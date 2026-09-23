@@ -139,26 +139,34 @@ const (
 )
 
 func New(id ID, title string) *Conversation
-func (c *Conversation) Append(role Role, content []Part) Message
-func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error)
-func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树
-func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点
+func (c *Conversation) Append(role Role, content []Part) (Message, error) // user|assistant 内容消息；tool 消息走 AppendCommitted
+func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（含 tool 消息），入树前校验不变量
+func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // tool 节点不可 Revise
+func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（连带清理失联 tool 节点）
+func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点（"" = 虚拟 Root，空路径）
 func (c *Conversation) Path() []Message                     // Root→Head 线性序列
-func (c *Conversation) Branches(id MessageID) []Message     // 同级分叉（UI 对比新旧版本）
+func (c *Conversation) Branches(id MessageID) []Message     // 同级分叉（UI 对比新旧版本；"" = 顶层消息）
 func (c *Conversation) Find(id MessageID) (Message, bool)
+func (c *Conversation) Validate() error                     // 三条不变量整体自检（加载后/测试用）
 ```
 
 **不变量（3 条，性质测试守护）**：
 
-1. **树合法**：至多一个根；无环；`Parent/Children` 双向一致；`Head` 属于树。
+1. **树合法**：以**虚拟 Root 为唯一根**——`Parent == ""` 的顶层消息都是它的孩子（允许多条，支撑 Revise 首条消息），
+   `Head == ""` 表示游标在虚拟 Root（空路径）；无环；`Parent/Children` 双向一致；`Head` 属于树。
 2. **引用合法**：`tool` 节点的 `CallID` 匹配**树中存在**的某 assistant 节点的 `ToolCalls[i].ID`（存在性引用，
    以支撑 Carry 边转移；Path 上"失联"的 tool 节点在 Prompt 装配时按文本内联并标注 `〔历史工具结果〕`）。
-3. **节点不可变**：`Nodes` 只增不改；一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
+   `Prune` 连带移除因此失联的 tool 结果节点，维持本不变量（D18）。
+3. **节点不可变**：`Nodes` 只增不改（节点内容创建后只读）；一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
 
 **关键语义**：
 
 - **Revise Carry = 边转移**（否决深拷贝子树）：节点内容不依赖祖先指纹（不像 git commit），
-  改写历史只需把 `Children[id]` 这批边改挂到新节点，后代节点字节级不动。树仍是一棵树，无 DAG。
+  改写历史只需把 `Children[id]` 这批边改挂到新节点，树仍是一棵树，无 DAG。精确语义（D16）：
+  被转移子树**零拷贝、身份不变**，`Children` 边与**直接孩子的 `Parent` 边指针**随之改写，
+  孙代及更深节点字节级不动；节点内容（Content/ToolCalls/ToolResult/Usage/Model/Outcome/CreatedAt）永不改写。
+- **Revise 的 Head 语义**（D15/D16）：`Fresh` → `Head` 移到新节点；`Carry` → 旧 `Head` 若是 id 的严格后代
+  （随子树转移）则保持不变，否则移到新节点。Revise 首条（顶层）消息合法：新节点同为顶层消息。
 - **流式中间态不进领域**：增量只流经 `Presenter`；Turn 结束（或取消）一次性 Commit 不可变节点
   （取消 = `Outcome: cancelled` + 已生成部分文本）。没有半个节点，崩溃恢复无部分写入问题。
   节点 ID 在 Turn 开始时预分配，作流事件关联 ID。
@@ -233,7 +241,8 @@ type ModelInfo struct {
     CostIn, CostOutUSD float64 // 每千 token 单价
 }
 
-type Usage struct{ InputTokens, OutputTokens int; CostUSD float64 }
+// Usage 见 domain/conversation.Usage（与 Message.Usage 同型，port 直接引用，不另造 DTO）
+type Usage = conversation.Usage
 
 type Delta struct {
     Text      string
@@ -304,7 +313,8 @@ type MemoryStore interface {
 ### 5.5 `blob.go` —— 附件端口
 
 ```go
-type BlobRef struct{ Hash, MIME, Name string; Size int64 }
+// BlobRef 见 domain/conversation.BlobRef（Part.Ref 引用之，port 直接引用，不另造 DTO）
+type BlobRef = conversation.BlobRef
 
 type AttachmentStore interface {
     Put(ctx context.Context, r io.Reader, mime, name string) (BlobRef, error)
@@ -623,7 +633,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 | 层 | 手段 |
 |---|---|
-| domain | 性质测试：随机 Append/Revise(Fresh\|Carry)/Prune/Checkout 序列 → 不变量 1–3 恒成立；Carry 后后代节点字节级不变 |
+| domain | 性质测试：随机 Append/Revise(Fresh\|Carry)/Prune/Checkout 序列 → 不变量 1–3 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写） |
 | app | 脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter → 交互回放（golden）；摄取管线用假 Transcriber |
 | adapter | LLM 录制流回放；storejson/blobfs/jobproc/memoryfs 契约测试（临时目录） |
 | MCP | 测试内起假 MCP server（stdio）跑 mcpgate 契约：发现/调用/超时/崩溃重启/授权拒绝 |
@@ -663,6 +673,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D12 | 工具调用引用放宽为"存在性引用" | 严格祖先引用（与 D2 边转移冲突） |
 | D13 | 内置能力与三方插件同走端口契约（内置不享特权） | 内核直连内置能力（内核腐化） |
 | D14 | 横切能力用装饰器，不进插件 API | 插件中间件链（API 面失控） |
+| D15 | 虚拟 Root 是唯一根，顶层消息可多条（`Head==""` = 游标在虚拟 Root） | 严格单根消息——Revise 首条消息将被禁止，与"改任意消息"的招牌能力冲突 |
+| D16 | Carry 边转移 = 改挂 `Children` 边 + 改写直接孩子的 `Parent` 边指针；Revise 的 Head 语义见 §4.1 | "边指针永不改写"（那就只能拷贝子树，回到 D2 否决项） |
+| D17 | `Usage` / `BlobRef` 由 `domain/conversation` 持有，`port` 直接引用 | port 再造同型 DTO（双份定义易漂移，且 `Part.Ref` 本就要用） |
+| D18 | tool 节点不可 Revise；`Prune` 连带清理失联 tool 结果节点 | 允许编辑机器生成的结果（破坏存在性引用不变量）；Prune 后留失联引用（同上） |
 
 ## 14. 暂缓事项（Backlog）
 
