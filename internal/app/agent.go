@@ -22,6 +22,14 @@ import (
 // ErrMaxTurns 单次 Run 的"生成 + 工具"循环次数用尽（DESIGN §7.1）。
 var ErrMaxTurns = errors.New("agent: 超过最大轮次数")
 
+// ErrNothingToCompact /compact 无可压缩历史：摘要之上没有新增内容（D21）。
+var ErrNothingToCompact = errors.New("agent: 没有可压缩的历史")
+
+// compactInstruction /compact 摘要生成的 system 指令（D21 手动轨）。
+const compactInstruction = "你是上下文压缩器。请把给出的对话历史压缩为一段摘要，供后续对话延续上下文：" +
+	"保留目标、约束、关键事实、未决问题与最新进展，忽略寒暄与冗余；" +
+	"直接输出摘要正文（不加前缀、不加解释），使用与对话相同的语言。"
+
 // defaultMaxTurns Config.MaxTurns <= 0 时的默认值（DESIGN §8 limits.max_turns）。
 const defaultMaxTurns = 8
 
@@ -165,6 +173,87 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		}
 	}
 	return fmt.Errorf("%w（%d）", ErrMaxTurns, a.maxTurns)
+}
+
+// Compact 生成上下文压缩摘要（D21 手动轨，/compact）：
+// 把当前上下文（persona + 现有摘要 + 其后历史）交给模型转写为一条 system 摘要节点入树
+// （记 Model/Usage，链式吸收旧摘要），其上历史此后装配不再回传。
+// 失败只报错、树无损；无可压缩历史（摘要之上无新增）返回 ErrNothingToCompact。
+// 返回 (摘要节点, 被吸收的上下文节点数, nil)。
+func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conversation.Message, int, error) {
+	if c == nil {
+		return conversation.Message{}, 0, errors.New("agent: nil conversation")
+	}
+	path := c.Path()
+	if len(path) <= 1 { // 仅 Root
+		return conversation.Message{}, 0, ErrNothingToCompact
+	}
+	_, watermarkIdx := waterline(path)
+	start := 1
+	if watermarkIdx >= 0 {
+		start = watermarkIdx
+	}
+	absorbed := len(path) - start
+	// 可压缩增量 = 水位之后的非摘要节点；为 0 表示上下文没有新内容（重复压缩短路）。
+	fresh := 0
+	for i := start; i < len(path); i++ {
+		if path[i].Role != conversation.RoleSystem {
+			fresh++
+		}
+	}
+	if fresh == 0 {
+		return conversation.Message{}, 0, ErrNothingToCompact
+	}
+
+	// 压缩输入 = 当前上下文（已水位化：链式吸收只吞旧摘要与其后的新历史）。
+	history, err := assemblePath(ctx, path, a.blobs)
+	if err != nil {
+		return conversation.Message{}, 0, fmt.Errorf("装配压缩输入: %w", err)
+	}
+	msgs := make([]port.PromptMessage, 0, len(history)+2)
+	msgs = append(msgs, port.PromptMessage{
+		Role:    "system",
+		Content: []port.PromptPart{{Kind: "text", Text: compactInstruction}},
+	})
+	msgs = append(msgs, history...)
+	msgs = append(msgs, port.PromptMessage{
+		Role:    "user",
+		Content: []port.PromptPart{{Kind: "text", Text: "请输出以上对话的压缩摘要。"}},
+	})
+
+	mid := a.ids.MessageID() // 预分配关联 ID
+	buf := &commitBuffer{id: mid, parent: c.Head}
+	stream, err := a.llm.Generate(ctx, port.GenerateRequest{
+		Model:    a.cfg.Model,
+		Messages: msgs,
+		Budget:   a.cfg.Budget,
+	})
+	if err != nil {
+		return conversation.Message{}, 0, fmt.Errorf("生成摘要: %w", err)
+	}
+	// 流式过程只进 UI；失败不提交（树无损）。
+	if _, err := a.consume(ctx, stream, buf, mid); err != nil {
+		return conversation.Message{}, 0, fmt.Errorf("生成摘要: %w", err)
+	}
+	text := strings.TrimSpace(buf.text.String())
+	if text == "" {
+		return conversation.Message{}, 0, errors.New("生成摘要: 模型返回为空")
+	}
+	node := conversation.Message{
+		ID:        mid,
+		Parent:    c.Head,
+		Role:      conversation.RoleSystem,
+		Content:   []conversation.Part{{Kind: conversation.PartText, Text: text}},
+		Outcome:   conversation.OutcomeDone,
+		Model:     a.cfg.Model,
+		Usage:     buf.usage,
+		CreatedAt: a.clock.Now(),
+	}
+	if err := c.AppendCommitted(node); err != nil {
+		return conversation.Message{}, 0, fmt.Errorf("提交摘要节点: %w", err)
+	}
+	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
+	return node, absorbed, nil
 }
 
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 工具清单（DESIGN §7.1）。

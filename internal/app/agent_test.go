@@ -334,6 +334,134 @@ func TestNewValidatesDeps(t *testing.T) {
 	}
 }
 
+// TestAgentCompactSummarizesAndSetsWatermark D21 手动轨：摘要 system 节点入树、水位生效、记账完整。
+func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{
+		withUsage(textStream("这是摘要"), conversation.Usage{InputTokens: 30, OutputTokens: 12}),
+	}}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{}, Config{})
+	c := newConv(t) // root + user "hi"
+	prevHead := c.Head
+
+	node, absorbed, err := a.Compact(context.Background(), c)
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if node.Role != conversation.RoleSystem || node.Content[0].Text != "这是摘要" {
+		t.Fatalf("node = %+v", node)
+	}
+	if node.Parent != prevHead {
+		t.Fatalf("parent = %s, want %s", node.Parent, prevHead)
+	}
+	if node.Usage.InputTokens != 30 || node.Usage.OutputTokens != 12 {
+		t.Fatalf("usage = %+v", node.Usage)
+	}
+	if node.Outcome != conversation.OutcomeDone || node.Model != "test-model" {
+		t.Fatalf("outcome/model = %q/%q", node.Outcome, node.Model)
+	}
+	if absorbed != 1 {
+		t.Fatalf("absorbed = %d, want 1", absorbed)
+	}
+	if c.Head != node.ID {
+		t.Fatalf("head = %s, want 摘要节点", c.Head)
+	}
+
+	// 请求：压缩指令在首位，历史紧随，尾部输出提示。
+	req := llm.requests[0]
+	if req.Messages[0].Role != "system" || !strings.Contains(req.Messages[0].Content[0].Text, "压缩") {
+		t.Fatalf("messages[0] = %+v, want 压缩指令", req.Messages[0])
+	}
+	if len(req.Messages) != 3 || req.Messages[1].Role != "user" || req.Messages[1].Content[0].Text != "hi" {
+		t.Fatalf("messages = %+v, want [指令, hi, 提示]", req.Messages)
+	}
+	last := req.Messages[2]
+	if last.Role != "user" || !strings.Contains(last.Content[0].Text, "摘要") {
+		t.Fatalf("last = %+v, want 输出提示", last)
+	}
+
+	// 水位生效：再装配只剩摘要（user 被裁掉）。
+	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].Role != "system" || msgs[0].Content[0].Text != "这是摘要" {
+		t.Fatalf("msgs = %+v, want 水位裁剪后仅 [摘要]", msgs)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if names := eventNames(rec.events); names[len(names)-1] != "committed" {
+		t.Fatalf("events = %v, want 以 committed 收尾", names)
+	}
+}
+
+// TestAgentCompactNothingToCompact 空会话 / 仅 persona / 重复压缩均短路，不花生成费用。
+func TestAgentCompactNothingToCompact(t *testing.T) {
+	llm := &scriptLLM{t: t}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{}, Config{})
+
+	empty := conversation.New(conversation.ID("e"), "e")
+	if _, _, err := a.Compact(context.Background(), empty); !errors.Is(err, ErrNothingToCompact) {
+		t.Fatalf("empty = %v, want ErrNothingToCompact", err)
+	}
+
+	c := conversation.New(conversation.ID("p"), "p")
+	commitNode(t, c, conversation.MessageID(c.ID), conversation.RoleSystem, "人格")
+	if _, _, err := a.Compact(context.Background(), c); !errors.Is(err, ErrNothingToCompact) {
+		t.Fatalf("persona only = %v", err)
+	}
+
+	// 已有摘要且其后无新内容：重复压缩短路。
+	c2 := conversation.New(conversation.ID("c2"), "c2")
+	u := commitNode(t, c2, conversation.MessageID(c2.ID), conversation.RoleUser, "q")
+	commitNode(t, c2, u.ID, conversation.RoleSystem, "旧摘要")
+	if _, _, err := a.Compact(context.Background(), c2); !errors.Is(err, ErrNothingToCompact) {
+		t.Fatalf("double compact = %v", err)
+	}
+
+	if len(llm.requests) != 0 {
+		t.Fatalf("不应发起生成: %d", len(llm.requests))
+	}
+}
+
+// TestAgentCompactFailureLeavesTreeIntact 生成/断流失败：树无损、不发 Committed。
+func TestAgentCompactFailureLeavesTreeIntact(t *testing.T) {
+	cases := []struct {
+		name string
+		llm  *scriptLLM
+	}{
+		{"generate", &scriptLLM{t: nil, genErr: errors.New("boom")}},
+		{"mid-stream", &scriptLLM{t: nil, streams: []*scriptStream{{steps: []scriptStep{
+			{delta: port.Delta{Text: "半截"}},
+			{err: errors.New("conn reset")},
+		}}}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.llm.t = t
+			rec := &recorder{}
+			a := newAgent(t, tc.llm, rec, Deps{}, Config{})
+			c := newConv(t)
+			before := len(c.Nodes)
+
+			_, _, err := a.Compact(context.Background(), c)
+			if err == nil {
+				t.Fatal("want error")
+			}
+			if len(c.Nodes) != before {
+				t.Fatalf("nodes = %d, want 树无损 %d", len(c.Nodes), before)
+			}
+			for _, ev := range rec.events {
+				if _, ok := ev.(port.CommittedEvent); ok {
+					t.Fatal("失败不应发 CommittedEvent")
+				}
+			}
+		})
+	}
+}
+
 // TestBuildRequestTreePersonaReplacesConfig D20：树内 persona 在位时不再注入 config 兜底 system。
 func TestBuildRequestTreePersonaReplacesConfig(t *testing.T) {
 	llm := &scriptLLM{t: t}

@@ -211,6 +211,23 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 	case "exit":
 		return "", ErrQuit
 
+	case "compact":
+		node, absorbed, err := s.agent.Compact(ctx, s.cur)
+		if errors.Is(err, ErrNothingToCompact) {
+			return "无需压缩：摘要之上没有新的历史", nil
+		}
+		if errors.Is(err, context.Canceled) {
+			return "已取消压缩（会话未改动）", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if err := s.store.Save(ctx, s.cur); err != nil {
+			return "", fmt.Errorf("session: 保存会话: %w", err)
+		}
+		return fmt.Sprintf("已压缩 %d 条历史 → 1 条摘要（in=%d out=%d tokens）",
+			absorbed, node.Usage.InputTokens, node.Usage.OutputTokens), nil
+
 	case "permission":
 		if len(cmd.Args) == 0 {
 			return s.permissionReport(), nil
@@ -242,6 +259,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/new [标题]             新建会话",
 			"/list                   列出会话",
 			"/title [文本]           查看/改写会话标题",
+			"/compact                触发上下文压缩（生成 system 摘要节点，D21）",
 			"/permission [等级]      查看/切换权限等级（read-only/strict/permissive/full-access）",
 			"/quit, /exit            退出",
 		}, "\n"), nil

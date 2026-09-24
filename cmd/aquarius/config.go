@@ -39,10 +39,11 @@ type uiConfig struct {
 
 // limitsConfig 运行限额（DESIGN §8）。
 type limitsConfig struct {
-	MaxContextTokens int `json:"max_context_tokens"`
-	MaxTurns         int `json:"max_turns"`
-	ToolOutputChars  int `json:"tool_output_chars"`
-	ToolTimeoutSec   int `json:"tool_timeout_sec"`
+	MaxContextTokens int     `json:"max_context_tokens"`
+	MaxTurns         int     `json:"max_turns"`
+	CompactThreshold float64 `json:"compact_threshold"` // 自动压缩阈值（D21；自动轨 M2 消费）
+	ToolOutputChars  int     `json:"tool_output_chars"`
+	ToolTimeoutSec   int     `json:"tool_timeout_sec"`
 }
 
 // defaultConfig 首次运行写入的模板：DESIGN §8 示例的可运行子集
@@ -64,6 +65,7 @@ const defaultConfig = `{
   "limits": {
     "max_turns": 8,
     "max_context_tokens": 64000,
+    "compact_threshold": 0.7,
     "tool_output_chars": 20000,
     "tool_timeout_sec": 60
   }

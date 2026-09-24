@@ -14,10 +14,13 @@
 
 ## 状态
 
-开发中，里程碑 **M0 骨架**已落地（DESIGN §12）：会话树领域 + 性质测试、全量端口、
-storejson 持久化、OpenAI 兼容流式适配器、Turn 循环、repl 界面与单二进制装配——
-`go build ./cmd/aquarius` 即可跑通一轮纯文本对话。后续按里程碑推进：
-M1 树交互 → M2 工具与记忆 → M3 任务与多模态 → M4 MCP 与 TUI。
+开发中，里程碑 **M0 骨架**已落地（DESIGN §12）：实 Root 会话树 + 性质测试、persona 首节点、
+**上下文压缩手动轨**（`/compact` → system 摘要水位节点，三轨之一）、**权限等级矩阵**
+（read-only/strict/permissive/full-access + `/permission`）、全量端口、storejson 持久化、
+OpenAI 兼容流式适配器、Turn 循环、repl 界面与单二进制装配——`go build ./cmd/aquarius`
+即可跑通纯文本对话。命令：`/new /list /title /compact /permission /quit /exit /help`。
+后续按里程碑推进：M1 树交互 → M2 工具与记忆（ToolRunner、权限执行接入、自动压缩轨、
+`context_compact` 工具）→ M3 任务与多模态 → M4 MCP 与 TUI。
 
 ## 文档
 
@@ -33,10 +36,12 @@ go build ./cmd/aquarius
 ./aquarius.exe      # 首次运行生成 ~/.aquarius/config.json
 ```
 
-1. 编辑 `~/.aquarius/config.json`：`model.name` / `model.base_url`；
+1. 编辑 `~/.aquarius/config.json`：`model.name` / `model.base_url`（可选 `system_prompt` 人格、
+   `permissions.level` 权限等级，默认 `strict`，特权目录 `~/.aquarius/sandbox`）；
 2. 密钥只经环境变量引用（禁止明文入配置）：配置里写 `secret:AQUARIUS_OPENAI_KEY`，
    同名环境变量存真实密钥；
-3. 重新运行，直接对话；`/help` 查看命令，`/quit` 退出。
+3. 重新运行，直接对话；`/help` 查看命令（含 `/compact` 上下文压缩、`/permission` 权限等级），
+   `/quit`（或 `/exit`）退出。
 
 数据全部在 `~/.aquarius/`（`-data` 可指定目录），会话树为可直接查看的一树一 JSON。
 

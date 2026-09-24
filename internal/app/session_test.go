@@ -307,6 +307,40 @@ func TestSessionPermissionCommand(t *testing.T) {
 	}
 }
 
+// TestSessionCompactCommand D21 手动轨：/compact 生成摘要节点、落盘、报记账；重复压缩短路。
+func TestSessionCompactCommand(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store,
+		textStream("模型回复"),
+		withUsage(textStream("压缩后的摘要"), conversation.Usage{InputTokens: 40, OutputTokens: 15}),
+	)
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "compact"}})
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if !strings.Contains(out, "已压缩") || !strings.Contains(out, "in=40 out=15") {
+		t.Fatalf("out = %q, want 记账信息", out)
+	}
+	path := s.Current().Path()
+	last := path[len(path)-1]
+	if last.Role != conversation.RoleSystem || last.Content[0].Text != "压缩后的摘要" {
+		t.Fatalf("last = %+v, want 摘要节点", last)
+	}
+	if _, ok := store.convs[s.Current().ID].Nodes[last.ID]; !ok {
+		t.Fatal("摘要节点应已落盘")
+	}
+
+	// 重复压缩：其后无新内容 → 短路提示，不发起生成。
+	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "compact"}})
+	if err != nil || !strings.Contains(out, "无需压缩") {
+		t.Fatalf("second compact = %q, %v", out, err)
+	}
+}
+
 func TestSessionSaveFailureSurfaces(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store, textStream("x"))

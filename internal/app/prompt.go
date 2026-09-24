@@ -17,22 +17,26 @@ const defaultSystem = "你是 Aquarius，一个面向个人的极简 AI 助手�
 // historyToolMarker 失联 tool 结果的内联标注（DESIGN §4.1 不变量 2）。
 const historyToolMarker = "〔历史工具结果〕"
 
+// waterline 计算装配水位（D21/D20）：persona = path[1] 的 system 节点；
+// 摘要 = 其后最后一个 system 节点。返回 (personaIdx, watermarkIdx)，-1 表示无。
+func waterline(path []conversation.Message) (personaIdx, watermarkIdx int) {
+	personaIdx = -1
+	if len(path) > 1 && path[1].Role == conversation.RoleSystem {
+		personaIdx = 1
+	}
+	for i := len(path) - 1; i > personaIdx; i-- {
+		if path[i].Role == conversation.RoleSystem {
+			return personaIdx, i
+		}
+	}
+	return personaIdx, -1
+}
+
 // assemblePath 把 Path() 装配为模型消息序列（DESIGN §7.1，含 D21 水位裁剪）：
 // persona（path[1] 的 system 节点）恒回传；最新压缩摘要之上的历史（persona 之外）一律不回传；
 // Root 空节点不进上下文。blobs 为 nil 时图片以内联占位文本代替（附件库就绪于 M3）。
 func assemblePath(ctx context.Context, path []conversation.Message, blobs port.AttachmentStore) ([]port.PromptMessage, error) {
-	// 水位判定（D21）：persona = path[1] 的 system 节点；摘要 = 其后最后一个 system 节点。
-	personaIdx := -1
-	if len(path) > 1 && path[1].Role == conversation.RoleSystem {
-		personaIdx = 1
-	}
-	watermarkIdx := -1
-	for i := len(path) - 1; i > personaIdx; i-- {
-		if path[i].Role == conversation.RoleSystem {
-			watermarkIdx = i
-			break
-		}
-	}
+	personaIdx, watermarkIdx := waterline(path)
 	start := 1 // 起点恒 ≥ 1：Root 不进上下文
 	if watermarkIdx >= 0 {
 		start = watermarkIdx
