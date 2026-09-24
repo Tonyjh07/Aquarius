@@ -14,7 +14,10 @@
 
 ## 状态
 
-设计定稿，开发中（里程碑 M0 起步）。当前仓库仅包含设计文档。
+开发中，里程碑 **M0 骨架**已落地（DESIGN §12）：会话树领域 + 性质测试、全量端口、
+storejson 持久化、OpenAI 兼容流式适配器、Turn 循环、repl 界面与单二进制装配——
+`go build ./cmd/aquarius` 即可跑通一轮纯文本对话。后续按里程碑推进：
+M1 树交互 → M2 工具与记忆 → M3 任务与多模态 → M4 MCP 与 TUI。
 
 ## 文档
 
@@ -23,12 +26,19 @@
 | [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型（会话树/Revise）、端口设计、插件架构（MCP）、权限模型、里程碑与决策记录 |
 | [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令、测试与提交要求 |
 
-## 快速开始（规划中）
+## 快速开始
 
 ```bash
 go build ./cmd/aquarius
-./aquarius          # 首次运行生成 ~/.aquarius/config.json，按提示填模型与密钥
+./aquarius.exe      # 首次运行生成 ~/.aquarius/config.json
 ```
+
+1. 编辑 `~/.aquarius/config.json`：`model.name` / `model.base_url`；
+2. 密钥只经环境变量引用（禁止明文入配置）：配置里写 `secret:AQUARIUS_OPENAI_KEY`，
+   同名环境变量存真实密钥；
+3. 重新运行，直接对话；`/help` 查看命令，`/quit` 退出。
+
+数据全部在 `~/.aquarius/`（`-data` 可指定目录），会话树为可直接查看的一树一 JSON。
 
 ## 许可证
 
