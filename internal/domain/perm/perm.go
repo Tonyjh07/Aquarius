@@ -5,7 +5,7 @@
 //   - 执行类工具只看工具列：Risk=Safe 免确认；Risk=Confirm 仅 full-access 免、其余逐次确认。
 //   - 矩阵格 = 免确认范围；矩阵外一律 ask（Confirmer），无 deny 出口。
 //
-// 本包是领域级纯规则：零 IO、零端口依赖；执行接入在 M2 ToolRunner，
+// 本包是领域级纯规则：零 IO、零端口依赖；执行接入在 adapter/toolrun（D25），
 // 展示（/permission）与配置（config permissions.level）消费本包。
 package perm
 

@@ -7,7 +7,8 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
-// Event UI 事件（联合类型）：DeltaEvent | ToolCallEvent | ToolResultEvent | CommittedEvent | ErrorEvent。
+// Event UI 事件（联合类型）：DeltaEvent | ToolCallEvent | ToolResultEvent | CommittedEvent
+// | ErrorEvent | NoticeEvent。
 type Event any
 
 // DeltaEvent 流式增量，只进 UI 不进领域（D3）；MessageID 为 Turn 开始时预分配的关联 ID。
@@ -35,6 +36,11 @@ type CommittedEvent struct {
 // ErrorEvent 错误上抛 UI。
 type ErrorEvent struct {
 	Err error
+}
+
+// NoticeEvent 非错误提示（裁剪"已省略 k 条"、自动压缩触发等，D21/§7.1）。
+type NoticeEvent struct {
+	Text string
 }
 
 // Presenter 事件呈现端口。

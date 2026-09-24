@@ -3,6 +3,8 @@ package port
 import (
 	"context"
 	"time"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
 // MemoryDoc 一篇 markdown 记忆文档。
@@ -25,7 +27,18 @@ type MemoryHit struct {
 	Snippet string `json:"snippet"`
 }
 
+// 全局/会话记忆文档名（D23 布局的端口侧约定，app 与 memoryfs 共同消费）。
+const (
+	GlobalMemoryDoc = "memories.md" // 全局记忆：<dataDir>/memories.md
+	// SessionMemorySuffix 会话记忆后缀：<dataDir>/conversations/<会话ID><本后缀>。
+	SessionMemorySuffix = ".memory.md"
+)
+
+// SessionMemoryDoc 返回会话 ID 对应的记忆文档名。
+func SessionMemoryDoc(id conversation.ID) string { return string(id) + SessionMemorySuffix }
+
 // MemoryStore 记忆文档端口：markdown 即记忆、检索 = 关键词（D11）；后端可插拔。
+// name 寻址：全局 = GlobalMemoryDoc；会话 = SessionMemoryDoc(id)（D23）。
 type MemoryStore interface {
 	Index(ctx context.Context) ([]MemoryIndexEntry, error)
 	Read(ctx context.Context, name string) (MemoryDoc, error)

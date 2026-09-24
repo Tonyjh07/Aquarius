@@ -79,3 +79,10 @@ type LLM interface {
 	Generate(ctx context.Context, req GenerateRequest) (Stream, error)
 	Models(ctx context.Context) ([]ModelInfo, error)
 }
+
+// TokenCounter 可选精确计数能力（三级计数链②，D26）：LLM 适配器可选择性实现——
+// 本地 tokenizer（config model.tokenizer 指向 tokenizer.json）或服务端 count_tokens API。
+// 实现即覆盖 app 的通用估算；未实现者由 app 回落估算③，并以服务端实测 usage①自校准。
+type TokenCounter interface {
+	CountTokens(ctx context.Context, text string) (int, error)
+}
