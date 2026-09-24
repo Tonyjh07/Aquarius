@@ -249,6 +249,9 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool) ([]byte, err
 		if err != nil {
 			return nil, err
 		}
+		if cm.Role == "" {
+			continue // toChatMessage 对"空内容且无调用"的消息返回零值表示跳过
+		}
 		out.Messages = append(out.Messages, cm)
 	}
 	if len(req.Tools) > 0 {
