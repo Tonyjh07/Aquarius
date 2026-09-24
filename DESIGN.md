@@ -12,7 +12,7 @@
 **Aquarius 是一个面向个人的、交互优先的极简 AI 助手。**
 
 - 核心是**对话体验**：流式交互、消息修订分支、回溯对比；不是编码工作流产品。
-- **极简内核**：无 subagent、无任务编排层、无消息总线。内核只有三件事：会话树、上下文装配、Turn 循环。
+- **极简内核**：无 subagent、无任务编排层、无消息总线。内核只有三件事：会话树、上下文装配（含压缩）、Turn 循环。
 - **多模态出入**：文本 / 图片 / 文档 / 语音皆可输入，文本 / 语音 / 通知皆可输出；输入输出**方式**可插拔。
 - **记忆 = 文档**：markdown 文件即记忆，用户可直接编辑；模型经工具读写；检索 = 关键词。
 - **不可变节点 + 用户主权**：历史节点永不修改；"改"= 创建同级新节点，是否携带后续历史由用户选择。
@@ -39,7 +39,11 @@
 | 节点 | Message | 树节点，创建后只读：角色、内容分片、工具调用/结果、终态、用量 |
 | 内容分片 | Part | 消息内容的多态片段：Text / Image / Audio / Doc |
 | 附件 | Attachment | 被消息引用的二进制内容，sha256 内容寻址存储 |
-| 根 / 头 | Root / Head | 虚拟起点 / 当前游标，决定发给模型的线性路径 |
+| 根 | Root | 实节点空消息（ID=会话 ID、Role=root），唯一 `Parent==""` 的节点，仅作树管理、不进模型上下文 |
+| 头 | Head | 当前游标（初始=Root，无空串特例），决定发给模型的线性路径 |
+| 人格 | persona | 会话首节点（system 角色，config 快照），压缩水位之上也恒回传 |
+| 压缩摘要 | Compact Summary | system 角色水位节点：其上历史（persona 除外）不再回传模型 |
+| 权限等级 | Permission Level | read-only / strict / permissive / full-access 四档矩阵预设 |
 | 路径 | Path | Root → Head 的节点序列 = 本次推理的上下文 |
 | 轮次 | Turn | 一次"模型生成 + 0..n 次工具执行"的循环 |
 | 提交 | Commit | 流式结束后把本轮产出作为不可变节点一次性挂入树 |
@@ -70,7 +74,11 @@
 ```
 
 **不做**（明确排除）：subagent、任务/计划聚合、事件总线、Saga、多租户、计量计费、评测平台、
-**工作区**（项目目录抽象/代码索引/文件监听）、自动摘要记忆、embedding 检索。
+**工作区**（项目目录抽象/代码索引/文件监听）、**独立于文档的记忆系统**（记忆 = markdown 文档，一切一并写入；
+无自动入库的记忆巩固/摘要记忆管线）、embedding 检索。
+
+> **上下文压缩摘要**（§4.1 关键语义 / §7.1 三轨压缩）不是记忆系统：它管理的是**对话上下文**
+> （agent 框架必备能力），转写结果以 system 节点入会话树、随会话走，与 `memory/*.md` 记忆文档无关。
 
 ---
 
@@ -79,7 +87,7 @@
 ### 4.1 会话树（`domain/conversation`）
 
 ```
-            Root(虚拟)
+            Root(实节点空消息，ID=会话ID)
                │
               m1 (user)
                │
@@ -110,8 +118,8 @@ type Part struct {
 
 type Message struct { // 创建后只读，值语义
     ID         MessageID
-    Parent     MessageID // "" = 根消息
-    Role       Role      // user | assistant | tool
+    Parent     MessageID // "" = Root 自身（仅 Root 为空；其余节点 Parent 恒非空）
+    Role       Role      // root | user | assistant | system | tool
     Content    []Part
     ToolCalls  []tool.Call
     ToolResult *tool.Result
@@ -125,7 +133,7 @@ type Conversation struct {
     ID           ID
     Title        string
     Nodes        map[MessageID]Message       // 只增
-    Children     map[MessageID][]MessageID   // 结构边
+    Children     map[MessageID][]MessageID   // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root 自身）
     Head         MessageID
     RevisedFrom  map[MessageID]MessageID     // 新→旧：版本链（纯结构元数据）
     CreatedAt, UpdatedAt time.Time
@@ -138,22 +146,23 @@ const (
     Carry                 // 旧节点的子树边转移到新节点；旧节点成为"旧版本"叶子
 )
 
-func New(id ID, title string) *Conversation
-func (c *Conversation) Append(role Role, content []Part) (Message, error) // user|assistant 内容消息；tool 消息走 AppendCommitted
-func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（含 tool 消息），入树前校验不变量
-func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // tool 节点不可 Revise
-func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（连带清理失联 tool 节点）
-func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点（"" = 虚拟 Root，空路径）
-func (c *Conversation) Path() []Message                     // Root→Head 线性序列
-func (c *Conversation) Branches(id MessageID) []Message     // 同级分叉（UI 对比新旧版本；"" = 顶层消息）
+func New(id ID, title string) *Conversation // 建 Root 空节点（ID=id、Role=root）并把 Head 置于 Root；persona 由应用层写为首孩子
+func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅 user|assistant；root/system/tool 一律走 AppendCommitted
+func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system/tool），入树前校验不变量
+func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root/tool 不可 Revise；system 可
+func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（连带清理失联 tool 节点；Root 不可剪）
+func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点（含 Root=回根；无空串特例）
+func (c *Conversation) Path() []Message                     // Root→Head 线性序列（首元素为 Root，装配时滤掉）
+func (c *Conversation) Branches(id MessageID) []Message     // 同级分叉（UI 对比新旧版本；id=Root 时为顶层消息）
 func (c *Conversation) Find(id MessageID) (Message, bool)
 func (c *Conversation) Validate() error                     // 三条不变量整体自检（加载后/测试用）
 ```
 
 **不变量（3 条，性质测试守护）**：
 
-1. **树合法**：以**虚拟 Root 为唯一根**——`Parent == ""` 的顶层消息都是它的孩子（允许多条，支撑 Revise 首条消息），
-   `Head == ""` 表示游标在虚拟 Root（空路径）；无环；`Parent/Children` 双向一致；`Head` 属于树。
+1. **树合法**：以 **Root 实节点为唯一根**——Root 是空消息节点（`ID == 会话 ID`、`Role == root`、`Parent == ""`），
+   `Parent == ""` 的节点仅 Root 一个；顶层消息 = Root 的孩子（允许多条，支撑 Revise 首条消息）；
+   无环；`Parent/Children` 双向一致；`Head` 属于树（初始 = Root，**无空串特例**）。
 2. **引用合法**：`tool` 节点的 `CallID` 匹配**树中存在**的某 assistant 节点的 `ToolCalls[i].ID`（存在性引用，
    以支撑 Carry 边转移；Path 上"失联"的 tool 节点在 Prompt 装配时按文本内联并标注 `〔历史工具结果〕`）。
    `Prune` 连带移除因此失联的 tool 结果节点，维持本不变量（D18）。
@@ -170,6 +179,15 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 - **流式中间态不进领域**：增量只流经 `Presenter`；Turn 结束（或取消）一次性 Commit 不可变节点
   （取消 = `Outcome: cancelled` + 已生成部分文本）。没有半个节点，崩溃恢复无部分写入问题。
   节点 ID 在 Turn 开始时预分配，作流事件关联 ID。
+- **Root 即会话**（D19）：Root 实节点 ID 复用会话 ID（不另造第二个 ID），Role=root、空内容，仅作树管理；
+  `Prune`/`Revise` 均拒 Root（删/改 Root 即破坏唯一根）。M0 的虚拟 Root 落盘格式**破坏性切换**——
+  旧会话文件加载即报错，删除重建。
+- **persona 进树**（D20）：会话首节点 = system 角色（值为 config `system_prompt` 快照，空则内置默认），
+  压缩水位之上也**恒回传**；可 Revise（/edit 重写人格）、可 Prune（= 清空对话，走 /rm 二次确认；
+  清空后装配回退 config 兜底注入）。
+- **上下文压缩水位**（D21）：压缩摘要以 system 节点入树；装配 = [persona] + [最新摘要] + [摘要之后]，
+  摘要之上（persona 除外）历史一律不回传；多次压缩链式吸收（只回传最新摘要）。
+  `/compact` 手动触发、失败只报错树无损；超预算硬保底仍是最旧裁剪（三轨压缩见 §7.1）。
 - `Prune` 是唯一破坏性操作；`storejson` 写文件前保留一代 `.bak` 防误删（§13-D7）。
 
 ### 4.2 附件与多模态承载
@@ -188,14 +206,15 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 | `memory_list` / `memory_read` / `memory_search` | 记忆文档读取与检索 | Safe |
 | `memory_write` | 写入/覆盖记忆文档 | Confirm |
 | `think` | 显式整理思路（no-op） | Safe |
-| `file_read` / `file_list` / `file_search` | 通用文件读取（默认限家目录） | Safe（越界=Confirm） |
+| `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 等级矩阵，读全盘免确认） | Safe |
 | `file_write` / `file_delete` | 文件写入 / 删除 | Confirm |
 | `term_exec` | 终端命令同步执行（超时返回，输出截断保头尾） | Confirm |
 | `job_start` | 后台任务启动 | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理 | Safe |
+| `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文；M2 随 ToolRunner 落地） | Safe |
 
-- 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。默认沙箱 = 用户家目录，
-  越界路径逐次 Confirm（§13-D6）。
+- 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
+  读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
 - 后台任务 = 独立进程 + 日志落盘 `~/.aquarius/jobs/<id>.log`；任务表 v1 内存态（§13-D8）。
 - 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`。
 
@@ -521,9 +540,27 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 }
 ```
 
-上下文装配规则（v1 故意简单）：`Path()` 全量（Image Part 内联字节、Audio 取 Transcript、Doc 取截断文本、
-失联 tool 节点文本内联标注）+ 记忆索引 + 工具清单（含 `mcp:*`）+ 一条 system 提示；
-超预算从最旧裁剪（保 root 与最近 N 条）并在 UI 提示"已省略 k 条"。不做自动摘要。
+上下文装配规则（含压缩）：
+
+```
+装配顺序 = [persona（树内首节点，树内无则 config 兜底注入）]
+         + [最新压缩摘要（若有）]
+         + [摘要之后的历史]
+—— Root 空节点不进上下文；摘要之上除 persona 外一律不回传（D21）。
+其余承载：Image Part 内联字节、Audio 取 Transcript、Doc 取截断文本、
+          失联 tool 节点文本内联标注〔历史工具结果〕、记忆索引、工具清单（含 mcp:*）。
+```
+
+**三轨压缩【特色功能】**（D21）：
+
+1. **手动**：`/compact` 调 `Agent.Compact`——把水位上（persona 之后）的历史交给当前模型转写为
+   一条 system 摘要节点入树（记 Model/Usage）；失败只报错、树无损。
+2. **自动**：用量估算达 `limits.compact_threshold`（默认 0.7 × max_context_tokens）自动触发
+   （字符粗估；M2 落地——此前超预算走裁剪兜底）。
+3. **自触发**：模型经 `context_compact` 工具（Safe）自行管理上下文（M2 随 ToolRunner 落地）。
+
+压缩失败一律**回退最旧裁剪**（保 persona 与最近、丢中间，并在 UI 提示"已省略 k 条"）；
+超预算的硬保底始终是从最旧裁剪（截断装饰器，D14）。不做向量化、不进记忆文档。
 
 ### 7.2 摄取 / 输出管线
 
@@ -539,7 +576,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 | 命令 | 作用 |
 |---|---|
-| `/new` `/list` `/quit` | 新会话 / 列会话 / 退出 |
+| `/new` `/list` `/quit` `/exit` | 新会话 / 列会话 / 退出（`/exit` = `/quit` 别名） |
+| `/title [文本]` | 查看 / 改写会话标题（会话元数据，即时落盘） |
+| `/compact` | 触发上下文压缩：生成 system 摘要节点，水位上历史不再回传（§7.1 三轨之一） |
+| `/permission [等级]` | 查看 / 切换权限等级（read-only/strict/permissive/full-access，写回 config） |
 | `/goto <id>` | Head 移到任意节点（分支导航） |
 | `/edit <id> [--keep] <文本>` | Revise：默认 Fresh；`--keep` = Carry（保留后续历史） |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
@@ -556,7 +596,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 ```
 ~/.aquarius/
-├── config.json                # 主配置（密钥只存引用名）
+├── config.json                # 主配置（密钥只存引用名；permissions.level 权限等级）
+├── sandbox/                   # Agent 特权目录（权限矩阵免确认读写，启动自动创建）
 ├── memory/**/*.md             # 记忆文档
 ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
 ├── jobs/<jobID>.log           # 后台任务日志
@@ -573,6 +614,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
     "api_key": "secret:AQUARIUS_OPENAI_KEY"
   },
   "ui": { "kind": "tui" },
+  "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
   "memory": { "dir": "~/.aquarius/memory" },
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
@@ -586,13 +628,11 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
       "risk": "safe"
     }
   },
-  "permissions": {
-    "allow": ["fs-read:~/**"],
-    "ask": ["fs-read", "fs-write", "exec", "network", "secret"]
-  },
+  "permissions": { "level": "strict" },
   "limits": {
     "max_turns": 8,
     "max_context_tokens": 64000,
+    "compact_threshold": 0.7,
     "tool_output_chars": 20000,
     "tool_timeout_sec": 60
   }
@@ -605,15 +645,40 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 ## 9. 权限与安全模型
 
-| capability | 含义 | 默认策略 | 备注 |
-|---|---|---|---|
-| `fs-read` | 文件读取 | 家目录 allow，越界 ask | `file_*`、Doc 提取 |
-| `fs-write` | 文件写入/删除 | ask（逐次 Confirm） | `file_write/delete`、`memory_write` |
-| `exec` | 执行命令 | ask | `term_exec`、`job_start` |
-| `network` | 网络访问 | 首次 ask 进 allowlist | MCP 插件声明 |
-| `secret` | 读取密钥 | 按名 allowlist | 仅经 `Secrets` 注入，不回显进上下文 |
+**权限等级矩阵（D22，取代 D6）**：`config.permissions.level` 四档预设，默认 `strict`。
+矩阵格 = **免确认范围**；矩阵外的操作一律逐次确认（`Confirmer`）。`~/.aquarius/sandbox`
+（`<dataDir>/sandbox`，启动自动创建）是 Agent 特权目录。读操作全等级免确认（覆盖全盘），
+写与工具执行按等级区分：
 
-- 权限判定顺序：config allow → ask（`Confirmer`）→ deny。工具级 `Risk` 与 capability 取更严者。
+| 权限等级 | 特权目录 sandbox | 其他目录 | 工具调用 |
+|---|---|---|---|
+| `read-only` | r | r | （`Confirm` 逐次） |
+| `strict` | **rw** | r | （`Confirm` 逐次） |
+| `permissive` | **rw** | **rw** | （`Confirm` 逐次） |
+| `full-access` | **rw** | **rw** | **√ 全免** |
+
+- **两列分工、互不叠加**（D22）：
+  - **文件类**（`file_*`、`memory_write`…）只看**路径格**：`rw` 格内免确认；`r` 格写入
+    = 矩阵外 → 逐次确认。`Risk=Confirm` 不再叠加抬高（否则 strict 的 sandbox rw 名存实亡）。
+  - **执行类**（`term_exec`、`job_start`…）只看**工具列**：`Safe` 免确认（全等级）；
+    `Confirm` 仅 `full-access` 免、其余等级逐次确认。
+- 判定顺序：**等级矩阵（免确认）→ 矩阵外 ask（`Confirmer`）**；deny 面由"矩阵不覆盖的能力
+  不开放"体现（network/secret 见下表）。
+- 策略是纯函数（等级 × 路径格 × Risk → Allow/Ask），落 `domain/perm`；**本轮落配置/策略/展示，
+  执行接入在 M2 ToolRunner**。
+- capability 表：`fs-*` 与 `exec` 由上述矩阵/工具列接管；`network`/`secret` 属插件与密钥授权流
+  （§6.4、按名 allowlist），**不随等级变化**：
+
+| capability | 含义 | 策略 | 备注 |
+|---|---|---|---|
+| `fs-read` | 文件读取 | 矩阵 r 格（全等级免确认） | `file_*`、Doc 提取 |
+| `fs-write` | 文件写入/删除 | 矩阵 rw 格；`r` 格/矩阵外 ask | `file_write/delete`、`memory_write` |
+| `exec` | 执行命令 | 工具列（`full-access` 免，其余 ask） | `term_exec`、`job_start` |
+| `network` | 网络访问 | 首次 ask 进 allowlist（不变） | MCP 插件声明 |
+| `secret` | 读取密钥 | 按名 allowlist（不变） | 仅经 `Secrets` 注入，不回显进上下文 |
+
+- `/permission <level>` 切换**写回 config.json 的 `permissions.level`**（保留其余配置键、仅重排格式），
+  立即生效、下次启动沿用；无参则展示当前等级 + 矩阵 + sandbox 路径。
 - 输出安全：终端/任务输出视为**不可信数据**，只渲染不执行；工具结果统一截断（`tool_output_chars`）。
 - 密钥永不进会话树、附件、日志；`Secrets` 返回值对 Prompt 侧不可见。
 
@@ -649,7 +714,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 |---|---|---|
 | **M0 骨架** | go.mod、`domain/conversation` + 性质测试、`port` 全量接口、storejson、repl UI、openai 兼容适配器 | 二进制跑通一轮纯文本对话；会话树存取正确；性质测试全绿 |
 | **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
-| **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、权限 allow/ask | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；家目录沙箱生效 |
+| **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、自动压缩轨 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板/麦克风）、ASR/TTS 适配器、输出器 | "语音提问 → 文本回答 → TTS 播报"链路端到端跑通；job 后台跑 + 日志可查 |
 | **M4 MCP 与 TUI** | mcpgate + grant + `/plugin`、bubbletea TUI（多模态呈现）、装饰器链（重试/截断/审计） | 接入任一现成 MCP server 全链路可用；崩溃重启与授权拒绝行为符合 §6.4 |
 
@@ -664,7 +729,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D3 | 流式中间态不进领域，Turn 结束一次性 Commit | 节点随流变异（半节点/部分写入问题） |
 | D4 | Tier-2 插件协议 = **MCP**（mcpgate 适配） | 自造 JSON-RPC（三方接入成本高、生态为零） |
 | D5 | MCP sampling 反向调用 v1 拒绝 | —（有真实用例再议） |
-| D6 | 文件工具默认沙箱 = 家目录，越界逐次 Confirm | 全路径裸放（误伤面大）；严格 chroot（对个人助手过重） |
+| D6 | ~~文件工具默认沙箱 = 家目录，越界逐次 Confirm~~（**被 D22 取代**：权限等级矩阵 + sandbox 特权目录） | 全路径裸放（误伤面大）；严格 chroot（对个人助手过重） |
 | D7 | `Prune` 硬删，storejson 写前留一代 `.bak` | 软删除/墓碑（个人数据不留坟墓） |
 | D8 | Job 表 v1 内存态，日志落盘 | SQLite 任务表（量级不足，暂缓） |
 | D9 | UI 插件 v1 只留契约不开放装载 | 开放多 UI 并存（焦点/路由复杂度不值） |
@@ -673,10 +738,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D12 | 工具调用引用放宽为"存在性引用" | 严格祖先引用（与 D2 边转移冲突） |
 | D13 | 内置能力与三方插件同走端口契约（内置不享特权） | 内核直连内置能力（内核腐化） |
 | D14 | 横切能力用装饰器，不进插件 API | 插件中间件链（API 面失控） |
-| D15 | 虚拟 Root 是唯一根，顶层消息可多条（`Head==""` = 游标在虚拟 Root） | 严格单根消息——Revise 首条消息将被禁止，与"改任意消息"的招牌能力冲突 |
+| D15 | 虚拟 Root 是唯一根，顶层消息可多条（`Head==""` = 游标在虚拟 Root）（**root 载体被 D19 修订为实节点**：多顶层语义保留，载体改为 Root 实节点、移除空串特例） | 严格单根消息——Revise 首条消息将被禁止，与"改任意消息"的招牌能力冲突 |
 | D16 | Carry 边转移 = 改挂 `Children` 边 + 改写直接孩子的 `Parent` 边指针；Revise 的 Head 语义见 §4.1 | "边指针永不改写"（那就只能拷贝子树，回到 D2 否决项） |
 | D17 | `Usage` / `BlobRef` 由 `domain/conversation` 持有，`port` 直接引用 | port 再造同型 DTO（双份定义易漂移，且 `Part.Ref` 本就要用） |
 | D18 | tool 节点不可 Revise；`Prune` 连带清理失联 tool 结果节点 | 允许编辑机器生成的结果（破坏存在性引用不变量）；Prune 后留失联引用（同上） |
+| D19 | Root 实节点化：ID 复用会话 ID（Root 即会话）、新增 `RoleRoot`、移除 `Head/Checkout` 空串特例、Prune/Revise 拒 Root、旧格式破坏性切换（修订 D15 载体） | 保留虚拟 Root + 空串特例（API 留魔法值、不变量两套表述）；Root 另造常量/ULID ID（同一棵树两个根 ID，易漂移） |
+| D20 | persona 进树为会话首节点（system 角色，config `system_prompt` 快照，恒回传，可 Revise/Prune） | 只在装配期注入 config（人格随会话不可分叉/不可编辑、审计不到树上） |
+| D21 | 上下文压缩三轨（手动 /compact 本轮、超阈值自动 70%、`context_compact`/Safe 自触发，后两轨 M2）；摘要 = system 水位节点，其上不回传（persona 除外），失败回退最旧裁剪 | 只裁剪不摘要（丢上下文）；摘要存记忆文档（与记忆系统混淆，§3 已排除）；旁路字段存摘要（与树两处存放、重启/回溯易失配） |
+| D22 | 权限等级矩阵四档（默认 strict）+ sandbox 特权目录，两列分工（文件看路径格、执行看工具列）、矩阵外一律 ask、`/permission` 写回 config（取代 D6） | 家目录沙箱（D6：目录身份与等级正交，表达不了"特权/其他"两档）；矩阵外 deny（个人助手过严）；allow/ask 明细键与矩阵双事实源（判定顺序绕） |
 
 ## 14. 暂缓事项（Backlog）
 
@@ -685,6 +754,6 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - Job 表持久化（SQLite）
 - PDF/Office 等 Doc 提取器插件
 - 图片 OCR/描述自动降级、音频直输模型（等模型能力普及）
-- 自动摘要压缩上下文、长期记忆巩固
+- 长期记忆巩固（记忆 = 文档，无独立记忆系统；**上下文压缩摘要已入正册** §4.1/§7.1，与记忆无关）
 - GUI / Web UI、移动端输入方式
 - 向量检索记忆后端（作为 MemoryStore 插件）
