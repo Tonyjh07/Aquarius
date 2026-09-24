@@ -30,6 +30,8 @@ type modelConfig struct {
 	BaseURL  string `json:"base_url"`
 	// APIKey 只允许 "secret:<环境变量名>" 引用——明文密钥禁止入配置（AGENTS 硬性规则 8 / DESIGN §8）。
 	APIKey string `json:"api_key"`
+	// Tokenizer 本地 tokenizer.json 路径（精确计数②，D26）；空 = 通用估算③。
+	Tokenizer string `json:"tokenizer"`
 }
 
 // uiConfig UI 形态；M0 仅支持 "repl"（TUI 见里程碑 M4）。
@@ -53,7 +55,8 @@ const defaultConfig = `{
     "provider": "openai-compatible",
     "name": "gpt-4o-mini",
     "base_url": "https://api.openai.com/v1",
-    "api_key": "secret:AQUARIUS_OPENAI_KEY"
+    "api_key": "secret:AQUARIUS_OPENAI_KEY",
+    "tokenizer": ""
   },
   "ui": { "kind": "repl" },
   "system_prompt": "",

@@ -359,3 +359,32 @@ func TestEncodeOmitsDefaultParams(t *testing.T) {
 		t.Fatal("无工具不应发送 tools")
 	}
 }
+
+// TestCountTokens TokenCounter（三级计数链②，D26）：未配置报错回落估算；
+// 配置 fixture 后精确计数；配置了坏路径 fail-fast。
+func TestCountTokens(t *testing.T) {
+	c, err := New(Config{BaseURL: "http://127.0.0.1:1/v1"})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if _, err := c.CountTokens(context.Background(), "hello"); err == nil ||
+		!strings.Contains(err.Error(), "未配置") {
+		t.Fatalf("未配置 err = %v", err)
+	}
+
+	const fixture = "../llm/tokenizer/testdata/fixture_tokenizer.json"
+	c2, err := New(Config{BaseURL: "http://127.0.0.1:1/v1", Tokenizer: fixture})
+	if err != nil {
+		t.Fatalf("new with tokenizer: %v", err)
+	}
+	if n, err := c2.CountTokens(context.Background(), "hello world"); err != nil || n != 3 {
+		t.Fatalf("count = %d, %v, want 3（fixture 官方期望值）", n, err)
+	}
+	if n, err := c2.CountTokens(context.Background(), ""); err != nil || n != 0 {
+		t.Fatalf("empty = %d, %v", n, err)
+	}
+
+	if _, err := New(Config{BaseURL: "http://127.0.0.1:1/v1", Tokenizer: "no/such/tokenizer.json"}); err == nil {
+		t.Fatal("坏路径应 fail-fast")
+	}
+}

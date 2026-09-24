@@ -412,6 +412,45 @@ func TestUsageReport(t *testing.T) {
 	}
 }
 
+// countingLLM 带 TokenCounter 的脚本 LLM（②覆盖③的接线验证）。
+type countingLLM struct {
+	*scriptLLM
+	n int
+}
+
+func (l *countingLLM) CountTokens(context.Context, string) (int, error) { return l.n, nil }
+
+// TestUsageReportExactCounter 适配器实现 TokenCounter → /usage 走精确计数②（D26 覆盖语义）。
+func TestUsageReportExactCounter(t *testing.T) {
+	script := &scriptLLM{t: t, streams: []*scriptStream{
+		withUsage(textStream("答"), conversation.Usage{InputTokens: 50, OutputTokens: 5}),
+	}}
+	rec := &recorder{}
+	llm := &countingLLM{scriptLLM: script, n: 777}
+	a, err := New(Deps{LLM: llm, UI: rec, IDs: &seqIDs{}, Clock: fixedClock{testTime}}, Config{Model: "m"})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	c := newConv(t) // root + user → 2 条消息
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	rep, err := a.UsageReport(context.Background(), c)
+	if err != nil {
+		t.Fatalf("usage: %v", err)
+	}
+	if !rep.Exact {
+		t.Fatal("实现 TokenCounter 应走精确计数②")
+	}
+	// Run 后 path = root,user,assistant → 装配 3 条（system 兜底 + user + assistant）。
+	if want := 777 + 3*perMessageOverhead; rep.Estimate != want {
+		t.Fatalf("estimate = %d, want %d（777 + 3×结构开销）", rep.Estimate, want)
+	}
+	if rep.SumIn != 50 || rep.SumOut != 5 {
+		t.Fatalf("sum = %+v", rep)
+	}
+}
+
 // reqText 拼接请求全部文本（断言用）。
 func reqText(req port.GenerateRequest) string {
 	var b strings.Builder

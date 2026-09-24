@@ -1,0 +1,54 @@
+[
+ {
+  "text": "",
+  "count": 0
+ },
+ {
+  "text": "hello",
+  "count": 1
+ },
+ {
+  "text": "hello world",
+  "count": 3
+ },
+ {
+  "text": "hello world test",
+  "count": 5
+ },
+ {
+  "text": "你好",
+  "count": 2
+ },
+ {
+  "text": "hello 你好 world",
+  "count": 6
+ },
+ {
+  "text": "1234567890",
+  "count": 10
+ },
+ {
+  "text": "Hello, world!",
+  "count": 9
+ },
+ {
+  "text": "<s>hello</s>",
+  "count": 3
+ },
+ {
+  "text": "  spaced  out  ",
+  "count": 15
+ },
+ {
+  "text": "🙂 emoji",
+  "count": 7
+ },
+ {
+  "text": "no-merges-for-this xyz",
+  "count": 22
+ },
+ {
+  "text": "你，好。",
+  "count": 6
+ }
+]

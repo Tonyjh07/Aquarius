@@ -178,7 +178,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	client, err := llm.New(llm.Config{BaseURL: cfg.Model.BaseURL, APIKey: apiKey})
+	client, err := llm.New(llm.Config{
+		BaseURL: cfg.Model.BaseURL, APIKey: apiKey, Tokenizer: cfg.Model.Tokenizer,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1

@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/llm/tokenizer"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -38,6 +39,9 @@ var _ port.LLM = (*Client)(nil)
 type Config struct {
 	BaseURL string // 如 https://api.openai.com/v1（末尾斜杠可省）
 	APIKey  string // 空 = 不带 Authorization（本地服务）
+	// Tokenizer 本地 tokenizer.json 路径（文件或目录；空 = 不启用精确计数，
+	// app 回落通用估算——三级计数链 D26②/③）。
+	Tokenizer string
 	// HTTPClient 为 nil 时使用无整体超时的默认客户端（由 ctx 控制时长）。
 	HTTPClient *http.Client
 }
@@ -47,9 +51,13 @@ type Client struct {
 	base string
 	key  string
 	hc   *http.Client
+	tok  *tokenizer.Tokenizer // 配置了本地 tokenizer 时非 nil（D26②）
 }
 
-// New 创建客户端并校验 BaseURL。
+var _ port.TokenCounter = (*Client)(nil)
+
+// New 创建客户端并校验 BaseURL；配置了 Tokenizer 则加载（路径错误 fail-fast，
+// 绝不静默降级成估算）。
 func New(cfg Config) (*Client, error) {
 	raw := strings.TrimSpace(cfg.BaseURL)
 	if raw == "" {
@@ -63,11 +71,28 @@ func New(cfg Config) (*Client, error) {
 	if hc == nil {
 		hc = &http.Client{}
 	}
-	return &Client{
+	c := &Client{
 		base: strings.TrimRight(raw, "/"),
 		key:  strings.TrimSpace(cfg.APIKey),
 		hc:   hc,
-	}, nil
+	}
+	if p := strings.TrimSpace(cfg.Tokenizer); p != "" {
+		tok, terr := tokenizer.Load(p)
+		if terr != nil {
+			return nil, terr
+		}
+		c.tok = tok
+	}
+	return c, nil
+}
+
+// CountTokens port.TokenCounter（三级计数链②，D26）：本地 tokenizer 精确计数。
+// 未配置时报错——app 据此回落通用估算③。
+func (c *Client) CountTokens(_ context.Context, text string) (int, error) {
+	if c.tok == nil {
+		return 0, errors.New("llm: 未配置 model.tokenizer（回落通用估算）")
+	}
+	return c.tok.Count(text), nil
 }
 
 // Generate 发起流式生成，返回 SSE 生成流。
