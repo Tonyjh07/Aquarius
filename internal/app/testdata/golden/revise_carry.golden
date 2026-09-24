@@ -1,0 +1,86 @@
+== 回放 revise_carry ==
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回… ← Head
+> 问题一
+[stream] 答一
+[committed] assistant done
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 问题一
+      n4 [assistant] 答一 ← Head
+> 追问
+[stream] 答二
+[committed] assistant done
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 问题一
+      n4 [assistant] 答一
+        n5 [user] 追问
+          n6 [assistant] 答二 ← Head
+> /edit n3 --keep 问题一（改）
+已修订 n3 → n7（carry，后续历史已转移；Head → n6）
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 问题一
+    n7 [user] 问题一（改）（修订自 n3）
+      n4 [assistant] 答一
+        n5 [user] 追问
+          n6 [assistant] 答二 ← Head
+> /branch n3
+当前: n3 [user] 问题一
+同级分叉（1 条，不含自身）:
+  n7 [user] 问题一（改）（修订自 n3）
+下级: 无
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 问题一
+    n7 [user] 问题一（改）（修订自 n3）
+      n4 [assistant] 答一
+        n5 [user] 追问
+          n6 [assistant] 答二 ← Head
+> 继续追问
+[stream] 答三
+[committed] assistant done
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 问题一
+    n7 [user] 问题一（改）（修订自 n3）
+      n4 [assistant] 答一
+        n5 [user] 追问
+          n6 [assistant] 答二
+            n8 [user] 继续追问
+              n9 [assistant] 答三 ← Head
+> /goto n3
+Head → n3
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 问题一 ← Head
+    n7 [user] 问题一（改）（修订自 n3）
+      n4 [assistant] 答一
+        n5 [user] 追问
+          n6 [assistant] 答二
+            n8 [user] 继续追问
+              n9 [assistant] 答三
+> /branch
+当前: n3 [user] 问题一 ← Head
+同级分叉（1 条，不含自身）:
+  n7 [user] 问题一（改）（修订自 n3）
+下级: 无
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 问题一 ← Head
+    n7 [user] 问题一（改）（修订自 n3）
+      n4 [assistant] 答一
+        n5 [user] 追问
+          n6 [assistant] 答二
+            n8 [user] 继续追问
+              n9 [assistant] 答三
+> /quit

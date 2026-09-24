@@ -1,0 +1,64 @@
+== 回放 branch_rm ==
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回… ← Head
+> 你好
+[stream] 你好
+[committed] assistant done
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好
+      n4 [assistant] 你好 ← Head
+> /edit n1 不行
+! error: session: 修订: revise "n1": conversation: invalid node: root 即会话，不可修订
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好
+      n4 [assistant] 你好 ← Head
+> /goto n4
+Head → n4
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好
+      n4 [assistant] 你好 ← Head
+> /branch
+当前: n4 [assistant] 你好 ← Head
+同级分叉: 无
+下级: 无
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好
+      n4 [assistant] 你好 ← Head
+> /rm n1
+! error: session: root 即会话，不可删除（D19）
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好
+      n4 [assistant] 你好 ← Head
+> /rm n4
+[confirm] 确认删除 n4 及其子树（至少 1 条节点）？此操作不可恢复 → 否
+已取消删除 n4
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好
+      n4 [assistant] 你好 ← Head
+> /rm n4
+[confirm] 确认删除 n4 及其子树（至少 1 条节点）？此操作不可恢复 → 是
+已删除 n4 子树（1 条节点；Head → n3）
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好 ← Head
+> /goto n4
+! error: 会话树中没有节点 "n4"（/branch 可查看同级 id）
+会话树:
+n1 [root]
+  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+    n3 [user] 你好 ← Head
+> /quit
