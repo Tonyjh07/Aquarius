@@ -19,8 +19,8 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// ErrNotFound 记忆文档不存在。
-var ErrNotFound = errors.New("memoryfs: memory doc not found")
+// ErrNotFound 记忆文档不存在（= port.ErrMemoryNotFound，消费方经 errors.Is 判定）。
+var ErrNotFound = port.ErrMemoryNotFound
 
 var _ port.MemoryStore = (*Store)(nil)
 
@@ -38,6 +38,10 @@ func New(global, convDir string) (*Store, error) {
 	return &Store{global: global, convDir: convDir}, nil
 
 }
+
+// path 公开版：文档名 → 磁盘路径（main 给 memory_write 申报 FileTarget、/memory 打开编辑器用）。
+// 非法/未知名字报错（含路径穿越拒绝）。
+func (s *Store) Path(name string) (string, error) { return s.path(name) }
 
 // path 按文档名解析到文件路径；非法名字（路径分隔符/..）与未知名字报错（防目录穿越）。
 func (s *Store) path(name string) (string, error) {

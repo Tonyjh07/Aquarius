@@ -13,7 +13,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // recordedReq 脚本服务记录的一次请求。
@@ -385,4 +387,256 @@ func TestRunRmConfirmE2E(t *testing.T) {
 	if len(*reqs) != 2 {
 		t.Fatalf("llm requests = %d, want 2", len(*reqs))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// M2：记忆工具、确认拦截、权限等级生效（DESIGN §12 M2 验收）
+// ---------------------------------------------------------------------------
+
+// rawScriptServer 按序回话的 SSE 服务：第 i 次请求逐行回放 dataLines[i]（可含 tool_calls）。
+func rawScriptServer(t *testing.T, dataLines [][]string) (*httptest.Server, *[]recordedReq) {
+	t.Helper()
+	var reqs []recordedReq
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		reqs = append(reqs, recordedReq{body: body})
+		i := len(reqs) - 1
+		if i >= len(dataLines) {
+			t.Errorf("第 %d 次请求超出脚本", i+1)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, line := range dataLines[i] {
+			fmt.Fprint(w, line+"\n")
+		}
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &reqs
+}
+
+// contentData 纯文本回复的 data 行。
+func contentData(text string) string {
+	b, _ := json.Marshal(map[string]any{
+		"choices": []map[string]any{{"delta": map[string]any{"content": text}}},
+	})
+	return "data: " + string(b)
+}
+
+// toolCallData 工具调用回复的 data 行（单分片完整参数）。
+func toolCallData(id, name, args string) string {
+	b, _ := json.Marshal(map[string]any{
+		"choices": []map[string]any{{"delta": map[string]any{
+			"tool_calls": []map[string]any{{
+				"index": 0, "id": id, "type": "function",
+				"function": map[string]any{"name": name, "arguments": args},
+			}},
+		}}},
+	})
+	return "data: " + string(b)
+}
+
+// TestPickEditor 编辑器选择（D24）：$VISUAL → $EDITOR → 平台默认。
+func TestPickEditor(t *testing.T) {
+	cases := []struct {
+		name                 string
+		visual, editor, goos string
+		want                 []string
+	}{
+		{"VISUAL 优先且可带参数", "code -w", "vi", "windows", []string{"code", "-w"}},
+		{"EDITOR 兜底", "  ", "emacs -nw", "linux", []string{"emacs", "-nw"}},
+		{"windows 默认记事本", "", "", "windows", []string{"notepad"}},
+		{"unix 默认 vi", "", "", "linux", []string{"vi"}},
+		{"空白 VISUAL 落到 EDITOR", "   ", "nano", "darwin", []string{"nano"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := pickEditor(tc.visual, tc.editor, tc.goos)
+			if strings.Join(got, " ") != strings.Join(tc.want, " ") {
+				t.Fatalf("pickEditor = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestOpenMemoryEditorCreatesFile 打开前确保文件存在（全局/会话路径，D23 布局）；
+// 编辑器启动失败报因但文件已建；非法文档名拒绝。
+func TestOpenMemoryEditorCreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	mem, err := memoryfs.New(filepath.Join(dir, port.GlobalMemoryDoc), filepath.Join(dir, "conversations"))
+	if err != nil {
+		t.Fatalf("memoryfs: %v", err)
+	}
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "aquarius-no-such-editor-xyz") // 必失败的编辑器：断言文件创建与报错
+	open := openMemoryEditor(mem)
+
+	if _, err := open(port.GlobalMemoryDoc); err == nil || !strings.Contains(err.Error(), "运行编辑器") {
+		t.Fatalf("err = %v, want 运行编辑器失败", err)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, port.GlobalMemoryDoc)); serr != nil {
+		t.Fatalf("全局记忆文件应已创建: %v", serr)
+	}
+
+	sname := port.SessionMemoryDoc("convX")
+	if _, err := open(sname); err == nil {
+		t.Fatal("会话记忆也应报编辑器失败")
+	}
+	if _, serr := os.Stat(filepath.Join(dir, "conversations", sname)); serr != nil {
+		t.Fatalf("会话记忆文件应已创建: %v", serr)
+	}
+
+	if _, err := open("../evil.md"); err == nil {
+		t.Fatal("非法文档名应报错")
+	}
+}
+
+// writeConfigLevel 带指定权限等级的 config。
+func writeConfigLevel(t *testing.T, dir, baseURL, name, level string) {
+	t.Helper()
+	cfg := fmt.Sprintf(`{
+  "model": {"provider":"openai-compatible","name":%q,"base_url":%q,"api_key":"secret:AQ_E2E_KEY"},
+  "ui": {"kind":"repl"},
+  "permissions": {"level": %q},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`, name, baseURL, level)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("AQ_E2E_KEY", "test-key")
+}
+
+// loadTree 读取唯一会话树并做不变量自检。
+func loadTree(t *testing.T, dir string) *conversation.Conversation {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "conversations", "*.json"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("conversation files = %v, %v", files, err)
+	}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatalf("read tree: %v", err)
+	}
+	var c conversation.Conversation
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("parse tree: %v", err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("落盘会话破坏不变量: %v", err)
+	}
+	return &c
+}
+
+// findToolNode 找到首个 tool 角色节点。
+func findToolNode(c *conversation.Conversation) (conversation.Message, bool) {
+	for _, m := range c.Nodes {
+		if m.Role == conversation.RoleTool {
+			return m, true
+		}
+	}
+	return conversation.Message{}, false
+}
+
+// TestRunMemoryWriteConfirmE2E M2 验收：模型经 memory_write 写记忆；
+// Confirm 拦截（strict 答 y 落盘 / 答 n 拒绝不写）；permissive 等级矩阵免确认（矩阵生效）。
+func TestRunMemoryWriteConfirmE2E(t *testing.T) {
+	toolArgs := `{"name":"memories.md","content":"喜欢绿茶","mode":"overwrite"}`
+
+	t.Run("strict 同意后落盘", func(t *testing.T) {
+		srv, reqs := rawScriptServer(t, [][]string{
+			{toolCallData("call_mw", "memory_write", toolArgs)},
+			{contentData("记下了。")},
+		})
+		dir := t.TempDir()
+		writeConfig(t, dir, srv.URL, "m")
+
+		var out bytes.Buffer
+		if code := run([]string{"-data", dir},
+			strings.NewReader("记住我喜欢绿茶\ny\n/quit\n"), &out, io.Discard); code != 0 {
+			t.Fatalf("code = %d, out = %q", code, out.String())
+		}
+		got := out.String()
+		for _, want := range []string{"[y/N]", "memory_write", "[tool ok]", "记下了。"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("stdout 缺 %q: %q", want, got)
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(dir, port.GlobalMemoryDoc))
+		if err != nil {
+			t.Fatalf("记忆文件未落盘: %v", err)
+		}
+		if !strings.Contains(string(data), "喜欢绿茶") {
+			t.Fatalf("memory = %q", data)
+		}
+		// 第二次请求带上 tool 结果；首次请求带 tools 声明。
+		if !strings.Contains(string((*reqs)[0].body), `"tools"`) {
+			t.Fatal("首次请求应带工具声明")
+		}
+		if !strings.Contains(string((*reqs)[1].body), "已写入") {
+			t.Fatalf("第二次请求应带工具结果: %.300s", (*reqs)[1].body)
+		}
+		c := loadTree(t, dir)
+		tn, ok := findToolNode(c)
+		if !ok || !tn.ToolResult.OK {
+			t.Fatalf("tool 节点 = %+v", tn)
+		}
+	})
+
+	t.Run("strict 拒绝不落盘", func(t *testing.T) {
+		srv, _ := rawScriptServer(t, [][]string{
+			{toolCallData("call_mw", "memory_write", toolArgs)},
+			{contentData("好的，不写。")},
+		})
+		dir := t.TempDir()
+		writeConfig(t, dir, srv.URL, "m")
+
+		var out bytes.Buffer
+		if code := run([]string{"-data", dir},
+			strings.NewReader("别记了\nn\n/quit\n"), &out, io.Discard); code != 0 {
+			t.Fatalf("code = %d, out = %q", code, out.String())
+		}
+		got := out.String()
+		if !strings.Contains(got, "[y/N]") || !strings.Contains(got, "用户拒绝") {
+			t.Fatalf("stdout 缺拒绝痕迹: %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(dir, port.GlobalMemoryDoc)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("拒绝后记忆文件不应存在: %v", err)
+		}
+		c := loadTree(t, dir)
+		tn, ok := findToolNode(c)
+		if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "用户拒绝") {
+			t.Fatalf("tool 节点 = %+v", tn)
+		}
+	})
+
+	t.Run("permissive 矩阵免确认", func(t *testing.T) {
+		srv, _ := rawScriptServer(t, [][]string{
+			{toolCallData("call_mw", "memory_write", toolArgs)},
+			{contentData("已记录。")},
+		})
+		dir := t.TempDir()
+		writeConfigLevel(t, dir, srv.URL, "m", "permissive")
+
+		var out bytes.Buffer
+		// 无 y/n 应答行：确认若被触发会吞掉 /quit 并卡在等输入。
+		if code := run([]string{"-data", dir},
+			strings.NewReader("记住我喜欢绿茶\n/quit\n"), &out, io.Discard); code != 0 {
+			t.Fatalf("code = %d, out = %q", code, out.String())
+		}
+		got := out.String()
+		if strings.Contains(got, "[y/N]") {
+			t.Fatalf("permissive 不应确认: %q", got)
+		}
+		if !strings.Contains(got, "[tool ok]") {
+			t.Fatalf("工具应直接执行: %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(dir, port.GlobalMemoryDoc)); err != nil {
+			t.Fatalf("记忆文件应落盘: %v", err)
+		}
+	})
 }

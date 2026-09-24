@@ -10,14 +10,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
@@ -125,7 +130,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// /permission 写回 config（D22）：map 级重排保留其余配置键。
+	// 权限等级活状态（D22 执行接入）：persistLevel 写回成功后同步，ToolRunner 经 func 读取
+	//（REPL 单 goroutine 顺序调用，无并发）。
+	lvl := &levelHolder{level: level}
+
+	// /permission 写回 config（D22）：map 级重排保留其余配置键；成功后同步活等级。
 	persistLevel := func(l perm.Level) error {
 		data, rerr := os.ReadFile(cfgPath)
 		if rerr != nil {
@@ -153,11 +162,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			_ = os.Remove(tmp)
 			return fmt.Errorf("换入 %s: %w", cfgPath, rerr)
 		}
+		lvl.Set(l) // 工具链路活等级（D22 执行接入）
 		return nil
 	}
 
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。
 	store, err := storejson.New(filepath.Join(dir, "conversations"))
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	// 记忆（D23 布局）：全局 memories.md + 会话 <id>.memory.md（与会话树同目录）。
+	mem, err := memoryfs.New(filepath.Join(dir, port.GlobalMemoryDoc), filepath.Join(dir, "conversations"))
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
@@ -173,15 +189,42 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if *autoYes {
 		confirmer = yesConfirmer{}
 	}
+	// 内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
+	toolTimeout := time.Duration(cfg.Limits.ToolTimeoutSec) * time.Second
+	if cfg.Limits.ToolTimeoutSec <= 0 {
+		toolTimeout = 60 * time.Second
+	}
+	maxOutput := cfg.Limits.ToolOutputChars
+	if maxOutput <= 0 {
+		maxOutput = 20000
+	}
+	runner := toolrun.New(toolrun.Options{
+		Tools: toolbuiltin.New(mem, func(name string) (string, bool) {
+			p, err := mem.Path(name)
+			return p, err == nil
+		}),
+		Confirmer:   confirmer,
+		Level:       lvl.Get,
+		SandboxPath: sandboxDir,
+		Timeout:     toolTimeout,
+		MaxOutput:   maxOutput,
+	})
 	ids := systemIDGen{}
 	agent, err := app.New(
-		app.Deps{LLM: client, UI: ui, IDs: ids, Clock: systemClock{}},
-		app.Config{Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns},
+		app.Deps{
+			LLM: client, UI: ui, IDs: ids, Clock: systemClock{},
+			Tools: runner, Memory: mem,
+		},
+		app.Config{
+			Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns,
+			CompactThreshold: cfg.Limits.CompactThreshold, MaxContextTokens: cfg.Limits.MaxContextTokens,
+		},
 	)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	runner.Add(agent.ContextCompactTool()) // 装配期注册（agent 依赖 runner，反向补注册）
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -196,6 +239,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SandboxPath:  sandboxDir,
 		PersistLevel: persistLevel,
 		Confirmer:    confirmer,
+		OpenMemory:   openMemoryEditor(mem),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -237,6 +281,53 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 type envSecrets struct{}
 
 var _ port.Secrets = envSecrets{}
+
+// levelHolder 权限等级活状态（D22 执行接入）：/permission 写回成功后 Set，
+// ToolRunner 经 Get 读取。REPL 单 goroutine 顺序调用，无需加锁。
+type levelHolder struct{ level perm.Level }
+
+func (h *levelHolder) Get() perm.Level  { return h.level }
+func (h *levelHolder) Set(l perm.Level) { h.level = l }
+
+// pickEditor 选择系统编辑器（D24）：$VISUAL → $EDITOR → 平台默认（windows 记事本 / vi）。
+func pickEditor(visual, editor, goos string) []string {
+	if s := strings.TrimSpace(visual); s != "" {
+		return strings.Fields(s)
+	}
+	if s := strings.TrimSpace(editor); s != "" {
+		return strings.Fields(s)
+	}
+	if goos == "windows" {
+		return []string{"notepad"}
+	}
+	return []string{"vi"}
+}
+
+// openMemoryEditor /memory 的装配实现（D24）：文档名 → 磁盘路径（缺失先建空文件）
+// → 系统编辑器阻塞打开；保存后下次读取即生效。
+func openMemoryEditor(mem *memoryfs.Store) func(name string) (string, error) {
+	return func(name string) (string, error) {
+		p, err := mem.Path(name)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				return "", fmt.Errorf("创建记忆目录: %w", err)
+			}
+			if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
+				return "", fmt.Errorf("创建记忆文件 %s: %w", p, err)
+			}
+		}
+		argv := pickEditor(os.Getenv("VISUAL"), os.Getenv("EDITOR"), runtime.GOOS)
+		cmd := exec.Command(argv[0], append(argv[1:], p)...)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("运行编辑器 %s: %w", argv[0], err)
+		}
+		return p, nil
+	}
+}
 
 func (envSecrets) Get(_ context.Context, name string) (string, error) {
 	v, ok := os.LookupEnv(name)

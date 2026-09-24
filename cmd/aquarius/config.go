@@ -41,9 +41,9 @@ type uiConfig struct {
 type limitsConfig struct {
 	MaxContextTokens int     `json:"max_context_tokens"`
 	MaxTurns         int     `json:"max_turns"`
-	CompactThreshold float64 `json:"compact_threshold"` // 自动压缩阈值（D21；自动轨 M2 消费）
-	ToolOutputChars  int     `json:"tool_output_chars"`
-	ToolTimeoutSec   int     `json:"tool_timeout_sec"`
+	CompactThreshold float64 `json:"compact_threshold"` // 自动压缩阈值（D21 轨2，M2）
+	ToolOutputChars  int     `json:"tool_output_chars"` // 工具结果截断（ToolRunner，M2）
+	ToolTimeoutSec   int     `json:"tool_timeout_sec"`  // 工具超时秒（ToolRunner，M2）
 }
 
 // defaultConfig 首次运行写入的模板：DESIGN §8 示例的可运行子集
@@ -57,7 +57,6 @@ const defaultConfig = `{
   },
   "ui": { "kind": "repl" },
   "system_prompt": "",
-  "memory": { "dir": "~/.aquarius/memory" },
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {},

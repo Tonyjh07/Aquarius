@@ -20,6 +20,9 @@ func newStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	if s == nil {
+		t.Fatal("nil store")
+	}
 	return s
 }
 
