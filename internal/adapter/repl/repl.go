@@ -19,6 +19,7 @@ import (
 var (
 	_ port.Presenter = (*UI)(nil)
 	_ port.Prompter  = (*UI)(nil)
+	_ port.Confirmer = (*UI)(nil)
 )
 
 // inputLineLimit 单行输入上限（防超长粘贴撑爆 Scanner）。
@@ -80,6 +81,30 @@ func (u *UI) Say(text string) {
 	}
 	u.flushDelta()
 	_, _ = fmt.Fprint(u.out, text+"\n")
+}
+
+// Confirm 逐次确认（/rm 二次确认、Risk=Confirm 工具等）：
+// 打印提示并读取一行回答；y/yes（大小写不敏感）为同意，其余与输入流结束均为拒绝。
+func (u *UI) Confirm(ctx context.Context, prompt string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	u.flushDelta()
+	if _, err := fmt.Fprint(u.out, prompt+" [y/N] "); err != nil {
+		return false, fmt.Errorf("repl: 输出确认提示: %w", err)
+	}
+	if !u.scanner.Scan() {
+		if err := u.scanner.Err(); err != nil {
+			return false, fmt.Errorf("repl: 读取确认: %w", err)
+		}
+		return false, nil // 输入流结束：不替用户做破坏性决定
+	}
+	switch strings.ToLower(strings.TrimSpace(u.scanner.Text())) {
+	case "y", "yes":
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 // Emit 呈现 Turn 事件。

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +84,76 @@ func withUsage(s *scriptStream, u conversation.Usage) *scriptStream {
 }
 
 // ---------------------------------------------------------------------------
+// 脚本队列 Prompter（交互回放的输入端；DESIGN §11 app 层测试手段）
+// ---------------------------------------------------------------------------
+
+// scriptPrompter 按脚本行回放用户输入；解析规则与 repl.Next 一致（斜杠开头 = 命令）。
+type scriptPrompter struct {
+	lines   []string
+	i       int
+	lastRaw string // 当前行原文（回显进 transcript 用）
+}
+
+var _ port.Prompter = (*scriptPrompter)(nil)
+
+func (p *scriptPrompter) Next(context.Context) (port.UserInput, error) {
+	if p.i >= len(p.lines) {
+		return port.UserInput{}, io.EOF
+	}
+	line := strings.TrimSpace(p.lines[p.i])
+	p.i++
+	p.lastRaw = line
+	if line == "" {
+		return port.UserInput{}, nil
+	}
+	if strings.HasPrefix(line, "/") {
+		fields := strings.Fields(line)
+		return port.UserInput{Command: &port.Command{
+			Name: strings.TrimPrefix(fields[0], "/"),
+			Args: fields[1:],
+		}}, nil
+	}
+	return port.UserInput{Text: line}, nil
+}
+
+// ---------------------------------------------------------------------------
+// 脚本确认器（自动应答；DESIGN §5.10 Confirmer 测试替身）
+// ---------------------------------------------------------------------------
+
+// askedConfirm 一次已应答的确认请求。
+type askedConfirm struct {
+	prompt string
+	answer bool
+}
+
+// scriptConfirmer 按脚本应答：记录提示并弹出预置答案；脚本走尽即测试失败
+// （能抓住"不该确认却确认了"之类的多余调用）。
+type scriptConfirmer struct {
+	t       *testing.T
+	answers []bool
+	asked   []askedConfirm
+}
+
+var _ port.Confirmer = (*scriptConfirmer)(nil)
+
+func (c *scriptConfirmer) Confirm(_ context.Context, prompt string) (bool, error) {
+	if len(c.answers) == 0 {
+		c.t.Fatalf("scriptConfirmer: 没有对应脚本的确认请求: %s", prompt)
+	}
+	a := c.answers[0]
+	c.answers = c.answers[1:]
+	c.asked = append(c.asked, askedConfirm{prompt: prompt, answer: a})
+	return a, nil
+}
+
+// drain 取出并清空已应答的确认记录（每步回放渲染一次）。
+func (c *scriptConfirmer) drain() []askedConfirm {
+	out := c.asked
+	c.asked = nil
+	return out
+}
+
+// ---------------------------------------------------------------------------
 // 收集器 Presenter
 // ---------------------------------------------------------------------------
 
@@ -144,6 +215,16 @@ func (g *seqIDs) CallID() tool.CallID {
 	seqCounter++
 	return tool.CallID(fmt.Sprintf("K%d", seqCounter))
 }
+
+// ulidIDs 与 domain 同源的 ULID 生成器（golden 回放用：ID 恒 26 字符、无前缀特例，
+// 且不依赖包级计数器——单跑与全量跑的回放结果一致）。
+type ulidIDs struct{}
+
+var _ port.IDGen = ulidIDs{}
+
+func (ulidIDs) ConversationID() conversation.ID   { return conversation.NewID() }
+func (ulidIDs) MessageID() conversation.MessageID { return conversation.NewMessageID() }
+func (ulidIDs) CallID() tool.CallID               { return tool.CallID(conversation.NewMessageID()) }
 
 // ---------------------------------------------------------------------------
 // 工具执行替身

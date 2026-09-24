@@ -106,6 +106,44 @@ func TestSayAndPrompt(t *testing.T) {
 	}
 }
 
+// TestConfirmReadsAnswer /rm 等二次确认：提示后读一行；y/yes 同意，其余、空行与 EOF 一律拒绝。
+func TestConfirmReadsAnswer(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"y", "y\n", true},
+		{"YES 大小写", "  YES \n", true},
+		{"n", "n\n", false},
+		{"空行默认拒绝", "\n", false},
+		{"EOF 不替用户决定", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			ui := New(strings.NewReader(tc.in), &buf)
+			got, err := ui.Confirm(context.Background(), "确认删除 n4？")
+			if err != nil || got != tc.want {
+				t.Fatalf("confirm = %v, %v, want %v", got, err, tc.want)
+			}
+			if want := "确认删除 n4？ [y/N] "; buf.String() != want {
+				t.Fatalf("buf = %q, want %q", buf.String(), want)
+			}
+		})
+	}
+}
+
+// TestConfirmCanceledContext 取消的 ctx 直接报错，不读输入。
+func TestConfirmCanceledContext(t *testing.T) {
+	ui := New(strings.NewReader("y\n"), io.Discard)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ui.Confirm(ctx, "p"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
 func TestEmitLongPreviewTruncated(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)

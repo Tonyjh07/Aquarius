@@ -305,3 +305,84 @@ func TestRunRejectsTUIConfig(t *testing.T) {
 		t.Fatalf("stderr = %q", errBuf.String())
 	}
 }
+
+// TestRunRmConfirmE2E /rm 二次确认端到端（M1）：REPL 确认读行——
+// 拒绝则保留、同意则剪枝落盘、-yes 跳过确认；全程会话树满足不变量。
+func TestRunRmConfirmE2E(t *testing.T) {
+	srv, reqs := scriptServer(t, []string{"收到一。", "收到二。"})
+	dir := t.TempDir()
+	writeConfig(t, dir, srv.URL, "m")
+
+	load := func() *conversation.Conversation {
+		t.Helper()
+		files, err := filepath.Glob(filepath.Join(dir, "conversations", "*.json"))
+		if err != nil || len(files) != 1 {
+			t.Fatalf("conversation files = %v, %v", files, err)
+		}
+		data, err := os.ReadFile(files[0])
+		if err != nil {
+			t.Fatalf("read tree: %v", err)
+		}
+		var c conversation.Conversation
+		if err := json.Unmarshal(data, &c); err != nil {
+			t.Fatalf("parse tree: %v", err)
+		}
+		if err := c.Validate(); err != nil {
+			t.Fatalf("落盘会话破坏不变量: %v", err)
+		}
+		return &c
+	}
+	runStdin := func(args []string, stdin string) string {
+		t.Helper()
+		var out, errBuf bytes.Buffer
+		if code := run(append([]string{"-data", dir}, args...), strings.NewReader(stdin), &out, &errBuf); code != 0 {
+			t.Fatalf("code = %d, want 0; stderr = %q; stdout = %q", code, errBuf.String(), out.String())
+		}
+		return out.String()
+	}
+
+	// 建树：两轮对话 → root, persona, u1, a1, u2, a2。
+	runStdin(nil, "hi\nagain\n/quit\n")
+	c := load()
+	if len(c.Nodes) != 6 {
+		t.Fatalf("nodes = %d, want 6", len(c.Nodes))
+	}
+	path := c.Path()
+	u1, a1, u2 := path[2].ID, path[3].ID, path[4].ID
+
+	// 拒绝：确认提示打印在 stdout，回答 n → 节点保留。
+	got := runStdin(nil, fmt.Sprintf("/rm %s\nn\n/quit\n", u2))
+	for _, want := range []string{"确认删除", "[y/N]", "已取消删除"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout 缺 %q: %q", want, got)
+		}
+	}
+	if c = load(); len(c.Nodes) != 6 {
+		t.Fatalf("拒绝后 nodes = %d, want 6", len(c.Nodes))
+	}
+
+	// 同意：剪掉 {u2, a2}，Head 回退到最近存活祖先 a1，落盘合法。
+	got = runStdin(nil, fmt.Sprintf("/rm %s\ny\n/quit\n", u2))
+	if !strings.Contains(got, "已删除") {
+		t.Fatalf("stdout = %q, want 已删除", got)
+	}
+	if c = load(); len(c.Nodes) != 4 || c.Head != a1 {
+		t.Fatalf("同意后 nodes/head = %d/%s, want 4/%s", len(c.Nodes), c.Head, a1)
+	}
+
+	// -yes：跳过确认直接删。
+	got = runStdin([]string{"-yes"}, fmt.Sprintf("/rm %s\n/quit\n", u1))
+	if strings.Contains(got, "[y/N]") {
+		t.Fatalf("-yes 不应出现确认提示: %q", got)
+	}
+	if !strings.Contains(got, "已删除") {
+		t.Fatalf("stdout = %q, want 已删除", got)
+	}
+	if c = load(); len(c.Nodes) != 2 {
+		t.Fatalf("-yes 后 nodes = %d, want 2（root+persona）", len(c.Nodes))
+	}
+	// 只有首轮对话花生成请求（其余均为命令）。
+	if len(*reqs) != 2 {
+		t.Fatalf("llm requests = %d, want 2", len(*reqs))
+	}
+}

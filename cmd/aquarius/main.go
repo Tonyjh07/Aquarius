@@ -36,6 +36,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	dataDir := flags.String("data", "", "数据目录（默认 ~/.aquarius）")
 	modelName := flags.String("model", "", "覆盖 model.name")
 	baseURL := flags.String("base-url", "", "覆盖 model.base_url")
+	autoYes := flags.Bool("yes", false, "跳过逐次确认（等价对每个确认回答 y；危险操作慎用）")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -167,6 +168,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	ui := repl.New(stdin, stdout)
+	// 逐次确认（§5.10 Confirmer 矩阵）：默认走 REPL 交互；-yes 一律应 y。
+	var confirmer port.Confirmer = ui
+	if *autoYes {
+		confirmer = yesConfirmer{}
+	}
 	ids := systemIDGen{}
 	agent, err := app.New(
 		app.Deps{LLM: client, UI: ui, IDs: ids, Clock: systemClock{}},
@@ -189,6 +195,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Level:        level,
 		SandboxPath:  sandboxDir,
 		PersistLevel: persistLevel,
+		Confirmer:    confirmer,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -245,6 +252,13 @@ type systemClock struct{}
 var _ port.Clock = systemClock{}
 
 func (systemClock) Now() time.Time { return time.Now() }
+
+// yesConfirmer port.Confirmer 的内置实现：-yes 下所有确认一律同意（§5.10 矩阵）。
+type yesConfirmer struct{}
+
+var _ port.Confirmer = yesConfirmer{}
+
+func (yesConfirmer) Confirm(context.Context, string) (bool, error) { return true, nil }
 
 // systemIDGen port.IDGen 的内置实现：复用 domain 的进程内单调 ULID。
 type systemIDGen struct{}
