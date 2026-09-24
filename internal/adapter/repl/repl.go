@@ -156,6 +156,11 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 		_, err := fmt.Fprintf(u.out, "error: %v\n", e.Err)
 		return err
 
+	case port.NoticeEvent:
+		u.flushDelta()
+		_, err := fmt.Fprintf(u.out, "[notice] %s\n", e.Text)
+		return err
+
 	default:
 		u.flushDelta()
 		_, err := fmt.Fprintf(u.out, "%v\n", ev)

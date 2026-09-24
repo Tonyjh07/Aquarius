@@ -223,10 +223,14 @@ func TestSessionCommands(t *testing.T) {
 	if !strings.Contains(lines[1], defaultTitle) {
 		t.Fatalf("list[1] = %q, want 旧会话", lines[1])
 	}
-	// 未启用与未知命令报因。
+	// 未启用与未知命令报因（memory 已启用：未配置编辑器时报配置错）。
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "memory"}})
-	if err == nil || !strings.Contains(err.Error(), "尚未启用") {
+	if err == nil || !strings.Contains(err.Error(), "未配置记忆编辑器") {
 		t.Fatalf("memory err = %v", err)
+	}
+	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "jobs"}})
+	if err == nil || !strings.Contains(err.Error(), "尚未启用") {
+		t.Fatalf("jobs err = %v", err)
 	}
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "wat"}})
 	if err == nil || !strings.Contains(err.Error(), "未知命令") {
@@ -237,6 +241,104 @@ func TestSessionCommands(t *testing.T) {
 	if !errors.Is(err, ErrQuit) {
 		t.Fatalf("quit err = %v, want ErrQuit", err)
 	}
+}
+
+// TestSessionMemoryCommand /memory：缺省开全局、带参会话 id 前缀解析、未配置编辑器报因。
+func TestSessionMemoryCommand(t *testing.T) {
+	var opened []string
+	store := newMemStore()
+	s, err := NewSession(context.Background(), SessionDeps{
+		Store: store, Agent: newTestAgent(t), IDs: &seqIDs{}, Clock: fixedClock{testTime},
+		OpenMemory: func(name string) (string, error) {
+			opened = append(opened, name)
+			return "/data/" + name, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	// 其他会话（前缀解析用）。
+	if _, err := NewSession(context.Background(), SessionDeps{
+		Store: store, Agent: newTestAgent(t), IDs: &seqIDs{}, Clock: fixedClock{testTime},
+	}); err != nil {
+		t.Fatalf("second session: %v", err)
+	}
+	cur := string(s.Current().ID)
+
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "memory"}})
+	if err != nil || len(opened) != 1 || opened[0] != port.GlobalMemoryDoc {
+		t.Fatalf("全局: out=%q err=%v opened=%v", out, err, opened)
+	}
+	if !strings.Contains(out, "/data/"+port.GlobalMemoryDoc) {
+		t.Fatalf("out = %q", out)
+	}
+
+	// 精确会话 id。
+	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{
+		Name: "memory", Args: []string{cur},
+	}}); err != nil || opened[1] != port.SessionMemoryDoc(s.Current().ID) {
+		t.Fatalf("会话: err=%v opened=%v", err, opened)
+	}
+
+	// 未知会话 / 参数过多。
+	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{
+		Name: "memory", Args: []string{"zzzz"},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "没有会话") {
+		t.Fatalf("未知会话 err = %v", err)
+	}
+	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{
+		Name: "memory", Args: []string{"a", "b"},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "用法") {
+		t.Fatalf("参数过多 err = %v", err)
+	}
+}
+
+// TestSessionUsageCommand /usage：估算/上轮实测/累计三段展示（脚本流带 usage）。
+func TestSessionUsageCommand(t *testing.T) {
+	store := newMemStore()
+	agent := newTestAgent(t)
+	s, err := NewSession(context.Background(), SessionDeps{
+		Store: store, Agent: agent, IDs: &seqIDs{}, Clock: fixedClock{testTime},
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	// 一轮对话（带服务端实测 usage）。
+	agent.llm.(*scriptLLM).streams = append(agent.llm.(*scriptLLM).streams,
+		withUsage(textStream("答"), conversation.Usage{InputTokens: 88, OutputTokens: 12}))
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "usage"}})
+	if err != nil {
+		t.Fatalf("usage: %v", err)
+	}
+	for _, want := range []string{
+		"当前上下文:≈", "tokens", "自动压缩阈值", "44800",
+		"计数方式: 估算", "校准",
+		"上轮实测: in=88 out=12",
+		"本会话累计(Path): in=88 out=12 tokens（1 次生成）",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("/usage 缺 %q:\n%s", want, out)
+		}
+	}
+}
+
+// newTestAgent 组装注入脚本流 LLM 的最小 Agent（会话测试用）。
+func newTestAgent(t *testing.T) *Agent {
+	t.Helper()
+	a, err := New(
+		Deps{LLM: &scriptLLM{t: t}, UI: &recorder{}, IDs: &seqIDs{}, Clock: fixedClock{testTime}},
+		Config{Model: "m"},
+	)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	return a
 }
 
 // TestSessionTitleAndExitCommands /title 无参显示、有参改写并落盘；/exit = /quit 别名。

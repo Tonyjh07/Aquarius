@@ -37,6 +37,9 @@ type SessionDeps struct {
 	PersistLevel func(perm.Level) error
 	// Confirmer 逐次确认（/rm 二次确认等）；nil 时破坏性命令报"未配置确认器"。
 	Confirmer port.Confirmer
+	// OpenMemory 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
+	// nil 时 /memory 报"未配置编辑器"。
+	OpenMemory func(name string) (string, error)
 }
 
 // Session 当前会话 + 命令处理（DESIGN §7.3；M0 起启用 /new /list /title /compact /
@@ -52,6 +55,7 @@ type Session struct {
 	sandboxPath  string
 	persistLevel func(perm.Level) error
 	confirmer    port.Confirmer
+	openMemory   func(name string) (string, error)
 	cur          *conversation.Conversation
 }
 
@@ -81,6 +85,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		sandboxPath:  d.SandboxPath,
 		persistLevel: d.PersistLevel,
 		confirmer:    d.Confirmer,
+		openMemory:   d.OpenMemory,
 	}
 
 	list, err := d.Store.List(ctx)
@@ -383,7 +388,48 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			return "", fmt.Errorf("session: 写回 config 失败: %w", err)
 		}
 		s.level = level
-		return fmt.Sprintf("权限等级已切换为 %s（已写回 config；工具链路执行接入 M2）", level), nil
+		return fmt.Sprintf("权限等级已切换为 %s（已写回 config；工具链路即时生效）", level), nil
+
+	case "memory":
+		if s.openMemory == nil {
+			return "", errors.New("session: 未配置记忆编辑器（SessionDeps.OpenMemory）")
+		}
+		if len(cmd.Args) > 1 {
+			return "", errors.New("用法: /memory [会话id前缀]（缺省打开全局记忆文件）")
+		}
+		name := port.GlobalMemoryDoc
+		if len(cmd.Args) == 1 {
+			id, err := s.resolveConversation(ctx, cmd.Args[0])
+			if err != nil {
+				return "", err
+			}
+			name = port.SessionMemoryDoc(id)
+		}
+		path, err := s.openMemory(name)
+		if err != nil {
+			return "", fmt.Errorf("session: 打开记忆文件: %w", err)
+		}
+		return fmt.Sprintf("已用系统编辑器打开 %s（保存后下次读取即生效）", path), nil
+
+	case "usage":
+		rep, err := s.agent.UsageReport(ctx, s.cur)
+		if err != nil {
+			return "", fmt.Errorf("session: 估算用量: %w", err)
+		}
+		var b strings.Builder
+		pct := 100 * float64(rep.Estimate) / float64(rep.MaxCtx)
+		tpct := 100 * float64(rep.CompactAt) / float64(rep.MaxCtx)
+		mode := fmt.Sprintf("估算（服务端 usage 校准 ×%.2f，D26③）", rep.Ratio)
+		if rep.Exact {
+			mode = "精确（适配器 TokenCounter，D26②）"
+		}
+		fmt.Fprintf(&b, "当前上下文:≈%d / %d tokens（%.1f%%，自动压缩阈值 %d = %.0f%%）\n",
+			rep.Estimate, rep.MaxCtx, pct, rep.CompactAt, tpct)
+		fmt.Fprintf(&b, "计数方式: %s\n", mode)
+		fmt.Fprintf(&b, "上轮实测: in=%d out=%d tokens（服务端返回）\n", rep.LastIn, rep.LastOut)
+		fmt.Fprintf(&b, "本会话累计(Path): in=%d out=%d tokens（%d 次生成）",
+			rep.SumIn, rep.SumOut, rep.Gen)
+		return b.String(), nil
 
 	case "quit":
 		return "", ErrQuit
@@ -399,11 +445,13 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/rm <id>                删除节点及整棵子树（二次确认）",
 			"/compact                触发上下文压缩（生成 system 摘要节点，D21）",
 			"/permission [等级]      查看/切换权限等级（read-only/strict/permissive/full-access）",
+			"/memory [会话id]        用系统编辑器打开记忆文件（缺省全局 memories.md，D24）",
+			"/usage                  查看 token 用量（上下文占用/上轮实测/会话累计，三级计数链 D26）",
 			"/quit, /exit            退出",
 		}, "\n"), nil
 
-	case "memory", "model", "jobs", "plugin":
-		return "", fmt.Errorf("命令 /%s 尚未启用（里程碑 M2/M4）", cmd.Name)
+	case "model", "jobs", "plugin":
+		return "", fmt.Errorf("命令 /%s 尚未启用（里程碑 M3/M4，见 DESIGN §12）", cmd.Name)
 
 	default:
 		return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
@@ -446,6 +494,40 @@ func (s *Session) resolveNode(arg string) (conversation.MessageID, error) {
 			ids[i] = string(h)
 		}
 		return "", fmt.Errorf("节点标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(ids, ", "))
+	}
+}
+
+// resolveConversation 按会话 ID（精确或唯一前缀）解析会话（/memory [会话id] 用）；
+// 前缀命中多个时报歧义（会话列表按时间降序，命中序确定）。
+func (s *Session) resolveConversation(ctx context.Context, arg string) (conversation.ID, error) {
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return s.cur.ID, nil
+	}
+	list, err := s.store.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("session: 列出会话: %w", err)
+	}
+	var hits []conversation.ID
+	for _, sm := range list {
+		if string(sm.ID) == arg {
+			return sm.ID, nil
+		}
+		if strings.HasPrefix(string(sm.ID), arg) {
+			hits = append(hits, sm.ID)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return "", fmt.Errorf("没有会话 %q（/list 查看可用会话）", arg)
+	case 1:
+		return hits[0], nil
+	default:
+		ids := make([]string, len(hits))
+		for i, h := range hits {
+			ids[i] = string(h)
+		}
+		return "", fmt.Errorf("会话标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(ids, ", "))
 	}
 }
 

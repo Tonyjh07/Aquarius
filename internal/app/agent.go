@@ -42,6 +42,8 @@ type Deps struct {
 	// Tools 为 nil = 无工具（M0）；Blobs 为 nil = 图片以内联占位代替（附件库 M3）。
 	Tools port.ToolRunner
 	Blobs port.AttachmentStore
+	// Memory 为 nil = 不注入记忆索引与会话记忆（M2，DESIGN §7.1 承载）。
+	Memory port.MemoryStore
 }
 
 // Config Agent 行为配置。
@@ -51,19 +53,27 @@ type Config struct {
 	Sampling port.Sampling
 	Budget   port.TokenBudget
 	MaxTurns int // <=0 = 8
+	// CompactThreshold 自动压缩阈值系数（×MaxContextTokens；<=0 = 0.7，D21 轨2/M2）。
+	CompactThreshold float64
+	// MaxContextTokens 上下文预算 tokens（<=0 = 64000，DESIGN §8）。
+	MaxContextTokens int
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（DESIGN §7.1，内核唯一的编排）。
 type Agent struct {
-	llm      port.LLM
-	ui       port.Presenter
-	ids      port.IDGen
-	clock    port.Clock
-	tools    port.ToolRunner
-	blobs    port.AttachmentStore
-	cfg      Config
-	system   string
-	maxTurns int
+	llm       port.LLM
+	ui        port.Presenter
+	ids       port.IDGen
+	clock     port.Clock
+	tools     port.ToolRunner
+	blobs     port.AttachmentStore
+	memory    port.MemoryStore
+	cfg       Config
+	system    string
+	maxTurns  int
+	est       *estimator // 三级 token 计数链②③（D26）
+	compactAt int        // 自动压缩阈值 tokens（= CompactThreshold × MaxContextTokens）
+	maxCtx    int        // 上下文预算 tokens
 }
 
 // New 创建 Agent 并校验必需依赖。
@@ -88,16 +98,33 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
 	}
+	threshold := cfg.CompactThreshold
+	if threshold <= 0 {
+		threshold = defaultCompactThreshold
+	}
+	maxCtx := cfg.MaxContextTokens
+	if maxCtx <= 0 {
+		maxCtx = defaultMaxContextTokens
+	}
+	// 三级计数链②：LLM 适配器可选实现 TokenCounter（D26），实现即覆盖通用估算③。
+	var counter port.TokenCounter
+	if c, ok := d.LLM.(port.TokenCounter); ok {
+		counter = c
+	}
 	return &Agent{
-		llm:      d.LLM,
-		ui:       d.UI,
-		ids:      d.IDs,
-		clock:    d.Clock,
-		tools:    d.Tools,
-		blobs:    d.Blobs,
-		cfg:      cfg,
-		system:   system,
-		maxTurns: maxTurns,
+		llm:       d.LLM,
+		ui:        d.UI,
+		ids:       d.IDs,
+		clock:     d.Clock,
+		tools:     d.Tools,
+		blobs:     d.Blobs,
+		memory:    d.Memory,
+		cfg:       cfg,
+		system:    system,
+		maxTurns:  maxTurns,
+		est:       newEstimator(counter),
+		compactAt: int(threshold*float64(maxCtx) + 0.5),
+		maxCtx:    maxCtx,
 	}, nil
 }
 
@@ -114,11 +141,21 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	if len(c.Path()) <= 1 { // 仅 Root = 空会话
 		return errors.New("agent: 会话为空，无可生成的上下文")
 	}
+	// 工具执行上下文：会话 ID（port，memory_* 会话作用域）+ 会话对象（app 内部，context_compact）。
+	ctx = port.WithSessionID(ctx, c.ID)
+	ctx = withConversation(ctx, c)
+	autoTried := false // 自动压缩轨每次 Run 至多尝试一次（D21 轨2）
 
 	for turn := 0; turn < a.maxTurns; turn++ {
 		req, err := a.buildRequest(ctx, c)
 		if err != nil {
 			return fmt.Errorf("装配上下文: %w", err)
+		}
+		// 三级计数链（D26）：估算当前请求；达阈值 → 自动压缩（轨2）。
+		sentEstimate, _ := a.est.Estimate(ctx, req)
+		if !autoTried && sentEstimate >= a.compactAt {
+			autoTried = true
+			req, sentEstimate = a.autoCompact(ctx, c, req, sentEstimate)
 		}
 		mid := a.ids.MessageID() // 预分配关联 ID
 		buf := &commitBuffer{id: mid, parent: c.Head}
@@ -145,6 +182,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			return fmt.Errorf("提交节点: %w", err)
 		}
 		_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
+		// 服务端实测 usage 回校估算（D26①→③：已发生的精确值修正未发送的估算）。
+		if node.Usage.InputTokens > 0 {
+			a.est.Calibrate(sentEstimate, node.Usage.InputTokens)
+		}
 
 		if recvErr != nil {
 			if outcome == conversation.OutcomeCancelled {
@@ -259,8 +300,82 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 	return node, absorbed, nil
 }
 
-// buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 工具清单（DESIGN §7.1）。
-// 记忆索引自 M2 起并入 system（此处先留静态提示）。
+// autoCompact 自动压缩轨（D21 轨2 / M2）：估算达阈值时先尝试 Compact——
+// 成功则重建请求（水位生效）并发 NoticeEvent；无可压缩内容则维持原请求；
+// 失败回退"最旧裁剪"（D21：保 leading system 与最近、丢中间）并提示省略条数。
+// 返回（执行后的请求, 用于 usage 校准的该请求估算）。
+func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, req port.GenerateRequest, est int) (port.GenerateRequest, int) {
+	_, _, err := a.Compact(ctx, c)
+	switch {
+	case err == nil:
+		_ = a.ui.Emit(ctx, port.NoticeEvent{
+			Text: fmt.Sprintf("上下文 ≈%d tokens 达自动压缩阈值 %d，已生成摘要", est, a.compactAt),
+		})
+		next, berr := a.buildRequest(ctx, c)
+		if berr != nil {
+			return req, est // 重建失败：沿用原请求（下一轮生成会暴露同因错误）
+		}
+		ne, _ := a.est.Estimate(ctx, next)
+		return next, ne
+	case errors.Is(err, ErrNothingToCompact):
+		return req, est // 摘要之上无新内容（如 persona 巨大）：无可压，维持原请求
+	default:
+		kept, omitted := a.est.trimOldest(ctx, req.Messages, a.compactAt)
+		req.Messages = kept
+		text := fmt.Sprintf("自动压缩失败（%v），已回退最旧裁剪", err)
+		if omitted > 0 {
+			text += fmt.Sprintf("，已省略 %d 条较早消息", omitted)
+		}
+		_ = a.ui.Emit(ctx, port.NoticeEvent{Text: text})
+		ne, _ := a.est.Estimate(ctx, req)
+		return req, ne
+	}
+}
+
+// UsageReport /usage 的用量汇总（DESIGN §7.3，三级计数链 D26 的展示面）。
+type UsageReport struct {
+	Estimate  int     // 当前上下文占用（②精确 / ③估算）
+	Exact     bool    // 是否精确计数（适配器 TokenCounter 生效）
+	MaxCtx    int     // 上下文预算 tokens
+	CompactAt int     // 自动压缩阈值 tokens
+	Ratio     float64 // ③的服务端 usage 校准比值
+	SumIn     int     // Path 内累计输入 tokens（服务端实测）
+	SumOut    int     // Path 内累计输出 tokens（服务端实测）
+	Gen       int     // Path 内带用量的生成次数
+	LastIn    int     // 最近一次实测输入 tokens
+	LastOut   int     // 最近一次实测输出 tokens
+}
+
+// UsageReport 汇总当前上下文估算与树上实测用量（估算走三级链，实测直接读节点）。
+func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (UsageReport, error) {
+	if c == nil {
+		return UsageReport{}, errors.New("agent: nil conversation")
+	}
+	req, err := a.buildRequest(ctx, c)
+	if err != nil {
+		return UsageReport{}, fmt.Errorf("装配上下文: %w", err)
+	}
+	est, exact := a.est.Estimate(ctx, req)
+	rep := UsageReport{
+		Estimate:  est,
+		Exact:     exact,
+		MaxCtx:    a.maxCtx,
+		CompactAt: a.compactAt,
+		Ratio:     a.est.ratio,
+	}
+	for _, m := range c.Path() {
+		if m.Usage.InputTokens == 0 && m.Usage.OutputTokens == 0 {
+			continue
+		}
+		rep.SumIn += m.Usage.InputTokens
+		rep.SumOut += m.Usage.OutputTokens
+		rep.Gen++
+		rep.LastIn, rep.LastOut = m.Usage.InputTokens, m.Usage.OutputTokens
+	}
+	return rep, nil
+}
+
+// buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（DESIGN §7.1）。
 func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) (port.GenerateRequest, error) {
 	treePath := c.Path()
 	path, err := assemblePath(ctx, treePath, a.blobs)
@@ -276,6 +391,11 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) 
 		})
 	}
 	msgs = append(msgs, path...)
+	// 记忆注入（DESIGN §7.1 承载 / D23）：索引（全局+当前会话）与会话记忆全文追加进
+	// 首条 system；msgs[0] 恒为 system（persona 或兜底）。读取失败静默跳过，不阻断对话。
+	if block := a.memoryBlock(ctx, c.ID); block != "" && len(msgs) > 0 && msgs[0].Role == "system" {
+		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: "text", Text: block})
+	}
 
 	req := port.GenerateRequest{
 		Model:    a.cfg.Model,
@@ -291,6 +411,36 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) 
 		req.Tools = specs
 	}
 	return req, nil
+}
+
+// memoryBlock 构造记忆注入块（DESIGN §7.1 承载）：记忆索引（只含全局 + 当前会话两份，
+// D23 名字白名单）+ 当前会话记忆全文（水位无关：压缩/回溯后仍在）。任一读取失败静默跳过。
+func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
+	if a.memory == nil {
+		return ""
+	}
+	var b strings.Builder
+	if entries, err := a.memory.Index(ctx); err == nil {
+		want := map[string]bool{port.GlobalMemoryDoc: true, port.SessionMemoryDoc(id): true}
+		var lines []string
+		for _, e := range entries {
+			if want[e.Name] {
+				lines = append(lines, "- "+e.Name+" — "+e.Summary)
+			}
+		}
+		if len(lines) > 0 {
+			sort.Strings(lines) // 确定性（索引顺序不承诺）
+			b.WriteString("\n\n# 记忆索引（memory_read/memory_search 可取详情）\n")
+			b.WriteString(strings.Join(lines, "\n"))
+		}
+	}
+	if doc, err := a.memory.Read(ctx, port.SessionMemoryDoc(id)); err == nil {
+		if strings.TrimSpace(doc.Content) != "" {
+			b.WriteString("\n\n# 会话记忆（本会话专用便签）\n")
+			b.WriteString(doc.Content)
+		}
+	}
+	return b.String()
 }
 
 // consume 边收边发 DeltaEvent（只进 UI），返回聚合后的工具调用。

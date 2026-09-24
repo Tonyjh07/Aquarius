@@ -144,6 +144,17 @@ func TestConfirmCanceledContext(t *testing.T) {
 	}
 }
 
+// TestEmitNotice NoticeEvent：断流式行后以 [notice] 呈现（裁剪/自动压缩提示，D21）。
+func TestEmitNotice(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "生成中"}})
+	emit(t, ui, port.NoticeEvent{Text: "已省略 3 条较早消息"})
+	if got, want := buf.String(), "生成中\n[notice] 已省略 3 条较早消息\n"; got != want {
+		t.Fatalf("buf = %q, want %q", got, want)
+	}
+}
+
 func TestEmitLongPreviewTruncated(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)

@@ -180,6 +180,8 @@ func eventNames(events []port.Event) []string {
 			out = append(out, "tool_result")
 		case port.ErrorEvent:
 			out = append(out, "error")
+		case port.NoticeEvent:
+			out = append(out, "notice")
 		default:
 			out = append(out, fmt.Sprintf("%T", ev))
 		}
@@ -249,6 +251,61 @@ func (r *fakeRunner) Execute(_ context.Context, call tool.Call) (tool.Result, er
 		return res, nil
 	}
 	return tool.Result{CallID: call.ID, OK: true, Output: "ok:" + call.Name}, nil
+}
+
+// ---------------------------------------------------------------------------
+// 记忆端口替身（M2）
+// ---------------------------------------------------------------------------
+
+// fakeMemory map 实现的 port.MemoryStore（记忆注入/工具回放用）。
+type fakeMemory struct{ docs map[string]string }
+
+var _ port.MemoryStore = (*fakeMemory)(nil)
+
+func newFakeMemory() *fakeMemory { return &fakeMemory{docs: map[string]string{}} }
+
+func (m *fakeMemory) Index(context.Context) ([]port.MemoryIndexEntry, error) {
+	var out []port.MemoryIndexEntry
+	for name, content := range m.docs {
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
+		out = append(out, port.MemoryIndexEntry{Name: name, Summary: strings.Split(content, "\n")[0]})
+	}
+	return out, nil
+}
+
+func (m *fakeMemory) Read(_ context.Context, name string) (port.MemoryDoc, error) {
+	c, ok := m.docs[name]
+	if !ok {
+		return port.MemoryDoc{}, port.ErrMemoryNotFound
+	}
+	return port.MemoryDoc{Name: name, Content: c}, nil
+}
+
+func (m *fakeMemory) Write(_ context.Context, doc port.MemoryDoc) error {
+	m.docs[doc.Name] = doc.Content
+	return nil
+}
+
+func (m *fakeMemory) Remove(_ context.Context, name string) error {
+	if _, ok := m.docs[name]; !ok {
+		return port.ErrMemoryNotFound
+	}
+	delete(m.docs, name)
+	return nil
+}
+
+func (m *fakeMemory) Search(_ context.Context, q string) ([]port.MemoryHit, error) {
+	var out []port.MemoryHit
+	for name, content := range m.docs {
+		for i, line := range strings.Split(content, "\n") {
+			if strings.Contains(strings.ToLower(line), strings.ToLower(q)) {
+				out = append(out, port.MemoryHit{Name: name, Line: i + 1, Snippet: line})
+			}
+		}
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------
