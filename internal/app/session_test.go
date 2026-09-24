@@ -42,7 +42,7 @@ func (m *memStore) List(context.Context) ([]port.ConversationSummary, error) {
 	var out []port.ConversationSummary
 	for _, c := range m.convs {
 		out = append(out, port.ConversationSummary{
-			ID: c.ID, Title: c.Title, MessageN: len(c.Nodes), UpdatedAt: c.UpdatedAt,
+			ID: c.ID, Title: c.Title, MessageN: len(c.Nodes) - 1, UpdatedAt: c.UpdatedAt, // 不含 Root，与 storejson 对齐
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -322,8 +322,9 @@ func TestSessionCompactCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	if !strings.Contains(out, "已压缩") || !strings.Contains(out, "in=40 out=15") {
-		t.Fatalf("out = %q, want 记账信息", out)
+	// 会话 = [root,persona,user,assistant]：absorbed 应为 2（persona 恒回传不计）。
+	if !strings.Contains(out, "已压缩 2 条历史") || !strings.Contains(out, "in=40 out=15") {
+		t.Fatalf("out = %q, want 精确计数与记账", out)
 	}
 	path := s.Current().Path()
 	last := path[len(path)-1]
@@ -341,6 +342,27 @@ func TestSessionCompactCommand(t *testing.T) {
 	}
 }
 
+// TestSessionCompactCancelFriendly 压缩被取消：友好文案、会话树不动。
+func TestSessionCompactCancelFriendly(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store,
+		textStream("回复"),
+		&scriptStream{steps: []scriptStep{{err: context.Canceled}}},
+	)
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	before := len(s.Current().Nodes)
+
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "compact"}})
+	if err != nil || !strings.Contains(out, "已取消压缩") {
+		t.Fatalf("compact cancel = %q, %v", out, err)
+	}
+	if len(s.Current().Nodes) != before {
+		t.Fatalf("nodes = %d, want 会话未改动 %d", len(s.Current().Nodes), before)
+	}
+}
+
 func TestSessionSaveFailureSurfaces(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store, textStream("x"))
@@ -349,6 +371,16 @@ func TestSessionSaveFailureSurfaces(t *testing.T) {
 	_, err := s.Handle(context.Background(), port.UserInput{Text: "hello"})
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("err = %v, want 保存失败上抛", err)
+	}
+
+	// Turn 错误与保存失败同时发生：两个错误都要保留。
+	store2 := newMemStore()
+	s2, llm2, _ := newTestSession(t, store2, textStream("x"))
+	llm2.genErr = errors.New("boom")
+	store2.err = errors.New("disk full")
+	_, err = s2.Handle(context.Background(), port.UserInput{Text: "hello"})
+	if err == nil || !strings.Contains(err.Error(), "boom") || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("err = %v, want 同时保留 boom 与 disk full", err)
 	}
 }
 

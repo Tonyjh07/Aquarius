@@ -179,7 +179,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 // 把当前上下文（persona + 现有摘要 + 其后历史）交给模型转写为一条 system 摘要节点入树
 // （记 Model/Usage，链式吸收旧摘要），其上历史此后装配不再回传。
 // 失败只报错、树无损；无可压缩历史（摘要之上无新增）返回 ErrNothingToCompact。
-// 返回 (摘要节点, 被吸收的上下文节点数, nil)。
+// 返回 (摘要节点, 被吸收的历史节点数（persona 恒回传不计）, nil)。
 func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conversation.Message, int, error) {
 	if c == nil {
 		return conversation.Message{}, 0, errors.New("agent: nil conversation")
@@ -188,12 +188,15 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 	if len(path) <= 1 { // 仅 Root
 		return conversation.Message{}, 0, ErrNothingToCompact
 	}
-	_, watermarkIdx := waterline(path)
+	personaIdx, watermarkIdx := waterline(path)
 	start := 1
 	if watermarkIdx >= 0 {
 		start = watermarkIdx
 	}
 	absorbed := len(path) - start
+	if personaIdx >= start {
+		absorbed-- // persona 恒回传，不计入被吸收的历史
+	}
 	// 可压缩增量 = 水位之后的非摘要节点；为 0 表示上下文没有新内容（重复压缩短路）。
 	fresh := 0
 	for i := start; i < len(path); i++ {

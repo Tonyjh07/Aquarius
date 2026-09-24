@@ -75,6 +75,7 @@ type Stream interface {
 
 // LLM 生成端口。
 type LLM interface {
+	// Generate 发起流式生成。契约：err != nil 时 stream 恒为 nil，调用方无需防御性 Close。
 	Generate(ctx context.Context, req GenerateRequest) (Stream, error)
 	Models(ctx context.Context) ([]ModelInfo, error)
 }

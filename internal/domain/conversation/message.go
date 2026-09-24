@@ -69,7 +69,7 @@ type Usage struct {
 // 角色约束：user 无调用无结果；assistant 可带 ToolCalls；tool 必带 ToolResult。
 type Message struct {
 	ID         MessageID    `json:"id"`
-	Parent     MessageID    `json:"parent"` // "" = 顶层消息（挂在虚拟 Root 下）
+	Parent     MessageID    `json:"parent"` // "" = Root 自身；其余节点恒非空（D19）
 	Role       Role         `json:"role"`
 	Content    []Part       `json:"content,omitempty"`
 	ToolCalls  []tool.Call  `json:"tool_calls,omitempty"`

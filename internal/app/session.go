@@ -143,6 +143,10 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	runErr := s.agent.Run(ctx, s.cur)
 	// Turn 成败都落盘：error/cancelled 终态的节点同样要持久化。
 	if err := s.store.Save(ctx, s.cur); err != nil {
+		if runErr != nil {
+			// 两个错误都保留：Turn 错误为主，保存失败附注。
+			return "", fmt.Errorf("session: %w（且保存失败: %v）", runErr, err)
+		}
 		return "", fmt.Errorf("session: 保存会话: %w", err)
 	}
 	return "", runErr
@@ -216,7 +220,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if errors.Is(err, ErrNothingToCompact) {
 			return "无需压缩：摘要之上没有新的历史", nil
 		}
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return "已取消压缩（会话未改动）", nil
 		}
 		if err != nil {
@@ -249,7 +253,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			return "", fmt.Errorf("session: 写回 config 失败: %w", err)
 		}
 		s.level = level
-		return fmt.Sprintf("权限等级已切换为 %s（已写回 config，立即生效）", level), nil
+		return fmt.Sprintf("权限等级已切换为 %s（已写回 config；工具链路执行接入 M2）", level), nil
 
 	case "quit":
 		return "", ErrQuit

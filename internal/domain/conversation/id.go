@@ -9,7 +9,7 @@ import (
 // ID 会话标识。
 type ID string
 
-// MessageID 消息标识。"" 保留给虚拟 Root（DESIGN §4.1 不变量 1 / D15）。
+// MessageID 消息标识（节点 ID 恒非空）；"" 仅作 Root.Parent 的树外哨兵（D19）。
 type MessageID string
 
 // NewID 生成新的会话 ID（ULID）。

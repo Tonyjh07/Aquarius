@@ -76,7 +76,7 @@ const defaultConfig = `{
 func loadConfig(path string) (*fileConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("读取 %s: %w", path, err)
 	}
 	var cfg fileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {

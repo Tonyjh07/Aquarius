@@ -144,8 +144,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if rerr != nil {
 			return fmt.Errorf("编码 config: %w", rerr)
 		}
-		if rerr := os.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
-			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
+		tmp := cfgPath + ".tmp"
+		if rerr := os.WriteFile(tmp, append(out, '\n'), 0o644); rerr != nil {
+			return fmt.Errorf("写入 %s: %w", tmp, rerr)
+		}
+		if rerr := os.Rename(tmp, cfgPath); rerr != nil {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("换入 %s: %w", cfgPath, rerr)
 		}
 		return nil
 	}

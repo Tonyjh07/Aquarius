@@ -462,6 +462,35 @@ func TestAgentCompactFailureLeavesTreeIntact(t *testing.T) {
 	}
 }
 
+// TestBuildRequestConfigFallbackWithoutPersona 无 persona 但有水位：config system 兜底注入 + 摘要照常裁剪。
+func TestBuildRequestConfigFallbackWithoutPersona(t *testing.T) {
+	llm := &scriptLLM{t: t}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{}, Config{})
+	c := conversation.New(conversation.ID("np"), "np")
+	u := commitNode(t, c, conversation.MessageID(c.ID), conversation.RoleUser, "旧问题")
+	commitNode(t, c, u.ID, conversation.RoleAssistant, "旧回答")
+	sum := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要")
+	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
+
+	req, err := a.buildRequest(context.Background(), c)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	if len(req.Messages) != 3 {
+		t.Fatalf("messages = %d, want 3 (config system, 摘要, 新问题): %+v", len(req.Messages), req.Messages)
+	}
+	if req.Messages[0].Role != "system" || req.Messages[0].Content[0].Text != defaultSystem {
+		t.Fatalf("messages[0] = %+v, want config/内置 system 兜底", req.Messages[0])
+	}
+	if req.Messages[1].Role != "system" || req.Messages[1].Content[0].Text != "摘要" {
+		t.Fatalf("messages[1] = %+v, want 摘要水位", req.Messages[1])
+	}
+	if req.Messages[2].Role != "user" || req.Messages[2].Content[0].Text != "新问题" {
+		t.Fatalf("messages[2] = %+v", req.Messages[2])
+	}
+}
+
 // TestBuildRequestTreePersonaReplacesConfig D20：树内 persona 在位时不再注入 config 兜底 system。
 func TestBuildRequestTreePersonaReplacesConfig(t *testing.T) {
 	llm := &scriptLLM{t: t}

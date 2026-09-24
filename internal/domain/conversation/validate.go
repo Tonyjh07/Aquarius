@@ -14,11 +14,12 @@ func checkNodeShape(m Message) error {
 		return fmt.Errorf("%w: empty id", ErrInvalidNode)
 	}
 	if m.Role == RoleRoot {
-		// Root 即会话（D19）：唯一空 Parent、空内容节点。
+		// Root 即会话（D19）：唯一空 Parent、空内容、无生成痕迹节点。
 		if m.Parent != "" {
 			return fmt.Errorf("node %q: %w: root must have empty parent", m.ID, ErrInvalidNode)
 		}
-		if len(m.Content) > 0 || len(m.ToolCalls) > 0 || m.ToolResult != nil {
+		if len(m.Content) > 0 || len(m.ToolCalls) > 0 || m.ToolResult != nil ||
+			m.Model != "" || m.Outcome != "" || m.Usage != (Usage{}) {
 			return fmt.Errorf("node %q: %w: root must be an empty message", m.ID, ErrInvalidNode)
 		}
 		return nil

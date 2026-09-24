@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -85,6 +86,57 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	}
 	if fi, err := os.Stat(filepath.Join(dir, "sandbox")); err != nil || !fi.IsDir() {
 		t.Fatalf("特权目录应自动创建: %v", err)
+	}
+}
+
+// TestRunPermissionSwitchWritesBackConfig /permission 切换写回：其余配置键与数值类型不丢、无半截文件残留（D22）。
+func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{
+  "model": {"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},
+  "ui": {"kind":"repl"},
+  "system_prompt": "",
+  "memory": {"dir": "~/.aquarius/memory"},
+  "permissions": {"level": "strict"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "compact_threshold": 0.7}
+}`
+	cfgPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+
+	var out, errBuf bytes.Buffer
+	code := run([]string{"-data", dir}, strings.NewReader("/permission permissive\n/quit\n"), &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("code = %d, err = %s", code, errBuf.String())
+	}
+	if !strings.Contains(out.String(), "permissive") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read back config: %v", err)
+	}
+	var back map[string]any
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("config 不是合法 JSON: %v\n%s", err, data)
+	}
+	perms, _ := back["permissions"].(map[string]any)
+	if perms["level"] != "permissive" {
+		t.Fatalf("level = %v, want permissive", perms["level"])
+	}
+	mem, _ := back["memory"].(map[string]any)
+	if mem["dir"] != "~/.aquarius/memory" {
+		t.Fatalf("memory 键丢失: %v", back["memory"])
+	}
+	limits, _ := back["limits"].(map[string]any)
+	if limits["max_turns"] != float64(8) || limits["compact_threshold"] != 0.7 {
+		t.Fatalf("limits 数值类型漂移: %v", limits)
+	}
+	if _, err := os.Stat(cfgPath + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("不应残留 .tmp: %v", err)
 	}
 }
 

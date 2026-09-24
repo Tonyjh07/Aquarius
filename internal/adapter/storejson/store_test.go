@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -244,14 +245,10 @@ func TestSaveRejectsInvalidTree(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsLegacyVirtualRootFormat D19 破坏性切换：M0 虚拟 Root 格式必须明确报因。
-func TestLoadRejectsLegacyVirtualRootFormat(t *testing.T) {
-	s, err := New(t.TempDir())
-	if err != nil {
-		t.Fatalf("new: %v", err)
-	}
-	legacy := `{
-  "id": "conv-old",
+// legacyConversationJSON 造 M0 虚拟 Root 旧格式文件内容。
+func legacyConversationJSON(id string) string {
+	return fmt.Sprintf(`{
+  "id": %q,
   "title": "旧会话",
   "nodes": {"U1": {"id": "U1", "parent": "", "role": "user", "content": [{"kind": "text", "text": "hi"}], "created_at": "2026-01-01T00:00:00Z"}},
   "children": {"": ["U1"]},
@@ -259,13 +256,41 @@ func TestLoadRejectsLegacyVirtualRootFormat(t *testing.T) {
   "revised_from": {},
   "created_at": "2026-01-01T00:00:00Z",
   "updated_at": "2026-01-01T00:00:00Z"
-}`
-	if err := os.WriteFile(filepath.Join(s.dir, "conv-old.json"), []byte(legacy), 0o644); err != nil {
+}`, id)
+}
+
+// TestLoadRejectsLegacyVirtualRootFormat D19 破坏性切换：M0 虚拟 Root 格式必须明确报因。
+func TestLoadRejectsLegacyVirtualRootFormat(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(s.dir, "conv-old.json"), []byte(legacyConversationJSON("conv-old")), 0o644); err != nil {
 		t.Fatalf("write legacy: %v", err)
 	}
 	_, err = s.Load(context.Background(), conversation.ID("conv-old"))
-	if err == nil || !strings.Contains(err.Error(), "旧格式") {
-		t.Fatalf("err = %v, want 旧格式报因", err)
+	if err == nil || !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "旧格式") {
+		t.Fatalf("err = %v, want ErrLegacyFormat 报因", err)
+	}
+}
+
+// TestListReportsLegacyFormat D19：List 不得静默跳过旧格式——聚合列出 ID 报因，
+// 否则升级后旧数据隐形、用户无从得知要删哪个文件。
+func TestListReportsLegacyFormat(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(s.dir, "conv-old.json"), []byte(legacyConversationJSON("conv-old")), 0o644); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	// 另有一个可用会话：报因必须点名旧格式 ID，而不是笼统失败。
+	if err := s.Save(context.Background(), mustConv(t)); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	_, err = s.List(context.Background())
+	if !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "conv-old") {
+		t.Fatalf("list err = %v, want 聚合点名 conv-old", err)
 	}
 }
 

@@ -23,6 +23,9 @@ import (
 // ErrNotFound 会话文件不存在。
 var ErrNotFound = errors.New("storejson: conversation not found")
 
+// ErrLegacyFormat M0 虚拟 Root 旧格式（D19 破坏性切换）：Load 显式报因、List 聚合上报，绝不静默跳过。
+var ErrLegacyFormat = errors.New("storejson: 发现旧格式会话（虚拟 Root，D19）")
+
 var _ port.ConversationStore = (*Store)(nil)
 
 // Store 基于文件系统的会话存储（一会话一 JSON）。
@@ -110,7 +113,9 @@ func (s *Store) Load(ctx context.Context, id conversation.ID) (*conversation.Con
 }
 
 // List 列出全部会话摘要，按 UpdatedAt 降序（最新在前）。
-// 单个损坏文件跳过不致命（由 Load 显式暴露），.bak/.tmp 不计入。
+// 单个损坏文件跳过不致命（由 Load 显式暴露），.bak/.tmp 不计入；
+// M0 旧格式会话（D19）不静默跳过——聚合报因列出具体 ID，避免升级后旧数据隐形、
+// NewSession 无提示地另起新会话。
 func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 	if err := checkCtx(ctx); err != nil {
 		return nil, err
@@ -120,6 +125,7 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 		return nil, fmt.Errorf("storejson: 列出 %s: %w", s.dir, err)
 	}
 	var out []port.ConversationSummary
+	var legacy []string
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".json") {
@@ -132,6 +138,9 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 		}
 		c, err := decode(data, id)
 		if err != nil {
+			if errors.Is(err, ErrLegacyFormat) {
+				legacy = append(legacy, string(id))
+			}
 			continue // 损坏文件跳过，不影响其余会话
 		}
 		out = append(out, port.ConversationSummary{
@@ -140,6 +149,9 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 			MessageN:  len(c.Nodes) - 1, // 不含 Root 节点
 			UpdatedAt: c.UpdatedAt,
 		})
+	}
+	if len(legacy) > 0 {
+		return nil, fmt.Errorf("%w: %s——请删除对应 .json 文件后重试", ErrLegacyFormat, strings.Join(legacy, ", "))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
@@ -188,7 +200,7 @@ func decode(data []byte, id conversation.ID) (*conversation.Conversation, error)
 	}
 	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
 	if root, ok := c.Nodes[conversation.MessageID(c.ID)]; !ok || root.Role != conversation.RoleRoot || c.Head == "" {
-		return nil, fmt.Errorf("旧格式会话（M0 虚拟 Root，D19 破坏性切换）：与实 Root 不兼容，请删除该文件重建")
+		return nil, fmt.Errorf("%w：与实 Root 不兼容，请删除该文件重建", ErrLegacyFormat)
 	}
 	// 空 map 归一化：JSON 里的 null 反序列化为 nil map，直接写入会 panic。
 	if c.Nodes == nil {
