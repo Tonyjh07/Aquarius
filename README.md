@@ -14,12 +14,17 @@
 
 ## 状态
 
-开发中，里程碑 **M0 骨架**已落地（DESIGN §12）：实 Root 会话树 + 性质测试、persona 首节点、
+开发中，里程碑 **M0 骨架 + M1 树交互**已落地（DESIGN §12）：实 Root 会话树 + 性质测试、persona 首节点、
 **上下文压缩手动轨**（`/compact` → system 摘要水位节点，三轨之一）、**权限等级矩阵**
 （read-only/strict/permissive/full-access + `/permission`）、全量端口、storejson 持久化、
 OpenAI 兼容流式适配器、Turn 循环、repl 界面与单二进制装配——`go build ./cmd/aquarius`
-即可跑通纯文本对话。命令：`/new /list /title /compact /permission /quit /exit /help`。
-后续按里程碑推进：M1 树交互 → M2 工具与记忆（ToolRunner、权限执行接入、自动压缩轨、
+即可跑通纯文本对话。
+M1 提供 **Revise 两模式与分支导航**：`/goto <id>`（唯一前缀匹配回溯）、
+`/edit <id> [--keep] <文本>`（缺省 Fresh 另起节点，`--keep` Carry 边转移保留后续历史）、
+`/branch [id]`（同级分叉与下级视图，Root 显示顶层消息）、`/rm <id>`（二次确认后剪枝，`-yes` 跳过确认），
+并有 golden 回放测试覆盖。
+命令：`/new /list /title /goto /edit /branch /rm /compact /permission /quit /exit /help`。
+后续按里程碑推进：M2 工具与记忆（ToolRunner、权限执行接入、自动压缩轨、
 `context_compact` 工具）→ M3 任务与多模态 → M4 MCP 与 TUI。
 
 ## 文档

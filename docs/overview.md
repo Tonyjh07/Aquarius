@@ -76,7 +76,7 @@ Root(实节点, ID=会话ID, role=root)
 | `Presenter` / `Prompter` | repl（TUI → uitui） | repl **M0 ✓** | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | **M0 ✓** | 固定 / 递增 / map |
 | `Tool` / `ToolRunner` | memory_*、file_*、think、context_compact | M2 | fake tool |
-| `Confirmer` | TUI 确认 | M2 | 自动应答 |
+| `Confirmer` | repl 确认（读行 y/N；`-yes` 全免） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs | M2 | in-memory |
 | `AttachmentStore` | blobfs | M3 | in-memory |
 | `Transcriber` / `Synthesizer` | whisper / 系统朗读 | M3 | 假转写 |

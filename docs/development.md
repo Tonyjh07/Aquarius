@@ -38,6 +38,7 @@ internal/adapter  llm / repl / storejson（一个适配器一个目录）
 |---|---|---|
 | domain | **性质测试**：随机操作序列 → 三条不变量恒成立；快照比对证明不可变 | `domain/conversation/property_test.go` |
 | app | **交互回放**：脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter | `app/fakes_test.go`、`app/agent_test.go` |
+| app | **golden 回放**：命令脚本 → 归一化 transcript（ID 归一为标签）与 `testdata/golden/` 基准比对；改语义后 `go test ./internal/app -run TestGoldenReplay -update` 重写基准并人工检视 | `app/golden_test.go` |
 | adapter | **契约测试**：storejson 临时目录；LLM 用 httptest 假 SSE 录制流回放 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go` |
 | e2e | **进程内装配回放**：`run(stdin, stdout)` + 假服务喂 stdin 断言 stdout | `cmd/aquarius/main_test.go` |
 
