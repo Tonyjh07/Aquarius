@@ -25,11 +25,14 @@ func TestRunTextRound(t *testing.T) {
 	}
 
 	path := c.Path()
-	if len(path) != 2 {
-		t.Fatalf("path len = %d, want 2", len(path))
+	if len(path) != 3 {
+		t.Fatalf("path len = %d, want 3 (root,user,assistant)", len(path))
 	}
-	node := path[1]
-	if node.Role != conversation.RoleAssistant || node.Parent != path[0].ID {
+	if path[1].Role != conversation.RoleUser {
+		t.Fatalf("path[1] = %+v, want user", path[1])
+	}
+	node := path[2]
+	if node.Role != conversation.RoleAssistant || node.Parent != path[1].ID {
 		t.Fatalf("node = %+v", node)
 	}
 	if len(node.Content) != 1 || node.Content[0].Text != "Hello" {
@@ -94,10 +97,10 @@ func TestRunToolRound(t *testing.T) {
 	}
 
 	path := c.Path()
-	if len(path) != 4 {
-		t.Fatalf("path len = %d, want 4 (user/assistant/tool/assistant)", len(path))
+	if len(path) != 5 {
+		t.Fatalf("path len = %d, want 5 (root/user/assistant/tool/assistant)", len(path))
 	}
-	asst, tnode, final := path[1], path[2], path[3]
+	asst, tnode, final := path[2], path[3], path[4]
 	if asst.Role != conversation.RoleAssistant || len(asst.ToolCalls) != 1 {
 		t.Fatalf("assistant = %+v", asst)
 	}
@@ -159,15 +162,15 @@ func TestRunToolErrorFeedsBack(t *testing.T) {
 		t.Fatalf("工具失败不应中断 Turn: %v", err)
 	}
 	path := c.Path()
-	if len(path) != 4 {
-		t.Fatalf("path len = %d, want 4", len(path))
+	if len(path) != 5 {
+		t.Fatalf("path len = %d, want 5", len(path))
 	}
-	res := path[2].ToolResult
+	res := path[3].ToolResult
 	if res == nil || res.OK || !strings.Contains(res.Err, "tool broke") {
 		t.Fatalf("result = %+v, want OK=false 回填错误", res)
 	}
-	if path[3].Content[0].Text != "已恢复" {
-		t.Fatalf("final = %+v", path[3])
+	if path[4].Content[0].Text != "已恢复" {
+		t.Fatalf("final = %+v", path[4])
 	}
 }
 
@@ -182,10 +185,10 @@ func TestRunGenerateErrorCommitsErrorNode(t *testing.T) {
 		t.Fatalf("err = %v, want 含 boom", err)
 	}
 	path := c.Path()
-	if len(path) != 2 {
-		t.Fatalf("path len = %d, want 2（error 占位节点已提交）", len(path))
+	if len(path) != 3 {
+		t.Fatalf("path len = %d, want 3（error 占位节点已提交）", len(path))
 	}
-	node := path[1]
+	node := path[2]
 	if node.Outcome != conversation.OutcomeError || len(node.Content) != 0 || len(node.ToolCalls) != 0 {
 		t.Fatalf("node = %+v, want 空内容 error 节点", node)
 	}
@@ -211,7 +214,7 @@ func TestRunStreamErrorCommitsPartialText(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "conn reset") {
 		t.Fatalf("err = %v", err)
 	}
-	node := c.Path()[1]
+	node := c.Path()[2]
 	if node.Outcome != conversation.OutcomeError {
 		t.Fatalf("outcome = %q, want error", node.Outcome)
 	}
@@ -241,7 +244,7 @@ func TestRunCancelCommitsCancelledAndReturnsNil(t *testing.T) {
 	if err := a.Run(context.Background(), c); err != nil {
 		t.Fatalf("取消不应视为失败: %v", err)
 	}
-	node := c.Path()[1]
+	node := c.Path()[2]
 	if node.Outcome != conversation.OutcomeCancelled || node.Content[0].Text != "一半" {
 		t.Fatalf("node = %+v, want cancelled + 部分文本", node)
 	}
@@ -293,14 +296,14 @@ func TestRunNormalizesMissingCallIDAndArgs(t *testing.T) {
 	if err := a.Run(context.Background(), c); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	asst := c.Path()[1]
+	asst := c.Path()[2]
 	if len(asst.ToolCalls) != 1 || asst.ToolCalls[0].ID == "" {
 		t.Fatalf("call = %+v, want 补齐 ID", asst.ToolCalls)
 	}
 	if string(asst.ToolCalls[0].Args) != "{}" {
 		t.Fatalf("args = %s, want {}", asst.ToolCalls[0].Args)
 	}
-	tnode := c.Path()[2]
+	tnode := c.Path()[3]
 	if tnode.ToolResult.CallID != asst.ToolCalls[0].ID {
 		t.Fatalf("result call id = %s, want %s", tnode.ToolResult.CallID, asst.ToolCalls[0].ID)
 	}

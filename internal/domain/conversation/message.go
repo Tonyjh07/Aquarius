@@ -36,9 +36,14 @@ type Part struct {
 type Role string
 
 const (
-	RoleUser      Role = "user"
+	// RoleRoot 会话唯一根：实节点空消息，ID = 会话 ID（D19，Root 即会话）。
+	RoleRoot Role = "root"
+	RoleUser Role = "user"
+	// RoleAssistant 助手消息，可携带 ToolCalls。
 	RoleAssistant Role = "assistant"
-	RoleTool      Role = "tool"
+	// RoleSystem 系统节点：会话首节点 persona（D20）与上下文压缩摘要（D21）。
+	RoleSystem Role = "system"
+	RoleTool   Role = "tool"
 )
 
 // Outcome 节点终态，提交时确定（DESIGN §4.1）。

@@ -70,7 +70,7 @@ func TestAssemblePathImageInlinesBytes(t *testing.T) {
 
 func TestAssemblePathNormalToolResult(t *testing.T) {
 	c := convWithUser(t)
-	user1 := c.Path()[0]
+	user1 := c.Path()[1] // path[0] 是 Root
 	// 手工提交带调用的 assistant 节点 + tool 应答。
 	asst := conversation.Message{
 		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
@@ -114,7 +114,7 @@ func TestAssemblePathFailedToolResultText(t *testing.T) {
 // 必须按文本内联并标注——Revise(Carry) 隔离旧 assistant 是产生场景（DESIGN §4.1 不变量 2）。
 func TestAssemblePathOrphanToolInlined(t *testing.T) {
 	c := convWithUser(t)
-	user1 := c.Path()[0]
+	user1 := c.Path()[1] // path[0] 是 Root
 	asst := conversation.Message{
 		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
 		ToolCalls: []tool.Call{{ID: "call_1", Name: "echo"}},

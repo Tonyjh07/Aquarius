@@ -41,13 +41,17 @@ func TestNewMessageIDMonotonic(t *testing.T) {
 func TestAppendAdvancesHeadAndBuildsPath(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
-	if c.Head != "" {
-		t.Fatalf("new conversation head = %q, want virtual root", c.Head)
+	rootID := MessageID(c.ID)
+	if c.Head != rootID {
+		t.Fatalf("new conversation head = %q, want root %q", c.Head, rootID)
+	}
+	if path := c.Path(); len(path) != 1 || path[0].ID != rootID || path[0].Role != RoleRoot {
+		t.Fatalf("initial path = %v, want [root]", ids(path))
 	}
 
 	u := mustAppend(t, c, RoleUser, "hi")
-	if u.Parent != "" {
-		t.Fatalf("first message parent = %q, want top-level", u.Parent)
+	if u.Parent != rootID {
+		t.Fatalf("first message parent = %q, want root %q", u.Parent, rootID)
 	}
 	if c.Head != u.ID {
 		t.Fatalf("head = %q, want %q", c.Head, u.ID)
@@ -55,8 +59,8 @@ func TestAppendAdvancesHeadAndBuildsPath(t *testing.T) {
 	a := mustAppend(t, c, RoleAssistant, "hello")
 
 	path := c.Path()
-	if len(path) != 2 || path[0].ID != u.ID || path[1].ID != a.ID {
-		t.Fatalf("path = %v, want [%s %s]", ids(path), u.ID, a.ID)
+	if len(path) != 3 || path[0].ID != rootID || path[1].ID != u.ID || path[2].ID != a.ID {
+		t.Fatalf("path = %v, want [root %s %s]", ids(path), u.ID, a.ID)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -216,10 +220,11 @@ func TestReviseTopLevelMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("revise top-level: %v", err)
 	}
-	if m.Parent != "" {
-		t.Fatalf("revised top-level parent = %q, want virtual root", m.Parent)
+	rootID := MessageID(c.ID)
+	if m.Parent != rootID {
+		t.Fatalf("revised top-level parent = %q, want root %q", m.Parent, rootID)
 	}
-	if top := c.Branches(""); len(top) != 2 {
+	if top := c.Branches(rootID); len(top) != 2 {
 		t.Fatalf("top-level messages = %v, want 2", ids(top))
 	}
 	if err := c.Validate(); err != nil {
@@ -254,18 +259,21 @@ func TestPruneSubtreeAndHeadFallback(t *testing.T) {
 		t.Fatalf("validate: %v", err)
 	}
 
-	// 剪掉整棵树：Head 回退到虚拟 Root。
+	// 剪掉全部内容节点：只剩 Root，Head 回到 Root（Root 不可剪，D19）。
 	if err := c.Prune(u1.ID); err != nil {
-		t.Fatalf("prune root: %v", err)
+		t.Fatalf("prune top-level: %v", err)
 	}
-	if len(c.Nodes) != 0 || c.Head != "" {
-		t.Fatalf("nodes = %d head = %q, want empty tree at virtual root", len(c.Nodes), c.Head)
+	if len(c.Nodes) != 1 || c.Head != MessageID(c.ID) {
+		t.Fatalf("nodes = %d head = %q, want only root", len(c.Nodes), c.Head)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
 	if err := c.Prune("nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("prune missing = %v, want ErrNotFound", err)
+	}
+	if err := c.Prune(MessageID(c.ID)); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("prune root = %v, want ErrInvalidNode", err)
 	}
 }
 
@@ -310,25 +318,75 @@ func TestPruneCascadesOrphanToolResult(t *testing.T) {
 	}
 }
 
-func TestCheckoutVirtualRoot(t *testing.T) {
+func TestCheckoutRootRealNode(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
 	mustAppend(t, c, RoleUser, "q1")
+	rootID := MessageID(c.ID)
 
-	if err := c.Checkout(""); err != nil {
+	if err := c.Checkout(rootID); err != nil {
 		t.Fatalf("checkout root: %v", err)
 	}
-	if path := c.Path(); len(path) != 0 {
-		t.Fatalf("path = %v, want empty", ids(path))
+	if path := c.Path(); len(path) != 1 || path[0].ID != rootID {
+		t.Fatalf("path = %v, want [root]", ids(path))
 	}
 	m := mustAppend(t, c, RoleUser, "fresh top-level")
-	if m.Parent != "" {
-		t.Fatalf("parent = %q, want top-level", m.Parent)
+	if m.Parent != rootID {
+		t.Fatalf("parent = %q, want root %q", m.Parent, rootID)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
+	if err := c.Checkout(""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("checkout empty = %v, want ErrNotFound（空串特例已移除，D19）", err)
+	}
 	if err := c.Checkout("nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("checkout missing = %v, want ErrNotFound", err)
+	}
+}
+
+// TestRootGuardsAndSystemRole D19/D20：Root 不可 Append/Commit/Revise/Prune 且必须为空；
+// system 节点经 AppendCommitted 入树且可 Revise；非 Root 不得无父。
+func TestRootGuardsAndSystemRole(t *testing.T) {
+	useFixedClock(t)
+	c := New(NewID(), "t")
+	rootID := MessageID(c.ID)
+
+	root, ok := c.Find(rootID)
+	if !ok || root.Role != RoleRoot || root.Parent != "" || len(root.Content) != 0 || root.ToolResult != nil {
+		t.Fatalf("root = %+v, want 空内容 RoleRoot", root)
+	}
+	if top := c.Branches(rootID); len(top) != 0 {
+		t.Fatalf("fresh top-level = %v, want none", ids(top))
+	}
+
+	for _, role := range []Role{RoleSystem, RoleRoot, RoleTool} {
+		if _, err := c.Append(role, textParts("x")); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("append(%s) = %v, want ErrInvalidNode", role, err)
+		}
+	}
+	if err := c.AppendCommitted(Message{ID: NewMessageID(), Role: RoleRoot, CreatedAt: nowFunc()}); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("commit root = %v, want ErrInvalidNode", err)
+	}
+	if err := c.AppendCommitted(Message{ID: NewMessageID(), Role: RoleUser, CreatedAt: nowFunc()}); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("commit parentless user = %v, want ErrInvalidNode", err)
+	}
+	if _, err := c.Revise(rootID, textParts("x"), Fresh); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("revise(root) = %v, want ErrInvalidNode", err)
+	}
+	if err := c.Prune(rootID); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("prune(root) = %v, want ErrInvalidNode", err)
+	}
+
+	// system 节点（persona 形态）：入树、可 Revise（D20）。
+	sys := mustCommit(t, c, Message{
+		ID: NewMessageID(), Parent: rootID, Role: RoleSystem,
+		Content: textParts("persona"), CreatedAt: nowFunc(),
+	})
+	if _, err := c.Revise(sys.ID, textParts("persona'"), Fresh); err != nil {
+		t.Fatalf("revise(system) = %v, want allowed", err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 }

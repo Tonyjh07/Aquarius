@@ -31,6 +31,15 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 	var out []port.PromptMessage
 	for _, m := range path {
 		switch m.Role {
+		case conversation.RoleRoot:
+			continue // Root 空节点不进上下文（D19）
+		case conversation.RoleSystem:
+			// 系统节点（persona / 压缩摘要）映射为 system 角色（D20/D21）。
+			parts, err := assembleParts(ctx, m.Content, blobs)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, port.PromptMessage{Role: "system", Content: parts})
 		case conversation.RoleTool:
 			text := toolResultText(m.ToolResult)
 			if declared[m.ToolResult.CallID] {

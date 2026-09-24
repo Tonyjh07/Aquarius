@@ -89,21 +89,21 @@ func TestSessionTextRoundPersists(t *testing.T) {
 		t.Fatalf("llm requests = %d, want 1", len(llm.requests))
 	}
 	cur := s.Current()
-	if len(cur.Nodes) != 2 {
-		t.Fatalf("nodes = %d, want 2（user+assistant）", len(cur.Nodes))
+	if len(cur.Nodes) != 3 {
+		t.Fatalf("nodes = %d, want 3（root+user+assistant）", len(cur.Nodes))
 	}
 	if cur.Title != "讲个笑话" {
 		t.Fatalf("title = %q, want 首条消息摘要", cur.Title)
 	}
 	// 已落盘且可跨"进程"恢复。
 	saved := store.convs[cur.ID]
-	if saved == nil || len(saved.Nodes) != 2 {
-		t.Fatalf("saved = %+v, want 落盘 2 节点", saved)
+	if saved == nil || len(saved.Nodes) != 3 {
+		t.Fatalf("saved = %+v, want 落盘 3 节点", saved)
 	}
 
 	// 重启会话：恢复同一棵树继续对话。
 	s2, llm2, _ := newTestSession(t, store, textStream("继续"))
-	if s2.Current().ID != cur.ID || len(s2.Current().Nodes) != 2 {
+	if s2.Current().ID != cur.ID || len(s2.Current().Nodes) != 3 {
 		t.Fatalf("resume = %s/%d nodes, want 同一会话", s2.Current().ID, len(s2.Current().Nodes))
 	}
 	if _, err := s2.Handle(context.Background(), port.UserInput{Text: "再来一个"}); err != nil {

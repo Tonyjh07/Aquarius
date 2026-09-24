@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -97,16 +98,16 @@ func TestSaveKeepsOneGenerationBak(t *testing.T) {
 	if bak.Title != "测试会话" {
 		t.Fatalf(".bak title = %q, want 上一代标题", bak.Title)
 	}
-	if len(bak.Nodes) != 2 {
-		t.Fatalf(".bak nodes = %d, want 2（上一代）", len(bak.Nodes))
+	if len(bak.Nodes) != 3 {
+		t.Fatalf(".bak nodes = %d, want 3（上一代：root+u+a）", len(bak.Nodes))
 	}
 
 	cur, err := s.Load(ctx, c.ID)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cur.Nodes) != 3 || cur.Title != "改过标题" {
-		t.Fatalf("current = %d nodes title %q, want 3 nodes 改过标题", len(cur.Nodes), cur.Title)
+	if len(cur.Nodes) != 4 || cur.Title != "改过标题" {
+		t.Fatalf("current = %d nodes title %q, want 4 nodes 改过标题", len(cur.Nodes), cur.Title)
 	}
 }
 
@@ -134,8 +135,8 @@ func TestLoadFallsBackToBakWhenMainCorrupt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load should fall back to .bak: %v", err)
 	}
-	if len(got.Nodes) != 2 {
-		t.Fatalf("fallback nodes = %d, want 2（.bak 一代）", len(got.Nodes))
+	if len(got.Nodes) != 3 {
+		t.Fatalf("fallback nodes = %d, want 3（.bak 一代：root+u+a）", len(got.Nodes))
 	}
 }
 
@@ -240,6 +241,31 @@ func TestSaveRejectsInvalidTree(t *testing.T) {
 	}
 	if _, err := os.Stat(s.path(c.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("invalid tree must not be written: %v", err)
+	}
+}
+
+// TestLoadRejectsLegacyVirtualRootFormat D19 破坏性切换：M0 虚拟 Root 格式必须明确报因。
+func TestLoadRejectsLegacyVirtualRootFormat(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	legacy := `{
+  "id": "conv-old",
+  "title": "旧会话",
+  "nodes": {"U1": {"id": "U1", "parent": "", "role": "user", "content": [{"kind": "text", "text": "hi"}], "created_at": "2026-01-01T00:00:00Z"}},
+  "children": {"": ["U1"]},
+  "head": "",
+  "revised_from": {},
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z"
+}`
+	if err := os.WriteFile(filepath.Join(s.dir, "conv-old.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	_, err = s.Load(context.Background(), conversation.ID("conv-old"))
+	if err == nil || !strings.Contains(err.Error(), "旧格式") {
+		t.Fatalf("err = %v, want 旧格式报因", err)
 	}
 }
 

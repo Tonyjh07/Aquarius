@@ -103,7 +103,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	if c == nil {
 		return errors.New("agent: nil conversation")
 	}
-	if len(c.Path()) == 0 {
+	if len(c.Path()) <= 1 { // 仅 Root = 空会话
 		return errors.New("agent: 会话为空，无可生成的上下文")
 	}
 

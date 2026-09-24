@@ -3,7 +3,9 @@
 // 核心语义（DESIGN §4.1）：
 //   - 节点创建后内容只读；用户"修改"永远走 Revise（创建同级新节点），绝不就地改写。
 //   - Revise Carry = 边转移：子树零拷贝改挂到新节点（D2/D16）。
-//   - 虚拟 Root 是唯一根：Parent == "" 的顶层消息可多条；Head == "" 表示游标在虚拟 Root（D15）。
+//   - Root 实节点是唯一根（D19 修订 D15 载体）：ID = 会话 ID、Role = root、空内容；
+//     顶层消息 = Root 的孩子（可多条，支撑 Revise 首条消息）；Head 初始 = Root，无空串特例。
+//   - system 节点承载 persona（D20）与压缩摘要（D21）；root/system/tool 组装节点一律走 AppendCommitted。
 //   - 流式中间态不进领域：Turn 结束一次性 AppendCommitted 提交不可变节点（D3）。
 package conversation
 
@@ -54,21 +56,28 @@ type Conversation struct {
 	ID          ID                        `json:"id"`
 	Title       string                    `json:"title"`
 	Nodes       map[MessageID]Message     `json:"nodes"`        // 只增不改（Prune 硬删除外）
-	Children    map[MessageID][]MessageID `json:"children"`     // 结构边（虚拟 Root 的孩子键为 ""）
-	Head        MessageID                 `json:"head"`         // "" = 虚拟 Root（空路径）
+	Children    map[MessageID][]MessageID `json:"children"`     // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root）
+	Head        MessageID                 `json:"head"`         // 初始 = Root ID；无空串特例（D19）
 	RevisedFrom map[MessageID]MessageID   `json:"revised_from"` // 新→旧：版本链（纯结构元数据）
 	CreatedAt   time.Time                 `json:"created_at"`
 	UpdatedAt   time.Time                 `json:"updated_at"`
 }
 
-// New 创建空会话（Head 位于虚拟 Root）。
+// New 创建空会话：Root 空节点（ID = id、Role = root）入树，Children[""] = [Root]，Head 指向 Root。
+// persona 首节点由应用层写入（D20）。
 func New(id ID, title string) *Conversation {
 	now := nowFunc()
+	root := Message{
+		ID:        MessageID(id),
+		Role:      RoleRoot,
+		CreatedAt: now,
+	}
 	return &Conversation{
 		ID:          id,
 		Title:       title,
-		Nodes:       map[MessageID]Message{},
-		Children:    map[MessageID][]MessageID{},
+		Nodes:       map[MessageID]Message{root.ID: root},
+		Children:    map[MessageID][]MessageID{"": {root.ID}},
+		Head:        root.ID,
 		RevisedFrom: map[MessageID]MessageID{},
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -76,10 +85,10 @@ func New(id ID, title string) *Conversation {
 }
 
 // Append 追加一条 user|assistant 内容消息，父节点为当前 Head；成功后 Head 移到新节点。
-// tool 消息必须携带 ToolResult，请改用 AppendCommitted 提交。
+// root/system/tool 一律走 AppendCommitted（Root 由 New 创建，system/tool 为组装节点）。
 func (c *Conversation) Append(role Role, content []Part) (Message, error) {
-	if role == RoleTool {
-		return Message{}, fmt.Errorf("append: %w: tool 消息须走 AppendCommitted", ErrInvalidNode)
+	if role != RoleUser && role != RoleAssistant {
+		return Message{}, fmt.Errorf("append: %w: 仅 user|assistant 可走 Append，root/system/tool 用 AppendCommitted", ErrInvalidNode)
 	}
 	m := Message{
 		ID:        NewMessageID(),
@@ -94,10 +103,13 @@ func (c *Conversation) Append(role Role, content []Part) (Message, error) {
 	return c.Nodes[m.ID], nil
 }
 
-// AppendCommitted 提交一个已组装好的不可变节点（Turn 结束一次性 Commit 的入口，含 tool 消息）。
-// Parent 取 m.Parent（"" = 顶层消息）；入树前校验不变量，并对切片/指针做防御性拷贝；
-// 成功后 Head 移到新节点。
+// AppendCommitted 提交一个已组装好的不可变节点（system/tool 等；Turn 结束一次性 Commit 的入口）。
+// Root 不可提交（由 New 创建，D19）；Parent 必须非空且存在；入树前校验不变量，
+// 并对切片/指针做防御性拷贝；成功后 Head 移到新节点。
 func (c *Conversation) AppendCommitted(m Message) error {
+	if m.Role == RoleRoot {
+		return fmt.Errorf("append %q: %w: root 由 New 创建，不可提交", m.ID, ErrInvalidNode)
+	}
 	if err := checkNodeShape(m); err != nil {
 		return err
 	}
@@ -129,7 +141,8 @@ func (c *Conversation) AppendCommitted(m Message) error {
 }
 
 // Revise 创建 id 的同级新版本节点（同父、同角色，内容替换），并记录版本链 RevisedFrom 新→旧。
-// tool 节点不可 Revise（D18）。id 为顶层消息时新节点同为顶层消息（D15）。
+// root/tool 不可 Revise（Root 即会话，D19；tool 结果机器生成不可编辑，D18）；system 可以（persona/摘要可改写）。
+// id 为顶层消息时新节点同为顶层（挂 Root 下，D15 语义）。
 //
 // Head 语义（D16）：
 //   - Fresh：Head 移到新节点，旧子树原样留作历史分支；
@@ -139,6 +152,9 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	old, ok := c.Nodes[id]
 	if !ok {
 		return Message{}, fmt.Errorf("revise %q: %w", id, ErrNotFound)
+	}
+	if old.Role == RoleRoot {
+		return Message{}, fmt.Errorf("revise %q: %w: root 即会话，不可修订", id, ErrInvalidNode)
 	}
 	if old.Role == RoleTool {
 		return Message{}, fmt.Errorf("revise %q: %w", id, ErrReviseTool)
@@ -180,14 +196,19 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	return c.Nodes[m.ID], nil
 }
 
-// Prune 剪掉 id 及整棵子树（唯一破坏性操作，硬删；storejson 写前留一代 .bak 兜底，D7）。
+// Prune 剪掉 id 及整棵子树（唯一破坏性操作，硬删；Root 不可剪——Root 即会话，D19；
+// storejson 写前留一代 .bak 兜底，D7）。
 //
 // 连带处理（D18）：因引用的 assistant 节点被剪而失联的 tool 结果节点一并移除——
 // 只删该节点本身，其子树改挂到最近存活祖先（历史不丢），从而维持存在性引用不变量。
-// Head 落在被移除节点上时，回退到最近存活祖先（可为虚拟 Root）。
+// Head 落在被移除节点上时，回退到最近存活祖先（Root 之外的根不可删，链必止于 Root）。
 func (c *Conversation) Prune(id MessageID) error {
-	if _, ok := c.Nodes[id]; !ok {
+	m, ok := c.Nodes[id]
+	if !ok {
 		return fmt.Errorf("prune %q: %w", id, ErrNotFound)
+	}
+	if m.Role == RoleRoot {
+		return fmt.Errorf("prune %q: %w: root 即会话，不可删除", id, ErrInvalidNode)
 	}
 	sub := map[MessageID]bool{}
 	c.collectSubtree(id, sub)
@@ -274,19 +295,18 @@ func (c *Conversation) Prune(id MessageID) error {
 	return nil
 }
 
-// Checkout 将 Head 移到任意节点（分支导航）；id 为 "" 时回到虚拟 Root（空路径）。
+// Checkout 将 Head 移到任意节点（分支导航；含 Root = 回根）。
+// 无空串特例（D19）：id 不在树中（含 ""）一律 ErrNotFound。
 func (c *Conversation) Checkout(id MessageID) error {
-	if id != "" {
-		if _, ok := c.Nodes[id]; !ok {
-			return fmt.Errorf("checkout %q: %w", id, ErrNotFound)
-		}
+	if _, ok := c.Nodes[id]; !ok {
+		return fmt.Errorf("checkout %q: %w", id, ErrNotFound)
 	}
 	c.Head = id
 	c.UpdatedAt = nowFunc()
 	return nil
 }
 
-// Path 返回 Root→Head 的线性节点序列 = 本次推理的上下文（早→近）。
+// Path 返回 Root→Head 的线性节点序列 = 本次推理的上下文（早→近）；首元素恒为 Root（装配时滤掉）。
 func (c *Conversation) Path() []Message {
 	var rev []Message
 	for cur := c.Head; cur != ""; {
@@ -305,19 +325,19 @@ func (c *Conversation) Path() []Message {
 }
 
 // Branches 返回 id 的同级分叉（同一父节点下的其他孩子，不含 id 自身），按创建时间升序；
-// 供 UI 做新旧版本对比。id 为 "" 时返回全部顶层消息；id 不在树中返回 nil。
+// 供 UI 做新旧版本对比。Root 的分叉 = 其孩子（顶层消息）；id 不在树中返回 nil。
 func (c *Conversation) Branches(id MessageID) []Message {
-	self := id
-	if id != "" {
-		m, ok := c.Nodes[id]
-		if !ok {
-			return nil
-		}
-		id = m.Parent // 同级 = 与 id 同父的孩子
+	m, ok := c.Nodes[id]
+	if !ok {
+		return nil
+	}
+	parent := m.Parent
+	if m.Role == RoleRoot {
+		parent = id // Root 的"同级"取其孩子：顶层消息（D15 语义）
 	}
 	var out []Message
-	for _, nid := range c.Children[id] {
-		if nid == self {
+	for _, nid := range c.Children[parent] {
+		if nid == id {
 			continue
 		}
 		if m, ok := c.Nodes[nid]; ok {

@@ -137,7 +137,7 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 		out = append(out, port.ConversationSummary{
 			ID:        c.ID,
 			Title:     c.Title,
-			MessageN:  len(c.Nodes),
+			MessageN:  len(c.Nodes) - 1, // 不含 Root 节点
 			UpdatedAt: c.UpdatedAt,
 		})
 	}
@@ -185,6 +185,10 @@ func decode(data []byte, id conversation.ID) (*conversation.Conversation, error)
 	}
 	if c.ID != id {
 		return nil, fmt.Errorf("文件内容属于会话 %q 而非 %q", c.ID, id)
+	}
+	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
+	if root, ok := c.Nodes[conversation.MessageID(c.ID)]; !ok || root.Role != conversation.RoleRoot || c.Head == "" {
+		return nil, fmt.Errorf("旧格式会话（M0 虚拟 Root，D19 破坏性切换）：与实 Root 不兼容，请删除该文件重建")
 	}
 	// 空 map 归一化：JSON 里的 null 反序列化为 nil map，直接写入会 panic。
 	if c.Nodes == nil {

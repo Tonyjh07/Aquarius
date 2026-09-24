@@ -8,15 +8,33 @@ import (
 )
 
 // checkNodeShape 校验单个节点的形态约束（与树无关）：
-// 空 ID、角色与调用/结果的匹配关系、调用 ID 非空且节点内唯一。
+// 空 ID、Root/非 Root 的 Parent 规则、角色与调用/结果的匹配关系、调用 ID 非空且节点内唯一。
 func checkNodeShape(m Message) error {
 	if m.ID == "" {
 		return fmt.Errorf("%w: empty id", ErrInvalidNode)
+	}
+	if m.Role == RoleRoot {
+		// Root 即会话（D19）：唯一空 Parent、空内容节点。
+		if m.Parent != "" {
+			return fmt.Errorf("node %q: %w: root must have empty parent", m.ID, ErrInvalidNode)
+		}
+		if len(m.Content) > 0 || len(m.ToolCalls) > 0 || m.ToolResult != nil {
+			return fmt.Errorf("node %q: %w: root must be an empty message", m.ID, ErrInvalidNode)
+		}
+		return nil
+	}
+	if m.Parent == "" {
+		return fmt.Errorf("node %q: %w: non-root node requires a parent", m.ID, ErrInvalidNode)
 	}
 	switch m.Role {
 	case RoleUser:
 		if len(m.ToolCalls) > 0 || m.ToolResult != nil {
 			return fmt.Errorf("node %q: %w: user message cannot carry tool calls or results", m.ID, ErrInvalidNode)
+		}
+	case RoleSystem:
+		// persona / 压缩摘要（D20/D21）：纯内容节点，不可携带工具调用或结果。
+		if len(m.ToolCalls) > 0 || m.ToolResult != nil {
+			return fmt.Errorf("node %q: %w: system message cannot carry tool calls or results", m.ID, ErrInvalidNode)
 		}
 	case RoleAssistant:
 		if m.ToolResult != nil {
@@ -48,8 +66,8 @@ func checkNodeShape(m Message) error {
 	return nil
 }
 
-// Validate 整树自检：不变量 1（树合法）与不变量 2（引用合法）必须恒成立，
-// 另查结构元数据一致性（RevisedFrom 两端存在、Children 父节点存在）。
+// Validate 整树自检：不变量 1（树合法：唯一实根、双向一致、无环、Head 在树）与
+// 不变量 2（引用合法）必须恒成立，另查结构元数据一致性（RevisedFrom 两端存在、Children 父节点存在）。
 // 不变量 3（节点不可变）由操作 API 保证，性质测试以快照比对守护（DESIGN §11）。
 func (c *Conversation) Validate() error {
 	var errs []error
@@ -69,6 +87,25 @@ func (c *Conversation) Validate() error {
 				errs = append(errs, fmt.Errorf("invariant tree: children key %q not in tree", pid))
 			}
 		}
+	}
+
+	// 不变量 1：唯一实根（D19）——Root 即会话：ID = 会话 ID、Role = root、Parent = ""。
+	rootID := MessageID(c.ID)
+	if root, ok := c.Nodes[rootID]; !ok {
+		errs = append(errs, fmt.Errorf("invariant tree: root %q missing", rootID))
+	} else if root.Role != RoleRoot {
+		errs = append(errs, fmt.Errorf("invariant tree: node %q must have role root, got %q", rootID, root.Role))
+	}
+	for nid, m := range c.Nodes {
+		if m.Role == RoleRoot && nid != rootID {
+			errs = append(errs, fmt.Errorf("invariant tree: stray root-role node %q", nid))
+		}
+		if m.Parent == "" && nid != rootID {
+			errs = append(errs, fmt.Errorf("invariant tree: node %q has empty parent but is not root", nid))
+		}
+	}
+	if top := c.Children[""]; len(top) != 1 || top[0] != rootID {
+		errs = append(errs, fmt.Errorf("invariant tree: children[\"\"] = %v, want exactly [%q]", top, rootID))
 	}
 
 	owners := map[tool.CallID]MessageID{} // 调用 ID → 声明节点（唯一性）
@@ -120,11 +157,11 @@ func (c *Conversation) Validate() error {
 		}
 	}
 
-	// 不变量 1：Head 属于树（"" = 虚拟 Root）。
-	if c.Head != "" {
-		if _, ok := c.Nodes[c.Head]; !ok {
-			errs = append(errs, fmt.Errorf("invariant tree: head %q not in tree", c.Head))
-		}
+	// 不变量 1：Head 属于树（初始 = Root；空串即旧格式残留，D19 无空串特例）。
+	if c.Head == "" {
+		errs = append(errs, errors.New("invariant tree: empty head (legacy virtual root, D19)"))
+	} else if _, ok := c.Nodes[c.Head]; !ok {
+		errs = append(errs, fmt.Errorf("invariant tree: head %q not in tree", c.Head))
 	}
 
 	// 不变量 2：存在性引用——tool 节点的 CallID 匹配树中存在的某 assistant 调用。

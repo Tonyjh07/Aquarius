@@ -48,9 +48,14 @@ type propDriver struct {
 	callSeq int
 }
 
-func (d *propDriver) pickNode(c *Conversation, toolOnly bool) MessageID {
+// pickNode 从池中挑节点：toolOnly 过滤工具节点；includeRoot=false 排除 Root
+// （Root 不可 Revise/Prune，D19）。
+func (d *propDriver) pickNode(c *Conversation, toolOnly, includeRoot bool) MessageID {
 	var pool []MessageID
 	for nid, m := range c.Nodes {
+		if m.Role == RoleRoot && !includeRoot {
+			continue
+		}
 		if (m.Role == RoleTool) == toolOnly {
 			pool = append(pool, nid)
 		}
@@ -63,11 +68,11 @@ func (d *propDriver) pickNode(c *Conversation, toolOnly bool) MessageID {
 }
 
 func (d *propDriver) parent(c *Conversation) MessageID {
-	if d.rng.Intn(4) == 0 { // 偶尔挂到任意节点，制造分支
-		if nid := d.pickNode(c, false); nid != "" && d.rng.Intn(2) == 0 {
+	if d.rng.Intn(4) == 0 { // 偶尔挂到任意节点（含 Root=顶层），制造分支
+		if nid := d.pickNode(c, false, true); nid != "" && d.rng.Intn(2) == 0 {
 			return nid
 		}
-		if nid := d.pickNode(c, true); nid != "" {
+		if nid := d.pickNode(c, true, false); nid != "" {
 			return nid
 		}
 	}
@@ -77,7 +82,7 @@ func (d *propDriver) parent(c *Conversation) MessageID {
 // step 执行一个随机操作并返回操作序号（8 = Prune；-1 = 跳过）。
 func (d *propDriver) step(t *testing.T, c *Conversation) int {
 	t.Helper()
-	op := d.rng.Intn(10)
+	op := d.rng.Intn(12)
 	switch op {
 	case 0:
 		if _, err := c.Append(RoleUser, textParts(fmt.Sprintf("u%d", d.rng.Int63()))); err != nil {
@@ -130,7 +135,7 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 			t.Fatalf("dangling tool result accepted")
 		}
 	case 5, 6:
-		target := d.pickNode(c, false)
+		target := d.pickNode(c, false, false)
 		if target == "" {
 			return -1
 		}
@@ -142,7 +147,7 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 			t.Fatalf("revise(%s) %s: %v", mode, target, err)
 		}
 	case 7: // tool 节点修订必须被拒（D18）
-		target := d.pickNode(c, true)
+		target := d.pickNode(c, true, false)
 		if target == "" {
 			return -1
 		}
@@ -150,9 +155,9 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 			t.Fatalf("revise(tool) = %v, want ErrReviseTool", err)
 		}
 	case 8:
-		target := d.pickNode(c, false)
+		target := d.pickNode(c, false, false)
 		if target == "" {
-			target = d.pickNode(c, true)
+			target = d.pickNode(c, true, false)
 		}
 		if target == "" {
 			return -1
@@ -161,16 +166,45 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 			t.Fatalf("prune %s: %v", target, err)
 		}
 	case 9:
-		id := MessageID("")
+		id := MessageID(c.ID) // 回 Root（无空串特例，D19）
 		if d.rng.Intn(2) == 0 {
-			if d.rng.Intn(2) == 0 {
-				id = d.pickNode(c, false)
-			} else {
-				id = d.pickNode(c, true)
+			if id = d.pickNode(c, d.rng.Intn(2) == 0, true); id == "" {
+				return -1
 			}
 		}
 		if err := c.Checkout(id); err != nil {
 			t.Fatalf("checkout %q: %v", id, err)
+		}
+	case 10: // system 节点（persona / 摘要形态）经 AppendCommitted 入树
+		err := c.AppendCommitted(Message{
+			ID: NewMessageID(), Parent: d.parent(c), Role: RoleSystem,
+			Content: textParts(fmt.Sprintf("s%d", d.rng.Int63())), CreatedAt: nowFunc(),
+		})
+		if err != nil {
+			t.Fatalf("commit system: %v", err)
+		}
+	case 11: // D19/D18 必然失败路径：root 不可 Append/Commit/Revise/Prune，空串特例已移除
+		if _, err := c.Append(RoleSystem, textParts("x")); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("append(system) = %v, want ErrInvalidNode", err)
+		}
+		if _, err := c.Append(RoleRoot, nil); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("append(root) = %v, want ErrInvalidNode", err)
+		}
+		if err := c.AppendCommitted(Message{ID: NewMessageID(), Role: RoleRoot, CreatedAt: nowFunc()}); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("commit root = %v, want ErrInvalidNode", err)
+		}
+		if err := c.AppendCommitted(Message{ID: NewMessageID(), Role: RoleUser, CreatedAt: nowFunc()}); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("commit parentless user = %v, want ErrInvalidNode", err)
+		}
+		root := MessageID(c.ID)
+		if _, err := c.Revise(root, textParts("x"), Fresh); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("revise(root) = %v, want ErrInvalidNode", err)
+		}
+		if err := c.Prune(root); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("prune(root) = %v, want ErrInvalidNode", err)
+		}
+		if err := c.Checkout(""); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("checkout empty = %v, want ErrNotFound", err)
 		}
 	}
 	return op
@@ -231,12 +265,6 @@ func TestPropertyPathChain(t *testing.T) {
 			d.step(t, c)
 
 			path := c.Path()
-			if c.Head == "" {
-				if len(path) != 0 {
-					t.Fatalf("seed %d: path not empty at virtual root: %v", seed, ids(path))
-				}
-				continue
-			}
 			if len(path) == 0 || path[len(path)-1].ID != c.Head {
 				t.Fatalf("seed %d: path %v does not end at head %s", seed, ids(path), c.Head)
 			}
@@ -247,8 +275,8 @@ func TestPropertyPathChain(t *testing.T) {
 				}
 				seen[m.ID] = true
 				if i == 0 {
-					if m.Parent != "" {
-						t.Fatalf("seed %d: path does not start at top-level message", seed)
+					if m.ID != MessageID(string(c.ID)) || m.Role != RoleRoot || m.Parent != "" {
+						t.Fatalf("seed %d: path does not start at real root: %+v", seed, m)
 					}
 					continue
 				}
@@ -257,9 +285,9 @@ func TestPropertyPathChain(t *testing.T) {
 				}
 			}
 
-			for _, nid := range append(append([]MessageID{}, ""), nodeIDs(c)...) {
+			for _, nid := range nodeIDs(c) {
 				self, ok := c.Find(nid)
-				if nid != "" && !ok {
+				if !ok {
 					continue
 				}
 				got := map[MessageID]bool{}
@@ -269,7 +297,11 @@ func TestPropertyPathChain(t *testing.T) {
 				if got[nid] {
 					t.Fatalf("seed %d: branches(%s) contains self", seed, nid)
 				}
-				for _, sib := range c.Children[self.Parent] {
+				sibParent := self.Parent
+				if self.Role == RoleRoot {
+					sibParent = nid // Root 的分叉 = 顶层消息
+				}
+				for _, sib := range c.Children[sibParent] {
 					if sib == nid {
 						continue
 					}
@@ -301,7 +333,7 @@ func TestPropertyCarryEdgeTransfer(t *testing.T) {
 		for i := d.rng.Intn(6) + 3; i > 0; i-- {
 			d.step(t, c)
 		}
-		target := d.pickNode(c, false)
+		target := d.pickNode(c, false, false)
 		if target == "" {
 			continue
 		}
