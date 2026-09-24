@@ -10,11 +10,12 @@
 ~/.aquarius/                     # -data 可整体改指
 ├── config.json                  # 主配置（写回 = tmp+rename 原子换入）
 ├── sandbox/                     # Agent 特权目录（权限矩阵 rw 格，启动自动创建）
+├── memories.md                  # 全局记忆（markdown 单文件，D23；/memory 直开）
 ├── conversations/               # 会话树，一会话一 JSON
 │   ├── <id>.json                # 当前代
 │   ├── <id>.json.bak            # 上一代（Save 换代前留一代，D7）
-│   └── <id>.json.tmp            # 写入中的临时文件（正常结束不存在）
-├── memory/**/*.md               # 记忆文档（M2 起）
+│   ├── <id>.json.tmp            # 写入中的临时文件（正常结束不存在）
+│   └── <id>.memory.md           # 该会话的会话记忆（随会话就近存放，D23）
 ├── jobs/<jobID>.log             # 后台任务日志（M3 起）
 ├── attachments/<sha256>         # 内容寻址附件（M3 起）
 └── plugins/<name>/plugin.json   # MCP server 描述（M4 起）
@@ -68,7 +69,8 @@
 Move-Item ~/.aquarius/conversations/<id>.json.bak ~/.aquarius/conversations/<id>.json -Force
 ```
 
-- `Remove`（未来 `/rm` 会话级）与手工删除会连 `.bak` 一起删——想留底先拷走。
+- `Remove`（未来 `/rm` 会话级）与手工删除会连 `.bak` 一起删——想留底先拷走；
+  `<id>.memory.md` 不随 JSON 删除联动（会话级删除落地时再一并处理，当前无此入口）。
 
 ## D19 旧格式（M0 早期数据）处置
 

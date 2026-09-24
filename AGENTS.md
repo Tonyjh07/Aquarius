@@ -72,6 +72,6 @@ internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/
 internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
 internal/app/        agent（Turn 循环）、prompt、session（命令）、ingest、facade
 internal/plugin/     registry、mcp（生命周期）、grant（授权）
-internal/adapter/    llm、mcpgate、toolbuiltin、jobproc、storejson、blobfs、memoryfs、
-                     asr、tts、ingestbuiltin、outbuiltin、uitui、plugingo
+internal/adapter/    llm（含 llm/tokenizer 精确计数）、mcpgate、toolbuiltin、toolrun、jobproc、
+                     storejson、blobfs、memoryfs、asr、tts、ingestbuiltin、outbuiltin、uitui、plugingo
 ```

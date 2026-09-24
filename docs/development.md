@@ -23,10 +23,11 @@ gofmt -l .                     # 格式检查（应无输出）
 
 ```
 cmd/aquarius      组装根（唯一知道"具体实现"的地方）
-internal/app      agent(Turn 循环) · prompt(装配/水位) · session(命令)
+internal/app      agent(Turn 循环) · prompt(装配/水位/记忆注入) · session(命令) · est(token 计数链)
 internal/port     端口 = 接口 + DTO（消费方定义、1–3 方法、ctx 首参）
 internal/domain   conversation(树) · tool(值对象) · perm(权限矩阵) —— 零依赖
-internal/adapter  llm / repl / storejson（一个适配器一个目录）
+internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbuiltin / toolrun
+                  （一个适配器一个目录）
 ```
 
 接口由消费方定义；错误 `fmt.Errorf("...: %w")` 包装；值对象具名类型；
@@ -39,8 +40,9 @@ internal/adapter  llm / repl / storejson（一个适配器一个目录）
 | domain | **性质测试**：随机操作序列 → 三条不变量恒成立；快照比对证明不可变 | `domain/conversation/property_test.go` |
 | app | **交互回放**：脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter | `app/fakes_test.go`、`app/agent_test.go` |
 | app | **golden 回放**：命令脚本 → 归一化 transcript（ID 归一为标签）与 `testdata/golden/` 基准比对；改语义后 `go test ./internal/app -run TestGoldenReplay -update` 重写基准并人工检视 | `app/golden_test.go` |
-| adapter | **契约测试**：storejson 临时目录；LLM 用 httptest 假 SSE 录制流回放 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go` |
-| e2e | **进程内装配回放**：`run(stdin, stdout)` + 假服务喂 stdin 断言 stdout | `cmd/aquarius/main_test.go` |
+| adapter | **契约测试**：storejson/memoryfs 临时目录；LLM 用 httptest 假 SSE 录制流回放；toolrun 全等级矩阵表 + 脚本确认器 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go`、`adapter/toolrun/runner_test.go` |
+| tokenizer | **官方向量比对**：期望值由 Python `tokenizers` 一次性生成入库（`testdata/gen_*.py`）；fixture 全离线跑，真实 DeepSeek 词表向量需 `AQUARIUS_TOKENIZER_JSON=<路径>`（缺省跳过） | `adapter/llm/tokenizer/tokenizer_test.go` |
+| e2e | **进程内装配回放**：`run(stdin, stdout)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵） | `cmd/aquarius/main_test.go` |
 
 修 bug 先写复现测试；新行为补测试。测试替身放测试文件内或 `internal/adapter/fake/`。
 
@@ -57,9 +59,12 @@ internal/adapter  llm / repl / storejson（一个适配器一个目录）
 
 1. DESIGN §4.3 工具表加行（名称/说明/Risk）；
 2. 实现 `port.Tool`（`Spec()` + `Execute(ctx, call)`），放 `internal/adapter/toolbuiltin/`；
-3. 经 `ToolRunner` 注册——**禁止**在 app/domain 直连；Risk=Confirm 走 Confirmer，
-   权限判定用 `domain/perm`（两列分工：文件看路径格、执行看工具列）；
-4. 契约测试覆盖：调用、超时、确认拒绝、结果截断。
+   **文件类**再实现 `port.FileTarget` 自申报 `(path, op)`（D25：ToolRunner 据此查
+   路径格；不申报则按执行类看工具列 Risk）；
+3. 在 `cmd/aquarius` 经 `toolbuiltin.New(...)` 产出、`toolrun.New/runner.Add` 注册——
+   **禁止**在 app/domain 直连；确认/超时/裁剪由 ToolRunner 统一执行；
+4. 契约测试覆盖：调用、参数解析、FileTarget 申报；Runner 侧补矩阵判定、确认拒绝、
+   超时、结果截断（样板 `toolrun/runner_test.go`）。
 
 ### 新增一个斜杠命令
 
