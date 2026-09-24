@@ -98,7 +98,7 @@ func New(d Deps, cfg Config) (*Agent, error) {
 //     节点 ID 在 Turn 开始时预分配，作流事件关联 ID。
 //   - 工具失败转 OK=false 照常回填，不中断 Turn。
 //   - 取消 = 已生成部分以 Outcome: cancelled 提交后返回 nil（可 /edit 重试）；
-//     模型/网络错误 = Outcome: error 提交 + ErrorEvent 上抛。
+//     模型/网络错误 = Outcome: error 提交并返回错误（ErrorEvent 由装配根统一上抛，避免重复呈现）。
 func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	if c == nil {
 		return errors.New("agent: nil conversation")
@@ -110,7 +110,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	for turn := 0; turn < a.maxTurns; turn++ {
 		req, err := a.buildRequest(ctx, c)
 		if err != nil {
-			return a.emitError(ctx, fmt.Errorf("装配上下文: %w", err))
+			return fmt.Errorf("装配上下文: %w", err)
 		}
 		mid := a.ids.MessageID() // 预分配关联 ID
 		buf := &commitBuffer{id: mid, parent: c.Head}
@@ -134,7 +134,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		}
 		node := buf.commit(a.clock.Now(), outcome, a.cfg.Model, calls)
 		if err := c.AppendCommitted(node); err != nil {
-			return a.emitError(ctx, fmt.Errorf("提交节点: %w", err))
+			return fmt.Errorf("提交节点: %w", err)
 		}
 		_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
 
@@ -142,7 +142,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			if outcome == conversation.OutcomeCancelled {
 				return nil // 取消已提交，不视为失败
 			}
-			return a.emitError(ctx, fmt.Errorf("生成失败: %w", recvErr))
+			return fmt.Errorf("生成失败: %w", recvErr)
 		}
 		if len(node.ToolCalls) == 0 {
 			return nil
@@ -159,12 +159,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 				CreatedAt:  a.clock.Now(),
 			}
 			if err := c.AppendCommitted(tnode); err != nil {
-				return a.emitError(ctx, fmt.Errorf("提交工具结果: %w", err))
+				return fmt.Errorf("提交工具结果: %w", err)
 			}
 			_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
 		}
 	}
-	return a.emitError(ctx, fmt.Errorf("%w（%d）", ErrMaxTurns, a.maxTurns))
+	return fmt.Errorf("%w（%d）", ErrMaxTurns, a.maxTurns)
 }
 
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 工具清单（DESIGN §7.1）。
@@ -244,21 +244,15 @@ func (a *Agent) normalizeCalls(calls []tool.Call) []tool.Call {
 	return calls
 }
 
-// commitFailure 以 Outcome: error 提交节点并上抛 UI（§10）。
+// commitFailure 以 Outcome: error 提交节点后返回原错误（§10）；
+// ErrorEvent 由装配根统一上抛，避免重复呈现。
 func (a *Agent) commitFailure(ctx context.Context, c *conversation.Conversation, buf *commitBuffer, cause error) error {
 	node := buf.commit(a.clock.Now(), conversation.OutcomeError, a.cfg.Model, nil)
 	if err := c.AppendCommitted(node); err != nil {
-		_ = a.ui.Emit(ctx, port.ErrorEvent{Err: cause})
 		return fmt.Errorf("%w（提交失败: %v）", cause, err)
 	}
 	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
-	return a.emitError(ctx, cause)
-}
-
-// emitError 把错误上抛 UI 并原样返回。
-func (a *Agent) emitError(ctx context.Context, err error) error {
-	_ = a.ui.Emit(ctx, port.ErrorEvent{Err: err})
-	return err
+	return cause
 }
 
 // commitBuffer 流式缓冲：只进 UI，Turn 结束一次性 Commit（D3）。

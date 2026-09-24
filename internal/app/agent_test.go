@@ -190,8 +190,8 @@ func TestRunGenerateErrorCommitsErrorNode(t *testing.T) {
 		t.Fatalf("node = %+v, want 空内容 error 节点", node)
 	}
 	got := eventNames(rec.events)
-	if strings.Join(got, ",") != "committed,error" {
-		t.Fatalf("events = %v, want committed,error", got)
+	if strings.Join(got, ",") != "committed" {
+		t.Fatalf("events = %v, want committed（错误经返回值上抛，ErrorEvent 由装配根发）", got)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestRunStreamErrorCommitsPartialText(t *testing.T) {
 		t.Fatalf("半截工具调用不应进树: %+v", node.ToolCalls)
 	}
 	got := eventNames(rec.events)
-	if strings.Join(got, ",") != "delta,delta,committed,error" {
+	if strings.Join(got, ",") != "delta,delta,committed" {
 		t.Fatalf("events = %v", got)
 	}
 }
@@ -270,8 +270,8 @@ func TestRunMaxTurns(t *testing.T) {
 	if len(runner.ran) != 2 {
 		t.Fatalf("tool executions = %d, want 2", len(runner.ran))
 	}
-	if names := eventNames(rec.events); names[len(names)-1] != "error" {
-		t.Fatalf("events = %v, want 以 error 收尾", names)
+	if names := eventNames(rec.events); len(names) > 0 && names[len(names)-1] == "error" {
+		t.Fatalf("events = %v, agent 不直接发 ErrorEvent（装配根统一上抛）", names)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
