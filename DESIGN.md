@@ -203,15 +203,15 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 
 | 工具 | 说明 | Risk |
 |---|---|---|
-| `memory_list` / `memory_read` / `memory_search` | 记忆文档读取与检索 | Safe |
-| `memory_write` | 写入/覆盖记忆文档 | Confirm |
+| `memory_list` / `memory_read` / `memory_search` | 记忆读取与检索（只见全局 + 当前会话两份，按文档名寻址） | Safe |
+| `memory_write` | 写入记忆文档（`name`=全局/当前会话；`mode`=append 缺省 / overwrite） | Confirm |
 | `think` | 显式整理思路（no-op） | Safe |
 | `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 等级矩阵，读全盘免确认） | Safe |
 | `file_write` / `file_delete` | 文件写入 / 删除 | Confirm |
 | `term_exec` | 终端命令同步执行（超时返回，输出截断保头尾） | Confirm |
 | `job_start` | 后台任务启动 | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理 | Safe |
-| `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文；M2 随 ToolRunner 落地） | Safe |
+| `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -220,7 +220,9 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 
 ### 4.4 记忆文档
 
-- `~/.aquarius/memory/**/*.md`，用户可直接用编辑器改，下次读取即生效。
+- **全局记忆**：`~/.aquarius/memories.md` 单文件；**会话记忆**：`~/.aquarius/conversations/<id>.memory.md`
+  （随会话文件夹就近存放，D23）。用户可直接用编辑器改，`/memory` 即用系统编辑器打开（D24），下次读取即生效。
+- `memory_*` 工具只操作**全局 + 当前会话**两份，按文档名寻址（`memories.md` / `<id>.memory.md`）。
 - 无 embedding、无自动遗忘、无冲突消解；检索 = 关键词匹配。后端是插件面（`port.MemoryStore`）。
 
 ---
@@ -278,6 +280,13 @@ type LLM interface {
     Generate(ctx context.Context, req GenerateRequest) (Stream, error)
     Models(ctx context.Context) ([]ModelInfo, error)
 }
+
+// TokenCounter 可选精确计数（三级计数链②，D26）：适配器按需实现——
+// 本地 tokenizer（如 config `model.tokenizer` 指向的 tokenizer.json）或 count_tokens API。
+// 未实现/报错时 app 回落通用估算（③），并以服务端实测 usage（①）自校准。
+type TokenCounter interface {
+    CountTokens(ctx context.Context, text string) (int, error)
+}
 ```
 
 ### 5.2 `tool.go` —— 工具端口
@@ -296,6 +305,17 @@ type ToolRunner interface { // 查找 + capability 校验 + Risk 确认 + 超时
 type Confirmer interface {
     Confirm(ctx context.Context, prompt string) (bool, error)
 }
+
+// FileTarget 可选能力（D25）：文件类工具申报本次调用的目标路径与读写操作，
+// ToolRunner 据此查权限矩阵路径格（D22 两列分工）；未申报者走执行类（看工具列）。
+type FileTarget interface {
+    Target(ctx context.Context, call tool.Call) (path string, op perm.Op, ok bool)
+}
+
+// 会话上下文：Agent.Run 执行工具时注入当前会话 ID（值拷贝、只读），
+// 供 memory_* 的 session 作用域等定位资源；不暴露会话树对象（插件不得直接操作树）。
+func WithSessionID(ctx context.Context, id conversation.ID) context.Context
+func SessionIDFrom(ctx context.Context) (conversation.ID, bool)
 ```
 
 ### 5.3 `store.go` —— 会话存储端口
@@ -412,7 +432,7 @@ type JobManager interface {
 
 ```go
 type Event any // DeltaEvent{MessageID, Delta} | ToolCallEvent | ToolResultEvent
-               // | CommittedEvent{Message} | ErrorEvent
+               // | CommittedEvent{Message} | ErrorEvent | NoticeEvent{Text}（裁剪/自动压缩等提示）
 type Presenter interface{ Emit(ctx context.Context, ev Event) error }
 type Prompter interface{ Next(ctx context.Context) (UserInput, error) }
 
@@ -437,8 +457,9 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 
 | 端口 | v1 内置适配器 | 三方接入 | 测试替身 |
 |---|---|---|---|
-| `LLM` | openai 兼容 / anthropic / ollama | Tier-1 Go 插件 | 脚本化 Stream |
+| `LLM` | openai 兼容 / anthropic / ollama（+可选 `TokenCounter`） | Tier-1 Go 插件 | 脚本化 Stream |
 | `Tool` | memory_*、file_*、term_*、job_*、think | **MCP server** | fake tool |
+| `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
 | `Confirmer` | TUI 确认 / `--yes` | — | 自动应答 |
 | `ConversationStore` | storejson（一树一 JSON + .bak） | — | in-memory |
 | `MemoryStore` | memoryfs（markdown） | MCP resources / Tier-1 | in-memory |
@@ -548,16 +569,20 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
          + [摘要之后的历史]
 —— Root 空节点不进上下文；摘要之上除 persona 外一律不回传（D21）。
 其余承载：Image Part 内联字节、Audio 取 Transcript、Doc 取截断文本、
-          失联 tool 节点文本内联标注〔历史工具结果〕、记忆索引、工具清单（含 mcp:*）。
+          失联 tool 节点文本内联标注〔历史工具结果〕、记忆索引与当前会话记忆文件内容、工具清单（含 mcp:*）。
 ```
 
 **三轨压缩【特色功能】**（D21）：
 
 1. **手动**：`/compact` 调 `Agent.Compact`——把水位上（persona 之后）的历史交给当前模型转写为
    一条 system 摘要节点入树（记 Model/Usage）；失败只报错、树无损。
-2. **自动**：用量估算达 `limits.compact_threshold`（默认 0.7 × max_context_tokens）自动触发
-   （字符粗估；M2 落地——此前超预算走裁剪兜底）。
-3. **自触发**：模型经 `context_compact` 工具（Safe）自行管理上下文（M2 随 ToolRunner 落地）。
+2. **自动**：**三级 token 计数链**（D26）估算当前请求占用，达 `limits.compact_threshold`
+   （默认 0.7 × max_context_tokens）自动触发——①已发生的用服务端实测 usage（自校准）；
+   ②未发送的优先用适配器精确计数（`port.TokenCounter`：本地 tokenizer 或 count_tokens API）；
+   ③适配器不支持时回退通用估算（ASCII÷4 + CJK÷1.5 + 其他÷2 + 结构开销）。
+   每次 Run 至多自动压缩一次；压缩失败回退"最旧裁剪"（保 persona 与最近、丢中间，
+   经 `NoticeEvent` 提示"已省略 k 条"）。
+3. **自触发**：模型经 `context_compact` 工具（Safe）自行管理上下文。
 
 压缩失败一律**回退最旧裁剪**（保 persona 与最近、丢中间，并在 UI 提示"已省略 k 条"）；
 超预算的硬保底始终是从最旧裁剪（截断装饰器，D14）。不做向量化、不进记忆文档。
@@ -584,7 +609,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/edit <id> [--keep] <文本>` | Revise：默认 Fresh；`--keep` = Carry（保留后续历史） |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
 | `/rm <id>` | Prune 剪子树（二次确认） |
-| `/memory [list\|show\|edit\|rm]` | 记忆文档管理 |
+| `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
+| `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/model [name]` | 查看/切换模型 |
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
 | `/plugin [list\|enable\|disable]` | 插件管理 |
@@ -598,11 +624,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 ~/.aquarius/
 ├── config.json                # 主配置（密钥只存引用名；permissions.level 权限等级）
 ├── sandbox/                   # Agent 特权目录（权限矩阵免确认读写，启动自动创建）
-├── memory/**/*.md             # 记忆文档
+├── memories.md                # 全局记忆（markdown 单文件，D23）
 ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
 ├── jobs/<jobID>.log           # 后台任务日志
 ├── attachments/<sha256>       # 内容寻址附件
-└── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak）
+├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak）
+└── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
 ```
 
 ```json
@@ -611,11 +638,11 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
     "provider": "openai-compatible",
     "name": "gpt-4o-mini",
     "base_url": "https://api.openai.com/v1",
-    "api_key": "secret:AQUARIUS_OPENAI_KEY"
+    "api_key": "secret:AQUARIUS_OPENAI_KEY",
+    "tokenizer": ""              // 可选：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
   },
   "ui": { "kind": "tui" },
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
-  "memory": { "dir": "~/.aquarius/memory" },
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {
@@ -714,7 +741,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 |---|---|---|
 | **M0 骨架** | go.mod、`domain/conversation` + 性质测试、`port` 全量接口、storejson、repl UI、openai 兼容适配器 | 二进制跑通一轮纯文本对话；会话树存取正确；性质测试全绿 |
 | **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
-| **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、自动压缩轨 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通 |
+| **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板/麦克风）、ASR/TTS 适配器、输出器 | "语音提问 → 文本回答 → TTS 播报"链路端到端跑通；job 后台跑 + 日志可查 |
 | **M4 MCP 与 TUI** | mcpgate + grant + `/plugin`、bubbletea TUI（多模态呈现）、装饰器链（重试/截断/审计） | 接入任一现成 MCP server 全链路可用；崩溃重启与授权拒绝行为符合 §6.4 |
 
@@ -746,6 +773,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D20 | persona 进树为会话首节点（system 角色，config `system_prompt` 快照，恒回传，可 Revise/Prune） | 只在装配期注入 config（人格随会话不可分叉/不可编辑、审计不到树上） |
 | D21 | 上下文压缩三轨（手动 /compact 本轮、超阈值自动 70%、`context_compact`/Safe 自触发，后两轨 M2）；摘要 = system 水位节点，其上不回传（persona 除外），失败回退最旧裁剪 | 只裁剪不摘要（丢上下文）；摘要存记忆文档（与记忆系统混淆，§3 已排除）；旁路字段存摘要（与树两处存放、重启/回溯易失配） |
 | D22 | 权限等级矩阵四档（默认 strict）+ sandbox 特权目录，两列分工（文件看路径格、执行看工具列）、矩阵外一律 ask、`/permission` 写回 config（取代 D6） | 家目录沙箱（D6：目录身份与等级正交，表达不了"特权/其他"两档）；矩阵外 deny（个人助手过严）；allow/ask 明细键与矩阵双事实源（判定顺序绕） |
+| D23 | 记忆布局 = 全局单文件 `memories.md` + 会话级 `conversations/<id>.memory.md` | `memory/**/*.md` 目录树（个人单文件即可直读直编，目录树徒增组织成本）；会话记忆独立目录（与会话树分家，迁移/删除要同步两处） |
+| D24 | `/memory` = 系统编辑器直开记忆文件（无子命令） | `list\|show\|edit\|rm` 子命令集（编辑器即最强编辑 UI，命令面保持极简） |
+| D25 | ToolRunner 落位 `internal/adapter/toolrun`，文件类权限经可选接口 `FileTarget` 由工具**自申报**目标路径 | 按工具名前缀硬编码分类（内核腐化、三方工具无法参与）；往 `tool.Spec` 塞权限字段（污染模型可见的工具声明） |
+| D26 | token 计数**三级链**：①服务端实测 usage（已发生的）→ ②适配器可选 `TokenCounter`（本地 tokenizer.json / count_tokens API，覆盖估算）→ ③通用字符估算 + 服务端 usage 自校准；tokenizer 经 `model.tokenizer` 指路径懒加载 | 通用估算一刀切（已可拿到精确值时不拿）；词表 embed 进二进制（+数 MB 且换模型即失效）；实现 Jinja chat_template 渲染（要引模板引擎，且结构开销用常数已够准）；强推 count_tokens API（openai-compatible 普遍没有） |
 
 ## 14. 暂缓事项（Backlog）
 
