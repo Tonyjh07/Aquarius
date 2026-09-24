@@ -10,10 +10,10 @@ import (
 // TestFileMatrix 用户矩阵（DESIGN §9 / D22）全表覆盖：四档 × {特权, 其他} × {读, 写}。
 func TestFileMatrix(t *testing.T) {
 	cases := []struct {
-		level    Level
+		level     Level
 		inSandbox bool
-		op       Op
-		want     Decision
+		op        Op
+		want      Decision
 	}{
 		// read-only：特权 r、其他 r —— 读全免，写全 ask。
 		{ReadOnly, true, OpRead, Allow},

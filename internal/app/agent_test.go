@@ -334,6 +334,36 @@ func TestNewValidatesDeps(t *testing.T) {
 	}
 }
 
+// TestBuildRequestTreePersonaReplacesConfig D20：树内 persona 在位时不再注入 config 兜底 system。
+func TestBuildRequestTreePersonaReplacesConfig(t *testing.T) {
+	llm := &scriptLLM{t: t}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{}, Config{})
+	c := conversation.New(conversation.ID("p"), "p")
+	persona := conversation.Message{
+		ID:      "P1",
+		Parent:  conversation.MessageID(c.ID),
+		Role:    conversation.RoleSystem,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "树内人格"}},
+	}
+	if err := c.AppendCommitted(persona); err != nil {
+		t.Fatalf("commit persona: %v", err)
+	}
+	if _, err := c.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: "hi"}}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	req, err := a.buildRequest(context.Background(), c)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	if len(req.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (persona system + user)", len(req.Messages))
+	}
+	if req.Messages[0].Role != "system" || req.Messages[0].Content[0].Text != "树内人格" {
+		t.Fatalf("messages[0] = %+v, want 树内 persona", req.Messages[0])
+	}
+}
+
 // TestCallAssemblerIndexOrder 验证 Index 分片聚合与乱序到达的升序输出。
 func TestCallAssemblerIndexOrder(t *testing.T) {
 	var a callAssembler

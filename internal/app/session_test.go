@@ -67,11 +67,40 @@ func newTestSession(t *testing.T, store port.ConversationStore, streams ...*scri
 	rec := &recorder{}
 	llm := &scriptLLM{t: t, streams: streams}
 	agent := newAgent(t, llm, rec, Deps{}, Config{})
-	s, err := NewSession(context.Background(), SessionDeps{Store: store, Agent: agent, IDs: &seqIDs{}})
+	s, err := NewSession(context.Background(), SessionDeps{
+		Store: store,
+		Agent: agent,
+		IDs:   &seqIDs{},
+		Clock: fixedClock{testTime},
+	})
 	if err != nil {
 		t.Fatalf("new session: %v", err)
 	}
 	return s, llm, rec
+}
+
+// TestNewSessionWritesPersonaFirstNode D20：新建会话 = Root + persona 首节点，Head 在 persona。
+func TestNewSessionWritesPersonaFirstNode(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+
+	path := s.Current().Path()
+	if len(path) != 2 {
+		t.Fatalf("path len = %d, want 2 (root,persona)", len(path))
+	}
+	persona := path[1]
+	if persona.Role != conversation.RoleSystem || persona.Parent != path[0].ID {
+		t.Fatalf("persona = %+v, want system under root", persona)
+	}
+	if len(persona.Content) != 1 || persona.Content[0].Text != defaultSystem {
+		t.Fatalf("persona content = %+v, want 内置默认人格", persona.Content)
+	}
+	if s.Current().Head != persona.ID {
+		t.Fatalf("head = %s, want persona", s.Current().Head)
+	}
+	if persona.CreatedAt.IsZero() {
+		t.Fatal("persona CreatedAt 应由 Clock 注入")
+	}
 }
 
 func TestSessionTextRoundPersists(t *testing.T) {
@@ -89,21 +118,21 @@ func TestSessionTextRoundPersists(t *testing.T) {
 		t.Fatalf("llm requests = %d, want 1", len(llm.requests))
 	}
 	cur := s.Current()
-	if len(cur.Nodes) != 3 {
-		t.Fatalf("nodes = %d, want 3（root+user+assistant）", len(cur.Nodes))
+	if len(cur.Nodes) != 4 {
+		t.Fatalf("nodes = %d, want 4（root+persona+user+assistant）", len(cur.Nodes))
 	}
 	if cur.Title != "讲个笑话" {
 		t.Fatalf("title = %q, want 首条消息摘要", cur.Title)
 	}
 	// 已落盘且可跨"进程"恢复。
 	saved := store.convs[cur.ID]
-	if saved == nil || len(saved.Nodes) != 3 {
-		t.Fatalf("saved = %+v, want 落盘 3 节点", saved)
+	if saved == nil || len(saved.Nodes) != 4 {
+		t.Fatalf("saved = %+v, want 落盘 4 节点", saved)
 	}
 
 	// 重启会话：恢复同一棵树继续对话。
 	s2, llm2, _ := newTestSession(t, store, textStream("继续"))
-	if s2.Current().ID != cur.ID || len(s2.Current().Nodes) != 3 {
+	if s2.Current().ID != cur.ID || len(s2.Current().Nodes) != 4 {
 		t.Fatalf("resume = %s/%d nodes, want 同一会话", s2.Current().ID, len(s2.Current().Nodes))
 	}
 	if _, err := s2.Handle(context.Background(), port.UserInput{Text: "再来一个"}); err != nil {

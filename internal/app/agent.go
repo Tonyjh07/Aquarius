@@ -170,15 +170,19 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 工具清单（DESIGN §7.1）。
 // 记忆索引自 M2 起并入 system（此处先留静态提示）。
 func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) (port.GenerateRequest, error) {
-	path, err := assemblePath(ctx, c.Path(), a.blobs)
+	treePath := c.Path()
+	path, err := assemblePath(ctx, treePath, a.blobs)
 	if err != nil {
 		return port.GenerateRequest{}, err
 	}
 	msgs := make([]port.PromptMessage, 0, len(path)+1)
-	msgs = append(msgs, port.PromptMessage{
-		Role:    "system",
-		Content: []port.PromptPart{{Kind: "text", Text: a.system}},
-	})
+	// persona 恒回传（D20）：树内 persona 在位则由它充当 system；否则 config/内置提示兜底注入。
+	if !(len(treePath) > 1 && treePath[1].Role == conversation.RoleSystem) {
+		msgs = append(msgs, port.PromptMessage{
+			Role:    "system",
+			Content: []port.PromptPart{{Kind: "text", Text: a.system}},
+		})
+	}
 	msgs = append(msgs, path...)
 
 	req := port.GenerateRequest{

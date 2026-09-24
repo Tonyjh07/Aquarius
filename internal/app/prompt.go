@@ -17,19 +17,47 @@ const defaultSystem = "你是 Aquarius，一个面向个人的极简 AI 助手�
 // historyToolMarker 失联 tool 结果的内联标注（DESIGN §4.1 不变量 2）。
 const historyToolMarker = "〔历史工具结果〕"
 
-// assemblePath 把 Path() 装配为模型消息序列（DESIGN §7.1：v1 故意简单）。
-// blobs 为 nil 时图片以内联占位文本代替（附件库就绪于 M3）。
+// assemblePath 把 Path() 装配为模型消息序列（DESIGN §7.1，含 D21 水位裁剪）：
+// persona（path[1] 的 system 节点）恒回传；最新压缩摘要之上的历史（persona 之外）一律不回传；
+// Root 空节点不进上下文。blobs 为 nil 时图片以内联占位文本代替（附件库就绪于 M3）。
 func assemblePath(ctx context.Context, path []conversation.Message, blobs port.AttachmentStore) ([]port.PromptMessage, error) {
-	// 本路径上 assistant 声明的调用集合：tool 节点据此判断"在位"还是"失联"。
+	// 水位判定（D21）：persona = path[1] 的 system 节点；摘要 = 其后最后一个 system 节点。
+	personaIdx := -1
+	if len(path) > 1 && path[1].Role == conversation.RoleSystem {
+		personaIdx = 1
+	}
+	watermarkIdx := -1
+	for i := len(path) - 1; i > personaIdx; i-- {
+		if path[i].Role == conversation.RoleSystem {
+			watermarkIdx = i
+			break
+		}
+	}
+	start := 1 // 起点恒 ≥ 1：Root 不进上下文
+	if watermarkIdx >= 0 {
+		start = watermarkIdx
+	}
+
+	// 进入上下文的 assistant 声明的调用集合（水位之上的声明随历史消失，不算在位）。
 	declared := map[tool.CallID]bool{}
-	for _, m := range path {
-		for _, call := range m.ToolCalls {
+	for i := start; i < len(path); i++ {
+		for _, call := range path[i].ToolCalls {
 			declared[call.ID] = true
 		}
 	}
 
+	// 遍历序列：有水位时先单独补发 persona（它不在 [start:] 内，恒回传，D20/D21）。
+	seq := make([]int, 0, len(path))
+	if watermarkIdx >= 0 && personaIdx == 1 {
+		seq = append(seq, personaIdx)
+	}
+	for i := start; i < len(path); i++ {
+		seq = append(seq, i)
+	}
+
 	var out []port.PromptMessage
-	for _, m := range path {
+	for _, i := range seq {
+		m := path[i]
 		switch m.Role {
 		case conversation.RoleRoot:
 			continue // Root 空节点不进上下文（D19）

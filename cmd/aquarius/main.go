@@ -120,7 +120,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ids := systemIDGen{}
 	agent, err := app.New(
 		app.Deps{LLM: client, UI: ui, IDs: ids, Clock: systemClock{}},
-		app.Config{Model: cfg.Model.Name, MaxTurns: cfg.Limits.MaxTurns},
+		app.Config{Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns},
 	)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -130,7 +130,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	sess, err := app.NewSession(ctx, app.SessionDeps{Store: store, Agent: agent, IDs: ids})
+	sess, err := app.NewSession(ctx, app.SessionDeps{
+		Store:        store,
+		Agent:        agent,
+		IDs:          ids,
+		Clock:        systemClock{},
+		SystemPrompt: cfg.SystemPrompt,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1

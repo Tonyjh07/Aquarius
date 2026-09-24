@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -153,6 +154,92 @@ func TestAssemblePathOrphanToolInlined(t *testing.T) {
 		if m.Role == "assistant" && m.Content[0].Text == "重写" && len(m.ToolCalls) != 0 {
 			t.Fatalf("重写节点不应带 tool_calls: %+v", m)
 		}
+	}
+}
+
+// commitNode 手工提交组装态节点（persona/摘要等），ID 按树内序号生成避免冲突。
+func commitNode(t *testing.T, c *conversation.Conversation, parent conversation.MessageID, role conversation.Role, text string) conversation.Message {
+	t.Helper()
+	m := conversation.Message{
+		ID:      conversation.MessageID(fmt.Sprintf("n%d", len(c.Nodes)+1)),
+		Parent:  parent,
+		Role:    role,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: text}},
+	}
+	if err := c.AppendCommitted(m); err != nil {
+		t.Fatalf("commit %s: %v", role, err)
+	}
+	return c.Nodes[m.ID]
+}
+
+// TestAssemblePathWatermarkDropsAboveSummary D21：persona 恒回传，摘要水位之上（persona 之外）不回传。
+func TestAssemblePathWatermarkDropsAboveSummary(t *testing.T) {
+	c := conversation.New(conversation.ID("w"), "w")
+	root := conversation.MessageID(c.ID)
+	persona := commitNode(t, c, root, conversation.RoleSystem, "人格")
+	commitNode(t, c, persona.ID, conversation.RoleUser, "旧问题")
+	commitNode(t, c, c.Head, conversation.RoleAssistant, "旧回答")
+	sum := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要内容")
+	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
+	commitNode(t, c, c.Head, conversation.RoleAssistant, "新回答")
+
+	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(msgs) != 4 {
+		t.Fatalf("msgs len = %d, want 4 (persona,摘要,新问题,新回答): %+v", len(msgs), msgs)
+	}
+	if msgs[0].Role != "system" || msgs[0].Content[0].Text != "人格" {
+		t.Fatalf("msgs[0] = %+v, want persona 恒回传", msgs[0])
+	}
+	if msgs[1].Role != "system" || msgs[1].Content[0].Text != "摘要内容" {
+		t.Fatalf("msgs[1] = %+v, want 摘要", msgs[1])
+	}
+	if msgs[2].Content[0].Text != "新问题" || msgs[3].Content[0].Text != "新回答" {
+		t.Fatalf("msgs[2:] = %+v", msgs[2:])
+	}
+}
+
+// TestAssemblePathChainedSummariesKeepLatest 多次压缩链式吸收：只回传最新摘要。
+func TestAssemblePathChainedSummariesKeepLatest(t *testing.T) {
+	c := conversation.New(conversation.ID("w2"), "w")
+	root := conversation.MessageID(c.ID)
+	persona := commitNode(t, c, root, conversation.RoleSystem, "人格")
+	commitNode(t, c, persona.ID, conversation.RoleUser, "q1")
+	sum1 := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要一")
+	commitNode(t, c, sum1.ID, conversation.RoleUser, "q2")
+	sum2 := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要二")
+	commitNode(t, c, sum2.ID, conversation.RoleUser, "q3")
+
+	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("msgs len = %d, want 3 (人格,摘要二,q3): %+v", len(msgs), msgs)
+	}
+	if msgs[1].Content[0].Text != "摘要二" || msgs[2].Content[0].Text != "q3" {
+		t.Fatalf("msgs = %+v, want 摘要一被吸收", msgs)
+	}
+}
+
+// TestAssemblePathWatermarkWithoutPersona 无 persona 的会话：摘要即起点，其上全丢。
+func TestAssemblePathWatermarkWithoutPersona(t *testing.T) {
+	c := conversation.New(conversation.ID("w3"), "w")
+	root := conversation.MessageID(c.ID)
+	commitNode(t, c, root, conversation.RoleUser, "旧问题")
+	commitNode(t, c, c.Head, conversation.RoleAssistant, "旧回答")
+	sum := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要")
+	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
+
+	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(msgs) != 2 || msgs[0].Role != "system" || msgs[0].Content[0].Text != "摘要" ||
+		msgs[1].Content[0].Text != "新问题" {
+		t.Fatalf("msgs = %+v, want [摘要, 新问题]", msgs)
 	}
 }
 

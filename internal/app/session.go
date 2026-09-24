@@ -24,16 +24,21 @@ type SessionDeps struct {
 	Store port.ConversationStore
 	Agent *Agent
 	IDs   port.IDGen
+	Clock port.Clock // persona 节点 CreatedAt
+	// SystemPrompt 人格提示：空 = 内置默认；新建会话时快照进 persona 首节点（D20）。
+	SystemPrompt string
 }
 
 // Session 当前会话 + 命令处理（DESIGN §7.3；M0 启用 /new /list /quit /help，
 // 其余命令给出里程碑提示）。命令的文本输出经返回值交给装配根渲染，
 // 轮次过程输出走 Presenter——app 不直接接触 IO。
 type Session struct {
-	store port.ConversationStore
-	agent *Agent
-	ids   port.IDGen
-	cur   *conversation.Conversation
+	store        port.ConversationStore
+	agent        *Agent
+	ids          port.IDGen
+	clock        port.Clock
+	systemPrompt string
+	cur          *conversation.Conversation
 }
 
 // NewSession 恢复最近更新的会话；没有则新建并落盘（会话树跨进程持久化）。
@@ -45,8 +50,16 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		return nil, errors.New("session: agent 依赖为空")
 	case d.IDs == nil:
 		return nil, errors.New("session: IDGen 依赖为空")
+	case d.Clock == nil:
+		return nil, errors.New("session: Clock 依赖为空")
 	}
-	s := &Session{store: d.Store, agent: d.Agent, ids: d.IDs}
+	s := &Session{
+		store:        d.Store,
+		agent:        d.Agent,
+		ids:          d.IDs,
+		clock:        d.Clock,
+		systemPrompt: strings.TrimSpace(d.SystemPrompt),
+	}
 
 	list, err := d.Store.List(ctx)
 	if err != nil {
@@ -60,11 +73,34 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		s.cur = c
 		return s, nil
 	}
-	s.cur = conversation.New(d.IDs.ConversationID(), defaultTitle)
+	s.cur, err = s.newConversation(defaultTitle)
+	if err != nil {
+		return nil, err
+	}
 	if err := d.Store.Save(ctx, s.cur); err != nil {
 		return nil, fmt.Errorf("session: 初始化会话: %w", err)
 	}
 	return s, nil
+}
+
+// newConversation 建会话：Root + persona 首节点（system 角色，D20），Head 落在 persona。
+func (s *Session) newConversation(title string) (*conversation.Conversation, error) {
+	c := conversation.New(s.ids.ConversationID(), title)
+	prompt := s.systemPrompt
+	if prompt == "" {
+		prompt = defaultSystem
+	}
+	persona := conversation.Message{
+		ID:        s.ids.MessageID(),
+		Parent:    conversation.MessageID(c.ID),
+		Role:      conversation.RoleSystem,
+		Content:   []conversation.Part{{Kind: conversation.PartText, Text: prompt}},
+		CreatedAt: s.clock.Now(),
+	}
+	if err := c.AppendCommitted(persona); err != nil {
+		return nil, fmt.Errorf("session: 写入 persona 首节点: %w", err)
+	}
+	return c, nil
 }
 
 // Current 当前会话（供只读展示；一切修改仍走 Session）。
@@ -116,7 +152,10 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if title == "" {
 			title = defaultTitle
 		}
-		c := conversation.New(s.ids.ConversationID(), title)
+		c, err := s.newConversation(title)
+		if err != nil {
+			return "", err
+		}
 		if err := s.store.Save(ctx, c); err != nil {
 			return "", fmt.Errorf("session: 新建会话: %w", err)
 		}

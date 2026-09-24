@@ -148,8 +148,8 @@ func TestRunFullTextConversation(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("落盘会话破坏不变量: %v", err)
 	}
-	if len(c.Nodes) != 3 {
-		t.Fatalf("nodes = %d, want 3（root+user+assistant；/quit 不入树）", len(c.Nodes))
+	if len(c.Nodes) != 4 {
+		t.Fatalf("nodes = %d, want 4（root+persona+user+assistant；/quit 不入树）", len(c.Nodes))
 	}
 	if c.Title != "你好" {
 		t.Fatalf("title = %q, want 首条消息摘要", c.Title)
@@ -206,8 +206,8 @@ func TestRunFullTextConversation(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("第二轮后不变量: %v", err)
 	}
-	if len(c.Nodes) != 5 {
-		t.Fatalf("nodes = %d, want 5", len(c.Nodes))
+	if len(c.Nodes) != 6 {
+		t.Fatalf("nodes = %d, want 6", len(c.Nodes))
 	}
 }
 
