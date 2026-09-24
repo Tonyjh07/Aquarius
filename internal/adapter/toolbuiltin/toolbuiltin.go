@@ -1,0 +1,110 @@
+// Package toolbuiltin 实现 DESIGN §4.3 的内置工具（memory_* / file_* / think），
+// 全部经 port.Tool 契约接入（D13 内置不享特权）：权限判定、确认、超时与结果裁剪
+// 由 ToolRunner 统一执行（D25），本包只做"参数解析 + 干活 + 申报文件目标"。
+//
+// 会话作用域：memory_* 按文档名寻址，但只允许操作全局与**当前会话**两份记忆
+// （DESIGN §4.4）——当前会话 ID 经 port.SessionIDFrom 从工具执行上下文取。
+package toolbuiltin
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/port"
+)
+
+// PathOf 文档名 → 磁盘路径（memory_write 申报 FileTarget 用）。
+// 由装配根注入（与 memoryfs 同源，D23 布局单一事实源）；nil 或未命中 = 不申报。
+type PathOf func(name string) (string, bool)
+
+// New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
+func New(mem port.MemoryStore, pathOf PathOf) []port.Tool {
+	return []port.Tool{
+		&memoryList{mem: mem},
+		&memoryRead{mem: mem},
+		&memorySearch{mem: mem},
+		&memoryWrite{mem: mem, pathOf: pathOf},
+		&fileRead{},
+		&fileList{},
+		&fileSearch{},
+		&fileWrite{},
+		&fileDelete{},
+		&thinkTool{},
+	}
+}
+
+// decodeArgs 解析工具调用的 JSON 参数；空参数按空对象。
+func decodeArgs(call tool.Call, v any) error {
+	if len(call.Args) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(call.Args, v); err != nil {
+		return fmt.Errorf("参数不是合法 JSON 对象: %w", err)
+	}
+	return nil
+}
+
+// requireSessionDoc 校验记忆文档名只指向全局或当前会话（DESIGN §4.4），返回规范后的名字。
+func requireSessionDoc(ctx context.Context, name string) (string, error) {
+	if name == port.GlobalMemoryDoc {
+		return name, nil
+	}
+	sid, ok := port.SessionIDFrom(ctx)
+	if !ok {
+		return "", fmt.Errorf("无会话上下文，只能访问全局记忆 %s", port.GlobalMemoryDoc)
+	}
+	if name == port.SessionMemoryDoc(sid) {
+		return name, nil
+	}
+	return "", fmt.Errorf("memory_* 只能访问全局记忆 %s 与当前会话记忆 %s",
+		port.GlobalMemoryDoc, port.SessionMemoryDoc(sid))
+}
+
+// allowedDocNames 全局 + 当前会话两个名字的白名单。
+func allowedDocNames(ctx context.Context) map[string]bool {
+	m := map[string]bool{port.GlobalMemoryDoc: true}
+	if sid, ok := port.SessionIDFrom(ctx); ok {
+		m[port.SessionMemoryDoc(sid)] = true
+	}
+	return m
+}
+
+// okResult 构造成功结果。
+func okResult(out string) tool.Result { return tool.Result{OK: true, Output: out} }
+
+// 声明 port 接口实现（编译期护栏）。
+var (
+	_ port.Tool       = (*memoryList)(nil)
+	_ port.Tool       = (*memoryRead)(nil)
+	_ port.Tool       = (*memorySearch)(nil)
+	_ port.Tool       = (*memoryWrite)(nil)
+	_ port.FileTarget = (*memoryWrite)(nil)
+	_ port.Tool       = (*fileRead)(nil)
+	_ port.FileTarget = (*fileRead)(nil)
+	_ port.Tool       = (*fileList)(nil)
+	_ port.FileTarget = (*fileList)(nil)
+	_ port.Tool       = (*fileSearch)(nil)
+	_ port.FileTarget = (*fileSearch)(nil)
+	_ port.Tool       = (*fileWrite)(nil)
+	_ port.FileTarget = (*fileWrite)(nil)
+	_ port.Tool       = (*fileDelete)(nil)
+	_ port.FileTarget = (*fileDelete)(nil)
+	_ port.Tool       = (*thinkTool)(nil)
+)
+
+// 解析辅助（Target 申报共用）：取 path 参数并规约为绝对路径。
+func targetPath(call tool.Call) (string, bool) {
+	var a struct {
+		Path string `json:"path"`
+	}
+	if err := decodeArgs(call, &a); err != nil {
+		return "", false
+	}
+	p, err := requireAbs(a.Path)
+	if err != nil {
+		return "", false
+	}
+	return p, true
+}

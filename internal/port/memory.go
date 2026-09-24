@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -26,6 +27,9 @@ type MemoryHit struct {
 	Line    int    `json:"line"`
 	Snippet string `json:"snippet"`
 }
+
+// ErrMemoryNotFound 记忆文档不存在（memoryfs 等实现共同包装本哨兵，供消费方 errors.Is 判定）。
+var ErrMemoryNotFound = errors.New("memory doc not found")
 
 // 全局/会话记忆文档名（D23 布局的端口侧约定，app 与 memoryfs 共同消费）。
 const (
