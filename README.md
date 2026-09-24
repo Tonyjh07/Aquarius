@@ -28,6 +28,13 @@ OpenAI 兼容流式适配器、Turn 循环、repl 界面与单二进制装配—
 |---|---|
 | [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型（会话树/Revise）、端口设计、插件架构（MCP）、权限模型、里程碑与决策记录 |
 | [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令、测试与提交要求 |
+| [docs/overview.md](docs/overview.md) | 架构导读：10 分钟地图——内核三事、依赖铁律、目录与端口矩阵 |
+| [docs/usage.md](docs/usage.md) | 使用手册：命令参考、三轨压缩、权限等级、常见问题 |
+| [docs/configuration.md](docs/configuration.md) | 配置参考：config.json 逐字段、三级覆盖、密钥规则 |
+| [docs/storage.md](docs/storage.md) | 数据布局与备份：目录树、会话 JSON、.bak 恢复、旧格式处置 |
+| [docs/development.md](docs/development.md) | 开发指南：门禁、测试手段、新增适配器/工具/命令分步 how-to |
+
+> `docs/` 均为衍生视图，**冲突以 DESIGN.md 为准**；里程碑进度只看本页「状态」。
 
 ## 快速开始
 

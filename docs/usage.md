@@ -1,0 +1,78 @@
+# 使用手册
+
+> 本文衍生自 [DESIGN.md](../DESIGN.md) §7.1/§7.3/§9，并与当前实现对齐；
+> **冲突以 DESIGN.md 为准**。配置字段见 [configuration.md](configuration.md)，数据与备份见 [storage.md](storage.md)。
+
+## 快速上手
+
+```bash
+go build ./cmd/aquarius
+./aquarius.exe        # 首次运行生成 ~/.aquarius/config.json 后退出
+# 填 model.name / model.base_url，设置密钥环境变量，重新运行
+```
+
+进入 REPL 后直接输入文本即对话；`/help` 看命令；`/quit`（或 `/exit`）退出；Ctrl+C 取消当前生成
+（已生成部分以 `cancelled` 终态入库，可 `/edit` 重试——M1 启用）。
+
+## 命令参考
+
+| 命令 | 说明 |
+|---|---|
+| `/new [标题]` | 新建会话（立即落盘；首条消息后默认标题自动改为消息摘要） |
+| `/list` | 列出会话：最新在前，当前会话行首标 `*`，`N条` 为消息数（不含 Root） |
+| `/title` | 无参：显示当前标题；有参：改写标题并即时落盘（会话元数据，不动消息树） |
+| `/compact` | 触发上下文压缩（见下节） |
+| `/permission [等级]` | 无参：当前等级 + 免确认矩阵 + 特权目录；有参：切换等级并写回 config |
+| `/quit` `/exit` | 退出（`/exit` 为别名） |
+| `/help` | 命令帮助 |
+
+**尚未启用**（输入会提示对应里程碑）：`/goto` `/edit` `/branch` `/rm` `/memory` `/model`
+`/jobs` `/plugin` —— 树交互命令在 M1，其余随 M2/M4。
+
+## 上下文压缩（三轨特色功能）
+
+会话树不可变，压缩不删历史——它生成一条 **system 摘要节点**作为"水位"：此后装配
+`[persona] + [最新摘要] + [摘要之后]`，摘要之上（persona 除外）的历史不再发给模型。
+被裁掉的原文仍在树上，随时可回溯（M1 的 `/goto` 可"撤销"压缩效果）。
+
+- **手动轨（已可用）**：`/compact`
+  - 摘要之上没有新历史 → 提示"无需压缩"，不花生成费用；
+  - 成功 → `已压缩 N 条历史 → 1 条摘要（in=X out=Y tokens）`；
+  - 取消/失败 → 会话树无损，可重试。
+  - 多次压缩链式吸收：新摘要把旧摘要一并吞掉，上下文永远只带最新一条。
+- **自动轨（M2）**：用量估算达 `limits.compact_threshold`（默认 0.7 ×
+  `max_context_tokens`）自动触发；失败回退"最旧裁剪"。
+- **自触发轨（M2）**：模型经 `context_compact` 工具（Safe）自我管理上下文。
+
+persona（人格）恒回传：它是会话首节点（system 角色），源自 config 的 `system_prompt`
+（空则用内置默认），可用未来的 `/edit` 改写（M1）。
+
+## 权限等级
+
+四档预设，`sandbox`（`~/.aquarius/sandbox`，启动自动创建）是 Agent 特权目录。
+矩阵格 = **免确认范围**，矩阵外一律逐次确认：
+
+| 等级 | 特权目录 | 其他目录 | 工具调用 |
+|---|---|---|---|
+| `read-only` | r | r | Confirm 逐次 |
+| `strict`（默认） | **rw** | r | Confirm 逐次 |
+| `permissive` | **rw** | **rw** | Confirm 逐次 |
+| `full-access` | **rw** | **rw** | 全免 |
+
+- 两列分工不叠加：**文件类**只看路径格（读全盘免确认；写看该格是否 rw）；
+  **执行类**（term_exec 等）只看工具列（Safe 免、Confirm 仅 full-access 免）。
+- `/permission permissive` 切换后写回 config（保留其余键），下次启动沿用。
+- **执行接入在 M2**（ToolRunner 落地前，等级仅决定配置与展示）；
+  `network`/`secret` 属插件与密钥授权流，不随等级变化。
+
+## 常见问题
+
+- **启动报"发现旧格式会话（虚拟 Root，D19）"**：M0 早期数据不兼容，按报因点名的
+  ID 删除 `~/.aquarius/conversations/<id>.json`（含 `.bak`）后重试，详见 [storage.md](storage.md)。
+- **启动报"model.api_key 必须是 secret:<环境变量名>"**：禁止明文密钥入配置，
+  改成 `"api_key": "secret:AQUARIUS_OPENAI_KEY"` 并设置同名环境变量。
+- **启动报未知权限等级**：`permissions.level` 只接受
+  `read-only|strict|permissive|full-access`。
+- **`ui.kind` 报未支持**：M0 只有 repl；bubbletea TUI 在 M4。
+- **想换模型/端点**：改 config 的 `model.name`/`model.base_url`，或用
+  `-model`/`-base-url` flag、`AQUARIUS_MODEL`/`AQUARIUS_BASE_URL` 环境变量临时覆盖。
