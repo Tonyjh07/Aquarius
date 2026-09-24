@@ -1,0 +1,161 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
+)
+
+// ErrQuit /quit 命令的退出请求；装配根据此收尾（app 不依赖具体 UI）。
+var ErrQuit = errors.New("session: quit")
+
+// defaultTitle 新会话默认标题（首条消息后改写为消息摘要）。
+const defaultTitle = "新会话"
+
+// titleRunes 标题摘要的最大长度。
+const titleRunes = 24
+
+// SessionDeps 会话依赖（全部端口，测试注入替身）。
+type SessionDeps struct {
+	Store port.ConversationStore
+	Agent *Agent
+	IDs   port.IDGen
+}
+
+// Session 当前会话 + 命令处理（DESIGN §7.3；M0 启用 /new /list /quit /help，
+// 其余命令给出里程碑提示）。命令的文本输出经返回值交给装配根渲染，
+// 轮次过程输出走 Presenter——app 不直接接触 IO。
+type Session struct {
+	store port.ConversationStore
+	agent *Agent
+	ids   port.IDGen
+	cur   *conversation.Conversation
+}
+
+// NewSession 恢复最近更新的会话；没有则新建并落盘（会话树跨进程持久化）。
+func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
+	switch {
+	case d.Store == nil:
+		return nil, errors.New("session: store 依赖为空")
+	case d.Agent == nil:
+		return nil, errors.New("session: agent 依赖为空")
+	case d.IDs == nil:
+		return nil, errors.New("session: IDGen 依赖为空")
+	}
+	s := &Session{store: d.Store, agent: d.Agent, ids: d.IDs}
+
+	list, err := d.Store.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("session: 列出会话: %w", err)
+	}
+	if len(list) > 0 { // List 按 UpdatedAt 降序，首条即最近
+		c, err := d.Store.Load(ctx, list[0].ID)
+		if err != nil {
+			return nil, fmt.Errorf("session: 恢复会话 %s: %w", list[0].ID, err)
+		}
+		s.cur = c
+		return s, nil
+	}
+	s.cur = conversation.New(d.IDs.ConversationID(), defaultTitle)
+	if err := d.Store.Save(ctx, s.cur); err != nil {
+		return nil, fmt.Errorf("session: 初始化会话: %w", err)
+	}
+	return s, nil
+}
+
+// Current 当前会话（供只读展示；一切修改仍走 Session）。
+func (s *Session) Current() *conversation.Conversation { return s.cur }
+
+// Handle 处理一次用户输入：命令走 execCommand；普通文本入树 → Turn → 落盘。
+// 返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。
+func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error) {
+	if in.Command != nil {
+		return s.execCommand(ctx, *in.Command)
+	}
+	if in.Raw != nil {
+		return "", errors.New("session: 附件/语音输入尚未启用（里程碑 M3）")
+	}
+	text := strings.TrimSpace(in.Text)
+	if text == "" {
+		return "", nil
+	}
+	s.maybeSetTitle(text)
+	if _, err := s.cur.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: text}}); err != nil {
+		return "", fmt.Errorf("session: 追加消息: %w", err)
+	}
+	runErr := s.agent.Run(ctx, s.cur)
+	// Turn 成败都落盘：error/cancelled 终态的节点同样要持久化。
+	if err := s.store.Save(ctx, s.cur); err != nil {
+		return "", fmt.Errorf("session: 保存会话: %w", err)
+	}
+	return "", runErr
+}
+
+// maybeSetTitle 首条消息后把默认标题改写为消息摘要。
+func (s *Session) maybeSetTitle(text string) {
+	if s.cur.Title != "" && s.cur.Title != defaultTitle {
+		return
+	}
+	r := []rune(text)
+	if len(r) > titleRunes {
+		s.cur.Title = string(r[:titleRunes]) + "…"
+		return
+	}
+	s.cur.Title = string(r)
+}
+
+// execCommand 命令分发（DESIGN §7.3 的 M0 子集）。
+func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, error) {
+	switch cmd.Name {
+	case "new":
+		title := strings.TrimSpace(strings.Join(cmd.Args, " "))
+		if title == "" {
+			title = defaultTitle
+		}
+		c := conversation.New(s.ids.ConversationID(), title)
+		if err := s.store.Save(ctx, c); err != nil {
+			return "", fmt.Errorf("session: 新建会话: %w", err)
+		}
+		s.cur = c
+		return fmt.Sprintf("已新建会话 %s", c.ID), nil
+
+	case "list":
+		sums, err := s.store.List(ctx)
+		if err != nil {
+			return "", fmt.Errorf("session: 列出会话: %w", err)
+		}
+		if len(sums) == 0 {
+			return "（暂无会话）", nil
+		}
+		var b strings.Builder
+		for _, sm := range sums {
+			mark := " "
+			if sm.ID == s.cur.ID {
+				mark = "*"
+			}
+			fmt.Fprintf(&b, "%s %s  %d条  %s\n", mark, sm.ID, sm.MessageN, sm.Title)
+		}
+		return strings.TrimRight(b.String(), "\n"), nil
+
+	case "quit":
+		return "", ErrQuit
+
+	case "help":
+		return strings.Join([]string{
+			"/new [标题]     新建会话",
+			"/list           列出会话",
+			"/quit           退出",
+			"/help           本帮助",
+		}, "\n"), nil
+
+	case "goto", "edit", "branch", "rm", "memory", "model", "jobs", "plugin":
+		return "", fmt.Errorf("命令 /%s 尚未启用（里程碑 M1+）", cmd.Name)
+
+	default:
+		return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
+	}
+}

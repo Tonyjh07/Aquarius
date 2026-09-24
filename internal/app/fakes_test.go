@@ -125,18 +125,25 @@ type fixedClock struct{ t time.Time }
 
 func (c fixedClock) Now() time.Time { return c.t }
 
+// seqCounter 测试内全局递增计数器：模拟真实 ULID 的进程级唯一
+// （不同 IDGen 实例、不同"进程重启"间也不重复）。
+var seqCounter int
+
 // seqIDs 递增 ID 生成器。
-type seqIDs struct{ n int }
+type seqIDs struct{}
 
 func (g *seqIDs) ConversationID() conversation.ID {
-	g.n++
-	return conversation.ID(fmt.Sprintf("C%d", g.n))
+	seqCounter++
+	return conversation.ID(fmt.Sprintf("C%d", seqCounter))
 }
 func (g *seqIDs) MessageID() conversation.MessageID {
-	g.n++
-	return conversation.MessageID(fmt.Sprintf("M%d", g.n))
+	seqCounter++
+	return conversation.MessageID(fmt.Sprintf("M%d", seqCounter))
 }
-func (g *seqIDs) CallID() tool.CallID { g.n++; return tool.CallID(fmt.Sprintf("K%d", g.n)) }
+func (g *seqIDs) CallID() tool.CallID {
+	seqCounter++
+	return tool.CallID(fmt.Sprintf("K%d", seqCounter))
+}
 
 // ---------------------------------------------------------------------------
 // 工具执行替身
