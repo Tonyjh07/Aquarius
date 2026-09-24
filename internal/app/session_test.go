@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -213,6 +214,96 @@ func TestSessionCommands(t *testing.T) {
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "quit"}})
 	if !errors.Is(err, ErrQuit) {
 		t.Fatalf("quit err = %v, want ErrQuit", err)
+	}
+}
+
+// TestSessionTitleAndExitCommands /title 无参显示、有参改写并落盘；/exit = /quit 别名。
+func TestSessionTitleAndExitCommands(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "title"}})
+	if err != nil || !strings.Contains(out, defaultTitle) {
+		t.Fatalf("title 无参 = %q, %v", out, err)
+	}
+	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "title", Args: []string{"改个", "名字"}}})
+	if err != nil || !strings.Contains(out, "改个 名字") {
+		t.Fatalf("title 有参 = %q, %v", out, err)
+	}
+	if store.convs[s.Current().ID].Title != "改个 名字" {
+		t.Fatalf("标题未落盘: %q", store.convs[s.Current().ID].Title)
+	}
+	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "exit"}}); !errors.Is(err, ErrQuit) {
+		t.Fatalf("exit = %v, want ErrQuit", err)
+	}
+}
+
+// TestSessionPermissionCommand /permission 展示矩阵、切换等级并写回 config（D22）。
+func TestSessionPermissionCommand(t *testing.T) {
+	store := newMemStore()
+	rec := &recorder{}
+	llm := &scriptLLM{t: t}
+	agent := newAgent(t, llm, rec, Deps{}, Config{})
+	var persisted []perm.Level
+	s, err := NewSession(context.Background(), SessionDeps{
+		Store:        store,
+		Agent:        agent,
+		IDs:          &seqIDs{},
+		Clock:        fixedClock{testTime},
+		SandboxPath:  "/data/sandbox",
+		PersistLevel: func(l perm.Level) error { persisted = append(persisted, l); return nil },
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+
+	// 无参：默认 strict + 矩阵 + 特权目录。
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "permission"}})
+	if err != nil {
+		t.Fatalf("permission: %v", err)
+	}
+	for _, want := range []string{"strict", "/data/sandbox", "read-only", "permissive", "full-access", "特权 rw"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("report 缺 %q:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, "* strict") {
+		t.Fatalf("当前等级应带 * 标记:\n%s", out)
+	}
+
+	// 非法等级报因。
+	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "permission", Args: []string{"root"}}}); err == nil {
+		t.Fatal("非法等级应报错")
+	}
+	// 切换并写回。
+	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "permission", Args: []string{"PERMISSIVE"}}})
+	if err != nil || !strings.Contains(out, "permissive") {
+		t.Fatalf("switch = %q, %v", out, err)
+	}
+	if len(persisted) != 1 || persisted[0] != perm.Permissive {
+		t.Fatalf("persisted = %v, want [permissive]", persisted)
+	}
+	out, _ = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "permission"}})
+	if !strings.Contains(out, "* permissive") {
+		t.Fatalf("切换后报告:\n%s", out)
+	}
+	// 相同等级短路：不再写回。
+	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "permission", Args: []string{"permissive"}}}); err != nil {
+		t.Fatalf("same level: %v", err)
+	}
+	if len(persisted) != 1 {
+		t.Fatalf("persisted = %v, want 不重复写回", persisted)
+	}
+
+	// 无持久化回调时拒绝切换。
+	s2, err := NewSession(context.Background(), SessionDeps{
+		Store: newMemStore(), Agent: agent, IDs: &seqIDs{}, Clock: fixedClock{testTime},
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	if _, err := s2.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "permission", Args: []string{"full-access"}}}); err == nil {
+		t.Fatal("无持久化回调应报错")
 	}
 }
 

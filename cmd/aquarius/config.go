@@ -11,10 +11,16 @@ import (
 // DESIGN §8 的其余键（memory/input/output/mcpServers…）同样写入模板但由对应里程碑启用，
 // encoding/json 对未知键宽容。
 type fileConfig struct {
-	Model        modelConfig  `json:"model"`
-	UI           uiConfig     `json:"ui"`
-	SystemPrompt string       `json:"system_prompt"` // 人格：空 = 内置默认（快照进 persona 首节点，D20）
-	Limits       limitsConfig `json:"limits"`
+	Model        modelConfig       `json:"model"`
+	UI           uiConfig          `json:"ui"`
+	SystemPrompt string            `json:"system_prompt"` // 人格：空 = 内置默认（快照进 persona 首节点，D20）
+	Permissions  permissionsConfig `json:"permissions"`
+	Limits       limitsConfig      `json:"limits"`
+}
+
+// permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
+type permissionsConfig struct {
+	Level string `json:"level"` // 空 = strict（perm.DefaultLevel）
 }
 
 // modelConfig 模型接入配置。
@@ -54,10 +60,7 @@ const defaultConfig = `{
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {},
-  "permissions": {
-    "allow": ["fs-read:~/**"],
-    "ask": ["fs-read", "fs-write", "exec", "network", "secret"]
-  },
+  "permissions": { "level": "strict" },
   "limits": {
     "max_turns": 8,
     "max_context_tokens": 64000,

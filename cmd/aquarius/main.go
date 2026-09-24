@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
@@ -18,6 +20,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -49,6 +52,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fmt.Fprintf(stderr, "创建数据目录 %s: %v\n", dir, err)
+		return 1
+	}
+	// 特权目录（D22）：<dataDir>/sandbox，权限矩阵的免确认 rw 格。
+	sandboxDir := filepath.Join(dir, "sandbox")
+	if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
+		fmt.Fprintf(stderr, "创建特权目录 %s: %v\n", sandboxDir, err)
 		return 1
 	}
 
@@ -105,6 +114,42 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// 权限等级（D22）：缺省 strict；非法值报因退出。
+	level := perm.DefaultLevel
+	if raw := strings.TrimSpace(cfg.Permissions.Level); raw != "" {
+		level, err = perm.Parse(raw)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+	}
+
+	// /permission 写回 config（D22）：map 级重排保留其余配置键。
+	persistLevel := func(l perm.Level) error {
+		data, rerr := os.ReadFile(cfgPath)
+		if rerr != nil {
+			return rerr
+		}
+		var generic map[string]any
+		if rerr := json.Unmarshal(data, &generic); rerr != nil {
+			return fmt.Errorf("解析 %s: %w", cfgPath, rerr)
+		}
+		perms, _ := generic["permissions"].(map[string]any)
+		if perms == nil {
+			perms = map[string]any{}
+			generic["permissions"] = perms
+		}
+		perms["level"] = string(l)
+		out, rerr := json.MarshalIndent(generic, "", "  ")
+		if rerr != nil {
+			return fmt.Errorf("编码 config: %w", rerr)
+		}
+		if rerr := os.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
+			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
+		}
+		return nil
+	}
+
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。
 	store, err := storejson.New(filepath.Join(dir, "conversations"))
 	if err != nil {
@@ -136,6 +181,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		IDs:          ids,
 		Clock:        systemClock{},
 		SystemPrompt: cfg.SystemPrompt,
+		Level:        level,
+		SandboxPath:  sandboxDir,
+		PersistLevel: persistLevel,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)

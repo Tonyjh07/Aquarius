@@ -77,6 +77,32 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if !strings.Contains(string(data), `"secret:AQUARIUS_OPENAI_KEY"`) {
 		t.Fatalf("模板应使用 secret 引用: %s", data)
 	}
+	if !strings.Contains(string(data), `"level": "strict"`) {
+		t.Fatalf("模板应含权限等级默认值: %s", data)
+	}
+	if !strings.Contains(string(data), `"system_prompt"`) {
+		t.Fatalf("模板应含 system_prompt 键: %s", data)
+	}
+	if fi, err := os.Stat(filepath.Join(dir, "sandbox")); err != nil || !fi.IsDir() {
+		t.Fatalf("特权目录应自动创建: %v", err)
+	}
+}
+
+// TestRunRejectsInvalidPermissionLevel 非法 permissions.level 启动即报因。
+func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"repl"},"permissions":{"level":"root"}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(errBuf.String(), "未知权限等级") {
+		t.Fatalf("stderr = %q", errBuf.String())
+	}
 }
 
 // TestRunRejectsPlaintextKey 明文密钥与缺失环境变量都要在启动时报因（硬性规则 8）。

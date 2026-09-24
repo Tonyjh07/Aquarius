@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -27,6 +28,12 @@ type SessionDeps struct {
 	Clock port.Clock // persona 节点 CreatedAt
 	// SystemPrompt 人格提示：空 = 内置默认；新建会话时快照进 persona 首节点（D20）。
 	SystemPrompt string
+	// Level 权限等级（D22）；空 = perm.DefaultLevel。
+	Level perm.Level
+	// SandboxPath 特权目录（<dataDir>/sandbox），仅用于 /permission 展示。
+	SandboxPath string
+	// PersistLevel 把等级切换写回 config（D22）；nil 时 /permission 切换报错。
+	PersistLevel func(perm.Level) error
 }
 
 // Session 当前会话 + 命令处理（DESIGN §7.3；M0 启用 /new /list /quit /help，
@@ -38,6 +45,9 @@ type Session struct {
 	ids          port.IDGen
 	clock        port.Clock
 	systemPrompt string
+	level        perm.Level
+	sandboxPath  string
+	persistLevel func(perm.Level) error
 	cur          *conversation.Conversation
 }
 
@@ -53,12 +63,19 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 	case d.Clock == nil:
 		return nil, errors.New("session: Clock 依赖为空")
 	}
+	level := d.Level
+	if level == "" {
+		level = perm.DefaultLevel
+	}
 	s := &Session{
 		store:        d.Store,
 		agent:        d.Agent,
 		ids:          d.IDs,
 		clock:        d.Clock,
 		systemPrompt: strings.TrimSpace(d.SystemPrompt),
+		level:        level,
+		sandboxPath:  d.SandboxPath,
+		persistLevel: d.PersistLevel,
 	}
 
 	list, err := d.Store.List(ctx)
@@ -180,15 +197,53 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		}
 		return strings.TrimRight(b.String(), "\n"), nil
 
+	case "title":
+		if len(cmd.Args) == 0 {
+			return fmt.Sprintf("当前标题: %s", s.cur.Title), nil
+		}
+		title := strings.TrimSpace(strings.Join(cmd.Args, " "))
+		s.cur.Title = title
+		if err := s.store.Save(ctx, s.cur); err != nil {
+			return "", fmt.Errorf("session: 保存标题: %w", err)
+		}
+		return fmt.Sprintf("标题已改为: %s", title), nil
+
+	case "exit":
+		return "", ErrQuit
+
+	case "permission":
+		if len(cmd.Args) == 0 {
+			return s.permissionReport(), nil
+		}
+		if len(cmd.Args) > 1 {
+			return "", errors.New("用法: /permission [read-only|strict|permissive|full-access]")
+		}
+		level, err := perm.Parse(cmd.Args[0])
+		if err != nil {
+			return "", err
+		}
+		if level == s.level {
+			return fmt.Sprintf("权限等级已是 %s", level), nil
+		}
+		if s.persistLevel == nil {
+			return "", errors.New("session: 未配置权限持久化，无法切换（D22 要求写回 config）")
+		}
+		if err := s.persistLevel(level); err != nil {
+			return "", fmt.Errorf("session: 写回 config 失败: %w", err)
+		}
+		s.level = level
+		return fmt.Sprintf("权限等级已切换为 %s（已写回 config，立即生效）", level), nil
+
 	case "quit":
 		return "", ErrQuit
 
 	case "help":
 		return strings.Join([]string{
-			"/new [标题]     新建会话",
-			"/list           列出会话",
-			"/quit           退出",
-			"/help           本帮助",
+			"/new [标题]             新建会话",
+			"/list                   列出会话",
+			"/title [文本]           查看/改写会话标题",
+			"/permission [等级]      查看/切换权限等级（read-only/strict/permissive/full-access）",
+			"/quit, /exit            退出",
 		}, "\n"), nil
 
 	case "goto", "edit", "branch", "rm", "memory", "model", "jobs", "plugin":
@@ -197,4 +252,25 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 	default:
 		return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
 	}
+}
+
+// permissionReport /permission 无参输出：当前等级 + 全档免确认矩阵（由 perm 判定推导，单一事实源）+ 特权目录。
+func (s *Session) permissionReport() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "当前权限等级: %s（默认 strict）\n", s.level)
+	fmt.Fprintf(&b, "特权目录: %s\n", s.sandboxPath)
+	b.WriteString("免确认矩阵（矩阵格外一律逐次确认，D22）:\n")
+	for _, l := range perm.Levels {
+		mark := "  "
+		if l == s.level {
+			mark = "* "
+		}
+		sandbox, other, free := l.Matrix()
+		tools := "工具 Confirm 逐次"
+		if free {
+			tools = "工具全免确认"
+		}
+		fmt.Fprintf(&b, "%s%-12s 特权 %s | 其他 %-2s | %s\n", mark, l, sandbox, other, tools)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
