@@ -75,7 +75,7 @@ internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
 internal/app/        agent（Turn 循环）、prompt（装配/水位）、session（命令/摄取分派）、
                      est（token 计数链）、plugins/model/compact_prompt（M4 命令面与压缩提示词）
 internal/plugin/     config/session（声明与宿主契约）、host（发现合并/grant/生命周期，§6.4）
-internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/
+internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/sleep/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、
                      mcpgate（MCP client → port 投影，D30）、uitui（bubbletea TUI，D33）

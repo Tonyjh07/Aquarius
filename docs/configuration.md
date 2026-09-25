@@ -72,7 +72,7 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
 | `limits.max_context_tokens` | int | 64000 | 上下文预算（硬保底由截断装饰器执行，D14，装配根叠加） |
 | `limits.compact_threshold` | float | 0.7 | 自动压缩阈值（×max_context_tokens，M2 自动轨消费） |
 | `limits.tool_output_chars` | int | 20000 | 工具结果截断（ToolRunner，M2 消费） |
-| `limits.tool_timeout_sec` | int | 60 | 单次工具执行超时秒（ToolRunner，M2 消费） |
+| `limits.tool_timeout_sec` | int | 60 | 单次工具执行超时秒（ToolRunner 缺省；模型可经保留参数 `timeout_sec`（1–3600）逐次覆盖，允许高于此值，D38） |
 
 ### output（M3 起）
 

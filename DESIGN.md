@@ -20,6 +20,8 @@
 - **内核极简、边缘可插**：工具、模型、记忆后端、命令、UI、输入/输出方式全部是插件面；
   进程外扩展统一走 **MCP**；内置实现与三方插件走同一契约（**内置不享特权**）。
 - 交付物是**单个二进制**，数据全部在 `~/.aquarius/`。
+- **面向 agent 的文本用英文**：进入模型上下文的字符串（system 提示、工具声明与参数描述、
+  工具回填结果/错误）一律英文；面向用户的界面、命令输出与日志用中文（D36）。
 
 架构原则：
 
@@ -182,7 +184,8 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 - **Root 即会话**（D19）：Root 实节点 ID 复用会话 ID（不另造第二个 ID），Role=root、空内容，仅作树管理；
   `Prune`/`Revise` 均拒 Root（删/改 Root 即破坏唯一根）。M0 的虚拟 Root 落盘格式**破坏性切换**——
   旧会话文件加载即报错，删除重建。
-- **persona 进树**（D20）：会话首节点 = system 角色（值为 config `system_prompt` 快照，空则内置默认），
+- **persona 进树**（D20）：会话首节点 = system 角色（值为 config `system_prompt` 快照 + 运行环境块
+  D37：platform、UI 形态与 TERM、特权沙盒目录、缺省调用超时与 `timeout_sec` 说明，字段为空跳过；空则内置默认），
   压缩水位之上也**恒回传**；可 Revise（/edit 重写人格）、可 Prune（= 清空对话，走 /rm 二次确认；
   清空后装配回退 config 兜底注入）。
 - **上下文压缩水位**（D21）：压缩摘要以 system 节点入树；装配 = [persona] + [最新摘要] + [摘要之后]，
@@ -207,6 +210,7 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 | `memory_list` / `memory_read` / `memory_search` | 记忆读取与检索（只见全局 + 当前会话两份，按文档名寻址） | Safe |
 | `memory_write` | 写入记忆文档（`name`=全局/当前会话；`mode`=append 缺省 / overwrite） | Confirm |
 | `think` | 显式整理思路（no-op）；可见性走 config `model.think_tool`，**默认隐藏**（D34：原生思考为主，需要草稿工具时配置启用） | Safe |
+| `sleep` | 等待 N 秒（停顿或等后台任务；取消可中断；1–3600s，超缺省超时需在调用上配 `timeout_sec`，D38/D39） | Safe |
 | `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 等级矩阵，读全盘免确认） | Safe |
 | `file_write` / `file_delete` | 文件写入 / 删除 | Confirm |
 | `term_exec` | 终端命令同步执行（超时返回，输出截断保头尾） | Confirm |
@@ -217,6 +221,8 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
 - 后台任务 = 独立进程 + 日志落盘 `~/.aquarius/jobs/<id>.log`；任务表 v1 内存态（§13-D8）。
+- 工具声明与回填一律英文（D36）；任何调用可带**保留参数** `timeout_sec`（整数 1–3600）逐次覆盖缺省超时，
+  schema 自声明该参数的工具（`job_start`）不受保留参数约束（D38）。
 - 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`。
 
 ### 4.4 记忆文档
@@ -300,7 +306,7 @@ type Tool interface {
     Execute(ctx context.Context, call tool.Call) (tool.Result, error)
 }
 
-type ToolRunner interface { // 查找 + capability 校验 + Risk 确认 + 超时 + 结果裁剪
+type ToolRunner interface { // 查找 + capability 校验 + Risk 确认 + 超时（可经保留参数 timeout_sec 逐次覆盖，D38）+ 结果裁剪
     Specs(ctx context.Context) ([]tool.Spec, error)
     Execute(ctx context.Context, call tool.Call) (tool.Result, error)
 }
@@ -706,7 +712,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
     "max_context_tokens": 64000,
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,
-    "tool_timeout_sec": 60
+    "tool_timeout_sec": 60         // 缺省单次调用超时；模型可经保留参数 timeout_sec 覆盖（1–3600，D38）
   }
 }
 ```
@@ -837,6 +843,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D33 | TUI **MVP** = 转写区 + 流式 + 输入框 + 命令历史 + Confirm 对话 + 状态行 + glamour 轻 markdown（committed 后渲染，流式阶段原样）；图片/音频仍占位；`ui.kind` 模板默认 `tui`、repl 保留；GUI 框架后移 §14 | 一步到位富 TUI（拖拽/语音/内联图——与后续 GUI 框架重复投入）；TUI 取代 REPL（e2e/CI 丢失无终端后端） |
 | D34 | **思考控制面**：`/think [on\|off]` = 原生思考**总开关**（覆盖 `/effort`），`/effort [minimal\|low\|medium\|high\|off]` = `reasoning_effort` 档位；请求发 `reasoning_effort` 与 `enable_thinking`（dashscope 系布尔）两个字段，服务端点名不认 → **同请求剥离重试 + 记录进 config `model.unsupported_params`**（启动注入、以后直接省略）；思维链分片**只展示不入树**；`think` 草稿工具可见性走 config `model.think_tool`、**默认隐藏**（不做 /models 能力探测——兼容端几乎不返回能力信息） | 逐家私有布尔映射表（每家一个开关字段，维护面爆炸）；/models 能力探测后自动分叉（探测不可靠、分支形同虚设）；思维链入树（回传可能被服务端拒绝且占上下文） |
 | D35 | `model.api_key` **允许明文**：启动打印警告（不回显密钥）、`secret:` 引用仍走 `port.Secrets`；值为空时回落默认 `secret:AQUARIUS_OPENAI_KEY`；文件内值优先 | 维持明文一律拒绝（用户明确要简化接入）；明文静默启用（丢失风险告知） |
+| D36 | **面向 agent 的文本一律英文**：进入模型上下文的字符串（system 提示、工具声明与参数描述、工具回填结果与错误）用英文；仅面向用户的界面、命令输出、启动警告与日志用中文 | 中英混杂（模型上下文语言口径漂移，回复语言只应由 system 提示约束）；全站改英文（用户界面跟着变，违背中文协作约定） |
+| D37 | persona 创建时附加**运行环境块**：platform、UI 形态与 TERM、特权沙盒目录（`IsAbs` 才附）、缺省调用超时与 `timeout_sec` 说明；随 config 快照入树（D20 语义不变），字段为空整块跳过 | 装配期动态注入（与 D20 快照语义冲突，分叉/回溯后环境漂移）；不告知（模型不知道沙盒与平台，只能踩坑后学） |
+| D38 | 单次工具调用超时 = `limits.tool_timeout_sec` 缺省，模型可经**保留参数** `timeout_sec`（整数 1–3600）逐次覆盖，**允许高于 config**；schema 自声明该参数的工具（`job_start`）不受保留参数约束；执行前从 Args 剥离（MCP 服务端不收未知参数）；值域外/非整数报错回填；发现性经 persona 环境块一行说明 | 每个工具各加超时参数（16×schema 重复、MCP 工具无法参与）；不可覆盖（长任务与 `sleep` 撞默认 60s）；静默夹取（掩盖模型传参错误，`0` 还会被误读为不限时）；完全无上限（失控面不可控） |
+| D39 | 新增 `sleep` 内置工具（Safe：1–3600 秒、ctx 可中断、超缺省时长须配 `timeout_sec`） | 只靠 `job_start` + 轮询日志（重量级）；不提供（模型无法自然停顿 / 等待后台任务收尾） |
 
 ## 14. 暂缓事项（Backlog）
 
