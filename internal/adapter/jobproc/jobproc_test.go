@@ -242,6 +242,64 @@ func TestStartKill(t *testing.T) {
 	}
 }
 
+// treeSpec 构造"父包装 + 子进程写标记"的任务（§14 M3 遗留：进程树终止的自动化验证）：
+// 父 = 被 Kill 的直接进程（cmd/sh），子 = 每秒追加 marker 的进程（ping / 内层 sh 循环）。
+// 若 killTree 只杀父进程，孤儿子进程会继续追加 → marker 增长 → 测试判失败。
+func treeSpec(mark string) port.JobSpec {
+	if runtime.GOOS == "windows" {
+		return port.JobSpec{
+			Command: "cmd",
+			Args:    []string{"/c", `ping -n 60 127.0.0.1 >> "` + mark + `"`},
+		}
+	}
+	return port.JobSpec{
+		Command: "/bin/sh",
+		Args:    []string{"-c", `sh -c 'while :; do echo x >> "` + mark + `"; sleep 1; done' & wait`},
+	}
+}
+
+// TestKillTerminatesProcessTree 杀整棵进程树：Kill 后孤儿子进程也必须终止
+// （以 marker 是否停增判定；直接进程死亡由 TestStartKill 覆盖）。
+func TestKillTerminatesProcessTree(t *testing.T) {
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	mark := filepath.Join(t.TempDir(), "mark.txt")
+	job, err := m.Start(context.Background(), treeSpec(mark))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	// 子进程开始写标记（首写 ≤ 数秒；轮询至多 8s）。
+	waitFor(t, "子进程写入标记", func() bool {
+		st, serr := os.Stat(mark)
+		return serr == nil && st.Size() > 0
+	})
+
+	if err := m.Kill(context.Background(), job.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	waitFor(t, "任务被终止", func() bool {
+		j, serr := m.Status(context.Background(), job.ID)
+		return serr == nil && j.Status == port.JobKilled
+	})
+	// 快照后观察 3s（≥2 个写入周期）：仍在增长 = 孤儿子进程存活。
+	st1, err := os.Stat(mark)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	time.Sleep(3 * time.Second)
+	st2, err := os.Stat(mark)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if st2.Size() != st1.Size() {
+		t.Fatalf("Kill 后 marker 仍增长 %d→%d：进程树未杀净（孤儿子进程存活）",
+			st1.Size(), st2.Size())
+	}
+}
+
 // TestStartTimeout Timeout 到点自动终止：状态 failed。
 func TestStartTimeout(t *testing.T) {
 	m, err := New(t.TempDir())
