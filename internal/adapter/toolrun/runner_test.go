@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -412,6 +413,57 @@ func TestInSandboxBoundary(t *testing.T) {
 	}
 	if r.inSandbox("") {
 		t.Fatal("空路径不在 sandbox")
+	}
+}
+
+// TestInSandboxNonexistentPath 尚不存在的路径按最长存在前缀解析：
+// sandbox 内的新文件（file_write 写新文件）必须命中，外部新路径不命中。
+func TestInSandboxNonexistentPath(t *testing.T) {
+	base := t.TempDir()
+	sbx := filepath.Join(base, "sbx")
+	if err := os.MkdirAll(sbx, 0o755); err != nil {
+		t.Fatalf("mkdir sandbox: %v", err)
+	}
+	r := New(Options{SandboxPath: sbx})
+
+	if !r.inSandbox(filepath.Join(sbx, "new", "deep", "f.txt")) {
+		t.Fatal("sandbox 内尚不存在的深层路径应命中")
+	}
+	if r.inSandbox(filepath.Join(base, "outside", "new", "f.txt")) {
+		t.Fatal("sandbox 外尚不存在的路径不应命中")
+	}
+}
+
+// TestInSandboxResolvesSymlinks §14 遗留：词法判定不解析符号链接——
+// sandbox 内链到外部的链接（逃逸面）不算特权；外部链进 sandbox 的链接落点在特权格内。
+// 本机无法创建符号链接（Windows 非开发者模式/无权限）时跳过。
+func TestInSandboxResolvesSymlinks(t *testing.T) {
+	base := t.TempDir()
+	sbx := filepath.Join(base, "sbx")
+	outside := filepath.Join(base, "outside")
+	for _, d := range []string{sbx, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	escape := filepath.Join(sbx, "escape") // sandbox 内 → 外部
+	if err := os.Symlink(outside, escape); err != nil {
+		t.Skipf("本机无法创建符号链接: %v", err)
+	}
+	enter := filepath.Join(base, "enter") // 外部 → sandbox
+	if err := os.Symlink(sbx, enter); err != nil {
+		t.Skipf("本机无法创建符号链接: %v", err)
+	}
+	r := New(Options{SandboxPath: sbx})
+
+	if r.inSandbox(filepath.Join(escape, "f.txt")) {
+		t.Fatal("sandbox 内链接指向外部，写出落点在外，不应算特权目录")
+	}
+	if !r.inSandbox(filepath.Join(enter, "f.txt")) {
+		t.Fatal("外部链接指向 sandbox，落点在特权目录内应命中")
+	}
+	if r.inSandbox(filepath.Join(escape, "new", "f.txt")) {
+		t.Fatal("经链接逃逸的尚不存在路径不应命中（尾部段拼回后仍在外部）")
 	}
 }
 

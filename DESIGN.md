@@ -793,7 +793,6 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   - `/attach` `/clip` `/mic` 输入命令与 TUI 拖拽/粘贴/语音按钮（随 M4 TUI 走同一 `UserInput.Raw` 入口）
   - 导出文件输出器（`output.tts` 同批启用）
 - **M2 审查遗留（P2/P3，2026-09 评审）**：
-  - `inSandbox` 词法判定不解析符号链接（`EvalSymlinks` 补齐，须在 M3 `term_exec` 之前）
   - `file_write`/`memoryfs` 写入的临时文件唯一化与既有权限继承（固定 tmp 名并发互踩、
     覆盖会把 0600 放宽成 0644）
   - `execTool` 对装配级错误（Confirmer 未配置等）快速失败上抛，而非回填 `OK=false`

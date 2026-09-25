@@ -197,6 +197,9 @@ func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.
 
 // inSandbox 判定路径是否位于特权目录内（Abs+Clean 前缀比较；含边界：
 // /a/sandbox 不覆盖 /a/sandbox2）。
+// 判定前先解析符号链接（§14 遗留修复）：sandbox 内链到外部的链接不落特权格，
+// 外部链进 sandbox 的链接落点在特权格内；路径尚不存在时按最长存在前缀解析、
+// 尾部原样拼回（file_write 写新文件仍要命中），解析失败回退词法判定（宁可多问）。
 func (r *Runner) inSandbox(path string) bool {
 	if r.sandbox == "" || path == "" {
 		return false
@@ -209,8 +212,27 @@ func (r *Runner) inSandbox(path string) bool {
 	if err != nil {
 		return false
 	}
-	abs, base = filepath.Clean(abs), filepath.Clean(base)
+	abs, base = filepath.Clean(evalExisting(abs)), filepath.Clean(evalExisting(base))
 	return abs == base || strings.HasPrefix(abs, base+string(filepath.Separator))
+}
+
+// evalExisting 解析符号链接：对路径的最长存在前缀求 EvalSymlinks，
+// 尚不存在的尾部段原样拼回；全程解析不了（权限/循环等）回退原路径。
+func evalExisting(p string) string {
+	orig := p
+	var tail []string
+	for {
+		resolved, err := filepath.EvalSymlinks(p)
+		if err == nil {
+			return filepath.Join(append([]string{resolved}, tail...)...)
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return orig // 到根仍解析不了：回退词法判定
+		}
+		tail = append([]string{filepath.Base(p)}, tail...)
+		p = parent
+	}
 }
 
 // confirmPrompt 确认提示：带目标路径与参数预览（用户看得见要允许什么）。
