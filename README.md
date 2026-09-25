@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon/icon-128.png" alt="Aquarius 图标" width="128">
+</p>
+
 # Aquarius
 
 面向个人的极简 AI 助手 —— 对话优先、多模态出入、文档记忆、可插拔工具与模型。Go 编写，交付单个二进制。

@@ -67,6 +67,8 @@ gofmt -l .                     # 格式检查（应无输出）
 
 ```
 cmd/aquarius/        组装根（wiring：config → 插件/授权 → 端口装配含装饰器 → UI）
+cmd/iconify/         开发工具：图标集生成（多尺寸 PNG / ICO / ICNS，纯 Go 无三方依赖）
+assets/              源图标 icon.png 与生成物 icon/（README、Windows 资源嵌入共用）
 pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；M4 起建）
 internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）、perm（权限矩阵）
 internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
