@@ -512,6 +512,47 @@ func TestRunTUIAcceptsKind(t *testing.T) {
 	}
 }
 
+// TestRunTUIConfirmE2E §12 TUI 验收线：TUI 前端完成带工具确认的完整链路——
+// 脚本 LLM 发起 file_delete → [y/N] 确认对话 → 键入 y 放行 → 结果回填 → /quit。
+func TestRunTUIConfirmE2E(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim.txt")
+	if err := os.WriteFile(victim, []byte("bye"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv, reqs := rawScriptServer(t, [][]string{
+		{toolCallData("c1", "file_delete", fmt.Sprintf(`{"path":%q}`, filepath.ToSlash(victim)))},
+		{contentData("已删除")},
+	})
+	cfg := fmt.Sprintf(`{
+  "model": {"name":"m","base_url":%q,"api_key":"secret:AQ_E2E_KEY"},
+  "ui": {"kind":"tui"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`, srv.URL)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("AQ_E2E_KEY", "test-key")
+
+	var out bytes.Buffer
+	stdin := "删掉 victim 文件\ny\n/quit\n"
+	if code := run([]string{"-data", dir}, strings.NewReader(stdin), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	got := out.String()
+	for _, want := range []string{"[y/N]", "[tool ok]", "已删除"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("TUI 确认链路缺 %q: %q", want, got)
+		}
+	}
+	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("y 确认后文件应被删除: %v", err)
+	}
+	if len(*reqs) != 2 {
+		t.Fatalf("llm requests = %d, want 2（工具轮 + 回答轮）", len(*reqs))
+	}
+}
+
 // TestRunRejectsUnknownUIKind 非法 ui.kind 启动即报因（D33 仅 repl | tui）。
 func TestRunRejectsUnknownUIKind(t *testing.T) {
 	dir := t.TempDir()

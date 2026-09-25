@@ -219,9 +219,10 @@ func (u *UI) Say(text string) {
 }
 
 // Confirm 逐次确认：转写区记提示行，输入行切换为 [y/N] 对话；
-// y/yes（大小写不敏感）为同意，其余、ctx 取消与**输入流结束**均为拒绝
-// （审查修复：EOF 分支对齐 repl"不替用户做破坏性决定"的语义——管道输入下
-// 没有任何后续行能应答，缺此分支确认对话永久挂起）。
+// 应答三路，优先级：模型侧已应答（reply）→ **排队输入**（审查修复：管道输入在
+// 对话框打开前就已全部入队，只等 reply/EOF 会先撞上已关闭的 EOF 而把 y 误拒）→
+// 输入流结束（拒，对齐 repl"不替用户做破坏性决定"）。取排队输入或走 EOF 时同步发
+// confirmResultMsg 关闭模型侧对话框，避免残留对话框吞掉后续输入。
 func (u *UI) Confirm(ctx context.Context, prompt string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -229,16 +230,29 @@ func (u *UI) Confirm(ctx context.Context, prompt string) (bool, error) {
 	reply := make(chan bool, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
 	u.prog.Send(confirmMsg{prompt: prompt, reply: reply})
 	for {
-		select { // 应答优先（避免与 EOF 竞速时丢弃已键入的回答）
+		select { // 模型侧应答优先（避免多取一行）
 		case yes := <-reply:
+			return yes, nil
+		default:
+		}
+		select { // 排队输入优先于 EOF：eofCh 一旦关闭恒就绪，与 inCh 同时就绪时
+		// select 随机选中会把 y 误拒——必须先非阻塞取（与 Next 同款结构）。
+		case in := <-u.inCh:
+			yes := isYes(in.Text)
+			u.prog.Send(confirmResultMsg{yes: yes}) // 关闭模型侧对话框并记转写
 			return yes, nil
 		default:
 		}
 		select {
 		case yes := <-reply:
 			return yes, nil
+		case in := <-u.inCh:
+			yes := isYes(in.Text)
+			u.prog.Send(confirmResultMsg{yes: yes})
+			return yes, nil
 		case <-u.eofCh:
-			return false, nil // 标志保留：随后 Next 仍会返回 EOF/错误
+			u.prog.Send(confirmResultMsg{yes: false})
+			return false, nil
 		case <-ctx.Done():
 			return false, ctx.Err()
 		}
@@ -264,6 +278,8 @@ type (
 		prompt string
 		reply  chan bool
 	}
+	// confirmResultMsg Confirm 侧自行得出应答后的模型状态收尾（关闭对话框 + 记转写）。
+	confirmResultMsg struct{ yes bool }
 	// drainMsg 排空标记（Close 投递：处理到它即代表此前 Send 全部落帧）。
 	drainMsg struct{ done chan struct{} }
 	// eofMsg 输入流结束（pump 投递：与输入行同一队列，杜绝 EOF 抢跑于排队输入）；

@@ -91,6 +91,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirm = &pendingConfirm{prompt: msg.prompt, reply: msg.reply}
 		m.add(blockPlain, msg.prompt+" [y/N]")
 		return m, nil
+	case confirmResultMsg:
+		// Confirm 自行应答（排队输入/EOF）后的收尾：关对话框、记转写；
+		// 若模型侧已应答则为幂等 no-op。
+		m.replyConfirm(msg.yes)
+		return m, nil
 	case drainMsg:
 		close(msg.done)
 		return m, nil

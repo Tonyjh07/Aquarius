@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -73,9 +72,6 @@ func TestRealMCPEverythingAcceptance(t *testing.T) {
 	})
 
 	t.Run("streamable-http", func(t *testing.T) {
-		if runtime.GOOS != "windows" {
-			t.Skip("HTTP 验收的进程树清理按 Windows 实现（taskkill /T）")
-		}
 		port := startEverythingHTTP(t)
 
 		llmSrv, reqs := rawScriptServer(t, [][]string{
@@ -119,7 +115,8 @@ func writeRealMCPConfig(t *testing.T, dir, llmURL, model, mcpEntryJSON string) {
 }
 
 // startEverythingHTTP 以 streamableHttp 模式拉起现成 server，返回其端口；
-// 轮询 /mcp 握手成功即就绪（首拉 npx 包给足时间），退出时清理整棵进程树。
+// 轮询 /mcp 且响应须含 serverInfo（MCP initialize 真握手——防止命中端口上的
+// 无关服务给出误导性通过）才认定就绪；退出时按平台清理整棵进程树。
 func startEverythingHTTP(t *testing.T) int {
 	t.Helper()
 	cmd := exec.Command("npx", "-y", realMCPNpx, "streamableHttp")
@@ -127,13 +124,13 @@ func startEverythingHTTP(t *testing.T) int {
 	if err != nil {
 		t.Fatalf("stderr pipe: %v", err)
 	}
+	setupAcceptCmd(cmd) // unix: 独立进程组（整组清理）；windows: taskkill /T 兜底
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start npx: %v", err)
 	}
 	t.Cleanup(func() {
 		if cmd.Process != nil {
-			_ = exec.Command("taskkill", "/T", "/F",
-				"/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+			killAcceptCmd(cmd)
 		}
 	})
 	// 端口从启动日志解析（缺省 3001，实测 server-everything v2 固定值）；
@@ -167,8 +164,9 @@ func startEverythingHTTP(t *testing.T) int {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
 		if resp, err := client.Do(req); err == nil {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
 			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
+			if resp.StatusCode == http.StatusOK && strings.Contains(string(body), "serverInfo") {
 				return port
 			}
 		}

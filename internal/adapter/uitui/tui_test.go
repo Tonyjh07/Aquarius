@@ -233,6 +233,26 @@ func TestConfirmRejectsOnEOF(t *testing.T) {
 	}
 }
 
+// TestConfirmDrainsQueuedAnswer 审查修复：管道输入在对话框打开前就已全部入队——
+// Confirm 必须把排队行作为应答取走（否则与已关闭的 eofCh 同时就绪时 select 随机
+// 选中 EOF、把 y 误拒），并保留后续行给 Next。
+func TestConfirmDrainsQueuedAnswer(t *testing.T) {
+	u := New(Options{In: strings.NewReader("y\n/quit\n"), Out: io.Discard})
+	defer func() { _ = u.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	yes, err := u.Confirm(ctx, "确认删除？")
+	if err != nil || !yes {
+		t.Fatalf("confirm = %v, %v, want 排队输入 y 作答为真", yes, err)
+	}
+	// 后续行仍可被 Next 取到（未被确认吞掉）。
+	in, err := u.Next(ctx)
+	if err != nil || in.Command == nil || in.Command.Name != "quit" {
+		t.Fatalf("next = %+v, %v, want /quit", in, err)
+	}
+}
+
 // TestPumpMultiLineThenEOF 端到端：管道多行输入全部交付后稳定返回 EOF
 // （B-M1 复现——旧实现第一或第二次 Next 就可能把 EOF 吞掉直接退出，跳过整轮对话）。
 func TestPumpMultiLineThenEOF(t *testing.T) {
