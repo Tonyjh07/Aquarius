@@ -56,6 +56,11 @@ type SessionDeps struct {
 	// PersistModel 把切换后的模型写回 config（D32，同 /permission 模式）；
 	// nil 时 /model 有参报"未配置持久化"。
 	PersistModel func(name string) error
+	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
+	// nil 时 /think 有参报"未配置持久化"。
+	PersistThink func(on bool) error
+	// PersistEffort 把推理档位写回 config（D34；"" = 清除）；nil 时 /effort 有参报错。
+	PersistEffort func(level string) error
 }
 
 // CommandHandler 动态命令处理器（DESIGN §6.1 扩展点 #4 / §7.3 MCP prompts）：
@@ -64,26 +69,28 @@ type CommandHandler func(ctx context.Context, args []string) (string, error)
 
 // Session 当前会话 + 命令处理（DESIGN §7.3；M0 起启用 /new /list /title /compact /
 // /permission /quit，M1 启用树交互 /goto /edit /branch /rm，M3 启用 /jobs，
-// M4 启用 /plugin 与动态 /mcp: 命令，/model 留待其里程碑）。
+// M4 启用 /plugin 与动态 /mcp: 命令、/model，思考控制 /think /effort 随 D34 启用）。
 // 命令的文本输出经返回值交给装配根渲染，轮次过程输出走 Presenter——app 不直接接触 IO。
 type Session struct {
-	store        port.ConversationStore
-	agent        *Agent
-	ids          port.IDGen
-	clock        port.Clock
-	systemPrompt string
-	level        perm.Level
-	sandboxPath  string
-	persistLevel func(perm.Level) error
-	confirmer    port.Confirmer
-	jobs         port.JobManager
-	ingestors    []port.Ingestor
-	ui           port.Presenter
-	openMemory   func(name string) (string, error)
-	plugins      PluginAdmin
-	listModels   func(ctx context.Context) ([]port.ModelInfo, error)
-	persistModel func(name string) error
-	cur          *conversation.Conversation
+	store         port.ConversationStore
+	agent         *Agent
+	ids           port.IDGen
+	clock         port.Clock
+	systemPrompt  string
+	level         perm.Level
+	sandboxPath   string
+	persistLevel  func(perm.Level) error
+	confirmer     port.Confirmer
+	jobs          port.JobManager
+	ingestors     []port.Ingestor
+	ui            port.Presenter
+	openMemory    func(name string) (string, error)
+	plugins       PluginAdmin
+	listModels    func(ctx context.Context) ([]port.ModelInfo, error)
+	persistModel  func(name string) error
+	persistThink  func(on bool) error
+	persistEffort func(level string) error
+	cur           *conversation.Conversation
 
 	// dynMu 保护 dynamic：REPL 主循环读、插件启停回调（可能来自崩溃重启的
 	// watch goroutine）写，须加锁（§10 并发语义）。
@@ -122,23 +129,25 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		level = perm.DefaultLevel
 	}
 	s := &Session{
-		store:        d.Store,
-		agent:        d.Agent,
-		ids:          d.IDs,
-		clock:        d.Clock,
-		systemPrompt: strings.TrimSpace(d.SystemPrompt),
-		level:        level,
-		sandboxPath:  d.SandboxPath,
-		persistLevel: d.PersistLevel,
-		confirmer:    d.Confirmer,
-		jobs:         d.Jobs,
-		ingestors:    d.Ingestors,
-		ui:           d.UI,
-		openMemory:   d.OpenMemory,
-		plugins:      d.Plugins,
-		listModels:   d.ListModels,
-		persistModel: d.PersistModel,
-		dynamic:      map[string]CommandHandler{},
+		store:         d.Store,
+		agent:         d.Agent,
+		ids:           d.IDs,
+		clock:         d.Clock,
+		systemPrompt:  strings.TrimSpace(d.SystemPrompt),
+		level:         level,
+		sandboxPath:   d.SandboxPath,
+		persistLevel:  d.PersistLevel,
+		confirmer:     d.Confirmer,
+		jobs:          d.Jobs,
+		ingestors:     d.Ingestors,
+		ui:            d.UI,
+		openMemory:    d.OpenMemory,
+		plugins:       d.Plugins,
+		listModels:    d.ListModels,
+		persistModel:  d.PersistModel,
+		persistThink:  d.PersistThink,
+		persistEffort: d.PersistEffort,
+		dynamic:       map[string]CommandHandler{},
 	}
 
 	list, err := d.Store.List(ctx)
@@ -571,6 +580,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/plugin [list|enable <name>|disable <name>]  MCP 插件管理（D31，DESIGN §7.3）",
 			"/mcp:<server>:<prompt>  MCP prompts 动态命令（随插件启停注册，见 /plugin）",
 			"/model [name]          查看可用模型 / 切换并写回 config（D32）",
+			"/think [on|off]        原生思考总开关（写回 config，D34；off 覆盖 /effort）",
+			"/effort [档位]         推理档位 minimal|low|medium|high|off（写回 config，D34）",
 		}, "\n"), nil
 
 	case "plugin":
@@ -578,6 +589,12 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 
 	case "model":
 		return s.execModel(ctx, cmd.Args)
+
+	case "think":
+		return s.execThink(ctx, cmd.Args)
+
+	case "effort":
+		return s.execEffort(ctx, cmd.Args)
 
 	default:
 		// 动态命令（§6.1 扩展点 #4）：静态命令未命中时查询

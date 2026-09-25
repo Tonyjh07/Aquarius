@@ -53,6 +53,11 @@ type Config struct {
 	CompactThreshold float64
 	// MaxContextTokens 上下文预算 tokens（<=0 = 64000，DESIGN §8）。
 	MaxContextTokens int
+	// Think 原生思考三态开关（D34）：nil = 键缺失（展示为"开"，但**不发**
+	// enable_thinking 布尔，保持零字段变化）；true/false = 显式开关（/think 写回后生效）。
+	Think *bool
+	// ReasoningEffort 推理档位初值（D34；空 = 不发送）。/effort 热切换取代。
+	ReasoningEffort string
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（DESIGN §7.1，内核唯一的编排）。
@@ -66,6 +71,8 @@ type Agent struct {
 	memory    port.MemoryStore
 	cfg       Config
 	model     atomic.Value // string：当前生成模型（/model 热切换，D32；取代 cfg.Model 读取）
+	think     atomic.Pointer[bool]
+	effort    atomic.Value // string：推理档位（/effort 热切换，D34）
 	system    string
 	maxTurns  int
 	est       *estimator // 三级 token 计数链②③（D26）
@@ -124,11 +131,42 @@ func New(d Deps, cfg Config) (*Agent, error) {
 		maxCtx:    maxCtx,
 	}
 	ag.model.Store(cfg.Model) // 生成模型初值（/model 热切换，D32）
+	ag.think.Store(cfg.Think) // 思考三态初值（nil = 键缺失，D34）
+	ag.effort.Store(cfg.ReasoningEffort)
 	return ag, nil
 }
 
 // setModel 切换生成模型（/model，D32）：只改模型名，请求参数其余部分不受影响。
 func (a *Agent) setModel(name string) { a.model.Store(name) }
+
+// setThink 切换原生思考三态（/think，D34）：nil = 键缺失态。
+func (a *Agent) setThink(v *bool) { a.think.Store(v) }
+
+// thinkState 取三态开关（wire 口径）：nil = 未显式设置（不发 enable_thinking）。
+func (a *Agent) thinkState() *bool { return a.think.Load() }
+
+// ThinkOn 展示口径的开关状态（D34：键缺失视为"开"）。
+func (a *Agent) ThinkOn() bool {
+	v := a.think.Load()
+	return v == nil || *v
+}
+
+// setEffort 切换推理档位（/effort，D34）；空串 = 清除（不发送）。
+func (a *Agent) setEffort(v string) { a.effort.Store(v) }
+
+// Effort 当前推理档位（"" = 未设，交服务端默认）。
+func (a *Agent) Effort() string {
+	v, _ := a.effort.Load().(string)
+	return v
+}
+
+// CurrentEffort 状态行口径（D34）：think off 时 effort 不发送，故显示空。
+func (a *Agent) CurrentEffort() string {
+	if v := a.think.Load(); v != nil && !*v {
+		return ""
+	}
+	return a.Effort()
+}
 
 // modelName 当前生成模型。
 func (a *Agent) modelName() string {
@@ -468,6 +506,17 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) 
 		Messages: msgs,
 		Params:   a.cfg.Sampling,
 		Budget:   a.cfg.Budget,
+	}
+	// 思考参数（D34）：/think 是总开关，off 时 reasoning_effort 与 enable_thinking
+	// 一律不发（覆盖 /effort）；on/缺省时 effort 空则不发（交服务端默认）。
+	think := a.thinkState()
+	if think != nil { // 键缺失（nil）不发布尔：缺省零字段变化
+		req.Params.Thinking = think
+	}
+	if think != nil && !*think {
+		req.Params.ReasoningEffort = ""
+	} else {
+		req.Params.ReasoningEffort = a.Effort()
 	}
 	if a.tools != nil {
 		specs, err := a.tools.Specs(ctx)
