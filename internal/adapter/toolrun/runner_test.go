@@ -118,7 +118,8 @@ func TestSpecsRegistrationOrderAndReplace(t *testing.T) {
 }
 
 // TestExecuteToolErrorFeedsBack 工具自身报错（参数非法等）转 OK=false 照常回填，
-// 不作为 error 上抛——error 通道只留给装配级故障（§10/§14）。
+// 不作为 error 上抛——error 通道只留给装配级故障（§10/§14）；
+// 错误文本同样按 tool_output_chars 裁剪（§9 统一截断）。
 func TestExecuteToolErrorFeedsBack(t *testing.T) {
 	r := New(Options{Tools: []port.Tool{&stubTool{
 		spec: tool.Spec{Name: "boom", Risk: tool.Safe}, err: errors.New("炸了"),
@@ -129,6 +130,22 @@ func TestExecuteToolErrorFeedsBack(t *testing.T) {
 	}
 	if res.OK || !strings.Contains(res.Err, "炸了") {
 		t.Fatalf("res = %+v, want OK=false 回填工具错误", res)
+	}
+
+	// 超长错误同样被裁剪。
+	long := New(Options{
+		Tools:     []port.Tool{&stubTool{spec: tool.Spec{Name: "boom", Risk: tool.Safe}, err: errors.New(strings.Repeat("x", 500))}},
+		MaxOutput: 50,
+	})
+	res2, err := long.Execute(context.Background(), c("boom", `{}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if n := len([]rune(res2.Err)); n > 50+80 { // 50 + 截断标注余量
+		t.Fatalf("Err 长度 = %d, 未按 MaxOutput 裁剪", n)
+	}
+	if !strings.Contains(res2.Err, "原文 500 字符") {
+		t.Fatalf("缺截断标注: %q", res2.Err)
 	}
 }
 

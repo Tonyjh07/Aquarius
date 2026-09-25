@@ -154,25 +154,31 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	var got outcome
 	select {
 	case got = <-done:
-		if got.err != nil {
-			// 与 select 超时竞态到达：按 runCtx 判定归类（工具收到的是本次 deadline）。
-			if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-				return timeoutResult(call, r.timeout), nil
-			}
-			if ctx.Err() != nil {
-				// 父 ctx 取消（Ctrl+C）：装配级错误原样上抛，Agent 快速中止 Turn。
+	case <-runCtx.Done():
+		// 竞态：结果恰已就绪则优先采用（避免把刚好成功的调用误判为超时/取消）。
+		select {
+		case got = <-done:
+		default:
+			if ctx.Err() != nil { // 父 ctx 取消（Ctrl+C）原样上抛
 				return tool.Result{}, ctx.Err()
 			}
-			// 工具自身报错（参数非法/启动失败等模型可纠正的问题）：按 §10 转
-			// OK=false 照常回填让模型自行纠正——error 通道只留给基础设施故障
-			// （确认器缺失/报错、父 ctx 取消），Agent 据此快速失败（§14）。
-			return tool.Result{CallID: call.ID, OK: false, Err: got.err.Error()}, nil
+			return timeoutResult(call, r.timeout), nil
 		}
-	case <-runCtx.Done():
-		if ctx.Err() != nil { // 父 ctx 取消（Ctrl+C）原样上抛
+	}
+	if got.err != nil {
+		// 与超时同时到达的错误：按 runCtx 判定归类（工具收到的是本次 deadline）。
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			return timeoutResult(call, r.timeout), nil
+		}
+		if ctx.Err() != nil {
+			// 父 ctx 取消（Ctrl+C）：装配级错误原样上抛，Agent 快速中止 Turn。
 			return tool.Result{}, ctx.Err()
 		}
-		return timeoutResult(call, r.timeout), nil
+		// 工具自身报错（参数非法/启动失败等模型可纠正的问题）：按 §10 转
+		// OK=false 照常回填让模型自行纠正——error 通道只留给基础设施故障
+		// （确认器缺失/报错、父 ctx 取消），Agent 据此快速失败（§14）。
+		// 错误文本同样过裁剪（§9：工具结果统一受 tool_output_chars 约束）。
+		return tool.Result{CallID: call.ID, OK: false, Err: trim(got.err.Error(), r.maxOut)}, nil
 	}
 	res := got.res
 	if res.CallID == "" {
