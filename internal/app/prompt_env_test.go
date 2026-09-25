@@ -44,6 +44,16 @@ func TestSystemWithEnv(t *testing.T) {
 		t.Fatalf("relative sandbox must not be hinted:\n%s", got)
 	}
 
+	// 超时说明行（D38 发现性）：缺省秒数与保留参数口径；0 不附。
+	got = systemWithEnv(base, RuntimeEnv{Platform: "linux/amd64", ToolTimeoutSec: 60})
+	if !strings.Contains(got, "- Tool timeout: default 60s per call") ||
+		!strings.Contains(got, `"timeout_sec" argument (1-3600)`) {
+		t.Fatalf("tool timeout line missing:\n%s", got)
+	}
+	if got := systemWithEnv(base, RuntimeEnv{Platform: "linux/amd64"}); strings.Contains(got, "Tool timeout") {
+		t.Fatalf("zero ToolTimeoutSec must not add the line:\n%s", got)
+	}
+
 	// 自定义人格 + 环境块：基础提示在前、环境块在后。
 	custom := "Custom persona."
 	got = systemWithEnv(custom, RuntimeEnv{Platform: "darwin/arm64"})

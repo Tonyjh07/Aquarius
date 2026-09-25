@@ -23,6 +23,8 @@ type RuntimeEnv struct {
 	Terminal   string // UI 形态：tui / repl（cfg.UI.Kind）
 	TERM       string // 终端 TERM 环境变量（可空）
 	SandboxDir string // 特权沙盒目录（仅绝对路径才附提示，139d585 口径）
+	// ToolTimeoutSec 缺省单次调用超时（D38）；0 = 不附超时说明行。
+	ToolTimeoutSec int
 }
 
 // systemWithEnv 在基础 system 提示后附加运行环境块（D37）。
@@ -43,6 +45,11 @@ func systemWithEnv(base string, env RuntimeEnv) string {
 	if filepath.IsAbs(env.SandboxDir) {
 		fmt.Fprintf(&b, "- Privileged sandbox directory: %q — writes there skip confirmation from the strict permission level upward.\n",
 			env.SandboxDir)
+	}
+	// 超时发现性（D38）：保留参数的口径一句话讲清，避免模型逐个工具试错。
+	if env.ToolTimeoutSec > 0 {
+		fmt.Fprintf(&b, "- Tool timeout: default %ds per call; pass the optional \"timeout_sec\" argument (1-%d) on any tool call to override it.\n",
+			env.ToolTimeoutSec, port.MaxCallTimeoutSec)
 	}
 	if b.Len() == 0 {
 		return base

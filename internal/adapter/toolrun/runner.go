@@ -12,6 +12,7 @@ package toolrun
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -36,7 +37,7 @@ type Options struct {
 	Level func() perm.Level
 	// SandboxPath 特权目录（D22 路径格的 inSandbox 判定基准）。
 	SandboxPath string
-	// Timeout 单次工具执行超时；<=0 = 不限。
+	// Timeout 缺省单次工具执行超时（可被保留参数 timeout_sec 逐次覆盖，D38）；<=0 = 不限。
 	Timeout time.Duration
 	// MaxOutput 结果裁剪上限（rune）；<=0 = 不裁剪。
 	MaxOutput int
@@ -145,6 +146,14 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		return tool.Result{CallID: call.ID, OK: false, Err: fmt.Sprintf("unknown tool %q", call.Name)}, nil
 	}
 
+	// 单次调用超时覆盖（D38）：保留参数 timeout_sec（1–port.MaxCallTimeoutSec，允许高于
+	// config 缺省）；schema 自声明该参数的工具（job_start）不参与保留参数、原样下传。
+	// 值域外/非整数 → OK=false 回填让模型纠正（不静默夹取，避免 0 被误读为不限时）。
+	call, callTimeout, terr := applyCallTimeout(t.Spec(), call, r.timeout)
+	if terr != nil {
+		return tool.Result{CallID: call.ID, OK: false, Err: terr.Error()}, nil
+	}
+
 	// 权限判定（D22 两列分工）。
 	decision, target := r.decide(ctx, t, call)
 	if decision == perm.Ask {
@@ -160,14 +169,15 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		}
 	}
 
-	// 硬超时执行（DESIGN §10"工具执行同受 ctx 约束"）：部分工具（阻塞在慢盘/网络盘
+	// 硬超时执行（DESIGN §10"工具执行同受 ctx 约束"；超时值 = Options 缺省、可被保留参数
+	// timeout_sec 逐次覆盖，D38）：部分工具（阻塞在慢盘/网络盘
 	// 上的文件 IO）不响应 ctx，故在旁路 goroutine 执行并 select 等待——超时立即回填
 	// OK=false 返回，不再等待底层调用；泄漏的 goroutine 随系统调用自行结束，其结果
 	// 写入带缓冲通道，无人接收也不阻塞。
 	runCtx := ctx
 	var cancel context.CancelFunc
-	if r.timeout > 0 {
-		runCtx, cancel = context.WithTimeout(ctx, r.timeout)
+	if callTimeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, callTimeout)
 		defer cancel()
 	}
 	type outcome struct {
@@ -190,13 +200,13 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 			if ctx.Err() != nil { // 父 ctx 取消（Ctrl+C）原样上抛
 				return tool.Result{}, ctx.Err()
 			}
-			return timeoutResult(call, r.timeout), nil
+			return timeoutResult(call, callTimeout), nil
 		}
 	}
 	if got.err != nil {
 		// 与超时同时到达的错误：按 runCtx 判定归类（工具收到的是本次 deadline）。
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			return timeoutResult(call, r.timeout), nil
+			return timeoutResult(call, callTimeout), nil
 		}
 		if ctx.Err() != nil {
 			// 父 ctx 取消（Ctrl+C）：装配级错误原样上抛，Agent 快速中止 Turn。
@@ -225,6 +235,50 @@ func timeoutResult(call tool.Call, d time.Duration) tool.Result {
 		OK:     false,
 		Err:    fmt.Sprintf("tool execution timed out (%s)", d),
 	}
+}
+
+// applyCallTimeout 解析保留参数 timeout_sec（D38）：
+//   - schema 自声明该参数的工具（job_start 的任务超时语义）不参与保留参数，原样下传缺省超时；
+//   - 非整数或值域外 → 错误（回填让模型纠正，不静默夹取——0 会被误读为不限时）；
+//   - 命中时参数从 Args 剥离后下传（MCP 服务端不收未知参数）。
+func applyCallTimeout(spec tool.Spec, call tool.Call, def time.Duration) (tool.Call, time.Duration, error) {
+	if len(call.Args) == 0 {
+		return call, def, nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(call.Args, &m); err != nil {
+		return call, def, nil // 非 JSON 对象：按原样交给工具报它自己的参数错误
+	}
+	raw, hit := m["timeout_sec"]
+	if !hit || specDeclaresTimeout(spec) {
+		return call, def, nil
+	}
+	var sec int
+	if err := json.Unmarshal(raw, &sec); err != nil {
+		return call, 0, fmt.Errorf("invalid timeout_sec (want an integer 1-%d)", port.MaxCallTimeoutSec)
+	}
+	if sec < 1 || sec > port.MaxCallTimeoutSec {
+		return call, 0, fmt.Errorf("timeout_sec out of range (want 1-%d), got %d", port.MaxCallTimeoutSec, sec)
+	}
+	delete(m, "timeout_sec")
+	stripped, err := json.Marshal(m)
+	if err != nil {
+		return call, def, nil // map[string]json.RawMessage 恒可序列化；防御兜底走缺省
+	}
+	call.Args = stripped
+	return call, time.Duration(sec) * time.Second, nil
+}
+
+// specDeclaresTimeout 工具 schema 是否自声明 timeout_sec（D38：自有语义不被保留参数截胡）。
+func specDeclaresTimeout(spec tool.Spec) bool {
+	var s struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(spec.Schema, &s); err != nil {
+		return false
+	}
+	_, ok := s.Properties["timeout_sec"]
+	return ok
 }
 
 // decide 权限判定：文件类看路径格，执行类看工具列（D22）。

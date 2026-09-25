@@ -393,7 +393,8 @@ func TestRunPersonaEnvironmentE2E(t *testing.T) {
 	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
 		t.Fatalf("code = %d, out = %q", code, out.String())
 	}
-	for _, want := range []string{"Runtime environment:", "Platform: ", "Terminal: repl", "sandbox"} {
+	for _, want := range []string{"Runtime environment:", "Platform: ", "Terminal: repl", "sandbox",
+		"Tool timeout: default 60s", `"timeout_sec"`} {
 		if !strings.Contains(string(reqs.at(0).body), want) {
 			t.Fatalf("request body 缺 %q: %.400s", want, reqs.at(0).body)
 		}

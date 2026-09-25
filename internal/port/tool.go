@@ -14,6 +14,10 @@ type Tool interface {
 	Execute(ctx context.Context, call tool.Call) (tool.Result, error)
 }
 
+// MaxCallTimeoutSec 单次调用 timeout_sec 保留参数的硬顶（D38）：
+// 模型可逐次覆盖 limits.tool_timeout_sec（允许高于 config），但不超过此上限。
+const MaxCallTimeoutSec = 3600
+
 // ToolRunner 工具执行门面：查找 + capability 校验 + Risk 确认 + 超时 + 结果裁剪。
 type ToolRunner interface {
 	Specs(ctx context.Context) ([]tool.Spec, error)

@@ -485,6 +485,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Terminal:   cfg.UI.Kind,
 		TERM:       os.Getenv("TERM"),
 		SandboxDir: sandboxDir,
+		// D38：缺省调用超时随环境块披露（发现性），保留参数口径见 D38。
+		ToolTimeoutSec: int(toolTimeout.Seconds()),
 	}
 	agent, err := app.New(
 		app.Deps{

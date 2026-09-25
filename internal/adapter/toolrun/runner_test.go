@@ -376,6 +376,106 @@ func TestExecuteTimeout(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// 单次调用超时覆盖（D38）
+// ---------------------------------------------------------------------------
+
+// spyArgsTool 记录收到的 Args（验证保留参数剥离/透传）；可选延迟。
+type spyArgsTool struct {
+	spec  tool.Spec
+	got   json.RawMessage
+	delay time.Duration
+}
+
+func (s *spyArgsTool) Spec() tool.Spec { return s.spec }
+
+func (s *spyArgsTool) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
+	s.got = call.Args
+	if s.delay > 0 {
+		select {
+		case <-time.After(s.delay):
+		case <-ctx.Done():
+			return tool.Result{}, ctx.Err()
+		}
+	}
+	return tool.Result{OK: true, Output: "done"}, nil
+}
+
+// TestCallTimeoutOverrideShortens 缩短：timeout_sec=1 覆盖 5s 缺省，1s 即超时回填。
+func TestCallTimeoutOverrideShortens(t *testing.T) {
+	r := New(Options{
+		Tools:   []port.Tool{&stubTool{spec: tool.Spec{Name: "slow", Risk: tool.Safe}, delay: 5 * time.Second}},
+		Timeout: 5 * time.Second,
+	})
+	start := time.Now()
+	res, err := r.Execute(context.Background(), c("slow", `{"timeout_sec":1}`))
+	if err != nil {
+		t.Fatalf("超时应作结果回填: %v", err)
+	}
+	if res.OK || !strings.Contains(res.Err, "timed out (1s)") {
+		t.Fatalf("res=%+v, want 按 1s 超时", res)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("override 未生效: %s", d)
+	}
+}
+
+// TestCallTimeoutOverrideExceedsDefault 高于 config：缺省 50ms、覆盖 1s，200ms 的工具成功
+// 且保留参数已从 Args 剥离、其余参数原样下传。
+func TestCallTimeoutOverrideExceedsDefault(t *testing.T) {
+	spy := &spyArgsTool{spec: tool.Spec{Name: "t", Risk: tool.Safe}, delay: 200 * time.Millisecond}
+	r := New(Options{Tools: []port.Tool{spy}, Timeout: 50 * time.Millisecond})
+	res, err := r.Execute(context.Background(), c("t", `{"timeout_sec":1,"path":"x"}`))
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v, want 覆盖高于缺省后成功", res, err)
+	}
+	if strings.Contains(string(spy.got), "timeout_sec") {
+		t.Fatalf("保留参数应剥离: %s", spy.got)
+	}
+	if !strings.Contains(string(spy.got), `"path"`) {
+		t.Fatalf("其余参数应原样下传: %s", spy.got)
+	}
+}
+
+// TestCallTimeoutValidation 值域外/非整数 → OK=false 纠错回填（不静默夹取），工具不被调用。
+func TestCallTimeoutValidation(t *testing.T) {
+	for _, args := range []string{
+		`{"timeout_sec":0}`,
+		`{"timeout_sec":-5}`,
+		`{"timeout_sec":3601}`,
+		`{"timeout_sec":"10"}`,
+		`{"timeout_sec":1.5}`,
+	} {
+		spy := &spyArgsTool{spec: tool.Spec{Name: "t", Risk: tool.Safe}}
+		r := New(Options{Tools: []port.Tool{spy}, Timeout: time.Second})
+		res, err := r.Execute(context.Background(), c("t", args))
+		if err != nil || res.OK || spy.got != nil {
+			t.Fatalf("args=%s res=%+v err=%v got=%s, want 纠错回填且不调用工具", args, res, err, spy.got)
+		}
+		if !strings.Contains(res.Err, "timeout_sec") {
+			t.Fatalf("args=%s err=%q, want 点名 timeout_sec", args, res.Err)
+		}
+	}
+}
+
+// TestCallTimeoutDeclaredSchemaPassThrough schema 自声明 timeout_sec 的工具（job_start 的
+// 任务超时语义）不参与保留参数：原样下传、不做值域校验、用缺省超时。
+func TestCallTimeoutDeclaredSchemaPassThrough(t *testing.T) {
+	spy := &spyArgsTool{spec: tool.Spec{
+		Name:   "job_start",
+		Risk:   tool.Safe,
+		Schema: json.RawMessage(`{"type":"object","properties":{"timeout_sec":{"type":"integer"}}}`),
+	}}
+	r := New(Options{Tools: []port.Tool{spy}, Timeout: time.Second})
+	res, err := r.Execute(context.Background(), c("job_start", `{"timeout_sec":0}`))
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if !strings.Contains(string(spy.got), `"timeout_sec":0`) {
+		t.Fatalf("声明工具应收到原参数: %s", spy.got)
+	}
+}
+
 // TestExecuteParentCancelPropagates 父 ctx 取消原样上抛（区别于超时）。
 func TestExecuteParentCancelPropagates(t *testing.T) {
 	r := New(Options{
