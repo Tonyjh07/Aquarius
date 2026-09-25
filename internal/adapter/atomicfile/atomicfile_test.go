@@ -111,6 +111,38 @@ func TestWriteFileConcurrent(t *testing.T) {
 	}
 }
 
+// TestWriteFileLockKeyNormalized §14 M3 遗留：锁 key 经 filepath.Clean 归一——
+// 等价路径写法（`.` 段、混用分隔符）共享同一把锁，同目标并发写不再分两把锁。
+func TestWriteFileLockKeyNormalized(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "norm.txt")
+	// 原始（未 Clean）等价写法：filepath.Join 会先归一，故手工拼接制造差异。
+	variants := []string{
+		base,
+		dir + string(os.PathSeparator) + "." + string(os.PathSeparator) + "norm.txt",
+		dir + "/norm.txt",
+	}
+	for i, p := range variants {
+		if err := WriteFile(p, []byte(fmt.Sprintf("v%d", i)), 0o644); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+	want := filepath.Clean(base)
+	n := 0
+	pathLocks.Range(func(k, _ any) bool {
+		if k.(string) == want {
+			n++
+		}
+		return true
+	})
+	if n != 1 {
+		t.Fatalf("锁 key 归一失败: 目标 %q 有 %d 把锁", want, n)
+	}
+	if got, _ := os.ReadFile(base); string(got) != "v2" {
+		t.Fatalf("最终内容 = %q, want 最后一次写入 v2", got)
+	}
+}
+
 // TestWriteFileMissingDir 父目录不存在时报错（MkdirAll 归调用方）。
 func TestWriteFileMissingDir(t *testing.T) {
 	dir := t.TempDir()

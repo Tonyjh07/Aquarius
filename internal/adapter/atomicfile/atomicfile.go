@@ -29,6 +29,9 @@ const (
 // WriteFile 原子写入 data 到 path（父目录须已存在，由调用方 MkdirAll）。
 // 临时文件形如 <base>.<随机>.tmp（后缀便于残留检测），写入 → chmod 最终权限 → rename 换入。
 func WriteFile(path string, data []byte, perm fs.FileMode) error {
+	// 锁 key 归一（§14 M3 遗留：Windows 下 "a/b" 与 "a\b"、含 "." 段的等价写法
+	// 必须是同一把锁，否则同目标并发写仍会撞 rename）。
+	path = filepath.Clean(path)
 	v, _ := pathLocks.LoadOrStore(path, &sync.Mutex{})
 	mu := v.(*sync.Mutex)
 	mu.Lock()
