@@ -42,6 +42,7 @@ func (in *Ingestor) Accepts(raw port.RawInput) bool {
 }
 
 // Ingest 读文件 → 附件入库 → 产出 Part（见包注释的分类规则）。
+// 全程单次打开：分类/提取文本与入库字节取自同一快照（防两次读取间文件被改）。
 func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestReport, error) {
 	if in.blobs == nil {
 		return port.IngestReport{}, fmt.Errorf("ingestfile: 未配置附件库（port.AttachmentStore）")
@@ -53,17 +54,26 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 	path = filepath.Clean(path)
 	name := filepath.Base(path)
 
+	f, err := os.Open(path)
+	if err != nil {
+		return port.IngestReport{}, fmt.Errorf("ingestfile: 打开文件: %w", err)
+	}
+	defer f.Close()
+
 	// 头部分类与文本提取（读 maxExtractText+1 以判定是否截断）。
-	head, more, err := readHead(path)
+	head, more, err := readHead(f)
 	if err != nil {
 		return port.IngestReport{}, err
 	}
 	mime := detectMime(head, path)
 
-	// 附件先落库（DESIGN §7.2 输入管线第一步）。
-	ref, err := in.put(ctx, path, mime, name)
+	// 回到文件头，同一 fd 的完整内容入附件库（DESIGN §7.2 输入管线第一步）。
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return port.IngestReport{}, fmt.Errorf("ingestfile: 回到文件头: %w", err)
+	}
+	ref, err := in.blobs.Put(ctx, f, mime, name)
 	if err != nil {
-		return port.IngestReport{}, err
+		return port.IngestReport{}, fmt.Errorf("ingestfile: 附件入库: %w", err)
 	}
 
 	switch {
@@ -93,27 +103,11 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 	}
 }
 
-// put 打开文件流式入附件库。
-func (in *Ingestor) put(ctx context.Context, path, mime, name string) (conversation.BlobRef, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("ingestfile: 打开文件: %w", err)
+// readHead 从已打开的文件读取头部至多 maxExtractText+1 字节；more=是否还有更多内容。
+func readHead(f *os.File) ([]byte, bool, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, false, fmt.Errorf("ingestfile: 定位文件头: %w", err)
 	}
-	defer f.Close()
-	ref, err := in.blobs.Put(ctx, f, mime, name)
-	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("ingestfile: 附件入库: %w", err)
-	}
-	return ref, nil
-}
-
-// readHead 读取文件头部至多 maxExtractText+1 字节；more=是否还有更多内容。
-func readHead(path string) ([]byte, bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false, fmt.Errorf("ingestfile: 打开文件: %w", err)
-	}
-	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, maxExtractText+1))
 	if err != nil {
 		return nil, false, fmt.Errorf("ingestfile: 读取文件: %w", err)
