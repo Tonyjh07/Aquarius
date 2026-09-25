@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,8 +14,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -188,6 +192,98 @@ func TestRunMissingSecretEnv(t *testing.T) {
 	}
 	if !strings.Contains(errBuf.String(), "AQ_E2E_KEY") {
 		t.Fatalf("stderr = %q, want 指名环境变量", errBuf.String())
+	}
+}
+
+// TestRunAttachmentGC 启动附件 GC：按全量会话引用保活、清扫孤儿；
+// 引用收集失败（store 报错）时跳过清扫并告警——宁可漏清不误删。
+func TestRunAttachmentGC(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := storejson.New(filepath.Join(dir, "conversations"))
+	if err != nil {
+		t.Fatalf("storejson: %v", err)
+	}
+	blobs, err := blobfs.New(filepath.Join(dir, "attachments"))
+	if err != nil {
+		t.Fatalf("blobfs: %v", err)
+	}
+	// 会话带一个图片引用。
+	c := conversation.New("conv1", "t")
+	ref, err := blobs.Put(ctx, bytes.NewReader([]byte("live")), "image/png", "live.png")
+	if err != nil {
+		t.Fatalf("put live: %v", err)
+	}
+	if err := c.AppendCommitted(conversation.Message{
+		ID: "m1", Parent: conversation.MessageID("conv1"), Role: conversation.RoleSystem,
+		Content:   []conversation.Part{{Kind: conversation.PartImage, Ref: &ref}},
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if err := store.Save(ctx, c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	orphan, err := blobs.Put(ctx, bytes.NewReader([]byte("dead")), "image/png", "dead.png")
+	if err != nil {
+		t.Fatalf("put orphan: %v", err)
+	}
+
+	keep, err := collectBlobRefs(ctx, store)
+	if err != nil || !keep[ref.Hash] {
+		t.Fatalf("keep = %v, err = %v", keep, err)
+	}
+	if keep[orphan.Hash] {
+		t.Fatal("孤儿不应进 keep")
+	}
+	var warn bytes.Buffer
+	runAttachmentGC(ctx, store, blobs, &warn)
+	if ok, _ := blobs.Stat(ctx, ref); !ok {
+		t.Fatal("被引用附件不应被清")
+	}
+	if ok, _ := blobs.Stat(ctx, orphan); ok {
+		t.Fatal("孤儿附件应被清")
+	}
+
+	// 收集失败 → 跳过清扫并告警。
+	orphan2, err := blobs.Put(ctx, bytes.NewReader([]byte("dead2")), "image/png", "dead2.png")
+	if err != nil {
+		t.Fatalf("put orphan2: %v", err)
+	}
+	warn.Reset()
+	runAttachmentGC(ctx, failingStore{}, blobs, &warn)
+	if !strings.Contains(warn.String(), "已跳过") {
+		t.Fatalf("warn = %q, want 已跳过", warn.String())
+	}
+	if ok, _ := blobs.Stat(ctx, orphan2); !ok {
+		t.Fatal("收集失败时不应清扫")
+	}
+}
+
+// failingStore 只让 List 报错的 ConversationStore 替身。
+type failingStore struct{ port.ConversationStore }
+
+func (failingStore) List(context.Context) ([]port.ConversationSummary, error) {
+	return nil, errors.New("boom")
+}
+
+// TestLoadConfigOutput 输出器开关解析：键缺失 = false（保守），显式 true 生效。
+func TestLoadConfigOutput(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(p, []byte(`{"model":{"name":"m"}}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cfg, err := loadConfig(p)
+	if err != nil || cfg.Output.Notify {
+		t.Fatalf("缺键 = %+v, err = %v", cfg.Output, err)
+	}
+	if err := os.WriteFile(p, []byte(`{"output":{"notify":true,"tts":false}}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cfg, err = loadConfig(p)
+	if err != nil || !cfg.Output.Notify || cfg.Output.TTS {
+		t.Fatalf("output = %+v, err = %v", cfg.Output, err)
 	}
 }
 

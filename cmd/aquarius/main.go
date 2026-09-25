@@ -18,9 +18,13 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/notify"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
@@ -165,11 +169,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	store, err := storejson.New(filepath.Join(dir, "conversations"))
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	// 附件库（DESIGN §4.2）：sha256 内容寻址存 <dir>/attachments；
+	// 启动 GC 按全量会话引用清扫（引用收集不完整则跳过，宁可漏清不误删）。
+	blobs, err := blobfs.New(filepath.Join(dir, "attachments"))
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	runAttachmentGC(ctx, store, blobs, stderr)
 	// 记忆（D23 布局）：全局 memories.md + 会话 <id>.memory.md（与会话树同目录）。
 	mem, err := memoryfs.New(filepath.Join(dir, port.GlobalMemoryDoc), filepath.Join(dir, "conversations"))
 	if err != nil {
@@ -184,6 +199,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	ui := repl.New(stdin, stdout)
+	// 输出器扇出（D28/D14）：Presenter 装饰器包住实际 UI，仅 output.notify 开启时装配；
+	// app 与 repl 均不感知输出器，Deliver 失败只记日志（§5.7）。
+	var outs []port.OutputAdapter
+	if cfg.Output.Notify {
+		outs = append(outs, notify.New(notifySender(runtime.GOOS)))
+	}
+	presenter := &outputsPresenter{
+		inner: ui,
+		outs:  outs,
+		log:   func(err error) { fmt.Fprintf(stderr, "[输出器] %v\n", err) },
+	}
 	// 逐次确认（§5.10 Confirmer 矩阵）：默认走 REPL 交互；-yes 一律应 y。
 	var confirmer port.Confirmer = ui
 	if *autoYes {
@@ -218,8 +244,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ids := systemIDGen{}
 	agent, err := app.New(
 		app.Deps{
-			LLM: client, UI: ui, IDs: ids, Clock: systemClock{},
-			Tools: runner, Memory: mem,
+			LLM: client, UI: presenter, IDs: ids, Clock: systemClock{},
+			Tools: runner, Memory: mem, Blobs: blobs,
 		},
 		app.Config{
 			Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns,
@@ -232,9 +258,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	runner.Add(agent.ContextCompactTool()) // 装配期注册（agent 依赖 runner，反向补注册）
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	sess, err := app.NewSession(ctx, app.SessionDeps{
 		Store:        store,
 		Agent:        agent,
@@ -246,6 +269,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		PersistLevel: persistLevel,
 		Confirmer:    confirmer,
 		Jobs:         jobs,
+		Ingestors:    []port.Ingestor{ingestfile.New(blobs), ingestclip.New(blobs)},
+		UI:           presenter,
 		OpenMemory:   openMemoryEditor(mem, stdin, stdout, stderr),
 	})
 	if err != nil {
