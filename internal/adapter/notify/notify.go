@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -114,7 +115,11 @@ func sanitizeControl(s string) string {
 					j++
 				}
 				if j < len(rs) {
-					i = j
+					if rs[j] == 0x1b {
+						i = j + 1 // ST 的 ESC\ 两字符都要跳过（审查修复：旧实现漏掉反斜杠）
+					} else {
+						i = j
+					}
 				} else {
 					i = len(rs) - 1
 				}
@@ -124,7 +129,7 @@ func sanitizeControl(s string) string {
 				continue
 			}
 		}
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError {
 			continue
 		}
 		b.WriteRune(r)

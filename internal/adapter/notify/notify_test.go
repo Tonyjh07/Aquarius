@@ -136,3 +136,27 @@ func TestPreviewStripsControlChars(t *testing.T) {
 		t.Fatalf("sent = %q", sent)
 	}
 }
+
+// TestSanitizeControlSequences 序列级剥离（审查修复补充）：OSC 的两种收尾
+// （BEL 与 ESC\）、截断序列、结尾裸 ESC、合法 UTF-8 的 C1、RuneError 字节。
+func TestSanitizeControlSequences(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"a\x1b[31mb", "ab"},
+		{"a\x1b]0;title\x07b", "ab"},
+		{"a\x1b]0;title\x1b\\b", "ab"}, // ST 收尾：反斜杠必须一并吞掉（审查修复）
+		{"a\x1bMb", "ab"},
+		{"截断\x1b[3", "截断"},
+		{"尾部\x1b", "尾部"},
+		{"ab", "ab"},      // 合法 UTF-8 的 C1（U+0085）
+		{"a\xffb", "ab"},   // 非法字节 → RuneError 剔除
+		{"行1\n行2", "行1行2"}, // notify 管线已由 collapseSpaces 预压空白，\n 剥除无妨
+	}
+	for _, tc := range cases {
+		if got := sanitizeControl(tc.in); got != tc.want {
+			t.Errorf("sanitizeControl(% x) = % q, want % q", []byte(tc.in), got, tc.want)
+		}
+	}
+}
