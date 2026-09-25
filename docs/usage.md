@@ -34,6 +34,8 @@ go build ./cmd/aquarius
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/jobs [list\|logs <id> [行数]\|kill <id>]` | 后台任务管理（M3）：缺省 `list`；`logs` 取末尾行（缺省 50）；`kill` 终止（连同子进程）。任务由模型经 `job_start` 启动，ID 支持唯一前缀 |
 | `/model [name]` | 无参：当前模型 + 可用清单（`LLM.Models()`，能力/单价标注）；有参：先写回 config `model.name` 再 Agent 内热切换（D32，同 `/permission` 模式），下一轮即生效 |
+| `/think [on\|off]` | 无参：原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发（覆盖 `/effort`） |
+| `/effort [级别]` | 无参：当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off 清除）写回 config `model.reasoning_effort`。是否真发由 `/think` 决定；on 且未设档 = 不发（交服务端默认） |
 | `/plugin [list\|enable <name>\|disable <name>]` | MCP 插件管理（M4，D31）：list 显示状态/来源/传输/能力授权/调用统计/重启与报因，并列出可用动态命令；enable 走 capability 首用确认并写回 config；disable 即时摘除其工具与命令 |
 | `/mcp:<server>:<prompt> [args]` | MCP prompts 动态命令（随插件启停注册/注销，`/plugin list` 查看可用项）；渲染结果作为用户消息走完整一轮 |
 | `/quit` `/exit` | 退出（`/exit` 为别名） |
@@ -124,8 +126,13 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 
 - **启动报"发现旧格式会话（虚拟 Root，D19）"**：M0 早期数据不兼容，按报因点名的
   ID 删除 `~/.aquarius/conversations/<id>.json`（含 `.bak`）后重试，详见 [storage.md](storage.md)。
-- **启动报"model.api_key 必须是 secret:<环境变量名>"**：禁止明文密钥入配置，
-  改成 `"api_key": "secret:AQUARIUS_OPENAI_KEY"` 并设置同名环境变量。
+- **启动警告"model.api_key 为明文"**（D35）：明文密钥直接写在 config.json 里，任何能读
+  该文件的进程都可取用——建议改为 `"api_key": "secret:AQUARIUS_OPENAI_KEY"` + 同名环境变量；
+  该项留空也会自动回落默认引用（环境变量缺失时才报错退出）。
+- **思考链路（D34）**：`/think off` 关闭原生思考（不发 `reasoning_effort`/`enable_thinking`）；
+  `/effort high` 只存档位、配合 `/think on` 才发送；`reasoning_effort` 非法值启动即报因
+  （`minimal|low|medium|high`）；服务端不认的参数会被自动剥离并记入
+  `model.unsupported_params`（要恢复发送就从该数组删掉对应字段）。
 - **启动报未知权限等级**：`permissions.level` 只接受
   `read-only|strict|permissive|full-access`。
 - **`ui.kind` 报未支持**：只接受 `repl`（行式，测试/e2e 后端）与 `tui`（默认，D33）。

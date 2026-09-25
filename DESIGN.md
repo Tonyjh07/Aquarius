@@ -206,7 +206,7 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 |---|---|---|
 | `memory_list` / `memory_read` / `memory_search` | 记忆读取与检索（只见全局 + 当前会话两份，按文档名寻址） | Safe |
 | `memory_write` | 写入记忆文档（`name`=全局/当前会话；`mode`=append 缺省 / overwrite） | Confirm |
-| `think` | 显式整理思路（no-op） | Safe |
+| `think` | 显式整理思路（no-op）；可见性走 config `model.think_tool`，**默认隐藏**（D34：原生思考为主，需要草稿工具时配置启用） | Safe |
 | `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 等级矩阵，读全盘免确认） | Safe |
 | `file_write` / `file_delete` | 文件写入 / 删除 | Confirm |
 | `term_exec` | 终端命令同步执行（超时返回，输出截断保头尾） | Confirm |
@@ -255,7 +255,7 @@ type GenerateRequest struct {
     Model    string
     Messages []PromptMessage
     Tools    []tool.Spec
-    Params   Sampling        // Temperature、MaxTokens、Stop
+    Params   Sampling        // Temperature、MaxTokens、Stop、ReasoningEffort、Thinking（enable_thinking，D34）
     Budget   TokenBudget     // MaxOutputTokens、MaxCostUSD
 }
 
@@ -639,6 +639,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/model [name]` | 无参：列 `LLM.Models()` 可用模型 + 当前模型/能力/单价；有参：Agent 内热切换并写回 config（D32，同 `/permission` 模式） |
+| `/think [on\|off]` | 无参：显示原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发 |
+| `/effort [级别]` | 无参：显示当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off = 清除）写回 config `model.reasoning_effort`；**是否真发由 `/think` 决定**，on 且未设档则不发（交服务端默认，D34） |
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
 | `/plugin [list\|enable\|disable]` | MCP 插件管理（D31）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效 |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
@@ -650,7 +652,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 ```
 ~/.aquarius/
-├── config.json                # 主配置（密钥只存引用名；permissions.level 权限等级）
+├── config.json                # 主配置（密钥默认存引用名，明文允许但启动警告 D35；permissions.level 权限等级）
 ├── sandbox/                   # Agent 特权目录（权限矩阵免确认读写，启动自动创建）
 ├── memories.md                # 全局记忆（markdown 单文件，D23）
 ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
@@ -667,8 +669,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
     "provider": "openai-compatible",
     "name": "gpt-4o-mini",
     "base_url": "https://api.openai.com/v1",
-    "api_key": "secret:AQUARIUS_OPENAI_KEY",
-    "tokenizer": ""              // 可选：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
+    "api_key": "secret:AQUARIUS_OPENAI_KEY", // 明文允许但启动警告；空值回落本默认引用（D35）
+    "tokenizer": "",              // 可选：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
+    "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）
+    "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
+    "think_tool": false,          // think 草稿工具可见性（默认隐藏，D34）
+    "unsupported_params": []      // 服务端已知不认的请求参数（自动记录、启动注入省略，D34）
   },
   "ui": { "kind": "tui" },
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
@@ -747,6 +753,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   立即生效、下次启动沿用；无参则展示当前等级 + 矩阵 + sandbox 路径。
 - 输出安全：终端/任务输出视为**不可信数据**，只渲染不执行；工具结果统一截断（`tool_output_chars`）。
 - 密钥永不进会话树、附件、日志；`Secrets` 返回值对 Prompt 侧不可见。
+  `config.model.api_key` 明文是**显式例外**（D35）：仅常驻 config、启动打印警告（不回显），
+  同样不进日志/会话树/附件；stdio 插件子进程环境仍剔除 `AQUARIUS_*`（§6.4 #3）。
 
 ---
 
@@ -827,6 +835,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D31 | 插件**启停与授权状态**统一存 config `plugins.<name> = {enabled, granted[]}`，两种发现源（`mcpServers` / `plugin.json`）共用；声明与状态分离 | 状态写回 `mcpServers` 条目（plugin.json 发现的插件无处安放）；状态存 plugin.json（本机授权态不该随分发文件走） |
 | D32 | `/model <name>` = Agent 内热切换 + **写回 config**（同 `/permission` 模式，重启沿用） | 每会话独立模型（与"全局唯一 model 配置"冲突，切换语义碎片化）；只切不存（重启即失） |
 | D33 | TUI **MVP** = 转写区 + 流式 + 输入框 + 命令历史 + Confirm 对话 + 状态行 + glamour 轻 markdown（committed 后渲染，流式阶段原样）；图片/音频仍占位；`ui.kind` 模板默认 `tui`、repl 保留；GUI 框架后移 §14 | 一步到位富 TUI（拖拽/语音/内联图——与后续 GUI 框架重复投入）；TUI 取代 REPL（e2e/CI 丢失无终端后端） |
+| D34 | **思考控制面**：`/think [on\|off]` = 原生思考**总开关**（覆盖 `/effort`），`/effort [minimal\|low\|medium\|high\|off]` = `reasoning_effort` 档位；请求发 `reasoning_effort` 与 `enable_thinking`（dashscope 系布尔）两个字段，服务端点名不认 → **同请求剥离重试 + 记录进 config `model.unsupported_params`**（启动注入、以后直接省略）；思维链分片**只展示不入树**；`think` 草稿工具可见性走 config `model.think_tool`、**默认隐藏**（不做 /models 能力探测——兼容端几乎不返回能力信息） | 逐家私有布尔映射表（每家一个开关字段，维护面爆炸）；/models 能力探测后自动分叉（探测不可靠、分支形同虚设）；思维链入树（回传可能被服务端拒绝且占上下文） |
+| D35 | `model.api_key` **允许明文**：启动打印警告（不回显密钥）、`secret:` 引用仍走 `port.Secrets`；值为空时回落默认 `secret:AQUARIUS_OPENAI_KEY`；文件内值优先 | 维持明文一律拒绝（用户明确要简化接入）；明文静默启用（丢失风险告知） |
 
 ## 14. 暂缓事项（Backlog）
 

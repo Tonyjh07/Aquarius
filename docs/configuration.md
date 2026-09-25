@@ -26,8 +26,12 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  config.json
 | `model.provider` | string | `openai-compatible` | 预留标识，当前适配器只实现 OpenAI 兼容 |
 | `model.name` | string | `gpt-4o-mini` | 模型名，空值启动报错 |
 | `model.base_url` | string | `https://api.openai.com/v1` | Chat Completions 端点，空值启动报错 |
-| `model.api_key` | string | `secret:AQUARIUS_OPENAI_KEY` | **只允许 `secret:<环境变量名>`**；明文启动即拒（密钥不落配置/日志/会话树） |
+| `model.api_key` | string | `secret:AQUARIUS_OPENAI_KEY` | `secret:<环境变量名>` 引用（`port.Secrets` 按名取用）**或明文**（D35：启动打印警告、不回显密钥）；**值为空时回落默认引用** `secret:AQUARIUS_OPENAI_KEY`；文件内值优先 |
 | `model.tokenizer` | string | `""` | 本地 tokenizer.json 路径（文件或目录）：启用**精确 token 计数**（三级计数链②，D26）；空 = 通用估算；路径错误启动即报因 |
+| `model.think` | bool | `true`（键缺失） | 原生思考**总开关**（D34）：`off` 时 `reasoning_effort` 与 `enable_thinking` 一律不发；`/think` 切换写回本字段 |
+| `model.reasoning_effort` | string | `""` | 推理档位（D34）：`minimal` / `low` / `medium` / `high`，空 = 不发送（交服务端默认）；`/effort` 切换写回本字段（`off` 即清除）；非法值启动报错 |
+| `model.think_tool` | bool | `false` | `think` 草稿工具（DESIGN §4.3）是否列给模型——**默认隐藏**（D34），需要时配置启用（改后重启生效） |
+| `model.unsupported_params` | []string | `[]` | 服务端已知不认的请求参数名单（D34 自动记录：400 点名 → 剥离重试成功 → 落盘；启动注入，之后直接省略）。可手工加字段名让某字段永久禁发 |
 
 ### ui
 
@@ -103,9 +107,10 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
 "api_key": "secret:AQUARIUS_OPENAI_KEY"
 ```
 
-- 配置里只有引用名；真实值存于同名环境变量，进程内按名取用（`port.Secrets`）。
-- 禁止把明文密钥写进 config——启动时校验，非 `secret:` 前缀直接报错退出。
-- 密钥不进会话树、附件、日志。
+- 推荐：配置里只有引用名 `secret:<环境变量名>`，真实值存于同名环境变量，进程内按名取用（`port.Secrets`）。
+- 明文密钥（D35）：允许直接填进 `model.api_key`，**启动打印警告**（不回显密钥值）；建议此时确保 config 不被提交/同步。
+- 值为空（或整项删除）→ 自动回落默认 `secret:AQUARIUS_OPENAI_KEY`（环境变量缺失时启动报因）。
+- 无论哪种形态，密钥都不进会话树、附件、日志；stdio 插件子进程环境会剔除 `AQUARIUS_*` 变量。
 
 ## 完整模板（首次运行生成）
 
@@ -116,7 +121,11 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
     "name": "gpt-4o-mini",
     "base_url": "https://api.openai.com/v1",
     "api_key": "secret:AQUARIUS_OPENAI_KEY",
-    "tokenizer": ""
+    "tokenizer": "",
+    "think": true,
+    "reasoning_effort": "",
+    "think_tool": false,
+    "unsupported_params": []
   },
   "ui": { "kind": "tui" },
   "system_prompt": "",

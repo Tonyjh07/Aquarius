@@ -73,8 +73,8 @@ go build ./cmd/aquarius
 
 1. 编辑 `~/.aquarius/config.json`：`model.name` / `model.base_url`（可选 `system_prompt` 人格、
    `permissions.level` 权限等级，默认 `strict`，特权目录 `~/.aquarius/sandbox`）；
-2. 密钥只经环境变量引用（禁止明文入配置）：配置里写 `secret:AQUARIUS_OPENAI_KEY`，
-   同名环境变量存真实密钥；
+2. 密钥推荐走环境变量引用：配置里写 `secret:AQUARIUS_OPENAI_KEY`，同名环境变量存真实密钥；
+   也允许直接把密钥明文填进 `model.api_key`（**启动会打印警告**，值留空则自动回落上述默认引用）；
 3. 重新运行，直接对话；`/help` 查看命令（含 `/compact` 上下文压缩、`/permission` 权限等级），
    `/quit`（或 `/exit`）退出。
 
