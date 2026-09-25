@@ -46,7 +46,7 @@ func (s *Server) Tools(ctx context.Context) ([]port.Tool, error) {
 			Risk:        s.risk,
 		}
 		if strings.TrimSpace(spec.Description) == "" {
-			spec.Description = fmt.Sprintf("MCP 插件 %s 提供的工具 %s", s.name, mt.Name)
+			spec.Description = fmt.Sprintf("tool %s provided by MCP plugin %s", mt.Name, s.name)
 		}
 		out = append(out, &Tool{server: s, orig: mt.Name, spec: spec})
 	}
@@ -74,13 +74,13 @@ func (t *Tool) Execute(ctx context.Context, call tool.Call) (tool.Result, error)
 	if len(bytes.TrimSpace(call.Args)) > 0 {
 		if err := json.Unmarshal(call.Args, &args); err != nil {
 			t.server.recordCall(time.Since(start), false)
-			return tool.Result{}, fmt.Errorf("参数不是 JSON 对象: %w", err)
+			return tool.Result{}, fmt.Errorf("arguments are not a valid JSON object: %w", err)
 		}
 	}
 	res, err := t.server.cs.CallTool(ctx, &mcp.CallToolParams{Name: t.orig, Arguments: args})
 	if err != nil {
 		t.server.recordCall(time.Since(start), false)
-		return tool.Result{}, fmt.Errorf("MCP 调用失败（%s）: %w", t.spec.Name, err)
+		return tool.Result{}, fmt.Errorf("MCP call failed (%s): %w", t.spec.Name, err)
 	}
 	text := contentText(res.Content)
 	if res.IsError {

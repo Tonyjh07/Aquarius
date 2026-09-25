@@ -48,15 +48,15 @@ func (r resourceStore) Index(ctx context.Context) ([]port.MemoryIndexEntry, erro
 func (r resourceStore) Read(ctx context.Context, name string) (port.MemoryDoc, error) {
 	res, err := r.s.cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: name})
 	if err != nil {
-		return port.MemoryDoc{}, fmt.Errorf("读取资源 %s（插件 %s）: %w", name, r.s.name, err)
+		return port.MemoryDoc{}, fmt.Errorf("read resource %s (plugin %s): %w", name, r.s.name, err)
 	}
 	if len(res.Contents) == 0 {
-		return port.MemoryDoc{}, fmt.Errorf("资源 %s 无内容: %w", name, port.ErrMemoryNotFound)
+		return port.MemoryDoc{}, fmt.Errorf("resource %s has no content: %w", name, port.ErrMemoryNotFound)
 	}
 	var b strings.Builder
 	for _, c := range res.Contents {
 		if c == nil || len(c.Blob) > 0 {
-			return port.MemoryDoc{}, fmt.Errorf("资源 %s 含二进制内容（v1 只读文本）", name)
+			return port.MemoryDoc{}, fmt.Errorf("resource %s contains binary content (v1 reads text only)", name)
 		}
 		// 空文本是合法内容（审查修复：曾与二进制一并拒收）。
 		if b.Len() > 0 {
@@ -69,12 +69,12 @@ func (r resourceStore) Read(ctx context.Context, name string) (port.MemoryDoc, e
 
 // Write 只读投影：拒绝（§6.3 写走自有记忆）。
 func (r resourceStore) Write(context.Context, port.MemoryDoc) error {
-	return fmt.Errorf("MCP 资源（插件 %s）为只读投影，写请用自有记忆（§6.3）", r.s.name)
+	return fmt.Errorf("MCP resources (plugin %s) are a read-only projection; write to your own memory instead (DESIGN 6.3)", r.s.name)
 }
 
 // Remove 只读投影：拒绝。
 func (r resourceStore) Remove(context.Context, string) error {
-	return fmt.Errorf("MCP 资源（插件 %s）为只读投影，删除请用自有记忆（§6.3）", r.s.name)
+	return fmt.Errorf("MCP resources (plugin %s) are a read-only projection; delete from your own memory instead (DESIGN 6.3)", r.s.name)
 }
 
 // Search 关键词检索：对索引的 URI 与 Summary 做包含匹配（内容级检索先 Read 再查，

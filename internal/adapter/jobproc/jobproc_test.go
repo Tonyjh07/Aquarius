@@ -121,8 +121,8 @@ func TestRunFailExitCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if res.OK || !strings.Contains(res.Err, "退出码 3") {
-		t.Fatalf("res = %+v, want 退出码 3", res)
+	if res.OK || !strings.Contains(res.Err, "exit code 3") {
+		t.Fatalf("res = %+v, want exit code 3", res)
 	}
 	if !strings.Contains(res.Output, "failing") {
 		t.Fatalf("输出未带回: %+v", res)
@@ -139,7 +139,7 @@ func TestRunSpawnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("启动失败应转 OK=false 而非 error: %v", err)
 	}
-	if res.OK || !strings.Contains(res.Err, "启动") {
+	if res.OK || !strings.Contains(res.Err, "start") {
 		t.Fatalf("res = %+v", res)
 	}
 }
@@ -235,10 +235,10 @@ func TestStartKill(t *testing.T) {
 		j, serr := m.Status(context.Background(), job.ID)
 		return serr == nil && j.Status == port.JobKilled
 	})
-	if err := m.Kill(context.Background(), job.ID); err == nil || !strings.Contains(err.Error(), "已结束") {
-		t.Fatalf("重复 kill err = %v, want 已结束", err)
+	if err := m.Kill(context.Background(), job.ID); err == nil || !strings.Contains(err.Error(), "already finished") {
+		t.Fatalf("重复 kill err = %v, want already finished", err)
 	}
-	if _, err := m.Status(context.Background(), "j999"); err == nil || !strings.Contains(err.Error(), "没有任务") {
+	if _, err := m.Status(context.Background(), "j999"); err == nil || !strings.Contains(err.Error(), "no task") {
 		t.Fatalf("未知任务 err = %v", err)
 	}
 	if _, err := m.Logs(context.Background(), "j999", 0); err == nil {
@@ -491,7 +491,7 @@ func TestRunOutputCap(t *testing.T) {
 	if err != nil || !res.OK {
 		t.Fatalf("res = %+v, err = %v", res, err)
 	}
-	if !strings.Contains(res.Output, "已截断") {
+	if !strings.Contains(res.Output, "truncated") {
 		t.Fatalf("缺截断标注（输出 %d 字节）", len(res.Output))
 	}
 	if len(res.Output) > maxRunOutput+120 {
@@ -541,7 +541,7 @@ func TestLogsWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logs: %v", err)
 	}
-	if !strings.Contains(logs, "日志超出窗口") {
+	if !strings.Contains(logs, "log exceeds the read window") {
 		t.Fatalf("缺窗口标注: %.80q", logs)
 	}
 	if strings.Contains(logs, "-test.run=") {
@@ -549,7 +549,7 @@ func TestLogsWindow(t *testing.T) {
 	}
 	// tail=0：整窗口 + 标注。
 	full, err := m.Logs(context.Background(), job.ID, 0)
-	if err != nil || !strings.Contains(full, "日志超出窗口") {
+	if err != nil || !strings.Contains(full, "log exceeds the read window") {
 		t.Fatalf("full = %.80q, err = %v", full, err)
 	}
 	if len(full) > logWindow+120 {

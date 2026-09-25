@@ -124,7 +124,7 @@ func TestTermExecTrimsHeadTail(t *testing.T) {
 	if !strings.HasPrefix(res.Output, "AAAA") || !strings.HasSuffix(res.Output, "CCCC") {
 		t.Fatalf("头尾未保留: %.60q … %.40q", res.Output, res.Output[len(res.Output)-40:])
 	}
-	if !strings.Contains(res.Output, "已省略中间") {
+	if !strings.Contains(res.Output, "middle") {
 		t.Fatalf("缺省略标注: %.80q", res.Output)
 	}
 	if n := len([]rune(res.Output)); n > maxTermOut+120 { // 标注行的余量
@@ -136,7 +136,7 @@ func TestTermExecTrimsHeadTail(t *testing.T) {
 func TestTermExecNilJobs(t *testing.T) {
 	te := &termExec{}
 	if _, err := te.Execute(context.Background(), call(`{"command":"x"}`)); err == nil ||
-		!strings.Contains(err.Error(), "未配置任务管理器") {
+		!strings.Contains(err.Error(), "no job manager") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -164,12 +164,12 @@ func TestJobStartSpecs(t *testing.T) {
 	}
 	// §14 M3 遗留：负 timeout_sec 与相对 workdir 拒收。
 	if _, err := js.Execute(context.Background(), call(`{"command":"srv","timeout_sec":-1}`)); err == nil ||
-		!strings.Contains(err.Error(), "非负") {
+		!strings.Contains(err.Error(), "non-negative") {
 		t.Fatalf("负 timeout_sec err = %v, want 拒收", err)
 	}
 	// 上限：防 Duration 乘法溢出（审查修复）。
 	if _, err := js.Execute(context.Background(), call(`{"command":"srv","timeout_sec":9999999999}`)); err == nil ||
-		!strings.Contains(err.Error(), "上限") {
+		!strings.Contains(err.Error(), "exceeds the upper bound") {
 		t.Fatalf("超上限 timeout_sec err = %v, want 拒收", err)
 	}
 	// 校验与启动同值：带尾空格的绝对路径以 trim 后的值启动（审查修复）。
@@ -180,7 +180,7 @@ func TestJobStartSpecs(t *testing.T) {
 		t.Fatalf("WorkDir = %q, want trim 后的 /tmp", got)
 	}
 	if _, err := js.Execute(context.Background(), call(`{"command":"srv","workdir":"rel/dir"}`)); err == nil ||
-		!strings.Contains(err.Error(), "绝对路径") {
+		!strings.Contains(err.Error(), "must be an absolute path") {
 		t.Fatalf("相对 workdir err = %v, want 拒收", err)
 	}
 	// 根起始路径（Windows 无盘符口径）仍接受。
@@ -196,7 +196,7 @@ func TestJobStartSpecs(t *testing.T) {
 func TestJobListOutput(t *testing.T) {
 	jl := &jobList{jobs: &fakeJobs{}}
 	res, err := jl.Execute(context.Background(), call(`{}`))
-	if err != nil || !strings.Contains(res.Output, "暂无后台任务") {
+	if err != nil || !strings.Contains(res.Output, "no background tasks") {
 		t.Fatalf("res = %+v, err = %v", res, err)
 	}
 	jl = &jobList{jobs: &fakeJobs{jobs: []port.Job{{
@@ -218,12 +218,12 @@ func TestJobStatusAndPrefixResolve(t *testing.T) {
 		StartedAt: now, EndedAt: now.Add(time.Second),
 	}}}}
 	res, err := js.Execute(context.Background(), call(`{"id":"j0"}`)) // 唯一前缀
-	if err != nil || !res.OK || !strings.Contains(res.Output, "状态=done") ||
-		!strings.Contains(res.Output, "退出码=0") {
+	if err != nil || !res.OK || !strings.Contains(res.Output, "status=done") ||
+		!strings.Contains(res.Output, "exit=0") {
 		t.Fatalf("res = %+v, err = %v", res, err)
 	}
 	if _, err := js.Execute(context.Background(), call(`{"id":"j999"}`)); err == nil ||
-		!strings.Contains(err.Error(), "没有任务") {
+		!strings.Contains(err.Error(), "no task") {
 		t.Fatalf("err = %v", err)
 	}
 	if _, err := js.Execute(context.Background(), call(`{}`)); err == nil {
@@ -250,7 +250,7 @@ func TestJobLogsTail(t *testing.T) {
 	}
 	jobs.logs = "  \n"
 	res, err = jl.Execute(context.Background(), call(`{"id":"j001"}`))
-	if err != nil || !strings.Contains(res.Output, "日志为空") {
+	if err != nil || !strings.Contains(res.Output, "log is empty") {
 		t.Fatalf("res = %+v, err = %v", res, err)
 	}
 }
@@ -273,17 +273,17 @@ func TestJobKill(t *testing.T) {
 func TestTrimHeadTailOddMax(t *testing.T) {
 	s := strings.Repeat("a", 100)
 	out := trimHeadTail(s, 11) // keep=5，实际保留 10，省略 90（旧口径报 89）
-	if !strings.Contains(out, "已省略中间 90 字符") {
+	if !strings.Contains(out, "middle 90 chars omitted") {
 		t.Fatalf("奇数上限省略计数错: %q", out)
 	}
-	if !strings.Contains(out, "原文共 100 字符") {
+	if !strings.Contains(out, "100 chars total") {
 		t.Fatalf("原长标注错: %q", out)
 	}
 	if head := strings.SplitN(out, "\n", 2)[0]; head != "aaaaa" {
 		t.Fatalf("头部保留 = %q, want 5 字符", head)
 	}
 	// 偶数上限：不变式（2×keep = max）。
-	if out := trimHeadTail(s, 10); !strings.Contains(out, "已省略中间 90 字符") {
+	if out := trimHeadTail(s, 10); !strings.Contains(out, "middle 90 chars omitted") {
 		t.Fatalf("偶数上限省略计数错: %q", out)
 	}
 	// 未超限原样返回。

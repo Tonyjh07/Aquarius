@@ -24,12 +24,12 @@ var _ port.Tool = (*termExec)(nil)
 func (t *termExec) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "term_exec",
-		Description: "同步执行终端命令行（超时由运行限额统一控制；输出保头尾截断）。" +
-			"Windows 经 cmd /c，其余经 sh -c；退出码非 0 视为失败并带回输出。",
+		Description: "Run a terminal command line synchronously (timeout is governed by the run limits; output is truncated head-and-tail). " +
+			"Windows runs via cmd /c, others via sh -c; a non-zero exit is treated as failure and brings back the output.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
-				"command": {"type": "string", "description": "要执行的完整命令行"}
+				"command": {"type": "string", "description": "the full command line to run"}
 			},
 			"required": ["command"]
 		}`),
@@ -53,7 +53,7 @@ func (t *termExec) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	}
 	command := strings.TrimSpace(a.Command)
 	if command == "" {
-		return tool.Result{}, fmt.Errorf("缺少 command")
+		return tool.Result{}, fmt.Errorf("missing command")
 	}
 	// 模型给出的是完整命令行字符串：包一层平台 shell 执行（不做分词，
 	// 引号/管道/重定向语义交给 shell，用户经 Confirmer 逐次过目）。
@@ -89,6 +89,6 @@ func trimHeadTail(s string, max int) string {
 	}
 	keep := max / 2
 	return string(r[:keep]) +
-		fmt.Sprintf("\n…[输出过长，已省略中间 %d 字符，原文共 %d 字符]\n", len(r)-2*keep, len(r)) +
+		fmt.Sprintf("\n…[output too long: middle %d chars omitted, %d chars total]\n", len(r)-2*keep, len(r)) +
 		string(r[len(r)-keep:])
 }

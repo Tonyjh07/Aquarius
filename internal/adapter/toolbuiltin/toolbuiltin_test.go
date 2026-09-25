@@ -136,11 +136,11 @@ func TestMemoryScope(t *testing.T) {
 		t.Fatal("Target 不应申报其他会话的记忆")
 	}
 	if _, err := w.Execute(ctx, call(`{"name":"`+other+`","content":"x"}`)); err == nil ||
-		!strings.Contains(err.Error(), "只能访问") {
+		!strings.Contains(err.Error(), "can only access") {
 		t.Fatalf("err = %v, want 会话隔离", err)
 	}
 	if _, err := w.Execute(context.Background(), call(`{"name":"`+port.SessionMemoryDoc("conv1")+`","content":"x"}`)); err == nil ||
-		!strings.Contains(err.Error(), "无会话上下文") {
+		!strings.Contains(err.Error(), "no session context") {
 		t.Fatalf("无会话上下文 err = %v", err)
 	}
 
@@ -173,7 +173,7 @@ func TestMemoryScope(t *testing.T) {
 		t.Fatal("未知 mode 应报错")
 	}
 	if _, err := w.Execute(ctx, call(`{"name":"memories.md"}`)); err == nil ||
-		!strings.Contains(err.Error(), "content 不可为空") {
+		!strings.Contains(err.Error(), "content must not be empty") {
 		t.Fatalf("空 content err = %v", err)
 	}
 
@@ -238,7 +238,7 @@ func TestRelativePathSuggestsSandbox(t *testing.T) {
 	if err == nil {
 		t.Fatal("相对路径应报错")
 	}
-	for _, want := range []string{"绝对路径", "特权沙盒", fmt.Sprintf("%q", sbx)} {
+	for _, want := range []string{"must be absolute", "privileged sandbox", fmt.Sprintf("%q", sbx)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, 缺 %q", err, want)
 		}
@@ -250,13 +250,13 @@ func TestRelativePathSuggestsSandbox(t *testing.T) {
 	// 未注入沙盒：原消息、不带提示（既有测试缺省路径）。
 	plain := pick(t, newAllTools(newFakeMem(), nil), "file_write")
 	_, err = plain.Execute(ctx, args)
-	if err == nil || strings.Contains(err.Error(), "特权沙盒") {
+	if err == nil || strings.Contains(err.Error(), "privileged sandbox") {
 		t.Fatalf("空沙盒 err = %v, want 原消息无提示", err)
 	}
 	// 相对沙盒同样不提示——不能建议一个会被同一条规则再次拒绝的路径。
 	rel := pick(t, New(newFakeMem(), nil, &fakeJobs{}, "rel-sandbox"), "file_write")
 	_, err = rel.Execute(ctx, args)
-	if err == nil || strings.Contains(err.Error(), "特权沙盒") {
+	if err == nil || strings.Contains(err.Error(), "privileged sandbox") {
 		t.Fatalf("相对沙盒 err = %v, want 无提示", err)
 	}
 }
@@ -275,7 +275,7 @@ func TestFileTools(t *testing.T) {
 			args = `{"path":"rel/x.txt","content":"c"}`
 		}
 		if _, err := tl.Execute(ctx, call(args)); err == nil ||
-			!strings.Contains(err.Error(), "绝对路径") {
+			!strings.Contains(err.Error(), "must be absolute") {
 			t.Fatalf("%s 相对路径 err = %v", name, err)
 		}
 		if _, _, ok := tl.(port.FileTarget).Target(ctx, call(args)); ok {
@@ -314,7 +314,7 @@ func TestFileTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := r.Execute(ctx, call(`{"path":`+js(bin)+`}`)); err == nil ||
-		!strings.Contains(err.Error(), "二进制") {
+		!strings.Contains(err.Error(), "binary") {
 		t.Fatalf("binary err = %v", err)
 	}
 
@@ -328,7 +328,7 @@ func TestFileTools(t *testing.T) {
 	if err := os.Mkdir(empty, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if res, err = l.Execute(ctx, call(`{"path":`+js(empty)+`}`)); err != nil || res.Output != "（空目录）" {
+	if res, err = l.Execute(ctx, call(`{"path":`+js(empty)+`}`)); err != nil || res.Output != "(empty directory)" {
 		t.Fatalf("empty list = %q, %v", res.Output, err)
 	}
 

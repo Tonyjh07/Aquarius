@@ -1084,7 +1084,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 		if !strings.Contains(string(reqs.at(0).body), `"tools"`) {
 			t.Fatal("首次请求应带工具声明")
 		}
-		if !strings.Contains(string(reqs.at(1).body), "已写入") {
+		if !strings.Contains(string(reqs.at(1).body), "wrote memories.md") {
 			t.Fatalf("第二次请求应带工具结果: %.300s", reqs.at(1).body)
 		}
 		c := loadTree(t, dir)
@@ -1108,7 +1108,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 			t.Fatalf("code = %d, out = %q", code, out.String())
 		}
 		got := out.String()
-		if !strings.Contains(got, "[y/N]") || !strings.Contains(got, "用户拒绝") {
+		if !strings.Contains(got, "[y/N]") || !strings.Contains(got, "user denied") {
 			t.Fatalf("stdout 缺拒绝痕迹: %q", got)
 		}
 		if _, err := os.Stat(filepath.Join(dir, port.GlobalMemoryDoc)); !errors.Is(err, os.ErrNotExist) {
@@ -1116,7 +1116,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 		}
 		c := loadTree(t, dir)
 		tn, ok := findToolNode(c)
-		if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "用户拒绝") {
+		if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "user denied") {
 			t.Fatalf("tool 节点 = %+v", tn)
 		}
 	})
@@ -1243,12 +1243,12 @@ func TestRunTermExecRejectE2E(t *testing.T) {
 	if code := run([]string{"-data", dir}, strings.NewReader("跑一下\nn\n/quit\n"), &out, io.Discard); code != 0 {
 		t.Fatalf("code = %d, out = %q", code, out.String())
 	}
-	if !strings.Contains(out.String(), "用户拒绝") {
+	if !strings.Contains(out.String(), "user denied") {
 		t.Fatalf("stdout 缺拒绝痕迹: %q", out.String())
 	}
 	c := loadTree(t, dir)
 	tn, ok := findToolNode(c)
-	if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "用户拒绝") {
+	if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "user denied") {
 		t.Fatalf("tool 节点 = %+v", tn)
 	}
 }

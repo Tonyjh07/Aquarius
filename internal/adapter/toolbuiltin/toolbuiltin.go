@@ -48,7 +48,7 @@ func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox stri
 // requireJobs 任务类工具的管理器校验（未装配时明确报错，不 panic）。
 func requireJobs(jobs port.JobManager, name string) (port.JobManager, error) {
 	if jobs == nil {
-		return nil, fmt.Errorf("%s: 未配置任务管理器（port.JobManager）", name)
+		return nil, fmt.Errorf("%s: no job manager configured (port.JobManager)", name)
 	}
 	return jobs, nil
 }
@@ -59,7 +59,7 @@ func decodeArgs(call tool.Call, v any) error {
 		return nil
 	}
 	if err := json.Unmarshal(call.Args, v); err != nil {
-		return fmt.Errorf("参数不是合法 JSON 对象: %w", err)
+		return fmt.Errorf("arguments are not a valid JSON object: %w", err)
 	}
 	return nil
 }
@@ -71,12 +71,12 @@ func requireSessionDoc(ctx context.Context, name string) (string, error) {
 	}
 	sid, ok := port.SessionIDFrom(ctx)
 	if !ok {
-		return "", fmt.Errorf("无会话上下文，只能访问全局记忆 %s", port.GlobalMemoryDoc)
+		return "", fmt.Errorf("no session context; only the global memory %s is accessible", port.GlobalMemoryDoc)
 	}
 	if name == port.SessionMemoryDoc(sid) {
 		return name, nil
 	}
-	return "", fmt.Errorf("memory_* 只能访问全局记忆 %s 与当前会话记忆 %s",
+	return "", fmt.Errorf("memory_* can only access the global memory %s and the current session's memory %s",
 		port.GlobalMemoryDoc, port.SessionMemoryDoc(sid))
 }
 

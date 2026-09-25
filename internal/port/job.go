@@ -59,7 +59,7 @@ type JobManager interface {
 func ResolveJobID(jobs []Job, arg string) (JobID, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
-		return "", errors.New("缺少任务 id")
+		return "", errors.New("missing task id")
 	}
 	var hits []JobID
 	for _, j := range jobs {
@@ -72,7 +72,7 @@ func ResolveJobID(jobs []Job, arg string) (JobID, error) {
 	}
 	switch len(hits) {
 	case 0:
-		return "", fmt.Errorf("没有任务 %q", arg)
+		return "", fmt.Errorf("no task %q", arg)
 	case 1:
 		return hits[0], nil
 	default:
@@ -80,6 +80,6 @@ func ResolveJobID(jobs []Job, arg string) (JobID, error) {
 		for i, h := range hits {
 			ids[i] = string(h)
 		}
-		return "", fmt.Errorf("任务标识 %q 有歧义（命中 %s），请加长", arg, strings.Join(ids, ", "))
+		return "", fmt.Errorf("ambiguous task id %q (matches %s); use a longer prefix", arg, strings.Join(ids, ", "))
 	}
 }

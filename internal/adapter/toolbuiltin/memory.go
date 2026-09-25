@@ -17,7 +17,7 @@ type memoryList struct{ mem port.MemoryStore }
 func (t *memoryList) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "memory_list",
-		Description: "列出可访问的记忆文档索引（全局记忆与当前会话记忆），含每篇摘要。",
+		Description: "List the index of accessible memory documents (global memory and current-session memory), with each summary.",
 		Schema:      jsonSchema(`{"type":"object","properties":{}}`),
 		Risk:        tool.Safe,
 	}
@@ -26,7 +26,7 @@ func (t *memoryList) Spec() tool.Spec {
 func (t *memoryList) Execute(ctx context.Context, _ tool.Call) (tool.Result, error) {
 	entries, err := t.mem.Index(ctx)
 	if err != nil {
-		return tool.Result{}, fmt.Errorf("记忆索引: %w", err)
+		return tool.Result{}, fmt.Errorf("memory index: %w", err)
 	}
 	allowed := allowedDocNames(ctx)
 	var b strings.Builder
@@ -39,7 +39,7 @@ func (t *memoryList) Execute(ctx context.Context, _ tool.Call) (tool.Result, err
 		n++
 	}
 	if n == 0 {
-		return okResult("（暂无记忆文档）"), nil
+		return okResult("(no memory documents yet)"), nil
 	}
 	return okResult(strings.TrimRight(b.String(), "\n")), nil
 }
@@ -50,11 +50,11 @@ type memoryRead struct{ mem port.MemoryStore }
 func (t *memoryRead) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "memory_read",
-		Description: "按文档名读取记忆全文。名字用 memory_list 查看（全局 memories.md 或当前会话的 <会话ID>.memory.md）。",
+		Description: "Read a memory document in full by name. Use memory_list to see names (the global memories.md or the current session's <sessionID>.memory.md).",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
-				"name": {"type": "string", "description": "记忆文档名"}
+				"name": {"type": "string", "description": "memory document name"}
 			},
 			"required": ["name"]
 		}`),
@@ -75,7 +75,7 @@ func (t *memoryRead) Execute(ctx context.Context, call tool.Call) (tool.Result, 
 	}
 	doc, err := t.mem.Read(ctx, name)
 	if err != nil {
-		return tool.Result{}, fmt.Errorf("读取记忆 %s: %w", name, err)
+		return tool.Result{}, fmt.Errorf("read memory %s: %w", name, err)
 	}
 	return okResult(doc.Content), nil
 }
@@ -86,11 +86,11 @@ type memorySearch struct{ mem port.MemoryStore }
 func (t *memorySearch) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "memory_search",
-		Description: "在可访问的记忆（全局 + 当前会话）中按关键词检索，返回文档名、行号与片段。",
+		Description: "Search accessible memories (global + current session) by keyword; returns document name, line number and snippet.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
-				"query": {"type": "string", "description": "检索关键词"}
+				"query": {"type": "string", "description": "search keyword"}
 			},
 			"required": ["query"]
 		}`),
@@ -107,7 +107,7 @@ func (t *memorySearch) Execute(ctx context.Context, call tool.Call) (tool.Result
 	}
 	hits, err := t.mem.Search(ctx, a.Query)
 	if err != nil {
-		return tool.Result{}, fmt.Errorf("检索记忆: %w", err)
+		return tool.Result{}, fmt.Errorf("search memory: %w", err)
 	}
 	allowed := allowedDocNames(ctx)
 	var b strings.Builder
@@ -120,7 +120,7 @@ func (t *memorySearch) Execute(ctx context.Context, call tool.Call) (tool.Result
 		n++
 	}
 	if n == 0 {
-		return okResult("（无命中）"), nil
+		return okResult("(no hits)"), nil
 	}
 	return okResult(strings.TrimRight(b.String(), "\n")), nil
 }
@@ -134,14 +134,14 @@ type memoryWrite struct {
 func (t *memoryWrite) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "memory_write",
-		Description: "写入记忆文档（全局 memories.md 或当前会话记忆）。mode=append 追加到文末（缺省）；" +
-			"overwrite 整篇覆盖（先 memory_read 再改再覆盖）。写入会请求用户确认。",
+		Description: "Write a memory document (the global memories.md or the current session's memory). mode=append appends to the end (default); " +
+			"overwrite replaces the whole document (memory_read first, then edit, then overwrite). Writing requests user confirmation.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
-				"name": {"type": "string", "description": "记忆文档名"},
-				"content": {"type": "string", "description": "要写入的 markdown 内容"},
-				"mode": {"type": "string", "enum": ["append", "overwrite"], "description": "缺省 append"}
+				"name": {"type": "string", "description": "memory document name"},
+				"content": {"type": "string", "description": "markdown content to write"},
+				"mode": {"type": "string", "enum": ["append", "overwrite"], "description": "defaults to append"}
 			},
 			"required": ["name", "content"]
 		}`),
@@ -185,7 +185,7 @@ func (t *memoryWrite) Execute(ctx context.Context, call tool.Call) (tool.Result,
 		return tool.Result{}, err
 	}
 	if a.Content == "" {
-		return tool.Result{}, errors.New("content 不可为空")
+		return tool.Result{}, errors.New("content must not be empty")
 	}
 	mode := a.Mode
 	if mode == "" {
@@ -198,15 +198,15 @@ func (t *memoryWrite) Execute(ctx context.Context, call tool.Call) (tool.Result,
 		if err == nil {
 			content = strings.TrimRight(prev.Content, "\n") + "\n" + a.Content
 		} else if !errors.Is(err, port.ErrMemoryNotFound) {
-			return tool.Result{}, fmt.Errorf("读取既有记忆: %w", err)
+			return tool.Result{}, fmt.Errorf("read existing memory: %w", err)
 		}
 	case "overwrite":
 		// 整篇覆盖
 	default:
-		return tool.Result{}, fmt.Errorf("未知 mode %q（append|overwrite）", mode)
+		return tool.Result{}, fmt.Errorf("unknown mode %q (append|overwrite)", mode)
 	}
 	if err := t.mem.Write(ctx, port.MemoryDoc{Name: name, Content: content}); err != nil {
-		return tool.Result{}, fmt.Errorf("写入记忆: %w", err)
+		return tool.Result{}, fmt.Errorf("write memory: %w", err)
 	}
-	return okResult(fmt.Sprintf("已写入 %s（%s，%d 字符）", name, mode, len([]rune(content)))), nil
+	return okResult(fmt.Sprintf("wrote %s (%s, %d chars)", name, mode, len([]rune(content)))), nil
 }

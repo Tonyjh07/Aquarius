@@ -264,14 +264,14 @@ func TestResourceStore(t *testing.T) {
 	if err != nil || !strings.Contains(doc.Content, "buy milk") {
 		t.Fatalf("read = %+v, %v", doc, err)
 	}
-	if _, err := mem.Read(context.Background(), "fake://blob"); err == nil || !strings.Contains(err.Error(), "二进制") {
+	if _, err := mem.Read(context.Background(), "fake://blob"); err == nil || !strings.Contains(err.Error(), "binary") {
 		t.Fatalf("二进制资源应拒绝: %v", err)
 	}
 	// 空文本是合法内容（审查修复：曾与二进制一并拒收）。
 	if doc, err := mem.Read(context.Background(), "fake://blank"); err != nil || doc.Content != "" {
 		t.Fatalf("空文本资源 read = %+v, %v", doc, err)
 	}
-	if err := mem.Write(context.Background(), port.MemoryDoc{Name: "x"}); err == nil || !strings.Contains(err.Error(), "只读") {
+	if err := mem.Write(context.Background(), port.MemoryDoc{Name: "x"}); err == nil || !strings.Contains(err.Error(), "read-only") {
 		t.Fatalf("写应拒绝: %v", err)
 	}
 	if err := mem.Remove(context.Background(), "x"); err == nil {

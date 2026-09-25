@@ -96,7 +96,7 @@ func levelFn(l perm.Level) func() perm.Level { return func() perm.Level { return
 func TestExecuteUnknownTool(t *testing.T) {
 	r := New(Options{})
 	res, err := r.Execute(context.Background(), c("nope", `{}`))
-	if err != nil || res.OK || !strings.Contains(res.Err, "未知工具") {
+	if err != nil || res.OK || !strings.Contains(res.Err, "unknown tool") {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 }
@@ -144,8 +144,8 @@ func TestExecuteToolErrorFeedsBack(t *testing.T) {
 	if n := len([]rune(res2.Err)); n > 50+80 { // 50 + 截断标注余量
 		t.Fatalf("Err 长度 = %d, 未按 MaxOutput 裁剪", n)
 	}
-	if !strings.Contains(res2.Err, "原文 500 字符") {
-		t.Fatalf("缺截断标注: %q", res2.Err)
+	if !strings.Contains(res2.Err, "original 500 chars") {
+		t.Fatalf("missing truncation marker: %q", res2.Err)
 	}
 }
 
@@ -248,7 +248,7 @@ func TestConfirmDeny(t *testing.T) {
 	})
 	_ = toolRan
 	res, err := r.Execute(context.Background(), c("fw", `{"p":1}`))
-	if err != nil || res.OK || !strings.Contains(res.Err, "用户拒绝") {
+	if err != nil || res.OK || !strings.Contains(res.Err, "user denied") {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	if len(conf.asked) != 1 || !strings.Contains(conf.asked[0], "fw") {
@@ -348,7 +348,7 @@ func TestExecuteHardTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("超时应作结果回填而非错误: %v", err)
 	}
-	if res.OK || !strings.Contains(res.Err, "超时") {
+	if res.OK || !strings.Contains(res.Err, "timed out") {
 		t.Fatalf("res=%+v", res)
 	}
 	if time.Since(start) > 500*time.Millisecond {
@@ -368,7 +368,7 @@ func TestExecuteTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("超时应作结果回填而非错误: %v", err)
 	}
-	if res.OK || !strings.Contains(res.Err, "超时") {
+	if res.OK || !strings.Contains(res.Err, "timed out") {
 		t.Fatalf("res=%+v", res)
 	}
 	if time.Since(start) > 500*time.Millisecond {
@@ -402,8 +402,8 @@ func TestTrimOutput(t *testing.T) {
 	if got := []rune(strings.Split(res.Output, "\n")[0]); len(got) != 10 {
 		t.Fatalf("trimmed 前段 = %d runes", len(got))
 	}
-	if !strings.Contains(res.Output, "原文 100 字符") {
-		t.Fatalf("缺截断标注: %q", res.Output)
+	if !strings.Contains(res.Output, "original 100 chars") {
+		t.Fatalf("missing truncation marker: %q", res.Output)
 	}
 
 	r2 := New(Options{Tools: []port.Tool{&stubTool{
@@ -574,7 +574,7 @@ func TestRunnerRemove(t *testing.T) {
 		t.Fatalf("specs = %+v, want 仅 builtin", specs)
 	}
 	res, err := r.Execute(context.Background(), tool.Call{ID: "c1", Name: "mcp:a:t1"})
-	if err != nil || res.OK || !strings.Contains(res.Err, "未知工具") {
+	if err != nil || res.OK || !strings.Contains(res.Err, "unknown tool") {
 		t.Fatalf("execute 已移除工具 = %+v, %v", res, err)
 	}
 	r.Remove("不存在的工具") // 无操作不 panic

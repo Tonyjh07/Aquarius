@@ -17,11 +17,11 @@ type thinkTool struct{}
 func (t *thinkTool) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "think",
-		Description: "在给出最终回答前显式整理思路（无副作用；内容会随调用记录在对话树中）。",
+		Description: "Explicitly structure your thoughts before the final answer (no side effects; the content is kept in the conversation tree with the call).",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
-				"thought": {"type": "string", "description": "思考内容"}
+				"thought": {"type": "string", "description": "the thought content"}
 			},
 			"required": ["thought"]
 		}`),
@@ -36,5 +36,5 @@ func (t *thinkTool) Execute(_ context.Context, call tool.Call) (tool.Result, err
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
 	}
-	return okResult("已记录思考（think 为 no-op，仅随调用入树）"), nil
+	return okResult("recorded (think is a no-op; the call is kept in the conversation tree)"), nil
 }

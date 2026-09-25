@@ -142,21 +142,21 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	t, ok := r.byName[call.Name]
 	r.mu.Unlock()
 	if !ok {
-		return tool.Result{CallID: call.ID, OK: false, Err: fmt.Sprintf("未知工具 %q", call.Name)}, nil
+		return tool.Result{CallID: call.ID, OK: false, Err: fmt.Sprintf("unknown tool %q", call.Name)}, nil
 	}
 
 	// 权限判定（D22 两列分工）。
 	decision, target := r.decide(ctx, t, call)
 	if decision == perm.Ask {
 		if r.conf == nil {
-			return tool.Result{}, fmt.Errorf("工具 %s 需要确认，但未配置 Confirmer", call.Name)
+			return tool.Result{}, fmt.Errorf("tool %s requires confirmation but no Confirmer is configured", call.Name)
 		}
 		yes, err := r.conf.Confirm(ctx, confirmPrompt(call, target))
 		if err != nil {
-			return tool.Result{}, fmt.Errorf("确认 %s: %w", call.Name, err)
+			return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
 		}
 		if !yes {
-			return tool.Result{CallID: call.ID, OK: false, Err: "用户拒绝执行 " + call.Name}, nil
+			return tool.Result{CallID: call.ID, OK: false, Err: "user denied " + call.Name}, nil
 		}
 	}
 
@@ -223,7 +223,7 @@ func timeoutResult(call tool.Call, d time.Duration) tool.Result {
 	return tool.Result{
 		CallID: call.ID,
 		OK:     false,
-		Err:    fmt.Sprintf("工具执行超时（%s）", d),
+		Err:    fmt.Sprintf("tool execution timed out (%s)", d),
 	}
 }
 
@@ -305,7 +305,7 @@ func evalPath(p string) (string, error) {
 				}
 				return out, nil
 			}
-			return "", fmt.Errorf("解析 %s: %w", next, err) // 权限等：无法判定 → fail-closed
+			return "", fmt.Errorf("resolve %s: %w", next, err) // 权限等：无法判定 → fail-closed
 		}
 		if !link {
 			out = next
@@ -313,11 +313,11 @@ func evalPath(p string) (string, error) {
 		}
 		depth++
 		if depth > maxLinkDepth {
-			return "", fmt.Errorf("链接层数超过 %d（疑似循环）: %s", maxLinkDepth, p)
+			return "", fmt.Errorf("symlink depth exceeded %d (possible loop): %s", maxLinkDepth, p)
 		}
 		target, err := os.Readlink(next)
 		if err != nil {
-			return "", fmt.Errorf("读取链接目标 %s: %w", next, err)
+			return "", fmt.Errorf("read link target %s: %w", next, err)
 		}
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(out, target) // 相对目标基于链接的父目录
@@ -374,5 +374,5 @@ func trim(s string, max int) string {
 	if len(r) <= max {
 		return s
 	}
-	return string(r[:max]) + fmt.Sprintf("\n…[输出已截断，原文 %d 字符]", len(r))
+	return string(r[:max]) + fmt.Sprintf("\n…[output truncated, original %d chars]", len(r))
 }

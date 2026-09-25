@@ -45,7 +45,7 @@ func cmdRawLine(cmd *exec.Cmd) (string, bool) {
 // killTree 终止任务及其全部子进程：taskkill /T /F；失败回退直接 Kill。
 func killTree(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
-		return errors.New("jobproc: 进程未启动")
+		return errors.New("jobproc: process not started")
 	}
 	err := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
 	if err == nil {
