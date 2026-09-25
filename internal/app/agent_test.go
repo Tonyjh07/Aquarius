@@ -671,6 +671,25 @@ func TestBuildRequestConfigFallbackWithoutPersona(t *testing.T) {
 	}
 }
 
+// TestBuildRequestFallbackSystemIncludesEnv D37：兜底注入的 config system 同样带环境块。
+func TestBuildRequestFallbackSystemIncludesEnv(t *testing.T) {
+	llm := &scriptLLM{t: t}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{}, Config{Env: RuntimeEnv{Platform: "linux/amd64", Terminal: "repl"}})
+	c := conversation.New(conversation.ID("envp"), "envp")
+	commitNode(t, c, conversation.MessageID(c.ID), conversation.RoleUser, "hi")
+
+	req, err := a.buildRequest(context.Background(), c)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	sys := req.Messages[0].Content[0].Text
+	if !strings.HasPrefix(sys, defaultSystem) || !strings.Contains(sys, "Runtime environment:") ||
+		!strings.Contains(sys, "- Platform: linux/amd64") {
+		t.Fatalf("system = %q", sys)
+	}
+}
+
 // TestBuildRequestTreePersonaReplacesConfig D20：树内 persona 在位时不再注入 config 兜底 system。
 func TestBuildRequestTreePersonaReplacesConfig(t *testing.T) {
 	llm := &scriptLLM{t: t}

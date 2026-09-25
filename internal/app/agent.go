@@ -59,6 +59,9 @@ type Config struct {
 	Think *bool
 	// ReasoningEffort 推理档位初值（D34；空 = 不发送）。/effort 热切换取代。
 	ReasoningEffort string
+	// Env 运行环境块（D37）：附加到 system 提示（含 config 自定义提示）之后；
+	// 全空 = 不附加。
+	Env RuntimeEnv
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（DESIGN §7.1，内核唯一的编排）。
@@ -99,6 +102,7 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	if system == "" {
 		system = defaultSystem
 	}
+	system = systemWithEnv(system, cfg.Env) // D37：兜底注入的 system 同样带环境块
 	maxTurns := cfg.MaxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns

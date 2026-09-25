@@ -378,6 +378,34 @@ func TestRunThinkToolVisibility(t *testing.T) {
 	}
 }
 
+// TestRunPersonaEnvironmentE2E D37：persona 首节点携带运行环境块（main 装配 → 树 → 请求体）。
+func TestRunPersonaEnvironmentE2E(t *testing.T) {
+	srv, reqs := scriptServer(t, []string{"好的"})
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X"},"ui":{"kind":"repl"},
+  "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	for _, want := range []string{"Runtime environment:", "Platform: ", "Terminal: repl", "sandbox"} {
+		if !strings.Contains(string(reqs.at(0).body), want) {
+			t.Fatalf("request body 缺 %q: %.400s", want, reqs.at(0).body)
+		}
+	}
+	c := loadTree(t, dir)
+	persona := c.Path()[1]
+	if persona.Role != conversation.RoleSystem ||
+		!strings.Contains(persona.Content[0].Text, "Runtime environment:") {
+		t.Fatalf("persona = %+v, want 环境块随快照入树", persona)
+	}
+}
+
 // TestRunRecordsUnsupportedParams D34 全链路：服务端 400 点名不认 reasoning_effort
 // → 同请求剥离重试成功 → 自动写回 config model.unsupported_params（重启后不再发送）。
 func TestRunRecordsUnsupportedParams(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -14,6 +15,40 @@ import (
 // defaultSystem 未配置时的默认 system 提示（记忆索引自 M2 起并入）。
 // 面向模型的提示用英文（AGENTS 语言约定）；回复语言由首句指定为跟随用户。
 const defaultSystem = "You are Aquarius, a minimalist personal AI assistant. Reply in the user's language, concisely."
+
+// RuntimeEnv 运行环境事实（D37）：随 config 快照进 persona 首节点的英文环境块，
+// 让模型开局就知道平台语义、终端形态、特权沙盒位置，而不必踩坑后才学。
+type RuntimeEnv struct {
+	Platform   string // 如 "windows/amd64"
+	Terminal   string // UI 形态：tui / repl（cfg.UI.Kind）
+	TERM       string // 终端 TERM 环境变量（可空）
+	SandboxDir string // 特权沙盒目录（仅绝对路径才附提示，139d585 口径）
+}
+
+// systemWithEnv 在基础 system 提示后附加运行环境块（D37）。
+// 字段为空的行跳过；全部为空时原样返回（无环境注入的缺省行为不变）。
+func systemWithEnv(base string, env RuntimeEnv) string {
+	var b strings.Builder
+	if env.Platform != "" {
+		fmt.Fprintf(&b, "- Platform: %s\n", env.Platform)
+	}
+	if env.Terminal != "" {
+		term := "TERM unset"
+		if env.TERM != "" {
+			term = "TERM=" + env.TERM
+		}
+		fmt.Fprintf(&b, "- Terminal: %s (%s)\n", env.Terminal, term)
+	}
+	// 沙盒提示必须是绝对路径——不能建议一个会被同一规则再拒的相对路径（139d585）。
+	if filepath.IsAbs(env.SandboxDir) {
+		fmt.Fprintf(&b, "- Privileged sandbox directory: %q — writes there skip confirmation from the strict permission level upward.\n",
+			env.SandboxDir)
+	}
+	if b.Len() == 0 {
+		return base
+	}
+	return base + "\n\nRuntime environment:\n" + strings.TrimRight(b.String(), "\n")
+}
 
 // historyToolMarker 失联 tool 结果的内联标注（DESIGN §4.1 不变量 2）。
 const historyToolMarker = "〔历史工具结果〕"

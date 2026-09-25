@@ -31,6 +31,8 @@ type SessionDeps struct {
 	Clock port.Clock // persona 节点 CreatedAt
 	// SystemPrompt 人格提示：空 = 内置默认；新建会话时快照进 persona 首节点（D20）。
 	SystemPrompt string
+	// Env 运行环境块（D37）：附加在 SystemPrompt/默认提示之后一并快照进 persona。
+	Env RuntimeEnv
 	// Level 权限等级（D22）；空 = perm.DefaultLevel。
 	Level perm.Level
 	// SandboxPath 特权目录（<dataDir>/sandbox），仅用于 /permission 展示。
@@ -77,6 +79,7 @@ type Session struct {
 	ids           port.IDGen
 	clock         port.Clock
 	systemPrompt  string
+	env           RuntimeEnv
 	level         perm.Level
 	sandboxPath   string
 	persistLevel  func(perm.Level) error
@@ -134,6 +137,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		ids:           d.IDs,
 		clock:         d.Clock,
 		systemPrompt:  strings.TrimSpace(d.SystemPrompt),
+		env:           d.Env,
 		level:         level,
 		sandboxPath:   d.SandboxPath,
 		persistLevel:  d.PersistLevel,
@@ -179,6 +183,7 @@ func (s *Session) newConversation(title string) (*conversation.Conversation, err
 	if prompt == "" {
 		prompt = defaultSystem
 	}
+	prompt = systemWithEnv(prompt, s.env) // D37：环境块随 config 快照进 persona
 	persona := conversation.Message{
 		ID:        s.ids.MessageID(),
 		Parent:    conversation.MessageID(c.ID),

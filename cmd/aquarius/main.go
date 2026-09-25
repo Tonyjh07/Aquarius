@@ -479,6 +479,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	gen = decorate.NewRetry(gen)
 	auditedRunner := decorate.AuditTool(runner, audit)
 	ids := systemIDGen{}
+	// D37：运行环境块（随 config 快照进 persona）——平台、终端形态与 TERM、特权沙盒目录。
+	runtimeEnv := app.RuntimeEnv{
+		Platform:   runtime.GOOS + "/" + runtime.GOARCH,
+		Terminal:   cfg.UI.Kind,
+		TERM:       os.Getenv("TERM"),
+		SandboxDir: sandboxDir,
+	}
 	agent, err := app.New(
 		app.Deps{
 			LLM: gen, UI: presenter, IDs: ids, Clock: systemClock{},
@@ -488,6 +495,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns,
 			CompactThreshold: cfg.Limits.CompactThreshold, MaxContextTokens: cfg.Limits.MaxContextTokens,
 			Think: cfg.Model.Think, ReasoningEffort: cfg.Model.ReasoningEffort, // D34 初值
+			Env: runtimeEnv, // D37
 		},
 	)
 	if err != nil {
@@ -531,6 +539,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		IDs:           ids,
 		Clock:         systemClock{},
 		SystemPrompt:  cfg.SystemPrompt,
+		Env:           runtimeEnv, // D37：persona 快照带环境块
 		Level:         level,
 		SandboxPath:   sandboxDir,
 		PersistLevel:  persistLevel,

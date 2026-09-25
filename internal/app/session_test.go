@@ -96,6 +96,31 @@ func newTestSession(t *testing.T, store port.ConversationStore, streams ...*scri
 	return s, llm, rec
 }
 
+// TestSessionPersonaIncludesEnv D37：环境块随 config 快照进 persona 首节点入树。
+func TestSessionPersonaIncludesEnv(t *testing.T) {
+	store := newMemStore()
+	rec := &recorder{}
+	llm := &scriptLLM{t: t}
+	agent := newAgent(t, llm, rec, Deps{}, Config{})
+	s, err := NewSession(context.Background(), SessionDeps{
+		Store: store,
+		Agent: agent,
+		IDs:   &seqIDs{},
+		Clock: fixedClock{testTime},
+		Env:   RuntimeEnv{Platform: "windows/amd64", Terminal: "tui", SandboxDir: `C:\data\sandbox`},
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	persona := s.Current().Path()[1]
+	text := persona.Content[0].Text
+	for _, want := range []string{"Runtime environment:", "Platform: windows/amd64", "Terminal: tui"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("persona missing %q:\n%s", want, text)
+		}
+	}
+}
+
 // TestNewSessionWritesPersonaFirstNode D20：新建会话 = Root + persona 首节点，Head 在 persona。
 func TestNewSessionWritesPersonaFirstNode(t *testing.T) {
 	store := newMemStore()
