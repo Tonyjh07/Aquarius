@@ -62,6 +62,9 @@ type Delta struct {
 	Text      string
 	ToolCalls []ToolCallDelta // Index 分片聚合（app 层 ToolCallAssembler）
 	Usage     *conversation.Usage
+	// Reasoning 思维链分片（D34）：Text 承载推理文本——只呈现不入树
+	//（consume 不进 commit buffer，不回传服务端、不占下轮上下文）。
+	Reasoning bool
 }
 
 // ToolCallDelta 工具调用的流式分片：同一 Index 的分片聚合为一个 tool.Call。

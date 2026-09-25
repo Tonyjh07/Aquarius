@@ -65,6 +65,30 @@ func TestEmitStreamThenCommitted(t *testing.T) {
 	}
 }
 
+// TestEmitReasoningLine D34：思维链独立成行（[thinking] 前缀，分片续写），
+// 正文/工具/提交事件到达时先关思维链行。
+func TestEmitReasoningLine(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "先想", Reasoning: true}})
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "一步", Reasoning: true}})
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "答案"}})
+	emit(t, ui, port.CommittedEvent{Message: conversation.Message{Outcome: conversation.OutcomeDone}})
+	if got, want := buf.String(), "[thinking] 先想一步\n答案\n"; got != want {
+		t.Fatalf("buf = %q, want %q", got, want)
+	}
+
+	// 思维链 → 工具事件：先关思维链行再打工具行。
+	buf.Reset()
+	ui = New(strings.NewReader(""), &buf)
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "打算调用", Reasoning: true}})
+	emit(t, ui, port.ToolCallEvent{Call: tool.Call{Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}})
+	if got, want := buf.String(), "[thinking] 打算调用\n[tool] echo {\"m\":\"x\"}\n"; got != want {
+		t.Fatalf("buf = %q, want %q", got, want)
+	}
+}
+
 func TestEmitCancelledOutcome(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)

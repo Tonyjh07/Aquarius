@@ -615,8 +615,12 @@ type chatChunk struct {
 
 type chatChoice struct {
 	Delta struct {
-		Content   string          `json:"content"`
-		ToolCalls []chatCallDelta `json:"tool_calls"`
+		Content string `json:"content"`
+		// ReasoningContent / Reasoning 思维链的两种常见键名（deepseek、qwen/dashscope、
+		// mimo 等 OpenAI 兼容端，D34）；与 content 同分片出现时 content 优先。
+		ReasoningContent string          `json:"reasoning_content"`
+		Reasoning        string          `json:"reasoning"`
+		ToolCalls        []chatCallDelta `json:"tool_calls"`
 	} `json:"delta"`
 	FinishReason string `json:"finish_reason"`
 }
@@ -645,7 +649,14 @@ func (ch chatChunk) toDelta() port.Delta {
 	var d port.Delta
 	if len(ch.Choices) > 0 {
 		delta := ch.Choices[0].Delta
-		d.Text = delta.Content
+		switch {
+		case delta.Content != "":
+			d.Text = delta.Content // 正文优先：与思维链同片时推理丢弃（实践中不共存）
+		case delta.ReasoningContent != "":
+			d.Text, d.Reasoning = delta.ReasoningContent, true
+		case delta.Reasoning != "":
+			d.Text, d.Reasoning = delta.Reasoning, true
+		}
 		for _, tc := range delta.ToolCalls {
 			d.ToolCalls = append(d.ToolCalls, port.ToolCallDelta{
 				Index:     tc.Index,

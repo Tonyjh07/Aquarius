@@ -30,9 +30,10 @@ const toolPreviewLen = 120
 
 // UI 基于 Reader/Writer 的会话界面。
 type UI struct {
-	scanner *bufio.Scanner
-	out     io.Writer
-	inDelta bool // 上一事件是流式增量：写非增量行前先补换行
+	scanner  *bufio.Scanner
+	out      io.Writer
+	inDelta  bool // 上一事件是流式增量：写非增量行前先补换行
+	thinking bool // 思维链行进行中（D34：[thinking] 前缀已打，等正文/事件收尾）
 }
 
 // New 创建 REPL UI。
@@ -121,6 +122,30 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 		if e.Delta.Text == "" {
 			return nil // 工具调用分片、用量分片不直接渲染
 		}
+		if e.Delta.Reasoning {
+			// 思维链（D34）：单独通道——先关上一行（正文或旧思维链），首片打
+			// [thinking] 前缀，连续分片续写同一行。
+			if u.inDelta {
+				if _, err := io.WriteString(u.out, "\n"); err != nil {
+					return err
+				}
+				u.inDelta = false
+			}
+			if !u.thinking {
+				if _, err := io.WriteString(u.out, "[thinking] "); err != nil {
+					return err
+				}
+				u.thinking = true
+			}
+			_, err := io.WriteString(u.out, e.Delta.Text)
+			return err
+		}
+		if u.thinking { // 正文首片：关思维链行
+			if _, err := io.WriteString(u.out, "\n"); err != nil {
+				return err
+			}
+			u.thinking = false
+		}
 		u.inDelta = true
 		_, err := io.WriteString(u.out, e.Delta.Text)
 		return err
@@ -175,11 +200,12 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 	}
 }
 
-// flushDelta 若刚写过流式增量则补换行断行。
+// flushDelta 若刚写过流式增量或思维链行则补换行断行。
 func (u *UI) flushDelta() {
-	if u.inDelta {
+	if u.inDelta || u.thinking {
 		_, _ = io.WriteString(u.out, "\n")
 		u.inDelta = false
+		u.thinking = false
 	}
 }
 

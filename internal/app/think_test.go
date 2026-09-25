@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -111,6 +112,51 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	help, err := thinkCmd(t, s, "help")
 	if err != nil || !strings.Contains(help, "/think") || !strings.Contains(help, "/effort") {
 		t.Fatalf("help = %q, %v", help, err)
+	}
+}
+
+// TestRunReasoningNotCommitted D34：思维链只呈现不入树——事件面带 Reasoning 标记
+// 可见，提交节点文本只含正文（推理不回传、不占下轮上下文）。
+func TestRunReasoningNotCommitted(t *testing.T) {
+	stream := &scriptStream{steps: []scriptStep{
+		{delta: port.Delta{Text: "先想一想", Reasoning: true}},
+		{delta: port.Delta{Text: "再算一算", Reasoning: true}},
+		{delta: port.Delta{Text: "答案"}},
+	}}
+	s, _, rec := newTestSession(t, newMemStore(), stream)
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+
+	var sawReasoning, sawCommitted bool
+	for _, ev := range rec.events {
+		switch e := ev.(type) {
+		case port.DeltaEvent:
+			if e.Delta.Reasoning {
+				sawReasoning = true
+				if e.Delta.Text == "" {
+					t.Fatal("思维链分片应携带文本")
+				}
+			}
+		case port.CommittedEvent:
+			sawCommitted = true
+			var b strings.Builder
+			for _, p := range e.Message.Content {
+				if p.Kind == conversation.PartText {
+					b.WriteString(p.Text)
+				}
+			}
+			text := b.String()
+			if strings.Contains(text, "想一想") || strings.Contains(text, "算一算") {
+				t.Fatalf("提交节点含思维链: %q", text)
+			}
+			if !strings.Contains(text, "答案") {
+				t.Fatalf("提交节点缺正文: %q", text)
+			}
+		}
+	}
+	if !sawReasoning || !sawCommitted {
+		t.Fatalf("events: reasoning=%v committed=%v, want 均可见", sawReasoning, sawCommitted)
 	}
 }
 

@@ -569,6 +569,12 @@ func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *commitBuff
 		if err != nil {
 			return nil, err // 半截工具调用不带出（未完成调用不能进树）
 		}
+		if d.Reasoning {
+			// 思维链只呈现不入树（D34）：不进 commit buffer——不回传服务端、
+			// 不占下轮上下文、不进 /usage 的节点文本；推理 token 已计入 Usage。
+			_ = a.ui.Emit(ctx, port.DeltaEvent{MessageID: mid, Delta: d})
+			continue
+		}
 		buf.add(d)
 		_ = a.ui.Emit(ctx, port.DeltaEvent{MessageID: mid, Delta: d})
 	}

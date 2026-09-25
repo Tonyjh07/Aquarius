@@ -413,6 +413,64 @@ func TestGenerateEnumErrorNotStripped(t *testing.T) {
 	}
 }
 
+// TestStreamParsesReasoningDeltas D34：reasoning_content / reasoning 两种键名映射为
+// 思维链增量（Reasoning=true）；正文优先，同片时推理丢弃。
+func TestStreamParsesReasoningDeltas(t *testing.T) {
+	script := "" +
+		`data: {"choices":[{"delta":{"reasoning_content":"先想"}}]}` + "\n\n" +
+		`data: {"choices":[{"delta":{"reasoning":"一步"}}]}` + "\n\n" +
+		`data: {"choices":[{"delta":{"content":"答案"}}]}` + "\n\n" +
+		`data: {"choices":[{"delta":{"content":"正文","reasoning_content":"同片丢弃"}}]}` + "\n\n" +
+		"data: [DONE]\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, script)
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	s, err := c.Generate(context.Background(), port.GenerateRequest{
+		Model:    "m",
+		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	defer s.Close()
+
+	var got []port.Delta
+	for {
+		d, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("recv: %v", err)
+		}
+		got = append(got, d)
+	}
+	want := []struct {
+		text      string
+		reasoning bool
+	}{
+		{"先想", true},
+		{"一步", true},
+		{"答案", false},
+		{"正文", false}, // content 优先：同片推理丢弃
+	}
+	if len(got) != len(want) {
+		t.Fatalf("deltas = %d (%+v), want %d", len(got), got, len(want))
+	}
+	for i, w := range want {
+		if got[i].Text != w.text || got[i].Reasoning != w.reasoning {
+			t.Fatalf("delta[%d] = %+v, want %q reasoning=%v", i, got[i], w.text, w.reasoning)
+		}
+	}
+}
+
 func TestGenerateHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
