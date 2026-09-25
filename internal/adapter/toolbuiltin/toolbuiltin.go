@@ -20,7 +20,9 @@ import (
 type PathOf func(name string) (string, bool)
 
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
-func New(mem port.MemoryStore, pathOf PathOf) []port.Tool {
+// jobs 为任务端口（term_exec / job_* 用）：装配根必传；测试不关心时可传 nil，
+// 此类调用执行会明确报"未配置任务管理器"而非 panic。
+func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager) []port.Tool {
 	return []port.Tool{
 		&memoryList{mem: mem},
 		&memoryRead{mem: mem},
@@ -32,7 +34,21 @@ func New(mem port.MemoryStore, pathOf PathOf) []port.Tool {
 		&fileWrite{},
 		&fileDelete{},
 		&thinkTool{},
+		&termExec{jobs: jobs},
+		&jobStart{jobs: jobs},
+		&jobList{jobs: jobs},
+		&jobStatus{jobs: jobs},
+		&jobLogs{jobs: jobs},
+		&jobKill{jobs: jobs},
 	}
+}
+
+// requireJobs 任务类工具的管理器校验（未装配时明确报错，不 panic）。
+func requireJobs(jobs port.JobManager, name string) (port.JobManager, error) {
+	if jobs == nil {
+		return nil, fmt.Errorf("%s: 未配置任务管理器（port.JobManager）", name)
+	}
+	return jobs, nil
 }
 
 // decodeArgs 解析工具调用的 JSON 参数；空参数按空对象。
@@ -92,6 +108,12 @@ var (
 	_ port.Tool       = (*fileDelete)(nil)
 	_ port.FileTarget = (*fileDelete)(nil)
 	_ port.Tool       = (*thinkTool)(nil)
+	_ port.Tool       = (*termExec)(nil)
+	_ port.Tool       = (*jobStart)(nil)
+	_ port.Tool       = (*jobList)(nil)
+	_ port.Tool       = (*jobStatus)(nil)
+	_ port.Tool       = (*jobLogs)(nil)
+	_ port.Tool       = (*jobKill)(nil)
 )
 
 // 解析辅助（Target 申报共用）：取 path 参数并规约为绝对路径。

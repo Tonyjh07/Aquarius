@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
@@ -189,6 +190,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		confirmer = yesConfirmer{}
 	}
 	// 内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
+	// 后台任务（DESIGN §5.8/D8）：日志落盘 <dir>/jobs，任务表内存态。
+	jobs, err := jobproc.New(filepath.Join(dir, "jobs"))
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
 	toolTimeout := time.Duration(cfg.Limits.ToolTimeoutSec) * time.Second
 	if cfg.Limits.ToolTimeoutSec <= 0 {
 		toolTimeout = 60 * time.Second
@@ -201,7 +208,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Tools: toolbuiltin.New(mem, func(name string) (string, bool) {
 			p, err := mem.Path(name)
 			return p, err == nil
-		}),
+		}, jobs),
 		Confirmer:   confirmer,
 		Level:       lvl.Get,
 		SandboxPath: sandboxDir,

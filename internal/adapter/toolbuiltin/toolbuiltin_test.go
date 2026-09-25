@@ -89,13 +89,15 @@ func pick(t *testing.T, tools []port.Tool, name string) port.Tool {
 
 // TestNewRegistersAllTools 注册集合与 Risk 声明对齐 DESIGN §4.3。
 func TestNewRegistersAllTools(t *testing.T) {
-	tools := New(newFakeMem(), nil)
+	tools := newAllTools(newFakeMem(), nil)
 	want := map[string]tool.Risk{
 		"memory_list": tool.Safe, "memory_read": tool.Safe, "memory_search": tool.Safe,
 		"memory_write": tool.Confirm,
 		"file_read":    tool.Safe, "file_list": tool.Safe, "file_search": tool.Safe,
 		"file_write": tool.Confirm, "file_delete": tool.Confirm,
-		"think": tool.Safe,
+		"think":     tool.Safe,
+		"term_exec": tool.Confirm, "job_start": tool.Confirm,
+		"job_list": tool.Safe, "job_status": tool.Safe, "job_logs": tool.Safe, "job_kill": tool.Safe,
 	}
 	if len(tools) != len(want) {
 		t.Fatalf("tools = %d, want %d", len(tools), len(want))
@@ -123,7 +125,7 @@ func TestNewRegistersAllTools(t *testing.T) {
 // TestMemoryScope 记忆工具只碰全局 + 当前会话两份（DESIGN §4.4）。
 func TestMemoryScope(t *testing.T) {
 	mem := newFakeMem()
-	tools := New(mem, nil)
+	tools := newAllTools(mem, nil)
 	ctx := sessCtx("conv1")
 	other := port.SessionMemoryDoc("conv2")
 
@@ -208,7 +210,7 @@ func TestMemoryScope(t *testing.T) {
 
 	// memory_write 申报的 FileTarget = 写 + 解析出的磁盘路径。
 	pathOf := func(name string) (string, bool) { return filepath.Join("D", name), true }
-	wt := pick(t, New(mem, pathOf), "memory_write").(port.FileTarget)
+	wt := pick(t, newAllTools(mem, pathOf), "memory_write").(port.FileTarget)
 	p, op, ok := wt.Target(ctx, call(`{"name":"memories.md","content":"x"}`))
 	if !ok || op.String() != "write" || filepath.Base(p) != port.GlobalMemoryDoc {
 		t.Fatalf("Target = %q/%v/%v", p, op, ok)
@@ -217,7 +219,7 @@ func TestMemoryScope(t *testing.T) {
 
 // TestMemoryFileTargetWithoutPathOf 未注入路径解析时不申报（回退执行类判定）。
 func TestMemoryFileTargetWithoutPathOf(t *testing.T) {
-	w := pick(t, New(newFakeMem(), nil), "memory_write").(port.FileTarget)
+	w := pick(t, newAllTools(newFakeMem(), nil), "memory_write").(port.FileTarget)
 	if _, _, ok := w.Target(sessCtx("c"), call(`{"name":"memories.md","content":"x"}`)); ok {
 		t.Fatal("pathOf 为 nil 不应申报")
 	}
@@ -226,7 +228,7 @@ func TestMemoryFileTargetWithoutPathOf(t *testing.T) {
 // TestFileTools 文件工具：绝对路径强制、读写删、二进制拒绝、搜索。
 func TestFileTools(t *testing.T) {
 	dir := t.TempDir()
-	tools := New(newFakeMem(), nil)
+	tools := newAllTools(newFakeMem(), nil)
 	ctx := context.Background()
 
 	// 相对路径一律拒绝（无工作区概念）。
@@ -320,7 +322,7 @@ func TestFileTools(t *testing.T) {
 
 // TestReadMissingFile 不存在文件的报错可读。
 func TestReadMissingFile(t *testing.T) {
-	tools := New(newFakeMem(), nil)
+	tools := newAllTools(newFakeMem(), nil)
 	r := pick(t, tools, "file_read")
 	p := filepath.Join(t.TempDir(), "nope.txt")
 	if _, err := r.Execute(context.Background(), call(`{"path":`+js(p)+`}`)); err == nil {
@@ -330,7 +332,7 @@ func TestReadMissingFile(t *testing.T) {
 
 // TestThinkNoOp think 为 Safe no-op。
 func TestThinkNoOp(t *testing.T) {
-	th := pick(t, New(newFakeMem(), nil), "think")
+	th := pick(t, newAllTools(newFakeMem(), nil), "think")
 	if th.Spec().Risk != tool.Safe {
 		t.Fatalf("risk = %v", th.Spec().Risk)
 	}
@@ -342,7 +344,7 @@ func TestThinkNoOp(t *testing.T) {
 
 // TestBadJSONArgs 非法参数统一报 JSON 错误。
 func TestBadJSONArgs(t *testing.T) {
-	tools := New(newFakeMem(), nil)
+	tools := newAllTools(newFakeMem(), nil)
 	bad := tool.Call{ID: "c", Args: json.RawMessage(`not-json`)}
 	for _, name := range []string{"memory_read", "memory_write", "file_read", "think"} {
 		if _, err := pick(t, tools, name).Execute(context.Background(), bad); err == nil {
