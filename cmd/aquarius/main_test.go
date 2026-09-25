@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -474,7 +475,7 @@ func TestOpenMemoryEditorCreatesFile(t *testing.T) {
 	}
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "aquarius-no-such-editor-xyz") // 必失败的编辑器：断言文件创建与报错
-	open := openMemoryEditor(mem)
+	open := openMemoryEditor(mem, strings.NewReader(""), io.Discard, io.Discard)
 
 	if _, err := open(port.GlobalMemoryDoc); err == nil || !strings.Contains(err.Error(), "运行编辑器") {
 		t.Fatalf("err = %v, want 运行编辑器失败", err)
@@ -639,4 +640,48 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 			t.Fatalf("记忆文件应落盘: %v", err)
 		}
 	})
+}
+
+// TestEditorHelperProcess 假编辑器（helper 进程模式）：EDITOR 指向本测试二进制时，
+// 向命令行末尾的路径写入标记，证明编辑器收到了正确目标（P1-4 e2e 用）。
+func TestEditorHelperProcess(t *testing.T) {
+	if os.Getenv("AQUARIUS_EDITOR_HELPER") != "1" {
+		t.Skip("非 helper 进程运行")
+	}
+	args := flag.Args() // -test.run 之后的尾随参数 = 记忆文件路径
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "helper: 缺少路径参数")
+		os.Exit(2)
+	}
+	if err := os.WriteFile(args[len(args)-1], []byte("edited-by-helper"), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "helper:", err)
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+// TestRunMemoryCommandE2E /memory 端到端（M2 验收）：run() 注入的标准流直达编辑器
+// 子进程（helper 假编辑器）——收到目标路径、写入标记，stdout 出现打开提示。
+func TestRunMemoryCommandE2E(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "http://127.0.0.1:1", "m") // /memory 不发起生成
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", os.Args[0]+" -test.run=TestEditorHelperProcess")
+	t.Setenv("AQUARIUS_EDITOR_HELPER", "1")
+
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("/memory\n/quit\n"), &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %q, stdout = %q", code, errBuf.String(), out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "已用系统编辑器打开") || !strings.Contains(got, port.GlobalMemoryDoc) {
+		t.Fatalf("stdout 缺打开提示: %q", got)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, port.GlobalMemoryDoc))
+	if err != nil {
+		t.Fatalf("记忆文件: %v", err)
+	}
+	if string(data) != "edited-by-helper" {
+		t.Fatalf("假编辑器未收到目标路径: %q", data)
+	}
 }

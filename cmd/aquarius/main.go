@@ -241,7 +241,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SandboxPath:  sandboxDir,
 		PersistLevel: persistLevel,
 		Confirmer:    confirmer,
-		OpenMemory:   openMemoryEditor(mem),
+		OpenMemory:   openMemoryEditor(mem, stdin, stdout, stderr),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -307,7 +307,8 @@ func pickEditor(visual, editor, goos string) []string {
 
 // openMemoryEditor /memory 的装配实现（D24）：文档名 → 磁盘路径（缺失先建空文件）
 // → 系统编辑器阻塞打开；保存后下次读取即生效。
-func openMemoryEditor(mem *memoryfs.Store) func(name string) (string, error) {
+// stdio 来自 run() 注入的三流——保持"标准流可注入"的 e2e 契约（不直连 os.Std*）。
+func openMemoryEditor(mem *memoryfs.Store, stdin io.Reader, stdout, stderr io.Writer) func(name string) (string, error) {
 	return func(name string) (string, error) {
 		p, err := mem.Path(name)
 		if err != nil {
@@ -323,7 +324,7 @@ func openMemoryEditor(mem *memoryfs.Store) func(name string) (string, error) {
 		}
 		argv := pickEditor(os.Getenv("VISUAL"), os.Getenv("EDITOR"), runtime.GOOS)
 		cmd := exec.Command(argv[0], append(argv[1:], p)...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 		if err := cmd.Run(); err != nil {
 			return "", fmt.Errorf("运行编辑器 %s: %w", argv[0], err)
 		}
