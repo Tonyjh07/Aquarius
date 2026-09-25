@@ -426,6 +426,166 @@ func TestHostDialFailureIsSoft(t *testing.T) {
 	}
 }
 
+// TestHostDisableEnableReconnect 审查修复：stopping 必须可复位——
+// disable 后再 enable 必须真的重连（旧实现 stopping 永不复位，enable 后被
+// connect 的临界区直接掐掉新连接，status 卡 connecting）。
+func TestHostDisableEnableReconnect(t *testing.T) {
+	dial := &fakeDial{}
+	h := New(Deps{
+		Dial:          dial.dialer(),
+		ConfigServers: map[string]MCPServer{"web": stdioDecl()},
+	})
+	h.Start(context.Background())
+	defer h.Close()
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "首连就绪")
+
+	if err := h.Disable("web"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if statusOf(h, "web") != StatusDisabled || dial.callCount() != 1 {
+		t.Fatalf("status=%s dial=%d", statusOf(h, "web"), dial.callCount())
+	}
+
+	if err := h.Enable(context.Background(), "web"); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "重新就绪")
+	if dial.callCount() != 2 {
+		t.Fatalf("dial = %d, want 2（enable 必须真拨号）", dial.callCount())
+	}
+	if len(h.Ready()) != 1 {
+		t.Fatalf("Ready = %d, want 1", len(h.Ready()))
+	}
+}
+
+// TestHostDisableDuringBackoffNotResurrected 审查修复：崩溃退避窗口内 disable，
+// 退避醒来不得重启（旧实现 connect 不复检启用态，运行态会被翻案成 ready）。
+func TestHostDisableDuringBackoffNotResurrected(t *testing.T) {
+	dial := &fakeDial{}
+	h := New(Deps{
+		Dial:          dial.dialer(),
+		ConfigServers: map[string]MCPServer{"web": stdioDecl()},
+	})
+	h.backoff = func(int) time.Duration { return 50 * time.Millisecond }
+	h.Start(context.Background())
+	defer h.Close()
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "首连就绪")
+
+	dial.latest().crash() // 进入退避（session 已 nil、stopping=false）
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusRestarting }, "进入重启中")
+	if err := h.Disable("web"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if statusOf(h, "web") != StatusDisabled {
+		t.Fatalf("status = %s, want disabled", statusOf(h, "web"))
+	}
+	// 等过退避窗口：不得复活。
+	time.Sleep(120 * time.Millisecond)
+	if statusOf(h, "web") != StatusDisabled {
+		t.Fatalf("退避醒来后 status = %s, want 保持 disabled", statusOf(h, "web"))
+	}
+	if dial.callCount() != 1 {
+		t.Fatalf("dial = %d, want 1（退避不得拨号）", dial.callCount())
+	}
+}
+
+// TestHostEnableResetsRestartBudget 审查修复：手动 enable 复位崩溃计数——
+// 否则累计 3 次后即使 enable 成功，下一次崩溃也直接判死。
+func TestHostEnableResetsRestartBudget(t *testing.T) {
+	dial := &fakeDial{}
+	h := New(Deps{
+		Dial:          dial.dialer(),
+		ConfigServers: map[string]MCPServer{"web": stdioDecl()},
+	})
+	h.backoff = func(int) time.Duration { return time.Millisecond }
+	h.Start(context.Background())
+	defer h.Close()
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "首连就绪")
+
+	for i := 0; i <= maxRestarts; i++ {
+		dial.latest().crash()
+		want := i + 2
+		waitFor(t, func() bool {
+			return dial.callCount() == want || statusOf(h, "web") == StatusCrashed
+		}, "重启计数推进")
+	}
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusCrashed }, "超限判死")
+
+	if err := h.Enable(context.Background(), "web"); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "enable 后就绪")
+	wantDial := dial.callCount() + 1
+	dial.latest().crash() // 计数已复位：这应当触发一次重启而不是立即判死
+	waitFor(t, func() bool { return dial.callCount() == wantDial }, "复位后仍可重启")
+	if statusOf(h, "web") == StatusCrashed {
+		t.Fatal("enable 复位后不应一次崩溃即判死")
+	}
+}
+
+// TestHostGrantPartialPersist 审查修复：能力逐项确认中途拒绝，
+// 已授予项仍须落盘（不留"内存已授、磁盘未授"）。
+func TestHostGrantPartialPersist(t *testing.T) {
+	dial := &fakeDial{}
+	var persisted map[string]State
+	persists := 0
+	h := New(Deps{
+		Dial:    dial.dialer(),
+		Confirm: &fakeConfirm{answers: []bool{true, false}}, // network 允、fs 拒
+		ConfigServers: map[string]MCPServer{
+			"web": {MCPConfig: stdioDecl().MCPConfig, Capabilities: []string{"network", "fs"}},
+		},
+		Persist: func(s map[string]State) error {
+			persists++
+			persisted = s
+			return nil
+		},
+	})
+	h.Start(context.Background())
+	defer h.Close()
+
+	if statusOf(h, "web") != StatusRevoked || dial.callCount() != 0 {
+		t.Fatalf("status=%s dial=%d, want revoked/0", statusOf(h, "web"), dial.callCount())
+	}
+	if persists == 0 || !persisted["web"].HasGranted("network") {
+		t.Fatalf("persisted = %+v（%d 次），want network 已落盘", persisted, persists)
+	}
+	if persisted["web"].HasGranted("fs") {
+		t.Fatal("被拒绝的 fs 不应落盘")
+	}
+}
+
+// TestHostPersistErrorSurfaced 审查修复：写回失败向用户上抛（运行态仍生效），
+// 不再静默吞掉。
+func TestHostPersistErrorSurfaced(t *testing.T) {
+	dial := &fakeDial{}
+	h := New(Deps{
+		Dial:          dial.dialer(),
+		ConfigServers: map[string]MCPServer{"web": stdioDecl()},
+		States:        map[string]State{"web": {Enabled: boolPtr(false)}},
+		Persist:       func(map[string]State) error { return errors.New("disk full") },
+	})
+	h.Start(context.Background())
+	defer h.Close()
+
+	err := h.Enable(context.Background(), "web")
+	if err == nil || !strings.Contains(err.Error(), "disk full") || !strings.Contains(err.Error(), "本次运行生效") {
+		t.Fatalf("err = %v, want 写回失败且注明运行态已生效", err)
+	}
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "运行态仍就绪")
+
+	err = h.Disable("web")
+	if err == nil || !strings.Contains(err.Error(), "disk full") || !strings.Contains(err.Error(), "停用") {
+		t.Fatalf("disable err = %v, want 写回失败", err)
+	}
+	if statusOf(h, "web") != StatusDisabled {
+		t.Fatalf("status = %s, want disabled（运行态仍生效）", statusOf(h, "web"))
+	}
+}
+
+// boolPtr 状态字面量辅助。
+func boolPtr(b bool) *bool { return &b }
+
 // itoa 小整数转串（测试用，避免额外依赖）。
 func itoa(n int) string {
 	if n == 0 {

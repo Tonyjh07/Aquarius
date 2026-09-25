@@ -16,6 +16,9 @@ import (
 const (
 	maxRestarts     = 3
 	baseRestartWait = time.Second
+	// dialTimeout 单次拨号（含 initialize 握手）上限：防"能建连但不回
+	// initialize"的 server 挂死启动（§10 软启动哲学，审查修复）。
+	dialTimeout = 15 * time.Second
 )
 
 // Status 单个插件的运行状态（/plugin list 展示）。
@@ -220,6 +223,14 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		return false
 	}
 	changed := false
+	// 任何返回路径都把已授予项落盘（审查修复：中途拒绝不得留下"内存已授、磁盘未授"）。
+	defer func() {
+		if changed {
+			if err := h.saveStates(); err != nil {
+				h.logf("[plugin] %s 授权状态写回失败: %v", d.Name, err)
+			}
+		}
+	}()
 	for _, c := range pending {
 		yes, err := h.confirm.Confirm(ctx, fmt.Sprintf("插件 %q 请求能力 %q，允许？", d.Name, c))
 		if err != nil {
@@ -239,17 +250,16 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		}
 		h.mu.Unlock()
 	}
-	if changed {
-		h.saveStates()
-	}
 	return true
 }
 
 // connect 拉起一个 server 并挂崩溃观察（§6.4 #4）；已就绪则短路（幂等）。
+// 拨号带超时（防"能建连但不回 initialize"的 server 挂死启动，§10 软启动哲学）；
+// 拨号返回后的临界区复检启停状态——停用/关闭期间的在途拨号一律收掉（审查修复）。
 func (h *Host) connect(ctx context.Context, name string) {
 	h.mu.Lock()
 	d, ok := h.decls[name]
-	if !ok {
+	if !ok || !h.states[name].IsEnabled() { // 退避醒来时复检（disable 不得被重启翻案）
 		h.mu.Unlock()
 		return
 	}
@@ -260,7 +270,9 @@ func (h *Host) connect(ctx context.Context, name string) {
 	h.mu.Unlock()
 
 	h.setStatus(name, StatusConnecting, "")
-	s, err := h.dial(ctx, d)
+	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	s, err := h.dial(dctx, d)
+	cancel()
 	if err != nil {
 		h.logf("[plugin] %s 启动失败: %v", name, err)
 		h.setStatus(name, StatusFailed, err.Error())
@@ -272,16 +284,21 @@ func (h *Host) connect(ctx context.Context, name string) {
 		m = &managed{}
 		h.managed[name] = m
 	}
-	if m.stopping || h.closing { // 等待期间被停用
+	if m.stopping || h.closing || !h.states[name].IsEnabled() {
+		// 等待期间被停用/关闭（状态可能在拨号期间变化）。
 		h.mu.Unlock()
 		_ = s.Close()
 		return
 	}
+	old := m.session // 并发 connect（退避 vs 手动启用）：换新前摘旧，防泄漏
 	m.session = s
 	m.status = StatusReady
 	m.lastErr = ""
 	base := h.ctx
 	h.mu.Unlock()
+	if old != nil && old != s {
+		_ = old.Close()
+	}
 
 	go h.watch(name, s, base)
 	h.changed()
@@ -319,6 +336,7 @@ func (h *Host) watch(name string, s Session, base context.Context) {
 	h.mu.Unlock()
 	h.logf("[plugin] %s 连接终止（%v），%s 后重启（第 %d/%d 次）",
 		name, werr, wait, restart, maxRestarts)
+	h.changed() // 崩溃即刷新：退避期间摘掉指向死会话的工具与动态命令，重连后再挂回
 
 	select {
 	case <-time.After(wait):
@@ -328,8 +346,8 @@ func (h *Host) watch(name string, s Session, base context.Context) {
 	if base == nil {
 		base = context.Background()
 	}
-	if base.Err() != nil || h.isClosing() {
-		return
+	if base.Err() != nil || h.isClosing() || !h.isEnabled(name) {
+		return // 退避期间被停用：不得"翻案"重启（审查修复）
 	}
 	h.connect(base, name)
 }
@@ -341,7 +359,16 @@ func (h *Host) isClosing() bool {
 	return h.closing
 }
 
+// isEnabled 插件是否处于启用态（锁内读；退避醒来时复检）。
+func (h *Host) isEnabled(name string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.states[name].IsEnabled()
+}
+
 // Enable 启用并立即连接（写回 state，§6.4 #1 config 启停）。
+// 手动启用同时复位 stopping/崩溃计数（审查修复：否则 disable→enable 永不重连、
+// crashed 后一次都不再重启）。
 func (h *Host) Enable(ctx context.Context, name string) error {
 	h.mu.Lock()
 	d, ok := h.decls[name]
@@ -352,14 +379,22 @@ func (h *Host) Enable(ctx context.Context, name string) error {
 	prev := h.states[name]
 	on := true
 	h.states[name] = State{Enabled: &on, Granted: prev.Granted}
+	if m := h.managed[name]; m != nil {
+		m.stopping = false
+		m.restarts = 0
+		m.lastErr = ""
+	}
 	h.mu.Unlock()
-	h.saveStates()
+	perr := h.saveStates()
 	if h.grant(ctx, d) {
 		h.connect(ctx, name)
 	} else {
 		h.setStatus(name, StatusRevoked, "授权被拒绝或缺少确认器（fail-closed）")
 	}
 	h.changed()
+	if perr != nil {
+		return fmt.Errorf("%s 已在本次运行生效，但状态写回 config 失败: %w", name, perr)
+	}
 	return nil
 }
 
@@ -375,26 +410,33 @@ func (h *Host) Disable(name string) error {
 	off := false
 	h.states[name] = State{Enabled: &off, Granted: prev.Granted}
 	h.mu.Unlock()
-	h.saveStates()
+	perr := h.saveStates()
 	h.stop(name)
 	h.setStatus(name, StatusDisabled, "")
 	h.changed()
+	if perr != nil {
+		return fmt.Errorf("%s 已在本次运行停用，但状态写回 config 失败: %w", name, perr)
+	}
 	return nil
 }
 
 // stop 主动关闭一个 server 的连接（stopping 标记抑制崩溃重启）。
+// 无论有无在途会话都置位：session==nil 的"拨号中/退避中"窗口同样要被拦下
+// （审查修复：否则停用可被在途拨号/崩溃重启翻案）。
 func (h *Host) stop(name string) {
 	h.mu.Lock()
 	m := h.managed[name]
-	if m == nil || m.session == nil {
-		h.mu.Unlock()
-		return
+	if m == nil {
+		m = &managed{}
+		h.managed[name] = m
 	}
 	m.stopping = true
 	s := m.session
 	m.session = nil
 	h.mu.Unlock()
-	_ = s.Close()
+	if s != nil {
+		_ = s.Close()
+	}
 }
 
 // Close 关闭全部连接（§6.4 #4 优雅关机）。
@@ -473,10 +515,12 @@ func (h *Host) setStatus(name string, st Status, lastErr string) {
 	h.mu.Unlock()
 }
 
-// saveStates 落盘当前状态（拷贝隔离；Persist 失败只记日志——不阻断运行态）。
-func (h *Host) saveStates() {
+// saveStates 落盘当前状态（拷贝隔离）。返回错误由调用方处置：
+// Enable/Disable 向用户上抛（运行态仍生效）、grant 的 defer 只记日志——
+// 不阻断运行态（审查修复：写回失败不再静默）。
+func (h *Host) saveStates() error {
 	if h.persist == nil {
-		return
+		return nil
 	}
 	h.mu.Lock()
 	cp := make(map[string]State, len(h.states))
@@ -484,9 +528,7 @@ func (h *Host) saveStates() {
 		cp[k] = v
 	}
 	h.mu.Unlock()
-	if err := h.persist(cp); err != nil {
-		h.logf("[plugin] 状态落盘失败: %v", err)
-	}
+	return h.persist(cp)
 }
 
 // changed 触发 OnChange 回调（锁外）。
