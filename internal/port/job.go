@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -58,7 +59,7 @@ type JobManager interface {
 func ResolveJobID(jobs []Job, arg string) (JobID, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
-		return "", fmt.Errorf("缺少任务 id")
+		return "", errors.New("缺少任务 id")
 	}
 	var hits []JobID
 	for _, j := range jobs {

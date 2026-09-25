@@ -236,8 +236,12 @@ func ingestTitle(parts []conversation.Part) string {
 	return ""
 }
 
-// maybeSetTitle 首条消息后把默认标题改写为消息摘要。
+// maybeSetTitle 首条消息后把默认标题改写为消息摘要（空文本不改写，
+// 防 ingestTitle 无文本分片时把默认标题抹成空串）。
 func (s *Session) maybeSetTitle(text string) {
+	if text == "" {
+		return
+	}
 	if s.cur.Title != "" && s.cur.Title != defaultTitle {
 		return
 	}

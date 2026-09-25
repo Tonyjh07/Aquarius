@@ -173,6 +173,49 @@ func TestSessionRawDispatchErrors(t *testing.T) {
 	}
 }
 
+// audioIngestor 产出"无文本分片、无附件引用"的摄取器（标题守卫复现用）。
+type audioIngestor struct{}
+
+func (audioIngestor) Accepts(port.RawInput) bool { return true }
+
+func (audioIngestor) Ingest(context.Context, port.RawInput) (port.IngestReport, error) {
+	return port.IngestReport{
+		Parts: []conversation.Part{{Kind: conversation.PartAudio, Transcript: "语音转写"}},
+	}, nil
+}
+
+// TestSessionRawKeepsDefaultTitle 摄取结果无文本分片/附件名时保留默认标题，
+// 不得被空串抹成 ""（ingestTitle 返回空 → maybeSetTitle 守卫）。
+func TestSessionRawKeepsDefaultTitle(t *testing.T) {
+	store := newMemStore()
+	s, llm, _ := newTestSession(t, store, textStream("好"))
+	s.ingestors = []port.Ingestor{audioIngestor{}}
+
+	if _, err := s.Handle(context.Background(), port.UserInput{
+		Raw: &port.RawInput{Kind: "mic"},
+	}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if s.Current().Title != defaultTitle {
+		t.Fatalf("title = %q, want 保留默认标题 %q", s.Current().Title, defaultTitle)
+	}
+	// 转写文本按 audio 分片语义入树（模型只见 Transcript）。
+	if len(llm.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(llm.requests))
+	}
+	var hasAudio bool
+	for _, m := range s.Current().Nodes {
+		for _, p := range m.Content {
+			if p.Kind == conversation.PartAudio && p.Transcript == "语音转写" {
+				hasAudio = true
+			}
+		}
+	}
+	if !hasAudio {
+		t.Fatal("树中缺 audio 分片")
+	}
+}
+
 // TestSessionRawTextDirect Kind=text 直通入树并触发 Turn（无需注册摄取器）。
 func TestSessionRawTextDirect(t *testing.T) {
 	store := newMemStore()

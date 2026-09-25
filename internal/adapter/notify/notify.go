@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -58,7 +59,7 @@ func MessageText(req port.OutputRequest) string {
 	}
 	var b strings.Builder
 	for _, p := range parts {
-		if p.Kind == "text" && strings.TrimSpace(p.Text) != "" {
+		if p.Kind == conversation.PartText && strings.TrimSpace(p.Text) != "" {
 			if b.Len() > 0 {
 				b.WriteByte(' ')
 			}
