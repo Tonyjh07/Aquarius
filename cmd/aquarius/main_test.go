@@ -148,6 +148,52 @@ func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
 	}
 }
 
+// TestRunModelSwitchWritesBackConfig /model <name> 写回 model.name 并保留其余键（D32，同 /permission）。
+func TestRunModelSwitchWritesBackConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{
+  "model": {"provider":"openai-compatible","name":"old-model","base_url":"http://127.0.0.1:1","api_key":"secret:X","tokenizer":""},
+  "ui": {"kind":"repl"},
+  "system_prompt": "人格不动",
+  "permissions": {"level": "strict"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000}
+}`
+	cfgPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+
+	var out, errBuf bytes.Buffer
+	code := run([]string{"-data", dir}, strings.NewReader("/model new-model\n/quit\n"), &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("code = %d, err = %s", code, errBuf.String())
+	}
+	if !strings.Contains(out.String(), "已切换模型 → new-model") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read back config: %v", err)
+	}
+	var back map[string]any
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("config 不是合法 JSON: %v\n%s", err, data)
+	}
+	model, _ := back["model"].(map[string]any)
+	if model["name"] != "new-model" {
+		t.Fatalf("model.name = %v, want new-model", model["name"])
+	}
+	if back["system_prompt"] != "人格不动" {
+		t.Fatalf("system_prompt 键丢失: %v", back["system_prompt"])
+	}
+	perms, _ := back["permissions"].(map[string]any)
+	if perms["level"] != "strict" {
+		t.Fatalf("permissions 键丢失: %v", back["permissions"])
+	}
+}
+
 // TestRunRejectsInvalidPermissionLevel 非法 permissions.level 启动即报因。
 func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
 	dir := t.TempDir()

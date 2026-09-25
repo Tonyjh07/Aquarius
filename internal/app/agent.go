@@ -12,6 +12,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -64,6 +65,7 @@ type Agent struct {
 	blobs     port.AttachmentStore
 	memory    port.MemoryStore
 	cfg       Config
+	model     atomic.Value // string：当前生成模型（/model 热切换，D32；取代 cfg.Model 读取）
 	system    string
 	maxTurns  int
 	est       *estimator // 三级 token 计数链②③（D26）
@@ -106,7 +108,7 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	if c, ok := d.LLM.(port.TokenCounter); ok {
 		counter = c
 	}
-	return &Agent{
+	ag := &Agent{
 		llm:       d.LLM,
 		ui:        d.UI,
 		ids:       d.IDs,
@@ -120,7 +122,18 @@ func New(d Deps, cfg Config) (*Agent, error) {
 		est:       newEstimator(counter),
 		compactAt: int(threshold*float64(maxCtx) + 0.5),
 		maxCtx:    maxCtx,
-	}, nil
+	}
+	ag.model.Store(cfg.Model) // 生成模型初值（/model 热切换，D32）
+	return ag, nil
+}
+
+// setModel 切换生成模型（/model，D32）：只改模型名，请求参数其余部分不受影响。
+func (a *Agent) setModel(name string) { a.model.Store(name) }
+
+// modelName 当前生成模型。
+func (a *Agent) modelName() string {
+	v, _ := a.model.Load().(string)
+	return v
 }
 
 // Run 从当前 Head 出发执行一轮 Turn（DESIGN §7.1 / §10）：
@@ -179,7 +192,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		default:
 			outcome = conversation.OutcomeError
 		}
-		node := buf.commit(a.clock.Now(), outcome, a.cfg.Model, calls)
+		node := buf.commit(a.clock.Now(), outcome, a.modelName(), calls)
 		if err := c.AppendCommitted(node); err != nil {
 			return fmt.Errorf("提交节点: %w", err)
 		}
@@ -308,7 +321,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 		}
 		buf := &commitBuffer{id: mid, parent: c.Head}
 		stream, err := a.llm.Generate(ctx, port.GenerateRequest{
-			Model:    a.cfg.Model,
+			Model:    a.modelName(),
 			Messages: msgs,
 			Budget:   a.cfg.Budget,
 		})
@@ -339,7 +352,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 		Role:      conversation.RoleSystem,
 		Content:   []conversation.Part{{Kind: conversation.PartText, Text: text}},
 		Outcome:   conversation.OutcomeDone,
-		Model:     a.cfg.Model,
+		Model:     a.modelName(),
 		Usage:     usage,
 		CreatedAt: a.clock.Now(),
 	}
@@ -448,7 +461,7 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) 
 	}
 
 	req := port.GenerateRequest{
-		Model:    a.cfg.Model,
+		Model:    a.modelName(),
 		Messages: msgs,
 		Params:   a.cfg.Sampling,
 		Budget:   a.cfg.Budget,
@@ -572,7 +585,7 @@ func (a *Agent) normalizeCalls(calls []tool.Call) []tool.Call {
 // commitFailure 以 Outcome: error 提交节点后返回原错误（§10）；
 // ErrorEvent 由装配根统一上抛，避免重复呈现。
 func (a *Agent) commitFailure(ctx context.Context, c *conversation.Conversation, buf *commitBuffer, cause error) error {
-	node := buf.commit(a.clock.Now(), conversation.OutcomeError, a.cfg.Model, nil)
+	node := buf.commit(a.clock.Now(), conversation.OutcomeError, a.modelName(), nil)
 	if err := c.AppendCommitted(node); err != nil {
 		return fmt.Errorf("%w（提交失败: %v）", cause, err)
 	}
@@ -583,7 +596,7 @@ func (a *Agent) commitFailure(ctx context.Context, c *conversation.Conversation,
 // commitCancelled 发起阶段取消的收场：以 Outcome: cancelled 提交占位节点并返回
 // nil（与断流取消一致，§10"取消提交"——可 /edit 重试，不作为错误呈现）。
 func (a *Agent) commitCancelled(ctx context.Context, c *conversation.Conversation, buf *commitBuffer) error {
-	node := buf.commit(a.clock.Now(), conversation.OutcomeCancelled, a.cfg.Model, nil)
+	node := buf.commit(a.clock.Now(), conversation.OutcomeCancelled, a.modelName(), nil)
 	if err := c.AppendCommitted(node); err != nil {
 		return fmt.Errorf("提交取消节点: %w", err)
 	}

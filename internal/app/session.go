@@ -51,6 +51,11 @@ type SessionDeps struct {
 	OpenMemory func(name string) (string, error)
 	// Plugins 插件管理面（/plugin，DESIGN §7.3 / M4）；nil 时 /plugin 报"未配置"。
 	Plugins PluginAdmin
+	// ListModels 可用模型列表（LLM.Models，/model 无参展示，D32）；nil 时报"未配置模型服务"。
+	ListModels func(ctx context.Context) ([]port.ModelInfo, error)
+	// PersistModel 把切换后的模型写回 config（D32，同 /permission 模式）；
+	// nil 时 /model 有参报"未配置持久化"。
+	PersistModel func(name string) error
 }
 
 // CommandHandler 动态命令处理器（DESIGN §6.1 扩展点 #4 / §7.3 MCP prompts）：
@@ -76,6 +81,8 @@ type Session struct {
 	ui           port.Presenter
 	openMemory   func(name string) (string, error)
 	plugins      PluginAdmin
+	listModels   func(ctx context.Context) ([]port.ModelInfo, error)
+	persistModel func(name string) error
 	cur          *conversation.Conversation
 
 	// dynMu 保护 dynamic：REPL 主循环读、插件启停回调（可能来自崩溃重启的
@@ -129,6 +136,8 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		ui:           d.UI,
 		openMemory:   d.OpenMemory,
 		plugins:      d.Plugins,
+		listModels:   d.ListModels,
+		persistModel: d.PersistModel,
 		dynamic:      map[string]CommandHandler{},
 	}
 
@@ -561,14 +570,14 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/quit, /exit            退出",
 			"/plugin [list|enable <name>|disable <name>]  MCP 插件管理（D31，DESIGN §7.3）",
 			"/mcp:<server>:<prompt>  MCP prompts 动态命令（随插件启停注册，见 /plugin）",
-			"/model                  尚未启用（里程碑 M4）",
+			"/model [name]          查看可用模型 / 切换并写回 config（D32）",
 		}, "\n"), nil
 
 	case "plugin":
 		return s.execPlugin(ctx, cmd.Args)
 
 	case "model":
-		return "", fmt.Errorf("命令 /model 尚未启用（里程碑 M4，见 DESIGN §12）")
+		return s.execModel(ctx, cmd.Args)
 
 	default:
 		// 动态命令（§6.1 扩展点 #4）：静态命令未命中时查询

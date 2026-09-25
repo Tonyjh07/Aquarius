@@ -214,6 +214,33 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return nil
 	}
 
+	// /model 切换写回 config 的 model.name（D32）：map 级重排保留其余配置键，
+	// 原子换入与 /permission 同口径。
+	persistModel := func(name string) error {
+		data, rerr := os.ReadFile(cfgPath)
+		if rerr != nil {
+			return rerr
+		}
+		var generic map[string]any
+		if rerr := json.Unmarshal(data, &generic); rerr != nil {
+			return fmt.Errorf("解析 %s: %w", cfgPath, rerr)
+		}
+		model, _ := generic["model"].(map[string]any)
+		if model == nil {
+			model = map[string]any{}
+			generic["model"] = model
+		}
+		model["name"] = name
+		out, rerr := json.MarshalIndent(generic, "", "  ")
+		if rerr != nil {
+			return fmt.Errorf("编码 config: %w", rerr)
+		}
+		if rerr := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
+			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
+		}
+		return nil
+	}
+
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -397,6 +424,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		UI:           presenter,
 		OpenMemory:   openMemoryEditor(mem, stdin, stdout, stderr),
 		Plugins:      hostAdmin{host},
+		ListModels:   func(ctx context.Context) ([]port.ModelInfo, error) { return client.Models(ctx) },
+		PersistModel: persistModel,
 	})
 	if err != nil {
 		if ctx.Err() != nil {
