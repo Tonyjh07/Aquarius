@@ -123,6 +123,7 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {},
+  "plugins": {},
   "permissions": { "level": "strict" },
   "limits": {
     "max_turns": 8,

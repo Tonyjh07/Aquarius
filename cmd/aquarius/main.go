@@ -119,6 +119,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "ui.kind=%q 尚未支持（bubbletea TUI 见里程碑 M4）\n", cfg.UI.Kind)
 		return 1
 	}
+	// MCP 声明校验（D30/D31，启动 fail-fast）：transport/command/url/risk/名字合法。
+	for name, srv := range cfg.MCPServers {
+		if err := srv.Validate(name); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+	}
 	secretRef, err := secretName(cfg.Model.APIKey)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)

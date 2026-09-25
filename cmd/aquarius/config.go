@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/plugin"
 )
 
 // fileConfig config.json 中当前里程碑消费的部分。
-// DESIGN §8 的其余键（memory/input/output/mcpServers…）同样写入模板但由对应里程碑启用，
+// DESIGN §8 的其余键（input 等）同样写入模板但由对应里程碑启用，
 // encoding/json 对未知键宽容。
 type fileConfig struct {
 	Model        modelConfig       `json:"model"`
@@ -17,6 +19,10 @@ type fileConfig struct {
 	Permissions  permissionsConfig `json:"permissions"`
 	Output       outputConfig      `json:"output"`
 	Limits       limitsConfig      `json:"limits"`
+	// MCPServers MCP server 声明（D30/D31，M4 启用；校验见 plugin.MCPServer.Validate）。
+	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
+	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。
+	Plugins map[string]plugin.State `json:"plugins"`
 }
 
 // outputConfig 输出器开关（DESIGN §8；M3 启用 notify，tts 见 D27 解析但不启用）。
@@ -57,7 +63,7 @@ type limitsConfig struct {
 }
 
 // defaultConfig 首次运行写入的模板：DESIGN §8 示例的可运行子集
-// （ui.kind 取 repl，mcpServers 留空待 M4）。
+// （ui.kind 取 repl；mcpServers/plugins 为 M4 MCP 接入的声明与状态，缺省皆空）。
 const defaultConfig = `{
   "model": {
     "provider": "openai-compatible",
@@ -71,6 +77,7 @@ const defaultConfig = `{
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {},
+  "plugins": {},
   "permissions": { "level": "strict" },
   "limits": {
     "max_turns": 8,
