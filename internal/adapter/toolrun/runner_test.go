@@ -556,3 +556,26 @@ func mustAbs(t *testing.T, p string) string {
 	}
 	return abs
 }
+
+// TestRunnerRemove 注销工具（M4 插件停用路径）：Specs 与 Execute 同步移除、
+// 未知名无操作；注册/注销与并发读（Specs）经内部锁互斥。
+func TestRunnerRemove(t *testing.T) {
+	r := New(Options{})
+	r.Add(&stubTool{spec: tool.Spec{Name: "mcp:a:t1"}})
+	r.Add(&stubTool{spec: tool.Spec{Name: "builtin"}})
+
+	specs, err := r.Specs(context.Background())
+	if err != nil || len(specs) != 2 {
+		t.Fatalf("specs = %v, %v, want 2", specs, err)
+	}
+	r.Remove("mcp:a:t1")
+	specs, _ = r.Specs(context.Background())
+	if len(specs) != 1 || specs[0].Name != "builtin" {
+		t.Fatalf("specs = %+v, want 仅 builtin", specs)
+	}
+	res, err := r.Execute(context.Background(), tool.Call{ID: "c1", Name: "mcp:a:t1"})
+	if err != nil || res.OK || !strings.Contains(res.Err, "未知工具") {
+		t.Fatalf("execute 已移除工具 = %+v, %v", res, err)
+	}
+	r.Remove("不存在的工具") // 无操作不 panic
+}

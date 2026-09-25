@@ -73,7 +73,7 @@ pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；D29 后移
 internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）、perm（权限矩阵）
 internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
 internal/app/        agent（Turn 循环）、prompt（装配/水位）、session（命令/摄取分派）、est（token 计数链）
-internal/plugin/     registry、mcp（生命周期）、grant（授权）（M4 起建）
+internal/plugin/     registry（发现合并）、host（生命周期/grant/崩溃限次重启，§6.4）
 internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、

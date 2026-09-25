@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
@@ -48,11 +49,17 @@ type SessionDeps struct {
 	// OpenMemory 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
 	// nil 时 /memory 报"未配置编辑器"。
 	OpenMemory func(name string) (string, error)
+	// Plugins 插件管理面（/plugin，DESIGN §7.3 / M4）；nil 时 /plugin 报"未配置"。
+	Plugins PluginAdmin
 }
+
+// CommandHandler 动态命令处理器（DESIGN §6.1 扩展点 #4 / §7.3 MCP prompts）：
+// 装配根随插件启停注册 `/mcp:<server>:<prompt>` 等动态命令；静态命令优先命中。
+type CommandHandler func(ctx context.Context, args []string) (string, error)
 
 // Session 当前会话 + 命令处理（DESIGN §7.3；M0 起启用 /new /list /title /compact /
 // /permission /quit，M1 启用树交互 /goto /edit /branch /rm，M3 启用 /jobs，
-// /model /plugin 留待其里程碑）。
+// M4 启用 /plugin 与动态 /mcp: 命令，/model 留待其里程碑）。
 // 命令的文本输出经返回值交给装配根渲染，轮次过程输出走 Presenter——app 不直接接触 IO。
 type Session struct {
 	store        port.ConversationStore
@@ -68,7 +75,27 @@ type Session struct {
 	ingestors    []port.Ingestor
 	ui           port.Presenter
 	openMemory   func(name string) (string, error)
+	plugins      PluginAdmin
 	cur          *conversation.Conversation
+
+	// dynMu 保护 dynamic：REPL 主循环读、插件启停回调（可能来自崩溃重启的
+	// watch goroutine）写，须加锁（§10 并发语义）。
+	dynMu   sync.Mutex
+	dynamic map[string]CommandHandler
+}
+
+// SetDynamicCommands 替换动态命令表（装配根随插件启停刷新；锁内整体换）。
+func (s *Session) SetDynamicCommands(cmds map[string]CommandHandler) {
+	s.dynMu.Lock()
+	defer s.dynMu.Unlock()
+	s.dynamic = cmds
+}
+
+// dynamicCommand 查动态命令（未命中返回 nil）。
+func (s *Session) dynamicCommand(name string) CommandHandler {
+	s.dynMu.Lock()
+	defer s.dynMu.Unlock()
+	return s.dynamic[name]
 }
 
 // NewSession 恢复最近更新的会话；没有则新建并落盘（会话树跨进程持久化）。
@@ -101,6 +128,8 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		ingestors:    d.Ingestors,
 		ui:           d.UI,
 		openMemory:   d.OpenMemory,
+		plugins:      d.Plugins,
+		dynamic:      map[string]CommandHandler{},
 	}
 
 	list, err := d.Store.List(ctx)
@@ -530,13 +559,23 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/usage                  查看 token 用量（上下文占用/上轮实测/会话累计，三级计数链 D26）",
 			"/jobs [list|logs <id> [行数]|kill <id>]  后台任务管理（job_start 启动的任务，DESIGN §7.3）",
 			"/quit, /exit            退出",
-			"/model, /plugin         尚未启用（里程碑 M4）",
+			"/plugin [list|enable <name>|disable <name>]  MCP 插件管理（D31，DESIGN §7.3）",
+			"/mcp:<server>:<prompt>  MCP prompts 动态命令（随插件启停注册，见 /plugin）",
+			"/model                  尚未启用（里程碑 M4）",
 		}, "\n"), nil
 
-	case "model", "plugin":
-		return "", fmt.Errorf("命令 /%s 尚未启用（里程碑 M4，见 DESIGN §12）", cmd.Name)
+	case "plugin":
+		return s.execPlugin(ctx, cmd.Args)
+
+	case "model":
+		return "", fmt.Errorf("命令 /model 尚未启用（里程碑 M4，见 DESIGN §12）")
 
 	default:
+		// 动态命令（§6.1 扩展点 #4）：静态命令未命中时查询
+		//（装配根随插件启停注册 /mcp:<server>:<prompt> 等）。
+		if h := s.dynamicCommand(cmd.Name); h != nil {
+			return h(ctx, cmd.Args)
+		}
 		return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
 	}
 }

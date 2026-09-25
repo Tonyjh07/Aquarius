@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
@@ -42,7 +43,10 @@ type Options struct {
 }
 
 // Runner port.ToolRunner 实现（注册表 + 判定 + 执行门面）。
+// mu 保护注册表：装配根的插件刷新回调可能来自崩溃重启 goroutine，
+// 与 REPL 主循环的 Specs/Execute 并发（§10；M4 接入）。
 type Runner struct {
+	mu      sync.Mutex
 	tools   []port.Tool
 	byName  map[string]port.Tool
 	order   []string
@@ -76,17 +80,36 @@ func New(opts Options) *Runner {
 	return r
 }
 
-// Add 注册工具（同名覆盖，注册序保持首次出现位置）；装配期调用。
+// Add 注册工具（同名覆盖，注册序保持首次出现位置）；装配期与插件刷新期均可调。
 func (r *Runner) Add(t port.Tool) {
 	if t == nil {
 		return
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	name := t.Spec().Name
 	if _, ok := r.byName[name]; !ok {
 		r.order = append(r.order, name)
 	}
 	r.byName[name] = t
-	r.tools = append(r.tools[:0:0], toolsOf(r.order, r.byName)...)
+	r.tools = toolsOf(r.order, r.byName)
+}
+
+// Remove 注销工具（插件停用时按名移除；不存在则无操作）。
+func (r *Runner) Remove(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.byName[name]; !ok {
+		return
+	}
+	delete(r.byName, name)
+	for i, n := range r.order {
+		if n == name {
+			r.order = append(r.order[:i], r.order[i+1:]...)
+			break
+		}
+	}
+	r.tools = toolsOf(r.order, r.byName)
 }
 
 // toolsOf 按注册序物化当前工具列表。
@@ -100,8 +123,11 @@ func toolsOf(order []string, m map[string]port.Tool) []port.Tool {
 
 // Specs 返回全部工具声明（按注册序，供装配进 Prompt）。
 func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
-	out := make([]tool.Spec, 0, len(r.tools))
-	for _, t := range r.tools {
+	r.mu.Lock()
+	tools := append([]port.Tool(nil), r.tools...)
+	r.mu.Unlock()
+	out := make([]tool.Spec, 0, len(tools))
+	for _, t := range tools {
 		out = append(out, t.Spec())
 	}
 	return out, nil
@@ -112,7 +138,9 @@ func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
 // 模型可自行纠正）；返回 error 仅限基础设施故障（确认器缺失/报错、父 ctx 取消）——
 // Agent 对这类装配级错误快速失败上抛（§14 遗留修复）。
 func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
+	r.mu.Lock()
 	t, ok := r.byName[call.Name]
+	r.mu.Unlock()
 	if !ok {
 		return tool.Result{CallID: call.ID, OK: false, Err: fmt.Sprintf("未知工具 %q", call.Name)}, nil
 	}

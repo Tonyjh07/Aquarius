@@ -24,6 +24,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/mcpgate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/notify"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
@@ -34,6 +35,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -179,6 +181,39 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return nil
 	}
 
+	// /plugin 状态写回 config 的 plugins 段（D31）：map 级重排保留其余配置键；
+	// 键缺失语义靠省略表达（enabled 缺省启用、granted 缺省空）。
+	persistPlugins := func(states map[string]plugin.State) error {
+		data, rerr := os.ReadFile(cfgPath)
+		if rerr != nil {
+			return rerr
+		}
+		var generic map[string]any
+		if rerr := json.Unmarshal(data, &generic); rerr != nil {
+			return fmt.Errorf("解析 %s: %w", cfgPath, rerr)
+		}
+		pm := make(map[string]any, len(states))
+		for name, st := range states {
+			entry := map[string]any{}
+			if st.Enabled != nil {
+				entry["enabled"] = *st.Enabled
+			}
+			if len(st.Granted) > 0 {
+				entry["granted"] = st.Granted
+			}
+			pm[name] = entry
+		}
+		generic["plugins"] = pm
+		out, rerr := json.MarshalIndent(generic, "", "  ")
+		if rerr != nil {
+			return fmt.Errorf("编码 config: %w", rerr)
+		}
+		if rerr := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
+			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
+		}
+		return nil
+	}
+
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -201,6 +236,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
+	}
+	// 合并记忆（§6.3）：主存储 + 插件 resources 只读投影；宿主建好前 extras 为空。
+	// 写/删与 /memory 编辑器仍走主存储（mem.Path 是 memoryfs 专有面）。
+	var host *plugin.Host
+	mergedMem := &mergedMemory{
+		primary: mem,
+		extras: func() []port.MemoryStore {
+			if host == nil {
+				return nil
+			}
+			ready := host.Ready()
+			out := make([]port.MemoryStore, 0, len(ready))
+			for _, name := range sortedStoreNames(ready) {
+				out = append(out, ready[name].Memory())
+			}
+			return out
+		},
+		logf: func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
 	}
 	client, err := llm.New(llm.Config{
 		BaseURL: cfg.Model.BaseURL, APIKey: apiKey, Tokenizer: cfg.Model.Tokenizer,
@@ -242,7 +295,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		maxOutput = 20000
 	}
 	runner := toolrun.New(toolrun.Options{
-		Tools: toolbuiltin.New(mem, func(name string) (string, bool) {
+		Tools: toolbuiltin.New(mergedMem, func(name string) (string, bool) {
 			p, err := mem.Path(name)
 			return p, err == nil
 		}, jobs),
@@ -290,7 +343,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	agent, err := app.New(
 		app.Deps{
 			LLM: gen, UI: presenter, IDs: ids, Clock: systemClock{},
-			Tools: auditedRunner, Memory: mem, Blobs: blobs,
+			Tools: auditedRunner, Memory: mergedMem, Blobs: blobs,
 		},
 		app.Config{
 			Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns,
@@ -303,7 +356,33 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	runner.Add(agent.ContextCompactTool()) // 装配期注册（agent 依赖 runner，反向补注册）
 
-	sess, err := app.NewSession(ctx, app.SessionDeps{
+	// 插件宿主（M4，§6.4）：面刷新先备好（host 与 session 互依，经闭包后绑定）。
+	var sess *app.Session
+	surfaces := &pluginSurfaces{
+		runner:  runner,
+		session: &sess,
+		ready: func() map[string]plugin.Session {
+			if host == nil {
+				return nil
+			}
+			return host.Ready()
+		},
+		callCtx:    ctx,
+		logf:       func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
+		registered: map[string][]string{},
+	}
+	host = plugin.New(plugin.Deps{
+		Dial:          mcpgate.NewDialer(envSecrets{}),
+		Confirm:       confirmer,
+		ConfigServers: cfg.MCPServers,
+		PluginsDir:    filepath.Join(dir, "plugins"),
+		States:        cfg.Plugins,
+		Persist:       persistPlugins,
+		Logf:          func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
+		OnChange:      surfaces.refresh,
+	})
+
+	sess, err = app.NewSession(ctx, app.SessionDeps{
 		Store:        store,
 		Agent:        agent,
 		IDs:          ids,
@@ -317,6 +396,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Ingestors:    []port.Ingestor{ingestfile.New(blobs), ingestclip.New(blobs)},
 		UI:           presenter,
 		OpenMemory:   openMemoryEditor(mem, stdin, stdout, stderr),
+		Plugins:      hostAdmin{host},
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -328,6 +408,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if ctx.Err() != nil {
 		return 0
 	}
+
+	// 插件宿主启动（发现 + 授权 + 连接，软启动：单插件失败只记状态）；
+	// 退出时优雅关闭（§6.4 #4）。OnChange 已在 Start 内把工具/动态命令同步到位。
+	host.Start(ctx)
+	defer host.Close()
 
 	ui.Say("Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成")
 	for {

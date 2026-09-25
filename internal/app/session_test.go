@@ -192,7 +192,7 @@ func TestSessionCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("help: %v", err)
 	}
-	for _, want := range []string{"/new", "/quit", "/goto", "/edit", "/branch", "/rm", "/jobs", "/model"} {
+	for _, want := range []string{"/new", "/quit", "/goto", "/edit", "/branch", "/rm", "/jobs", "/model", "/plugin"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help 缺 %q:\n%s", want, out)
 		}

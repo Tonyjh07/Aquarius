@@ -333,6 +333,47 @@ func TestHelperMCPServer(t *testing.T) {
 	os.Exit(0)
 }
 
+// TestHelperCrashServer 连接成功后 100ms 自杀（真进程崩溃模拟，仅 env 门控）。
+func TestHelperCrashServer(t *testing.T) {
+	if os.Getenv("AQUARIUS_MCPGATE_CRASH_HELPER") != "1" {
+		t.Skip("helper process（由 TestDialStdioCrashWait 拉起）")
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		os.Exit(1)
+	}()
+	_ = newTestServer().Run(context.Background(), &mcp.StdioTransport{})
+	os.Exit(0)
+}
+
+// TestDialStdioCrashWait 崩溃检测原语（§6.4 #4 重启的前提）：
+// 子进程异常退出后 Wait 返回非空报因，宿主据此计次重启。
+func TestDialStdioCrashWait(t *testing.T) {
+	d := plugin.Decl{
+		Name: "crash",
+		MCPConfig: plugin.MCPConfig{
+			Transport: plugin.TransportStdio,
+			Command:   os.Args[0],
+			Args:      []string{"-test.run=TestHelperCrashServer"},
+			Env:       map[string]string{"AQUARIUS_MCPGATE_CRASH_HELPER": "1"},
+		},
+		Source: plugin.SourceConfig,
+	}
+	s, err := Dial(context.Background(), nil, d)
+	if err != nil {
+		t.Fatalf("dial stdio: %v", err)
+	}
+	start := time.Now()
+	werr := s.Wait()
+	if werr == nil {
+		t.Fatal("进程异常退出，Wait 应返回报因")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("Wait 迟迟未返回: %v", time.Since(start))
+	}
+	_ = s.Close()
+}
+
 // TestDialStdio stdio 传输端到端：spawn 子进程 → 发现/调用 → 优雅关闭。
 func TestDialStdio(t *testing.T) {
 	d := plugin.Decl{
