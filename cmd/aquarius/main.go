@@ -573,6 +573,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer host.Close()
 
 	ui.Say("Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成")
+	// 启动历史回放（D40/§7.4）：恢复的会话把水位→Head 的可见历史重放进转写区，
+	// 让用户知道当前是哪个会话、此前聊了什么（新建会话无历史，no-op）。
+	if _, rerr := sess.ReplayHistory(ctx); rerr != nil {
+		fmt.Fprintf(stderr, "回放历史: %v\n", rerr)
+	}
 	for {
 		ui.Prompt()
 		in, err := ui.Next(ctx)

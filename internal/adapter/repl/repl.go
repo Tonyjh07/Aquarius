@@ -184,6 +184,11 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 		_, err := io.WriteString(u.out, b.String())
 		return err
 
+	case port.HistoryEvent:
+		// 启动历史回放（D40/§7.4）：与 TUI 同语义逐节点打印。
+		u.flushDelta()
+		return u.history(e.Message)
+
 	case port.ErrorEvent:
 		u.flushDelta()
 		_, err := fmt.Fprintf(u.out, "error: %s\n", sanitizeControl(e.Err.Error()))
@@ -208,6 +213,77 @@ func (u *UI) flushDelta() {
 		u.inDelta = false
 		u.thinking = false
 	}
+}
+
+// history 历史节点回放（D40/§7.4）：按角色逐行打印，语义与 TUI 呈现对齐——
+// user 输入行带 "> " 提示符、assistant 正文原样、tool 调用/结果与实时同形、
+// system 摘要原文。不可信内容一律经 preview/剥控制序列（§9）。
+func (u *UI) history(msg conversation.Message) error {
+	text := partsText(msg.Content)
+	switch msg.Role {
+	case conversation.RoleUser:
+		_, err := fmt.Fprintf(u.out, "> %s\n", text)
+		return err
+	case conversation.RoleAssistant:
+		var b strings.Builder
+		for _, call := range msg.ToolCalls {
+			if p := preview(call.Args); p != "" {
+				fmt.Fprintf(&b, "[tool] %s %s\n", call.Name, p)
+			} else {
+				fmt.Fprintf(&b, "[tool] %s\n", call.Name)
+			}
+		}
+		if strings.TrimSpace(text) != "" {
+			b.WriteString(text)
+			b.WriteString("\n")
+		}
+		// 空内容的取消/错误也要有反馈（与实时 CommittedEvent 同口径）。
+		if msg.Outcome != conversation.OutcomeDone {
+			fmt.Fprintf(&b, "[%s]\n", msg.Outcome)
+		}
+		if b.Len() == 0 {
+			return nil
+		}
+		_, err := io.WriteString(u.out, b.String())
+		return err
+	case conversation.RoleTool:
+		if msg.ToolResult == nil {
+			return nil
+		}
+		status, detail := "ok", msg.ToolResult.Output
+		if !msg.ToolResult.OK {
+			status, detail = "failed", msg.ToolResult.Err
+		}
+		_, err := fmt.Fprintf(u.out, "[tool %s] %s\n", status, preview([]byte(detail)))
+		return err
+	case conversation.RoleSystem:
+		if strings.TrimSpace(text) == "" {
+			return nil
+		}
+		_, err := fmt.Fprintf(u.out, "%s\n", text)
+		return err
+	default:
+		return nil
+	}
+}
+
+// partsText 节点文本拼接（与 uitui 同语义）：文本/文档分片直连，图片/音频留占位；
+// 出口剥控制序列（历史内容同样是不可信数据，§9）。
+func partsText(parts []conversation.Part) string {
+	var b strings.Builder
+	for _, p := range parts {
+		switch p.Kind {
+		case conversation.PartText:
+			b.WriteString(p.Text)
+		case conversation.PartImage:
+			b.WriteString("〔图片〕")
+		case conversation.PartAudio:
+			b.WriteString("〔音频转写〕")
+		case conversation.PartDoc:
+			b.WriteString(p.Text)
+		}
+	}
+	return sanitizeControl(b.String())
 }
 
 // preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。

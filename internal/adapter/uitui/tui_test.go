@@ -345,6 +345,71 @@ func TestEventsAndCommit(t *testing.T) {
 	}
 }
 
+// TestHistoryReplay D40/§7.4：历史节点按角色定稿渲染——user 行、assistant 工具调用行
+// 与正文、tool 结果行、system 摘要块；空文本的取消给 [cancelled] 标记（与 commit 同口径）；
+// 回放只展示不累计用量。
+func TestHistoryReplay(t *testing.T) {
+	m, _ := newTestModel(t)
+
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "你好"}},
+	}})
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:      conversation.RoleAssistant,
+		Outcome:   conversation.OutcomeDone,
+		ToolCalls: []tool.Call{{Name: "echo", Args: []byte(`{"m":"x"}`)}},
+		Content:   []conversation.Part{{Kind: conversation.PartText, Text: "## 结论\n最终答案"}},
+	}})
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:       conversation.RoleTool,
+		ToolResult: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+	}})
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleSystem,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "压缩摘要"}},
+	}})
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeCancelled,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "半截话"}},
+	}})
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeCancelled,
+	}})
+
+	wantKinds := []blockKind{blockUser, blockTool, blockAssistant, blockTool,
+		blockSystem, blockAssistant, blockAssistant}
+	if len(m.blocks) != len(wantKinds) {
+		t.Fatalf("blocks = %d, want %d", len(m.blocks), len(wantKinds))
+	}
+	for i, want := range wantKinds {
+		if m.blocks[i].kind != want {
+			t.Fatalf("blocks[%d].kind = %d, want %d", i, m.blocks[i].kind, want)
+		}
+	}
+	for i, want := range []string{
+		"你好",
+		"[tool] echo",
+		"最终答案",
+		"[tool ok] pong",
+		"压缩摘要",
+		"[cancelled]",
+		"[cancelled]",
+	} {
+		if !strings.Contains(m.blocks[i].text, want) {
+			t.Fatalf("blocks[%d].text = %q, 缺 %q", i, m.blocks[i].text, want)
+		}
+	}
+	if m.usage.InputTokens != 0 || m.usage.OutputTokens != 0 {
+		t.Fatalf("回放不应累计用量: %+v", m.usage)
+	}
+	if got := m.View(); !strings.Contains(got, "压缩摘要") {
+		t.Fatalf("View 缺回放内容: %q", got)
+	}
+}
+
 // TestScrollWindow PgUp/PgDn 滚动转写窗口（尾随跟随与上限收敛）。
 func TestScrollWindow(t *testing.T) {
 	m, _ := newTestModel(t)

@@ -183,6 +183,8 @@ func eventNames(events []port.Event) []string {
 			out = append(out, "error")
 		case port.NoticeEvent:
 			out = append(out, "notice")
+		case port.HistoryEvent:
+			out = append(out, "history")
 		default:
 			out = append(out, fmt.Sprintf("%T", ev))
 		}

@@ -8,7 +8,7 @@ import (
 )
 
 // Event UI 事件（联合类型）：DeltaEvent | ToolCallEvent | ToolResultEvent | CommittedEvent
-// | ErrorEvent | NoticeEvent。
+// | ErrorEvent | NoticeEvent | HistoryEvent。
 type Event any
 
 // DeltaEvent 流式增量，只进 UI 不进领域（D3）；MessageID 为 Turn 开始时预分配的关联 ID。
@@ -30,6 +30,13 @@ type ToolResultEvent struct {
 
 // CommittedEvent Turn 结束一次性提交的不可变节点。
 type CommittedEvent struct {
+	Message conversation.Message
+}
+
+// HistoryEvent 启动恢复时的历史回放节点（D40/§7.4）：Message 为已提交节点，
+// 前端按角色定稿渲染（与实时呈现同样式）；不属 Turn 流程——输出器装饰器（D28）
+// 只认 CommittedEvent，故回放不会重复触发通知/TTS。
+type HistoryEvent struct {
 	Message conversation.Message
 }
 

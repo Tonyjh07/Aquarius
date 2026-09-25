@@ -442,6 +442,7 @@ type JobManager interface {
 ```go
 type Event any // DeltaEvent{MessageID, Delta} | ToolCallEvent | ToolResultEvent
                // | CommittedEvent{Message} | ErrorEvent | NoticeEvent{Text}（裁剪/自动压缩等提示）
+               // | HistoryEvent{Message}（启动恢复的历史回放，D40——不触发输出器扇出）
 type Presenter interface{ Emit(ctx context.Context, ev Event) error }
 type Prompter interface{ Next(ctx context.Context) (UserInput, error) }
 
@@ -652,6 +653,24 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
+### 7.4 启动历史回放（D40）
+
+启动 `NewSession` 恢复最近会话后（`Store.List` 首条），装配根调用 `Session.ReplayHistory(ctx)`
+把**当前分支的可见历史**重放进 UI 转写区，让用户知道"加载了哪个会话、此前聊了什么"：
+
+- **回放范围** = `Path()` 上从水位到 Head：有压缩摘要时从**最新摘要节点**起（persona 之外的
+  水位，D21），否则从**persona 之后的首条消息**起；Root 与 persona 不回放（persona 是配置
+  快照，非对话内容）。与 `assemblePath` 同口径，回放内容 = 模型实际能看到的上下文。
+- **事件形态**：新增 `port.HistoryEvent{Message}`——一次性呈现**已提交的历史节点**，非 Turn
+  流程事件。前段不带 delta/ToolCall 过程，直接按节点角色定稿渲染（user 输入行、assistant
+  正文、tool 调用/结果行、system 摘要块），与实时呈现同一套样式。
+- **不扇出**：`HistoryEvent` 不是 `CommittedEvent`，输出器装饰器（D28）对它 no-op——
+  回放不重复触发通知/TTS。
+- **回放前提示**：发 `NoticeEvent`（`已恢复会话 <标题> (<id>)，回放 <n> 条历史`）。
+- **时机**：仅启动恢复时回放一次；`/goto` 切换会话、`/new` 不回放（命令回显已足够，§14）。
+- **repl 同权**：repl 前端按行打印同一语义（`> ` 输入行、正文、`[tool]` 行），保证
+  e2e/管道输出与 TUI 信息一致。
+
 ---
 
 ## 8. 存储布局与配置
@@ -847,10 +866,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D37 | persona 创建时附加**运行环境块**：platform、UI 形态与 TERM、特权沙盒目录（`IsAbs` 才附）、缺省调用超时与 `timeout_sec` 说明；随 config 快照入树（D20 语义不变），字段为空整块跳过 | 装配期动态注入（与 D20 快照语义冲突，分叉/回溯后环境漂移）；不告知（模型不知道沙盒与平台，只能踩坑后学） |
 | D38 | 单次工具调用超时 = `limits.tool_timeout_sec` 缺省，模型可经**保留参数** `timeout_sec`（整数 1–3600）逐次覆盖，**允许高于 config**；schema 自声明该参数的工具（`job_start`）不受保留参数约束；执行前从 Args 剥离（MCP 服务端不收未知参数）；值域外/非整数报错回填；发现性经 persona 环境块一行说明 | 每个工具各加超时参数（16×schema 重复、MCP 工具无法参与）；不可覆盖（长任务与 `sleep` 撞默认 60s）；静默夹取（掩盖模型传参错误，`0` 还会被误读为不限时）；完全无上限（失控面不可控） |
 | D39 | 新增 `sleep` 内置工具（Safe：1–3600 秒、ctx 可中断、超缺省时长须配 `timeout_sec`） | 只靠 `job_start` + 轮询日志（重量级）；不提供（模型无法自然停顿 / 等待后台任务收尾） |
+| D40 | 启动恢复会话经 **`HistoryEvent` 回放可见历史**（水位 → Head，见 §7.4）+ NoticeEvent 提示会话身份 | 复用 `CommittedEvent` 回放（会触发 D28 输出器重复通知/TTS，且 user/tool 节点在两前端的 Committed 语义是 no-op、渲染不出）；复用 Say 拼纯文本（丢角色样式、TUI 与 repl 各拼一遍易漂移） |
 
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
+- `/goto`、`/new` 切换会话时的自动历史回放（当前仅启动恢复时回放一次，D40/§7.4）
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）

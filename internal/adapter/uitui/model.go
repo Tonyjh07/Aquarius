@@ -319,6 +319,8 @@ func (m *model) handleEvent(ev port.Event) {
 		m.add(blockTool, "[tool "+status+"] "+preview([]byte(detail)))
 	case port.CommittedEvent:
 		m.commit(e.Message)
+	case port.HistoryEvent:
+		m.replay(e.Message) // 启动历史回放（D40/§7.4）：按节点角色定稿渲染
 	case port.ErrorEvent:
 		m.add(blockError, "error: "+sanitizeControl(e.Err.Error())) // 服务端错误片段可携带注入序列
 	case port.NoticeEvent:
@@ -363,6 +365,52 @@ func (m *model) commit(msg conversation.Message) {
 	default:
 		// user / tool 节点无事件面（输入与工具行已单独入块）。
 		m.resetDraft()
+	}
+	m.scroll = 0
+}
+
+// replay 历史节点回放（D40/§7.4）：已提交节点按角色一次性定稿渲染，与实时
+// 呈现同一套样式；无草稿/流式过程，也不累计用量（回放是展示，不是新一轮提交）。
+func (m *model) replay(msg conversation.Message) {
+	text := partsText(msg.Content)
+	switch msg.Role {
+	case conversation.RoleUser:
+		if strings.TrimSpace(text) != "" {
+			m.add(blockUser, text)
+		}
+	case conversation.RoleAssistant:
+		// 助手节点可能带工具调用声明：先渲染调用行（与 ToolCallEvent 同形），
+		// 随后 path 上的 tool 节点渲染结果行。
+		for _, call := range msg.ToolCalls {
+			m.add(blockTool, "[tool] "+call.Name+" "+preview(call.Args))
+		}
+		// 空文本的取消/错误同样给标记（与 commit 同口径；repl 亦打 [cancelled]）。
+		if strings.TrimSpace(text) == "" {
+			if msg.Outcome != conversation.OutcomeDone {
+				m.add(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome))
+			}
+			break
+		}
+		if msg.Outcome == conversation.OutcomeDone {
+			m.add(blockAssistant, m.renderMD(text))
+		} else {
+			m.add(blockAssistant, lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(
+				fmt.Sprintf("[%s]", msg.Outcome))+"\n"+text)
+		}
+	case conversation.RoleTool:
+		if msg.ToolResult == nil {
+			return
+		}
+		status, detail := "ok", msg.ToolResult.Output
+		if !msg.ToolResult.OK {
+			status, detail = "failed", msg.ToolResult.Err
+		}
+		m.add(blockTool, "[tool "+status+"] "+preview([]byte(detail)))
+	case conversation.RoleSystem:
+		if strings.TrimSpace(text) != "" {
+			m.add(blockSystem, text)
+		}
+	default: // root 等不该出现在回放区间
 	}
 	m.scroll = 0
 }

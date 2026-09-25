@@ -89,6 +89,7 @@ func newTestSession(t *testing.T, store port.ConversationStore, streams ...*scri
 		Agent: agent,
 		IDs:   &seqIDs{},
 		Clock: fixedClock{testTime},
+		UI:    rec, // 会话级呈现（D40 历史回放、摄取 Notice）
 	})
 	if err != nil {
 		t.Fatalf("new session: %v", err)
@@ -192,6 +193,127 @@ func TestSessionTextRoundPersists(t *testing.T) {
 	}
 	if userN != 2 {
 		t.Fatalf("user messages in context = %d, want 2（历史随恢复进上下文）", userN)
+	}
+}
+
+// TestSessionReplayHistory D40/§7.4：启动恢复后回放水位→Head 的可见历史——
+// 先 NoticeEvent 报会话身份，再逐节点 HistoryEvent；persona/Root 不回放。
+func TestSessionReplayHistory(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store, textStream("哈"))
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "讲个笑话"}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	// 重启：同一 store 恢复 → 回放 user + assistant 两条。
+	s2, _, rec2 := newTestSession(t, store)
+	if !s2.resumed {
+		t.Fatal("应处于恢复态")
+	}
+	n, err := s2.ReplayHistory(context.Background())
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("回放条数 = %d, want 2（user+assistant，persona 不回放）", n)
+	}
+	names := eventNames(rec2.events)
+	if len(names) != 3 || names[0] != "notice" || names[1] != "history" || names[2] != "history" {
+		t.Fatalf("events = %v, want [notice history history]", names)
+	}
+	notice := rec2.events[0].(port.NoticeEvent)
+	for _, want := range []string{"已恢复会话", s2.Current().Title, string(s2.Current().ID), "2 条历史"} {
+		if !strings.Contains(notice.Text, want) {
+			t.Fatalf("notice = %q, 缺 %q", notice.Text, want)
+		}
+	}
+	got := []conversation.Role{
+		rec2.events[1].(port.HistoryEvent).Message.Role,
+		rec2.events[2].(port.HistoryEvent).Message.Role,
+	}
+	if got[0] != conversation.RoleUser || got[1] != conversation.RoleAssistant {
+		t.Fatalf("roles = %v, want [user assistant]", got)
+	}
+	if text := rec2.events[1].(port.HistoryEvent).Message.Content[0].Text; text != "讲个笑话" {
+		t.Fatalf("user 历史文本 = %q", text)
+	}
+
+	// 同一会话内重复调用幂等可重放（回放本身不改树）。
+	if n2, err := s2.ReplayHistory(context.Background()); err != nil || n2 != 2 {
+		t.Fatalf("二次回放 = %d/%v, want 2/nil", n2, err)
+	}
+}
+
+// TestSessionReplayHistoryWatermark D21×D40：有压缩摘要时从摘要节点起回放
+// （与 assemblePath 同口径——回放内容 = 模型可见上下文）。
+func TestSessionReplayHistoryWatermark(t *testing.T) {
+	store := newMemStore()
+	c := conversation.New(conversation.ID("Cw"), "带摘要")
+	root := conversation.MessageID(c.ID)
+	persona := commitNode(t, c, root, conversation.RoleSystem, "人格")
+	u1 := commitNode(t, c, persona.ID, conversation.RoleUser, "旧问题")
+	commitNode(t, c, u1.ID, conversation.RoleAssistant, "旧回答")
+	sum := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要内容")
+	u2 := commitNode(t, c, c.Head, conversation.RoleUser, "新问题")
+	commitNode(t, c, u2.ID, conversation.RoleAssistant, "新回答")
+	if err := store.Save(context.Background(), c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	s, _, rec := newTestSession(t, store)
+	n, err := s.ReplayHistory(context.Background())
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("回放条数 = %d, want 3（摘要+新问题+新回答，摘要之上不回放）", n)
+	}
+	if names := eventNames(rec.events); len(names) != 4 || names[0] != "notice" {
+		t.Fatalf("events = %v", names)
+	}
+	var roles []conversation.Role
+	var texts []string
+	for _, ev := range rec.events[1:] {
+		m := ev.(port.HistoryEvent).Message
+		roles = append(roles, m.Role)
+		texts = append(texts, m.Content[0].Text)
+	}
+	wantTexts := []string{"摘要内容", "新问题", "新回答"}
+	for i := range wantTexts {
+		if texts[i] != wantTexts[i] {
+			t.Fatalf("文本[%d] = %q, want %q", i, texts[i], wantTexts[i])
+		}
+	}
+	if roles[0] != conversation.RoleSystem || roles[1] != conversation.RoleUser || roles[2] != conversation.RoleAssistant {
+		t.Fatalf("roles = %v", roles)
+	}
+	if sum.ID == "" || s.Current().ID != "Cw" {
+		t.Fatal("回放不应改动当前会话")
+	}
+}
+
+// TestSessionReplayHistoryFreshNoop 新建会话无历史：不发任何事件。
+func TestSessionReplayHistoryFreshNoop(t *testing.T) {
+	store := newMemStore()
+	s, _, rec := newTestSession(t, store)
+	n, err := s.ReplayHistory(context.Background())
+	if err != nil || n != 0 || len(rec.events) != 0 {
+		t.Fatalf("fresh replay = %d/%v/events=%d, want 0/nil/0", n, err, len(rec.events))
+	}
+}
+
+// TestSessionReplayHistoryNoHistoryOnlyPersona 恢复但只有 persona（没聊过）：静默。
+func TestSessionReplayHistoryNoHistoryOnlyPersona(t *testing.T) {
+	store := newMemStore()
+	c := conversation.New(conversation.ID("Cp"), "空会话")
+	commitNode(t, c, conversation.MessageID(c.ID), conversation.RoleSystem, "人格")
+	if err := store.Save(context.Background(), c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	s, _, rec := newTestSession(t, store)
+	n, err := s.ReplayHistory(context.Background())
+	if err != nil || n != 0 || len(rec.events) != 0 {
+		t.Fatalf("replay = %d/%v/events=%d, want 0/nil/0", n, err, len(rec.events))
 	}
 }
 

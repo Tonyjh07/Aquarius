@@ -94,6 +94,9 @@ type Session struct {
 	persistThink  func(on bool) error
 	persistEffort func(level string) error
 	cur           *conversation.Conversation
+	// resumed 本次启动是否恢复了既有会话（NewSession 走 Load 分支）；
+	// ReplayHistory 仅在恢复时回放（新建会话无历史可回放，D40/§7.4）。
+	resumed bool
 
 	// dynMu 保护 dynamic：REPL 主循环读、插件启停回调（可能来自崩溃重启的
 	// watch goroutine）写，须加锁（§10 并发语义）。
@@ -164,6 +167,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 			return nil, fmt.Errorf("session: 恢复会话 %s: %w", list[0].ID, err)
 		}
 		s.cur = c
+		s.resumed = true
 		return s, nil
 	}
 	s.cur, err = s.newConversation(defaultTitle)
@@ -199,6 +203,39 @@ func (s *Session) newConversation(title string) (*conversation.Conversation, err
 
 // Current 当前会话（供只读展示；一切修改仍走 Session）。
 func (s *Session) Current() *conversation.Conversation { return s.cur }
+
+// ReplayHistory 启动历史回放（D40/§7.4）：把当前分支"模型可见"的历史
+// （水位 → Head；无摘要则 persona 之后 → Head）经 Presenter 逐节点呈现，
+// 并先发 NoticeEvent 说明恢复了哪个会话。新建会话无历史，直接返回 0。
+// 返回回放的节点数（不含提示）。
+func (s *Session) ReplayHistory(ctx context.Context) (int, error) {
+	if !s.resumed || s.ui == nil {
+		return 0, nil
+	}
+	path := s.cur.Path()
+	personaIdx, watermarkIdx := waterline(path)
+	start := 1 // 跳过 Root
+	if personaIdx >= 0 {
+		start = personaIdx + 1 // 跳过 persona（配置快照，非对话内容）
+	}
+	if watermarkIdx >= 0 {
+		start = watermarkIdx // 有压缩摘要：从摘要节点起（含），与 assemblePath 同口径
+	}
+	if start >= len(path) {
+		return 0, nil // 仅 Root/persona：没有可回放的历史
+	}
+	n := len(path) - start
+	notice := fmt.Sprintf("已恢复会话 %s (%s)，回放 %d 条历史", s.cur.Title, s.cur.ID, n)
+	if err := s.ui.Emit(ctx, port.NoticeEvent{Text: notice}); err != nil {
+		return 0, fmt.Errorf("session: 回放提示: %w", err)
+	}
+	for i := start; i < len(path); i++ {
+		if err := s.ui.Emit(ctx, port.HistoryEvent{Message: path[i]}); err != nil {
+			return i - start, fmt.Errorf("session: 回放历史: %w", err)
+		}
+	}
+	return n, nil
+}
 
 // Handle 处理一次用户输入：命令走 execCommand；Raw 走多模态摄取管线（M3）；
 // 普通文本入树 → Turn → 落盘。返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。

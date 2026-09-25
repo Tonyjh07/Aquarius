@@ -1,6 +1,6 @@
 # 使用手册
 
-> 本文衍生自 [DESIGN.md](../DESIGN.md) §7.1/§7.3/§9，并与当前实现对齐；
+> 本文衍生自 [DESIGN.md](../DESIGN.md) §7.1/§7.3/§7.4/§9，并与当前实现对齐；
 > **冲突以 DESIGN.md 为准**。配置字段见 [configuration.md](configuration.md)，数据与备份见 [storage.md](storage.md)。
 
 ## 快速上手
@@ -16,6 +16,10 @@ go build ./cmd/aquarius
 `ui.kind=repl` 为行式 REPL（测试/e2e 后端）。直接输入文本即对话；`/help` 看命令；
 `/quit`（或 `/exit`）退出。
 （Ctrl+C 语义：TUI 取消本轮后保持待命；repl 取消本轮后进程随即退出。）
+
+启动会自动恢复最近一次会话，并把该分支**模型可见的历史**（上个压缩摘要 → 最新；
+没有摘要则从首条消息起）回放进转写区，附一条 `已恢复会话 <标题> (<id>)，回放 n 条历史`
+提示——persona 配置快照与摘要水位之上的旧内容不回放（D40/DESIGN §7.4）。
 
 ## 命令参考
 

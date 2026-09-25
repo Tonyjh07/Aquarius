@@ -192,6 +192,66 @@ func TestEmitLongPreviewTruncated(t *testing.T) {
 	}
 }
 
+// TestEmitHistoryReplay D40/§7.4：历史回放按角色逐行打印，与 TUI 同语义。
+func TestEmitHistoryReplay(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "你好"}},
+	}})
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:      conversation.RoleAssistant,
+		Outcome:   conversation.OutcomeDone,
+		Content:   []conversation.Part{{Kind: conversation.PartText, Text: "回答"}},
+		ToolCalls: []tool.Call{{Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}},
+	}})
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:       conversation.RoleTool,
+		ToolResult: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+	}})
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:       conversation.RoleTool,
+		ToolResult: &tool.Result{CallID: "c", OK: false, Err: "boom"},
+	}})
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleSystem,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "压缩摘要"}},
+	}})
+	want := "> 你好\n" +
+		"[tool] echo {\"m\":\"x\"}\n" +
+		"回答\n" +
+		"[tool ok] pong\n" +
+		"[tool failed] boom\n" +
+		"压缩摘要\n"
+	if buf.String() != want {
+		t.Fatalf("buf = %q, want %q", buf.String(), want)
+	}
+}
+
+// TestHistoryStripsControlSequences 回放内容同样只渲染不执行（§9）：
+// GBK 乱码字节（0x9B = C1 CSI）与 ANSI 序列不得直通终端——复现"输出清掉前几行"。
+func TestHistoryStripsControlSequences(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role: conversation.RoleUser,
+		Content: []conversation.Part{{
+			Kind: conversation.PartText,
+			Text: "os: Windows\x9b2J\rnext\x1b[31mred\x1b[0m",
+		}},
+	}})
+	got := buf.String()
+	for _, bad := range []string{"\x9b", "\r", "\x1b"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("回放直通控制字节 %q: %q", bad, got)
+		}
+	}
+	if !strings.Contains(got, "Windows") || !strings.Contains(got, "next") {
+		t.Fatalf("正常文本被误删: %q", got)
+	}
+}
+
 // TestPreviewStripsGBKInvalidUTF8 工具结果预览剥非法 UTF-8（Windows cmd 默认
 // OEM 代码页输出），与 uitui.preview 同口径。
 func TestPreviewStripsGBKInvalidUTF8(t *testing.T) {
