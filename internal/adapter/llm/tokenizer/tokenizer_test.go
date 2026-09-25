@@ -168,12 +168,18 @@ func TestCountEdges(t *testing.T) {
 }
 
 // TestRealVectors 真实 DeepSeek tokenizer 的官方期望向量。
-// 需本机提供 tokenizer.json（环境变量 AQUARIUS_TOKENIZER_JSON 指向文件或目录）；
-// 缺省跳过——向量与生成脚本已入库（testdata/gen_vectors.py），有词表的环境可随时重验。
+// 词表来源（二选一）：环境变量 AQUARIUS_TOKENIZER_JSON 指向文件/目录，
+// 或把词表放到 testdata/tokenizer.json（.gitignore 排除，见 gen_vectors.py）；
+// 都没有才跳过——向量与生成脚本已入库，任何有词表的环境可随时全量重验。
 func TestRealVectors(t *testing.T) {
 	path := os.Getenv("AQUARIUS_TOKENIZER_JSON")
 	if path == "" {
-		t.Skip("未设置 AQUARIUS_TOKENIZER_JSON（DeepSeek tokenizer.json 路径），跳过真实向量比对")
+		if _, err := os.Stat("testdata/tokenizer.json"); err == nil {
+			path = "testdata/tokenizer.json"
+		}
+	}
+	if path == "" {
+		t.Skip("未提供词表（AQUARIUS_TOKENIZER_JSON 或 testdata/tokenizer.json），跳过真实向量比对")
 	}
 	tok, err := Load(path)
 	if err != nil {

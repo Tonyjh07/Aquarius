@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# 本地 tokenizer 词表（6MB 级，不入库；真实向量测试经环境变量或此路径发现）
+internal/adapter/llm/tokenizer/testdata/tokenizer.json
+
 # Editor/IDE
 # .idea/
 # .vscode/
