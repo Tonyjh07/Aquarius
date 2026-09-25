@@ -256,6 +256,37 @@ func TestRunCancelDuringToolReturnsNil(t *testing.T) {
 	}
 }
 
+// TestRunMissingToolsRunnerGuard 未注入 Deps.Tools 却收到 tool_calls：
+// 按装配级错误中止并补失败结果（不 panic、不空转）。
+func TestRunMissingToolsRunnerGuard(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{
+		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
+			{Index: 0, ID: "call_x", Name: "ghost"},
+		}}}}},
+	}}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{}, Config{}) // 无 Tools
+	c := newConv(t)
+
+	err := a.Run(context.Background(), c)
+	if err == nil || !strings.Contains(err.Error(), "未配置工具执行器") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(llm.requests))
+	}
+	path := c.Path()
+	if len(path) != 4 {
+		t.Fatalf("path len = %d, want 4", len(path))
+	}
+	if path[3].ToolResult == nil || path[3].ToolResult.OK {
+		t.Fatalf("中断结果 = %+v", path[3].ToolResult)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
 // TestRunInfraErrorAfterFirstTool 首个调用成功、第二个装配级失败（i>0 分支）：
 // 只为剩余调用补中断结果，已成功的照常入树，事件序成对。
 func TestRunInfraErrorAfterFirstTool(t *testing.T) {

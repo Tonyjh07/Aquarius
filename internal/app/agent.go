@@ -484,6 +484,11 @@ func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *commitBuff
 // 返回 error 仅限装配级错误（确认器缺失/报错、父 ctx 取消等基础设施故障），
 // 由 Run 快速失败上抛（§14：不让模型空转到 MaxTurns）。
 func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, error) {
+	if a.tools == nil {
+		// 未声明工具却收到 tool_calls（嵌入方/配置缺陷）：按装配级错误中止，
+		// 不让空指针 panic、也不回填让模型空转。
+		return tool.Result{}, errors.New("未配置工具执行器（Deps.Tools）")
+	}
 	res, err := a.tools.Execute(ctx, call)
 	if err != nil {
 		return tool.Result{}, err
