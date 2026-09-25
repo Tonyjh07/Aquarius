@@ -132,8 +132,9 @@ func New(d Deps, cfg Config) (*Agent, error) {
 //   - 流式增量只经 Presenter 进 UI，每次生成结束一次性 Commit 不可变节点（D3）；
 //     节点 ID 在 Turn 开始时预分配，作流事件关联 ID。
 //   - 工具级失败转 OK=false 照常回填，不中断 Turn；
-//     装配级错误（确认器缺失/报错、ctx 取消）为剩余调用补失败结果后快速上抛。
+//     装配级错误（确认器缺失/报错）为剩余调用补失败结果后中止本轮。
 //   - 取消 = 已生成部分以 Outcome: cancelled 提交后返回 nil（可 /edit 重试）；
+//     工具阶段取消 = 补齐中断结果后同样返回 nil（树可装配，主循环经 ctx 收尾）。
 //     模型/网络错误 = Outcome: error 提交并返回错误（ErrorEvent 由装配根统一上抛，避免重复呈现）。
 func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	if c == nil {
@@ -204,12 +205,20 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			if err != nil {
 				// 装配级错误（确认器缺失/报错、父 ctx 取消）：先补公告尚未呈现的
 				// 调用，再为剩余调用补失败结果保持 tool_calls 一一配对（树下次
-				// 仍可装配），随后快速上抛，不回填空转 MaxTurns（§14 遗留修复）。
+				// 仍可装配），随后中止本轮，不回填空转 MaxTurns（§14 遗留修复）。
 				for _, rest := range node.ToolCalls[i+1:] {
 					_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: rest})
 				}
 				cause := fmt.Errorf("执行工具 %s: %w", call.Name, err)
-				return a.abortToolCalls(ctx, c, node.ToolCalls[i:], cause)
+				if aerr := a.abortToolCalls(ctx, c, node.ToolCalls[i:], cause); aerr != nil {
+					return aerr
+				}
+				// 取消（Ctrl+C/超时）补齐中断结果后按取消收场，与生成阶段一致（§10）：
+				// 不作为错误呈现，主循环经 ctx 状态干净退出。
+				if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+					return nil
+				}
+				return cause
 			}
 			tnode := conversation.Message{
 				ID:         a.ids.MessageID(),
@@ -486,8 +495,9 @@ func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, erro
 }
 
 // abortToolCalls 装配级工具故障的收尾：为剩余未执行的调用补 OK=false 结果节点
-// （保持 assistant.tool_calls 与 tool 结果一一配对，树下次装配仍可发送），
-// 随后返回 cause 中止本轮。与 §10 的"工具失败不中断 Turn"不同——那指的是工具级失败。
+// （保持 assistant.tool_calls 与 tool 结果一一配对，树下次装配仍可发送）。
+// 只在补录自身失败时返回错误；成功返回 nil（原错误由调用方处置）。
+// 与 §10 的"工具失败不中断 Turn"不同——那指的是工具级失败。
 func (a *Agent) abortToolCalls(ctx context.Context, c *conversation.Conversation, calls []tool.Call, cause error) error {
 	for _, call := range calls {
 		res := tool.Result{CallID: call.ID, OK: false, Err: cause.Error()}
@@ -499,11 +509,11 @@ func (a *Agent) abortToolCalls(ctx context.Context, c *conversation.Conversation
 			CreatedAt:  a.clock.Now(),
 		}
 		if err := c.AppendCommitted(tnode); err != nil {
-			return fmt.Errorf("提交工具中断结果: %w（原错误: %v）", err, cause)
+			return fmt.Errorf("%w（补齐中断结果失败: %v）", cause, err)
 		}
 		_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
 	}
-	return cause
+	return nil
 }
 
 // normalizeCalls 补齐/去重调用 ID（个别兼容服务不回传 ID），并给空参数补 {}。

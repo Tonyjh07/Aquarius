@@ -224,6 +224,79 @@ func TestRunInfraErrorAbortsTurn(t *testing.T) {
 	}
 }
 
+// TestRunCancelDuringToolReturnsNil 工具阶段取消：补齐中断结果后返回 nil
+// （与生成阶段取消一致，§10——不作为错误呈现），树仍满足不变量，不再发起后续生成。
+func TestRunCancelDuringToolReturnsNil(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{
+		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
+			{Index: 0, ID: "call_c", Name: "slow"},
+		}}}}},
+	}}
+	rec := &recorder{}
+	runner := &fakeRunner{errs: map[tool.CallID]error{"call_c": context.Canceled}}
+	a := newAgent(t, llm, rec, Deps{Tools: runner}, Config{})
+	c := newConv(t)
+
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("工具阶段取消应返回 nil: %v", err)
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(llm.requests))
+	}
+	path := c.Path()
+	if len(path) != 4 { // root + persona + assistant + 中断结果
+		t.Fatalf("path len = %d, want 4", len(path))
+	}
+	res := path[3].ToolResult
+	if res == nil || res.OK || !strings.Contains(res.Err, "context canceled") {
+		t.Fatalf("result = %+v", res)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestRunInfraErrorAfterFirstTool 首个调用成功、第二个装配级失败（i>0 分支）：
+// 只为剩余调用补中断结果，已成功的照常入树，事件序成对。
+func TestRunInfraErrorAfterFirstTool(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{
+		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
+			{Index: 0, ID: "call_ok", Name: "alpha"},
+			{Index: 1, ID: "call_bad", Name: "beta"},
+		}}}}},
+	}}
+	rec := &recorder{}
+	runner := &fakeRunner{errs: map[tool.CallID]error{"call_bad": errors.New("未配置 Confirmer")}}
+	a := newAgent(t, llm, rec, Deps{Tools: runner}, Config{})
+	c := newConv(t)
+
+	err := a.Run(context.Background(), c)
+	if err == nil || !strings.Contains(err.Error(), "执行工具 beta") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(llm.requests))
+	}
+	path := c.Path()
+	if len(path) != 5 {
+		t.Fatalf("path len = %d, want 5", len(path))
+	}
+	if path[3].ToolResult == nil || !path[3].ToolResult.OK {
+		t.Fatalf("首个成功结果 = %+v", path[3].ToolResult)
+	}
+	if path[4].ToolResult == nil || path[4].ToolResult.OK ||
+		!strings.Contains(path[4].ToolResult.Err, "未配置 Confirmer") {
+		t.Fatalf("中断结果 = %+v", path[4].ToolResult)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	want := "delta,committed,tool_call,tool_result,tool_call,tool_result"
+	if got := strings.Join(eventNames(rec.events), ","); got != want {
+		t.Fatalf("events = %v, want %s", got, want)
+	}
+}
+
 func TestRunGenerateErrorCommitsErrorNode(t *testing.T) {
 	llm := &scriptLLM{t: t, genErr: errors.New("boom")}
 	rec := &recorder{}
