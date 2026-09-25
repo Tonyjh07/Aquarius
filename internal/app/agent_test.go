@@ -352,6 +352,31 @@ func TestRunGenerateErrorCommitsErrorNode(t *testing.T) {
 	}
 }
 
+// TestRunStartPhaseCancelCommitsCancelled 发起生成阶段被 ctx 取消：
+// 以 cancelled 终态提交占位节点并返回 nil（与断流取消一致，§10）。
+func TestRunStartPhaseCancelCommitsCancelled(t *testing.T) {
+	llm := &scriptLLM{t: t, genErr: context.Canceled}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{}, Config{})
+	c := newConv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := a.Run(ctx, c); err != nil {
+		t.Fatalf("发起阶段取消应返回 nil: %v", err)
+	}
+	path := c.Path()
+	if len(path) != 3 { // root + persona + cancelled 占位
+		t.Fatalf("path len = %d, want 3", len(path))
+	}
+	if path[2].Outcome != conversation.OutcomeCancelled {
+		t.Fatalf("outcome = %v, want cancelled", path[2].Outcome)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
 func TestRunStreamErrorCommitsPartialText(t *testing.T) {
 	llm := &scriptLLM{t: t, streams: []*scriptStream{
 		{steps: []scriptStep{

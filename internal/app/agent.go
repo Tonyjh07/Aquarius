@@ -164,6 +164,11 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 		stream, err := a.llm.Generate(ctx, req)
 		if err != nil {
+			if ctx.Err() != nil {
+				// 发起阶段被取消：按取消提交（Outcome: cancelled，返回 nil），
+				// 与断流取消一致（§10）——主循环经 ctx 状态收尾，不报 error 行。
+				return a.commitCancelled(ctx, c, buf)
+			}
 			return a.commitFailure(ctx, c, buf, fmt.Errorf("发起生成: %w", err))
 		}
 		calls, recvErr := a.consume(ctx, stream, buf, mid)
@@ -548,6 +553,17 @@ func (a *Agent) commitFailure(ctx context.Context, c *conversation.Conversation,
 	}
 	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
 	return cause
+}
+
+// commitCancelled 发起阶段取消的收场：以 Outcome: cancelled 提交占位节点并返回
+// nil（与断流取消一致，§10"取消提交"——可 /edit 重试，不作为错误呈现）。
+func (a *Agent) commitCancelled(ctx context.Context, c *conversation.Conversation, buf *commitBuffer) error {
+	node := buf.commit(a.clock.Now(), conversation.OutcomeCancelled, a.cfg.Model, nil)
+	if err := c.AppendCommitted(node); err != nil {
+		return fmt.Errorf("提交取消节点: %w", err)
+	}
+	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
+	return nil
 }
 
 // commitBuffer 流式缓冲：只进 UI，Turn 结束一次性 Commit（D3）。
