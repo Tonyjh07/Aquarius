@@ -91,9 +91,10 @@ func Load(path string) (*Tokenizer, error) {
 	if hf.Model.Type != "BPE" {
 		return nil, fmt.Errorf("tokenizer: 不支持的模型类型 %q（仅 BPE）", hf.Model.Type)
 	}
-	// normalizer：只支持恒等（空 Sequence / 缺省）。
-	if hf.Normalizer != nil && hf.Normalizer.Type == "Sequence" && len(hf.Normalizer.Normalizers) > 0 {
-		return nil, fmt.Errorf("tokenizer: 不支持的 normalizer（非空 Sequence）")
+	// normalizer：只支持恒等（缺省或空 Sequence）；其余（NFKC/Lowercase…）
+	// 若静默放行会导致计数与服务端不符却仍标"精确"——一律报错回落通用估算③。
+	if hf.Normalizer != nil && !(hf.Normalizer.Type == "Sequence" && len(hf.Normalizer.Normalizers) == 0) {
+		return nil, fmt.Errorf("tokenizer: 不支持的 normalizer %q（仅支持恒等）", hf.Normalizer.Type)
 	}
 	// pre_tokenizer：Sequence[Split…, ByteLevel]。
 	if hf.PreTokenizer == nil || hf.PreTokenizer.Type != "Sequence" {
@@ -130,12 +131,13 @@ func Load(path string) (*Tokenizer, error) {
 	}
 	for i, raw := range ms {
 		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
+		// 注意：JSON null 反序列化进 string 不报错且得空串——空 merge 串一律视为畸形。
+		if err := json.Unmarshal(raw, &s); err == nil && s != "" {
 			t.merges[s] = i
 			continue
 		}
 		var pair []string
-		if err := json.Unmarshal(raw, &pair); err == nil || len(pair) == 2 {
+		if err := json.Unmarshal(raw, &pair); err == nil && len(pair) == 2 {
 			t.merges[pair[0]+" "+pair[1]] = i
 			continue
 		}

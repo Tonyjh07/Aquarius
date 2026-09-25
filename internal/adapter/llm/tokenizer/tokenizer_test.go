@@ -2,6 +2,7 @@ package tokenizer
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,7 +89,7 @@ func TestLoadRejects(t *testing.T) {
 	if _, err := Load(notBPE); err == nil {
 		t.Fatal("非 BPE 应报错")
 	}
-	// 非空 normalizer 拒绝（回落估算的依据）。
+	// 非恒等 normalizer 拒绝（回落估算的依据）——含非 Sequence 的单条形式。
 	nf := filepath.Join(t.TempDir(), "nfkc.json")
 	if err := os.WriteFile(nf, []byte(`{
 		"normalizer": {"type":"Sequence","normalizers":[{"type":"NFKC"}]},
@@ -99,6 +100,31 @@ func TestLoadRejects(t *testing.T) {
 	}
 	if _, err := Load(nf); err == nil {
 		t.Fatal("非恒等 normalizer 应报错")
+	}
+	lc := filepath.Join(t.TempDir(), "lowercase.json")
+	if err := os.WriteFile(lc, []byte(`{
+		"normalizer": {"type":"Lowercase"},
+		"pre_tokenizer": {"type":"Sequence","pretokenizers":[]},
+		"model": {"type":"BPE","vocab":{},"merges":[]}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(lc); err == nil {
+		t.Fatal("非 Sequence 单条 normalizer 应报错")
+	}
+
+	// 畸形 merges 拒绝而非 panic：空对、单元素、三元素、null。
+	for i, raw := range []string{`[[]]`, `[["x"]]`, `[["a","b","c"]]`, `[null]`} {
+		mf := filepath.Join(t.TempDir(), fmt.Sprintf("merges%d.json", i))
+		if err := os.WriteFile(mf, []byte(`{
+			"pre_tokenizer": {"type":"Sequence","pretokenizers":[]},
+			"model": {"type":"BPE","vocab":{"a":0,"b":1},"merges":`+string(raw)+`}
+		}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(mf); err == nil {
+			t.Fatalf("畸形 merges %s 应报错而非 panic", raw)
+		}
 	}
 }
 
