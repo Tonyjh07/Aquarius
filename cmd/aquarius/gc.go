@@ -37,10 +37,12 @@ func collectBlobRefs(ctx context.Context, store port.ConversationStore) (map[str
 func runAttachmentGC(ctx context.Context, store port.ConversationStore, blobs port.AttachmentStore, warn io.Writer) {
 	keep, err := collectBlobRefs(ctx, store)
 	if err != nil {
-		fmt.Fprintf(warn, "附件 GC 已跳过（引用收集失败）: %v\n", err)
+		if ctx.Err() == nil { // 启动期 Ctrl+C 属正常收尾，不告警
+			fmt.Fprintf(warn, "附件 GC 已跳过（引用收集失败）: %v\n", err)
+		}
 		return
 	}
-	if err := blobs.GC(ctx, keep); err != nil {
+	if err := blobs.GC(ctx, keep); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(warn, "附件 GC: %v\n", err)
 	}
 }

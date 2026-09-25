@@ -261,6 +261,22 @@ func TestRunAttachmentGC(t *testing.T) {
 	}
 }
 
+// TestRunAttachmentGCQuietOnCancel 启动期 ctx 取消：跳过清扫且不告警（干净收尾，
+// ctx 提前到装配段创建后 Ctrl+C 不产生误导性错误输出）。
+func TestRunAttachmentGCQuietOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	blobs, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("blobfs: %v", err)
+	}
+	var warn bytes.Buffer
+	runAttachmentGC(ctx, failingStore{}, blobs, &warn)
+	if warn.Len() != 0 {
+		t.Fatalf("取消不应告警: %q", warn.String())
+	}
+}
+
 // failingStore 只让 List 报错的 ConversationStore 替身。
 type failingStore struct{ port.ConversationStore }
 

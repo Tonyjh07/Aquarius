@@ -274,8 +274,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		OpenMemory:   openMemoryEditor(mem, stdin, stdout, stderr),
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			return 0 // 启动期 Ctrl+C：ctx 早于主循环创建，按取消干净收尾（不报错退出）
+		}
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
+	}
+	if ctx.Err() != nil {
+		return 0
 	}
 
 	ui.Say("Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成")
