@@ -15,7 +15,15 @@ type fileConfig struct {
 	UI           uiConfig          `json:"ui"`
 	SystemPrompt string            `json:"system_prompt"` // 人格：空 = 内置默认（快照进 persona 首节点，D20）
 	Permissions  permissionsConfig `json:"permissions"`
+	Output       outputConfig      `json:"output"`
 	Limits       limitsConfig      `json:"limits"`
+}
+
+// outputConfig 输出器开关（DESIGN §8；M3 启用 notify，tts 见 D27 解析但不启用）。
+// 键缺失 = false（保守：老配置不自动弹通知，模板默认 notify=true）。
+type outputConfig struct {
+	Notify bool `json:"notify"`
+	TTS    bool `json:"tts"`
 }
 
 // permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
