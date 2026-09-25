@@ -1,20 +1,20 @@
 == 回放 revise_fresh ==
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回… ← Head
+  n2 [system] You are Aquarius, a minimalist personal … ← Head
 > 你好
 [stream] 你好呀
 [committed] assistant done
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀 ← Head
 > /edit n4 更优雅的回复
 已修订 n4 → n5（fresh，旧分支保留；Head → n5）
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀
       n5 [assistant] 更优雅的回复 ← Head（修订自 n4）
@@ -25,7 +25,7 @@ n1 [root]
 下级: 无
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀
       n5 [assistant] 更优雅的回复 ← Head（修订自 n4）
@@ -34,7 +34,7 @@ n1 [root]
 [committed] assistant done
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀
       n5 [assistant] 更优雅的回复（修订自 n4）
@@ -44,7 +44,7 @@ n1 [root]
 Head → n4
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀 ← Head
       n5 [assistant] 更优雅的回复（修订自 n4）
@@ -55,7 +55,7 @@ n1 [root]
 [committed] assistant done
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀
         n8 [user] 旧分支也聊聊
@@ -69,7 +69,7 @@ n1 [root]
 下级: 无
 会话树:
 n1 [root]
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀
         n8 [user] 旧分支也聊聊
@@ -81,7 +81,7 @@ n1 [root]
 Head → n1
 会话树:
 n1 [root] ← Head
-  n2 [system] 你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回…
+  n2 [system] You are Aquarius, a minimalist personal …
     n3 [user] 你好
       n4 [assistant] 你好呀
         n8 [user] 旧分支也聊聊

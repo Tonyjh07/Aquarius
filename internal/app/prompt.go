@@ -12,7 +12,8 @@ import (
 )
 
 // defaultSystem 未配置时的默认 system 提示（记忆索引自 M2 起并入）。
-const defaultSystem = "你是 Aquarius，一个面向个人的极简 AI 助手。用与用户相同的语言简洁回复。"
+// 面向模型的提示用英文（AGENTS 语言约定）；回复语言由首句指定为跟随用户。
+const defaultSystem = "You are Aquarius, a minimalist personal AI assistant. Reply in the user's language, concisely."
 
 // historyToolMarker 失联 tool 结果的内联标注（DESIGN §4.1 不变量 2）。
 const historyToolMarker = "〔历史工具结果〕"

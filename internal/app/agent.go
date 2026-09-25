@@ -24,7 +24,8 @@ import (
 var ErrMaxTurns = errors.New("agent: 超过最大轮次数")
 
 // ErrNothingToCompact /compact 无可压缩历史：摘要之上没有新增内容（D21）。
-var ErrNothingToCompact = errors.New("agent: 没有可压缩的历史")
+// 文本面向模型（context_compact 工具回填），/compact 命令按 errors.Is 单独给中文提示。
+var ErrNothingToCompact = errors.New("agent: nothing to compact")
 
 // defaultMaxTurns Config.MaxTurns <= 0 时的默认值（DESIGN §8 limits.max_turns）。
 const defaultMaxTurns = 8
@@ -263,7 +264,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 				for _, rest := range node.ToolCalls[i+1:] {
 					_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: rest})
 				}
-				cause := fmt.Errorf("执行工具 %s: %w", call.Name, err)
+				cause := fmt.Errorf("tool %s failed: %w", call.Name, err)
 				if aerr := a.abortToolCalls(ctx, c, node.ToolCalls[i:], cause); aerr != nil {
 					return aerr
 				}
@@ -282,7 +283,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 				CreatedAt:  a.clock.Now(),
 			}
 			if err := c.AppendCommitted(tnode); err != nil {
-				return fmt.Errorf("提交工具结果: %w", err)
+				return fmt.Errorf("commit tool result: %w", err)
 			}
 			_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
 		}
@@ -329,7 +330,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 	// 压缩输入 = 当前上下文（已水位化：链式吸收只吞旧摘要与其后的新历史）。
 	history, err := assemblePath(ctx, path, a.blobs)
 	if err != nil {
-		return conversation.Message{}, 0, fmt.Errorf("装配压缩输入: %w", err)
+		return conversation.Message{}, 0, fmt.Errorf("assemble compact input: %w", err)
 	}
 	// 提示词两态：水位存在 = 已有旧摘要 → 合并更新，否则首次压缩（compact_prompt.go）。
 	base := make([]port.PromptMessage, 0, len(history)+2)
@@ -367,11 +368,11 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 			Budget:   a.cfg.Budget,
 		})
 		if err != nil {
-			return conversation.Message{}, 0, fmt.Errorf("生成摘要: %w", err)
+			return conversation.Message{}, 0, fmt.Errorf("generate summary: %w", err)
 		}
 		// 流式过程只进 UI；失败不提交（树无损）。
 		if _, err := a.consume(ctx, stream, buf, mid); err != nil {
-			return conversation.Message{}, 0, fmt.Errorf("生成摘要: %w", err)
+			return conversation.Message{}, 0, fmt.Errorf("generate summary: %w", err)
 		}
 		usage.InputTokens += buf.usage.InputTokens
 		usage.OutputTokens += buf.usage.OutputTokens
@@ -382,9 +383,9 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 		}
 		if attempt == 1 {
 			if text == "" {
-				return conversation.Message{}, 0, errors.New("生成摘要: 模型返回为空")
+				return conversation.Message{}, 0, errors.New("generate summary: model returned empty output")
 			}
-			return conversation.Message{}, 0, errors.New("生成摘要: 输出未匹配摘要模板")
+			return conversation.Message{}, 0, errors.New("generate summary: output did not match the summary template")
 		}
 	}
 	node := conversation.Message{
@@ -398,7 +399,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 		CreatedAt: a.clock.Now(),
 	}
 	if err := c.AppendCommitted(node); err != nil {
-		return conversation.Message{}, 0, fmt.Errorf("提交摘要节点: %w", err)
+		return conversation.Message{}, 0, fmt.Errorf("commit summary node: %w", err)
 	}
 	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
 	return node, absorbed, nil
@@ -545,13 +546,13 @@ func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
 		}
 		if len(lines) > 0 {
 			sort.Strings(lines) // 确定性（索引顺序不承诺）
-			b.WriteString("\n\n# 记忆索引（memory_read/memory_search 可取详情）\n")
+			b.WriteString("\n\n# Memory index (use memory_read/memory_search for details)\n")
 			b.WriteString(strings.Join(lines, "\n"))
 		}
 	}
 	if doc, err := a.memory.Read(ctx, port.SessionMemoryDoc(id)); err == nil {
 		if strings.TrimSpace(doc.Content) != "" {
-			b.WriteString("\n\n# 会话记忆（本会话专用便签）\n")
+			b.WriteString("\n\n# Session memory (this conversation's notepad)\n")
 			b.WriteString(doc.Content)
 		}
 	}
@@ -588,7 +589,7 @@ func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, erro
 	if a.tools == nil {
 		// 未声明工具却收到 tool_calls（嵌入方/配置缺陷）：按装配级错误中止，
 		// 不让空指针 panic、也不回填让模型空转。
-		return tool.Result{}, errors.New("未配置工具执行器（Deps.Tools）")
+		return tool.Result{}, errors.New("no tool executor configured (Deps.Tools)")
 	}
 	res, err := a.tools.Execute(ctx, call)
 	if err != nil {
@@ -615,7 +616,7 @@ func (a *Agent) abortToolCalls(ctx context.Context, c *conversation.Conversation
 			CreatedAt:  a.clock.Now(),
 		}
 		if err := c.AppendCommitted(tnode); err != nil {
-			return fmt.Errorf("%w（补齐中断结果失败: %v）", cause, err)
+			return fmt.Errorf("%w (also failed to backfill interrupted results: %v)", cause, err)
 		}
 		_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
 	}
@@ -645,7 +646,7 @@ func (a *Agent) normalizeCalls(calls []tool.Call) []tool.Call {
 func (a *Agent) commitFailure(ctx context.Context, c *conversation.Conversation, buf *commitBuffer, cause error) error {
 	node := buf.commit(a.clock.Now(), conversation.OutcomeError, a.modelName(), nil)
 	if err := c.AppendCommitted(node); err != nil {
-		return fmt.Errorf("%w（提交失败: %v）", cause, err)
+		return fmt.Errorf("%w (commit failed: %v)", cause, err)
 	}
 	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
 	return cause

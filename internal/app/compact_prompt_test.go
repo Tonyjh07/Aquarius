@@ -116,7 +116,7 @@ func TestAgentCompactFailsAfterRetry(t *testing.T) {
 	prevHead := c.Head
 
 	_, _, err := a.Compact(context.Background(), c)
-	if err == nil || !strings.Contains(err.Error(), "摘要模板") {
+	if err == nil || !strings.Contains(err.Error(), "summary template") {
 		t.Fatalf("err = %v, want 未匹配摘要模板", err)
 	}
 	if c.Head != prevHead {
@@ -141,7 +141,7 @@ func TestAgentCompactEmptyOutputRetriesThenFails(t *testing.T) {
 	prevHead := c.Head
 
 	_, _, err := a.Compact(context.Background(), c)
-	if err == nil || !strings.Contains(err.Error(), "模型返回为空") {
+	if err == nil || !strings.Contains(err.Error(), "model returned empty output") {
 		t.Fatalf("err = %v, want 模型返回为空", err)
 	}
 	if len(llm.requests) != 2 {

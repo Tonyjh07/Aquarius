@@ -76,7 +76,7 @@ func TestRunMemoryInjection(t *testing.T) {
 		text.WriteString(p.Text)
 	}
 	got := text.String()
-	for _, want := range []string{"记忆索引", port.GlobalMemoryDoc, "用户偏好",
+	for _, want := range []string{"Memory index", port.GlobalMemoryDoc, "用户偏好",
 		port.SessionMemoryDoc("conv"), "本会话要点"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("system 缺 %q:\n%s", want, got)
@@ -288,7 +288,7 @@ func TestContextCompactToolRound(t *testing.T) {
 	if path[4].Role != conversation.RoleTool || path[4].ToolResult == nil || !path[4].ToolResult.OK {
 		t.Fatalf("tool result = %+v", path[4])
 	}
-	if !strings.Contains(path[4].ToolResult.Output, "已压缩") {
+	if !strings.Contains(path[4].ToolResult.Output, "compacted") {
 		t.Fatalf("output = %q", path[4].ToolResult.Output)
 	}
 	// 第三次请求：水位生效 + 失联 tool 内联标注（不带孤立 tool_call_id）。
@@ -351,7 +351,7 @@ func TestContextCompactToolDirect(t *testing.T) {
 
 	// 无上下文。
 	res, err := ct.Execute(context.Background(), mustCall("cc"))
-	if err != nil || res.OK || !strings.Contains(res.Err, "会话上下文") {
+	if err != nil || res.OK || !strings.Contains(res.Err, "conversation context") {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 
@@ -359,7 +359,7 @@ func TestContextCompactToolDirect(t *testing.T) {
 	c := conversation.New(conversation.ID("p"), "p")
 	commitNode(t, c, conversation.MessageID(c.ID), conversation.RoleSystem, "人格")
 	res, err = ct.Execute(withConversation(context.Background(), c), mustCall("cc"))
-	if err != nil || !res.OK || !strings.Contains(res.Output, "没有可压缩") {
+	if err != nil || !res.OK || !strings.Contains(res.Output, "nothing to compact") {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	if len(llm.requests) != 0 {

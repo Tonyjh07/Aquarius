@@ -198,7 +198,7 @@ func TestRunInfraErrorAbortsTurn(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "未配置 Confirmer") {
 		t.Fatalf("err = %v, want 装配级错误快速上抛", err)
 	}
-	if !strings.Contains(err.Error(), "执行工具 alpha") {
+	if !strings.Contains(err.Error(), "tool alpha failed") {
 		t.Fatalf("err = %v, want 指明首个失败调用", err)
 	}
 	if len(llm.requests) != 1 {
@@ -269,7 +269,7 @@ func TestRunMissingToolsRunnerGuard(t *testing.T) {
 	c := newConv(t)
 
 	err := a.Run(context.Background(), c)
-	if err == nil || !strings.Contains(err.Error(), "未配置工具执行器") {
+	if err == nil || !strings.Contains(err.Error(), "no tool executor") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(llm.requests) != 1 {
@@ -302,7 +302,7 @@ func TestRunInfraErrorAfterFirstTool(t *testing.T) {
 	c := newConv(t)
 
 	err := a.Run(context.Background(), c)
-	if err == nil || !strings.Contains(err.Error(), "执行工具 beta") {
+	if err == nil || !strings.Contains(err.Error(), "tool beta failed") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(llm.requests) != 1 {

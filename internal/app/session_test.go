@@ -398,7 +398,7 @@ func TestSessionJobsCommand(t *testing.T) {
 		t.Fatalf("bad tail err = %v", err)
 	}
 	if _, err := handleCmd(s, "jobs", "logs", "j999"); err == nil ||
-		!strings.Contains(err.Error(), "没有任务") {
+		!strings.Contains(err.Error(), "no task") {
 		t.Fatalf("unknown id err = %v", err)
 	}
 }
@@ -426,11 +426,11 @@ func TestSessionJobsEdges(t *testing.T) {
 	// 前缀歧义（"j0" 命中两个）。
 	s.jobs = &fakeJobs{jobs: jobs}
 	if _, err := handleCmd(s, "jobs", "logs", "j0"); err == nil ||
-		!strings.Contains(err.Error(), "有歧义") {
+		!strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("歧义 err = %v", err)
 	}
 	if _, err := handleCmd(s, "jobs", "kill", "j0"); err == nil ||
-		!strings.Contains(err.Error(), "有歧义") {
+		!strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("kill 歧义 err = %v", err)
 	}
 

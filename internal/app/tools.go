@@ -42,8 +42,9 @@ var (
 func (t *contextCompactTool) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "context_compact",
-		Description: "触发上下文压缩（等价 /compact）：把当前历史转写为一条摘要水位节点，其上历史不再回传。" +
-			"上下文过长、想主动丢弃对话中间细节时调用。",
+		Description: "Trigger a context compaction (equivalent to /compact): transcribe the current history into a single " +
+			"summary watermark node, above which older history is no longer sent back. Call it when the context grows too long " +
+			"or you want to deliberately drop mid-conversation details.",
 		Schema: jsonSchemaEmptyObject(),
 		Risk:   tool.Safe,
 	}
@@ -52,18 +53,18 @@ func (t *contextCompactTool) Spec() tool.Spec {
 func (t *contextCompactTool) Execute(ctx context.Context, _ tool.Call) (tool.Result, error) {
 	c, ok := conversationFrom(ctx)
 	if !ok {
-		return tool.Result{OK: false, Err: "缺少当前会话上下文（context_compact 只能在对话轮次内执行）"}, nil
+		return tool.Result{OK: false, Err: "no current conversation context (context_compact only runs inside a conversation turn)"}, nil
 	}
 	node, absorbed, err := t.a.Compact(ctx, c)
 	if errors.Is(err, ErrNothingToCompact) {
-		return tool.Result{OK: true, Output: "没有可压缩的历史（摘要之上无新内容）"}, nil
+		return tool.Result{OK: true, Output: "nothing to compact (no new content above the summary)"}, nil
 	}
 	if err != nil {
 		return tool.Result{}, err
 	}
 	return tool.Result{
 		OK: true,
-		Output: fmt.Sprintf("已压缩 %d 条历史 → 1 条摘要（in=%d out=%d tokens）",
+		Output: fmt.Sprintf("compacted %d history messages into 1 summary (in=%d out=%d tokens)",
 			absorbed, node.Usage.InputTokens, node.Usage.OutputTokens),
 	}, nil
 }
