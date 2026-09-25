@@ -477,10 +477,45 @@ func TestRunFullTextConversation(t *testing.T) {
 	}
 }
 
-// TestRunRejectsTUIConfig M0 只支持 repl。
-func TestRunRejectsTUIConfig(t *testing.T) {
+// TestRunTUIAcceptsKind D33：ui.kind=tui 走 bubbletea 前端——
+// 管道输入完成一轮对话（流式→提交→glamour 渲染）后 /quit 干净退出。
+func TestRunTUIAcceptsKind(t *testing.T) {
+	srv, reqs := scriptServer(t, []string{"TUI 好的"})
 	dir := t.TempDir()
-	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"tui"}}`
+	cfg := fmt.Sprintf(`{
+  "model": {"name":"m","base_url":%q,"api_key":"secret:X"},
+  "ui": {"kind":"tui"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000}
+}`, srv.URL)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+
+	var out bytes.Buffer
+	var errBuf bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("在吗\n/quit\n"), &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, out = %q, err = %q", code, out.String(), errBuf.String())
+	}
+	got := out.String()
+	t.Logf("llm requests = %d", len(*reqs))
+	for i, r := range *reqs {
+		t.Logf("req[%d] = %.120s", i, r.body)
+	}
+	for _, want := range []string{"在吗", "TUI 好的", "模型 m", "/quit"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("TUI 输出缺 %q；stderr=%q", want, errBuf.String())
+		}
+	}
+	if len(*reqs) != 1 {
+		t.Fatalf("llm requests = %d, want 1", len(*reqs))
+	}
+}
+
+// TestRunRejectsUnknownUIKind 非法 ui.kind 启动即报因（D33 仅 repl | tui）。
+func TestRunRejectsUnknownUIKind(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"gui"}}`
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -489,7 +524,7 @@ func TestRunRejectsTUIConfig(t *testing.T) {
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if !strings.Contains(errBuf.String(), "tui") {
+	if !strings.Contains(errBuf.String(), "gui") {
 		t.Fatalf("stderr = %q", errBuf.String())
 	}
 }

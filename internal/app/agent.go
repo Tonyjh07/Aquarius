@@ -136,6 +136,9 @@ func (a *Agent) modelName() string {
 	return v
 }
 
+// CurrentModel 当前生成模型（/model 热切换后的运行值；TUI 状态行经装配根回调读取）。
+func (a *Agent) CurrentModel() string { return a.modelName() }
+
 // Run 从当前 Head 出发执行一轮 Turn（DESIGN §7.1 / §10）：
 //   - 流式增量只经 Presenter 进 UI，每次生成结束一次性 Commit 不可变节点（D3）；
 //     节点 ID 在 Turn 开始时预分配，作流事件关联 ID。

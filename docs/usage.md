@@ -11,8 +11,10 @@ go build ./cmd/aquarius
 # 填 model.name / model.base_url，设置密钥环境变量，重新运行
 ```
 
-进入 REPL 后直接输入文本即对话；`/help` 看命令；`/quit`（或 `/exit`）退出；Ctrl+C 取消当前生成
-（已生成部分以 `cancelled` 终态入库，可 `/edit` 从该节点重试）。
+默认 **TUI**（`ui.kind=tui`，D33）：转写区 + 输入框 + 状态行（模型/权限/用量），
+上下键历史、PgUp/PgDn 滚动转写、Ctrl+C 取消当前生成、committed 回答带轻 markdown 渲染；
+`ui.kind=repl` 为行式 REPL（测试/e2e 后端）。直接输入文本即对话；`/help` 看命令；
+`/quit`（或 `/exit`）退出。
 
 ## 命令参考
 

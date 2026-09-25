@@ -107,6 +107,13 @@ func (u *UI) Confirm(ctx context.Context, prompt string) (bool, error) {
 	}
 }
 
+// SetInterrupt Ctrl+C 行为注入（前端接口同形，D33）：REPL 模式下 Ctrl+C 走
+// 进程 os.Interrupt → signal ctx 取消，无需桥接（no-op）。
+func (u *UI) SetInterrupt(func()) {}
+
+// Close 前端收尾（前端接口同形）：REPL 无终端态需要恢复（no-op）。
+func (u *UI) Close() error { return nil }
+
 // Emit 呈现 Turn 事件。
 func (u *UI) Emit(_ context.Context, ev port.Event) error {
 	switch e := ev.(type) {

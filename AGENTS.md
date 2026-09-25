@@ -77,7 +77,7 @@ internal/plugin/     registry（发现合并）、host（生命周期/grant/崩�
 internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、
-                     mcpgate（MCP client → port 投影，D30）
-待建：                uitui（M4）；pluginapi/v1、plugingo（后移出 M4，D29）；
+                     mcpgate（MCP client → port 投影，D30）、uitui（bubbletea TUI，D33）
+待建：                pluginapi/v1、plugingo（后移出 M4，D29）；
                      asr、tts（backlog，D27）
 ```

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
@@ -31,6 +32,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
@@ -45,6 +47,21 @@ func main() {
 
 // minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（DESIGN §7.1）。
 const minOutputReserve = 1024
+
+// uiFrontend 装配根消费的前端面：repl 与 TUI 同权实现（D33 换壳不换核）。
+type uiFrontend interface {
+	port.Presenter
+	port.Prompter
+	port.Confirmer
+	// Say 输出一行会话文本（命令输出、启动提示）。
+	Say(text string)
+	// Prompt 输入提示（TUI 输入行常驻，等价 no-op）。
+	Prompt()
+	// SetInterrupt 注入 Ctrl+C 行为（repl = no-op 走 os.Interrupt；TUI = 取消当前 Turn）。
+	SetInterrupt(fn func())
+	// Close 前端收尾（TUI 恢复终端；repl no-op）。
+	Close() error
+}
 
 // run 程序主体（标准流可注入，便于端到端回放测试）。返回进程退出码。
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -117,8 +134,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if cfg.UI.Kind == "" {
 		cfg.UI.Kind = "repl"
 	}
-	if cfg.UI.Kind != "repl" {
-		fmt.Fprintf(stderr, "ui.kind=%q 尚未支持（bubbletea TUI 见里程碑 M4）\n", cfg.UI.Kind)
+	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" {
+		fmt.Fprintf(stderr, "ui.kind=%q 仅支持 repl | tui（D33）\n", cfg.UI.Kind)
 		return 1
 	}
 	// MCP 声明校验（D30/D31，启动 fail-fast）：transport/command/url/risk/名字合法。
@@ -289,7 +306,32 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	ui := repl.New(stdin, stdout)
+	// UI 前端（D33）：repl（行式，测试/e2e 后端）或 bubbletea TUI（模板默认）——
+	// 同权实现 uiFrontend，换壳不换核（未来 GUI 复用同一套 port 契约，§14）。
+	// TUI 状态行回调经 atomic 读 Agent（构造晚于 UI 创建，事件循环并发读 → -race 必须）。
+	var agentPtr atomic.Pointer[app.Agent]
+	var ui uiFrontend
+	switch cfg.UI.Kind {
+	case "tui":
+		ui = uitui.New(uitui.Options{
+			In:  stdin,
+			Out: stdout,
+			Status: func() uitui.Status {
+				if agent := agentPtr.Load(); agent != nil {
+					return uitui.Status{Model: agent.CurrentModel(), Level: lvl.Get().String()}
+				}
+				return uitui.Status{}
+			},
+		})
+	default:
+		ui = repl.New(stdin, stdout)
+	}
+	defer func() {
+		// 先停前端事件循环再写收尾换行：TUI 渲染器写同一 stdout，
+		// 直接 Fprintln 会与其并发竞争（-race 复现）。
+		_ = ui.Close()
+		fmt.Fprintln(stdout)
+	}()
 	// 输出器扇出（D28/D14）：Presenter 装饰器包住实际 UI，仅 output.notify 开启时装配；
 	// app 与 repl 均不感知输出器，Deliver 失败只记日志（§5.7）。
 	var outs []port.OutputAdapter
@@ -381,6 +423,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	agentPtr.Store(agent)                  // TUI 状态行回调读取（atomic，避免与构造竞争）
 	runner.Add(agent.ContextCompactTool()) // 装配期注册（agent 依赖 runner，反向补注册）
 
 	// 插件宿主（M4，§6.4）：面刷新先备好（host 与 session 互依，经闭包后绑定）。
@@ -449,24 +492,31 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		in, err := ui.Next(ctx)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-				fmt.Fprintln(stdout)
-				return 0
+				return 0 // 收尾换行由 ui.Close 后的 defer 统一处理
 			}
 			fmt.Fprintf(stderr, "读取输入失败: %v\n", err)
 			return 1
 		}
-		out, herr := sess.Handle(ctx, in)
+		out, herr := func() (string, error) {
+			// 每轮独立 ctx（§10 取消语义）：TUI 的 Ctrl+C 经 SetInterrupt 取消本轮；
+			// repl 的 os.Interrupt 仍由外层 signal ctx 传导到本 ctx。
+			hctx, hcancel := context.WithCancel(ctx)
+			ui.SetInterrupt(hcancel)
+			defer func() {
+				hcancel()
+				ui.SetInterrupt(nil)
+			}()
+			return sess.Handle(hctx, in)
+		}()
 		if out != "" {
 			ui.Say(out)
 		}
 		if errors.Is(herr, app.ErrQuit) {
-			fmt.Fprintln(stdout)
 			return 0
 		}
 		if herr != nil {
 			_ = ui.Emit(ctx, port.ErrorEvent{Err: herr})
 			if ctx.Err() != nil {
-				fmt.Fprintln(stdout)
 				return 0
 			}
 		}
