@@ -162,6 +162,22 @@ func TestJobStartSpecs(t *testing.T) {
 	if _, err := js.Execute(context.Background(), call(`{}`)); err == nil {
 		t.Fatal("缺 command 应报错")
 	}
+	// §14 M3 遗留：负 timeout_sec 与相对 workdir 拒收。
+	if _, err := js.Execute(context.Background(), call(`{"command":"srv","timeout_sec":-1}`)); err == nil ||
+		!strings.Contains(err.Error(), "非负") {
+		t.Fatalf("负 timeout_sec err = %v, want 拒收", err)
+	}
+	if _, err := js.Execute(context.Background(), call(`{"command":"srv","workdir":"rel/dir"}`)); err == nil ||
+		!strings.Contains(err.Error(), "绝对路径") {
+		t.Fatalf("相对 workdir err = %v, want 拒收", err)
+	}
+	// 根起始路径（Windows 无盘符口径）仍接受。
+	if _, err := js.Execute(context.Background(), call(`{"command":"srv","workdir":"/tmp"}`)); err != nil {
+		t.Fatalf("根起始 workdir 应接受: %v", err)
+	}
+	if len(jobs.started) != 2 {
+		t.Fatalf("非法参数不应启动: started=%d", len(jobs.started))
+	}
 }
 
 // TestJobListOutput job_list 输出格式与空表提示。

@@ -3,6 +3,7 @@ package toolbuiltin
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -54,6 +55,12 @@ func (t *jobStart) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	}
 	if strings.TrimSpace(a.Command) == "" {
 		return tool.Result{}, fmt.Errorf("缺少 command")
+	}
+	if a.TimeoutSec < 0 {
+		return tool.Result{}, fmt.Errorf("timeout_sec 须为非负（0/缺省 = 不限时），当前 %d", a.TimeoutSec)
+	}
+	if wd := strings.TrimSpace(a.WorkDir); wd != "" && !absWorkDir(wd) {
+		return tool.Result{}, fmt.Errorf("workdir 须为绝对路径（缺省家目录），当前 %q", a.WorkDir)
 	}
 	job, err := jobs.Start(ctx, port.JobSpec{
 		Command: a.Command,
@@ -261,6 +268,13 @@ func (t *jobKill) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 		return tool.Result{}, fmt.Errorf("终止任务: %w", err)
 	}
 	return okResult("已终止 " + string(id)), nil
+}
+
+// absWorkDir 绝对路径判定（§14 M3 遗留：相对 workdir 按绝对路径口径拒收）。
+// 除 filepath.IsAbs 外放行根起始路径（Windows 上 "/tmp" 无盘符但仍是绝对定位，
+// 既有调用与 shell 语义均按当前盘根解析）。
+func absWorkDir(p string) bool {
+	return filepath.IsAbs(p) || strings.HasPrefix(p, "/")
 }
 
 // resolveJobID 解析任务标识（精确优先 + 唯一前缀，port 共用实现）；
