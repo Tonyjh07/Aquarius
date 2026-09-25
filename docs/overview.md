@@ -1,7 +1,7 @@
 # 架构导读
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §1/§3/§5/§6，定位是 **10 分钟建立索引的地图**；
-> **冲突以 DESIGN.md 为准**（决策全集在 §13，D1–D33）。
+> **冲突以 DESIGN.md 为准**（决策全集在 §13，D1–D35）。
 
 ## Aquarius 是什么
 
@@ -99,6 +99,6 @@ Root(实节点, ID=会话ID, role=root)
 
 ## 延伸阅读
 
-- 逐条决策（D1–D33）：[DESIGN.md §13](../DESIGN.md)
+- 逐条决策（D1–D35）：[DESIGN.md §13](../DESIGN.md)
 - 使用与命令：[usage.md](usage.md) ｜ 配置：[configuration.md](configuration.md)
 - 数据与备份：[storage.md](storage.md) ｜ 动手开发：[development.md](development.md)

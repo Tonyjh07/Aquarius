@@ -57,7 +57,7 @@ go build ./cmd/aquarius
 | `memory_write` | 写入记忆（`mode=append` 缺省 / `overwrite`；strict 下路径格外需确认） | Confirm |
 | `file_read` / `file_list` / `file_search` | 读文件 / 列目录 / 按文件名递归搜索（**绝对路径**，读全盘免确认） | Safe |
 | `file_write` / `file_delete` | 覆盖写 / 删除（写按权限矩阵路径格判定） | Confirm |
-| `think` | 显式整理思路（no-op，内容随调用入树） | Safe |
+| `think` | 显式整理思路（no-op，内容随调用入树）——**默认不列给模型**（D34），`model.think_tool: true` 启用 | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，自我管理上下文） | Safe |
 | `term_exec` | 同步执行终端命令行（`cmd /c` / `sh -c`；超时统一控制，输出保头尾截断；执行类看工具列） | Confirm |
 | `job_start` | 启动后台任务（独立进程，日志落盘 `~/.aquarius/jobs/<id>.log`，不随对话取消） | Confirm |
