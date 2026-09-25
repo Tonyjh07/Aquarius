@@ -14,23 +14,37 @@ import (
 
 // mergedMemory 主记忆存储 + 插件 resources 只读投影（§6.3/D31）：资源并入索引与
 // memory_* 的读取面，写/删恒走主存储（与记忆系统的边界见 DESIGN §3）。
-// extras 经闭包现取（插件启停即时生效），按服务器名排序保证索引顺序稳定。
+// extras 经闭包现取（插件启停即时生效），按服务器名排序保证索引顺序稳定；
+// 每次投影调用带超时（审查修复：卡死的插件不得拖垮 Turn——每轮 buildRequest 都会
+// 经此取索引）。
 type mergedMemory struct {
 	primary port.MemoryStore
 	extras  func() []port.MemoryStore
 	logf    func(string, ...any)
+	timeout time.Duration // <=0 = 默认 5s
+}
+
+// withTimeout 投影调用的 ctx（超时后跳过该投影）。
+func (m *mergedMemory) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	t := m.timeout
+	if t <= 0 {
+		t = 5 * time.Second
+	}
+	return context.WithTimeout(ctx, t)
 }
 
 var _ port.MemoryStore = (*mergedMemory)(nil)
 
-// Index 主索引 + 各插件投影（投影失败只记日志，不拖垮主索引）。
+// Index 主索引 + 各插件投影（投影失败/超时只记日志，不拖垮主索引）。
 func (m *mergedMemory) Index(ctx context.Context) ([]port.MemoryIndexEntry, error) {
 	out, err := m.primary.Index(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, e := range m.extras() {
-		entries, err := e.Index(ctx)
+		ectx, cancel := m.withTimeout(ctx)
+		entries, err := e.Index(ectx)
+		cancel()
 		if err != nil {
 			m.logf("[plugin] 资源索引失败: %v", err)
 			continue
@@ -40,7 +54,8 @@ func (m *mergedMemory) Index(ctx context.Context) ([]port.MemoryIndexEntry, erro
 	return out, nil
 }
 
-// Read 主存储优先；未命中时查插件投影（按 URI 寻址）。
+// Read 主存储优先；未命中时查插件投影（按 URI 寻址，带超时；投影的非 NotFound
+// 错误向上抛——不把"网络失败"说成"没这篇"，审查修复）。
 func (m *mergedMemory) Read(ctx context.Context, name string) (port.MemoryDoc, error) {
 	doc, err := m.primary.Read(ctx, name)
 	if err == nil {
@@ -49,12 +64,22 @@ func (m *mergedMemory) Read(ctx context.Context, name string) (port.MemoryDoc, e
 	if !errors.Is(err, port.ErrMemoryNotFound) {
 		return port.MemoryDoc{}, err
 	}
+	var firstErr error
 	for _, e := range m.extras() {
-		if doc, rerr := e.Read(ctx, name); rerr == nil {
+		ectx, cancel := m.withTimeout(ctx)
+		doc, rerr := e.Read(ectx, name)
+		cancel()
+		if rerr == nil {
 			return doc, nil
 		}
+		if !errors.Is(rerr, port.ErrMemoryNotFound) && firstErr == nil {
+			firstErr = rerr
+		}
 	}
-	return port.MemoryDoc{}, err
+	if firstErr != nil {
+		return port.MemoryDoc{}, firstErr // 投影自身已带上下文（读取资源 X…）
+	}
+	return port.MemoryDoc{}, err // 主存储 NotFound 且所有投影确认没有
 }
 
 // Write 恒走主存储（插件资源只读，§6.3）。
@@ -67,7 +92,7 @@ func (m *mergedMemory) Remove(ctx context.Context, name string) error {
 	return m.primary.Remove(ctx, name)
 }
 
-// Search 主存储 + 插件投影的关键词命中（按名去重，主存储优先）。
+// Search 主存储 + 插件投影的关键词命中（按名去重，主存储优先；投影带超时）。
 func (m *mergedMemory) Search(ctx context.Context, query string) ([]port.MemoryHit, error) {
 	hits, err := m.primary.Search(ctx, query)
 	if err != nil {
@@ -78,7 +103,9 @@ func (m *mergedMemory) Search(ctx context.Context, query string) ([]port.MemoryH
 		seen[h.Name] = true
 	}
 	for _, e := range m.extras() {
-		extra, err := e.Search(ctx, query)
+		ectx, cancel := m.withTimeout(ctx)
+		extra, err := e.Search(ectx, query)
+		cancel()
 		if err != nil {
 			m.logf("[plugin] 资源检索失败: %v", err)
 			continue

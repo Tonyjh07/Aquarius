@@ -297,7 +297,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return out
 		},
-		logf: func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
+		logf:    func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
+		timeout: 5 * time.Second, // 插件投影单次上限（卡死的插件不得拖垮 Turn）
 	}
 	client, err := llm.New(llm.Config{
 		BaseURL: cfg.Model.BaseURL, APIKey: apiKey, Tokenizer: cfg.Model.Tokenizer,

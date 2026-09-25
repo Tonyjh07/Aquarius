@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +110,69 @@ var errTest = &testErr{"list failed"}
 type testErr struct{ s string }
 
 func (e *testErr) Error() string { return e.s }
+
+// stubStore port.MemoryStore 简单替身（合并记忆测试用）。
+type stubStore struct {
+	index   []port.MemoryIndexEntry
+	readErr error
+	block   chan struct{}
+}
+
+func (s *stubStore) Index(ctx context.Context) ([]port.MemoryIndexEntry, error) {
+	if s.block != nil {
+		select {
+		case <-s.block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return s.index, nil
+}
+
+func (s *stubStore) Read(context.Context, string) (port.MemoryDoc, error) {
+	if s.readErr != nil {
+		return port.MemoryDoc{}, s.readErr
+	}
+	return port.MemoryDoc{}, port.ErrMemoryNotFound
+}
+func (s *stubStore) Write(context.Context, port.MemoryDoc) error { return nil }
+func (s *stubStore) Remove(context.Context, string) error        { return nil }
+func (s *stubStore) Search(context.Context, string) ([]port.MemoryHit, error) {
+	return nil, nil
+}
+
+// TestMergedMemoryProjectionTimeout 审查修复：插件投影卡死 → 单次调用超时后跳过，
+// 主存储索引照常返回（每轮 buildRequest 都取索引，无超时会被插件拖死 Turn）；
+// 插件读取的网络错误向上抛，不伪装成 NotFound。
+func TestMergedMemoryProjectionTimeout(t *testing.T) {
+	primary := &stubStore{index: []port.MemoryIndexEntry{{Name: "memories.md", Summary: "全局"}}}
+	blocked := &stubStore{block: make(chan struct{}), readErr: errors.New("连接重置")}
+	m := &mergedMemory{
+		primary: primary,
+		extras:  func() []port.MemoryStore { return []port.MemoryStore{blocked} },
+		logf:    func(string, ...any) {},
+		timeout: 50 * time.Millisecond,
+	}
+	defer close(blocked.block)
+
+	start := time.Now()
+	entries, err := m.Index(context.Background())
+	if err != nil {
+		t.Fatalf("index: %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("投影超时未生效（Turn 会被卡死的插件拖住）")
+	}
+	if len(entries) != 1 || entries[0].Name != "memories.md" {
+		t.Fatalf("entries = %+v, want 仅主存储", entries)
+	}
+
+	// 主存储 NotFound + 插件读取失败 → 报网络错误而非"没这篇"。
+	_, err = m.Read(context.Background(), "demo://x")
+	if err == nil || errors.Is(err, port.ErrMemoryNotFound) || !strings.Contains(err.Error(), "连接重置") {
+		t.Fatalf("err = %v, want 透传插件读取错误", err)
+	}
+}
 
 // TestPluginSurfacesToolDiff 审查修复：server 侧缩表/改名 → 旧工具按集合 diff 摘除
 // （旧实现只覆盖登记簿，残留名再也摘不掉，disable 也清不干净）；prompts 拉取失败
