@@ -41,7 +41,7 @@ type SessionDeps struct {
 	Confirmer port.Confirmer
 	// Jobs 后台任务管理（/jobs，DESIGN §7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
 	Jobs port.JobManager
-	// Ingestors 多模态输入摄取器（M3 管线，D27：触发命令面留 M4）；
+	// Ingestors 多模态输入摄取器（M3 管线；/attach 等触发命令面留 §14，D27/D33）；
 	// nil 时 Raw 输入报"没有可用的摄取器"。
 	Ingestors []port.Ingestor
 	// UI 轮次外的过程事件（摄取 Note 等 NoticeEvent）；nil 时跳过呈现。
@@ -219,7 +219,7 @@ func (s *Session) runTurn(ctx context.Context) error {
 	return runErr
 }
 
-// ingestAndRun 多模态输入管线（M3，D27：/attach 等触发命令面留 M4）：
+// ingestAndRun 多模态输入管线（M3，D27：/attach 等触发命令面留 §14，D27/D33）：
 // RawInput → Ingestor 分派 → Part 入树（user）→ Turn → 落盘；摄取 Note 经 NoticeEvent 提示。
 func (s *Session) ingestAndRun(ctx context.Context, raw port.RawInput) (string, error) {
 	parts, note, err := s.ingest(ctx, raw)

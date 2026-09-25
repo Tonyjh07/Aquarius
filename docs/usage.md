@@ -15,6 +15,7 @@ go build ./cmd/aquarius
 上下键历史、PgUp/PgDn 滚动转写、Ctrl+C 取消当前生成、committed 回答带轻 markdown 渲染；
 `ui.kind=repl` 为行式 REPL（测试/e2e 后端）。直接输入文本即对话；`/help` 看命令；
 `/quit`（或 `/exit`）退出。
+（Ctrl+C 语义：TUI 取消本轮后保持待命；repl 取消本轮后进程随即退出。）
 
 ## 命令参考
 

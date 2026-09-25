@@ -22,7 +22,7 @@
 6. **插件不得直接操作会话树**：一切经内核中转。
 7. **无工作区概念**：不要引入项目根/cwd 工作区/文件索引/文件监听之类的抽象。
 8. **密钥安全**：密钥只经 `port.Secrets` 按名取用；禁止写入配置明文、日志、会话树或附件。
-9. **横切能力走装饰器**：重试/限流/截断/审计在 main 的装配处叠加端口装饰器，不进插件 API、不散落进业务代码。
+9. **横切能力走装饰器**：重试（含 429 退避）/截断/审计在 main 的装配处叠加端口装饰器，不进插件 API、不散落进业务代码。
 
 ## 常用命令
 
@@ -69,11 +69,12 @@ gofmt -l .                     # 格式检查（应无输出）
 cmd/aquarius/        组装根（wiring：config → 插件/授权 → 端口装配含装饰器 → UI）
 cmd/iconify/         开发工具：图标集生成（多尺寸 PNG / ICO / ICNS，纯 Go 无三方依赖）
 assets/              源图标 icon.png 与生成物 icon/（README、Windows 资源嵌入共用）
-pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；D29 后移出 M4）
+pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；D29 后移出 M4，目录见"待建"）
 internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）、perm（权限矩阵）
 internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
-internal/app/        agent（Turn 循环）、prompt（装配/水位）、session（命令/摄取分派）、est（token 计数链）
-internal/plugin/     registry（发现合并）、host（生命周期/grant/崩溃限次重启，§6.4）
+internal/app/        agent（Turn 循环）、prompt（装配/水位）、session（命令/摄取分派）、
+                     est（token 计数链）、plugins/model/compact_prompt（M4 命令面与压缩提示词）
+internal/plugin/     config/session（声明与宿主契约）、host（发现合并/grant/生命周期，§6.4）
 internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、

@@ -36,7 +36,7 @@ M2 提供**工具与记忆**：内置工具 memory_*/file_*/think/context_compac
 M3 提供**任务与多模态**：`term_exec` 同步执行与 `job_start` 后台任务（独立进程、日志落盘
 `~/.aquarius/jobs/`，`/jobs` 列表/查日志/终止）、**附件库**（sha256 内容寻址 + 启动 GC）、
 文件/剪贴板**摄取管线**（RawInput → Part 入树 → 装配内联图片字节与文档提取文本；
-触发命令面按 D27 留 M4）、`notify` 输出器（已提交回答触发系统通知，`output.notify`）。
+触发命令面按 D27/D33 留 §14）、`notify` 输出器（已提交回答触发系统通知，`output.notify`）。
 命令：`/new /list /title /goto /edit /branch /rm /compact /permission /memory /usage /jobs /model /plugin /quit /exit /help`（外加 MCP prompts 的 `/mcp:<server>:<prompt>` 动态命令）。
 M4 提供**MCP 接入与 TUI**：Tier-2 MCP server（**stdio + streamable HTTP** 双传输，D30 官方
 go-sdk）经 `mcpgate` 投影为 `mcp:<server>:<tool>` 工具（与内置工具同权过权限矩阵）、

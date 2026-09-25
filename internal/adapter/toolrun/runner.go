@@ -7,7 +7,7 @@
 //   - 执行类：未申报者 → level.Tool(spec.Risk) 只看工具列；
 //   - 判定为 Ask → 经 port.Confirmer 逐次确认，拒绝回填 OK=false（§10）。
 //
-// 横切的重试/限流/审计是装配根的装饰器（D14/M4），不在本包。
+// 横切的重试（含退避）/审计是装配根的装饰器（D14/M4），不在本包。
 package toolrun
 
 import (

@@ -1,7 +1,7 @@
 # 架构导读
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §1/§3/§5/§6，定位是 **10 分钟建立索引的地图**；
-> **冲突以 DESIGN.md 为准**（决策全集在 §13，D1–D28）。
+> **冲突以 DESIGN.md 为准**（决策全集在 §13，D1–D33）。
 
 ## Aquarius 是什么
 
@@ -33,7 +33,7 @@ Go 单二进制交付，数据全在 `~/.aquarius/`。不是编码工作流产�
 - **依赖方向**：`adapter → port ← app → domain`；`domain` 零依赖（不 import 端口/适配器/SDK）。
 - **内置不享特权**：内置工具/存储/UI 一律经端口契约接入，app/domain 不直连具体实现。
 - **流式不进领域**：增量只到 Presenter；Turn 结束一次性 Commit 不可变节点。
-- **横切走装饰器**：重试/限流/截断/审计在装配根叠加，不进业务代码与插件 API。
+- **横切走装饰器**：重试（含 429 退避）/截断/审计在装配根叠加，不进业务代码与插件 API。
 
 ## 会话树一图
 
@@ -64,7 +64,7 @@ Root(实节点, ID=会话ID, role=root)
 | `internal/adapter/memoryfs` | 记忆存储：全局 memories.md + 会话 `<id>.memory.md`（D23） |
 | `internal/adapter/toolbuiltin` | 内置工具：memory_* / file_* / think / term_exec / job_*（经端口契约接入，D13） |
 | `internal/adapter/toolrun` | ToolRunner 门面：权限判定 → 确认 → 超时 → 裁剪（D25） |
-| `pluginapi/v1` | 对外稳定契约（独立 go.mod；**D29 后移出 M4**，与 port 类型互不引用） |
+| `pluginapi/v1` | 对外稳定契约（独立 go.mod；**D29 后移出 M4，尚未建目录**；与 port 类型互不引用） |
 | `docs/` | 衍生文档（本目录）；权威是 DESIGN.md |
 
 已落位适配器（M3）：`blobfs`（附件库+启动 GC）/ `jobproc`（后台任务）/

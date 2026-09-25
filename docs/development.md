@@ -17,7 +17,8 @@ gofmt -l .                     # 格式检查（应无输出）
 - 语言约定：文档/注释中文；标识符、commit message 英文祈使句。
 - **Windows 下 `-race` 需要 CGO + C 编译器**：本机已装 llvm-mingw 并
   `go env -w CGO_ENABLED=1 CC=<clang.exe 路径>`（用户级配置，不入库）。
-- 全部测试**不起真实网络**：LLM 用脚本流/httptest 假 SSE 服务，存储用临时目录。
+- 全部测试**默认不起真实网络**：LLM 用脚本流/httptest 假 SSE 服务，存储用临时目录；
+  门控的真实 MCP 验收（`AQUARIUS_E2E_REAL_MCP=1`，拉现成 npx server）除外，缺省 skip。
 
 ## 代码分层速查
 
@@ -28,6 +29,7 @@ internal/port     端口 = 接口 + DTO（消费方定义、1–3 方法、ctx �
 internal/domain   conversation(树) · tool(值对象) · perm(权限矩阵) —— 零依赖
 internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbuiltin / toolrun
                   + M3：blobfs / jobproc / ingestfile / ingestclip / notify / atomicfile
+                  + M4：decorate(装饰器) / mcpgate(MCP→port) / uitui(TUI)
                   （一个适配器一个目录）
 ```
 
@@ -54,7 +56,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 1. 先在 DESIGN §5/§5.10 补契约与矩阵行（**先改文档再改代码**，§13 补决策如适用）；
 2. `internal/port` 定义/复用接口（消费方定义、保持小）；
 3. `internal/adapter/<name>/` 实现 + 同目录契约测试（临时目录 / 假 server）；
-4. `cmd/aquarius` 装配注入；横切能力（重试/限流/截断）在装配根做装饰器，不进适配器。
+4. `cmd/aquarius` 装配注入；横切能力（重试（含退避）/硬保底截断/审计）在装配根做装饰器，不进适配器。
 
 ### 新增一个内置工具（M2 起）
 

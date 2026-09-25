@@ -25,7 +25,7 @@
 
 1. 六边形架构：`domain` 纯 Go、零依赖；外部世界全部是端口（`port`）的适配器。
 2. **两个稳定级**：`pluginapi/v1` 对外严格 semver；`internal/port` 是内核内部的缝、自由演进。二者类型独立。
-3. 横切能力（重试、限流、审计日志、截断）用**端口装饰器**叠加，不进插件 API。
+3. 横切能力（重试/退避、审计日志、截断）用**端口装饰器**叠加，不进插件 API（限流由重试退避承担，暂无独立限流装饰器）。
 4. 会话树是纯追加结构：一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
 5. 插件**永远不能直接操作会话树**，一切经内核中转。
 
@@ -542,7 +542,9 @@ config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
    密钥经 `Secrets` 按名注入插件环境，不落明文配置。
    **stdio 子进程环境 = 父环境剔除 `AQUARIUS_*`（本项目密钥命名约定）+ 声明项**——
    宿主密钥不随继承外泄给插件；PATH/TEMP 等系统变量照常继承（审查修复）。
-4. **生命周期**：按需懒加载 → 健康检查 → 崩溃自动重启（限次 + 退避）→ 关机优雅 `shutdown`。
+4. **生命周期**：启动即按状态连接（软启动，单插件失败只记状态）→ 被动健康
+   （会话终止感知 `Wait`）→ 崩溃自动重启（限次 + 退避）→ 关机优雅 `shutdown`；
+   主动健康检查与按需懒加载未实现，见 §14。
 5. **可观测**：记录每个调用的 插件名/耗时/结果状态，供 `/plugin` 命令查看（同源数据进审计日志，§8）。
 
 ---
@@ -784,7 +786,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
-| **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；遗留项清零后全门禁通过 |
+| **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
 
 ---
 
@@ -829,6 +831,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
+- MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
 - **GUI 框架接入（D33 移入）**：换掉 TUI 壳，复用 `port.Presenter + Prompter + Confirmer`
@@ -843,7 +846,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   - regexp2 `MatchTimeout` 与计数路径的 ctx 检查（模型可控输入的回溯爆炸防护）
   - Agent/Runner 共享可变状态的并发模型显式化（多会话共享实例时加锁）
   - `think` 参数非空校验；压缩摘要流的 UI 标注（"正在生成摘要"以区别于回答流）；
-    `/usage` "上轮实测"文案改"最近实测"；trim `omitted==0` 时的通知措辞
+    `/usage` "上轮实测"文案改"最近实测"
 - 跨分支"摘抄"共享子树（DAG 化）
 - Job 表持久化（SQLite）
 - PDF/Office 等 Doc 提取器插件
