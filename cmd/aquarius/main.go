@@ -53,6 +53,29 @@ type terminalSuspend interface {
 	Resume() error
 }
 
+// persistConfig 通用 config 键改写：读入 → mutate 只动目标键（map 级重排保留
+// 其余键与注释性空白）→ 唯一临时文件 + 原子换入（覆盖沿用既有权限位）。
+// /permission、/plugin、/model 三处写回共用（审查修复：三份复制）。
+func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(data, &generic); err != nil {
+		return fmt.Errorf("解析 %s: %w", cfgPath, err)
+	}
+	mutate(generic)
+	out, err := json.MarshalIndent(generic, "", "  ")
+	if err != nil {
+		return fmt.Errorf("编码 config: %w", err)
+	}
+	if err := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); err != nil {
+		return fmt.Errorf("写入 %s: %w", cfgPath, err)
+	}
+	return nil
+}
+
 // minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（DESIGN §7.1）。
 const minOutputReserve = 1024
 
@@ -179,92 +202,51 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// goroutine 写——D33 之后"单 goroutine"前提不再成立。
 	lvl := newLevelHolder(level)
 
-	// /permission 写回 config（D22）：map 级重排保留其余配置键；成功后同步活等级。
+	// /permission 写回 config（D22）：成功后同步活等级。
 	persistLevel := func(l perm.Level) error {
-		data, rerr := os.ReadFile(cfgPath)
-		if rerr != nil {
-			return rerr
-		}
-		var generic map[string]any
-		if rerr := json.Unmarshal(data, &generic); rerr != nil {
-			return fmt.Errorf("解析 %s: %w", cfgPath, rerr)
-		}
-		perms, _ := generic["permissions"].(map[string]any)
-		if perms == nil {
-			perms = map[string]any{}
-			generic["permissions"] = perms
-		}
-		perms["level"] = string(l)
-		out, rerr := json.MarshalIndent(generic, "", "  ")
-		if rerr != nil {
-			return fmt.Errorf("编码 config: %w", rerr)
-		}
-		// 唯一临时文件 + 原子换入：无半截文件，覆盖沿用既有权限位（§14 遗留）。
-		if rerr := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
-			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
+		if err := persistConfig(cfgPath, func(generic map[string]any) {
+			perms, _ := generic["permissions"].(map[string]any)
+			if perms == nil {
+				perms = map[string]any{}
+				generic["permissions"] = perms
+			}
+			perms["level"] = string(l)
+		}); err != nil {
+			return err
 		}
 		lvl.Set(l) // 工具链路活等级（D22 执行接入）
 		return nil
 	}
 
-	// /plugin 状态写回 config 的 plugins 段（D31）：map 级重排保留其余配置键；
-	// 键缺失语义靠省略表达（enabled 缺省启用、granted 缺省空）。
+	// /plugin 状态写回 config 的 plugins 段（D31）：键缺失语义靠省略表达
+	//（enabled 缺省启用、granted 缺省空）。
 	persistPlugins := func(states map[string]plugin.State) error {
-		data, rerr := os.ReadFile(cfgPath)
-		if rerr != nil {
-			return rerr
-		}
-		var generic map[string]any
-		if rerr := json.Unmarshal(data, &generic); rerr != nil {
-			return fmt.Errorf("解析 %s: %w", cfgPath, rerr)
-		}
-		pm := make(map[string]any, len(states))
-		for name, st := range states {
-			entry := map[string]any{}
-			if st.Enabled != nil {
-				entry["enabled"] = *st.Enabled
+		return persistConfig(cfgPath, func(generic map[string]any) {
+			pm := make(map[string]any, len(states))
+			for name, st := range states {
+				entry := map[string]any{}
+				if st.Enabled != nil {
+					entry["enabled"] = *st.Enabled
+				}
+				if len(st.Granted) > 0 {
+					entry["granted"] = st.Granted
+				}
+				pm[name] = entry
 			}
-			if len(st.Granted) > 0 {
-				entry["granted"] = st.Granted
-			}
-			pm[name] = entry
-		}
-		generic["plugins"] = pm
-		out, rerr := json.MarshalIndent(generic, "", "  ")
-		if rerr != nil {
-			return fmt.Errorf("编码 config: %w", rerr)
-		}
-		if rerr := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
-			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
-		}
-		return nil
+			generic["plugins"] = pm
+		})
 	}
 
-	// /model 切换写回 config 的 model.name（D32）：map 级重排保留其余配置键，
-	// 原子换入与 /permission 同口径。
+	// /model 切换写回 config 的 model.name（D32）。
 	persistModel := func(name string) error {
-		data, rerr := os.ReadFile(cfgPath)
-		if rerr != nil {
-			return rerr
-		}
-		var generic map[string]any
-		if rerr := json.Unmarshal(data, &generic); rerr != nil {
-			return fmt.Errorf("解析 %s: %w", cfgPath, rerr)
-		}
-		model, _ := generic["model"].(map[string]any)
-		if model == nil {
-			model = map[string]any{}
-			generic["model"] = model
-		}
-		model["name"] = name
-		out, rerr := json.MarshalIndent(generic, "", "  ")
-		if rerr != nil {
-			return fmt.Errorf("编码 config: %w", rerr)
-		}
-		if rerr := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
-			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
-		}
-		return nil
+		return persistConfig(cfgPath, func(generic map[string]any) {
+			model, _ := generic["model"].(map[string]any)
+			if model == nil {
+				model = map[string]any{}
+				generic["model"] = model
+			}
+			model["name"] = name
+		})
 	}
 
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。

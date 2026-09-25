@@ -48,7 +48,7 @@ type modelConfig struct {
 	Tokenizer string `json:"tokenizer"`
 }
 
-// uiConfig UI 形态；M0 仅支持 "repl"（TUI 见里程碑 M4）。
+// uiConfig UI 形态：repl | tui（D33；模板与键缺省为 tui，repl 为测试/e2e 后端）。
 type uiConfig struct {
 	Kind string `json:"kind"`
 }
