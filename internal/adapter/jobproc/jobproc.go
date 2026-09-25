@@ -4,7 +4,10 @@
 //   - 任务不随会话取消（§10：Start 不绑定调用方 ctx），job_kill 显式终止
 //     （Windows 杀进程树 / unix 杀进程组）；Timeout 到点自动终止。
 //
-// 同步执行 Run（term_exec 路）响应 ctx：取消即终止进程并上抛（Runner 归类超时/取消）。
+// 同步执行 Run（term_exec 路）响应 ctx：取消即终止**直接**子进程并上抛，
+// WaitDelay 兜住"孙进程持有输出管道"的拖累（否则会被拖到孙进程退出），
+// 输出按 maxRunOutput 限长采集。Run 的 error 只会是 ctx 取消——
+// 启动失败/非零退出/管道超时都转 Result{OK:false}（工具侧可回填模型纠正）。
 package jobproc
 
 import (
@@ -30,6 +33,14 @@ var _ port.JobManager = (*Manager)(nil)
 
 // logWindow Logs 的读取窗口上限（超大日志只读末尾这一窗口，防爆内存/上下文）。
 const logWindow = 1 << 20 // 1MB
+
+// maxRunOutput Run 的输出采集上限：刷屏命令不得吃满内存
+// （后续仍有工具保头尾截断与 ToolRunner 的 tool_output_chars 裁剪）。
+const maxRunOutput = 4 << 20 // 4MB
+
+// waitDelay Run 等待输出管道关闭的上限：取消后孙进程仍持有管道句柄时，
+// 到点强制关管道返回，Run 不会被孙进程拖住。
+const waitDelay = 2 * time.Second
 
 // Manager port.JobManager 实现。
 type Manager struct {
@@ -99,9 +110,9 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	return m.snap(rec), nil
 }
 
-// Run 同步执行（term_exec 路）：合并 stdout/stderr 返回，ctx 取消即终止进程。
-// 退出码非 0 / 启动失败 → Result{OK:false}（§10 交模型自行纠正）；
-// error 只留给 ctx 取消（装配级，Runner/Agent 据此归类）。
+// Run 同步执行（term_exec 路）：限长采集合并输出，ctx 取消即终止直接子进程。
+// 退出码非 0 / 启动失败 / 输出管道被孙进程拖到 WaitDelay → Result{OK:false}
+// （§10 交模型自行纠正）；error 只留给 ctx 取消（装配级，Runner/Agent 据此归类）。
 func (m *Manager) Run(ctx context.Context, spec port.JobSpec) (tool.Result, error) {
 	if err := ctx.Err(); err != nil {
 		return tool.Result{}, err
@@ -112,24 +123,68 @@ func (m *Manager) Run(ctx context.Context, spec port.JobSpec) (tool.Result, erro
 	cmd := exec.CommandContext(ctx, spec.Command, spec.Args...)
 	applySpec(cmd, spec)
 	setupProc(cmd)
-	// 注意：取消只终止直接子进程（如 cmd/sh），其孙进程可能残留——v1 接受，
-	// 后台任务的整树终止由 Start + killTree 承担。
-	out, err := cmd.CombinedOutput()
+	cmd.WaitDelay = waitDelay
+	buf := &capBuffer{max: maxRunOutput}
+	cmd.Stdout, cmd.Stderr = buf, buf // 同一实例：exec 保证对可比较 writer 串行 Write
+	// 取消只终止直接子进程（如 cmd/sh），孙进程可能残留——v1 接受，整树终止由
+	// Start + killTree 承担；但孙进程持有输出管道不再拖住返回（WaitDelay 兜底）。
+	err := cmd.Run()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return tool.Result{}, ctxErr
 	}
+	out := buf.String()
 	if err != nil {
+		// 直接子进程已退出、管道被孙进程拖到 WaitDelay：按进程退出状态结算。
+		if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil {
+			if cmd.ProcessState.Success() {
+				return tool.Result{OK: true, Output: out}, nil
+			}
+			return tool.Result{
+				OK:     false,
+				Output: out,
+				Err:    fmt.Sprintf("退出码 %d", cmd.ProcessState.ExitCode()),
+			}, nil
+		}
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			return tool.Result{
 				OK:     false,
-				Output: string(out),
+				Output: out,
 				Err:    fmt.Sprintf("退出码 %d", ee.ExitCode()),
 			}, nil
 		}
-		return tool.Result{OK: false, Output: string(out), Err: "启动: " + err.Error()}, nil
+		return tool.Result{OK: false, Output: out, Err: "启动: " + err.Error()}, nil
 	}
-	return tool.Result{OK: true, Output: string(out)}, nil
+	return tool.Result{OK: true, Output: out}, nil
+}
+
+// capBuffer 限长输出缓冲：写满即丢弃后续数据并置截断标记。
+// Stdout/Stderr 为同一实例时，exec 保证 Write 串行调用，无需加锁。
+type capBuffer struct {
+	buf       strings.Builder
+	max       int
+	truncated bool
+}
+
+func (b *capBuffer) Write(p []byte) (int, error) {
+	if b.truncated {
+		return len(p), nil
+	}
+	if remain := b.max - b.buf.Len(); len(p) > remain {
+		b.buf.Write(p[:remain])
+		b.truncated = true
+	} else {
+		b.buf.Write(p)
+	}
+	return len(p), nil
+}
+
+// String 采集到的内容；发生截断时附标注（不可信输出只作文本回填，§9）。
+func (b *capBuffer) String() string {
+	if b.truncated {
+		return b.buf.String() + "\n…[输出超出采集上限，已截断]"
+	}
+	return b.buf.String()
 }
 
 // List 按启动时间升序返回全部任务快照。
@@ -239,9 +294,18 @@ func (m *Manager) Kill(ctx context.Context, id port.JobID) error {
 		m.mu.Unlock()
 		return fmt.Errorf("jobproc: 任务 %s 已结束（%s）", id, r.job.Status)
 	}
-	r.killed = true
+	r.killed = true // 先置位：killTree 成功与 wait 收割存在竞态，须让 wait 看见
 	m.mu.Unlock()
 	if err := killTree(r.cmd); err != nil {
+		m.mu.Lock()
+		st := r.job.Status
+		if st == port.JobRunning {
+			r.killed = false // 终止失败：撤销标记，按进程自然结局记状态
+		}
+		m.mu.Unlock()
+		if st != port.JobRunning {
+			return nil // 检查后进程已自然结束：终止目的已达（幂等成功）
+		}
 		return fmt.Errorf("jobproc: 终止 %s: %w", id, err)
 	}
 	return nil
@@ -256,7 +320,7 @@ func (m *Manager) allocLog() (port.JobID, string, *os.File, error) {
 		m.seq++
 		id := port.JobID(fmt.Sprintf("j%03d", m.seq))
 		p := filepath.Join(m.logDir, string(id)+".log")
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // 日志可能含敏感命令输出：仅属主可读
 		if errors.Is(err, fs.ErrExist) {
 			continue // 上一进程留下的同号日志：跳号
 		}
@@ -267,7 +331,8 @@ func (m *Manager) allocLog() (port.JobID, string, *os.File, error) {
 	}
 }
 
-// expire Timeout 到点终止（终态记 failed；已结束则不动作）。
+// expire Timeout 到点终止（终态记 failed；已结束则不动作）；
+// 终止失败写入日志（否则任务会永远显示 running 且无人知晓超时未生效）。
 func (m *Manager) expire(r *jobRec) {
 	m.mu.Lock()
 	if r.job.Status != port.JobRunning {
@@ -276,7 +341,9 @@ func (m *Manager) expire(r *jobRec) {
 	}
 	r.timedOut = true
 	m.mu.Unlock()
-	_ = killTree(r.cmd)
+	if err := killTree(r.cmd); err != nil {
+		_, _ = fmt.Fprintf(r.logFile, "[超时终止失败: %v]\n", err)
+	}
 }
 
 // wait 收割子进程：置终态与退出码、写退出标记行、关闭日志句柄。
