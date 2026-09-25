@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -105,6 +110,166 @@ func TestOutputsPresenterNoOutputs(t *testing.T) {
 	if len(inner.events) != 1 {
 		t.Fatalf("inner events = %d", len(inner.events))
 	}
+}
+
+// TestNotifyWithBranches 发送分支：windows 分离启动（env 带文案、正文不进脚本）、
+// 其余平台带超时上下文同步执行；空正文不打扰；执行错误原样上抛。
+func TestNotifyWithBranches(t *testing.T) {
+	t.Run("windows 分离启动", func(t *testing.T) {
+		var got *exec.Cmd
+		detachedCalled, waitingCalled := false, false
+		send := notifyWith("windows",
+			func(c *exec.Cmd) error { detachedCalled, got = true, c; return nil },
+			func(*exec.Cmd) error { waitingCalled = true; return nil })
+		if err := send("Aquarius", "你好"); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if !detachedCalled || waitingCalled {
+			t.Fatalf("detached=%v waiting=%v, want 分离启动", detachedCalled, waitingCalled)
+		}
+		if len(got.Args) == 0 || !strings.HasSuffix(strings.ToLower(got.Args[0]), "powershell") {
+			t.Fatalf("args = %v, want powershell", got.Args)
+		}
+		if strings.Contains(strings.Join(got.Args, " "), "你好") {
+			t.Fatal("正文不应出现在命令行参数里")
+		}
+		env := got.Env
+		if len(env) < 2 || !strings.HasSuffix(env[len(env)-2], "Aquarius") ||
+			!strings.HasSuffix(env[len(env)-1], "你好") {
+			t.Fatalf("文案应经环境变量（末尾两项）: %v", env[max(0, len(env)-2):])
+		}
+	})
+	t.Run("其余平台带超时同步执行", func(t *testing.T) {
+		var got *exec.Cmd
+		send := notifyWith("linux",
+			func(*exec.Cmd) error { t.Fatal("不应分离启动"); return nil },
+			func(c *exec.Cmd) error { got = c; return nil })
+		if err := send("Aquarius", "hi"); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if got.Args[0] != "notify-send" || got.Args[1] != "Aquarius" || got.Args[2] != "hi" {
+			t.Fatalf("args = %v", got.Args)
+		}
+		if got.Cancel == nil {
+			t.Fatal("应为带超时上下文的 CommandContext（防通知守护挂起卡主循环）")
+		}
+	})
+	t.Run("空正文不发送", func(t *testing.T) {
+		called := false
+		send := notifyWith("linux",
+			func(*exec.Cmd) error { called = true; return nil },
+			func(*exec.Cmd) error { called = true; return nil })
+		if err := send("Aquarius", "   \n "); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		if called {
+			t.Fatal("空正文不应执行外部命令")
+		}
+	})
+	t.Run("执行错误上抛", func(t *testing.T) {
+		want := errors.New("无通知守护")
+		if err := notifyWith("linux", nil, func(*exec.Cmd) error { return want })("t", "b"); err != want {
+			t.Fatalf("err = %v, want %v", err, want)
+		}
+		if err := notifyWith("windows", func(*exec.Cmd) error { return want }, nil)("t", "b"); err != want {
+			t.Fatalf("err = %v, want %v", err, want)
+		}
+	})
+}
+
+// writeConfigNotify 写带 output.notify 开关的可运行配置。
+func writeConfigNotify(t *testing.T, dir, baseURL, name string, notify bool) {
+	t.Helper()
+	cfg := fmt.Sprintf(`{
+  "model": {"provider":"openai-compatible","name":%q,"base_url":%q,"api_key":"secret:AQ_E2E_KEY"},
+  "ui": {"kind":"repl"},
+  "output": {"notify": %t, "tts": false},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`, name, baseURL, notify)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("AQ_E2E_KEY", "test-key")
+}
+
+// TestRunNotifyWiring M3 验收④：output.notify=true 装配输出器——
+// 提交回答触发发送；发送失败只记日志不打断；键缺失不装配（不触碰发送器）。
+func TestRunNotifyWiring(t *testing.T) {
+	// stubNotify 临时替换发送器工厂，返回记录函数；返回恢复函数。
+	stubNotify := func(fn func(goos string) func(title, body string) error) func() {
+		old := notifySenderImpl
+		notifySenderImpl = fn
+		return func() { notifySenderImpl = old }
+	}
+
+	t.Run("提交回答触发发送", func(t *testing.T) {
+		srv, _ := scriptServer(t, []string{"通知这句"})
+		dir := t.TempDir()
+		writeConfigNotify(t, dir, srv.URL, "m", true)
+		calls := 0
+		var gotTitle, gotBody string
+		restore := stubNotify(func(string) func(string, string) error {
+			return func(title, body string) error {
+				calls++
+				gotTitle, gotBody = title, body
+				return nil
+			}
+		})
+		t.Cleanup(restore)
+
+		var out, errBuf bytes.Buffer
+		if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, &errBuf); code != 0 {
+			t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
+		}
+		if calls != 1 || gotTitle != "Aquarius" || !strings.Contains(gotBody, "通知这句") {
+			t.Fatalf("calls=%d title=%q body=%q", calls, gotTitle, gotBody)
+		}
+		if !strings.Contains(out.String(), "通知这句") {
+			t.Fatalf("回答仍应正常呈现: %q", out.String())
+		}
+	})
+
+	t.Run("发送失败只记日志不打断", func(t *testing.T) {
+		srv, _ := scriptServer(t, []string{"第二句"})
+		dir := t.TempDir()
+		writeConfigNotify(t, dir, srv.URL, "m", true)
+		restore := stubNotify(func(string) func(string, string) error {
+			return func(string, string) error { return errors.New("无桌面会话") }
+		})
+		t.Cleanup(restore)
+
+		var out, errBuf bytes.Buffer
+		if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, &errBuf); code != 0 {
+			t.Fatalf("发送失败不应影响退出码: %d, stderr = %q", code, errBuf.String())
+		}
+		if !strings.Contains(errBuf.String(), "[输出器]") ||
+			!strings.Contains(errBuf.String(), "无桌面会话") {
+			t.Fatalf("stderr 缺输出器日志: %q", errBuf.String())
+		}
+		if !strings.Contains(out.String(), "第二句") {
+			t.Fatalf("回答仍应正常呈现: %q", out.String())
+		}
+	})
+
+	t.Run("键缺失不装配", func(t *testing.T) {
+		srv, _ := scriptServer(t, []string{"无通知"})
+		dir := t.TempDir()
+		writeConfig(t, dir, srv.URL, "m") // 无 output 键 → 不装配
+		factoryCalls := 0
+		restore := stubNotify(func(string) func(string, string) error {
+			factoryCalls++
+			return func(string, string) error { return nil }
+		})
+		t.Cleanup(restore)
+
+		var out, errBuf bytes.Buffer
+		if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, &errBuf); code != 0 {
+			t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
+		}
+		if factoryCalls != 0 {
+			t.Fatalf("notify 关闭时不应构造发送器（factoryCalls=%d）", factoryCalls)
+		}
+	})
 }
 
 // TestNotifyCmdInjectionSafe 文案只经 argv/环境变量传递，绝不进脚本文本。

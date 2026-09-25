@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -40,28 +41,51 @@ func (p *outputsPresenter) Emit(ctx context.Context, ev port.Event) error {
 	return nil
 }
 
+// notifySenderImpl 装配用发送器入口（测试可替换，避免 e2e 真弹系统通知）。
+var notifySenderImpl = notifySender
+
+// notifyTimeout 非 Windows 分支的发送超时：通知守护缺失/挂起时以超时收场，
+// 不卡主循环（§5.7"失败只记日志、不打断主流程"——挂起不是失败）。
+const notifyTimeout = 5 * time.Second
+
 // notifySender 平台通知发送（外部命令尽力而为；失败由装饰器记日志）。
 // 正文/标题经 argv 或环境变量传递，绝不拼进脚本——内容来自模型（不可信数据，§9）。
 func notifySender(goos string) func(title, body string) error {
+	return notifyWith(goos, startDetached, func(cmd *exec.Cmd) error { return cmd.Run() })
+}
+
+// notifyWith 组装发送函数（执行方式可注入，便于测试断言分支与命令构造）：
+// windows 分离启动（气泡需驻留数秒），其余平台带超时同步执行。
+func notifyWith(goos string, detached, waiting func(*exec.Cmd) error) func(title, body string) error {
 	return func(title, body string) error {
 		if strings.TrimSpace(body) == "" {
 			return nil
 		}
 		path, args, env := notifyCmd(goos, title, body)
-		cmd := exec.Command(path, args...)
+		if goos == "windows" {
+			cmd := exec.Command(path, args...)
+			if len(env) > 0 {
+				cmd.Env = append(os.Environ(), env...)
+			}
+			return detached(cmd)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, path, args...)
 		if len(env) > 0 {
 			cmd.Env = append(os.Environ(), env...)
 		}
-		if goos == "windows" {
-			// 气泡通知需脚本驻留数秒：分离启动，不阻塞主循环。
-			if err := cmd.Start(); err != nil {
-				return fmt.Errorf("启动 %s: %w", path, err)
-			}
-			go func() { _ = cmd.Wait() }()
-			return nil
-		}
-		return cmd.Run()
+		return waiting(cmd)
 	}
+}
+
+// startDetached 分离启动（进程不随调用返回退出），由后台 goroutine 回收句柄。
+func startDetached(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动 %s: %w", cmd.Path, err)
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // notifyCmd 构造平台通知命令（argv/env 与脚本分离，便于测试断言注入安全）。

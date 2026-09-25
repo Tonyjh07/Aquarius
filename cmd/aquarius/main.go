@@ -203,7 +203,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// app 与 repl 均不感知输出器，Deliver 失败只记日志（§5.7）。
 	var outs []port.OutputAdapter
 	if cfg.Output.Notify {
-		outs = append(outs, notify.New(notifySender(runtime.GOOS)))
+		outs = append(outs, notify.New(notifySenderImpl(runtime.GOOS)))
 	}
 	presenter := &outputsPresenter{
 		inner: ui,
