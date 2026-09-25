@@ -40,6 +40,11 @@ type SessionDeps struct {
 	Confirmer port.Confirmer
 	// Jobs 后台任务管理（/jobs，DESIGN §7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
 	Jobs port.JobManager
+	// Ingestors 多模态输入摄取器（M3 管线，D27：触发命令面留 M4）；
+	// nil 时 Raw 输入报"没有可用的摄取器"。
+	Ingestors []port.Ingestor
+	// UI 轮次外的过程事件（摄取 Note 等 NoticeEvent）；nil 时跳过呈现。
+	UI port.Presenter
 	// OpenMemory 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
 	// nil 时 /memory 报"未配置编辑器"。
 	OpenMemory func(name string) (string, error)
@@ -60,6 +65,8 @@ type Session struct {
 	persistLevel func(perm.Level) error
 	confirmer    port.Confirmer
 	jobs         port.JobManager
+	ingestors    []port.Ingestor
+	ui           port.Presenter
 	openMemory   func(name string) (string, error)
 	cur          *conversation.Conversation
 }
@@ -91,6 +98,8 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persistLevel: d.PersistLevel,
 		confirmer:    d.Confirmer,
 		jobs:         d.Jobs,
+		ingestors:    d.Ingestors,
+		ui:           d.UI,
 		openMemory:   d.OpenMemory,
 	}
 
@@ -139,14 +148,14 @@ func (s *Session) newConversation(title string) (*conversation.Conversation, err
 // Current 当前会话（供只读展示；一切修改仍走 Session）。
 func (s *Session) Current() *conversation.Conversation { return s.cur }
 
-// Handle 处理一次用户输入：命令走 execCommand；普通文本入树 → Turn → 落盘。
-// 返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。
+// Handle 处理一次用户输入：命令走 execCommand；Raw 走多模态摄取管线（M3）；
+// 普通文本入树 → Turn → 落盘。返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。
 func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error) {
 	if in.Command != nil {
 		return s.execCommand(ctx, *in.Command)
 	}
 	if in.Raw != nil {
-		return "", errors.New("session: 附件/语音输入尚未启用（里程碑 M3）")
+		return s.ingestAndRun(ctx, *in.Raw)
 	}
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
@@ -156,16 +165,75 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	if _, err := s.cur.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: text}}); err != nil {
 		return "", fmt.Errorf("session: 追加消息: %w", err)
 	}
+	return "", s.runTurn(ctx)
+}
+
+// runTurn 执行一轮 Turn 并落盘：成败都保存（error/cancelled 终态的节点同样持久化）。
+func (s *Session) runTurn(ctx context.Context) error {
 	runErr := s.agent.Run(ctx, s.cur)
-	// Turn 成败都落盘：error/cancelled 终态的节点同样要持久化。
 	if err := s.store.Save(ctx, s.cur); err != nil {
 		if runErr != nil {
 			// 两个错误都保留：Turn 错误为主，保存失败附注。
-			return "", fmt.Errorf("session: %w（且保存失败: %v）", runErr, err)
+			return fmt.Errorf("session: %w（且保存失败: %v）", runErr, err)
 		}
-		return "", fmt.Errorf("session: 保存会话: %w", err)
+		return fmt.Errorf("session: 保存会话: %w", err)
 	}
-	return "", runErr
+	return runErr
+}
+
+// ingestAndRun 多模态输入管线（M3，D27：/attach 等触发命令面留 M4）：
+// RawInput → Ingestor 分派 → Part 入树（user）→ Turn → 落盘；摄取 Note 经 NoticeEvent 提示。
+func (s *Session) ingestAndRun(ctx context.Context, raw port.RawInput) (string, error) {
+	parts, note, err := s.ingest(ctx, raw)
+	if err != nil {
+		return "", fmt.Errorf("session: 摄取输入: %w", err)
+	}
+	if len(parts) == 0 {
+		return "", errors.New("session: 摄取未产出内容")
+	}
+	s.maybeSetTitle(ingestTitle(parts))
+	if _, err := s.cur.Append(conversation.RoleUser, parts); err != nil {
+		return "", fmt.Errorf("session: 追加消息: %w", err)
+	}
+	if note != "" && s.ui != nil {
+		_ = s.ui.Emit(ctx, port.NoticeEvent{Text: note})
+	}
+	return "", s.runTurn(ctx)
+}
+
+// ingest 分派 RawInput：Kind=text 直通（DESIGN §7.2 文本摄取），
+// 其余按注册序找首个 Accepts 的 Ingestor（file/clipboard 由装配注入，mic 见 D27）。
+func (s *Session) ingest(ctx context.Context, raw port.RawInput) ([]conversation.Part, string, error) {
+	if raw.Kind == "text" {
+		text := strings.TrimSpace(raw.Text)
+		if text == "" {
+			return nil, "", errors.New("session: 文本输入为空")
+		}
+		return []conversation.Part{{Kind: conversation.PartText, Text: text}}, "", nil
+	}
+	for _, in := range s.ingestors {
+		if in.Accepts(raw) {
+			rep, err := in.Ingest(ctx, raw)
+			if err != nil {
+				return nil, "", err
+			}
+			return rep.Parts, rep.Note, nil
+		}
+	}
+	return nil, "", fmt.Errorf("session: 没有可用的摄取器处理 %q 输入（M3 装配 file/clipboard；语音输入见 D27）", raw.Kind)
+}
+
+// ingestTitle 摄取消息的标题摘要：文本分片优先，其次附件名。
+func ingestTitle(parts []conversation.Part) string {
+	for _, p := range parts {
+		if p.Kind == conversation.PartText && strings.TrimSpace(p.Text) != "" {
+			return strings.TrimSpace(p.Text)
+		}
+		if p.Ref != nil && p.Ref.Name != "" {
+			return p.Ref.Name
+		}
+	}
+	return ""
 }
 
 // maybeSetTitle 首条消息后把默认标题改写为消息摘要。
