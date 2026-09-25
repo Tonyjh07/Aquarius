@@ -274,6 +274,50 @@ func TestResourceStore(t *testing.T) {
 	}
 }
 
+// TestMapArgsHardening 审查修复的三处边界（prompts/list 为不可信输入）：
+// nil 声明不 panic、单声明多词不丢词、超声明数报用法、未声明参数的 prompt 拒收。
+func TestMapArgsHardening(t *testing.T) {
+	s := &Server{name: "x", prompts: []*mcp.Prompt{{
+		Name:      "p",
+		Arguments: []*mcp.PromptArgument{nil, {Name: "who", Required: true}},
+	}}}
+
+	// nil 声明被过滤；单声明 + 多词整体拼接（旧实现第二词起静默丢弃）。
+	args, _, err := s.mapArgs("p", []string{"hello", "world"})
+	if err != nil || args["who"] != "hello world" {
+		t.Fatalf("args=%v err=%v, want who=hello world", args, err)
+	}
+	// 必填缺失报用法。
+	if _, _, err := s.mapArgs("p", nil); err == nil || !strings.Contains(err.Error(), "用法:") {
+		t.Fatalf("err = %v, want 用法", err)
+	}
+
+	// 双声明：按位映射；第三参 → 多余参数报错（不静默截断）。
+	s.prompts[0].Arguments = []*mcp.PromptArgument{{Name: "a"}, {Name: "b", Required: true}}
+	args, _, err = s.mapArgs("p", []string{"1", "2"})
+	if err != nil || args["a"] != "1" || args["b"] != "2" {
+		t.Fatalf("args=%v err=%v", args, err)
+	}
+	if _, _, err := s.mapArgs("p", []string{"1", "2", "3"}); err == nil ||
+		!strings.Contains(err.Error(), "多余参数") {
+		t.Fatalf("err = %v, want 多余参数报错", err)
+	}
+
+	// 未声明参数的 prompt 拒收参数。
+	s.prompts[0].Arguments = nil
+	if _, _, err := s.mapArgs("p", []string{"x"}); err == nil ||
+		!strings.Contains(err.Error(), "不声明参数") {
+		t.Fatalf("err = %v, want 拒收", err)
+	}
+
+	// 未拿到声明（prompts/list 缺失）：整体作 input 交服务端裁决。
+	bare := &Server{name: "y"}
+	args, _, err = bare.mapArgs("unknown", []string{"a", "b"})
+	if err != nil || args["input"] != "a b" {
+		t.Fatalf("args=%v err=%v, want input=a b", args, err)
+	}
+}
+
 // TestRenderPrompt prompts：参数位次映射、必填缺失报用法、文本拼接。
 func TestRenderPrompt(t *testing.T) {
 	s := dial(t, httpDecl(t, nil))
