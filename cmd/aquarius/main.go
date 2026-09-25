@@ -144,6 +144,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		dir = filepath.Join(home, ".aquarius")
 	}
+	// -data 允许相对路径，启动即锚定为绝对：对外展示的路径（沙盒提示、配置
+	// 路径等）必须可直接复制使用，且不受后续"相对路径再次校验"拒绝。
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fmt.Fprintf(stderr, "创建数据目录 %s: %v\n", dir, err)
 		return 1

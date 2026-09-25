@@ -35,7 +35,9 @@ func requireAbs(sandbox, path string) (string, error) {
 	}
 	if !filepath.IsAbs(path) {
 		msg := fmt.Sprintf("path 必须是绝对路径（本产品无工作区概念），当前为 %q", path)
-		if sandbox != "" {
+		// 只在沙盒本身是绝对路径时提示——不能建议一个会被同一条规则再次
+		// 拒绝的相对路径（嵌入方可能没走装配根的路径锚定）。
+		if filepath.IsAbs(sandbox) {
 			msg += fmt.Sprintf("；可改用特权沙盒目录 %q（strict 起写入免确认）", sandbox)
 		}
 		return "", errors.New(msg)

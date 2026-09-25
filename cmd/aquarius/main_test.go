@@ -270,6 +270,21 @@ func TestRunPlaintextKeyWarns(t *testing.T) {
 
 // TestRunEmptyAPIKeyFallsBackToDefaultSecret D35：api_key 留空回落默认引用
 // secret:AQUARIUS_OPENAI_KEY（文件内值优先于默认引用；环境变量缺失才报错）。
+// TestRunRelativeDataDirBecomesAbsolute -data 相对路径启动即锚定为绝对：
+// 首跑输出的配置路径可直接复制使用，沙盒提示也因此恒为绝对路径。
+func TestRunRelativeDataDirBecomesAbsolute(t *testing.T) {
+	tmp := t.TempDir()
+	t.Chdir(tmp) // 测试内改 cwd，结束自动还原
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", "data"}, strings.NewReader(""), &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
+	}
+	want := filepath.Join(tmp, "data", "config.json") // tmp 为绝对 TempDir
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("first-run 输出 = %q, want 绝对路径 %q", out.String(), want)
+	}
+}
+
 func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":""},"ui":{"kind":"repl"}}`

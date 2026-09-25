@@ -3,6 +3,7 @@ package toolbuiltin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,14 +230,15 @@ func TestMemoryFileTargetWithoutPathOf(t *testing.T) {
 // 反馈：报错需给出可行动的替代路径）；未注入（空）时保持原消息。
 func TestRelativePathSuggestsSandbox(t *testing.T) {
 	ctx := context.Background()
-	tools := New(newFakeMem(), nil, &fakeJobs{}, "/data/aquarius-sandbox")
+	sbx := filepath.Join(t.TempDir(), "sandbox") // 平台合法绝对路径
+	tools := New(newFakeMem(), nil, &fakeJobs{}, sbx)
 	w := pick(t, tools, "file_write")
 	args := call(`{"path":"rel/x.md","content":"c"}`)
 	_, err := w.Execute(ctx, args)
 	if err == nil {
 		t.Fatal("相对路径应报错")
 	}
-	for _, want := range []string{"绝对路径", "特权沙盒", "/data/aquarius-sandbox"} {
+	for _, want := range []string{"绝对路径", "特权沙盒", fmt.Sprintf("%q", sbx)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, 缺 %q", err, want)
 		}
@@ -250,6 +252,12 @@ func TestRelativePathSuggestsSandbox(t *testing.T) {
 	_, err = plain.Execute(ctx, args)
 	if err == nil || strings.Contains(err.Error(), "特权沙盒") {
 		t.Fatalf("空沙盒 err = %v, want 原消息无提示", err)
+	}
+	// 相对沙盒同样不提示——不能建议一个会被同一条规则再次拒绝的路径。
+	rel := pick(t, New(newFakeMem(), nil, &fakeJobs{}, "rel-sandbox"), "file_write")
+	_, err = rel.Execute(ctx, args)
+	if err == nil || strings.Contains(err.Error(), "特权沙盒") {
+		t.Fatalf("相对沙盒 err = %v, want 无提示", err)
 	}
 }
 
