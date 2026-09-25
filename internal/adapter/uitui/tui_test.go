@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -175,6 +177,101 @@ func TestCtrlDEof(t *testing.T) {
 	m.key(tea.KeyMsg{Type: tea.KeyCtrlD})
 	if _, err := u.Next(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want io.EOF", err)
+	}
+}
+
+// TestNextDrainsQueuedInputBeforeEOF 审查修复：EOF 是 close 广播（粘滞+同时可见），
+// 排队输入必须先于 EOF 交付——旧实现的一次性 channel 标记会被随机 select 吞掉，
+// 此后 Next 永久阻塞。
+func TestNextDrainsQueuedInputBeforeEOF(t *testing.T) {
+	m, u := newTestModel(t)
+	m.submit("第一行")
+	m.submit("/quit")
+	u.signalEOF(nil) // 事件循环已在处理完输入行后广播
+
+	in, err := u.Next(context.Background())
+	if err != nil || in.Text != "第一行" {
+		t.Fatalf("first = %+v, %v, want 第一行", in, err)
+	}
+	in, err = u.Next(context.Background())
+	if err != nil || in.Command == nil || in.Command.Name != "quit" {
+		t.Fatalf("second = %+v, %v, want /quit", in, err)
+	}
+	// EOF 粘滞：之后每次 Next 都返回 EOF（不再阻塞）。
+	for i := 0; i < 3; i++ {
+		if _, err := u.Next(context.Background()); !errors.Is(err, io.EOF) {
+			t.Fatalf("第 %d 次 Next = %v, want 持续 EOF", i+3, err)
+		}
+	}
+}
+
+// TestNextSurfacesScanError 审查修复：pump 扫描错误（超长行等）随 eofMsg 上抛，
+// 不再静默当 EOF（否则 TUI 以退出码 0 掩盖输入故障）。
+func TestNextSurfacesScanError(t *testing.T) {
+	_, u := newTestModel(t)
+	boom := errors.New("读取输入故障")
+	u.signalEOF(boom)
+	if _, err := u.Next(context.Background()); !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want 扫描错误原样上抛", err)
+	}
+}
+
+// TestConfirmRejectsOnEOF 审查修复：输入流结束时确认对话不得永久挂起——
+// 对齐 repl"不替用户做破坏性决定"语义，返回拒绝。
+func TestConfirmRejectsOnEOF(t *testing.T) {
+	u := New(Options{In: strings.NewReader(""), Out: io.Discard})
+	defer func() { _ = u.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	yes, err := u.Confirm(ctx, "危险操作？")
+	if err != nil || yes {
+		t.Fatalf("confirm = %v, %v, want (false, nil)", yes, err)
+	}
+	// EOF 标志保留：随后 Next 仍见 EOF。
+	if _, err := u.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("Next = %v, want EOF", err)
+	}
+}
+
+// TestPumpMultiLineThenEOF 端到端：管道多行输入全部交付后稳定返回 EOF
+// （B-M1 复现——旧实现第一或第二次 Next 就可能把 EOF 吞掉直接退出，跳过整轮对话）。
+func TestPumpMultiLineThenEOF(t *testing.T) {
+	u := New(Options{In: strings.NewReader("第一行\n/quit\n"), Out: io.Discard})
+	defer func() { _ = u.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	in, err := u.Next(ctx)
+	if err != nil || in.Text != "第一行" {
+		t.Fatalf("first = %+v, %v", in, err)
+	}
+	in, err = u.Next(ctx)
+	if err != nil || in.Command == nil || in.Command.Name != "quit" {
+		t.Fatalf("second = %+v, %v", in, err)
+	}
+	if _, err := u.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("third = %v, want EOF", err)
+	}
+	if _, err := u.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("fourth = %v, want EOF（粘滞）", err)
+	}
+}
+
+// TestPumpScanErrorPropagates 扫描错误端到端：首行正常交付，随后错误上抛。
+func TestPumpScanErrorPropagates(t *testing.T) {
+	boom := errors.New("scanner 故障")
+	in := io.MultiReader(strings.NewReader("line\n"), iotest.ErrReader(boom))
+	u := New(Options{In: in, Out: io.Discard})
+	defer func() { _ = u.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	got, err := u.Next(ctx)
+	if err != nil || got.Text != "line" {
+		t.Fatalf("first = %+v, %v", got, err)
+	}
+	if _, err := u.Next(ctx); err == nil || !strings.Contains(err.Error(), "scanner 故障") {
+		t.Fatalf("second = %v, want 扫描错误上抛", err)
 	}
 }
 

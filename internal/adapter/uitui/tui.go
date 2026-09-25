@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -61,7 +62,9 @@ type Options struct {
 type UI struct {
 	prog      *tea.Program
 	inCh      chan port.UserInput
-	eofCh     chan struct{}
+	eofCh     chan struct{} // 关闭 = 输入流结束（广播：Next/Confirm 同时唤醒，天然粘滞）
+	eofOnce   sync.Once
+	eofErr    error // 写于 close 之前；close 提供 happens-before，读者安全
 	done      chan struct{}
 	interrupt atomic.Pointer[func()]
 	opts      Options
@@ -79,7 +82,7 @@ func New(opts Options) *UI {
 	}
 	u := &UI{
 		inCh:  make(chan port.UserInput, inputCap),
-		eofCh: make(chan struct{}, 1),
+		eofCh: make(chan struct{}),
 		done:  make(chan struct{}),
 		opts:  opts,
 	}
@@ -114,17 +117,20 @@ func isTerminal(r io.Reader) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-// pumpLines 非 TTY 输入泵：按行读 UTF-8 直投（等价"输入行 + 回车"语义；
-// 流结束 = io.EOF 语义）。绕开 tea 的 localereader 代码页误解码。
-// EOF 经事件循环排队：若直接写 eofCh，会与尚未入队的输入行竞态（Next 的 select
-// 随机命中 EOF 提前退出，整轮对话被跳过）。
+// pumpLines 非 TTY 输入泵：按行读 UTF-8 直投（等价"输入行 + 回车"语义）。
+// 绕开 tea 的 localereader 代码页误解码；EOF 经事件循环排队（与输入行同一队列，
+// 先于它的提交必已入队）；扫描错误（如超长行）随 eofMsg 上抛，不再静默当 EOF。
 func (u *UI) pumpLines(in io.Reader) {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64<<10), inputLineLimit)
 	for sc.Scan() {
 		u.prog.Send(inputMsg{text: strings.TrimSuffix(sc.Text(), "\r")})
 	}
-	u.prog.Send(eofMsg{})
+	var err error
+	if sc.Err() != nil {
+		err = fmt.Errorf("tui: 读取输入: %w", sc.Err())
+	}
+	u.prog.Send(eofMsg{err: err})
 }
 
 // Close 排空队列后退出事件循环并等待收尾（幂等；repl 侧为 no-op，装配根按 io.Closer 调用）。
@@ -151,12 +157,27 @@ func (u *UI) SetInterrupt(fn func()) {
 	u.interrupt.Store(&fn)
 }
 
+// signalEOF 标记输入流结束（幂等；close 广播给 Next/Confirm——审查修复：旧的
+// 一次性 channel 标记会被"EOF 与排队输入同时就绪"的随机 select 吞掉，后续 Next
+// 永久阻塞）。err 非空 = 扫描错误（Next 原样上抛，装配根以退出码 1 结束）。
+func (u *UI) signalEOF(err error) {
+	u.eofOnce.Do(func() {
+		u.eofErr = err
+		close(u.eofCh)
+	})
+}
+
 // Next 阻塞读取下一条输入（斜杠命令解析与 repl 同口径）；
-// io.EOF = Ctrl+D（空输入）/ 输入流结束；ctx 取消原样上抛。
-// EOF 到达时先让位已排队输入（eofMsg 经事件循环排队，正常情况下 inCh 已填满；
-// 此处兜底再查一次，杜绝随机 select 抢跑）。
+// io.EOF = Ctrl+D（空输入）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
+// 广播到达时先取尽排队输入（eofMsg 经事件循环排队，先于它的提交必已入队），
+// 取空才返回 EOF——任何 select 次序下都不丢输入、也不吞 EOF（审查修复）。
 func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 	for {
+		select {
+		case in := <-u.inCh:
+			return in, nil
+		default:
+		}
 		select {
 		case in := <-u.inCh:
 			return in, nil
@@ -165,6 +186,9 @@ func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 			case in := <-u.inCh:
 				return in, nil
 			default:
+				if u.eofErr != nil {
+					return port.UserInput{}, u.eofErr
+				}
 				return port.UserInput{}, io.EOF
 			}
 		case <-ctx.Done():
@@ -185,18 +209,29 @@ func (u *UI) Say(text string) {
 }
 
 // Confirm 逐次确认：转写区记提示行，输入行切换为 [y/N] 对话；
-// y/yes（大小写不敏感）为同意，其余与 ctx 取消均为拒绝（与 repl 语义一致）。
+// y/yes（大小写不敏感）为同意，其余、ctx 取消与**输入流结束**均为拒绝
+// （审查修复：EOF 分支对齐 repl"不替用户做破坏性决定"的语义——管道输入下
+// 没有任何后续行能应答，缺此分支确认对话永久挂起）。
 func (u *UI) Confirm(ctx context.Context, prompt string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 	reply := make(chan bool, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
 	u.prog.Send(confirmMsg{prompt: prompt, reply: reply})
-	select {
-	case yes := <-reply:
-		return yes, nil
-	case <-ctx.Done():
-		return false, ctx.Err()
+	for {
+		select { // 应答优先（避免与 EOF 竞速时丢弃已键入的回答）
+		case yes := <-reply:
+			return yes, nil
+		default:
+		}
+		select {
+		case yes := <-reply:
+			return yes, nil
+		case <-u.eofCh:
+			return false, nil // 标志保留：随后 Next 仍会返回 EOF/错误
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
 	}
 }
 
@@ -221,8 +256,9 @@ type (
 	}
 	// drainMsg 排空标记（Close 投递：处理到它即代表此前 Send 全部落帧）。
 	drainMsg struct{ done chan struct{} }
-	// eofMsg 输入流结束（pump 投递：与输入行同一队列，杜绝 EOF 抢跑于排队输入）。
-	eofMsg struct{}
+	// eofMsg 输入流结束（pump 投递：与输入行同一队列，杜绝 EOF 抢跑于排队输入）；
+	// err 非空 = 扫描错误（Next 原样上抛）。
+	eofMsg struct{ err error }
 )
 
 // parseInput 单行输入解析（斜杠开头 = 命令；与 repl.Next 同口径）。

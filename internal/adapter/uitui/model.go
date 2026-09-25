@@ -95,10 +95,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		close(msg.done)
 		return m, nil
 	case eofMsg:
-		select { // 输入流结束：等价 Ctrl+D（空输入）
-		case m.u.eofCh <- struct{}{}:
-		default:
-		}
+		m.u.signalEOF(msg.err) // 输入流结束（或扫描错误）：广播给 Next/Confirm
 		return m, nil
 	case tea.KeyMsg:
 		return m.key(msg), nil
@@ -150,10 +147,7 @@ func (m *model) key(msg tea.KeyMsg) *model {
 		return m
 	case tea.KeyCtrlD:
 		if m.confirm == nil && len(m.input) == 0 {
-			select {
-			case m.u.eofCh <- struct{}{}:
-			default:
-			}
+			m.u.signalEOF(nil) // 等价输入流结束（幂等）
 		}
 		return m
 	case tea.KeyCtrlU:
