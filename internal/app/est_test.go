@@ -139,6 +139,73 @@ func TestCalibrate(t *testing.T) {
 	}
 }
 
+// TestTrimOldestOrphanTools P0-2 回归：任何形态下都不得留下"声明 assistant 已被裁掉"
+// 的前导孤儿 tool——否则压缩失败兜底会把 Turn 打成服务端 400。
+func TestTrimOldestOrphanTools(t *testing.T) {
+	sys := port.PromptMessage{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: "人格"}}}
+	asstOf := func(n int) port.PromptMessage {
+		return port.PromptMessage{
+			Role:      "assistant",
+			Content:   []port.PromptPart{{Kind: "text", Text: strings.Repeat("a", n)}},
+			ToolCalls: []tool.Call{{ID: "c1", Name: "echo"}},
+		}
+	}
+	toolOf := func(id string, n int) port.PromptMessage {
+		return port.PromptMessage{
+			Role:    "tool",
+			CallID:  id,
+			Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("t", n)}},
+		}
+	}
+	noOrphan := func(t *testing.T, kept []port.PromptMessage) {
+		t.Helper()
+		// 首条非 system 不得是 tool（其声明者必在窗口内且位于其前）。
+		for _, m := range kept {
+			if m.Role == "system" {
+				continue
+			}
+			if m.Role == "tool" {
+				t.Fatalf("留下前导孤儿 tool: %+v", kept)
+			}
+			break
+		}
+	}
+
+	e := newEstimator(nil)
+
+	// A：assistant 巨大 → 主循环裁掉它后 est 立即达标 → 清理循环必须裁掉尾随 tool。
+	kept, omitted := e.trimOldest(context.Background(),
+		[]port.PromptMessage{sys, asstOf(1000), toolOf("c1", 100)}, 60)
+	noOrphan(t, kept)
+	if len(kept) != 1 || omitted != 2 {
+		t.Fatalf("A: kept=%d omitted=%d, want 1/2（assistant+tool 都裁、仅剩 system）: %+v", len(kept), omitted, kept)
+	}
+
+	// B：target 极小、非 system 全是工具轮产物（工具循环开头的常态）——
+	// 旧逻辑 nonSystem<=1 提前 break 会停在 [system, tool]（400）。
+	kept, omitted = e.trimOldest(context.Background(),
+		[]port.PromptMessage{sys, asstOf(100), toolOf("c1", 100), toolOf("c2", 100)}, 1)
+	noOrphan(t, kept)
+	if len(kept) != 1 {
+		t.Fatalf("B: kept=%d, want 1（system-only 可发送）: %+v", len(kept), kept)
+	}
+
+	// C：est 一开始就低于 target，后置清理也必须移除孤儿（单 tool 打头）。
+	kept, omitted = e.trimOldest(context.Background(),
+		[]port.PromptMessage{sys, toolOf("c1", 100)}, 10000)
+	noOrphan(t, kept)
+	if len(kept) != 1 || omitted != 1 {
+		t.Fatalf("C: kept=%d omitted=%d, want 1/1: %+v", len(kept), omitted, kept)
+	}
+
+	// D：assistant 与其 tool 结构成对保留时（未被裁）不得误伤。
+	kept, _ = e.trimOldest(context.Background(),
+		[]port.PromptMessage{sys, asstOf(10), toolOf("c1", 10)}, 100000)
+	if len(kept) != 3 || kept[1].Role != "assistant" || kept[2].Role != "tool" {
+		t.Fatalf("D: 不应改动: %+v", kept)
+	}
+}
+
 // TestTrimOldest 保 leading system 与最近、丢中间；孤儿 tool 结果一并裁掉；至少留 1 条。
 func TestTrimOldest(t *testing.T) {
 	msg := func(role, text string) port.PromptMessage {

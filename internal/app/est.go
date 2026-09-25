@@ -123,8 +123,13 @@ func isCJK(r rune) bool {
 }
 
 // trimOldest 从最旧处裁剪消息直到估算低于 target（D21：压缩失败回退最旧裁剪——
-// 保 leading system（persona/摘要）与最近消息、丢中间；至少保留 1 条非 system 消息，
-// 且不得把"声明工具调用的 assistant"裁掉后留下孤儿 tool 结果）。返回 (保留序列, 省略条数)。
+// 保 leading system（persona/摘要）与最近消息、丢中间）。约束：
+//   - 至少保留 1 条非 system（保最近），例外是仅剩者为孤儿 tool——发不出去，继续裁；
+//   - 不得留下"声明 assistant 已被裁掉"的前导孤儿 tool 结果（role=tool 打头的请求
+//     必被服务端 400，兜底反而打断 Turn），允许最终裁到 0 条非 system（system-only
+//     请求可发送，属极端兜底）。
+//
+// 返回 (保留序列, 省略条数)。
 func (e *estimator) trimOldest(ctx context.Context, msgs []port.PromptMessage, target int) ([]port.PromptMessage, int) {
 	lead := 0
 	for lead < len(msgs) && msgs[lead].Role == "system" {
@@ -144,16 +149,20 @@ func (e *estimator) trimOldest(ctx context.Context, msgs []port.PromptMessage, t
 		}
 		return n
 	}
+	isOrphanLead := func() bool { return lead < len(kept) && kept[lead].Role == "tool" }
 	for {
 		est, _ := e.Estimate(ctx, port.GenerateRequest{Messages: kept})
-		if est < target || nonSystem(kept) <= 1 {
+		if est < target {
 			break
+		}
+		if nonSystem(kept) <= 1 && !isOrphanLead() {
+			break // 保至少 1 条非 system；孤儿 tool 不算有效保留
 		}
 		kept = append(kept[:lead:lead], kept[lead+1:]...)
 		omitted++
 	}
-	// 孤儿 tool 结果清理：前导 tool 消息的声明 assistant 已被裁掉（或本就在水位之上）。
-	for nonSystem(kept) > 1 && lead < len(kept) && kept[lead].Role == "tool" {
+	// 无条件清理前导孤儿 tool：其声明 assistant 已被裁掉（或本就在水位之上）。
+	for isOrphanLead() {
 		kept = append(kept[:lead:lead], kept[lead+1:]...)
 		omitted++
 	}
