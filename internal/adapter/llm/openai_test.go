@@ -217,6 +217,38 @@ func TestGenerateFallsBackWithoutStreamOptions(t *testing.T) {
 	}
 }
 
+// TestGenerateFallbackTransportErrorIsTransient stream_options 兼容重试的第二次
+// post 遭遇传输层故障：必须原样上抛（含 ErrTransient 标注），不得被吞成首轮 400
+// 非瞬时错误（审查修复——否则装饰器层错过可重试窗口）。
+func TestGenerateFallbackTransportErrorIsTransient(t *testing.T) {
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		if n == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"Unrecognized request argument supplied: stream_options"}}`)
+			return
+		}
+		panic(http.ErrAbortHandler) // 第二次请求直接断连（模拟传输层故障）
+	}))
+	defer srv.Close()
+
+	c, _ := New(Config{BaseURL: srv.URL})
+	_, err := c.Generate(context.Background(), port.GenerateRequest{
+		Model:    "m",
+		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+	})
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !errors.Is(err, port.ErrTransient) {
+		t.Fatalf("err = %v, want 瞬时标注（旧实现会吞成 400 非瞬时）", err)
+	}
+	if n < 2 {
+		t.Fatalf("请求次数 = %d, want 2（应已进入兼容重试）", n)
+	}
+}
+
 func TestGenerateHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

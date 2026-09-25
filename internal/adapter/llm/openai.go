@@ -122,14 +122,20 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 		if bytes.Contains([]byte(sn), []byte("stream_options")) {
 			// 部分兼容服务不认 stream_options：去掉重试一次。
 			if plain, e := encodeChatRequest(req, false); e == nil {
-				if resp2, e := c.post(streamCtx, chatPath, plain); e == nil {
-					if resp2.StatusCode == http.StatusOK {
-						resp = resp2
-					} else {
-						code = resp2.StatusCode
-						sn = readSnippet(resp2.Body)
-						_ = resp2.Body.Close()
-					}
+				resp2, e := c.post(streamCtx, chatPath, plain)
+				if e != nil {
+					// 第二次 post 的传输层错误不得被吞成首轮状态码（审查修复：
+					// 瞬时断连会误判为 400 非瞬时，装饰器层就不再重试）——
+					// 按 post 口径上抛（含 ErrTransient 标注）。
+					cancel()
+					return nil, e
+				}
+				if resp2.StatusCode == http.StatusOK {
+					resp = resp2
+				} else {
+					code = resp2.StatusCode
+					sn = readSnippet(resp2.Body)
+					_ = resp2.Body.Close()
 				}
 			}
 		}

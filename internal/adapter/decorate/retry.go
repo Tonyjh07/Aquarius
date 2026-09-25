@@ -1,6 +1,7 @@
 // Package decorate 端口装饰器（DESIGN §10 / D14）：横切能力（重试、硬保底截断、审计）
 // 以端口包装器实现，全部在装配根（cmd/aquarius）叠加，不进插件 API、不散落业务代码。
-// 依赖方向：只依赖 internal/port 与标准库，不 import app（裁剪等 app 能力经闭包注入）。
+// 依赖 internal/port 与 domain（conversation/tool 经端口类型引用）+ 标准库；
+// 装饰器不 import app——裁剪等 app 能力经闭包注入。
 package decorate
 
 import (
