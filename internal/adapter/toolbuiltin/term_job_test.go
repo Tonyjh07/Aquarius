@@ -70,9 +70,9 @@ func (f *fakeJobs) Kill(_ context.Context, id port.JobID) error {
 	return nil
 }
 
-// newAllTools 用脚本任务管理器注册全部内置工具（测试缺省）。
+// newAllTools 用脚本任务管理器注册全部内置工具（测试缺省；无沙盒提示）。
 func newAllTools(mem port.MemoryStore, pathOf PathOf) []port.Tool {
-	return New(mem, pathOf, &fakeJobs{})
+	return New(mem, pathOf, &fakeJobs{}, "")
 }
 
 // ---------------------------------------------------------------------------

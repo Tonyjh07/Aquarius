@@ -225,6 +225,34 @@ func TestMemoryFileTargetWithoutPathOf(t *testing.T) {
 	}
 }
 
+// TestRelativePathSuggestsSandbox 相对路径报错附特权沙盒提示（装配根注入沙盒时，
+// 反馈：报错需给出可行动的替代路径）；未注入（空）时保持原消息。
+func TestRelativePathSuggestsSandbox(t *testing.T) {
+	ctx := context.Background()
+	tools := New(newFakeMem(), nil, &fakeJobs{}, "/data/aquarius-sandbox")
+	w := pick(t, tools, "file_write")
+	args := call(`{"path":"rel/x.md","content":"c"}`)
+	_, err := w.Execute(ctx, args)
+	if err == nil {
+		t.Fatal("相对路径应报错")
+	}
+	for _, want := range []string{"绝对路径", "特权沙盒", "/data/aquarius-sandbox"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, 缺 %q", err, want)
+		}
+	}
+	// Target 仍不申报相对路径（提示只出现在执行错误里）。
+	if _, _, ok := w.(port.FileTarget).Target(ctx, args); ok {
+		t.Fatal("Target 不应申报相对路径")
+	}
+	// 未注入沙盒：原消息、不带提示（既有测试缺省路径）。
+	plain := pick(t, newAllTools(newFakeMem(), nil), "file_write")
+	_, err = plain.Execute(ctx, args)
+	if err == nil || strings.Contains(err.Error(), "特权沙盒") {
+		t.Fatalf("空沙盒 err = %v, want 原消息无提示", err)
+	}
+}
+
 // TestFileTools 文件工具：绝对路径强制、读写删、二进制拒绝、搜索。
 func TestFileTools(t *testing.T) {
 	dir := t.TempDir()

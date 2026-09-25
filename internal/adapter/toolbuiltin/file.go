@@ -26,19 +26,25 @@ const (
 )
 
 // requireAbs 要求绝对路径（DESIGN：无 cwd 工作区概念，硬性规则 7）。
-func requireAbs(path string) (string, error) {
+// sandbox 非空时附特权沙盒目录提示——相对路径多半是"想写进当前工作区"，
+// 给调用模型一个立刻可用的绝对路径（审查/反馈：报错里缺少可行动的替代）。
+func requireAbs(sandbox, path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", errors.New("缺少 path")
 	}
 	if !filepath.IsAbs(path) {
-		return "", fmt.Errorf("path 必须是绝对路径（本产品无工作区概念），当前为 %q", path)
+		msg := fmt.Sprintf("path 必须是绝对路径（本产品无工作区概念），当前为 %q", path)
+		if sandbox != "" {
+			msg += fmt.Sprintf("；可改用特权沙盒目录 %q（strict 起写入免确认）", sandbox)
+		}
+		return "", errors.New(msg)
 	}
 	return filepath.Clean(path), nil
 }
 
 // fileRead 读取文本文件。
-type fileRead struct{}
+type fileRead struct{ sandbox string }
 
 func (t *fileRead) Spec() tool.Spec {
 	return tool.Spec{
@@ -56,7 +62,7 @@ func (t *fileRead) Spec() tool.Spec {
 }
 
 func (t *fileRead) Target(_ context.Context, call tool.Call) (string, perm.Op, bool) {
-	p, ok := targetPath(call)
+	p, ok := targetPath(call, t.sandbox)
 	if !ok {
 		return "", 0, false
 	}
@@ -73,7 +79,7 @@ func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
 	}
-	p, err := requireAbs(a.Path)
+	p, err := requireAbs(t.sandbox, a.Path)
 	if err != nil {
 		return tool.Result{}, err
 	}
@@ -111,7 +117,7 @@ func isBinary(data []byte) bool {
 }
 
 // fileList 列目录。
-type fileList struct{}
+type fileList struct{ sandbox string }
 
 func (t *fileList) Spec() tool.Spec {
 	return tool.Spec{
@@ -129,7 +135,7 @@ func (t *fileList) Spec() tool.Spec {
 }
 
 func (t *fileList) Target(_ context.Context, call tool.Call) (string, perm.Op, bool) {
-	p, ok := targetPath(call)
+	p, ok := targetPath(call, t.sandbox)
 	if !ok {
 		return "", 0, false
 	}
@@ -146,7 +152,7 @@ func (t *fileList) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
 	}
-	p, err := requireAbs(a.Path)
+	p, err := requireAbs(t.sandbox, a.Path)
 	if err != nil {
 		return tool.Result{}, err
 	}
@@ -173,7 +179,7 @@ func (t *fileList) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 }
 
 // fileSearch 按文件名子串递归搜索（大小写不敏感）。
-type fileSearch struct{}
+type fileSearch struct{ sandbox string }
 
 func (t *fileSearch) Spec() tool.Spec {
 	return tool.Spec{
@@ -192,7 +198,7 @@ func (t *fileSearch) Spec() tool.Spec {
 }
 
 func (t *fileSearch) Target(_ context.Context, call tool.Call) (string, perm.Op, bool) {
-	p, ok := targetPath(call)
+	p, ok := targetPath(call, t.sandbox)
 	if !ok {
 		return "", 0, false
 	}
@@ -207,7 +213,7 @@ func (t *fileSearch) Execute(ctx context.Context, call tool.Call) (tool.Result, 
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
 	}
-	p, err := requireAbs(a.Path)
+	p, err := requireAbs(t.sandbox, a.Path)
 	if err != nil {
 		return tool.Result{}, err
 	}
@@ -246,7 +252,7 @@ func (t *fileSearch) Execute(ctx context.Context, call tool.Call) (tool.Result, 
 }
 
 // fileWrite 覆盖写文本文件（Risk=Confirm；路径格判定）。
-type fileWrite struct{}
+type fileWrite struct{ sandbox string }
 
 func (t *fileWrite) Spec() tool.Spec {
 	return tool.Spec{
@@ -265,7 +271,7 @@ func (t *fileWrite) Spec() tool.Spec {
 }
 
 func (t *fileWrite) Target(_ context.Context, call tool.Call) (string, perm.Op, bool) {
-	p, ok := targetPath(call)
+	p, ok := targetPath(call, t.sandbox)
 	if !ok {
 		return "", 0, false
 	}
@@ -283,7 +289,7 @@ func (t *fileWrite) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
 	}
-	p, err := requireAbs(a.Path)
+	p, err := requireAbs(t.sandbox, a.Path)
 	if err != nil {
 		return tool.Result{}, err
 	}
@@ -298,7 +304,7 @@ func (t *fileWrite) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 }
 
 // fileDelete 删除文件或空目录（Risk=Confirm；路径格判定）。
-type fileDelete struct{}
+type fileDelete struct{ sandbox string }
 
 func (t *fileDelete) Spec() tool.Spec {
 	return tool.Spec{
@@ -316,7 +322,7 @@ func (t *fileDelete) Spec() tool.Spec {
 }
 
 func (t *fileDelete) Target(_ context.Context, call tool.Call) (string, perm.Op, bool) {
-	p, ok := targetPath(call)
+	p, ok := targetPath(call, t.sandbox)
 	if !ok {
 		return "", 0, false
 	}
@@ -333,7 +339,7 @@ func (t *fileDelete) Execute(ctx context.Context, call tool.Call) (tool.Result, 
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
 	}
-	p, err := requireAbs(a.Path)
+	p, err := requireAbs(t.sandbox, a.Path)
 	if err != nil {
 		return tool.Result{}, err
 	}

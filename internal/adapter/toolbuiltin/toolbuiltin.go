@@ -22,17 +22,19 @@ type PathOf func(name string) (string, bool)
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
 // jobs 为任务端口（term_exec / job_* 用）：装配根必传；测试不关心时可传 nil，
 // 此类调用执行会明确报"未配置任务管理器"而非 panic。
-func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager) []port.Tool {
+// sandbox 为特权沙盒目录（装配根注入）：仅用于 file_* 相对路径报错时给出
+// 可行动的替代提示（D34 反馈；空 = 不提示，测试缺省）。
+func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox string) []port.Tool {
 	return []port.Tool{
 		&memoryList{mem: mem},
 		&memoryRead{mem: mem},
 		&memorySearch{mem: mem},
 		&memoryWrite{mem: mem, pathOf: pathOf},
-		&fileRead{},
-		&fileList{},
-		&fileSearch{},
-		&fileWrite{},
-		&fileDelete{},
+		&fileRead{sandbox: sandbox},
+		&fileList{sandbox: sandbox},
+		&fileSearch{sandbox: sandbox},
+		&fileWrite{sandbox: sandbox},
+		&fileDelete{sandbox: sandbox},
 		&thinkTool{},
 		&termExec{jobs: jobs},
 		&jobStart{jobs: jobs},
@@ -117,14 +119,15 @@ var (
 )
 
 // 解析辅助（Target 申报共用）：取 path 参数并规约为绝对路径。
-func targetPath(call tool.Call) (string, bool) {
+// sandbox 仅供绝对路径校验失败时构造提示（Target 层丢弃错误，Execute 层原样上抛）。
+func targetPath(call tool.Call, sandbox string) (string, bool) {
 	var a struct {
 		Path string `json:"path"`
 	}
 	if err := decodeArgs(call, &a); err != nil {
 		return "", false
 	}
-	p, err := requireAbs(a.Path)
+	p, err := requireAbs(sandbox, a.Path)
 	if err != nil {
 		return "", false
 	}

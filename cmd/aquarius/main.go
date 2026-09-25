@@ -425,7 +425,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	builtinTools := toolbuiltin.New(mergedMem, func(name string) (string, bool) {
 		p, err := mem.Path(name)
 		return p, err == nil
-	}, jobs)
+	}, jobs, sandboxDir)
 	// think 草稿工具可见性（D34）：默认隐藏（model.think_tool 缺省 false），
 	// 配置启用后重启生效——装配期摘除，不做能力探测、运行时零开销。
 	if !cfg.Model.ThinkTool {
