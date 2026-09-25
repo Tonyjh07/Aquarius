@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -469,6 +471,62 @@ func TestInSandboxResolvesSymlinks(t *testing.T) {
 	}
 	if r.inSandbox(filepath.Join(escape, "new", "f.txt")) {
 		t.Fatal("经链接逃逸的尚不存在路径不应命中（尾部段拼回后仍在外部）")
+	}
+}
+
+// TestInSandboxDanglingLink 复现审查发现的 fail-open：悬空链接（目标尚不存在）
+// 经 EvalSymlinks 解析失败，若按字面拼回会被误判为 sandbox 内——必须按链接目标判定。
+func TestInSandboxDanglingLink(t *testing.T) {
+	base := t.TempDir()
+	sbx := filepath.Join(base, "sbx")
+	outside := filepath.Join(base, "outside") // 故意不创建（悬空）
+	if err := os.MkdirAll(sbx, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	dangle := filepath.Join(sbx, "dangle")
+	if err := os.Symlink(outside, dangle); err != nil {
+		t.Skipf("本机无法创建符号链接: %v", err)
+	}
+	r := New(Options{SandboxPath: sbx})
+
+	if r.inSandbox(filepath.Join(dangle, "f.txt")) {
+		t.Fatal("sandbox 内悬空链接指向外部，不应算特权目录")
+	}
+	if r.inSandbox(dangle) {
+		t.Fatal("sandbox 内悬空链接自身不应算特权目录（落点在外）")
+	}
+}
+
+// TestInSandboxJunctionWindows 复现审查发现的 junction 绕过：目录 junction
+// （mklink /J，无需管理员）不被 EvalSymlinks 解析，须按 reparse point 识别。
+// 仅 Windows；创建失败（无权限等）跳过。
+func TestInSandboxJunctionWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("junction 仅存在于 Windows")
+	}
+	base := t.TempDir()
+	sbx := filepath.Join(base, "sbx")
+	outside := filepath.Join(base, "outside")
+	for _, d := range []string{sbx, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	escape := filepath.Join(sbx, "jescape")
+	if err := exec.Command("cmd", "/c", "mklink", "/J", escape, outside).Run(); err != nil {
+		t.Skipf("无法创建 junction: %v", err)
+	}
+	r := New(Options{SandboxPath: sbx})
+	if r.inSandbox(filepath.Join(escape, "f.txt")) {
+		t.Fatal("sandbox 内 junction 指向外部，不应算特权目录")
+	}
+	// 反向：外部 junction 指进 sandbox，落点在特权格内应命中。
+	enter := filepath.Join(base, "jenter")
+	if err := exec.Command("cmd", "/c", "mklink", "/J", enter, sbx).Run(); err != nil {
+		t.Skipf("无法创建 junction: %v", err)
+	}
+	if !r.inSandbox(filepath.Join(enter, "f.txt")) {
+		t.Fatal("外部 junction 指向 sandbox，落点在特权目录内应命中")
 	}
 }
 
