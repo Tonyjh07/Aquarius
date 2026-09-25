@@ -298,6 +298,40 @@ func TestLevelSwitchLive(t *testing.T) {
 // 超时与裁剪
 // ---------------------------------------------------------------------------
 
+// blockTool 无视 ctx 的阻塞工具（模拟卡死的系统调用/慢盘）。
+type blockTool struct {
+	spec tool.Spec
+	d    time.Duration
+}
+
+func (s *blockTool) Spec() tool.Spec { return s.spec }
+
+func (s *blockTool) Execute(context.Context, tool.Call) (tool.Result, error) {
+	time.Sleep(s.d)
+	return tool.Result{OK: true, Output: "late"}, nil
+}
+
+// TestExecuteHardTimeout 工具无视 ctx 阻塞时，runner 仍在超时点回填 OK=false 返回
+// （P1-3：协作式超时对阻塞型 IO 无效 → 旁路 goroutine 硬超时）。
+func TestExecuteHardTimeout(t *testing.T) {
+	r := New(Options{
+		Tools:   []port.Tool{&blockTool{spec: tool.Spec{Name: "blocked", Risk: tool.Safe}, d: time.Second}},
+		Timeout: 30 * time.Millisecond,
+	})
+	start := time.Now()
+	res, err := r.Execute(context.Background(), c("blocked", `{}`))
+	if err != nil {
+		t.Fatalf("超时应作结果回填而非错误: %v", err)
+	}
+	if res.OK || !strings.Contains(res.Err, "超时") {
+		t.Fatalf("res=%+v", res)
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("硬超时未生效: %s", time.Since(start))
+	}
+	// 迟到的结果落进带缓冲通道：无接收方也不阻塞（goroutine 可自行结束）。
+}
+
 // TestExecuteTimeout 慢工具超时 → OK=false 带"超时"；父 ctx 未被误伤。
 func TestExecuteTimeout(t *testing.T) {
 	r := New(Options{

@@ -129,24 +129,42 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		}
 	}
 
-	// 超时执行（per-call 超时；父 ctx 取消原样上抛）。
+	// 硬超时执行（DESIGN §10"工具执行同受 ctx 约束"）：部分工具（阻塞在慢盘/网络盘
+	// 上的文件 IO）不响应 ctx，故在旁路 goroutine 执行并 select 等待——超时立即回填
+	// OK=false 返回，不再等待底层调用；泄漏的 goroutine 随系统调用自行结束，其结果
+	// 写入带缓冲通道，无人接收也不阻塞。
 	runCtx := ctx
 	var cancel context.CancelFunc
 	if r.timeout > 0 {
 		runCtx, cancel = context.WithTimeout(ctx, r.timeout)
 		defer cancel()
 	}
-	res, err := t.Execute(runCtx, call)
-	if err != nil {
-		if runCtx != ctx && errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			return tool.Result{
-				CallID: call.ID,
-				OK:     false,
-				Err:    fmt.Sprintf("工具执行超时（%s）", r.timeout),
-			}, nil
-		}
-		return tool.Result{}, err
+	type outcome struct {
+		res tool.Result
+		err error
 	}
+	done := make(chan outcome, 1)
+	go func() {
+		res, err := t.Execute(runCtx, call)
+		done <- outcome{res, err}
+	}()
+	var got outcome
+	select {
+	case got = <-done:
+		if got.err != nil {
+			// 与 select 超时竞态到达：按 runCtx 判定归类（工具收到的是本次 deadline）。
+			if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+				return timeoutResult(call, r.timeout), nil
+			}
+			return tool.Result{}, got.err
+		}
+	case <-runCtx.Done():
+		if ctx.Err() != nil { // 父 ctx 取消（Ctrl+C）原样上抛
+			return tool.Result{}, ctx.Err()
+		}
+		return timeoutResult(call, r.timeout), nil
+	}
+	res := got.res
 	if res.CallID == "" {
 		res.CallID = call.ID
 	}
@@ -154,6 +172,15 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	res.Output = trim(res.Output, r.maxOut)
 	res.Err = trim(res.Err, r.maxOut)
 	return res, nil
+}
+
+// timeoutResult 超时的结果回填（§10：超时是工具级失败，不中断 Turn）。
+func timeoutResult(call tool.Call, d time.Duration) tool.Result {
+	return tool.Result{
+		CallID: call.ID,
+		OK:     false,
+		Err:    fmt.Sprintf("工具执行超时（%s）", d),
+	}
 }
 
 // decide 权限判定：文件类看路径格，执行类看工具列（D22）。

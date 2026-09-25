@@ -62,7 +62,10 @@ func (t *fileRead) Target(_ context.Context, call tool.Call) (string, perm.Op, b
 	return p, perm.OpRead, true
 }
 
-func (t *fileRead) Execute(_ context.Context, call tool.Call) (tool.Result, error) {
+func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Result{}, err // 入口即响应取消（DESIGN §10：工具执行同受 ctx 约束）
+	}
 	var a struct {
 		Path string `json:"path"`
 	}
@@ -132,7 +135,10 @@ func (t *fileList) Target(_ context.Context, call tool.Call) (string, perm.Op, b
 	return p, perm.OpRead, true
 }
 
-func (t *fileList) Execute(_ context.Context, call tool.Call) (tool.Result, error) {
+func (t *fileList) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Result{}, err
+	}
 	var a struct {
 		Path string `json:"path"`
 	}
@@ -265,7 +271,10 @@ func (t *fileWrite) Target(_ context.Context, call tool.Call) (string, perm.Op, 
 	return p, perm.OpWrite, true
 }
 
-func (t *fileWrite) Execute(_ context.Context, call tool.Call) (tool.Result, error) {
+func (t *fileWrite) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Result{}, err
+	}
 	var a struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -317,7 +326,10 @@ func (t *fileDelete) Target(_ context.Context, call tool.Call) (string, perm.Op,
 	return p, perm.OpWrite, true
 }
 
-func (t *fileDelete) Execute(_ context.Context, call tool.Call) (tool.Result, error) {
+func (t *fileDelete) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Result{}, err
+	}
 	var a struct {
 		Path string `json:"path"`
 	}
