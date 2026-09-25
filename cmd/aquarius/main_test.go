@@ -695,7 +695,7 @@ func TestOpenMemoryEditorCreatesFile(t *testing.T) {
 	}
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "aquarius-no-such-editor-xyz") // 必失败的编辑器：断言文件创建与报错
-	open := openMemoryEditor(mem, strings.NewReader(""), io.Discard, io.Discard)
+	open := openMemoryEditor(mem, nil, strings.NewReader(""), io.Discard, io.Discard)
 
 	if _, err := open(port.GlobalMemoryDoc); err == nil || !strings.Contains(err.Error(), "运行编辑器") {
 		t.Fatalf("err = %v, want 运行编辑器失败", err)

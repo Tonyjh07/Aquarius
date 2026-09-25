@@ -151,6 +151,14 @@ func (u *UI) Close() error {
 	return nil
 }
 
+// Suspend 交出终端给外部全屏程序（/memory 系统编辑器，D24；审查修复：TUI 事件循环
+// 仍在读同一 stdin、渲染器占用 stdout，不释放会与编辑器互相踩踏）。
+// 非 TTY 模式下 tea 未持有终端，Release 为安全空操作。
+func (u *UI) Suspend() error { return u.prog.ReleaseTerminal() }
+
+// Resume 重新接管终端（Suspend 的逆操作；随后事件循环全量重绘）。
+func (u *UI) Resume() error { return u.prog.RestoreTerminal() }
+
 // SetInterrupt 注入 Ctrl+C 行为（装配根在每轮 Turn 前设为取消该轮；原子换，事件循环读）。
 func (u *UI) SetInterrupt(fn func()) {
 	if fn == nil {

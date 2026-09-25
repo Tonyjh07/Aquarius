@@ -45,6 +45,14 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+// terminalSuspend 可选前端能力：交出/收回终端（TUI 前端实现，/memory 系统编辑器
+// 等全屏外部程序用——审查修复：事件循环仍在读同一 stdin，不释放会互相踩踏；
+// repl 无终端态需要管理，不实现即跳过）。
+type terminalSuspend interface {
+	Suspend() error
+	Resume() error
+}
+
 // minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（DESIGN §7.1）。
 const minOutputReserve = 1024
 
@@ -469,7 +477,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Jobs:         jobs,
 		Ingestors:    []port.Ingestor{ingestfile.New(blobs), ingestclip.New(blobs)},
 		UI:           presenter,
-		OpenMemory:   openMemoryEditor(mem, stdin, stdout, stderr),
+		OpenMemory:   openMemoryEditor(mem, ui, stdin, stdout, stderr),
 		Plugins:      hostAdmin{host},
 		ListModels:   func(ctx context.Context) ([]port.ModelInfo, error) { return client.Models(ctx) },
 		PersistModel: persistModel,
@@ -570,7 +578,7 @@ func pickEditor(visual, editor, goos string) []string {
 // openMemoryEditor /memory 的装配实现（D24）：文档名 → 磁盘路径（缺失先建空文件）
 // → 系统编辑器阻塞打开；保存后下次读取即生效。
 // stdio 来自 run() 注入的三流——保持"标准流可注入"的 e2e 契约（不直连 os.Std*）。
-func openMemoryEditor(mem *memoryfs.Store, stdin io.Reader, stdout, stderr io.Writer) func(name string) (string, error) {
+func openMemoryEditor(mem *memoryfs.Store, fe uiFrontend, stdin io.Reader, stdout, stderr io.Writer) func(name string) (string, error) {
 	return func(name string) (string, error) {
 		p, err := mem.Path(name)
 		if err != nil {
@@ -583,6 +591,18 @@ func openMemoryEditor(mem *memoryfs.Store, stdin io.Reader, stdout, stderr io.Wr
 			if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
 				return "", fmt.Errorf("创建记忆文件 %s: %w", p, err)
 			}
+		}
+		// TUI 前端先交出终端再拉起编辑器，返回后收回（审查修复）。
+		sus, _ := fe.(terminalSuspend)
+		if sus != nil {
+			if serr := sus.Suspend(); serr != nil {
+				fmt.Fprintf(stderr, "暂停 TUI: %v\n", serr)
+			}
+			defer func() {
+				if rerr := sus.Resume(); rerr != nil {
+					fmt.Fprintf(stderr, "恢复 TUI: %v\n", rerr)
+				}
+			}()
 		}
 		argv := pickEditor(os.Getenv("VISUAL"), os.Getenv("EDITOR"), runtime.GOOS)
 		cmd := exec.Command(argv[0], append(argv[1:], p)...)
