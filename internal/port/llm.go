@@ -29,6 +29,10 @@ type Sampling struct {
 	Temperature float64
 	MaxTokens   int
 	Stop        []string
+	// ReasoningEffort 推理档位（D34；空 = 不发送，交服务端默认）。
+	ReasoningEffort string
+	// Thinking enable_thinking 布尔（D34；dashscope 系思考开关）；nil = 不发送。
+	Thinking *bool
 }
 
 // TokenBudget 本轮生成预算（超出由装饰器层截断，D14）。

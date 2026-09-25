@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -246,6 +247,169 @@ func TestGenerateFallbackTransportErrorIsTransient(t *testing.T) {
 	}
 	if n < 2 {
 		t.Fatalf("请求次数 = %d, want 2（应已进入兼容重试）", n)
+	}
+}
+
+// TestGenerateSendsReasoningParams D34：reasoning_effort / enable_thinking 只在
+// Sampling 设置时发送，未设置一律省略（缺省零字段变化）。
+func TestGenerateSendsReasoningParams(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	on := true
+	s1, err := c.Generate(context.Background(), port.GenerateRequest{
+		Model:    "m",
+		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Params:   port.Sampling{ReasoningEffort: "high", Thinking: &on},
+	})
+	if err != nil {
+		t.Fatalf("generate1: %v", err)
+	}
+	_ = s1.Close()
+	s2, err := c.Generate(context.Background(), port.GenerateRequest{
+		Model:    "m",
+		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+	})
+	if err != nil {
+		t.Fatalf("generate2: %v", err)
+	}
+	_ = s2.Close()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 {
+		t.Fatalf("requests = %d, want 2", len(bodies))
+	}
+	for _, want := range []string{`"reasoning_effort":"high"`, `"enable_thinking":true`} {
+		if !strings.Contains(bodies[0], want) {
+			t.Fatalf("请求1 缺 %s: %.400s", want, bodies[0])
+		}
+	}
+	for _, bad := range []string{"reasoning_effort", "enable_thinking"} {
+		if strings.Contains(bodies[1], bad) {
+			t.Fatalf("未设置时不应发送 %s: %.400s", bad, bodies[1])
+		}
+	}
+}
+
+// TestGenerateStripsUnsupportedReasoning D34：服务端点名不认 reasoning_effort →
+// 同请求剥离重试（enable_thinking 保留），成功后经 NoteUnsupported 记录；
+// 记录后同客户端进程内记忆，后续请求首包即省略且不重复记录。
+func TestGenerateStripsUnsupportedReasoning(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		n++
+		first := n == 1
+		mu.Unlock()
+		if first {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"Unknown parameter: 'reasoning_effort'"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	var noted []string
+	c, err := New(Config{
+		BaseURL:         srv.URL,
+		NoteUnsupported: func(f string) { noted = append(noted, f) },
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	on := true
+	gen := func() error {
+		s, err := c.Generate(context.Background(), port.GenerateRequest{
+			Model:    "m",
+			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+			Params:   port.Sampling{ReasoningEffort: "high", Thinking: &on},
+		})
+		if err != nil {
+			return err
+		}
+		return s.Close()
+	}
+	if err := gen(); err != nil {
+		t.Fatalf("剥离重试后应成功: %v", err)
+	}
+	if err := gen(); err != nil {
+		t.Fatalf("进程内记忆后应直接成功: %v", err)
+	}
+
+	mu.Lock()
+	if len(bodies) != 3 {
+		t.Fatalf("requests = %d, want 3（剥离重试 1 + 记忆后 1...）", len(bodies))
+	}
+	if !strings.Contains(bodies[0], "reasoning_effort") {
+		t.Fatalf("首包应含 reasoning_effort: %.400s", bodies[0])
+	}
+	if strings.Contains(bodies[1], "reasoning_effort") {
+		t.Fatalf("剥离后不应含 reasoning_effort: %.400s", bodies[1])
+	}
+	if !strings.Contains(bodies[1], "enable_thinking") {
+		t.Fatalf("剥离只针对被点名的字段: %.400s", bodies[1])
+	}
+	if strings.Contains(bodies[2], "reasoning_effort") {
+		t.Fatalf("记录后首包即应省略: %.400s", bodies[2])
+	}
+	mu.Unlock()
+	if len(noted) != 1 || noted[0] != "reasoning_effort" {
+		t.Fatalf("noted = %v, want [reasoning_effort]（只记一次）", noted)
+	}
+}
+
+// TestGenerateEnumErrorNotStripped D34：枚举值错误不是"未知参数"——不剥离、不记录、
+// 照常报 400，不掩盖配置问题。
+func TestGenerateEnumErrorNotStripped(t *testing.T) {
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"Invalid value 'minimal' for parameter 'reasoning_effort'"}}`)
+	}))
+	defer srv.Close()
+
+	var noted []string
+	c, err := New(Config{
+		BaseURL:         srv.URL,
+		NoteUnsupported: func(f string) { noted = append(noted, f) },
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	_, err = c.Generate(context.Background(), port.GenerateRequest{
+		Model:    "m",
+		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Params:   port.Sampling{ReasoningEffort: "minimal"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "状态码 400") {
+		t.Fatalf("err = %v, want 400 上抛", err)
+	}
+	if n != 1 {
+		t.Fatalf("requests = %d, want 1（枚举错误不重试）", n)
+	}
+	if len(noted) != 0 {
+		t.Fatalf("noted = %v, want 空（枚举错误不记录）", noted)
 	}
 }
 

@@ -4,7 +4,9 @@
 // 语义约定：
 //   - Params.Temperature == 0 视作"不发送"（交由服务端默认值）；MaxTokens 同理，
 //     两者与 Budget.MaxOutputTokens 冲突时以 Budget 为准。
-//   - stream_options.include_usage 总是请求；个别兼容服务不认该字段（400）时自动去掉重试一次。
+//   - stream_options.include_usage 总是请求；思考参数 reasoning_effort / enable_thinking 按
+//     Sampling 发送。服务端点名不认的参数（400）**同请求剥离重试一次**，成功后经
+//     NoteUnsupported 记录进 config `model.unsupported_params`（D34，重启后直接省略）。
 //   - 流末尾 usage 映射为 conversation.Usage（CostUSD 恒为 0：适配器不掌握单价，
 //     成本核算由装饰器/上层按 ModelInfo 计算，D14）。
 //   - 请求时长由调用方 ctx 控制，故默认 http.Client 不设 Timeout（流式不能设整体超时）。
@@ -23,6 +25,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm/tokenizer"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -42,6 +45,12 @@ type Config struct {
 	// Tokenizer 本地 tokenizer.json 路径（文件或目录；空 = 不启用精确计数，
 	// app 回落通用估算——三级计数链 D26②/③）。
 	Tokenizer string
+	// UnsupportedParams 启动注入的"服务端已知不认"参数名（D34：由上一次 400 剥离
+	// 成功后记录进 config，重启生效）；命中者编码时直接省略。
+	UnsupportedParams []string
+	// NoteUnsupported 剥离成功后的记录回调（装配根写回 config `model.unsupported_params`）；
+	// nil = 只在本进程内记住。
+	NoteUnsupported func(field string)
 	// HTTPClient 为 nil 时使用无整体超时的默认客户端（由 ctx 控制时长）。
 	HTTPClient *http.Client
 }
@@ -52,6 +61,9 @@ type Client struct {
 	key  string
 	hc   *http.Client
 	tok  *tokenizer.Tokenizer // 配置了本地 tokenizer 时非 nil（D26②）
+	mu   sync.Mutex           // 保护 omit（记录回调与编码并发取快照）
+	omit map[string]bool      // 服务端已知不认的参数（启动注入 + 本次运行记录，D34）
+	note func(field string)
 }
 
 var _ port.TokenCounter = (*Client)(nil)
@@ -75,6 +87,13 @@ func New(cfg Config) (*Client, error) {
 		base: strings.TrimRight(raw, "/"),
 		key:  strings.TrimSpace(cfg.APIKey),
 		hc:   hc,
+		omit: make(map[string]bool, len(cfg.UnsupportedParams)),
+		note: cfg.NoteUnsupported,
+	}
+	for _, f := range cfg.UnsupportedParams {
+		if f = strings.TrimSpace(f); f != "" {
+			c.omit[f] = true
+		}
 	}
 	if p := strings.TrimSpace(cfg.Tokenizer); p != "" {
 		tok, terr := tokenizer.Load(p)
@@ -103,7 +122,7 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, errors.New("llm: model 为空")
 	}
-	body, err := encodeChatRequest(req, true)
+	body, err := encodeChatRequest(req, true, c.omitCopy())
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +138,16 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 		sn := readSnippet(resp.Body)
 		_ = resp.Body.Close()
 		resp = nil
-		if bytes.Contains([]byte(sn), []byte("stream_options")) {
-			// 部分兼容服务不认 stream_options：去掉重试一次。
-			if plain, e := encodeChatRequest(req, false); e == nil {
+		// D34：服务端点名不认的参数 → 本次剥离重试，成功后记录（装配根写回 config，
+		// 以后启动直接省略）。stream_options 的兼容回退并入同一机制（历史口径：报错
+		// 片段出现该名即剥，各家措辞不一）。
+		if stripped := unsupportedFields(sn, req, true); len(stripped) > 0 {
+			omit := c.omitCopy()
+			for _, f := range stripped {
+				omit[f] = true
+			}
+			include := !containsStripped(stripped, "stream_options")
+			if plain, e := encodeChatRequest(req, include, omit); e == nil {
 				resp2, e := c.post(streamCtx, chatPath, plain)
 				if e != nil {
 					// 第二次 post 的传输层错误不得被吞成首轮状态码（审查修复：
@@ -132,6 +158,7 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 				}
 				if resp2.StatusCode == http.StatusOK {
 					resp = resp2
+					c.markUnsupported(stripped...)
 				} else {
 					code = resp2.StatusCode
 					sn = readSnippet(resp2.Body)
@@ -149,6 +176,81 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 		}
 	}
 	return newStream(streamCtx, cancel, resp.Body), nil
+}
+
+// unsupportedFields 判定报错片段点名了哪些本次实际发送、但服务端不认的参数（D34）。
+// 思考参数要求"字段名 + 未知参数措辞"同时出现——枚举值错误
+// （如 "invalid value 'x' for reasoning_effort"）不匹配，照常报错、不掩盖配置问题；
+// stream_options 保留历史的"仅出现即剥"口径（各家报错措辞差异大）。
+func unsupportedFields(sn string, req port.GenerateRequest, includeUsage bool) []string {
+	var out []string
+	if includeUsage && strings.Contains(sn, "stream_options") {
+		out = append(out, "stream_options")
+	}
+	if !unknownParamPhrase(sn) {
+		return out
+	}
+	if req.Params.ReasoningEffort != "" && strings.Contains(sn, "reasoning_effort") {
+		out = append(out, "reasoning_effort")
+	}
+	if req.Params.Thinking != nil && strings.Contains(sn, "enable_thinking") {
+		out = append(out, "enable_thinking")
+	}
+	return out
+}
+
+// unknownParamPhrase 报错是否带"未知/不支持参数"措辞（中英常见措辞）。
+func unknownParamPhrase(sn string) bool {
+	s := strings.ToLower(sn)
+	for _, kw := range []string{
+		"unknown", "unrecognized", "unsupported", "not supported",
+		"unexpected", "extra input", "not permitted", "not allowed",
+		"不支持", "未支持", "无法识别",
+	} {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsStripped 剥离清单内是否含某字段。
+func containsStripped(fields []string, want string) bool {
+	for _, f := range fields {
+		if f == want {
+			return true
+		}
+	}
+	return false
+}
+
+// omitCopy 剥离名单快照（map 只在锁内增删，读侧拿副本，避免与记录回调竞争）。
+func (c *Client) omitCopy() map[string]bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[string]bool, len(c.omit))
+	for k, v := range c.omit {
+		out[k] = v
+	}
+	return out
+}
+
+// markUnsupported 剥离成功后登记新字段（进程内记忆 + 回调写回 config，D34）。
+func (c *Client) markUnsupported(fields ...string) {
+	c.mu.Lock()
+	var fresh []string
+	for _, f := range fields {
+		if !c.omit[f] {
+			c.omit[f] = true
+			fresh = append(fresh, f)
+		}
+	}
+	c.mu.Unlock()
+	if c.note != nil {
+		for _, f := range fresh {
+			c.note(f)
+		}
+	}
 }
 
 // Models 拉取 /models 列表；能力与单价未知，仅填 Name（DESIGN §5.1）。
@@ -234,6 +336,10 @@ type chatRequest struct {
 	Temperature   float64            `json:"temperature,omitempty"` // 0 = 不发送
 	MaxTokens     int                `json:"max_tokens,omitempty"`  // 0 = 不发送
 	Stop          []string           `json:"stop,omitempty"`
+	// ReasoningEffort 推理档位（D34；空 = 不发送）。
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// EnableThinking 思考开关（D34；dashscope 系）；nil = 不发送。
+	EnableThinking *bool `json:"enable_thinking,omitempty"`
 }
 
 type chatStreamOptions struct {
@@ -280,14 +386,15 @@ type chatToolFunc struct {
 }
 
 // encodeChatRequest 把 GenerateRequest 编码为 SSE 流式请求体。
-// includeUsage=false 时省略 stream_options（兼容性回退用）。
-func encodeChatRequest(req port.GenerateRequest, includeUsage bool) ([]byte, error) {
+// includeUsage=false 时省略 stream_options（兼容性回退用）；omit 命中的参数一律不发
+// （D34：服务端已知不认的字段，启动注入或本次 400 记录）。nil omit 不省略。
+func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[string]bool) ([]byte, error) {
 	out := chatRequest{
 		Model:    req.Model,
 		Stream:   true,
 		Messages: make([]chatMessage, 0, len(req.Messages)),
 	}
-	if includeUsage {
+	if includeUsage && !omit["stream_options"] {
 		out.StreamOptions = &chatStreamOptions{IncludeUsage: true}
 	}
 	for _, m := range req.Messages {
@@ -305,6 +412,12 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool) ([]byte, err
 	}
 	out.Temperature = req.Params.Temperature
 	out.Stop = req.Params.Stop
+	if req.Params.ReasoningEffort != "" && !omit["reasoning_effort"] {
+		out.ReasoningEffort = req.Params.ReasoningEffort
+	}
+	if req.Params.Thinking != nil && !omit["enable_thinking"] {
+		out.EnableThinking = req.Params.Thinking
+	}
 	// 本轮生成预算优先于采样参数（DESIGN §5.1 Budget）。
 	out.MaxTokens = req.Budget.MaxOutputTokens
 	if out.MaxTokens == 0 {
