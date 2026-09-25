@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
 // 传输与风险的合法取值（D30/§6.3、§8）。
@@ -82,6 +84,30 @@ func (s State) IsEnabled() bool { return s.Enabled == nil || *s.Enabled }
 
 // HasGranted capability 是否已授权。
 func (s State) HasGranted(cap string) bool { return slices.Contains(s.Granted, cap) }
+
+// Decl 一个 server 的完整声明：config `mcpServers` 条目或 `plugin.json` 的合并产物
+// （D31 声明与状态分离）。Source 标注发现来源，供 /plugin list 展示。
+type Decl struct {
+	Name string `json:"name"`
+	MCPConfig
+	Capabilities []string `json:"capabilities,omitempty"`
+	Risk         string   `json:"risk,omitempty"`
+	Source       string   `json:"source"` // "config" | "plugins"
+}
+
+// 发现来源取值（/plugin list 展示）。
+const (
+	SourceConfig  = "config"  // config mcpServers 条目
+	SourcePlugins = "plugins" // ~/.aquarius/plugins/<name>/plugin.json
+)
+
+// ToolRisk 声明风险 → 工具风险（domain/tool；confirm 逐次走 Confirmer，§9）。
+func (d Decl) ToolRisk() tool.Risk {
+	if d.Risk == RiskConfirm {
+		return tool.Confirm
+	}
+	return tool.Safe
+}
 
 // Manifest `plugin.json`（§6.3）：与 config `mcpServers` 同为声明来源（D31）。
 type Manifest struct {
