@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -185,7 +186,7 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 
 	case port.ErrorEvent:
 		u.flushDelta()
-		_, err := fmt.Fprintf(u.out, "error: %v\n", e.Err)
+		_, err := fmt.Fprintf(u.out, "error: %s\n", sanitizeControl(e.Err.Error()))
 		return err
 
 	case port.NoticeEvent:
@@ -210,11 +211,63 @@ func (u *UI) flushDelta() {
 }
 
 // preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。
+// 先剥控制序列与非法 UTF-8（审查修复：Windows cmd 输出常为 GBK——其中 0x9B 是
+// 8 位 C1 CSI 引导符，直通终端会被解析成 ANSI 擦除序列，把转写区前几行清掉；
+// 与 uitui.preview 同算法，两前端出口一致）。
 func preview(b []byte) string {
-	s := strings.TrimSpace(string(b))
+	s := strings.TrimSpace(sanitizeControl(string(b)))
 	r := []rune(s)
 	if len(r) > toolPreviewLen {
 		return string(r[:toolPreviewLen]) + "…"
 	}
 	return s
+}
+
+// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。
+// 算法与 internal/adapter/uitui、notify 的同名函数一致——三处分别守护通知面与
+// 两个前端的转写面。
+func sanitizeControl(s string) string {
+	var b strings.Builder
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		if r == 0x1b && i+1 < len(rs) {
+			switch rs[i+1] {
+			case '[': // CSI：吞至终结字节（0x40–0x7E）
+				j := i + 2
+				for j < len(rs) && (rs[j] < 0x40 || rs[j] > 0x7e) {
+					j++
+				}
+				if j < len(rs) {
+					i = j
+				} else {
+					i = len(rs) - 1
+				}
+				continue
+			case ']': // OSC：吞至 BEL 或 ESC\
+				j := i + 2
+				for j < len(rs) && rs[j] != 0x07 && !(rs[j] == 0x1b && j+1 < len(rs) && rs[j+1] == '\\') {
+					j++
+				}
+				if j < len(rs) {
+					if rs[j] == 0x1b {
+						i = j + 1 // ST 的 ESC\ 两字符都要跳过
+					} else {
+						i = j
+					}
+				} else {
+					i = len(rs) - 1
+				}
+				continue
+			default: // 其余两字符转义
+				i++
+				continue
+			}
+		}
+		if r < 0x20 && r != '\n' && r != '\t' || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

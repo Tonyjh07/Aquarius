@@ -192,6 +192,19 @@ func TestEmitLongPreviewTruncated(t *testing.T) {
 	}
 }
 
+// TestPreviewStripsGBKInvalidUTF8 工具结果预览剥非法 UTF-8（Windows cmd 默认
+// OEM 代码页输出），与 uitui.preview 同口径。
+func TestPreviewStripsGBKInvalidUTF8(t *testing.T) {
+	in := []byte{'d', 'i', 'r', ' ', 0xc4, 0xe3, 0xba, 0xc3, '\r', '\n', 'o', 'k'}
+	got := preview(in)
+	if strings.ContainsRune(got, '\r') || strings.ContainsRune(got, 0xfffd) {
+		t.Fatalf("preview = %q, want 无 CR/无替换符", got)
+	}
+	if !strings.Contains(got, "dir") || !strings.Contains(got, "ok") {
+		t.Fatalf("preview = %q, 正常 ASCII 应保留", got)
+	}
+}
+
 // emit 触发 Emit 并断言无错。
 func emit(t *testing.T, ui *UI, ev port.Event) {
 	t.Helper()
