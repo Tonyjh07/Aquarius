@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -175,13 +176,9 @@ func (s *Store) Write(ctx context.Context, doc port.MemoryDoc) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return fmt.Errorf("memoryfs: 创建目录: %w", err)
 	}
-	tmp := file + ".tmp"
-	if err := os.WriteFile(tmp, []byte(doc.Content), 0o644); err != nil {
-		return fmt.Errorf("memoryfs: 写入 %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, file); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("memoryfs: 换入 %s: %w", file, err)
+	// 唯一临时文件 + 原子换入：并发写互不踩踏，覆盖沿用既有权限位（§14 遗留）。
+	if err := atomicfile.WriteFile(file, []byte(doc.Content), 0o644); err != nil {
+		return fmt.Errorf("memoryfs: 写入 %s: %w", file, err)
 	}
 	return nil
 }

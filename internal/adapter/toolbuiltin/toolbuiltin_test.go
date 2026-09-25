@@ -254,8 +254,8 @@ func TestFileTools(t *testing.T) {
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("文件未落盘: %v", err)
 	}
-	if _, err := os.Stat(target + ".aquarius.tmp"); !os.IsNotExist(err) {
-		t.Fatal("残留 .tmp")
+	if m, _ := filepath.Glob(target + "*"); len(m) > 1 {
+		t.Fatalf("残留临时文件: %v", m)
 	}
 	r := pick(t, tools, "file_read")
 	res, err := r.Execute(ctx, call(`{"path":`+js(target)+`}`))

@@ -138,8 +138,8 @@ func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
 	if limits["max_turns"] != float64(8) || limits["compact_threshold"] != 0.7 {
 		t.Fatalf("limits 数值类型漂移: %v", limits)
 	}
-	if _, err := os.Stat(cfgPath + ".tmp"); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("不应残留 .tmp: %v", err)
+	if m, _ := filepath.Glob(cfgPath + ".*"); len(m) > 0 {
+		t.Fatalf("不应残留临时文件: %v", m)
 	}
 }
 

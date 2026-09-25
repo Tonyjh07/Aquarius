@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
@@ -154,13 +155,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if rerr != nil {
 			return fmt.Errorf("编码 config: %w", rerr)
 		}
-		tmp := cfgPath + ".tmp"
-		if rerr := os.WriteFile(tmp, append(out, '\n'), 0o644); rerr != nil {
-			return fmt.Errorf("写入 %s: %w", tmp, rerr)
-		}
-		if rerr := os.Rename(tmp, cfgPath); rerr != nil {
-			_ = os.Remove(tmp)
-			return fmt.Errorf("换入 %s: %w", cfgPath, rerr)
+		// 唯一临时文件 + 原子换入：无半截文件，覆盖沿用既有权限位（§14 遗留）。
+		if rerr := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); rerr != nil {
+			return fmt.Errorf("写入 %s: %w", cfgPath, rerr)
 		}
 		lvl.Set(l) // 工具链路活等级（D22 执行接入）
 		return nil

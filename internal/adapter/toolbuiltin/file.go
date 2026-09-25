@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
@@ -289,13 +290,9 @@ func (t *fileWrite) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return tool.Result{}, fmt.Errorf("创建父目录: %w", err)
 	}
-	tmp := p + ".aquarius.tmp"
-	if err := os.WriteFile(tmp, []byte(a.Content), 0o644); err != nil {
+	// 唯一临时文件 + 原子换入：并发写互不踩踏，覆盖沿用既有权限位（§14 遗留）。
+	if err := atomicfile.WriteFile(p, []byte(a.Content), 0o644); err != nil {
 		return tool.Result{}, fmt.Errorf("写入: %w", err)
-	}
-	if err := os.Rename(tmp, p); err != nil {
-		_ = os.Remove(tmp)
-		return tool.Result{}, fmt.Errorf("换入: %w", err)
 	}
 	return okResult(fmt.Sprintf("已写入 %s（%d 字符）", p, len([]rune(a.Content)))), nil
 }
