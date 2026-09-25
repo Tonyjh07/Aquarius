@@ -36,6 +36,7 @@ func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox stri
 		&fileWrite{sandbox: sandbox},
 		&fileDelete{sandbox: sandbox},
 		&thinkTool{},
+		&sleepTool{},
 		&termExec{jobs: jobs},
 		&jobStart{jobs: jobs},
 		&jobList{jobs: jobs},
@@ -110,6 +111,7 @@ var (
 	_ port.Tool       = (*fileDelete)(nil)
 	_ port.FileTarget = (*fileDelete)(nil)
 	_ port.Tool       = (*thinkTool)(nil)
+	_ port.Tool       = (*sleepTool)(nil)
 	_ port.Tool       = (*termExec)(nil)
 	_ port.Tool       = (*jobStart)(nil)
 	_ port.Tool       = (*jobList)(nil)

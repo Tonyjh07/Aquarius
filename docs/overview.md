@@ -81,7 +81,7 @@ Root(实节点, ID=会话ID, role=root)
 | `ConversationStore` | storejson | **M0 ✓** | in-memory |
 | `Presenter` / `Prompter` | repl（行式）+ uitui（TUI，D33） | repl **M0 ✓** / uitui **M4 ✓** | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | **M0 ✓** | 固定 / 递增 / map |
-| `Tool` | toolbuiltin（memory_*/file_*/think + M3 的 term_exec/job_*）+ app 的 context_compact + mcpgate 的 `mcp:<server>:<tool>` | **M2 ✓**（M3 扩充，M4+MCP） | fake tool |
+| `Tool` | toolbuiltin（memory_*/file_*/think/sleep + M3 的 term_exec/job_*）+ app 的 context_compact + mcpgate 的 `mcp:<server>:<tool>` | **M2 ✓**（M3 扩充，M4+MCP） | fake tool |
 | `ToolRunner` | toolrun（权限判定/确认/超时/裁剪，D25） | **M2 ✓** | fake runner |
 | `Confirmer` | repl 确认（读行 y/N；`-yes` 全免）；uitui 确认对话（D33） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs（全局 memories.md + 会话记忆，D23） | **M2 ✓** | in-memory |

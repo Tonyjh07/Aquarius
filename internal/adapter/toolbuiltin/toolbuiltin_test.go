@@ -97,6 +97,7 @@ func TestNewRegistersAllTools(t *testing.T) {
 		"file_read":    tool.Safe, "file_list": tool.Safe, "file_search": tool.Safe,
 		"file_write": tool.Confirm, "file_delete": tool.Confirm,
 		"think":     tool.Safe,
+		"sleep":     tool.Safe,
 		"term_exec": tool.Confirm, "job_start": tool.Confirm,
 		"job_list": tool.Safe, "job_status": tool.Safe, "job_logs": tool.Safe, "job_kill": tool.Safe,
 	}
