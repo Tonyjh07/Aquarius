@@ -36,8 +36,9 @@ var (
 	_ port.Confirmer = (*UI)(nil)
 )
 
-// inputCap 输入缓冲容量：打字快于 REPL 消费时暂存（超出忽略并提示，不阻塞事件循环）。
-const inputCap = 16
+// inputCap 输入缓冲容量：打字/管道行快于 REPL 消费时暂存（审查修复：16 在
+// 长 Turn 的脚本输入下偏小，放大到 256；仍溢出时提示"未执行"而非静默丢弃）。
+const inputCap = 256
 
 // Status 状态行数据（View 时经回调现取，反映 /model、/permission 热切换）。
 type Status struct {

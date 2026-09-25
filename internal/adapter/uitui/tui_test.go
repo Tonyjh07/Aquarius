@@ -365,6 +365,54 @@ func TestStatusLine(t *testing.T) {
 	}
 }
 
+// TestSubmitOverflowMarksNotExecuted 审查修复：缓冲满时明确标注"未执行"
+// （旧行为先入转写再静默丢弃，制造"已执行"错觉）；缓冲吸收后恢复。
+func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
+	m, u := newTestModel(t)
+	for i := 0; i < inputCap; i++ {
+		m.submit("x")
+	}
+	m.submit("丢弃这行")
+	got := m.View()
+	if !strings.Contains(got, "丢弃这行") {
+		t.Fatalf("View 缺输入行: %q", got)
+	}
+	if !strings.Contains(got, "此行未执行") {
+		t.Fatalf("View 缺未执行标注: %q", got)
+	}
+	// 消费一行后恢复。
+	<-u.inCh
+	before := strings.Count(m.View(), "此行未执行")
+	m.submit("恢复这行")
+	if strings.Count(m.View(), "此行未执行") != before {
+		t.Fatal("恢复后不应再标注未执行")
+	}
+}
+
+// TestConfirmAnswerEditing 审查修复：确认态的退格/Ctrl+U 编辑应答缓冲
+// （旧实现误改输入框），应答缓冲同受上限约束。
+func TestConfirmAnswerEditing(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.Update(confirmMsg{prompt: "p", reply: make(chan bool, 1)})
+	m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("yes")})
+	m.key(tea.KeyMsg{Type: tea.KeyBackspace})
+	if string(m.confirm.answer) != "ye" {
+		t.Fatalf("answer = %q, want ye（退格作用于应答缓冲）", m.confirm.answer)
+	}
+	if len(m.input) != 0 {
+		t.Fatalf("input = %q, want 不受影响", m.input)
+	}
+	m.key(tea.KeyMsg{Type: tea.KeyCtrlU})
+	if len(m.confirm.answer) != 0 {
+		t.Fatalf("answer = %q, want Ctrl+U 清空应答", m.confirm.answer)
+	}
+	// 超长粘贴截断在上限内。
+	m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(strings.Repeat("z", inputRuneCap+100))})
+	if len(m.confirm.answer) > inputRuneCap {
+		t.Fatalf("answer len = %d, want <= %d", len(m.confirm.answer), inputRuneCap)
+	}
+}
+
 // TestRenderMDFallback 无渲染器时原文回退。
 func TestRenderMDFallback(t *testing.T) {
 	m, _ := newTestModel(t)

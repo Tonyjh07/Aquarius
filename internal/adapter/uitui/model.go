@@ -151,9 +151,19 @@ func (m *model) key(msg tea.KeyMsg) *model {
 		}
 		return m
 	case tea.KeyCtrlU:
+		if m.confirm != nil {
+			m.confirm.answer = m.confirm.answer[:0]
+			return m
+		}
 		m.input = m.input[:0]
 		return m
 	case tea.KeyBackspace:
+		if m.confirm != nil {
+			if len(m.confirm.answer) > 0 {
+				m.confirm.answer = m.confirm.answer[:len(m.confirm.answer)-1]
+			}
+			return m
+		}
 		if len(m.input) > 0 {
 			m.input = m.input[:len(m.input)-1]
 		}
@@ -180,7 +190,10 @@ func (m *model) key(msg tea.KeyMsg) *model {
 	}
 	if len(msg.Runes) > 0 {
 		if m.confirm != nil {
-			m.confirm.answer = append(m.confirm.answer, msg.Runes...)
+			// 确认应答缓冲同受上限约束（审查修复：无上限粘贴可撑爆渲染）。
+			if len(m.confirm.answer)+len(msg.Runes) <= inputRuneCap {
+				m.confirm.answer = append(m.confirm.answer, msg.Runes...)
+			}
 			return m
 		}
 		if len(m.input)+len(msg.Runes) <= inputRuneCap {
@@ -190,7 +203,9 @@ func (m *model) key(msg tea.KeyMsg) *model {
 	return m
 }
 
-// submit 提交一行：确认对话优先应答，空行忽略，其余入转写并投给 Next。
+// submit 提交一行：确认对话优先应答，空行忽略，其余先投递再入转写。
+// 投递失败（缓冲满）时明确标注"未执行"——审查修复：旧行为先入块再丢弃，
+// 转写区会把没执行的输入显示成已提交，制造"已执行"错觉。
 func (m *model) submit(text string) {
 	if m.confirm != nil {
 		m.replyConfirm(isYes(text))
@@ -201,12 +216,12 @@ func (m *model) submit(text string) {
 		return
 	}
 	m.pushHistory(line)
-	m.add(blockUser, line)
-	m.scroll = 0
 	select {
 	case m.u.inCh <- parseInput(line):
+		m.add(blockUser, line)
 	default:
-		m.add(blockNotice, "[notice] 输入缓冲已满，已忽略一行")
+		m.add(blockUser, line)
+		m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
 	}
 }
 
