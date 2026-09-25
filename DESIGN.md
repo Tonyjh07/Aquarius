@@ -495,7 +495,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | | Tier-1 进程内（Go） | Tier-2 进程外 = **MCP server** |
 |---|---|---|
 | 契约 | `pluginapi/v1` Go 接口（独立 go.mod，严格 semver） | MCP 协议（stdio / streamable HTTP） |
-| 内核侧接入 | `adapter/plugingo` | `adapter/mcpgate`（MCP client → port 实现） |
+| 内核侧接入 | `adapter/plugingo`（**D29：后移出 M4**，见 §14） | `adapter/mcpgate`（MCP client → port 实现，M4） |
 | 发现 | main 显式注册 | config `mcpServers` + `~/.aquarius/plugins/*/plugin.json` |
 | 装载 | 编译期 | 运行期 enable/disable，不重编 |
 | 隔离 | 同进程 | 独立进程（崩溃不带崩内核） |
@@ -529,14 +529,19 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 }
 ```
 
+传输两种（M4，D30）：`stdio`（command/args/env）与 `streamable-http`（`url` + 可选 `headers`，
+值同样允许 `secret:<环境变量名>` 引用，经 `port.Secrets` 在请求时注入、不落明文）；
+config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
+
 ### 6.4 插件宿主职责（`internal/plugin`）
 
-1. **发现**：扫描 `plugins/*/plugin.json` + config 启停；Tier-1 由 main 注册。
+1. **发现**：扫描 `plugins/*/plugin.json` + config 启停（启停与授权状态统一存 config `plugins.<name>`，两种发现源共用，D31）；Tier-1 由 main 注册。
 2. **校验**：manifest schema、API 版本协商、provides 自检。
-3. **授权（grant）**：`capabilities` 首次使用弹确认 → 写入 config allowlist；`risk=confirm` 工具逐次走 `Confirmer`；
+3. **授权（grant）**：`capabilities` 首次使用弹确认 → 写入 config `plugins.<name>.granted`（D31）；
+   `risk=confirm` 工具逐次走 `Confirmer`；
    密钥经 `Secrets` 按名注入插件环境，不落明文配置。
-4. **生命周期**：按需懒加载 → 健康检查 → 崩溃自动重启（限次）→ 关机优雅 `shutdown`。
-5. **可观测**：记录每个调用的 插件名/耗时/结果状态，供 `/plugin` 命令查看。
+4. **生命周期**：按需懒加载 → 健康检查 → 崩溃自动重启（限次 + 退避）→ 关机优雅 `shutdown`。
+5. **可观测**：记录每个调用的 插件名/耗时/结果状态，供 `/plugin` 命令查看（同源数据进审计日志，§8）。
 
 ---
 
@@ -599,7 +604,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 压缩失败回退**最旧裁剪**（保 persona 与最近、丢中间，产出可发送的请求——
 不得留下孤立 tool 结果，并在 UI 提示"已省略 k 条"）；
-超预算的硬保底由截断装饰器执行（M4，D14）。不做向量化、不进记忆文档。
+超预算的硬保底由截断装饰器执行（M4，D14：装饰器在装配根叠加，裁剪/估算逻辑由 `app`
+导出注入，装饰器不反向依赖 app）。不做向量化、不进记忆文档。
 
 ### 7.2 摄取 / 输出管线
 
@@ -627,9 +633,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/rm <id>` | Prune 剪子树（二次确认） |
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
-| `/model [name]` | 查看/切换模型 |
+| `/model [name]` | 无参：列 `LLM.Models()` 可用模型 + 当前模型/能力/单价；有参：Agent 内热切换并写回 config（D32，同 `/permission` 模式） |
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
-| `/plugin [list\|enable\|disable]` | 插件管理 |
+| `/plugin [list\|enable\|disable]` | MCP 插件管理（D31）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效 |
+| `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
 ---
@@ -643,6 +650,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 ├── memories.md                # 全局记忆（markdown 单文件，D23）
 ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
 ├── jobs/<jobID>.log           # 后台任务日志
+├── audit.log                  # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
 ├── attachments/<sha256>       # 内容寻址附件
 ├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak）
 └── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
@@ -669,7 +677,17 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
       "env": { "SERPER_API_KEY": "secret:SERPER_API_KEY" },
       "capabilities": ["network"],
       "risk": "safe"
+    },
+    "docs": {                     // streamable HTTP 形态（M4，D30）
+      "transport": "streamable-http",
+      "url": "https://mcp.example.com",
+      "headers": { "Authorization": "secret:DOCS_MCP_AUTH" },
+      "capabilities": ["network"],
+      "risk": "confirm"
     }
+  },
+  "plugins": {                    // 启停与授权状态，两种发现源共用（D31；声明仍在 mcpServers/plugin.json）
+    "web-search": { "enabled": true, "granted": ["network"] }
   },
   "permissions": { "level": "strict" },
   "limits": {
@@ -735,7 +753,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - **装配级故障**：`ToolRunner.Execute` 返回 `error`（确认器缺失/报错、父 ctx 取消）——
   为剩余调用补 `OK=false` 中断结果（保持 tool_calls 一一配对、树仍可装配）后中止本轮，
   不回填让模型空转；取消按"取消提交"收场（返回 nil，主循环经 ctx 收尾）。
-- **模型/网络错误**：装饰器层重试（幂等 Generate 的瞬时错误，限次 + 退避）；仍失败则 `Outcome: error` 提交并上抛 UI。
+- **模型/网络错误**：装饰器层重试（幂等 Generate 的**瞬时错误**——适配器以 `port.ErrTransient`
+  哨兵标注 429/5xx/连接中断，装饰器限次 + 指数退避，ctx 取消一律不重试）；仍失败则 `Outcome: error` 提交并上抛 UI。
 - **并发**：单会话内 Turn 串行（Head 唯一）；多会话并行安全（一会话一文件）；Job 自管并发。
 
 ---
@@ -762,7 +781,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
-| **M4 MCP 与 TUI** | mcpgate + grant + `/plugin`、`/model`、bubbletea TUI（多模态呈现）、装饰器链（重试/截断/审计） | 接入任一现成 MCP server 全链路可用；崩溃重启与授权拒绝行为符合 §6.4 |
+| **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；遗留项清零后全门禁通过 |
 
 ---
 
@@ -796,16 +815,26 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D24 | `/memory` = 系统编辑器直开记忆文件（无子命令） | `list\|show\|edit\|rm` 子命令集（编辑器即最强编辑 UI，命令面保持极简） |
 | D25 | ToolRunner 落位 `internal/adapter/toolrun`，文件类权限经可选接口 `FileTarget` 由工具**自申报**目标路径 | 按工具名前缀硬编码分类（内核腐化、三方工具无法参与）；往 `tool.Spec` 塞权限字段（污染模型可见的工具声明） |
 | D26 | token 计数**三级链**：①服务端实测 usage（已发生的）→ ②适配器可选 `TokenCounter`（本地 tokenizer.json / count_tokens API，覆盖估算）→ ③通用字符估算 + 服务端 usage 自校准；tokenizer 经 `model.tokenizer` 指路径**启动时加载、错误 fail-fast** | 通用估算一刀切（已可拿到精确值时不拿）；词表 embed 进二进制（+数 MB 且换模型即失效）；实现 Jinja chat_template 渲染（要引模板引擎，且结构开销用常数已够准）；强推 count_tokens API（openai-compatible 普遍没有） |
-| D27 | **M3 范围调整**：M3 落 JobManager + blobfs + Ingestor 管线 + notify 输出器；REPL 输入命令面（`/attach`/`/clip`/`/mic`）与 ASR/TTS/麦克风移入 §14 backlog，随 M4 TUI（或独立里程碑）落地 | 硬凑"语音提问 → TTS 播报"验收（REPL 行式输入无拖拽/语音按钮；语音适配器选型未定，先定契约后装实现） |
+| D27 | **M3 范围调整**：M3 落 JobManager + blobfs + Ingestor 管线 + notify 输出器；REPL 输入命令面（`/attach`/`/clip`/`/mic`）与 ASR/TTS/麦克风移入 §14 backlog，随 TUI 后续迭代或 GUI 落地（M4 TUI 为 MVP 不含，D33） | 硬凑"语音提问 → TTS 播报"验收（REPL 行式输入无拖拽/语音按钮；语音适配器选型未定，先定契约后装实现） |
 | D28 | 输出器扇出点 = 装配根的 **Presenter 装饰器**：包住实际 UI，收到已完成的 assistant `CommittedEvent`（`Outcome=done`）后逐个调 `OutputAdapter.Deliver`，失败只记日志 | app 内直连输出器（内核直连具体实现违反 D13；扇出属横切，按 D14 走装配根装饰器） |
+| D29 | **Tier-1 Go 插件后移出 M4**（`pluginapi/v1` + `adapter/plugingo` 移 §14，随后续里程碑落）；M4 只做 Tier-2 MCP | M4 双线并进（§12 验收只针对 MCP；Tier-1 会挤占 TUI、装饰器与审查遗留的容量） |
+| D30 | MCP 客户端用官方 **`modelcontextprotocol/go-sdk`**（纯 Go，stdio + streamable HTTP 双传输）；引入前先 spike 实测，API 不合则回退自写 stdio JSON-RPC + `net/http` SSE | 长期自写协议栈（帧格式/能力协商/HTTP 流重连易踩 spec 细节）；cgo/Node 系客户端（违背纯 Go 优先） |
+| D31 | 插件**启停与授权状态**统一存 config `plugins.<name> = {enabled, granted[]}`，两种发现源（`mcpServers` / `plugin.json`）共用；声明与状态分离 | 状态写回 `mcpServers` 条目（plugin.json 发现的插件无处安放）；状态存 plugin.json（本机授权态不该随分发文件走） |
+| D32 | `/model <name>` = Agent 内热切换 + **写回 config**（同 `/permission` 模式，重启沿用） | 每会话独立模型（与"全局唯一 model 配置"冲突，切换语义碎片化）；只切不存（重启即失） |
+| D33 | TUI **MVP** = 转写区 + 流式 + 输入框 + 命令历史 + Confirm 对话 + 状态行 + glamour 轻 markdown（committed 后渲染，流式阶段原样）；图片/音频仍占位；`ui.kind` 模板默认 `tui`、repl 保留；GUI 框架后移 §14 | 一步到位富 TUI（拖拽/语音/内联图——与后续 GUI 框架重复投入）；TUI 取代 REPL（e2e/CI 丢失无终端后端） |
 
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
+- **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
+  编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
+- **GUI 框架接入（D33 移入）**：换掉 TUI 壳，复用 `port.Presenter + Prompter + Confirmer`
+  契约与全部内核（TUI 薄壳即为该契约预留的换壳面）
 - **语音输入与播报（D27 移入）**：
   - ASR（`Transcriber`）/ TTS（`Synthesizer`）适配器选型与实现（whisper-api / 系统朗读 / 云 TTS）
   - 麦克风采集（`Kind=mic` 摄取）
-  - `/attach` `/clip` `/mic` 输入命令与 TUI 拖拽/粘贴/语音按钮（随 M4 TUI 走同一 `UserInput.Raw` 入口）
+  - `/attach` `/clip` `/mic` 输入命令与 TUI 拖拽/粘贴/语音按钮（M4 TUI 为 MVP 不含，D33——
+    留 TUI 后续迭代或 GUI，走同一 `UserInput.Raw` 入口）
   - 导出文件输出器（`output.tts` 同批启用）
 - **M2 审查遗留（P2/P3，2026-09 评审）**：
   - trim 估算并入工具 schema（当前只按消息文本估，工具声明的 1–2k tokens 漏算）

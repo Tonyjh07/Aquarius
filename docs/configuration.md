@@ -77,10 +77,25 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
 | `output.notify` | bool | 模板 `true`；键缺失 = `false` | 已提交的回答触发系统通知（Windows PowerShell 气泡 / `notify-send` / `osascript`，发送失败只记日志）。扇出在装配根的 Presenter 装饰器上（D28），app 不感知输出器 |
 | `output.tts` | bool | `false` | 语音播报：解析但不启用（ASR/TTS 移入 backlog，DESIGN D27） |
 
+### mcpServers / plugins（M4 起）
+
+`mcpServers` 声明 MCP server；`plugins` 存**启停与授权状态**（两种发现源共用，D31——
+声明也可来自 `~/.aquarius/plugins/<name>/plugin.json`，状态一律在 config）。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `mcpServers.<name>.transport` | string | — | `stdio` 或 `streamable-http`（D30），缺省报错 |
+| `mcpServers.<name>.command` / `args` / `env` | string / []string / object | — | stdio 形态：启动命令与环境（值可用 `secret:<环境变量名>`） |
+| `mcpServers.<name>.url` / `headers` | string / object | — | streamable-http 形态：端点与请求头（值同样可用 `secret:` 引用，请求时注入不落明文） |
+| `mcpServers.<name>.capabilities` | []string | `[]` | 所需能力声明（如 `network`），**首次使用弹确认**后写入下表 granted |
+| `mcpServers.<name>.risk` | string | `safe` | `safe` / `confirm`：后者工具逐次走 `[y/N]` 确认（不随 granted 放行） |
+| `plugins.<name>.enabled` | bool | `true` | 启停；`/plugin enable\|disable` 写回本字段（tmp+rename 原子换入），即时生效 |
+| `plugins.<name>.granted` | []string | `[]` | capability allowlist（grant 确认的落盘处，D31） |
+
 ### 暂未消费的键（模板自带，随里程碑启用）
 
-`input`（asr/mic）、`output.tts`、`mcpServers`、
-`permissions` 之外的授权细节。未知键解析时忽略，**写回时原样保留**。
+`input`（asr/mic）、`output.tts`。
+未知键解析时忽略，**写回时原样保留**。
 
 ## 密钥规则
 

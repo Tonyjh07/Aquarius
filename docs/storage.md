@@ -17,6 +17,7 @@
 │   ├── <id>.json.<随机>.tmp     # 写入中的临时文件（唯一随机名，正常结束不存在）
 │   └── <id>.memory.md           # 该会话的会话记忆（随会话就近存放，D23）
 ├── jobs/<jobID>.log             # 后台任务日志（M3：命令头 + 输出 + 退出标记行；任务表内存态 D8）
+├── audit.log                    # 审计日志（M4：JSONL，装饰器写入 LLM/工具调用的耗时与结果状态；超限轮转一代）
 ├── attachments/<sha256>         # 内容寻址附件（M3：同内容去重；启动时按全量会话引用 GC）
 └── plugins/<name>/plugin.json   # MCP server 描述（M4 起）
 ```
