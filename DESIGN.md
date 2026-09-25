@@ -583,6 +583,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 1. **手动**：`/compact` 调 `Agent.Compact`——把水位上（persona 之后）的历史交给当前模型转写为
    一条 system 摘要节点入树（记 Model/Usage）；失败只报错、树无损。
+   摘要按**英文结构化模板**生成（借鉴 OpenCode 压缩提示词，措辞对任意 agent 通用接手）：
+   Objective / Requirements / Decisions / Work State（Completed·Active·Blocked）/
+   Next Move / Relevant Files / Important Context 七节；首次压缩与链式压缩（已有旧摘要）
+   分两态提示词——后者合并更新、新历史优先、对齐 Work State 与 Next Move；
+   persona 与系统设定恒回传、不入摘要；输出缺模板小节则带提醒重试一次（两次生成的
+   Usage 累计入节点），仍不合格按失败处理。
 2. **自动**：**三级 token 计数链**（D26）估算当前请求占用，达 `limits.compact_threshold`
    （默认 0.7 × max_context_tokens）自动触发——①已发生的用服务端实测 usage（自校准）；
    ②未发送的优先用适配器精确计数（`port.TokenCounter`：本地 tokenizer 或 count_tokens API）；

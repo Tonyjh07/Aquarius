@@ -66,6 +66,9 @@ go build ./cmd/aquarius
 - **手动轨（已可用）**：`/compact`
   - 摘要之上没有新历史 → 提示"无需压缩"，不花生成费用；
   - 成功 → `已压缩 N 条历史 → 1 条摘要（in=X out=Y tokens）`；
+  - 摘要按**英文结构化模板**生成（Objective/Requirements/Decisions/Work State/
+    Next Move/Relevant Files/Important Context，对任意 agent 通用接手），
+    已有旧摘要时合并更新（新历史优先）；输出缺小节带提醒重试一次，仍不合格按失败处理；
   - 取消/失败 → 会话树无损，可重试。
   - 多次压缩链式吸收：新摘要把旧摘要一并吞掉，上下文永远只带最新一条。
 - **自动轨（M2 起可用）**：每轮生成前按**三级 token 计数链**估算上下文
