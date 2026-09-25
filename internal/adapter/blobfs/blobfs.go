@@ -87,6 +87,12 @@ func (s *Store) Put(ctx context.Context, r io.Reader, mime, name string) (conver
 			return conversation.BlobRef{}, fmt.Errorf("blobfs: 读取输入: %w", rerr)
 		}
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		// 崩溃安全：不 Sync 就 rename 可能留下"哈希名与内容不符"的损坏文件
+		//（Put 的去重与 Get 都不会再校验内容），宁可失败。
+		return conversation.BlobRef{}, fmt.Errorf("blobfs: 落盘: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return conversation.BlobRef{}, fmt.Errorf("blobfs: 关闭临时文件: %w", err)
 	}
