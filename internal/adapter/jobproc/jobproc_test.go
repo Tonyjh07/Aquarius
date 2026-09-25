@@ -209,6 +209,10 @@ func TestStartLifecycle(t *testing.T) {
 			t.Fatalf("日志缺 %q: %q", want, logs)
 		}
 	}
+	// 头行先于子进程输出（§14 M3 遗留：cmd.Start 之前写入，杜绝抢行）。
+	if first := strings.SplitN(logs, "\n", 2)[0]; !strings.HasPrefix(first, "$ ") {
+		t.Fatalf("日志首行 = %q, want $ 命令头", first)
+	}
 	if _, err := os.Stat(filepath.Join(dir, string(job.ID)+".log")); err != nil {
 		t.Fatalf("日志文件未落盘: %v", err)
 	}

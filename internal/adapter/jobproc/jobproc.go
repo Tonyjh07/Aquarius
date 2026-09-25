@@ -88,12 +88,13 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	applySpec(cmd, spec)
 	setupProc(cmd) // unix 独立进程组（killTree 连子进程终止）；windows 空操作
 	cmd.Stdout, cmd.Stderr = logFile, logFile
+	// 日志头行先于启动写入（§14 M3 遗留：Start 后写会排在子进程输出之后）。
+	_, _ = fmt.Fprintf(logFile, "$ %s\n", commandLine(spec))
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		_ = os.Remove(logPath)
 		return port.Job{}, fmt.Errorf("jobproc: 启动 %s: %w", spec.Command, err)
 	}
-	_, _ = fmt.Fprintf(logFile, "$ %s\n", commandLine(spec))
 	rec := &jobRec{
 		job:     port.Job{ID: id, Spec: spec, Status: port.JobRunning, PID: cmd.Process.Pid, StartedAt: time.Now()},
 		logPath: logPath,
