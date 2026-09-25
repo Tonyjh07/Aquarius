@@ -186,16 +186,33 @@ func (h *Host) discover() {
 			continue
 		}
 		h.mu.Lock()
-		_, exists := h.decls[m.Name]
-		if !exists { // config 同名条目优先（D31：声明与状态分离，config 是本机权威）
-			h.decls[m.Name] = Decl{
+		cur, exists := h.decls[m.Name]
+		if !exists {
+			cur = Decl{
 				Name: m.Name, MCPConfig: m.MCP,
 				Capabilities: m.Capabilities, Risk: m.Risk, Source: SourcePlugins,
+			}
+			h.decls[m.Name] = cur
+		} else {
+			// config 为本机权威（D31），但**省略不等于降级**（审查修复：同名覆盖曾
+			// 静默取消 plugin.json 声明的 capabilities/risk——安全字段只在 config
+			// 未表达时继承）。
+			changed := false
+			if len(cur.Capabilities) == 0 && len(m.Capabilities) > 0 {
+				cur.Capabilities = m.Capabilities
+				changed = true
+			}
+			if cur.Risk == "" && m.Risk != "" {
+				cur.Risk = m.Risk
+				changed = true
+			}
+			if changed {
+				h.decls[m.Name] = cur
 			}
 		}
 		h.mu.Unlock()
 		if exists {
-			h.logf("[plugin] %s: config 条目覆盖 plugin.json 声明（D31）", m.Name)
+			h.logf("[plugin] %s: config 条目优先；未配置的能力/风险继承 plugin.json（D31）", m.Name)
 		}
 	}
 }

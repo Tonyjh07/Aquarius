@@ -269,8 +269,9 @@ func TestHostDiscoverMerges(t *testing.T) {
 		}
 	}
 	writeManifest("onlyfile", `{"name":"onlyfile","mcp":{"transport":"stdio","command":"x"}}`)
-	writeManifest("dup", `{"name":"dup","mcp":{"transport":"stdio","command":"from-file"}}`)
+	writeManifest("dup", `{"name":"dup","mcp":{"transport":"stdio","command":"from-file"},"capabilities":["network"],"risk":"confirm"}`)
 	writeManifest("bad", `{"name":"bad","mcp":{"transport":"stdio","command":"x"},"risk":"wild"}`)
+	writeManifest("kept", `{"name":"kept","mcp":{"transport":"stdio","command":"from-file"},"risk":"confirm"}`)
 	if err := os.WriteFile(filepath.Join(dir, "stray.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -281,11 +282,13 @@ func TestHostDiscoverMerges(t *testing.T) {
 		Dial:       dial.dialer(),
 		PluginsDir: dir,
 		ConfigServers: map[string]MCPServer{
-			"dup": {MCPConfig: MCPConfig{Transport: "stdio", Command: "from-config"}},
+			"dup":  {MCPConfig: MCPConfig{Transport: "stdio", Command: "from-config"}},
+			"kept": {MCPConfig: MCPConfig{Transport: "stdio", Command: "from-config"}, Risk: "safe"},
 		},
 		States: map[string]State{
 			"onlyfile": {Enabled: &off},
 			"dup":      {Enabled: &off},
+			"kept":     {Enabled: &off},
 		},
 	})
 	h.Start(context.Background())
@@ -300,6 +303,15 @@ func TestHostDiscoverMerges(t *testing.T) {
 	}
 	if info, ok := byName["dup"]; !ok || info.Source != SourceConfig {
 		t.Fatalf("dup = %+v, want config 覆盖 plugin.json（D31）", info)
+	}
+	// 审查修复：config 省略安全字段 ≠ 降级——capabilities/risk 继承 plugin.json。
+	if info := byName["dup"]; info.Risk != "confirm" || len(info.Capabilities) != 1 ||
+		info.Capabilities[0] != "network" {
+		t.Fatalf("dup 安全声明 = risk %q caps %v, want 继承 confirm/network", info.Risk, info.Capabilities)
+	}
+	// config 显式表达过的字段不被继承覆盖（本机权威）。
+	if info := byName["kept"]; info.Risk != "safe" {
+		t.Fatalf("kept risk = %q, want 保持 config 的 safe", info.Risk)
 	}
 	bad, ok := byName["bad"]
 	if !ok || bad.Status != StatusFailed || !strings.Contains(bad.LastErr, "risk") {

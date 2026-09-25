@@ -540,6 +540,8 @@ config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
 3. **授权（grant）**：`capabilities` 首次使用弹确认 → 写入 config `plugins.<name>.granted`（D31）；
    `risk=confirm` 工具逐次走 `Confirmer`；
    密钥经 `Secrets` 按名注入插件环境，不落明文配置。
+   **stdio 子进程环境 = 父环境剔除 `AQUARIUS_*`（本项目密钥命名约定）+ 声明项**——
+   宿主密钥不随继承外泄给插件；PATH/TEMP 等系统变量照常继承（审查修复）。
 4. **生命周期**：按需懒加载 → 健康检查 → 崩溃自动重启（限次 + 退避）→ 关机优雅 `shutdown`。
 5. **可观测**：记录每个调用的 插件名/耗时/结果状态，供 `/plugin` 命令查看（同源数据进审计日志，§8）。
 

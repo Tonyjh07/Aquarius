@@ -55,9 +55,10 @@ func (r resourceStore) Read(ctx context.Context, name string) (port.MemoryDoc, e
 	}
 	var b strings.Builder
 	for _, c := range res.Contents {
-		if c == nil || c.Text == "" {
-			return port.MemoryDoc{}, fmt.Errorf("资源 %s 含二进制或空内容（v1 只读文本）", name)
+		if c == nil || len(c.Blob) > 0 {
+			return port.MemoryDoc{}, fmt.Errorf("资源 %s 含二进制内容（v1 只读文本）", name)
 		}
+		// 空文本是合法内容（审查修复：曾与二进制一并拒收）。
 		if b.Len() > 0 {
 			b.WriteString("\n\n")
 		}

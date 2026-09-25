@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -60,6 +61,13 @@ func newTestServer() *mcp.Server {
 	}, func(_ context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{
 			{URI: "fake://blob", MIMEType: "application/octet-stream", Blob: []byte{1, 2, 3}},
+		}}, nil
+	})
+	s.AddResource(&mcp.Resource{
+		Name: "blank", URI: "fake://blank", MIMEType: "text/plain",
+	}, func(_ context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{
+			{URI: "fake://blank", MIMEType: "text/plain", Text: ""},
 		}}, nil
 	})
 	s.AddPrompt(&mcp.Prompt{
@@ -259,6 +267,10 @@ func TestResourceStore(t *testing.T) {
 	if _, err := mem.Read(context.Background(), "fake://blob"); err == nil || !strings.Contains(err.Error(), "二进制") {
 		t.Fatalf("二进制资源应拒绝: %v", err)
 	}
+	// 空文本是合法内容（审查修复：曾与二进制一并拒收）。
+	if doc, err := mem.Read(context.Background(), "fake://blank"); err != nil || doc.Content != "" {
+		t.Fatalf("空文本资源 read = %+v, %v", doc, err)
+	}
 	if err := mem.Write(context.Background(), port.MemoryDoc{Name: "x"}); err == nil || !strings.Contains(err.Error(), "只读") {
 		t.Fatalf("写应拒绝: %v", err)
 	}
@@ -339,6 +351,33 @@ func TestRenderPrompt(t *testing.T) {
 	_, err = s.RenderPrompt(context.Background(), "greet", nil)
 	if err == nil || !strings.Contains(err.Error(), "用法:") || !strings.Contains(err.Error(), "<who>") {
 		t.Fatalf("缺必填参数应报用法: %v", err)
+	}
+}
+
+// TestChildEnvStripsAquarius 审查修复：stdio 子进程不继承 AQUARIUS_*（宿主密钥），
+// 系统变量与声明项照常。
+func TestChildEnvStripsAquarius(t *testing.T) {
+	t.Setenv("AQUARIUS_OPENAI_KEY", "sk-secret")
+	t.Setenv("AQ_PLAIN_CHECK", "1")
+	env := childEnv(map[string]string{"DECLARED": "v"})
+	got := map[string]string{}
+	for _, kv := range env {
+		if i := strings.IndexByte(kv, '='); i > 0 {
+			got[kv[:i]] = kv[i+1:]
+		}
+	}
+	if _, ok := got["AQUARIUS_OPENAI_KEY"]; ok {
+		t.Fatalf("宿主密钥被继承: %v", got["AQUARIUS_OPENAI_KEY"])
+	}
+	if _, ok := got["AQ_PLAIN_CHECK"]; !ok {
+		t.Fatal("非 AQUARIUS_ 前缀的变量不应剔除")
+	}
+	if got["DECLARED"] != "v" {
+		t.Fatalf("声明项缺失: %v", got)
+	}
+	if _, ok := got["PATH"]; !ok && runtime.GOOS == "windows" {
+		// PATH 在各平台通常存在；缺失时仅提示（沙箱环境可能真的没有）。
+		t.Log("PATH 不在环境中")
 	}
 }
 

@@ -82,12 +82,10 @@ func transportFor(ctx context.Context, secrets port.Secrets, d plugin.Decl) (mcp
 		if err != nil {
 			return nil, fmt.Errorf("插件 %s 环境变量: %w", d.Name, err)
 		}
-		if len(env) > 0 {
-			cmd.Env = os.Environ()
-			for k, v := range env {
-				cmd.Env = append(cmd.Env, k+"="+v)
-			}
-		}
+		// 子进程环境 = 父环境剔除 AQUARIUS_* + 声明项（审查修复：宿主密钥
+		//（api_key 等按本项目命名约定存 AQUARIUS_*）不得随继承外泄给插件；
+		// PATH/TEMP 等系统变量照常继承，npx/node 才能跑）。
+		cmd.Env = childEnv(env)
 		return &mcp.CommandTransport{Command: cmd}, nil
 	case plugin.TransportHTTP:
 		hdr, err := resolveRefs(ctx, secrets, d.Headers)
@@ -103,6 +101,24 @@ func transportFor(ctx context.Context, secrets port.Secrets, d plugin.Decl) (mcp
 	default:
 		return nil, fmt.Errorf("插件 %s: 未知 transport %q", d.Name, d.Transport)
 	}
+}
+
+// childEnv 构造 stdio 子进程环境：父环境剔除 AQUARIUS_*（本项目密钥命名约定——
+// 宿主密钥不随继承外泄给插件，审查修复）后加声明项（secret: 已解析为明文，
+// 只在子进程环境出现）。PATH/TEMP 等其余变量照常继承，保证 npx/node 等可运行。
+func childEnv(declared map[string]string) []string {
+	base := os.Environ()
+	out := make([]string, 0, len(base)+len(declared))
+	for _, kv := range base {
+		if i := strings.IndexByte(kv, '='); i > 0 && strings.HasPrefix(kv[:i], "AQUARIUS_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	for k, v := range declared {
+		out = append(out, k+"="+v)
+	}
+	return out
 }
 
 // resolveRefs 解析 map 值中的 "secret:<环境变量名>" 引用（§9：真实值只经 port.Secrets
