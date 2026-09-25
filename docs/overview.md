@@ -62,7 +62,7 @@ Root(实节点, ID=会话ID, role=root)
 | `internal/adapter/repl` | REPL Presenter + Prompter（标准输入输出） |
 | `internal/adapter/storejson` | 一会话一 JSON + 一代 .bak |
 | `internal/adapter/memoryfs` | 记忆存储：全局 memories.md + 会话 `<id>.memory.md`（D23） |
-| `internal/adapter/toolbuiltin` | 内置工具：memory_* / file_* / think（经端口契约接入，D13） |
+| `internal/adapter/toolbuiltin` | 内置工具：memory_* / file_* / think / term_exec / job_*（经端口契约接入，D13） |
 | `internal/adapter/toolrun` | ToolRunner 门面：权限判定 → 确认 → 超时 → 裁剪（D25） |
 | `pluginapi/v1` | 对外稳定契约（独立 go.mod，M4 起用；与 port 类型互不引用） |
 | `docs/` | 衍生文档（本目录）；权威是 DESIGN.md |
@@ -79,7 +79,7 @@ Root(实节点, ID=会话ID, role=root)
 | `ConversationStore` | storejson | **M0 ✓** | in-memory |
 | `Presenter` / `Prompter` | repl（TUI → uitui） | repl **M0 ✓** | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | **M0 ✓** | 固定 / 递增 / map |
-| `Tool` | toolbuiltin（memory_*/file_*/think）+ app 的 context_compact | **M2 ✓** | fake tool |
+| `Tool` | toolbuiltin（memory_*/file_*/think + M3 的 term_exec/job_*）+ app 的 context_compact | **M2 ✓**（M3 扩充） | fake tool |
 | `ToolRunner` | toolrun（权限判定/确认/超时/裁剪，D25） | **M2 ✓** | fake runner |
 | `Confirmer` | repl 确认（读行 y/N；`-yes` 全免） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs（全局 memories.md + 会话记忆，D23） | **M2 ✓** | in-memory |

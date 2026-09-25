@@ -43,7 +43,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 | app | **golden 回放**：命令脚本 → 归一化 transcript（ID 归一为标签）与 `testdata/golden/` 基准比对；改语义后 `go test ./internal/app -run TestGoldenReplay -update` 重写基准并人工检视 | `app/golden_test.go` |
 | adapter | **契约测试**：storejson/memoryfs 临时目录；LLM 用 httptest 假 SSE 录制流回放；toolrun 全等级矩阵表 + 脚本确认器 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go`、`adapter/toolrun/runner_test.go` |
 | tokenizer | **官方向量比对**：期望值由 Python `tokenizers` 一次性生成入库（`testdata/gen_*.py`）；fixture 全离线跑，真实 DeepSeek 词表向量需 `AQUARIUS_TOKENIZER_JSON=<路径>`（缺省跳过） | `adapter/llm/tokenizer/tokenizer_test.go` |
-| e2e | **进程内装配回放**：`run(stdin, stdout)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵） | `cmd/aquarius/main_test.go` |
+| e2e | **进程内装配回放**：`run(args, stdin, stdout, stderr)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵、M3 的 term_exec/job 链路） | `cmd/aquarius/main_test.go` |
 
 修 bug 先写复现测试；新行为补测试。测试替身放测试文件内或 `internal/adapter/fake/`。
 

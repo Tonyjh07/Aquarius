@@ -29,7 +29,7 @@ M2 提供**工具与记忆**：内置工具 memory_*/file_*/think/context_compac
 `conversations/<id>.memory.md`（模型经工具读写，`/memory` 用系统编辑器直开）；
 **三级 token 计数链**（服务端实测 usage → 适配器本地 tokenizer 精确计数 → 通用估算+自校准）
 支撑自动压缩与 `/usage` 用量查看。
-M3 提供**任务与多模态**：`term_exec`/`job_start` 后台任务（独立进程、日志落盘
+M3 提供**任务与多模态**：`term_exec` 同步执行与 `job_start` 后台任务（独立进程、日志落盘
 `~/.aquarius/jobs/`，`/jobs` 列表/查日志/终止）、**附件库**（sha256 内容寻址 + 启动 GC）、
 文件/剪贴板**摄取管线**（RawInput → Part 入树 → 装配内联图片字节与文档提取文本；
 触发命令面按 D27 留 M4）、`notify` 输出器（已提交回答触发系统通知，`output.notify`）。

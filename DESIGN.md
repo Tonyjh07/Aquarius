@@ -194,7 +194,7 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 ### 4.2 附件与多模态承载
 
 - 附件内容寻址（sha256）存 `~/.aquarius/attachments/<hash>`；同内容多处引用只存一份；
-  GC 按引用计数清扫（Prune 会话不立即删附件）。
+  GC 按引用集合清扫（启动时收集全量会话引用作 keep 集，收集不全则跳过；Prune 会话不立即删附件）。
 - 模型能力差异：`ModelInfo{Vision, Audio}` 声明能力；不支持图片的模型遇到 Image Part →
   明确报因并提示（v1 不做自动 OCR/描述降级）。
 - Audio Part 一律先经 `Transcriber` 得到 Transcript；模型只见文本。Doc Part 注入提取文本（截断），
@@ -230,7 +230,9 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 
 ## 5. 端口设计（`internal/port`）
 
-依赖方向：`adapter → port ← app → domain`；`domain` 不 import 任何端口；port 只含接口与 DTO。
+依赖方向：`adapter → port ← app → domain`；`domain` 不 import 任何端口；
+port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobID`、`WithSessionID`——多层共用、
+放任一层都会违反依赖方向）。
 
 ### 5.1 `llm.go` —— 生成端口
 
@@ -552,8 +554,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
         calls, err := a.consume(ctx, stream, buf) // 边收边 Emit DeltaEvent
         c.AppendCommitted(buf.Commit(a.clock.Now(), outcomeOf(err))) // 一次性不可变提交
         if len(calls) == 0 { return nil }
-        for _, call := range calls {
-            res := a.tools.Execute(ctx, call)     // capability 校验 + Risk 确认 + 超时 + 裁剪
+        for i, call := range calls {
+            res, err := a.tools.Execute(ctx, call) // 判定 + 确认 + 超时 + 裁剪
+            if err != nil { // 装配级故障（§10）：补剩余失败结果后中止本轮
+                abortToolCalls(calls[i:], err)
+                return err
+            }
             c.AppendCommitted(toolMessage(a.ids.MessageID(), res))
             _ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
         }
@@ -598,7 +604,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 输出：CommittedEvent → Presenter.Emit（文本渲染 / 图片占位 / 音频播放器）
                   └→ 各 OutputAdapter.Deliver（TTS 播报 / 通知 / 导出），失败只记日志
       —— 扇出点在装配根的 Presenter 装饰器上（D28/D14）：包装实际 UI，仅对
-      提交的 assistant 文本 Deliver；app 与 UI 适配器均不感知输出器。
+      Outcome=done 的 assistant 提交文本 Deliver；app 与 UI 适配器均不感知输出器。
 ```
 
 ### 7.3 命令体系
@@ -720,6 +726,9 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - **取消**：`ctx` 取消 ≡ `Stream.Close()`；工具执行同受 `ctx` 约束；Job 后台运行不受会话取消影响（`job_kill` 显式终止）。
 - **取消提交**：已生成文本以 `Outcome: cancelled` 提交为节点（可 `/edit` 重试），不留半节点。
 - **工具失败**：`Result{OK:false, Err}` 照常回填给模型（让模型自行决定重试或改道），不中断 Turn。
+- **装配级故障**：`ToolRunner.Execute` 返回 `error`（确认器缺失/报错、父 ctx 取消）——
+  为剩余调用补 `OK=false` 中断结果（保持 tool_calls 一一配对、树仍可装配）后中止本轮，
+  不回填让模型空转；取消按"取消提交"收场（返回 nil，主循环经 ctx 收尾）。
 - **模型/网络错误**：装饰器层重试（幂等 Generate 的瞬时错误，限次 + 退避）；仍失败则 `Outcome: error` 提交并上抛 UI。
 - **并发**：单会话内 Turn 串行（Head 唯一）；多会话并行安全（一会话一文件）；Job 自管并发。
 
@@ -747,7 +756,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
-| **M4 MCP 与 TUI** | mcpgate + grant + `/plugin`、bubbletea TUI（多模态呈现）、装饰器链（重试/截断/审计） | 接入任一现成 MCP server 全链路可用；崩溃重启与授权拒绝行为符合 §6.4 |
+| **M4 MCP 与 TUI** | mcpgate + grant + `/plugin`、`/model`、bubbletea TUI（多模态呈现）、装饰器链（重试/截断/审计） | 接入任一现成 MCP server 全链路可用；崩溃重启与授权拒绝行为符合 §6.4 |
 
 ---
 
@@ -782,7 +791,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D25 | ToolRunner 落位 `internal/adapter/toolrun`，文件类权限经可选接口 `FileTarget` 由工具**自申报**目标路径 | 按工具名前缀硬编码分类（内核腐化、三方工具无法参与）；往 `tool.Spec` 塞权限字段（污染模型可见的工具声明） |
 | D26 | token 计数**三级链**：①服务端实测 usage（已发生的）→ ②适配器可选 `TokenCounter`（本地 tokenizer.json / count_tokens API，覆盖估算）→ ③通用字符估算 + 服务端 usage 自校准；tokenizer 经 `model.tokenizer` 指路径**启动时加载、错误 fail-fast** | 通用估算一刀切（已可拿到精确值时不拿）；词表 embed 进二进制（+数 MB 且换模型即失效）；实现 Jinja chat_template 渲染（要引模板引擎，且结构开销用常数已够准）；强推 count_tokens API（openai-compatible 普遍没有） |
 | D27 | **M3 范围调整**：M3 落 JobManager + blobfs + Ingestor 管线 + notify 输出器；REPL 输入命令面（`/attach`/`/clip`/`/mic`）与 ASR/TTS/麦克风移入 §14 backlog，随 M4 TUI（或独立里程碑）落地 | 硬凑"语音提问 → TTS 播报"验收（REPL 行式输入无拖拽/语音按钮；语音适配器选型未定，先定契约后装实现） |
-| D28 | 输出器扇出点 = 装配根的 **Presenter 装饰器**：包住实际 UI，收到 `CommittedEvent` 后逐个调 `OutputAdapter.Deliver`，失败只记日志 | app 内直连输出器（内核直连具体实现违反 D13；扇出属横切，按 D14 走装配根装饰器） |
+| D28 | 输出器扇出点 = 装配根的 **Presenter 装饰器**：包住实际 UI，收到已完成的 assistant `CommittedEvent`（`Outcome=done`）后逐个调 `OutputAdapter.Deliver`，失败只记日志 | app 内直连输出器（内核直连具体实现违反 D13；扇出属横切，按 D14 走装配根装饰器） |
 
 ## 14. 暂缓事项（Backlog）
 
@@ -799,6 +808,13 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   - `think` 参数非空校验；压缩摘要流的 UI 标注（"正在生成摘要"以区别于回答流）；
     `/usage` "上轮实测"文案改"最近实测"；trim `omitted==0` 时的通知措辞
 - 跨分支"摘抄"共享子树（DAG 化）
+- **M3 审查遗留（P3，2026-09 评审）**：
+  - `job_start` 参数校验（负 `timeout_sec` 拒收、相对 `workdir` 按绝对路径口径拒收）
+  - jobproc 进程树终止（`taskkill /T` / unix 进程组）缺自动化测试（依赖系统命令，难稳定断言）
+  - notify 通知正文缺控制字符（ESC/BEL 等）过滤
+  - atomicfile 路径锁 key 未做 `Clean` 归一（Windows 下 `a/b` 与 `a\b` 是两把锁）
+  - `trimHeadTail` 上限为奇数时省略计数偏差 1
+  - jobproc 日志头行在 `cmd.Start` 之后写、可能排在子进程输出之后（纯观感）
 - Job 表持久化（SQLite）
 - PDF/Office 等 Doc 提取器插件
 - 图片 OCR/描述自动降级、音频直输模型（等模型能力普及）

@@ -35,8 +35,6 @@ go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
 ```
 
-> M0 落地前 `go.mod` 尚不存在；先建模块再执行上述命令。
-
 ## 代码风格
 
 - `gofmt` 即风格；不引入额外格式化/lint 工具，除非用户要求。
@@ -52,6 +50,8 @@ gofmt -l .                     # 格式检查（应无输出）
 - **改动 app**：用脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter 做交互回放（golden 测试），
   禁止测试里起真实网络。
 - **改动 adapter**：跑该适配器的契约测试（临时目录/假 server）；LLM 适配器用录制流回放。
+- **链路级验收**（如"摄取 → 附件入库 → 装配内联"）：可在测试中借用真实适配器（临时目录）串联，
+  但**生产代码**的跨层直连仍被禁止（依赖铁律只约束非测试代码）。
 - **改动 mcpgate/插件宿主**：用测试内假 MCP server（stdio）覆盖：发现、调用、超时、崩溃重启、授权拒绝。
 - 新行为补测试，修 bug 先写复现测试。全部测试 + `go vet` + `gofmt` 通过才算完成。
 
@@ -67,11 +67,13 @@ gofmt -l .                     # 格式检查（应无输出）
 
 ```
 cmd/aquarius/        组装根（wiring：config → 插件/授权 → 端口装配含装饰器 → UI）
-pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖）
-internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）
+pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；M4 起建）
+internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）、perm（权限矩阵）
 internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
-internal/app/        agent（Turn 循环）、prompt、session（命令）、ingest、facade
-internal/plugin/     registry、mcp（生命周期）、grant（授权）
-internal/adapter/    llm（含 llm/tokenizer 精确计数）、mcpgate、toolbuiltin、toolrun、jobproc、
-                     storejson、blobfs、memoryfs、asr、tts、ingestbuiltin、outbuiltin、uitui、plugingo
+internal/app/        agent（Turn 循环）、prompt（装配/水位）、session（命令/摄取分派）、est（token 计数链）
+internal/plugin/     registry、mcp（生命周期）、grant（授权）（M4 起建）
+internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/
+                     term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
+                     ingestfile、ingestclip、notify、atomicfile
+待建：                mcpgate、uitui、plugingo（M4）；asr、tts（backlog，D27）
 ```
