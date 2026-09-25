@@ -245,6 +245,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		SandboxPath:  sandboxDir,
 		PersistLevel: persistLevel,
 		Confirmer:    confirmer,
+		Jobs:         jobs,
 		OpenMemory:   openMemoryEditor(mem, stdin, stdout, stderr),
 	})
 	if err != nil {

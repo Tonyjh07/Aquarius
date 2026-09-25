@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -251,6 +252,51 @@ func (r *fakeRunner) Execute(_ context.Context, call tool.Call) (tool.Result, er
 		return res, nil
 	}
 	return tool.Result{CallID: call.ID, OK: true, Output: "ok:" + call.Name}, nil
+}
+
+// ---------------------------------------------------------------------------
+// 任务端口替身（M3 /jobs）
+// ---------------------------------------------------------------------------
+
+// fakeJobs 脚本化 port.JobManager：返回预设任务/日志，记录终止调用。
+type fakeJobs struct {
+	jobs     []port.Job
+	logs     map[port.JobID]string
+	killed   []port.JobID
+	lastTail int
+	err      error
+}
+
+func (f *fakeJobs) Start(context.Context, port.JobSpec) (port.Job, error) {
+	return port.Job{}, errors.New("fakeJobs: Start 未脚本化")
+}
+
+func (f *fakeJobs) Run(context.Context, port.JobSpec) (tool.Result, error) {
+	return tool.Result{}, errors.New("fakeJobs: Run 未脚本化")
+}
+
+func (f *fakeJobs) List(context.Context) ([]port.Job, error) { return f.jobs, f.err }
+
+func (f *fakeJobs) Status(_ context.Context, id port.JobID) (port.Job, error) {
+	for _, j := range f.jobs {
+		if j.ID == id {
+			return j, nil
+		}
+	}
+	return port.Job{}, fmt.Errorf("fakeJobs: 没有任务 %s", id)
+}
+
+func (f *fakeJobs) Logs(_ context.Context, id port.JobID, tail int) (string, error) {
+	f.lastTail = tail
+	if text, ok := f.logs[id]; ok {
+		return text, nil
+	}
+	return "", fmt.Errorf("fakeJobs: 没有任务 %s", id)
+}
+
+func (f *fakeJobs) Kill(_ context.Context, id port.JobID) error {
+	f.killed = append(f.killed, id)
+	return nil
 }
 
 // ---------------------------------------------------------------------------

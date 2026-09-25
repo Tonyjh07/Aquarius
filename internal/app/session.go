@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -37,13 +38,16 @@ type SessionDeps struct {
 	PersistLevel func(perm.Level) error
 	// Confirmer 逐次确认（/rm 二次确认等）；nil 时破坏性命令报"未配置确认器"。
 	Confirmer port.Confirmer
+	// Jobs 后台任务管理（/jobs，DESIGN §7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
+	Jobs port.JobManager
 	// OpenMemory 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
 	// nil 时 /memory 报"未配置编辑器"。
 	OpenMemory func(name string) (string, error)
 }
 
 // Session 当前会话 + 命令处理（DESIGN §7.3；M0 起启用 /new /list /title /compact /
-// /permission /quit，M1 启用树交互 /goto /edit /branch /rm，其余命令给出里程碑提示）。
+// /permission /quit，M1 启用树交互 /goto /edit /branch /rm，M3 启用 /jobs，
+// /model /plugin 留待其里程碑）。
 // 命令的文本输出经返回值交给装配根渲染，轮次过程输出走 Presenter——app 不直接接触 IO。
 type Session struct {
 	store        port.ConversationStore
@@ -55,6 +59,7 @@ type Session struct {
 	sandboxPath  string
 	persistLevel func(perm.Level) error
 	confirmer    port.Confirmer
+	jobs         port.JobManager
 	openMemory   func(name string) (string, error)
 	cur          *conversation.Conversation
 }
@@ -85,6 +90,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		sandboxPath:  d.SandboxPath,
 		persistLevel: d.PersistLevel,
 		confirmer:    d.Confirmer,
+		jobs:         d.Jobs,
 		openMemory:   d.OpenMemory,
 	}
 
@@ -431,6 +437,9 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			rep.SumIn, rep.SumOut, rep.Gen)
 		return b.String(), nil
 
+	case "jobs":
+		return s.jobsReport(ctx, cmd.Args)
+
 	case "quit":
 		return "", ErrQuit
 
@@ -447,10 +456,11 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/permission [等级]      查看/切换权限等级（read-only/strict/permissive/full-access）",
 			"/memory [会话id]        用系统编辑器打开记忆文件（缺省全局 memories.md，D24）",
 			"/usage                  查看 token 用量（上下文占用/上轮实测/会话累计，三级计数链 D26）",
+			"/jobs [list|logs <id> [行数]|kill <id>]  后台任务管理（job_start 启动的任务，DESIGN §7.3）",
 			"/quit, /exit            退出",
 		}, "\n"), nil
 
-	case "model", "jobs", "plugin":
+	case "model", "plugin":
 		return "", fmt.Errorf("命令 /%s 尚未启用（里程碑 M3/M4，见 DESIGN §12）", cmd.Name)
 
 	default:
@@ -529,6 +539,101 @@ func (s *Session) resolveConversation(ctx context.Context, arg string) (conversa
 		}
 		return "", fmt.Errorf("会话标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(ids, ", "))
 	}
+}
+
+// jobsReport /jobs 命令（DESIGN §7.3）：list（缺省）/ logs <id> [行数] / kill <id>。
+// 任务由模型经 job_* 工具启动，状态与日志同源（port.JobManager）。
+func (s *Session) jobsReport(ctx context.Context, args []string) (string, error) {
+	if s.jobs == nil {
+		return "", errors.New("session: 未配置任务管理器（SessionDeps.Jobs），/jobs 不可用")
+	}
+	sub := "list"
+	if len(args) > 0 {
+		sub, args = args[0], args[1:]
+	}
+	switch sub {
+	case "list":
+		if len(args) != 0 {
+			return "", errors.New("用法: /jobs [list|logs <id> [行数]|kill <id>]")
+		}
+		jobs, err := s.jobs.List(ctx)
+		if err != nil {
+			return "", fmt.Errorf("session: 列出任务: %w", err)
+		}
+		if len(jobs) == 0 {
+			return "（暂无后台任务；模型可用 job_start 启动）", nil
+		}
+		var b strings.Builder
+		for _, j := range jobs {
+			fmt.Fprintf(&b, "%s  %-8s pid=%-7d %s  %s\n",
+				j.ID, j.Status, j.PID, j.StartedAt.Format("15:04:05"), jobCommand(j.Spec))
+		}
+		return strings.TrimRight(b.String(), "\n"), nil
+
+	case "logs":
+		if len(args) < 1 || len(args) > 2 {
+			return "", errors.New("用法: /jobs logs <id> [行数]（缺省最后 50 行）")
+		}
+		id, err := s.resolveJob(ctx, args[0])
+		if err != nil {
+			return "", err
+		}
+		tail := defaultJobLogsTail
+		if len(args) == 2 {
+			n, cerr := strconv.Atoi(args[1])
+			if cerr != nil || n <= 0 {
+				return "", errors.New("/jobs logs 行数须为正整数")
+			}
+			tail = n
+		}
+		text, err := s.jobs.Logs(ctx, id, tail)
+		if err != nil {
+			return "", fmt.Errorf("session: 读取 %s 日志: %w", id, err)
+		}
+		if strings.TrimSpace(text) == "" {
+			return fmt.Sprintf("任务 %s 日志为空", id), nil
+		}
+		return fmt.Sprintf("任务 %s 日志（末尾 %d 行）:\n%s", id, tail, text), nil
+
+	case "kill":
+		if len(args) != 1 {
+			return "", errors.New("用法: /jobs kill <id>")
+		}
+		id, err := s.resolveJob(ctx, args[0])
+		if err != nil {
+			return "", err
+		}
+		if err := s.jobs.Kill(ctx, id); err != nil {
+			return "", fmt.Errorf("session: 终止任务: %w", err)
+		}
+		return fmt.Sprintf("已终止 %s", id), nil
+
+	default:
+		return "", errors.New("用法: /jobs [list|logs <id> [行数]|kill <id>]")
+	}
+}
+
+// defaultJobLogsTail /jobs logs 缺省行数（与 job_logs 工具一致）。
+const defaultJobLogsTail = 50
+
+// resolveJob 解析任务标识（精确优先 + 唯一前缀，port 共用实现）。
+func (s *Session) resolveJob(ctx context.Context, arg string) (port.JobID, error) {
+	list, err := s.jobs.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("session: 列出任务: %w", err)
+	}
+	id, err := port.ResolveJobID(list, arg)
+	if err != nil {
+		return "", fmt.Errorf("session: %w（/jobs 查看可用 ID）", err)
+	}
+	return id, nil
+}
+
+// jobCommand JobSpec 的可读命令行（/jobs 列表展示用）。
+func jobCommand(spec port.JobSpec) string {
+	parts := make([]string, 0, 1+len(spec.Args))
+	parts = append(parts, spec.Command)
+	return strings.Join(append(parts, spec.Args...), " ")
 }
 
 // parseEditArgs 解析 /edit <id> [--keep] <文本>：--keep 只在紧跟 id 的位置识别

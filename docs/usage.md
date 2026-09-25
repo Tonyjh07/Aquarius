@@ -29,19 +29,21 @@ go build ./cmd/aquarius
 | `/permission [等级]` | 无参：当前等级 + 免确认矩阵 + 特权目录；有参：切换等级并写回 config，工具链路即时生效 |
 | `/memory [会话id]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`，带参会话记忆；保存后下次读取生效） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
+| `/jobs [list\|logs <id> [行数]\|kill <id>]` | 后台任务管理（M3）：缺省 `list`；`logs` 取末尾行（缺省 50）；`kill` 终止（连同子进程）。任务由模型经 `job_start` 启动，ID 支持唯一前缀 |
 | `/quit` `/exit` | 退出（`/exit` 为别名） |
 | `/help` | 命令帮助 |
 
 > 节点 ID 支持唯一前缀匹配；自身、同级与下级节点 ID 可用 `/branch` 查看（逐层下钻可达任意深度）。
 > "修改"永不改写旧消息：Fresh 另起节点、Carry 边转移（后代本身不变），会话树始终保持不可变。
 
-**尚未启用**（输入会提示对应里程碑）：`/model` `/jobs` `/plugin` —— 随 M3/M4。
+**尚未启用**（输入会提示对应里程碑）：`/model` `/plugin` —— M4。
 
-## 内置工具（M2 起，模型自行调用）
+## 内置工具（M2/M3 起，模型自行调用）
 
 模型可在回答过程中调用工具；**执行前一律过 ToolRunner**：权限矩阵判定 → 矩阵外逐次
 `[y/N]` 确认（`-yes` 全免）→ 单次超时（`limits.tool_timeout_sec`）→ 结果按
-`limits.tool_output_chars` 裁剪。拒绝/超时/失败都以 `OK=false` 回填给模型，不中断对话。
+`limits.tool_output_chars` 裁剪。拒绝/超时/工具自身失败都以 `OK=false` 回填给模型，
+不中断对话；**基础设施故障**（确认器缺失/报错、Ctrl+C 取消）则快速中止本轮，不空转。
 
 | 工具 | 说明 | Risk |
 |---|---|---|
@@ -51,6 +53,9 @@ go build ./cmd/aquarius
 | `file_write` / `file_delete` | 覆盖写 / 删除（写按权限矩阵路径格判定） | Confirm |
 | `think` | 显式整理思路（no-op，内容随调用入树） | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，自我管理上下文） | Safe |
+| `term_exec` | 同步执行终端命令行（`cmd /c` / `sh -c`；超时统一控制，输出保头尾截断；执行类看工具列） | Confirm |
+| `job_start` | 启动后台任务（独立进程，日志落盘 `~/.aquarius/jobs/<id>.log`，不随对话取消） | Confirm |
+| `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理（列表/状态/日志尾部/终止） | Safe |
 
 ## 上下文压缩（三轨特色功能）
 

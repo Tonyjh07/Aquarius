@@ -263,31 +263,16 @@ func (t *jobKill) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	return okResult("已终止 " + string(id)), nil
 }
 
-// resolveJobID 精确匹配优先，其次唯一前缀；无命中/歧义报错。
+// resolveJobID 解析任务标识（精确优先 + 唯一前缀，port 共用实现）；
+// 失败附上发现线索（job_list 可查可用 ID）。
 func resolveJobID(ctx context.Context, jobs port.JobManager, arg string) (port.JobID, error) {
 	list, err := jobs.List(ctx)
 	if err != nil {
 		return "", fmt.Errorf("列出任务: %w", err)
 	}
-	var hits []port.JobID
-	for _, j := range list {
-		switch {
-		case string(j.ID) == arg:
-			return j.ID, nil
-		case strings.HasPrefix(string(j.ID), arg):
-			hits = append(hits, j.ID)
-		}
+	id, err := port.ResolveJobID(list, arg)
+	if err != nil {
+		return "", fmt.Errorf("%w（job_list 可查看可用 ID）", err)
 	}
-	switch len(hits) {
-	case 0:
-		return "", fmt.Errorf("没有任务 %q（job_list 可查看可用 ID）", arg)
-	case 1:
-		return hits[0], nil
-	default:
-		ids := make([]string, len(hits))
-		for i, h := range hits {
-			ids[i] = string(h)
-		}
-		return "", fmt.Errorf("任务标识 %q 有歧义（命中 %s），请加长", arg, strings.Join(ids, ", "))
-	}
+	return id, nil
 }

@@ -187,12 +187,12 @@ func TestSessionCommands(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)
 
-	// /help：M1 树交互命令在列。
+	// /help：M1 树交互与 M3 /jobs 命令在列。
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "help"}})
 	if err != nil {
 		t.Fatalf("help: %v", err)
 	}
-	for _, want := range []string{"/new", "/quit", "/goto", "/edit", "/branch", "/rm"} {
+	for _, want := range []string{"/new", "/quit", "/goto", "/edit", "/branch", "/rm", "/jobs"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help 缺 %q:\n%s", want, out)
 		}
@@ -228,9 +228,14 @@ func TestSessionCommands(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "未配置记忆编辑器") {
 		t.Fatalf("memory err = %v", err)
 	}
+	// /jobs 已启用（M3）：未配置任务管理器时报配置错；/model 留待其里程碑。
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "jobs"}})
-	if err == nil || !strings.Contains(err.Error(), "尚未启用") {
+	if err == nil || !strings.Contains(err.Error(), "未配置任务管理器") {
 		t.Fatalf("jobs err = %v", err)
+	}
+	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
+	if err == nil || !strings.Contains(err.Error(), "尚未启用") {
+		t.Fatalf("model err = %v", err)
 	}
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "wat"}})
 	if err == nil || !strings.Contains(err.Error(), "未知命令") {
@@ -342,6 +347,73 @@ func newTestAgent(t *testing.T) *Agent {
 }
 
 // TestSessionTitleAndExitCommands /title 无参显示、有参改写并落盘；/exit = /quit 别名。
+// TestSessionJobsCommand /jobs 命令（M3）：list/logs/kill、前缀解析、用法与空表提示。
+func TestSessionJobsCommand(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+	jobs := &fakeJobs{
+		jobs: []port.Job{{
+			ID: "j001", Status: port.JobRunning, PID: 7, StartedAt: testTime,
+			Spec: port.JobSpec{Command: "srv", Args: []string{"--port", "1"}},
+		}},
+		logs: map[port.JobID]string{"j001": "listening\n"},
+	}
+	s.jobs = jobs
+
+	// list：展示状态与命令行。
+	out, err := handleCmd(s, "jobs")
+	if err != nil || !strings.Contains(out, "j001") || !strings.Contains(out, "running") ||
+		!strings.Contains(out, "srv --port 1") {
+		t.Fatalf("list = %q, %v", out, err)
+	}
+	// logs：前缀解析 + 缺省 tail + 内容回显。
+	out, err = handleCmd(s, "jobs", "logs", "j0")
+	if err != nil || !strings.Contains(out, "listening") {
+		t.Fatalf("logs = %q, %v", out, err)
+	}
+	if jobs.lastTail != defaultJobLogsTail {
+		t.Fatalf("tail = %d, want %d", jobs.lastTail, defaultJobLogsTail)
+	}
+	// logs：自定义行数透传。
+	if _, err := handleCmd(s, "jobs", "logs", "j001", "5"); err != nil {
+		t.Fatalf("logs n: %v", err)
+	}
+	if jobs.lastTail != 5 {
+		t.Fatalf("tail = %d, want 5", jobs.lastTail)
+	}
+	// kill：前缀解析并转发。
+	out, err = handleCmd(s, "jobs", "kill", "j0")
+	if err != nil || !strings.Contains(out, "已终止 j001") {
+		t.Fatalf("kill = %q, %v", out, err)
+	}
+	if len(jobs.killed) != 1 || jobs.killed[0] != "j001" {
+		t.Fatalf("killed = %v", jobs.killed)
+	}
+	// 未知子命令与坏参数报用法。
+	if _, err := handleCmd(s, "jobs", "wat"); err == nil || !strings.Contains(err.Error(), "用法") {
+		t.Fatalf("wat err = %v", err)
+	}
+	if _, err := handleCmd(s, "jobs", "logs", "j001", "-3"); err == nil ||
+		!strings.Contains(err.Error(), "正整数") {
+		t.Fatalf("bad tail err = %v", err)
+	}
+	if _, err := handleCmd(s, "jobs", "logs", "j999"); err == nil ||
+		!strings.Contains(err.Error(), "没有任务") {
+		t.Fatalf("unknown id err = %v", err)
+	}
+}
+
+// TestSessionJobsEmpty 空表提示。
+func TestSessionJobsEmpty(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+	s.jobs = &fakeJobs{}
+	out, err := handleCmd(s, "jobs", "list")
+	if err != nil || !strings.Contains(out, "暂无后台任务") {
+		t.Fatalf("out = %q, %v", out, err)
+	}
+}
+
 func TestSessionTitleAndExitCommands(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)
