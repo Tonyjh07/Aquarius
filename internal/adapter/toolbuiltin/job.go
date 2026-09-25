@@ -59,13 +59,17 @@ func (t *jobStart) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	if a.TimeoutSec < 0 {
 		return tool.Result{}, fmt.Errorf("timeout_sec 须为非负（0/缺省 = 不限时），当前 %d", a.TimeoutSec)
 	}
-	if wd := strings.TrimSpace(a.WorkDir); wd != "" && !absWorkDir(wd) {
+	if a.TimeoutSec > maxJobTimeoutSec {
+		return tool.Result{}, fmt.Errorf("timeout_sec 超出上限（≤ %d 秒），当前 %d", maxJobTimeoutSec, a.TimeoutSec)
+	}
+	wd := strings.TrimSpace(a.WorkDir)
+	if wd != "" && !absWorkDir(wd) {
 		return tool.Result{}, fmt.Errorf("workdir 须为绝对路径（缺省家目录），当前 %q", a.WorkDir)
 	}
 	job, err := jobs.Start(ctx, port.JobSpec{
 		Command: a.Command,
 		Args:    a.Args,
-		WorkDir: a.WorkDir,
+		WorkDir: wd, // 用校验过的 trim 值（审查修复：尾空格的路径校验通过却启动失败）
 		Timeout: time.Duration(a.TimeoutSec) * time.Second,
 	})
 	if err != nil {
@@ -270,11 +274,15 @@ func (t *jobKill) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	return okResult("已终止 " + string(id)), nil
 }
 
+// maxJobTimeoutSec job_start 超时上限（30 天）：既防负值也防 time.Duration 乘法
+// 溢出为负（审查修复——溢出会被 jobproc 静默当成"不限时"）。
+const maxJobTimeoutSec = 30 * 24 * 3600
+
 // absWorkDir 绝对路径判定（§14 M3 遗留：相对 workdir 按绝对路径口径拒收）。
-// 除 filepath.IsAbs 外放行根起始路径（Windows 上 "/tmp" 无盘符但仍是绝对定位，
-// 既有调用与 shell 语义均按当前盘根解析）。
+// 除 filepath.IsAbs 外放行根起始路径（Windows 上 "/tmp" 与 "\tmp" 无盘符但仍是
+// 绝对定位，既有调用与 shell 语义均按当前盘根解析）。
 func absWorkDir(p string) bool {
-	return filepath.IsAbs(p) || strings.HasPrefix(p, "/")
+	return filepath.IsAbs(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\")
 }
 
 // resolveJobID 解析任务标识（精确优先 + 唯一前缀，port 共用实现）；

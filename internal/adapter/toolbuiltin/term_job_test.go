@@ -167,6 +167,18 @@ func TestJobStartSpecs(t *testing.T) {
 		!strings.Contains(err.Error(), "非负") {
 		t.Fatalf("负 timeout_sec err = %v, want 拒收", err)
 	}
+	// 上限：防 Duration 乘法溢出（审查修复）。
+	if _, err := js.Execute(context.Background(), call(`{"command":"srv","timeout_sec":9999999999}`)); err == nil ||
+		!strings.Contains(err.Error(), "上限") {
+		t.Fatalf("超上限 timeout_sec err = %v, want 拒收", err)
+	}
+	// 校验与启动同值：带尾空格的绝对路径以 trim 后的值启动（审查修复）。
+	if _, err := js.Execute(context.Background(), call(`{"command":"srv","workdir":"/tmp "}`)); err != nil {
+		t.Fatalf("带尾空格的根起始 workdir 应接受: %v", err)
+	}
+	if got := jobs.started[len(jobs.started)-1].WorkDir; got != "/tmp" {
+		t.Fatalf("WorkDir = %q, want trim 后的 /tmp", got)
+	}
 	if _, err := js.Execute(context.Background(), call(`{"command":"srv","workdir":"rel/dir"}`)); err == nil ||
 		!strings.Contains(err.Error(), "绝对路径") {
 		t.Fatalf("相对 workdir err = %v, want 拒收", err)
@@ -175,8 +187,8 @@ func TestJobStartSpecs(t *testing.T) {
 	if _, err := js.Execute(context.Background(), call(`{"command":"srv","workdir":"/tmp"}`)); err != nil {
 		t.Fatalf("根起始 workdir 应接受: %v", err)
 	}
-	if len(jobs.started) != 2 {
-		t.Fatalf("非法参数不应启动: started=%d", len(jobs.started))
+	if len(jobs.started) != 3 {
+		t.Fatalf("非法参数不应启动: started=%d, want 3（两次合法 /tmp + 尾空格 trim）", len(jobs.started))
 	}
 }
 

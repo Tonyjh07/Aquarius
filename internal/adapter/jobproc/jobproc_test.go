@@ -249,6 +249,7 @@ func TestStartKill(t *testing.T) {
 // treeSpec 构造"父包装 + 子进程写标记"的任务（§14 M3 遗留：进程树终止的自动化验证）：
 // 父 = 被 Kill 的直接进程（cmd/sh），子 = 每秒追加 marker 的进程（ping / 内层 sh 循环）。
 // 若 killTree 只杀父进程，孤儿子进程会继续追加 → marker 增长 → 测试判失败。
+// 写入方均为**有界循环**（审查修复：断言失败时不留永久孤儿）。
 func treeSpec(mark string) port.JobSpec {
 	if runtime.GOOS == "windows" {
 		return port.JobSpec{
@@ -258,7 +259,33 @@ func treeSpec(mark string) port.JobSpec {
 	}
 	return port.JobSpec{
 		Command: "/bin/sh",
-		Args:    []string{"-c", `sh -c 'while :; do echo x >> "` + mark + `"; sleep 1; done' & wait`},
+		Args:    []string{"-c", `sh -c 'i=0; while [ $i -lt 120 ]; do echo x >> "` + mark + `"; i=$((i+1)); sleep 1; done' & wait`},
+	}
+}
+
+// TestStartFailureCleansUp 启动失败（不存在的命令）：不留日志、不入任务表
+// （审查修复：头行改到 Start 前写入后，失败分支的清理需要回归保护）。
+func TestStartFailureCleansUp(t *testing.T) {
+	dir := t.TempDir()
+	m, err := New(dir)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if _, err := m.Start(context.Background(), port.JobSpec{
+		Command: filepath.Join(dir, "definitely-missing-binary-xyz"),
+	}); err == nil {
+		t.Fatal("不存在的命令应报错")
+	}
+	if list, _ := m.List(context.Background()); len(list) != 0 {
+		t.Fatalf("list = %+v, want 空", list)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("日志目录残留: %v", names)
 	}
 }
 
@@ -284,10 +311,15 @@ func TestKillTerminatesProcessTree(t *testing.T) {
 	if err := m.Kill(context.Background(), job.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
+	// 失败路径兜底：断言失败也回收任务（含其进程树），避免测试间残留。
+	t.Cleanup(func() { _ = m.Kill(context.Background(), job.ID) })
 	waitFor(t, "任务被终止", func() bool {
 		j, serr := m.Status(context.Background(), job.ID)
 		return serr == nil && j.Status == port.JobKilled
 	})
+	// 先 settle：taskkill /T 逐个终止，直接进程先死会让状态先行，
+	// 立即快照可能撞上尚在写入周期内的子进程（审查修复的误判窗口）。
+	time.Sleep(500 * time.Millisecond)
 	// 快照后观察 3s（≥2 个写入周期）：仍在增长 = 孤儿子进程存活。
 	st1, err := os.Stat(mark)
 	if err != nil {
