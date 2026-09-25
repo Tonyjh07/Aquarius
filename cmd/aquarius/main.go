@@ -19,6 +19,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
@@ -39,6 +40,9 @@ import (
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
+
+// minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（DESIGN §7.1）。
+const minOutputReserve = 1024
 
 // run 程序主体（标准流可注入，便于端到端回放测试）。返回进程退出码。
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -241,11 +245,45 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Timeout:     toolTimeout,
 		MaxOutput:   maxOutput,
 	})
+	// 横切装饰器链（D14/§10，装配根叠加）：审计记每次真实调用，重试包在审计之外
+	// （一次用户可见的 Generate = 多条审计行），硬保底截断最内（发给服务端前裁到预算内）。
+	audit, err := decorate.NewAudit(filepath.Join(dir, "audit.log"), 0)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	defer audit.Close()
+	var counter port.TokenCounter
+	if c, ok := any(client).(port.TokenCounter); ok {
+		counter = c // 三级计数链②（D26）：裁剪估算与 Agent 内部共用同一 tokenizer
+	}
+	maxCtx := cfg.Limits.MaxContextTokens
+	if maxCtx <= 0 {
+		maxCtx = app.DefaultMaxContextTokens
+	}
+	fit := func(fctx context.Context, req port.GenerateRequest) (port.GenerateRequest, int) {
+		reserve := req.Budget.MaxOutputTokens
+		if reserve < minOutputReserve {
+			reserve = minOutputReserve
+		}
+		kept, omitted := app.TrimOldest(fctx, counter, req.Messages, maxCtx-reserve)
+		req.Messages = kept
+		return req, omitted
+	}
+	var gen port.LLM = client
+	gen = decorate.NewTruncate(gen, fit, func(omitted int) {
+		_ = presenter.Emit(ctx, port.NoticeEvent{
+			Text: fmt.Sprintf("硬保底截断：上下文超预算，已省略 %d 条最旧消息", omitted),
+		})
+	})
+	gen = decorate.AuditLLM(gen, audit)
+	gen = decorate.NewRetry(gen)
+	auditedRunner := decorate.AuditTool(runner, audit)
 	ids := systemIDGen{}
 	agent, err := app.New(
 		app.Deps{
-			LLM: client, UI: presenter, IDs: ids, Clock: systemClock{},
-			Tools: runner, Memory: mem, Blobs: blobs,
+			LLM: gen, UI: presenter, IDs: ids, Clock: systemClock{},
+			Tools: auditedRunner, Memory: mem, Blobs: blobs,
 		},
 		app.Config{
 			Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns,

@@ -262,3 +262,29 @@ func TestTrimOldest(t *testing.T) {
 		t.Fatalf("至少留 1 条非 system: %d/%d", len(k), o)
 	}
 }
+
+// TestTrimOldestExported D14 装配根注入入口：与 trimOldest 同约束
+// （保 leading system 与最近一条、超 target 才动刀）。
+func TestTrimOldestExported(t *testing.T) {
+	text := func(role, s string) port.PromptMessage {
+		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: "text", Text: s}}}
+	}
+	msgs := []port.PromptMessage{
+		text("system", "persona"),
+		text("user", strings.Repeat("长", 1000)),
+		text("assistant", strings.Repeat("a", 1000)),
+		text("user", "latest"),
+	}
+	kept, omitted := TrimOldest(context.Background(), nil, msgs, 10)
+	if omitted == 0 {
+		t.Fatal("应有裁剪")
+	}
+	if len(kept) != 2 || kept[0].Role != "system" || kept[1].Content[0].Text != "latest" {
+		t.Fatalf("kept = %+v, want [system latest]", kept)
+	}
+	// 未超预算（target 很大）：原样返回。
+	kept2, omitted2 := TrimOldest(context.Background(), nil, msgs, 1<<20)
+	if omitted2 != 0 || len(kept2) != len(msgs) {
+		t.Fatalf("未超预算不应裁: %d/%d", len(kept2), omitted2)
+	}
+}

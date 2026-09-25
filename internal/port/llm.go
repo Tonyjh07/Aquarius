@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -79,6 +80,10 @@ type LLM interface {
 	Generate(ctx context.Context, req GenerateRequest) (Stream, error)
 	Models(ctx context.Context) ([]ModelInfo, error)
 }
+
+// ErrTransient 瞬时错误哨兵（§10 装饰器重试判据）：适配器把 429/5xx/连接中断等
+// 可重试错误用 %w 包进错误链；未标注的错误一律视为不可重试，ctx 取消不算瞬时。
+var ErrTransient = errors.New("port: 瞬时错误（可重试）")
 
 // TokenCounter 可选精确计数能力（三级计数链②，D26）：LLM 适配器可选择性实现——
 // 本地 tokenizer（config model.tokenizer 指向 tokenizer.json）或服务端 count_tokens API。

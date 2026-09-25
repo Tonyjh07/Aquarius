@@ -348,6 +348,32 @@ func TestRunFullTextConversation(t *testing.T) {
 	if c.Title != "你好" {
 		t.Fatalf("title = %q, want 首条消息摘要", c.Title)
 	}
+
+	// 审计装饰器（D14/§8）：这一轮生成应落一行 llm 审计。
+	auditData, err := os.ReadFile(filepath.Join(dir, "audit.log"))
+	if err != nil {
+		t.Fatalf("audit.log: %v", err)
+	}
+	var llmOK int
+	for _, ln := range strings.Split(strings.TrimSpace(string(auditData)), "\n") {
+		if ln == "" {
+			continue
+		}
+		var line struct {
+			Kind  string `json:"kind"`
+			OK    bool   `json:"ok"`
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal([]byte(ln), &line); err != nil {
+			t.Fatalf("parse audit line %q: %v", ln, err)
+		}
+		if line.Kind == "llm" && line.OK && line.Model == "script-model" {
+			llmOK++
+		}
+	}
+	if llmOK != 1 {
+		t.Fatalf("audit llm ok 行 = %d, want 1（内容: %s）", llmOK, auditData)
+	}
 	if len(*reqs) != 1 {
 		t.Fatalf("llm requests = %d, want 1", len(*reqs))
 	}

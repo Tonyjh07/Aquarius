@@ -605,7 +605,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 压缩失败回退**最旧裁剪**（保 persona 与最近、丢中间，产出可发送的请求——
 不得留下孤立 tool 结果，并在 UI 提示"已省略 k 条"）；
 超预算的硬保底由截断装饰器执行（M4，D14：装饰器在装配根叠加，裁剪/估算逻辑由 `app`
-导出注入，装饰器不反向依赖 app）。不做向量化、不进记忆文档。
+导出注入，装饰器不反向依赖 app；裁到 `max_context_tokens − max(本轮 MaxOutputTokens, 1024)` 之下，
+省略发生时发 `NoticeEvent`）。不做向量化、不进记忆文档。
 
 ### 7.2 摄取 / 输出管线
 

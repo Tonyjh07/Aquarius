@@ -135,6 +135,10 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 		}
 		if resp == nil {
 			cancel()
+			if transientStatus(code) {
+				// §10：429/408/5xx 标注瞬时错误，供装配根的重试装饰器限次退避。
+				return nil, fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, chatPath, code, sn, port.ErrTransient)
+			}
 			return nil, fmt.Errorf("llm: POST %s%s: 状态码 %d: %s", c.base, chatPath, code, sn)
 		}
 	}
@@ -188,9 +192,20 @@ func (c *Client) post(ctx context.Context, path string, body []byte) (*http.Resp
 	c.authorize(req)
 	resp, err := c.hc.Do(req)
 	if err != nil {
+		// 传输层失败（连接拒绝/超时/DNS 抖动）视为瞬时；ctx 已取消的不算（§10）。
+		if ctx.Err() == nil {
+			return nil, fmt.Errorf("llm: POST %s: %w: %w", path, err, port.ErrTransient)
+		}
 		return nil, fmt.Errorf("llm: POST %s: %w", path, err)
 	}
 	return resp, nil
+}
+
+// transientStatus 可重试的 HTTP 状态（限流/请求超时/服务端错误）。
+func transientStatus(code int) bool {
+	return code == http.StatusTooManyRequests ||
+		code == http.StatusRequestTimeout ||
+		code >= http.StatusInternalServerError
 }
 
 // authorize 附加 Authorization 头（有密钥才发）。

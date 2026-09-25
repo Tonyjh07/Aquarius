@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -233,6 +234,63 @@ func TestGenerateHTTPError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "bad api key") {
 		t.Fatalf("err = %v, want 含状态码与服务端信息", err)
+	}
+}
+
+// TestGenerateTransientStatusTagging §10：429/408/5xx 标注 port.ErrTransient
+// （供装配根重试装饰器判据），4xx 业务错误不标注。
+func TestGenerateTransientStatusTagging(t *testing.T) {
+	cases := []struct {
+		code      int
+		transient bool
+	}{
+		{http.StatusTooManyRequests, true},
+		{http.StatusRequestTimeout, true},
+		{http.StatusInternalServerError, true},
+		{http.StatusBadGateway, true},
+		{http.StatusUnauthorized, false},
+		{http.StatusBadRequest, false},
+	}
+	for _, tc := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.code)
+			fmt.Fprint(w, `{"error":{"message":"nope"}}`)
+		}))
+		c, _ := New(Config{BaseURL: srv.URL})
+		_, err := c.Generate(context.Background(), port.GenerateRequest{
+			Model:    "m",
+			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		})
+		srv.Close()
+		if err == nil {
+			t.Fatalf("%d: want error", tc.code)
+		}
+		if got := errors.Is(err, port.ErrTransient); got != tc.transient {
+			t.Fatalf("%d: transient = %v, want %v（err=%v）", tc.code, got, tc.transient, err)
+		}
+	}
+}
+
+// TestGenerateTransportErrorTagging 连接层失败标瞬时；ctx 已取消的不算（§10 不重试）。
+func TestGenerateTransportErrorTagging(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	url := srv.URL
+	srv.Close() // 此后连接必然失败
+
+	c, _ := New(Config{BaseURL: url})
+	req := port.GenerateRequest{
+		Model:    "m",
+		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+	}
+	if _, err := c.Generate(context.Background(), req); err == nil || !errors.Is(err, port.ErrTransient) {
+		t.Fatalf("err = %v, want 瞬时标注", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.Generate(ctx, req)
+	if errors.Is(err, port.ErrTransient) {
+		t.Fatalf("ctx 取消的错误不应标瞬时: %v", err)
 	}
 }
 

@@ -76,7 +76,7 @@ internal/app/        agent（Turn 循环）、prompt（装配/水位）、sessio
 internal/plugin/     registry、mcp（生命周期）、grant（授权）（M4 起建）
 internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
-                     ingestfile、ingestclip、notify、atomicfile
-待建：                mcpgate、uitui、decorate（M4）；pluginapi/v1、plugingo（后移出 M4，D29）；
+                     ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）
+待建：                mcpgate、uitui（M4）；pluginapi/v1、plugingo（后移出 M4，D29）；
                      asr、tts（backlog，D27）
 ```

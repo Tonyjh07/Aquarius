@@ -404,7 +404,7 @@ func TestUsageReport(t *testing.T) {
 		t.Fatalf("estimate = %d（max %d）", rep.Estimate, rep.MaxCtx)
 	}
 	thr := defaultCompactThreshold // 经变量打破常量折叠（int(常量小数) 非法）
-	wantCompactAt := int(thr*float64(defaultMaxContextTokens) + 0.5)
+	wantCompactAt := int(thr*float64(DefaultMaxContextTokens) + 0.5)
 	if rep.CompactAt != wantCompactAt {
 		t.Fatalf("compactAt = %d, want %d（默认 0.7×64000）", rep.CompactAt, wantCompactAt)
 	}

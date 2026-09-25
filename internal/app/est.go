@@ -24,11 +24,13 @@ const (
 	calMin, calMax     = 0.5, 2.0
 )
 
-// defaultCompactThreshold / defaultMaxContextTokens Config 零值时的默认
+// defaultCompactThreshold / DefaultMaxContextTokens Config 零值时的默认
 // （DESIGN §8 limits.compact_threshold=0.7、max_context_tokens=64000）。
+// MaxContextTokens 导出供装配根的硬保底截断装饰器对齐同一预算（D14/§7.1）。
 const (
 	defaultCompactThreshold = 0.7
-	defaultMaxContextTokens = 64000
+	// DefaultMaxContextTokens 上下文预算默认值（见上注）。
+	DefaultMaxContextTokens = 64000
 )
 
 // estimator 三级计数链的②③两层（①在树上，不经这里）。
@@ -120,6 +122,14 @@ func isCJK(r rune) bool {
 		unicode.Is(unicode.Hiragana, r) ||
 		unicode.Is(unicode.Katakana, r) ||
 		unicode.Is(unicode.Hangul, r)
+}
+
+// TrimOldest 硬保底截断的导出入口（D14/§7.1）：装配根的截断装饰器经闭包注入本函数，
+// 装饰器（adapter 侧）不反向依赖 app。counter 可为 nil（纯通用估算③）；
+// 超 target 从最旧处裁剪，约束与调用时机同 trimOldest（保 leading system 与最近、
+// 不留前导孤儿 tool）。返回 (保留消息, 省略条数)。
+func TrimOldest(ctx context.Context, counter port.TokenCounter, msgs []port.PromptMessage, target int) ([]port.PromptMessage, int) {
+	return newEstimator(counter).trimOldest(ctx, msgs, target)
 }
 
 // trimOldest 从最旧处裁剪消息直到估算低于 target（D21：压缩失败回退最旧裁剪——

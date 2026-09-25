@@ -99,7 +99,7 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	}
 	maxCtx := cfg.MaxContextTokens
 	if maxCtx <= 0 {
-		maxCtx = defaultMaxContextTokens
+		maxCtx = DefaultMaxContextTokens
 	}
 	// 三级计数链②：LLM 适配器可选实现 TokenCounter（D26），实现即覆盖通用估算③。
 	var counter port.TokenCounter
