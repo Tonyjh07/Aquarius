@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,17 +32,52 @@ type recordedReq struct {
 
 // scriptServer 造一个按序回话的 OpenAI 兼容 SSE 服务。
 // replies[i] 是第 i+1 次请求的回复文本。
-func scriptServer(t *testing.T, replies []string) (*httptest.Server, *[]recordedReq) {
+// reqLog 脚本服务的请求收集器：handler goroutine 写、测试体读——
+// 裸切片无同步边，-race 会判为无序访问（审查修复）。
+type reqLog struct {
+	mu    sync.Mutex
+	items []recordedReq
+}
+
+// add 记录一次请求，返回其下标。
+func (l *reqLog) add(r recordedReq) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.items = append(l.items, r)
+	return len(l.items) - 1
+}
+
+// len 请求总数。
+func (l *reqLog) len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.items)
+}
+
+// at 第 i 条（越界即 panic——测试尽早失败）。
+func (l *reqLog) at(i int) recordedReq {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.items[i]
+}
+
+// all 全量快照（range 遍历用）。
+func (l *reqLog) all() []recordedReq {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]recordedReq(nil), l.items...)
+}
+
+func scriptServer(t *testing.T, replies []string) (*httptest.Server, *reqLog) {
 	t.Helper()
-	var reqs []recordedReq
+	reqs := &reqLog{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
 			http.NotFound(w, r)
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
-		reqs = append(reqs, recordedReq{body: body})
-		i := len(reqs) - 1
+		i := reqs.add(recordedReq{body: body})
 		if i >= len(replies) {
 			t.Errorf("第 %d 次请求超出脚本", i+1)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -52,7 +88,7 @@ func scriptServer(t *testing.T, replies []string) (*httptest.Server, *[]recorded
 		fmt.Fprint(w, "data: [DONE]\n")
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &reqs
+	return srv, reqs
 }
 
 // writeConfig 写入可运行的 config.json（密钥走 secret 引用）。
@@ -420,8 +456,8 @@ func TestRunFullTextConversation(t *testing.T) {
 	if llmOK != 1 {
 		t.Fatalf("audit llm ok 行 = %d, want 1（内容: %s）", llmOK, auditData)
 	}
-	if len(*reqs) != 1 {
-		t.Fatalf("llm requests = %d, want 1", len(*reqs))
+	if reqs.len() != 1 {
+		t.Fatalf("llm requests = %d, want 1", reqs.len())
 	}
 	var first struct {
 		Model    string `json:"model"`
@@ -430,7 +466,7 @@ func TestRunFullTextConversation(t *testing.T) {
 			Role string `json:"role"`
 		} `json:"messages"`
 	}
-	if err := json.Unmarshal((*reqs)[0].body, &first); err != nil {
+	if err := json.Unmarshal(reqs.at(0).body, &first); err != nil {
 		t.Fatalf("parse request: %v", err)
 	}
 	if first.Model != "script-model" || !first.Stream {
@@ -451,10 +487,10 @@ func TestRunFullTextConversation(t *testing.T) {
 	if !strings.Contains(out2.String(), c.Title) {
 		t.Fatalf("run2 /list 应含标题 %q: %q", c.Title, out2.String())
 	}
-	if len(*reqs) != 2 {
-		t.Fatalf("llm requests = %d, want 2", len(*reqs))
+	if reqs.len() != 2 {
+		t.Fatalf("llm requests = %d, want 2", reqs.len())
 	}
-	second := string((*reqs)[1].body)
+	second := string(reqs.at(1).body)
 	for _, want := range []string{"你好", "继续聊", "你好，我是脚本模型。"} {
 		if !strings.Contains(second, want) {
 			t.Fatalf("第二次请求应携带历史 %q: %s", want, second)
@@ -498,8 +534,8 @@ func TestRunTUIAcceptsKind(t *testing.T) {
 		t.Fatalf("code = %d, out = %q, err = %q", code, out.String(), errBuf.String())
 	}
 	got := out.String()
-	t.Logf("llm requests = %d", len(*reqs))
-	for i, r := range *reqs {
+	t.Logf("llm requests = %d", reqs.len())
+	for i, r := range reqs.all() {
 		t.Logf("req[%d] = %.120s", i, r.body)
 	}
 	for _, want := range []string{"在吗", "TUI 好的", "模型 m", "/quit"} {
@@ -507,8 +543,8 @@ func TestRunTUIAcceptsKind(t *testing.T) {
 			t.Fatalf("TUI 输出缺 %q；stderr=%q", want, errBuf.String())
 		}
 	}
-	if len(*reqs) != 1 {
-		t.Fatalf("llm requests = %d, want 1", len(*reqs))
+	if reqs.len() != 1 {
+		t.Fatalf("llm requests = %d, want 1", reqs.len())
 	}
 }
 
@@ -548,8 +584,8 @@ func TestRunTUIConfirmE2E(t *testing.T) {
 	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("y 确认后文件应被删除: %v", err)
 	}
-	if len(*reqs) != 2 {
-		t.Fatalf("llm requests = %d, want 2（工具轮 + 回答轮）", len(*reqs))
+	if reqs.len() != 2 {
+		t.Fatalf("llm requests = %d, want 2（工具轮 + 回答轮）", reqs.len())
 	}
 }
 
@@ -646,8 +682,8 @@ func TestRunRmConfirmE2E(t *testing.T) {
 		t.Fatalf("-yes 后 nodes = %d, want 2（root+persona）", len(c.Nodes))
 	}
 	// 只有首轮对话花生成请求（其余均为命令）。
-	if len(*reqs) != 2 {
-		t.Fatalf("llm requests = %d, want 2", len(*reqs))
+	if reqs.len() != 2 {
+		t.Fatalf("llm requests = %d, want 2", reqs.len())
 	}
 }
 
@@ -656,17 +692,16 @@ func TestRunRmConfirmE2E(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // rawScriptServer 按序回话的 SSE 服务：第 i 次请求逐行回放 dataLines[i]（可含 tool_calls）。
-func rawScriptServer(t *testing.T, dataLines [][]string) (*httptest.Server, *[]recordedReq) {
+func rawScriptServer(t *testing.T, dataLines [][]string) (*httptest.Server, *reqLog) {
 	t.Helper()
-	var reqs []recordedReq
+	reqs := &reqLog{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
 			http.NotFound(w, r)
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
-		reqs = append(reqs, recordedReq{body: body})
-		i := len(reqs) - 1
+		i := reqs.add(recordedReq{body: body})
 		if i >= len(dataLines) {
 			t.Errorf("第 %d 次请求超出脚本", i+1)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -679,7 +714,7 @@ func rawScriptServer(t *testing.T, dataLines [][]string) (*httptest.Server, *[]r
 		fmt.Fprint(w, "data: [DONE]\n")
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &reqs
+	return srv, reqs
 }
 
 // contentData 纯文本回复的 data 行。
@@ -836,11 +871,11 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 			t.Fatalf("memory = %q", data)
 		}
 		// 第二次请求带上 tool 结果；首次请求带 tools 声明。
-		if !strings.Contains(string((*reqs)[0].body), `"tools"`) {
+		if !strings.Contains(string(reqs.at(0).body), `"tools"`) {
 			t.Fatal("首次请求应带工具声明")
 		}
-		if !strings.Contains(string((*reqs)[1].body), "已写入") {
-			t.Fatalf("第二次请求应带工具结果: %.300s", (*reqs)[1].body)
+		if !strings.Contains(string(reqs.at(1).body), "已写入") {
+			t.Fatalf("第二次请求应带工具结果: %.300s", reqs.at(1).body)
 		}
 		c := loadTree(t, dir)
 		tn, ok := findToolNode(c)
@@ -972,11 +1007,11 @@ func TestRunTermExecE2E(t *testing.T) {
 	} else if !strings.Contains(okSeg, "quoted e2e") {
 		t.Fatalf("结果段缺命令输出: %q", okSeg)
 	}
-	if len(*reqs) != 2 {
-		t.Fatalf("llm requests = %d, want 2", len(*reqs))
+	if reqs.len() != 2 {
+		t.Fatalf("llm requests = %d, want 2", reqs.len())
 	}
-	if !strings.Contains(string((*reqs)[1].body), "quoted e2e") {
-		t.Fatalf("第二次请求应回填命令输出: %.400s", (*reqs)[1].body)
+	if !strings.Contains(string(reqs.at(1).body), "quoted e2e") {
+		t.Fatalf("第二次请求应回填命令输出: %.400s", reqs.at(1).body)
 	}
 	c := loadTree(t, dir)
 	tn, ok := findToolNode(c)
@@ -1032,8 +1067,8 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 	if !strings.Contains(got, "job-e2e") {
 		t.Fatalf("日志应回显任务输出: %q", got)
 	}
-	if len(*reqs) != 2 {
-		t.Fatalf("llm requests = %d, want 2", len(*reqs))
+	if reqs.len() != 2 {
+		t.Fatalf("llm requests = %d, want 2", reqs.len())
 	}
 	// 任务日志文件落盘（jobs/<id>.log）。
 	logPath := filepath.Join(dir, "jobs", "j001.log")

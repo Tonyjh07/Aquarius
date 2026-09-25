@@ -88,19 +88,19 @@ func TestRunPluginMCPFullChain(t *testing.T) {
 			t.Fatalf("stdout 缺 %q: %q", want, got)
 		}
 	}
-	if len(*reqs) != 3 {
-		t.Fatalf("llm requests = %d, want 3（工具调用/回答/prompt 轮）", len(*reqs))
+	if reqs.len() != 3 {
+		t.Fatalf("llm requests = %d, want 3（工具调用/回答/prompt 轮）", reqs.len())
 	}
 	// 请求1 带 mcp: 工具声明（发现）。
-	if !strings.Contains(string((*reqs)[0].body), "mcp:fake:echo") {
-		t.Fatalf("请求1 缺 mcp 工具声明: %.300s", (*reqs)[0].body)
+	if !strings.Contains(string(reqs.at(0).body), "mcp:fake:echo") {
+		t.Fatalf("请求1 缺 mcp 工具声明: %.300s", reqs.at(0).body)
 	}
 	// 请求2 回填 MCP 结果（tool 消息里是 JSON 转义后的 structured content 文本）。
-	if !strings.Contains(string((*reqs)[1].body), "\\\"echo\\\":\\\"ping\\\"") {
-		t.Fatalf("请求2 缺 MCP 工具结果: %.400s", (*reqs)[1].body)
+	if !strings.Contains(string(reqs.at(1).body), "\\\"echo\\\":\\\"ping\\\"") {
+		t.Fatalf("请求2 缺 MCP 工具结果: %.400s", reqs.at(1).body)
 	}
 	// 请求3 的用户消息 = prompt 渲染文本（greet 命令 → Handle(Text)）。
-	if !strings.Contains(string((*reqs)[2].body), "Hello tony") {
-		t.Fatalf("请求3 缺 prompt 渲染输入: %.400s", (*reqs)[2].body)
+	if !strings.Contains(string(reqs.at(2).body), "Hello tony") {
+		t.Fatalf("请求3 缺 prompt 渲染输入: %.400s", reqs.at(2).body)
 	}
 }

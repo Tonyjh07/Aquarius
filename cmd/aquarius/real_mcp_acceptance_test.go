@@ -57,17 +57,17 @@ func TestRealMCPEverythingAcceptance(t *testing.T) {
 				t.Fatalf("stdout 缺 %q: %q", want, got)
 			}
 		}
-		if len(*reqs) != 3 {
-			t.Fatalf("requests = %d, want 3", len(*reqs))
+		if reqs.len() != 3 {
+			t.Fatalf("requests = %d, want 3", reqs.len())
 		}
-		if !strings.Contains(string((*reqs)[0].body), "mcp:everything:echo") {
+		if !strings.Contains(string(reqs.at(0).body), "mcp:everything:echo") {
 			t.Fatal("请求1 缺真实 server 的工具声明")
 		}
-		if !strings.Contains(string((*reqs)[1].body), "real-server-ok") {
-			t.Fatalf("请求2 缺真实工具结果: %.400s", (*reqs)[1].body)
+		if !strings.Contains(string(reqs.at(1).body), "real-server-ok") {
+			t.Fatalf("请求2 缺真实工具结果: %.400s", reqs.at(1).body)
 		}
-		if !strings.Contains(string((*reqs)[2].body), "北京") {
-			t.Fatalf("请求3 缺 prompt 渲染输入: %.400s", (*reqs)[2].body)
+		if !strings.Contains(string(reqs.at(2).body), "北京") {
+			t.Fatalf("请求3 缺 prompt 渲染输入: %.400s", reqs.at(2).body)
 		}
 	})
 
@@ -93,8 +93,8 @@ func TestRealMCPEverythingAcceptance(t *testing.T) {
 				t.Fatalf("stdout 缺 %q: %q", want, got)
 			}
 		}
-		if !strings.Contains(string((*reqs)[1].body), "real-http-ok") {
-			t.Fatalf("请求2 缺真实工具结果: %.400s", (*reqs)[1].body)
+		if !strings.Contains(string(reqs.at(1).body), "real-http-ok") {
+			t.Fatalf("请求2 缺真实工具结果: %.400s", reqs.at(1).body)
 		}
 	})
 }
