@@ -81,6 +81,16 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
    （`Matrix()` 展示由判定推导，勿硬编码第二份）；
 3. config 模板与校验无需变（`Parse` 自动接受新枚举）。
 
+### 更换项目图标与 Windows 资源
+
+1. 源图放 `assets/icon.png`（512×512、正方形、透明底 PNG；白底图会把方角带进产物）；
+2. `go run ./cmd/iconify` 重新生成 `assets/icon/`：面积平均缩放的 16–256 PNG、
+   `aquarius.ico`、`aquarius.icns`（容器手写、纯 Go 无三方依赖，测试覆盖编解码）；
+3. Windows 程序图标与版本信息：`go generate ./cmd/aquarius`——按 `cmd/aquarius/winres/winres.json`
+   重生成 `rsrc_windows_<arch>.syso` 并随包提交（`go run ...@v0.3.3` 走模块缓存，不进 go.mod）。
+   文件名构建约束保证这些对象只链入 Windows 目标，`GOOS=linux/darwin` 交叉编译不受影响；
+   改版本号同步改 winres.json 的 `fixed`/`info` 两处。
+
 ## 提交规范
 
 - 祈使句英文：`feat:` / `fix:` / `test:` / `docs:` / `refactor:`；一个 commit 只做一件事。
