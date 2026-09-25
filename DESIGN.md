@@ -187,7 +187,8 @@ func (c *Conversation) Validate() error                     // 三条不变量�
   清空后装配回退 config 兜底注入）。
 - **上下文压缩水位**（D21）：压缩摘要以 system 节点入树；装配 = [persona] + [最新摘要] + [摘要之后]，
   摘要之上（persona 除外）历史一律不回传；多次压缩链式吸收（只回传最新摘要）。
-  `/compact` 手动触发、失败只报错树无损；超预算硬保底仍是最旧裁剪（三轨压缩见 §7.1）。
+  `/compact` 手动触发、失败只报错树无损；压缩失败回退最旧裁剪、超预算硬保底由
+  截断装饰器执行（三轨压缩与硬保底见 §7.1/D14）。
 - `Prune` 是唯一破坏性操作；`storejson` 写文件前保留一代 `.bak` 防误删（§13-D7）。
 
 ### 4.2 附件与多模态承载
@@ -584,8 +585,9 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
    经 `NoticeEvent` 提示"已省略 k 条"）。
 3. **自触发**：模型经 `context_compact` 工具（Safe）自行管理上下文。
 
-压缩失败一律**回退最旧裁剪**（保 persona 与最近、丢中间，并在 UI 提示"已省略 k 条"）；
-超预算的硬保底始终是从最旧裁剪（截断装饰器，D14）。不做向量化、不进记忆文档。
+压缩失败回退**最旧裁剪**（保 persona 与最近、丢中间，产出可发送的请求——
+不得留下孤立 tool 结果，并在 UI 提示"已省略 k 条"）；
+超预算的硬保底由截断装饰器执行（M4，D14）。不做向量化、不进记忆文档。
 
 ### 7.2 摄取 / 输出管线
 
@@ -776,11 +778,22 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D23 | 记忆布局 = 全局单文件 `memories.md` + 会话级 `conversations/<id>.memory.md` | `memory/**/*.md` 目录树（个人单文件即可直读直编，目录树徒增组织成本）；会话记忆独立目录（与会话树分家，迁移/删除要同步两处） |
 | D24 | `/memory` = 系统编辑器直开记忆文件（无子命令） | `list\|show\|edit\|rm` 子命令集（编辑器即最强编辑 UI，命令面保持极简） |
 | D25 | ToolRunner 落位 `internal/adapter/toolrun`，文件类权限经可选接口 `FileTarget` 由工具**自申报**目标路径 | 按工具名前缀硬编码分类（内核腐化、三方工具无法参与）；往 `tool.Spec` 塞权限字段（污染模型可见的工具声明） |
-| D26 | token 计数**三级链**：①服务端实测 usage（已发生的）→ ②适配器可选 `TokenCounter`（本地 tokenizer.json / count_tokens API，覆盖估算）→ ③通用字符估算 + 服务端 usage 自校准；tokenizer 经 `model.tokenizer` 指路径懒加载 | 通用估算一刀切（已可拿到精确值时不拿）；词表 embed 进二进制（+数 MB 且换模型即失效）；实现 Jinja chat_template 渲染（要引模板引擎，且结构开销用常数已够准）；强推 count_tokens API（openai-compatible 普遍没有） |
+| D26 | token 计数**三级链**：①服务端实测 usage（已发生的）→ ②适配器可选 `TokenCounter`（本地 tokenizer.json / count_tokens API，覆盖估算）→ ③通用字符估算 + 服务端 usage 自校准；tokenizer 经 `model.tokenizer` 指路径**启动时加载、错误 fail-fast** | 通用估算一刀切（已可拿到精确值时不拿）；词表 embed 进二进制（+数 MB 且换模型即失效）；实现 Jinja chat_template 渲染（要引模板引擎，且结构开销用常数已够准）；强推 count_tokens API（openai-compatible 普遍没有） |
 
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
+- **M2 审查遗留（P2/P3，2026-09 评审）**：
+  - `inSandbox` 词法判定不解析符号链接（`EvalSymlinks` 补齐，须在 M3 `term_exec` 之前）
+  - `file_write`/`memoryfs` 写入的临时文件唯一化与既有权限继承（固定 tmp 名并发互踩、
+    覆盖会把 0600 放宽成 0644）
+  - `execTool` 对装配级错误（Confirmer 未配置等）快速失败上抛，而非回填 `OK=false`
+    让模型空转到 MaxTurns
+  - trim 估算并入工具 schema（当前只按消息文本估，工具声明的 1–2k tokens 漏算）
+  - regexp2 `MatchTimeout` 与计数路径的 ctx 检查（模型可控输入的回溯爆炸防护）
+  - Agent/Runner 共享可变状态的并发模型显式化（多会话共享实例时加锁）
+  - `think` 参数非空校验；压缩摘要流的 UI 标注（"正在生成摘要"以区别于回答流）；
+    `/usage` "上轮实测"文案改"最近实测"；trim `omitted==0` 时的通知措辞
 - 跨分支"摘抄"共享子树（DAG 化）
 - Job 表持久化（SQLite）
 - PDF/Office 等 Doc 提取器插件

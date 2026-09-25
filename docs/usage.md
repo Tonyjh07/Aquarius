@@ -67,7 +67,8 @@ go build ./cmd/aquarius
   （①已发生的服务端实测 usage 自校准 → ②适配器本地 tokenizer 精确计数，
   配置 `model.tokenizer` 即启用 → ③通用估算 ASCII÷4 / CJK÷1.5 / 其他÷2），
   达 `limits.compact_threshold`（默认 0.7 × `max_context_tokens`）自动压缩——
-  每次对话至多一次；失败回退"最旧裁剪"（保人格与最近、丢中间，`[notice]` 提示省略条数）。
+  每次 Run（单条输入触发的整轮工具循环）至多一次；失败回退"最旧裁剪"
+  （保人格与最近、丢中间，`[notice]` 提示省略条数，绝不留下孤立 tool 消息）。
 - **自触发轨（M2 起可用）**：模型经 `context_compact` 工具（Safe）自我管理上下文。
 
 persona（人格）恒回传：它是会话首节点（system 角色），源自 config 的 `system_prompt`
