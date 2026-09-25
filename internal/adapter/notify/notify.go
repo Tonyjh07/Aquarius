@@ -70,8 +70,9 @@ func MessageText(req port.OutputRequest) string {
 }
 
 // Preview 截断到 max 个 rune（超出加省略号）；空文本返回空。
+// 先剔除控制字符（§14 M3 遗留：ESC/BEL 等防通知/终端注入——正文是不可信模型输出）。
 func Preview(text string, max int) string {
-	text = collapseSpaces(text)
+	text = sanitizeControl(collapseSpaces(text))
 	if text == "" {
 		return ""
 	}
@@ -83,6 +84,52 @@ func Preview(text string, max int) string {
 		return text
 	}
 	return string(r[:max]) + "…"
+}
+
+// sanitizeControl 剔除控制序列与控制字符（§14 M3 遗留）：
+// 先吞完整 ANSI 转义序列（CSI `ESC[…终止`、OSC `ESC]…BEL/ESC\`、其余两字符转义），
+// 再剔除残余 C0 控制符（保留空白已被 collapseSpaces 压平）、DEL 与 C1——
+// 正文是不可信模型输出，ESC 剥净即瓦解注入面（§9：只渲染不执行）。
+func sanitizeControl(s string) string {
+	var b strings.Builder
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		if r == 0x1b && i+1 < len(rs) {
+			switch rs[i+1] {
+			case '[': // CSI：吞至终结字节（0x40–0x7E）
+				j := i + 2
+				for j < len(rs) && (rs[j] < 0x40 || rs[j] > 0x7e) {
+					j++
+				}
+				if j < len(rs) {
+					i = j
+				} else {
+					i = len(rs) - 1
+				}
+				continue
+			case ']': // OSC：吞至 BEL 或 ESC\
+				j := i + 2
+				for j < len(rs) && rs[j] != 0x07 && !(rs[j] == 0x1b && j+1 < len(rs) && rs[j+1] == '\\') {
+					j++
+				}
+				if j < len(rs) {
+					i = j
+				} else {
+					i = len(rs) - 1
+				}
+				continue
+			default: // 其余两字符转义（如 ESC M）
+				i++
+				continue
+			}
+		}
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // collapseSpaces 压平空白（含换行/制表）为空格。

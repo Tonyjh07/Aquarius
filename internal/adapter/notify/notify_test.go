@@ -108,3 +108,31 @@ func TestDeliverPropagatesSendError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// TestPreviewStripsControlChars §14 M3 遗留：通知正文剔除控制字符
+// （ESC/BEL/DEL/C1——正文是不可信模型输出，防通知与终端注入）。
+func TestPreviewStripsControlChars(t *testing.T) {
+	in := "正常文本\x1b[31m红色\x07告警\x7f\x85结尾"
+	got := Preview(in, 0)
+	for _, bad := range []string{"\x1b", "[31m", "\x07", "\x7f", "\x85"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("未剔除 %q: %q", bad, got)
+		}
+	}
+	for _, want := range []string{"正常文本", "红色", "告警", "结尾"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("正常文本被误删 %q: %q", want, got)
+		}
+	}
+	// Deliver 同路径生效。
+	var sent string
+	a := New(func(_, body string) error { sent = body; return nil })
+	if err := a.Deliver(context.Background(), port.OutputRequest{
+		Parts: []conversation.Part{{Kind: conversation.PartText, Text: "前\x00后"}},
+	}); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	if strings.Contains(sent, "\x00") || !strings.Contains(sent, "前后") {
+		t.Fatalf("sent = %q", sent)
+	}
+}
