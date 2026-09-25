@@ -530,6 +530,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/usage                  查看 token 用量（上下文占用/上轮实测/会话累计，三级计数链 D26）",
 			"/jobs [list|logs <id> [行数]|kill <id>]  后台任务管理（job_start 启动的任务，DESIGN §7.3）",
 			"/quit, /exit            退出",
+			"/model, /plugin         尚未启用（里程碑 M4）",
 		}, "\n"), nil
 
 	case "model", "plugin":
