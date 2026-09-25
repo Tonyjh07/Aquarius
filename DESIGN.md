@@ -597,6 +597,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 输出：CommittedEvent → Presenter.Emit（文本渲染 / 图片占位 / 音频播放器）
                   └→ 各 OutputAdapter.Deliver（TTS 播报 / 通知 / 导出），失败只记日志
+      —— 扇出点在装配根的 Presenter 装饰器上（D28/D14）：包装实际 UI，仅对
+      提交的 assistant 文本 Deliver；app 与 UI 适配器均不感知输出器。
 ```
 
 ### 7.3 命令体系
@@ -744,7 +746,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | **M0 骨架** | go.mod、`domain/conversation` + 性质测试、`port` 全量接口、storejson、repl UI、openai 兼容适配器 | 二进制跑通一轮纯文本对话；会话树存取正确；性质测试全绿 |
 | **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
-| **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板/麦克风）、ASR/TTS 适配器、输出器 | "语音提问 → 文本回答 → TTS 播报"链路端到端跑通；job 后台跑 + 日志可查 |
+| **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
 | **M4 MCP 与 TUI** | mcpgate + grant + `/plugin`、bubbletea TUI（多模态呈现）、装饰器链（重试/截断/审计） | 接入任一现成 MCP server 全链路可用；崩溃重启与授权拒绝行为符合 §6.4 |
 
 ---
@@ -779,10 +781,17 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D24 | `/memory` = 系统编辑器直开记忆文件（无子命令） | `list\|show\|edit\|rm` 子命令集（编辑器即最强编辑 UI，命令面保持极简） |
 | D25 | ToolRunner 落位 `internal/adapter/toolrun`，文件类权限经可选接口 `FileTarget` 由工具**自申报**目标路径 | 按工具名前缀硬编码分类（内核腐化、三方工具无法参与）；往 `tool.Spec` 塞权限字段（污染模型可见的工具声明） |
 | D26 | token 计数**三级链**：①服务端实测 usage（已发生的）→ ②适配器可选 `TokenCounter`（本地 tokenizer.json / count_tokens API，覆盖估算）→ ③通用字符估算 + 服务端 usage 自校准；tokenizer 经 `model.tokenizer` 指路径**启动时加载、错误 fail-fast** | 通用估算一刀切（已可拿到精确值时不拿）；词表 embed 进二进制（+数 MB 且换模型即失效）；实现 Jinja chat_template 渲染（要引模板引擎，且结构开销用常数已够准）；强推 count_tokens API（openai-compatible 普遍没有） |
+| D27 | **M3 范围调整**：M3 落 JobManager + blobfs + Ingestor 管线 + notify 输出器；REPL 输入命令面（`/attach`/`/clip`/`/mic`）与 ASR/TTS/麦克风移入 §14 backlog，随 M4 TUI（或独立里程碑）落地 | 硬凑"语音提问 → TTS 播报"验收（REPL 行式输入无拖拽/语音按钮；语音适配器选型未定，先定契约后装实现） |
+| D28 | 输出器扇出点 = 装配根的 **Presenter 装饰器**：包住实际 UI，收到 `CommittedEvent` 后逐个调 `OutputAdapter.Deliver`，失败只记日志 | app 内直连输出器（内核直连具体实现违反 D13；扇出属横切，按 D14 走装配根装饰器） |
 
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
+- **语音输入与播报（D27 移入）**：
+  - ASR（`Transcriber`）/ TTS（`Synthesizer`）适配器选型与实现（whisper-api / 系统朗读 / 云 TTS）
+  - 麦克风采集（`Kind=mic` 摄取）
+  - `/attach` `/clip` `/mic` 输入命令与 TUI 拖拽/粘贴/语音按钮（随 M4 TUI 走同一 `UserInput.Raw` 入口）
+  - 导出文件输出器（`output.tts` 同批启用）
 - **M2 审查遗留（P2/P3，2026-09 评审）**：
   - `inSandbox` 词法判定不解析符号链接（`EvalSymlinks` 补齐，须在 M3 `term_exec` 之前）
   - `file_write`/`memoryfs` 写入的临时文件唯一化与既有权限继承（固定 tmp 名并发互踩、

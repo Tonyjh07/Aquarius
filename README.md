@@ -30,7 +30,7 @@ M2 提供**工具与记忆**：内置工具 memory_*/file_*/think/context_compac
 **三级 token 计数链**（服务端实测 usage → 适配器本地 tokenizer 精确计数 → 通用估算+自校准）
 支撑自动压缩与 `/usage` 用量查看。
 命令：`/new /list /title /goto /edit /branch /rm /compact /permission /memory /usage /quit /exit /help`。
-后续按里程碑推进：M3 任务与多模态（job_*/term_exec、附件、语音）→ M4 MCP 与 TUI。
+后续按里程碑推进：M3 任务与多模态（job_*/term_exec、附件、notify 输出器；语音输入/播报按 DESIGN D27 后移）→ M4 MCP 与 TUI。
 
 ## 文档
 
