@@ -423,6 +423,34 @@ func TestRunRecordsUnsupportedParams(t *testing.T) {
 	}
 }
 
+// TestRunTUIReasoningE2E D34：思维链全链路——SSE reasoning_content 分片 → TUI
+// [thinking] 暗块展示，正文照常提交（推理不入树，由 app 层测试保证）。
+func TestRunTUIReasoningE2E(t *testing.T) {
+	reasonLine := `data: {"choices":[{"delta":{"reasoning_content":"先想一想"}}]}`
+	srv, reqs := rawScriptServer(t, [][]string{{reasonLine, contentData("答案")}})
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X"},"ui":{"kind":"tui"},
+  "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	got := out.String()
+	for _, want := range []string{"[thinking]", "先想一想", "答案"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("TUI 思维链链路缺 %q: %.500s", want, got)
+		}
+	}
+	if reqs.len() != 1 {
+		t.Fatalf("llm requests = %d, want 1", reqs.len())
+	}
+}
+
 // TestRunAttachmentGC 启动附件 GC：按全量会话引用保活、清扫孤儿；
 // 引用收集失败（store 报错）时跳过清扫并告警——宁可漏清不误删。
 func TestRunAttachmentGC(t *testing.T) {

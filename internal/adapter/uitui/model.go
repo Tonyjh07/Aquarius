@@ -23,6 +23,7 @@ const (
 	blockNotice                     // notice 提示
 	blockError                      // 错误行
 	blockSystem                     // system 节点（/compact 摘要等）
+	blockThinking                   // 思维链暗块（D34：只展示不入树）
 )
 
 // block 一段定稿转写（text 已含样式）。
@@ -51,6 +52,7 @@ type model struct {
 	blocks   []block
 	draft    strings.Builder // 流式草稿（committed 后以消息文本定稿替换）
 	drafting bool
+	think    strings.Builder // 进行中的思维链（D34：View 实时显示，正文/事件到达落暗块）
 
 	input     []rune
 	history   []string
@@ -82,6 +84,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleEvent(msg.ev)
 		return m, nil
 	case sayMsg:
+		m.flushThink() // 时序：思维链先于外部输出
 		m.add(blockPlain, sanitizeControl(msg.text))
 		return m, nil
 	case inputMsg:
@@ -291,6 +294,13 @@ func (m *model) historyNext() {
 
 // handleEvent Turn 事件 → 转写块（与 repl.Emit 同呈现语义）。
 func (m *model) handleEvent(ev port.Event) {
+	if d, ok := ev.(port.DeltaEvent); ok && d.Delta.Reasoning {
+		// 思维链（D34）：只展示不入树——积累进 think 草稿，View 实时可见。
+		m.think.WriteString(sanitizeControl(d.Delta.Text))
+		m.scroll = 0
+		return
+	}
+	m.flushThink() // 思维链阶段结束：落为暗块，后续正文/工具/提交照常
 	switch e := ev.(type) {
 	case port.DeltaEvent:
 		if e.Delta.Text == "" {
@@ -403,6 +413,16 @@ func (m *model) add(kind blockKind, text string) {
 	m.scroll = 0
 }
 
+// flushThink 把进行中的思维链落为暗块（D34：只展示——不进正文草稿、不入树、
+// 不回传服务端）。
+func (m *model) flushThink() {
+	if m.think.Len() == 0 {
+		return
+	}
+	m.add(blockThinking, "[thinking] "+m.think.String())
+	m.think.Reset()
+}
+
 // style 按块种类着色（glamour 输出原样；用户行加提示符）。
 func (m *model) style(kind blockKind, text string) string {
 	switch kind {
@@ -416,6 +436,8 @@ func (m *model) style(kind blockKind, text string) string {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(text)
 	case blockSystem:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Render(text)
+	case blockThinking:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true).Render(text)
 	default:
 		return text
 	}
@@ -439,6 +461,10 @@ func (m *model) View() string {
 	var lines []string
 	for _, b := range m.blocks {
 		lines = append(lines, strings.Split(b.text, "\n")...)
+	}
+	if m.think.Len() > 0 {
+		// 进行中的思维链实时可见（落块后由 blocks 承载）。
+		lines = append(lines, strings.Split(m.style(blockThinking, "[thinking] "+m.think.String()), "\n")...)
 	}
 	if m.drafting || m.draft.Len() > 0 {
 		lines = append(lines, strings.Split(strings.TrimRight(m.draft.String(), "\n"), "\n")...)
@@ -490,6 +516,9 @@ func (m *model) statusLine() string {
 		}
 		if st.Level != "" {
 			parts = append(parts, "权限 "+st.Level)
+		}
+		if st.Effort != "" {
+			parts = append(parts, "effort "+st.Effort)
 		}
 	}
 	if u := m.usage; u.InputTokens > 0 || u.OutputTokens > 0 {

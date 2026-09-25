@@ -373,7 +373,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Out: stdout,
 			Status: func() uitui.Status {
 				if agent := agentPtr.Load(); agent != nil {
-					return uitui.Status{Model: agent.CurrentModel(), Level: lvl.Get().String()}
+					return uitui.Status{
+						Model:  agent.CurrentModel(),
+						Level:  lvl.Get().String(),
+						Effort: agent.CurrentEffort(), // D34：effort 档位（off 时为空）
+					}
 				}
 				return uitui.Status{}
 			},

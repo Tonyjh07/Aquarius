@@ -41,10 +41,11 @@ var (
 // 长 Turn 的脚本输入下偏小，放大到 256；仍溢出时提示"未执行"而非静默丢弃）。
 const inputCap = 256
 
-// Status 状态行数据（View 时经回调现取，反映 /model、/permission 热切换）。
+// Status 状态行数据（View 时经回调现取，反映 /model、/permission、/effort 热切换）。
 type Status struct {
-	Model string
-	Level string
+	Model  string
+	Level  string
+	Effort string // D34：推理档位（think off 时为空——effort 不发送）
 }
 
 // Options 装配选项（装配根注入）。

@@ -433,6 +433,57 @@ func TestConfirmAnswerEditing(t *testing.T) {
 	}
 }
 
+// TestReasoningFlow D34：思维链实时可见 → 正文/提交到达落暗块 → 不进正文草稿；
+// 状态行在 effort 非空时标注（think off 由装配根回空）。
+func TestReasoningFlow(t *testing.T) {
+	m, _ := newTestModel(t)
+
+	// 流中：实时可见。
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "先想一想", Reasoning: true}})
+	got := m.View()
+	if !strings.Contains(got, "[thinking]") || !strings.Contains(got, "先想一想") {
+		t.Fatalf("思维链流中不可见: %q", got)
+	}
+	if m.draft.Len() != 0 {
+		t.Fatalf("思维链不应进正文草稿: %q", m.draft.String())
+	}
+
+	// 正文到达：落暗块 + 草稿继续。
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "答案"}})
+	if m.think.Len() != 0 {
+		t.Fatal("正文到达应把思维链落块")
+	}
+	got = m.View()
+	for _, want := range []string{"[thinking] 先想一想", "答案"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("View 缺 %q: %q", want, got)
+		}
+	}
+
+	// 提交后暗块仍在（思维链只展示：树内节点由 consume 保证不含推理）。
+	m.commit(conversation.Message{
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "答案"}},
+	})
+	got = m.View()
+	for _, want := range []string{"[thinking] 先想一想", "答案"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("提交后 View 缺 %q: %q", want, got)
+		}
+	}
+
+	// 状态行 effort 标注。
+	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict", Effort: "high"} }
+	if line := m.statusLine(); !strings.Contains(line, "effort high") {
+		t.Fatalf("status = %q, want effort high", line)
+	}
+	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict"} }
+	if line := m.statusLine(); strings.Contains(line, "effort") {
+		t.Fatalf("effort 为空不应标注: %q", line)
+	}
+}
+
 // TestSanitizeControlStripsSequences 终端注入面：CSI、OSC（BEL 与 ST 收尾）、
 // 两字符转义、截断序列、裸尾 ESC、C0/C1/DEL 全部剥除；\n\t 保留。
 func TestSanitizeControlStripsSequences(t *testing.T) {
