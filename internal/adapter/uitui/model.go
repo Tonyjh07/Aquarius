@@ -82,7 +82,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleEvent(msg.ev)
 		return m, nil
 	case sayMsg:
-		m.add(blockPlain, msg.text)
+		m.add(blockPlain, sanitizeControl(msg.text))
 		return m, nil
 	case inputMsg:
 		m.submit(msg.text)
@@ -292,7 +292,7 @@ func (m *model) handleEvent(ev port.Event) {
 			return // 工具调用分片、用量分片不进转写
 		}
 		m.drafting = true
-		m.draft.WriteString(e.Delta.Text)
+		m.draft.WriteString(sanitizeControl(e.Delta.Text)) // 模型流为不可信输入（§9）
 		m.scroll = 0
 	case port.ToolCallEvent:
 		m.add(blockTool, "[tool] "+e.Call.Name+" "+preview(e.Call.Args))
@@ -305,17 +305,19 @@ func (m *model) handleEvent(ev port.Event) {
 	case port.CommittedEvent:
 		m.commit(e.Message)
 	case port.ErrorEvent:
-		m.add(blockError, "error: "+e.Err.Error())
+		m.add(blockError, "error: "+sanitizeControl(e.Err.Error())) // 服务端错误片段可携带注入序列
 	case port.NoticeEvent:
-		m.add(blockNotice, "[notice] "+e.Text)
+		m.add(blockNotice, "[notice] "+sanitizeControl(e.Text))
 	default:
-		m.add(blockPlain, fmt.Sprintf("%v", ev))
+		m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
 	}
 }
 
 // commit 提交节点定稿：助手（done 经 glamour）以消息文本为准替换草稿；
-// system 节点（/compact 摘要）入块；用量在节点上累计（不与 Delta 重复计）。
+// system 节点（/compact 摘要）入块；用量在所有节点上累计（含 system 的压缩摘要——
+// 审查修复：旧实现只累计 assistant，/usage 的压缩开销从状态行消失）。
 func (m *model) commit(msg conversation.Message) {
+	m.usage = addUsage(m.usage, msg.Usage)
 	text := partsText(msg.Content)
 	switch msg.Role {
 	case conversation.RoleAssistant:
@@ -325,6 +327,11 @@ func (m *model) commit(msg conversation.Message) {
 		}
 		m.resetDraft()
 		if strings.TrimSpace(final) == "" {
+			// 空内容的取消/错误也要有反馈（审查修复：首个 token 前 Ctrl+C 是最常见
+			// 场景，旧实现什么都不显示；repl 会打 [cancelled]）。
+			if msg.Outcome != conversation.OutcomeDone {
+				m.add(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome))
+			}
 			return
 		}
 		if msg.Outcome == conversation.OutcomeDone {
@@ -333,7 +340,6 @@ func (m *model) commit(msg conversation.Message) {
 			m.add(blockAssistant, lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(
 				fmt.Sprintf("[%s]", msg.Outcome))+"\n"+final)
 		}
-		m.usage = addUsage(m.usage, msg.Usage)
 	case conversation.RoleSystem:
 		m.resetDraft()
 		if strings.TrimSpace(text) != "" {
@@ -346,7 +352,8 @@ func (m *model) commit(msg conversation.Message) {
 	m.scroll = 0
 }
 
-// partsText 节点文本：文本分片直连，其余留占位（§4.2 多模态呈现 MVP）。
+// partsText 节点文本：文本分片直连，其余留占位（§4.2 多模态呈现 MVP）；
+// 出口统一剥控制序列（提交内容是不可信模型输出，§9/审查修复）。
 func partsText(parts []conversation.Part) string {
 	var b strings.Builder
 	for _, p := range parts {
@@ -365,7 +372,7 @@ func partsText(parts []conversation.Part) string {
 			b.WriteString(p.Text)
 		}
 	}
-	return b.String()
+	return sanitizeControl(b.String())
 }
 
 // addUsage 用量累加。

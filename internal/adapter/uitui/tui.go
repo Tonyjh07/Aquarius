@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
@@ -279,12 +280,62 @@ func parseInput(line string) port.UserInput {
 }
 
 // preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。
+// 先剥控制序列（ANSI/OSC/C0/C1——与 notify.sanitizeControl 同算法、终端注入面一致，
+// 审查修复：工具参数与服务端错误片段可携带注入序列）。
 func preview(b []byte) string {
 	const toolPreviewLen = 120
-	s := strings.TrimSpace(string(b))
+	s := strings.TrimSpace(sanitizeControl(string(b)))
 	r := []rune(s)
 	if len(r) > toolPreviewLen {
 		return string(r[:toolPreviewLen]) + "…"
 	}
 	return s
+}
+
+// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。
+// 算法与 internal/adapter/notify 的同名函数一致——两处分别守护通知面与终端转写面。
+func sanitizeControl(s string) string {
+	var b strings.Builder
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		if r == 0x1b && i+1 < len(rs) {
+			switch rs[i+1] {
+			case '[': // CSI：吞至终结字节（0x40–0x7E）
+				j := i + 2
+				for j < len(rs) && (rs[j] < 0x40 || rs[j] > 0x7e) {
+					j++
+				}
+				if j < len(rs) {
+					i = j
+				} else {
+					i = len(rs) - 1
+				}
+				continue
+			case ']': // OSC：吞至 BEL 或 ESC\
+				j := i + 2
+				for j < len(rs) && rs[j] != 0x07 && !(rs[j] == 0x1b && j+1 < len(rs) && rs[j+1] == '\\') {
+					j++
+				}
+				if j < len(rs) {
+					if rs[j] == 0x1b {
+						i = j + 1 // ST 的 ESC\ 两字符都要跳过
+					} else {
+						i = j
+					}
+				} else {
+					i = len(rs) - 1
+				}
+				continue
+			default: // 其余两字符转义
+				i++
+				continue
+			}
+		}
+		if r < 0x20 && r != '\n' && r != '\t' || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

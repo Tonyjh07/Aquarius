@@ -413,6 +413,95 @@ func TestConfirmAnswerEditing(t *testing.T) {
 	}
 }
 
+// TestSanitizeControlStripsSequences 终端注入面：CSI、OSC（BEL 与 ST 收尾）、
+// 两字符转义、截断序列、裸尾 ESC、C0/C1/DEL 全部剥除；\n\t 保留。
+func TestSanitizeControlStripsSequences(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"a\x1b[31mb", "ab"},
+		{"a\x1b]0;title\x07b", "ab"},
+		{"a\x1b]0;title\x1b\\b", "ab"},
+		{"a\x1bMb", "ab"},
+		{"a\x07b\x7fb\x85c", "abbc"}, // 夹缝字符剥除；0x85 非法 UTF-8 → RuneError 同样剔除
+		{"ab", "ab"},                // 合法 UTF-8 编码的 C1（U+0085）同样剔除
+		{"行1\n行2\t制表", "行1\n行2\t制表"},
+		{"截断\x1b[3", "截断"},
+		{"尾部\x1b", "尾部"},
+	}
+	for _, tc := range cases {
+		if got := sanitizeControl(tc.in); got != tc.want {
+			t.Errorf("sanitizeControl(% x) = % x, want % x（%q → %q）", []byte(tc.in), []byte(got), []byte(tc.want), tc.in, got)
+		}
+	}
+}
+
+// TestTranscriptStripsControlSequences 转写各入口统一消毒（§9）：
+// notice/错误行、流式草稿、工具预览、committed 内容都不得把注入序列带进终端。
+func TestTranscriptStripsControlSequences(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.handleEvent(port.NoticeEvent{Text: "注意\x1b[2J清屏"})
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "流式\x07"}})
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{Name: "t", Args: []byte(`{"a":"b\x1b]52;c;?\x07"}`)}})
+	got := m.View() // 流式草稿仍在（未提交）
+	for _, bad := range []string{"\x1b", "\x07"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("View 泄漏控制序列 %q: %q", bad, got)
+		}
+	}
+	for _, want := range []string{"注意", "清屏", "流式"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("View 缺 %q: %q", want, got)
+		}
+	}
+
+	// committed 内容（glamour 未装配时回退原文，仍须已消毒）。
+	m.commit(conversation.Message{
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "正文\x1b[1m加粗"}},
+	})
+	got = m.View()
+	if strings.Contains(got, "\x1b[1m") || !strings.Contains(got, "正文加粗") {
+		t.Fatalf("committed 内容消毒异常: %q", got)
+	}
+}
+
+// TestCommitEmptyCancelledShowsMarker 审查修复：首个 token 前取消的空内容节点
+// 显示 [cancelled]（旧实现什么都不显示）；done 的空节点不入块。
+func TestCommitEmptyCancelledShowsMarker(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.commit(conversation.Message{Role: conversation.RoleAssistant, Outcome: conversation.OutcomeCancelled})
+	if !strings.Contains(m.View(), "[cancelled]") {
+		t.Fatalf("View 缺 [cancelled]: %q", m.View())
+	}
+	before := len(m.blocks)
+	m.commit(conversation.Message{Role: conversation.RoleAssistant, Outcome: conversation.OutcomeDone})
+	if len(m.blocks) != before {
+		t.Fatalf("done 空节点不应入块: %d → %d", before, len(m.blocks))
+	}
+}
+
+// TestCommitSystemUsageAccumulated 审查修复：system 节点（/compact 摘要）的用量
+// 计入状态行——旧实现只累计 assistant，压缩开销从状态行消失。
+func TestCommitSystemUsageAccumulated(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.commit(conversation.Message{
+		Role:  conversation.RoleSystem,
+		Usage: conversation.Usage{InputTokens: 100, OutputTokens: 50},
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "压缩摘要"},
+		},
+	})
+	if m.usage.InputTokens != 100 || m.usage.OutputTokens != 50 {
+		t.Fatalf("usage = %+v, want {100 50}", m.usage)
+	}
+	if !strings.Contains(m.statusLine(), "↑100 ↓50") {
+		t.Fatalf("status = %q", m.statusLine())
+	}
+}
+
 // TestRenderMDFallback 无渲染器时原文回退。
 func TestRenderMDFallback(t *testing.T) {
 	m, _ := newTestModel(t)
