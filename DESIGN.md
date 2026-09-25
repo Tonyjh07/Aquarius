@@ -819,7 +819,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D27 | **M3 范围调整**：M3 落 JobManager + blobfs + Ingestor 管线 + notify 输出器；REPL 输入命令面（`/attach`/`/clip`/`/mic`）与 ASR/TTS/麦克风移入 §14 backlog，随 TUI 后续迭代或 GUI 落地（M4 TUI 为 MVP 不含，D33） | 硬凑"语音提问 → TTS 播报"验收（REPL 行式输入无拖拽/语音按钮；语音适配器选型未定，先定契约后装实现） |
 | D28 | 输出器扇出点 = 装配根的 **Presenter 装饰器**：包住实际 UI，收到已完成的 assistant `CommittedEvent`（`Outcome=done`）后逐个调 `OutputAdapter.Deliver`，失败只记日志 | app 内直连输出器（内核直连具体实现违反 D13；扇出属横切，按 D14 走装配根装饰器） |
 | D29 | **Tier-1 Go 插件后移出 M4**（`pluginapi/v1` + `adapter/plugingo` 移 §14，随后续里程碑落）；M4 只做 Tier-2 MCP | M4 双线并进（§12 验收只针对 MCP；Tier-1 会挤占 TUI、装饰器与审查遗留的容量） |
-| D30 | MCP 客户端用官方 **`modelcontextprotocol/go-sdk`**（纯 Go，stdio + streamable HTTP 双传输）；引入前先 spike 实测，API 不合则回退自写 stdio JSON-RPC + `net/http` SSE | 长期自写协议栈（帧格式/能力协商/HTTP 流重连易踩 spec 细节）；cgo/Node 系客户端（违背纯 Go 优先） |
+| D30 | MCP 客户端用官方 **`modelcontextprotocol/go-sdk`**（纯 Go，stdio `CommandTransport` + streamable HTTP `StreamableClientTransport` 双传输）；引入前先 spike 实测，API 不合则回退自写 stdio JSON-RPC + `net/http` SSE。**spike 已过（2026-09）**：双传输回环、工具调用、`IsError` 工具级错误语义均验证；sdk 要求 **go≥1.25**，go.mod 由 1.22 上调 | 长期自写协议栈（帧格式/能力协商/HTTP 流重连易踩 spec 细节）；cgo/Node 系客户端（违背纯 Go 优先） |
 | D31 | 插件**启停与授权状态**统一存 config `plugins.<name> = {enabled, granted[]}`，两种发现源（`mcpServers` / `plugin.json`）共用；声明与状态分离 | 状态写回 `mcpServers` 条目（plugin.json 发现的插件无处安放）；状态存 plugin.json（本机授权态不该随分发文件走） |
 | D32 | `/model <name>` = Agent 内热切换 + **写回 config**（同 `/permission` 模式，重启沿用） | 每会话独立模型（与"全局唯一 model 配置"冲突，切换语义碎片化）；只切不存（重启即失） |
 | D33 | TUI **MVP** = 转写区 + 流式 + 输入框 + 命令历史 + Confirm 对话 + 状态行 + glamour 轻 markdown（committed 后渲染，流式阶段原样）；图片/音频仍占位；`ui.kind` 模板默认 `tui`、repl 保留；GUI 框架后移 §14 | 一步到位富 TUI（拖拽/语音/内联图——与后续 GUI 框架重复投入）；TUI 取代 REPL（e2e/CI 丢失无终端后端） |
