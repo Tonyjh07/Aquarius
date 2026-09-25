@@ -30,13 +30,15 @@ go build ./cmd/aquarius
 | `/memory [会话id]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`，带参会话记忆；保存后下次读取生效） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/jobs [list\|logs <id> [行数]\|kill <id>]` | 后台任务管理（M3）：缺省 `list`；`logs` 取末尾行（缺省 50）；`kill` 终止（连同子进程）。任务由模型经 `job_start` 启动，ID 支持唯一前缀 |
+| `/plugin [list\|enable <name>\|disable <name>]` | MCP 插件管理（M4，D31）：list 显示状态/来源/传输/能力授权/调用统计/重启与报因，并列出可用动态命令；enable 走 capability 首用确认并写回 config；disable 即时摘除其工具与命令 |
+| `/mcp:<server>:<prompt> [args]` | MCP prompts 动态命令（随插件启停注册/注销，`/plugin list` 查看可用项）；渲染结果作为用户消息走完整一轮 |
 | `/quit` `/exit` | 退出（`/exit` 为别名） |
 | `/help` | 命令帮助 |
 
 > 节点 ID 支持唯一前缀匹配；自身、同级与下级节点 ID 可用 `/branch` 查看（逐层下钻可达任意深度）。
 > "修改"永不改写旧消息：Fresh 另起节点、Carry 边转移（后代本身不变），会话树始终保持不可变。
 
-**尚未启用**（输入会提示对应里程碑）：`/model` `/plugin` —— M4。
+**尚未启用**（输入会提示对应里程碑）：`/model` —— M4。
 
 ## 内置工具（M2/M3 起，模型自行调用）
 
@@ -81,6 +83,21 @@ go build ./cmd/aquarius
 
 persona（人格）恒回传：它是会话首节点（system 角色），源自 config 的 `system_prompt`
 （空则用内置默认），可用 `/edit <persona-id> --keep <文本>` 改写（Carry 保留整棵对话树）。
+
+## MCP 插件（M4）
+
+Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go-sdk）：
+
+- **声明**在 config `mcpServers.<name>`（stdio：`command`/`args`/`env`；http：`url`/`headers`，
+  值可用 `secret:<环境变量名>` 引用）或 `~/.aquarius/plugins/<name>/plugin.json`；
+  **启停与授权状态**在 config `plugins.<name>`（D31，同名声明以 config 为准）。
+- **授权**：声明的 `capabilities` 首次启用逐项 `[y/N]` 确认，通过即写入 `granted`；
+  未配置确认器时 fail-closed 不启动；`risk=confirm` 的工具仍逐次确认（不随授权放行）。
+- **工具**：`tools/list` 注册为 `mcp:<server>:<tool>`，与内置工具同权过 ToolRunner 权限矩阵；
+  server 崩溃自动重启（1s/2s/4s 退避、限 3 次），超限置 `crashed`；重启与调用统计见 `/plugin`。
+- **resources** 只读并入记忆索引与 `memory_*` 读取面（写/删仍走自有记忆，§6.3）；
+  **prompts** 暴露为 `/mcp:<server>:<prompt>` 动态命令。
+- `/plugin list` 看状态，`enable`/`disable` 即时启停（写回 config，重启沿用）。
 
 ## 权限等级
 
