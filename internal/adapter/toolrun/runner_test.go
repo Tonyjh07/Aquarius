@@ -115,13 +115,18 @@ func TestSpecsRegistrationOrderAndReplace(t *testing.T) {
 	}
 }
 
-func TestExecuteToolErrorPropagates(t *testing.T) {
+// TestExecuteToolErrorFeedsBack 工具自身报错（参数非法等）转 OK=false 照常回填，
+// 不作为 error 上抛——error 通道只留给装配级故障（§10/§14）。
+func TestExecuteToolErrorFeedsBack(t *testing.T) {
 	r := New(Options{Tools: []port.Tool{&stubTool{
 		spec: tool.Spec{Name: "boom", Risk: tool.Safe}, err: errors.New("炸了"),
 	}}})
-	_, err := r.Execute(context.Background(), c("boom", `{}`))
-	if err == nil || !strings.Contains(err.Error(), "炸了") {
-		t.Fatalf("err=%v", err)
+	res, err := r.Execute(context.Background(), c("boom", `{}`))
+	if err != nil {
+		t.Fatalf("工具自身报错不应作为 error 上抛: %v", err)
+	}
+	if res.OK || !strings.Contains(res.Err, "炸了") {
+		t.Fatalf("res = %+v, want OK=false 回填工具错误", res)
 	}
 }
 

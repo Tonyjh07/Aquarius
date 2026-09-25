@@ -131,7 +131,8 @@ func New(d Deps, cfg Config) (*Agent, error) {
 // Run 从当前 Head 出发执行一轮 Turn（DESIGN §7.1 / §10）：
 //   - 流式增量只经 Presenter 进 UI，每次生成结束一次性 Commit 不可变节点（D3）；
 //     节点 ID 在 Turn 开始时预分配，作流事件关联 ID。
-//   - 工具失败转 OK=false 照常回填，不中断 Turn。
+//   - 工具级失败转 OK=false 照常回填，不中断 Turn；
+//     装配级错误（确认器缺失/报错、ctx 取消）为剩余调用补失败结果后快速上抛。
 //   - 取消 = 已生成部分以 Outcome: cancelled 提交后返回 nil（可 /edit 重试）；
 //     模型/网络错误 = Outcome: error 提交并返回错误（ErrorEvent 由装配根统一上抛，避免重复呈现）。
 func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
@@ -197,9 +198,19 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			return nil
 		}
 
-		for _, call := range node.ToolCalls {
+		for i, call := range node.ToolCalls {
 			_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: call})
-			res := a.execTool(ctx, call)
+			res, err := a.execTool(ctx, call)
+			if err != nil {
+				// 装配级错误（确认器缺失/报错、父 ctx 取消）：先补公告尚未呈现的
+				// 调用，再为剩余调用补失败结果保持 tool_calls 一一配对（树下次
+				// 仍可装配），随后快速上抛，不回填空转 MaxTurns（§14 遗留修复）。
+				for _, rest := range node.ToolCalls[i+1:] {
+					_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: rest})
+				}
+				cause := fmt.Errorf("执行工具 %s: %w", call.Name, err)
+				return a.abortToolCalls(ctx, c, node.ToolCalls[i:], cause)
+			}
 			tnode := conversation.Message{
 				ID:         a.ids.MessageID(),
 				Parent:     c.Head,
@@ -460,16 +471,39 @@ func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *commitBuff
 	return buf.finalize(), nil
 }
 
-// execTool 执行工具；错误转为 OK=false 结果照常回填（§10：失败不中断 Turn）。
-func (a *Agent) execTool(ctx context.Context, call tool.Call) tool.Result {
+// execTool 执行工具：工具级失败由 Runner 转为 OK=false 结果照常回填（§10：不中断 Turn）；
+// 返回 error 仅限装配级错误（确认器缺失/报错、父 ctx 取消等基础设施故障），
+// 由 Run 快速失败上抛（§14：不让模型空转到 MaxTurns）。
+func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, error) {
 	res, err := a.tools.Execute(ctx, call)
 	if err != nil {
-		return tool.Result{CallID: call.ID, OK: false, Err: err.Error()}
+		return tool.Result{}, err
 	}
 	if res.CallID == "" {
 		res.CallID = call.ID
 	}
-	return res
+	return res, nil
+}
+
+// abortToolCalls 装配级工具故障的收尾：为剩余未执行的调用补 OK=false 结果节点
+// （保持 assistant.tool_calls 与 tool 结果一一配对，树下次装配仍可发送），
+// 随后返回 cause 中止本轮。与 §10 的"工具失败不中断 Turn"不同——那指的是工具级失败。
+func (a *Agent) abortToolCalls(ctx context.Context, c *conversation.Conversation, calls []tool.Call, cause error) error {
+	for _, call := range calls {
+		res := tool.Result{CallID: call.ID, OK: false, Err: cause.Error()}
+		tnode := conversation.Message{
+			ID:         a.ids.MessageID(),
+			Parent:     c.Head,
+			Role:       conversation.RoleTool,
+			ToolResult: &res,
+			CreatedAt:  a.clock.Now(),
+		}
+		if err := c.AppendCommitted(tnode); err != nil {
+			return fmt.Errorf("提交工具中断结果: %w（原错误: %v）", err, cause)
+		}
+		_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
+	}
+	return cause
 }
 
 // normalizeCalls 补齐/去重调用 ID（个别兼容服务不回传 ID），并给空参数补 {}。

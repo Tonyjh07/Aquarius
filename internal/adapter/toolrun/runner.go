@@ -106,8 +106,9 @@ func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
 }
 
 // Execute 查找 → 权限判定/确认 → 超时执行 → 结果裁剪（DESIGN §5.2）。
-// 未知工具/确认拒绝/超时均以 Result{OK:false} 回填（§10：失败不中断 Turn）；
-// 返回 error 仅限基础设施故障（确认器缺失/报错、父 ctx 取消）。
+// 未知工具/确认拒绝/超时/工具自身报错均以 Result{OK:false} 回填（§10：失败不中断 Turn，
+// 模型可自行纠正）；返回 error 仅限基础设施故障（确认器缺失/报错、父 ctx 取消）——
+// Agent 对这类装配级错误快速失败上抛（§14 遗留修复）。
 func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
 	t, ok := r.byName[call.Name]
 	if !ok {
@@ -156,7 +157,14 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 			if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 				return timeoutResult(call, r.timeout), nil
 			}
-			return tool.Result{}, got.err
+			if ctx.Err() != nil {
+				// 父 ctx 取消（Ctrl+C）：装配级错误原样上抛，Agent 快速中止 Turn。
+				return tool.Result{}, ctx.Err()
+			}
+			// 工具自身报错（参数非法/启动失败等模型可纠正的问题）：按 §10 转
+			// OK=false 照常回填让模型自行纠正——error 通道只留给基础设施故障
+			// （确认器缺失/报错、父 ctx 取消），Agent 据此快速失败（§14）。
+			return tool.Result{CallID: call.ID, OK: false, Err: got.err.Error()}, nil
 		}
 	case <-runCtx.Done():
 		if ctx.Err() != nil { // 父 ctx 取消（Ctrl+C）原样上抛

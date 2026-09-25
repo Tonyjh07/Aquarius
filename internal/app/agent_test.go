@@ -146,7 +146,9 @@ func TestRunToolRound(t *testing.T) {
 	}
 }
 
-func TestRunToolErrorFeedsBack(t *testing.T) {
+// TestRunToolFailureFeedsBack 工具级失败（Runner 转 OK=false 结果）照常回填、
+// 不中断 Turn，模型拿到错误自行恢复（§10）。
+func TestRunToolFailureFeedsBack(t *testing.T) {
 	llm := &scriptLLM{t: t, streams: []*scriptStream{
 		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
 			{Index: 0, ID: "call_e", Name: "boom"},
@@ -154,12 +156,14 @@ func TestRunToolErrorFeedsBack(t *testing.T) {
 		textStream("已恢复"),
 	}}
 	rec := &recorder{}
-	runner := &fakeRunner{errs: map[tool.CallID]error{"call_e": errors.New("tool broke")}}
+	runner := &fakeRunner{results: map[tool.CallID]tool.Result{
+		"call_e": {OK: false, Err: "tool broke"},
+	}}
 	a := newAgent(t, llm, rec, Deps{Tools: runner}, Config{})
 	c := newConv(t)
 
 	if err := a.Run(context.Background(), c); err != nil {
-		t.Fatalf("工具失败不应中断 Turn: %v", err)
+		t.Fatalf("工具级失败不应中断 Turn: %v", err)
 	}
 	path := c.Path()
 	if len(path) != 5 {
@@ -171,6 +175,52 @@ func TestRunToolErrorFeedsBack(t *testing.T) {
 	}
 	if path[4].Content[0].Text != "已恢复" {
 		t.Fatalf("final = %+v", path[4])
+	}
+}
+
+// TestRunInfraErrorAbortsTurn 装配级错误（确认器缺失等基础设施故障）快速失败上抛：
+// 不再发起后续生成（不空转 MaxTurns），剩余调用补 OK=false 中断结果——
+// assistant.tool_calls 与 tool 结果一一配对，树仍满足不变量可继续装配。
+func TestRunInfraErrorAbortsTurn(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{
+		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
+			{Index: 0, ID: "call_0", Name: "alpha"},
+			{Index: 1, ID: "call_1", Name: "beta"},
+		}}}}},
+		// 只给一个脚本：若发生第二次 Generate，scriptLLM 会 t.Fatalf。
+	}}
+	rec := &recorder{}
+	runner := &fakeRunner{errs: map[tool.CallID]error{"call_0": errors.New("未配置 Confirmer")}}
+	a := newAgent(t, llm, rec, Deps{Tools: runner}, Config{})
+	c := newConv(t)
+
+	err := a.Run(context.Background(), c)
+	if err == nil || !strings.Contains(err.Error(), "未配置 Confirmer") {
+		t.Fatalf("err = %v, want 装配级错误快速上抛", err)
+	}
+	if !strings.Contains(err.Error(), "执行工具 alpha") {
+		t.Fatalf("err = %v, want 指明首个失败调用", err)
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("requests = %d, want 1（不应空转生成）", len(llm.requests))
+	}
+	path := c.Path()
+	if len(path) != 5 { // root + persona + assistant(2 calls) + 2 个中断结果
+		t.Fatalf("path len = %d, want 5", len(path))
+	}
+	for _, idx := range []int{3, 4} {
+		res := path[idx].ToolResult
+		if res == nil || res.OK || !strings.Contains(res.Err, "未配置 Confirmer") {
+			t.Fatalf("tool result = %+v, want OK=false 中断结果", res)
+		}
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := eventNames(rec.events)
+	want := "delta,committed,tool_call,tool_call,tool_result,tool_result"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("events = %v, want %s", got, want)
 	}
 }
 
