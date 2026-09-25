@@ -515,8 +515,9 @@ func TestNewValidatesDeps(t *testing.T) {
 
 // TestAgentCompactSummarizesAndSetsWatermark D21 手动轨：摘要 system 节点入树、水位生效、记账完整。
 func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
+	const summaryText = "## Objective\n- 这是摘要"
 	llm := &scriptLLM{t: t, streams: []*scriptStream{
-		withUsage(textStream("这是摘要"), conversation.Usage{InputTokens: 30, OutputTokens: 12}),
+		withUsage(textStream(summaryText), conversation.Usage{InputTokens: 30, OutputTokens: 12}),
 	}}
 	rec := &recorder{}
 	a := newAgent(t, llm, rec, Deps{}, Config{})
@@ -527,7 +528,7 @@ func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	if node.Role != conversation.RoleSystem || node.Content[0].Text != "这是摘要" {
+	if node.Role != conversation.RoleSystem || node.Content[0].Text != summaryText {
 		t.Fatalf("node = %+v", node)
 	}
 	if node.Parent != prevHead {
@@ -546,16 +547,16 @@ func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
 		t.Fatalf("head = %s, want 摘要节点", c.Head)
 	}
 
-	// 请求：压缩指令在首位，历史紧随，尾部输出提示。
+	// 请求：结构化压缩指令在首位，历史紧随，尾部输出提示。
 	req := llm.requests[0]
-	if req.Messages[0].Role != "system" || !strings.Contains(req.Messages[0].Content[0].Text, "压缩") {
-		t.Fatalf("messages[0] = %+v, want 压缩指令", req.Messages[0])
+	if req.Messages[0].Role != "system" || !strings.Contains(req.Messages[0].Content[0].Text, "## Objective") {
+		t.Fatalf("messages[0] = %+v, want 结构化压缩指令", req.Messages[0])
 	}
 	if len(req.Messages) != 3 || req.Messages[1].Role != "user" || req.Messages[1].Content[0].Text != "hi" {
 		t.Fatalf("messages = %+v, want [指令, hi, 提示]", req.Messages)
 	}
 	last := req.Messages[2]
-	if last.Role != "user" || !strings.Contains(last.Content[0].Text, "摘要") {
+	if last.Role != "user" || !strings.Contains(last.Content[0].Text, "summary") {
 		t.Fatalf("last = %+v, want 输出提示", last)
 	}
 
@@ -564,7 +565,7 @@ func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 1 || msgs[0].Role != "system" || msgs[0].Content[0].Text != "这是摘要" {
+	if len(msgs) != 1 || msgs[0].Role != "system" || msgs[0].Content[0].Text != summaryText {
 		t.Fatalf("msgs = %+v, want 水位裁剪后仅 [摘要]", msgs)
 	}
 	if err := c.Validate(); err != nil {

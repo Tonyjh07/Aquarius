@@ -121,9 +121,10 @@ func (brokenMemory) Search(context.Context, string) ([]port.MemoryHit, error) {
 
 // TestRunAutoCompact 触发阈值 → 先压缩（轨2）再生成：摘要入树、NoticeEvent、水位裁掉长文。
 func TestRunAutoCompact(t *testing.T) {
+	const autoSummary = "## Objective\n- 这是自动摘要"
 	longText := strings.Repeat("长", 300) // CJK ≈200 tokens ≫ 阈值
 	llm := &scriptLLM{t: t, streams: []*scriptStream{
-		textStream("这是自动摘要"),
+		textStream(autoSummary),
 		textStream("最终回答"),
 	}}
 	rec := &recorder{}
@@ -140,7 +141,7 @@ func TestRunAutoCompact(t *testing.T) {
 		t.Fatalf("requests = %d, want 2（压缩 + 生成）", len(llm.requests))
 	}
 	// 请求0 = 压缩指令。
-	if txt := reqText(llm.requests[0]); !strings.Contains(txt, "压缩") {
+	if txt := reqText(llm.requests[0]); !strings.Contains(txt, "## Objective") {
 		t.Fatalf("req0 非压缩请求: %.100s", txt)
 	}
 	// 请求1 = 水位生效：含摘要、不含被压长文。
@@ -153,7 +154,7 @@ func TestRunAutoCompact(t *testing.T) {
 	}
 	// 树：root,user,summary,assistant；摘要为 system 水位节点。
 	path := c.Path()
-	if len(path) != 4 || path[2].Role != conversation.RoleSystem || path[2].Content[0].Text != "这是自动摘要" {
+	if len(path) != 4 || path[2].Role != conversation.RoleSystem || path[2].Content[0].Text != autoSummary {
 		t.Fatalf("path roles = %+v", roles(path))
 	}
 	if path[3].Content[0].Text != "最终回答" {
@@ -239,7 +240,7 @@ func TestRunAutoCompactOncePerRun(t *testing.T) {
 	}
 	compactReqs := 0
 	for _, req := range llm.requests {
-		if strings.Contains(reqText(req), "你是上下文压缩器") {
+		if strings.Contains(reqText(req), "summarize the conversation above") {
 			compactReqs++
 		}
 	}
@@ -258,7 +259,7 @@ func TestContextCompactToolRound(t *testing.T) {
 		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
 			{Index: 0, ID: "cc1", Name: "context_compact"},
 		}}}}},
-		textStream("自答摘要"),
+		textStream("## Objective\n- 自答摘要"),
 		textStream("压缩后的回答"),
 	}}
 	rec := &recorder{}
@@ -281,7 +282,7 @@ func TestContextCompactToolRound(t *testing.T) {
 	if len(path) != 6 {
 		t.Fatalf("path len = %d, want 6: %v", len(path), roles(path))
 	}
-	if path[3].Role != conversation.RoleSystem || path[3].Content[0].Text != "自答摘要" {
+	if path[3].Role != conversation.RoleSystem || path[3].Content[0].Text != "## Objective\n- 自答摘要" {
 		t.Fatalf("summary = %+v", path[3])
 	}
 	if path[4].Role != conversation.RoleTool || path[4].ToolResult == nil || !path[4].ToolResult.OK {

@@ -542,7 +542,7 @@ func TestSessionCompactCommand(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store,
 		textStream("模型回复"),
-		withUsage(textStream("压缩后的摘要"), conversation.Usage{InputTokens: 40, OutputTokens: 15}),
+		withUsage(textStream("## Objective\n- 压缩后的摘要"), conversation.Usage{InputTokens: 40, OutputTokens: 15}),
 	)
 	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
 		t.Fatalf("handle: %v", err)
@@ -558,7 +558,7 @@ func TestSessionCompactCommand(t *testing.T) {
 	}
 	path := s.Current().Path()
 	last := path[len(path)-1]
-	if last.Role != conversation.RoleSystem || last.Content[0].Text != "压缩后的摘要" {
+	if last.Role != conversation.RoleSystem || last.Content[0].Text != "## Objective\n- 压缩后的摘要" {
 		t.Fatalf("last = %+v, want 摘要节点", last)
 	}
 	if _, ok := store.convs[s.Current().ID].Nodes[last.ID]; !ok {
