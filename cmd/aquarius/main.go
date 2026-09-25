@@ -395,7 +395,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if reserve < minOutputReserve {
 			reserve = minOutputReserve
 		}
-		kept, omitted := app.TrimOldest(fctx, counter, req.Messages, maxCtx-reserve)
+		kept, omitted := app.TrimOldest(fctx, counter, req.Messages, maxCtx-reserve, req.Tools...)
 		req.Messages = kept
 		return req, omitted
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -127,20 +128,23 @@ func isCJK(r rune) bool {
 // TrimOldest 硬保底截断的导出入口（D14/§7.1）：装配根的截断装饰器经闭包注入本函数，
 // 装饰器（adapter 侧）不反向依赖 app。counter 可为 nil（纯通用估算③）；
 // 超 target 从最旧处裁剪，约束与调用时机同 trimOldest（保 leading system 与最近、
-// 不留前导孤儿 tool）。返回 (保留消息, 省略条数)。
-func TrimOldest(ctx context.Context, counter port.TokenCounter, msgs []port.PromptMessage, target int) ([]port.PromptMessage, int) {
-	return newEstimator(counter).trimOldest(ctx, msgs, target)
+// 不留前导孤儿 tool）。tools 变参随估算计入（§14 遗留：工具声明 1–2k tokens 不得漏算，
+// 否则 trim 恰在带工具的请求上裁不足）。返回 (保留消息, 省略条数)。
+func TrimOldest(ctx context.Context, counter port.TokenCounter, msgs []port.PromptMessage, target int, tools ...tool.Spec) ([]port.PromptMessage, int) {
+	return newEstimator(counter).trimOldest(ctx, msgs, target, tools...)
 }
 
 // trimOldest 从最旧处裁剪消息直到估算低于 target（D21：压缩失败回退最旧裁剪——
-// 保 leading system（persona/摘要）与最近消息、丢中间）。约束：
+// 保 leading system（persona/摘要）与最近消息、丢中间）。tools 变参随每次估算计入
+// （工具声明是请求体积的一部分：只按消息文本估会在带工具的请求上裁不足，§14 遗留）。
+// 约束：
 //   - 至少保留 1 条非 system（保最近），例外是仅剩者为孤儿 tool——发不出去，继续裁；
 //   - 不得留下"声明 assistant 已被裁掉"的前导孤儿 tool 结果（role=tool 打头的请求
 //     必被服务端 400，兜底反而打断 Turn），允许最终裁到 0 条非 system（system-only
 //     请求可发送，属极端兜底）。
 //
 // 返回 (保留序列, 省略条数)。
-func (e *estimator) trimOldest(ctx context.Context, msgs []port.PromptMessage, target int) ([]port.PromptMessage, int) {
+func (e *estimator) trimOldest(ctx context.Context, msgs []port.PromptMessage, target int, tools ...tool.Spec) ([]port.PromptMessage, int) {
 	lead := 0
 	for lead < len(msgs) && msgs[lead].Role == "system" {
 		lead++
@@ -161,7 +165,7 @@ func (e *estimator) trimOldest(ctx context.Context, msgs []port.PromptMessage, t
 	}
 	isOrphanLead := func() bool { return lead < len(kept) && kept[lead].Role == "tool" }
 	for {
-		est, _ := e.Estimate(ctx, port.GenerateRequest{Messages: kept})
+		est, _ := e.Estimate(ctx, port.GenerateRequest{Messages: kept, Tools: tools})
 		if est < target {
 			break
 		}

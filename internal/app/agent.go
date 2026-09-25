@@ -386,7 +386,7 @@ func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, r
 	case errors.Is(err, ErrNothingToCompact):
 		return req, est // 摘要之上无新内容（如 persona 巨大）：无可压，维持原请求
 	default:
-		kept, omitted := a.est.trimOldest(ctx, req.Messages, a.compactAt)
+		kept, omitted := a.est.trimOldest(ctx, req.Messages, a.compactAt, req.Tools...)
 		req.Messages = kept
 		text := fmt.Sprintf("自动压缩失败（%v），已回退最旧裁剪", err)
 		if omitted > 0 {

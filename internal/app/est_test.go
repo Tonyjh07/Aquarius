@@ -288,3 +288,30 @@ func TestTrimOldestExported(t *testing.T) {
 		t.Fatalf("未超预算不应裁: %d/%d", len(kept2), omitted2)
 	}
 }
+
+// TestTrimOldestCountsToolSpecs §14 遗留：工具声明随估算计入——
+// 只按消息文本估会在带工具的请求上裁不足（工具声明可达 1–2k tokens）。
+func TestTrimOldestCountsToolSpecs(t *testing.T) {
+	text := func(role, s string) port.PromptMessage {
+		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: "text", Text: s}}}
+	}
+	msgs := []port.PromptMessage{
+		text("system", "persona"),
+		text("user", strings.Repeat("a", 2000)), // ≈500 tokens
+		text("user", "latest"),                  // ≈2 tokens + 结构
+	}
+	tools := []tool.Spec{{Name: "t1", Description: strings.Repeat("x", 4000)}} // ≈1000 tokens
+	e := newEstimator(nil)
+	const target = 600
+
+	if _, o := e.trimOldest(context.Background(), msgs, target); o != 0 {
+		t.Fatalf("仅消息文本（≈514<target）不应裁: omitted=%d", o)
+	}
+	kept, o := e.trimOldest(context.Background(), msgs, target, tools...)
+	if o != 1 {
+		t.Fatalf("计入工具声明后应裁 1 条: omitted=%d", o)
+	}
+	if len(kept) != 2 || kept[1].Content[0].Text != "latest" {
+		t.Fatalf("kept = %+v, want [system latest]", kept)
+	}
+}
