@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -53,10 +54,16 @@ type terminalSuspend interface {
 	Resume() error
 }
 
+// cfgWriteMu 串行化全部 config 写回（/permission、/model、/think、/effort、
+// /plugin 与 llm 的 unsupported_params 记录可能并发——读-改-写须互斥防丢更新）。
+var cfgWriteMu sync.Mutex
+
 // persistConfig 通用 config 键改写：读入 → mutate 只动目标键（map 级重排保留
 // 其余键与注释性空白）→ 唯一临时文件 + 原子换入（覆盖沿用既有权限位）。
-// /permission、/plugin、/model 三处写回共用（审查修复：三份复制）。
+// /permission、/model、/think、/effort、/plugin 与 unsupported_params 共用。
 func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
+	cfgWriteMu.Lock()
+	defer cfgWriteMu.Unlock()
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return err
@@ -74,6 +81,27 @@ func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
 		return fmt.Errorf("写入 %s: %w", cfgPath, err)
 	}
 	return nil
+}
+
+// modelSection 取/建 config 的 model 段（各写回闭包共用）。
+func modelSection(generic map[string]any) map[string]any {
+	model, _ := generic["model"].(map[string]any)
+	if model == nil {
+		model = map[string]any{}
+		generic["model"] = model
+	}
+	return model
+}
+
+// dropTool 摘除指定名字的工具（model.think_tool=false 时隐藏 think，D34）。
+func dropTool(tools []port.Tool, name string) []port.Tool {
+	out := make([]port.Tool, 0, len(tools))
+	for _, t := range tools {
+		if t.Spec().Name != name {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（DESIGN §7.1）。
@@ -136,7 +164,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "已生成配置: %s\n请编辑 model.name / model.base_url，并设置密钥环境变量后重新运行。\n"+
-			"  api_key 采用引用格式 secret:<环境变量名>，例如 secret:AQUARIUS_OPENAI_KEY 对应环境变量 AQUARIUS_OPENAI_KEY\n",
+			"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文（启动会警告，D35）\n",
 			cfgPath)
 		return 0
 	}
@@ -162,6 +190,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "model.name 与 model.base_url 不可为空\n")
 		return 1
 	}
+	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 口径。
+	if raw := strings.TrimSpace(cfg.Model.ReasoningEffort); raw != "" {
+		effort, err := app.ParseEffort(raw)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		cfg.Model.ReasoningEffort = effort
+	}
 	if cfg.UI.Kind == "" {
 		cfg.UI.Kind = "tui" // 键缺失与模板同默认（D33）；显式 "repl" 仍可用（测试/e2e 后端）
 	}
@@ -176,12 +213,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 	}
-	secretRef, err := secretName(cfg.Model.APIKey)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
-	}
-	apiKey, err := (envSecrets{}).Get(context.Background(), secretRef)
+	apiKey, err := resolveAPIKey(context.Background(), cfg.Model.APIKey, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
@@ -240,12 +272,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// /model 切换写回 config 的 model.name（D32）。
 	persistModel := func(name string) error {
 		return persistConfig(cfgPath, func(generic map[string]any) {
-			model, _ := generic["model"].(map[string]any)
-			if model == nil {
-				model = map[string]any{}
-				generic["model"] = model
+			modelSection(generic)["name"] = name
+		})
+	}
+
+	// /think /effort 写回 config 的 model 段（D34）。
+	persistThink := func(on bool) error {
+		return persistConfig(cfgPath, func(generic map[string]any) {
+			modelSection(generic)["think"] = on
+		})
+	}
+	persistEffort := func(level string) error {
+		return persistConfig(cfgPath, func(generic map[string]any) {
+			model := modelSection(generic)
+			if level == "" {
+				delete(model, "reasoning_effort") // off = 清除（不发送）
+				return
 			}
-			model["name"] = name
+			model["reasoning_effort"] = level
 		})
 	}
 
@@ -291,8 +335,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		logf:    func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
 		timeout: 5 * time.Second, // 插件投影单次上限（卡死的插件不得拖垮 Turn）
 	}
+	// 服务端不认的参数记录（D34）：LLM 适配器剥离重试成功后回调，写回 config
+	// model.unsupported_params（此后启动直接省略）；写回失败只记日志（下次仍会剥离）。
+	noteUnsupported := func(field string) {
+		fmt.Fprintf(stderr, "[llm] 服务端不支持参数 %s：已剥离重试，记入 config model.unsupported_params（D34）\n", field)
+		if err := persistConfig(cfgPath, func(generic map[string]any) {
+			model := modelSection(generic)
+			list, _ := model["unsupported_params"].([]any)
+			for _, v := range list {
+				if v == field {
+					return // 已记录
+				}
+			}
+			model["unsupported_params"] = append(list, field)
+		}); err != nil {
+			fmt.Fprintf(stderr, "[llm] 记录 unsupported_params 失败: %v（下次启动仍会先试发该字段）\n", err)
+		}
+	}
 	client, err := llm.New(llm.Config{
 		BaseURL: cfg.Model.BaseURL, APIKey: apiKey, Tokenizer: cfg.Model.Tokenizer,
+		UnsupportedParams: cfg.Model.UnsupportedParams,
+		NoteUnsupported:   noteUnsupported,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -355,11 +418,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if maxOutput <= 0 {
 		maxOutput = 20000
 	}
+	builtinTools := toolbuiltin.New(mergedMem, func(name string) (string, bool) {
+		p, err := mem.Path(name)
+		return p, err == nil
+	}, jobs)
+	// think 草稿工具可见性（D34）：默认隐藏（model.think_tool 缺省 false），
+	// 配置启用后重启生效——装配期摘除，不做能力探测、运行时零开销。
+	if !cfg.Model.ThinkTool {
+		builtinTools = dropTool(builtinTools, "think")
+	}
 	runner := toolrun.New(toolrun.Options{
-		Tools: toolbuiltin.New(mergedMem, func(name string) (string, bool) {
-			p, err := mem.Path(name)
-			return p, err == nil
-		}, jobs),
+		Tools:       builtinTools,
 		Confirmer:   confirmer,
 		Level:       lvl.Get,
 		SandboxPath: sandboxDir,
@@ -409,6 +478,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		app.Config{
 			Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns,
 			CompactThreshold: cfg.Limits.CompactThreshold, MaxContextTokens: cfg.Limits.MaxContextTokens,
+			Think: cfg.Model.Think, ReasoningEffort: cfg.Model.ReasoningEffort, // D34 初值
 		},
 	)
 	if err != nil {
@@ -447,22 +517,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	})
 
 	sess, err = app.NewSession(ctx, app.SessionDeps{
-		Store:        store,
-		Agent:        agent,
-		IDs:          ids,
-		Clock:        systemClock{},
-		SystemPrompt: cfg.SystemPrompt,
-		Level:        level,
-		SandboxPath:  sandboxDir,
-		PersistLevel: persistLevel,
-		Confirmer:    confirmer,
-		Jobs:         jobs,
-		Ingestors:    []port.Ingestor{ingestfile.New(blobs), ingestclip.New(blobs)},
-		UI:           presenter,
-		OpenMemory:   openMemoryEditor(mem, ui, stdin, stdout, stderr),
-		Plugins:      hostAdmin{host},
-		ListModels:   func(ctx context.Context) ([]port.ModelInfo, error) { return client.Models(ctx) },
-		PersistModel: persistModel,
+		Store:         store,
+		Agent:         agent,
+		IDs:           ids,
+		Clock:         systemClock{},
+		SystemPrompt:  cfg.SystemPrompt,
+		Level:         level,
+		SandboxPath:   sandboxDir,
+		PersistLevel:  persistLevel,
+		Confirmer:     confirmer,
+		Jobs:          jobs,
+		Ingestors:     []port.Ingestor{ingestfile.New(blobs), ingestclip.New(blobs)},
+		UI:            presenter,
+		OpenMemory:    openMemoryEditor(mem, ui, stdin, stdout, stderr),
+		Plugins:       hostAdmin{host},
+		ListModels:    func(ctx context.Context) ([]port.ModelInfo, error) { return client.Models(ctx) },
+		PersistModel:  persistModel,
+		PersistThink:  persistThink,  // D34
+		PersistEffort: persistEffort, // D34
 	})
 	if err != nil {
 		if ctx.Err() != nil {

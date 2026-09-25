@@ -247,19 +247,66 @@ func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
 	}
 }
 
-// TestRunRejectsPlaintextKey 明文密钥与缺失环境变量都要在启动时报因（硬性规则 8）。
-func TestRunRejectsPlaintextKey(t *testing.T) {
+// TestRunPlaintextKeyWarns D35：明文 api_key 允许启动，但必须打印警告、
+// 给出 secret: 建议，且不回显密钥值。
+func TestRunPlaintextKeyWarns(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"sk-plain"},"ui":{"kind":"repl"}}`
+	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"sk-plain-abc"},"ui":{"kind":"repl"}}`
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
+	}
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "明文") || !strings.Contains(stderr, "secret:") {
+		t.Fatalf("stderr 缺明文警告/建议: %q", stderr)
+	}
+	if strings.Contains(stderr, "sk-plain-abc") {
+		t.Fatalf("警告不得回显密钥值: %q", stderr)
+	}
+}
+
+// TestRunEmptyAPIKeyFallsBackToDefaultSecret D35：api_key 留空回落默认引用
+// secret:AQUARIUS_OPENAI_KEY（文件内值优先于默认引用；环境变量缺失才报错）。
+func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":""},"ui":{"kind":"repl"}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("AQUARIUS_OPENAI_KEY", "k") // 环境变量就位 → 正常启动
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
+	}
+
+	t.Setenv("AQUARIUS_OPENAI_KEY", "") // 缺失（envSecrets 对空值报错）→ 指名报因
+	out.Reset()
+	errBuf.Reset()
+	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
+		t.Fatalf("缺环境变量 code = %d, want 1", code)
+	}
+	if !strings.Contains(errBuf.String(), "AQUARIUS_OPENAI_KEY") {
+		t.Fatalf("stderr 应指名默认环境变量: %q", errBuf.String())
+	}
+}
+
+// TestRunRejectsBadEffort D34：reasoning_effort 非法值启动即报因（与 /effort 同口径）。
+func TestRunRejectsBadEffort(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X","reasoning_effort":"extreme"},"ui":{"kind":"repl"}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if !strings.Contains(errBuf.String(), "secret:") {
-		t.Fatalf("stderr = %q, want 提示 secret 引用", errBuf.String())
+	if !strings.Contains(errBuf.String(), "minimal|low|medium|high|off") {
+		t.Fatalf("stderr = %q, want 档位口径", errBuf.String())
 	}
 }
 
@@ -275,6 +322,104 @@ func TestRunMissingSecretEnv(t *testing.T) {
 	}
 	if !strings.Contains(errBuf.String(), "AQ_E2E_KEY") {
 		t.Fatalf("stderr = %q, want 指名环境变量", errBuf.String())
+	}
+}
+
+// TestRunThinkToolVisibility D34：think 草稿工具默认**不出现**在请求工具清单；
+// config model.think_tool=true 时列给模型（装配期决定，重启生效）。
+func TestRunThinkToolVisibility(t *testing.T) {
+	cases := []struct {
+		name      string
+		thinkTool string // model.think_tool 字段原文（"" = 键缺失）
+		wantThink bool
+	}{
+		{"默认隐藏", "", false},
+		{"配置启用", `"think_tool": true`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, reqs := scriptServer(t, []string{"好的"})
+			dir := t.TempDir()
+			model := `"name":"m","base_url":` + fmt.Sprintf("%q", srv.URL) + `,"api_key":"secret:X"`
+			if tc.thinkTool != "" {
+				model += "," + tc.thinkTool
+			}
+			cfg := `{"model":{` + model + `},"ui":{"kind":"repl"},
+  "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			t.Setenv("X", "k")
+			var out bytes.Buffer
+			if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+				t.Fatalf("code = %d, out = %q", code, out.String())
+			}
+			body := string(reqs.at(0).body)
+			got := strings.Contains(body, `"name":"think"`)
+			if got != tc.wantThink {
+				t.Fatalf("think 工具在请求清单中 = %v, want %v（body 摘要: %.300s）", got, tc.wantThink, body)
+			}
+		})
+	}
+}
+
+// TestRunRecordsUnsupportedParams D34 全链路：服务端 400 点名不认 reasoning_effort
+// → 同请求剥离重试成功 → 自动写回 config model.unsupported_params（重启后不再发送）。
+func TestRunRecordsUnsupportedParams(t *testing.T) {
+	var mu sync.Mutex
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		n++
+		first := n == 1 && strings.Contains(string(b), "reasoning_effort")
+		mu.Unlock()
+		if first {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"Unknown parameter: 'reasoning_effort'"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X","think":true,"reasoning_effort":"high"},"ui":{"kind":"repl"},
+  "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	mu.Lock()
+	if n < 2 {
+		t.Fatalf("requests = %d, want >=2（400 后剥离重试）", n)
+	}
+	mu.Unlock()
+
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var parsed struct {
+		Model struct {
+			UnsupportedParams []string `json:"unsupported_params"`
+			ReasoningEffort   string   `json:"reasoning_effort"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if len(parsed.Model.UnsupportedParams) != 1 || parsed.Model.UnsupportedParams[0] != "reasoning_effort" {
+		t.Fatalf("unsupported_params = %v, want [reasoning_effort]", parsed.Model.UnsupportedParams)
+	}
+	if parsed.Model.ReasoningEffort != "high" {
+		t.Fatalf("reasoning_effort = %q, want 保留原档位（只记不改）", parsed.Model.ReasoningEffort)
 	}
 }
 
