@@ -71,8 +71,10 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 
 1. DESIGN §7.3 命令表加行；
 2. `internal/app/session.go` 的 `execCommand` 加 case（含 `/help` 文案）；
-3. 命令输出走返回字符串（装配根交给 REPL），轮次输出走 Presenter——app 不碰 IO；
-4. `session_test.go` 补命令测试；未启用的命令在"尚未启用"case 里报对应里程碑。
+   MCP prompts 类动态命令不进 switch——经 `SetDynamicCommands` 注册、default 分支查询
+   （静态命令优先，§6.1 扩展点 #4）；
+3. 命令输出走返回字符串（装配根交给 UI），轮次输出走 Presenter——app 不碰 IO；
+4. `session_test.go` / `plugins_test.go` 补命令测试（注入替身直接构造 Session）。
 
 ### 新增一档权限等级
 

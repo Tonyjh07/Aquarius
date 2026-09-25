@@ -837,20 +837,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   - `/attach` `/clip` `/mic` 输入命令与 TUI 拖拽/粘贴/语音按钮（M4 TUI 为 MVP 不含，D33——
     留 TUI 后续迭代或 GUI，走同一 `UserInput.Raw` 入口）
   - 导出文件输出器（`output.tts` 同批启用）
-- **M2 审查遗留（P2/P3，2026-09 评审）**：
-  - trim 估算并入工具 schema（当前只按消息文本估，工具声明的 1–2k tokens 漏算）
+- **M2 审查遗留（P3，2026-09 评审；P2 的 trim 工具 schema 估算已修）**：
   - regexp2 `MatchTimeout` 与计数路径的 ctx 检查（模型可控输入的回溯爆炸防护）
   - Agent/Runner 共享可变状态的并发模型显式化（多会话共享实例时加锁）
   - `think` 参数非空校验；压缩摘要流的 UI 标注（"正在生成摘要"以区别于回答流）；
     `/usage` "上轮实测"文案改"最近实测"；trim `omitted==0` 时的通知措辞
 - 跨分支"摘抄"共享子树（DAG 化）
-- **M3 审查遗留（P3，2026-09 评审）**：
-  - `job_start` 参数校验（负 `timeout_sec` 拒收、相对 `workdir` 按绝对路径口径拒收）
-  - jobproc 进程树终止（`taskkill /T` / unix 进程组）缺自动化测试（依赖系统命令，难稳定断言）
-  - notify 通知正文缺控制字符（ESC/BEL 等）过滤
-  - atomicfile 路径锁 key 未做 `Clean` 归一（Windows 下 `a/b` 与 `a\b` 是两把锁）
-  - `trimHeadTail` 上限为奇数时省略计数偏差 1
-  - jobproc 日志头行在 `cmd.Start` 之后写、可能排在子进程输出之后（纯观感）
 - Job 表持久化（SQLite）
 - PDF/Office 等 Doc 提取器插件
 - 图片 OCR/描述自动降级、音频直输模型（等模型能力普及）

@@ -64,12 +64,14 @@ Root(实节点, ID=会话ID, role=root)
 | `internal/adapter/memoryfs` | 记忆存储：全局 memories.md + 会话 `<id>.memory.md`（D23） |
 | `internal/adapter/toolbuiltin` | 内置工具：memory_* / file_* / think / term_exec / job_*（经端口契约接入，D13） |
 | `internal/adapter/toolrun` | ToolRunner 门面：权限判定 → 确认 → 超时 → 裁剪（D25） |
-| `pluginapi/v1` | 对外稳定契约（独立 go.mod，M4 起用；与 port 类型互不引用） |
+| `pluginapi/v1` | 对外稳定契约（独立 go.mod；**D29 后移出 M4**，与 port 类型互不引用） |
 | `docs/` | 衍生文档（本目录）；权威是 DESIGN.md |
 
 已落位适配器（M3）：`blobfs`（附件库+启动 GC）/ `jobproc`（后台任务）/
 `ingestfile`/`ingestclip`（摄取管线）/ `notify`（通知输出器）/ `atomicfile`（原子写入原语）；
-待落位：`mcpgate`/`uitui`/`plugingo`（M4）、`asr`/`tts`（backlog，D27）。
+（M4）：`decorate`（横切装饰器）/ `mcpgate`（MCP → port 投影）/ `uitui`（bubbletea TUI）+
+`internal/plugin` 宿主（发现/grant/崩溃限次重启）；
+待落位：`plugingo` + `pluginapi/v1`（D29 后移）、`asr`/`tts`（backlog，D27）。
 
 ## 端口 × 内置适配器（落地里程碑）
 
@@ -77,11 +79,11 @@ Root(实节点, ID=会话ID, role=root)
 |---|---|---|---|
 | `LLM` | openai 兼容（+可选本地 tokenizer 精确计数，D26） | **M0 ✓** | 脚本化 Stream |
 | `ConversationStore` | storejson | **M0 ✓** | in-memory |
-| `Presenter` / `Prompter` | repl（TUI → uitui） | repl **M0 ✓** | 收集器 / 脚本队列 |
+| `Presenter` / `Prompter` | repl（行式）+ uitui（TUI，D33） | repl **M0 ✓** / uitui **M4 ✓** | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | **M0 ✓** | 固定 / 递增 / map |
-| `Tool` | toolbuiltin（memory_*/file_*/think + M3 的 term_exec/job_*）+ app 的 context_compact | **M2 ✓**（M3 扩充） | fake tool |
+| `Tool` | toolbuiltin（memory_*/file_*/think + M3 的 term_exec/job_*）+ app 的 context_compact + mcpgate 的 `mcp:<server>:<tool>` | **M2 ✓**（M3 扩充，M4+MCP） | fake tool |
 | `ToolRunner` | toolrun（权限判定/确认/超时/裁剪，D25） | **M2 ✓** | fake runner |
-| `Confirmer` | repl 确认（读行 y/N；`-yes` 全免） | **M1 ✓** | 脚本应答 |
+| `Confirmer` | repl 确认（读行 y/N；`-yes` 全免）；uitui 确认对话（D33） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs（全局 memories.md + 会话记忆，D23） | **M2 ✓** | in-memory |
 | `AttachmentStore` | blobfs（sha256 寻址 + 启动 GC） | **M3 ✓** | in-memory |
 | `Transcriber` / `Synthesizer` | （选型待定） | backlog（D27） | 假转写 |
@@ -91,12 +93,12 @@ Root(实节点, ID=会话ID, role=root)
 ## 两个稳定级
 
 - **`internal/port`**：内核内部的缝，可随内核自由重构；
-- **`pluginapi/v1`**（M4 起）：对外严格 semver，只增不改，breaking 走 v2；
-  两侧类型互不引用，由 `adapter/plugingo` 与 `adapter/mcpgate` 做防腐转换——
+- **`pluginapi/v1`**（D29 后移出 M4，见 §14）：对外严格 semver，只增不改，breaking 走 v2；
+  两侧类型互不引用，由 `adapter/plugingo`（后移）与 `adapter/mcpgate`（M4 ✓）做防腐转换——
   外部插件永远编译不到内核类型。
 
 ## 延伸阅读
 
-- 逐条决策（D1–D28）：[DESIGN.md §13](../DESIGN.md)
+- 逐条决策（D1–D33）：[DESIGN.md §13](../DESIGN.md)
 - 使用与命令：[usage.md](usage.md) ｜ 配置：[configuration.md](configuration.md)
 - 数据与备份：[storage.md](storage.md) ｜ 动手开发：[development.md](development.md)

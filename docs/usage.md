@@ -127,6 +127,6 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
   改成 `"api_key": "secret:AQUARIUS_OPENAI_KEY"` 并设置同名环境变量。
 - **启动报未知权限等级**：`permissions.level` 只接受
   `read-only|strict|permissive|full-access`。
-- **`ui.kind` 报未支持**：M0 只有 repl；bubbletea TUI 在 M4。
+- **`ui.kind` 报未支持**：只接受 `repl`（行式，测试/e2e 后端）与 `tui`（默认，D33）。
 - **想换模型/端点**：改 config 的 `model.name`/`model.base_url`，或用
   `-model`/`-base-url` flag、`AQUARIUS_MODEL`/`AQUARIUS_BASE_URL` 环境变量临时覆盖。
