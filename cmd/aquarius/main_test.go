@@ -589,6 +589,28 @@ func TestRunTUIConfirmE2E(t *testing.T) {
 	}
 }
 
+// TestRunDefaultsToTUIWhenKeyMissing ui 键缺失与模板同默认 tui（D33；审查修复：
+// 文档写"默认 tui"而缺省回落却是 repl，两处口径打架）。
+func TestRunDefaultsToTUIWhenKeyMissing(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{
+  "model": {"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000}
+}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("X", "k")
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	// TUI 状态行标识（repl 不会渲染）。
+	if !strings.Contains(out.String(), "PgUp/PgDn") {
+		t.Fatalf("缺 ui 键应默认 TUI: %q", out.String())
+	}
+}
+
 // TestRunRejectsUnknownUIKind 非法 ui.kind 启动即报因（D33 仅 repl | tui）。
 func TestRunRejectsUnknownUIKind(t *testing.T) {
 	dir := t.TempDir()

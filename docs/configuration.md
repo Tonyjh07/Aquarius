@@ -33,7 +33,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `ui.kind` | string | `tui`（模板） | `tui` = bubbletea TUI（D33 MVP：转写区/流式/历史/Confirm/状态行，轻 markdown）；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
+| `ui.kind` | string | `tui`（模板与键缺省） | `tui` = bubbletea TUI（D33 MVP：转写区/流式/历史/Confirm/状态行，轻 markdown）；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
 
 ### system_prompt（人格）
 

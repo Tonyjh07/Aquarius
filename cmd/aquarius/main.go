@@ -140,7 +140,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if cfg.UI.Kind == "" {
-		cfg.UI.Kind = "repl"
+		cfg.UI.Kind = "tui" // 键缺失与模板同默认（D33）；显式 "repl" 仍可用（测试/e2e 后端）
 	}
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" {
 		fmt.Fprintf(stderr, "ui.kind=%q 仅支持 repl | tui（D33）\n", cfg.UI.Kind)
