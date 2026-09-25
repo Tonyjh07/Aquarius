@@ -166,9 +166,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// 权限等级活状态（D22 执行接入）：persistLevel 写回成功后同步，ToolRunner 经 func 读取
-	//（REPL 单 goroutine 顺序调用，无并发）。
-	lvl := &levelHolder{level: level}
+	// 权限等级活状态（D22 执行接入）：persistLevel 写回成功后同步，ToolRunner 经 func 读取。
+	// atomic 存取（审查修复）：TUI 状态行在事件循环 goroutine 读、/permission 在主
+	// goroutine 写——D33 之后"单 goroutine"前提不再成立。
+	lvl := newLevelHolder(level)
 
 	// /permission 写回 config（D22）：map 级重排保留其余配置键；成功后同步活等级。
 	persistLevel := func(l perm.Level) error {
@@ -533,11 +534,24 @@ type envSecrets struct{}
 var _ port.Secrets = envSecrets{}
 
 // levelHolder 权限等级活状态（D22 执行接入）：/permission 写回成功后 Set，
-// ToolRunner 经 Get 读取。REPL 单 goroutine 顺序调用，无需加锁。
-type levelHolder struct{ level perm.Level }
+// ToolRunner 经 Get 读取。atomic.Value 存取——TUI 状态行回调（事件循环 goroutine）
+// 与 REPL 主 goroutine 并发读写（D33 引入第二 goroutine 打破"单 goroutine"前提，
+// 审查修复，与 agentPtr 同口径）。
+type levelHolder struct{ v atomic.Value } // perm.Level
 
-func (h *levelHolder) Get() perm.Level  { return h.level }
-func (h *levelHolder) Set(l perm.Level) { h.level = l }
+// newLevelHolder 构造并写入初值。
+func newLevelHolder(l perm.Level) *levelHolder {
+	h := &levelHolder{}
+	h.v.Store(l)
+	return h
+}
+
+func (h *levelHolder) Get() perm.Level {
+	v, _ := h.v.Load().(perm.Level)
+	return v
+}
+
+func (h *levelHolder) Set(l perm.Level) { h.v.Store(l) }
 
 // pickEditor 选择系统编辑器（D24）：$VISUAL → $EDITOR → 平台默认（windows 记事本 / vi）。
 func pickEditor(visual, editor, goos string) []string {
