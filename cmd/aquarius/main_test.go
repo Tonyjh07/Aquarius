@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -754,6 +755,151 @@ func TestEditorHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	os.Exit(0)
+}
+
+// ---------------------------------------------------------------------------
+// M3：term_exec / 后台任务（DESIGN §12 M3 验收）
+// ---------------------------------------------------------------------------
+
+// jobEchoSpec 平台安全的 echo 后台任务参数（job_start 的 command/args）。
+func jobEchoSpec(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return `{"command":"cmd","args":["/c","echo","job-e2e"]}`
+	}
+	return `{"command":"/bin/sh","args":["-c","echo job-e2e"]}`
+}
+
+// TestRunTermExecE2E M3 验收①：term_exec 经确认链路执行，
+// 输出回填给模型（第二次请求可见）、tool 节点 OK 落树。
+func TestRunTermExecE2E(t *testing.T) {
+	srv, reqs := rawScriptServer(t, [][]string{
+		{toolCallData("call_te", "term_exec", `{"command":"echo hello-e2e"}`)},
+		{contentData("执行完成")},
+	})
+	dir := t.TempDir()
+	writeConfig(t, dir, srv.URL, "m")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("跑一下 echo\ny\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	got := out.String()
+	for _, want := range []string{"[y/N]", "term_exec", "[tool ok]", "执行完成"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout 缺 %q: %q", want, got)
+		}
+	}
+	if len(*reqs) != 2 {
+		t.Fatalf("llm requests = %d, want 2", len(*reqs))
+	}
+	if !strings.Contains(string((*reqs)[1].body), "hello-e2e") {
+		t.Fatalf("第二次请求应回填命令输出: %.400s", (*reqs)[1].body)
+	}
+	c := loadTree(t, dir)
+	tn, ok := findToolNode(c)
+	if !ok || !tn.ToolResult.OK {
+		t.Fatalf("tool 节点 = %+v", tn)
+	}
+}
+
+// TestRunTermExecRejectE2E strict 下拒绝确认：不执行、OK=false 回填（工具列 D22）。
+func TestRunTermExecRejectE2E(t *testing.T) {
+	srv, _ := rawScriptServer(t, [][]string{
+		{toolCallData("call_te", "term_exec", `{"command":"echo should-not-run"}`)},
+		{contentData("好的，不执行。")},
+	})
+	dir := t.TempDir()
+	writeConfig(t, dir, srv.URL, "m")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("跑一下\nn\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	if !strings.Contains(out.String(), "用户拒绝") {
+		t.Fatalf("stdout 缺拒绝痕迹: %q", out.String())
+	}
+	c := loadTree(t, dir)
+	tn, ok := findToolNode(c)
+	if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "用户拒绝") {
+		t.Fatalf("tool 节点 = %+v", tn)
+	}
+}
+
+// TestRunJobLifecycleE2E M3 验收②：job_start 后台启动（经确认），
+// `/jobs` 列表可见、`/jobs logs` 日志可查（日志落盘 ~/.aquarius/jobs/<id>.log）。
+func TestRunJobLifecycleE2E(t *testing.T) {
+	srv, reqs := rawScriptServer(t, [][]string{
+		{toolCallData("call_js", "job_start", jobEchoSpec(t))},
+		{contentData("已启动。")},
+	})
+	dir := t.TempDir()
+	writeConfig(t, dir, srv.URL, "m")
+
+	var out bytes.Buffer
+	stdin := "启动后台任务\ny\n/jobs\n/jobs logs j001\n/quit\n"
+	if code := run([]string{"-data", dir}, strings.NewReader(stdin), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	got := out.String()
+	for _, want := range []string{"[y/N]", "job_start", "已启动。", "j001"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout 缺 %q: %q", want, got)
+		}
+	}
+	if !strings.Contains(got, "job-e2e") {
+		t.Fatalf("日志应回显任务输出: %q", got)
+	}
+	if len(*reqs) != 2 {
+		t.Fatalf("llm requests = %d, want 2", len(*reqs))
+	}
+	// 任务日志文件落盘（jobs/<id>.log）。
+	logPath := filepath.Join(dir, "jobs", "j001.log")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("读日志文件: %v", err)
+	}
+	if !strings.Contains(string(data), "job-e2e") {
+		t.Fatalf("日志文件 = %q", data)
+	}
+	// 会话树里 tool 节点 OK（启动成功回填）。
+	c := loadTree(t, dir)
+	tn, ok := findToolNode(c)
+	if !ok || !tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Output, "j001") {
+		t.Fatalf("tool 节点 = %+v", tn)
+	}
+}
+
+// longSleepSpec 平台可靠的长睡眠任务（约 30s；供 kill 测试启动）。
+func longSleepSpec(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		// ping 计时在无交互控制台下可靠等待（timeout 会因 stdin 重定向报错）。
+		return `{"command":"ping","args":["-n","30","127.0.0.1"]}`
+	}
+	return `{"command":"sleep","args":["30"]}`
+}
+
+// TestRunJobKillE2E M3：`/jobs kill` 终止后台任务（full-access 免确认启动）。
+func TestRunJobKillE2E(t *testing.T) {
+	srv, _ := rawScriptServer(t, [][]string{
+		{toolCallData("call_js", "job_start", longSleepSpec(t))},
+		{contentData("已启动。")},
+	})
+	dir := t.TempDir()
+	writeConfigLevel(t, dir, srv.URL, "m", "full-access")
+
+	var out bytes.Buffer
+	stdin := "启动长任务\n/jobs kill j001\n/quit\n"
+	if code := run([]string{"-data", dir}, strings.NewReader(stdin), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	got := out.String()
+	for _, want := range []string{"j001", "已终止 j001"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout 缺 %q: %q", want, got)
+		}
+	}
 }
 
 // TestRunMemoryCommandE2E /memory 端到端（M2 验收）：run() 注入的标准流直达编辑器
