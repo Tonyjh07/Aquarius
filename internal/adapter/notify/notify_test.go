@@ -80,6 +80,24 @@ func TestDeliverSkipsEmpty(t *testing.T) {
 	}
 }
 
+// TestDeliverFallsBackToMessageContent Parts 为空时回退消息内容（装饰器可能
+// 只传 Message）。
+func TestDeliverFallsBackToMessageContent(t *testing.T) {
+	var got string
+	a := New(func(_, body string) error { got = body; return nil })
+	if err := a.Deliver(context.Background(), port.OutputRequest{
+		Message: conversation.Message{
+			Role:    conversation.RoleAssistant,
+			Content: []conversation.Part{{Kind: conversation.PartText, Text: "来自消息内容"}},
+		},
+	}); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	if got != "来自消息内容" {
+		t.Fatalf("body = %q", got)
+	}
+}
+
 // TestDeliverPropagatesSendError 发送失败原样返回（装饰器据此记日志）。
 func TestDeliverPropagatesSendError(t *testing.T) {
 	a := New(func(string, string) error { return errors.New("无桌面会话") })

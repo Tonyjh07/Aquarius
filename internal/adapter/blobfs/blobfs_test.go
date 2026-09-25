@@ -3,6 +3,7 @@ package blobfs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -192,6 +193,40 @@ func TestPutCanceled(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Fatalf("取消后残留: %v", entries)
+	}
+}
+
+// errAfterReader 输出 n 字节后返回错误的 reader（Put 中途失败复现）。
+type errAfterReader struct{ n int }
+
+func (r *errAfterReader) Read(p []byte) (int, error) {
+	if r.n <= 0 {
+		return 0, errors.New("磁盘炸了")
+	}
+	n := len(p)
+	if n > r.n {
+		n = r.n
+	}
+	for i := 0; i < n; i++ {
+		p[i] = 'z'
+	}
+	r.n -= n
+	return n, nil
+}
+
+// TestPutReadError 中途读失败：报错且不留临时文件（不会产出半截哈希文件）。
+func TestPutReadError(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if _, err := s.Put(context.Background(), &errAfterReader{n: 100}, "text/plain", "x"); err == nil {
+		t.Fatal("读失败应报错")
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Fatalf("残留文件: %v", entries)
 	}
 }
 

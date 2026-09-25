@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -30,7 +31,7 @@ func newRawSession(t *testing.T, streams ...*scriptStream) (*Session, *scriptLLM
 		Agent:     agent,
 		IDs:       &seqIDs{},
 		Clock:     fixedClock{testTime},
-		Ingestors: []port.Ingestor{ingestfile.New(blobs)},
+		Ingestors: []port.Ingestor{ingestfile.New(blobs), ingestclip.New(blobs)},
 		UI:        rec,
 	})
 	if err != nil {
@@ -213,6 +214,38 @@ func TestSessionRawKeepsDefaultTitle(t *testing.T) {
 	}
 	if !hasAudio {
 		t.Fatal("树中缺 audio 分片")
+	}
+}
+
+// TestSessionRawClipboardPipeline 剪贴板链路（§12 M3 验收并列项）：已入库 Blob →
+// ingestclip 校验 → PartImage 入树 → 装配把附件字节内联进请求。
+func TestSessionRawClipboardPipeline(t *testing.T) {
+	s, llm, _, blobs := newRawSession(t, textStream("看到图片"))
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x33}, 16)...)
+	ref, err := blobs.Put(context.Background(), bytes.NewReader(png), "image/png", "clip.png")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if _, err := s.Handle(context.Background(), port.UserInput{
+		Raw: &port.RawInput{Kind: "clipboard", Blob: &ref},
+	}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	parts := findUserParts(llm.requests[0], conversation.PartImage)
+	if parts == nil {
+		t.Fatalf("请求缺图片分片: %+v", llm.requests[0].Messages)
+	}
+	found := false
+	for _, p := range parts {
+		if p.Kind == "image" && len(p.Data) > 0 && p.MIME == "image/png" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("剪贴板图片字节未内联: %+v", parts)
+	}
+	if err := s.Current().Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 }
 

@@ -414,6 +414,40 @@ func TestSessionJobsEmpty(t *testing.T) {
 	}
 }
 
+// TestSessionJobsEdges /jobs 边界：前缀歧义、List 故障上抛、空日志提示。
+func TestSessionJobsEdges(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+	jobs := []port.Job{
+		{ID: "j001", Status: port.JobDone, StartedAt: testTime, Spec: port.JobSpec{Command: "a"}},
+		{ID: "j002", Status: port.JobDone, StartedAt: testTime, Spec: port.JobSpec{Command: "b"}},
+	}
+
+	// 前缀歧义（"j0" 命中两个）。
+	s.jobs = &fakeJobs{jobs: jobs}
+	if _, err := handleCmd(s, "jobs", "logs", "j0"); err == nil ||
+		!strings.Contains(err.Error(), "有歧义") {
+		t.Fatalf("歧义 err = %v", err)
+	}
+	if _, err := handleCmd(s, "jobs", "kill", "j0"); err == nil ||
+		!strings.Contains(err.Error(), "有歧义") {
+		t.Fatalf("kill 歧义 err = %v", err)
+	}
+
+	// List 故障上抛（不静默）。
+	s.jobs = &fakeJobs{err: errors.New("存储炸了")}
+	if _, err := handleCmd(s, "jobs"); err == nil || !strings.Contains(err.Error(), "存储炸了") {
+		t.Fatalf("list err = %v", err)
+	}
+
+	// 空日志提示。
+	s.jobs = &fakeJobs{jobs: jobs, logs: map[port.JobID]string{"j001": "  \n"}}
+	out, err := handleCmd(s, "jobs", "logs", "j001")
+	if err != nil || !strings.Contains(out, "日志为空") {
+		t.Fatalf("out = %q, %v", out, err)
+	}
+}
+
 func TestSessionTitleAndExitCommands(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)
