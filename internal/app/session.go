@@ -529,7 +529,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		}, "\n"), nil
 
 	case "model", "plugin":
-		return "", fmt.Errorf("命令 /%s 尚未启用（里程碑 M3/M4，见 DESIGN §12）", cmd.Name)
+		return "", fmt.Errorf("命令 /%s 尚未启用（里程碑 M4，见 DESIGN §12）", cmd.Name)
 
 	default:
 		return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
