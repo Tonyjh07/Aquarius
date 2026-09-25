@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -291,6 +292,32 @@ func TestLogsTail(t *testing.T) {
 	}
 	if strings.Contains(logs, "line-3") {
 		t.Fatalf("tail 裁剪失效: %q", logs)
+	}
+}
+
+// TestRunCmdQuoting Windows：cmd /c 的含引号命令不被 Go 的 argv 转义破坏
+// （`"`→`\"`，cmd.exe 不认反斜杠转义）——setupProc 以 SysProcAttr.CmdLine 直传。
+// 非 Windows 跳过（sh -c 走 argv，无此问题）。
+func TestRunCmdQuoting(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("仅 Windows 有 cmd.exe 转义问题")
+	}
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	res, err := m.Run(context.Background(), port.JobSpec{
+		Command: "cmd",
+		Args:    []string{"/c", `echo "a b"`},
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(res.Output, `"a b"`) {
+		t.Fatalf("引号未保留: %q（期望输出含 \"a b\"）", res.Output)
+	}
+	if strings.Contains(res.Output, `\"`) {
+		t.Fatalf("出现 argv 转义残留 \": %q", res.Output)
 	}
 }
 

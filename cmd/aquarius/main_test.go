@@ -772,9 +772,10 @@ func jobEchoSpec(t *testing.T) string {
 
 // TestRunTermExecE2E M3 验收①：term_exec 经确认链路执行，
 // 输出回填给模型（第二次请求可见）、tool 节点 OK 落树。
+// 命令带引号（Windows 回归：cmd /c 的原始命令行不得被 argv 转义破坏）。
 func TestRunTermExecE2E(t *testing.T) {
 	srv, reqs := rawScriptServer(t, [][]string{
-		{toolCallData("call_te", "term_exec", `{"command":"echo hello-e2e"}`)},
+		{toolCallData("call_te", "term_exec", `{"command":"echo \"quoted e2e\""}`)},
 		{contentData("执行完成")},
 	})
 	dir := t.TempDir()
@@ -790,10 +791,27 @@ func TestRunTermExecE2E(t *testing.T) {
 			t.Fatalf("stdout 缺 %q: %q", want, got)
 		}
 	}
+	// 引号语义（只截结果段；工具参数 JSON 预览本身含 \" 转义，不算破坏）：
+	// sh -c 吃掉引号（quoted e2e）；cmd /c 保留引号且结果段不出现 \" 残留。
+	idx := strings.Index(got, "[tool ok]")
+	if idx < 0 {
+		t.Fatalf("stdout 缺 [tool ok]: %q", got)
+	}
+	okSeg := got[idx:]
+	if nl := strings.IndexAny(okSeg, "\r\n"); nl >= 0 {
+		okSeg = okSeg[:nl]
+	}
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(okSeg, `"quoted e2e"`) || strings.Contains(okSeg, `\"`) {
+			t.Fatalf("cmd /c 引号被 argv 转义破坏: %q", okSeg)
+		}
+	} else if !strings.Contains(okSeg, "quoted e2e") {
+		t.Fatalf("结果段缺命令输出: %q", okSeg)
+	}
 	if len(*reqs) != 2 {
 		t.Fatalf("llm requests = %d, want 2", len(*reqs))
 	}
-	if !strings.Contains(string((*reqs)[1].body), "hello-e2e") {
+	if !strings.Contains(string((*reqs)[1].body), "quoted e2e") {
 		t.Fatalf("第二次请求应回填命令输出: %.400s", (*reqs)[1].body)
 	}
 	c := loadTree(t, dir)
