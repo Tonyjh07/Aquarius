@@ -67,8 +67,9 @@ Root(实节点, ID=会话ID, role=root)
 | `pluginapi/v1` | 对外稳定契约（独立 go.mod，M4 起用；与 port 类型互不引用） |
 | `docs/` | 衍生文档（本目录）；权威是 DESIGN.md |
 
-未来适配器按里程碑落位：`blobfs`/`jobproc`/`ingestfile`/`ingestclip`/`notify`（M3）、
-`mcpgate`/`uitui`/`plugingo`（M4）；`asr`/`tts`、麦克风与输入命令见 §14 backlog（D27）。
+已落位适配器（M3）：`blobfs`（附件库+启动 GC）/ `jobproc`（后台任务）/
+`ingestfile`/`ingestclip`（摄取管线）/ `notify`（通知输出器）/ `atomicfile`（原子写入原语）；
+待落位：`mcpgate`/`uitui`/`plugingo`（M4）、`asr`/`tts`（backlog，D27）。
 
 ## 端口 × 内置适配器（落地里程碑）
 
@@ -82,10 +83,10 @@ Root(实节点, ID=会话ID, role=root)
 | `ToolRunner` | toolrun（权限判定/确认/超时/裁剪，D25） | **M2 ✓** | fake runner |
 | `Confirmer` | repl 确认（读行 y/N；`-yes` 全免） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs（全局 memories.md + 会话记忆，D23） | **M2 ✓** | in-memory |
-| `AttachmentStore` | blobfs | M3 | in-memory |
+| `AttachmentStore` | blobfs（sha256 寻址 + 启动 GC） | **M3 ✓** | in-memory |
 | `Transcriber` / `Synthesizer` | （选型待定） | backlog（D27） | 假转写 |
-| `Ingestor` / `OutputAdapter` | ingestfile/ingestclip（文本/文件/剪贴板）；notify | M3 | 脚本 |
-| `JobManager` | jobproc | M3 | 假任务 |
+| `Ingestor` / `OutputAdapter` | ingestfile/ingestclip（文本/文件/剪贴板）；notify | **M3 ✓** | 脚本 |
+| `JobManager` | jobproc（日志落盘，D8 内存表） | **M3 ✓** | 假任务 |
 
 ## 两个稳定级
 

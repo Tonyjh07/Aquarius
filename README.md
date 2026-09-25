@@ -14,7 +14,7 @@
 
 ## 状态
 
-开发中，里程碑 **M0 骨架 + M1 树交互 + M2 工具与记忆**已落地（DESIGN §12）：实 Root 会话树 +
+开发中，里程碑 **M0 骨架 + M1 树交互 + M2 工具与记忆 + M3 任务与多模态**已落地（DESIGN §12）：实 Root 会话树 +
 性质测试、persona 首节点、**三轨上下文压缩**（`/compact` 手动轨、超阈值自动轨、
 `context_compact` 自触发轨；失败回退最旧裁剪）、**权限等级矩阵**
 （read-only/strict/permissive/full-access + `/permission`，且经 ToolRunner 在工具链路生效）、
@@ -29,8 +29,12 @@ M2 提供**工具与记忆**：内置工具 memory_*/file_*/think/context_compac
 `conversations/<id>.memory.md`（模型经工具读写，`/memory` 用系统编辑器直开）；
 **三级 token 计数链**（服务端实测 usage → 适配器本地 tokenizer 精确计数 → 通用估算+自校准）
 支撑自动压缩与 `/usage` 用量查看。
-命令：`/new /list /title /goto /edit /branch /rm /compact /permission /memory /usage /quit /exit /help`。
-后续按里程碑推进：M3 任务与多模态（job_*/term_exec、附件、notify 输出器；语音输入/播报按 DESIGN D27 后移）→ M4 MCP 与 TUI。
+M3 提供**任务与多模态**：`term_exec`/`job_start` 后台任务（独立进程、日志落盘
+`~/.aquarius/jobs/`，`/jobs` 列表/查日志/终止）、**附件库**（sha256 内容寻址 + 启动 GC）、
+文件/剪贴板**摄取管线**（RawInput → Part 入树 → 装配内联图片字节与文档提取文本；
+触发命令面按 D27 留 M4）、`notify` 输出器（已提交回答触发系统通知，`output.notify`）。
+命令：`/new /list /title /goto /edit /branch /rm /compact /permission /memory /usage /jobs /quit /exit /help`。
+后续按里程碑推进：M4 MCP 与 TUI（语音输入/播报按 DESIGN D27 另行安排）。
 
 ## 文档
 

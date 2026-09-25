@@ -70,9 +70,16 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
 | `limits.tool_output_chars` | int | 20000 | 工具结果截断（ToolRunner，M2 消费） |
 | `limits.tool_timeout_sec` | int | 60 | 单次工具执行超时秒（ToolRunner，M2 消费） |
 
+### output（M3 起）
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `output.notify` | bool | 模板 `true`；键缺失 = `false` | 已提交的回答触发系统通知（Windows PowerShell 气泡 / `notify-send` / `osascript`，发送失败只记日志）。扇出在装配根的 Presenter 装饰器上（D28），app 不感知输出器 |
+| `output.tts` | bool | `false` | 语音播报：解析但不启用（ASR/TTS 移入 backlog，DESIGN D27） |
+
 ### 暂未消费的键（模板自带，随里程碑启用）
 
-`input`（asr/mic）、`output`（tts/notify）、`mcpServers`、
+`input`（asr/mic）、`output.tts`、`mcpServers`、
 `permissions` 之外的授权细节。未知键解析时忽略，**写回时原样保留**。
 
 ## 密钥规则

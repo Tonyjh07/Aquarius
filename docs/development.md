@@ -27,6 +27,7 @@ internal/app      agent(Turn 循环) · prompt(装配/水位/记忆注入) · se
 internal/port     端口 = 接口 + DTO（消费方定义、1–3 方法、ctx 首参）
 internal/domain   conversation(树) · tool(值对象) · perm(权限矩阵) —— 零依赖
 internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbuiltin / toolrun
+                  + M3：blobfs / jobproc / ingestfile / ingestclip / notify / atomicfile
                   （一个适配器一个目录）
 ```
 
