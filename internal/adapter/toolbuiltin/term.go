@@ -77,6 +77,8 @@ func shellSpec(command string) port.JobSpec {
 }
 
 // trimHeadTail 保头尾截断：头尾各 keep/2，中段以标注代替并给出原长。
+// 省略数按实际保留量（2×keep）计——max 为奇数时 keep*2 = max-1，
+// 若按 len-max 会少报 1（§14 M3 遗留）。
 func trimHeadTail(s string, max int) string {
 	if max <= 0 {
 		return s
@@ -87,6 +89,6 @@ func trimHeadTail(s string, max int) string {
 	}
 	keep := max / 2
 	return string(r[:keep]) +
-		fmt.Sprintf("\n…[输出过长，已省略中间 %d 字符，原文共 %d 字符]\n", len(r)-max, len(r)) +
+		fmt.Sprintf("\n…[输出过长，已省略中间 %d 字符，原文共 %d 字符]\n", len(r)-2*keep, len(r)) +
 		string(r[len(r)-keep:])
 }

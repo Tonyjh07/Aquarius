@@ -255,3 +255,27 @@ func TestJobKill(t *testing.T) {
 		t.Fatalf("killed = %v", jobs.killed)
 	}
 }
+
+// TestTrimHeadTailOddMax §14 M3 遗留：max 为奇数时省略计数按实际保留量（2×keep）计——
+// keep=max/2 使头尾合计 max-1，按 len-max 会少报 1。
+func TestTrimHeadTailOddMax(t *testing.T) {
+	s := strings.Repeat("a", 100)
+	out := trimHeadTail(s, 11) // keep=5，实际保留 10，省略 90（旧口径报 89）
+	if !strings.Contains(out, "已省略中间 90 字符") {
+		t.Fatalf("奇数上限省略计数错: %q", out)
+	}
+	if !strings.Contains(out, "原文共 100 字符") {
+		t.Fatalf("原长标注错: %q", out)
+	}
+	if head := strings.SplitN(out, "\n", 2)[0]; head != "aaaaa" {
+		t.Fatalf("头部保留 = %q, want 5 字符", head)
+	}
+	// 偶数上限：不变式（2×keep = max）。
+	if out := trimHeadTail(s, 10); !strings.Contains(out, "已省略中间 90 字符") {
+		t.Fatalf("偶数上限省略计数错: %q", out)
+	}
+	// 未超限原样返回。
+	if out := trimHeadTail("short", 10); out != "short" {
+		t.Fatalf("未超限应原样: %q", out)
+	}
+}
