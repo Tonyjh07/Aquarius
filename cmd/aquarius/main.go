@@ -438,8 +438,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return host.Ready()
 		},
 		callCtx:    ctx,
+		ioTimeout:  10 * time.Second,
 		logf:       func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
 		registered: map[string][]string{},
+		prompts:    map[string][]plugin.PromptInfo{},
 	}
 	host = plugin.New(plugin.Deps{
 		Dial:          mcpgate.NewDialer(envSecrets{}),

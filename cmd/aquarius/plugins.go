@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
@@ -128,16 +129,21 @@ func (a hostAdmin) Enable(ctx context.Context, name string) error { return a.h.E
 func (a hostAdmin) Disable(name string) error { return a.h.Disable(name) }
 
 // pluginSurfaces 插件面刷新器（宿主 OnChange 回调）：把就绪会话的 tools/prompts
-// 同步到 ToolRunner 与 Session 动态命令表。可能来自崩溃重启 goroutine——
-// 内部串行（refreshMu），Runner 与 Session 各自加锁。
+// 同步到 ToolRunner 与 Session 动态命令表。可能来自崩溃重启 goroutine——内部串行
+// （refreshMu），但 I/O 一律锁外做并带超时（审查修复：持锁做网络会卡死 REPL 的
+// enable/disable，卡死的 server 会挂起整个面）；工具按集合 diff 增删（审查修复：
+// server 侧缩表/改名残留的旧工具此前再也摘不掉）；prompts 拉取失败保留上次成功表
+// （与工具"失败保留旧登记"语义一致）。
 type pluginSurfaces struct {
 	mu         sync.Mutex
 	runner     toolRunnerAdder
 	session    **app.Session // 装配后期才赋值（先建 host 再建 session）
 	ready      func() map[string]plugin.Session
 	callCtx    context.Context
+	ioTimeout  time.Duration // 单次 tools/prompts 拉取上限（<=0 = 默认 10s）
 	logf       func(string, ...any)
-	registered map[string][]string // server → 已注册工具名（停用时移除）
+	registered map[string][]string            // server → 已注册工具名
+	prompts    map[string][]plugin.PromptInfo // server → 上次成功的 prompt 清单
 }
 
 // toolRunnerAdder Runner 的最小装配面（Add/Remove；main 侧的具体类型）。
@@ -146,42 +152,92 @@ type toolRunnerAdder interface {
 	Remove(name string)
 }
 
-// refresh 全量同步工具与动态命令（幂等）。
-func (p *pluginSurfaces) refresh() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	ready := p.ready()
-	names := make([]string, 0, len(ready))
-	for n := range ready {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+// refreshedSnapshot 锁外拉取的单 server 结果。
+type refreshedSnapshot struct {
+	name      string
+	tools     []port.Tool
+	toolNames []string
+	prompts   []plugin.PromptInfo
+	promptsOK bool
+}
 
-	// 工具：就绪 server 逐一同步（Add 同名覆盖），不再就绪的按记录移除。
+// refresh 幂等同步：锁外带超时拉取 → 锁内 diff 提交。
+func (p *pluginSurfaces) refresh() {
+	ready := p.ready()
+	names := sortedStoreNames(ready)
+	timeout := p.ioTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+
+	// 阶段一（锁外，网络）：拉取失败者本轮不动（保留旧工具登记）。
+	snaps := make([]refreshedSnapshot, 0, len(names))
 	for _, name := range names {
-		sess := ready[name]
-		tools, err := sess.Tools(p.callCtx)
+		tctx, cancel := context.WithTimeout(p.callCtx, timeout)
+		tools, err := ready[name].Tools(tctx)
+		cancel()
 		if err != nil {
 			p.logf("[plugin] %s tools/list: %v", name, err)
 			continue
 		}
-		registered := make([]string, 0, len(tools))
-		for _, t := range tools {
-			p.runner.Add(t)
-			registered = append(registered, t.Spec().Name)
+		pctx, cancel := context.WithTimeout(p.callCtx, timeout)
+		prompts, perr := ready[name].Prompts(pctx)
+		cancel()
+		if perr != nil {
+			p.logf("[plugin] %s prompts/list: %v", name, perr)
 		}
-		p.registered[name] = registered
+		sn := refreshedSnapshot{name: name, tools: tools, prompts: prompts, promptsOK: perr == nil}
+		for _, t := range tools {
+			sn.toolNames = append(sn.toolNames, t.Spec().Name)
+		}
+		snaps = append(snaps, sn)
 	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.registered == nil {
+		p.registered = map[string][]string{}
+	}
+	if p.prompts == nil {
+		p.prompts = map[string][]plugin.PromptInfo{}
+	}
+	live := make(map[string]bool, len(names))
+	for _, n := range names {
+		live[n] = true
+	}
+
+	// 阶段二（锁内提交）：就绪 server 的工具集合 diff（新增/覆盖 → Add；消失 → Remove）。
+	for _, sn := range snaps {
+		newSet := make(map[string]bool, len(sn.toolNames))
+		for _, tn := range sn.toolNames {
+			newSet[tn] = true
+		}
+		for _, old := range p.registered[sn.name] {
+			if !newSet[old] {
+				p.runner.Remove(old)
+			}
+		}
+		for _, t := range sn.tools {
+			p.runner.Add(t)
+		}
+		p.registered[sn.name] = sn.toolNames
+		if sn.promptsOK {
+			p.prompts[sn.name] = sn.prompts
+		}
+	}
+	// 整机下线：清工具与 prompt 簿。
 	for name, toolNames := range p.registered {
-		if _, ok := ready[name]; !ok {
+		if !live[name] {
 			for _, tn := range toolNames {
 				p.runner.Remove(tn)
 			}
 			delete(p.registered, name)
+			delete(p.prompts, name)
 		}
 	}
 
-	// 动态命令 /mcp:<server>:<prompt>（渲染后作为用户输入走完整 Turn）。
+	// 动态命令 /mcp:<server>:<prompt>（渲染后作为用户输入走完整 Turn）；
+	// prompt 清单取"上次成功"，本轮拉取失败不清空。
 	if *p.session == nil {
 		return // session 尚未建好（Start 前的回调）
 	}
@@ -189,14 +245,9 @@ func (p *pluginSurfaces) refresh() {
 	dyn := make(map[string]app.CommandHandler)
 	for _, name := range names {
 		sess := sess
-		prompts, err := ready[name].Prompts(p.callCtx)
-		if err != nil {
-			p.logf("[plugin] %s prompts/list: %v", name, err)
-			continue
-		}
-		for _, pi := range prompts {
+		render := ready[name]
+		for _, pi := range p.prompts[name] {
 			promptName := pi.Name
-			render := ready[name]
 			dyn["mcp:"+name+":"+promptName] = func(ctx context.Context, args []string) (string, error) {
 				text, err := render.RenderPrompt(ctx, promptName, args)
 				if err != nil {
