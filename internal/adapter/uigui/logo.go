@@ -97,7 +97,10 @@ func drawLogo(gtx layout.Context, box image.Rectangle) {
 		x := box.Min.X + (box.Dx()-logoIconPx)/2
 		y := box.Min.Y + (box.Dy()-logoIconPx)/2
 		ts := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
+		// ImageOp.Add 只设材质不落绘制——须紧跟 PaintOp（paint.Fill = ColorOp +
+		// PaintOp 的实证口径）：缺则图标永不显形，只剩品牌蓝底。
 		im.Add(gtx.Ops)
+		paint.PaintOp{}.Add(gtx.Ops)
 		ts.Pop()
 	}
 	st.Pop()
