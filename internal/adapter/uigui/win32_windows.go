@@ -309,9 +309,14 @@ var fadePresentLogged bool
 
 var overlayClassOnce uintptr // RegisterClassW 只做一次
 
-// overlaySyncTopMost 淡出 overlay 置顶态与主窗**实际**态逐次对齐（§15.1：渐变带与
-// 主窗同步置顶/非置顶，不独立悬浮）。仅窗口线程调用（ovl 归属该线程）；主窗置顶位
-// 以实际查询为准——主窗被意外降级时 overlay 跟着退，杜绝"带孤零零飘在其他窗口上"。
+// overlaySyncTopMost 淡出 overlay 与主窗 z 序同步（§15.1），两步：
+//  1. 置顶标志对齐——以主窗**实际**置顶位为准（overlay 不带独立 WS_EX_TOPMOST）。
+//  2. 相邻锚定（恒做）——overlay 紧贴主窗。只对齐标志不够：同带内激活序列会把别的
+//     窗口插到主窗与带之间（实测 bug：切非置顶后带被终端压住/整条消失——主窗被点到
+//     带顶、带留在原地沉在终端下）。每次提交把带拉回主窗身后（主窗区域整带挖空，
+//     带从洞里透出；紧邻侧在上在下均可见）。
+//
+// 仅窗口线程调用（ovl 归属该线程）。
 func overlaySyncTopMost() {
 	main := atomic.LoadUintptr(&mainHWND)
 	if main == 0 || ovl.hwnd == 0 {
@@ -320,10 +325,11 @@ func overlaySyncTopMost() {
 	want, _, _ := procGetWindowLongPtrW.Call(main, gwlExStyle)
 	have, _, _ := procGetWindowLongPtrW.Call(ovl.hwnd, gwlExStyle)
 	wantOn := want&wsExTopMost != 0
-	if wantOn == (have&wsExTopMost != 0) {
-		return
+	if wantOn != (have&wsExTopMost != 0) {
+		procSetWindowPos.Call(ovl.hwnd, topMostHandle(wantOn), 0, 0, 0, 0,
+			swpNoMove|swpNoSize|swpNoActivate)
 	}
-	procSetWindowPos.Call(ovl.hwnd, topMostHandle(wantOn), 0, 0, 0, 0,
+	procSetWindowPos.Call(ovl.hwnd, main, 0, 0, 0, 0,
 		swpNoMove|swpNoSize|swpNoActivate)
 }
 
