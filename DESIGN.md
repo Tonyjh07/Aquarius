@@ -896,6 +896,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D41 | 进程输出在 **jobproc 适配器内按行解码为 UTF-8**：UTF-8 合法则原样（ASCII 与显式 `chcp 65001` 输出），否则 GBK/CP936 解码；x/text 宽松解码器以 U+FFFD 兜底"两者都不是"，`term_exec` 同步输出与 `job_logs` 日志同口径 | 给子进程强灌 `chcp 65001`（改变命令运行环境，依赖 OEM 代码页的老程序反而乱码，且控制台代码页是共享状态）；调 `GetConsoleOutputCP`/`GetOEMCP` 精确解码（平台特定代码，子进程 stdout 是 pipe 时与控制台代码页未必一致——内容探测已覆盖真实两档 65001/936）；交 UI 层清洗（字节 → string 转换时 U+FFFD 已产生，事后不可恢复） |
 | D42 | **思考过程入树 + config 控制回传**（修订 D34）：新增 `PartThinking` 分片（仅 assistant 可携带，节点形态校验把关；流内分片合并至多一段置于正文前，取消/出错终态的已生成思考同样入树）；回传走**独立承载** `PromptMessage.Reasoning` → openai 适配器序列化为 assistant 消息的 `reasoning_content` 字段（**2026-09 调研**：OpenAI 官方 Chat Completions 每轮丢弃推理、也不返回明文思维链——官方端点不触发回传；DeepSeek 等兼容端点带 `tools` 时**强制**回传、缺失即 400；`reasoning_content` 是兼容生态事实标准），端点点名不认则复用 D34 剥离重试管线（扩展到消息内字段）记入 `model.unsupported_params` 后省略；开关 config `model.echo_thinking`（`*bool`：**键缺失 = 回传**，显式 false 关，改后重启生效）；展示口径（实时暗块、启动回放）恒含思考，与回传开关解耦 | 维持"只展示不入树"（D34 原状：重启/回溯即丢、审计不到树上，违背"树是唯一事实源/用户主权"）；旁路字段或独立文件存思考（D21 否决同款理由：两处存放、回溯易失配）；独立 system/tool 节点承载思考（破坏一轮一 assistant 节点与工具配对语义）；`<thinking>` 文本拼进正文（DeepSeek 工具轮缺 `reasoning_content` 字段仍 400，且思考被当正文污染上下文）；默认不回传（对 DeepSeek 类端点是工具轮硬故障——调研后由"默认关"翻案为"默认回传"）；厂商私有思考块原样回传（Anthropic thinking block 等，列 §14 backlog） |
 | D43 | **GUI 前端 = Gio 悬浮球换壳**（§15/M5）：`internal/adapter/uigui` 同权实现 `uiFrontend`（`port.Presenter + Prompter + Confirmer` + Say/Prompt/SetInterrupt/Close），`ui.kind` 新增 `gui` 接入装配 switch（repl/tui 不动、默认仍 tui）；形态 = **单组件悬浮球**（logo 即球，左键展开/收起输入栏、右键菜单）→ 提交后上方转写浮层（每轮清空 + 可固定钉住累计）；托盘常驻生命周期（关窗隐藏、退出经菜单）、全局快捷键（默认 Alt+Space，设置可改）、拖拽 + 位置记忆；消息流 = 思考暗块（流式实时、定稿折叠为「已思考」行，D42 展示口径恒含）+ 工具折叠 chip 可展开 + 完整 markdown；Confirm = 输入栏切换确认态（非模态）；附件按钮 = 系统文件选择框走 `UserInput.Raw{Kind=file}` 既有摄取管线；主题令牌化（MVP 品牌色 `#00AEEF` + 输入框浅白/浅灰 + 深/浅跟随系统，多颜色预设留数据后补）。**spike 已过（2026-09，§15.6）**：悬浮胶囊用**形裁 `SetWindowRgn`**（Gio 无真透明、色键与 D3D 不兼容白屏、DWM 圆角有描边副作用，均排除）；托盘/Alt+Space 快捷键/多显示器定位/位置记忆/系统中文字形全通过；实现铁律两条见 §15.6（修改性 Win32 调用走 `Window.Run`、拖动用光标绝对跟踪） | Fyne（cgo/OpenGL 违「无 cgo」硬约束、控件样式僵硬做不出透明胶囊）；Wails/Web UI（前端构建链 + webview 依赖，富文本强但与纯 Go 单二进制张力大）；独立 GUI 进程经 IPC（交付变双程序）；悬浮球 + 独立胶囊双组件（两套焦点/生命周期，合并为单组件展开态）；模态弹窗做 Confirm（打断输入流，输入栏确认态更贴极简）；MVP 上多主题预设（先令牌化留一色，加色只改数据）；~~色键透明~~/~~DWM 圆角~~/~~每像素透明~~（spike 实测不可行或被形裁取代，§15.6） |
+| D44 | **GUI 悬浮渲染架构 = 逐元素形裁 + headless/ULW 淡出**（细化 D43 形裁口径，§15.1/§15.3）：无背景"全悬空" = 每帧布局记录可见元素矩形（气泡/输入栏/状态行），`SetWindowRgn` 并集**逐元素挖空**（间隙/边角透明 + 点击穿透；物理 px = 逻辑 × PxPerDp，经 `Window.Run` 重建）；统一半透明 = `LWA_ALPHA` 整窗常量（与形裁正交）；顶边渐变淡出 = 淡出带整带挖空 + 独立 `UpdateLayeredWindow` overlay——像素源取 **`gpu/headless` 离屏渲染同布局**（透明清屏 → alpha=覆盖免掩码、`PxPerDp` 对齐主窗、零值 Source 纯渲染），预乘线性+sRGB 语义转字节预乘后 `ULW_ALPHA+AC_SRC_ALPHA` 提交，`SourceConstantAlpha` = 主窗 LWA_ALPHA × 渐变无缝衔接。**spike 已过（2026-09，§15.6）**：headless 四点全过；PrintWindow 捕获全零已排除 | 主窗直出 alpha（`gpu.Clear` 写死不透明白 + HWND swapchain alpha 被合成器忽略，per-pixel 仅 DirectComposition / ULW 两条系统路径，Gio 都不走）；色键 `LWA_COLORKEY`（D3D 白屏，§15.6）；屏幕 BitBlt 捕获淡出带（带内已挖空、取不到气泡内容）；`PrintWindow` 捕获（spike 实测连可见区全零）；扫描线抖动近似淡出（观感降级，留作 fallback）；`LWA_ALPHA` 做渐变（仅整窗常量）；接管 swapchain 走 DirectComposition（放弃 Gio 渲染 = 换架构，违背 D43 换壳不换核） |
 
 ## 14. 暂缓事项（Backlog）
 
@@ -944,17 +945,23 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 
 - **单组件悬浮球**：logo 圆钮是唯一常驻物，输入栏是它的展开态——悬浮球右侧展开输入栏，
   再次左键 logo 收起回球；**不存在球 + 胶囊两个独立组件**（两套焦点/生命周期）。
-- **悬浮形态实现 = 形裁（spike 实证，§15.6）**：Gio 窗口本质不透明（`gpu.Clear` 写死），
-  胶囊"透明背景"经 **`SetWindowRgn` 形裁**实现——窗口直接裁成胶囊圆角矩形（两端全圆），
-  区域外不可见且点击穿透，**不依赖任何透明技术**；代价：边缘二值掩码无抗锯齿、失去 DWM
-  阴影、改尺寸需重算区域。半透明可叠加 `LWA_ALPHA`。
+- **悬浮形态实现 = 逐元素形裁（spike 实证 §15.6，D44）**：Gio 窗口本质不透明
+  （`gpu.Clear` 写死不透明白），"全悬空"经 **`SetWindowRgn` 逐元素挖空**实现——
+  每帧布局记录可见元素矩形（气泡、输入栏、状态行），并集（圆角矩形 `CombineRgn OR`）
+  构成窗口区域：元素间隙与窗口边角完全透明、**点击穿透到下层窗口**；区域随布局
+  变化重建（物理 px = 逻辑 × PxPerDp，经 `Window.Run` 送窗口线程——§15.6 铁律 1）。
+  代价：边缘二值掩码无抗锯齿、失去 DWM 阴影。**统一半透明** = `LWA_ALPHA` 整窗
+  常量（与形裁正交，spike 已验证）：元素以同一不透明度实时叠在下层窗口上；
+  差异化/渐变透明见 D44 淡出架构。
 - **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出。
 - **托盘常驻生命周期**：关窗 = 隐藏，退出只经菜单。
 - **全局快捷键**：呼出/收起输入框（显示悬浮球时 = 展开输入框），默认 `Alt+Space`，
   进设置可改（GUI 设置面 MVP 仅快捷键与主题两项）。
-- **位置**：拖拽移动 + 位置记忆（含多显示器，随 config/本地状态持久化）。
-- **转写浮层**：提交后在胶囊上方出现，自动高度、可滚动、生成时长高；
-  **每轮清空 + 可固定**（钉住后累计显示、可拖高）——历史在会话里，经菜单切会话查看。
+- **位置**：拖拽移动（把手 = logo / 输入栏空隙 / 状态行；气泡区是滚动区、不拖窗）
+  + 位置记忆（含多显示器，随 config/本地状态持久化）。
+- **转写浮层**：提交后在胶囊上方出现，**无底板——消息以双色气泡悬浮呈现**（§15.3），
+  自动高度、可滚动、生成时长高；**每轮清空 + 可固定**（钉住后累计显示、可拖高）——
+  历史在会话里，经菜单切会话查看。
 - **状态行**：浮层底栏仅生成时显示「思考中/生成中 · 模型 · 权限档」（TUI 状态行等价物，
   数据源同 `Status` 回调：Model/Level/Effort 现取）；用量详情进 logo 菜单。
 - **常规窗口形态只预留设计、不做实现**（§14）。
@@ -977,11 +984,30 @@ command..."*｜展开按钮｜**发送键（主题色）**。
 
 | 元素 | 呈现 |
 |---|---|
+| 消息气泡 | **双色气泡**标示角色：user = 品牌色系气泡、assistant = 浅白气泡；思考/工具/notice 为非气泡文本行（气泡群内弱化样式） |
 | 思考（D42） | 流式**实时暗块**（灰色小字 + "思考中…"）；定稿折叠为「已思考 · Ns」行可展开；启动回放同款——展示口径恒含思考，与 `model.echo_thinking` 回传开关解耦 |
 | 工具调用/结果 | **折叠 chip**（`🔧 file_read config.json ✓`），点击展开参数/结果明细 |
 | assistant 正文 | **完整 markdown**：代码块（语法高亮 + 复制按钮）、表格、列表、链接、内联图片 |
 | NoticeEvent / ErrorEvent | 流层内淡色提示行 / 错误块 |
 | 流式 vs 定稿 | 对齐 D33 口径：流式阶段原样追加，`CommittedEvent` 后定稿渲染（思考折叠、markdown 全量） |
+| 顶边淡出 | 转写区顶部固定高度**淡出带**：气泡滚出顶部走垂直 alpha 渐变消失（非硬切）；实现见下 |
+
+**淡出实现（D44，spike 已过 §15.6）**：淡出带在主窗区域中**整带挖空**（该处桌面/下层
+窗口直接可见），由一个**独立 `UpdateLayeredWindow` overlay 窗口**（`WS_EX_LAYERED |
+TRANSPARENT | NOACTIVATE | TOOLWINDOW | TOPMOST`，随主窗定位）呈现渐变内容：
+
+1. **像素源** = `gioui.org/gpu/headless` 离屏渲染同一布局：清屏为透明 → alpha 通道 =
+   内容覆盖（**免布局掩码同步**）；`Metric.PxPerDp` 对齐主窗 DPI；零值 `Source` 纯渲染
+   已验证（`io/input`：zero-value = disabled）。
+2. 裁淡出带行 → 垂直渐变 × alpha → 预乘转换（headless 像素 = **预乘线性 + sRGB 存储**
+   语义，按 decode/encode 转为 ULW 所需的字节空间预乘；alpha=255 的内容像素简化为
+   字节 × 渐变）。
+3. `UpdateLayeredWindow(ULW_ALPHA + AC_SRC_ALPHA)`，`SourceConstantAlpha` = 主窗
+   `LWA_ALPHA` 常量 × 渐变——与主窗半透明在带底无缝衔接（同源 Gio 渲染，像素一致）。
+
+约束：淡出带内**不放交互控件**（零值 Source = 禁用态渲染、与主窗启用态有色差；带内
+恒为文本气泡则无差异）；带内点击已随挖空穿透（不参与交互，滚动从带下方起效）；
+headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化驱动重渲与 overlay 复位。
 
 **§9 清洗**：所有不可信文本（流式 delta、思考、工具参数/结果、历史回放、命令输出）
 出口统一剥控制序列（对齐 `sanitizeControl`）；渲染不执行任何标记语言的活动内容。
@@ -1014,6 +1040,8 @@ command..."*｜展开按钮｜**发送键（主题色）**。
 | 多显示器 + 位置记忆 | ✅ 显示器枚举/工作区夹取/`SetWindowPos` 定位 + JSON 位置记忆 + 重启恢复 |
 | 中文字形 | ✅ 系统 `msyh.ttc` → `opentype.ParseCollection` 加载成功（gofont 无 CJK，M5 中文渲染走系统字体） |
 | Gio 真透明 | ❌ 不存在（`gpu.Clear` 强制不透明白，仅 js 平台透明）；每像素透明需 `UpdateLayeredWindow` CPU 位图或 DirectComposition，与 Gio GPU 路径冲突——形裁绕开 |
+| 淡出像素源（headless 离屏渲染） | ✅ spike/headless：`gpu/headless` 清屏 = 透明（alpha 通道 = 内容覆盖，**免布局掩码**）；零值 `Source` 纯渲染不 panic（含 `gtx.Execute`/material 控件）；`PxPerDp` 可控（125% 缩放实测通过）；像素语义 = **预乘线性 + sRGB 存储**（ULW 前需 decode/encode 转字节预乘） |
+| 主窗捕获（PrintWindow） | ❌ spike/printwin：`PW_RENDERFULLCONTENT` **连可见区都返回全零** → 捕获路线排除；淡出像素源改 headless 离屏渲染（D44） |
 
 **实现铁律（M5 必守，堆栈实证）**：
 
