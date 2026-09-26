@@ -35,3 +35,6 @@ internal/adapter/llm/tokenizer/testdata/tokenizer.json
 # .vscode/
 
 temp/
+
+# spike 运行日志（本地实测产物，结论已回写 DESIGN §15.6）
+spike/**/*.log
