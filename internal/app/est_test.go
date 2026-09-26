@@ -58,6 +58,26 @@ func TestEstimateRequestPayload(t *testing.T) {
 	}
 }
 
+// TestPayloadIncludesReasoning D42：回传思考计入请求 payload——估算口径 = 发送口径
+// （/usage、自动压缩阈值按实际发出的文本计）。
+func TestPayloadIncludesReasoning(t *testing.T) {
+	text := []port.PromptPart{{Kind: "text", Text: "答案"}}
+	base := port.GenerateRequest{
+		Messages: []port.PromptMessage{{Role: "assistant", Content: text}},
+	}
+	withThink := port.GenerateRequest{
+		Messages: []port.PromptMessage{{Role: "assistant", Reasoning: strings.Repeat("思", 60), Content: text}},
+	}
+	p0, _ := payloadOf(base)
+	p1, _ := payloadOf(withThink)
+	if strings.Contains(p0, "思") {
+		t.Fatalf("无思考的 payload 不应含思考: %q", p0)
+	}
+	if n := strings.Count(p1, "思"); n != 60 {
+		t.Fatalf("思考计入 = %d, want 60（回传文本全额计入）", n)
+	}
+}
+
 // fakeCounter 假精确计数器（②覆盖③）。
 type fakeCounter struct {
 	n   int

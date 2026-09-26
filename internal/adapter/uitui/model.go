@@ -23,7 +23,7 @@ const (
 	blockNotice                     // notice 提示
 	blockError                      // 错误行
 	blockSystem                     // system 节点（/compact 摘要等）
-	blockThinking                   // 思维链暗块（D34：只展示不入树）
+	blockThinking                   // 思维链暗块（D34 展示；节点侧 PartThinking 入树，D42）
 )
 
 // block 一段定稿转写（text 已含样式）。
@@ -295,7 +295,8 @@ func (m *model) historyNext() {
 // handleEvent Turn 事件 → 转写块（与 repl.Emit 同呈现语义）。
 func (m *model) handleEvent(ev port.Event) {
 	if d, ok := ev.(port.DeltaEvent); ok && d.Delta.Reasoning {
-		// 思维链（D34）：只展示不入树——积累进 think 草稿，View 实时可见。
+		// 思维链（D34 展示）：积累进 think 草稿实时可见；提交时节点已带
+		// PartThinking（D42），故落块只由这里与 flushThink 负责，commit 不重复渲染。
 		m.think.WriteString(sanitizeControl(d.Delta.Text))
 		m.scroll = 0
 		return
@@ -379,6 +380,10 @@ func (m *model) replay(msg conversation.Message) {
 			m.add(blockUser, text)
 		}
 	case conversation.RoleAssistant:
+		// 思考暗块先行（D42：展示口径恒含思考，与 echo_thinking 回传开关无关）。
+		if tp := thinkingText(msg.Content); tp != "" {
+			m.add(blockThinking, "[thinking] "+tp)
+		}
 		// 助手节点可能带工具调用声明：先渲染调用行（与 ToolCallEvent 同形），
 		// 随后 path 上的 tool 节点渲染结果行。
 		for _, call := range msg.ToolCalls {
@@ -417,6 +422,7 @@ func (m *model) replay(msg conversation.Message) {
 
 // partsText 节点文本：文本分片直连，其余留占位（§4.2 多模态呈现 MVP）；
 // 出口统一剥控制序列（提交内容是不可信模型输出，§9/审查修复）。
+// 思考分片不并入正文——回放路径单独渲染为暗块（D42）。
 func partsText(parts []conversation.Part) string {
 	var b strings.Builder
 	for _, p := range parts {
@@ -433,9 +439,21 @@ func partsText(parts []conversation.Part) string {
 			b.WriteString("〔音频转写〕")
 		case conversation.PartDoc:
 			b.WriteString(p.Text)
+		case conversation.PartThinking:
+			// 单独成块（thinkingText），不混正文。
 		}
 	}
 	return sanitizeControl(b.String())
+}
+
+// thinkingText 提取首个非空思考分片（D42：回放口径恒含思考）；无思考返回空串。
+func thinkingText(parts []conversation.Part) string {
+	for _, p := range parts {
+		if p.Kind == conversation.PartThinking && strings.TrimSpace(p.Text) != "" {
+			return sanitizeControl(p.Text)
+		}
+	}
+	return ""
 }
 
 // addUsage 用量累加。
@@ -461,8 +479,8 @@ func (m *model) add(kind blockKind, text string) {
 	m.scroll = 0
 }
 
-// flushThink 把进行中的思维链落为暗块（D34：只展示——不进正文草稿、不入树、
-// 不回传服务端）。
+// flushThink 把进行中的思维链落为暗块（D34 展示口径）：不进正文草稿；
+// 节点侧已由 PartThinking 入树并按 config 回传（D42），此处只管呈现。
 func (m *model) flushThink() {
 	if m.think.Len() == 0 {
 		return

@@ -74,11 +74,15 @@ func (e *estimator) Calibrate(raw, actual int) {
 	e.ratio = r
 }
 
-// payloadOf 拼接请求的可计数文本（消息内容 + 工具调用参数 + 工具声明），
+// payloadOf 拼接请求的可计数文本（思考回传 + 消息内容 + 工具调用参数 + 工具声明），
 // 返回文本与结构开销（每消息常数；图片字节不计入——按占位粗估已含在常数里）。
 func payloadOf(req port.GenerateRequest) (string, int) {
 	var b strings.Builder
 	for _, m := range req.Messages {
+		if m.Reasoning != "" {
+			b.WriteString(m.Reasoning)
+			b.WriteByte('\n')
+		}
 		for _, p := range m.Content {
 			b.WriteString(p.Text)
 			b.WriteByte('\n')

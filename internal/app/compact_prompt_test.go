@@ -190,7 +190,7 @@ func TestAgentCompactUpdatesExistingSummary(t *testing.T) {
 		t.Fatal("已有旧摘要时不应走首次压缩提示词")
 	}
 	// 水位生效：再装配只剩新摘要与追问之后的结构。
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}

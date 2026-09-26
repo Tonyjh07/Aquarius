@@ -8,7 +8,8 @@ import (
 )
 
 // checkNodeShape 校验单个节点的形态约束（与树无关）：
-// 空 ID、Root/非 Root 的 Parent 规则、角色与调用/结果的匹配关系、调用 ID 非空且节点内唯一。
+// 空 ID、Root/非 Root 的 Parent 规则、角色与调用/结果的匹配关系、调用 ID 非空且节点内唯一、
+// 思考分片的角色约束（D42：仅 assistant 可携带）。
 func checkNodeShape(m Message) error {
 	if m.ID == "" {
 		return fmt.Errorf("%w: empty id", ErrInvalidNode)
@@ -26,6 +27,14 @@ func checkNodeShape(m Message) error {
 	}
 	if m.Parent == "" {
 		return fmt.Errorf("node %q: %w: non-root node requires a parent", m.ID, ErrInvalidNode)
+	}
+	// 思考分片仅 assistant 可携带（D42）：入树入口（Append/AppendCommitted/Revise）统一把关。
+	if m.Role != RoleAssistant {
+		for _, p := range m.Content {
+			if p.Kind == PartThinking {
+				return fmt.Errorf("node %q: %w: thinking part only allowed on assistant message", m.ID, ErrInvalidNode)
+			}
+		}
 	}
 	switch m.Role {
 	case RoleUser:

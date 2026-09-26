@@ -89,7 +89,12 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 			t.Fatalf("append user: %v", err)
 		}
 	case 1:
-		if _, err := c.Append(RoleAssistant, textParts(fmt.Sprintf("a%d", d.rng.Int63()))); err != nil {
+		// D42：思考分片随 assistant 随机入树——形态校验与三不变量在同一批随机序列中受证。
+		content := textParts(fmt.Sprintf("a%d", d.rng.Int63()))
+		if d.rng.Intn(2) == 0 {
+			content = append([]Part{{Kind: PartThinking, Text: fmt.Sprintf("t%d", d.rng.Int63())}}, content...)
+		}
+		if _, err := c.Append(RoleAssistant, content); err != nil {
 			t.Fatalf("append assistant: %v", err)
 		}
 	case 2:

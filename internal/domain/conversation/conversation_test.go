@@ -124,6 +124,49 @@ func TestCommitToolFlowAndRejectBadRefs(t *testing.T) {
 	}
 }
 
+// TestThinkingPartOnlyOnAssistant D42：思考分片（PartThinking）仅 assistant 可携带——
+// assistant 入树合法且整树校验通过；user/system/tool 与 Revise 路径一律 ErrInvalidNode。
+func TestThinkingPartOnlyOnAssistant(t *testing.T) {
+	useFixedClock(t)
+	c := New(NewID(), "t")
+	u := mustAppend(t, c, RoleUser, "explain")
+
+	thinking := []Part{{Kind: PartThinking, Text: "先想一想"}, {Kind: PartText, Text: "答案"}}
+	a, err := c.Append(RoleAssistant, thinking)
+	if err != nil {
+		t.Fatalf("append assistant with thinking: %v", err)
+	}
+	if a.Content[0].Kind != PartThinking || a.Content[1].Kind != PartText {
+		t.Fatalf("assistant content = %v, want [thinking text]", a.Content)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	// user / system 携带思考必须被拒。
+	if _, err := c.Append(RoleUser, thinking); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("append(user, thinking) = %v, want ErrInvalidNode", err)
+	}
+	err = c.AppendCommitted(Message{
+		ID: NewMessageID(), Parent: a.ID, Role: RoleSystem,
+		Content: []Part{{Kind: PartThinking, Text: "x"}}, CreatedAt: nowFunc(),
+	})
+	if !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("commit(system, thinking) = %v, want ErrInvalidNode", err)
+	}
+	// Revise 同受形态约束（修订 user 消息塞思考）。
+	if _, err := c.Revise(u.ID, thinking, Fresh); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("revise(user, thinking) = %v, want ErrInvalidNode", err)
+	}
+	// Root 恒为空消息（先于思考校验拒绝）。
+	if err := c.AppendCommitted(Message{
+		ID: MessageID(c.ID), Role: RoleRoot,
+		Content: []Part{{Kind: PartThinking, Text: "x"}}, CreatedAt: nowFunc(),
+	}); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("commit(root, thinking) = %v, want ErrInvalidNode", err)
+	}
+}
+
 func TestReviseFreshStartsNewBranch(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")

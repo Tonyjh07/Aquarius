@@ -410,6 +410,51 @@ func TestHistoryReplay(t *testing.T) {
 	}
 }
 
+// TestHistoryReplayThinking D42：回放口径恒含思考——思考分片渲染为独立暗块、不并入正文；
+// 实时流场景下"思考分片 → 节点提交（Content 带思考）"恰好落一个暗块，不重复渲染。
+func TestHistoryReplayThinking(t *testing.T) {
+	parts := []conversation.Part{
+		{Kind: conversation.PartThinking, Text: "先想一想"},
+		{Kind: conversation.PartText, Text: "答案"},
+	}
+
+	m, _ := newTestModel(t)
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role: conversation.RoleAssistant, Outcome: conversation.OutcomeDone, Content: parts,
+	}})
+	if len(m.blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2（思考块 + 正文块）", len(m.blocks))
+	}
+	if m.blocks[0].kind != blockThinking || !strings.Contains(m.blocks[0].text, "[thinking] 先想一想") {
+		t.Fatalf("blocks[0] = %d %q, want 思考暗块", m.blocks[0].kind, m.blocks[0].text)
+	}
+	if m.blocks[1].kind != blockAssistant || !strings.Contains(m.blocks[1].text, "答案") {
+		t.Fatalf("blocks[1] = %d %q, want 正文块", m.blocks[1].kind, m.blocks[1].text)
+	}
+	if strings.Contains(m.blocks[1].text, "先想一想") {
+		t.Fatalf("思考并入正文: %q", m.blocks[1].text)
+	}
+
+	// 实时流：思考 delta 已由 flushThink 落块，提交节点的思考分片不重复渲染。
+	live, _ := newTestModel(t)
+	live.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "先想一想", Reasoning: true}})
+	live.handleEvent(port.CommittedEvent{Message: conversation.Message{
+		Role: conversation.RoleAssistant, Outcome: conversation.OutcomeDone, Content: parts,
+	}})
+	thinking := 0
+	for _, b := range live.blocks {
+		if b.kind == blockThinking {
+			thinking++
+		}
+	}
+	if thinking != 1 {
+		t.Fatalf("实时流思考块 = %d, want 恰好 1（提交不重复渲染）", thinking)
+	}
+	if len(live.blocks) != 2 || !strings.Contains(live.blocks[1].text, "答案") {
+		t.Fatalf("live blocks = %d, want 思考块 + 正文块: %+v", len(live.blocks), live.blocks)
+	}
+}
+
 // TestScrollWindow PgUp/PgDn 滚动转写窗口（尾随跟随与上限收敛）。
 func TestScrollWindow(t *testing.T) {
 	m, _ := newTestModel(t)
@@ -525,17 +570,30 @@ func TestReasoningFlow(t *testing.T) {
 		}
 	}
 
-	// 提交后暗块仍在（思维链只展示：树内节点由 consume 保证不含推理）。
+	// 提交后暗块仍在且不重复（D42：节点 Content 已带思考，实时落块渲染过一次，
+	// commit 的正文渲染不再重复输出思考）。
 	m.commit(conversation.Message{
 		Role:    conversation.RoleAssistant,
 		Outcome: conversation.OutcomeDone,
-		Content: []conversation.Part{{Kind: conversation.PartText, Text: "答案"}},
+		Content: []conversation.Part{
+			{Kind: conversation.PartThinking, Text: "先想一想"},
+			{Kind: conversation.PartText, Text: "答案"},
+		},
 	})
 	got = m.View()
 	for _, want := range []string{"[thinking] 先想一想", "答案"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("提交后 View 缺 %q: %q", want, got)
 		}
+	}
+	thinkingBlocks := 0
+	for _, b := range m.blocks {
+		if b.kind == blockThinking {
+			thinkingBlocks++
+		}
+	}
+	if thinkingBlocks != 1 {
+		t.Fatalf("思考块 = %d, want 恰好 1（提交不重复渲染）", thinkingBlocks)
 	}
 
 	// 状态行 effort 标注。

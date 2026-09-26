@@ -18,8 +18,11 @@ type PromptPart struct {
 
 // PromptMessage 装配后的一条模型消息。
 type PromptMessage struct {
-	Role      string // "system" | "user" | "assistant" | "tool"
-	Content   []PromptPart
+	Role    string // "system" | "user" | "assistant" | "tool"
+	Content []PromptPart
+	// Reasoning role=assistant 的思维链回传承载（D42）：适配器映射为 reasoning_content 等
+	// 消息级字段；空 = 无思考或 config `model.echo_thinking` 关闭（装配层过滤）。
+	Reasoning string
 	ToolCalls []tool.Call
 	CallID    string // role=tool：对应 assistant 调用的 ID
 }
@@ -62,8 +65,9 @@ type Delta struct {
 	Text      string
 	ToolCalls []ToolCallDelta // Index 分片聚合（app 层 ToolCallAssembler）
 	Usage     *conversation.Usage
-	// Reasoning 思维链分片（D34）：Text 承载推理文本——只呈现不入树
-	//（consume 不进 commit buffer，不回传服务端、不占下轮上下文）。
+	// Reasoning 思维链分片（D34 展示 / D42 入树）：Text 承载推理文本——UI 实时呈现，
+	// 同时进 commit buffer 提交为 PartThinking 分片；是否回传由装配层的
+	// config `model.echo_thinking` 决定（port.Delta 本身不带口径）。
 	Reasoning bool
 }
 

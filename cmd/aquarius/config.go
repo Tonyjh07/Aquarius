@@ -55,6 +55,9 @@ type modelConfig struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// ThinkTool think 草稿工具可见性（D34）；默认 false（隐藏），改后重启生效。
 	ThinkTool bool `json:"think_tool,omitempty"`
+	// EchoThinking 思考回传开关（D42）；nil = 键缺失 = 回传（DeepSeek 等兼容端点带
+	// tools 时强制回传 reasoning_content，缺失即 400）；显式 false = 不回传，改后重启生效。
+	EchoThinking *bool `json:"echo_thinking,omitempty"`
 	// UnsupportedParams 服务端已知不认的请求参数（D34 自动记录，启动注入省略）。
 	UnsupportedParams []string `json:"unsupported_params,omitempty"`
 }
@@ -86,6 +89,7 @@ const defaultConfig = `{
     "think": true,
     "reasoning_effort": "",
     "think_tool": false,
+    "echo_thinking": true,
     "unsupported_params": []
   },
   "ui": { "kind": "tui" },

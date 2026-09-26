@@ -89,6 +89,26 @@ func TestEmitReasoningLine(t *testing.T) {
 	}
 }
 
+// TestEmitDeltaStripsControlSequences §9：实时增量（正文与思维链）同样只渲染不执行——
+// 模型流携带的 ANSI/C1 序列不得直通终端（与 TUI、回放同口径）。
+func TestEmitDeltaStripsControlSequences(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "os: Windows\x9b2Jred\x1b[31m"}})
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "\x1b[31m思考\x1b[0m", Reasoning: true}})
+	got := buf.String()
+	for _, bad := range []string{"\x9b", "\x1b"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("实时输出直通控制序列 %q: %q", bad, got)
+		}
+	}
+	for _, want := range []string{"Windows", "red", "思考"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("正常文本被误删 %q: %q", want, got)
+		}
+	}
+}
+
 func TestEmitCancelledOutcome(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)
@@ -224,6 +244,28 @@ func TestEmitHistoryReplay(t *testing.T) {
 		"[tool ok] pong\n" +
 		"[tool failed] boom\n" +
 		"压缩摘要\n"
+	if buf.String() != want {
+		t.Fatalf("buf = %q, want %q", buf.String(), want)
+	}
+}
+
+// TestEmitHistoryReplayThinking D42：回放口径恒含思考——[thinking] 行在工具/正文之前，
+// 思考不并入正文行。
+func TestEmitHistoryReplayThinking(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:      conversation.RoleAssistant,
+		Outcome:   conversation.OutcomeDone,
+		ToolCalls: []tool.Call{{Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}},
+		Content: []conversation.Part{
+			{Kind: conversation.PartThinking, Text: "先想一想"},
+			{Kind: conversation.PartText, Text: "答案"},
+		},
+	}})
+	want := "[thinking] 先想一想\n" +
+		"[tool] echo {\"m\":\"x\"}\n" +
+		"答案\n"
 	if buf.String() != want {
 		t.Fatalf("buf = %q, want %q", buf.String(), want)
 	}

@@ -27,6 +27,8 @@ type Ingestor interface {
 }
 
 // OutputRequest 输出请求。
+// Parts 取自已提交节点的 Content，**可能含思考分片（PartThinking，D42）**——
+// 通知/TTS/导出属"对外播报正文"，适配器须自行筛选正文分片（notify 只取 PartText）。
 type OutputRequest struct {
 	Message conversation.Message
 	Parts   []conversation.Part

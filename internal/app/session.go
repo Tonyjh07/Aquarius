@@ -868,10 +868,15 @@ func branchLine(m conversation.Message, head conversation.MessageID, revisedFrom
 
 // nodeSummary 节点内容的单行预览（分支列表/回放树用）。
 // 内容与工具输出均为不可信数据，只渲染不执行（DESIGN §9）。
+// 预览取**正文口径**：跳过思考分片（D42——思考恒在正文之前，不筛会占满预览、掩盖版本差异；
+// 实时与回放的完整展示仍含思考）。
 func nodeSummary(m conversation.Message) string {
 	const maxRunes = 40
 	var parts []string
 	for _, p := range m.Content {
+		if p.Kind == conversation.PartThinking {
+			continue
+		}
 		if s := strings.TrimSpace(p.Text); s != "" {
 			parts = append(parts, s)
 		}

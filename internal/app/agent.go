@@ -59,6 +59,10 @@ type Config struct {
 	Think *bool
 	// ReasoningEffort 推理档位初值（D34；空 = 不发送）。/effort 热切换取代。
 	ReasoningEffort string
+	// EchoThinking 思考回传开关（D42）：true = 树内 PartThinking 置入 PromptMessage.Reasoning
+	// 由适配器映射 reasoning_content；false = 装配时过滤。config `model.echo_thinking` 键缺失 =
+	// 回传、显式 false 才关（缺省解析在装配根完成，app 只见 bool）。
+	EchoThinking bool
 	// Env 运行环境块（D37）：附加到 system 提示（含 config 自定义提示）之后；
 	// 全空 = 不附加。
 	Env RuntimeEnv
@@ -332,7 +336,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 	}
 
 	// 压缩输入 = 当前上下文（已水位化：链式吸收只吞旧摘要与其后的新历史）。
-	history, err := assemblePath(ctx, path, a.blobs)
+	history, err := assemblePath(ctx, path, a.blobs, a.cfg.EchoThinking)
 	if err != nil {
 		return conversation.Message{}, 0, fmt.Errorf("assemble compact input: %w", err)
 	}
@@ -487,7 +491,7 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（DESIGN §7.1）。
 func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) (port.GenerateRequest, error) {
 	treePath := c.Path()
-	path, err := assemblePath(ctx, treePath, a.blobs)
+	path, err := assemblePath(ctx, treePath, a.blobs, a.cfg.EchoThinking)
 	if err != nil {
 		return port.GenerateRequest{}, err
 	}
@@ -564,6 +568,7 @@ func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
 }
 
 // consume 边收边发 DeltaEvent（只进 UI），返回聚合后的工具调用。
+// Reasoning 分片同时进 commit buffer 的思考缓冲，随节点提交入树（D42）。
 func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *commitBuffer, mid conversation.MessageID) ([]tool.Call, error) {
 	defer stream.Close()
 	for {
@@ -574,13 +579,7 @@ func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *commitBuff
 		if err != nil {
 			return nil, err // 半截工具调用不带出（未完成调用不能进树）
 		}
-		if d.Reasoning {
-			// 思维链只呈现不入树（D34）：不进 commit buffer——不回传服务端、
-			// 不占下轮上下文、不进 /usage 的节点文本；推理 token 已计入 Usage。
-			_ = a.ui.Emit(ctx, port.DeltaEvent{MessageID: mid, Delta: d})
-			continue
-		}
-		buf.add(d)
+		buf.add(d) // Reasoning → 思考缓冲（D42），其余 → 正文/调用（D3）
 		_ = a.ui.Emit(ctx, port.DeltaEvent{MessageID: mid, Delta: d})
 	}
 	return buf.finalize(), nil
@@ -668,17 +667,24 @@ func (a *Agent) commitCancelled(ctx context.Context, c *conversation.Conversatio
 }
 
 // commitBuffer 流式缓冲：只进 UI，Turn 结束一次性 Commit（D3）。
+// Reasoning 分片进思考缓冲（D42，提交为 PartThinking），其余进正文/调用。
 type commitBuffer struct {
-	id     conversation.MessageID
-	parent conversation.MessageID
-	text   strings.Builder
-	calls  callAssembler
-	usage  conversation.Usage
+	id       conversation.MessageID
+	parent   conversation.MessageID
+	text     strings.Builder
+	thinking strings.Builder
+	calls    callAssembler
+	usage    conversation.Usage
 }
 
-// add 累积一个增量。
+// add 累积一个增量（按 Reasoning 分流思考/正文缓冲；usage 两路都记）。
+// 工具调用与文本来源无关，恒聚合——推理分片上若捎带调用分片同样不得丢（审查修复）。
 func (b *commitBuffer) add(d port.Delta) {
-	b.text.WriteString(d.Text)
+	if d.Reasoning {
+		b.thinking.WriteString(d.Text)
+	} else {
+		b.text.WriteString(d.Text)
+	}
 	b.calls.add(d.ToolCalls)
 	if d.Usage != nil {
 		b.usage = *d.Usage
@@ -689,11 +695,15 @@ func (b *commitBuffer) add(d port.Delta) {
 func (b *commitBuffer) finalize() []tool.Call { return b.calls.finalize() }
 
 // commit 组装终态节点。非 done 终态丢弃半截工具调用——未完成的调用若进树，
-// 后续装配会产出"无应答的 tool_calls"被服务端拒（DESIGN §10 取消提交语义）。
+// 后续装配会产出"无应答的 tool_calls"被服务端拒（DESIGN §10 取消提交语义）；
+// 思考分片与正文一样随终态保留（D42：已生成即入树，无配对约束）。
 func (b *commitBuffer) commit(now time.Time, outcome conversation.Outcome, model string, calls []tool.Call) conversation.Message {
 	var content []conversation.Part
+	if b.thinking.Len() > 0 {
+		content = append(content, conversation.Part{Kind: conversation.PartThinking, Text: b.thinking.String()})
+	}
 	if b.text.Len() > 0 {
-		content = []conversation.Part{{Kind: conversation.PartText, Text: b.text.String()}}
+		content = append(content, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})
 	}
 	if outcome != conversation.OutcomeDone {
 		calls = nil

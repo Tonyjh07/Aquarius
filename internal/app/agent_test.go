@@ -561,7 +561,7 @@ func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
 	}
 
 	// 水位生效：再装配只剩摘要（user 被裁掉）。
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}

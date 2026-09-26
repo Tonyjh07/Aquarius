@@ -21,7 +21,7 @@ func TestAssemblePathBasicRoles(t *testing.T) {
 	if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{{Kind: conversation.PartText, Text: "你好"}}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -30,6 +30,51 @@ func TestAssemblePathBasicRoles(t *testing.T) {
 	}
 	if msgs[0].Content[0].Text != "hi" || msgs[1].Content[0].Text != "你好" {
 		t.Fatalf("texts = %+v", msgs)
+	}
+}
+
+// TestAssemblePathEchoThinking D42 回传开关两态：开 = 思考置入 PromptMessage.Reasoning
+// （正文分片不含思考）；关 = 过滤不发，纯思考节点（如取消轮）整条不入请求。
+func TestAssemblePathEchoThinking(t *testing.T) {
+	c := convWithUser(t)
+	if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{
+		{Kind: conversation.PartThinking, Text: "推理过程"},
+		{Kind: conversation.PartText, Text: "答案"},
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{
+		{Kind: conversation.PartThinking, Text: "只有思考"},
+	}); err != nil {
+		t.Fatalf("append thinking-only: %v", err)
+	}
+
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, true)
+	if err != nil {
+		t.Fatalf("assemble(echo): %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("echo on: msgs = %d, want 3（纯思考节点也在）", len(msgs))
+	}
+	if msgs[1].Reasoning != "推理过程" || msgs[2].Reasoning != "只有思考" {
+		t.Fatalf("echo on: reasoning = %q / %q", msgs[1].Reasoning, msgs[2].Reasoning)
+	}
+	if len(msgs[1].Content) != 1 || msgs[1].Content[0].Kind != "text" || msgs[1].Content[0].Text != "答案" {
+		t.Fatalf("echo on: 正文分片 = %+v, want 仅 text 答案", msgs[1].Content)
+	}
+
+	msgs, err = assemblePath(context.Background(), c.Path(), nil, false)
+	if err != nil {
+		t.Fatalf("assemble(no-echo): %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("echo off: msgs = %d, want 2（纯思考节点整条不发）", len(msgs))
+	}
+	if msgs[1].Reasoning != "" {
+		t.Fatalf("echo off: reasoning = %q, want 空", msgs[1].Reasoning)
+	}
+	if len(msgs[1].Content) != 1 || msgs[1].Content[0].Text != "答案" {
+		t.Fatalf("echo off: 正文分片 = %+v, want 仅 text 答案", msgs[1].Content)
 	}
 }
 
@@ -88,7 +133,7 @@ func TestAssemblePathNormalToolResult(t *testing.T) {
 		t.Fatalf("append tool: %v", err)
 	}
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -138,7 +183,7 @@ func TestAssemblePathOrphanToolInlined(t *testing.T) {
 		t.Fatalf("validate: %v", err)
 	}
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -183,7 +228,7 @@ func TestAssemblePathWatermarkDropsAboveSummary(t *testing.T) {
 	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
 	commitNode(t, c, c.Head, conversation.RoleAssistant, "新回答")
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -212,7 +257,7 @@ func TestAssemblePathChainedSummariesKeepLatest(t *testing.T) {
 	sum2 := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要二")
 	commitNode(t, c, sum2.ID, conversation.RoleUser, "q3")
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -233,7 +278,7 @@ func TestAssemblePathWatermarkWithoutPersona(t *testing.T) {
 	sum := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要")
 	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -251,7 +296,7 @@ func TestAssemblePathSkipsEmptyNodes(t *testing.T) {
 	if _, err := c.Append(conversation.RoleUser, nil); err != nil {
 		t.Fatalf("append empty user: %v", err)
 	}
-	msgs, err := assemblePath(context.Background(), c.Path(), nil)
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}

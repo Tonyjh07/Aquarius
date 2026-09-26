@@ -115,9 +115,9 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	}
 }
 
-// TestRunReasoningNotCommitted D34：思维链只呈现不入树——事件面带 Reasoning 标记
-// 可见，提交节点文本只含正文（推理不回传、不占下轮上下文）。
-func TestRunReasoningNotCommitted(t *testing.T) {
+// TestRunReasoningCommitted D42：思维链随节点入树——事件面带 Reasoning 标记实时可见；
+// 提交节点 Content = [thinking 分片, text 分片]（思考在前、正文不被污染）。
+func TestRunReasoningCommitted(t *testing.T) {
 	stream := &scriptStream{steps: []scriptStep{
 		{delta: port.Delta{Text: "先想一想", Reasoning: true}},
 		{delta: port.Delta{Text: "再算一算", Reasoning: true}},
@@ -140,23 +140,65 @@ func TestRunReasoningNotCommitted(t *testing.T) {
 			}
 		case port.CommittedEvent:
 			sawCommitted = true
-			var b strings.Builder
+			if e.Message.Role != conversation.RoleAssistant {
+				continue
+			}
+			kinds := make([]conversation.PartKind, 0, len(e.Message.Content))
 			for _, p := range e.Message.Content {
-				if p.Kind == conversation.PartText {
-					b.WriteString(p.Text)
+				kinds = append(kinds, p.Kind)
+			}
+			want := []conversation.PartKind{conversation.PartThinking, conversation.PartText}
+			if len(kinds) != len(want) {
+				t.Fatalf("提交节点分片 = %v, want %v", kinds, want)
+			}
+			for i := range want {
+				if kinds[i] != want[i] {
+					t.Fatalf("提交节点分片 = %v, want %v", kinds, want)
 				}
 			}
-			text := b.String()
-			if strings.Contains(text, "想一想") || strings.Contains(text, "算一算") {
-				t.Fatalf("提交节点含思维链: %q", text)
+			if got := e.Message.Content[0].Text; got != "先想一想再算一算" {
+				t.Fatalf("思考分片 = %q, want 合并两段", got)
 			}
-			if !strings.Contains(text, "答案") {
-				t.Fatalf("提交节点缺正文: %q", text)
+			if got := e.Message.Content[1].Text; got != "答案" {
+				t.Fatalf("正文 = %q, want 答案（思考不污染正文）", got)
 			}
 		}
 	}
 	if !sawReasoning || !sawCommitted {
 		t.Fatalf("events: reasoning=%v committed=%v, want 均可见", sawReasoning, sawCommitted)
+	}
+}
+
+// TestRunCancelledKeepsThinking D42：取消终态的已生成思考同样入树
+// （与正文同口径——回放/审计能看到"想到哪被掐断"）。
+func TestRunCancelledKeepsThinking(t *testing.T) {
+	stream := &scriptStream{steps: []scriptStep{
+		{delta: port.Delta{Text: "先想一想", Reasoning: true}},
+		{err: context.Canceled},
+	}}
+	s, _, rec := newTestSession(t, newMemStore(), stream)
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("取消不应作为错误上抛: %v", err)
+	}
+
+	var committed port.CommittedEvent
+	var found bool
+	for _, ev := range rec.events {
+		if e, ok := ev.(port.CommittedEvent); ok && e.Message.Role == conversation.RoleAssistant {
+			committed, found = e, true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("未见 assistant CommittedEvent")
+	}
+	if committed.Message.Outcome != conversation.OutcomeCancelled {
+		t.Fatalf("outcome = %q, want cancelled", committed.Message.Outcome)
+	}
+	if len(committed.Message.Content) != 1 ||
+		committed.Message.Content[0].Kind != conversation.PartThinking ||
+		committed.Message.Content[0].Text != "先想一想" {
+		t.Fatalf("content = %+v, want 仅思考分片", committed.Message.Content)
 	}
 }
 

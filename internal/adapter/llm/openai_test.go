@@ -378,6 +378,190 @@ func TestGenerateStripsUnsupportedReasoning(t *testing.T) {
 	}
 }
 
+// TestGenerateEchoesReasoningContent D42：assistant 的 PromptMessage.Reasoning 序列化为
+// 消息级 reasoning_content 字段（思维链回传）；无思考（装配层已过滤）时该字段不出现。
+func TestGenerateEchoesReasoningContent(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	echo := func(reasoning string) error {
+		s, err := c.Generate(context.Background(), port.GenerateRequest{
+			Model: "m",
+			Messages: []port.PromptMessage{
+				{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
+				{Role: "assistant", Reasoning: reasoning, Content: []port.PromptPart{{Kind: "text", Text: "答案"}}},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		return s.Close()
+	}
+	if err := echo("先想一想"); err != nil {
+		t.Fatalf("generate(echo): %v", err)
+	}
+	if err := echo(""); err != nil {
+		t.Fatalf("generate(no-echo): %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 {
+		t.Fatalf("requests = %d, want 2", len(bodies))
+	}
+	if !strings.Contains(bodies[0], `"reasoning_content":"先想一想"`) {
+		t.Fatalf("回传包缺 reasoning_content: %.500s", bodies[0])
+	}
+	if strings.Contains(bodies[1], "reasoning_content") {
+		t.Fatalf("无思考时不应发 reasoning_content: %.500s", bodies[1])
+	}
+}
+
+// TestGenerateReasoningWithToolCalls D42 核心形态：推理模型"只调工具不说话"的
+// assistant（Reasoning + ToolCalls + 空正文）与纯思考节点都不得被丢——
+// reasoning_content 以消息级字段回传、content 字段省略（DeepSeek 带 tools 强制回传的形态）。
+func TestGenerateReasoningWithToolCalls(t *testing.T) {
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		body = string(b)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	s, err := c.Generate(context.Background(), port.GenerateRequest{
+		Model: "m",
+		Messages: []port.PromptMessage{
+			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
+			{Role: "assistant", Reasoning: "先想", ToolCalls: []tool.Call{{ID: "c1", Name: "echo", Args: []byte(`{}`)}}},
+			{Role: "assistant", Reasoning: "独白"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	_ = s.Close()
+
+	var payload struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("parse body: %v (%.400s)", err, body)
+	}
+	if len(payload.Messages) != 3 {
+		t.Fatalf("messages = %d, want 3（只调工具/纯思考的 assistant 不得被丢）: %.400s", len(payload.Messages), body)
+	}
+	withCalls := payload.Messages[1]
+	if withCalls["reasoning_content"] != "先想" {
+		t.Fatalf("messages[1].reasoning_content = %v, want 先想", withCalls["reasoning_content"])
+	}
+	if _, ok := withCalls["tool_calls"]; !ok {
+		t.Fatalf("messages[1] 缺 tool_calls: %.400s", body)
+	}
+	if _, ok := withCalls["content"]; ok {
+		t.Fatalf("空正文不应发 content 字段: %.400s", body)
+	}
+	only := payload.Messages[2]
+	if only["reasoning_content"] != "独白" {
+		t.Fatalf("messages[2].reasoning_content = %v, want 独白", only["reasoning_content"])
+	}
+	if _, ok := only["content"]; ok {
+		t.Fatalf("纯思考节点不应发 content 字段: %.400s", body)
+	}
+}
+
+// TestGenerateStripsUnsupportedReasoningContent D42：端点点名不认 reasoning_content
+// （未知字段措辞）→ 同请求剥离重试（正文/其余字段保留），成功后 NoteUnsupported
+// 记录一次，后续请求首包即省略。
+func TestGenerateStripsUnsupportedReasoningContent(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		n++
+		first := n == 1
+		mu.Unlock()
+		if first {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"Unknown argument: 'messages[1].reasoning_content'"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	var noted []string
+	c, err := New(Config{
+		BaseURL:         srv.URL,
+		NoteUnsupported: func(f string) { noted = append(noted, f) },
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	gen := func() error {
+		s, err := c.Generate(context.Background(), port.GenerateRequest{
+			Model: "m",
+			Messages: []port.PromptMessage{
+				{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
+				{Role: "assistant", Reasoning: "先想", Content: []port.PromptPart{{Kind: "text", Text: "答案"}}},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		return s.Close()
+	}
+	if err := gen(); err != nil {
+		t.Fatalf("剥离重试后应成功: %v", err)
+	}
+	if err := gen(); err != nil {
+		t.Fatalf("进程内记忆后应直接成功: %v", err)
+	}
+
+	mu.Lock()
+	if len(bodies) != 3 {
+		t.Fatalf("requests = %d, want 3（剥离重试 1 + 记忆后 1）", len(bodies))
+	}
+	if !strings.Contains(bodies[0], "reasoning_content") {
+		t.Fatalf("首包应含 reasoning_content: %.500s", bodies[0])
+	}
+	if strings.Contains(bodies[1], "reasoning_content") {
+		t.Fatalf("剥离后不应含 reasoning_content: %.500s", bodies[1])
+	}
+	if !strings.Contains(bodies[1], "答案") {
+		t.Fatalf("剥离只针对被点名字段，正文须保留: %.500s", bodies[1])
+	}
+	if strings.Contains(bodies[2], "reasoning_content") {
+		t.Fatalf("记录后首包即应省略: %.500s", bodies[2])
+	}
+	mu.Unlock()
+	if len(noted) != 1 || noted[0] != "reasoning_content" {
+		t.Fatalf("noted = %v, want [reasoning_content]（只记一次）", noted)
+	}
+}
+
 // TestGenerateEnumErrorNotStripped D34：枚举值错误不是"未知参数"——不剥离、不记录、
 // 照常报 400，不掩盖配置问题。
 func TestGenerateEnumErrorNotStripped(t *testing.T) {
@@ -410,6 +594,43 @@ func TestGenerateEnumErrorNotStripped(t *testing.T) {
 	}
 	if len(noted) != 0 {
 		t.Fatalf("noted = %v, want 空（枚举错误不记录）", noted)
+	}
+}
+
+// TestGenerateReasoningContentValueErrorNotStripped D42：reasoning_content 的取值/格式
+// 错误不是"未知字段"措辞——不剥离、不记录，照常 400 上抛（剥离管线不掩盖真实故障）。
+func TestGenerateReasoningContentValueErrorNotStripped(t *testing.T) {
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"Invalid value for parameter 'reasoning_content'"}}`)
+	}))
+	defer srv.Close()
+
+	var noted []string
+	c, err := New(Config{
+		BaseURL:         srv.URL,
+		NoteUnsupported: func(f string) { noted = append(noted, f) },
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	_, err = c.Generate(context.Background(), port.GenerateRequest{
+		Model: "m",
+		Messages: []port.PromptMessage{
+			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
+			{Role: "assistant", Reasoning: "先想", Content: []port.PromptPart{{Kind: "text", Text: "答案"}}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "状态码 400") {
+		t.Fatalf("err = %v, want 400 上抛", err)
+	}
+	if n != 1 {
+		t.Fatalf("requests = %d, want 1（取值错误不重试）", n)
+	}
+	if len(noted) != 0 {
+		t.Fatalf("noted = %v, want 空（取值错误不记录）", noted)
 	}
 }
 

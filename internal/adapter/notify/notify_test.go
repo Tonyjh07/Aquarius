@@ -41,6 +41,23 @@ func TestDeliverSendsPreview(t *testing.T) {
 	}
 }
 
+// TestDeliverSkipsThinking D42：思考分片不进通知——通知只摘正文（PartText）。
+func TestDeliverSkipsThinking(t *testing.T) {
+	var got string
+	a := New(func(_, body string) error { got = body; return nil })
+	if err := a.Deliver(context.Background(), port.OutputRequest{
+		Parts: []conversation.Part{
+			{Kind: conversation.PartThinking, Text: "内部推理不外发"},
+			{Kind: conversation.PartText, Text: "正式回答"},
+		},
+	}); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	if got != "正式回答" {
+		t.Fatalf("body = %q, want 正式回答（思考不得外发）", got)
+	}
+}
+
 // TestDeliverPreviewTruncates 超长文本截断加省略号。
 func TestDeliverPreviewTruncates(t *testing.T) {
 	var got string

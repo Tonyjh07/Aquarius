@@ -497,7 +497,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Model: cfg.Model.Name, System: cfg.SystemPrompt, MaxTurns: cfg.Limits.MaxTurns,
 			CompactThreshold: cfg.Limits.CompactThreshold, MaxContextTokens: cfg.Limits.MaxContextTokens,
 			Think: cfg.Model.Think, ReasoningEffort: cfg.Model.ReasoningEffort, // D34 初值
-			Env: runtimeEnv, // D37
+			EchoThinking: cfg.Model.EchoThinking == nil || *cfg.Model.EchoThinking, // D42：键缺失 = 回传
+			Env:          runtimeEnv,                                               // D37
 		},
 	)
 	if err != nil {

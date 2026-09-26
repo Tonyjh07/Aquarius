@@ -7,6 +7,9 @@
 //   - stream_options.include_usage 总是请求；思考参数 reasoning_effort / enable_thinking 按
 //     Sampling 发送。服务端点名不认的参数（400）**同请求剥离重试一次**，成功后经
 //     NoteUnsupported 记录进 config `model.unsupported_params`（D34，重启后直接省略）。
+//   - 思维链回传（D42）：PromptMessage.Reasoning 序列化为 assistant 消息的
+//     reasoning_content 字段（兼容生态事实标准；DeepSeek 带 tools 时强制）；端点不认
+//     该字段同样剥离重试并记录（unsupported_params 含消息级字段）。
 //   - 流末尾 usage 映射为 conversation.Usage（CostUSD 恒为 0：适配器不掌握单价，
 //     成本核算由装饰器/上层按 ModelInfo 计算，D14）。
 //   - 请求时长由调用方 ctx 控制，故默认 http.Client 不设 Timeout（流式不能设整体超时）。
@@ -181,7 +184,8 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 // unsupportedFields 判定报错片段点名了哪些本次实际发送、但服务端不认的参数（D34）。
 // 思考参数要求"字段名 + 未知参数措辞"同时出现——枚举值错误
 // （如 "invalid value 'x' for reasoning_effort"）不匹配，照常报错、不掩盖配置问题；
-// stream_options 保留历史的"仅出现即剥"口径（各家报错措辞差异大）。
+// stream_options 保留历史的"仅出现即剥"口径（各家报错措辞差异大）；
+// 消息级 reasoning_content 回传同走"字段名 + 未知措辞"口径（D42 剥离兜底）。
 func unsupportedFields(sn string, req port.GenerateRequest, includeUsage bool) []string {
 	var out []string
 	if includeUsage && strings.Contains(sn, "stream_options") {
@@ -196,7 +200,20 @@ func unsupportedFields(sn string, req port.GenerateRequest, includeUsage bool) [
 	if req.Params.Thinking != nil && strings.Contains(sn, "enable_thinking") {
 		out = append(out, "enable_thinking")
 	}
+	if hasPromptReasoning(req) && strings.Contains(sn, "reasoning_content") {
+		out = append(out, "reasoning_content")
+	}
 	return out
+}
+
+// hasPromptReasoning 请求是否携带思维链回传（D42）。
+func hasPromptReasoning(req port.GenerateRequest) bool {
+	for _, m := range req.Messages {
+		if m.Role == "assistant" && m.Reasoning != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // unknownParamPhrase 报错是否带"未知/不支持参数"措辞（中英常见措辞）。
@@ -351,6 +368,9 @@ type chatMessage struct {
 	Content    any            `json:"content,omitempty"` // string 或 []chatContentPart；nil 时省略
 	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+	// ReasoningContent role=assistant 的思维链回传（D42，生态事实标准字段名；
+	// DeepSeek 带 tools 时强制回传）。端点不认时经 omit 剥离（unsupported_params 记录）。
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type chatContentPart struct {
@@ -398,12 +418,12 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 		out.StreamOptions = &chatStreamOptions{IncludeUsage: true}
 	}
 	for _, m := range req.Messages {
-		cm, err := toChatMessage(m)
+		cm, err := toChatMessage(m, omit)
 		if err != nil {
 			return nil, err
 		}
 		if cm.Role == "" {
-			continue // toChatMessage 对"空内容且无调用"的消息返回零值表示跳过
+			continue // toChatMessage 对"空内容且无思考/无调用"的消息返回零值表示跳过
 		}
 		out.Messages = append(out.Messages, cm)
 	}
@@ -430,8 +450,8 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 	return data, nil
 }
 
-// toChatMessage 转换单条消息。
-func toChatMessage(m port.PromptMessage) (chatMessage, error) {
+// toChatMessage 转换单条消息。omit 命中的 reasoning_content 不回传（D42 剥离兜底）。
+func toChatMessage(m port.PromptMessage, omit map[string]bool) (chatMessage, error) {
 	cm := chatMessage{Role: m.Role}
 	switch m.Role {
 	case "tool":
@@ -439,6 +459,9 @@ func toChatMessage(m port.PromptMessage) (chatMessage, error) {
 		cm.Content = flattenText(m.Content)
 		return cm, nil
 	case "assistant":
+		if m.Reasoning != "" && !omit["reasoning_content"] {
+			cm.ReasoningContent = m.Reasoning // D42：思维链以消息级字段回传
+		}
 		if len(m.ToolCalls) > 0 {
 			for _, call := range m.ToolCalls {
 				args := strings.TrimSpace(string(call.Args))
@@ -462,8 +485,12 @@ func toChatMessage(m port.PromptMessage) (chatMessage, error) {
 		return chatMessage{}, err
 	}
 	if s, ok := content.(string); ok && s == "" && m.Role != "tool" {
-		// 空内容消息：不发（调用方已跳过，这里再兜一层）。
-		return chatMessage{}, nil
+		// 真·空消息（无正文、无思考、无调用）：不发（encodeChatRequest 据 Role 空跳过）。
+		// 只带思考的 assistant 保留（D42：纯思考节点的回传），content 字段省略。
+		if cm.ReasoningContent == "" {
+			return chatMessage{}, nil
+		}
+		return cm, nil
 	}
 	cm.Content = content
 	return cm, nil

@@ -10,10 +10,11 @@ import (
 type PartKind string
 
 const (
-	PartText  PartKind = "text"
-	PartImage PartKind = "image"
-	PartAudio PartKind = "audio"
-	PartDoc   PartKind = "doc"
+	PartText     PartKind = "text"
+	PartImage    PartKind = "image"
+	PartAudio    PartKind = "audio"
+	PartDoc      PartKind = "doc"
+	PartThinking PartKind = "thinking" // 思考过程（D42）：仅 assistant 节点可携带
 )
 
 // BlobRef 附件引用（sha256 内容寻址），由 AttachmentStore 解析（DESIGN §4.2 / D17）。
@@ -27,7 +28,7 @@ type BlobRef struct {
 // Part 消息内容的多态片段。
 type Part struct {
 	Kind       PartKind `json:"kind"`
-	Text       string   `json:"text,omitempty"`       // Kind=text；Kind=doc 时为提取文本（截断）
+	Text       string   `json:"text,omitempty"`       // Kind=text；Kind=doc 为提取文本（截断）；Kind=thinking 为思考文本（D42）
 	Ref        *BlobRef `json:"ref,omitempty"`        // Kind=image|audio|doc：附件引用
 	Transcript string   `json:"transcript,omitempty"` // Kind=audio：ASR 转写文本（模型只见文本）
 }
@@ -66,7 +67,8 @@ type Usage struct {
 //
 // 结构边指针 Parent 可随 Revise Carry 边转移改写（DESIGN §4.1 / D16）；
 // 其余字段（Content/ToolCalls/ToolResult/Outcome/Model/Usage/CreatedAt）一经入树永不改写。
-// 角色约束：user 无调用无结果；assistant 可带 ToolCalls；tool 必带 ToolResult。
+// 角色约束：user 无调用无结果；assistant 可带 ToolCalls；tool 必带 ToolResult；
+// 思考分片（PartThinking）仅 assistant 可携带（D42）。
 type Message struct {
 	ID         MessageID    `json:"id"`
 	Parent     MessageID    `json:"parent"` // "" = Root 自身；其余节点恒非空（D19）

@@ -78,7 +78,9 @@ func waterline(path []conversation.Message) (personaIdx, watermarkIdx int) {
 // assemblePath 把 Path() 装配为模型消息序列（DESIGN §7.1，含 D21 水位裁剪）：
 // persona（path[1] 的 system 节点）恒回传；最新压缩摘要之上的历史（persona 之外）一律不回传；
 // Root 空节点不进上下文。blobs 为 nil 时图片以内联占位文本代替（附件库就绪于 M3）。
-func assemblePath(ctx context.Context, path []conversation.Message, blobs port.AttachmentStore) ([]port.PromptMessage, error) {
+// echoThinking 控制思考回传（D42）：true = 置入 assistant 的 PromptMessage.Reasoning
+// （适配器映射 reasoning_content），false = 丢弃（仅展示/回放口径仍含思考）。
+func assemblePath(ctx context.Context, path []conversation.Message, blobs port.AttachmentStore, echoThinking bool) ([]port.PromptMessage, error) {
 	personaIdx, watermarkIdx := waterline(path)
 	start := 1 // 起点恒 ≥ 1：Root 不进上下文
 	if watermarkIdx >= 0 {
@@ -141,7 +143,18 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, port.PromptMessage{Role: "assistant", Content: parts, ToolCalls: m.ToolCalls})
+			// 思考回传（D42）：独立承载（不混正文）；开关关闭时过滤——
+			// 过滤后空且无调用的节点（如仅思考的取消轮）整条不发。
+			reasoning := ""
+			if echoThinking {
+				reasoning = thinkingText(m.Content)
+			}
+			if len(parts) == 0 && reasoning == "" && len(m.ToolCalls) == 0 {
+				continue
+			}
+			out = append(out, port.PromptMessage{
+				Role: "assistant", Content: parts, Reasoning: reasoning, ToolCalls: m.ToolCalls,
+			})
 		default: // user
 			if len(m.Content) == 0 {
 				continue
@@ -157,7 +170,8 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 }
 
 // assembleParts 把领域分片装配为提示词分片：
-// audio 取转写文本、doc 取提取文本（D10）、image 经 AttachmentStore 内联字节（DESIGN §4.2）。
+// audio 取转写文本、doc 取提取文本（D10）、image 经 AttachmentStore 内联字节（DESIGN §4.2）；
+// thinking 不进 Content——由 assemblePath 经 PromptMessage.Reasoning 独立回传（D42）。
 func assembleParts(ctx context.Context, parts []conversation.Part, blobs port.AttachmentStore) ([]port.PromptPart, error) {
 	out := make([]port.PromptPart, 0, len(parts))
 	for _, p := range parts {
@@ -192,11 +206,25 @@ func assembleParts(ctx context.Context, parts []conversation.Part, blobs port.At
 				return nil, fmt.Errorf("读取附件 %s: %w", p.Ref.Name, rerr)
 			}
 			out = append(out, port.PromptPart{Kind: "image", MIME: p.Ref.MIME, Data: data})
+		case conversation.PartThinking:
+			// 思考走 PromptMessage.Reasoning（D42），不与正文混装。
+			continue
 		default:
 			// 未知分片种类：忽略（前向兼容）。
 		}
 	}
 	return out, nil
+}
+
+// thinkingText 提取思考分片文本（D42）：流内分片已合并为至多一段，取首个非空；
+// 无思考返回空串（展示侧的同名助手在 uitui/repl 各自实现，出口剥控制序列）。
+func thinkingText(parts []conversation.Part) string {
+	for _, p := range parts {
+		if p.Kind == conversation.PartThinking && strings.TrimSpace(p.Text) != "" {
+			return p.Text
+		}
+	}
+	return ""
 }
 
 // toolResultText 工具结果的提示词文本。

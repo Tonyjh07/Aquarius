@@ -138,7 +138,8 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 				}
 				u.thinking = true
 			}
-			_, err := io.WriteString(u.out, e.Delta.Text)
+			// 模型流是不可信数据，出口剥控制序列（§9，与 TUI/回放同口径）。
+			_, err := io.WriteString(u.out, sanitizeControl(e.Delta.Text))
 			return err
 		}
 		if u.thinking { // 正文首片：关思维链行
@@ -148,7 +149,7 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 			u.thinking = false
 		}
 		u.inDelta = true
-		_, err := io.WriteString(u.out, e.Delta.Text)
+		_, err := io.WriteString(u.out, sanitizeControl(e.Delta.Text))
 		return err
 
 	case port.ToolCallEvent:
@@ -226,6 +227,10 @@ func (u *UI) history(msg conversation.Message) error {
 		return err
 	case conversation.RoleAssistant:
 		var b strings.Builder
+		// 思考行先行（D42：回放口径恒含思考，与 echo_thinking 回传开关无关）。
+		if tp := thinkingText(msg.Content); tp != "" {
+			fmt.Fprintf(&b, "[thinking] %s\n", tp)
+		}
 		for _, call := range msg.ToolCalls {
 			if p := preview(call.Args); p != "" {
 				fmt.Fprintf(&b, "[tool] %s %s\n", call.Name, p)
@@ -268,6 +273,7 @@ func (u *UI) history(msg conversation.Message) error {
 }
 
 // partsText 节点文本拼接（与 uitui 同语义）：文本/文档分片直连，图片/音频留占位；
+// 思考分片不并入正文（回放单独打 [thinking] 行，D42）；
 // 出口剥控制序列（历史内容同样是不可信数据，§9）。
 func partsText(parts []conversation.Part) string {
 	var b strings.Builder
@@ -281,9 +287,21 @@ func partsText(parts []conversation.Part) string {
 			b.WriteString("〔音频转写〕")
 		case conversation.PartDoc:
 			b.WriteString(p.Text)
+		case conversation.PartThinking:
+			// 单独成行（thinkingText），不混正文。
 		}
 	}
 	return sanitizeControl(b.String())
+}
+
+// thinkingText 提取首个非空思考分片（D42：回放口径恒含思考）；无思考返回空串。
+func thinkingText(parts []conversation.Part) string {
+	for _, p := range parts {
+		if p.Kind == conversation.PartThinking && strings.TrimSpace(p.Text) != "" {
+			return sanitizeControl(p.Text)
+		}
+	}
+	return ""
 }
 
 // preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。
