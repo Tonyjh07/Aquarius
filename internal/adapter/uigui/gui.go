@@ -19,6 +19,7 @@ package uigui
 
 import (
 	"context"
+	"image"
 	"io"
 	"strings"
 	"sync"
@@ -26,7 +27,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/gesture"
-	"gioui.org/layout"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
@@ -88,13 +89,26 @@ type UI struct {
 	stopBtn  widget.Clickable
 	allowBtn widget.Clickable
 	denyBtn  widget.Clickable
-	list     widget.List
 	drag     gesture.Drag
 	hwnd     uintptr
 	x, y     int32 // 窗口屏幕坐标（拖动跟随 + 位置记忆）
 	dragging bool
 	dragWin0 point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
 	dragCur0 point // 按下时光标位置（屏幕坐标）
+
+	// 转写区手工滚动（D44：不用 widget.List——需要每行绝对矩形做逐元素形裁）。
+	transcriptScroll gesture.Scroll
+	scrollPx         int // 内容滚动偏移（物理 px，0 = 顶）
+	contentH         int // 内容总高（上一帧测得，物理 px）
+
+	// 形裁与淡出（D44/§15.1、§15.3）。
+	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
+	physShapes  []shapePhys // 形裁转换缓冲
+	lastShapes  []shapePhys // 已应用的形裁（变化才重建）
+	frameMetric unit.Metric // 当前帧 Metric（headless 同源渲染用）
+	frameSize   image.Point // 当前帧窗口尺寸（物理 px）
+	fade        fadeState   // 淡出带 headless 渲染状态
+	fadeBuf     []byte      // 淡出带预乘 BGRA 缓冲
 
 	// m 渲染状态机：仅事件循环 goroutine 读写；测试经 drainSync 取 happens-before 后读。
 	m *model
@@ -118,7 +132,6 @@ func newUI(opts Options, window bool) *UI {
 	u.m = newModel(u)
 	u.editor.Submit = true // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
-	u.list = widget.List{List: layout.List{Axis: layout.Vertical, ScrollToEnd: true}}
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
 	}

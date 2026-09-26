@@ -1,7 +1,8 @@
 //go:build !windows
 
 // 非 Windows 桩：GUI 窗口壳仅 Windows 实测（§15.6），其余平台可构建、未适配——
-// 形裁/定位等补位能力一律 no-op，Win32ViewEvent 不投递。
+// 形裁/半透明/淡出 overlay 一律 no-op，Win32ViewEvent 不投递（窗口保持普通卡片形态，
+// 内容照常渲染）。
 package uigui
 
 import "gioui.org/io/event"
@@ -21,5 +22,14 @@ func cursorPos() point { return point{} }
 // clampToWorkArea 原样返回（无显示器信息源）。
 func clampToWorkArea(x, y, _, _ int32) (int32, int32) { return x, y }
 
-// applyRegion 形裁未适配。
-func applyRegion(_, _, _, _, _ int32) bool { return false }
+// applyShapesRegion 形裁未适配。
+func applyShapesRegion([]shapePhys) bool { return false }
+
+// applyAlpha 半透明未适配。
+func applyAlpha(byte) bool { return false }
+
+// overlayPresent 淡出 overlay 未适配。
+func overlayPresent(int32, int32, int32, int32, []byte, byte) bool { return false }
+
+// overlaySetVisible 淡出 overlay 未适配。
+func overlaySetVisible(bool) {}
