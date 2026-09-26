@@ -897,6 +897,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D42 | **思考过程入树 + config 控制回传**（修订 D34）：新增 `PartThinking` 分片（仅 assistant 可携带，节点形态校验把关；流内分片合并至多一段置于正文前，取消/出错终态的已生成思考同样入树）；回传走**独立承载** `PromptMessage.Reasoning` → openai 适配器序列化为 assistant 消息的 `reasoning_content` 字段（**2026-09 调研**：OpenAI 官方 Chat Completions 每轮丢弃推理、也不返回明文思维链——官方端点不触发回传；DeepSeek 等兼容端点带 `tools` 时**强制**回传、缺失即 400；`reasoning_content` 是兼容生态事实标准），端点点名不认则复用 D34 剥离重试管线（扩展到消息内字段）记入 `model.unsupported_params` 后省略；开关 config `model.echo_thinking`（`*bool`：**键缺失 = 回传**，显式 false 关，改后重启生效）；展示口径（实时暗块、启动回放）恒含思考，与回传开关解耦 | 维持"只展示不入树"（D34 原状：重启/回溯即丢、审计不到树上，违背"树是唯一事实源/用户主权"）；旁路字段或独立文件存思考（D21 否决同款理由：两处存放、回溯易失配）；独立 system/tool 节点承载思考（破坏一轮一 assistant 节点与工具配对语义）；`<thinking>` 文本拼进正文（DeepSeek 工具轮缺 `reasoning_content` 字段仍 400，且思考被当正文污染上下文）；默认不回传（对 DeepSeek 类端点是工具轮硬故障——调研后由"默认关"翻案为"默认回传"）；厂商私有思考块原样回传（Anthropic thinking block 等，列 §14 backlog） |
 | D43 | **GUI 前端 = Gio 悬浮球换壳**（§15/M5）：`internal/adapter/uigui` 同权实现 `uiFrontend`（`port.Presenter + Prompter + Confirmer` + Say/Prompt/SetInterrupt/Close），`ui.kind` 新增 `gui` 接入装配 switch（repl/tui 不动、默认仍 tui）；形态 = **单组件悬浮球**（logo 即球，左键展开/收起输入栏、右键菜单）→ 提交后上方转写浮层（每轮清空 + 可固定钉住累计）；托盘常驻生命周期（关窗隐藏、退出经菜单）、全局快捷键（默认 Alt+A，`ui.hotkey` 可改）、拖拽 + 位置记忆；消息流 = 思考暗块（流式实时、定稿折叠为「已思考」行，D42 展示口径恒含）+ 工具折叠 chip 可展开 + 完整 markdown；Confirm = 输入栏切换确认态（非模态）；附件按钮 = 系统文件选择框走 `UserInput.Raw{Kind=file}` 既有摄取管线；主题令牌化（MVP 品牌色 `#00AEEF` + 输入框浅白/浅灰 + 深/浅跟随系统，多颜色预设留数据后补）。**spike 已过（2026-09，§15.6）**：悬浮胶囊用**形裁 `SetWindowRgn`**（Gio 无真透明、色键与 D3D 不兼容白屏、DWM 圆角有描边副作用，均排除）；托盘/Alt+Space 快捷键/多显示器定位/位置记忆/系统中文字形全通过；实现铁律两条见 §15.6（修改性 Win32 调用走 `Window.Run`、拖动用光标绝对跟踪） | Fyne（cgo/OpenGL 违「无 cgo」硬约束、控件样式僵硬做不出透明胶囊）；Wails/Web UI（前端构建链 + webview 依赖，富文本强但与纯 Go 单二进制张力大）；独立 GUI 进程经 IPC（交付变双程序）；悬浮球 + 独立胶囊双组件（两套焦点/生命周期，合并为单组件展开态）；模态弹窗做 Confirm（打断输入流，输入栏确认态更贴极简）；MVP 上多主题预设（先令牌化留一色，加色只改数据）；~~色键透明~~/~~DWM 圆角~~/~~每像素透明~~（spike 实测不可行或被形裁取代，§15.6） |
 | D44 | **GUI 悬浮渲染架构 = 逐元素形裁 + headless/ULW 淡出**（细化 D43 形裁口径，§15.1/§15.3）：无背景"全悬空" = 每帧布局记录可见元素矩形（气泡/输入栏/状态行），`SetWindowRgn` 并集**逐元素挖空**（间隙/边角透明 + 点击穿透；物理 px = 逻辑 × PxPerDp，经 `Window.Run` 重建）；统一半透明 = `LWA_ALPHA` 整窗常量（与形裁正交）；顶边渐变淡出 = 淡出带整带挖空 + 独立 `UpdateLayeredWindow` overlay——像素源取 **`gpu/headless` 离屏渲染同布局**（透明清屏 → alpha=覆盖免掩码、`PxPerDp` 对齐主窗、零值 Source 纯渲染），预乘线性+sRGB 语义转字节预乘后 `ULW_ALPHA+AC_SRC_ALPHA` 提交，`SourceConstantAlpha` = 主窗 LWA_ALPHA × 渐变无缝衔接。**spike 已过（2026-09，§15.6）**：headless 四点全过；PrintWindow 捕获全零已排除 | 主窗直出 alpha（`gpu.Clear` 写死不透明白 + HWND swapchain alpha 被合成器忽略，per-pixel 仅 DirectComposition / ULW 两条系统路径，Gio 都不走）；色键 `LWA_COLORKEY`（D3D 白屏，§15.6）；屏幕 BitBlt 捕获淡出带（带内已挖空、取不到气泡内容）；`PrintWindow` 捕获（spike 实测连可见区全零）；扫描线抖动近似淡出（观感降级，留作 fallback）；`LWA_ALPHA` 做渐变（仅整窗常量）；接管 swapchain 走 DirectComposition（放弃 Gio 渲染 = 换架构，违背 D43 换壳不换核） |
+| D45 | **元素边缘羽化 = 淡出 overlay 整窗效果层**（D44 扩展，§15.1/§15.3）：`SetWindowRgn` 二值掩码致圆角锯齿——headless 同帧渲染已存在（D44），overlay 从"仅带内"扩为**整窗**：带内渐变照旧，带外对每个可见元素画**羽化环**（几何边界内 alpha=1 盖住二值切口，向外 2px smoothstep 衰减到 0；颜色取同帧内侧像素；`SourceConstantAlpha` 与主窗 LWA 同值衔接），带线以上不画环、被带裁切形状**方顶续接**（region 上两角填方）。输入/caret/形裁语义全不动；z 序仍锚定主窗 | ~~整窗 ULW 换壳~~（治本但打字 caret 消失需 spike、D44 架构级重构、ULW 取代常规自绘需运行时实证——风险高）；~~纯参数缓解~~（降 semiAlpha/加大圆角/同色描边，治标不显真过渡） |
 
 ## 14. 暂缓事项（Backlog）
 
@@ -955,7 +956,11 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   变化重建（物理 px = 逻辑 × PxPerDp，经 `Window.Run` 送窗口线程——§15.6 铁律 1）。
   代价：边缘二值掩码无抗锯齿、失去 DWM 阴影。**统一半透明** = `LWA_ALPHA` 整窗
   常量（与形裁正交，spike 已验证）：元素以同一不透明度实时叠在下层窗口上；
-  差异化/渐变透明见 D44 淡出架构。
+  差异化/渐变透明见 D44 淡出架构。**元素边缘羽化（D45）**：region 是二值掩码、圆角
+  出阶梯——淡出 overlay 扩成**整窗效果层**兜住切口：对每个可见元素画羽化环（几何
+  边界内 1px alpha=1 盖住二值切口，向外 2px smoothstep 衰减到 0；颜色取 headless
+  同帧内侧像素，`SourceConstantAlpha` 与主窗 LWA 同值衔接），带线以上不画（带内渐变
+  在带底 alpha=1 衔接；被带裁切的形裁**方顶续接**见 §15.3）。
 - **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出
   （菜单步补全；托盘步先落「显示/隐藏 + 退出」两项）。
 - **托盘常驻生命周期**：关窗（Alt+F4）= **隐藏**——子类化主窗过程吞 `WM_CLOSE`
@@ -963,9 +968,11 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   一并隐藏；**退出只经托盘菜单**（清托盘图标与快捷键 → EOF 收尾）。
   托盘 = `Shell_NotifyIconW`（图标**内嵌** `assets/icon/aquarius.ico`，单二进制；
   Explorer 重启后图标重挂留后续），左键显隐、右键菜单。
-- **全局快捷键**：呼出/收起（显示悬浮球时 = 展开输入栏），默认 **`Alt+A`**
-  （D43 修订 2026-09：原 `Alt+Space` 与输入法/开始菜单冲突面大），`ui.hotkey` 可改
-  （设置面后补，先走配置文件），注册失败回退 `Ctrl+Alt+A`，再失败仅托盘可用。
+- **全局快捷键**：默认 **`Alt+A`**（D43 修订 2026-09：原 `Alt+Space` 与输入法/开始
+  菜单冲突面大），`ui.hotkey` 可改（设置面后补，先走配置文件），注册失败回退
+  `Ctrl+Alt+A`，再失败仅托盘可用。语义 = **展开/收起互切**：窗口隐藏 → 呼出并展开
+  输入栏（焦点入栏）；窗口可见 → 展开 ↔ 收起回球互切；**隐藏只经托盘**（左键显隐 /
+  菜单）。
 - **置顶开关（菜单调节）**：托盘菜单（与右键 logo 菜单同内容）带「窗口置顶」勾选项，
   切换主窗 `HWND_TOPMOST/NOTOPMOST`——**本端 `SetWindowPos` 显式断言**（不依赖 Gio 的
   TopMost 应用路径：实测主窗置顶态会意外丢失、原因未明）并**持久化**（与位置记忆
@@ -983,8 +990,8 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 
 ### 15.2 输入栏与交互（视觉稿 `temp/ui_design.png`，本地稿未入库；idle 形态）
 
-透明背景极简胶囊：**logo**（兼展开/收起钮）｜附件按钮｜占位 *"Ask anything or type a
-command..."*｜展开按钮｜**发送键（主题色）**。
+透明背景极简胶囊：**logo**（兼展开/收起钮，圆钮**内嵌品牌图标** `assets/icon`）｜附件按钮｜占位 *"Ask anything or type a
+command..."*｜展开按钮｜**发送键 = 主题色圆形钮 + 向上箭头图标**（悬停 tooltip「发送」；生成中变停止键不变）。
 
 | 交互 | 语义 |
 |---|---|
@@ -1019,6 +1026,9 @@ TRANSPARENT | NOACTIVATE | TOOLWINDOW | TOPMOST`，随主窗定位）呈现渐�
    字节 × 渐变）。
 3. `UpdateLayeredWindow(ULW_ALPHA + AC_SRC_ALPHA)`，`SourceConstantAlpha` = 主窗
    `LWA_ALPHA` 常量 × 渐变——与主窗半透明在带底无缝衔接（同源 Gio 渲染，像素一致）。
+4. **带/非带衔接**：被带裁切的形状形裁**方顶续接**（region 上两角填方——否则主窗侧
+   下半截重新圆角，与带内渐变断层）；带底渐变 alpha=1 与主窗同源像素无缝。
+   overlay 同时承担**元素边缘羽化环**（D45/§15.1，整窗效果层）。
 
 约束：淡出带内**不放交互控件**（零值 Source = 禁用态渲染、与主窗启用态有色差；带内
 恒为文本气泡则无差异）；带内点击已随挖空穿透（不参与交互，滚动从带下方起效）；
