@@ -28,12 +28,13 @@ func TestRrectSD(t *testing.T) {
 	near(want, got, "右上角对角外点（圆弧）")
 }
 
-// TestFadeFeatherShapes 羽化环（D45）：带内不写；边界内 alpha=1、界外 2px smoothstep
-// 衰减、3px 外为 0；颜色取内侧像素（红方块 → BGRA 红）。
+// TestFadeFeatherShapes 羽化环（D45）：边界内 alpha=1、界外 2px smoothstep 衰减、
+// 3px 外为 0；颜色取内侧像素（红方块 → BGRA 红）。带内行随带渐变同步衰减
+// （带顶附近 ≈0、带底 → 满值），与带渐变同风格衔接。
 func TestFadeFeatherShapes(t *testing.T) {
 	const w, h, bandPx = 40, 60, 16
 	src := image.NewRGBA(image.Rect(0, 0, w, h))
-	// 实心红块 [10,30)×[8,40)（跨带：顶边在带内，验证带内跳过）。
+	// 实心红块 [10,30)×[8,40)（跨带：顶边在带内）。
 	for y := 8; y < 40; y++ {
 		for x := 10; x < 30; x++ {
 			i := src.PixOffset(x, y)
@@ -49,27 +50,34 @@ func TestFadeFeatherShapes(t *testing.T) {
 		i := (y*w + x) * 4
 		return out[i], out[i+1], out[i+2], out[i+3]
 	}
-	// ① 带内 [0, bandPx) 恒零（带内由渐变接管，不画环）。
-	for y := 0; y < bandPx; y++ {
-		for x := 0; x < w; x++ {
-			if _, _, _, a := px(x, y); a != 0 {
-				t.Fatalf("带内 (%d,%d) 不应有环像素 a=%d", x, y, a)
-			}
+	// ① 形状上方带顶附近（环区之外）恒零。
+	for x := 0; x < w; x++ {
+		if _, _, _, a := px(x, 1); a != 0 {
+			t.Fatalf("带顶行 (%d,1) 不应有环像素 a=%d", x, a)
 		}
 	}
-	// ② 右边界内 1px（d=-0.5）：alpha=1、颜色 = 内侧红（BGRA R 在 +2）。
-	if _, g, r, a := px(29, 30); a != 255 || r != 255 || g != 0 {
+	// ② 带内边缘随带渐变衰减（0<a<255），小于带外同点（满值）→ 与带渐变同风格。
+	_, _, _, aBand := px(29, 10)
+	if aBand == 0 || aBand == 255 {
+		t.Fatalf("带内边缘 (29,10) a=%d, want 0<a<255", aBand)
+	}
+	// ③ 右边界内 1px（d=-0.5、带外）：alpha=1、颜色 = 内侧红（BGRA R 在 +2）。
+	_, g, r, a := px(29, 30)
+	if a != 255 || r != 255 || g != 0 {
 		t.Fatalf("界内 (29,30) = g=%d r=%d a=%d, want 0/255/255", g, r, a)
 	}
-	// ③ 界外 1px（d=1.5）：0 < a < 255（衰减中）。
+	if aBand >= a {
+		t.Fatalf("带内边缘 a=%d 应小于带外同点 a=%d（随带渐变衰减）", aBand, a)
+	}
+	// ④ 界外 1px（d=1.5）：0 < a < 255（衰减中）。
 	if _, _, _, a := px(31, 30); a == 0 || a == 255 {
 		t.Fatalf("界外 (31,30) a=%d, want 0<a<255", a)
 	}
-	// ④ 界外 4px：无像素。
+	// ⑤ 界外 4px：无像素。
 	if _, _, _, a := px(34, 30); a != 0 {
 		t.Fatalf("环外 (34,30) a=%d, want 0", a)
 	}
-	// ⑤ 形状内部深处（距边 >1px）：不写。
+	// ⑥ 形状内部深处（距边 >1px）：不写。
 	if _, _, _, a := px(20, 25); a != 0 {
 		t.Fatalf("内部 (20,25) a=%d, want 0", a)
 	}

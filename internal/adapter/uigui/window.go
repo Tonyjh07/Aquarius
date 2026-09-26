@@ -272,6 +272,7 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	}
 	u.updateClicks(gtx)
 	u.updateDrag(gtx)
+	u.updateLogo(gtx)
 
 	size := gtx.Constraints.Max
 	u.frameMetric = gtx.Metric
@@ -584,7 +585,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	st.Pop()
 	u.record(pill.Add(image.Pt(0, absY)), pillH/2, image.Rectangle{Max: u.frameSize})
 	// 悬浮 tips（§15.1 启动提示 / §15.2 发送键）：独立底板元素随形裁。
-	if u.logoBtn.Hovered() {
+	if u.logoHovered {
 		u.hoverTip(gtx, absY, startupHint, false)
 	}
 	if u.sendBtn.Hovered() && u.m.confirm == nil && !u.generating.Load() {
@@ -642,9 +643,17 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 	}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				// Clickable 包装：悬停 = 启动提示 tips（§15.1）；左键 = 展开/收起（§15.2 预留）。
-				// 注意：注册为可点区后 logo 不再下穿到背景拖动层（把手 = 输入栏空白/状态行）。
-				return u.logoBtn.Layout(gtx, u.logo)
+				d := gtx.Dp(44)
+				box := image.Rectangle{Max: image.Pt(d, d)}
+				drawLogo(gtx, box)
+				// 手势区 = 圆钮（§15.1 把手含 logo）：hover = 启动 tips、拖动 = 移窗、
+				// 单击（位移小于 dragClickSlackPx）= 收起回球。同区双 handler——输入按
+				// Target 分发互不抢夺；圆钮区在背景把手之上，按下优先归它。
+				st := clip.Rect{Max: box.Max}.Push(gtx.Ops)
+				u.logoHover.Add(gtx.Ops)
+				u.logoDrag.Add(gtx.Ops)
+				st.Pop()
+				return layout.Dimensions{Size: box.Size()}
 			})
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -654,7 +663,11 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 			}
 			ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
 			ed.TextSize = unit.Sp(15)
-			return ed.Layout(gtx)
+			// 约束 Min.Y 被 Exact 拉满会把编辑器/提示行顶到盒顶（Flex Middle 对满高盒
+			// 无效 → 文本视觉偏上）：放开 Min 让其返回自然行高，由 Flex 垂直居中（§15.2）。
+			gtxC := gtx
+			gtxC.Constraints.Min.Y = 0
+			return ed.Layout(gtxC)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if u.m.confirm != nil {
@@ -822,14 +835,8 @@ func (u *UI) submitEditor() {
 	u.m.submit(text)
 }
 
-// updateClicks 控件行为：logo 收起回球（再单击球展开在 updateDrag）/
-// 发送/停止/允许/拒绝。
+// updateClicks 控件行为：发送/停止/允许/拒绝（logo 手势与悬停在 updateLogo）。
 func (u *UI) updateClicks(gtx layout.Context) {
-	if u.logoBtn.Clicked(gtx) {
-		// 左键 logo = 收起回球（§15.1 单组件展开/收起）。
-		u.collapsed = true
-		u.w.Invalidate() // 状态变于帧中：换形需下一帧
-	}
 	if u.sendBtn.Clicked(gtx) {
 		u.submitEditor()
 	}
@@ -846,7 +853,8 @@ func (u *UI) updateClicks(gtx layout.Context) {
 
 // updateDrag 拖动定位（§15.6 铁律 2：按下记「窗口左上角 + 光标屏幕坐标」按差值
 // 定位——窗口移动会改变指针本地坐标，本地增量法与移动互为反馈会回弹）。
-// 形裁后把手 = 输入栏空白/状态行/logo（气泡区是滚动区，DESIGN §15.1）。
+// 背景把手 = 输入栏空白/状态行/收起态整窗（气泡区是滚动区，§15.1）；
+// 收起态单击球（位移小于阈值）= 再展开。
 func (u *UI) updateDrag(gtx layout.Context) {
 	for {
 		ev, ok := u.drag.Update(gtx.Metric, gtx.Source, gesture.Both)
@@ -855,44 +863,91 @@ func (u *UI) updateDrag(gtx layout.Context) {
 		}
 		switch ev.Kind {
 		case pointer.Press:
-			if rc, ok := windowRectPx(); ok {
-				u.dragWin0 = point{x: rc.left, y: rc.top}
-				u.dragCur0 = cursorPos()
-				u.dragging = true
-			}
+			u.beginDrag()
 		case pointer.Drag:
-			if !u.dragging {
-				break
-			}
-			cur := cursorPos()
-			u.x = u.dragWin0.x + (cur.x - u.dragCur0.x)
-			u.y = u.dragWin0.y + (cur.y - u.dragCur0.y)
-			moveWindowTo(u.x, u.y)
+			u.moveDrag()
 		case pointer.Release, pointer.Cancel:
-			wasDragging := u.dragging
-			if u.dragging && u.opts.PosFile != "" {
-				tm := topMostQuery()
-				savePos(u.opts.PosFile, posRec{X: u.x, Y: u.y, TopMost: &tm})
-			}
-			u.dragging = false
-			// 收起态：单击球（位移小于阈值）= 再展开；移动 = 拖窗（§15.1）。
-			if ev.Kind == pointer.Release && wasDragging && u.collapsed {
-				cur := cursorPos()
-				dx, dy := cur.x-u.dragCur0.x, cur.y-u.dragCur0.y
-				if dx < 0 {
-					dx = -dx
-				}
-				if dy < 0 {
-					dy = -dy
-				}
-				if dx <= dragClickSlackPx && dy <= dragClickSlackPx {
-					u.collapsed = false
-					u.focusPending = true // 展开即入焦点
-					u.w.Invalidate()
-				}
+			was := u.dragging
+			u.endDrag()
+			// 收起态：单击球 = 再展开；移动 = 拖窗（§15.1）。
+			if ev.Kind == pointer.Release && was && u.collapsed && u.clickHeld() {
+				u.collapsed = false
+				u.focusPending = true // 展开即入焦点
+				u.w.Invalidate()
 			}
 		}
 	}
+}
+
+// updateLogo logo 圆钮手势（§15.1 把手含 logo）：悬停驱动启动 tips；拖动移窗；
+// 单击（位移小于 dragClickSlackPx）= 收起回球。收起态圆钮区不存在（事件归背景
+// 把手），本循环空转并清悬停态。
+func (u *UI) updateLogo(gtx layout.Context) {
+	u.logoHovered = u.logoHover.Update(gtx.Source)
+	if u.collapsed {
+		u.logoHovered = false
+	}
+	for {
+		ev, ok := u.logoDrag.Update(gtx.Metric, gtx.Source, gesture.Both)
+		if !ok {
+			break
+		}
+		switch ev.Kind {
+		case pointer.Press:
+			u.beginDrag()
+		case pointer.Drag:
+			u.moveDrag()
+		case pointer.Release, pointer.Cancel:
+			was := u.dragging
+			u.endDrag()
+			if ev.Kind == pointer.Release && was && u.clickHeld() {
+				u.collapsed = true // 左键 logo = 收起回球（§15.1）
+				u.w.Invalidate()
+			}
+		}
+	}
+}
+
+// beginDrag 记录拖动基准（按下；窗口未就绪则忽略本次触发）。
+func (u *UI) beginDrag() {
+	if rc, ok := windowRectPx(); ok {
+		u.dragWin0 = point{x: rc.left, y: rc.top}
+		u.dragCur0 = cursorPos()
+		u.dragging = true
+	}
+}
+
+// moveDrag 主窗跟随光标（拖动中，铁律 2 绝对跟踪）。
+func (u *UI) moveDrag() {
+	if !u.dragging {
+		return
+	}
+	cur := cursorPos()
+	u.x = u.dragWin0.x + (cur.x - u.dragCur0.x)
+	u.y = u.dragWin0.y + (cur.y - u.dragCur0.y)
+	moveWindowTo(u.x, u.y)
+}
+
+// endDrag 抬起/取消收尾：持久化位置。
+func (u *UI) endDrag() {
+	if u.dragging && u.opts.PosFile != "" {
+		tm := topMostQuery()
+		savePos(u.opts.PosFile, posRec{X: u.x, Y: u.y, TopMost: &tm})
+	}
+	u.dragging = false
+}
+
+// clickHeld 抬起时位移小于阈值 = 单击（与拖窗判定互斥）。
+func (u *UI) clickHeld() bool {
+	cur := cursorPos()
+	dx, dy := cur.x-u.dragCur0.x, cur.y-u.dragCur0.y
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	return dx <= dragClickSlackPx && dy <= dragClickSlackPx
 }
 
 // logo 品牌色圆钮 + 内嵌品牌图标（§15.2 logo 实装；绘制细节见 logo.go）。

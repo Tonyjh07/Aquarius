@@ -194,11 +194,11 @@ func rrectSD(px, py, cx, cy, hw, hh, rad float32) float32 {
 	return out + in - rad
 }
 
-// fadeFeatherShapes 元素边缘羽化环（D45/方案 B）：在整帧缓冲 [bandPx, h) 内对每个
-// 可见元素画轮廓环——几何边界内 alpha=1（盖住 region 二值切口），向外 2px smoothstep
-// 衰减到 0；颜色取同帧内侧像素（headless 无 region 裁剪、内容完整；采样点夹进形状
-// 内 1px = 最近内侧点近似，环仅 3px 够用）。带线以上不画（带内渐变在带底 alpha=1
-// 衔接）。返回是否写入环像素。
+// fadeFeatherShapes 元素边缘羽化环（D45/方案 B）：在整帧缓冲内对每个可见元素画
+// 轮廓环——几何边界内 alpha=1（盖住 region 二值切口），向外 2px smoothstep 衰减到 0；
+// 颜色取同帧内侧像素（headless 无 region 裁剪、内容完整；采样点夹进形状内 1px =
+// 最近内侧点近似，环仅 3px 够用）。带内行乘带渐变 g(y)（带底 alpha=1 与带/非带
+// 平滑衔接）。返回是否写入环像素。
 func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, out []byte, size image.Point) bool {
 	if src == nil || len(shapes) == 0 {
 		return false
@@ -230,19 +230,26 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, out []by
 		cy := float32(r.Min.Y) + hh
 		x0 := max(r.Min.X-int(inPx)-1, 0)
 		x1 := min(r.Max.X+int(outPx)+1, w)
-		y0 := max(r.Min.Y-int(inPx)-1, bandPx)
+		y0 := max(r.Min.Y-int(inPx)-1, 0)
 		y1 := min(r.Max.Y+int(outPx)+1, h)
 		for y := y0; y < y1; y++ {
+			// 带内行：环随带渐变同步衰减（带底 alpha=1 平滑衔接——消除"带下方轮廓
+			// 比带内宽一圈"的断层，D45/§15.1；带内观感与带渐变同风格）。
+			bandG := 1.0
+			if y < bandPx {
+				t := (float64(y) + 0.5) / float64(bandPx)
+				bandG = t * t * (3 - 2*t)
+			}
 			for x := x0; x < x1; x++ {
 				d := rrectSD(float32(x)+0.5, float32(y)+0.5, cx, cy, hw, hh, rad)
 				if d < -inPx || d > outPx {
 					continue
 				}
-				av := 1.0
+				av := bandG
 				if d > 0 {
 					td := float64(d) / outPx
 					g := td * td * (3 - 2*td) // smoothstep
-					av = 1 - g
+					av = bandG * (1 - g)
 				}
 				// 颜色采样：夹进形状内 1px（最近内侧点近似）。
 				sx, sy := x, y

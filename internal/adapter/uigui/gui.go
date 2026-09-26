@@ -85,19 +85,21 @@ type UI struct {
 	w *app.Window
 
 	// 窗口侧状态（仅帧循环 goroutine 读写；headless 不触碰，构造成零值可用）。
-	th       *material.Theme
-	editor   widget.Editor
-	logoBtn  widget.Clickable // logo：左键展开/收起（§15.2 预留）+ 悬浮 tips（§15.1）
-	sendBtn  widget.Clickable
-	stopBtn  widget.Clickable
-	allowBtn widget.Clickable
-	denyBtn  widget.Clickable
-	drag     gesture.Drag
-	hwnd     uintptr
-	x, y     int32 // 窗口屏幕坐标（拖动跟随 + 位置记忆）
-	dragging bool
-	dragWin0 point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
-	dragCur0 point // 按下时光标位置（屏幕坐标）
+	th          *material.Theme
+	editor      widget.Editor
+	logoDrag    gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
+	logoHover   gesture.Hover // logo 圆钮：悬停 = 启动提示 tips（§15.1）
+	logoHovered bool          // 仅事件循环 goroutine 读写
+	sendBtn     widget.Clickable
+	stopBtn     widget.Clickable
+	allowBtn    widget.Clickable
+	denyBtn     widget.Clickable
+	drag        gesture.Drag
+	hwnd        uintptr
+	x, y        int32 // 窗口屏幕坐标（拖动跟随 + 位置记忆）
+	dragging    bool
+	dragWin0    point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
+	dragCur0    point // 按下时光标位置（屏幕坐标）
 
 	// 转写区手工滚动（D44：不用 widget.List——需要每行绝对矩形做逐元素形裁）。
 	transcriptScroll gesture.Scroll
