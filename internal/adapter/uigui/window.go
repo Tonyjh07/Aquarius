@@ -192,7 +192,9 @@ func (u *UI) runWindow(w *app.Window) {
 		case app.DestroyEvent:
 			// 用户关窗 = 输入流结束（Next → EOF → 装配根退出，退出码 0；
 			// 创建失败 Err 非空 → Next 上抛，退出码 1）。
-			// "关窗 = 隐藏、退出经菜单"的托盘常驻语义留托盘步接入（§15.1）。
+			// 正常 Alt+F4 已被 WM_CLOSE 拦截为隐藏（§15.1），走到这里 = 真销毁
+			//（装配根收尾/系统关闭）——清托盘图标防悬浮区残留。
+			trayDelete()
 			u.signalEOF(e.Err)
 			return
 		default:
@@ -210,7 +212,8 @@ func (u *UI) onHWND(h uintptr) {
 	}
 	u.hwnd = h
 	atomic.StoreUintptr(&mainHWND, h)
-	applyAlpha(semiAlpha) // LWA_ALPHA 整窗常量（与形裁正交，spike 已验证）
+	applyAlpha(semiAlpha)  // LWA_ALPHA 整窗常量（与形裁正交，spike 已验证）
+	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
 	rc, ok := windowRectPx()
 	if !ok {
 		return
@@ -231,6 +234,10 @@ func (u *UI) onHWND(h uintptr) {
 // 输入栏——自底向上定高，全部绝对坐标登记形裁（§15.1/D44）。
 // 本函数也被 fadeFrame 以零值 Source 二次调用（纯渲染，无事件消费）。
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
+	if u.focusPending {
+		u.focusPending = false
+		gtx.Execute(key.FocusCmd{Tag: &u.editor}) // 唤出（托盘/快捷键）后焦点进输入栏
+	}
 	u.updateEditor(gtx)
 	u.updateClicks(gtx)
 	u.updateDrag(gtx)

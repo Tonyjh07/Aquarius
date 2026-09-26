@@ -33,3 +33,12 @@ func overlayPresent(int32, int32, int32, int32, []byte, byte) bool { return fals
 
 // overlaySetVisible 淡出 overlay 未适配。
 func overlaySetVisible(bool) {}
+
+// startShell 托盘与全局快捷键未适配（§15.6 仅 Windows 实测）。
+func startShell(*UI) {}
+
+// trayDelete 无托盘图标可清。
+func trayDelete() {}
+
+// subclassCloseToHide 关窗拦截未适配（窗口照常销毁）。
+func subclassCloseToHide(uintptr) {}

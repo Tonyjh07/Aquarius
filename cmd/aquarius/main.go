@@ -389,6 +389,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return uigui.Status{}
 			},
 			PosFile: filepath.Join(dir, "gui_pos.json"),
+			Hotkey:  cfg.UI.Hotkey, // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
 		})
 	case "tui":
 		ui = uitui.New(uitui.Options{

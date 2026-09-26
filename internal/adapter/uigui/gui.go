@@ -62,6 +62,8 @@ type Options struct {
 	PosFile string
 	// Interrupt 初始中断行为（装配根一般经 SetInterrupt 每轮注入，留 nil 即可）。
 	Interrupt func()
+	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。
+	Hotkey string
 }
 
 // UI GUI 前端句柄（装配根按 uiFrontend 使用）。
@@ -102,6 +104,10 @@ type UI struct {
 	scrollPx         int  // 内容滚动偏移（物理 px，0 = 顶）
 	followTail       bool // 尾随贴底（新内容贴输入栏；上滚即停，§15.3）
 	contentH         int  // 内容总高（上一帧测得，物理 px）
+
+	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
+	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
+	focusPending bool
 
 	// 形裁与淡出（D44/§15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
@@ -145,6 +151,7 @@ func newUI(opts Options, window bool) *UI {
 		w := new(app.Window)
 		u.w = w // go 前发布：post 侧读取无竞争
 		go u.runWindow(w)
+		startShell(u) // 托盘 + 全局快捷键线程（§15.1；仅窗口模式，headless 不起）
 	} else {
 		go u.runHeadless()
 	}
@@ -192,6 +199,7 @@ func (u *UI) interruptNow() {
 // 先投 drain 并等其处理：post 是异步 FIFO，保证此前 Emit/Say 全部落进状态机，
 // 再投 quit 结束循环（对齐 uitui Close 的排空语义）。
 func (u *UI) Close() error {
+	trayDelete() // 托盘图标随前端收尾清理（真销毁未走到 DestroyEvent 的路径防残留）
 	done := make(chan struct{})
 	if !u.post(drainMsg{done: done}) {
 		return nil // 事件循环已退出（如窗口已关）
@@ -324,6 +332,8 @@ type (
 	eofMsg struct{ err error }
 	// quitMsg 结束事件循环（Close 在 drain 之后投递）。
 	quitMsg struct{}
+	// focusMsg 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投递）。
+	focusMsg struct{}
 )
 
 // apply 把桥接消息应用到状态机（仅事件循环 goroutine 调用）；false = 循环应退出。
@@ -343,6 +353,8 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.signalEOF(m.err)
 	case drainMsg:
 		close(m.done)
+	case focusMsg:
+		u.focusPending = true // 下帧 layout 执行 key.FocusCmd
 	case quitMsg:
 		return false
 	}

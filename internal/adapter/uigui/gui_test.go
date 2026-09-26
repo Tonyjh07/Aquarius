@@ -274,3 +274,18 @@ func TestStatusTextPhase(t *testing.T) {
 		t.Fatalf("生成阶段 statusText = %q", got)
 	}
 }
+
+// TestFocusMsgSetsPending 唤出路径（托盘/快捷键显示窗口）投 focusMsg → 置待聚焦，
+// 下帧 layout 执行 key.FocusCmd 把输入焦点交给编辑器（§15.1）；drainSync 提供
+// happens-before 后读取无竞争。
+func TestFocusMsgSetsPending(t *testing.T) {
+	u := newHeadless(t, Options{Hotkey: "Alt+A"})
+	if u.focusPending {
+		t.Fatal("初始不应有待聚焦")
+	}
+	u.post(focusMsg{})
+	drainSync(t, u)
+	if !u.focusPending {
+		t.Fatal("focusMsg 应用后应有待聚焦")
+	}
+}
