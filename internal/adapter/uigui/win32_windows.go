@@ -31,7 +31,7 @@ var (
 	procSetWindowPos          = user32.NewProc("SetWindowPos")
 	procGetWindowRect         = user32.NewProc("GetWindowRect")
 	procSetWindowRgn          = user32.NewProc("SetWindowRgn")
-	procCombineRgn            = user32.NewProc("CombineRgn")
+	procCombineRgn            = gdi32.NewProc("CombineRgn") // GDI 函数；声明在 user32 会 panic（LazyProc 找不到入口）
 	procGetWindowLongPtrW     = user32.NewProc("GetWindowLongPtrW")
 	procSetWindowLongPtrW     = user32.NewProc("SetWindowLongPtrW")
 	procSetLayeredWindowAttrs = user32.NewProc("SetLayeredWindowAttributes")
@@ -62,7 +62,7 @@ const (
 	wsExLayered = 0x00080000
 	lwaAlpha    = 0x00000002
 
-	rgnOr = 1 // CombineRgn：并集
+	rgnOr = 2 // CombineRgn 并集（RGN_AND=1 / RGN_OR=2 / RGN_DIFF=4——写成1会取交集得空区域）
 
 	// overlay 窗口（D44 淡出带）。
 	wsExToolWindow  = 0x00000080

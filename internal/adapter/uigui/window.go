@@ -589,7 +589,8 @@ func (u *UI) applyRegion() {
 		u.lastShapes = append(u.lastShapes[:0], u.physShapes...)
 		if regionLogN < 3 {
 			regionLogN++
-			fmt.Printf("[region] 形裁应用成功 shapes=%d（第 %d 次）\n", len(u.physShapes), regionLogN)
+			fmt.Printf("[region] 形裁应用成功 shapes=%d %v（第 %d 次）\n",
+				len(u.physShapes), u.physShapes, regionLogN)
 		}
 		return
 	}
