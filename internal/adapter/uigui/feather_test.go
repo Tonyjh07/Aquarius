@@ -28,58 +28,63 @@ func TestRrectSD(t *testing.T) {
 	near(want, got, "右上角对角外点（圆弧）")
 }
 
-// TestFadeFeatherShapes 羽化环（D45）：边界内 alpha=1、界外 2px smoothstep 衰减、
-// 3px 外为 0；颜色取内侧像素（红方块 → BGRA 红）。带内行随带渐变同步衰减
-// （带顶附近 ≈0、带底 → 满值），与带渐变同风格衔接。
+// TestFadeFeatherShapes 羽化环（D45/§15.1）：真轮廓内 (in+1)px alpha=1、向外 outPx
+// smoothstep 衰减；带底以上不落笔（带内由带单绘——避免与带重复叠加出横缝）；只落在
+// 可见裁剪区内。颜色取内侧像素（红方块 → BGRA 红）。
 func TestFadeFeatherShapes(t *testing.T) {
-	const w, h, bandPx = 40, 60, 16
+	const w, h, bandPx = 60, 60, 16
 	src := image.NewRGBA(image.Rect(0, 0, w, h))
-	// 实心红块 [10,30)×[8,40)（跨带：顶边在带内）。
-	for y := 8; y < 40; y++ {
+	// 实心红块 [10,30)×[24,44)（整块在带底以下，隔离带内规则）。
+	for y := 24; y < 44; y++ {
 		for x := 10; x < 30; x++ {
 			i := src.PixOffset(x, y)
 			src.Pix[i], src.Pix[i+1], src.Pix[i+2], src.Pix[i+3] = 255, 0, 0, 255
 		}
 	}
-	shapes := []drawShape{{r: image.Rect(10, 8, 30, 40), radius: 6}}
+	const inPx, outPx = 2, 6
+	shapes := []drawShape{{
+		outline: image.Rect(10, 24, 30, 44),
+		clip:    image.Rect(0, 0, 36, h), // 右侧裁到 x=36：环不得越出裁剪区
+		radius:  6,
+	}}
 	out := make([]byte, w*h*4)
-	if !fadeFeatherShapes(src, shapes, bandPx, out, image.Pt(w, h)) {
+	if !fadeFeatherShapes(src, shapes, bandPx, inPx, outPx, out, image.Pt(w, h)) {
 		t.Fatal("应写入环像素")
 	}
 	px := func(x, y int) (b, g, r, a byte) {
 		i := (y*w + x) * 4
 		return out[i], out[i+1], out[i+2], out[i+3]
 	}
-	// ① 形状上方带顶附近（环区之外）恒零。
-	for x := 0; x < w; x++ {
-		if _, _, _, a := px(x, 1); a != 0 {
-			t.Fatalf("带顶行 (%d,1) 不应有环像素 a=%d", x, a)
+	// ① 带底以上不落笔（带内由带渐变单独绘制）。
+	for y := 0; y < bandPx; y++ {
+		for x := 0; x < w; x++ {
+			if _, _, _, a := px(x, y); a != 0 {
+				t.Fatalf("带内 (%d,%d) 不应有环像素 a=%d", x, y, a)
+			}
 		}
 	}
-	// ② 带内边缘随带渐变衰减（0<a<255），小于带外同点（满值）→ 与带渐变同风格。
-	_, _, _, aBand := px(29, 10)
-	if aBand == 0 || aBand == 255 {
-		t.Fatalf("带内边缘 (29,10) a=%d, want 0<a<255", aBand)
-	}
-	// ③ 右边界内 1px（d=-0.5、带外）：alpha=1、颜色 = 内侧红（BGRA R 在 +2）。
-	_, g, r, a := px(29, 30)
+	// ② 右边界内 1px（带外）：alpha=1、颜色 = 内侧红（BGRA R 在 +2）。
+	_, g, r, a := px(29, 34)
 	if a != 255 || r != 255 || g != 0 {
-		t.Fatalf("界内 (29,30) = g=%d r=%d a=%d, want 0/255/255", g, r, a)
+		t.Fatalf("界内 (29,34) = g=%d r=%d a=%d, want 0/255/255", g, r, a)
 	}
-	if aBand >= a {
-		t.Fatalf("带内边缘 a=%d 应小于带外同点 a=%d（随带渐变衰减）", aBand, a)
+	// ③ 界外 1.5px：0 < a < 255（衰减中）。
+	if _, _, _, a := px(31, 34); a == 0 || a == 255 {
+		t.Fatalf("界外 (31,34) a=%d, want 0<a<255", a)
 	}
-	// ④ 界外 1px（d=1.5）：0 < a < 255（衰减中）。
-	if _, _, _, a := px(31, 30); a == 0 || a == 255 {
-		t.Fatalf("界外 (31,30) a=%d, want 0<a<255", a)
+	// ④ 界外超过 outPx：无像素。
+	if _, _, _, a := px(38, 34); a != 0 {
+		t.Fatalf("环外 (38,34) a=%d, want 0", a)
 	}
-	// ⑤ 界外 4px：无像素。
-	if _, _, _, a := px(34, 30); a != 0 {
-		t.Fatalf("环外 (34,30) a=%d, want 0", a)
+	// ⑤ 内部深处（距边 > in+1）：不写。
+	if _, _, _, a := px(20, 34); a != 0 {
+		t.Fatalf("内部 (20,34) a=%d, want 0", a)
 	}
-	// ⑥ 形状内部深处（距边 >1px）：不写。
-	if _, _, _, a := px(20, 25); a != 0 {
-		t.Fatalf("内部 (20,25) a=%d, want 0", a)
+	// ⑥ 裁剪区外不写。
+	for x := 36; x < w; x++ {
+		if _, _, _, a := px(x, 34); a != 0 {
+			t.Fatalf("裁剪区外 (%d,34) a=%d, want 0", x, a)
+		}
 	}
 }
 
@@ -87,11 +92,11 @@ func TestFadeFeatherShapes(t *testing.T) {
 func TestFadeFeatherShapesEmpty(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	out := make([]byte, 10*10*4)
-	if fadeFeatherShapes(src, nil, 4, out, image.Pt(10, 10)) {
+	if fadeFeatherShapes(src, nil, 4, 2, 6, out, image.Pt(10, 10)) {
 		t.Fatal("无形状应返回 false")
 	}
-	if fadeFeatherShapes(src, []drawShape{{r: image.Rect(0, 0, 5, 5), radius: 2}},
-		4, out[:10], image.Pt(10, 10)) {
+	sh := []drawShape{{outline: image.Rect(0, 0, 5, 5), clip: image.Rect(0, 0, 10, 10), radius: 2}}
+	if fadeFeatherShapes(src, sh, 4, 2, 6, out[:10], image.Pt(10, 10)) {
 		t.Fatal("缓冲不足应返回 false")
 	}
 }

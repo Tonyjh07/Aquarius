@@ -194,13 +194,14 @@ func rrectSD(px, py, cx, cy, hw, hh, rad float32) float32 {
 	return out + in - rad
 }
 
-// fadeFeatherShapes 元素边缘羽化环（D45/方案 B）：在整帧缓冲内对每个可见元素画
-// 轮廓环——几何边界内 alpha=1（盖住 region 二值切口），向外 2px smoothstep 衰减到 0；
-// 颜色取同帧内侧像素（headless 无 region 裁剪、内容完整；采样点夹进形状内 1px =
-// 最近内侧点近似，环仅 3px 够用）。带内行乘带渐变 g(y)（带底 alpha=1 与带/非带
-// 平滑衔接）。返回是否写入环像素。
-func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, out []byte, size image.Point) bool {
-	if src == nil || len(shapes) == 0 {
+// fadeFeatherShapes 元素边缘羽化环（D45/§15.1）：overlay 沿元素**真实轮廓**画 alpha
+// 斜坡——轮廓内 (in+1)px 内 alpha=1（盖住 region 内缩留下的缝），向外 outPx smoothstep
+// 衰减到 0；颜色取同帧内侧像素（headless 无 region 裁剪、内容完整，夹进形状内 1px 作
+// 最近内侧点近似）。只落笔在 y ≥ 带底（带内由 fadePremultiplyBand 单绘——避免与带
+// 重复叠加出横缝）且落在元素可见裁剪区内的像素。真轮廓保证环不沿视口/带裁切线描边
+// （消除带底横缝）。返回是否写入环像素。
+func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx, inPx, outPx int, out []byte, size image.Point) bool {
+	if src == nil || len(shapes) == 0 || outPx <= 0 {
 		return false
 	}
 	w, h := size.X, size.Y
@@ -211,10 +212,11 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, out []by
 		return false
 	}
 	_ = lutForever
-	const inPx, outPx = 1.0, 2.0
+	inF := float32(inPx) + 1 // 边界内覆盖宽（+1 与 region 内缩重叠 1px，防漏缝）
+	outF := float32(outPx)
 	content := false
 	for _, s := range shapes {
-		r := s.r
+		r := s.outline
 		if r.Empty() {
 			continue
 		}
@@ -228,30 +230,28 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, out []by
 		}
 		cx := float32(r.Min.X) + hw
 		cy := float32(r.Min.Y) + hh
-		x0 := max(r.Min.X-int(inPx)-1, 0)
-		x1 := min(r.Max.X+int(outPx)+1, w)
-		y0 := max(r.Min.Y-int(inPx)-1, 0)
-		y1 := min(r.Max.Y+int(outPx)+1, h)
+		clip := s.clip
+		if clip.Empty() {
+			clip = image.Rectangle{Max: size}
+		}
+		// 落笔范围 = 真轮廓外扩 ∩ 可见裁剪区 ∩ 带底以下 ∩ 缓冲区。
+		x0 := max(r.Min.X-int(outF)-1, max(clip.Min.X, 0))
+		x1 := min(r.Max.X+int(outF)+1, min(clip.Max.X, w))
+		y0 := max(r.Min.Y-int(outF)-1, max(max(clip.Min.Y, bandPx), 0))
+		y1 := min(r.Max.Y+int(outF)+1, min(clip.Max.Y, h))
 		for y := y0; y < y1; y++ {
-			// 带内行：环随带渐变同步衰减（带底 alpha=1 平滑衔接——消除"带下方轮廓
-			// 比带内宽一圈"的断层，D45/§15.1；带内观感与带渐变同风格）。
-			bandG := 1.0
-			if y < bandPx {
-				t := (float64(y) + 0.5) / float64(bandPx)
-				bandG = t * t * (3 - 2*t)
-			}
 			for x := x0; x < x1; x++ {
 				d := rrectSD(float32(x)+0.5, float32(y)+0.5, cx, cy, hw, hh, rad)
-				if d < -inPx || d > outPx {
+				if d < -inF || d > outF {
 					continue
 				}
-				av := bandG
+				av := 1.0
 				if d > 0 {
-					td := float64(d) / outPx
+					td := float64(d) / float64(outF)
 					g := td * td * (3 - 2*td) // smoothstep
-					av = bandG * (1 - g)
+					av = 1 - g
 				}
-				// 颜色采样：夹进形状内 1px（最近内侧点近似）。
+				// 颜色采样：夹进形状内 1px（最近内侧点近似），再夹进缓冲区（轮廓可越窗）。
 				sx, sy := x, y
 				if sx < r.Min.X+1 {
 					sx = r.Min.X + 1
@@ -264,6 +264,18 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, out []by
 				}
 				if sy > r.Max.Y-1 {
 					sy = r.Max.Y - 1
+				}
+				if sx < 0 {
+					sx = 0
+				}
+				if sx >= w {
+					sx = w - 1
+				}
+				if sy < 0 {
+					sy = 0
+				}
+				if sy >= h {
+					sy = h - 1
 				}
 				if writePremul(src.Pix, src.PixOffset(sx, sy), av, out, (y*w+x)*4) {
 					content = true
@@ -304,7 +316,8 @@ func (u *UI) fadeFrame() {
 	}
 	clear(u.fadeBuf) // 整窗效果层：band 渐变写顶部带、羽化环写其余区域，先清零
 	band := fadePremultiplyBand(u.fade.img, u.frameSize.X, bandPx, u.fadeBuf)
-	rings := fadeFeatherShapes(u.fade.img, u.shapes, bandPx, u.fadeBuf, u.frameSize)
+	rings := fadeFeatherShapes(u.fade.img, u.shapes, bandPx,
+		u.frameMetric.Dp(featherInDp), u.frameMetric.Dp(featherOutDp), u.fadeBuf, u.frameSize)
 	if !band && !rings {
 		overlaySetVisible(false) // 带内无内容且无元素（空态）：隐藏（桌面/下层直接可见）
 		return

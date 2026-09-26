@@ -49,6 +49,12 @@ const (
 	statusChipDp = 20 // 状态行 chip 高
 	maxTextColDp = 400
 
+	// 边缘羽化（D45/§15.1）：region 向内缩 featherInDp（避免 overlay 环叠在主窗同色像素上
+	// 抬升不透明度 → 亮边），overlay 环沿真轮廓画 [-(in+1), out] 的 alpha 斜坡——把淡出带
+	// 那套「region 让位 + overlay 单绘」推广到所有边缘。
+	featherInDp  = 2 // region 内缩 / 环内侧覆盖宽
+	featherOutDp = 6 // 环向外衰减宽
+
 	// semiAlpha 统一半透明（LWA_ALPHA 整窗常量；淡出 overlay 同值衔接，D44）。
 	semiAlpha byte = 235
 
@@ -81,11 +87,14 @@ var (
 type point struct{ x, y int32 }
 type rect struct{ left, top, right, bottom int32 }
 
-// drawShape 布局期收集的可见元素矩形（窗口系物理 px；layout 坐标即物理）。
+// drawShape 布局期收集的可见元素：outline = 元素**真实轮廓**（未按视口/淡出带裁剪，
+// 羽化环沿此取边 → 不沿裁切线描边，消除横缝）；clip = 可见裁剪区（转写区视口/整窗，
+// 环只在此区内落笔）；radius = 圆角半径。形裁矩形（applyRegion）与羽化环
+// （fadeFeatherShapes）都由这两者推导（§15.3/D45）。
 type drawShape struct {
-	r      image.Rectangle
-	radius int  // 圆角半径（px）
-	sqTop  bool // 顶边被淡出带裁切 → region 上两角填方（§15.3 带/非带衔接）
+	outline image.Rectangle
+	clip    image.Rectangle
+	radius  int // 圆角半径（px）
 }
 
 // shapePhys 形裁元素（传 win32 并集）。
@@ -687,39 +696,75 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// record 登记可见元素的形裁矩形：视口裁剪 + 淡出带剔除（带内由 overlay 接管，D44）；
-// 被带裁切的顶边标记 sqTop（region 上两角填方——§15.3 带/非带衔接）。
+// record 登记可见元素（D44/D45）：保存真实轮廓 + 可见裁剪区，形裁（applyRegion）与
+// 羽化环（fadeFeatherShapes）都由此推导。零半径、裁剪后为空、或完全落在淡出带内
+// （整条由 overlay 带渐变绘制）的元素不登记。
 func (u *UI) record(abs image.Rectangle, radius int, clipRect image.Rectangle) {
-	r := abs.Intersect(clipRect)
-	band := u.frameMetric.Dp(fadeBandDp)
-	sqTop := false
-	if r.Min.Y < band {
-		r.Min.Y = band
-		sqTop = true
-	}
-	if r.Empty() || radius <= 0 {
+	if radius <= 0 || abs.Empty() {
 		return
 	}
-	u.shapes = append(u.shapes, drawShape{r: r, radius: radius, sqTop: sqTop})
+	vis := abs.Intersect(clipRect)
+	if vis.Empty() {
+		return
+	}
+	if vis.Max.Y <= u.frameMetric.Dp(fadeBandDp) {
+		return
+	}
+	u.shapes = append(u.shapes, drawShape{outline: abs, clip: clipRect, radius: radius})
+}
+
+// regionShapes 由可见元素推导形裁并集（纯逻辑，可测，D45/§15.1）：视口裁剪 ∩ 淡出带
+// 裁切 → 沿元素**真实边**内缩 ins（裁切边不缩——内缩会露出羽化环不覆盖的洞），圆角
+// 同步收窄（同心内缩圆角）；带顶裁切标 sqTop（并集构建时上两角填方续接带渐变，§15.3）。
+func regionShapes(dst []shapePhys, shapes []drawShape, band, ins int) []shapePhys {
+	for _, s := range shapes {
+		r := s.outline.Intersect(s.clip)
+		if r.Empty() {
+			continue
+		}
+		cutTop := r.Min.Y > s.outline.Min.Y
+		cutBottom := r.Max.Y < s.outline.Max.Y
+		cutLeft := r.Min.X > s.outline.Min.X
+		cutRight := r.Max.X < s.outline.Max.X
+		if r.Min.Y < band {
+			r.Min.Y = band
+			cutTop = true
+		}
+		if !cutTop {
+			r.Min.Y += ins
+		}
+		if !cutBottom {
+			r.Max.Y -= ins
+		}
+		if !cutLeft {
+			r.Min.X += ins
+		}
+		if !cutRight {
+			r.Max.X -= ins
+		}
+		if r.Dx() <= 0 || r.Dy() <= 0 {
+			continue
+		}
+		rad := s.radius - ins
+		if rad < 0 {
+			rad = 0
+		}
+		dst = append(dst, shapePhys{
+			x: int32(r.Min.X), y: int32(r.Min.Y),
+			w: int32(r.Dx()), h: int32(r.Dy()),
+			ellipse: int32(rad * 2),
+			sqTop:   cutTop,
+		})
+	}
+	return dst
 }
 
 // applyRegion 形裁并集仅在变化时重建（布局结果稳定 → 多数帧零开销）。
 // 失败（hwnd 未到/系统调用错误）不写缓存 → 下帧重试，防止首帧竞态把缓存污染成
 // "已应用"导致形裁永久失效。
 func (u *UI) applyRegion() {
-	u.physShapes = u.physShapes[:0]
-	for _, s := range u.shapes {
-		r := s.r
-		if r.Dx() <= 0 || r.Dy() <= 0 {
-			continue
-		}
-		u.physShapes = append(u.physShapes, shapePhys{
-			x: int32(r.Min.X), y: int32(r.Min.Y),
-			w: int32(r.Dx()), h: int32(r.Dy()),
-			ellipse: int32(s.radius * 2),
-			sqTop:   s.sqTop,
-		})
-	}
+	u.physShapes = regionShapes(u.physShapes[:0], u.shapes,
+		u.frameMetric.Dp(fadeBandDp), u.frameMetric.Dp(featherInDp))
 	if shapesEqual(u.physShapes, u.lastShapes) {
 		return
 	}
