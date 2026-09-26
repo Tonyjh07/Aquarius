@@ -515,6 +515,44 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	inner.Pop()
 	st.Pop()
 	u.record(pill.Add(image.Pt(0, absY)), pillH/2, image.Rectangle{Max: u.frameSize})
+	// logo 悬浮 tips（§15.1：启动提示不再进转写区；独立底板元素随形裁）。
+	if u.logoBtn.Hovered() {
+		u.logoTip(gtx, absY)
+	}
+}
+
+// startupHint 启动提示（装配根对 GUI 不再发 Say 启动行，§15.1）。
+const startupHint = "Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成"
+
+// tipBg 悬浮 tips 底色（实色——形裁下元素必须自带底板）。
+var tipBg = color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF}
+
+// logoTip logo 悬浮提示：画在胶囊上沿之上（输入栏段的局部坐标，可为负 → 溢出到
+// 转写区底部之上，无遮挡裁剪）；自带底板并登记形裁。
+func (u *UI) logoTip(gtx layout.Context, absY int) {
+	label := func(gtx layout.Context) layout.Dimensions {
+		s := material.Caption(u.th, startupHint)
+		s.Color = whiteText
+		return s.Layout(gtx)
+	}
+	m := op.Record(gtx.Ops)
+	dims := label(gtx)
+	txt := m.Stop()
+	padX, padY := gtx.Dp(10), gtx.Dp(6)
+	radius := gtx.Dp(8)
+	x := gtx.Dp(sideMarginDp)
+	y := gtx.Dp(pillTopDp) - dims.Size.Y - 2*padY - gtx.Dp(6)
+	bgRect := image.Rectangle{
+		Min: image.Pt(x, y),
+		Max: image.Pt(x+dims.Size.X+2*padX, y+dims.Size.Y+2*padY),
+	}
+	st := clip.UniformRRect(bgRect, radius).Push(gtx.Ops)
+	paint.Fill(gtx.Ops, tipBg)
+	inner := op.Offset(image.Pt(bgRect.Min.X+padX, bgRect.Min.Y+padY)).Push(gtx.Ops)
+	txt.Add(gtx.Ops)
+	inner.Pop()
+	st.Pop()
+	u.record(bgRect.Add(image.Pt(0, absY)), radius, image.Rectangle{Max: u.frameSize})
 }
 
 // pillContent 胶囊内横排（坐标原点 = 胶囊左上，约束 = 胶囊尺寸）。
@@ -525,7 +563,11 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 		Spacing:   layout.SpaceBetween,
 	}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, u.logo)
+			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				// Clickable 包装：悬停 = 启动提示 tips（§15.1）；左键 = 展开/收起（§15.2 预留）。
+				// 注意：注册为可点区后 logo 不再下穿到背景拖动层（把手 = 输入栏空白/状态行）。
+				return u.logoBtn.Layout(gtx, u.logo)
+			})
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if u.m.confirm != nil {
@@ -697,8 +739,12 @@ func (u *UI) submitEditor() {
 	u.m.submit(text)
 }
 
-// updateClicks 控件行为：发送/停止/允许/拒绝。
+// updateClicks 控件行为：logo（消费点击队列；展开/收起动作留 §15.2 形态步）/
+// 发送/停止/允许/拒绝。
 func (u *UI) updateClicks(gtx layout.Context) {
+	if u.logoBtn.Clicked(gtx) {
+		// 左键 logo = 展开/收起输入栏（§15.2）——待实现；此处先消费队列防积压。
+	}
 	if u.sendBtn.Clicked(gtx) {
 		u.submitEditor()
 	}

@@ -591,7 +591,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	host.Start(ctx)
 	defer host.Close()
 
-	ui.Say("Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成")
+	// 启动提示：GUI 做成 logo 悬浮 tips（§15.1，不入转写区、初始即空）；
+	// repl/TUI 照常一行。
+	if cfg.UI.Kind != "gui" {
+		ui.Say("Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成")
+	}
 	// 启动历史回放（D40/§7.4）：恢复的会话把水位→Head 的可见历史重放进转写区，
 	// 让用户知道当前是哪个会话、此前聊了什么（新建会话无历史，no-op）。
 	if _, rerr := sess.ReplayHistory(ctx); rerr != nil {

@@ -85,6 +85,7 @@ type UI struct {
 	// 窗口侧状态（仅帧循环 goroutine 读写；headless 不触碰，构造成零值可用）。
 	th       *material.Theme
 	editor   widget.Editor
+	logoBtn  widget.Clickable // logo：左键展开/收起（§15.2 预留）+ 悬浮 tips（§15.1）
 	sendBtn  widget.Clickable
 	stopBtn  widget.Clickable
 	allowBtn widget.Clickable
