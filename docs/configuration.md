@@ -38,7 +38,8 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `ui.kind` | string | `tui`（模板与键缺省） | `tui` = bubbletea TUI（D33 MVP：转写区/流式/历史/Confirm/状态行，轻 markdown）；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
+| `ui.kind` | string | `tui`（模板与键缺省） | `tui` = bubbletea TUI（D33 MVP：转写区/流式/历史/Confirm/状态行，轻 markdown）；`repl` = 行式（测试/e2e 后端）；`gui` = Gio 悬浮球 GUI（D43/§15，仅 Windows）；其他值启动报错 |
+| `ui.hotkey` | string | `""`（= `Alt+A`） | **GUI** 全局呼出/收起快捷键（§15.1）：`修饰键+键`（如 `Alt+A`、`Ctrl+Alt+Shift+X`、`Alt+Space`）；修饰键 `alt`/`ctrl`/`shift`/`win`，键 = 字母、数字、`Space`/`Tab`/`Esc`/`Enter`/`F1`–`F24`，至少一个修饰键；注册失败回退 `Ctrl+Alt+A`，再失败仅托盘可用；仅 `ui.kind=gui` 生效 |
 
 ### system_prompt（人格）
 

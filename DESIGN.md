@@ -845,7 +845,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
 | **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
-| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+Space 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅跟随系统。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；Alt+Space 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
+| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅跟随系统。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
 
 ---
 
@@ -895,7 +895,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D40 | 启动恢复会话经 **`HistoryEvent` 回放可见历史**（水位 → Head，见 §7.4）+ NoticeEvent 提示会话身份 | 复用 `CommittedEvent` 回放（会触发 D28 输出器重复通知/TTS，且 user/tool 节点在两前端的 Committed 语义是 no-op、渲染不出）；复用 Say 拼纯文本（丢角色样式、TUI 与 repl 各拼一遍易漂移） |
 | D41 | 进程输出在 **jobproc 适配器内按行解码为 UTF-8**：UTF-8 合法则原样（ASCII 与显式 `chcp 65001` 输出），否则 GBK/CP936 解码；x/text 宽松解码器以 U+FFFD 兜底"两者都不是"，`term_exec` 同步输出与 `job_logs` 日志同口径 | 给子进程强灌 `chcp 65001`（改变命令运行环境，依赖 OEM 代码页的老程序反而乱码，且控制台代码页是共享状态）；调 `GetConsoleOutputCP`/`GetOEMCP` 精确解码（平台特定代码，子进程 stdout 是 pipe 时与控制台代码页未必一致——内容探测已覆盖真实两档 65001/936）；交 UI 层清洗（字节 → string 转换时 U+FFFD 已产生，事后不可恢复） |
 | D42 | **思考过程入树 + config 控制回传**（修订 D34）：新增 `PartThinking` 分片（仅 assistant 可携带，节点形态校验把关；流内分片合并至多一段置于正文前，取消/出错终态的已生成思考同样入树）；回传走**独立承载** `PromptMessage.Reasoning` → openai 适配器序列化为 assistant 消息的 `reasoning_content` 字段（**2026-09 调研**：OpenAI 官方 Chat Completions 每轮丢弃推理、也不返回明文思维链——官方端点不触发回传；DeepSeek 等兼容端点带 `tools` 时**强制**回传、缺失即 400；`reasoning_content` 是兼容生态事实标准），端点点名不认则复用 D34 剥离重试管线（扩展到消息内字段）记入 `model.unsupported_params` 后省略；开关 config `model.echo_thinking`（`*bool`：**键缺失 = 回传**，显式 false 关，改后重启生效）；展示口径（实时暗块、启动回放）恒含思考，与回传开关解耦 | 维持"只展示不入树"（D34 原状：重启/回溯即丢、审计不到树上，违背"树是唯一事实源/用户主权"）；旁路字段或独立文件存思考（D21 否决同款理由：两处存放、回溯易失配）；独立 system/tool 节点承载思考（破坏一轮一 assistant 节点与工具配对语义）；`<thinking>` 文本拼进正文（DeepSeek 工具轮缺 `reasoning_content` 字段仍 400，且思考被当正文污染上下文）；默认不回传（对 DeepSeek 类端点是工具轮硬故障——调研后由"默认关"翻案为"默认回传"）；厂商私有思考块原样回传（Anthropic thinking block 等，列 §14 backlog） |
-| D43 | **GUI 前端 = Gio 悬浮球换壳**（§15/M5）：`internal/adapter/uigui` 同权实现 `uiFrontend`（`port.Presenter + Prompter + Confirmer` + Say/Prompt/SetInterrupt/Close），`ui.kind` 新增 `gui` 接入装配 switch（repl/tui 不动、默认仍 tui）；形态 = **单组件悬浮球**（logo 即球，左键展开/收起输入栏、右键菜单）→ 提交后上方转写浮层（每轮清空 + 可固定钉住累计）；托盘常驻生命周期（关窗隐藏、退出经菜单）、全局快捷键（默认 Alt+Space，设置可改）、拖拽 + 位置记忆；消息流 = 思考暗块（流式实时、定稿折叠为「已思考」行，D42 展示口径恒含）+ 工具折叠 chip 可展开 + 完整 markdown；Confirm = 输入栏切换确认态（非模态）；附件按钮 = 系统文件选择框走 `UserInput.Raw{Kind=file}` 既有摄取管线；主题令牌化（MVP 品牌色 `#00AEEF` + 输入框浅白/浅灰 + 深/浅跟随系统，多颜色预设留数据后补）。**spike 已过（2026-09，§15.6）**：悬浮胶囊用**形裁 `SetWindowRgn`**（Gio 无真透明、色键与 D3D 不兼容白屏、DWM 圆角有描边副作用，均排除）；托盘/Alt+Space 快捷键/多显示器定位/位置记忆/系统中文字形全通过；实现铁律两条见 §15.6（修改性 Win32 调用走 `Window.Run`、拖动用光标绝对跟踪） | Fyne（cgo/OpenGL 违「无 cgo」硬约束、控件样式僵硬做不出透明胶囊）；Wails/Web UI（前端构建链 + webview 依赖，富文本强但与纯 Go 单二进制张力大）；独立 GUI 进程经 IPC（交付变双程序）；悬浮球 + 独立胶囊双组件（两套焦点/生命周期，合并为单组件展开态）；模态弹窗做 Confirm（打断输入流，输入栏确认态更贴极简）；MVP 上多主题预设（先令牌化留一色，加色只改数据）；~~色键透明~~/~~DWM 圆角~~/~~每像素透明~~（spike 实测不可行或被形裁取代，§15.6） |
+| D43 | **GUI 前端 = Gio 悬浮球换壳**（§15/M5）：`internal/adapter/uigui` 同权实现 `uiFrontend`（`port.Presenter + Prompter + Confirmer` + Say/Prompt/SetInterrupt/Close），`ui.kind` 新增 `gui` 接入装配 switch（repl/tui 不动、默认仍 tui）；形态 = **单组件悬浮球**（logo 即球，左键展开/收起输入栏、右键菜单）→ 提交后上方转写浮层（每轮清空 + 可固定钉住累计）；托盘常驻生命周期（关窗隐藏、退出经菜单）、全局快捷键（默认 Alt+A，`ui.hotkey` 可改）、拖拽 + 位置记忆；消息流 = 思考暗块（流式实时、定稿折叠为「已思考」行，D42 展示口径恒含）+ 工具折叠 chip 可展开 + 完整 markdown；Confirm = 输入栏切换确认态（非模态）；附件按钮 = 系统文件选择框走 `UserInput.Raw{Kind=file}` 既有摄取管线；主题令牌化（MVP 品牌色 `#00AEEF` + 输入框浅白/浅灰 + 深/浅跟随系统，多颜色预设留数据后补）。**spike 已过（2026-09，§15.6）**：悬浮胶囊用**形裁 `SetWindowRgn`**（Gio 无真透明、色键与 D3D 不兼容白屏、DWM 圆角有描边副作用，均排除）；托盘/Alt+Space 快捷键/多显示器定位/位置记忆/系统中文字形全通过；实现铁律两条见 §15.6（修改性 Win32 调用走 `Window.Run`、拖动用光标绝对跟踪） | Fyne（cgo/OpenGL 违「无 cgo」硬约束、控件样式僵硬做不出透明胶囊）；Wails/Web UI（前端构建链 + webview 依赖，富文本强但与纯 Go 单二进制张力大）；独立 GUI 进程经 IPC（交付变双程序）；悬浮球 + 独立胶囊双组件（两套焦点/生命周期，合并为单组件展开态）；模态弹窗做 Confirm（打断输入流，输入栏确认态更贴极简）；MVP 上多主题预设（先令牌化留一色，加色只改数据）；~~色键透明~~/~~DWM 圆角~~/~~每像素透明~~（spike 实测不可行或被形裁取代，§15.6） |
 | D44 | **GUI 悬浮渲染架构 = 逐元素形裁 + headless/ULW 淡出**（细化 D43 形裁口径，§15.1/§15.3）：无背景"全悬空" = 每帧布局记录可见元素矩形（气泡/输入栏/状态行），`SetWindowRgn` 并集**逐元素挖空**（间隙/边角透明 + 点击穿透；物理 px = 逻辑 × PxPerDp，经 `Window.Run` 重建）；统一半透明 = `LWA_ALPHA` 整窗常量（与形裁正交）；顶边渐变淡出 = 淡出带整带挖空 + 独立 `UpdateLayeredWindow` overlay——像素源取 **`gpu/headless` 离屏渲染同布局**（透明清屏 → alpha=覆盖免掩码、`PxPerDp` 对齐主窗、零值 Source 纯渲染），预乘线性+sRGB 语义转字节预乘后 `ULW_ALPHA+AC_SRC_ALPHA` 提交，`SourceConstantAlpha` = 主窗 LWA_ALPHA × 渐变无缝衔接。**spike 已过（2026-09，§15.6）**：headless 四点全过；PrintWindow 捕获全零已排除 | 主窗直出 alpha（`gpu.Clear` 写死不透明白 + HWND swapchain alpha 被合成器忽略，per-pixel 仅 DirectComposition / ULW 两条系统路径，Gio 都不走）；色键 `LWA_COLORKEY`（D3D 白屏，§15.6）；屏幕 BitBlt 捕获淡出带（带内已挖空、取不到气泡内容）；`PrintWindow` 捕获（spike 实测连可见区全零）；扫描线抖动近似淡出（观感降级，留作 fallback）；`LWA_ALPHA` 做渐变（仅整窗常量）；接管 swapchain 走 DirectComposition（放弃 Gio 渲染 = 换架构，违背 D43 换壳不换核） |
 
 ## 14. 暂缓事项（Backlog）
@@ -956,10 +956,16 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   代价：边缘二值掩码无抗锯齿、失去 DWM 阴影。**统一半透明** = `LWA_ALPHA` 整窗
   常量（与形裁正交，spike 已验证）：元素以同一不透明度实时叠在下层窗口上；
   差异化/渐变透明见 D44 淡出架构。
-- **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出。
-- **托盘常驻生命周期**：关窗 = 隐藏，退出只经菜单。
-- **全局快捷键**：呼出/收起输入框（显示悬浮球时 = 展开输入框），默认 `Alt+Space`，
-  进设置可改（GUI 设置面 MVP 仅快捷键与主题两项）。
+- **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出
+  （菜单步补全；托盘步先落「显示/隐藏 + 退出」两项）。
+- **托盘常驻生命周期**：关窗（Alt+F4）= **隐藏**——子类化主窗过程吞 `WM_CLOSE`
+  （Gio 无关闭拦截 API，`WM_CLOSE` 直落 `DefWindowProc` 即销毁），主窗与淡出 overlay
+  一并隐藏；**退出只经托盘菜单**（清托盘图标与快捷键 → EOF 收尾）。
+  托盘 = `Shell_NotifyIconW`（图标**内嵌** `assets/icon/aquarius.ico`，单二进制；
+  Explorer 重启后图标重挂留后续），左键显隐、右键菜单。
+- **全局快捷键**：呼出/收起（显示悬浮球时 = 展开输入栏），默认 **`Alt+A`**
+  （D43 修订 2026-09：原 `Alt+Space` 与输入法/开始菜单冲突面大），`ui.hotkey` 可改
+  （设置面后补，先走配置文件），注册失败回退 `Ctrl+Alt+A`，再失败仅托盘可用。
 - **位置**：拖拽移动（把手 = logo / 输入栏空隙 / 状态行；气泡区是滚动区、不拖窗）
   + 位置记忆（含多显示器，随 config/本地状态持久化）。
 - **转写浮层**：提交后在胶囊上方出现，**无底板——消息以双色气泡悬浮呈现**（§15.3），
@@ -1039,7 +1045,7 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
 | 悬浮胶囊形态 | ✅ **形裁 `SetWindowRgn`**：窗口裁成胶囊（两端全圆）、区域外不可见 + 点击穿透；边缘二值无抗锯齿、无 DWM 阴影（可接受）；~~色键 `LWA_COLORKEY`~~ 与 D3D swapchain 不兼容（白屏，WinUI3#8469/SDL#15751 同类）；~~DWM 圆角~~ 被形裁取代且多一圈窗口描边——两者排除 |
 | 半透明 | ✅ `LWA_ALPHA` 常量透明可用（可与形裁叠加） |
 | 系统托盘 | ✅ `Shell_NotifyIconW` + 消息窗口 + 右键菜单（纯 Go syscall） |
-| 全局快捷键 | ✅ `RegisterHotKey(Alt+Space)` 注册成功（设计默认值可保留；Ctrl+Alt+A 回退逻辑备着） |
+| 全局快捷键 | ✅ `RegisterHotKey` 注册成功（spike 用 Alt+Space 验机制；默认值改 **Alt+A**——组合键与注册无关，Ctrl+Alt+A 回退逻辑备着） |
 | 多显示器 + 位置记忆 | ✅ 显示器枚举/工作区夹取/`SetWindowPos` 定位 + JSON 位置记忆 + 重启恢复 |
 | 中文字形 | ✅ 系统 `msyh.ttc` → `opentype.ParseCollection` 加载成功（gofont 无 CJK，M5 中文渲染走系统字体） |
 | Gio 真透明 | ❌ 不存在（`gpu.Clear` 强制不透明白，仅 js 平台透明）；每像素透明需 `UpdateLayeredWindow` CPU 位图或 DirectComposition，与 Gio GPU 路径冲突——形裁绕开 |
