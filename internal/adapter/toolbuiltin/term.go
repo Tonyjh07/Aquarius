@@ -24,7 +24,8 @@ var _ port.Tool = (*termExec)(nil)
 func (t *termExec) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "term_exec",
-		Description: "Run a terminal command line synchronously (timeout is governed by the run limits; output is truncated head-and-tail). " +
+		Description: "Run a terminal command line synchronously (timeout is governed by the run limits; output is truncated head-and-tail " +
+			"and transcoded to UTF-8, so there is no need to switch the console code page with chcp). " +
 			"Windows runs via cmd /c, others via sh -c; a non-zero exit is treated as failure and brings back the output.",
 		Schema: jsonSchema(`{
 			"type": "object",

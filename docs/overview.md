@@ -1,7 +1,7 @@
 # 架构导读
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §1/§3/§5/§6，定位是 **10 分钟建立索引的地图**；
-> **冲突以 DESIGN.md 为准**（决策全集在 §13，D1–D35）。
+> **冲突以 DESIGN.md 为准**（决策全集在 §13，D1–D41）。
 
 ## Aquarius 是什么
 
@@ -88,7 +88,7 @@ Root(实节点, ID=会话ID, role=root)
 | `AttachmentStore` | blobfs（sha256 寻址 + 启动 GC） | **M3 ✓** | in-memory |
 | `Transcriber` / `Synthesizer` | （选型待定） | backlog（D27） | 假转写 |
 | `Ingestor` / `OutputAdapter` | ingestfile/ingestclip（文本/文件/剪贴板）；notify | **M3 ✓** | 脚本 |
-| `JobManager` | jobproc（日志落盘，D8 内存表） | **M3 ✓** | 假任务 |
+| `JobManager` | jobproc（日志落盘，D8 内存表；进程输出按行解码为 UTF-8，D41） | **M3 ✓** | 假任务 |
 
 ## 两个稳定级
 
@@ -99,6 +99,6 @@ Root(实节点, ID=会话ID, role=root)
 
 ## 延伸阅读
 
-- 逐条决策（D1–D35）：[DESIGN.md §13](../DESIGN.md)
+- 逐条决策（D1–D41）：[DESIGN.md §13](../DESIGN.md)
 - 使用与命令：[usage.md](usage.md) ｜ 配置：[configuration.md](configuration.md)
 - 数据与备份：[storage.md](storage.md) ｜ 动手开发：[development.md](development.md)

@@ -1,6 +1,6 @@
 # 使用手册
 
-> 本文衍生自 [DESIGN.md](../DESIGN.md) §7.1/§7.3/§7.4/§9，并与当前实现对齐；
+> 本文衍生自 [DESIGN.md](../DESIGN.md) §4.3/§7.1/§7.3/§7.4/§9，并与当前实现对齐；
 > **冲突以 DESIGN.md 为准**。配置字段见 [configuration.md](configuration.md)，数据与备份见 [storage.md](storage.md)。
 
 ## 快速上手
@@ -65,7 +65,7 @@ go build ./cmd/aquarius
 | `think` | 显式整理思路（no-op，内容随调用入树）——**默认不列给模型**（D34），`model.think_tool: true` 启用 | Safe |
 | `sleep` | 等待 N 秒（停顿或等后台任务；Ctrl+C 可中断；1–3600s，超缺省超时须在该次调用上带 `timeout_sec`，D38/D39） | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，自我管理上下文） | Safe |
-| `term_exec` | 同步执行终端命令行（`cmd /c` / `sh -c`；超时统一控制，输出保头尾截断；执行类看工具列） | Confirm |
+| `term_exec` | 同步执行终端命令行（`cmd /c` / `sh -c`；超时统一控制，输出保头尾截断；输出自动转 UTF-8，无须 `chcp`；执行类看工具列） | Confirm |
 | `job_start` | 启动后台任务（独立进程，日志落盘 `~/.aquarius/jobs/<id>.log`，不随对话取消） | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理（列表/状态/日志尾部/终止） | Safe |
 

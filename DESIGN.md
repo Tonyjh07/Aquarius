@@ -223,6 +223,8 @@ func (c *Conversation) Validate() error                     // 三条不变量�
 - 后台任务 = 独立进程 + 日志落盘 `~/.aquarius/jobs/<id>.log`；任务表 v1 内存态（§13-D8）。
 - 工具声明与回填一律英文（D36）；任何调用可带**保留参数** `timeout_sec`（整数 1–3600）逐次覆盖缺省超时，
   schema 自声明该参数的工具（`job_start`）不受保留参数约束（D38）。
+- `term_exec` 与 `job_*` 的**终端输出在 jobproc 适配器内按行解码为 UTF-8**（D41）：UTF-8 合法则原样
+  （含显式 `chcp 65001` 的输出），否则按 GBK/CP936 解码；模型无需再手工 `chcp` 切换代码页。
 - 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`。
 
 ### 4.4 记忆文档
@@ -436,6 +438,9 @@ type JobManager interface {
     Kill(ctx context.Context, id JobID) error
 }
 ```
+
+输出语义：`Run` 的 `tool.Result.Output` 与 `Logs` 返回值都是 **UTF-8 文本**——进程原始字节由
+jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码。
 
 ### 5.9 `ui.go` / `misc.go`
 
@@ -867,10 +872,13 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D38 | 单次工具调用超时 = `limits.tool_timeout_sec` 缺省，模型可经**保留参数** `timeout_sec`（整数 1–3600）逐次覆盖，**允许高于 config**；schema 自声明该参数的工具（`job_start`）不受保留参数约束；执行前从 Args 剥离（MCP 服务端不收未知参数）；值域外/非整数报错回填；发现性经 persona 环境块一行说明 | 每个工具各加超时参数（16×schema 重复、MCP 工具无法参与）；不可覆盖（长任务与 `sleep` 撞默认 60s）；静默夹取（掩盖模型传参错误，`0` 还会被误读为不限时）；完全无上限（失控面不可控） |
 | D39 | 新增 `sleep` 内置工具（Safe：1–3600 秒、ctx 可中断、超缺省时长须配 `timeout_sec`） | 只靠 `job_start` + 轮询日志（重量级）；不提供（模型无法自然停顿 / 等待后台任务收尾） |
 | D40 | 启动恢复会话经 **`HistoryEvent` 回放可见历史**（水位 → Head，见 §7.4）+ NoticeEvent 提示会话身份 | 复用 `CommittedEvent` 回放（会触发 D28 输出器重复通知/TTS，且 user/tool 节点在两前端的 Committed 语义是 no-op、渲染不出）；复用 Say 拼纯文本（丢角色样式、TUI 与 repl 各拼一遍易漂移） |
+| D41 | 进程输出在 **jobproc 适配器内按行解码为 UTF-8**：UTF-8 合法则原样（ASCII 与显式 `chcp 65001` 输出），否则 GBK/CP936 解码；x/text 宽松解码器以 U+FFFD 兜底"两者都不是"，`term_exec` 同步输出与 `job_logs` 日志同口径 | 给子进程强灌 `chcp 65001`（改变命令运行环境，依赖 OEM 代码页的老程序反而乱码，且控制台代码页是共享状态）；调 `GetConsoleOutputCP`/`GetOEMCP` 精确解码（平台特定代码，子进程 stdout 是 pipe 时与控制台代码页未必一致——内容探测已覆盖真实两档 65001/936）；交 UI 层清洗（字节 → string 转换时 U+FFFD 已产生，事后不可恢复） |
 
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
+- 非 GBK 的遗留代码页（CP437/latin-1 等）终端输出识别（D41 内容探测只有 UTF-8/GBK 两档，会误判成乱码中文）
+- `file_read` 等文件文本入口的遗留编码解码（与 D41 同算法，终端之外的文本入口）
 - `/goto`、`/new` 切换会话时的自动历史回放（当前仅启动恢复时回放一次，D40/§7.4）
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`

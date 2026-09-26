@@ -113,6 +113,14 @@ func TestTermExecRejectsEmpty(t *testing.T) {
 	}
 }
 
+// TestTermExecSpecEncodingNote 工具声明告知模型输出自动转 UTF-8、无须 chcp（D41）。
+func TestTermExecSpecEncodingNote(t *testing.T) {
+	spec := (&termExec{}).Spec()
+	if !strings.Contains(spec.Description, "UTF-8") || !strings.Contains(spec.Description, "chcp") {
+		t.Fatalf("description 应提示输出自动转 UTF-8/无须 chcp: %q", spec.Description)
+	}
+}
+
 // TestTermExecTrimsHeadTail 超长输出保头尾截断（DESIGN §4.3）。
 func TestTermExecTrimsHeadTail(t *testing.T) {
 	long := strings.Repeat("A", 10000) + strings.Repeat("B", 10000) + strings.Repeat("C", 30000)

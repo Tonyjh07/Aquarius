@@ -180,12 +180,14 @@ func (b *capBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// String 采集到的内容；发生截断时附标注（不可信输出只作文本回填，§9）。
+// String 采集到的内容（按 D41 解码为 UTF-8）；发生截断时附标注
+// （不可信输出只作文本回填，§9）。
 func (b *capBuffer) String() string {
+	out := decodeOutput(b.buf.String())
 	if b.truncated {
-		return b.buf.String() + "\n…[output exceeded the capture cap, truncated]"
+		return out + "\n…[output exceeded the capture cap, truncated]"
 	}
-	return b.buf.String()
+	return out
 }
 
 // List 按启动时间升序返回全部任务快照。
@@ -262,7 +264,7 @@ func (m *Manager) Logs(ctx context.Context, id port.JobID, tail int) (string, er
 	if _, err := f.ReadAt(buf, start); err != nil && !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("jobproc: read log %s: %w", id, err)
 	}
-	text := string(buf)
+	text := decodeOutput(string(buf)) // 日志字节按 D41 解码为 UTF-8（与 Run 同口径）
 	if tail > 0 {
 		// 先去掉行尾换行，避免 split 出空尾行挤占 tail 名额。
 		lines := strings.Split(strings.TrimRight(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n")

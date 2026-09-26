@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -22,6 +23,7 @@ import (
 //	fail  → 打印 failing 后以 3 退出
 //	lines → 打印 N 行（line-1..line-N）后退出 0
 //	fill  → 输出约 N 字节（供日志窗口/输出上限测试）后退出 0
+//	gbk   → 输出 GBK 中文字节 + 孤立坏字节（供 D41 解码测试）后退出 0
 //	sleep → 睡 30s（供 Kill/Timeout 测试）
 func TestJobHelperProcess(t *testing.T) {
 	if os.Getenv("AQUARIUS_JOB_HELPER") != "1" {
@@ -58,6 +60,11 @@ func TestJobHelperProcess(t *testing.T) {
 			fmt.Print(block[:n])
 			written += n
 		}
+		os.Exit(0)
+	case "gbk":
+		// 原样吐出 GBK 字节（模拟 Windows cmd/OEM 代码页输出，D41 解码测试）：
+		// ASCII 行 + GBK"中文"行 + 尾部孤立非法前导字节。
+		_, _ = os.Stdout.Write([]byte("ascii header\r\n\xd6\xd0\xce\xc4\r\n\x81"))
 		os.Exit(0)
 	case "sleep":
 		time.Sleep(30 * time.Second)
@@ -108,6 +115,30 @@ func TestRunEcho(t *testing.T) {
 	}
 	if !res.OK || !strings.Contains(res.Output, "hello world") {
 		t.Fatalf("res = %+v", res)
+	}
+}
+
+// TestRunDecodesGBKOutput 同步输出按 D41 解码：GBK 行出中文、ASCII 行原样、
+// 结构非法字节落 U+FFFD（Windows cmd 默认 OEM 代码页场景的跨平台复现）。
+func TestRunDecodesGBKOutput(t *testing.T) {
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	res, err := m.Run(context.Background(), helperSpec(t, t.TempDir(), "gbk"))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("res = %+v", res)
+	}
+	for _, want := range []string{"ascii header", "中文", "�"} {
+		if !strings.Contains(res.Output, want) {
+			t.Fatalf("output 缺 %q: %q", want, res.Output)
+		}
+	}
+	if !utf8.ValidString(res.Output) {
+		t.Fatalf("output 非法 UTF-8: % x", res.Output)
 	}
 }
 
@@ -400,6 +431,32 @@ func TestLogsTail(t *testing.T) {
 	}
 	if strings.Contains(logs, "line-3") {
 		t.Fatalf("tail 裁剪失效: %q", logs)
+	}
+}
+
+// TestLogsDecodesGBKOutput 后台任务日志读出与 Run 同口径按 D41 解码（job_logs 链路）。
+func TestLogsDecodesGBKOutput(t *testing.T) {
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "gbk"))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitFor(t, "任务完成", func() bool {
+		j, serr := m.Status(context.Background(), job.ID)
+		return serr == nil && j.Status == port.JobDone
+	})
+	logs, err := m.Logs(context.Background(), job.ID, 0)
+	if err != nil {
+		t.Fatalf("logs: %v", err)
+	}
+	if !strings.Contains(logs, "ascii header") || !strings.Contains(logs, "中文") {
+		t.Fatalf("日志未解码: %q", logs)
+	}
+	if !utf8.ValidString(logs) {
+		t.Fatalf("日志非法 UTF-8: % x", logs)
 	}
 }
 
