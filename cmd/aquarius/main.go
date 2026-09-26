@@ -33,6 +33,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -207,8 +208,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if cfg.UI.Kind == "" {
 		cfg.UI.Kind = "tui" // 键缺失与模板同默认（D33）；显式 "repl" 仍可用（测试/e2e 后端）
 	}
-	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" {
-		fmt.Fprintf(stderr, "ui.kind=%q 仅支持 repl | tui（D33）\n", cfg.UI.Kind)
+	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
+		fmt.Fprintf(stderr, "ui.kind=%q 仅支持 repl | tui | gui（D33/D43）\n", cfg.UI.Kind)
 		return 1
 	}
 	// MCP 声明校验（D30/D31，启动 fail-fast）：transport/command/url/risk/名字合法。
@@ -366,12 +367,29 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	// UI 前端（D33）：repl（行式，测试/e2e 后端）或 bubbletea TUI（模板默认）——
-	// 同权实现 uiFrontend，换壳不换核（未来 GUI 复用同一套 port 契约，§14）。
-	// TUI 状态行回调经 atomic 读 Agent（构造晚于 UI 创建，事件循环并发读 → -race 必须）。
+	// UI 前端（D33/D43）：repl（行式，测试/e2e 后端）、bubbletea TUI（模板默认）或
+	// Gio GUI（ui.kind=gui，§15）——同权实现 uiFrontend，换壳不换核（D28 输出器
+	// 装饰器自动继承）。TUI 状态行回调经 atomic 读 Agent（构造晚于 UI 创建，
+	// 事件循环并发读 → -race 必须）。
 	var agentPtr atomic.Pointer[app.Agent]
 	var ui uiFrontend
 	switch cfg.UI.Kind {
+	case "gui":
+		// GUI（D43/§15）：悬浮窗事件循环自驱；位置记忆落数据目录（§15.1）。
+		// 不进 CI 图形路径（§15.5：GUI 测试全走 headless，门禁/e2e 仍 repl）。
+		ui = uigui.New(uigui.Options{
+			Status: func() uigui.Status {
+				if agent := agentPtr.Load(); agent != nil {
+					return uigui.Status{
+						Model:  agent.CurrentModel(),
+						Level:  lvl.Get().String(),
+						Effort: agent.CurrentEffort(), // D34：effort 档位（off 时为空）
+					}
+				}
+				return uigui.Status{}
+			},
+			PosFile: filepath.Join(dir, "gui_pos.json"),
+		})
 	case "tui":
 		ui = uitui.New(uitui.Options{
 			In:  stdin,

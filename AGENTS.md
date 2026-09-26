@@ -78,7 +78,8 @@ internal/plugin/     config/session（声明与宿主契约）、host（发现�
 internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/sleep/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、
-                     mcpgate（MCP client → port 投影，D30）、uitui（bubbletea TUI，D33）
+                     mcpgate（MCP client → port 投影，D30）、uitui（bubbletea TUI，D33）、
+                     uigui（Gio 悬浮球 GUI，D43/§15）
 待建：                pluginapi/v1、plugingo（后移出 M4，D29）；
                      asr、tts（backlog，D27）
 ```

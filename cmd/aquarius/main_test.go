@@ -879,10 +879,10 @@ func TestRunDefaultsToTUIWhenKeyMissing(t *testing.T) {
 	}
 }
 
-// TestRunRejectsUnknownUIKind 非法 ui.kind 启动即报因（D33 仅 repl | tui）。
+// TestRunRejectsUnknownUIKind 非法 ui.kind 启动即报因（D33/D43 仅 repl | tui | gui）。
 func TestRunRejectsUnknownUIKind(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"gui"}}`
+	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"web"}}`
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -891,7 +891,7 @@ func TestRunRejectsUnknownUIKind(t *testing.T) {
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if !strings.Contains(errBuf.String(), "gui") {
+	if !strings.Contains(errBuf.String(), "web") {
 		t.Fatalf("stderr = %q", errBuf.String())
 	}
 }
