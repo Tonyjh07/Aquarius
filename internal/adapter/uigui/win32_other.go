@@ -34,6 +34,9 @@ func overlayPresent(int32, int32, int32, int32, []byte, byte) bool { return fals
 // overlaySetVisible 淡出 overlay 未适配。
 func overlaySetVisible(bool) {}
 
+// mainVisible 主窗可见性未适配（恒真——非 Windows 无 overlay 路径）。
+func mainVisible() bool { return true }
+
 // topMostQuery 非 Windows 无置顶概念（恒真，缺省口径与 Windows 一致）。
 func topMostQuery() bool { return true }
 

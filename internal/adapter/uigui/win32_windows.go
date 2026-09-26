@@ -211,26 +211,45 @@ func applyShapesRegion(shapes []shapePhys) bool {
 			}
 		}
 		for _, s := range shapes {
-			r, _, _ := procCreateRoundRectRgn.Call(
+			rr, _, _ := procCreateRoundRectRgn.Call(
 				uintptr(s.x), uintptr(s.y),
 				uintptr(s.x+s.w+1), uintptr(s.y+s.h+1),
 				uintptr(s.ellipse), uintptr(s.ellipse))
-			if r == 0 {
+			if rr == 0 {
 				continue
 			}
+			accR := rr
+			if s.sqTop && s.ellipse > 0 {
+				// 被带裁切的顶边：补矩形把上两角填方（§15.3 带/非带衔接——主窗侧
+				// 须平顶续接带内渐变，否则下半截重新圆角）。
+				fill := s.ellipse/2 + 1
+				if fill > s.h {
+					fill = s.h
+				}
+				if sq, _, _ := procCreateRectRgn.Call(
+					uintptr(s.x), uintptr(s.y),
+					uintptr(s.x+s.w), uintptr(s.y+fill)); sq != 0 {
+					if t, _, _ := procCreateRectRgn.Call(0, 0, 0, 0); t != 0 {
+						procCombineRgn.Call(t, accR, sq, rgnOr)
+						del(accR)
+						accR = t
+					}
+					del(sq)
+				}
+			}
 			if acc == 0 {
-				acc = r
+				acc = accR
 				continue
 			}
 			// 并集：dst 用独立临时区（规避 CombineRgn 源/目标别名的未定义约束）。
 			tmp, _, _ := procCreateRectRgn.Call(0, 0, 0, 0)
 			if tmp == 0 {
-				del(r)
+				del(accR)
 				continue
 			}
-			procCombineRgn.Call(tmp, acc, r, rgnOr)
+			procCombineRgn.Call(tmp, acc, accR, rgnOr)
 			del(acc)
-			del(r)
+			del(accR)
 			acc = tmp
 		}
 		if acc == 0 {
@@ -262,6 +281,17 @@ func applyAlpha(alpha byte) bool {
 		ok = r != 0
 	})
 	return ok
+}
+
+// mainVisible 主窗可见性（查询类直接调；无句柄 = 不可见）——fadeFrame 兜底：
+// 主窗隐藏时 overlay 不得孤立上屏（hideMain 已藏，防隐藏后仍有帧把它唤回）。
+func mainVisible() bool {
+	h := atomic.LoadUintptr(&mainHWND)
+	if h == 0 {
+		return false
+	}
+	v, _, _ := procIsWindowVisible.Call(h)
+	return v != 0
 }
 
 // topMostQuery 主窗置顶态**实际值**（查询类直接调，铁律 1 不限；无句柄 = 缺省置顶）。

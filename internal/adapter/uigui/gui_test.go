@@ -275,17 +275,31 @@ func TestStatusTextPhase(t *testing.T) {
 	}
 }
 
-// TestFocusMsgSetsPending 唤出路径（托盘/快捷键显示窗口）投 focusMsg → 置待聚焦，
-// 下帧 layout 执行 key.FocusCmd 把输入焦点交给编辑器（§15.1）；drainSync 提供
-// happens-before 后读取无竞争。
-func TestFocusMsgSetsPending(t *testing.T) {
-	u := newHeadless(t, Options{Hotkey: "Alt+A"})
-	if u.focusPending {
-		t.Fatal("初始不应有待聚焦")
-	}
-	u.post(focusMsg{})
+// TestExpandMsgs 呼出/互切消息（§15.1）：showExpand 展开并置焦点入栏；
+// toggleExpand 互切、展开时置焦点。drainSync 提供 happens-before 后读取无竞争。
+func TestExpandMsgs(t *testing.T) {
+	u := newHeadless(t, Options{})
+
+	u.collapsed = true
+	u.post(showExpandMsg{})
 	drainSync(t, u)
-	if !u.focusPending {
-		t.Fatal("focusMsg 应用后应有待聚焦")
+	if u.collapsed || !u.focusPending {
+		t.Fatalf("showExpand 后 collapsed=%v focusPending=%v, want false/true",
+			u.collapsed, u.focusPending)
+	}
+
+	u.focusPending = false
+	u.post(toggleExpandMsg{})
+	drainSync(t, u)
+	if !u.collapsed || u.focusPending {
+		t.Fatalf("展开态 toggle 后 collapsed=%v focusPending=%v, want true/false",
+			u.collapsed, u.focusPending)
+	}
+
+	u.post(toggleExpandMsg{})
+	drainSync(t, u)
+	if u.collapsed || !u.focusPending {
+		t.Fatalf("收起态 toggle 后 collapsed=%v focusPending=%v, want false/true",
+			u.collapsed, u.focusPending)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"gioui.org/app"
+	"gioui.org/f32"
 	"gioui.org/font/gofont"
 	"gioui.org/font/opentype"
 	"gioui.org/gesture"
@@ -83,13 +84,15 @@ type rect struct{ left, top, right, bottom int32 }
 // drawShape 布局期收集的可见元素矩形（窗口系物理 px；layout 坐标即物理）。
 type drawShape struct {
 	r      image.Rectangle
-	radius int // 圆角半径（px）
+	radius int  // 圆角半径（px）
+	sqTop  bool // 顶边被淡出带裁切 → region 上两角填方（§15.3 带/非带衔接）
 }
 
 // shapePhys 形裁元素（传 win32 并集）。
 type shapePhys struct {
 	x, y, w, h int32
 	ellipse    int32 // CreateRoundRectRgn 椭圆宽高 = 2×半径
+	sqTop      bool  // 同 drawShape.sqTop：并集构建时上两角填方
 }
 
 // 主窗口句柄与窗口线程入口（win32 补位的两个跨 goroutine 交接点）。
@@ -343,7 +346,7 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 		Min: image.Pt(ballX, ballY),
 		Max: image.Pt(ballX+ballD, ballY+ballD),
 	}
-	paint.FillShape(gtx.Ops, brandColor, clip.UniformRRect(r, ballD/2).Op(gtx.Ops))
+	drawLogo(gtx, r) // §15.2 logo 实装（品牌色圆钮 + 内嵌图标）
 	u.record(r, ballD/2, image.Rectangle{Max: u.frameSize})
 }
 
@@ -580,9 +583,12 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	inner.Pop()
 	st.Pop()
 	u.record(pill.Add(image.Pt(0, absY)), pillH/2, image.Rectangle{Max: u.frameSize})
-	// logo 悬浮 tips（§15.1：启动提示不再进转写区；独立底板元素随形裁）。
+	// 悬浮 tips（§15.1 启动提示 / §15.2 发送键）：独立底板元素随形裁。
 	if u.logoBtn.Hovered() {
-		u.logoTip(gtx, absY)
+		u.hoverTip(gtx, absY, startupHint, false)
+	}
+	if u.sendBtn.Hovered() && u.m.confirm == nil && !u.generating.Load() {
+		u.hoverTip(gtx, absY, "发送", true)
 	}
 }
 
@@ -592,11 +598,12 @@ const startupHint = "Aquarius — 输入 /help 查看命令，/quit 退出；Ctr
 // tipBg 悬浮 tips 底色（实色——形裁下元素必须自带底板）。
 var tipBg = color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF}
 
-// logoTip logo 悬浮提示：画在胶囊上沿之上（输入栏段的局部坐标，可为负 → 溢出到
-// 转写区底部之上，无遮挡裁剪）；自带底板并登记形裁。
-func (u *UI) logoTip(gtx layout.Context, absY int) {
+// hoverTip 悬浮提示卡片：画在胶囊上沿之上（输入栏段局部坐标，可为负 → 溢出到
+// 转写区之上，无遮挡裁剪）；自带底板并登记形裁。rightAlign=右对齐到胶囊内边距
+// （发送键），false=左对齐（logo）。
+func (u *UI) hoverTip(gtx layout.Context, absY int, text string, rightAlign bool) {
 	label := func(gtx layout.Context) layout.Dimensions {
-		s := material.Caption(u.th, startupHint)
+		s := material.Caption(u.th, text)
 		s.Color = whiteText
 		return s.Layout(gtx)
 	}
@@ -606,6 +613,12 @@ func (u *UI) logoTip(gtx layout.Context, absY int) {
 	padX, padY := gtx.Dp(10), gtx.Dp(6)
 	radius := gtx.Dp(8)
 	x := gtx.Dp(sideMarginDp)
+	if rightAlign {
+		x = gtx.Constraints.Max.X - gtx.Dp(sideMarginDp) - dims.Size.X - 2*padX
+		if x < 0 {
+			x = 0
+		}
+	}
 	y := gtx.Dp(pillTopDp) - dims.Size.Y - 2*padY - gtx.Dp(6)
 	bgRect := image.Rectangle{
 		Min: image.Pt(x, y),
@@ -644,33 +657,37 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 			return ed.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				if u.m.confirm != nil {
+			if u.m.confirm != nil {
+				return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx,
 						layout.Rigid(u.actionBtn(&u.allowBtn, "允许", brandColor)),
 						layout.Rigid(u.actionBtn(&u.denyBtn, "拒绝", textMuted)),
 					)
-				}
-				if u.generating.Load() {
-					return u.actionBtn(&u.stopBtn, "停止", textError)(gtx)
-				}
-				return u.actionBtn(&u.sendBtn, "发送", brandColor)(gtx)
-			})
+				})
+			}
+			if u.generating.Load() {
+				return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, u.actionBtn(&u.stopBtn, "停止", textError))
+			}
+			// 发送键 = 主题色圆形钮 + 向上箭头（§15.2；悬停 tooltip「发送」见 inputBar）。
+			return layout.Inset{Right: unit.Dp(10), Left: unit.Dp(6)}.Layout(gtx, u.sendCircle)
 		}),
 	)
 }
 
-// record 登记可见元素的形裁矩形：视口裁剪 + 淡出带剔除（带内由 overlay 接管，D44）。
+// record 登记可见元素的形裁矩形：视口裁剪 + 淡出带剔除（带内由 overlay 接管，D44）；
+// 被带裁切的顶边标记 sqTop（region 上两角填方——§15.3 带/非带衔接）。
 func (u *UI) record(abs image.Rectangle, radius int, clipRect image.Rectangle) {
 	r := abs.Intersect(clipRect)
 	band := u.frameMetric.Dp(fadeBandDp)
+	sqTop := false
 	if r.Min.Y < band {
 		r.Min.Y = band
+		sqTop = true
 	}
 	if r.Empty() || radius <= 0 {
 		return
 	}
-	u.shapes = append(u.shapes, drawShape{r: r, radius: radius})
+	u.shapes = append(u.shapes, drawShape{r: r, radius: radius, sqTop: sqTop})
 }
 
 // applyRegion 形裁并集仅在变化时重建（布局结果稳定 → 多数帧零开销）。
@@ -687,6 +704,7 @@ func (u *UI) applyRegion() {
 			x: int32(r.Min.X), y: int32(r.Min.Y),
 			w: int32(r.Dx()), h: int32(r.Dy()),
 			ellipse: int32(s.radius * 2),
+			sqTop:   s.sqTop,
 		})
 	}
 	if shapesEqual(u.physShapes, u.lastShapes) {
@@ -869,6 +887,7 @@ func (u *UI) updateDrag(gtx layout.Context) {
 				}
 				if dx <= dragClickSlackPx && dy <= dragClickSlackPx {
 					u.collapsed = false
+					u.focusPending = true // 展开即入焦点
 					u.w.Invalidate()
 				}
 			}
@@ -876,16 +895,14 @@ func (u *UI) updateDrag(gtx layout.Context) {
 	}
 }
 
-// logo 品牌色圆钮（§15.1 单组件语义的骨架等价物；贴 assets/icon 与展开/收起
-// 交互留形态步）。
+// logo 品牌色圆钮 + 内嵌品牌图标（§15.2 logo 实装；绘制细节见 logo.go）。
 func (u *UI) logo(gtx layout.Context) layout.Dimensions {
 	d := gtx.Dp(44)
-	paint.FillShape(gtx.Ops, brandColor,
-		clip.UniformRRect(image.Rectangle{Max: image.Pt(d, d)}, d/2).Op(gtx.Ops))
+	drawLogo(gtx, image.Rectangle{Max: image.Pt(d, d)})
 	return layout.Dimensions{Size: image.Pt(d, d)}
 }
 
-// actionBtn 动作键（发送/停止/允许/拒绝；主题色底白字）。
+// actionBtn 动作键（停止/允许/拒绝；主题色底白字）。
 func (u *UI) actionBtn(cl *widget.Clickable, label string, bg color.NRGBA) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		b := material.Button(u.th, cl, label)
@@ -897,4 +914,27 @@ func (u *UI) actionBtn(cl *widget.Clickable, label string, bg color.NRGBA) layou
 		}
 		return b.Layout(gtx)
 	}
+}
+
+// sendCircle 发送键（§15.2：主题色圆形钮 + 向上箭头图标；悬停 tooltip「发送」在
+// inputBar 绘制）。Clickable 包装保证发送行为与旧文本键同路（updateClicks）。
+func (u *UI) sendCircle(gtx layout.Context) layout.Dimensions {
+	d := gtx.Dp(40)
+	return u.sendBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		box := image.Rectangle{Max: image.Pt(d, d)}
+		paint.FillShape(gtx.Ops, brandColor, clip.UniformRRect(box, d/2).Op(gtx.Ops))
+		// 向上箭头 = 竖杆 + 人字头（白色描边、圆端）。
+		cx, cy := float32(d)/2, float32(d)/2
+		a := float32(d) * 0.18
+		var p clip.Path
+		p.Begin(gtx.Ops)
+		p.MoveTo(f32.Pt(cx, cy+a)) // 竖杆
+		p.LineTo(f32.Pt(cx, cy-a))
+		p.MoveTo(f32.Pt(cx-a, cy)) // 人字头
+		p.LineTo(f32.Pt(cx, cy-a))
+		p.LineTo(f32.Pt(cx+a, cy))
+		paint.FillShape(gtx.Ops, whiteText,
+			clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
+		return layout.Dimensions{Size: image.Pt(d, d)}
+	})
 }

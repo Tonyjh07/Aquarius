@@ -8,3 +8,8 @@ import _ "embed"
 //
 //go:embed icon/aquarius.ico
 var TrayICO []byte
+
+// LogoPNG 品牌图标（icon/icon-128.png，透明底）——悬浮球圆钮内嵌的 logo（§15.2）。
+//
+//go:embed icon/icon-128.png
+var LogoPNG []byte

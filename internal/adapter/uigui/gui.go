@@ -336,8 +336,10 @@ type (
 	eofMsg struct{ err error }
 	// quitMsg 结束事件循环（Close 在 drain 之后投递）。
 	quitMsg struct{}
-	// focusMsg 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投递）。
-	focusMsg struct{}
+	// showExpandMsg 呼出（托盘/快捷键从隐藏唤起）：展开输入栏 + 焦点入栏（§15.1）。
+	showExpandMsg struct{}
+	// toggleExpandMsg 快捷键在窗口可见时：展开 ↔ 收起互切（§15.1）。
+	toggleExpandMsg struct{}
 )
 
 // apply 把桥接消息应用到状态机（仅事件循环 goroutine 调用）；false = 循环应退出。
@@ -357,8 +359,14 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.signalEOF(m.err)
 	case drainMsg:
 		close(m.done)
-	case focusMsg:
+	case showExpandMsg:
+		u.collapsed = false
 		u.focusPending = true // 下帧 layout 执行 key.FocusCmd
+	case toggleExpandMsg:
+		u.collapsed = !u.collapsed
+		if !u.collapsed {
+			u.focusPending = true
+		}
 	case quitMsg:
 		return false
 	}

@@ -23,15 +23,15 @@ func TestRecordClipsBandAndViewport(t *testing.T) {
 	if len(u.shapes) != 0 {
 		t.Fatalf("带内矩形不应登记: %+v", u.shapes)
 	}
-	// ② 跨带 → 顶边裁到带底。
+	// ② 跨带 → 顶边裁到带底，且标 sqTop（region 方顶续接，§15.3）。
 	u.record(image.Rect(10, 20, 90, 120), 12, viewport)
-	if len(u.shapes) != 1 || u.shapes[0].r.Min.Y != 56 {
-		t.Fatalf("跨带矩形应裁到 y=56: %+v", u.shapes)
+	if len(u.shapes) != 1 || u.shapes[0].r.Min.Y != 56 || !u.shapes[0].sqTop {
+		t.Fatalf("跨带矩形应裁到 y=56 且标 sqTop: %+v", u.shapes)
 	}
-	// ③ 带下、视口内 → 原样登记。
+	// ③ 带下、视口内 → 原样登记（不标 sqTop）。
 	u.record(image.Rect(8, 150, 92, 200), 12, viewport)
-	if len(u.shapes) != 2 || u.shapes[1].r != image.Rect(8, 150, 92, 200) {
-		t.Fatalf("视口内矩形应原样: %+v", u.shapes)
+	if len(u.shapes) != 2 || u.shapes[1].r != image.Rect(8, 150, 92, 200) || u.shapes[1].sqTop {
+		t.Fatalf("视口内矩形应原样且不标 sqTop: %+v", u.shapes)
 	}
 	// ④ 视口外（滚动到上方）→ 裁空剔除。
 	u.record(image.Rect(8, -60, 92, -10), 12, viewport)

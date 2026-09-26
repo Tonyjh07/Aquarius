@@ -254,7 +254,7 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 		return 0
 	case wmHotkey:
 		if u := shellUI.Load(); u != nil {
-			u.toggleWindow()
+			u.hotkeyToggle() // §15.1：隐藏 → 呼出展开；可见 → 展开↔收起互切
 		}
 		return 0
 	case wmDestroy:
@@ -318,8 +318,7 @@ func (u *UI) toggleTopMost() {
 	fmt.Printf("[tray] 窗口置顶 → %v\n", on)
 }
 
-// toggleWindow 呼出/收起主窗（托盘左键、快捷键、菜单共用，§15.1）。
-// 显示时抢前台 + 投 focusMsg（下帧焦点进输入栏）；隐藏走窗口线程直落 hideMain。
+// toggleWindow 托盘显隐（§15.1：隐藏只经托盘；呼出 = 显示 + 展开 + 焦点入栏）。
 func (u *UI) toggleWindow() {
 	h := atomic.LoadUintptr(&mainHWND)
 	if h == 0 {
@@ -330,11 +329,34 @@ func (u *UI) toggleWindow() {
 		onWindowThread(func() { hideMain(h) })
 		return
 	}
+	u.showMain()
+}
+
+// hotkeyToggle 快捷键（§15.1）：隐藏 → 呼出（showMain）；可见 → 展开 ↔ 收起互切。
+func (u *UI) hotkeyToggle() {
+	h := atomic.LoadUintptr(&mainHWND)
+	if h == 0 {
+		return
+	}
+	visible, _, _ := procIsWindowVisible.Call(h)
+	if visible == 0 {
+		u.showMain()
+		return
+	}
+	u.post(toggleExpandMsg{})
+}
+
+// showMain 呼出：显示 + 前台 + 展开输入栏 + 焦点入栏（§15.1 呼出 = 展开）。
+func (u *UI) showMain() {
+	h := atomic.LoadUintptr(&mainHWND)
+	if h == 0 {
+		return
+	}
 	onWindowThread(func() {
 		procShowWindow.Call(h, swRestore)
 		procSetForegroundWindow.Call(h)
 	})
-	u.post(focusMsg{})
+	u.post(showExpandMsg{})
 }
 
 // hideMain 主窗与淡出 overlay 一并隐藏——必须在 Gio 窗口 goroutine 执行
