@@ -12,6 +12,7 @@
 package uigui
 
 import (
+	"fmt"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -220,8 +221,16 @@ func applyShapesRegion(shapes []shapePhys) bool {
 				acc = r
 				continue
 			}
-			procCombineRgn.Call(acc, acc, r, rgnOr) // dst = src1 ✓
+			// 并集：dst 用独立临时区（规避 CombineRgn 源/目标别名的未定义约束）。
+			tmp, _, _ := procCreateRectRgn.Call(0, 0, 0, 0)
+			if tmp == 0 {
+				del(r)
+				continue
+			}
+			procCombineRgn.Call(tmp, acc, r, rgnOr)
+			del(acc)
 			del(r)
+			acc = tmp
 		}
 		if acc == 0 {
 			acc, _, _ = procCreateRectRgn.Call(0, 0, 0, 0) // 空区域
@@ -263,6 +272,9 @@ type overlayState struct {
 
 var ovl overlayState
 
+// fadePresentLogged overlay 首次提交与失败时记日志（窗口线程访问）。
+var fadePresentLogged bool
+
 var overlayClassOnce uintptr // RegisterClassW 只做一次
 
 // overlayPresent 提交淡出带内容：懒创建 overlay 窗口 + 复用 DIB +
@@ -295,11 +307,15 @@ func overlayPresent(x, y, w, h int32, bits []byte, alpha byte) bool {
 			alphaFormat:         acSrcAlpha,
 		}
 		r, _, _ := procUpdateLayeredWindow.Call(
-			ovl.hwnd, ovl.hdc,
+			ovl.hwnd, 0, // hdcDst：屏幕 DC，可为 NULL（MSDN：指定位置/尺寸时）
 			uintptr(unsafe.Pointer(&dstPt)), uintptr(unsafe.Pointer(&sz)),
 			ovl.hdc, uintptr(unsafe.Pointer(&srcPt)),
 			0, uintptr(unsafe.Pointer(&bf)), ulwAlpha)
 		ok = r != 0
+		if !fadePresentLogged || !ok {
+			fadePresentLogged = true
+			fmt.Printf("[fade] UpdateLayeredWindow %dx%d@(%d,%d): %v\n", w, h, x, y, ok)
+		}
 	})
 	return ok
 }

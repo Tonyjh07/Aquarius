@@ -174,7 +174,10 @@ func (u *UI) fadeFrame() {
 	if err := u.fade.ensure(u.frameSize.X, u.frameSize.Y, u.frameMetric); err != nil {
 		return // 无 GPU 后端等：淡出降级为硬切（形裁仍生效）
 	}
-	if err := u.fade.render(u.layout); err != nil {
+	u.inFadePass = true // 淡出源：跳过兜底底色（带内无消息 = 全透明，overlay 隐藏）
+	err := u.fade.render(u.layout)
+	u.inFadePass = false
+	if err != nil {
 		return
 	}
 	if u.fadeBuf == nil || len(u.fadeBuf) < u.frameSize.X*bandPx*4 {

@@ -98,8 +98,9 @@ type UI struct {
 
 	// 转写区手工滚动（D44：不用 widget.List——需要每行绝对矩形做逐元素形裁）。
 	transcriptScroll gesture.Scroll
-	scrollPx         int // 内容滚动偏移（物理 px，0 = 顶）
-	contentH         int // 内容总高（上一帧测得，物理 px）
+	scrollPx         int  // 内容滚动偏移（物理 px，0 = 顶）
+	followTail       bool // 尾随贴底（新内容贴输入栏；上滚即停，§15.3）
+	contentH         int  // 内容总高（上一帧测得，物理 px）
 
 	// 形裁与淡出（D44/§15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
@@ -109,6 +110,9 @@ type UI struct {
 	frameSize   image.Point // 当前帧窗口尺寸（物理 px）
 	fade        fadeState   // 淡出带 headless 渲染状态
 	fadeBuf     []byte      // 淡出带预乘 BGRA 缓冲
+	// inFadePass 淡出源渲染标记：跳过兜底窗口底色——淡出带像素源只含可见元素
+	//（气泡/输入栏），背景保持 headless 清屏的透明 → 带内无消息 = 全透明（D44/§15.3）。
+	inFadePass bool
 
 	// m 渲染状态机：仅事件循环 goroutine 读写；测试经 drainSync 取 happens-before 后读。
 	m *model
@@ -132,6 +136,7 @@ func newUI(opts Options, window bool) *UI {
 	u.m = newModel(u)
 	u.editor.Submit = true // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
+	u.followTail = true // 初始尾随贴底（新消息出现在输入栏上方，§15.1）
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
 	}

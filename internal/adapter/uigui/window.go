@@ -254,7 +254,10 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			// 兜底背景（形裁生效前的首帧、非 Windows 降级形态）+ 整窗拖动区：
 			// 形裁后元素间隙点击穿透，实际能落到这里的把手 = 输入栏空白/状态行。
-			paint.Fill(gtx.Ops, windowBg)
+			// 淡出源渲染时跳过底色（inFadePass）：headless 清屏透明 = 带内无消息全透明。
+			if !u.inFadePass {
+				paint.Fill(gtx.Ops, windowBg)
+			}
 			st := clip.Rect{Max: size}.Push(gtx.Ops)
 			u.drag.Add(gtx.Ops)
 			st.Pop()
@@ -279,9 +282,11 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	return dims
 }
 
-// updateScroll 滚轮滚动（边界经 ScrollRange 钳制；d>0 = 向下滚）。
-func (u *UI) updateScroll(gtx layout.Context, viewH int) {
-	overflow := u.contentH - viewH
+// updateScroll 滚动手势 + 当帧边界钳制 + 尾随（§15.3 流式内容贴底）。
+// d>0 = 向下滚（往新内容）；d<0 = 上滚离开底部 → 停止尾随；滚回底部 → 恢复。
+// ScrollRange 内部按边界钳制手势距离（含 fling 溢出）。
+func (u *UI) updateScroll(gtx layout.Context, viewH, total int) {
+	overflow := total - viewH
 	if overflow < 0 {
 		overflow = 0
 	}
@@ -295,54 +300,77 @@ func (u *UI) updateScroll(gtx layout.Context, viewH int) {
 	if u.scrollPx > overflow {
 		u.scrollPx = overflow
 	}
+	if d < 0 {
+		u.followTail = false
+	} else if d > 0 && u.scrollPx >= overflow {
+		u.followTail = true
+	}
+	if u.followTail {
+		u.scrollPx = overflow // 尾随：新内容永远贴底
+	}
 }
 
-// transcript 转写区：手工纵向布局（不用 widget.List——需要每行绝对矩形做逐元素
-// 形裁）；视口裁剪 + 滚动手势注册；空态给提示卡片。
+// transcript 转写区：两遍布局（量高 → 滚动定界 → 绘制），**底部锚定**——新消息贴着
+// 输入栏出现（§15.1"提交后在胶囊上方出现"），旧消息上滚进顶部淡出带渐隐（§15.3）；
+// 尾随贴底，用户上滚即停跟随。手工纵排（需要每行绝对矩形做逐元素形裁，D44）。
 func (u *UI) transcript(gtx layout.Context, w, h int) {
-	u.updateScroll(gtx, h)
-	st := clip.Rect{Max: image.Pt(w, h)}.Push(gtx.Ops)
-	defer st.Pop()
-	u.transcriptScroll.Add(gtx.Ops)
-
 	items := u.frameItems()
 	if len(items) == 0 {
+		// 空态不渲染任何元素（悬浮球只剩输入栏，区域全透；转写浮层"提交后出现"，§15.1）。
 		u.contentH = 0
 		u.scrollPx = 0
-		// 空态提示（形裁下每个可见元素都得有底板——否则底板被挖空连文本一起不可见）。
-		hint := blockView{kind: blockPlain, text: "输入 /help 查看命令"}
-		y := (h - gtx.Dp(statusChipDp+10)) / 2
-		if y < 0 {
-			y = 0
-		}
-		u.row(gtx, hint, w, y, image.Rectangle{Max: image.Pt(w, h)})
 		return
 	}
-	gap := gtx.Dp(rowGapDp)
-	y := 0
 	viewport := image.Rectangle{Max: image.Pt(w, h)}
+	st := clip.Rect{Max: image.Pt(w, h)}.Push(gtx.Ops)
+	defer st.Pop()
+	u.transcriptScroll.Add(gtx.Ops) // 视口滚动手势
+
+	gap := gtx.Dp(rowGapDp)
+	// ① 量高（文本只排一次，录宏供绘制复用）。
+	rows := make([]measuredRow, len(items))
+	total := 0
 	for i := range items {
-		rh := u.row(gtx, items[i], w, y-u.scrollPx, viewport)
-		y += rh + gap
+		rows[i] = u.measureRow(gtx, items[i], w)
+		total += rows[i].height()
 	}
-	u.contentH = y - gap
-	if overflow := u.contentH - h; u.scrollPx > overflow {
-		u.scrollPx = overflow
-		if u.scrollPx < 0 {
-			u.scrollPx = 0
-		}
+	total += gap * (len(rows) - 1)
+
+	// ② 滚动定界：手势 + 当帧真实内容高（无一帧滞后），尾随贴底。
+	u.updateScroll(gtx, h, total)
+
+	// ③ 绘制：底部锚定基线——内容矮时贴底（信息悬在输入栏上方），超出视口后
+	// 顶出上沿、上滚进淡出带（base 归零后退化为标准滚动）。
+	base := h - total
+	if base < 0 {
+		base = 0
 	}
+	y := base - u.scrollPx
+	for i := range rows {
+		y += u.paintRow(gtx, rows[i], w, y, viewport) + gap
+	}
+	u.contentH = total
 }
 
-// row 转写行：底板（气泡/卡片）+ 文本，y 为视口内绝对坐标（可为负，视口裁剪）。
-// 返回行总高（含底板，px）。
-func (u *UI) row(gtx layout.Context, it blockView, w, y int, viewport image.Rectangle) int {
+// measuredRow 量高后的转写行（文本录宏 + 样式令牌）。
+type measuredRow struct {
+	txt                op.CallOp
+	dims               image.Point
+	bg                 color.NRGBA
+	radius, padX, padY int
+	right              bool
+}
+
+// height 行总高（含上下内边距，px）。
+func (m measuredRow) height() int { return m.dims.Y + 2*m.padY }
+
+// measureRow 量高 + 取样式（文本录入宏，不在本步落 ops）。
+func (u *UI) measureRow(gtx layout.Context, it blockView, w int) measuredRow {
 	label, bg, radius, rightAlign, bubble := u.rowStyle(gtx, it)
 	padX, padY := gtx.Dp(cardPadXDp), gtx.Dp(cardPadYDp)
 	if bubble {
 		padX, padY = gtx.Dp(bubblePadXDp), gtx.Dp(bubblePadYDp)
 	}
-	// 量文本（录宏，先不落 ops）。
 	maxW := w - 2*gtx.Dp(sideMarginDp)
 	if maxW < gtx.Dp(80) {
 		maxW = gtx.Dp(80)
@@ -351,23 +379,30 @@ func (u *UI) row(gtx layout.Context, it blockView, w, y int, viewport image.Rect
 	cs.Constraints = layout.Constraints{Min: image.Point{}, Max: image.Pt(maxW-2*padX, 1<<30)}
 	m := op.Record(gtx.Ops)
 	dims := label(cs)
-	txt := m.Stop()
+	return measuredRow{
+		txt: m.Stop(), dims: dims.Size, bg: bg, radius: radius,
+		padX: padX, padY: padY, right: rightAlign,
+	}
+}
 
+// paintRow 绘制底板 + 文本并登记形裁；y 为视口内绝对坐标（可为负）。
+// 返回行总高（px）。
+func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport image.Rectangle) int {
 	x := gtx.Dp(sideMarginDp)
-	if rightAlign {
-		x = w - gtx.Dp(sideMarginDp) - dims.Size.X - 2*padX
+	if mr.right {
+		x = w - gtx.Dp(sideMarginDp) - mr.dims.X - 2*mr.padX
 	}
 	bgRect := image.Rectangle{
 		Min: image.Pt(x, y),
-		Max: image.Pt(x+dims.Size.X+2*padX, y+dims.Size.Y+2*padY),
+		Max: image.Pt(x+mr.dims.X+2*mr.padX, y+mr.height()),
 	}
-	st := clip.UniformRRect(bgRect, radius).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, bg)
-	inner := op.Offset(image.Pt(bgRect.Min.X+padX, bgRect.Min.Y+padY)).Push(gtx.Ops)
-	txt.Add(gtx.Ops)
+	st := clip.UniformRRect(bgRect, mr.radius).Push(gtx.Ops)
+	paint.Fill(gtx.Ops, mr.bg)
+	inner := op.Offset(image.Pt(bgRect.Min.X+mr.padX, bgRect.Min.Y+mr.padY)).Push(gtx.Ops)
+	mr.txt.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
-	u.record(bgRect, radius, viewport)
+	u.record(bgRect, mr.radius, viewport)
 	return bgRect.Dy()
 }
 
@@ -532,6 +567,8 @@ func (u *UI) record(abs image.Rectangle, radius int, clipRect image.Rectangle) {
 }
 
 // applyRegion 形裁并集仅在变化时重建（布局结果稳定 → 多数帧零开销）。
+// 失败（hwnd 未到/系统调用错误）不写缓存 → 下帧重试，防止首帧竞态把缓存污染成
+// "已应用"导致形裁永久失效。
 func (u *UI) applyRegion() {
 	u.physShapes = u.physShapes[:0]
 	for _, s := range u.shapes {
@@ -548,9 +585,23 @@ func (u *UI) applyRegion() {
 	if shapesEqual(u.physShapes, u.lastShapes) {
 		return
 	}
-	u.lastShapes = append(u.lastShapes[:0], u.physShapes...)
-	applyShapesRegion(u.lastShapes) // 内部经 onWindowThread（铁律 1）
+	if applyShapesRegion(u.physShapes) { // 内部经 onWindowThread（铁律 1）
+		u.lastShapes = append(u.lastShapes[:0], u.physShapes...)
+		if regionLogN < 3 {
+			regionLogN++
+			fmt.Printf("[region] 形裁应用成功 shapes=%d（第 %d 次）\n", len(u.physShapes), regionLogN)
+		}
+		return
+	}
+	if regionFailLogN < 5 {
+		regionFailLogN++
+		fmt.Printf("[region] 形裁应用失败 shapes=%d hwnd=%#x（下帧重试，第 %d 次）\n",
+			len(u.physShapes), atomic.LoadUintptr(&mainHWND), regionFailLogN)
+	}
 }
+
+// 形裁应用日志限次（流式时形状高频变化，只留首几次成功与失败记录）。
+var regionLogN, regionFailLogN int
 
 // shapesEqual 形裁相等判定（纯逻辑，可测）。
 func shapesEqual(a, b []shapePhys) bool {
