@@ -39,7 +39,7 @@
 |---|---|---|
 | 会话树 | Conversation | 一棵不可变消息树 + 一个 Head 游标 |
 | 节点 | Message | 树节点，创建后只读：角色、内容分片、工具调用/结果、终态、用量 |
-| 内容分片 | Part | 消息内容的多态片段：Text / Image / Audio / Doc |
+| 内容分片 | Part | 消息内容的多态片段：Text / Image / Audio / Doc / Thinking |
 | 附件 | Attachment | 被消息引用的二进制内容，sha256 内容寻址存储 |
 | 根 | Root | 实节点空消息（ID=会话 ID、Role=root），唯一 `Parent==""` 的节点，仅作树管理、不进模型上下文 |
 | 头 | Head | 当前游标（初始=Root，无空串特例），决定发给模型的线性路径 |
@@ -105,15 +105,16 @@ package conversation
 type PartKind string
 
 const (
-    PartText  PartKind = "text"
-    PartImage PartKind = "image"
-    PartAudio PartKind = "audio"
-    PartDoc   PartKind = "doc"
+    PartText     PartKind = "text"
+    PartImage    PartKind = "image"
+    PartAudio    PartKind = "audio"
+    PartDoc      PartKind = "doc"
+    PartThinking PartKind = "thinking" // 思考过程（D42）：仅 assistant 节点可携带
 )
 
 type Part struct {
     Kind       PartKind
-    Text       string   // Kind=text；Kind=doc 时为提取文本（截断）
+    Text       string   // Kind=text；Kind=doc 时为提取文本（截断）；Kind=thinking 时为思考文本（D42）
     Ref        *BlobRef // Kind=image|audio|doc：附件引用
     Transcript string   // Kind=audio：ASR 转写文本（模型只见文本，音频留附件库回放）
 }
@@ -192,6 +193,16 @@ func (c *Conversation) Validate() error                     // 三条不变量�
   摘要之上（persona 除外）历史一律不回传；多次压缩链式吸收（只回传最新摘要）。
   `/compact` 手动触发、失败只报错树无损；压缩失败回退最旧裁剪、超预算硬保底由
   截断装饰器执行（三轨压缩与硬保底见 §7.1/D14）。
+- **思考过程入树 + 回传开关**（D42）：assistant 节点的思维链以 `PartThinking` 分片承载（流内分片
+  合并为至多一段、置于正文之前；取消/出错终态的已生成思考随节点一同入树）；节点形态校验限定
+  **仅 assistant 可携带**（root/user/system/tool 一律拒）。**回传给提供商**走独立承载：
+  装配层把思考放进 `PromptMessage.Reasoning`（与 Content 分离），openai 适配器序列化为
+  assistant 消息的 **`reasoning_content` 字段**（兼容生态事实标准；DeepSeek 带 `tools` 时
+  **强制**回传，缺失即 400），不混进正文；端点点名不认该字段时复用 D34 剥离重试管线
+  （扩展到消息内字段）→ 记入 `model.unsupported_params` 后省略。是否回传由 config
+  **`model.echo_thinking`** 控制（`*bool`：**键缺失 = 回传**，显式 `false` 才关，改后重启生效）。
+  展示口径（实时暗块 + 启动回放）恒含思考，与模型口径（回传开关）解耦——
+  回放展示树里有什么，装配决定发什么。
 - `Prune` 是唯一破坏性操作；`storejson` 写文件前保留一代 `.bak` 防误删（§13-D7）。
 
 ### 4.2 附件与多模态承载
@@ -255,6 +266,7 @@ type PromptPart struct {
 type PromptMessage struct {
     Role      string // "system" | "user" | "assistant" | "tool"
     Content   []PromptPart
+    Reasoning string // role=assistant：思维链回传承载（D42），适配器映射为 reasoning_content 等字段
     ToolCalls []tool.Call
     CallID    string // role=tool
 }
@@ -278,6 +290,7 @@ type Usage = conversation.Usage
 
 type Delta struct {
     Text      string
+    Reasoning bool            // 思维链分片（D34 展示 / D42 入树）：随节点提交为 PartThinking，回传走 PromptMessage.Reasoning
     ToolCalls []ToolCallDelta // Index 分片聚合（app 层 ToolCallAssembler）
     Usage     *Usage          // 流末尾
 }
@@ -405,6 +418,7 @@ type Ingestor interface {
     Ingest(ctx context.Context, raw RawInput) (IngestReport, error)
 }
 
+// Parts 可能含思考分片（PartThinking，D42）：输出器属"对外播报正文"，适配器须自行筛选。
 type OutputRequest struct{ Message conversation.Message; Parts []conversation.Part }
 
 type OutputAdapter interface {
@@ -597,7 +611,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
          + [摘要之后的历史]
 —— Root 空节点不进上下文；摘要之上除 persona 外一律不回传（D21）。
 其余承载：Image Part 内联字节、Audio 取 Transcript、Doc 取截断文本、
-          失联 tool 节点文本内联标注〔历史工具结果〕、记忆索引与当前会话记忆文件内容、工具清单（含 mcp:*）。
+          失联 tool 节点文本内联标注〔历史工具结果〕、记忆索引与当前会话记忆文件内容、工具清单（含 mcp:*）；
+          思考分片（PartThinking）按 `model.echo_thinking` 二态处理（D42）——
+          回传（键缺失 = 开）= 置入该 assistant 消息的 `PromptMessage.Reasoning`，由适配器
+          映射为 `reasoning_content` 字段；关（显式 false）= 装配时丢弃不发。
 ```
 
 **三轨压缩【特色功能】**（D21）：
@@ -665,10 +682,12 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 - **回放范围** = `Path()` 上从水位到 Head：有压缩摘要时从**最新摘要节点**起（persona 之外的
   水位，D21），否则从**persona 之后的首条消息**起；Root 与 persona 不回放（persona 是配置
-  快照，非对话内容）。与 `assemblePath` 同口径，回放内容 = 模型实际能看到的上下文。
+  快照，非对话内容）。水位裁剪与 `assemblePath` 同口径，但回放是**展示口径**：树内有什么显示什么
+  （D42：**含思考分片**，与实时呈现一致），不套用 `model.echo_thinking` 回传开关——
+  装配决定发什么，回放展示树里有什么。
 - **事件形态**：新增 `port.HistoryEvent{Message}`——一次性呈现**已提交的历史节点**，非 Turn
   流程事件。前段不带 delta/ToolCall 过程，直接按节点角色定稿渲染（user 输入行、assistant
-  正文、tool 调用/结果行、system 摘要块），与实时呈现同一套样式。
+  思考暗块与正文、tool 调用/结果行、system 摘要块），与实时呈现同一套样式。
 - **不扇出**：`HistoryEvent` 不是 `CommittedEvent`，输出器装饰器（D28）对它 no-op——
   回放不重复触发通知/TTS。
 - **回放前提示**：发 `NoticeEvent`（`已恢复会话 <标题> (<id>)，回放 <n> 条历史`）。
@@ -704,7 +723,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
     "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）
     "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
     "think_tool": false,          // think 草稿工具可见性（默认隐藏，D34）
-    "unsupported_params": []      // 服务端已知不认的请求参数（自动记录、启动注入省略，D34）
+    "echo_thinking": true,       // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
+    "unsupported_params": []      // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
   },
   "ui": { "kind": "tui" },
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
@@ -806,8 +826,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 | 层 | 手段 |
 |---|---|
-| domain | 性质测试：随机 Append/Revise(Fresh\|Carry)/Prune/Checkout 序列 → 不变量 1–3 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写） |
-| app | 脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter → 交互回放（golden）；摄取管线用假 Transcriber |
+| domain | 性质测试：随机 Append/Revise(Fresh\|Carry)/Prune/Checkout 序列 → 不变量 1–3 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写）；节点形态校验含思考分片仅 assistant 可携带（D42） |
+| app | 脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter → 交互回放（golden）；摄取管线用假 Transcriber；思考入树（分片顺序）与回传开关两态装配（D42） |
 | adapter | LLM 录制流回放；storejson/blobfs/jobproc/memoryfs 契约测试（临时目录） |
 | MCP | 测试内起假 MCP server（stdio）跑 mcpgate 契约：发现/调用/超时/崩溃重启/授权拒绝 |
 | e2e | 编译出二进制 + repl 适配器喂 stdin 断言 stdout；装配假 MCP server 验证 `mcp:` 工具全链路 |
@@ -865,7 +885,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D31 | 插件**启停与授权状态**统一存 config `plugins.<name> = {enabled, granted[]}`，两种发现源（`mcpServers` / `plugin.json`）共用；声明与状态分离 | 状态写回 `mcpServers` 条目（plugin.json 发现的插件无处安放）；状态存 plugin.json（本机授权态不该随分发文件走） |
 | D32 | `/model <name>` = Agent 内热切换 + **写回 config**（同 `/permission` 模式，重启沿用） | 每会话独立模型（与"全局唯一 model 配置"冲突，切换语义碎片化）；只切不存（重启即失） |
 | D33 | TUI **MVP** = 转写区 + 流式 + 输入框 + 命令历史 + Confirm 对话 + 状态行 + glamour 轻 markdown（committed 后渲染，流式阶段原样）；图片/音频仍占位；`ui.kind` 模板默认 `tui`、repl 保留；GUI 框架后移 §14 | 一步到位富 TUI（拖拽/语音/内联图——与后续 GUI 框架重复投入）；TUI 取代 REPL（e2e/CI 丢失无终端后端） |
-| D34 | **思考控制面**：`/think [on\|off]` = 原生思考**总开关**（覆盖 `/effort`），`/effort [minimal\|low\|medium\|high\|off]` = `reasoning_effort` 档位；请求发 `reasoning_effort` 与 `enable_thinking`（dashscope 系布尔）两个字段，服务端点名不认 → **同请求剥离重试 + 记录进 config `model.unsupported_params`**（启动注入、以后直接省略）；思维链分片**只展示不入树**；`think` 草稿工具可见性走 config `model.think_tool`、**默认隐藏**（不做 /models 能力探测——兼容端几乎不返回能力信息） | 逐家私有布尔映射表（每家一个开关字段，维护面爆炸）；/models 能力探测后自动分叉（探测不可靠、分支形同虚设）；思维链入树（回传可能被服务端拒绝且占上下文） |
+| D34 | **思考控制面**：`/think [on\|off]` = 原生思考**总开关**（覆盖 `/effort`），`/effort [minimal\|low\|medium\|high\|off]` = `reasoning_effort` 档位；请求发 `reasoning_effort` 与 `enable_thinking`（dashscope 系布尔）两个字段，服务端点名不认 → **同请求剥离重试 + 记录进 config `model.unsupported_params`**（启动注入、以后直接省略）；思维链分片**只展示**（展示口径——入树与回传被 **D42 修订**：随节点入树、回传走 config）；`think` 草稿工具可见性走 config `model.think_tool`、**默认隐藏**（不做 /models 能力探测——兼容端几乎不返回能力信息） | 逐家私有布尔映射表（每家一个开关字段，维护面爆炸）；/models 能力探测后自动分叉（探测不可靠、分支形同虚设）；~~思维链入树（回传可能被服务端拒绝且占上下文）~~（**被 D42 取代**：入树且默认回传；拒收顾虑由剥离重试兜底、上下文顾虑交 config 关） |
 | D35 | `model.api_key` **允许明文**：启动打印警告（不回显密钥）、`secret:` 引用仍走 `port.Secrets`；值为空时回落默认 `secret:AQUARIUS_OPENAI_KEY`；文件内值优先 | 维持明文一律拒绝（用户明确要简化接入）；明文静默启用（丢失风险告知） |
 | D36 | **面向 agent 的文本一律英文**：进入模型上下文的字符串（system 提示、工具声明与参数描述、工具回填结果与错误）用英文；仅面向用户的界面、命令输出、启动警告与日志用中文 | 中英混杂（模型上下文语言口径漂移，回复语言只应由 system 提示约束）；全站改英文（用户界面跟着变，违背中文协作约定） |
 | D37 | persona 创建时附加**运行环境块**：platform、UI 形态与 TERM、特权沙盒目录（`IsAbs` 才附）、缺省调用超时与 `timeout_sec` 说明；随 config 快照入树（D20 语义不变），字段为空整块跳过 | 装配期动态注入（与 D20 快照语义冲突，分叉/回溯后环境漂移）；不告知（模型不知道沙盒与平台，只能踩坑后学） |
@@ -873,10 +893,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D39 | 新增 `sleep` 内置工具（Safe：1–3600 秒、ctx 可中断、超缺省时长须配 `timeout_sec`） | 只靠 `job_start` + 轮询日志（重量级）；不提供（模型无法自然停顿 / 等待后台任务收尾） |
 | D40 | 启动恢复会话经 **`HistoryEvent` 回放可见历史**（水位 → Head，见 §7.4）+ NoticeEvent 提示会话身份 | 复用 `CommittedEvent` 回放（会触发 D28 输出器重复通知/TTS，且 user/tool 节点在两前端的 Committed 语义是 no-op、渲染不出）；复用 Say 拼纯文本（丢角色样式、TUI 与 repl 各拼一遍易漂移） |
 | D41 | 进程输出在 **jobproc 适配器内按行解码为 UTF-8**：UTF-8 合法则原样（ASCII 与显式 `chcp 65001` 输出），否则 GBK/CP936 解码；x/text 宽松解码器以 U+FFFD 兜底"两者都不是"，`term_exec` 同步输出与 `job_logs` 日志同口径 | 给子进程强灌 `chcp 65001`（改变命令运行环境，依赖 OEM 代码页的老程序反而乱码，且控制台代码页是共享状态）；调 `GetConsoleOutputCP`/`GetOEMCP` 精确解码（平台特定代码，子进程 stdout 是 pipe 时与控制台代码页未必一致——内容探测已覆盖真实两档 65001/936）；交 UI 层清洗（字节 → string 转换时 U+FFFD 已产生，事后不可恢复） |
+| D42 | **思考过程入树 + config 控制回传**（修订 D34）：新增 `PartThinking` 分片（仅 assistant 可携带，节点形态校验把关；流内分片合并至多一段置于正文前，取消/出错终态的已生成思考同样入树）；回传走**独立承载** `PromptMessage.Reasoning` → openai 适配器序列化为 assistant 消息的 `reasoning_content` 字段（**2026-09 调研**：OpenAI 官方 Chat Completions 每轮丢弃推理、也不返回明文思维链——官方端点不触发回传；DeepSeek 等兼容端点带 `tools` 时**强制**回传、缺失即 400；`reasoning_content` 是兼容生态事实标准），端点点名不认则复用 D34 剥离重试管线（扩展到消息内字段）记入 `model.unsupported_params` 后省略；开关 config `model.echo_thinking`（`*bool`：**键缺失 = 回传**，显式 false 关，改后重启生效）；展示口径（实时暗块、启动回放）恒含思考，与回传开关解耦 | 维持"只展示不入树"（D34 原状：重启/回溯即丢、审计不到树上，违背"树是唯一事实源/用户主权"）；旁路字段或独立文件存思考（D21 否决同款理由：两处存放、回溯易失配）；独立 system/tool 节点承载思考（破坏一轮一 assistant 节点与工具配对语义）；`<thinking>` 文本拼进正文（DeepSeek 工具轮缺 `reasoning_content` 字段仍 400，且思考被当正文污染上下文）；默认不回传（对 DeepSeek 类端点是工具轮硬故障——调研后由"默认关"翻案为"默认回传"）；厂商私有思考块原样回传（Anthropic thinking block 等，列 §14 backlog） |
 
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
+- **厂商私有思考块回传**：Anthropic extended thinking 工具续跑须原样回传 thinking block；
+  GPT-OSS/vLLM 系回传键名 `reasoning`（D42 现发 `reasoning_content`，vLLM 兼容两者）——
+  接入此类提供商时由适配器做键名/块格式映射
 - 非 GBK 的遗留代码页（CP437/latin-1 等）终端输出识别（D41 内容探测只有 UTF-8/GBK 两档，会误判成乱码中文）
 - `file_read` 等文件文本入口的遗留编码解码（与 D41 同算法，终端之外的文本入口）
 - `/goto`、`/new` 切换会话时的自动历史回放（当前仅启动恢复时回放一次，D40/§7.4）
@@ -893,7 +917,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   - 导出文件输出器（`output.tts` 同批启用）
 - **M2 审查遗留（P3，2026-09 评审；P2 的 trim 工具 schema 估算已修）**：
   - regexp2 `MatchTimeout` 与计数路径的 ctx 检查（模型可控输入的回溯爆炸防护）
-  - Agent/Runner 共享可变状态的并发模型显式化（多会话共享实例时加锁）
+  - Agent/Runner 共享可变状态的并发模型显式化（多会话共享实例时加锁；含 LLM 适配器
+    `NoteUnsupported` → config 写回的并发竞争——D34 既有，非 D42 引入）
   - `think` 参数非空校验；压缩摘要流的 UI 标注（"正在生成摘要"以区别于回答流）；
     `/usage` "上轮实测"文案改"最近实测"
 - 跨分支"摘抄"共享子树（DAG 化）

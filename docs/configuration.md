@@ -31,7 +31,8 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  config.json
 | `model.think` | bool | `true`（键缺失） | 原生思考**总开关**（D34）：`off` 时 `reasoning_effort` 与 `enable_thinking` 一律不发；`/think` 切换写回本字段 |
 | `model.reasoning_effort` | string | `""` | 推理档位（D34）：`minimal` / `low` / `medium` / `high`，空 = 不发送（交服务端默认）；`/effort` 切换写回本字段（`off` 即清除）；非法值启动报错 |
 | `model.think_tool` | bool | `false` | `think` 草稿工具（DESIGN §4.3）是否列给模型——**默认隐藏**（D34），需要时配置启用（改后重启生效） |
-| `model.unsupported_params` | []string | `[]` | 服务端已知不认的请求参数名单（D34 自动记录：400 点名 → 剥离重试成功 → 落盘；启动注入，之后直接省略）。可手工加字段名让某字段永久禁发 |
+| `model.echo_thinking` | bool | `true`（键缺失） | **思考回传开关**（D42）：思维链随节点入树后，是否回传给提供商。键缺失 = 回传（DeepSeek 等兼容端点带 `tools` 时**强制**回传，缺失会 400）；显式 `false` = 装配时丢弃不发。回传走 assistant 消息的 `reasoning_content` 字段（适配器映射，不混进正文）；端点点名不认该字段时自动剥离重试并记入 `model.unsupported_params`，此后省略。改后重启生效；与 `/think`（是否产生思考）互不干扰，实时展示与历史回放恒含思考、不受本开关影响 |
+| `model.unsupported_params` | []string | `[]` | 服务端已知不认的字段名单（D34/D42 自动记录：400 点名 → 剥离重试成功 → 落盘；启动注入，之后直接省略）。含**消息级字段** `reasoning_content`（思考回传被拒时自动降级为不回传）。可手工加字段名让某字段永久禁发 |
 
 ### ui
 
@@ -125,6 +126,7 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
     "think": true,
     "reasoning_effort": "",
     "think_tool": false,
+    "echo_thinking": true,
     "unsupported_params": []
   },
   "ui": { "kind": "tui" },

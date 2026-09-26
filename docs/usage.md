@@ -135,10 +135,14 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 - **启动警告"model.api_key 为明文"**（D35）：明文密钥直接写在 config.json 里，任何能读
   该文件的进程都可取用——建议改为 `"api_key": "secret:AQUARIUS_OPENAI_KEY"` + 同名环境变量；
   该项留空也会自动回落默认引用（环境变量缺失时才报错退出）。
-- **思考链路（D34）**：`/think off` 关闭原生思考（不发 `reasoning_effort`/`enable_thinking`）；
+- **思考链路（D34/D42）**：`/think off` 关闭原生思考（不发 `reasoning_effort`/`enable_thinking`）；
   `/effort high` 只存档位、配合 `/think on` 才发送；`reasoning_effort` 非法值启动即报因
   （`minimal|low|medium|high`）；服务端不认的参数会被自动剥离并记入
   `model.unsupported_params`（要恢复发送就从该数组删掉对应字段）。
+  思考过程**随节点入树**（`PartThinking` 分片，实时暗块与启动回放都看得到）；
+  是否**回传给提供商**由 config `model.echo_thinking` 控制——**键缺失即回传**（DeepSeek 等
+  兼容端点带 `tools` 时强制，缺失会 400），设为 `false` 可关；回传走 assistant 消息的
+  `reasoning_content` 字段，服务端不认时自动剥离并记入 `model.unsupported_params`。
 - **启动报未知权限等级**：`permissions.level` 只接受
   `read-only|strict|permissive|full-access`。
 - **`ui.kind` 报未支持**：只接受 `repl`（行式，测试/e2e 后端）与 `tui`（默认，D33）。
