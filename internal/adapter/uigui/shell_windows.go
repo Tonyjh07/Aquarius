@@ -71,11 +71,13 @@ const (
 
 	mfString    = 0x00000000
 	mfSeparator = 0x00000800
+	mfChecked   = 0x00000008 // 勾选（置顶开关当前态）
 	tpmRightBtn = 0x0002
 	tpmRetCmd   = 0x0100 // 返回命令 ID（不再发 WM_COMMAND）
 
-	cmdToggle = 101
-	cmdExit   = 102
+	cmdToggle  = 101
+	cmdExit    = 102
+	cmdTopMost = 103
 
 	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
 
@@ -263,13 +265,19 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	return r
 }
 
-// showTrayMenu 右键菜单（§15.1 MVP：显示/隐藏 + 退出；会话/主题项随菜单步补全）。
+// showTrayMenu 右键菜单（§15.1：显示/隐藏、置顶开关 + 退出；会话/主题项随菜单步补全）。
 // TPM_RETURNCMD：TrackPopupMenu 直接返回命令（不发 WM_COMMAND）。
 func showTrayMenu(hwnd uintptr) {
 	menu, _, _ := procCreatePopupMenu.Call()
 	toggleText, _ := syscall.UTF16PtrFromString("显示 / 隐藏输入窗")
+	topMostText, _ := syscall.UTF16PtrFromString("窗口置顶")
 	exitText, _ := syscall.UTF16PtrFromString("退出")
 	procAppendMenuW.Call(menu, mfString, cmdToggle, uintptr(unsafe.Pointer(toggleText)))
+	tmf := uintptr(mfString)
+	if topMostQuery() {
+		tmf |= mfChecked // 勾选 = 当前置顶态
+	}
+	procAppendMenuW.Call(menu, tmf, cmdTopMost, uintptr(unsafe.Pointer(topMostText)))
 	procAppendMenuW.Call(menu, mfSeparator, 0, 0)
 	procAppendMenuW.Call(menu, mfString, cmdExit, uintptr(unsafe.Pointer(exitText)))
 	var pt point
@@ -284,11 +292,30 @@ func showTrayMenu(hwnd uintptr) {
 		if u := shellUI.Load(); u != nil {
 			u.toggleWindow()
 		}
+	case cmdTopMost:
+		if u := shellUI.Load(); u != nil {
+			u.toggleTopMost()
+		}
 	case cmdExit:
 		if u := shellUI.Load(); u != nil {
 			u.exitViaShell()
 		}
 	}
+}
+
+// toggleTopMost 置顶开关（托盘菜单，§15.1）：切换主窗 HWND_TOPMOST、同步 overlay、
+// 持久化（与位置记忆同文件）。
+func (u *UI) toggleTopMost() {
+	on := !topMostQuery()
+	platformSetTopMost(on)             // 主窗断言（内部经 onWindowThread，铁律 1）
+	onWindowThread(overlaySyncTopMost) // overlay 跟随（同一窗口线程串行）
+	if u.opts.PosFile != "" {
+		if rc, ok := windowRectPx(); ok { // 查询类：跨线程直接调
+			tm := on
+			savePos(u.opts.PosFile, posRec{X: rc.left, Y: rc.top, TopMost: &tm})
+		}
+	}
+	fmt.Printf("[tray] 窗口置顶 → %v\n", on)
 }
 
 // toggleWindow 呼出/收起主窗（托盘左键、快捷键、菜单共用，§15.1）。

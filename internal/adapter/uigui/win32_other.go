@@ -34,6 +34,12 @@ func overlayPresent(int32, int32, int32, int32, []byte, byte) bool { return fals
 // overlaySetVisible 淡出 overlay 未适配。
 func overlaySetVisible(bool) {}
 
+// topMostQuery 非 Windows 无置顶概念（恒真，缺省口径与 Windows 一致）。
+func topMostQuery() bool { return true }
+
+// platformSetTopMost 置顶开关未适配。
+func platformSetTopMost(bool) {}
+
 // startShell 托盘与全局快捷键未适配（§15.6 仅 Windows 实测）。
 func startShell(*UI) {}
 

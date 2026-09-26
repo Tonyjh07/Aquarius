@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"gioui.org/app"
@@ -105,23 +106,34 @@ func onWindowThread(f func()) {
 	f() // 窗口未就绪（理论上不发生）：直接执行兜底
 }
 
-// 位置记忆（§15.1：拖拽 + 位置记忆，含多显示器工作区夹取）。
-type posRec struct{ X, Y int32 }
+// 位置记忆（§15.1：拖拽 + 位置记忆，含多显示器工作区夹取；置顶态随存——
+// §15.1 置顶开关）。posMu：拖动保存（帧循环）与菜单切换保存（托盘线程）互斥。
+type posRec struct {
+	X, Y int32
+	// TopMost 置顶态；nil = 旧文件/未设置 → 缺省置顶。
+	TopMost *bool `json:"top_most,omitempty"`
+}
 
-func loadPos(path string) (int32, int32, bool) {
+var posMu sync.Mutex
+
+func loadPos(path string) (posRec, bool) {
+	posMu.Lock()
+	defer posMu.Unlock()
 	src, err := os.ReadFile(path)
 	if err != nil {
-		return 0, 0, false
+		return posRec{}, false
 	}
 	var p posRec
 	if json.Unmarshal(src, &p) != nil {
-		return 0, 0, false
+		return posRec{}, false
 	}
-	return p.X, p.Y, true
+	return p, true
 }
 
-func savePos(path string, x, y int32) {
-	src, _ := json.Marshal(posRec{X: x, Y: y})
+func savePos(path string, p posRec) {
+	posMu.Lock()
+	defer posMu.Unlock()
+	src, _ := json.Marshal(p)
 	if dir := filepath.Dir(path); dir != "" {
 		_ = os.MkdirAll(dir, 0o755)
 	}
@@ -205,7 +217,8 @@ func (u *UI) runWindow(w *app.Window) {
 	}
 }
 
-// onHWND Win32ViewEvent 投递的窗口句柄：统一半透明 + 位置记忆恢复（§15.1/D44）。
+// onHWND Win32ViewEvent 投递的窗口句柄：统一半透明 + 置顶断言 + 位置记忆恢复
+// （§15.1/D44）。
 func (u *UI) onHWND(h uintptr) {
 	if u.hwnd != 0 {
 		return
@@ -214,6 +227,15 @@ func (u *UI) onHWND(h uintptr) {
 	atomic.StoreUintptr(&mainHWND, h)
 	applyAlpha(semiAlpha)  // LWA_ALPHA 整窗常量（与形裁正交，spike 已验证）
 	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
+	// 置顶断言 + 记忆恢复（§15.1 置顶开关）：缺省置顶、菜单切换态随记忆回来——
+	// 本端 SetWindowPos 断言，不依赖 Gio 的 TopMost 应用（实测会意外丢失、原因未明）。
+	on := true
+	if u.opts.PosFile != "" {
+		if p, found := loadPos(u.opts.PosFile); found && p.TopMost != nil {
+			on = *p.TopMost
+		}
+	}
+	platformSetTopMost(on)
 	rc, ok := windowRectPx()
 	if !ok {
 		return
@@ -221,8 +243,8 @@ func (u *UI) onHWND(h uintptr) {
 	w, ht := rc.right-rc.left, rc.bottom-rc.top
 	u.x, u.y = rc.left, rc.top
 	if u.opts.PosFile != "" {
-		if sx, sy, found := loadPos(u.opts.PosFile); found {
-			nx, ny := clampToWorkArea(sx, sy, w, ht)
+		if p, found := loadPos(u.opts.PosFile); found {
+			nx, ny := clampToWorkArea(p.X, p.Y, w, ht)
 			moveWindowTo(nx, ny)
 			u.x, u.y = nx, ny
 		}
@@ -792,7 +814,8 @@ func (u *UI) updateDrag(gtx layout.Context) {
 			moveWindowTo(u.x, u.y)
 		case pointer.Release, pointer.Cancel:
 			if u.dragging && u.opts.PosFile != "" {
-				savePos(u.opts.PosFile, u.x, u.y)
+				tm := topMostQuery()
+				savePos(u.opts.PosFile, posRec{X: u.x, Y: u.y, TopMost: &tm})
 			}
 			u.dragging = false
 		}

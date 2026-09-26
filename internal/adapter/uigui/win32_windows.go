@@ -54,6 +54,7 @@ var (
 // 常量（Win32 头文件取值）。
 const (
 	swpNoSize           = 0x0001
+	swpNoMove           = 0x0002
 	swpNoZOrder         = 0x0004
 	swpNoActivate       = 0x0010
 	monDefaultToNearest = 2
@@ -263,6 +264,37 @@ func applyAlpha(alpha byte) bool {
 	return ok
 }
 
+// topMostQuery 主窗置顶态**实际值**（查询类直接调，铁律 1 不限；无句柄 = 缺省置顶）。
+func topMostQuery() bool {
+	h := atomic.LoadUintptr(&mainHWND)
+	if h == 0 {
+		return true
+	}
+	ex, _, _ := procGetWindowLongPtrW.Call(h, gwlExStyle)
+	return ex&wsExTopMost != 0
+}
+
+// topMostHandle HWND_TOPMOST(-1)/HWND_NOTOPMOST(-2) 的补码 uintptr。
+func topMostHandle(on bool) uintptr {
+	if on {
+		return ^uintptr(0)
+	}
+	return ^uintptr(1)
+}
+
+// platformSetTopMost 显式设置主窗置顶（§15.1 置顶开关）——本端 SetWindowPos 断言，
+// 不依赖 Gio 的 TopMost 应用路径（实测会意外丢失、原因未明）；经 onWindowThread（铁律 1）。
+func platformSetTopMost(on bool) {
+	h := atomic.LoadUintptr(&mainHWND)
+	if h == 0 {
+		return
+	}
+	after := topMostHandle(on)
+	onWindowThread(func() {
+		procSetWindowPos.Call(h, after, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
+	})
+}
+
 // overlayState 淡出带 overlay 窗口（仅窗口线程访问——全部经 onWindowThread）。
 type overlayState struct {
 	hwnd, hdc, hbm uintptr
@@ -277,6 +309,24 @@ var fadePresentLogged bool
 
 var overlayClassOnce uintptr // RegisterClassW 只做一次
 
+// overlaySyncTopMost 淡出 overlay 置顶态与主窗**实际**态逐次对齐（§15.1：渐变带与
+// 主窗同步置顶/非置顶，不独立悬浮）。仅窗口线程调用（ovl 归属该线程）；主窗置顶位
+// 以实际查询为准——主窗被意外降级时 overlay 跟着退，杜绝"带孤零零飘在其他窗口上"。
+func overlaySyncTopMost() {
+	main := atomic.LoadUintptr(&mainHWND)
+	if main == 0 || ovl.hwnd == 0 {
+		return
+	}
+	want, _, _ := procGetWindowLongPtrW.Call(main, gwlExStyle)
+	have, _, _ := procGetWindowLongPtrW.Call(ovl.hwnd, gwlExStyle)
+	wantOn := want&wsExTopMost != 0
+	if wantOn == (have&wsExTopMost != 0) {
+		return
+	}
+	procSetWindowPos.Call(ovl.hwnd, topMostHandle(wantOn), 0, 0, 0, 0,
+		swpNoMove|swpNoSize|swpNoActivate)
+}
+
 // overlayPresent 提交淡出带内容：懒创建 overlay 窗口 + 复用 DIB +
 // UpdateLayeredWindow(ULW_ALPHA + AC_SRC_ALPHA)。bits = 预乘 BGRA（顶向、w*h*4）；
 // alpha = SourceConstantAlpha（主窗 LWA_ALPHA 常量，与主窗半透明衔接，D44）。
@@ -290,6 +340,7 @@ func overlayPresent(x, y, w, h int32, bits []byte, alpha byte) bool {
 		if err := overlayEnsure(x, y, w, h); err != nil {
 			return
 		}
+		overlaySyncTopMost() // 置顶态与主窗实际态对齐（§15.1：带不离主窗独立悬浮）
 		if ovl.visible == false {
 			procShowWindow.Call(ovl.hwnd, swShowNA)
 			ovl.visible = true
@@ -356,8 +407,9 @@ func overlayEnsure(x, y, w, h int32) error {
 			overlayClassOnce = 1
 		}
 		name, _ := syscall.UTF16PtrFromString("AquariusUiguiFade")
+		// 不带 WS_EX_TOPMOST：置顶态由 overlaySyncTopMost 按主窗实际态逐次对齐（§15.1）。
 		hwnd, _, _ := procCreateWindowExW.Call(
-			wsExToolWindow|wsExTopMost|wsExLayered|wsExTransparent|wsExNoActivate,
+			wsExToolWindow|wsExLayered|wsExTransparent|wsExNoActivate,
 			uintptr(unsafe.Pointer(name)), 0,
 			wsPopup,
 			uintptr(x), uintptr(y), uintptr(w), uintptr(h),
