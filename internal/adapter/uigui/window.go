@@ -50,6 +50,10 @@ const (
 
 	// semiAlpha 统一半透明（LWA_ALPHA 整窗常量；淡出 overlay 同值衔接，D44）。
 	semiAlpha byte = 235
+
+	// dragClickSlackPx 拖窗/单击判定阈值（物理 px）：收起态单击球 = 展开，
+	// 位移超阈值 = 拖窗。
+	dragClickSlackPx = 4
 )
 
 // 主题令牌（§15.4 MVP：品牌色 + 输入栏浅白/浅灰；深浅两版与多预设后补）。
@@ -256,11 +260,13 @@ func (u *UI) onHWND(h uintptr) {
 // 输入栏——自底向上定高，全部绝对坐标登记形裁（§15.1/D44）。
 // 本函数也被 fadeFrame 以零值 Source 二次调用（纯渲染，无事件消费）。
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
-	if u.focusPending {
+	if u.focusPending && !u.collapsed {
 		u.focusPending = false
 		gtx.Execute(key.FocusCmd{Tag: &u.editor}) // 唤出（托盘/快捷键）后焦点进输入栏
 	}
-	u.updateEditor(gtx)
+	if !u.collapsed {
+		u.updateEditor(gtx) // 收起态不消费按键（编辑器不可见，防隐形收字）
+	}
 	u.updateClicks(gtx)
 	u.updateDrag(gtx)
 
@@ -268,6 +274,12 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.frameMetric = gtx.Metric
 	u.frameSize = size
 	u.shapes = u.shapes[:0]
+
+	if u.collapsed {
+		u.layoutCollapsed(gtx, size)
+		u.applyRegion()
+		return layout.Dimensions{Size: size}
+	}
 
 	inputH := gtx.Dp(pillHeightDp + pillTopDp + 16) // 胶囊 + 上 8 下 16 边距
 	statusH := 0
@@ -309,6 +321,30 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	)
 	u.applyRegion()
 	return dims
+}
+
+// layoutCollapsed 收起态（§15.1 单组件"左键 logo 收起回球"）：只渲染 logo 悬浮球——
+// 球位 = 展开态（无状态行）的 logo 位置（换形不跳动），窗口尺寸不变，球外区域经形裁
+// 透明且点击穿透；拖动把手 = 整窗背景层（事件被形裁收到球上），单击球（位移小于
+// dragClickSlackPx）再展开、移动则拖窗。
+func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
+	if !u.inFadePass {
+		paint.Fill(gtx.Ops, windowBg)
+	}
+	dst := clip.Rect{Max: size}.Push(gtx.Ops)
+	u.drag.Add(gtx.Ops)
+	dst.Pop()
+
+	ballD := gtx.Dp(44) // u.logo 圆钮直径
+	ballX := gtx.Dp(sideMarginDp) + gtx.Dp(12)
+	pillY := size.Y - gtx.Dp(pillHeightDp+pillTopDp+16) + gtx.Dp(pillTopDp)
+	ballY := pillY + (gtx.Dp(pillHeightDp)-ballD)/2 // Flex Middle：logo 垂直居中
+	r := image.Rectangle{
+		Min: image.Pt(ballX, ballY),
+		Max: image.Pt(ballX+ballD, ballY+ballD),
+	}
+	paint.FillShape(gtx.Ops, brandColor, clip.UniformRRect(r, ballD/2).Op(gtx.Ops))
+	u.record(r, ballD/2, image.Rectangle{Max: u.frameSize})
 }
 
 // updateScroll 滚动手势 + 当帧边界钳制 + 尾随（§15.3 流式内容贴底）。
@@ -768,11 +804,13 @@ func (u *UI) submitEditor() {
 	u.m.submit(text)
 }
 
-// updateClicks 控件行为：logo（消费点击队列；展开/收起动作留 §15.2 形态步）/
+// updateClicks 控件行为：logo 收起回球（再单击球展开在 updateDrag）/
 // 发送/停止/允许/拒绝。
 func (u *UI) updateClicks(gtx layout.Context) {
 	if u.logoBtn.Clicked(gtx) {
-		// 左键 logo = 展开/收起输入栏（§15.2）——待实现；此处先消费队列防积压。
+		// 左键 logo = 收起回球（§15.1 单组件展开/收起）。
+		u.collapsed = true
+		u.w.Invalidate() // 状态变于帧中：换形需下一帧
 	}
 	if u.sendBtn.Clicked(gtx) {
 		u.submitEditor()
@@ -813,11 +851,27 @@ func (u *UI) updateDrag(gtx layout.Context) {
 			u.y = u.dragWin0.y + (cur.y - u.dragCur0.y)
 			moveWindowTo(u.x, u.y)
 		case pointer.Release, pointer.Cancel:
+			wasDragging := u.dragging
 			if u.dragging && u.opts.PosFile != "" {
 				tm := topMostQuery()
 				savePos(u.opts.PosFile, posRec{X: u.x, Y: u.y, TopMost: &tm})
 			}
 			u.dragging = false
+			// 收起态：单击球（位移小于阈值）= 再展开；移动 = 拖窗（§15.1）。
+			if ev.Kind == pointer.Release && wasDragging && u.collapsed {
+				cur := cursorPos()
+				dx, dy := cur.x-u.dragCur0.x, cur.y-u.dragCur0.y
+				if dx < 0 {
+					dx = -dx
+				}
+				if dy < 0 {
+					dy = -dy
+				}
+				if dx <= dragClickSlackPx && dy <= dragClickSlackPx {
+					u.collapsed = false
+					u.w.Invalidate()
+				}
+			}
 		}
 	}
 }

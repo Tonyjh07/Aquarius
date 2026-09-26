@@ -109,6 +109,10 @@ type UI struct {
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
 	focusPending bool
 
+	// collapsed 收起态（§15.1 单组件：左键 logo 收起回球，仅渲染悬浮球；再单击球
+	// 展开）。仅事件循环 goroutine 读写。
+	collapsed bool
+
 	// 形裁与淡出（D44/§15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
 	physShapes  []shapePhys // 形裁转换缓冲
