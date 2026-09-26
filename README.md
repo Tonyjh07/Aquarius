@@ -45,10 +45,11 @@ resources 只读并入记忆索引、prompts 暴露为动态命令；插件宿�
 崩溃限次重启与 `/plugin` 管理；`/model` 查看/热切换模型并写回 config（D32）。
 **TUI**（bubbletea，D33）为默认前端（`ui.kind=tui`）：转写区 + 流式 + 命令历史 + Confirm
 对话 + 状态行（模型/权限/用量）+ 轻 markdown（glamour），repl 保留为测试/e2e 后端，
-GUI 框架接入预留同一套 port 换壳（§14）。横切**装饰器链**（重试/硬保底截断/审计 JSONL，
+GUI 换壳契约已定稿（§15/D43：Gio 悬浮球前端，M5）。横切**装饰器链**（重试/硬保底截断/审计 JSONL，
 D14）在装配根叠加。验收：stdio 与 streamable HTTP 各接现成 MCP server 全链路
 （`AQUARIUS_E2E_REAL_MCP=1 go test ./cmd/aquarius -run RealMCP` 可重跑）。
-后续：Tier-1 插件（`pluginapi/v1`，D29）与 GUI 框架（D33）按 §14 推进；语音输入/播报按 D27。
+后续：**M5 GUI 前端**（D43/§15：Gio 悬浮球 + 输入栏 + 转写浮层，spike 先行）；Tier-1 插件
+（`pluginapi/v1`，D29）与语音输入/播报（D27）按 §14 推进。
 
 ## 文档
 

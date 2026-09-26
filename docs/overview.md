@@ -71,7 +71,8 @@ Root(实节点, ID=会话ID, role=root)
 `ingestfile`/`ingestclip`（摄取管线）/ `notify`（通知输出器）/ `atomicfile`（原子写入原语）；
 （M4）：`decorate`（横切装饰器）/ `mcpgate`（MCP → port 投影）/ `uitui`（bubbletea TUI）+
 `internal/plugin` 宿主（发现/grant/崩溃限次重启）；
-待落位：`plugingo` + `pluginapi/v1`（D29 后移）、`asr`/`tts`（backlog，D27）。
+待落位：`uigui`（Gio 悬浮球 GUI，M5/D43/§15）、`plugingo` + `pluginapi/v1`（D29 后移）、
+`asr`/`tts`（backlog，D27）。
 
 ## 端口 × 内置适配器（落地里程碑）
 
@@ -79,11 +80,11 @@ Root(实节点, ID=会话ID, role=root)
 |---|---|---|---|
 | `LLM` | openai 兼容（+可选本地 tokenizer 精确计数，D26） | **M0 ✓** | 脚本化 Stream |
 | `ConversationStore` | storejson | **M0 ✓** | in-memory |
-| `Presenter` / `Prompter` | repl（行式）+ uitui（TUI，D33） | repl **M0 ✓** / uitui **M4 ✓** | 收集器 / 脚本队列 |
+| `Presenter` / `Prompter` | repl（行式）+ uitui（TUI，D33）+ uigui（GUI 悬浮球，D43/§15） | repl **M0 ✓** / uitui **M4 ✓** / uigui M5 | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | **M0 ✓** | 固定 / 递增 / map |
 | `Tool` | toolbuiltin（memory_*/file_*/think/sleep + M3 的 term_exec/job_*）+ app 的 context_compact + mcpgate 的 `mcp:<server>:<tool>` | **M2 ✓**（M3 扩充，M4+MCP） | fake tool |
 | `ToolRunner` | toolrun（权限判定/确认/超时/裁剪，D25） | **M2 ✓** | fake runner |
-| `Confirmer` | repl 确认（读行 y/N；`-yes` 全免）；uitui 确认对话（D33） | **M1 ✓** | 脚本应答 |
+| `Confirmer` | repl 确认（读行 y/N；`-yes` 全免）；uitui 确认对话（D33）；uigui 输入栏确认态（D43） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs（全局 memories.md + 会话记忆，D23） | **M2 ✓** | in-memory |
 | `AttachmentStore` | blobfs（sha256 寻址 + 启动 GC） | **M3 ✓** | in-memory |
 | `Transcriber` / `Synthesizer` | （选型待定） | backlog（D27） | 假转写 |

@@ -496,7 +496,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `Transcriber` / `Synthesizer` | whisper API / 系统朗读 | Tier-1 Go 插件 | 假转写 |
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/导出 | Tier-1 Go 插件 | 脚本 |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
-| `Presenter` / `Prompter` | uitui（TUI）、repl | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
+| `Presenter` / `Prompter` | uitui（TUI）、repl、uigui（GUI 悬浮球，D43/M5） | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | Tier-1（keychain） | 固定 / map |
 
 ---
@@ -726,7 +726,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
     "echo_thinking": true,       // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
     "unsupported_params": []      // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
   },
-  "ui": { "kind": "tui" },
+  "ui": { "kind": "tui" },      // repl | tui | gui（D33 默认 tui；gui = 悬浮球前端，D43/§15）
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
@@ -845,6 +845,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
 | **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
+| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+Space 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅跟随系统。**前置 spike**（类 D30）：Gio/Windows 无边框透明悬浮窗 + 托盘 + 全局快捷键实测 | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；Alt+Space 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
 
 ---
 
@@ -884,7 +885,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D30 | MCP 客户端用官方 **`modelcontextprotocol/go-sdk`**（纯 Go，stdio `CommandTransport` + streamable HTTP `StreamableClientTransport` 双传输）；引入前先 spike 实测，API 不合则回退自写 stdio JSON-RPC + `net/http` SSE。**spike 已过（2026-09）**：双传输回环、工具调用、`IsError` 工具级错误语义均验证；sdk 要求 **go≥1.25**，go.mod 由 1.22 上调 | 长期自写协议栈（帧格式/能力协商/HTTP 流重连易踩 spec 细节）；cgo/Node 系客户端（违背纯 Go 优先） |
 | D31 | 插件**启停与授权状态**统一存 config `plugins.<name> = {enabled, granted[]}`，两种发现源（`mcpServers` / `plugin.json`）共用；声明与状态分离 | 状态写回 `mcpServers` 条目（plugin.json 发现的插件无处安放）；状态存 plugin.json（本机授权态不该随分发文件走） |
 | D32 | `/model <name>` = Agent 内热切换 + **写回 config**（同 `/permission` 模式，重启沿用） | 每会话独立模型（与"全局唯一 model 配置"冲突，切换语义碎片化）；只切不存（重启即失） |
-| D33 | TUI **MVP** = 转写区 + 流式 + 输入框 + 命令历史 + Confirm 对话 + 状态行 + glamour 轻 markdown（committed 后渲染，流式阶段原样）；图片/音频仍占位；`ui.kind` 模板默认 `tui`、repl 保留；GUI 框架后移 §14 | 一步到位富 TUI（拖拽/语音/内联图——与后续 GUI 框架重复投入）；TUI 取代 REPL（e2e/CI 丢失无终端后端） |
+| D33 | TUI **MVP** = 转写区 + 流式 + 输入框 + 命令历史 + Confirm 对话 + 状态行 + glamour 轻 markdown（committed 后渲染，流式阶段原样）；图片/音频仍占位；`ui.kind` 模板默认 `tui`、repl 保留；GUI 框架后移 §14（**被 D43 接续**：Gio 悬浮球 GUI 入正册 §15/M5） | 一步到位富 TUI（拖拽/语音/内联图——与后续 GUI 框架重复投入）；TUI 取代 REPL（e2e/CI 丢失无终端后端） |
 | D34 | **思考控制面**：`/think [on\|off]` = 原生思考**总开关**（覆盖 `/effort`），`/effort [minimal\|low\|medium\|high\|off]` = `reasoning_effort` 档位；请求发 `reasoning_effort` 与 `enable_thinking`（dashscope 系布尔）两个字段，服务端点名不认 → **同请求剥离重试 + 记录进 config `model.unsupported_params`**（启动注入、以后直接省略）；思维链分片**只展示**（展示口径——入树与回传被 **D42 修订**：随节点入树、回传走 config）；`think` 草稿工具可见性走 config `model.think_tool`、**默认隐藏**（不做 /models 能力探测——兼容端几乎不返回能力信息） | 逐家私有布尔映射表（每家一个开关字段，维护面爆炸）；/models 能力探测后自动分叉（探测不可靠、分支形同虚设）；~~思维链入树（回传可能被服务端拒绝且占上下文）~~（**被 D42 取代**：入树且默认回传；拒收顾虑由剥离重试兜底、上下文顾虑交 config 关） |
 | D35 | `model.api_key` **允许明文**：启动打印警告（不回显密钥）、`secret:` 引用仍走 `port.Secrets`；值为空时回落默认 `secret:AQUARIUS_OPENAI_KEY`；文件内值优先 | 维持明文一律拒绝（用户明确要简化接入）；明文静默启用（丢失风险告知） |
 | D36 | **面向 agent 的文本一律英文**：进入模型上下文的字符串（system 提示、工具声明与参数描述、工具回填结果与错误）用英文；仅面向用户的界面、命令输出、启动警告与日志用中文 | 中英混杂（模型上下文语言口径漂移，回复语言只应由 system 提示约束）；全站改英文（用户界面跟着变，违背中文协作约定） |
@@ -894,6 +895,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D40 | 启动恢复会话经 **`HistoryEvent` 回放可见历史**（水位 → Head，见 §7.4）+ NoticeEvent 提示会话身份 | 复用 `CommittedEvent` 回放（会触发 D28 输出器重复通知/TTS，且 user/tool 节点在两前端的 Committed 语义是 no-op、渲染不出）；复用 Say 拼纯文本（丢角色样式、TUI 与 repl 各拼一遍易漂移） |
 | D41 | 进程输出在 **jobproc 适配器内按行解码为 UTF-8**：UTF-8 合法则原样（ASCII 与显式 `chcp 65001` 输出），否则 GBK/CP936 解码；x/text 宽松解码器以 U+FFFD 兜底"两者都不是"，`term_exec` 同步输出与 `job_logs` 日志同口径 | 给子进程强灌 `chcp 65001`（改变命令运行环境，依赖 OEM 代码页的老程序反而乱码，且控制台代码页是共享状态）；调 `GetConsoleOutputCP`/`GetOEMCP` 精确解码（平台特定代码，子进程 stdout 是 pipe 时与控制台代码页未必一致——内容探测已覆盖真实两档 65001/936）；交 UI 层清洗（字节 → string 转换时 U+FFFD 已产生，事后不可恢复） |
 | D42 | **思考过程入树 + config 控制回传**（修订 D34）：新增 `PartThinking` 分片（仅 assistant 可携带，节点形态校验把关；流内分片合并至多一段置于正文前，取消/出错终态的已生成思考同样入树）；回传走**独立承载** `PromptMessage.Reasoning` → openai 适配器序列化为 assistant 消息的 `reasoning_content` 字段（**2026-09 调研**：OpenAI 官方 Chat Completions 每轮丢弃推理、也不返回明文思维链——官方端点不触发回传；DeepSeek 等兼容端点带 `tools` 时**强制**回传、缺失即 400；`reasoning_content` 是兼容生态事实标准），端点点名不认则复用 D34 剥离重试管线（扩展到消息内字段）记入 `model.unsupported_params` 后省略；开关 config `model.echo_thinking`（`*bool`：**键缺失 = 回传**，显式 false 关，改后重启生效）；展示口径（实时暗块、启动回放）恒含思考，与回传开关解耦 | 维持"只展示不入树"（D34 原状：重启/回溯即丢、审计不到树上，违背"树是唯一事实源/用户主权"）；旁路字段或独立文件存思考（D21 否决同款理由：两处存放、回溯易失配）；独立 system/tool 节点承载思考（破坏一轮一 assistant 节点与工具配对语义）；`<thinking>` 文本拼进正文（DeepSeek 工具轮缺 `reasoning_content` 字段仍 400，且思考被当正文污染上下文）；默认不回传（对 DeepSeek 类端点是工具轮硬故障——调研后由"默认关"翻案为"默认回传"）；厂商私有思考块原样回传（Anthropic thinking block 等，列 §14 backlog） |
+| D43 | **GUI 前端 = Gio 悬浮球换壳**（§15/M5）：`internal/adapter/uigui` 同权实现 `uiFrontend`（`port.Presenter + Prompter + Confirmer` + Say/Prompt/SetInterrupt/Close），`ui.kind` 新增 `gui` 接入装配 switch（repl/tui 不动、默认仍 tui）；形态 = **单组件悬浮球**（logo 即球，左键展开/收起输入栏、右键菜单）→ 提交后上方转写浮层（每轮清空 + 可固定钉住累计）；托盘常驻生命周期（关窗隐藏、退出经菜单）、全局快捷键（默认 Alt+Space，设置可改）、拖拽 + 位置记忆；消息流 = 思考暗块（流式实时、定稿折叠为「已思考」行，D42 展示口径恒含）+ 工具折叠 chip 可展开 + 完整 markdown；Confirm = 输入栏切换确认态（非模态）；附件按钮 = 系统文件选择框走 `UserInput.Raw{Kind=file}` 既有摄取管线；主题令牌化（MVP 品牌色 `#00AEEF` + 输入框浅白/浅灰 + 深/浅跟随系统，多颜色预设留数据后补）。**引入前 spike**（类 D30）：Gio/Windows 无边框每像素透明窗 + 托盘 + 全局快捷键实测，不合则回退平台原生壳并回本表补决策 | Fyne（cgo/OpenGL 违「无 cgo」硬约束、控件样式僵硬做不出透明胶囊）；Wails/Web UI（前端构建链 + webview 依赖，富文本强但与纯 Go 单二进制张力大）；独立 GUI 进程经 IPC（交付变双程序）；悬浮球 + 独立胶囊双组件（两套焦点/生命周期，合并为单组件展开态）；模态弹窗做 Confirm（打断输入流，输入栏确认态更贴极简）；MVP 上多主题预设（先令牌化留一色，加色只改数据） |
 
 ## 14. 暂缓事项（Backlog）
 
@@ -907,8 +909,9 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
-- **GUI 框架接入（D33 移入）**：换掉 TUI 壳，复用 `port.Presenter + Prompter + Confirmer`
-  契约与全部内核（TUI 薄壳即为该契约预留的换壳面）
+- **GUI 后续（M5/D43 之外，§15 预留）**：常规窗口形态（D43 只预留设计不做实现）、
+  多颜色主题预设（M5 只做品牌色 `#00AEEF` + 深/浅）、拖拽/粘贴/语音按钮（走同一
+  `UserInput.Raw` 入口，摄取管线已就绪，见下方语音条目）
 - **语音输入与播报（D27 移入）**：
   - ASR（`Transcriber`）/ TTS（`Synthesizer`）适配器选型与实现（whisper-api / 系统朗读 / 云 TTS）
   - 麦克风采集（`Kind=mic` 摄取）
@@ -926,5 +929,80 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - PDF/Office 等 Doc 提取器插件
 - 图片 OCR/描述自动降级、音频直输模型（等模型能力普及）
 - 长期记忆巩固（记忆 = 文档，无独立记忆系统；**上下文压缩摘要已入正册** §4.1/§7.1，与记忆无关）
-- GUI / Web UI、移动端输入方式
+- Web UI、移动端输入方式（GUI 桌面前端已入正册 §15/D43/M5）
 - 向量检索记忆后端（作为 MemoryStore 插件）
+
+---
+
+## 15. GUI 前端（`internal/adapter/uigui`，D43 / M5）
+
+GUI = **换壳不换核**：Gio 实现同一套 `uiFrontend`（`port.Presenter + Prompter + Confirmer` +
+Say/Prompt/SetInterrupt/Close，装配面见 `cmd/aquarius`），`ui.kind=gui` 接入装配 switch；
+repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自动继承。本节只描述**壳内**设计。
+
+### 15.1 形态与窗口（悬浮球模型）
+
+- **单组件悬浮球**：logo 圆钮是唯一常驻物，输入栏是它的展开态——悬浮球右侧展开输入栏，
+  再次左键 logo 收起回球；**不存在球 + 胶囊两个独立组件**（两套焦点/生命周期）。
+- **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出。
+- **托盘常驻生命周期**：关窗 = 隐藏，退出只经菜单。
+- **全局快捷键**：呼出/收起输入框（显示悬浮球时 = 展开输入框），默认 `Alt+Space`，
+  进设置可改（GUI 设置面 MVP 仅快捷键与主题两项）。
+- **位置**：拖拽移动 + 位置记忆（含多显示器，随 config/本地状态持久化）。
+- **转写浮层**：提交后在胶囊上方出现，自动高度、可滚动、生成时长高；
+  **每轮清空 + 可固定**（钉住后累计显示、可拖高）——历史在会话里，经菜单切会话查看。
+- **状态行**：浮层底栏仅生成时显示「思考中/生成中 · 模型 · 权限档」（TUI 状态行等价物，
+  数据源同 `Status` 回调：Model/Level/Effort 现取）；用量详情进 logo 菜单。
+- **常规窗口形态只预留设计、不做实现**（§14）。
+
+### 15.2 输入栏与交互（视觉稿 `temp/ui_design.png`，本地稿未入库；idle 形态）
+
+透明背景极简胶囊：**logo**（兼展开/收起钮）｜附件按钮｜占位 *"Ask anything or type a
+command..."*｜展开按钮｜**发送键（主题色）**。
+
+| 交互 | 语义 |
+|---|---|
+| 展开按钮 | 输入栏变大（多行长文本编辑），可再收起 |
+| Enter / Shift+Enter | 发送 / 换行（展开态多行编辑同规则） |
+| 附件按钮 | 系统文件选择框 → `UserInput.Raw{Kind:"file"}` → ingestfile 既有管线（拖拽/粘贴/语音留 §14） |
+| 输入 `/` | 命令补全浮层（含 MCP 动态命令 `/mcp:*`，数据源 `Session.Handle` 命令面） |
+| 生成中 | 发送键变**停止键**（`SetInterrupt` 取消本轮）；输入框保持可输入，新消息**排队**待本轮结束 |
+| Confirm（工具确认） | 输入栏**切换为确认态**（胶囊内变 [允许/拒绝] 按钮组），非模态弹窗 |
+
+### 15.3 转写浮层与消息流呈现
+
+| 元素 | 呈现 |
+|---|---|
+| 思考（D42） | 流式**实时暗块**（灰色小字 + "思考中…"）；定稿折叠为「已思考 · Ns」行可展开；启动回放同款——展示口径恒含思考，与 `model.echo_thinking` 回传开关解耦 |
+| 工具调用/结果 | **折叠 chip**（`🔧 file_read config.json ✓`），点击展开参数/结果明细 |
+| assistant 正文 | **完整 markdown**：代码块（语法高亮 + 复制按钮）、表格、列表、链接、内联图片 |
+| NoticeEvent / ErrorEvent | 流层内淡色提示行 / 错误块 |
+| 流式 vs 定稿 | 对齐 D33 口径：流式阶段原样追加，`CommittedEvent` 后定稿渲染（思考折叠、markdown 全量） |
+
+**§9 清洗**：所有不可信文本（流式 delta、思考、工具参数/结果、历史回放、命令输出）
+出口统一剥控制序列（对齐 `sanitizeControl`）；渲染不执行任何标记语言的活动内容。
+
+### 15.4 主题
+
+- **令牌化主题系统**（颜色/圆角/间距/字号为令牌）；预设 = 纯数据，加色不改代码。
+- **MVP**：品牌色 `#00AEEF`（logo、发送键；取自 `assets/icon`）+ 输入框浅白/浅灰；
+  深/浅两版，**默认跟随系统**。多颜色预设后补（§14）。
+
+### 15.5 契约与并发
+
+- `uigui` 实现 `uiFrontend` 六个面，语义与 uitui 一致：`Next/Confirm` 对调用方阻塞
+  （channel 桥接），`Emit/Say/Confirm` 从装配根 goroutine 投递事件循环（线程安全）；
+  EOF 与排队输入的优先级结构照抄 uitui 修复后的口径（先取尽排队输入再判 EOF），不重踩竞态。
+- 渲染状态机对齐 `uitui/model.go`：`Delta.Reasoning` 分流进思考草稿、`CommittedEvent`
+  定稿落块、`HistoryEvent` 回放（思考暗块先行）、`Say` 纯文本块。
+- 测试：GUI 自身用**无窗口 headless 逻辑测试**（渲染状态机/桥接层抽纯逻辑）+ 投影收集器；
+  门禁与 e2e 仍跑 repl 后端，GUI 不进 CI 图形路径。
+
+### 15.6 前置 spike 与风险（类 D30）
+
+引入 Gio 前实测（不合则回退平台原生壳并回 §13 补决策）：
+
+1. Windows 无边框 + **每像素透明**悬浮窗（胶囊透明背景的技术前提）；
+2. 系统托盘常驻与菜单；
+3. 全局快捷键注册；
+4. 多显示器窗口定位与位置记忆。
