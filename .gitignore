@@ -33,3 +33,5 @@ internal/adapter/llm/tokenizer/testdata/tokenizer.json
 # Editor/IDE
 # .idea/
 # .vscode/
+
+temp/
