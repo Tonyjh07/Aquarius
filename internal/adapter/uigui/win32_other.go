@@ -19,8 +19,11 @@ func moveWindowTo(int32, int32) {}
 // cursorPos 无光标跟踪。
 func cursorPos() point { return point{} }
 
-// clampToWorkArea 原样返回（无显示器信息源）。
-func clampToWorkArea(x, y, _, _ int32) (int32, int32) { return x, y }
+// platformWorkArea 非 Windows 无显示器信息源（夹取/吸附/停靠整体不干预）。
+func platformWorkArea(point) (rect, bool) { return rect{}, false }
+
+// platformMonitorAt 无显示器拓扑（停靠永不触发）。
+func platformMonitorAt(point) bool { return false }
 
 // applyShapesRegion 形裁未适配。
 func applyShapesRegion([]shapePhys) bool { return false }

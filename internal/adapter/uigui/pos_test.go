@@ -35,3 +35,25 @@ func TestPosRecRoundTrip(t *testing.T) {
 		t.Fatal("缺失文件应返回未找到")
 	}
 }
+
+// TestPosRecDocked 停靠记忆（D50）：docked 键随存随取；旧文件（无 docked 键）→
+// 空串 = 未停靠（停靠态恢复忽略 X/Y、按边重算）。
+func TestPosRecDocked(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gui_pos.json")
+
+	tm := true
+	savePos(path, posRec{X: -56, Y: 300, TopMost: &tm, Docked: "left"})
+	p, ok := loadPos(path)
+	if !ok || p.Docked != "left" || p.X != -56 {
+		t.Fatalf("停靠 roundtrip = %+v,%v, want Docked=left X=-56", p, ok)
+	}
+
+	// 旧格式（无 docked 键）→ 未停靠。
+	if err := os.WriteFile(path, []byte(`{"X":10,"Y":20}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, ok = loadPos(path)
+	if !ok || p.Docked != "" {
+		t.Fatalf("旧文件 = %+v,%v, want Docked 空", p, ok)
+	}
+}

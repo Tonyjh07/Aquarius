@@ -169,29 +169,23 @@ func cursorPos() point {
 	return pt
 }
 
-// clampToWorkArea 把目标位置夹进最近显示器工作区（位置记忆恢复时防"记到拔掉的屏幕"）。
-func clampToWorkArea(x, y, w, h int32) (int32, int32) {
-	pt := point{x: x, y: y}
-	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&pt)), monDefaultToNearest)
+// platformWorkArea 最近显示器工作区（查询类直接调）——锚点夹取/吸附/停靠共用口径
+// （D50：点取锚点中心，含多显示器）。
+func platformWorkArea(p point) (rect, bool) {
+	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&p)), monDefaultToNearest)
 	var mi monitorInfo
 	mi.cbSize = uint32(unsafe.Sizeof(mi))
 	if r, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); r == 0 {
-		return x, y
+		return rect{}, false
 	}
-	wr := mi.rcWork
-	if x+w > wr.right {
-		x = wr.right - w
-	}
-	if y+h > wr.bottom {
-		y = wr.bottom - h
-	}
-	if x < wr.left {
-		x = wr.left
-	}
-	if y < wr.top {
-		y = wr.top
-	}
-	return x, y
+	return mi.rcWork, true
+}
+
+// platformMonitorAt 点上是否有显示器（MONITOR_DEFAULTTONULL = 0：域外返回 0）——
+// D50 停靠外侧边判定（接缝边外还有屏 → 不停靠）。
+func platformMonitorAt(p point) bool {
+	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&p)), 0)
+	return hmon != 0
 }
 
 // applyShapesRegion 形裁：逐元素圆角矩形并集（§15.1/D44）——元素间隙与窗口边角

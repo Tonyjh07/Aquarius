@@ -364,5 +364,5 @@ func (u *UI) fadeFrame() {
 	if rc, ok := windowRectPx(); ok { // 实际窗口矩形优先（防自跟踪位置失联）
 		x, y = rc.left, rc.top
 	}
-	overlayPresent(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, semiAlpha)
+	overlayPresent(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha)
 }

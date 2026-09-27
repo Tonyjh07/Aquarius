@@ -137,10 +137,14 @@ func onWindowThread(f func()) {
 
 // 位置记忆（§15.1：拖拽 + 位置记忆，含多显示器工作区夹取；置顶态随存——
 // §15.1 置顶开关）。posMu：拖动保存（帧循环）与菜单切换保存（托盘线程）互斥。
+// Docked 停靠边（D50）：left/right = 停靠中（恢复按当前工作区重算停靠位、X/Y 忽略），
+// 缺省/旧文件空键 = 未停靠。
 type posRec struct {
 	X, Y int32
 	// TopMost 置顶态；nil = 旧文件/未设置 → 缺省置顶。
 	TopMost *bool `json:"top_most,omitempty"`
+	// Docked 停靠边；"" = 未停靠（omitted 保证旧文件兼容）。
+	Docked string `json:"docked,omitempty"`
 }
 
 var posMu sync.Mutex
@@ -229,6 +233,7 @@ func (u *UI) runWindow(w *app.Window) {
 			gtx := app.NewContext(&ops, e)
 			u.layout(gtx)
 			e.Frame(&ops)
+			u.stepAnim()  // D50：停靠动画每帧前推（layout 会被 headless 二次调用，不能放里面）
 			u.fadeFrame() // 淡出带：headless 同布局重渲 → 渐变预乘 → ULW（D44）
 		case app.DestroyEvent:
 			// 用户关窗 = 输入流结束（Next → EOF → 装配根退出，退出码 0；
@@ -254,7 +259,7 @@ func (u *UI) onHWND(h uintptr) {
 	}
 	u.hwnd = h
 	atomic.StoreUintptr(&mainHWND, h)
-	applyAlpha(semiAlpha)  // LWA_ALPHA 整窗常量（与形裁正交，spike 已验证）
+	applyAlpha(u.alpha)    // LWA_ALPHA 整窗常量（与形裁正交，spike 已验证；D50 可为 dockAlpha）
 	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
 	// 置顶断言 + 记忆恢复（§15.1 置顶开关）：缺省置顶、菜单切换态随记忆回来——
 	// 本端 SetWindowPos 断言，不依赖 Gio 的 TopMost 应用（实测会意外丢失、原因未明）。
@@ -273,7 +278,16 @@ func (u *UI) onHWND(h uintptr) {
 	u.x, u.y = rc.left, rc.top
 	if u.opts.PosFile != "" {
 		if p, found := loadPos(u.opts.PosFile); found {
-			nx, ny := clampToWorkArea(p.X, p.Y, w, ht)
+			// D50：停靠记忆优先（停靠位重算，X/Y 忽略）；失败/非停靠走普通恢复——
+			// 锚点 = 整窗，与拖动夹取同口径（重启不跳位）。
+			if (p.Docked == "left" || p.Docked == "right") && u.restoreDock(p, rc) {
+				return
+			}
+			nx, ny := p.X, p.Y
+			if work, wok := platformWorkArea(point{x: p.X + w/2, y: p.Y + ht/2}); wok {
+				c := clampAnchor(point{x: p.X, y: p.Y}, image.Rect(0, 0, int(w), int(ht)), work)
+				nx, ny = c.x, c.y
+			}
 			moveWindowTo(nx, ny)
 			u.x, u.y = nx, ny
 		}
@@ -295,6 +309,12 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.updateClicks(gtx)
 	u.updateDrag(gtx)
 	u.updateLogo(gtx)
+	if u.collapsed || u.docked {
+		u.evalDockFrame() // D50：收起/停靠态逐帧评估停靠（光标直采，layout 前置状态已更新）
+	} else {
+		u.dockArm = false // 展开态不可停靠：清布防残留（防收起瞬间误触发滑出）
+	}
+	u.armHeartbeat() // D50：布防心跳（移出球后无指针事件 → 主动唤帧完成移开判定）
 
 	size := gtx.Constraints.Max
 	u.frameMetric = gtx.Metric
@@ -362,16 +382,10 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 	dst.Pop()
 
 	// 球 = 展开态 logo 圆钮本身（D49 三段式：⌀ = 行高、x = 侧边距、y = 行内 logo 位）
-	// → 换形不跳动；窗口尺寸不变，球外区域形裁透明。
-	ballD := gtx.Dp(inputRowDp)
-	ballX := gtx.Dp(sideMarginDp)
-	ballY := size.Y - gtx.Dp(inputRowDp+pillTopDp+16) + gtx.Dp(pillTopDp)
-	r := image.Rectangle{
-		Min: image.Pt(ballX, ballY),
-		Max: image.Pt(ballX+ballD, ballY+ballD),
-	}
+	// → 换形不跳动；窗口尺寸不变，球外区域形裁透明。D50：ballRect 与停靠锚点同源。
+	r := ballRect(size, gtx.Dp)
 	drawLogo(gtx, r) // §15.2 logo 实装（品牌色圆钮 + 内嵌图标）
-	u.record(r, ballD/2, brandColor, image.Rectangle{Max: u.frameSize})
+	u.record(r, r.Dx()/2, brandColor, image.Rectangle{Max: u.frameSize})
 }
 
 // updateScroll 滚动手势 + 当帧边界钳制 + 尾随（§15.3 流式内容贴底）。
@@ -1065,6 +1079,7 @@ func (u *UI) updateDrag(gtx layout.Context) {
 		}
 		switch ev.Kind {
 		case pointer.Press:
+			u.undockInstant() // D50：按下即脱离停靠（拖动/点击都从贴齐亮态起）
 			u.beginDrag()
 		case pointer.Drag:
 			u.moveDrag()
@@ -1119,22 +1134,42 @@ func (u *UI) beginDrag() {
 	}
 }
 
-// moveDrag 主窗跟随光标（拖动中，铁律 2 绝对跟踪）。
+// moveDrag 主窗跟随光标（拖动中，铁律 2 绝对跟踪）；可见锚点实时夹取（D50 不出桌面）。
 func (u *UI) moveDrag() {
 	if !u.dragging {
 		return
 	}
 	cur := cursorPos()
-	u.x = u.dragWin0.x + (cur.x - u.dragCur0.x)
-	u.y = u.dragWin0.y + (cur.y - u.dragCur0.y)
+	x := u.dragWin0.x + (cur.x - u.dragCur0.x)
+	y := u.dragWin0.y + (cur.y - u.dragCur0.y)
+	u.x, u.y = u.clampPos(x, y)
 	moveWindowTo(u.x, u.y)
 }
 
-// endDrag 抬起/取消收尾：持久化位置。
+// endDrag 抬起/取消收尾：锚点夹取 + 四边吸附贴齐（D50）+ 持久化位置。
+// 按下时已脱离停靠（undockInstant），故落盘恒为未停靠。
+// 纯点击（位移 ≤ dragClickSlackPx）跳过夹取/吸附：「点击脱离停靠」把窗口落在半出屏
+// 贴边位（球锚点越界合法），若再按抬手时的态夹一次，展开态整窗锚点会把它推离边缘、
+// 收起后球离边超 snapDp → 布防/停靠断链（D50 实测缺陷修订，§15.1）。
 func (u *UI) endDrag() {
-	if u.dragging && u.opts.PosFile != "" {
-		tm := topMostQuery()
-		savePos(u.opts.PosFile, posRec{X: u.x, Y: u.y, TopMost: &tm})
+	if u.dragging {
+		if !u.clickHeld() {
+			u.x, u.y = u.clampPos(u.x, u.y)
+			if a, ok := u.anchorFor(); ok {
+				pos := point{x: u.x, y: u.y}
+				if work, wok := platformWorkArea(anchorCenter(pos, a)); wok {
+					if d := snapDelta(pos, a, work, int32(u.frameMetric.Dp(snapDp))); d != (point{}) {
+						u.x += d.x
+						u.y += d.y
+					}
+				}
+			}
+			moveWindowTo(u.x, u.y)
+		}
+		// 抬手（点击/拖动）=「曾悬停」的证据：直接布防（D50 拍板"拖到可停靠区移开也重停"），
+		// 贴边由下一瞬的 evalDockFrame 校验 edge，不贴边/展开态自然清掉。
+		u.dockArm = true
+		u.savePosRec("")
 	}
 	u.dragging = false
 }

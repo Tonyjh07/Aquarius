@@ -312,7 +312,11 @@ func (u *UI) toggleTopMost() {
 	if u.opts.PosFile != "" {
 		if rc, ok := windowRectPx(); ok { // 查询类：跨线程直接调
 			tm := on
-			savePos(u.opts.PosFile, posRec{X: rc.left, Y: rc.top, TopMost: &tm})
+			var docked string // D50：停靠边随记忆保存（dockHint 原子镜像，跨线程读）
+			if c := u.dockHint.Load(); c != dockNoneInt {
+				docked = edgeName(c)
+			}
+			savePos(u.opts.PosFile, posRec{X: rc.left, Y: rc.top, TopMost: &tm, Docked: docked})
 		}
 	}
 	fmt.Printf("[tray] 窗口置顶 → %v\n", on)

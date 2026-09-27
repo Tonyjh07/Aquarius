@@ -101,6 +101,17 @@ type UI struct {
 	dragWin0    point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
 	dragCur0    point // 按下时光标位置（屏幕坐标）
 
+	// D50 停靠（§15.1 停靠隐藏）：alpha/docked/dockArm/dockAn 仅事件循环 goroutine
+	// 读写；dockHint = 「docked 且停靠边」的原子镜像（0=未停靠 1=left 2=right），
+	// 供托盘线程（置顶开关）跨线程读取保存。
+	alpha    byte   // 当前整窗 LWA_ALPHA（semiAlpha ↔ dockAlpha 动画插值；overlay 同帧跟随）
+	docked   bool   // 停靠态（滑出中/已停：球只剩窄条 + 淡化）
+	dockArm  bool   // 上一帧「停在可停靠边且光标在球上」（曾悬停 = 停靠布防）
+	edgeNow  string // 当帧可停靠边（evalDockFrame 写入，"" = 不可停靠；心跳判据）
+	dockHint atomic.Int32
+	dockAn   dockAnim      // 停靠/召回动画（进度帧分支现算，见 stepAnim）
+	armTick  chan struct{} // 收起/停靠心跳（nil = 未运行；关停 = close，见 armHeartbeat）
+
 	// 转写区手工滚动（D44：不用 widget.List——需要每行绝对矩形做逐元素形裁）。
 	transcriptScroll gesture.Scroll
 	scrollPx         int  // 内容滚动偏移（物理 px，0 = 顶）
@@ -150,6 +161,7 @@ func newUI(opts Options, window bool) *UI {
 	u.editor.Submit = true // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
 	u.followTail = true // 初始尾随贴底（新消息出现在输入栏上方，§15.1）
+	u.alpha = semiAlpha // 整窗 LWA_ALPHA 起点（D50 动画在其上插值）
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
 	}
@@ -362,12 +374,16 @@ func (u *UI) apply(msg uiMsg) bool {
 	case drainMsg:
 		close(m.done)
 	case showExpandMsg:
+		u.undockInstant() // D50：呼出 = 召回 + 展开（停靠态先归位复亮）
 		u.collapsed = false
 		u.focusPending = true // 下帧 layout 执行 key.FocusCmd
 	case toggleExpandMsg:
-		u.collapsed = !u.collapsed
-		if !u.collapsed {
+		if u.collapsed {
+			u.undockInstant() // D50：展开前脱离停靠（锚点按收起球算，须先于 collapsed 翻转）
+			u.collapsed = false
 			u.focusPending = true
+		} else {
+			u.collapsed = true
 		}
 	case quitMsg:
 		return false
