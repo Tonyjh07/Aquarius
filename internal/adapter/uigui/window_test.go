@@ -19,68 +19,116 @@ func TestRecordStoresOutlineAndClip(t *testing.T) {
 	viewport := image.Rect(0, 0, 100, 300)
 
 	// ① 完全在淡出带内 → 剔除（overlay 带渐变接管）。
-	u.record(image.Rect(10, 0, 90, 50), 12, viewport)
+	u.record(image.Rect(10, 0, 90, 50), 12, brandColor, viewport)
 	if len(u.shapes) != 0 {
 		t.Fatalf("带内矩形不应登记: %+v", u.shapes)
 	}
-	// ② 跨带 → 存**真轮廓**（不裁到带）+ 裁剪区（区外由环自行裁剪）。
-	u.record(image.Rect(10, 20, 90, 120), 12, viewport)
+	// ② 跨带 → 存**真轮廓**（不裁到带）+ 裁剪区 + 底色（区外由环自行裁剪）。
+	u.record(image.Rect(10, 20, 90, 120), 12, brandColor, viewport)
 	if len(u.shapes) != 1 || u.shapes[0].outline != image.Rect(10, 20, 90, 120) ||
-		u.shapes[0].clip != viewport || u.shapes[0].radius != 12 {
-		t.Fatalf("跨带矩形应存真轮廓 + 裁剪区: %+v", u.shapes)
+		u.shapes[0].clip != viewport || u.shapes[0].radius != 12 || u.shapes[0].fill != brandColor {
+		t.Fatalf("跨带矩形应存真轮廓 + 裁剪区 + 底色: %+v", u.shapes)
 	}
 	// ③ 带下、视口内 → 原样登记。
-	u.record(image.Rect(8, 150, 92, 200), 12, viewport)
+	u.record(image.Rect(8, 150, 92, 200), 12, brandColor, viewport)
 	if len(u.shapes) != 2 || u.shapes[1].outline != image.Rect(8, 150, 92, 200) {
 		t.Fatalf("视口内矩形应原样登记: %+v", u.shapes)
 	}
 	// ④ 视口外（滚动到上方）→ 裁空剔除。
-	u.record(image.Rect(8, -60, 92, -10), 12, viewport)
+	u.record(image.Rect(8, -60, 92, -10), 12, brandColor, viewport)
 	if len(u.shapes) != 2 {
 		t.Fatalf("视口外不应登记: %+v", u.shapes)
 	}
 	// ⑤ 零圆角（如被裁成细条的异常态）→ 剔除。
-	u.record(image.Rect(8, 150, 92, 200), 0, viewport)
+	u.record(image.Rect(8, 150, 92, 200), 0, brandColor, viewport)
 	if len(u.shapes) != 2 {
 		t.Fatalf("零圆角不应登记: %+v", u.shapes)
 	}
 }
 
-// TestRegionShapesInsetAndCuts 形裁推导（D45/§15.1）：真实边内缩 featherInPx 且圆角
-// 同步收窄（同心内缩圆角）；带/视口裁切边不内缩（内缩会露出羽化环不覆盖的洞）；
-// 带顶裁切标 sqTop。
+// TestRegionShapesInsetAndCuts 形裁推导（D45–D48/§15.1）：真实边内缩（响应式 featherWidth，
+// 按**真轮廓**短边——跨带元素裁剪后短边会变，按裁剪尺寸算会与渐隐带错位）且圆角同步收窄
+// （同心内缩圆角）；带/视口裁切边不内缩（内缩会露出渐隐不覆盖的洞）；带顶裁切标 sqTop。
 func TestRegionShapesInsetAndCuts(t *testing.T) {
+	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	viewport := image.Rect(0, 0, 100, 300)
-	// ① 带下、完全在视口内：四边都是真边 → 全内缩（半径 12-2=10）。
+	// ① 带下、完全在视口内：四边都是真边 → 全内缩（半径 12-ins）。
+	ins := featherWidth(m, 80, 60)
 	got := regionShapes(nil, []drawShape{
 		{outline: image.Rect(10, 100, 90, 160), clip: viewport, radius: 12},
-	}, 56, 2)
-	want := shapePhys{x: 12, y: 102, w: 76, h: 56, ellipse: 20}
+	}, 56, m)
+	want := shapePhys{x: int32(10 + ins), y: int32(100 + ins), w: int32(80 - 2*ins), h: int32(60 - 2*ins), ellipse: int32((12 - ins) * 2)}
 	if len(got) != 1 || got[0] != want {
-		t.Fatalf("带下矩形 = %+v, want %+v", got, want)
+		t.Fatalf("带下矩形 = %+v, want %+v（ins=%d）", got, want, ins)
 	}
-	// ② 顶边被带裁切：顶边不缩（= 带底），其余内缩，标 sqTop。
+	// ② 顶边被带裁切：顶边不缩（= 带底），其余内缩，标 sqTop；内缩量仍按**真轮廓** 80×140。
+	ins2 := featherWidth(m, 80, 140)
 	got = regionShapes(nil, []drawShape{
 		{outline: image.Rect(10, 20, 90, 160), clip: viewport, radius: 12},
-	}, 56, 2)
-	want = shapePhys{x: 12, y: 56, w: 76, h: 102, ellipse: 20, sqTop: true}
+	}, 56, m)
+	want = shapePhys{x: int32(10 + ins2), y: 56, w: int32(80 - 2*ins2), h: int32(160 - ins2 - 56), ellipse: int32((12 - ins2) * 2), sqTop: true}
 	if len(got) != 1 || got[0] != want {
-		t.Fatalf("跨带矩形 = %+v, want %+v", got, want)
+		t.Fatalf("跨带矩形 = %+v, want %+v（ins=%d）", got, want, ins2)
 	}
 	// ③ 底边被视口裁切：底边不缩，其余内缩。
+	ins3 := featherWidth(m, 80, 200)
 	got = regionShapes(nil, []drawShape{
 		{outline: image.Rect(10, 100, 90, 320), clip: viewport, radius: 12},
-	}, 56, 2)
-	want = shapePhys{x: 12, y: 102, w: 76, h: 198, ellipse: 20}
+	}, 56, m)
+	want = shapePhys{x: int32(10 + ins3), y: int32(100 + ins3), w: int32(80 - 2*ins3), h: int32(300 - (100 + ins3)), ellipse: int32((12 - ins3) * 2)}
 	if len(got) != 1 || got[0] != want {
-		t.Fatalf("视口底裁矩形 = %+v, want %+v", got, want)
+		t.Fatalf("视口底裁矩形 = %+v, want %+v（ins=%d）", got, want, ins3)
 	}
-	// ④ 内缩后退化（高小于 2×ins）→ 剔除。
+	// ④ 极扁元素：内缩夹到短边 1/3，region 不退化（元素不被整块吃掉）。
+	ins4 := featherWidth(m, 80, 6)
 	got = regionShapes(nil, []drawShape{
-		{outline: image.Rect(10, 100, 90, 103), clip: viewport, radius: 2},
-	}, 56, 2)
+		{outline: image.Rect(10, 100, 90, 106), clip: viewport, radius: 2},
+	}, 56, m)
+	if len(got) != 1 || int(got[0].h) != 6-2*ins4 || int(got[0].y) != 100+ins4 {
+		t.Fatalf("极扁矩形应夹到短边 1/3、region 合法: %+v（ins=%d）", got, ins4)
+	}
+	// ⑤ 视口裁空 → 剔除。
+	got = regionShapes(nil, []drawShape{
+		{outline: image.Rect(10, 400, 90, 460), clip: viewport, radius: 12},
+	}, 56, m)
 	if len(got) != 0 {
-		t.Fatalf("退化矩形不应输出: %+v", got)
+		t.Fatalf("裁剪为空不应输出: %+v", got)
+	}
+}
+
+// TestFeatherWidthResponsive 渐隐带宽响应式（D47/D48）：受 [Dp(featherMinDp), Dp(featherMaxDp)]
+// 与短边 1/3（防 region 退化）约束，且**随 DPI 同步放大**——随元素尺寸/窗口缩放/DPI 自动
+// 跟随，不写死 px。断言写成"由常量推导的界"，改羽化宽参数时测试不需重写。
+func TestFeatherWidthResponsive(t *testing.T) {
+	one := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	two := unit.Metric{PxPerDp: 2, PxPerSp: 2}
+	for _, c := range [][2]int{{200, 40}, {400, 80}, {6, 6}, {90, 3}, {90, 6}, {2000, 2000}} {
+		w, h := c[0], c[1]
+		short := w
+		if h < short {
+			short = h
+		}
+		f1 := featherWidth(one, w, h)
+		if f1 > one.Dp(featherMaxDp) || f1 > short/3 {
+			t.Fatalf("1× featherWidth(%d,%d)=%d 越界（上限 Dp(%d)=%d、短边 1/3=%d）",
+				w, h, f1, featherMaxDp, one.Dp(featherMaxDp), short/3)
+		}
+		if lim := min(one.Dp(featherMinDp), short/3); f1 < lim {
+			t.Fatalf("1× featherWidth(%d,%d)=%d < 下界 %d", w, h, f1, lim)
+		}
+		// 同一逻辑元素在 2× DPI（物理尺寸翻倍）→ 带宽不小于 1×（非写死 px）。
+		f2 := featherWidth(two, 2*w, 2*h)
+		if f2 < f1 {
+			t.Fatalf("2× featherWidth(%d,%d)=%d 应 ≥ 1× 的 %d", 2*w, 2*h, f2, f1)
+		}
+		if f2 > two.Dp(featherMaxDp) || f2 > 2*short/3 {
+			t.Fatalf("2× featherWidth(%d,%d)=%d 越界（上限 Dp(%d)=%d、短边 1/3=%d）",
+				2*w, 2*h, f2, featherMaxDp, two.Dp(featherMaxDp), 2*short/3)
+		}
+	}
+	// 大元素落到**Dp 上限**（随 DPI 走，证明是响应式而非固定 px）。
+	if got, want := featherWidth(one, 2000, 2000), one.Dp(featherMaxDp); got != want {
+		t.Fatalf("大元素 featherWidth = %d, want %d（= Dp(featherMaxDp)）", got, want)
 	}
 }
 

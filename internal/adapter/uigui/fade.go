@@ -1,7 +1,8 @@
 package uigui
 
-// fade.go —— 淡出带 + 边缘羽化 overlay（D44/§15.3 + D45/§15.1）：headless 离屏渲染
-// 同一布局 → 整窗效果层（带内垂直渐变 + 带外元素羽化环）→ 预乘转换 → UpdateLayeredWindow。
+// fade.go —— 淡出带 + 边缘内容渐隐 overlay（D44/§15.3 + D45–D48/§15.1）：headless 离屏
+// 渲染同一布局 → 整窗效果层（带内垂直渐变 + 带外元素自身渐隐）→ 预乘转换 →
+// UpdateLayeredWindow。
 //
 // 承重验证（spike/headless，§15.6）：headless 清屏 = 透明（alpha 通道 = 内容覆盖，
 // 免布局掩码）；零值 Source 纯渲染不 panic；PxPerDp 可控（对齐主窗 DPI）；
@@ -9,6 +10,7 @@ package uigui
 
 import (
 	"image"
+	"image/color"
 	"math"
 	"time"
 
@@ -108,7 +110,7 @@ func encodeLUTAt(v float64) float64 {
 	return encodeLUT[int(v*4096)]
 }
 
-// writePremul 单像素转换（带内渐变与羽化环共用同一口径）：源 = headless 语义
+// writePremul 单像素转换（淡出带与边缘渐隐共用同一口径）：源 = headless 语义
 // （A 直通 alpha、C = sRGB_encode(线性预乘值)），目标 alpha = av（0..1）→ 输出
 // 字节空间预乘 BGRA（out[oi..oi+3]）。返回是否写入非透明像素。
 func writePremul(src []byte, si int, av float64, out []byte, oi int) bool {
@@ -132,6 +134,34 @@ func writePremul(src []byte, si int, av float64, out []byte, oi int) bool {
 			colorLin = 1
 		}
 		out[oi+(2-ch)] = byte(math.Round(encodeLUTAt(colorLin) * av * 255)) // R,G,B → BGRA
+	}
+	out[oi+3] = byte(aOut)
+	return true
+}
+
+// writePremulFill 用元素底色写一个预乘像素——headless 内容不可用（src 缺省、或尺寸小于
+// 本帧）时的兜底取色：底色恒定，处处均匀、与形状无关（若在圆角/窄条处盲目外扩采样，
+// 采样点会落到形状外的透明区 → writePremul 丢弃 → 直边有边、圆角没有的"十字/阶梯"伪影）。
+// fill 为直通 sRGB（A 直通 alpha），av = 渐隐不透明度（0..1）→ 输出字节空间预乘 BGRA。
+func writePremulFill(fill color.NRGBA, av float64, out []byte, oi int) bool {
+	if av <= 0 || fill.A == 0 {
+		out[oi], out[oi+1], out[oi+2], out[oi+3] = 0, 0, 0, 0
+		return false
+	}
+	if fill.A != 0xFF {
+		av *= float64(fill.A) / 255
+	}
+	aOut := int(math.Round(av * 255))
+	if aOut == 0 {
+		out[oi], out[oi+1], out[oi+2], out[oi+3] = 0, 0, 0, 0
+		return false
+	}
+	if aOut > 255 {
+		aOut = 255
+	}
+	for ch := 0; ch < 3; ch++ {
+		lin := decodeLUT[[3]byte{fill.R, fill.G, fill.B}[ch]]
+		out[oi+(2-ch)] = byte(math.Round(encodeLUTAt(lin*av) * 255)) // R,G,B → BGRA
 	}
 	out[oi+3] = byte(aOut)
 	return true
@@ -194,30 +224,50 @@ func rrectSD(px, py, cx, cy, hw, hh, rad float32) float32 {
 	return out + in - rad
 }
 
-// fadeFeatherShapes 元素边缘羽化环（D45/§15.1）：overlay 沿元素**真实轮廓**画 alpha
-// 斜坡——轮廓内 (in+1)px 内 alpha=1（盖住 region 内缩留下的缝），向外 outPx smoothstep
-// 衰减到 0；颜色取同帧内侧像素（headless 无 region 裁剪、内容完整，夹进形状内 1px 作
-// 最近内侧点近似）。只落笔在 y ≥ 带底（带内由 fadePremultiplyBand 单绘——避免与带
-// 重复叠加出横缝）且落在元素可见裁剪区内的像素。真轮廓保证环不沿视口/带裁切线描边
-// （消除带底横缝）。返回是否写入环像素。
-func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx, inPx, outPx int, out []byte, size image.Point) bool {
-	if src == nil || len(shapes) == 0 || outPx <= 0 {
+// featherEdgeMin 轮廓处（d=0）的最低不透明度：0 = 内容在真实轮廓处淡到全透明——渐隐完全
+// 收在形状内，**不向外外扩 1px、不堆光晕**（D48）。要让轮廓处留一点可见度可调大。
+const featherEdgeMin = 0.0
+
+// fadeFeatherShapes 元素边缘内容渐隐（D45–D48/§15.1）：与顶部淡出带同模型——region 沿真
+// 轮廓内缩 featherWidth（主窗不画边带，见 regionShapes），overlay 在让位出的边带内沿真轮廓
+// 画「内容自身由内向外渐隐」：从 region 边界的首像素（alpha=1，与主窗像素同不透明度、无缝
+// 衔接）起，随 d 向轮廓 smoothstep 衰减到 featherEdgeMin，在 d=0 处收尾。**不向外堆光晕**：
+// 旧 D45–D47 的向外环在轮廓线 d=0 有折点（内 alpha=1 平坦、外衰减）→ 观感成「饱和核心 +
+// 外圈亮带」，与带边割裂；本式从 region 边界即起衰减、只在形状内落笔，与带底同类。**颜色
+// （D47/D48）**：采样同帧 headless 内容（保文字/图标随渐隐自然淡出；只在形状内采样——避开
+// 圆角外透明区，无 D47 的"十字/阶梯"），headless 不可用（src 缺省或尺寸不符）时用元素底色
+// 兜底。**带内 (y < bandPx) 额外乘淡出带因子 g(y)**：跨带元素在带底的左右边与带下连续
+// （带底 g→1），消除带底横缝。只落笔在元素可见裁剪区内。真轮廓保证不沿视口/带裁切线描边。
+// 返回是否写入像素。
+func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, m unit.Metric, out []byte, size image.Point) bool {
+	if len(shapes) == 0 {
 		return false
 	}
 	w, h := size.X, size.Y
-	if w <= 0 || h <= 0 || src.Bounds().Dx() < w || src.Bounds().Dy() < h {
+	if w <= 0 || h <= 0 || len(out) < w*h*4 {
 		return false
 	}
-	if len(out) < w*h*4 {
-		return false
+	if src != nil && (src.Bounds().Dx() < w || src.Bounds().Dy() < h) {
+		src = nil
 	}
 	_ = lutForever
-	inF := float32(inPx) + 1 // 边界内覆盖宽（+1 与 region 内缩重叠 1px，防漏缝）
-	outF := float32(outPx)
 	content := false
 	for _, s := range shapes {
 		r := s.outline
 		if r.Empty() {
+			continue
+		}
+		fw := featherWidth(m, r.Dx(), r.Dy())
+		if fw <= 0 {
+			continue
+		}
+		// region 区块覆盖 d ≤ -(fw+0.5)（GDI 边界落在 SDF 零线内 0.5px，见 regionShapes），
+		// 渐隐覆盖其余 d > -(fw+0.5) → 逐像素恰好互补。用 fw+0 会在圆角处留 1px 空洞，
+		// 用 fw+1 会在每条真实边内叠 1px 亮线。
+		inF := float32(fw) + 0.5
+		d0 := -inF + 1 // 渐隐首像素（region 边界外 1px）：alpha=1，与主窗像素同不透明度
+		span := -d0    // 渐隐跨度
+		if span <= 0 || span >= 1e6 {
 			continue
 		}
 		hw, hh := float32(r.Dx())/2, float32(r.Dy())/2
@@ -234,50 +284,39 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx, inPx, outPx 
 		if clip.Empty() {
 			clip = image.Rectangle{Max: size}
 		}
-		// 落笔范围 = 真轮廓外扩 ∩ 可见裁剪区 ∩ 带底以下 ∩ 缓冲区。
-		x0 := max(r.Min.X-int(outF)-1, max(clip.Min.X, 0))
-		x1 := min(r.Max.X+int(outF)+1, min(clip.Max.X, w))
-		y0 := max(r.Min.Y-int(outF)-1, max(max(clip.Min.Y, bandPx), 0))
-		y1 := min(r.Max.Y+int(outF)+1, min(clip.Max.Y, h))
+		// 落笔范围 = 真轮廓 ∩ 可见裁剪区 ∩ 缓冲区（渐隐全在形状内，无需向轮廓外扩；
+		// 带内也落笔：跨带元素在带底的左右边要与带下连续，见函数头）。
+		x0 := max(r.Min.X, max(clip.Min.X, 0))
+		x1 := min(r.Max.X, min(clip.Max.X, w))
+		y0 := max(r.Min.Y, max(clip.Min.Y, 0))
+		y1 := min(r.Max.Y, min(clip.Max.Y, h))
 		for y := y0; y < y1; y++ {
+			g := 1.0
+			if y < bandPx {
+				t := (float64(y) + 0.5) / float64(bandPx)
+				g = t * t * (3 - 2*t) // 与 fadePremultiplyBand 同式
+			}
 			for x := x0; x < x1; x++ {
 				d := rrectSD(float32(x)+0.5, float32(y)+0.5, cx, cy, hw, hh, rad)
-				if d < -inF || d > outF {
+				if d <= -inF || d > 0 {
+					continue // region 区块（主窗画）/ 轮廓外（不外扩）
+				}
+				t := (float64(d) - float64(d0)) / float64(span)
+				if t < 0 {
+					t = 0
+				} else if t > 1 {
+					t = 1
+				}
+				av := (featherEdgeMin + (1-featherEdgeMin)*(1-t*t*(3-2*t))) * g
+				if av <= 0 {
 					continue
 				}
-				av := 1.0
-				if d > 0 {
-					td := float64(d) / float64(outF)
-					g := td * td * (3 - 2*td) // smoothstep
-					av = 1 - g
-				}
-				// 颜色采样：夹进形状内 1px（最近内侧点近似），再夹进缓冲区（轮廓可越窗）。
-				sx, sy := x, y
-				if sx < r.Min.X+1 {
-					sx = r.Min.X + 1
-				}
-				if sx > r.Max.X-1 {
-					sx = r.Max.X - 1
-				}
-				if sy < r.Min.Y+1 {
-					sy = r.Min.Y + 1
-				}
-				if sy > r.Max.Y-1 {
-					sy = r.Max.Y - 1
-				}
-				if sx < 0 {
-					sx = 0
-				}
-				if sx >= w {
-					sx = w - 1
-				}
-				if sy < 0 {
-					sy = 0
-				}
-				if sy >= h {
-					sy = h - 1
-				}
-				if writePremul(src.Pix, src.PixOffset(sx, sy), av, out, (y*w+x)*4) {
+				oi := (y*w + x) * 4
+				if src != nil {
+					if writePremul(src.Pix, src.PixOffset(x, y), av, out, oi) {
+						content = true
+					}
+				} else if writePremulFill(s.fill, av, out, oi) {
 					content = true
 				}
 			}
@@ -287,7 +326,7 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx, inPx, outPx 
 }
 
 // fadeFrame 主帧之后执行（runWindow 调）：headless 同布局重渲 → 整窗效果层
-// （带内渐变 + 带外羽化环，D44+D45）→ 整窗预乘 BGRA → overlay 提交。
+// （顶部带渐变 + 元素边缘渐隐，D44/D48）→ 整窗预乘 BGRA → overlay 提交。
 // 非 Windows（hwnd=0）或离屏上下文创建失败时静默降级。
 func (u *UI) fadeFrame() {
 	if u.hwnd == 0 || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
@@ -314,11 +353,10 @@ func (u *UI) fadeFrame() {
 	if u.fadeBuf == nil || len(u.fadeBuf) < size {
 		u.fadeBuf = make([]byte, size)
 	}
-	clear(u.fadeBuf) // 整窗效果层：band 渐变写顶部带、羽化环写其余区域，先清零
+	clear(u.fadeBuf) // 整窗效果层：band 渐变写顶部带、边缘渐隐写元素边带，先清零
 	band := fadePremultiplyBand(u.fade.img, u.frameSize.X, bandPx, u.fadeBuf)
-	rings := fadeFeatherShapes(u.fade.img, u.shapes, bandPx,
-		u.frameMetric.Dp(featherInDp), u.frameMetric.Dp(featherOutDp), u.fadeBuf, u.frameSize)
-	if !band && !rings {
+	edges := fadeFeatherShapes(u.fade.img, u.shapes, bandPx, u.frameMetric, u.fadeBuf, u.frameSize)
+	if !band && !edges {
 		overlaySetVisible(false) // 带内无内容且无元素（空态）：隐藏（桌面/下层直接可见）
 		return
 	}

@@ -47,13 +47,16 @@ const (
 	radiusDp     = 12 // 气泡圆角
 	cardRadiusDp = 8  // 文本行卡圆角
 	statusChipDp = 20 // 状态行 chip 高
-	maxTextColDp = 400
 
-	// 边缘羽化（D45/§15.1）：region 向内缩 featherInDp（避免 overlay 环叠在主窗同色像素上
-	// 抬升不透明度 → 亮边），overlay 环沿真轮廓画 [-(in+1), out] 的 alpha 斜坡——把淡出带
-	// 那套「region 让位 + overlay 单绘」推广到所有边缘。
-	featherInDp  = 2 // region 内缩 / 环内侧覆盖宽
-	featherOutDp = 6 // 环向外衰减宽
+	// 边缘羽化（D45–D48/§15.1）：把淡出带那套「region 让位 + overlay 单绘」推广到所有
+	// 边缘——region 沿元素真实边内缩 featherWidth（主窗不画边带），overlay 在让位出的边带
+	// 内沿真轮廓画「内容自身由内向外渐隐」（轮廓处最低、向内升到 1），与顶部淡出带同模型；
+	// **不向外堆光晕**（旧 D45–D47 的向外环在轮廓线 d=0 有折点 →「饱和核心 + 外圈亮带」，
+	// 与带边观感割裂）。**响应式（D47）**：渐隐带宽按元素短边成比例再夹上下限，随元素尺寸/
+	// 窗口缩放/DPI 自适应，不引入固定 px 羽化宽。
+	featherRatio = 0.05 // 渐隐带（region 内缩）宽 = min(宽,高) × 该比例
+	featherMinDp = 0    // 渐隐宽下限
+	featherMaxDp = 5    // 渐隐宽上限
 
 	// semiAlpha 统一半透明（LWA_ALPHA 整窗常量；淡出 overlay 同值衔接，D44）。
 	semiAlpha byte = 235
@@ -88,13 +91,15 @@ type point struct{ x, y int32 }
 type rect struct{ left, top, right, bottom int32 }
 
 // drawShape 布局期收集的可见元素：outline = 元素**真实轮廓**（未按视口/淡出带裁剪，
-// 羽化环沿此取边 → 不沿裁切线描边，消除横缝）；clip = 可见裁剪区（转写区视口/整窗，
-// 环只在此区内落笔）；radius = 圆角半径。形裁矩形（applyRegion）与羽化环
-// （fadeFeatherShapes）都由这两者推导（§15.3/D45）。
+// 边缘渐隐沿此取边 → 不沿裁切线描边，消除横缝）；clip = 可见裁剪区（转写区视口/整窗，
+// 渐隐只在此区内落笔）；radius = 圆角半径；fill = 元素自身底色（headless 不可用时的兜底
+// 取色——见 writePremulFill）。形裁矩形（applyRegion）与边缘渐隐（fadeFeatherShapes）都由
+// outline/clip/radius/fill 推导（§15.3/D45–D48）。
 type drawShape struct {
 	outline image.Rectangle
 	clip    image.Rectangle
 	radius  int // 圆角半径（px）
+	fill    color.NRGBA
 }
 
 // shapePhys 形裁元素（传 win32 并集）。
@@ -357,7 +362,7 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 		Max: image.Pt(ballX+ballD, ballY+ballD),
 	}
 	drawLogo(gtx, r) // §15.2 logo 实装（品牌色圆钮 + 内嵌图标）
-	u.record(r, ballD/2, image.Rectangle{Max: u.frameSize})
+	u.record(r, ballD/2, brandColor, image.Rectangle{Max: u.frameSize})
 }
 
 // updateScroll 滚动手势 + 当帧边界钳制 + 尾随（§15.3 流式内容贴底）。
@@ -480,7 +485,7 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport ima
 	mr.txt.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
-	u.record(bgRect, mr.radius, viewport)
+	u.record(bgRect, mr.radius, mr.bg, viewport)
 	return bgRect.Dy()
 }
 
@@ -572,7 +577,7 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 	txtOp.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
-	u.record(bgRect.Add(image.Pt(0, absY)), chipH/2, image.Rectangle{Max: u.frameSize})
+	u.record(bgRect.Add(image.Pt(0, absY)), chipH/2, pillBg, image.Rectangle{Max: u.frameSize})
 }
 
 // inputBar 输入栏（§15.2 骨架）：logo（拖拽把手）｜编辑器（确认态 = 提示行）｜
@@ -592,7 +597,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	u.pillContent(gtxC)
 	inner.Pop()
 	st.Pop()
-	u.record(pill.Add(image.Pt(0, absY)), pillH/2, image.Rectangle{Max: u.frameSize})
+	u.record(pill.Add(image.Pt(0, absY)), pillH/2, pillBg, image.Rectangle{Max: u.frameSize})
 	// 悬浮 tips（§15.1 启动提示 / §15.2 发送键）：独立底板元素随形裁。
 	if u.logoHovered {
 		u.hoverTip(gtx, absY, startupHint, false)
@@ -640,7 +645,7 @@ func (u *UI) hoverTip(gtx layout.Context, absY int, text string, rightAlign bool
 	txt.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
-	u.record(bgRect.Add(image.Pt(0, absY)), radius, image.Rectangle{Max: u.frameSize})
+	u.record(bgRect.Add(image.Pt(0, absY)), radius, tipBg, image.Rectangle{Max: u.frameSize})
 }
 
 // pillContent 胶囊内横排（坐标原点 = 胶囊左上，约束 = 胶囊尺寸）。
@@ -696,10 +701,10 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// record 登记可见元素（D44/D45）：保存真实轮廓 + 可见裁剪区，形裁（applyRegion）与
-// 羽化环（fadeFeatherShapes）都由此推导。零半径、裁剪后为空、或完全落在淡出带内
+// record 登记可见元素（D44–D48）：保存真实轮廓 + 可见裁剪区 + 底色，形裁（applyRegion）
+// 与羽化渐隐（fadeFeatherShapes）都由此推导。零半径、裁剪后为空、或完全落在淡出带内
 // （整条由 overlay 带渐变绘制）的元素不登记。
-func (u *UI) record(abs image.Rectangle, radius int, clipRect image.Rectangle) {
+func (u *UI) record(abs image.Rectangle, radius int, fill color.NRGBA, clipRect image.Rectangle) {
 	if radius <= 0 || abs.Empty() {
 		return
 	}
@@ -710,18 +715,43 @@ func (u *UI) record(abs image.Rectangle, radius int, clipRect image.Rectangle) {
 	if vis.Max.Y <= u.frameMetric.Dp(fadeBandDp) {
 		return
 	}
-	u.shapes = append(u.shapes, drawShape{outline: abs, clip: clipRect, radius: radius})
+	u.shapes = append(u.shapes, drawShape{outline: abs, clip: clipRect, radius: radius, fill: fill})
 }
 
-// regionShapes 由可见元素推导形裁并集（纯逻辑，可测，D45/§15.1）：视口裁剪 ∩ 淡出带
-// 裁切 → 沿元素**真实边**内缩 ins（裁切边不缩——内缩会露出羽化环不覆盖的洞），圆角
-// 同步收窄（同心内缩圆角）；带顶裁切标 sqTop（并集构建时上两角填方续接带渐变，§15.3）。
-func regionShapes(dst []shapePhys, shapes []drawShape, band, ins int) []shapePhys {
+// featherWidth 元素边缘内容渐隐带的宽（px，D47/D48 响应式）：＝ region 内缩宽 ＝ overlay
+// 渐隐带宽。按元素**短边**成比例，夹到 [Dp(featherMinDp), Dp(featherMaxDp)]，且不超过短边
+// 的 1/3（再大 region 退化、元素整体被吃掉）——元素尺寸/窗口缩放/DPI 变化时自动跟随，
+// 不再用固定 px。纯逻辑，可测。
+func featherWidth(m unit.Metric, w, h int) int {
+	short := w
+	if h < short {
+		short = h
+	}
+	f := int(float64(short)*featherRatio + 0.5)
+	if lo := m.Dp(featherMinDp); f < lo {
+		f = lo
+	}
+	if hi := m.Dp(featherMaxDp); f > hi {
+		f = hi
+	}
+	if lim := short / 3; f > lim {
+		f = lim
+	}
+	return f
+}
+
+// regionShapes 由可见元素推导形裁并集（纯逻辑，可测，D45–D48/§15.1）：视口裁剪 ∩ 淡出带
+// 裁切 → 沿元素**真实边**内缩（裁切边不缩——内缩会露出羽化渐隐不覆盖的洞），圆角同步收窄
+// （同心内缩圆角）；带顶裁切标 sqTop（并集构建时上两角填方续接带渐变，§15.3）。内缩量按
+// 元素短边响应式（featherWidth，D47/D48）——取**真轮廓**尺寸（与 overlay 渐隐带同源，
+// 跨带元素裁剪后短边会变、按裁剪尺寸算会与渐隐带错位），与渐隐带宽逐像素互补。
+func regionShapes(dst []shapePhys, shapes []drawShape, band int, m unit.Metric) []shapePhys {
 	for _, s := range shapes {
 		r := s.outline.Intersect(s.clip)
 		if r.Empty() {
 			continue
 		}
+		ins := featherWidth(m, s.outline.Dx(), s.outline.Dy())
 		cutTop := r.Min.Y > s.outline.Min.Y
 		cutBottom := r.Max.Y < s.outline.Max.Y
 		cutLeft := r.Min.X > s.outline.Min.X
@@ -764,7 +794,7 @@ func regionShapes(dst []shapePhys, shapes []drawShape, band, ins int) []shapePhy
 // "已应用"导致形裁永久失效。
 func (u *UI) applyRegion() {
 	u.physShapes = regionShapes(u.physShapes[:0], u.shapes,
-		u.frameMetric.Dp(fadeBandDp), u.frameMetric.Dp(featherInDp))
+		u.frameMetric.Dp(fadeBandDp), u.frameMetric)
 	if shapesEqual(u.physShapes, u.lastShapes) {
 		return
 	}
@@ -993,13 +1023,6 @@ func (u *UI) clickHeld() bool {
 		dy = -dy
 	}
 	return dx <= dragClickSlackPx && dy <= dragClickSlackPx
-}
-
-// logo 品牌色圆钮 + 内嵌品牌图标（§15.2 logo 实装；绘制细节见 logo.go）。
-func (u *UI) logo(gtx layout.Context) layout.Dimensions {
-	d := gtx.Dp(44)
-	drawLogo(gtx, image.Rectangle{Max: image.Pt(d, d)})
-	return layout.Dimensions{Size: image.Pt(d, d)}
 }
 
 // actionBtn 动作键（停止/允许/拒绝；主题色底白字）。
