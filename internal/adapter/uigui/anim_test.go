@@ -185,7 +185,7 @@ func startAt(u *UI, expand bool) time.Time {
 	return u.expandAn.start
 }
 
-// TestExpandTimeline 展开 480ms 严格先后（D54）：输入栏 260ms 先跑完，消息区 220ms 才起。
+// TestExpandTimeline 展开 700ms 严格先后（D54）：输入栏 260ms 先跑完，消息区 440ms 才起。
 func TestExpandTimeline(t *testing.T) {
 	u := &UI{collapsed: true}
 	t0 := startAt(u, true)
@@ -222,14 +222,14 @@ func TestExpandTimeline(t *testing.T) {
 	}
 	u.expandAn.advance(t0.Add((expandBarMs + expandMsgMs) * time.Millisecond))
 	if u.expandAn.active {
-		t.Fatal("480ms 应已收尾")
+		t.Fatal("700ms 应已收尾")
 	}
 	if u.expandAn.barP != 1 || u.expandAn.msgP != 1 {
 		t.Fatalf("收尾进度应为 (1,1), 得 (%v,%v)", u.expandAn.barP, u.expandAn.msgP)
 	}
 }
 
-// TestCollapseTimeline 收起 380ms 严格先后（D54）：消息区 160ms 先退，输入栏 220ms 后缩。
+// TestCollapseTimeline 收起 540ms 严格先后（D54）：消息区 320ms 先退，输入栏 220ms 后缩。
 func TestCollapseTimeline(t *testing.T) {
 	u := &UI{collapsed: false}
 	t0 := startAt(u, false)
@@ -246,12 +246,12 @@ func TestCollapseTimeline(t *testing.T) {
 	}
 	u.expandAn.advance(t0.Add(collapseMsgMs * time.Millisecond))
 	if u.expandAn.msgP != 0 || u.expandAn.barP != 1 || !u.expandAn.phase2 {
-		t.Fatalf("160ms 处 msgP=%v barP=%v phase2=%v, want 0/1/true",
+		t.Fatalf("320ms 处 msgP=%v barP=%v phase2=%v, want 0/1/true",
 			u.expandAn.msgP, u.expandAn.barP, u.expandAn.phase2)
 	}
 	u.expandAn.advance(t0.Add((collapseMsgMs + collapseBarMs) * time.Millisecond))
 	if u.expandAn.active {
-		t.Fatal("380ms 应已收尾")
+		t.Fatal("540ms 应已收尾")
 	}
 	if u.expandAn.barP != 0 || u.expandAn.msgP != 0 {
 		t.Fatalf("收尾进度应为 (0,0), 得 (%v,%v)", u.expandAn.barP, u.expandAn.msgP)
@@ -311,7 +311,7 @@ func TestExpandReverseNoJump(t *testing.T) {
 	}
 	u2.expandAn.advance(t2.Add(collapseMsgMs * time.Millisecond))
 	if u2.expandAn.msgP != 0 || u2.expandAn.barP != 1 || !u2.expandAn.phase2 {
-		t.Fatalf("160ms 处消息应退尽: msgP=%v barP=%v phase2=%v",
+		t.Fatalf("320ms 处消息应退尽: msgP=%v barP=%v phase2=%v",
 			u2.expandAn.msgP, u2.expandAn.barP, u2.expandAn.phase2)
 	}
 	u2.expandAn.advance(t2.Add((collapseMsgMs + collapseBarMs) * time.Millisecond))

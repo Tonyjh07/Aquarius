@@ -11,8 +11,8 @@ import (
 // 复用：layout 会被 headless 二次调用，进度放里面会双倍推进），ticker 只负责 Invalidate。
 const (
 	expandBarMs   = 260 // 展开·输入栏（easeOutBack 轻回弹）
-	expandMsgMs   = 220 // 展开·消息揭示（CSS ease）
-	collapseMsgMs = 160 // 收起·消息揭示（CSS ease）
+	expandMsgMs   = 440 // 展开·消息揭示（CSS ease）
+	collapseMsgMs = 320 // 收起·消息揭示（CSS ease）
 	collapseBarMs = 220 // 收起·输入栏（easeInSine）
 )
 
