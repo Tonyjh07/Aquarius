@@ -80,8 +80,8 @@ type limitsConfig struct {
 }
 
 // defaultConfig 首次运行写入的模板：DESIGN §8 示例的可运行子集
-// （ui.kind 取 tui——D33 模板默认，repl 为测试/e2e 后端；mcpServers/plugins 为
-// M4 MCP 接入的声明与状态，缺省皆空）。
+// （ui.kind 取 gui——D51 模板默认 = 悬浮球前端，tui 显式指定、repl 为测试/e2e
+// 后端；mcpServers/plugins 为 M4 MCP 接入的声明与状态，缺省皆空）。
 const defaultConfig = `{
   "model": {
     "provider": "openai-compatible",
@@ -95,7 +95,7 @@ const defaultConfig = `{
     "echo_thinking": true,
     "unsupported_params": []
   },
-  "ui": { "kind": "tui" },
+  "ui": { "kind": "gui" },
   "system_prompt": "",
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },

@@ -210,9 +210,9 @@ func TestArmHeartbeat(t *testing.T) {
 	}
 }
 
-// TestHeartbeatNeed 心跳判据（D50 实测修订）：停靠中 / 布防中 / 收起态球停在可停靠边
-// → 需唤帧（形裁窄区悬停可能零帧，判定全靠帧 + 光标直采）；展开态与球不在可停靠边
-// → 静默。
+// TestHeartbeatNeed 心跳判据（D50 实测修订 / D53 扩展）：停靠中 / 布防中 / 收起态球
+// 停在可停靠边 / tips 在显 → 需唤帧（形裁窄区与分层窗透明区悬停可能零帧，判定全靠
+// 帧 + 光标直采）；否则静默零帧。
 func TestHeartbeatNeed(t *testing.T) {
 	u := &UI{}
 	if u.heartbeatNeed() {
@@ -236,6 +236,54 @@ func TestHeartbeatNeed(t *testing.T) {
 	if !u.heartbeatNeed() {
 		t.Fatal("停靠中应心跳")
 	}
+	u.docked = false
+	u.tipShown = true
+	if !u.heartbeatNeed() {
+		t.Fatal("tips 在显应心跳（D53 光标直采复评）")
+	}
+	u.tipShown = false
+	if u.heartbeatNeed() {
+		t.Fatal("全部条件清空应静默")
+	}
+}
+
+// TestOverInputBtn tips 光标直采判定（D53）：圆钮矩形由 rowAnchor 派生（logo = 锚点
+// 左上方块、右钮 = 右上方块），命中 = 窗口位 + 矩形含光标屏幕坐标；帧未就绪不命中。
+// 分层窗透明像素/窗外零 pointer 事件，Hover 收不到 Leave——tips 熄灭全靠本判定。
+func TestOverInputBtn(t *testing.T) {
+	u := &UI{}
+	u.frameSize = image.Pt(760, 575)
+	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	u.x, u.y = -16, 628
+
+	a := rowAnchor(u.frameSize, u.frameMetric.Dp)
+	logo := inputBtnRects(u.frameSize, u.frameMetric.Dp, false)
+	send := inputBtnRects(u.frameSize, u.frameMetric.Dp, true)
+	if logo.Min != a.Min || logo.Dx() != a.Dy() || logo.Dx() != logo.Dy() {
+		t.Fatalf("logo 钮 = %v, want 锚点左上方块 ⌀%d", logo, a.Dy())
+	}
+	if send.Max != a.Max || send.Dx() != a.Dy() || send.Dy() != a.Dy() {
+		t.Fatalf("右钮 = %v, want 锚点右上方块 ⌀%d", send, a.Dy())
+	}
+	mid := func(r image.Rectangle) point {
+		return point{x: u.x + int32(r.Min.X+r.Dx()/2), y: u.y + int32(r.Min.Y+r.Dy()/2)}
+	}
+	if !u.overInputBtn(false, mid(logo)) {
+		t.Fatal("光标在 logo 钮上应命中")
+	}
+	if !u.overInputBtn(true, mid(send)) {
+		t.Fatal("光标在右钮上应命中右钮")
+	}
+	if u.overInputBtn(false, mid(send)) {
+		t.Fatal("光标在右钮上不应命中 logo 钮")
+	}
+	if u.overInputBtn(false, point{x: u.x - 5, y: u.y - 5}) {
+		t.Fatal("光标在窗外不应命中")
+	}
+	u.frameMetric = unit.Metric{}
+	if u.overInputBtn(false, mid(logo)) {
+		t.Fatal("frameMetric 未就绪不应命中")
+	}
 }
 
 // TestEndDragClickKeepsPark 抬手纯点击不夹取（D50 实测缺陷修订，§15.1）：「点击脱离
@@ -243,7 +291,8 @@ func TestHeartbeatNeed(t *testing.T) {
 // 收起后球离边超 snapDp、布防/停靠断链——纯点击必须原位保留；真拖动仍按态夹取。
 func TestEndDragClickKeepsPark(t *testing.T) {
 	u := newHeadless(t, Options{})
-	u.frameSize = image.Pt(760, 575) // 展开态锚点 = 整窗
+	u.frameSize = image.Pt(760, 575) // 展开态锚点 = 输入栏包围盒（D52）
+	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	u.collapsed = false
 
 	// 纯点击：光标与按下点重合（位移 ≤ dragClickSlackPx）→ 跳过夹取，贴边位原样保留。
@@ -258,13 +307,53 @@ func TestEndDragClickKeepsPark(t *testing.T) {
 		t.Fatal("endDrag 应清 dragging")
 	}
 
-	// 真拖动（位移 > slack）：整窗锚点夹取照常（x=-380 中心仍在主屏 → 夹回 ≥ work.left）。
+	// 真拖动（位移 > slack）：按输入栏锚点夹取（D52——透明边距可越界，夹到
+	// 输入栏贴左缘 x = -sideMargin，而非整窗的 x ≥ 0）。
 	u.dragging = true
 	u.dragCur0 = point{x: cursorPos().x + 100, y: cursorPos().y}
 	u.x, u.y = -380, 628
 	u.endDrag()
-	if u.x == -380 || u.x < 0 {
-		t.Fatalf("真拖动应夹入工作区: x=%d, want 变化且 ≥0", u.x)
+	if want := int32(-dpId(sideMarginDp)); u.x != want {
+		t.Fatalf("真拖动应按输入栏锚点夹取: x=%d, want %d", u.x, want)
+	}
+}
+
+// TestRowAnchor 展开态锚点几何（D52）：输入栏三段包围盒 = [sideMargin, 镜像边距] ×
+// [行上, 行高]——与 inputBar 同式，转写消息区不参与。
+func TestRowAnchor(t *testing.T) {
+	size, dp := image.Pt(760, 575), dpId
+	r := rowAnchor(size, dp)
+	if r.Min.X != dp(sideMarginDp) || r.Max.X != size.X-dp(sideMarginDp) {
+		t.Fatalf("rowAnchor x = [%d,%d], want [%d,%d]",
+			r.Min.X, r.Max.X, dp(sideMarginDp), size.X-dp(sideMarginDp))
+	}
+	if r.Min.Y != ballRect(size, dp).Min.Y || r.Max.Y-r.Min.Y != dp(inputRowDp) {
+		t.Fatalf("rowAnchor y = %v, want top=%d h=%d",
+			r, ballRect(size, dp).Min.Y, dp(inputRowDp))
+	}
+}
+
+// TestExpandedClampRowEdge 展开态夹取只限制输入栏（D52）：输入栏贴左缘/提到上沿的
+// 位置不被弹开（旧整窗口径会推开 0～20px 透明边距），再越即夹回。
+func TestExpandedClampRowEdge(t *testing.T) {
+	u := newHeadless(t, Options{})
+	u.frameSize = image.Pt(760, 575)
+	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	u.collapsed = false
+	margin := int32(dpId(sideMarginDp))
+	top := int32(575 - dpId(inputRowDp+pillTopDp+16) + dpId(pillTopDp))
+
+	if x, _ := u.clampPos(-margin, 628); x != -margin {
+		t.Fatalf("输入栏贴左缘位被弹开: x=%d, want %d", x, -margin)
+	}
+	if x, _ := u.clampPos(-margin-30, 628); x != -margin {
+		t.Fatalf("过左应夹回贴缘位: x=%d, want %d", x, -margin)
+	}
+	if _, y := u.clampPos(0, -top); y != -top {
+		t.Fatalf("输入栏提到上沿被挡: y=%d, want %d", y, -top)
+	}
+	if _, y := u.clampPos(0, -top-40); y != -top {
+		t.Fatalf("输入栏越上沿应夹回: y=%d, want %d", y, -top)
 	}
 }
 

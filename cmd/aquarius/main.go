@@ -124,6 +124,15 @@ type uiFrontend interface {
 }
 
 // run 程序主体（标准流可注入，便于端到端回放测试）。返回进程退出码。
+// uiKindDefault ui.kind 键缺失回落（D51：与模板/文档同默认 = gui；显式值原样保留）。
+// 独立成函数 = 缺省口径可测，避免测试真开窗。
+func uiKindDefault(kind string) string {
+	if kind == "" {
+		return "gui"
+	}
+	return kind
+}
+
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("aquarius", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -205,9 +214,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		cfg.Model.ReasoningEffort = effort
 	}
-	if cfg.UI.Kind == "" {
-		cfg.UI.Kind = "tui" // 键缺失与模板同默认（D33）；显式 "repl" 仍可用（测试/e2e 后端）
-	}
+	cfg.UI.Kind = uiKindDefault(cfg.UI.Kind)
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
 		fmt.Fprintf(stderr, "ui.kind=%q 仅支持 repl | tui | gui（D33/D43）\n", cfg.UI.Kind)
 		return 1
@@ -367,8 +374,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	// UI 前端（D33/D43）：repl（行式，测试/e2e 后端）、bubbletea TUI（模板默认）或
-	// Gio GUI（ui.kind=gui，§15）——同权实现 uiFrontend，换壳不换核（D28 输出器
+	// UI 前端（D33/D43/D51）：Gio GUI（默认，§15）、bubbletea TUI（ui.kind=tui）或
+	// repl（行式，测试/e2e 后端）——同权实现 uiFrontend，换壳不换核（D28 输出器
 	// 装饰器自动继承）。TUI 状态行回调经 atomic 读 Agent（构造晚于 UI 创建，
 	// 事件循环并发读 → -race 必须）。
 	var agentPtr atomic.Pointer[app.Agent]

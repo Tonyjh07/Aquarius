@@ -128,6 +128,9 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if !strings.Contains(string(data), `"system_prompt"`) {
 		t.Fatalf("模板应含 system_prompt 键: %s", data)
 	}
+	if !strings.Contains(string(data), `"kind": "gui"`) {
+		t.Fatalf("模板默认 ui.kind 应为 gui（D51）: %s", data)
+	}
 	if fi, err := os.Stat(filepath.Join(dir, "sandbox")); err != nil || !fi.IsDir() {
 		t.Fatalf("特权目录应自动创建: %v", err)
 	}
@@ -857,25 +860,16 @@ func TestRunTUIConfirmE2E(t *testing.T) {
 	}
 }
 
-// TestRunDefaultsToTUIWhenKeyMissing ui 键缺失与模板同默认 tui（D33；审查修复：
-// 文档写"默认 tui"而缺省回落却是 repl，两处口径打架）。
-func TestRunDefaultsToTUIWhenKeyMissing(t *testing.T) {
-	dir := t.TempDir()
-	cfg := `{
-  "model": {"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},
-  "limits": {"max_turns": 8, "max_context_tokens": 64000}
-}`
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
+// TestRunDefaultsToGUIWhenKeyMissing ui 键缺失与模板同默认 gui（D51；D33 旧默认 tui
+// 随单二进制交付目标改判）。只测回落口径、不起 run——GUI 路径会真开窗，测试禁开真窗。
+func TestRunDefaultsToGUIWhenKeyMissing(t *testing.T) {
+	if got := uiKindDefault(""); got != "gui" {
+		t.Fatalf("缺 ui 键应默认 gui: %q", got)
 	}
-	t.Setenv("X", "k")
-	var out bytes.Buffer
-	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, io.Discard); code != 0 {
-		t.Fatalf("code = %d, out = %q", code, out.String())
-	}
-	// TUI 状态行标识（repl 不会渲染）。
-	if !strings.Contains(out.String(), "PgUp/PgDn") {
-		t.Fatalf("缺 ui 键应默认 TUI: %q", out.String())
+	for _, k := range []string{"tui", "repl", "gui"} {
+		if got := uiKindDefault(k); got != k {
+			t.Fatalf("显式 ui.kind 不改写: %q → %q", k, got)
+		}
 	}
 }
 

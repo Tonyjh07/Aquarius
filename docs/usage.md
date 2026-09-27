@@ -11,9 +11,10 @@ go build ./cmd/aquarius
 # 填 model.name / model.base_url，设置密钥环境变量，重新运行
 ```
 
-默认 **TUI**（`ui.kind=tui`，D33）：转写区 + 输入框 + 状态行（模型/权限/用量），
+默认 **GUI 悬浮球**（`ui.kind=gui`，D51/§15：托盘常驻、Alt+A 呼出、不进任务栏）。
+`ui.kind=tui` 起 **TUI**（D33）：转写区 + 输入框 + 状态行（模型/权限/用量），
 上下键历史、PgUp/PgDn 滚动转写、Ctrl+C 取消当前生成、committed 回答带轻 markdown 渲染；
-`ui.kind=repl` 为行式 REPL（测试/e2e 后端）。直接输入文本即对话；`/help` 看命令；
+`ui.kind=repl` 为行式 REPL（测试/e2e 后端）。TUI/repl 中直接输入文本即对话；`/help` 看命令；
 `/quit`（或 `/exit`）退出。
 （Ctrl+C 语义：TUI 取消本轮后保持待命；repl 取消本轮后进程随即退出。）
 
@@ -145,6 +146,6 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
   `reasoning_content` 字段，服务端不认时自动剥离并记入 `model.unsupported_params`。
 - **启动报未知权限等级**：`permissions.level` 只接受
   `read-only|strict|permissive|full-access`。
-- **`ui.kind` 报未支持**：只接受 `repl`（行式，测试/e2e 后端）与 `tui`（默认，D33）。
+- **`ui.kind` 报未支持**：只接受 `gui`（默认，D51 悬浮球）、`tui`（D33）与 `repl`（行式，测试/e2e 后端）。
 - **想换模型/端点**：改 config 的 `model.name`/`model.base_url`，或用
   `-model`/`-base-url` flag、`AQUARIUS_MODEL`/`AQUARIUS_BASE_URL` 环境变量临时覆盖。

@@ -43,9 +43,9 @@ go-sdk）经 `mcpgate` 投影为 `mcp:<server>:<tool>` 工具（与内置工具�
 resources 只读并入记忆索引、prompts 暴露为动态命令；插件宿主负责发现（config `mcpServers` +
 `plugin.json`，D31）、capability 首用授权（grant 写回 `plugins.<name>.granted`）、
 崩溃限次重启与 `/plugin` 管理；`/model` 查看/热切换模型并写回 config（D32）。
-**TUI**（bubbletea，D33）为默认前端（`ui.kind=tui`）：转写区 + 流式 + 命令历史 + Confirm
-对话 + 状态行（模型/权限/用量）+ 轻 markdown（glamour），repl 保留为测试/e2e 后端，
-GUI 换壳契约已定稿（§15/D43：Gio 悬浮球前端，M5）。横切**装饰器链**（重试/硬保底截断/审计 JSONL，
+**TUI**（bubbletea，D33，`ui.kind=tui`）：转写区 + 流式 + 命令历史 + Confirm
+对话 + 状态行（模型/权限/用量）+ 轻 markdown（glamour），repl 保留为测试/e2e 后端；
+**GUI 悬浮球（§15/D43）为默认前端**（`ui.kind=gui`，D51；启动不进任务栏/Alt+Tab）。横切**装饰器链**（重试/硬保底截断/审计 JSONL，
 D14）在装配根叠加。验收：stdio 与 streamable HTTP 各接现成 MCP server 全链路
 （`AQUARIUS_E2E_REAL_MCP=1 go test ./cmd/aquarius -run RealMCP` 可重跑）。
 后续：**M5 GUI 前端**（D43/§15：spike 已过——形裁悬浮窗/托盘/快捷键/定位实测见 §15.6；

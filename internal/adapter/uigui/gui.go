@@ -90,6 +90,7 @@ type UI struct {
 	logoDrag    gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
 	logoHover   gesture.Hover // logo 圆钮：悬停 = 启动提示 tips（§15.1）
 	logoHovered bool          // 仅事件循环 goroutine 读写
+	tipShown    bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
 	sendBtn     widget.Clickable
 	stopBtn     widget.Clickable
 	allowBtn    widget.Clickable

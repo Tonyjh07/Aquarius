@@ -261,6 +261,7 @@ func (u *UI) onHWND(h uintptr) {
 	atomic.StoreUintptr(&mainHWND, h)
 	applyAlpha(u.alpha)    // LWA_ALPHA 整窗常量（与形裁正交，spike 已验证；D50 可为 dockAlpha）
 	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
+	hideFromTaskbar(h)     // 不进任务栏与 Alt+Tab（D51；非 Windows 为 no-op 桩）
 	// 置顶断言 + 记忆恢复（§15.1 置顶开关）：缺省置顶、菜单切换态随记忆回来——
 	// 本端 SetWindowPos 断言，不依赖 Gio 的 TopMost 应用（实测会意外丢失、原因未明）。
 	on := true
@@ -279,13 +280,17 @@ func (u *UI) onHWND(h uintptr) {
 	if u.opts.PosFile != "" {
 		if p, found := loadPos(u.opts.PosFile); found {
 			// D50：停靠记忆优先（停靠位重算，X/Y 忽略）；失败/非停靠走普通恢复——
-			// 锚点 = 整窗，与拖动夹取同口径（重启不跳位）。
+			// D52：锚点 = 输入栏包围盒（非停靠恢复恒为展开态，posRec 无 collapsed 键），
+			// 与拖动夹取同口径（重启不跳位）；frameMetric 未就绪 → restorePx 窗高比例。
 			if (p.Docked == "left" || p.Docked == "right") && u.restoreDock(p, rc) {
 				return
 			}
 			nx, ny := p.X, p.Y
 			if work, wok := platformWorkArea(point{x: p.X + w/2, y: p.Y + ht/2}); wok {
-				c := clampAnchor(point{x: p.X, y: p.Y}, image.Rect(0, 0, int(w), int(ht)), work)
+				px := restorePx(ht)
+				top := int(ht) - int(px(inputRowDp+pillTopDp+16)) + int(px(pillTopDp))
+				a := image.Rect(int(px(sideMarginDp)), top, int(w)-int(px(sideMarginDp)), top+int(px(inputRowDp)))
+				c := clampAnchor(point{x: p.X, y: p.Y}, a, work)
 				nx, ny = c.x, c.y
 			}
 			moveWindowTo(nx, ny)
@@ -650,15 +655,26 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	u.record(send.Add(image.Pt(0, absY)), rowH/2, fill, clipRect)
 
 	// 悬浮 tips（§15.1 启动提示 / §15.2 发送·停止键）：独立底板元素随形裁。
-	if u.logoHovered {
+	// 显隐 = 事件态 × 光标直采（D53）：分层窗按像素 alpha 命中，光标移到透明像素/
+	// 窗外后零 pointer 事件，Hover 收不到 Leave → 实测移开不消；直采离钮即熄，
+	// tipShown 并入 heartbeatNeed 唤帧复评（D50 心跳底座复用）。
+	cur := cursorPos()
+	shown := false
+	if u.logoHovered && u.overInputBtn(false, cur) {
 		u.hoverTip(gtx, absY, startupHint, false)
+		shown = true
 	}
-	if u.m.confirm == nil && u.sendBtn.Hovered() && !u.generating.Load() {
+	if u.m.confirm == nil && u.sendBtn.Hovered() && !u.generating.Load() &&
+		u.overInputBtn(true, cur) {
 		u.hoverTip(gtx, absY, "发送", true)
+		shown = true
 	}
-	if u.m.confirm == nil && u.generating.Load() && u.stopBtn.Hovered() {
+	if u.m.confirm == nil && u.generating.Load() && u.stopBtn.Hovered() &&
+		u.overInputBtn(true, cur) {
 		u.hoverTip(gtx, absY, "停止", true)
+		shown = true
 	}
+	u.tipShown = shown
 }
 
 // inputRowRects 三段几何（纯逻辑，可测，D49/§15.2）：拓扑 = 边距 | logo | 间隙 | 胶囊 |

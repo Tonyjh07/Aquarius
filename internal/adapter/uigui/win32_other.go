@@ -54,3 +54,6 @@ func trayDelete() {}
 
 // subclassCloseToHide 关窗拦截未适配（窗口照常销毁）。
 func subclassCloseToHide(uintptr) {}
+
+// hideFromTaskbar 任务栏屏蔽未适配（窗口照常上任务栏）。
+func hideFromTaskbar(uintptr) {}

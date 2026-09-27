@@ -219,15 +219,47 @@ func (u *UI) ballAnchor() (image.Rectangle, bool) {
 	return ballRect(u.frameSize, u.frameMetric.Dp), true
 }
 
-// anchorFor 当前状态的可见锚点（夹取/吸附共用口径，D50）：收起 = 球、展开 = 整窗。
+// rowAnchor 展开态输入栏锚点（窗口系，D52）：三段包围盒 = [sideMargin, 镜像边距] ×
+// [行上, 行高 48dp]，与 inputBar 同式（行上取 ballRect 同源式 = 底定高、上 8 下 16）。
+// 转写消息区不参与——允许越出桌面上沿，只限制输入栏（§15.1）。
+func rowAnchor(size image.Point, dp func(unit.Dp) int) image.Rectangle {
+	logo, _, send := inputRowRects(size.X, dp(pillTopDp), dp(inputRowDp), dp(inputGapDp), dp(sideMarginDp))
+	top := ballRect(size, dp).Min.Y // 行上 = logo 上（D49 换形不跳动，与 layout 同式）
+	return image.Rectangle{Min: image.Pt(logo.Min.X, top), Max: image.Pt(send.Max.X, top+dp(inputRowDp))}
+}
+
+// inputBtnRects 输入栏圆钮窗口系矩形（rowAnchor 派生，tips 光标直采判定用，D53）：
+// logo = 锚点左上角方块、右钮 = 右上角方块（边长 = 行高 48dp）。
+func inputBtnRects(size image.Point, dp func(unit.Dp) int, right bool) image.Rectangle {
+	a := rowAnchor(size, dp)
+	h := a.Dy()
+	if right {
+		return image.Rect(a.Max.X-h, a.Min.Y, a.Max.X, a.Max.Y)
+	}
+	return image.Rect(a.Min.X, a.Min.Y, a.Min.X+h, a.Min.Y+h)
+}
+
+// overInputBtn 光标是否在输入栏圆钮上（cur = 光标屏幕坐标，生产传 cursorPos 直采）。
+// 分层窗按像素 alpha 命中穿透：光标到透明像素/窗外后零 pointer 事件，Hover 收不到
+// Leave（实测 tips 移开不消，D53）——显隐判定在事件态之上叠光标直采，与停靠悬停同口径。
+func (u *UI) overInputBtn(right bool, cur point) bool {
+	if u.frameSize.X <= 0 || u.frameMetric.PxPerDp <= 0 {
+		return false
+	}
+	r := inputBtnRects(u.frameSize, u.frameMetric.Dp, right)
+	return insideRect(r.Add(image.Pt(int(u.x), int(u.y))), cur)
+}
+
+// anchorFor 当前状态的可见锚点（夹取/吸附共用口径，D50/D52）：收起 = 球、
+// 展开 = 输入栏包围盒（转写消息区可越出上沿）。
 func (u *UI) anchorFor() (image.Rectangle, bool) {
 	if u.collapsed {
 		return u.ballAnchor()
 	}
-	if u.frameSize.X <= 0 {
+	if u.frameSize.X <= 0 || u.frameSize.Y <= 0 || u.frameMetric.PxPerDp <= 0 {
 		return image.Rectangle{}, false
 	}
-	return image.Rectangle{Max: u.frameSize}, true
+	return rowAnchor(u.frameSize, u.frameMetric.Dp), true
 }
 
 // anchorCenter 锚点中心（屏幕系）——最近显示器判定用。
@@ -303,10 +335,11 @@ func (u *UI) evalDockFrame() {
 }
 
 // heartbeatNeed 心跳判据（纯状态读取，可测）：停靠中 / 布防中 / 收起态球停在可停靠
-// 边（edgeNow 由当帧 evalDockFrame 写入）→ 需要主动唤帧；展开态与球不在可停靠边
-// （无从停靠）→ 静默零帧。
+// 边（edgeNow 由当帧 evalDockFrame 写入）/ tips 在显（D53：光标直采判定需帧驱动，
+// 事件静默时 50ms 复评）→ 需要主动唤帧；否则展开态与球不在可停靠边（无从停靠）→
+// 静默零帧。
 func (u *UI) heartbeatNeed() bool {
-	return u.docked || u.dockArm || (u.collapsed && u.edgeNow != "")
+	return u.docked || u.dockArm || (u.collapsed && u.edgeNow != "") || u.tipShown
 }
 
 // armHeartbeat 收起/停靠态心跳（D50 实测修订）：悬停/移开判定 = 帧 + 光标直采，而
@@ -496,6 +529,13 @@ func (u *UI) stepAnim() {
 	}
 }
 
+// restorePx 恢复期 dp→px 换算（frameMetric 未就绪：窗高 / winHeightDp 即 DPI 比例——
+// 窗口刚建为默认尺寸，比例精确。restoreDock 与普通恢复夹取共用口径，D50/D52）。
+func restorePx(hPx int32) func(dp int) int32 {
+	scale := float64(hPx) / float64(winHeightDp)
+	return func(dp int) int32 { return int32(math.Round(float64(dp) * scale)) }
+}
+
 // restoreDock 位置记忆的停靠恢复（D50）：停靠位按当前工作区重算（存的 X/Y 忽略）；
 // 外侧边判定失效（接缝/分辨率变化）→ 返回 false 落回普通恢复（贴边可见）。
 // dp→px 比例按窗口高推（此刻 frameMetric 未就绪；窗口刚建即默认尺寸，比例即 DPI
@@ -505,8 +545,7 @@ func (u *UI) restoreDock(p posRec, rc rect) bool {
 	if hPx <= 0 {
 		return false
 	}
-	scale := float64(hPx) / float64(winHeightDp)
-	px := func(dp int) int32 { return int32(math.Round(float64(dp) * scale)) }
+	px := restorePx(hPx)
 	bx := px(sideMarginDp)
 	by := hPx - px(inputRowDp+pillTopDp+16) + px(pillTopDp)
 	bd := px(inputRowDp)

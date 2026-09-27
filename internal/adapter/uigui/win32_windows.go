@@ -62,6 +62,8 @@ const (
 	gwlExStyle  = ^uintptr(19) // GWL_EXSTYLE = -20（补码形式过 uintptr 参数）
 	wsExLayered = 0x00080000
 	lwaAlpha    = 0x00000002
+	// 主窗任务栏屏蔽（D51）：TOOLWINDOW 复用下方 overlay 常量，APPWINDOW 须清。
+	wsExAppWindow = 0x00040000 // 顶层窗强制上任务栏（与 TOOLWINDOW 相斥）
 
 	rgnOr = 2 // CombineRgn 并集（RGN_AND=1 / RGN_OR=2 / RGN_DIFF=4——写成1会取交集得空区域）
 
@@ -275,6 +277,18 @@ func applyAlpha(alpha byte) bool {
 		ok = r != 0
 	})
 	return ok
+}
+
+// hideFromTaskbar 主窗不进任务栏与 Alt+Tab（D51）：置 WS_EX_TOOLWINDOW、清
+// WS_EX_APPWINDOW——悬浮球托盘常驻、关窗即隐藏，任务栏条目与形态相斥（淡出
+// overlay 天然 TOOLWINDOW，主窗补齐同口径）。onHWND 挂接时一次性设置，经
+// onWindowThread（§15.6 铁律 1）。
+func hideFromTaskbar(h uintptr) {
+	onWindowThread(func() {
+		ex, _, _ := procGetWindowLongPtrW.Call(h, gwlExStyle)
+		ne := (ex | wsExToolWindow) &^ wsExAppWindow
+		procSetWindowLongPtrW.Call(h, gwlExStyle, ne)
+	})
 }
 
 // mainVisible 主窗可见性（查询类直接调；无句柄 = 不可见）——fadeFrame 兜底：
