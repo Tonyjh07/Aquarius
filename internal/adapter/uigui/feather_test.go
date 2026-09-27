@@ -78,7 +78,7 @@ func TestFadeFeatherShapes(t *testing.T) {
 		fill:    color.NRGBA{R: 0xFF, A: 0xFF}, // 底色红（src=nil 时的颜色来源）
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFeatherShapes(nil, shapes, bandPx, m, out, image.Pt(w, h)) {
+	if !fadeFeatherShapes(nil, shapes, 0, bandPx, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入渐隐像素")
 	}
 	px := func(x, y int) (b, g, r, a byte) {
@@ -161,7 +161,7 @@ func TestFadeFeatherShapesSamplesContent(t *testing.T) {
 		fill:    color.NRGBA{R: 0xFF, A: 0xFF}, // 底色红：若被误用，绿就不会出现
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFeatherShapes(src, shapes, 0, m, out, image.Pt(w, h)) {
+	if !fadeFeatherShapes(src, shapes, 0, 0, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入渐隐像素")
 	}
 	first := 30 - featherWidth(m, 20, 20) // 渐隐首像素（d = -fw+0.5，见 TestFadeFeatherShapes）
@@ -188,7 +188,7 @@ func TestFadeFeatherShapesCornerUniform(t *testing.T) {
 		fill:    color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFeatherShapes(nil, shapes, 0, m, out, image.Pt(w, h)) {
+	if !fadeFeatherShapes(nil, shapes, 0, 0, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入渐隐像素")
 	}
 	px := func(x, y int) byte { return out[(y*w+x)*4+3] }
@@ -243,7 +243,7 @@ func TestFadeFeatherShapesBandContinuity(t *testing.T) {
 		fill:    color.NRGBA{R: 0xFF, A: 0xFF},
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFeatherShapes(nil, shapes, bandPx, m, out, image.Pt(w, h)) {
+	if !fadeFeatherShapes(nil, shapes, 0, bandPx, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入渐隐像素")
 	}
 	px := func(x, y int) byte { return out[(y*w+x)*4+3] }
@@ -265,11 +265,11 @@ func TestFadeFeatherShapesBandContinuity(t *testing.T) {
 func TestFadeFeatherShapesEmpty(t *testing.T) {
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	out := make([]byte, 10*10*4)
-	if fadeFeatherShapes(nil, nil, 4, m, out, image.Pt(10, 10)) {
+	if fadeFeatherShapes(nil, nil, 0, 4, m, out, image.Pt(10, 10)) {
 		t.Fatal("无形状应返回 false")
 	}
 	sh := []drawShape{{outline: image.Rect(0, 0, 5, 5), clip: image.Rect(0, 0, 10, 10), radius: 2}}
-	if fadeFeatherShapes(nil, sh, 4, m, out[:10], image.Pt(10, 10)) {
+	if fadeFeatherShapes(nil, sh, 0, 4, m, out[:10], image.Pt(10, 10)) {
 		t.Fatal("缓冲不足应返回 false")
 	}
 }

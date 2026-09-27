@@ -127,14 +127,21 @@ type UI struct {
 	// 展开）。仅事件循环 goroutine 读写。
 	collapsed bool
 
+	// expandAn 展开/收起动画（D54）：collapsed 是逻辑态、即时翻转；渲染几何由
+	// expandAn.barP/msgP 插值，静止态由 collapsed 推导（expandProgress）。
+	expandAn expandAnim
+
 	// 形裁与淡出（D44/§15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
 	physShapes  []shapePhys // 形裁转换缓冲
 	lastShapes  []shapePhys // 已应用的形裁（变化才重建）
 	frameMetric unit.Metric // 当前帧 Metric（headless 同源渲染用）
 	frameSize   image.Point // 当前帧窗口尺寸（物理 px）
-	fade        fadeState   // 淡出带 headless 渲染状态
-	fadeBuf     []byte      // 淡出带预乘 BGRA 缓冲
+	// bandTop/bandBottom 当前帧淡出带范围 [top, bottom)（D54 消息揭示带）：静息 = 顶带
+	// [0, bandPx)；动画中带顶随 msgP 从转写区底升到 0。layout 每遍写入，两遍同帧同值。
+	bandTop, bandBottom int
+	fade                fadeState // 淡出带 headless 渲染状态
+	fadeBuf             []byte    // 淡出带预乘 BGRA 缓冲
 	// inFadePass 淡出源渲染标记：跳过兜底窗口底色——淡出带像素源只含可见元素
 	//（气泡/输入栏），背景保持 headless 清屏的透明 → 带内无消息 = 全透明（D44/§15.3）。
 	inFadePass bool
@@ -375,17 +382,9 @@ func (u *UI) apply(msg uiMsg) bool {
 	case drainMsg:
 		close(m.done)
 	case showExpandMsg:
-		u.undockInstant() // D50：呼出 = 召回 + 展开（停靠态先归位复亮）
-		u.collapsed = false
-		u.focusPending = true // 下帧 layout 执行 key.FocusCmd
+		u.beginExpand() // 呼出 = 召回 + 展开（D50 召回、D54 动画）
 	case toggleExpandMsg:
-		if u.collapsed {
-			u.undockInstant() // D50：展开前脱离停靠（锚点按收起球算，须先于 collapsed 翻转）
-			u.collapsed = false
-			u.focusPending = true
-		} else {
-			u.collapsed = true
-		}
+		u.toggleExpand() // 互切；动画中反向续跑（D54）
 	case quitMsg:
 		return false
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gioui.org/app"
 	"gioui.org/f32"
@@ -231,6 +232,9 @@ func (u *UI) runWindow(w *app.Window) {
 		switch e := ev.(type) {
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
+			// D54：展开动画进度前推须在 layout **之前**——layout 会被 fadeFrame 以零值
+			// Source 二次调用，进度放里面会双倍推进（D50 同款教训）；两遍因此同帧同进度。
+			u.stepExpand(time.Now())
 			u.layout(gtx)
 			e.Frame(&ops)
 			u.stepAnim()  // D50：停靠动画每帧前推（layout 会被 headless 二次调用，不能放里面）
@@ -314,9 +318,12 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.updateClicks(gtx)
 	u.updateDrag(gtx)
 	u.updateLogo(gtx)
-	if u.collapsed || u.docked {
+	switch {
+	case u.expandAn.active:
+		u.dockArm = false // D54：动画期间不做停靠评估（球位在动，布防无意义）
+	case u.collapsed || u.docked:
 		u.evalDockFrame() // D50：收起/停靠态逐帧评估停靠（光标直采，layout 前置状态已更新）
-	} else {
+	default:
 		u.dockArm = false // 展开态不可停靠：清布防残留（防收起瞬间误触发滑出）
 	}
 	u.armHeartbeat() // D50：布防心跳（移出球后无指针事件 → 主动唤帧完成移开判定）
@@ -325,8 +332,12 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.frameMetric = gtx.Metric
 	u.frameSize = size
 	u.shapes = u.shapes[:0]
+	// D54：淡出带缺省 = §15.3 静息顶带（收起态无转写区，带只作兜底口径）。
+	u.bandTop, u.bandBottom = 0, gtx.Dp(fadeBandDp)
 
-	if u.collapsed {
+	// D54：collapsed 是逻辑态、即时翻转；动画中走全量 layout 带几何插值（收尾 barP=0
+	// 时几何 == layoutCollapsed 的球，切换无缝）。
+	if u.collapsed && !u.expandAn.active {
 		u.layoutCollapsed(gtx, size)
 		u.applyRegion()
 		return layout.Dimensions{Size: size}
@@ -341,6 +352,10 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	if transH < 0 {
 		transH = 0
 	}
+	// D54 消息揭示带：msgP 驱动带顶从 transH（全隐）升到 0（静息，与 §15.3 顶带重合），
+	// 带底夹在 transH 内（不压状态行/输入行）。静态读，两遍 layout 同帧同值。
+	_, msgP := u.expandProgress()
+	u.bandTop, u.bandBottom = revealBand(msgP, transH, gtx.Dp(fadeBandDp))
 
 	dims := layout.Stack{Alignment: layout.N}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -613,33 +628,33 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 // inputBar 输入行（D49 三段式，§15.2）：[logo ⌀48] 12 [输入胶囊] 12 [send ⌀48]——三段等高
 // 独立成形（各自 record → 形裁/羽化，间隙透明且点击穿透），中间胶囊吃掉全部剩余宽度
 // （响应式：窗口宽变化只伸缩它，字号/圆钮尺寸不随窗口变）。坐标原点 = 输入行段左上，
-// w = 窗口宽（均经 gtx.Dp 换算为物理 px）。
+// w = 窗口宽（均经 gtx.Dp 换算为物理 px）。D54：绘制顺序 = 胶囊 → 右钮 → logo（动画
+// p=0 时 logo 盖住前两者），几何按展开进度插值。
 func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	rowH := gtx.Dp(inputRowDp)
-	logo, pill, send := inputRowRects(w, gtx.Dp(pillTopDp), rowH,
+	logo, pillEnd, sendEnd := inputRowRects(w, gtx.Dp(pillTopDp), rowH,
 		gtx.Dp(inputGapDp), gtx.Dp(sideMarginDp))
+	// D54 展开/收起动画：p=0 时胶囊与右钮都退化为 logo 位置的同尺寸圆（被 logo 盖住）、
+	// p=1 = D49 终位；过冲 p>1（easeOutBack）沿同一式外推，让它们越出终位再回落。
+	pill, send := lerpRowRects(logo, pillEnd, sendEnd, u.barP())
 	clipRect := image.Rectangle{Max: u.frameSize}
+	inAnim := u.expandAn.active
 
-	// logo 圆钮（§15.1 把手含 logo）：悬停启动 tips、拖动移窗、单击收起回球。
-	drawLogo(gtx, logo)
-	gst := clip.Rect(logo).Push(gtx.Ops)
-	u.logoHover.Add(gtx.Ops)
-	u.logoDrag.Add(gtx.Ops)
-	gst.Pop()
-	u.record(logo.Add(image.Pt(0, absY)), rowH/2, brandColor, clipRect)
-
-	// 输入胶囊：底色 + 内容（内边距/图标槽/文字/动作区）。
+	// 输入胶囊（**先画**，D54 绘制顺序 = 胶囊 → 右钮 → logo）：内容**按终位整盒排版**
+	// （原点 + 终宽都取 pillEnd → 文字图标不挤压、不位移），只按当前胶囊矩形裁剪 →
+	// 胶囊生长即揭示内容。
 	paint.FillShape(gtx.Ops, pillBg, clip.UniformRRect(pill, rowH/2).Op(gtx.Ops))
 	pst := clip.UniformRRect(pill, rowH/2).Push(gtx.Ops)
-	inner := op.Offset(pill.Min).Push(gtx.Ops)
+	inner := op.Offset(pillEnd.Min).Push(gtx.Ops)
 	gtxC := gtx
-	gtxC.Constraints = layout.Exact(pill.Size())
+	gtxC.Constraints = layout.Exact(pillEnd.Size())
 	u.pillContent(gtxC)
 	inner.Pop()
 	pst.Pop()
 	u.record(pill.Add(image.Pt(0, absY)), rowH/2, pillBg, clipRect)
 
-	// 右圆钮（恒在，几何不随状态变，D49）：idle = 发送、生成中 = 停止、确认态 = 置灰不可点。
+	// 右圆钮（恒在，几何不随状态变、动画期只平移，D49）：idle = 发送、生成中 = 停止、
+	// 确认态 = 置灰不可点。
 	fill, stop, cl := brandColor, false, &u.sendBtn
 	switch {
 	case u.m.confirm != nil:
@@ -654,25 +669,36 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	off.Pop()
 	u.record(send.Add(image.Pt(0, absY)), rowH/2, fill, clipRect)
 
+	// logo 圆钮（**最后画**，D54）：p=0 时盖住胶囊/右钮 → 像素与 layoutCollapsed 的球
+	// 一致（收尾切收起态无缝）；p=1 三段不重叠、顺序无副作用。悬停 tips、拖动移窗、单击互切。
+	drawLogo(gtx, logo)
+	gst := clip.Rect(logo).Push(gtx.Ops)
+	u.logoHover.Add(gtx.Ops)
+	u.logoDrag.Add(gtx.Ops)
+	gst.Pop()
+	u.record(logo.Add(image.Pt(0, absY)), rowH/2, brandColor, clipRect)
+
 	// 悬浮 tips（§15.1 启动提示 / §15.2 发送·停止键）：独立底板元素随形裁。
 	// 显隐 = 事件态 × 光标直采（D53）：分层窗按像素 alpha 命中，光标移到透明像素/
 	// 窗外后零 pointer 事件，Hover 收不到 Leave → 实测移开不消；直采离钮即熄，
-	// tipShown 并入 heartbeatNeed 唤帧复评（D50 心跳底座复用）。
-	cur := cursorPos()
+	// tipShown 并入 heartbeatNeed 唤帧复评（D50 心跳底座复用）。动画期抑制（D54）。
 	shown := false
-	if u.logoHovered && u.overInputBtn(false, cur) {
-		u.hoverTip(gtx, absY, startupHint, false)
-		shown = true
-	}
-	if u.m.confirm == nil && u.sendBtn.Hovered() && !u.generating.Load() &&
-		u.overInputBtn(true, cur) {
-		u.hoverTip(gtx, absY, "发送", true)
-		shown = true
-	}
-	if u.m.confirm == nil && u.generating.Load() && u.stopBtn.Hovered() &&
-		u.overInputBtn(true, cur) {
-		u.hoverTip(gtx, absY, "停止", true)
-		shown = true
+	if !inAnim {
+		cur := cursorPos()
+		if u.logoHovered && u.overInputBtn(false, cur) {
+			u.hoverTip(gtx, absY, startupHint, false)
+			shown = true
+		}
+		if u.m.confirm == nil && u.sendBtn.Hovered() && !u.generating.Load() &&
+			u.overInputBtn(true, cur) {
+			u.hoverTip(gtx, absY, "发送", true)
+			shown = true
+		}
+		if u.m.confirm == nil && u.generating.Load() && u.stopBtn.Hovered() &&
+			u.overInputBtn(true, cur) {
+			u.hoverTip(gtx, absY, "停止", true)
+			shown = true
+		}
 	}
 	u.tipShown = shown
 }
@@ -869,7 +895,7 @@ func (u *UI) record(abs image.Rectangle, radius int, fill color.NRGBA, clipRect 
 	if vis.Empty() {
 		return
 	}
-	if vis.Max.Y <= u.frameMetric.Dp(fadeBandDp) {
+	if vis.Max.Y <= u.bandBottom { // D54：带底可动（消息揭示带），静息即 §15.3 顶带底
 		return
 	}
 	u.shapes = append(u.shapes, drawShape{outline: abs, clip: clipRect, radius: radius, fill: fill})
@@ -951,7 +977,7 @@ func regionShapes(dst []shapePhys, shapes []drawShape, band int, m unit.Metric) 
 // "已应用"导致形裁永久失效。
 func (u *UI) applyRegion() {
 	u.physShapes = regionShapes(u.physShapes[:0], u.shapes,
-		u.frameMetric.Dp(fadeBandDp), u.frameMetric)
+		u.bandBottom, u.frameMetric)
 	if shapesEqual(u.physShapes, u.lastShapes) {
 		return
 	}
@@ -1068,7 +1094,11 @@ func (u *UI) submitEditor() {
 }
 
 // updateClicks 控件行为：发送/停止/允许/拒绝（logo 手势与悬停在 updateLogo）。
+// D54：动画期间几何在动（右钮半程在飞），不接受点击。
 func (u *UI) updateClicks(gtx layout.Context) {
+	if u.expandAn.active {
+		return
+	}
 	if u.sendBtn.Clicked(gtx) {
 		u.submitEditor()
 	}
@@ -1103,10 +1133,10 @@ func (u *UI) updateDrag(gtx layout.Context) {
 			was := u.dragging
 			u.endDrag()
 			// 收起态：单击球 = 再展开；移动 = 拖窗（§15.1）。
-			if ev.Kind == pointer.Release && was && u.collapsed && u.clickHeld() {
-				u.collapsed = false
-				u.focusPending = true // 展开即入焦点
-				u.w.Invalidate()
+			// D54：动画中本把手与 logo 钮重叠，展开语义归 logo 的互切（防背景误触发反向）。
+			if ev.Kind == pointer.Release && was && u.collapsed &&
+				!u.expandAn.active && u.clickHeld() {
+				u.beginExpand() // 展开即入焦点（含）
 			}
 		}
 	}
@@ -1134,8 +1164,7 @@ func (u *UI) updateLogo(gtx layout.Context) {
 			was := u.dragging
 			u.endDrag()
 			if ev.Kind == pointer.Release && was && u.clickHeld() {
-				u.collapsed = true // 左键 logo = 收起回球（§15.1）
-				u.w.Invalidate()
+				u.toggleExpand() // 左键 logo = 互切（§15.1；D54 动画中反向续跑）
 			}
 		}
 	}

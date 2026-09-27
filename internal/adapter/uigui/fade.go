@@ -167,20 +167,23 @@ func writePremulFill(fill color.NRGBA, av float64, out []byte, oi int) bool {
 	return true
 }
 
-// fadePremultiplyBand 把源图淡出带 [0, bandH) 行转成 UpdateLayeredWindow 用的
-// 预乘 BGRA（写入 out 顶部 bandH 行），返回带内是否有可见内容。
+// fadePremultiplyBand 把源图淡出带 [top, bottom) 行转成 UpdateLayeredWindow 用的
+// 预乘 BGRA（写入 out 对应行），返回带内是否有可见内容。
 // g(y) = smoothstep（带顶 0 → 带底 1），带底与主窗像素在 alpha 上无缝衔接。
-func fadePremultiplyBand(src *image.RGBA, w, bandH int, out []byte) bool {
-	if w <= 0 || bandH <= 0 || src == nil || src.Bounds().Dx() < w || src.Bounds().Dy() < bandH {
+// D54：带顶/带底可动（消息揭示带）；top=0、bottom=bandH 时即 §15.3 静息顶带。
+func fadePremultiplyBand(src *image.RGBA, w, top, bottom int, out []byte) bool {
+	bandH := bottom - top
+	if w <= 0 || bandH <= 0 || top < 0 ||
+		src == nil || src.Bounds().Dx() < w || src.Bounds().Dy() < bottom {
 		return false
 	}
-	if len(out) < w*bandH*4 {
+	if len(out) < w*bottom*4 {
 		return false
 	}
 	_ = lutForever // 确保 LUT 已初始化
 	content := false
-	for y := 0; y < bandH; y++ {
-		t := (float64(y) + 0.5) / float64(bandH)
+	for y := top; y < bottom; y++ {
+		t := (float64(y-top) + 0.5) / float64(bandH)
 		g := t * t * (3 - 2*t) // smoothstep
 		inOff := src.PixOffset(0, y)
 		rowIn := src.Pix[inOff : inOff+w*4]
@@ -236,10 +239,13 @@ const featherEdgeMin = 0.0
 // 外圈亮带」，与带边割裂；本式从 region 边界即起衰减、只在形状内落笔，与带底同类。**颜色
 // （D47/D48）**：采样同帧 headless 内容（保文字/图标随渐隐自然淡出；只在形状内采样——避开
 // 圆角外透明区，无 D47 的"十字/阶梯"），headless 不可用（src 缺省或尺寸不符）时用元素底色
-// 兜底。**带内 (y < bandPx) 额外乘淡出带因子 g(y)**：跨带元素在带底的左右边与带下连续
-// （带底 g→1），消除带底横缝。只落笔在元素可见裁剪区内。真轮廓保证不沿视口/带裁切线描边。
+// 兜底。**带内 (bandTop ≤ y < bandBottom) 额外乘淡出带因子 g(y)**：跨带元素在带底的左右边
+// 与带下连续（带底 g→1），消除带底横缝；**带顶以上 g=0 不落笔**（D54 消息揭示带：主窗形裁
+// 与带都在带顶让位，那片区域须完全透明）。只落笔在元素可见裁剪区内。真轮廓保证不沿视口/
+// 带裁切线描边。
 // 返回是否写入像素。
-func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, m unit.Metric, out []byte, size image.Point) bool {
+func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandTop, bandBottom int,
+	m unit.Metric, out []byte, size image.Point) bool {
 	if len(shapes) == 0 {
 		return false
 	}
@@ -292,8 +298,10 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, m unit.M
 		y1 := min(r.Max.Y, min(clip.Max.Y, h))
 		for y := y0; y < y1; y++ {
 			g := 1.0
-			if y < bandPx {
-				t := (float64(y) + 0.5) / float64(bandPx)
+			if y < bandTop {
+				g = 0 // D54：带顶以上不可见（主窗形裁让位、带亦不写）
+			} else if y < bandBottom {
+				t := (float64(y-bandTop) + 0.5) / float64(bandBottom-bandTop)
 				g = t * t * (3 - 2*t) // 与 fadePremultiplyBand 同式
 			}
 			for x := x0; x < x1; x++ {
@@ -325,6 +333,25 @@ func fadeFeatherShapes(src *image.RGBA, shapes []drawShape, bandPx int, m unit.M
 	return content
 }
 
+// clampedBand 当前帧淡出带 [top, bottom)（D54 纯读，可测）：把 layout 写入的带范围夹到
+// 当前窗口内（带顶不越窗、带底不越过带顶、不出窗）。静息 = §15.3 顶带 [0, Dp(fadeBandDp))。
+func (u *UI) clampedBand() (top, bottom int) {
+	top, bottom = u.bandTop, u.bandBottom
+	if top < 0 {
+		top = 0
+	}
+	if h := u.frameSize.Y; top > h {
+		top = h
+	}
+	if bottom < top {
+		bottom = top
+	}
+	if h := u.frameSize.Y; bottom > h {
+		bottom = h
+	}
+	return top, bottom
+}
+
 // fadeFrame 主帧之后执行（runWindow 调）：headless 同布局重渲 → 整窗效果层
 // （顶部带渐变 + 元素边缘渐隐，D44/D48）→ 整窗预乘 BGRA → overlay 提交。
 // 非 Windows（hwnd=0）或离屏上下文创建失败时静默降级。
@@ -335,10 +362,6 @@ func (u *UI) fadeFrame() {
 	if !mainVisible() { // 主窗隐藏：overlay 不得孤立上屏（hideMain 已藏，这里兜底）
 		overlaySetVisible(false)
 		return
-	}
-	bandPx := u.frameMetric.Dp(fadeBandDp)
-	if bandPx <= 0 || bandPx > u.frameSize.Y {
-		bandPx = u.frameSize.Y
 	}
 	if err := u.fade.ensure(u.frameSize.X, u.frameSize.Y, u.frameMetric); err != nil {
 		return // 无 GPU 后端等：淡出降级为硬切（形裁仍生效）
@@ -353,9 +376,13 @@ func (u *UI) fadeFrame() {
 	if u.fadeBuf == nil || len(u.fadeBuf) < size {
 		u.fadeBuf = make([]byte, size)
 	}
-	clear(u.fadeBuf) // 整窗效果层：band 渐变写顶部带、边缘渐隐写元素边带，先清零
-	band := fadePremultiplyBand(u.fade.img, u.frameSize.X, bandPx, u.fadeBuf)
-	edges := fadeFeatherShapes(u.fade.img, u.shapes, bandPx, u.frameMetric, u.fadeBuf, u.frameSize)
+	clear(u.fadeBuf) // 整窗效果层：band 渐变写带内、边缘渐隐写元素边带，先清零
+	// D54 消息揭示带：重渲刚把 bandTop/bandBottom 按当帧 msgP 写好（与主窗那遍同帧同值），
+	// 就地读取保证与 u.shapes 同源；夹到窗口内，静息即 §15.3 顶带 [0, Dp(fadeBandDp))。
+	top, bottom := u.clampedBand()
+	band := fadePremultiplyBand(u.fade.img, u.frameSize.X, top, bottom, u.fadeBuf)
+	edges := fadeFeatherShapes(u.fade.img, u.shapes, top, bottom, u.frameMetric,
+		u.fadeBuf, u.frameSize)
 	if !band && !edges {
 		overlaySetVisible(false) // 带内无内容且无元素（空态）：隐藏（桌面/下层直接可见）
 		return

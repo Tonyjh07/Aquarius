@@ -38,7 +38,7 @@ func TestFadePremultiplyBand(t *testing.T) {
 	}
 
 	out := make([]byte, w*bandH*4)
-	if !fadePremultiplyBand(src, w, bandH, out) {
+	if !fadePremultiplyBand(src, w, 0, bandH, out) {
 		t.Fatal("带内有不透明内容却报告无内容")
 	}
 
@@ -97,15 +97,15 @@ func TestFadePremultiplyBand(t *testing.T) {
 
 	// ④ 全透明带 → 无内容（overlay 应隐藏）。
 	empty := image.NewRGBA(image.Rect(0, 0, w, bandH))
-	if fadePremultiplyBand(empty, w, bandH, out) {
+	if fadePremultiplyBand(empty, w, 0, bandH, out) {
 		t.Fatal("全透明带不应报告有内容")
 	}
 
 	// ⑤ 参数防御：缓冲过短/非法尺寸拒绝。
-	if fadePremultiplyBand(src, w, bandH, out[:10]) {
+	if fadePremultiplyBand(src, w, 0, bandH, out[:10]) {
 		t.Fatal("短缓冲应拒绝")
 	}
-	if fadePremultiplyBand(src, w, 0, out) {
+	if fadePremultiplyBand(src, w, 0, 0, out) {
 		t.Fatal("零高应拒绝")
 	}
 }

@@ -7,9 +7,11 @@ import (
 	"gioui.org/unit"
 )
 
-// newShapeUI 形裁登记用的最小 UI（frameMetric 供淡出带剔除换算）。
+// newShapeUI 形裁登记用的最小 UI（frameMetric 供淡出带剔除换算；bandBottom = 带底，
+// 生产里由 layout 每帧写入——D54 动画前恒为 §15.3 静息顶带底 Dp(fadeBandDp)）。
 func newShapeUI(pxPerDp float32) *UI {
-	return &UI{frameMetric: unit.Metric{PxPerDp: pxPerDp, PxPerSp: pxPerDp}}
+	m := unit.Metric{PxPerDp: pxPerDp, PxPerSp: pxPerDp}
+	return &UI{frameMetric: m, bandBottom: m.Dp(fadeBandDp)}
 }
 
 // TestRecordStoresOutlineAndClip 形裁登记（D44/D45）：存真轮廓（未按视口/带裁剪——
