@@ -151,6 +151,57 @@ func TestShapesEqual(t *testing.T) {
 	}
 }
 
+// TestInputRowRectsFollowsDesign 输入行三段几何（D49/§15.2）：1:1 还原 canvas（元素 48、
+// 间距 12、边距 16 → 默认窗宽 608 下行 576、输入区恰 456）；窗口宽变化只伸缩胶囊
+// （logo 锚左、send 锚右，圆钮直径/间距/字号不动）。
+func TestInputRowRectsFollowsDesign(t *testing.T) {
+	// 设计稿 1:1 契约（canvas：48/12/16/20、行 576 + 双侧 16 = 608）。
+	if inputRowDp != 48 || inputGapDp != 12 || inputPadDp != 16 || inputIconDp != 20 || winWidthDp != 608 {
+		t.Fatalf("常量偏离设计稿: row=%d gap=%d pad=%d icon=%d win=%d（DESIGN §15.2/D49）",
+			inputRowDp, inputGapDp, inputPadDp, inputIconDp, winWidthDp)
+	}
+	const top, margin = 8, 16
+	rowH, gap := inputRowDp, inputGapDp
+	w := winWidthDp
+	logo, pill, send := inputRowRects(w, top, rowH, gap, margin)
+
+	// ① 三段等高；logo 贴左边距；输入区 = 设计稿 456；间隙/右边距逐值对应。
+	if logo.Dy() != rowH || pill.Dy() != rowH || send.Dy() != rowH {
+		t.Fatalf("三段应等高 %d: logo=%v pill=%v send=%v", rowH, logo, pill, send)
+	}
+	if logo != image.Rect(margin, top, margin+rowH, top+rowH) {
+		t.Fatalf("logo 位 = %v, want 贴左边距", logo)
+	}
+	if got := pill.Dx(); got != 456 {
+		t.Fatalf("输入区宽 = %d, want 456（canvas 1:1）", got)
+	}
+	if l, s := pill.Min.X-logo.Max.X, send.Min.X-pill.Max.X; l != gap || s != gap {
+		t.Fatalf("间隙 = %d/%d, want %d/%d", l, s, gap, gap)
+	}
+	if m := w - send.Max.X; m != margin {
+		t.Fatalf("右边距 = %d, want %d", m, margin)
+	}
+
+	// ② 响应式：窗口加宽 100——logo 锚左边距、send 锚右边距，胶囊左缘不动、吃掉全部增量。
+	logo2, pill2, send2 := inputRowRects(w+100, top, rowH, gap, margin)
+	if logo2 != logo {
+		t.Fatalf("logo 应锚定左边距: %v, want %v", logo2, logo)
+	}
+	if send2 != send.Add(image.Pt(100, 0)) {
+		t.Fatalf("send 应锚定右边距: %v, want %v", send2, send.Add(image.Pt(100, 0)))
+	}
+	if pill2.Min.X != pill.Min.X || pill2.Dx() != pill.Dx()+100 {
+		t.Fatalf("胶囊应左缘不动、吃掉全部增量: %v 宽 %d, want 左 %d 宽 %d",
+			pill2, pill2.Dx(), pill.Min.X, pill.Dx()+100)
+	}
+
+	// ③ 最窄窗口（winMinWidth）胶囊仍有内容区。
+	_, pill3, _ := inputRowRects(winMinWidth, top, rowH, gap, margin)
+	if pill3.Dx() <= 0 || pill3.Dx() >= pill.Dx() {
+		t.Fatalf("winMinWidth 下胶囊 = %d，应在 (0, %d)", pill3.Dx(), pill.Dx())
+	}
+}
+
 // TestFrameItemsLive 帧内容（渲染视图）：定稿块 + 实时思考 + 流式草稿顺序。
 func TestFrameItemsLive(t *testing.T) {
 	u := &UI{}

@@ -30,14 +30,17 @@ import (
 
 // 窗口与布局常量（物理 px 经 gtx.Dp 换算——layout 坐标即物理 px，Dp 只换算尺寸）。
 const (
-	winWidthDp   = 560
+	winWidthDp   = 608 // 默认窗宽：16 边距 + 576 三段行 + 16（行宽 = 设计稿，D49）
 	winHeightDp  = 460
 	winMinWidth  = 420
 	winMinHeight = 240
 
 	fadeBandDp   = 56 // 淡出带高（§15.3）
-	pillHeightDp = 72 // 输入栏胶囊高
-	pillTopDp    = 8  // 胶囊上边距（下方 16）
+	inputRowDp   = 48 // 输入行元素高（D49 canvas 1:1）＝胶囊高＝logo/send 圆钮直径
+	inputGapDp   = 12 // 三段间距与胶囊内元素间距（canvas spacing 12）
+	inputPadDp   = 16 // 胶囊左右内边距（canvas padding 16）
+	inputIconDp  = 20 // 胶囊内图标槽（canvas 20×20，灰占位不可点）
+	pillTopDp    = 8  // 输入行上边距（下方 16）
 	sideMarginDp = 16 // 左右边距
 	rowGapDp     = 6  // 转写行间距
 	bubblePadXDp = 12 // 气泡内边距
@@ -84,6 +87,11 @@ var (
 	cardError    = color.NRGBA{R: 0xFB, G: 0xE4, B: 0xE4, A: 0xFF}
 	cardSystem   = color.NRGBA{R: 0xF1, G: 0xEB, B: 0xFA, A: 0xFF}
 	whiteText    = color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
+
+	// 图标槽占位灰（canvas 稿 #94A3B8；配色为占位，D49）。
+	iconDim = color.NRGBA{R: 0x94, G: 0xA3, B: 0xB8, A: 0xFF}
+	// 确认态置灰右圆（D49：几何不随状态变，只换色）。
+	disabledCircle = color.NRGBA{R: 0xD8, G: 0xDC, B: 0xE3, A: 0xFF}
 )
 
 // point/rect Win32 坐标对（中性定义：非 Windows 构建仅作占位类型）。
@@ -299,7 +307,7 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{Size: size}
 	}
 
-	inputH := gtx.Dp(pillHeightDp + pillTopDp + 16) // 胶囊 + 上 8 下 16 边距
+	inputH := gtx.Dp(inputRowDp + pillTopDp + 16) // 输入行 + 上 8 下 16 边距
 	statusH := 0
 	if u.statusText() != "" {
 		statusH = gtx.Dp(statusChipDp + 8)
@@ -353,10 +361,11 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 	u.drag.Add(gtx.Ops)
 	dst.Pop()
 
-	ballD := gtx.Dp(44) // u.logo 圆钮直径
-	ballX := gtx.Dp(sideMarginDp) + gtx.Dp(12)
-	pillY := size.Y - gtx.Dp(pillHeightDp+pillTopDp+16) + gtx.Dp(pillTopDp)
-	ballY := pillY + (gtx.Dp(pillHeightDp)-ballD)/2 // Flex Middle：logo 垂直居中
+	// 球 = 展开态 logo 圆钮本身（D49 三段式：⌀ = 行高、x = 侧边距、y = 行内 logo 位）
+	// → 换形不跳动；窗口尺寸不变，球外区域形裁透明。
+	ballD := gtx.Dp(inputRowDp)
+	ballX := gtx.Dp(sideMarginDp)
+	ballY := size.Y - gtx.Dp(inputRowDp+pillTopDp+16) + gtx.Dp(pillTopDp)
 	r := image.Rectangle{
 		Min: image.Pt(ballX, ballY),
 		Max: image.Pt(ballX+ballD, ballY+ballD),
@@ -582,29 +591,70 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 
 // inputBar 输入栏（§15.2 骨架）：logo（拖拽把手）｜编辑器（确认态 = 提示行）｜
 // 发送/停止；确认态整体切换为 [允许/拒绝] 按钮组（非模态）。
+// inputBar 输入行（D49 三段式，§15.2）：[logo ⌀48] 12 [输入胶囊] 12 [send ⌀48]——三段等高
+// 独立成形（各自 record → 形裁/羽化，间隙透明且点击穿透），中间胶囊吃掉全部剩余宽度
+// （响应式：窗口宽变化只伸缩它，字号/圆钮尺寸不随窗口变）。坐标原点 = 输入行段左上，
+// w = 窗口宽（均经 gtx.Dp 换算为物理 px）。
 func (u *UI) inputBar(gtx layout.Context, w, absY int) {
-	pillH := gtx.Dp(pillHeightDp)
-	top := gtx.Dp(pillTopDp)
-	pill := image.Rectangle{
-		Min: image.Pt(gtx.Dp(sideMarginDp), top),
-		Max: image.Pt(w-gtx.Dp(sideMarginDp), top+pillH),
-	}
-	paint.FillShape(gtx.Ops, pillBg, clip.UniformRRect(pill, pillH/2).Op(gtx.Ops))
-	st := clip.UniformRRect(pill, pillH/2).Push(gtx.Ops)
+	rowH := gtx.Dp(inputRowDp)
+	logo, pill, send := inputRowRects(w, gtx.Dp(pillTopDp), rowH,
+		gtx.Dp(inputGapDp), gtx.Dp(sideMarginDp))
+	clipRect := image.Rectangle{Max: u.frameSize}
+
+	// logo 圆钮（§15.1 把手含 logo）：悬停启动 tips、拖动移窗、单击收起回球。
+	drawLogo(gtx, logo)
+	gst := clip.Rect(logo).Push(gtx.Ops)
+	u.logoHover.Add(gtx.Ops)
+	u.logoDrag.Add(gtx.Ops)
+	gst.Pop()
+	u.record(logo.Add(image.Pt(0, absY)), rowH/2, brandColor, clipRect)
+
+	// 输入胶囊：底色 + 内容（内边距/图标槽/文字/动作区）。
+	paint.FillShape(gtx.Ops, pillBg, clip.UniformRRect(pill, rowH/2).Op(gtx.Ops))
+	pst := clip.UniformRRect(pill, rowH/2).Push(gtx.Ops)
 	inner := op.Offset(pill.Min).Push(gtx.Ops)
 	gtxC := gtx
 	gtxC.Constraints = layout.Exact(pill.Size())
 	u.pillContent(gtxC)
 	inner.Pop()
-	st.Pop()
-	u.record(pill.Add(image.Pt(0, absY)), pillH/2, pillBg, image.Rectangle{Max: u.frameSize})
-	// 悬浮 tips（§15.1 启动提示 / §15.2 发送键）：独立底板元素随形裁。
+	pst.Pop()
+	u.record(pill.Add(image.Pt(0, absY)), rowH/2, pillBg, clipRect)
+
+	// 右圆钮（恒在，几何不随状态变，D49）：idle = 发送、生成中 = 停止、确认态 = 置灰不可点。
+	fill, stop, cl := brandColor, false, &u.sendBtn
+	switch {
+	case u.m.confirm != nil:
+		fill, cl = disabledCircle, nil
+	case u.generating.Load():
+		fill, stop, cl = textError, true, &u.stopBtn
+	}
+	off := op.Offset(send.Min).Push(gtx.Ops)
+	gtxS := gtx
+	gtxS.Constraints = layout.Exact(send.Size())
+	actionCircle(gtxS, cl, fill, stop)
+	off.Pop()
+	u.record(send.Add(image.Pt(0, absY)), rowH/2, fill, clipRect)
+
+	// 悬浮 tips（§15.1 启动提示 / §15.2 发送·停止键）：独立底板元素随形裁。
 	if u.logoHovered {
 		u.hoverTip(gtx, absY, startupHint, false)
 	}
-	if u.sendBtn.Hovered() && u.m.confirm == nil && !u.generating.Load() {
+	if u.m.confirm == nil && u.sendBtn.Hovered() && !u.generating.Load() {
 		u.hoverTip(gtx, absY, "发送", true)
 	}
+	if u.m.confirm == nil && u.generating.Load() && u.stopBtn.Hovered() {
+		u.hoverTip(gtx, absY, "停止", true)
+	}
+}
+
+// inputRowRects 三段几何（纯逻辑，可测，D49/§15.2）：拓扑 = 边距 | logo | 间隙 | 胶囊 |
+// 间隙 | send | 边距——两圆钮贴边距定宽（⌀ = rowH），胶囊吃掉全部剩余宽度（`grow`）。
+// 参数均为已换算的 px。
+func inputRowRects(w, top, rowH, gap, margin int) (logo, pill, send image.Rectangle) {
+	logo = image.Rect(margin, top, margin+rowH, top+rowH)
+	send = image.Rect(w-margin-rowH, top, w-margin, top+rowH)
+	pill = image.Rect(margin+rowH+gap, top, w-margin-rowH-gap, top+rowH)
+	return
 }
 
 // startupHint 启动提示（装配根对 GUI 不再发 Say 启动行，§15.1）。
@@ -648,57 +698,134 @@ func (u *UI) hoverTip(gtx layout.Context, absY int, text string, rightAlign bool
 	u.record(bgRect.Add(image.Pt(0, absY)), radius, tipBg, image.Rectangle{Max: u.frameSize})
 }
 
-// pillContent 胶囊内横排（坐标原点 = 胶囊左上，约束 = 胶囊尺寸）。
+// pillContent 胶囊内横排（坐标原点 = 胶囊左上，约束 = 胶囊尺寸；D49/§15.2）：
+// [pad16][附件槽20][12][文字 grow][12][展开槽20][12][动作区][pad16]。图标槽是 canvas 的
+// 20dp 灰占位（附件/展开未实现、不可点，实现时启用）；动作区仅确认态有内容（[允许/拒绝]）——
+// 生成中停止在右圆、胶囊内不占位，idle 时胶囊内只有占位文字。
 func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{
-		Axis:      layout.Horizontal,
-		Alignment: layout.Middle,
-		Spacing:   layout.SpaceBetween,
-	}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				d := gtx.Dp(44)
-				box := image.Rectangle{Max: image.Pt(d, d)}
-				drawLogo(gtx, box)
-				// 手势区 = 圆钮（§15.1 把手含 logo）：hover = 启动 tips、拖动 = 移窗、
-				// 单击（位移小于 dragClickSlackPx）= 收起回球。同区双 handler——输入按
-				// Target 分发互不抢夺；圆钮区在背景把手之上，按下优先归它。
-				st := clip.Rect{Max: box.Max}.Push(gtx.Ops)
-				u.logoHover.Add(gtx.Ops)
-				u.logoDrag.Add(gtx.Ops)
-				st.Pop()
-				return layout.Dimensions{Size: box.Size()}
-			})
-		}),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			if u.m.confirm != nil {
-				return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(8)}.Layout(gtx,
-					material.Body2(u.th, u.m.confirm.prompt).Layout)
-			}
-			ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
-			ed.TextSize = unit.Sp(15)
-			// 约束 Min.Y 被 Exact 拉满会把编辑器/提示行顶到盒顶（Flex Middle 对满高盒
-			// 无效 → 文本视觉偏上）：放开 Min 让其返回自然行高，由 Flex 垂直居中（§15.2）。
-			gtxC := gtx
-			gtxC.Constraints.Min.Y = 0
-			return ed.Layout(gtxC)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if u.m.confirm != nil {
-				return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(inputPadDp), Right: unit.Dp(inputPadDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{
+			Axis:      layout.Horizontal,
+			Alignment: layout.Middle,
+		}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return iconSlot(gtx, drawPaperclip)
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				inset := layout.Inset{Left: unit.Dp(inputGapDp), Right: unit.Dp(inputGapDp)}
+				return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					// 约束 Min.Y 被 Exact 拉满会把编辑器/提示行顶到盒顶（Flex Middle 对满高盒
+					// 无效 → 文本视觉偏上）：放开 Min 让其返回自然行高，由 Flex 垂直居中（§15.2）。
+					gtx.Constraints.Min.Y = 0
+					if u.m.confirm != nil {
+						return material.Body2(u.th, u.m.confirm.prompt).Layout(gtx)
+					}
+					ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
+					ed.TextSize = unit.Sp(15)
+					return ed.Layout(gtx)
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return iconSlot(gtx, drawMaximize)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if u.m.confirm == nil {
+					return layout.Dimensions{}
+				}
+				return layout.Inset{Left: unit.Dp(inputGapDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx,
 						layout.Rigid(u.actionBtn(&u.allowBtn, "允许", brandColor)),
 						layout.Rigid(u.actionBtn(&u.denyBtn, "拒绝", textMuted)),
 					)
 				})
-			}
-			if u.generating.Load() {
-				return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, u.actionBtn(&u.stopBtn, "停止", textError))
-			}
-			// 发送键 = 主题色圆形钮 + 向上箭头（§15.2；悬停 tooltip「发送」见 inputBar）。
-			return layout.Inset{Right: unit.Dp(10), Left: unit.Dp(6)}.Layout(gtx, u.sendCircle)
-		}),
+			}),
+		)
+	})
+}
+
+// iconSlot 胶囊内 20dp 图标槽（D49/§15.2：canvas 20×20 灰占位、不可点——附件/展开实现时启用）。
+func iconSlot(gtx layout.Context, draw func(gtx layout.Context, box image.Rectangle)) layout.Dimensions {
+	d := gtx.Dp(inputIconDp)
+	box := image.Rectangle{Max: image.Pt(d, d)}
+	draw(gtx, box)
+	return layout.Dimensions{Size: box.Size()}
+}
+
+// drawMaximize 展开图标占位（灰、不可点）：四角括号——canvas 原几何（内缩 2、臂长 6、
+// 臂厚 2，稿内 1:1 即 dp），只把配色换成占位灰。
+func drawMaximize(gtx layout.Context, box image.Rectangle) {
+	if box.Dx() <= 0 || box.Dy() <= 0 {
+		return
+	}
+	in, arm, th := gtx.Dp(2), gtx.Dp(6), gtx.Dp(2)
+	x0, y0 := box.Min.X, box.Min.Y
+	x1, y1 := box.Max.X, box.Max.Y
+	for _, r := range []image.Rectangle{
+		image.Rect(x0+in, y0+in, x0+in+arm, y0+in+th), // 左上·横
+		image.Rect(x0+in, y0+in, x0+in+th, y0+in+arm), // 左上·竖
+		image.Rect(x1-in-arm, y0+in, x1-in, y0+in+th), // 右上·横
+		image.Rect(x1-in-th, y0+in, x1-in, y0+in+arm), // 右上·竖
+		image.Rect(x0+in, y1-in-th, x0+in+arm, y1-in), // 左下·横
+		image.Rect(x0+in, y1-in-arm, x0+in+th, y1-in), // 左下·竖
+		image.Rect(x1-in-arm, y1-in-th, x1-in, y1-in), // 右下·横
+		image.Rect(x1-in-th, y1-in-arm, x1-in, y1-in), // 右下·竖
+	} {
+		paint.FillShape(gtx.Ops, iconDim, clip.Rect(r).Op())
+	}
+}
+
+// cubicArc 以 c 为圆心、从 p 到 q 的 90° 圆弧（三次贝塞尔逼近，k = 0.5523）：
+// 切向 = 半径向量 ±90°（方向由 p→q 相对 c 的旋转取号），控制点 = 出点沿切向前伸、
+// 入点沿切向回退。占位图标折线用。
+func cubicArc(path *clip.Path, c, p, q f32.Point) {
+	const k = 0.5523
+	r1 := f32.Point{X: p.X - c.X, Y: p.Y - c.Y}
+	r2 := f32.Point{X: q.X - c.X, Y: q.Y - c.Y}
+	t1 := f32.Point{X: -r1.Y, Y: r1.X}
+	t2 := f32.Point{X: -r2.Y, Y: r2.X}
+	if r1.X*r2.Y-r1.Y*r2.X < 0 {
+		t1 = f32.Point{X: r1.Y, Y: -r1.X}
+		t2 = f32.Point{X: r2.Y, Y: -r2.X}
+	}
+	path.CubeTo(
+		f32.Point{X: p.X + k*t1.X, Y: p.Y + k*t1.Y},
+		f32.Point{X: q.X - k*t2.X, Y: q.Y - k*t2.Y},
+		q,
 	)
+}
+
+// drawPaperclip 附件图标占位（灰、不可点）：回形针折线 = 三段直线 + 三段半圆（24 视图的
+// 中心线 (2.005,1.39)–(21.44,22) 等比 s=0.8 缩进 20dp 槽居中，描边 2dp 按稿）。
+func drawPaperclip(gtx layout.Context, box image.Rectangle) {
+	if box.Dx() <= 0 || box.Dy() <= 0 {
+		return
+	}
+	const s = 0.8
+	const bw, bh = 15.548, 16.488 // 缩后中心线尺寸
+	ox := float32(box.Min.X) + (float32(box.Dx())-bw)/2 - 2.005*s
+	oy := float32(box.Min.Y) + (float32(box.Dy())-bh)/2 - 1.39*s
+	at := func(x, y float32) f32.Point { return f32.Point{X: ox + x*s, Y: oy + y*s} }
+
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(at(21.44, 11.05)) // 外端（右侧中）
+	p.LineTo(at(12.25, 20.24)) // 沿外线下行到底
+	c1 := at(8.005, 16)        // 大半圆 r=6（底 → 左）
+	m1 := at(3.762, 20.243)
+	cubicArc(&p, c1, at(12.25, 20.24), m1)
+	cubicArc(&p, c1, m1, at(3.76, 11.75))
+	p.LineTo(at(12.95, 2.56)) // 上行到顶
+	c2 := at(15.78, 5.39)     // 中半圆 r=4（顶 → 右）
+	m2 := at(18.61, 2.56)
+	cubicArc(&p, c2, at(12.95, 2.56), m2)
+	cubicArc(&p, c2, m2, at(18.61, 8.22))
+	p.LineTo(at(9.41, 17.41)) // 内线斜下
+	c3 := at(7.995, 15.995)   // 小半圆 r=2（内底 → 内左）
+	m3 := at(6.58, 17.41)
+	cubicArc(&p, c3, at(9.41, 17.41), m3)
+	cubicArc(&p, c3, m3, at(6.58, 14.58))
+	p.LineTo(at(15.07, 6.1)) // 内端（收尾）
+	paint.FillShape(gtx.Ops, iconDim, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
 }
 
 // record 登记可见元素（D44–D48）：保存真实轮廓 + 可见裁剪区 + 底色，形裁（applyRegion）
@@ -1039,14 +1166,26 @@ func (u *UI) actionBtn(cl *widget.Clickable, label string, bg color.NRGBA) layou
 	}
 }
 
-// sendCircle 发送键（§15.2：主题色圆形钮 + 向上箭头图标；悬停 tooltip「发送」在
-// inputBar 绘制）。Clickable 包装保证发送行为与旧文本键同路（updateClicks）。
-func (u *UI) sendCircle(gtx layout.Context) layout.Dimensions {
-	d := gtx.Dp(40)
-	return u.sendBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+// actionCircle 右侧主操作圆钮（D49/§15.2：⌀ = 行高，三态恒在同一位置、几何不随状态变）：
+// idle = 发送（向上箭头）、生成中 = 停止（方块图标）、确认态 = 置灰（cl=nil 不可点）。
+// 坐标 = 当前原点（调用方偏移到 send 位）；Gio Clickable 在原点登记面积（无居中），
+// 走同一 updateClicks 路径。
+func actionCircle(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, stop bool) layout.Dimensions {
+	d := gtx.Dp(inputRowDp)
+	draw := func(gtx layout.Context) layout.Dimensions {
 		box := image.Rectangle{Max: image.Pt(d, d)}
-		paint.FillShape(gtx.Ops, brandColor, clip.UniformRRect(box, d/2).Op(gtx.Ops))
-		// 向上箭头 = 竖杆 + 人字头（白色描边、圆端）。
+		paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, d/2).Op(gtx.Ops))
+		if stop {
+			// 停止 = 圆角方块。
+			s := d / 3
+			r := image.Rectangle{
+				Min: image.Pt((d-s)/2, (d-s)/2),
+				Max: image.Pt((d+s)/2, (d+s)/2),
+			}
+			paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(r, gtx.Dp(2)).Op(gtx.Ops))
+			return layout.Dimensions{Size: image.Pt(d, d)}
+		}
+		// 向上箭头 = 竖杆 + 人字头（白色描边）。
 		cx, cy := float32(d)/2, float32(d)/2
 		a := float32(d) * 0.18
 		var p clip.Path
@@ -1059,5 +1198,9 @@ func (u *UI) sendCircle(gtx layout.Context) layout.Dimensions {
 		paint.FillShape(gtx.Ops, whiteText,
 			clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
 		return layout.Dimensions{Size: image.Pt(d, d)}
-	})
+	}
+	if cl == nil {
+		return draw(gtx)
+	}
+	return cl.Layout(gtx, draw)
 }
