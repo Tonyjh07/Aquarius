@@ -452,15 +452,22 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 
 // updateScroll 滚动手势 + 当帧边界钳制 + 尾随（§15.3 流式内容贴底）。
 // d>0 = 向下滚（往新内容）；d<0 = 上滚离开底部 → 停止尾随；滚回底部 → 恢复。
-// ScrollRange 内部按边界钳制手势距离（含 fling 溢出）。
+// 边界由本函数钳制（含 fling 溢出）——不交给 ScrollRange（见下方滞后说明）。
 func (u *UI) updateScroll(gtx layout.Context, viewH, total int) {
 	overflow := total - viewH
 	if overflow < 0 {
 		overflow = 0
 	}
+	// 滚动范围按**轴向**绑定（gesture.Scroll.Update 的 scrollx/scrolly 两参）：垂直手势
+	// 累加 e.Scroll.Y，夹取范围必须给 scrolly——Gio 自家 layout/list.go 即此法
+	//（`Axis==Vertical` 时把 bounds 换到 Y）。绑到 scrollx 会被 Y 侧 {0,0} 夹成 0，
+	// 滚轮永不生效（实测缺陷：手工滚动从未生效）。
+	// 范围只按 overflow 取、**不随 scrollPx 走**：过滤器在事件到来时取的是上一帧登记的
+	// 边界，随位置走会滞后一帧——边界处反向的首格会被旧边界误夹成 0 而丢失；反正边界
+	// 由下面的钳制负责，过滤器只需够宽（|d| ≤ overflow 一格不可能超过）。
 	d := u.transcriptScroll.Update(gtx.Metric, gtx.Source, gtx.Now, gesture.Vertical,
-		pointer.ScrollRange{Min: -u.scrollPx, Max: overflow - u.scrollPx},
-		pointer.ScrollRange{})
+		pointer.ScrollRange{}, // 横向不滚（X 夹到 0）
+		pointer.ScrollRange{Min: -overflow, Max: overflow})
 	u.scrollPx += d
 	if u.scrollPx < 0 {
 		u.scrollPx = 0

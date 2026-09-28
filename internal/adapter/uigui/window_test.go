@@ -1,11 +1,14 @@
 package uigui
 
 import (
+	"fmt"
 	"image"
 	"testing"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -285,5 +288,55 @@ func TestFrameCommitsScreenStateBeforeSubmit(t *testing.T) {
 	}
 	if u.frameSize == (image.Point{}) {
 		t.Fatal("compose/commit 之前 layout 未跑（frameSize 未定）")
+	}
+}
+
+// TestTranscriptManualScroll 消息区手动滚动（§15.3）：滚轮在转写区上滚离底 → 内容上移、
+// 停止尾随；滚回底部 → 恢复尾随（新消息重新贴底）。方向口径：d>0 = 向新内容（尾随），
+// d<0 = 上滚离开底部——与 Gio Windows 侧的滚轮反号、X11 Button4/5 映射一致。
+func TestTranscriptManualScroll(t *testing.T) {
+	u := newFrameUI()
+	for i := 0; i < 40; i++ {
+		u.m.add(blockAssistant, fmt.Sprintf("第 %02d 条：内容高过视口，制造滚动余量。", i))
+	}
+	var q input.Router
+	frame := func() {
+		gtx, ops := frameGtx(q.Source())
+		u.layout(gtx)
+		q.Frame(ops) // 提交 hit 树与过滤器（Gio 也在 render 之后、Present 之前做这一步）
+	}
+
+	// ① 帧 1：登记滚动手势区与过滤器，初始尾随贴底。
+	frame()
+	if !u.followTail {
+		t.Fatal("初始应尾随贴底")
+	}
+	if u.contentH == 0 || u.scrollPx == 0 {
+		t.Fatalf("内容应高过视口: contentH=%d scrollPx=%d", u.contentH, u.scrollPx)
+	}
+	bottom := u.scrollPx
+
+	// ② 上滚 60px：位置上移、停止尾随。过滤器范围不随 scrollPx 走（见 updateScroll），
+	// 故事件一到即可被接受，无需先等一帧刷新边界。
+	q.Queue(pointer.Event{Kind: pointer.Scroll, Position: f32.Pt(300, 200), Scroll: f32.Pt(0, -60)})
+	frame()
+	if u.scrollPx != bottom-60 {
+		t.Fatalf("上滚后 scrollPx = %d, want %d", u.scrollPx, bottom-60)
+	}
+	if u.followTail {
+		t.Fatal("上滚离开底部应停止尾随")
+	}
+
+	// ③ 分两步下滚回底部：半程不恢复尾随，回到 overflow 才恢复（新消息重新贴底）。
+	q.Queue(pointer.Event{Kind: pointer.Scroll, Position: f32.Pt(300, 200), Scroll: f32.Pt(0, 40)})
+	frame()
+	if u.scrollPx != bottom-20 || u.followTail {
+		t.Fatalf("下滚 40: scrollPx=%d followTail=%v, want %d/false", u.scrollPx, u.followTail, bottom-20)
+	}
+	q.Queue(pointer.Event{Kind: pointer.Scroll, Position: f32.Pt(300, 200), Scroll: f32.Pt(0, 20)})
+	frame()
+	if u.scrollPx != bottom || !u.followTail {
+		t.Fatalf("滚回底部应恢复尾随: scrollPx=%d followTail=%v, want %d/true",
+			u.scrollPx, u.followTail, bottom)
 	}
 }
