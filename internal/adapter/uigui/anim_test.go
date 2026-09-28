@@ -177,6 +177,55 @@ func TestLerpRowRects(t *testing.T) {
 	}
 }
 
+// TestClampRowX 过冲几何夹回窗口边界（D57）：easeOutBack 峰值处右钮右缘越过窗宽会被
+// 窗边切平（实测 620 > 608）、同帧形裁/overlay 越界；收界**只平移保尺寸**，窗内 16px
+// 行边距仍留给回弹（D54「越出终位再回落」不落空）。
+func TestClampRowX(t *testing.T) {
+	const w, top, rowH, gap, margin = 608, 8, 48, 12, 16
+	logo, pill, send := inputRowRects(w, top, rowH, gap, margin)
+
+	// 全进度扫描（含过冲与负值防御段）：收界后恒在窗内、尺寸不变。
+	for i := -20; i <= 180; i++ {
+		p := float64(i) / 100
+		pr, sr := lerpRowRects(logo, pill, send, p)
+		for name, raw := range map[string]image.Rectangle{"pill": pr, "send": sr} {
+			got := clampRowX(raw, w)
+			if got.Min.X < 0 || got.Max.X > w {
+				t.Fatalf("p=%v %s 收界后越窗: %v (w=%d)", p, name, got, w)
+			}
+			want := raw.Dx()
+			if want > w {
+				want = w
+			}
+			if got.Dx() != want {
+				t.Fatalf("p=%v %s 收界只该平移不该改宽: got %d want %d", p, name, got.Dx(), want)
+			}
+		}
+	}
+
+	// 峰值处原始外推确实越窗（复现缺陷的口径），收界后贴窗但仍在终位右侧（回弹保留）。
+	rawP, rawS := lerpRowRects(logo, pill, send, 1.053)
+	if rawS.Max.X <= w {
+		t.Fatalf("峰值外推应越窗（否则收界无意义）: send=%v w=%d", rawS, w)
+	}
+	if rawP.Max.X > w {
+		t.Fatalf("胶囊在窗中部、不应越窗: %v", rawP)
+	}
+	cS := clampRowX(rawS, w)
+	if cS.Max.X != w || cS.Dx() != send.Dx() {
+		t.Fatalf("收界后应贴窗且保尺寸: got %v want Max.X=%d Dx=%d", cS, w, send.Dx())
+	}
+	if cS.Min.X <= send.Min.X {
+		t.Fatalf("收界不应吃掉回弹：右钮仍应越出终位: %d <= %d", cS.Min.X, send.Min.X)
+	}
+
+	// 极窄窗兜底：尺寸也保不住时退化为压缩到窗内（仍不越界）。
+	narrow := clampRowX(rawS, 20)
+	if narrow.Min.X < 0 || narrow.Max.X > 20 || narrow.Dx() > 20 {
+		t.Fatalf("窄窗兜底越界: %v", narrow)
+	}
+}
+
 // ---- 时间线与状态机 ----
 
 // startAt 启动动画并返回基准时刻（headless：u.w == nil，不起唤帧 ticker，D54）。

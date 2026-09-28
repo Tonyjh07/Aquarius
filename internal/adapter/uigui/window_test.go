@@ -211,6 +211,38 @@ func TestInputRowRectsFollowsDesign(t *testing.T) {
 	}
 }
 
+// TestOvershootStaysInFrame 过冲几何不越窗（D57）：easeOutBack 峰值处右钮沿 D54 同式
+// 外推越过窗宽（实测 send 右缘 620 > 窗宽 608）→ 按钮被自家窗边切平、同帧形裁被窗界
+// 夹掉一角。整链路（inputBar 插值 → record → regionShapes）断言轮廓与形裁恒在窗内。
+func TestOvershootStaysInFrame(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockAssistant, "撑起转写区，让输入行落到正常绝对坐标")
+	// 先起动画再翻 collapsed（beginExpand 同序）：静止态由 collapsed 推导，翻早了起点
+	// 读成 1/1 → 动画无距离、瞬时完成。
+	u.collapsed = true
+	u.startExpandAnim(true)
+	u.collapsed = false
+	u.stepExpand(u.expandAn.start.Add(165 * time.Millisecond)) // 输入栏阶段峰值（barP≈1.053）
+	if barP, _ := u.expandProgress(); barP <= 1 {
+		t.Fatalf("该时刻应处于过冲段: barP=%v", barP)
+	}
+	gtx, _ := frameGtx(input.Source{})
+	u.layout(gtx)
+	if len(u.shapes) == 0 {
+		t.Fatal("无登记形状")
+	}
+	for _, s := range u.shapes {
+		if s.outline.Min.X < 0 || s.outline.Max.X > u.frameSize.X {
+			t.Fatalf("登记轮廓越窗: %v (frame=%v)", s.outline, u.frameSize)
+		}
+	}
+	for _, s := range regionShapes(nil, u.shapes, u.bandBottom, u.frameMetric) {
+		if s.x < 0 || int(s.x+s.w) > u.frameSize.X {
+			t.Fatalf("形裁越窗: x=%d w=%d frame=%v", s.x, s.w, u.frameSize)
+		}
+	}
+}
+
 // TestFrameItemsLive 帧内容（渲染视图）：定稿块 + 实时思考 + 流式草稿顺序。
 func TestFrameItemsLive(t *testing.T) {
 	u := &UI{}

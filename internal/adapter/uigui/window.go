@@ -684,8 +684,10 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	logo, pillEnd, sendEnd := inputRowRects(w, gtx.Dp(pillTopDp), rowH,
 		gtx.Dp(inputGapDp), gtx.Dp(sideMarginDp))
 	// D54 展开/收起动画：p=0 时胶囊与右钮都退化为 logo 位置的同尺寸圆（被 logo 盖住）、
-	// p=1 = D49 终位；过冲 p>1（easeOutBack）沿同一式外推，让它们越出终位再回落。
+	// p=1 = D49 终位；过冲 p>1（easeOutBack）沿同一式外推，让它们越出终位再回落——
+	// 外推对贴边元素没有护栏，右钮会越过窗宽被窗边切平，故插值后夹回窗内（D57）。
 	pill, send := lerpRowRects(logo, pillEnd, sendEnd, u.barP())
+	pill, send = clampRowX(pill, w), clampRowX(send, w)
 	clipRect := image.Rectangle{Max: u.frameSize}
 	inAnim := u.expandAn.active
 

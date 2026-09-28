@@ -317,6 +317,27 @@ func lerpRowRects(logo, pill, send image.Rectangle, p float64) (image.Rectangle,
 	return lerpRect(logo, pill, p), lerpRect(logo, send, p)
 }
 
+// clampRowX 过冲几何夹回窗口边界（D57 纯逻辑，可测）：easeOutBack 峰值（barP≈1.053）下
+// 右钮右缘会越过窗宽被窗边切平（无窗口实测 620 > 608，形裁/overlay 同帧越界）——行右边
+// 距只剩 sideMarginDp，回弹位移却 = (p-1)×(终位−原点) ≈ 28px。只**平移收界**、不改尺寸：
+// 窗内 16px 行边距留给回弹，D54 的「越出终位再回落」在窗内仍可见。只夹 X——行 Y 是行内
+// 局部坐标（真实位置经 absY 另加）、D49 行位不随动画变，不会越界。
+func clampRowX(r image.Rectangle, w int) image.Rectangle {
+	if w <= 0 {
+		return r
+	}
+	if r.Dx() > w { // 极窄窗兜底：保不住尺寸才退化为压缩
+		r.Max.X = r.Min.X + w
+	}
+	if r.Max.X > w {
+		r = r.Sub(image.Pt(r.Max.X-w, 0))
+	}
+	if r.Min.X < 0 {
+		r = r.Add(image.Pt(-r.Min.X, 0))
+	}
+	return r
+}
+
 // revealBand 消息揭示带（D54 纯逻辑，可测）：把「内容静止、淡化区域从底向上移动」建模为
 // 一条动画的顶部淡出带——带顶 top 从转写区底 h（全隐）升到 0（静息），带内 smoothstep
 // 淡入，带顶以上不可见（形裁裁掉 + overlay 不写），带底以下全可见。
