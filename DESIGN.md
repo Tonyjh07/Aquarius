@@ -906,7 +906,7 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   再次左键 logo 收起回球；**不存在球 + 胶囊两个独立组件**（两套焦点/生命周期）。
   logo **悬浮 tips** 承载启动提示（`Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C
   取消当前生成`）——装配根对 `ui.kind=gui` 不再发 Say 启动行，转写区初始即空；
-  悬浮提示为独立底板元素（随形裁），悬停即现、移开即消（移开判定 = 事件态 × 光标
+  悬浮提示为独立底板元素（随位图合成），悬停即现、移开即消（移开判定 = 事件态 × 光标
   直采 + 心跳复评，D53——分层窗按像素命中穿透，透明像素/窗外零事件收不到 Leave）。
 - **展开/收起动画（D54）**：不再瞬时翻形，双通道**严格先后**——展开 700ms = 输入栏
   260ms `easeOutBack(c1=1.2)` 轻回弹（logo 不动，胶囊/send 从 logo 矩形插值到终位、
@@ -918,54 +918,42 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   `collapsed` 仍即时翻转，layout 分支以 `expandAn.active` 区分（动画走全量 layout 插值）；
   进度在帧分支 `stepExpand` 现算（D50 ticker 底座，**置于 layout 之前**，headless 不起
   ticker）；中途再点 logo 从当前进度反向不跳变，动画期间 logo 可点、胶囊/send/tips 不可点。
-- **悬浮形态实现 = 逐元素形裁（spike 实证 §15.6，D44）**：Gio 窗口本质不透明
-  （`gpu.Clear` 写死不透明白），"全悬空"经 **`SetWindowRgn` 逐元素挖空**实现——
-  每帧布局记录可见元素矩形（气泡、输入栏、状态行），并集（圆角矩形 `CombineRgn OR`）
-  构成窗口区域：元素间隙与窗口边角完全透明、**点击穿透到下层窗口**；区域随布局
-  变化重建（物理 px = 逻辑 × PxPerDp，经 `Window.Run` 送窗口线程——§15.6 铁律 1）。
-  代价：边缘二值掩码无抗锯齿、失去 DWM 阴影。**统一半透明** = `LWA_ALPHA` 整窗
-  常量（与形裁正交，spike 已验证）：元素以同一不透明度实时叠在下层窗口上；
-  差异化/渐变透明见 D44 淡出架构。**元素边缘羽化（D45–D48）**：region 是二值掩码、圆角
-  出阶梯——淡出 overlay 扩成**整窗效果层**兜住切口：对每个可见元素做边缘渐隐，**沿元素
-  真实轮廓**（未按视口/淡出带裁剪）——只描真实圆角边、不描裁切线（否则跨带形状会沿带底
-  裁切线留下横缝）；形裁 region 沿真实边**内缩** `featherWidth`（裁切边不缩，否则露洞），
-  使渐隐带与 region 在像素栅格上**恰好互补**——region 覆盖 `d ≤ -(fw+0.5)`（GDI 区块边界落在
-  SDF 零线内 0.5px）、渐隐覆盖其余：既不双图层叠加把 0.92 抬到 ~0.99（亮线），
-  也不在圆角处留 1px 透明空洞（`+0` 会留洞、`+1` 会叠亮线，两者实测均复现）；
-  渐隐剖面 = **内容自身由内向外渐隐（D48）**：region 边界首像素 alpha=1（与主窗像素同
-  不透明度、无缝）→ smoothstep → 轮廓处 `featherEdgeMin`（当前 0 = 淡到全透明），
-  **只在形状内落笔、不向外外扩**——与顶部淡出带同模型（旧 D45–D47 的向外环在 `d=0` 有
-  折点 →「饱和核心 + 外圈亮带」，与带边割裂，已否决）；颜色**采样同帧 headless 内容**
-  （文字/图标随渐隐自然淡出；采样点只在形状内，无 D46/D47 的"十字/阶梯"），headless
-  不可用（`src` 缺省或尺寸不符）才用元素底色兜底；跨带元素在带内**额外乘带渐变 `g(y)`**
-  （带底 g→1 衔接，消除带底横缝），`SourceConstantAlpha` 与主窗 LWA 同值衔接；
-  带底以上不画（带内渐变为唯一绘制者、带底 alpha=1 衔接；被带裁切的形裁**方顶续接**见
-  §15.3）。**羽化宽响应式（D47/D48）**：`fw = clamp(round(min(w,h) × featherRatio),
-  Dp(featherMinDp), Dp(featherMaxDp))`、且 ≤ 短边 1/3（region 不退化）——随元素尺寸/窗口
-  缩放/DPI 自适应，**不引入固定 px 羽化宽**（当前调参 0.05 / 0 / 5 → 发丝级 1–5px）。
-- **同拍合成（D55 → D58 → D59 修订次序）**：形裁 / 移窗 / `LWA_ALPHA` / overlay ULW 全部经
-  `Window.Run` 排到窗口线程，且必须与本帧内容**并入同一次 DWM 合成**——Gio `processFrame`
-  先 ack 后 `Present(1,0)`（阻塞到下一 vblank），排队项要等 Present 返回才被服务。两类机制的
-  **采样点不同（D59）**，故次序按通道分边：`SetWindowRgn` 的形状要到**下一次 Present** 才被
-  DWM 采样 → 排在 `e.Frame` **之前**（与本次 Present 的内容同拍；排在之后 = 慢一帧，实测
-  黑沙漏/灰圆盘/空心键三件套）；`UpdateLayeredWindow` **立即**在下一次合成生效 → 排在
-  `e.Frame` **之后**（与刚拷贝完的内容同拍；排在之前 = 提前于内容上屏，D58 实测黑缝 + 月牙；
-  主窗是 bitblt 交换模型，内容同样要等 Present 拷贝后的下一次合成才渲染）。帧次序固定为
-  `stepExpand → stepAnim → layout → fadeCompose → commitWinGeom → submit(e.Frame) → fadePresent`：
-  两遍 layout 同帧同进度 → 离屏合成（唯一慢段、不改屏幕态）→ 屏幕态一拍提交（随本次 Present
-  落地）→ 提交绘制 → overlay 提交（须在移窗之后取实测窗口矩形定位）。
-  **已知限制（D59 验证记录）**：该次序消掉了月牙与三件套，但最快段仍偶发约 1 帧的通道错位
-  （细环横穿胶囊 / 峰值帧白块盖发送键左半），且同一次序不同帧表现不一致 → 属窗口线程队列
-  竞态、非次序可治；根治需 DirectComposition/单窗（D45/D46 已否决），止损记为已知限制。
+- **悬浮形态实现 = 整窗 ULW 位图（D62；headless 底座 spike 实证 §15.6）**：Gio 窗口
+  本质不透明（`gpu.Clear` 写死不透明白），"全悬空"经**单一像素通道**实现——headless
+  同布局离屏重渲（D44 底座）升级为唯一像素源：内容 + 顶带/揭示带渐变 + 元素边缘羽化按
+  `av = vis(形状) × g(y) × 内容alpha` 一次合成为整窗预乘 BGRA 位图，
+  `UpdateLayeredWindow(ULW_ALPHA + AC_SRC_ALPHA)` 提交到**主窗 HWND**（分层窗）。
+  位图 alpha 即形状（自带抗锯齿；代价同旧形裁：无 DWM 阴影）也即命中——alpha=0 的
+  元素间隙与窗口边角**点击穿透到下层窗口**（分层窗逐像素命中）；羽化边带 alpha>0
+  可命中，视觉与命中一致（优于旧形裁让位边带的"死区"）。**统一半透明** = ULW
+  `SourceConstantAlpha`（每帧随 `u.alpha` 提交；D50 停靠淡化 `semiAlpha`→`dockAlpha`
+  同帧跟随——旧 `LWA_ALPHA` 与形裁、overlay 一并退役）。**元素边缘羽化（D45–D48
+  剖面保留）**：每像素 vis = 核心 1 → 边带 smoothstep 渐隐 → 真实轮廓处
+  `featherEdgeMin`（0 = 淡到全透明），**沿元素真实轮廓**（未按视口/淡出带裁剪——
+  不沿裁切线描边，跨带形状不留横缝）、**只在形状内落笔、不向外外扩**（旧向外环在
+  `d=0` 有折点 →「饱和核心 + 外圈亮带」，已否决）；羽化宽响应式（D47/D48）：
+  `fw = clamp(round(min(w,h) × featherRatio), Dp(featherMinDp), Dp(featherMaxDp))`、
+  且 ≤ 短边 1/3——随元素尺寸/窗口缩放/DPI 自适应，不引入固定 px。颜色取同帧
+  headless 内容（文字/图标随渐隐自然淡出），headless 不可用（`src` 缺省或尺寸不符）
+  才用元素底色兜底（`writePremulFill`，形状可见可点、无文字）。g(y) = 带渐变
+  smoothstep（带顶 0 → 带底 1，D54 揭示带/§15.3 顶带同式）——带顶以上 av=0 不可见。
+  降级：非 Windows / headless 失败 → 常规不透明窗渲染照常（win32 桩 no-op）。
+- **同拍合成（D55 → D58 → D59 → D62 单通道收口）**：像素、形状、透明度、效果层全部
+  在同一张 ULW 位图里生成、一次提交——主窗 swapchain 内容 / 形裁 / overlay 三通道并存
+  时期的亚帧错位（D58/D59 三轮截图迭代实证：同一次序不同帧结果不一致 = 窗口线程队列与
+  Gio ack→Present 的交错竞态，非次序可治）在结构上不再可能。帧次序固定为
+  `stepExpand → stepAnim → layout → compose(全帧合成) → commit(移窗) → submit(e.Frame)
+  → present(ULW)`：全帧合成是唯一慢段（离屏重渲 + 预乘，先跑完）；移窗一拍 flush
+  （帧内只 `requestMove` 记账，D55 机制保留）；`e.Frame` 保留（事件路由/IME/vblank
+  节奏零改动，其画面被 ULW 位图覆盖）；ULW 殿后提交（取实测窗口矩形定位）。
 - **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出
   ＋功能窗入口「设置 / 会话历史 / 欢迎」（§15.7/D60；菜单步补全——托盘步先落
   「显示/隐藏 + 退出」两项，功能窗入口随窗口管理步启用、未落地项置灰）。
 - **托盘常驻生命周期**：关窗（Alt+F4）= **隐藏**——子类化主窗过程吞 `WM_CLOSE`
-  （Gio 无关闭拦截 API，`WM_CLOSE` 直落 `DefWindowProc` 即销毁），主窗与淡出 overlay
-  一并隐藏；**退出只经托盘菜单**（清托盘图标与快捷键 → EOF 收尾）。主窗**不进任务栏
+  （Gio 无关闭拦截 API，`WM_CLOSE` 直落 `DefWindowProc` 即销毁），主窗隐藏即像素层
+  一并消失（D62 后无独立 overlay）；**退出只经托盘菜单**（清托盘图标与快捷键 → EOF 收尾）。主窗**不进任务栏
   与 Alt+Tab**（D51：`onHWND` 挂接句柄时一次性经窗口线程置 `WS_EX_TOOLWINDOW`、清
-  `WS_EX_APPWINDOW`——托盘/快捷键是唯一入口，任务栏条目与悬浮球形态相斥；淡出
-  overlay 天然 TOOLWINDOW，主窗补齐同口径）。
+  `WS_EX_APPWINDOW`——托盘/快捷键是唯一入口，任务栏条目与悬浮球形态相斥）。
   托盘 = `Shell_NotifyIconW`（图标**内嵌** `assets/icon/aquarius.ico`，单二进制；
   Explorer 重启后图标重挂留后续），左键显隐、右键菜单。
 - **全局快捷键**：默认 **`Alt+A`**（D43 修订 2026-09：原 `Alt+Space` 与输入法/开始
@@ -976,9 +964,8 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 - **置顶开关（菜单调节）**：托盘菜单（与右键 logo 菜单同内容）带「窗口置顶」勾选项，
   切换主窗 `HWND_TOPMOST/NOTOPMOST`——**本端 `SetWindowPos` 显式断言**（不依赖 Gio 的
   TopMost 应用路径：实测主窗置顶态会意外丢失、原因未明）并**持久化**（与位置记忆
-  同文件，键缺失 = 缺省置顶）。**淡出 overlay 的置顶态恒与主窗实际态同步**：overlay
-  不带独立 `WS_EX_TOPMOST`，逐次按主窗实际置顶位对齐——杜绝"主窗非置顶而渐变带
-  孤零零飘在其他窗口上"。
+  同文件，键缺失 = 缺省置顶）。**置顶即整窗置顶**（D62 后像素单窗、无 overlay 同步问题——
+  旧「overlay 置顶态逐次对齐主窗」机制随 overlay 退役）。
 - **位置**：拖拽移动（把手 = logo / 输入栏空隙 / 状态行；气泡区是滚动区、不拖窗）
   + 位置记忆（含多显示器，随 config/本地状态持久化）。**不出桌面（D50/D52）**：拖动中
   可见锚点（收起 = logo 球、展开 = **输入栏三段包围盒**——D52：转写消息区允许越出
@@ -989,10 +976,10 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   且球贴齐**左右外侧边**（该边之外无相邻显示器——跨屏接缝不触发，"滑出"才藏得住）；
   触发 = **停在可停靠边 + 曾悬停 + 光标移开**（悬停 = 布防，启动恢复无悬停不自动滑出；
   召回移开、召回后拖回可停靠区移开走同一判定）——滑出屏幕留 `dockSliverDp`(8dp) 窄条 +
-  整窗淡化（`semiAlpha`→`dockAlpha`，淡出 overlay 同帧跟随），`dockDurMs`(220ms)
+  整窗淡化（`semiAlpha`→`dockAlpha`，ULW `SourceConstantAlpha` 同帧跟随），`dockDurMs`(220ms)
   ease-out 插值（ticker 唤帧、进度事件循环现算）；**悬停窄条滑回复亮（召回）**，
   召回后无操作光标移开则重停靠；点击/呼出（Alt+A、托盘显示 = 召回 + 展开）立即脱离。
-  **唤帧底座（D50 实测修订）**：悬停/移开判定 = 帧 + 光标直采，而形裁窄区上的指针
+  **唤帧底座（D50 实测修订）**：悬停/移开判定 = 帧 + 光标直采，而位图窄条上的指针
   悬停**可能零帧**（实测：停靠窄条悬停 2s 无一帧 → 召回永不触发，点击却必有帧能唤出）
   ——故**收起态且球停在可停靠边（含停靠中）期间常驻 50ms 心跳 `Invalidate`** 主动唤帧；
   展开态、球不在可停靠边（无从停靠）则静默零帧。**纯点击不夹取不吸附**：位移 ≤
@@ -1010,7 +997,7 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 
 ### 15.2 输入栏与交互（视觉稿 = Figma 稿 `Untitled.fig` 的 canvas，本地稿未入库；D49：canvas 1:1 为几何基准，`temp/ui_design.png` 是截图、不作依据；idle 形态）
 
-**三段式独立元素（无外层容器胶囊）**：**logo 圆钮**（⌀48、r24，兼展开/收起钮，圆钮**内嵌品牌图标** `assets/icon`）｜间隙 12｜**输入胶囊**（高 48、r24 全圆，`grow` 随窗口宽伸缩）｜间隙 12｜**发送键圆钮**（⌀48、r24）。三段等高、垂直居中、彼此分离——各自形裁 + 羽化，间隙透明且点击穿透；几何 1:1 取自 canvas（元素 48、间距 12、内边距 16、图标槽 20、文字 15sp），默认窗宽 608dp 下行宽 576 = 设计稿、输入区恰 456。
+**三段式独立元素（无外层容器胶囊）**：**logo 圆钮**（⌀48、r24，兼展开/收起钮，圆钮**内嵌品牌图标** `assets/icon`）｜间隙 12｜**输入胶囊**（高 48、r24 全圆，`grow` 随窗口宽伸缩）｜间隙 12｜**发送键圆钮**（⌀48、r24）。三段等高、垂直居中、彼此分离——各自羽化边缘（位图合成），间隙透明且点击穿透；几何 1:1 取自 canvas（元素 48、间距 12、内边距 16、图标槽 20、文字 15sp），默认窗宽 608dp 下行宽 576 = 设计稿、输入区恰 456。
 
 胶囊内（左右内边距 16、元素间距 12）：**附件图标槽**（20×20 灰占位、不可点，实现附件时启用）｜占位 *"Ask anything or type a command..."* 15sp（`grow`）｜**展开图标槽**（20×20 灰占位、不可点）｜状态动作区（确认态 = [允许/拒绝] 按钮组；生成中胶囊内无动作——停止在右圆）。
 
@@ -1038,29 +1025,24 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 | 顶边淡出 | 转写区顶部固定高度**淡出带**：气泡滚出顶部走垂直 alpha 渐变消失（非硬切）；实现见下 |
 | 滚动与贴底（D56） | 转写区是**滚轮滚动区**（把手只在输入栏/状态行，气泡区只滚不拖窗）：**底部锚定**——内容矮时贴底悬在输入栏上方，高过视口后旧消息上滚进顶带渐隐；**尾随贴底**（`d>0` = 向新内容）：流式新消息始终贴底，上滚离底即停跟随、滚回底部恢复跟随。滚轮增量按**垂直轴**夹取、边界由当帧钳制负责（D56） |
 
-**淡出实现（D44，spike 已过 §15.6）**：淡出带在主窗区域中**整带挖空**（该处桌面/下层
-窗口直接可见），由一个**独立 `UpdateLayeredWindow` overlay 窗口**（`WS_EX_LAYERED |
-TRANSPARENT | NOACTIVATE | TOOLWINDOW | TOPMOST`，随主窗定位）呈现渐变内容：
+**淡出实现（D44 起、D62 并入单通道，spike 已过 §15.6）**：淡出带不再挖空主窗、也没有
+独立 overlay 窗——带渐变作为乘性因子 `g(y)` 并入整窗 ULW 位图（§15.1 单通道）：
 
 1. **像素源** = `gioui.org/gpu/headless` 离屏渲染同一布局：清屏为透明 → alpha 通道 =
    内容覆盖（**免布局掩码同步**）；`Metric.PxPerDp` 对齐主窗 DPI；零值 `Source` 纯渲染
    已验证（`io/input`：zero-value = disabled）。
-2. 裁淡出带行 → 垂直渐变 × alpha → 预乘转换（headless 像素 = **预乘线性 + sRGB 存储**
-   语义，按 decode/encode 转为 ULW 所需的字节空间预乘；alpha=255 的内容像素简化为
-   字节 × 渐变）。
-3. `UpdateLayeredWindow(ULW_ALPHA + AC_SRC_ALPHA)`，`SourceConstantAlpha` = 主窗
-   `LWA_ALPHA` 常量 × 渐变——与主窗半透明在带底无缝衔接（同源 Gio 渲染，像素一致）。
-4. **带/非带衔接**：被带裁切的形状形裁**方顶续接**（region 上两角填方——否则主窗侧
-   下半截重新圆角，与带内渐变断层）；带底渐变 alpha=1 与主窗同源像素无缝。
-   overlay 同时承担**元素边缘渐隐（D45–D48/§15.1，整窗效果层）**：渐隐只落在带底
-   以下（带内由带单绘——避免带/渐隐重复叠加出横缝；带内另乘带渐变 `g(y)` 与带衔接），
-   且沿元素真轮廓取边、只落在元素可见裁剪区内、**只在形状内落笔**（轮廓外不外扩光晕）；
-   颜色采样同帧 headless 内容（不可用才取元素底色），羽化宽按元素短边成比例
-   （D47/D48——响应式，不引入固定 px）。
+2. 全帧合成 `av = vis(形状) × g(y) × 内容alpha`（headless 像素 = **预乘线性 + sRGB
+   存储**语义，按 decode/encode LUT 转为 ULW 所需的字节空间预乘；vis 剖面见 §15.1
+   羽化；g(y) = smoothstep，带顶 0 → 带底 1，D54 揭示带/静息顶带同式——带顶以上
+   av=0 不可见）。
+3. `UpdateLayeredWindow(ULW_ALPHA + AC_SRC_ALPHA)` 提交**主窗 HWND**，
+   `SourceConstantAlpha` = `u.alpha`（统一半透明/停靠淡化，同帧跟随）。
+4. **带/非带衔接**：同一位图内 g(y) 与 vis 连续相乘——带底 g→1 与带下无缝、跨带形状
+   无横缝（旧「region 方顶续接」机制随形裁退役，不再需要）。
 
 约束：淡出带内**不放交互控件**（零值 Source = 禁用态渲染、与主窗启用态有色差；带内
-恒为文本气泡则无差异）；带内点击已随挖空穿透（不参与交互，滚动从带下方起效）；
-headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化驱动重渲与 overlay 复位。
+恒为文本气泡则无差异）；带内像素随 g(y) 半透明、命中按位图 alpha（不参与交互，滚动
+从带下方起效）；headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化驱动重渲。
 
 **§9 清洗**：所有不可信文本（流式 delta、思考、工具参数/结果、历史回放、命令输出）
 出口统一剥控制序列（对齐 `sanitizeControl`）；渲染不执行任何标记语言的活动内容。
@@ -1086,23 +1068,26 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
 - 渲染状态机对齐 `uitui/model.go`：`Delta.Reasoning` 分流进思考草稿、`CommittedEvent`
   定稿落块、`HistoryEvent` 回放（思考暗块先行）、`Say` 纯文本块。
 - 测试：GUI 自身用**无窗口 headless 逻辑测试**（渲染状态机/桥接层抽纯逻辑）+ 投影收集器；
-  门禁与 e2e 仍跑 repl 后端，GUI 不进 CI 图形路径。帧内提交次序是契约（D55/D58/D59）：抽
-  `frame(gtx, submit)` 方法 + `framePhase` 测试回执（生产恒 nil），无窗口断言
-  「compose → commit → submit → present」（屏幕态先于绘制提交落地、overlay 留在绘制提交
-  之后），并断言 submit 时屏幕态**已** flush、帧尾已 flush。
+  门禁与 e2e 仍跑 repl 后端，GUI 不进 CI 图形路径。帧内提交次序是契约（D55/D58/D59
+  历史次序被 **D62 单通道**取代）：抽 `frame(gtx, submit)` 方法 + `framePhase` 测试回执
+  （生产恒 nil），无窗口断言「compose → commit → submit → present」（全帧合成先行、
+  移窗 flush 在 `e.Frame` 之前、ULW 提交殿后），并断言 submit 时移窗**已** flush、
+  帧尾已 flush；全帧合成（av = vis × g(y) × alpha 预乘）另有参考实现对照测试
+  （内容不透明 / 间隙全零 / 带行渐变 / 羽化 ramp）。
 
 ### 15.6 前置 spike 结论（2026-09 已过，D30 同款记录）
 
 | §15.6 清单项 | 实测结论 |
 |---|---|
 | 纯 Go 构建 | ✅ `CGO_ENABLED=0` 通过（Gio v0.10.2 Windows 纯 Go，无 cgo） |
-| 悬浮胶囊形态 | ✅ **形裁 `SetWindowRgn`**：窗口裁成胶囊（两端全圆）、区域外不可见 + 点击穿透；边缘二值无抗锯齿、无 DWM 阴影（可接受）；~~色键 `LWA_COLORKEY`~~ 与 D3D swapchain 不兼容（白屏，WinUI3#8469/SDL#15751 同类）；~~DWM 圆角~~ 被形裁取代且多一圈窗口描边——两者排除 |
-| 半透明 | ✅ `LWA_ALPHA` 常量透明可用（可与形裁叠加） |
+| 悬浮胶囊形态 | ✅ **悬浮形态**（D44–D59 期 `SetWindowRgn` 形裁；D62 起整窗 ULW 位图——位图 alpha 即形状/命中/穿透，自带抗锯齿）；~~色键 `LWA_COLORKEY`~~ 与 D3D swapchain 不兼容（白屏，WinUI3#8469/SDL#15751 同类）；~~DWM 圆角~~ 多一圈窗口描边——两者排除 |
+| 半透明 | ✅ `LWA_ALPHA` 常量透明可用（D44–D59 期与形裁叠加）；D62 起随整窗 ULW 位图走 `SourceConstantAlpha`（同帧提交） |
+| 整窗 ULW 换壳（D62） | ✅ 主窗 `WS_EX_LAYERED` + 每帧 `UpdateLayeredWindow(ULW_ALPHA+AC_SRC_ALPHA)` 提交全帧合成位图：alpha 即形状/命中/穿透；内容 = headless 全帧重渲（单通道——形裁/overlay/swapchain 三通道并存的亚帧错位结构性根除） |
 | 系统托盘 | ✅ `Shell_NotifyIconW` + 消息窗口 + 右键菜单（纯 Go syscall） |
 | 全局快捷键 | ✅ `RegisterHotKey` 注册成功（spike 用 Alt+Space 验机制；默认值改 **Alt+A**——组合键与注册无关，Ctrl+Alt+A 回退逻辑备着） |
 | 多显示器 + 位置记忆 | ✅ 显示器枚举/工作区夹取/`SetWindowPos` 定位 + JSON 位置记忆 + 重启恢复 |
 | 中文字形 | ✅ 系统 `msyh.ttc` → `opentype.ParseCollection` 加载成功（gofont 无 CJK，M5 中文渲染走系统字体） |
-| Gio 真透明 | ❌ 不存在（`gpu.Clear` 强制不透明白，仅 js 平台透明）；每像素透明需 `UpdateLayeredWindow` CPU 位图或 DirectComposition，与 Gio GPU 路径冲突——形裁绕开 |
+| Gio 真透明 | ❌ 不存在（`gpu.Clear` 强制不透明白，仅 js 平台透明）；每像素透明需 `UpdateLayeredWindow` CPU 位图或 DirectComposition，与 Gio GPU 路径冲突——D44–D59 形裁绕开，D62 起经 headless 全帧重渲 + 主窗 ULW 承载 |
 | 淡出像素源（headless 离屏渲染） | ✅ spike/headless：`gpu/headless` 清屏 = 透明（alpha 通道 = 内容覆盖，**免布局掩码**）；零值 `Source` 纯渲染不 panic（含 `gtx.Execute`/material 控件）；`PxPerDp` 可控（125% 缩放实测通过）；像素语义 = **预乘线性 + sRGB 存储**（ULW 前需 decode/encode 转字节预乘） |
 | 主窗捕获（PrintWindow） | ❌ spike/printwin：`PW_RENDERFULLCONTENT` **连可见区都返回全零** → 捕获路线排除；淡出像素源改 headless 离屏渲染（D44） |
 
@@ -1113,18 +1098,15 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
    `deliverEvent` 的 select、不泵消息，跨线程调用死锁）。查询类（`GetWindowRect`/`GetCursorPos`）不受限。
 2. **拖动定位用光标屏幕坐标绝对跟踪**（按下记「窗口左上角 + 光标位置」，按差值定位）；
    指针本地增量法与窗口移动互为反馈，会回弹。
-3. **帧内提交次序按通道分边（D55 提出、D58/D59 修订次序）**：Gio `processFrame` 先 ack 本帧再
-   `Present(1,0)`（阻塞到下一 vblank），ack 之后经 `Window.Run` 排队的移窗 / `LWA_ALPHA` /
-   形裁 / overlay ULW 要等 Present 返回才被窗口线程服务；而主窗是 bitblt 交换模型，内容也要等
-   Present 拷贝后的**下一次合成**才渲染。两类机制的采样点不同，故按通道分边：
-   - **形裁 `SetWindowRgn` 必须排在 `e.Frame` 之前**（D59）：其形状到**下一次 Present** 才被
-     DWM 采样 → 提前提交 = 与本次 Present 的内容同拍；排在之后 = 慢一帧（实测：胶囊体内黑
-     沙漏 + 同色灰圆盘 + 发送键空心三件套）；
-   - **overlay ULW 必须排在 `e.Frame` 之后**（D58）：它**立即**在下一次合成生效 → 排在内容
-     拷贝完之后 = 与新内容同拍；排在之前 = 先于内容上屏（实测：旧内容 + 新形裁/新环 =
-     黑缝 + 月牙）；
-   - 移窗 / `LWA_ALPHA` 与形裁同拍提交（不产生形状-内容错位）。
-   帧次序固定：`stepExpand → stepAnim → layout → fadeCompose → commitWinGeom → submit(e.Frame) → fadePresent`。
+3. **帧内提交次序（D55 提出、D58/D59 修订、D62 单通道收口）**：Gio `processFrame` 先
+   ack 本帧再 `Present(1,0)`（阻塞到下一 vblank），ack 之后经 `Window.Run` 排队的
+   Win32 调用要等 Present 返回才被窗口线程服务；而主窗是 bitblt 交换模型，内容同样要等
+   Present 拷贝后的**下一次合成**才渲染——D44–D59 期主窗内容 / 形裁 / overlay **三通道
+   并存**、采样点各异（`SetWindowRgn` 随下一次 Present 采样、`UpdateLayeredWindow` 立即
+   生效），D59 的按通道分边混合次序仍留亚帧竞态（同一次序不同帧结果不一致，实测止损）；
+   **D62 起像素单通道化**（整窗 ULW 位图承载形状/效果/透明度），按通道分边作废，次序
+   仅剩工程约束：全帧合成（唯一慢段）→ 移窗一拍 flush（`requestMove` 记账，D55 保留）
+   → `e.Frame`（事件路由/帧节奏，画面被 ULW 覆盖）→ ULW 提交殿后（取实测窗口矩形定位）。
 
 ### 15.7 窗口管理（多窗宿主，D60）
 
@@ -1137,13 +1119,13 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
   `ui.hotkey`、`ui.theme`；密钥只写不回显、不回显明文——D35）｜**会话历史**（占位壳；
   列表数据面依赖未来切会话命令，§14）｜**欢迎/首次运行**（占位壳；接管「写模板即退出」
   启动流为后续步）。
-- **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 `SetWindowRgn` 形裁、
-  无 `LWA_ALPHA`、无淡出 overlay、无位置记忆、不置顶、不拖拽把手；任务栏条目照常
+- **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 ULW 形状位图（常规
+  不透明窗）、无位置记忆、不置顶、不拖拽把手；任务栏条目照常
   （`WS_EX_TOOLWINDOW` 只挂主窗 HWND，次窗不参与）。
 - **并发模型**：每窗独立事件循环 goroutine、**自持状态**；跨窗只经消息（沿用 `uiMsg`
   模式）与线程安全回调（`Options` 下发，同 `Status` 口径），**不共享裸字段**（`-race`
   门禁兜底）。主窗专属全局态显式隔离、次窗一律不碰：`win32Run` 单槽（§15.6 铁律 1）、
-  `mainHWND`、淡出 overlay、位置记忆/停靠、`WM_CLOSE → 隐藏` 子类化。
+  `mainHWND`、ULW 像素管线（fadeState/fadeBuf）、位置记忆/停靠、`WM_CLOSE → 隐藏` 子类化。
 - **生命周期**：单实例防重开（同 kind 已开 → raise/focus）；次窗关闭 = **真关闭**
   （不走主窗「Alt+F4 = 隐藏」语义）；托盘隐藏 / Alt+A 显隐**不连带**次窗；退出只经
   托盘菜单 → 收编关闭全部次窗 → EOF 收尾。

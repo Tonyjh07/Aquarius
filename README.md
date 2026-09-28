@@ -48,7 +48,8 @@ resources 只读并入记忆索引、prompts 暴露为动态命令；插件宿�
 **GUI 悬浮球（§15/D43）为默认前端**（`ui.kind=gui`，D51；启动不进任务栏/Alt+Tab）。横切**装饰器链**（重试/硬保底截断/审计 JSONL，
 D14）在装配根叠加。验收：stdio 与 streamable HTTP 各接现成 MCP server 全链路
 （`AQUARIUS_E2E_REAL_MCP=1 go test ./cmd/aquarius -run RealMCP` 可重跑）。
-后续：**M5 GUI 前端**（D43/§15：spike 已过——形裁悬浮窗/托盘/快捷键/定位实测见 §15.6；
+后续：**M5 GUI 前端**（D43/§15：spike 已过——悬浮窗/托盘/快捷键/定位实测见 §15.6；
+悬浮形态 D62 起整窗 ULW 位图单通道（形裁/overlay 退役，亚帧错位根除）；
 `uigui` 骨架（uiFrontend 六面 + 桥接 + 渲染状态机 + 窗口壳，`ui.kind=gui`）已落位，
 悬浮球形态/托盘常驻/完整 markdown 消息面按 §15 继续推进；**窗口管理（§15.7/D60：
 设置/会话历史/欢迎三窗 = 独立常规窗）、主题令牌深浅两版 + `ui.theme` 系统跟随
