@@ -78,6 +78,10 @@ type winHandle struct {
 	runFn atomic.Pointer[func(func())]
 	// hwnd 次窗 HWND（Win32ViewEvent 写；独立于 mainHWND，主窗机制不作用于次窗）。
 	hwnd atomic.Uintptr
+	// pal 主题原子快照（spawn 初存、applyTheme 广播；次窗帧内校正自身 material 主题）。
+	pal atomic.Pointer[palette]
+	// invalidate 次窗重绘请求（runSecondary 装配；Invalidate 并发安全，§15.5）。
+	invalidate atomic.Pointer[func()]
 	// closePending 关闭请求早于 HWND 就绪时置位，attach 到件补投（Dekker 两步：
 	// 请求先置位后读句柄、挂接先存句柄后读置位——任一次序至少投出一次关闭）。
 	closePending atomic.Bool
@@ -187,10 +191,28 @@ func (h *winHost) isOpen(k winKind) bool {
 	return ok && !cur.doneClosed()
 }
 
+// propagatePalette 广播主题快照到全部次窗并请求重绘（§15.7/D61：跨窗只经原子
+// 快照 + Invalidate，不共享裸字段）。
+func (h *winHost) propagatePalette(p *palette) {
+	h.mu.Lock()
+	live := make([]*winHandle, 0, len(h.live))
+	for _, hs := range h.live {
+		live = append(live, hs)
+	}
+	h.mu.Unlock()
+	for _, hs := range live {
+		hs.pal.Store(p)
+		if inv := hs.invalidate.Load(); inv != nil {
+			(*inv)()
+		}
+	}
+}
+
 // spawnSecondary 起次窗（独立 goroutine + 独立 app.Window；不接主窗任何全局态，
 // §15.7 形态与并发模型）。返回的句柄由注册表持有。
 func (u *UI) spawnSecondary(k winKind) *winHandle {
 	ctl := &winHandle{done: make(chan struct{})}
+	ctl.pal.Store(u.pal.Load()) // 初始主题快照（spawn 可能在托盘线程，原子读）
 	w := new(app.Window)
 	go u.runSecondary(w, k, ctl)
 	return ctl
@@ -204,6 +226,8 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	defer close(ctl.done)
 	runFn := w.Run
 	ctl.runFn.Store(&runFn) // 次窗自己的线程投递槽——win32Run 单槽归主窗，不碰
+	inval := w.Invalidate
+	ctl.invalidate.Store(&inval) // 主题广播后重绘请求（并发安全）
 	width, height, minW, minH := k.geometry()
 	w.Option(
 		app.Title(k.title()),
@@ -211,12 +235,17 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 		app.MinSize(unit.Dp(minW), unit.Dp(minH)),
 		app.Decorated(true), // 常规装饰窗（D60：无边框形裁等主窗机制一律不接）
 	)
-	th := newTheme() // 每窗独立主题实例（material：不同顶层窗应各自持有 Shaper）
+	th := newTheme()     // 每窗独立主题实例（material：不同顶层窗应各自持有 Shaper）
+	var applied *palette // 本窗已校正到的快照（帧内只读写本 goroutine）
 	var ops op.Ops
 	for {
 		ev := w.Event()
 		switch e := ev.(type) {
 		case app.FrameEvent:
+			if p := ctl.pal.Load(); p != nil && p != applied {
+				th.Palette.Fg, th.Palette.Bg = p.fg, p.bg
+				applied = p
+			}
 			gtx := app.NewContext(&ops, e)
 			secondaryFrame(gtx, th, k)
 			e.Frame(&ops)

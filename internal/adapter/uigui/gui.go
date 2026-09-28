@@ -64,6 +64,8 @@ type Options struct {
 	Interrupt func()
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。
 	Hotkey string
+	// Theme 主题档（§15.4/D61）：system | light | dark；空 = system（跟随系统）。
+	Theme string
 }
 
 // UI GUI 前端句柄（装配根按 uiFrontend 使用）。
@@ -164,6 +166,13 @@ type UI struct {
 	// wins 功能窗注册表（§15.7/D60）：单实例防重开 + 退出收编。互斥锁保护，
 	// 托盘线程/事件循环均可开窗；headless 构造成无开窗器（openWin no-op）。
 	wins *winHost
+
+	// pal 主题原子快照（spawn 次窗时读取——applyTheme 在 goroutine 启动前写初始值，
+	// 运行时仅事件循环 goroutine 写；§15.7 跨窗只经原子快照）。
+	pal atomic.Pointer[palette]
+	// themeMode 当前主题档归一值（system|light|dark）：初始写于 goroutine 启动前、
+	// 运行时仅事件循环 goroutine 读写（sysThemeMsg 判定 system 档才重解析）。
+	themeMode string
 }
 
 // New 启动 GUI 前端（Gio 窗口事件循环即刻在后台运行，退出经 Close 收尾）。
@@ -187,6 +196,7 @@ func newUI(opts Options, window bool) *UI {
 	u.followTail = true // 初始尾随贴底（新消息出现在输入栏上方，§15.1）
 	u.alpha = semiAlpha // 整窗 LWA_ALPHA 起点（D50 动画在其上插值）
 	u.wins = newWinHost(nil)
+	u.applyTheme(opts.Theme) // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
 	}
@@ -381,6 +391,10 @@ type (
 	showExpandMsg struct{}
 	// toggleExpandMsg 快捷键在窗口可见时：展开 ↔ 收起互切（§15.1）。
 	toggleExpandMsg struct{}
+	// themeMsg 主题档切换（设置窗保存/启动校正；mode = system|light|dark）。
+	themeMsg struct{ mode string }
+	// sysThemeMsg 系统深浅变化（主窗 WM_SETTINGCHANGE 广播 → 仅 system 档重解析）。
+	sysThemeMsg struct{}
 )
 
 // apply 把桥接消息应用到状态机（仅事件循环 goroutine 调用）；false = 循环应退出。
@@ -404,6 +418,12 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.beginExpand() // 呼出 = 召回 + 展开（D50 召回、D54 动画）
 	case toggleExpandMsg:
 		u.toggleExpand() // 互切；动画中反向续跑（D54）
+	case themeMsg:
+		u.applyTheme(m.mode) // 热生效（下一帧重绘，§15.4；事件循环 goroutine 独占）
+	case sysThemeMsg:
+		if u.themeMode == "system" {
+			u.applyTheme("system") // 仅 system 档跟随；固定档忽略广播
+		}
 	case quitMsg:
 		return false
 	}

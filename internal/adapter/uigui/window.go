@@ -70,7 +70,8 @@ const (
 	dragClickSlackPx = 4
 )
 
-// 主题令牌（§15.4 MVP：品牌色 + 输入栏浅白/浅灰；深浅两版与多预设后补）。
+// 主题令牌活动槽（§15.4/D61：深浅两版预设与 applyPalette 见 theme.go——
+// 预设纯数据，自绘路径读活动槽、material 主题经同一快照取默认色）。
 var (
 	brandColor = color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF}
 	pillBg     = color.NRGBA{R: 0xFA, G: 0xFA, B: 0xFC, A: 0xFF} // 输入栏浅白
@@ -222,6 +223,9 @@ func (u *UI) runWindow(w *app.Window) {
 		app.TopMost(true),    // 悬浮球常驻顶层
 	)
 	u.th = newTheme()
+	if p := u.pal.Load(); p != nil { // 初始主题快照校正默认色（§15.4/D61）
+		u.th.Palette.Fg, u.th.Palette.Bg = p.fg, p.bg
+	}
 	var ops op.Ops
 	for {
 		ev := w.Event()

@@ -63,11 +63,14 @@ type modelConfig struct {
 }
 
 // uiConfig UI 形态：repl | tui | gui（D33/D43；模板与键缺省为 tui，repl 为测试/e2e
-// 后端）+ GUI 全局呼出快捷键。
+// 后端）+ GUI 全局呼出快捷键 + 主题档。
 type uiConfig struct {
 	Kind string `json:"kind"`
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。仅 ui.kind=gui 用。
 	Hotkey string `json:"hotkey,omitempty"`
+	// Theme GUI 深浅主题（§15.4/D61）：system | light | dark；空 = system（跟随系统，
+	// 其余未识别值亦按 system 处理）。仅 ui.kind=gui 用。
+	Theme string `json:"theme,omitempty"`
 }
 
 // limitsConfig 运行限额（DESIGN §8）。
@@ -95,7 +98,7 @@ const defaultConfig = `{
     "echo_thinking": true,
     "unsupported_params": []
   },
-  "ui": { "kind": "gui" },
+  "ui": { "kind": "gui", "theme": "system" },
   "system_prompt": "",
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },

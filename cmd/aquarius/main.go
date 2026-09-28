@@ -397,6 +397,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			},
 			PosFile: filepath.Join(dir, "gui_pos.json"),
 			Hotkey:  cfg.UI.Hotkey, // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:   cfg.UI.Theme,  // 主题档 system|light|dark（§15.4/D61；空 = system）
 		})
 	case "tui":
 		ui = uitui.New(uitui.Options{

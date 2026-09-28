@@ -1073,9 +1073,10 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
 - **实施口径（D61，先于设置窗落地）**：v1 先落**颜色令牌**（背景/文字/气泡双色/思考
   暗块/状态行/错误色/禁用态等）**深浅两版纯数据预设**，主界面自绘路径与 material 主题
   同读令牌；几何令牌（圆角/间距/字号）只做结构、不随主题变体（多预设后补，§14）。
-  **`ui.theme` = `system | light | dark`**（键缺失 = `system`，§8）：`system` 经系统
-  深浅检测（实现时定：Gio 系统事件或 Win32 `AppsUseLightTheme` 注册表 +
-  `WM_SETTINGCHANGE` 广播刷新）；切换**热生效**（下一帧重绘），设置窗主题档同口径。
+  **`ui.theme` = `system | light | dark`**（键缺失 = `system`，未识别值亦按 `system`，
+  §8）：`system` 经 Win32 `AppsUseLightTheme` 注册表读取、主窗 `WM_SETTINGCHANGE`
+  广播实时刷新；切换**热生效**（下一帧重绘），设置窗主题档同口径；次窗经原子快照
+  同读同一预设（§15.7 并发模型）。
 
 ### 15.5 契约与并发
 

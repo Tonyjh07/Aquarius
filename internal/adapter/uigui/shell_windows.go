@@ -48,15 +48,16 @@ var (
 
 // 托盘/快捷键/子类化常量（Win32 头文件取值）。
 const (
-	wmNull       = 0x0000
-	wmDestroy    = 0x0002
-	wmClose      = 0x0010
-	wmCommand    = 0x0111
-	wmLButtonUp  = 0x0202
-	wmRButtonUp  = 0x0205
-	wmHotkey     = 0x0312
-	wmApp        = 0x8000
-	trayCallback = wmApp + 1
+	wmNull          = 0x0000
+	wmDestroy       = 0x0002
+	wmClose         = 0x0010
+	wmSettingChange = 0x001A // 系统设置变化广播（含系统深浅切换，§15.4/D61）
+	wmCommand       = 0x0111
+	wmLButtonUp     = 0x0202
+	wmRButtonUp     = 0x0205
+	wmHotkey        = 0x0312
+	wmApp           = 0x8000
+	trayCallback    = wmApp + 1
 
 	swRestore = 9
 
@@ -422,11 +423,19 @@ func subclassCloseToHide(h uintptr) {
 	})
 }
 
-// subClassProc 子类化窗口过程：WM_CLOSE 隐藏，其余原样转发。
+// subClassProc 子类化窗口过程：WM_CLOSE 隐藏；WM_SETTINGCHANGE（Explorer 广播
+// 系统深浅等设置变化）→ sysThemeMsg 重解析 system 档（§15.4/D61）；其余原样转发。
+// 本回调在 Gio 窗口 goroutine 上执行，post 线程安全、此处不触修改性调用。
 func subClassProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	if uMsg == wmClose {
 		hideMain(hwnd)
 		return 0
+	}
+	if uMsg == wmSettingChange {
+		if u := shellUI.Load(); u != nil {
+			u.post(sysThemeMsg{})
+		}
+		// 继续转发：Gio 侧不受影响，不吞广播。
 	}
 	if p := shellPrevProc; p != 0 {
 		r, _, _ := procCallWindowProcW.Call(p, hwnd, uMsg, wParam, lParam)

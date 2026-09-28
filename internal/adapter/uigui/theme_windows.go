@@ -1,0 +1,56 @@
+//go:build windows
+
+package uigui
+
+import (
+	"syscall"
+	"unsafe"
+)
+
+var advapi32 = syscall.NewLazyDLL("advapi32.dll")
+
+var (
+	procRegOpenKeyExW    = advapi32.NewProc("RegOpenKeyExW")
+	procRegQueryValueExW = advapi32.NewProc("RegQueryValueExW")
+	procRegCloseKey      = advapi32.NewProc("RegCloseKey")
+)
+
+// 系统深浅检测相关常量（Win32 头文件取值）。
+const (
+	hkeyCurrentUser = 0x80000001 // HKEY_CURRENT_USER（预定义句柄，与 x/sys 同口径零扩展）
+	keyRead         = 0x20019    // KEY_READ
+	regDWORD        = 4          // REG_DWORD
+	personalizePath = `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`
+	appsUseLight    = "AppsUseLightTheme" // 0 = 深色应用主题，1 = 浅色
+)
+
+// systemDark 系统深浅检测（§15.4/D61：Win32 注册表 `AppsUseLightTheme`，键缺失/
+// 读取失败 = 浅色保守回落）。查询类调用可跨线程直调（§15.6 铁律 1 不限）；
+// 运行中变化经主窗 WM_SETTINGCHANGE 广播（subClassProc）触发 sysThemeMsg 重解析。
+func systemDark() bool {
+	key, err := syscall.UTF16PtrFromString(personalizePath)
+	if err != nil {
+		return false
+	}
+	name, err := syscall.UTF16PtrFromString(appsUseLight)
+	if err != nil {
+		return false
+	}
+	var hkey uintptr
+	r, _, _ := procRegOpenKeyExW.Call(hkeyCurrentUser,
+		uintptr(unsafe.Pointer(key)), 0, keyRead,
+		uintptr(unsafe.Pointer(&hkey)))
+	if r != 0 || hkey == 0 {
+		return false
+	}
+	defer procRegCloseKey.Call(hkey)
+	var val, typ, size uint32
+	q, _, _ := procRegQueryValueExW.Call(hkey,
+		uintptr(unsafe.Pointer(name)), 0,
+		uintptr(unsafe.Pointer(&typ)), uintptr(unsafe.Pointer(&val)),
+		uintptr(unsafe.Pointer(&size)))
+	if q != 0 || typ != regDWORD || size < 4 {
+		return false
+	}
+	return val == 0
+}

@@ -151,3 +151,44 @@ func TestWinHostHeadlessNoSpawn(t *testing.T) {
 		t.Fatalf("headless 收编 = %d, want 0", n)
 	}
 }
+
+// TestWinHostPropagatePalette 主题广播（§15.7/D61）：全部在开句柄换快照 +
+// 逐窗请求重绘；未装配重绘器（nil）的句柄安全跳过。
+func TestWinHostPropagatePalette(t *testing.T) {
+	var mu sync.Mutex
+	var handles []*winHandle
+	h := newWinHost(func(k winKind) *winHandle {
+		mu.Lock()
+		hd := &winHandle{done: make(chan struct{})}
+		handles = append(handles, hd)
+		mu.Unlock()
+		return hd
+	})
+	h.openWin(winHistory)
+	h.openWin(winWelcome)
+	h.openWin(winSettings)
+	invokes := 0
+	mu.Lock()
+	for i, hd := range handles {
+		f := func() { invokes++ }
+		hd.invalidate.Store(&f)
+		if i == 0 {
+			hd.invalidate.Store(nil) // 未就绪句柄：nil 守卫
+		}
+	}
+	mu.Unlock()
+
+	p := darkPalette()
+	h.propagatePalette(&p)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, hd := range handles {
+		if got := hd.pal.Load(); got != &p {
+			t.Errorf("句柄 %d 主题快照未更新", i)
+		}
+	}
+	if invokes != 2 {
+		t.Errorf("重绘请求数 = %d, want 2（nil 守卫跳过 1 个）", invokes)
+	}
+}
