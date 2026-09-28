@@ -102,13 +102,13 @@ type UI struct {
 	dragWin0    point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
 	dragCur0    point // 按下时光标位置（屏幕坐标）
 
-	// D55 帧内屏幕态记账：帧中一律只置 pending，由 commitWinGeom 帧尾一拍 flush（形裁 +
-	// 移窗 + alpha 同批经 Window.Run，与 overlay 提交同拍）——分散发起会各占一拍。仅帧循环
-	// goroutine 读写；启动路径（onHWND/restoreDock）不在帧内，直接调 Win32。
+	// D55 帧内屏幕态记账：帧中一律只置 pending，由 commitWinGeom 一拍 flush（形裁 +
+	// 移窗 + alpha 同批经 Window.Run，排在 `e.Frame` 之前——D59）——分散发起会各占一拍。
+	// 仅帧循环 goroutine 读写；启动路径（onHWND/restoreDock）不在帧内，直接调 Win32。
 	movePending  bool // u.x/u.y 已变、SetWindowPos 未发
 	alphaPending bool // u.alpha 已变、LWA_ALPHA 未发
-	// framePhase 帧阶段回执（**仅测试注入**，生产恒 nil）：断言 D55 次序契约——
-	// compose → commit → present → submit（屏幕态与 overlay 必须先于 e.Frame）。
+	// framePhase 帧阶段回执（**仅测试注入**，生产恒 nil）：断言 D55/D58/D59 次序契约——
+	// compose → commit → submit → present（屏幕态先于绘制提交落地、overlay 留在其后）。
 	framePhase func(phase string)
 
 	// D50 停靠（§15.1 停靠隐藏）：alpha/docked/dockArm/dockAn 仅事件循环 goroutine

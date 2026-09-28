@@ -249,13 +249,24 @@ func (u *UI) runWindow(w *app.Window) {
 	}
 }
 
-// frame 单帧推进与提交（runWindow 帧事件调；抽成方法 = 无窗口可测的次序契约，D55）。
+// frame 单帧推进与提交（runWindow 帧事件调；抽成方法 = 无窗口可测的次序契约，D55/D58/D59）。
 // 次序固定：两套动画进度 → 两遍 layout（同帧同进度）→ 离屏合成（唯一慢段、不改屏幕态）
-// → 屏幕态一拍提交 → overlay 提交 → 绘制提交。
-// 【§15.6 铁律 3】Gio 在 Present(1,0)（阻塞到下一 vblank）**之前**就 ack 本帧，ack 之后
-// 经 Window.Run 排队的移窗/alpha/形裁/ULW 只能等 Present 返回才被窗口线程 select 服务
-// → 一切屏幕态与 overlay 必须排在 e.Frame **之前**，否则效果层（羽化带/淡出带）恒慢
-// 主窗一帧——动画与拖动中"元素边缘滞后于元素"的实测根因。
+// → **屏幕态一拍提交** → **绘制提交** → overlay 提交。
+// 【§15.6 铁律 3｜D58/D59 修订】Gio `processFrame` 先 ack 本帧、后 `Present(1,0)`（阻塞到下一
+// vblank），ack 之后经 `Window.Run` 排队的移窗/alpha/形裁/ULW 只能等 Present 返回才被窗口
+// 线程服务；而主窗是 bitblt 交换模型——Present 把 back buffer 拷进 redirection surface，
+// DWM 要到**拷贝之后的下一次合成**才渲染它。两类机制的采样点不同，故**按通道分边**（D59）：
+//   - 形裁 `SetWindowRgn`：形状到**下一次 Present** 才被 DWM 采样 → 必须排在 `e.Frame`
+//     **之前**，随本次 Present 的内容落地。排在之后（D58 序）= 慢一帧：旧 region 的
+//     pill/send 形与新内容错开 → 胶囊体两形之间的缝露台布（黑沙漏）、旧 send 形窗口放行
+//     新胶囊白底（同色灰圆盘）、内容的新 send 盘不在旧 region 覆盖内被整块裁掉（发送键
+//     只剩不受形裁约束的 overlay 环 = 空心键）——实测三件套；
+//   - overlay `UpdateLayeredWindow`：**立即**在下一次合成生效 → 必须排在 `e.Frame`
+//     **之后**，与刚拷贝完的内容同拍。排在之前（D55 序）= 提前于内容上屏 → 旧内容 +
+//     新羽化环 = 黑缝 + 月牙（D58 实测形态）；
+//   - 移窗 / `LWA_ALPHA` 与形裁同拍提交（不产生形状-内容错位）。
+//
+// 慢速段错位量 < 羽化宽（1–5px）本就不可见，故伪影只在运动最快的段落露出（实测 ≈8px、2/8 帧）。
 func (u *UI) frame(gtx layout.Context, submit func()) {
 	u.stepExpand(time.Now())
 	u.stepAnim() // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
@@ -263,13 +274,13 @@ func (u *UI) frame(gtx layout.Context, submit func()) {
 	u.phase("compose")
 	composed := u.fadeCompose() // 淡出带：headless 同布局重渲 → 渐变/羽化预乘（D44/D48）
 	u.phase("commit")
-	u.commitWinGeom() // 形裁 + 移窗 + LWA_ALPHA 一拍提交（D55）
-	u.phase("present")
-	u.fadePresent(composed) // ULW 上屏（在移窗之后：取实测窗口矩形定位）
+	u.commitWinGeom() // D59：屏幕态在绘制提交**之前**落地——形裁随本次 Present 被采样，与本帧内容同拍
 	submit()
+	u.phase("present")
+	u.fadePresent(composed) // D58/D59：overlay 留在绘制提交**之后**——ULW 立即生效，须与新内容同拍
 }
 
-// phase 帧阶段回执（仅测试注入，生产恒 nil）：断言 D55 次序契约。
+// phase 帧阶段回执（仅测试注入，生产恒 nil）：断言 D55/D58/D59 次序契约。
 func (u *UI) phase(name string) {
 	if u.framePhase != nil {
 		u.framePhase(name)
@@ -277,8 +288,9 @@ func (u *UI) phase(name string) {
 }
 
 // commitWinGeom 一拍提交本帧全部屏幕态（形裁 + 移窗 + 整窗 alpha，均经 Window.Run，
-// §15.6 铁律 1）。D55：帧内改动一律只记账，帧尾统一 flush——分散发起会各占一拍、与
-// overlay 提交拍点错开。
+// §15.6 铁律 1）。D55：帧内改动一律只记账，由这里统一 flush——分散发起会各占一拍、与
+// overlay 提交拍点错开。D59：调用点排在 `e.Frame` **之前**——形裁到下一次 Present 才被
+// 采样，提前提交才与本帧内容同拍。
 func (u *UI) commitWinGeom() {
 	if u.movePending {
 		u.movePending = false
@@ -291,7 +303,7 @@ func (u *UI) commitWinGeom() {
 	u.applyRegion()
 }
 
-// requestMove/requestAlpha 帧内位移/透明度改动记账（D55）：由 commitWinGeom 帧尾提交。
+// requestMove/requestAlpha 帧内位移/透明度改动记账（D55）：由 commitWinGeom 统一提交。
 // 启动路径（onHWND/restoreDock）不在帧内，直接调用 moveWindowTo/applyAlpha。
 func (u *UI) requestMove() { u.movePending = true }
 
@@ -350,7 +362,7 @@ func (u *UI) onHWND(h uintptr) {
 // layout 悬浮窗布局：背景（兜底 + 整窗拖动）| 转写区（手工布局 + 滚动）/ 状态行 /
 // 输入栏——自底向上定高，全部绝对坐标登记形裁（§15.1/D44）。
 // 本函数也被 fadeCompose 以零值 Source 二次调用（纯渲染，无事件消费）；形裁不在这里
-// 下发——两遍共用同一提交点，由帧尾 commitWinGeom 统一 flush（D55）。
+// 下发——两遍共用同一提交点，由 commitWinGeom 统一 flush（D55）。
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	if u.focusPending && !u.collapsed {
 		u.focusPending = false
@@ -1024,7 +1036,8 @@ func regionShapes(dst []shapePhys, shapes []drawShape, band int, m unit.Metric) 
 }
 
 // applyRegion 形裁并集仅在变化时重建（布局结果稳定 → 多数帧零开销）。
-// 只由帧尾 commitWinGeom 调用（D55：两遍 layout 共用同一提交点，与移窗/overlay 同拍）。
+// 只由 commitWinGeom 调用（D55：两遍 layout 共用同一提交点；D59：排在 `e.Frame` 之前，
+// 随本次 Present 被采样才与本帧内容同拍）。
 // 失败（hwnd 未到/系统调用错误）不写缓存 → 下帧重试，防止首帧竞态把缓存污染成
 // "已应用"导致形裁永久失效。
 func (u *UI) applyRegion() {
@@ -1243,7 +1256,7 @@ func (u *UI) moveDrag() {
 	x := u.dragWin0.x + (cur.x - u.dragCur0.x)
 	y := u.dragWin0.y + (cur.y - u.dragCur0.y)
 	u.x, u.y = u.clampPos(x, y)
-	u.requestMove() // D55：帧尾 commitWinGeom 一拍提交（与形裁/overlay 同拍）
+	u.requestMove() // D55：commitWinGeom 一拍提交（与形裁/overlay 同拍）
 }
 
 // endDrag 抬起/取消收尾：锚点夹取 + 四边吸附贴齐（D50）+ 持久化位置。

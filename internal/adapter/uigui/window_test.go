@@ -288,12 +288,15 @@ func frameGtx(src input.Source) (layout.Context, *op.Ops) {
 	}, ops
 }
 
-// TestFrameCommitsScreenStateBeforeSubmit D55 帧提交次序契约：屏幕态（移窗/LWA_ALPHA/
-// 形裁）与 overlay 呈现必须全部排在绘制提交**之前**——Gio 在 Present(1,0)（阻塞到下一
-// vblank）之前就 ack 本帧，之后经 Window.Run 排队的 Win32 调用只能等 Present 返回才被
-// 窗口线程服务，故排在 e.Frame 之后的一切屏幕态都会晚一个 vblank 合成（动画/拖动中
-// "元素边缘滞后于元素"的实测根因）。
-func TestFrameCommitsScreenStateBeforeSubmit(t *testing.T) {
+// TestFrameCommitBeforeSubmitOverlayAfter D59 次序契约（混合次序）：屏幕态（移窗/LWA_ALPHA/
+// 形裁）在**绘制提交之前**落地，overlay 在其**之后**。依据两类机制的采样点不同——
+// `SetWindowRgn` 的形状到**下一次 Present** 才被 DWM 采样：提前提交 = 随本次 Present 的
+// 内容同拍；排在 `e.Frame` 之后（D58 序）= 慢一帧，实测三件套（胶囊体内黑沙漏、旧 send 形
+// 窗口放行新胶囊白底的同色灰圆盘、内容蓝盘被整块裁掉只剩 overlay 环的空心键）。而
+// `UpdateLayeredWindow` **立即**在下一次合成生效：排在 `e.Frame` 之后 = 与刚拷贝完的内容
+// 同拍；排在之前（D55 序）= 提前于内容上屏，实测黑缝 + 月牙。overlay 是否在 submit 之后，
+// 由末段序 present ∈ 殿后断言。
+func TestFrameCommitBeforeSubmitOverlayAfter(t *testing.T) {
 	u := newFrameUI()
 	u.m.add(blockAssistant, "首帧有内容 → 形裁有可提交的并集")
 	var phases []string
@@ -302,14 +305,13 @@ func TestFrameCommitsScreenStateBeforeSubmit(t *testing.T) {
 	u.alphaPending = true // 帧内已发生透明度改动
 
 	gtx, _ := frameGtx(input.Source{})
+	pendingAtSubmit := false
 	u.frame(gtx, func() {
 		phases = append(phases, "submit")
-		if u.movePending || u.alphaPending {
-			t.Error("绘制提交时屏幕态仍挂起：本帧移窗/alpha 未 flush")
-		}
+		pendingAtSubmit = u.movePending || u.alphaPending
 	})
 
-	want := []string{"compose", "commit", "present", "submit"}
+	want := []string{"compose", "commit", "submit", "present"}
 	if len(phases) != len(want) {
 		t.Fatalf("阶段 = %v, want %v", phases, want)
 	}
@@ -317,6 +319,12 @@ func TestFrameCommitsScreenStateBeforeSubmit(t *testing.T) {
 		if phases[i] != want[i] {
 			t.Fatalf("阶段 = %v, want %v", phases, want)
 		}
+	}
+	if pendingAtSubmit {
+		t.Error("绘制提交时屏幕态仍挂起：commitWinGeom 排到了 e.Frame 之后（退回 D58 序 → 形裁慢一帧）")
+	}
+	if u.movePending || u.alphaPending {
+		t.Error("帧结束屏幕态仍挂起：本帧移窗/alpha 未 flush")
 	}
 	if u.frameSize == (image.Point{}) {
 		t.Fatal("compose/commit 之前 layout 未跑（frameSize 未定）")

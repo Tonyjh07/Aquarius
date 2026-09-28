@@ -437,7 +437,7 @@ func (u *UI) undockInstant() {
 	u.docked = false
 	u.dockArm = false
 	u.dockHint.Store(dockNoneInt)
-	u.requestMove() // D55：帧内只记账，帧尾 commitWinGeom 一拍提交
+	u.requestMove() // D55：帧内只记账，commitWinGeom 一拍提交
 	if u.alpha != semiAlpha {
 		u.alpha = semiAlpha
 		u.requestAlpha()
@@ -513,7 +513,7 @@ func (u *UI) stepAnim() {
 	p := easeOutCubic(t)
 	u.x = int32(lerpInt(int(a.fromPos.x), int(a.toPos.x), p))
 	u.y = int32(lerpInt(int(a.fromPos.y), int(a.toPos.y), p))
-	u.requestMove() // D55：帧内只记账，帧尾 commitWinGeom 一拍提交
+	u.requestMove() // D55：帧内只记账，commitWinGeom 一拍提交
 	if al := byte(lerpInt(int(a.fromAlpha), int(a.toAlpha), p)); al != u.alpha {
 		u.alpha = al
 		u.requestAlpha()

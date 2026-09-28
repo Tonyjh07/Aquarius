@@ -352,9 +352,9 @@ func (u *UI) clampedBand() (top, bottom int) {
 	return top, bottom
 }
 
-// fadeCompose 合成阶段（frame 调，**在 e.Frame 之前**，D55）：headless 同布局重渲 →
+// fadeCompose 合成阶段（frame 调，**在 e.Frame 之前**）：headless 同布局重渲 →
 // 整窗效果层（顶部带渐变 + 元素边缘渐隐，D44/D48）→ 整窗预乘 BGRA。不改屏幕态——它是
-// 一帧里唯一的慢段（离屏 GPU 重渲），先跑完再提交屏幕态，让三者挤在同一个 vblank 之前。
+// 一帧里唯一的慢段（离屏 GPU 重渲），在屏幕态/绘制提交前跑完，之后的形裁与 overlay 才同拍落地（D55/D59）。
 // 返回位图是否可上屏（false = 降级：非 Windows / hwnd 未到 / 离屏上下文或渲染失败，
 // fadePresent 不动 overlay，形裁仍生效）。**主窗隐藏在此判定**（主窗隐藏时 overlay 不得
 // 孤立上屏，hideMain 已藏，这里兜底——交由 fadePresent 收口）。
@@ -390,10 +390,13 @@ func (u *UI) fadeCompose() bool {
 	return true
 }
 
-// fadePresent 上屏阶段（frame 调，**在 e.Frame 之前、commitWinGeom 之后**，D55）：
-// overlay 的 UpdateLayeredWindow 提交或隐藏。排在 commitWinGeom 之后有二义——
-// ① 取实测窗口矩形定位，必须等本帧移窗生效；② ULW 经 Window.Run 排队，落到 e.Frame
-// 之后只能等 Present(1,0) 返回、晚一个 vblank 合成（效果层恒慢主窗一帧的根因）。
+// fadePresent 上屏阶段（frame 调，**在 e.Frame 之后、commitWinGeom 之后**，D58/D59）：
+// overlay 的 UpdateLayeredWindow 提交或隐藏。排在最后有二义——
+// ① 取实测窗口矩形定位，必须等本帧移窗生效（commitWinGeom 在前）；
+// ② ULW **立即**在下一次合成生效 → 必须排在 `e.Frame` **之后**：内容拷贝完才落地，与新
+// 内容并入同一次 DWM 合成；排在**之前**（D55 旧序）则先于内容上屏，内容边缘露出底色、
+// 新羽化环画在更外侧 = 实测的黑缝 + 月牙。另一半通道见 D59：形裁 `SetWindowRgn` 到
+// **下一次 Present** 才被采样，故必须排在 `e.Frame` **之前**（排在之后 = 慢一帧）。
 // fadeCompose 降级（false）时不动 overlay，避免形裁已生效却闪断羽化。
 func (u *UI) fadePresent(composed bool) {
 	if u.hwnd == 0 || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
