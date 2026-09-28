@@ -50,7 +50,9 @@ D14）在装配根叠加。验收：stdio 与 streamable HTTP 各接现成 MCP s
 （`AQUARIUS_E2E_REAL_MCP=1 go test ./cmd/aquarius -run RealMCP` 可重跑）。
 后续：**M5 GUI 前端**（D43/§15：spike 已过——形裁悬浮窗/托盘/快捷键/定位实测见 §15.6；
 `uigui` 骨架（uiFrontend 六面 + 桥接 + 渲染状态机 + 窗口壳，`ui.kind=gui`）已落位，
-悬浮球形态/托盘常驻/完整 markdown 消息面按 §15 继续推进）；Tier-1 插件
+悬浮球形态/托盘常驻/完整 markdown 消息面按 §15 继续推进；**窗口管理（§15.7/D60：
+设置/会话历史/欢迎三窗 = 独立常规窗）与主题令牌深浅两版（§15.4/D61）本轮开工**，
+设置窗含核心档写回）；Tier-1 插件
 （`pluginapi/v1`，D29）与语音输入/播报（D27）按 §14 推进。
 
 ## 文档
@@ -58,7 +60,7 @@ D14）在装配根叠加。验收：stdio 与 streamable HTTP 各接现成 MCP s
 | 文档 | 内容 |
 |---|---|
 | [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型（会话树/Revise）、端口设计、插件架构（MCP）、权限模型与里程碑 |
-| [docs/decisions.md](docs/decisions.md) | **决策记录 ADR**（原 DESIGN §13 拆出）：D1–D59 逐条决策与否决方案 |
+| [docs/decisions.md](docs/decisions.md) | **决策记录 ADR**（原 DESIGN §13 拆出）：D1–D61 逐条决策与否决方案 |
 | [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令、测试与提交要求 |
 | [docs/overview.md](docs/overview.md) | 架构导读：10 分钟地图——内核三事、依赖铁律、目录与端口矩阵 |
 | [docs/usage.md](docs/usage.md) | 使用手册：命令参考、三轨压缩、权限等级、常见问题 |

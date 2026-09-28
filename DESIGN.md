@@ -727,7 +727,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
     "echo_thinking": true,       // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
     "unsupported_params": []      // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
   },
-  "ui": { "kind": "gui" },      // gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）
+  "ui": { "kind": "gui", "hotkey": "", "theme": "system" }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
@@ -846,13 +846,13 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
 | **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
-| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅跟随系统。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
+| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统（§15.4 令牌 + `ui.theme`，D61）；**窗口管理**（§15.7/D60）：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口——本轮基建 + 设置核心档（模型/权限/think/effort/hotkey/主题）+ 两空窗壳验证宿主。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；**托盘/右键菜单可开三窗（历史/欢迎为占位壳）；设置窗改核心档写回 config 并热生效（模型/权限/think/effort/hotkey/主题），密钥只写不回显；主题深浅两版可切、`system` 跟随系统**；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
 
 ---
 
 ## 13. 已决决策记录（ADR 摘要）
 
-决策记录已拆分至 **[docs/decisions.md](docs/decisions.md)**（与本文同权威；编号 D1–D59 跨文件不变，
+决策记录已拆分至 **[docs/decisions.md](docs/decisions.md)**（与本文同权威；编号 D1–D61 跨文件不变，
 `§13` / `Dn` 引用仍有效）。新决策在该文件追加，本节不再维护。
 
 ## 14. 暂缓事项（Backlog）
@@ -868,8 +868,9 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
-- **GUI 后续（M5/D43 之外，§15 预留）**：常规窗口形态（D43 只预留设计不做实现）、
-  多颜色主题预设（M5 只做品牌色 `#00AEEF` + 深/浅）、拖拽/粘贴/语音按钮（走同一
+- **GUI 后续（M5/D43 之外，§15 预留）**：悬浮球本体转常规窗口形态（D43 只预留设计
+  不实现；功能窗用独立常规窗已入正册 §15.7/D60）、多颜色主题预设（M5 只做品牌色
+  `#00AEEF` + 深/浅两版）、拖拽/粘贴/语音按钮（走同一
   `UserInput.Raw` 入口，摄取管线已就绪，见下方语音条目）
 - **语音输入与播报（D27 移入）**：
   - ASR（`Transcriber`）/ TTS（`Synthesizer`）适配器选型与实现（whisper-api / 系统朗读 / 云 TTS）
@@ -957,7 +958,8 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   （细环横穿胶囊 / 峰值帧白块盖发送键左半），且同一次序不同帧表现不一致 → 属窗口线程队列
   竞态、非次序可治；根治需 DirectComposition/单窗（D45/D46 已否决），止损记为已知限制。
 - **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出
-  （菜单步补全；托盘步先落「显示/隐藏 + 退出」两项）。
+  ＋功能窗入口「设置 / 会话历史 / 欢迎」（§15.7/D60；菜单步补全——托盘步先落
+  「显示/隐藏 + 退出」两项，功能窗入口随窗口管理步启用、未落地项置灰）。
 - **托盘常驻生命周期**：关窗（Alt+F4）= **隐藏**——子类化主窗过程吞 `WM_CLOSE`
   （Gio 无关闭拦截 API，`WM_CLOSE` 直落 `DefWindowProc` 即销毁），主窗与淡出 overlay
   一并隐藏；**退出只经托盘菜单**（清托盘图标与快捷键 → EOF 收尾）。主窗**不进任务栏
@@ -1003,7 +1005,8 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   历史在会话里，经菜单切会话查看。
 - **状态行**：浮层底栏仅生成时显示「思考中/生成中 · 模型 · 权限档」（TUI 状态行等价物，
   数据源同 `Status` 回调：Model/Level/Effort 现取）；用量详情进 logo 菜单。
-- **常规窗口形态只预留设计、不做实现**（§14）。
+- **悬浮球本体不转常规窗口形态**（只预留设计、不做实现，§14）；功能窗（设置/
+  会话历史/欢迎）用**独立常规 OS 窗口**承载（D60/§15.7）。
 
 ### 15.2 输入栏与交互（视觉稿 = Figma 稿 `Untitled.fig` 的 canvas，本地稿未入库；D49：canvas 1:1 为几何基准，`temp/ui_design.png` 是截图、不作依据；idle 形态）
 
@@ -1067,6 +1070,12 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
 - **令牌化主题系统**（颜色/圆角/间距/字号为令牌）；预设 = 纯数据，加色不改代码。
 - **MVP**：品牌色 `#00AEEF`（logo、发送键；取自 `assets/icon`）+ 输入框浅白/浅灰；
   深/浅两版，**默认跟随系统**。多颜色预设后补（§14）。
+- **实施口径（D61，先于设置窗落地）**：v1 先落**颜色令牌**（背景/文字/气泡双色/思考
+  暗块/状态行/错误色/禁用态等）**深浅两版纯数据预设**，主界面自绘路径与 material 主题
+  同读令牌；几何令牌（圆角/间距/字号）只做结构、不随主题变体（多预设后补，§14）。
+  **`ui.theme` = `system | light | dark`**（键缺失 = `system`，§8）：`system` 经系统
+  深浅检测（实现时定：Gio 系统事件或 Win32 `AppsUseLightTheme` 注册表 +
+  `WM_SETTINGCHANGE` 广播刷新）；切换**热生效**（下一帧重绘），设置窗主题档同口径。
 
 ### 15.5 契约与并发
 
@@ -1115,3 +1124,33 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
      黑缝 + 月牙）；
    - 移窗 / `LWA_ALPHA` 与形裁同拍提交（不产生形状-内容错位）。
    帧次序固定：`stepExpand → stepAnim → layout → fadeCompose → commitWinGeom → submit(e.Frame) → fadePresent`。
+
+### 15.7 窗口管理（多窗宿主，D60）
+
+三类功能窗采用**独立常规 OS 窗口**（各自 Gio `app.Window`、有边框），与悬浮球形态解耦
+——**悬浮球本体仍不转常规窗口形态**（§14 口径不变，卡的是球自己变普通窗，不是功能窗）。
+本轮范围：**窗口管理基建 + 空窗壳**；设置窗随主题步（D61）一起落地；欢迎（首次运行）
+与会话历史只落空窗壳验证宿主，数据面留后续步。
+
+- **窗口清单**：**设置**（核心档：模型 provider/name/base_url、权限档、think/effort、
+  `ui.hotkey`、`ui.theme`；密钥只写不回显、不回显明文——D35）｜**会话历史**（占位壳；
+  列表数据面依赖未来切会话命令，§14）｜**欢迎/首次运行**（占位壳；接管「写模板即退出」
+  启动流为后续步）。
+- **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 `SetWindowRgn` 形裁、
+  无 `LWA_ALPHA`、无淡出 overlay、无位置记忆、不置顶、不拖拽把手；任务栏条目照常
+  （`WS_EX_TOOLWINDOW` 只挂主窗 HWND，次窗不参与）。
+- **并发模型**：每窗独立事件循环 goroutine、**自持状态**；跨窗只经消息（沿用 `uiMsg`
+  模式）与线程安全回调（`Options` 下发，同 `Status` 口径），**不共享裸字段**（`-race`
+  门禁兜底）。主窗专属全局态显式隔离、次窗一律不碰：`win32Run` 单槽（§15.6 铁律 1）、
+  `mainHWND`、淡出 overlay、位置记忆/停靠、`WM_CLOSE → 隐藏` 子类化。
+- **生命周期**：单实例防重开（同 kind 已开 → raise/focus）；次窗关闭 = **真关闭**
+  （不走主窗「Alt+F4 = 隐藏」语义）；托盘隐藏 / Alt+A 显隐**不连带**次窗；退出只经
+  托盘菜单 → 收编关闭全部次窗 → EOF 收尾。
+- **入口**：托盘菜单与右键 logo 菜单（同内容，§15.1）带「设置 / 会话历史 / 欢迎」项，
+  项随各窗步启用、未落地者置灰。
+- **设置窗读写契约**：读 = `Options` 快照回调（线程安全，同 `Status`）；写 = 单一
+  patch 回调**在装配根实现**（复用 config 泛键改写），模型/权限/思考/effort 的热生效
+  与 `/model` `/permission` `/think` `/effort` 同口径——树/装配相关的语义仍走内核命令，
+  壳内不旁路。
+- **测试（§15.5）**：窗口注册表与生命周期抽纯逻辑 + 假开窗器 headless 测（open/
+  防重开/close/退出收编）；设置 patch 构造与回调序列 headless 测；GUI 不进 CI 图形路径。
