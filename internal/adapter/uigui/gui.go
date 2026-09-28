@@ -160,6 +160,10 @@ type UI struct {
 
 	// m 渲染状态机：仅事件循环 goroutine 读写；测试经 drainSync 取 happens-before 后读。
 	m *model
+
+	// wins 功能窗注册表（§15.7/D60）：单实例防重开 + 退出收编。互斥锁保护，
+	// 托盘线程/事件循环均可开窗；headless 构造成无开窗器（openWin no-op）。
+	wins *winHost
 }
 
 // New 启动 GUI 前端（Gio 窗口事件循环即刻在后台运行，退出经 Close 收尾）。
@@ -182,12 +186,14 @@ func newUI(opts Options, window bool) *UI {
 	u.editor.SingleLine = true
 	u.followTail = true // 初始尾随贴底（新消息出现在输入栏上方，§15.1）
 	u.alpha = semiAlpha // 整窗 LWA_ALPHA 起点（D50 动画在其上插值）
+	u.wins = newWinHost(nil)
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
 	}
 	if window {
 		w := new(app.Window)
-		u.w = w // go 前发布：post 侧读取无竞争
+		u.w = w                         // go 前发布：post 侧读取无竞争
+		u.wins.spawn = u.spawnSecondary // 功能窗开窗器（§15.7；仅窗口模式）
 		go u.runWindow(w)
 		startShell(u) // 托盘 + 全局快捷键线程（§15.1；仅窗口模式，headless 不起）
 	} else {
@@ -237,7 +243,8 @@ func (u *UI) interruptNow() {
 // 先投 drain 并等其处理：post 是异步 FIFO，保证此前 Emit/Say 全部落进状态机，
 // 再投 quit 结束循环（对齐 uitui Close 的排空语义）。
 func (u *UI) Close() error {
-	trayDelete() // 托盘图标随前端收尾清理（真销毁未走到 DestroyEvent 的路径防残留）
+	trayDelete()      // 托盘图标随前端收尾清理（真销毁未走到 DestroyEvent 的路径防残留）
+	u.wins.closeAll() // 功能窗收编（§15.7：退出 → 关闭全部次窗；headless 无开窗 = no-op）
 	done := make(chan struct{})
 	if !u.post(drainMsg{done: done}) {
 		return nil // 事件循环已退出（如窗口已关）
