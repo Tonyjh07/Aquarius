@@ -57,7 +57,8 @@ D14）在装配根叠加。验收：stdio 与 streamable HTTP 各接现成 MCP s
 
 | 文档 | 内容 |
 |---|---|
-| [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型（会话树/Revise）、端口设计、插件架构（MCP）、权限模型、里程碑与决策记录 |
+| [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型（会话树/Revise）、端口设计、插件架构（MCP）、权限模型与里程碑 |
+| [docs/decisions.md](docs/decisions.md) | **决策记录 ADR**（原 DESIGN §13 拆出）：D1–D59 逐条决策与否决方案 |
 | [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令、测试与提交要求 |
 | [docs/overview.md](docs/overview.md) | 架构导读：10 分钟地图——内核三事、依赖铁律、目录与端口矩阵 |
 | [docs/usage.md](docs/usage.md) | 使用手册：命令参考、三轨压缩、权限等级、常见问题 |
@@ -65,7 +66,7 @@ D14）在装配根叠加。验收：stdio 与 streamable HTTP 各接现成 MCP s
 | [docs/storage.md](docs/storage.md) | 数据布局与备份：目录树、会话 JSON、.bak 恢复、旧格式处置 |
 | [docs/development.md](docs/development.md) | 开发指南：门禁、测试手段、新增适配器/工具/命令分步 how-to |
 
-> `docs/` 均为衍生视图，**冲突以 DESIGN.md 为准**；里程碑进度只看本页「状态」。
+> `docs/` 除 `decisions.md`（权威，原 DESIGN §13）外均为衍生视图，**冲突以 DESIGN.md / docs/decisions.md 为准**；里程碑进度只看本页「状态」。
 
 ## 快速开始
 

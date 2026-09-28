@@ -53,7 +53,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 
 ### 新增一个端口适配器
 
-1. 先在 DESIGN §5/§5.10 补契约与矩阵行（**先改文档再改代码**，§13 补决策如适用）；
+1. 先在 DESIGN §5/§5.10 补契约与矩阵行（**先改文档再改代码**，[decisions.md](decisions.md) 补决策如适用）；
 2. `internal/port` 定义/复用接口（消费方定义、保持小）；
 3. `internal/adapter/<name>/` 实现 + 同目录契约测试（临时目录 / 假 server）；
 4. `cmd/aquarius` 装配注入；横切能力（重试（含退避）/硬保底截断/审计）在装配根做装饰器，不进适配器。
@@ -80,7 +80,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 
 ### 新增一档权限等级
 
-1. **先改 DESIGN §9 矩阵表 + §13 决策**；
+1. **先改 DESIGN §9 矩阵表 + [decisions.md](decisions.md) 决策**；
 2. `internal/domain/perm`：`Levels` 切片 + `File`/`Tool` 判定 + `perm_test` 全表断言
    （`Matrix()` 展示由判定推导，勿硬编码第二份）；
 3. config 模板与校验无需变（`Parse` 自动接受新枚举）。
