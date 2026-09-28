@@ -691,7 +691,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - **不扇出**：`HistoryEvent` 不是 `CommittedEvent`，输出器装饰器（D28）对它 no-op——
   回放不重复触发通知/TTS。
 - **回放前提示**：发 `NoticeEvent`（`已恢复会话 <标题> (<id>)，回放 <n> 条历史`）。
-- **时机**：仅启动恢复时回放一次；`/goto` 切换会话、`/new` 不回放（命令回显已足够，§14）。
+- **时机**：仅启动恢复时回放一次；`/goto`（Head 导航，§7.3）与 `/new` 不回放
+  （命令回显已足够；切到已有会话时的回放见 §14）。
 - **repl 同权**：repl 前端按行打印同一语义（`> ` 输入行、正文、`[tool]` 行），保证
   e2e/管道输出与 TUI 信息一致。
 
@@ -862,7 +863,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   接入此类提供商时由适配器做键名/块格式映射
 - 非 GBK 的遗留代码页（CP437/latin-1 等）终端输出识别（D41 内容探测只有 UTF-8/GBK 两档，会误判成乱码中文）
 - `file_read` 等文件文本入口的遗留编码解码（与 D41 同算法，终端之外的文本入口）
-- `/goto`、`/new` 切换会话时的自动历史回放（当前仅启动恢复时回放一次，D40/§7.4）
+- 切到已有会话（未来切换命令）与 `/new` 后的自动历史回放（当前仅启动恢复时回放一次；
+  `/goto` 只移 Head 不换会话，D40/§7.4）
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
