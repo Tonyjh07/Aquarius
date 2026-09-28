@@ -66,11 +66,21 @@ type Options struct {
 	Hotkey string
 	// Theme 主题档（§15.4/D61）：system | light | dark；空 = system（跟随系统）。
 	Theme string
+	// Settings 设置窗核心档快照数据源（开窗现取；同 Status 线程安全口径）；
+	// nil = 设置窗空表单。
+	Settings func() SettingsSnapshot
+	// ApplySettings 设置窗单一写回调（§15.7 装配根实现）：持久化核心档文本键并
+	// 返回待执行内核命令（diff 运行态；设置窗经 inCh 与键入同路径串行执行）；
+	// nil = 设置窗只读占位。
+	ApplySettings func(SettingsPatch) ([]port.Command, error)
 }
 
 // UI GUI 前端句柄（装配根按 uiFrontend 使用）。
 type UI struct {
 	opts Options
+	// hotkeyCfg 快捷键配置原子槽（设置窗保存热更新；托盘线程注册读，newUI 预存
+	// opts.Hotkey——u.opts 本身只读不改，防跨线程裸写）。
+	hotkeyCfg atomic.Value
 
 	// 桥接通道（装配根 goroutine ↔ 事件循环 goroutine）。
 	inbox   chan uiMsg
@@ -196,7 +206,8 @@ func newUI(opts Options, window bool) *UI {
 	u.followTail = true // 初始尾随贴底（新消息出现在输入栏上方，§15.1）
 	u.alpha = semiAlpha // 整窗 LWA_ALPHA 起点（D50 动画在其上插值）
 	u.wins = newWinHost(nil)
-	u.applyTheme(opts.Theme) // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
+	u.applyTheme(opts.Theme)       // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
+	u.hotkeyCfg.Store(opts.Hotkey) // 快捷键槽预存（托盘线程 hotkeySetting 读）
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
 	}

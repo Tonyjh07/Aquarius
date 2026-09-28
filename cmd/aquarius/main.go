@@ -380,6 +380,25 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 事件循环并发读 → -race 必须）。
 	var agentPtr atomic.Pointer[app.Agent]
 	var ui uiFrontend
+	// 设置窗读写（§15.7/D60-D61）：快照 = config 文本键（文件即事实源）+ 运行态
+	//（等级活槽与 Agent 访问器，同状态行口径）；写 = 单一 patch 回调——文本键泛键
+	// 改写 + 内核命令计划（设置窗经输入通道与键入同路径串行执行，壳内不旁路）。
+	settingsSnapshot := func() uigui.SettingsSnapshot {
+		s := readTextSettings(cfgPath)
+		s.Permission = lvl.Get().String()
+		if agent := agentPtr.Load(); agent != nil {
+			s.Model = agent.CurrentModel()
+			s.Think = agent.ThinkOn()
+			s.Effort = agent.CurrentEffort()
+		}
+		return s
+	}
+	applySettings := func(p uigui.SettingsPatch) ([]port.Command, error) {
+		if err := persistSettingsTextKeys(cfgPath, p); err != nil {
+			return nil, fmt.Errorf("写回 config: %w", err)
+		}
+		return settingsCommands(settingsSnapshot(), p), nil
+	}
 	switch cfg.UI.Kind {
 	case "gui":
 		// GUI（D43/§15）：悬浮窗事件循环自驱；位置记忆落数据目录（§15.1）。
@@ -395,9 +414,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				}
 				return uigui.Status{}
 			},
-			PosFile: filepath.Join(dir, "gui_pos.json"),
-			Hotkey:  cfg.UI.Hotkey, // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
-			Theme:   cfg.UI.Theme,  // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Settings:      settingsSnapshot,
+			ApplySettings: applySettings,
+			PosFile:       filepath.Join(dir, "gui_pos.json"),
+			Hotkey:        cfg.UI.Hotkey, // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:         cfg.UI.Theme,  // 主题档 system|light|dark（§15.4/D61；空 = system）
 		})
 	case "tui":
 		ui = uitui.New(uitui.Options{

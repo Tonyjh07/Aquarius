@@ -58,6 +58,7 @@ const (
 	wmHotkey        = 0x0312
 	wmApp           = 0x8000
 	trayCallback    = wmApp + 1
+	rehotkeyMsg     = wmApp + 2 // 托盘线程内重注册全局快捷键（设置窗改 hotkey 投递，§15.1）
 
 	swRestore = 9
 
@@ -77,11 +78,12 @@ const (
 	tpmRightBtn = 0x0002
 	tpmRetCmd   = 0x0100 // 返回命令 ID（不再发 WM_COMMAND）
 
-	cmdToggle  = 101
-	cmdExit    = 102
-	cmdTopMost = 103
-	cmdHistory = 104 // 功能窗入口（§15.7/D60：会话历史占位壳）
-	cmdWelcome = 105 // 功能窗入口（§15.7/D60：欢迎/首次运行占位壳）
+	cmdToggle   = 101
+	cmdExit     = 102
+	cmdTopMost  = 103
+	cmdHistory  = 104 // 功能窗入口（§15.7/D60：会话历史占位壳）
+	cmdWelcome  = 105 // 功能窗入口（§15.7/D60：欢迎/首次运行占位壳）
+	cmdSettings = 106 // 功能窗入口（§15.7/D60：设置窗核心档）
 
 	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
 
@@ -189,12 +191,24 @@ func registerHotkey(hwnd uintptr) {
 	fmt.Println("[hotkey] 两档均失败，呼出仅剩托盘")
 }
 
-// hotkeySetting 取装配注入的快捷键配置（空 = 默认）。
+// hotkeySetting 取快捷键配置（装配注入初值 + 设置窗热更新经原子槽；空 = 默认）。
 func hotkeySetting() string {
 	if u := shellUI.Load(); u != nil {
-		return u.opts.Hotkey
+		if hk, ok := u.hotkeyCfg.Load().(string); ok {
+			return hk
+		}
+		return u.opts.Hotkey // 兜底（newUI 预存之前的理论窗口）
 	}
 	return ""
+}
+
+// reRegisterHotkey 请求托盘线程重注册全局快捷键（设置窗改 hotkey 后）。注册归属
+// 托盘线程——RegisterHotKey 归调用线程的消息队列，跨线程只能投消息（rehotkeyMsg）；
+// shellHWND 未就绪 = 托盘线程未起（headless）→ no-op。
+func reRegisterHotkey() {
+	if h := shellHWND.Load(); h != 0 {
+		procPostMessageW.Call(h, rehotkeyMsg, 0, 0)
+	}
 }
 
 // addTrayIcon 托盘图标 + 提示（v3 回调：legacy WM_LBUTTONUP/WM_RBUTTONUP）。
@@ -261,6 +275,11 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 			u.hotkeyToggle() // §15.1：隐藏 → 呼出展开；可见 → 展开↔收起互切
 		}
 		return 0
+	case rehotkeyMsg: // 设置窗保存 hotkey → 托盘线程内换绑（失败自动回退 Ctrl+Alt+A）
+		procUnregisterHotKey.Call(hwnd, 1)
+		procUnregisterHotKey.Call(hwnd, 2)
+		registerHotkey(hwnd)
+		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
 		return 0
@@ -275,6 +294,7 @@ func showTrayMenu(hwnd uintptr) {
 	menu, _, _ := procCreatePopupMenu.Call()
 	toggleText, _ := syscall.UTF16PtrFromString("显示 / 隐藏输入窗")
 	topMostText, _ := syscall.UTF16PtrFromString("窗口置顶")
+	settingsText, _ := syscall.UTF16PtrFromString("设置")
 	historyText, _ := syscall.UTF16PtrFromString("会话历史")
 	welcomeText, _ := syscall.UTF16PtrFromString("欢迎 / 首次运行引导")
 	exitText, _ := syscall.UTF16PtrFromString("退出")
@@ -285,6 +305,7 @@ func showTrayMenu(hwnd uintptr) {
 	}
 	procAppendMenuW.Call(menu, tmf, cmdTopMost, uintptr(unsafe.Pointer(topMostText)))
 	procAppendMenuW.Call(menu, mfSeparator, 0, 0)
+	procAppendMenuW.Call(menu, mfString, cmdSettings, uintptr(unsafe.Pointer(settingsText)))
 	procAppendMenuW.Call(menu, mfString, cmdHistory, uintptr(unsafe.Pointer(historyText)))
 	procAppendMenuW.Call(menu, mfString, cmdWelcome, uintptr(unsafe.Pointer(welcomeText)))
 	procAppendMenuW.Call(menu, mfSeparator, 0, 0)
@@ -304,6 +325,10 @@ func showTrayMenu(hwnd uintptr) {
 	case cmdTopMost:
 		if u := shellUI.Load(); u != nil {
 			u.toggleTopMost()
+		}
+	case cmdSettings:
+		if u := shellUI.Load(); u != nil {
+			u.wins.openWin(winSettings) // 单实例防重开（§15.7；注册表线程安全）
 		}
 	case cmdHistory:
 		if u := shellUI.Load(); u != nil {

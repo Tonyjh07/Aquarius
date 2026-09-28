@@ -46,11 +46,12 @@ func (k winKind) title() string {
 	}
 }
 
-// placeholder 占位窗正文（空窗壳验证多窗宿主，§15.7/D60：数据面留后续步）。
+// placeholder 占位窗正文（会话历史/欢迎数据面留后续步；设置窗经表单渲染，
+// 此处仅作表单未构建时的回退显示）。
 func (k winKind) placeholder() string {
 	switch k {
 	case winSettings:
-		return "设置（模型 / 权限 / 思考 / 快捷键 / 主题）随主题步落地。"
+		return "设置窗表单未就绪。"
 	case winHistory:
 		return "会话历史——即将提供（列表依赖未来切换会话命令）。"
 	default:
@@ -228,6 +229,10 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	ctl.runFn.Store(&runFn) // 次窗自己的线程投递槽——win32Run 单槽归主窗，不碰
 	inval := w.Invalidate
 	ctl.invalidate.Store(&inval) // 主题广播后重绘请求（并发安全）
+	var form *settingsForm
+	if k == winSettings {
+		form = newSettingsForm(u) // 开窗现取快照（Options 回调；nil = 空表/只读占位）
+	}
 	width, height, minW, minH := k.geometry()
 	w.Option(
 		app.Title(k.title()),
@@ -247,7 +252,11 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 				applied = p
 			}
 			gtx := app.NewContext(&ops, e)
-			secondaryFrame(gtx, th, k)
+			if form != nil {
+				settingsFrame(gtx, th, u, form) // 设置窗 = 核心档表单（§15.7/D60）
+			} else {
+				secondaryFrame(gtx, th, k)
+			}
 			e.Frame(&ops)
 		case app.DestroyEvent:
 			return
@@ -259,7 +268,7 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	}
 }
 
-// secondaryFrame 次窗单帧（当前 = 占位壳；设置表单随设置步接入）。
+// secondaryFrame 占位窗单帧（会话历史/欢迎；设置窗走 settingsFrame）。
 // 常规窗不做形裁/羽化/淡出带（§15.7 形态）：主题 Bg 铺底 + 正文居中。
 func secondaryFrame(gtx layout.Context, th *material.Theme, k winKind) layout.Dimensions {
 	return layout.Stack{}.Layout(gtx,
