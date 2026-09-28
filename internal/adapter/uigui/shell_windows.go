@@ -1,7 +1,8 @@
 //go:build windows
 
 // 托盘 + 全局快捷键 + 关窗拦截（§15.1/D43；spike/giospike/win32.go 为验证底本）：
-//   - 托盘：Shell_NotifyIconW，左键显隐、右键菜单（MVP：显示/隐藏 + 退出）；
+//   - 托盘：Shell_NotifyIconW，左键显隐、右键菜单（显示/隐藏 + 置顶 + 功能窗入口
+//   - 退出；功能窗项随各窗步启用，§15.7）；
 //     图标内嵌 assets.TrayICO → 纯 Go 目录解析 → CreateIconFromResourceEx（单二进制）。
 //   - 全局快捷键：RegisterHotKey 默认 Alt+A（ui.hotkey 可配），失败回退 Ctrl+Alt+A。
 //   - 关窗（Alt+F4）= 隐藏：子类化主窗过程吞 WM_CLOSE（Gio 无关闭拦截 API）。
@@ -78,6 +79,8 @@ const (
 	cmdToggle  = 101
 	cmdExit    = 102
 	cmdTopMost = 103
+	cmdHistory = 104 // 功能窗入口（§15.7/D60：会话历史占位壳）
+	cmdWelcome = 105 // 功能窗入口（§15.7/D60：欢迎/首次运行占位壳）
 
 	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
 
@@ -265,12 +268,14 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	return r
 }
 
-// showTrayMenu 右键菜单（§15.1：显示/隐藏、置顶开关 + 退出；会话/主题项随菜单步补全）。
-// TPM_RETURNCMD：TrackPopupMenu 直接返回命令（不发 WM_COMMAND）。
+// showTrayMenu 右键菜单（§15.1：显示/隐藏、置顶开关、功能窗入口（§15.7，随各窗步
+// 启用）+ 退出）。TPM_RETURNCMD：TrackPopupMenu 直接返回命令（不发 WM_COMMAND）。
 func showTrayMenu(hwnd uintptr) {
 	menu, _, _ := procCreatePopupMenu.Call()
 	toggleText, _ := syscall.UTF16PtrFromString("显示 / 隐藏输入窗")
 	topMostText, _ := syscall.UTF16PtrFromString("窗口置顶")
+	historyText, _ := syscall.UTF16PtrFromString("会话历史")
+	welcomeText, _ := syscall.UTF16PtrFromString("欢迎 / 首次运行引导")
 	exitText, _ := syscall.UTF16PtrFromString("退出")
 	procAppendMenuW.Call(menu, mfString, cmdToggle, uintptr(unsafe.Pointer(toggleText)))
 	tmf := uintptr(mfString)
@@ -278,6 +283,9 @@ func showTrayMenu(hwnd uintptr) {
 		tmf |= mfChecked // 勾选 = 当前置顶态
 	}
 	procAppendMenuW.Call(menu, tmf, cmdTopMost, uintptr(unsafe.Pointer(topMostText)))
+	procAppendMenuW.Call(menu, mfSeparator, 0, 0)
+	procAppendMenuW.Call(menu, mfString, cmdHistory, uintptr(unsafe.Pointer(historyText)))
+	procAppendMenuW.Call(menu, mfString, cmdWelcome, uintptr(unsafe.Pointer(welcomeText)))
 	procAppendMenuW.Call(menu, mfSeparator, 0, 0)
 	procAppendMenuW.Call(menu, mfString, cmdExit, uintptr(unsafe.Pointer(exitText)))
 	var pt point
@@ -295,6 +303,14 @@ func showTrayMenu(hwnd uintptr) {
 	case cmdTopMost:
 		if u := shellUI.Load(); u != nil {
 			u.toggleTopMost()
+		}
+	case cmdHistory:
+		if u := shellUI.Load(); u != nil {
+			u.wins.openWin(winHistory) // 单实例防重开（§15.7；注册表线程安全）
+		}
+	case cmdWelcome:
+		if u := shellUI.Load(); u != nil {
+			u.wins.openWin(winWelcome)
 		}
 	case cmdExit:
 		if u := shellUI.Load(); u != nil {
