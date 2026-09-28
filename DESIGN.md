@@ -907,6 +907,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | D52 | **展开态夹取/吸附锚点 = 输入栏三段包围盒**（D50 ① 修订，§15.1）：收起态不变（logo 球），展开态锚点从整窗改为输入栏（logo/胶囊/send）包围盒——**转写消息区允许越出桌面上沿，只限制输入栏不离工作区**（用户拍板）。整窗口径含形裁剔除的透明边距，实测两缺陷：贴边拖到底输入栏被弹离桌面边缘约 20px（左缘要让出整窗透明边距）、展开态顶部无法近（最上只能到透明上边距处）；`anchorFor` 展开分支与普通位置恢复夹取共用同式（恢复期 frameMetric 未就绪 → 沿用 `restoreDock` 的「窗高/`winHeightDp`」比例口径，抽出 `restorePx` 共用） | 否决：展开态完全不夹取（输入栏可被拖出屏幕、交互面丢失）；锚点 = 全部可见形状包围盒（转写区参与仍顶住上沿，且内容高度变化使夹取边界漂移）；锚点 = 整窗（实测两缺陷） |
 | D53 | **tips 显隐 = 事件态 × 光标直采 + 心跳唤帧**（D50 光标直采口径推广到 tips，§15.1）：分层窗按像素 alpha 命中穿透——光标移到透明像素或窗外后**零 pointer 事件**，`gesture.Hover`/`widget.Clickable` 永远等不到 `Leave`（实测老 bug：悬停启动/发送/停止 tips 移开后不消失）。修：三处 tips 显示条件叠「`cursorPos` 直采在钮上」（`inputBtnRects` 由 `rowAnchor` 派生圆钮窗口矩形，与停靠悬停同一口径）；任一 tips 在显 → `tipShown` 并入 `heartbeatNeed`（复用 D50 50ms 心跳唤帧复评），光标离钮即熄、心跳随之收敛 | 否决：`TrackMouseEvent`/`WM_MOUSELEAVE` 自管进出（穿行透明像素仍不可见、需钩 WndProc）；光标全局轮询驱帧（无 tips 时白耗电）；直接清 `Hover` 事件态（事件静默时无帧可跑，判定跑不到）；整窗 ULW 换壳（D46 否决理由同） |
 | D54 | **展开/收起动画 = 输入栏插值 + 消息揭示带双通道，严格先后**（D43 形态行为细化，§15.1）：左键 logo / 快捷键 / 托盘呼出的展开收起不再瞬时翻形，改为双通道时间线——**展开 700ms = 输入栏 260ms `easeOutBack(c1=1.2)`（轻回弹 ≈6%，send 过冲回落）→ 消息区 440ms CSS ease `cubic-bezier(.25,.1,.25,1)`；收起 540ms = 消息区 320ms CSS ease → 输入栏 220ms `easeInSine`，两阶段严格先后不并行**（消息区时长 = 输入栏的近两倍：揭示刻意比控件归位更慢，让内容浮现更从容）。① **输入栏**：logo 恒定不动（D49 换形不跳动），胶囊/send 从 logo 矩形插值到终位（p=0 二者 = logo 同尺寸圆、被 logo 盖住，p=1 = D49 终位几何），胶囊内容按**终宽排版、按当前胶囊矩形裁剪**（生长即揭示，不挤压重排）；绘制顺序改 **胶囊 → send → logo 最后**（p=0 时 logo 盖住二者，与收起态球逐像素一致 → 收尾切 `layoutCollapsed` 无缝）。② **消息揭示 = 动画淡出带**：内容静止不位移——带顶 `Y = (1-msgP)×transH` 从 transH（全隐）降到 0（静息），`y < Y` 不可见（形裁裁掉 + overlay 不写）、`[Y, min(Y+bandPx, transH))` smoothstep 淡入、带底以下全可见；**带底夹在 transH 内**（展开中途的带绝不压状态行/刚弹出的输入行），`Y = 0` 时退化为现有顶带 `[0, bandPx)` 与静息**无缝重合**——三处带机制（`record` 跳过条件、`regionShapes` band 裁切线、`fadePremultiplyBand` 写行范围 × `fadeFeatherShapes` 带因子 `g(y)`）从"恒为顶带"泛化为动态 `(bandTop, bandBottom)`。③ **状态机与驱动**：`collapsed` 仍即时翻转（逻辑态），layout 分支 = `collapsed && !expandAn.active → layoutCollapsed`（动画期间走全量 layout + barP 插值，收尾 barP=0 时几何 == 收起球）；进度全在帧分支 `stepExpand` 现算、且在 `layout` **之前**（D50 底座复用：16ms ticker → `Invalidate`；headless 二次 layout 须与主窗同帧同进度，进度放 `layout` 内会双倍推进），headless 不起 ticker、只落状态；中途再点 logo **从当前进度反向不跳变**（无距离的阶段瞬时跳过），动画期间 logo 可点、胶囊/send/tips 不可点、停靠评估让位 | 否决：整体位移淡入（内容会动，与拍板的"内容静止"相悖）；硬边裁剪揭示（割裂横缝，顶带机制本可复用）；两通道并行（输入栏与消息争抢注意力，交互焦点不清）；带底不夹在 transH（展开到一半把刚弹出的输入行顶部扫淡）；进度放 `layout` 内（headless 二次调用双倍推进，D50 已实证）；动画期间胶囊可点（半程几何点击落点错位） |
+| D55 | **帧提交次序 = 屏幕态与效果层先于绘制提交（D44/D45/D50/D54 合成时序收口，§15.1/§15.5/§15.6）**：实测缺陷——展开/收起/停靠动画与拖动中，**元素边缘（羽化带 + 淡出带，全在 ULW overlay 上）恒慢元素一帧**。根因（堆栈实证）：Gio `processFrame` **先 ack 后 `Present(1,0)`**（`app/os.go`："Let the client continue as soon as possible, in particular before a potentially blocking Present"），`Present` 阻塞到下一 vblank；客户端 ack 之后经 `Window.Run`（铁律 1）排队的移窗 / `LWA_ALPHA` / 形裁 / ULW 要等 Present 返回才被窗口线程 select 服务 → 一律落在下一 vblank 之后合成，而主窗绘制已在当前 vblank 上屏 → 效果层恒比主窗晚一帧。旧帧次序 `layout → e.Frame → stepAnim → fadeFrame` 恰好把 `stepAnim`（移窗+alpha）与 `fadeFrame`（ULW）全排在 `e.Frame` **之后**。修：帧次序固定为 **`stepExpand → stepAnim → layout → fadeCompose → commitWinGeom → fadePresent → e.Frame`**——① `fadeFrame` 拆成 **`fadeCompose`**（headless 同布局重渲 + 渐变/羽化预乘，唯一慢段、不改屏幕态）与 **`fadePresent`**（ULW 提交或隐藏，须在移窗之后——取实测窗口矩形定位）；② 新增 **`commitWinGeom`**：形裁 + 移窗 + `LWA_ALPHA` **一拍 flush**——帧内 `moveDrag`/`endDrag`/`undockInstant`/`stepAnim` 一律只记账（`requestMove`/`requestAlpha`），避免多次 `Window.Run` 各占一拍、与 overlay 拍点错开；启动路径 `onHWND`/`restoreDock` 不在帧内，仍直接调用；③ `applyRegion` 从 `layout` 移出（headless 二次调用与主遍共用同一提交点；`mainHWND==0` 直接返回、不刷失败日志）；④ 两套动画进度（`stepExpand`/`stepAnim`）都提到 `layout` **之前**，两遍 layout 同帧同进度（顺带修掉 `stepAnim` 夹在两遍 layout 之间、停靠进度两遍不一致的隐患）。次序是契约：抽 `frame(gtx, submit)` 方法 + `framePhase` 测试回执（§15.5），无窗口断言「compose → commit → present → submit」且提交时挂起标记已清 | 否决：`e.Frame` 之后再提交（把合成留到 `e.Frame` 之后 = 缺陷本身；ack 后窗口线程立刻进 Present，"空档"不存在，排队项只能等 Present 返回）；每帧无条件 `SetWindowPos`/`SetLayeredWindowAttributes`（无变化也发 = 冗余 GDI 调用与闪烁，故只在 pending 时发）；给 overlay 换 DWM / DirectComposition（架构级，D45/D46 已否决） |
 
 ## 14. 暂缓事项（Backlog）
 
@@ -994,6 +995,13 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   §15.3）。**羽化宽响应式（D47/D48）**：`fw = clamp(round(min(w,h) × featherRatio),
   Dp(featherMinDp), Dp(featherMaxDp))`、且 ≤ 短边 1/3（region 不退化）——随元素尺寸/窗口
   缩放/DPI 自适应，**不引入固定 px 羽化宽**（当前调参 0.05 / 0 / 5 → 发丝级 1–5px）。
+- **同拍合成（D55）**：形裁 / 移窗 / `LWA_ALPHA` / overlay ULW 全部经 `Window.Run` 排到
+  窗口线程，而 Gio 在 `Present(1,0)`（阻塞到下一 vblank）**之前**就 ack 了本帧——这些调用
+  若排在 `e.Frame` 之后只能等 Present 返回、落到**下一个** vblank 才合成，效果层（羽化带、
+  淡出带）恒慢主窗一帧（动画/拖动中"元素边缘滞后于元素"）。故帧次序固定为
+  `stepExpand → stepAnim → layout → fadeCompose → commitWinGeom → fadePresent → e.Frame`：
+  两遍 layout 同帧同进度 → 离屏合成（唯一慢段、不改屏幕态）→ 屏幕态一拍提交 → overlay 提交
+  （须在移窗之后，取实测窗口矩形定位）→ 最后才提交绘制。
 - **右键 logo** = 菜单，与**托盘菜单同内容**：会话切换/新建、主题、显示输入框、退出
   （菜单步补全；托盘步先落「显示/隐藏 + 退出」两项）。
 - **托盘常驻生命周期**：关窗（Alt+F4）= **隐藏**——子类化主窗过程吞 `WM_CLOSE`
@@ -1113,7 +1121,9 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
 - 渲染状态机对齐 `uitui/model.go`：`Delta.Reasoning` 分流进思考草稿、`CommittedEvent`
   定稿落块、`HistoryEvent` 回放（思考暗块先行）、`Say` 纯文本块。
 - 测试：GUI 自身用**无窗口 headless 逻辑测试**（渲染状态机/桥接层抽纯逻辑）+ 投影收集器；
-  门禁与 e2e 仍跑 repl 后端，GUI 不进 CI 图形路径。
+  门禁与 e2e 仍跑 repl 后端，GUI 不进 CI 图形路径。帧内提交次序是契约（D55）：抽
+  `frame(gtx, submit)` 方法 + `framePhase` 测试回执（生产恒 nil），无窗口断言
+  「compose → commit → present → submit」与提交时屏幕态挂起标记已清。
 
 ### 15.6 前置 spike 结论（2026-09 已过，D30 同款记录）
 
@@ -1137,3 +1147,8 @@ headless 上下文随窗口尺寸/DPI 变化重建，内容/滚动/位置变化�
    `deliverEvent` 的 select、不泵消息，跨线程调用死锁）。查询类（`GetWindowRect`/`GetCursorPos`）不受限。
 2. **拖动定位用光标屏幕坐标绝对跟踪**（按下记「窗口左上角 + 光标位置」，按差值定位）；
    指针本地增量法与窗口移动互为反馈，会回弹。
+3. **帧内屏幕态与效果层必须在 `e.Frame` 之前提交**（D55）：Gio `processFrame` 先 ack 本帧
+   再 `Present(1,0)`（阻塞到下一 vblank），ack 之后经 `Window.Run` 排队的移窗 / `LWA_ALPHA` /
+   形裁 / overlay ULW 要等 Present 返回才被窗口线程 select 服务 → 排在 `e.Frame` **之后**的
+   一律落到下一个 vblank 合成，效果层恒慢主窗一帧（动画/拖动中"元素边缘滞后"的实测根因）。
+   帧次序固定：`stepExpand → stepAnim → layout → fadeCompose → commitWinGeom → fadePresent → e.Frame`。

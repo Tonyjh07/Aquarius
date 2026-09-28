@@ -22,9 +22,9 @@ import (
 //	正常·展开 ─抬手贴边─► 仅吸附贴齐（不隐藏——仅收起态可停靠）
 //
 // 动画 = easeOutCubic p(t) 纯函数 + 16ms ticker → Invalidate 唤帧；进度与插值在
-// runWindow 帧分支 stepAnim 现算（layout 会被 fadeFrame 以零值 Source 二次调用，
-// 位置/alpha 前推不能放进 layout），ticker goroutine 只读自有 channel → 无共享可变
-// 状态（-race 友好）。
+// frame 的 stepAnim 现算（layout 会被 fadeCompose 以零值 Source 二次调用，位置/alpha
+// 前推不能放进 layout；且须排在两遍 layout **之前**，D55），ticker goroutine 只读自有
+// channel → 无共享可变状态（-race 友好）。
 
 // 常量（物理 px 经 frameMetric.Dp 换算；位置恢复路径按窗口高推比例，见 restoreDock）。
 const (
@@ -437,10 +437,10 @@ func (u *UI) undockInstant() {
 	u.docked = false
 	u.dockArm = false
 	u.dockHint.Store(dockNoneInt)
-	moveWindowTo(u.x, u.y)
+	u.requestMove() // D55：帧内只记账，帧尾 commitWinGeom 一拍提交
 	if u.alpha != semiAlpha {
 		u.alpha = semiAlpha
-		applyAlpha(semiAlpha)
+		u.requestAlpha()
 	}
 	if was {
 		fmt.Println("[dock] 脱离停靠")
@@ -502,8 +502,8 @@ func (u *UI) stopDockAnim() {
 	u.dockAn = dockAnim{}
 }
 
-// stepAnim 每帧推进停靠动画（runWindow 帧分支调用；layout 被 headless 二次调用，
-// 位置/alpha 前推只能每帧一次）。完成时收尾：召回侧清停靠记忆并落盘。
+// stepAnim 每帧推进停靠动画（frame 调，置于两遍 layout 之前；layout 被 headless 二次
+// 调用，位置/alpha 前推只能每帧一次）。完成时收尾：召回侧清停靠记忆并落盘。
 func (u *UI) stepAnim() {
 	a := &u.dockAn
 	if !a.active {
@@ -513,10 +513,10 @@ func (u *UI) stepAnim() {
 	p := easeOutCubic(t)
 	u.x = int32(lerpInt(int(a.fromPos.x), int(a.toPos.x), p))
 	u.y = int32(lerpInt(int(a.fromPos.y), int(a.toPos.y), p))
-	moveWindowTo(u.x, u.y)
+	u.requestMove() // D55：帧内只记账，帧尾 commitWinGeom 一拍提交
 	if al := byte(lerpInt(int(a.fromAlpha), int(a.toAlpha), p)); al != u.alpha {
 		u.alpha = al
-		applyAlpha(al)
+		u.requestAlpha()
 	}
 	if t >= 1 {
 		toDock := a.toDock

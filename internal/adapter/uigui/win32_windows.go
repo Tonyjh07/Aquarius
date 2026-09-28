@@ -291,7 +291,7 @@ func hideFromTaskbar(h uintptr) {
 	})
 }
 
-// mainVisible 主窗可见性（查询类直接调；无句柄 = 不可见）——fadeFrame 兜底：
+// mainVisible 主窗可见性（查询类直接调；无句柄 = 不可见）——fadePresent 兜底：
 // 主窗隐藏时 overlay 不得孤立上屏（hideMain 已藏，防隐藏后仍有帧把它唤回）。
 func mainVisible() bool {
 	h := atomic.LoadUintptr(&mainHWND)

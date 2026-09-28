@@ -232,13 +232,7 @@ func (u *UI) runWindow(w *app.Window) {
 		switch e := ev.(type) {
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
-			// D54：展开动画进度前推须在 layout **之前**——layout 会被 fadeFrame 以零值
-			// Source 二次调用，进度放里面会双倍推进（D50 同款教训）；两遍因此同帧同进度。
-			u.stepExpand(time.Now())
-			u.layout(gtx)
-			e.Frame(&ops)
-			u.stepAnim()  // D50：停靠动画每帧前推（layout 会被 headless 二次调用，不能放里面）
-			u.fadeFrame() // 淡出带：headless 同布局重渲 → 渐变预乘 → ULW（D44）
+			u.frame(gtx, func() { e.Frame(&ops) })
 		case app.DestroyEvent:
 			// 用户关窗 = 输入流结束（Next → EOF → 装配根退出，退出码 0；
 			// 创建失败 Err 非空 → Next 上抛，退出码 1）。
@@ -254,6 +248,54 @@ func (u *UI) runWindow(w *app.Window) {
 		}
 	}
 }
+
+// frame 单帧推进与提交（runWindow 帧事件调；抽成方法 = 无窗口可测的次序契约，D55）。
+// 次序固定：两套动画进度 → 两遍 layout（同帧同进度）→ 离屏合成（唯一慢段、不改屏幕态）
+// → 屏幕态一拍提交 → overlay 提交 → 绘制提交。
+// 【§15.6 铁律 3】Gio 在 Present(1,0)（阻塞到下一 vblank）**之前**就 ack 本帧，ack 之后
+// 经 Window.Run 排队的移窗/alpha/形裁/ULW 只能等 Present 返回才被窗口线程 select 服务
+// → 一切屏幕态与 overlay 必须排在 e.Frame **之前**，否则效果层（羽化带/淡出带）恒慢
+// 主窗一帧——动画与拖动中"元素边缘滞后于元素"的实测根因。
+func (u *UI) frame(gtx layout.Context, submit func()) {
+	u.stepExpand(time.Now())
+	u.stepAnim() // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
+	u.layout(gtx)
+	u.phase("compose")
+	composed := u.fadeCompose() // 淡出带：headless 同布局重渲 → 渐变/羽化预乘（D44/D48）
+	u.phase("commit")
+	u.commitWinGeom() // 形裁 + 移窗 + LWA_ALPHA 一拍提交（D55）
+	u.phase("present")
+	u.fadePresent(composed) // ULW 上屏（在移窗之后：取实测窗口矩形定位）
+	submit()
+}
+
+// phase 帧阶段回执（仅测试注入，生产恒 nil）：断言 D55 次序契约。
+func (u *UI) phase(name string) {
+	if u.framePhase != nil {
+		u.framePhase(name)
+	}
+}
+
+// commitWinGeom 一拍提交本帧全部屏幕态（形裁 + 移窗 + 整窗 alpha，均经 Window.Run，
+// §15.6 铁律 1）。D55：帧内改动一律只记账，帧尾统一 flush——分散发起会各占一拍、与
+// overlay 提交拍点错开。
+func (u *UI) commitWinGeom() {
+	if u.movePending {
+		u.movePending = false
+		moveWindowTo(u.x, u.y)
+	}
+	if u.alphaPending {
+		u.alphaPending = false
+		applyAlpha(u.alpha)
+	}
+	u.applyRegion()
+}
+
+// requestMove/requestAlpha 帧内位移/透明度改动记账（D55）：由 commitWinGeom 帧尾提交。
+// 启动路径（onHWND/restoreDock）不在帧内，直接调用 moveWindowTo/applyAlpha。
+func (u *UI) requestMove() { u.movePending = true }
+
+func (u *UI) requestAlpha() { u.alphaPending = true }
 
 // onHWND Win32ViewEvent 投递的窗口句柄：统一半透明 + 置顶断言 + 位置记忆恢复
 // （§15.1/D44）。
@@ -301,12 +343,14 @@ func (u *UI) onHWND(h uintptr) {
 			u.x, u.y = nx, ny
 		}
 	}
-	// 形裁在首帧布局后按元素矩形重建（applyRegion）。
+	// 形裁在首帧布局后按元素矩形重建（commitWinGeom → applyRegion，D55）。
+	// 本函数不在帧内，位移/透明度直接下发（帧内的改动一律记账，见 requestMove/requestAlpha）。
 }
 
 // layout 悬浮窗布局：背景（兜底 + 整窗拖动）| 转写区（手工布局 + 滚动）/ 状态行 /
 // 输入栏——自底向上定高，全部绝对坐标登记形裁（§15.1/D44）。
-// 本函数也被 fadeFrame 以零值 Source 二次调用（纯渲染，无事件消费）。
+// 本函数也被 fadeCompose 以零值 Source 二次调用（纯渲染，无事件消费）；形裁不在这里
+// 下发——两遍共用同一提交点，由帧尾 commitWinGeom 统一 flush（D55）。
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	if u.focusPending && !u.collapsed {
 		u.focusPending = false
@@ -339,7 +383,6 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	// 时几何 == layoutCollapsed 的球，切换无缝）。
 	if u.collapsed && !u.expandAn.active {
 		u.layoutCollapsed(gtx, size)
-		u.applyRegion()
 		return layout.Dimensions{Size: size}
 	}
 
@@ -385,7 +428,6 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: size}
 		}),
 	)
-	u.applyRegion()
 	return dims
 }
 
@@ -973,9 +1015,13 @@ func regionShapes(dst []shapePhys, shapes []drawShape, band int, m unit.Metric) 
 }
 
 // applyRegion 形裁并集仅在变化时重建（布局结果稳定 → 多数帧零开销）。
+// 只由帧尾 commitWinGeom 调用（D55：两遍 layout 共用同一提交点，与移窗/overlay 同拍）。
 // 失败（hwnd 未到/系统调用错误）不写缓存 → 下帧重试，防止首帧竞态把缓存污染成
 // "已应用"导致形裁永久失效。
 func (u *UI) applyRegion() {
+	if atomic.LoadUintptr(&mainHWND) == 0 {
+		return // 窗口句柄未到（onHWND 之前）：不算失败，不刷失败日志，首帧后自然应用
+	}
 	u.physShapes = regionShapes(u.physShapes[:0], u.shapes,
 		u.bandBottom, u.frameMetric)
 	if shapesEqual(u.physShapes, u.lastShapes) {
@@ -1188,7 +1234,7 @@ func (u *UI) moveDrag() {
 	x := u.dragWin0.x + (cur.x - u.dragCur0.x)
 	y := u.dragWin0.y + (cur.y - u.dragCur0.y)
 	u.x, u.y = u.clampPos(x, y)
-	moveWindowTo(u.x, u.y)
+	u.requestMove() // D55：帧尾 commitWinGeom 一拍提交（与形裁/overlay 同拍）
 }
 
 // endDrag 抬起/取消收尾：锚点夹取 + 四边吸附贴齐（D50）+ 持久化位置。
@@ -1209,7 +1255,7 @@ func (u *UI) endDrag() {
 					}
 				}
 			}
-			moveWindowTo(u.x, u.y)
+			u.requestMove() // D55：吸附后落位与本帧形裁/overlay 同拍提交
 		}
 		// 抬手（点击/拖动）=「曾悬停」的证据：直接布防（D50 拍板"拖到可停靠区移开也重停"），
 		// 贴边由下一瞬的 evalDockFrame 校验 edge，不贴边/展开态自然清掉。

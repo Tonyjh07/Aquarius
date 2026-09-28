@@ -102,6 +102,15 @@ type UI struct {
 	dragWin0    point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
 	dragCur0    point // 按下时光标位置（屏幕坐标）
 
+	// D55 帧内屏幕态记账：帧中一律只置 pending，由 commitWinGeom 帧尾一拍 flush（形裁 +
+	// 移窗 + alpha 同批经 Window.Run，与 overlay 提交同拍）——分散发起会各占一拍。仅帧循环
+	// goroutine 读写；启动路径（onHWND/restoreDock）不在帧内，直接调 Win32。
+	movePending  bool // u.x/u.y 已变、SetWindowPos 未发
+	alphaPending bool // u.alpha 已变、LWA_ALPHA 未发
+	// framePhase 帧阶段回执（**仅测试注入**，生产恒 nil）：断言 D55 次序契约——
+	// compose → commit → present → submit（屏幕态与 overlay 必须先于 e.Frame）。
+	framePhase func(phase string)
+
 	// D50 停靠（§15.1 停靠隐藏）：alpha/docked/dockArm/dockAn 仅事件循环 goroutine
 	// 读写；dockHint = 「docked 且停靠边」的原子镜像（0=未停靠 1=left 2=right），
 	// 供托盘线程（置顶开关）跨线程读取保存。
@@ -142,6 +151,9 @@ type UI struct {
 	bandTop, bandBottom int
 	fade                fadeState // 淡出带 headless 渲染状态
 	fadeBuf             []byte    // 淡出带预乘 BGRA 缓冲
+	// fadeEmpty 本帧效果层为空（带内无内容且无元素）：fadeCompose 写、fadePresent 读
+	//（D55 拆分：合成与上屏分两阶段，"空即隐藏"的判定留在合成阶段）。
+	fadeEmpty bool
 	// inFadePass 淡出源渲染标记：跳过兜底窗口底色——淡出带像素源只含可见元素
 	//（气泡/输入栏），背景保持 headless 清屏的透明 → 带内无消息 = 全透明（D44/§15.3）。
 	inFadePass bool

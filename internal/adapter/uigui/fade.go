@@ -352,25 +352,28 @@ func (u *UI) clampedBand() (top, bottom int) {
 	return top, bottom
 }
 
-// fadeFrame 主帧之后执行（runWindow 调）：headless 同布局重渲 → 整窗效果层
-// （顶部带渐变 + 元素边缘渐隐，D44/D48）→ 整窗预乘 BGRA → overlay 提交。
-// 非 Windows（hwnd=0）或离屏上下文创建失败时静默降级。
-func (u *UI) fadeFrame() {
+// fadeCompose 合成阶段（frame 调，**在 e.Frame 之前**，D55）：headless 同布局重渲 →
+// 整窗效果层（顶部带渐变 + 元素边缘渐隐，D44/D48）→ 整窗预乘 BGRA。不改屏幕态——它是
+// 一帧里唯一的慢段（离屏 GPU 重渲），先跑完再提交屏幕态，让三者挤在同一个 vblank 之前。
+// 返回位图是否可上屏（false = 降级：非 Windows / hwnd 未到 / 离屏上下文或渲染失败，
+// fadePresent 不动 overlay，形裁仍生效）。**主窗隐藏在此判定**（主窗隐藏时 overlay 不得
+// 孤立上屏，hideMain 已藏，这里兜底——交由 fadePresent 收口）。
+func (u *UI) fadeCompose() bool {
+	u.fadeEmpty = false
 	if u.hwnd == 0 || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
-		return
+		return false
 	}
-	if !mainVisible() { // 主窗隐藏：overlay 不得孤立上屏（hideMain 已藏，这里兜底）
-		overlaySetVisible(false)
-		return
+	if !mainVisible() {
+		return false
 	}
 	if err := u.fade.ensure(u.frameSize.X, u.frameSize.Y, u.frameMetric); err != nil {
-		return // 无 GPU 后端等：淡出降级为硬切（形裁仍生效）
+		return false // 无 GPU 后端等：淡出降级为硬切（形裁仍生效）
 	}
 	u.inFadePass = true // 淡出源：跳过兜底底色（带内无消息 = 全透明，overlay 隐藏）
 	err := u.fade.render(u.layout)
 	u.inFadePass = false
 	if err != nil {
-		return
+		return false
 	}
 	size := u.frameSize.X * u.frameSize.Y * 4
 	if u.fadeBuf == nil || len(u.fadeBuf) < size {
@@ -383,7 +386,27 @@ func (u *UI) fadeFrame() {
 	band := fadePremultiplyBand(u.fade.img, u.frameSize.X, top, bottom, u.fadeBuf)
 	edges := fadeFeatherShapes(u.fade.img, u.shapes, top, bottom, u.frameMetric,
 		u.fadeBuf, u.frameSize)
-	if !band && !edges {
+	u.fadeEmpty = !band && !edges // 空态（带内无内容且无元素）→ fadePresent 隐藏
+	return true
+}
+
+// fadePresent 上屏阶段（frame 调，**在 e.Frame 之前、commitWinGeom 之后**，D55）：
+// overlay 的 UpdateLayeredWindow 提交或隐藏。排在 commitWinGeom 之后有二义——
+// ① 取实测窗口矩形定位，必须等本帧移窗生效；② ULW 经 Window.Run 排队，落到 e.Frame
+// 之后只能等 Present(1,0) 返回、晚一个 vblank 合成（效果层恒慢主窗一帧的根因）。
+// fadeCompose 降级（false）时不动 overlay，避免形裁已生效却闪断羽化。
+func (u *UI) fadePresent(composed bool) {
+	if u.hwnd == 0 || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
+		return
+	}
+	if !mainVisible() {
+		overlaySetVisible(false) // 主窗隐藏：overlay 不得孤立上屏（hideMain 已藏，这里兜底）
+		return
+	}
+	if !composed {
+		return
+	}
+	if u.fadeEmpty {
 		overlaySetVisible(false) // 带内无内容且无元素（空态）：隐藏（桌面/下层直接可见）
 		return
 	}

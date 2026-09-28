@@ -3,7 +3,11 @@ package uigui
 import (
 	"image"
 	"testing"
+	"time"
 
+	"gioui.org/io/input"
+	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/unit"
 )
 
@@ -225,5 +229,61 @@ func TestFrameItemsLive(t *testing.T) {
 	}
 	if items[2].kind != blockAssistant || !items[2].live || items[2].text != "答" {
 		t.Fatalf("items[2] = %+v（流式草稿应 live）", items[2])
+	}
+}
+
+// newFrameUI 帧级无窗口测试用的最小 UI（不起事件循环，与 TestFrameItemsLive 同法——
+// §15.5：GUI 只进无窗口 headless 测试）。followTail 初值对齐 newUI。
+func newFrameUI() *UI {
+	u := &UI{followTail: true}
+	u.m = newModel(u)
+	u.th = newTheme()
+	return u
+}
+
+// frameGtx 单帧布局上下文（608×460 @1x；src 传零值 = 禁用态，同 fadeCompose 的二次布局）。
+func frameGtx(src input.Source) (layout.Context, *op.Ops) {
+	ops := new(op.Ops)
+	return layout.Context{
+		Ops:         ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(image.Pt(winWidthDp, winHeightDp)),
+		Source:      src,
+		Now:         time.Now(),
+	}, ops
+}
+
+// TestFrameCommitsScreenStateBeforeSubmit D55 帧提交次序契约：屏幕态（移窗/LWA_ALPHA/
+// 形裁）与 overlay 呈现必须全部排在绘制提交**之前**——Gio 在 Present(1,0)（阻塞到下一
+// vblank）之前就 ack 本帧，之后经 Window.Run 排队的 Win32 调用只能等 Present 返回才被
+// 窗口线程服务，故排在 e.Frame 之后的一切屏幕态都会晚一个 vblank 合成（动画/拖动中
+// "元素边缘滞后于元素"的实测根因）。
+func TestFrameCommitsScreenStateBeforeSubmit(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockAssistant, "首帧有内容 → 形裁有可提交的并集")
+	var phases []string
+	u.framePhase = func(p string) { phases = append(phases, p) }
+	u.movePending = true  // 帧内已发生位移（拖动 / 停靠动画）
+	u.alphaPending = true // 帧内已发生透明度改动
+
+	gtx, _ := frameGtx(input.Source{})
+	u.frame(gtx, func() {
+		phases = append(phases, "submit")
+		if u.movePending || u.alphaPending {
+			t.Error("绘制提交时屏幕态仍挂起：本帧移窗/alpha 未 flush")
+		}
+	})
+
+	want := []string{"compose", "commit", "present", "submit"}
+	if len(phases) != len(want) {
+		t.Fatalf("阶段 = %v, want %v", phases, want)
+	}
+	for i := range want {
+		if phases[i] != want[i] {
+			t.Fatalf("阶段 = %v, want %v", phases, want)
+		}
+	}
+	if u.frameSize == (image.Point{}) {
+		t.Fatal("compose/commit 之前 layout 未跑（frameSize 未定）")
 	}
 }
