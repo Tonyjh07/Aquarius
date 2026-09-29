@@ -144,6 +144,10 @@ type UI struct {
 	// 行选手势独占气泡区指针。仅事件循环 goroutine 读写。
 	selRows []*widget.Selectable
 
+	// markdown 展开缓存（D65）：助手定稿块原文 → 行视图（mdViews 维护，上限
+	// mdCacheLimit）。仅事件循环 goroutine 读写。
+	mdCache map[string][]blockView
+
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
 	focusPending bool

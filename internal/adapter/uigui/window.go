@@ -14,6 +14,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/f32"
+	"gioui.org/font"
 	"gioui.org/font/gofont"
 	"gioui.org/font/opentype"
 	"gioui.org/gesture"
@@ -167,16 +168,66 @@ func savePos(path string, p posRec) {
 	_ = os.WriteFile(path, src, 0o644)
 }
 
+// monoFace 代码块等宽字体面（newTheme 从集合挑 Mono 系；零值 = 回落正文体，D65）。
+// 与 brandColor 等同槽风格：主题组装期写定，帧循环只读。
+var monoFace font.Font
+
 // newTheme 主题组装（§15.4 骨架：系统中文字体优先——gofont 无 CJK，spike 实证路径；
-// 失败回落 gofont）。
+// 失败回落 gofont）。字体集合恒补 Go Mono 系面（markdown 代码块等宽，D65；CJK 缺字
+// 由 typesetting FontMap 自动回落中文字面）。
 func newTheme() *material.Theme {
 	th := material.NewTheme()
-	if faces := loadCJKFaces(); len(faces) > 0 {
-		th.Shaper = text.NewShaper(text.WithCollection(faces))
+	faces := loadCJKFaces()
+	if len(faces) == 0 {
+		faces = gofont.Collection() // 自带 Go Mono
 	} else {
-		th.Shaper = text.NewShaper(text.WithCollection(gofont.Collection()))
+		faces = append(faces, monoFontFaces()...)
 	}
+	monoFace = pickMonoFace(faces)
+	th.Shaper = text.NewShaper(text.WithCollection(faces))
 	return th
+}
+
+// monoFontFaces gofont 集合中的 Mono 系面（等宽拉丁；正体在前优先）。
+func monoFontFaces() []text.FontFace {
+	var out []text.FontFace
+	for _, f := range gofont.Collection() {
+		if strings.Contains(strings.ToLower(string(f.Font.Typeface)), "mono") {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// pickMonoFace 从字体集合挑等宽正体面（未找到 = 零值回落）。
+func pickMonoFace(faces []text.FontFace) font.Font {
+	for _, f := range faces {
+		if strings.Contains(strings.ToLower(string(f.Font.Typeface)), "mono") &&
+			f.Font.Weight == font.Normal && f.Font.Style == font.Regular {
+			return f.Font
+		}
+	}
+	for _, f := range faces {
+		if strings.Contains(strings.ToLower(string(f.Font.Typeface)), "mono") {
+			return f.Font
+		}
+	}
+	return font.Font{}
+}
+
+// mdHeadingSp 标题字号阶梯（D65）：h1 20sp → h2 17sp → h3 15sp，h4 以下与正文同大
+// （Weight 求粗仍区分；CJK 粗体面缺省时回落常规渲染）。
+func mdHeadingSp(th *material.Theme, level int) unit.Sp {
+	switch level {
+	case 1:
+		return th.TextSize * 20.0 / 16.0
+	case 2:
+		return th.TextSize * 17.0 / 16.0
+	case 3:
+		return th.TextSize * 15.0 / 16.0
+	default:
+		return th.TextSize * 14.0 / 16.0
+	}
 }
 
 // loadCJKFaces 加载 Windows 系统中文字体（§15.6 spike 实证：msyh.ttc → opentype）。
@@ -656,6 +707,29 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, sel *widget.Selectable) 
 			l.State = sel
 			return l.Layout(gtx)
 		}, cardSystem, cardR, false, false
+	case blockHeading: // markdown 标题（D65）：同气泡大字——h1 20sp 递减，Weight 求粗
+		return func(gtx layout.Context) layout.Dimensions {
+			s := material.Body1(u.th, it.text)
+			s.TextSize = mdHeadingSp(u.th, it.level)
+			s.Font.Weight = font.SemiBold
+			s.State = sel
+			return s.Layout(gtx)
+		}, pillBg, radiusDp, false, true
+	case blockCode: // markdown 代码块（D65）：等宽 + 深底卡；逐字保真不解转义
+		return func(gtx layout.Context) layout.Dimensions {
+			s := material.Body2(u.th, it.text)
+			s.Font = monoFace
+			s.TextSize = u.th.TextSize * 13.0 / 16.0
+			s.State = sel
+			return s.Layout(gtx)
+		}, cardTool, cardR, false, true
+	case blockRule: // markdown 分隔线（D65）：弱化短行——文本行承载，行机制零特例
+		return func(gtx layout.Context) layout.Dimensions {
+			l := material.Caption(u.th, "· · · · · ·")
+			l.Color = textDim
+			l.State = sel
+			return l.Layout(gtx)
+		}, cardTool, cardR, false, false
 	default: // blockPlain（Say/命令输出/提示）：底板浅白、正文默认色
 		return func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, it.text)
@@ -996,18 +1070,25 @@ func featherWidth(m unit.Metric, w, h int) int {
 	return f
 }
 
-// blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块）。
+// blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块；
+// level = 标题级别，markdown 派生行专用，D65）。
 type blockView struct {
-	kind blockKind
-	text string
-	secs int
-	live bool
+	kind  blockKind
+	text  string
+	secs  int
+	live  bool
+	level int
 }
 
 // frameItems 定稿块 + 实时思考/草稿（流式可见；对齐 D33"流式原样、定稿渲染"口径）。
+// 助手定稿块经 markdown 展开为多行（D65），live 草稿原样单行。
 func (u *UI) frameItems() []blockView {
 	items := make([]blockView, 0, len(u.m.blocks)+2)
 	for _, b := range u.m.blocks {
+		if b.kind == blockAssistant {
+			items = append(items, u.mdViews(b.text)...)
+			continue
+		}
 		items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs})
 	}
 	if u.m.think.Len() > 0 {
