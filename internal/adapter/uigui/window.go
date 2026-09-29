@@ -49,6 +49,7 @@ const (
 	bubblePadYDp = 7
 	cardPadXDp   = 10 // 文本行卡内边距
 	cardPadYDp   = 5
+	radiusDp     = 12 // 气泡圆角
 	cardRadiusDp = 8  // 文本行卡圆角
 	statusChipDp = 20 // 状态行 chip 高
 
@@ -631,11 +632,6 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, sels func(int) 
 	}
 }
 
-// radiusFullRound 全圆角哨兵（D69）：rowStyle 无法预知行高，paintRow 按实际底板矩形
-// 解析 rad = min(Dy, Dx)/2（= 输入胶囊同款全圆；Gio RRect.Path 不夹取超尺寸半径，
-// 必须在 paint 期给真值）。
-const radiusFullRound = -1
-
 // paintRow 绘制底板 + 文本并登记形状；y 为视口内绝对坐标（可为负）。
 // 返回行总高（px）。
 func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport image.Rectangle) int {
@@ -647,17 +643,13 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport ima
 		Min: image.Pt(x, y),
 		Max: image.Pt(x+mr.dims.X+2*mr.padX, y+mr.height()),
 	}
-	rad := mr.radius
-	if rad <= 0 {
-		rad = min(bgRect.Dy(), bgRect.Dx()) / 2 // 全圆胶囊角（D69）
-	}
-	st := clip.UniformRRect(bgRect, rad).Push(gtx.Ops)
+	st := clip.UniformRRect(bgRect, mr.radius).Push(gtx.Ops)
 	paint.Fill(gtx.Ops, mr.bg)
 	inner := op.Offset(image.Pt(bgRect.Min.X+mr.padX, bgRect.Min.Y+mr.padY)).Push(gtx.Ops)
 	mr.txt.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
-	u.record(bgRect, rad, mr.bg, viewport)
+	u.record(bgRect, mr.radius, mr.bg, viewport)
 	return bgRect.Dy()
 }
 
@@ -665,15 +657,15 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport ima
 // sel sels(k) 非 nil 返回时文本行挂行选状态（D63；D66 双键 k = 复合行内块序）——
 // 除思考头部（元信息）外全部可选。
 func (u *UI) rowStyle(gtx layout.Context, it blockView, sels func(int) *widget.Selectable) (layout.Widget, color.NRGBA, int, bool, bool) {
-	cardR := gtx.Dp(cardRadiusDp)
+	radiusDp, cardR := gtx.Dp(radiusDp), gtx.Dp(cardRadiusDp)
 	switch it.kind {
-	case blockUser: // 用户气泡：品牌色底白字、右对齐（§15.3 双色气泡；全圆胶囊角 D69）
+	case blockUser: // 用户气泡：品牌色底白字、右对齐（§15.3 双色气泡）
 		return func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, it.text)
 			s.Color = whiteText
 			s.State = sels(0)
 			return s.Layout(gtx)
-		}, brandColor, radiusFullRound, true, true
+		}, brandColor, radiusDp, true, true
 	case blockAssistant: // 助手气泡：浅白底、左对齐；markdown 复合行 = 垂直多块共底板（D66）
 		blocks := it.md
 		if len(blocks) == 0 {
@@ -688,7 +680,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, sels func(int) *widget.S
 				kids = append(kids, layout.Rigid(u.mdBlockWidget(b, sels(k))))
 			}
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, kids...)
-		}, pillBg, radiusFullRound, false, true
+		}, pillBg, radiusDp, false, true
 	case blockThinking: // 思考行：头部（元信息，不选）+ 正文
 		header := "已思考"
 		if it.live {
@@ -777,7 +769,7 @@ func (u *UI) mdBlockWidget(b mdBlock, sel *widget.Selectable) layout.Widget {
 			m := op.Record(gtx.Ops)
 			dims := layout.UniformInset(mdCodeInsetDp).Layout(gtx, s.Layout)
 			txt := m.Stop()
-			st := clip.UniformRRect(image.Rectangle{Max: dims.Size}, gtx.Dp(cardRadiusDp)).Push(gtx.Ops)
+			st := clip.UniformRRect(image.Rectangle{Max: dims.Size}, gtx.Dp(radiusDp)).Push(gtx.Ops)
 			paint.Fill(gtx.Ops, cardTool)
 			st.Pop()
 			txt.Add(gtx.Ops)

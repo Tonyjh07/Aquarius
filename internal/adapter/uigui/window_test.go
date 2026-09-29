@@ -385,30 +385,3 @@ func TestTranscriptManualScroll(t *testing.T) {
 			u.scrollPx, u.followTail, bottom)
 	}
 }
-
-// TestBubbleFullRoundRadius D69：用户/助手气泡底板半径 = 短半边（全圆胶囊角，
-// 与输入胶囊同款）；非气泡卡（notice/tool/思考）维持 cardRadiusDp。
-func TestBubbleFullRoundRadius(t *testing.T) {
-	u := newFrameUI()
-	u.m.add(blockUser, "问")
-	u.m.add(blockAssistant, "答")
-	u.m.add(blockNotice, "提示")
-
-	gtx, _ := frameGtx(input.Source{})
-	u.transcript(gtx, 600, 400)
-	if len(u.shapes) < 3 {
-		t.Fatalf("shapes = %d, want ≥3", len(u.shapes))
-	}
-	for i, name := range []string{"用户气泡", "助手气泡"} {
-		s := u.shapes[i]
-		want := min(s.outline.Dy(), s.outline.Dx()) / 2
-		if s.radius != want {
-			t.Fatalf("%s radius = %d, want %d（D69 全圆胶囊角）", name, s.radius, want)
-		}
-	}
-	// notice 卡仍为 cardRadiusDp(8)
-	s := u.shapes[2]
-	if s.radius != gtx.Dp(cardRadiusDp) {
-		t.Fatalf("notice 卡 radius = %d, want %d", s.radius, gtx.Dp(cardRadiusDp))
-	}
-}
