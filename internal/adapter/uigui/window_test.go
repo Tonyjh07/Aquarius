@@ -532,3 +532,104 @@ func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
 		t.Fatalf("帧外钉点 alpha = %d, want 0", presented[oi+3])
 	}
 }
+
+// TestLogoRightClickMenuRequest D72 logo 右键菜单手势：区域内右键按下（Buttons 含
+// secondary）武装、同指针原位抬起 = 请求菜单；移出热区（位置门控）/ 系统取消 / 左键
+// 均不请求。收起态（球）与展开态（logo 钮，D49 与球同位）热区同源——ballRect 即两态
+// 窗口系矩形。透明像素不产 OS 事件（D62 逐像素命中）由窗口层负责，这里只测几何过滤
+// 后的状态机。
+func TestLogoRightClickMenuRequest(t *testing.T) {
+	type env struct {
+		u     *UI
+		q     *input.Router
+		frame func()
+		n     *int
+	}
+	setup := func() env {
+		u := newFrameUI()
+		n := 0
+		u.logoMenuHook = func() { n++ }
+		q := new(input.Router)
+		e := env{u: u, q: q, n: &n}
+		e.frame = func() {
+			gtx, ops := frameGtx(q.Source())
+			u.layout(gtx)
+			q.Frame(ops)
+		}
+		return e
+	}
+	mid := func(u *UI) f32.Point {
+		r := ballRect(u.frameSize, u.frameMetric.Dp)
+		return f32.Pt(float32((r.Min.X+r.Max.X)/2), float32((r.Min.Y+r.Max.Y)/2))
+	}
+	press := func(e env, pos f32.Point, b pointer.Buttons, id pointer.ID) {
+		e.q.Queue(pointer.Event{Kind: pointer.Press, Position: pos, Buttons: b, PointerID: id})
+		e.frame()
+	}
+	release := func(e env, pos f32.Point, id pointer.ID) {
+		e.q.Queue(pointer.Event{Kind: pointer.Release, Position: pos, PointerID: id})
+		e.frame()
+	}
+
+	// ① 收起态：按下不请求（等原位抬起），抬起后请求 1 次。
+	e := setup()
+	e.u.collapsed = true
+	e.frame()
+	p := mid(e.u)
+	press(e, p, pointer.ButtonSecondary, 1)
+	if *e.n != 0 {
+		t.Fatalf("按下即请求 = %d, want 0（应等原位抬起）", *e.n)
+	}
+	release(e, p, 1)
+	if *e.n != 1 {
+		t.Fatalf("原位抬起后请求 = %d, want 1", *e.n)
+	}
+
+	// ② 移出球矩形抬起 = 放弃（右键拖走不弹）：Gio Release 恒投按下方，须位置门控——
+	// 窗内透明处（球外）与窗外两种落点都不得弹。
+	for _, away := range []f32.Point{{X: 2, Y: 2}, {X: -20, Y: -20}} {
+		e = setup()
+		e.u.collapsed = true
+		e.frame()
+		p = mid(e.u)
+		press(e, p, pointer.ButtonSecondary, 2)
+		release(e, away, 2)
+		if *e.n != 0 {
+			t.Fatalf("移出后抬起（%v）请求 = %d, want 0", away, *e.n)
+		}
+	}
+
+	// ③ 系统取消（窗口失焦等）后抬起不请求。
+	e = setup()
+	e.u.collapsed = true
+	e.frame()
+	p = mid(e.u)
+	press(e, p, pointer.ButtonSecondary, 3)
+	e.q.Queue(pointer.Event{Kind: pointer.Cancel, PointerID: 3})
+	e.frame()
+	release(e, p, 3)
+	if *e.n != 0 {
+		t.Fatalf("取消后抬起请求 = %d, want 0", *e.n)
+	}
+
+	// ④ 左键按下抬起不请求（不干扰左键互切/拖动语义）。
+	e = setup()
+	e.u.collapsed = true
+	e.frame()
+	p = mid(e.u)
+	press(e, p, pointer.ButtonPrimary, 4)
+	release(e, p, 4)
+	if *e.n != 0 {
+		t.Fatalf("左键请求 = %d, want 0", *e.n)
+	}
+
+	// ⑤ 展开态：logo 钮（D49 与球同位）右键原位抬起请求。
+	e = setup()
+	e.frame()
+	p = mid(e.u)
+	press(e, p, pointer.ButtonSecondary, 5)
+	release(e, p, 5)
+	if *e.n != 1 {
+		t.Fatalf("展开态请求 = %d, want 1", *e.n)
+	}
+}

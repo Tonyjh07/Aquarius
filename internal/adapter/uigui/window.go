@@ -18,6 +18,8 @@ import (
 	"gioui.org/font/gofont"
 	"gioui.org/font/opentype"
 	"gioui.org/gesture"
+	"gioui.org/io/event"
+	"gioui.org/io/input"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -501,6 +503,9 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 	}
 	dst := clip.Rect{Max: size}.Push(gtx.Ops)
 	u.drag.Add(gtx.Ops)
+	// D72：收起态热区 = 球矩形（注册整窗 clip——事件本只落球像素，D62；抬起按球
+	// 矩形门控，拖到窗内透明处/窗外不弹）。
+	u.logoRight.add(gtx.Ops, ballRect(size, gtx.Dp))
 	dst.Pop()
 
 	// 球 = 展开态 logo 圆钮本身（D49 三段式：⌀ = 行高、x = 侧边距、y = 行内 logo 位）
@@ -1011,6 +1016,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	gst := clip.Rect(logo).Push(gtx.Ops)
 	u.logoHover.Add(gtx.Ops)
 	u.logoDrag.Add(gtx.Ops)
+	u.logoRight.add(gtx.Ops, logo) // D72：右键热区 = logo 钮矩形
 	gst.Pop()
 	u.record(logo.Add(image.Pt(0, absY)), rowH/2, brandColor, clipRect)
 
@@ -1449,13 +1455,79 @@ func (u *UI) updateDrag(gtx layout.Context) {
 	}
 }
 
+// logoRight D72 logo 右键菜单手势状态：区域内右键按下（pointer.Event.Buttons 含
+// ButtonSecondary）武装、同指针**原位**抬起（位置落 bounds 内）= 请求菜单；移出/
+// Cancel = 放弃。Gio 的 Release 恒投给按下时记录的 handlers（不按位置重命中），故
+// 「移出不弹」必须位置门控。gesture.Drag/Click 均跳过非主键按下（右键与其零冲突），
+// 故需自挂 pointer.Filter。
+type logoRight struct {
+	armed  bool
+	pid    pointer.ID
+	bounds image.Rectangle // 注册区（logo 钮/球矩形；坐标空间 = event.Op 处的局部空间）
+}
+
+// add 注册右键手势并记录热区矩形（展开 = logo 钮 clip 矩形（输入栏局部空间）、
+// 收起 = 球矩形（窗口空间）——与事件投递的 invTransform 局部空间一一对应）。
+// 收起态注册整窗 clip、事件本只落球像素（D62 逐像素命中），热区仍按球矩形门控。
+func (r *logoRight) add(ops *op.Ops, bounds image.Rectangle) {
+	r.bounds = bounds
+	event.Op(ops, r)
+}
+
+// update 消费手势事件：右键按下武装、同指针原位抬起返回 true（请求菜单）；位置在
+// 热区外的抬起、Cancel、非右键按下均解除武装（左键照常零干扰——gesture.Drag 本就
+// 跳过非主键）。
+func (r *logoRight) update(q input.Source) bool {
+	fire := false
+	for {
+		ev, ok := q.Event(pointer.Filter{
+			Target: r,
+			Kinds:  pointer.Press | pointer.Release | pointer.Cancel,
+		})
+		if !ok {
+			break
+		}
+		e, ok := ev.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch e.Kind {
+		case pointer.Press:
+			r.armed = e.Buttons.Contain(pointer.ButtonSecondary)
+			r.pid = e.PointerID
+		case pointer.Release:
+			if r.armed && e.PointerID == r.pid && e.Position.Round().In(r.bounds) {
+				fire = true
+			}
+			r.armed = false
+		case pointer.Cancel:
+			r.armed = false
+		}
+	}
+	return fire
+}
+
+// requestLogoMenu 请求弹出 logo 右键菜单（D72）：测试经 logoMenuHook 回执；生产投
+// 托盘线程呈现（shell 线程已有独立消息泵，TrackPopupMenu 不嵌 Gio 泵）。
+func (u *UI) requestLogoMenu() {
+	if u.logoMenuHook != nil {
+		u.logoMenuHook()
+		return
+	}
+	postLogoMenu()
+}
+
 // updateLogo logo 圆钮手势（§15.1 把手含 logo）：悬停驱动启动 tips；拖动移窗；
 // 单击（位移小于 dragClickSlackPx）= 收起回球。收起态圆钮区不存在（事件归背景
-// 把手），本循环空转并清悬停态。
+// 把手），悬停/拖动循环空转并清悬停态——右键菜单例外，收起态照跑（球即 logo，D72）。
 func (u *UI) updateLogo(gtx layout.Context) {
 	u.logoHovered = u.logoHover.Update(gtx.Source)
 	if u.collapsed {
 		u.logoHovered = false
+	}
+	// D72 右键菜单：原位抬起才请求（动画期不响应，D54；收起态照跑——球即 logo）。
+	if !u.expandAn.active && u.logoRight.update(gtx.Source) {
+		u.requestLogoMenu()
 	}
 	for {
 		ev, ok := u.logoDrag.Update(gtx.Metric, gtx.Source, gesture.Both)

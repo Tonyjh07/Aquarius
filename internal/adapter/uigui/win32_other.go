@@ -49,6 +49,9 @@ func trayDelete() {}
 // reRegisterHotkey 无全局快捷键可重注册（startShell 未适配）。
 func reRegisterHotkey() {}
 
+// postLogoMenu logo 右键菜单未适配（shell 线程不存在，§15.6 仅 Windows 实测）。
+func postLogoMenu() {}
+
 // subclassCloseToHide 关窗拦截未适配（窗口照常销毁）。
 func subclassCloseToHide(uintptr) {}
 

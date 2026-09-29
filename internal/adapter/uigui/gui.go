@@ -102,6 +102,7 @@ type UI struct {
 	logoDrag    gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
 	logoHover   gesture.Hover // logo 圆钮：悬停 = 启动提示 tips（§15.1）
 	logoHovered bool          // 仅事件循环 goroutine 读写
+	logoRight   logoRight     // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
 	tipShown    bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
 	sendBtn     widget.Clickable
 	stopBtn     widget.Clickable
@@ -121,6 +122,9 @@ type UI struct {
 	// framePhase 帧阶段回执（**仅测试注入**，生产恒 nil）：断言 D55–D62 次序契约——
 	// compose → commit → submit → present（全帧合成先行、移窗 flush 在提交前、ULW 殿后）。
 	framePhase func(phase string)
+	// logoMenuHook 菜单请求回执（**仅测试注入**，生产恒 nil → requestLogoMenu 投
+	// 托盘线程呈现原生菜单，D72）。
+	logoMenuHook func()
 
 	// D50 停靠（§15.1 停靠隐藏）：alpha/docked/dockArm/dockAn 仅事件循环 goroutine
 	// 读写；dockHint = 「docked 且停靠边」的原子镜像（0=未停靠 1=left 2=right），

@@ -2,7 +2,8 @@
 
 // 托盘 + 全局快捷键 + 关窗拦截（§15.1/D43；spike/giospike/win32.go 为验证底本）：
 //   - 托盘：Shell_NotifyIconW，左键显隐、右键菜单（显示/隐藏 + 置顶 + 功能窗入口
-//   - 退出；功能窗项随各窗步启用，§15.7）；
+//   - 退出；功能窗项随各窗步启用，§15.7）；logo 右键菜单经 PostMessage 投本线程
+//     呈现（六项，与托盘共享 runMenu/menuDispatch，D72）；
 //     图标内嵌 assets.TrayICO → 纯 Go 目录解析 → CreateIconFromResourceEx（单二进制）。
 //   - 全局快捷键：RegisterHotKey 默认 Alt+A（ui.hotkey 可配），失败回退 Ctrl+Alt+A。
 //   - 关窗（Alt+F4）= 隐藏：子类化主窗过程吞 WM_CLOSE（Gio 无关闭拦截 API）。
@@ -59,6 +60,7 @@ const (
 	wmApp           = 0x8000
 	trayCallback    = wmApp + 1
 	rehotkeyMsg     = wmApp + 2 // 托盘线程内重注册全局快捷键（设置窗改 hotkey 投递，§15.1）
+	logoMenuMsg     = wmApp + 3 // 托盘线程呈现 logo 右键菜单（D72：Gio 检出右键后投递）
 
 	swRestore = 9
 
@@ -84,6 +86,7 @@ const (
 	cmdHistory  = 104 // 功能窗入口（§15.7/D60：会话历史占位壳）
 	cmdWelcome  = 105 // 功能窗入口（§15.7/D60：欢迎/首次运行占位壳）
 	cmdSettings = 106 // 功能窗入口（§15.7/D60：设置窗核心档）
+	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
 
 	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
 
@@ -280,6 +283,9 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 		procUnregisterHotKey.Call(hwnd, 2)
 		registerHotkey(hwnd)
 		return 0
+	case logoMenuMsg: // D72：Gio 侧检出 logo 右键 → 本线程呈现原生菜单
+		showLogoMenu()
+		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
 		return 0
@@ -288,28 +294,85 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	return r
 }
 
-// showTrayMenu 右键菜单（§15.1：显示/隐藏、置顶开关、功能窗入口（§15.7，随各窗步
-// 启用）+ 退出）。TPM_RETURNCMD：TrackPopupMenu 直接返回命令（不发 WM_COMMAND）。
-func showTrayMenu(hwnd uintptr) {
-	menu, _, _ := procCreatePopupMenu.Call()
-	toggleText, _ := syscall.UTF16PtrFromString("显示 / 隐藏输入窗")
-	topMostText, _ := syscall.UTF16PtrFromString("窗口置顶")
-	settingsText, _ := syscall.UTF16PtrFromString("设置")
-	historyText, _ := syscall.UTF16PtrFromString("会话历史")
-	welcomeText, _ := syscall.UTF16PtrFromString("欢迎 / 首次运行引导")
-	exitText, _ := syscall.UTF16PtrFromString("退出")
-	procAppendMenuW.Call(menu, mfString, cmdToggle, uintptr(unsafe.Pointer(toggleText)))
-	tmf := uintptr(mfString)
-	if topMostQuery() {
-		tmf |= mfChecked // 勾选 = 当前置顶态
+// menuIt 菜单项（托盘/logo 右键菜单共用，D72）；id 0 = 分隔线。
+type menuIt struct {
+	id      uintptr
+	label   string
+	checked bool
+}
+
+// logoMenuItems logo 右键菜单六项（D72，项序/文案为契约、测试锁定）：置顶勾选随
+// topMostQuery（查询类，跨线程直调）。
+func logoMenuItems() []menuIt {
+	return []menuIt{
+		{id: cmdNew, label: "新对话"},
+		{id: cmdHistory, label: "消息历史"},
+		{id: cmdSettings, label: "设置"},
+		{id: cmdTopMost, label: "置顶", checked: topMostQuery()},
+		{id: cmdToggle, label: "隐藏悬浮球"},
+		{}, // 分隔线
+		{id: cmdExit, label: "退出"},
 	}
-	procAppendMenuW.Call(menu, tmf, cmdTopMost, uintptr(unsafe.Pointer(topMostText)))
-	procAppendMenuW.Call(menu, mfSeparator, 0, 0)
-	procAppendMenuW.Call(menu, mfString, cmdSettings, uintptr(unsafe.Pointer(settingsText)))
-	procAppendMenuW.Call(menu, mfString, cmdHistory, uintptr(unsafe.Pointer(historyText)))
-	procAppendMenuW.Call(menu, mfString, cmdWelcome, uintptr(unsafe.Pointer(welcomeText)))
-	procAppendMenuW.Call(menu, mfSeparator, 0, 0)
-	procAppendMenuW.Call(menu, mfString, cmdExit, uintptr(unsafe.Pointer(exitText)))
+}
+
+// postLogoMenu 投递 logo 右键菜单请求到托盘线程（D72：呈现归 shell 线程的独立消息
+// 泵，TrackPopupMenu 不嵌 Gio 泵）。shell 未就绪（启动微窗/headless）= 静默放弃。
+func postLogoMenu() {
+	if h := shellHWND.Load(); h != 0 {
+		procPostMessageW.Call(h, logoMenuMsg, 0, 0)
+	}
+}
+
+// showLogoMenu logo 右键菜单呈现（托盘线程，D72）：六项走共享件，owner = 托盘消息窗
+// （与托盘菜单同款 TPM 收尾）。
+func showLogoMenu() {
+	h := shellHWND.Load()
+	if h == 0 {
+		return
+	}
+	if u := shellUI.Load(); u != nil {
+		menuDispatch(u, runMenu(h, logoMenuItems()))
+	}
+}
+
+// menuDispatch 命令分发（托盘/logo 菜单共用，D72；托盘线程调用——openWin 锁内单
+// 实例、修改性调用经 onWindowThread/post，§15.6 铁律 1）。
+func menuDispatch(u *UI, r uintptr) {
+	switch r {
+	case cmdNew:
+		_ = u.post(inputMsg{text: "/new"}) // 新对话：与键入同路径（parseInput → inCh）
+	case cmdToggle:
+		u.toggleWindow()
+	case cmdTopMost:
+		u.toggleTopMost()
+	case cmdSettings:
+		u.wins.openWin(winSettings) // 单实例防重开（§15.7；注册表线程安全）
+	case cmdHistory:
+		u.wins.openWin(winHistory)
+	case cmdWelcome:
+		u.wins.openWin(winWelcome)
+	case cmdExit:
+		u.exitViaShell()
+	}
+}
+
+// runMenu 共享呈现件（D72）：建单 → 追加项（勾选/分隔，label 现转 UTF-16）→ 光标位
+// TrackPopupMenu（TPM_RETURNCMD 直接返回命令，不发 WM_COMMAND）→ MSDN 收尾 WM_NULL
+// → 销毁。返回 0 = 取消。
+func runMenu(hwnd uintptr, items []menuIt) uintptr {
+	menu, _, _ := procCreatePopupMenu.Call()
+	for _, it := range items {
+		if it.id == 0 {
+			procAppendMenuW.Call(menu, mfSeparator, 0, 0)
+			continue
+		}
+		lab, _ := syscall.UTF16PtrFromString(it.label)
+		f := uintptr(mfString)
+		if it.checked {
+			f |= mfChecked // 勾选 = 当前置顶态
+		}
+		procAppendMenuW.Call(menu, f, it.id, uintptr(unsafe.Pointer(lab)))
+	}
 	var pt point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	procSetForegroundWindow.Call(hwnd)
@@ -317,35 +380,28 @@ func showTrayMenu(hwnd uintptr) {
 		uintptr(pt.x), uintptr(pt.y), 0, hwnd, 0)
 	procPostMessageW.Call(hwnd, wmNull, 0, 0) // MSDN 要求：收尾防菜单不消失
 	procDestroyMenu.Call(menu)
-	switch r {
-	case cmdToggle:
-		if u := shellUI.Load(); u != nil {
-			u.toggleWindow()
-		}
-	case cmdTopMost:
-		if u := shellUI.Load(); u != nil {
-			u.toggleTopMost()
-		}
-	case cmdSettings:
-		if u := shellUI.Load(); u != nil {
-			u.wins.openWin(winSettings) // 单实例防重开（§15.7；注册表线程安全）
-		}
-	case cmdHistory:
-		if u := shellUI.Load(); u != nil {
-			u.wins.openWin(winHistory) // 单实例防重开（§15.7；注册表线程安全）
-		}
-	case cmdWelcome:
-		if u := shellUI.Load(); u != nil {
-			u.wins.openWin(winWelcome)
-		}
-	case cmdExit:
-		if u := shellUI.Load(); u != nil {
-			u.exitViaShell()
-		}
+	return r
+}
+
+// showTrayMenu 托盘右键菜单（§15.1：显示/隐藏、置顶开关、功能窗入口（§15.7，随各窗
+// 步启用）+ 退出）；建单/呈现/分发走共享件（runMenu/menuDispatch，D72）。
+func showTrayMenu(hwnd uintptr) {
+	items := []menuIt{
+		{id: cmdToggle, label: "显示 / 隐藏输入窗"},
+		{id: cmdTopMost, label: "窗口置顶", checked: topMostQuery()},
+		{},
+		{id: cmdSettings, label: "设置"},
+		{id: cmdHistory, label: "会话历史"},
+		{id: cmdWelcome, label: "欢迎 / 首次运行引导"},
+		{},
+		{id: cmdExit, label: "退出"},
+	}
+	if u := shellUI.Load(); u != nil {
+		menuDispatch(u, runMenu(hwnd, items))
 	}
 }
 
-// toggleTopMost 置顶开关（托盘菜单，§15.1）：切换主窗 HWND_TOPMOST、持久化（与位置
+// toggleTopMost 置顶开关（托盘/logo 菜单，§15.1/D72）：切换主窗 HWND_TOPMOST、持久化（与位置
 // 记忆同文件）。D62：单窗单像素层，无 overlay 跟随步。
 func (u *UI) toggleTopMost() {
 	on := !topMostQuery()
@@ -410,7 +466,7 @@ func hideMain(h uintptr) {
 	procShowWindow.Call(h, swHide)
 }
 
-// exitViaShell 托盘菜单退出（§15.1：退出只经菜单）——注销快捷键、清托盘图标、
+// exitViaShell 菜单退出（托盘/logo 右键菜单共用，§15.1/D72：退出只经菜单）——注销快捷键、清托盘图标、
 // 隐藏主窗，**中断进行中轮次**（D64：退出即终止，不等待 Agent 完成——装配根阻塞在
 // Turn 内时 EOF 不可见，先经停止键同款取消通道解卷）再走 EOF 收尾（装配根 Next →
 // io.EOF → Close → 事件循环退出，退出码 0）。
