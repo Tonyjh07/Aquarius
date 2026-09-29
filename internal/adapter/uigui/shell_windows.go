@@ -411,7 +411,9 @@ func hideMain(h uintptr) {
 }
 
 // exitViaShell 托盘菜单退出（§15.1：退出只经菜单）——注销快捷键、清托盘图标、
-// 隐藏主窗，走 EOF 收尾（装配根 Next → io.EOF → Close → 事件循环退出，退出码 0）。
+// 隐藏主窗，**中断进行中轮次**（D64：退出即终止，不等待 Agent 完成——装配根阻塞在
+// Turn 内时 EOF 不可见，先经停止键同款取消通道解卷）再走 EOF 收尾（装配根 Next →
+// io.EOF → Close → 事件循环退出，退出码 0）。
 func (u *UI) exitViaShell() {
 	if h := shellHWND.Load(); h != 0 {
 		procUnregisterHotKey.Call(h, 1)
@@ -422,6 +424,7 @@ func (u *UI) exitViaShell() {
 		onWindowThread(func() { hideMain(h) })
 	}
 	fmt.Println("[tray] 菜单退出")
+	u.interruptNow() // D64：进行中的 Turn 立即取消（无轮进行 = nop，空闲退出不受影响）
 	u.signalEOF(nil)
 }
 

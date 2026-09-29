@@ -951,7 +951,7 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   「显示/隐藏 + 退出」两项，功能窗入口随窗口管理步启用、未落地项置灰）。
 - **托盘常驻生命周期**：关窗（Alt+F4）= **隐藏**——子类化主窗过程吞 `WM_CLOSE`
   （Gio 无关闭拦截 API，`WM_CLOSE` 直落 `DefWindowProc` 即销毁），主窗隐藏即像素层
-  一并消失（D62 后无独立 overlay）；**退出只经托盘菜单**（清托盘图标与快捷键 → EOF 收尾）。主窗**不进任务栏
+  一并消失（D62 后无独立 overlay）；**退出只经托盘菜单**（清托盘图标与快捷键 → **中断进行中轮次**（`interruptNow`，D64——退出即终止，不等待 Agent 完成）→ EOF 收尾）。主窗**不进任务栏
   与 Alt+Tab**（D51：`onHWND` 挂接句柄时一次性经窗口线程置 `WS_EX_TOOLWINDOW`、清
   `WS_EX_APPWINDOW`——托盘/快捷键是唯一入口，任务栏条目与悬浮球形态相斥）。
   托盘 = `Shell_NotifyIconW`（图标**内嵌** `assets/icon/aquarius.ico`，单二进制；
