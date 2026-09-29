@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -27,10 +28,25 @@ const (
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
 // secs 仅思考块使用：>=0 定稿耗时秒数（折叠行"已思考 · Ns"），-1 = 回放无耗时。
+// chip 仅工具块使用（D67）：一次调用合并调用/确认/结果。
 type block struct {
 	kind blockKind
 	text string
 	secs int
+	chip *toolChip
+}
+
+// toolChip 一次工具调用的合并视图（D67/§15.3）：调用 + 权限确认 + 结果同组，
+// 默认折叠、点击展开。args/result 为不可信数据，只渲染（§9），全文不截断。
+type toolChip struct {
+	id       tool.CallID
+	name     string
+	args     string // 原始 JSON 参数
+	confirmQ string // 权限问句（"" = 未触发确认）
+	confirmA string // 应答（"允许"/"拒绝"；空 = 待应答/未触发）
+	done     bool
+	ok       bool
+	result   string // 输出（ok）或错误（!ok）全文
 }
 
 // pendingConfirm 进行中的确认（输入栏确认态，§15.2 非模态按钮组）。
@@ -52,8 +68,9 @@ type model struct {
 	think    strings.Builder // 进行中的思维链（流式实时可见，D42）
 	thinkAt  time.Time       // 首个思考增量时刻（flush → secs 定稿耗时）
 
-	confirm *pendingConfirm
-	usage   conversation.Usage // 节点权威累计（用量详情后补进 logo 菜单，§15.1）
+	confirm     *pendingConfirm
+	confirmChip int                // 确认归属的 chip 块序（D67；-1 = 非 chip 确认，如 /rm）
+	usage       conversation.Usage // 节点权威累计（用量详情后补进 logo 菜单，§15.1）
 }
 
 // newModel 初始状态机。
@@ -87,13 +104,9 @@ func (m *model) handleEvent(ev port.Event) {
 		m.drafting = true
 		m.draft.WriteString(sanitizeControl(e.Delta.Text)) // 模型流为不可信输入（§9）
 	case port.ToolCallEvent:
-		m.add(blockTool, "[tool] "+e.Call.Name+" "+preview(e.Call.Args))
+		m.addToolCall(e.Call)
 	case port.ToolResultEvent:
-		status, detail := "ok", e.Result.Output
-		if !e.Result.OK {
-			status, detail = "failed", e.Result.Err
-		}
-		m.add(blockTool, "[tool "+status+"] "+preview([]byte(detail)))
+		m.attachToolResult(e.Result)
 	case port.CommittedEvent:
 		m.commit(e.Message)
 	case port.HistoryEvent:
@@ -109,7 +122,9 @@ func (m *model) handleEvent(ev port.Event) {
 
 // commit 提交节点定稿：助手（done）以消息文本为准替换草稿；
 // system 节点（/compact 摘要）入块；用量在所有节点上累计（含 system 的压缩摘要）。
+// 未完成 chip 一并收口（取消/异常收尾没有结果事件，D67）。
 func (m *model) commit(msg conversation.Message) {
+	m.closeOpenChips()
 	m.usage = addUsage(m.usage, msg.Usage)
 	text := partsText(msg.Content)
 	switch msg.Role {
@@ -156,7 +171,7 @@ func (m *model) replay(msg conversation.Message) {
 			m.add(blockThinking, tp) // 回放无耗时 → secs 置 -1（add 内统一处理）
 		}
 		for _, call := range msg.ToolCalls {
-			m.add(blockTool, "[tool] "+call.Name+" "+preview(call.Args))
+			m.addToolCall(call) // D67：调用开 chip，结果由后续 tool 节点按 CallID 回填
 		}
 		if strings.TrimSpace(text) == "" {
 			if msg.Outcome != conversation.OutcomeDone {
@@ -173,11 +188,7 @@ func (m *model) replay(msg conversation.Message) {
 		if msg.ToolResult == nil {
 			return
 		}
-		status, detail := "ok", msg.ToolResult.Output
-		if !msg.ToolResult.OK {
-			status, detail = "failed", msg.ToolResult.Err
-		}
-		m.add(blockTool, "[tool "+status+"] "+preview([]byte(detail)))
+		m.attachToolResult(*msg.ToolResult) // D67：按 CallID 并入调用 chip
 	case conversation.RoleSystem:
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
@@ -206,23 +217,113 @@ func (m *model) submit(text string) {
 	}
 }
 
+// addToolCall 新开一个工具调用 chip（D67：调用/确认/结果合并，默认折叠）。
+func (m *model) addToolCall(call tool.Call) {
+	m.blocks = append(m.blocks, block{kind: blockTool, chip: &toolChip{
+		id:   call.ID,
+		name: call.Name,
+		args: sanitizeControl(string(call.Args)),
+	}})
+}
+
+// attachToolResult 按 CallID 回填最新匹配 chip（D67；并行调用交错不错配）；
+// 找不到（历史截断等）则新开结果 chip 兜底。
+func (m *model) attachToolResult(r tool.Result) {
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		c := m.blocks[i].chip
+		if c == nil || c.id != r.CallID {
+			continue
+		}
+		c.done, c.ok = true, r.OK
+		if r.OK {
+			c.result = sanitizeControl(r.Output)
+		} else {
+			c.result = sanitizeControl(r.Err)
+		}
+		return
+	}
+	m.blocks = append(m.blocks, block{kind: blockTool, chip: &toolChip{
+		done:   true,
+		ok:     r.OK,
+		result: sanitizeControl(resultText(r)),
+	}})
+}
+
+// resultText 取结果文本（ok = 输出，!ok = 错误）。
+func resultText(r tool.Result) string {
+	if r.OK {
+		return r.Output
+	}
+	return r.Err
+}
+
+// closeOpenChips 收口所有未完成 chip（commit 时：取消/异常收尾没有结果事件，D67）。
+func (m *model) closeOpenChips() {
+	for i := range m.blocks {
+		if c := m.blocks[i].chip; c != nil && !c.done {
+			c.done = true
+			c.ok = false
+			c.result = "（未返回——本轮已结束）"
+		}
+	}
+}
+
 // startConfirm 打开确认态（Confirm 投递；输入栏切按钮组，§15.2）。
+// 工具权限确认（问句含工具名且最新 chip 未完成）并入该 chip（D67）；
+// 其余（/rm 二次确认等）保持独立文本行。
 func (m *model) startConfirm(prompt string, reply chan bool) {
 	m.confirm = &pendingConfirm{prompt: sanitizeControl(prompt), reply: reply}
+	if i := m.openChipFor(m.confirm.prompt); i >= 0 {
+		m.blocks[i].chip.confirmQ = m.confirm.prompt
+		m.confirmChip = i
+		return
+	}
+	m.confirmChip = -1
 	m.add(blockPlain, m.confirm.prompt+" [y/N]")
 }
 
+// openChipFor 确认问句归属的最新未完成 chip（D67）：问句含其工具名才算（confirmPrompt
+// 格式含 call.Name；/rm 等命令确认不含 → 不并入）。无 chip 或最新 chip 不匹配返回 -1。
+func (m *model) openChipFor(prompt string) int {
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		c := m.blocks[i].chip
+		if c == nil {
+			continue
+		}
+		if !c.done && c.confirmQ == "" && c.name != "" && strings.Contains(prompt, c.name) {
+			return i
+		}
+		return -1
+	}
+	return -1
+}
+
 // replyConfirm 应答进行中的确认（缓冲 1 + default：取消后迟到的应答不阻塞）。
+// chip 确认把问答留痕在 chip 内（D67）；其余保持文本行回显。两条路径都必须把应答
+// 送回 runner（否则权限等待永不解除）。
 func (m *model) replyConfirm(yes bool) {
 	if m.confirm == nil {
 		return
 	}
-	m.add(blockPlain, fmt.Sprintf("%s → %t", m.confirm.prompt, yes))
-	select {
-	case m.confirm.reply <- yes:
-	default:
+	reply, prompt := m.confirm.reply, m.confirm.prompt
+	if m.confirmChip >= 0 && m.confirmChip < len(m.blocks) {
+		if c := m.blocks[m.confirmChip].chip; c != nil && c.confirmQ != "" {
+			c.confirmA = "拒绝"
+			if yes {
+				c.confirmA = "允许"
+			}
+			prompt = "" // chip 路径留痕在展开体，不再加文本行
+		}
 	}
 	m.confirm = nil
+	m.confirmChip = -1
+	if prompt != "" {
+		m.add(blockPlain, fmt.Sprintf("%s → %t", prompt, yes))
+	}
+	select {
+	case reply <- yes:
+	default:
+	}
 }
 
 // flushThink 把进行中的思维链落为定稿思考块（D34/§15.3：定稿带耗时秒数）。
@@ -300,18 +401,6 @@ func addUsage(a, b conversation.Usage) conversation.Usage {
 	a.OutputTokens += b.OutputTokens
 	a.CostUSD += b.CostUSD
 	return a
-}
-
-// preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。
-// 先剥控制序列（与 notify.sanitizeControl 同算法、GUI 出口面一致）。
-func preview(b []byte) string {
-	const toolPreviewLen = 120
-	s := strings.TrimSpace(sanitizeControl(string(b)))
-	r := []rune(s)
-	if len(r) > toolPreviewLen {
-		return string(r[:toolPreviewLen]) + "…"
-	}
-	return s
 }
 
 // sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。

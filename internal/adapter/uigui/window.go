@@ -697,12 +697,15 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, sels func(int) *widget.S
 			)
 		}, cardThinking, cardR, false, false
 	case blockTool:
-		return func(gtx layout.Context) layout.Dimensions {
-			l := material.Caption(u.th, it.text)
-			l.Color = textMuted
-			l.State = sels(0)
-			return l.Layout(gtx)
-		}, cardTool, cardR, false, false
+		if it.chip == nil { // 兜底：无 chip 的工具行（防御，正常路径都有 chip）
+			return func(gtx layout.Context) layout.Dimensions {
+				l := material.Caption(u.th, it.text)
+				l.Color = textMuted
+				l.State = sels(0)
+				return l.Layout(gtx)
+			}, cardTool, cardR, false, false
+		}
+		return u.toolChipRow(it, sels, cardR)
 	case blockNotice:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, it.text)
@@ -786,6 +789,125 @@ func (u *UI) mdBlockWidget(b mdBlock, sel *widget.Selectable) layout.Widget {
 			return s.Layout(gtx)
 		}
 	}
+}
+
+// chipClick 工具 chip 头部点击控件 get-or-create（D67：按块序缓存，块只增不减）。
+func (u *UI) chipClick(i int) *widget.Clickable {
+	for len(u.chipClicks) <= i {
+		u.chipClicks = append(u.chipClicks, new(widget.Clickable))
+	}
+	return u.chipClicks[i]
+}
+
+// chipIsOpen chip 展开态（D67）：用户开合按块序缓存；待确认 chip 强制展开
+// （权限问句不可折叠隐藏），应答后回落用户选择。
+func (u *UI) chipIsOpen(idx int, c *toolChip) bool {
+	if c != nil && c.confirmQ != "" && c.confirmA == "" && u.m.confirm != nil {
+		return true
+	}
+	return u.chipOpen[idx]
+}
+
+// chipHeaderText chip 头部行（D67）：▸/▾ 开合指示 + 🔧 名称 + 参数首行预览 + 状态
+// （… 运行中 / 待确认 / ✓ / ✗）。
+func chipHeaderText(c *toolChip, open bool) string {
+	arrow, status := "▸", "…"
+	if open {
+		arrow = "▾"
+	}
+	if c.done {
+		status = "✓"
+		if !c.ok {
+			status = "✗"
+		}
+	} else if c.confirmQ != "" {
+		status = "待确认"
+	}
+	args := strings.TrimSpace(c.args)
+	if i := strings.IndexByte(args, '\n'); i >= 0 {
+		args = args[:i]
+	}
+	if r := []rune(args); len(r) > 40 {
+		args = string(r[:40]) + "…"
+	}
+	line := "🔧 " + c.name
+	if args != "" {
+		line += " · " + args
+	}
+	return arrow + " " + line + " · " + status
+}
+
+// toolChipRow 工具合并 chip（D67）：头部行可点击折叠/展开；展开体 = 参数（等宽全文）+
+// 权限问答（暗色）+ 结果全文。头部为点击热区不挂行选；参数/结果可选
+// （键位固定 2 = selCount，开合不漂移后续行序号）。
+func (u *UI) toolChipRow(it blockView, sels func(int) *widget.Selectable, cardR int) (layout.Widget, color.NRGBA, int, bool, bool) {
+	c := it.chip
+	cl := u.chipClick(it.chipIdx)
+	expanded := u.chipIsOpen(it.chipIdx, c)
+	header := chipHeaderText(c, expanded)
+	return func(gtx layout.Context) layout.Dimensions {
+		kids := []layout.FlexChild{
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					l := material.Caption(u.th, header)
+					l.Color = textMuted
+					return l.Layout(gtx)
+				})
+			}),
+		}
+		if expanded {
+			add := func(w layout.Widget) {
+				kids = append(kids,
+					layout.Rigid(layout.Spacer{Height: mdBlockGapDp}.Layout),
+					layout.Rigid(w))
+			}
+			if strings.TrimSpace(c.args) != "" {
+				add(func(gtx layout.Context) layout.Dimensions {
+					s := material.Body2(u.th, c.args)
+					s.Font = monoFace
+					s.TextSize = u.th.TextSize * 13.0 / 16.0
+					s.State = sels(0)
+					return s.Layout(gtx)
+				})
+			}
+			if c.confirmQ != "" {
+				qa := c.confirmQ
+				if c.confirmA != "" {
+					qa += " → " + c.confirmA
+				}
+				add(func(gtx layout.Context) layout.Dimensions {
+					l := material.Caption(u.th, qa)
+					l.Color = textDim
+					return l.Layout(gtx)
+				})
+			}
+			switch {
+			case c.done:
+				mark := "结果 ✓"
+				if !c.ok {
+					mark = "结果 ✗"
+				}
+				add(func(gtx layout.Context) layout.Dimensions {
+					l := material.Caption(u.th, mark)
+					l.Color = textDim
+					return l.Layout(gtx)
+				})
+				add(func(gtx layout.Context) layout.Dimensions {
+					s := material.Body2(u.th, c.result)
+					s.Color = textMuted
+					s.State = sels(1)
+					return s.Layout(gtx)
+				})
+			case c.confirmQ == "": // 运行中且无待确认（展开查看时）
+				add(func(gtx layout.Context) layout.Dimensions {
+					l := material.Caption(u.th, "运行中…")
+					l.Color = textDim
+					return l.Layout(gtx)
+				})
+			}
+		}
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, kids...)
+	}, cardTool, cardR, false, false
 }
 
 // statusChip 状态行 chip（§15.1：仅生成时显示"思考中/生成中 · 模型 · 权限档"），
@@ -1120,33 +1242,44 @@ func featherWidth(m unit.Metric, w, h int) int {
 }
 
 // blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块；
-// md = 助手定稿块的 markdown 结构块（D66 复合行），nil = 纯文本行）。
+// md = 助手定稿块的 markdown 结构块（D66 复合行）；chip/chipIdx = 工具合并 chip
+// 及其块序（D67），text 为空）。
 type blockView struct {
-	kind blockKind
-	text string
-	secs int
-	live bool
-	md   []mdBlock
+	kind    blockKind
+	text    string
+	secs    int
+	live    bool
+	md      []mdBlock
+	chip    *toolChip
+	chipIdx int
 }
 
-// selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数，其余行恒 1。
+// selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数；工具 chip = 恒 2
+// （参数/结果——开合切换不漂移后续行序号，D67）；其余行恒 1。
 func (it blockView) selCount() int {
-	if it.kind == blockAssistant && len(it.md) > 0 {
+	switch {
+	case it.kind == blockAssistant && len(it.md) > 0:
 		return len(it.md)
+	case it.kind == blockTool && it.chip != nil:
+		return 2
 	}
 	return 1
 }
 
 // frameItems 定稿块 + 实时思考/草稿（流式可见；对齐 D33"流式原样、定稿渲染"口径）。
-// 助手定稿块 = 单条目携 markdown 结构块（D66 单回复单气泡），live 草稿原样单行。
+// 助手定稿块 = 单条目携 markdown 结构块（D66 单回复单气泡），工具块 = 合并 chip
+// 携块序（D67），live 草稿原样单行。
 func (u *UI) frameItems() []blockView {
 	items := make([]blockView, 0, len(u.m.blocks)+2)
-	for _, b := range u.m.blocks {
-		if b.kind == blockAssistant {
+	for bi, b := range u.m.blocks {
+		switch {
+		case b.kind == blockAssistant:
 			items = append(items, blockView{kind: blockAssistant, md: u.mdBlocks(b.text)})
-			continue
+		case b.kind == blockTool && b.chip != nil:
+			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi})
+		default:
+			items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs})
 		}
-		items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs})
 	}
 	if u.m.think.Len() > 0 {
 		items = append(items, blockView{kind: blockThinking, text: u.m.think.String(), live: true})
@@ -1255,6 +1388,15 @@ func (u *UI) updateClicks(gtx layout.Context) {
 	}
 	if u.denyBtn.Clicked(gtx) {
 		u.m.replyConfirm(false)
+	}
+	// 工具 chip 头部点击 → 折叠/展开（D67；m.blocks 只增，块序即 chipIdx）。
+	for i, b := range u.m.blocks {
+		if b.kind == blockTool && b.chip != nil && u.chipClick(i).Clicked(gtx) {
+			if u.chipOpen == nil {
+				u.chipOpen = map[int]bool{}
+			}
+			u.chipOpen[i] = !u.chipOpen[i]
+		}
 	}
 }
 

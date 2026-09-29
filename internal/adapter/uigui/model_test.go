@@ -27,6 +27,18 @@ func allText(m *model) string {
 	for _, blk := range m.blocks {
 		b.WriteString(blk.text)
 		b.WriteByte('\n')
+		if c := blk.chip; c != nil { // D67：chip 的参数/问答/结果一并纳入消毒与合并断言
+			b.WriteString(c.name)
+			b.WriteByte('\n')
+			b.WriteString(c.args)
+			b.WriteByte('\n')
+			b.WriteString(c.confirmQ)
+			b.WriteByte('\n')
+			b.WriteString(c.confirmA)
+			b.WriteByte('\n')
+			b.WriteString(c.result)
+			b.WriteByte('\n')
+		}
 	}
 	b.WriteString(m.think.String())
 	b.WriteByte('\n')
@@ -182,16 +194,25 @@ func TestEventsAndCommit(t *testing.T) {
 		t.Fatalf("usage 双重累计: %+v", m.usage)
 	}
 
-	m.handleEvent(port.ToolCallEvent{Call: tool.Call{Name: "file_read", Args: []byte(`{"path":"a.txt"}`)}})
-	m.handleEvent(port.ToolResultEvent{Result: tool.Result{OK: true, Output: "内容"}})
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "file_read", Args: []byte(`{"path":"a.txt"}`)}})
+	m.handleEvent(port.ToolResultEvent{Result: tool.Result{CallID: "c1", OK: true, Output: "内容"}})
 	m.handleEvent(port.NoticeEvent{Text: "提示行"})
 	m.handleEvent(port.ErrorEvent{Err: errors.New("boom")})
 	m.commit(conversation.Message{
 		Role:    conversation.RoleSystem,
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "压缩摘要"}},
 	})
+	// D67：调用+结果合并为单个 chip 块（文本行只剩 notice/error/system；前面已有
+	// committed 助手块）。
+	if len(m.blocks) != 5 {
+		t.Fatalf("blocks = %d, want 5: %+v", len(m.blocks), m.blocks)
+	}
+	c := m.blocks[1].chip
+	if c == nil || c.name != "file_read" || !c.done || !c.ok || c.result != "内容" || c.args != `{"path":"a.txt"}` {
+		t.Fatalf("chip = %+v", c)
+	}
 	got := allText(m)
-	for _, want := range []string{"[tool] file_read", "[tool ok]", "[notice] 提示行", "error: boom", "压缩摘要"} {
+	for _, want := range []string{"file_read", "内容", "[notice] 提示行", "error: boom", "压缩摘要"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("缺 %q: %q", want, got)
 		}
@@ -210,7 +231,7 @@ func TestHistoryReplay(t *testing.T) {
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
 		Role:      conversation.RoleAssistant,
 		Outcome:   conversation.OutcomeDone,
-		ToolCalls: []tool.Call{{Name: "echo", Args: []byte(`{"m":"x"}`)}},
+		ToolCalls: []tool.Call{{ID: "c", Name: "echo", Args: []byte(`{"m":"x"}`)}},
 		Content:   []conversation.Part{{Kind: conversation.PartText, Text: "## 结论\n最终答案"}},
 	}})
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
@@ -231,19 +252,23 @@ func TestHistoryReplay(t *testing.T) {
 		Outcome: conversation.OutcomeCancelled,
 	}})
 
-	wantKinds := []blockKind{blockUser, blockTool, blockAssistant, blockTool,
+	// D67：调用与结果按 CallID 合并为单个 chip 块（tool 节点不再独立成块）。
+	wantKinds := []blockKind{blockUser, blockTool, blockAssistant,
 		blockSystem, blockAssistant, blockAssistant}
 	if len(m.blocks) != len(wantKinds) {
-		t.Fatalf("blocks = %d, want %d", len(m.blocks), len(wantKinds))
+		t.Fatalf("blocks = %d, want %d: %+v", len(m.blocks), len(wantKinds), m.blocks)
 	}
 	for i, want := range wantKinds {
 		if m.blocks[i].kind != want {
 			t.Fatalf("blocks[%d].kind = %d, want %d", i, m.blocks[i].kind, want)
 		}
 	}
+	c := m.blocks[1].chip
+	if c == nil || c.name != "echo" || !c.done || !c.ok || c.result != "pong" {
+		t.Fatalf("回放 chip = %+v", c)
+	}
 	for i, want := range []string{
-		"你好", "[tool] echo", "最终答案", "[tool ok] pong",
-		"压缩摘要", "[cancelled]", "[cancelled]",
+		"你好", "", "最终答案", "压缩摘要", "[cancelled]", "[cancelled]",
 	} {
 		if !strings.Contains(m.blocks[i].text, want) {
 			t.Fatalf("blocks[%d].text = %q, 缺 %q", i, m.blocks[i].text, want)

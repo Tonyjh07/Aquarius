@@ -148,6 +148,11 @@ type UI struct {
 	// mdCacheLimit）。仅事件循环 goroutine 读写。
 	mdCache map[string][]mdBlock
 
+	// 工具 chip 视图态（D67）：折叠开合 + 头部点击控件，按块序缓存（块只增不减 →
+	// 序稳定；视图态不进 model，会话重建后复位折叠）。仅事件循环 goroutine 读写。
+	chipOpen   map[int]bool
+	chipClicks []*widget.Clickable
+
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
 	focusPending bool
