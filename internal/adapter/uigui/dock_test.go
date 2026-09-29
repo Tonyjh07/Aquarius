@@ -317,6 +317,32 @@ func TestCollapseAnimKeepsDockArm(t *testing.T) {
 	}
 }
 
+// TestBeginDragBaseFollowsUndock 拖动基点取脱离停靠后的逻辑位（D55/§15.1 实测缺陷
+// 修订）：停靠态按下先 undockInstant 记账、SetWindowPos 帧末才发——此刻 windowRectPx
+// 还是滑出位；按 OS 矩形起基，点击期间 ≥1px 抖动的 moveDrag 会把贴齐位回退成滑出位
+// （离边超 snapDp → 布防/停靠断链）。基点必须 = u.x/u.y（undockInstant 记账后即贴齐位）。
+func TestBeginDragBaseFollowsUndock(t *testing.T) {
+	u := newFrameUI()
+	u.hwnd = 1 // 窗口就绪门控（headless 无真句柄，windowRectPx 恒失败）
+	u.frameSize = image.Pt(760, 575)
+	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	u.collapsed = true
+	u.docked = true
+	u.dockHint.Store(dockLeftInt)
+	u.x, u.y = -56, 628 // 停靠滑出位
+
+	u.undockInstant() // 按下即脱离（帧内只记账：OS 矩形仍旧是滑出位）
+	park := u.x
+	u.beginDrag()
+	if !u.dragging {
+		t.Fatal("窗口就绪应起拖动")
+	}
+	if u.dragWin0.x != park || u.dragWin0.y != u.y {
+		t.Fatalf("拖动基点 = (%d,%d), want 脱离后逻辑位 (%d,%d)",
+			u.dragWin0.x, u.dragWin0.y, park, u.y)
+	}
+}
+
 // TestEndDragClickKeepsPark 抬手纯点击不夹取（D50 实测缺陷修订，§15.1）：「点击脱离
 // 停靠」把窗口落在半出屏贴边位（球锚点越界合法），展开态整窗锚点会把它推离边缘 →
 // 收起后球离边超 snapDp、布防/停靠断链——纯点击必须原位保留；真拖动仍按态夹取。

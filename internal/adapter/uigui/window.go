@@ -1463,11 +1463,14 @@ func (u *UI) updateLogo(gtx layout.Context) {
 	}
 }
 
-// beginDrag 记录拖动基准（按下；窗口未就绪则忽略本次触发）。
-// beginDrag 记录拖动基准（窗口左上角 + 光标位置，铁律 2 绝对跟踪）。
+// beginDrag 记录拖动基准（窗口左上角 + 光标位置，铁律 2 绝对跟踪；按下时窗口未
+// 就绪则忽略本次触发）。基点取逻辑位 u.x/u.y 而非 windowRectPx——停靠态按下先
+// undockInstant 记账（D55，SetWindowPos 帧末才发），此刻 OS 矩形还是滑出位；按旧值
+// 起基，点击期间 ≥1px 抖动的 moveDrag 会把贴齐位回退成滑出位（离边超 snapDp →
+// 布防/停靠断链，§15.1 实测缺陷）。
 func (u *UI) beginDrag() {
-	if rc, ok := windowRectPx(); ok {
-		u.dragWin0 = point{x: rc.left, y: rc.top}
+	if u.hwnd != 0 {
+		u.dragWin0 = point{x: u.x, y: u.y}
 		u.dragCur0 = cursorPos()
 		u.dragging = true
 	}
