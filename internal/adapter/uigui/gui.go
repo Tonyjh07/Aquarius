@@ -12,7 +12,7 @@
 //     结构与 uitui 一致：先取尽排队输入再判 EOF。
 //   - 修改性 Win32 调用一律经 Window.Run 送窗口线程（§15.6 铁律 1）。
 //
-// 平台边界：窗口壳仅 Windows 实测（形裁/定位见 win32_windows.go），其余平台由
+// 平台边界：窗口壳仅 Windows 实测（ULW 像素管线/定位见 win32_windows.go），其余平台由
 // win32_other.go 桩接住构建、GUI 未适配。窗口循环不调 app.Main——Windows 的
 // osMain 仅 select{}（Gio 自建窗口线程），库内调用会卡死装配根。
 package uigui
@@ -114,19 +114,18 @@ type UI struct {
 	dragWin0    point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
 	dragCur0    point // 按下时光标位置（屏幕坐标）
 
-	// D55 帧内屏幕态记账：帧中一律只置 pending，由 commitWinGeom 一拍 flush（形裁 +
-	// 移窗 + alpha 同批经 Window.Run，排在 `e.Frame` 之前——D59）——分散发起会各占一拍。
+	// D55 帧内屏幕态记账：帧中一律只置 pending，由 commitWinGeom 一拍 flush（移窗经
+	// Window.Run）。D62：形裁/alpha 通道退役（随 ULW 位图同拍提交），仅剩移窗。
 	// 仅帧循环 goroutine 读写；启动路径（onHWND/restoreDock）不在帧内，直接调 Win32。
-	movePending  bool // u.x/u.y 已变、SetWindowPos 未发
-	alphaPending bool // u.alpha 已变、LWA_ALPHA 未发
-	// framePhase 帧阶段回执（**仅测试注入**，生产恒 nil）：断言 D55/D58/D59 次序契约——
-	// compose → commit → submit → present（屏幕态先于绘制提交落地、overlay 留在其后）。
+	movePending bool // u.x/u.y 已变、SetWindowPos 未发
+	// framePhase 帧阶段回执（**仅测试注入**，生产恒 nil）：断言 D55–D62 次序契约——
+	// compose → commit → submit → present（全帧合成先行、移窗 flush 在提交前、ULW 殿后）。
 	framePhase func(phase string)
 
 	// D50 停靠（§15.1 停靠隐藏）：alpha/docked/dockArm/dockAn 仅事件循环 goroutine
 	// 读写；dockHint = 「docked 且停靠边」的原子镜像（0=未停靠 1=left 2=right），
 	// 供托盘线程（置顶开关）跨线程读取保存。
-	alpha    byte   // 当前整窗 LWA_ALPHA（semiAlpha ↔ dockAlpha 动画插值；overlay 同帧跟随）
+	alpha    byte   // 当前整窗不透明度（D62：ULW SourceConstantAlpha；semiAlpha ↔ dockAlpha 动画插值）
 	docked   bool   // 停靠态（滑出中/已停：球只剩窄条 + 淡化）
 	dockArm  bool   // 上一帧「停在可停靠边且光标在球上」（曾悬停 = 停靠布防）
 	edgeNow  string // 当帧可停靠边（evalDockFrame 写入，"" = 不可停靠；心跳判据）
@@ -134,7 +133,7 @@ type UI struct {
 	dockAn   dockAnim      // 停靠/召回动画（进度帧分支现算，见 stepAnim）
 	armTick  chan struct{} // 收起/停靠心跳（nil = 未运行；关停 = close，见 armHeartbeat）
 
-	// 转写区手工滚动（D44：不用 widget.List——需要每行绝对矩形做逐元素形裁）。
+	// 转写区手工滚动（D44：不用 widget.List——需要每行绝对矩形登记形状）。
 	transcriptScroll gesture.Scroll
 	scrollPx         int  // 内容滚动偏移（物理 px，0 = 顶）
 	followTail       bool // 尾随贴底（新内容贴输入栏；上滚即停，§15.3）
@@ -143,6 +142,9 @@ type UI struct {
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
 	focusPending bool
+	// caretFocused 编辑器焦点态（真窗 pass 捕获，fade pass 读——D62 caret 自绘：
+	// material.Editor 的 caret 由 gtx.Focused 门控，零值 Source 渲染不画 caret）。
+	caretFocused bool
 
 	// collapsed 收起态（§15.1 单组件：左键 logo 收起回球，仅渲染悬浮球；再单击球
 	// 展开）。仅事件循环 goroutine 读写。
@@ -152,22 +154,20 @@ type UI struct {
 	// expandAn.barP/msgP 插值，静止态由 collapsed 推导（expandProgress）。
 	expandAn expandAnim
 
-	// 形裁与淡出（D44/§15.1、§15.3）。
+	// 形状与全帧合成（D44/D62/§15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
-	physShapes  []shapePhys // 形裁转换缓冲
-	lastShapes  []shapePhys // 已应用的形裁（变化才重建）
 	frameMetric unit.Metric // 当前帧 Metric（headless 同源渲染用）
 	frameSize   image.Point // 当前帧窗口尺寸（物理 px）
 	// bandTop/bandBottom 当前帧淡出带范围 [top, bottom)（D54 消息揭示带）：静息 = 顶带
 	// [0, bandPx)；动画中带顶随 msgP 从转写区底升到 0。layout 每遍写入，两遍同帧同值。
 	bandTop, bandBottom int
-	fade                fadeState // 淡出带 headless 渲染状态
-	fadeBuf             []byte    // 淡出带预乘 BGRA 缓冲
-	// fadeEmpty 本帧效果层为空（带内无内容且无元素）：fadeCompose 写、fadePresent 读
-	//（D55 拆分：合成与上屏分两阶段，"空即隐藏"的判定留在合成阶段）。
+	fade                fadeState // headless 离屏渲染状态（全帧像素源，D62）
+	fadeBuf             []byte    // 整窗预乘 BGRA 缓冲（ULW 位图）
+	// fadeEmpty 本帧位图全透明（无登记元素）：fadeCompose 写（空帧仍提交 ULW 以清除
+	// 上一帧像素——D62 后无独立 overlay 可隐藏）。
 	fadeEmpty bool
-	// inFadePass 淡出源渲染标记：跳过兜底窗口底色——淡出带像素源只含可见元素
-	//（气泡/输入栏），背景保持 headless 清屏的透明 → 带内无消息 = 全透明（D44/§15.3）。
+	// inFadePass 淡出源渲染标记：跳过兜底窗口底色——位图像素只含可见元素
+	//（气泡/输入栏），背景保持 headless 清屏的透明 → 间隙穿透（D44/D62）。
 	inFadePass bool
 
 	// m 渲染状态机：仅事件循环 goroutine 读写；测试经 drainSync 取 happens-before 后读。
@@ -204,7 +204,7 @@ func newUI(opts Options, window bool) *UI {
 	u.editor.Submit = true // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
 	u.followTail = true // 初始尾随贴底（新消息出现在输入栏上方，§15.1）
-	u.alpha = semiAlpha // 整窗 LWA_ALPHA 起点（D50 动画在其上插值）
+	u.alpha = semiAlpha // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）
 	u.wins = newWinHost(nil)
 	u.applyTheme(opts.Theme)       // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
 	u.hotkeyCfg.Store(opts.Hotkey) // 快捷键槽预存（托盘线程 hotkeySetting 读）

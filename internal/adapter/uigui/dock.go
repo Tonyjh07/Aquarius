@@ -343,7 +343,7 @@ func (u *UI) heartbeatNeed() bool {
 }
 
 // armHeartbeat 收起/停靠态心跳（D50 实测修订）：悬停/移开判定 = 帧 + 光标直采，而
-// 形裁窄区上的指针悬停可能零帧（窄条悬停 2s 无一帧 → 召回永不触发、点击必有帧才唤出）。
+// 位图窄条上的指针悬停可能零帧（窄条悬停 2s 无一帧 → 召回永不触发、点击必有帧才唤出）。
 // 故按 heartbeatNeed 以 50ms 主动 Invalidate 唤帧，让悬停召回 / 布防 / 移开停靠按帧
 // 直采跑起来。停靠/召回动画期间另有动画 ticker 唤帧；need 不看动画态：召回收尾帧后
 // 动画 ticker 已停，心跳须能接续。展开态 layout 先清 dockArm 再来本函数 → 天然收敛
@@ -438,10 +438,7 @@ func (u *UI) undockInstant() {
 	u.dockArm = false
 	u.dockHint.Store(dockNoneInt)
 	u.requestMove() // D55：帧内只记账，commitWinGeom 一拍提交
-	if u.alpha != semiAlpha {
-		u.alpha = semiAlpha
-		u.requestAlpha()
-	}
+	u.alpha = semiAlpha
 	if was {
 		fmt.Println("[dock] 脱离停靠")
 		u.savePosRec("")
@@ -515,8 +512,7 @@ func (u *UI) stepAnim() {
 	u.y = int32(lerpInt(int(a.fromPos.y), int(a.toPos.y), p))
 	u.requestMove() // D55：帧内只记账，commitWinGeom 一拍提交
 	if al := byte(lerpInt(int(a.fromAlpha), int(a.toAlpha), p)); al != u.alpha {
-		u.alpha = al
-		u.requestAlpha()
+		u.alpha = al // D62：alpha 随下一帧 ULW 位图同拍提交
 	}
 	if t >= 1 {
 		toDock := a.toDock
@@ -564,8 +560,7 @@ func (u *UI) restoreDock(p posRec, rc rect) bool {
 	slide := dockSlidePos(pos, anchor, work, p.Docked, px(dockSliverDp))
 	moveWindowTo(slide.x, slide.y)
 	u.x, u.y = slide.x, slide.y
-	u.alpha = dockAlpha
-	applyAlpha(dockAlpha)
+	u.alpha = dockAlpha // D62：随首帧 ULW 生效（restoreDock 在首帧前，无需单独下发）
 	u.docked = true
 	u.dockArm = false
 	u.dockHint.Store(edgeCode(p.Docked))

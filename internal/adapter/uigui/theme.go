@@ -17,7 +17,7 @@ import "image/color"
 type palette struct {
 	brandColor     color.NRGBA // 品牌色（logo/发送键/用户气泡底——两版同值，取自 assets/icon）
 	pillBg         color.NRGBA // 输入胶囊/助手气泡/纯文本卡/状态 chip 底
-	windowBg       color.NRGBA // 兜底背景（形裁前/整窗铺底）
+	windowBg       color.NRGBA // 兜底背景（非 Windows 降级形态整窗铺底）
 	textDim        color.NRGBA // 思考块文字
 	textMuted      color.NRGBA // 工具 chip/状态行文字
 	textError      color.NRGBA // 错误文字

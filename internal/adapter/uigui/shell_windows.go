@@ -11,7 +11,7 @@
 // 线程分发）。与窗口侧交接：修改性调用经 onWindowThread（§15.6 铁律 1）；查询类
 // （IsWindowVisible 等）直接调。主窗过程回调与 onWindowThread 闭包同在 Gio 窗口
 // goroutine 上执行（os_windows.go 消息泵 → ProcessEvent → deliverEvent），故
-// hideMain/subClassProc 可直读 ovl 与 shellPrevProc，无竞争。
+// hideMain/subClassProc 同 goroutine，无竞争。
 package uigui
 
 import (
@@ -345,12 +345,11 @@ func showTrayMenu(hwnd uintptr) {
 	}
 }
 
-// toggleTopMost 置顶开关（托盘菜单，§15.1）：切换主窗 HWND_TOPMOST、同步 overlay、
-// 持久化（与位置记忆同文件）。
+// toggleTopMost 置顶开关（托盘菜单，§15.1）：切换主窗 HWND_TOPMOST、持久化（与位置
+// 记忆同文件）。D62：单窗单像素层，无 overlay 跟随步。
 func (u *UI) toggleTopMost() {
 	on := !topMostQuery()
-	platformSetTopMost(on)             // 主窗断言（内部经 onWindowThread，铁律 1）
-	onWindowThread(overlaySyncTopMost) // overlay 跟随（同一窗口线程串行）
+	platformSetTopMost(on) // 主窗断言（内部经 onWindowThread，铁律 1）
 	if u.opts.PosFile != "" {
 		if rc, ok := windowRectPx(); ok { // 查询类：跨线程直接调
 			tm := on
@@ -405,14 +404,10 @@ func (u *UI) showMain() {
 	u.post(showExpandMsg{})
 }
 
-// hideMain 主窗与淡出 overlay 一并隐藏——必须在 Gio 窗口 goroutine 执行
-// （overlay 归属该线程；帧循环隐藏路径与 WM_CLOSE 拦截共用）。
+// hideMain 主窗隐藏（像素层随窗口一并消失，D62 后无独立 overlay）——必须在 Gio
+// 窗口 goroutine 执行（帧循环隐藏路径与 WM_CLOSE 拦截共用）。
 func hideMain(h uintptr) {
 	procShowWindow.Call(h, swHide)
-	if ovl.hwnd != 0 && ovl.visible {
-		procShowWindow.Call(ovl.hwnd, swHide)
-		ovl.visible = false
-	}
 }
 
 // exitViaShell 托盘菜单退出（§15.1：退出只经菜单）——注销快捷键、清托盘图标、

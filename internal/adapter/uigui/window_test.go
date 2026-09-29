@@ -21,87 +21,38 @@ func newShapeUI(pxPerDp float32) *UI {
 	return &UI{frameMetric: m, bandBottom: m.Dp(fadeBandDp)}
 }
 
-// TestRecordStoresOutlineAndClip 形裁登记（D44/D45）：存真轮廓（未按视口/带裁剪——
-// 羽化环沿此取边）+ 可见裁剪区；带内剔除、裁剪后为空、零圆角不登记。
+// TestRecordStoresOutlineAndClip 形状登记（D44/D45/D62）：存真轮廓（未按视口/带裁剪——
+// 羽化沿此取边）+ 可见裁剪区；裁剪后为空、零圆角不登记；带内元素**必须登记**
+// （D62：带渐变只作用于登记形状的像素，取代旧「带整行单绘」）。
 func TestRecordStoresOutlineAndClip(t *testing.T) {
 	u := newShapeUI(1) // Dp(56) = 56px 淡出带
 	viewport := image.Rect(0, 0, 100, 300)
 
-	// ① 完全在淡出带内 → 剔除（overlay 带渐变接管）。
+	// ① 完全在淡出带内 → 登记（揭示带内元素按 g(y) 呈现，D62）。
 	u.record(image.Rect(10, 0, 90, 50), 12, brandColor, viewport)
-	if len(u.shapes) != 0 {
-		t.Fatalf("带内矩形不应登记: %+v", u.shapes)
+	if len(u.shapes) != 1 {
+		t.Fatalf("带内矩形应登记: %+v", u.shapes)
 	}
-	// ② 跨带 → 存**真轮廓**（不裁到带）+ 裁剪区 + 底色（区外由环自行裁剪）。
+	// ② 跨带 → 存**真轮廓**（不裁到带）+ 裁剪区 + 底色（区外由 vis 自行裁剪）。
 	u.record(image.Rect(10, 20, 90, 120), 12, brandColor, viewport)
-	if len(u.shapes) != 1 || u.shapes[0].outline != image.Rect(10, 20, 90, 120) ||
-		u.shapes[0].clip != viewport || u.shapes[0].radius != 12 || u.shapes[0].fill != brandColor {
+	if len(u.shapes) != 2 || u.shapes[1].outline != image.Rect(10, 20, 90, 120) ||
+		u.shapes[1].clip != viewport || u.shapes[1].radius != 12 || u.shapes[1].fill != brandColor {
 		t.Fatalf("跨带矩形应存真轮廓 + 裁剪区 + 底色: %+v", u.shapes)
 	}
 	// ③ 带下、视口内 → 原样登记。
 	u.record(image.Rect(8, 150, 92, 200), 12, brandColor, viewport)
-	if len(u.shapes) != 2 || u.shapes[1].outline != image.Rect(8, 150, 92, 200) {
+	if len(u.shapes) != 3 || u.shapes[2].outline != image.Rect(8, 150, 92, 200) {
 		t.Fatalf("视口内矩形应原样登记: %+v", u.shapes)
 	}
 	// ④ 视口外（滚动到上方）→ 裁空剔除。
 	u.record(image.Rect(8, -60, 92, -10), 12, brandColor, viewport)
-	if len(u.shapes) != 2 {
+	if len(u.shapes) != 3 {
 		t.Fatalf("视口外不应登记: %+v", u.shapes)
 	}
 	// ⑤ 零圆角（如被裁成细条的异常态）→ 剔除。
 	u.record(image.Rect(8, 150, 92, 200), 0, brandColor, viewport)
-	if len(u.shapes) != 2 {
+	if len(u.shapes) != 3 {
 		t.Fatalf("零圆角不应登记: %+v", u.shapes)
-	}
-}
-
-// TestRegionShapesInsetAndCuts 形裁推导（D45–D48/§15.1）：真实边内缩（响应式 featherWidth，
-// 按**真轮廓**短边——跨带元素裁剪后短边会变，按裁剪尺寸算会与渐隐带错位）且圆角同步收窄
-// （同心内缩圆角）；带/视口裁切边不内缩（内缩会露出渐隐不覆盖的洞）；带顶裁切标 sqTop。
-func TestRegionShapesInsetAndCuts(t *testing.T) {
-	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
-	viewport := image.Rect(0, 0, 100, 300)
-	// ① 带下、完全在视口内：四边都是真边 → 全内缩（半径 12-ins）。
-	ins := featherWidth(m, 80, 60)
-	got := regionShapes(nil, []drawShape{
-		{outline: image.Rect(10, 100, 90, 160), clip: viewport, radius: 12},
-	}, 56, m)
-	want := shapePhys{x: int32(10 + ins), y: int32(100 + ins), w: int32(80 - 2*ins), h: int32(60 - 2*ins), ellipse: int32((12 - ins) * 2)}
-	if len(got) != 1 || got[0] != want {
-		t.Fatalf("带下矩形 = %+v, want %+v（ins=%d）", got, want, ins)
-	}
-	// ② 顶边被带裁切：顶边不缩（= 带底），其余内缩，标 sqTop；内缩量仍按**真轮廓** 80×140。
-	ins2 := featherWidth(m, 80, 140)
-	got = regionShapes(nil, []drawShape{
-		{outline: image.Rect(10, 20, 90, 160), clip: viewport, radius: 12},
-	}, 56, m)
-	want = shapePhys{x: int32(10 + ins2), y: 56, w: int32(80 - 2*ins2), h: int32(160 - ins2 - 56), ellipse: int32((12 - ins2) * 2), sqTop: true}
-	if len(got) != 1 || got[0] != want {
-		t.Fatalf("跨带矩形 = %+v, want %+v（ins=%d）", got, want, ins2)
-	}
-	// ③ 底边被视口裁切：底边不缩，其余内缩。
-	ins3 := featherWidth(m, 80, 200)
-	got = regionShapes(nil, []drawShape{
-		{outline: image.Rect(10, 100, 90, 320), clip: viewport, radius: 12},
-	}, 56, m)
-	want = shapePhys{x: int32(10 + ins3), y: int32(100 + ins3), w: int32(80 - 2*ins3), h: int32(300 - (100 + ins3)), ellipse: int32((12 - ins3) * 2)}
-	if len(got) != 1 || got[0] != want {
-		t.Fatalf("视口底裁矩形 = %+v, want %+v（ins=%d）", got, want, ins3)
-	}
-	// ④ 极扁元素：内缩夹到短边 1/3，region 不退化（元素不被整块吃掉）。
-	ins4 := featherWidth(m, 80, 6)
-	got = regionShapes(nil, []drawShape{
-		{outline: image.Rect(10, 100, 90, 106), clip: viewport, radius: 2},
-	}, 56, m)
-	if len(got) != 1 || int(got[0].h) != 6-2*ins4 || int(got[0].y) != 100+ins4 {
-		t.Fatalf("极扁矩形应夹到短边 1/3、region 合法: %+v（ins=%d）", got, ins4)
-	}
-	// ⑤ 视口裁空 → 剔除。
-	got = regionShapes(nil, []drawShape{
-		{outline: image.Rect(10, 400, 90, 460), clip: viewport, radius: 12},
-	}, 56, m)
-	if len(got) != 0 {
-		t.Fatalf("裁剪为空不应输出: %+v", got)
 	}
 }
 
@@ -138,25 +89,6 @@ func TestFeatherWidthResponsive(t *testing.T) {
 	// 大元素落到**Dp 上限**（随 DPI 走，证明是响应式而非固定 px）。
 	if got, want := featherWidth(one, 2000, 2000), one.Dp(featherMaxDp); got != want {
 		t.Fatalf("大元素 featherWidth = %d, want %d（= Dp(featherMaxDp)）", got, want)
-	}
-}
-
-// TestShapesEqual 形裁去重判定：相等才免重建。
-func TestShapesEqual(t *testing.T) {
-	a := []shapePhys{{x: 1, y: 2, w: 3, h: 4, ellipse: 8}}
-	b := []shapePhys{{x: 1, y: 2, w: 3, h: 4, ellipse: 8}}
-	if !shapesEqual(a, b) {
-		t.Fatal("相同应相等")
-	}
-	if shapesEqual(a, nil) {
-		t.Fatal("长度不同不应相等")
-	}
-	b[0].w = 9
-	if shapesEqual(a, b) {
-		t.Fatal("内容不同不应相等")
-	}
-	if !shapesEqual(nil, nil) {
-		t.Fatal("双空应相等")
 	}
 }
 
@@ -212,8 +144,8 @@ func TestInputRowRectsFollowsDesign(t *testing.T) {
 }
 
 // TestOvershootStaysInFrame 过冲几何不越窗（D57）：easeOutBack 峰值处右钮沿 D54 同式
-// 外推越过窗宽（实测 send 右缘 620 > 窗宽 608）→ 按钮被自家窗边切平、同帧形裁被窗界
-// 夹掉一角。整链路（inputBar 插值 → record → regionShapes）断言轮廓与形裁恒在窗内。
+// 外推越过窗宽（实测 send 右缘 620 > 窗宽 608）→ 按钮越出会被位图缓冲边缘切平（D62 后
+// 同旧形裁的窗界裁切观感）。整链路（inputBar 插值 → record）断言轮廓恒在窗内。
 func TestOvershootStaysInFrame(t *testing.T) {
 	u := newFrameUI()
 	u.m.add(blockAssistant, "撑起转写区，让输入行落到正常绝对坐标")
@@ -234,11 +166,6 @@ func TestOvershootStaysInFrame(t *testing.T) {
 	for _, s := range u.shapes {
 		if s.outline.Min.X < 0 || s.outline.Max.X > u.frameSize.X {
 			t.Fatalf("登记轮廓越窗: %v (frame=%v)", s.outline, u.frameSize)
-		}
-	}
-	for _, s := range regionShapes(nil, u.shapes, u.bandBottom, u.frameMetric) {
-		if s.x < 0 || int(s.x+s.w) > u.frameSize.X {
-			t.Fatalf("形裁越窗: x=%d w=%d frame=%v", s.x, s.w, u.frameSize)
 		}
 	}
 }
@@ -288,27 +215,22 @@ func frameGtx(src input.Source) (layout.Context, *op.Ops) {
 	}, ops
 }
 
-// TestFrameCommitBeforeSubmitOverlayAfter D59 次序契约（混合次序）：屏幕态（移窗/LWA_ALPHA/
-// 形裁）在**绘制提交之前**落地，overlay 在其**之后**。依据两类机制的采样点不同——
-// `SetWindowRgn` 的形状到**下一次 Present** 才被 DWM 采样：提前提交 = 随本次 Present 的
-// 内容同拍；排在 `e.Frame` 之后（D58 序）= 慢一帧，实测三件套（胶囊体内黑沙漏、旧 send 形
-// 窗口放行新胶囊白底的同色灰圆盘、内容蓝盘被整块裁掉只剩 overlay 环的空心键）。而
-// `UpdateLayeredWindow` **立即**在下一次合成生效：排在 `e.Frame` 之后 = 与刚拷贝完的内容
-// 同拍；排在之前（D55 序）= 提前于内容上屏，实测黑缝 + 月牙。overlay 是否在 submit 之后，
-// 由末段序 present ∈ 殿后断言。
+// TestFrameCommitBeforeSubmitOverlayAfter D62 次序契约（单通道）：全帧合成先行（唯一
+// 慢段），移窗一拍 flush 在**绘制提交之前**（fadePresent 取实测窗口矩形定位），ULW 提交
+// 殿后。D44–D59 期「形裁/overlay 与 e.Frame 按通道分边」的约束随三通道退役作废（D62）：
+// 位图 alpha 即形状/命中，单通道无亚帧错位，次序仅剩工程约束。
 func TestFrameCommitBeforeSubmitOverlayAfter(t *testing.T) {
 	u := newFrameUI()
-	u.m.add(blockAssistant, "首帧有内容 → 形裁有可提交的并集")
+	u.m.add(blockAssistant, "首帧有内容 → 合成有可提交的位图")
 	var phases []string
 	u.framePhase = func(p string) { phases = append(phases, p) }
-	u.movePending = true  // 帧内已发生位移（拖动 / 停靠动画）
-	u.alphaPending = true // 帧内已发生透明度改动
+	u.movePending = true // 帧内已发生位移（拖动 / 停靠动画）
 
 	gtx, _ := frameGtx(input.Source{})
 	pendingAtSubmit := false
 	u.frame(gtx, func() {
 		phases = append(phases, "submit")
-		pendingAtSubmit = u.movePending || u.alphaPending
+		pendingAtSubmit = u.movePending
 	})
 
 	want := []string{"compose", "commit", "submit", "present"}
@@ -321,13 +243,54 @@ func TestFrameCommitBeforeSubmitOverlayAfter(t *testing.T) {
 		}
 	}
 	if pendingAtSubmit {
-		t.Error("绘制提交时屏幕态仍挂起：commitWinGeom 排到了 e.Frame 之后（退回 D58 序 → 形裁慢一帧）")
+		t.Error("绘制提交时移窗仍挂起：commitWinGeom 排到了 e.Frame 之后（present 定位会失准）")
 	}
-	if u.movePending || u.alphaPending {
-		t.Error("帧结束屏幕态仍挂起：本帧移窗/alpha 未 flush")
+	if u.movePending {
+		t.Error("帧结束移窗仍挂起：本帧位移未 flush")
 	}
 	if u.frameSize == (image.Point{}) {
 		t.Fatal("compose/commit 之前 layout 未跑（frameSize 未定）")
+	}
+}
+
+// TestFadePresentSubmitsBitmap D62：fadePresent 把整窗位图与当前不透明度一并交
+// mainPresent（SourceConstantAlpha = u.alpha）；合成失败（composed=false）不提交，
+// 保持上一帧位图。经 presentMain 槽注入捕获（生产恒 mainPresent）。
+func TestFadePresentSubmitsBitmap(t *testing.T) {
+	u := newFrameUI()
+	u.hwnd = 1 // 非 0 即过门控（windowRectPx 无真句柄 → 回退 u.x/u.y）
+	u.frameSize = image.Pt(100, 80)
+	u.fadeBuf = make([]byte, 100*80*4)
+	u.fadeBuf[3] = 0xFF // 一个非零像素
+	u.x, u.y, u.alpha = 11, 22, 178
+
+	var gotX, gotY, gotW, gotH int32
+	var gotAlpha byte
+	var gotBits []byte
+	calls := 0
+	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+		calls++
+		gotX, gotY, gotW, gotH, gotAlpha, gotBits = x, y, w, h, alpha, bits
+		return true
+	}
+	defer func() { presentMain = mainPresent }()
+
+	u.fadePresent(false)
+	if calls != 0 {
+		t.Fatal("合成失败不应提交（保持上一帧）")
+	}
+	u.fadePresent(true)
+	if calls != 1 {
+		t.Fatalf("应提交一次, got %d", calls)
+	}
+	if gotX != 11 || gotY != 22 || gotW != 100 || gotH != 80 {
+		t.Fatalf("提交矩形 = (%d,%d)+%dx%d, want (11,22)+100x80", gotX, gotY, gotW, gotH)
+	}
+	if gotAlpha != 178 {
+		t.Fatalf("SourceConstantAlpha = %d, want 178（u.alpha 直传）", gotAlpha)
+	}
+	if len(gotBits) != 100*80*4 || gotBits[3] != 0xFF {
+		t.Fatal("位图应为整窗缓冲")
 	}
 }
 

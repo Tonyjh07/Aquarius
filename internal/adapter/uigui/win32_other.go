@@ -1,7 +1,7 @@
 //go:build !windows
 
 // 非 Windows 桩：GUI 窗口壳仅 Windows 实测（§15.6），其余平台可构建、未适配——
-// 形裁/半透明/淡出 overlay 一律 no-op，Win32ViewEvent 不投递（窗口保持普通卡片形态，
+// ULW 像素管线/半透明一律 no-op，Win32ViewEvent 不投递（窗口保持普通卡片形态，
 // 内容照常渲染）。
 package uigui
 
@@ -25,19 +25,13 @@ func platformWorkArea(point) (rect, bool) { return rect{}, false }
 // platformMonitorAt 无显示器拓扑（停靠永不触发）。
 func platformMonitorAt(point) bool { return false }
 
-// applyShapesRegion 形裁未适配。
-func applyShapesRegion([]shapePhys) bool { return false }
+// mainPresent 整窗 ULW 未适配（Gio 常规渲染路径照常显示）。
+func mainPresent(int32, int32, int32, int32, []byte, byte) bool { return false }
 
-// applyAlpha 半透明未适配。
-func applyAlpha(byte) bool { return false }
+// ensureLayeredStyle 非 Windows 无分层窗口概念（Gio 常规渲染）。
+func ensureLayeredStyle(uintptr) {}
 
-// overlayPresent 淡出 overlay 未适配。
-func overlayPresent(int32, int32, int32, int32, []byte, byte) bool { return false }
-
-// overlaySetVisible 淡出 overlay 未适配。
-func overlaySetVisible(bool) {}
-
-// mainVisible 主窗可见性未适配（恒真——非 Windows 无 overlay 路径）。
+// mainVisible 主窗可见性未适配（恒真——非 Windows 无隐藏路径）。
 func mainVisible() bool { return true }
 
 // topMostQuery 非 Windows 无置顶概念（恒真，缺省口径与 Windows 一致）。

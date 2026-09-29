@@ -560,25 +560,26 @@ func TestStepExpandStopsTicker(t *testing.T) {
 	u.stepExpand(time.Now()) // 幂等：无动画直接返回
 }
 
-// TestRecordDynamicBand record 按动态带底剔除（D54）：带底 = 消息揭示带的下沿；
-// 静息（带底 = Dp(fadeBandDp)）与既有口径一致。
+// TestRecordDynamicBand record 不随带底剔除（D62 修订 D54 口径）：带渐变改为全帧合成的
+// 每像素因子 g(y)（fadeFrame），取代旧「带内整行单绘 + record 剔除带内元素」——带内/
+// 跨带元素一律登记，带底动画位不再影响登记。
 func TestRecordDynamicBand(t *testing.T) {
 	u := newShapeUI(1)
 	viewport := image.Rect(0, 0, 100, 300)
 	u.bandBottom = 200 // 动画中：带底已下移到 200
 	u.record(image.Rect(10, 0, 90, 199), 12, brandColor, viewport)
-	if len(u.shapes) != 0 {
-		t.Fatalf("带内矩形不应登记: %+v", u.shapes)
+	if len(u.shapes) != 1 {
+		t.Fatalf("带内矩形应登记（D62：带渐变按像素作用）: %+v", u.shapes)
 	}
 	u.record(image.Rect(10, 0, 90, 201), 12, brandColor, viewport)
-	if len(u.shapes) != 1 {
+	if len(u.shapes) != 2 {
 		t.Fatalf("跨带底矩形应登记: %+v", u.shapes)
 	}
-	// 带底 0 = 空带（带顶也 0，退化位）→ 没有元素落在带内，全部照常登记。
+	// 带底 0 = 静息顶带口径，登记行为一致。
 	u.shapes = u.shapes[:0]
 	u.bandBottom = 0
-	u.record(viewport, 12, brandColor, viewport)
+	u.record(image.Rect(10, 0, 90, 50), 12, brandColor, viewport)
 	if len(u.shapes) != 1 {
-		t.Fatalf("空带时元素不应被剔除: %+v", u.shapes)
+		t.Fatalf("静息带内元素应登记: %+v", u.shapes)
 	}
 }

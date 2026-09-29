@@ -1,10 +1,8 @@
 //go:build windows
 
-// Win32 补位（§15.6 spike 移植 + D44/§15.1、§15.3）：
-//   - 形裁：applyShapesRegion 逐元素圆角矩形并集（无背景"全悬空"，§15.1）
-//   - 统一半透明：applyAlpha（LWA_ALPHA 整窗常量，与形裁正交）
-//   - 淡出带：overlayPresent/overlaySetVisible —— 独立 WS_EX_LAYERED 窗口 +
-//     UpdateLayeredWindow（ULW_ALPHA + AC_SRC_ALPHA 每像素 alpha，D44）
+// Win32 补位（§15.6 spike 移植 + D44/§15.1、§15.3、D62）：
+//   - 整窗 ULW：mainPresent——全帧合成位图直接提主窗（位图 alpha 即形状/命中/穿透，
+//     单通道；形裁 / LWA_ALPHA / overlay 独立窗三机制随 D62 退役）
 //   - 定位/夹取/光标跟踪（位置记忆、拖动，§15.6 铁律 2）
 //
 // 修改性调用一律经 onWindowThread（Window.Run，§15.6 铁律 1）；查询类直接调用。
@@ -26,29 +24,24 @@ var (
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 	gdi32    = syscall.NewLazyDLL("gdi32.dll")
 
-	procGetModuleHandleW      = kernel32.NewProc("GetModuleHandleW")
-	procGetCursorPos          = user32.NewProc("GetCursorPos")
-	procSetWindowPos          = user32.NewProc("SetWindowPos")
-	procGetWindowRect         = user32.NewProc("GetWindowRect")
-	procSetWindowRgn          = user32.NewProc("SetWindowRgn")
-	procCombineRgn            = gdi32.NewProc("CombineRgn") // GDI 函数；声明在 user32 会 panic（LazyProc 找不到入口）
-	procGetWindowLongPtrW     = user32.NewProc("GetWindowLongPtrW")
-	procSetWindowLongPtrW     = user32.NewProc("SetWindowLongPtrW")
-	procSetLayeredWindowAttrs = user32.NewProc("SetLayeredWindowAttributes")
-	procMonitorFromPoint      = user32.NewProc("MonitorFromPoint")
-	procGetMonitorInfoW       = user32.NewProc("GetMonitorInfoW")
-	procRegisterClassW        = user32.NewProc("RegisterClassW")
-	procCreateWindowExW       = user32.NewProc("CreateWindowExW")
-	procDefWindowProcW        = user32.NewProc("DefWindowProcW")
-	procShowWindow            = user32.NewProc("ShowWindow")
-	procUpdateLayeredWindow   = user32.NewProc("UpdateLayeredWindow")
-	procCreateRoundRectRgn    = gdi32.NewProc("CreateRoundRectRgn")
-	procCreateRectRgn         = gdi32.NewProc("CreateRectRgn")
-	procCreateCompatibleDC    = gdi32.NewProc("CreateCompatibleDC")
-	procCreateDIBSection      = gdi32.NewProc("CreateDIBSection")
-	procSelectObject          = gdi32.NewProc("SelectObject")
-	procDeleteObject          = gdi32.NewProc("DeleteObject")
-	procDeleteDC              = gdi32.NewProc("DeleteDC")
+	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
+	procGetCursorPos        = user32.NewProc("GetCursorPos")
+	procSetWindowPos        = user32.NewProc("SetWindowPos")
+	procGetWindowRect       = user32.NewProc("GetWindowRect")
+	procGetWindowLongPtrW   = user32.NewProc("GetWindowLongPtrW")
+	procSetWindowLongPtrW   = user32.NewProc("SetWindowLongPtrW")
+	procMonitorFromPoint    = user32.NewProc("MonitorFromPoint")
+	procGetMonitorInfoW     = user32.NewProc("GetMonitorInfoW")
+	procRegisterClassW      = user32.NewProc("RegisterClassW") // 托盘消息窗口用（shell_windows.go）
+	procCreateWindowExW     = user32.NewProc("CreateWindowExW")
+	procDefWindowProcW      = user32.NewProc("DefWindowProcW")
+	procShowWindow          = user32.NewProc("ShowWindow")
+	procUpdateLayeredWindow = user32.NewProc("UpdateLayeredWindow")
+	procCreateCompatibleDC  = gdi32.NewProc("CreateCompatibleDC")
+	procCreateDIBSection    = gdi32.NewProc("CreateDIBSection")
+	procSelectObject        = gdi32.NewProc("SelectObject")
+	procDeleteObject        = gdi32.NewProc("DeleteObject")
+	procDeleteDC            = gdi32.NewProc("DeleteDC")
 )
 
 // 常量（Win32 头文件取值）。
@@ -61,20 +54,12 @@ const (
 
 	gwlExStyle  = ^uintptr(19) // GWL_EXSTYLE = -20（补码形式过 uintptr 参数）
 	wsExLayered = 0x00080000
-	lwaAlpha    = 0x00000002
-	// 主窗任务栏屏蔽（D51）：TOOLWINDOW 复用下方 overlay 常量，APPWINDOW 须清。
+	// 主窗任务栏屏蔽（D51）：TOOLWINDOW + 清 APPWINDOW。
 	wsExAppWindow = 0x00040000 // 顶层窗强制上任务栏（与 TOOLWINDOW 相斥）
 
-	rgnOr = 2 // CombineRgn 并集（RGN_AND=1 / RGN_OR=2 / RGN_DIFF=4——写成1会取交集得空区域）
-
-	// overlay 窗口（D44 淡出带）。
-	wsExToolWindow  = 0x00000080
-	wsExTopMost     = 0x00000008
-	wsExTransparent = 0x00000020 // layered 窗口：鼠标穿透
-	wsExNoActivate  = 0x08000000
-	wsPopup         = 0x80000000 // WS_POPUP（无符号 32 位值，作 uintptr 传参）
-	swHide          = 0
-	swShowNA        = 8
+	wsExToolWindow = 0x00000080
+	wsExTopMost    = 0x00000008
+	swHide         = 0
 
 	ulwAlpha   = 0x00000002
 	acSrcOver  = 0
@@ -139,7 +124,7 @@ func (u *UI) viewEvent(ev event.Event) (uintptr, bool) {
 	return e.HWND, true
 }
 
-// windowRectPx 取主窗口物理像素矩形（拖动基准与形裁尺寸）。
+// windowRectPx 取主窗口物理像素矩形（拖动基准与 ULW 定位）。
 func windowRectPx() (rect, bool) {
 	h := atomic.LoadUintptr(&mainHWND)
 	if h == 0 {
@@ -190,99 +175,9 @@ func platformMonitorAt(p point) bool {
 	return hmon != 0
 }
 
-// applyShapesRegion 形裁：逐元素圆角矩形并集（§15.1/D44）——元素间隙与窗口边角
-// 完全透明且点击穿透。空集 = 全窗不可见（内容未就绪的兜底，防白色底板闪现）。
-// 成功后系统接管最终 HRGN 所有权；中途失败的句柄自行回收。
-func applyShapesRegion(shapes []shapePhys) bool {
-	hwnd := atomic.LoadUintptr(&mainHWND)
-	if hwnd == 0 {
-		return false
-	}
-	ok := false
-	onWindowThread(func() {
-		var acc uintptr
-		del := func(h uintptr) {
-			if h != 0 {
-				procDeleteObject.Call(h)
-			}
-		}
-		for _, s := range shapes {
-			rr, _, _ := procCreateRoundRectRgn.Call(
-				uintptr(s.x), uintptr(s.y),
-				uintptr(s.x+s.w+1), uintptr(s.y+s.h+1),
-				uintptr(s.ellipse), uintptr(s.ellipse))
-			if rr == 0 {
-				continue
-			}
-			accR := rr
-			if s.sqTop && s.ellipse > 0 {
-				// 被带裁切的顶边：补矩形把上两角填方（§15.3 带/非带衔接——主窗侧
-				// 须平顶续接带内渐变，否则下半截重新圆角）。
-				fill := s.ellipse/2 + 1
-				if fill > s.h {
-					fill = s.h
-				}
-				if sq, _, _ := procCreateRectRgn.Call(
-					uintptr(s.x), uintptr(s.y),
-					uintptr(s.x+s.w), uintptr(s.y+fill)); sq != 0 {
-					if t, _, _ := procCreateRectRgn.Call(0, 0, 0, 0); t != 0 {
-						procCombineRgn.Call(t, accR, sq, rgnOr)
-						del(accR)
-						accR = t
-					}
-					del(sq)
-				}
-			}
-			if acc == 0 {
-				acc = accR
-				continue
-			}
-			// 并集：dst 用独立临时区（规避 CombineRgn 源/目标别名的未定义约束）。
-			tmp, _, _ := procCreateRectRgn.Call(0, 0, 0, 0)
-			if tmp == 0 {
-				del(accR)
-				continue
-			}
-			procCombineRgn.Call(tmp, acc, accR, rgnOr)
-			del(acc)
-			del(accR)
-			acc = tmp
-		}
-		if acc == 0 {
-			acc, _, _ = procCreateRectRgn.Call(0, 0, 0, 0) // 空区域
-		}
-		// SetWindowRgn 成功后系统接管 HRGN 所有权；失败归还调用方回收。
-		if r, _, _ := procSetWindowRgn.Call(hwnd, acc, 1); r == 0 {
-			del(acc)
-			return
-		}
-		ok = true
-	})
-	return ok
-}
-
-// applyAlpha 统一半透明（LWA_ALPHA 整窗常量；与形裁正交，spike 已验证）。
-// 淡出 overlay 是独立窗口走 UpdateLayeredWindow，两者不冲突（MSDN 的
-// "SLWA 后同窗 ULW 失效" 仅约束同一 hwnd）。
-func applyAlpha(alpha byte) bool {
-	h := atomic.LoadUintptr(&mainHWND)
-	if h == 0 {
-		return false
-	}
-	ok := false
-	onWindowThread(func() {
-		ex, _, _ := procGetWindowLongPtrW.Call(h, gwlExStyle)
-		procSetWindowLongPtrW.Call(h, gwlExStyle, ex|wsExLayered)
-		r, _, _ := procSetLayeredWindowAttrs.Call(h, 0, uintptr(alpha), lwaAlpha)
-		ok = r != 0
-	})
-	return ok
-}
-
 // hideFromTaskbar 主窗不进任务栏与 Alt+Tab（D51）：置 WS_EX_TOOLWINDOW、清
-// WS_EX_APPWINDOW——悬浮球托盘常驻、关窗即隐藏，任务栏条目与形态相斥（淡出
-// overlay 天然 TOOLWINDOW，主窗补齐同口径）。onHWND 挂接时一次性设置，经
-// onWindowThread（§15.6 铁律 1）。
+// WS_EX_APPWINDOW——悬浮球托盘常驻、关窗即隐藏，任务栏条目与形态相斥。
+// onHWND 挂接时一次性设置，经 onWindowThread（§15.6 铁律 1）。
 func hideFromTaskbar(h uintptr) {
 	onWindowThread(func() {
 		ex, _, _ := procGetWindowLongPtrW.Call(h, gwlExStyle)
@@ -292,7 +187,7 @@ func hideFromTaskbar(h uintptr) {
 }
 
 // mainVisible 主窗可见性（查询类直接调；无句柄 = 不可见）——fadePresent 兜底：
-// 主窗隐藏时 overlay 不得孤立上屏（hideMain 已藏，防隐藏后仍有帧把它唤回）。
+// 主窗隐藏时不再提交 ULW（hideMain 已藏，防隐藏后仍有帧把位图唤回）。
 func mainVisible() bool {
 	h := atomic.LoadUintptr(&mainHWND)
 	if h == 0 {
@@ -333,64 +228,94 @@ func platformSetTopMost(on bool) {
 	})
 }
 
-// overlayState 淡出带 overlay 窗口（仅窗口线程访问——全部经 onWindowThread）。
-type overlayState struct {
-	hwnd, hdc, hbm uintptr
-	w, h           int32
-	visible        bool
+// mainBits 主窗 ULW 位图状态（仅窗口线程访问——全部经 onWindowThread，D62 单通道）。
+type mainBits struct {
+	hdc, hbm uintptr
+	w, h     int32
 }
 
-var ovl overlayState
+var (
+	mbits    mainBits
+	mbitsPtr unsafe.Pointer // 当前 DIB 像素（窗口线程访问）
 
-// fadePresentLogged overlay 首次提交与失败时记日志（窗口线程访问）。
-var fadePresentLogged bool
+	mainPresentN  int  // 首次/失败日志节流（窗口线程访问）
+	mainULWLayerd bool // WS_EX_LAYERED 已挂（窗口线程访问）
+)
 
-var overlayClassOnce uintptr // RegisterClassW 只做一次
-
-// overlaySyncTopMost 淡出 overlay 与主窗 z 序同步（§15.1），两步：
-//  1. 置顶标志对齐——以主窗**实际**置顶位为准（overlay 不带独立 WS_EX_TOPMOST）。
-//  2. 相邻锚定（恒做）——overlay 紧贴主窗。只对齐标志不够：同带内激活序列会把别的
-//     窗口插到主窗与带之间（实测 bug：切非置顶后带被终端压住/整条消失——主窗被点到
-//     带顶、带留在原地沉在终端下）。每次提交把带拉回主窗身后（主窗区域整带挖空，
-//     带从洞里透出；紧邻侧在上在下均可见）。
-//
-// 仅窗口线程调用（ovl 归属该线程）。
-func overlaySyncTopMost() {
-	main := atomic.LoadUintptr(&mainHWND)
-	if main == 0 || ovl.hwnd == 0 {
-		return
+// ensureMainDIB 分配/复用主窗 DIB（窗口线程内；尺寸变化时重建）。
+func ensureMainDIB(w, h int32) error {
+	if mbits.hdc != 0 && mbits.w == w && mbits.h == h {
+		return nil
 	}
-	want, _, _ := procGetWindowLongPtrW.Call(main, gwlExStyle)
-	have, _, _ := procGetWindowLongPtrW.Call(ovl.hwnd, gwlExStyle)
-	wantOn := want&wsExTopMost != 0
-	if wantOn != (have&wsExTopMost != 0) {
-		procSetWindowPos.Call(ovl.hwnd, topMostHandle(wantOn), 0, 0, 0, 0,
-			swpNoMove|swpNoSize|swpNoActivate)
+	if mbits.hbm != 0 {
+		procDeleteObject.Call(mbits.hbm)
+		procDeleteDC.Call(mbits.hdc)
+		mbits.hbm, mbits.hdc, mbitsPtr = 0, 0, nil
 	}
-	procSetWindowPos.Call(ovl.hwnd, main, 0, 0, 0, 0,
-		swpNoMove|swpNoSize|swpNoActivate)
+	hdc, _, _ := procCreateCompatibleDC.Call(0)
+	if hdc == 0 {
+		return syscall.EINVAL
+	}
+	var bi bitmapInfoHeader
+	bi.biSize = uint32(unsafe.Sizeof(bi))
+	bi.biWidth = w
+	bi.biHeight = -h // 顶向
+	bi.biPlanes = 1
+	bi.biBitCount = 32
+	bi.biCompression = dibRGBColors
+	var bits unsafe.Pointer
+	hbm, _, _ := procCreateDIBSection.Call(0, uintptr(unsafe.Pointer(&bi)),
+		dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
+	if hbm == 0 || bits == nil {
+		procDeleteDC.Call(hdc)
+		return syscall.EINVAL
+	}
+	procSelectObject.Call(hdc, hbm)
+	mbits.hdc, mbits.hbm, mbits.w, mbits.h, mbitsPtr = hdc, hbm, w, h, bits
+	return nil
 }
 
-// overlayPresent 提交淡出带内容：懒创建 overlay 窗口 + 复用 DIB +
-// UpdateLayeredWindow(ULW_ALPHA + AC_SRC_ALPHA)。bits = 预乘 BGRA（顶向、w*h*4）；
-// alpha = SourceConstantAlpha（主窗 LWA_ALPHA 常量，与主窗半透明衔接，D44）。
-// x/y = 屏幕坐标（物理），w/h = 带尺寸（物理）。
-func overlayPresent(x, y, w, h int32, bits []byte, alpha byte) bool {
+// ensureLayeredStyle 主窗挂 WS_EX_LAYERED（onHWND 一次性，D62）：分层窗在首次
+// ULW 前不显示（MSDN）——启动从 Gio ShowWindow 到首帧位图之间不闪白底，首次 ULW
+// 即带内容出现。ULW 接管后 SLWA 同窗互斥，LWA_ALPHA 已随 D62 退役。
+func ensureLayeredStyle(h uintptr) {
+	onWindowThread(func() {
+		mainULWLayerd = applyLayeredStyle(h)
+	})
+}
+
+// applyLayeredStyle 置 WS_EX_LAYERED（幂等）；窗口线程调用。
+func applyLayeredStyle(h uintptr) bool {
+	ex, _, _ := procGetWindowLongPtrW.Call(h, gwlExStyle)
+	if ex&wsExLayered == 0 {
+		procSetWindowLongPtrW.Call(h, gwlExStyle, ex|wsExLayered)
+	}
+	return true
+}
+
+// mainPresent 整窗 ULW 提交（D62 单通道）：全帧合成位图直接写主窗——位图 alpha 即
+// 形状（自带抗锯齿）也即命中（分层窗逐像素命中：alpha=0 穿透到下层窗口），
+// SourceConstantAlpha = 统一半透明（D50 停靠淡化同帧跟随；旧 LWA_ALPHA 退役——
+// 同窗 SLWA 与 ULW 互斥，ULW 接管即生效）。bits = 预乘 BGRA（顶向、w*h*4）；
+// x/y = 屏幕坐标（物理，实测窗口矩形）、w/h = 位图尺寸（物理）。经窗口线程（铁律 1）。
+func mainPresent(x, y, w, h int32, bits []byte, alpha byte) bool {
 	if w <= 0 || h <= 0 || int64(w)*int64(h)*4 != int64(len(bits)) {
 		return false
 	}
 	ok := false
 	onWindowThread(func() {
-		if err := overlayEnsure(x, y, w, h); err != nil {
+		hwnd := atomic.LoadUintptr(&mainHWND)
+		if hwnd == 0 {
 			return
 		}
-		overlaySyncTopMost() // 置顶态与主窗实际态对齐（§15.1：带不离主窗独立悬浮）
-		if ovl.visible == false {
-			procShowWindow.Call(ovl.hwnd, swShowNA)
-			ovl.visible = true
+		if err := ensureMainDIB(w, h); err != nil {
+			return
+		}
+		if !mainULWLayerd {
+			mainULWLayerd = applyLayeredStyle(hwnd) // 兜底：onHWND 未跑到的防御
 		}
 		// 写入 DIB（顶向：bits 直接拷贝）。
-		dst := unsafe.Slice((*byte)(ovlBits()), len(bits))
+		dst := unsafe.Slice((*byte)(mbitsPtr), len(bits))
 		copy(dst, bits)
 		dstPt := point{x: x, y: y}
 		sz := sizeXY{cx: w, cy: h}
@@ -402,100 +327,15 @@ func overlayPresent(x, y, w, h int32, bits []byte, alpha byte) bool {
 			alphaFormat:         acSrcAlpha,
 		}
 		r, _, _ := procUpdateLayeredWindow.Call(
-			ovl.hwnd, 0, // hdcDst：屏幕 DC，可为 NULL（MSDN：指定位置/尺寸时）
+			hwnd, 0, // hdcDst：屏幕 DC，可为 NULL（MSDN：指定位置/尺寸时）
 			uintptr(unsafe.Pointer(&dstPt)), uintptr(unsafe.Pointer(&sz)),
-			ovl.hdc, uintptr(unsafe.Pointer(&srcPt)),
+			mbits.hdc, uintptr(unsafe.Pointer(&srcPt)),
 			0, uintptr(unsafe.Pointer(&bf)), ulwAlpha)
 		ok = r != 0
-		if !fadePresentLogged || !ok {
-			fadePresentLogged = true
-			fmt.Printf("[fade] UpdateLayeredWindow %dx%d@(%d,%d): %v\n", w, h, x, y, ok)
+		mainPresentN++
+		if mainPresentN == 1 || (!ok && mainPresentN <= 8) {
+			fmt.Printf("[ulw] UpdateLayeredWindow %dx%d@(%d,%d): %v\n", w, h, x, y, ok)
 		}
 	})
 	return ok
-}
-
-// overlaySetVisible 隐藏/显示淡出带（带内无内容时隐藏，省合成）。
-func overlaySetVisible(v bool) {
-	onWindowThread(func() {
-		if ovl.hwnd == 0 || ovl.visible == v {
-			return
-		}
-		if v {
-			procShowWindow.Call(ovl.hwnd, swShowNA)
-		} else {
-			procShowWindow.Call(ovl.hwnd, swHide)
-		}
-		ovl.visible = v
-	})
-}
-
-// ovlBits 当前 DIB 的像素指针（无状态查询失败返回 nil——调用方已保证尺寸一致）。
-func ovlBits() unsafe.Pointer { return ovlBitsPtr }
-
-var ovlBitsPtr unsafe.Pointer
-
-// overlayEnsure 创建/复用 overlay 窗口与 DIB（窗口线程内）。
-func overlayEnsure(x, y, w, h int32) error {
-	if ovl.hwnd == 0 {
-		hInst, _, _ := procGetModuleHandleW.Call(0)
-		if overlayClassOnce == 0 {
-			cls, _ := syscall.UTF16PtrFromString("AquariusUiguiFade")
-			var wc wndClassW
-			wc.lpfnWndProc = syscall.NewCallback(overlayWndProc)
-			wc.hInstance = hInst
-			wc.lpszClassName = cls
-			if r, _, _ := procRegisterClassW.Call(uintptr(unsafe.Pointer(&wc))); r == 0 {
-				// 已注册（同进程二次调用）不算错误。
-			}
-			overlayClassOnce = 1
-		}
-		name, _ := syscall.UTF16PtrFromString("AquariusUiguiFade")
-		// 不带 WS_EX_TOPMOST：置顶态由 overlaySyncTopMost 按主窗实际态逐次对齐（§15.1）。
-		hwnd, _, _ := procCreateWindowExW.Call(
-			wsExToolWindow|wsExLayered|wsExTransparent|wsExNoActivate,
-			uintptr(unsafe.Pointer(name)), 0,
-			wsPopup,
-			uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-			0, 0, hInst, 0)
-		if hwnd == 0 {
-			return syscall.EINVAL
-		}
-		ovl.hwnd = hwnd
-		ovl.visible = false
-	}
-	if ovl.w != w || ovl.h != h {
-		if ovl.hbm != 0 {
-			procDeleteObject.Call(ovl.hbm)
-			procDeleteDC.Call(ovl.hdc)
-			ovl.hbm, ovl.hdc = 0, 0
-		}
-		if ovl.hdc == 0 {
-			ovl.hdc, _, _ = procCreateCompatibleDC.Call(0)
-		}
-		var bi bitmapInfoHeader
-		bi.biSize = uint32(unsafe.Sizeof(bi))
-		bi.biWidth = w
-		bi.biHeight = -h // 顶向
-		bi.biPlanes = 1
-		bi.biBitCount = 32
-		bi.biCompression = dibRGBColors
-		var bits unsafe.Pointer
-		hbm, _, _ := procCreateDIBSection.Call(0, uintptr(unsafe.Pointer(&bi)),
-			dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
-		if hbm == 0 || bits == nil {
-			return syscall.EINVAL
-		}
-		procSelectObject.Call(ovl.hdc, hbm)
-		ovl.hbm, ovlBitsPtr = hbm, bits
-		ovl.w, ovl.h = w, h
-	}
-	return nil
-}
-
-// overlayWndProc overlay 无需处理的消息直落 DefWindowProc（窗口线程的
-// Gio 消息泵分发到本过程）。
-func overlayWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
-	r, _, _ := procDefWindowProcW.Call(hwnd, uMsg, wParam, lParam)
-	return r
 }

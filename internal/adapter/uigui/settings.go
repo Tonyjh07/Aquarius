@@ -226,7 +226,7 @@ func (u *UI) setHotkey(hk string) {
 }
 
 // settingsFrame 设置窗单帧：滚动表单（§15.7/D60 核心档数据面）。事件先于渲染取尽
-// （Clicked 自带 Update；点击触发重绘，新值随后续帧呈现）。常规窗不做形裁/羽化
+// （Clicked 自带 Update；点击触发重绘，新值随后续帧呈现）。常规窗不做形状位图/羽化
 // （§15.7 形态）：windowBg 铺底，与主窗内容面同底。
 func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsForm) layout.Dimensions {
 	for f.save.Clicked(gtx) {

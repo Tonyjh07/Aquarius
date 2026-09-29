@@ -52,17 +52,17 @@ const (
 	cardRadiusDp = 8  // 文本行卡圆角
 	statusChipDp = 20 // 状态行 chip 高
 
-	// 边缘羽化（D45–D48/§15.1）：把淡出带那套「region 让位 + overlay 单绘」推广到所有
-	// 边缘——region 沿元素真实边内缩 featherWidth（主窗不画边带），overlay 在让位出的边带
-	// 内沿真轮廓画「内容自身由内向外渐隐」（轮廓处最低、向内升到 1），与顶部淡出带同模型；
-	// **不向外堆光晕**（旧 D45–D47 的向外环在轮廓线 d=0 有折点 →「饱和核心 + 外圈亮带」，
-	// 与带边观感割裂）。**响应式（D47）**：渐隐带宽按元素短边成比例再夹上下限，随元素尺寸/
-	// 窗口缩放/DPI 自适应，不引入固定 px 羽化宽。
-	featherRatio = 0.05 // 渐隐带（region 内缩）宽 = min(宽,高) × 该比例
+	// 边缘羽化（D45–D48/§15.1、D62）：把「内容自身由内向外渐隐」作为每像素 vis 因子
+	// 并入整窗 ULW 位图——核心不透明、边带沿真轮廓 smoothstep 渐隐到轮廓（不向外堆光晕：
+	// 旧 D45–D47 的向外环在轮廓线 d=0 有折点 →「饱和核心 + 外圈亮带」，与带边观感割裂）。
+	// **响应式（D47）**：渐隐带宽按元素短边成比例再夹上下限，随元素尺寸/窗口缩放/DPI
+	// 自适应，不引入固定 px 羽化宽。
+	featherRatio = 0.05 // 渐隐带宽 = min(宽,高) × 该比例
 	featherMinDp = 0    // 渐隐宽下限
 	featherMaxDp = 5    // 渐隐宽上限
 
-	// semiAlpha 统一半透明（LWA_ALPHA 整窗常量；淡出 overlay 同值衔接，D44）。
+	// semiAlpha 统一半透明（D62：ULW SourceConstantAlpha 每帧随位图同拍提交；
+	// D50 停靠淡化在其上插值到 dockAlpha）。
 	semiAlpha byte = 235
 
 	// dragClickSlackPx 拖窗/单击判定阈值（物理 px）：收起态单击球 = 展开，
@@ -75,14 +75,14 @@ const (
 var (
 	brandColor = color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF}
 	pillBg     = color.NRGBA{R: 0xFA, G: 0xFA, B: 0xFC, A: 0xFF} // 输入栏浅白
-	windowBg   = color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF} // 兜底背景（形裁前/未适配平台）
+	windowBg   = color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF} // 兜底背景（非 Windows 降级形态）
 	textDim    = color.NRGBA{R: 0x8A, G: 0x8F, B: 0x98, A: 0xFF}
 	textMuted  = color.NRGBA{R: 0x6B, G: 0x70, B: 0x78, A: 0xFF}
 	textError  = color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF}
 	textNotice = color.NRGBA{R: 0xC0, G: 0x77, B: 0x00, A: 0xFF}
 	textSystem = color.NRGBA{R: 0x8E, G: 0x6B, B: 0xC4, A: 0xFF}
 
-	// 行卡底色（全部实色——形裁下元素外无底板，半透明只能整窗 LWA_ALPHA 叠加）。
+	// 行卡底色（全部实色——位图合成下元素外无底板，半透明只能整窗 SourceConstantAlpha 叠加）。
 	cardThinking = color.NRGBA{R: 0xE9, G: 0xEB, B: 0xF0, A: 0xFF}
 	cardTool     = color.NRGBA{R: 0xE7, G: 0xEA, B: 0xEF, A: 0xFF}
 	cardNotice   = color.NRGBA{R: 0xFD, G: 0xF2, B: 0xDC, A: 0xFF}
@@ -103,20 +103,12 @@ type rect struct{ left, top, right, bottom int32 }
 // drawShape 布局期收集的可见元素：outline = 元素**真实轮廓**（未按视口/淡出带裁剪，
 // 边缘渐隐沿此取边 → 不沿裁切线描边，消除横缝）；clip = 可见裁剪区（转写区视口/整窗，
 // 渐隐只在此区内落笔）；radius = 圆角半径；fill = 元素自身底色（headless 不可用时的兜底
-// 取色——见 writePremulFill）。形裁矩形（applyRegion）与边缘渐隐（fadeFeatherShapes）都由
-// outline/clip/radius/fill 推导（§15.3/D45–D48）。
+// 取色——见 writePremulFill）。全帧合成的 vis 覆盖度（fadeFrame）由此推导（§15.1/D45–D48）。
 type drawShape struct {
 	outline image.Rectangle
 	clip    image.Rectangle
 	radius  int // 圆角半径（px）
 	fill    color.NRGBA
-}
-
-// shapePhys 形裁元素（传 win32 并集）。
-type shapePhys struct {
-	x, y, w, h int32
-	ellipse    int32 // CreateRoundRectRgn 椭圆宽高 = 2×半径
-	sqTop      bool  // 同 drawShape.sqTop：并集构建时上两角填方
 }
 
 // 主窗口句柄与窗口线程入口（win32 补位的两个跨 goroutine 交接点）。
@@ -253,75 +245,62 @@ func (u *UI) runWindow(w *app.Window) {
 	}
 }
 
-// frame 单帧推进与提交（runWindow 帧事件调；抽成方法 = 无窗口可测的次序契约，D55/D58/D59）。
-// 次序固定：两套动画进度 → 两遍 layout（同帧同进度）→ 离屏合成（唯一慢段、不改屏幕态）
-// → **屏幕态一拍提交** → **绘制提交** → overlay 提交。
-// 【§15.6 铁律 3｜D58/D59 修订】Gio `processFrame` 先 ack 本帧、后 `Present(1,0)`（阻塞到下一
-// vblank），ack 之后经 `Window.Run` 排队的移窗/alpha/形裁/ULW 只能等 Present 返回才被窗口
-// 线程服务；而主窗是 bitblt 交换模型——Present 把 back buffer 拷进 redirection surface，
-// DWM 要到**拷贝之后的下一次合成**才渲染它。两类机制的采样点不同，故**按通道分边**（D59）：
-//   - 形裁 `SetWindowRgn`：形状到**下一次 Present** 才被 DWM 采样 → 必须排在 `e.Frame`
-//     **之前**，随本次 Present 的内容落地。排在之后（D58 序）= 慢一帧：旧 region 的
-//     pill/send 形与新内容错开 → 胶囊体两形之间的缝露台布（黑沙漏）、旧 send 形窗口放行
-//     新胶囊白底（同色灰圆盘）、内容的新 send 盘不在旧 region 覆盖内被整块裁掉（发送键
-//     只剩不受形裁约束的 overlay 环 = 空心键）——实测三件套；
-//   - overlay `UpdateLayeredWindow`：**立即**在下一次合成生效 → 必须排在 `e.Frame`
-//     **之后**，与刚拷贝完的内容同拍。排在之前（D55 序）= 提前于内容上屏 → 旧内容 +
-//     新羽化环 = 黑缝 + 月牙（D58 实测形态）；
-//   - 移窗 / `LWA_ALPHA` 与形裁同拍提交（不产生形状-内容错位）。
-//
-// 慢速段错位量 < 羽化宽（1–5px）本就不可见，故伪影只在运动最快的段落露出（实测 ≈8px、2/8 帧）。
+// frame 单帧推进与提交（runWindow 帧事件调；抽成方法 = 无窗口可测的次序契约，D55–D62）。
+// 次序固定：两套动画进度 → 两遍 layout（同帧同进度）→ 全帧合成（唯一慢段、不改屏幕态）
+// → 移窗一拍 flush → 绘制提交（事件路由/帧节奏）→ ULW 上屏。
+// 【§15.6 铁律 3｜D62 单通道】D44–D59 期主窗内容（bitblt swapchain）/ 形裁
+// （SetWindowRgn）/ 效果层（overlay ULW）三通道并存、DWM 采样点各异，最快动画段存在
+// 亚帧通道错位（同一次序不同帧结果不一致 = 窗口线程队列与 Gio ack→Present 的交错竞态，
+// 三轮截图迭代实证非次序可治）。D62 起像素单通道化——形状/效果/透明度全部并入同一张
+// 整窗 ULW 位图，错位结构性不可能；次序仅剩工程约束：
+//   - 全帧合成（离屏重渲 + 预乘）先跑完，不与提交交错；
+//   - 移窗先于 present（fadePresent 取实测窗口矩形定位）；
+//   - `e.Frame` 保留（事件路由 / IME / vblank 帧节奏，其画面被 ULW 位图覆盖）；
+//   - ULW 殿后提交（主窗 HWND，SourceConstantAlpha = u.alpha）。
 func (u *UI) frame(gtx layout.Context, submit func()) {
 	u.stepExpand(time.Now())
 	u.stepAnim() // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
 	u.layout(gtx)
 	u.phase("compose")
-	composed := u.fadeCompose() // 淡出带：headless 同布局重渲 → 渐变/羽化预乘（D44/D48）
+	composed := u.fadeCompose() // 全帧合成：headless 同布局重渲 → av = vis × g(y) × alpha 预乘（D62）
 	u.phase("commit")
-	u.commitWinGeom() // D59：屏幕态在绘制提交**之前**落地——形裁随本次 Present 被采样，与本帧内容同拍
+	u.commitWinGeom() // 移窗一拍 flush（先于 present：定位取实测矩形）
 	submit()
 	u.phase("present")
-	u.fadePresent(composed) // D58/D59：overlay 留在绘制提交**之后**——ULW 立即生效，须与新内容同拍
+	u.fadePresent(composed) // 整窗 ULW 提交（D62：位图 alpha 即形状/命中，单通道无错位）
 }
 
-// phase 帧阶段回执（仅测试注入，生产恒 nil）：断言 D55/D58/D59 次序契约。
+// phase 帧阶段回执（仅测试注入，生产恒 nil）：断言 D55–D62 次序契约。
 func (u *UI) phase(name string) {
 	if u.framePhase != nil {
 		u.framePhase(name)
 	}
 }
 
-// commitWinGeom 一拍提交本帧全部屏幕态（形裁 + 移窗 + 整窗 alpha，均经 Window.Run，
-// §15.6 铁律 1）。D55：帧内改动一律只记账，由这里统一 flush——分散发起会各占一拍、与
-// overlay 提交拍点错开。D59：调用点排在 `e.Frame` **之前**——形裁到下一次 Present 才被
-// 采样，提前提交才与本帧内容同拍。
+// commitWinGeom 一拍提交本帧屏幕态（移窗，经 Window.Run，§15.6 铁律 1）。
+// D55：帧内改动一律只记账，由这里统一 flush——分散发起会各占一拍。D62：形裁/alpha
+// 通道退役（随位图同拍提交），仅剩移窗。
 func (u *UI) commitWinGeom() {
 	if u.movePending {
 		u.movePending = false
 		moveWindowTo(u.x, u.y)
 	}
-	if u.alphaPending {
-		u.alphaPending = false
-		applyAlpha(u.alpha)
-	}
-	u.applyRegion()
 }
 
-// requestMove/requestAlpha 帧内位移/透明度改动记账（D55）：由 commitWinGeom 统一提交。
-// 启动路径（onHWND/restoreDock）不在帧内，直接调用 moveWindowTo/applyAlpha。
+// requestMove 帧内位移改动记账（D55）：由 commitWinGeom 统一提交。
+// 启动路径（onHWND/restoreDock）不在帧内，直接调用 moveWindowTo。
 func (u *UI) requestMove() { u.movePending = true }
 
-func (u *UI) requestAlpha() { u.alphaPending = true }
-
-// onHWND Win32ViewEvent 投递的窗口句柄：统一半透明 + 置顶断言 + 位置记忆恢复
-// （§15.1/D44）。
+// onHWND Win32ViewEvent 投递的窗口句柄：置顶断言 + 位置记忆恢复（§15.1/D44/D62）。
+// 统一半透明不在此下发（D62：首帧 ULW 随 SourceConstantAlpha 生效；分层窗在首次 ULW
+// 前不显示，启动无白闪）。
 func (u *UI) onHWND(h uintptr) {
 	if u.hwnd != 0 {
 		return
 	}
 	u.hwnd = h
 	atomic.StoreUintptr(&mainHWND, h)
-	applyAlpha(u.alpha)    // LWA_ALPHA 整窗常量（与形裁正交，spike 已验证；D50 可为 dockAlpha）
+	ensureLayeredStyle(h)  // 分层窗首次 ULW 前不显示 → 启动无白闪（D62；非 Windows no-op）
 	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
 	hideFromTaskbar(h)     // 不进任务栏与 Alt+Tab（D51；非 Windows 为 no-op 桩）
 	// 置顶断言 + 记忆恢复（§15.1 置顶开关）：缺省置顶、菜单切换态随记忆回来——
@@ -359,14 +338,14 @@ func (u *UI) onHWND(h uintptr) {
 			u.x, u.y = nx, ny
 		}
 	}
-	// 形裁在首帧布局后按元素矩形重建（commitWinGeom → applyRegion，D55）。
-	// 本函数不在帧内，位移/透明度直接下发（帧内的改动一律记账，见 requestMove/requestAlpha）。
+	// 首帧 ULW 在帧循环提交位图后窗口方显示（分层窗首次 ULW 前不显示，D62）。
+	// 本函数不在帧内，位移直接下发（帧内的改动一律记账，见 requestMove）。
 }
 
 // layout 悬浮窗布局：背景（兜底 + 整窗拖动）| 转写区（手工布局 + 滚动）/ 状态行 /
-// 输入栏——自底向上定高，全部绝对坐标登记形裁（§15.1/D44）。
-// 本函数也被 fadeCompose 以零值 Source 二次调用（纯渲染，无事件消费）；形裁不在这里
-// 下发——两遍共用同一提交点，由 commitWinGeom 统一 flush（D55）。
+// 输入栏——自底向上定高，全部绝对坐标登记形状（§15.1/D44/D62）。
+// 本函数也被 fadeCompose 以零值 Source 二次调用（纯渲染，无事件消费）；移窗不在这里
+// 下发——帧内只记账，由 commitWinGeom 统一 flush（D55）。
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	if u.focusPending && !u.collapsed {
 		u.focusPending = false
@@ -418,9 +397,10 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 
 	dims := layout.Stack{Alignment: layout.N}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			// 兜底背景（形裁生效前的首帧、非 Windows 降级形态）+ 整窗拖动区：
-			// 形裁后元素间隙点击穿透，实际能落到这里的把手 = 输入栏空白/状态行。
-			// 淡出源渲染时跳过底色（inFadePass）：headless 清屏透明 = 带内无消息全透明。
+			// 兜底背景（非 Windows 降级形态——Windows 上位图以 alpha 表达间隙，
+			// 淡出源渲染跳过底色）+ 整窗拖动区：间隙穿透后实际能落到这里的把手 =
+			// 输入栏空白/状态行。淡出源渲染时跳过底色（inFadePass）：headless 清屏
+			// 透明 = 无元素处全透明穿透。
 			if !u.inFadePass {
 				paint.Fill(gtx.Ops, windowBg)
 			}
@@ -448,9 +428,9 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 }
 
 // layoutCollapsed 收起态（§15.1 单组件"左键 logo 收起回球"）：只渲染 logo 悬浮球——
-// 球位 = 展开态（无状态行）的 logo 位置（换形不跳动），窗口尺寸不变，球外区域经形裁
-// 透明且点击穿透；拖动把手 = 整窗背景层（事件被形裁收到球上），单击球（位移小于
-// dragClickSlackPx）再展开、移动则拖窗。
+// 球位 = 展开态（无状态行）的 logo 位置（换形不跳动），窗口尺寸不变，球外区域位图
+// alpha=0 透明且点击穿透；拖动把手 = 整窗背景层（事件只能落在球像素上），单击球
+// （位移小于 dragClickSlackPx）再展开、移动则拖窗。
 func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 	if !u.inFadePass {
 		paint.Fill(gtx.Ops, windowBg)
@@ -460,7 +440,7 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 	dst.Pop()
 
 	// 球 = 展开态 logo 圆钮本身（D49 三段式：⌀ = 行高、x = 侧边距、y = 行内 logo 位）
-	// → 换形不跳动；窗口尺寸不变，球外区域形裁透明。D50：ballRect 与停靠锚点同源。
+	// → 换形不跳动；窗口尺寸不变，球外区域位图 alpha=0 透明。D50：ballRect 与停靠锚点同源。
 	r := ballRect(size, gtx.Dp)
 	drawLogo(gtx, r) // §15.2 logo 实装（品牌色圆钮 + 内嵌图标）
 	u.record(r, r.Dx()/2, brandColor, image.Rectangle{Max: u.frameSize})
@@ -503,7 +483,7 @@ func (u *UI) updateScroll(gtx layout.Context, viewH, total int) {
 
 // transcript 转写区：两遍布局（量高 → 滚动定界 → 绘制），**底部锚定**——新消息贴着
 // 输入栏出现（§15.1"提交后在胶囊上方出现"），旧消息上滚进顶部淡出带渐隐（§15.3）；
-// 尾随贴底，用户上滚即停跟随。手工纵排（需要每行绝对矩形做逐元素形裁，D44）。
+// 尾随贴底，用户上滚即停跟随。手工纵排（需要每行绝对矩形登记形状，D44）。
 func (u *UI) transcript(gtx layout.Context, w, h int) {
 	items := u.frameItems()
 	if len(items) == 0 {
@@ -576,7 +556,7 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int) measuredRow {
 	}
 }
 
-// paintRow 绘制底板 + 文本并登记形裁；y 为视口内绝对坐标（可为负）。
+// paintRow 绘制底板 + 文本并登记形状；y 为视口内绝对坐标（可为负）。
 // 返回行总高（px）。
 func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport image.Rectangle) int {
 	x := gtx.Dp(sideMarginDp)
@@ -660,7 +640,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView) (layout.Widget, color.NR
 }
 
 // statusChip 状态行 chip（§15.1：仅生成时显示"思考中/生成中 · 模型 · 权限档"），
-// 右对齐小胶囊（自带底板 → 形裁可见 + 可作拖拽把手）。
+// 右对齐小胶囊（自带底板 → 位图可见 + 可作拖拽把手）。
 func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 	txt := u.statusText()
 	if txt == "" {
@@ -691,7 +671,7 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 // inputBar 输入栏（§15.2 骨架）：logo（拖拽把手）｜编辑器（确认态 = 提示行）｜
 // 发送/停止；确认态整体切换为 [允许/拒绝] 按钮组（非模态）。
 // inputBar 输入行（D49 三段式，§15.2）：[logo ⌀48] 12 [输入胶囊] 12 [send ⌀48]——三段等高
-// 独立成形（各自 record → 形裁/羽化，间隙透明且点击穿透），中间胶囊吃掉全部剩余宽度
+// 独立成形（各自 record → vis/羽化，间隙透明且点击穿透），中间胶囊吃掉全部剩余宽度
 // （响应式：窗口宽变化只伸缩它，字号/圆钮尺寸不随窗口变）。坐标原点 = 输入行段左上，
 // w = 窗口宽（均经 gtx.Dp 换算为物理 px）。D54：绘制顺序 = 胶囊 → 右钮 → logo（动画
 // p=0 时 logo 盖住前两者），几何按展开进度插值。
@@ -745,7 +725,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	gst.Pop()
 	u.record(logo.Add(image.Pt(0, absY)), rowH/2, brandColor, clipRect)
 
-	// 悬浮 tips（§15.1 启动提示 / §15.2 发送·停止键）：独立底板元素随形裁。
+	// 悬浮 tips（§15.1 启动提示 / §15.2 发送·停止键）：独立底板元素随位图。
 	// 显隐 = 事件态 × 光标直采（D53）：分层窗按像素 alpha 命中，光标移到透明像素/
 	// 窗外后零 pointer 事件，Hover 收不到 Leave → 实测移开不消；直采离钮即熄，
 	// tipShown 并入 heartbeatNeed 唤帧复评（D50 心跳底座复用）。动画期抑制（D54）。
@@ -783,11 +763,11 @@ func inputRowRects(w, top, rowH, gap, margin int) (logo, pill, send image.Rectan
 // startupHint 启动提示（装配根对 GUI 不再发 Say 启动行，§15.1）。
 const startupHint = "Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成"
 
-// tipBg 悬浮 tips 底色（实色——形裁下元素必须自带底板）。
+// tipBg 悬浮 tips 底色（实色——位图合成下元素必须自带底板）。
 var tipBg = color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF}
 
 // hoverTip 悬浮提示卡片：画在胶囊上沿之上（输入栏段局部坐标，可为负 → 溢出到
-// 转写区之上，无遮挡裁剪）；自带底板并登记形裁。rightAlign=右对齐到胶囊内边距
+// 转写区之上，无遮挡裁剪）；自带底板并登记形状。rightAlign=右对齐到胶囊内边距
 // （发送键），false=左对齐（logo）。
 func (u *UI) hoverTip(gtx layout.Context, absY int, text string, rightAlign bool) {
 	label := func(gtx layout.Context) layout.Dimensions {
@@ -845,7 +825,11 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 					}
 					ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
 					ed.TextSize = unit.Sp(15)
-					return ed.Layout(gtx)
+					dims := ed.Layout(gtx)
+					if u.inFadePass && u.caretFocused {
+						u.drawCaret(gtx, dims) // D62：fade pass 无 Focused 态，caret 自绘
+					}
+					return dims
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -951,9 +935,9 @@ func drawPaperclip(gtx layout.Context, box image.Rectangle) {
 	paint.FillShape(gtx.Ops, iconDim, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
 }
 
-// record 登记可见元素（D44–D48）：保存真实轮廓 + 可见裁剪区 + 底色，形裁（applyRegion）
-// 与羽化渐隐（fadeFeatherShapes）都由此推导。零半径、裁剪后为空、或完全落在淡出带内
-// （整条由 overlay 带渐变绘制）的元素不登记。
+// record 登记可见元素（D44–D48、D62）：保存真实轮廓 + 可见裁剪区 + 底色，全帧合成的
+// vis 覆盖度（fadeFrame）由此推导。零半径、裁剪后为空的元素不登记；带内元素**必须登记**
+// （D62：带渐变只作用于登记形状的像素——取代旧「带整行单绘」机制）。
 func (u *UI) record(abs image.Rectangle, radius int, fill color.NRGBA, clipRect image.Rectangle) {
 	if radius <= 0 || abs.Empty() {
 		return
@@ -962,16 +946,12 @@ func (u *UI) record(abs image.Rectangle, radius int, fill color.NRGBA, clipRect 
 	if vis.Empty() {
 		return
 	}
-	if vis.Max.Y <= u.bandBottom { // D54：带底可动（消息揭示带），静息即 §15.3 顶带底
-		return
-	}
 	u.shapes = append(u.shapes, drawShape{outline: abs, clip: clipRect, radius: radius, fill: fill})
 }
 
-// featherWidth 元素边缘内容渐隐带的宽（px，D47/D48 响应式）：＝ region 内缩宽 ＝ overlay
-// 渐隐带宽。按元素**短边**成比例，夹到 [Dp(featherMinDp), Dp(featherMaxDp)]，且不超过短边
-// 的 1/3（再大 region 退化、元素整体被吃掉）——元素尺寸/窗口缩放/DPI 变化时自动跟随，
-// 不再用固定 px。纯逻辑，可测。
+// featherWidth 元素边缘渐隐带的宽（px，D47/D48 响应式）：按元素**短边**成比例，
+// 夹到 [Dp(featherMinDp), Dp(featherMaxDp)]，且不超过短边的 1/3（再大元素整体被吃掉）
+// ——元素尺寸/窗口缩放/DPI 变化时自动跟随，不再用固定 px。纯逻辑，可测。
 func featherWidth(m unit.Metric, w, h int) int {
 	short := w
 	if h < short {
@@ -988,101 +968,6 @@ func featherWidth(m unit.Metric, w, h int) int {
 		f = lim
 	}
 	return f
-}
-
-// regionShapes 由可见元素推导形裁并集（纯逻辑，可测，D45–D48/§15.1）：视口裁剪 ∩ 淡出带
-// 裁切 → 沿元素**真实边**内缩（裁切边不缩——内缩会露出羽化渐隐不覆盖的洞），圆角同步收窄
-// （同心内缩圆角）；带顶裁切标 sqTop（并集构建时上两角填方续接带渐变，§15.3）。内缩量按
-// 元素短边响应式（featherWidth，D47/D48）——取**真轮廓**尺寸（与 overlay 渐隐带同源，
-// 跨带元素裁剪后短边会变、按裁剪尺寸算会与渐隐带错位），与渐隐带宽逐像素互补。
-func regionShapes(dst []shapePhys, shapes []drawShape, band int, m unit.Metric) []shapePhys {
-	for _, s := range shapes {
-		r := s.outline.Intersect(s.clip)
-		if r.Empty() {
-			continue
-		}
-		ins := featherWidth(m, s.outline.Dx(), s.outline.Dy())
-		cutTop := r.Min.Y > s.outline.Min.Y
-		cutBottom := r.Max.Y < s.outline.Max.Y
-		cutLeft := r.Min.X > s.outline.Min.X
-		cutRight := r.Max.X < s.outline.Max.X
-		if r.Min.Y < band {
-			r.Min.Y = band
-			cutTop = true
-		}
-		if !cutTop {
-			r.Min.Y += ins
-		}
-		if !cutBottom {
-			r.Max.Y -= ins
-		}
-		if !cutLeft {
-			r.Min.X += ins
-		}
-		if !cutRight {
-			r.Max.X -= ins
-		}
-		if r.Dx() <= 0 || r.Dy() <= 0 {
-			continue
-		}
-		rad := s.radius - ins
-		if rad < 0 {
-			rad = 0
-		}
-		dst = append(dst, shapePhys{
-			x: int32(r.Min.X), y: int32(r.Min.Y),
-			w: int32(r.Dx()), h: int32(r.Dy()),
-			ellipse: int32(rad * 2),
-			sqTop:   cutTop,
-		})
-	}
-	return dst
-}
-
-// applyRegion 形裁并集仅在变化时重建（布局结果稳定 → 多数帧零开销）。
-// 只由 commitWinGeom 调用（D55：两遍 layout 共用同一提交点；D59：排在 `e.Frame` 之前，
-// 随本次 Present 被采样才与本帧内容同拍）。
-// 失败（hwnd 未到/系统调用错误）不写缓存 → 下帧重试，防止首帧竞态把缓存污染成
-// "已应用"导致形裁永久失效。
-func (u *UI) applyRegion() {
-	if atomic.LoadUintptr(&mainHWND) == 0 {
-		return // 窗口句柄未到（onHWND 之前）：不算失败，不刷失败日志，首帧后自然应用
-	}
-	u.physShapes = regionShapes(u.physShapes[:0], u.shapes,
-		u.bandBottom, u.frameMetric)
-	if shapesEqual(u.physShapes, u.lastShapes) {
-		return
-	}
-	if applyShapesRegion(u.physShapes) { // 内部经 onWindowThread（铁律 1）
-		u.lastShapes = append(u.lastShapes[:0], u.physShapes...)
-		if regionLogN < 3 {
-			regionLogN++
-			fmt.Printf("[region] 形裁应用成功 shapes=%d %v（第 %d 次）\n",
-				len(u.physShapes), u.physShapes, regionLogN)
-		}
-		return
-	}
-	if regionFailLogN < 5 {
-		regionFailLogN++
-		fmt.Printf("[region] 形裁应用失败 shapes=%d hwnd=%#x（下帧重试，第 %d 次）\n",
-			len(u.physShapes), atomic.LoadUintptr(&mainHWND), regionFailLogN)
-	}
-}
-
-// 形裁应用日志限次（流式时形状高频变化，只留首几次成功与失败记录）。
-var regionLogN, regionFailLogN int
-
-// shapesEqual 形裁相等判定（纯逻辑，可测）。
-func shapesEqual(a, b []shapePhys) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块）。
@@ -1143,6 +1028,9 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	if u.m.confirm != nil {
 		return // 确认态：输入栏是按钮组，编辑器不消费按键（§15.2）
 	}
+	if !u.inFadePass {
+		u.caretFocused = gtx.Focused(&u.editor) // 真窗 pass 捕获（fade pass 零 Source 恒 false）
+	}
 	gtx.Execute(key.FocusCmd{Tag: &u.editor}) // 常驻焦点（窗口内唯一可聚焦控件）
 	for {
 		evt, ok := u.editor.Update(gtx)
@@ -1153,6 +1041,23 @@ func (u *UI) updateEditor(gtx layout.Context) {
 			u.submitEditor()
 		}
 	}
+}
+
+// drawCaret 淡出源渲染的 caret 自绘（D62）：material.Editor 的 caret 由 gtx.Focused
+// 门控（零值 Source 恒 false，见 editor.layout），fade pass 里编辑器不画 caret——按
+// CaretCoords（相对编辑器原点、y = 基线）补画一根 2px 实心杆，高度按行高近似
+// （CaretInfo 未导出，asc/desc 用 0.8/0.2 行高拆分）。常显不闪：闪烁由真窗 pass 的
+// InvalidateCmd 驱动，fade pass 无事件源、帧率随唤帧走，跟闪会冻在半相位。
+func (u *UI) drawCaret(gtx layout.Context, dims layout.Dimensions) {
+	c := u.editor.CaretCoords()
+	asc := int(float64(dims.Size.Y) * 0.8)
+	rect := image.Rect(int(c.X)-1, int(c.Y)-asc, int(c.X)+1, int(c.Y)+dims.Size.Y-asc)
+	if rect.Empty() {
+		return
+	}
+	cl := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+	paint.Fill(gtx.Ops, u.th.Palette.Fg)
+	cl.Pop()
 }
 
 // submitEditor 提交编辑器内容（发送键与 Enter 同路）；确认态由 model.submit 路由应答。
@@ -1260,7 +1165,7 @@ func (u *UI) moveDrag() {
 	x := u.dragWin0.x + (cur.x - u.dragCur0.x)
 	y := u.dragWin0.y + (cur.y - u.dragCur0.y)
 	u.x, u.y = u.clampPos(x, y)
-	u.requestMove() // D55：commitWinGeom 一拍提交（与形裁/overlay 同拍）
+	u.requestMove() // D55：commitWinGeom 一拍提交（本帧内只记账）
 }
 
 // endDrag 抬起/取消收尾：锚点夹取 + 四边吸附贴齐（D50）+ 持久化位置。
@@ -1281,7 +1186,7 @@ func (u *UI) endDrag() {
 					}
 				}
 			}
-			u.requestMove() // D55：吸附后落位与本帧形裁/overlay 同拍提交
+			u.requestMove() // D55：吸附后落位记账，commitWinGeom 一拍提交
 		}
 		// 抬手（点击/拖动）=「曾悬停」的证据：直接布防（D50 拍板"拖到可停靠区移开也重停"），
 		// 贴边由下一瞬的 evalDockFrame 校验 edge，不贴边/展开态自然清掉。
