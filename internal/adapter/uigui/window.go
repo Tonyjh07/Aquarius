@@ -57,10 +57,11 @@ const (
 	// 并入整窗 ULW 位图——核心不透明、边带沿真轮廓 smoothstep 渐隐到轮廓（不向外堆光晕：
 	// 旧 D45–D47 的向外环在轮廓线 d=0 有折点 →「饱和核心 + 外圈亮带」，与带边观感割裂）。
 	// **响应式（D47）**：渐隐带宽按元素短边成比例再夹上下限，随元素尺寸/窗口缩放/DPI
-	// 自适应，不引入固定 px 羽化宽。
-	featherRatio = 0.05 // 渐隐带宽 = min(宽,高) × 该比例
+	// 自适应，不引入固定 px 羽化宽。D68：ULW 单通道后 A/B 观测（AQUARIUS_NO_FEATHER）
+	// 结论 = 羽化观感仍优于硬切，保留；带宽收细（0.05→0.03、上限 5→3dp）。
+	featherRatio = 0.03 // 渐隐带宽 = min(宽,高) × 该比例
 	featherMinDp = 0    // 渐隐宽下限
-	featherMaxDp = 5    // 渐隐宽上限
+	featherMaxDp = 3    // 渐隐宽上限
 
 	// semiAlpha 统一半透明（D62：ULW SourceConstantAlpha 每帧随位图同拍提交；
 	// D50 停靠淡化在其上插值到 dockAlpha）。

@@ -169,7 +169,8 @@ func TestFadeFeatherDisabled(t *testing.T) {
 	if core := atA(105, 60); core != 0xFF {
 		t.Fatalf("核心 alpha = %d, want 255", core)
 	}
-	if edge := atA(12, 60); edge >= 0xFF {
+	// 采样点取轮廓内 1.5px（fw=3 时 d=-1.5 在渐隐带中段；D68 收细带宽后 12,60 已到带外）
+	if edge := atA(11, 60); edge >= 0xFF {
 		t.Fatalf("默认羽化：边带 alpha = %d, 应 < 255", edge)
 	}
 
@@ -179,7 +180,7 @@ func TestFadeFeatherDisabled(t *testing.T) {
 	if !fadeFrame(src, shapes, 0, 0, m1x(), out2, image.Pt(w, h)) {
 		t.Fatal("应有内容")
 	}
-	if a := out2[(60*w+12)*4+3]; a != 0xFF {
+	if a := out2[(60*w+11)*4+3]; a != 0xFF {
 		t.Fatalf("禁用羽化：边带 alpha = %d, want 255（硬切）", a)
 	}
 	if a := out2[(60*w+105)*4+3]; a != 0xFF {
