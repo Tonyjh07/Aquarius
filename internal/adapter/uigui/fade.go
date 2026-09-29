@@ -10,9 +10,11 @@ package uigui
 // 像素语义 = 预乘线性 + sRGB 存储（此处转为 ULW 所需的字节空间预乘）。
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
+	"os"
 	"time"
 
 	"gioui.org/gpu/headless"
@@ -198,8 +200,19 @@ func rrectSD(px, py, cx, cy, hw, hh, rad float32) float32 {
 }
 
 // featherEdgeMin 轮廓处（d=0）的最低不透明度：0 = 内容在真实轮廓处淡到全透明——渐隐完全
-// 收在形状内，**不向外外扩 1px、不堆光晕**（D48）。要让轮廓处留一点可见度可调大。
+// 在形状内完成（真实轮廓处 alpha = featherEdgeMin = 0）。
 const featherEdgeMin = 0.0
+
+// featherDisabled 羽化对比开关（D62 后评估）：设 AQUARIUS_NO_FEATHER=1 启动即禁用
+// 元素边缘羽化（形状边缘 = SDF 硬切，无渐隐带），用于同一二进制下羽化与否的 A/B
+// 观测；不设 = 羽化照常（生产默认）。启动读一次，运行期不变。
+var featherDisabled = os.Getenv("AQUARIUS_NO_FEATHER") != ""
+
+func init() {
+	if featherDisabled {
+		fmt.Println("[fade] 羽化已禁用（AQUARIUS_NO_FEATHER）——ULW 换壳后羽化收益对比观测")
+	}
+}
 
 // fadeFrame 全帧合成（D62 单通道）：headless 内容 + 元素形状 → 整窗预乘 BGRA，
 // av = vis(形状) × g(y) × 内容alpha 一次写入。
@@ -249,7 +262,7 @@ func fadeFrame(src *image.RGBA, shapes []drawShape, bandTop, bandBottom int,
 		inF := float32(fw) + 0.5
 		d0 := -inF + 1 // 渐隐首像素：alpha=1（与核心连续）
 		span := -d0    // 渐隐跨度
-		feather := fw > 0 && span > 0 && span < 1e6
+		feather := fw > 0 && span > 0 && span < 1e6 && !featherDisabled
 		// 落笔范围 = 真轮廓 ∩ 可见裁剪区 ∩ 缓冲区（渐隐全在形状内，不向轮廓外扩）。
 		x0 := max(r.Min.X, max(clip.Min.X, 0))
 		x1 := min(r.Max.X, min(clip.Max.X, w))

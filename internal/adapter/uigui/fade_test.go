@@ -147,3 +147,45 @@ func TestSRoundtrip(t *testing.T) {
 		t.Fatal("encodeLUTAt 越界钳制失败")
 	}
 }
+
+// TestFadeFeatherDisabled AQUARIUS_NO_FEATHER 对比开关（D62 后评估）：禁用后边带像素
+// 硬切为全量 alpha（vis 恒 1），核心与轮廓裁剪语义不变。
+func TestFadeFeatherDisabled(t *testing.T) {
+	const w, h = 220, 120
+	src := image.NewRGBA(image.Rect(0, 0, w, h))
+	for i := range src.Pix {
+		src.Pix[i] = 0xFF // 全不透明白
+	}
+	shapes := []drawShape{{
+		outline: image.Rect(10, 10, 210, 110),
+		clip:    image.Rect(0, 0, w, h),
+		radius:  8,
+	}}
+	out := make([]byte, w*h*4)
+	if !fadeFrame(src, shapes, 0, 0, m1x(), out, image.Pt(w, h)) {
+		t.Fatal("应有内容")
+	}
+	atA := func(x, y int) byte { return out[(y*w+x)*4+3] }
+	if core := atA(105, 60); core != 0xFF {
+		t.Fatalf("核心 alpha = %d, want 255", core)
+	}
+	if edge := atA(12, 60); edge >= 0xFF {
+		t.Fatalf("默认羽化：边带 alpha = %d, 应 < 255", edge)
+	}
+
+	featherDisabled = true
+	defer func() { featherDisabled = false }()
+	out2 := make([]byte, w*h*4)
+	if !fadeFrame(src, shapes, 0, 0, m1x(), out2, image.Pt(w, h)) {
+		t.Fatal("应有内容")
+	}
+	if a := out2[(60*w+12)*4+3]; a != 0xFF {
+		t.Fatalf("禁用羽化：边带 alpha = %d, want 255（硬切）", a)
+	}
+	if a := out2[(60*w+105)*4+3]; a != 0xFF {
+		t.Fatalf("禁用羽化不应影响核心: %d", a)
+	}
+	if a := out2[(60*w+9)*4+3]; a != 0 {
+		t.Fatalf("轮廓外 alpha = %d, want 0（禁用只去渐隐，不去形状裁剪）", a)
+	}
+}
