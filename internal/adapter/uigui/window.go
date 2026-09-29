@@ -1227,15 +1227,17 @@ func (u *UI) record(abs image.Rectangle, radius int, fill color.NRGBA, clipRect 
 	u.shapes = append(u.shapes, drawShape{outline: abs, clip: clipRect, radius: radius, fill: fill})
 }
 
-// featherWidth 元素边缘渐隐带的宽（px，D47/D48 响应式）：按元素**短边**成比例，
-// 夹到 [Dp(featherMinDp), Dp(featherMaxDp)]，且不超过短边的 1/3（再大元素整体被吃掉）
-// ——元素尺寸/窗口缩放/DPI 变化时自动跟随，不再用固定 px。纯逻辑，可测。
+// featherWidth 元素边缘渐隐带的宽（px，D47/D48 响应式 + D70 全元素统一）：带宽恒取
+// **输入胶囊的带宽** round(Dp(inputRowDp)×featherRatio)——同屏各元素边缘剖面一致（按
+// 元素自身短边算会让气泡/chip/胶囊各得不同带宽）；仍夹到 [Dp(featherMinDp),
+// Dp(featherMaxDp)] 且不超过该元素短边 1/3（极小元素防被整带吃掉）。Dp 换算保证
+// DPI/缩放跟随、不写死 px。纯逻辑，可测。
 func featherWidth(m unit.Metric, w, h int) int {
 	short := w
 	if h < short {
 		short = h
 	}
-	f := int(float64(short)*featherRatio + 0.5)
+	f := int(float64(m.Dp(inputRowDp))*featherRatio + 0.5)
 	if lo := m.Dp(featherMinDp); f < lo {
 		f = lo
 	}

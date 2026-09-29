@@ -31,17 +31,6 @@ func TestRrectSD(t *testing.T) {
 	near(want, got, "右上角对角外点（圆弧）")
 }
 
-// featherTestSide 按**当前羽化参数**反推出能给出 ≥minFW px 渐隐带的最小方形边长——测试
-// 几何跟随参数走（featherRatio/featherMinDp/featherMaxDp 改了测试仍有效），取不到返回 0。
-func featherTestSide(m unit.Metric, minFW int) int {
-	for n := 8; n <= 400; n += 4 {
-		if featherWidth(m, n, n) >= minFW {
-			return n
-		}
-	}
-	return 0
-}
-
 // wantFeatherAlpha 参考实现（与 fadeFrame 独立推导，D48/§15.1/D62）：给定像素中心到
 // 真轮廓的有符号距离 d（外正内负）与羽化宽 fw，按「边带外缘 alpha=1 → 轮廓 featherEdgeMin
 // 的 smoothstep 渐隐」给出期望不透明度系数（0..1）。仅用于边带（-(fw+0.5) < d ≤ 0）。
@@ -63,12 +52,9 @@ func wantFeatherVis(d float64, fw int) float64 {
 // 裁剪区外不写。src=nil 时用元素底色。
 func TestFadeFrameFeatherEdge(t *testing.T) {
 	const bandPx = 16
-	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
-	side := featherTestSide(m, 3)
-	if side == 0 {
-		t.Fatal("当前羽化参数取不到 ≥3px 渐隐带（检查 featherRatio/featherMinDp/featherMaxDp）")
-	}
-	const left, top = 10, 24 // 形状左/上边界；top 在淡出带之下（带内由带渐变按 g(y) 衰减）
+	m := unit.Metric{PxPerDp: 2, PxPerSp: 2} // 2× 下统一带宽（D70）= 3px，剖面可逐像素观测
+	const side = 40                          // 固定几何、r=6 直边段充足——带宽与元素尺寸无关（D70），无需按参数反推边长
+	const left, top = 10, 24                 // 形状左/上边界；top 在淡出带之下（带内由带渐变按 g(y) 衰减）
 	w, h := left+side+40, top+side+20
 	outline := image.Rect(left, top, left+side, top+side)
 	shapes := []drawShape{{
@@ -137,6 +123,40 @@ func TestFadeFrameFeatherEdge(t *testing.T) {
 	// ⑤ 裁剪区外不写（该像素在左渐隐带内、却落在 clip 之外）。
 	if a := al(left, y); a != 0 {
 		t.Fatalf("裁剪区外 (%d,%d) a=%d, want 0", left, y, a)
+	}
+}
+
+// TestFadeFrameFeatherUniformAcrossShapes 羽化带宽全元素统一（D70，用户实测：消息气泡
+// 边缘与输入胶囊边缘羽化不一致）：同一帧内不同高度的形状沿直边的渐隐剖面必须逐像素
+// 一致——高气泡（短边大）此前带宽封顶、胶囊（48dp 短边）只有其一半左右。修前本测试红。
+func TestFadeFrameFeatherUniformAcrossShapes(t *testing.T) {
+	const w, h = 460, 400
+	m := unit.Metric{PxPerDp: 2, PxPerSp: 2} // 2× 下胶囊带宽 = 3px，剖面逐像素可分辨
+	shapes := []drawShape{
+		// 高气泡 300×150px（复现多行复合气泡的短边量级）。
+		{outline: image.Rect(20, 60, 320, 210), clip: image.Rect(0, 0, w, h), radius: 24,
+			fill: color.NRGBA{R: 0xFF, A: 0xFF}},
+		// 输入胶囊 400×96px（= 48dp@2×，r = h/2 全圆）。
+		{outline: image.Rect(20, 240, 420, 336), clip: image.Rect(0, 0, w, h), radius: 48,
+			fill: color.NRGBA{R: 0xFF, A: 0xFF}},
+	}
+	out := make([]byte, w*h*4)
+	if !fadeFrame(nil, shapes, 0, 0, m, out, image.Pt(w, h)) {
+		t.Fatal("应写入形状像素")
+	}
+	px := func(x, y int) byte { return out[(y*w+x)*4+3] }
+	// 直边段内取同一列（气泡底边直段 x∈[44,296]、胶囊 x∈[68,372] 的交集），
+	// 自轮廓向内比对渐隐剖面。
+	const x = 200
+	for k := 0; k < 8; k++ {
+		if a, b := px(x, 210-1-k), px(x, 336-1-k); a != b {
+			t.Fatalf("轮廓内第 %d 像素羽化剖面应一致（D70 统一带宽）：气泡 a=%d, 胶囊 b=%d",
+				k+1, a, b)
+		}
+	}
+	// 剖面确实在渐隐（防两边恒 255 的假一致）：轮廓内首像素明显低于核心 255。
+	if a := px(x, 210-1); a >= 200 {
+		t.Fatalf("轮廓内首像素应明显渐隐: a=%d", a)
 	}
 }
 

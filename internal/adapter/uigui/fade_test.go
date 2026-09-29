@@ -153,6 +153,7 @@ func TestSRoundtrip(t *testing.T) {
 // 硬切为全量 alpha（vis 恒 1），核心与轮廓裁剪语义不变。
 func TestFadeFeatherDisabled(t *testing.T) {
 	const w, h = 220, 120
+	m := unit.Metric{PxPerDp: 2, PxPerSp: 2} // 2× 下统一带宽（D70）= 3px，边带才有可观测的渐隐中段
 	src := image.NewRGBA(image.Rect(0, 0, w, h))
 	for i := range src.Pix {
 		src.Pix[i] = 0xFF // 全不透明白
@@ -163,14 +164,14 @@ func TestFadeFeatherDisabled(t *testing.T) {
 		radius:  8,
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(src, shapes, 0, 0, m1x(), out, image.Pt(w, h)) {
+	if !fadeFrame(src, shapes, 0, 0, m, out, image.Pt(w, h)) {
 		t.Fatal("应有内容")
 	}
 	atA := func(x, y int) byte { return out[(y*w+x)*4+3] }
 	if core := atA(105, 60); core != 0xFF {
 		t.Fatalf("核心 alpha = %d, want 255", core)
 	}
-	// 采样点取轮廓内 1.5px（fw=3 时 d=-1.5 在渐隐带中段；D68 收细带宽后 12,60 已到带外）
+	// 采样点取轮廓内 1.5px（fw=3 时 d=-1.5 在渐隐带中段）。
 	if edge := atA(11, 60); edge >= 0xFF {
 		t.Fatalf("默认羽化：边带 alpha = %d, 应 < 255", edge)
 	}
@@ -178,7 +179,7 @@ func TestFadeFeatherDisabled(t *testing.T) {
 	featherDisabled = true
 	defer func() { featherDisabled = false }()
 	out2 := make([]byte, w*h*4)
-	if !fadeFrame(src, shapes, 0, 0, m1x(), out2, image.Pt(w, h)) {
+	if !fadeFrame(src, shapes, 0, 0, m, out2, image.Pt(w, h)) {
 		t.Fatal("应有内容")
 	}
 	if a := out2[(60*w+11)*4+3]; a != 0xFF {

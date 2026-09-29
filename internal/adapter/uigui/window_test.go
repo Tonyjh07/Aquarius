@@ -57,9 +57,10 @@ func TestRecordStoresOutlineAndClip(t *testing.T) {
 	}
 }
 
-// TestFeatherWidthResponsive 渐隐带宽响应式（D47/D48）：受 [Dp(featherMinDp), Dp(featherMaxDp)]
-// 与短边 1/3（防 region 退化）约束，且**随 DPI 同步放大**——随元素尺寸/窗口缩放/DPI 自动
-// 跟随，不写死 px。断言写成"由常量推导的界"，改羽化宽参数时测试不需重写。
+// TestFeatherWidthResponsive 渐隐带宽响应式（D47/D48/D70）：受 [Dp(featherMinDp),
+// Dp(featherMaxDp)] 与短边 1/3（防极小元素被整带吃掉）约束，且**随 DPI 同步放大**——
+// Dp 换算保证不写死 px。D70 起带宽按输入胶囊统一、不再随元素尺寸变（统一性由
+// TestFeatherWidthUnifiedToInputCapsule 断言）。断言写成"由常量推导的界"，改参数不需重写。
 func TestFeatherWidthResponsive(t *testing.T) {
 	one := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	two := unit.Metric{PxPerDp: 2, PxPerSp: 2}
@@ -87,9 +88,33 @@ func TestFeatherWidthResponsive(t *testing.T) {
 				2*w, 2*h, f2, featherMaxDp, two.Dp(featherMaxDp), 2*short/3)
 		}
 	}
-	// 大元素落到**Dp 上限**（随 DPI 走，证明是响应式而非固定 px）。
-	if got, want := featherWidth(one, 2000, 2000), one.Dp(featherMaxDp); got != want {
-		t.Fatalf("大元素 featherWidth = %d, want %d（= Dp(featherMaxDp)）", got, want)
+	// 带宽随 DPI 同步放大（Dp 换算 → 非固定 px；D70 后元素尺寸不再影响带宽）。
+	f1, f2 := featherWidth(one, 2000, 2000), featherWidth(two, 4000, 4000)
+	if f2 <= f1 {
+		t.Fatalf("DPI 响应：2× 大元素 featherWidth=%d 应 > 1× 的 %d", f2, f1)
+	}
+}
+
+// TestFeatherWidthUnifiedToInputCapsule 羽化带宽全元素统一（D70，用户实测：消息气泡
+// 边缘与输入胶囊边缘羽化不一致）：带宽恒 = 输入胶囊的带宽 round(Dp(inputRowDp)×ratio)，
+// 不随元素自身短边变化——多行气泡（短边大）此前封顶 3dp、chip（短边小）不足 1dp，
+// 与胶囊各得不同带宽。修前本测试红（气泡/球≠胶囊值）。
+func TestFeatherWidthUnifiedToInputCapsule(t *testing.T) {
+	// 单行气泡 / 多行气泡 / 输入胶囊 / chip / 球（dp 尺寸）。
+	sizes := [][2]int{{200, 34}, {300, 150}, {456, 48}, {80, 20}, {60, 60}}
+	for _, m := range []unit.Metric{
+		{PxPerDp: 1, PxPerSp: 1},
+		{PxPerDp: 1.5, PxPerSp: 1.5},
+		{PxPerDp: 2, PxPerSp: 2},
+	} {
+		ref := int(float64(m.Dp(inputRowDp))*featherRatio + 0.5)
+		for _, c := range sizes {
+			w, h := m.Dp(unit.Dp(c[0])), m.Dp(unit.Dp(c[1]))
+			if got := featherWidth(m, w, h); got != ref {
+				t.Errorf("featherWidth(%g, %d, %d) = %d, want %d（= 输入胶囊带宽，D70 统一）",
+					m.PxPerDp, w, h, got, ref)
+			}
+		}
 	}
 }
 
