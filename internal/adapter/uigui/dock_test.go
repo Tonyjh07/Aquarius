@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"gioui.org/io/input"
 	"gioui.org/unit"
 )
 
@@ -283,6 +284,36 @@ func TestOverInputBtn(t *testing.T) {
 	u.frameMetric = unit.Metric{}
 	if u.overInputBtn(false, mid(logo)) {
 		t.Fatal("frameMetric 未就绪不应命中")
+	}
+}
+
+// TestCollapseAnimKeepsDockArm 收起动画保留抬手布防（D50 实测缺陷修订，§15.1）：
+// endDrag 抬手即布防（「曾悬停」的证据），而收起动画 320+220ms 内 evalDockFrame 被
+// 抑制——若 layout 连布防一起清，动画结束首帧重新布防又要求光标在球上、此刻光标通常
+// 已移开 → 不悬停就永不停靠（收回后不自动吸附/停靠的实测缺陷）。展开方向仍须清
+// （展开态不可停靠，default 分支同口径）。
+func TestCollapseAnimKeepsDockArm(t *testing.T) {
+	// ① 收起动画（beginCollapse 同序：先起动画再翻态）：抬手布防证据保留。
+	u := newFrameUI()
+	u.dockArm = true
+	u.startExpandAnim(false)
+	u.collapsed = true
+	gtx, _ := frameGtx(input.Source{})
+	u.layout(gtx)
+	if !u.dockArm {
+		t.Fatal("收起动画不应清抬手布防（动画结束的 evalDockFrame 靠它停靠）")
+	}
+
+	// ② 展开动画（beginExpand 同序）：清布防——展开态不可停靠。
+	u2 := newFrameUI()
+	u2.dockArm = true
+	u2.collapsed = true
+	u2.startExpandAnim(true)
+	u2.collapsed = false
+	gtx2, _ := frameGtx(input.Source{})
+	u2.layout(gtx2)
+	if u2.dockArm {
+		t.Fatal("展开动画应清布防")
 	}
 }
 

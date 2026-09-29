@@ -410,7 +410,13 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.updateLogo(gtx)
 	switch {
 	case u.expandAn.active:
-		u.dockArm = false // D54：动画期间不做停靠评估（球位在动，布防无意义）
+		// D54：动画期间不做停靠评估（球位在动）。布防只在**展开方向**清；收起方向
+		// 保留 endDrag 抬手时的布防证据（「曾悬停」，§15.1）——收起动画 540ms 内
+		// 光标通常已移开，清掉则动画结束首帧重新布防要求光标在球上 → 不悬停就
+		// 永不停靠（收回后不自动吸附/停靠的实测缺陷）。
+		if u.expandAn.expand {
+			u.dockArm = false
+		}
 	case u.collapsed || u.docked:
 		u.evalDockFrame() // D50：收起/停靠态逐帧评估停靠（光标直采，layout 前置状态已更新）
 	default:
