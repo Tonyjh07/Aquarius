@@ -371,6 +371,7 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.frameMetric = gtx.Metric
 	u.frameSize = size
 	u.shapes = u.shapes[:0]
+	u.rowRects = u.rowRects[:0] // D63：本帧行矩形重建（layoutCollapsed 时保持为空）
 	// D54：淡出带缺省 = §15.3 静息顶带（收起态无转写区，带只作兜底口径）。
 	u.bandTop, u.bandBottom = 0, gtx.Dp(fadeBandDp)
 
@@ -498,11 +499,11 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	u.transcriptScroll.Add(gtx.Ops) // 视口滚动手势
 
 	gap := gtx.Dp(rowGapDp)
-	// ① 量高（文本只排一次，录宏供绘制复用）。
+	// ① 量高（文本只排一次，录宏供绘制复用）；行选状态按序挂接（D63）。
 	rows := make([]measuredRow, len(items))
 	total := 0
 	for i := range items {
-		rows[i] = u.measureRow(gtx, items[i], w)
+		rows[i] = u.measureRow(gtx, items[i], w, u.selFor(i))
 		total += rows[i].height()
 	}
 	total += gap * (len(rows) - 1)
@@ -523,6 +524,27 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	u.contentH = total
 }
 
+// selFor 行选状态 get-or-create（D63）：按行序缓存——跨帧持久（选中态/焦点不丢），
+// 行文本变化由 LabelStyle.Layout 的 SetText 幂等更新并自动清选区（流式行、会话切换
+// 同路径）。仅事件循环 goroutine 调用。
+func (u *UI) selFor(i int) *widget.Selectable {
+	for len(u.selRows) <= i {
+		u.selRows = append(u.selRows, new(widget.Selectable))
+	}
+	return u.selRows[i]
+}
+
+// anySelFocused 任一转写行持有焦点（D63）：为真时编辑器不回投常驻焦点，
+// 否则每帧 FocusCmd 会把选区焦点抢走（Ctrl+C 随之失效）。
+func (u *UI) anySelFocused() bool {
+	for _, s := range u.selRows {
+		if s.Focused() {
+			return true
+		}
+	}
+	return false
+}
+
 // measuredRow 量高后的转写行（文本录宏 + 样式令牌）。
 type measuredRow struct {
 	txt                op.CallOp
@@ -535,9 +557,9 @@ type measuredRow struct {
 // height 行总高（含上下内边距，px）。
 func (m measuredRow) height() int { return m.dims.Y + 2*m.padY }
 
-// measureRow 量高 + 取样式（文本录入宏，不在本步落 ops）。
-func (u *UI) measureRow(gtx layout.Context, it blockView, w int) measuredRow {
-	label, bg, radius, rightAlign, bubble := u.rowStyle(gtx, it)
+// measureRow 量高 + 取样式（文本录入宏，不在本步落 ops；sel = 行选状态，D63）。
+func (u *UI) measureRow(gtx layout.Context, it blockView, w int, sel *widget.Selectable) measuredRow {
+	label, bg, radius, rightAlign, bubble := u.rowStyle(gtx, it, sel)
 	padX, padY := gtx.Dp(cardPadXDp), gtx.Dp(cardPadYDp)
 	if bubble {
 		padX, padY = gtx.Dp(bubblePadXDp), gtx.Dp(bubblePadYDp)
@@ -573,23 +595,30 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport ima
 	mr.txt.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
+	u.rowRects = append(u.rowRects, bgRect) // D63：拖层过滤（气泡区只滚不拖窗）
 	u.record(bgRect, mr.radius, mr.bg, viewport)
 	return bgRect.Dy()
 }
 
 // rowStyle 每种块的渲染样式：文本控件、底板色、圆角、是否右对齐、是否气泡。
-func (u *UI) rowStyle(gtx layout.Context, it blockView) (layout.Widget, color.NRGBA, int, bool, bool) {
+// sel 非 nil 时文本行挂行选状态（D63）——除思考头部（元信息）外全部可选。
+func (u *UI) rowStyle(gtx layout.Context, it blockView, sel *widget.Selectable) (layout.Widget, color.NRGBA, int, bool, bool) {
 	radiusDp, cardR := gtx.Dp(radiusDp), gtx.Dp(cardRadiusDp)
 	switch it.kind {
 	case blockUser: // 用户气泡：品牌色底白字、右对齐（§15.3 双色气泡）
 		return func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, it.text)
 			s.Color = whiteText
+			s.State = sel
 			return s.Layout(gtx)
 		}, brandColor, radiusDp, true, true
 	case blockAssistant: // 助手气泡：浅白底、左对齐
-		return material.Body2(u.th, it.text).Layout, pillBg, radiusDp, false, true
-	case blockThinking: // 思考行：头部 + 正文（流式"思考中…" / 定稿"已思考 · Ns"）
+		return func(gtx layout.Context) layout.Dimensions {
+			s := material.Body2(u.th, it.text)
+			s.State = sel
+			return s.Layout(gtx)
+		}, pillBg, radiusDp, false, true
+	case blockThinking: // 思考行：头部（元信息，不选）+ 正文
 		header := "已思考"
 		if it.live {
 			header = "思考中…"
@@ -606,6 +635,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView) (layout.Widget, color.NR
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					s := material.Body2(u.th, it.text)
 					s.Color = textDim
+					s.State = sel
 					return s.Layout(gtx)
 				}),
 			)
@@ -614,28 +644,36 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView) (layout.Widget, color.NR
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, it.text)
 			l.Color = textMuted
+			l.State = sel
 			return l.Layout(gtx)
 		}, cardTool, cardR, false, false
 	case blockNotice:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, it.text)
 			l.Color = textNotice
+			l.State = sel
 			return l.Layout(gtx)
 		}, cardNotice, cardR, false, false
 	case blockError:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(u.th, it.text)
 			l.Color = textError
+			l.State = sel
 			return l.Layout(gtx)
 		}, cardError, cardR, false, false
 	case blockSystem:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(u.th, it.text)
 			l.Color = textSystem
+			l.State = sel
 			return l.Layout(gtx)
 		}, cardSystem, cardR, false, false
 	default: // blockPlain（Say/命令输出/提示）：底板浅白、正文默认色
-		return material.Body2(u.th, it.text).Layout, pillBg, cardR, false, false
+		return func(gtx layout.Context) layout.Dimensions {
+			s := material.Body2(u.th, it.text)
+			s.State = sel
+			return s.Layout(gtx)
+		}, pillBg, cardR, false, false
 	}
 }
 
@@ -1030,8 +1068,13 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	}
 	if !u.inFadePass {
 		u.caretFocused = gtx.Focused(&u.editor) // 真窗 pass 捕获（fade pass 零 Source 恒 false）
+		// 常驻焦点（窗口内唯一可聚焦控件）；D63：任一转写行持有焦点时让位——
+		// 每帧回投 FocusCmd 会把选区焦点抢走（选区隐没、Ctrl+C 失效）。点击行 = 行
+		// 获焦（Selectable 自带），点击输入栏 = 编辑器经其自带点击取焦，呼出走 focusPending。
+		if !u.anySelFocused() {
+			gtx.Execute(key.FocusCmd{Tag: &u.editor})
+		}
 	}
-	gtx.Execute(key.FocusCmd{Tag: &u.editor}) // 常驻焦点（窗口内唯一可聚焦控件）
 	for {
 		evt, ok := u.editor.Update(gtx)
 		if !ok {
@@ -1052,10 +1095,11 @@ func (u *UI) drawCaret(gtx layout.Context, dims layout.Dimensions) {
 	c := u.editor.CaretCoords()
 	asc := int(float64(dims.Size.Y) * 0.8)
 	rect := image.Rect(int(c.X)-1, int(c.Y)-asc, int(c.X)+1, int(c.Y)+dims.Size.Y-asc)
+	rect.Min.X = max(rect.Min.X, 0) // 空文本时 caret 贴原点，杆宽一半越出编辑器盒
 	if rect.Empty() {
 		return
 	}
-	cl := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+	cl := clip.Rect(rect).Push(gtx.Ops) // 只裁 caret 杆——paint.Fill 覆盖整个当前裁剪区
 	paint.Fill(gtx.Ops, u.th.Palette.Fg)
 	cl.Pop()
 }
@@ -1103,7 +1147,10 @@ func (u *UI) updateDrag(gtx layout.Context) {
 		switch ev.Kind {
 		case pointer.Press:
 			u.undockInstant() // D50：按下即脱离停靠（拖动/点击都从贴齐亮态起）
-			u.beginDrag()
+			// D63：气泡区内按下不启动拖窗（§15.3 只滚不拖）——归行选手势。
+			if !u.posInRow(ev.Position) {
+				u.beginDrag()
+			}
 		case pointer.Drag:
 			u.moveDrag()
 		case pointer.Release, pointer.Cancel:
@@ -1148,6 +1195,19 @@ func (u *UI) updateLogo(gtx layout.Context) {
 }
 
 // beginDrag 记录拖动基准（按下；窗口未就绪则忽略本次触发）。
+// posInRow 按下位置是否落在转写行底板内（D63：行内按下归行选，拖层让位）。
+// p = 拖层手势事件坐标（窗口系物理 px；转写区贴窗口顶，行矩形即窗口系）。
+func (u *UI) posInRow(p f32.Point) bool {
+	x, y := int(p.X), int(p.Y)
+	for _, r := range u.rowRects {
+		if r.Min.X <= x && x < r.Max.X && r.Min.Y <= y && y < r.Max.Y {
+			return true
+		}
+	}
+	return false
+}
+
+// beginDrag 记录拖动基准（窗口左上角 + 光标位置，铁律 2 绝对跟踪）。
 func (u *UI) beginDrag() {
 	if rc, ok := windowRectPx(); ok {
 		u.dragWin0 = point{x: rc.left, y: rc.top}

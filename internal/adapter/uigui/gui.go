@@ -139,6 +139,12 @@ type UI struct {
 	followTail       bool // 尾随贴底（新内容贴输入栏；上滚即停，§15.3）
 	contentH         int  // 内容总高（上一帧测得，物理 px）
 
+	// 行选择（D63）：selRows 按行序缓存 Selectable（get-or-create；行文本变化经
+	// SetText 幂等更新并自动清选区），rowRects 为本帧各行底板矩形（窗口系，拖层
+	// 过滤用——气泡区只滚不拖窗，§15.3）。仅事件循环 goroutine 读写。
+	selRows  []*widget.Selectable
+	rowRects []image.Rectangle
+
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
 	focusPending bool

@@ -294,6 +294,39 @@ func TestFadePresentSubmitsBitmap(t *testing.T) {
 	}
 }
 
+// TestSelForRowState 行选状态缓存（D63）：按行序 get-or-create，跨调用同指针
+// （选中态/焦点跨帧持久）；越界增长幂等。
+func TestSelForRowState(t *testing.T) {
+	u := newFrameUI()
+	a := u.selFor(0)
+	b := u.selFor(0)
+	if a != b {
+		t.Fatal("同行序应返回同一 Selectable 实例")
+	}
+	if u.selFor(2) == a {
+		t.Fatal("不同行序应为不同实例")
+	}
+	if len(u.selRows) != 3 {
+		t.Fatalf("应增长到 3 个: %d", len(u.selRows))
+	}
+	if u.anySelFocused() {
+		t.Fatal("初始无行持有焦点")
+	}
+}
+
+// TestDragSkipsRows 拖层行内过滤（D63/§15.3）：气泡区内按下不启动拖窗（归行选），
+// 行外（间隙/输入栏区）照常拖窗。
+func TestDragSkipsRows(t *testing.T) {
+	u := newFrameUI()
+	u.rowRects = append(u.rowRects, image.Rect(16, 100, 400, 140))
+	if !u.posInRow(f32.Pt(100, 120)) {
+		t.Fatal("行内位置应命中")
+	}
+	if u.posInRow(f32.Pt(8, 120)) || u.posInRow(f32.Pt(100, 150)) {
+		t.Fatal("行外位置不应命中")
+	}
+}
+
 // TestTranscriptManualScroll 消息区手动滚动（§15.3）：滚轮在转写区上滚离底 → 内容上移、
 // 停止尾随；滚回底部 → 恢复尾随（新消息重新贴底）。方向口径：d>0 = 向新内容（尾随），
 // d<0 = 上滚离开底部——与 Gio Windows 侧的滚轮反号、X11 Button4/5 映射一致。
