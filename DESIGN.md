@@ -931,10 +931,10 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   剖面保留）**：每像素 vis = 核心 1 → 边带 smoothstep 渐隐 → 真实轮廓处
   `featherEdgeMin`（0 = 淡到全透明），**沿元素真实轮廓**（未按视口/淡出带裁剪——
   不沿裁切线描边，跨带形状不留横缝）、**只在形状内落笔、不向外外扩**（旧向外环在
-  `d=0` 有折点 →「饱和核心 + 外圈亮带」，已否决）；羽化宽响应式（D47/D48；D68 收细：
-  ratio 0.03、上限 3dp——换壳后 A/B 观测羽化仍优于硬切）：
-  `fw = clamp(round(min(w,h) × featherRatio), Dp(featherMinDp), Dp(featherMaxDp))`、
-  且 ≤ 短边 1/3——随元素尺寸/窗口缩放/DPI 自适应，不引入固定 px。颜色取同帧
+  `d=0` 有折点 →「饱和核心 + 外圈亮带」，已否决）；羽化宽全元素统一（D47/D48 响应式框架保留；D68 收细：
+  ratio 0.03、上限 3dp——换壳后 A/B 观测羽化仍优于硬切；D70 修订参考边：按元素自身短边算会令气泡/chip/胶囊各得不同带宽，同屏边缘剖面软硬不一）：
+  `fw = clamp(round(Dp(inputRowDp) × featherRatio), Dp(featherMinDp), Dp(featherMaxDp))`、
+  且 ≤ 元素短边 1/3——取输入胶囊（48dp 短边）带宽为全元素统一值，随 DPI/缩放自适应，不引入固定 px。颜色取同帧
   headless 内容（文字/图标随渐隐自然淡出），headless 不可用（`src` 缺省或尺寸不符）
   才用元素底色兜底（`writePremulFill`，形状可见可点、无文字）。g(y) = 带渐变
   smoothstep（带顶 0 → 带底 1，D54 揭示带/§15.3 顶带同式）——带顶以上 av=0 不可见。
