@@ -371,7 +371,6 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.frameMetric = gtx.Metric
 	u.frameSize = size
 	u.shapes = u.shapes[:0]
-	u.rowRects = u.rowRects[:0] // D63：本帧行矩形重建（layoutCollapsed 时保持为空）
 	// D54：淡出带缺省 = §15.3 静息顶带（收起态无转写区，带只作兜底口径）。
 	u.bandTop, u.bandBottom = 0, gtx.Dp(fadeBandDp)
 
@@ -399,13 +398,14 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	dims := layout.Stack{Alignment: layout.N}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			// 兜底背景（非 Windows 降级形态——Windows 上位图以 alpha 表达间隙，
-			// 淡出源渲染跳过底色）+ 整窗拖动区：间隙穿透后实际能落到这里的把手 =
-			// 输入栏空白/状态行。淡出源渲染时跳过底色（inFadePass）：headless 清屏
-			// 透明 = 无元素处全透明穿透。
+			// 淡出源渲染跳过底色）+ 拖动把手带 = 状态行 + 输入栏（[transH, 窗底)）。
+			// **转写区不注册拖层**（§15.3 只滚不拖窗；D63：gesture.Drag 超出 slop
+			// 即 pointer.Grab 且先到先得——拖层若覆盖气泡，会在行选手势前抢走
+			// Drag/Release 事件，选区永远无法延伸）。
 			if !u.inFadePass {
 				paint.Fill(gtx.Ops, windowBg)
 			}
-			st := clip.Rect{Max: size}.Push(gtx.Ops)
+			st := clip.Rect{Min: image.Pt(0, transH), Max: size}.Push(gtx.Ops)
 			u.drag.Add(gtx.Ops)
 			st.Pop()
 			return layout.Dimensions{Size: size}
@@ -534,17 +534,6 @@ func (u *UI) selFor(i int) *widget.Selectable {
 	return u.selRows[i]
 }
 
-// anySelFocused 任一转写行持有焦点（D63）：为真时编辑器不回投常驻焦点，
-// 否则每帧 FocusCmd 会把选区焦点抢走（Ctrl+C 随之失效）。
-func (u *UI) anySelFocused() bool {
-	for _, s := range u.selRows {
-		if s.Focused() {
-			return true
-		}
-	}
-	return false
-}
-
 // measuredRow 量高后的转写行（文本录宏 + 样式令牌）。
 type measuredRow struct {
 	txt                op.CallOp
@@ -595,7 +584,6 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport ima
 	mr.txt.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
-	u.rowRects = append(u.rowRects, bgRect) // D63：拖层过滤（气泡区只滚不拖窗）
 	u.record(bgRect, mr.radius, mr.bg, viewport)
 	return bgRect.Dy()
 }
@@ -1068,13 +1056,11 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	}
 	if !u.inFadePass {
 		u.caretFocused = gtx.Focused(&u.editor) // 真窗 pass 捕获（fade pass 零 Source 恒 false）
-		// 常驻焦点（窗口内唯一可聚焦控件）；D63：任一转写行持有焦点时让位——
-		// 每帧回投 FocusCmd 会把选区焦点抢走（选区隐没、Ctrl+C 失效）。点击行 = 行
-		// 获焦（Selectable 自带），点击输入栏 = 编辑器经其自带点击取焦，呼出走 focusPending。
-		if !u.anySelFocused() {
-			gtx.Execute(key.FocusCmd{Tag: &u.editor})
-		}
 	}
+	// 编辑器不再每帧回投常驻焦点（D63）：无条件的 FocusCmd 会与行获焦竞态——
+	// Selectable.Focused() 滞后一帧，编辑器会把刚点选的行的焦点抢回（选区隐没、
+	// Ctrl+C 失效）。焦点来源收口为：focusPending（呼出/展开，anim.go）、编辑器
+	// 自带点击取焦、newUI 初始焦点。
 	for {
 		evt, ok := u.editor.Update(gtx)
 		if !ok {
@@ -1147,10 +1133,7 @@ func (u *UI) updateDrag(gtx layout.Context) {
 		switch ev.Kind {
 		case pointer.Press:
 			u.undockInstant() // D50：按下即脱离停靠（拖动/点击都从贴齐亮态起）
-			// D63：气泡区内按下不启动拖窗（§15.3 只滚不拖）——归行选手势。
-			if !u.posInRow(ev.Position) {
-				u.beginDrag()
-			}
+			u.beginDrag()
 		case pointer.Drag:
 			u.moveDrag()
 		case pointer.Release, pointer.Cancel:
@@ -1195,18 +1178,6 @@ func (u *UI) updateLogo(gtx layout.Context) {
 }
 
 // beginDrag 记录拖动基准（按下；窗口未就绪则忽略本次触发）。
-// posInRow 按下位置是否落在转写行底板内（D63：行内按下归行选，拖层让位）。
-// p = 拖层手势事件坐标（窗口系物理 px；转写区贴窗口顶，行矩形即窗口系）。
-func (u *UI) posInRow(p f32.Point) bool {
-	x, y := int(p.X), int(p.Y)
-	for _, r := range u.rowRects {
-		if r.Min.X <= x && x < r.Max.X && r.Min.Y <= y && y < r.Max.Y {
-			return true
-		}
-	}
-	return false
-}
-
 // beginDrag 记录拖动基准（窗口左上角 + 光标位置，铁律 2 绝对跟踪）。
 func (u *UI) beginDrag() {
 	if rc, ok := windowRectPx(); ok {

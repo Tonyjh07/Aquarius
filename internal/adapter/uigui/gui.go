@@ -140,10 +140,9 @@ type UI struct {
 	contentH         int  // 内容总高（上一帧测得，物理 px）
 
 	// 行选择（D63）：selRows 按行序缓存 Selectable（get-or-create；行文本变化经
-	// SetText 幂等更新并自动清选区），rowRects 为本帧各行底板矩形（窗口系，拖层
-	// 过滤用——气泡区只滚不拖窗，§15.3）。仅事件循环 goroutine 读写。
-	selRows  []*widget.Selectable
-	rowRects []image.Rectangle
+	// SetText 幂等更新并自动清选区）。拖层把手带不覆盖转写区（window.go layout），
+	// 行选手势独占气泡区指针。仅事件循环 goroutine 读写。
+	selRows []*widget.Selectable
 
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
@@ -209,8 +208,9 @@ func newUI(opts Options, window bool) *UI {
 	u.m = newModel(u)
 	u.editor.Submit = true // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
-	u.followTail = true // 初始尾随贴底（新消息出现在输入栏上方，§15.1）
-	u.alpha = semiAlpha // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）
+	u.followTail = true   // 初始尾随贴底（新内容贴输入栏，§15.1）
+	u.alpha = semiAlpha   // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）
+	u.focusPending = true // 初始焦点入输入栏（D63：编辑器不再每帧回投常驻焦点）
 	u.wins = newWinHost(nil)
 	u.applyTheme(opts.Theme)       // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
 	u.hotkeyCfg.Store(opts.Hotkey) // 快捷键槽预存（托盘线程 hotkeySetting 读）

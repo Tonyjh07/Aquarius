@@ -309,22 +309,6 @@ func TestSelForRowState(t *testing.T) {
 	if len(u.selRows) != 3 {
 		t.Fatalf("应增长到 3 个: %d", len(u.selRows))
 	}
-	if u.anySelFocused() {
-		t.Fatal("初始无行持有焦点")
-	}
-}
-
-// TestDragSkipsRows 拖层行内过滤（D63/§15.3）：气泡区内按下不启动拖窗（归行选），
-// 行外（间隙/输入栏区）照常拖窗。
-func TestDragSkipsRows(t *testing.T) {
-	u := newFrameUI()
-	u.rowRects = append(u.rowRects, image.Rect(16, 100, 400, 140))
-	if !u.posInRow(f32.Pt(100, 120)) {
-		t.Fatal("行内位置应命中")
-	}
-	if u.posInRow(f32.Pt(8, 120)) || u.posInRow(f32.Pt(100, 150)) {
-		t.Fatal("行外位置不应命中")
-	}
 }
 
 // TestTranscriptManualScroll 消息区手动滚动（§15.3）：滚轮在转写区上滚离底 → 内容上移、
