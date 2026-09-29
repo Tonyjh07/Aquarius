@@ -15,6 +15,7 @@ import (
 	"image/color"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"gioui.org/gpu/headless"
@@ -203,10 +204,20 @@ func rrectSD(px, py, cx, cy, hw, hh, rad float32) float32 {
 // 在形状内完成（真实轮廓处 alpha = featherEdgeMin = 0）。
 const featherEdgeMin = 0.0
 
-// featherDisabled 羽化对比开关（D62 后评估）：设 AQUARIUS_NO_FEATHER=1 启动即禁用
-// 元素边缘羽化（形状边缘 = SDF 硬切，无渐隐带），用于同一二进制下羽化与否的 A/B
-// 观测；不设 = 羽化照常（生产默认）。启动读一次，运行期不变。
-var featherDisabled = os.Getenv("AQUARIUS_NO_FEATHER") != ""
+// featherDisabled 羽化对比开关（D68）：设 AQUARIUS_NO_FEATHER=1（或 true/yes/on，
+// 大小写不敏感）启动即禁用元素边缘羽化（形状边缘 = SDF 硬切，无渐隐带），用于同一
+// 二进制下羽化与否的 A/B 观测；不设或设 0/false/off = 羽化照常（生产默认）——按值
+// 解析，非空即禁用会把显式的「0」误判为禁用。启动读一次，运行期不变。
+var featherDisabled = envBool("AQUARIUS_NO_FEATHER")
+
+// envBool 环境布尔：真值 = 1/true/yes/on（大小写不敏感）；0/false/off/空/未设为假。
+func envBool(name string) bool {
+	switch strings.ToLower(os.Getenv(name)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
 
 func init() {
 	if featherDisabled {

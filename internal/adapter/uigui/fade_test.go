@@ -3,6 +3,7 @@ package uigui
 import (
 	"image"
 	"math"
+	"os"
 	"testing"
 
 	"gioui.org/unit"
@@ -188,5 +189,30 @@ func TestFadeFeatherDisabled(t *testing.T) {
 	}
 	if a := out2[(60*w+9)*4+3]; a != 0 {
 		t.Fatalf("轮廓外 alpha = %d, want 0（禁用只去渐隐，不去形状裁剪）", a)
+	}
+}
+
+// TestEnvBool 环境布尔解析：1/true/yes/on 为真；0/false/off/空/未设为假——
+// 显式「0」是「不禁用」，不是禁用（AQUARIUS_NO_FEATHER=0 误禁羽化的教训）。
+func TestEnvBool(t *testing.T) {
+	t.Setenv("AQUARIUS_NO_FEATHER", "0")
+	if envBool("AQUARIUS_NO_FEATHER") {
+		t.Fatal(`"0" 应为假`)
+	}
+	for _, v := range []string{"1", "true", "TRUE", "Yes", "on"} {
+		t.Setenv("AQUARIUS_NO_FEATHER", v)
+		if !envBool("AQUARIUS_NO_FEATHER") {
+			t.Fatalf("%q 应为真", v)
+		}
+	}
+	for _, v := range []string{"", "false", "OFF", "no", "junk"} {
+		t.Setenv("AQUARIUS_NO_FEATHER", v)
+		if envBool("AQUARIUS_NO_FEATHER") {
+			t.Fatalf("%q 应为假", v)
+		}
+	}
+	os.Unsetenv("AQUARIUS_NO_FEATHER")
+	if envBool("AQUARIUS_NO_FEATHER") {
+		t.Fatal("未设应为假")
 	}
 }
