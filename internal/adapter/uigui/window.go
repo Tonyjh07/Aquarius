@@ -588,16 +588,25 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	}
 	total += gap * (len(rows) - 1)
 
+	// D74 顶部 headroom：滚动内容头部垫一个**淡出带高**的空白（计入 total → 参与
+	// overflow/钳制与 base）。滚到最上（scrollPx=0）时首行落在 y ≥ pad、完整在带下
+	// 可读——否则首行困在带内而 scrollPx 不可为负，永远半透明（= 淡出遮挡内容）。
+	// 空白随内容滚（非视口固定留白，否则渐隐作用于空白而失效）；短内容时 pad 一并
+	// 制造 overflow，拥挤内容同样能往上滚出让出带外。
+	pad := gtx.Dp(fadeBandDp)
+	total += pad
+
 	// ② 滚动定界：手势 + 当帧真实内容高（无一帧滞后），尾随贴底。
 	u.updateScroll(gtx, h, total)
 
 	// ③ 绘制：底部锚定基线——内容矮时贴底（信息悬在输入栏上方），超出视口后
-	// 顶出上沿、上滚进淡出带（base 归零后退化为标准滚动）。
+	// 顶出上沿、上滚进淡出带（base 归零后退化为标准滚动）。起点 +pad 抵消头部
+	// 空白，底钉不偏移（base + pad + 行高总和 == h）。
 	base := h - total
 	if base < 0 {
 		base = 0
 	}
-	y := base - u.scrollPx
+	y := base - u.scrollPx + pad
 	for i := range rows {
 		y += u.paintRow(gtx, rows[i], w, y, viewport) + gap
 	}

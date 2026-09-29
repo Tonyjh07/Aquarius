@@ -411,6 +411,72 @@ func TestTranscriptManualScroll(t *testing.T) {
 	}
 }
 
+// TestTranscriptTopHeadroom D74 顶部可滚空白：滚动内容头部垫一个**淡出带高**（fadeBandDp）
+// 的 pad——滚到最上时首行完整落在带下可读，否则首行困在带内、`scrollPx` 不可为负而永远
+// 半透明（= 淡出遮挡内容）。pad 计入 contentH/overflow（可多滚一个带高），底钉与尾随语义
+// 不变（空白随内容滚，非视口固定留白——后者渐隐失效）。
+func TestTranscriptTopHeadroom(t *testing.T) {
+	u := newFrameUI()
+	for i := 0; i < 40; i++ {
+		u.m.add(blockAssistant, fmt.Sprintf("第 %02d 条：内容高过视口，需要顶部 headroom。", i))
+	}
+	gtx, _ := frameGtx(input.Source{})
+	const w, h = 600, 400
+	pad := gtx.Dp(fadeBandDp)
+
+	// 行高总和（复用生产量高；pad 单列不混入行）——用于锁 contentH 契约。
+	rowsTotal := 0
+	items := u.frameItems()
+	gap := gtx.Dp(rowGapDp)
+	for i := range items {
+		rowsTotal += u.measureRow(gtx, items[i], w, func(int) *widget.Selectable { return nil }).height()
+	}
+	rowsTotal += gap * (len(items) - 1)
+	if rowsTotal <= h {
+		t.Fatalf("测试前提：内容应高过视口，rowsTotal = %d", rowsTotal)
+	}
+
+	// ① 滚到最上（scrollPx=0、非尾随）：首行落在淡出带之下；pad 计入滚动内容。
+	u.followTail = false
+	u.shapes = u.shapes[:0]
+	u.transcript(gtx, w, h)
+	if u.scrollPx != 0 {
+		t.Fatalf("顶部 scrollPx = %d, want 0", u.scrollPx)
+	}
+	if len(u.shapes) == 0 {
+		t.Fatal("应登记行形状")
+	}
+	if y := u.shapes[0].outline.Min.Y; y < pad {
+		t.Fatalf("首行 y = %d, want >= %d（D74：不入淡出带）", y, pad)
+	}
+	if u.contentH != rowsTotal+pad {
+		t.Fatalf("contentH = %d, want 行高 %d + pad %d（D74：pad 计入滚动内容）",
+			u.contentH, rowsTotal, pad)
+	}
+
+	// ② 尾随到底：底钉不因 pad 偏移——scrollPx = overflow、末行底 == 视口底。
+	u.followTail = true
+	u.shapes = u.shapes[:0]
+	u.transcript(gtx, w, h)
+	if u.scrollPx != u.contentH-h {
+		t.Fatalf("底部 scrollPx = %d, want overflow %d", u.scrollPx, u.contentH-h)
+	}
+	if last := u.shapes[len(u.shapes)-1].outline; last.Max.Y != h {
+		t.Fatalf("末行底 = %d, want %d（底钉不回归）", last.Max.Y, h)
+	}
+
+	// ③ 短内容：不产生滚动，末行仍贴底（pad 不把内容顶离输入栏）。
+	u2 := newFrameUI()
+	u2.m.add(blockAssistant, "短内容一条。")
+	u2.transcript(gtx, w, h)
+	if u2.scrollPx != 0 {
+		t.Fatalf("短内容应无滚动: scrollPx = %d", u2.scrollPx)
+	}
+	if last := u2.shapes[len(u2.shapes)-1].outline; last.Max.Y != h {
+		t.Fatalf("短内容末行底 = %d, want %d（贴底）", last.Max.Y, h)
+	}
+}
+
 // TestWheelGesturePinStateMachine D71 状态机：转写区滚轮真有增量 → 手势挂上（锚点 =
 // 当帧光标屏幕坐标）；光标不动保持、移位解除、收起解除；解除后重新滚动重新挂上。
 func TestWheelGesturePinStateMachine(t *testing.T) {
