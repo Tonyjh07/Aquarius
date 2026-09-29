@@ -326,9 +326,21 @@ func (m *model) handleEvent(ev port.Event) {
 		m.add(blockError, "error: "+sanitizeControl(e.Err.Error())) // 服务端错误片段可携带注入序列
 	case port.NoticeEvent:
 		m.add(blockNotice, "[notice] "+sanitizeControl(e.Text))
+	case port.ClearEvent:
+		m.clear() // 转写重开（D75：/switch、/new）
 	default:
 		m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
 	}
+}
+
+// clear 清屏（D75：/switch、/new）：丢弃转写块、未完成草稿与进行中的思维链，
+// 用量归零（前端累计值，/usage 走节点汇总不受影响）、滚回跟随。
+func (m *model) clear() {
+	m.blocks = nil
+	m.resetDraft()
+	m.think.Reset()
+	m.usage = conversation.Usage{}
+	m.scroll = 0
 }
 
 // commit 提交节点定稿：助手（done 经 glamour）以消息文本为准替换草稿；

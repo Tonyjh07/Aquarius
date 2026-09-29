@@ -200,6 +200,12 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 		_, err := fmt.Fprintf(u.out, "[notice] %s\n", e.Text)
 		return err
 
+	case port.ClearEvent:
+		// 转写重开（D75：/switch、/new）：行式输出无法真清屏，打标记行分隔。
+		u.flushDelta()
+		_, err := fmt.Fprint(u.out, "[clear]\n")
+		return err
+
 	default:
 		u.flushDelta()
 		_, err := fmt.Fprintf(u.out, "%v\n", ev)

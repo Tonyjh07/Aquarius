@@ -115,9 +115,25 @@ func (m *model) handleEvent(ev port.Event) {
 		m.add(blockError, "error: "+sanitizeControl(e.Err.Error())) // 服务端错误片段可携带注入序列
 	case port.NoticeEvent:
 		m.add(blockNotice, "[notice] "+sanitizeControl(e.Text))
+	case port.ClearEvent:
+		m.clear() // 转写重开（D75：/switch、/new）
 	default:
 		m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
 	}
+}
+
+// clear 清屏（D75：/switch、/new）：丢弃转写块、未完成草稿与进行中的思维链，
+// 用量归零（前端累计值，/usage 走节点汇总不受影响）；转写滚动与行选态在 UI 侧
+// 一并归零——内容没了，偏移/高度失去意义，恢复跟随贴底。
+func (m *model) clear() {
+	m.blocks = nil
+	m.draft.Reset()
+	m.drafting = false
+	m.think.Reset()
+	m.usage = conversation.Usage{}
+	m.u.scrollPx, m.u.contentH = 0, 0
+	m.u.followTail = true
+	m.u.selRows = m.u.selRows[:0]
 }
 
 // commit 提交节点定稿：助手（done）以消息文本为准替换草稿；

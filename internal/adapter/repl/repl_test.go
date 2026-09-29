@@ -199,6 +199,18 @@ func TestEmitNotice(t *testing.T) {
 	}
 }
 
+// TestEmitClear ClearEvent（D75）：断掉流式行后打 [clear] 分隔行——REPL 行式输出无法
+// 真清屏，以标记行表达"转写重开"（/switch、/new）。
+func TestEmitClear(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+	emit(t, ui, port.DeltaEvent{Delta: port.Delta{Text: "生成中"}})
+	emit(t, ui, port.ClearEvent{})
+	if got, want := buf.String(), "生成中\n[clear]\n"; got != want {
+		t.Fatalf("buf = %q, want %q", got, want)
+	}
+}
+
 func TestEmitLongPreviewTruncated(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)

@@ -345,6 +345,40 @@ func TestEventsAndCommit(t *testing.T) {
 	}
 }
 
+// TestClearEvent D75：/switch、/new 的清屏——blocks/草稿/思维链/用量归零、滚回跟随，
+// View 不再含旧内容；之后的 HistoryEvent 从空白重新铺开。
+func TestClearEvent(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "旧会话的内容"}},
+	}})
+	m.handleEvent(port.NoticeEvent{Text: "旧提示"})
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "未完成草稿"}})
+	m.usage = conversation.Usage{InputTokens: 7, OutputTokens: 3}
+	m.scroll = 5
+	if len(m.blocks) == 0 {
+		t.Fatal("前置：应已有转写块")
+	}
+
+	m.handleEvent(port.ClearEvent{})
+	if len(m.blocks) != 0 {
+		t.Fatalf("清屏后 blocks = %d, want 0", len(m.blocks))
+	}
+	if m.draft.Len() != 0 || m.drafting || m.think.Len() != 0 {
+		t.Fatalf("草稿/思维链未清: draft=%q think=%q", m.draft.String(), m.think.String())
+	}
+	if m.usage.InputTokens != 0 || m.usage.OutputTokens != 0 {
+		t.Fatalf("用量未清: %+v", m.usage)
+	}
+	if m.scroll != 0 {
+		t.Fatalf("scroll = %d, want 0（回到跟随）", m.scroll)
+	}
+	if got := m.View(); strings.Contains(got, "旧会话的内容") || strings.Contains(got, "旧提示") {
+		t.Fatalf("View 仍含旧内容: %q", got)
+	}
+}
+
 // TestHistoryReplay D40/§7.4：历史节点按角色定稿渲染——user 行、assistant 工具调用行
 // 与正文、tool 结果行、system 摘要块；空文本的取消给 [cancelled] 标记（与 commit 同口径）；
 // 回放只展示不累计用量。

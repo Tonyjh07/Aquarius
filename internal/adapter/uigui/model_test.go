@@ -219,6 +219,47 @@ func TestEventsAndCommit(t *testing.T) {
 	}
 }
 
+// TestClearEvent D75：/switch、/new 的清屏——blocks/草稿/思维链/用量归零，
+// 并重置转写滚动与行选态（contentH 归零、跟随贴底）。
+func TestClearEvent(t *testing.T) {
+	m, u := newTestModel(t)
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "旧会话的内容"}},
+	}})
+	m.handleEvent(port.NoticeEvent{Text: "旧提示"})
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "未完成草稿"}})
+	m.usage = conversation.Usage{InputTokens: 7, OutputTokens: 3}
+	u.scrollPx, u.contentH, u.followTail = 120, 800, false
+	u.selRows = append(u.selRows, nil)
+	if len(m.blocks) == 0 {
+		t.Fatal("前置：应已有转写块")
+	}
+
+	m.handleEvent(port.ClearEvent{})
+	if len(m.blocks) != 0 {
+		t.Fatalf("清屏后 blocks = %d, want 0", len(m.blocks))
+	}
+	if m.draft.Len() != 0 || m.drafting || m.think.Len() != 0 {
+		t.Fatalf("草稿/思维链未清: draft=%q think=%q", m.draft.String(), m.think.String())
+	}
+	if m.usage.InputTokens != 0 || m.usage.OutputTokens != 0 {
+		t.Fatalf("用量未清: %+v", m.usage)
+	}
+	if u.scrollPx != 0 || u.contentH != 0 {
+		t.Fatalf("滚动状态未清: scrollPx=%d contentH=%d", u.scrollPx, u.contentH)
+	}
+	if !u.followTail {
+		t.Fatal("清屏后应恢复跟随贴底")
+	}
+	if len(u.selRows) != 0 {
+		t.Fatalf("行选态未清: %d", len(u.selRows))
+	}
+	if got := allText(m); strings.Contains(got, "旧会话的内容") || strings.Contains(got, "旧提示") {
+		t.Fatalf("转写仍含旧内容: %q", got)
+	}
+}
+
 // TestHistoryReplay D40/§7.4：历史节点按角色定稿渲染；空文本的取消给 [cancelled]
 // 标记；回放不累计用量。
 func TestHistoryReplay(t *testing.T) {

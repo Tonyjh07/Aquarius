@@ -207,9 +207,20 @@ func (s *Session) Current() *conversation.Conversation { return s.cur }
 // ReplayHistory 启动历史回放（D40/§7.4）：把当前分支"模型可见"的历史
 // （水位 → Head；无摘要则 persona 之后 → Head）经 Presenter 逐节点呈现，
 // 并先发 NoticeEvent 说明恢复了哪个会话。新建会话无历史，直接返回 0。
+// 仅启动恢复时回放一次；/switch 切会话走 replayHistory（D75）。
 // 返回回放的节点数（不含提示）。
 func (s *Session) ReplayHistory(ctx context.Context) (int, error) {
-	if !s.resumed || s.ui == nil {
+	if !s.resumed {
+		return 0, nil
+	}
+	return s.replayHistory(ctx, "已恢复")
+}
+
+// replayHistory 回放当前会话的可见历史（D40/§7.4 口径：水位 → Head，persona 不回放），
+// 先发 NoticeEvent 说明会话身份与条数；verb 是提示动词——启动「已恢复」、切换「已切换到」
+// （D75）。无 UI 或仅 Root/persona 时直接返回 0。
+func (s *Session) replayHistory(ctx context.Context, verb string) (int, error) {
+	if s.ui == nil {
 		return 0, nil
 	}
 	path := s.cur.Path()
@@ -225,7 +236,7 @@ func (s *Session) ReplayHistory(ctx context.Context) (int, error) {
 		return 0, nil // 仅 Root/persona：没有可回放的历史
 	}
 	n := len(path) - start
-	notice := fmt.Sprintf("已恢复会话 %s (%s)，回放 %d 条历史", s.cur.Title, s.cur.ID, n)
+	notice := fmt.Sprintf("%s会话 %s (%s)，回放 %d 条历史", verb, s.cur.Title, s.cur.ID, n)
 	if err := s.ui.Emit(ctx, port.NoticeEvent{Text: notice}); err != nil {
 		return 0, fmt.Errorf("session: 回放提示: %w", err)
 	}
@@ -235,6 +246,18 @@ func (s *Session) ReplayHistory(ctx context.Context) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// emitClear 发清屏事件（D75）：/switch 与 /new 前置——UI 丢弃已呈现内容，
+// 后续 HistoryEvent 从空白铺开。无 UI 时静默。
+func (s *Session) emitClear(ctx context.Context) error {
+	if s.ui == nil {
+		return nil
+	}
+	if err := s.ui.Emit(ctx, port.ClearEvent{}); err != nil {
+		return fmt.Errorf("session: 清屏: %w", err)
+	}
+	return nil
 }
 
 // Handle 处理一次用户输入：命令走 execCommand；Raw 走多模态摄取管线（M3）；
@@ -358,6 +381,9 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			return "", fmt.Errorf("session: 新建会话: %w", err)
 		}
 		s.cur = c
+		if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75，修订 D72 后果④）
+			return "", err
+		}
 		return fmt.Sprintf("已新建会话 %s", c.ID), nil
 
 	case "list":
@@ -377,6 +403,34 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			fmt.Fprintf(&b, "%s %s  %d条  %s\n", mark, sm.ID, sm.MessageN, sm.Title)
 		}
 		return strings.TrimRight(b.String(), "\n"), nil
+
+	case "switch":
+		if len(cmd.Args) != 1 {
+			return "", errors.New("用法: /switch <id前缀>（/list 查看可用会话，支持唯一前缀）")
+		}
+		id, err := s.resolveConversation(ctx, cmd.Args[0])
+		if err != nil {
+			return "", err
+		}
+		// 切前落盘当前会话：/edit 等只改内存的命令必须带上，否则切走即丢（D75）。
+		if err := s.store.Save(ctx, s.cur); err != nil {
+			return "", fmt.Errorf("session: 保存当前会话: %w", err)
+		}
+		if id != s.cur.ID {
+			next, err := s.store.Load(ctx, id)
+			if err != nil {
+				return "", fmt.Errorf("session: 载入会话 %s: %w", id, err)
+			}
+			s.cur = next
+		}
+		// 清屏后回放目标会话可见历史（目标即当前时等价重载，D75）。
+		if err := s.emitClear(ctx); err != nil {
+			return "", err
+		}
+		if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("已切换到会话 %s", s.cur.ID), nil
 
 	case "title":
 		if len(cmd.Args) == 0 {
@@ -608,6 +662,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return strings.Join([]string{
 			"/new [标题]             新建会话",
 			"/list                   列出会话",
+			"/switch <id前缀>        切换到既有会话（清屏并回放历史，D75）",
 			"/title [文本]           查看/改写会话标题",
 			"/goto <id>              Head 移到任意节点（分支导航；id 支持唯一前缀）",
 			"/edit <id> [--keep] <文本>  Revise：缺省 Fresh 开新分支；--keep 边转移保留后续历史",

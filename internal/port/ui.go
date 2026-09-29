@@ -8,7 +8,7 @@ import (
 )
 
 // Event UI 事件（联合类型）：DeltaEvent | ToolCallEvent | ToolResultEvent | CommittedEvent
-// | ErrorEvent | NoticeEvent | HistoryEvent。
+// | ErrorEvent | NoticeEvent | HistoryEvent | ClearEvent。
 type Event any
 
 // DeltaEvent 流式增量，只进 UI 不进领域（D3）；MessageID 为 Turn 开始时预分配的关联 ID。
@@ -39,6 +39,10 @@ type CommittedEvent struct {
 type HistoryEvent struct {
 	Message conversation.Message
 }
+
+// ClearEvent 清空转写区（D75）：UI 丢弃已呈现内容，后续 HistoryEvent 从空白铺开。
+// /switch 切会话与 /new 新会话时发；非 CommittedEvent → 输出器装饰器（D28）no-op。
+type ClearEvent struct{}
 
 // ErrorEvent 错误上抛 UI。
 type ErrorEvent struct {

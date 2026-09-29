@@ -317,6 +317,126 @@ func TestSessionReplayHistoryNoHistoryOnlyPersona(t *testing.T) {
 	}
 }
 
+// TestSessionSwitchCommand D75：/switch 切到既有会话——精确/唯一前缀解析、切前 Save 当前
+// 会话（/edit 只改内存，不落盘即丢）、先 ClearEvent 再 Notice + HistoryEvent 回放目标可见历史；
+// 无参/未知/歧义报错且不改动当前会话、不发任何事件。
+func TestSessionSwitchCommand(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	s, _, rec := newTestSession(t, store, textStream("甲的回复"), textStream("乙的回复"))
+
+	if _, err := s.Handle(ctx, port.UserInput{Text: "会话甲的内容"}); err != nil {
+		t.Fatalf("甲对话: %v", err)
+	}
+	idA, titleA := s.Current().ID, s.Current().Title
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "new", Args: []string{"乙"}}}); err != nil {
+		t.Fatalf("/new: %v", err)
+	}
+	if s.Current().ID == idA {
+		t.Fatal("/new 后应指向新会话")
+	}
+	if _, err := s.Handle(ctx, port.UserInput{Text: "会话乙的内容"}); err != nil {
+		t.Fatalf("乙对话: %v", err)
+	}
+	idB := s.Current().ID
+
+	// /edit 只改内存（不即时落盘）：切换必须先把当前会话 Save，否则切走即丢。
+	edited := "改过的乙内容"
+	pathB := s.Current().Path()
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "edit",
+		Args: []string{string(pathB[2].ID), edited}}}); err != nil {
+		t.Fatalf("/edit: %v", err)
+	}
+
+	rec.events = nil
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "switch", Args: []string{string(idA)}}}); err != nil {
+		t.Fatalf("/switch: %v", err)
+	}
+	if s.Current().ID != idA {
+		t.Fatalf("当前会话 = %s, want %s", s.Current().ID, idA)
+	}
+	// 清屏 → 切换提示 → 回放甲的可见历史（persona 不回放 = 2 条）。
+	names := eventNames(rec.events)
+	if len(names) != 4 || names[0] != "clear" || names[1] != "notice" || names[2] != "history" || names[3] != "history" {
+		t.Fatalf("events = %v, want [clear notice history history]", names)
+	}
+	notice := rec.events[1].(port.NoticeEvent)
+	for _, want := range []string{"已切换到会话", titleA, string(idA), "回放 2 条历史"} {
+		if !strings.Contains(notice.Text, want) {
+			t.Fatalf("notice = %q, want 含 %q", notice.Text, want)
+		}
+	}
+	// 切前 Save：乙的 /edit 已进库（memStore 存深拷贝，读到即证明保存过）。
+	saved, err := store.Load(ctx, idB)
+	if err != nil {
+		t.Fatalf("load 乙: %v", err)
+	}
+	found := false
+	for _, n := range saved.Path() {
+		for _, p := range n.Content {
+			if strings.Contains(p.Text, edited) {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("切换前未把当前会话的 /edit 落盘")
+	}
+
+	// 切回乙：唯一前缀解析 + 同样清屏回放。
+	rec.events = nil
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "switch", Args: []string{string(idB)}}}); err != nil {
+		t.Fatalf("/switch 乙: %v", err)
+	}
+	if s.Current().ID != idB {
+		t.Fatalf("当前会话 = %s, want %s", s.Current().ID, idB)
+	}
+	if names := eventNames(rec.events); len(names) < 2 || names[0] != "clear" || names[1] != "notice" {
+		t.Fatalf("events = %v, want 以 [clear notice ...] 开头", names)
+	}
+
+	// 无参/未知/歧义：报错、当前会话不动、不发事件（不得清屏）。
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, "用法"},
+		{[]string{"ZZZ"}, "没有会话"},
+		{[]string{"C"}, "有歧义"}, // 会话 id 形如 C<n>，前缀 C 必命中多个
+	} {
+		rec.events = nil
+		_, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "switch", Args: tc.args}})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("/switch %v err = %v, want 含 %q", tc.args, err, tc.want)
+		}
+		if s.Current().ID != idB {
+			t.Fatalf("/switch %v 失败后当前会话 = %s, want %s（不动）", tc.args, s.Current().ID, idB)
+		}
+		if len(rec.events) != 0 {
+			t.Fatalf("/switch %v 失败发了事件 %v, want 无", tc.args, eventNames(rec.events))
+		}
+	}
+}
+
+// TestSessionNewClearsTranscript D75（修订 D72 后果④）：/new 除落盘外还发 ClearEvent
+// 清屏——新会话无可回放，故只有 clear 一条，不带 HistoryEvent。
+func TestSessionNewClearsTranscript(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	s, _, rec := newTestSession(t, store, textStream("回复"))
+	if _, err := s.Handle(ctx, port.UserInput{Text: "聊一句"}); err != nil {
+		t.Fatalf("对话: %v", err)
+	}
+	rec.events = nil
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "new"}}); err != nil {
+		t.Fatalf("/new: %v", err)
+	}
+	names := eventNames(rec.events)
+	if len(names) != 1 || names[0] != "clear" {
+		t.Fatalf("events = %v, want [clear]", names)
+	}
+}
+
 func TestSessionEmptyInputNoop(t *testing.T) {
 	store := newMemStore()
 	s, llm, rec := newTestSession(t, store)
@@ -339,7 +459,7 @@ func TestSessionCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("help: %v", err)
 	}
-	for _, want := range []string{"/new", "/quit", "/goto", "/edit", "/branch", "/rm", "/jobs", "/model", "/plugin"} {
+	for _, want := range []string{"/new", "/switch", "/quit", "/goto", "/edit", "/branch", "/rm", "/jobs", "/model", "/plugin"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help 缺 %q:\n%s", want, out)
 		}
