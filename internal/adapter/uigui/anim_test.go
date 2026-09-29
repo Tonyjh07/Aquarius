@@ -133,90 +133,150 @@ func TestRevealBand(t *testing.T) {
 	}
 }
 
-// TestLerpRowRects 输入栏几何插值（D54）：p=0 → 胶囊/右钮都是 logo 同尺寸圆（logo 最后
-// 绘制即盖住它们）；p=1 → D49 终位；过冲 p>1 沿同一式外推（回弹时越出终位）。
-func TestLerpRowRects(t *testing.T) {
+// TestRowRectsFromSend 输入栏几何按 send 行程分段导出（D76，修订 D54 单标量插值）：
+// 里程碑（0 → logo 圆、split → 胶囊成圆、1 → D49 终位）、split 处连续、缩/长段双间隙
+// 恒 gap（含过冲）、间距单调、两段区间不重叠（缩/长段只改宽、平移段只移位）。
+func TestRowRectsFromSend(t *testing.T) {
 	const w, top, rowH, gap, margin = 608, 8, 48, 12, 16
-	logo, pill, send := inputRowRects(w, top, rowH, gap, margin)
+	logo, pillEnd, sendEnd := inputRowRects(w, top, rowH, gap, margin)
+	circle := image.Rect(pillEnd.Min.X, pillEnd.Min.Y, pillEnd.Min.X+rowH, pillEnd.Min.Y+rowH)
+	// split = send.Min 抵达成圆处（pillEnd.Min+rowH+gap）的行程进度（D76 分界点）。
+	split := float64(pillEnd.Min.X+rowH+gap-logo.Min.X) / float64(sendEnd.Min.X-logo.Min.X)
 
-	p0, s0 := lerpRowRects(logo, pill, send, 0)
+	// 里程碑：0 → 双双退化为 logo 圆（logo 最后绘制盖住）；split → 胶囊成圆贴 send；1 → D49 终位。
+	p0, s0 := rowRectsFromSend(logo, pillEnd, sendEnd, 0, w)
 	if p0 != logo || s0 != logo {
-		t.Fatalf("p=0 应双双退化为 logo 圆: pill=%v send=%v", p0, s0)
+		t.Fatalf("sendP=0 应双双退化为 logo 圆: pill=%v send=%v", p0, s0)
 	}
-	p1, s1 := lerpRowRects(logo, pill, send, 1)
-	if p1 != pill || s1 != send {
-		t.Fatalf("p=1 应取终位: pill=%v send=%v, want %v/%v", p1, s1, pill, send)
+	ps, ss := rowRectsFromSend(logo, pillEnd, sendEnd, split, w)
+	if ps != circle {
+		t.Fatalf("split 处胶囊应成圆 %v, 得 %v", circle, ps)
 	}
-	// 中途：左缘/宽度单调伸长，右钮单调右移。
-	prevW, prevX := rowH, margin
-	for i := 1; i < 100; i++ {
+	if ss.Min.X != circle.Max.X+gap || ss.Dy() != rowH {
+		t.Fatalf("split 处 send 应贴圆间隙 %d 且行高不变: %v", gap, ss)
+	}
+	p1, s1 := rowRectsFromSend(logo, pillEnd, sendEnd, 1, w)
+	if p1 != pillEnd || s1 != sendEnd {
+		t.Fatalf("sendP=1 应取终位: pill=%v send=%v, want %v/%v", p1, s1, pillEnd, sendEnd)
+	}
+
+	// split 连续：分支切换不跳变（中途反向由此天然连续）。
+	if below, _ := rowRectsFromSend(logo, pillEnd, sendEnd, split-1e-9, w); below != ps {
+		t.Fatalf("split 处应连续: 下侧 %v vs 上侧 %v", below, ps)
+	}
+
+	// 全程扫描（0 → 1.6 含过冲）：行高不变、在窗内、间距与几何单调不减。
+	prevLogoGap, prevJoinGap := logo.Min.X-logo.Max.X, logo.Min.X-logo.Max.X
+	prevPillMax, prevSendMin := logo.Max.X, logo.Min.X
+	for i := 0; i <= 160; i++ {
 		p := float64(i) / 100
-		pr, sr := lerpRowRects(logo, pill, send, p)
-		if pr.Dx() < prevW {
-			t.Fatalf("胶囊宽应单调: p=%v 时 %d < %d", p, pr.Dx(), prevW)
-		}
-		if sr.Min.X < prevX {
-			t.Fatalf("右钮应单调右移: p=%v 时 %d < %d", p, sr.Min.X, prevX)
-		}
+		pr, sr := rowRectsFromSend(logo, pillEnd, sendEnd, p, w)
 		if pr.Dy() != rowH || sr.Dy() != rowH {
 			t.Fatalf("行高不随动画变: pill.h=%d send.h=%d", pr.Dy(), sr.Dy())
 		}
-		prevW, prevX = pr.Dx(), sr.Min.X
+		if pr.Min.X < 0 || pr.Max.X > w || sr.Min.X < 0 || sr.Max.X > w {
+			t.Fatalf("p=%v 越窗: pill=%v send=%v (w=%d)", p, pr, sr, w)
+		}
+		logoGap, joinGap := pr.Min.X-logo.Max.X, sr.Min.X-pr.Max.X
+		if logoGap < prevLogoGap || joinGap < prevJoinGap {
+			t.Fatalf("p=%v 间距应单调不减: logoGap %d→%d joinGap %d→%d", p,
+				prevLogoGap, logoGap, prevJoinGap, joinGap)
+		}
+		if pr.Max.X < prevPillMax || sr.Min.X < prevSendMin {
+			t.Fatalf("p=%v 几何应单调不缩回: pill.Max %d→%d send.Min %d→%d", p,
+				prevPillMax, pr.Max.X, prevSendMin, sr.Min.X)
+		}
+		prevLogoGap, prevJoinGap = logoGap, joinGap
+		prevPillMax, prevSendMin = pr.Max.X, sr.Min.X
 	}
-	// 回弹过冲：p>1 时右钮越过终位（不夹取），胶囊同步变宽。
-	over, so := lerpRowRects(logo, pill, send, 1.05)
-	if so.Min.X <= send.Min.X {
-		t.Fatalf("过冲时右钮应越出终位: %d <= %d", so.Min.X, send.Min.X)
+
+	// 缩/长段（sendP ≥ split）：双间隙恒 gap（含过冲），左缘钉终位 → 只改宽不移位。
+	for i := int(split*100) + 1; i <= 140; i++ {
+		p := float64(i) / 100
+		pr, sr := rowRectsFromSend(logo, pillEnd, sendEnd, p, w)
+		if pr.Min.X != pillEnd.Min.X {
+			t.Fatalf("sendP=%v 缩/长段左缘应钉终位: %d != %d", p, pr.Min.X, pillEnd.Min.X)
+		}
+		if lg, jg := pr.Min.X-logo.Max.X, sr.Min.X-pr.Max.X; lg != gap || jg != gap {
+			t.Fatalf("sendP=%v 缩/长段双间隙应恒 %d: logoGap=%d joinGap=%d (pill=%v send=%v)",
+				p, gap, lg, jg, pr, sr)
+		}
 	}
-	if over.Dx() <= pill.Dx() {
-		t.Fatalf("过冲时胶囊应变宽: %d <= %d", over.Dx(), pill.Dx())
+
+	// 平移段（sendP < split）：宽恒 = 行高 → 只移位不改宽（与缩/长段区间不重叠）。
+	for i := 0; i <= int(split*100); i++ {
+		p := float64(i) / 100
+		pr, _ := rowRectsFromSend(logo, pillEnd, sendEnd, p, w)
+		if pr.Dx() != rowH {
+			t.Fatalf("sendP=%v 平移段胶囊应恒成圆宽 %d, 得 %d", p, rowH, pr.Dx())
+		}
 	}
+
+	// 过冲回弹（D54 手感 × D76 双间隙）：越出终位、收界在窗、胶囊随夹后 send 同步。
+	po, so := rowRectsFromSend(logo, pillEnd, sendEnd, 1.053, w)
+	if po.Max.X <= pillEnd.Max.X || so.Min.X <= sendEnd.Min.X {
+		t.Fatalf("过冲应越出终位: pill=%v send=%v (终位 %v/%v)", po, so, pillEnd, sendEnd)
+	}
+	if so.Max.X > w {
+		t.Fatalf("过冲收界后仍越窗: %v (w=%d)", so, w)
+	}
+	if lg, jg := po.Min.X-logo.Max.X, so.Min.X-po.Max.X; lg != gap || jg != gap {
+		t.Fatalf("过冲收界后双间隙应恒 %d: logoGap=%d joinGap=%d", gap, lg, jg)
+	}
+
 	// p<0 防御（缓动理论上不产生负值，仍须夹住不反向缩过 logo）。
-	if pn, sn := lerpRowRects(logo, pill, send, -1); pn != logo || sn != logo {
+	if pn, sn := rowRectsFromSend(logo, pillEnd, sendEnd, -1, w); pn != logo || sn != logo {
 		t.Fatalf("p<0 应夹为 logo 圆: %v/%v", pn, sn)
+	}
+	// w≤0 跳过收界（纯几何口径）：过冲原始外推仍在。
+	if _, sRaw := rowRectsFromSend(logo, pillEnd, sendEnd, 1.053, 0); sRaw.Max.X <= w {
+		t.Fatalf("w=0 不应收界: %v", sRaw)
 	}
 }
 
-// TestClampRowX 过冲几何夹回窗口边界（D57）：easeOutBack 峰值处右钮右缘越过窗宽会被
-// 窗边切平（实测 620 > 608）、同帧形裁/overlay 越界；收界**只平移保尺寸**，窗内 16px
-// 行边距仍留给回弹（D54「越出终位再回落」不落空）。
+// TestClampRowX 过冲几何夹回窗口边界（D57；D76 夹取先 send 后胶囊）：easeOutBack 峰值处
+// 右钮右缘越过窗宽会被窗边切平（实测 620 > 608）、同帧形裁/overlay 越界；收界**只平移保尺寸**，
+// 窗内 16px 行边距仍留给回弹（D54「越出终位再回落」不落空）；胶囊由夹后 send 导出 → 双间隙仍恒 gap。
 func TestClampRowX(t *testing.T) {
 	const w, top, rowH, gap, margin = 608, 8, 48, 12, 16
-	logo, pill, send := inputRowRects(w, top, rowH, gap, margin)
+	logo, pillEnd, sendEnd := inputRowRects(w, top, rowH, gap, margin)
 
-	// 全进度扫描（含过冲与负值防御段）：收界后恒在窗内、尺寸不变。
+	// 全进度扫描（含过冲与负值防御段）：收界后恒在窗内；send 只平移不改宽。
 	for i := -20; i <= 180; i++ {
 		p := float64(i) / 100
-		pr, sr := lerpRowRects(logo, pill, send, p)
-		for name, raw := range map[string]image.Rectangle{"pill": pr, "send": sr} {
-			got := clampRowX(raw, w)
-			if got.Min.X < 0 || got.Max.X > w {
-				t.Fatalf("p=%v %s 收界后越窗: %v (w=%d)", p, name, got, w)
-			}
-			want := raw.Dx()
-			if want > w {
-				want = w
-			}
-			if got.Dx() != want {
-				t.Fatalf("p=%v %s 收界只该平移不该改宽: got %d want %d", p, name, got.Dx(), want)
-			}
+		pr, sr := rowRectsFromSend(logo, pillEnd, sendEnd, p, w)
+		if pr.Min.X < 0 || pr.Max.X > w || sr.Min.X < 0 || sr.Max.X > w {
+			t.Fatalf("p=%v 收界后越窗: pill=%v send=%v (w=%d)", p, pr, sr, w)
+		}
+		if sr.Dx() != rowH {
+			t.Fatalf("p=%v send 收界只该平移不该改宽: %d", p, sr.Dx())
 		}
 	}
 
 	// 峰值处原始外推确实越窗（复现缺陷的口径），收界后贴窗但仍在终位右侧（回弹保留）。
-	rawP, rawS := lerpRowRects(logo, pill, send, 1.053)
+	rawS := lerpRect(logo, sendEnd, 1.053)
 	if rawS.Max.X <= w {
 		t.Fatalf("峰值外推应越窗（否则收界无意义）: send=%v w=%d", rawS, w)
 	}
-	if rawP.Max.X > w {
-		t.Fatalf("胶囊在窗中部、不应越窗: %v", rawP)
-	}
 	cS := clampRowX(rawS, w)
-	if cS.Max.X != w || cS.Dx() != send.Dx() {
-		t.Fatalf("收界后应贴窗且保尺寸: got %v want Max.X=%d Dx=%d", cS, w, send.Dx())
+	if cS.Max.X != w || cS.Dx() != sendEnd.Dx() {
+		t.Fatalf("收界后应贴窗且保尺寸: got %v want Max.X=%d Dx=%d", cS, w, sendEnd.Dx())
 	}
-	if cS.Min.X <= send.Min.X {
-		t.Fatalf("收界不应吃掉回弹：右钮仍应越出终位: %d <= %d", cS.Min.X, send.Min.X)
+	if cS.Min.X <= sendEnd.Min.X {
+		t.Fatalf("收界不应吃掉回弹：右钮仍应越出终位: %d <= %d", cS.Min.X, sendEnd.Min.X)
+	}
+
+	// D76 夹取顺序：峰值贴边收界后，胶囊随夹后 send 导出——send 与单独收界一致、
+	// 双间隙仍恒 gap、胶囊回弹仍可见。
+	po, so := rowRectsFromSend(logo, pillEnd, sendEnd, 1.053, w)
+	if so != cS {
+		t.Fatalf("几何导出的 send 应与单独收界一致: %v vs %v", so, cS)
+	}
+	if lg, jg := po.Min.X-logo.Max.X, so.Min.X-po.Max.X; lg != gap || jg != gap {
+		t.Fatalf("收界后双间隙应恒 %d: logoGap=%d joinGap=%d (pill=%v)", gap, lg, jg, po)
+	}
+	if po.Max.X <= pillEnd.Max.X {
+		t.Fatalf("胶囊回弹收界后仍应越出终位: %d <= %d", po.Max.X, pillEnd.Max.X)
 	}
 
 	// 极窄窗兜底：尺寸也保不住时退化为压缩到窗内（仍不越界）。

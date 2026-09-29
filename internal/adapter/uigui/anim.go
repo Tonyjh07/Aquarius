@@ -108,7 +108,7 @@ func expandPhase(expand, phase2 bool) (bar bool, to, durMs float64, ease func(fl
 }
 
 // expandAnim 展开/收起动画状态（仅事件循环 goroutine 读写；ticker goroutine 只持有 stop）。
-// barP = 输入栏几何进度（0 = 收起几何、1 = D49 终位，过冲可 >1）；msgP = 消息揭示进度
+// barP = 输入栏行程进度（= send 行程，D76：0 = 收起球、1 = D49 终位，过冲可 >1）；msgP = 消息揭示进度
 // （0 = 全隐、1 = 静息顶带）。静止态不看这两个字段，由 collapsed 推导（见 expandProgress）。
 type expandAnim struct {
 	active bool
@@ -301,20 +301,57 @@ func (u *UI) invalidate() {
 	}
 }
 
-// barP 当前输入栏展开进度（0 = 收起几何，1 = D49 终位；过冲可 >1）。
+// barP 当前输入栏行程进度（= send 行程：0 = 收起球，1 = D49 终位；过冲可 >1；
+// D76 分段几何的时钟——胶囊几何由它分段导出）。
 func (u *UI) barP() float64 {
 	p, _ := u.expandProgress()
 	return p
 }
 
-// lerpRowRects 三段几何按展开进度插值（D54 纯逻辑，可测）：p≤0 时胶囊/右钮都退化为
-// logo 同尺寸圆；p=1 取终位（插值在此精确）；p>1 按同一式外推——easeOutBack 过冲段
-// 右钮/胶囊就此越出终位再回落。
-func lerpRowRects(logo, pill, send image.Rectangle, p float64) (image.Rectangle, image.Rectangle) {
-	if p < 0 {
-		p = 0
+// rowRectsFromSend 输入栏几何按 send 行程进度分段导出（D76，修订 D54 单标量插值；纯逻辑、
+// 可测）：send = logo→终位线性插值（`barP` 即 send 行程，回弹过冲 p>1 按同一式外推越出终位
+// 再回落；w>0 时先 `clampRowX` 收界，D57）；胶囊按分界点 split（send.Min 抵达成圆处 ≈120/528）
+// 分两支——
+//   - sendP ≥ split（缩/长段）：左缘钉 pillEnd.Min（与 logo 间隙恒 gap），右缘 = send.Min − gap
+//     （与 send 间隙恒 gap；send 全程同步移动，胶囊由**夹后** send 导出 → 过冲贴边夹掉后
+//     双间隙仍恒 gap）；
+//   - sendP < split（平移/合球段）：胶囊已成 ⌀48 圆（宽 = 行高、停 pillEnd.Min），与 send
+//     同步插值到 logo 合球（展开反向：圆先弹出到 split 再长宽）。
+//
+// 单函数无方向参数 → 两方向同一路径，split 处连续、中途反向天然不跳变。split ≤ 0（退化
+// 窄窗）恒走平移支、胶囊贴 logo 不动。
+func rowRectsFromSend(logo, pillEnd, sendEnd image.Rectangle, sendP float64, w int) (image.Rectangle, image.Rectangle) {
+	if sendP < 0 {
+		sendP = 0
 	}
-	return lerpRect(logo, pill, p), lerpRect(logo, send, p)
+	send := lerpRect(logo, sendEnd, sendP)
+	if w > 0 {
+		send = clampRowX(send, w)
+	}
+	gap := pillEnd.Min.X - logo.Max.X
+	rowH := logo.Dy()
+	// split = send.Min 抵达成圆处（pillEnd.Min + rowH + gap）的行程进度。
+	split := 0.0
+	if span := float64(sendEnd.Min.X - logo.Min.X); span > 0 {
+		split = float64(pillEnd.Min.X+rowH+gap-logo.Min.X) / span
+	}
+	if split > 0 && sendP >= split {
+		// 缩/长段：左缘钉终位、右缘随 send − gap → 只改宽不移位。
+		return image.Rectangle{
+			Min: pillEnd.Min,
+			Max: image.Pt(send.Min.X-gap, pillEnd.Max.Y),
+		}, send
+	}
+	// 平移/合球段：胶囊圆与 send 同步插值（q=0 → logo 圆、q→1 → 成圆位）。
+	q := 0.0
+	if split > 0 {
+		q = sendP / split
+	}
+	circle := image.Rectangle{
+		Min: pillEnd.Min,
+		Max: image.Pt(pillEnd.Min.X+rowH, pillEnd.Min.Y+rowH),
+	}
+	return lerpRect(logo, circle, q), send
 }
 
 // clampRowX 过冲几何夹回窗口边界（D57 纯逻辑，可测）：easeOutBack 峰值（barP≈1.053）下
