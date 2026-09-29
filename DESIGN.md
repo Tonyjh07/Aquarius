@@ -657,7 +657,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 | 命令 | 作用 |
 |---|---|
-| `/new` `/list` `/quit` `/exit` | 新会话 / 列会话 / 退出（`/exit` = `/quit` 别名） |
+| `/new` `/list` `/switch <id前缀>` `/quit` `/exit` | 新会话（清屏，D75）/ 列会话 / **切到既有会话**（唯一前缀解析，清屏并回放目标会话可见历史，D75）/ 退出（`/exit` = `/quit` 别名） |
 | `/title [文本]` | 查看 / 改写会话标题（会话元数据，即时落盘） |
 | `/compact` | 触发上下文压缩：生成 system 摘要节点，水位上历史不再回传（§7.1 三轨之一） |
 | `/permission [等级]` | 查看 / 切换权限等级（read-only/strict/permissive/full-access，写回 config） |
@@ -691,8 +691,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - **不扇出**：`HistoryEvent` 不是 `CommittedEvent`，输出器装饰器（D28）对它 no-op——
   回放不重复触发通知/TTS。
 - **回放前提示**：发 `NoticeEvent`（`已恢复会话 <标题> (<id>)，回放 <n> 条历史`）。
-- **时机**：仅启动恢复时回放一次；`/goto`（Head 导航，§7.3）与 `/new` 不回放
-  （命令回显已足够；切到已有会话时的回放见 §14）。
+- **时机**：启动恢复时回放一次；`/switch` 切到既有会话时同样**清屏（D75 `ClearEvent`）后
+  回放**；`/goto`（Head 导航，§7.3）不回放，`/new` 只清屏不回放（新会话无可回放）。
 - **repl 同权**：repl 前端按行打印同一语义（`> ` 输入行、正文、`[tool]` 行），保证
   e2e/管道输出与 TUI 信息一致。
 
@@ -863,8 +863,6 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   接入此类提供商时由适配器做键名/块格式映射
 - 非 GBK 的遗留代码页（CP437/latin-1 等）终端输出识别（D41 内容探测只有 UTF-8/GBK 两档，会误判成乱码中文）
 - `file_read` 等文件文本入口的遗留编码解码（与 D41 同算法，终端之外的文本入口）
-- 切到已有会话（未来切换命令）与 `/new` 后的自动历史回放（当前仅启动恢复时回放一次；
-  `/goto` 只移 Head 不换会话，D40/§7.4）
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
@@ -957,7 +955,8 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   本只落球像素，D62 逐像素命中），动画期不响应（D54）。检测在 Gio 事件循环，
   `PostMessage` 投**托盘线程**呈现 `TrackPopupMenu`（独立消息泵、不嵌 Gio 泵，
   TPM_RETURNCMD + 光标位）；命令分发与托盘菜单共享（`menuIt`/`runMenu`/`menuDispatch`）。
-  **新对话 = 注入 `/new`**，与键入同路径同语义（转写视图不自动清，与现状一致）。
+  **新对话 = 注入 `/new`**，与键入同路径同语义（`/new` 发 `ClearEvent` 清屏，D75——
+  「转写视图不自动清」的旧口径作废）。
 - **托盘常驻生命周期**：关窗（Alt+F4）= **隐藏**——子类化主窗过程吞 `WM_CLOSE`
   （Gio 无关闭拦截 API，`WM_CLOSE` 直落 `DefWindowProc` 即销毁），主窗隐藏即像素层
   一并消失（D62 后无独立 overlay）；**退出只经托盘菜单**（清托盘图标与快捷键 → **中断进行中轮次**（`interruptNow`，D64——退出即终止，不等待 Agent 完成）→ EOF 收尾）。主窗**不进任务栏
