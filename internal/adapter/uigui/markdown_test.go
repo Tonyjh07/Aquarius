@@ -124,37 +124,38 @@ func TestMdUnescape(t *testing.T) {
 	}
 }
 
-// TestMdViewsFallback 空解析结果回退原文单行；缓存命中返回同一实例（D65）。
-func TestMdViewsFallback(t *testing.T) {
+// TestMdBlocksFallback 空解析结果回退单段落原文；缓存命中返回同一实例（D65/D66）。
+func TestMdBlocksFallback(t *testing.T) {
 	u := &UI{} // mdCache 惰性初始化（不依赖 newUI）
 	for _, src := range []string{"   ", "\n\n"} {
-		views := u.mdViews(src)
-		if len(views) != 1 || views[0].kind != blockAssistant || views[0].text != src {
-			t.Fatalf("mdViews(%q) = %+v, want 原文单行", src, views)
+		blocks := u.mdBlocks(src)
+		if len(blocks) != 1 || blocks[0].kind != mdPara || blocks[0].text != src {
+			t.Fatalf("mdBlocks(%q) = %+v, want 原文单段落", src, blocks)
 		}
 	}
-	first := u.mdViews("# 标题")
-	again := u.mdViews("# 标题")
-	if len(first) != 1 || first[0].kind != blockHeading || first[0].level != 1 {
-		t.Fatalf("mdViews 展开 = %+v", first)
+	first := u.mdBlocks("# 标题")
+	again := u.mdBlocks("# 标题")
+	if len(first) != 1 || first[0].kind != mdHeading || first[0].level != 1 {
+		t.Fatalf("mdBlocks 解析 = %+v", first)
 	}
 	if &first[0] != &again[0] {
 		t.Fatal("缓存命中应返回同一实例")
 	}
 }
 
-// TestMdViewsCacheLimit 缓存上限：超限整表重建（长会话防膨胀，D65）。
-func TestMdViewsCacheLimit(t *testing.T) {
+// TestMdBlocksCacheLimit 缓存上限：超限整表重建（长会话防膨胀，D65）。
+func TestMdBlocksCacheLimit(t *testing.T) {
 	u := &UI{}
 	for i := 0; i < mdCacheLimit+1; i++ {
-		u.mdViews(fmt.Sprintf("消息 %d", i))
+		u.mdBlocks(fmt.Sprintf("消息 %d", i))
 	}
 	if len(u.mdCache) > mdCacheLimit {
 		t.Fatalf("缓存条目 = %d, 应在重建后 ≤ %d", len(u.mdCache), mdCacheLimit)
 	}
 }
 
-// TestFrameItemsMarkdown 助手定稿块展开为多行；live 草稿不解析（D33 口径，D65）。
+// TestFrameItemsMarkdown 助手定稿块 = 单条目携结构块（D66 单回复单气泡）；live 草稿
+// 不解析（D33 口径）。
 func TestFrameItemsMarkdown(t *testing.T) {
 	u := newFrameUI()
 	u.m.add(blockUser, "给我列个清单")
@@ -163,24 +164,31 @@ func TestFrameItemsMarkdown(t *testing.T) {
 	u.m.draft.WriteString("**草稿**不解析")
 
 	items := u.frameItems()
-	// 用户 1 行 + 助手展开（段/两项/代码 = 4 行）+ live 草稿 1 行 = 6。
-	if len(items) != 6 {
-		t.Fatalf("items = %d, want 6: %+v", len(items), items)
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want 3: %+v", len(items), items)
 	}
-	if items[0].kind != blockUser {
-		t.Fatalf("items[0] = %+v", items[0])
+	if items[0].kind != blockUser || items[0].selCount() != 1 {
+		t.Fatalf("items[0] = %+v（用户行恒 1 键）", items[0])
 	}
-	if items[1].kind != blockAssistant || items[1].text != "好的：" {
-		t.Fatalf("items[1] = %+v", items[1])
+	a := items[1]
+	if a.kind != blockAssistant || a.text != "" {
+		t.Fatalf("items[1] = %+v（复合行正文在 md 块里）", a)
 	}
-	if items[2].text != "• 一项" || items[3].text != "• 二项" {
-		t.Fatalf("列表行 = %+v / %+v", items[2], items[3])
+	wantKinds := []mdKind{mdPara, mdListItem, mdListItem, mdCode}
+	wantTexts := []string{"好的：", "• 一项", "• 二项", "done"}
+	if len(a.md) != len(wantKinds) {
+		t.Fatalf("md 块数 = %d, want %d: %+v", len(a.md), len(wantKinds), a.md)
 	}
-	if items[4].kind != blockCode || items[4].text != "done" {
-		t.Fatalf("代码行 = %+v", items[4])
+	for k := range wantKinds {
+		if a.md[k].kind != wantKinds[k] || a.md[k].text != wantTexts[k] {
+			t.Fatalf("md[%d] = %+v, want %v %q", k, a.md[k], wantKinds[k], wantTexts[k])
+		}
 	}
-	if items[5].kind != blockAssistant || !items[5].live || items[5].text != "**草稿**不解析" {
-		t.Fatalf("items[5] = %+v（live 草稿应原样）", items[5])
+	if a.selCount() != len(wantKinds) {
+		t.Fatalf("selCount = %d, want %d", a.selCount(), len(wantKinds))
+	}
+	if items[2].kind != blockAssistant || !items[2].live || items[2].text != "**草稿**不解析" || items[2].md != nil {
+		t.Fatalf("items[2] = %+v（live 草稿应原样且不解析）", items[2])
 	}
 }
 

@@ -550,12 +550,18 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	u.transcriptScroll.Add(gtx.Ops) // 视口滚动手势
 
 	gap := gtx.Dp(rowGapDp)
-	// ① 量高（文本只排一次，录宏供绘制复用）；行选状态按序挂接（D63）。
+	// ① 量高（文本只排一次，录宏供绘制复用）；行选状态按（行,块）双键挂接（D63/D66）：
+	// 线性序号 selBase 随条目 selCount 累计，sels 同步消费于 measureRow 内。
 	rows := make([]measuredRow, len(items))
 	total := 0
+	selBase := 0
 	for i := range items {
-		rows[i] = u.measureRow(gtx, items[i], w, u.selFor(i))
+		start := selBase // 闭包定格本条目起始键（消费是同步的，拷贝防御后续改动）
+		rows[i] = u.measureRow(gtx, items[i], w, func(k int) *widget.Selectable {
+			return u.selFor(start + k)
+		})
 		total += rows[i].height()
+		selBase += items[i].selCount()
 	}
 	total += gap * (len(rows) - 1)
 
@@ -597,9 +603,10 @@ type measuredRow struct {
 // height 行总高（含上下内边距，px）。
 func (m measuredRow) height() int { return m.dims.Y + 2*m.padY }
 
-// measureRow 量高 + 取样式（文本录入宏，不在本步落 ops；sel = 行选状态，D63）。
-func (u *UI) measureRow(gtx layout.Context, it blockView, w int, sel *widget.Selectable) measuredRow {
-	label, bg, radius, rightAlign, bubble := u.rowStyle(gtx, it, sel)
+// measureRow 量高 + 取样式（文本录入宏，不在本步落 ops；sels = 行选状态按键取用，
+// D63/D66 双键：k 为复合行内块序）。
+func (u *UI) measureRow(gtx layout.Context, it blockView, w int, sels func(int) *widget.Selectable) measuredRow {
+	label, bg, radius, rightAlign, bubble := u.rowStyle(gtx, it, sels)
 	padX, padY := gtx.Dp(cardPadXDp), gtx.Dp(cardPadYDp)
 	if bubble {
 		padX, padY = gtx.Dp(bubblePadXDp), gtx.Dp(bubblePadYDp)
@@ -640,22 +647,32 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport ima
 }
 
 // rowStyle 每种块的渲染样式：文本控件、底板色、圆角、是否右对齐、是否气泡。
-// sel 非 nil 时文本行挂行选状态（D63）——除思考头部（元信息）外全部可选。
-func (u *UI) rowStyle(gtx layout.Context, it blockView, sel *widget.Selectable) (layout.Widget, color.NRGBA, int, bool, bool) {
+// sel sels(k) 非 nil 返回时文本行挂行选状态（D63；D66 双键 k = 复合行内块序）——
+// 除思考头部（元信息）外全部可选。
+func (u *UI) rowStyle(gtx layout.Context, it blockView, sels func(int) *widget.Selectable) (layout.Widget, color.NRGBA, int, bool, bool) {
 	radiusDp, cardR := gtx.Dp(radiusDp), gtx.Dp(cardRadiusDp)
 	switch it.kind {
 	case blockUser: // 用户气泡：品牌色底白字、右对齐（§15.3 双色气泡）
 		return func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, it.text)
 			s.Color = whiteText
-			s.State = sel
+			s.State = sels(0)
 			return s.Layout(gtx)
 		}, brandColor, radiusDp, true, true
-	case blockAssistant: // 助手气泡：浅白底、左对齐
+	case blockAssistant: // 助手气泡：浅白底、左对齐；markdown 复合行 = 垂直多块共底板（D66）
+		blocks := it.md
+		if len(blocks) == 0 {
+			blocks = []mdBlock{{kind: mdPara, text: it.text}} // live 草稿/兜底：纯文本单块
+		}
 		return func(gtx layout.Context) layout.Dimensions {
-			s := material.Body2(u.th, it.text)
-			s.State = sel
-			return s.Layout(gtx)
+			kids := make([]layout.FlexChild, 0, len(blocks)*2-1)
+			for k, b := range blocks {
+				if k > 0 {
+					kids = append(kids, layout.Rigid(layout.Spacer{Height: mdBlockGapDp}.Layout))
+				}
+				kids = append(kids, layout.Rigid(u.mdBlockWidget(b, sels(k))))
+			}
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, kids...)
 		}, pillBg, radiusDp, false, true
 	case blockThinking: // 思考行：头部（元信息，不选）+ 正文
 		header := "已思考"
@@ -674,7 +691,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, sel *widget.Selectable) 
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					s := material.Body2(u.th, it.text)
 					s.Color = textDim
-					s.State = sel
+					s.State = sels(0)
 					return s.Layout(gtx)
 				}),
 			)
@@ -683,59 +700,91 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, sel *widget.Selectable) 
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, it.text)
 			l.Color = textMuted
-			l.State = sel
+			l.State = sels(0)
 			return l.Layout(gtx)
 		}, cardTool, cardR, false, false
 	case blockNotice:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, it.text)
 			l.Color = textNotice
-			l.State = sel
+			l.State = sels(0)
 			return l.Layout(gtx)
 		}, cardNotice, cardR, false, false
 	case blockError:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(u.th, it.text)
 			l.Color = textError
-			l.State = sel
+			l.State = sels(0)
 			return l.Layout(gtx)
 		}, cardError, cardR, false, false
 	case blockSystem:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(u.th, it.text)
 			l.Color = textSystem
-			l.State = sel
+			l.State = sels(0)
 			return l.Layout(gtx)
 		}, cardSystem, cardR, false, false
-	case blockHeading: // markdown 标题（D65）：同气泡大字——h1 20sp 递减，Weight 求粗
+	default: // blockPlain（Say/命令输出/提示）：底板浅白、正文默认色
 		return func(gtx layout.Context) layout.Dimensions {
-			s := material.Body1(u.th, it.text)
-			s.TextSize = mdHeadingSp(u.th, it.level)
+			s := material.Body2(u.th, it.text)
+			s.State = sels(0)
+			return s.Layout(gtx)
+		}, pillBg, cardR, false, false
+	}
+}
+
+// mdBlockGapDp 气泡内 markdown 块间距（D66 复合行）。
+const mdBlockGapDp unit.Dp = 4
+
+// mdCodeInsetDp 代码小卡内边距（D66：卡嵌气泡内）。
+const mdCodeInsetDp unit.Dp = 6
+
+// mdBlockWidget 单个 markdown 块的行内部件（D66 复合行分派；sel = 该块行选状态）。
+func (u *UI) mdBlockWidget(b mdBlock, sel *widget.Selectable) layout.Widget {
+	switch b.kind {
+	case mdHeading: // 大字求粗（D65 阶梯；CJK 粗体面缺省回落常规）
+		return func(gtx layout.Context) layout.Dimensions {
+			s := material.Body1(u.th, b.text)
+			s.TextSize = mdHeadingSp(u.th, b.level)
 			s.Font.Weight = font.SemiBold
 			s.State = sel
 			return s.Layout(gtx)
-		}, pillBg, radiusDp, false, true
-	case blockCode: // markdown 代码块（D65）：等宽 + 深底卡；逐字保真不解转义
+		}
+	case mdCode: // 等宽小卡：录宏量高 → 画底 → 重放（同 paintRow 次序，卡嵌气泡内）
 		return func(gtx layout.Context) layout.Dimensions {
-			s := material.Body2(u.th, it.text)
+			s := material.Body2(u.th, b.text)
 			s.Font = monoFace
 			s.TextSize = u.th.TextSize * 13.0 / 16.0
 			s.State = sel
+			m := op.Record(gtx.Ops)
+			dims := layout.UniformInset(mdCodeInsetDp).Layout(gtx, s.Layout)
+			txt := m.Stop()
+			st := clip.UniformRRect(image.Rectangle{Max: dims.Size}, gtx.Dp(radiusDp)).Push(gtx.Ops)
+			paint.Fill(gtx.Ops, cardTool)
+			st.Pop()
+			txt.Add(gtx.Ops)
+			return dims
+		}
+	case mdQuote: // 引用：暗色正文（前缀已在文本）
+		return func(gtx layout.Context) layout.Dimensions {
+			s := material.Body2(u.th, b.text)
+			s.Color = textDim
+			s.State = sel
 			return s.Layout(gtx)
-		}, cardTool, cardR, false, true
-	case blockRule: // markdown 分隔线（D65）：弱化短行——文本行承载，行机制零特例
+		}
+	case mdRule: // 分隔线：暗点行
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, "· · · · · ·")
 			l.Color = textDim
 			l.State = sel
 			return l.Layout(gtx)
-		}, cardTool, cardR, false, false
-	default: // blockPlain（Say/命令输出/提示）：底板浅白、正文默认色
+		}
+	default: // mdPara / mdListItem：正文（列表前缀已在文本）
 		return func(gtx layout.Context) layout.Dimensions {
-			s := material.Body2(u.th, it.text)
+			s := material.Body2(u.th, b.text)
 			s.State = sel
 			return s.Layout(gtx)
-		}, pillBg, cardR, false, false
+		}
 	}
 }
 
@@ -1071,22 +1120,30 @@ func featherWidth(m unit.Metric, w, h int) int {
 }
 
 // blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块；
-// level = 标题级别，markdown 派生行专用，D65）。
+// md = 助手定稿块的 markdown 结构块（D66 复合行），nil = 纯文本行）。
 type blockView struct {
-	kind  blockKind
-	text  string
-	secs  int
-	live  bool
-	level int
+	kind blockKind
+	text string
+	secs int
+	live bool
+	md   []mdBlock
+}
+
+// selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数，其余行恒 1。
+func (it blockView) selCount() int {
+	if it.kind == blockAssistant && len(it.md) > 0 {
+		return len(it.md)
+	}
+	return 1
 }
 
 // frameItems 定稿块 + 实时思考/草稿（流式可见；对齐 D33"流式原样、定稿渲染"口径）。
-// 助手定稿块经 markdown 展开为多行（D65），live 草稿原样单行。
+// 助手定稿块 = 单条目携 markdown 结构块（D66 单回复单气泡），live 草稿原样单行。
 func (u *UI) frameItems() []blockView {
 	items := make([]blockView, 0, len(u.m.blocks)+2)
 	for _, b := range u.m.blocks {
 		if b.kind == blockAssistant {
-			items = append(items, u.mdViews(b.text)...)
+			items = append(items, blockView{kind: blockAssistant, md: u.mdBlocks(b.text)})
 			continue
 		}
 		items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs})

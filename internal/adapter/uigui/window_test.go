@@ -12,6 +12,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"gioui.org/widget"
 )
 
 // newShapeUI 形裁登记用的最小 UI（frameMetric 供淡出带剔除换算；bandBottom = 带底，
@@ -308,6 +309,30 @@ func TestSelForRowState(t *testing.T) {
 	}
 	if len(u.selRows) != 3 {
 		t.Fatalf("应增长到 3 个: %d", len(u.selRows))
+	}
+}
+
+// TestCompositeAssistantBubble 单回复单气泡（D66）：一条多块助手消息在 transcript 中
+// 占一行——行选键数 = 块数、气泡底板每消息登记一个矩形。
+func TestCompositeAssistantBubble(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockUser, "问")
+	u.m.add(blockAssistant, "好的：\n\n- 一项\n- 二项\n\n```go\ndone\n```")
+
+	gtx, _ := frameGtx(input.Source{})
+	u.transcript(gtx, 600, 400)
+	// 行选键：用户 1 + 助手复合行 4 块 = 5。
+	if len(u.selRows) != 5 {
+		t.Fatalf("selRows 键数 = %d, want 5（D66 双键挂接）", len(u.selRows))
+	}
+	// 形状：每消息一个矩形（用户气泡 + 助手气泡），复合行不再逐块拆底板。
+	if len(u.shapes) != 2 {
+		t.Fatalf("登记形状 = %d, want 2", len(u.shapes))
+	}
+	// 复合行应作为气泡底板渲染（与段落同 pillBg 系）。
+	_, _, _, _, bubble := u.rowStyle(gtx, u.frameItems()[1], func(int) *widget.Selectable { return nil })
+	if !bubble {
+		t.Fatal("助手复合行应为气泡")
 	}
 }
 

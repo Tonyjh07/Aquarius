@@ -23,9 +23,6 @@ const (
 	blockError                      // 错误块
 	blockSystem                     // system 节点（/compact 摘要等）
 	blockThinking                   // 思考块（D42；流式实时 + 定稿折叠，§15.3）
-	blockHeading                    // markdown 标题（D65；level = 1–6）
-	blockCode                       // markdown 代码块（D65；等宽 + 深底卡）
-	blockRule                       // markdown 分隔线（D65；弱化短行）
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。

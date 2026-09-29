@@ -1,8 +1,8 @@
 package uigui
 
-// markdown.go 助手正文 markdown 渲染（D65/§15.3）：goldmark（CommonMark，依赖树既有）
-// 定稿解析为结构块，frameItems 渲染期展开为多行 blockView——行选（D63）/滚动手势/
-// 淡出合成（D62）等行机制零改动复用。行内剥标记保文本（material.Label 单一样式；
+// markdown.go 助手正文 markdown 渲染（D65/D66/§15.3）：goldmark（CommonMark，依赖树
+// 既有）定稿解析为结构块，渲染期作为消息级复合行进单气泡（D66）——行选（D63）/滚动
+// 手势/淡出合成（D62）等行机制零改动复用。行内剥标记保文本（material.Label 单一样式；
 // 行内富样式留 richtext 后续增量）；live 草稿不解析（D33「流式原样、定稿渲染」）。
 
 import (
@@ -252,35 +252,31 @@ func mdTrimNL(s string) string { return strings.TrimRight(s, "\n") }
 // mdCacheLimit 展开缓存上限（条）：超限整表重建——长会话防膨胀，重解析代价可忽略。
 const mdCacheLimit = 256
 
-// mdViews 助手定稿文本 → markdown 行视图（D65）：按原文缓存（展开结果不可变）；
-// 解析 panic 或空结果回退原文单行（帧循环不可挂，goldmark 虽经模糊测试仍兜底）。
-func (u *UI) mdViews(src string) (views []blockView) {
+// mdBlocks 助手定稿文本 → markdown 结构块（D65/D66）：按原文缓存（解析结果不可变）；
+// 空文本块剔除（空围栏等不占气泡空间）；解析 panic 或空结果回退单段落原文
+// （帧循环不可挂，goldmark 虽经模糊测试仍兜底）。
+func (u *UI) mdBlocks(src string) (blocks []mdBlock) {
 	if u.mdCache == nil {
-		u.mdCache = map[string][]blockView{}
+		u.mdCache = map[string][]mdBlock{}
 	}
 	if v, ok := u.mdCache[src]; ok {
 		return v
 	}
 	defer func() {
-		if recover() != nil || len(views) == 0 {
-			views = []blockView{{kind: blockAssistant, text: src}}
+		if recover() != nil || len(blocks) == 0 {
+			blocks = []mdBlock{{kind: mdPara, text: src}}
 		}
 		if len(u.mdCache) >= mdCacheLimit {
-			u.mdCache = map[string][]blockView{}
+			u.mdCache = map[string][]mdBlock{}
 		}
-		u.mdCache[src] = views
+		u.mdCache[src] = blocks
 	}()
-	for _, b := range parseMarkdown(src) {
-		switch b.kind {
-		case mdHeading:
-			views = append(views, blockView{kind: blockHeading, text: b.text, level: b.level})
-		case mdCode:
-			views = append(views, blockView{kind: blockCode, text: b.text})
-		case mdRule:
-			views = append(views, blockView{kind: blockRule})
-		default: // 段落/列表项/引用：助手气泡样式（前缀已含在文本里）
-			views = append(views, blockView{kind: blockAssistant, text: b.text})
+	parsed := parseMarkdown(src)
+	blocks = parsed[:0]
+	for _, b := range parsed {
+		if b.kind == mdRule || strings.TrimSpace(b.text) != "" {
+			blocks = append(blocks, b)
 		}
 	}
-	return views
+	return blocks
 }
