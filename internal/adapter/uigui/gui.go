@@ -139,6 +139,12 @@ type UI struct {
 	followTail       bool // 尾随贴底（新内容贴输入栏；上滚即停，§15.3）
 	contentH         int  // 内容总高（上一帧测得，物理 px）
 
+	// D71 滚轮手势钉点：转写区滚轮真有增量 → 手势进行中（fadePresent 把光标所在
+	// 帧像素 alpha 顶到 ≥1 维持分层窗命中，光标停在透明间隙滚轮不流失到下层窗）；
+	// 收起/停靠/光标移位即解除恢复逐像素穿透。仅事件循环 goroutine 读写。
+	wheelCap    bool
+	wheelAnchor point // 手势锚点（光标屏幕坐标；位置变化 = 手势结束）
+
 	// 行选择（D63）：selRows 按行序缓存 Selectable（get-or-create；行文本变化经
 	// SetText 幂等更新并自动清选区）。拖层把手带不覆盖转写区（window.go layout），
 	// 行选手势独占气泡区指针。仅事件循环 goroutine 读写。

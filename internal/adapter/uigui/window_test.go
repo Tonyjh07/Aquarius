@@ -410,3 +410,125 @@ func TestTranscriptManualScroll(t *testing.T) {
 			u.scrollPx, u.followTail, bottom)
 	}
 }
+
+// TestWheelGesturePinStateMachine D71 状态机：转写区滚轮真有增量 → 手势挂上（锚点 =
+// 当帧光标屏幕坐标）；光标不动保持、移位解除、收起解除；解除后重新滚动重新挂上。
+func TestWheelGesturePinStateMachine(t *testing.T) {
+	u := newFrameUI()
+	for i := 0; i < 40; i++ {
+		u.m.add(blockAssistant, fmt.Sprintf("第 %02d 条：内容高过视口，制造滚动余量。", i))
+	}
+	var q input.Router
+	frame := func() {
+		gtx, ops := frameGtx(q.Source())
+		u.layout(gtx)
+		q.Frame(ops) // 提交 hit 树与过滤器
+	}
+
+	frame() // 登记滚动手势区
+	if u.wheelCap {
+		t.Fatal("初始不应有滚动手势")
+	}
+
+	// ① 上滚一格（真有增量）：手势挂上，锚点 = 当帧光标。
+	q.Queue(pointer.Event{Kind: pointer.Scroll, Position: f32.Pt(300, 200), Scroll: f32.Pt(0, -60)})
+	frame()
+	if !u.wheelCap {
+		t.Fatal("滚轮真有增量后手势应挂上")
+	}
+	if cur := cursorPos(); u.wheelAnchor != cur {
+		t.Fatalf("锚点 = %v, want 当帧光标 %v", u.wheelAnchor, cur)
+	}
+
+	// ② 光标不动：保持。
+	frame()
+	if !u.wheelCap {
+		t.Fatal("光标未动应保持手势")
+	}
+
+	// ③ 光标移位（锚点失配）：解除。
+	u.wheelAnchor = point{x: cursorPos().x + 99, y: cursorPos().y}
+	frame()
+	if u.wheelCap {
+		t.Fatal("光标移位应解除手势")
+	}
+
+	// ④ 重新滚动：重新挂上；收起：解除。
+	q.Queue(pointer.Event{Kind: pointer.Scroll, Position: f32.Pt(300, 200), Scroll: f32.Pt(0, -40)})
+	frame()
+	if !u.wheelCap {
+		t.Fatal("解除后重新滚动应重新挂上")
+	}
+	u.collapsed = true
+	frame()
+	if u.wheelCap {
+		t.Fatal("收起应解除手势")
+	}
+}
+
+// TestFadePresentPinsCursorPixelDuringGesture D71 钉点落笔：手势期间提交位图的光标
+// 所在像素 alpha 顶到 ≥1（分层窗逐像素命中保住 → 透明间隙不吞滚轮），只钉 A==0 像素、
+// 解除后不再钉、光标在帧外不落笔。经 presentMain 槽捕获提交字节（钉点须在提交前）。
+func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
+	u := newFrameUI()
+	u.hwnd = 1 // 非 0 即过门控（windowRectPx 无真句柄 → 回退 u.x/u.y）
+	u.frameSize = image.Pt(400, 300)
+	u.fadeBuf = make([]byte, 400*300*4) // 全透明间隙帧
+	cur := cursorPos()
+	u.x, u.y = cur.x-200, cur.y-150 // 窗口对齐光标 → 光标落帧中心 (200,150)
+	oi := (150*400 + 200) * 4
+
+	var presented []byte
+	old := presentMain
+	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+		presented = append([]byte(nil), bits...)
+		return true
+	}
+	defer func() { presentMain = old }()
+
+	// ① 手势进行中：间隙像素钉到 alpha=1（提交字节里已含钉点）。
+	u.wheelCap = true
+	u.wheelAnchor = cur
+	u.fadePresent(true)
+	if presented == nil {
+		t.Fatal("presentMain 未被调用")
+	}
+	if presented[oi+3] != 1 {
+		t.Fatalf("钉点像素 alpha = %d, want 1（间隙像素应钉到 ≥1 保住命中）", presented[oi+3])
+	}
+
+	// ② 已有内容像素不改写（只钉 A==0）。
+	u.fadeBuf[oi+3] = 40
+	presented = nil
+	u.fadePresent(true)
+	if presented == nil {
+		t.Fatal("presentMain 未被调用")
+	}
+	if presented[oi+3] != 40 {
+		t.Fatalf("内容像素 alpha = %d, want 40（既有可见像素不应改写）", presented[oi+3])
+	}
+
+	// ③ 手势解除：不再钉（恢复 alpha=0 逐像素穿透）。
+	u.wheelCap = false
+	u.fadeBuf[oi+3] = 0
+	presented = nil
+	u.fadePresent(true)
+	if presented == nil {
+		t.Fatal("presentMain 未被调用")
+	}
+	if presented[oi+3] != 0 {
+		t.Fatalf("解除后 alpha = %d, want 0（恢复穿透）", presented[oi+3])
+	}
+
+	// ④ 光标在帧外（窗移出光标下方）：不落笔。
+	u.wheelCap = true
+	u.x = cur.x + 1000
+	presented = nil
+	u.fadePresent(true)
+	if presented == nil {
+		t.Fatal("presentMain 未被调用")
+	}
+	if presented[oi+3] != 0 {
+		t.Fatalf("帧外钉点 alpha = %d, want 0", presented[oi+3])
+	}
+}

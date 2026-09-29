@@ -378,6 +378,26 @@ func (u *UI) fadeCompose() bool {
 	return true
 }
 
+// pinWheelCursor 滚轮手势钉点（D71）：手势期间把光标所在帧像素 alpha 顶到 ≥1——
+// 分层窗逐像素命中以 alpha==0 为穿透（spike/wheelpcap 实证：alpha=1 即送达、
+// SetCapture 不改滚轮路由），光标停在透明间隙时滚轮仍路由到本窗 → 跨间隙连续可滚。
+// 只钉 A==0 像素（既有可见内容不改写）；RGB=0 合法预乘，观感 ≤1/255 不可见。
+// 光标在帧外（窗移位让出光标下方）不落笔：命中自然失效，手势随 layout 下帧复评解除。
+func pinWheelCursor(data []byte, size image.Point, winX, winY int32, cur point) {
+	if size.X <= 0 || size.Y <= 0 || len(data) < size.X*size.Y*4 {
+		return
+	}
+	fx, fy := int(cur.x-winX), int(cur.y-winY)
+	if fx < 0 || fy < 0 || fx >= size.X || fy >= size.Y {
+		return
+	}
+	oi := (fy*size.X + fx) * 4
+	if data[oi+3] != 0 {
+		return
+	}
+	data[oi+0], data[oi+1], data[oi+2], data[oi+3] = 0, 0, 0, 1
+}
+
 // fadePresent 上屏阶段（frame 调，殿后）：整窗 ULW 提交到主窗（D62 单通道——位图
 // alpha 即形状/命中，SourceConstantAlpha = u.alpha 统一半透明；空帧也提交以清除
 // 上一帧像素，位图全透明时窗口不可见且点击穿透）。取实测窗口矩形定位（防自跟踪
@@ -395,6 +415,9 @@ func (u *UI) fadePresent(composed bool) {
 			return // 尺寸竞态：跳过一帧，下帧对齐后提交（防 ULW 拉伸位图/改窗尺寸）
 		}
 		x, y = rc.left, rc.top
+	}
+	if u.wheelCap { // D71 滚轮手势钉点（提交前落笔：位图 alpha 即形状/命中/穿透）
+		pinWheelCursor(u.fadeBuf, u.frameSize, x, y, cursorPos())
 	}
 	presentMain(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha)
 }

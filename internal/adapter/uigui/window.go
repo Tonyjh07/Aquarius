@@ -409,6 +409,11 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.updateClicks(gtx)
 	u.updateDrag(gtx)
 	u.updateLogo(gtx)
+	// D71 滚轮手势钉点复评：收起/停靠/光标移位 = 手势结束 → 解除钉点、恢复逐像素
+	// 穿透。事件静默时无帧可跑：钉点残留原像素至下一帧，任意本窗事件到达即自愈。
+	if u.wheelCap && (u.collapsed || u.docked || cursorPos() != u.wheelAnchor) {
+		u.wheelCap = false
+	}
 	switch {
 	case u.expandAn.active:
 		// D54：动画期间不做停靠评估（球位在动）。布防只在**展开方向**清；收起方向
@@ -523,6 +528,12 @@ func (u *UI) updateScroll(gtx layout.Context, viewH, total int) {
 	d := u.transcriptScroll.Update(gtx.Metric, gtx.Source, gtx.Now, gesture.Vertical,
 		pointer.ScrollRange{}, // 横向不滚（X 夹到 0）
 		pointer.ScrollRange{Min: -overflow, Max: overflow})
+	if d != 0 {
+		// D71 滚轮手势钉点：真有增量 = 手势进行中；锚点随当前光标刷新（本帧顶部
+		// 复评若已因移位解除，此处即在新位置重挂）。钉点由 fadePresent 落笔。
+		u.wheelCap = true
+		u.wheelAnchor = cursorPos()
+	}
 	u.scrollPx += d
 	if u.scrollPx < 0 {
 		u.scrollPx = 0
