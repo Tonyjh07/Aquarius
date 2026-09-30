@@ -49,7 +49,7 @@ func TestFadeFrameBand(t *testing.T) {
 		radius:  0,
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(src, shapes, 0, bandH, m1x(), out, image.Pt(w, h)) {
+	if !fadeFrame(src, shapes, fadeBands{bottom: bandH}, m1x(), out, image.Pt(w, h)) {
 		t.Fatal("应有内容")
 	}
 	at := func(x, y, ch int) byte { // ch: 0=B 1=G 2=R 3=A
@@ -109,7 +109,7 @@ func TestFadeFrameBand(t *testing.T) {
 	}
 	// ⑤ 带顶以上不可见：带顶>0 时其上全零。
 	out2 := make([]byte, w*h*4)
-	if !fadeFrame(src, shapes, 2, bandH, m1x(), out2, image.Pt(w, h)) {
+	if !fadeFrame(src, shapes, fadeBands{top: 2, bottom: bandH}, m1x(), out2, image.Pt(w, h)) {
 		t.Fatal("带下应有内容")
 	}
 	for y := 0; y < 2; y++ {
@@ -122,12 +122,98 @@ func TestFadeFrameBand(t *testing.T) {
 	// ⑥ 全透明内容 → 无内容。
 	empty := image.NewRGBA(image.Rect(0, 0, w, h))
 	out3 := make([]byte, w*h*4)
-	if fadeFrame(empty, shapes, 0, bandH, m1x(), out3, image.Pt(w, h)) {
+	if fadeFrame(empty, shapes, fadeBands{bottom: bandH}, m1x(), out3, image.Pt(w, h)) {
 		t.Fatal("全透明内容不应报告有内容")
 	}
 	// ⑦ 参数防御：缓冲过短拒绝。
-	if fadeFrame(src, shapes, 0, bandH, m1x(), out[:10], image.Pt(w, h)) {
+	if fadeFrame(src, shapes, fadeBands{bottom: bandH}, m1x(), out[:10], image.Pt(w, h)) {
 		t.Fatal("短缓冲应拒绝")
+	}
+}
+
+// TestFadeFrameBottomBand D79 底部矮带：带内 g = 1 → 0 smoothstep 渐隐到带底（末像素
+// 近 0）、**带上方与带下方都不衰减（g=1）**——带下即状态行/输入栏，绝不能被淡化；与
+// 顶带重叠段两带相乘；零值（无底带）不改变任何像素。逐行与参考式交叉验证（±1）。
+func TestFadeFrameBottomBand(t *testing.T) {
+	const w, h = 4, 6
+	src := image.NewRGBA(image.Rect(0, 0, w, h))
+	for i := range src.Pix {
+		src.Pix[i] = 0xFF // 全不透明白（预乘 255）
+	}
+	shapes := []drawShape{{
+		outline: image.Rect(-40, 0, w+40, h), // 同 TestFadeFrameBand：观测列恒在核心
+		clip:    image.Rect(0, 0, w, h),
+		radius:  0,
+	}}
+	run := func(b fadeBands) []byte {
+		out := make([]byte, w*h*4)
+		if !fadeFrame(src, shapes, b, m1x(), out, image.Pt(w, h)) {
+			t.Fatal("应有内容")
+		}
+		return out
+	}
+	at := func(out []byte, x, y int) byte { return out[(y*w+x)*4+3] } // ch3 = A
+
+	// ① 带 [3,6)：带外（y<3）g=1 原样；带内逐行 = 255×smoothstep((带底−y−0.5)/带高)，
+	//    单调递减，末行近 0（不为 0——与带外连续、无 1px 空洞）。
+	out := run(fadeBands{lowTop: 3, lowEnd: h})
+	for y := 0; y < h; y++ {
+		g := 1.0
+		if y >= 3 {
+			g = smoothstep((float64(h-y) - 0.5) / float64(h-3))
+		}
+		want := math.Round(255 * g)
+		for x := 0; x < w; x++ {
+			if diff := math.Abs(float64(at(out, x, y)) - want); diff > 1 {
+				t.Fatalf("(%d,%d) A = %d, want %.0f", x, y, at(out, x, y), want)
+			}
+		}
+	}
+	for y := 4; y < h; y++ {
+		if cur, prev := at(out, 0, y), at(out, 0, y-1); cur >= prev {
+			t.Fatalf("带内行 %d alpha 应递减: %d >= %d", y, cur, prev)
+		}
+	}
+	if a := at(out, 0, h-1); a == 0 || a > 32 {
+		t.Fatalf("带底 alpha = %d，应近 0 但非 0（≤32）", a)
+	}
+	if a := at(out, 0, 2); a != 0xFF {
+		t.Fatalf("带上方 alpha = %d, want 255（带外不衰减）", a)
+	}
+
+	// ② 带下恢复 g=1：带收到 [3,4)（单行）→ 行 3 居中、行 4/5 原样 = 状态行/输入栏口径。
+	out2 := run(fadeBands{lowTop: 3, lowEnd: 4})
+	if a := at(out2, 0, 3); a < 96 || a > 160 {
+		t.Fatalf("span=1 带内 alpha = %d, want ≈128（g=0.5）", a)
+	}
+	for y := 4; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if a := at(out2, x, y); a != 0xFF {
+				t.Fatalf("带下 (%d,%d) A = %d, want 255（带下不受淡化）", x, y, a)
+			}
+		}
+	}
+
+	// ③ 与顶带重叠：两带相乘（顶带 0→1 × 底带 1→0），带顶以上仍全零。
+	out3 := run(fadeBands{top: 2, bottom: 4, lowTop: 3, lowEnd: 6})
+	for y := 0; y < 2; y++ {
+		for x := 0; x < w; x++ {
+			if a := at(out3, x, y); a != 0 {
+				t.Fatalf("顶带以上 (%d,%d) A = %d, want 0", x, y, a)
+			}
+		}
+	}
+	want3 := math.Round(255 * smoothstep((3-2+0.5)/2.0) * smoothstep((6-3-0.5)/3.0))
+	if diff := math.Abs(float64(at(out3, 0, 3)) - want3); diff > 1 {
+		t.Fatalf("重叠行 alpha = %d, want %.0f（相乘）", at(out3, 0, 3), want3)
+	}
+
+	// ④ 零值（无底带，收起态口径）= 不衰减。
+	out4 := run(fadeBands{})
+	for x := 0; x < w; x++ {
+		if a := at(out4, x, h-1); a != 0xFF {
+			t.Fatalf("无底带末行 A = %d, want 255", a)
+		}
 	}
 }
 
@@ -164,7 +250,7 @@ func TestFadeFeatherDisabled(t *testing.T) {
 		radius:  8,
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(src, shapes, 0, 0, m, out, image.Pt(w, h)) {
+	if !fadeFrame(src, shapes, fadeBands{}, m, out, image.Pt(w, h)) {
 		t.Fatal("应有内容")
 	}
 	atA := func(x, y int) byte { return out[(y*w+x)*4+3] }
@@ -179,7 +265,7 @@ func TestFadeFeatherDisabled(t *testing.T) {
 	featherDisabled = true
 	defer func() { featherDisabled = false }()
 	out2 := make([]byte, w*h*4)
-	if !fadeFrame(src, shapes, 0, 0, m, out2, image.Pt(w, h)) {
+	if !fadeFrame(src, shapes, fadeBands{}, m, out2, image.Pt(w, h)) {
 		t.Fatal("应有内容")
 	}
 	if a := out2[(60*w+11)*4+3]; a != 0xFF {

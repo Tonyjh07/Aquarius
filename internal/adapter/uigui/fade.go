@@ -225,6 +225,16 @@ func init() {
 	}
 }
 
+// fadeBands 淡出带几何（窗口坐标、物理 px；零值 = 两带皆无）：
+//   - [top, bottom) 顶带（D54 揭示带 / §15.3 静息顶带）：y < top 不可见，带内 0 → 1；
+//   - [lowTop, lowEnd) 底部矮带（D79）：带内 1 → 0 渐隐到带底（= 转写区底），带下
+//     恢复 1（状态行/输入栏在带之下、不受淡化）；lowEnd <= lowTop 即无底带
+//     （收起态与零值调用皆走此口径）。
+type fadeBands struct {
+	top, bottom    int
+	lowTop, lowEnd int
+}
+
 // fadeFrame 全帧合成（D62 单通道）：headless 内容 + 元素形状 → 整窗预乘 BGRA，
 // av = vis(形状) × g(y) × 内容alpha 一次写入。
 //   - vis = 形状覆盖度：核心（d ≤ -(fw+0.5)）= 1；边带沿**真轮廓**（未按视口/带裁剪——
@@ -233,13 +243,15 @@ func init() {
 //     亮带」，已否决）；轮廓外 = 0（等价旧形裁裁剪语义）。边带内缩界沿用 D47 标定
 //     （fw+0.5：GDI 区块边界落在 SDF 零线内 0.5px）——渐隐首像素 alpha≈1，无 1px
 //     空洞/亮线；fw=0 的退化元素按无羽化处理（核心即轮廓）。
-//   - g(y) = 带渐变 smoothstep（带顶 0 → 带底 1；带顶以上 av=0 不可见——D54 揭示带
-//     /§15.3 顶带同式，取代旧「带整带挖空 + 带内单绘」两段机制）。
+//   - g(y) = 双带渐变 smoothstep：顶带**带顶 0 → 带底 1**（带顶以上 av=0 不可见——
+//     D54 揭示带/§15.3 顶带同式，取代旧「带整带挖空 + 带内单绘」两段机制）；底带
+//     **反向 1 → 0** 收零于带底（= 转写区底，D79），带下恢复 1——断点两侧无同形状
+//     跨越（转写形状裁剪上沿即带底、状态行/输入栏形状自带底起），故不留横缝。
 //   - 形状按 record 顺序落笔（= 绘制顺序），重叠处后者覆盖 → z 序与单遍渲染一致。
 //
 // src 不可用（nil 或尺寸小于本帧）时用元素底色兜底（writePremulFill：形状可见
 // 可点、无文字）。返回是否写入非零像素（false = 全透明帧）。
-func fadeFrame(src *image.RGBA, shapes []drawShape, bandTop, bandBottom int,
+func fadeFrame(src *image.RGBA, shapes []drawShape, b fadeBands,
 	m unit.Metric, out []byte, size image.Point) bool {
 	w, h := size.X, size.Y
 	if w <= 0 || h <= 0 || len(shapes) == 0 || len(out) < w*h*4 {
@@ -281,11 +293,22 @@ func fadeFrame(src *image.RGBA, shapes []drawShape, bandTop, bandBottom int,
 		y1 := min(r.Max.Y, min(clip.Max.Y, h))
 		for y := y0; y < y1; y++ {
 			g := 1.0
-			if y < bandTop {
+			if y < b.top {
 				continue // D54：带顶以上不可见（揭示带全隐段）
-			} else if y < bandBottom {
-				t := (float64(y-bandTop) + 0.5) / float64(bandBottom-bandTop)
+			} else if y < b.bottom {
+				t := (float64(y-b.top) + 0.5) / float64(b.bottom-b.top)
 				g = t * t * (3 - 2*t)
+			}
+			if b.lowTop <= y && y < b.lowEnd {
+				// D79 底带：1 → 0（首像素≈1、末像素≈0，与带外两侧连续）。
+				// 进入此分支必有 span = lowEnd−lowTop ≥ 1，无除零。
+				t := (float64(b.lowEnd-y) - 0.5) / float64(b.lowEnd-b.lowTop)
+				if t < 0 {
+					t = 0
+				} else if t > 1 {
+					t = 1
+				}
+				g *= t * t * (3 - 2*t)
 			}
 			for x := x0; x < x1; x++ {
 				d := rrectSD(float32(x)+0.5, float32(y)+0.5, cx, cy, hw, hh, rad)
@@ -344,6 +367,30 @@ func (u *UI) clampedBand() (top, bottom int) {
 	return top, bottom
 }
 
+// clampedLowBand 底部矮带（D79 纯读，可测）[top, end)：夹到当前窗口内，end ≤ top 即关。
+// 展开路径写 [transH−带高, transH)——transH 低于带高（极矮窗）时退化为 [0, transH)，
+// 整片转写区渐隐，尺寸约束归 S1b 响应式迁移处理；收起态写 size.Y,size.Y → 夹后仍空。
+func (u *UI) clampedLowBand() (top, end int) {
+	top, end = u.bandLowTop, u.bandLowEnd
+	h := u.frameSize.Y
+	if top < 0 {
+		top = 0
+	}
+	if top > h {
+		top = h
+	}
+	if end < 0 {
+		end = 0
+	}
+	if end > h {
+		end = h
+	}
+	if end < top {
+		end = top
+	}
+	return top, end
+}
+
 // fadeCompose 合成阶段（frame 调，**在 commit/submit/present 之前**）：headless 同布局
 // 重渲 → 整窗位图（av = vis × g(y) × alpha，D62 全帧合成）。不改屏幕态——它是一帧里
 // 唯一的慢段（离屏 GPU 重渲 + 预乘），先跑完，之后的移窗/提交/ULW 才各自落地。
@@ -371,11 +418,14 @@ func (u *UI) fadeCompose() bool {
 		u.fadeBuf = make([]byte, size)
 	}
 	clear(u.fadeBuf)
-	// D54 消息揭示带：重渲刚把 bandTop/bandBottom 按当帧 msgP 写好（与主窗那遍同帧同值），
-	// 就地读取保证与 u.shapes 同源；夹到窗口内，静息即 §15.3 顶带 [0, Dp(fadeBandDp))。
+	// D54 消息揭示带 + D79 底部矮带：重渲刚把四端按当帧 msgP/转写区底写好（与主窗那遍
+	// 同帧同值），就地读取保证与 u.shapes 同源；夹到窗口内，静息即 §15.3 顶带
+	// [0, Dp(fadeBandDp)) + 底带 [transH−Dp(fadeBandBottomDp), transH)。
 	top, bottom := u.clampedBand()
-	u.fadeEmpty = !fadeFrame(u.fade.img, u.shapes, top, bottom, u.frameMetric,
-		u.fadeBuf, u.frameSize)
+	lowTop, lowEnd := u.clampedLowBand()
+	u.fadeEmpty = !fadeFrame(u.fade.img, u.shapes,
+		fadeBands{top: top, bottom: bottom, lowTop: lowTop, lowEnd: lowEnd},
+		u.frameMetric, u.fadeBuf, u.frameSize)
 	return true
 }
 

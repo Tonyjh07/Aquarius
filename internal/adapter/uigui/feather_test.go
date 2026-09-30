@@ -64,7 +64,7 @@ func TestFadeFrameFeatherEdge(t *testing.T) {
 		fill:    color.NRGBA{R: 0xFF, A: 0xFF}, // 底色红（src=nil 时的颜色来源）
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(nil, shapes, 0, bandPx, m, out, image.Pt(w, h)) {
+	if !fadeFrame(nil, shapes, fadeBands{bottom: bandPx}, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入形状像素")
 	}
 	px := func(x, y int) (b, g, r, a byte) {
@@ -141,7 +141,7 @@ func TestFadeFrameFeatherUniformAcrossShapes(t *testing.T) {
 			fill: color.NRGBA{R: 0xFF, A: 0xFF}},
 	}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(nil, shapes, 0, 0, m, out, image.Pt(w, h)) {
+	if !fadeFrame(nil, shapes, fadeBands{}, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入形状像素")
 	}
 	px := func(x, y int) byte { return out[(y*w+x)*4+3] }
@@ -178,7 +178,7 @@ func TestFadeFrameSamplesContent(t *testing.T) {
 		fill:    color.NRGBA{R: 0xFF, A: 0xFF}, // 底色红：若被误用，绿就不会出现
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(src, shapes, 0, 0, m, out, image.Pt(w, h)) {
+	if !fadeFrame(src, shapes, fadeBands{}, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入形状像素")
 	}
 	core := (20*w + 15) * 4               // 核心像素（远离边带）
@@ -208,7 +208,7 @@ func TestFadeFrameCornerUniform(t *testing.T) {
 		fill:    color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(nil, shapes, 0, 0, m, out, image.Pt(w, h)) {
+	if !fadeFrame(nil, shapes, fadeBands{}, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入形状像素")
 	}
 	px := func(x, y int) byte { return out[(y*w+x)*4+3] }
@@ -263,7 +263,7 @@ func TestFadeFrameBandContinuity(t *testing.T) {
 		fill:    color.NRGBA{R: 0xFF, A: 0xFF},
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(nil, shapes, 0, bandPx, m, out, image.Pt(w, h)) {
+	if !fadeFrame(nil, shapes, fadeBands{bottom: bandPx}, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入形状像素")
 	}
 	px := func(x, y int) byte { return out[(y*w+x)*4+3] }
@@ -293,7 +293,7 @@ func TestFadeFrameBandTopInvisible(t *testing.T) {
 		fill:    color.NRGBA{R: 0xFF, A: 0xFF},
 	}}
 	out := make([]byte, w*h*4)
-	if !fadeFrame(nil, shapes, 10, 20, m, out, image.Pt(w, h)) {
+	if !fadeFrame(nil, shapes, fadeBands{top: 10, bottom: 20}, m, out, image.Pt(w, h)) {
 		t.Fatal("带下应有形状像素")
 	}
 	px := func(x, y int) byte { return out[(y*w+x)*4+3] }
@@ -311,14 +311,14 @@ func TestFadeFrameBandTopInvisible(t *testing.T) {
 func TestFadeFrameEmpty(t *testing.T) {
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	out := make([]byte, 10*10*4)
-	if fadeFrame(nil, nil, 0, 4, m, out, image.Pt(10, 10)) {
+	if fadeFrame(nil, nil, fadeBands{bottom: 4}, m, out, image.Pt(10, 10)) {
 		t.Fatal("无形状应返回 false")
 	}
 	sh := []drawShape{{outline: image.Rect(0, 0, 5, 5), clip: image.Rect(0, 0, 10, 10), radius: 2}}
-	if fadeFrame(nil, sh, 0, 4, m, out[:10], image.Pt(10, 10)) {
+	if fadeFrame(nil, sh, fadeBands{bottom: 4}, m, out[:10], image.Pt(10, 10)) {
 		t.Fatal("缓冲不足应返回 false")
 	}
-	if fadeFrame(nil, sh, 0, 4, m, out, image.Pt(0, 10)) {
+	if fadeFrame(nil, sh, fadeBands{bottom: 4}, m, out, image.Pt(0, 10)) {
 		t.Fatal("零宽应返回 false")
 	}
 }

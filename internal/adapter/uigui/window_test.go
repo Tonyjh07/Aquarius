@@ -467,7 +467,9 @@ func TestTranscriptManualScroll(t *testing.T) {
 // TestTranscriptTopHeadroom D74 顶部可滚空白：滚动内容头部垫一个**淡出带高**（fadeBandDp）
 // 的 pad——滚到最上时首行完整落在带下可读，否则首行困在带内、`scrollPx` 不可为负而永远
 // 半透明（= 淡出遮挡内容）。pad 计入 contentH/overflow（可多滚一个带高），底钉与尾随语义
-// 不变（空白随内容滚，非视口固定留白——后者渐隐失效）。
+// 不变（空白随内容滚，非视口固定留白——后者渐隐失效）。D79 起尾部再垫一个**底带高**
+// （fadeBandBottomDp）的等高留白：contentH 两者都含、贴底时末行底 = h − lowPad（正好在
+// 底带之外）；上滚到顶时内容仍延伸过视口底 → 底缘进带渐隐、不再硬切。
 func TestTranscriptTopHeadroom(t *testing.T) {
 	u := newFrameUI()
 	for i := 0; i < 40; i++ {
@@ -476,6 +478,7 @@ func TestTranscriptTopHeadroom(t *testing.T) {
 	gtx, _ := frameGtx(input.Source{})
 	const w, h = 600, 400
 	pad := gtx.Dp(fadeBandDp)
+	lowPad := gtx.Dp(fadeBandBottomDp) // D79：底带高 = 尾部留白（单源取值）
 
 	// 行高总和（复用生产量高；pad 单列不混入行）——用于锁 contentH 契约。
 	rowsTotal := 0
@@ -502,31 +505,70 @@ func TestTranscriptTopHeadroom(t *testing.T) {
 	if y := u.shapes[0].outline.Min.Y; y < pad {
 		t.Fatalf("首行 y = %d, want >= %d（D74：不入淡出带）", y, pad)
 	}
-	if u.contentH != rowsTotal+pad {
-		t.Fatalf("contentH = %d, want 行高 %d + pad %d（D74：pad 计入滚动内容）",
-			u.contentH, rowsTotal, pad)
+	if u.contentH != rowsTotal+pad+lowPad {
+		t.Fatalf("contentH = %d, want 行高 %d + pad %d + lowPad %d（D74/D79：两段留白都计入滚动内容）",
+			u.contentH, rowsTotal, pad, lowPad)
+	}
+	// ①' 上滚到顶（内容高过视口）：末行底越过视口底 → 底缘内容**在底带内**渐隐，
+	//     而不是被视口下沿齐刷刷切断（D79 的现象面）。
+	if last := u.shapes[len(u.shapes)-1].outline; last.Max.Y <= h {
+		t.Fatalf("末行底 = %d, want > %d（上滚离底时内容应延伸进底带，D79）", last.Max.Y, h)
 	}
 
-	// ② 尾随到底：底钉不因 pad 偏移——scrollPx = overflow、末行底 == 视口底。
+	// ② 尾随到底：底钉只整体上移一个尾部留白——scrollPx = overflow、末行底 == 视口底
+	// − lowPad（正好停在底带之外，D79）。
 	u.followTail = true
 	u.shapes = u.shapes[:0]
 	u.transcript(gtx, w, h)
 	if u.scrollPx != u.contentH-h {
 		t.Fatalf("底部 scrollPx = %d, want overflow %d", u.scrollPx, u.contentH-h)
 	}
-	if last := u.shapes[len(u.shapes)-1].outline; last.Max.Y != h {
-		t.Fatalf("末行底 = %d, want %d（底钉不回归）", last.Max.Y, h)
+	if last := u.shapes[len(u.shapes)-1].outline; last.Max.Y != h-lowPad {
+		t.Fatalf("末行底 = %d, want %d（底钉上移一个带高、落在带外）", last.Max.Y, h-lowPad)
 	}
 
-	// ③ 短内容：不产生滚动，末行仍贴底（pad 不把内容顶离输入栏）。
+	// ③ 短内容：不产生滚动，末行仍贴底（pad/lowPad 不把内容顶离输入栏，只留带外）。
 	u2 := newFrameUI()
 	u2.m.add(blockAssistant, "短内容一条。")
 	u2.transcript(gtx, w, h)
 	if u2.scrollPx != 0 {
 		t.Fatalf("短内容应无滚动: scrollPx = %d", u2.scrollPx)
 	}
-	if last := u2.shapes[len(u2.shapes)-1].outline; last.Max.Y != h {
-		t.Fatalf("短内容末行底 = %d, want %d（贴底）", last.Max.Y, h)
+	if last := u2.shapes[len(u2.shapes)-1].outline; last.Max.Y != h-lowPad {
+		t.Fatalf("短内容末行底 = %d, want %d（贴底、带外）", last.Max.Y, h-lowPad)
+	}
+}
+
+// TestLayoutBottomFadeBand D79 底部矮带几何：展开路径每帧写转写区底缘
+// [transH−Dp(fadeBandBottomDp), transH)——带**止于转写区底**（状态行/输入栏在其下、
+// 不受淡化）；收起态（无转写区）写 size.Y,size.Y = 区间空即关。带高与尾部留白单源。
+func TestLayoutBottomFadeBand(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockAssistant, "一条内容。")
+	gtx, _ := frameGtx(input.Source{})
+	const h = winHeightDp
+	u.layout(gtx)
+
+	transH := h - gtx.Dp(inputRowDp+pillTopDp+16)
+	if u.statusText() != "" {
+		transH -= gtx.Dp(statusChipDp + 8)
+	}
+	wantTop := transH - gtx.Dp(fadeBandBottomDp)
+	if u.bandLowTop != wantTop || u.bandLowEnd != transH {
+		t.Fatalf("展开态底带 = [%d,%d), want [%d,%d)", u.bandLowTop, u.bandLowEnd, wantTop, transH)
+	}
+	if top, end := u.clampedLowBand(); top != wantTop || end != transH {
+		t.Fatalf("夹取后 = [%d,%d), want 原样 [%d,%d)", top, end, wantTop, transH)
+	}
+
+	// 收起态：无转写区 → 底带关（缺省写 size.Y,size.Y，夹取后仍为空区间）。
+	u.collapsed = true
+	u.layout(gtx)
+	if u.bandLowTop != h || u.bandLowEnd != h {
+		t.Fatalf("收起态底带 = [%d,%d), want 关（%d,%d）", u.bandLowTop, u.bandLowEnd, h, h)
+	}
+	if top, end := u.clampedLowBand(); top != end {
+		t.Fatalf("收起态夹取后应为空区间: [%d,%d)", top, end)
 	}
 }
 

@@ -39,21 +39,23 @@ const (
 	winMinWidth  = 420
 	winMinHeight = 240
 
-	fadeBandDp   = 56 // 淡出带高（§15.3）
-	inputRowDp   = 48 // 输入行元素高（D49 canvas 1:1）＝胶囊高＝logo/send 圆钮直径
-	inputGapDp   = 12 // 三段间距与胶囊内元素间距（canvas spacing 12）
-	inputPadDp   = 16 // 胶囊左右内边距（canvas padding 16）
-	inputIconDp  = 20 // 胶囊内图标槽（canvas 20×20，灰占位不可点）
-	pillTopDp    = 8  // 输入行上边距（下方 16）
-	sideMarginDp = 16 // 左右边距
-	rowGapDp     = 6  // 转写行间距
-	bubblePadXDp = 12 // 气泡内边距
-	bubblePadYDp = 7
-	cardPadXDp   = 10 // 文本行卡内边距
-	cardPadYDp   = 5
-	radiusDp     = 12 // 气泡圆角
-	cardRadiusDp = 8  // 文本行卡圆角
-	statusChipDp = 20 // 状态行 chip 高
+	fadeBandDp = 56 // 顶带高（§15.3）
+	// 底部矮带高（D79，§15.3）：≈顶带 1/5，薄带；底带与**等高尾部留白**共用此单源取值。
+	fadeBandBottomDp = 12
+	inputRowDp       = 48 // 输入行元素高（D49 canvas 1:1）＝胶囊高＝logo/send 圆钮直径
+	inputGapDp       = 12 // 三段间距与胶囊内元素间距（canvas spacing 12）
+	inputPadDp       = 16 // 胶囊左右内边距（canvas padding 16）
+	inputIconDp      = 20 // 胶囊内图标槽（canvas 20×20，灰占位不可点）
+	pillTopDp        = 8  // 输入行上边距（下方 16）
+	sideMarginDp     = 16 // 左右边距
+	rowGapDp         = 6  // 转写行间距
+	bubblePadXDp     = 12 // 气泡内边距
+	bubblePadYDp     = 7
+	cardPadXDp       = 10 // 文本行卡内边距
+	cardPadYDp       = 5
+	radiusDp         = 12 // 气泡圆角
+	cardRadiusDp     = 8  // 文本行卡圆角
+	statusChipDp     = 20 // 状态行 chip 高
 
 	// 边缘羽化（D45–D48/§15.1、D62）：把「内容自身由内向外渐隐」作为每像素 vis 因子
 	// 并入整窗 ULW 位图——核心不透明、边带沿真轮廓 smoothstep 渐隐到轮廓（不向外堆光晕：
@@ -445,6 +447,8 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.shapes = u.shapes[:0]
 	// D54：淡出带缺省 = §15.3 静息顶带（收起态无转写区，带只作兜底口径）。
 	u.bandTop, u.bandBottom = 0, gtx.Dp(fadeBandDp)
+	// D79：底部矮带缺省**关**（收起态无转写区）——区间空即无带；展开路径按转写区底重设。
+	u.bandLowTop, u.bandLowEnd = size.Y, size.Y
 
 	// D54：collapsed 是逻辑态、即时翻转；动画中走全量 layout 带几何插值（收尾 barP=0
 	// 时几何 == layoutCollapsed 的球，切换无缝）。
@@ -466,6 +470,9 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	// 带底夹在 transH 内（不压状态行/输入行）。静态读，两遍 layout 同帧同值。
 	_, msgP := u.expandProgress()
 	u.bandTop, u.bandBottom = revealBand(msgP, transH, gtx.Dp(fadeBandDp))
+	// D79 底部矮带：**常驻转写区底缘** [transH−带高, transH)——底缘内容渐隐不硬切；
+	// 带止于 transH（状态行/输入栏在其下，不受淡化）。揭示动画（D54）期间照常驻留。
+	u.bandLowTop, u.bandLowEnd = transH-gtx.Dp(fadeBandBottomDp), transH
 
 	dims := layout.Stack{Alignment: layout.N}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -603,12 +610,20 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	pad := gtx.Dp(fadeBandDp)
 	total += pad
 
+	// D79 尾部留白：滚动内容尾部垫一个**底部矮带高**的空白（等高、单源、随内容滚，
+	// D74 同款）——贴底/尾随时末行底 = h − lowPad，正好停在底带**之外**（带里只剩
+	// 空白，渐隐作用于内容而非留白）；上滚离底（scrollPx=0）时内容延伸进带内 → 底缘
+	// 渐隐而非硬切。计入 total → 同样参与 overflow/钳制与 base。
+	lowPad := gtx.Dp(fadeBandBottomDp)
+	total += lowPad
+
 	// ② 滚动定界：手势 + 当帧真实内容高（无一帧滞后），尾随贴底。
 	u.updateScroll(gtx, h, total)
 
 	// ③ 绘制：底部锚定基线——内容矮时贴底（信息悬在输入栏上方），超出视口后
 	// 顶出上沿、上滚进淡出带（base 归零后退化为标准滚动）。起点 +pad 抵消头部
-	// 空白，底钉不偏移（base + pad + 行高总和 == h）。
+	// 空白，底钉只整体上移一个尾部留白（base + pad + 行高总和 + lowPad == h →
+	// 尾随时末行底 = h − lowPad，恰在底带之上，D79）。
 	base := h - total
 	if base < 0 {
 		base = 0

@@ -192,8 +192,11 @@ type UI struct {
 	// bandTop/bandBottom 当前帧淡出带范围 [top, bottom)（D54 消息揭示带）：静息 = 顶带
 	// [0, bandPx)；动画中带顶随 msgP 从转写区底升到 0。layout 每遍写入，两遍同帧同值。
 	bandTop, bandBottom int
-	fade                fadeState // headless 离屏渲染状态（全帧像素源，D62）
-	fadeBuf             []byte    // 整窗预乘 BGRA 缓冲（ULW 位图）
+	// bandLowTop/bandLowEnd 底部矮带范围 [lowTop, lowEnd)（D79）：展开路径写转写区
+	// 底缘 [transH−Dp(fadeBandBottomDp), transH)；收起态写 size.Y,size.Y（区间空 = 关）。
+	bandLowTop, bandLowEnd int
+	fade                   fadeState // headless 离屏渲染状态（全帧像素源，D62）
+	fadeBuf                []byte    // 整窗预乘 BGRA 缓冲（ULW 位图）
 	// fadeEmpty 本帧位图全透明（无登记元素）：fadeCompose 写（空帧仍提交 ULW 以清除
 	// 上一帧像素——D62 后无独立 overlay 可隐藏）。
 	fadeEmpty bool

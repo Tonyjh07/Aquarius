@@ -599,6 +599,31 @@ func TestClampedBand(t *testing.T) {
 	}
 }
 
+// TestClampedLowBand 底部矮带夹取（D79）：夹进当前窗口，倒置/越界一律退化为空区间 = 关。
+func TestClampedLowBand(t *testing.T) {
+	u := &UI{frameSize: image.Pt(100, 300)}
+	u.bandLowTop, u.bandLowEnd = 288, 300 // 常规：转写区底 300、带高 12
+	if top, end := u.clampedLowBand(); top != 288 || end != 300 {
+		t.Fatalf("正常底带应原样: (%d,%d), want (288,300)", top, end)
+	}
+	u.bandLowTop, u.bandLowEnd = 290, 400 // 带底越窗
+	if top, end := u.clampedLowBand(); top != 290 || end != 300 {
+		t.Fatalf("越窗带底应夹到窗口: (%d,%d), want (290,300)", top, end)
+	}
+	u.bandLowTop, u.bandLowEnd = -5, 320 // 带顶越上 + 带底越下
+	if top, end := u.clampedLowBand(); top != 0 || end != 300 {
+		t.Fatalf("越界带应夹到窗口: (%d,%d), want (0,300)", top, end)
+	}
+	u.bandLowTop, u.bandLowEnd = 300, 200 // 倒置
+	if top, end := u.clampedLowBand(); top != 300 || end != 300 {
+		t.Fatalf("倒置带应夹平（空区间 = 关）: (%d,%d), want (300,300)", top, end)
+	}
+	u.bandLowTop, u.bandLowEnd = 300, 300 // 收起态缺省（size.Y,size.Y）
+	if top, end := u.clampedLowBand(); top != end {
+		t.Fatalf("收起态应为空区间: (%d,%d)", top, end)
+	}
+}
+
 // TestStepExpandStopsTicker 动画收尾关停唤帧循环（channel 关闭、句柄清空、幂等）。
 func TestStepExpandStopsTicker(t *testing.T) {
 	u := &UI{collapsed: true}
