@@ -286,8 +286,12 @@ func fadeFrame(src *image.RGBA, shapes []drawShape, b fadeBands,
 			clip = image.Rectangle{Max: size}
 		}
 		inF := float32(fw) + 0.5
-		d0 := -inF + 1 // 渐隐首像素：alpha=1（与核心连续）
-		span := -d0    // 渐隐跨度
+		// D83：核心上界 = -(fw+0.5)（D47 内缩标定），渐隐跨度 = fw+0.5 —— 与本节文档
+		// 同式。旧式 `-inF + 1` 把跨度压到 fw−0.5：1× 缩放（PxPerDp=1）下 fw =
+		// round(Dp(48)×0.03) = 1 → 跨度 0.5px，而直边带内唯一的像素中心恰在 d=-0.5
+		// = d0 → t=0 → vis≡1，整条边全不透明（用户实测：100% 缩放下羽化彻底消失）。
+		d0 := -inF
+		span := -d0 // 渐隐跨度
 		feather := fw > 0 && span > 0 && span < 1e6 && !featherDisabled
 		// 落笔范围 = 真轮廓 ∩ 可见裁剪区 ∩ 缓冲区（渐隐全在形状内，不向轮廓外扩）。
 		x0 := max(r.Min.X, max(clip.Min.X, 0))

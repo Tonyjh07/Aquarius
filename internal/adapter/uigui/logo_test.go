@@ -25,6 +25,33 @@ func TestLogoAssetDecode(t *testing.T) {
 	}
 }
 
+// TestLogoImageSizedToBall D83 回归：图标按**球的实际像素边长**预缩放，不用固定 60px
+// —— 100% 缩放下球径 48px，固定 60px 的图标居中后被 48px 的圆裁掉外圈（用户实测：
+// logo 边缘被截、看着像被放大裁切）。换 DPI/尺寸档时缓存必须重建。
+func TestLogoImageSizedToBall(t *testing.T) {
+	// 100% 缩放：球径 48px。
+	if _, ok := logoImageOp(48); !ok {
+		t.Fatal("图标应可用（assets.LogoPNG 已内嵌）")
+	}
+	if logoPx != 48 {
+		t.Fatalf("100%% 缩放下图标边长 = %d, want 48（球径）", logoPx)
+	}
+	// 125% 缩放：球径 60px——换档必须重建，不能沿用上一档。
+	if _, ok := logoImageOp(60); !ok {
+		t.Fatal("125% 档应可用")
+	}
+	if logoPx != 60 {
+		t.Fatalf("125%% 缩放下图标边长 = %d, want 60", logoPx)
+	}
+	// 非法边长（零/负）不返图，也不污染缓存。
+	if _, ok := logoImageOp(0); ok {
+		t.Fatal("零边长不应返回图")
+	}
+	if logoPx != 60 {
+		t.Fatalf("零边长不应改变缓存: logoPx = %d, want 60", logoPx)
+	}
+}
+
 // TestScaleBox 面积平均缩放（logo 预缩放路径）：尺寸正确、纯色保持。
 func TestScaleBox(t *testing.T) {
 	// 纯色不透明 → 缩放后仍纯色。

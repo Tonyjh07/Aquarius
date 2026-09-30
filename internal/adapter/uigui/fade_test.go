@@ -44,7 +44,9 @@ func TestFadeFrameBand(t *testing.T) {
 	set(3, 0, 0, 0, 255, 255)
 
 	shapes := []drawShape{{
-		outline: image.Rect(-40, 0, w+40, h), // 左右越界 → 观测列恒在核心（直边段）
+		// 四周越界 → 全部观测像素落在核心（vis=1，D83 后形状边缘像素确实会羽化，
+		// 本测试只考察带渐变 g(y)，观测点必须避开边带）。
+		outline: image.Rect(-40, -40, w+40, h+40),
 		clip:    image.Rect(0, 0, w, h),
 		radius:  0,
 	}}
@@ -143,7 +145,8 @@ func TestFadeFrameBottomBand(t *testing.T) {
 	run := func(b fadeBands, clip image.Rectangle) []byte {
 		out := make([]byte, w*h*4)
 		shapes := []drawShape{{
-			outline: image.Rect(-40, 0, w+40, h), // 同 TestFadeFrameBand：观测列恒在核心
+			// 四周越界 → 观测像素恒在核心（同 TestFadeFrameBand；D83 后边带确实羽化）
+			outline: image.Rect(-40, -40, w+40, h+40),
 			clip:    clip,
 			radius:  0,
 		}}
@@ -233,11 +236,12 @@ func TestFadeFrameLowBandSkipsChrome(t *testing.T) {
 	for i := range src.Pix {
 		src.Pix[i] = 0xFF // 全不透明白
 	}
-	// 越界矩形：左右越出缓冲 → 观测列恒在核心直边段（同 TestFadeFrameBand，radius=0）。
+	// 四周越界矩形：观测像素恒在核心直边段（同 TestFadeFrameBand，radius=0；D83 后
+	// 形状边缘像素确实羽化，跨带的上下沿也必须越出缓冲才不被边带影响）。
 	run := func(clip image.Rectangle) []byte {
 		out := make([]byte, w*h*4)
 		shapes := []drawShape{{
-			outline: image.Rect(-40, 3, w+40, 7), // 占 y ∈ [3,7)：跨带及其上下
+			outline: image.Rect(-40, 3-40, w+40, 7+40), // 覆盖 y ∈ [3,7) 并上下越界
 			clip:    clip,
 			radius:  0,
 		}}

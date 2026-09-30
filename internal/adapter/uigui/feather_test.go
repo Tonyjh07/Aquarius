@@ -31,12 +31,13 @@ func TestRrectSD(t *testing.T) {
 	near(want, got, "右上角对角外点（圆弧）")
 }
 
-// wantFeatherAlpha 参考实现（与 fadeFrame 独立推导，D48/§15.1/D62）：给定像素中心到
-// 真轮廓的有符号距离 d（外正内负）与羽化宽 fw，按「边带外缘 alpha=1 → 轮廓 featherEdgeMin
-// 的 smoothstep 渐隐」给出期望不透明度系数（0..1）。仅用于边带（-(fw+0.5) < d ≤ 0）。
+// wantFeatherAlpha 参考实现（与 fadeFrame 独立推导，D48/§15.1/D62/D83）：给定像素中心到
+// 真轮廓的有符号距离 d（外正内负）与羽化宽 fw，按「核心上界 d=-(fw+0.5) 处 vis=1 →
+// 真实轮廓 d=0 处 featherEdgeMin」的 smoothstep 渐隐给出期望不透明度系数（0..1）。
+// 仅用于边带（-(fw+0.5) < d ≤ 0）。
 func wantFeatherVis(d float64, fw int) float64 {
-	d0 := -(float64(fw) + 0.5) + 1 // 渐隐首像素：alpha=1（与核心连续）
-	span := -d0                    // 渐隐跨度
+	d0 := -(float64(fw) + 0.5) // 核心上界（d ≤ d0 → vis=1）
+	span := -d0                // 渐隐跨度 = fw+0.5（D83：旧式 +1 把跨度压到 fw−0.5）
 	t := (d - d0) / span
 	if t < 0 {
 		t = 0
@@ -46,8 +47,8 @@ func wantFeatherVis(d float64, fw int) float64 {
 	return featherEdgeMin + (1-featherEdgeMin)*(1-smoothstep(t))
 }
 
-// TestFadeFrameFeatherEdge 全帧合成的边缘渐隐（D45–D48/§15.1/D62）：边带外缘首像素
-// alpha=1（与核心无缝），随 d 向轮廓 smoothstep 衰减到 featherEdgeMin，在轮廓处收尾——
+// TestFadeFrameFeatherEdge 全帧合成的边缘渐隐（D45–D48/§15.1/D62）：核心上界（d=-(fw+0.5)）
+// 起 vis=1（与核心无缝），随 d 向轮廓 smoothstep 衰减到 featherEdgeMin，在轮廓处收尾——
 // **只在形状内落笔**（轮廓外不外扩、不堆光晕）；核心不透明、带内不写（整块在带下）、
 // 裁剪区外不写。src=nil 时用元素底色。
 func TestFadeFrameFeatherEdge(t *testing.T) {
@@ -80,17 +81,16 @@ func TestFadeFrameFeatherEdge(t *testing.T) {
 			}
 		}
 	}
-	// 渐隐带的横向范围按 featherWidth() 反推（d = x+0.5-轮廓右边，直边段上可精确解析）：
-	//   first   = 轮廓右边 - fw → d = -fw+0.5 = 渐隐首像素（vis=1，与核心连续）
-	//   first-1 → d = -(fw+0.5) = 核心上界
-	//   lastIn  = 轮廓右边 - 1  → d = -0.5 = 轮廓内最后一像素
-	//   outside = 轮廓右边      → d = +0.5 = 轮廓外（D48 不外扩，一律 0）
+	// 渐隐带的横向范围按 featherWidth() 反推（d = x+0.5-轮廓右边，直边段上可精确解析；D83）：
+	//   first   = 轮廓右边 - fw - 1 → d = -(fw+0.5) = 核心上界（vis=1，与核心连续）
+	//   lastIn  = 轮廓右边 - 1      → d = -0.5 = 轮廓内最后一像素
+	//   outside = 轮廓右边          → d = +0.5 = 轮廓外（D48 不外扩，一律 0）
 	fw := featherWidth(m, side, side)
 	if fw < 3 {
 		t.Fatalf("featherWidth(%d,%d)=%d，期望 ≥3（测试几何失效）", side, side, fw)
 	}
 	right, y := outline.Max.X, top+10 // 观测行落在直边段内（避开端/角）
-	first, lastIn, outside := right-fw, right-1, right
+	first, lastIn, outside := right-fw-1, right-1, right
 	// ② 核心不透明（vis=1）、颜色 = 底色红。
 	bc, gc, rc, ac := px(first-2, y)
 	if ac != 255 {
@@ -181,15 +181,16 @@ func TestFadeFrameSamplesContent(t *testing.T) {
 	if !fadeFrame(src, shapes, fadeBands{}, m, out, image.Pt(w, h)) {
 		t.Fatal("应写入形状像素")
 	}
-	core := (20*w + 15) * 4               // 核心像素（远离边带）
-	first := 30 - featherWidth(m, 20, 20) // 渐隐首像素（d = -fw+0.5）
-	edge := (20*w + first) * 4
+	// 核心像素（远离边带）与边带内缘像素（d = -(fw+0.5) = 核心上界，vis=1）都必须是
+	// 内容绿而非底色红——证明边带也采样同帧 headless 内容（D48/D62/D83）。
+	core := (20*w + 15) * 4
+	edge := (20*w + (30 - featherWidth(m, 20, 20) - 1)) * 4
 	for _, i := range []int{core, edge} {
 		if out[i+3] == 0 {
 			t.Fatalf("(%d) 应有像素", i/4/w)
 		}
 		if out[i+1] < 150 || out[i+2] != 0 { // BGRA：G 高、R=0 → 采样到绿色内容
-			t.Fatalf("颜色应为内容绿: b=%d g=%d r=%d", out[i], out[i+1], out[i+2])
+			t.Fatalf("颜色应为内容绿: b=%d g=%d r=%d a=%d", out[i], out[i+1], out[i+2], out[i+3])
 		}
 	}
 }
@@ -304,6 +305,46 @@ func TestFadeFrameBandTopInvisible(t *testing.T) {
 	}
 	if a := px(20, 12); a == 0 {
 		t.Fatal("带内首行应有像素（g>0）")
+	}
+}
+
+// TestFadeFrameFeatherAtUnitDPIScale 1× 缩放（100%）下羽化必须真实发生（D83 回归）：
+// fw = round(Dp(48)×featherRatio) = 1，渐隐跨度按设计 = fw+0.5 = 1.5px，轮廓内首像素
+// （d=-0.5）应明显淡于核心。修前 d0 = -(fw+0.5)+1 → 跨度只剩 fw−0.5 = 0.5px，而直边
+// 上带内唯一的像素中心恰在 d=-0.5 = d0 → t=0 → vis=1 → 整条边全不透明（羽化彻底消失，
+// 用户实测：100% 缩放下无羽化）。
+func TestFadeFrameFeatherAtUnitDPIScale(t *testing.T) {
+	const w, h = 120, 60
+	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
+	shapes := []drawShape{{
+		outline: image.Rect(20, 10, 100, 50),
+		clip:    image.Rect(0, 0, w, h),
+		radius:  4,
+		fill:    color.NRGBA{R: 0xFF, A: 0xFF},
+	}}
+	out := make([]byte, w*h*4)
+	if !fadeFrame(nil, shapes, fadeBands{}, m, out, image.Pt(w, h)) {
+		t.Fatal("应写入形状像素")
+	}
+	fw := featherWidth(m, 100-20, 50-10)
+	if fw != 1 {
+		t.Fatalf("1× 带宽 = %d, want 1（D70 标定：round(Dp(48)×0.03)）", fw)
+	}
+	al := func(x, y int) byte { return out[(y*w+x)*4+3] }
+	const y, right = 30, 100
+	if edge := al(right-1, y); edge >= 200 {
+		t.Fatalf("1× 下轮廓内首像素 a=%d，羽化消失（应明显低于核心 255）", edge)
+	}
+	if core := al(right-6, y); core != 255 {
+		t.Fatalf("核心 a=%d, want 255（渐隐不得侵入核心）", core)
+	}
+	prev := byte(0)
+	for x := right - 1; x >= right-4; x-- { // 由外向内单调不减
+		if a := al(x, y); a < prev {
+			t.Fatalf("由外向内应单调不减: a(%d)=%d < %d", x, a, prev)
+		} else {
+			prev = a
+		}
 	}
 }
 
