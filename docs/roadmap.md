@@ -17,7 +17,7 @@
 |---|---------|----------|----------|------|
 | 1 | 设置界面，config.json 解析 | 设置窗核心档已落地（模型/权限/think/effort/hotkey/主题；`settingsSnapshot`/`persistSettingsTextKeys`/`applySettings` 写回 + 热生效，密钥只写不回显） | 全量 `fileConfig` 编辑（limits/output/system_prompt/mcpServers/plugins/…）；分组导航；未知键保留 | M |
 | 2 | 欢迎界面，引导配置与教程 | `winWelcome` 独立窗壳已存在（D60 多窗宿主） | 数据面：首步引导（provider/key/model 三问）+ 操作教程页 + 「首次运行」判定（如 `ui.welcomed` 标记） | M |
-| 3 | 会话管理界面（树状） | `ConversationStore.List` 已有；`/list` `/goto` `/branch` `/rm` 命令已有；winHistory 窗壳已存在 | ① **已落地（D75）**：切换到已有会话 + `/new` 后回放；仍缺**删除任意会话**命令（`Remove` 无命令调用者）与**改名非当前会话**（`/title` 只改当前）；② 会话树结构进 UI 的**只读数据面**（现 Presenter 只给块，不给树）；③ 树状 UI 自绘 | L |
+| 3 | 会话管理界面（树状） | `ConversationStore.List` 已有；`/list` `/goto` `/branch` `/rm` 命令已有；winHistory 窗壳已存在 | ① **已落地（D75）**：切换到已有会话 + `/new` 后回放；仍缺**删除任意会话**命令（`Remove` 无命令调用者）与**改名非当前会话**（`/title` 只改当前）；② 会话树结构进 UI 的**只读数据面**（**已落地（D80/§7.5，前置 A）**：`port.TreeView` + app 原子发布快照——树状 UI 自绘可直接消费）；③ 树状 UI 自绘 | L |
 | 4 | 消息气泡右键（编辑/重生成/复制） | D72 右键手势与 `menuIt`/`runMenu`/`menuDispatch` 共享件已就绪；领域 `/edit` `/branch` 已实现分叉语义 | 主窗**行级**右键命中（D63 行选可复用）；呈现复用 D72 TPM 管线、重生成 = 重发上游用户消息（§5-Q2/Q3 已定）；复制 = Gio clipboard | M |
 | 5 | 配置文件化（多配置独立与切换） | config 单文件单路径（数据目录 `config.json`），读/写/警告链路清晰 | config **schema 破坏性改造**（profile 目录布局或 `profiles/` 段）；加载/写回全链路；设置窗 profile 切换 UI；CLI 参数 | L |
 | 6 | 模型与提供商管理 + 自动 fallback | `modelConfig` 单提供商；LLM 适配器（OpenAI 兼容）；重试装饰器（429 退避）已在 main 装配处 | provider 列表化 schema（破坏性，建议与 #5 同批）；fallback 链语义（错误分类 → 降级顺序 → 状态行提示）；设置窗管理页 | L |
@@ -29,7 +29,7 @@
 
 **贯穿性前置（两处复用，建议先做）**：
 
-- **A. 会话树只读数据面**：分叉编号/切换按钮（#10-7）与会话管理界面（#3）都要读树结构（兄弟节点、当前 Head、深度），Presenter 现在只给渲染块。需设计一个小的 UI 只读视图端口（铁律 5：UI 不得直读 store）。
+- **A. 会话树只读数据面**：分叉编号/切换按钮（#10-7）与会话管理界面（#3）都要读树结构（兄弟节点、当前 Head、深度），Presenter 现在只给渲染块。需设计一个小的 UI 只读视图端口（铁律 5：UI 不得直读 store）。**已落地（D80/§7.5）**：`port.TreeView`（`Branches(id)` → 同级 ID 创建序 + 自身下标）+ app 侧不可变快照原子发布（UI 无锁读）；S3 可直接复用同一数据面。
 - **B. Status 扩展**：logo tooltip（#10-5）要 profile、会话标题、模型、上下文使用率、用量 —— 现 `Status{Model,Level,Effort}` 需扩展（上下文使用率走 est token 计数链，用量走 `/usage` 数据源）。
 
 ---
@@ -49,7 +49,7 @@
 | 1c 展开完成后再淡入控件 | **已拍板（D77）**：输入栏阶段完成（bar 260ms 到位）即触发胶囊内容 180ms CSS ease 淡入（与消息揭示并行，不等 700ms 全完成）；收起淡出 180ms、自收起起点 140ms 处开始、**与消息区收起同一刻结束**；范围**仅胶囊内**（附件/占位符/展开槽/确认区），send 键与 logo 不参与 | `anim.go` `pillFade` 独立时间线（`stepExpand` 帧推 + ticker 续命）+ `inputBar` 组透明层 `PushOpacity` | 性质测试：淡出与消息阶段同刻、触发点、端点/单调、反向取消不闪隐 |
 | 1d 启动闪窗 | **已拍板（D78）**：`onHWND` 挂接即 `SW_HIDE`（`revealPending` 武装，最早接管点）、合成/提交门放行启动期、**首帧 ULW 成功即揭示**（`ShowWindow + SetForegroundWindow` 激活前台）；首帧前呼出只置展开态不 ShowWindow；GPU 降级保持隐藏 | `win32`/`gui.go`：`revealPending` 状态机（`presentable` 门 + `presentMain` 成功后揭示 + `showMain` 呼出门 + `revealMain` 平台件） | 时序测试：门放行/首帧后揭示恰好一次/呼出被拦/降级不揭示；手工验收启动无闪窗 |
 | 1e 工具调用确认 UI 优化 | 「允许/拒绝/提升权限」选项界面优化 | `window.go` Confirm 确认态渲染（`port.Confirmer` 数据不动） | 设计稿先看（Figma canvas 口径，D49） |
-| 1f 消息分叉切换按钮 | 消息下方显示当前分支编号（如 2/3）+ 左右切换 | 依赖前置 **A（树数据面）** + 切换命令（领域已有 `/branch`/`/goto` 可复用或薄封装） | 与 S3 的树 UI 共用数据面，可提前只做按钮、树窗留后 |
+| 1f 消息分叉切换按钮 | 消息下方显示当前分支编号（如 2/3）+ 左右切换 | **已落地（D80/D81）**：气泡下方 `◀ i/n ▶`（数据面 = 前置 A 的 `port.TreeView`）；点击经输入通道投递 `/goto <兄弟id>`，`/goto` 同时补齐清屏+回放（与 `/switch` 同口径） | 与 S3 的树 UI 共用数据面（A 已就绪），树窗仍留后 |
 | 1g logo tooltip 自定义显示项 | profile、会话标题、模型、上下文窗口使用率、用量 | 依赖前置 **B（Status 扩展）**；`logo.go` 悬停 tooltip（现无 tooltip 机制，需新建） | 悬停检测注意与 D72 右键手势、拖窗把手互不干扰 |
 | 1h 消息区底部淡化区 + 留白 | 底部加**少量**淡出带（比顶部矮）与等高留白，底缘不再硬切 | `fade.go` 带底 `bandBottom` 机制已有（D54 揭示带在用）、`window.go` 布局 | **已拍板（D79）**：底带高 **12dp**（顶带 56dp 的 ~21%，取「几～十几 dp」薄带口径）+ 等高尾部留白；上滚离底后底缘内容渐隐更自然；带常驻视口底缘 + 等高底部留白，贴底锚定（D56）时最后一行在带外不受影响 |
 
