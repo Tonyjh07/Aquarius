@@ -95,6 +95,7 @@
 | D79 | 转写区底部常驻矮带（12dp）+ 等高尾部留白：底缘渐隐不硬切（§15.3，Q13/1h） | 生效 |
 | D80 | `port.TreeView` 会话树只读视图 + app 原子发布不可变快照（前置 A，§7.5） | 生效 |
 | D81 | 消息分叉切换按钮 `◀ i/n ▶`（投递 `/goto` 经输入通道）+ `/goto` 补清屏回放（S1-1f，§7.3/§15.3） | 生效 |
+| D82 | logo tooltip 会话事实卡：`port.SessionFacts` 展示快照 + `uigui.Status` 扩展（前置 B，S1-1g，§7.6/§15.1） | 生效 |
 
 ## 记录
 
@@ -635,4 +636,12 @@
 - **决策**：① `/goto` 移 Head 后同样 `emitClear` + `replayHistory`（动词「已切换到」同 D75 口径），与 `/switch` 一致——转写区恒与 Head 一致。② UI 侧：定稿块携带节点 ID（`block.id`），气泡下方对**有同级分叉**的节点渲染 `◀ i/n ▶`（`i` = 快照 `Index+1`，`n` = `len(IDs)`）；点击投递 `/goto <兄弟id>` 经**输入通道**（与键入同路径，壳内不旁路，同 D72/D73 口径）。③ 行高/命中按既有行机制（`selRows`/`record`）扩展，按钮为独立点击热区、不挂行选（D63）。
 - **否决**：不动 `/goto` 另加专用命令（两条命令职责重叠，`/branch` 已是查询面）；只移 Head 不回放（界面说谎，1f 无可见反馈——即本项动机）；UI 自行清屏+回放（壳内旁路内核，违反「一切经内核中转」铁律 6）；在事件里带分支编号（见 D80 否决④，同级数会变）。
 - **后果/限制**：① repl golden 的 `/goto` 段会新增 `[clear]` 与回放行（**行为变更**，逐段确认后 `-update` 重写）；② 切换 = `Checkout` 兄弟节点，当前 Head 的下游**脱离路径但不删除**（树内保留为分支，非破坏性操作）；③ 分叉按钮只对有同级的节点显示（多数消息无分叉 → 不增行），`n = 1` 时不渲染。
+- **状态**：生效
+
+### D82 — logo tooltip 会话事实卡：`port.SessionFacts` 展示快照 + `Status` 扩展（前置 B，S1-1g，§7.6/§15.1）
+
+- **动机**：roadmap S1-1g 要 logo 悬停显示 profile、会话标题、模型、上下文使用率、用量；数据分散三处——模型/权限档/effort 在 `Options.Status` 闭包（agent 原子量，廉价可随取），而标题/上下文/用量在会话树与装配结果里（标题随首条消息改写、上下文占用需装配后计数、用量记在节点上）；`Agent.UsageReport` 要 `buildRequest` 全量装配，只能在会话 goroutine 跑——UI 事件循环直调既竞态（`-race` 必红，同 D80 动机）又拖帧。roadmap 把前置 B（Status 扩展）的形态留到「设计」这一步。
+- **决策**：① 新增 `port.SessionFacts` 值类型（`Title/ConvID/CtxTokens/CtxExact/CtxMax/SumIn/SumOut/LastIn/LastOut`；`ConvID` 用 string——仅供前缀显示，不参与命令回传）；`*app.Session` 在 D80 同组发布点（构造完成 + 每次 `Handle` 返回前）重建快照并经 `atomic.Pointer` 发布，新增 `Facts()` 无锁读口。② 重算复用 `Agent.UsageReport`（与 `/usage` 同源同值），**签名门控**：标题/会话 ID/Head/路径长/Path 实测用量和任一变更才重算——命令类输入零装配零计数空转；计数失败保留旧快照、下次 `Handle` 自愈重试。③ `uigui.Status` 扩展 `Profile` 与 `Facts port.SessionFacts` 两字段（自此与 `uitui.Status` 形状分叉——tooltip 按 roadmap 只做 GUI，同 Q15 口径）；装配根闭包组合 agent 原子量 + `sessPtr` 快照 + profile 占位 `default`。④ 呈现：`hoverTip` 泛化为多行 `hoverCard`，logo 悬停显示事实卡（profile/会话/模型/上下文 `used/max（pct，精确|估算）`/用量），快照未就绪（零值）回退启动提示；抑制规则/心跳/手势面全沿现状（动画期与收起态不显 D54、`tipShown` 唤帧 D53、悬停/拖动/右键三手势共存不加新热区）。
+- **否决**：UI 直调 `UsageReport`（跨 goroutine 竞态 + 悬停每帧全量装配计数，帧循环不可承受）；每次 `Handle` 无条件重算（`/help` 类输入白白装配+计数）；给 facts 开独立 Options 回调或端口接口（消费面只有 tooltip 一处，经既有 `Options.Status` 闭包组合即可，契约面不扩；与 D80 升端口的理由不同——那里 S3 要跨适配器复用）；在 Presenter 事件里带事实（占用/用量每轮都变，事件面无法自我更新，同 D80 否决③）；uitui 同步扩展（tooltip 只做 GUI）。
+- **后果/限制**：① `uigui.Status` 与 `uitui.Status` 形状分叉，`gui.go` 注释同步改口径；② 事实是**发布点时点值**——Turn 进行中 tooltip 显示上一轮结束值（生成中的实时占用本就未定，接受）；③ 上下文占用口径 = 当前装配（persona + Path + 记忆 + 工具清单），与 `/usage` 同源同值；④ profile 恒 `default` 直至 S4（Q1），届时装配根换真值、契约不动；⑤ logo 收起态（球）不显示事实卡——沿用现状 tips 抑制口径，避免与背景把手/右键热区搅局，收起球 tooltip 留作后续增强。
 - **状态**：生效
