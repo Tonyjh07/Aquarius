@@ -296,9 +296,13 @@ func applyLayeredStyle(h uintptr) bool {
 
 // hideUntilFirstPresent 挂接即隐藏（D78 启动防闪）：Gio `Configure(ShowWindow)` 早于
 // Win32ViewEvent 投递——onHWND 是最早可接管点，此处 SW_HIDE 直到首帧 ULW 提交成功经
-// revealMainWindow 揭示。窗口线程调用（onHWND 即在其中）。
+// revealMainWindow 揭示。经窗口线程下发（铁律 1）：onHWND 在事件循环客户端协程，
+// 此际窗口线程常停在 deliverEvent 的 select 发事件、不泵消息，直调 ShowWindow 永久互锁
+// （实机启动即「未响应」）。
 func hideUntilFirstPresent(h uintptr) {
-	procShowWindow.Call(h, swHide)
+	onWindowThread(func() {
+		procShowWindow.Call(h, swHide)
+	})
 }
 
 // revealMainWindow 揭示（D78）：显示 + 激活前台（与现状启动聚焦一致，D78 拍板）——
