@@ -140,23 +140,26 @@ func TestFadeFrameBottomBand(t *testing.T) {
 	for i := range src.Pix {
 		src.Pix[i] = 0xFF // 全不透明白（预乘 255）
 	}
-	shapes := []drawShape{{
-		outline: image.Rect(-40, 0, w+40, h), // 同 TestFadeFrameBand：观测列恒在核心
-		clip:    image.Rect(0, 0, w, h),
-		radius:  0,
-	}}
-	run := func(b fadeBands) []byte {
+	run := func(b fadeBands, clip image.Rectangle) []byte {
 		out := make([]byte, w*h*4)
+		shapes := []drawShape{{
+			outline: image.Rect(-40, 0, w+40, h), // 同 TestFadeFrameBand：观测列恒在核心
+			clip:    clip,
+			radius:  0,
+		}}
 		if !fadeFrame(src, shapes, b, m1x(), out, image.Pt(w, h)) {
 			t.Fatal("应有内容")
 		}
 		return out
 	}
+	// 转写视口 clip（带底 == 窗底时即整窗）；带底 < 窗底的 chrome 口径见
+	// TestFadeFrameLowBandSkipsChrome。
+	viewport := image.Rectangle{Max: image.Pt(w, h)}
 	at := func(out []byte, x, y int) byte { return out[(y*w+x)*4+3] } // ch3 = A
 
 	// ① 带 [3,6)：带外（y<3）g=1 原样；带内逐行 = 255×smoothstep((带底−y−0.5)/带高)，
 	//    单调递减，末行近 0（不为 0——与带外连续、无 1px 空洞）。
-	out := run(fadeBands{lowTop: 3, lowEnd: h})
+	out := run(fadeBands{lowTop: 3, lowEnd: h}, viewport)
 	for y := 0; y < h; y++ {
 		g := 1.0
 		if y >= 3 {
@@ -181,21 +184,23 @@ func TestFadeFrameBottomBand(t *testing.T) {
 		t.Fatalf("带上方 alpha = %d, want 255（带外不衰减）", a)
 	}
 
-	// ② 带下恢复 g=1：带收到 [3,4)（单行）→ 行 3 居中、行 4/5 原样 = 状态行/输入栏口径。
-	out2 := run(fadeBands{lowTop: 3, lowEnd: 4})
+	// ② 单行带（span=1，除零/舍入边界）：带内居中 g=0.5；**带下不属转写形状**——
+	//    转写 clip 底 == 带底，带下（状态行/输入栏区）由 chrome 形状覆盖，
+	//    见 TestFadeFrameLowBandSkipsChrome（chrome 跨带保持 255）。
+	out2 := run(fadeBands{lowTop: 3, lowEnd: 4}, image.Rect(0, 0, w, 4))
 	if a := at(out2, 0, 3); a < 96 || a > 160 {
 		t.Fatalf("span=1 带内 alpha = %d, want ≈128（g=0.5）", a)
 	}
 	for y := 4; y < h; y++ {
 		for x := 0; x < w; x++ {
-			if a := at(out2, x, y); a != 0xFF {
-				t.Fatalf("带下 (%d,%d) A = %d, want 255（带下不受淡化）", x, y, a)
+			if a := at(out2, x, y); a != 0 {
+				t.Fatalf("带下 (%d,%d) A = %d, want 0（转写 clip 止于带底，不画到带下）", x, y, a)
 			}
 		}
 	}
 
 	// ③ 与顶带重叠：两带相乘（顶带 0→1 × 底带 1→0），带顶以上仍全零。
-	out3 := run(fadeBands{top: 2, bottom: 4, lowTop: 3, lowEnd: 6})
+	out3 := run(fadeBands{top: 2, bottom: 4, lowTop: 3, lowEnd: 6}, viewport)
 	for y := 0; y < 2; y++ {
 		for x := 0; x < w; x++ {
 			if a := at(out3, x, y); a != 0 {
@@ -209,10 +214,62 @@ func TestFadeFrameBottomBand(t *testing.T) {
 	}
 
 	// ④ 零值（无底带，收起态口径）= 不衰减。
-	out4 := run(fadeBands{})
+	out4 := run(fadeBands{}, viewport)
 	for x := 0; x < w; x++ {
 		if a := at(out4, x, h-1); a != 0xFF {
 			t.Fatalf("无底带末行 A = %d, want 255", a)
+		}
+	}
+}
+
+// TestFadeFrameLowBandSkipsChrome D79 底带作用域（实测 bug：tooltip 被淡化）：底带只乘
+// 在**转写视口登记**的形状上（clip 底 ≤ 带底）；chrome 形状（悬浮 tips `hoverTip`、状态
+// 行、输入栏——整窗 clip，且 tips 画在胶囊上沿之上、几何上跨进带内）一律保持 g=1，
+// 否则 tips 卡片顶沿半透明。转写行本身照常在带内渐隐。
+func TestFadeFrameLowBandSkipsChrome(t *testing.T) {
+	const w, h = 8, 8
+	const lowTop, lowEnd = 4, 6 // 带 [4,6)：带下 2 行 = 状态行/输入栏区（带底 < 窗底）
+	src := image.NewRGBA(image.Rect(0, 0, w, h))
+	for i := range src.Pix {
+		src.Pix[i] = 0xFF // 全不透明白
+	}
+	// 越界矩形：左右越出缓冲 → 观测列恒在核心直边段（同 TestFadeFrameBand，radius=0）。
+	run := func(clip image.Rectangle) []byte {
+		out := make([]byte, w*h*4)
+		shapes := []drawShape{{
+			outline: image.Rect(-40, 3, w+40, 7), // 占 y ∈ [3,7)：跨带及其上下
+			clip:    clip,
+			radius:  0,
+		}}
+		if !fadeFrame(src, shapes, fadeBands{lowTop: lowTop, lowEnd: lowEnd},
+			m1x(), out, image.Pt(w, h)) {
+			t.Fatal("应有内容")
+		}
+		return out
+	}
+	at := func(out []byte, x, y int) byte { return out[(y*w+x)*4+3] } // ch3 = A
+
+	// ① chrome（整窗 clip = 悬浮 tips 口径）：跨进带内的顶沿**不淡化**（全 255）。
+	chrome := run(image.Rectangle{Max: image.Pt(w, h)})
+	for y := 3; y < 7; y++ {
+		for x := 0; x < w; x++ {
+			if a := at(chrome, x, y); a != 0xFF {
+				t.Fatalf("chrome 形状 (%d,%d) A = %d, want 255（chrome 不受底带，D79）", x, y, a)
+			}
+		}
+	}
+
+	// ② 转写行（clip = 转写视口，底 == 带底）：带外原样、带内按参考式渐隐。
+	rows := run(image.Rect(0, 0, w, lowEnd))
+	for x := 0; x < w; x++ {
+		if a := at(rows, x, 3); a != 0xFF {
+			t.Fatalf("带上方 (%d,3) A = %d, want 255", x, a)
+		}
+		for y := lowTop; y < lowEnd; y++ {
+			want := math.Round(255 * smoothstep((float64(lowEnd-y)-0.5)/float64(lowEnd-lowTop)))
+			if diff := math.Abs(float64(at(rows, x, y)) - want); diff > 1 {
+				t.Fatalf("转写行 (%d,%d) A = %d, want %.0f（带内应渐隐）", x, y, at(rows, x, y), want)
+			}
 		}
 	}
 }

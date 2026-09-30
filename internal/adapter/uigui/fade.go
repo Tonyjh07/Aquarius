@@ -229,7 +229,9 @@ func init() {
 //   - [top, bottom) 顶带（D54 揭示带 / §15.3 静息顶带）：y < top 不可见，带内 0 → 1；
 //   - [lowTop, lowEnd) 底部矮带（D79）：带内 1 → 0 渐隐到带底（= 转写区底），带下
 //     恢复 1（状态行/输入栏在带之下、不受淡化）；lowEnd <= lowTop 即无底带
-//     （收起态与零值调用皆走此口径）。
+//     （收起态与零值调用皆走此口径）。**作用域按 clip 界定**：只乘 `clip 底 ≤ 带底`
+//     的形状（= 转写视口登记的滚动内容）——chrome 形状（悬浮 tips/状态行/输入栏，
+//     整窗 clip）几何上跨进带内也保持 g=1。
 type fadeBands struct {
 	top, bottom    int
 	lowTop, lowEnd int
@@ -246,7 +248,8 @@ type fadeBands struct {
 //   - g(y) = 双带渐变 smoothstep：顶带**带顶 0 → 带底 1**（带顶以上 av=0 不可见——
 //     D54 揭示带/§15.3 顶带同式，取代旧「带整带挖空 + 带内单绘」两段机制）；底带
 //     **反向 1 → 0** 收零于带底（= 转写区底，D79），带下恢复 1——断点两侧无同形状
-//     跨越（转写形状裁剪上沿即带底、状态行/输入栏形状自带底起），故不留横缝。
+//     跨越（转写形状裁剪上沿即带底、状态行/输入栏形状自带底起），故不留横缝；且底带
+//     **只作用于转写视口登记的形状**（clip 底 ≤ 带底），chrome 跨带也保持 g=1。
 //   - 形状按 record 顺序落笔（= 绘制顺序），重叠处后者覆盖 → z 序与单遍渲染一致。
 //
 // src 不可用（nil 或尺寸小于本帧）时用元素底色兜底（writePremulFill：形状可见
@@ -291,6 +294,9 @@ func fadeFrame(src *image.RGBA, shapes []drawShape, b fadeBands,
 		x1 := min(r.Max.X, min(clip.Max.X, w))
 		y0 := max(r.Min.Y, max(clip.Min.Y, 0))
 		y1 := min(r.Max.Y, min(clip.Max.Y, h))
+		// D79 底带作用域：只乘**转写视口登记**的形状（clip 底 ≤ 带底 = 转写区底）——
+		// chrome 形状（悬浮 tips/状态行/输入栏，均整窗 clip）几何上可跨进带内，一律 g=1。
+		lowHere := clip.Max.Y <= b.lowEnd
 		for y := y0; y < y1; y++ {
 			g := 1.0
 			if y < b.top {
@@ -299,7 +305,7 @@ func fadeFrame(src *image.RGBA, shapes []drawShape, b fadeBands,
 				t := (float64(y-b.top) + 0.5) / float64(b.bottom-b.top)
 				g = t * t * (3 - 2*t)
 			}
-			if b.lowTop <= y && y < b.lowEnd {
+			if lowHere && b.lowTop <= y && y < b.lowEnd {
 				// D79 底带：1 → 0（首像素≈1、末像素≈0，与带外两侧连续）。
 				// 进入此分支必有 span = lowEnd−lowTop ≥ 1，无除零。
 				t := (float64(b.lowEnd-y) - 0.5) / float64(b.lowEnd-b.lowTop)
