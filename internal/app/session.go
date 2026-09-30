@@ -98,6 +98,9 @@ type Session struct {
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
 	// 发布，UI 事件循环 goroutine 经 Branches 无锁读（见 tree.go）。
 	tree atomic.Pointer[treeSnapshot]
+	// facts 会话展示事实快照（D82/§7.6，前置 B）：与 tree 同组发布点原子发布，UI 经
+	// Facts 无锁读（见 facts.go）；重算经签名门控，命令类输入不空转。
+	facts atomic.Pointer[factsSnapshot]
 	// resumed 本次启动是否恢复了既有会话（NewSession 走 Load 分支）；
 	// ReplayHistory 仅在恢复时回放（新建会话无历史可回放，D40/§7.4）。
 	resumed bool
@@ -172,7 +175,8 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		}
 		s.cur = c
 		s.resumed = true
-		s.publishTree() // D80/§7.5：构造完成即发布树只读快照（UI 早于首帧即可读）
+		s.publishTree()     // D80/§7.5：构造完成即发布树只读快照（UI 早于首帧即可读）
+		s.publishFacts(ctx) // D82/§7.6：事实快照同组发布（恢复会话首帧 tooltip 即可用）
 		return s, nil
 	}
 	s.cur, err = s.newConversation(defaultTitle)
@@ -182,7 +186,8 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 	if err := d.Store.Save(ctx, s.cur); err != nil {
 		return nil, fmt.Errorf("session: 初始化会话: %w", err)
 	}
-	s.publishTree() // D80/§7.5：构造完成即发布树只读快照
+	s.publishTree()     // D80/§7.5：构造完成即发布树只读快照
+	s.publishFacts(ctx) // D82/§7.6：事实快照同组发布
 	return s, nil
 }
 
@@ -270,8 +275,10 @@ func (s *Session) emitClear(ctx context.Context) error {
 // 普通文本入树 → Turn → 落盘。返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。
 func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error) {
 	// D80/§7.5：树变更只发生在 Handle 内（命令面与 Turn），返回前重发一次只读快照——
-	// UI 侧每帧无锁读，本 defer 是唯一的变更后发布点。
+	// UI 侧每帧无锁读，本 defer 是唯一的变更后发布点。D82/§7.6：事实快照同点重发
+	// （签名门控：无变更的命令输入不重算）。
 	defer s.publishTree()
+	defer s.publishFacts(ctx)
 	if in.Command != nil {
 		return s.execCommand(ctx, *in.Command)
 	}
