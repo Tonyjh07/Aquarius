@@ -485,15 +485,18 @@ func (u *UI) hotkeyToggle() {
 }
 
 // showMain 呼出：显示 + 前台 + 展开输入栏 + 焦点入栏（§15.1 呼出 = 展开）。
+// D78：首帧 ULW 未提交前（revealPending）**不显示窗口**——只投展开态，窗口由首帧
+// 揭示（防提前 ShowWindow 闪现未定制窗口）；就绪后经 revealMain 揭示（显示 + 激活前台）。
 func (u *UI) showMain() {
 	h := atomic.LoadUintptr(&mainHWND)
 	if h == 0 {
 		return
 	}
-	onWindowThread(func() {
-		procShowWindow.Call(h, swRestore)
-		procSetForegroundWindow.Call(h)
-	})
+	if u.revealPending.Load() {
+		u.post(showExpandMsg{}) // 只置展开/焦点态（拍板：首帧前呼出忽略显示）
+		return
+	}
+	revealMain(h)
 	u.post(showExpandMsg{})
 }
 

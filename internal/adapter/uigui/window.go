@@ -345,16 +345,20 @@ func (u *UI) commitWinGeom() {
 // 启动路径（onHWND/restoreDock）不在帧内，直接调用 moveWindowTo。
 func (u *UI) requestMove() { u.movePending = true }
 
-// onHWND Win32ViewEvent 投递的窗口句柄：置顶断言 + 位置记忆恢复（§15.1/D44/D62）。
-// 统一半透明不在此下发（D62：首帧 ULW 随 SourceConstantAlpha 生效；分层窗在首次 ULW
-// 前不显示，启动无白闪）。
+// onHWND Win32ViewEvent 投递的窗口句柄：启动防闪（D78 挂接即隐藏、首帧 ULW 成功才
+// 揭示）+ 置顶断言 + 位置记忆恢复（§15.1/D44/D62）。统一半透明不在此下发（D62：首帧
+// ULW 随 SourceConstantAlpha 生效）。
 func (u *UI) onHWND(h uintptr) {
 	if u.hwnd != 0 {
 		return
 	}
 	u.hwnd = h
 	atomic.StoreUintptr(&mainHWND, h)
-	ensureLayeredStyle(h)  // 分层窗首次 ULW 前不显示 → 启动无白闪（D62；非 Windows no-op）
+	ensureLayeredStyle(h) // 分层样式（D62 双保险；非 Windows no-op）
+	// D78 启动防闪：挂接即隐藏（最早可接管点——Gio Configure(ShowWindow) 早于本事件、
+	// 无可挂钩点，其间亚帧间隙接受）并置揭示待定；首帧 ULW 提交成功才揭示（fadePresent）。
+	u.revealPending.Store(true)
+	hideUntilFirstPresent(h)
 	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
 	hideFromTaskbar(h)     // 不进任务栏与 Alt+Tab（D51；非 Windows 为 no-op 桩）
 	// 置顶断言 + 记忆恢复（§15.1 置顶开关）：缺省置顶、菜单切换态随记忆回来——
@@ -392,7 +396,7 @@ func (u *UI) onHWND(h uintptr) {
 			u.x, u.y = nx, ny
 		}
 	}
-	// 首帧 ULW 在帧循环提交位图后窗口方显示（分层窗首次 ULW 前不显示，D62）。
+	// 首帧 ULW 提交成功窗口才揭示（D78：挂接即隐藏、revealPending 至此清零）。
 	// 本函数不在帧内，位移直接下发（帧内的改动一律记账，见 requestMove）。
 }
 

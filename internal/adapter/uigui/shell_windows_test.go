@@ -112,3 +112,41 @@ func TestMenuDispatchNew(t *testing.T) {
 		t.Fatal("inCh 未收到 /new")
 	}
 }
+
+// TestShowMainGateBeforeFirstFrame D78 呼出门：首帧 ULW 就绪前（revealPending）托盘/
+// 快捷键呼出只投展开消息、**不显示窗口**（位图未提交 → 防闪现未定制窗口）；就绪后呼出
+// 正常揭示（显示 + 激活前台）。揭示经 revealMain 槽注入、假句柄不落真 Win32。
+func TestShowMainGateBeforeFirstFrame(t *testing.T) {
+	if mainHWND != 0 {
+		t.Skip("测试进程内已有主窗句柄")
+	}
+	oldReveal := revealMain
+	defer func() { revealMain = oldReveal }()
+	reveals := 0
+	revealMain = func(uintptr) { reveals++ }
+
+	mainHWND = 0x1234 // 非 0 过 h 门（headless 无真窗；揭示经槽注入不落真 ShowWindow）
+	defer func() { mainHWND = 0 }()
+
+	u := newFrameUI()
+	u.inbox = make(chan uiMsg, 8) // post 落点（无事件循环，缓冲可见）
+	u.done = make(chan struct{})
+
+	u.revealPending.Store(true)
+	u.showMain()
+	if reveals != 0 {
+		t.Fatalf("首帧前呼出不应显示窗口, reveals=%d", reveals)
+	}
+	if n := len(u.inbox); n != 1 {
+		t.Fatalf("呼出应仍投一条展开消息（只置展开态）, got %d", n)
+	}
+
+	u.revealPending.Store(false)
+	u.showMain()
+	if reveals != 1 {
+		t.Fatalf("就绪后呼出应显示一次, got %d", reveals)
+	}
+	if n := len(u.inbox); n != 2 {
+		t.Fatalf("展开消息照投, got %d", n)
+	}
+}

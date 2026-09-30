@@ -275,9 +275,10 @@ func ensureMainDIB(w, h int32) error {
 	return nil
 }
 
-// ensureLayeredStyle 主窗挂 WS_EX_LAYERED（onHWND 一次性，D62）：分层窗在首次
-// ULW 前不显示（MSDN）——启动从 Gio ShowWindow 到首帧位图之间不闪白底，首次 ULW
-// 即带内容出现。ULW 接管后 SLWA 同窗互斥，LWA_ALPHA 已随 D62 退役。
+// ensureLayeredStyle 主窗挂 WS_EX_LAYERED（onHWND 一次性，D62）：ULW 承载形状/命中/
+// 穿透的前提；ULW 接管后 SLWA 同窗互斥，LWA_ALPHA 已随 D62 退役。启动防闪的**显式**
+// 机制归 D78（挂接即 SW_HIDE、首帧 ULW 成功才揭示）——分层样式只作双保险，不再依赖
+// 「首 ULW 前不显示」语义（那只在建窗时挂样式才成立）。
 func ensureLayeredStyle(h uintptr) {
 	onWindowThread(func() {
 		mainULWLayerd = applyLayeredStyle(h)
@@ -291,6 +292,23 @@ func applyLayeredStyle(h uintptr) bool {
 		procSetWindowLongPtrW.Call(h, gwlExStyle, ex|wsExLayered)
 	}
 	return true
+}
+
+// hideUntilFirstPresent 挂接即隐藏（D78 启动防闪）：Gio `Configure(ShowWindow)` 早于
+// Win32ViewEvent 投递——onHWND 是最早可接管点，此处 SW_HIDE 直到首帧 ULW 提交成功经
+// revealMainWindow 揭示。窗口线程调用（onHWND 即在其中）。
+func hideUntilFirstPresent(h uintptr) {
+	procShowWindow.Call(h, swHide)
+}
+
+// revealMainWindow 揭示（D78）：显示 + 激活前台（与现状启动聚焦一致，D78 拍板）——
+// 首帧揭示（fadePresent）与呼出（showMain）共用，经 revealMain 槽注入可测。
+// 经窗口线程（铁律 1）。
+func revealMainWindow(h uintptr) {
+	onWindowThread(func() {
+		procShowWindow.Call(h, swRestore)
+		procSetForegroundWindow.Call(h)
+	})
 }
 
 // mainPresent 整窗 ULW 提交（D62 单通道）：全帧合成位图直接写主窗——位图 alpha 即

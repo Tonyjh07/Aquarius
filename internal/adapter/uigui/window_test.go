@@ -320,6 +320,59 @@ func TestFadePresentSubmitsBitmap(t *testing.T) {
 	}
 }
 
+// ---- D78 启动显隐时序（挂接即隐藏 → 首帧 ULW 成功即揭示）----
+
+// TestPresentableDuringReveal 合成/提交门（D78）：主窗隐藏时不提交（hideMain 语义——
+// 防隐藏后仍有帧把位图唤回）；唯**启动揭示期**例外——隐藏是我方所为，须照常合成提交，
+// 否则永不首帧、永不揭示。
+func TestPresentableDuringReveal(t *testing.T) {
+	u := newFrameUI()
+	if u.presentable() != mainVisible() {
+		t.Fatalf("无揭示待定：presentable 应等于 mainVisible()（平台口径），got %v want %v",
+			u.presentable(), mainVisible())
+	}
+	u.revealPending.Store(true)
+	if !u.presentable() {
+		t.Fatal("揭示期应放行合成/提交（否则永无首帧）")
+	}
+}
+
+// TestFirstPresentRevealsWindow 揭示时机（D78）：首帧 ULW 提交成功 → 恰好揭示一次并清
+// 揭示待定；提交失败（GPU 降级）不揭示、待定保持（拍板：降级保持隐藏，下帧重试）；
+// 已揭示不重复。
+func TestFirstPresentRevealsWindow(t *testing.T) {
+	u := newFrameUI()
+	u.hwnd = 1
+	u.frameSize = image.Pt(100, 80)
+	u.fadeBuf = make([]byte, 100*80*4)
+	u.x, u.y = 0, 0
+
+	oldPresent, oldReveal := presentMain, revealMain
+	defer func() { presentMain, revealMain = oldPresent, oldReveal }()
+	reveals := 0
+	revealMain = func(uintptr) { reveals++ }
+
+	u.revealPending.Store(true)
+	presentMain = func(int32, int32, int32, int32, []byte, byte) bool { return false }
+	u.fadePresent(true)
+	if reveals != 0 || !u.revealPending.Load() {
+		t.Fatalf("提交失败不应揭示、待定保持: reveals=%d pending=%v", reveals, u.revealPending.Load())
+	}
+
+	presentMain = func(int32, int32, int32, int32, []byte, byte) bool { return true }
+	u.fadePresent(true)
+	if reveals != 1 {
+		t.Fatalf("首帧提交成功应揭示一次, got %d", reveals)
+	}
+	if u.revealPending.Load() {
+		t.Fatal("揭示后待定应清除")
+	}
+	u.fadePresent(true)
+	if reveals != 1 {
+		t.Fatalf("揭示应一次性, got %d", reveals)
+	}
+}
+
 // TestSelForRowState 行选状态缓存（D63）：按行序 get-or-create，跨调用同指针
 // （选中态/焦点跨帧持久）；越界增长幂等。
 func TestSelForRowState(t *testing.T) {

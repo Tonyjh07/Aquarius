@@ -348,12 +348,13 @@ func (u *UI) clampedBand() (top, bottom int) {
 // 重渲 → 整窗位图（av = vis × g(y) × alpha，D62 全帧合成）。不改屏幕态——它是一帧里
 // 唯一的慢段（离屏 GPU 重渲 + 预乘），先跑完，之后的移窗/提交/ULW 才各自落地。
 // 返回位图是否可上屏（false = 降级：非 Windows / hwnd 未到 / 主窗隐藏 / 离屏渲染失败，
-// fadePresent 保持上一帧位图）。主窗隐藏在此判定（隐藏期间不提交，防被唤回）。
+// fadePresent 保持上一帧位图）。主窗隐藏在此判定（隐藏期间不提交，防被唤回）——唯启动
+// 揭示期例外（revealPending，D78：隐藏是我方所为，须照常合成提交否则永不首帧）。
 func (u *UI) fadeCompose() bool {
 	if u.hwnd == 0 || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
 		return false
 	}
-	if !mainVisible() {
+	if !u.presentable() {
 		return false
 	}
 	if err := u.fade.ensure(u.frameSize.X, u.frameSize.Y, u.frameMetric); err != nil {
@@ -419,8 +420,20 @@ func (u *UI) fadePresent(composed bool) {
 	if u.wheelCap { // D71 滚轮手势钉点（提交前落笔：位图 alpha 即形状/命中/穿透）
 		pinWheelCursor(u.fadeBuf, u.frameSize, x, y, cursorPos())
 	}
-	presentMain(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha)
+	if presentMain(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha) && u.revealPending.Swap(false) {
+		revealMain(u.hwnd) // D78：首帧 ULW 已提交 → 揭示（显示 + 激活前台），首个可见帧带内容
+	}
 }
 
 // presentMain 提交函数槽（测试注入点；生产恒 mainPresent——Windows 实作 / 非 Windows no-op）。
 var presentMain = mainPresent
+
+// revealMain 揭示函数槽（测试注入点；生产恒 revealMainWindow——Windows 实作 / 非 Windows no-op）。
+var revealMain = revealMainWindow
+
+// presentable 合成/提交可否进行（D78）：主窗隐藏时不提交（hideMain 语义——防隐藏后仍有
+// 帧把位图唤回）；唯启动揭示期例外（revealPending：隐藏是我方所为，须照常合成提交，
+// 否则永不首帧）。
+func (u *UI) presentable() bool {
+	return u.revealPending.Load() || mainVisible()
+}

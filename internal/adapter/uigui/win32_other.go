@@ -57,3 +57,9 @@ func subclassCloseToHide(uintptr) {}
 
 // hideFromTaskbar 任务栏屏蔽未适配（窗口照常上任务栏）。
 func hideFromTaskbar(uintptr) {}
+
+// hideUntilFirstPresent 非 Windows 无隐藏路径（Win32ViewEvent 不投递、onHWND 不会跑）。
+func hideUntilFirstPresent(uintptr) {}
+
+// revealMainWindow 非 Windows 无揭示路径（Gio 常规渲染本就直接显示）。
+func revealMainWindow(uintptr) {}

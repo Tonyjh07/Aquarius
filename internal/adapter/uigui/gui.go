@@ -110,10 +110,13 @@ type UI struct {
 	denyBtn     widget.Clickable
 	drag        gesture.Drag
 	hwnd        uintptr
-	x, y        int32 // 窗口屏幕坐标（拖动跟随 + 位置记忆）
-	dragging    bool
-	dragWin0    point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
-	dragCur0    point // 按下时光标位置（屏幕坐标）
+	// revealPending 启动防闪（D78）：挂接即隐藏、首帧 ULW 提交成功才揭示（激活前台）。
+	// 事件循环写（onHWND/fadePresent）、托盘线程读（showMain 呼出门）→ atomic。
+	revealPending atomic.Bool
+	x, y          int32 // 窗口屏幕坐标（拖动跟随 + 位置记忆）
+	dragging      bool
+	dragWin0      point // 按下时窗口左上角（屏幕坐标，绝对跟踪修回弹，§15.6 铁律 2）
+	dragCur0      point // 按下时光标位置（屏幕坐标）
 
 	// D55 帧内屏幕态记账：帧中一律只置 pending，由 commitWinGeom 一拍 flush（移窗经
 	// Window.Run）。D62：形裁/alpha 通道退役（随 ULW 位图同拍提交），仅剩移窗。
