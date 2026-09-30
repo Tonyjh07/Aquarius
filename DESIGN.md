@@ -960,6 +960,16 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
   → present(ULW)`：全帧合成是唯一慢段（离屏重渲 + 预乘，先跑完）；移窗一拍 flush
   （帧内只 `requestMove` 记账，D55 机制保留）；`e.Frame` 保留（事件路由/IME/vblank
   节奏零改动，其画面被 ULW 位图覆盖）；ULW 殿后提交（取实测窗口矩形定位）。
+- **启动显隐时序（D78，补 D62）**：启动曾闪现「未定制窗口」（Q8/1d——Gio `Configure(ShowWindow)`
+  早于 `Win32ViewEvent`，D62「分层窗首 ULW 前不显示」依赖**建窗时**挂样式的语义，后挂不成立）→
+  改**显式状态机**（`revealPending`，事件循环/托盘线程 atomic）：`onHWND` 挂接即 `SW_HIDE`
+  （最早可接管点；其前 Configure→挂钩的亚帧间隙无更早挂钩点，接受为限制），`WS_EX_LAYERED`
+  保留（D62 双保险）；合成/提交门放行启动期（`presentable = mainVisible || revealPending`——
+  隐藏是我方所为、须照常合成，否则永不首帧）；**首帧 ULW 提交成功即揭示**
+  （`ShowWindow + SetForegroundWindow` 激活前台，与现状启动聚焦一致，首个可见帧带内容）；
+  首帧前托盘/快捷键呼出**只置展开态、不 ShowWindow**（窗口由首帧自现，防提前显闪）；
+  位置记忆/置顶/停靠恢复全在隐藏期完成（揭示即在记忆位、无跳动）。GPU 离屏失败永不首帧 →
+  **保持隐藏**（D62 降级本无可显示像素；托盘在、可经菜单退出）。
 - **右键 logo** = 菜单（D72 补全「菜单步」，项清单经 D73 调整）：**原生弹出菜单 = 新对话 /
   权限（二级菜单四档 = 设置窗同源 `permLevels`：read-only / strict / permissive /
   full-access，当前档打勾；选中注入 `/permission <档>` 与键入同路径——D22 写回 +
