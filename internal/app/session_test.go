@@ -941,6 +941,7 @@ func buildTree(t *testing.T, s *Session) *conversation.Conversation {
 		t.Fatalf("build tree: %v", err)
 	}
 	s.cur = c
+	s.publishTree() // D80/§7.5：换树后重发只读快照（Handle 外改 s.cur 时须手动发布）
 	return c
 }
 
