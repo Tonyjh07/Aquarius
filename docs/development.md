@@ -15,8 +15,15 @@ gofmt -l .                     # 格式检查（应无输出）
 ```
 
 - 语言约定：文档/注释中文；标识符、commit message 英文祈使句。
-- **Windows 下 `-race` 需要 CGO + C 编译器**：本机已装 llvm-mingw 并
-  `go env -w CGO_ENABLED=1 CC=<clang.exe 路径>`（用户级配置，不入库）。
+- **Windows 下 `-race` 需要 CGO + C 编译器**（`-race` 走 cgo，说"需要 C 工具链"没错）。
+  本机用 WinGet 装的 **WinLibs MinGW**，并已把 Go **用户级** env 的 `CC` 指到它：
+  `go env -w CC="…\mingw64\bin\gcc.exe"`（写在 `go env GOENV` 指向的文件里，**不入库、换机需重配**）。
+  **PATH 上第一个 `gcc` 是 Cygwin 的**（`C:\msys64\usr\bin\gcc.exe`），Go 明确拒绝它：
+  `runtime/cgo: #error "don't use the cygwin compiler to build native Windows programs; use MinGW instead"`
+  ——所以只把 MinGW 追加到 PATH 末尾**不够**，必须用 `CC` 显式指过去。
+  自检：`go env CC` 应指向 `…\mingw64\bin\gcc.exe`，之后 `go test -race ./...` 直接可用、无需任何临时环境变量。
+  未装时：`winget install BrechtSanders.WinLibs.MCF.UCRT`；取路径可用
+  `(Get-Command gcc -All | ? { $_.Source -notmatch 'msys64' })[0].Source`。
 - 全部测试**默认不起真实网络**：LLM 用脚本流/httptest 假 SSE 服务，存储用临时目录；
   门控的真实 MCP 验收（`AQUARIUS_E2E_REAL_MCP=1`，拉现成 npx server）除外，缺省 skip。
 

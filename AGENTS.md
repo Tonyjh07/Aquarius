@@ -35,6 +35,12 @@ go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
 ```
 
+- **`-race` 在 Windows 需要 C 编译器**（`-race` 走 cgo——"需要 C 工具链"这句本身没错），但**本机已配好**：
+  Go 用户级 env 的 `CC` 已指向 MinGW gcc（`go env -w` 写入，不入库）——**直接跑 `go test -race ./...` 即可，
+  不需要自己设环境变量或改 `PATH`**。PATH 上第一个 `gcc` 是 Cygwin 的（`C:\msys64\usr\bin\gcc.exe`），
+  Go 明确拒绝它（报 `don't use the cygwin compiler to build native Windows programs; use MinGW instead`）；
+  若真遇到该错，用 `go env CC` 确认它指向 `…\mingw64\bin\gcc.exe`。详见 [docs/development.md](docs/development.md) 的"环境与门禁"。
+
 ## 代码风格
 
 - `gofmt` 即风格；不引入额外格式化/lint 工具，除非用户要求。
