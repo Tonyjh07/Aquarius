@@ -661,7 +661,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/title [文本]` | 查看 / 改写会话标题（会话元数据，即时落盘） |
 | `/compact` | 触发上下文压缩：生成 system 摘要节点，水位上历史不再回传（§7.1 三轨之一） |
 | `/permission [等级]` | 查看 / 切换权限等级（read-only/strict/permissive/full-access，写回 config） |
-| `/goto <id>` | Head 移到任意节点（分支导航） |
+| `/goto <id>` | Head 移到任意节点（分支导航）；**清屏 + 回放**新路径（D81，与 `/switch` 同口径） |
 | `/edit <id> [--keep] <文本>` | Revise：默认 Fresh；`--keep` = Carry（保留后续历史） |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
 | `/rm <id>` | Prune 剪子树（二次确认） |
@@ -691,10 +691,30 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - **不扇出**：`HistoryEvent` 不是 `CommittedEvent`，输出器装饰器（D28）对它 no-op——
   回放不重复触发通知/TTS。
 - **回放前提示**：发 `NoticeEvent`（`已恢复会话 <标题> (<id>)，回放 <n> 条历史`）。
-- **时机**：启动恢复时回放一次；`/switch` 切到既有会话时同样**清屏（D75 `ClearEvent`）后
-  回放**；`/goto`（Head 导航，§7.3）不回放，`/new` 只清屏不回放（新会话无可回放）。
+- **时机**：启动恢复时回放一次；`/switch` 切到既有会话与 `/goto` 移 Head（§7.3）时同样
+  **清屏（D75 `ClearEvent`）后回放**（D81：转写区须与 Head 一致，`/goto` 此前不回放是缺口）；
+  `/new` 只清屏不回放（新会话无可回放）。
 - **repl 同权**：repl 前端按行打印同一语义（`> ` 输入行、正文、`[tool]` 行），保证
   e2e/管道输出与 TUI 信息一致。
+
+### 7.5 会话树只读视图（D80，前置 A）
+
+UI 要画分叉按钮（§15.3/S1-1f）与会话树界面（S3）就得知道**树事实**（某节点的同级集合与
+自身下标），但 Presenter 只发渲染事件、不给树；UI 又跑在独立 goroutine，直读
+`Session.Current()` 会与装配根的树变更并发（`-race` 必红），铁律 5 亦不许 UI 直连 store。
+
+- **端口**：`port.TreeView` —— 单一方法 `Branches(id) (BranchInfo, bool)`；
+  `BranchInfo{IDs []conversation.MessageID; Index int}`：同父全部孩子**按创建序**（含自身）、
+  `Index` 为自身下标；`id` 不在树中 → `ok=false`。
+- **实现**：`*app.Session` 实现该端口（**首个 app 侧端口实现**；方向合法 —— adapter 与 app
+  同依赖 port，本端口消费方是 UI 适配器、实现方是 app，与 llm/store 反向）。
+- **并发**：Session 内维护**不可变快照**（整树 → `map[MessageID]BranchInfo`），树变更后
+  整体重建并经 `atomic.Pointer` 发布；UI 侧无锁读，`-race` 干净。发布时机 = 构造完成 +
+  每次 `Handle` 返回前（树变更只发生在 `Handle` 内：命令面与 Turn）。
+- **口径**：快照是**展示口径**，不参与推理装配（装配走 `assemblePath`/水位，§7.1）；
+  一次输入内的中间态对 UI 不可见（分支形状本就不会在 Turn 中途变化）。
+- **不扇出**：只读视图不经 Presenter 事件面（同级数会随后续 Revise 变化，事件无法自我
+  更新），也不给任何变更入口 —— 一切变更仍经内核命令（§6/§7.3）。
 
 ---
 
@@ -1050,6 +1070,7 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 | 元素 | 呈现 |
 |---|---|
 | 消息气泡 | **双色气泡**标示角色：user = 品牌色系气泡、assistant = 浅白气泡；思考/工具/notice 为非气泡文本行（气泡群内弱化样式） |
+| 分叉切换（D81） | 有同级分叉的节点在气泡下方显示 `◀ i/n ▶`（`i` = 自身在兄弟创建序中的下标 +1）：点击经**输入通道**投递 `/goto <兄弟id>`（与键入同路径，壳内不旁路），内核移 Head + 清屏回放（§7.4）；按钮为独立点击热区、不挂行选（D63）；数据面 = `port.TreeView`（D80/§7.5，每帧无锁读快照） |
 | 思考（D42） | 流式**实时暗块**（灰色小字 + "思考中…"）；定稿折叠为「已思考 · Ns」行可展开；启动回放同款——展示口径恒含思考，与 `model.echo_thinking` 回传开关解耦 |
 | 工具调用/确认/结果（D67） | **单气泡合并 chip，默认折叠**：头部行 `▸ 🔧 name · 参数预览 · 状态`（…运行中/待确认/✓/✗），点击展开参数全文、权限问答与结果全文（可选可复制，不再截 120 字预览）；权限确认并入 chip（待确认自动展开；/rm 等非工具确认仍为文本行） |
 | assistant 正文 | **完整 markdown**（D65 首增量 = 结构块：标题/代码块等宽卡/列表/引用/分隔线，行内剥标记保文本；语法高亮 + 复制按钮、表格、链接点击、行内富样式与行内图片为后续增量） |
