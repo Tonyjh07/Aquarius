@@ -354,11 +354,14 @@ func (u *UI) onHWND(h uintptr) {
 	}
 	u.hwnd = h
 	atomic.StoreUintptr(&mainHWND, h)
-	ensureLayeredStyle(h) // 分层样式（D62 双保险；非 Windows no-op）
 	// D78 启动防闪：挂接即隐藏（最早可接管点——Gio Configure(ShowWindow) 早于本事件、
 	// 无可挂钩点，其间亚帧间隙接受）并置揭示待定；首帧 ULW 提交成功才揭示（fadePresent）。
+	// 【顺序敏感】先 SW_HIDE 再挂 WS_EX_LAYERED：层样式在**可见态**挂接、随后首帧 ULW 前
+	// 被隐藏，UpdateLayeredWindow 将永久失败（errno=87，重新显示也不恢复）——revealPending
+	// 永不清零、窗口永不揭示且呼出门死锁（实机「找不到窗口」）。隐藏态挂接则全链路正常。
 	u.revealPending.Store(true)
 	hideUntilFirstPresent(h)
+	ensureLayeredStyle(h)  // 分层样式（D62 双保险；非 Windows no-op）——须在隐藏后挂
 	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
 	hideFromTaskbar(h)     // 不进任务栏与 Alt+Tab（D51；非 Windows 为 no-op 桩）
 	// 置顶断言 + 记忆恢复（§15.1 置顶开关）：缺省置顶、菜单切换态随记忆回来——
