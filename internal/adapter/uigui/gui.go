@@ -47,11 +47,15 @@ var (
 	_ port.Confirmer = (*UI)(nil)
 )
 
-// Status 状态行数据（浮层底栏生成时经回调现取，形状同 uitui.Status）。
+// Status 状态行数据（浮层底栏生成时经回调现取）。自 D82 起与 uitui.Status 形状分叉：
+// GUI 额外携带 logo 事实卡（§15.1/S1-1g）要的 profile 与会话事实快照（port.SessionFacts，
+// app 侧原子发布零值安全）——tooltip 按 roadmap 只做 GUI（同 Q15 口径），TUI 不扩展。
 type Status struct {
-	Model  string
-	Level  string
-	Effort string // D34：推理档位（think off 时为空——effort 不显示）
+	Model   string
+	Level   string
+	Effort  string            // D34：推理档位（think off 时为空——effort 不显示）
+	Profile string            // D82：当前 profile（S4/Q1 落地前恒 "default" 占位）
+	Facts   port.SessionFacts // D82：会话展示事实（零值 = 未就绪，事实卡回退启动提示）
 }
 
 // Options 装配选项（装配根注入）。

@@ -1075,7 +1075,12 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	if !inAnim {
 		cur := cursorPos()
 		if u.logoHovered && u.overInputBtn(false, cur) {
-			u.hoverTip(gtx, absY, startupHint, false)
+			// D82/S1-1g：事实快照就绪则显多行事实卡，未就绪（零值）回退启动提示。
+			if lines := u.factsCard(); len(lines) > 0 {
+				u.hoverCard(gtx, absY, lines, false)
+			} else {
+				u.hoverTip(gtx, absY, startupHint, false)
+			}
 			shown = true
 		}
 		if u.m.confirm == nil && u.sendBtn.Hovered() && !u.generating.Load() &&
@@ -1110,37 +1115,121 @@ var tipBg = color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF}
 
 // hoverTip 悬浮提示卡片：画在胶囊上沿之上（输入栏段局部坐标，可为负 → 溢出到
 // 转写区之上，无遮挡裁剪）；自带底板并登记形状。rightAlign=右对齐到胶囊内边距
-// （发送键），false=左对齐（logo）。
+// （发送键），false=左对齐（logo）。单行 = hoverCard 的单行特例（D82）。
 func (u *UI) hoverTip(gtx layout.Context, absY int, text string, rightAlign bool) {
-	label := func(gtx layout.Context) layout.Dimensions {
-		s := material.Caption(u.th, text)
-		s.Color = whiteText
-		return s.Layout(gtx)
+	u.hoverCard(gtx, absY, []string{text}, rightAlign)
+}
+
+// hoverCard 多行悬浮提示卡（D82/S1-1g，泛化自单行 tips）：texts 逐行左对齐、宽度取
+// 最宽行；画在胶囊上沿之上（输入栏段局部坐标，可为负 → 溢出到转写区之上，无遮挡
+// 裁剪）；自带底板并登记形状（形状规则同单行）。rightAlign=右对齐到胶囊内边距
+// （发送键），false=左对齐（logo）。
+func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign bool) {
+	if len(texts) == 0 {
+		return
 	}
-	m := op.Record(gtx.Ops)
-	dims := label(gtx)
-	txt := m.Stop()
+	type line struct {
+		op op.CallOp
+		w  int
+		h  int
+	}
+	lines := make([]line, 0, len(texts))
+	w, h := 0, 0
+	for _, text := range texts {
+		m := op.Record(gtx.Ops)
+		cap := material.Caption(u.th, text)
+		cap.Color = whiteText
+		dims := cap.Layout(gtx)
+		lines = append(lines, line{op: m.Stop(), w: dims.Size.X, h: dims.Size.Y})
+		w = max(w, dims.Size.X)
+		h += dims.Size.Y
+	}
 	padX, padY := gtx.Dp(10), gtx.Dp(6)
 	radius := gtx.Dp(8)
 	x := gtx.Dp(sideMarginDp)
 	if rightAlign {
-		x = gtx.Constraints.Max.X - gtx.Dp(sideMarginDp) - dims.Size.X - 2*padX
+		x = gtx.Constraints.Max.X - gtx.Dp(sideMarginDp) - w - 2*padX
 		if x < 0 {
 			x = 0
 		}
 	}
-	y := gtx.Dp(pillTopDp) - dims.Size.Y - 2*padY - gtx.Dp(6)
+	y := gtx.Dp(pillTopDp) - h - 2*padY - gtx.Dp(6)
 	bgRect := image.Rectangle{
 		Min: image.Pt(x, y),
-		Max: image.Pt(x+dims.Size.X+2*padX, y+dims.Size.Y+2*padY),
+		Max: image.Pt(x+w+2*padX, y+h+2*padY),
 	}
 	st := clip.UniformRRect(bgRect, radius).Push(gtx.Ops)
 	paint.Fill(gtx.Ops, tipBg)
-	inner := op.Offset(image.Pt(bgRect.Min.X+padX, bgRect.Min.Y+padY)).Push(gtx.Ops)
-	txt.Add(gtx.Ops)
-	inner.Pop()
+	ly := bgRect.Min.Y + padY
+	for _, ln := range lines {
+		inner := op.Offset(image.Pt(bgRect.Min.X+padX, ly)).Push(gtx.Ops)
+		ln.op.Add(gtx.Ops)
+		inner.Pop()
+		ly += ln.h
+	}
 	st.Pop()
 	u.record(bgRect.Add(image.Pt(0, absY)), radius, tipBg, image.Rectangle{Max: u.frameSize})
+}
+
+// factsCard logo 悬停事实卡内容（D82/S1-1g，§15.1）：profile · 会话（标题+ID 前缀）·
+// 模型（权限档/effort）· 上下文占用（Q6：精确优先 est 兜底，分母 max_context_tokens）·
+// 用量（Path 累计 + 有实测时上轮）。快照未就绪（零值）→ nil（调用方回退启动提示）。
+// 纯逻辑（读 Status 回调后不触 GUI 状态），可测。
+func (u *UI) factsCard() []string {
+	var st Status
+	if u.opts.Status != nil {
+		st = u.opts.Status()
+	}
+	f := st.Facts
+	if f.Title == "" && f.CtxMax == 0 { // 尚未发布（构造早期/计数一直失败）
+		return nil
+	}
+	profile := st.Profile
+	if profile == "" { // S4/Q1 前装配根留空 → 占位
+		profile = "default"
+	}
+	title := f.Title
+	if title == "" {
+		title = "（未就绪）"
+	}
+	l1 := fmt.Sprintf("%s · %s（%s）", profile, title, shortID(f.ConvID))
+	if st.Model != "" {
+		l1 += " · " + st.Model
+		if st.Level != "" {
+			l1 += "（" + st.Level
+			if st.Effort != "" {
+				l1 += "，" + st.Effort
+			}
+			l1 += "）"
+		}
+	}
+	var l2 string
+	if f.CtxMax > 0 {
+		mode := "估算"
+		if f.CtxExact {
+			mode = "精确"
+		}
+		l2 = fmt.Sprintf("上下文 %d/%d tokens（%.1f%%，%s）",
+			f.CtxTokens, f.CtxMax, 100*float64(f.CtxTokens)/float64(f.CtxMax), mode)
+	}
+	l3 := fmt.Sprintf("累计 in %d / out %d tokens", f.SumIn, f.SumOut)
+	out := []string{l1}
+	if l2 != "" {
+		out = append(out, l2)
+	}
+	out = append(out, l3)
+	if f.LastIn > 0 || f.LastOut > 0 {
+		out = append(out, fmt.Sprintf("上轮 in %d / out %d tokens", f.LastIn, f.LastOut))
+	}
+	return out
+}
+
+// shortID 会话 ID 展示前缀（D82）：前 8 位，短 ID 原样。
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // pillContent 胶囊内横排（坐标原点 = 胶囊左上，约束 = 胶囊尺寸；D49/§15.2）：

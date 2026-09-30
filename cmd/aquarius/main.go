@@ -409,11 +409,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		ui = uigui.New(uigui.Options{
 			Status: func() uigui.Status {
 				if agent := agentPtr.Load(); agent != nil {
-					return uigui.Status{
+					st := uigui.Status{
 						Model:  agent.CurrentModel(),
 						Level:  lvl.Get().String(),
 						Effort: agent.CurrentEffort(), // D34：effort 档位（off 时为空）
+						// D82：logo 事实卡（§15.1/S1-1g）——profile 占位至 S4（Q1），
+						// 会话事实取 app 侧发布快照（无锁原子读，§15.5 同口径）。
+						Profile: "default",
 					}
+					if sess := sessPtr.Load(); sess != nil {
+						st.Facts = sess.Facts()
+					}
+					return st
 				}
 				return uigui.Status{}
 			},
