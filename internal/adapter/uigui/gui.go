@@ -73,6 +73,9 @@ type Options struct {
 	// 返回待执行内核命令（diff 运行态；设置窗经 inCh 与键入同路径串行执行）；
 	// nil = 设置窗只读占位。
 	ApplySettings func(SettingsPatch) ([]port.Command, error)
+	// Tree 会话树只读视图（D80/§7.5，前置 A）：分叉条（D81）每帧无锁读快照，取
+	// 「同级集合 + 自身下标」；nil = 不渲染分叉条。实现方须线程安全（UI 事件循环 goroutine 调用）。
+	Tree port.TreeView
 }
 
 // UI GUI 前端句柄（装配根按 uiFrontend 使用）。
@@ -156,6 +159,11 @@ type UI struct {
 	// SetText 幂等更新并自动清选区）。拖层把手带不覆盖转写区（window.go layout），
 	// 行选手势独占气泡区指针。仅事件循环 goroutine 读写。
 	selRows []*widget.Selectable
+
+	// 分叉条点击件（D81）：按分叉条序缓存左右两个 Clickable（get-or-create）；分叉条
+	// 消费 0 个行选键（selCount），故其增删不漂移其它行的选择键。仅事件循环 goroutine 读写。
+	branchPrev []*widget.Clickable
+	branchNext []*widget.Clickable
 
 	// markdown 解析缓存（D65/D66）：助手定稿块原文 → 结构块（mdBlocks 维护，上限
 	// mdCacheLimit）。仅事件循环 goroutine 读写。

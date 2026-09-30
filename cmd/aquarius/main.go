@@ -379,6 +379,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 装饰器自动继承）。TUI 状态行回调经 atomic 读 Agent（构造晚于 UI 创建，
 	// 事件循环并发读 → -race 必须）。
 	var agentPtr atomic.Pointer[app.Agent]
+	// sessPtr 会话原子槽（D80/§7.5）：UI（含分叉条）先于 Session 构造，故经原子槽
+	// 间接取只读树视图——UI 事件循环 goroutine 可与构造并发调用（同 agentPtr 口径）。
+	var sessPtr atomic.Pointer[app.Session]
 	var ui uiFrontend
 	// 设置窗读写（§15.7/D60-D61）：快照 = config 文本键（文件即事实源）+ 运行态
 	//（等级活槽与 Agent 访问器，同状态行口径）；写 = 单一 patch 回调——文本键泛键
@@ -416,6 +419,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			},
 			Settings:      settingsSnapshot,
 			ApplySettings: applySettings,
+			Tree:          sessionTree{p: &sessPtr}, // D80/§7.5：分叉条只读数据面
 			PosFile:       filepath.Join(dir, "gui_pos.json"),
 			Hotkey:        cfg.UI.Hotkey, // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
 			Theme:         cfg.UI.Theme,  // 主题档 system|light|dark（§15.4/D61；空 = system）
@@ -615,6 +619,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if ctx.Err() != nil {
 		return 0
 	}
+	sessPtr.Store(sess) // D80/§7.5：会话就绪后发布只读树视图（UI 侧分叉条数据面）
 
 	// 插件宿主启动（发现 + 授权 + 连接，软启动：单插件失败只记状态）；
 	// 退出时优雅关闭（§6.4 #4）。OnChange 已在 Start 内把工具/动态命令同步到位。
@@ -665,6 +670,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 	}
+}
+
+// sessionTree 会话树只读视图的装配侧代理（D80/§7.5，前置 A）：Session 构造晚于 UI，
+// 故经原子槽间接取用；零开销包装，Branches 直接转发（快照读本身无锁，§15.5）。
+type sessionTree struct{ p *atomic.Pointer[app.Session] }
+
+var _ port.TreeView = sessionTree{}
+
+func (t sessionTree) Branches(id conversation.MessageID) (port.BranchInfo, bool) {
+	s := t.p.Load()
+	if s == nil {
+		return port.BranchInfo{}, false
+	}
+	return s.Branches(id)
 }
 
 // envSecrets port.Secrets 的内置实现：按名读环境变量（矩阵 DESIGN §5.10）。

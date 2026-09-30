@@ -30,6 +30,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
 // 窗口与布局常量（物理 px 经 gtx.Dp 换算——layout 坐标即物理 px，Dp 只换算尺寸）。
@@ -760,6 +762,13 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, sels func(int) *widget.S
 			}, cardTool, cardR, false, false
 		}
 		return u.toolChipRow(it, sels, cardR)
+	case blockBranch: // 分叉条（D81）：气泡下方 `◀ i/n ▶`，与气泡同向对齐
+		if it.branch == nil { // 防御：无数据的空行不渲染也不登记形状
+			return func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{}
+			}, cardTool, 0, false, false
+		}
+		return u.branchRow(it.branch, cardR)
 	case blockNotice:
 		return func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, it.text)
@@ -1307,7 +1316,7 @@ func featherWidth(m unit.Metric, w, h int) int {
 
 // blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块；
 // md = 助手定稿块的 markdown 结构块（D66 复合行）；chip/chipIdx = 工具合并 chip
-// 及其块序（D67），text 为空）。
+// 及其块序（D67），text 为空；branch = 分叉条（D81））。
 type blockView struct {
 	kind    blockKind
 	text    string
@@ -1316,12 +1325,16 @@ type blockView struct {
 	md      []mdBlock
 	chip    *toolChip
 	chipIdx int
+	branch  *branchStrip
 }
 
 // selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数；工具 chip = 恒 2
-// （参数/结果——开合切换不漂移后续行序号，D67）；其余行恒 1。
+// （参数/结果——开合切换不漂移后续行序号，D67）；**分叉条 = 0**（D81：无文本可选，且
+// 不占键 → 分叉条的增删不漂移其它行的选择序号）；其余行恒 1。
 func (it blockView) selCount() int {
 	switch {
+	case it.kind == blockBranch:
+		return 0
 	case it.kind == blockAssistant && len(it.md) > 0:
 		return len(it.md)
 	case it.kind == blockTool && it.chip != nil:
@@ -1330,11 +1343,104 @@ func (it blockView) selCount() int {
 	return 1
 }
 
+// branchStrip 分叉条（D81）：气泡正下方的 `◀ i/n ▶`。数据面 = port.TreeView 快照（D80）。
+type branchStrip struct {
+	blockIdx int                      // 所属块序（m.blocks 下标；渲染期按此对齐插入）
+	id       conversation.MessageID   // 所源节点
+	ids      []conversation.MessageID // 同级全部节点（创建序，含自身）
+	index    int                      // 自身在 ids 中的下标
+	right    bool                     // 与气泡同向对齐（user 气泡右对齐 → 分叉条也右对齐）
+	slot     int                      // 点击件缓存槽 = 分叉条序（与 ids 无关，只增不改）
+}
+
+// branchStrips 本次渲染的分叉条（D81）：按块序为「带节点 ID 且同级 ≥2」的 user/assistant
+// 正文块各生成一条；同级只有 1 条（无分叉）不生成。仅事件循环 goroutine 调用。
+func (u *UI) branchStrips() []branchStrip {
+	if u.opts.Tree == nil {
+		return nil
+	}
+	var out []branchStrip
+	for bi, b := range u.m.blocks {
+		if b.id == "" || (b.kind != blockUser && b.kind != blockAssistant) {
+			continue
+		}
+		bi2, ok := u.opts.Tree.Branches(b.id)
+		if !ok || len(bi2.IDs) < 2 {
+			continue
+		}
+		out = append(out, branchStrip{
+			blockIdx: bi, id: b.id, ids: bi2.IDs, index: bi2.Index,
+			right: b.kind == blockUser, slot: len(out),
+		})
+	}
+	return out
+}
+
+// branchClick 分叉条左右点击件 get-or-create（D81；照 chipClick 口径按序缓存）。
+func (u *UI) branchClick(slot int, next bool) *widget.Clickable {
+	if next {
+		for len(u.branchNext) <= slot {
+			u.branchNext = append(u.branchNext, new(widget.Clickable))
+		}
+		return u.branchNext[slot]
+	}
+	for len(u.branchPrev) <= slot {
+		u.branchPrev = append(u.branchPrev, new(widget.Clickable))
+	}
+	return u.branchPrev[slot]
+}
+
+// branchArrow 分叉条上的方向键；enabled=false（已在边界）时暗色——真正的不响应在
+// updateClicks 的边界夹取里，这里只表达"不可用"。
+func (u *UI) branchArrow(gtx layout.Context, glyph string, enabled bool) layout.Dimensions {
+	c := textMuted
+	if !enabled {
+		c = textDim
+	}
+	l := material.Caption(u.th, glyph)
+	l.Color = c
+	return l.Layout(gtx)
+}
+
+// branchRow 分叉条渲染（D81）：`◀ i/n ▶` 横排，左右各一个点击件。底板 cardTool
+// **不透明** → 整条像素可命中（D62 逐像素命中：透明间隙会穿透到下层窗，箭头字形
+// 之间的空隙吞点击）。
+func (u *UI) branchRow(s *branchStrip, cardR int) (layout.Widget, color.NRGBA, int, bool, bool) {
+	n := len(s.ids)
+	prev, next := u.branchClick(s.slot, false), u.branchClick(s.slot, true)
+	return func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return prev.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return u.branchArrow(gtx, "◀", s.index > 0)
+				})
+			}),
+			layout.Rigid(layout.Spacer{Width: branchGapDp}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Caption(u.th, fmt.Sprintf("%d/%d", s.index+1, n))
+				l.Color = textMuted
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: branchGapDp}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return next.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return u.branchArrow(gtx, "▶", s.index < n-1)
+				})
+			}),
+		)
+	}, cardTool, cardR, s.right, false
+}
+
+// branchGapDp 分叉条内 `◀`/计数/`▶` 的横向间距。
+const branchGapDp unit.Dp = 6
+
 // frameItems 定稿块 + 实时思考/草稿（流式可见；对齐 D33"流式原样、定稿渲染"口径）。
 // 助手定稿块 = 单条目携 markdown 结构块（D66 单回复单气泡），工具块 = 合并 chip
-// 携块序（D67），live 草稿原样单行。
+// 携块序（D67），live 草稿原样单行；带分叉的正文块后紧跟一条分叉条（D81）。
 func (u *UI) frameItems() []blockView {
-	items := make([]blockView, 0, len(u.m.blocks)+2)
+	strips := u.branchStrips()
+	next := 0 // strips 按块序升序，指针单向前进即对齐
+	items := make([]blockView, 0, len(u.m.blocks)+len(strips)+2)
 	for bi, b := range u.m.blocks {
 		switch {
 		case b.kind == blockAssistant:
@@ -1343,6 +1449,11 @@ func (u *UI) frameItems() []blockView {
 			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi})
 		default:
 			items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs})
+		}
+		if next < len(strips) && strips[next].blockIdx == bi {
+			s := strips[next] // 拷贝：条目持值，避免共享切片元素
+			items = append(items, blockView{kind: blockBranch, branch: &s})
+			next++
 		}
 	}
 	if u.m.think.Len() > 0 {
@@ -1461,6 +1572,28 @@ func (u *UI) updateClicks(gtx layout.Context) {
 			}
 			u.chipOpen[i] = !u.chipOpen[i]
 		}
+	}
+	// 分叉条左右切换（D81）：投递 `/goto <兄弟id>` 经输入通道（与键入同路径，壳内不
+	// 旁路）；已在边界则不环绕（按钮置暗且不投递）。
+	for _, s := range u.branchStrips() {
+		switch {
+		case u.branchClick(s.slot, false).Clicked(gtx):
+			u.gotoBranch(s, -1)
+		case u.branchClick(s.slot, true).Clicked(gtx):
+			u.gotoBranch(s, +1)
+		}
+	}
+}
+
+// gotoBranch 投递一次分叉切换（D81）：delta = -1 左（更旧版本）/ +1 右（更新版本）。
+// 越界不环绕；输入缓冲满时给提示而不是静默丢弃（同 model.submit 口径）。
+func (u *UI) gotoBranch(s branchStrip, delta int) {
+	to := s.index + delta
+	if to < 0 || to >= len(s.ids) {
+		return
+	}
+	if !u.m.submitCommand("/goto " + string(s.ids[to])) {
+		u.m.add(blockNotice, "[notice] 输入缓冲已满，分叉切换未执行")
 	}
 }
 

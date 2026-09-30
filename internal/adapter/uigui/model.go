@@ -24,16 +24,19 @@ const (
 	blockError                      // 错误块
 	blockSystem                     // system 节点（/compact 摘要等）
 	blockThinking                   // 思考块（D42；流式实时 + 定稿折叠，§15.3）
+	blockBranch                     // 分叉行（D81）：气泡下方的 `◀ i/n ▶` 切换条
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
 // secs 仅思考块使用：>=0 定稿耗时秒数（折叠行"已思考 · Ns"），-1 = 回放无耗时。
 // chip 仅工具块使用（D67）：一次调用合并调用/确认/结果。
+// id 仅 user/assistant 正文块使用（D81）：所源节点——分叉编号与左右切换的数据键。
 type block struct {
 	kind blockKind
 	text string
 	secs int
 	chip *toolChip
+	id   conversation.MessageID
 }
 
 // toolChip 一次工具调用的合并视图（D67/§15.3）：调用 + 权限确认 + 结果同组，
@@ -153,14 +156,14 @@ func (m *model) commit(msg conversation.Message) {
 		if strings.TrimSpace(final) == "" {
 			// 空内容的取消/错误也要有反馈（首个 token 前取消是最常见场景）。
 			if msg.Outcome != conversation.OutcomeDone {
-				m.add(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome))
+				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), msg.ID)
 			}
 			return
 		}
 		if msg.Outcome == conversation.OutcomeDone {
-			m.add(blockAssistant, final) // §15.3 完整 markdown 在渲染期处理（骨架先纯文本）
+			m.addMsg(blockAssistant, final, msg.ID) // §15.3 完整 markdown 在渲染期处理（骨架先纯文本）
 		} else {
-			m.add(blockAssistant, fmt.Sprintf("[%s]\n%s", msg.Outcome, final))
+			m.addMsg(blockAssistant, fmt.Sprintf("[%s]\n%s", msg.Outcome, final), msg.ID)
 		}
 	case conversation.RoleSystem:
 		m.resetDraft()
@@ -180,7 +183,7 @@ func (m *model) replay(msg conversation.Message) {
 	switch msg.Role {
 	case conversation.RoleUser:
 		if strings.TrimSpace(text) != "" {
-			m.add(blockUser, text)
+			m.addMsg(blockUser, text, msg.ID)
 		}
 	case conversation.RoleAssistant:
 		if tp := thinkingText(msg.Content); tp != "" {
@@ -191,14 +194,14 @@ func (m *model) replay(msg conversation.Message) {
 		}
 		if strings.TrimSpace(text) == "" {
 			if msg.Outcome != conversation.OutcomeDone {
-				m.add(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome))
+				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), msg.ID)
 			}
 			break
 		}
 		if msg.Outcome == conversation.OutcomeDone {
-			m.add(blockAssistant, text)
+			m.addMsg(blockAssistant, text, msg.ID)
 		} else {
-			m.add(blockAssistant, fmt.Sprintf("[%s]\n%s", msg.Outcome, text))
+			m.addMsg(blockAssistant, fmt.Sprintf("[%s]\n%s", msg.Outcome, text), msg.ID)
 		}
 	case conversation.RoleTool:
 		if msg.ToolResult == nil {
@@ -230,6 +233,18 @@ func (m *model) submit(text string) {
 	default:
 		m.add(blockUser, line)
 		m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
+	}
+}
+
+// submitCommand 投递一条命令且**不入转写块**（D81 分叉按钮）：与 model.submit 同走
+// `inCh`（壳内不旁路内核，同 D72/D73 菜单口径），区别仅在不回显——按钮不是用户输入，
+// 转写里写一行 `/goto <ulid>` 是噪音。返回 false = 输入缓冲满（点击丢弃，调用方给提示）。
+func (m *model) submitCommand(line string) bool {
+	select {
+	case m.u.inCh <- parseInput(line):
+		return true
+	default:
+		return false
 	}
 }
 
@@ -365,10 +380,16 @@ func (m *model) resetDraft() {
 
 // add 追加定稿块。思考块缺省 secs=-1（回放无耗时；flushThink 自行填）。
 func (m *model) add(kind blockKind, text string) {
+	m.addMsg(kind, text, "")
+}
+
+// addMsg 追加定稿块并记下其所源节点（D81：UI 据此在气泡下方画分叉编号；
+// 空 id = 不参与分叉呈现，如命令输出/notice/思考块）。
+func (m *model) addMsg(kind blockKind, text string, id conversation.MessageID) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	b := block{kind: kind, text: text}
+	b := block{kind: kind, text: text, id: id}
 	if kind == blockThinking {
 		b.secs = -1
 	}

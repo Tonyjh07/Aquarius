@@ -466,6 +466,14 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if err := s.persist(ctx); err != nil {
 			return "", err
 		}
+		// D81：移 Head 后清屏 + 回放新路径——转写区恒与 Head 一致（此前不回放是缺口：
+		// 切分支后界面仍停在旧分支）。口径与 /switch（D75）一致。
+		if err := s.emitClear(ctx); err != nil {
+			return "", err
+		}
+		if _, err := s.replayHistory(ctx, "已切换分支至"); err != nil {
+			return "", err
+		}
 		return fmt.Sprintf("Head → %s", id), nil
 
 	case "edit":

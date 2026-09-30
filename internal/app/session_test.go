@@ -1006,6 +1006,90 @@ func TestSessionGotoCommand(t *testing.T) {
 	}
 }
 
+// TestSessionGotoClearsAndReplays D81：/goto 移 Head 后清屏 + 回放新路径——转写区
+// 恒与 Head 一致（此前不回放是缺口：切分支后界面停在旧分支）。
+func TestSessionGotoClearsAndReplays(t *testing.T) {
+	ctx := context.Background()
+	s, _, rec := newTestSession(t, newMemStore(), textStream("回复一"), textStream("回复二"))
+	text := func(m conversation.Message) string {
+		var b strings.Builder
+		for _, p := range m.Content {
+			b.WriteString(p.Text)
+		}
+		return b.String()
+	}
+
+	if _, err := s.Handle(ctx, port.UserInput{Text: "你好"}); err != nil {
+		t.Fatalf("首轮: %v", err)
+	}
+	// path = [root persona user assistant]
+	first := s.Current().Path()[3].ID
+
+	// Revise 造出同级分叉（Head 移到新节点），旧回答 first 留作历史分支。
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "edit",
+		Args: []string{string(first), "改过的回复"}}}); err != nil {
+		t.Fatalf("/edit: %v", err)
+	}
+	sib := revisedID(s.Current(), first)
+	if sib == "" || s.Current().Head != sib {
+		t.Fatalf("edit 后 head = %s, want %s", s.Current().Head, sib)
+	}
+
+	// 切回旧分支：清屏 + 回放 first 所在路径（persona 之后 = user + first，2 条）。
+	rec.events = nil
+	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "goto", Args: []string{string(first)}}})
+	if err != nil {
+		t.Fatalf("/goto: %v", err)
+	}
+	if out != "Head → "+string(first) {
+		t.Fatalf("goto 输出 = %q, want Head → %s", out, first)
+	}
+	if s.Current().Head != first {
+		t.Fatalf("head = %s, want %s", s.Current().Head, first)
+	}
+
+	names := eventNames(rec.events)
+	if len(names) != 4 || names[0] != "clear" || names[1] != "notice" || names[2] != "history" || names[3] != "history" {
+		t.Fatalf("events = %v, want [clear notice history history]", names)
+	}
+	notice, ok := rec.events[1].(port.NoticeEvent)
+	if !ok {
+		t.Fatalf("第二个事件 = %T, want NoticeEvent", rec.events[1])
+	}
+	for _, want := range []string{"已切换分支至会话", "回放 2 条历史"} {
+		if !strings.Contains(notice.Text, want) {
+			t.Fatalf("notice = %q, want 含 %q", notice.Text, want)
+		}
+	}
+	// 回放内容 = 新 Head 路径（含旧回答"回复一"，不含改后的"改过的回复"）。
+	hist, ok := rec.events[3].(port.HistoryEvent)
+	if !ok {
+		t.Fatalf("末事件 = %T, want HistoryEvent", rec.events[3])
+	}
+	if hist.Message.ID != first {
+		t.Fatalf("回放末节点 = %s, want %s", hist.Message.ID, first)
+	}
+	if got := text(hist.Message); !strings.Contains(got, "回复一") {
+		t.Fatalf("回放文本 = %q, want 含旧分支内容「回复一」", got)
+	}
+
+	// 切回新分支：同样清屏回放，且回放内容换成改后的回复。
+	rec.events = nil
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "goto", Args: []string{string(sib)}}}); err != nil {
+		t.Fatalf("/goto 新分支: %v", err)
+	}
+	if names := eventNames(rec.events); len(names) < 2 || names[0] != "clear" || names[1] != "notice" {
+		t.Fatalf("events = %v, want 以 [clear notice ...] 开头", names)
+	}
+	last, ok := rec.events[len(rec.events)-1].(port.HistoryEvent)
+	if !ok {
+		t.Fatalf("末事件 = %T, want HistoryEvent", rec.events[len(rec.events)-1])
+	}
+	if got := text(last.Message); !strings.Contains(got, "改过的回复") {
+		t.Fatalf("回放文本 = %q, want 含新分支内容「改过的回复」", got)
+	}
+}
+
 // TestSessionEditFresh /edit 缺省 Fresh：同级新节点、旧分支原样保留、Head 移到新节点、落盘。
 func TestSessionEditFresh(t *testing.T) {
 	store := newMemStore()
