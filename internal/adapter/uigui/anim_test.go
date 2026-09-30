@@ -643,3 +643,107 @@ func TestRecordDynamicBand(t *testing.T) {
 		t.Fatalf("静息带内元素应登记: %+v", u.shapes)
 	}
 }
+
+// ---- D77 胶囊内容淡入/淡出 ----
+
+// TestPillFadeExpand 淡入：展开输入栏阶段完成（进消息阶段）那一刻触发、180ms CSS ease
+// 淡满（与消息揭示并行）；触发前 bar 阶段内容恒隐；曲线/单调/端点精确。
+func TestPillFadeExpand(t *testing.T) {
+	u := &UI{collapsed: true}
+	t0 := startAt(u, true)
+	// bar 阶段内（含回弹峰值）内容恒隐：无时间线 → 展开动画保持现值 0。
+	for _, ms := range []int{0, 65, 165, 259} {
+		if a := u.contentAlpha(t0.Add(time.Duration(ms) * time.Millisecond)); a != 0 {
+			t.Fatalf("bar 阶段内内容应恒 0（t=%dms）, 得 %v", ms, a)
+		}
+	}
+	// 进消息阶段那一帧触发淡入（触发时刻 = bar 计划终点，帧分片不推后）。
+	u.stepExpand(t0.Add(expandBarMs * time.Millisecond))
+	if !u.pillFade.running || u.pillFade.to != 1 {
+		t.Fatalf("bar 完成应触发淡入: running=%v to=%v", u.pillFade.running, u.pillFade.to)
+	}
+	// 曲线 = CSS ease（from=0 → 值即曲线）：步进单调、中点精确、终点恰 1。
+	prev := 0.0
+	for ms := 0; ms <= fadeMs; ms += 18 {
+		a := u.contentAlpha(t0.Add(time.Duration(expandBarMs+ms) * time.Millisecond))
+		if a < prev-1e-9 {
+			t.Fatalf("淡入应单调: t=%dms 时 %v < %v", ms, a, prev)
+		}
+		if ms == fadeMs/2 && math.Abs(a-cssEase(0.5)) > 1e-9 {
+			t.Fatalf("淡入曲线应为 CSS ease: 中点 %v, want %v", a, cssEase(0.5))
+		}
+		prev = a
+	}
+	if prev != 1 {
+		t.Fatalf("淡入终点应恰 1, 得 %v", prev)
+	}
+	if u.pillFade.running {
+		t.Fatal("淡入应已收尾")
+	}
+}
+
+// TestPillFadeCollapse 淡出：消息区先开始、内容后起跑（延迟 140ms）、二者**同一刻结束**
+// （= 消息区收起 320ms 终点）；此后 bar 收缩段胶囊已空（保持 0）。
+func TestPillFadeCollapse(t *testing.T) {
+	u := &UI{collapsed: false}
+	if a := u.contentAlpha(time.Now()); a != 1 {
+		t.Fatalf("静止展开态内容应 1, 得 %v", a)
+	}
+	t0 := startAt(u, false)
+	// 延迟期内（消息区先开始）内容保持全可见。
+	for ms := 0; ms < fadeOutDelayMs; ms += 20 {
+		if a := u.contentAlpha(t0.Add(time.Duration(ms) * time.Millisecond)); a != 1 {
+			t.Fatalf("淡出未起跑（t=%dms）应保持 1, 得 %v", ms, a)
+		}
+	}
+	// 起跑后单调下降。
+	prev := 1.0
+	for ms := fadeOutDelayMs + 5; ms < collapseMsgMs; ms += 15 {
+		a := u.contentAlpha(t0.Add(time.Duration(ms) * time.Millisecond))
+		if a >= prev {
+			t.Fatalf("淡出应单调: t=%dms 时 %v >= %v", ms, a, prev)
+		}
+		prev = a
+	}
+	// 同刻结束：消息区收起终点内容恰为 0；bar 收缩期保持 0。
+	if a := u.contentAlpha(t0.Add(collapseMsgMs * time.Millisecond)); a != 0 {
+		t.Fatalf("与消息区收起同刻应归 0（t=%dms）, 得 %v", collapseMsgMs, a)
+	}
+	if a := u.contentAlpha(t0.Add((collapseMsgMs + collapseBarMs) * time.Millisecond)); a != 0 {
+		t.Fatalf("bar 收缩段应保持 0, 得 %v", a)
+	}
+}
+
+// TestPillFadeReverse 收起中途反向（D77）：取消进行中的淡出、保持现值不闪隐；
+// bar 完成后再从现值续淡入到 1。
+func TestPillFadeReverse(t *testing.T) {
+	u := &UI{collapsed: false}
+	if a := u.contentAlpha(time.Now()); a != 1 {
+		t.Fatalf("静止展开态内容应 1, 得 %v", a)
+	}
+	t0 := startAt(u, false)
+	mid := u.contentAlpha(t0.Add((fadeOutDelayMs + 50) * time.Millisecond))
+	if mid <= 0 || mid >= 1 {
+		t.Fatalf("淡出中段应在 (0,1), 得 %v", mid)
+	}
+	// 反向重展开 → 取消淡出、保持现值。
+	u.beginExpand()
+	if u.pillFade.running {
+		t.Fatal("反向重展开应取消进行中的淡出")
+	}
+	if a := u.contentAlpha(u.expandAn.start.Add(30 * time.Millisecond)); a != mid {
+		t.Fatalf("取消后应保持现值: %v != %v", a, mid)
+	}
+	// bar 完成触发淡入，从现值续到 1。
+	u.stepExpand(u.expandAn.start.Add(expandBarMs * time.Millisecond))
+	if !u.pillFade.running || u.pillFade.to != 1 {
+		t.Fatalf("bar 完成应触发淡入: running=%v to=%v", u.pillFade.running, u.pillFade.to)
+	}
+	end := u.expandAn.start.Add((expandBarMs + fadeMs) * time.Millisecond)
+	if a := u.contentAlpha(end); a != 1 {
+		t.Fatalf("淡入终点应 1, 得 %v", a)
+	}
+	if u.pillFade.running {
+		t.Fatal("淡入应收尾")
+	}
+}

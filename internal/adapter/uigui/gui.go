@@ -177,6 +177,10 @@ type UI struct {
 	// expandAn 展开/收起动画（D54）：collapsed 是逻辑态、即时翻转；渲染几何由
 	// expandAn.barP/msgP 插值，静止态由 collapsed 推导（expandProgress）。
 	expandAn expandAnim
+	// pillFade/pillAlpha 胶囊内容显隐（D77）：独立 alpha 时间线 + 当帧定帧值
+	//（stepExpand 在 layout 前算好，两遍 layout 同帧同值；静止由 collapsed 推导）。
+	pillFade  pillFade
+	pillAlpha float64
 
 	// 形状与全帧合成（D44/D62/§15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）

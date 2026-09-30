@@ -990,14 +990,22 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	inAnim := u.expandAn.active
 
 	// 输入胶囊（**先画**，D54 绘制顺序 = 胶囊 → 右钮 → logo）：内容**按终位整盒排版**
-	// （原点 + 终宽都取 pillEnd → 文字图标不挤压、不位移），只按当前胶囊矩形裁剪 →
-	// 胶囊生长即揭示内容。
+	// （原点 + 终宽都取 pillEnd → 文字图标不挤压、不位移），按当前胶囊矩形裁剪；
+	// D77 显隐另走内容 alpha 时间线（动画期隐藏、bar 完成后淡入），裁剪只管几何揭示。
+	// α 由 stepExpand 定帧（pillAlpha，两遍 layout 同帧同值）；仅 α<1 压组透明层
+	//（胶囊底板不透明 → 位图命中/焦点/手势不变）。
 	paint.FillShape(gtx.Ops, pillBg, clip.UniformRRect(pill, rowH/2).Op(gtx.Ops))
 	pst := clip.UniformRRect(pill, rowH/2).Push(gtx.Ops)
 	inner := op.Offset(pillEnd.Min).Push(gtx.Ops)
 	gtxC := gtx
 	gtxC.Constraints = layout.Exact(pillEnd.Size())
-	u.pillContent(gtxC)
+	if al := u.pillAlpha; al >= 1 {
+		u.pillContent(gtxC)
+	} else {
+		layer := paint.PushOpacity(gtx.Ops, float32(al))
+		u.pillContent(gtxC)
+		layer.Pop()
+	}
 	inner.Pop()
 	pst.Pop()
 	u.record(pill.Add(image.Pt(0, absY)), rowH/2, pillBg, clipRect)

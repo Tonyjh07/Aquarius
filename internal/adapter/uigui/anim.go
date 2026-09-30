@@ -16,6 +16,13 @@ const (
 	collapseBarMs = 220 // 收起·输入栏（easeInSine）
 )
 
+// D77 胶囊内容淡入/淡出：时长 fadeMs、曲线 CSS ease；收起淡出延迟 fadeOutDelayMs 起跑
+// → 与消息区收起（collapseMsgMs）同一刻结束（消息区先开始、内容后开始、同时收尾）。
+const (
+	fadeMs         = 180                    // 内容淡入/淡出时长（ms）
+	fadeOutDelayMs = collapseMsgMs - fadeMs // 收起淡出延迟起跑（ms）= 140
+)
+
 // backOutC1 easeOutBack 回弹系数（c1=1.2 → 峰值过冲约 5.3% ≈ 轻回弹 6%，D54 拍板）。
 const backOutC1 = 1.2
 
@@ -194,15 +201,86 @@ func (u *UI) expandProgress() (barP, msgP float64) {
 	return 1, 1
 }
 
-// stepExpand 每帧前推展开动画（runWindow 帧分支、**layout 之前**调用，D54/D50：
-// headless 二次 layout 必须与主窗同帧同进度）。完成后顺手关停唤帧循环。
-func (u *UI) stepExpand(now time.Time) {
-	if !u.expandAn.active {
-		return
+// pillFade 胶囊内容显隐的独立 alpha 时间线（D77）：淡入 = 展开输入栏阶段完成触发、
+// 淡出 = 收起布防后延迟 fadeOutDelayMs 起跑（与消息区收起同一刻结束）；时长 fadeMs、
+// 曲线 CSS ease。仅事件循环 goroutine 读写。
+type pillFade struct {
+	alpha   float64   // 当前值（静止由 collapsed 推导回写；动画无时间线时保持——反向续住）
+	running bool      // 时间线进行中（含延迟段）
+	from    float64   // 起点
+	to      float64   // 目标
+	start   time.Time // 计划起点（可晚于布防时刻 = 延迟起跑，段内取 from）
+	durMs   float64
+}
+
+// arm 布防：自 start 起 durMs 内从 from 缓动到 to（start 可为未来时刻 = 延迟起跑）。
+func (f *pillFade) arm(from float64, start time.Time, to float64, durMs float64) {
+	f.running = true
+	f.from, f.to, f.start, f.durMs = from, to, start, durMs
+}
+
+// cancel 取消进行中的时间线、保持现值——反向重展开用。**不按墙钟回算**：现值来自
+// 最近一帧定帧（≤16ms 新），回算会把已推进的现值拉回去造成闪变。
+func (f *pillFade) cancel() {
+	f.running = false
+}
+
+// value 时间线在 now 的现值（纯推进，可测）：延迟段取 from；跑完落定 f.alpha 并停表。
+func (f *pillFade) value(now time.Time) float64 {
+	if !f.running {
+		return f.alpha
 	}
-	u.expandAn.advance(now)
-	if !u.expandAn.active {
-		u.stopExpandTicker()
+	t := float64(now.Sub(f.start)) / (f.durMs * float64(time.Millisecond))
+	if t <= 0 {
+		return f.from // 延迟起跑段内保持起点
+	}
+	if t >= 1 {
+		f.running = false
+		f.alpha = f.to
+		return f.to
+	}
+	f.alpha = f.from + (f.to-f.from)*cssEase(t)
+	return f.alpha
+}
+
+// contentAlpha 胶囊内容 alpha（D77，stepExpand 每帧定帧）：时间线优先（推进并回写现值）
+// → 展开动画中无时间线则保持现值（fresh expand = 静止收起同步的 0）→ 静止由 collapsed
+// 推导回写（expandProgress 同款，直接翻 collapsed 的调用方不必手工同步）。
+func (u *UI) contentAlpha(now time.Time) float64 {
+	f := &u.pillFade
+	if f.running {
+		return f.value(now)
+	}
+	if u.expandAn.active {
+		return f.alpha
+	}
+	if u.collapsed {
+		f.alpha = 0
+	} else {
+		f.alpha = 1
+	}
+	return f.alpha
+}
+
+// stepExpand 每帧前推展开动画与内容淡入时间线（runWindow 帧分支、**layout 之前**调用，
+// D54/D50/D77：headless 二次 layout 必须与主窗同帧同进度 → pillAlpha 在此定帧、两遍
+// layout 只读）。完成后顺手关停唤帧循环——**动画与时间线都结束才停**（D77 淡入可越过
+// 动画收尾）。
+func (u *UI) stepExpand(now time.Time) {
+	a := &u.expandAn
+	if a.active {
+		enteredPhase2 := !a.phase2
+		a.advance(now)
+		// D77 淡入：展开输入栏阶段完成（bar 到位、进消息阶段）→ 胶囊内容 fadeMs CSS ease
+		// 淡满，与消息揭示并行（不等双通道全完成）。起点取 advance 转段时写入的 a.start
+		//（= bar 计划终点；无距离瞬跳则为当帧时刻）——帧分片不推后触发。
+		if a.expand && enteredPhase2 && a.phase2 {
+			u.pillFade.arm(u.contentAlpha(a.start), a.start, 1, fadeMs)
+		}
+	}
+	u.pillAlpha = u.contentAlpha(now) // 定帧（推进时间线并回写现值）
+	if !a.active && !u.pillFade.running {
+		u.stopExpandTicker() // 幂等；淡入未完不关（ticker 续命到两者皆终）
 	}
 }
 
@@ -213,12 +291,22 @@ func (u *UI) startExpandAnim(expand bool) {
 	if a.active && a.expand == expand {
 		return // 同向已在进行
 	}
+	now := time.Now()
+	// D77 胶囊内容显隐，须在 expandAn 翻转前取值（contentAlpha 读 expandAn/collapsed）：
+	// 收起 → 淡出布防、延迟 fadeOutDelayMs 起跑（与消息区收起同一刻结束，同一 now 保证
+	// 与 a.start 对齐）；反向重展开 → 取消进行中的淡出、保持现值（内容不闪隐），淡入由
+	// bar 完成触发（stepExpand）。
+	if expand {
+		u.pillFade.cancel()
+	} else {
+		u.pillFade.arm(u.contentAlpha(now), now.Add(fadeOutDelayMs*time.Millisecond), 0, fadeMs)
+	}
 	barP, msgP := u.expandProgress() // 反向时 = 中途进度；静止时 = collapsed 推导值
 	a.barP, a.msgP = barP, msgP
 	a.active = true
 	a.expand = expand
 	a.phase2 = false
-	a.start = time.Now()
+	a.start = now
 	bar, _, _, _ := expandPhase(expand, false)
 	a.from = a.get(bar)
 	u.stopExpandTicker()
