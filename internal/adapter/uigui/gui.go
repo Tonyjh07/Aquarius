@@ -70,6 +70,10 @@ type Options struct {
 	Hotkey string
 	// Theme 主题档（§15.4/D61）：system | light | dark；空 = system（跟随系统）。
 	Theme string
+	// Scale 元素缩放倍率（D90/§15.8）：默认 1.0，夹 [0.75,2.5]，越界回落 1.0；设置窗热更。
+	Scale float64
+	// FontSize 正文字号 sp（D90/§15.8）：默认 15，夹 [10,28]；最终字号 = FontSize × Scale。
+	FontSize float64
 	// Settings 设置窗核心档快照数据源（开窗现取；同 Status 线程安全口径）；
 	// nil = 设置窗空表单。
 	Settings func() SettingsSnapshot
@@ -82,12 +86,52 @@ type Options struct {
 	Tree port.TreeView
 }
 
+// zoomKnobs 双缩放旋钮（D90/§15.8）：元素缩放 × 正文字号，原子槽整体换存（成对生效）。
+type zoomKnobs struct {
+	scale  float64
+	fontSp float64
+}
+
+// 旋钮边界与缺省（D90）：字号阶梯以正文 15sp 为设计基准（§15.2 的 Sp 字面量按此解释）。
+const (
+	zoomScaleMin = 0.75
+	zoomScaleMax = 2.5
+	fontSpMin    = 10.0
+	fontSpMax    = 28.0
+	fontSpBase   = 15.0
+)
+
+// clampScale 元素缩放夹取：越界/NaN 回落 1.0（NaN 与任何区间比较皆 false，须用否定式）。
+func clampScale(v float64) float64 {
+	if !(v >= zoomScaleMin && v <= zoomScaleMax) {
+		return 1.0
+	}
+	return v
+}
+
+// clampFontSp 正文字号夹取：越界/NaN 回落 15。
+func clampFontSp(v float64) float64 {
+	if !(v >= fontSpMin && v <= fontSpMax) {
+		return fontSpBase
+	}
+	return v
+}
+
+// clampKnobs 成对夹取（newUI 预存与 SetZoom 共用口径）。
+func clampKnobs(scale, fontSp float64) zoomKnobs {
+	return zoomKnobs{scale: clampScale(scale), fontSp: clampFontSp(fontSp)}
+}
+
 // UI GUI 前端句柄（装配根按 uiFrontend 使用）。
 type UI struct {
 	opts Options
 	// hotkeyCfg 快捷键配置原子槽（设置窗保存热更新；托盘线程注册读，newUI 预存
 	// opts.Hotkey——u.opts 本身只读不改，防跨线程裸写）。
 	hotkeyCfg atomic.Value
+
+	// zoom 双缩放旋钮原子槽（D90/§15.8，同 hotkeyCfg 口径）：设置窗 SetZoom 热更，
+	// 帧循环每帧读（zoomedMetric 咽喉点）；Load 失败（未预存）= 缺省 1.0/15。
+	zoom atomic.Value
 
 	// 桥接通道（装配根 goroutine ↔ 事件循环 goroutine）。
 	inbox   chan uiMsg
@@ -254,8 +298,9 @@ func newUI(opts Options, window bool) *UI {
 	u.alpha = semiAlpha   // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）
 	u.focusPending = true // 初始焦点入输入栏（D63：编辑器不再每帧回投常驻焦点）
 	u.wins = newWinHost(nil)
-	u.applyTheme(opts.Theme)       // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
-	u.hotkeyCfg.Store(opts.Hotkey) // 快捷键槽预存（托盘线程 hotkeySetting 读）
+	u.applyTheme(opts.Theme)                            // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
+	u.hotkeyCfg.Store(opts.Hotkey)                      // 快捷键槽预存（托盘线程 hotkeySetting 读）
+	u.zoom.Store(clampKnobs(opts.Scale, opts.FontSize)) // 缩放槽预存（D90，夹取回落）
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
 	}
@@ -269,6 +314,31 @@ func newUI(opts Options, window bool) *UI {
 		go u.runHeadless()
 	}
 	return u
+}
+
+// zoomLoad 当前旋钮（原子读；未预存 = 缺省 1.0/15——零值 UI 直接可用，headless 测试口径）。
+func (u *UI) zoomLoad() zoomKnobs {
+	if v, ok := u.zoom.Load().(zoomKnobs); ok {
+		return v
+	}
+	return zoomKnobs{scale: 1.0, fontSp: fontSpBase}
+}
+
+// SetZoom 热更双旋钮（D90，设置窗调；任意 goroutine）：原子换存，下一帧 Metric 咽喉点
+// 生效——元素几何与字号同步重排；fadeState 按 PxPerDp/PxPerSp 变化自动重建离屏窗。
+func (u *UI) SetZoom(scale, fontSp float64) {
+	u.zoom.Store(clampKnobs(scale, fontSp))
+}
+
+// zoomedMetric 缩放 Metric（D90 咽喉点，§15.8）：PxPerDp ×= scale（元素几何等比）、
+// PxPerSp ×= scale × font/15（Sp 字面量按「正文 15 的等比阶梯」解释——最终字号 =
+// font × scale）。窗口 px 画布不缩放；layout 随后把缩放后值存进 frameMetric，派生几何
+// （球锚/行锚/确认钮/fade headless）零改动自动一致。缺省（1.0/15）恒等。
+func (u *UI) zoomedMetric(m unit.Metric) unit.Metric {
+	z := u.zoomLoad()
+	m.PxPerDp *= float32(z.scale)
+	m.PxPerSp *= float32(z.scale * z.fontSp / fontSpBase)
+	return m
 }
 
 // Emit 呈现 Turn 事件（投递事件循环；线程安全）。

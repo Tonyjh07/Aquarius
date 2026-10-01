@@ -334,6 +334,9 @@ func (u *UI) runWindow(w *app.Window) {
 //   - `e.Frame` 保留（事件路由 / IME / vblank 帧节奏，其画面被 ULW 位图覆盖）；
 //   - ULW 殿后提交（主窗 HWND，SourceConstantAlpha = u.alpha）。
 func (u *UI) frame(gtx layout.Context, submit func()) {
+	// D90 咽喉点（§15.8）：缩放只在此一处进布局——layout 与 fadeCompose 二次调用都
+	// 消费 frameMetric（已缩放），不会重复缩放；窗口 px 画布与 Constraints 不动。
+	gtx.Metric = u.zoomedMetric(gtx.Metric)
 	u.stepExpand(time.Now())
 	u.stepAnim() // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
 	u.layout(gtx)
