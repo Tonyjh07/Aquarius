@@ -63,7 +63,7 @@ type modelConfig struct {
 }
 
 // uiConfig UI 形态：repl | tui | gui（D33/D43；模板与键缺省为 tui，repl 为测试/e2e
-// 后端）+ GUI 全局呼出快捷键 + 主题档。
+// 后端）+ GUI 全局呼出快捷键 + 主题档 + 缩放/字号/窗口尺寸三旋钮（D90，全热生效）。
 type uiConfig struct {
 	Kind string `json:"kind"`
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。仅 ui.kind=gui 用。
@@ -71,6 +71,14 @@ type uiConfig struct {
 	// Theme GUI 深浅主题（§15.4/D61）：system | light | dark；空 = system（跟随系统，
 	// 其余未识别值亦按 system 处理）。仅 ui.kind=gui 用。
 	Theme string `json:"theme,omitempty"`
+	// Scale 元素缩放倍率（D90/§15.8）：默认 1.0；UI 侧夹 [0.75,2.5]，越界回落 1.0。
+	Scale float64 `json:"scale,omitempty"`
+	// FontSize 正文字号 sp（D90/§15.8）：默认 15；UI 侧夹 [10,28]，最终字号 = FontSize × Scale。
+	FontSize float64 `json:"font_size,omitempty"`
+	// WindowWidth/WindowHeight 主窗像素尺寸（D90/§15.8）：0 = 缺省 608×460dp 现行为；
+	// 配置后按字面 px 建窗，UI 侧按布局地板与粗界夹取。
+	WindowWidth  int `json:"window_width,omitempty"`
+	WindowHeight int `json:"window_height,omitempty"`
 }
 
 // limitsConfig 运行限额（DESIGN §8）。
@@ -98,7 +106,7 @@ const defaultConfig = `{
     "echo_thinking": true,
     "unsupported_params": []
   },
-  "ui": { "kind": "gui", "theme": "system" },
+  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 },
   "system_prompt": "",
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },

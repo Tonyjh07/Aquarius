@@ -138,6 +138,8 @@ func parkPos(pos point, anchor image.Rectangle, work rect, edge string) point {
 }
 
 // dockSlidePos 停靠位：锚点自贴齐位滑出至仅剩 sliver 宽留在屏内（窄条 = 召回区）。
+// 锚点 = 球矩形（ballRect，**左定于 sideMargin**）——滑出位只依赖工作区边缘、球径与
+// sliver，与窗宽无关（D90 实证：热改窗宽后停靠位天然有效，无需重锚）。
 func dockSlidePos(pos point, anchor image.Rectangle, work rect, edge string, sliver int32) point {
 	pos = parkPos(pos, anchor, work, edge)
 	d := int32(anchor.Dx())

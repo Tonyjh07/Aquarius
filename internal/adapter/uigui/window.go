@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,6 +75,15 @@ const (
 	tipsRadiusDp     = 8  // 悬停卡圆角
 	tipsUpGapDp      = 6  // 悬停卡与胶囊顶的间隙
 	bubbleMinWDp     = 80 // 气泡最大宽下限（极窄窗兜底，D90 命名化）
+
+	// 主窗像素尺寸夹取界（D90）：粗界给 config/settings 校验兜底；布局地板按
+	// 240dp × DPI × scale 抬下限（宽 = 三段行最小构成、高 = 输入行带 + 状态行 +
+	// 顶底带 + 少量内容余量——再小布局退化，不承诺可用）。
+	winPxMinW     = 200
+	winPxMinH     = 200
+	winPxMaxW     = 3840
+	winPxMaxH     = 2160
+	layoutFloorDp = 240
 
 	// 边缘羽化（D45–D48/§15.1、D62）：把「内容自身由内向外渐隐」作为每像素 vis 因子
 	// 并入整窗 ULW 位图——核心不透明、边带沿真轮廓 smoothstep 渐隐到轮廓（不向外堆光晕：
@@ -398,6 +408,9 @@ func (u *UI) onHWND(h uintptr) {
 		}
 	}
 	platformSetTopMost(on)
+	// D90：配置像素尺寸先落（app.Size 只收 dp、建窗期 DPI 未就绪无法换算，px 口径在
+	// 挂接点经窗口线程补投）；同步等待完成后，位置恢复/停靠重算按落定矩形取值。
+	u.applyConfiguredSize()
 	rc, ok := windowRectPx()
 	if !ok {
 		return
@@ -426,6 +439,17 @@ func (u *UI) onHWND(h uintptr) {
 	}
 	// 首帧 ULW 提交成功窗口才揭示（D78：挂接即隐藏、revealPending 至此清零）。
 	// 本函数不在帧内，位移直接下发（帧内的改动一律记账，见 requestMove）。
+}
+
+// applyConfiguredSize 启动期把配置像素尺寸落到 OS 窗口（D90/§15.8）：WindowWidth/
+// Height 均非 0 才生效（0 = 缺省 dp 建窗，现行为）。夹取按挂接点实测 DPI × 当前缩放。
+func (u *UI) applyConfiguredSize() {
+	if u.opts.WindowWidth <= 0 || u.opts.WindowHeight <= 0 || u.hwnd == 0 {
+		return
+	}
+	w, h := clampWindowPx(u.opts.WindowWidth, u.opts.WindowHeight,
+		platformWindowDPI(u.hwnd), u.zoomLoad().scale)
+	resizeWindowTo(int32(w), int32(h))
 }
 
 // layout 悬浮窗布局：背景（兜底 + 整窗拖动）| 转写区（手工布局 + 滚动）/ 状态行 /
@@ -492,10 +516,11 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	// D54 消息揭示带：msgP 驱动带顶从 transH（全隐）升到 0（静息，与 §15.3 顶带重合），
 	// 带底夹在 transH 内（不压状态行/输入行）。静态读，两遍 layout 同帧同值。
 	_, msgP := u.expandProgress()
-	u.bandTop, u.bandBottom = revealBand(msgP, transH, gtx.Dp(fadeBandDp))
+	bandPx, lowPx := u.bandHeightsClamped(gtx, transH) // D90：极矮窗带高夹 ≤ transH/4
+	u.bandTop, u.bandBottom = revealBand(msgP, transH, bandPx)
 	// D79 底部矮带：**常驻转写区底缘** [transH−带高, transH)——底缘内容渐隐不硬切；
 	// 带止于 transH（状态行/输入栏在其下，不受淡化）。揭示动画（D54）期间照常驻留。
-	u.bandLowTop, u.bandLowEnd = transH-gtx.Dp(fadeBandBottomDp), transH
+	u.bandLowTop, u.bandLowEnd = transH-lowPx, transH
 
 	dims := layout.Stack{Alignment: layout.N}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -528,6 +553,36 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 		}),
 	)
 	return dims
+}
+
+// bandHeightsClamped 当前帧顶/底带高（D90）：极矮窗（transH ≯ 0 或带高 > transH/4）时
+// 带高夹 ≤ transH/4——防整片转写区被带吞掉（fade 层 clampedLowBand 预留的尺寸约束
+// 归口在此收口）。带写入（layout bandTop/bandBottom/bandLowTop/bandLowEnd）与头部/
+// 尾部留白（transcript pad/lowPad）同源取值，两遍 layout 同帧同值。
+func (u *UI) bandHeightsClamped(gtx layout.Context, transH int) (top, low int) {
+	if transH <= 0 {
+		return 0, 0
+	}
+	top, low = gtx.Dp(fadeBandDp), gtx.Dp(fadeBandBottomDp)
+	if maxBand := transH / 4; top > maxBand {
+		top = maxBand
+	}
+	if maxBand := transH / 4; low > maxBand {
+		low = maxBand
+	}
+	return top, low
+}
+
+// clampWindowPx 窗口像素夹取（D90）：粗界 [200,3840]×[200,2160]，再按布局地板
+// （layoutFloorDp × DPI × scale）抬下限。纯函数；config 侧 DPI/缩放未知时传 1,1（仅粗界）。
+func clampWindowPx(w, h int, dpi, scale float64) (int, int) {
+	w = max(winPxMinW, min(w, winPxMaxW))
+	h = max(winPxMinH, min(h, winPxMaxH))
+	if floor := int(math.Round(layoutFloorDp * dpi * scale)); floor > 0 {
+		w = max(w, floor)
+		h = max(h, floor)
+	}
+	return w, h
 }
 
 // layoutCollapsed 收起态（§15.1 单组件"左键 logo 收起回球"）：只渲染 logo 悬浮球——
@@ -630,14 +685,13 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	// 可读——否则首行困在带内而 scrollPx 不可为负，永远半透明（= 淡出遮挡内容）。
 	// 空白随内容滚（非视口固定留白，否则渐隐作用于空白而失效）；短内容时 pad 一并
 	// 制造 overflow，拥挤内容同样能往上滚出让出带外。
-	pad := gtx.Dp(fadeBandDp)
+	pad, lowPad := u.bandHeightsClamped(gtx, h) // D90：与 layout 带写入同源（极矮窗夹取一致）
 	total += pad
 
 	// D79 尾部留白：滚动内容尾部垫一个**底部矮带高**的空白（等高、单源、随内容滚，
 	// D74 同款）——贴底/尾随时末行底 = h − lowPad，正好停在底带**之外**（带里只剩
 	// 空白，渐隐作用于内容而非留白）；上滚离底（scrollPx=0）时内容延伸进带内 → 底缘
 	// 渐隐而非硬切。计入 total → 同样参与 overflow/钳制与 base。
-	lowPad := gtx.Dp(fadeBandBottomDp)
 	total += lowPad
 
 	// ② 滚动定界：手势 + 当帧真实内容高（无一帧滞后），尾随贴底。

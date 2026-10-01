@@ -74,6 +74,11 @@ type Options struct {
 	Scale float64
 	// FontSize 正文字号 sp（D90/§15.8）：默认 15，夹 [10,28]；最终字号 = FontSize × Scale。
 	FontSize float64
+	// WindowWidth/WindowHeight 主窗像素尺寸（D90/§15.8）：0 = 缺省 app.Size(unit.Dp(608/460))
+	// 现行为；配置后按字面 px 建窗（挂接点 SetWindowPos 落地）。热改走 SetWindowSize，
+	// 不回写本字段——config 是事实源。
+	WindowWidth  int
+	WindowHeight int
 	// Settings 设置窗核心档快照数据源（开窗现取；同 Status 线程安全口径）；
 	// nil = 设置窗空表单。
 	Settings func() SettingsSnapshot
@@ -328,6 +333,17 @@ func (u *UI) zoomLoad() zoomKnobs {
 // 生效——元素几何与字号同步重排；fadeState 按 PxPerDp/PxPerSp 变化自动重建离屏窗。
 func (u *UI) SetZoom(scale, fontSp float64) {
 	u.zoom.Store(clampKnobs(scale, fontSp))
+}
+
+// SetWindowSize 热改主窗像素尺寸（D90，设置窗调；任意 goroutine）：按实测 DPI × 当前
+// 缩放夹取后经窗口线程 SetWindowPos（铁律 1），Gio 收 WM_SIZE 下帧重排。停靠位与窗宽
+// 无关（球锚左定，dockSlidePos 口径），无需重锚；0/负值忽略。
+func (u *UI) SetWindowSize(w, h int) {
+	if w <= 0 || h <= 0 {
+		return
+	}
+	w, h = clampWindowPx(w, h, platformWindowDPI(atomic.LoadUintptr(&mainHWND)), u.zoomLoad().scale)
+	resizeWindowTo(int32(w), int32(h))
 }
 
 // zoomedMetric 缩放 Metric（D90 咽喉点，§15.8）：PxPerDp ×= scale（元素几何等比）、

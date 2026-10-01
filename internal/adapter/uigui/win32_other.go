@@ -16,6 +16,9 @@ func windowRectPx() (rect, bool) { return rect{}, false }
 // moveWindowTo 无窗口可移。
 func moveWindowTo(int32, int32) {}
 
+// resizeWindowTo 窗口尺寸热改未适配（Gio 常规窗口，D90）。
+func resizeWindowTo(int32, int32) {}
+
 // cursorPos 无光标跟踪。
 func cursorPos() point { return point{} }
 

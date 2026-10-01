@@ -378,8 +378,9 @@ func (u *UI) clampedBand() (top, bottom int) {
 }
 
 // clampedLowBand 底部矮带（D79 纯读，可测）[top, end)：夹到当前窗口内，end ≤ top 即关。
-// 展开路径写 [transH−带高, transH)——transH 低于带高（极矮窗）时退化为 [0, transH)，
-// 整片转写区渐隐，尺寸约束归 S1b 响应式迁移处理；收起态写 size.Y,size.Y → 夹后仍空。
+// 展开路径写 [transH−带高, transH)——transH 低于带高（极矮窗）时带高已在布局侧夹
+// ≤ transH/4（D90 bandHeightsClamped，本处夹取保留为下界防御），不再整片渐隐；
+// 收起态写 size.Y,size.Y → 夹后仍空。
 func (u *UI) clampedLowBand() (top, end int) {
 	top, end = u.bandLowTop, u.bandLowEnd
 	h := u.frameSize.Y

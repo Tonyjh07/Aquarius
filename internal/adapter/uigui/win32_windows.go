@@ -151,6 +151,20 @@ func moveWindowTo(x, y int32) {
 	})
 }
 
+// resizeWindowTo 改主窗尺寸（保位，D90）；经窗口线程执行（铁律 1）。Gio 收 WM_SIZE
+// 后下帧以新 Constraints 重排；fadePresent 的尺寸竞态守卫（实测矩形 ≠ frameSize
+// 跳帧）兜底对齐一帧。
+func resizeWindowTo(w, h int32) {
+	hh := atomic.LoadUintptr(&mainHWND)
+	if hh == 0 {
+		return
+	}
+	onWindowThread(func() {
+		procSetWindowPos.Call(hh, 0, 0, 0, uintptr(w), uintptr(h),
+			swpNoMove|swpNoZOrder|swpNoActivate)
+	})
+}
+
 // cursorPos 取光标屏幕坐标（拖动增量的绝对基准，铁律 2）。
 func cursorPos() point {
 	var pt point

@@ -1271,9 +1271,10 @@ live 草稿不解析（D33 口径，流式原样、定稿渲染）；代码块�
   PxPerDp/PxPerSp，缩放变化自动重建离屏窗。窗口 px 尺寸不参与缩放。
 - **几何单源**：输入行带高 = `inputRowBandDp` 单源（五处重复组合式收编）；球锚/行锚/
   确认钮矩形与布局共享纯函数（D76 口径：同一几何的两面）；内联间距字面量命名化。
-- **窗口尺寸热生效**：设置保存 → 装配根持久化 + `resizeMsg` → 窗口线程 `SetWindowPos`
+- **窗口尺寸热生效**：设置保存 → 装配根持久化 + `SetWindowSize` → 窗口线程 `SetWindowPos`
   （§15.6 铁律 1）→ Gio `WM_SIZE` → 下帧 Constraints 重排；`fadePresent` 尺寸竞态守卫
-  （实测矩形 ≠ frameSize 跳帧）兜底对齐；停靠中按当前边重锚（dockSlidePos 几何复用）。
+  （实测矩形 ≠ frameSize 跳帧）兜底对齐。**停靠无需重锚**（实现实证修正 D90 预设）：
+  球锚左定于 sideMargin，停靠滑出位只依赖工作区边缘/球径/sliver，与窗宽无关。
 - **恢复 DPI 直查（restorePx 治本）**：位置恢复的 dp→px 换算不再「窗高÷默认高」反推——
   `platformWindowDPI(hwnd)`（GetDpiForWindow）直查，非 Windows 桩 1.0；窗口尺寸可配后
   反推必错，一次根治。

@@ -428,8 +428,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			ApplySettings: applySettings,
 			Tree:          sessionTree{p: &sessPtr}, // D80/§7.5：分叉条只读数据面
 			PosFile:       filepath.Join(dir, "gui_pos.json"),
-			Hotkey:        cfg.UI.Hotkey, // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
-			Theme:         cfg.UI.Theme,  // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Hotkey:        cfg.UI.Hotkey,      // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:         cfg.UI.Theme,       // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Scale:         cfg.UI.Scale,       // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
+			FontSize:      cfg.UI.FontSize,    // 正文字号 sp（D90；0 = 15）
+			WindowWidth:   cfg.UI.WindowWidth, // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
+			WindowHeight:  cfg.UI.WindowHeight,
 		})
 	case "tui":
 		ui = uitui.New(uitui.Options{
