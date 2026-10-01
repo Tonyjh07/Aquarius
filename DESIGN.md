@@ -766,7 +766,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "echo_thinking": true,       // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
     "unsupported_params": []      // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
   },
-  "ui": { "kind": "gui", "hotkey": "", "theme": "system" }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）
+  "ui": { "kind": "gui", "hotkey": "", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）；scale: 元素缩放倍率（默认 1.0）；font_size: 正文字号 sp（默认 15，最终字号 = font_size × scale）；window_width/window_height: 主窗像素尺寸（0 = 缺省 608×460dp 现行为）——三旋钮口径与热生效见 §15.8/D90
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
@@ -1249,3 +1249,34 @@ live 草稿不解析（D33 口径，流式原样、定稿渲染）；代码块�
   D35）。
 - **测试（§15.5）**：窗口注册表与生命周期抽纯逻辑 + 假开窗器 headless 测（open/
   防重开/close/退出收编）；设置 patch 构造与回调序列 headless 测；GUI 不进 CI 图形路径。
+
+### 15.8 响应式与缩放（S1b，D90）
+
+主窗布局由**可用窗口空间推导**（Q12）：骨架早已如此——转写区 = 窗高 − 输入行带 − 状态行、
+胶囊/气泡吃剩余宽度（§15.2/D49）；本节固化口径：**元素级令牌（圆钮/间距/行高/字号）不随
+窗口尺寸变**，由下列旋钮显式缩放；窗口尺寸是画布（px，Q11 示例 304×920 = 屏上像素）。
+次窗不迁移（§15.7 固定尺寸）。
+
+- **三旋钮（config `ui.*`，全热生效）**：
+  - `ui.scale` **元素缩放**倍率（默认 1.0，夹 [0.75, 2.5]；设置窗以百分比档呈现
+    100/125/150/175/200）——所有元素几何（dp 令牌）等比；
+  - `ui.font_size` **正文字号** sp（默认 15，夹 [10, 28]）——**最终字号 = font_size ×
+    scale**（用户拍板：缩放叠加在字号之上）；字号阶梯以正文为基准**等比**：
+    `Sp(v)` 最终渲染 `v/15 × font_size × scale`，正文 15 缺省时与既有渲染逐像素一致；
+  - `ui.window_width`/`ui.window_height` **主窗像素尺寸**（0 = 缺省 `app.Size(unit.Dp(608/460))`
+    现行为；配置后 `unit.Px` 字面）。
+- **实现 = Metric 咽喉点**：`FrameEvent` 入口替换 `gtx.Metric`（`PxPerDp ×= scale`、
+  `PxPerSp ×= scale × font/15`），`u.frameMetric` 存缩放后值——布局站点与全部派生几何
+  （球锚/行锚/确认钮/形状集/fade headless）零改动自动一致；`fadeState.ensure` 比较
+  PxPerDp/PxPerSp，缩放变化自动重建离屏窗。窗口 px 尺寸不参与缩放。
+- **几何单源**：输入行带高 = `inputRowBandDp` 单源（五处重复组合式收编）；球锚/行锚/
+  确认钮矩形与布局共享纯函数（D76 口径：同一几何的两面）；内联间距字面量命名化。
+- **窗口尺寸热生效**：设置保存 → 装配根持久化 + `resizeMsg` → 窗口线程 `SetWindowPos`
+  （§15.6 铁律 1）→ Gio `WM_SIZE` → 下帧 Constraints 重排；`fadePresent` 尺寸竞态守卫
+  （实测矩形 ≠ frameSize 跳帧）兜底对齐；停靠中按当前边重锚（dockSlidePos 几何复用）。
+- **恢复 DPI 直查（restorePx 治本）**：位置恢复的 dp→px 换算不再「窗高÷默认高」反推——
+  `platformWindowDPI(hwnd)`（GetDpiForWindow）直查，非 Windows 桩 1.0；窗口尺寸可配后
+  反推必错，一次根治。
+- **极端尺寸地板**：UI 侧按实时 DPI×scale 夹最小可用 px（布局地板 ≈300dp 基准，实测定
+  值）；config 侧粗界 [200, 3840]×[200, 2160]；极矮窗淡出带夹 ≤ transH/4（顶/底带同规，
+  fade 层尺寸约束归口）。尺寸属配置不属位置记忆：`gui_pos.json` 仍只存位置（D52 口径）。
