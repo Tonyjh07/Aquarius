@@ -148,6 +148,7 @@ func (m *model) commit(msg conversation.Message) {
 	text := partsText(msg.Content)
 	switch msg.Role {
 	case conversation.RoleAssistant:
+		start := len(m.blocks)
 		final := text
 		if final == "" {
 			final = m.draft.String() // 极端：以流式草稿兜底
@@ -157,6 +158,10 @@ func (m *model) commit(msg conversation.Message) {
 			// 空内容的取消/错误也要有反馈（首个 token 前取消是最常见场景）。
 			if msg.Outcome != conversation.OutcomeDone {
 				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), msg.ID)
+			} else {
+				// D89：纯工具/思考轮（chip 由 ToolCallEvent 先行入块）——锚回填节点
+				// ID，分叉条在纯工具轮分支才有挂点。
+				m.stampAssistantAnchor(msg, start)
 			}
 			return
 		}
@@ -178,6 +183,33 @@ func (m *model) commit(msg conversation.Message) {
 			m.stampUserBlock(text, msg.ID)
 		}
 		m.resetDraft()
+	}
+}
+
+// stampAssistantAnchor 无正文 assistant 节点的分叉锚点回填（D89）：thinking 卡与
+// 工具 chip 都不携节点 ID，纯工具轮（模型径直发起调用、无正文）在转写里没有任何
+// 带 ID 的块 → 分叉条无处可挂（branchStrips 跳过空 ID 块），切到该分支后无法切回。
+// 优先按调用 ID 匹配本轮 chip（该节点的可见表示），无工具则锚到本轮最后一个新块
+// （思考卡）。已有锚（带正文块直携 ID）时 no-op。
+func (m *model) stampAssistantAnchor(msg conversation.Message, start int) {
+	if start > len(m.blocks) {
+		start = len(m.blocks)
+	}
+	for _, b := range m.blocks[start:] {
+		if b.id == msg.ID {
+			return
+		}
+	}
+	for _, call := range msg.ToolCalls {
+		for i := range m.blocks {
+			if c := m.blocks[i].chip; c != nil && c.id == call.ID {
+				m.blocks[i].id = msg.ID
+				return
+			}
+		}
+	}
+	if len(m.blocks) > start {
+		m.blocks[len(m.blocks)-1].id = msg.ID
 	}
 }
 
@@ -207,6 +239,7 @@ func (m *model) replay(msg conversation.Message) {
 			m.addMsg(blockUser, text, msg.ID)
 		}
 	case conversation.RoleAssistant:
+		start := len(m.blocks)
 		if tp := thinkingText(msg.Content); tp != "" {
 			m.add(blockThinking, tp) // 回放无耗时 → secs 置 -1（add 内统一处理）
 		}
@@ -217,13 +250,12 @@ func (m *model) replay(msg conversation.Message) {
 			if msg.Outcome != conversation.OutcomeDone {
 				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), msg.ID)
 			}
-			break
-		}
-		if msg.Outcome == conversation.OutcomeDone {
+		} else if msg.Outcome == conversation.OutcomeDone {
 			m.addMsg(blockAssistant, text, msg.ID)
 		} else {
 			m.addMsg(blockAssistant, fmt.Sprintf("[%s]\n%s", msg.Outcome, text), msg.ID)
 		}
+		m.stampAssistantAnchor(msg, start) // D89：纯工具/思考轮锚点（见函数注释）
 	case conversation.RoleTool:
 		if msg.ToolResult == nil {
 			return

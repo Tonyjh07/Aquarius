@@ -1553,7 +1553,11 @@ func (u *UI) branchStrips() []branchStrip {
 	}
 	var out []branchStrip
 	for bi, b := range u.m.blocks {
-		if b.id == "" || (b.kind != blockUser && b.kind != blockAssistant) {
+		if b.id == "" {
+			continue
+		}
+		// D89：纯工具轮的锚点在 chip 块上（blockTool），分叉条随之渲染于 chip 下方。
+		if b.kind != blockUser && b.kind != blockAssistant && b.kind != blockTool {
 			continue
 		}
 		bi2, ok := u.opts.Tree.Branches(b.id)

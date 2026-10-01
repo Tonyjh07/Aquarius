@@ -9,6 +9,7 @@ import (
 	"gioui.org/io/pointer"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -73,6 +74,67 @@ func TestCommitStampMatching(t *testing.T) {
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "别的"}}})
 	if m.blocks[2].id != "" {
 		t.Fatalf("命令回显被错盖: %q", m.blocks[2].id)
+	}
+}
+
+// TestReplayToolTurnAnchorsFork D89 复现：纯工具轮 assistant 节点（只有 thinking +
+// tool_calls、无正文——模型径直发起调用）回放时 thinking 卡与 chip 都不携节点 ID、
+// 空正文不产生 assistant 块 → 转写里没有任何带 ID 的块 → 分叉条无处可挂，
+// 「切到该分支后切不回」（S1-1f 用户实测）。锚点应回填到本轮 chip/思考块上。
+func TestReplayToolTurnAnchorsFork(t *testing.T) {
+	u := newBranchUI(fakeTree{
+		"a1": {IDs: []conversation.MessageID{"a1", "u2"}, Index: 0},
+	})
+	u.m.clear()
+	u.m.replay(conversation.Message{ID: "u1", Role: conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "whoami"}}})
+	u.m.replay(conversation.Message{
+		ID:        "a1",
+		Role:      conversation.RoleAssistant,
+		Content:   []conversation.Part{{Kind: conversation.PartThinking, Text: "Just run it."}},
+		ToolCalls: []tool.Call{{ID: "call1", Name: "term_exec", Args: []byte(`{"command":"whoami"}`)}},
+		Outcome:   conversation.OutcomeDone,
+	})
+	found := false
+	for _, b := range u.m.blocks {
+		if b.id == "a1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("纯工具轮回放后没有任何块携带节点 ID（分叉条无处可挂）")
+	}
+	strips := u.branchStrips()
+	if len(strips) != 1 || strips[0].id != "a1" || strips[0].index != 0 || len(strips[0].ids) != 2 {
+		t.Fatalf("strips = %+v, want a1 的分叉条 index=0 n=2", strips)
+	}
+}
+
+// TestCommitToolTurnAnchorsChip D89 live 路径：本轮 chip 由 ToolCallEvent 先行入块，
+// CommittedEvent 到达时正文为空 → chip 块应按调用 ID 回填节点 ID。
+func TestCommitToolTurnAnchorsChip(t *testing.T) {
+	u := newBranchUI(fakeTree{
+		"a1": {IDs: []conversation.MessageID{"a1", "u2"}, Index: 0},
+	})
+	m := u.m
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "call1", Name: "term_exec", Args: []byte(`{}`)}})
+	m.commit(conversation.Message{
+		ID:        "a1",
+		Role:      conversation.RoleAssistant,
+		ToolCalls: []tool.Call{{ID: "call1", Name: "term_exec"}},
+		Outcome:   conversation.OutcomeDone,
+	})
+	found := false
+	for _, b := range m.blocks {
+		if b.kind == blockTool && b.chip != nil && b.id == "a1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("纯工具轮 commit 后 chip 块未携带节点 ID")
+	}
+	if strips := u.branchStrips(); len(strips) != 1 || strips[0].id != "a1" {
+		t.Fatalf("strips = %+v, want a1 锚在 chip 上的分叉条", strips)
 	}
 }
 
