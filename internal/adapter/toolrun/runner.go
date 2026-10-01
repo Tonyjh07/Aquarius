@@ -160,12 +160,21 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		if r.conf == nil {
 			return tool.Result{}, fmt.Errorf("tool %s requires confirmation but no Confirmer is configured", call.Name)
 		}
-		yes, err := r.conf.Confirm(ctx, confirmPrompt(call, target))
+		ans, err := r.conf.Confirm(ctx, confirmPrompt(call, target))
 		if err != nil {
 			return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
 		}
-		if !yes {
-			return tool.Result{CallID: call.ID, OK: false, Err: "user denied " + call.Name}, nil
+		if !ans.Allow {
+			// D86：拒绝原因原样回传（用户自填文本，同用户消息口径不翻译）；200 rune
+			// 截断防失控粘贴——与 confirmPrompt 的参数预览同量级。
+			denied := "user denied " + call.Name
+			if reason := strings.TrimSpace(ans.Reason); reason != "" {
+				if r := []rune(reason); len(r) > 200 {
+					reason = string(r[:200]) + "…"
+				}
+				denied += ": " + reason
+			}
+			return tool.Result{CallID: call.ID, OK: false, Err: denied}, nil
 		}
 	}
 

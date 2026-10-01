@@ -21,7 +21,7 @@ import (
 func TestToolChipConfirmMerge(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec", Args: []byte(`{"cmd":"ls"}`)}})
-	reply := make(chan bool, 1)
+	reply := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm(`允许执行 term_exec？参数: {"cmd":"ls"}`, reply)
 
 	if len(m.blocks) != 1 {
@@ -31,7 +31,7 @@ func TestToolChipConfirmMerge(t *testing.T) {
 		t.Fatalf("confirm 未入 chip: chip=%+v confirmChip=%d", m.blocks[0].chip, m.confirmChip)
 	}
 
-	m.replyConfirm(true)
+	m.replyConfirm(port.ConfirmAnswer{Allow: true})
 	if m.blocks[0].chip.confirmA != "允许" {
 		t.Fatalf("confirmA = %q, want 允许", m.blocks[0].chip.confirmA)
 	}
@@ -40,7 +40,7 @@ func TestToolChipConfirmMerge(t *testing.T) {
 	}
 	select {
 	case ok := <-reply:
-		if !ok {
+		if !ok.Allow {
 			t.Fatal("应答应为 true")
 		}
 	default:
@@ -61,15 +61,15 @@ func TestToolChipConfirmMerge(t *testing.T) {
 func TestToolChipConfirmDeny(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
-	reply := make(chan bool, 1)
+	reply := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("允许执行 term_exec？参数: {}", reply)
-	m.replyConfirm(false)
+	m.replyConfirm(port.ConfirmAnswer{})
 	if m.blocks[0].chip.confirmA != "拒绝" {
 		t.Fatalf("confirmA = %q, want 拒绝", m.blocks[0].chip.confirmA)
 	}
 	select {
 	case ok := <-reply:
-		if ok {
+		if ok.Allow {
 			t.Fatal("应答应为 false")
 		}
 	default:
@@ -86,7 +86,7 @@ func TestToolChipConfirmDeny(t *testing.T) {
 func TestConfirmNonToolStaysPlain(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
-	reply := make(chan bool, 1)
+	reply := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("确认删除 n1 及其子树（至少 3 条节点）？此操作不可恢复", reply)
 
 	if m.confirmChip != -1 {
@@ -95,7 +95,7 @@ func TestConfirmNonToolStaysPlain(t *testing.T) {
 	if len(m.blocks) != 2 || m.blocks[1].kind != blockPlain {
 		t.Fatalf("blocks = %+v, want chip + plain 行", m.blocks)
 	}
-	m.replyConfirm(true)
+	m.replyConfirm(port.ConfirmAnswer{Allow: true})
 	if m.blocks[0].chip.confirmA != "" {
 		t.Fatal("不应写入 chip")
 	}
@@ -181,11 +181,11 @@ func TestToolChipView(t *testing.T) {
 	if u.chipIsOpen(0, items[0].chip) {
 		t.Fatal("默认折叠")
 	}
-	u.m.startConfirm(`允许执行 file_read？参数: {"path":"a.txt"}`, make(chan bool, 1))
+	u.m.startConfirm(`允许执行 file_read？参数: {"path":"a.txt"}`, make(chan port.ConfirmAnswer, 1))
 	if !u.chipIsOpen(0, u.m.blocks[0].chip) {
 		t.Fatal("待确认应强制展开")
 	}
-	u.m.replyConfirm(true)
+	u.m.replyConfirm(port.ConfirmAnswer{Allow: true})
 	if u.chipIsOpen(0, u.m.blocks[0].chip) {
 		t.Fatal("应答后应回落用户选择（默认折叠）")
 	}

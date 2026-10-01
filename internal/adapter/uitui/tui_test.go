@@ -92,7 +92,7 @@ func TestHistoryKeys(t *testing.T) {
 // TestConfirmFlow 确认对话：提示入转写、应答缓冲提交、y/yes 语义与拒答记录。
 func TestConfirmFlow(t *testing.T) {
 	m, _ := newTestModel(t)
-	reply := make(chan bool, 1)
+	reply := make(chan port.ConfirmAnswer, 1)
 	m.Update(confirmMsg{prompt: "确认删除？", reply: reply})
 	if m.confirm == nil {
 		t.Fatal("确认态未设置")
@@ -108,8 +108,8 @@ func TestConfirmFlow(t *testing.T) {
 	}
 	m.key(tea.KeyMsg{Type: tea.KeyEnter})
 	select {
-	case yes := <-reply:
-		if !yes {
+	case ans := <-reply:
+		if !ans.Allow {
 			t.Fatal("y 应为同意")
 		}
 	default:
@@ -123,12 +123,12 @@ func TestConfirmFlow(t *testing.T) {
 	}
 
 	// 拒答：非 y/yes 一律 false（与 repl 语义一致）。
-	reply2 := make(chan bool, 1)
+	reply2 := make(chan port.ConfirmAnswer, 1)
 	m.Update(confirmMsg{prompt: "再来？", reply: reply2})
 	m.key(tea.KeyMsg{Type: tea.KeyEnter}) // 空应答
 	select {
-	case yes := <-reply2:
-		if yes {
+	case ans := <-reply2:
+		if ans.Allow {
 			t.Fatal("空应答应为拒绝")
 		}
 	default:
@@ -142,7 +142,7 @@ func TestConfirmInterruptCtrlC(t *testing.T) {
 	var interrupted bool
 	u.SetInterrupt(func() { interrupted = true })
 
-	reply := make(chan bool, 1)
+	reply := make(chan port.ConfirmAnswer, 1)
 	m.Update(confirmMsg{prompt: "p", reply: reply})
 	m.input = []rune("typed")
 	m.key(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -151,8 +151,8 @@ func TestConfirmInterruptCtrlC(t *testing.T) {
 		t.Fatal("Ctrl+C 应触发中断回调")
 	}
 	select {
-	case yes := <-reply:
-		if yes {
+	case ans := <-reply:
+		if ans.Allow {
 			t.Fatal("中断应拒答")
 		}
 	default:
@@ -223,9 +223,9 @@ func TestConfirmRejectsOnEOF(t *testing.T) {
 	defer func() { _ = u.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	yes, err := u.Confirm(ctx, "危险操作？")
-	if err != nil || yes {
-		t.Fatalf("confirm = %v, %v, want (false, nil)", yes, err)
+	ans, err := u.Confirm(ctx, "危险操作？")
+	if err != nil || ans.Allow {
+		t.Fatalf("confirm = %v, %v, want (false, nil)", ans, err)
 	}
 	// EOF 标志保留：随后 Next 仍见 EOF。
 	if _, err := u.Next(ctx); !errors.Is(err, io.EOF) {
@@ -242,9 +242,9 @@ func TestConfirmDrainsQueuedAnswer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	yes, err := u.Confirm(ctx, "确认删除？")
-	if err != nil || !yes {
-		t.Fatalf("confirm = %v, %v, want 排队输入 y 作答为真", yes, err)
+	ans, err := u.Confirm(ctx, "确认删除？")
+	if err != nil || !ans.Allow {
+		t.Fatalf("confirm = %v, %v, want 排队输入 y 作答为真", ans, err)
 	}
 	// 后续行仍可被 Next 取到（未被确认吞掉）。
 	in, err := u.Next(ctx)
@@ -557,7 +557,7 @@ func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
 // （旧实现误改输入框），应答缓冲同受上限约束。
 func TestConfirmAnswerEditing(t *testing.T) {
 	m, _ := newTestModel(t)
-	m.Update(confirmMsg{prompt: "p", reply: make(chan bool, 1)})
+	m.Update(confirmMsg{prompt: "p", reply: make(chan port.ConfirmAnswer, 1)})
 	m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("yes")})
 	m.key(tea.KeyMsg{Type: tea.KeyBackspace})
 	if string(m.confirm.answer) != "ye" {

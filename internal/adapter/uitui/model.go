@@ -35,7 +35,7 @@ type block struct {
 // pendingConfirm 进行中的确认对话。
 type pendingConfirm struct {
 	prompt string
-	reply  chan bool
+	reply  chan port.ConfirmAnswer
 	answer []rune
 }
 
@@ -97,7 +97,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case confirmResultMsg:
 		// Confirm 自行应答（排队输入/EOF）后的收尾：关对话框、记转写；
 		// 若模型侧已应答则为幂等 no-op。
-		m.replyConfirm(msg.yes)
+		m.replyConfirm(msg.ans)
 		return m, nil
 	case drainMsg:
 		close(msg.done)
@@ -149,7 +149,7 @@ func (m *model) key(msg tea.KeyMsg) *model {
 			(*f)()
 		}
 		if m.confirm != nil {
-			m.replyConfirm(false)
+			m.replyConfirm(port.ConfirmAnswer{})
 		}
 		m.input = m.input[:0]
 		return m
@@ -216,7 +216,7 @@ func (m *model) key(msg tea.KeyMsg) *model {
 // 转写区会把没执行的输入显示成已提交，制造"已执行"错觉。
 func (m *model) submit(text string) {
 	if m.confirm != nil {
-		m.replyConfirm(isYes(text))
+		m.replyConfirm(port.ConfirmAnswer{Allow: isYes(text)})
 		return
 	}
 	line := strings.TrimSpace(text)
@@ -234,13 +234,13 @@ func (m *model) submit(text string) {
 }
 
 // replyConfirm 应答进行中的确认（缓冲 1 + default：取消后迟到的应答不阻塞）。
-func (m *model) replyConfirm(yes bool) {
+func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	if m.confirm == nil {
 		return
 	}
-	m.add(blockPlain, fmt.Sprintf("%s → %t", m.confirm.prompt, yes))
+	m.add(blockPlain, fmt.Sprintf("%s → %t", m.confirm.prompt, ans.Allow))
 	select {
-	case m.confirm.reply <- yes:
+	case m.confirm.reply <- ans:
 	default:
 	}
 	m.confirm = nil

@@ -55,7 +55,7 @@ type toolChip struct {
 // pendingConfirm 进行中的确认（输入栏确认态，§15.2 非模态按钮组）。
 type pendingConfirm struct {
 	prompt string
-	reply  chan bool
+	reply  chan port.ConfirmAnswer
 }
 
 // model 渲染状态机：事件面口径对齐 uitui/model.go（§15.5）——
@@ -220,7 +220,7 @@ func (m *model) replay(msg conversation.Message) {
 // 投递失败（缓冲满）时明确标注"未执行"——不制造"已执行"错觉（uitui 审查修复同款）。
 func (m *model) submit(text string) {
 	if m.confirm != nil {
-		m.replyConfirm(isYes(text))
+		m.replyConfirm(port.ConfirmAnswer{Allow: isYes(text)})
 		return
 	}
 	line := strings.TrimSpace(text)
@@ -302,7 +302,7 @@ func (m *model) closeOpenChips() {
 // startConfirm 打开确认态（Confirm 投递；输入栏切按钮组，§15.2）。
 // 工具权限确认（问句含工具名且最新 chip 未完成）并入该 chip（D67）；
 // 其余（/rm 二次确认等）保持独立文本行。
-func (m *model) startConfirm(prompt string, reply chan bool) {
+func (m *model) startConfirm(prompt string, reply chan port.ConfirmAnswer) {
 	m.confirm = &pendingConfirm{prompt: sanitizeControl(prompt), reply: reply}
 	if i := m.openChipFor(m.confirm.prompt); i >= 0 {
 		m.blocks[i].chip.confirmQ = m.confirm.prompt
@@ -332,7 +332,7 @@ func (m *model) openChipFor(prompt string) int {
 // replyConfirm 应答进行中的确认（缓冲 1 + default：取消后迟到的应答不阻塞）。
 // chip 确认把问答留痕在 chip 内（D67）；其余保持文本行回显。两条路径都必须把应答
 // 送回 runner（否则权限等待永不解除）。
-func (m *model) replyConfirm(yes bool) {
+func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	if m.confirm == nil {
 		return
 	}
@@ -340,7 +340,7 @@ func (m *model) replyConfirm(yes bool) {
 	if m.confirmChip >= 0 && m.confirmChip < len(m.blocks) {
 		if c := m.blocks[m.confirmChip].chip; c != nil && c.confirmQ != "" {
 			c.confirmA = "拒绝"
-			if yes {
+			if ans.Allow {
 				c.confirmA = "允许"
 			}
 			prompt = "" // chip 路径留痕在展开体，不再加文本行
@@ -349,10 +349,10 @@ func (m *model) replyConfirm(yes bool) {
 	m.confirm = nil
 	m.confirmChip = -1
 	if prompt != "" {
-		m.add(blockPlain, fmt.Sprintf("%s → %t", prompt, yes))
+		m.add(blockPlain, fmt.Sprintf("%s → %t", prompt, ans.Allow))
 	}
 	select {
-	case reply <- yes:
+	case reply <- ans:
 	default:
 	}
 }

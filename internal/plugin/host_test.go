@@ -94,16 +94,16 @@ type fakeConfirm struct {
 	prompts []string
 }
 
-func (c *fakeConfirm) Confirm(_ context.Context, prompt string) (bool, error) {
+func (c *fakeConfirm) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.prompts = append(c.prompts, prompt)
 	if len(c.answers) == 0 {
-		return false, errors.New("确认脚本耗尽")
+		return port.ConfirmAnswer{}, errors.New("确认脚本耗尽")
 	}
 	a := c.answers[0]
 	c.answers = c.answers[1:]
-	return a, nil
+	return port.ConfirmAnswer{Allow: a}, nil
 }
 
 // waitFor 轮询等待条件成立。

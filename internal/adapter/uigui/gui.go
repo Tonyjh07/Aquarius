@@ -383,38 +383,39 @@ func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 // 应答三路，优先级：模型侧已应答（reply）→ 排队输入 → 输入流结束（拒，
 // 对齐 repl"不替用户做破坏性决定"）。取排队输入或走 EOF 时同步发 confirmResultMsg
 // 关闭模型侧确认态，避免残留（uitui 审查修复同款结构）。
-func (u *UI) Confirm(ctx context.Context, prompt string) (bool, error) {
+func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
-		return false, err
+		return port.ConfirmAnswer{}, err
 	}
-	reply := make(chan bool, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
+	reply := make(chan port.ConfirmAnswer, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
 	u.post(confirmMsg{prompt: prompt, reply: reply})
 	for {
 		select { // 模型侧应答优先（避免多取一行）
-		case yes := <-reply:
-			return yes, nil
+		case ans := <-reply:
+			return ans, nil
 		default:
 		}
 		select { // 排队输入优先于 EOF：eofCh 一旦关闭恒就绪，与 inCh 同时就绪时
 		// select 随机选中会把 y 误拒——必须先非阻塞取（与 Next 同款结构）。
 		case in := <-u.inCh:
-			yes := isYes(in.Text)
-			u.post(confirmResultMsg{yes: yes})
-			return yes, nil
+			ans := port.ConfirmAnswer{Allow: isYes(in.Text)}
+			u.post(confirmResultMsg{ans: ans})
+			return ans, nil
 		default:
 		}
 		select {
-		case yes := <-reply:
-			return yes, nil
+		case ans := <-reply:
+			return ans, nil
 		case in := <-u.inCh:
-			yes := isYes(in.Text)
-			u.post(confirmResultMsg{yes: yes})
-			return yes, nil
+			ans := port.ConfirmAnswer{Allow: isYes(in.Text)}
+			u.post(confirmResultMsg{ans: ans})
+			return ans, nil
 		case <-u.eofCh:
-			u.post(confirmResultMsg{yes: false})
-			return false, nil
+			ans := port.ConfirmAnswer{}
+			u.post(confirmResultMsg{ans: ans})
+			return ans, nil
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return port.ConfirmAnswer{}, ctx.Err()
 		}
 	}
 }
@@ -433,10 +434,10 @@ type (
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
 		prompt string
-		reply  chan bool
+		reply  chan port.ConfirmAnswer
 	}
 	// confirmResultMsg Confirm 侧自行得出应答后的确认态收尾（关态 + 记转写）。
-	confirmResultMsg struct{ yes bool }
+	confirmResultMsg struct{ ans port.ConfirmAnswer }
 	// drainMsg 排空标记（Close 投递：处理到它即代表此前 post 全部落进状态机）。
 	drainMsg struct{ done chan struct{} }
 	// eofMsg 输入流结束（关窗/外部泵投递；err 非空 = 读取错误，Next 原样上抛）。
@@ -465,7 +466,7 @@ func (u *UI) apply(msg uiMsg) bool {
 	case confirmMsg:
 		u.m.startConfirm(m.prompt, m.reply)
 	case confirmResultMsg:
-		u.m.replyConfirm(m.yes)
+		u.m.replyConfirm(m.ans)
 	case eofMsg:
 		u.signalEOF(m.err)
 	case drainMsg:

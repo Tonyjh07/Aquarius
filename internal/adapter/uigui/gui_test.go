@@ -134,9 +134,9 @@ func TestConfirmRejectsOnEOF(t *testing.T) {
 
 	ctx, cancel := ctx5(t)
 	defer cancel()
-	yes, err := u.Confirm(ctx, "危险操作？")
-	if err != nil || yes {
-		t.Fatalf("confirm = %v, %v, want (false, nil)", yes, err)
+	ans, err := u.Confirm(ctx, "危险操作？")
+	if err != nil || ans.Allow {
+		t.Fatalf("confirm = %v, %v, want (false, nil)", ans, err)
 	}
 	drainSync(t, u) // confirmResultMsg 收尾已应用
 	if u.m.confirm != nil {
@@ -157,9 +157,9 @@ func TestConfirmDrainsQueuedAnswer(t *testing.T) {
 
 	ctx, cancel := ctx5(t)
 	defer cancel()
-	yes, err := u.Confirm(ctx, "确认删除？")
-	if err != nil || !yes {
-		t.Fatalf("confirm = %v, %v, want 排队输入 y 作答为真", yes, err)
+	ans, err := u.Confirm(ctx, "确认删除？")
+	if err != nil || !ans.Allow {
+		t.Fatalf("confirm = %v, %v, want 排队输入 y 作答为真", ans, err)
 	}
 	drainSync(t, u)
 	if u.m.confirm != nil {
@@ -179,24 +179,24 @@ func TestConfirmFromModelReply(t *testing.T) {
 	defer cancel()
 
 	type result struct {
-		yes bool
+		ans port.ConfirmAnswer
 		err error
 	}
 	resCh := make(chan result, 1)
 	go func() {
-		yes, err := u.Confirm(ctx, "允许执行？")
-		resCh <- result{yes, err}
+		ans, err := u.Confirm(ctx, "允许执行？")
+		resCh <- result{ans, err}
 	}()
 	// Confirm 构造后立即投递 confirmMsg：墙钟余量 + 屏障（FIFO——屏障处理到即代表
 	// 此前投递全部应用），保证应答不越过确认请求。
 	time.Sleep(100 * time.Millisecond)
 	drainSync(t, u)
-	u.post(confirmResultMsg{yes: true}) // 按钮同路：事件循环上应用 replyConfirm
+	u.post(confirmResultMsg{ans: port.ConfirmAnswer{Allow: true}}) // 按钮同路：事件循环上应用 replyConfirm
 	drainSync(t, u)
 
 	r := <-resCh
-	if r.err != nil || !r.yes {
-		t.Fatalf("confirm = %v, %v, want (true, nil)", r.yes, r.err)
+	if r.err != nil || !r.ans.Allow {
+		t.Fatalf("confirm = %v, %v, want (true, nil)", r.ans, r.err)
 	}
 	if u.m.confirm != nil {
 		t.Fatal("应答后确认态应清除")

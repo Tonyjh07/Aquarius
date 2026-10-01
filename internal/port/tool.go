@@ -24,9 +24,16 @@ type ToolRunner interface {
 	Execute(ctx context.Context, call tool.Call) (tool.Result, error)
 }
 
+// ConfirmAnswer 确认应答（D86）：拒绝可带原因回传给模型（用户自填文本，原样
+// 附上不翻译）；Allow=true 时 Reason 无意义，实现方应留空。
+type ConfirmAnswer struct {
+	Allow  bool
+	Reason string
+}
+
 // Confirmer 逐次确认（Risk=Confirm 的工具、越界文件访问、插件授权等）。
 type Confirmer interface {
-	Confirm(ctx context.Context, prompt string) (bool, error)
+	Confirm(ctx context.Context, prompt string) (ConfirmAnswer, error)
 }
 
 // FileTarget 可选能力（D25）：文件类工具申报本次调用的目标路径与读写操作，

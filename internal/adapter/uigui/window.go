@@ -30,6 +30,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
@@ -1649,10 +1650,10 @@ func (u *UI) updateClicks(gtx layout.Context) {
 		u.interruptNow() // 生成中发送键变停止键（§15.2）
 	}
 	if u.allowBtn.Clicked(gtx) {
-		u.m.replyConfirm(true)
+		u.m.replyConfirm(port.ConfirmAnswer{Allow: true})
 	}
 	if u.denyBtn.Clicked(gtx) {
-		u.m.replyConfirm(false)
+		u.m.replyConfirm(port.ConfirmAnswer{})
 	}
 	// 工具 chip 头部点击 → 折叠/展开（D67；m.blocks 只增，块序即 chipIdx）。
 	for i, b := range u.m.blocks {

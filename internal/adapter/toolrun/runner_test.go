@@ -57,22 +57,23 @@ func (s *stubTool) Target(context.Context, tool.Call) (string, perm.Op, bool) {
 
 // scriptConf 记录提示并按脚本应答的确认器。
 type scriptConf struct {
-	answers []bool
-	asked   []string
-	err     error
+	answers    []bool
+	denyReason string // D86：拒绝时附带的原因（空 = 干拒）
+	asked      []string
+	err        error
 }
 
-func (c *scriptConf) Confirm(_ context.Context, prompt string) (bool, error) {
+func (c *scriptConf) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
 	if c.err != nil {
-		return false, c.err
+		return port.ConfirmAnswer{}, c.err
 	}
 	c.asked = append(c.asked, prompt)
 	if len(c.answers) == 0 {
-		return false, errors.New("scriptConf: 没有对应脚本的确认请求")
+		return port.ConfirmAnswer{}, errors.New("scriptConf: 没有对应脚本的确认请求")
 	}
 	a := c.answers[0]
 	c.answers = c.answers[1:]
-	return a, nil
+	return port.ConfirmAnswer{Allow: a, Reason: c.denyReason}, nil
 }
 
 func fileTool(name, path string, op perm.Op, risk tool.Risk, out string) *stubTool {
@@ -254,6 +255,49 @@ func TestConfirmDeny(t *testing.T) {
 	if len(conf.asked) != 1 || !strings.Contains(conf.asked[0], "fw") {
 		t.Fatalf("asked=%v", conf.asked)
 	}
+}
+
+// TestConfirmDenyReason D86：拒绝原因原样回填给模型（用户自填文本不翻译）；
+// 空原因保持干拒原文；超长原因按 200 rune 截断加省略号。
+func TestConfirmDenyReason(t *testing.T) {
+	mk := func(reason string) (*scriptConf, *Runner) {
+		conf := &scriptConf{answers: []bool{false}, denyReason: reason}
+		return conf, New(Options{
+			Tools:     []port.Tool{&stubTool{spec: tool.Spec{Name: "fw", Risk: tool.Confirm}}},
+			Confirmer: conf, Level: levelFn(perm.Strict),
+		})
+	}
+	t.Run("带原因", func(t *testing.T) {
+		conf, r := mk("  路径越界，换个 sandbox 内的目标  ")
+		res, err := r.Execute(context.Background(), c("fw", `{"p":1}`))
+		if err != nil || res.OK {
+			t.Fatalf("res=%+v err=%v", res, err)
+		}
+		if want := "user denied fw: 路径越界，换个 sandbox 内的目标"; res.Err != want {
+			t.Fatalf("Err = %q, want %q（TrimSpace 后原样回传）", res.Err, want)
+		}
+		if len(conf.asked) != 1 {
+			t.Fatalf("asked=%v", conf.asked)
+		}
+	})
+	t.Run("空原因干拒", func(t *testing.T) {
+		_, r := mk("   ")
+		res, err := r.Execute(context.Background(), c("fw", `{"p":1}`))
+		if err != nil || res.OK || res.Err != "user denied fw" {
+			t.Fatalf("res=%+v err=%v", res, err)
+		}
+	})
+	t.Run("超长截断", func(t *testing.T) {
+		_, r := mk(strings.Repeat("长", 250))
+		res, err := r.Execute(context.Background(), c("fw", `{"p":1}`))
+		if err != nil || res.OK {
+			t.Fatalf("res=%+v err=%v", res, err)
+		}
+		want := "user denied fw: " + strings.Repeat("长", 200) + "…"
+		if res.Err != want {
+			t.Fatalf("Err 长度 = %d runes, want %d", len([]rune(res.Err)), len([]rune(want)))
+		}
+	})
 }
 
 // TestConfirmPromptCarriesPath 确认提示带目标路径与参数（用户看得见）。

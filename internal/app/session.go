@@ -570,11 +570,11 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		}
 		size := subtreeSize(s.cur, id)
 		prompt := fmt.Sprintf("确认删除 %s 及其子树（至少 %d 条节点）？此操作不可恢复", id, size)
-		ok, err := s.confirmer.Confirm(ctx, prompt)
+		ans, err := s.confirmer.Confirm(ctx, prompt)
 		if err != nil {
 			return "", fmt.Errorf("session: 确认删除: %w", err)
 		}
-		if !ok {
+		if !ans.Allow {
 			return fmt.Sprintf("已取消删除 %s", id), nil
 		}
 		before := len(s.cur.Nodes)

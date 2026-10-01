@@ -792,7 +792,9 @@ type yesConfirmer struct{}
 
 var _ port.Confirmer = yesConfirmer{}
 
-func (yesConfirmer) Confirm(context.Context, string) (bool, error) { return true, nil }
+func (yesConfirmer) Confirm(context.Context, string) (port.ConfirmAnswer, error) {
+	return port.ConfirmAnswer{Allow: true}, nil
+}
 
 // systemIDGen port.IDGen 的内置实现：复用 domain 的进程内单调 ULID。
 type systemIDGen struct{}

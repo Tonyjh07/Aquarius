@@ -224,38 +224,39 @@ func (u *UI) Say(text string) {
 // 对话框打开前就已全部入队，只等 reply/EOF 会先撞上已关闭的 EOF 而把 y 误拒）→
 // 输入流结束（拒，对齐 repl"不替用户做破坏性决定"）。取排队输入或走 EOF 时同步发
 // confirmResultMsg 关闭模型侧对话框，避免残留对话框吞掉后续输入。
-func (u *UI) Confirm(ctx context.Context, prompt string) (bool, error) {
+func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
-		return false, err
+		return port.ConfirmAnswer{}, err
 	}
-	reply := make(chan bool, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
+	reply := make(chan port.ConfirmAnswer, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
 	u.prog.Send(confirmMsg{prompt: prompt, reply: reply})
 	for {
 		select { // 模型侧应答优先（避免多取一行）
-		case yes := <-reply:
-			return yes, nil
+		case ans := <-reply:
+			return ans, nil
 		default:
 		}
 		select { // 排队输入优先于 EOF：eofCh 一旦关闭恒就绪，与 inCh 同时就绪时
 		// select 随机选中会把 y 误拒——必须先非阻塞取（与 Next 同款结构）。
 		case in := <-u.inCh:
-			yes := isYes(in.Text)
-			u.prog.Send(confirmResultMsg{yes: yes}) // 关闭模型侧对话框并记转写
-			return yes, nil
+			ans := port.ConfirmAnswer{Allow: isYes(in.Text)}
+			u.prog.Send(confirmResultMsg{ans: ans}) // 关闭模型侧对话框并记转写
+			return ans, nil
 		default:
 		}
 		select {
-		case yes := <-reply:
-			return yes, nil
+		case ans := <-reply:
+			return ans, nil
 		case in := <-u.inCh:
-			yes := isYes(in.Text)
-			u.prog.Send(confirmResultMsg{yes: yes})
-			return yes, nil
+			ans := port.ConfirmAnswer{Allow: isYes(in.Text)}
+			u.prog.Send(confirmResultMsg{ans: ans})
+			return ans, nil
 		case <-u.eofCh:
-			u.prog.Send(confirmResultMsg{yes: false})
-			return false, nil
+			ans := port.ConfirmAnswer{}
+			u.prog.Send(confirmResultMsg{ans: ans})
+			return ans, nil
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return port.ConfirmAnswer{}, ctx.Err()
 		}
 	}
 }
@@ -277,10 +278,10 @@ type (
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
 		prompt string
-		reply  chan bool
+		reply  chan port.ConfirmAnswer
 	}
 	// confirmResultMsg Confirm 侧自行得出应答后的模型状态收尾（关闭对话框 + 记转写）。
-	confirmResultMsg struct{ yes bool }
+	confirmResultMsg struct{ ans port.ConfirmAnswer }
 	// drainMsg 排空标记（Close 投递：处理到它即代表此前 Send 全部落帧）。
 	drainMsg struct{ done chan struct{} }
 	// eofMsg 输入流结束（pump 投递：与输入行同一队列，杜绝 EOF 抢跑于排队输入）；

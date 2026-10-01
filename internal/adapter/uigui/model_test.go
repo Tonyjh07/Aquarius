@@ -109,7 +109,7 @@ func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
 // 提示出口消毒（§9）。
 func TestConfirmFlow(t *testing.T) {
 	m, _ := newTestModel(t)
-	reply := make(chan bool, 1)
+	reply := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("确认删除？", reply)
 	if m.confirm == nil {
 		t.Fatal("确认态未设置")
@@ -120,8 +120,8 @@ func TestConfirmFlow(t *testing.T) {
 
 	m.submit("y") // 确认态：submit 路由为应答（不进 inCh）
 	select {
-	case yes := <-reply:
-		if !yes {
+	case ans := <-reply:
+		if !ans.Allow {
 			t.Fatal("y 应为同意")
 		}
 	default:
@@ -140,12 +140,12 @@ func TestConfirmFlow(t *testing.T) {
 	}
 
 	// 拒答：非 y/yes 一律 false（与 repl 语义一致）。
-	reply2 := make(chan bool, 1)
+	reply2 := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("再来？", reply2)
 	m.submit("") // 空应答
 	select {
-	case yes := <-reply2:
-		if yes {
+	case ans := <-reply2:
+		if ans.Allow {
 			t.Fatal("空应答应为拒绝")
 		}
 	default:
@@ -156,7 +156,7 @@ func TestConfirmFlow(t *testing.T) {
 	}
 
 	// 提示出口消毒：确认提示可携带注入序列（§9）。
-	reply3 := make(chan bool, 1)
+	reply3 := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("危险\x1b[2J清屏？", reply3)
 	if strings.Contains(allText(m), "\x1b") {
 		t.Fatalf("确认提示泄漏控制序列: %q", allText(m))

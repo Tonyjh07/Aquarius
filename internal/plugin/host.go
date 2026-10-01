@@ -249,12 +249,12 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		}
 	}()
 	for _, c := range pending {
-		yes, err := h.confirm.Confirm(ctx, fmt.Sprintf("插件 %q 请求能力 %q，允许？", d.Name, c))
+		ans, err := h.confirm.Confirm(ctx, fmt.Sprintf("插件 %q 请求能力 %q，允许？", d.Name, c))
 		if err != nil {
 			h.logf("[plugin] %s: 确认 %s 失败: %v", d.Name, c, err)
 			return false
 		}
-		if !yes {
+		if !ans.Allow {
 			h.logf("[plugin] %s: 用户拒绝能力 %s", d.Name, c)
 			return false
 		}

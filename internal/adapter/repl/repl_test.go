@@ -168,7 +168,7 @@ func TestConfirmReadsAnswer(t *testing.T) {
 			var buf bytes.Buffer
 			ui := New(strings.NewReader(tc.in), &buf)
 			got, err := ui.Confirm(context.Background(), "确认删除 n4？")
-			if err != nil || got != tc.want {
+			if err != nil || got.Allow != tc.want {
 				t.Fatalf("confirm = %v, %v, want %v", got, err, tc.want)
 			}
 			if want := "确认删除 n4？ [y/N] "; buf.String() != want {

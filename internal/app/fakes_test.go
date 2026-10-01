@@ -137,14 +137,14 @@ type scriptConfirmer struct {
 
 var _ port.Confirmer = (*scriptConfirmer)(nil)
 
-func (c *scriptConfirmer) Confirm(_ context.Context, prompt string) (bool, error) {
+func (c *scriptConfirmer) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
 	if len(c.answers) == 0 {
 		c.t.Fatalf("scriptConfirmer: 没有对应脚本的确认请求: %s", prompt)
 	}
 	a := c.answers[0]
 	c.answers = c.answers[1:]
 	c.asked = append(c.asked, askedConfirm{prompt: prompt, answer: a})
-	return a, nil
+	return port.ConfirmAnswer{Allow: a}, nil
 }
 
 // drain 取出并清空已应答的确认记录（每步回放渲染一次）。
