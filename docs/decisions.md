@@ -102,6 +102,7 @@
 | D86 | 工具确认态三钮重排：`port.ConfirmAnswer` 拒绝原因回传 + 一键提档放行（S1-1e，§15.2/§15.3） | 生效 |
 | D87 | 实时分叉条修复：user 节点 commit 时回填回显块节点 ID（S1-1f 验收发现，§15.3） | 生效 |
 | D88 | 揭示/呼出后立即补提交 ULW：焊死「可见但分层位图未生效」竞态（§15.1，用户实测一次性） | 生效 |
+| D89 | 纯工具轮分叉锚点：chip/思考块承载节点 ID（S1-1f 验收发现，§15.3） | 生效 |
 
 ## 记录
 
@@ -697,4 +698,11 @@
 - **决策**：① **揭示后立即补提交**：`fadePresent` 揭示分支（首帧提交成功 → `revealMain`）与 `showMain` 呼出路径（`revealMain` 之后）各补一次 `representAfterShow`——以最后一次合成位图立即再提交一次，把「可见」与「分层位图生效」焊死；`ShowWindow` 与补提交同经 `onWindowThread` 按序执行，事件循环与帧循环同 goroutine、`fadeBuf` 无并发。位图未就绪/尺寸与实测矩形不符则跳过（同 `fadePresent` 口径，常规帧兜底）。② **揭示期取证日志**：`fadePresent` 在 `revealPending` 未清零期间遇合成失败，节流打印前 8 条（hwnd/尺寸/presentable）——该竞态无法稳定复现，下次出现直接留证据。
 - **否决**：重试循环直到 ULW「确认生效」（无法从 ULW 返回值判断 DWM 呈现态，纯空转）；去掉事件 pass 的兜底底色（非 Windows 降级形态靠它铺底，D62 拍板过双 pass 分工）；给窗口常挂低频心跳重提交（违反 D50 静默零帧）；只修 showMain 或只修首帧揭示一侧（两处是同一竞态的两个入口）。
 - **后果/限制**：① 揭示与呼出各多一次 ULW 提交（同帧位图，代价 ≈0）；② 一次性竞态无法现场复现验证——以「可见态必有紧随的 ULW 提交」为不变量封死该类竞态面，取证日志兜底下一例；③ 非 Windows 降级形态不经过 ULW 路径，不受影响。
+- **状态**：生效
+### D89 — 纯工具轮分叉锚点：chip/思考块承载节点 ID（S1-1f 验收发现，§15.3）
+
+- **动机（用户实测）**：D87 修掉实时回显缺口后，分叉切换到「纯工具轮」分支（assistant 节点只有 thinking + tool_calls、无正文——模型径直发起工具调用）后**切不回来**。定位：回放路径 thinking 卡与工具 chip 都不携节点 ID、空正文（OutcomeDone）又不产生 assistant 块 → 转写里没有任何块携带该节点 ID，`branchStrips` 跳过空 ID 块 → 分叉条无处可挂（用户会话实测节点 content 仅 thinking part + tool_calls）。live 路径同构：chip 由 `ToolCallEvent` 先行入块、commit 空正文早退，chip 同样无 ID。
+- **决策**：① **锚点回填**：assistant 节点处理完毕后，若没有任何块携带其 ID，按「调用 ID 匹配本轮 chip」回填（chip 是该节点在转写里的可见表示）；无工具则回填到本轮最后一个新块（思考卡）。`replay()` 与 `commit()` 两路径统一（新增 `stampAssistantAnchor`；带正文的节点已由正文块携带 ID，no-op）。② **branchStrips 放行带 ID 的工具块**：锚在 chip 上的分叉条渲染于 chip 正下方（对齐仍 user 右 / 其余左）。
+- **否决**：给 thinking 卡/chip 单独加「来源节点」字段（block.id 即「块所源节点」语义，D81 已定义，无需新字段）；空正文时合成一个占位 assistant 块（转写多一行空泡，观感劣化且 D67 chip 已是呈现主体）；只修 replay 不修 commit（live 纯工具轮同样无锚，切走再切回同样丢）。
+- **后果/限制**：① chip 块从此可携带 block.id——选择/命中按行序不按 ID，无既有消费方受影响；② 思考-only 节点（无工具无正文）锚到思考卡（罕见边角，同一机制顺带覆盖）；③ 分叉条出现在 chip 下方的形态为首次出现，视觉验收随 1f 一并确认。
 - **状态**：生效
