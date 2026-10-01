@@ -15,48 +15,53 @@ import "image/color"
 // palette 颜色令牌全集（§15.4：背景/文字/气泡双色/思考暗块/状态行/错误色/禁用态；
 // fg/bg = material 默认文字/底——编辑器与助手/纯文本默认取色、次窗铺底）。
 type palette struct {
-	brandColor     color.NRGBA // 品牌色（logo/发送键/用户气泡底——两版同值，取自 assets/icon）
-	pillBg         color.NRGBA // 输入胶囊/助手气泡/纯文本卡/状态 chip 底
-	windowBg       color.NRGBA // 兜底背景（非 Windows 降级形态整窗铺底）
-	textDim        color.NRGBA // 思考块文字
-	textMuted      color.NRGBA // 工具 chip/状态行文字
-	textError      color.NRGBA // 错误文字
-	textNotice     color.NRGBA // 提示文字
-	textSystem     color.NRGBA // 系统行文字
-	cardThinking   color.NRGBA
-	cardTool       color.NRGBA
-	cardNotice     color.NRGBA
-	cardError      color.NRGBA
-	cardSystem     color.NRGBA
-	whiteText      color.NRGBA // 品牌底/深色 tips 上的文字
-	iconDim        color.NRGBA // 图标槽占位灰
-	disabledCircle color.NRGBA // 确认态置灰右圆
-	tipBg          color.NRGBA // 悬浮 tips 底色
-	fg, bg         color.NRGBA // material Palette（默认文字/底）
+	brandColor   color.NRGBA // 品牌色（logo/发送键/用户气泡底——两版同值，取自 assets/icon）
+	pillBg       color.NRGBA // 输入胶囊/助手气泡/纯文本卡/状态 chip 底
+	windowBg     color.NRGBA // 兜底背景（非 Windows 降级形态整窗铺底）
+	textDim      color.NRGBA // 思考块文字
+	textMuted    color.NRGBA // 工具 chip/状态行文字
+	textError    color.NRGBA // 错误文字
+	textNotice   color.NRGBA // 提示文字
+	textSystem   color.NRGBA // 系统行文字
+	cardThinking color.NRGBA
+	cardTool     color.NRGBA
+	cardNotice   color.NRGBA
+	cardError    color.NRGBA
+	cardSystem   color.NRGBA
+	whiteText    color.NRGBA // 品牌底/深色 tips 上的文字
+	iconDim      color.NRGBA // 图标槽占位灰
+	// 确认态三钮（D86）：实色圆白字，两版同值（饱和实色，两主题对比度均足）。
+	actionDeny    color.NRGBA // ✗ 拒绝
+	actionAllow   color.NRGBA // ✓ 允许
+	actionElevate color.NRGBA // 🔑 提升权限
+	tipBg         color.NRGBA // 悬浮 tips 底色
+	fg, bg        color.NRGBA // material Palette（默认文字/底）
 }
 
 // lightPalette 浅色预设（= MVP 既有配色，逐值不变——§15.4 品牌色 + 浅白/浅灰）。
 func lightPalette() palette {
 	return palette{
-		brandColor:     color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
-		pillBg:         color.NRGBA{R: 0xFA, G: 0xFA, B: 0xFC, A: 0xFF},
-		windowBg:       color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
-		textDim:        color.NRGBA{R: 0x8A, G: 0x8F, B: 0x98, A: 0xFF},
-		textMuted:      color.NRGBA{R: 0x6B, G: 0x70, B: 0x78, A: 0xFF},
-		textError:      color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
-		textNotice:     color.NRGBA{R: 0xC0, G: 0x77, B: 0x00, A: 0xFF},
-		textSystem:     color.NRGBA{R: 0x8E, G: 0x6B, B: 0xC4, A: 0xFF},
-		cardThinking:   color.NRGBA{R: 0xE9, G: 0xEB, B: 0xF0, A: 0xFF},
-		cardTool:       color.NRGBA{R: 0xE7, G: 0xEA, B: 0xEF, A: 0xFF},
-		cardNotice:     color.NRGBA{R: 0xFD, G: 0xF2, B: 0xDC, A: 0xFF},
-		cardError:      color.NRGBA{R: 0xFB, G: 0xE4, B: 0xE4, A: 0xFF},
-		cardSystem:     color.NRGBA{R: 0xF1, G: 0xEB, B: 0xFA, A: 0xFF},
-		whiteText:      color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
-		iconDim:        color.NRGBA{R: 0x94, G: 0xA3, B: 0xB8, A: 0xFF},
-		disabledCircle: color.NRGBA{R: 0xD8, G: 0xDC, B: 0xE3, A: 0xFF},
-		tipBg:          color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF},
-		fg:             color.NRGBA{R: 0x00, G: 0x00, B: 0x00, A: 0xFF},
-		bg:             color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
+		brandColor:    color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
+		pillBg:        color.NRGBA{R: 0xFA, G: 0xFA, B: 0xFC, A: 0xFF},
+		windowBg:      color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
+		textDim:       color.NRGBA{R: 0x8A, G: 0x8F, B: 0x98, A: 0xFF},
+		textMuted:     color.NRGBA{R: 0x6B, G: 0x70, B: 0x78, A: 0xFF},
+		textError:     color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
+		textNotice:    color.NRGBA{R: 0xC0, G: 0x77, B: 0x00, A: 0xFF},
+		textSystem:    color.NRGBA{R: 0x8E, G: 0x6B, B: 0xC4, A: 0xFF},
+		cardThinking:  color.NRGBA{R: 0xE9, G: 0xEB, B: 0xF0, A: 0xFF},
+		cardTool:      color.NRGBA{R: 0xE7, G: 0xEA, B: 0xEF, A: 0xFF},
+		cardNotice:    color.NRGBA{R: 0xFD, G: 0xF2, B: 0xDC, A: 0xFF},
+		cardError:     color.NRGBA{R: 0xFB, G: 0xE4, B: 0xE4, A: 0xFF},
+		cardSystem:    color.NRGBA{R: 0xF1, G: 0xEB, B: 0xFA, A: 0xFF},
+		whiteText:     color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
+		iconDim:       color.NRGBA{R: 0x94, G: 0xA3, B: 0xB8, A: 0xFF},
+		actionDeny:    color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
+		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
+		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
+		tipBg:         color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF},
+		fg:            color.NRGBA{R: 0x00, G: 0x00, B: 0x00, A: 0xFF},
+		bg:            color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
 	}
 }
 
@@ -64,25 +69,27 @@ func lightPalette() palette {
 // 品牌色与 tips 白字恒定——§15.4 两版预设）。
 func darkPalette() palette {
 	return palette{
-		brandColor:     color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
-		pillBg:         color.NRGBA{R: 0x26, G: 0x2A, B: 0x2F, A: 0xFF},
-		windowBg:       color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
-		textDim:        color.NRGBA{R: 0x9A, G: 0xA1, B: 0xAB, A: 0xFF},
-		textMuted:      color.NRGBA{R: 0x90, G: 0x96, B: 0xA0, A: 0xFF},
-		textError:      color.NRGBA{R: 0xF0, G: 0x6A, B: 0x6A, A: 0xFF},
-		textNotice:     color.NRGBA{R: 0xE0, G: 0xA3, B: 0x3C, A: 0xFF},
-		textSystem:     color.NRGBA{R: 0xB4, G: 0x9B, B: 0xE8, A: 0xFF},
-		cardThinking:   color.NRGBA{R: 0x23, G: 0x26, B: 0x2B, A: 0xFF},
-		cardTool:       color.NRGBA{R: 0x21, G: 0x24, B: 0x2A, A: 0xFF},
-		cardNotice:     color.NRGBA{R: 0x34, G: 0x2D, B: 0x1E, A: 0xFF},
-		cardError:      color.NRGBA{R: 0x35, G: 0x24, B: 0x24, A: 0xFF},
-		cardSystem:     color.NRGBA{R: 0x2B, G: 0x27, B: 0x35, A: 0xFF},
-		whiteText:      color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
-		iconDim:        color.NRGBA{R: 0x7C, G: 0x87, B: 0x98, A: 0xFF},
-		disabledCircle: color.NRGBA{R: 0x3A, G: 0x3F, B: 0x47, A: 0xFF},
-		tipBg:          color.NRGBA{R: 0x2E, G: 0x32, B: 0x38, A: 0xFF},
-		fg:             color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
-		bg:             color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
+		brandColor:    color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
+		pillBg:        color.NRGBA{R: 0x26, G: 0x2A, B: 0x2F, A: 0xFF},
+		windowBg:      color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
+		textDim:       color.NRGBA{R: 0x9A, G: 0xA1, B: 0xAB, A: 0xFF},
+		textMuted:     color.NRGBA{R: 0x90, G: 0x96, B: 0xA0, A: 0xFF},
+		textError:     color.NRGBA{R: 0xF0, G: 0x6A, B: 0x6A, A: 0xFF},
+		textNotice:    color.NRGBA{R: 0xE0, G: 0xA3, B: 0x3C, A: 0xFF},
+		textSystem:    color.NRGBA{R: 0xB4, G: 0x9B, B: 0xE8, A: 0xFF},
+		cardThinking:  color.NRGBA{R: 0x23, G: 0x26, B: 0x2B, A: 0xFF},
+		cardTool:      color.NRGBA{R: 0x21, G: 0x24, B: 0x2A, A: 0xFF},
+		cardNotice:    color.NRGBA{R: 0x34, G: 0x2D, B: 0x1E, A: 0xFF},
+		cardError:     color.NRGBA{R: 0x35, G: 0x24, B: 0x24, A: 0xFF},
+		cardSystem:    color.NRGBA{R: 0x2B, G: 0x27, B: 0x35, A: 0xFF},
+		whiteText:     color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
+		iconDim:       color.NRGBA{R: 0x7C, G: 0x87, B: 0x98, A: 0xFF},
+		actionDeny:    color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
+		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
+		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
+		tipBg:         color.NRGBA{R: 0x2E, G: 0x32, B: 0x38, A: 0xFF},
+		fg:            color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
+		bg:            color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
 	}
 }
 
@@ -120,7 +127,9 @@ func applyPalette(p palette) {
 	cardSystem = p.cardSystem
 	whiteText = p.whiteText
 	iconDim = p.iconDim
-	disabledCircle = p.disabledCircle
+	actionDeny = p.actionDeny
+	actionAllow = p.actionAllow
+	actionElevate = p.actionElevate
 	tipBg = p.tipBg
 }
 
@@ -128,23 +137,25 @@ func applyPalette(p palette) {
 // material 的 fg/bg 不落包级槽——回读为零值，校正走 u.th/次窗快照。
 func currentPalette() palette {
 	return palette{
-		brandColor:     brandColor,
-		pillBg:         pillBg,
-		windowBg:       windowBg,
-		textDim:        textDim,
-		textMuted:      textMuted,
-		textError:      textError,
-		textNotice:     textNotice,
-		textSystem:     textSystem,
-		cardThinking:   cardThinking,
-		cardTool:       cardTool,
-		cardNotice:     cardNotice,
-		cardError:      cardError,
-		cardSystem:     cardSystem,
-		whiteText:      whiteText,
-		iconDim:        iconDim,
-		disabledCircle: disabledCircle,
-		tipBg:          tipBg,
+		brandColor:    brandColor,
+		pillBg:        pillBg,
+		windowBg:      windowBg,
+		textDim:       textDim,
+		textMuted:     textMuted,
+		textError:     textError,
+		textNotice:    textNotice,
+		textSystem:    textSystem,
+		cardThinking:  cardThinking,
+		cardTool:      cardTool,
+		cardNotice:    cardNotice,
+		cardError:     cardError,
+		cardSystem:    cardSystem,
+		whiteText:     whiteText,
+		iconDim:       iconDim,
+		actionDeny:    actionDeny,
+		actionAllow:   actionAllow,
+		actionElevate: actionElevate,
+		tipBg:         tipBg,
 	}
 }
 

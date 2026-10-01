@@ -104,17 +104,19 @@ type UI struct {
 	w *app.Window
 
 	// 窗口侧状态（仅帧循环 goroutine 读写；headless 不触碰，构造成零值可用）。
-	th        *material.Theme
-	editor    widget.Editor
-	logoDrag  gesture.Drag // logo 圆钮：拖动移窗（§15.1 把手含 logo）
-	logoRight logoRight    // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
-	tipShown  bool         // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
-	sendBtn   widget.Clickable
-	stopBtn   widget.Clickable
-	allowBtn  widget.Clickable
-	denyBtn   widget.Clickable
-	drag      gesture.Drag
-	hwnd      uintptr
+	th         *material.Theme
+	editor     widget.Editor
+	reasonEd   widget.Editor // D86：确认态原因编辑器（拒绝原因，可留空）
+	logoDrag   gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
+	logoRight  logoRight     // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
+	tipShown   bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
+	sendBtn    widget.Clickable
+	stopBtn    widget.Clickable
+	allowBtn   widget.Clickable
+	denyBtn    widget.Clickable
+	elevateBtn widget.Clickable // D86：提升权限钮（仅工具确认且有下一档时布局）
+	drag       gesture.Drag
+	hwnd       uintptr
 	// revealPending 启动防闪（D78）：挂接即隐藏、首帧 ULW 提交成功才揭示（激活前台）。
 	// 事件循环写（onHWND/fadePresent）、托盘线程读（showMain 呼出门）→ atomic。
 	revealPending atomic.Bool
@@ -178,6 +180,7 @@ type UI struct {
 
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
+	reasonFocus  bool // D86：确认开启后把焦点让入原因框（一次性，同 focusPending 口径）
 	focusPending bool
 	// caretFocused 编辑器焦点态（真窗 pass 捕获，fade pass 读——D62 caret 自绘：
 	// material.Editor 的 caret 由 gtx.Focused 门控，零值 Source 渲染不画 caret）。

@@ -99,8 +99,8 @@ func TestConfirmNonToolStaysPlain(t *testing.T) {
 	if m.blocks[0].chip.confirmA != "" {
 		t.Fatal("不应写入 chip")
 	}
-	if !strings.Contains(allText(m), "→ true") {
-		t.Fatal("非 chip 确认应保留文本行回显")
+	if !strings.Contains(allText(m), "→ 允许") {
+		t.Fatal("非 chip 确认应保留文本行回显（D86 中文回显）")
 	}
 }
 

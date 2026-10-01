@@ -239,6 +239,29 @@ func inputBtnRects(size image.Point, dp func(unit.Dp) int, right bool) image.Rec
 	return image.Rect(a.Min.X, a.Min.Y, a.Min.X+h, a.Min.Y+h)
 }
 
+// confirmBtnRects 确认态三钮窗口系矩形（pill 几何推导，D86 tips 直采用）：
+// 左→右 = [✗ 拒绝][✓ 允许][🔑 提升权限]（elevate=false 时无第三枚），⌀36、间距 8、
+// 行内垂直居中；最右钮右缘 = 胶囊右缘 − 12dp（D86 右内边距，含圆形光学校正）。
+// 与布局期的 Flex 排布是同一几何的两面（同 inputBtnRects 派生口径，非布局实测）。
+func confirmBtnRects(size image.Point, dp func(unit.Dp) int, elevate bool) []image.Rectangle {
+	_, pill, _ := inputRowRects(size.X, dp(pillTopDp), dp(inputRowDp), dp(inputGapDp), dp(sideMarginDp))
+	top := ballRect(size, dp).Min.Y // 行上 = logo 上（D49 换形不跳动，同 rowAnchor 口径）
+	d := dp(confirmBtnDp)
+	gap := dp(confirmBtnGapDp)
+	right := pill.Max.X - dp(confirmBtnEdgeDp)
+	cy := top + dp(inputRowDp)/2
+	n := 2
+	if elevate {
+		n = 3
+	}
+	rects := make([]image.Rectangle, n)
+	for i := n - 1; i >= 0; i-- { // 从最右（提升/允许）往左回排
+		rects[i] = image.Rect(right-d, cy-d/2, right, cy+d/2)
+		right -= d + gap
+	}
+	return rects
+}
+
 // overInputBtn 光标是否在输入栏圆钮上（cur = 光标屏幕坐标，生产传 cursorPos 直采）。
 // 分层窗按像素 alpha 命中穿透：光标到透明像素/窗外后零 pointer 事件，Hover 收不到
 // Leave（实测 tips 移开不消，D53）——显隐判定在事件态之上叠光标直采，与停靠悬停同口径。
@@ -256,7 +279,14 @@ func (u *UI) overInputBtn(right bool, cur point) bool {
 // gesture.Hover 的事件态不可靠（D85 实测：Enter 在 Move 下永不投递，仅 Press 会送），
 // 故不再参与本判定。无窗口句柄（headless）退化为纯矩形直采。
 func (u *UI) cursorHitsLogo(cur point) bool {
-	if !u.overInputBtn(false, cur) {
+	return u.cursorHitsRect(inputBtnRects(u.frameSize, u.frameMetric.Dp, false), cur)
+}
+
+// cursorHitsRect 通用钮命中直证（D85 口径）：矩形直采 × WindowFromPoint——OS 命中是
+// 鼠标路由的同一份真相，零事件场景照常成立、被遮挡与圆角外穿透像素天然排除；
+// 无窗口句柄（headless）退化为纯矩形直采。logo（D85）与确认态三钮 tips（D86）共用。
+func (u *UI) cursorHitsRect(r image.Rectangle, cur point) bool {
+	if !insideRect(r.Add(image.Pt(int(u.x), int(u.y))), cur) {
 		return false
 	}
 	if u.hwnd == 0 {

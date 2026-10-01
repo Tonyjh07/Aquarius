@@ -304,13 +304,15 @@ func (m *model) closeOpenChips() {
 // 其余（/rm 二次确认等）保持独立文本行。
 func (m *model) startConfirm(prompt string, reply chan port.ConfirmAnswer) {
 	m.confirm = &pendingConfirm{prompt: sanitizeControl(prompt), reply: reply}
+	m.u.reasonEd.SetText("") // D86：原因框清空待填
+	m.u.reasonFocus = true   // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性口径）
 	if i := m.openChipFor(m.confirm.prompt); i >= 0 {
 		m.blocks[i].chip.confirmQ = m.confirm.prompt
 		m.confirmChip = i
 		return
 	}
 	m.confirmChip = -1
-	m.add(blockPlain, m.confirm.prompt+" [y/N]")
+	m.add(blockPlain, m.confirm.prompt)
 }
 
 // openChipFor 确认问句归属的最新未完成 chip（D67）：问句含其工具名才算（confirmPrompt
@@ -339,22 +341,31 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	reply, prompt := m.confirm.reply, m.confirm.prompt
 	if m.confirmChip >= 0 && m.confirmChip < len(m.blocks) {
 		if c := m.blocks[m.confirmChip].chip; c != nil && c.confirmQ != "" {
-			c.confirmA = "拒绝"
-			if ans.Allow {
-				c.confirmA = "允许"
-			}
-			prompt = "" // chip 路径留痕在展开体，不再加文本行
+			c.confirmA = confirmEcho(ans) // D86：允许 / 拒绝 / 拒绝：<原因>
+			prompt = ""                   // chip 路径留痕在展开体，不再加文本行
 		}
 	}
 	m.confirm = nil
 	m.confirmChip = -1
 	if prompt != "" {
-		m.add(blockPlain, fmt.Sprintf("%s → %t", prompt, ans.Allow))
+		m.add(blockPlain, prompt+" → "+confirmEcho(ans))
 	}
 	select {
 	case reply <- ans:
 	default:
 	}
+}
+
+// confirmEcho 应答回显文案（D86）：允许 / 拒绝 / 拒绝：<原因>（原因消毒同问句；
+// Allow 时忽略原因）。chip confirmA 与 plain 行回显共用。
+func confirmEcho(ans port.ConfirmAnswer) string {
+	if ans.Allow {
+		return "允许"
+	}
+	if r := sanitizeControl(strings.TrimSpace(ans.Reason)); r != "" {
+		return "拒绝：" + r
+	}
+	return "拒绝"
 }
 
 // flushThink 把进行中的思维链落为定稿思考块（D34/§15.3：定稿带耗时秒数）。

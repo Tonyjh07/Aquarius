@@ -307,6 +307,44 @@ func TestCursorHitsLogo(t *testing.T) {
 	// 「hwnd=0 退化直采」分支——真窗行为归 GUI 手工验收（D85）。
 }
 
+// TestConfirmBtnRects 确认态三钮矩形推导（D86）：默认窗宽 608×460 @1x 下胶囊右缘
+// 532，最右钮右缘 = 532−12（D86 右内边距，含光学校正），⌀36、间距 8、行内垂直居中；
+// 顺序左→右恒 [✗ 拒绝][✓ 允许][🔑 提升（仅 elevate）]。tips 直采（confirmTipAt）
+// 与布局期 Flex 排布共用同一套 dp 常量，此处锁几何契约。
+func TestConfirmBtnRects(t *testing.T) {
+	dp := func(d unit.Dp) int { return int(d) }
+	size := image.Pt(608, 460)
+
+	rects2 := confirmBtnRects(size, dp, false)
+	if len(rects2) != 2 {
+		t.Fatalf("len = %d, want 2（无提升钮）", len(rects2))
+	}
+	want2 := []image.Rectangle{
+		image.Rect(440, 402, 476, 438), // ✗ 拒绝
+		image.Rect(484, 402, 520, 438), // ✓ 允许（最右）
+	}
+	for i, r := range rects2 {
+		if r != want2[i] {
+			t.Fatalf("rects2[%d] = %v, want %v", i, r, want2[i])
+		}
+	}
+
+	rects3 := confirmBtnRects(size, dp, true)
+	if len(rects3) != 3 {
+		t.Fatalf("len = %d, want 3", len(rects3))
+	}
+	want3 := []image.Rectangle{
+		image.Rect(396, 402, 432, 438), // ✗ 拒绝
+		image.Rect(440, 402, 476, 438), // ✓ 允许
+		image.Rect(484, 402, 520, 438), // 🔑 提升在最右
+	}
+	for i, r := range rects3 {
+		if r != want3[i] {
+			t.Fatalf("rects3[%d] = %v, want %v", i, r, want3[i])
+		}
+	}
+}
+
 // TestOverInputBtn tips 光标直采判定（D53）：圆钮矩形由 rowAnchor 派生（logo = 锚点
 // 左上方块、右钮 = 右上方块），命中 = 窗口位 + 矩形含光标屏幕坐标；帧未就绪不命中。
 // 分层窗透明像素/窗外零 pointer 事件，Hover 收不到 Leave——tips 熄灭全靠本判定。

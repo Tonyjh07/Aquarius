@@ -201,7 +201,7 @@ func TestConfirmFromModelReply(t *testing.T) {
 	if u.m.confirm != nil {
 		t.Fatal("应答后确认态应清除")
 	}
-	if !strings.Contains(allText(u.m), "允许执行？ → true") {
+	if !strings.Contains(allText(u.m), "允许执行？ → 允许") {
 		t.Fatalf("缺应答记录: %q", allText(u.m))
 	}
 }

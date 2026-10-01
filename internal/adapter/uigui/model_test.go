@@ -105,6 +105,104 @@ func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
 	}
 }
 
+// TestConfirmReasonEcho D86：拒绝原因回显进 chip confirmA 与 plain 行（消毒同问句）。
+func TestConfirmReasonEcho(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
+	reply := make(chan port.ConfirmAnswer, 1)
+	m.startConfirm("允许执行 term_exec？参数: {}", reply)
+	if m.confirmChip < 0 {
+		t.Fatal("工具确认应并入 chip")
+	}
+	m.replyConfirm(port.ConfirmAnswer{Reason: "路径越界[2J了"})
+	if got := m.blocks[0].chip.confirmA; got != "拒绝：路径越界了" {
+		t.Fatalf("confirmA = %q, want 拒绝：路径越界了（CSI 序列整段吞除）", got)
+	}
+
+	// 非 chip 确认（/rm 类）：plain 行回显带原因。
+	reply2 := make(chan port.ConfirmAnswer, 1)
+	m.startConfirm("确认删除 n4？", reply2)
+	m.replyConfirm(port.ConfirmAnswer{Reason: "留错了"})
+	if !strings.Contains(allText(m), "确认删除 n4？ → 拒绝：留错了") {
+		t.Fatalf("缺回显: %q", allText(m))
+	}
+
+	// 干拒与允许文案不变。
+	reply3 := make(chan port.ConfirmAnswer, 1)
+	m.startConfirm("再来？", reply3)
+	m.replyConfirm(port.ConfirmAnswer{})
+	if !strings.Contains(allText(m), "再来？ → 拒绝") {
+		t.Fatalf("干拒回显缺失: %q", allText(m))
+	}
+}
+
+// TestStartConfirmResetsReason D86：确认开启清空原因框并请求焦点让入。
+func TestStartConfirmResetsReason(t *testing.T) {
+	m, u := newTestModel(t)
+	u.reasonEd.SetText("上一次的原因")
+	m.startConfirm("确认删除？", make(chan port.ConfirmAnswer, 1))
+	if got := u.reasonEd.Text(); got != "" {
+		t.Fatalf("reasonEd = %q, want 清空", got)
+	}
+	if !u.reasonFocus {
+		t.Fatal("reasonFocus 未武装（焦点不会让入原因框）")
+	}
+}
+
+// TestNextPermLevel D86：权限档序列升一档；到顶/未知档不可升。
+func TestNextPermLevel(t *testing.T) {
+	cases := []struct {
+		cur, next string
+		ok        bool
+	}{
+		{"read-only", "strict", true},
+		{"strict", "permissive", true},
+		{"permissive", "full-access", true},
+		{"full-access", "", false},
+		{"unknown", "", false},
+		{"", "", false},
+	}
+	for _, tc := range cases {
+		next, ok := nextPermLevel(tc.cur)
+		if next != tc.next || ok != tc.ok {
+			t.Fatalf("nextPermLevel(%q) = %q, %v, want %q, %v", tc.cur, next, ok, tc.next, tc.ok)
+		}
+	}
+}
+
+// TestConfirmElevatable D86：🔑 仅工具确认且有下一档时可见。
+func TestConfirmElevatable(t *testing.T) {
+	u := newFrameUI() // 需要 u.m 双向就绪（confirmElevatable 读确认态）
+	m := u.m
+	u.opts.Status = func() Status { return Status{Level: "strict"} }
+
+	// 非 chip 确认（/rm 类）：不可见。
+	m.startConfirm("确认删除 n4？", make(chan port.ConfirmAnswer, 1))
+	if u.confirmElevatable() {
+		t.Fatal("非工具确认不应显示提升钮")
+	}
+	m.replyConfirm(port.ConfirmAnswer{})
+
+	// 工具确认：strict 档可见。
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
+	m.startConfirm("允许执行 term_exec？", make(chan port.ConfirmAnswer, 1))
+	if !u.confirmElevatable() {
+		t.Fatal("strict 档工具确认应显示提升钮")
+	}
+
+	// full-access 档：到顶不可见。
+	u.opts.Status = func() Status { return Status{Level: "full-access"} }
+	if u.confirmElevatable() {
+		t.Fatal("full-access 档不应显示提升钮")
+	}
+
+	// Status 未配置：不可见（提档无据）。
+	u.opts.Status = nil
+	if u.confirmElevatable() {
+		t.Fatal("无 Status 数据源不应显示提升钮")
+	}
+}
+
 // TestConfirmFlow 确认态：提示入转写、submit 路由应答（y/yes 语义）、拒答记录、
 // 提示出口消毒（§9）。
 func TestConfirmFlow(t *testing.T) {
@@ -114,7 +212,7 @@ func TestConfirmFlow(t *testing.T) {
 	if m.confirm == nil {
 		t.Fatal("确认态未设置")
 	}
-	if !strings.Contains(allText(m), "确认删除？ [y/N]") {
+	if !strings.Contains(allText(m), "确认删除？") {
 		t.Fatalf("缺确认提示: %q", allText(m))
 	}
 
@@ -130,7 +228,7 @@ func TestConfirmFlow(t *testing.T) {
 	if m.confirm != nil {
 		t.Fatal("应答后确认态应清除")
 	}
-	if !strings.Contains(allText(m), "确认删除？ → true") {
+	if !strings.Contains(allText(m), "确认删除？ → 允许") {
 		t.Fatalf("缺应答记录: %q", allText(m))
 	}
 	select {

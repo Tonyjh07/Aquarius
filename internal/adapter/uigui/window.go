@@ -51,6 +51,10 @@ const (
 	inputIconDp      = 20 // 胶囊内图标槽（canvas 20×20，灰占位不可点）
 	pillTopDp        = 8  // 输入行上边距（下方 16）
 	sideMarginDp     = 16 // 左右边距
+	confirmBtnDp     = 36 // D86：确认态三钮直径（行高 48 的 3/4）
+	confirmBtnGapDp  = 8  // D86：三钮间距
+	confirmBtnEdgeDp = 12 // D86：最右钮右缘到胶囊边缘（padding 16 − 4 圆形光学校正）
+	confirmBtnOptDp  = 4  // D86：光学校正量（布局期负内边距实现上面的 12）
 	rowGapDp         = 6  // 转写行间距
 	bubblePadXDp     = 12 // 气泡内边距
 	bubblePadYDp     = 7
@@ -101,8 +105,10 @@ var (
 
 	// 图标槽占位灰（canvas 稿 #94A3B8；配色为占位，D49）。
 	iconDim = color.NRGBA{R: 0x94, G: 0xA3, B: 0xB8, A: 0xFF}
-	// 确认态置灰右圆（D49：几何不随状态变，只换色）。
-	disabledCircle = color.NRGBA{R: 0xD8, G: 0xDC, B: 0xE3, A: 0xFF}
+	// 确认态三钮（D86；令牌槽由主题预设回填，两版同值——实色圆白字两主题对比度均足）。
+	actionDeny    = color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF}
+	actionAllow   = color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF}
+	actionElevate = color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF}
 )
 
 // point/rect Win32 坐标对（中性定义：非 Windows 构建仅作占位类型）。
@@ -1042,13 +1048,11 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	pst.Pop()
 	u.record(pill.Add(image.Pt(0, absY)), rowH/2, pillBg, clipRect)
 
-	// 右圆钮（恒在，几何不随状态变、动画期只平移，D49）：idle = 发送、生成中 = 停止、
-	// 确认态 = 置灰不可点。
+	// 右圆钮（恒在，几何不随状态变、动画期只平移，D49）：idle = 发送、生成中 = 停止
+	// ——确认态不特判（D86：工具确认发生在 Turn 内，停止键照常可点，取消整轮语义
+	// 不变、迟到应答缓冲兜底；/rm 等非生成中确认遇 idle 为发送键，submitEditor 拦截）。
 	fill, stop, cl := brandColor, false, &u.sendBtn
-	switch {
-	case u.m.confirm != nil:
-		fill, cl = disabledCircle, nil
-	case u.generating.Load():
+	if u.generating.Load() {
 		fill, stop, cl = textError, true, &u.stopBtn
 	}
 	off := op.Offset(send.Min).Push(gtx.Ops)
@@ -1085,13 +1089,21 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			}
 			shown = true
 		}
-		if u.m.confirm == nil && u.sendBtn.Hovered() && !u.generating.Load() &&
+		if u.m.confirm != nil {
+			// D86：确认态三钮 tips（图标无文字，tooltip 承担可发现性）——布局几何
+			// 直采 × OS 命中直证（D85 口径；Clickable.Hovered 事件态在本窗不可靠）。
+			if txt, ok := u.confirmTipAt(cur); ok {
+				u.hoverTip(gtx, absY, txt, true)
+				shown = true
+			}
+		} else if u.sendBtn.Hovered() && !u.generating.Load() &&
 			u.overInputBtn(true, cur) {
 			u.hoverTip(gtx, absY, "发送", true)
 			shown = true
 		}
-		if u.m.confirm == nil && u.generating.Load() && u.stopBtn.Hovered() &&
+		if u.generating.Load() && u.stopBtn.Hovered() &&
 			u.overInputBtn(true, cur) {
+			// D86：确认态恢复（右圆停止键不再置灰）。
 			u.hoverTip(gtx, absY, "停止", true)
 			shown = true
 		}
@@ -1245,6 +1257,9 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 			Alignment: layout.Middle,
 		}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if u.m.confirm != nil {
+					return layout.Dimensions{} // D86：确认态灰槽隐藏（本就不可点占位）
+				}
 				return iconSlot(gtx, drawPaperclip)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -1254,7 +1269,14 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 					// 无效 → 文本视觉偏上）：放开 Min 让其返回自然行高，由 Flex 垂直居中（§15.2）。
 					gtx.Constraints.Min.Y = 0
 					if u.m.confirm != nil {
-						return material.Body2(u.th, u.m.confirm.prompt).Layout(gtx)
+						// D86：原因编辑器（拒绝原因，可留空；Enter = 拒绝附原因）。
+						re := material.Editor(u.th, &u.reasonEd, "reason……")
+						re.TextSize = unit.Sp(15)
+						dims := re.Layout(gtx)
+						if u.inFadePass && u.caretFocused {
+							u.drawReasonCaret(gtx, dims) // 同 D62：fade pass caret 自绘
+						}
+						return dims
 					}
 					ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
 					ed.TextSize = unit.Sp(15)
@@ -1266,21 +1288,100 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if u.m.confirm != nil {
+					return layout.Dimensions{}
+				}
 				return iconSlot(gtx, drawMaximize)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm == nil {
 					return layout.Dimensions{}
 				}
-				return layout.Inset{Left: unit.Dp(inputGapDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx,
-						layout.Rigid(u.actionBtn(&u.allowBtn, "允许", brandColor)),
-						layout.Rigid(u.actionBtn(&u.denyBtn, "拒绝", textMuted)),
-					)
+				// D86 确认动作区：左→右 [✗ 拒绝][✓ 允许][🔑 提升权限]（⌀36、间距 8；
+				// 右内边距 12 = 胶囊 padding 16 − 4 圆形光学校正）。
+				return layout.Inset{Left: unit.Dp(inputGapDp), Right: unit.Dp(-confirmBtnOptDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					kids := []layout.FlexChild{
+						layout.Rigid(confirmBtn(gtx, &u.denyBtn, actionDeny, glyphDeny)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(confirmBtnGapDp)}.Layout(gtx,
+								confirmBtn(gtx, &u.allowBtn, actionAllow, glyphAllow))
+						}),
+					}
+					if u.confirmElevatable() {
+						kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(confirmBtnGapDp)}.Layout(gtx,
+								confirmBtn(gtx, &u.elevateBtn, actionElevate, glyphKey))
+						}))
+					}
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)
 				})
 			}),
 		)
 	})
+}
+
+// confirmBtn 确认态动作圆钮（D86：⌀36 实色圆 + 白色字形，点击热区即整圆）。
+func confirmBtn(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, glyph func(gtx layout.Context, d int, fill color.NRGBA)) func(gtx layout.Context) layout.Dimensions {
+	return func(gtx layout.Context) layout.Dimensions {
+		d := gtx.Dp(confirmBtnDp)
+		draw := func(gtx layout.Context) layout.Dimensions {
+			box := image.Rectangle{Max: image.Pt(d, d)}
+			paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, d/2).Op(gtx.Ops))
+			glyph(gtx, d, fill)
+			return layout.Dimensions{Size: image.Pt(d, d)}
+		}
+		return cl.Layout(gtx, draw)
+	}
+}
+
+// glyphDeny ✗（两对角白杆）。
+func glyphDeny(gtx layout.Context, d int, _ color.NRGBA) {
+	a := float32(d) * 0.16
+	cx, cy := float32(d)/2, float32(d)/2
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(f32.Pt(cx-a, cy-a))
+	p.LineTo(f32.Pt(cx+a, cy+a))
+	p.MoveTo(f32.Pt(cx+a, cy-a))
+	p.LineTo(f32.Pt(cx-a, cy+a))
+	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
+}
+
+// glyphAllow ✓（短杆下探 + 长臂上挑）。
+func glyphAllow(gtx layout.Context, d int, _ color.NRGBA) {
+	a := float32(d) * 0.20
+	cx, cy := float32(d)/2, float32(d)/2
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(f32.Pt(cx-a, cy))
+	p.LineTo(f32.Pt(cx-a/3, cy+a*0.7))
+	p.LineTo(f32.Pt(cx+a, cy-a*0.7))
+	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
+}
+
+// glyphKey 🔑（环头 + 杆 + 两齿；环 = 白实心圆挖钮底色孔——实色钮上与描边等效，
+// 本版 gio 无 clip.Circle，方盒 UniformRRect 即内切圆）。
+func glyphKey(gtx layout.Context, d int, fill color.NRGBA) {
+	a := float32(d) * 0.20
+	cx, cy := float32(d)/2, float32(d)/2
+	hx := cx - a*0.9
+	headR := a * 0.62
+	headBox := image.Rect(int(hx-headR), int(cy-headR), int(hx+headR), int(cy+headR))
+	paint.FillShape(gtx.Ops, whiteText,
+		clip.UniformRRect(headBox, headBox.Dx()/2).Op(gtx.Ops))
+	if inner := headBox.Inset(2); !inner.Empty() {
+		paint.FillShape(gtx.Ops, fill,
+			clip.UniformRRect(inner, inner.Dx()/2).Op(gtx.Ops))
+	}
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(f32.Pt(hx+headR, cy)) // 杆：环右缘 → 右端
+	p.LineTo(f32.Pt(cx+a, cy))
+	p.MoveTo(f32.Pt(cx+a*0.45, cy)) // 齿 1
+	p.LineTo(f32.Pt(cx+a*0.45, cy+a*0.55))
+	p.MoveTo(f32.Pt(cx+a, cy)) // 齿 2
+	p.LineTo(f32.Pt(cx+a, cy+a*0.75))
+	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
 }
 
 // iconSlot 胶囊内 20dp 图标槽（D49/§15.2：canvas 20×20 灰占位、不可点——附件/展开实现时启用）。
@@ -1589,7 +1690,8 @@ func (u *UI) statusText() string {
 // 内部也会 Update 但丢弃返回的 SubmitEvent——必须在渲染前自己循环取尽。
 func (u *UI) updateEditor(gtx layout.Context) {
 	if u.m.confirm != nil {
-		return // 确认态：输入栏是按钮组，编辑器不消费按键（§15.2）
+		u.updateReasonEditor(gtx) // D86：确认态 = 原因编辑器消费按键（主编辑器隐藏）
+		return
 	}
 	if !u.inFadePass {
 		u.caretFocused = gtx.Focused(&u.editor) // 真窗 pass 捕获（fade pass 零 Source 恒 false）
@@ -1627,8 +1729,111 @@ func (u *UI) drawCaret(gtx layout.Context, dims layout.Dimensions) {
 	cl.Pop()
 }
 
-// submitEditor 提交编辑器内容（发送键与 Enter 同路）；确认态由 model.submit 路由应答。
+// updateReasonEditor 消费确认态原因编辑器事件（D86）：Enter → SubmitEvent → 拒绝
+// （附原因；允许/提升必经按钮）。焦点一次性让入（reasonFocus，主编辑器确认态隐藏
+// ——不转移则键入落空），沿 D63 口径不回投常驻焦点。
+func (u *UI) updateReasonEditor(gtx layout.Context) {
+	if !u.inFadePass {
+		u.caretFocused = gtx.Focused(&u.reasonEd) // 真窗 pass 捕获（同主编辑器）
+	}
+	if u.reasonFocus {
+		u.reasonFocus = false
+		gtx.Execute(key.FocusCmd{Tag: &u.reasonEd})
+	}
+	for {
+		evt, ok := u.reasonEd.Update(gtx)
+		if !ok {
+			break
+		}
+		if _, isSubmit := evt.(widget.SubmitEvent); isSubmit {
+			u.m.replyConfirm(port.ConfirmAnswer{Reason: u.confirmReason()})
+		}
+	}
+}
+
+// drawReasonCaret 原因编辑器 fade pass caret 自绘（drawCaret 的 reasonEd 版，D86）。
+func (u *UI) drawReasonCaret(gtx layout.Context, dims layout.Dimensions) {
+	c := u.reasonEd.CaretCoords()
+	asc := int(float64(dims.Size.Y) * 0.8)
+	rect := image.Rect(int(c.X)-1, int(c.Y)-asc, int(c.X)+1, int(c.Y)+dims.Size.Y-asc)
+	rect.Min.X = max(rect.Min.X, 0)
+	if rect.Empty() {
+		return
+	}
+	cl := clip.Rect(rect).Push(gtx.Ops)
+	paint.Fill(gtx.Ops, u.th.Palette.Fg)
+	cl.Pop()
+}
+
+// confirmReason 取原因文本（TrimSpace + 控制序列消毒，同确认问句口径）。
+func (u *UI) confirmReason() string {
+	return sanitizeControl(strings.TrimSpace(u.reasonEd.Text()))
+}
+
+// nextPermLevel 权限档序列的下一档（D86）：无下一档（已 full-access / 档名未知）
+// 返回 false。
+func nextPermLevel(level string) (string, bool) {
+	for i, lv := range permLevels {
+		if lv == level && i+1 < len(permLevels) {
+			return permLevels[i+1], true
+		}
+	}
+	return "", false
+}
+
+// confirmElevatable 🔑 提升钮可见性（D86）：仅工具确认（问句并入 chip，confirmChip ≥ 0）
+// 且当前档有下一档时显示；/rm 等非工具确认与 full-access 档隐藏。
+func (u *UI) confirmElevatable() bool {
+	if u.m.confirm == nil || u.m.confirmChip < 0 {
+		return false
+	}
+	if u.opts.Status == nil {
+		return false
+	}
+	_, ok := nextPermLevel(u.opts.Status().Level)
+	return ok
+}
+
+// confirmElevate 一键提档放行（D86）：经输入通道投 /permission <下一档>（托盘 D73
+// 同路径，PersistLevel 写回 config；转写回显由 /permission 报告承载）+ 放行本次——
+// 放行是显式点击授权，档位只影响后续判定，二者无时序依赖。投递失败（缓冲满）只
+// 降级为放行，不阻塞应答。
+func (u *UI) confirmElevate() {
+	if next, ok := nextPermLevel(u.opts.Status().Level); ok {
+		u.m.submitCommand("/permission " + next)
+	}
+	u.m.replyConfirm(port.ConfirmAnswer{Allow: true})
+}
+
+// confirmTipAt 确认态三钮 tips 判定（D86）：窗口系矩形直采 × OS 命中直证（D85）。
+// 返回 (tooltip 文本, 是否命中)；按钮在胶囊右段，tip 右对齐。
+func (u *UI) confirmTipAt(cur point) (string, bool) {
+	if u.frameSize.X <= 0 || u.frameMetric.PxPerDp <= 0 {
+		return "", false
+	}
+	elevate := u.confirmElevatable()
+	rects := confirmBtnRects(u.frameSize, u.frameMetric.Dp, elevate)
+	texts := make([]string, len(rects))
+	texts[0] = "拒绝"
+	texts[1] = "允许"
+	if elevate {
+		next, _ := nextPermLevel(u.opts.Status().Level)
+		texts[2] = "提升权限 → " + next
+	}
+	for i, r := range rects {
+		if u.cursorHitsRect(r, cur) {
+			return texts[i], true
+		}
+	}
+	return "", false
+}
+
+// submitEditor 提交编辑器内容（发送键与 Enter 同路）；确认态无动作——D86：应答经
+// 三钮/原因框 Enter，拦截以防主编辑器旧草稿被 submit 误当 y/N 应答。
 func (u *UI) submitEditor() {
+	if u.m.confirm != nil {
+		return
+	}
 	text := strings.TrimSpace(u.editor.Text())
 	if text == "" {
 		return
@@ -1653,7 +1858,10 @@ func (u *UI) updateClicks(gtx layout.Context) {
 		u.m.replyConfirm(port.ConfirmAnswer{Allow: true})
 	}
 	if u.denyBtn.Clicked(gtx) {
-		u.m.replyConfirm(port.ConfirmAnswer{})
+		u.m.replyConfirm(port.ConfirmAnswer{Reason: u.confirmReason()})
+	}
+	if u.elevateBtn.Clicked(gtx) {
+		u.confirmElevate() // D86：/permission 升一档 + 放行本次
 	}
 	// 工具 chip 头部点击 → 折叠/展开（D67；m.blocks 只增，块序即 chipIdx）。
 	for i, b := range u.m.blocks {
@@ -1872,20 +2080,6 @@ func (u *UI) clickHeld() bool {
 		dy = -dy
 	}
 	return dx <= dragClickSlackPx && dy <= dragClickSlackPx
-}
-
-// actionBtn 动作键（停止/允许/拒绝；主题色底白字）。
-func (u *UI) actionBtn(cl *widget.Clickable, label string, bg color.NRGBA) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		b := material.Button(u.th, cl, label)
-		b.Background = bg
-		b.Color = whiteText
-		b.TextSize = unit.Sp(14)
-		b.Inset = layout.Inset{
-			Left: unit.Dp(14), Right: unit.Dp(14), Top: unit.Dp(8), Bottom: unit.Dp(8),
-		}
-		return b.Layout(gtx)
-	}
 }
 
 // actionCircle 右侧主操作圆钮（D49/§15.2：⌀ = 行高，三态恒在同一位置、几何不随状态变）：
