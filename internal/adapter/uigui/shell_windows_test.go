@@ -2,7 +2,10 @@
 
 package uigui
 
-import "testing"
+import (
+	"image"
+	"testing"
+)
 
 // TestTopMostHandle HWND_TOPMOST(-1)/HWND_NOTOPMOST(-2) 的补码取值
 // （置顶开关与 overlay 同步共用，§15.1）。
@@ -110,6 +113,38 @@ func TestMenuDispatchNew(t *testing.T) {
 		}
 	default:
 		t.Fatal("inCh 未收到 /new")
+	}
+}
+
+// TestShowMainRepresentsAfterReveal D88 呼出补提交：隐藏期间 presentable=false
+// 不提交 ULW，重显瞬间 DWM 可能露 Gio 不透明表面——showMain 揭示后应立即以最后
+// 一次合成位图补提交一次（与揭示帧补提交同一不变量）。
+func TestShowMainRepresentsAfterReveal(t *testing.T) {
+	if mainHWND != 0 {
+		t.Skip("测试进程内已有主窗句柄")
+	}
+	oldReveal := revealMain
+	revealMain = func(uintptr) {}
+	defer func() { revealMain = oldReveal }()
+	calls := 0
+	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+		calls++
+		return true
+	}
+	defer func() { presentMain = mainPresent }()
+
+	mainHWND = 0x1234 // windowRectPx 拿不到真矩形 → 回退 u.x/u.y（同 TestFadePresentSubmitsBitmap 口径）
+	defer func() { mainHWND = 0 }()
+
+	u := newFrameUI()
+	u.inbox = make(chan uiMsg, 8)
+	u.done = make(chan struct{})
+	u.frameSize = image.Pt(100, 80)
+	u.fadeBuf = make([]byte, 100*80*4)
+
+	u.showMain()
+	if calls != 1 {
+		t.Fatalf("呼出揭示后应补提交一次, got %d", calls)
 	}
 }
 

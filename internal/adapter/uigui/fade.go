@@ -468,6 +468,16 @@ func (u *UI) fadePresent(composed bool) {
 		return
 	}
 	if !composed {
+		// D88 取证：揭示期合成失败节流留证（冷启动一次性竞态无法现场复现——
+		// hwnd/尺寸/GPU 任一未就绪都会走到这里，下次出现直接有据可查）。
+		if u.revealPending.Load() {
+			fadeStallN++
+			if fadeStallN <= 8 {
+				msg := fmt.Sprintf("[fade] 揭示期合成未就绪 x%d: hwnd=%x size=%dx%d presentable=%v",
+					fadeStallN, u.hwnd, u.frameSize.X, u.frameSize.Y, u.presentable())
+				fmt.Println(msg)
+			}
+		}
 		return
 	}
 	x, y := u.x, u.y
@@ -481,12 +491,37 @@ func (u *UI) fadePresent(composed bool) {
 		pinWheelCursor(u.fadeBuf, u.frameSize, x, y, cursorPos())
 	}
 	if presentMain(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha) && u.revealPending.Swap(false) {
-		revealMain(u.hwnd) // D78：首帧 ULW 已提交 → 揭示（显示 + 激活前台），首个可见帧带内容
+		revealMain(u.hwnd)     // D78：首帧 ULW 已提交 → 揭示（显示 + 激活前台），首个可见帧带内容
+		u.representAfterShow() // D88：揭示后可见态立即补提交（防 DWM 露 Gio 不透明表面）
 	}
+}
+
+// representAfterShow 揭示/呼出后的可见态补提交（D88）：隐藏期间 presentable=false
+// 不提交 ULW，ShowWindow 重显瞬间 DWM 可能呈现 Gio 的重定向表面（事件 pass 恒涂
+// 兜底底色 → 整幅不透明），直到下一次 ULW 才恢复——静默零帧（D50）下「下一次」
+// 就是用户的首次点击（构建后首启实测一次性）。此处立即以最后一次合成位图再提交
+// 一次，把「可见」与「分层位图生效」焊死：ShowWindow 与补提交同经 onWindowThread
+// 按序执行，事件循环与帧循环同 goroutine、fadeBuf 无并发。位图未就绪/尺寸与实测
+// 矩形不符则跳过（同 fadePresent 口径，常规帧兜底）。
+func (u *UI) representAfterShow() {
+	if u.fadeBuf == nil || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
+		return
+	}
+	x, y := u.x, u.y
+	if rc, ok := windowRectPx(); ok {
+		if int(rc.right-rc.left) != u.frameSize.X || int(rc.bottom-rc.top) != u.frameSize.Y {
+			return
+		}
+		x, y = rc.left, rc.top
+	}
+	presentMain(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha)
 }
 
 // presentMain 提交函数槽（测试注入点；生产恒 mainPresent——Windows 实作 / 非 Windows no-op）。
 var presentMain = mainPresent
+
+// fadeStallN 揭示期合成失败计数（D88 取证日志节流；帧循环 goroutine 独占）。
+var fadeStallN int
 
 // revealMain 揭示函数槽（测试注入点；生产恒 revealMainWindow——Windows 实作 / 非 Windows no-op）。
 var revealMain = revealMainWindow

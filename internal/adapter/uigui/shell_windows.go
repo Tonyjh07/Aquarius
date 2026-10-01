@@ -497,6 +497,7 @@ func (u *UI) showMain() {
 		return
 	}
 	revealMain(h)
+	u.representAfterShow() // D88：呼出重显后补提交（隐藏期间无 ULW，防裸 Gio 表面）
 	u.post(showExpandMsg{})
 }
 

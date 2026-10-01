@@ -320,6 +320,63 @@ func TestFadePresentSubmitsBitmap(t *testing.T) {
 	}
 }
 
+// TestFadePresentRevealRepresents D88：揭示帧在 revealMain 后立即补提交一次——
+// ShowWindow 重显瞬间 DWM 可能呈现 Gio 的不透明重定向表面（构建后首启一次性竞态，
+// 无法现场复现），可见态必须有紧随的 ULW 提交焊死；revealPending 清零后不再补。
+func TestFadePresentRevealRepresents(t *testing.T) {
+	u := newFrameUI()
+	u.hwnd = 1
+	u.frameSize = image.Pt(100, 80)
+	u.fadeBuf = make([]byte, 100*80*4)
+	u.revealPending.Store(true)
+
+	oldReveal := revealMain
+	revealMain = func(uintptr) {}
+	defer func() { revealMain = oldReveal }()
+	calls := 0
+	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+		calls++
+		return true
+	}
+	defer func() { presentMain = mainPresent }()
+
+	u.fadePresent(true)
+	if calls != 2 {
+		t.Fatalf("揭示帧应提交两次（首帧 + 揭示后补提交）, got %d", calls)
+	}
+	u.fadePresent(true)
+	if calls != 3 {
+		t.Fatalf("revealPending 清零后应恢复单次提交, got %d", calls)
+	}
+}
+
+// TestRepresentAfterShow D88：补提交以最后一次合成位图为准——位图未就绪跳过，
+// 就绪后按 u.x/u.y（无实测矩形时）提交一次。
+func TestRepresentAfterShow(t *testing.T) {
+	u := newFrameUI()
+	u.frameSize = image.Pt(100, 80)
+	u.x, u.y, u.alpha = 3, 4, 200
+
+	calls := 0
+	var gotX, gotY int32
+	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+		calls++
+		gotX, gotY = x, y
+		return true
+	}
+	defer func() { presentMain = mainPresent }()
+
+	u.representAfterShow() // fadeBuf 未就绪
+	if calls != 0 {
+		t.Fatalf("位图未就绪不应提交, got %d", calls)
+	}
+	u.fadeBuf = make([]byte, 100*80*4)
+	u.representAfterShow()
+	if calls != 1 || gotX != 3 || gotY != 4 {
+		t.Fatalf("calls=%d pos=(%d,%d), want 1 次 (3,4)", calls, gotX, gotY)
+	}
+}
+
 // ---- D78 启动显隐时序（挂接即隐藏 → 首帧 ULW 成功即揭示）----
 
 // TestPresentableDuringReveal 合成/提交门（D78）：主窗隐藏时不提交（hideMain 语义——
