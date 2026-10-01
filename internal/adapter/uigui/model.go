@@ -171,8 +171,29 @@ func (m *model) commit(msg conversation.Message) {
 			m.add(blockSystem, text)
 		}
 	default:
-		// user / tool 节点无事件面（输入与工具行已单独入块）。
+		// user / tool 节点无独立事件面：工具行由 chip 呈现；user 行已在 submit 时
+		// 回显入块——但回显时节点尚不存在、块无 ID（D87），此处按「最早未盖章且
+		// 文本一致」回填节点 ID，分叉条（D81）在实时会话才能出现。
+		if msg.Role == conversation.RoleUser && text != "" {
+			m.stampUserBlock(text, msg.ID)
+		}
 		m.resetDraft()
+	}
+}
+
+// stampUserBlock 给回显的用户行补盖节点 ID（D87）：按「最早未盖章且文本一致」匹配
+// ——回显与提交同经输入通道串行 FIFO，重名按序对齐；命令行回显以 "/" 开头、
+// parseInput 恒路由为命令、永不会成为节点文本，插队也不会被错盖。找不到匹配
+// （如附件等无文本提交）静默跳过，维持无 ID 现状。
+func (m *model) stampUserBlock(text string, id conversation.MessageID) {
+	want := sanitizeControl(text)
+	for i := range m.blocks {
+		b := &m.blocks[i]
+		if b.kind != blockUser || b.id != "" || sanitizeControl(b.text) != want {
+			continue
+		}
+		b.id = id
+		return
 	}
 }
 

@@ -28,6 +28,54 @@ func newBranchUI(tree port.TreeView) *UI {
 	return u
 }
 
+// TestCommitStampsUserEcho D87 复现：实时路径 submit 回显的 user 块没有节点 ID
+// （分叉条跳过空 ID 块 → /goto 后再发消息、分叉已建但按钮不出现），user 节点
+// commit 时应按「最早未盖章且文本一致」回填 ID，分叉条随即出现。
+func TestCommitStampsUserEcho(t *testing.T) {
+	// 新消息节点 n2 与旧分支 a_old 是同级（树里孩子数 2，用户实测场景）。
+	u := newBranchUI(fakeTree{
+		"n2": {IDs: []conversation.MessageID{"a_old", "n2"}, Index: 1},
+	})
+	u.m.submit("再来一条")
+	if b := u.m.blocks[0]; b.kind != blockUser || b.id != "" {
+		t.Fatalf("block = %+v, want 未盖章 user 回显块", b)
+	}
+	u.m.commit(conversation.Message{
+		ID:      "n2",
+		Role:    conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "再来一条"}},
+	})
+	if b := u.m.blocks[0]; b.id != "n2" {
+		t.Fatalf("回显块 id = %q, want n2（commit 应回填）", b.id)
+	}
+	strips := u.branchStrips()
+	if len(strips) != 1 || strips[0].id != "n2" || strips[0].index != 1 || !strips[0].right {
+		t.Fatalf("strips = %+v, want n2 的右对齐分叉条 index=1", strips)
+	}
+}
+
+// TestCommitStampMatching D87 匹配规则：重名文本按 FIFO 对齐；文本不一致不盖章；
+// 命令行回显（永不为节点文本）不被错盖。
+func TestCommitStampMatching(t *testing.T) {
+	u := newBranchUI(fakeTree{})
+	m := u.m
+	m.submit("hi")
+	m.submit("hi")
+	m.submit("/goto x") // 排队命令：回显但永不成为节点
+	m.commit(conversation.Message{ID: "n1", Role: conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "hi"}}})
+	m.commit(conversation.Message{ID: "n2", Role: conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "hi"}}})
+	if got := [3]conversation.MessageID{m.blocks[0].id, m.blocks[1].id, m.blocks[2].id}; got != [3]conversation.MessageID{"n1", "n2", ""} {
+		t.Fatalf("ids = %v, want [n1 n2 ]（FIFO 对齐，命令回显不盖章）", got)
+	}
+	m.commit(conversation.Message{ID: "n3", Role: conversation.RoleUser,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "别的"}}})
+	if m.blocks[2].id != "" {
+		t.Fatalf("命令回显被错盖: %q", m.blocks[2].id)
+	}
+}
+
 // TestBranchStrips 分叉条生成（D81）：仅「带节点 ID 且同级 ≥2」的正文块生成一条；
 // 同级唯一的节点、无 ID 的块（notice/思考/命令输出）都不生成；对齐随气泡。
 func TestBranchStrips(t *testing.T) {
