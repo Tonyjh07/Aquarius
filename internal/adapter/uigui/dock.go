@@ -250,6 +250,21 @@ func (u *UI) overInputBtn(right bool, cur point) bool {
 	return insideRect(r.Add(image.Pt(int(u.x), int(u.y))), cur)
 }
 
+// cursorHitsLogo 光标命中 logo 钮（D85，tips 门控的最终判定）：矩形直采（上）×
+// OS 命中直证——WindowFromPoint 是鼠标路由的同一份真相，窗口出现在静止光标下、
+// 首次悬停等零事件场景照常成立，且天然排除被遮挡（命中他窗）与矩形圆角外穿透像素。
+// gesture.Hover 的事件态不可靠（D85 实测：Enter 在 Move 下永不投递，仅 Press 会送），
+// 故不再参与本判定。无窗口句柄（headless）退化为纯矩形直采。
+func (u *UI) cursorHitsLogo(cur point) bool {
+	if !u.overInputBtn(false, cur) {
+		return false
+	}
+	if u.hwnd == 0 {
+		return true
+	}
+	return windowFromPoint(cur) == u.hwnd
+}
+
 // anchorFor 当前状态的可见锚点（夹取/吸附共用口径，D50/D52）：收起 = 球、
 // 展开 = 输入栏包围盒（转写消息区可越出上沿）。
 func (u *UI) anchorFor() (image.Rectangle, bool) {

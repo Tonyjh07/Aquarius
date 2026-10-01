@@ -26,6 +26,7 @@ var (
 
 	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
 	procGetCursorPos        = user32.NewProc("GetCursorPos")
+	procWindowFromPoint     = user32.NewProc("WindowFromPoint")
 	procSetWindowPos        = user32.NewProc("SetWindowPos")
 	procGetWindowRect       = user32.NewProc("GetWindowRect")
 	procGetWindowLongPtrW   = user32.NewProc("GetWindowLongPtrW")
@@ -154,6 +155,15 @@ func cursorPos() point {
 	var pt point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	return pt
+}
+
+// windowFromPoint 光标处的顶层窗口（OS 命中判定的同款查询，D85）：返回 0 = 无窗口。
+// WindowFromPoint 的 POINT 参数按 **值** 传递（x64 单寄存器：低 32 位 = x、高 32 位 = y，
+// 两成员均为原始 32 位，负坐标不符号扩展）。
+func windowFromPoint(p point) uintptr {
+	arg := uintptr(uint32(p.x)) | uintptr(uint32(p.y))<<32
+	h, _, _ := procWindowFromPoint.Call(arg)
+	return h
 }
 
 // platformWorkArea 最近显示器工作区（查询类直接调）——锚点夹取/吸附/停靠共用口径

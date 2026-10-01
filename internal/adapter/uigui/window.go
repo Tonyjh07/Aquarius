@@ -1061,7 +1061,6 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	// 一致（收尾切收起态无缝）；p=1 三段不重叠、顺序无副作用。悬停 tips、拖动移窗、单击互切。
 	drawLogo(gtx, logo)
 	gst := clip.Rect(logo).Push(gtx.Ops)
-	u.logoHover.Add(gtx.Ops)
 	u.logoDrag.Add(gtx.Ops)
 	u.logoRight.add(gtx.Ops, logo) // D72：右键热区 = logo 钮矩形
 	gst.Pop()
@@ -1074,7 +1073,9 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	shown := false
 	if !inAnim {
 		cur := cursorPos()
-		if u.logoHovered && u.overInputBtn(false, cur) {
+		// D85：logo 门控 = 矩形直采 × WindowFromPoint 命中直证（事件态不可靠——
+		// Enter 在「窗口出现于静止光标下/首次悬停」场景永不投递，仅 Press 会送）。
+		if u.cursorHitsLogo(cur) {
 			// D82/S1-1g：事实快照就绪则显多行事实卡，未就绪（零值）回退启动提示。
 			if lines := u.factsCard(); len(lines) > 0 {
 				u.hoverCard(gtx, absY, lines, false)
@@ -1777,14 +1778,11 @@ func (u *UI) requestLogoMenu() {
 	postLogoMenu()
 }
 
-// updateLogo logo 圆钮手势（§15.1 把手含 logo）：悬停驱动启动 tips；拖动移窗；
-// 单击（位移小于 dragClickSlackPx）= 收起回球。收起态圆钮区不存在（事件归背景
-// 把手），悬停/拖动循环空转并清悬停态——右键菜单例外，收起态照跑（球即 logo，D72）。
+// updateLogo logo 圆钮手势（§15.1 把手含 logo）：拖动移窗；单击（位移小于
+// dragClickSlackPx）= 收起回球。悬停 tips 不经手势事件（D85：事件态不可靠，改
+// WindowFromPoint 直证命中，见 tips 块与 cursorHitsLogo）。收起态圆钮区不存在
+// （事件归背景把手）——右键菜单例外，收起态照跑（球即 logo，D72）。
 func (u *UI) updateLogo(gtx layout.Context) {
-	u.logoHovered = u.logoHover.Update(gtx.Source)
-	if u.collapsed {
-		u.logoHovered = false
-	}
 	// D72 右键菜单：原位抬起才请求（动画期不响应，D54；收起态照跑——球即 logo）。
 	if !u.expandAn.active && u.logoRight.update(gtx.Source) {
 		u.requestLogoMenu()

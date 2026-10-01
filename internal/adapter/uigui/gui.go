@@ -104,19 +104,17 @@ type UI struct {
 	w *app.Window
 
 	// 窗口侧状态（仅帧循环 goroutine 读写；headless 不触碰，构造成零值可用）。
-	th          *material.Theme
-	editor      widget.Editor
-	logoDrag    gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
-	logoHover   gesture.Hover // logo 圆钮：悬停 = 启动提示 tips（§15.1）
-	logoHovered bool          // 仅事件循环 goroutine 读写
-	logoRight   logoRight     // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
-	tipShown    bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
-	sendBtn     widget.Clickable
-	stopBtn     widget.Clickable
-	allowBtn    widget.Clickable
-	denyBtn     widget.Clickable
-	drag        gesture.Drag
-	hwnd        uintptr
+	th        *material.Theme
+	editor    widget.Editor
+	logoDrag  gesture.Drag // logo 圆钮：拖动移窗（§15.1 把手含 logo）
+	logoRight logoRight    // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
+	tipShown  bool         // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
+	sendBtn   widget.Clickable
+	stopBtn   widget.Clickable
+	allowBtn  widget.Clickable
+	denyBtn   widget.Clickable
+	drag      gesture.Drag
+	hwnd      uintptr
 	// revealPending 启动防闪（D78）：挂接即隐藏、首帧 ULW 提交成功才揭示（激活前台）。
 	// 事件循环写（onHWND/fadePresent）、托盘线程读（showMain 呼出门）→ atomic。
 	revealPending atomic.Bool

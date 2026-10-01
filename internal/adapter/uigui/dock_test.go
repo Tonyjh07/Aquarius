@@ -282,6 +282,31 @@ func TestHeartbeatInputBand(t *testing.T) {
 	}
 }
 
+// TestCursorHitsLogo logo 门控（D85）：矩形直采 × WindowFromPoint 命中直证。
+// headless（hwnd=0）退化为纯矩形直采——608×460@1x 窗口系 logo 钮 = [16,396,64,444)。
+func TestCursorHitsLogo(t *testing.T) {
+	u := &UI{frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	u.x, u.y = 227, 146
+	cases := []struct {
+		x, y int
+		want bool
+		note string
+	}{
+		{259, 566, true, "钮内（窗口系 32,420）"},
+		{243, 542, true, "钮左上角内（16,396）"},
+		{291, 589, false, "钮右下角外（64,444 恰在开区间外）"},
+		{230, 560, false, "钮外左侧"},
+		{259, 700, false, "钮下方远处"},
+	}
+	for _, tc := range cases {
+		if got := u.cursorHitsLogo(point{x: int32(tc.x), y: int32(tc.y)}); got != tc.want {
+			t.Fatalf("%s: cursor=(%d,%d) hits=%v, want %v", tc.note, tc.x, tc.y, got, tc.want)
+		}
+	}
+	// 矩形内但 hwnd 非 0 且 OS 命中他窗：win32 路径不可 headless 驱动，此处仅锁
+	// 「hwnd=0 退化直采」分支——真窗行为归 GUI 手工验收（D85）。
+}
+
 // TestOverInputBtn tips 光标直采判定（D53）：圆钮矩形由 rowAnchor 派生（logo = 锚点
 // 左上方块、右钮 = 右上方块），命中 = 窗口位 + 矩形含光标屏幕坐标；帧未就绪不命中。
 // 分层窗透明像素/窗外零 pointer 事件，Hover 收不到 Leave——tips 熄灭全靠本判定。
