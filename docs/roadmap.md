@@ -50,7 +50,7 @@
 | 1d 启动闪窗 | **已拍板（D78）**：`onHWND` 挂接即 `SW_HIDE`（`revealPending` 武装，最早接管点）、合成/提交门放行启动期、**首帧 ULW 成功即揭示**（`ShowWindow + SetForegroundWindow` 激活前台）；首帧前呼出只置展开态不 ShowWindow；GPU 降级保持隐藏 | `win32`/`gui.go`：`revealPending` 状态机（`presentable` 门 + `presentMain` 成功后揭示 + `showMain` 呼出门 + `revealMain` 平台件） | 时序测试：门放行/首帧后揭示恰好一次/呼出被拦/降级不揭示；手工验收启动无闪窗 |
 | 1e 工具调用确认 UI 优化 | 「允许/拒绝/提升权限」选项界面优化 | `window.go` Confirm 确认态渲染（`port.Confirmer` 数据不动） | 设计稿先看（Figma canvas 口径，D49） |
 | 1f 消息分叉切换按钮 | 消息下方显示当前分支编号（如 2/3）+ 左右切换 | **已落地（D80/D81）**：气泡下方 `◀ i/n ▶`（数据面 = 前置 A 的 `port.TreeView`）；点击经输入通道投递 `/goto <兄弟id>`，`/goto` 同时补齐清屏+回放（与 `/switch` 同口径） | 与 S3 的树 UI 共用数据面（A 已就绪），树窗仍留后 |
-| 1g logo tooltip 自定义显示项 | profile、会话标题、模型、上下文窗口使用率、用量 | **已落地（D82）**：logo 悬停多行事实卡（profile 占位 `default` 至 S4、会话标题+ID 前缀、模型/档位、上下文 `used/max（pct，精确|估算）`、累计与上轮用量）；数据面 = 前置 B 的 `port.SessionFacts` 快照，未就绪回退启动提示；`hoverTip` 泛化多行 `hoverCard` | 手势面零新增（悬停/拖动/右键三手势本就共存）；验收修复 D84：输入行带心跳（透明边距条零事件哑窗） |
+| 1g logo tooltip 自定义显示项 | profile、会话标题、模型、上下文窗口使用率、用量 | **已落地（D82）**：logo 悬停多行事实卡（profile 占位 `default` 至 S4、会话标题+ID 前缀、模型/档位、上下文 `used/max（pct，精确|估算）`、累计与上轮用量）；数据面 = 前置 B 的 `port.SessionFacts` 快照，未就绪回退启动提示；`hoverTip` 泛化多行 `hoverCard` | 手势面零新增（悬停/拖动/右键三手势本就共存）；验收修复 D84 输入行带心跳 + D85 门控改 `WindowFromPoint` 直证（事件态不可靠） |
 | 1h 消息区底部淡化区 + 留白 | 底部加**少量**淡出带（比顶部矮）与等高留白，底缘不再硬切 | `fade.go` 带底 `bandBottom` 机制已有（D54 揭示带在用）、`window.go` 布局 | **已拍板（D79）**：底带高 **12dp**（顶带 56dp 的 ~21%，取「几～十几 dp」薄带口径）+ 等高尾部留白；上滚离底后底缘内容渐隐更自然；带常驻视口底缘 + 等高底部留白，贴底锚定（D56）时最后一行在带外不受影响 |
 
 **S1 出口**：三门禁 + GUI 冒烟全绿；逐项手工验收清单。
