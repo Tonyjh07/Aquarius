@@ -201,3 +201,108 @@ func TestSaveSettingsThemeUnchanged(t *testing.T) {
 		t.Errorf("主题档应保持 light，实为 %q", u.themeMode)
 	}
 }
+
+// TestSaveSettingsZoomKnobs D90 三旋钮保存流：缩放 cycle/字号/窗口尺寸进 patch、
+// zoom 槽热更（下帧 Metric 咽喉点生效）、窗口尺寸 headless no-op（mainHWND=0）、
+// 快照基准更新含新字段。
+func TestSaveSettingsZoomKnobs(t *testing.T) {
+	restoreLight(t)
+	var gotPatch SettingsPatch
+	u := newHeadless(t, Options{
+		Settings: func() SettingsSnapshot {
+			s := fillSnapshot()
+			s.Scale, s.FontSize = 1.25, 15
+			s.WindowWidth, s.WindowHeight = 608, 460
+			return s
+		},
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) {
+			gotPatch = p
+			return nil, nil
+		},
+	})
+	f := newSettingsForm(u)
+	if got := f.scale.value(); got != "1.25" {
+		t.Fatalf("缩放档填表 = %q, want 1.25", got)
+	}
+	f.scale.setValue("1.5")
+	f.fontSize.SetText("20")
+	f.winW.SetText("304")
+	f.winH.SetText("920")
+	u.saveSettings(f)
+
+	if gotPatch.Scale != 1.5 || gotPatch.FontSize != 20 ||
+		gotPatch.WindowWidth != 304 || gotPatch.WindowHeight != 920 {
+		t.Fatalf("patch 旋钮 = %+v", gotPatch)
+	}
+	if z := u.zoomLoad(); z != (zoomKnobs{scale: 1.5, fontSp: 20}) {
+		t.Errorf("zoom 槽 = %+v, want {1.5 20}（热更）", z)
+	}
+	if f.err || !strings.Contains(f.status, "已保存") {
+		t.Errorf("反馈 = (%v, %q)", f.err, f.status)
+	}
+	if f.snap.Scale != 1.5 || f.snap.FontSize != 20 ||
+		f.snap.WindowWidth != 304 || f.snap.WindowHeight != 920 {
+		t.Errorf("二次保存基准 = %+v", f.snap)
+	}
+}
+
+// TestSaveSettingsZoomDefaults 空快照旋钮归一：缩放/字号空值填表为缺省（1.0/15），
+// 窗口尺寸空 = 保持缺省（0）——保存不误写非零。
+func TestSaveSettingsZoomDefaults(t *testing.T) {
+	restoreLight(t)
+	var gotPatch SettingsPatch
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return SettingsSnapshot{} },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { gotPatch = p; return nil, nil },
+	})
+	f := newSettingsForm(u)
+	u.saveSettings(f)
+	if gotPatch.Scale != 1 || gotPatch.FontSize != 15 {
+		t.Errorf("空快照旋钮 patch = %v/%v, want 1/15", gotPatch.Scale, gotPatch.FontSize)
+	}
+	if gotPatch.WindowWidth != 0 || gotPatch.WindowHeight != 0 {
+		t.Errorf("空窗口尺寸 patch = %d/%d, want 0/0（缺省）",
+			gotPatch.WindowWidth, gotPatch.WindowHeight)
+	}
+	if z := u.zoomLoad(); z != (zoomKnobs{scale: 1, fontSp: 15}) {
+		t.Errorf("zoom 槽 = %+v, want {1 15}", z)
+	}
+}
+
+// TestSaveSettingsZoomErrors 旋钮非法输入在写回调之前拦截（不落盘、不热更）。
+func TestSaveSettingsZoomErrors(t *testing.T) {
+	cases := []struct {
+		name       string
+		font, w, h string
+		wantMsg    string
+	}{
+		{"字号非数值", "abc", "", "", "字号"},
+		{"窗口宽非数值", "", "3O4", "920", "窗口"},
+		{"窗口高负值", "", "304", "-1", "窗口"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			restoreLight(t)
+			called := 0
+			u := newHeadless(t, Options{
+				Settings: func() SettingsSnapshot {
+					s := fillSnapshot()
+					s.Scale, s.FontSize = 1, 15
+					return s
+				},
+				ApplySettings: func(p SettingsPatch) ([]port.Command, error) { called++; return nil, nil },
+			})
+			f := newSettingsForm(u)
+			f.fontSize.SetText(c.font)
+			f.winW.SetText(c.w)
+			f.winH.SetText(c.h)
+			u.saveSettings(f)
+			if !f.err || !strings.Contains(f.status, c.wantMsg) {
+				t.Errorf("反馈 = (%v, %q), want 含 %q", f.err, f.status, c.wantMsg)
+			}
+			if called != 0 {
+				t.Error("非法输入必须在写回调之前拦截")
+			}
+		})
+	}
+}

@@ -6,7 +6,9 @@ package uigui
 // 路径串行执行（壳内不旁路），主题/快捷键热生效经消息与原子槽（同跨窗模型）。
 
 import (
+	"fmt"
 	"image"
+	"strconv"
 	"strings"
 
 	"gioui.org/io/key"
@@ -24,27 +26,35 @@ import (
 // Permission/Model/Think/Effort 由装配根取运行态（等级活槽与 Agent 访问器），
 // 其余取 config 文件；密钥永不进快照（D35 只写不回显）。
 type SettingsSnapshot struct {
-	Permission string // 规范值 read-only|strict|permissive|full-access（perm.Level）
-	Provider   string
-	BaseURL    string
-	Model      string
-	Think      bool
-	Effort     string // "" = 未设（D34 清除态）
-	Hotkey     string // "" = 默认 Alt+A
-	Theme      string // "" = system
+	Permission   string // 规范值 read-only|strict|permissive|full-access（perm.Level）
+	Provider     string
+	BaseURL      string
+	Model        string
+	Think        bool
+	Effort       string  // "" = 未设（D34 清除态）
+	Hotkey       string  // "" = 默认 Alt+A
+	Theme        string  // "" = system
+	Scale        float64 // D90：元素缩放倍率；0 = 缺省 1.0（表单归一）
+	FontSize     float64 // D90：正文字号 sp；0 = 缺省 15（表单归一）
+	WindowWidth  int     // D90：主窗像素宽；0 = 缺省 608×460dp
+	WindowHeight int
 }
 
 // SettingsPatch 保存提交（表单全量；APIKey 仅在用户填写时非空 = 只写不回显）。
 type SettingsPatch struct {
-	Permission string
-	Provider   string
-	BaseURL    string
-	Model      string
-	APIKey     string // "" = 不改
-	Think      bool
-	Effort     string
-	Hotkey     string
-	Theme      string
+	Permission   string
+	Provider     string
+	BaseURL      string
+	Model        string
+	APIKey       string // "" = 不改
+	Think        bool
+	Effort       string
+	Hotkey       string
+	Theme        string
+	Scale        float64 // D90：元素缩放倍率（cycle 档，恒非零）
+	FontSize     float64 // D90：正文字号 sp；0 = 不改
+	WindowWidth  int     // D90：主窗像素宽；0 = 不改（缺省）
+	WindowHeight int
 }
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
@@ -57,6 +67,10 @@ var (
 	// themeLevels 主题档展示与键值（§15.4/D61：system|light|dark）。
 	themeLevels = []string{"跟随系统", "浅色", "深色"}
 	themeValues = []string{"system", "light", "dark"}
+	// zoomLevels 元素缩放档（D90/§15.8）：展示百分比，键值 = 倍率字符串（cycleField
+	// 键值为 string 的既有口径，表单侧 ParseFloat 换算；%g 往返一致）。
+	zoomLevels = []string{"100%", "125%", "150%", "175%", "200%"}
+	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
 )
 
 // cycleField 点击循环枚举档（material v0.10 无下拉框）：按钮显示当前项，点击进一档。
@@ -96,7 +110,7 @@ func (c *cycleField) advance(gtx layout.Context) {
 }
 
 // settingsRows 表单行数（与 settingsForm 行渲染的 switch 对齐——改行数两处同步）。
-const settingsRows = 13
+const settingsRows = 16
 
 // fieldH 文本档统一高度（dp）：单行编辑器 + 上下留白（material 无内建输入框边框）。
 const fieldH = 40
@@ -112,10 +126,14 @@ type settingsForm struct {
 	baseURL  widget.Editor
 	apiKey   widget.Editor
 	hotkey   widget.Editor
+	fontSize widget.Editor // D90：正文字号 sp（数值，空 = 不改）
+	winW     widget.Editor // D90：主窗像素宽（数值，空 = 不改）
+	winH     widget.Editor // D90：主窗像素高
 	think    widget.Bool
 	perm     cycleField
 	effort   cycleField
 	theme    cycleField
+	scale    cycleField // D90：元素缩放（cycle 百分比档）
 	save     widget.Clickable
 
 	snap     SettingsSnapshot // 开窗快照（保存 diff 基准 + 变更提示）
@@ -131,8 +149,10 @@ func newSettingsForm(u *UI) *settingsForm {
 		perm:   cycleField{displays: permLevels, values: permLevels},
 		effort: cycleField{displays: effortLevels, values: effortValues},
 		theme:  cycleField{displays: themeLevels, values: themeValues},
+		scale:  cycleField{displays: zoomLevels, values: zoomValues},
 	}
-	for _, ed := range []*widget.Editor{&f.provider, &f.model, &f.baseURL, &f.apiKey, &f.hotkey} {
+	for _, ed := range []*widget.Editor{&f.provider, &f.model, &f.baseURL, &f.apiKey, &f.hotkey,
+		&f.fontSize, &f.winW, &f.winH} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
 	f.readOnly = u.opts.ApplySettings == nil
@@ -142,6 +162,12 @@ func newSettingsForm(u *UI) *settingsForm {
 	s := u.opts.Settings()
 	if s.Permission == "" {
 		s.Permission = "strict" // 快照未就绪（Agent 晚于 UI 构造）对齐默认档 perm.DefaultLevel，防误发切换
+	}
+	if s.Scale == 0 {
+		s.Scale = 1.0 // D90：config 未配 = 缺省（表单显示 100%）
+	}
+	if s.FontSize == 0 {
+		s.FontSize = fontSpBase
 	}
 	f.snap = s
 	f.provider.SetText(s.Provider)
@@ -153,6 +179,14 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.perm.setValue(s.Permission)
 	f.effort.setValue(s.Effort)
 	f.theme.setValue(s.Theme) // "" 未命中 → 首项 = 跟随系统
+	f.scale.setValue(fmt.Sprintf("%g", s.Scale))
+	f.fontSize.SetText(fmt.Sprintf("%g", s.FontSize))
+	if s.WindowWidth > 0 {
+		f.winW.SetText(strconv.Itoa(s.WindowWidth))
+	}
+	if s.WindowHeight > 0 {
+		f.winH.SetText(strconv.Itoa(s.WindowHeight))
+	}
 	return f
 }
 
@@ -180,6 +214,39 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if p.Model == "" {
 		p.Model = f.snap.Model // 空模型名 = 保持当前
 	}
+	// D90 三旋钮（写回调前校验，非法不落盘）：缩放 = cycle 档（恒合法）；字号/窗口
+	// 尺寸空 = 保持快照原值，数值非法/越界拦截。
+	p.Scale = f.snap.Scale
+	if v, err := strconv.ParseFloat(f.scale.value(), 64); err == nil {
+		p.Scale = v
+	}
+	if v := strings.TrimSpace(f.fontSize.Text()); v != "" {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil || n < fontSpMin || n > fontSpMax {
+			f.err = true
+			f.status = fmt.Sprintf("字号须为 %g–%g 的数值", fontSpMin, fontSpMax)
+			return
+		}
+		p.FontSize = n
+	}
+	if v := strings.TrimSpace(f.winW.Text()); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			f.err = true
+			f.status = "窗口宽须为非负像素数值"
+			return
+		}
+		p.WindowWidth = n
+	}
+	if v := strings.TrimSpace(f.winH.Text()); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			f.err = true
+			f.status = "窗口高须为非负像素数值"
+			return
+		}
+		p.WindowHeight = n
+	}
 	if p.Hotkey != "" {
 		if _, err := parseHotkey(p.Hotkey); err != nil {
 			f.err = true
@@ -203,6 +270,12 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if p.Hotkey != f.snap.Hotkey {
 		u.setHotkey(p.Hotkey) // 原子槽 + 托盘线程重注册（失败回退 Ctrl+Alt+A，§15.1）
 	}
+	if p.Scale != f.snap.Scale || p.FontSize != f.snap.FontSize {
+		u.SetZoom(p.Scale, p.FontSize) // D90：下帧 Metric 咽喉点生效（原子换存）
+	}
+	if p.WindowWidth != f.snap.WindowWidth || p.WindowHeight != f.snap.WindowHeight {
+		u.SetWindowSize(p.WindowWidth, p.WindowHeight) // D90：窗口线程 SetWindowPos（headless no-op）
+	}
 	f.err = false
 	f.status = "已保存"
 	switch {
@@ -214,6 +287,8 @@ func (u *UI) saveSettings(f *settingsForm) {
 	f.snap = SettingsSnapshot{
 		Permission: p.Permission, Provider: p.Provider, BaseURL: p.BaseURL,
 		Model: p.Model, Think: p.Think, Effort: p.Effort, Hotkey: p.Hotkey, Theme: p.Theme,
+		Scale: p.Scale, FontSize: p.FontSize,
+		WindowWidth: p.WindowWidth, WindowHeight: p.WindowHeight,
 	}
 }
 
@@ -235,6 +310,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	f.perm.advance(gtx)
 	f.effort.advance(gtx)
 	f.theme.advance(gtx)
+	f.scale.advance(gtx)
 	if !f.focused {
 		f.focused = true
 		gtx.Execute(key.FocusCmd{Tag: &f.provider}) // 开窗焦点入首档；点击切换（editor.go 自聚焦）
@@ -277,6 +353,12 @@ func (f *settingsForm) row(th *material.Theme) func(layout.Context, int) layout.
 				return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
 			case 11:
 				return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme))
+			case 12:
+				return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale))
+			case 13:
+				return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
+			case 14:
+				return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
 			default:
 				return f.actionsRow(gtx, th)
 			}
@@ -323,6 +405,21 @@ func editorBox(th *material.Theme, ed *widget.Editor, hint string) layout.Widget
 			return material.Editor(th, ed, hint).Layout(gtx)
 		})
 		return layout.Dimensions{Size: size}
+	}
+}
+
+// sizeRow 窗口尺寸双数值档（D90）：宽 × 高（px），并排等分；空 = 保持缺省。
+func sizeRow(gtx layout.Context, th *material.Theme, w, h *widget.Editor) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Flexed(1, editorBox(th, w, "宽 px")),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return material.Body1(th, "×").Layout(gtx)
+				})
+			}),
+			layout.Flexed(1, editorBox(th, h, "高 px")),
+		)
 	}
 }
 

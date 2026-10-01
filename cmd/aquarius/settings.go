@@ -21,8 +21,12 @@ type textSettings struct {
 		BaseURL  string `json:"base_url"`
 	} `json:"model"`
 	UI struct {
-		Hotkey string `json:"hotkey"`
-		Theme  string `json:"theme"`
+		Hotkey       string  `json:"hotkey"`
+		Theme        string  `json:"theme"`
+		Scale        float64 `json:"scale"`         // D90：元素缩放倍率（0 = 缺省 1.0）
+		FontSize     float64 `json:"font_size"`     // D90：正文字号 sp（0 = 缺省 15）
+		WindowWidth  int     `json:"window_width"`  // D90：主窗像素宽（0 = 缺省）
+		WindowHeight int     `json:"window_height"` // D90：主窗像素高
 	} `json:"ui"`
 }
 
@@ -38,17 +42,23 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		return uigui.SettingsSnapshot{}
 	}
 	return uigui.SettingsSnapshot{
-		Provider: raw.Model.Provider,
-		BaseURL:  raw.Model.BaseURL,
-		Hotkey:   raw.UI.Hotkey,
-		Theme:    raw.UI.Theme,
+		Provider:     raw.Model.Provider,
+		BaseURL:      raw.Model.BaseURL,
+		Hotkey:       raw.UI.Hotkey,
+		Theme:        raw.UI.Theme,
+		Scale:        raw.UI.Scale,
+		FontSize:     raw.UI.FontSize,
+		WindowWidth:  raw.UI.WindowWidth,
+		WindowHeight: raw.UI.WindowHeight,
 	}
 }
 
-// persistSettingsTextKeys 无内核命令覆盖的键一次泛键改写（ui.theme/hotkey +
-// model.provider/base_url/api_key；空 provider/base_url/api_key = 保持不变——
-// api_key 仅用户填写时下发。有覆盖的键由命令各自写回，cfgWriteMu 串行防丢更新）。
-// theme 先归一校验（"" → system），非法值拒写防落盘。
+// persistSettingsTextKeys 无内核命令覆盖的键一次泛键改写（ui.theme/hotkey + D90 三
+// 旋钮 scale/font_size/window_width/window_height + model.provider/base_url/api_key；
+// 空 provider/base_url/api_key = 保持不变——api_key 仅用户填写时下发。有覆盖的键由
+// 命令各自写回，cfgWriteMu 串行防丢更新）。
+// theme 先归一校验（"" → system），非法值拒写防落盘；旋钮数值原样落盘（UI 侧
+// clampWindowPx/clampKnobs 统一夹取，config 侧不重复校验）。
 func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	switch p.Theme {
 	case "":
@@ -65,6 +75,10 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 		uiSec["theme"] = p.Theme
 		uiSec["hotkey"] = p.Hotkey
+		uiSec["scale"] = p.Scale
+		uiSec["font_size"] = p.FontSize
+		uiSec["window_width"] = p.WindowWidth
+		uiSec["window_height"] = p.WindowHeight
 		model := modelSection(generic)
 		if p.Provider != "" {
 			model["provider"] = p.Provider

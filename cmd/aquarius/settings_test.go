@@ -148,3 +148,30 @@ func TestReadTextSettingsFallback(t *testing.T) {
 		t.Errorf("坏文件读回 = %+v, want 零值", s)
 	}
 }
+
+// TestPersistReadTextSettingsZoomKnobs D90 三旋钮写读往返：scale/font_size/
+// window_width/window_height 写回后读回同值，无关键（permissions/limits）不受影响。
+func TestPersistReadTextSettingsZoomKnobs(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme: "system", Scale: 1.5, FontSize: 20,
+		WindowWidth: 304, WindowHeight: 920,
+	}); err != nil {
+		t.Fatalf("persistSettingsTextKeys: %v", err)
+	}
+	s := readTextSettings(cfgPath)
+	if s.Scale != 1.5 || s.FontSize != 20 || s.WindowWidth != 304 || s.WindowHeight != 920 {
+		t.Errorf("旋钮读回 = %v/%v %dx%d, want 1.5/20 304x920",
+			s.Scale, s.FontSize, s.WindowWidth, s.WindowHeight)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("读回 config: %v", err)
+	}
+	if !strings.Contains(string(data), `"max_context_tokens": 64000`) {
+		t.Error("limits 段未保留（泛键改写口径破坏了无关键）")
+	}
+}
