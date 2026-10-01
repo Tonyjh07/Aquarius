@@ -41,6 +41,9 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  config.json
 | `ui.kind` | string | `gui`（D51 模板与键缺省） | `gui` = Gio 悬浮球 GUI（D43/§15，仅 Windows；启动不进任务栏/Alt+Tab——D51）；`tui` = bubbletea TUI（D33 MVP：转写区/流式/历史/Confirm/状态行，轻 markdown）；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
 | `ui.hotkey` | string | `""`（= `Alt+A`） | **GUI** 全局呼出/收起快捷键（§15.1）：`修饰键+键`（如 `Alt+A`、`Ctrl+Alt+Shift+X`、`Alt+Space`）；修饰键 `alt`/`ctrl`/`shift`/`win`，键 = 字母、数字、`Space`/`Tab`/`Esc`/`Enter`/`F1`–`F24`，至少一个修饰键；注册失败回退 `Ctrl+Alt+A`，再失败仅托盘可用；仅 `ui.kind=gui` 生效 |
 | `ui.theme` | string | `system`（键缺失） | **GUI** 深浅主题（§15.4/D61）：`system` = 跟随系统深浅（Win32 注册表 `AppsUseLightTheme` 读取，运行中经主窗 `WM_SETTINGCHANGE` 广播实时刷新）、`light` / `dark` = 强制，未识别值按 `system`；切换热生效（下一帧重绘）；设置窗主题档写同一键；仅 `ui.kind=gui` 生效 |
+| `ui.scale` | number | `1.0` | **GUI** 元素缩放倍率（§15.8/D90）：所有元素几何（圆钮/间距/行高）等比；UI 侧夹 [0.75, 2.5]，越界回落 1.0；设置窗以百分比档（100%–200%）呈现；保存热生效；仅 `ui.kind=gui` 生效 |
+| `ui.font_size` | number | `15` | **GUI** 正文字号 sp（§15.8/D90）：字号阶梯以正文为基准等比，**最终字号 = font_size × scale**；UI 侧夹 [10, 28]；设置窗数值档；保存热生效；仅 `ui.kind=gui` 生效 |
+| `ui.window_width` / `ui.window_height` | int | `0`（= 缺省 608×460dp） | **GUI** 主窗像素尺寸（§15.8/D90）：配置后按字面 px 建窗（`app.Size` 只收 dp，px 在窗口挂接点经 `SetWindowPos` 落地）；UI 侧按布局地板（240dp × DPI × scale）与粗界 [200, 3840]×[200, 2160] 夹取；设置窗「宽 × 高」数值档；保存热生效（停靠位与窗宽无关，无需重锚）；仅 `ui.kind=gui` 生效 |
 
 ### system_prompt（人格）
 
@@ -131,7 +134,7 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**（ToolRunner 每�
     "echo_thinking": true,
     "unsupported_params": []
   },
-  "ui": { "kind": "gui", "theme": "system" },
+  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 },
   "system_prompt": "",
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
