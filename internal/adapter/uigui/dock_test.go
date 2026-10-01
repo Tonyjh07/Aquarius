@@ -211,40 +211,74 @@ func TestArmHeartbeat(t *testing.T) {
 	}
 }
 
-// TestHeartbeatNeed 心跳判据（D50 实测修订 / D53 扩展）：停靠中 / 布防中 / 收起态球
-// 停在可停靠边 / tips 在显 → 需唤帧（形裁窄区与分层窗透明区悬停可能零帧，判定全靠
-// 帧 + 光标直采）；否则静默零帧。
+// TestHeartbeatNeed 心跳判据（D50 实测修订 / D53 扩展 / D84 扩展）：停靠中 / 布防中 /
+// 收起态球停在可停靠边 / tips 在显 / 光标在输入行带内 → 需唤帧（形裁窄区与分层窗
+// 透明区悬停可能零帧，判定全靠帧 + 光标直采）；否则静默零帧。光标项经 heartbeatNeedAt
+// 参数化（真实光标不可控）。
 func TestHeartbeatNeed(t *testing.T) {
+	far := point{x: -1 << 29, y: -1 << 29} // 任何带外位置
 	u := &UI{}
-	if u.heartbeatNeed() {
+	if u.heartbeatNeedAt(far) {
 		t.Fatal("展开态不应心跳")
 	}
 	u.collapsed = true
-	if u.heartbeatNeed() {
+	if u.heartbeatNeedAt(far) {
 		t.Fatal("收起态球不在可停靠边不应心跳")
 	}
 	u.edgeNow = "left"
-	if !u.heartbeatNeed() {
+	if !u.heartbeatNeedAt(far) {
 		t.Fatal("收起态球在可停靠边应心跳")
 	}
 	u.edgeNow = ""
 	u.dockArm = true
-	if !u.heartbeatNeed() {
+	if !u.heartbeatNeedAt(far) {
 		t.Fatal("布防中应心跳")
 	}
 	u.dockArm = false
 	u.docked = true
-	if !u.heartbeatNeed() {
+	if !u.heartbeatNeedAt(far) {
 		t.Fatal("停靠中应心跳")
 	}
 	u.docked = false
 	u.tipShown = true
-	if !u.heartbeatNeed() {
+	if !u.heartbeatNeedAt(far) {
 		t.Fatal("tips 在显应心跳（D53 光标直采复评）")
 	}
 	u.tipShown = false
-	if u.heartbeatNeed() {
+	if u.heartbeatNeedAt(far) {
 		t.Fatal("全部条件清空应静默")
+	}
+}
+
+// TestHeartbeatInputBand 输入行带心跳（D84）：光标落在输入行块（含上下透明边距）
+// 及其上方 approach 余量内 → 心跳；带外（转写区深处/窗外）不因光标项心跳。
+// 几何：608×460@1x，行块 = [396,444)+上下边距 = [388,460)，带顶 = 388−12 = 376。
+func TestHeartbeatInputBand(t *testing.T) {
+	u := &UI{frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	u.x, u.y = 100, 200 // 窗口屏幕位 → 带 = 屏幕 x∈[100,708) y∈[576,660)
+	cases := []struct {
+		cur  point
+		want bool
+		note string
+	}{
+		{point{x: 130, y: 650}, true, "行块下透明边距条（D84 哑窗场景）"},
+		{point{x: 130, y: 590}, true, "行块内"},
+		{point{x: 400, y: 585}, true, "行块顶上方 approach 余量内"},
+		{point{x: 130, y: 575}, false, "带顶之上（转写区）"},
+		{point{x: 60, y: 650}, false, "窗外左侧"},
+		{point{x: 800, y: 650}, false, "窗外右侧"},
+	}
+	for _, tc := range cases {
+		if got := u.cursorInInputBand(tc.cur); got != tc.want {
+			t.Fatalf("%s: cursor=(%d,%d) inBand=%v, want %v", tc.note, tc.cur.x, tc.cur.y, got, tc.want)
+		}
+		if got := u.heartbeatNeedAt(tc.cur); got != tc.want {
+			t.Fatalf("%s: heartbeatNeedAt=(%d,%d) = %v, want %v", tc.note, tc.cur.x, tc.cur.y, got, tc.want)
+		}
+	}
+	// 帧几何未就绪（headless 构造零值）= 不心跳。
+	if (&UI{}).cursorInInputBand(point{x: 130, y: 650}) {
+		t.Fatal("frameSize 未就绪不应心跳")
 	}
 }
 

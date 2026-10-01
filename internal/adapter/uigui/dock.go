@@ -334,12 +334,36 @@ func (u *UI) evalDockFrame() {
 	}
 }
 
-// heartbeatNeed 心跳判据（纯状态读取，可测）：停靠中 / 布防中 / 收起态球停在可停靠
-// 边（edgeNow 由当帧 evalDockFrame 写入）/ tips 在显（D53：光标直采判定需帧驱动，
-// 事件静默时 50ms 复评）→ 需要主动唤帧；否则展开态与球不在可停靠边（无从停靠）→
-// 静默零帧。
+// tipBandSlackDp 输入行带上方余量（D84）：光标自转写区贴近输入行的 approach 过渡带，
+// 让贴着输入行徘徊的直采门控提前进入帧驱动。
+const tipBandSlackDp = 12
+
+// heartbeatNeed 心跳判据（状态读取；光标项现取 cursorPos）：停靠中 / 布防中 / 收起态
+// 球停在可停靠边（edgeNow 由当帧 evalDockFrame 写入）/ tips 在显（D53：光标直采判定
+// 需帧驱动，事件静默时 50ms 复评）/ 光标在输入行带内（D84）→ 需要主动唤帧；否则静默
+// 零帧。
 func (u *UI) heartbeatNeed() bool {
-	return u.docked || u.dockArm || (u.collapsed && u.edgeNow != "") || u.tipShown
+	return u.heartbeatNeedAt(cursorPos())
+}
+
+// heartbeatNeedAt 同 heartbeatNeed，光标项参数化（可测，D84）。
+func (u *UI) heartbeatNeedAt(cur point) bool {
+	return u.docked || u.dockArm || (u.collapsed && u.edgeNow != "") || u.tipShown ||
+		u.cursorInInputBand(cur)
+}
+
+// cursorInInputBand 光标是否在输入行带内（D84，窗口系直采）：带 = 窗口全宽 ×
+// [输入行块顶 − slack, 窗底]，输入行块含上下透明边距。ULW 位图 alpha=0 即穿透
+// （D62）——光标停在边距条上零事件零帧，所有直采门控（tips/布防）失聪，故带内恒
+// 心跳供帧。frameMetric/frameSize 未就绪 = false。
+func (u *UI) cursorInInputBand(cur point) bool {
+	if u.frameSize.X <= 0 || u.frameSize.Y <= 0 || u.frameMetric.PxPerDp <= 0 {
+		return false
+	}
+	dp := u.frameMetric.Dp
+	top := u.frameSize.Y - dp(inputRowDp+pillTopDp+16) - dp(tipBandSlackDp)
+	r := image.Rect(0, top, u.frameSize.X, u.frameSize.Y).Add(image.Pt(int(u.x), int(u.y)))
+	return insideRect(r, cur)
 }
 
 // armHeartbeat 收起/停靠态心跳（D50 实测修订）：悬停/移开判定 = 帧 + 光标直采，而
