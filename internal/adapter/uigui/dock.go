@@ -206,7 +206,7 @@ func evalDock(in dockInputs) (armed bool, act dockAct) {
 // ballRect 收起球几何（= 展开态 logo 位，D49/§15.2 换形不跳动；与 layoutCollapsed 同式）。
 func ballRect(size image.Point, dp func(unit.Dp) int) image.Rectangle {
 	x := dp(sideMarginDp)
-	y := size.Y - dp(inputRowDp+pillTopDp+16) + dp(pillTopDp)
+	y := size.Y - dp(inputRowBandDp) + dp(pillTopDp)
 	d := dp(inputRowDp)
 	return image.Rect(x, y, x+d, y+d)
 }
@@ -406,7 +406,7 @@ func (u *UI) cursorInInputBand(cur point) bool {
 		return false
 	}
 	dp := u.frameMetric.Dp
-	top := u.frameSize.Y - dp(inputRowDp+pillTopDp+16) - dp(tipBandSlackDp)
+	top := u.frameSize.Y - dp(inputRowBandDp) - dp(tipBandSlackDp)
 	r := image.Rect(0, top, u.frameSize.X, u.frameSize.Y).Add(image.Pt(int(u.x), int(u.y)))
 	return insideRect(r, cur)
 }
@@ -594,25 +594,25 @@ func (u *UI) stepAnim() {
 	}
 }
 
-// restorePx 恢复期 dp→px 换算（frameMetric 未就绪：窗高 / winHeightDp 即 DPI 比例——
-// 窗口刚建为默认尺寸，比例精确。restoreDock 与普通恢复夹取共用口径，D50/D52）。
-func restorePx(hPx int32) func(dp int) int32 {
-	scale := float64(hPx) / float64(winHeightDp)
+// restorePx 恢复期 dp→px 换算（D90 治本：DPI 由 GetDpiForWindow 对主窗直查——废除旧
+// 「实测窗高 ÷ winHeightDp」反推，窗口尺寸可配后该假设必错；查询类直接调，取不到
+// （句柄无效/老系统）回落 1.0 = 100% 口径）。restoreDock 与普通恢复夹取共用（D50/D52）。
+func restorePx(h uintptr) func(dp int) int32 {
+	scale := platformWindowDPI(h)
 	return func(dp int) int32 { return int32(math.Round(float64(dp) * scale)) }
 }
 
 // restoreDock 位置记忆的停靠恢复（D50）：停靠位按当前工作区重算（存的 X/Y 忽略）；
 // 外侧边判定失效（接缝/分辨率变化）→ 返回 false 落回普通恢复（贴边可见）。
-// dp→px 比例按窗口高推（此刻 frameMetric 未就绪；窗口刚建即默认尺寸，比例即 DPI
-// 缩放——Windows 缩放档 100/125/150/… 皆有理，比例精确）。
+// dp→px 比例由 platformWindowDPI 对主窗直查（D90；此刻 frameMetric 未就绪）。
 func (u *UI) restoreDock(p posRec, rc rect) bool {
 	hPx := rc.bottom - rc.top
 	if hPx <= 0 {
 		return false
 	}
-	px := restorePx(hPx)
+	px := restorePx(u.hwnd)
 	bx := px(sideMarginDp)
-	by := hPx - px(inputRowDp+pillTopDp+16) + px(pillTopDp)
+	by := hPx - px(inputRowBandDp) + px(pillTopDp)
 	bd := px(inputRowDp)
 	anchor := image.Rect(int(bx), int(by), int(bx+bd), int(by+bd))
 	pos := point{x: p.X, y: p.Y}

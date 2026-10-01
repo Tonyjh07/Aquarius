@@ -49,7 +49,11 @@ const (
 	inputGapDp       = 12 // 三段间距与胶囊内元素间距（canvas spacing 12）
 	inputPadDp       = 16 // 胶囊左右内边距（canvas padding 16）
 	inputIconDp      = 20 // 胶囊内图标槽（canvas 20×20，灰占位不可点）
-	pillTopDp        = 8  // 输入行上边距（下方 16）
+	pillTopDp        = 8  // 输入行上边距（下方 = inputRowBottomDp）
+	inputRowBottomDp = 16 // 输入行下边距（D49 canvas）
+	// inputRowBandDp 输入行带总高（D90 单源）＝行元素 + 上 8 下 16 透明边距：布局区高
+	// 划分、球锚、心跳带、停靠恢复共用（旧为五处手写重复组合式，改几何须五处同步）。
+	inputRowBandDp   = inputRowDp + pillTopDp + inputRowBottomDp
 	sideMarginDp     = 16 // 左右边距
 	confirmBtnDp     = 36 // D86：确认态三钮直径（行高 48 的 3/4）
 	confirmBtnGapDp  = 8  // D86：三钮间距
@@ -63,6 +67,13 @@ const (
 	radiusDp         = 12 // 气泡圆角
 	cardRadiusDp     = 8  // 文本行卡圆角
 	statusChipDp     = 20 // 状态行 chip 高
+	statusPadXDp     = 10 // 状态行 chip 水平内边距
+	statusGapDp      = 8  // 状态行带高（chip + 与转写区间隙）
+	tipsPadXDp       = 10 // 悬停卡（hoverCard）内边距
+	tipsPadYDp       = 6
+	tipsRadiusDp     = 8  // 悬停卡圆角
+	tipsUpGapDp      = 6  // 悬停卡与胶囊顶的间隙
+	bubbleMinWDp     = 80 // 气泡最大宽下限（极窄窗兜底，D90 命名化）
 
 	// 边缘羽化（D45–D48/§15.1、D62）：把「内容自身由内向外渐隐」作为每像素 vis 因子
 	// 并入整窗 ULW 位图——核心不透明、边带沿真轮廓 smoothstep 渐隐到轮廓（不向外堆光晕：
@@ -394,14 +405,14 @@ func (u *UI) onHWND(h uintptr) {
 		if p, found := loadPos(u.opts.PosFile); found {
 			// D50：停靠记忆优先（停靠位重算，X/Y 忽略）；失败/非停靠走普通恢复——
 			// D52：锚点 = 输入栏包围盒（非停靠恢复恒为展开态，posRec 无 collapsed 键），
-			// 与拖动夹取同口径（重启不跳位）；frameMetric 未就绪 → restorePx 窗高比例。
+			// 与拖动夹取同口径（重启不跳位）；frameMetric 未就绪 → restorePx 直查 DPI（D90）。
 			if (p.Docked == "left" || p.Docked == "right") && u.restoreDock(p, rc) {
 				return
 			}
 			nx, ny := p.X, p.Y
 			if work, wok := platformWorkArea(point{x: p.X + w/2, y: p.Y + ht/2}); wok {
-				px := restorePx(ht)
-				top := int(ht) - int(px(inputRowDp+pillTopDp+16)) + int(px(pillTopDp))
+				px := restorePx(h)
+				top := int(ht) - int(px(inputRowBandDp)) + int(px(pillTopDp))
 				a := image.Rect(int(px(sideMarginDp)), top, int(w)-int(px(sideMarginDp)), top+int(px(inputRowDp)))
 				c := clampAnchor(point{x: p.X, y: p.Y}, a, work)
 				nx, ny = c.x, c.y
@@ -466,10 +477,10 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{Size: size}
 	}
 
-	inputH := gtx.Dp(inputRowDp + pillTopDp + 16) // 输入行 + 上 8 下 16 边距
+	inputH := gtx.Dp(inputRowBandDp) // 输入行 + 上 8 下 16 边距（D90 单源）
 	statusH := 0
 	if u.statusText() != "" {
-		statusH = gtx.Dp(statusChipDp + 8)
+		statusH = gtx.Dp(statusChipDp + statusGapDp)
 	}
 	transH := size.Y - inputH - statusH
 	if transH < 0 {
@@ -675,8 +686,8 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, sels func(int) 
 		padX, padY = gtx.Dp(bubblePadXDp), gtx.Dp(bubblePadYDp)
 	}
 	maxW := w - 2*gtx.Dp(sideMarginDp)
-	if maxW < gtx.Dp(80) {
-		maxW = gtx.Dp(80)
+	if maxW < gtx.Dp(bubbleMinWDp) {
+		maxW = gtx.Dp(bubbleMinWDp)
 	}
 	cs := gtx
 	cs.Constraints = layout.Constraints{Min: image.Point{}, Max: image.Pt(maxW-2*padX, 1<<30)}
@@ -995,7 +1006,7 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 	m := op.Record(gtx.Ops)
 	dims := label(gtx)
 	txtOp := m.Stop()
-	padX := gtx.Dp(10)
+	padX := gtx.Dp(statusPadXDp)
 	chipH := gtx.Dp(statusChipDp)
 	x := w - gtx.Dp(sideMarginDp) - dims.Size.X - 2*padX
 	y := (h - chipH) / 2
@@ -1158,8 +1169,8 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 		w = max(w, dims.Size.X)
 		h += dims.Size.Y
 	}
-	padX, padY := gtx.Dp(10), gtx.Dp(6)
-	radius := gtx.Dp(8)
+	padX, padY := gtx.Dp(tipsPadXDp), gtx.Dp(tipsPadYDp)
+	radius := gtx.Dp(tipsRadiusDp)
 	x := gtx.Dp(sideMarginDp)
 	if rightAlign {
 		x = gtx.Constraints.Max.X - gtx.Dp(sideMarginDp) - w - 2*padX
@@ -1167,7 +1178,7 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 			x = 0
 		}
 	}
-	y := gtx.Dp(pillTopDp) - h - 2*padY - gtx.Dp(6)
+	y := gtx.Dp(pillTopDp) - h - 2*padY - gtx.Dp(tipsUpGapDp)
 	bgRect := image.Rectangle{
 		Min: image.Pt(x, y),
 		Max: image.Pt(x+w+2*padX, y+h+2*padY),

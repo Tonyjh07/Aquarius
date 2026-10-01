@@ -33,6 +33,7 @@ var (
 	procSetWindowLongPtrW   = user32.NewProc("SetWindowLongPtrW")
 	procMonitorFromPoint    = user32.NewProc("MonitorFromPoint")
 	procGetMonitorInfoW     = user32.NewProc("GetMonitorInfoW")
+	procGetDpiForWindow     = user32.NewProc("GetDpiForWindow")
 	procRegisterClassW      = user32.NewProc("RegisterClassW") // 托盘消息窗口用（shell_windows.go）
 	procCreateWindowExW     = user32.NewProc("CreateWindowExW")
 	procDefWindowProcW      = user32.NewProc("DefWindowProcW")
@@ -183,6 +184,17 @@ func platformWorkArea(p point) (rect, bool) {
 func platformMonitorAt(p point) bool {
 	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&p)), 0)
 	return hmon != 0
+}
+
+// platformWindowDPI 主窗 DPI 比例（D90：GetDpiForWindow 直查，恢复期 dp→px 换算用——
+// 废除旧「窗高÷默认高」反推，窗口尺寸可配后该假设必错）。查询类直接调（铁律 1 不限）；
+// 句柄无效或老系统无此 API → 0，回落 1.0 = 100% 口径（与旧默认行为一致）。
+func platformWindowDPI(h uintptr) float64 {
+	v, _, _ := procGetDpiForWindow.Call(h)
+	if v == 0 {
+		return 1.0
+	}
+	return float64(v) / 96.0
 }
 
 // hideFromTaskbar 主窗不进任务栏与 Alt+Tab（D51）：置 WS_EX_TOOLWINDOW、清

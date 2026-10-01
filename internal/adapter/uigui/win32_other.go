@@ -25,6 +25,9 @@ func platformWorkArea(point) (rect, bool) { return rect{}, false }
 // platformMonitorAt 无显示器拓扑（停靠永不触发）。
 func platformMonitorAt(point) bool { return false }
 
+// platformWindowDPI 无 DPI 源（恒 1.0 = 100% 口径，D90）。
+func platformWindowDPI(uintptr) float64 { return 1.0 }
+
 // mainPresent 整窗 ULW 未适配（Gio 常规渲染路径照常显示）。
 func mainPresent(int32, int32, int32, int32, []byte, byte) bool { return false }
 

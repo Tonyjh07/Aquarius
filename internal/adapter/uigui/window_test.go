@@ -231,11 +231,16 @@ func newFrameUI() *UI {
 
 // frameGtx 单帧布局上下文（608×460 @1x；src 传零值 = 禁用态，同 fadeCompose 的二次布局）。
 func frameGtx(src input.Source) (layout.Context, *op.Ops) {
+	return frameGtxSize(src, winWidthDp, winHeightDp)
+}
+
+// frameGtxSize 同 frameGtx，尺寸参数化（D90 响应式：非默认窗尺寸的布局性质测试用）。
+func frameGtxSize(src input.Source, wDp, hDp int) (layout.Context, *op.Ops) {
 	ops := new(op.Ops)
 	return layout.Context{
 		Ops:         ops,
 		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
-		Constraints: layout.Exact(image.Pt(winWidthDp, winHeightDp)),
+		Constraints: layout.Exact(image.Pt(wDp, hDp)),
 		Source:      src,
 		Now:         time.Now(),
 	}, ops
@@ -606,9 +611,9 @@ func TestLayoutBottomFadeBand(t *testing.T) {
 	const h = winHeightDp
 	u.layout(gtx)
 
-	transH := h - gtx.Dp(inputRowDp+pillTopDp+16)
+	transH := h - gtx.Dp(inputRowBandDp)
 	if u.statusText() != "" {
-		transH -= gtx.Dp(statusChipDp + 8)
+		transH -= gtx.Dp(statusChipDp + statusGapDp)
 	}
 	wantTop := transH - gtx.Dp(fadeBandBottomDp)
 	if u.bandLowTop != wantTop || u.bandLowEnd != transH {

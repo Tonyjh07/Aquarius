@@ -495,7 +495,7 @@ func TestExpandedClampRowEdge(t *testing.T) {
 	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	u.collapsed = false
 	margin := int32(dpId(sideMarginDp))
-	top := int32(575 - dpId(inputRowDp+pillTopDp+16) + dpId(pillTopDp))
+	top := int32(575 - dpId(inputRowBandDp) + dpId(pillTopDp))
 
 	if x, _ := u.clampPos(-margin, 628); x != -margin {
 		t.Fatalf("输入栏贴左缘位被弹开: x=%d, want %d", x, -margin)
