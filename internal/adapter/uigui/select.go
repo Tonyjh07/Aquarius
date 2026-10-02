@@ -511,8 +511,9 @@ func selSpansOf(a, f selPoint, nrunes func(key int) int) []selSpan {
 	return out
 }
 
-// selCopy Ctrl+C（D91 ④）：逐键 Text() rune 切片、键间 `\n` 拼接写系统剪贴板。
-func (u *UI) selCopy(gtx layout.Context) {
+// selText 当前选区文本（D91/D92）：逐键 Text() rune 切片、键间 `\n` 拼接；空选区 = ""。
+// selCopy 与气泡右键「复制选区」（D92 复用 D91 选态）共用此拼接口径。
+func (u *UI) selText() string {
 	var parts []string
 	for _, sp := range u.selSpansBuf {
 		r := []rune(u.selFor(sp.key).Text())
@@ -528,13 +529,31 @@ func (u *UI) selCopy(gtx layout.Context) {
 		}
 		parts = append(parts, string(r[sp.start:end]))
 	}
-	if len(parts) == 0 {
+	return strings.Join(parts, "\n")
+}
+
+// selCopy Ctrl+C（D91 ④）：选区文本写系统剪贴板。
+func (u *UI) selCopy(gtx layout.Context) {
+	t := u.selText()
+	if t == "" {
 		return
 	}
 	gtx.Execute(clipboard.WriteCmd{
 		Type: "application/text", // Gio 自家 Selectable 复制同款 MIME
-		Data: io.NopCloser(strings.NewReader(strings.Join(parts, "\n"))),
+		Data: io.NopCloser(strings.NewReader(t)),
 	})
+}
+
+// blockText 整条气泡的渲染文本（D92）：[base, base+n) 行选键逐键 Text()、键间
+// `\n` 拼接（与 selCopy 同拼接口径；未铺开键无文本、跳过）。
+func (u *UI) blockText(base, n int) string {
+	var parts []string
+	for k := base; k < base+n; k++ {
+		if t := u.selFor(k).Text(); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // writeKeyRects 量期记录 → 窗口系几何落盘（paint 期、行原点已定）+ 结构指纹流式

@@ -470,6 +470,9 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.updateClicks(gtx)
 	u.updateDrag(gtx)
 	u.updateLogo(gtx)
+	if !u.collapsed {
+		u.updateBubbleRight(gtx) // D92：气泡右键消费者（事件仅展开态注册，收起态无）
+	}
 	// D71 滚轮手势钉点复评：收起/停靠/光标移位 = 手势结束 → 解除钉点、恢复逐像素
 	// 穿透。事件静默时无帧可跑：钉点残留原像素至下一帧，任意本窗事件到达即自愈。
 	if u.wheelCap && (u.collapsed || u.docked || cursorPos() != u.wheelAnchor) {
@@ -660,7 +663,8 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 		// 空态不渲染任何元素（悬浮球只剩输入栏，区域全透；转写浮层"提交后出现"，§15.1）。
 		u.contentH = 0
 		u.scrollPx = 0
-		u.keyRects = u.keyRects[:0] // 键清零 → 指针值（0）与任何选区指纹都不同，选区下帧自愈
+		u.keyRects = u.keyRects[:0]       // 键清零 → 指针值（0）与任何选区指纹都不同，选区下帧自愈
+		u.bubbleRects = u.bubbleRects[:0] // D92：气泡矩形随帧复位
 		u.keyFp = 0
 		return
 	}
@@ -671,6 +675,8 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	// D91 ① 跨块拖选观察者热区：转写视口整片（clip 无平移 = 窗口系坐标，与行 keyRects
 	// 同一坐标系；注册于同组内与滚动手势同一命中链——根级注册会被行组命中跳过）。
 	event.Op(gtx.Ops, &u.sel)
+	// D92 气泡右键手势：同组命中链（同 D91 ①——根级注册不可达）；坐标 = 窗口系。
+	u.bubbleRight.add(gtx.Ops)
 
 	gap := gtx.Dp(rowGapDp)
 	// ① 量高（文本只排一次，录宏供绘制复用）；行选几何按（行,块）双键挂接（D63/D66/
@@ -680,6 +686,7 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	rows := make([]measuredRow, len(items))
 	total, totalKeys := 0, 0
 	for i := range items {
+		items[i].keyBase = totalKeys // D92：整条复制按键区间取渲染文本
 		rs := &rowSel{u: u, base: totalKeys, n: items[i].selCount()}
 		rows[i] = u.measureRow(gtx, items[i], w, rs)
 		total += rows[i].height()
@@ -716,10 +723,11 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	//（行盒缓冲逐帧复用），指纹流式喂哈希（行序 = 键序）。消费者阶段（下一帧
 	// updateSel）读到的即上一帧整帧几何——一帧陈旧是既定口径。
 	u.keyRects = u.keyRects[:0]
+	u.bubbleRects = u.bubbleRects[:0] // D92：气泡矩形随帧复位（paint 期重登记）
 	fph := fnv.New64a()
 	y := base - u.scrollPx + pad
 	for i := range rows {
-		rh := u.paintRow(gtx, rows[i], w, y, viewport, fph)
+		rh := u.paintRow(gtx, rows[i], items[i], w, y, viewport, fph)
 		y += rh + gap
 	}
 	u.keyRects = u.keyRects[:totalKeys] // 结构缩小时清尾（writeKeyRects 按 base 定位不越界）
@@ -774,8 +782,9 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, rs *rowSel) mea
 }
 
 // paintRow 绘制底板 + 文本并登记形状；y 为视口内绝对坐标（可为负）。
-// 顺带把本行量期记录译成窗口系键几何（D91 ②）并喂结构指纹。返回行总高（px）。
-func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport image.Rectangle, fph hash.Hash64) int {
+// 顺带把本行量期记录译成窗口系键几何（D91 ②）并喂结构指纹；menuable 条目登记
+// 气泡底板矩形（D92 右键命中）。返回行总高（px）。
+func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int, viewport image.Rectangle, fph hash.Hash64) int {
 	x := gtx.Dp(sideMarginDp)
 	if mr.right {
 		x = w - gtx.Dp(sideMarginDp) - mr.dims.X - 2*mr.padX
@@ -786,6 +795,12 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, w, y int, viewport ima
 	}
 	if mr.sel != nil {
 		u.writeKeyRects(mr.sel, image.Pt(bgRect.Min.X+mr.padX, bgRect.Min.Y+mr.padY), fph)
+	}
+	if it.menuable() {
+		u.bubbleRects = append(u.bubbleRects, bubbleHit{
+			rect: bgRect, bi: it.bi, id: it.id, kind: it.kind,
+			keyBase: it.keyBase, keyN: it.selCount(),
+		})
 	}
 	st := clip.UniformRRect(bgRect, mr.radius).Push(gtx.Ops)
 	paint.Fill(gtx.Ops, mr.bg)
@@ -1634,7 +1649,9 @@ func featherWidth(m unit.Metric, w, h int) int {
 
 // blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块；
 // md = 助手定稿块的 markdown 结构块（D66 复合行）；chip/chipIdx = 工具合并 chip
-// 及其块序（D67），text 为空；branch = 分叉条（D81））。
+// 及其块序（D67），text 为空；branch = 分叉条（D81）；bi/id = 所源 model 块序与
+// 节点 ID（D92 右键菜单数据键——与 block.id 同源，live 条目为空）；keyBase = 行选
+// 键线性基址（transcript 量高期填，整条复制取渲染文本用））。
 type blockView struct {
 	kind    blockKind
 	text    string
@@ -1644,6 +1661,15 @@ type blockView struct {
 	chip    *toolChip
 	chipIdx int
 	branch  *branchStrip
+	bi      int
+	id      conversation.MessageID
+	keyBase int
+}
+
+// menuable 该条目是否响应气泡右键（D92）：带节点 ID 的 user/assistant 定稿块
+// （live 草稿/思考/chip/notice 无 id 或非正文角色，不进菜单）。
+func (it blockView) menuable() bool {
+	return it.id != "" && (it.kind == blockUser || it.kind == blockAssistant)
 }
 
 // selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数；工具 chip = 恒 2
@@ -1766,11 +1792,11 @@ func (u *UI) frameItems() []blockView {
 	for bi, b := range u.m.blocks {
 		switch {
 		case b.kind == blockAssistant:
-			items = append(items, blockView{kind: blockAssistant, md: u.mdBlocks(b.text)})
+			items = append(items, blockView{kind: blockAssistant, md: u.mdBlocks(b.text), bi: bi, id: b.id})
 		case b.kind == blockTool && b.chip != nil:
 			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi})
 		default:
-			items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs})
+			items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs, bi: bi, id: b.id})
 		}
 		if next < len(strips) && strips[next].blockIdx == bi {
 			s := strips[next] // 拷贝：条目持值，避免共享切片元素
@@ -2115,6 +2141,127 @@ func (u *UI) requestLogoMenu() {
 		return
 	}
 	postLogoMenu()
+}
+
+// bubbleHit 右键命中的气泡底板矩形（D92）：rect = 气泡底板（窗口系，与形状登记同一
+// bgRect——padding 区也是气泡的一部分）；bi/id/kind 定位块，keyBase/keyN = 该块的
+// 行选键区间（整条复制按键区间取渲染文本）。随帧复位、消费者阶段读上一帧（一帧陈旧）。
+type bubbleHit struct {
+	rect          image.Rectangle
+	bi            int
+	id            conversation.MessageID
+	kind          blockKind
+	keyBase, keyN int
+}
+
+// bubbleRight 气泡右键手势（D92，D72 logoRight 同款）：Secondary 按下武装、同指针
+// 抬起 = fire（携按下/抬起两点——是否「原位」由消费方按气泡粒度判定）；Cancel/非
+// 右键 = 放弃。gesture 系跳过非主键按下，与 D63/D91 主键选态零冲突。按下与抬起
+// 分属两批事件，按下位置必须持久化在手势态里（Press/Release 事件各成一批送达）。
+type bubbleRight struct {
+	armed bool
+	pid   pointer.ID
+	press image.Point // 按下位置（窗口系；抬起时与抬起点比对定「原位」）
+}
+
+// add 注册右键手势（转写视口 clip 内、与 D91 观察者同组命中链；事件坐标 = 窗口系）。
+func (r *bubbleRight) add(ops *op.Ops) { event.Op(ops, r) }
+
+// update 消费手势事件：同指针按下后抬起返回 (按下点, 抬起点, true)；移出后抬起、
+// Cancel、非右键按下均解除武装（位置门控的气泡级判定在消费方——hitBubble 比对）。
+func (r *bubbleRight) update(q input.Source) (press, release image.Point, fire bool) {
+	for {
+		ev, ok := q.Event(pointer.Filter{
+			Target: r,
+			Kinds:  pointer.Press | pointer.Release | pointer.Cancel,
+		})
+		if !ok {
+			break
+		}
+		e, ok := ev.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch e.Kind {
+		case pointer.Press:
+			r.armed = e.Buttons.Contain(pointer.ButtonSecondary)
+			r.pid = e.PointerID
+			r.press = e.Position.Round()
+		case pointer.Release:
+			if r.armed && e.PointerID == r.pid {
+				release = e.Position.Round()
+				press = r.press
+				fire = true
+			}
+			r.armed = false
+		case pointer.Cancel:
+			r.armed = false
+		}
+	}
+	return press, release, fire
+}
+
+// hitBubble 点落在哪个气泡底板（D92）；未命中返回 -1。
+func (u *UI) hitBubble(p image.Point) int {
+	for i := range u.bubbleRects {
+		if p.In(u.bubbleRects[i].rect) {
+			return i
+		}
+	}
+	return -1
+}
+
+// updateBubbleRight 气泡右键消费者（D92）：命中解析 + 菜单请求。bubbleRects 一帧
+// 陈旧（与 keyRects 同口径）——命中基于上一帧气泡矩形；「原位」= 按下与抬起落在
+// 同一气泡（抬起位置定菜单位）。
+func (u *UI) updateBubbleRight(gtx layout.Context) {
+	press, release, fire := u.bubbleRight.update(gtx.Source)
+	if !fire {
+		return
+	}
+	pi := u.hitBubble(press)
+	if pi < 0 || pi != u.hitBubble(release) {
+		return
+	}
+	u.requestBubbleMenu(u.bubbleCtx(pi))
+}
+
+// bubbleMenuCtx 气泡右键菜单上下文（D92）：Gio 线程命中时组好、atomic.Pointer 过
+// 线程到 shell；edit = 编辑预填文本（user 块原文本），copy = 复制文本（选区优先，
+// 否则整条渲染文本）。
+type bubbleMenuCtx struct {
+	id   conversation.MessageID
+	kind blockKind
+	edit string
+	copy string
+}
+
+// bubbleCtx 组装菜单上下文（D92）：复制文本此刻定——选区激活取选区（D91 后果⑤：
+// 副键留 S2 菜单复用选态），否则整条气泡渲染文本（逐键 Text 拼接，与 selCopy 同
+// 口径）；user 块另备编辑预填原文。
+func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
+	it := u.bubbleRects[h]
+	ctx := &bubbleMenuCtx{id: it.id, kind: it.kind}
+	if u.sel.active {
+		ctx.copy = u.selText()
+	} else {
+		ctx.copy = u.blockText(it.keyBase, it.keyN)
+	}
+	if it.kind == blockUser && it.bi < len(u.m.blocks) {
+		ctx.edit = u.m.blocks[it.bi].text
+	}
+	return ctx
+}
+
+// requestBubbleMenu 请求弹出气泡右键菜单（D92）：测试经 bubbleMenuHook 回执；生产
+// 存上下文原子槽并投 shell 线程呈现（TrackPopupMenu 不嵌 Gio 泵，D72 同款）。
+func (u *UI) requestBubbleMenu(ctx *bubbleMenuCtx) {
+	if u.bubbleMenuHook != nil {
+		u.bubbleMenuHook(ctx)
+		return
+	}
+	u.bubbleMenu.Store(ctx)
+	postBubbleMenu()
 }
 
 // updateLogo logo 圆钮手势（§15.1 把手含 logo）：拖动移窗；单击（位移小于

@@ -224,6 +224,16 @@ type UI struct {
 	selSpansBuf []selSpan
 	selScratch  []widget.Region
 
+	// 气泡右键（D92）：bubbleRects = paint 期逐行登记的气泡底板矩形（随帧复位，
+	// 消费者阶段读上一帧——与 keyRects 同口径的一帧陈旧）；bubbleRight = 武装-原位
+	// 抬手手势态（D72 logoRight 同款）；bubbleMenu = 命中后组好的菜单上下文原子槽
+	// （过线程到 shell 呈现）；bubbleMenuHook = 测试注入口（headless 不投 shell）。
+	// 仅事件循环 goroutine 读写（bubbleMenu 原子槽除外）。
+	bubbleRects    []bubbleHit
+	bubbleRight    bubbleRight
+	bubbleMenu     atomic.Pointer[bubbleMenuCtx]
+	bubbleMenuHook func(*bubbleMenuCtx)
+
 	// 分叉条点击件（D81）：按分叉条序缓存左右两个 Clickable（get-or-create）；分叉条
 	// 消费 0 个行选键（selCount），故其增删不漂移其它行的选择键。仅事件循环 goroutine 读写。
 	branchPrev []*widget.Clickable

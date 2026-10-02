@@ -58,6 +58,9 @@ func reRegisterHotkey() {}
 // postLogoMenu logo 右键菜单未适配（shell 线程不存在，§15.6 仅 Windows 实测）。
 func postLogoMenu() {}
 
+// postBubbleMenu 气泡右键菜单未适配（shell 线程不存在，D92 仅 Windows 实测）。
+func postBubbleMenu() {}
+
 // subclassCloseToHide 关窗拦截未适配（窗口照常销毁）。
 func subclassCloseToHide(uintptr) {}
 

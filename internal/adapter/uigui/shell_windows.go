@@ -61,6 +61,7 @@ const (
 	trayCallback    = wmApp + 1
 	rehotkeyMsg     = wmApp + 2 // 托盘线程内重注册全局快捷键（设置窗改 hotkey 投递，§15.1）
 	logoMenuMsg     = wmApp + 3 // 托盘线程呈现 logo 右键菜单（D72：Gio 检出右键后投递）
+	bubbleMenuMsg   = wmApp + 4 // 托盘线程呈现气泡右键菜单（D92：上下文在 u.bubbleMenu 原子槽）
 
 	swRestore = 9
 
@@ -329,6 +330,14 @@ func logoMenuItems(level string) []menuIt {
 func postLogoMenu() {
 	if h := shellHWND.Load(); h != 0 {
 		procPostMessageW.Call(h, logoMenuMsg, 0, 0)
+	}
+}
+
+// postBubbleMenu 投递气泡右键菜单请求到托盘线程（D92：命中上下文已存 u.bubbleMenu
+// 原子槽，Gio 线程 Store 先于本调用）。shell 未就绪（启动微窗/headless）= 静默放弃。
+func postBubbleMenu() {
+	if h := shellHWND.Load(); h != 0 {
+		procPostMessageW.Call(h, bubbleMenuMsg, 0, 0)
 	}
 }
 
