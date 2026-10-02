@@ -1819,35 +1819,53 @@ func (u *UI) frameItems() []blockView {
 
 // statusText 状态行文本（数据源同 uitui Status 回调：Model/Level/Effort 现取）。
 func (u *UI) statusText() string {
-	if !u.generating.Load() {
-		return ""
-	}
-	phase := "生成中"
-	if u.m.think.Len() > 0 {
-		phase = "思考中"
-	}
-	parts := []string{phase}
-	if u.opts.Status != nil {
-		st := u.opts.Status()
-		if st.Model != "" {
-			parts = append(parts, st.Model)
+	if u.generating.Load() {
+		phase := "生成中"
+		if u.m.think.Len() > 0 {
+			phase = "思考中"
 		}
-		if st.Level != "" {
-			parts = append(parts, st.Level)
+		parts := []string{phase}
+		if u.opts.Status != nil {
+			st := u.opts.Status()
+			if st.Model != "" {
+				parts = append(parts, st.Model)
+			}
+			if st.Level != "" {
+				parts = append(parts, st.Level)
+			}
+			if st.Effort != "" {
+				parts = append(parts, st.Effort)
+			}
 		}
-		if st.Effort != "" {
-			parts = append(parts, st.Effort)
-		}
+		return strings.Join(parts, " · ")
 	}
-	return strings.Join(parts, " · ")
+	// D92 编辑态提示（无生成状态时占用状态行；生成优先——编辑可跨生成提交排队）。
+	if u.m.editTarget != "" {
+		return "编辑中 · Enter 提交 / Esc 取消"
+	}
+	return ""
 }
 
 // updateEditor 消费编辑器事件（Enter → SubmitEvent → 提交）。material.Editor.Layout
 // 内部也会 Update 但丢弃返回的 SubmitEvent——必须在渲染前自己循环取尽。
+// D92：编辑态额外拉取 Esc = 取消（清目标与编辑框；与 D91 选区 Escape 清除同为广播
+// 过滤器，同按时二者皆发生——语义相容）。
 func (u *UI) updateEditor(gtx layout.Context) {
 	if u.m.confirm != nil {
 		u.updateReasonEditor(gtx) // D86：确认态 = 原因编辑器消费按键（主编辑器隐藏）
 		return
+	}
+	if u.m.editTarget != "" {
+		for {
+			ev, ok := gtx.Event(key.Filter{Name: key.NameEscape})
+			if !ok {
+				break
+			}
+			if ke, isKey := ev.(key.Event); isKey && ke.State == key.Press {
+				u.cancelEdit()
+				break
+			}
+		}
 	}
 	if !u.inFadePass {
 		u.caretFocused = gtx.Focused(&u.editor) // 真窗 pass 捕获（fade pass 零 Source 恒 false）
@@ -1992,10 +2010,19 @@ func (u *UI) submitEditor() {
 	}
 	text := strings.TrimSpace(u.editor.Text())
 	if text == "" {
+		if u.m.editTarget != "" { // D92：编辑态空提交 = 取消
+			u.cancelEdit()
+		}
 		return
 	}
 	u.editor.SetText("")
 	u.m.submit(text)
+}
+
+// cancelEdit 退出编辑态（D92）：清目标节点并还原空编辑框（Esc / 空提交共用）。
+func (u *UI) cancelEdit() {
+	u.m.editTarget = ""
+	u.editor.SetText("")
 }
 
 // updateClicks 控件行为：发送/停止/允许/拒绝（logo 手势与悬停在 updateLogo）。

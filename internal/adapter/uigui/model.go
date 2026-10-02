@@ -74,6 +74,9 @@ type model struct {
 	confirm     *pendingConfirm
 	confirmChip int                // 确认归属的 chip 块序（D67；-1 = 非 chip 确认，如 /rm）
 	usage       conversation.Usage // 节点权威累计（用量详情后补进 logo 菜单，§15.1）
+	// editTarget 编辑态目标节点（D92 气泡右键「编辑」）：非空时提交 = 结构化 /edit
+	// 命令（不回显，修订结果由清屏回放呈现）；"" = 非编辑态。仅事件循环 goroutine 读写。
+	editTarget conversation.MessageID
 }
 
 // newModel 初始状态机。
@@ -272,7 +275,7 @@ func (m *model) replay(msg conversation.Message) {
 	}
 }
 
-// submit 提交一行：确认态优先应答，空行忽略，其余先投递再入转写。
+// submit 提交一行：确认态优先应答，编辑态走结构化 /edit，空行忽略，其余先投递再入转写。
 // 投递失败（缓冲满）时明确标注"未执行"——不制造"已执行"错觉（uitui 审查修复同款）。
 func (m *model) submit(text string) {
 	if m.confirm != nil {
@@ -281,6 +284,22 @@ func (m *model) submit(text string) {
 	}
 	line := strings.TrimSpace(text)
 	if line == "" {
+		return
+	}
+	// D92 编辑态：提交 = 结构化 /edit 命令——Args 直达不经斜杠解析（parseEditArgs 的
+	// Join 对单元素是恒等，多行文本保真）；不回显 blockUser，修订结果由 /edit 的清屏
+	// 回放呈现（D81 口径：转写区恒与 Head 一致）。
+	if m.editTarget != "" {
+		id := m.editTarget
+		m.editTarget = ""
+		select {
+		case m.u.inCh <- port.UserInput{Command: &port.Command{
+			Name: "edit",
+			Args: []string{string(id), line},
+		}}:
+		default:
+			m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
+		}
 		return
 	}
 	select {

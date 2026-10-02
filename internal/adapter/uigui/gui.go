@@ -31,6 +31,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -541,6 +542,12 @@ type (
 	sayMsg struct{ text string }
 	// inputMsg 注入一行提交（headless 测试与外部输入泵用；窗口侧走 model.submit）。
 	inputMsg struct{ text string }
+	// editMsg 进入编辑态（D92 气泡右键「编辑」经 shell 菜单分发投递）：目标节点 +
+	// 预填原文；提交/Esc 的生命周期见 model.editTarget 与 cancelEdit。
+	editMsg struct {
+		id   conversation.MessageID
+		text string
+	}
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
 		prompt string
@@ -573,6 +580,12 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.m.say(m.text)
 	case inputMsg:
 		u.m.submit(m.text)
+	case editMsg:
+		// D92 编辑态入口：预填原文 + 焦点入编辑框（同唤出口径——layout 次帧执行
+		// FocusCmd）；提交/Esc 的收尾见 model.submit 与 cancelEdit。
+		u.m.editTarget = m.id
+		u.editor.SetText(m.text)
+		u.focusPending = true
 	case confirmMsg:
 		u.m.startConfirm(m.prompt, m.reply)
 	case confirmResultMsg:
