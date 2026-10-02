@@ -499,11 +499,51 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if err := s.persist(ctx); err != nil {
 			return "", err
 		}
+		// D92：Revise 已移 Head（Fresh 恒移、Carry 例外）——清屏回放新路径，
+		// 转写区恒与 Head 一致（D81 口径，/goto 同款；此前只入树不回放是缺口）。
+		if err := s.emitClear(ctx); err != nil {
+			return "", err
+		}
+		if _, err := s.replayHistory(ctx, "已修订"); err != nil {
+			return "", err
+		}
 		note := "旧分支保留"
 		if mode == conversation.Carry {
 			note = "后续历史已转移"
 		}
 		return fmt.Sprintf("已修订 %s → %s（%s，%s；Head → %s）", id, m.ID, mode, note, s.cur.Head), nil
+
+	case "regen":
+		if len(cmd.Args) != 1 {
+			return "", errors.New("用法: /regen <id>（id 可为用户或助手消息，支持唯一前缀）")
+		}
+		id, err := s.resolveNode(cmd.Args[0])
+		if err != nil {
+			return "", err
+		}
+		um, err := s.upstreamUser(id)
+		if err != nil {
+			return "", err
+		}
+		// D92：原 Parts 原样重发（Revise 内部 cloneParts，多模态分片保真）；
+		// Fresh 开同父兄弟节点，旧回答子树原样留作历史分支。
+		if _, err := s.cur.Revise(um.ID, um.Content, conversation.Fresh); err != nil {
+			return "", fmt.Errorf("session: 重发用户消息: %w", err)
+		}
+		if err := s.persist(ctx); err != nil {
+			return "", err
+		}
+		// Head 已移到新分叉：清屏回放（D81 口径）后重跑一轮生成。
+		if err := s.emitClear(ctx); err != nil {
+			return "", err
+		}
+		if _, err := s.replayHistory(ctx, "已重新生成"); err != nil {
+			return "", err
+		}
+		if err := s.runTurn(ctx); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("已重新生成（旧回答保留为分支；Head → %s）", s.cur.Head), nil
 
 	case "branch":
 		if len(cmd.Args) > 1 {
@@ -690,6 +730,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/title [文本]           查看/改写会话标题",
 			"/goto <id>              Head 移到任意节点（分支导航；id 支持唯一前缀）",
 			"/edit <id> [--keep] <文本>  Revise：缺省 Fresh 开新分支；--keep 边转移保留后续历史",
+			"/regen <id>             重新生成：上游用户消息原样重发分叉（旧回答保留为分支）",
 			"/branch [id]            展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）",
 			"/rm <id>                删除节点及整棵子树（二次确认）",
 			"/compact                触发上下文压缩（生成 system 摘要节点，D21）",
@@ -764,6 +805,22 @@ func (s *Session) resolveNode(arg string) (conversation.MessageID, error) {
 		}
 		return "", fmt.Errorf("节点标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(ids, ", "))
 	}
+}
+
+// upstreamUser 沿 Parent 回溯找 id 上游最近一条 user 消息（D92 /regen：
+// 重发对象——id 本身是 user 消息时即其自身）；到 Root（Parent == ""）仍未遇则报错。
+func (s *Session) upstreamUser(id conversation.MessageID) (conversation.Message, error) {
+	for cur := id; cur != ""; {
+		m, ok := s.cur.Find(cur)
+		if !ok {
+			return conversation.Message{}, fmt.Errorf("session: 节点 %s 不在会话树中", cur)
+		}
+		if m.Role == conversation.RoleUser {
+			return m, nil
+		}
+		cur = m.Parent
+	}
+	return conversation.Message{}, errors.New("session: 该消息上游没有用户消息，无法重新生成")
 }
 
 // resolveConversation 按会话 ID（精确或唯一前缀）解析会话（/memory [会话id] 用）；

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -1087,6 +1088,109 @@ func TestSessionGotoClearsAndReplays(t *testing.T) {
 	}
 	if got := text(last.Message); !strings.Contains(got, "改过的回复") {
 		t.Fatalf("回放文本 = %q, want 含新分支内容「改过的回复」", got)
+	}
+}
+
+// TestSessionEditClearsAndReplays D92：/edit 修订后清屏 + 回放新路径——Head 移动类
+// 命令统一口径（D81；此前只入树不回放，界面停在旧文本）。
+func TestSessionEditClearsAndReplays(t *testing.T) {
+	ctx := context.Background()
+	s, _, rec := newTestSession(t, newMemStore(), textStream("回复一"))
+	if _, err := s.Handle(ctx, port.UserInput{Text: "你好"}); err != nil {
+		t.Fatalf("首轮: %v", err)
+	}
+	first := s.Current().Path()[3].ID
+
+	rec.events = nil
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "edit",
+		Args: []string{string(first), "改过的回复"}}}); err != nil {
+		t.Fatalf("/edit: %v", err)
+	}
+	sib := revisedID(s.Current(), first)
+	names := eventNames(rec.events)
+	if len(names) != 4 || names[0] != "clear" || names[1] != "notice" || names[2] != "history" || names[3] != "history" {
+		t.Fatalf("events = %v, want [clear notice history history]", names)
+	}
+	notice := rec.events[1].(port.NoticeEvent)
+	if !strings.Contains(notice.Text, "已修订会话") || !strings.Contains(notice.Text, "回放 2 条历史") {
+		t.Fatalf("notice = %q", notice.Text)
+	}
+	hist := rec.events[3].(port.HistoryEvent)
+	if hist.Message.ID != sib || !strings.Contains(hist.Message.Content[0].Text, "改过的回复") {
+		t.Fatalf("回放末节点 = %s %q, want 新分支「改过的回复」", hist.Message.ID, hist.Message.Content[0].Text)
+	}
+}
+
+// TestSessionRegenCommand D92 /regen：上游最近用户消息原样重发为同父兄弟（Fresh 分叉，
+// 旧回答保留），清屏回放后重跑一轮生成。
+func TestSessionRegenCommand(t *testing.T) {
+	store := newMemStore()
+	s, _, rec := newTestSession(t, store, textStream("新的回答"), textStream("重发回答"))
+	c := buildTree(t, s)
+
+	// regen 助手消息 a1：上游最近 user = u1，原样重发为同父兄弟节点。
+	if _, err := handleCmd(s, "regen", "a1"); err != nil {
+		t.Fatalf("/regen: %v", err)
+	}
+	nu := revisedID(c, "u1")
+	if nu == "" {
+		t.Fatal("RevisedFrom 应记录 新user→u1")
+	}
+	nuMsg := c.Nodes[nu]
+	if nuMsg.Parent != "p" || nuMsg.Role != conversation.RoleUser || nuMsg.Content[0].Text != "问题" {
+		t.Fatalf("新 user 节点 = %+v, want 同父同角色原内容", nuMsg)
+	}
+	// 旧分支原样保留：u1 → a1 → t1 → u2 仍在。
+	if got := c.Children["u1"]; len(got) != 1 || got[0] != "a1" {
+		t.Fatalf("children[u1] = %v, want 旧分支保留", got)
+	}
+	// 新回答生成在新 user 之下，Head 到位。
+	if c.Nodes[c.Head].Role != conversation.RoleAssistant || c.Nodes[c.Head].Parent != nu {
+		t.Fatalf("head = %s (parent %s), want 新 user 下的 assistant 回答", c.Head, c.Nodes[c.Head].Parent)
+	}
+	if got := c.Nodes[c.Head].Content[0].Text; got != "新的回答" {
+		t.Fatalf("新回答 = %q, want 新的回答", got)
+	}
+	// 事件序：clear → notice → 回放新路径（nu）→ 新一轮 Turn 流式。
+	names := eventNames(rec.events)
+	if len(names) < 4 || names[0] != "clear" || names[1] != "notice" || names[2] != "history" {
+		t.Fatalf("events 前缀 = %v, want [clear notice history ...]", names)
+	}
+	if !slices.Contains(names, "delta") || !slices.Contains(names, "committed") {
+		t.Fatalf("events = %v, want 新一轮含 delta/committed", names)
+	}
+	hist := rec.events[2].(port.HistoryEvent)
+	if hist.Message.ID != nu {
+		t.Fatalf("回放节点 = %s, want %s", hist.Message.ID, nu)
+	}
+	if saved := store.convs[c.ID]; saved == nil || saved.Head != c.Head {
+		t.Fatalf("saved head = %+v, want 已落盘", saved)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	// regen 用户消息直达：upstreamUser 即其自身（u2 的兄弟挂 t1 之下）。
+	if _, err := handleCmd(s, "regen", "u2"); err != nil {
+		t.Fatalf("/regen u2: %v", err)
+	}
+	nu2 := revisedID(c, "u2")
+	if nu2 == "" || c.Nodes[nu2].Parent != "t1" || c.Nodes[nu2].Content[0].Text != "追问" {
+		t.Fatalf("regen u2 新节点 = %+v, want 同父（t1）原内容", c.Nodes[nu2])
+	}
+
+	// 错误路径：用法 / 不存在 / 上游无用户消息（persona 与 Root）。
+	if _, err := handleCmd(s, "regen"); err == nil || !strings.Contains(err.Error(), "用法") {
+		t.Fatalf("用法 err = %v", err)
+	}
+	if _, err := handleCmd(s, "regen", "zz"); err == nil || !strings.Contains(err.Error(), "没有节点") {
+		t.Fatalf("不存在 err = %v", err)
+	}
+	if _, err := handleCmd(s, "regen", "p"); err == nil || !strings.Contains(err.Error(), "上游没有用户消息") {
+		t.Fatalf("persona err = %v", err)
+	}
+	if _, err := handleCmd(s, "regen", "convT"); err == nil || !strings.Contains(err.Error(), "上游没有用户消息") {
+		t.Fatalf("root err = %v", err)
 	}
 }
 
