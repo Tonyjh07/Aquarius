@@ -18,7 +18,7 @@
 | 1 | 设置界面，config.json 解析 | 设置窗核心档已落地（模型/权限/think/effort/hotkey/主题；`settingsSnapshot`/`persistSettingsTextKeys`/`applySettings` 写回 + 热生效，密钥只写不回显） | 全量 `fileConfig` 编辑（limits/output/system_prompt/mcpServers/plugins/…）；分组导航；未知键保留 | M |
 | 2 | 欢迎界面，引导配置与教程 | `winWelcome` 独立窗壳已存在（D60 多窗宿主） | 数据面：首步引导（provider/key/model 三问）+ 操作教程页 + 「首次运行」判定（如 `ui.welcomed` 标记） | M |
 | 3 | 会话管理界面（树状） | `ConversationStore.List` 已有；`/list` `/goto` `/branch` `/rm` 命令已有；winHistory 窗壳已存在 | ① **已落地（D75）**：切换到已有会话 + `/new` 后回放；仍缺**删除任意会话**命令（`Remove` 无命令调用者）与**改名非当前会话**（`/title` 只改当前）；② 会话树结构进 UI 的**只读数据面**（**已落地（D80/§7.5，前置 A）**：`port.TreeView` + app 原子发布快照——树状 UI 自绘可直接消费）；③ 树状 UI 自绘 | L |
-| 4 | 消息气泡右键（编辑/重生成/复制） | D72 右键手势与 `menuIt`/`runMenu`/`menuDispatch` 共享件已就绪；领域 `/edit` `/branch` 已实现分叉语义 | 主窗**行级**右键命中（D63 行选可复用）；呈现复用 D72 TPM 管线、重生成 = 重发上游用户消息（§5-Q2/Q3 已定）；复制 = Gio clipboard | M |
+| 4 | 消息气泡右键（编辑/重生成/复制） | **已落地（D92）**：右键手势（气泡底板矩形命中）+ TPM 菜单 + `/regen`（上游用户消息分叉重发）+ 编辑态（结构化 `/edit` 直达）+ 复制（选区优先/整条渲染文本）；`/edit` 补清屏回放 | 可增项：引用/查看原始块（roadmap 预留）；thinking/chip 块的右键 | M |
 | 5 | 配置文件化（多配置独立与切换） | config 单文件单路径（数据目录 `config.json`），读/写/警告链路清晰 | config **schema 破坏性改造**（profile 目录布局或 `profiles/` 段）；加载/写回全链路；设置窗 profile 切换 UI；CLI 参数 | L |
 | 6 | 模型与提供商管理 + 自动 fallback | `modelConfig` 单提供商；LLM 适配器（OpenAI 兼容）；重试装饰器（429 退避）已在 main 装配处 | provider 列表化 schema（破坏性，建议与 #5 同批）；fallback 链语义（错误分类 → 降级顺序 → 状态行提示）；设置窗管理页 | L |
 | 7 | 工具与 MCP 管理 | plugin host 已支持运行时 `Enable/Disable/Status/Grant`（D31），`/plugin list\|enable\|disable` 已有，config `plugins`/`mcpServers` 段已有 | 设置窗数据面（列表、启停、连接状态、授权、日志）；内置工具**无**启停机制（现仅 MCP 插件可禁用）；跨窗通知（host 状态变化 → UI 刷新） | M |
@@ -91,6 +91,8 @@
 - 路径：行命中（D63 行选/`selRows` 复用，D91 `keyRects` 可直接供给矩形）→ 武装-原位抬手（D72 手势同款）→ 菜单呈现 → `menuDispatch` 扩展分发到 `/edit`、`/branch`(+重发)、clipboard（复制项复用 D91 跨块选态：有选区 → 复制选区，否则整条）。
 - 前置已定：菜单复用 D72 TPM 管线（§5-Q2）、重新生成 = 重发上游用户消息分叉（§5-Q3）。
 - 测试：行命中与手势复现测试（headless）、分发注入 `inCh` 测试（同 `TestMenuDispatchNew` 模式）、`/edit`/`/branch` 内核测试已有。
+- 改动面（落地口径，**D92 已入档**）：`window.go`（`bubbleRects` 气泡底板矩形随帧登记 + `bubbleRight` 手势 + 编辑态提示/取消）+ `model.go`（编辑态提交 = 结构化 `/edit` 命令直达、不回显）+ `shell_windows.go`（`bubbleMenuMsg` 呈现 + `menuDispatchBubble` 三项分发）+ `gui.go`（`editMsg`/`copyMsg`/`pendingCopy` 帧内落剪贴板）+ `session.go`（**新 `/regen`**：上游最近 user 消息 Revise Fresh 分叉重发 → 清屏回放 → Turn；**`/edit` 补清屏回放**——D81「转写区恒与 Head 一致」口径统一）。
+- **状态（2026-10-02）**：**已落地（D92）**——headless 测试（矩形登记/手势状态机/复制口径/编辑态生命周期/分发注入 + `/regen` `/edit` 内核）+ 三门禁全绿；命中实现按**气泡底板矩形**（非 `keyRects` 行盒——padding 也是气泡、且行选键无块身份），「原位」= 按下与抬起落在同一气泡。手工验收待执行：右键编辑/重生成/复制、选区优先复制、Esc 取消、TUI 侧 `/edit`/`/regen` 回放。
 
 ### S2b · 输入行体验：命令补全 + 预留按钮实装 + 附件（M6–M7，P1，M~L，**新增，已拍板**）
 
