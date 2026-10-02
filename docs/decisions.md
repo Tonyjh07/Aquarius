@@ -104,6 +104,7 @@
 | D88 | 揭示/呼出后立即补提交 ULW：焊死「可见但分层位图未生效」竞态（§15.1，用户实测一次性） | 生效 |
 | D89 | 纯工具轮分叉锚点：chip/思考块承载节点 ID（S1-1f 验收发现，§15.3） | 生效 |
 | D90 | S1b 三旋钮：`ui.scale` 元素缩放 + `ui.font_size` 字号（最终 = 字号 × 缩放）+ 主窗像素尺寸，全热生效；Metric 咽喉点 + restorePx 治本（§15.8） | 生效 |
+| D91 | 跨块拖选 = 转写区观察者抢先 grab + `Regions` 几何自绘高亮，锚/焦点模型跨消息连续选择、Ctrl+C 拼接复制（更正 D66 后果③，S1c，§15.3） | 生效 |
 
 ## 记录
 
@@ -526,7 +527,7 @@
 - **决策**：呈现粒度从块收回**消息**——助手消息仍是 transcript 的**一行**，行内容 = 垂直 Flex 的多块复合 widget，共用一个 `pillBg` 气泡底板（思考块「头部+正文」共底板为既有先例）：① `frameItems` 对定稿助手块产出**单条目**携预解析 `md []mdBlock`（live 草稿 `md==nil` 单气泡原样，D33 口径不变）；② 块分派在 `rowStyle` 内：段落/列表项 = Body2、标题 = 大字求粗、引用 = 暗色 Body2、代码块 = 等宽 `cardTool` 小卡（录宏→画底→重放，同 `paintRow` 次序，卡在气泡内嵌套）、分隔线 = 暗点行；块间 Spacer 4dp；③ 行选挂接改**双键**——`measureRow/rowStyle` 的单 `sel` 参数改 `sels func(int) *widget.Selectable`，transcript 按条目 `selCount()`（助手 = 块数，其余 = 1）累计线性序号，`sels(k) = selFor(base+k)`：`selRows` 缓存结构与 SetText 清选区语义不变；定稿块只增不改 → 既有消息序号 base 稳定（漂移只发生在尾部 live 思考/草稿，瞬时态无选择价值）。D65 的 `blockHeading/blockCode/blockRule` 行种类随拆行机制退役（blockKind 不为 markdown 膨胀）。
 - **否决**：组级布局（transcript 主循环按消息分组——动间隙/量高/绘制三处主循环，相邻底板矩形拼接 per-corner RRect 且内部边羽化要靠 painter's-algorithm 覆盖缝合，滚动贴底主循环是 D56/D62 精调过的敏感路径）；继续多气泡（即用户反馈的问题本身）；richtext 整块替换（行内富样式正解但不解决气泡粒度，仍留后续）。
 - **后果/限制**：① 气泡宽 = 消息内最宽块（贴满宽块后短段落左侧对齐留白——标准聊天气泡形态）；② `record()` 每消息一个矩形（D65 实现期为每块一个），fade 形状数下降；③ 块内选择仍是逐块 Selectable（跨块拖选高亮分段，与拆行期等价）；④ 单块消息（纯文本回复）渲染不变。
-- **状态**：生效
+- **状态**：生效；后果③「跨块拖选高亮分段」经 D91 更正——原述不成立（Gio 按下冻结 handler 集合 + drag grab 抢占使选区钳在起始块内），跨块拖选须走 D91 观察者机制
 
 ### D67 — 工具调用单气泡 = 调用/确认/结果合并 chip，默认折叠点击展开（§15.3）
 
@@ -713,4 +714,16 @@
 - **决策**：① **三旋钮语义与键**：`ui.scale` 元素缩放倍率（默认 1.0，夹 [0.75,2.5]；设置窗百分比档 100/125/150/175/200）、`ui.font_size` 正文字号 sp（默认 15，夹 [10,28]）、`ui.window_width`/`ui.window_height` 主窗像素尺寸（0 = 缺省 `app.Size(unit.Dp(608/460))` 现行为，配置后 `unit.Px` 字面——Q11 示例 304×920 即屏上像素）。② **最终字号 = font_size × scale**（用户拍板叠加关系）；字号阶梯以正文为基准**等比**：`Sp(v)` 渲染 `v/15 × font_size × scale`，正文 15 缺省与既有渲染逐像素一致。③ **实现 = Metric 咽喉点**：FrameEvent 入口替换 `gtx.Metric`（PxPerDp×=scale、PxPerSp×=scale×font/15）、`u.frameMetric` 存缩放后值——现有全部 Dp/Sp 站点与派生几何（球锚/行锚/确认钮/形状集/fade headless）零改动自动一致；窗口 px 画布不参与缩放。④ **几何单源化**：`inputRowDp+pillTopDp+16` 五处重复收编 `inputRowBandDp`；内联字面量（输入行下边距/chip pad/tips pad/气泡最小宽）命名化。⑤ **restorePx 治本**：新增 `platformWindowDPI(hwnd)`（GetDpiForWindow，非 Windows 桩 1.0）直查 DPI，废除窗高反推。⑥ **全热生效**（用户拍板）：scale/font 下一帧生效；窗口尺寸 = 窗口线程 `SetWindowPos`（SWP_NOMOVE）→ Gio WM_SIZE → 下帧 Constraints 重排（fadePresent 尺寸竞态守卫兜底）。⑦ **极端尺寸地板**：UI 侧按实时 DPI×scale 夹最小可用 px，config 侧粗界 [200,3840]×[200,2160]；极矮窗淡出带夹 ≤ transH/4（fade 层预留的 S1b 归口）。⑧ 尺寸属配置不属位置记忆——`gui_pos.json` 不动（D52 口径）。
 - **否决**：窗口配置用 dp（用户拍板 px——屏上所见即所配，换屏语义由用户自担）；拖拽 resize（Q11 明确暂不做）；字号**偏移阶梯**（20/17/15/14 = 正文±偏移——需逐站点替换字面量且层级间距随字号失真，等比制与 Metric 咽喉点天然契合、站点零改动）；窗口尺寸重启生效（用户拍板热生效，竞态守卫基建已有）；缩放做成每站点乘子（30+ 站点触碰面大、漏一处即不一致）；窗口尺寸记忆进 gui_pos.json（尺寸是用户配置项，写回 config 即可，位置文件保持纯位置）。
 - **后果/限制**：① 设置窗新增三行（缩放 cycle / 字号数值 / 宽高数值），设置窗自身尺寸不迁移（Q12 次窗口径）；② Sp 等比后标题/代码层级差随字号缩放（等比观感更统一，接受）；③ scale/font 变化触发 fadeState 重建一次（ensure 已比较 PxPerDp/PxPerSp，代价一次离屏窗重建）；④ 极窄窗低于布局地板被夹取，不承诺更小可用；⑤ SetWindowPos 热改尺寸为新增窗口线程调用面——沿用 §15.6 铁律 1 串行 + 竞态守卫，真实窗口行为留手工验收；⑥ **停靠无需重锚（实现实证修正本决策预设）**：球锚左定于 sideMargin（ballRect.x = margin），停靠滑出位只依赖工作区边缘/球径/sliver，与窗宽无关——预设的「改宽后按边重锚」属多余机制，已省略（测试锁定该不变量）；⑦ `app.Size` 只收 dp，px 配置在 HWND 挂接点经窗口线程补投（同步等待后位置恢复按落定矩形取值）。
+- **状态**：生效
+
+### D91 — 跨块拖选 = 转写区观察者抢先 grab + `Regions` 几何自绘高亮（S1c，§15.3）
+
+- **动机/实测**：用户提出「消息内容跨行选择」。现状：**块内**跨行拖选原生可用（D66 逐块 `Selectable`），但**跨块**（同一消息的多个段落块、跨消息）拖选不成立——D66 后果③「跨块拖选高亮分段，与拆行期等价」与实际不符（本决策更正之）。机制实证（Gio v0.10.2 源码）：① 按下时 handler 集合冻结（`io/input/pointer.go` Press 期定格 `p.handlers`，拖拽不再吸纳新 handler）；② 超 3dp slop 后 `gesture.Drag` 发 `pointer.GrabCmd`，grab 把其余 handler 全部 Cancel 并丢出集合（先到先得，`router.execute` 同步执行）——起始块的 dragger 因此永远收不到跨块事件，caret 钳在本块内。D63 否决过的 `posInRow`（按下过滤）与这堵 grab 墙是同一机制的两面。
+- **决策**：范围 = **整个转写区跨消息连续**；复制 = **Ctrl+C**（拼接选中文本）。四件套：
+  ① **观察者抢先 grab（方案 B）**：raw filter（D72 `logoRight` 同款，Kinds = Press|Drag|Release|Cancel），热区 `event.Op` **注册于转写视口 clip 内（与 `transcriptScroll` 同组）**——根级（layout 栈外）注册在行内容渲染后会被行组命中链跳组、Press 永远到不了观察者（实测缺陷；空态与根级可达只是巧合），同组注册与滚动手势同一命中链保证可达；在 `layout` 消费者阶段（measure 循环之前）pull——Press 命中可选块矩形记 candidate，Drag 超 3dp slop（`gtx.Dp(3)`，随 D90 缩放）即执行 `pointer.GrabCmd{Tag: 观察者}`：同步先到先得 → 块内 dragger 收 Cancel 退出，观察者保持 Drag/Release 直至抬手（Windows 驱动 `WM_POINTERDOWN → SetCapture`，窗外 Release 照常送达，无需按钮轮询/心跳兜底）。单击/双击选词/三击选行/shift+点击都发生在 Press 阶段、无 slop → 不触发 grab，原生行为无损保留。
+  ② **锚/焦点模型**：grab 瞬间锚 = 起始块 `Selectable.Selection().start`（Press 已置 caret；双击选词后拖拽 → 锚自动为词首）；焦点 = Drag 事件 Position 经 `pointToCaret`（块 rect 命中 → 视觉行定位 → 行内 `Regions(mid,mid+1)` 二分）；块外夹取最近行缘；chip 头/分叉条无选键、不贡献文本。逐块 `[lo,hi]`：同块取区间、锚与焦点之间全选。几何底座 = measure 期对每块调 `Regions(0,n,nil)` 取每视觉行矩形（同帧 Layout 后有效、widget 相对）+ `rowStyle` 可选块组手工纵排取块内偏移 + 行原点 → 窗口坐标，按线性 selBase 键持久于 `keyRects`（帧末覆写、消费者阶段读上一帧，一帧陈旧可接受）。
+  ③ **焦点纪律 + 自绘高亮**：grab 瞬间执行 `key.FocusCmd{Tag:nil}` 清焦——widget 失焦即不绘 caret/选区、其 `Focus:` 键过滤器失效（`selectable.go` 实证），杜绝 Ctrl+C 双写；高亮由 `paintRow` 回放宏前按 `Regions(lo,hi)` 自绘（material 默认 `ContrastBg×0x60` 同公式），fade 两遍 layout 同帧同值（消费者阶段零 Source 无事件、捕获赋值幂等）。下次 Press 由 widget 自然重新取焦，原生路径无损恢复。
+  ④ **状态生命周期**：active 期间条件 pull `key.Filter{Name:"C", Required: ModShortcut}` → 逐块 `Text()` rune 切片、`\n` 拼接 → `clipboard.WriteCmd`。清除源 = **主键鼠标 Press**（触控不参与——保原生点按/滚动；副键留给 S2 右键菜单，D91 后果⑤）/ `Escape` / 编辑器获焦 / `model.clear`（树操作清 selRows 同点挂接）/ **结构指纹变化**（帧末对逐键 `(laid, len(text), text)` 长度前缀 fnv64 哈希——chip 开合、分叉切换、流式改文任一变化即清，选区不漂移到错块；会话切换走 `model.clear` 兜底）。
+- **否决**：方案 A（观察者不 grab、块内保留原生、Cancel 后轮询 `GetAsyncKeyState`+心跳收尾——任何文本拖拽都会收到 Cancel，同样要接管，却多出按钮轮询、心跳扩面与跨平台 stub，锚/焦点两头管理更脆）；逐块 Selectable 各自 `SetCaret` 拼高亮（widget 仅 focused 时自绘，多块同时聚焦不可行，焦点本是单 tag）；richtext/span 级选择（D65 已否，留后续，届时本机制的行几何直接复用）；OS 级 mouse hook/子类化（绕开 Gio 事件路由，破坏 headless 可测性）；v1 做 shift+点击跨块扩展与拖拽贴边自动滚动（增量留后续，滚轮在拖选中照常可用已覆盖基本需求）；TUI/REPL 同步实现（GUI only，同 S2b-Q15 口径）。
+- **后果/限制**：① 拖拽（哪怕单块内）由观察者接管 caret 落点，原生拖选退场——落点质量由 `Regions` 二分测试锁定，双击/三击/shift 仍原生；② 高亮跨块间经 chip 头/分叉条时视觉断开（无文本不绘制，复制拼接亦跳过）——接受；③ 极端输入栈（无 pointer 消息的虚拟机等）`SetCapture` 不生效时窗外 Release 可能丢失 → 选区滞留至下次 Press 自愈清除，不加按钮轮询；④ `keyRects` 一帧陈旧：拖选期间内容变化由结构指纹清除兜底；⑤ 与 S2 右键菜单共享同一选态（复制菜单项后续直接复用）。
 - **状态**：生效

@@ -1135,15 +1135,30 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 **§9 清洗**：所有不可信文本（流式 delta、思考、工具参数/结果、历史回放、命令输出）
 出口统一剥控制序列（对齐 `sanitizeControl`）；渲染不执行任何标记语言的活动内容。
 
-**文本选择与复制（D63）**：转写文本行挂 Gio `widget.Selectable`——拖选 / 双击选词 /
-三击整行 / Ctrl+C 复制选区（经系统剪贴板）/ Ctrl+A 行内全选；选择状态按行序缓存
-（markdown 复合行内为（行,块）双键，D66；行文本变化自动清选区，流式与会话切换
-同路径）；适用行 = 用户/助手/普通/notice/错误/系统/思考正文/工具 chip **展开体**
+**文本选择与复制（D63/D66/D91）**：转写文本行挂 Gio `widget.Selectable`——拖选 /
+双击选词 / 三击整行 / Ctrl+C 复制选区（经系统剪贴板）/ Ctrl+A 行内全选；选择状态按
+行序缓存（markdown 复合行内为（行,块）双键，D66；行文本变化自动清选区，流式与会话
+切换同路径）；适用行 = 用户/助手/普通/notice/错误/系统/思考正文/工具 chip **展开体**
 （D67：chip 头部为点击热区不挂行选）；选区高亮随 widget 状态进 fade
 位图（D62 单通道两遍渲染同帧同值）。配套：**拖层把手带收窄**为状态行 + 输入栏
 （转写区不注册拖层——`gesture.Drag` 的 pointer.Grab 先到先得，否则拖层抢走行选
 的 Drag 事件）；**编辑器焦点收口**为 `focusPending` / 自带点击取焦 / 初始焦点
 （废除每帧常驻焦点——与行获焦同帧竞态会把选区焦点抢回）。
+
+**跨块拖选（D91）**：选择范围 = **整个转写区跨消息连续**（锚/焦点模型，逐块
+`[lo,hi]`、中间块全选；chip 头/分叉条无选键，跳过其文本）。机制 = 转写区观察者
+（raw filter，热区 `event.Op` 注册于转写视口 clip 内、与滚动手势同组——根级注册
+会被行组命中链跳组而收不到 Press，实测）在 measure 之前 pull、Drag 超 slop **抢先
+`pointer.GrabCmd`**
+（Gio 按下冻结 handler 集合 + grab 先到先得——不抢先则选区钳在起始块，D66 后果③
+已更正）；锚取起始块 `Selection().start`（双击选词后拖拽锚为词首），焦点经
+`Regions` 行几何二分落点；grab 瞬间 `FocusCmd{Tag:nil}` 清焦（widget 不绘不收键），
+高亮由 `paintRow` 按 `Regions(lo,hi)` 自绘（`ContrastBg×0x60` 同公式，两遍渲染同帧
+同值）；几何底座 = measure 期捕获每块每视觉行矩形（`keyRects`，线性 selBase 键）。
+复制 = active 态 Ctrl+C 拼接（`\n` 连接）；清除 = 主键鼠标 Press（触控保原生点按、
+副键留 S2 菜单）/ Escape / 编辑器获焦 / `model.clear` / 结构指纹（逐键
+laid/len/text 哈希，chip 开合与流式改文即变）变化。单击/双击/三击/shift+点击
+无 slop 不触发 grab，原生保留；TUI/REPL 不做（GUI only）。
 
 **markdown 渲染（D65/D66）**：定稿助手文本经 goldmark（CommonMark，依赖树既有）解析为
 结构块（段落/标题/代码块/列表/引用/分隔线），`frameItems` 渲染期展开、**单回复单气泡**
