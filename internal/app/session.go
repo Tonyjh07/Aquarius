@@ -511,6 +511,15 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if mode == conversation.Carry {
 			note = "后续历史已转移"
 		}
+		// D93：编辑用户消息（Fresh 分叉）= 改写并重新生成——Head 在无回答的新节点上，
+		// 直接重跑一轮（Carry 是原地改写历史，Head 随转移子树；assistant/system 修订
+		// 不触发生成）。
+		if mode == conversation.Fresh && m.Role == conversation.RoleUser {
+			if err := s.runTurn(ctx); err != nil {
+				return "", err
+			}
+			note += "，已重新生成回答"
+		}
 		return fmt.Sprintf("已修订 %s → %s（%s，%s；Head → %s）", id, m.ID, mode, note, s.cur.Head), nil
 
 	case "regen":
@@ -525,15 +534,30 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if err != nil {
 			return "", err
 		}
-		// D92：原 Parts 原样重发（Revise 内部 cloneParts，多模态分片保真）；
-		// Fresh 开同父兄弟节点，旧回答子树原样留作历史分支。
-		if _, err := s.cur.Revise(um.ID, um.Content, conversation.Fresh); err != nil {
-			return "", fmt.Errorf("session: 重发用户消息: %w", err)
+		forked := true
+		if len(s.cur.Children[um.ID]) == 0 {
+			// D93：上游用户消息尚无任何回答（编辑 Fresh 分叉后/空轮次）——Revise 只会
+			// 造出同文本的冗余兄弟分支；Head 不在其上则移过去，直接生成本回答。
+			forked = false
+			if s.cur.Head != um.ID {
+				if err := s.cur.Checkout(um.ID); err != nil {
+					return "", fmt.Errorf("session: 移动 Head: %w", err)
+				}
+				if err := s.persist(ctx); err != nil {
+					return "", err
+				}
+			}
+		} else {
+			// 已有回答：原 Parts 原样重发（Revise 内部 cloneParts，多模态分片保真）；
+			// Fresh 开同父兄弟节点，旧回答子树原样留作历史分支。
+			if _, err := s.cur.Revise(um.ID, um.Content, conversation.Fresh); err != nil {
+				return "", fmt.Errorf("session: 重发用户消息: %w", err)
+			}
+			if err := s.persist(ctx); err != nil {
+				return "", err
+			}
 		}
-		if err := s.persist(ctx); err != nil {
-			return "", err
-		}
-		// Head 已移到新分叉：清屏回放（D81 口径）后重跑一轮生成。
+		// Head 已就位：清屏回放（D81 口径）后重跑一轮生成。
 		if err := s.emitClear(ctx); err != nil {
 			return "", err
 		}
@@ -543,7 +567,10 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if err := s.runTurn(ctx); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("已重新生成（旧回答保留为分支；Head → %s）", s.cur.Head), nil
+		if forked {
+			return fmt.Sprintf("已重新生成（旧回答保留为分支；Head → %s）", s.cur.Head), nil
+		}
+		return fmt.Sprintf("已重新生成（Head → %s）", s.cur.Head), nil
 
 	case "branch":
 		if len(cmd.Args) > 1 {
@@ -729,8 +756,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/switch <id前缀>        切换到既有会话（清屏并回放历史，D75）",
 			"/title [文本]           查看/改写会话标题",
 			"/goto <id>              Head 移到任意节点（分支导航；id 支持唯一前缀）",
-			"/edit <id> [--keep] <文本>  Revise：缺省 Fresh 开新分支；--keep 边转移保留后续历史",
-			"/regen <id>             重新生成：上游用户消息原样重发分叉（旧回答保留为分支）",
+			"/edit <id> [--keep] <文本>  Revise：缺省 Fresh 开新分支（编辑用户消息即重新生成回答，D93）；--keep 边转移保留后续历史",
+			"/regen <id>             重新生成：上游用户消息分叉重发（已有回答）；无回答直接生成（D93）",
 			"/branch [id]            展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）",
 			"/rm <id>                删除节点及整棵子树（二次确认）",
 			"/compact                触发上下文压缩（生成 system 摘要节点，D21）",

@@ -324,7 +324,8 @@ func TestSessionReplayHistoryNoHistoryOnlyPersona(t *testing.T) {
 func TestSessionSwitchCommand(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore()
-	s, _, rec := newTestSession(t, store, textStream("甲的回复"), textStream("乙的回复"))
+	// 第三条流：乙的 /edit 现编辑用户消息即重新生成（D93）。
+	s, _, rec := newTestSession(t, store, textStream("甲的回复"), textStream("乙的回复"), textStream("乙的改后回答"))
 
 	if _, err := s.Handle(ctx, port.UserInput{Text: "会话甲的内容"}); err != nil {
 		t.Fatalf("甲对话: %v", err)
@@ -1121,6 +1122,47 @@ func TestSessionEditClearsAndReplays(t *testing.T) {
 	}
 }
 
+// TestSessionEditUserRegenerates D93：编辑用户消息（Fresh 分叉）= 改写并重新生成——
+// 清屏回放后 Head 在新节点上直接重跑一轮；assistant 修订不触发生成（既有口径）。
+func TestSessionEditUserRegenerates(t *testing.T) {
+	ctx := context.Background()
+	s, _, rec := newTestSession(t, newMemStore(), textStream("回复一"), textStream("改后回答"))
+	if _, err := s.Handle(ctx, port.UserInput{Text: "你好"}); err != nil {
+		t.Fatalf("首轮: %v", err)
+	}
+	userID := s.Current().Path()[2].ID
+
+	rec.events = nil
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "edit",
+		Args: []string{string(userID), "你好（改）"}}}); err != nil {
+		t.Fatalf("/edit: %v", err)
+	}
+	c := s.Current()
+	n := revisedID(c, userID)
+	if n == "" || c.Nodes[c.Head].Parent != n ||
+		c.Nodes[c.Head].Content[0].Text != "改后回答" {
+		t.Fatalf("编辑后未重新生成: head=%s (%+v) n=%s", c.Head, c.Nodes[c.Head], n)
+	}
+	names := eventNames(rec.events)
+	if len(names) < 3 || names[0] != "clear" || names[1] != "notice" {
+		t.Fatalf("events 前缀 = %v, want [clear notice ...]", names)
+	}
+	if !slices.Contains(names, "delta") || !slices.Contains(names, "committed") {
+		t.Fatalf("events = %v, want 编辑后自动生成（delta/committed）", names)
+	}
+
+	// assistant 修订不触发生成。
+	rec.events = nil
+	asst := c.Path()[3].ID
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "edit",
+		Args: []string{string(asst), "回答（改）"}}}); err != nil {
+		t.Fatalf("/edit assistant: %v", err)
+	}
+	if names := eventNames(rec.events); slices.Contains(names, "delta") || slices.Contains(names, "committed") {
+		t.Fatalf("assistant 修订不应触发生成: %v", names)
+	}
+}
+
 // TestSessionRegenCommand D92 /regen：上游最近用户消息原样重发为同父兄弟（Fresh 分叉，
 // 旧回答保留），清屏回放后重跑一轮生成。
 func TestSessionRegenCommand(t *testing.T) {
@@ -1170,13 +1212,20 @@ func TestSessionRegenCommand(t *testing.T) {
 		t.Fatalf("validate: %v", err)
 	}
 
-	// regen 用户消息直达：upstreamUser 即其自身（u2 的兄弟挂 t1 之下）。
+	// regen 无回答的用户消息（D93）：不重复分叉——Head 移过去直接生成（u2 是 t1
+	// 之下的无回答叶子，此前会造出同文本冗余兄弟）。
 	if _, err := handleCmd(s, "regen", "u2"); err != nil {
 		t.Fatalf("/regen u2: %v", err)
 	}
-	nu2 := revisedID(c, "u2")
-	if nu2 == "" || c.Nodes[nu2].Parent != "t1" || c.Nodes[nu2].Content[0].Text != "追问" {
-		t.Fatalf("regen u2 新节点 = %+v, want 同父（t1）原内容", c.Nodes[nu2])
+	if revisedID(c, "u2") != "" {
+		t.Fatal("无回答的 u2 不应分叉出冗余兄弟")
+	}
+	ans := c.Nodes[c.Head]
+	if ans.Parent != "u2" || ans.Role != conversation.RoleAssistant || ans.Content[0].Text != "重发回答" {
+		t.Fatalf("u2 的新回答 = %+v, want 直接生成在 u2 之下", ans)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 
 	// 错误路径：用法 / 不存在 / 上游无用户消息（persona 与 Root）。
@@ -1194,10 +1243,11 @@ func TestSessionRegenCommand(t *testing.T) {
 	}
 }
 
-// TestSessionEditFresh /edit 缺省 Fresh：同级新节点、旧分支原样保留、Head 移到新节点、落盘。
+// TestSessionEditFresh /edit 缺省 Fresh：同级新节点、旧分支原样保留、Head 移到新节点、
+// 落盘；编辑用户消息即重新生成回答（D93），Head 落在新分支的回答上。
 func TestSessionEditFresh(t *testing.T) {
 	store := newMemStore()
-	s, _ := newConfirmedSession(t, store, nil)
+	s, _, _ := newTestSession(t, store, textStream("新回答"))
 	c := buildTree(t, s)
 
 	out, err := handleCmd(s, "edit", "u1", "新问题")
@@ -1208,8 +1258,9 @@ func TestSessionEditFresh(t *testing.T) {
 	if n == "" {
 		t.Fatal("RevisedFrom 应记录 新→旧")
 	}
-	if !strings.Contains(out, "fresh") || !strings.Contains(out, "旧分支保留") || !strings.Contains(out, string(n)) {
-		t.Fatalf("out = %q, want fresh/旧分支保留/新节点 id", out)
+	if !strings.Contains(out, "fresh") || !strings.Contains(out, "旧分支保留") ||
+		!strings.Contains(out, "已重新生成回答") || !strings.Contains(out, string(n)) {
+		t.Fatalf("out = %q, want fresh/旧分支保留/已重新生成回答/新节点 id", out)
 	}
 	nm := c.Nodes[n]
 	if nm.Parent != "p" || nm.Role != conversation.RoleUser || nm.Content[0].Text != "新问题" {
@@ -1218,10 +1269,12 @@ func TestSessionEditFresh(t *testing.T) {
 	if got := c.Children["u1"]; len(got) != 1 || got[0] != "a1" {
 		t.Fatalf("children[u1] = %v, want 旧分支原样保留", got)
 	}
-	if c.Head != n {
-		t.Fatalf("head = %s, want %s（Fresh 移到新节点）", c.Head, n)
+	// Head = 新分支的回答（编辑即重发，D93）。
+	if c.Nodes[c.Head].Parent != n || c.Nodes[c.Head].Role != conversation.RoleAssistant ||
+		c.Nodes[c.Head].Content[0].Text != "新回答" {
+		t.Fatalf("head = %s (%+v), want 新节点下的回答", c.Head, c.Nodes[c.Head])
 	}
-	if saved := store.convs[c.ID]; saved == nil || saved.Head != n {
+	if saved := store.convs[c.ID]; saved == nil || saved.Head != c.Head {
 		t.Fatalf("saved = %+v, want 已落盘新 Head", saved)
 	}
 	if err := c.Validate(); err != nil {
@@ -1407,15 +1460,20 @@ func TestSessionEditRejects(t *testing.T) {
 // TestSessionBranchCommand /branch：缺省取 Head、显式 id、Head/修订标记、无分叉与错误路径。
 func TestSessionBranchCommand(t *testing.T) {
 	store := newMemStore()
-	s, _ := newConfirmedSession(t, store, nil)
+	// 一条流：u1 的编辑是用户消息（Fresh）→ 即重新生成（D93），Head 落在回答上。
+	s, _, _ := newTestSession(t, store, textStream("新回答"))
 	c := buildTree(t, s)
 
 	if _, err := handleCmd(s, "edit", "u1", "改"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	n := revisedID(c, "u1") // Head 在新节点
+	n := revisedID(c, "u1")
+	if n == "" || c.Nodes[c.Head].Parent != n {
+		t.Fatalf("编辑后 Head 应在新分支回答上: head=%s n=%s", c.Head, n)
+	}
 
-	// 显式 id：自身 + 同级（新旧版本对比）+ 下级，带 Head 与修订标记。
+	// 显式 id：自身 + 同级（新旧版本对比）+ 下级，带修订标记；新分支已有回答，
+	// 同级行不再标 Head（D93）。
 	out, err := handleCmd(s, "branch", "u1")
 	if err != nil {
 		t.Fatalf("branch u1: %v", err)
@@ -1424,7 +1482,6 @@ func TestSessionBranchCommand(t *testing.T) {
 		"当前: u1 [user] 问题",
 		"同级分叉（1 条，不含自身）:",
 		string(n) + " [user] 改",
-		"← Head",
 		"（修订自 u1）",
 		"下级（1 条）:",
 		"a1 [assistant] 回复",
@@ -1433,10 +1490,14 @@ func TestSessionBranchCommand(t *testing.T) {
 			t.Fatalf("branch 缺 %q:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, string(n)+" [user] 改 ← Head") {
+		t.Fatalf("新分支已有回答，同级行不应标 Head:\n%s", out)
+	}
 
-	// 缺省 = Head。
+	// 缺省 = Head（编辑生成的回答节点，标 Head）。
 	out, err = handleCmd(s, "branch")
-	if err != nil || !strings.Contains(out, "当前: "+string(n)) || !strings.Contains(out, "u1 [user] 问题") {
+	if err != nil || !strings.Contains(out, "当前: "+string(c.Head)) ||
+		!strings.Contains(out, "[assistant] 新回答 ← Head") {
 		t.Fatalf("branch 缺省 = %q, %v", out, err)
 	}
 
