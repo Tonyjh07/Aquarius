@@ -662,7 +662,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/compact` | 触发上下文压缩：生成 system 摘要节点，水位上历史不再回传（§7.1 三轨之一） |
 | `/permission [等级]` | 查看 / 切换权限等级（read-only/strict/permissive/full-access，写回 config） |
 | `/goto <id>` | Head 移到任意节点（分支导航）；**清屏 + 回放**新路径（D81，与 `/switch` 同口径） |
-| `/edit <id> [--keep] <文本>` | Revise：默认 Fresh；`--keep` = Carry（保留后续历史） |
+| `/edit <id> [--keep] <文本>` | Revise：默认 Fresh；`--keep` = Carry（保留后续历史）；修订后**清屏回放**（D92：Head 移动类命令统一口径） |
+| `/regen <id>` | 重新生成（D92）：id 可为用户或助手消息——取上游最近用户消息 Revise Fresh 开同父兄弟重发（旧回答保留为历史分支），清屏回放后跑 Turn |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
 | `/rm <id>` | Prune 剪子树（二次确认） |
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
@@ -693,6 +694,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - **回放前提示**：发 `NoticeEvent`（`已恢复会话 <标题> (<id>)，回放 <n> 条历史`）。
 - **时机**：启动恢复时回放一次；`/switch` 切到既有会话与 `/goto` 移 Head（§7.3）时同样
   **清屏（D75 `ClearEvent`）后回放**（D81：转写区须与 Head 一致，`/goto` 此前不回放是缺口）；
+  `/edit` 与 `/regen` 同为 Head 移动类命令，修订/重发后同样清屏回放（D92 口径统一）；
   `/new` 只清屏不回放（新会话无可回放）。
 - **repl 同权**：repl 前端按行打印同一语义（`> ` 输入行、正文、`[tool]` 行），保证
   e2e/管道输出与 TUI 信息一致。
@@ -1296,3 +1298,24 @@ live 草稿不解析（D33 口径，流式原样、定稿渲染）；代码块�
 - **极端尺寸地板**：UI 侧按实时 DPI×scale 夹最小可用 px（布局地板 ≈300dp 基准，实测定
   值）；config 侧粗界 [200, 3840]×[200, 2160]；极矮窗淡出带夹 ≤ transH/4（顶/底带同规，
   fade 层尺寸约束归口）。尺寸属配置不属位置记忆：`gui_pos.json` 仍只存位置（D52 口径）。
+
+### 15.9 气泡右键菜单（S2，D92）
+
+转写区右键气泡 → 原生菜单：**编辑**（分叉新节点）/ **重新生成**（分叉新节点）/ **复制**。
+菜单项按块角色：user 气泡三项全有；assistant 气泡 = 重新生成/复制（编辑不适用于生成文本）；
+thinking/chip/notice/live 草稿不响应。一切变更经内核命令、与键入同路径（submitCommand 口径）。
+
+- **手势与命中**：`bubbleRight` 照 D72 `logoRight` 武装-原位抬手（自挂 `pointer.Filter`——
+  gesture 系跳过非主键，与 D63/D91 主键选态零冲突）；热区注册于转写视口 clip 内（与 D91
+  观察者同组命中链）。命中按 `paintRow` 期逐行登记的**气泡底板矩形** `bubbleRects`
+  （与形状登记同一 bgRect，padding 区也是气泡；携块序/节点 ID/行选键区间），随帧复位。
+- **呈现管线（复用 D72 TPM）**：命中后在 Gio 线程组好上下文（`bubbleMenuCtx`：节点 ID、
+  块角色、编辑预填文本、复制文本），`atomic.Pointer` 过线程 → `bubbleMenuMsg` 投 shell
+  线程 → 光标位 `TrackPopupMenu`（TPM_RETURNCMD）→ 按项分发。不做 Gio 自绘浮层。
+- **三项分发**：重新生成 = `/regen <id>`（`inputMsg` 同键入路径）；编辑 = `editMsg` 回 Gio
+  进编辑态；复制 = `copyMsg` → 主循环记 `pendingCopy` → 下一帧 `gtx.Execute(clipboard.
+  WriteCmd)`（剪贴板写入必须在 Gio 帧）。复制口径：有选区 → 选区（D91 选态复用）；
+  无选区 → 整条气泡渲染文本（逐键 `Text()` 拼接，与 `selCopy` 同口径）。
+- **编辑态**：预填输入框 + `editTarget` + 轻提示（Enter 提交 / Esc 取消，空文本 = 取消）；
+  提交 = 结构化 `Command{Name:"edit", Args:[id, 文本]}`（不经斜杠解析，多行文本保真），
+  不回显 blockUser——修订结果由 `/edit` 的清屏回放呈现（D92；树语义见 §4.1/§7.3）。

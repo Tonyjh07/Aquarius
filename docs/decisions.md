@@ -105,6 +105,7 @@
 | D89 | 纯工具轮分叉锚点：chip/思考块承载节点 ID（S1-1f 验收发现，§15.3） | 生效 |
 | D90 | S1b 三旋钮：`ui.scale` 元素缩放 + `ui.font_size` 字号（最终 = 字号 × 缩放）+ 主窗像素尺寸，全热生效；Metric 咽喉点 + restorePx 治本（§15.8） | 生效 |
 | D91 | 跨块拖选 = 转写区观察者抢先 grab + `Regions` 几何自绘高亮，锚/焦点模型跨消息连续选择、Ctrl+C 拼接复制（更正 D66 后果③，S1c，§15.3） | 生效 |
+| D92 | 气泡右键菜单：编辑/重新生成/复制——TPM 管线复用 + `/regen` 上游用户消息分叉重发 + `/edit` 补清屏回放（S2，§15.9） | 生效 |
 
 ## 记录
 
@@ -726,4 +727,19 @@
   ④ **状态生命周期**：active 期间条件 pull `key.Filter{Name:"C", Required: ModShortcut}` → 逐块 `Text()` rune 切片、`\n` 拼接 → `clipboard.WriteCmd`。清除源 = **主键鼠标 Press**（触控不参与——保原生点按/滚动；副键留给 S2 右键菜单，D91 后果⑤）/ `Escape` / 编辑器获焦 / `model.clear`（树操作清 selRows 同点挂接）/ **结构指纹变化**（帧末对逐键 `(laid, len(text), text)` 长度前缀 fnv64 哈希——chip 开合、分叉切换、流式改文任一变化即清，选区不漂移到错块；会话切换走 `model.clear` 兜底）。
 - **否决**：方案 A（观察者不 grab、块内保留原生、Cancel 后轮询 `GetAsyncKeyState`+心跳收尾——任何文本拖拽都会收到 Cancel，同样要接管，却多出按钮轮询、心跳扩面与跨平台 stub，锚/焦点两头管理更脆）；逐块 Selectable 各自 `SetCaret` 拼高亮（widget 仅 focused 时自绘，多块同时聚焦不可行，焦点本是单 tag）；richtext/span 级选择（D65 已否，留后续，届时本机制的行几何直接复用）；OS 级 mouse hook/子类化（绕开 Gio 事件路由，破坏 headless 可测性）；v1 做 shift+点击跨块扩展与拖拽贴边自动滚动（增量留后续，滚轮在拖选中照常可用已覆盖基本需求）；TUI/REPL 同步实现（GUI only，同 S2b-Q15 口径）。
 - **后果/限制**：① 拖拽（哪怕单块内）由观察者接管 caret 落点，原生拖选退场——落点质量由 `Regions` 二分测试锁定，双击/三击/shift 仍原生；② 高亮跨块间经 chip 头/分叉条时视觉断开（无文本不绘制，复制拼接亦跳过）——接受；③ 极端输入栈（无 pointer 消息的虚拟机等）`SetCapture` 不生效时窗外 Release 可能丢失 → 选区滞留至下次 Press 自愈清除，不加按钮轮询；④ `keyRects` 一帧陈旧：拖选期间内容变化由结构指纹清除兜底；⑤ 与 S2 右键菜单共享同一选态（复制菜单项后续直接复用）。
+- **状态**：生效
+
+### D92 — 气泡右键菜单：编辑 / 重新生成 / 复制（S2，§15.9）
+
+- **动机**：roadmap S2（M6/P0，Q2/Q3 预先拍板：菜单复用 D72 TPM 管线、重生成 = 重发上游用户消息分叉）。现状缺口（探索实证）：主窗右键手势只挂 logo 钮、`blockView` 丢块序/节点 ID、`/regen` 无命令、复制写入须在 Gio 帧执行而菜单分发在 shell 线程。
+- **决策**：
+  ① **手势与命中**：`bubbleRight` 照 D72 `logoRight`（Secondary 按下武装、同指针原位抬起 fire，自挂 `pointer.Filter`——gesture 系跳过非主键，与 D63/D91 主键选态零冲突）；热区注册于转写视口 clip 内（与 D91 观察者同组命中链，D91 ① 实证根级注册不可达）。命中按**气泡底板矩形**：`paintRow` 期逐行登记 `bubbleRects{rect, bi, id, kind, keyBase, keyN}`（与 `u.record` 同一 bgRect）——padding 区也是气泡的一部分，且行选键矩形无块身份。
+  ② **菜单项按块角色**：user 气泡 = 编辑/重新生成/复制；assistant 气泡 = 重新生成/复制（编辑不适用于生成文本）；thinking/chip/notice/live 草稿不响应（roadmap「可增：引用/查看原始块」不做）。上下文 `bubbleMenuCtx{id, kind, edit, copy}` 在 Gio 线程命中时组好，`atomic.Pointer` 过线程到 shell。
+  ③ **呈现与分发**：`bubbleMenuMsg`（wmApp+4）投 shell 线程 → `showBubbleMenu`（光标位 `TrackPopupMenu`，TPM_RETURNCMD）→ 按项分发：重新生成 = `inputMsg "/regen <id>"`（与键入同路径）；编辑 = `editMsg` 回 Gio 进编辑态；复制 = `copyMsg` → 主循环记 `pendingCopy` → 下一帧 `gtx.Execute(clipboard.WriteCmd)`（剪贴板写入必须在 Gio 帧）。
+  ④ **`/regen <id>`**：resolveNode → 沿 Parent 回溯找上游最近 user 消息（到 Root 未遇 user 报错）→ `Revise(userID, 原 Parts 整体拷贝, Fresh)`（保多模态）→ persist → **清屏回放** → `runTurn`。旧回答保留为历史分支（分叉条可见）。
+  ⑤ **`/edit` 补回放**：Revise 移 Head 后清屏 + 回放——D81「转写区恒与 Head 一致」口径统一（/goto 同款；此前 /edit 只入树不回放是缺口，TUI 同样受益）。
+  ⑥ **编辑流**：菜单编辑 → `editMsg` 预填输入框 + `editTarget` 态 + 轻提示（Enter 提交 / Esc 取消）；提交 = 结构化 `Command{Name:"edit", Args:[id, 文本]}`（**不经斜杠解析**——`parseEditArgs` 的 `Join(rest[1:], " ")` 对单元素是恒等，多行文本保真直达）；空文本视为取消；不回显 blockUser（修订结果由回放呈现）。
+  ⑦ **复制口径**：有选区 → 复制选区（D91 选态直接复用）；无选区 → 整条气泡**渲染文本**（逐键 `Text()` 以 `\n` 拼接，与 `selCopy` 同口径）。
+- **否决**：Gio 自绘菜单浮层（主窗无先例、ULW 位图命中语义添乱、TPM 管线现成且模态收尾由 OS 完成）；按行选键 `keyRects` 命中（矩形是文本行盒不含 padding，且无块身份）；/regen 用文本拼装 `/edit`（typed 解析多行必碎）；编辑弹独立小窗（输入框就地预填最轻）；Carry 重生成（旧回答子树会跟着新节点走，违背「旧回答保留为分支」）；复制原始 markdown（与 D91 渲染文本口径不一致）。
+- **后果/限制**：① 「编辑文本恰以 `--keep` 开头」继承 typed 路径歧义（`args[1]=="--keep"` 识别为 Carry），不另立机制；② 编辑框单行：多行历史文本预填后以编辑框所见为准（所见即所发）；③ 编辑历史中段消息 = Fresh 分叉，其后旧消息转入旧分支（分叉条可切回），转写如实呈现；④ `/edit` 行为变化对 TUI 可见（清屏回放）；⑤ 收起态/动画期不响应（无转写区 / D54 口径）；⑥ 菜单文案为用户界面中文（语言约定）。
 - **状态**：生效
