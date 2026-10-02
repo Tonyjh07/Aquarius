@@ -19,4 +19,9 @@ type BranchInfo struct {
 type TreeView interface {
 	// Branches 返回 id 的同级视图；id 不在树中时 ok=false（返回零值 BranchInfo）。
 	Branches(id conversation.MessageID) (BranchInfo, bool)
+	// Tail 返回 id 版本子树的对话末端（D94）：id 自身是叶子时即自身，否则取子树中
+	// CreatedAt 最新的叶子——分支切换的落点（切版本应恢复该版本的对话全程，而非停在
+	// 消息节点上——其回答不在 Head 路径上）；S3 树 UI 画叶子亦可复用。
+	// id 不在树中时 ok=false。
+	Tail(id conversation.MessageID) (conversation.MessageID, bool)
 }

@@ -2086,12 +2086,20 @@ func (u *UI) updateClicks(gtx layout.Context) {
 
 // gotoBranch 投递一次分叉切换（D81）：delta = -1 左（更旧版本）/ +1 右（更新版本）。
 // 越界不环绕；输入缓冲满时给提示而不是静默丢弃（同 model.submit 口径）。
+// D94：落点 = 目标版本的对话末端（port.TreeView.Tail）——/goto 停在消息节点上时其
+// 回答不在 Head 路径上，切用户消息版本会只剩半截；端口不可用回退兄弟 id。
 func (u *UI) gotoBranch(s branchStrip, delta int) {
 	to := s.index + delta
 	if to < 0 || to >= len(s.ids) {
 		return
 	}
-	if !u.m.submitCommand("/goto " + string(s.ids[to])) {
+	id := s.ids[to]
+	if u.opts.Tree != nil {
+		if t, ok := u.opts.Tree.Tail(id); ok {
+			id = t
+		}
+	}
+	if !u.m.submitCommand("/goto " + string(id)) {
 		u.m.add(blockNotice, "[notice] 输入缓冲已满，分叉切换未执行")
 	}
 }

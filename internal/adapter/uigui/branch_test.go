@@ -21,6 +21,24 @@ func (f fakeTree) Branches(id conversation.MessageID) (port.BranchInfo, bool) {
 	return bi, ok
 }
 
+// Tail 版本末端（D94）：固定视图未配置末端表 → 即自身（既有分派测试口径不变）。
+func (f fakeTree) Tail(id conversation.MessageID) (conversation.MessageID, bool) {
+	return id, true
+}
+
+// fakeTreeTail 带末端表的树视图（D94 分派测试用）：tails 未命中的 id 回退自身。
+type fakeTreeTail struct {
+	fakeTree
+	tails map[conversation.MessageID]conversation.MessageID
+}
+
+func (f fakeTreeTail) Tail(id conversation.MessageID) (conversation.MessageID, bool) {
+	if t, ok := f.tails[id]; ok {
+		return t, ok
+	}
+	return id, true
+}
+
 // newBranchUI 带树视图与输入通道的最小 UI（headless，同 newFrameUI 口径）。
 func newBranchUI(tree port.TreeView) *UI {
 	u := newFrameUI()
@@ -249,6 +267,27 @@ func TestGotoBranchDispatch(t *testing.T) {
 	full.gotoBranch(branchStrip{id: "n2", ids: ids, index: 1}, +1)
 	if len(full.m.blocks) != 1 || full.m.blocks[0].kind != blockNotice {
 		t.Fatalf("缓冲满 blocks = %+v, want 1 条 notice", full.m.blocks)
+	}
+}
+
+// TestGotoBranchDispatchTail D94：切换落点 = 目标版本的对话末端（port.TreeView.Tail）
+// ——/goto 停在消息节点上时其回答不在 Head 路径上，切用户消息版本会只剩半截；
+// 端口不可用回退兄弟 id（上方用例 nil 树即此口径）。
+func TestGotoBranchDispatchTail(t *testing.T) {
+	u := newBranchUI(fakeTreeTail{
+		fakeTree: fakeTree{},
+		tails:    map[conversation.MessageID]conversation.MessageID{"n1": "old_leaf"},
+	})
+	ids := []conversation.MessageID{"n1", "n2", "n3"}
+	s := branchStrip{id: "n2", ids: ids, index: 1}
+
+	u.gotoBranch(s, -1) // 左切到 n1 → 末端 old_leaf
+	if in := <-u.inCh; in.Command == nil || in.Command.Args[0] != "old_leaf" {
+		t.Fatalf("左切投递 = %+v, want /goto old_leaf", in)
+	}
+	u.gotoBranch(s, +1) // 右切到 n3 → 末端表未命中 → 回退自身
+	if in := <-u.inCh; in.Command == nil || in.Command.Args[0] != "n3" {
+		t.Fatalf("右切投递 = %+v, want /goto n3", in)
 	}
 }
 

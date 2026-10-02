@@ -684,7 +684,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // sessionTree 会话树只读视图的装配侧代理（D80/§7.5，前置 A）：Session 构造晚于 UI，
-// 故经原子槽间接取用；零开销包装，Branches 直接转发（快照读本身无锁，§15.5）。
+// 故经原子槽间接取用；零开销包装，Branches/Tail 直接转发（快照读本身无锁，§15.5）。
 type sessionTree struct{ p *atomic.Pointer[app.Session] }
 
 var _ port.TreeView = sessionTree{}
@@ -695,6 +695,14 @@ func (t sessionTree) Branches(id conversation.MessageID) (port.BranchInfo, bool)
 		return port.BranchInfo{}, false
 	}
 	return s.Branches(id)
+}
+
+func (t sessionTree) Tail(id conversation.MessageID) (conversation.MessageID, bool) {
+	s := t.p.Load()
+	if s == nil {
+		return "", false
+	}
+	return s.Tail(id)
 }
 
 // envSecrets port.Secrets 的内置实现：按名读环境变量（矩阵 DESIGN §5.10）。

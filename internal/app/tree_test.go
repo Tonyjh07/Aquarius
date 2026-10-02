@@ -160,6 +160,44 @@ func TestSessionBranchesUnknownBeforePublish(t *testing.T) {
 	if _, ok := s.Branches("a1"); ok {
 		t.Fatal("cur 为 nil 时 publishTree 不应发布空快照")
 	}
+	if _, ok := s.Tail("a1"); ok {
+		t.Fatal("未发布快照 Tail 应 ok=false")
+	}
+}
+
+// TestMakeTreeSnapshotTail 快照版本末端（D94）：叶子即自身；有孩子取子树 CreatedAt
+// 最新的叶子；未知节点不在快照中。
+func TestMakeTreeSnapshotTail(t *testing.T) {
+	snap := makeTreeSnapshot(treeFixture(t))
+	for id, want := range map[conversation.MessageID]conversation.MessageID{
+		"a1": "a1", "a2": "a2", // 叶子即自身
+		"u1": "a2", // 子树最新叶子（a2 晚于 a1）
+		"p":  "a2",
+	} {
+		if got := snap.tails[id]; got != want {
+			t.Fatalf("tails[%s] = %s, want %s", id, got, want)
+		}
+	}
+	if _, ok := snap.tails["zz"]; ok {
+		t.Fatal("未知节点不应出现在快照中")
+	}
+}
+
+// TestSessionTail 端口实现（D94）：快照随 publishTree 发布，Tail 读最新发布值；
+// buildTree 的 u1→a1→t1→u2 链唯一叶子是 u2。
+func TestSessionTail(t *testing.T) {
+	s, _ := newConfirmedSession(t, newMemStore(), nil)
+	buildTree(t, s)
+
+	if got, ok := s.Tail("u2"); !ok || got != "u2" {
+		t.Fatalf("Tail(u2) = %q %v, want 自身", got, ok)
+	}
+	if got, ok := s.Tail("u1"); !ok || got != "u2" {
+		t.Fatalf("Tail(u1) = %q %v, want u2（链唯一叶子）", got, ok)
+	}
+	if _, ok := s.Tail("zz"); ok {
+		t.Fatal("未知节点 ok=false")
+	}
 }
 
 // TestSessionBranchesConcurrentRead 并发契约（§15.5）：UI 侧多 goroutine 读快照、

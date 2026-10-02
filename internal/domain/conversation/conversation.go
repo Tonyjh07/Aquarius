@@ -306,6 +306,37 @@ func (c *Conversation) Checkout(id MessageID) error {
 	return nil
 }
 
+// Tail 返回 id 版本子树的对话末端（D94 分支切换落点）：id 自身是叶子（无孩子）时即
+// 自身；否则取子树全部叶子中 CreatedAt 最新者（平局取 ID 序最大，保证确定性）。
+// 切换消息版本应恢复该版本的对话全程——Head 停在消息节点上时其回答不在 Head 路径上。
+// id 不在树中 → ok=false。
+func (c *Conversation) Tail(id MessageID) (MessageID, bool) {
+	if _, ok := c.Nodes[id]; !ok {
+		return "", false
+	}
+	if len(c.Children[id]) == 0 {
+		return id, true
+	}
+	var best MessageID
+	var bestAt time.Time
+	var walk func(MessageID)
+	walk = func(x MessageID) {
+		kids := c.Children[x]
+		if len(kids) == 0 {
+			n := c.Nodes[x]
+			if best == "" || n.CreatedAt.After(bestAt) || (n.CreatedAt.Equal(bestAt) && n.ID > best) {
+				best, bestAt = x, n.CreatedAt
+			}
+			return
+		}
+		for _, kid := range kids {
+			walk(kid)
+		}
+	}
+	walk(id)
+	return best, true
+}
+
 // Path 返回 Root→Head 的线性节点序列 = 本次推理的上下文（早→近）；首元素恒为 Root（装配时滤掉）。
 func (c *Conversation) Path() []Message {
 	var rev []Message
