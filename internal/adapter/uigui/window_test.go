@@ -12,7 +12,6 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
-	"gioui.org/widget"
 )
 
 // newShapeUI 形裁登记用的最小 UI（frameMetric 供淡出带剔除换算；bandBottom = 带底，
@@ -470,7 +469,7 @@ func TestCompositeAssistantBubble(t *testing.T) {
 		t.Fatalf("登记形状 = %d, want 2", len(u.shapes))
 	}
 	// 复合行应作为气泡底板渲染（与段落同 pillBg 系）。
-	_, _, _, _, bubble := u.rowStyle(gtx, u.frameItems()[1], func(int) *widget.Selectable { return nil })
+	_, _, _, _, bubble := u.rowStyle(gtx, u.frameItems()[1], nil)
 	if !bubble {
 		t.Fatal("助手复合行应为气泡")
 	}
@@ -547,7 +546,7 @@ func TestTranscriptTopHeadroom(t *testing.T) {
 	items := u.frameItems()
 	gap := gtx.Dp(rowGapDp)
 	for i := range items {
-		rowsTotal += u.measureRow(gtx, items[i], w, func(int) *widget.Selectable { return nil }).height()
+		rowsTotal += u.measureRow(gtx, items[i], w, nil).height()
 	}
 	rowsTotal += gap * (len(items) - 1)
 	if rowsTotal <= h {

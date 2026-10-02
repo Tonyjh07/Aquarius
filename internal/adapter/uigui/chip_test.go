@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"gioui.org/io/input"
-	"gioui.org/widget"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -194,7 +193,7 @@ func TestToolChipView(t *testing.T) {
 		t.Fatalf("结果回填失败: %+v", c)
 	}
 
-	_, _, _, _, bubble := u.rowStyle(gtx, u.frameItems()[0], func(int) *widget.Selectable { return nil })
+	_, _, _, _, bubble := u.rowStyle(gtx, u.frameItems()[0], nil)
 	if bubble {
 		t.Fatal("工具 chip 应为非气泡卡")
 	}

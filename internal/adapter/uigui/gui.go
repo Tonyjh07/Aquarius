@@ -213,6 +213,17 @@ type UI struct {
 	// 行选手势独占气泡区指针。仅事件循环 goroutine 读写。
 	selRows []*widget.Selectable
 
+	// D91 跨块拖选观察者：sel = 状态机（候选/激活/锚/焦点/指纹）；keyRects = 上帧
+	// 行键几何（量期记录、paint 期译窗口系，消费者阶段读——一帧陈旧是既定口径）；
+	// keyFp = 结构指纹（fnv64 流式喂自 writeKeyRects，变化即清选：流式/开合/重排）；
+	// selSpansBuf = 消费者阶段预算的逐键跨度（测量闭包绘制期读取）；
+	// selScratch = Regions 每键转录暂存（rowSel.paint）。仅事件循环 goroutine 读写。
+	sel         selState
+	keyRects    []selGeom
+	keyFp       uint64
+	selSpansBuf []selSpan
+	selScratch  []widget.Region
+
 	// 分叉条点击件（D81）：按分叉条序缓存左右两个 Clickable（get-or-create）；分叉条
 	// 消费 0 个行选键（selCount），故其增删不漂移其它行的选择键。仅事件循环 goroutine 读写。
 	branchPrev []*widget.Clickable

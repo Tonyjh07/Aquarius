@@ -137,6 +137,9 @@ func (m *model) clear() {
 	m.u.scrollPx, m.u.contentH = 0, 0
 	m.u.followTail = true
 	m.u.selRows = m.u.selRows[:0]
+	m.u.sel.clear() // D91 ④：清屏也清转写选区（键清零 → 指纹失配自愈）
+	m.u.keyRects = m.u.keyRects[:0]
+	m.u.keyFp = 0
 }
 
 // commit 提交节点定稿：助手（done）以消息文本为准替换草稿；
