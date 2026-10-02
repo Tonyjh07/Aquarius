@@ -662,8 +662,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/compact` | 触发上下文压缩：生成 system 摘要节点，水位上历史不再回传（§7.1 三轨之一） |
 | `/permission [等级]` | 查看 / 切换权限等级（read-only/strict/permissive/full-access，写回 config） |
 | `/goto <id>` | Head 移到任意节点（分支导航）；**清屏 + 回放**新路径（D81，与 `/switch` 同口径） |
-| `/edit <id> [--keep] <文本>` | Revise：默认 Fresh；`--keep` = Carry（保留后续历史）；修订后**清屏回放**（D92：Head 移动类命令统一口径） |
-| `/regen <id>` | 重新生成（D92）：id 可为用户或助手消息——取上游最近用户消息 Revise Fresh 开同父兄弟重发（旧回答保留为历史分支），清屏回放后跑 Turn |
+| `/edit <id> [--keep] <文本>` | Revise：默认 Fresh；`--keep` = Carry（保留后续历史）；修订后**清屏回放**（D92：Head 移动类命令统一口径）；修订**用户消息**（Fresh）即重新生成回答（D93：编辑即重发） |
+| `/regen <id>` | 重新生成（D92）：id 可为用户或助手消息——取上游最近用户消息 Revise Fresh 开同父兄弟重发（旧回答保留为历史分支），清屏回放后跑 Turn；上游用户消息**尚无回答**时直接生成、不重复分叉（D93） |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
 | `/rm <id>` | Prune 剪子树（二次确认） |
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
