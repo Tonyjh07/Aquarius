@@ -234,6 +234,9 @@ type UI struct {
 	bubbleRight    bubbleRight
 	bubbleMenu     atomic.Pointer[bubbleMenuCtx]
 	bubbleMenuHook func(*bubbleMenuCtx)
+	// pendingCopy 挂起的剪贴板写入（D92）：copyMsg 记账，frame 内 flushCopy 经
+	// gtx.Execute 落盘后清空。仅事件循环 goroutine 读写。
+	pendingCopy string
 
 	// 分叉条点击件（D81）：按分叉条序缓存左右两个 Clickable（get-or-create）；分叉条
 	// 消费 0 个行选键（selCount），故其增删不漂移其它行的选择键。仅事件循环 goroutine 读写。
@@ -548,6 +551,10 @@ type (
 		id   conversation.MessageID
 		text string
 	}
+	// copyMsg 写剪贴板请求（D92 气泡菜单复制项经 shell 线程分发投递）：记账到
+	// pendingCopy，下一帧经 gtx.Execute(clipboard.WriteCmd) 落盘（剪贴板写入必须在
+	// Gio 帧上下文执行，shell 线程不可直达）。
+	copyMsg struct{ text string }
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
 		prompt string
@@ -586,6 +593,8 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.m.editTarget = m.id
 		u.editor.SetText(m.text)
 		u.focusPending = true
+	case copyMsg:
+		u.pendingCopy = m.text // D92：记账，frame 内 flushCopy 落剪贴板
 	case confirmMsg:
 		u.m.startConfirm(m.prompt, m.reply)
 	case confirmResultMsg:

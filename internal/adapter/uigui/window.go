@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"image"
 	"image/color"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"gioui.org/font/gofont"
 	"gioui.org/font/opentype"
 	"gioui.org/gesture"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/input"
 	"gioui.org/io/key"
@@ -349,6 +351,7 @@ func (u *UI) frame(gtx layout.Context, submit func()) {
 	// D90 咽喉点（§15.8）：缩放只在此一处进布局——layout 与 fadeCompose 二次调用都
 	// 消费 frameMetric（已缩放），不会重复缩放；窗口 px 画布与 Constraints 不动。
 	gtx.Metric = u.zoomedMetric(gtx.Metric)
+	u.flushCopy(gtx) // D92：菜单分发的复制请求在此（Gio 帧）落剪贴板
 	u.stepExpand(time.Now())
 	u.stepAnim() // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
 	u.layout(gtx)
@@ -2023,6 +2026,20 @@ func (u *UI) submitEditor() {
 func (u *UI) cancelEdit() {
 	u.m.editTarget = ""
 	u.editor.SetText("")
+}
+
+// flushCopy 处理挂起的复制请求（D92，frame 每帧调用）：clipboard.WriteCmd 须在 Gio
+// 帧上下文执行——shell 线程分发的 copyMsg 经主循环记账（pendingCopy）到这里落盘。
+func (u *UI) flushCopy(gtx layout.Context) {
+	if u.pendingCopy == "" {
+		return
+	}
+	t := u.pendingCopy
+	u.pendingCopy = ""
+	gtx.Execute(clipboard.WriteCmd{
+		Type: "application/text", // Gio 自家 Selectable 复制同款 MIME（selCopy 同款）
+		Data: io.NopCloser(strings.NewReader(t)),
+	})
 }
 
 // updateClicks 控件行为：发送/停止/允许/拒绝（logo 手势与悬停在 updateLogo）。

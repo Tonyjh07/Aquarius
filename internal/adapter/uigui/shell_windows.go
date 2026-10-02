@@ -91,6 +91,10 @@ const (
 	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
 	cmdPermBase = 108 // 权限子菜单四档基值（D73：+i 对齐 settings.go permLevels 序）
 
+	cmdBubbleEdit  = 120 // 气泡右键：编辑（D92 → editMsg 进编辑态）
+	cmdBubbleRegen = 121 // 气泡右键：重新生成（D92 → /regen 与键入同路径）
+	cmdBubbleCopy  = 122 // 气泡右键：复制（D92 → copyMsg，下一帧写剪贴板）
+
 	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
 
 	iconResVersion = 0x30000 // RT_ICON 资源版本（CreateIconFromResourceEx）
@@ -289,6 +293,9 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	case logoMenuMsg: // D72：Gio 侧检出 logo 右键 → 本线程呈现原生菜单
 		showLogoMenu()
 		return 0
+	case bubbleMenuMsg: // D92：Gio 侧检出气泡右键 → 本线程呈现原生菜单（上下文在原子槽）
+		showBubbleMenu()
+		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
 		return 0
@@ -360,6 +367,50 @@ func permLevelOf(u *UI) string {
 		return ""
 	}
 	return u.opts.Status().Level
+}
+
+// bubbleMenuItems 气泡右键菜单（D92，项集按块角色、文案为契约测试锁定）：
+// user 气泡 = 编辑/重新生成/复制；assistant 气泡 = 重新生成/复制（编辑不适用于生成文本）。
+func bubbleMenuItems(kind blockKind) []menuIt {
+	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
+	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
+	if kind == blockUser {
+		return []menuIt{{id: cmdBubbleEdit, label: "编辑"}, regen, cp}
+	}
+	return []menuIt{regen, cp}
+}
+
+// showBubbleMenu 气泡右键菜单呈现（托盘线程，D92）：上下文取 u.bubbleMenu 原子槽
+// （Gio 线程 Store 先于 PostMessage），owner = 托盘消息窗（与 logo 菜单同款 TPM 收尾）。
+func showBubbleMenu() {
+	h := shellHWND.Load()
+	if h == 0 {
+		return
+	}
+	u := shellUI.Load()
+	if u == nil {
+		return
+	}
+	ctx := u.bubbleMenu.Load()
+	if ctx == nil {
+		return
+	}
+	menuDispatchBubble(u, ctx, runMenu(h, bubbleMenuItems(ctx.kind)))
+}
+
+// menuDispatchBubble 气泡菜单命令分发（D92；托盘线程调用——修改性调用一律经 post，
+// §15.6 铁律 1）：重新生成 = /regen（与键入同路径，内核分叉重发）；编辑 = editMsg
+// 进编辑态（预填/提交/Esc 生命周期在 Gio 侧）；复制 = copyMsg → 下一帧
+// gtx.Execute(clipboard.WriteCmd)（剪贴板写入必须在 Gio 帧）。
+func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
+	switch r {
+	case cmdBubbleEdit:
+		_ = u.post(editMsg{id: ctx.id, text: ctx.edit})
+	case cmdBubbleRegen:
+		_ = u.post(inputMsg{text: "/regen " + string(ctx.id)})
+	case cmdBubbleCopy:
+		_ = u.post(copyMsg{text: ctx.copy})
+	}
 }
 
 // menuDispatch 命令分发（托盘/logo 菜单共用，D72；托盘线程调用——openWin 锁内单

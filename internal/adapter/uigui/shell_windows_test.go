@@ -5,6 +5,8 @@ package uigui
 import (
 	"image"
 	"testing"
+
+	"gioui.org/io/input"
 )
 
 // TestTopMostHandle HWND_TOPMOST(-1)/HWND_NOTOPMOST(-2) 的补码取值
@@ -113,6 +115,57 @@ func TestMenuDispatchNew(t *testing.T) {
 		}
 	default:
 		t.Fatal("inCh 未收到 /new")
+	}
+}
+
+// TestMenuDispatchBubble D92 气泡菜单分发：重新生成 = /regen（与键入同路径）、
+// 复制 = copyMsg 记账 → 帧内落剪贴板、编辑 = editMsg 进编辑态（预填原文）；
+// 项集按块角色（呈现契约，测试锁定）。
+func TestMenuDispatchBubble(t *testing.T) {
+	u := newHeadless(t, Options{})
+
+	// 重新生成：/regen <id> 进 inCh（与键入同路径）。
+	menuDispatchBubble(u, &bubbleMenuCtx{id: "a1", kind: blockAssistant}, cmdBubbleRegen)
+	drainSync(t, u)
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "regen" || len(in.Command.Args) != 1 || in.Command.Args[0] != "a1" {
+			t.Fatalf("inCh 输入 = %+v, want /regen a1", in)
+		}
+	default:
+		t.Fatal("inCh 未收到 /regen")
+	}
+
+	// 复制：copyMsg 记账 pendingCopy → flushCopy（Gio 帧）写系统剪贴板。
+	menuDispatchBubble(u, &bubbleMenuCtx{id: "a1", kind: blockAssistant, copy: "回答文本"}, cmdBubbleCopy)
+	drainSync(t, u)
+	if u.pendingCopy != "回答文本" {
+		t.Fatalf("pendingCopy = %q, want 已记账", u.pendingCopy)
+	}
+	q := new(input.Router)
+	gtx, ops := frameGtx(q.Source())
+	u.flushCopy(gtx)
+	q.Frame(ops)
+	_, content, ok := q.WriteClipboard()
+	if !ok || string(content) != "回答文本" {
+		t.Fatalf("剪贴板 = %q ok=%v, want 回答文本", content, ok)
+	}
+
+	// 编辑：editMsg 进编辑态（预填原文 + 焦点待入）。
+	menuDispatchBubble(u, &bubbleMenuCtx{id: "u1", kind: blockUser, edit: "问"}, cmdBubbleEdit)
+	drainSync(t, u)
+	if u.m.editTarget != "u1" || u.editor.Text() != "问" {
+		t.Fatalf("编辑态 = target %q editor %q, want u1/问", u.m.editTarget, u.editor.Text())
+	}
+
+	// 项集按块角色：user 三项 / assistant 两项。
+	if items := bubbleMenuItems(blockUser); len(items) != 3 ||
+		items[0].label != "编辑" || items[1].label != "重新生成" || items[2].label != "复制" {
+		t.Fatalf("user 菜单项 = %+v", items)
+	}
+	if items := bubbleMenuItems(blockAssistant); len(items) != 2 ||
+		items[0].label != "重新生成" || items[1].label != "复制" {
+		t.Fatalf("assistant 菜单项 = %+v", items)
 	}
 }
 
