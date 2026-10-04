@@ -232,28 +232,31 @@ func TestEmitHistoryReplay(t *testing.T) {
 		Role:    conversation.RoleUser,
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "你好"}},
 	}})
+	// D95：工具分片随 assistant 节点回放——正文先行，调用/结果行随后（与实时一致）。
 	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
-		Role:      conversation.RoleAssistant,
-		Outcome:   conversation.OutcomeDone,
-		Content:   []conversation.Part{{Kind: conversation.PartText, Text: "回答"}},
-		ToolCalls: []tool.Call{{Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}},
-	}})
-	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
-		Role:       conversation.RoleTool,
-		ToolResult: &tool.Result{CallID: "c", OK: true, Output: "pong"},
-	}})
-	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
-		Role:       conversation.RoleTool,
-		ToolResult: &tool.Result{CallID: "c", OK: false, Err: "boom"},
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "回答"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c", Name: "echo", Args: json.RawMessage(`{"m":"x"}`),
+				Result: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+			}},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c2", Name: "boom",
+				Result: &tool.Result{CallID: "c2", OK: false, Err: "boom"},
+			}},
+		},
 	}})
 	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
 		Role:    conversation.RoleSystem,
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "压缩摘要"}},
 	}})
 	want := "> 你好\n" +
-		"[tool] echo {\"m\":\"x\"}\n" +
 		"回答\n" +
+		"[tool] echo {\"m\":\"x\"}\n" +
 		"[tool ok] pong\n" +
+		"[tool] boom\n" +
 		"[tool failed] boom\n" +
 		"压缩摘要\n"
 	if buf.String() != want {
@@ -267,17 +270,21 @@ func TestEmitHistoryReplayThinking(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)
 	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
-		Role:      conversation.RoleAssistant,
-		Outcome:   conversation.OutcomeDone,
-		ToolCalls: []tool.Call{{Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}},
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
 		Content: []conversation.Part{
 			{Kind: conversation.PartThinking, Text: "先想一想"},
 			{Kind: conversation.PartText, Text: "答案"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c", Name: "echo", Args: json.RawMessage(`{"m":"x"}`),
+				Result: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+			}},
 		},
 	}})
 	want := "[thinking] 先想一想\n" +
+		"答案\n" +
 		"[tool] echo {\"m\":\"x\"}\n" +
-		"答案\n"
+		"[tool ok] pong\n"
 	if buf.String() != want {
 		t.Fatalf("buf = %q, want %q", buf.String(), want)
 	}

@@ -477,7 +477,8 @@ func TestSessionCommands(t *testing.T) {
 	if store.convs[s.Current().ID] == nil {
 		t.Fatal("/new 应立即落盘")
 	}
-	// /list：两行，当前会话带 * 标记，最新在前。
+	// /list：两行，当前会话带 * 标记（UpdatedAt 同刻按 ID 序——全局计数器位移
+	// 不影响本断言语义，按标题定位行而非位置）。
 	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "list"}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -486,11 +487,20 @@ func TestSessionCommands(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("list lines = %d (%q), want 2", len(lines), out)
 	}
-	if !strings.HasPrefix(lines[0], "*") || !strings.Contains(lines[0], "项目 X") {
-		t.Fatalf("list[0] = %q, want 当前行", lines[0])
+	curLine, otherLine := "", ""
+	for _, ln := range lines {
+		switch {
+		case strings.Contains(ln, "项目 X"):
+			curLine = ln
+		case strings.Contains(ln, defaultTitle):
+			otherLine = ln
+		}
 	}
-	if !strings.Contains(lines[1], defaultTitle) {
-		t.Fatalf("list[1] = %q, want 旧会话", lines[1])
+	if !strings.HasPrefix(curLine, "*") {
+		t.Fatalf("当前行 = %q, want * 标记", curLine)
+	}
+	if otherLine == "" || strings.HasPrefix(otherLine, "*") {
+		t.Fatalf("旧会话行 = %q, want 无标记", otherLine)
 	}
 	// 未启用与未知命令报因（memory 已启用：未配置编辑器时报配置错）。
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "memory"}})
@@ -912,7 +922,7 @@ func newConfirmedSession(t *testing.T, store port.ConversationStore, answers []b
 }
 
 // buildTree 把一棵显式 ID 的树挂进会话（替换默认会话）：
-// convT(root) → p(persona) → u1(user) → a1(assistant，带调用 k1) → t1(tool 结果) → u2(user)；
+// convT(root) → p(persona) → u1(user) → a1(assistant，正文+工具分片 k1{call,result}) → u2(user)；
 // Head 在 u2。显式 ID 便于断言前缀解析与结构变化。
 func buildTree(t *testing.T, s *Session) *conversation.Conversation {
 	t.Helper()
@@ -930,15 +940,14 @@ func buildTree(t *testing.T, s *Session) *conversation.Conversation {
 	root := conversation.MessageID(c.ID)
 	p := mk(conversation.Message{ID: "p", Parent: root, Role: conversation.RoleSystem, Content: txt("人格")})
 	u1 := mk(conversation.Message{ID: "u1", Parent: p.ID, Role: conversation.RoleUser, Content: txt("问题")})
-	a1 := mk(conversation.Message{
-		ID: "a1", Parent: u1.ID, Role: conversation.RoleAssistant, Content: txt("回复"),
-		ToolCalls: []tool.Call{{ID: "k1", Name: "think", Args: json.RawMessage(`{}`)}},
-	})
 	mk(conversation.Message{
-		ID: "t1", Parent: a1.ID, Role: conversation.RoleTool,
-		ToolResult: &tool.Result{CallID: "k1", OK: true, Output: "思考完毕"},
+		ID: "a1", Parent: u1.ID, Role: conversation.RoleAssistant,
+		Content: append(txt("回复"), conversation.Part{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+			CallID: "k1", Name: "think", Args: json.RawMessage(`{}`),
+			Result: &tool.Result{CallID: "k1", OK: true, Output: "思考完毕"},
+		}}),
 	})
-	mk(conversation.Message{ID: "u2", Parent: "t1", Role: conversation.RoleUser, Content: txt("追问")})
+	mk(conversation.Message{ID: "u2", Parent: "a1", Role: conversation.RoleUser, Content: txt("追问")})
 	if err := c.Validate(); err != nil {
 		t.Fatalf("build tree: %v", err)
 	}
@@ -1288,7 +1297,6 @@ func TestSessionEditCarry(t *testing.T) {
 	s, _ := newConfirmedSession(t, store, nil)
 	c := buildTree(t, s)
 	a1Before := c.Nodes["a1"].Clone()
-	t1Before := c.Nodes["t1"].Clone()
 	u2Before := c.Nodes["u2"].Clone()
 
 	out, err := handleCmd(s, "edit", "u1", "--keep", "新问题")
@@ -1321,15 +1329,15 @@ func TestSessionEditCarry(t *testing.T) {
 		return string(b)
 	}
 	for id, before := range map[conversation.MessageID]conversation.Message{
-		"a1": a1Before, "t1": t1Before, "u2": u2Before,
+		"a1": a1Before, "u2": u2Before,
 	} {
 		if snap(before) != snap(c.Nodes[id]) {
 			t.Fatalf("被转移后代 %s 字节被改写:\nbefore %s\nafter  %s", id, snap(before), snap(c.Nodes[id]))
 		}
 	}
 	// 零拷贝：只 +1 个修订节点（子树各节点仍是原对象，无复制）。
-	if len(c.Nodes) != 7 {
-		t.Fatalf("nodes = %d, want 7（6 + 1 修订节点，零拷贝）", len(c.Nodes))
+	if len(c.Nodes) != 6 {
+		t.Fatalf("nodes = %d, want 6（5 + 1 修订节点，零拷贝）", len(c.Nodes))
 	}
 	// 旧 Head（u2）是 u1 的严格后代 → 随子树转移，Head 保持不变（D16）。
 	if c.Head != "u2" {
@@ -1409,8 +1417,8 @@ func TestSessionEditPersonaKeep(t *testing.T) {
 	if c.Head != "u2" {
 		t.Fatalf("head = %s, want u2（随树保持）", c.Head)
 	}
-	if len(c.Nodes) != 7 {
-		t.Fatalf("nodes = %d, want 7（零拷贝）", len(c.Nodes))
+	if len(c.Nodes) != 6 {
+		t.Fatalf("nodes = %d, want 6（5 + 1 修订节点，零拷贝）", len(c.Nodes))
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -1432,7 +1440,6 @@ func TestSessionEditRejects(t *testing.T) {
 		{"空文本", []string{"u1", ""}, "不可为空", nil},
 		{"未知节点", []string{"zz", "x"}, "没有节点", nil},
 		{"root", []string{"convT", "x"}, "root 即会话", conversation.ErrInvalidNode},
-		{"tool", []string{"t1", "x"}, "", conversation.ErrReviseTool},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1503,7 +1510,7 @@ func TestSessionBranchCommand(t *testing.T) {
 
 	// 无同级分叉 / 错误路径。
 	out, err = handleCmd(s, "branch", "a1")
-	if err != nil || !strings.Contains(out, "同级分叉: 无") || !strings.Contains(out, "下级（1 条）:\n  t1 [tool]") {
+	if err != nil || !strings.Contains(out, "同级分叉: 无") || !strings.Contains(out, "下级（1 条）:\n  u2 [user] 追问") {
 		t.Fatalf("无分叉 = %q, %v", out, err)
 	}
 
@@ -1558,8 +1565,8 @@ func TestSessionRmCommand(t *testing.T) {
 		if err != nil || !strings.Contains(out, "已取消删除 u1") {
 			t.Fatalf("deny = %q, %v", out, err)
 		}
-		if len(c.Nodes) != 6 {
-			t.Fatalf("nodes = %d, want 树未改动 6", len(c.Nodes))
+		if len(c.Nodes) != 5 {
+			t.Fatalf("nodes = %d, want 树未改动 5", len(c.Nodes))
 		}
 	})
 
@@ -1571,14 +1578,14 @@ func TestSessionRmCommand(t *testing.T) {
 		if err != nil {
 			t.Fatalf("rm: %v", err)
 		}
-		// 子树 u1 = {u1,a1,t1,u2} 共 4 条；Head(u2) 回退到最近存活祖先 p。
-		if !strings.Contains(out, "共 4 条节点") && !strings.Contains(out, "4 条节点") {
-			t.Fatalf("out = %q, want 子树计数 4", out)
+		// 子树 u1 = {u1,a1,u2} 共 3 条；Head(u2) 回退到最近存活祖先 p。
+		if !strings.Contains(out, "共 3 条节点") && !strings.Contains(out, "3 条节点") {
+			t.Fatalf("out = %q, want 子树计数 3", out)
 		}
 		if !strings.Contains(out, "Head → p") {
 			t.Fatalf("out = %q, want Head 回退到 p", out)
 		}
-		for _, id := range []string{"u1", "a1", "t1", "u2"} {
+		for _, id := range []string{"u1", "a1", "u2"} {
 			if _, ok := c.Nodes[conversation.MessageID(id)]; ok {
 				t.Fatalf("节点 %s 应已删除", id)
 			}
@@ -1608,11 +1615,11 @@ func TestSessionRmCommand(t *testing.T) {
 			t.Fatalf("err = %v, want 回滚且保留 disk full", err)
 		}
 		// 内存与已存副本都回到删除前状态：删除绝不"半生效"。
-		if len(s.cur.Nodes) != 6 {
-			t.Fatalf("nodes = %d, want 回滚到 6", len(s.cur.Nodes))
+		if len(s.cur.Nodes) != 5 {
+			t.Fatalf("nodes = %d, want 回滚到 5", len(s.cur.Nodes))
 		}
-		if saved := store.convs[c.ID]; saved == nil || len(saved.Nodes) != 6 {
-			t.Fatalf("saved = %v, want 6 节点副本未被改写", saved)
+		if saved := store.convs[c.ID]; saved == nil || len(saved.Nodes) != 5 {
+			t.Fatalf("saved = %v, want 5 节点副本未被改写", saved)
 		}
 	})
 

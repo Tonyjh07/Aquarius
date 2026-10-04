@@ -106,12 +106,17 @@ func TestReplayToolTurnAnchorsFork(t *testing.T) {
 	u.m.clear()
 	u.m.replay(conversation.Message{ID: "u1", Role: conversation.RoleUser,
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "whoami"}}})
+	// D95：调用声明在节点工具分片里。
 	u.m.replay(conversation.Message{
-		ID:        "a1",
-		Role:      conversation.RoleAssistant,
-		Content:   []conversation.Part{{Kind: conversation.PartThinking, Text: "Just run it."}},
-		ToolCalls: []tool.Call{{ID: "call1", Name: "term_exec", Args: []byte(`{"command":"whoami"}`)}},
-		Outcome:   conversation.OutcomeDone,
+		ID:   "a1",
+		Role: conversation.RoleAssistant,
+		Content: []conversation.Part{
+			{Kind: conversation.PartThinking, Text: "Just run it."},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "call1", Name: "term_exec", Args: []byte(`{"command":"whoami"}`),
+			}},
+		},
+		Outcome: conversation.OutcomeDone,
 	})
 	found := false
 	for _, b := range u.m.blocks {
@@ -137,10 +142,12 @@ func TestCommitToolTurnAnchorsChip(t *testing.T) {
 	m := u.m
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "call1", Name: "term_exec", Args: []byte(`{}`)}})
 	m.commit(conversation.Message{
-		ID:        "a1",
-		Role:      conversation.RoleAssistant,
-		ToolCalls: []tool.Call{{ID: "call1", Name: "term_exec"}},
-		Outcome:   conversation.OutcomeDone,
+		ID:   "a1",
+		Role: conversation.RoleAssistant,
+		Content: []conversation.Part{{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+			CallID: "call1", Name: "term_exec",
+		}}},
+		Outcome: conversation.OutcomeDone,
 	})
 	found := false
 	for _, b := range m.blocks {

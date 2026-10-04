@@ -648,7 +648,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if err := s.cur.Prune(id); err != nil {
 			return "", fmt.Errorf("session: 删除: %w", err)
 		}
-		removed := before - len(s.cur.Nodes) // 实际删除数：Prune 可能连带删除子树外的失联节点（D18）
+		removed := before - len(s.cur.Nodes) // 实际删除数 = 子树大小（D95 后 Prune 恰删子树，无连带）
 		if err := s.persist(ctx); err != nil {
 			// 删除绝不"半生效"：落盘失败即回滚到最近一次成功保存的状态。
 			if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
@@ -1045,18 +1045,28 @@ func nodeSummary(m conversation.Message) string {
 		}
 	}
 	s := strings.Join(parts, " ")
-	if s == "" && len(m.ToolCalls) > 0 {
-		names := make([]string, len(m.ToolCalls))
-		for i, c := range m.ToolCalls {
-			names[i] = c.Name
+	// 工具分片预览（D95）：先列调用名；无正文时结果节点兜底显示输出/错误。
+	if s == "" {
+		var names []string
+		for _, p := range m.Content {
+			if p.Kind == conversation.PartTool && p.Tool != nil {
+				names = append(names, p.Tool.Name)
+			}
 		}
-		s = "（调用 " + strings.Join(names, ", ") + "）"
+		if len(names) > 0 {
+			s = "（调用 " + strings.Join(names, ", ") + "）"
+		}
 	}
-	if s == "" && m.ToolResult != nil {
-		if m.ToolResult.OK {
-			s = strings.TrimSpace(m.ToolResult.Output)
-		} else {
-			s = "错误: " + m.ToolResult.Err
+	if s == "" {
+		for _, p := range m.Content {
+			if p.Kind == conversation.PartTool && p.Tool != nil && p.Tool.Result != nil {
+				if p.Tool.Result.OK {
+					s = strings.TrimSpace(p.Tool.Result.Output)
+				} else {
+					s = "错误: " + p.Tool.Result.Err
+				}
+				break
+			}
 		}
 	}
 	if s == "" {

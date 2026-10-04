@@ -253,7 +253,8 @@ func TestRunAutoCompactOncePerRun(t *testing.T) {
 }
 
 // TestContextCompactToolRound 模型经 context_compact 触发压缩（轨3）：
-// 摘要 mid-turn 入树、tool 结果回填、下一次装配水位生效（失联 tool 内联标注）。
+// 摘要 mid-turn 入树（D95 先执行后提交：摘要挂在其父节点之下，声明调用的节点随后
+// 以工具分片提交）、下一次装配水位生效（调用与结果同片成对回传，无失联形态）。
 func TestContextCompactToolRound(t *testing.T) {
 	llm := &scriptLLM{t: t, streams: []*scriptStream{
 		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
@@ -278,32 +279,39 @@ func TestContextCompactToolRound(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	path := c.Path()
-	// root,user,assistant(call),summary,tool,final
-	if len(path) != 6 {
-		t.Fatalf("path len = %d, want 6: %v", len(path), roles(path))
+	// root,user,summary,turn-node——一 Turn 一节点（D95）：摘要 mid-turn 入树，
+	// Turn 节点挂摘要之下、工具分片与收场正文按到达序交错。
+	if len(path) != 4 {
+		t.Fatalf("path len = %d, want 4: %v", len(path), roles(path))
 	}
-	if path[3].Role != conversation.RoleSystem || path[3].Content[0].Text != "## Objective\n- 自答摘要" {
-		t.Fatalf("summary = %+v", path[3])
+	if path[2].Role != conversation.RoleSystem || path[2].Content[0].Text != "## Objective\n- 自答摘要" {
+		t.Fatalf("summary = %+v", path[2])
 	}
-	if path[4].Role != conversation.RoleTool || path[4].ToolResult == nil || !path[4].ToolResult.OK {
-		t.Fatalf("tool result = %+v", path[4])
+	turn := path[3]
+	if turn.Role != conversation.RoleAssistant || turn.Parent != path[2].ID {
+		t.Fatalf("turn node = %+v", turn)
 	}
-	if !strings.Contains(path[4].ToolResult.Output, "compacted") {
-		t.Fatalf("output = %q", path[4].ToolResult.Output)
+	res := toolPartOf(t, turn, 0)
+	if res.Result == nil || !res.Result.OK || !strings.Contains(res.Result.Output, "compacted") {
+		t.Fatalf("tool result = %+v", res.Result)
 	}
-	// 第三次请求：水位生效 + 失联 tool 内联标注（不带孤立 tool_call_id）。
+	if len(turn.Content) != 2 || turn.Content[1].Text != "压缩后的回答" {
+		t.Fatalf("turn content = %+v, want [tool, text 压缩后的回答]", turn.Content)
+	}
+	// 第三次请求：水位生效 + 调用/应答成对回传（D95，无失联内联形态）。
 	last := llm.requests[2]
 	txt := reqText(last)
 	if !strings.Contains(txt, "自答摘要") {
 		t.Fatalf("req2 缺摘要: %.200s", txt)
 	}
-	if !strings.Contains(txt, historyToolMarker) {
-		t.Fatalf("req2 缺失联 tool 内联标注: %.300s", txt)
-	}
+	sawTool := false
 	for _, m := range last.Messages {
-		if m.Role == "tool" {
-			t.Fatalf("水位之上不应出现孤立 tool 消息: %+v", m)
+		if m.Role == "tool" && m.CallID == "cc1" {
+			sawTool = true
 		}
+	}
+	if !sawTool {
+		t.Fatalf("req2 缺 tool 应答消息: %.300s", txt)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)

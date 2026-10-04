@@ -2,10 +2,11 @@
 //
 // 核心语义（DESIGN §4.1）：
 //   - 节点创建后内容只读；用户"修改"永远走 Revise（创建同级新节点），绝不就地改写。
-//   - Revise Carry = 边转移：子树零拷贝改挂到新节点（D2/D16）。
+//   - Revise Carry = 边转移：子树零拷贝改挂到新节点（D2/D16）；Clone = 深拷贝子树分叉（D96）。
 //   - Root 实节点是唯一根（D19 修订 D15 载体）：ID = 会话 ID、Role = root、空内容；
 //     顶层消息 = Root 的孩子（可多条，支撑 Revise 首条消息）；Head 初始 = Root，无空串特例。
-//   - system 节点承载 persona（D20）与压缩摘要（D21）；root/system/tool 组装节点一律走 AppendCommitted。
+//   - system 节点承载 persona（D20）与压缩摘要（D21）；root/system 组装节点一律走 AppendCommitted。
+//   - 工具调用与结果内嵌为 assistant 节点的 PartTool 分片（D95），无跨节点引用。
 //   - 流式中间态不进领域：Turn 结束一次性 AppendCommitted 提交不可变节点（D3）。
 package conversation
 
@@ -14,18 +15,14 @@ import (
 	"fmt"
 	"sort"
 	"time"
-
-	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
 // 哨兵错误。
 var (
 	// ErrNotFound 目标消息不在树中。
 	ErrNotFound = errors.New("conversation: message not found")
-	// ErrInvalidNode 节点不满足入树条件：空 ID、重复 ID、角色非法、父不存在、引用不合法等。
+	// ErrInvalidNode 节点不满足入树条件：空 ID、重复 ID、角色非法、父不存在等。
 	ErrInvalidNode = errors.New("conversation: invalid node")
-	// ErrReviseTool tool 结果节点不可 Revise（内容由模型调用产生，不可编辑，D18）。
-	ErrReviseTool = errors.New("conversation: tool message cannot be revised")
 )
 
 // nowFunc 取当前时间；测试可替换以获得确定性输出。
@@ -85,10 +82,10 @@ func New(id ID, title string) *Conversation {
 }
 
 // Append 追加一条 user|assistant 内容消息，父节点为当前 Head；成功后 Head 移到新节点。
-// root/system/tool 一律走 AppendCommitted（Root 由 New 创建，system/tool 为组装节点）。
+// root/system 一律走 AppendCommitted（Root 由 New 创建，system 为组装节点）。
 func (c *Conversation) Append(role Role, content []Part) (Message, error) {
 	if role != RoleUser && role != RoleAssistant {
-		return Message{}, fmt.Errorf("append: %w: 仅 user|assistant 可走 Append，root/system/tool 用 AppendCommitted", ErrInvalidNode)
+		return Message{}, fmt.Errorf("append: %w: 仅 user|assistant 可走 Append，root/system 用 AppendCommitted", ErrInvalidNode)
 	}
 	m := Message{
 		ID:        NewMessageID(),
@@ -103,9 +100,10 @@ func (c *Conversation) Append(role Role, content []Part) (Message, error) {
 	return c.Nodes[m.ID], nil
 }
 
-// AppendCommitted 提交一个已组装好的不可变节点（system/tool 等；Turn 结束一次性 Commit 的入口）。
+// AppendCommitted 提交一个已组装好的不可变节点（system 等；Turn 结束一次性 Commit 的入口）。
 // Root 不可提交（由 New 创建，D19）；Parent 必须非空且存在；入树前校验不变量，
 // 并对切片/指针做防御性拷贝；成功后 Head 移到新节点。
+// D95 后无跨节点引用检查：工具调用与结果同片，合法性由 checkNodeShape 把守（CallID 节点内唯一）。
 func (c *Conversation) AppendCommitted(m Message) error {
 	if m.Role == RoleRoot {
 		return fmt.Errorf("append %q: %w: root 由 New 创建，不可提交", m.ID, ErrInvalidNode)
@@ -121,16 +119,6 @@ func (c *Conversation) AppendCommitted(m Message) error {
 			return fmt.Errorf("append %q: %w: parent %q not in tree", m.ID, ErrInvalidNode, m.Parent)
 		}
 	}
-	for _, call := range m.ToolCalls {
-		if c.hasCallID(call.ID) {
-			return fmt.Errorf("append %q: %w: duplicate call id %q", m.ID, ErrInvalidNode, call.ID)
-		}
-	}
-	// 不变量 2：存在性引用——tool 结果的 CallID 须匹配树中存在的某 assistant 调用（D12）。
-	if m.Role == RoleTool && !c.hasCallID(m.ToolResult.CallID) {
-		return fmt.Errorf("append %q: %w: tool result references unknown call id %q",
-			m.ID, ErrInvalidNode, m.ToolResult.CallID)
-	}
 
 	stored := m.Clone()
 	c.Nodes[stored.ID] = stored
@@ -141,13 +129,16 @@ func (c *Conversation) AppendCommitted(m Message) error {
 }
 
 // Revise 创建 id 的同级新版本节点（同父、同角色，内容替换），并记录版本链 RevisedFrom 新→旧。
-// root/tool 不可 Revise（Root 即会话，D19；tool 结果机器生成不可编辑，D18）；system 可以（persona/摘要可改写）。
+// root 不可 Revise（Root 即会话，D19）；system 可以（persona/摘要可改写）。
 // id 为顶层消息时新节点同为顶层（挂 Root 下，D15 语义）。
+// 内容整体替换：旧节点的工具分片随旧版本保留，新版本不含（修订即改写该版本，D95）。
 //
-// Head 语义（D16）：
+// Head 语义（D16/D96）：
 //   - Fresh：Head 移到新节点，旧子树原样留作历史分支；
 //   - Carry：id 的子树边转移到新节点；旧 Head 若是 id 的严格后代（随子树转移）则保持不变，
-//     否则移到新节点。
+//     否则移到新节点；
+//   - Clone：id 的子树深拷贝到新节点下（全新 ID，原子树不动）；旧 Head 若在原子树内
+//     则平移到拷贝对应节点，否则移到新节点。
 func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) {
 	old, ok := c.Nodes[id]
 	if !ok {
@@ -155,9 +146,6 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	}
 	if old.Role == RoleRoot {
 		return Message{}, fmt.Errorf("revise %q: %w: root 即会话，不可修订", id, ErrInvalidNode)
-	}
-	if old.Role == RoleTool {
-		return Message{}, fmt.Errorf("revise %q: %w", id, ErrReviseTool)
 	}
 
 	m := Message{
@@ -198,10 +186,8 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 
 // Prune 剪掉 id 及整棵子树（唯一破坏性操作，硬删；Root 不可剪——Root 即会话，D19；
 // storejson 写前留一代 .bak 兜底，D7）。
-//
-// 连带处理（D18）：因引用的 assistant 节点被剪而失联的 tool 结果节点一并移除——
-// 只删该节点本身，其子树改挂到最近存活祖先（历史不丢），从而维持存在性引用不变量。
-// Head 落在被移除节点上时，回退到最近存活祖先（Root 之外的根不可删，链必止于 Root）。
+// Head 落在被移除子树内时，回退到最近存活祖先（Root 不可删，链必止于 Root）。
+// D95 后无跨节点引用，不存在失联节点——剪除范围即子树本身。
 func (c *Conversation) Prune(id MessageID) error {
 	m, ok := c.Nodes[id]
 	if !ok {
@@ -213,72 +199,28 @@ func (c *Conversation) Prune(id MessageID) error {
 	sub := map[MessageID]bool{}
 	c.collectSubtree(id, sub)
 
-	// 失联 tool 结果节点（在被剪子树外的）逐轮收敛。
-	drop := map[MessageID]bool{}
-	for {
-		changed := false
-		for nid, m := range c.Nodes {
-			if sub[nid] || drop[nid] || m.Role != RoleTool {
-				continue
-			}
-			if !c.hasCallID(m.ToolResult.CallID, sub, drop) {
-				drop[nid] = true
-				changed = true
-			}
-		}
-		if !changed {
-			break
-		}
-	}
-
-	survives := func(n MessageID) bool { return n == "" || (!sub[n] && !drop[n]) }
-	nearestSurvivingAncestor := func(n MessageID) MessageID {
-		cur := c.Nodes[n].Parent
-		for !survives(cur) {
+	if sub[c.Head] {
+		cur := c.Nodes[c.Head].Parent
+		for sub[cur] {
 			cur = c.Nodes[cur].Parent
 		}
-		return cur
-	}
-	headMoved := false
-	head := c.Head
-	if !survives(head) {
-		head = nearestSurvivingAncestor(head)
-		headMoved = true
-	}
-	// drop 节点的存活孩子改挂到最近存活祖先（子树零拷贝，仅直接孩子的 Parent 边指针改写）。
-	for nid := range drop {
-		p := nearestSurvivingAncestor(nid)
-		for _, ch := range c.Children[nid] {
-			if !survives(ch) {
-				continue
-			}
-			cm := c.Nodes[ch]
-			cm.Parent = p
-			c.Nodes[ch] = cm
-			c.Children[p] = append(c.Children[p], ch)
-		}
+		c.Head = cur
 	}
 
-	removed := func(n MessageID) bool { return sub[n] || drop[n] }
 	for nid := range sub {
 		delete(c.Nodes, nid)
 		delete(c.Children, nid)
 		delete(c.RevisedFrom, nid)
 	}
-	for nid := range drop {
-		delete(c.Nodes, nid)
-		delete(c.Children, nid)
-		delete(c.RevisedFrom, nid)
-	}
 	for newID, oldID := range c.RevisedFrom {
-		if removed(oldID) {
+		if sub[oldID] {
 			delete(c.RevisedFrom, newID)
 		}
 	}
 	for pid, kids := range c.Children {
 		kept := kids[:0]
 		for _, k := range kids {
-			if !removed(k) {
+			if !sub[k] {
 				kept = append(kept, k)
 			}
 		}
@@ -287,9 +229,6 @@ func (c *Conversation) Prune(id MessageID) error {
 		} else {
 			c.Children[pid] = kept
 		}
-	}
-	if headMoved {
-		c.Head = head
 	}
 	c.UpdatedAt = nowFunc()
 	return nil
@@ -411,34 +350,6 @@ func (c *Conversation) isStrictDescendant(id, node MessageID) bool {
 		cur = m.Parent
 		if cur == id {
 			return true
-		}
-	}
-	return false
-}
-
-// hasCallID 判断树中是否存在 assistant 节点声明了该调用 ID；skip 中的节点视作不存在。
-func (c *Conversation) hasCallID(id tool.CallID, skip ...map[MessageID]bool) bool {
-	if id == "" {
-		return false
-	}
-	for nid, m := range c.Nodes {
-		if m.Role != RoleAssistant {
-			continue
-		}
-		gone := false
-		for _, s := range skip {
-			if s[nid] {
-				gone = true
-				break
-			}
-		}
-		if gone {
-			continue
-		}
-		for _, call := range m.ToolCalls {
-			if call.ID == id {
-				return true
-			}
 		}
 	}
 	return false

@@ -77,6 +77,12 @@ type model struct {
 	// editTarget 编辑态目标节点（D92 气泡右键「编辑」）：非空时提交 = 结构化 /edit
 	// 命令（不回显，修订结果由清屏回放呈现）；"" = 非编辑态。仅事件循环 goroutine 读写。
 	editTarget conversation.MessageID
+
+	// flushedDrafts 待调和的草稿正文段块序（D95 Turn 粒度）：工具事件先于
+	// CommittedEvent 到达——工具边界把流式草稿落为正文气泡（重构前观感：正文先于
+	// chip，第 2 轮文本重新流式），块先不带节点 ID；提交（每 Turn 一次）时就地回填
+	// 权威文本并盖章。chip 照旧直接入块，确认问答留痕不受提交调和影响。
+	flushedDrafts []int
 }
 
 // newModel 初始状态机。
@@ -110,6 +116,7 @@ func (m *model) handleEvent(ev port.Event) {
 		m.drafting = true
 		m.draft.WriteString(sanitizeControl(e.Delta.Text)) // 模型流为不可信输入（§9）
 	case port.ToolCallEvent:
+		m.flushDraftSegment() // D95：工具边界落正文段（正文气泡先于 chip，与重构前一致）
 		m.addToolCall(e.Call)
 	case port.ToolResultEvent:
 		m.attachToolResult(e.Result)
@@ -136,6 +143,7 @@ func (m *model) clear() {
 	m.draft.Reset()
 	m.drafting = false
 	m.think.Reset()
+	m.flushedDrafts = nil
 	m.usage = conversation.Usage{}
 	m.u.scrollPx, m.u.contentH = 0, 0
 	m.u.followTail = true
@@ -145,9 +153,10 @@ func (m *model) clear() {
 	m.u.keyFp = 0
 }
 
-// commit 提交节点定稿：助手（done）以消息文本为准替换草稿；
-// system 节点（/compact 摘要）入块；用量在所有节点上累计（含 system 的压缩摘要）。
-// 未完成 chip 一并收口（取消/异常收尾没有结果事件，D67）。
+// commit 提交节点定稿（D95 Turn 粒度：每 Turn 一次）：system 节点（/compact 摘要）
+// 入块；用量累计；未完成 chip 一并收口（取消/异常收尾没有结果事件，D67）。
+// assistant 节点做调和而非重渲——flushed 草稿段就地回填权威文本、chips 保留实时现场
+// （确认问答留痕不丢），末段从 parts 追加渲染。
 func (m *model) commit(msg conversation.Message) {
 	m.closeOpenChips()
 	m.usage = addUsage(m.usage, msg.Usage)
@@ -155,41 +164,98 @@ func (m *model) commit(msg conversation.Message) {
 	switch msg.Role {
 	case conversation.RoleAssistant:
 		start := len(m.blocks)
-		final := text
-		if final == "" {
-			final = m.draft.String() // 极端：以流式草稿兜底
-		}
 		m.resetDraft()
-		if strings.TrimSpace(final) == "" {
-			// 空内容的取消/错误也要有反馈（首个 token 前取消是最常见场景）。
+		segs := textSegments(msg.Content)
+		if len(segs) == 0 && len(m.flushedDrafts) == 0 {
+			// 空内容的取消/错误也要有反馈（首个 token 前取消是最常见场景）；
+			// 纯工具/思考轮（chip/思考卡已实时入块）走 D89 锚点回填节点 ID。
 			if msg.Outcome != conversation.OutcomeDone {
 				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), msg.ID)
 			} else {
-				// D89：纯工具/思考轮（chip 由 ToolCallEvent 先行入块）——锚回填节点
-				// ID，分叉条在纯工具轮分支才有挂点。
 				m.stampAssistantAnchor(msg, start)
 			}
 			return
 		}
-		if msg.Outcome == conversation.OutcomeDone {
-			m.addMsg(blockAssistant, final, msg.ID) // §15.3 完整 markdown 在渲染期处理（骨架先纯文本）
-		} else {
-			m.addMsg(blockAssistant, fmt.Sprintf("[%s]\n%s", msg.Outcome, final), msg.ID)
+		// flushed 草稿段就地回填（FIFO；权威文本以节点为准）。
+		for _, idx := range m.flushedDrafts {
+			if len(segs) == 0 {
+				break
+			}
+			m.blocks[idx].text = segs[0]
+			segs = segs[1:]
 		}
+		m.flushedDrafts = m.flushedDrafts[:0]
+		// 余段（收场轮的正文，通常仍在草稿）追加渲染；最后一段盖节点 ID
+		// ——分叉条（D81）每 Turn 一个挂点，挂在回答气泡下。
+		stamped := false
+		for i, seg := range segs {
+			blk := block{kind: blockAssistant, text: seg}
+			if msg.Outcome != conversation.OutcomeDone && i == len(segs)-1 {
+				blk.text = fmt.Sprintf("[%s]\n%s", msg.Outcome, seg)
+			}
+			if i == len(segs)-1 {
+				blk.id = msg.ID
+				stamped = true
+			}
+			m.blocks = append(m.blocks, blk)
+		}
+		// Turn 以工具收场（正文段全部经工具边界落块）：末个已落块盖 ID。
+		if !stamped && len(m.flushedDrafts) > 0 {
+			m.blocks[m.flushedDrafts[len(m.flushedDrafts)-1]].id = msg.ID
+		}
+		m.flushedDrafts = m.flushedDrafts[:0]
 	case conversation.RoleSystem:
 		m.resetDraft()
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
 		}
 	default:
-		// user / tool 节点无独立事件面：工具行由 chip 呈现；user 行已在 submit 时
-		// 回显入块——但回显时节点尚不存在、块无 ID（D87），此处按「最早未盖章且
-		// 文本一致」回填节点 ID，分叉条（D81）在实时会话才能出现。
+		// user 无独立事件面：输入行已在 submit 时回显入块——但回显时节点尚不存在、
+		// 块无 ID（D87），此处按「最早未盖章且文本一致」回填节点 ID，分叉条（D81）
+		// 在实时会话才能出现；工具结果随 assistant 节点分片呈现（D95）。
 		if msg.Role == conversation.RoleUser && text != "" {
 			m.stampUserBlock(text, msg.ID)
 		}
 		m.resetDraft()
 	}
+}
+
+// flushDraftSegment 工具边界把流式草稿落为正文气泡（D95 Turn 粒度）：块先不带节点
+// ID（提交调和时回填权威文本并盖章），草稿清空后第 2 轮文本重新流式。
+func (m *model) flushDraftSegment() {
+	if !m.drafting && m.draft.Len() == 0 {
+		return
+	}
+	text := m.draft.String()
+	m.resetDraft()
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	m.flushedDrafts = append(m.flushedDrafts, len(m.blocks))
+	m.blocks = append(m.blocks, block{kind: blockAssistant, text: text})
+}
+
+// textSegments 按工具分片把节点正文切段（D95 Turn 粒度）：段 = tool 分片之间的连续
+// text/image/audio/doc 分片，渲染口径与 partsText 一致（§4.2 占位、§9 出口消毒）。
+// thinking 分片不进正文（回放单独成块，D42）。
+func textSegments(parts []conversation.Part) []string {
+	var segs []string
+	var b strings.Builder
+	flush := func() {
+		if s := sanitizeControl(b.String()); strings.TrimSpace(s) != "" {
+			segs = append(segs, s)
+		}
+		b.Reset()
+	}
+	for _, p := range parts {
+		if p.Kind == conversation.PartTool {
+			flush()
+			continue
+		}
+		appendPartText(&b, p)
+	}
+	flush()
+	return segs
 }
 
 // stampAssistantAnchor 无正文 assistant 节点的分叉锚点回填（D89）：thinking 卡与
@@ -206,9 +272,9 @@ func (m *model) stampAssistantAnchor(msg conversation.Message, start int) {
 			return
 		}
 	}
-	for _, call := range msg.ToolCalls {
-		for i := range m.blocks {
-			if c := m.blocks[i].chip; c != nil && c.id == call.ID {
+	for _, p := range msg.Content {
+		if p.Kind == conversation.PartTool && p.Tool != nil {
+			if i := m.findChipBlock(tool.CallID(p.Tool.CallID)); i >= 0 {
 				m.blocks[i].id = msg.ID
 				return
 			}
@@ -217,6 +283,16 @@ func (m *model) stampAssistantAnchor(msg conversation.Message, start int) {
 	if len(m.blocks) > start {
 		m.blocks[len(m.blocks)-1].id = msg.ID
 	}
+}
+
+// findChipBlock 按调用 ID 找 chip 块序（D89 锚点匹配；D95 后调用声明在节点分片里）。
+func (m *model) findChipBlock(id tool.CallID) int {
+	for i := range m.blocks {
+		if c := m.blocks[i].chip; c != nil && c.id == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // stampUserBlock 给回显的用户行补盖节点 ID（D87）：按「最早未盖章且文本一致」匹配
@@ -236,7 +312,8 @@ func (m *model) stampUserBlock(text string, id conversation.MessageID) {
 }
 
 // replay 历史节点回放（D40/§7.4）：已提交节点按角色一次性定稿渲染；无草稿/流式
-// 过程，也不累计用量（回放是展示，不是新一轮提交）。思考暗块先行（D42）。
+// 过程，也不累计用量（回放是展示，不是新一轮提交）。D95 Turn 粒度：逐分片序渲染
+// ——思考分片各自成块、正文按 tool 边界分段成气泡、chip 夹段间，与实时一致。
 func (m *model) replay(msg conversation.Message) {
 	text := partsText(msg.Content)
 	switch msg.Role {
@@ -246,27 +323,62 @@ func (m *model) replay(msg conversation.Message) {
 		}
 	case conversation.RoleAssistant:
 		start := len(m.blocks)
-		if tp := thinkingText(msg.Content); tp != "" {
-			m.add(blockThinking, tp) // 回放无耗时 → secs 置 -1（add 内统一处理）
-		}
-		for _, call := range msg.ToolCalls {
-			m.addToolCall(call) // D67：调用开 chip，结果由后续 tool 节点按 CallID 回填
-		}
-		if strings.TrimSpace(text) == "" {
-			if msg.Outcome != conversation.OutcomeDone {
-				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), msg.ID)
+		var seg strings.Builder
+		flushSeg := func() {
+			if s := sanitizeControl(seg.String()); strings.TrimSpace(s) != "" {
+				m.addMsg(blockAssistant, s, "") // 段先不带 ID：末段统一盖
 			}
-		} else if msg.Outcome == conversation.OutcomeDone {
-			m.addMsg(blockAssistant, text, msg.ID)
-		} else {
-			m.addMsg(blockAssistant, fmt.Sprintf("[%s]\n%s", msg.Outcome, text), msg.ID)
+			seg.Reset()
 		}
-		m.stampAssistantAnchor(msg, start) // D89：纯工具/思考轮锚点（见函数注释）
-	case conversation.RoleTool:
-		if msg.ToolResult == nil {
-			return
+		for _, p := range msg.Content {
+			switch p.Kind {
+			case conversation.PartThinking:
+				flushSeg()
+				if strings.TrimSpace(p.Text) != "" {
+					m.add(blockThinking, p.Text) // 回放无耗时 → secs 置 -1（add 内统一处理）
+				}
+			case conversation.PartTool:
+				flushSeg()
+				if p.Tool == nil {
+					continue
+				}
+				m.addToolCall(tool.Call{ID: tool.CallID(p.Tool.CallID), Name: p.Tool.Name, Args: p.Tool.Args})
+				if p.Tool.Result != nil {
+					m.attachToolResult(*p.Tool.Result) // D67：按 CallID 并入调用 chip
+				}
+			default:
+				appendPartText(&seg, p)
+			}
 		}
-		m.attachToolResult(*msg.ToolResult) // D67：按 CallID 并入调用 chip
+		flushSeg()
+		// 非 done 终态：标记行并入最后一个正文气泡（与实时 commit 同口径）；
+		// 无正文段（空内容的取消/错误）单独给标记块。
+		if msg.Outcome != conversation.OutcomeDone {
+			marked := false
+			for i := len(m.blocks) - 1; i >= start; i-- {
+				if m.blocks[i].kind == blockAssistant {
+					m.blocks[i].text = fmt.Sprintf("[%s]\n%s", msg.Outcome, m.blocks[i].text)
+					marked = true
+					break
+				}
+			}
+			if !marked {
+				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), "")
+			}
+		}
+		// 最后一个正文气泡盖节点 ID（D81 分叉条每 Turn 一个挂点）；
+		// 无正文段（纯工具/思考轮）走 D89 锚点回填。
+		stamped := false
+		for i := len(m.blocks) - 1; i >= start; i-- {
+			if m.blocks[i].kind == blockAssistant {
+				m.blocks[i].id = msg.ID
+				stamped = true
+				break
+			}
+		}
+		if !stamped {
+			m.stampAssistantAnchor(msg, start) // D89：纯工具/思考轮锚点（见函数注释）
+		}
 	case conversation.RoleSystem:
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
@@ -484,38 +596,35 @@ func (m *model) addMsg(kind blockKind, text string, id conversation.MessageID) {
 
 // partsText 节点文本：文本分片直连，其余留占位（§4.2 多模态呈现 MVP）；
 // 出口统一剥控制序列（提交内容是不可信模型输出，§9）。
-// 思考分片不并入正文——回放路径单独渲染为思考块（D42）。
+// 思考分片不并入正文——回放路径单独渲染为思考块（D42）；
+// 工具分片不并入正文——回放路径单独渲染为 chip（D95）。
 func partsText(parts []conversation.Part) string {
 	var b strings.Builder
 	for _, p := range parts {
-		switch p.Kind {
-		case conversation.PartText:
-			b.WriteString(p.Text)
-		case conversation.PartImage:
-			name := "图片"
-			if p.Ref != nil {
-				name = "图片：" + p.Ref.Name
-			}
-			fmt.Fprintf(&b, "〔%s〕", name)
-		case conversation.PartAudio:
-			b.WriteString("〔音频转写〕")
-		case conversation.PartDoc:
-			b.WriteString(p.Text)
-		case conversation.PartThinking:
-			// 单独成块（thinkingText），不混正文。
-		}
+		appendPartText(&b, p)
 	}
 	return sanitizeControl(b.String())
 }
 
-// thinkingText 提取首个非空思考分片（D42：回放口径恒含思考）；无思考返回空串。
-func thinkingText(parts []conversation.Part) string {
-	for _, p := range parts {
-		if p.Kind == conversation.PartThinking && strings.TrimSpace(p.Text) != "" {
-			return sanitizeControl(p.Text)
+// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用口径）；
+// 思考/工具分片不并入正文（各自单独成块，D42/D95）。
+func appendPartText(b *strings.Builder, p conversation.Part) {
+	switch p.Kind {
+	case conversation.PartText:
+		b.WriteString(p.Text)
+	case conversation.PartImage:
+		name := "图片"
+		if p.Ref != nil {
+			name = "图片：" + p.Ref.Name
 		}
+		fmt.Fprintf(b, "〔%s〕", name)
+	case conversation.PartAudio:
+		b.WriteString("〔音频转写〕")
+	case conversation.PartDoc:
+		b.WriteString(p.Text)
+	case conversation.PartThinking, conversation.PartTool:
+		// 单独成块（思考卡 / chip），不混正文。
 	}
-	return ""
 }
 
 // addUsage 用量累加。

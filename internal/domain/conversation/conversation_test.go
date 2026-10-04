@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -68,44 +69,73 @@ func TestAppendAdvancesHeadAndBuildsPath(t *testing.T) {
 	}
 }
 
-func TestCommitToolFlowAndRejectBadRefs(t *testing.T) {
+// TestCommitToolPartFlowAndRejectBadShapes D95：工具分片（调用+结果同片）随 assistant
+// 节点提交；Result=nil 合法（未执行/被取消）；形态违规（user/system 携带、节点内 CallID
+// 撞车、Result.CallID 不一致、空工具名）一律 ErrInvalidNode。无跨节点引用可悬挂。
+func TestCommitToolPartFlowAndRejectBadShapes(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
 	u := mustAppend(t, c, RoleUser, "run think")
 
-	if _, err := c.Append(RoleTool, nil); !errors.Is(err, ErrInvalidNode) {
-		t.Fatalf("append(tool) = %v, want ErrInvalidNode", err)
+	toolPart := func(callID string, res *tool.Result) Part {
+		return Part{Kind: PartTool, Tool: &ToolPart{CallID: callID, Name: "think", Args: json.RawMessage(`{}`), Result: res}}
 	}
-
-	calls := []tool.Call{{ID: "c1", Name: "think", Args: []byte(`{}`)}}
 	a := mustCommit(t, c, Message{
 		ID: NewMessageID(), Parent: u.ID, Role: RoleAssistant,
-		ToolCalls: calls, Outcome: OutcomeDone, CreatedAt: nowFunc(),
+		Content: []Part{toolPart("c1", &tool.Result{CallID: "c1", OK: true, Output: "ok"})},
+		Outcome: OutcomeDone, CreatedAt: nowFunc(),
 	})
-	tr := mustCommit(t, c, Message{
-		ID: NewMessageID(), Parent: a.ID, Role: RoleTool,
-		ToolResult: &tool.Result{CallID: "c1", OK: true, Output: "ok"},
-		Outcome:    OutcomeDone, CreatedAt: nowFunc(),
+	// Result=nil（未执行）同样是合法形态。
+	mustCommit(t, c, Message{
+		ID: NewMessageID(), Parent: a.ID, Role: RoleAssistant,
+		Content: []Part{toolPart("c2", nil)},
+		Outcome: OutcomeDone, CreatedAt: nowFunc(),
 	})
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
 
-	// 不变量 2：存在性引用——悬挂引用必须被拒。
+	// user/system 携带工具分片必须被拒。
 	err := c.AppendCommitted(Message{
-		ID: NewMessageID(), Parent: tr.ID, Role: RoleTool,
-		ToolResult: &tool.Result{CallID: "missing"}, CreatedAt: nowFunc(),
+		ID: NewMessageID(), Parent: a.ID, Role: RoleUser,
+		Content: []Part{toolPart("c9", nil)}, CreatedAt: nowFunc(),
 	})
 	if !errors.Is(err, ErrInvalidNode) {
-		t.Fatalf("dangling tool result = %v, want ErrInvalidNode", err)
+		t.Fatalf("commit(user, tool part) = %v, want ErrInvalidNode", err)
 	}
-	// 调用 ID 全树唯一：撞车必须被拒。
 	err = c.AppendCommitted(Message{
-		ID: NewMessageID(), Parent: tr.ID, Role: RoleAssistant,
-		ToolCalls: calls, CreatedAt: nowFunc(),
+		ID: NewMessageID(), Parent: a.ID, Role: RoleSystem,
+		Content: []Part{toolPart("c9", nil)}, CreatedAt: nowFunc(),
 	})
 	if !errors.Is(err, ErrInvalidNode) {
-		t.Fatalf("duplicate call id = %v, want ErrInvalidNode", err)
+		t.Fatalf("commit(system, tool part) = %v, want ErrInvalidNode", err)
+	}
+	// 节点内 CallID 撞车必须被拒（全树唯一已随 D95 取消——另一节点复用 c1 合法）。
+	dup := Message{
+		ID: NewMessageID(), Parent: a.ID, Role: RoleAssistant,
+		Content: []Part{toolPart("d1", nil), toolPart("d1", nil)},
+		Outcome: OutcomeDone, CreatedAt: nowFunc(),
+	}
+	if err := c.AppendCommitted(dup); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("duplicate part call id = %v, want ErrInvalidNode", err)
+	}
+	// Result.CallID 与分片不一致必须被拒。
+	err = c.AppendCommitted(Message{
+		ID: NewMessageID(), Parent: a.ID, Role: RoleAssistant,
+		Content: []Part{toolPart("e1", &tool.Result{CallID: "other", OK: true})},
+		Outcome: OutcomeDone, CreatedAt: nowFunc(),
+	})
+	if !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("mismatched result call id = %v, want ErrInvalidNode", err)
+	}
+	// 空工具名必须被拒。
+	bad := Message{
+		ID: NewMessageID(), Parent: a.ID, Role: RoleAssistant,
+		Content: []Part{{Kind: PartTool, Tool: &ToolPart{CallID: "f1"}}},
+		Outcome: OutcomeDone, CreatedAt: nowFunc(),
+	}
+	if err := c.AppendCommitted(bad); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("empty tool name = %v, want ErrInvalidNode", err)
 	}
 	// 重复消息 ID / 父不存在必须被拒。
 	err = c.AppendCommitted(Message{ID: a.ID, Parent: u.ID, Role: RoleUser, CreatedAt: nowFunc()})
@@ -116,9 +146,15 @@ func TestCommitToolFlowAndRejectBadRefs(t *testing.T) {
 	if !errors.Is(err, ErrInvalidNode) {
 		t.Fatalf("dangling parent = %v, want ErrInvalidNode", err)
 	}
-	// D18：tool 结果节点不可 Revise。
-	if _, err := c.Revise(tr.ID, textParts("x"), Fresh); !errors.Is(err, ErrReviseTool) {
-		t.Fatalf("revise(tool) = %v, want ErrReviseTool", err)
+	// 带 tool 分片的 assistant 节点可 Revise（D18 随 D95 取消）：内容整体替换，新版本不含旧分片。
+	m, err := c.Revise(a.ID, textParts("a1'"), Fresh)
+	if err != nil {
+		t.Fatalf("revise(assistant with tool part) = %v, want allowed", err)
+	}
+	for _, p := range m.Content {
+		if p.Kind == PartTool {
+			t.Fatalf("revised node keeps old tool part: %+v", m.Content)
+		}
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate after rejects: %v", err)
@@ -321,47 +357,6 @@ func TestPruneSubtreeAndHeadFallback(t *testing.T) {
 	}
 }
 
-func TestPruneCascadesOrphanToolResult(t *testing.T) {
-	useFixedClock(t)
-	c := New(NewID(), "t")
-	u := mustAppend(t, c, RoleUser, "q1")
-	a := mustCommit(t, c, Message{
-		ID: NewMessageID(), Parent: u.ID, Role: RoleAssistant,
-		ToolCalls: []tool.Call{{ID: "c1", Name: "think"}}, CreatedAt: nowFunc(),
-	})
-	tr := mustCommit(t, c, Message{
-		ID: NewMessageID(), Parent: a.ID, Role: RoleTool,
-		ToolResult: &tool.Result{CallID: "c1", OK: true, Output: "ok"}, CreatedAt: nowFunc(),
-	})
-	n := mustAppend(t, c, RoleAssistant, "a2") // Head，位于 tr 之下
-
-	// Carry 修订 assistant：tool 结果改挂到新 assistant 之下（存在性引用仍指向旧 assistant）。
-	m, err := c.Revise(a.ID, textParts("a1'"), Carry)
-	if err != nil {
-		t.Fatalf("revise carry: %v", err)
-	}
-	if c.Nodes[tr.ID].Parent != m.ID {
-		t.Fatalf("tool result not carried: parent = %q", c.Nodes[tr.ID].Parent)
-	}
-
-	// 剪掉旧 assistant：tool 结果失联 → 连带清理，其子树改挂最近存活祖先（历史不丢）。
-	if err := c.Prune(a.ID); err != nil {
-		t.Fatalf("prune: %v", err)
-	}
-	if _, ok := c.Find(tr.ID); ok {
-		t.Fatalf("orphan tool result not cascaded")
-	}
-	if c.Nodes[n.ID].Parent != m.ID {
-		t.Fatalf("history lost: n.parent = %q, want %q", c.Nodes[n.ID].Parent, m.ID)
-	}
-	if c.Head != n.ID {
-		t.Fatalf("head = %q, want %q", c.Head, n.ID)
-	}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("validate: %v", err)
-	}
-}
-
 func TestCheckoutRootRealNode(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
@@ -456,14 +451,14 @@ func TestRootGuardsAndSystemRole(t *testing.T) {
 	rootID := MessageID(c.ID)
 
 	root, ok := c.Find(rootID)
-	if !ok || root.Role != RoleRoot || root.Parent != "" || len(root.Content) != 0 || root.ToolResult != nil {
+	if !ok || root.Role != RoleRoot || root.Parent != "" || len(root.Content) != 0 {
 		t.Fatalf("root = %+v, want 空内容 RoleRoot", root)
 	}
 	if top := c.Branches(rootID); len(top) != 0 {
 		t.Fatalf("fresh top-level = %v, want none", ids(top))
 	}
 
-	for _, role := range []Role{RoleSystem, RoleRoot, RoleTool} {
+	for _, role := range []Role{RoleSystem, RoleRoot} {
 		if _, err := c.Append(role, textParts("x")); !errors.Is(err, ErrInvalidNode) {
 			t.Fatalf("append(%s) = %v, want ErrInvalidNode", role, err)
 		}

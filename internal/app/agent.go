@@ -187,13 +187,16 @@ func (a *Agent) modelName() string {
 func (a *Agent) CurrentModel() string { return a.modelName() }
 
 // Run 从当前 Head 出发执行一轮 Turn（DESIGN §7.1 / §10）：
-//   - 流式增量只经 Presenter 进 UI，每次生成结束一次性 Commit 不可变节点（D3）；
-//     节点 ID 在 Turn 开始时预分配，作流事件关联 ID。
-//   - 工具级失败转 OK=false 照常回填，不中断 Turn；
-//     装配级错误（确认器缺失/报错）为剩余调用补失败结果后中止本轮。
-//   - 取消 = 已生成部分以 Outcome: cancelled 提交后返回 nil（可 /edit 重试）；
-//     工具阶段取消 = 补齐中断结果后同样返回 nil（树可装配，主循环经 ctx 收尾）。
-//     模型/网络错误 = Outcome: error 提交并返回错误（ErrorEvent 由装配根统一上抛，避免重复呈现）。
+//   - 流式增量只经 Presenter 进 UI；**一次 Turn（可含多轮"生成+工具"循环）只提交一个
+//     不可变节点**（D3/D95 Turn 粒度）：多轮的思考/正文/工具分片按到达序交错累积，
+//     Turn 收场（正常/取消/失败/MaxTurns 用尽）时一次性 AppendCommitted。
+//   - 节点 ID 在 Turn 开始时预分配，作全部流事件的关联 ID；第 2 轮起构造请求时把
+//     未提交缓冲投影为合成消息追加在 Path 之后（模型能看到前几轮的调用与结果）。
+//   - 工具级失败转 OK=false 照常回填，不中断 Turn；装配级错误（确认器缺失/报错）
+//     为剩余调用补失败结果后随 Turn 节点提交并中止。
+//   - 取消 = 已生成部分以 Outcome: cancelled 随 Turn 节点提交后返回 nil（可 /edit 重试）；
+//     工具阶段取消 = 补齐中断结果后同样收场（树可装配，主循环经 ctx 收尾）。
+//     模型/网络错误 = Outcome: error 提交并返回错误（ErrorEvent 由装配根统一上抛）。
 func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	if c == nil {
 		return errors.New("agent: nil conversation")
@@ -206,28 +209,37 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	ctx = withConversation(ctx, c)
 	autoTried := false // 自动压缩轨每次 Run 至多尝试一次（D21 轨2）
 
+	mid := a.ids.MessageID() // Turn 预分配关联 ID（一 Turn 一节点，D95）
+	buf := newTurnBuffer(mid)
+
 	for turn := 0; turn < a.maxTurns; turn++ {
-		req, err := a.buildRequest(ctx, c)
+		req, err := a.buildRequest(ctx, c, buf)
 		if err != nil {
+			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
+				return fmt.Errorf("装配上下文: %w (commit failed: %v)", err, cerr)
+			}
 			return fmt.Errorf("装配上下文: %w", err)
 		}
 		// 三级计数链（D26）：估算当前请求；达阈值 → 自动压缩（轨2）。
 		sentEstimate, _ := a.est.Estimate(ctx, req)
 		if !autoTried && sentEstimate >= a.compactAt {
 			autoTried = true
-			req, sentEstimate = a.autoCompact(ctx, c, req, sentEstimate)
+			req, sentEstimate = a.autoCompact(ctx, c, req, sentEstimate, buf)
 		}
-		mid := a.ids.MessageID() // 预分配关联 ID
-		buf := &commitBuffer{id: mid, parent: c.Head}
-
 		stream, err := a.llm.Generate(ctx, req)
 		if err != nil {
 			if ctx.Err() != nil {
 				// 发起阶段被取消：按取消提交（Outcome: cancelled，返回 nil），
 				// 与断流取消一致（§10）——主循环经 ctx 状态收尾，不报 error 行。
-				return a.commitCancelled(ctx, c, buf)
+				if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeCancelled); cerr != nil {
+					return fmt.Errorf("提交取消节点: %w", cerr)
+				}
+				return nil
 			}
-			return a.commitFailure(ctx, c, buf, fmt.Errorf("发起生成: %w", err))
+			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
+				return fmt.Errorf("发起生成: %w (commit failed: %v)", err, cerr)
+			}
+			return fmt.Errorf("发起生成: %w", err)
 		}
 		calls, recvErr := a.consume(ctx, stream, buf, mid)
 		calls = a.normalizeCalls(calls)
@@ -242,61 +254,67 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		default:
 			outcome = conversation.OutcomeError
 		}
-		node := buf.commit(a.clock.Now(), outcome, a.modelName(), calls)
-		if err := c.AppendCommitted(node); err != nil {
-			return fmt.Errorf("提交节点: %w", err)
+		// 服务端实测 usage 回校估算（D26①→③）：raw 与 actual 必须同请求，逐轮校准。
+		if ru := buf.round; ru.InputTokens > 0 {
+			a.est.Calibrate(sentEstimate, ru.InputTokens)
 		}
-		_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
-		// 服务端实测 usage 回校估算（D26①→③：已发生的精确值修正未发送的估算）。
-		if node.Usage.InputTokens > 0 {
-			a.est.Calibrate(sentEstimate, node.Usage.InputTokens)
+		// 本轮思考/正文定稿进 Turn 缓冲（幂等；工具分片随后按到达序追加）。
+		buf.sealRound()
+
+		// 工具执行（D95 先执行后提交）：结果分片入缓冲，随 Turn 节点一次性入树。
+		// 非 done 终态不执行——半截调用不进缓冲（§10 取消提交语义）。
+		var toolErr error
+		if recvErr == nil {
+			toolErr = a.runTools(ctx, buf, mid, calls)
 		}
 
-		if recvErr != nil {
+		switch {
+		case recvErr != nil:
 			if outcome == conversation.OutcomeCancelled {
+				if _, cerr := a.finishTurn(ctx, c, buf, outcome); cerr != nil {
+					return fmt.Errorf("提交取消节点: %w", cerr)
+				}
 				return nil // 取消已提交，不视为失败
 			}
+			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
+				return fmt.Errorf("生成失败: %w (commit failed: %v)", recvErr, cerr)
+			}
 			return fmt.Errorf("生成失败: %w", recvErr)
-		}
-		if len(node.ToolCalls) == 0 {
+		case toolErr != nil:
+			// 装配级故障：失败结果已填进分片，提交 Turn 节点后上抛；
+			// 取消（Ctrl+C/超时）按取消收场，不作为错误呈现（§10）。
+			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeDone); cerr != nil {
+				return fmt.Errorf("%w (commit failed: %v)", toolErr, cerr)
+			}
+			if errors.Is(toolErr, context.Canceled) || errors.Is(toolErr, context.DeadlineExceeded) {
+				return nil
+			}
+			return toolErr
+		case len(calls) == 0:
+			// Turn 正常收场：一次性提交（D95）。
+			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeDone); cerr != nil {
+				return fmt.Errorf("提交节点: %w", cerr)
+			}
 			return nil
 		}
-
-		for i, call := range node.ToolCalls {
-			_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: call})
-			res, err := a.execTool(ctx, call)
-			if err != nil {
-				// 装配级错误（确认器缺失/报错、父 ctx 取消）：先补公告尚未呈现的
-				// 调用，再为剩余调用补失败结果保持 tool_calls 一一配对（树下次
-				// 仍可装配），随后中止本轮，不回填空转 MaxTurns（§14 遗留修复）。
-				for _, rest := range node.ToolCalls[i+1:] {
-					_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: rest})
-				}
-				cause := fmt.Errorf("tool %s failed: %w", call.Name, err)
-				if aerr := a.abortToolCalls(ctx, c, node.ToolCalls[i:], cause); aerr != nil {
-					return aerr
-				}
-				// 取消（Ctrl+C/超时）补齐中断结果后按取消收场，与生成阶段一致（§10）：
-				// 不作为错误呈现，主循环经 ctx 状态干净退出。
-				if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
-					return nil
-				}
-				return cause
-			}
-			tnode := conversation.Message{
-				ID:         a.ids.MessageID(),
-				Parent:     c.Head,
-				Role:       conversation.RoleTool,
-				ToolResult: &res,
-				CreatedAt:  a.clock.Now(),
-			}
-			if err := c.AppendCommitted(tnode); err != nil {
-				return fmt.Errorf("commit tool result: %w", err)
-			}
-			_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
-		}
+		// 仍有调用 → 下一轮：请求构造会把未提交缓冲投影进上下文。
+	}
+	// MaxTurns 用尽：先提交已累积的 Turn 节点再报错。
+	if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeDone); cerr != nil {
+		return fmt.Errorf("%w (commit failed: %v)", ErrMaxTurns, cerr)
 	}
 	return fmt.Errorf("%w（%d）", ErrMaxTurns, a.maxTurns)
+}
+
+// finishTurn 提交 Turn 节点并广播（每 Turn 恰一次，D95）：parent 取提交时的 Head
+// （mid-turn 的 compact 摘要可能已前移 Head，节点挂到最新 Head 之下保持路径线性）。
+func (a *Agent) finishTurn(ctx context.Context, c *conversation.Conversation, buf *turnBuffer, outcome conversation.Outcome) (conversation.Message, error) {
+	node := buf.commit(c.Head, a.clock.Now(), outcome, a.modelName())
+	if err := c.AppendCommitted(node); err != nil {
+		return conversation.Message{}, err
+	}
+	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
+	return node, nil
 }
 
 // Compact 生成上下文压缩摘要（D21 手动轨，/compact）：
@@ -369,7 +387,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 				Content: []port.PromptPart{{Kind: "text", Text: compactRetryReminder}},
 			})
 		}
-		buf := &commitBuffer{id: mid, parent: c.Head}
+		buf := newTurnBuffer(mid)
 		stream, err := a.llm.Generate(ctx, port.GenerateRequest{
 			Model:    a.modelName(),
 			Messages: msgs,
@@ -382,9 +400,9 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 		if _, err := a.consume(ctx, stream, buf, mid); err != nil {
 			return conversation.Message{}, 0, fmt.Errorf("generate summary: %w", err)
 		}
-		usage.InputTokens += buf.usage.InputTokens
-		usage.OutputTokens += buf.usage.OutputTokens
-		usage.CostUSD += buf.usage.CostUSD
+		usage.InputTokens += buf.round.InputTokens
+		usage.OutputTokens += buf.round.OutputTokens
+		usage.CostUSD += buf.round.CostUSD
 		text = strings.TrimSpace(buf.text.String())
 		if text != "" && hasSummarySection(text) {
 			break
@@ -417,14 +435,14 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 // 成功则重建请求（水位生效）并发 NoticeEvent；无可压缩内容则维持原请求；
 // 失败回退"最旧裁剪"（D21：保 leading system 与最近、丢中间）并提示省略条数。
 // 返回（执行后的请求, 用于 usage 校准的该请求估算）。
-func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, req port.GenerateRequest, est int) (port.GenerateRequest, int) {
+func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, req port.GenerateRequest, est int, buf *turnBuffer) (port.GenerateRequest, int) {
 	_, _, err := a.Compact(ctx, c)
 	switch {
 	case err == nil:
 		_ = a.ui.Emit(ctx, port.NoticeEvent{
 			Text: fmt.Sprintf("上下文 ≈%d tokens 达自动压缩阈值 %d，已生成摘要", est, a.compactAt),
 		})
-		next, berr := a.buildRequest(ctx, c)
+		next, berr := a.buildRequest(ctx, c, buf)
 		if berr != nil {
 			return req, est // 重建失败：沿用原请求（下一轮生成会暴露同因错误）
 		}
@@ -464,7 +482,7 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 	if c == nil {
 		return UsageReport{}, errors.New("agent: nil conversation")
 	}
-	req, err := a.buildRequest(ctx, c)
+	req, err := a.buildRequest(ctx, c, nil)
 	if err != nil {
 		return UsageReport{}, fmt.Errorf("装配上下文: %w", err)
 	}
@@ -489,8 +507,13 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 }
 
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（DESIGN §7.1）。
-func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation) (port.GenerateRequest, error) {
+// Turn 粒度（D95）：buf 非空时把未提交缓冲投影为合成 assistant 消息追加在 Path 尾部——
+// 第 2 轮起模型能看到本 Turn 前几轮的调用与结果（合成节点不进树，仅本次请求可见）。
+func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, buf *turnBuffer) (port.GenerateRequest, error) {
 	treePath := c.Path()
+	if buf != nil && !buf.empty() {
+		treePath = append(treePath, buf.inFlight())
+	}
 	path, err := assemblePath(ctx, treePath, a.blobs, a.cfg.EchoThinking)
 	if err != nil {
 		return port.GenerateRequest{}, err
@@ -569,7 +592,7 @@ func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
 
 // consume 边收边发 DeltaEvent（只进 UI），返回聚合后的工具调用。
 // Reasoning 分片同时进 commit buffer 的思考缓冲，随节点提交入树（D42）。
-func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *commitBuffer, mid conversation.MessageID) ([]tool.Call, error) {
+func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *turnBuffer, mid conversation.MessageID) ([]tool.Call, error) {
 	defer stream.Close()
 	for {
 		d, err := stream.Recv()
@@ -579,10 +602,10 @@ func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *commitBuff
 		if err != nil {
 			return nil, err // 半截工具调用不带出（未完成调用不能进树）
 		}
-		buf.add(d) // Reasoning → 思考缓冲（D42），其余 → 正文/调用（D3）
+		buf.add(d) // Reasoning → 思考缓冲（D42），其余 → 当前轮正文/调用（D3）
 		_ = a.ui.Emit(ctx, port.DeltaEvent{MessageID: mid, Delta: d})
 	}
-	return buf.finalize(), nil
+	return buf.takeCalls(), nil
 }
 
 // execTool 执行工具：工具级失败由 Runner 转为 OK=false 结果照常回填（§10：不中断 Turn）；
@@ -604,26 +627,40 @@ func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, erro
 	return res, nil
 }
 
-// abortToolCalls 装配级工具故障的收尾：为剩余未执行的调用补 OK=false 结果节点
-// （保持 assistant.tool_calls 与 tool 结果一一配对，树下次装配仍可发送）。
-// 只在补录自身失败时返回错误；成功返回 nil（原错误由调用方处置）。
-// 与 §10 的"工具失败不中断 Turn"不同——那指的是工具级失败。
-func (a *Agent) abortToolCalls(ctx context.Context, c *conversation.Conversation, calls []tool.Call, cause error) error {
-	for _, call := range calls {
-		res := tool.Result{CallID: call.ID, OK: false, Err: cause.Error()}
-		tnode := conversation.Message{
-			ID:         a.ids.MessageID(),
-			Parent:     c.Head,
-			Role:       conversation.RoleTool,
-			ToolResult: &res,
-			CreatedAt:  a.clock.Now(),
+// runTools 执行本轮全部调用（D95 先执行后提交）：ToolCallEvent → 执行 → ToolResultEvent，
+// 结果作为工具分片按到达序追加进 Turn 缓冲。
+// 工具级失败由 Runner 转 OK=false 结果照常回填（§10：不中断 Turn）；
+// 返回 error 仅限装配级错误（确认器缺失/报错、父 ctx 取消等基础设施故障），
+// 由 Run 在提交后快速失败上抛（§14：不让模型空转到 MaxTurns）。
+func (a *Agent) runTools(ctx context.Context, buf *turnBuffer, mid conversation.MessageID, calls []tool.Call) error {
+	for i, call := range calls {
+		_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: call})
+		res, err := a.execTool(ctx, call)
+		if err != nil {
+			// 装配级错误：先公告尚未呈现的调用，再连同本调用一并补失败结果
+			// （保持调用与结果一一配对，树下次装配仍可发送），随后中止本轮。
+			for _, rest := range calls[i+1:] {
+				_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: rest})
+			}
+			cause := fmt.Errorf("tool %s failed: %w", call.Name, err)
+			a.abortToolCalls(ctx, buf, calls[i:], cause)
+			return cause
 		}
-		if err := c.AppendCommitted(tnode); err != nil {
-			return fmt.Errorf("%w (also failed to backfill interrupted results: %v)", cause, err)
-		}
+		buf.addToolPart(call, &res)
 		_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
 	}
 	return nil
+}
+
+// abortToolCalls 装配级工具故障的收尾：为未完成的调用补 OK=false 结果分片
+// （与调用一一配对，树下次装配仍可发送，D95）。结果填充与事件发射不产生错误。
+// 与 §10 的"工具失败不中断 Turn"不同——那指的是工具级失败。
+func (a *Agent) abortToolCalls(ctx context.Context, buf *turnBuffer, calls []tool.Call, cause error) {
+	for _, call := range calls {
+		res := tool.Result{CallID: call.ID, OK: false, Err: cause.Error()}
+		buf.addToolPart(call, &res)
+		_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
+	}
 }
 
 // normalizeCalls 补齐/去重调用 ID（个别兼容服务不回传 ID），并给空参数补 {}。
@@ -644,42 +681,25 @@ func (a *Agent) normalizeCalls(calls []tool.Call) []tool.Call {
 	return calls
 }
 
-// commitFailure 以 Outcome: error 提交节点后返回原错误（§10）；
-// ErrorEvent 由装配根统一上抛，避免重复呈现。
-func (a *Agent) commitFailure(ctx context.Context, c *conversation.Conversation, buf *commitBuffer, cause error) error {
-	node := buf.commit(a.clock.Now(), conversation.OutcomeError, a.modelName(), nil)
-	if err := c.AppendCommitted(node); err != nil {
-		return fmt.Errorf("%w (commit failed: %v)", cause, err)
-	}
-	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
-	return cause
-}
-
-// commitCancelled 发起阶段取消的收场：以 Outcome: cancelled 提交占位节点并返回
-// nil（与断流取消一致，§10"取消提交"——可 /edit 重试，不作为错误呈现）。
-func (a *Agent) commitCancelled(ctx context.Context, c *conversation.Conversation, buf *commitBuffer) error {
-	node := buf.commit(a.clock.Now(), conversation.OutcomeCancelled, a.modelName(), nil)
-	if err := c.AppendCommitted(node); err != nil {
-		return fmt.Errorf("提交取消节点: %w", err)
-	}
-	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
-	return nil
-}
-
-// commitBuffer 流式缓冲：只进 UI，Turn 结束一次性 Commit（D3）。
-// Reasoning 分片进思考缓冲（D42，提交为 PartThinking），其余进正文/调用。
-type commitBuffer struct {
+// turnBuffer 流式缓冲（D95 Turn 粒度）：一次 Turn（可含多轮"生成+工具"循环）只提交
+// 一个不可变节点。已定稿段存 content（按到达序交错：思考/正文段与工具分片）；当前轮
+// 增量进 text/thinking builder，轮末 sealRound 定稿；usage 逐轮累计（roundUsage 供校准）。
+type turnBuffer struct {
 	id       conversation.MessageID
-	parent   conversation.MessageID
-	text     strings.Builder
-	thinking strings.Builder
-	calls    callAssembler
-	usage    conversation.Usage
+	content  []conversation.Part
+	text     strings.Builder    // 当前轮正文
+	thinking strings.Builder    // 当前轮思考
+	calls    callAssembler      // 当前轮调用聚合（takeCalls 后复位，轮界隔离）
+	usage    conversation.Usage // Turn 累计（各轮流末 usage 求和）
+	round    conversation.Usage // 当前轮流末 usage（校准用，sealRound 并入 usage）
 }
 
-// add 累积一个增量（按 Reasoning 分流思考/正文缓冲；usage 两路都记）。
+// newTurnBuffer 以 Turn 预分配的关联 ID 建缓冲。
+func newTurnBuffer(id conversation.MessageID) *turnBuffer { return &turnBuffer{id: id} }
+
+// add 累积一个增量（按 Reasoning 分流当前轮思考/正文；usage 记当前轮流末值）。
 // 工具调用与文本来源无关，恒聚合——推理分片上若捎带调用分片同样不得丢（审查修复）。
-func (b *commitBuffer) add(d port.Delta) {
+func (b *turnBuffer) add(d port.Delta) {
 	if d.Reasoning {
 		b.thinking.WriteString(d.Text)
 	} else {
@@ -687,33 +707,73 @@ func (b *commitBuffer) add(d port.Delta) {
 	}
 	b.calls.add(d.ToolCalls)
 	if d.Usage != nil {
-		b.usage = *d.Usage
+		b.round = *d.Usage
 	}
 }
 
-// finalize 返回聚合后的工具调用。
-func (b *commitBuffer) finalize() []tool.Call { return b.calls.finalize() }
+// takeCalls 返回当前轮聚合的调用并复位聚合器（轮界隔离：下一轮分片不得混入）。
+func (b *turnBuffer) takeCalls() []tool.Call {
+	c := b.calls.finalize()
+	b.calls = callAssembler{}
+	return c
+}
 
-// commit 组装终态节点。非 done 终态丢弃半截工具调用——未完成的调用若进树，
-// 后续装配会产出"无应答的 tool_calls"被服务端拒（DESIGN §10 取消提交语义）；
-// 思考分片与正文一样随终态保留（D42：已生成即入树，无配对约束）。
-func (b *commitBuffer) commit(now time.Time, outcome conversation.Outcome, model string, calls []tool.Call) conversation.Message {
-	var content []conversation.Part
+// sealRound 把当前轮的思考/正文定稿进 content（幂等：builder 空时 no-op），
+// 并把本轮 usage 并入 Turn 累计。思考段在前、正文段在后（D42 段内序）。
+func (b *turnBuffer) sealRound() {
 	if b.thinking.Len() > 0 {
-		content = append(content, conversation.Part{Kind: conversation.PartThinking, Text: b.thinking.String()})
+		b.content = append(b.content, conversation.Part{Kind: conversation.PartThinking, Text: b.thinking.String()})
+		b.thinking.Reset()
 	}
 	if b.text.Len() > 0 {
-		content = append(content, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})
+		b.content = append(b.content, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})
+		b.text.Reset()
 	}
-	if outcome != conversation.OutcomeDone {
-		calls = nil
+	b.usage.InputTokens += b.round.InputTokens
+	b.usage.OutputTokens += b.round.OutputTokens
+	b.usage.CostUSD += b.round.CostUSD
+	b.round = conversation.Usage{}
+}
+
+// addToolPart 把一个"调用+结果"作为工具分片按到达序追加进 content（D95 同片落库）。
+func (b *turnBuffer) addToolPart(call tool.Call, res *tool.Result) {
+	b.content = append(b.content, conversation.Part{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+		CallID: string(call.ID),
+		Name:   call.Name,
+		Args:   call.Args,
+		Result: res,
+	}})
+}
+
+// empty 缓冲是否没有任何可提交内容。
+func (b *turnBuffer) empty() bool {
+	return len(b.content) == 0 && b.text.Len() == 0 && b.thinking.Len() == 0
+}
+
+// inFlight 未提交缓冲的只读投影（轮间 buildRequest 用）：合成 assistant 节点，
+// 不进树、仅本次请求可见；已定稿段 + 当前轮 builder（防御性并入，正常轮界为空）。
+func (b *turnBuffer) inFlight() conversation.Message {
+	parts := make([]conversation.Part, len(b.content), len(b.content)+2)
+	copy(parts, b.content)
+	if b.thinking.Len() > 0 {
+		parts = append(parts, conversation.Part{Kind: conversation.PartThinking, Text: b.thinking.String()})
 	}
+	if b.text.Len() > 0 {
+		parts = append(parts, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})
+	}
+	return conversation.Message{ID: b.id, Role: conversation.RoleAssistant, Content: parts}
+}
+
+// commit 组装 Turn 终态节点（每 Turn 恰一次）：parent 取提交时的 Head——mid-turn 的
+// compact 摘要会前移 Head，节点挂到最新 Head 之下保持路径线性。收场轮的半截思考/正文
+// 经 sealRound 幂等定稿；半截工具调用从未进缓冲（非 done 终态不执行工具，§10）。
+func (b *turnBuffer) commit(parent conversation.MessageID, now time.Time, outcome conversation.Outcome, model string) conversation.Message {
+	b.sealRound()
 	return conversation.Message{
 		ID:        b.id,
-		Parent:    b.parent,
+		Parent:    parent,
 		Role:      conversation.RoleAssistant,
-		Content:   content,
-		ToolCalls: calls,
+		Content:   b.content,
 		Outcome:   outcome,
 		Model:     model,
 		Usage:     b.usage,

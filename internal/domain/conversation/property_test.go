@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -42,23 +43,20 @@ func sameContent(a, b Message) bool {
 }
 
 // propDriver 随机操作序列驱动：覆盖 Append / AppendCommitted / Revise(Fresh|Carry) / Prune / Checkout，
-// 并混入必然失败的操作（悬挂 tool 结果、修订 tool 节点），验证失败路径同样不破坏不变量。
+// 并混入必然失败的操作（违规工具分片形态，D95），验证失败路径同样不破坏不变量。
 type propDriver struct {
 	rng     *rand.Rand
 	callSeq int
 }
 
-// pickNode 从池中挑节点：toolOnly 过滤工具节点；includeRoot=false 排除 Root
-// （Root 不可 Revise/Prune，D19）。
-func (d *propDriver) pickNode(c *Conversation, toolOnly, includeRoot bool) MessageID {
+// pickNode 从池中挑节点：includeRoot=false 排除 Root（Root 不可 Revise/Prune，D19）。
+func (d *propDriver) pickNode(c *Conversation, includeRoot bool) MessageID {
 	var pool []MessageID
 	for nid, m := range c.Nodes {
 		if m.Role == RoleRoot && !includeRoot {
 			continue
 		}
-		if (m.Role == RoleTool) == toolOnly {
-			pool = append(pool, nid)
-		}
+		pool = append(pool, nid)
 	}
 	if len(pool) == 0 {
 		return ""
@@ -69,14 +67,33 @@ func (d *propDriver) pickNode(c *Conversation, toolOnly, includeRoot bool) Messa
 
 func (d *propDriver) parent(c *Conversation) MessageID {
 	if d.rng.Intn(4) == 0 { // 偶尔挂到任意节点（含 Root=顶层），制造分支
-		if nid := d.pickNode(c, false, true); nid != "" && d.rng.Intn(2) == 0 {
+		if nid := d.pickNode(c, true); nid != "" && d.rng.Intn(2) == 0 {
 			return nid
 		}
-		if nid := d.pickNode(c, true, false); nid != "" {
+		if nid := d.pickNode(c, false); nid != "" {
 			return nid
 		}
 	}
 	return c.Head
+}
+
+// toolParts 生成 n 个工具分片（调用+结果同片，D95）：CallID 全局递增（节点内唯一即可），
+// 结果按概率填充（含 nil = 未执行）。
+func (d *propDriver) toolParts(n int) []Part {
+	parts := make([]Part, 0, n)
+	for i := 0; i < n; i++ {
+		d.callSeq++
+		tp := &ToolPart{
+			CallID: fmt.Sprintf("call_%d", d.callSeq),
+			Name:   "think",
+			Args:   json.RawMessage(`{}`),
+		}
+		if d.rng.Intn(2) == 0 {
+			tp.Result = &tool.Result{CallID: tool.CallID(tp.CallID), OK: true, Output: "ok"}
+		}
+		parts = append(parts, Part{Kind: PartTool, Tool: tp})
+	}
+	return parts
 }
 
 // step 执行一个随机操作并返回操作序号（8 = Prune；-1 = 跳过）。
@@ -98,49 +115,64 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 			t.Fatalf("append assistant: %v", err)
 		}
 	case 2:
-		var calls []tool.Call
-		for i := d.rng.Intn(2) + 1; i > 0; i-- {
-			d.callSeq++
-			calls = append(calls, tool.Call{
-				ID: tool.CallID(fmt.Sprintf("call_%d", d.callSeq)), Name: "think", Args: []byte(`{}`),
-			})
+		// D95：工具分片（调用+结果同片）随 assistant 随机入树——偶为纯工具轮。
+		var content []Part
+		if d.rng.Intn(2) == 0 {
+			content = textParts(fmt.Sprintf("a%d", d.rng.Int63()))
 		}
+		content = append(content, d.toolParts(d.rng.Intn(2)+1)...)
 		err := c.AppendCommitted(Message{
 			ID: NewMessageID(), Parent: d.parent(c), Role: RoleAssistant,
-			ToolCalls: calls, Outcome: OutcomeDone, CreatedAt: nowFunc(),
+			Content: content, Outcome: OutcomeDone, CreatedAt: nowFunc(),
 		})
 		if err != nil {
-			t.Fatalf("commit assistant with calls: %v", err)
+			t.Fatalf("commit assistant with tool parts: %v", err)
 		}
-	case 3:
-		var refs []tool.CallID
+	case 3: // 跨节点复用 CallID（D95 后仅节点内唯一）：必须被接受
+		var callIDs []string
 		for _, m := range c.Nodes {
-			for _, call := range m.ToolCalls {
-				refs = append(refs, call.ID)
+			for _, p := range m.Content {
+				if p.Kind == PartTool && p.Tool != nil {
+					callIDs = append(callIDs, p.Tool.CallID)
+				}
 			}
 		}
-		if len(refs) == 0 {
+		if len(callIDs) == 0 {
 			return -1
 		}
-		sort.Slice(refs, func(i, j int) bool { return refs[i] < refs[j] })
+		sort.Strings(callIDs)
+		reuse := callIDs[d.rng.Intn(len(callIDs))]
 		err := c.AppendCommitted(Message{
-			ID: NewMessageID(), Parent: d.parent(c), Role: RoleTool,
-			ToolResult: &tool.Result{CallID: refs[d.rng.Intn(len(refs))], OK: true, Output: "ok"},
-			Outcome:    OutcomeDone, CreatedAt: nowFunc(),
+			ID: NewMessageID(), Parent: d.parent(c), Role: RoleAssistant,
+			Content: []Part{{Kind: PartTool, Tool: &ToolPart{
+				CallID: reuse, Name: "think", Args: json.RawMessage(`{}`),
+				Result: &tool.Result{CallID: tool.CallID(reuse), OK: true, Output: "ok"},
+			}}},
+			Outcome: OutcomeDone, CreatedAt: nowFunc(),
 		})
 		if err != nil {
-			t.Fatalf("commit tool result: %v", err)
+			t.Fatalf("commit assistant reusing call id: %v", err)
 		}
-	case 4: // 悬挂引用：必须被拒绝（不变量 2）
-		err := c.AppendCommitted(Message{
-			ID: NewMessageID(), Parent: c.Head, Role: RoleTool,
-			ToolResult: &tool.Result{CallID: "missing"}, CreatedAt: nowFunc(),
-		})
-		if err == nil {
-			t.Fatalf("dangling tool result accepted")
+	case 4: // 工具分片形态违规：必须被拒绝（user/system 携带、节点内撞车、Result.CallID 不一致）
+		bad := []Message{
+			{ID: NewMessageID(), Parent: c.Head, Role: RoleUser,
+				Content: []Part{{Kind: PartTool, Tool: &ToolPart{CallID: "bad", Name: "x"}}}, CreatedAt: nowFunc()},
+			{ID: NewMessageID(), Parent: c.Head, Role: RoleAssistant,
+				Content: []Part{
+					{Kind: PartTool, Tool: &ToolPart{CallID: "dup", Name: "x"}},
+					{Kind: PartTool, Tool: &ToolPart{CallID: "dup", Name: "x"}},
+				}, CreatedAt: nowFunc()},
+			{ID: NewMessageID(), Parent: c.Head, Role: RoleAssistant,
+				Content: []Part{{Kind: PartTool, Tool: &ToolPart{CallID: "m1", Name: "x",
+					Result: &tool.Result{CallID: "m2", OK: true}}}}, CreatedAt: nowFunc()},
+		}
+		for _, m := range bad {
+			if err := c.AppendCommitted(m); err == nil {
+				t.Fatalf("invalid tool part accepted: %+v", m)
+			}
 		}
 	case 5, 6:
-		target := d.pickNode(c, false, false)
+		target := d.pickNode(c, false)
 		if target == "" {
 			return -1
 		}
@@ -151,19 +183,20 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 		if _, err := c.Revise(target, textParts("revised"), mode); err != nil {
 			t.Fatalf("revise(%s) %s: %v", mode, target, err)
 		}
-	case 7: // tool 节点修订必须被拒（D18）
-		target := d.pickNode(c, true, false)
-		if target == "" {
-			return -1
+	case 7: // 空 CallID / 空工具名必须被拒
+		tp := &ToolPart{CallID: "", Name: "x"}
+		if d.rng.Intn(2) == 0 {
+			tp = &ToolPart{CallID: "g1", Name: ""}
 		}
-		if _, err := c.Revise(target, textParts("x"), Fresh); !errors.Is(err, ErrReviseTool) {
-			t.Fatalf("revise(tool) = %v, want ErrReviseTool", err)
+		err := c.AppendCommitted(Message{
+			ID: NewMessageID(), Parent: c.Head, Role: RoleAssistant,
+			Content: []Part{{Kind: PartTool, Tool: tp}}, CreatedAt: nowFunc(),
+		})
+		if err == nil {
+			t.Fatalf("invalid tool part accepted")
 		}
 	case 8:
-		target := d.pickNode(c, false, false)
-		if target == "" {
-			target = d.pickNode(c, true, false)
-		}
+		target := d.pickNode(c, false)
 		if target == "" {
 			return -1
 		}
@@ -173,7 +206,7 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 	case 9:
 		id := MessageID(c.ID) // 回 Root（无空串特例，D19）
 		if d.rng.Intn(2) == 0 {
-			if id = d.pickNode(c, d.rng.Intn(2) == 0, true); id == "" {
+			if id = d.pickNode(c, true); id == "" {
 				return -1
 			}
 		}
@@ -215,7 +248,7 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 	return op
 }
 
-// checkInvariants 不变量 1–3（DESIGN §4.1）：树合法、引用合法由 Validate 证明；
+// checkInvariants 不变量 1–2（DESIGN §4.1）：树合法由 Validate 证明；
 // 节点不可变以快照比对证明——非 Prune 步骤节点只增不减，存留节点内容字节级不变。
 func checkInvariants(t *testing.T, c *Conversation, snap map[MessageID]Message, allowRemoval bool) {
 	t.Helper()
@@ -246,7 +279,7 @@ func checkInvariants(t *testing.T, c *Conversation, snap map[MessageID]Message, 
 	}
 }
 
-// TestPropertyInvariants 随机操作序列下三条不变量恒成立（含失败路径）。
+// TestPropertyInvariants 随机操作序列下两条不变量恒成立（含失败路径）。
 func TestPropertyInvariants(t *testing.T) {
 	useFixedClock(t)
 	for seed := int64(1); seed <= 40; seed++ {
@@ -338,7 +371,7 @@ func TestPropertyCarryEdgeTransfer(t *testing.T) {
 		for i := d.rng.Intn(6) + 3; i > 0; i-- {
 			d.step(t, c)
 		}
-		target := d.pickNode(c, false, false)
+		target := d.pickNode(c, false)
 		if target == "" {
 			continue
 		}

@@ -389,15 +389,17 @@ func TestHistoryReplay(t *testing.T) {
 		Role:    conversation.RoleUser,
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "你好"}},
 	}})
+	// D95：工具分片随 assistant 节点回放——正文先行，调用/结果行随后（与实时一致）。
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
-		Role:      conversation.RoleAssistant,
-		Outcome:   conversation.OutcomeDone,
-		ToolCalls: []tool.Call{{Name: "echo", Args: []byte(`{"m":"x"}`)}},
-		Content:   []conversation.Part{{Kind: conversation.PartText, Text: "## 结论\n最终答案"}},
-	}})
-	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
-		Role:       conversation.RoleTool,
-		ToolResult: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "## 结论\n最终答案"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c", Name: "echo", Args: []byte(`{"m":"x"}`),
+				Result: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+			}},
+		},
 	}})
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
 		Role:    conversation.RoleSystem,
@@ -413,7 +415,7 @@ func TestHistoryReplay(t *testing.T) {
 		Outcome: conversation.OutcomeCancelled,
 	}})
 
-	wantKinds := []blockKind{blockUser, blockTool, blockAssistant, blockTool,
+	wantKinds := []blockKind{blockUser, blockAssistant, blockTool, blockTool,
 		blockSystem, blockAssistant, blockAssistant}
 	if len(m.blocks) != len(wantKinds) {
 		t.Fatalf("blocks = %d, want %d", len(m.blocks), len(wantKinds))
@@ -425,8 +427,8 @@ func TestHistoryReplay(t *testing.T) {
 	}
 	for i, want := range []string{
 		"你好",
-		"[tool] echo",
 		"最终答案",
+		"[tool] echo",
 		"[tool ok] pong",
 		"压缩摘要",
 		"[cancelled]",

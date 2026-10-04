@@ -1113,14 +1113,16 @@ func loadTree(t *testing.T, dir string) *conversation.Conversation {
 	return &c
 }
 
-// findToolNode 找到首个 tool 角色节点。
-func findToolNode(c *conversation.Conversation) (conversation.Message, bool) {
+// findToolPart 找到首个工具分片（D95：调用+结果内嵌 assistant 节点）。
+func findToolPart(c *conversation.Conversation) (*conversation.ToolPart, bool) {
 	for _, m := range c.Nodes {
-		if m.Role == conversation.RoleTool {
-			return m, true
+		for _, p := range m.Content {
+			if p.Kind == conversation.PartTool && p.Tool != nil {
+				return p.Tool, true
+			}
 		}
 	}
-	return conversation.Message{}, false
+	return nil, false
 }
 
 // TestRunMemoryWriteConfirmE2E M2 验收：模型经 memory_write 写记忆；
@@ -1162,9 +1164,9 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 			t.Fatalf("第二次请求应带工具结果: %.300s", reqs.at(1).body)
 		}
 		c := loadTree(t, dir)
-		tn, ok := findToolNode(c)
-		if !ok || !tn.ToolResult.OK {
-			t.Fatalf("tool 节点 = %+v", tn)
+		tp, ok := findToolPart(c)
+		if !ok || tp.Result == nil || !tp.Result.OK {
+			t.Fatalf("tool 分片 = %+v", tp)
 		}
 	})
 
@@ -1189,9 +1191,9 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 			t.Fatalf("拒绝后记忆文件不应存在: %v", err)
 		}
 		c := loadTree(t, dir)
-		tn, ok := findToolNode(c)
-		if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "user denied") {
-			t.Fatalf("tool 节点 = %+v", tn)
+		tp, ok := findToolPart(c)
+		if !ok || tp.Result == nil || tp.Result.OK || !strings.Contains(tp.Result.Err, "user denied") {
+			t.Fatalf("tool 分片 = %+v", tp)
 		}
 	})
 
@@ -1298,9 +1300,9 @@ func TestRunTermExecE2E(t *testing.T) {
 		t.Fatalf("第二次请求应回填命令输出: %.400s", reqs.at(1).body)
 	}
 	c := loadTree(t, dir)
-	tn, ok := findToolNode(c)
-	if !ok || !tn.ToolResult.OK {
-		t.Fatalf("tool 节点 = %+v", tn)
+	tp, ok := findToolPart(c)
+	if !ok || tp.Result == nil || !tp.Result.OK {
+		t.Fatalf("tool 分片 = %+v", tp)
 	}
 }
 
@@ -1321,9 +1323,9 @@ func TestRunTermExecRejectE2E(t *testing.T) {
 		t.Fatalf("stdout 缺拒绝痕迹: %q", out.String())
 	}
 	c := loadTree(t, dir)
-	tn, ok := findToolNode(c)
-	if !ok || tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Err, "user denied") {
-		t.Fatalf("tool 节点 = %+v", tn)
+	tp, ok := findToolPart(c)
+	if !ok || tp.Result == nil || tp.Result.OK || !strings.Contains(tp.Result.Err, "user denied") {
+		t.Fatalf("tool 分片 = %+v", tp)
 	}
 }
 
@@ -1363,11 +1365,11 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 	if !strings.Contains(string(data), "job-e2e") {
 		t.Fatalf("日志文件 = %q", data)
 	}
-	// 会话树里 tool 节点 OK（启动成功回填）。
+	// 会话树里工具分片 OK（启动成功回填，D95）。
 	c := loadTree(t, dir)
-	tn, ok := findToolNode(c)
-	if !ok || !tn.ToolResult.OK || !strings.Contains(tn.ToolResult.Output, "j001") {
-		t.Fatalf("tool 节点 = %+v", tn)
+	tp, ok := findToolPart(c)
+	if !ok || tp.Result == nil || !tp.Result.OK || !strings.Contains(tp.Result.Output, "j001") {
+		t.Fatalf("tool 分片 = %+v", tp)
 	}
 }
 

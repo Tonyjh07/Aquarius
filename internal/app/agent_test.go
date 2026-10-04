@@ -74,6 +74,22 @@ func TestRunTextRound(t *testing.T) {
 	}
 }
 
+// toolPartOf 取节点的第 i 个工具分片（D95：调用+结果同片）。
+func toolPartOf(t *testing.T, m conversation.Message, i int) *conversation.ToolPart {
+	t.Helper()
+	n := 0
+	for _, p := range m.Content {
+		if p.Kind == conversation.PartTool {
+			if n == i {
+				return p.Tool
+			}
+			n++
+		}
+	}
+	t.Fatalf("node %s has %d tool parts, want index %d", m.ID, n, i)
+	return nil
+}
+
 func TestRunToolRound(t *testing.T) {
 	callDelta := port.Delta{ToolCalls: []port.ToolCallDelta{{
 		Index: 0, ID: "call_1", Name: "echo", ArgsDelta: `{"m":`,
@@ -97,30 +113,29 @@ func TestRunToolRound(t *testing.T) {
 	}
 
 	path := c.Path()
-	if len(path) != 5 {
-		t.Fatalf("path len = %d, want 5 (root/user/assistant/tool/assistant)", len(path))
+	if len(path) != 3 {
+		t.Fatalf("path len = %d, want 3 (root/user/turn-node)——一 Turn 一节点（D95）", len(path))
 	}
-	asst, tnode, final := path[2], path[3], path[4]
-	if asst.Role != conversation.RoleAssistant || len(asst.ToolCalls) != 1 {
-		t.Fatalf("assistant = %+v", asst)
+	turn := path[2]
+	if turn.Role != conversation.RoleAssistant || turn.Parent != path[1].ID {
+		t.Fatalf("turn node = %+v", turn)
 	}
-	if asst.ToolCalls[0].ID != "call_1" || asst.ToolCalls[0].Name != "echo" {
-		t.Fatalf("call = %+v", asst.ToolCalls[0])
+	// 一个节点按到达序交错：第 1 轮工具分片 + 第 2 轮正文。
+	call := toolPartOf(t, turn, 0)
+	if call.CallID != "call_1" || call.Name != "echo" {
+		t.Fatalf("tool part = %+v", call)
 	}
-	if string(asst.ToolCalls[0].Args) != `{"m":"x"}` {
-		t.Fatalf("args 聚合 = %s", asst.ToolCalls[0].Args)
+	if string(call.Args) != `{"m":"x"}` {
+		t.Fatalf("args 聚合 = %s", call.Args)
 	}
-	if tnode.Role != conversation.RoleTool || tnode.Parent != asst.ID {
-		t.Fatalf("tool node = %+v", tnode)
+	if call.Result == nil || !call.Result.OK || call.Result.Output != "pong" {
+		t.Fatalf("result 分片 = %+v", call.Result)
 	}
-	if tnode.ToolResult == nil || !tnode.ToolResult.OK || tnode.ToolResult.Output != "pong" {
-		t.Fatalf("tool result = %+v", tnode.ToolResult)
-	}
-	if final.Role != conversation.RoleAssistant || final.Content[0].Text != "答案" {
-		t.Fatalf("final = %+v", final)
+	if len(turn.Content) != 2 || turn.Content[1].Kind != conversation.PartText || turn.Content[1].Text != "答案" {
+		t.Fatalf("turn content = %+v, want [tool, text 答案]", turn.Content)
 	}
 
-	// 第二次请求带上了 assistant 调用与 tool 应答。
+	// 第二次请求带上了 assistant 调用声明与 tool 应答（port 投影口径，D95）。
 	if len(llm.requests) != 2 {
 		t.Fatalf("requests = %d, want 2", len(llm.requests))
 	}
@@ -137,7 +152,7 @@ func TestRunToolRound(t *testing.T) {
 	}
 
 	got := eventNames(rec.events)
-	want := "delta,delta,committed,tool_call,tool_result,delta,committed"
+	want := "delta,delta,tool_call,tool_result,delta,committed"
 	if strings.Join(got, ",") != want {
 		t.Fatalf("events = %v, want %s", got, want)
 	}
@@ -166,15 +181,16 @@ func TestRunToolFailureFeedsBack(t *testing.T) {
 		t.Fatalf("工具级失败不应中断 Turn: %v", err)
 	}
 	path := c.Path()
-	if len(path) != 5 {
-		t.Fatalf("path len = %d, want 5", len(path))
+	if len(path) != 3 {
+		t.Fatalf("path len = %d, want 3", len(path))
 	}
-	res := path[3].ToolResult
+	turn := path[2]
+	res := toolPartOf(t, turn, 0).Result
 	if res == nil || res.OK || !strings.Contains(res.Err, "tool broke") {
 		t.Fatalf("result = %+v, want OK=false 回填错误", res)
 	}
-	if path[4].Content[0].Text != "已恢复" {
-		t.Fatalf("final = %+v", path[4])
+	if len(turn.Content) != 2 || turn.Content[1].Text != "已恢复" {
+		t.Fatalf("turn content = %+v, want [tool, text 已恢复]", turn.Content)
 	}
 }
 
@@ -205,11 +221,11 @@ func TestRunInfraErrorAbortsTurn(t *testing.T) {
 		t.Fatalf("requests = %d, want 1（不应空转生成）", len(llm.requests))
 	}
 	path := c.Path()
-	if len(path) != 5 { // root + persona + assistant(2 calls) + 2 个中断结果
-		t.Fatalf("path len = %d, want 5", len(path))
+	if len(path) != 3 { // root + persona + assistant(2 calls，中断结果同片)
+		t.Fatalf("path len = %d, want 3", len(path))
 	}
-	for _, idx := range []int{3, 4} {
-		res := path[idx].ToolResult
+	for _, idx := range []int{0, 1} {
+		res := toolPartOf(t, path[2], idx).Result
 		if res == nil || res.OK || !strings.Contains(res.Err, "未配置 Confirmer") {
 			t.Fatalf("tool result = %+v, want OK=false 中断结果", res)
 		}
@@ -218,7 +234,7 @@ func TestRunInfraErrorAbortsTurn(t *testing.T) {
 		t.Fatalf("validate: %v", err)
 	}
 	got := eventNames(rec.events)
-	want := "delta,committed,tool_call,tool_call,tool_result,tool_result"
+	want := "delta,tool_call,tool_call,tool_result,tool_result,committed"
 	if strings.Join(got, ",") != want {
 		t.Fatalf("events = %v, want %s", got, want)
 	}
@@ -244,10 +260,10 @@ func TestRunCancelDuringToolReturnsNil(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", len(llm.requests))
 	}
 	path := c.Path()
-	if len(path) != 4 { // root + persona + assistant + 中断结果
-		t.Fatalf("path len = %d, want 4", len(path))
+	if len(path) != 3 { // root + persona + assistant(中断结果同片)
+		t.Fatalf("path len = %d, want 3", len(path))
 	}
-	res := path[3].ToolResult
+	res := toolPartOf(t, path[2], 0).Result
 	if res == nil || res.OK || !strings.Contains(res.Err, "context canceled") {
 		t.Fatalf("result = %+v", res)
 	}
@@ -276,11 +292,12 @@ func TestRunMissingToolsRunnerGuard(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", len(llm.requests))
 	}
 	path := c.Path()
-	if len(path) != 4 {
-		t.Fatalf("path len = %d, want 4", len(path))
+	if len(path) != 3 {
+		t.Fatalf("path len = %d, want 3", len(path))
 	}
-	if path[3].ToolResult == nil || path[3].ToolResult.OK {
-		t.Fatalf("中断结果 = %+v", path[3].ToolResult)
+	res := toolPartOf(t, path[2], 0).Result
+	if res == nil || res.OK {
+		t.Fatalf("中断结果 = %+v", res)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -309,20 +326,20 @@ func TestRunInfraErrorAfterFirstTool(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", len(llm.requests))
 	}
 	path := c.Path()
-	if len(path) != 5 {
-		t.Fatalf("path len = %d, want 5", len(path))
+	if len(path) != 3 { // root + persona + assistant(成功与中断结果同片)
+		t.Fatalf("path len = %d, want 3", len(path))
 	}
-	if path[3].ToolResult == nil || !path[3].ToolResult.OK {
-		t.Fatalf("首个成功结果 = %+v", path[3].ToolResult)
+	if res := toolPartOf(t, path[2], 0).Result; res == nil || !res.OK {
+		t.Fatalf("首个成功结果 = %+v", res)
 	}
-	if path[4].ToolResult == nil || path[4].ToolResult.OK ||
-		!strings.Contains(path[4].ToolResult.Err, "未配置 Confirmer") {
-		t.Fatalf("中断结果 = %+v", path[4].ToolResult)
+	if res := toolPartOf(t, path[2], 1).Result; res == nil || res.OK ||
+		!strings.Contains(res.Err, "未配置 Confirmer") {
+		t.Fatalf("中断结果 = %+v", res)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
-	want := "delta,committed,tool_call,tool_result,tool_call,tool_result"
+	want := "delta,tool_call,tool_result,tool_call,tool_result,committed"
 	if got := strings.Join(eventNames(rec.events), ","); got != want {
 		t.Fatalf("events = %v, want %s", got, want)
 	}
@@ -343,7 +360,7 @@ func TestRunGenerateErrorCommitsErrorNode(t *testing.T) {
 		t.Fatalf("path len = %d, want 3（error 占位节点已提交）", len(path))
 	}
 	node := path[2]
-	if node.Outcome != conversation.OutcomeError || len(node.Content) != 0 || len(node.ToolCalls) != 0 {
+	if node.Outcome != conversation.OutcomeError || len(node.Content) != 0 {
 		t.Fatalf("node = %+v, want 空内容 error 节点", node)
 	}
 	got := eventNames(rec.events)
@@ -400,8 +417,10 @@ func TestRunStreamErrorCommitsPartialText(t *testing.T) {
 	if len(node.Content) != 1 || node.Content[0].Text != "写到一半" {
 		t.Fatalf("content = %+v", node.Content)
 	}
-	if len(node.ToolCalls) != 0 {
-		t.Fatalf("半截工具调用不应进树: %+v", node.ToolCalls)
+	for _, p := range node.Content {
+		if p.Kind == conversation.PartTool {
+			t.Fatalf("半截工具调用不应进树: %+v", node.Content)
+		}
 	}
 	got := eventNames(rec.events)
 	if strings.Join(got, ",") != "delta,delta,committed" {
@@ -460,6 +479,103 @@ func TestRunMaxTurns(t *testing.T) {
 	}
 }
 
+// TestRunMultiRoundSingleNode D95 Turn 粒度：两轮工具循环落在同一个 Turn 节点，
+// 分片按到达序交错；第 2/3 轮请求把未提交缓冲投影为合成消息（模型能看到前轮调用与结果）。
+func TestRunMultiRoundSingleNode(t *testing.T) {
+	toolStep := func(id string) *scriptStream {
+		return &scriptStream{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
+			{Index: 0, ID: id, Name: "echo"},
+		}}}}}
+	}
+	llm := &scriptLLM{t: t, streams: []*scriptStream{
+		toolStep("c1"),
+		toolStep("c2"),
+		textStream("完成"),
+	}}
+	rec := &recorder{}
+	runner := &fakeRunner{results: map[tool.CallID]tool.Result{
+		"c1": {CallID: "c1", OK: true, Output: "一"},
+		"c2": {CallID: "c2", OK: true, Output: "二"},
+	}}
+	a := newAgent(t, llm, rec, Deps{Tools: runner}, Config{})
+	c := newConv(t)
+
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	path := c.Path()
+	if len(path) != 3 {
+		t.Fatalf("path len = %d, want 3（一 Turn 一节点）", len(path))
+	}
+	turn := path[2]
+	p1, p2 := toolPartOf(t, turn, 0), toolPartOf(t, turn, 1)
+	if p1.CallID != "c1" || p1.Result == nil || p1.Result.Output != "一" {
+		t.Fatalf("分片1 = %+v", p1)
+	}
+	if p2.CallID != "c2" || p2.Result == nil || p2.Result.Output != "二" {
+		t.Fatalf("分片2 = %+v", p2)
+	}
+	if n := len(turn.Content); n != 3 || turn.Content[2].Text != "完成" {
+		t.Fatalf("turn content = %d 项, want [tool, tool, text 完成]", n)
+	}
+	// 第 2 轮请求：in-flight 投影含第 1 轮调用声明与 tool 应答。
+	msgs2 := llm.requests[1].Messages
+	if len(msgs2) != 4 || msgs2[2].ToolCalls[0].ID != "c1" || msgs2[3].Role != "tool" || msgs2[3].Content[0].Text != "一" {
+		t.Fatalf("round2 request = %+v", msgs2)
+	}
+	// 第 3 轮请求：两轮分片同段投影（assistant 双调用 + 双应答）。
+	msgs3 := llm.requests[2].Messages
+	if len(msgs3) != 5 || len(msgs3[2].ToolCalls) != 2 ||
+		msgs3[3].CallID != "c1" || msgs3[4].CallID != "c2" {
+		t.Fatalf("round3 request = %+v", msgs3)
+	}
+	want := "delta,tool_call,tool_result,delta,tool_call,tool_result,delta,committed"
+	if got := strings.Join(eventNames(rec.events), ","); got != want {
+		t.Fatalf("events = %v, want %s", got, want)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestRunCancelDuringSecondRoundTools D95：取消发生在第 2 轮工具——单节点收场，
+// 前轮成功分片与本轮中断分片同节点，树可装配、不视为失败（§10）。
+func TestRunCancelDuringSecondRoundTools(t *testing.T) {
+	toolStep := func(id string) *scriptStream {
+		return &scriptStream{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
+			{Index: 0, ID: id, Name: "slow"},
+		}}}}}
+	}
+	llm := &scriptLLM{t: t, streams: []*scriptStream{toolStep("c1"), toolStep("c2")}}
+	rec := &recorder{}
+	runner := &fakeRunner{results: map[tool.CallID]tool.Result{
+		"c1": {CallID: "c1", OK: true, Output: "一"},
+	}, errs: map[tool.CallID]error{
+		"c2": context.Canceled,
+	}}
+	a := newAgent(t, llm, rec, Deps{Tools: runner}, Config{})
+	c := newConv(t)
+
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("工具阶段取消应返回 nil: %v", err)
+	}
+	if len(llm.requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(llm.requests))
+	}
+	turn := c.Path()[2]
+	p1 := toolPartOf(t, turn, 0)
+	if p1.Result == nil || !p1.Result.OK {
+		t.Fatalf("前轮成功分片 = %+v", p1)
+	}
+	p2 := toolPartOf(t, turn, 1)
+	if p2.Result == nil || p2.Result.OK || !strings.Contains(p2.Result.Err, "context canceled") {
+		t.Fatalf("中断分片 = %+v", p2)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
 func TestRunNormalizesMissingCallIDAndArgs(t *testing.T) {
 	llm := &scriptLLM{t: t, streams: []*scriptStream{
 		{steps: []scriptStep{{delta: port.Delta{ToolCalls: []port.ToolCallDelta{
@@ -476,15 +592,15 @@ func TestRunNormalizesMissingCallIDAndArgs(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	asst := c.Path()[2]
-	if len(asst.ToolCalls) != 1 || asst.ToolCalls[0].ID == "" {
-		t.Fatalf("call = %+v, want 补齐 ID", asst.ToolCalls)
+	call := toolPartOf(t, asst, 0)
+	if call.CallID == "" {
+		t.Fatalf("tool part = %+v, want 补齐 ID", call)
 	}
-	if string(asst.ToolCalls[0].Args) != "{}" {
-		t.Fatalf("args = %s, want {}", asst.ToolCalls[0].Args)
+	if string(call.Args) != "{}" {
+		t.Fatalf("args = %s, want {}", call.Args)
 	}
-	tnode := c.Path()[3]
-	if tnode.ToolResult.CallID != asst.ToolCalls[0].ID {
-		t.Fatalf("result call id = %s, want %s", tnode.ToolResult.CallID, asst.ToolCalls[0].ID)
+	if call.Result == nil || call.Result.CallID != tool.CallID(call.CallID) {
+		t.Fatalf("result call id = %+v, want %s", call.Result, call.CallID)
 	}
 }
 
@@ -653,7 +769,7 @@ func TestBuildRequestConfigFallbackWithoutPersona(t *testing.T) {
 	sum := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要")
 	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
 
-	req, err := a.buildRequest(context.Background(), c)
+	req, err := a.buildRequest(context.Background(), c, nil)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -679,7 +795,7 @@ func TestBuildRequestFallbackSystemIncludesEnv(t *testing.T) {
 	c := conversation.New(conversation.ID("envp"), "envp")
 	commitNode(t, c, conversation.MessageID(c.ID), conversation.RoleUser, "hi")
 
-	req, err := a.buildRequest(context.Background(), c)
+	req, err := a.buildRequest(context.Background(), c, nil)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -708,7 +824,7 @@ func TestBuildRequestTreePersonaReplacesConfig(t *testing.T) {
 	if _, err := c.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: "hi"}}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	req, err := a.buildRequest(context.Background(), c)
+	req, err := a.buildRequest(context.Background(), c, nil)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}

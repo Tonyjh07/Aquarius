@@ -263,6 +263,60 @@ func TestConfirmFlow(t *testing.T) {
 
 // TestEventsAndCommit 事件流：流式草稿 → committed 定稿（替换草稿）、工具/通知/
 // 错误行、用量在节点累计（Delta 用量分片不重复计）。
+// TestLiveMultiSegmentTurn D95 Turn 粒度实时路径：工具边界把草稿落为正文气泡
+// （重构前观感：正文先于 chip），第 2 轮文本重新流式；提交调和回填权威文本、
+// 末段盖节点 ID（分叉条每 Turn 一个挂点），chip 保留实时结果。
+func TestLiveMultiSegmentTurn(t *testing.T) {
+	m, _ := newTestModel(t)
+
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "我先看看"}})
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "echo"}})
+	// 工具边界：草稿已落为正文气泡（无 ID，待提交盖章），chip 随后入块。
+	if len(m.blocks) != 2 || m.blocks[0].kind != blockAssistant ||
+		m.blocks[0].text != "我先看看" || m.blocks[0].id != "" {
+		t.Fatalf("工具边界 blocks = %+v", m.blocks)
+	}
+	if m.draft.Len() != 0 {
+		t.Fatalf("草稿未清空: %q", m.draft.String())
+	}
+	m.handleEvent(port.ToolResultEvent{Result: tool.Result{CallID: "c1", OK: true, Output: "pong"}})
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "答案"}}) // 第 2 轮重新流式
+	m.commit(conversation.Message{
+		ID:      "a1",
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "我先看看"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c1", Name: "echo",
+				Result: &tool.Result{CallID: "c1", OK: true, Output: "pong"},
+			}},
+			{Kind: conversation.PartText, Text: "答案"},
+		},
+	})
+
+	// 调和后：[正文段1（无 ID）] [chip] [正文段2（盖 ID）]——工具块分割助手气泡。
+	wantKinds := []blockKind{blockAssistant, blockTool, blockAssistant}
+	if len(m.blocks) != len(wantKinds) {
+		t.Fatalf("blocks = %d, want %d: %+v", len(m.blocks), len(wantKinds), m.blocks)
+	}
+	for i, want := range wantKinds {
+		if m.blocks[i].kind != want {
+			t.Fatalf("blocks[%d].kind = %d, want %d", i, m.blocks[i].kind, want)
+		}
+	}
+	if m.blocks[0].text != "我先看看" || m.blocks[0].id != "" {
+		t.Fatalf("段1 = %+v, want 权威文本回填、无 ID", m.blocks[0])
+	}
+	c := m.blocks[1].chip
+	if c == nil || !c.done || !c.ok || c.result != "pong" {
+		t.Fatalf("chip = %+v", c)
+	}
+	if m.blocks[2].text != "答案" || m.blocks[2].id != "a1" {
+		t.Fatalf("段2 = %+v, want 末段盖节点 ID", m.blocks[2])
+	}
+}
+
 func TestEventsAndCommit(t *testing.T) {
 	m, _ := newTestModel(t)
 
@@ -367,15 +421,17 @@ func TestHistoryReplay(t *testing.T) {
 		Role:    conversation.RoleUser,
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "你好"}},
 	}})
+	// D95：工具分片随 assistant 节点回放——正文块先行，chip 随后（与实时一致）。
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
-		Role:      conversation.RoleAssistant,
-		Outcome:   conversation.OutcomeDone,
-		ToolCalls: []tool.Call{{ID: "c", Name: "echo", Args: []byte(`{"m":"x"}`)}},
-		Content:   []conversation.Part{{Kind: conversation.PartText, Text: "## 结论\n最终答案"}},
-	}})
-	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
-		Role:       conversation.RoleTool,
-		ToolResult: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "## 结论\n最终答案"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c", Name: "echo", Args: []byte(`{"m":"x"}`),
+				Result: &tool.Result{CallID: "c", OK: true, Output: "pong"},
+			}},
+		},
 	}})
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
 		Role:    conversation.RoleSystem,
@@ -391,8 +447,8 @@ func TestHistoryReplay(t *testing.T) {
 		Outcome: conversation.OutcomeCancelled,
 	}})
 
-	// D67：调用与结果按 CallID 合并为单个 chip 块（tool 节点不再独立成块）。
-	wantKinds := []blockKind{blockUser, blockTool, blockAssistant,
+	// D67：调用与结果按 CallID 合并为单个 chip 块；D95：正文块在 chip 之前。
+	wantKinds := []blockKind{blockUser, blockAssistant, blockTool,
 		blockSystem, blockAssistant, blockAssistant}
 	if len(m.blocks) != len(wantKinds) {
 		t.Fatalf("blocks = %d, want %d: %+v", len(m.blocks), len(wantKinds), m.blocks)
@@ -402,12 +458,12 @@ func TestHistoryReplay(t *testing.T) {
 			t.Fatalf("blocks[%d].kind = %d, want %d", i, m.blocks[i].kind, want)
 		}
 	}
-	c := m.blocks[1].chip
+	c := m.blocks[2].chip
 	if c == nil || c.name != "echo" || !c.done || !c.ok || c.result != "pong" {
 		t.Fatalf("回放 chip = %+v", c)
 	}
 	for i, want := range []string{
-		"你好", "", "最终答案", "压缩摘要", "[cancelled]", "[cancelled]",
+		"你好", "最终答案", "", "压缩摘要", "[cancelled]", "[cancelled]",
 	} {
 		if !strings.Contains(m.blocks[i].text, want) {
 			t.Fatalf("blocks[%d].text = %q, 缺 %q", i, m.blocks[i].text, want)

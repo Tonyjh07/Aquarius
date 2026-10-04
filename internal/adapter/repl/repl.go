@@ -233,21 +233,46 @@ func (u *UI) history(msg conversation.Message) error {
 		return err
 	case conversation.RoleAssistant:
 		var b strings.Builder
-		// 思考行先行（D42：回放口径恒含思考，与 echo_thinking 回传开关无关）。
-		if tp := thinkingText(msg.Content); tp != "" {
-			fmt.Fprintf(&b, "[thinking] %s\n", tp)
+		// D95 Turn 粒度：逐分片序回放——思考分片各自成行、正文按 tool 边界分段、
+		// 调用/结果行夹段间，与实时呈现一致。
+		var seg strings.Builder
+		flushSeg := func() {
+			if s := strings.TrimSpace(seg.String()); s != "" {
+				b.WriteString(sanitizeControl(s))
+				b.WriteString("\n")
+			}
+			seg.Reset()
 		}
-		for _, call := range msg.ToolCalls {
-			if p := preview(call.Args); p != "" {
-				fmt.Fprintf(&b, "[tool] %s %s\n", call.Name, p)
-			} else {
-				fmt.Fprintf(&b, "[tool] %s\n", call.Name)
+		for _, p := range msg.Content {
+			switch p.Kind {
+			case conversation.PartThinking:
+				flushSeg()
+				if strings.TrimSpace(p.Text) != "" {
+					fmt.Fprintf(&b, "[thinking] %s\n", sanitizeControl(p.Text))
+				}
+			case conversation.PartTool:
+				flushSeg()
+				tp := p.Tool
+				if tp == nil {
+					continue
+				}
+				if pr := preview(tp.Args); pr != "" {
+					fmt.Fprintf(&b, "[tool] %s %s\n", tp.Name, pr)
+				} else {
+					fmt.Fprintf(&b, "[tool] %s\n", tp.Name)
+				}
+				if res := tp.Result; res != nil {
+					status, detail := "ok", res.Output
+					if !res.OK {
+						status, detail = "failed", res.Err
+					}
+					fmt.Fprintf(&b, "[tool %s] %s\n", status, preview([]byte(detail)))
+				}
+			default:
+				appendPartText(&seg, p)
 			}
 		}
-		if strings.TrimSpace(text) != "" {
-			b.WriteString(text)
-			b.WriteString("\n")
-		}
+		flushSeg()
 		// 空内容的取消/错误也要有反馈（与实时 CommittedEvent 同口径）。
 		if msg.Outcome != conversation.OutcomeDone {
 			fmt.Fprintf(&b, "[%s]\n", msg.Outcome)
@@ -256,16 +281,6 @@ func (u *UI) history(msg conversation.Message) error {
 			return nil
 		}
 		_, err := io.WriteString(u.out, b.String())
-		return err
-	case conversation.RoleTool:
-		if msg.ToolResult == nil {
-			return nil
-		}
-		status, detail := "ok", msg.ToolResult.Output
-		if !msg.ToolResult.OK {
-			status, detail = "failed", msg.ToolResult.Err
-		}
-		_, err := fmt.Fprintf(u.out, "[tool %s] %s\n", status, preview([]byte(detail)))
 		return err
 	case conversation.RoleSystem:
 		if strings.TrimSpace(text) == "" {
@@ -280,34 +295,31 @@ func (u *UI) history(msg conversation.Message) error {
 
 // partsText 节点文本拼接（与 uitui 同语义）：文本/文档分片直连，图片/音频留占位；
 // 思考分片不并入正文（回放单独打 [thinking] 行，D42）；
+// 工具分片不并入正文（回放单独打 [tool] 行，D95）；
 // 出口剥控制序列（历史内容同样是不可信数据，§9）。
 func partsText(parts []conversation.Part) string {
 	var b strings.Builder
 	for _, p := range parts {
-		switch p.Kind {
-		case conversation.PartText:
-			b.WriteString(p.Text)
-		case conversation.PartImage:
-			b.WriteString("〔图片〕")
-		case conversation.PartAudio:
-			b.WriteString("〔音频转写〕")
-		case conversation.PartDoc:
-			b.WriteString(p.Text)
-		case conversation.PartThinking:
-			// 单独成行（thinkingText），不混正文。
-		}
+		appendPartText(&b, p)
 	}
 	return sanitizeControl(b.String())
 }
 
-// thinkingText 提取首个非空思考分片（D42：回放口径恒含思考）；无思考返回空串。
-func thinkingText(parts []conversation.Part) string {
-	for _, p := range parts {
-		if p.Kind == conversation.PartThinking && strings.TrimSpace(p.Text) != "" {
-			return sanitizeControl(p.Text)
-		}
+// appendPartText 把一个分片的呈现文本写入 b（partsText/回放分段共用口径）；
+// 思考/工具分片不并入正文（各自单独成行，D42/D95）。
+func appendPartText(b *strings.Builder, p conversation.Part) {
+	switch p.Kind {
+	case conversation.PartText:
+		b.WriteString(p.Text)
+	case conversation.PartImage:
+		b.WriteString("〔图片〕")
+	case conversation.PartAudio:
+		b.WriteString("〔音频转写〕")
+	case conversation.PartDoc:
+		b.WriteString(p.Text)
+	case conversation.PartThinking, conversation.PartTool:
+		// 单独成行（思考行 / 工具行），不混正文。
 	}
-	return ""
 }
 
 // preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。

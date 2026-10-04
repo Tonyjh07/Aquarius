@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -114,32 +115,126 @@ func TestAssemblePathImageInlinesBytes(t *testing.T) {
 	}
 }
 
-func TestAssemblePathNormalToolResult(t *testing.T) {
+// TestAssemblePathToolPartProjectsCallAndResult D95 装配投影：assistant 节点的
+// 工具分片拆为 1 条 assistant(tool_calls) + 1 条 tool 应答消息（调用与结果同片恒成对）。
+func TestAssemblePathToolPartProjectsCallAndResult(t *testing.T) {
 	c := convWithUser(t)
 	user1 := c.Path()[1] // path[0] 是 Root
-	// 手工提交带调用的 assistant 节点 + tool 应答。
+	// 手工提交带工具分片（含结果）的 assistant 节点。
 	asst := conversation.Message{
 		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
-		ToolCalls: []tool.Call{{ID: "call_1", Name: "echo"}},
+		Content: []conversation.Part{{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+			CallID: "call_1", Name: "echo", Args: json.RawMessage(`{"m":"x"}`),
+			Result: &tool.Result{CallID: "call_1", OK: true, Output: "pong"},
+		}}},
 	}
 	if err := c.AppendCommitted(asst); err != nil {
 		t.Fatalf("append assistant: %v", err)
-	}
-	tnode := conversation.Message{
-		ID: "T1", Parent: "A1", Role: conversation.RoleTool,
-		ToolResult: &tool.Result{CallID: "call_1", OK: true, Output: "pong"},
-	}
-	if err := c.AppendCommitted(tnode); err != nil {
-		t.Fatalf("append tool: %v", err)
 	}
 
 	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	last := msgs[len(msgs)-1]
-	if last.Role != "tool" || last.CallID != "call_1" || last.Content[0].Text != "pong" {
-		t.Fatalf("tool msg = %+v", last)
+	if len(msgs) != 3 { // user + assistant(tool_calls) + tool
+		t.Fatalf("msgs = %d, want 3: %+v", len(msgs), msgs)
+	}
+	if msgs[1].Role != "assistant" || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "call_1" {
+		t.Fatalf("assistant msg = %+v", msgs[1])
+	}
+	// 分片不应混进正文。
+	if len(msgs[1].Content) != 0 {
+		t.Fatalf("assistant content = %+v, want 空", msgs[1].Content)
+	}
+	// 拆出的 tool 应答紧随其后。
+	if msgs[2].Role != "tool" || msgs[2].CallID != "call_1" || msgs[2].Content[0].Text != "pong" {
+		t.Fatalf("tool msg = %+v", msgs[2])
+	}
+}
+
+// TestAssemblePathSegmentedTurnNode D95 Turn 粒度：一节点多段（text1, tool, text2）
+// 按工具边界切段投影——assistant(段1) → tool 应答 → assistant(段2)；多段 thinking
+// 各随其段；echo_thinking=false 时思考丢弃、正文照常分段。
+func TestAssemblePathSegmentedTurnNode(t *testing.T) {
+	c := convWithUser(t)
+	user1 := c.Path()[1]
+	asst := conversation.Message{
+		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
+		Content: []conversation.Part{
+			{Kind: conversation.PartThinking, Text: "想一"},
+			{Kind: conversation.PartText, Text: "先看"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c1", Name: "echo",
+				Result: &tool.Result{CallID: "c1", OK: true, Output: "pong"},
+			}},
+			{Kind: conversation.PartThinking, Text: "想二"},
+			{Kind: conversation.PartText, Text: "答案"},
+		},
+		Outcome: conversation.OutcomeDone,
+	}
+	if err := c.AppendCommitted(asst); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, true)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(msgs) != 4 { // user + assistant(段1) + tool + assistant(段2)
+		t.Fatalf("msgs = %d, want 4: %+v", len(msgs), msgs)
+	}
+	seg1, reply, seg2 := msgs[1], msgs[2], msgs[3]
+	if seg1.Role != "assistant" || seg1.Reasoning != "想一" || len(seg1.Content) != 1 ||
+		seg1.Content[0].Text != "先看" || len(seg1.ToolCalls) != 1 || seg1.ToolCalls[0].ID != "c1" {
+		t.Fatalf("段1 = %+v", seg1)
+	}
+	if reply.Role != "tool" || reply.CallID != "c1" || reply.Content[0].Text != "pong" {
+		t.Fatalf("tool 应答 = %+v", reply)
+	}
+	if seg2.Role != "assistant" || seg2.Reasoning != "想二" || len(seg2.Content) != 1 ||
+		seg2.Content[0].Text != "答案" || len(seg2.ToolCalls) != 0 {
+		t.Fatalf("段2 = %+v", seg2)
+	}
+
+	// echo_thinking=false：思考丢弃，正文分段不变。
+	msgs, err = assemblePath(context.Background(), c.Path(), nil, false)
+	if err != nil {
+		t.Fatalf("assemble(off): %v", err)
+	}
+	if len(msgs) != 4 || msgs[1].Reasoning != "" || msgs[3].Reasoning != "" {
+		t.Fatalf("echo off = %+v", msgs)
+	}
+}
+
+// TestAssemblePathNilResultPartSkipped D95：Result=nil 的工具分片（未执行/被取消）
+// 不声明调用也不产出应答消息；纯 nil 分片节点整条不发。
+func TestAssemblePathNilResultPartSkipped(t *testing.T) {
+	c := convWithUser(t)
+	user1 := c.Path()[1]
+	asst := conversation.Message{
+		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
+		Content: []conversation.Part{{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+			CallID: "call_1", Name: "echo",
+		}}},
+	}
+	if err := c.AppendCommitted(asst); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	// 仅 user；nil 分片节点无正文无调用，整条不发。
+	if len(msgs) != 1 {
+		t.Fatalf("msgs = %d, want 1: %+v", len(msgs), msgs)
+	}
+	for _, m := range msgs {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			t.Fatalf("nil 分片不应声明调用: %+v", m)
+		}
+		if m.Role == "tool" {
+			t.Fatalf("nil 分片不应产出 tool 应答: %+v", m)
+		}
 	}
 }
 
@@ -153,52 +248,6 @@ func TestAssemblePathFailedToolResultText(t *testing.T) {
 	}
 	if got := toolResultText(nil); got != "（无输出）" {
 		t.Fatalf("nil text = %q", got)
-	}
-}
-
-// TestAssemblePathOrphanToolInlined 失联 tool 结果（声明其调用的 assistant 不在本路径）
-// 必须按文本内联并标注——Revise(Carry) 隔离旧 assistant 是产生场景（DESIGN §4.1 不变量 2）。
-func TestAssemblePathOrphanToolInlined(t *testing.T) {
-	c := convWithUser(t)
-	user1 := c.Path()[1] // path[0] 是 Root
-	asst := conversation.Message{
-		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
-		ToolCalls: []tool.Call{{ID: "call_1", Name: "echo"}},
-	}
-	if err := c.AppendCommitted(asst); err != nil {
-		t.Fatalf("append assistant: %v", err)
-	}
-	tnode := conversation.Message{
-		ID: "T1", Parent: "A1", Role: conversation.RoleTool,
-		ToolResult: &tool.Result{CallID: "call_1", OK: true, Output: "pong"},
-	}
-	if err := c.AppendCommitted(tnode); err != nil {
-		t.Fatalf("append tool: %v", err)
-	}
-	// Carry Revise 旧 assistant：tool 子树随行，但调用声明者掉出路径 → 失联。
-	if _, err := c.Revise("A1", []conversation.Part{{Kind: conversation.PartText, Text: "重写"}}, conversation.Carry); err != nil {
-		t.Fatalf("revise: %v", err)
-	}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("validate: %v", err)
-	}
-
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
-	if err != nil {
-		t.Fatalf("assemble: %v", err)
-	}
-	last := msgs[len(msgs)-1]
-	if last.Role != "assistant" || last.CallID != "" {
-		t.Fatalf("orphan 应内联为 assistant 文本，got %+v", last)
-	}
-	if !strings.Contains(last.Content[0].Text, historyToolMarker) || !strings.Contains(last.Content[0].Text, "pong") {
-		t.Fatalf("orphan text = %q, want 含标注与结果", last.Content[0].Text)
-	}
-	// 新 assistant 不应带调用（否则与内联结果配不上）。
-	for _, m := range msgs {
-		if m.Role == "assistant" && m.Content[0].Text == "重写" && len(m.ToolCalls) != 0 {
-			t.Fatalf("重写节点不应带 tool_calls: %+v", m)
-		}
 	}
 }
 
