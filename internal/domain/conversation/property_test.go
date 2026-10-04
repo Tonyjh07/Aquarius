@@ -42,6 +42,14 @@ func sameContent(a, b Message) bool {
 	return reflect.DeepEqual(x, y)
 }
 
+// sameCopy 比较克隆体与原节点：ID/Parent 之外字节级一致（Clone 拷贝必换 ID，D96）。
+func sameCopy(a, b Message) bool {
+	x, y := a.Clone(), b.Clone()
+	x.ID, y.ID = "", ""
+	x.Parent, y.Parent = "", ""
+	return reflect.DeepEqual(x, y)
+}
+
 // propDriver 随机操作序列驱动：覆盖 Append / AppendCommitted / Revise(Fresh|Carry) / Prune / Checkout，
 // 并混入必然失败的操作（违规工具分片形态，D95），验证失败路径同样不破坏不变量。
 type propDriver struct {
@@ -178,7 +186,10 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 		}
 		mode := Fresh
 		if op == 6 {
-			mode = Carry
+			mode = Carry // D96：Clone 并入随机序列，三模式同受不变量守护
+			if d.rng.Intn(2) == 0 {
+				mode = Clone
+			}
 		}
 		if _, err := c.Revise(target, textParts("revised"), mode); err != nil {
 			t.Fatalf("revise(%s) %s: %v", mode, target, err)
@@ -417,6 +428,78 @@ func TestPropertyCarryEdgeTransfer(t *testing.T) {
 		if !reflect.DeepEqual(c.Nodes[target], before[target]) {
 			t.Fatalf("seed %d: revised target %s mutated", seed, target)
 		}
+		if err := c.Validate(); err != nil {
+			t.Fatalf("seed %d: validate: %v", seed, err)
+		}
+	}
+}
+
+// TestPropertyCloneZeroSharing Clone 深拷贝性质（D96）：拷贝子树与原子树零共享——
+// 全新 ID、内容与 CreatedAt 深相等、结构镜像；原子树（含 Parent 边）字节级不动。
+func TestPropertyCloneZeroSharing(t *testing.T) {
+	useFixedClock(t)
+	for seed := int64(1); seed <= 30; seed++ {
+		d := &propDriver{rng: rand.New(rand.NewSource(seed))}
+		c := New(NewID(), "clone")
+		for i := d.rng.Intn(6) + 3; i > 0; i-- {
+			d.step(t, c)
+		}
+		target := d.pickNode(c, false)
+		if target == "" {
+			continue
+		}
+
+		before := map[MessageID]Message{}
+		for nid, m := range c.Nodes {
+			before[nid] = m.Clone()
+		}
+		sub := map[MessageID]bool{}
+		c.collectSubtree(target, sub)
+
+		m, err := c.Revise(target, textParts("revised"), Clone)
+		if err != nil {
+			t.Fatalf("seed %d: revise clone: %v", seed, err)
+		}
+
+		// 原子树节点一个不少、一个不改（内容 + Parent 边）。
+		for nid, want := range before {
+			got, ok := c.Nodes[nid]
+			if !ok {
+				t.Fatalf("seed %d: original node %s disappeared", seed, nid)
+			}
+			if got.Parent != want.Parent || !sameContent(want, got) {
+				t.Fatalf("seed %d: original node %s rewritten", seed, nid)
+			}
+		}
+		// 新增节点 = 新版本 + 子树拷贝（不含新版本自身恰为子树大小-1）；拷贝 ID 全新。
+		copied := 0
+		for nid := range c.Nodes {
+			if _, ok := before[nid]; !ok && nid != m.ID {
+				if _, was := before[nid]; was {
+					t.Fatalf("seed %d: copied node reuses old id %s", seed, nid)
+				}
+				copied++
+			}
+		}
+		if copied != len(sub)-1 {
+			t.Fatalf("seed %d: copied = %d, want %d", seed, copied, len(sub)-1)
+		}
+		// 并行遍历原子树与拷贝子树：结构镜像、内容与 CreatedAt 深相等（sameContent 覆盖）。
+		var walk func(src, dst MessageID)
+		walk = func(src, dst MessageID) {
+			srcKids, dstKids := c.Children[src], c.Children[dst]
+			if len(srcKids) != len(dstKids) {
+				t.Fatalf("seed %d: copy fanout mismatch at %s (%d vs %d)", seed, src, len(srcKids), len(dstKids))
+			}
+			for i := range srcKids {
+				if !sameCopy(c.Nodes[srcKids[i]], c.Nodes[dstKids[i]]) {
+					t.Fatalf("seed %d: copied node %s content mismatch", seed, srcKids[i])
+				}
+				walk(srcKids[i], dstKids[i])
+			}
+		}
+		walk(target, m.ID)
+
 		if err := c.Validate(); err != nil {
 			t.Fatalf("seed %d: validate: %v", seed, err)
 		}

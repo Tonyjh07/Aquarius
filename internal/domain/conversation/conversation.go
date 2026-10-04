@@ -36,14 +36,21 @@ const (
 	Fresh KeepMode = iota
 	// Carry 旧节点的子树边转移到新节点；旧节点成为"旧版本"叶子。
 	Carry
+	// Clone 旧节点的子树深拷贝为新分支（全新 ID、原子树字节级不动，D96）；
+	// 与 Fresh/Carry 并列的显式模式——"复制整段历史另试走向"，数据翻倍由选用者承担。
+	Clone
 )
 
 // String 实现 fmt.Stringer。
 func (k KeepMode) String() string {
-	if k == Carry {
+	switch k {
+	case Carry:
 		return "carry"
+	case Clone:
+		return "clone"
+	default:
+		return "fresh"
 	}
-	return "fresh"
 }
 
 // Conversation 一棵不可变消息树 + 一个 Head 游标。
@@ -161,9 +168,10 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	}
 	c.RevisedFrom[m.ID] = id
 
-	// Head 判定必须在边转移之前：转移会改写链路，之后旧 Head 就不再可达 id。
+	// Head 判定必须在子树处置（转移/拷贝）之前：转移会改写链路，之后旧 Head 就不再可达 id。
 	headInSubtree := c.isStrictDescendant(id, prevHead)
-	if mode == Carry {
+	switch mode {
+	case Carry:
 		if moved := c.Children[id]; len(moved) > 0 {
 			c.Children[m.ID] = moved // 边转移：整批边零拷贝改挂
 			delete(c.Children, id)
@@ -178,10 +186,42 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 			c.UpdatedAt = nowFunc()
 			return c.Nodes[m.ID], nil
 		}
+	case Clone:
+		mapping := c.cloneSubtree(id, m.ID) // 深拷贝子树：全新 ID、原子树字节级不动（D96）
+		if headInSubtree {
+			if mapped, ok := mapping[prevHead]; ok {
+				c.Head = mapped // 历史随行，Head 平移到拷贝对应节点
+				c.UpdatedAt = nowFunc()
+				return c.Nodes[m.ID], nil
+			}
+		}
 	}
 	c.Head = m.ID
 	c.UpdatedAt = nowFunc()
 	return c.Nodes[m.ID], nil
+}
+
+// cloneSubtree 把 id 的整棵子树深拷贝到 parent 之下（不含 id 自身——新节点即其"新版本"）：
+// 拷贝节点 ID 全新、内容经 Clone 深拷、CreatedAt 保留原值（保真历史时刻，D96）；
+// 返回 原ID → 拷贝ID 映射。
+func (c *Conversation) cloneSubtree(id, parent MessageID) map[MessageID]MessageID {
+	mapping := map[MessageID]MessageID{}
+	var walk func(src, dstParent MessageID)
+	walk = func(src, dstParent MessageID) {
+		cm := c.Nodes[src].Clone()
+		cm.ID = NewMessageID()
+		cm.Parent = dstParent
+		c.Nodes[cm.ID] = cm
+		c.Children[dstParent] = append(c.Children[dstParent], cm.ID)
+		mapping[src] = cm.ID
+		for _, ch := range c.Children[src] {
+			walk(ch, cm.ID)
+		}
+	}
+	for _, ch := range c.Children[id] {
+		walk(ch, parent)
+	}
+	return mapping
 }
 
 // Prune 剪掉 id 及整棵子树（唯一破坏性操作，硬删；Root 不可剪——Root 即会话，D19；

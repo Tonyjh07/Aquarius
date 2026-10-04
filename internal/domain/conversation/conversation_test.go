@@ -291,6 +291,90 @@ func TestReviseCarryOnHeadMovesHead(t *testing.T) {
 	}
 }
 
+// TestReviseCloneDeepCopiesSubtree D96：Clone = 新节点 + 整棵子树深拷贝（全新 ID、
+// 原子树字节级不动、CreatedAt 保真）；旧 Head 在原子树内则平移到拷贝对应节点；
+// RevisedFrom 仅记新根一条。
+func TestReviseCloneDeepCopiesSubtree(t *testing.T) {
+	useFixedClock(t)
+	c := New(NewID(), "t")
+	u1 := mustAppend(t, c, RoleUser, "q1")
+	a1 := mustAppend(t, c, RoleAssistant, "a1")
+	u2 := mustAppend(t, c, RoleUser, "q2")
+	a2 := mustAppend(t, c, RoleAssistant, "a2") // Head，在 u1 子树内
+
+	before := map[MessageID]Message{}
+	for nid, m := range c.Nodes {
+		before[nid] = m.Clone()
+	}
+
+	m, err := c.Revise(u1.ID, textParts("q1'"), Clone)
+	if err != nil {
+		t.Fatalf("revise clone: %v", err)
+	}
+	if m.Parent != u1.Parent || m.Role != RoleUser {
+		t.Fatalf("new node = %+v, want 同父同角色", m)
+	}
+	if c.RevisedFrom[m.ID] != u1.ID || len(c.RevisedFrom) != 1 {
+		t.Fatalf("revised_from = %v, want 仅 新根→旧根 一条", c.RevisedFrom)
+	}
+	// 原子树字节级不动（内容 + Parent 边）。
+	for nid, want := range before {
+		got, ok := c.Nodes[nid]
+		if !ok {
+			t.Fatalf("原节点 %s 消失", nid)
+		}
+		if got.Parent != want.Parent || !sameContent(want, got) {
+			t.Fatalf("原节点 %s 被改写", nid)
+		}
+	}
+	// 拷贝镜像结构：a1 的全新拷贝挂在 m 下，内容与 CreatedAt 保真。
+	kids := c.Children[m.ID]
+	if len(kids) != 1 || kids[0] == a1.ID {
+		t.Fatalf("children[new] = %v, want a1 的全新拷贝", kids)
+	}
+	ca1 := c.Nodes[kids[0]]
+	if ca1.Parent != m.ID || !sameCopy(before[a1.ID], ca1) {
+		t.Fatalf("拷贝 a1 = %+v, want 内容保真、挂到新节点", ca1)
+	}
+	// 节点数 = 原 5 + 新版本 1 + 拷贝 3。
+	if len(c.Nodes) != len(before)+1+3 {
+		t.Fatalf("nodes = %d, want %d", len(c.Nodes), len(before)+1+3)
+	}
+	// Head 平移到拷贝对应节点：Head → a1 拷贝 → m 的链路成立，且不是原子树节点。
+	if c.Head == a2.ID || c.Head == a1.ID || c.Head == u2.ID {
+		t.Fatalf("head = %q, 不应留在原子树", c.Head)
+	}
+	hops := 0
+	for cur := c.Head; cur != m.ID; hops++ {
+		n, ok := c.Nodes[cur]
+		if !ok || hops > 3 {
+			t.Fatalf("Head 链断裂于 %s", cur)
+		}
+		cur = n.Parent
+	}
+	if hops != 3 { // 自 Head 经 a2拷贝、u2拷贝、a1拷贝 到达新根 m
+		t.Fatalf("Head 到新根 hops = %d, want 3", hops)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	// 旧 Head 不在原子树（回 Root 后修订）：Head 移到新节点。
+	if err := c.Checkout(MessageID(c.ID)); err != nil {
+		t.Fatalf("checkout root: %v", err)
+	}
+	m2, err := c.Revise(a1.ID, textParts("a1'"), Clone)
+	if err != nil {
+		t.Fatalf("revise clone 2: %v", err)
+	}
+	if c.Head != m2.ID {
+		t.Fatalf("head = %q, want 新节点 %q", c.Head, m2.ID)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
 func TestReviseTopLevelMessage(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
