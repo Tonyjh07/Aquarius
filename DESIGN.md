@@ -38,8 +38,8 @@
 | 术语 | 英文 | 定义 |
 |---|---|---|
 | 会话树 | Conversation | 一棵不可变消息树 + 一个 Head 游标 |
-| 节点 | Message | 树节点，创建后只读：角色、内容分片、工具调用/结果、终态、用量 |
-| 内容分片 | Part | 消息内容的多态片段：Text / Image / Audio / Doc / Thinking |
+| 节点 | Message | 树节点，创建后只读：角色、内容分片（工具调用/结果内嵌于 assistant 分片，D95）、终态、用量 |
+| 内容分片 | Part | 消息内容的多态片段：Text / Image / Audio / Doc / Thinking / Tool（D95） |
 | 附件 | Attachment | 被消息引用的二进制内容，sha256 内容寻址存储 |
 | 根 | Root | 实节点空消息（ID=会话 ID、Role=root），唯一 `Parent==""` 的节点，仅作树管理、不进模型上下文 |
 | 头 | Head | 当前游标（初始=Root，无空串特例），决定发给模型的线性路径 |
@@ -49,8 +49,8 @@
 | 路径 | Path | Root → Head 的节点序列 = 本次推理的上下文 |
 | 轮次 | Turn | 一次"模型生成 + 0..n 次工具执行"的循环 |
 | 提交 | Commit | 流式结束后把本轮产出作为不可变节点一次性挂入树 |
-| 修订 | Revise | 创建同级新节点（同父）；`Fresh`=新分支重新开始，`Carry`=后续历史边转移过来 |
-| 工具调用 | ToolCall / Result | 模型发起的调用与回填结果（tool 角色节点承载） |
+| 修订 | Revise | 创建同级新节点（同父）；`Fresh`=新分支重新开始，`Carry`=后续历史边转移过来，`Clone`=深拷贝后续历史为独立副本（D96） |
+| 工具调用 | ToolCall / Result | 模型发起的调用与回填结果（内嵌为 assistant 节点的 Tool 分片，D95） |
 | 后台任务 | Job | 异步执行的进程：可查状态、拉日志、终止 |
 | 摄取器 | Ingestor | 输入方式适配器：原始输入（文本/文件/剪贴板/麦克风）→ Part 列表 |
 | 输出器 | OutputAdapter | 输出方式适配器：TTS 播报 / 系统通知 / 导出文件 |
@@ -110,22 +110,32 @@ const (
     PartAudio    PartKind = "audio"
     PartDoc      PartKind = "doc"
     PartThinking PartKind = "thinking" // 思考过程（D42）：仅 assistant 节点可携带
+    PartTool     PartKind = "tool"     // 工具调用+结果同片（D95）：仅 assistant 节点可携带
 )
+
+type ApprovalState string // 工具确认态（M5 预留）：""=未进入 / pending / approved / denied
+
+type ToolPart struct { // Kind=PartTool 分片载荷：调用与结果同片（D95）
+    CallID   string        // 节点内唯一（不再全树唯一，D95）
+    Name     string
+    Args     json.RawMessage
+    Result   *tool.Result  // nil = 未执行/被取消（正常路径由提交时点保证不出现）
+    Approval ApprovalState // 预留：M5 工具确认
+}
 
 type Part struct {
     Kind       PartKind
-    Text       string   // Kind=text；Kind=doc 时为提取文本（截断）；Kind=thinking 时为思考文本（D42）
-    Ref        *BlobRef // Kind=image|audio|doc：附件引用
-    Transcript string   // Kind=audio：ASR 转写文本（模型只见文本，音频留附件库回放）
+    Text       string    // Kind=text；Kind=doc 时为提取文本（截断）；Kind=thinking 时为思考文本（D42）
+    Ref        *BlobRef  // Kind=image|audio|doc：附件引用
+    Transcript string    // Kind=audio：ASR 转写文本（模型只见文本，音频留附件库回放）
+    Tool       *ToolPart // Kind=tool：调用与结果同片（D95）
 }
 
 type Message struct { // 创建后只读，值语义
     ID         MessageID
     Parent     MessageID // "" = Root 自身（仅 Root 为空；其余节点 Parent 恒非空）
-    Role       Role      // root | user | assistant | system | tool
+    Role       Role      // root | user | assistant | system
     Content    []Part
-    ToolCalls  []tool.Call
-    ToolResult *tool.Result
     Outcome    Outcome // done | cancelled | error（提交时确定）
     Model      string
     Usage      Usage
@@ -147,41 +157,53 @@ type KeepMode int
 const (
     Fresh KeepMode = iota // 新节点空白开始；旧节点的子树原样留作历史分支
     Carry                 // 旧节点的子树边转移到新节点；旧节点成为"旧版本"叶子
+    Clone                 // 深拷贝旧节点的子树为新分支（全新 ID、原子树不动，D96）
 )
 
 func New(id ID, title string) *Conversation // 建 Root 空节点（ID=id、Role=root）并把 Head 置于 Root；persona 由应用层写为首孩子
-func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅 user|assistant；root/system/tool 一律走 AppendCommitted
-func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system/tool），入树前校验不变量
-func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root/tool 不可 Revise；system 可
-func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（连带清理失联 tool 节点；Root 不可剪）
+func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅 user|assistant；root/system 一律走 AppendCommitted
+func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system 等），入树前校验不变量
+func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root 不可 Revise；system 可
+func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（Root 不可剪）
 func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点（含 Root=回根；无空串特例）
 func (c *Conversation) Path() []Message                     // Root→Head 线性序列（首元素为 Root，装配时滤掉）
 func (c *Conversation) Branches(id MessageID) []Message     // 同级分叉（UI 对比新旧版本；id=Root 时为顶层消息）
 func (c *Conversation) Find(id MessageID) (Message, bool)
-func (c *Conversation) Validate() error                     // 三条不变量整体自检（加载后/测试用）
+func (c *Conversation) Validate() error                     // 两条不变量整体自检（加载后/测试用）
 ```
 
-**不变量（3 条，性质测试守护）**：
+**不变量（2 条，性质测试守护）**：
 
 1. **树合法**：以 **Root 实节点为唯一根**——Root 是空消息节点（`ID == 会话 ID`、`Role == root`、`Parent == ""`），
    `Parent == ""` 的节点仅 Root 一个；顶层消息 = Root 的孩子（允许多条，支撑 Revise 首条消息）；
    无环；`Parent/Children` 双向一致；`Head` 属于树（初始 = Root，**无空串特例**）。
-2. **引用合法**：`tool` 节点的 `CallID` 匹配**树中存在**的某 assistant 节点的 `ToolCalls[i].ID`（存在性引用，
-   以支撑 Carry 边转移；Path 上"失联"的 tool 节点在 Prompt 装配时按文本内联并标注 `〔历史工具结果〕`）。
-   `Prune` 连带移除因此失联的 tool 结果节点，维持本不变量（D18）。
-3. **节点不可变**：`Nodes` 只增不改（节点内容创建后只读）；一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
+   节点形态校验（`checkNodeShape`）另把守分片级约束：思考分片与工具分片**仅 assistant 可携带**
+   （D42/D95）、工具分片 CallID 节点内唯一且非空、Result.CallID 与分片一致（D95）。
+2. **节点不可变**：`Nodes` 只增不改（节点内容创建后只读）；一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
+   （旧不变量 2"存在性引用"随 D95 Tool as Part 取消——调用与结果同片，无跨节点引用可失联。）
 
 **关键语义**：
 
-- **Revise Carry = 边转移**（否决深拷贝子树）：节点内容不依赖祖先指纹（不像 git commit），
+- **Revise Carry = 边转移**（D2）：节点内容不依赖祖先指纹（不像 git commit），
   改写历史只需把 `Children[id]` 这批边改挂到新节点，树仍是一棵树，无 DAG。精确语义（D16）：
   被转移子树**零拷贝、身份不变**，`Children` 边与**直接孩子的 `Parent` 边指针**随之改写，
-  孙代及更深节点字节级不动；节点内容（Content/ToolCalls/ToolResult/Usage/Model/Outcome/CreatedAt）永不改写。
+  孙代及更深节点字节级不动；节点内容（Content/Usage/Model/Outcome/CreatedAt）永不改写。
+- **Revise Clone = 深拷贝分叉**（D96）：第三种并列模式——新节点 + 整棵子树深拷贝（全新 ID、
+  与原子树零共享，原子树字节级不动），供"复制整段历史另试走向"的显式选用；仅领域 API，不接命令。
 - **Revise 的 Head 语义**（D15/D16）：`Fresh` → `Head` 移到新节点；`Carry` → 旧 `Head` 若是 id 的严格后代
-  （随子树转移）则保持不变，否则移到新节点。Revise 首条（顶层）消息合法：新节点同为顶层消息。
-- **流式中间态不进领域**：增量只流经 `Presenter`；Turn 结束（或取消）一次性 Commit 不可变节点
-  （取消 = `Outcome: cancelled` + 已生成部分文本）。没有半个节点，崩溃恢复无部分写入问题。
-  节点 ID 在 Turn 开始时预分配，作流事件关联 ID。
+  （随子树转移）则保持不变，否则移到新节点；`Clone` → 旧 `Head` 若在原子树内则**平移到拷贝对应节点**，
+  否则移到新节点。Revise 首条（顶层）消息合法：新节点同为顶层消息。
+- **流式中间态不进领域**：增量只流经 `Presenter`；**一次 Turn（可含多轮"生成+工具执行"循环）
+  只提交一个不可变节点**（D3/D95 Turn 粒度：多轮的思考/正文/工具分片按到达序交错累积，
+  用户消息 : 助手节点 = 1:1；取消 = `Outcome: cancelled` + 已生成部分）。没有半个节点，
+  崩溃恢复无部分写入问题。节点 ID 在 Turn 开始时预分配，作全部流事件关联 ID；第 2 轮起
+  构造请求把未提交缓冲投影为合成消息追加在 Path 之后。取消/装配级故障向未完成分片填
+  `OK=false` 结果（abortToolCalls 语义），树恒可装配。
+- **工具调用内嵌分片**（D95）：assistant 节点以 `PartTool` 同片承载调用与结果（`Result=nil` = 未执行）；
+  CallID 仅节点内唯一，无跨节点引用。port 装配时把 assistant 节点**按工具分片边界切段**：
+  每段产出 1 条 assistant 消息（Content+Reasoning+该段 ToolCalls）+ N 条 tool 应答消息——
+  "tool 角色"是 **API 投影概念**（OpenAI 协议要求 assistant(tool_calls)→tool 应答交错），
+  树上无 tool 节点；`Result=nil` 的调用不声明也不应答。
 - **Root 即会话**（D19）：Root 实节点 ID 复用会话 ID（不另造第二个 ID），Role=root、空内容，仅作树管理；
   `Prune`/`Revise` 均拒 Root（删/改 Root 即破坏唯一根）。M0 的虚拟 Root 落盘格式**破坏性切换**——
   旧会话文件加载即报错，删除重建。
@@ -193,9 +215,10 @@ func (c *Conversation) Validate() error                     // 三条不变量�
   摘要之上（persona 除外）历史一律不回传；多次压缩链式吸收（只回传最新摘要）。
   `/compact` 手动触发、失败只报错树无损；压缩失败回退最旧裁剪、超预算硬保底由
   截断装饰器执行（三轨压缩与硬保底见 §7.1/D14）。
-- **思考过程入树 + 回传开关**（D42）：assistant 节点的思维链以 `PartThinking` 分片承载（流内分片
-  合并为至多一段、置于正文之前；取消/出错终态的已生成思考随节点一同入树）；节点形态校验限定
-  **仅 assistant 可携带**（root/user/system/tool 一律拒）。**回传给提供商**走独立承载：
+- **思考过程入树 + 回传开关**（D42）：assistant 节点的思维链以 `PartThinking` 分片承载（每轮
+  生成的流内分片合并为至多一段、置于该段正文之前；D95 Turn 粒度下一节点可含多段——每段
+  属于其生成轮；取消/出错终态的已生成思考随节点一同入树）；节点形态校验限定
+  **仅 assistant 可携带**（root/user/system 一律拒；工具分片同规则，D95）。**回传给提供商**走独立承载：
   装配层把思考放进 `PromptMessage.Reasoning`（与 Content 分离），openai 适配器序列化为
   assistant 消息的 **`reasoning_content` 字段**（兼容生态事实标准；DeepSeek 带 `tools` 时
   **强制**回传，缺失即 400），不混进正文；端点点名不认该字段时复用 D34 剥离重试管线
@@ -264,7 +287,9 @@ type PromptPart struct {
 }
 
 type PromptMessage struct {
-    Role      string // "system" | "user" | "assistant" | "tool"
+    Role      string // "system" | "user" | "assistant" | "tool"——tool 仅为 **API 投影概念**（OpenAI 协议要求
+                    // assistant(tool_calls)→tool 应答交错）；树上无 tool 节点，装配期由 assistant 节点的
+                    // Tool 分片拆出（D95）
     Content   []PromptPart
     Reasoning string // role=assistant：思维链回传承载（D42），适配器映射为 reasoning_content 等字段
     ToolCalls []tool.Call
@@ -581,25 +606,27 @@ config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
 
 ```go
 func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
+    mid := a.ids.MessageID()          // Turn 预分配关联 ID（一 Turn 一节点，D95）
+    buf := newTurnBuffer(mid)         // Turn 级流式缓冲：只进 UI，不进领域
     for turn := 0; turn < a.limits.MaxTurns; turn++ {
-        req := a.buildRequest(ctx, c)   // Path + 记忆索引 + 工具清单 + system 提示
+        req := a.buildRequest(ctx, c, buf) // Path + 未提交缓冲投影 + 记忆索引 + 工具清单 + system
         stream, err := a.llm.Generate(ctx, req)
-        mid := a.ids.MessageID()        // 预分配关联 ID
-        buf := newCommitBuffer(mid)     // 流式缓冲：只进 UI，不进领域
-        calls, err := a.consume(ctx, stream, buf) // 边收边 Emit DeltaEvent
-        c.AppendCommitted(buf.Commit(a.clock.Now(), outcomeOf(err))) // 一次性不可变提交
-        if len(calls) == 0 { return nil }
-        for i, call := range calls {
+        calls, err := a.consume(ctx, stream, buf) // 边收边 Emit DeltaEvent（当前轮缓冲）
+        buf.sealRound()                   // 本轮思考/正文定稿进缓冲（到达序交错）
+        for i, call := range calls {      // 先执行后提交（D95）：结果作为分片追加进缓冲
+            _ = a.ui.Emit(ctx, port.ToolCallEvent{Call: call})
             res, err := a.tools.Execute(ctx, call) // 判定 + 确认 + 超时 + 裁剪
-            if err != nil { // 装配级故障（§10）：补剩余失败结果后中止本轮
-                abortToolCalls(calls[i:], err)
-                return err
+            if err != nil {               // 装配级故障（§10）：剩余分片补失败结果后中止本轮
+                abortToolCalls(calls[i:], err, buf)
+                break
             }
-            c.AppendCommitted(toolMessage(a.ids.MessageID(), res))
+            buf.addToolPart(call, res)
             _ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
         }
+        if len(calls) == 0 { break }      // Turn 收场
     }
-    return errMaxTurns
+    c.AppendCommitted(buf.Commit(c.Head, a.clock.Now(), outcomeOf(err))) // 每 Turn 一次性提交（D95）
+    return nil // MaxTurns 用尽：同样先提交再报错
 }
 ```
 
@@ -609,11 +636,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 装配顺序 = [persona（树内首节点，树内无则 config 兜底注入）]
          + [最新压缩摘要（若有）]
          + [摘要之后的历史]
+         + [未提交的 Turn 缓冲投影（第 2 轮起，合成 assistant 消息，D95）]
 —— Root 空节点不进上下文；摘要之上除 persona 外一律不回传（D21）。
 其余承载：Image Part 内联字节、Audio 取 Transcript、Doc 取截断文本、
-          失联 tool 节点文本内联标注〔历史工具结果〕、记忆索引与当前会话记忆文件内容、工具清单（含 mcp:*）；
+          assistant 节点按工具分片边界切段——每段 1 条 assistant(tool_calls) 消息 + N 条
+          tool 应答消息（D95，Result=nil 的调用不声明也不应答）、
+          记忆索引与当前会话记忆文件内容、工具清单（含 mcp:*）；
           思考分片（PartThinking）按 `model.echo_thinking` 二态处理（D42）——
-          回传（键缺失 = 开）= 置入该 assistant 消息的 `PromptMessage.Reasoning`，由适配器
+          回传（键缺失 = 开）= 置入该段 assistant 消息的 `PromptMessage.Reasoning`，由适配器
           映射为 `reasoning_content` 字段；关（显式 false）= 装配时丢弃不发。
 ```
 
@@ -688,7 +718,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
   装配决定发什么，回放展示树里有什么。
 - **事件形态**：新增 `port.HistoryEvent{Message}`——一次性呈现**已提交的历史节点**，非 Turn
   流程事件。前段不带 delta/ToolCall 过程，直接按节点角色定稿渲染（user 输入行、assistant
-  思考暗块与正文、tool 调用/结果行、system 摘要块），与实时呈现同一套样式。
+  思考暗块、正文与工具分片的调用/结果行、system 摘要块——工具分片随 assistant 节点回放，D95），
+  与实时呈现同一套样式。
 - **不扇出**：`HistoryEvent` 不是 `CommittedEvent`，输出器装饰器（D28）对它 no-op——
   回放不重复触发通知/TTS。
 - **回放前提示**：发 `NoticeEvent`（`已恢复会话 <标题> (<id>)，回放 <n> 条历史`）。
@@ -752,7 +783,10 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 ├── jobs/<jobID>.log           # 后台任务日志
 ├── audit.log                  # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
 ├── attachments/<sha256>       # 内容寻址附件
-├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak）
+├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak；JSON 与领域结构同构、无独立版本号，
+                                #   合法性由加载期 Validate 把关；破坏性切换先例：D19 虚拟 Root、
+                                #   D95 独立 tool 节点——旧格式 Load/List 显式报 ErrLegacyFormat 点名 ID，
+                                #   不自动迁移，旧文件留存原地由用户手工处置）
 └── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
 ```
 
@@ -870,7 +904,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 | 层 | 手段 |
 |---|---|
-| domain | 性质测试：随机 Append/Revise(Fresh\|Carry)/Prune/Checkout 序列 → 不变量 1–3 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写）；节点形态校验含思考分片仅 assistant 可携带（D42） |
+| domain | 性质测试：随机 Append/Revise(Fresh\|Carry\|Clone)/Prune/Checkout 序列 → 不变量 1–2 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写）；Clone 深拷贝子树与原子树零共享、原子树字节级不变（D96）；节点形态校验含思考分片与工具分片仅 assistant 可携带、工具分片 CallID 节点内唯一（D42/D95） |
 | app | 脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter → 交互回放（golden）；摄取管线用假 Transcriber；思考入树（分片顺序）与回传开关两态装配（D42） |
 | adapter | LLM 录制流回放；storejson/blobfs/jobproc/memoryfs 契约测试（临时目录） |
 | MCP | 测试内起假 MCP server（stdio）跑 mcpgate 契约：发现/调用/超时/崩溃重启/授权拒绝 |
@@ -1164,13 +1198,15 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 laid/len/text 哈希，chip 开合与流式改文即变）变化。单击/双击/三击/shift+点击
 无 slop 不触发 grab，原生保留；TUI/REPL 不做（GUI only）。
 
-**markdown 渲染（D65/D66）**：定稿助手文本经 goldmark（CommonMark，依赖树既有）解析为
+**markdown 渲染（D65/D66/D95）**：定稿助手文本经 goldmark（CommonMark，依赖树既有）解析为
 结构块（段落/标题/代码块/列表/引用/分隔线），`frameItems` 渲染期展开、**单回复单气泡**
-——一条消息一行，行内垂直复合多块、共底板（D66 消息级复合行；代码块为气泡内嵌套
-等宽小卡）；行选按（行,块）双键挂接，行机制/滚动/形状登记零特例，解析按原文缓存
+——一条正文段一行，行内垂直复合多块、共底板（D66 消息级复合行；代码块为气泡内嵌套
+等宽小卡）；D95 Turn 粒度下一节点含多段正文时**按工具分片分段成多个气泡**（工具 chip
+为独立气泡夹段间——工具块分割助手消息气泡），节点 ID 盖在末段气泡（D81 分叉条每 Turn
+一个挂点）；行选按（行,块）双键挂接，行机制/滚动/形状登记零特例，解析按原文缓存
 （上限 256）；行内剥标记保文本（Label 单一样式，行内富样式留 richtext 后续增量）；
-live 草稿不解析（D33 口径，流式原样、定稿渲染）；代码块用 Go Mono 等宽面（theme
-集合补面，CJK 缺字自动回落）。详见 D65/D66。
+live 草稿不解析（D33 口径，流式原样、定稿渲染；工具边界草稿落为正文气泡）；代码块用
+Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/D66/D95。
 
 ### 15.4 主题
 
