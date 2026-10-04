@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
 // mustConv 造一棵小会话：u1(user) ← a1(assistant)。
@@ -327,6 +329,158 @@ func TestListReportsLegacyFormat(t *testing.T) {
 	if !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "conv-old") {
 		t.Fatalf("list err = %v, want 聚合点名 conv-old", err)
 	}
+}
+
+// legacyToolNodeJSON 造 D95 前旧格式（独立 tool 节点 + assistant.tool_calls）文件内容。
+func legacyToolNodeJSON(id string) string {
+	return fmt.Sprintf(`{
+  "id": %q,
+  "title": "工具旧会话",
+  "nodes": {
+    %q: {"id": %q, "parent": "", "role": "root", "created_at": "2026-01-01T00:00:00Z"},
+    "U1": {"id": "U1", "parent": %q, "role": "user", "content": [{"kind": "text", "text": "hi"}], "created_at": "2026-01-01T00:00:01Z"},
+    "A1": {"id": "A1", "parent": "U1", "role": "assistant", "content": [{"kind": "text", "text": "调用"}], "tool_calls": [{"id": "c1", "name": "echo", "args": {"m": "x"}}], "created_at": "2026-01-01T00:00:02Z"},
+    "T1": {"id": "T1", "parent": "A1", "role": "tool", "tool_result": {"call_id": "c1", "ok": true, "output": "pong"}, "created_at": "2026-01-01T00:00:03Z"}
+  },
+  "children": {"": [%q], "U1": ["A1"], "A1": ["T1"]},
+  "head": "T1",
+  "revised_from": {},
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:03Z"
+}`, id, id, id, id, id)
+}
+
+// TestLoadRejectsLegacyToolNodeFormat D95 破坏切换：独立 tool 节点格式必须明确报因，
+// 不自动迁移（D95⑥：迁移正确性风险与双格式共存成本不值）。
+func TestLoadRejectsLegacyToolNodeFormat(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(s.dir, "conv-t.json"), []byte(legacyToolNodeJSON("conv-t")), 0o644); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	_, err = s.Load(context.Background(), conversation.ID("conv-t"))
+	if err == nil || !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "tool") {
+		t.Fatalf("err = %v, want ErrLegacyFormat 报因", err)
+	}
+}
+
+// TestListReportsLegacyToolNodeFormat D95：List 同样聚合点名，不让旧数据隐形。
+func TestListReportsLegacyToolNodeFormat(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(s.dir, "conv-t.json"), []byte(legacyToolNodeJSON("conv-t")), 0o644); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	_, err = s.List(context.Background())
+	if !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "conv-t") {
+		t.Fatalf("list err = %v, want 聚合点名 conv-t", err)
+	}
+}
+
+// TestLoadRejectsOrphanToolCallsField 防静默丢失：assistant 带 tool_calls 却无独立
+// tool 节点的旧文件，普通反序列化会"看起来正常"地丢掉调用声明——影子解码必须报因。
+func TestLoadRejectsOrphanToolCallsField(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	body := `{
+  "id": "conv-o",
+  "title": "残留声明",
+  "nodes": {
+    "conv-o": {"id": "conv-o", "parent": "", "role": "root", "created_at": "2026-01-01T00:00:00Z"},
+    "U1": {"id": "U1", "parent": "conv-o", "role": "user", "content": [{"kind": "text", "text": "hi"}], "created_at": "2026-01-01T00:00:01Z"},
+    "A1": {"id": "A1", "parent": "U1", "role": "assistant", "tool_calls": [{"id": "c1", "name": "echo"}], "created_at": "2026-01-01T00:00:02Z"}
+  },
+  "children": {"": ["conv-o"], "conv-o": ["U1"], "U1": ["A1"]},
+  "head": "A1",
+  "revised_from": {},
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:02Z"
+}`
+	if err := os.WriteFile(filepath.Join(s.dir, "conv-o.json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	_, err = s.Load(context.Background(), conversation.ID("conv-o"))
+	if !errors.Is(err, ErrLegacyFormat) {
+		t.Fatalf("err = %v, want ErrLegacyFormat（防 tool_calls 被静默丢弃）", err)
+	}
+}
+
+// TestRoundtripToolPart 新格式回环：工具分片（调用+结果同片）经 Save/Load 字节级保真。
+func TestRoundtripToolPart(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	src := mustConv(t)
+	parent := src.Head
+	if err := src.AppendCommitted(conversation.Message{
+		ID: "A2", Parent: parent, Role: conversation.RoleAssistant,
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "调用"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c1", Name: "echo", Args: json.RawMessage(`{"m":"x"}`),
+				Result: &tool.Result{CallID: "c1", OK: true, Output: "pong"},
+			}},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c2", Name: "ghost", Args: json.RawMessage(`{}`),
+			}},
+		},
+		Outcome: conversation.OutcomeDone,
+	}); err != nil {
+		t.Fatalf("commit tool part node: %v", err)
+	}
+
+	if err := s.Save(ctx, src); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := s.Load(ctx, src.ID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want, _ := src.Find("A2")
+	gnode, ok := got.Find("A2")
+	if !ok {
+		t.Fatal("node A2 missing")
+	}
+	if len(gnode.Content) != len(want.Content) {
+		t.Fatalf("content = %d, want %d", len(gnode.Content), len(want.Content))
+	}
+	for i := range want.Content {
+		got, wantP := gnode.Content[i].Tool, want.Content[i].Tool
+		if (got == nil) != (wantP == nil) {
+			t.Fatalf("part %d tool presence mismatch", i)
+		}
+		if got == nil {
+			continue
+		}
+		// MarshalIndent 会重排 RawMessage 空白：参数按 JSON 语义比较，其余字段直比。
+		if got.CallID != wantP.CallID || got.Name != wantP.Name ||
+			got.Approval != wantP.Approval || !reflect.DeepEqual(got.Result, wantP.Result) {
+			t.Fatalf("part %d tool = %+v, want %+v", i, *got, *wantP)
+		}
+		if !sameJSON(got.Args, wantP.Args) {
+			t.Fatalf("part %d args = %s, want %s", i, got.Args, wantP.Args)
+		}
+	}
+	if err := got.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// sameJSON 两段 JSON 字节语义等价（忽略空白）。
+func sameJSON(a, b []byte) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	return reflect.DeepEqual(x, y)
 }
 
 func TestCanceledContextRejected(t *testing.T) {

@@ -17,14 +17,16 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // ErrNotFound 会话文件不存在。
 var ErrNotFound = errors.New("storejson: conversation not found")
 
-// ErrLegacyFormat M0 虚拟 Root 旧格式（D19 破坏性切换）：Load 显式报因、List 聚合上报，绝不静默跳过。
-var ErrLegacyFormat = errors.New("storejson: 发现旧格式会话（虚拟 Root，D19）")
+// ErrLegacyFormat 旧格式会话（不兼容的历史格式）：Load 显式报因、List 聚合上报，
+// 绝不静默跳过、不做自动迁移。已有两种：M0 虚拟 Root（D19）、独立 tool 节点（D95 前半部分）。
+var ErrLegacyFormat = errors.New("storejson: 发现旧格式会话")
 
 var _ port.ConversationStore = (*Store)(nil)
 
@@ -189,22 +191,48 @@ func (s *Store) path(id conversation.ID) string {
 	return filepath.Join(s.dir, string(id)+".json")
 }
 
-// decode 反序列化 + ID 一致性检查 + 空 map 归一化 + 不变量自检（加载后自检，DESIGN §4.1）。
+// legacyNode 承接 D95 前磁盘格式的遗留字段：assistant 的 tool_calls 与独立 tool 节点的
+// tool_result。普通反序列化会把未知字段**静默丢弃**——残留 tool 角色节点的文件还能靠
+// Validate 失败暴露，纯 tool_calls 文件则会"看起来正常"地丢数据，因此解码必须走影子
+// 结构显式识别（D95 破坏切换，同 D19 先例：不自动迁移）。
+type legacyNode struct {
+	conversation.Message
+	ToolCalls  []tool.Call  `json:"tool_calls,omitempty"`
+	ToolResult *tool.Result `json:"tool_result,omitempty"`
+}
+
+// legacyTree 影子载体：仅 nodes 覆盖为影子节点（JSON 同名键取浅层），其余字段直落内嵌结构。
+type legacyTree struct {
+	conversation.Conversation
+	Nodes map[conversation.MessageID]legacyNode `json:"nodes"`
+}
+
+// decode 反序列化 + 旧格式显式识别（D19/D95）+ ID 一致性检查 + 空 map 归一化 + 不变量自检
+// （加载后自检，DESIGN §4.1）。
 func decode(data []byte, id conversation.ID) (*conversation.Conversation, error) {
-	var c conversation.Conversation
-	if err := json.Unmarshal(data, &c); err != nil {
+	var lt legacyTree
+	if err := json.Unmarshal(data, &lt); err != nil {
 		return nil, fmt.Errorf("解析 JSON: %w", err)
 	}
-	if c.ID != id {
-		return nil, fmt.Errorf("文件内容属于会话 %q 而非 %q", c.ID, id)
+	if lt.Conversation.ID != id {
+		return nil, fmt.Errorf("文件内容属于会话 %q 而非 %q", lt.Conversation.ID, id)
 	}
 	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
-	if root, ok := c.Nodes[conversation.MessageID(c.ID)]; !ok || root.Role != conversation.RoleRoot || c.Head == "" {
-		return nil, fmt.Errorf("%w：与实 Root 不兼容，请删除该文件重建", ErrLegacyFormat)
+	root, ok := lt.Nodes[conversation.MessageID(lt.Conversation.ID)]
+	if !ok || root.Role != conversation.RoleRoot || lt.Conversation.Head == "" {
+		return nil, fmt.Errorf("%w：虚拟 Root（D19）或损坏，与实 Root 不兼容，请删除该文件重建", ErrLegacyFormat)
 	}
-	// 空 map 归一化：JSON 里的 null 反序列化为 nil map，直接写入会 panic。
-	if c.Nodes == nil {
-		c.Nodes = map[conversation.MessageID]conversation.Message{}
+	// D95 破坏性切换：独立 tool 节点 / 遗留 tool_calls·tool_result 字段。
+	for nid, n := range lt.Nodes {
+		if n.Message.Role == conversation.Role("tool") || len(n.ToolCalls) > 0 || n.ToolResult != nil {
+			return nil, fmt.Errorf("%w：独立 tool 节点格式（D95）：%q 及其节点无法加载，请删除或手工处置", ErrLegacyFormat, nid)
+		}
+	}
+	// 影子字段全空，逐节点搬运为领域节点；空 map 归一化：JSON 里的 null 反序列化为 nil map。
+	c := lt.Conversation
+	c.Nodes = make(map[conversation.MessageID]conversation.Message, len(lt.Nodes))
+	for nid, n := range lt.Nodes {
+		c.Nodes[nid] = n.Message
 	}
 	if c.Children == nil {
 		c.Children = map[conversation.MessageID][]conversation.MessageID{}
