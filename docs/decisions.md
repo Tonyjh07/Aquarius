@@ -848,3 +848,15 @@
 - **否决**：真实时间基推进（帧间隔抖动大、headless Now 语义不稳，名义 60fps 步长简单且测试确定）；事件驱动推进（静止指针无 Drag 事件——推进必须按帧，靠心跳）；滚动时绘制端点预览（端点随动已由②给出，无需预览层）。
 - **后果/限制**：① transH/scrollPx 边界取自上一帧（消费者阶段先于 transcript 量高）——一帧陈旧，与 keyRects 同口径；② 滚轮与自动滚动同帧叠加时按各自增量先后生效、终值经同一钳制（D71 滚轮钉点不受影响）；③ 选区结构指纹不随滚动变化（键 laid/text 不变），滚动中选区不会被自愈清除。
 - **状态**：生效
+
+### D103 — 命令清单只读端口与 GUI 补全浮层（S2b-1，§15.2）
+
+- **动机**：roadmap S2b-1（§5-Q15：只做 GUI，TUI 保持现状）——输入 `/` 给出命令补全（含动态 `/mcp:*`）。数据源 = 命令清单：help 文本现居 app 层硬编码字符串（单一事实源缺失、UI 拿不到），铁律 5 要求经端口暴露；动态命令表只存处理器（`PromptInfo.Description` 注册即弃）。
+- **决策**：
+  ① **只读端口**：`port.CommandCatalog { Commands() []port.CommandInfo }`——TreeView 同款反向端口（实现方 app.Session、消费方 uigui，不给变更入口；命令执行仍走 Prompter → Handle）。`CommandInfo{Names []string, Usage, Desc string}`：Names 含别名（quit/exit 一条两名），Usage = 参数用例（不含命令名），Desc = 一句话描述。
+  ② **单一事实源**：app 侧静态命令表 `commandCatalog`（19 条），`/help` 改由表渲染（行 = `/` + names `, /` 连接 + usage + 对齐填充 + desc；填充按前缀显示宽计算、替代手排空格——行集与文案不变、间距微调）；`/mcp:<server>:<prompt>` 家族说明行保留为 help 尾行（非可执行命令，不入清单——真实动态命令逐条入列）。`SetDynamicCommands(cmds, meta map[string]port.CommandInfo)` 扩展携带元数据（plugins.go refresh 保留 `PromptInfo.Description`；未带 meta 的动态命令按名生成无描述条目）。`Commands()` = 静态表 + 锁内动态表合并（dynMu；动态按名排序缀尾）。
+  ③ **浮层交互（GUI-only）**：触发 = 编辑框文本以 `/` 开头且尚无空格（**命令词法相**；出现空格即关闭——参数相不补全）；过滤 = 对条目任一 Names 做大小写不敏感前缀匹配、保持清单序；**↑↓** 循环移动高亮（文本变更重置首选）、**Enter** = 高亮匹配名与已输入完全一致时直接提交、否则补全为 `/名 `（落空格后浮层随词法相关闭）、**Esc** 关闭（文本不动，文本变更即重开；编辑态下 Esc 先关浮层、再取消编辑）、**点击行** = 选中即补全；过滤为空不显示；超 8 行显前 8 + 「还有 N 条…」。**Enter 接管走 `SubmitEvent` 分支**（浮层开启时 SubmitEvent = 补全判定、不再直达提交——不与编辑器抢 Return 键过滤，headless 可测）；↑↓/Esc 由浮层 `key.Filter{Focus: &editor}` 消费（编辑器不作用于这些键，无冲突面）。
+  ④ **呈现**：hoverCard 同款深色卡（tipBg 底、整窗 clip 登记 chrome 形状——不受 D79 淡化带作用），锚在胶囊上方、左对齐胶囊左缘；行 = 命令名（品牌色）+ usage/描述（暗色、超宽截断）；行矩形随帧登记、点击命中 = 武装-原位抬起（D72 同口径）、悬停高亮 = 光标直采（D85）。
+- **否决**：TUI/repl 补全（Q15 拍板）；事件推送清单（清单是拉取型只读事实——TreeView/Facts 快照端口同款，事件适合"发生了什么"）；help 与清单两套文本（漂移风险）；参数级补全（usage 仅展示，补全只到命令名）；Tab 补全键（§15.2 未定义，Enter/点击已足）。
+- **后果/限制**：① `/help` 输出布局微调（表驱动对齐）——行集不变（session_test 子串钉住），动态命令启用后 help 逐条列出（原先只有家族行）；② `Commands()` 每调用合成（锁内遍历，清单 ≤ 数十条，GUI 每帧读无压力）；③ Session 未就绪（装配早期）清单为空 → 浮层不出现（`Options.Commands` 经 sessionCommands 原子槽代理注入，sessionTree 同款）；④ 编辑态文本恰以 `/` 开头也会触发浮层——补全插入的是普通文本，Esc 优先关浮层，语义自洽；⑤ 浮层随帧过滤不缓存，空格后关闭由词法相判定承担。
+- **状态**：生效
