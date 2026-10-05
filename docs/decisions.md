@@ -877,18 +877,18 @@
 ### D105 — 文档转文本解析选型与实施（Q17 定案，S2b-3，§4.2）
 
 - **动机**：roadmap Q17 留白（同 Q7 模式：动手前补）——Q14 档位要求常见文档转文本；用户拍板（2026-10-05）：纯文本/富文本 + office 三件套 + pdf + html，**尽量用现成库不自己造轮子**。cgo 红线（D43）限定纯 Go。
-- **spike 实证（temp/spike 独立模块，最小样本实测，D30 模式）**：pdf/docx/xlsx/html 四路提取全通（含中文样本）；**gopptx v0.4.0 在 Windows 无法构建**——`//go:embed templates/\[Content_Types].xml` 的反斜杠转义依赖 path.Match 非 Windows 语义（`\` 在 Windows 不作转义 → `[...]` 被当字符类），平台级缺陷。
+- **spike 实证（temp/spike 独立模块，D30 模式）**：合成最小样本 + **用户提供的真实文档**（temp/test_docs：7 页中文综合 PDF、多表格 xlsx、带图 docx、git 手册 html）四路提取全通——xlsx 27k 字符（多工作表中文表格）、pdf 3.3k 字符（中文完整可读、版式碎片化→提取后归一）、docx 按实际文字量提取、html 剥 script/style 干净；**gopptx v0.4.0 在 Windows 无法构建**——`//go:embed templates/\[Content_Types].xml` 的反斜杠转义依赖 path.Match 非 Windows 语义（`\` 在 Windows 不作转义 → `[...]` 被当字符类），平台级缺陷。
 - **决策（Q17 拍板）**：
   | 格式 | 库 | 结论 |
   |---|---|---|
-  | pdf | `github.com/ledongthuc/pdf`（rsc.io/pdf 系，2026-09 仍在维护） | 采纳；逐页提取、按文本量截断；无文本层/加密 PDF 失败回落占位 |
-  | docx | `github.com/fumiama/go-docx`（纯 Go，段落/Run/Text 走 Children 树） | 采纳 |
+  | pdf | `github.com/ledongthuc/pdf`（rsc.io/pdf 系，2026-09 仍在维护，BSD-3） | 采纳；逐页提取 + 版式碎片归一（段内单换行折空格）、按文本量截断；无文本层/加密 PDF 失败回落占位 |
+  | docx | `github.com/gomutex/godocx` v0.1.5（MIT） | 采纳；Body.Children→Para.GetCT()→Run/Text 走读取路径，测试内 round-trip 生成样本 |
   | xlsx | `github.com/xuri/excelize/v2` v2.11（Apache-2.0 事实标准；按工作表顺序 GetRows） | 采纳 |
   | html | `golang.org/x/net/html`（官方 x/，已在依赖图；剥 script/style 取文本） | 采纳 |
   | pptx | `github.com/kenny-not-dead/gopptx` v0.4.0 | **缓**——Windows embed 构建损坏（spike 实证）；回落二进制占位，待上游修复或换库再补 |
   | rtf | 无成熟纯 Go 库 | **缓**——且现状 isTextish 会把 rtf 控制词当正文提取（垃圾文本），显式排除回落占位 |
   | legacy 二进制 Office（.doc/.xls/.ppt） | 无 | 不在档（Q14 口径），二进制占位 |
 - **统一口径**：① 分派按**扩展名**（OOXML 是 zip 容器，内容嗅探无能为力；pdf/html 扩展名即判）；② 解析实现居 `ingestfile` 内（parse*.go），产 `PartDoc{Ref, Text}`，装配内联零改动（§4.2③）；③ 提取文本上限 `maxDocText`(64KB) 截断标注（沿「全文可用 file_read」口径）、结构化文档文件大小上限 `maxIngestFile`(32MB) 超限不解析（zip/内存有界）；④ **解析失败（加密/损坏/超限）回落现有二进制占位文案并注明原因**——提取尽力而为，绝不让附件摄取整体失败；⑤ detectMime 扩展名校正增 pdf/html/docx/xlsx/pptx（元数据更准）；⑥ isTextish 显式排除 .rtf。
-- **否决**：unioffice（AGPL/商业双授权，污染单二进制分发）；UniPDF（商业授权）；pdfcpu（面向操作非提取）；自写 OOXML 解析（用户明确要求现成库；三件套 XML 细节是 bug 农场）；pptx 手写 zip+xml 提取（违背「不造轮子」拍板，宁缓）。
-- **后果/限制**：① 新增 4 个直接依赖 + 若干传递依赖（THIRD-PARTY-NOTICES 同步）；② pptx/rtf/legacy Office 附件仍走二进制占位（占位文案可 file_read 取原文）；③ PDF 文本提取对 CJK（无内嵌字体）与复杂版式尽力而为；④ xlsx 提取走 excelize OpenReader（内存 ≈ 文件大小，32MB 上限封顶）；⑤ 上限为包级 var（测试可缩）。
+- **否决**：**fumiama/go-docx（AGPL-3.0，连带 imgsz GPL-3.0——许可证核查发现，与 unioffice 同理由排除；换 gomutex/godocx）**；unioffice（AGPL/商业双授权，污染单二进制分发）；UniPDF（商业授权）；pdfcpu（面向操作非提取）；自写 OOXML 解析（用户明确要求现成库；三件套 XML 细节是 bug 农场）；pptx 手写 zip+xml 提取（违背「不造轮子」拍板，宁缓）。
+- **后果/限制**：① 新增 4 个直接依赖 + 若干传递依赖（THIRD-PARTY-NOTICES 同步；x/ 系钉在 go 1.25 兼容版本，go.mod 不升 1.26）；② pptx/rtf/legacy Office 附件仍走二进制占位（占位文案可 file_read 取原文）；③ PDF 文本提取对 CJK（无内嵌字体）与复杂版式尽力而为——提取后做版式碎片归一；④ xlsx 提取走 excelize OpenReader（内存 ≈ 文件大小，32MB 上限封顶）；docx 经 godocx.OpenDocument(path) 复开文件（与入库 fd 分离——两读间文件被改的竞窗可接受，入库字节才是 file_read 权威）；⑤ 上限为包级 var（测试可缩）。
 - **状态**：生效
