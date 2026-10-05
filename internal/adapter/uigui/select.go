@@ -260,6 +260,14 @@ func (u *UI) updateSel(gtx layout.Context) {
 			if !e.Buttons.Contain(pointer.ButtonPrimary) || e.Source != pointer.Mouse {
 				continue
 			}
+			// Shift+点击 = 跨块扩选（D101）：选区 active 时保留锚、焦点跳到点击处、
+			// 不进候选（无拖拽语义）；无激活选区仍原生（widget 自身扩选，D91 口径）。
+			if s.active && e.Modifiers.Contain(key.ModShift) {
+				if p, ok := u.pointToCaret(pos); ok {
+					s.focus = p
+				}
+				continue
+			}
 			if s.active {
 				u.clearSel()
 			}

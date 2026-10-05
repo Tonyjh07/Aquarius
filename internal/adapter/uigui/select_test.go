@@ -448,3 +448,67 @@ func TestSelDragAcrossCollapsedChip(t *testing.T) {
 		t.Fatalf("焦点 = %+v 跨度数 = %d, want 键 3 / 2 段跨度", u.sel.focus, len(u.selSpansBuf))
 	}
 }
+
+// selPointerMod 带修饰键的指针事件（D101 Shift 扩选测试用；其余同 selPointer）。
+func selPointerMod(kind pointer.Kind, p image.Point, mods key.Modifiers) pointer.Event {
+	e := selPointer(kind, p, true)
+	e.Modifiers = mods
+	return e
+}
+
+// TestSelShiftClickExtend D101：选区 active 时 Shift+点击跨块扩选——锚不动、焦点
+// 跳到点击处（可反向）、抬手保持、Ctrl+C 按锚→焦拼接；无激活选区的 Shift+点击
+// 仍走原生路径（入候选不激活，D91 口径）。
+func TestSelShiftClickExtend(t *testing.T) {
+	u, q := newSelUI()
+	selArmDrag(t, q, u) // 选区 {0,0}..{1,n1} armed
+	if u.sel.anchor != (selPoint{key: 0, rune: 0}) {
+		t.Fatalf("锚 = %+v, want {0 0}", u.sel.anchor)
+	}
+
+	// Shift+点击键 0 中部：焦点跳回键 0（跨度缩为单键、方向不变）。
+	r0 := selKeyRect(t, u, 0)
+	mid := image.Pt((r0.Min.X+r0.Max.X)/2, (r0.Min.Y+r0.Max.Y)/2)
+	q.Queue(selPointerMod(pointer.Press, mid, key.ModShift))
+	selFrame(q, u)
+	if !u.sel.active {
+		t.Fatal("Shift 扩选应保持激活")
+	}
+	if u.sel.anchor != (selPoint{key: 0, rune: 0}) {
+		t.Fatalf("锚被移动: %+v", u.sel.anchor)
+	}
+	if u.sel.focus.key != 0 || u.sel.focus.rune == 0 {
+		t.Fatalf("焦点应落在键 0 中部: %+v", u.sel.focus)
+	}
+	q.Queue(selPointer(pointer.Release, mid, false))
+	selFrame(q, u)
+	q.Queue(key.Event{Name: "C", State: key.Press, Modifiers: key.ModShortcut})
+	selFrame(q, u)
+	_, content, ok := q.WriteClipboard()
+	if !ok {
+		t.Fatal("Ctrl+C 应写剪贴板")
+	}
+	if want := "alpha bravo"[:u.sel.focus.rune]; string(content) != want {
+		t.Fatalf("剪贴板 = %q, want %q", content, want)
+	}
+
+	// 反向扩选：Shift+点击键 1 尾部 → 焦点越过锚、跨度恢复两键。
+	r1 := selKeyRect(t, u, 1)
+	q.Queue(selPointerMod(pointer.Press, r1.Max.Add(image.Pt(-1, -1)), key.ModShift))
+	selFrame(q, u)
+	if u.sel.focus.key != 1 || len(u.selSpansBuf) != 2 {
+		t.Fatalf("焦点/跨度 = %+v/%d, want 键 1/2", u.sel.focus, len(u.selSpansBuf))
+	}
+
+	// 无激活选区：Shift+点击 = 原生路径（候选、不激活；无清除语义可触发）。
+	q.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+	selFrame(q, u)
+	if u.sel.active {
+		t.Fatal("Escape 应清选区")
+	}
+	q.Queue(selPointerMod(pointer.Press, r0.Min, key.ModShift))
+	selFrame(q, u)
+	if u.sel.active || !u.sel.cand {
+		t.Fatalf("无选区 Shift+点击 = active %v cand %v, want false/true", u.sel.active, u.sel.cand)
+	}
+}
