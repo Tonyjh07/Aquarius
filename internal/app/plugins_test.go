@@ -113,7 +113,7 @@ func TestSessionDynamicCommands(t *testing.T) {
 			t.Error("静态 help 应优先于同名动态命令")
 			return "", nil
 		},
-	})
+	}, nil) // meta 缺省 = nil（D103：按名生成无描述条目）
 	ctx := context.Background()
 
 	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{
@@ -133,7 +133,7 @@ func TestSessionDynamicCommands(t *testing.T) {
 	}
 
 	// 整体替换后旧命令注销。
-	s.SetDynamicCommands(map[string]CommandHandler{})
+	s.SetDynamicCommands(map[string]CommandHandler{}, nil)
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "mcp:fake:greet"}}); err == nil ||
 		!strings.Contains(err.Error(), "未知命令") {
 		t.Fatalf("err = %v, want 未知命令", err)

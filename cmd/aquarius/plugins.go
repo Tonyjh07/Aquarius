@@ -270,21 +270,24 @@ func (p *pluginSurfaces) refresh() {
 	}
 	sess := *p.session
 	dyn := make(map[string]app.CommandHandler)
+	meta := make(map[string]port.CommandInfo, len(dyn)) // D103：清单元数据（描述进 /help 与补全浮层）
 	for _, name := range names {
 		sess := sess
 		render := ready[name]
 		for _, pi := range p.prompts[name] {
 			promptName := pi.Name
-			dyn["mcp:"+name+":"+promptName] = func(ctx context.Context, args []string) (string, error) {
+			key := "mcp:" + name + ":" + promptName
+			dyn[key] = func(ctx context.Context, args []string) (string, error) {
 				text, err := render.RenderPrompt(ctx, promptName, args)
 				if err != nil {
 					return "", err
 				}
 				return sess.Handle(ctx, port.UserInput{Text: text})
 			}
+			meta[key] = port.CommandInfo{Names: []string{key}, Desc: pi.Description}
 		}
 	}
-	sess.SetDynamicCommands(dyn)
+	sess.SetDynamicCommands(dyn, meta)
 }
 
 // sortedStoreNames 取就绪服务器名（排序，extras 闭包用——索引顺序稳定）。

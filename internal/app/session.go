@@ -105,17 +105,20 @@ type Session struct {
 	// ReplayHistory 仅在恢复时回放（新建会话无历史可回放，D40/§7.4）。
 	resumed bool
 
-	// dynMu 保护 dynamic：REPL 主循环读、插件启停回调（可能来自崩溃重启的
+	// dynMu 保护 dynamic/dynamicMeta：REPL 主循环读、插件启停回调（可能来自崩溃重启的
 	// watch goroutine）写，须加锁（§10 并发语义）。
-	dynMu   sync.Mutex
-	dynamic map[string]CommandHandler
+	dynMu       sync.Mutex
+	dynamic     map[string]CommandHandler
+	dynamicMeta map[string]port.CommandInfo // 清单元数据（D103：名称→Names/Desc，键与 dynamic 对齐）
 }
 
 // SetDynamicCommands 替换动态命令表（装配根随插件启停刷新；锁内整体换）。
-func (s *Session) SetDynamicCommands(cmds map[string]CommandHandler) {
+// meta 携带清单元数据（D103/S2b-1：补全浮层与 /help 展示用；缺项按名生成无描述条目）。
+func (s *Session) SetDynamicCommands(cmds map[string]CommandHandler, meta map[string]port.CommandInfo) {
 	s.dynMu.Lock()
 	defer s.dynMu.Unlock()
 	s.dynamic = cmds
+	s.dynamicMeta = meta
 }
 
 // dynamicCommand 查动态命令（未命中返回 nil）。
@@ -753,28 +756,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return "", ErrQuit
 
 	case "help":
-		return strings.Join([]string{
-			"/new [标题]             新建会话",
-			"/list                   列出会话",
-			"/switch <id前缀>        切换到既有会话（清屏并回放历史，D75）",
-			"/title [文本]           查看/改写会话标题",
-			"/goto <id>              Head 移到任意节点（分支导航；id 支持唯一前缀）",
-			"/edit <id> [--keep|--copy] <文本>  Revise：缺省 Fresh 开新分支（编辑用户消息即重新生成回答，D93）；--keep 边转移后续历史；--copy 深拷贝后续历史（D97）",
-			"/regen <id>             重新生成：上游用户消息分叉重发（已有回答）；无回答直接生成（D93）",
-			"/branch [id]            展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）",
-			"/rm <id>                删除节点及整棵子树（二次确认）",
-			"/compact                触发上下文压缩（生成 system 摘要节点，D21）",
-			"/permission [等级]      查看/切换权限等级（read-only/strict/permissive/full-access）",
-			"/memory [会话id]        用系统编辑器打开记忆文件（缺省全局 memories.md，D24）",
-			"/usage                  查看 token 用量（上下文占用/上轮实测/会话累计，三级计数链 D26）",
-			"/jobs [list|logs <id> [行数]|kill <id>]  后台任务管理（job_start 启动的任务，DESIGN §7.3）",
-			"/quit, /exit            退出",
-			"/plugin [list|enable <name>|disable <name>]  MCP 插件管理（D31，DESIGN §7.3）",
-			"/mcp:<server>:<prompt>  MCP prompts 动态命令（随插件启停注册，见 /plugin）",
-			"/model [name]          查看可用模型 / 切换并写回 config（D32）",
-			"/think [on|off]        原生思考总开关（写回 config，D34；off 覆盖 /effort）",
-			"/effort [档位]         推理档位 minimal|low|medium|high|off（写回 config，D34）",
-		}, "\n"), nil
+		static, dyn := s.commandsSplit() // D103：help 与补全浮层同源（命令清单表渲染）
+		return renderHelp(static, dyn), nil
 
 	case "plugin":
 		return s.execPlugin(ctx, cmd.Args)

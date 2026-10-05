@@ -426,7 +426,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			},
 			Settings:      settingsSnapshot,
 			ApplySettings: applySettings,
-			Tree:          sessionTree{p: &sessPtr}, // D80/§7.5：分叉条只读数据面
+			Tree:          sessionTree{p: &sessPtr},     // D80/§7.5：分叉条只读数据面
+			Commands:      sessionCommands{p: &sessPtr}, // D103/S2b-1：补全浮层命令清单只读数据面
 			PosFile:       filepath.Join(dir, "gui_pos.json"),
 			Hotkey:        cfg.UI.Hotkey,      // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
 			Theme:         cfg.UI.Theme,       // 主题档 system|light|dark（§15.4/D61；空 = system）
@@ -703,6 +704,20 @@ func (t sessionTree) Tail(id conversation.MessageID) (conversation.MessageID, bo
 		return "", false
 	}
 	return s.Tail(id)
+}
+
+// sessionCommands 命令清单只读视图的装配侧代理（D103/S2b-1）：Session 构造晚于 UI，
+// 故经原子槽间接取用；未就绪返回空清单（补全浮层不出现）。
+type sessionCommands struct{ p *atomic.Pointer[app.Session] }
+
+var _ port.CommandCatalog = sessionCommands{}
+
+func (c sessionCommands) Commands() []port.CommandInfo {
+	s := c.p.Load()
+	if s == nil {
+		return nil
+	}
+	return s.Commands()
 }
 
 // envSecrets port.Secrets 的内置实现：按名读环境变量（矩阵 DESIGN §5.10）。

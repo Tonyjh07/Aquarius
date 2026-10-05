@@ -468,6 +468,7 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	}
 	if !u.collapsed {
 		u.updateSel(gtx)    // D91 跨块拖选消费者：先于编辑器（Ctrl+C 抢先，焦点纪律同帧生效）
+		u.updateCompl(gtx)  // D103 补全浮层消费者：先于编辑器（Enter 接管 SubmitEvent、Esc 让渡）
 		u.updateEditor(gtx) // 收起态不消费按键（编辑器不可见，防隐形收字）
 	}
 	u.updateClicks(gtx)
@@ -1300,6 +1301,9 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 		}
 	}
 	u.tipShown = shown
+	// D103 补全浮层（tips 之后画——盖住转写区下部，胶囊上方锚定）：chrome 形状整窗
+	// 登记不受淡化带作用；行矩形随帧重登记（fade pass 同几何复登，bubbleRects 同构）。
+	u.drawCompl(gtx, absY, pill)
 }
 
 // inputRowRects 三段几何（纯逻辑，可测，D49/§15.2）：拓扑 = 边距 | logo | 间隙 | 胶囊 |
@@ -1927,6 +1931,10 @@ func (u *UI) updateEditor(gtx layout.Context) {
 				break
 			}
 			if ke, isKey := ev.(key.Event); isKey && ke.State == key.Press {
+				if u.complEsc { // D103：浮层开启期 Esc 先关浮层（complUpdate 已处理），不取消编辑
+					u.complEsc = false
+					continue
+				}
 				u.cancelEdit()
 				break
 			}
@@ -1945,7 +1953,11 @@ func (u *UI) updateEditor(gtx layout.Context) {
 			break
 		}
 		if _, isSubmit := evt.(widget.SubmitEvent); isSubmit {
-			u.submitEditor()
+			if u.complOpenNow { // D103：浮层开启期 Enter = 补全判定（一致即提交、否则补全）
+				u.complEnter()
+			} else {
+				u.submitEditor()
+			}
 		}
 	}
 }

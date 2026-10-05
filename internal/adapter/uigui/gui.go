@@ -90,6 +90,10 @@ type Options struct {
 	// Tree 会话树只读视图（D80/§7.5，前置 A）：分叉条（D81）每帧无锁读快照，取
 	// 「同级集合 + 自身下标」；nil = 不渲染分叉条。实现方须线程安全（UI 事件循环 goroutine 调用）。
 	Tree port.TreeView
+	// Commands 命令清单只读数据面（D103/S2b-1）：补全浮层数据源，与 /help 同源
+	// （port.CommandCatalog 反向端口，实现方 app.Session）；nil = 无补全。
+	// 实现方须线程安全（UI 事件循环 goroutine 调用）。
+	Commands port.CommandCatalog
 }
 
 // zoomKnobs 双缩放旋钮（D90/§15.8）：元素缩放 × 正文字号，原子槽整体换存（成对生效）。
@@ -166,7 +170,19 @@ type UI struct {
 	denyBtn    widget.Clickable
 	elevateBtn widget.Clickable // D86：提升权限钮（仅工具确认且有下一档时布局）
 	drag       gesture.Drag
-	hwnd       uintptr
+	// D103 补全浮层（仅事件循环 goroutine 读写）：词法相/过滤清单每帧重算（命令清单
+	// 端口每帧拉取——动态命令随插件启停变化）；complRows 行矩形随帧登记（窗口系）。
+	complText      string            // 上一帧编辑框文本（变更 → 重置 dismissed/高亮）
+	complSel       int               // 键盘高亮行下标（complList 内）
+	complDismissed bool              // Esc 后搁置（文本变更即重开）
+	complOpenNow   bool              // 本帧浮层开启（updateEditor Enter 接管判据）
+	complEsc       bool              // 本帧 Esc 已被浮层消费（updateEditor 编辑态让渡）
+	complArmed     bool              // 行点击武装态（D72 口径）
+	complPressPt   image.Point       // 武装按下点（窗口系）
+	complList      []complItem       // 过滤后清单（drawCompl 呈现）
+	complRows      []image.Rectangle // 行命中矩形（窗口系，随帧重登记）
+	complTag       struct{}          // 行点击手势 tag
+	hwnd           uintptr
 	// revealPending 启动防闪（D78）：挂接即隐藏、首帧 ULW 提交成功才揭示（激活前台）。
 	// 事件循环写（onHWND/fadePresent）、托盘线程读（showMain 呼出门）→ atomic。
 	revealPending atomic.Bool
