@@ -134,9 +134,9 @@ func TestBubbleRightGesture(t *testing.T) {
 	}
 }
 
-// TestBubbleCtxCopy D92 复制口径：有选区 → 选区文本优先（D91 后果⑤：副键留 S2
+// TestBubbleCtxCopy D92/D97 复制口径：有选区 → 选区文本优先（D91 后果⑤：副键留
 // 菜单复用选态）；无选区 → 整条气泡渲染文本（assistant 复合行按键区间拼接）；
-// edit 预填仅 user 块携带。
+// edit 预填 user/assistant 均携带（D97 开放助手编辑）。
 func TestBubbleCtxCopy(t *testing.T) {
 	u := newFrameUI()
 	u.m.addMsg(blockUser, "问", "u1")
@@ -144,14 +144,14 @@ func TestBubbleCtxCopy(t *testing.T) {
 	q := new(input.Router)
 	bubbleFrame(q, u)
 
-	// 无选区：user 整条 = 原文本（含 edit 预填）；assistant 整条 = 复合行拼接（无 edit）。
+	// 无选区：user 整条 = 原文本（含 edit 预填）；assistant 整条 = 复合行拼接（含 edit 预填）。
 	cu := u.bubbleCtx(u.hitBubble(rectCenterI(u.bubbleRects[0].rect)))
 	if cu.copy != "问" || cu.edit != "问" || cu.kind != blockUser || cu.id != "u1" {
 		t.Fatalf("user ctx = %+v", cu)
 	}
 	ca := u.bubbleCtx(u.hitBubble(rectCenterI(u.bubbleRects[1].rect)))
-	if ca.copy != "一\n二" || ca.edit != "" || ca.kind != blockAssistant || ca.id != "a1" {
-		t.Fatalf("assistant ctx = %+v, want copy 一\\n二、无 edit", ca)
+	if ca.copy != "一\n二" || ca.edit != "一\n\n二" || ca.kind != blockAssistant || ca.id != "a1" {
+		t.Fatalf("assistant ctx = %+v, want copy 一\\n二、edit 原文", ca)
 	}
 
 	// 有选区（assistant 第二键）：复制文本 = 选区，即便右键落在 user 气泡上。

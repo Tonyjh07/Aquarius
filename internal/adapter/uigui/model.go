@@ -77,6 +77,9 @@ type model struct {
 	// editTarget 编辑态目标节点（D92 气泡右键「编辑」）：非空时提交 = 结构化 /edit
 	// 命令（不回显，修订结果由清屏回放呈现）；"" = 非编辑态。仅事件循环 goroutine 读写。
 	editTarget conversation.MessageID
+	// editMode 编辑态修订方式（D97 分叉三方式）：随 editMsg 进入时设定，zero = Fresh；
+	// 提交时转为 --keep/--copy token（与 typed 路径同解析，D97①）。
+	editMode conversation.KeepMode
 
 	// flushedDrafts 待调和的草稿正文段块序（D95 Turn 粒度）：工具事件先于
 	// CommittedEvent 到达——工具边界把流式草稿落为正文气泡（重构前观感：正文先于
@@ -398,16 +401,27 @@ func (m *model) submit(text string) {
 	if line == "" {
 		return
 	}
-	// D92 编辑态：提交 = 结构化 /edit 命令——Args 直达不经斜杠解析（parseEditArgs 的
-	// Join 对单元素是恒等，多行文本保真）；不回显 blockUser，修订结果由 /edit 的清屏
-	// 回放呈现（D81 口径：转写区恒与 Head 一致）。
+	// D92/D97 编辑态：提交 = 结构化 /edit 命令——Args 直达不经斜杠解析（parseEditArgs
+	// 的 Join 对单元素是恒等，多行文本保真）；修订方式转为 flag token（--keep=Carry/
+	// --copy=Clone，与 typed 路径同解析，D97①）；不回显 blockUser，修订结果由 /edit 的
+	// 清屏回放呈现（D81 口径：转写区恒与 Head 一致）。
 	if m.editTarget != "" {
 		id := m.editTarget
+		mode := m.editMode
 		m.editTarget = ""
+		m.editMode = conversation.Fresh
+		args := []string{string(id)}
+		switch mode {
+		case conversation.Carry:
+			args = append(args, "--keep")
+		case conversation.Clone:
+			args = append(args, "--copy")
+		}
+		args = append(args, line)
 		select {
 		case m.u.inCh <- port.UserInput{Command: &port.Command{
 			Name: "edit",
-			Args: []string{string(id), line},
+			Args: args,
 		}}:
 		default:
 			m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")

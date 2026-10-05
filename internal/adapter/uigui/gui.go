@@ -545,11 +545,13 @@ type (
 	sayMsg struct{ text string }
 	// inputMsg 注入一行提交（headless 测试与外部输入泵用；窗口侧走 model.submit）。
 	inputMsg struct{ text string }
-	// editMsg 进入编辑态（D92 气泡右键「编辑」经 shell 菜单分发投递）：目标节点 +
-	// 预填原文；提交/Esc 的生命周期见 model.editTarget 与 cancelEdit。
+	// editMsg 进入编辑态（D92/D97 气泡右键编辑三方式经 shell 菜单分发投递）：目标节点 +
+	// 预填原文 + 修订方式（zero = Fresh）；提交/Esc 的生命周期见 model.editTarget 与
+	// cancelEdit。
 	editMsg struct {
 		id   conversation.MessageID
 		text string
+		mode conversation.KeepMode
 	}
 	// copyMsg 写剪贴板请求（D92 气泡菜单复制项经 shell 线程分发投递）：记账到
 	// pendingCopy，下一帧经 gtx.Execute(clipboard.WriteCmd) 落盘（剪贴板写入必须在
@@ -588,9 +590,10 @@ func (u *UI) apply(msg uiMsg) bool {
 	case inputMsg:
 		u.m.submit(m.text)
 	case editMsg:
-		// D92 编辑态入口：预填原文 + 焦点入编辑框（同唤出口径——layout 次帧执行
-		// FocusCmd）；提交/Esc 的收尾见 model.submit 与 cancelEdit。
+		// D92/D97 编辑态入口：预填原文 + 修订方式 + 焦点入编辑框（同唤出口径——layout
+		// 次帧执行 FocusCmd）；提交/Esc 的收尾见 model.submit 与 cancelEdit。
 		u.m.editTarget = m.id
+		u.m.editMode = m.mode
 		u.editor.SetText(m.text)
 		u.focusPending = true
 	case copyMsg:

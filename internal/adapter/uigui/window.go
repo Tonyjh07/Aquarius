@@ -1842,8 +1842,15 @@ func (u *UI) statusText() string {
 		}
 		return strings.Join(parts, " · ")
 	}
-	// D92 编辑态提示（无生成状态时占用状态行；生成优先——编辑可跨生成提交排队）。
+	// D92/D97 编辑态提示（无生成状态时占用状态行；生成优先——编辑可跨生成提交排队）；
+	// 方式后缀让当前修订方式在提交前始终可见（D97④）。
 	if u.m.editTarget != "" {
+		switch u.m.editMode {
+		case conversation.Carry:
+			return "编辑中（转移历史）· Enter 提交 / Esc 取消"
+		case conversation.Clone:
+			return "编辑中（复制历史）· Enter 提交 / Esc 取消"
+		}
 		return "编辑中 · Enter 提交 / Esc 取消"
 	}
 	return ""
@@ -2278,9 +2285,9 @@ func (u *UI) updateBubbleRight(gtx layout.Context) {
 	u.requestBubbleMenu(u.bubbleCtx(pi))
 }
 
-// bubbleMenuCtx 气泡右键菜单上下文（D92）：Gio 线程命中时组好、atomic.Pointer 过
-// 线程到 shell；edit = 编辑预填文本（user 块原文本），copy = 复制文本（选区优先，
-// 否则整条渲染文本）。
+// bubbleMenuCtx 气泡右键菜单上下文（D92/D97）：Gio 线程命中时组好、atomic.Pointer 过
+// 线程到 shell；edit = 编辑预填文本（user/assistant 块原文，D97 开放助手编辑），copy =
+// 复制文本（选区优先，否则整条渲染文本）。
 type bubbleMenuCtx struct {
 	id   conversation.MessageID
 	kind blockKind
@@ -2288,9 +2295,9 @@ type bubbleMenuCtx struct {
 	copy string
 }
 
-// bubbleCtx 组装菜单上下文（D92）：复制文本此刻定——选区激活取选区（D91 后果⑤：
-// 副键留 S2 菜单复用选态），否则整条气泡渲染文本（逐键 Text 拼接，与 selCopy 同
-// 口径）；user 块另备编辑预填原文。
+// bubbleCtx 组装菜单上下文（D92/D97）：复制文本此刻定——选区激活取选区（D91 后果⑤：
+// 副键留菜单复用选态），否则整条气泡渲染文本（逐键 Text 拼接，与 selCopy 同口径）；
+// user/assistant 块另备编辑预填原文。
 func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	it := u.bubbleRects[h]
 	ctx := &bubbleMenuCtx{id: it.id, kind: it.kind}
@@ -2299,7 +2306,7 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	} else {
 		ctx.copy = u.blockText(it.keyBase, it.keyN)
 	}
-	if it.kind == blockUser && it.bi < len(u.m.blocks) {
+	if (it.kind == blockUser || it.kind == blockAssistant) && it.bi < len(u.m.blocks) {
 		ctx.edit = u.m.blocks[it.bi].text
 	}
 	return ctx

@@ -1,11 +1,13 @@
 package uigui
 
 import (
+	"slices"
 	"testing"
 
 	"gioui.org/io/input"
 	"gioui.org/io/key"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -92,7 +94,45 @@ func TestEditCancel(t *testing.T) {
 	}
 }
 
-// TestEditTextHint D92 编辑态提示：占用状态行（无生成状态时）；生成状态优先。
+// TestEditSubmitModes D97 编辑态三方式提交：editMode 随 editMsg 设定，提交转为
+// flag token（--keep=Carry / --copy=Clone，与 typed 路径同解析，D97①）；Fresh 无
+// token；提交后 editMode 复位 Fresh。
+func TestEditSubmitModes(t *testing.T) {
+	cases := []struct {
+		name string
+		mode conversation.KeepMode
+		want []string
+	}{
+		{"Fresh", conversation.Fresh, []string{"u1", "新问题"}},
+		{"Carry", conversation.Carry, []string{"u1", "--keep", "新问题"}},
+		{"Clone", conversation.Clone, []string{"u1", "--copy", "新问题"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newEditUI()
+			u.apply(editMsg{id: "u1", text: "旧", mode: tc.mode})
+			if u.m.editTarget != "u1" || u.m.editMode != tc.mode {
+				t.Fatalf("编辑态 = target %q mode %v, want u1/%v", u.m.editTarget, u.m.editMode, tc.mode)
+			}
+			u.editor.SetText("新问题")
+			u.submitEditor()
+			if u.m.editTarget != "" || u.m.editMode != conversation.Fresh {
+				t.Fatalf("提交后 = target %q mode %v, want 退出且复位 Fresh", u.m.editTarget, u.m.editMode)
+			}
+			select {
+			case in := <-u.inCh:
+				if in.Command == nil || in.Command.Name != "edit" || !slices.Equal(in.Command.Args, tc.want) {
+					t.Fatalf("inCh = %+v, want Args %v", in, tc.want)
+				}
+			default:
+				t.Fatal("inCh 未收到提交")
+			}
+		})
+	}
+}
+
+// TestEditTextHint D92/D97 编辑态提示：占用状态行（无生成状态时），方式后缀随
+// editMode；生成状态优先。
 func TestEditTextHint(t *testing.T) {
 	u := newEditUI()
 	if u.statusText() != "" {
@@ -100,8 +140,17 @@ func TestEditTextHint(t *testing.T) {
 	}
 	u.m.editTarget = "u1"
 	if got := u.statusText(); got != "编辑中 · Enter 提交 / Esc 取消" {
-		t.Fatalf("编辑态 statusText = %q", got)
+		t.Fatalf("Fresh 编辑态 statusText = %q", got)
 	}
+	u.m.editMode = conversation.Carry
+	if got := u.statusText(); got != "编辑中（转移历史）· Enter 提交 / Esc 取消" {
+		t.Fatalf("Carry 编辑态 statusText = %q", got)
+	}
+	u.m.editMode = conversation.Clone
+	if got := u.statusText(); got != "编辑中（复制历史）· Enter 提交 / Esc 取消" {
+		t.Fatalf("Clone 编辑态 statusText = %q", got)
+	}
+	u.m.editMode = conversation.Fresh
 	u.generating.Store(true)
 	if got := u.statusText(); got == "" || got == "编辑中 · Enter 提交 / Esc 取消" {
 		t.Fatalf("生成状态应优先: %q", got)

@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	"github.com/Tonyjh07/Aquarius/assets"
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
 var shell32 = syscall.NewLazyDLL("shell32.dll")
@@ -91,9 +92,11 @@ const (
 	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
 	cmdPermBase = 108 // 权限子菜单四档基值（D73：+i 对齐 settings.go permLevels 序）
 
-	cmdBubbleEdit  = 120 // 气泡右键：编辑（D92 → editMsg 进编辑态）
-	cmdBubbleRegen = 121 // 气泡右键：重新生成（D92 → /regen 与键入同路径）
-	cmdBubbleCopy  = 122 // 气泡右键：复制（D92 → copyMsg，下一帧写剪贴板）
+	cmdBubbleEdit     = 120 // 气泡右键：编辑（D92/D97 → editMsg Fresh 进编辑态）
+	cmdBubbleRegen    = 121 // 气泡右键：重新生成（D92 → /regen 与键入同路径）
+	cmdBubbleCopy     = 122 // 气泡右键：复制（D92 → copyMsg，下一帧写剪贴板）
+	cmdBubbleEditKeep = 123 // 气泡右键：编辑并转移历史（D97 → editMsg Carry）
+	cmdBubbleEditCopy = 124 // 气泡右键：编辑并复制历史（D97 → editMsg Clone）
 
 	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
 
@@ -369,15 +372,18 @@ func permLevelOf(u *UI) string {
 	return u.opts.Status().Level
 }
 
-// bubbleMenuItems 气泡右键菜单（D92，项集按块角色、文案为契约测试锁定）：
-// user 气泡 = 编辑/重新生成/复制；assistant 气泡 = 重新生成/复制（编辑不适用于生成文本）。
+// bubbleMenuItems 气泡右键菜单（D92/D97，项序/文案为契约测试锁定）：user/assistant
+// 同集五项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone 深拷贝后续历史）
+// + 重新生成/复制。kind 参数留给 thinking/chip 放开后的项集差异化（S2 增强项 D 步）。
 func bubbleMenuItems(kind blockKind) []menuIt {
 	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
 	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
-	if kind == blockUser {
-		return []menuIt{{id: cmdBubbleEdit, label: "编辑"}, regen, cp}
+	return []menuIt{
+		{id: cmdBubbleEdit, label: "编辑"},
+		{id: cmdBubbleEditKeep, label: "编辑并转移历史"},
+		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
+		regen, cp,
 	}
-	return []menuIt{regen, cp}
 }
 
 // showBubbleMenu 气泡右键菜单呈现（托盘线程，D92）：上下文取 u.bubbleMenu 原子槽
@@ -398,14 +404,18 @@ func showBubbleMenu() {
 	menuDispatchBubble(u, ctx, runMenu(h, bubbleMenuItems(ctx.kind)))
 }
 
-// menuDispatchBubble 气泡菜单命令分发（D92；托盘线程调用——修改性调用一律经 post，
-// §15.6 铁律 1）：重新生成 = /regen（与键入同路径，内核分叉重发）；编辑 = editMsg
-// 进编辑态（预填/提交/Esc 生命周期在 Gio 侧）；复制 = copyMsg → 下一帧
+// menuDispatchBubble 气泡菜单命令分发（D92/D97；托盘线程调用——修改性调用一律经 post，
+// §15.6 铁律 1）：重新生成 = /regen（与键入同路径，内核分叉重发）；编辑三方式 = editMsg
+// 进编辑态（预填/提交/Esc 生命周期在 Gio 侧，mode 随项而设）；复制 = copyMsg → 下一帧
 // gtx.Execute(clipboard.WriteCmd)（剪贴板写入必须在 Gio 帧）。
 func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 	switch r {
 	case cmdBubbleEdit:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit})
+		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Fresh})
+	case cmdBubbleEditKeep:
+		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Carry})
+	case cmdBubbleEditCopy:
+		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Clone})
 	case cmdBubbleRegen:
 		_ = u.post(inputMsg{text: "/regen " + string(ctx.id)})
 	case cmdBubbleCopy:

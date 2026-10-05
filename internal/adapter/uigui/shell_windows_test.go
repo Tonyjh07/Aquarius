@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"gioui.org/io/input"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
 // TestTopMostHandle HWND_TOPMOST(-1)/HWND_NOTOPMOST(-2) 的补码取值
@@ -118,9 +120,9 @@ func TestMenuDispatchNew(t *testing.T) {
 	}
 }
 
-// TestMenuDispatchBubble D92 气泡菜单分发：重新生成 = /regen（与键入同路径）、
-// 复制 = copyMsg 记账 → 帧内落剪贴板、编辑 = editMsg 进编辑态（预填原文）；
-// 项集按块角色（呈现契约，测试锁定）。
+// TestMenuDispatchBubble D92/D97 气泡菜单分发：重新生成 = /regen（与键入同路径）、
+// 复制 = copyMsg 记账 → 帧内落剪贴板、编辑三方式 = editMsg（mode 随项而设）进编辑态
+// （预填原文）；项集 user/assistant 同集五项（呈现契约，测试锁定）。
 func TestMenuDispatchBubble(t *testing.T) {
 	u := newHeadless(t, Options{})
 
@@ -151,21 +153,40 @@ func TestMenuDispatchBubble(t *testing.T) {
 		t.Fatalf("剪贴板 = %q ok=%v, want 回答文本", content, ok)
 	}
 
-	// 编辑：editMsg 进编辑态（预填原文 + 焦点待入）。
-	menuDispatchBubble(u, &bubbleMenuCtx{id: "u1", kind: blockUser, edit: "问"}, cmdBubbleEdit)
-	drainSync(t, u)
-	if u.m.editTarget != "u1" || u.editor.Text() != "问" {
-		t.Fatalf("编辑态 = target %q editor %q, want u1/问", u.m.editTarget, u.editor.Text())
+	// 编辑三方式（D97）：editMsg mode 随项而设，进编辑态（预填原文 + 焦点待入）。
+	for _, tc := range []struct {
+		cmd  uintptr
+		mode conversation.KeepMode
+	}{{cmdBubbleEdit, conversation.Fresh}, {cmdBubbleEditKeep, conversation.Carry}, {cmdBubbleEditCopy, conversation.Clone}} {
+		menuDispatchBubble(u, &bubbleMenuCtx{id: "u1", kind: blockUser, edit: "问"}, tc.cmd)
+		drainSync(t, u)
+		if u.m.editTarget != "u1" || u.editor.Text() != "问" || u.m.editMode != tc.mode {
+			t.Fatalf("编辑态(cmd %d) = target %q editor %q mode %v, want u1/问/%v",
+				tc.cmd, u.m.editTarget, u.editor.Text(), u.m.editMode, tc.mode)
+		}
 	}
 
-	// 项集按块角色：user 三项 / assistant 两项。
-	if items := bubbleMenuItems(blockUser); len(items) != 3 ||
-		items[0].label != "编辑" || items[1].label != "重新生成" || items[2].label != "复制" {
-		t.Fatalf("user 菜单项 = %+v", items)
+	// 项集 user/assistant 同集五项（D97：助手开放编辑；kind 参数留 thinking/chip 差异化）。
+	want := []struct {
+		id    uintptr
+		label string
+	}{
+		{cmdBubbleEdit, "编辑"},
+		{cmdBubbleEditKeep, "编辑并转移历史"},
+		{cmdBubbleEditCopy, "编辑并复制历史"},
+		{cmdBubbleRegen, "重新生成"},
+		{cmdBubbleCopy, "复制"},
 	}
-	if items := bubbleMenuItems(blockAssistant); len(items) != 2 ||
-		items[0].label != "重新生成" || items[1].label != "复制" {
-		t.Fatalf("assistant 菜单项 = %+v", items)
+	for _, kind := range []blockKind{blockUser, blockAssistant} {
+		items := bubbleMenuItems(kind)
+		if len(items) != len(want) {
+			t.Fatalf("%v 菜单项数 = %d, want %d", kind, len(items), len(want))
+		}
+		for i, w := range want {
+			if items[i].id != w.id || items[i].label != w.label {
+				t.Fatalf("%v 菜单项[%d] = {%d %q}, want {%d %q}", kind, i, items[i].id, items[i].label, w.id, w.label)
+			}
+		}
 	}
 }
 
