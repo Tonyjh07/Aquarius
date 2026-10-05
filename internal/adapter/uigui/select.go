@@ -437,12 +437,20 @@ func (u *UI) caretIn(k int, p image.Point) int {
 		li = len(g.lines) - 1
 	}
 	line := g.lines[li].Sub(g.origin)
-	// ② 行内 rune 区间 [f, e)：按行带单调二分（行带间不重叠、行内恒同）。
+	// ② 行内 rune 区间 [f, e)：行顶（box.Min.Y）按行严格递增，f 以本行顶为门槛；
+	// e 的门槛取**下一行顶**而非本行底——行盒按 ascent/descent 各自取整，相邻行带
+	// 可交叠 ~1px（实测行0底 > 行1顶），用行底会把下一行 rune 混入区间、Min.X 谓词
+	// 跨行非单调（行首 x 归零），二分落点随机漂到下一行（D91 更正，S1c「有时无法
+	// 跨行选择」的根因）。
 	f := sort.Search(n, func(m int) bool { return box(m).Min.Y >= line.Min.Y })
 	if f >= n {
 		return n
 	}
-	e := sort.Search(n, func(m int) bool { return box(m).Min.Y >= line.Max.Y })
+	nextTop := 1 << 30
+	if li+1 < len(g.lines) {
+		nextTop = g.lines[li+1].Min.Y - g.origin.Y
+	}
+	e := sort.Search(n, func(m int) bool { return box(m).Min.Y >= nextTop })
 	if e < f {
 		e = f
 	}

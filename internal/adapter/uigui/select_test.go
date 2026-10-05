@@ -10,12 +10,15 @@ package uigui
 
 import (
 	"image"
+	"strings"
 	"testing"
 
 	"gioui.org/f32"
 	"gioui.org/io/input"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
 // selFrame 一帧布局 + 提交 hit 树（Gio 次序：渲染之后、present 之前）。
@@ -289,5 +292,159 @@ func TestSelSpansOfDirection(t *testing.T) {
 	skip := selSpansOf(selPoint{key: 0, rune: 1}, selPoint{key: 2, rune: 2}, count)
 	if len(skip) != 2 || skip[0].key != 0 || skip[1].key != 2 {
 		t.Fatalf("空键跳过 = %+v, want 键 0 与键 2", skip)
+	}
+}
+
+// --- S1c 验收修正（2026-10-05，D91 更正）：行带取整交叠下的行内二分 ---
+
+// selLineGroups 折行键的逐视觉行 rune 分组（独立于 caretIn 的线性扫描真值）：
+// 每 rune 的 Regions(m,m+1) 盒顶与 keyRects 行带顶逐一相等（同出 makeRegion），
+// 按顶值归组——组序 = 行序，组内 = 该行 rune 区间 [首,末)。
+func selLineGroups(t *testing.T, u *UI, k int) [][]int {
+	t.Helper()
+	g := &u.keyRects[k]
+	if !g.laid || len(g.lines) < 2 {
+		t.Fatalf("前提：键 %d 折成多行 laid=%v lines=%d", k, g.laid, len(g.lines))
+	}
+	s := u.selFor(k)
+	topOf := map[int]int{} // 行带顶（widget 系）→ 行序
+	for i, ln := range g.lines {
+		topOf[ln.Min.Y-g.origin.Y] = i
+	}
+	groups := make([][]int, len(g.lines))
+	for m := 0; m < g.nrunes; m++ {
+		b := s.Regions(m, m+1, nil)
+		if len(b) == 0 {
+			continue
+		}
+		li, ok := topOf[b[0].Bounds.Min.Y]
+		if !ok {
+			t.Fatalf("rune %d 盒顶 %d 不在任何行带上（几何口径破裂）", m, b[0].Bounds.Min.Y)
+		}
+		groups[li] = append(groups[li], m)
+	}
+	return groups
+}
+
+// TestSelCaretInStaysInPointedLine 行内二分回归（D91 更正）：行带交叠 ~1px 时
+// e 门槛若用本行底会把下一行 rune 混入区间、Min.X 谓词非单调，落点随机漂到
+// 下一行。锁定：每行**左缘**落点 = 本行首 rune（错行即此 bug），且逐行严格递增。
+func TestSelCaretInStaysInPointedLine(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockAssistant, strings.Repeat("这一段话足够长以便在转写区宽度内折行成多个视觉行。", 6))
+	q := new(input.Router)
+	selFrame(q, u)
+	groups := selLineGroups(t, u, 0)
+	g := &u.keyRects[0]
+
+	prevFirst := -1
+	for i, grp := range groups {
+		if len(grp) == 0 {
+			t.Fatalf("行 %d 无 rune（分组破裂）", i)
+		}
+		ln := g.lines[i]
+		left := image.Pt(ln.Min.X+1, (ln.Min.Y+ln.Max.Y)/2)
+		if got := u.caretIn(0, left); got != grp[0] {
+			t.Fatalf("行 %d 左缘落点 = %d, want 本行首 rune %d（漂移到别行 = D91 更正前的 bug）",
+				i, got, grp[0])
+		}
+		if got := u.caretIn(0, left); got <= prevFirst && i > 0 {
+			t.Fatalf("行 %d 左缘落点 %d 未随行递增（前值 %d）", i, got, prevFirst)
+		}
+		prevFirst = grp[0]
+	}
+}
+
+// TestSelSameBatchDragCrossLine 同事件批 press+越 slop 拖动（生产鼠标高频上报的
+// 常见形态，锚走几何路径）：首行左缘起手拖到末行右缘——锚/焦点都必须跨行到位，
+// 回拖首行左缘焦点须回到首行（D91 更正回归）。
+func TestSelSameBatchDragCrossLine(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockAssistant, strings.Repeat("同批次按压与拖动的事件批形态也需要跨行可选。", 8))
+	q := new(input.Router)
+	selFrame(q, u)
+	groups := selLineGroups(t, u, 0)
+	g := &u.keyRects[0]
+	first, last := g.lines[0], g.lines[len(g.lines)-1]
+
+	q.Queue(
+		selPointer(pointer.Press, image.Pt(first.Min.X+1, (first.Min.Y+first.Max.Y)/2), true),
+		selPointer(pointer.Move, image.Pt(last.Max.X-1, (last.Min.Y+last.Max.Y)/2), true),
+	)
+	selFrame(q, u)
+	if !u.sel.active {
+		t.Fatal("同批越 slop 应激活")
+	}
+	if u.sel.anchor != (selPoint{key: 0, rune: groups[0][0]}) {
+		t.Fatalf("锚 = %+v, want {0 %d}（首行首 rune——漂到别行 = 二分越行）",
+			u.sel.anchor, groups[0][0])
+	}
+	if u.sel.focus.rune != g.nrunes {
+		t.Fatalf("焦点 = %+v, want 末行尾 %d", u.sel.focus, g.nrunes)
+	}
+
+	// 回拖首行左缘：焦点须回首行（≤ 首行末 rune），不得滞留尾部。
+	q.Queue(selPointer(pointer.Move, image.Pt(first.Min.X+1, (first.Min.Y+first.Max.Y)/2), true))
+	selFrame(q, u)
+	endOfFirst := groups[0][len(groups[0])-1] + 1 // 首行右缘 caret（可为次行首）
+	if u.sel.focus.rune > endOfFirst {
+		t.Fatalf("回拖后焦点 = %d, want ≤ %d（首行右缘）", u.sel.focus.rune, endOfFirst)
+	}
+}
+
+// TestSelDragAcrossMDParagraphs 同一助手气泡内两个 markdown 段落（vstack 双键）
+// 跨块拖选：跨度两键、焦点落次键（D91 ② 手排纵列的块内偏移路径）。
+func TestSelDragAcrossMDParagraphs(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockAssistant, "第一段落比较长一些这样能够折行。\n\n第二段落也需要有内容用于拖选目标。")
+	q := new(input.Router)
+	selFrame(q, u)
+	if len(u.keyRects) != 2 {
+		t.Fatalf("键数 = %d, want 2", len(u.keyRects))
+	}
+	r0, r1 := selKeyRect(t, u, 0), selKeyRect(t, u, 1)
+
+	q.Queue(selPointer(pointer.Press, image.Pt(r0.Min.X+2, (r0.Min.Y+r0.Max.Y)/2), true))
+	selFrame(q, u)
+	if !u.sel.cand {
+		t.Fatal("按压段 1 应入候选")
+	}
+	q.Queue(selPointer(pointer.Move, image.Pt(r1.Max.X-2, (r1.Min.Y+r1.Max.Y)/2), true))
+	selFrame(q, u)
+	if !u.sel.active {
+		t.Fatal("跨段拖动应激活")
+	}
+	if u.sel.focus.key != 1 || len(u.selSpansBuf) != 2 {
+		t.Fatalf("焦点 = %+v 跨度数 = %d, want 键 1 / 2 段跨度", u.sel.focus, len(u.selSpansBuf))
+	}
+}
+
+// TestSelDragAcrossCollapsedChip 跨折叠工具 chip 拖选：text → chip（键 1/2 不铺开）
+// → text，跨度恰两段（空键跳过、chip 头不捕获）。
+func TestSelDragAcrossCollapsedChip(t *testing.T) {
+	u := newFrameUI()
+	u.m.add(blockAssistant, "工具前的正文内容")
+	u.m.addToolCall(tool.Call{ID: "c1", Name: "think"})
+	u.m.attachToolResult(tool.Result{CallID: "c1", OK: true})
+	u.m.add(blockAssistant, "工具后的正文内容")
+	q := new(input.Router)
+	selFrame(q, u)
+	if len(u.keyRects) != 4 {
+		t.Fatalf("键数 = %d, want 4（text/chip×2/text）", len(u.keyRects))
+	}
+	r0, r3 := selKeyRect(t, u, 0), selKeyRect(t, u, 3)
+	if u.keyRects[1].laid || u.keyRects[2].laid {
+		t.Fatal("折叠 chip 的键不应铺开")
+	}
+
+	q.Queue(selPointer(pointer.Press, image.Pt(r0.Min.X+2, (r0.Min.Y+r0.Max.Y)/2), true))
+	selFrame(q, u)
+	q.Queue(selPointer(pointer.Move, image.Pt(r3.Max.X-2, (r3.Min.Y+r3.Max.Y)/2), true))
+	selFrame(q, u)
+	if !u.sel.active {
+		t.Fatal("跨 chip 拖动应激活")
+	}
+	if u.sel.focus.key != 3 || len(u.selSpansBuf) != 2 {
+		t.Fatalf("焦点 = %+v 跨度数 = %d, want 键 3 / 2 段跨度", u.sel.focus, len(u.selSpansBuf))
 	}
 }
