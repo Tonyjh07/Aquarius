@@ -1197,7 +1197,9 @@ repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自
 副键留 S2 菜单）/ Escape / 编辑器获焦 / `model.clear` / 结构指纹（逐键
 laid/len/text 哈希，chip 开合与流式改文即变）变化。单击/双击/三击/shift+点击
 无 slop 不触发 grab，原生保留；**选区 active 时 Shift+点击 = 跨块扩选**（保留锚、
-焦点跳到点击处，D101——无激活选区时仍原生）；TUI/REPL 不做（GUI only）。
+焦点跳到点击处，D101——无激活选区时仍原生）；**拖选贴边自动滚动**（指针在视口
+上/下缘 28dp 带内按帧推进 scrollPx、端点随动、心跳唤帧，D102）；
+TUI/REPL 不做（GUI only）。
 
 **markdown 渲染（D65/D66/D95）**：定稿助手文本经 goldmark（CommonMark，依赖树既有）解析为
 结构块（段落/标题/代码块/列表/引用/分隔线），`frameItems` 渲染期展开、**单回复单气泡**
