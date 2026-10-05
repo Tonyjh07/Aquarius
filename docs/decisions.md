@@ -731,6 +731,7 @@
   ④ **状态生命周期**：active 期间条件 pull `key.Filter{Name:"C", Required: ModShortcut}` → 逐块 `Text()` rune 切片、`\n` 拼接 → `clipboard.WriteCmd`。清除源 = **主键鼠标 Press**（触控不参与——保原生点按/滚动；副键留给 S2 右键菜单，D91 后果⑤）/ `Escape` / 编辑器获焦 / `model.clear`（树操作清 selRows 同点挂接）/ **结构指纹变化**（帧末对逐键 `(laid, len(text), text)` 长度前缀 fnv64 哈希——chip 开合、分叉切换、流式改文任一变化即清，选区不漂移到错块；会话切换走 `model.clear` 兜底）。
 - **否决**：方案 A（观察者不 grab、块内保留原生、Cancel 后轮询 `GetAsyncKeyState`+心跳收尾——任何文本拖拽都会收到 Cancel，同样要接管，却多出按钮轮询、心跳扩面与跨平台 stub，锚/焦点两头管理更脆）；逐块 Selectable 各自 `SetCaret` 拼高亮（widget 仅 focused 时自绘，多块同时聚焦不可行，焦点本是单 tag）；richtext/span 级选择（D65 已否，留后续，届时本机制的行几何直接复用）；OS 级 mouse hook/子类化（绕开 Gio 事件路由，破坏 headless 可测性）；v1 做 shift+点击跨块扩展与拖拽贴边自动滚动（增量留后续，滚轮在拖选中照常可用已覆盖基本需求）；TUI/REPL 同步实现（GUI only，同 S2b-Q15 口径）。
 - **后果/限制**：① 拖拽（哪怕单块内）由观察者接管 caret 落点，原生拖选退场——落点质量由 `Regions` 二分测试锁定，双击/三击/shift 仍原生；② 高亮跨块间经 chip 头/分叉条时视觉断开（无文本不绘制，复制拼接亦跳过）——接受；③ 极端输入栈（无 pointer 消息的虚拟机等）`SetCapture` 不生效时窗外 Release 可能丢失 → 选区滞留至下次 Press 自愈清除，不加按钮轮询；④ `keyRects` 一帧陈旧：拖选期间内容变化由结构指纹清除兜底；⑤ 与 S2 右键菜单共享同一选态（复制菜单项后续直接复用）。
+- **更正（2026-10-05，S1c 验收实测「有时无法跨行选择」）**：② 的行内二分原假设「行带间不重叠」不成立——`makeRegion` 行盒按 ascent/descent 各自 Ceil/Floor 取整，相邻行带可交叠 ~1px（实测行0底 317 > 行1顶 316）。行内区间 `[f,e)` 的 `e` 门槛取**本行底**时会把下一行 rune 混入区间，`Min.X` 谓词跨行非单调（行首 x 归零），`sort.Search` 落点随按压/拖点位置随机漂到下一行或行内错位——同一手势时对时错。修正：`e` 门槛改取**下一行顶**（末行取 +∞）——区间恰含本行 rune，谓词恢复单调；行带交叠对 `li` 行定位（按行底单调）与 `keyHit`/`pointToCaret`（并集覆盖）无影响。
 - **状态**：生效
 
 ### D92 — 气泡右键菜单：编辑 / 重新生成 / 复制（S2，§15.9）
