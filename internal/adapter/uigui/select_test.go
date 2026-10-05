@@ -512,3 +512,84 @@ func TestSelShiftClickExtend(t *testing.T) {
 		t.Fatalf("无选区 Shift+点击 = active %v cand %v, want false/true", u.sel.active, u.sel.cand)
 	}
 }
+
+// TestSelEdgeAutoScroll D102：拖选激活后指针停在下缘带内 → scrollPx 逐帧推进、
+// 焦点端点随动；移出带停止；上缘带内反向推进；松手停止。真窗的唤帧心跳由
+// selHeartbeat 承担（headless w=nil 不启动），此处手动逐帧驱动。
+func TestSelEdgeAutoScroll(t *testing.T) {
+	u := newFrameUI()
+	for i := 0; i < 40; i++ {
+		u.m.addMsg(blockUser, strings.Repeat("内容文本", i+3), "")
+	}
+	q := new(input.Router)
+	selFrame(q, u) // 首帧建立几何
+	if u.transH <= 0 || u.contentH <= u.transH {
+		t.Fatalf("应溢出视口: transH=%d contentH=%d", u.transH, u.contentH)
+	}
+	// 滚回顶部使键 0 可见（followTail 贴底时键 0 在视口上方）。
+	u.followTail = false
+	u.scrollPx = 0
+	selFrame(q, u)
+	r0 := selKeyRect(t, u, 0)
+	if r0.Min.Y < 0 {
+		t.Fatalf("键 0 应可见: %+v", r0)
+	}
+
+	// 起手拖选（按住不放）→ 拖至下缘带内（避开尾部留白带：距底 16px > lowPad 12dp）。
+	q.Queue(selPointer(pointer.Press, r0.Min, true))
+	selFrame(q, u)
+	bottom := image.Pt(r0.Min.X+10, u.transH-16)
+	q.Queue(selPointer(pointer.Move, bottom, true))
+	selFrame(q, u)
+	if !u.sel.active || !u.sel.cand {
+		t.Fatalf("拖选应激活: active=%v cand=%v", u.sel.active, u.sel.cand)
+	}
+	f0 := u.sel.focus
+	p0 := u.scrollPx
+	for i := 0; i < 8; i++ {
+		selFrame(q, u)
+	}
+	if u.scrollPx <= p0 {
+		t.Fatalf("下缘带内应推进 scrollPx: %d → %d", p0, u.scrollPx)
+	}
+	if u.followTail {
+		t.Fatal("推进期间 followTail 应关闭")
+	}
+	f1 := u.sel.focus
+	if f1.key < f0.key || (f1.key == f0.key && f1.rune <= f0.rune) {
+		t.Fatalf("焦点端点应随动: %v → %v", f0, f1)
+	}
+
+	// 移出带（视口中部）：停止推进。
+	q.Queue(selPointer(pointer.Move, image.Pt(r0.Min.X+10, u.transH/2), true))
+	selFrame(q, u)
+	p1 := u.scrollPx
+	for i := 0; i < 5; i++ {
+		selFrame(q, u)
+	}
+	if u.scrollPx != p1 {
+		t.Fatalf("带外应停止推进: %d → %d", p1, u.scrollPx)
+	}
+
+	// 上缘带内：反向推进。
+	q.Queue(selPointer(pointer.Move, image.Pt(r0.Min.X+10, 2), true))
+	selFrame(q, u)
+	p2 := u.scrollPx
+	for i := 0; i < 8; i++ {
+		selFrame(q, u)
+	}
+	if u.scrollPx >= p2 {
+		t.Fatalf("上缘带内应反向推进: %d → %d", p2, u.scrollPx)
+	}
+
+	// 松手：停止。
+	q.Queue(selPointer(pointer.Release, image.Pt(r0.Min.X+10, 2), false))
+	selFrame(q, u)
+	p3 := u.scrollPx
+	for i := 0; i < 5; i++ {
+		selFrame(q, u)
+	}
+	if u.scrollPx != p3 {
+		t.Fatalf("松手应停止推进: %d → %d", p3, u.scrollPx)
+	}
+}

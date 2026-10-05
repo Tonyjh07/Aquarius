@@ -202,6 +202,12 @@ type UI struct {
 	scrollPx         int  // 内容滚动偏移（物理 px，0 = 顶）
 	followTail       bool // 尾随贴底（新内容贴输入栏；上滚即停，§15.3）
 	contentH         int  // 内容总高（上一帧测得，物理 px）
+	transH           int  // 转写视口高（transcript 布局期写；updateSel 消费者阶段读——一帧陈旧，D102 判缘用）
+
+	// D102 拖选贴边自动滚动：selTick = 唤帧心跳（armHeartbeat 同模式，nil = 未运行）；
+	// selScrollAcc = 分数步长累加器（防整除吞步）。仅事件循环 goroutine 读写。
+	selTick      chan struct{}
+	selScrollAcc float64
 
 	// D71 滚轮手势钉点：转写区滚轮真有增量 → 手势进行中（fadePresent 把光标所在
 	// 帧像素 alpha 顶到 ≥1 维持分层窗命中，光标停在透明间隙滚轮不流失到下层窗）；

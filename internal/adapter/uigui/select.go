@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gioui.org/io/clipboard"
@@ -24,6 +25,13 @@ import (
 // selTouchSlopDp 跨块拖选起手 slop（与 Gio gesture 的 touchSlop 同口径：欧氏距离，
 // d² > slop² 才算拖动——小于此值留给块内原生点击/拖选）。
 const selTouchSlopDp unit.Dp = 3
+
+// D102 拖选贴边自动滚动参数：触发带高（视口上/下缘各一）与满速（dp/s，名义 60fps
+// 步长 = 满速/60，带内深度线性 0.35–1.0 加成）。
+const (
+	selScrollBandDp  unit.Dp = 28
+	selScrollSpeedDp unit.Dp = 900
+)
 
 // selPoint 跨块选择端点：线性选键 + 键内 rune 偏移（D91 ② 的几何底座）。
 type selPoint struct {
@@ -68,6 +76,8 @@ type selState struct {
 	// pressedNow 本批（同帧）处理过 Press：widget 尚未消化按压 → 锚用几何值
 	//（否则会读到陈旧选区）。异批激活时改用 widget 选区近端作锚（双击词锚）。
 	pressedNow bool
+	// cur 最新指针位（Press/Drag 更新，D102）：静止带内自动滚动按它判缘并重算端点。
+	cur image.Point
 }
 
 // clear 放弃全部选态（新按压/键面/取消/结构自愈共用）。
@@ -232,6 +242,8 @@ func selColor(c color.NRGBA) color.NRGBA {
 // fade pass 零 Source、收起态无热区 → 都不消费。
 func (u *UI) updateSel(gtx layout.Context) {
 	if u.inFadePass || u.collapsed {
+		u.selHeartbeat(false) // D102：二次布局/收起期不推进（心跳收敛，防悬空唤帧）
+		u.selScrollAcc = 0
 		return
 	}
 	s := &u.sel
@@ -273,6 +285,7 @@ func (u *UI) updateSel(gtx layout.Context) {
 			}
 			if k, hit := u.keyHit(pos); hit {
 				s.cand, s.press, s.candKey, s.pid = true, pos, k, e.PointerID
+				s.cur = pos // D102
 				s.pressedNow = true
 			} else {
 				s.cand = false
@@ -281,6 +294,7 @@ func (u *UI) updateSel(gtx layout.Context) {
 			if !s.cand || e.PointerID != s.pid {
 				continue
 			}
+			s.cur = pos // D102：静止带内判缘/端点随动用最新落点
 			if s.active {
 				if p, ok := u.pointToCaret(pos); ok {
 					s.focus = p
@@ -308,11 +322,15 @@ func (u *UI) updateSel(gtx layout.Context) {
 	}
 	if !s.active {
 		u.selSpansBuf = nil
+		u.selHeartbeat(false)
+		u.selScrollAcc = 0
 		return
 	}
 	// 结构指纹自愈（D91 ④）：键位/铺开/文本任一变化即清——选区不漂移到错块。
 	if s.fp != u.keyFp {
 		u.clearSel()
+		u.selHeartbeat(false)
+		u.selScrollAcc = 0
 		return
 	}
 	// 键面条件 pull（D91 ④）：选区存续期独占 Ctrl+C（编辑器焦点过滤器此刻不匹配
@@ -337,6 +355,101 @@ func (u *UI) updateSel(gtx layout.Context) {
 		}
 	}
 	u.selSpansBuf = u.selSpans()
+	// D102 贴边自动滚动：active+cand 且指针在缘带内按帧推进（含端点随动与唤帧心跳）。
+	u.selAutoScroll(gtx)
+}
+
+// selAutoScroll D102 拖选贴边自动滚动：指针在转写视口上/下缘 28dp 带内（含拖出窗外）
+// → 按帧推进 scrollPx（名义 60fps、满速 900dp/s、带内深度线性 0.35–1.0，分数步长
+// 累加器防整除吞步），推进后以指针位重算焦点（端点随动）；followTail 推进期间关闭、
+// 向下触底恢复。transH/边界取上一帧值（消费者阶段先于 transcript 量高），一帧陈旧
+// 与 keyRects 同口径。
+func (u *UI) selAutoScroll(gtx layout.Context) {
+	s := &u.sel
+	if !s.active || !s.cand || u.transH <= 0 {
+		u.selHeartbeat(false)
+		u.selScrollAcc = 0
+		return
+	}
+	band := gtx.Dp(selScrollBandDp)
+	var dir int
+	switch {
+	case s.cur.Y <= band:
+		dir = -1
+	case s.cur.Y >= u.transH-band:
+		dir = +1
+	default:
+		u.selHeartbeat(false)
+		u.selScrollAcc = 0
+		return
+	}
+	u.selHeartbeat(true)
+	// 深度线性加成：越贴边越快（带缘 0.35×，带外/缘上 1×）。
+	dist := s.cur.Y
+	if dir > 0 {
+		dist = u.transH - s.cur.Y
+	}
+	if dist < 0 {
+		dist = 0
+	}
+	depth := 1 - float64(dist)/float64(band)
+	u.selScrollAcc += float64(gtx.Dp(selScrollSpeedDp)) / 60 * (0.35 + 0.65*depth)
+	whole := int(u.selScrollAcc)
+	if whole <= 0 {
+		return
+	}
+	u.selScrollAcc -= float64(whole)
+	overflow := u.contentH - u.transH
+	if overflow <= 0 {
+		return
+	}
+	u.followTail = false // 推进期间关闭贴底钉住（触底时下方恢复）
+	u.scrollPx += whole * dir
+	if u.scrollPx < 0 {
+		u.scrollPx = 0
+	}
+	if u.scrollPx > overflow {
+		u.scrollPx = overflow
+	}
+	if dir > 0 && u.scrollPx >= overflow {
+		u.followTail = true
+	}
+	// 端点随动：视图滚动后指针下的文档位前移（keyRects 一帧陈旧 → 滞后一帧收敛）。
+	if p, ok := u.pointToCaret(s.cur); ok {
+		s.focus = p
+	}
+}
+
+// selHeartbeat D102③ 自动滚动唤帧心跳：指针静止带内无事件无帧、推进停摆——按 30ms
+// 主动 Invalidate 唤帧（armHeartbeat 同模式）。need 由 selAutoScroll 判定；出带/松手/
+// 失活/收起即收敛关停，无泄漏。headless（w=nil）不启动。
+func (u *UI) selHeartbeat(need bool) {
+	if need && u.w != nil {
+		if u.selTick != nil {
+			return
+		}
+		ch := make(chan struct{})
+		u.selTick = ch
+		go func() {
+			t := time.NewTicker(30 * time.Millisecond)
+			defer t.Stop()
+			for {
+				select {
+				case <-t.C:
+					u.w.Invalidate() // 并发安全（armHeartbeat 同模式）
+				case <-ch:
+					return
+				case <-u.done:
+					return
+				}
+			}
+		}()
+		return
+	}
+	if u.selTick != nil {
+		close(u.selTick)
+		u.selTick = nil
+	}
 }
 
 // selActivate 越 slop 激活（D91 ①②③）：抢先 grab + 清焦 + 定锚推焦点。

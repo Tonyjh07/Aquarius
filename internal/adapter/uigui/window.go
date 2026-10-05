@@ -666,11 +666,13 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 		// 空态不渲染任何元素（悬浮球只剩输入栏，区域全透；转写浮层"提交后出现"，§15.1）。
 		u.contentH = 0
 		u.scrollPx = 0
+		u.transH = 0
 		u.keyRects = u.keyRects[:0]       // 键清零 → 指针值（0）与任何选区指纹都不同，选区下帧自愈
 		u.bubbleRects = u.bubbleRects[:0] // D92：气泡矩形随帧复位
 		u.keyFp = 0
 		return
 	}
+	u.transH = h // D102：贴边自动滚动判缘（消费者阶段读上一帧值）
 	viewport := image.Rectangle{Max: image.Pt(w, h)}
 	st := clip.Rect{Max: image.Pt(w, h)}.Push(gtx.Ops)
 	defer st.Pop()
