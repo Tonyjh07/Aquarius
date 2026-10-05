@@ -1355,9 +1355,10 @@ Carry 后续历史边转移 / Clone 后续历史深拷贝）；重新生成 = �
   不做 Gio 自绘浮层。
 - **分发**：重新生成 = `/regen <id>`（`inputMsg` 同键入路径）；编辑三方式 = `editMsg{mode}`
   回 Gio 进编辑态；复制 = `copyMsg` → 主循环记 `pendingCopy` → 下一帧 `gtx.Execute(clipboard.
-  WriteCmd)`（剪贴板写入必须在 Gio 帧）；引用 = `quoteMsg` → `quoteInto` 追加引用块进
-  输入框 + 焦点入框（不进编辑态，D98）。复制/引用同口径：有选区 → 选区（D91 选态复用，
-  可跨块）；无选区 → 整条气泡渲染文本（逐键 `Text()` 拼接，与 `selCopy` 同口径）。
+  WriteCmd)`（剪贴板写入必须在 Gio 帧）；引用 = `quoteMsg` → `quoteInto` 单行引用前缀
+  （`> 文本`，换行压平——SingleLine 编辑框所见即所发）追加进输入框 + 焦点入框（不进
+  编辑态，D98）。复制/引用同口径：有选区 → 选区（D91 选态复用，可跨块）；无选区 →
+  整条气泡渲染文本（逐键 `Text()` 拼接，与 `selCopy` 同口径）。
 - **编辑态**：预填输入框 + `editTarget` + `editMode`（D97）+ 方式后缀轻提示（`编辑中（转移
   历史）· Enter 提交 / Esc 取消`，Fresh 无后缀；空文本 = 取消）；提交 = 结构化
   `Command{Name:"edit", Args:[id, ("--keep"|"--copy")?, 文本]}`（不经斜杠解析，多行文本保真；

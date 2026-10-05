@@ -557,6 +557,9 @@ type (
 	// pendingCopy，下一帧经 gtx.Execute(clipboard.WriteCmd) 落盘（剪贴板写入必须在
 	// Gio 帧上下文执行，shell 线程不可直达）。
 	copyMsg struct{ text string }
+	// quoteMsg 引用请求（D98 气泡菜单「引用」经 shell 线程分发投递）：文本口径与复制
+	// 一致（选区优先/整条渲染文本，D98①），Gio 侧经 quoteInto 追加引用块进输入框。
+	quoteMsg struct{ text string }
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
 		prompt string
@@ -598,6 +601,11 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.focusPending = true
 	case copyMsg:
 		u.pendingCopy = m.text // D92：记账，frame 内 flushCopy 落剪贴板
+	case quoteMsg:
+		// D98 引用："> " 引用块追加进输入框 + 焦点入框；不进编辑态（editTarget 不动，
+		// 引用是起草新输入、非修订历史）。
+		u.editor.SetText(quoteInto(u.editor.Text(), m.text))
+		u.focusPending = true
 	case confirmMsg:
 		u.m.startConfirm(m.prompt, m.reply)
 	case confirmResultMsg:
@@ -663,6 +671,18 @@ func parseInput(line string) port.UserInput {
 		}}
 	}
 	return port.UserInput{Text: line}
+}
+
+// quoteInto 把引用文本组为单行引用前缀追加到 existing（D98）："> " + 文本，文本内
+// 换行压为空格——输入框 SingleLine（D49），多行引用无法成块（Gio SetText/Insert 在
+// SingleLine 下均把 \n 替换为空格），沿 D92 后果②「所见即所发」口径；2b-4 展开态
+// 多行编辑区落地后可升级为整块引用。existing 非空以空格衔接。
+func quoteInto(existing, quoted string) string {
+	line := "> " + strings.ReplaceAll(quoted, "\n", " ")
+	if existing == "" {
+		return line
+	}
+	return existing + " " + line
 }
 
 // isYes y/yes（大小写不敏感）为同意——与 repl.Confirm 语义一致。

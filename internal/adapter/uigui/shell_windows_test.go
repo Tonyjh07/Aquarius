@@ -120,9 +120,10 @@ func TestMenuDispatchNew(t *testing.T) {
 	}
 }
 
-// TestMenuDispatchBubble D92/D97 气泡菜单分发：重新生成 = /regen（与键入同路径）、
+// TestMenuDispatchBubble D92/D97/D98 气泡菜单分发：重新生成 = /regen（与键入同路径）、
 // 复制 = copyMsg 记账 → 帧内落剪贴板、编辑三方式 = editMsg（mode 随项而设）进编辑态
-// （预填原文）；项集 user/assistant 同集五项（呈现契约，测试锁定）。
+// （预填原文）、引用 = quoteMsg 追加引用块；项集 user/assistant 同集六项（呈现契约，
+// 测试锁定）。
 func TestMenuDispatchBubble(t *testing.T) {
 	u := newHeadless(t, Options{})
 
@@ -166,7 +167,19 @@ func TestMenuDispatchBubble(t *testing.T) {
 		}
 	}
 
-	// 项集 user/assistant 同集五项（D97：助手开放编辑；kind 参数留 thinking/chip 差异化）。
+	// 引用（D98）：quoteMsg → 输入框追加单行引用前缀（不进编辑态）。先清上一段编辑态残留。
+	u.editor.SetText("")
+	u.m.editTarget = ""
+	menuDispatchBubble(u, &bubbleMenuCtx{id: "a1", kind: blockAssistant, copy: "一\n二"}, cmdBubbleQuote)
+	drainSync(t, u)
+	if u.m.editTarget != "" {
+		t.Fatalf("引用不应进编辑态: target=%q", u.m.editTarget)
+	}
+	if got := u.editor.Text(); got != "> 一 二" {
+		t.Fatalf("编辑框 = %q, want > 一 二（换行压平）", got)
+	}
+
+	// 项集 user/assistant 同集六项（D97 三方式 + D98 引用；kind 参数留 thinking/chip 差异化）。
 	want := []struct {
 		id    uintptr
 		label string
@@ -176,6 +189,7 @@ func TestMenuDispatchBubble(t *testing.T) {
 		{cmdBubbleEditCopy, "编辑并复制历史"},
 		{cmdBubbleRegen, "重新生成"},
 		{cmdBubbleCopy, "复制"},
+		{cmdBubbleQuote, "引用"},
 	}
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
 		items := bubbleMenuItems(kind)

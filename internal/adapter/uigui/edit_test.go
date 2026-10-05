@@ -12,16 +12,20 @@ import (
 )
 
 // newEditUI 带 inCh 的编辑流测试 UI（newFrameUI 无 inCh——编辑提交要断言通道）。
+// 编辑器对齐生产配置（SingleLine，gui.go:326）——多行文本在 SetText/Insert 时压平。
 func newEditUI() *UI {
 	u := &UI{followTail: true, inCh: make(chan port.UserInput, 8)}
 	u.m = newModel(u)
 	u.th = newTheme()
+	u.editor.Submit = true
+	u.editor.SingleLine = true
 	return u
 }
 
 // TestEditSubmitStructured D92 编辑态提交：结构化 /edit 命令（Args=[id, 文本] 直达，
-// 不经斜杠解析——多行文本保真），不回显 blockUser（修订结果由清屏回放呈现）；
-// 提交后退出编辑态。
+// 不经斜杠解析），不回显 blockUser（修订结果由清屏回放呈现）；提交后退出编辑态。
+// 多行文本在 SingleLine 编辑框内压平为空格（所见即所发，D92 后果②；命令管线对
+// buffer 内容零再加工）。
 func TestEditSubmitStructured(t *testing.T) {
 	u := newEditUI()
 	u.m.addMsg(blockUser, "旧问题", "u1")
@@ -38,8 +42,8 @@ func TestEditSubmitStructured(t *testing.T) {
 	select {
 	case in := <-u.inCh:
 		if in.Command == nil || in.Command.Name != "edit" ||
-			len(in.Command.Args) != 2 || in.Command.Args[0] != "u1" || in.Command.Args[1] != "新问题\n第二行" {
-			t.Fatalf("inCh = %+v, want 结构化 edit 命令且多行保真", in)
+			len(in.Command.Args) != 2 || in.Command.Args[0] != "u1" || in.Command.Args[1] != "新问题 第二行" {
+			t.Fatalf("inCh = %+v, want 结构化 edit 命令且所见即所发", in)
 		}
 	default:
 		t.Fatal("inCh 未收到提交")
@@ -128,6 +132,47 @@ func TestEditSubmitModes(t *testing.T) {
 				t.Fatal("inCh 未收到提交")
 			}
 		})
+	}
+}
+
+// TestQuoteInto D98 引用装配纯函数："> " 单行引用前缀（换行压为空格——SingleLine
+// 编辑框口径）、非空以空格衔接。
+func TestQuoteInto(t *testing.T) {
+	cases := []struct {
+		name     string
+		existing string
+		quoted   string
+		want     string
+	}{
+		{"空框单行", "", "引用文本", "> 引用文本"},
+		{"空框多行压平", "", "一\n二", "> 一 二"},
+		{"非空衔接", "草稿", "引用", "草稿 > 引用"},
+		{"非空多行引用", "草稿", "一\n二", "草稿 > 一 二"},
+		{"引用含空行", "", "一\n\n二", "> 一  二"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quoteInto(tc.existing, tc.quoted); got != tc.want {
+				t.Fatalf("quoteInto(%q, %q) = %q, want %q", tc.existing, tc.quoted, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestQuoteDispatch D98 引用 apply：追加而非替换（保留既有草稿）、不进编辑态、焦点待入。
+func TestQuoteDispatch(t *testing.T) {
+	u := newEditUI()
+	u.apply(quoteMsg{text: "一\n二"})
+	if u.m.editTarget != "" || !u.focusPending {
+		t.Fatalf("编辑态 = %q focusPending=%v, want 空且待入焦", u.m.editTarget, u.focusPending)
+	}
+	if got := u.editor.Text(); got != "> 一 二" {
+		t.Fatalf("编辑框 = %q, want > 一 二", got)
+	}
+	u.editor.SetText("已有草稿")
+	u.apply(quoteMsg{text: "引用"})
+	if got := u.editor.Text(); got != "已有草稿 > 引用" {
+		t.Fatalf("编辑框 = %q, want 追加", got)
 	}
 }
 
