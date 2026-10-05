@@ -484,7 +484,7 @@ func TestHistoryReplayThinking(t *testing.T) {
 
 	m, _ := newTestModel(t)
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
-		Role: conversation.RoleAssistant, Outcome: conversation.OutcomeDone, Content: parts,
+		ID: "a1", Role: conversation.RoleAssistant, Outcome: conversation.OutcomeDone, Content: parts,
 	}})
 	if len(m.blocks) != 2 {
 		t.Fatalf("blocks = %d, want 2（思考块 + 正文块）", len(m.blocks))
@@ -494,6 +494,9 @@ func TestHistoryReplayThinking(t *testing.T) {
 	}
 	if m.blocks[0].secs != -1 {
 		t.Fatalf("回放思考块 secs = %d, want -1（无耗时）", m.blocks[0].secs)
+	}
+	if m.blocks[0].id != "a1" || m.blocks[1].id != "a1" {
+		t.Fatalf("块 ID = %q/%q, want 均盖 a1（D100② 回放直盖）", m.blocks[0].id, m.blocks[1].id)
 	}
 	if m.blocks[1].kind != blockAssistant || !strings.Contains(m.blocks[1].text, "答案") {
 		t.Fatalf("blocks[1] = %+v, want 正文块", m.blocks[1])
@@ -506,7 +509,7 @@ func TestHistoryReplayThinking(t *testing.T) {
 	live, _ := newTestModel(t)
 	live.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "先想一想", Reasoning: true}})
 	live.handleEvent(port.CommittedEvent{Message: conversation.Message{
-		Role: conversation.RoleAssistant, Outcome: conversation.OutcomeDone, Content: parts,
+		ID: "a2", Role: conversation.RoleAssistant, Outcome: conversation.OutcomeDone, Content: parts,
 	}})
 	thinking := 0
 	for _, b := range live.blocks {
@@ -516,6 +519,9 @@ func TestHistoryReplayThinking(t *testing.T) {
 	}
 	if thinking != 1 {
 		t.Fatalf("实时流思考块 = %d, want 恰好 1（提交不重复渲染）", thinking)
+	}
+	if live.blocks[0].id != "a2" {
+		t.Fatalf("实时思考块 ID = %q, want commit 补盖 a2（D100②）", live.blocks[0].id)
 	}
 	if len(live.blocks) != 2 || !strings.Contains(live.blocks[1].text, "答案") {
 		t.Fatalf("live blocks = %+v, want 思考块 + 正文块", live.blocks)

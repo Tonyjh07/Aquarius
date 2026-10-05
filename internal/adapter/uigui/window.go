@@ -1046,6 +1046,51 @@ func chipHeaderText(c *toolChip, open bool) string {
 	return arrow + " " + line + " · " + status
 }
 
+// chipCopyText chip 的复制文本（D100④）：工具名 + 参数 + 结果——与展开体同源数据，
+// 剔除箭头/状态/问答着色等 UI 修饰。
+func chipCopyText(c *toolChip) string {
+	var b strings.Builder
+	b.WriteString(c.name)
+	if s := strings.TrimSpace(c.args); s != "" {
+		b.WriteString("\n")
+		b.WriteString(s)
+	}
+	if c.done && c.result != "" {
+		mark := "结果 ✓"
+		if !c.ok {
+			mark = "结果 ✗"
+		}
+		b.WriteString("\n")
+		b.WriteString(mark)
+		b.WriteString("\n")
+		b.WriteString(c.result)
+	}
+	return b.String()
+}
+
+// chipRaw chip 的查看原文内容（D100④）：调用/结果组为 JSON（参数为合法 JSON 时内嵌
+// 原值，否则降级为字符串字段）。
+func chipRaw(c *toolChip) rawContent {
+	payload := struct {
+		Tool      string          `json:"tool"`
+		Arguments json.RawMessage `json:"arguments,omitempty"`
+		ArgsText  string          `json:"arguments_text,omitempty"`
+		Done      bool            `json:"done"`
+		OK        bool            `json:"ok,omitempty"`
+		Result    string          `json:"result,omitempty"`
+	}{Tool: c.name, Done: c.done, OK: c.ok, Result: c.result}
+	if json.Valid([]byte(c.args)) {
+		payload.Arguments = json.RawMessage(c.args)
+	} else {
+		payload.ArgsText = c.args
+	}
+	b, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		b = []byte(c.name + "\n" + c.args + "\n" + c.result)
+	}
+	return rawContent{title: "工具调用 · " + c.name, text: string(b)}
+}
+
 // toolChipRow 工具合并 chip（D67）：头部行可点击折叠/展开；展开体 = 参数（等宽全文）+
 // 权限问答（暗色）+ 结果全文。头部为点击热区不挂行选；参数/结果可选
 // （键位固定 2 = selCount，开合不漂移后续行序号）。手排纵列（D91 ②：量期知块偏移；
@@ -1669,10 +1714,17 @@ type blockView struct {
 	keyBase int
 }
 
-// menuable 该条目是否响应气泡右键（D92）：带节点 ID 的 user/assistant 定稿块
-// （live 草稿/思考/chip/notice 无 id 或非正文角色，不进菜单）。
+// menuable 该条目是否响应气泡右键（D92/D100）：user/assistant 需带节点 ID（编辑/
+// 重生成目标）；thinking 定稿块需已盖章（D100②）；工具 chip 态自足（无节点 ID 亦可，
+// 复制/查看原文不需要）。live 草稿/notice/分叉条不进菜单。
 func (it blockView) menuable() bool {
-	return it.id != "" && (it.kind == blockUser || it.kind == blockAssistant)
+	switch it.kind {
+	case blockUser, blockAssistant, blockThinking:
+		return it.id != ""
+	case blockTool:
+		return it.chip != nil
+	}
+	return false
 }
 
 // selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数；工具 chip = 恒 2
@@ -1797,7 +1849,8 @@ func (u *UI) frameItems() []blockView {
 		case b.kind == blockAssistant:
 			items = append(items, blockView{kind: blockAssistant, md: u.mdBlocks(b.text), bi: bi, id: b.id})
 		case b.kind == blockTool && b.chip != nil:
-			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi})
+			// bi 同填（D100：chip 右键经 bubbleHit.bi 回查 chip 态；chipIdx = 点击件缓存槽）。
+			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi, bi: bi})
 		default:
 			items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs, bi: bi, id: b.id})
 		}
@@ -2285,31 +2338,54 @@ func (u *UI) updateBubbleRight(gtx layout.Context) {
 	u.requestBubbleMenu(u.bubbleCtx(pi))
 }
 
-// bubbleMenuCtx 气泡右键菜单上下文（D92/D97）：Gio 线程命中时组好、atomic.Pointer 过
-// 线程到 shell；edit = 编辑预填文本（user/assistant 块原文，D97 开放助手编辑），copy =
-// 复制文本（选区优先，否则整条渲染文本）。
+// bubbleMenuCtx 气泡右键菜单上下文（D92/D97/D99/D100）：Gio 线程命中时组好、
+// atomic.Pointer 过线程到 shell；edit = 编辑预填文本（user/assistant 块原文，D97 开放
+// 助手编辑），copy = 复制文本（选区优先，否则按块角色取），raw = 查看原文内容
+// （D99/D100：标题 + 原始文本/JSON）。
 type bubbleMenuCtx struct {
 	id   conversation.MessageID
 	kind blockKind
 	edit string
 	copy string
+	raw  rawContent
 }
 
-// bubbleCtx 组装菜单上下文（D92/D97）：复制文本此刻定——选区激活取选区（D91 后果⑤：
-// 副键留菜单复用选态），否则整条气泡渲染文本（逐键 Text 拼接，与 selCopy 同口径）；
-// user/assistant 块另备编辑预填原文。
+// bubbleCtx 组装菜单上下文（D92/D97/D99/D100）：复制文本此刻定——选区激活取选区
+// （D91 后果⑤：副键留菜单复用选态），否则按块角色（chip 用其态字段，见 D100④——
+// 折叠态键未铺开、blockText 不可靠；其余逐键 Text 拼接与 selCopy 同口径）；编辑预填
+// 仅 user/assistant；raw 按块角色组装。
 func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	it := u.bubbleRects[h]
 	ctx := &bubbleMenuCtx{id: it.id, kind: it.kind}
-	if u.sel.active {
+	chip := u.chipOf(it) // D100：chip 态取自所源块（bubbleHit 不携指针）
+	switch {
+	case u.sel.active:
 		ctx.copy = u.selText()
-	} else {
+	case chip != nil:
+		ctx.copy = chipCopyText(chip)
+	default:
 		ctx.copy = u.blockText(it.keyBase, it.keyN)
 	}
 	if (it.kind == blockUser || it.kind == blockAssistant) && it.bi < len(u.m.blocks) {
 		ctx.edit = u.m.blocks[it.bi].text
 	}
+	switch {
+	case chip != nil:
+		ctx.raw = chipRaw(chip)
+	case it.kind == blockThinking && it.bi < len(u.m.blocks):
+		ctx.raw = rawContent{title: "思考原文 · " + shortID(string(it.id)), text: u.m.blocks[it.bi].text}
+	case it.bi < len(u.m.blocks):
+		ctx.raw = rawContent{title: "原文 · " + shortID(string(it.id)), text: u.m.blocks[it.bi].text}
+	}
 	return ctx
+}
+
+// chipOf 命中矩形对应的 chip（D100）：经块序回查 model 块（越界/非工具块 = nil）。
+func (u *UI) chipOf(it bubbleHit) *toolChip {
+	if it.kind != blockTool || it.bi >= len(u.m.blocks) {
+		return nil
+	}
+	return u.m.blocks[it.bi].chip
 }
 
 // requestBubbleMenu 请求弹出气泡右键菜单（D92）：测试经 bubbleMenuHook 回执；生产

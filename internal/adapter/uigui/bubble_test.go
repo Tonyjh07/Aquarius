@@ -1,12 +1,16 @@
 package uigui
 
 import (
+	"encoding/json"
 	"image"
+	"strings"
 	"testing"
 
 	"gioui.org/f32"
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
 // rectCenterF 矩形中心的指针坐标（气泡命中测试用）。
@@ -160,5 +164,56 @@ func TestBubbleCtxCopy(t *testing.T) {
 	cs := u.bubbleCtx(u.hitBubble(rectCenterI(u.bubbleRects[0].rect)))
 	if cs.copy != "二" {
 		t.Fatalf("选区优先 copy = %q, want 二", cs.copy)
+	}
+}
+
+// TestBubbleRectsThinkingChip D100：思考块与工具 chip 进右键命中；ctx 按块角色组装
+// 复制文本与查看原文内容（thinking = 思考原文标题、chip = 调用/结果 JSON）；两者菜单
+// 项集 = 复制/查看原文两项。
+func TestBubbleRectsThinkingChip(t *testing.T) {
+	u := newFrameUI()
+	u.m.addMsg(blockUser, "问", "u1")
+	u.m.addMsg(blockThinking, "想一想", "a1")
+	u.m.addToolCall(tool.Call{ID: "k1", Name: "think", Args: json.RawMessage(`{"q":1}`)})
+	u.m.attachToolResult(tool.Result{CallID: "k1", OK: true, Output: "完毕"})
+	q := new(input.Router)
+	bubbleFrame(q, u)
+
+	var thinkHit, chipHit *bubbleHit
+	for i := range u.bubbleRects {
+		switch u.bubbleRects[i].kind {
+		case blockThinking:
+			thinkHit = &u.bubbleRects[i]
+		case blockTool:
+			chipHit = &u.bubbleRects[i]
+		}
+	}
+	if thinkHit == nil || chipHit == nil {
+		t.Fatalf("bubbleRects = %+v, want thinking/chip 均登记", u.bubbleRects)
+	}
+
+	// thinking ctx：复制 = 思考文本；raw = 思考原文标题；无编辑预填。
+	ct := u.bubbleCtx(u.hitBubble(rectCenterI(thinkHit.rect)))
+	if ct.copy != "想一想" || ct.raw.title != "思考原文 · a1" || ct.raw.text != "想一想" || ct.edit != "" {
+		t.Fatalf("thinking ctx = %+v", ct)
+	}
+
+	// chip ctx：复制 = 名+参数+结果（剔除 UI 修饰）；raw = JSON 内嵌参数原值。
+	cc := u.bubbleCtx(u.hitBubble(rectCenterI(chipHit.rect)))
+	if want := "think\n{\"q\":1}\n结果 ✓\n完毕"; cc.copy != want {
+		t.Fatalf("chip copy = %q, want %q", cc.copy, want)
+	}
+	if cc.raw.title != "工具调用 · think" ||
+		!strings.Contains(cc.raw.text, `"tool": "think"`) ||
+		!strings.Contains(cc.raw.text, `"q": 1`) {
+		t.Fatalf("chip raw = %+v", cc.raw)
+	}
+
+	// 项集：thinking/tool 两项（复制/查看原文）。
+	for _, kind := range []blockKind{blockThinking, blockTool} {
+		items := bubbleMenuItems(kind)
+		if len(items) != 2 || items[0].label != "复制" || items[1].label != "查看原文" {
+			t.Fatalf("%v 菜单项 = %+v, want 复制/查看原文", kind, items)
+		}
 	}
 }

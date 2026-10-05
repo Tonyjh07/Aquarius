@@ -374,20 +374,24 @@ func permLevelOf(u *UI) string {
 	return u.opts.Status().Level
 }
 
-// bubbleMenuItems 气泡右键菜单（D92/D97/D98/D99，项序/文案为契约测试锁定）：user/
-// assistant 同集七项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone 深拷贝
-// 后续历史）+ 重新生成/复制/引用/查看原文。kind 参数留给 thinking/chip 放开后的项集
-// 差异化（S2 增强项 D 步）。
+// bubbleMenuItems 气泡右键菜单（D92/D97/D98/D99/D100，项序/文案为契约测试锁定）：
+// user/assistant 同集七项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone
+// 深拷贝后续历史）+ 重新生成/复制/引用/查看原文；thinking 定稿块与工具 chip = 复制/
+// 查看原文两项（D100③）。
 func bubbleMenuItems(kind blockKind) []menuIt {
-	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
 	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
+	raw := menuIt{id: cmdBubbleRaw, label: "查看原文"}
+	if kind == blockThinking || kind == blockTool {
+		return []menuIt{cp, raw}
+	}
+	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
 	return []menuIt{
 		{id: cmdBubbleEdit, label: "编辑"},
 		{id: cmdBubbleEditKeep, label: "编辑并转移历史"},
 		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
 		regen, cp,
 		{id: cmdBubbleQuote, label: "引用"},
-		{id: cmdBubbleRaw, label: "查看原文"},
+		raw,
 	}
 }
 
@@ -429,12 +433,10 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 	case cmdBubbleQuote:
 		_ = u.post(quoteMsg{text: ctx.copy})
 	case cmdBubbleRaw:
-		// D99 查看原文：内容入原子槽（edit = 消毒后原始 markdown，与编辑预填同源）
-		// → 单实例次窗呈现；已开 = 聚焦 + 原地刷新（invalidateKind 请求重绘）。
-		u.rawView.Store(&rawContent{
-			title: "原文 · " + shortID(string(ctx.id)),
-			text:  ctx.edit,
-		})
+		// D99/D100 查看原文：raw 内容（bubbleCtx 按块角色组装——正文原文/思考原文/
+		// 工具 JSON）入原子槽 → 单实例次窗呈现；已开 = 聚焦 + 原地刷新（invalidateKind）。
+		raw := ctx.raw
+		u.rawView.Store(&raw)
 		u.wins.openWin(winRaw)
 		u.wins.invalidateKind(winRaw)
 	}

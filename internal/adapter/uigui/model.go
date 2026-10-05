@@ -167,6 +167,13 @@ func (m *model) commit(msg conversation.Message) {
 	switch msg.Role {
 	case conversation.RoleAssistant:
 		start := len(m.blocks)
+		// D100②：本轮思考块补盖节点 ID（未盖章 = 本轮所产——前轮已在各自 commit 盖过），
+		// thinking 右键取"所源节点"语义；分叉条挂点口径不变（branchStrips 不取 thinking）。
+		for i := range m.blocks {
+			if b := &m.blocks[i]; b.kind == blockThinking && b.id == "" {
+				b.id = msg.ID
+			}
+		}
 		m.resetDraft()
 		segs := textSegments(msg.Content)
 		if len(segs) == 0 && len(m.flushedDrafts) == 0 {
@@ -261,17 +268,18 @@ func textSegments(parts []conversation.Part) []string {
 	return segs
 }
 
-// stampAssistantAnchor 无正文 assistant 节点的分叉锚点回填（D89）：thinking 卡与
-// 工具 chip 都不携节点 ID，纯工具轮（模型径直发起调用、无正文）在转写里没有任何
-// 带 ID 的块 → 分叉条无处可挂（branchStrips 跳过空 ID 块），切到该分支后无法切回。
-// 优先按调用 ID 匹配本轮 chip（该节点的可见表示），无工具则锚到本轮最后一个新块
-// （思考卡）。已有锚（带正文块直携 ID）时 no-op。
+// stampAssistantAnchor 无正文 assistant 节点的分叉锚点回填（D89）：纯工具轮（模型
+// 径直发起调用、无正文）在转写里没有任何带 ID 的**分叉挂点块** → 分叉条无处可挂
+// （branchStrips 跳过空 ID 块），切到该分支后无法切回。优先按调用 ID 匹配本轮 chip
+// （该节点的可见表示），无工具则锚到本轮最后一个新块。已有锚（挂点块直携 ID）时
+// no-op——检查只看 user/assistant/tool（D100②：thinking 块现已盖章，但 branchStrips
+// 不取 thinking，思考块带 ID 不构成锚）。
 func (m *model) stampAssistantAnchor(msg conversation.Message, start int) {
 	if start > len(m.blocks) {
 		start = len(m.blocks)
 	}
 	for _, b := range m.blocks[start:] {
-		if b.id == msg.ID {
+		if b.id == msg.ID && (b.kind == blockUser || b.kind == blockAssistant || b.kind == blockTool) {
 			return
 		}
 	}
@@ -338,7 +346,7 @@ func (m *model) replay(msg conversation.Message) {
 			case conversation.PartThinking:
 				flushSeg()
 				if strings.TrimSpace(p.Text) != "" {
-					m.add(blockThinking, p.Text) // 回放无耗时 → secs 置 -1（add 内统一处理）
+					m.addMsg(blockThinking, p.Text, msg.ID) // 回放无耗时 → secs 置 -1；D100② 直盖节点 ID
 				}
 			case conversation.PartTool:
 				flushSeg()

@@ -179,8 +179,12 @@ func TestMenuDispatchBubble(t *testing.T) {
 		t.Fatalf("编辑框 = %q, want > 一 二（换行压平）", got)
 	}
 
-	// 查看原文（D99）：内容入 rawView 原子槽 + 开窗（headless spawn=nil = no-op 不 panic）。
-	menuDispatchBubble(u, &bubbleMenuCtx{id: "a1b2c3d4e5f6", kind: blockAssistant, edit: "**原始** markdown"}, cmdBubbleRaw)
+	// 查看原文（D99/D100）：ctx.raw（bubbleCtx 按块角色组装）入原子槽 + 开窗
+	// （headless spawn=nil = no-op 不 panic）。
+	menuDispatchBubble(u, &bubbleMenuCtx{
+		id: "a1b2c3d4e5f6", kind: blockAssistant, edit: "**原始** markdown",
+		raw: rawContent{title: "原文 · a1b2c3d4", text: "**原始** markdown"},
+	}, cmdBubbleRaw)
 	drainSync(t, u)
 	c := u.rawView.Load()
 	if c == nil || c.title != "原文 · a1b2c3d4" || c.text != "**原始** markdown" {
