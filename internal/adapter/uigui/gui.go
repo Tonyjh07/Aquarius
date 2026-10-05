@@ -237,6 +237,9 @@ type UI struct {
 	// pendingCopy 挂起的剪贴板写入（D92）：copyMsg 记账，frame 内 flushCopy 经
 	// gtx.Execute 落盘后清空。仅事件循环 goroutine 读写。
 	pendingCopy string
+	// rawView 查看原文窗内容原子槽（D99）：菜单分发处（托盘线程）Store，winRaw 次窗
+	// 帧内 Load——跨线程只经原子快照，不共享可变态（§15.7 并发模型）。
+	rawView atomic.Pointer[rawContent]
 
 	// 分叉条点击件（D81）：按分叉条序缓存左右两个 Clickable（get-or-create）；分叉条
 	// 消费 0 个行选键（selCount），故其增删不漂移其它行的选择键。仅事件循环 goroutine 读写。

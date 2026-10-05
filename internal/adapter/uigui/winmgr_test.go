@@ -53,6 +53,27 @@ func TestWinHostSingleInstance(t *testing.T) {
 	}
 }
 
+// TestWinHostInvalidateKind D99 invalidateKind：已开窗投递重绘请求、未开/其它 kind
+// = no-op（不 panic）。
+func TestWinHostInvalidateKind(t *testing.T) {
+	h := newWinHost(func(winKind) *winHandle { return &winHandle{done: make(chan struct{})} })
+	h.invalidateKind(winRaw) // 未开：no-op
+	h.openWin(winRaw)
+	h.invalidateKind(winHistory) // 其它 kind 未开：no-op
+	h.mu.Lock()
+	cur := h.live[winRaw]
+	h.mu.Unlock()
+	called := make(chan struct{}, 1)
+	inv := func() { called <- struct{}{} }
+	cur.invalidate.Store(&inv)
+	h.invalidateKind(winRaw)
+	select {
+	case <-called:
+	default:
+		t.Fatal("invalidate 未被调用")
+	}
+}
+
 // TestWinHostReopenAfterClose 用户关窗（X → DestroyEvent → done）后 watcher
 // 摘除登记，允许重开。
 func TestWinHostReopenAfterClose(t *testing.T) {

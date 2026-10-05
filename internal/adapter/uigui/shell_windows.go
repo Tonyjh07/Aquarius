@@ -97,7 +97,8 @@ const (
 	cmdBubbleCopy     = 122 // 气泡右键：复制（D92 → copyMsg，下一帧写剪贴板）
 	cmdBubbleEditKeep = 123 // 气泡右键：编辑并转移历史（D97 → editMsg Carry）
 	cmdBubbleEditCopy = 124 // 气泡右键：编辑并复制历史（D97 → editMsg Clone）
-	cmdBubbleQuote    = 125 // 气泡右键：引用（D98 → quoteMsg 追加引用块进输入框）
+	cmdBubbleQuote    = 125 // 气泡右键：引用（D98 → quoteMsg 追加引用前缀进输入框）
+	cmdBubbleRaw      = 126 // 气泡右键：查看原文（D99 → rawView 原子槽 + winRaw 次窗）
 
 	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
 
@@ -373,9 +374,10 @@ func permLevelOf(u *UI) string {
 	return u.opts.Status().Level
 }
 
-// bubbleMenuItems 气泡右键菜单（D92/D97/D98，项序/文案为契约测试锁定）：user/assistant
-// 同集六项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone 深拷贝后续历史）
-// + 重新生成/复制/引用。kind 参数留给 thinking/chip 放开后的项集差异化（S2 增强项 D 步）。
+// bubbleMenuItems 气泡右键菜单（D92/D97/D98/D99，项序/文案为契约测试锁定）：user/
+// assistant 同集七项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone 深拷贝
+// 后续历史）+ 重新生成/复制/引用/查看原文。kind 参数留给 thinking/chip 放开后的项集
+// 差异化（S2 增强项 D 步）。
 func bubbleMenuItems(kind blockKind) []menuIt {
 	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
 	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
@@ -385,6 +387,7 @@ func bubbleMenuItems(kind blockKind) []menuIt {
 		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
 		regen, cp,
 		{id: cmdBubbleQuote, label: "引用"},
+		{id: cmdBubbleRaw, label: "查看原文"},
 	}
 }
 
@@ -425,6 +428,15 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		_ = u.post(copyMsg{text: ctx.copy})
 	case cmdBubbleQuote:
 		_ = u.post(quoteMsg{text: ctx.copy})
+	case cmdBubbleRaw:
+		// D99 查看原文：内容入原子槽（edit = 消毒后原始 markdown，与编辑预填同源）
+		// → 单实例次窗呈现；已开 = 聚焦 + 原地刷新（invalidateKind 请求重绘）。
+		u.rawView.Store(&rawContent{
+			title: "原文 · " + shortID(string(ctx.id)),
+			text:  ctx.edit,
+		})
+		u.wins.openWin(winRaw)
+		u.wins.invalidateKind(winRaw)
 	}
 }
 

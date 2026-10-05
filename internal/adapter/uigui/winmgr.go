@@ -32,6 +32,7 @@ const (
 	winSettings winKind = iota
 	winHistory
 	winWelcome
+	winRaw // 查看原文（D99：气泡右键原始块只读次窗）
 )
 
 // title 窗标题（app.Title）。
@@ -41,6 +42,8 @@ func (k winKind) title() string {
 		return "Aquarius 设置"
 	case winHistory:
 		return "Aquarius 会话历史"
+	case winRaw:
+		return "Aquarius 查看原文"
 	default:
 		return "Aquarius 欢迎"
 	}
@@ -54,6 +57,8 @@ func (k winKind) placeholder() string {
 		return "设置窗表单未就绪。"
 	case winHistory:
 		return "会话历史——即将提供（列表依赖未来切换会话命令）。"
+	case winRaw:
+		return "" // D99：专用帧（rawViewFrame），不走占位正文
 	default:
 		return "欢迎使用 Aquarius——首次运行引导即将提供。"
 	}
@@ -66,6 +71,8 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 		return 560, 620, 480, 420
 	case winHistory:
 		return 520, 560, 420, 360
+	case winRaw:
+		return 560, 520, 420, 360
 	default:
 		return 560, 440, 460, 320
 	}
@@ -192,6 +199,19 @@ func (h *winHost) isOpen(k winKind) bool {
 	return ok && !cur.doneClosed()
 }
 
+// invalidateKind 对已开的 k 窗请求重绘（D99：rawView 原子槽更新后的重绘触发；
+// 未开/已退出 = no-op）。线程安全（锁内取句柄、锁外投递）。
+func (h *winHost) invalidateKind(k winKind) {
+	h.mu.Lock()
+	cur, ok := h.live[k]
+	h.mu.Unlock()
+	if ok && !cur.doneClosed() {
+		if inv := cur.invalidate.Load(); inv != nil {
+			(*inv)()
+		}
+	}
+}
+
 // propagatePalette 广播主题快照到全部次窗并请求重绘（§15.7/D61：跨窗只经原子
 // 快照 + Invalidate，不共享裸字段）。
 func (h *winHost) propagatePalette(p *palette) {
@@ -233,6 +253,10 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	if k == winSettings {
 		form = newSettingsForm(u) // 开窗现取快照（Options 回调；nil = 空表/只读占位）
 	}
+	var raw *rawViewState
+	if k == winRaw {
+		raw = newRawViewState() // D99：查看原文帧状态（仅本窗 goroutine 读写）
+	}
 	width, height, minW, minH := k.geometry()
 	w.Option(
 		app.Title(k.title()),
@@ -254,6 +278,8 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 			gtx := app.NewContext(&ops, e)
 			if form != nil {
 				settingsFrame(gtx, th, u, form) // 设置窗 = 核心档表单（§15.7/D60）
+			} else if raw != nil {
+				rawViewFrame(gtx, th, u, raw) // 查看原文 = 只读编辑器（D99）
 			} else {
 				secondaryFrame(gtx, th, k)
 			}

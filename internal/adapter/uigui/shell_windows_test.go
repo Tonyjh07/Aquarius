@@ -120,10 +120,10 @@ func TestMenuDispatchNew(t *testing.T) {
 	}
 }
 
-// TestMenuDispatchBubble D92/D97/D98 气泡菜单分发：重新生成 = /regen（与键入同路径）、
-// 复制 = copyMsg 记账 → 帧内落剪贴板、编辑三方式 = editMsg（mode 随项而设）进编辑态
-// （预填原文）、引用 = quoteMsg 追加引用块；项集 user/assistant 同集六项（呈现契约，
-// 测试锁定）。
+// TestMenuDispatchBubble D92/D97/D98/D99 气泡菜单分发：重新生成 = /regen（与键入同
+// 路径）、复制 = copyMsg 记账 → 帧内落剪贴板、编辑三方式 = editMsg（mode 随项而设）
+// 进编辑态（预填原文）、引用 = quoteMsg 追加引用前缀、查看原文 = rawView 原子槽 +
+// 次窗；项集 user/assistant 同集七项（呈现契约，测试锁定）。
 func TestMenuDispatchBubble(t *testing.T) {
 	u := newHeadless(t, Options{})
 
@@ -179,7 +179,16 @@ func TestMenuDispatchBubble(t *testing.T) {
 		t.Fatalf("编辑框 = %q, want > 一 二（换行压平）", got)
 	}
 
-	// 项集 user/assistant 同集六项（D97 三方式 + D98 引用；kind 参数留 thinking/chip 差异化）。
+	// 查看原文（D99）：内容入 rawView 原子槽 + 开窗（headless spawn=nil = no-op 不 panic）。
+	menuDispatchBubble(u, &bubbleMenuCtx{id: "a1b2c3d4e5f6", kind: blockAssistant, edit: "**原始** markdown"}, cmdBubbleRaw)
+	drainSync(t, u)
+	c := u.rawView.Load()
+	if c == nil || c.title != "原文 · a1b2c3d4" || c.text != "**原始** markdown" {
+		t.Fatalf("rawView = %+v, want 标题含 8 字符前缀 + 原文", c)
+	}
+
+	// 项集 user/assistant 同集七项（D97 三方式 + D98 引用 + D99 查看原文；kind 参数
+	// 留 thinking/chip 差异化）。
 	want := []struct {
 		id    uintptr
 		label string
@@ -190,6 +199,7 @@ func TestMenuDispatchBubble(t *testing.T) {
 		{cmdBubbleRegen, "重新生成"},
 		{cmdBubbleCopy, "复制"},
 		{cmdBubbleQuote, "引用"},
+		{cmdBubbleRaw, "查看原文"},
 	}
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
 		items := bubbleMenuItems(kind)
