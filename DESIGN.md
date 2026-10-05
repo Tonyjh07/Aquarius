@@ -1339,10 +1339,11 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 
 ### 15.9 气泡右键菜单（S2，D92/D97）
 
-转写区右键气泡 → 原生菜单，**扁平五项、user/assistant 同集（D97）**：**编辑 / 编辑并转移
-历史 / 编辑并复制历史 / 重新生成 / 复制**。三种编辑 = Revise 三方式（§4.1：Fresh 新分叉 /
-Carry 后续历史边转移 / Clone 后续历史深拷贝）；重新生成 = 上游用户消息分叉重发。
-thinking/chip/notice/live 草稿不响应。一切变更经内核命令、与键入同路径（submitCommand 口径）。
+转写区右键气泡 → 原生菜单，**扁平六项、user/assistant 同集（D97/D98）**：**编辑 / 编辑并转移
+历史 / 编辑并复制历史 / 重新生成 / 复制 / 引用**。三种编辑 = Revise 三方式（§4.1：Fresh 新分叉 /
+Carry 后续历史边转移 / Clone 后续历史深拷贝）；重新生成 = 上游用户消息分叉重发；引用 = 渲染
+文本以 `> ` 引用块装配进输入框（D98）。thinking/chip/notice/live 草稿不响应。一切变更经内核
+命令、与键入同路径（submitCommand 口径）。
 
 - **手势与命中**：`bubbleRight` 照 D72 `logoRight` 武装-原位抬手（自挂 `pointer.Filter`——
   gesture 系跳过非主键，与 D63/D91 主键选态零冲突）；热区注册于转写视口 clip 内（与 D91
@@ -1354,8 +1355,9 @@ thinking/chip/notice/live 草稿不响应。一切变更经内核命令、与键
   不做 Gio 自绘浮层。
 - **分发**：重新生成 = `/regen <id>`（`inputMsg` 同键入路径）；编辑三方式 = `editMsg{mode}`
   回 Gio 进编辑态；复制 = `copyMsg` → 主循环记 `pendingCopy` → 下一帧 `gtx.Execute(clipboard.
-  WriteCmd)`（剪贴板写入必须在 Gio 帧）。复制口径：有选区 → 选区（D91 选态复用）；
-  无选区 → 整条气泡渲染文本（逐键 `Text()` 拼接，与 `selCopy` 同口径）。
+  WriteCmd)`（剪贴板写入必须在 Gio 帧）；引用 = `quoteMsg` → `quoteInto` 追加引用块进
+  输入框 + 焦点入框（不进编辑态，D98）。复制/引用同口径：有选区 → 选区（D91 选态复用，
+  可跨块）；无选区 → 整条气泡渲染文本（逐键 `Text()` 拼接，与 `selCopy` 同口径）。
 - **编辑态**：预填输入框 + `editTarget` + `editMode`（D97）+ 方式后缀轻提示（`编辑中（转移
   历史）· Enter 提交 / Esc 取消`，Fresh 无后缀；空文本 = 取消）；提交 = 结构化
   `Command{Name:"edit", Args:[id, ("--keep"|"--copy")?, 文本]}`（不经斜杠解析，多行文本保真；
