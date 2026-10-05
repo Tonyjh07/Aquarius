@@ -492,7 +492,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if err != nil {
 			return "", err
 		}
-		m, err := s.cur.Revise(id, []conversation.Part{{Kind: conversation.PartText, Text: text}}, mode)
+		m, err := s.cur.Revise(id, s.editParts(id, text), mode)
 		if err != nil {
 			return "", fmt.Errorf("session: 修订: %w", err)
 		}
@@ -508,8 +508,11 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			return "", err
 		}
 		note := "旧分支保留"
-		if mode == conversation.Carry {
+		switch mode {
+		case conversation.Carry:
 			note = "后续历史已转移"
+		case conversation.Clone:
+			note = "后续历史已复制"
 		}
 		// D93：编辑用户消息（Fresh 分叉）= 改写并重新生成——Head 在无回答的新节点上，
 		// 直接重跑一轮（Carry 是原地改写历史，Head 随转移子树；assistant/system 修订
@@ -756,7 +759,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 			"/switch <id前缀>        切换到既有会话（清屏并回放历史，D75）",
 			"/title [文本]           查看/改写会话标题",
 			"/goto <id>              Head 移到任意节点（分支导航；id 支持唯一前缀）",
-			"/edit <id> [--keep] <文本>  Revise：缺省 Fresh 开新分支（编辑用户消息即重新生成回答，D93）；--keep 边转移保留后续历史",
+			"/edit <id> [--keep|--copy] <文本>  Revise：缺省 Fresh 开新分支（编辑用户消息即重新生成回答，D93）；--keep 边转移后续历史；--copy 深拷贝后续历史（D97）",
 			"/regen <id>             重新生成：上游用户消息分叉重发（已有回答）；无回答直接生成（D93）",
 			"/branch [id]            展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）",
 			"/rm <id>                删除节点及整棵子树（二次确认）",
@@ -848,6 +851,34 @@ func (s *Session) upstreamUser(id conversation.MessageID) (conversation.Message,
 		cur = m.Parent
 	}
 	return conversation.Message{}, errors.New("session: 该消息上游没有用户消息，无法重新生成")
+}
+
+// editParts 构造 /edit 的修订内容（D97⑤）：user 节点保留非文本分片（附件 Ref 原序
+// 原值），仅把文本分片并为一替换为新文本（新文本落在首个文本分片的位置）——修复
+// "改文字把附件留在旧分支"；其余角色整节点替换（D95 后果⑥：Turn 的 thinking/tool
+// 分片不可被编辑文本撕裂）。目标不在树中时返回纯文本（Revise 会再报错）。
+func (s *Session) editParts(id conversation.MessageID, text string) []conversation.Part {
+	fresh := conversation.Part{Kind: conversation.PartText, Text: text}
+	old, ok := s.cur.Find(id)
+	if !ok || old.Role != conversation.RoleUser {
+		return []conversation.Part{fresh}
+	}
+	parts := make([]conversation.Part, 0, len(old.Content)+1)
+	inserted := false
+	for _, p := range old.Content {
+		if p.Kind == conversation.PartText {
+			if !inserted {
+				parts = append(parts, fresh)
+				inserted = true
+			}
+			continue
+		}
+		parts = append(parts, p)
+	}
+	if !inserted {
+		parts = append(parts, fresh)
+	}
+	return parts
 }
 
 // resolveConversation 按会话 ID（精确或唯一前缀）解析会话（/memory [会话id] 用）；
@@ -979,25 +1010,32 @@ func jobCommand(spec port.JobSpec) string {
 	return strings.Join(append(parts, spec.Args...), " ")
 }
 
-// parseEditArgs 解析 /edit <id> [--keep] <文本>：--keep 只在紧跟 id 的位置识别
-// （用法与文档一致），修订文本里的字面 "--keep" 原样保留，返回（目标, 模式, 文本）。
+// parseEditArgs 解析 /edit <id> [--keep|--copy] <文本>：flag 只在紧跟 id 的位置识别
+// （用法与文档一致），修订文本里的字面 "--keep"/"--copy" 原样保留，返回（目标, 模式, 文本）。
+// GUI 结构化提交复用同一 token 序列（D97①）：Args=[id, flag?, 文本]。
 func parseEditArgs(args []string) (string, conversation.KeepMode, string, error) {
-	usage := errors.New("用法: /edit <id> [--keep] <文本>（缺省 Fresh 开新分支；--keep 紧跟 id 转移后续历史）")
-	if len(args) > 0 && args[0] == "--keep" {
+	usage := errors.New("用法: /edit <id> [--keep|--copy] <文本>（缺省 Fresh 开新分支；--keep 紧跟 id 转移后续历史；--copy 紧跟 id 复制后续历史）")
+	if len(args) > 0 && (args[0] == "--keep" || args[0] == "--copy") {
 		return "", conversation.Fresh, "", usage // flag 在 id 前：按用法拒绝
 	}
 	mode := conversation.Fresh
 	rest := args
-	if len(args) > 1 && args[1] == "--keep" {
-		mode = conversation.Carry
-		rest = append([]string{args[0]}, args[2:]...)
+	if len(args) > 1 {
+		switch args[1] {
+		case "--keep":
+			mode = conversation.Carry
+			rest = append([]string{args[0]}, args[2:]...)
+		case "--copy":
+			mode = conversation.Clone
+			rest = append([]string{args[0]}, args[2:]...)
+		}
 	}
 	if len(rest) < 2 {
 		return "", mode, "", usage
 	}
 	text := strings.TrimSpace(strings.Join(rest[1:], " "))
 	if text == "" {
-		return "", mode, "", errors.New("用法: /edit <id> [--keep] <文本>（修订文本不可为空）")
+		return "", mode, "", errors.New("用法: /edit <id> [--keep|--copy] <文本>（修订文本不可为空）")
 	}
 	return rest[0], mode, text, nil
 }

@@ -1351,8 +1351,8 @@ func TestSessionEditCarry(t *testing.T) {
 	}
 }
 
-// TestSessionEditKeepFlagPosition --keep 只在紧跟 id 的位置识别：
-// 文本里的字面 --keep 原样保留，不静默切换模式。
+// TestSessionEditKeepFlagPosition --keep/--copy 只在紧跟 id 的位置识别（D97①）：
+// 文本里的字面 flag 原样保留，不静默切换模式。
 func TestSessionEditKeepFlagPosition(t *testing.T) {
 	cases := []struct {
 		name string
@@ -1366,6 +1366,10 @@ func TestSessionEditKeepFlagPosition(t *testing.T) {
 		{"flag 后多余的 keep 归文本", []string{"u1", "--keep", "保留 --keep 字样"}, conversation.Carry, "保留 --keep 字样", ""},
 		{"flag 在 id 前拒绝", []string{"--keep", "u1", "x"}, conversation.Fresh, "", "用法"},
 		{"有 flag 无文本", []string{"u1", "--keep"}, conversation.Carry, "", "用法"},
+		{"copy 紧跟 id", []string{"u1", "--copy", "新问题"}, conversation.Clone, "新问题", ""},
+		{"文本含字面 copy", []string{"u1", "请加 --copy 参数"}, conversation.Fresh, "请加 --copy 参数", ""},
+		{"copy 在 id 前拒绝", []string{"--copy", "u1", "x"}, conversation.Fresh, "", "用法"},
+		{"有 copy 无文本", []string{"u1", "--copy"}, conversation.Clone, "", "用法"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1383,6 +1387,168 @@ func TestSessionEditKeepFlagPosition(t *testing.T) {
 				t.Fatalf("got %q/%v/%q, want %q/%v/%q", id, mode, text, tc.args[0], tc.mode, tc.text)
 			}
 		})
+	}
+}
+
+// TestSessionEditClone /edit --copy（D96/D97）：子树深拷贝到新节点下——拷贝 ID 全新、
+// 内容与 CreatedAt 保真、旧分支字节级不动；Head 平移到拷贝对应节点；不触发生成（D97②）。
+func TestSessionEditClone(t *testing.T) {
+	store := newMemStore()
+	s, _ := newConfirmedSession(t, store, nil)
+	c := buildTree(t, s)
+	a1Before, err := json.Marshal(c.Nodes["a1"])
+	if err != nil {
+		t.Fatalf("marshal a1: %v", err)
+	}
+	u2Before, err := json.Marshal(c.Nodes["u2"])
+	if err != nil {
+		t.Fatalf("marshal u2: %v", err)
+	}
+
+	out, err := handleCmd(s, "edit", "u1", "--copy", "新问题")
+	if err != nil {
+		t.Fatalf("edit --copy: %v", err)
+	}
+	n := revisedID(c, "u1")
+	if n == "" {
+		t.Fatal("RevisedFrom 应记录 新→旧")
+	}
+	if !strings.Contains(out, "clone") || !strings.Contains(out, "后续历史已复制") ||
+		strings.Contains(out, "已重新生成回答") {
+		t.Fatalf("out = %q, want clone/后续历史已复制 且不重发", out)
+	}
+	// 新节点：同父同角色新内容；旧分支原样保留。
+	nm := c.Nodes[n]
+	if nm.Parent != "p" || nm.Role != conversation.RoleUser || nm.Content[0].Text != "新问题" {
+		t.Fatalf("new node = %+v, want 同父同角色新内容", nm)
+	}
+	if got := c.Children["u1"]; len(got) != 1 || got[0] != "a1" {
+		t.Fatalf("children[u1] = %v, want 旧分支原样保留", got)
+	}
+	// 拷贝子树：ID 全新、内容保真、CreatedAt 保留（D96）。
+	copied := c.Children[n]
+	if len(copied) != 1 || copied[0] == "a1" {
+		t.Fatalf("children[new] = %v, want 拷贝出的新 a1（ID 全新）", copied)
+	}
+	a1c := c.Nodes[copied[0]]
+	if a1c.Parent != n || len(a1c.Content) != 2 || a1c.Content[0].Text != "回复" ||
+		a1c.Content[1].Tool == nil || a1c.Content[1].Tool.CallID != "k1" {
+		t.Fatalf("copied a1 = %+v, want 挂新节点下且内容保真", a1c)
+	}
+	u2c := c.Children[a1c.ID]
+	if len(u2c) != 1 || u2c[0] == "u2" || c.Nodes[u2c[0]].Content[0].Text != "追问" {
+		t.Fatalf("copied u2 = %v (%+v), want 新 ID 且内容保真", u2c, c.Nodes[u2c[0]])
+	}
+	if !a1c.CreatedAt.Equal(c.Nodes["a1"].CreatedAt) {
+		t.Fatalf("copied CreatedAt = %v, want 保留原值 %v", a1c.CreatedAt, c.Nodes["a1"].CreatedAt)
+	}
+	// 旧子树字节级不动（Clone 不改写任何原有对象）。
+	after, err := json.Marshal(c.Nodes["a1"])
+	if err != nil {
+		t.Fatalf("marshal a1 after: %v", err)
+	}
+	if string(after) != string(a1Before) {
+		t.Fatalf("旧 a1 被改写:\nbefore %s\nafter  %s", a1Before, after)
+	}
+	after, err = json.Marshal(c.Nodes["u2"])
+	if err != nil {
+		t.Fatalf("marshal u2 after: %v", err)
+	}
+	if string(after) != string(u2Before) {
+		t.Fatalf("旧 u2 被改写:\nbefore %s\nafter  %s", u2Before, after)
+	}
+	// 节点数 = 5 + 1 修订 + 2 拷贝；Head 平移到拷贝对应节点（旧 Head u2 在原子树内）。
+	if len(c.Nodes) != 8 {
+		t.Fatalf("nodes = %d, want 8（5 + 1 修订 + 2 拷贝）", len(c.Nodes))
+	}
+	if c.Head != u2c[0] {
+		t.Fatalf("head = %s, want 拷贝末端 %s（D96 Head 平移）", c.Head, u2c[0])
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestSessionEditAssistantNoRegen 助手消息修订（Fresh）不触发生成（D97②）：Head 落在
+// 修订节点、无新节点追加；整节点替换为编辑文本（D95 后果⑥，旧分支原样）。
+func TestSessionEditAssistantNoRegen(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store, textStream("不应生成"))
+	c := buildTree(t, s)
+
+	out, err := handleCmd(s, "edit", "a1", "改写的回答")
+	if err != nil {
+		t.Fatalf("edit a1: %v", err)
+	}
+	if !strings.Contains(out, "fresh") || strings.Contains(out, "已重新生成回答") {
+		t.Fatalf("out = %q, want fresh 且不重发", out)
+	}
+	n := revisedID(c, "a1")
+	if n == "" {
+		t.Fatal("RevisedFrom 应记录 新→a1")
+	}
+	if c.Head != n {
+		t.Fatalf("head = %s, want 修订节点 %s（Fresh 恒移）", c.Head, n)
+	}
+	nm := c.Nodes[n]
+	if nm.Role != conversation.RoleAssistant || len(nm.Content) != 1 || nm.Content[0].Text != "改写的回答" {
+		t.Fatalf("new node = %+v, want 整节点替换为单文本", nm)
+	}
+	if got := c.Children["a1"]; len(got) != 1 || got[0] != "u2" {
+		t.Fatalf("children[a1] = %v, want 旧分支原样保留", got)
+	}
+	if len(c.Nodes) != 6 {
+		t.Fatalf("nodes = %d, want 6（修订不触发生成，无追加）", len(c.Nodes))
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestSessionEditUserAttachmentKept user 节点修订保留附件分片（D97⑤）：仅文本分片被
+// 替换并为一（新文本落在首个文本分片位置），附件 Ref 原序原值随行。
+func TestSessionEditUserAttachmentKept(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store, textStream("新回答"), textStream("新回答2"))
+	c := buildTree(t, s)
+	ref := &conversation.BlobRef{Hash: "abc123", MIME: "image/png", Name: "shot.png", Size: 7}
+	m, err := c.Append(conversation.RoleUser, []conversation.Part{
+		{Kind: conversation.PartText, Text: "看这张图"},
+		{Kind: conversation.PartImage, Ref: ref},
+	})
+	if err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	ref2 := &conversation.BlobRef{Hash: "def456", MIME: "application/pdf", Name: "doc.pdf", Size: 9}
+	m2, err := c.Append(conversation.RoleUser, []conversation.Part{
+		{Kind: conversation.PartDoc, Ref: ref2},
+		{Kind: conversation.PartText, Text: "第一段"},
+		{Kind: conversation.PartText, Text: "第二段"},
+	})
+	if err != nil {
+		t.Fatalf("append user2: %v", err)
+	}
+
+	if _, err := handleCmd(s, "edit", string(m.ID), "改写文本"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	nm := c.Nodes[revisedID(c, m.ID)]
+	if len(nm.Content) != 2 ||
+		nm.Content[0].Kind != conversation.PartText || nm.Content[0].Text != "改写文本" ||
+		nm.Content[1].Kind != conversation.PartImage || nm.Content[1].Ref == nil || *nm.Content[1].Ref != *ref {
+		t.Fatalf("revised content = %+v, want [新文本, 原 image Ref]", nm.Content)
+	}
+	if _, err := handleCmd(s, "edit", string(m2.ID), "并为一"); err != nil {
+		t.Fatalf("edit2: %v", err)
+	}
+	nm2 := c.Nodes[revisedID(c, m2.ID)]
+	if len(nm2.Content) != 2 ||
+		nm2.Content[0].Kind != conversation.PartDoc || nm2.Content[0].Ref == nil || *nm2.Content[0].Ref != *ref2 ||
+		nm2.Content[1].Kind != conversation.PartText || nm2.Content[1].Text != "并为一" {
+		t.Fatalf("revised content2 = %+v, want [原 doc Ref, 新文本]（文本片并入首个文本位）", nm2.Content)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 }
 
