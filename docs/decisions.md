@@ -860,3 +860,16 @@
 - **否决**：TUI/repl 补全（Q15 拍板）；事件推送清单（清单是拉取型只读事实——TreeView/Facts 快照端口同款，事件适合"发生了什么"）；help 与清单两套文本（漂移风险）；参数级补全（usage 仅展示，补全只到命令名）；Tab 补全键（§15.2 未定义，Enter/点击已足）。
 - **后果/限制**：① `/help` 输出布局微调（表驱动对齐）——行集不变（session_test 子串钉住），动态命令启用后 help 逐条列出（原先只有家族行）；② `Commands()` 每调用合成（锁内遍历，清单 ≤ 数十条，GUI 每帧读无压力）；③ Session 未就绪（装配早期）清单为空 → 浮层不出现（`Options.Commands` 经 sessionCommands 原子槽代理注入，sessionTree 同款）；④ 编辑态文本恰以 `/` 开头也会触发浮层——补全插入的是普通文本，Esc 优先关浮层，语义自洽；⑤ 浮层随帧过滤不缓存，空格后关闭由词法相判定承担。
 - **状态**：生效
+
+### D104 — 附件按钮实装：暂存随文发 + Win32 文件选择框（S2b-2，§15.2）
+
+- **动机**：roadmap S2b-2——D49 附件灰槽（20dp 不可点）实装；摄取管线 M3 端到端已通（`UserInput.Raw{Kind:"file"}` → ingestfile），GUI 缺入口。发送语义用户拍板（2026-10-05）：**暂存随文发**。
+- **决策**：
+  ① **暂存随文发**：选择文件先**暂存**——附件槽变为 chip（回形针 + 文件名截断 + ×；整 chip 点击 = 取消暂存——芯片无第二动作、命中面最大化；再选即替换，单槽）；Enter 提交 = `UserInput{Raw:&{Kind:"file", File, Text:已输入文本}}`（文本可空 = 仅附件），提交后清空编辑框与暂存；**编辑态不消费暂存**（结构化 /edit 照常，修订不夹带新附件）；生成中照常可选（Raw 随既有排队语义）。
+  ② **Raw 文本并入**：`ingestfile` 对 file kind 且 `raw.Text` 非空 → 输出**首分片 `PartText(raw.Text)`**，其后接附件分片（图片/文档分类规则不变）——修复 Raw 路径丢 `RawInput.Text`（现状 file kind 下该字段被无视）；标题优先取文本分片（ingestTitle 现状不变）。
+  ③ **回显**：用户节点无 CommittedEvent（Agent 只对 Turn/system 节点 Emit），GUI 照 typed 路径**本地回显** blockUser（文本 + `〔附件：<名>〕`）；与回放呈现（摄取分片直渲——文本类显示提取文本、二进制显示占位）存在口径差，记为后果。
+  ④ **文件对话框**：comdlg32 `GetOpenFileNameW` 于 **shell 线程**（`fileDlgMsg = wmApp+5`，bubbleMenuMsg 模板：Gio 侧零参数 PostMessage、shell 侧模态泵阻塞、结果 `u.post(attachMsg{path})` 回 Gio inbox；取消/出错静默）——对话框自带模态泵与 TrackPopupMenu 同语义（D72 先例）；**单选 v1**（多选需扩 UserInput.Raw 多文件口径，留后续）；过滤器 = 常见文档（pdf/docx/xlsx/pptx/html/txt/md/csv/json）+ 图片 + 所有文件（与 2b-3 解析档一致，legacy 二进制 Office 不入过滤）。
+  ⑤ **槽位**：Clickable 布局内联（D86 确认钮模式），命中 = 20dp 图标槽本体（canvas 1:1）；悬停 tooltip「附件」走 D85 直采（几何 = 布局拓扑纯函数，锚定 pillEnd 左缘 + pad16）；确认态照旧隐藏整槽。
+- **否决**：选完即发（附文档提问是主用例，先发文件丢问题上下文——用户拍板暂存）；多选（`RawInput` 单文件口径，扩形状牵动两端，随暂存多 chip 一起后续评估）；`IFileOpenDialog`（需 shell 线程 COM 初始化，GetOpenFileNameW 足够）；暂存实现为输入框文本前缀（污染命令解析）。
+- **后果/限制**：① 回显与回放口径差（见③）；② GetOpenFileNameW 阻塞 shell 线程——对话框期间托盘菜单/快捷键不响应（TrackPopupMenu 同款既有语义）；③ 缓冲满时 Raw 投递失败 → 恢复暂存 + notice（编辑框已清、文本丢失——与既有缓冲满语义同款瑕疵）；④ `raw.Text` 并入是 file kind 全局行为——拖拽/粘贴等未来入口同样受益；⑤ Win32 对话框本体不可 headless 测试（手工验收）。
+- **状态**：生效
