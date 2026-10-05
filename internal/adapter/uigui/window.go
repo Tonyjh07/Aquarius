@@ -1281,6 +1281,13 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			}
 			shown = true
 		}
+		// D104：附件槽 tooltip（D85 直采；暂存态换 chip、无 tooltip——chip 自示意）。
+		if !shown && u.m.confirm == nil && u.m.stagedFile == "" &&
+			u.cursorHitsRect(attachSlotRect(pillEnd, gtx.Dp(inputPadDp), rowH,
+				gtx.Dp(inputIconDp)).Add(image.Pt(0, absY)), cur) {
+			u.hoverTip(gtx, absY, "附件", false)
+			shown = true
+		}
 		if u.m.confirm != nil {
 			// D86：确认态三钮 tips（图标无文字，tooltip 承担可发现性）——布局几何
 			// 直采 × OS 命中直证（D85 口径；Clickable.Hovered 事件态在本窗不可靠）。
@@ -1455,7 +1462,11 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm != nil {
 					return layout.Dimensions{} // D86：确认态灰槽隐藏（本就不可点占位）
 				}
-				return iconSlot(gtx, drawPaperclip)
+				// D104 附件槽实装：无暂存 = 20dp 可点图标槽；有暂存 = chip（点取消）。
+				if u.m.stagedFile != "" {
+					return u.attachChip(gtx)
+				}
+				return u.attachSlot(gtx)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				inset := layout.Inset{Left: unit.Dp(inputGapDp), Right: unit.Dp(inputGapDp)}
@@ -1585,6 +1596,69 @@ func iconSlot(gtx layout.Context, draw func(gtx layout.Context, box image.Rectan
 	box := image.Rectangle{Max: image.Pt(d, d)}
 	draw(gtx, box)
 	return layout.Dimensions{Size: box.Size()}
+}
+
+// attachSlot 附件槽实装（D104⑤）：20dp 命中 + 回形针图标（canvas 1:1，D49 灰槽启用）。
+func (u *UI) attachSlot(gtx layout.Context) layout.Dimensions {
+	d := gtx.Dp(inputIconDp)
+	return u.attachBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		box := image.Rectangle{Max: image.Pt(d, d)}
+		drawPaperclip(gtx, box)
+		return layout.Dimensions{Size: box.Size()}
+	})
+}
+
+// attachChip 暂存附件 chip（D104①）：回形针 + 文件名（按剩余宽截断）+ ×，深底圆角条；
+// 整 chip 点击 = 取消暂存（芯片无第二动作，命中面最大化）。
+func (u *UI) attachChip(gtx layout.Context) layout.Dimensions {
+	const (
+		attachChipDp    = 32  // 芯片高（胶囊 48 内垂直居中）
+		attachNameMaxDp = 200 // 文件名显示预算（超宽截断）
+	)
+	return u.attachClear.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		h := gtx.Dp(attachChipDp)
+		padX, iconD, gap := gtx.Dp(10), gtx.Dp(12), gtx.Dp(6)
+		budget := gtx.Dp(attachNameMaxDp)
+		if max := gtx.Constraints.Max.X - 2*padX - iconD - 3*gap - gtx.Dp(14); budget > max {
+			budget = max // 胶囊窄时让位（编辑器至少留一行宽）
+		}
+		name := u.complFitText(gtx, filepath.Base(u.m.stagedFile), budget)
+		nameOp, nameDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
+			s := material.Body2(u.th, name)
+			s.TextSize = unit.Sp(13)
+			return s.Layout(gtx)
+		})
+		w := 2*padX + iconD + gap + nameDims.Size.X + gap + gtx.Dp(14)
+		box := image.Rectangle{Max: image.Pt(w, h)}
+		paint.FillShape(gtx.Ops, tipBg, clip.UniformRRect(box, h/2).Op(gtx.Ops))
+		// 回形针（品牌色小图）。
+		off := op.Offset(image.Pt(padX, (h-iconD)/2)).Push(gtx.Ops)
+		drawPaperclip(gtx, image.Rectangle{Max: image.Pt(iconD, iconD)})
+		off.Pop()
+		// 文件名。
+		tr := op.Offset(image.Pt(padX+iconD+gap, (h-nameDims.Size.Y)/2)).Push(gtx.Ops)
+		nameOp.Add(gtx.Ops)
+		tr.Pop()
+		// ×（两杆，白字色）。
+		cx, cy := float32(w-padX-gtx.Dp(7)), float32(h)/2
+		a := float32(gtx.Dp(5))
+		var p clip.Path
+		p.Begin(gtx.Ops)
+		p.MoveTo(f32.Pt(cx-a, cy-a))
+		p.LineTo(f32.Pt(cx+a, cy+a))
+		p.MoveTo(f32.Pt(cx+a, cy-a))
+		p.LineTo(f32.Pt(cx-a, cy+a))
+		paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
+		return layout.Dimensions{Size: box.Size()}
+	})
+}
+
+// attachSlotRect 附件槽窗口系矩形（D85 tooltip 直采；布局拓扑 [pad16][附件槽20]…，
+// 内容按终位整盒排版 → 锚定 pillEnd 左缘）。
+func attachSlotRect(pillEnd image.Rectangle, padX, rowH, iconPx int) image.Rectangle {
+	y := pillEnd.Min.Y + (rowH-iconPx)/2
+	x := pillEnd.Min.X + padX
+	return image.Rect(x, y, x+iconPx, y+iconPx)
 }
 
 // drawMaximize 展开图标占位（灰、不可点）：四角括号——canvas 原几何（内缩 2、臂长 6、
@@ -2086,7 +2160,7 @@ func (u *UI) submitEditor() {
 		return
 	}
 	text := strings.TrimSpace(u.editor.Text())
-	if text == "" {
+	if text == "" && u.m.stagedFile == "" {
 		if u.m.editTarget != "" { // D92：编辑态空提交 = 取消
 			u.cancelEdit()
 		}
@@ -2136,6 +2210,12 @@ func (u *UI) updateClicks(gtx layout.Context) {
 	}
 	if u.elevateBtn.Clicked(gtx) {
 		u.confirmElevate() // D86：/permission 升一档 + 放行本次
+	}
+	if u.attachBtn.Clicked(gtx) {
+		u.requestFileDlg() // D104：附件槽 → shell 线程文件选择框（模态泵不嵌 Gio 泵）
+	}
+	if u.attachClear.Clicked(gtx) {
+		u.m.clearAttach() // D104：暂存 chip 点击 = 取消暂存
 	}
 	// 工具 chip 头部点击 → 折叠/展开（D67；m.blocks 只增，块序即 chipIdx）。
 	for i, b := range u.m.blocks {

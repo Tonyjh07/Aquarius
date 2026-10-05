@@ -79,7 +79,7 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 	switch {
 	case strings.HasPrefix(mime, "image/"):
 		return port.IngestReport{
-			Parts: []conversation.Part{{Kind: conversation.PartImage, Ref: &ref}},
+			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartImage, Ref: &ref}}),
 			Note:  fmt.Sprintf("已附图片 %s（%d 字节）", name, ref.Size),
 		}, nil
 
@@ -89,7 +89,7 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 			text += fmt.Sprintf("\n…[提取文本已截断，全文可用 file_read 读取：%s]", path)
 		}
 		return port.IngestReport{
-			Parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}},
+			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
 			Note:  fmt.Sprintf("已附文档 %s（提取文本 %d 字符已内联）", name, len([]rune(text))),
 		}, nil
 
@@ -97,10 +97,22 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 		// 二进制（含音频：M3 无 ASR，不做转写）：模型侧只给取用说明。
 		text := fmt.Sprintf("〔文档 %s〕二进制内容未提取，原文路径：%s（可用 file_read 读取）。", name, path)
 		return port.IngestReport{
-			Parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}},
+			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
 			Note:  fmt.Sprintf("已附文件 %s（二进制，%d 字节）", name, ref.Size),
 		}, nil
 	}
+}
+
+// withCaption 把随附文本（raw.Text，D104② 暂存随文发）并入首分片：file kind 现状
+// 无视 RawInput.Text——GUI 暂存随文发后该字段承载已输入文本，须进树（标题优先取
+// 文本分片由 ingestTitle 既有口径承接）。空文本原样返回。
+func (in *Ingestor) withCaption(raw port.RawInput, parts []conversation.Part) []conversation.Part {
+	if strings.TrimSpace(raw.Text) == "" {
+		return parts
+	}
+	out := make([]conversation.Part, 0, len(parts)+1)
+	out = append(out, conversation.Part{Kind: conversation.PartText, Text: raw.Text})
+	return append(out, parts...)
 }
 
 // readHead 从已打开的文件读取头部至多 maxExtractText+1 字节；more=是否还有更多内容。

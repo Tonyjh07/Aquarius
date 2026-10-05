@@ -158,18 +158,20 @@ type UI struct {
 	w *app.Window
 
 	// 窗口侧状态（仅帧循环 goroutine 读写；headless 不触碰，构造成零值可用）。
-	th         *material.Theme
-	editor     widget.Editor
-	reasonEd   widget.Editor // D86：确认态原因编辑器（拒绝原因，可留空）
-	logoDrag   gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
-	logoRight  logoRight     // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
-	tipShown   bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
-	sendBtn    widget.Clickable
-	stopBtn    widget.Clickable
-	allowBtn   widget.Clickable
-	denyBtn    widget.Clickable
-	elevateBtn widget.Clickable // D86：提升权限钮（仅工具确认且有下一档时布局）
-	drag       gesture.Drag
+	th          *material.Theme
+	editor      widget.Editor
+	reasonEd    widget.Editor // D86：确认态原因编辑器（拒绝原因，可留空）
+	logoDrag    gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
+	logoRight   logoRight     // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
+	tipShown    bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
+	sendBtn     widget.Clickable
+	stopBtn     widget.Clickable
+	allowBtn    widget.Clickable
+	denyBtn     widget.Clickable
+	elevateBtn  widget.Clickable // D86：提升权限钮（仅工具确认且有下一档时布局）
+	attachBtn   widget.Clickable // D104：附件槽（文件选择框入口，D49 灰槽实装）
+	attachClear widget.Clickable // D104：暂存 chip（点击取消暂存）
+	drag        gesture.Drag
 	// D103 补全浮层（仅事件循环 goroutine 读写）：词法相/过滤清单每帧重算（命令清单
 	// 端口每帧拉取——动态命令随插件启停变化）；complRows 行矩形随帧登记（窗口系）。
 	complText      string            // 上一帧编辑框文本（变更 → 重置 dismissed/高亮）
@@ -585,6 +587,9 @@ type (
 	// quoteMsg 引用请求（D98 气泡菜单「引用」经 shell 线程分发投递）：文本口径与复制
 	// 一致（选区优先/整条渲染文本，D98①），Gio 侧经 quoteInto 追加引用块进输入框。
 	quoteMsg struct{ text string }
+	// attachMsg 文件选择框选中结果（D104 暂存随文发：shell 线程对话框 → Gio inbox
+	// → 暂存；chip 呈现，发送随 Enter 走 Raw）。
+	attachMsg struct{ path string }
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
 		prompt string
@@ -630,6 +635,11 @@ func (u *UI) apply(msg uiMsg) bool {
 		// D98 引用："> " 引用块追加进输入框 + 焦点入框；不进编辑态（editTarget 不动，
 		// 引用是起草新输入、非修订历史）。
 		u.editor.SetText(quoteInto(u.editor.Text(), m.text))
+		u.focusPending = true
+	case attachMsg:
+		// D104 暂存随文发：选中即暂存（chip 呈现、点 chip 取消、再选替换），焦点入框
+		// 便于接着写问题；发送随 Enter 走 Raw（model.submit 暂存分支）。
+		u.m.stageAttach(m.path)
 		u.focusPending = true
 	case confirmMsg:
 		u.m.startConfirm(m.prompt, m.reply)

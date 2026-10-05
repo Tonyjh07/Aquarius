@@ -2,6 +2,7 @@ package uigui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -80,6 +81,9 @@ type model struct {
 	// editMode 编辑态修订方式（D97 分叉三方式）：随 editMsg 进入时设定，zero = Fresh；
 	// 提交时转为 --keep/--copy token（与 typed 路径同解析，D97①）。
 	editMode conversation.KeepMode
+	// stagedFile 已暂存附件路径（D104 暂存随文发）：非空时附件槽显示 chip、Enter
+	// 提交 Raw{Kind:"file", File, Text:已输入文本}；编辑态不消费（修订不夹带新附件）。
+	stagedFile string
 
 	// flushedDrafts 待调和的草稿正文段块序（D95 Turn 粒度）：工具事件先于
 	// CommittedEvent 到达——工具边界把流式草稿落为正文气泡（重构前观感：正文先于
@@ -406,6 +410,13 @@ func (m *model) submit(text string) {
 		return
 	}
 	line := strings.TrimSpace(text)
+	// D104 暂存随文发：有暂存附件 → Raw 提交（文本可空 = 仅附件，暂存清空）；
+	// 编辑态不消费（修订不夹带新附件，暂存保留待正常输入）。不回显常规 blockUser
+	// 以外的附加块——用户节点无 CommittedEvent（D104③），本地回显见 submitRaw。
+	if m.editTarget == "" && m.stagedFile != "" {
+		m.submitRaw(m.stagedFile, line)
+		return
+	}
 	if line == "" {
 		return
 	}
@@ -443,6 +454,36 @@ func (m *model) submit(text string) {
 		m.add(blockUser, line)
 		m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
 	}
+}
+
+// submitRaw 投递 Raw 摄取输入（D104 暂存随文发）：文件 + 已输入文本一并进摄取管线；
+// 用户节点无 CommittedEvent（Agent 只广播 Turn/system 节点）→ 本地回显 blockUser
+// （文本 + 附件名示意——与回放的摄取分片呈现存在口径差，D104③ 后果①）。
+// 缓冲满：恢复暂存 + notice（编辑框已清、文本丢失，D104 后果③）。
+func (m *model) submitRaw(file, text string) {
+	select {
+	case m.u.inCh <- port.UserInput{Raw: &port.RawInput{Kind: "file", File: file, Text: text}}:
+		m.stagedFile = "" // 提交即清暂存（D104①）
+	default:
+		m.stagedFile = file
+		m.add(blockNotice, "[notice] 输入缓冲已满，附件未发送")
+		return
+	}
+	echo := text
+	if echo != "" {
+		echo += " "
+	}
+	m.add(blockUser, echo+"〔附件："+filepath.Base(file)+"〕")
+}
+
+// stageAttach 暂存/替换附件（D104：单槽——再选即替换，点 chip 取消）。
+func (m *model) stageAttach(path string) {
+	m.stagedFile = path
+}
+
+// clearAttach 取消暂存（chip 点击）。
+func (m *model) clearAttach() {
+	m.stagedFile = ""
 }
 
 // submitCommand 投递一条命令且**不入转写块**（D81 分叉按钮）：与 model.submit 同走

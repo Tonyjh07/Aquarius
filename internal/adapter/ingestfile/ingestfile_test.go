@@ -168,3 +168,36 @@ func TestIngestRejects(t *testing.T) {
 		t.Fatalf("nil blobs err = %v", err)
 	}
 }
+
+// TestIngestWithCaption 随附文本并入（D104② 暂存随文发）：raw.Text 非空 → 首分片
+// PartText、其后附件分片；空文本不并（原样）。
+func TestIngestWithCaption(t *testing.T) {
+	in, blobs, dir := newIngestor(t)
+	p := writeFile(t, dir, "a.txt", []byte("正文内容"))
+
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p, Text: "总结一下这个文件"})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if len(rep.Parts) != 2 {
+		t.Fatalf("parts = %d, want 2（文本+文档）", len(rep.Parts))
+	}
+	if rep.Parts[0].Kind != conversation.PartText || rep.Parts[0].Text != "总结一下这个文件" {
+		t.Fatalf("首分片 = %+v, want PartText(随附文本)", rep.Parts[0])
+	}
+	if rep.Parts[1].Kind != conversation.PartDoc || rep.Parts[1].Ref == nil {
+		t.Fatalf("次分片 = %+v, want PartDoc", rep.Parts[1])
+	}
+	if got := refContent(t, blobs, *rep.Parts[1].Ref); string(got) != "正文内容" {
+		t.Fatalf("附件内容 = %q", got)
+	}
+
+	// 空文本：不并（单分片，原行为）。
+	rep, err = in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if len(rep.Parts) != 1 || rep.Parts[0].Kind != conversation.PartDoc {
+		t.Fatalf("空文本 parts = %+v, want 单 PartDoc", rep.Parts)
+	}
+}
