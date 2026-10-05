@@ -1344,7 +1344,8 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 转移历史 / 编辑并复制历史 / 重新生成 / 复制 / 引用 / 查看原文**。三种编辑 = Revise 三方式
 （§4.1：Fresh 新分叉 / Carry 后续历史边转移 / Clone 后续历史深拷贝）；重新生成 = 上游用户
 消息分叉重发；引用 = 渲染文本以 `> ` 单行引用前缀装配进输入框（D98）；查看原文 = 原始
-markdown 进只读次窗（D99/§15.7）。thinking/chip/notice/live 草稿不响应。一切变更经内核
+markdown 进只读次窗（D99/§15.7）。**thinking 定稿块与工具 chip 响应 复制/查看原文 两项
+（D100）**；notice/live 草稿/分叉条不响应。一切变更经内核
 命令、与键入同路径（submitCommand 口径）。
 
 - **手势与命中**：`bubbleRight` 照 D72 `logoRight` 武装-原位抬手（自挂 `pointer.Filter`——

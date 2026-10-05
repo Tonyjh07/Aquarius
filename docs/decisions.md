@@ -815,3 +815,16 @@
 - **否决**：主窗内浮层（hoverCard 无交互先例、转写区内浮层与 D91 命中/选区纠缠、无滚动）；TPM 菜单承载内容（只能弹菜单不能显示文本）；每块开独立窗（窗数失控，单实例 + 原地刷新已覆盖"看另一条"）；复用编辑态查看原文（改历史与看原文混流、误触提交风险）。
 - **后果/限制**：① 查看原文窗单实例——看另一条消息时内容原地替换并聚焦；② ReadOnly 编辑器仍可选中复制（gio Editor 语义）；③ thinking/chip 原文随 S2 增强项 D 步接入同一窗；④ winRaw 走专用帧、不用占位正文（`placeholder` 补空串防误用）。
 - **状态**：生效
+
+### D100 — thinking 思考块与工具 chip 开放右键：复制/查看原文（S2 增强项，§15.9）
+
+- **动机**：D92 把右键菜单限在 user/assistant 正文气泡（「thinking/chip 块的右键」列为可增项）；思考原文与工具调用/结果 JSON 同样有"取文本/看原始"的需求。
+- **决策**：
+  ① **menuable 扩展**：thinking 定稿块（需已盖节点 ID）与工具 chip（chip 态自足，不要求节点 ID）进 `bubbleRects`；notice/live 草稿/分叉条仍不响应。
+  ② **thinking 盖章补齐**：回放路径 `addMsg(blockThinking, …, msg.ID)` 直盖；实时路径 commit 时对未盖章思考块统一补盖（节点 ID = 块的"所源节点"语义，与 D89 锚点同源；**分叉条挂点口径不变**——branchStrips 仍只取 user/assistant/tool）。
+  ③ **菜单项集按块角色**：thinking/chip = 复制 / 查看原文（两项）；user/assistant 七项不变（D97–D99）。
+  ④ **chip 文本口径**：复制 = 工具名+参数+结果（剔除箭头/状态等 UI 修饰——比逐键 blockText 稳：折叠时参数/结果键未铺开、Selectable 文本滞留旧值）；查看原文 = 调用/结果 JSON（`MarshalIndent`，参数为合法 JSON 时内嵌原值、否则降级字符串字段）。
+  ⑤ **bubbleCtx 携带 raw**：`bubbleMenuCtx` 增 `raw rawContent`（user/assistant = block.text、标题「原文 · id」；thinking = 思考文本、标题「思考原文 · id」；chip = JSON、标题「工具调用 · 名」），分发处直存 rawView 原子槽。
+- **否决**：chip 复制走 blockText（折叠态键未铺开/文本滞留旧值，见决策④）；thinking/chip 开放编辑与重新生成（思考文本与工具 I/O 不是对话轮的直接载体——修订/重发锚在消息上，§5-Q3 口径不变）；给 notice 也开右键（系统提示无取用价值）。
+- **后果/限制**：① thinking 块实时路径要到 commit 才有 ID——流式与"已定稿未提交"窗口内右键无响应（回合收场即恢复）；② chip 的确认问答（confirmQ/confirmA）不进复制与 JSON（权限问答是 UI 交互留痕，D67——审计走 `/plugin logs` 同源）；③ 折叠 chip 的命中区 = 卡片头部矩形（展开体未布局）；④ D89 锚点口径不变（纯工具轮仍在 chip 上）。
+- **状态**：生效
