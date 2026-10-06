@@ -979,6 +979,16 @@
 - **后果/限制**：① 位置记忆 `gui_pos.json`、blob 内容寻址目录的落位（profile 内 vs 全局）需一并对齐——落码时定；② `--profile` 与三级覆盖（CLI flags > 环境变量 > `config.json`，§8）的优先级关系需在 §8 补明；③ 文档（§8/README/roadmap）与 THIRD-PARTY-NOTICES 同步。
 - **状态**：生效（schema 定案；实现随 S4/S5 落码）
 
+### D110 修订 — 后果①②定案与 fallback 运行语义（2026-10-06，S4/S5 落码前）
+- **动机**：D110 后果/限制列出落码时须定案的事项（gui_pos.json 与 blob 落位、`--profile` 与三级覆盖优先级、文档同步）；fallback 在 Q5 拍板方向上的运行细节（降级模型、粘态、分层）需动码前钉死。
+- **决策**：
+  ① **落位**：`gui_pos.json` 与 blob `attachments/` 均落 **profile 内**——整目录隔离原则（§5-Q1）；附件 GC 按 profile 目录清扫，全局放置会跨 profile 误清/悬挂引用。
+  ② **优先级**：profile 选择在三级覆盖链之外——`--profile` flag > `<data>/config.json` 指针，两者仅决定「读哪个 profile」；profile 内配置值覆盖链不变（CLI flags > 环境变量 > profile config.json）。`-model`/`AQUARIUS_MODEL` 覆盖 `model.name`；`-base-url`/`AQUARIUS_BASE_URL` 覆盖 primary provider 的 `base_url`（调试逃生口）。`--profile` 指向不存在的 profile = 报错列出已有名字、不自动创建。
+  ③ **fallback 运行语义（Q5 细化）**：判据 = `port.ErrTransient`（429/408/5xx/网络/超时；401/400 等 4xx 配置/请求错误不降级、直接暴露）；同 provider 重试（退避）耗尽后才降级——重试在内、降级在外（铁律 9，装饰器叠在 main 装配处）；降级目标 provider 的请求模型 = 该 provider `models[0]`（primary 用 `model.name`）；无粘态——每次 Generate 仍从 primary 起试；流中途断连不重试、不降级（既有 retry 边界）；降级发生经状态行一次性提示（Q5）。
+  ④ **切换面补充**：设置窗「复制 profile」= 仅复制配置（新 profile 以当前 profile 的 `config.json` 为底，不带会话/记忆/附件数据）；GUI 双击启动（D108 控制台隐藏）下启动错误经 Win32 MessageBox 呈现，补 stderr 不可见缺口。
+- **否决**：gui_pos/blob 全局共享（破坏整目录隔离、GC 语义复杂化）；fallback 粘态记忆上次成功 provider（状态与确定性成本，先无粘态观察）；迁移器（无生产数据，D110 原判）。
+- **状态**：生效（随 S4/S5 落码）
+
 ### D111 — GUI 跨平台抽象层（平台边界由「仅 Windows 实测」改判）
 - **动机**：§15.6 现状 = GUI 交互层仅 Windows 实测，非 Windows 全为 no-op 桩（`win32_other.go` / `winmgr_other.go` / `theme_other.go`：ULW 像素管线、托盘、全局热键、文件框、TPM 菜单、DPI、系统深浅色均未适配）。这与项目首要原则「轻量跨平台单二进制」冲突；且后续功能（设置窗全量、会话树 UI）都长在 `uigui` 上，边界越晚抽、重写越贵。
 - **决策**：

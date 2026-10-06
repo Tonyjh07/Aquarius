@@ -797,10 +797,17 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
                                     #   合法性由加载期 Validate 把关；破坏性切换先例：D19 虚拟 Root、
                                     #   D95 独立 tool 节点——旧格式 Load/List 显式报 ErrLegacyFormat 点名 ID，
                                     #   不自动迁移，旧文件留存原地由用户手工处置）
-    └── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
+    ├── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
+    └── gui_pos.json               # 主窗位置记忆（§15.1；随 profile 走，D110 修订①）
 ```
-> 落位待定（D110 后果①）：位置记忆 `gui_pos.json`、blob 内容寻址目录的归属（profile 内 vs 全局）
-> 在落码时对齐；`--profile` 与三级覆盖（CLI flags > 环境变量 > `config.json`）的优先级关系在实现时补明。
+> 落位定案（D110 修订①，2026-10-06）：位置记忆 `gui_pos.json` 与 blob `attachments/` 均落 **profile 内**——
+> 整目录隔离原则（§5-Q1）；附件 GC 按 profile 目录清扫，全局放置会跨 profile 误清/悬挂引用。
+> **profile 选择在三级覆盖链之外**：`--profile` flag > `<data>/config.json` 指针，两者仅决定「读哪个
+> profile」；profile 内配置值仍按 CLI flags > 环境变量 > profile `config.json`（D110 修订②）。
+> **fallback 运行语义（D110 修订③，Q5 细化）**：判据 = `port.ErrTransient`（429/408/5xx/网络/超时；
+> 401/400 不降级）；同 provider 重试耗尽后才降级（重试在内、降级在外，铁律 9）；降级目标 provider 的
+> 请求模型 = 该 provider `models[0]`（primary 用 `model.name`）；无粘态（每次 Generate 从 primary 起试）；
+> 流中途断连不重试、不降级（既有 retry 边界）。
 
 ```json
 {
@@ -813,7 +820,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
         "unsupported_params": [] }                   // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
     ],
     "primary": "openai",          // 当前生效 provider（原 model.provider 关系由 primary 承载）
-    "fallback": [],               // 有序 = 降级顺序（Q5：仅网络类 429/5xx/网络/超时 触发；401/400 不降级）
+    "fallback": [],               // 有序 = 降级顺序（Q5：仅网络类 429/5xx/网络/超时 触发；401/400 不降级；
+                                  //   降级目标 provider 的请求模型 = 其 models[0]，D110 修订③）
     "name": "gpt-4o-mini",        // 当前模型名（在 primary provider 的 models 内）
     "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）
     "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
@@ -855,7 +863,9 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 }
 ```
 
-配置三级覆盖：CLI flags > 环境变量（`AQUARIUS_*`）> `config.json`。
+配置三级覆盖：CLI flags > 环境变量（`AQUARIUS_*`）> profile `config.json`。profile 选择在覆盖链之外：
+`--profile` flag > `<data>/config.json` 指针（D110 修订②）。`-model`/`AQUARIUS_MODEL` 覆盖 `model.name`；
+`-base-url`/`AQUARIUS_BASE_URL` 覆盖 primary provider 的 `base_url`（调试逃生口）。
 
 ---
 
