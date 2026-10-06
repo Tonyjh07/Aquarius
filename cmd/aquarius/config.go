@@ -56,16 +56,36 @@ type permissionsConfig struct {
 	Level string `json:"level"` // 空 = strict（perm.DefaultLevel）
 }
 
-// modelConfig 模型接入配置。
-type modelConfig struct {
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	BaseURL  string `json:"base_url"`
+// providerConfig 单个 provider 接入（D110②，openai-compatible 端点一套连接参数）。
+type providerConfig struct {
+	// Name provider 唯一标识（model.primary / model.fallback 按名引用）。
+	Name string `json:"name"`
+	// BaseURL openai-compatible 端点地址。
+	BaseURL string `json:"base_url"`
 	// APIKey "secret:<环境变量名>" 引用（port.Secrets 按名取用）或明文（D35：
-	// 启动打印警告、不回显）；空值回落默认 secret:AQUARIUS_OPENAI_KEY。
+	// 启动打印警告、不回显）；空值回落默认 secret:AQUARIUS_OPENAI_KEY。逐 provider 独立。
 	APIKey string `json:"api_key"`
+	// Models 可用模型清单（advisory：/model 与设置窗补全用；首个 = 该 provider
+	// 的缺省请求模型——fallback 降级时使用，D110 修订③）。
+	Models []string `json:"models"`
 	// Tokenizer 本地 tokenizer.json 路径（精确计数②，D26）；空 = 通用估算③。
 	Tokenizer string `json:"tokenizer"`
+	// UnsupportedParams 服务端已知不认的请求参数（D34 自动记录，启动注入省略）。
+	UnsupportedParams []string `json:"unsupported_params,omitempty"`
+}
+
+// modelConfig 模型接入配置（D110② provider 列表化：原单 provider 平铺字段
+// provider/base_url/api_key/tokenizer/unsupported_params 随批退役）。
+type modelConfig struct {
+	// Providers provider 列表，至少一条。
+	Providers []providerConfig `json:"providers"`
+	// Primary 当前生效 provider（providers 中的 name；缺省 = 首个）。
+	Primary string `json:"primary,omitempty"`
+	// Fallback 有序降级顺序（Q5/D110 修订③：仅网络类错误触发；名字须在 providers
+	// 内、不含 primary 与重复项）。
+	Fallback []string `json:"fallback,omitempty"`
+	// Name 当前模型名（在 primary 的 models 内；缺省 = primary.models[0]）。
+	Name string `json:"name"`
 	// Think 原生思考总开关（/think 写回，D34）；nil = 键缺失（展示为开、不发布尔）。
 	Think *bool `json:"think,omitempty"`
 	// ReasoningEffort 推理档位（/effort 写回，D34）；空 = 不发送。
@@ -75,8 +95,73 @@ type modelConfig struct {
 	// EchoThinking 思考回传开关（D42）；nil = 键缺失 = 回传（DeepSeek 等兼容端点带
 	// tools 时强制回传 reasoning_content，缺失即 400）；显式 false = 不回传，改后重启生效。
 	EchoThinking *bool `json:"echo_thinking,omitempty"`
-	// UnsupportedParams 服务端已知不认的请求参数（D34 自动记录，启动注入省略）。
-	UnsupportedParams []string `json:"unsupported_params,omitempty"`
+}
+
+// byName 按名取 provider（未命中返回 nil）。
+func (m *modelConfig) byName(name string) *providerConfig {
+	for i := range m.Providers {
+		if m.Providers[i].Name == name {
+			return &m.Providers[i]
+		}
+	}
+	return nil
+}
+
+// primaryProvider 当前生效 provider（normalize 校验后调用）。
+func (m *modelConfig) primaryProvider() *providerConfig {
+	if p := m.byName(m.Primary); p != nil {
+		return p
+	}
+	return &m.Providers[0]
+}
+
+// normalize 应用缺省值并 fail-fast 校验 model 段（D110②，启动期调用）：
+// primary 缺省 = providers 首个；model.name 缺省 = primary.models[0]。
+func (m *modelConfig) normalize() error {
+	if len(m.Providers) == 0 {
+		return fmt.Errorf("model.providers 不可为空（D110②：provider 列表化，原平铺 base_url/api_key 已退役；" +
+			"若为旧格式请手工迁移，见 docs/configuration.md）")
+	}
+	seen := map[string]bool{}
+	for i := range m.Providers {
+		p := &m.Providers[i]
+		if p.Name == "" {
+			return fmt.Errorf("model.providers[%d].name 不可为空", i)
+		}
+		if seen[p.Name] {
+			return fmt.Errorf("model.providers[%d].name %q 重复", i, p.Name)
+		}
+		seen[p.Name] = true
+		if p.BaseURL == "" {
+			return fmt.Errorf("model.providers[%d] (%s) 的 base_url 不可为空", i, p.Name)
+		}
+		if len(p.Models) == 0 || p.Models[0] == "" {
+			return fmt.Errorf("model.providers[%d] (%s) 的 models 不可为空（首个 = 缺省请求模型）", i, p.Name)
+		}
+	}
+	if m.Primary == "" {
+		m.Primary = m.Providers[0].Name
+	}
+	if m.byName(m.Primary) == nil {
+		return fmt.Errorf("model.primary %q 不在 model.providers 内", m.Primary)
+	}
+	fbSeen := map[string]bool{}
+	for _, fb := range m.Fallback {
+		if fb == m.Primary {
+			return fmt.Errorf("model.fallback 不应含当前 provider %q", fb)
+		}
+		if fbSeen[fb] {
+			return fmt.Errorf("model.fallback 重复项 %q", fb)
+		}
+		fbSeen[fb] = true
+		if m.byName(fb) == nil {
+			return fmt.Errorf("model.fallback %q 不在 model.providers 内", fb)
+		}
+	}
+	if m.Name == "" {
+		m.Name = m.primaryProvider().Models[0]
+	}
+	return nil
 }
 
 // uiConfig UI 形态：repl | tui | gui（D33/D43；模板与键缺省为 tui，repl 为测试/e2e
@@ -112,16 +197,19 @@ type limitsConfig struct {
 // 后端；mcpServers/plugins 为 M4 MCP 接入的声明与状态，缺省皆空）。
 const defaultConfig = `{
   "model": {
-    "provider": "openai-compatible",
+    "providers": [
+      { "name": "openai", "base_url": "https://api.openai.com/v1",
+        "api_key": "secret:AQUARIUS_OPENAI_KEY",
+        "models": ["gpt-4o-mini"], "tokenizer": "",
+        "unsupported_params": [] }
+    ],
+    "primary": "openai",
+    "fallback": [],
     "name": "gpt-4o-mini",
-    "base_url": "https://api.openai.com/v1",
-    "api_key": "secret:AQUARIUS_OPENAI_KEY",
-    "tokenizer": "",
     "think": true,
     "reasoning_effort": "",
     "think_tool": false,
-    "echo_thinking": true,
-    "unsupported_params": []
+    "echo_thinking": true
   },
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 },
   "system_prompt": "",
@@ -140,17 +228,50 @@ const defaultConfig = `{
 }
 `
 
-// loadConfig 读取并解析配置。
+// loadConfig 读取并解析配置；model 段为 D110 前单 provider 平铺字段时显式报
+// ErrLegacyConfig（detectLegacyModelConfig：Unmarshal 对旧键静默零值，必须先判别）。
 func loadConfig(path string) (*fileConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("读取 %s: %w", path, err)
+	}
+	if err := detectLegacyModelConfig(path, data); err != nil {
+		return nil, err
 	}
 	var cfg fileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("解析配置 %s: %w", path, err)
 	}
 	return &cfg, nil
+}
+
+// detectLegacyModelConfig 旧单 provider 平铺字段判别（D110② 破坏性）：model 段含
+// 平铺 base_url/api_key/tokenizer/provider 且无 providers → 报 ErrLegacyConfig 与
+// 手工改写指引（D95 影子结构同口径，绝不静默丢配置）。
+func detectLegacyModelConfig(path string, data []byte) error {
+	var probe struct {
+		Model struct {
+			Providers []json.RawMessage `json:"providers"`
+			BaseURL   string            `json:"base_url"`
+			APIKey    string            `json:"api_key"`
+			Tokenizer string            `json:"tokenizer"`
+			Provider  string            `json:"provider"`
+		} `json:"model"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil || len(probe.Model.Providers) > 0 {
+		return nil // 非 JSON / 无 model 段 / 已是新格式：交由后续解析与校验处置
+	}
+	m := probe.Model
+	if m.BaseURL == "" && m.APIKey == "" && m.Tokenizer == "" && m.Provider == "" {
+		return nil
+	}
+	return fmt.Errorf("%w：%s 的 model 段为单 provider 平铺字段（检测到 base_url/api_key/tokenizer/provider）。\n"+
+		"D110② 起 provider 列表化（DESIGN §8）：\n"+
+		"  \"model\": { \"providers\": [ { \"name\": \"openai\", \"base_url\": \"…\",\n"+
+		"    \"api_key\": \"secret:…\", \"models\": [\"…\"], \"tokenizer\": \"\", \"unsupported_params\": [] } ],\n"+
+		"    \"primary\": \"openai\", \"fallback\": [], \"name\": \"…\", … }\n"+
+		"请手工改写（不做自动迁移），原平铺字段退役；字段说明见 docs/configuration.md。",
+		ErrLegacyConfig, path)
 }
 
 // writeDefaultConfig 落首次运行模板。
@@ -248,29 +369,29 @@ func secretName(ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	name := strings.TrimPrefix(ref, "secret:")
 	if ref == name || name == "" {
-		return "", fmt.Errorf("model.api_key 的 secret: 引用缺少环境变量名，当前为 %q（或直接填明文，D35）", ref)
+		return "", fmt.Errorf("api_key 的 secret: 引用缺少环境变量名，当前为 %q（或直接填明文，D35）", ref)
 	}
 	return name, nil
 }
 
-// resolveAPIKey 解析 model.api_key（D35，文件内值优先）：
+// resolveAPIKey 解析某 provider 的 api_key（D35，文件内值优先；D110② 逐 provider 独立）：
 //   - 空 → 回落默认引用 secret:AQUARIUS_OPENAI_KEY（经 Secrets 按名取用；
 //     环境变量缺失由 Secrets 报因）
 //   - secret:<环境变量名> → 经 port.Secrets 按名取用
 //   - 其余 → 视为明文直接使用，启动打印警告（**不回显密钥值**）
-func resolveAPIKey(ctx context.Context, ref string, stderr io.Writer) (string, error) {
+func resolveAPIKey(ctx context.Context, provider, ref string, stderr io.Writer) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ref = "secret:AQUARIUS_OPENAI_KEY"
 	}
 	if !strings.HasPrefix(ref, "secret:") {
-		fmt.Fprintln(stderr, "警告：model.api_key 为明文（D35）——密钥直接落在 config.json，"+
-			"本机任意可读进程、备份与同步都可能取用；建议改用 \"secret:<环境变量名>\" 引用环境变量。")
+		fmt.Fprintf(stderr, "警告：provider %q 的 api_key 为明文（D35）——密钥直接落在 config.json，"+
+			"本机任意可读进程、备份与同步都可能取用；建议改用 \"secret:<环境变量名>\" 引用环境变量。\n", provider)
 		return ref, nil
 	}
 	name, err := secretName(ref)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("provider %q: %w", provider, err)
 	}
 	return (envSecrets{}).Get(ctx, name)
 }

@@ -179,11 +179,11 @@ func TestNotifyWithBranches(t *testing.T) {
 func writeConfigNotify(t *testing.T, dir, baseURL, name string, notify bool) {
 	t.Helper()
 	cfg := fmt.Sprintf(`{
-  "model": {"provider":"openai-compatible","name":%q,"base_url":%q,"api_key":"secret:AQ_E2E_KEY"},
+  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"api_key":"secret:AQ_E2E_KEY","models":[%q]}],"name":%q},
   "ui": {"kind":"repl"},
   "output": {"notify": %t, "tts": false},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
-}`, name, baseURL, notify)
+}`, baseURL, name, name, notify)
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("AQ_E2E_KEY", "test-key")
 }

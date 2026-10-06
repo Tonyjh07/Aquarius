@@ -12,7 +12,7 @@ import (
 func TestLoadConfigMCPFields(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{
-  "model": {"provider":"openai-compatible","name":"m","base_url":"http://x","api_key":"secret:K"},
+  "model": {"providers":[{"name":"openai-compatible","base_url":"http://x","api_key":"secret:K","models":["m"]}],"name":"m"},
   "mcpServers": {
     "web": {"transport":"stdio","command":"web-mcp","args":["--s"],"capabilities":["network"],"risk":"safe"},
     "docs": {"transport":"streamable-http","url":"https://m.example/mcp","headers":{"Authorization":"secret:TOK"}}
@@ -71,7 +71,7 @@ func TestRunRejectsInvalidMCPConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			raw := `{
-  "model": {"provider":"openai-compatible","name":"m","base_url":"http://x","api_key":"secret:K"},
+  "model": {"providers":[{"name":"openai-compatible","base_url":"http://x","api_key":"secret:K","models":["m"]}],"name":"m"},
   ` + tc.cfg + `
 }`
 			if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(raw), 0o644); err != nil {

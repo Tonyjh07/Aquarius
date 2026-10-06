@@ -10,7 +10,7 @@ import (
 )
 
 // execModel /model [name]（DESIGN §7.3，D32）：
-// 无参 = 当前模型 + LLM.Models() 可用列表（能力/单价标注）；
+// 无参 = 当前 provider（D110②）+ 当前模型 + LLM.Models() 可用列表（能力/单价标注）；
 // 有参 = 先写回 config（同 /permission 的原子写回模式）再 Agent 内热切换。
 func (s *Session) execModel(ctx context.Context, args []string) (string, error) {
 	if len(args) == 0 {
@@ -21,7 +21,7 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 		if err != nil {
 			return "", fmt.Errorf("session: 列出可用模型: %w", err)
 		}
-		return formatModels(s.agent.modelName(), models), nil
+		return formatModels(s.providerName, s.agent.modelName(), models), nil
 	}
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return "", errors.New("用法: /model [name]")
@@ -38,9 +38,13 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 	return fmt.Sprintf("已切换模型 → %s（已写回 config，重启沿用）", name), nil
 }
 
-// formatModels /model 无参输出：当前模型行 + 可用清单（能力/单价标注）。
-func formatModels(current string, models []port.ModelInfo) string {
+// formatModels /model 无参输出：provider 行（D110②，未注入时省略）+ 当前模型行 +
+// 可用清单（能力/单价标注）。
+func formatModels(provider func() string, current string, models []port.ModelInfo) string {
 	var b strings.Builder
+	if provider != nil && provider() != "" {
+		fmt.Fprintf(&b, "当前 provider: %s\n", provider())
+	}
 	fmt.Fprintf(&b, "当前模型: %s\n", current)
 	if len(models) == 0 {
 		return b.String() + "（模型服务未返回可用列表，可直接 /model <name> 切换）"

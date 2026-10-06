@@ -59,6 +59,9 @@ type SessionDeps struct {
 	// PersistModel 把切换后的模型写回 config（D32，同 /permission 模式）；
 	// nil 时 /model 有参报"未配置持久化"。
 	PersistModel func(name string) error
+	// ProviderName 当前生效 provider 名（D110②：/model 无参展示；装配根注入
+	// 静态值——provider 运行态不热切，切换 = 重启生效）；nil 时省略该行。
+	ProviderName func() string
 	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
 	// nil 时 /think 有参报"未配置持久化"。
 	PersistThink func(on bool) error
@@ -92,6 +95,7 @@ type Session struct {
 	plugins       PluginAdmin
 	listModels    func(ctx context.Context) ([]port.ModelInfo, error)
 	persistModel  func(name string) error
+	providerName  func() string
 	persistThink  func(on bool) error
 	persistEffort func(level string) error
 	cur           *conversation.Conversation
@@ -162,6 +166,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		plugins:       d.Plugins,
 		listModels:    d.ListModels,
 		persistModel:  d.PersistModel,
+		providerName:  d.ProviderName,
 		persistThink:  d.PersistThink,
 		persistEffort: d.PersistEffort,
 		dynamic:       map[string]CommandHandler{},

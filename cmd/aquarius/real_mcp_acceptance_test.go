@@ -103,11 +103,11 @@ func TestRealMCPEverythingAcceptance(t *testing.T) {
 func writeRealMCPConfig(t *testing.T, dir, llmURL, model, mcpEntryJSON string) {
 	t.Helper()
 	cfg := fmt.Sprintf(`{
-  "model": {"provider":"openai-compatible","name":%q,"base_url":%q,"api_key":"secret:AQ_E2E_KEY"},
+  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"api_key":"secret:AQ_E2E_KEY","models":[%q]}],"name":%q},
   "ui": {"kind":"repl"},
   "mcpServers": {"everything": %s},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
-}`, model, llmURL, mcpEntryJSON)
+}`, llmURL, model, model, mcpEntryJSON)
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

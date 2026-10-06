@@ -95,6 +95,30 @@ func modelSection(generic map[string]any) map[string]any {
 	return model
 }
 
+// providerSection 定位 model.providers 中指定名字的条目（D110②）：
+// primary 缺省 = model.primary 键，再缺省 = 首个条目。未命中返回 nil。
+func providerSection(generic map[string]any, name string) map[string]any {
+	model := modelSection(generic)
+	providers, _ := model["providers"].([]any)
+	if len(providers) == 0 {
+		return nil
+	}
+	target := name
+	if target == "" {
+		target, _ = model["primary"].(string)
+	}
+	for _, pv := range providers {
+		p, ok := pv.(map[string]any)
+		if !ok {
+			continue
+		}
+		if n, _ := p["name"].(string); target == "" || n == target {
+			return p
+		}
+	}
+	return nil
+}
+
 // fatal 启动期致命错误：stderr 报因并返回退出码 1；控制台不可见（GUI 双击启动，
 // D108 已隐藏自建控制台、stderr 无处可看）时补系统消息框（D110 修订④——旧格式
 // 与配置错误必须清晰可见，不得静默退出）。
@@ -246,7 +270,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return fatal(stderr, "生成配置失败: %v", werr)
 		}
 		fmt.Fprintf(stdout, "已生成配置: %s\n当前 profile: %s（指针: %s）\n"+
-			"请编辑 model.name / model.base_url，并设置密钥环境变量后重新运行。\n"+
+			"请编辑 model.providers（base_url / models / api_key），并设置密钥环境变量后重新运行。\n"+
 			"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文（启动会警告，D35）\n",
 			cfgPath, profileName, filepath.Join(dir, "config.json"))
 		return 0
@@ -255,21 +279,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return fatal(stderr, "读取配置失败: %v", err)
 	}
 
-	// 环境变量与 flag 覆盖（flags > 环境变量 > config）。
+	// provider 列表校验与缺省归一（D110②，启动 fail-fast）：primary 缺省 = 首个，
+	// model.name 缺省 = primary.models[0]。
+	if err := cfg.Model.normalize(); err != nil {
+		return fatal(stderr, "%v", err)
+	}
+	primary := cfg.Model.primaryProvider()
+
+	// 环境变量与 flag 覆盖（flags > 环境变量 > config；D110 修订②：-model 覆盖
+	// model.name，-base-url 覆盖 primary provider 的 base_url——调试逃生口）。
 	if v := os.Getenv("AQUARIUS_MODEL"); v != "" {
 		cfg.Model.Name = v
 	}
 	if v := os.Getenv("AQUARIUS_BASE_URL"); v != "" {
-		cfg.Model.BaseURL = v
+		primary.BaseURL = v
 	}
 	if *modelName != "" {
 		cfg.Model.Name = *modelName
 	}
 	if *baseURL != "" {
-		cfg.Model.BaseURL = *baseURL
-	}
-	if cfg.Model.Name == "" || cfg.Model.BaseURL == "" {
-		return fatal(stderr, "model.name 与 model.base_url 不可为空")
+		primary.BaseURL = *baseURL
 	}
 	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 口径。
 	if raw := strings.TrimSpace(cfg.Model.ReasoningEffort); raw != "" {
@@ -292,7 +321,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return fatal(stderr, "%v", err)
 		}
 	}
-	apiKey, err := resolveAPIKey(context.Background(), cfg.Model.APIKey, stderr)
+	apiKey, err := resolveAPIKey(context.Background(), primary.Name, primary.APIKey, stderr)
 	if err != nil {
 		return fatal(stderr, "%v", err)
 	}
@@ -409,26 +438,34 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		logf:    func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
 		timeout: 5 * time.Second, // 插件投影单次上限（卡死的插件不得拖垮 Turn）
 	}
-	// 服务端不认的参数记录（D34）：LLM 适配器剥离重试成功后回调，写回 config
-	// model.unsupported_params（此后启动直接省略）；写回失败只记日志（下次仍会剥离）。
-	noteUnsupported := func(field string) {
-		fmt.Fprintf(stderr, "[llm] 服务端不支持参数 %s：已剥离重试，记入 config model.unsupported_params（D34）\n", field)
-		if err := persistConfig(cfgPath, func(generic map[string]any) {
-			model := modelSection(generic)
-			list, _ := model["unsupported_params"].([]any)
-			for _, v := range list {
-				if v == field {
-					return // 已记录
+	// 服务端不认的参数记录（D34/D110②）：LLM 适配器剥离重试成功后回调，写回 config
+	// providers[<name>].unsupported_params（此后启动直接省略）；写回失败只记日志
+	//（下次仍会剥离）。按 provider 名定位条目——fallback（D110②）会按 provider 各建
+	// client，回调须记到产生剥离的那一条。
+	noteUnsupportedFor := func(providerName string) func(string) {
+		return func(field string) {
+			fmt.Fprintf(stderr, "[llm] 服务端不支持参数 %s：已剥离重试，记入 config providers[%s].unsupported_params（D34）\n", field, providerName)
+			if err := persistConfig(cfgPath, func(generic map[string]any) {
+				p := providerSection(generic, providerName)
+				if p == nil {
+					return // providers 结构被外部改动：放弃记录，下次启动仍会剥离
 				}
+				list, _ := p["unsupported_params"].([]any)
+				for _, v := range list {
+					if v == field {
+						return // 已记录
+					}
+				}
+				p["unsupported_params"] = append(list, field)
+			}); err != nil {
+				fmt.Fprintf(stderr, "[llm] 记录 unsupported_params 失败: %v（下次启动仍会先试发该字段）\n", err)
 			}
-			model["unsupported_params"] = append(list, field)
-		}); err != nil {
-			fmt.Fprintf(stderr, "[llm] 记录 unsupported_params 失败: %v（下次启动仍会先试发该字段）\n", err)
 		}
 	}
+	noteUnsupported := noteUnsupportedFor(primary.Name)
 	client, err := llm.New(llm.Config{
-		BaseURL: cfg.Model.BaseURL, APIKey: apiKey, Tokenizer: cfg.Model.Tokenizer,
-		UnsupportedParams: cfg.Model.UnsupportedParams,
+		BaseURL: primary.BaseURL, APIKey: apiKey, Tokenizer: primary.Tokenizer,
+		UnsupportedParams: primary.UnsupportedParams,
 		NoteUnsupported:   noteUnsupported,
 	})
 	if err != nil {
@@ -674,6 +711,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		OpenMemory:    openMemoryEditor(mem, ui, stdin, stdout, stderr),
 		Plugins:       hostAdmin{host},
 		ListModels:    func(ctx context.Context) ([]port.ModelInfo, error) { return client.Models(ctx) },
+		ProviderName:  func() string { return primary.Name }, // D110②：/model 展示（静态，重启生效）
 		PersistModel:  persistModel,
 		PersistThink:  persistThink,  // D34
 		PersistEffort: persistEffort, // D34
