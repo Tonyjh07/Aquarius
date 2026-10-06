@@ -1621,3 +1621,48 @@ func TestRunMemoryCommandE2E(t *testing.T) {
 		t.Fatalf("假编辑器未收到目标路径: %q", data)
 	}
 }
+
+// TestRunFallbackDegradesE2E D110②/Q5 全链路：primary（bad）持续 5xx → 内层重试
+// 耗尽 → 降级到 fallback（good）成功；降级请求改写为其 models[0]，状态行出现一次性
+// 降级提示（NoticeEvent → repl 转写）。
+func TestRunFallbackDegradesE2E(t *testing.T) {
+	var badHits int
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		badHits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(bad.Close)
+	good, reqs := scriptServer(t, []string{"降级兜底"})
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{
+  "model": {"providers":[
+      {"name":"bad","base_url":%q,"api_key":"secret:X","models":["bm"]},
+      {"name":"good","base_url":%q,"api_key":"secret:X","models":["gm"]}],
+    "primary":"bad","fallback":["good"],"name":"bm"},
+  "ui": {"kind":"repl"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`, bad.URL, good.URL)
+	writeProfileLayout(t, dir, cfg)
+	t.Setenv("X", "k")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "已降级到") || !strings.Contains(got, "good") {
+		t.Fatalf("stdout 缺降级提示: %q", got)
+	}
+	if !strings.Contains(got, "降级兜底") {
+		t.Fatalf("降级后应成功生成: %q", got)
+	}
+	if badHits != 3 {
+		t.Fatalf("bad 请求 = %d, want 3（同 provider 重试 3 次在内）", badHits)
+	}
+	if reqs.len() != 1 {
+		t.Fatalf("good 请求 = %d, want 1（降级后成功）", reqs.len())
+	}
+	if m := string(reqs.at(0).body); !strings.Contains(m, `"model":"gm"`) {
+		t.Fatalf("降级请求模型应改写为 good 的 models[0]: %.200s", m)
+	}
+}

@@ -321,10 +321,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return fatal(stderr, "%v", err)
 		}
 	}
-	apiKey, err := resolveAPIKey(context.Background(), primary.Name, primary.APIKey, stderr)
-	if err != nil {
-		return fatal(stderr, "%v", err)
-	}
 
 	// 权限等级（D22）：缺省 strict；非法值报因退出。
 	level := perm.DefaultLevel
@@ -462,14 +458,46 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 	}
-	noteUnsupported := noteUnsupportedFor(primary.Name)
-	client, err := llm.New(llm.Config{
-		BaseURL: primary.BaseURL, APIKey: apiKey, Tokenizer: primary.Tokenizer,
-		UnsupportedParams: primary.UnsupportedParams,
-		NoteUnsupported:   noteUnsupported,
-	})
+	// provider 客户端构建（D110②/修订③）：primary 与 fallback[] 各建一具——
+	// base_url/api_key/tokenizer 构造期固化（port.LLM 不可热换）。密钥逐 provider
+	// 解析（D35），含 fallback——避免降级时才发现缺配置。
+	buildClient := func(p *providerConfig) (*llm.Client, port.TokenCounter, error) {
+		key, kerr := resolveAPIKey(context.Background(), p.Name, p.APIKey, stderr)
+		if kerr != nil {
+			return nil, nil, kerr
+		}
+		c, cerr := llm.New(llm.Config{
+			BaseURL: p.BaseURL, APIKey: key, Tokenizer: p.Tokenizer,
+			UnsupportedParams: p.UnsupportedParams,
+			NoteUnsupported:   noteUnsupportedFor(p.Name),
+		})
+		if cerr != nil {
+			return nil, nil, cerr
+		}
+		var counter port.TokenCounter
+		if cc, ok := any(c).(port.TokenCounter); ok {
+			counter = cc
+		}
+		return c, counter, nil
+	}
+	client, primaryCounter, err := buildClient(primary)
 	if err != nil {
 		return fatal(stderr, "%v", err)
+	}
+	// 降级链条目（D110 修订③）：Model 空 = 透传 req.Model（primary——agent 每轮
+	// 注入当前模型，热切换不失效）；降级目标 = 其 models[0]。
+	fallbackEntries := []decorate.FallbackEntry{{Name: primary.Name, LLM: client}}
+	fallbackCounters := map[string]port.TokenCounter{primary.Name: primaryCounter}
+	for _, fbName := range cfg.Model.Fallback {
+		p := cfg.Model.byName(fbName)
+		c, counter, ferr := buildClient(p)
+		if ferr != nil {
+			return fatal(stderr, "%v", ferr)
+		}
+		fallbackEntries = append(fallbackEntries, decorate.FallbackEntry{
+			Name: fbName, LLM: c, Model: p.Models[0],
+		})
+		fallbackCounters[fbName] = counter
 	}
 	// UI 前端（D33/D43/D51）：Gio GUI（默认，§15）、bubbletea TUI（ui.kind=tui）或
 	// repl（行式，测试/e2e 后端）——同权实现 uiFrontend，换壳不换核（D28 输出器
@@ -611,31 +639,47 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return fatal(stderr, "%v", err)
 	}
 	defer audit.Close()
-	var counter port.TokenCounter
-	if c, ok := any(client).(port.TokenCounter); ok {
-		counter = c // 三级计数链②（D26）：裁剪估算与 Agent 内部共用同一 tokenizer
-	}
 	maxCtx := cfg.Limits.MaxContextTokens
 	if maxCtx <= 0 {
 		maxCtx = app.DefaultMaxContextTokens
 	}
-	fit := func(fctx context.Context, req port.GenerateRequest) (port.GenerateRequest, int) {
-		reserve := req.Budget.MaxOutputTokens
-		if reserve < minOutputReserve {
-			reserve = minOutputReserve
+	// fit 闭包工厂：逐 provider 用各自 tokenizer 计数（fallback client 可配不同
+	// tokenizer；est 链见上恒取 primary）。
+	fitFor := func(cnt port.TokenCounter) func(context.Context, port.GenerateRequest) (port.GenerateRequest, int) {
+		return func(fctx context.Context, req port.GenerateRequest) (port.GenerateRequest, int) {
+			reserve := req.Budget.MaxOutputTokens
+			if reserve < minOutputReserve {
+				reserve = minOutputReserve
+			}
+			kept, omitted := app.TrimOldest(fctx, cnt, req.Messages, maxCtx-reserve, req.Tools...)
+			req.Messages = kept
+			return req, omitted
 		}
-		kept, omitted := app.TrimOldest(fctx, counter, req.Messages, maxCtx-reserve, req.Tools...)
-		req.Messages = kept
-		return req, omitted
 	}
-	var gen port.LLM = client
-	gen = decorate.NewTruncate(gen, fit, func(omitted int) {
+	truncateNotice := func(omitted int) {
 		_ = presenter.Emit(ctx, port.NoticeEvent{
 			Text: fmt.Sprintf("硬保底截断：上下文超预算，已省略 %d 条最旧消息", omitted),
 		})
-	})
-	gen = decorate.AuditLLM(gen, audit)
-	gen = decorate.NewRetry(gen)
+	}
+	// 每 provider 一条内链：硬保底截断最内（发给服务端前裁到预算内）→ 审计（记每次
+	// 真实调用）→ 同 provider 重试（外）；跨 provider 降级（D110②/Q5/修订③）罩全体
+	// 最外——重试在内、降级在外（铁律 9：装饰器只在装配根叠加）。
+	stacked := make([]decorate.FallbackEntry, 0, len(fallbackEntries))
+	for _, e := range fallbackEntries {
+		var inner port.LLM = e.LLM
+		inner = decorate.NewTruncate(inner, fitFor(fallbackCounters[e.Name]), truncateNotice)
+		inner = decorate.AuditLLM(inner, audit)
+		inner = decorate.NewRetry(inner)
+		stacked = append(stacked, decorate.FallbackEntry{Name: e.Name, LLM: inner, Model: e.Model})
+	}
+	var gen port.LLM = stacked[0].LLM
+	if len(stacked) > 1 {
+		gen = decorate.NewFallback(stacked, func(from, to string) {
+			_ = presenter.Emit(ctx, port.NoticeEvent{
+				Text: fmt.Sprintf("模型服务 %s 网络类错误，本轮已降级到 %s（Q5：状态行一次性提示）", from, to),
+			})
+		})
+	}
 	auditedRunner := decorate.AuditTool(runner, audit)
 	ids := systemIDGen{}
 	// D37：运行环境块（随 config 快照进 persona）——平台、终端形态与 TERM、特权沙盒目录。

@@ -3,7 +3,7 @@
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
 
-- 里程碑基线：**M0–M4 已落地**；当前推进 **M5 GUI**（S1/S1b/S1c/S2/S2b 已完成）。**M5 后续执行序重排（D109，2026-10-06）**：③ 前的日常体验与内核命令已落地 → **配置底座破坏性改造（S4+S5 合批，D110）→ GUI 跨平台抽象层（新 S4b，D111）→ 对话树 UI：relation-map（S3，D112）**，S6–S8 顺延，见 §2/§3
+- 里程碑基线：**M0–M4 已落地**；当前推进 **M5 GUI**（S1/S1b/S1c/S2/S2b 已完成）。**M5 后续执行序重排（D109，2026-10-06）**：对话树 UI（S3）之前的日常体验与内核命令已落地 → **配置底座破坏性改造（S4+S5 合批，D110）→ 大文件拆分重构（新 S4a，纯代码组织）→ GUI 跨平台抽象层（S4b，D111）→ 对话树 UI：relation-map（S3，D112）**，S6–S8 顺延，见 §2/§3
 - 基线：`3be7c91`（D75 已合入，决策记录 D1–D75），2026-09-30
 - 输入：用户 TODO 清单 10 大项 + 「UI增强与bug修复」7 小项 + 补充 3 项（响应式迁移、主窗口大小调整、消息区底部淡化区）+ 第二批补充 3 项（命令提示与补全、附件解析、预留按钮实装 → 合成 S2b 输入行阶段）
 - 决策状态：**Q1–Q16 已全部拍板**（§5，2026-09-30）；**Q17 已拍板**（D105，2026-10-06：pdf/docx/xlsx/html 现成纯 Go 库、pptx/rtf 缓）；Q7（ASR/TTS 选型）留待动手前补充
@@ -35,8 +35,8 @@
 
 ---
 
-## 2. 分阶段路线（9 主步 + S1b/S1c/S2b/S4b 四个半步 / 对应里程碑 M6 起）
-依赖顺序原则（**D109 重排**）：**先修用户天天看的（S1–S2b，已完成）→ 再动配置底座（S4+S5 破坏性集中一次）→ 再抽 GUI 跨平台抽象层（S4b）→ 再长对话树 UI（S3 relation-map）→ 再叠生态与语音**。
+## 2. 分阶段路线（9 主步 + S1b/S1c/S2b/S4a/S4b 五个半步 / 对应里程碑 M6 起）
+依赖顺序原则（**D109 重排，S4a 于 2026-10-06 增补**）：**先修用户天天看的（S1–S2b，已完成）→ 再动配置底座（S4+S5 破坏性集中一次）→ 先拆大文件（S4a，为抽平台层减负）→ 再抽 GUI 跨平台抽象层（S4b）→ 再长对话树 UI（S3 relation-map）→ 再叠生态与语音**。
 
 ### S1 · UI 增强与 bug 修复包（M6，P0，全部 S~M）
 
@@ -110,7 +110,7 @@
 **状态（2026-10-06）**：**已落地（D103–D106，一次规划分项落地）**——① **2b-1 命令补全（D103）**：`port.CommandCatalog` 只读清单端口（help 与补全同源、动态 `/mcp:*` 携描述）、`/` 词法相实时过滤浮层（↑↓/Enter/点击/Esc、超 8 行折叠）；② **2b-2 附件按钮（D104）**：附件槽实装 → shell 线程 `GetOpenFileNameW` 文件框 → **暂存随文发**（chip 取消/替换、`Raw{Kind:"file", Text}`、ingestfile 文本并入首分片）；③ **2b-3 文档转文本（D105/Q17）**：pdf（ledongthuc/pdf，版式碎片归一）/docx（godocx）/xlsx（excelize）/html（x/net/html）提取入树，解析失败回落占位，pptx/rtf 缓（gopptx Windows embed 构建损坏）；④ **2b-4 展开按钮（D106）**：胶囊原地增高 120dp 多行编辑（Enter 提交/Shift+Enter 换行/Esc 收起压平、圆钮随底缘对齐、D76 几何不动）。手工验收清单：输入 `/` 浮层键流（含动态命令）、附件选择→chip→随文提交→转写内联、四类真实文档转文本、展开/收起不破胶囊动画与 Esc 优先级。
 
 ### S3 · 会话管理界面：relation-map（M7，P0，L，**形态改定：relation-map，D112**）
-> **执行序（D109）**：S3 **顺延至 S4（配置底座破坏性改造）+ S4b（GUI 跨平台抽象层）之后**——它是 UI 消费者，落在前两者稳定的地基上（平台层就位后 relation-map 不必只写 Windows）。
+> **执行序（D109）**：S3 **顺延至 S4（配置底座破坏性改造）+ S4a（大文件拆分）+ S4b（GUI 跨平台抽象层）之后**——它是 UI 消费者，落在前几者稳定的地基上（平台层就位后 relation-map 不必只写 Windows）。
 1. **内核先行**（文档先行：DESIGN §7 + 新 Dn）：
    - **已完成（D75，`3be7c91`）**：`/switch <id前缀>` 切到既有会话 + `port.ClearEvent` 清屏（`/new` 同清）+ 切换后自动回放；
    - 仍缺：**删除任意会话**命令（`ConversationStore.Remove` 已有、无命令调用者）、**改名非当前会话**（`/title` 只改当前）——二次确认复用 `/rm` 口径。
@@ -143,8 +143,37 @@
 - UI：设置窗 provider 列表（增删改、连通性「测试」按钮 → 走真实最小请求）、状态行显示当前生效 provider、降级时提示。
 - 测试：录制流回放（LLM 适配器惯例）+ 错误分类矩阵 + fallback 顺序性质测试。
 
-### S4b · GUI 跨平台抽象层（M8，P1，L，**执行序第二，新增，D111**）
-> **执行序（D109）**：紧随 S4/S5 之后、S3 之前——结构改动、不新增用户可见功能；做完后 S3 的 relation-map 与后续设置窗功能都不必只写 Windows。
+### S4a · 大文件拆分重构（M8，P1，M~L，**新增，2026-10-06，执行序第二**）
+> **执行序**：当前进行中的任务（另一 agent，改动面含 `cmd/aquarius/main.go`、`uigui/gui.go` 等，与本步拆分对象重叠）**合入后即可开工**；**必须先于 S4b**——平台抽象层在拆薄后的文件上抽取，diff 可读、冲突面小。
+
+- **性质**：纯代码组织重构，**不新增、不变更任何行为**——以同包内搬文件为主（unexported 标识符包内可见，零 import 改动），仅两个巨型函数抽方法。无 DESIGN 口径变更、不立新 Dn；若拆分中发现实现与文档不一致，先改文档再改代码（惯例）。
+- **现状（非测试 Go 文件行数 Top）**：`uigui/window.go` **2791**（112 个顶层声明、十余主题混居）≫ `app/session.go` 1170（`execCommand` 单函数 401 行、23 case）≈ `cmd/aquarius/main.go` 889（`run` 单函数 553 行）> `app/agent.go` 829；其余 690~760：`uigui/{model,shell_windows,gui,select}.go`、`llm/openai.go`、`uitui/model.go`。
+- **P0：`uigui/window.go` → 骨架 + 10 文件**（全部同包 `uigui` 纯搬移，一个 commit）：
+
+| 新文件 | 迁入声明（现 window.go） | 约行数 |
+|---|---|---|
+| window.go（留骨架） | `point/rect/drawShape`、`onWindowThread`、`runWindow`、`frame`、`phase`、`requestMove`、`onHWND`（窗口事件循环） | ~250 |
+| theme_font.go | `newTheme`、`monoFontFaces`、`pickMonoFace`、`mdHeadingSp`、`loadCJKFaces` | ~110 |
+| winpos.go | `posRec`、`loadPos/savePos`、`commitWinGeom`、`applyConfiguredSize`、`clampWindowPx` | ~90 |
+| layout.go | `UI.layout`、`bandHeightsClamped`、`layoutCollapsed`、`updateScroll` | ~170 |
+| transcript.go | `transcript`、`selFor`、`measuredRow/measureRow/paintRow`、`rowStyle`、`mdBlockWidget` | ~360 |
+| chip.go | `chipClick/chipIsOpen/chipHeaderText/chipCopyText/chipRaw`、`toolChipRow`、`statusChip` | ~210 |
+| input.go | `inputBar`、`inputExtraDp/Px`、`inputRowRects`、`hoverTip/hoverCard`、`updateEditor/drawCaret/caretRect/caretLineH`、`updateReasonEditor/drawReasonCaret/confirmReason`、`submitEditor/cancelEdit/setExpanded` | ~420 |
+| confirm_ui.go | `factsCard`、`pillContent/expandSlot/pillContentExpanded`、`confirmBtn`、`glyphDeny/Allow/Key`、`iconSlot`、`nextPermLevel/confirmElevatable/confirmElevate/confirmTipAt`、`shortID` | ~250 |
+| attach.go | `attachSlot/attachChip/attachSlotRect`、`drawPaperclip`、`featherWidth`、`record` | ~120 |
+| chrome.go | `drawMaximize/drawMinimize`、`cubicArc`、`actionCircle`、`logoRight/updateLogo/requestLogoMenu` | ~190 |
+| branch.go | `blockView(+menuable/selCount)`、`branchStrip/branchStrips/branchClick/branchArrow/branchRow`、`gotoBranch` | ~190 |
+| interact.go | `updateClicks/updateDrag`、`beginDrag/moveDrag/endDrag/clickHeld`、`flushCopy`、`frameItems/statusText`、`bubbleHit/bubbleRight/updateBubbleRight`、`bubbleMenuCtx/bubbleCtx/chipOf/requestBubbleMenu` | ~330 |
+
+- **P1：`app/session.go` 先拆函数、再拆文件**——`execCommand` 保留 switch 分发壳，各 case 体抽 `execNew/execList/…/execEffort` 方法（golden 回放守门）；文件拆四份：`session.go`（结构 + `NewSession/Handle/runTurn/ingest/persist`，~350）、`session_cmd_tree.go`（new/list/switch/title/goto/branch/rm + `nodeSummary/branchLine/subtreeSize`）、`session_cmd_edit.go`（edit/regen/Carry/Clone + `editParts/parseEditArgs/resolveNode/upstreamUser/resolveConversation`）、`session_cmd_misc.go`（compact/permission/memory/usage/jobs/plugin/model/think/effort + `jobsReport/resolveJob/jobCommand/permissionReport`）。
+- **P1：`cmd/aquarius/main.go` 的 `run()` 按装配段抽子函数**——`run` 留顺序骨架；新增 `bootstrap_profile.go`（profile 解析/特权目录/模板写入）、`assemble_ports.go`（附件库/记忆/notify/llm/装饰器链/工具）、`assemble_ui.go`（三种前端 + 设置窗 + logo 事实卡）；小端口适配器（`sessionTree/sessionCommands/envSecrets/levelHolder/systemClock/yesConfirmer/systemIDGen/terminalSuspend`）→ `main_adapters.go`，`pickEditor/openMemoryEditor` → `editor.go`；能并入已有 config.go/plugins.go 的不另开新文件。
+- **P2（可选顺手）**：`llm/openai.go` → client / wire / stream 三份；`uigui/shell_windows.go` → tray / menu / filedlg 三份；`app/agent.go` → 核心循环 + `agent_compact.go` + `turnbuffer.go` + `agent_tools.go`。`uitui/model.go`、`uigui/gui.go`、`uigui/select.go`（内聚的选区子系统）、`plugin/host.go` 暂不动。
+- **验证与节奏**：每个源文件一个 commit（`refactor: split … by concern`）；每步 `gofmt -l .` 空 + `go vet` + `go test ./...`（含 `-race`）全绿；app 侧拆函数重点看 golden 回放不变；window.go 拆完全量跑一次 uigui 测试（同包搬移不影响测试对未导出标识符的引用）+ GUI 冒烟收尾。
+- **非目标**：不动包边界、命名与行为；不拆测试文件（`session_test.go` 1924、`main_test.go` 1535 留待按需）。
+- **状态（2026-10-06）**：待开工——前置：当前进行中任务合入；P0/P1 必做，P2 可选。
+
+### S4b · GUI 跨平台抽象层（M8，P1，L，**执行序第三，新增，D111**）
+> **执行序（D109）**：紧随 S4a（大文件拆分，见上）之后、S3 之前——结构改动、不新增用户可见功能；做完后 S3 的 relation-map 与后续设置窗功能都不必只写 Windows。
 
 - **动机（D111）**：§15.6 现状 = GUI 交互层仅 Windows 实测，非 Windows 全为 no-op 桩（`win32_other.go` / `winmgr_other.go` / `theme_other.go`）；与「轻量跨平台单二进制」首要原则冲突，且越晚抽、长在其上的功能越多、重写越贵。
 - **改动面**：
@@ -192,18 +221,23 @@
   └───────────────────────────┬──────────────────────────────────┘
                               ↓
   ┌──────────────────────────────────────────────────────────────┐
-  │ ② GUI 跨平台抽象层（结构改动，D111）                          │
+  │ ② 大文件拆分重构（S4a，纯代码组织、无行为变更）               │
+  │    window.go/session.go/main.go/openai.go 按主题拆薄          │
+  └───────────────────────────┬──────────────────────────────────┘
+                              ↓
+  ┌──────────────────────────────────────────────────────────────┐
+  │ ③ GUI 跨平台抽象层（结构改动，D111）                          │
   │    S4b 平台接口 + Windows 迁入 + 非 Windows 降级实现（非桩）  │
   └───────────────────────────┬──────────────────────────────────┘
                               ↓
   ┌──────────────────────────────────────────────────────────────┐
-  │ ③ 对话树 UI：relation-map（D112）                             │
+  │ ④ 对话树 UI：relation-map（D112）                             │
   │    S3 内核补洞(/rm 任意会话·改名) + TreeView 整树快照 + 关系图 │
   └───────────────────────────┬──────────────────────────────────┘
                               ↓
   S6 工具/MCP 管理 · S7 提示词模块化 · S8 语音（可并行 spike）【顺延】
 ```
-- **执行序原则（D109）**：**先动 schema（不依赖 UI 形态）→ 再抽平台层（结构改动、不新增用户可见功能）→ 再长 UI（消费者）**；三者串行，S6–S8 顺延。
+- **执行序原则（D109；S4a 2026-10-06 增补）**：**先动 schema（不依赖 UI 形态）→ 再拆大文件（S4a，纯代码组织，为抽平台层减负）→ 再抽平台层（结构改动、不新增用户可见功能）→ 再长 UI（消费者）**；串行，S6–S8 顺延。
 - **破坏性改造集中在 S4+S5 一次做完**（config schema、数据目录、模型配置结构），避免来回改——这是**第一顺位**，因为破坏性窗口（无生产数据）越晚用越贵。
 - **语音 spike** 可在任意间隙并行，不阻塞。
 - **S2b 输入行**已落地（D103–D106，见 §2-S2b 状态）。
@@ -217,7 +251,7 @@
 - 数据目录布局（含 profile 目录化）；
 - UI 几何、动画常量、菜单项文案与项序、快捷键默认值、托盘/logo 菜单项集合；
 - 会话存储文件格式（如需），损坏即重建；
-- 现有 GUI 内部结构（window.go 持续膨胀 → 可借机拆文件）。
+- 现有 GUI 内部结构（window.go 持续膨胀 → 可借机拆文件；**已立为 S4a，见 §2**，范围扩到全部大文件）。
 
 **仍然不许动的红线**：`pluginapi/v1`（稳定级，尚未建、建后只增不改）；`domain` 节点不可变与 Revise/Carry 语义；流式不进领域；依赖方向 `adapter → port ← app → domain`；内置实现必须经端口；无工作区概念。
 
