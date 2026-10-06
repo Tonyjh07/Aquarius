@@ -107,5 +107,5 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 - 祈使句英文：`feat:` / `fix:` / `test:` / `docs:` / `refactor:`；一个 commit 只做一件事。
 - PR/提交说明写清：改了什么、对应 DESIGN 哪节/哪条决策（如 D22）、如何验证。
 - **改 DESIGN 某节 → 同步检查 `docs/` 对应篇**（各篇头部标了来源节号）；
-  README 状态节涉及进度也一并更新。
+  docs/roadmap.md 涉及进度也一并更新。
 - 质量门禁全绿（含 `-race`）才算完成。
