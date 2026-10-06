@@ -627,8 +627,13 @@ func (u *UI) apply(msg uiMsg) bool {
 	case editMsg:
 		// D92/D97 编辑态入口：预填原文 + 修订方式 + 焦点入编辑框（同唤出口径——layout
 		// 次帧执行 FocusCmd）；提交/Esc 的收尾见 model.submit 与 cancelEdit。
+		// D106 修订⑷：多行原文先展开再预填（SingleLine=false 下 SetText 保真——
+		// 原顺序会在进入编辑态就压平换行）。
 		u.m.editTarget = m.id
 		u.m.editMode = m.mode
+		if strings.Contains(m.text, "\n") {
+			u.setExpanded(true)
+		}
 		u.editor.SetText(m.text)
 		u.focusPending = true
 	case copyMsg:

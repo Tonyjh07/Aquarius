@@ -3,6 +3,7 @@ package uigui
 import (
 	"testing"
 
+	"gioui.org/f32"
 	"gioui.org/io/input"
 	"gioui.org/io/key"
 
@@ -79,17 +80,22 @@ func TestExpandMultilineSubmit(t *testing.T) {
 	}
 }
 
-// TestExpandCollapseFlatten D106③：收起时含换行文本压平为空格（所见即所发逆操作）。
-func TestExpandCollapseFlatten(t *testing.T) {
+// TestExpandCollapseKeepsText D106 修订⑶：收起不压平——换行原样保留（数据保真），
+// 重新展开即完整多行。
+func TestExpandCollapseKeepsText(t *testing.T) {
 	u, _ := newExpandUI(t)
 	u.setExpanded(true)
 	u.editor.SetText("一\n二\n三")
 	u.setExpanded(false)
-	if u.editor.Text() != "一 二 三" {
-		t.Fatalf("压平 = %q, want 一 二 三", u.editor.Text())
+	if u.editor.Text() != "一\n二\n三" {
+		t.Fatalf("收起应保留换行: %q", u.editor.Text())
 	}
 	if !u.editor.SingleLine {
 		t.Fatal("收起后应为 SingleLine")
+	}
+	u.setExpanded(true)
+	if u.editor.Text() != "一\n二\n三" {
+		t.Fatalf("重新展开应还原多行: %q", u.editor.Text())
 	}
 }
 
@@ -142,7 +148,8 @@ func TestExpandEnterShiftEnter(t *testing.T) {
 	}
 }
 
-// TestExpandCollapseWindow D106③：收起窗口（球）时展开态一并复位。
+// TestExpandCollapseWindow D106③：收起窗口（球）时展开态一并复位（文本原样保留，
+// 修订⑶ 不压平）。
 func TestExpandCollapseWindow(t *testing.T) {
 	u, _ := newExpandUI(t)
 	u.setExpanded(true)
@@ -151,7 +158,37 @@ func TestExpandCollapseWindow(t *testing.T) {
 	if u.expanded {
 		t.Fatal("收起窗口应复位展开态")
 	}
-	if u.editor.Text() != "一 二" {
-		t.Fatalf("复位应压平文本: %q", u.editor.Text())
+	if u.editor.Text() != "一\n二" {
+		t.Fatalf("复位应保留文本: %q", u.editor.Text())
+	}
+}
+
+// TestEditMultilineAutoExpand D106 修订⑷：编辑多行消息自动展开，预填保真（含换行）。
+func TestEditMultilineAutoExpand(t *testing.T) {
+	u, _ := newExpandUI(t)
+	u.apply(editMsg{id: "u1", text: "第一行\n第二行"})
+	if !u.expanded || u.editor.SingleLine {
+		t.Fatalf("多行原文未自动展开: expanded=%v singleLine=%v", u.expanded, u.editor.SingleLine)
+	}
+	if u.m.editTarget != "u1" || u.editor.Text() != "第一行\n第二行" {
+		t.Fatalf("预填失真: target=%q editor=%q", u.m.editTarget, u.editor.Text())
+	}
+
+	// 单行原文不改变展开态。
+	u.setExpanded(false)
+	u.apply(editMsg{id: "u2", text: "单行"})
+	if u.expanded {
+		t.Fatal("单行原文不应展开")
+	}
+	if u.editor.Text() != "单行" {
+		t.Fatalf("单行预填 = %q", u.editor.Text())
+	}
+}
+
+// TestCaretRect D106 修订⑴：光标杆高度只随行高（20px 行高 → 杆高 20），与内容高无关。
+func TestCaretRect(t *testing.T) {
+	r := caretRect(f32.Pt(5, 100), 20)
+	if r.Dy() != 20 || r.Min.Y != 100-16 || r.Max.Y != 100+4 {
+		t.Fatalf("caretRect = %v, want 高 20、基线上 0.8 行下 0.2 行", r)
 	}
 }

@@ -1487,6 +1487,11 @@ func shortID(id string) string {
 // 生成中停止在右圆、胶囊内不占位，idle 时胶囊内只有占位文字。
 func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Left: unit.Dp(inputPadDp), Right: unit.Dp(inputPadDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		// D106 修订⑵：展开态 = 竖排 composer——附件左上/展开右上工具行 + 顶对齐多行
+		// 编辑区；确认态仍走单行布局（原因编辑器，灰槽本就隐藏）。
+		if u.expanded && u.m.confirm == nil {
+			return u.pillContentExpanded(gtx)
+		}
 		return layout.Flex{
 			Axis:      layout.Horizontal,
 			Alignment: layout.Middle,
@@ -1530,17 +1535,7 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm != nil {
 					return layout.Dimensions{} // D86：确认态灰槽隐藏（本就不可点占位）
 				}
-				// D106 展开槽实装：点击切换展开/收起；图标随态（四角括号外扩 ↔ 内收）。
-				d := gtx.Dp(inputIconDp)
-				draw := drawMaximize
-				if u.expanded {
-					draw = drawMinimize
-				}
-				return u.expandBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					box := image.Rectangle{Max: image.Pt(d, d)}
-					draw(gtx, box)
-					return layout.Dimensions{Size: box.Size()}
-				})
+				return u.expandSlot(gtx) // D106：点击切换展开/收起，图标随态
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm == nil {
@@ -1567,6 +1562,50 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 			}),
 		)
 	})
+}
+
+// expandSlot 展开槽（D106）：点击切换展开/收起，图标随态（四角括号外扩 ↔ 内收）。
+func (u *UI) expandSlot(gtx layout.Context) layout.Dimensions {
+	d := gtx.Dp(inputIconDp)
+	draw := drawMaximize
+	if u.expanded {
+		draw = drawMinimize
+	}
+	return u.expandBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		box := image.Rectangle{Max: image.Pt(d, d)}
+		draw(gtx, box)
+		return layout.Dimensions{Size: box.Size()}
+	})
+}
+
+// pillContentExpanded 展开态胶囊内竖排（D106 修订⑵）：[工具行 20][编辑区自然高]——
+// 附件左上、展开右上，编辑器**顶对齐**（Vertical Flex 默认 Start，不居中）。
+func (u *UI) pillContentExpanded(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					// 附件左上（D104：无暂存 = 图标槽、有暂存 = chip）。
+					if u.m.stagedFile != "" {
+						return u.attachChip(gtx)
+					}
+					return u.attachSlot(gtx)
+				}),
+				layout.Flexed(1, layout.Spacer{}.Layout),
+				layout.Rigid(u.expandSlot), // 展开右上
+			)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.Y = 0 // 自然高顶对齐（原 Flex Middle 居中——首行悬半空）
+			ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
+			ed.TextSize = unit.Sp(15)
+			dims := ed.Layout(gtx)
+			if u.inFadePass && u.caretFocused {
+				u.drawCaret(gtx, dims) // D62：fade pass 无 Focused 态，caret 自绘
+			}
+			return dims
+		}),
+	)
 }
 
 // confirmBtn 确认态动作圆钮（D86：⌀36 实色圆 + 白色字形，点击热区即整圆）。
@@ -2119,8 +2158,7 @@ func (u *UI) updateEditor(gtx layout.Context) {
 // InvalidateCmd 驱动，fade pass 无事件源、帧率随唤帧走，跟闪会冻在半相位。
 func (u *UI) drawCaret(gtx layout.Context, dims layout.Dimensions) {
 	c := u.editor.CaretCoords()
-	asc := int(float64(dims.Size.Y) * 0.8)
-	rect := image.Rect(int(c.X)-1, int(c.Y)-asc, int(c.X)+1, int(c.Y)+dims.Size.Y-asc)
+	rect := caretRect(c, u.caretLineH(gtx))
 	rect.Min.X = max(rect.Min.X, 0) // 空文本时 caret 贴原点，杆宽一半越出编辑器盒
 	if rect.Empty() {
 		return
@@ -2128,6 +2166,24 @@ func (u *UI) drawCaret(gtx layout.Context, dims layout.Dimensions) {
 	cl := clip.Rect(rect).Push(gtx.Ops) // 只裁 caret 杆——paint.Fill 覆盖整个当前裁剪区
 	paint.Fill(gtx.Ops, u.th.Palette.Fg)
 	cl.Pop()
+}
+
+// caretRect 光标杆矩形（D106 修订⑴）：基线 c.Y、按行高 lineH 的 0.8/0.2 拆分——
+// 高度只随**行高**、不随内容高（原实现用编辑器内容高，多行下光标正比于行数伸长）。
+func caretRect(c f32.Point, lineH int) image.Rectangle {
+	asc := int(float64(lineH) * 0.8)
+	return image.Rect(int(c.X)-1, int(c.Y)-asc, int(c.X)+1, int(c.Y)-asc+lineH)
+}
+
+// caretLineH 编辑器单行行高（D106 修订⑴）：同字号单行量测——多行下内容高 = 整块高
+// 不可用。字号与 pillContent 的编辑器设置（15sp）保持一致。
+func (u *UI) caretLineH(gtx layout.Context) int {
+	_, dims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
+		s := material.Body2(u.th, "行")
+		s.TextSize = unit.Sp(15)
+		return s.Layout(gtx)
+	})
+	return dims.Size.Y
 }
 
 // updateReasonEditor 消费确认态原因编辑器事件（D86）：Enter → SubmitEvent → 拒绝
@@ -2252,19 +2308,15 @@ func (u *UI) cancelEdit() {
 	u.editor.SetText("")
 }
 
-// setExpanded 切换展开态（D106）：编辑器 SingleLine 随动、焦点保持；收起时含换行
-// 文本压平为空格（SingleLine SetText 语义 =「所见即所发」的逆操作，D106③）。
+// setExpanded 切换展开态（D106；修订⑶ 收起保留换行）：编辑器 SingleLine 随动、焦点
+// 保持；切换不触 buffer——已有 \n 原样保留（单行胶囊内显示溢出裁剪可接受，数据保真
+// 优先：提交恒发真实文本，重新展开即完整多行）。
 func (u *UI) setExpanded(on bool) {
 	if u.expanded == on {
 		return
 	}
 	u.expanded = on
 	u.editor.SingleLine = !on
-	if !on {
-		if t := u.editor.Text(); strings.Contains(t, "\n") {
-			u.editor.SetText(t) // SingleLine 下 SetText 压 \n 为空格（D98 同机制）
-		}
-	}
 	u.focusPending = true
 }
 
