@@ -235,7 +235,9 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - 模型能力差异：`ModelInfo{Vision, Audio}` 声明能力；不支持图片的模型遇到 Image Part →
   明确报因并提示（v1 不做自动 OCR/描述降级）。
 - Audio Part 一律先经 `Transcriber` 得到 Transcript；模型只见文本。Doc Part 注入提取文本（截断），
-  原文可经 `file_read` 工具取用。
+  原文可经 `file_read` 工具取用。常见文档转文本（D105/S2b-3）：pdf/docx/xlsx/html 按扩展名
+  分派到现成纯 Go 库提取（选型表与统一口径见 D105）；pptx/rtf/legacy 二进制 Office 首批缓，
+  走二进制占位文案（原文仍可 `file_read`）；解析失败（加密/损坏/超限）同样回落占位并注明原因。
 
 ### 4.3 内置工具（全部经 `port.Tool` 契约，与三方插件同权）
 

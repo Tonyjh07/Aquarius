@@ -4,7 +4,7 @@
 
 ## 一、范围与维护
 
-- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 44 个模块。
+- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 53 个模块。
   - `spike/` 下各目录是独立 `go.mod` 的试验工程，不属于交付物，不在本清单内。
   - `assets/` 下图标为本项目自制素材，不含第三方组件。
 - **依赖升级后请重新核对并同步更新本文件**：
@@ -35,8 +35,10 @@
 | `github.com/charmbracelet/x/term` | `v0.2.1` | MIT | `Copyright (c) 2023 Charmbracelet, Inc.` |
 | `github.com/dlclark/regexp2` | `v1.12.0` | MIT | `Copyright (c) Doug Clark` |
 | `github.com/erikgeiser/coninput` | `v0.0.0-20211004153227-1c3628e74d0f` | MIT | `Copyright (c) 2021 Erik G.` |
+| `github.com/ledongthuc/pdf` | `v0.0.0-20260907135840-6c8c28e0e8a0` | BSD-3-Clause | `Copyright (c) 2009 The Go Authors. All rights reserved.` |
 | `github.com/go-text/typesetting` | `v0.3.4` | Unlicense OR BSD-3-Clause | `Copyright 2021 The go-text authors` |
 | `github.com/google/jsonschema-go` | `v0.4.3` | MIT | `Copyright (c) 2025 JSON Schema Go Project Authors` |
+| `github.com/gomutex/godocx` | `v0.1.5` | MIT | `Copyright (c) 2024 gomutex` |
 | `github.com/gorilla/css` | `v1.0.1` | BSD-3-Clause | `Copyright (c) 2023 The Gorilla Authors. All rights reserved.` |
 | `github.com/lucasb-eyer/go-colorful` | `v1.3.0` | MIT | `Copyright (c) 2013 Lucas Beyer` |
 | `github.com/mattn/go-isatty` | `v0.0.20` | MIT | `Copyright (c) Yasuhiro MATSUMOTO <mattn.jp@gmail.com>` |
@@ -48,16 +50,23 @@
 | `github.com/muesli/cancelreader` | `v0.2.2` | MIT | `Copyright (c) 2022 Erik Geiser and Christian Muehlhaeuser` |
 | `github.com/muesli/reflow` | `v0.3.0` | MIT | `Copyright (c) 2019 Christian Muehlhaeuser` |
 | `github.com/muesli/termenv` | `v0.16.0` | MIT | `Copyright (c) 2019 Christian Muehlhaeuser` |
+| `github.com/richardlehane/mscfb` | `v1.0.7` | Apache-2.0 | `Copyright 2013 Richard Lehane. All rights reserved.` |
+| `github.com/richardlehane/msoleps` | `v1.0.6` | Apache-2.0 | `Copyright 2014 Richard Lehane. All rights reserved.` |
 | `github.com/rivo/uniseg` | `v0.4.7` | MIT | `Copyright (c) 2019 Oliver Kuederle` |
 | `github.com/segmentio/asm` | `v1.1.3` | MIT | `Copyright (c) 2021 Segment` |
 | `github.com/segmentio/encoding` | `v0.5.4` | MIT | `Copyright (c) 2019 Segment.io, Inc.` |
+| `github.com/tiendc/go-deepcopy` | `v1.7.2` | MIT | `Copyright (c) 2023 tiendc` |
 | `github.com/xo/terminfo` | `v0.0.0-20220910002029-abceb7e1c41e` | MIT | `Copyright (c) 2016 Anmol Sethi` |
+| `github.com/xuri/efp` | `v0.0.1` | BSD-3-Clause | `Copyright (c) 2017 - 2025 Ri Xu All rights reserved.` |
+| `github.com/xuri/excelize/v2` | `v2.11.0` | Apache-2.0 | `Copyright (c) 2016-2026 The excelize Authors.` |
+| `github.com/xuri/nfp` | `v0.0.2-0.20250530014748-2ddeb826f9a9` | BSD-3-Clause | `Copyright (c) 2022-2025 Ri Xu All rights reserved.` |
 | `github.com/yosida95/uritemplate/v3` | `v3.0.2` | BSD-3-Clause | `Copyright (C) 2016, Kohei YOSHIDA <https://yosida95.com/>. All rights reserved.` |
 | `github.com/yuin/goldmark` | `v1.7.13` | MIT | `Copyright (c) 2019 Yusuke Inuzuka` |
 | `github.com/yuin/goldmark-emoji` | `v1.0.6` | MIT | `Copyright (c) 2020 Yusuke Inuzuka` |
+| `golang.org/x/crypto` | `v0.53.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/exp/shiny` | `v0.0.0-20250408133849-7e4ce0ab07d0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/image` | `v0.26.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
-| `golang.org/x/net` | `v0.48.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
+| `golang.org/x/net` | `v0.56.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/oauth2` | `v0.35.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/sync` | `v0.20.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/sys` | `v0.41.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
