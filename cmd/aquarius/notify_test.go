@@ -5,9 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -186,9 +184,7 @@ func writeConfigNotify(t *testing.T, dir, baseURL, name string, notify bool) {
   "output": {"notify": %t, "tts": false},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, name, baseURL, notify)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("AQ_E2E_KEY", "test-key")
 }
 

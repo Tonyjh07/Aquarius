@@ -18,6 +18,7 @@ var (
 	procGetConsoleProcessList = kernel32.NewProc("GetConsoleProcessList")
 	procGetConsoleWindow      = kernel32.NewProc("GetConsoleWindow")
 	procShowWindow            = user32.NewProc("ShowWindow")
+	procMessageBoxW           = user32.NewProc("MessageBoxW")
 )
 
 // Win32 面函数变量：测试注入假实现用（生产恒为真实 syscall 薄封装）。
@@ -35,11 +36,19 @@ var (
 	consoleShow = func(h uintptr, cmdShow int) {
 		procShowWindow.Call(h, uintptr(cmdShow))
 	}
+	messageBox = func(title, text string) {
+		tp, _ := syscall.UTF16PtrFromString(title)
+		mp, _ := syscall.UTF16PtrFromString(text)
+		procMessageBoxW.Call(0, uintptr(unsafe.Pointer(mp)),
+			uintptr(unsafe.Pointer(tp)), mbIconError)
+	}
 )
 
 const (
 	swHide = 0 // ShowWindow：隐藏窗口
 	swShow = 5 // ShowWindow：显示并激活
+
+	mbIconError = 0x10 // MessageBoxW：错误图标
 )
 
 // consoleHidden 自建控制台已隐藏标记（run() 主 goroutine 独占读写，无并发）。
@@ -67,5 +76,14 @@ func restoreConsole() {
 	consoleHidden = false
 	if hwnd := consoleWindow(); hwnd != 0 {
 		consoleShow(hwnd, swShow)
+	}
+}
+
+// notifyFatal 启动期致命错误的兜底呈现（D110 修订④）：stderr 对双击启动的用户不可见
+// （D108 已隐藏自建控制台），此时经系统消息框呈现；控制台可见（终端启动或 repl/tui
+// 已恢复）时 stderr 即达，no-op。
+func notifyFatal(msg string) {
+	if consoleHidden {
+		messageBox("Aquarius", msg)
 	}
 }

@@ -1018,7 +1018,7 @@ repl（测试/e2e 后端）与 tui 不动（二进制默认前端为 gui，D51�
   的上下边距在位图上透明（alpha=0 即穿透），光标停在边距条上零事件零帧，直采门控会
   失聪——故光标在输入行带内（输入行块顶 − 12dp 至窗底）恒心跳唤帧，离开带即静默收敛。
 - **logo tooltip 会话事实卡（D82/S1-1g，前置 B）**：logo 悬停在启动提示之外承载**事实卡**
-  ——profile（S4/Q1 落地前恒 `default` 占位）、会话标题（+ID 前缀）、模型（含权限档与
+  ——profile（D110 起为真实 profile 名）、会话标题（+ID 前缀）、模型（含权限档与
   effort）、上下文占用 `used/max（pct，精确|估算）`（Q6：精确优先、est 兜底，分母 =
   `limits.max_context_tokens`）、用量（Path 累计与上轮实测）。数据面 = `port.SessionFacts`
   展示快照（§7.6），经 `Options.Status` 回调随取（原子读零锁）；快照未就绪（零值）回退

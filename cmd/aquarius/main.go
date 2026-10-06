@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -94,6 +95,61 @@ func modelSection(generic map[string]any) map[string]any {
 	return model
 }
 
+// fatal 启动期致命错误：stderr 报因并返回退出码 1；控制台不可见（GUI 双击启动，
+// D108 已隐藏自建控制台、stderr 无处可看）时补系统消息框（D110 修订④——旧格式
+// 与配置错误必须清晰可见，不得静默退出）。
+func fatal(stderr io.Writer, format string, args ...any) int {
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintln(stderr, msg)
+	notifyFatal(msg)
+	return 1
+}
+
+// resolveProfile 解析当前 profile 名（D110①/修订②）：--profile flag > 根 config.json
+// 指针，两者仅决定「读哪个 profile」。指针不存在 = 首次运行，写指针指向 default；
+// 旧单文件 config 经 parsePointerFile 显式报 ErrLegacyConfig（D95 同口径，不做自动迁移）。
+// flag 显式选择视为用户断言：指向不存在的 profile 报因列出可用名，不自动创建、不写回指针。
+func resolveProfile(dir, flagName string) (string, error) {
+	pointerPath := filepath.Join(dir, "config.json")
+	var name string
+	data, err := os.ReadFile(pointerPath)
+	switch {
+	case err == nil:
+		var perr error
+		if name, perr = parsePointerFile(pointerPath, data); perr != nil {
+			return "", perr
+		}
+	case errors.Is(err, os.ErrNotExist):
+		if flagName == "" {
+			// 首次运行：写指针指向 default（profile 配置模板随后由 run 的模板分支落盘）。
+			if werr := os.WriteFile(pointerPath, []byte(pointerTemplate), 0o644); werr != nil {
+				return "", fmt.Errorf("生成 profile 指针 %s: %w", pointerPath, werr)
+			}
+		}
+	default:
+		return "", fmt.Errorf("读取 profile 指针 %s: %w", pointerPath, err)
+	}
+	if flagName != "" {
+		if err := validProfileName(flagName); err != nil {
+			return "", err
+		}
+		name = flagName
+		avail := listProfiles(dir)
+		if !slices.Contains(avail, name) {
+			joined := strings.Join(avail, ", ")
+			if joined == "" {
+				joined = "无"
+			}
+			return "", fmt.Errorf("--profile %s 不存在（profiles/ 下可用：%s）", name, joined)
+		}
+		return name, nil
+	}
+	if name == "" {
+		name = defaultProfileName
+	}
+	return name, nil
+}
+
 // dropTool 摘除指定名字的工具（model.think_tool=false 时隐藏 think，D34）。
 func dropTool(tools []port.Tool, name string) []port.Tool {
 	out := make([]port.Tool, 0, len(tools))
@@ -140,6 +196,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("aquarius", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	dataDir := flags.String("data", "", "数据目录（默认 ~/.aquarius）")
+	profileFlag := flags.String("profile", "", "选择 profile（进程级覆盖根 config.json 指针，D110；须已存在）")
 	modelName := flags.String("model", "", "覆盖 model.name")
 	baseURL := flags.String("base-url", "", "覆盖 model.base_url")
 	autoYes := flags.Bool("yes", false, "跳过逐次确认（等价对每个确认回答 y；危险操作慎用）")
@@ -152,8 +209,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Fprintf(stderr, "无法确定家目录: %v\n", err)
-			return 1
+			return fatal(stderr, "无法确定家目录: %v", err)
 		}
 		dir = filepath.Join(home, ".aquarius")
 	}
@@ -163,32 +219,40 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		dir = abs
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Fprintf(stderr, "创建数据目录 %s: %v\n", dir, err)
-		return 1
-	}
-	// 特权目录（D22）：<dataDir>/sandbox，权限矩阵的免确认 rw 格。
-	sandboxDir := filepath.Join(dir, "sandbox")
-	if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
-		fmt.Fprintf(stderr, "创建特权目录 %s: %v\n", sandboxDir, err)
-		return 1
+		return fatal(stderr, "创建数据目录 %s: %v", dir, err)
 	}
 
-	// 配置：不存在 = 首次运行，写模板并指引填写后重跑。
-	cfgPath := filepath.Join(dir, "config.json")
+	// profile 解析（D110①/修订②）：--profile > 根指针；根 config.json 仅存指针，
+	// 会话/记忆/附件等数据全部落 profiles/<name>/ 整目录隔离（Q1）。
+	profileName, err := resolveProfile(dir, *profileFlag)
+	if err != nil {
+		return fatal(stderr, "%v", err)
+	}
+	profileDir := filepath.Join(dir, "profiles", profileName)
+	if err := os.MkdirAll(profileDir, 0o755); err != nil {
+		return fatal(stderr, "创建 profile 目录 %s: %v", profileDir, err)
+	}
+	// 特权目录（D22）：<profile>/sandbox，权限矩阵的免确认 rw 格（随 profile 隔离）。
+	sandboxDir := filepath.Join(profileDir, "sandbox")
+	if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
+		return fatal(stderr, "创建特权目录 %s: %v", sandboxDir, err)
+	}
+
+	// profile 配置：不存在 = 该 profile 首次运行，写模板并指引填写后重跑。
+	cfgPath := filepath.Join(profileDir, "config.json")
 	cfg, err := loadConfig(cfgPath)
 	if errors.Is(err, os.ErrNotExist) {
 		if werr := writeDefaultConfig(cfgPath); werr != nil {
-			fmt.Fprintf(stderr, "生成配置失败: %v\n", werr)
-			return 1
+			return fatal(stderr, "生成配置失败: %v", werr)
 		}
-		fmt.Fprintf(stdout, "已生成配置: %s\n请编辑 model.name / model.base_url，并设置密钥环境变量后重新运行。\n"+
+		fmt.Fprintf(stdout, "已生成配置: %s\n当前 profile: %s（指针: %s）\n"+
+			"请编辑 model.name / model.base_url，并设置密钥环境变量后重新运行。\n"+
 			"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文（启动会警告，D35）\n",
-			cfgPath)
+			cfgPath, profileName, filepath.Join(dir, "config.json"))
 		return 0
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "读取配置失败: %v\n", err)
-		return 1
+		return fatal(stderr, "读取配置失败: %v", err)
 	}
 
 	// 环境变量与 flag 覆盖（flags > 环境变量 > config）。
@@ -205,22 +269,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		cfg.Model.BaseURL = *baseURL
 	}
 	if cfg.Model.Name == "" || cfg.Model.BaseURL == "" {
-		fmt.Fprintf(stderr, "model.name 与 model.base_url 不可为空\n")
-		return 1
+		return fatal(stderr, "model.name 与 model.base_url 不可为空")
 	}
 	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 口径。
 	if raw := strings.TrimSpace(cfg.Model.ReasoningEffort); raw != "" {
 		effort, err := app.ParseEffort(raw)
 		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 1
+			return fatal(stderr, "%v", err)
 		}
 		cfg.Model.ReasoningEffort = effort
 	}
 	cfg.UI.Kind = uiKindDefault(cfg.UI.Kind)
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
-		fmt.Fprintf(stderr, "ui.kind=%q 仅支持 repl | tui | gui（D33/D43）\n", cfg.UI.Kind)
-		return 1
+		return fatal(stderr, "ui.kind=%q 仅支持 repl | tui | gui（D33/D43）", cfg.UI.Kind)
 	}
 	if cfg.UI.Kind != "gui" {
 		restoreConsole() // repl/tui 以终端为界面，双击启动也必须可见（D108）
@@ -228,14 +289,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// MCP 声明校验（D30/D31，启动 fail-fast）：transport/command/url/risk/名字合法。
 	for name, srv := range cfg.MCPServers {
 		if err := srv.Validate(name); err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 1
+			return fatal(stderr, "%v", err)
 		}
 	}
 	apiKey, err := resolveAPIKey(context.Background(), cfg.Model.APIKey, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 
 	// 权限等级（D22）：缺省 strict；非法值报因退出。
@@ -243,8 +302,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if raw := strings.TrimSpace(cfg.Permissions.Level); raw != "" {
 		level, err = perm.Parse(raw)
 		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 1
+			return fatal(stderr, "%v", err)
 		}
 	}
 
@@ -316,24 +374,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	store, err := storejson.New(filepath.Join(dir, "conversations"))
+	store, err := storejson.New(filepath.Join(profileDir, "conversations"))
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
-	// 附件库（DESIGN §4.2）：sha256 内容寻址存 <dir>/attachments；
-	// 启动 GC 按全量会话引用清扫（引用收集不完整则跳过，宁可漏清不误删）。
-	blobs, err := blobfs.New(filepath.Join(dir, "attachments"))
+	// 附件库（DESIGN §4.2）：sha256 内容寻址存 <profile>/attachments（随 profile
+	// 隔离，D110 修订①）；启动 GC 按全量会话引用清扫（引用收集不完整则跳过，宁可漏清不误删）。
+	blobs, err := blobfs.New(filepath.Join(profileDir, "attachments"))
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 	runAttachmentGC(ctx, store, blobs, stderr)
 	// 记忆（D23 布局）：全局 memories.md + 会话 <id>.memory.md（与会话树同目录）。
-	mem, err := memoryfs.New(filepath.Join(dir, port.GlobalMemoryDoc), filepath.Join(dir, "conversations"))
+	mem, err := memoryfs.New(filepath.Join(profileDir, port.GlobalMemoryDoc), filepath.Join(profileDir, "conversations"))
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 	// 合并记忆（§6.3）：主存储 + 插件 resources 只读投影；宿主建好前 extras 为空。
 	// 写/删与 /memory 编辑器仍走主存储（mem.Path 是 memoryfs 专有面）。
@@ -377,8 +432,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		NoteUnsupported:   noteUnsupported,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 	// UI 前端（D33/D43/D51）：Gio GUI（默认，§15）、bubbletea TUI（ui.kind=tui）或
 	// repl（行式，测试/e2e 后端）——同权实现 uiFrontend，换壳不换核（D28 输出器
@@ -419,9 +473,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 						Model:  agent.CurrentModel(),
 						Level:  lvl.Get().String(),
 						Effort: agent.CurrentEffort(), // D34：effort 档位（off 时为空）
-						// D82：logo 事实卡（§15.1/S1-1g）——profile 占位至 S4（Q1），
+						// D82：logo 事实卡（§15.1/S1-1g）——D110 起为真实 profile 名，
 						// 会话事实取 app 侧发布快照（无锁原子读，§15.5 同口径）。
-						Profile: "default",
+						Profile: profileName,
 					}
 					if sess := sessPtr.Load(); sess != nil {
 						st.Facts = sess.Facts()
@@ -432,14 +486,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			},
 			Settings:      settingsSnapshot,
 			ApplySettings: applySettings,
-			Tree:          sessionTree{p: &sessPtr},     // D80/§7.5：分叉条只读数据面
-			Commands:      sessionCommands{p: &sessPtr}, // D103/S2b-1：补全浮层命令清单只读数据面
-			PosFile:       filepath.Join(dir, "gui_pos.json"),
-			Hotkey:        cfg.UI.Hotkey,      // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
-			Theme:         cfg.UI.Theme,       // 主题档 system|light|dark（§15.4/D61；空 = system）
-			Scale:         cfg.UI.Scale,       // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
-			FontSize:      cfg.UI.FontSize,    // 正文字号 sp（D90；0 = 15）
-			WindowWidth:   cfg.UI.WindowWidth, // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
+			Tree:          sessionTree{p: &sessPtr},                  // D80/§7.5：分叉条只读数据面
+			Commands:      sessionCommands{p: &sessPtr},              // D103/S2b-1：补全浮层命令清单只读数据面
+			PosFile:       filepath.Join(profileDir, "gui_pos.json"), // 位置记忆随 profile 走（D110 修订①）
+			Hotkey:        cfg.UI.Hotkey,                             // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:         cfg.UI.Theme,                              // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Scale:         cfg.UI.Scale,                              // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
+			FontSize:      cfg.UI.FontSize,                           // 正文字号 sp（D90；0 = 15）
+			WindowWidth:   cfg.UI.WindowWidth,                        // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
 			WindowHeight:  cfg.UI.WindowHeight,
 		})
 	case "tui":
@@ -483,11 +537,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		confirmer = yesConfirmer{}
 	}
 	// 内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
-	// 后台任务（DESIGN §5.8/D8）：日志落盘 <dir>/jobs，任务表内存态。
-	jobs, err := jobproc.New(filepath.Join(dir, "jobs"))
+	// 后台任务（DESIGN §5.8/D8）：日志落盘 <profile>/jobs，任务表内存态。
+	jobs, err := jobproc.New(filepath.Join(profileDir, "jobs"))
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 	toolTimeout := time.Duration(cfg.Limits.ToolTimeoutSec) * time.Second
 	if cfg.Limits.ToolTimeoutSec <= 0 {
@@ -516,10 +569,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	})
 	// 横切装饰器链（D14/§10，装配根叠加）：审计记每次真实调用，重试包在审计之外
 	// （一次用户可见的 Generate = 多条审计行），硬保底截断最内（发给服务端前裁到预算内）。
-	audit, err := decorate.NewAudit(filepath.Join(dir, "audit.log"), 0)
+	audit, err := decorate.NewAudit(filepath.Join(profileDir, "audit.log"), 0)
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 	defer audit.Close()
 	var counter port.TokenCounter
@@ -572,8 +624,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		},
 	)
 	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 	agentPtr.Store(agent)                  // TUI 状态行回调读取（atomic，避免与构造竞争）
 	runner.Add(agent.ContextCompactTool()) // 装配期注册（agent 依赖 runner，反向补注册）
@@ -599,7 +650,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Dial:          mcpgate.NewDialer(envSecrets{}),
 		Confirm:       confirmer,
 		ConfigServers: cfg.MCPServers,
-		PluginsDir:    filepath.Join(dir, "plugins"),
+		PluginsDir:    filepath.Join(profileDir, "plugins"),
 		States:        cfg.Plugins,
 		Persist:       persistPlugins,
 		Logf:          func(format string, args ...any) { fmt.Fprintf(stderr, format+"\n", args...) },
@@ -631,8 +682,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if ctx.Err() != nil {
 			return 0 // 启动期 Ctrl+C：ctx 早于主循环创建，按取消干净收尾（不报错退出）
 		}
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return fatal(stderr, "%v", err)
 	}
 	if ctx.Err() != nil {
 		return 0

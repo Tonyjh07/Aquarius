@@ -3,13 +3,30 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 )
+
+// ErrLegacyConfig D110 前的旧单文件 config（沿 storejson ErrLegacyFormat 口径：
+// 显式识别报因、绝不静默当零值解析、不做自动迁移——旧文件留存原地由用户手工处置）。
+var ErrLegacyConfig = errors.New("检测到旧格式 config（D110 前）")
+
+// defaultProfileName 首次运行创建的 profile 名（指针缺省指向它）。
+const defaultProfileName = "default"
+
+// legacyConfigKeys D110 前单文件 config 的顶层键：根 config.json 任一出现即判旧格式
+// （encoding/json 对未知键静默零值——旧文件「看起来正常」地丢光配置，必须显式识别，D95 同口径）。
+var legacyConfigKeys = []string{
+	"model", "ui", "mcpServers", "plugins", "permissions",
+	"limits", "system_prompt", "output", "input",
+}
 
 // fileConfig config.json 中当前里程碑消费的部分。
 // DESIGN §8 的其余键（input 等）同样写入模板但由对应里程碑启用，
@@ -139,6 +156,91 @@ func loadConfig(path string) (*fileConfig, error) {
 // writeDefaultConfig 落首次运行模板。
 func writeDefaultConfig(path string) error {
 	return os.WriteFile(path, []byte(defaultConfig), 0o644)
+}
+
+// pointerTemplate 根 config.json 的指针模板（D110①：仅存当前 profile 名）。
+const pointerTemplate = `{
+  "profile": "default"
+}
+`
+
+// validProfileName profile 名合法性（目录名安全子集）：非空、无路径分隔/盘符/控制
+// 字符、非 . ..、长度 ≤64。指针解析与设置窗新建/复制共用，防手改与注入。
+func validProfileName(name string) error {
+	if name == "" {
+		return fmt.Errorf("profile 名不可为空")
+	}
+	if name != strings.TrimSpace(name) {
+		return fmt.Errorf("profile 名首尾不可含空白: %q", name)
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("profile 名非法: %q", name)
+	}
+	if strings.ContainsAny(name, `/\:`) || len(name) > 64 {
+		return fmt.Errorf("profile 名不可含 / \\ : 且长度 ≤64: %q", name)
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("profile 名不可含控制字符: %q", name)
+		}
+	}
+	return nil
+}
+
+// parsePointerFile 解析根 config.json 指针（D110①），返回当前 profile 名。
+// 旧单文件 config 显式判别报 ErrLegacyConfig 并给出手工迁移步骤——普通 Unmarshal
+// 会把旧键静默丢成零值指针，「看起来正常」地换到空 profile，绝不允许（D95 同口径）。
+func parsePointerFile(path string, data []byte) (string, error) {
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return "", fmt.Errorf("解析 %s: %w", path, err)
+	}
+	for _, k := range legacyConfigKeys {
+		if _, ok := raw[k]; ok {
+			return "", fmt.Errorf("%w：%s 含旧格式键 %q。\n"+
+				"D110 起 profile 目录化：根 config.json 仅存当前 profile 指针（{\"profile\":\"<name>\"}），\n"+
+				"主配置落 profiles/<name>/config.json。请手工处置（不做自动迁移），例如迁移到 %s profile：\n"+
+				"  1. 把 %s 移动为 %s\n"+
+				"  2. 新建根 %s，内容：{\"profile\": \"%s\"}\n"+
+				"若该 profile 已存在请改用其他名字或手工合并；字段说明见 docs/configuration.md。",
+				ErrLegacyConfig, path, k, defaultProfileName, path,
+				filepath.Join(filepath.Dir(path), "profiles", defaultProfileName, "config.json"),
+				path, defaultProfileName)
+		}
+	}
+	v, ok := raw["profile"]
+	if !ok {
+		return "", fmt.Errorf("%s 缺 profile 键（指针格式：{\"profile\":\"<name>\"}，D110）", path)
+	}
+	name, ok := v.(string)
+	if !ok || name == "" {
+		return "", fmt.Errorf("%s 的 profile 键须为非空字符串", path)
+	}
+	if err := validProfileName(name); err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	return name, nil
+}
+
+// listProfiles 枚举 profiles/ 下可用的 profile 名（含 config.json 的目录）。
+// 目录不存在 = 无可用 profile（返回空）。
+func listProfiles(dir string) []string {
+	entries, err := os.ReadDir(filepath.Join(dir, "profiles"))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, "profiles", e.Name(), "config.json")); err != nil {
+			continue
+		}
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+	return names
 }
 
 // secretName 校验 secret 引用并返回环境变量名。

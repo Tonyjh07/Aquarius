@@ -91,7 +91,24 @@ func scriptServer(t *testing.T, replies []string) (*httptest.Server, *reqLog) {
 	return srv, reqs
 }
 
-// writeConfig 写入可运行的 config.json（密钥走 secret 引用）。
+// writeProfileLayout 在 <data> 落一套可运行 profile 布局（D110）：根指针 +
+// profiles/default/config.json。返回 profile 目录（conversations/ 等数据面断言用）。
+func writeProfileLayout(t *testing.T, dir, cfgJSON string) string {
+	t.Helper()
+	prof := filepath.Join(dir, "profiles", "default")
+	if err := os.MkdirAll(prof, 0o755); err != nil {
+		t.Fatalf("mkdir profile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(pointerTemplate), 0o644); err != nil {
+		t.Fatalf("write pointer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prof, "config.json"), []byte(cfgJSON), 0o644); err != nil {
+		t.Fatalf("write profile config: %v", err)
+	}
+	return prof
+}
+
+// writeConfig 写入可运行的 profile 配置（密钥走 secret 引用）。
 func writeConfig(t *testing.T, dir, baseURL, name string) {
 	t.Helper()
 	cfg := fmt.Sprintf(`{
@@ -99,13 +116,12 @@ func writeConfig(t *testing.T, dir, baseURL, name string) {
   "ui": {"kind":"repl"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, name, baseURL)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("AQ_E2E_KEY", "test-key")
 }
 
-// TestRunFirstTimeGeneratesConfig 首次运行：生成模板配置并退出（README 快速开始语义）。
+// TestRunFirstTimeGeneratesConfig 首次运行（D110）：生成根指针 + default profile
+// 模板配置并退出（README 快速开始语义）。
 func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	dir := t.TempDir()
 	var out, errBuf bytes.Buffer
@@ -115,24 +131,143 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if !strings.Contains(out.String(), "已生成配置") {
 		t.Fatalf("stdout = %q", out.String())
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	pointer, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
-		t.Fatalf("config 未生成: %v", err)
+		t.Fatalf("指针未生成: %v", err)
 	}
-	if !strings.Contains(string(data), `"secret:AQUARIUS_OPENAI_KEY"`) {
-		t.Fatalf("模板应使用 secret 引用: %s", data)
+	if !strings.Contains(string(pointer), `"profile"`) {
+		t.Fatalf("根 config.json 应为指针: %s", pointer)
 	}
-	if !strings.Contains(string(data), `"level": "strict"`) {
-		t.Fatalf("模板应含权限等级默认值: %s", data)
+	profCfg, err := os.ReadFile(filepath.Join(dir, "profiles", "default", "config.json"))
+	if err != nil {
+		t.Fatalf("profile 配置未生成: %v", err)
 	}
-	if !strings.Contains(string(data), `"system_prompt"`) {
-		t.Fatalf("模板应含 system_prompt 键: %s", data)
+	if !strings.Contains(string(profCfg), `"secret:AQUARIUS_OPENAI_KEY"`) {
+		t.Fatalf("模板应使用 secret 引用: %s", profCfg)
 	}
-	if !strings.Contains(string(data), `"kind": "gui"`) {
-		t.Fatalf("模板默认 ui.kind 应为 gui（D51）: %s", data)
+	if !strings.Contains(string(profCfg), `"level": "strict"`) {
+		t.Fatalf("模板应含权限等级默认值: %s", profCfg)
 	}
-	if fi, err := os.Stat(filepath.Join(dir, "sandbox")); err != nil || !fi.IsDir() {
-		t.Fatalf("特权目录应自动创建: %v", err)
+	if !strings.Contains(string(profCfg), `"system_prompt"`) {
+		t.Fatalf("模板应含 system_prompt 键: %s", profCfg)
+	}
+	if !strings.Contains(string(profCfg), `"kind": "gui"`) {
+		t.Fatalf("模板默认 ui.kind 应为 gui（D51）: %s", profCfg)
+	}
+	if fi, err := os.Stat(filepath.Join(dir, "profiles", "default", "sandbox")); err != nil || !fi.IsDir() {
+		t.Fatalf("特权目录应自动创建（profile 内）: %v", err)
+	}
+}
+
+// TestRunLegacyRootConfigRejected 旧单文件 config（D110 前布局）启动即显式报因
+// 并给出手工迁移步骤——绝不静默当零值指针解析（D95 同口径，D110④）。
+func TestRunLegacyRootConfigRejected(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{"model":{"name":"m","base_url":"http://127.0.0.1:1"},"ui":{"kind":"repl"}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	msg := errBuf.String()
+	for _, want := range []string{"旧格式", "profiles", "手工"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("stderr 缺 %q: %q", want, msg)
+		}
+	}
+}
+
+// TestRunProfileFlagSwitchesData --profile 选择已存在的 profile：数据面整体落在
+// profiles/<name>/（会话、审计随 profile 隔离，D110①）。
+func TestRunProfileFlagSwitchesData(t *testing.T) {
+	srv, _ := scriptServer(t, []string{"好的"})
+	dir := t.TempDir()
+	writeProfileLayout(t, dir, fmt.Sprintf(`{
+  "model": {"name":"m","base_url":%q,"api_key":"secret:X"},
+  "ui": {"kind":"repl"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`, srv.URL))
+	// 第二个 profile work：配置同构（密钥引用同名环境变量）。
+	work := filepath.Join(dir, "profiles", "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatalf("mkdir work: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "config.json"),
+		[]byte(fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X"},"ui":{"kind":"repl"}}`, srv.URL)), 0o644); err != nil {
+		t.Fatalf("write work config: %v", err)
+	}
+	t.Setenv("X", "k")
+
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir, "-profile", "work"},
+		strings.NewReader("hi\n/quit\n"), &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
+	}
+	// 会话树落在 work profile，default 不受影响。
+	if files, _ := filepath.Glob(filepath.Join(work, "conversations", "*.json")); len(files) != 1 {
+		t.Fatalf("work conversations = %v, want 1", files)
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json")); len(files) != 0 {
+		t.Fatalf("default conversations = %v, want 0（整目录隔离）", files)
+	}
+}
+
+// TestRunProfileFlagMissingRejected --profile 指向不存在的 profile：报因并列出
+// 可用名，不自动创建（D110 修订②）。
+func TestRunProfileFlagMissingRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeProfileLayout(t, dir, `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"repl"}}`)
+	t.Setenv("X", "k")
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir, "-profile", "nope"}, strings.NewReader(""), &out, &errBuf); code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(errBuf.String(), "nope") || !strings.Contains(errBuf.String(), "default") {
+		t.Fatalf("stderr = %q, want 报因含可用 profile 名", errBuf.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "profiles", "nope")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("不存在的 profile 不应被自动创建: %v", err)
+	}
+}
+
+// TestParsePointerFile 指针解析：合法指针、缺 profile 键、非法 profile 名、
+// 旧格式键判别（ErrLegacyConfig）。
+func TestParsePointerFile(t *testing.T) {
+	if name, err := parsePointerFile("p", []byte(`{"profile":"work"}`)); err != nil || name != "work" {
+		t.Fatalf("name = %q, err = %v", name, err)
+	}
+	if _, err := parsePointerFile("p", []byte(`{"other":1}`)); err == nil ||
+		!strings.Contains(err.Error(), "profile") {
+		t.Fatalf("缺 profile 键 err = %v", err)
+	}
+	if _, err := parsePointerFile("p", []byte(`{"profile":"../evil"}`)); err == nil {
+		t.Fatal("路径分隔 profile 名应被拒")
+	}
+	for _, k := range []string{"model", "ui", "mcpServers"} {
+		data := fmt.Sprintf(`{"profile":"default",%q:{}}`, k)
+		_, err := parsePointerFile("p", []byte(data))
+		if !errors.Is(err, ErrLegacyConfig) {
+			t.Fatalf("键 %q: err = %v, want ErrLegacyConfig", k, err)
+		}
+	}
+	if _, err := parsePointerFile("p", []byte(`{"model":{"name":"m"}}`)); !errors.Is(err, ErrLegacyConfig) {
+		t.Fatalf("纯旧格式 err = %v, want ErrLegacyConfig", err)
+	}
+}
+
+// TestValidProfileName profile 名目录安全子集。
+func TestValidProfileName(t *testing.T) {
+	for _, ok := range []string{"default", "work-1", "测试", "a.b"} {
+		if err := validProfileName(ok); err != nil {
+			t.Fatalf("%q 应合法: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", " x", "x ", ".", "..", "a/b", `a\b`, "a:b", strings.Repeat("x", 65)} {
+		if err := validProfileName(bad); err == nil {
+			t.Fatalf("%q 应被拒", bad)
+		}
 	}
 }
 
@@ -147,10 +282,7 @@ func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
   "permissions": {"level": "strict"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "compact_threshold": 0.7}
 }`
-	cfgPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	prof := writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 
 	var out, errBuf bytes.Buffer
@@ -162,7 +294,7 @@ func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
 		t.Fatalf("stdout = %q", out.String())
 	}
 
-	data, err := os.ReadFile(cfgPath)
+	data, err := os.ReadFile(filepath.Join(prof, "config.json"))
 	if err != nil {
 		t.Fatalf("read back config: %v", err)
 	}
@@ -182,7 +314,7 @@ func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
 	if limits["max_turns"] != float64(8) || limits["compact_threshold"] != 0.7 {
 		t.Fatalf("limits 数值类型漂移: %v", limits)
 	}
-	if m, _ := filepath.Glob(cfgPath + ".*"); len(m) > 0 {
+	if m, _ := filepath.Glob(filepath.Join(prof, "config.json") + ".*"); len(m) > 0 {
 		t.Fatalf("不应残留临时文件: %v", m)
 	}
 }
@@ -197,10 +329,7 @@ func TestRunModelSwitchWritesBackConfig(t *testing.T) {
   "permissions": {"level": "strict"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000}
 }`
-	cfgPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	prof := writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 
 	var out, errBuf bytes.Buffer
@@ -212,7 +341,7 @@ func TestRunModelSwitchWritesBackConfig(t *testing.T) {
 		t.Fatalf("stdout = %q", out.String())
 	}
 
-	data, err := os.ReadFile(cfgPath)
+	data, err := os.ReadFile(filepath.Join(prof, "config.json"))
 	if err != nil {
 		t.Fatalf("read back config: %v", err)
 	}
@@ -237,9 +366,7 @@ func TestRunModelSwitchWritesBackConfig(t *testing.T) {
 func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"repl"},"permissions":{"level":"root"}}`
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
@@ -255,9 +382,7 @@ func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
 func TestRunPlaintextKeyWarns(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"sk-plain-abc"},"ui":{"kind":"repl"}}`
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, &errBuf); code != 0 {
 		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
@@ -291,9 +416,7 @@ func TestRunRelativeDataDirBecomesAbsolute(t *testing.T) {
 func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":""},"ui":{"kind":"repl"}}`
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("AQUARIUS_OPENAI_KEY", "k") // 环境变量就位 → 正常启动
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, &errBuf); code != 0 {
@@ -315,9 +438,7 @@ func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
 func TestRunRejectsBadEffort(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X","reasoning_effort":"extreme"},"ui":{"kind":"repl"}}`
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
@@ -364,9 +485,7 @@ func TestRunThinkToolVisibility(t *testing.T) {
 			}
 			cfg := `{"model":{` + model + `},"ui":{"kind":"repl"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`
-			if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-				t.Fatalf("write config: %v", err)
-			}
+			writeProfileLayout(t, dir, cfg)
 			t.Setenv("X", "k")
 			var out bytes.Buffer
 			if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
@@ -387,9 +506,7 @@ func TestRunPersonaEnvironmentE2E(t *testing.T) {
 	dir := t.TempDir()
 	cfg := fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X"},"ui":{"kind":"repl"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 
 	var out bytes.Buffer
@@ -434,9 +551,7 @@ func TestRunRecordsUnsupportedParams(t *testing.T) {
 	dir := t.TempDir()
 	cfg := fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X","think":true,"reasoning_effort":"high"},"ui":{"kind":"repl"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 
 	var out bytes.Buffer
@@ -449,7 +564,7 @@ func TestRunRecordsUnsupportedParams(t *testing.T) {
 	}
 	mu.Unlock()
 
-	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	data, err := os.ReadFile(filepath.Join(dir, "profiles", "default", "config.json"))
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -478,9 +593,7 @@ func TestRunTUIReasoningE2E(t *testing.T) {
 	dir := t.TempDir()
 	cfg := fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X"},"ui":{"kind":"tui"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 
 	var out bytes.Buffer
@@ -520,9 +633,7 @@ func TestRunEchoThinkingE2E(t *testing.T) {
 			cfg := fmt.Sprintf(`{"model":{"name":"m","base_url":%q,"api_key":"secret:X"%s},"ui":{"kind":"repl"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`,
 				srv.URL, tc.modelExtra)
-			if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-				t.Fatalf("write config: %v", err)
-			}
+			writeProfileLayout(t, dir, cfg)
 			t.Setenv("X", "k")
 
 			var out bytes.Buffer
@@ -554,11 +665,11 @@ func TestRunEchoThinkingE2E(t *testing.T) {
 func TestRunAttachmentGC(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	store, err := storejson.New(filepath.Join(dir, "conversations"))
+	store, err := storejson.New(filepath.Join(dir, "profiles", "default", "conversations"))
 	if err != nil {
 		t.Fatalf("storejson: %v", err)
 	}
-	blobs, err := blobfs.New(filepath.Join(dir, "attachments"))
+	blobs, err := blobfs.New(filepath.Join(dir, "profiles", "default", "attachments"))
 	if err != nil {
 		t.Fatalf("blobfs: %v", err)
 	}
@@ -680,7 +791,7 @@ func TestRunFullTextConversation(t *testing.T) {
 	}
 
 	// 会话树已落盘且合法。
-	files, err := filepath.Glob(filepath.Join(dir, "conversations", "*.json"))
+	files, err := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json"))
 	if err != nil || len(files) != 1 {
 		t.Fatalf("conversation files = %v, %v", files, err)
 	}
@@ -703,7 +814,7 @@ func TestRunFullTextConversation(t *testing.T) {
 	}
 
 	// 审计装饰器（D14/§8）：这一轮生成应落一行 llm 审计。
-	auditData, err := os.ReadFile(filepath.Join(dir, "audit.log"))
+	auditData, err := os.ReadFile(filepath.Join(dir, "profiles", "default", "audit.log"))
 	if err != nil {
 		t.Fatalf("audit.log: %v", err)
 	}
@@ -794,9 +905,7 @@ func TestRunTUIAcceptsKind(t *testing.T) {
   "ui": {"kind":"tui"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000}
 }`, srv.URL)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 
 	var out bytes.Buffer
@@ -836,9 +945,7 @@ func TestRunTUIConfirmE2E(t *testing.T) {
   "ui": {"kind":"tui"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, srv.URL)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("AQ_E2E_KEY", "test-key")
 
 	var out bytes.Buffer
@@ -877,9 +984,7 @@ func TestRunDefaultsToGUIWhenKeyMissing(t *testing.T) {
 func TestRunRejectsUnknownUIKind(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"name":"m","base_url":"http://127.0.0.1:1","api_key":"secret:X"},"ui":{"kind":"web"}}`
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
@@ -899,7 +1004,7 @@ func TestRunRmConfirmE2E(t *testing.T) {
 
 	load := func() *conversation.Conversation {
 		t.Helper()
-		files, err := filepath.Glob(filepath.Join(dir, "conversations", "*.json"))
+		files, err := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json"))
 		if err != nil || len(files) != 1 {
 			t.Fatalf("conversation files = %v, %v", files, err)
 		}
@@ -1086,16 +1191,14 @@ func writeConfigLevel(t *testing.T, dir, baseURL, name, level string) {
   "permissions": {"level": %q},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, name, baseURL, level)
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	writeProfileLayout(t, dir, cfg)
 	t.Setenv("AQ_E2E_KEY", "test-key")
 }
 
-// loadTree 读取唯一会话树并做不变量自检。
+// loadTree 读取唯一会话树并做不变量自检（D110：数据落 profiles/default/）。
 func loadTree(t *testing.T, dir string) *conversation.Conversation {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join(dir, "conversations", "*.json"))
+	files, err := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json"))
 	if err != nil || len(files) != 1 {
 		t.Fatalf("conversation files = %v, %v", files, err)
 	}
@@ -1149,7 +1252,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 				t.Fatalf("stdout 缺 %q: %q", want, got)
 			}
 		}
-		data, err := os.ReadFile(filepath.Join(dir, port.GlobalMemoryDoc))
+		data, err := os.ReadFile(filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc))
 		if err != nil {
 			t.Fatalf("记忆文件未落盘: %v", err)
 		}
@@ -1187,7 +1290,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 		if !strings.Contains(got, "[y/N]") || !strings.Contains(got, "user denied") {
 			t.Fatalf("stdout 缺拒绝痕迹: %q", got)
 		}
-		if _, err := os.Stat(filepath.Join(dir, port.GlobalMemoryDoc)); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("拒绝后记忆文件不应存在: %v", err)
 		}
 		c := loadTree(t, dir)
@@ -1218,7 +1321,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 		if !strings.Contains(got, "[tool ok]") {
 			t.Fatalf("工具应直接执行: %q", got)
 		}
-		if _, err := os.Stat(filepath.Join(dir, port.GlobalMemoryDoc)); err != nil {
+		if _, err := os.Stat(filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc)); err != nil {
 			t.Fatalf("记忆文件应落盘: %v", err)
 		}
 	})
@@ -1357,7 +1460,7 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 		t.Fatalf("llm requests = %d, want 2", reqs.len())
 	}
 	// 任务日志文件落盘（jobs/<id>.log）。
-	logPath := filepath.Join(dir, "jobs", "j001.log")
+	logPath := filepath.Join(dir, "profiles", "default", "jobs", "j001.log")
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("读日志文件: %v", err)
@@ -1422,7 +1525,7 @@ func TestRunMemoryCommandE2E(t *testing.T) {
 	if !strings.Contains(got, "已用系统编辑器打开") || !strings.Contains(got, port.GlobalMemoryDoc) {
 		t.Fatalf("stdout 缺打开提示: %q", got)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, port.GlobalMemoryDoc))
+	data, err := os.ReadFile(filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc))
 	if err != nil {
 		t.Fatalf("记忆文件: %v", err)
 	}

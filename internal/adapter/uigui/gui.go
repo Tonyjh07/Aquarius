@@ -55,7 +55,7 @@ type Status struct {
 	Model   string
 	Level   string
 	Effort  string            // D34：推理档位（think off 时为空——effort 不显示）
-	Profile string            // D82：当前 profile（S4/Q1 落地前恒 "default" 占位）
+	Profile string            // D82：当前 profile 名（D110 起装配根传真值）
 	Facts   port.SessionFacts // D82：会话展示事实（零值 = 未就绪，事实卡回退启动提示）
 }
 
