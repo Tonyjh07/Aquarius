@@ -171,6 +171,8 @@ type UI struct {
 	elevateBtn  widget.Clickable // D86：提升权限钮（仅工具确认且有下一档时布局）
 	attachBtn   widget.Clickable // D104：附件槽（文件选择框入口，D49 灰槽实装）
 	attachClear widget.Clickable // D104：暂存 chip（点击取消暂存）
+	expandBtn   widget.Clickable // D106：展开槽（输入框放大切换，D49 灰槽实装）
+	expanded    bool             // D106：展开态（胶囊原地增高、编辑器多行；会话级不落盘）
 	drag        gesture.Drag
 	// D103 补全浮层（仅事件循环 goroutine 读写）：词法相/过滤清单每帧重算（命令清单
 	// 端口每帧拉取——动态命令随插件启停变化）；complRows 行矩形随帧登记（窗口系）。

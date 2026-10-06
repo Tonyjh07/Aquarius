@@ -58,27 +58,30 @@ const (
 	inputRowBottomDp = 16 // 输入行下边距（D49 canvas）
 	// inputRowBandDp 输入行带总高（D90 单源）＝行元素 + 上 8 下 16 透明边距：布局区高
 	// 划分、球锚、心跳带、停靠恢复共用（旧为五处手写重复组合式，改几何须五处同步）。
-	inputRowBandDp   = inputRowDp + pillTopDp + inputRowBottomDp
-	sideMarginDp     = 16 // 左右边距
-	confirmBtnDp     = 36 // D86：确认态三钮直径（行高 48 的 3/4）
-	confirmBtnGapDp  = 8  // D86：三钮间距
-	confirmBtnEdgeDp = 12 // D86：最右钮右缘到胶囊边缘（padding 16 − 4 圆形光学校正）
-	confirmBtnOptDp  = 4  // D86：光学校正量（布局期负内边距实现上面的 12）
-	rowGapDp         = 6  // 转写行间距
-	bubblePadXDp     = 12 // 气泡内边距
-	bubblePadYDp     = 7
-	cardPadXDp       = 10 // 文本行卡内边距
-	cardPadYDp       = 5
-	radiusDp         = 12 // 气泡圆角
-	cardRadiusDp     = 8  // 文本行卡圆角
-	statusChipDp     = 20 // 状态行 chip 高
-	statusPadXDp     = 10 // 状态行 chip 水平内边距
-	statusGapDp      = 8  // 状态行带高（chip + 与转写区间隙）
-	tipsPadXDp       = 10 // 悬停卡（hoverCard）内边距
-	tipsPadYDp       = 6
-	tipsRadiusDp     = 8  // 悬停卡圆角
-	tipsUpGapDp      = 6  // 悬停卡与胶囊顶的间隙
-	bubbleMinWDp     = 80 // 气泡最大宽下限（极窄窗兜底，D90 命名化）
+	inputRowBandDp = inputRowDp + pillTopDp + inputRowBottomDp
+	// inputPillExpandDp 展开态胶囊高（D106/S2b-4）：原地增高 ≈4 行多行编辑；输入带
+	// 随之增高 inputPillExpandDp−inputRowDp，转写区相应压缩。瞬时切换、不做高度动画。
+	inputPillExpandDp = 120
+	sideMarginDp      = 16 // 左右边距
+	confirmBtnDp      = 36 // D86：确认态三钮直径（行高 48 的 3/4）
+	confirmBtnGapDp   = 8  // D86：三钮间距
+	confirmBtnEdgeDp  = 12 // D86：最右钮右缘到胶囊边缘（padding 16 − 4 圆形光学校正）
+	confirmBtnOptDp   = 4  // D86：光学校正量（布局期负内边距实现上面的 12）
+	rowGapDp          = 6  // 转写行间距
+	bubblePadXDp      = 12 // 气泡内边距
+	bubblePadYDp      = 7
+	cardPadXDp        = 10 // 文本行卡内边距
+	cardPadYDp        = 5
+	radiusDp          = 12 // 气泡圆角
+	cardRadiusDp      = 8  // 文本行卡圆角
+	statusChipDp      = 20 // 状态行 chip 高
+	statusPadXDp      = 10 // 状态行 chip 水平内边距
+	statusGapDp       = 8  // 状态行带高（chip + 与转写区间隙）
+	tipsPadXDp        = 10 // 悬停卡（hoverCard）内边距
+	tipsPadYDp        = 6
+	tipsRadiusDp      = 8  // 悬停卡圆角
+	tipsUpGapDp       = 6  // 悬停卡与胶囊顶的间隙
+	bubbleMinWDp      = 80 // 气泡最大宽下限（极窄窗兜底，D90 命名化）
 
 	// 主窗像素尺寸夹取界（D90）：粗界给 config/settings 校验兜底；布局地板按
 	// 240dp × DPI × scale 抬下限（宽 = 三段行最小构成、高 = 输入行带 + 状态行 +
@@ -514,7 +517,9 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{Size: size}
 	}
 
-	inputH := gtx.Dp(inputRowBandDp) // 输入行 + 上 8 下 16 边距（D90 单源）
+	// 输入行带（D90 单源）+ 展开态增高（D106：与 inputBar 共用 inputExtra 单源，两遍
+	// layout 同帧一致）；statusH 照旧在带之上。
+	inputH := gtx.Dp(inputRowBandDp) + u.inputExtraPx(gtx)
 	statusH := 0
 	if u.statusText() != "" {
 		statusH = gtx.Dp(statusChipDp + statusGapDp)
@@ -1210,12 +1215,21 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 // p=0 时 logo 盖住前两者），几何按展开进度插值。
 func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	rowH := gtx.Dp(inputRowDp)
-	logo, pillEnd, sendEnd := inputRowRects(w, gtx.Dp(pillTopDp), rowH,
+	// D106：展开态胶囊原地增高（瞬时切换；动画期照常 48——D76 几何不动）。
+	pillH := rowH
+	if extra := u.inputExtraDp(); extra > 0 {
+		pillH = rowH + extra
+	}
+	// 圆钮贴胶囊底缘：展开态下移 extra（常态 extra=0 = D49 原位、D76 不变量不动）。
+	logo, pillEnd, sendEnd := inputRowRects(w, gtx.Dp(pillTopDp)+pillH-rowH, rowH,
 		gtx.Dp(inputGapDp), gtx.Dp(sideMarginDp))
 	// D54/D76 展开/收起几何：send 按 barP 从 logo 插值到终位（p=0 = 收起球、p=1 = D49 终位、
 	// 过冲 p>1 越出终位再回落），胶囊按 send 分段导出（缩/长段双间隙恒 12、平移段成圆同步
 	// 合球）；send 先收界（D57）、胶囊随夹后 send 导出 → 贴边夹掉后双间隙仍恒 12。
 	pill, send := rowRectsFromSend(logo, pillEnd, sendEnd, u.barP(), w)
+	if pillH != rowH {
+		pill.Min.Y -= pillH - rowH // 胶囊顶缘上移（底缘与圆钮对齐）；圆角恒 24dp
+	}
 	clipRect := image.Rectangle{Max: u.frameSize}
 	inAnim := u.expandAn.active
 
@@ -1223,12 +1237,17 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	// （原点 + 终宽都取 pillEnd → 文字图标不挤压、不位移），按当前胶囊矩形裁剪；
 	// D77 显隐另走内容 alpha 时间线（动画期隐藏、bar 完成后淡入），裁剪只管几何揭示。
 	// α 由 stepExpand 定帧（pillAlpha，两遍 layout 同帧同值）；仅 α<1 压组透明层
-	//（胶囊底板不透明 → 位图命中/焦点/手势不变）。
+	//（胶囊底板不透明 → 位图命中/焦点/手势不变）。展开态（D106）内容盒与原点改取
+	// 实际胶囊矩形（多行编辑从顶缘排）。
+	contentBox, contentOrigin := pillEnd.Size(), pillEnd.Min
+	if pillH != rowH {
+		contentBox, contentOrigin = pill.Size(), pill.Min
+	}
 	paint.FillShape(gtx.Ops, pillBg, clip.UniformRRect(pill, rowH/2).Op(gtx.Ops))
 	pst := clip.UniformRRect(pill, rowH/2).Push(gtx.Ops)
-	inner := op.Offset(pillEnd.Min).Push(gtx.Ops)
+	inner := op.Offset(contentOrigin).Push(gtx.Ops)
 	gtxC := gtx
-	gtxC.Constraints = layout.Exact(pillEnd.Size())
+	gtxC.Constraints = layout.Exact(contentBox)
 	if al := u.pillAlpha; al >= 1 {
 		u.pillContent(gtxC)
 	} else {
@@ -1311,6 +1330,20 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	// D103 补全浮层（tips 之后画——盖住转写区下部，胶囊上方锚定）：chrome 形状整窗
 	// 登记不受淡化带作用；行矩形随帧重登记（fade pass 同几何复登，bubbleRects 同构）。
 	u.drawCompl(gtx, absY, pill)
+}
+
+// inputExtraDp 展开态输入带增高量（D106 单源，dp）：胶囊增高超出常排 48 的部分。
+// 动画期恒 0（D76 几何不动）。
+func (u *UI) inputExtraDp() int {
+	if !u.expanded || u.expandAn.active {
+		return 0
+	}
+	return int(inputPillExpandDp - inputRowDp)
+}
+
+// inputExtraPx 增高量换算（layout 与 inputBar 同帧同值——经同一 gtx.Metric）。
+func (u *UI) inputExtraPx(gtx layout.Context) int {
+	return gtx.Dp(unit.Dp(u.inputExtraDp()))
 }
 
 // inputRowRects 三段几何（纯逻辑，可测，D49/§15.2）：拓扑 = 边距 | logo | 间隙 | 胶囊 |
@@ -1495,9 +1528,19 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm != nil {
-					return layout.Dimensions{}
+					return layout.Dimensions{} // D86：确认态灰槽隐藏（本就不可点占位）
 				}
-				return iconSlot(gtx, drawMaximize)
+				// D106 展开槽实装：点击切换展开/收起；图标随态（四角括号外扩 ↔ 内收）。
+				d := gtx.Dp(inputIconDp)
+				draw := drawMaximize
+				if u.expanded {
+					draw = drawMinimize
+				}
+				return u.expandBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					box := image.Rectangle{Max: image.Pt(d, d)}
+					draw(gtx, box)
+					return layout.Dimensions{Size: box.Size()}
+				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm == nil {
@@ -1679,6 +1722,25 @@ func drawMaximize(gtx layout.Context, box image.Rectangle) {
 		image.Rect(x0+in, y1-in-arm, x0+in+th, y1-in), // 左下·竖
 		image.Rect(x1-in-arm, y1-in-th, x1-in, y1-in), // 右下·横
 		image.Rect(x1-in-th, y1-in-arm, x1-in, y1-in), // 右下·竖
+	} {
+		paint.FillShape(gtx.Ops, iconDim, clip.Rect(r).Op())
+	}
+}
+
+// drawMinimize 收起图标（D106）：四边中点向内的短杠（与外扩四角括号对偶——「收回」），
+// 灰、臂长同 drawMaximize。
+func drawMinimize(gtx layout.Context, box image.Rectangle) {
+	if box.Dx() <= 0 || box.Dy() <= 0 {
+		return
+	}
+	in, arm, th := gtx.Dp(2), gtx.Dp(6), gtx.Dp(2)
+	x0, y0, x1, y1 := box.Min.X, box.Min.Y, box.Max.X, box.Max.Y
+	cx, cy := (x0+x1)/2, (y0+y1)/2
+	for _, r := range []image.Rectangle{
+		image.Rect(cx-th/2, y0+in, cx+th/2, y0+in+arm), // 上·竖（向下指）
+		image.Rect(cx-th/2, y1-in-arm, cx+th/2, y1-in), // 下·竖（向上指）
+		image.Rect(x0+in, cy-th/2, x0+in+arm, cy+th/2), // 左·横（向右指）
+		image.Rect(x1-in-arm, cy-th/2, x1-in, cy+th/2), // 右·横（向左指）
 	} {
 		paint.FillShape(gtx.Ops, iconDim, clip.Rect(r).Op())
 	}
@@ -2014,6 +2076,20 @@ func (u *UI) updateEditor(gtx layout.Context) {
 			}
 		}
 	}
+	// D106：展开态 Esc = 收起（文本保留压平）；优先级让浮层（complEsc/complOpenNow）
+	// 与编辑态（上方分支）——本过滤器 Focus 限编辑器，编辑器无 Esc 语义无冲突面。
+	if u.expanded && u.m.editTarget == "" && !u.complOpenNow && !u.complEsc {
+		for {
+			ev, ok := gtx.Event(key.Filter{Focus: &u.editor, Name: key.NameEscape})
+			if !ok {
+				break
+			}
+			if ke, isKey := ev.(key.Event); isKey && ke.State == key.Press {
+				u.setExpanded(false)
+				break
+			}
+		}
+	}
 	if !u.inFadePass {
 		u.caretFocused = gtx.Focused(&u.editor) // 真窗 pass 捕获（fade pass 零 Source 恒 false）
 	}
@@ -2176,6 +2252,22 @@ func (u *UI) cancelEdit() {
 	u.editor.SetText("")
 }
 
+// setExpanded 切换展开态（D106）：编辑器 SingleLine 随动、焦点保持；收起时含换行
+// 文本压平为空格（SingleLine SetText 语义 =「所见即所发」的逆操作，D106③）。
+func (u *UI) setExpanded(on bool) {
+	if u.expanded == on {
+		return
+	}
+	u.expanded = on
+	u.editor.SingleLine = !on
+	if !on {
+		if t := u.editor.Text(); strings.Contains(t, "\n") {
+			u.editor.SetText(t) // SingleLine 下 SetText 压 \n 为空格（D98 同机制）
+		}
+	}
+	u.focusPending = true
+}
+
 // flushCopy 处理挂起的复制请求（D92，frame 每帧调用）：clipboard.WriteCmd 须在 Gio
 // 帧上下文执行——shell 线程分发的 copyMsg 经主循环记账（pendingCopy）到这里落盘。
 func (u *UI) flushCopy(gtx layout.Context) {
@@ -2216,6 +2308,9 @@ func (u *UI) updateClicks(gtx layout.Context) {
 	}
 	if u.attachClear.Clicked(gtx) {
 		u.m.clearAttach() // D104：暂存 chip 点击 = 取消暂存
+	}
+	if u.expandBtn.Clicked(gtx) {
+		u.setExpanded(!u.expanded) // D106：展开/收起切换
 	}
 	// 工具 chip 头部点击 → 折叠/展开（D67；m.blocks 只增，块序即 chipIdx）。
 	for i, b := range u.m.blocks {

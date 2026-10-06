@@ -360,6 +360,9 @@ func (u *UI) beginCollapse() {
 	if u.collapsed && !u.expandAn.active {
 		return // 已收起且无动画可反向
 	}
+	if u.expanded { // D106：收起窗口一并复位展开态（文本压平还原 SingleLine）
+		u.setExpanded(false)
+	}
 	u.startExpandAnim(false)
 	u.collapsed = true
 	u.invalidate()
