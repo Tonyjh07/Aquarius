@@ -41,9 +41,10 @@ func TestEditSubmitStructured(t *testing.T) {
 	}
 	select {
 	case in := <-u.inCh:
-		if in.Command == nil || in.Command.Name != "edit" ||
-			len(in.Command.Args) != 2 || in.Command.Args[0] != "u1" || in.Command.Args[1] != "新问题 第二行" {
-			t.Fatalf("inCh = %+v, want 结构化 edit 命令且所见即所发", in)
+		// D107②：editMsg 零值 part=0（user 气泡恒段 0）→ 结构化提交附 --part 0。
+		want := []string{"u1", "--part", "0", "新问题 第二行"}
+		if in.Command == nil || in.Command.Name != "edit" || !slices.Equal(in.Command.Args, want) {
+			t.Fatalf("inCh = %+v, want 结构化 edit 命令且所见即所发（Args %v）", in, want)
 		}
 	default:
 		t.Fatal("inCh 未收到提交")
@@ -107,9 +108,9 @@ func TestEditSubmitModes(t *testing.T) {
 		mode conversation.KeepMode
 		want []string
 	}{
-		{"Fresh", conversation.Fresh, []string{"u1", "新问题"}},
-		{"Carry", conversation.Carry, []string{"u1", "--keep", "新问题"}},
-		{"Clone", conversation.Clone, []string{"u1", "--copy", "新问题"}},
+		{"Fresh", conversation.Fresh, []string{"u1", "--part", "0", "新问题"}},
+		{"Carry", conversation.Carry, []string{"u1", "--keep", "--part", "0", "新问题"}},
+		{"Clone", conversation.Clone, []string{"u1", "--copy", "--part", "0", "新问题"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -199,5 +200,32 @@ func TestEditTextHint(t *testing.T) {
 	u.generating.Store(true)
 	if got := u.statusText(); got == "" || got == "编辑中 · Enter 提交 / Esc 取消" {
 		t.Fatalf("生成状态应优先: %q", got)
+	}
+}
+
+// TestEditSubmitPartArg D107②：编辑态带分片序号提交 = 结构化 /edit 附 --part N；
+// 取消收尾分片序号归位（生命周期与 editTarget 同步）。
+func TestEditSubmitPartArg(t *testing.T) {
+	u := newEditUI()
+	u.apply(editMsg{id: "a1", text: "前半段", part: 0})
+	if u.m.editPart != 0 {
+		t.Fatalf("editPart = %d, want 0", u.m.editPart)
+	}
+	u.editor.SetText("新前半段")
+	u.submitEditor()
+	select {
+	case in := <-u.inCh:
+		want := []string{"a1", "--part", "0", "新前半段"}
+		if in.Command == nil || !slices.Equal(in.Command.Args, want) {
+			t.Fatalf("Args = %v, want %v", in.Command.Args, want)
+		}
+	default:
+		t.Fatal("inCh 未收到提交")
+	}
+
+	u.apply(editMsg{id: "a2", text: "x", part: 2})
+	u.cancelEdit()
+	if u.m.editPart != -1 || u.m.editTarget != "" {
+		t.Fatalf("取消未收尾: part=%d target=%q", u.m.editPart, u.m.editTarget)
 	}
 }

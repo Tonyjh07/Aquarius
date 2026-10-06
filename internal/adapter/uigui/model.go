@@ -3,6 +3,7 @@ package uigui
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -38,6 +39,10 @@ type block struct {
 	secs int
 	chip *toolChip
 	id   conversation.MessageID
+	// part 正文分片序号（D107②）：该块所源正文段内首个 PartText 在节点 Content 中的
+	// 序号（0 起；编辑回传 --part 用）——回放/提交调和两路盖章；-1 = 未盖章（草稿期/
+	// 非正文块）。
+	part int
 }
 
 // toolChip 一次工具调用的合并视图（D67/§15.3）：调用 + 权限确认 + 结果同组，
@@ -81,6 +86,9 @@ type model struct {
 	// editMode 编辑态修订方式（D97 分叉三方式）：随 editMsg 进入时设定，zero = Fresh；
 	// 提交时转为 --keep/--copy token（与 typed 路径同解析，D97①）。
 	editMode conversation.KeepMode
+	// editPart 编辑态正文分片序号（D107②）：随 editMsg 进入时设定（-1 = 缺省合段），
+	// 提交时转为 --part token；编辑态生命周期与 editTarget 同步收尾。
+	editPart int
 	// stagedFile 已暂存附件路径（D104 暂存随文发）：非空时附件槽显示 chip、Enter
 	// 提交 Raw{Kind:"file", File, Text:已输入文本}；编辑态不消费（修订不夹带新附件）。
 	stagedFile string
@@ -190,22 +198,30 @@ func (m *model) commit(msg conversation.Message) {
 			}
 			return
 		}
-		// flushed 草稿段就地回填（FIFO；权威文本以节点为准）。
+		// flushed 草稿段就地回填（FIFO；权威文本以节点为准），并盖段序（D107④）。
+		starts := textSegStarts(msg.Content)
+		consumed := 0
 		for _, idx := range m.flushedDrafts {
-			if len(segs) == 0 {
+			if consumed >= len(segs) {
 				break
 			}
-			m.blocks[idx].text = segs[0]
-			segs = segs[1:]
+			m.blocks[idx].text = segs[consumed]
+			if consumed < len(starts) {
+				m.blocks[idx].part = starts[consumed]
+			}
+			consumed++
 		}
 		m.flushedDrafts = m.flushedDrafts[:0]
 		// 余段（收场轮的正文，通常仍在草稿）追加渲染；最后一段盖节点 ID
 		// ——分叉条（D81）每 Turn 一个挂点，挂在回答气泡下。
 		stamped := false
-		for i, seg := range segs {
-			blk := block{kind: blockAssistant, text: seg}
+		for i := consumed; i < len(segs); i++ {
+			blk := block{kind: blockAssistant, text: segs[i], part: -1}
+			if i < len(starts) {
+				blk.part = starts[i]
+			}
 			if msg.Outcome != conversation.OutcomeDone && i == len(segs)-1 {
-				blk.text = fmt.Sprintf("[%s]\n%s", msg.Outcome, seg)
+				blk.text = fmt.Sprintf("[%s]\n%s", msg.Outcome, segs[i])
 			}
 			if i == len(segs)-1 {
 				blk.id = msg.ID
@@ -246,7 +262,7 @@ func (m *model) flushDraftSegment() {
 		return
 	}
 	m.flushedDrafts = append(m.flushedDrafts, len(m.blocks))
-	m.blocks = append(m.blocks, block{kind: blockAssistant, text: text})
+	m.blocks = append(m.blocks, block{kind: blockAssistant, text: text, part: -1}) // 段序提交调和时盖（D107④）
 }
 
 // textSegments 按工具分片把节点正文切段（D95 Turn 粒度）：段 = tool 分片之间的连续
@@ -270,6 +286,37 @@ func textSegments(parts []conversation.Part) []string {
 	}
 	flush()
 	return segs
+}
+
+// textSegStarts 各正文段的首个正文分片序号（D107④）：与 textSegments 同分口径（仅工具
+// 边界断段、空段不产出），段序 = 段内首个 PartText 在 Content 中的序号（0 起）——提交
+// 调和时给正文块盖 part，编辑回传 --part 用。
+func textSegStarts(parts []conversation.Part) []int {
+	var starts []int
+	var b strings.Builder
+	ord, start := -1, -1
+	flush := func() {
+		if s := sanitizeControl(b.String()); strings.TrimSpace(s) != "" {
+			starts = append(starts, start)
+		}
+		b.Reset()
+		start = -1
+	}
+	for _, p := range parts {
+		if p.Kind == conversation.PartTool {
+			flush()
+			continue
+		}
+		if p.Kind == conversation.PartText {
+			ord++
+			if start == -1 {
+				start = ord
+			}
+		}
+		appendPartText(&b, p)
+	}
+	flush()
+	return starts
 }
 
 // stampAssistantAnchor 无正文 assistant 节点的分叉锚点回填（D89）：纯工具轮（模型
@@ -322,6 +369,7 @@ func (m *model) stampUserBlock(text string, id conversation.MessageID) {
 			continue
 		}
 		b.id = id
+		b.part = 0 // D107④：user 节点单正文分片（标题/随文合并后恒一段）
 		return
 	}
 }
@@ -339,11 +387,16 @@ func (m *model) replay(msg conversation.Message) {
 	case conversation.RoleAssistant:
 		start := len(m.blocks)
 		var seg strings.Builder
+		// D107④：段序盖章——segStart = 本段首个 PartText 在 Content 中的序号（0 起），
+		// 编辑回传 --part 用；flushSeg 产出块即盖。
+		textOrd, segStart := -1, -1
 		flushSeg := func() {
 			if s := sanitizeControl(seg.String()); strings.TrimSpace(s) != "" {
 				m.addMsg(blockAssistant, s, "") // 段先不带 ID：末段统一盖
+				m.blocks[len(m.blocks)-1].part = segStart
 			}
 			seg.Reset()
+			segStart = -1
 		}
 		for _, p := range msg.Content {
 			switch p.Kind {
@@ -362,6 +415,12 @@ func (m *model) replay(msg conversation.Message) {
 					m.attachToolResult(*p.Tool.Result) // D67：按 CallID 并入调用 chip
 				}
 			default:
+				if p.Kind == conversation.PartText {
+					textOrd++
+					if segStart == -1 {
+						segStart = textOrd
+					}
+				}
 				appendPartText(&seg, p)
 			}
 		}
@@ -427,14 +486,19 @@ func (m *model) submit(text string) {
 	if m.editTarget != "" {
 		id := m.editTarget
 		mode := m.editMode
+		part := m.editPart
 		m.editTarget = ""
 		m.editMode = conversation.Fresh
+		m.editPart = -1
 		args := []string{string(id)}
 		switch mode {
 		case conversation.Carry:
 			args = append(args, "--keep")
 		case conversation.Clone:
 			args = append(args, "--copy")
+		}
+		if part >= 0 {
+			args = append(args, "--part", strconv.Itoa(part)) // D107②：精确替换该正文分片
 		}
 		args = append(args, line)
 		select {
@@ -650,7 +714,7 @@ func (m *model) addMsg(kind blockKind, text string, id conversation.MessageID) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	b := block{kind: kind, text: text, id: id}
+	b := block{kind: kind, text: text, id: id, part: -1}
 	if kind == blockThinking {
 		b.secs = -1
 	}

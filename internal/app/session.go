@@ -487,7 +487,7 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return fmt.Sprintf("Head → %s", id), nil
 
 	case "edit":
-		target, mode, text, err := parseEditArgs(cmd.Args)
+		target, mode, part, text, err := parseEditArgs(cmd.Args)
 		if err != nil {
 			return "", err
 		}
@@ -495,7 +495,11 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		if err != nil {
 			return "", err
 		}
-		m, err := s.cur.Revise(id, s.editParts(id, text), mode)
+		parts, err := s.editParts(id, text, part)
+		if err != nil {
+			return "", err
+		}
+		m, err := s.cur.Revise(id, parts, mode)
 		if err != nil {
 			return "", fmt.Errorf("session: 修订: %w", err)
 		}
@@ -840,11 +844,36 @@ func (s *Session) upstreamUser(id conversation.MessageID) (conversation.Message,
 // 原值），仅把文本分片并为一替换为新文本（新文本落在首个文本分片的位置）——修复
 // "改文字把附件留在旧分支"；其余角色整节点替换（D95 后果⑥：Turn 的 thinking/tool
 // 分片不可被编辑文本撕裂）。目标不在树中时返回纯文本（Revise 会再报错）。
-func (s *Session) editParts(id conversation.MessageID, text string) []conversation.Part {
+// editParts 修订内容分片（D107）：非正文分片（思考/工具/附件 Ref）原序原值保留，只动正文。
+//   - part >= 0：精确替换第 part 个正文分片（0 起，D107②——GUI 编辑气泡带段序，多正文段
+//     Turn 只动被编辑的那段）；越界报错。
+//   - part < 0：全部正文分片并为一条新文本、置于首个正文分片位置（typed 路径无段上下文；
+//     user 附件保真规则推广到全部角色，D107③——取代 D95 后果⑥ 的整节点替换）。
+//
+// 节点不存在时回退单文本分片（Revise 随后报节点不存在）。
+func (s *Session) editParts(id conversation.MessageID, text string, part int) ([]conversation.Part, error) {
 	fresh := conversation.Part{Kind: conversation.PartText, Text: text}
 	old, ok := s.cur.Find(id)
-	if !ok || old.Role != conversation.RoleUser {
-		return []conversation.Part{fresh}
+	if !ok {
+		return []conversation.Part{fresh}, nil
+	}
+	if part >= 0 {
+		n := -1
+		out := make([]conversation.Part, 0, len(old.Content))
+		for _, p := range old.Content {
+			if p.Kind == conversation.PartText {
+				n++
+				if n == part {
+					out = append(out, fresh)
+					continue
+				}
+			}
+			out = append(out, p)
+		}
+		if n < part {
+			return nil, fmt.Errorf("session: 正文分片 %d 越界（该节点共 %d 个正文分片）", part, n+1)
+		}
+		return out, nil
 	}
 	parts := make([]conversation.Part, 0, len(old.Content)+1)
 	inserted := false
@@ -861,7 +890,7 @@ func (s *Session) editParts(id conversation.MessageID, text string) []conversati
 	if !inserted {
 		parts = append(parts, fresh)
 	}
-	return parts
+	return parts, nil
 }
 
 // resolveConversation 按会话 ID（精确或唯一前缀）解析会话（/memory [会话id] 用）；
@@ -993,34 +1022,53 @@ func jobCommand(spec port.JobSpec) string {
 	return strings.Join(append(parts, spec.Args...), " ")
 }
 
-// parseEditArgs 解析 /edit <id> [--keep|--copy] <文本>：flag 只在紧跟 id 的位置识别
-// （用法与文档一致），修订文本里的字面 "--keep"/"--copy" 原样保留，返回（目标, 模式, 文本）。
-// GUI 结构化提交复用同一 token 序列（D97①）：Args=[id, flag?, 文本]。
-func parseEditArgs(args []string) (string, conversation.KeepMode, string, error) {
-	usage := errors.New("用法: /edit <id> [--keep|--copy] <文本>（缺省 Fresh 开新分支；--keep 紧跟 id 转移后续历史；--copy 紧跟 id 复制后续历史）")
-	if len(args) > 0 && (args[0] == "--keep" || args[0] == "--copy") {
-		return "", conversation.Fresh, "", usage // flag 在 id 前：按用法拒绝
+// parseEditArgs 解析 /edit <id> [--keep|--copy] [--part N] <文本>：flag 只在紧跟 id 的
+// 位置识别（已知 flag 逐个消费，未知 "--x" 视为文本起点——字面 "--keep" 原样保留的旧
+// 口径不变），返回（目标, 模式, 正文分片序号, 文本）。--part N = 只替换第 N 个正文分片
+// （0 起，D107②）；缺省 -1 = 全部正文并为一条（D107③）。GUI 结构化提交复用同一 token
+// 序列（D97①/D107②）：Args=[id, flag?, ("--part", N)?, 文本]。
+func parseEditArgs(args []string) (string, conversation.KeepMode, int, string, error) {
+	usage := errors.New("用法: /edit <id> [--keep|--copy] [--part N] <文本>（缺省 Fresh 开新分支；--keep 转移后续历史；--copy 复制后续历史；--part N 只改第 N 个正文分片，0 起）")
+	if len(args) == 0 {
+		return "", conversation.Fresh, -1, "", usage
 	}
-	mode := conversation.Fresh
-	rest := args
-	if len(args) > 1 {
-		switch args[1] {
+	if strings.HasPrefix(args[0], "--") {
+		return "", conversation.Fresh, -1, "", usage // flag 在 id 前：按用法拒绝
+	}
+	mode, part := conversation.Fresh, -1
+	id, rest := args[0], args[1:]
+	for len(rest) > 0 && strings.HasPrefix(rest[0], "--") {
+		switch rest[0] {
 		case "--keep":
 			mode = conversation.Carry
-			rest = append([]string{args[0]}, args[2:]...)
+			rest = rest[1:]
 		case "--copy":
 			mode = conversation.Clone
-			rest = append([]string{args[0]}, args[2:]...)
+			rest = rest[1:]
+		case "--part":
+			if len(rest) < 2 {
+				return "", conversation.Fresh, -1, "", usage // --part 缺序号
+			}
+			n, err := strconv.Atoi(rest[1])
+			if err != nil || n < 0 {
+				return "", conversation.Fresh, -1, "", usage // --part 序号非法
+			}
+			part = n
+			rest = rest[2:]
+		default:
+			// 未知 "--x" = 文本以它开头（旧口径：只有已知 flag 被消费）。
+			goto text
 		}
 	}
-	if len(rest) < 2 {
-		return "", mode, "", usage
+text:
+	if len(rest) < 1 {
+		return "", mode, part, "", usage
 	}
-	text := strings.TrimSpace(strings.Join(rest[1:], " "))
+	text := strings.TrimSpace(strings.Join(rest, " "))
 	if text == "" {
-		return "", mode, "", errors.New("用法: /edit <id> [--keep|--copy] <文本>（修订文本不可为空）")
+		return "", mode, part, "", errors.New("用法: /edit <id> [--keep|--copy] [--part N] <文本>（修订文本不可为空）")
 	}
-	return rest[0], mode, text, nil
+	return id, mode, part, text, nil
 }
 
 // subtreeSize 统计 id 及其整棵子树的节点数（/rm 确认提示用；树无环，遍历必终止）。

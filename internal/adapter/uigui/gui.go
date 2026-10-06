@@ -574,13 +574,14 @@ type (
 	sayMsg struct{ text string }
 	// inputMsg 注入一行提交（headless 测试与外部输入泵用；窗口侧走 model.submit）。
 	inputMsg struct{ text string }
-	// editMsg 进入编辑态（D92/D97 气泡右键编辑三方式经 shell 菜单分发投递）：目标节点 +
-	// 预填原文 + 修订方式（zero = Fresh）；提交/Esc 的生命周期见 model.editTarget 与
-	// cancelEdit。
+	// editMsg 进入编辑态（D92/D97/D107 气泡右键编辑三方式经 shell 菜单分发投递）：目标
+	// 节点 + 预填原文 + 修订方式（zero = Fresh）+ 正文分片序号（D107②，-1 = 缺省合段）；
+	// 提交/Esc 的生命周期见 model.editTarget 与 cancelEdit。
 	editMsg struct {
 		id   conversation.MessageID
 		text string
 		mode conversation.KeepMode
+		part int
 	}
 	// copyMsg 写剪贴板请求（D92 气泡菜单复制项经 shell 线程分发投递）：记账到
 	// pendingCopy，下一帧经 gtx.Execute(clipboard.WriteCmd) 落盘（剪贴板写入必须在
@@ -631,6 +632,7 @@ func (u *UI) apply(msg uiMsg) bool {
 		// 原顺序会在进入编辑态就压平换行）。
 		u.m.editTarget = m.id
 		u.m.editMode = m.mode
+		u.m.editPart = m.part // D107②：编辑目标正文分片序号（提交转 --part token）
 		if strings.Contains(m.text, "\n") {
 			u.setExpanded(true)
 		}

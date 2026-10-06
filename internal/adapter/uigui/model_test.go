@@ -1,6 +1,7 @@
 package uigui
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -655,5 +656,59 @@ func TestSayFlushesThink(t *testing.T) {
 	}
 	if len(m.blocks) != 2 || m.blocks[0].kind != blockThinking || m.blocks[1].kind != blockPlain {
 		t.Fatalf("blocks = %+v, want 思考块 + plain", m.blocks)
+	}
+}
+
+// TestReplayStampsPartOrdinals D107④：回放正文块盖段序（段内首个 PartText 序号），
+// 思考/工具块不参与（part -1）。
+func TestReplayStampsPartOrdinals(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.replay(conversation.Message{
+		ID:      "a1",
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{
+			{Kind: conversation.PartThinking, Text: "思考"},
+			{Kind: conversation.PartText, Text: "前半段"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{CallID: "t1", Name: "think", Args: json.RawMessage(`{}`)}},
+			{Kind: conversation.PartText, Text: "后半段"},
+		},
+	})
+	var parts []int
+	texts := []string{}
+	for _, b := range m.blocks {
+		if b.kind == blockAssistant {
+			parts = append(parts, b.part)
+			texts = append(texts, b.text)
+		}
+	}
+	if len(parts) != 2 || parts[0] != 0 || parts[1] != 1 || texts[0] != "前半段" || texts[1] != "后半段" {
+		t.Fatalf("正文块段序 = %v texts = %v, want [0 1] [前半段 后半段]", parts, texts)
+	}
+}
+
+// TestCommitStampsPartOrdinals D107④：提交调和盖段序——flushed 草稿回填取段 0、
+// 余段追加取段 1（末段盖节点 ID 的 D81 口径不变）。
+func TestCommitStampsPartOrdinals(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.drafting = true
+	m.draft.WriteString("前半段")
+	m.flushDraftSegment()
+	m.addToolCall(tool.Call{ID: "t1", Name: "think", Args: json.RawMessage(`{}`)})
+	m.commit(conversation.Message{
+		ID:      "a1",
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "前半段"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{CallID: "t1", Name: "think", Args: json.RawMessage(`{}`)}},
+			{Kind: conversation.PartText, Text: "后半段"},
+		},
+	})
+	if len(m.blocks) != 3 || m.blocks[0].text != "前半段" || m.blocks[0].part != 0 {
+		t.Fatalf("块 0 = %+v", m.blocks[0])
+	}
+	if m.blocks[2].part != 1 || m.blocks[2].id != "a1" || m.blocks[2].text != "后半段" {
+		t.Fatalf("块 2 = %+v", m.blocks[2])
 	}
 }

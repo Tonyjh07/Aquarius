@@ -2308,9 +2308,12 @@ func (u *UI) submitEditor() {
 	u.m.submit(text)
 }
 
-// cancelEdit 退出编辑态（D92）：清目标节点并还原空编辑框（Esc / 空提交共用）。
+// cancelEdit 退出编辑态（D92）：清目标节点与编辑框（Esc / 空提交共用）；分片序号随收
+// （D107② 生命周期与 editTarget 同步）。
 func (u *UI) cancelEdit() {
 	u.m.editTarget = ""
+	u.m.editMode = conversation.Fresh
+	u.m.editPart = -1
 	u.editor.SetText("")
 }
 
@@ -2585,14 +2588,15 @@ func (u *UI) updateBubbleRight(gtx layout.Context) {
 	u.requestBubbleMenu(u.bubbleCtx(pi))
 }
 
-// bubbleMenuCtx 气泡右键菜单上下文（D92/D97/D99/D100）：Gio 线程命中时组好、
+// bubbleMenuCtx 气泡右键菜单上下文（D92/D97/D99/D100/D107）：Gio 线程命中时组好、
 // atomic.Pointer 过线程到 shell；edit = 编辑预填文本（user/assistant 块原文，D97 开放
-// 助手编辑），copy = 复制文本（选区优先，否则按块角色取），raw = 查看原文内容
-// （D99/D100：标题 + 原始文本/JSON）。
+// 助手编辑），part = 编辑目标正文分片序号（D107②，-1 = 缺省合段），copy = 复制文本
+// （选区优先，否则按块角色取），raw = 查看原文内容（D99/D100：标题 + 原始文本/JSON）。
 type bubbleMenuCtx struct {
 	id   conversation.MessageID
 	kind blockKind
 	edit string
+	part int
 	copy string
 	raw  rawContent
 }
@@ -2615,6 +2619,7 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	}
 	if (it.kind == blockUser || it.kind == blockAssistant) && it.bi < len(u.m.blocks) {
 		ctx.edit = u.m.blocks[it.bi].text
+		ctx.part = u.m.blocks[it.bi].part // D107②：编辑目标正文分片序号
 	}
 	switch {
 	case chip != nil:

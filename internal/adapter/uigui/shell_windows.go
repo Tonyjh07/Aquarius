@@ -525,11 +525,11 @@ func showBubbleMenu() {
 func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 	switch r {
 	case cmdBubbleEdit:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Fresh})
+		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Fresh, part: ctx.part})
 	case cmdBubbleEditKeep:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Carry})
+		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Carry, part: ctx.part})
 	case cmdBubbleEditCopy:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Clone})
+		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Clone, part: ctx.part})
 	case cmdBubbleRegen:
 		_ = u.post(inputMsg{text: "/regen " + string(ctx.id)})
 	case cmdBubbleCopy:
