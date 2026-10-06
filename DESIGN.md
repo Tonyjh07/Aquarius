@@ -931,7 +931,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 ## 13. 已决决策记录（ADR 摘要）
 
-决策记录已拆分至 **[docs/decisions.md](docs/decisions.md)**（与本文同权威；编号 D1–D61 跨文件不变，
+决策记录已拆分至 **[docs/decisions.md](docs/decisions.md)**（与本文同权威；编号 D1–D106 跨文件不变，
 `§13` / `Dn` 引用仍有效）。新决策在该文件追加，本节不再维护。
 
 ## 14. 暂缓事项（Backlog）
@@ -975,7 +975,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 GUI = **换壳不换核**：Gio 实现同一套 `uiFrontend`（`port.Presenter + Prompter + Confirmer` +
 Say/Prompt/SetInterrupt/Close，装配面见 `cmd/aquarius`），`ui.kind=gui` 接入装配 switch；
-repl（测试/e2e 后端）与 tui（默认）不动，D28 输出器装饰器自动继承。本节只描述**壳内**设计。
+repl（测试/e2e 后端）与 tui 不动（二进制默认前端为 gui，D51），D28 输出器装饰器自动继承。本节只描述**壳内**设计。
 
 ### 15.1 形态与窗口（悬浮球模型）
 
