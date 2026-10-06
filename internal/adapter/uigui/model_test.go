@@ -712,3 +712,18 @@ func TestCommitStampsPartOrdinals(t *testing.T) {
 		t.Fatalf("块 2 = %+v", m.blocks[2])
 	}
 }
+
+// TestReplayEmptyOutcomeNoMarker D107 补：空 Outcome 不打终态标记（旧版 Revise 产的
+// 修订节点零值——标记会渲染成 `[]`）。
+func TestReplayEmptyOutcomeNoMarker(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.replay(conversation.Message{
+		ID:      "a1",
+		Role:    conversation.RoleAssistant,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "修订过的回答"}},
+		// Outcome 零值（旧版 Revise 未随原节点）
+	})
+	if len(m.blocks) != 1 || m.blocks[0].text != "修订过的回答" {
+		t.Fatalf("blocks = %+v, want 单块且无 [] 标记", m.blocks)
+	}
+}

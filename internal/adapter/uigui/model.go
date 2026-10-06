@@ -191,7 +191,8 @@ func (m *model) commit(msg conversation.Message) {
 		if len(segs) == 0 && len(m.flushedDrafts) == 0 {
 			// 空内容的取消/错误也要有反馈（首个 token 前取消是最常见场景）；
 			// 纯工具/思考轮（chip/思考卡已实时入块）走 D89 锚点回填节点 ID。
-			if msg.Outcome != conversation.OutcomeDone {
+			// 空 Outcome 不打标记（D107 补：旧版 Revise 产的修订节点零值——标记会渲染成 `[]`）。
+			if msg.Outcome != "" && msg.Outcome != conversation.OutcomeDone {
 				m.addMsg(blockAssistant, fmt.Sprintf("[%s]", msg.Outcome), msg.ID)
 			} else {
 				m.stampAssistantAnchor(msg, start)
@@ -220,7 +221,7 @@ func (m *model) commit(msg conversation.Message) {
 			if i < len(starts) {
 				blk.part = starts[i]
 			}
-			if msg.Outcome != conversation.OutcomeDone && i == len(segs)-1 {
+			if msg.Outcome != "" && msg.Outcome != conversation.OutcomeDone && i == len(segs)-1 {
 				blk.text = fmt.Sprintf("[%s]\n%s", msg.Outcome, segs[i])
 			}
 			if i == len(segs)-1 {
@@ -427,7 +428,8 @@ func (m *model) replay(msg conversation.Message) {
 		flushSeg()
 		// 非 done 终态：标记行并入最后一个正文气泡（与实时 commit 同口径）；
 		// 无正文段（空内容的取消/错误）单独给标记块。
-		if msg.Outcome != conversation.OutcomeDone {
+		// 空 Outcome 不打标记（D107 补：旧版 Revise 产的修订节点零值——标记会渲染成 `[]`）。
+		if msg.Outcome != "" && msg.Outcome != conversation.OutcomeDone {
 			marked := false
 			for i := len(m.blocks) - 1; i >= start; i-- {
 				if m.blocks[i].kind == blockAssistant {

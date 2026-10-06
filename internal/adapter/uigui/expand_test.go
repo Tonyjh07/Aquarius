@@ -192,3 +192,24 @@ func TestCaretRect(t *testing.T) {
 		t.Fatalf("caretRect = %v, want 高 20、基线上 0.8 行下 0.2 行", r)
 	}
 }
+
+// TestSubmitAutoCollapse D106 修订⑥：发送后展开态自动收起（编辑态提交同路）。
+func TestSubmitAutoCollapse(t *testing.T) {
+	u, _ := newExpandUI(t)
+	u.setExpanded(true)
+	u.editor.SetText("一条消息")
+	u.submitEditor()
+	if u.expanded {
+		t.Fatal("发送后应自动收起")
+	}
+	if !u.editor.SingleLine {
+		t.Fatal("收起后应为 SingleLine")
+	}
+
+	// 常态提交不受影响。
+	u.editor.SetText("第二条")
+	u.submitEditor()
+	if u.expanded {
+		t.Fatal("常态提交不应展开")
+	}
+}

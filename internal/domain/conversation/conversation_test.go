@@ -572,3 +572,23 @@ func TestRootGuardsAndSystemRole(t *testing.T) {
 		t.Fatalf("validate: %v", err)
 	}
 }
+
+// TestReviseCarriesOutcome 修订节点 Outcome 随原节点（D107 补）：修订 = 同一轮的改写版，
+// 终态语义随行——缺省零值会在呈现层命中「非 done 终态标记」（修订消息顶部多出 `[]`）。
+func TestReviseCarriesOutcome(t *testing.T) {
+	useFixedClock(t)
+	c := New(NewID(), "t")
+	mustAppend(t, c, RoleUser, "q")
+	a := Message{ID: NewMessageID(), Parent: c.Head, Role: RoleAssistant,
+		Content: textParts("回答"), Outcome: OutcomeDone}
+	if err := c.AppendCommitted(a); err != nil {
+		t.Fatalf("append committed: %v", err)
+	}
+	m, err := c.Revise(a.ID, textParts("改写"), Fresh)
+	if err != nil {
+		t.Fatalf("revise: %v", err)
+	}
+	if m.Outcome != OutcomeDone {
+		t.Fatalf("revised outcome = %q, want %q（随原节点）", m.Outcome, OutcomeDone)
+	}
+}

@@ -2306,6 +2306,11 @@ func (u *UI) submitEditor() {
 	}
 	u.editor.SetText("")
 	u.m.submit(text)
+	// D106 修订⑥：发送后自动收起——长文输完即走，胶囊回常态（编辑态与仅附件提交同路；
+	// 文本已清、焦点随 setExpanded 保持）。
+	if u.expanded {
+		u.setExpanded(false)
+	}
 }
 
 // cancelEdit 退出编辑态（D92）：清目标节点与编辑框（Esc / 空提交共用）；分片序号随收

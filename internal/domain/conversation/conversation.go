@@ -156,10 +156,14 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	}
 
 	m := Message{
-		ID:        NewMessageID(),
-		Parent:    old.Parent,
-		Role:      old.Role,
-		Content:   cloneParts(content),
+		ID:      NewMessageID(),
+		Parent:  old.Parent,
+		Role:    old.Role,
+		Content: cloneParts(content),
+		// Outcome 随原节点（D107 补）：修订 = 同一轮的改写版，终态语义随行——缺省零值
+		// 会命中呈现层「非 done 终态标记」分支（修订消息顶部多出 `[]`）。
+		// Model/Usage 不随：改写文本出自用户，不误标模型/用量。
+		Outcome:   old.Outcome,
 		CreatedAt: nowFunc(),
 	}
 	prevHead := c.Head
