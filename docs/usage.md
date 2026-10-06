@@ -12,6 +12,8 @@ go build ./cmd/aquarius
 ```
 
 默认 **GUI 悬浮球**（`ui.kind=gui`，D51/§15：托盘常驻、Alt+A 呼出、不进任务栏）。
+**双击启动不弹控制台**（D108）：仅本次启动独占新建控制台（双击/资源管理器/开始菜单）
+时窗口即隐，日志与启动警告不可见；需看日志（复现问题、明文 api_key 警告）请**从终端启动**。
 `ui.kind=tui` 起 **TUI**（D33）：转写区 + 输入框 + 状态行（模型/权限/用量），
 上下键历史、PgUp/PgDn 滚动转写、Ctrl+C 取消当前生成、committed 回答带轻 markdown 渲染；
 `ui.kind=repl` 为行式 REPL（测试/e2e 后端）。TUI/repl 中直接输入文本即对话；`/help` 看命令；
