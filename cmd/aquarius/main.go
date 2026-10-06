@@ -134,6 +134,9 @@ func uiKindDefault(kind string) string {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// 双击静默启动（D108/§15.1）：自建控制台即判即隐，压短黑框闪现；终端启动
+	//（挂载 ≥2）不受影响、日志照常。repl/tui 前端随后恢复显示。
+	hideSpawnedConsole()
 	flags := flag.NewFlagSet("aquarius", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	dataDir := flags.String("data", "", "数据目录（默认 ~/.aquarius）")
@@ -218,6 +221,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
 		fmt.Fprintf(stderr, "ui.kind=%q 仅支持 repl | tui | gui（D33/D43）\n", cfg.UI.Kind)
 		return 1
+	}
+	if cfg.UI.Kind != "gui" {
+		restoreConsole() // repl/tui 以终端为界面，双击启动也必须可见（D108）
 	}
 	// MCP 声明校验（D30/D31，启动 fail-fast）：transport/command/url/risk/名字合法。
 	for name, srv := range cfg.MCPServers {
