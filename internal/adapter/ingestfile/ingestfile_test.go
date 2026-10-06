@@ -3,11 +3,15 @@ package ingestfile
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gomutex/godocx"
+	"github.com/xuri/excelize/v2"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -199,5 +203,207 @@ func TestIngestWithCaption(t *testing.T) {
 	}
 	if len(rep.Parts) != 1 || rep.Parts[0].Kind != conversation.PartDoc {
 		t.Fatalf("空文本 parts = %+v, want 单 PartDoc", rep.Parts)
+	}
+}
+
+// ---- D105 常见文档转文本（样本测试内自造，零 fixture 入库）----
+
+// minimalPDF 生成最小合法 PDF（单页 Helvetica 文本，xref 偏移程序内计算）。
+func minimalPDF() []byte {
+	const stream = "BT /F1 24 Tf 72 720 Td (Hello Aquarius PDF) Tj ET"
+	bodies := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	var buf bytes.Buffer
+	buf.WriteString("%PDF-1.4\n")
+	offsets := make([]int, 0, len(bodies))
+	for i, o := range bodies {
+		offsets = append(offsets, buf.Len())
+		fmt.Fprintf(&buf, "%d 0 obj\n%s\nendobj\n", i+1, o)
+	}
+	xref := buf.Len()
+	fmt.Fprintf(&buf, "xref\n0 %d\n0000000000 65535 f \n", len(bodies)+1)
+	for _, off := range offsets {
+		fmt.Fprintf(&buf, "%010d 00000 n \n", off)
+	}
+	fmt.Fprintf(&buf, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(bodies)+1, xref)
+	return buf.Bytes()
+}
+
+// partText 组装后返回 PartDoc 的提取文本。
+func partText(t *testing.T, rep port.IngestReport) string {
+	t.Helper()
+	if len(rep.Parts) == 0 || rep.Parts[0].Kind != conversation.PartDoc {
+		t.Fatalf("parts = %+v, want PartDoc", rep.Parts)
+	}
+	return rep.Parts[0].Text
+}
+
+func TestIngestPDFExtract(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	p := writeFile(t, dir, "a.pdf", minimalPDF())
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if txt := partText(t, rep); !strings.Contains(txt, "Hello Aquarius PDF") {
+		t.Fatalf("pdf 提取文本 = %q", txt)
+	}
+}
+
+func TestIngestDOCXExtract(t *testing.T) {
+	in, _, _ := newIngestor(t)
+	p := buildDOCX(t, "Hello Aquarius DOCX", "第二段落")
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	txt := partText(t, rep)
+	if !strings.Contains(txt, "Hello Aquarius DOCX") || !strings.Contains(txt, "第二段落") {
+		t.Fatalf("docx 提取文本 = %q", txt)
+	}
+}
+
+// buildDOCX 用 godocx 生成样本 docx（round-trip：库写 → 库读，D105）。
+func buildDOCX(t *testing.T, paras ...string) string {
+	t.Helper()
+	root, err := godocx.NewDocument()
+	if err != nil {
+		t.Fatalf("godocx new: %v", err)
+	}
+	for _, para := range paras {
+		root.AddParagraph(para)
+	}
+	p := filepath.Join(t.TempDir(), "sample.docx")
+	if err := root.SaveTo(p); err != nil {
+		t.Fatalf("godocx save: %v", err)
+	}
+	return p
+}
+
+// TestNormalizePDFBreaks PDF 版式碎片归一（D105 后果③）：段内单换行折空格、空行保留。
+func TestNormalizePDFBreaks(t *testing.T) {
+	in := "第\n12\n章\n\n宏观热力学\n\n\n平衡态"
+	want := "第 12 章\n\n宏观热力学\n\n平衡态"
+	if got := normalizePDFBreaks(in); got != want {
+		t.Fatalf("= %q, want %q", got, want)
+	}
+}
+
+func TestIngestXLSXExtract(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	f := excelize.NewFile()
+	defer f.Close()
+	f.SetCellValue("Sheet1", "A1", "Hello Aquarius XLSX")
+	f.SetCellValue("Sheet1", "A2", 42)
+	if _, err := f.NewSheet("数据"); err != nil {
+		t.Fatalf("new sheet: %v", err)
+	}
+	f.SetCellValue("数据", "B1", "中文表")
+	var buf bytes.Buffer
+	if _, err := f.WriteTo(&buf); err != nil {
+		t.Fatalf("write xlsx: %v", err)
+	}
+	p := writeFile(t, dir, "a.xlsx", buf.Bytes())
+
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	txt := partText(t, rep)
+	for _, want := range []string{"〔工作表 Sheet1〕", "Hello Aquarius XLSX", "42", "〔工作表 数据〕", "中文表"} {
+		if !strings.Contains(txt, want) {
+			t.Fatalf("xlsx 提取文本缺 %q:\n%s", want, txt)
+		}
+	}
+}
+
+func TestIngestHTMLExtract(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	p := writeFile(t, dir, "a.html", []byte(
+		`<!doctype html><html><head><title>测试页</title><style>.x{color:red}</style></head>`+
+			`<body><h1>Hello Aquarius HTML</h1><script>alert(1)</script><p>正文段落。</p></body></html>`))
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	txt := partText(t, rep)
+	if !strings.Contains(txt, "Hello Aquarius HTML") || !strings.Contains(txt, "正文段落。") {
+		t.Fatalf("html 提取文本 = %q", txt)
+	}
+	if strings.Contains(txt, "alert") || strings.Contains(txt, "color:red") {
+		t.Fatalf("script/style 未剥离: %q", txt)
+	}
+}
+
+func TestIngestPDFCorruptFallback(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	p := writeFile(t, dir, "broken.pdf", []byte("%PDF-1.4 垃圾数据，没有对象"))
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("解析失败不应整体报错（D105④ 回落占位）: %v", err)
+	}
+	txt := partText(t, rep)
+	if !strings.Contains(txt, "解析失败") || !strings.Contains(txt, "file_read") {
+		t.Fatalf("回落占位文案 = %q", txt)
+	}
+}
+
+// TestIngestDeferredFormats pptx/rtf 首批缓（D105）：不解析、回落二进制占位（rtf 不把
+// 控制词当正文提取）。
+func TestIngestDeferredFormats(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	for _, tc := range []struct{ name, content string }{
+		{"a.pptx", "PK\x03\x04 幻灯片容器"},
+		{"a.rtf", `{\rtf1\ansi Hello {\b RTF}}`},
+	} {
+		p := writeFile(t, dir, tc.name, []byte(tc.content))
+		rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		txt := partText(t, rep)
+		if !strings.Contains(txt, "二进制内容未提取") {
+			t.Fatalf("%s 应回落二进制占位，got %q", tc.name, txt)
+		}
+	}
+}
+
+// TestIngestDocTruncation 提取文本截断（D105③）：超 maxDocText 加截断标注。
+func TestIngestDocTruncation(t *testing.T) {
+	old := maxDocText
+	maxDocText = 200
+	t.Cleanup(func() { maxDocText = old })
+
+	in, _, dir := newIngestor(t)
+	p := writeFile(t, dir, "big.html", []byte("<html><body><p>"+strings.Repeat("长文本内容。", 100)+"</p></body></html>"))
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	txt := partText(t, rep)
+	if !strings.Contains(txt, "提取文本已截断") {
+		t.Fatalf("截断标注缺失: %q", txt)
+	}
+}
+
+// TestIngestDocOversize 文件超 maxIngestFile（D105③）：不解析、回落占位。
+func TestIngestDocOversize(t *testing.T) {
+	old := maxIngestFile
+	maxIngestFile = 16
+	t.Cleanup(func() { maxIngestFile = old })
+
+	in, _, dir := newIngestor(t)
+	p := writeFile(t, dir, "big.pdf", minimalPDF())
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: p})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if txt := partText(t, rep); !strings.Contains(txt, "解析失败") {
+		t.Fatalf("超限应回落占位: %q", txt)
 	}
 }

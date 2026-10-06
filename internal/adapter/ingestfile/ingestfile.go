@@ -83,6 +83,26 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 			Note:  fmt.Sprintf("已附图片 %s（%d 字节）", name, ref.Size),
 		}, nil
 
+	case structuredKind(path) != "": // D105：常见文档转文本（解析失败回落占位）
+		kind := structuredKind(path)
+		text, truncated, perr := extractStructured(kind, f, path)
+		if perr != nil {
+			// 解析失败（加密/损坏/超大）：占位并注明原因——提取尽力而为（D105④）。
+			text = fmt.Sprintf("〔文档 %s〕内容解析失败（%v），原文路径：%s（可用 file_read 读取）。", name, perr, path)
+			return port.IngestReport{
+				Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
+				Note:  fmt.Sprintf("已附文件 %s（解析失败，回落占位：%v）", name, perr),
+			}, nil
+		}
+		if truncated {
+			text += fmt.Sprintf("\n…[提取文本已截断，全文可用 file_read 读取：%s]", path)
+		}
+		what := map[string]string{"pdf": "PDF", "docx": "Word", "xlsx": "Excel", "html": "HTML"}[kind]
+		return port.IngestReport{
+			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
+			Note:  fmt.Sprintf("已附%s文档 %s（提取文本 %d 字符已内联）", what, name, len([]rune(text))),
+		}, nil
+
 	case isTextish(mime, head, path):
 		text := strings.ToValidUTF8(string(head), "")
 		if more {
@@ -133,18 +153,38 @@ func readHead(f *os.File) ([]byte, bool, error) {
 // detectMime 判定 MIME：内容嗅探优先（首 512 字节），结构化文本扩展名校正。
 func detectMime(head []byte, path string) string {
 	mime := http.DetectContentType(head)
-	// 嗅探把多数纯文本判为 text/plain；扩展名明确时给出更准的类型（仅影响引用元数据）。
+	// 嗅探把多数纯文本判为 text/plain、OOXML 判为 zip——扩展名明确时给出更准的类型
+	//（仅影响引用元数据；解析分派走 structuredKind 的独立扩展名判定，D105）。
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".json":
 		return "application/json"
 	case ".md":
 		return "text/markdown"
+	case ".pdf":
+		return "application/pdf"
+	case ".html", ".htm":
+		return "text/html"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".xlsx", ".xlsm":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	}
 	return mime
 }
 
 // isTextish 是否按文本提取：MIME 为 text/*（或文本型结构格式）且头部无 NUL。
 func isTextish(mime string, head []byte, path string) bool {
+	// D105：rtf 控制词会污染提取文本（无成熟纯 Go 解析库）——显式排除、回落二进制占位。
+	if strings.EqualFold(filepath.Ext(path), ".rtf") {
+		return false
+	}
+	// D105：OOXML 容器（mime 扩展名校正带 openxmlformats——其中含 "xml" 会被下方
+	// Contains 误判为文本）不按文本提取。
+	if strings.Contains(mime, "openxmlformats") {
+		return false
+	}
 	if len(head) > 0 && bytes.IndexByte(head, 0) >= 0 {
 		return false // 含 NUL 判定为二进制（与 file_read 同口径）
 	}
