@@ -31,8 +31,8 @@ func newExpandUI(t *testing.T) (*UI, *input.Router) {
 	return u, q
 }
 
-// TestExpandGeometry D106②：展开态转写区压缩（460 − (72+72) = 316 @1x）、编辑器切多行；
-// 收起还原 388、SingleLine 回位。常态几何零变化（D76 口径）。
+// TestExpandGeometry D106②：展开态转写区压缩（460 − (72+112) = 276 @1x，修订⑸ 高 160）、
+// 编辑器切多行；收起还原 388、SingleLine 回位。常态几何零变化（D76 口径）。
 func TestExpandGeometry(t *testing.T) {
 	u, q := newExpandUI(t)
 	u.m.add(blockUser, "问") // 空转写不量高（早退分支）——放一条消息让 transH 生效
@@ -46,8 +46,8 @@ func TestExpandGeometry(t *testing.T) {
 	if !u.expanded || u.editor.SingleLine {
 		t.Fatalf("展开态未生效: expanded=%v singleLine=%v", u.expanded, u.editor.SingleLine)
 	}
-	if u.transH != 316 {
-		t.Fatalf("展开态 transH = %d, want 316（压缩 72）", u.transH)
+	if u.transH != 276 {
+		t.Fatalf("展开态 transH = %d, want 276（压缩 112）", u.transH)
 	}
 
 	u.setExpanded(false)

@@ -59,29 +59,32 @@ const (
 	// inputRowBandDp 输入行带总高（D90 单源）＝行元素 + 上 8 下 16 透明边距：布局区高
 	// 划分、球锚、心跳带、停靠恢复共用（旧为五处手写重复组合式，改几何须五处同步）。
 	inputRowBandDp = inputRowDp + pillTopDp + inputRowBottomDp
-	// inputPillExpandDp 展开态胶囊高（D106/S2b-4）：原地增高 ≈4 行多行编辑；输入带
-	// 随之增高 inputPillExpandDp−inputRowDp，转写区相应压缩。瞬时切换、不做高度动画。
-	inputPillExpandDp = 120
-	sideMarginDp      = 16 // 左右边距
-	confirmBtnDp      = 36 // D86：确认态三钮直径（行高 48 的 3/4）
-	confirmBtnGapDp   = 8  // D86：三钮间距
-	confirmBtnEdgeDp  = 12 // D86：最右钮右缘到胶囊边缘（padding 16 − 4 圆形光学校正）
-	confirmBtnOptDp   = 4  // D86：光学校正量（布局期负内边距实现上面的 12）
-	rowGapDp          = 6  // 转写行间距
-	bubblePadXDp      = 12 // 气泡内边距
-	bubblePadYDp      = 7
-	cardPadXDp        = 10 // 文本行卡内边距
-	cardPadYDp        = 5
-	radiusDp          = 12 // 气泡圆角
-	cardRadiusDp      = 8  // 文本行卡圆角
-	statusChipDp      = 20 // 状态行 chip 高
-	statusPadXDp      = 10 // 状态行 chip 水平内边距
-	statusGapDp       = 8  // 状态行带高（chip + 与转写区间隙）
-	tipsPadXDp        = 10 // 悬停卡（hoverCard）内边距
-	tipsPadYDp        = 6
-	tipsRadiusDp      = 8  // 悬停卡圆角
-	tipsUpGapDp       = 6  // 悬停卡与胶囊顶的间隙
-	bubbleMinWDp      = 80 // 气泡最大宽下限（极窄窗兜底，D90 命名化）
+	// inputPillExpandDp 展开态胶囊高（D106/S2b-4，修订⑸ = 160dp ≈ 6 行）：原地增高多行
+	// 编辑；输入带随之增高 inputPillExpandDp−inputRowDp，转写区相应压缩。瞬时切换、
+	// 不做高度动画。
+	inputPillExpandDp = 160
+	// pillToolTopDp 展开态工具行顶边距（D106 修订⑸）：图标避开胶囊 24dp 圆角曲线。
+	pillToolTopDp    = 10
+	sideMarginDp     = 16 // 左右边距
+	confirmBtnDp     = 36 // D86：确认态三钮直径（行高 48 的 3/4）
+	confirmBtnGapDp  = 8  // D86：三钮间距
+	confirmBtnEdgeDp = 12 // D86：最右钮右缘到胶囊边缘（padding 16 − 4 圆形光学校正）
+	confirmBtnOptDp  = 4  // D86：光学校正量（布局期负内边距实现上面的 12）
+	rowGapDp         = 6  // 转写行间距
+	bubblePadXDp     = 12 // 气泡内边距
+	bubblePadYDp     = 7
+	cardPadXDp       = 10 // 文本行卡内边距
+	cardPadYDp       = 5
+	radiusDp         = 12 // 气泡圆角
+	cardRadiusDp     = 8  // 文本行卡圆角
+	statusChipDp     = 20 // 状态行 chip 高
+	statusPadXDp     = 10 // 状态行 chip 水平内边距
+	statusGapDp      = 8  // 状态行带高（chip + 与转写区间隙）
+	tipsPadXDp       = 10 // 悬停卡（hoverCard）内边距
+	tipsPadYDp       = 6
+	tipsRadiusDp     = 8  // 悬停卡圆角
+	tipsUpGapDp      = 6  // 悬停卡与胶囊顶的间隙
+	bubbleMinWDp     = 80 // 气泡最大宽下限（极窄窗兜底，D90 命名化）
 
 	// 主窗像素尺寸夹取界（D90）：粗界给 config/settings 校验兜底；布局地板按
 	// 240dp × DPI × scale 抬下限（宽 = 三段行最小构成、高 = 输入行带 + 状态行 +
@@ -1578,22 +1581,25 @@ func (u *UI) expandSlot(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// pillContentExpanded 展开态胶囊内竖排（D106 修订⑵）：[工具行 20][编辑区自然高]——
-// 附件左上、展开右上，编辑器**顶对齐**（Vertical Flex 默认 Start，不居中）。
+// pillContentExpanded 展开态胶囊内竖排（D106 修订⑵⑸）：[工具行 20 + 顶距 10][编辑区
+// 自然高]——附件左上、展开右上（顶距避开 24dp 圆角曲线），编辑器**顶对齐**（Vertical
+// Flex 默认 Start，不居中）。
 func (u *UI) pillContentExpanded(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					// 附件左上（D104：无暂存 = 图标槽、有暂存 = chip）。
-					if u.m.stagedFile != "" {
-						return u.attachChip(gtx)
-					}
-					return u.attachSlot(gtx)
-				}),
-				layout.Flexed(1, layout.Spacer{}.Layout),
-				layout.Rigid(u.expandSlot), // 展开右上
-			)
+			return layout.Inset{Top: unit.Dp(pillToolTopDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						// 附件左上（D104：无暂存 = 图标槽、有暂存 = chip）。
+						if u.m.stagedFile != "" {
+							return u.attachChip(gtx)
+						}
+						return u.attachSlot(gtx)
+					}),
+					layout.Flexed(1, layout.Spacer{}.Layout),
+					layout.Rigid(u.expandSlot), // 展开右上
+				)
+			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0 // 自然高顶对齐（原 Flex Middle 居中——首行悬半空）
