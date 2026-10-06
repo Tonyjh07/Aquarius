@@ -732,17 +732,19 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 - **repl 同权**：repl 前端按行打印同一语义（`> ` 输入行、正文、`[tool]` 行），保证
   e2e/管道输出与 TUI 信息一致。
 
-### 7.5 会话树只读视图（D80，前置 A）
-
-UI 要画分叉按钮（§15.3/S1-1f）与会话树界面（S3）就得知道**树事实**（某节点的同级集合与
+### 7.5 会话树只读视图（D80，前置 A；**D112 扩展整树快照**）
+UI 要画分叉按钮（§15.3/S1-1f）与会话树界面（S3 relation-map）就得知道**树事实**（某节点的同级集合与
 自身下标），但 Presenter 只发渲染事件、不给树；UI 又跑在独立 goroutine，直读
 `Session.Current()` 会与装配根的树变更并发（`-race` 必红），铁律 5 亦不许 UI 直连 store。
-
 - **端口**：`port.TreeView` —— `Branches(id) (BranchInfo, bool)` 与 `Tail(id)
   (MessageID, bool)`（D94：版本末端 = 该节点版本子树中 CreatedAt 最新的叶子，分支切换
   的落点——切版本应恢复该版本的对话全程，而非停在消息节点上）；
   `BranchInfo{IDs []conversation.MessageID; Index int}`：同父全部孩子**按创建序**（含自身）、
   `Index` 为自身下标；`id` 不在树中 → `ok=false`。
+- **整树快照（D112②，S3 relation-map 数据面）**：增 `Graph()` —— 返回节点集
+  `{ID, Parent, Role, CreatedAt, Snippet}` + 版本链映射（`RevisedFrom`/`ClonedFrom`）+ 当前 Head；
+  与 `Branches`/`Tail` 同源、同一不可变快照发布（`atomic.Pointer`，发布点 = 构造完成 + 每次
+  `Handle` 返回前）。仍是**只读、无变更入口**；`Snippet` 为展示用短摘要（非推理口径）。
 - **实现**：`*app.Session` 实现该端口（**首个 app 侧端口实现**；方向合法 —— adapter 与 app
   同依赖 port，本端口消费方是 UI 适配器、实现方是 app，与 llm/store 反向）。
 - **并发**：Session 内维护**不可变快照**（整树 → `map[MessageID]BranchInfo`），树变更后
@@ -775,36 +777,48 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 ---
 
 ## 8. 存储布局与配置
-
+> **配置文件化 / profile 目录化（D110，破坏性改造）**：数据目录自 D110 起以 profile 为隔离单位——
+> `<data>/config.json` 为**当前 profile 指针**（`{"profile":"<name>"}`），`<data>/profiles/<name>/`
+> 为**整目录隔离**（会话/记忆/附件/任务/审计随 profile 走，§5-Q1）。CLI `--profile <name>` 进程级覆盖；
+> 切换 = 重启生效；不写迁移器（旧单文件 config 报清晰提示，用户手工处置）。下方目录树为
+> **profile 内**布局（`<data>/profiles/<name>/` 之下）。
 ```
-~/.aquarius/
-├── config.json                # 主配置（密钥默认存引用名，明文允许但启动警告 D35；permissions.level 权限等级）
-├── sandbox/                   # Agent 特权目录（权限矩阵免确认读写，启动自动创建）
-├── memories.md                # 全局记忆（markdown 单文件，D23）
-├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
-├── jobs/<jobID>.log           # 后台任务日志
-├── audit.log                  # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
-├── attachments/<sha256>       # 内容寻址附件
-├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak；JSON 与领域结构同构、无独立版本号，
-                                #   合法性由加载期 Validate 把关；破坏性切换先例：D19 虚拟 Root、
-                                #   D95 独立 tool 节点——旧格式 Load/List 显式报 ErrLegacyFormat 点名 ID，
-                                #   不自动迁移，旧文件留存原地由用户手工处置）
-└── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
+<data>/
+├── config.json                # 当前 profile 指针（{"profile":"<name>"}；D110）
+└── profiles/<name>/           # profile 整目录隔离（D110；下为其内容）
+    ├── config.json            # 主配置（密钥默认存引用名，明文允许但启动警告 D35；permissions.level 权限等级）
+    ├── sandbox/               # Agent 特权目录（权限矩阵免确认读写，启动自动创建）
+    ├── memories.md            # 全局记忆（markdown 单文件，D23）
+    ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
+    ├── jobs/<jobID>.log       # 后台任务日志
+    ├── audit.log              # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
+    ├── attachments/<sha256>   # 内容寻址附件
+    ├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak；JSON 与领域结构同构、无独立版本号，
+                                    #   合法性由加载期 Validate 把关；破坏性切换先例：D19 虚拟 Root、
+                                    #   D95 独立 tool 节点——旧格式 Load/List 显式报 ErrLegacyFormat 点名 ID，
+                                    #   不自动迁移，旧文件留存原地由用户手工处置）
+    └── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
 ```
+> 落位待定（D110 后果①）：位置记忆 `gui_pos.json`、blob 内容寻址目录的归属（profile 内 vs 全局）
+> 在落码时对齐；`--profile` 与三级覆盖（CLI flags > 环境变量 > `config.json`）的优先级关系在实现时补明。
 
 ```json
 {
   "model": {
-    "provider": "openai-compatible",
-    "name": "gpt-4o-mini",
-    "base_url": "https://api.openai.com/v1",
-    "api_key": "secret:AQUARIUS_OPENAI_KEY", // 明文允许但启动警告；空值回落本默认引用（D35）
-    "tokenizer": "",              // 可选：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
+    // D110②：provider 列表化（破坏性）。原单 provider 平铺字段（provider/name/base_url/api_key/…）退役。
+    "providers": [                // 每个 provider 一条；primary 指向其中 name
+      { "name": "openai", "base_url": "https://api.openai.com/v1",
+        "api_key": "secret:AQUARIUS_OPENAI_KEY", // 明文允许但启动警告；空值回落本默认引用（D35）
+        "models": ["gpt-4o-mini"], "tokenizer": "",  // tokenizer：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
+        "unsupported_params": [] }                   // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
+    ],
+    "primary": "openai",          // 当前生效 provider（原 model.provider 关系由 primary 承载）
+    "fallback": [],               // 有序 = 降级顺序（Q5：仅网络类 429/5xx/网络/超时 触发；401/400 不降级）
+    "name": "gpt-4o-mini",        // 当前模型名（在 primary provider 的 models 内）
     "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）
     "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
     "think_tool": false,          // think 草稿工具可见性（默认隐藏，D34）
-    "echo_thinking": true,       // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
-    "unsupported_params": []      // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
+    "echo_thinking": true        // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
   },
   "ui": { "kind": "gui", "hotkey": "", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）；scale: 元素缩放倍率（默认 1.0）；font_size: 正文字号 sp（默认 15，最终字号 = font_size × scale）；window_width/window_height: 主窗像素尺寸（0 = 缺省 608×460dp 现行为）——三旋钮口径与热生效见 §15.8/D90
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
@@ -926,13 +940,18 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
 | **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
 | **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统（§15.4 令牌 + `ui.theme`，D61）；**窗口管理**（§15.7/D60）：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口——本轮基建 + 设置核心档（模型/权限/think/effort/hotkey/主题）+ 两空窗壳验证宿主。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；**托盘/右键菜单可开三窗（历史/欢迎为占位壳）；设置窗改核心档写回 config 并热生效（模型/权限/think/effort/hotkey/主题），密钥只写不回显；主题深浅两版可切、`system` 跟随系统**；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
+| **M6 底座与跨平台**（D109 重排，2026-10-06） | **执行序**：① 配置底座破坏性改造（S4+S5 合批，**D110**：profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（新 S4b，**D111**：平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI：**relation-map**（S3，**D112**：`TreeView.Graph()` 整树快照 + 关系图自绘 + 内核 `/rm`/改名补洞）。S6–S8（工具/MCP 管理、提示词、语音）顺延 | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链、点节点切会话、`/rm` 任意会话与改名可用 |
 
 ---
 
 ## 13. 已决决策记录（ADR 摘要）
-
-决策记录已拆分至 **[docs/decisions.md](docs/decisions.md)**（与本文同权威；编号 D1–D106 跨文件不变，
+决策记录已拆分至 **[docs/decisions.md](docs/decisions.md)**（与本文同权威；编号 D1–D112 跨文件不变，
 `§13` / `Dn` 引用仍有效）。新决策在该文件追加，本节不再维护。
+
+**M5 后续执行序（D109，2026-10-06 重排）**：日常体验（S1–S2b）与内核命令已落地后，顺位为
+**① 配置底座破坏性改造（S4+S5 合批，D110）→ ② GUI 跨平台抽象层（S4b，D111）→ ③ 对话树 UI：
+relation-map（S3，D112）**；S6–S8（工具/MCP 管理、提示词、语音）顺延。原则 = 先动 schema
+（不依赖 UI 形态）→ 再抽平台层（结构改动、不新增用户可见功能）→ 再长 UI（消费者）。
 
 ## 14. 暂缓事项（Backlog）
 
@@ -1251,6 +1270,14 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 
 ### 15.6 前置 spike 结论（2026-09 已过，D30 同款记录）
 
+> **平台边界修订（D111，2026-10-06）**：本节及 §15.1 的 ULW / 托盘 / 全局热键 / TPM 菜单 /
+> 文件框 / DPI / 系统深浅色等均为 **Windows 实测**；非 Windows 现状为 no-op 桩
+> （`win32_other.go` / `winmgr_other.go` / `theme_other.go`）。**D111 将平台边界口径改为
+> 「平台抽象层 + 各平台实现/降级，功能对等分级」**——引入平台接口（窗口/帧/显隐/像素提交/
+> 托盘/热键/文件框/菜单/DPI/深浅色），`uigui` 主体去平台化，非 Windows 走**降级实现（非桩）**
+> （Gio 常规窗可交互，无 ULW 半透明/羽化/托盘/热键）。本节 spike 结论仍作 Windows 实现的依据。
+> 实现序列见 roadmap S4b（D109 执行序第二）。
+
 | §15.6 清单项 | 实测结论 |
 |---|---|
 | 纯 Go 构建 | ✅ `CGO_ENABLED=0` 通过（Gio v0.10.2 Windows 纯 Go，无 cgo） |
@@ -1291,10 +1318,11 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 与会话历史只落空窗壳验证宿主，数据面留后续步。
 
 - **窗口清单**：**设置**（核心档：模型 provider/name/base_url、权限档、think/effort、
-  `ui.hotkey`、`ui.theme`；密钥只写不回显、不回显明文——D35）｜**会话历史**（占位壳；
-  列表数据面依赖未来切会话命令，§14）｜**欢迎/首次运行**（占位壳；接管「写模板即退出」
-  启动流为后续步）｜**查看原文**（D99：气泡右键「查看原文」的只读次窗——单实例 +
-  内容原子槽原地刷新）。
+  `ui.hotkey`、`ui.theme`；密钥只写不回显、不回显明文——D35）｜**会话历史**（**relation-map
+  关系图**——D112/S3：节点 + 父子连线（版本链虚线/异色）+ 当前 Head 路径高亮 + 点节点切会话 +
+  右键；数据面 = `port.TreeView.Graph()` 整树快照，§7.5）｜**欢迎/首次运行**（占位壳；接管
+  「写模板即退出」启动流为后续步）｜**查看原文**（D99：气泡右键「查看原文」的只读次窗——
+  单实例 + 内容原子槽原地刷新）。
 - **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 ULW 形状位图（常规
   不透明窗）、无位置记忆、不置顶、不拖拽把手；任务栏条目照常
   （`WS_EX_TOOLWINDOW` 只挂主窗 HWND，次窗不参与）。
