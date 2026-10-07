@@ -131,6 +131,7 @@
 | D115 | 主窗揭示期不透明加固：梯次补提交 + 强制新帧（修订 D88，§15.1/D62） | 生效 |
 | D116 | 原生菜单呈现期主窗降出 topmost 带（右键菜单被窗体遮挡修复，§15.1） | 生效 |
 | D117 | 通知子进程静默隐藏：`CREATE_NO_WINDOW` + `HideWindow`（D114 连带回归修复，§7.2） | 生效 |
+| D118 | MCP server 与后台作业的控制台窗压制：`CREATE_NO_WINDOW` 单旗（D114 连带回归第二批，§6.3/§4.3） | 生效 |
 ## 记录
 
 ### D1 — 节点不可变；用户"改"= 创建同级新节点
@@ -1065,4 +1066,12 @@
 - **决策**：`notifyWith` 的 windows 分支在分离启动前给子进程挂 `syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW(0x08000000)}`——两旗并挂、互不冲突：`CREATE_NO_WINDOW` 断掉控制台窗创建（console 子系统正解），`HideWindow` 兜住顶层窗。实现落平台文件对 `cmd/aquarius/notify_windows.go`（`hideNotifyChild`）/ `notify_other.go`（no-op 桩，跟随 `console_*.go` 惯例），挂接在 `notifyWith` 内、注入的 `detached` 之前，故不依赖具体分离实现。通知形态（powershell 气泡脚本、文案走环境变量、detached 回收句柄）一概不变。
 - **否决**：roadmap 修法②——弃子进程改进程内 `Shell_NotifyIconW` 发气泡并顺带升级 Win10+ toast（零子进程、无 powershell 冷启，但要消息泵线程 + 平台分支 + toast 侧 WinRT COM，回归面远超本缺陷，留作可选后续）；父进程保留控制台不 FreeConsole（反向作废 D114，WT 场景实测 SW_HIDE 无效）；改同步 `cmd.Run()` 等待子进程（气泡需驻留 6s，会卡住输出器调用）。
 - **后果/限制**：① 每条通知仍拉一次 powershell（约 1s 冷启、子进程存活 ≈6s），只是不再有可见窗口；② `CREATE_NO_WINDOW` 只对 console 子系统子进程有意义，`HideWindow` 对 GUI 子进程同样生效，故两旗都挂；③ 复现测试 `TestNotifyDetachedChildHidden`（windows 构建标签）钉住 `SysProcAttr` 三要素，非 Windows 桩恒不设 `SysProcAttr`、交叉编译不受影响。
+- **状态**：生效（2026-10-07）
+
+### D118 — MCP server 与后台作业的控制台窗压制（D114 连带回归第二批，§6.3/§4.3）
+
+- **动机**：D117 修通知后做同款排查（2026-10-07），还有两处 spawn 无窗口压制，D114 双击启动 FreeConsole 后都会为子进程新开**可见控制台**：① `mcpgate` 的 stdio MCP server（`transportFor` 构造 `exec.Command`，子进程长驻 = 窗口长驻整个会话，配几个 server 开几个窗）；② `jobproc` 后台作业（`job_start` / `term_exec` 两路都过 `setupProc`，Windows 分支原先只设 `cmd /c` 的原始 `CmdLine`）——每起一个作业弹一个窗。两者 I/O 本就全程管道/文件（server 走 stdio pipe，job 的 `Stdout/Stderr` 写日志文件、stdin 置空），窗口纯属噪音。
+- **决策**：两处 spawn 前挂 `SysProcAttr.CreationFlags |= CREATE_NO_WINDOW(0x08000000)`。**只挂这一旗、不挂 `HideWindow`**（与 D117 的双旗区分是有意的）：`job_start` 跑的是**用户命令**（`notepad` 这类 GUI 子进程必须照常可见），`HideWindow` 会把它们一并藏掉；而缺陷本体（控制台窗）已由单旗归零——**实机探针实证**：父进程 FreeConsole 后无旗 = 新开 `ConsoleWindowClass` 窗 1 个，单旗 = 0，单旗 + `HideWindow` = 0。落点：`mcpgate` 新增平台文件对 `proc_windows.go` / `proc_other.go`（`hideStdioWindow`），`jobproc` 并入既有平台分家的 `setupProc`（与 `CmdLine` 按位或/条件赋值，互不覆盖）。
+- **否决**：与 D117 同款双旗（`HideWindow` 对用户命令的 GUI 窗是误伤）；把三处（通知/MCP/作业）抽成共享 spawn helper 新包（为 8 行 × 3 引入新包与文档面，各随包自带、随 D 号可溯，重复面可接受）；压制 `pickEditor`（`cmd/aquarius/editor.go`）——那是用户显式要开的编辑器窗，非噪音；作业进程改 `DETACHED_PROCESS`（只断继承，不解决「父无控制台时新建可见窗」，且与 `CmdLine` 组合语义不确定）。
+- **后果/限制**：① 子进程不再有控制台窗、也就不挂父控制台——jobproc 全程管道/文件 I/O 不受影响，需 `CONIN$` 的交互式命令在后台作业里本就无输入（stdin 置空不变）；② `term_exec` 与 `job_start` 同口径（输出回传会话/日志，语义本就不是「开个终端给人看」）；③ `killTree` 的 `taskkill` 与编辑器启动不压；④ 非 Windows 走 no-op 桩，交叉编译不受影响；⑤ 同口径测试 = `TestSetupProcHidesConsoleWindow`（jobproc）、`TestTransportForHidesStdioWindow`（mcpgate），均 windows 构建标签。
 - **状态**：生效（2026-10-07）
