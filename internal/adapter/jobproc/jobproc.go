@@ -86,7 +86,7 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	}
 	cmd := exec.Command(spec.Command, spec.Args...)
 	applySpec(cmd, spec)
-	setupProc(cmd) // unix 独立进程组（killTree 连子进程终止）；windows 空操作
+	setupProc(cmd) // unix 独立进程组（killTree 连子进程终止）；windows 控制台窗压制（D118）+ cmd/c 原始命令行
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	// 日志头行先于启动写入（§14 M3 遗留：Start 后写会排在子进程输出之后）。
 	_, _ = fmt.Fprintf(logFile, "$ %s\n", commandLine(spec))

@@ -86,6 +86,7 @@ func transportFor(ctx context.Context, secrets port.Secrets, d plugin.Decl) (mcp
 		//（api_key 等按本项目命名约定存 AQUARIUS_*）不得随继承外泄给插件；
 		// PATH/TEMP 等系统变量照常继承，npx/node 才能跑）。
 		cmd.Env = childEnv(env)
+		hideStdioWindow(cmd) // D118：D114 后父进程无控制台可继承，不为 server 新开可见控制台
 		return &mcp.CommandTransport{Command: cmd}, nil
 	case plugin.TransportHTTP:
 		hdr, err := resolveRefs(ctx, secrets, d.Headers)

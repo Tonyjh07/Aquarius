@@ -11,14 +11,25 @@ import (
 	"syscall"
 )
 
+// createNoWindow CREATE_NO_WINDOW（0x08000000）：console 子系统子进程不创建控制台窗。
+const createNoWindow = 0x08000000
+
 // setupProc 平台进程属性：
+//   - **控制台窗压制（D118）**：D114 双击启动 FreeConsole 后父进程无控制台可继承，
+//     Windows 会为每个作业子进程新建可见控制台窗——而作业 I/O 全程写日志文件/缓冲、
+//     stdin 置空，窗口纯属噪音（每起一个弹一个）。只挂 CREATE_NO_WINDOW、不挂
+//     HideWindow：job 跑的是用户命令，GUI 子进程（notepad 等）须照常可见。
 //   - cmd.exe /c：Go 的 argv 转义（EscapeArg）把 `"` 写成 `\"`，而 cmd.exe 不认
 //     反斜杠转义，含引号的命令会被静默改写（echo "a b" → \"a b\"、
 //     powershell -Command "..." 拿到错误参数）。对 cmd /c <整条命令行> 这一形态
 //     改用 SysProcAttr.CmdLine 原始命令行直传，引号/重定向语义保持模型原文。
 func setupProc(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= createNoWindow
 	if raw, ok := cmdRawLine(cmd); ok {
-		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: raw}
+		cmd.SysProcAttr.CmdLine = raw
 	}
 }
 
