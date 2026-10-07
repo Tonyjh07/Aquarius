@@ -226,7 +226,7 @@ func newFrameUI() *UI {
 	representLadder = nil // D115：防梯次 goroutine 在测试结束后读全局槽（-race）
 	u := &UI{followTail: true}
 	u.m = newModel(u)
-	u.th = newTheme()
+	u.th = testTheme()
 	return u
 }
 

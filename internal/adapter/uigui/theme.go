@@ -94,15 +94,15 @@ func darkPalette() palette {
 }
 
 // resolvePalette 档位 → 预设：light/dark 直取；其余（""/"system"/未识别）
-// = 跟随系统（§15.4 默认）。
-func resolvePalette(mode string) palette {
+// = 跟随系统（§15.4 默认）。dark = 系统深浅（平台查询，调用方现取传参——纯函数可测）。
+func resolvePalette(mode string, dark bool) palette {
 	switch mode {
 	case "light":
 		return lightPalette()
 	case "dark":
 		return darkPalette()
 	default:
-		if systemDark() {
+		if dark {
 			return darkPalette()
 		}
 		return lightPalette()
@@ -166,7 +166,7 @@ func (u *UI) applyTheme(mode string) {
 	if mode == "" {
 		mode = "system"
 	}
-	p := resolvePalette(mode)
+	p := resolvePalette(mode, u.plat.DarkMode())
 	applyPalette(p)
 	u.themeMode = mode
 	u.pal.Store(&p)

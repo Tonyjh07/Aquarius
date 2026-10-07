@@ -265,8 +265,8 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 		app.MinSize(unit.Dp(minW), unit.Dp(minH)),
 		app.Decorated(true), // 常规装饰窗（D60：无边框形裁等主窗机制一律不接）
 	)
-	th := newTheme()     // 每窗独立主题实例（material：不同顶层窗应各自持有 Shaper）
-	var applied *palette // 本窗已校正到的快照（帧内只读写本 goroutine）
+	th := newTheme(u.plat.SystemFontCandidates()) // 每窗独立主题实例（material：不同顶层窗应各自持有 Shaper）
+	var applied *palette                          // 本窗已校正到的快照（帧内只读写本 goroutine）
 	var ops op.Ops
 	for {
 		ev := w.Event()

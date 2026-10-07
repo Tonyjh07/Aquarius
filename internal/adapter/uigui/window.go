@@ -161,7 +161,7 @@ func (u *UI) runWindow(w *app.Window) {
 		app.Decorated(false), // 无边框 = 悬浮球形态前提（§15.1）
 		app.TopMost(true),    // 悬浮球常驻顶层
 	)
-	u.th = newTheme()
+	u.th = newTheme(u.plat.SystemFontCandidates())
 	if p := u.pal.Load(); p != nil { // 初始主题快照校正默认色（§15.4/D61）
 		u.th.Palette.Fg, u.th.Palette.Bg = p.fg, p.bg
 	}

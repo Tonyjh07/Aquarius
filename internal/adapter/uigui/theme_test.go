@@ -60,21 +60,24 @@ func TestApplyPaletteSyncsAllTokens(t *testing.T) {
 	}
 }
 
-// TestResolvePalette 档位解析：light/dark 直取预设；""/system/未识别 = 跟随系统。
+// TestResolvePalette 档位解析：light/dark 直取预设；""/system/未识别 = 跟随系统
+// （系统深浅由平台层给，测试两档都走一遍——不再依赖跑测试的机器当前主题）。
 func TestResolvePalette(t *testing.T) {
-	if got := resolvePalette("light"); got != lightPalette() {
-		t.Error("light 应直取浅色预设")
-	}
-	if got := resolvePalette("dark"); got != darkPalette() {
-		t.Error("dark 应直取深色预设")
-	}
-	sys := lightPalette()
-	if systemDark() {
-		sys = darkPalette()
-	}
-	for _, mode := range []string{"", "system", "bogus"} {
-		if got := resolvePalette(mode); got != sys {
-			t.Errorf("mode %q 应跟随系统解析", mode)
+	for _, dark := range []bool{false, true} {
+		if got := resolvePalette("light", dark); got != lightPalette() {
+			t.Error("light 应直取浅色预设")
+		}
+		if got := resolvePalette("dark", dark); got != darkPalette() {
+			t.Error("dark 应直取深色预设")
+		}
+		sys := lightPalette()
+		if dark {
+			sys = darkPalette()
+		}
+		for _, mode := range []string{"", "system", "bogus"} {
+			if got := resolvePalette(mode, dark); got != sys {
+				t.Errorf("mode %q（系统深色=%v）应跟随系统解析", mode, dark)
+			}
 		}
 	}
 }
@@ -121,7 +124,7 @@ func TestThemeMessagesHeadless(t *testing.T) {
 		t.Fatal("事件循环已退出")
 	}
 	drainSync(t, u)
-	if currentPalette() != slots(resolvePalette("system")) {
+	if currentPalette() != slots(resolvePalette("system", u.plat.DarkMode())) {
 		t.Error("system 档系统广播后未按系统解析")
 	}
 }

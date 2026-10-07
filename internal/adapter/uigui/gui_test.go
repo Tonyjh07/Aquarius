@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/widget/material"
+
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -18,6 +20,12 @@ func newHeadless(t *testing.T, opts Options) *UI {
 	u := newUI(opts, false)
 	t.Cleanup(func() { _ = u.Close() })
 	return u
+}
+
+// testTheme 测试用主题实例（字体候选取自平台实现——与生产同源，保证 CJK 字面在
+// 离屏渲染/几何测试里可用，不因平台层迁入而退回无 CJK 的 gofont）。
+func testTheme() *material.Theme {
+	return newTheme(newPlatform(Options{}, true).SystemFontCandidates())
 }
 
 // drainSync 等待此前所有 post 应用进状态机（drain → close 提供 happens-before，

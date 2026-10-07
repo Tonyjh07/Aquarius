@@ -194,7 +194,7 @@ func TestFrameItemsMarkdown(t *testing.T) {
 
 // TestMdHeadingSp 标题字号阶梯单调递减且不低于正文（D65）。
 func TestMdHeadingSp(t *testing.T) {
-	th := newTheme()
+	th := testTheme()
 	prev := th.TextSize * 2 // 哨兵：大于 h1（阶梯自 h1 递减、不低于正文）
 	for level := 1; level <= 6; level++ {
 		sp := mdHeadingSp(th, level)

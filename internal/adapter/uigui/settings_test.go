@@ -587,7 +587,7 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 		Profiles:      &fakeProfiles{snap: ProfilesSnapshot{Current: "default"}},
 	})
 	f := newSettingsForm(u)
-	th := newTheme()
+	th := testTheme()
 
 	var ops op.Ops
 	gtx := layout.Context{
@@ -646,7 +646,7 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 // ② fieldRow 控件起点 = 行宽 − Dp(fieldLabelW) − Dp(10)（标签列随密度缩放，不折行）。
 // 裸 px 实现（旧）在 dpi≠1 时两项皆红；dpi=1 恒绿作正向对照。
 func TestSettingsRowGeometryTracksDensity(t *testing.T) {
-	th := newTheme()
+	th := testTheme()
 	const rowW = 600
 	for _, dpi := range []float32{1, 1.25, 1.5, 2} {
 		t.Run(fmt.Sprintf("dpi%.2f", dpi), func(t *testing.T) {

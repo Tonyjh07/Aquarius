@@ -22,7 +22,7 @@ func newExpandUI(t *testing.T) (*UI, *input.Router) {
 	t.Helper()
 	u := &UI{followTail: true, inCh: make(chan port.UserInput, 8)}
 	u.m = newModel(u)
-	u.th = newTheme()
+	u.th = testTheme()
 	u.editor.Submit = true
 	u.editor.SingleLine = true
 	u.focusPending = true

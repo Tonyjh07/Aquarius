@@ -14,7 +14,7 @@ func TestRawViewFrame(t *testing.T) {
 	u := newFrameUI()
 	st := newRawViewState()
 	q := new(input.Router)
-	th := newTheme()
+	th := testTheme()
 
 	frame := func() {
 		gtx, ops := frameGtx(q.Source())

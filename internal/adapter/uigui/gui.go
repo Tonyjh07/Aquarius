@@ -141,6 +141,10 @@ func clampKnobs(scale, fontSp float64) zoomKnobs {
 // UI GUI 前端句柄（装配根按 uiFrontend 使用）。
 type UI struct {
 	opts Options
+	// plat 平台实现（D111/S4b）：所有平台能力经它触达——Windows 实测实现 / 非 Windows
+	// 降级实现；构造后只读（测试可在 newUI 后替换为假实现）。headless（window=false）
+	// 同样持有一个真实现（未起外壳线程，方法多为 no-op/中性回落）。
+	plat platformAPI
 	// hotkeyCfg 快捷键配置原子槽（设置窗保存热更新；托盘线程注册读，newUI 预存
 	// opts.Hotkey——u.opts 本身只读不改，防跨线程裸写）。
 	hotkeyCfg atomic.Value
@@ -357,7 +361,8 @@ func newUI(opts Options, window bool) *UI {
 		done:  make(chan struct{}),
 	}
 	u.m = newModel(u)
-	u.editor.Submit = true // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
+	u.plat = newPlatform(opts, window) // 平台实现（profile/主题解析前就绪）
+	u.editor.Submit = true             // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
 	u.followTail = true   // 初始尾随贴底（新内容贴输入栏，§15.1）
 	u.alpha = semiAlpha   // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）

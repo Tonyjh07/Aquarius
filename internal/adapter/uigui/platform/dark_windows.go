@@ -1,6 +1,6 @@
 //go:build windows
 
-package uigui
+package platform
 
 import (
 	"syscall"
@@ -24,10 +24,10 @@ const (
 	appsUseLight    = "AppsUseLightTheme" // 0 = 深色应用主题，1 = 浅色
 )
 
-// systemDark 系统深浅检测（§15.4/D61：Win32 注册表 `AppsUseLightTheme`，键缺失/
-// 读取失败 = 浅色保守回落）。查询类调用可跨线程直调（§15.6 铁律 1 不限）；
-// 运行中变化经主窗 WM_SETTINGCHANGE 广播（subClassProc）触发 sysThemeMsg 重解析。
-func systemDark() bool {
+// DarkMode 系统深浅检测（§15.4/D61：Win32 注册表 `AppsUseLightTheme`，键缺失/读取失败
+// = 浅色保守回落）。查询类调用可跨线程直调（§15.6 铁律 1 不限）；运行中变化经主窗
+// WM_SETTINGCHANGE 广播（见 shell_windows.go 的窗口过程）触发 Host.SystemThemeChanged。
+func (p *Plat) DarkMode() bool {
 	key, err := syscall.UTF16PtrFromString(personalizePath)
 	if err != nil {
 		return false
@@ -53,4 +53,15 @@ func systemDark() bool {
 		return false
 	}
 	return val == 0
+}
+
+// SystemFontCandidates 系统中文字体候选路径（§15.6 spike 实证：msyh.ttc → opentype）。
+// 平台无关的解析/回落（gofont）留在 uigui 侧：本方法只给路径。
+func (p *Plat) SystemFontCandidates() []string {
+	return []string{
+		`C:\Windows\Fonts\msyh.ttc`,
+		`C:\Windows\Fonts\msyhbd.ttc`,
+		`C:\Windows\Fonts\simhei.ttf`,
+		`C:\Windows\Fonts\simsun.ttc`,
+	}
 }

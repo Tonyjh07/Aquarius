@@ -16,7 +16,7 @@ import (
 func newEditUI() *UI {
 	u := &UI{followTail: true, inCh: make(chan port.UserInput, 8)}
 	u.m = newModel(u)
-	u.th = newTheme()
+	u.th = testTheme()
 	u.editor.Submit = true
 	u.editor.SingleLine = true
 	return u

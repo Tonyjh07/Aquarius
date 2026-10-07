@@ -79,7 +79,7 @@ func TestAttachStageFlow(t *testing.T) {
 func TestAttachBufferFull(t *testing.T) {
 	u := &UI{followTail: true, inCh: make(chan port.UserInput, 1)}
 	u.m = newModel(u)
-	u.th = newTheme()
+	u.th = testTheme()
 	u.editor.Submit = true
 	u.editor.SingleLine = true
 
