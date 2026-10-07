@@ -263,8 +263,10 @@ type testOutcome struct {
 	err  error
 }
 
-// newSettingsForm 开窗现取快照填表：读回调缺失 = 空表单，写回调缺失 = 只读占位。
-func newSettingsForm(u *UI) *settingsForm {
+// newSettingsFormState 表单控件与固定档的构造骨架（快照无关：列表轴向/枚举档/
+// 单行档/结果通道）。与快照填表分开 = 开窗路径与测试共用同一构造口径（S4c：
+// 列表轴向属构造不变量——轴向错配会让 material.List 按视口**宽**迭代，只画首行）。
+func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
 		perm:        cycleField{displays: permLevels, values: permLevels},
 		effort:      cycleField{displays: effortLevels, values: effortValues},
@@ -272,9 +274,16 @@ func newSettingsForm(u *UI) *settingsForm {
 		scale:       cycleField{displays: zoomLevels, values: zoomValues},
 		testResults: make(chan testOutcome, 8),
 	}
+	f.list.Axis = layout.Vertical // 表单行列表恒纵向（material.List 未设轴向 = Horizontal）
 	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
+	return f
+}
+
+// newSettingsForm 开窗现取快照填表：读回调缺失 = 空表单，写回调缺失 = 只读占位。
+func newSettingsForm(u *UI) *settingsForm {
+	f := newSettingsFormState()
 	f.readOnly = u.opts.ApplySettings == nil
 	if u.opts.Profiles != nil {
 		f.profiles = u.opts.Profiles.Snapshot() // D110③：profile 区数据面

@@ -5,8 +5,15 @@ package uigui
 
 import (
 	"errors"
+	"image"
+	"image/color"
 	"strings"
 	"testing"
+
+	"gioui.org/gpu/headless"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -538,5 +545,93 @@ func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
 	u.saveSettings(f)
 	if got.RawJSON != "" {
 		t.Fatalf("raw 未改动不应进 patch: %q", got.RawJSON)
+	}
+}
+
+// TestSettingsFrameRowsFillViewport 设置窗行列表真渲染回归（S4c 根因防线）。
+//
+// 复现过的故障：`settingsForm.list` 未设 `layout.Axis` → `layout.List` 按**水平**
+// 轴向做视口预算（按视口宽 700px 而非视口高 775px 迭代），而内容仍按垂直堆叠绘制；
+// 累计两行即判定"填满"，整个表单只画出首行，其余是空白窗底与越界的整宽底色带。
+//
+// 判据取用户可见事实而非内部结构：把设置窗按真窗尺寸/缩放离屏光栅化，要求窗体
+// **下半幅与底带确有内容**（轴向错配时下半幅恒为纯底色）。参照实现 = 真窗首帧
+// 700×775px（`winSettings` 几何 560×620dp × 1.25 缩放）。
+func TestSettingsFrameRowsFillViewport(t *testing.T) {
+	const (
+		viewW, viewH = 700, 775 // 真窗首帧像素尺寸（560×620dp @1.25）
+		pxPerDp      = 1.25     // 真窗 Metric（Win32 DPI 96→120 档实测值）
+	)
+	sz := image.Pt(viewW, viewH)
+
+	w, err := headless.NewWindow(viewW, viewH)
+	if err != nil {
+		t.Skipf("离屏渲染不可用（无 GPU/软件后端）: %v", err)
+	}
+	defer w.Release()
+
+	u := newHeadless(t, Options{
+		Settings: func() SettingsSnapshot {
+			return SettingsSnapshot{
+				Permission: "strict", Model: "m1", Theme: "system",
+				Scale: 1.0, FontSize: 15,
+				MaxTurns: 8, MaxContextTokens: 128000, CompactThreshold: 0.8,
+				ToolOutputChars: 4000, ToolTimeoutSec: 120,
+				SystemPrompt: "persona", RawJSON: `{"model":{"name":"m1"}}`,
+			}
+		},
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+		Profiles:      &fakeProfiles{snap: ProfilesSnapshot{Current: "default"}},
+	})
+	f := newSettingsForm(u)
+	th := newTheme()
+
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: pxPerDp, PxPerSp: pxPerDp},
+		Constraints: layout.Exact(sz),
+	}
+	settingsFrame(gtx, th, u, f)
+	if err := w.Frame(&ops); err != nil {
+		t.Fatalf("离屏帧提交失败: %v", err)
+	}
+	img := image.NewRGBA(image.Rectangle{Max: sz})
+	if err := w.Screenshot(img); err != nil {
+		t.Fatalf("离屏取像失败: %v", err)
+	}
+
+	// 底色 = 窗体铺底（windowBg）；逐行统计与底色不同的像素（文字/控件/底板）。
+	bg := color.RGBAModel.Convert(img.At(2, viewH-2)).(color.RGBA)
+	rowsWith := func(y0, y1 int) (rows, px int) {
+		for y := y0; y < y1; y++ {
+			n := 0
+			for x := 0; x < viewW; x++ {
+				if color.RGBAModel.Convert(img.At(x, y)).(color.RGBA) != bg {
+					n++
+				}
+			}
+			if n > 0 {
+				rows++
+				px += n
+			}
+		}
+		return rows, px
+	}
+
+	halfRows, halfPx := rowsWith(viewH/2, viewH)
+	if halfRows < 20 || halfPx < 300 {
+		t.Errorf("窗体下半幅内容过少：有内容的行数=%d 像素=%d（want ≥20 行 / ≥300 px）"+
+			"——列表很可能按错误轴向迭代、只画出首行（S4c 根因）", halfRows, halfPx)
+	}
+	// 底带（末 12%）也必须有内容：轴向错配时内容在首行之后即断流。
+	bottomRows, _ := rowsWith(viewH-viewH*12/100, viewH)
+	if bottomRows < 5 {
+		t.Errorf("窗底带（末 12%%）内容行数=%d，want ≥5——行列表未填满视口", bottomRows)
+	}
+	// 上幅有内容（正向对照：窗体确实渲染了表单而非全空）。
+	topRows, _ := rowsWith(0, viewH/4)
+	if topRows < 5 {
+		t.Errorf("窗体上幅内容行数=%d，want ≥5——表单未渲染", topRows)
 	}
 }
