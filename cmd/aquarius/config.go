@@ -285,6 +285,11 @@ const pointerTemplate = `{
 }
 `
 
+// pointerContent 指定 profile 名的指针文件内容（切换面写回用，D110③）。
+func pointerContent(name string) string {
+	return fmt.Sprintf("{\n  \"profile\": %q\n}\n", name)
+}
+
 // validProfileName profile 名合法性（目录名安全子集）：非空、无路径分隔/盘符/控制
 // 字符、非 . ..、长度 ≤64。指针解析与设置窗新建/复制共用，防手改与注入。
 func validProfileName(name string) error {

@@ -22,6 +22,23 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// ProfilesSnapshot profile 区快照（D110③）：当前生效 profile + 可用清单。
+type ProfilesSnapshot struct {
+	Current string   // 本次启动生效的 profile 名（--profile 或指针决定）
+	Items   []string // profiles/ 下可用清单（含 config.json 的目录）
+}
+
+// ProfilesManager profile 管理面（D110③/修订④，装配根实现）：设置窗 profile 区
+// 数据面与三动作。切换/新建/复制均重启生效（Q1：profile 进程级，运行态不热切）；
+// 复制语义 = 仅复制配置（新 profile 以当前 profile 的 config.json 为底，不带会话
+// /记忆/附件数据）。
+type ProfilesManager interface {
+	Snapshot() ProfilesSnapshot
+	Create(name string) error // 模板 config 新建
+	Copy(name string) error   // 以当前 profile 配置为底新建（仅配置）
+	Switch(name string) error // 原子写根指针（重启生效）
+}
+
 // SettingsSnapshot 设置窗核心档快照（开窗现取；同 Status 口径线程安全回调）。
 // Permission/Model/Think/Effort 由装配根取运行态（等级活槽与 Agent 访问器），
 // 其余取 config 文件；密钥永不进快照（D35 只写不回显）。
@@ -110,7 +127,7 @@ func (c *cycleField) advance(gtx layout.Context) {
 }
 
 // settingsRows 表单行数（与 settingsForm 行渲染的 switch 对齐——改行数两处同步）。
-const settingsRows = 16
+const settingsRows = 21
 
 // fieldH 文本档统一高度（dp）：单行编辑器 + 上下留白（material 无内建输入框边框）。
 const fieldH = 40
@@ -120,23 +137,28 @@ const fieldLabelW = 92
 
 // settingsForm 设置窗表单状态（次窗 goroutine 独占；控件即状态，不跨窗共享）。
 type settingsForm struct {
-	list     widget.List
-	provider widget.Editor
-	model    widget.Editor
-	baseURL  widget.Editor
-	apiKey   widget.Editor
-	hotkey   widget.Editor
-	fontSize widget.Editor // D90：正文字号 sp（数值，空 = 不改）
-	winW     widget.Editor // D90：主窗像素宽（数值，空 = 不改）
-	winH     widget.Editor // D90：主窗像素高
-	think    widget.Bool
-	perm     cycleField
-	effort   cycleField
-	theme    cycleField
-	scale    cycleField // D90：元素缩放（cycle 百分比档）
-	save     widget.Clickable
+	list       widget.List
+	provider   widget.Editor
+	model      widget.Editor
+	baseURL    widget.Editor
+	apiKey     widget.Editor
+	hotkey     widget.Editor
+	fontSize   widget.Editor // D90：正文字号 sp（数值，空 = 不改）
+	winW       widget.Editor // D90：主窗像素宽（数值，空 = 不改）
+	winH       widget.Editor // D90：主窗像素高
+	profName   widget.Editor // D110③：profile 名（新建/复制/切换共用输入档）
+	profCreate widget.Clickable
+	profCopy   widget.Clickable
+	profSwitch widget.Clickable
+	think      widget.Bool
+	perm       cycleField
+	effort     cycleField
+	theme      cycleField
+	scale      cycleField // D90：元素缩放（cycle 百分比档）
+	save       widget.Clickable
 
 	snap     SettingsSnapshot // 开窗快照（保存 diff 基准 + 变更提示）
+	profiles ProfilesSnapshot // profile 区数据面（动作后刷新，D110③）
 	status   string           // 保存反馈（本 goroutine 独占；"" = 默认提示）
 	err      bool             // 反馈为错误态（红字）
 	readOnly bool             // 无写回调：保存仅报只读占位
@@ -152,10 +174,13 @@ func newSettingsForm(u *UI) *settingsForm {
 		scale:  cycleField{displays: zoomLevels, values: zoomValues},
 	}
 	for _, ed := range []*widget.Editor{&f.provider, &f.model, &f.baseURL, &f.apiKey, &f.hotkey,
-		&f.fontSize, &f.winW, &f.winH} {
+		&f.fontSize, &f.winW, &f.winH, &f.profName} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
 	f.readOnly = u.opts.ApplySettings == nil
+	if u.opts.Profiles != nil {
+		f.profiles = u.opts.Profiles.Snapshot() // D110③：profile 区数据面
+	}
 	if u.opts.Settings == nil {
 		return f
 	}
@@ -292,6 +317,62 @@ func (u *UI) saveSettings(f *settingsForm) {
 	}
 }
 
+// profileActionLabel 三动作的反馈前缀（渲染与反馈共用）。
+func profileActionLabel(act string) string {
+	switch act {
+	case "create":
+		return "新建"
+	case "copy":
+		return "复制"
+	case "switch":
+		return "切换"
+	}
+	return act
+}
+
+// profileAction profile 区三动作（D110③/修订④）：名字非空校验 → ProfilesManager
+// 执行 → 反馈写表单状态（成功绿/错误红，同保存流口径）并刷新快照。headless 可测
+// （不进帧渲染）。
+func (u *UI) profileAction(f *settingsForm, act string) {
+	if u.opts.Profiles == nil {
+		f.err = true
+		f.status = "profile 管理未接线"
+		return
+	}
+	name := strings.TrimSpace(f.profName.Text())
+	if name == "" {
+		f.err = true
+		f.status = "请先填写 profile 名"
+		return
+	}
+	var err error
+	switch act {
+	case "create":
+		err = u.opts.Profiles.Create(name)
+	case "copy":
+		err = u.opts.Profiles.Copy(name)
+	case "switch":
+		err = u.opts.Profiles.Switch(name)
+	default:
+		err = fmt.Errorf("未知动作 %q", act)
+	}
+	if err != nil {
+		f.err = true
+		f.status = "profile " + profileActionLabel(act) + "失败：" + err.Error()
+		return
+	}
+	f.err = false
+	f.profiles = u.opts.Profiles.Snapshot() // 新建/复制后清单刷新，立即可切换
+	switch act {
+	case "create":
+		f.status = "已新建 profile " + name + "（模板已生成；填「Profile 名」后点「切换」启用，重启生效）"
+	case "copy":
+		f.status = "已复制当前 profile 配置到 " + name + "（仅配置不含会话数据；重启生效）"
+	case "switch":
+		f.status = "已切换 profile → " + name + "（重启生效）"
+	}
+}
+
 // setHotkey 更新快捷键配置原子槽并请求托盘线程重注册（设置窗保存；注册归属托盘
 // 线程——RegisterHotKey 归调用线程，跨线程只能投消息，§15.1）。headless/非窗口
 // 平台 = 槽更新即止。
@@ -306,6 +387,15 @@ func (u *UI) setHotkey(hk string) {
 func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsForm) layout.Dimensions {
 	for f.save.Clicked(gtx) {
 		u.saveSettings(f)
+	}
+	for f.profCreate.Clicked(gtx) {
+		u.profileAction(f, "create")
+	}
+	for f.profCopy.Clicked(gtx) {
+		u.profileAction(f, "copy")
+	}
+	for f.profSwitch.Clicked(gtx) {
+		u.profileAction(f, "switch")
 	}
 	f.perm.advance(gtx)
 	f.effort.advance(gtx)
@@ -331,39 +421,77 @@ func (f *settingsForm) row(th *material.Theme) func(layout.Context, int) layout.
 			switch i {
 			case 0:
 				return material.H6(th, "设置").Layout(gtx)
-			case 1:
-				return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm))
+			case 1: // D110③：profile 区（当前 + 名字输入 + 三动作）
+				return material.Subtitle1(th, "Profile").Layout(gtx)
 			case 2:
-				return material.CheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）").Layout(gtx)
+				return fieldRow(gtx, th, "当前", func(gtx layout.Context) layout.Dimensions {
+					txt := f.profiles.Current
+					if len(f.profiles.Items) > 0 {
+						txt += "（可用：" + strings.Join(f.profiles.Items, ", ") + "）"
+					}
+					l := material.Body1(th, txt)
+					l.Color = textDim
+					return l.Layout(gtx)
+				})
 			case 3:
-				return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort))
+				return fieldRow(gtx, th, "Profile 名", editorBox(th, &f.profName, "新建 / 复制 / 切换的目标名"))
 			case 4:
-				return material.Subtitle1(th, "模型服务").Layout(gtx)
+				return f.profileButtonsRow(gtx, th)
 			case 5:
-				return fieldRow(gtx, th, "提供方", editorBox(th, &f.provider, "如 openai-compatible"))
+				return material.Subtitle1(th, "权限与思考").Layout(gtx)
 			case 6:
-				return fieldRow(gtx, th, "模型名", editorBox(th, &f.model, "如 gpt-4o-mini（/model 同口径热切）"))
+				return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm))
 			case 7:
-				return fieldRow(gtx, th, "接口地址", editorBox(th, &f.baseURL, "如 https://api.openai.com/v1"))
+				return material.CheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）").Layout(gtx)
 			case 8:
-				return fieldRow(gtx, th, "API 密钥", editorBox(th, &f.apiKey, "只写不回显；留空保持不变（D35）"))
+				return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort))
 			case 9:
-				return material.Subtitle1(th, "外观与呼出").Layout(gtx)
+				return material.Subtitle1(th, "模型服务").Layout(gtx)
 			case 10:
-				return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
+				return fieldRow(gtx, th, "提供方", editorBox(th, &f.provider, "primary 选择器（providers 中的名字）"))
 			case 11:
-				return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme))
+				return fieldRow(gtx, th, "模型名", editorBox(th, &f.model, "如 gpt-4o-mini（/model 同口径热切）"))
 			case 12:
-				return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale))
+				return fieldRow(gtx, th, "接口地址", editorBox(th, &f.baseURL, "primary 的 base_url（重启生效）"))
 			case 13:
-				return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
+				return fieldRow(gtx, th, "API 密钥", editorBox(th, &f.apiKey, "只写不回显；留空保持不变（D35）"))
 			case 14:
+				return material.Subtitle1(th, "外观与呼出").Layout(gtx)
+			case 15:
+				return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
+			case 16:
+				return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme))
+			case 17:
+				return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale))
+			case 18:
+				return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
+			case 19:
 				return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
 			default:
 				return f.actionsRow(gtx, th)
 			}
 		})
 	}
+}
+
+// profileButtonsRow profile 区三动作按钮（D110③）：新建 / 复制当前 / 切换（重启生效）。
+func (f *settingsForm) profileButtonsRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	btn := func(c *widget.Clickable, label string) layout.Widget {
+		return func(gtx layout.Context) layout.Dimensions {
+			b := material.Button(th, c, label)
+			b.TextSize = unit.Sp(13)
+			return b.Layout(gtx)
+		}
+	}
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(btn(&f.profCreate, "新建")),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profCopy, "复制当前"))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profSwitch, "切换（重启生效）"))
+		}),
+	)
 }
 
 // fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。

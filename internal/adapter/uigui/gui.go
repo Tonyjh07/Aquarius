@@ -94,6 +94,9 @@ type Options struct {
 	// （port.CommandCatalog 反向端口，实现方 app.Session）；nil = 无补全。
 	// 实现方须线程安全（UI 事件循环 goroutine 调用）。
 	Commands port.CommandCatalog
+	// Profiles profile 管理面（D110③/修订④）：设置窗 profile 区数据面与三动作
+	//（新建/复制/切换，重启生效）；nil = 不渲染 profile 区。
+	Profiles ProfilesManager
 }
 
 // zoomKnobs 双缩放旋钮（D90/§15.8）：元素缩放 × 正文字号，原子槽整体换存（成对生效）。

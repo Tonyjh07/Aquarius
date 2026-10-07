@@ -146,7 +146,7 @@ func resolveProfile(dir, flagName string) (string, error) {
 	case errors.Is(err, os.ErrNotExist):
 		if flagName == "" {
 			// 首次运行：写指针指向 default（profile 配置模板随后由 run 的模板分支落盘）。
-			if werr := os.WriteFile(pointerPath, []byte(pointerTemplate), 0o644); werr != nil {
+			if werr := os.WriteFile(pointerPath, []byte(pointerContent(defaultProfileName)), 0o644); werr != nil {
 				return "", fmt.Errorf("生成 profile 指针 %s: %w", pointerPath, werr)
 			}
 		}
@@ -551,14 +551,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			},
 			Settings:      settingsSnapshot,
 			ApplySettings: applySettings,
-			Tree:          sessionTree{p: &sessPtr},                  // D80/§7.5：分叉条只读数据面
-			Commands:      sessionCommands{p: &sessPtr},              // D103/S2b-1：补全浮层命令清单只读数据面
-			PosFile:       filepath.Join(profileDir, "gui_pos.json"), // 位置记忆随 profile 走（D110 修订①）
-			Hotkey:        cfg.UI.Hotkey,                             // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
-			Theme:         cfg.UI.Theme,                              // 主题档 system|light|dark（§15.4/D61；空 = system）
-			Scale:         cfg.UI.Scale,                              // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
-			FontSize:      cfg.UI.FontSize,                           // 正文字号 sp（D90；0 = 15）
-			WindowWidth:   cfg.UI.WindowWidth,                        // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
+			Profiles:      &profilesManager{dataDir: dir, current: profileName, profileCfg: cfgPath}, // D110③：profile 区
+			Tree:          sessionTree{p: &sessPtr},                                                  // D80/§7.5：分叉条只读数据面
+			Commands:      sessionCommands{p: &sessPtr},                                              // D103/S2b-1：补全浮层命令清单只读数据面
+			PosFile:       filepath.Join(profileDir, "gui_pos.json"),                                 // 位置记忆随 profile 走（D110 修订①）
+			Hotkey:        cfg.UI.Hotkey,                                                             // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:         cfg.UI.Theme,                                                              // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Scale:         cfg.UI.Scale,                                                              // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
+			FontSize:      cfg.UI.FontSize,                                                           // 正文字号 sp（D90；0 = 15）
+			WindowWidth:   cfg.UI.WindowWidth,                                                        // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
 			WindowHeight:  cfg.UI.WindowHeight,
 		})
 	case "tui":
