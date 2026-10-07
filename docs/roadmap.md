@@ -3,7 +3,7 @@
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
 
-- 里程碑基线：**M0–M4 已落地**；当前推进 **M5 GUI**（S1/S1b/S1c/S2/S2b 已完成）。**M5 后续执行序重排（D109，2026-10-06）**：对话树 UI（S3）之前的日常体验与内核命令已落地 → **配置底座破坏性改造（S4+S5 合批，D110）→ 大文件拆分重构（新 S4a，纯代码组织）→ GUI 跨平台抽象层（S4b，D111）→ 对话树 UI：relation-map（S3，D112）**，S6–S8 顺延，见 §2/§3
+- 里程碑基线：**M0–M4 已落地**；当前推进 **M5 GUI**（S1/S1b/S1c/S2/S2b 已完成）。**M5 后续执行序重排（D109，2026-10-06）**：对话树 UI（S3）之前的日常体验与内核命令已落地 → **配置底座破坏性改造（S4+S5 合批，D110，已落地）→ 大文件拆分重构（S4a，纯代码组织，已落地 2026-10-07）→ GUI 跨平台抽象层（S4b，D111）→ 对话树 UI：relation-map（S3，D112）**，S6–S8 顺延，见 §2/§3
 - 基线：`3be7c91`（D75 已合入，决策记录 D1–D75），2026-09-30
 - 输入：用户 TODO 清单 10 大项 + 「UI增强与bug修复」7 小项 + 补充 3 项（响应式迁移、主窗口大小调整、消息区底部淡化区）+ 第二批补充 3 项（命令提示与补全、附件解析、预留按钮实装 → 合成 S2b 输入行阶段）
 - 决策状态：**Q1–Q16 已全部拍板**（§5，2026-09-30）；**Q17 已拍板**（D105，2026-10-06：pdf/docx/xlsx/html 现成纯 Go 库、pptx/rtf 缓）；Q7（ASR/TTS 选型）留待动手前补充
@@ -172,7 +172,14 @@
 - **P2（可选顺手）**：`llm/openai.go` → client / wire / stream 三份；`uigui/shell_windows.go` → tray / menu / filedlg 三份；`app/agent.go` → 核心循环 + `agent_compact.go` + `turnbuffer.go` + `agent_tools.go`。`uitui/model.go`、`uigui/gui.go`、`uigui/select.go`（内聚的选区子系统）、`plugin/host.go` 暂不动。
 - **验证与节奏**：每个源文件一个 commit（`refactor: split … by concern`）；每步 `gofmt -l .` 空 + `go vet` + `go test ./...`（含 `-race`）全绿；app 侧拆函数重点看 golden 回放不变；window.go 拆完全量跑一次 uigui 测试（同包搬移不影响测试对未导出标识符的引用）+ GUI 冒烟收尾。
 - **非目标**：不动包边界、命名与行为；不拆测试文件（`session_test.go` 1924、`main_test.go` 1535 留待按需）。
-- **状态（2026-10-06）**：待开工——前置：当前进行中任务合入；P0/P1 必做，P2 可选。
+- **状态（2026-10-07）**：**已落地**（8 个 refactor commit）。实测口径修订：`window.go` 2791 → 骨架 322 + **11 文件**
+  （theme_font/winpos/layout/transcript/chip/input/confirm_ui/attach/chrome/branch/interact；预研表"10 文件"为笔误）；
+  `execCommand` 399 行 21 命名 case（分发壳 + execXxx 方法，先拆函数后拆文件）；`main.go` 973（D110 后）/`run()` 610 行 →
+  wiring 装配态 + bootstrap_profile/assemble_ports/assemble_ui 三段，persist 闭包并 config.go（cfgWriter）、插件宿主并
+  plugins.go；P2 = openai.go→client/wire/stream、shell_windows.go→shell/tray/menu/filedlg、agent.go→agent/compact/
+  turnbuffer/tools。每步声明清单守恒核对 + 三门禁（含 -race）全绿。**P2 例外：`uigui/settings.go`（1134 行）未拆——
+  用户拍板留待 S4c 修渲染时一并处理**。备注：`GOOS=linux` 全仓交叉编译受 gio/cgo 限制不可达（基线如此）；
+  可用口径 = 非 gio 包 `CGO_ENABLED=0 GOOS=linux go build` 全绿。
 
 ### S4c · 设置窗渲染异常修复（M8，P1，M~L，**新增 2026-10-07，用户拍板暂缓**）
 - **症状（用户验收截图，2026-10-07）**：设置次窗（winSettings）表单渲染破碎——多行行内容横向
@@ -184,7 +191,8 @@
   `winmgr.runSecondary` 的事件循环与主窗共用的输入选项差异。首步 = 真窗渲染冒烟
   （`winmgr_smoke_test` 扩展：截帧比对行序与控件宽度），再二分定位。
 - **决策**：**暂缓**——用户拍板先记录不修（日常可用性尚可凑合）；排在 S4a（大文件拆分）之后
-  或与其合并进行（拆 `settings.go` 时顺带整修渲染）。修好前 D110 的 GUI 侧验证由 headless
+  或与其合并进行（拆 `settings.go` 时顺带整修渲染）。**S4a 落地时（2026-10-07）settings.go 未拆**
+  （P2 范围用户拍板排除）——拆分与渲染修复一并归入本步。修好前 D110 的 GUI 侧验证由 headless
   测试等价承担（profile 切换/重启 e2e：`TestRunProfileSwitchRestartE2E` 等）。
 
 ### S4b · GUI 跨平台抽象层（M8，P1，L，**执行序第三，新增，D111**）
@@ -237,8 +245,8 @@
   └───────────────────────────┬──────────────────────────────────┘
                               ↓
   ┌──────────────────────────────────────────────────────────────┐
-  │ ② 大文件拆分重构（S4a，纯代码组织、无行为变更）               │
-  │    window.go/session.go/main.go/openai.go 按主题拆薄          │
+  │ ② 大文件拆分重构（S4a，纯代码组织、无行为变更）【已落地】      │
+  │    window.go/session.go/main.go/openai.go 等按主题拆薄        │
   └───────────────────────────┬──────────────────────────────────┘
                               ↓
   ┌──────────────────────────────────────────────────────────────┐
