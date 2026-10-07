@@ -7,8 +7,8 @@
 
 ```bash
 go build ./cmd/aquarius
-./aquarius.exe        # 首次运行生成 ~/.aquarius/config.json 后退出
-# 填 model.name / model.base_url，设置密钥环境变量，重新运行
+./aquarius.exe        # 首次运行生成根指针 + profiles/default/config.json 模板后退出（D110）
+# 填 model.providers（base_url / models / api_key），设置密钥环境变量，重新运行
 ```
 
 默认 **GUI 悬浮球**（`ui.kind=gui`，D51/§15：托盘常驻、Alt+A 呼出、不进任务栏）。
@@ -41,7 +41,7 @@ go build ./cmd/aquarius
 | `/memory [会话id]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`，带参会话记忆；保存后下次读取生效） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/jobs [list\|logs <id> [行数]\|kill <id>]` | 后台任务管理（M3）：缺省 `list`；`logs` 取末尾行（缺省 50）；`kill` 终止（连同子进程）。任务由模型经 `job_start` 启动，ID 支持唯一前缀 |
-| `/model [name]` | 无参：当前模型 + 可用清单（`LLM.Models()`，能力/单价标注）；有参：先写回 config `model.name` 再 Agent 内热切换（D32，同 `/permission` 模式），下一轮即生效 |
+| `/model [name]` | 无参：当前 provider（D110②）+ 当前模型 + 可用清单（`LLM.Models()`，能力/单价标注）；有参：先写回 config `model.name` 再 Agent 内热切换（D32，同 `/permission` 模式），下一轮即生效；provider/端点切换走设置窗或 config（重启生效，D110②） |
 | `/think [on\|off]` | 无参：原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发（覆盖 `/effort`） |
 | `/effort [级别]` | 无参：当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off 清除）写回 config `model.reasoning_effort`。是否真发由 `/think` 决定；on 且未设档 = 不发（交服务端默认） |
 | `/plugin [list\|enable <name>\|disable <name>]` | MCP 插件管理（M4，D31）：list 显示状态/来源/传输/能力授权/调用统计/重启与报因，并列出可用动态命令；enable 走 capability 首用确认并写回 config；disable 即时摘除其工具与命令 |
@@ -70,7 +70,7 @@ go build ./cmd/aquarius
 | `sleep` | 等待 N 秒（停顿或等后台任务；Ctrl+C 可中断；1–3600s，超缺省超时须在该次调用上带 `timeout_sec`，D38/D39） | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，自我管理上下文） | Safe |
 | `term_exec` | 同步执行终端命令行（`cmd /c` / `sh -c`；超时统一控制，输出保头尾截断；输出自动转 UTF-8，无须 `chcp`；执行类看工具列） | Confirm |
-| `job_start` | 启动后台任务（独立进程，日志落盘 `~/.aquarius/jobs/<id>.log`，不随对话取消） | Confirm |
+| `job_start` | 启动后台任务（独立进程，日志落盘 `profiles/<name>/jobs/<id>.log`，不随对话取消） | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理（列表/状态/日志尾部/终止） | Safe |
 
 ## 上下文压缩（三轨特色功能）
@@ -103,7 +103,7 @@ persona（人格）恒回传：它是会话首节点（system 角色），源自
 Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go-sdk）：
 
 - **声明**在 config `mcpServers.<name>`（stdio：`command`/`args`/`env`；http：`url`/`headers`，
-  值可用 `secret:<环境变量名>` 引用）或 `~/.aquarius/plugins/<name>/plugin.json`；
+  值可用 `secret:<环境变量名>` 引用）或 `profiles/<name>/plugins/<m>/plugin.json`；
   **启停与授权状态**在 config `plugins.<name>`（D31，同名声明以 config 为准）。
 - **授权**：声明的 `capabilities` 首次启用逐项 `[y/N]` 确认，通过即写入 `granted`；
   未配置确认器时 fail-closed 不启动；`risk=confirm` 的工具仍逐次确认（不随授权放行）。
@@ -115,7 +115,7 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 
 ## 权限等级
 
-四档预设，`sandbox`（`~/.aquarius/sandbox`，启动自动创建）是 Agent 特权目录。
+四档预设，`sandbox`（`profiles/<name>/sandbox`，启动自动创建）是 Agent 特权目录。
 矩阵格 = **免确认范围**，矩阵外一律逐次确认：
 
 | 等级 | 特权目录 | 其他目录 | 工具调用 |
@@ -135,8 +135,8 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 ## 常见问题
 
 - **启动报"发现旧格式会话（虚拟 Root，D19）"**：M0 早期数据不兼容，按报因点名的
-  ID 删除 `~/.aquarius/conversations/<id>.json`（含 `.bak`）后重试，详见 [storage.md](storage.md)。
-- **启动警告"model.api_key 为明文"**（D35）：明文密钥直接写在 config.json 里，任何能读
+  ID 删除 `profiles/<name>/conversations/<id>.json`（含 `.bak`）后重试，详见 [storage.md](storage.md)。
+- **启动警告"api_key 为明文"**（D35）：明文密钥直接写在 config.json 里，任何能读
   该文件的进程都可取用——建议改为 `"api_key": "secret:AQUARIUS_OPENAI_KEY"` + 同名环境变量；
   该项留空也会自动回落默认引用（环境变量缺失时才报错退出）。
 - **思考链路（D34/D42）**：`/think off` 关闭原生思考（不发 `reasoning_effort`/`enable_thinking`）；
@@ -150,5 +150,6 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 - **启动报未知权限等级**：`permissions.level` 只接受
   `read-only|strict|permissive|full-access`。
 - **`ui.kind` 报未支持**：只接受 `gui`（默认，D51 悬浮球）、`tui`（D33）与 `repl`（行式，测试/e2e 后端）。
-- **想换模型/端点**：改 config 的 `model.name`/`model.base_url`，或用
+- **想换模型/端点**：模型名 `/model`（热切）或 config `model.name`；provider/端点改
+  `model.providers`（设置窗「模型服务」区可全量编辑 + 连通性测试，重启生效，D110②）；或用
   `-model`/`-base-url` flag、`AQUARIUS_MODEL`/`AQUARIUS_BASE_URL` 环境变量临时覆盖。

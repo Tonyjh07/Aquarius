@@ -17,21 +17,24 @@
 - [x] **内置工具** — 文件操作、终端执行、后台任务
 - [x] **MCP 扩展** — [stdio + streamable HTTP](https://modelcontextprotocol.io) 双传输，接入现成 server 即得新工具，与内置工具同权
 - [ ] **进程内插件** — Go 级进程内扩展，规划中
-- [x] **本地优先** — 数据全部在 `~/.aquarius/`，卸载 = 删二进制 + 删目录
+- [x] **本地优先** — 数据全部在 `~/.aquarius/`（profile 整目录隔离），卸载 = 删二进制 + 删目录
 - [x] **TUI + GUI** — bubbletea 终端界面；Gio 悬浮球为默认前端（托盘常驻、全局快捷键、深浅主题跟随）
 
 ## 快速开始
 
 ```bash
 go build ./cmd/aquarius
-./aquarius.exe      # 首次运行生成 ~/.aquarius/config.json
+./aquarius.exe      # 首次运行生成 ~/.aquarius/config.json 指针 + profiles/default/ 模板
 ```
 
-1. 编辑 `~/.aquarius/config.json`：填 `model.name` 与 `model.base_url`（人格、权限等级等可选项见[配置参考](docs/configuration.md)）；
-2. 密钥推荐写 `secret:AQUARIUS_OPENAI_KEY` 并存入同名环境变量（也允许明文填入 `model.api_key`，启动会打印警告）；
+1. 编辑 `~/.aquarius/profiles/default/config.json`：在 `model.providers` 填端点与模型
+   （`base_url` / `models` / `api_key`；多 provider + 降级顺序 `model.fallback`，见[配置参考](docs/configuration.md)）；
+2. 密钥推荐写 `secret:AQUARIUS_OPENAI_KEY` 并存入同名环境变量（也允许明文填入 `api_key`，启动会打印警告）；
 3. 重新运行即可直接对话；`/help` 查看命令，完整命令参考见[使用手册](docs/usage.md)。
 
-数据全部在 `~/.aquarius/`（`-data` 可指定目录），会话树为可直接查看的一树一 JSON。
+数据全部在 `~/.aquarius/`（`-data` 可指定目录）：根 `config.json` 仅存当前 profile 指针，
+主配置与会话/记忆/附件都在 `profiles/<name>/` 整目录隔离（`--profile` 或设置窗切换，重启生效）；
+会话树为可直接查看的一树一 JSON。
 
 ## 文档
 

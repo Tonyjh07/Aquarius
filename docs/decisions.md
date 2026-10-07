@@ -987,7 +987,7 @@
   ③ **fallback 运行语义（Q5 细化）**：判据 = `port.ErrTransient`（429/408/5xx/网络/超时；401/400 等 4xx 配置/请求错误不降级、直接暴露）；同 provider 重试（退避）耗尽后才降级——重试在内、降级在外（铁律 9，装饰器叠在 main 装配处）；降级目标 provider 的请求模型 = 该 provider `models[0]`（primary 用 `model.name`）；无粘态——每次 Generate 仍从 primary 起试；流中途断连不重试、不降级（既有 retry 边界）；降级发生经状态行一次性提示（Q5）。
   ④ **切换面补充**：设置窗「复制 profile」= 仅复制配置（新 profile 以当前 profile 的 `config.json` 为底，不带会话/记忆/附件数据）；GUI 双击启动（D108 控制台隐藏）下启动错误经 Win32 MessageBox 呈现，补 stderr 不可见缺口。
 - **否决**：gui_pos/blob 全局共享（破坏整目录隔离、GC 语义复杂化）；fallback 粘态记忆上次成功 provider（状态与确定性成本，先无粘态观察）；迁移器（无生产数据，D110 原判）。
-- **状态**：生效（随 S4/S5 落码）
+- **状态**：生效（S4/S5 已按本修订落码，2026-10-07）
 
 ### D111 — GUI 跨平台抽象层（平台边界由「仅 Windows 实测」改判）
 - **动机**：§15.6 现状 = GUI 交互层仅 Windows 实测，非 Windows 全为 no-op 桩（`win32_other.go` / `winmgr_other.go` / `theme_other.go`：ULW 像素管线、托盘、全局热键、文件框、TPM 菜单、DPI、系统深浅色均未适配）。这与项目首要原则「轻量跨平台单二进制」冲突；且后续功能（设置窗全量、会话树 UI）都长在 `uigui` 上，边界越晚抽、重写越贵。

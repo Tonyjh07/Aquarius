@@ -8,19 +8,26 @@
 
 ```
 ~/.aquarius/                     # -data 可整体改指
-├── config.json                  # 主配置（写回 = tmp+rename 原子换入）
-├── sandbox/                     # Agent 特权目录（权限矩阵 rw 格，启动自动创建）
-├── memories.md                  # 全局记忆（markdown 单文件，D23；/memory 直开）
-├── conversations/               # 会话树，一会话一 JSON
-│   ├── <id>.json                # 当前代
-│   ├── <id>.json.bak            # 上一代（Save 换代前留一代，D7）
-│   ├── <id>.json.<随机>.tmp     # 写入中的临时文件（唯一随机名，正常结束不存在）
-│   └── <id>.memory.md           # 该会话的会话记忆（随会话就近存放，D23）
-├── jobs/<jobID>.log             # 后台任务日志（M3：命令头 + 输出 + 退出标记行；任务表内存态 D8）
-├── audit.log                    # 审计日志（M4：JSONL，装饰器写入 LLM/工具调用的耗时与结果状态；超限轮转一代）
-├── attachments/<sha256>         # 内容寻址附件（M3：同内容去重；启动时按全量会话引用 GC）
-└── plugins/<name>/plugin.json   # MCP server 描述（M4 起）
+├── config.json                  # 当前 profile 指针（{"profile":"<name>"}；D110）
+└── profiles/<name>/             # profile 整目录隔离（D110：会话/记忆/附件随 profile 走，Q1）
+    ├── config.json              # 主配置（写回 = tmp+rename 原子换入；字段见 configuration.md）
+    ├── sandbox/                 # Agent 特权目录（权限矩阵 rw 格，启动自动创建）
+    ├── memories.md              # 全局记忆（markdown 单文件，D23；/memory 直开）
+    ├── conversations/           # 会话树，一会话一 JSON
+    │   ├── <id>.json            # 当前代
+    │   ├── <id>.json.bak        # 上一代（Save 换代前留一代，D7）
+    │   ├── <id>.json.<随机>.tmp # 写入中的临时文件（唯一随机名，正常结束不存在）
+    │   └── <id>.memory.md       # 该会话的会话记忆（随会话就近存放，D23）
+    ├── jobs/<jobID>.log         # 后台任务日志（M3：命令头 + 输出 + 退出标记行；任务表内存态 D8）
+    ├── audit.log                # 审计日志（M4：JSONL，装饰器写入 LLM/工具调用的耗时与结果状态；超限轮转一代）
+    ├── attachments/<sha256>     # 内容寻址附件（M3：同内容去重；启动按全量会话引用 GC，随 profile 清扫——D110 修订①）
+    ├── gui_pos.json             # 主窗位置记忆（§15.1，随 profile 走——D110 修订①）
+    └── plugins/<name>/plugin.json # MCP server 描述（M4 起）
 ```
+
+**profile 切换（D110③）**：`--profile <name>` 进程级覆盖，或设置窗切换（原子写根指针）
+——均重启生效；切换 = 换整目录，会话/记忆/附件互相隔离。旧单文件 config（D110 前布局）
+启动显式报 `ErrLegacyConfig` 并给手工迁移步骤，不做自动迁移（D110④）。
 
 ## 会话 JSON 结构
 
@@ -92,7 +99,7 @@ Remove-Item ~/.aquarius/conversations/<id>.json, ~/.aquarius/conversations/<id>.
 
 ## 备份与迁移
 
-- **全量备份**：整个 `~/.aquarius/` 拷走即可（全明文、无数据库、无锁文件）。
+- **全量备份**：整个 `~/.aquarius/` 拷走即可（全明文、无数据库、无锁文件）；单 profile 备份 = 拷 `profiles/<name>/` + 根指针。
 - **单会话迁移**：拷 `<id>.json` 到目标机 `conversations/`；`head`/`nodes` 自洽，
   加载时会跑不变量自检，坏树直接报因。
 - **换机续聊**：连同 `config.json` 一起拷；密钥不在这——记得设环境变量。
