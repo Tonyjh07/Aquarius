@@ -5,6 +5,7 @@ package uigui
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -633,5 +636,59 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 	topRows, _ := rowsWith(0, viewH/4)
 	if topRows < 5 {
 		t.Errorf("窗体上幅内容行数=%d，want ≥5——表单未渲染", topRows)
+	}
+}
+
+// TestSettingsRowGeometryTracksDensity 多度量几何回归（D113 验收补充）：行几何必须随
+// Metric 缩放——固定裸 px 定高在高 DPI 下裁掉编辑器文字底部（CJK 字面行高 25px > 内容区
+// 20px @1.25）、标签列变窄导致「接口地址」折行。判据取用户可见事实的几何等价物：
+// ① editorBox 返回高 ≥ 编辑器同度量实测行高 + 2×Dp(8)（不裁字）且 ≥ Dp(fieldH)（按压区下限）；
+// ② fieldRow 控件起点 = 行宽 − Dp(fieldLabelW) − Dp(10)（标签列随密度缩放，不折行）。
+// 裸 px 实现（旧）在 dpi≠1 时两项皆红；dpi=1 恒绿作正向对照。
+func TestSettingsRowGeometryTracksDensity(t *testing.T) {
+	th := newTheme()
+	const rowW = 600
+	for _, dpi := range []float32{1, 1.25, 1.5, 2} {
+		t.Run(fmt.Sprintf("dpi%.2f", dpi), func(t *testing.T) {
+			m := unit.Metric{PxPerDp: dpi, PxPerSp: dpi}
+
+			// 编辑器自然行高（同度量独立实例实测——编辑器有状态，不与被测框共用）。
+			var mops op.Ops
+			med := &widget.Editor{}
+			med.SingleLine = true
+			edDims := material.Editor(th, med, "").Layout(layout.Context{
+				Ops: &mops, Metric: m,
+				Constraints: layout.Constraints{Max: image.Pt(rowW, 1e6)},
+			})
+
+			var ops op.Ops
+			gtx := layout.Context{
+				Ops: &ops, Metric: m,
+				Constraints: layout.Constraints{Max: image.Pt(rowW, 1e6)},
+			}
+			ed := &widget.Editor{}
+			ed.SingleLine = true
+			box := editorBox(th, ed, "hint")(gtx)
+			if want := edDims.Size.Y + 2*gtx.Dp(8); box.Size.Y < want {
+				t.Errorf("dpi %.2f: 编辑框高 %dpx < 编辑器行高 %dpx + 2×Dp(8)——文字底部被裁（D113 验收补充）",
+					dpi, box.Size.Y, want)
+			}
+			if want := gtx.Dp(fieldH); box.Size.Y < want {
+				t.Errorf("dpi %.2f: 编辑框高 %dpx < 下限 Dp(fieldH)=%dpx", dpi, box.Size.Y, want)
+			}
+
+			// 标签列宽（探针控件记录收到的 Flexed 约束）。口径：fieldLabelW 含右间距
+			//（Inset{Right:10} 把标签 Min 压到 fieldLabelW−10，rigid 总占位 = fieldLabelW），
+			// 故控件起点 = 行宽 − Dp(fieldLabelW)——随密度缩放即不折行。
+			var gotCtrlMax int
+			fieldRow(gtx, th, "接口地址", func(gtx layout.Context) layout.Dimensions {
+				gotCtrlMax = gtx.Constraints.Max.X
+				return layout.Dimensions{}
+			})
+			if want := rowW - gtx.Dp(fieldLabelW); gotCtrlMax != want {
+				t.Errorf("dpi %.2f: 控件起点宽 %dpx，want %dpx（行宽 − Dp(fieldLabelW)）——标签列未随密度缩放",
+					dpi, gotCtrlMax, want)
+			}
+		})
 	}
 }

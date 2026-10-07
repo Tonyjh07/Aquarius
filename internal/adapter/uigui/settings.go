@@ -185,10 +185,11 @@ func (c *cycleField) advance(gtx layout.Context) {
 	}
 }
 
-// fieldH 文本档统一高度（dp）：单行编辑器 + 上下留白（material 无内建输入框边框）。
+// fieldH 文本档高度下限（dp，经 gtx.Dp 消费）：单行编辑器 + 上下留白（material 无
+// 内建输入框边框）。实际高由 editorBox 自适应（≥ 编辑器行高 + 留白，D113 验收补充）。
 const fieldH = 40
 
-// fieldLabelW 标签列宽（dp）：对齐各行控件起点。
+// fieldLabelW 标签列宽（dp，经 gtx.Dp 消费）：对齐各行控件起点。
 const fieldLabelW = 92
 
 // settingsForm 设置窗表单状态（次窗事件循环 goroutine 独占；控件即状态，不跨窗
@@ -1026,12 +1027,14 @@ func (f *settingsForm) profileButtonsRow(gtx layout.Context, th *material.Theme)
 	)
 }
 
-// fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。
+// fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。标签列宽随
+// 度量缩放（Dp）——裸 px 常量在高 DPI 下实际变窄，「接口地址」等四字标签折行。
 func fieldRow(gtx layout.Context, th *material.Theme, label string, control layout.Widget) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.X = fieldLabelW
-			gtx.Constraints.Max.X = fieldLabelW
+			labelW := gtx.Dp(fieldLabelW)
+			gtx.Constraints.Min.X = labelW
+			gtx.Constraints.Max.X = labelW
 			return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return material.Body1(th, label).Layout(gtx)
 			})
@@ -1053,25 +1056,36 @@ func cycleBtn(th *material.Theme, c *cycleField) layout.Widget {
 	}
 }
 
-// editorBox 文本档输入区（layout.Widget，供 fieldRow 装配）：定高满宽底衬
-// （material v0.10 编辑器无内建边框——底衬即可编辑标记）。列表行纵向约束无界，
-// 尺寸取行约束宽 + 固定高，不按 Max 铺底。
+// editorBox 文本档输入区（layout.Widget，供 fieldRow 装配）：满宽底衬，高度自适应
+// ——max(Dp(fieldH) 下限, 编辑器实测行高 + 2×留白)。固定裸 px 定高会在任何 DPI 裁掉
+// 文字底部（CJK 字面行高 > 内容区，D113 验收补充；实测行高 38px @1.0 / 48px @1.25 vs
+// 旧内容区 24px/20px），自适应后框随文字度量走。
 func editorBox(th *material.Theme, ed *widget.Editor, hint string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		size := image.Point{X: gtx.Constraints.Max.X, Y: fieldH}
-		paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: size}).Op())
-		gtx.Constraints = layout.Exact(size)
-		layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return material.Editor(th, ed, hint).Layout(gtx)
-		})
-		return layout.Dimensions{Size: size}
+		return layout.Stack{Alignment: layout.NW}.Layout(gtx,
+			// 底衬（Expanded 拿 Stacked 最大尺寸；垫底项保证下限，编辑器项决定实际高）。
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Op())
+				return layout.Dimensions{Size: gtx.Constraints.Min}
+			}),
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{Size: image.Point{Y: gtx.Dp(fieldH)}}
+			}),
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X // 铺满行宽：点击聚焦区 = 整框
+				return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return material.Editor(th, ed, hint).Layout(gtx)
+				})
+			}),
+		)
 	}
 }
 
-// editorBoxH 定高多行编辑区（编辑框的加高变体）：提示词与高级 raw JSON 用。
+// editorBoxH 定高多行编辑区（编辑框的加高变体）：提示词与高级 raw JSON 用。高度
+// 随度量缩放（Dp）——多行内容超高走编辑器内部滚动，但首行行高必须容得下。
 func editorBoxH(th *material.Theme, ed *widget.Editor, hint string, h int) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		size := image.Point{X: gtx.Constraints.Max.X, Y: h}
+		size := image.Point{X: gtx.Constraints.Max.X, Y: gtx.Dp(unit.Dp(h))}
 		paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: size}).Op())
 		gtx.Constraints = layout.Exact(size)
 		layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
