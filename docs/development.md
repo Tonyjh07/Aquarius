@@ -12,6 +12,7 @@ go test -race ./...            # 竞态检测（合入前必过）
 go test ./internal/domain/... -run TestProperty -count=50   # 性质测试加密跑
 go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
+go run ./cmd/linuxgate         # 非 Windows 门禁（WSL 内 build + vet，见下）
 ```
 
 - 语言约定：文档/注释中文；标识符、commit message 英文祈使句。
@@ -26,6 +27,39 @@ gofmt -l .                     # 格式检查（应无输出）
   `(Get-Command gcc -All | ? { $_.Source -notmatch 'msys64' })[0].Source`。
 - 全部测试**默认不起真实网络**：LLM 用脚本流/httptest 假 SSE 服务，存储用临时目录；
   门控的真实 MCP 验收（`AQUARIUS_E2E_REAL_MCP=1`，拉现成 npx server）除外，缺省 skip。
+
+### 非 Windows 门禁（D119）
+
+GUI（`uigui`）依赖 Gio，而 **Gio 在 Linux 上必须 cgo**（X11/Wayland/EGL/Vulkan/GL 全走
+cgo；`CGO_ENABLED=0 GOOS=linux` 时 `gioui.org/internal/vk` 报「build constraints exclude
+all Go files」，加 `-tags novulkan` 又栽在 `gioui.org/internal/gl` 的 `Functions` 无定义）。
+所以**不存在**「Windows 上一条 `GOOS=linux go build ./...` 验完」的口径——Linux 目标需要
+Linux 的 C 工具链与开发头。本机口径 = **在 WSL 里用原生 Linux 工具链跑**：
+
+```bash
+go run ./cmd/linuxgate          # 缺省：WSL 发行版 Ubuntu，目标 linux/amd64
+go run ./cmd/linuxgate -distro Ubuntu -proxy https://goproxy.cn,direct
+```
+
+工具做两件事（与本地门禁同口径）：`go build ./...` + `go vet ./...`。**vet 会一并类型检查
+`_test.go`**，能挡住「测试文件依赖 Windows 专属符号」这类只在非 Windows 才暴露的缺口。
+非 Windows 宿主（真 Linux/macOS）直接本地跑同一命令。
+
+一次性前置（WSL Ubuntu，本机实测清单）：
+
+```bash
+sudo apt-get install -y golang-go xorg-dev libx11-xcb-dev libxkbcommon-dev \
+    libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libvulkan-dev
+```
+
+- 校园网/受限网络：`proxy.golang.org` 与 `go.dev` 不通，apt 换 `mirrors.aliyun.com`、
+  Go 模块走 `goproxy.cn`（`cmd/linuxgate` 的 `-proxy` 缺省即此）。WSL 的 DNS 若解析异常，
+  在 `/etc/resolv.conf` 写校园 DNS（本机 `222.201.54.123`）后 `wsl --shutdown` 重启。
+- 工具缺省**共享 Windows 侧的 `GOMODCACHE`**（`-modcache` 可覆盖），避免在 WSL 内重下
+  2GB 级依赖；`GOCACHE` 用 WSL 原生目录（构建缓存不跨系统复用）。
+- 门禁只覆盖编译 + vet，**不跑 Linux 下的 GUI/交互**（WSL 无 X 显示）；非 Windows 的功能
+  对等分级见 DESIGN §15.6 与 D111，平台层落地后按降级清单走查。
+- Windows 行为回归仍以本地门禁 + `AQUARIUS_GUI_SMOKE=1` 冒烟为准，不要用 Linux 门禁替代。
 
 ## 代码分层速查
 

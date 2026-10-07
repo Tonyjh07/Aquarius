@@ -132,6 +132,7 @@
 | D116 | 原生菜单呈现期主窗降出 topmost 带（右键菜单被窗体遮挡修复，§15.1） | 生效 |
 | D117 | 通知子进程静默隐藏：`CREATE_NO_WINDOW` + `HideWindow`（D114 连带回归修复，§7.2） | 生效 |
 | D118 | MCP server 与后台作业的控制台窗压制：`CREATE_NO_WINDOW` 单旗（D114 连带回归第二批，§6.3/§4.3） | 生效 |
+| D119 | 非 Windows 门禁口径：WSL 原生 Linux 工具链 + `cmd/linuxgate`（Gio Linux 必须 cgo，单命令交叉编译不可达；S4b 出口项） | 生效 |
 ## 记录
 
 ### D1 — 节点不可变；用户"改"= 创建同级新节点
@@ -1007,6 +1008,18 @@
 - **后果/限制**：① 抽层是结构改动，期间不动用户可见行为（Windows 行为回归由既有 headless + 手工验收守住）；② 非 Windows 半透明/羽化/托盘缺失是**已知降级**，需在 README/文档明示；③ GUI 测试仍走 headless（不进 CI 图形路径，§15.5 口径不变）。
 - **状态**：生效（设计定案；实现分批）
 
+### D111 修订 — 平台层落位与降级验收口径（2026-10-07，S4b 落码前）
+
+- **动机**：D111①留了「`uigui` 内平台子面 **或** 独立小包」两个选项，①③的降级清单也只到方向级；动码前定案，免得边写边改结构。
+- **决策**：
+  ① **落位 = 独立小包 `internal/adapter/uigui/platform`**（纯 Go，**不 import gio**）。理由：平台实现可脱离 gio 单独交叉编译与单测（`GOOS=linux/darwin/windows` 都能编纯 Go 包，而 `uigui` 因 gio 只能在 WSL 侧验），接口实现可用假件注入 headless 测试；若留在 `uigui` 内用 build tag 分家，平台实现永远绑在 gio 上、也无法单独测。
+  ② **依赖方向**：`uigui`（消费方）声明所需接口与 DTO（`Handle`/`Point`/`Rect`/`MenuItem` 等），`platform` 包提供各平台**具体实现**（Go 隐式接口：`var _ uiguiPlatform = (*platform.Plat)(nil)` 就地断言）；平台实现不得反向 import `uigui`——需要回传 UI 语义时只经注入的回调接口（菜单命令 ID、显隐/退出/文件选中之类的动作枚举），业务语义（命令注入、开窗、写 config）留在 `uigui`。
+  ③ **像素提交**：`Present` 保留「整窗位图 + SourceConstantAlpha」签名；Windows 实作 = 现有 ULW；非 Windows 实作返回 false（Gio 常规不透明窗自行渲染内容，`fadeCompose`/`feather` 的离屏通道在非 Windows 不上屏，但布局/状态机零改动共用）。
+  ④ **降级清单（验收口径）**：非 Windows 必须可用 = Gio 常规窗渲染 + 输入/转写/次窗（设置/历史/原文）可交互 + DPI 经 Gio Metric + 深浅色经系统 API + 文件框经桌面命令（zenity/kdialog、macOS osascript）；**明确缺失** = ULW 半透明/羽化/逐像素穿透、托盘、全局热键、原生右键菜单——缺失项发**一次性降级 notice**（不静默、不假装可用），并在 README/docs 明示。
+  ⑤ **验证**：Windows 侧行为零回归（既有 headless 测试 + `AQUARIUS_GUI_SMOKE=1` 冒烟 + 手工验收）；非 Windows 侧 = `go run ./cmd/linuxgate`（D119）绿灯 + 平台包自身单测（纯 Go，可在 Windows 上跑）。
+- **否决**：`uigui` 内 build tag 子面（无法脱离 gio 验证、假件注入困难）；平台包反向持有 `*uigui.UI`（依赖倒置，测试也难）；为非 Windows 造 ULW 等价物（D111④ 已判留后续独立步）；把 notice 降级做成静默 no-op（回到「桩」的老问题）。
+- **状态**：生效（设计定案；实现随 S4b 落码）
+
 ### D112 — 对话树 UI：relation-map 形态 + TreeView 只读端口扩展（S3 形态改定）
 - **动机**：S3 原规划「树状列表：分支线 + 节点标题 + 右键」。用户拍板改为 **relation-map（关系图）**——以节点 + 连线的关系图呈现整棵消息树/版本链，比列表更直观地表达分叉与版本关系。现数据面 `port.TreeView`（D80/D94）只给 `Branches(id)` + `Tail(id)`（局部兄弟信息），不足以绘整图。
 - **决策**：
@@ -1074,4 +1087,20 @@
 - **决策**：两处 spawn 前挂 `SysProcAttr.CreationFlags |= CREATE_NO_WINDOW(0x08000000)`。**只挂这一旗、不挂 `HideWindow`**（与 D117 的双旗区分是有意的）：`job_start` 跑的是**用户命令**（`notepad` 这类 GUI 子进程必须照常可见），`HideWindow` 会把它们一并藏掉；而缺陷本体（控制台窗）已由单旗归零——**实机探针实证**：父进程 FreeConsole 后无旗 = 新开 `ConsoleWindowClass` 窗 1 个，单旗 = 0，单旗 + `HideWindow` = 0。落点：`mcpgate` 新增平台文件对 `proc_windows.go` / `proc_other.go`（`hideStdioWindow`），`jobproc` 并入既有平台分家的 `setupProc`（与 `CmdLine` 按位或/条件赋值，互不覆盖）。
 - **否决**：与 D117 同款双旗（`HideWindow` 对用户命令的 GUI 窗是误伤）；把三处（通知/MCP/作业）抽成共享 spawn helper 新包（为 8 行 × 3 引入新包与文档面，各随包自带、随 D 号可溯，重复面可接受）；压制 `pickEditor`（`cmd/aquarius/editor.go`）——那是用户显式要开的编辑器窗，非噪音；作业进程改 `DETACHED_PROCESS`（只断继承，不解决「父无控制台时新建可见窗」，且与 `CmdLine` 组合语义不确定）。
 - **后果/限制**：① 子进程不再有控制台窗、也就不挂父控制台——jobproc 全程管道/文件 I/O 不受影响，需 `CONIN$` 的交互式命令在后台作业里本就无输入（stdin 置空不变）；② `term_exec` 与 `job_start` 同口径（输出回传会话/日志，语义本就不是「开个终端给人看」）；③ `killTree` 的 `taskkill` 与编辑器启动不压；④ 非 Windows 走 no-op 桩，交叉编译不受影响；⑤ 同口径测试 = `TestSetupProcHidesConsoleWindow`（jobproc）、`TestTransportForHidesStdioWindow`（mcpgate），均 windows 构建标签。
+- **状态**：生效（2026-10-07）
+
+### D119 — 非 Windows 门禁口径：WSL 原生 Linux 工具链 + `cmd/linuxgate`（S4b 出口项）
+
+- **动机**：D111④/roadmap S4b 的出口项写着「三门禁全绿（含非 Windows 交叉编译 `GOOS=linux go build ./...`）」。动手前实测该口径在 Windows 宿主上**不可达**，若不改口径就等于「出口项无法验收」；而 S4b 恰要把 GUI 的平台实现抽出去，正需要一个能真验证非 Windows 的门禁才能边改边证。
+- **实证（本机，逐条跑过）**：
+  ① `CGO_ENABLED=0 GOOS=linux go build ./internal/adapter/uigui/` → `imports gioui.org/internal/vk: build constraints exclude all Go files`；加 `-tags novulkan` 后改栽在 `gioui.org/internal/gl`：`undefined: Functions`（`gl_unix.go` 是 cgo 文件，`CGO_ENABLED=0` 时整文件被排除，`Functions` 无定义）。Gio 的 Linux 后端（X11/Wayland/EGL/Vulkan/GL）**全走 cgo**，无纯 Go 通路，也没有能把它们一起关掉的 tag 组合。
+  ② `CGO_ENABLED=1 GOOS=linux` 需要 **Linux 目标 C 工具链 + X11/xkbcommon/xcb/xcursor/xfixes/Wayland/EGL/GL/Vulkan 的开发头与库**，Windows 侧不存在（MinGW 只产 Windows 目标）；WSL 发行版则是现成的**原生** Linux 环境，cgo 天然可用。
+  ③ 顺带发现：非 Windows 侧**并非「可构建的 no-op 桩」**——`dock.go` 的 `windowFromPoint` 与附件按钮的 `u.requestFileDlg` 只有 `_windows.go` 定义，linux 下直接编译失败；测试文件亦依赖 `menu_windows.go` 里的 `bubbleMenuItems`（`_test.go` 类型检查一并红）。即「仅 Windows 实测、其余平台可构建」这句在 D111 之前就已不成立。
+- **决策**：
+  ① 非 Windows 门禁口径 = **在 WSL 内用原生 Linux 工具链**跑 `go build ./...` 与 `go vet ./...`（vet 覆盖 `_test.go`，正是能挡住上述 ③ 的口径）；**不再声称** Windows 上单命令交叉编译可用。
+  ② 固化为仓库内一键工具 `cmd/linuxgate`：Windows 宿主经 `wsl -d <distro>` 下发（缺省 Ubuntu），非 Windows 宿主本地直跑；缺省 `GOPROXY=https://goproxy.cn,direct`、共享 Windows 侧 `GOMODCACHE`（免在 WSL 内重下 2GB 级依赖）、`GOTOOLCHAIN=local`；缺头文件时按缺失的 include 给出对应 apt 包提示。
+  ③ 一次性前置（Ubuntu，写进 docs/development.md）：`golang-go xorg-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libvulkan-dev`。
+  ④ 本次一并补齐 ③ 的缺口：`win32_other.go` 补 `windowFromPoint` 降级（恒 0；非 Windows 下 `u.hwnd` 恒 0，调用点已短路，降级语义 = 命中只看矩形）、`filedlg_other.go` 走 zenity/kdialog/osascript 真实降级；菜单**项集**（`menuIt`/`logoMenuItems`/`trayMenuItems`/`bubbleMenuItems`/命令 ID）移入中性 `menu.go`，`menu_windows.go` 只留 Win32 呈现。
+- **否决**：`-tags novulkan,noopengl,nox11,nowayland` 绕开 cgo（无此组合，绕开后编的已不是 Linux GUI 目标，属自欺）；自带 stub 头文件/换 gio 分支以凑交叉编译（脆弱且失真，等于维护一个假 Gio）；把 gio 依赖包从 `./...` 里排除（门禁失去意义）；引 CI（本项目单机开发、无 CI 体系）。
+- **后果/限制**：① 门禁依赖本机 WSL 与那份一次性 apt 清单，换机需重配（同 MinGW `CC` 的口径，均不入库）；② 门禁只覆盖**编译 + vet**，不跑 Linux 下的 GUI/测试（WSL 无 X 显示；headless 离屏断言留待后续）；③ 走 `/mnt/<drive>` 的 9p I/O 偏慢，二次全量 build ≈ 45s（含 WSL 往返）；④ `GOOS=darwin` 同类不可达（macOS 后端要 Metal/cgo、还需 mac 头文件），同样不设门禁，非 Windows 覆盖以 linux 为代表；⑤ 非 Windows 的**行为**验证仍止于「能编能 vet」，交互验收留待 S4b 的平台层落地后按 D111④ 降级清单逐项走查。
 - **状态**：生效（2026-10-07）

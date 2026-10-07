@@ -179,8 +179,8 @@
   plugins.go；P2 = openai.go→client/wire/stream、shell_windows.go→shell/tray/menu/filedlg、agent.go→agent/compact/
   turnbuffer/tools。每步声明清单守恒核对 + 三门禁（含 -race）全绿。**P2 例外：`uigui/settings.go` 未拆**——
   S4a 时用户拍板留待 S4c 一并处理；**S4c（2026-10-07，D113）落地时仍未拆**（渲染修复不需要拆分），
-  拆分按需留待。备注：`GOOS=linux` 全仓交叉编译受 gio/cgo 限制不可达（基线如此）；
-  可用口径 = 非 gio 包 `CGO_ENABLED=0 GOOS=linux go build` 全绿。
+  拆分按需留待。备注：`GOOS=linux` 全仓交叉编译受 gio/cgo 限制不可达（基线如此，实证与替代
+  口径见 **D119**：非 Windows 门禁 = WSL 内原生 linux 工具链 `go build ./...` + `go vet ./...`）。
 
 ### S4c · 设置窗渲染异常修复（M8，P1，M~L，**新增 2026-10-07，已落地 D113**）
 - **症状（用户验收截图，2026-10-07）**：设置次窗（winSettings）表单渲染破碎——多行行内容横向
@@ -214,13 +214,13 @@
 ### S4b · GUI 跨平台抽象层（M8，P1，L，**执行序第三，新增，D111**）
 > **执行序（D109）**：紧随 S4a（大文件拆分，见上）之后、S3 之前——结构改动、不新增用户可见功能；做完后 S3 的 relation-map 与后续设置窗功能都不必只写 Windows。
 
-- **动机（D111）**：§15.6 现状 = GUI 交互层仅 Windows 实测，非 Windows 全为 no-op 桩（`win32_other.go` / `winmgr_other.go` / `theme_other.go`）；与「轻量跨平台单二进制」首要原则冲突，且越晚抽、长在其上的功能越多、重写越贵。
+- **动机（D111）**：§15.6 现状 = GUI 交互层仅 Windows 实测，非 Windows 全为 no-op 桩（`win32_other.go` / `winmgr_other.go` / `theme_other.go`）；与「轻量跨平台单二进制」首要原则冲突，且越晚抽、长在其上的功能越多、重写越贵。**开工前实测修正**：非 Windows 侧连「可构建」都不成立（`windowFromPoint`/`requestFileDlg` 无 `!windows` 实现，linux 直接编译失败）——已随 D119 补齐。
 - **改动面**：
-  1. **平台接口**（建议 `uigui` 内平台子面或独立小包）：窗口句柄与帧事件、显隐/置顶/移动/尺寸、**像素提交**（ULW 或其降级）、托盘、全局快捷键、文件对话框、右键菜单（TPM）、系统深浅色、DPI 查询。
+  1. **平台接口**（落位已定，见 **D111 修订**：独立小包 `internal/adapter/uigui/platform`，纯 Go 不依赖 gio）：窗口句柄与帧事件、显隐/置顶/移动/尺寸、**像素提交**（ULW 或其降级）、托盘、全局快捷键、文件对话框、右键菜单（TPM）、系统深浅色、DPI 查询。
   2. **核心逻辑去平台化**：`uigui` 主体（布局/动画/状态机/命中/渲染状态机）不 import 平台实现；Windows 实现 = 现有 `win*_windows.go` 逻辑原样迁入。
   3. **非 Windows 降级实现（非桩）**：Gio 常规不透明窗渲染（无 ULW 半透明/羽化）、托盘/全局热键缺失（发降级 notice）、文件框经 portal/命令、深浅色经系统 API、DPI 经 Gio Metric。
 - **范围**：抽层 + 非 Windows 编译通过 + Gio 常规窗可交互（**降级但非桩**）；**不追求三平台功能对等**（ULW 等价物/托盘/热键留后续）。
-- **出口**：三门禁全绿（含非 Windows 交叉编译 `GOOS=linux go build ./...`）+ Windows 行为零回归（headless + 手工验收）；文档明示非 Windows 已知降级。
+- **出口**：三门禁全绿 + **非 Windows 门禁**（`go run ./cmd/linuxgate`：WSL 内原生 linux 工具链 build + vet，口径见 **D119**；Windows 上不存在单命令 `GOOS=linux go build` 通路）+ Windows 行为零回归（headless + 手工验收）；文档明示非 Windows 已知降级。
 - **后续可选**：纯 Go CPU 光栅化自绘底座（换掉 Gio 渲染 + 各平台位图提交），本步不做。
 
 ### 已知缺陷（2026-10-07 记录）

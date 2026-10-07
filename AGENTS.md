@@ -33,7 +33,13 @@ go test -race ./...            # 竞态检测（合入前必过）
 go test ./internal/domain/... -run TestProperty -count=50   # domain 性质测试加密跑
 go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
+go run ./cmd/linuxgate         # 非 Windows 门禁：WSL 内 linux 目标的 build + vet（D119）
 ```
+
+- **非 Windows 门禁**（`go run ./cmd/linuxgate`）：Gio 在 Linux 上必须 cgo，Windows 上不存在
+  「一条 `GOOS=linux go build`」的口径——该工具经 WSL 用原生 Linux 工具链跑 `go build ./...`
+  + `go vet ./...`（vet 覆盖 `_test.go`）。前置与网络注意事项见
+  [docs/development.md](docs/development.md) 的"非 Windows 门禁"。
 
 - **`-race` 在 Windows 需要 C 编译器**（`-race` 走 cgo——"需要 C 工具链"这句本身没错），但**本机已配好**：
   Go 用户级 env 的 `CC` 已指向 MinGW gcc（`go env -w` 写入，不入库）——**直接跑 `go test -race ./...` 即可，
@@ -78,6 +84,7 @@ gofmt -l .                     # 格式检查（应无输出）
 ```
 cmd/aquarius/        组装根（wiring：config → 插件/授权 → 端口装配含装饰器 → UI）
 cmd/iconify/         开发工具：图标集生成（多尺寸 PNG / ICO / ICNS，纯 Go 无三方依赖）
+cmd/linuxgate/       开发工具：非 Windows 门禁（WSL 内跑 linux 目标 build + vet，D119）
 assets/              源图标 icon.png 与生成物 icon/（README、Windows 资源嵌入共用）
 pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；D29 后移出 M4，目录见"待建"）
 internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）、perm（权限矩阵）
