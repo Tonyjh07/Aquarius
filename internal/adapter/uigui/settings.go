@@ -78,7 +78,8 @@ type ProviderManager interface {
 // SettingsSnapshot 设置窗核心档快照（开窗现取；同 Status 口径线程安全回调）。
 // Permission/Model/Think/Effort 由装配根取运行态（等级活槽与 Agent 访问器），
 // 其余取 config 文件；密钥永不进快照（D35 只写不回显）。provider 编辑数据面走
-// ProviderManager（D110②），不在本快照。
+// ProviderManager（D110②），不在本快照。MCPServers/Plugins 只读展示（编辑走
+// 高级页 raw JSON，Q10）；RawJSON = config.json 原文（高级页，解析失败不阻断开窗）。
 type SettingsSnapshot struct {
 	Permission   string // 规范值 read-only|strict|permissive|full-access（perm.Level）
 	Model        string
@@ -90,9 +91,25 @@ type SettingsSnapshot struct {
 	FontSize     float64 // D90：正文字号 sp；0 = 缺省 15（表单归一）
 	WindowWidth  int     // D90：主窗像素宽；0 = 缺省 608×460dp
 	WindowHeight int
+
+	// 全量分组页（S4/D110③）：输出 / 限制 / 提示词 / MCP 与插件 / 高级。
+	Notify           bool
+	TTS              bool
+	MaxTurns         int
+	MaxContextTokens int
+	CompactThreshold float64
+	ToolOutputChars  int
+	ToolTimeoutSec   int
+	SystemPrompt     string   // 人格（空 = 内置默认）
+	MCPServers       []string // 只读：声明名清单（sorted）
+	Plugins          []string // 只读：声明名清单（sorted）
+	RawJSON          string   // config.json 原文（高级页编辑起点）
 }
 
 // SettingsPatch 保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
+// 数值键 0 = 不改（表单留空 = 保持快照原值的既有口径）；Notify/TTS 恒写（布尔无
+// 留空语义）；SystemPrompt 恒写（清空 = 合法语义「内置默认」）；RawJSON 非空 =
+// 高级页整文件替换（保存前 cmd 侧 JSON 校验）。
 type SettingsPatch struct {
 	Permission   string
 	Model        string
@@ -104,6 +121,16 @@ type SettingsPatch struct {
 	FontSize     float64 // D90：正文字号 sp；0 = 不改
 	WindowWidth  int     // D90：主窗像素宽；0 = 不改（缺省）
 	WindowHeight int
+
+	Notify           bool
+	TTS              bool
+	MaxTurns         int
+	MaxContextTokens int
+	CompactThreshold float64
+	ToolOutputChars  int
+	ToolTimeoutSec   int
+	SystemPrompt     string
+	RawJSON          string // "" = 不改
 }
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
@@ -182,6 +209,17 @@ type settingsForm struct {
 	scale    cycleField // D90：元素缩放（cycle 百分比档）
 	save     widget.Clickable
 
+	// 全量分组页控件（S4/D110③）：输出 / 限制 / 提示词 / 高级 raw JSON。
+	notify    widget.Bool
+	tts       widget.Bool
+	maxTurns  widget.Editor
+	maxCtx    widget.Editor
+	compact   widget.Editor
+	toolChars widget.Editor
+	toolTo    widget.Editor
+	sysPrompt widget.Editor // 多行：人格（清空 = 内置默认）
+	rawCfg    widget.Editor // 多行：config.json 原文（Q10）
+
 	// provider 编辑区（D110②）：每条一组控件 + 测试/设主/删除；provApply 全量应用。
 	provs       []*providerForm
 	primaryIdx  int // 当前 primary（provs 下标；应用时取该条名字）
@@ -257,6 +295,10 @@ func newSettingsForm(u *UI) *settingsForm {
 	if s.FontSize == 0 {
 		s.FontSize = fontSpBase
 	}
+	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo} {
+		ed.SingleLine = true
+	}
+	// f.sysPrompt / f.rawCfg 保持多行（表单仅有的多行档）。
 	f.snap = s
 	f.model.SetText(s.Model)
 	// api_key 只写不回显（D35）：字段恒空，留空 = 保持不变。
@@ -273,6 +315,26 @@ func newSettingsForm(u *UI) *settingsForm {
 	if s.WindowHeight > 0 {
 		f.winH.SetText(strconv.Itoa(s.WindowHeight))
 	}
+	// S4/D110③ 全量分组页填表。
+	f.notify.Value = s.Notify
+	f.tts.Value = s.TTS
+	if s.MaxTurns > 0 {
+		f.maxTurns.SetText(strconv.Itoa(s.MaxTurns))
+	}
+	if s.MaxContextTokens > 0 {
+		f.maxCtx.SetText(strconv.Itoa(s.MaxContextTokens))
+	}
+	if s.CompactThreshold > 0 {
+		f.compact.SetText(fmt.Sprintf("%g", s.CompactThreshold))
+	}
+	if s.ToolOutputChars > 0 {
+		f.toolChars.SetText(strconv.Itoa(s.ToolOutputChars))
+	}
+	if s.ToolTimeoutSec > 0 {
+		f.toolTo.SetText(strconv.Itoa(s.ToolTimeoutSec))
+	}
+	f.sysPrompt.SetText(s.SystemPrompt)
+	f.rawCfg.SetText(s.RawJSON)
 	return f
 }
 
@@ -367,6 +429,59 @@ func (u *UI) saveSettings(f *settingsForm) {
 			return
 		}
 	}
+	// S4/D110③ 全量分组页：输出布尔恒写；限制数值空 = 保持；提示词恒写；
+	// raw JSON 改动 = 整文件替换（cmd 侧 JSON 校验，解析失败原文件不动）。
+	p.Notify = f.notify.Value
+	p.TTS = f.tts.Value
+	if v := strings.TrimSpace(f.maxTurns.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 0 {
+			f.err = true
+			f.status = "最大轮数须为非负整数"
+			return
+		}
+		p.MaxTurns = n
+	}
+	if v := strings.TrimSpace(f.maxCtx.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 0 {
+			f.err = true
+			f.status = "上下文上限须为非负整数"
+			return
+		}
+		p.MaxContextTokens = n
+	}
+	if v := strings.TrimSpace(f.compact.Text()); v != "" {
+		n, perr := strconv.ParseFloat(v, 64)
+		if perr != nil || n < 0 || n > 1 {
+			f.err = true
+			f.status = "压缩阈值须为 0–1 的小数"
+			return
+		}
+		p.CompactThreshold = n
+	}
+	if v := strings.TrimSpace(f.toolChars.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 0 {
+			f.err = true
+			f.status = "工具输出上限须为非负整数"
+			return
+		}
+		p.ToolOutputChars = n
+	}
+	if v := strings.TrimSpace(f.toolTo.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 0 {
+			f.err = true
+			f.status = "工具超时须为非负整数"
+			return
+		}
+		p.ToolTimeoutSec = n
+	}
+	p.SystemPrompt = f.sysPrompt.Text()
+	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
+		p.RawJSON = v
+	}
 	cmds, err := u.opts.ApplySettings(p)
 	if err != nil {
 		f.err = true
@@ -394,11 +509,19 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if p.Model != f.snap.Model {
 		f.status = "已保存（模型名经 /model 热切换）"
 	}
+	if p.RawJSON != "" {
+		f.status = "已保存（config.json 原文已替换；provider/密钥类改动重启生效）"
+	}
 	f.snap = SettingsSnapshot{
 		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
 		Hotkey: p.Hotkey, Theme: p.Theme,
 		Scale: p.Scale, FontSize: p.FontSize,
 		WindowWidth: p.WindowWidth, WindowHeight: p.WindowHeight,
+		Notify: p.Notify, TTS: p.TTS,
+		MaxTurns: p.MaxTurns, MaxContextTokens: p.MaxContextTokens,
+		CompactThreshold: p.CompactThreshold, ToolOutputChars: p.ToolOutputChars,
+		ToolTimeoutSec: p.ToolTimeoutSec, SystemPrompt: p.SystemPrompt,
+		RawJSON: p.RawJSON,
 	}
 }
 
@@ -579,6 +702,21 @@ const (
 	rowScale
 	rowFontSize
 	rowWinSize
+	rowSecOut
+	rowNotify
+	rowTTS
+	rowSecLimits
+	rowMaxTurns
+	rowMaxCtx
+	rowCompact
+	rowToolChars
+	rowToolTo
+	rowSecPrompt
+	rowSysPrompt
+	rowSecMCP
+	rowMCPList
+	rowSecAdv
+	rowRaw
 	rowActions
 )
 
@@ -626,7 +764,14 @@ func (f *settingsForm) rowPlan() []rowDesc {
 		rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply},
 		rowDesc{kind: rowSecCore}, rowDesc{kind: rowPerm}, rowDesc{kind: rowThink}, rowDesc{kind: rowEffort},
 		rowDesc{kind: rowSecLook}, rowDesc{kind: rowHotkey}, rowDesc{kind: rowTheme}, rowDesc{kind: rowScale},
-		rowDesc{kind: rowFontSize}, rowDesc{kind: rowWinSize}, rowDesc{kind: rowActions})
+		rowDesc{kind: rowFontSize}, rowDesc{kind: rowWinSize},
+		rowDesc{kind: rowSecOut}, rowDesc{kind: rowNotify}, rowDesc{kind: rowTTS},
+		rowDesc{kind: rowSecLimits}, rowDesc{kind: rowMaxTurns}, rowDesc{kind: rowMaxCtx},
+		rowDesc{kind: rowCompact}, rowDesc{kind: rowToolChars}, rowDesc{kind: rowToolTo},
+		rowDesc{kind: rowSecPrompt}, rowDesc{kind: rowSysPrompt},
+		rowDesc{kind: rowSecMCP}, rowDesc{kind: rowMCPList},
+		rowDesc{kind: rowSecAdv}, rowDesc{kind: rowRaw},
+		rowDesc{kind: rowActions})
 }
 
 // settingsFrame 设置窗单帧：滚动表单（§15.7/D60 核心档数据面 + D110②③ 动态区）。
@@ -746,6 +891,36 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 				return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
 			case rowWinSize:
 				return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
+			case rowSecOut: // S4/D110③：输出分组
+				return material.Subtitle1(th, "输出").Layout(gtx)
+			case rowNotify:
+				return material.CheckBox(th, &f.notify, "桌面通知（回答完成时，M3）").Layout(gtx)
+			case rowTTS:
+				return material.CheckBox(th, &f.tts, "语音播报（D27 解析，尚未启用）").Layout(gtx)
+			case rowSecLimits:
+				return material.Subtitle1(th, "限额").Layout(gtx)
+			case rowMaxTurns:
+				return fieldRow(gtx, th, "最大轮数", editorBox(th, &f.maxTurns, "单次提问的工具调用轮数上限（空 = 保持）"))
+			case rowMaxCtx:
+				return fieldRow(gtx, th, "上下文上限", editorBox(th, &f.maxCtx, "tokens；自动压缩与截断的预算分母（空 = 保持）"))
+			case rowCompact:
+				return fieldRow(gtx, th, "压缩阈值", editorBox(th, &f.compact, "0–1；占用超阈值触发自动压缩（空 = 保持）"))
+			case rowToolChars:
+				return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）"))
+			case rowToolTo:
+				return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
+			case rowSecPrompt:
+				return material.Subtitle1(th, "提示词").Layout(gtx)
+			case rowSysPrompt:
+				return editorBoxH(th, &f.sysPrompt, "人格（system prompt；空 = 内置默认。清空保存即恢复默认）", 80)(gtx)
+			case rowSecMCP:
+				return material.Subtitle1(th, "MCP 与插件（只读）").Layout(gtx)
+			case rowMCPList:
+				return mcpListRow(gtx, th, f)
+			case rowSecAdv:
+				return material.Subtitle1(th, "高级（config.json 原文）").Layout(gtx)
+			case rowRaw:
+				return editorBoxH(th, &f.rawCfg, "整文件编辑；保存前 JSON 校验（解析失败原文件不动，Q10）", 220)(gtx)
 			default:
 				return f.actionsRow(gtx, th)
 			}
@@ -882,6 +1057,37 @@ func editorBox(th *material.Theme, ed *widget.Editor, hint string) layout.Widget
 		})
 		return layout.Dimensions{Size: size}
 	}
+}
+
+// editorBoxH 定高多行编辑区（编辑框的加高变体）：提示词与高级 raw JSON 用。
+func editorBoxH(th *material.Theme, ed *widget.Editor, hint string, h int) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		size := image.Point{X: gtx.Constraints.Max.X, Y: h}
+		paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: size}).Op())
+		gtx.Constraints = layout.Exact(size)
+		layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return material.Editor(th, ed, hint).Layout(gtx)
+		})
+		return layout.Dimensions{Size: size}
+	}
+}
+
+// mcpListRow MCP 与插件只读清单（S4/D110③）：声明名展示 + raw JSON 编辑指引。
+func mcpListRow(gtx layout.Context, th *material.Theme, f *settingsForm) layout.Dimensions {
+	txt := "（无声明——MCP server 经 config mcpServers 声明，插件经 plugins 目录发现）"
+	var parts []string
+	if len(f.snap.MCPServers) > 0 {
+		parts = append(parts, "MCP: "+strings.Join(f.snap.MCPServers, ", "))
+	}
+	if len(f.snap.Plugins) > 0 {
+		parts = append(parts, "插件: "+strings.Join(f.snap.Plugins, ", "))
+	}
+	if len(parts) > 0 {
+		txt = strings.Join(parts, "；") + "。"
+	}
+	l := material.Body2(th, txt+"　声明编辑走「高级」页 raw JSON（transport/args/env 等结构化字段不设表单）。")
+	l.Color = textDim
+	return l.Layout(gtx)
 }
 
 // sizeRow 窗口尺寸双数值档（D90）：宽 × 高（px），并排等分；空 = 保持缺省。

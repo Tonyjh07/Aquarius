@@ -485,3 +485,58 @@ func TestProviderEditorHeadless(t *testing.T) {
 		t.Fatal("test 失败应回灌错误")
 	}
 }
+
+// TestSaveSettingsFullGroupsHeadless 全量分组页保存流（S4/D110③）：输出布尔恒写、
+// 限制数值空 = 不改/非法拦截、提示词恒写、raw JSON 改动进 patch。
+func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
+	restoreLight(t)
+	var got SettingsPatch
+	u := newHeadless(t, Options{
+		Settings: func() SettingsSnapshot {
+			return SettingsSnapshot{
+				Permission: "strict", Model: "m1", Think: true, Theme: "system",
+				Notify: true, MaxTurns: 8, MaxContextTokens: 64000,
+				CompactThreshold: 0.7, ToolOutputChars: 20000, ToolTimeoutSec: 60,
+				SystemPrompt: "旧人格", MCPServers: []string{"docs", "web"},
+				RawJSON: `{"a": 1}`,
+			}
+		},
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
+	})
+	f := newSettingsForm(u)
+	if !f.notify.Value || f.maxTurns.Text() != "8" || f.compact.Text() != "0.7" {
+		t.Fatalf("分组页填表: notify=%v maxTurns=%q compact=%q", f.notify.Value, f.maxTurns.Text(), f.compact.Text())
+	}
+	if len(f.snap.MCPServers) != 2 {
+		t.Fatalf("MCP 只读清单 = %v", f.snap.MCPServers)
+	}
+
+	// 非法数值拦截：压缩阈值越界不落盘。
+	f.compact.SetText("1.5")
+	u.saveSettings(f)
+	if !f.err || !strings.Contains(f.status, "压缩阈值") {
+		t.Fatalf("阈值拦截 = (%v, %q)", f.err, f.status)
+	}
+	f.compact.SetText("0.8")
+	f.tts.Value = true
+	f.maxCtx.SetText("") // 空 = 不改
+	f.sysPrompt.SetText("新人格")
+	f.rawCfg.SetText(`{"a": 2}`) // 改动 → 进 patch
+	u.saveSettings(f)
+	if f.err {
+		t.Fatalf("保存反馈 = %q", f.status)
+	}
+	if !got.Notify || !got.TTS || got.MaxTurns != 8 || got.MaxContextTokens != 0 ||
+		got.CompactThreshold != 0.8 || got.SystemPrompt != "新人格" {
+		t.Fatalf("patch = %+v", got)
+	}
+	if got.RawJSON != `{"a": 2}` {
+		t.Fatalf("raw patch = %q", got.RawJSON)
+	}
+	// raw 与当前快照一致（TrimSpace 口径）→ 不进 patch（got.RawJSON 留零值）。
+	f.rawCfg.SetText(strings.TrimSpace(f.snap.RawJSON))
+	u.saveSettings(f)
+	if got.RawJSON != "" {
+		t.Fatalf("raw 未改动不应进 patch: %q", got.RawJSON)
+	}
+}
