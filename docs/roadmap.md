@@ -207,8 +207,9 @@
   文字底部裁切、标签「接口地址」折行**。三处裸 px 几何修复：`editorBox` 高 = max(Dp(fieldH),
   编辑器实测行高+2×留白)（Stack 自适应 + dp 下限，DPI/字体行高/后续字号缩放任一变化不再裁字）、
   `editorBoxH` 与 `fieldRow` 标签列改 `gtx.Dp()`；多多度几何回归测试钉死。
-- **范围外（仍 P2）**：`uigui/settings.go`（968 行）未拆——渲染修复不需要拆分，拆分按 S4a 的
-  P2 口径留待按需；本步未动文件组织。
+- **范围外（仍 P2）→ 已补齐（2026-10-07）**：`uigui/settings.go` 渲染修复落地后即行拆分（S4a 约定的
+  时机）——拆为 `settings.go` 363（类型/状态/构造）+ `settings_actions.go` 319（保存/profile/provider/
+  连通性动作）+ `settings_rows.go` 489（行计划与帧渲染），声明清单守恒、双渲染回归测试守门。
 
 ### S4b · GUI 跨平台抽象层（M8，P1，L，**执行序第三，新增，D111**）
 > **执行序（D109）**：紧随 S4a（大文件拆分，见上）之后、S3 之前——结构改动、不新增用户可见功能；做完后 S3 的 relation-map 与后续设置窗功能都不必只写 Windows。
