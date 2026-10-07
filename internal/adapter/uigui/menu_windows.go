@@ -236,13 +236,21 @@ func buildMenu(items []menuIt) uintptr {
 // runMenu 共享呈现件（D72/D73）：建单（buildMenu）→ 光标位 TrackPopupMenu
 // （TPM_RETURNCMD 直接返回叶子命令，不发 WM_COMMAND）→ MSDN 收尾 WM_NULL → 销毁。
 // 返回 0 = 取消。
+// 【D116】呈现期把主窗降出 topmost 带、收尾按原值恢复：菜单窗不保证压在 topmost
+// 主窗之上（用户实测：气泡菜单与窗体重叠的部分被窗体像素盖住——透缝处可见、卡片/
+// 输入栏处被盖 = 窗在菜单之上），且遮挡只在其重叠时发生（"有时候"）。降档后菜单
+// 必然在主窗之上；气泡/logo 右键时主窗本是前台窗，非 topmost 带内仍居最高，观感
+// 无跳变；置顶的持久化只在 toggleTopMost，此处不影响记忆值。
 func runMenu(hwnd uintptr, items []menuIt) uintptr {
 	menu := buildMenu(items)
 	var pt point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	procSetForegroundWindow.Call(hwnd)
+	wasTop := topMostQuery()
+	platformSetTopMost(false)
 	r, _, _ := procTrackPopupMenu.Call(menu, tpmRightBtn|tpmRetCmd,
 		uintptr(pt.x), uintptr(pt.y), 0, hwnd, 0)
+	platformSetTopMost(wasTop)
 	procPostMessageW.Call(hwnd, wmNull, 0, 0) // MSDN 要求：收尾防菜单不消失
 	procDestroyMenu.Call(menu)
 	return r
