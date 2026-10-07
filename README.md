@@ -41,7 +41,7 @@ go build ./cmd/aquarius
 | 文档 | 内容 |
 |---|---|
 | [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型（会话树/Revise）、端口设计、插件架构（MCP）、权限模型与里程碑 |
-| [docs/decisions.md](docs/decisions.md) | **决策记录 ADR**：D1–D112 逐条决策与否决方案 |
+| [docs/decisions.md](docs/decisions.md) | **决策记录 ADR**：逐条决策与否决方案（编号范围见该文索引表） |
 | [docs/roadmap.md](docs/roadmap.md) | **进度与阶段规划**：TODO 盘点、S1–S8 分步路线（含 S1b/S1c/S2b/S4b 半步）与落地状态（里程碑进度以此为准） |
 | [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令、测试与提交要求 |
 | [docs/overview.md](docs/overview.md) | 架构导读：10 分钟地图——内核三事、依赖铁律、目录与端口矩阵 |
