@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 )
 
@@ -399,4 +401,67 @@ func resolveAPIKey(ctx context.Context, provider, ref string, stderr io.Writer) 
 		return "", fmt.Errorf("provider %q: %w", provider, err)
 	}
 	return (envSecrets{}).Get(ctx, name)
+}
+
+// cfgWriteMu 串行化全部 config 写回（/permission、/model、/think、/effort、
+// /plugin 与 llm 的 unsupported_params 记录可能并发——读-改-写须互斥防丢更新）。
+var cfgWriteMu sync.Mutex
+
+// persistConfig 通用 config 键改写：读入 → mutate 只动目标键（map 级重排保留
+// 其余键与注释性空白）→ 唯一临时文件 + 原子换入（覆盖沿用既有权限位）。
+// /permission、/model、/think、/effort、/plugin 与 unsupported_params 共用。
+func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
+	cfgWriteMu.Lock()
+	defer cfgWriteMu.Unlock()
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(data, &generic); err != nil {
+		return fmt.Errorf("解析 %s: %w", cfgPath, err)
+	}
+	mutate(generic)
+	out, err := json.MarshalIndent(generic, "", "  ")
+	if err != nil {
+		return fmt.Errorf("编码 config: %w", err)
+	}
+	if err := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); err != nil {
+		return fmt.Errorf("写入 %s: %w", cfgPath, err)
+	}
+	return nil
+}
+
+// modelSection 取/建 config 的 model 段（各写回闭包共用）。
+func modelSection(generic map[string]any) map[string]any {
+	model, _ := generic["model"].(map[string]any)
+	if model == nil {
+		model = map[string]any{}
+		generic["model"] = model
+	}
+	return model
+}
+
+// providerSection 定位 model.providers 中指定名字的条目（D110②）：
+// primary 缺省 = model.primary 键，再缺省 = 首个条目。未命中返回 nil。
+func providerSection(generic map[string]any, name string) map[string]any {
+	model := modelSection(generic)
+	providers, _ := model["providers"].([]any)
+	if len(providers) == 0 {
+		return nil
+	}
+	target := name
+	if target == "" {
+		target, _ = model["primary"].(string)
+	}
+	for _, pv := range providers {
+		p, ok := pv.(map[string]any)
+		if !ok {
+			continue
+		}
+		if n, _ := p["name"].(string); target == "" || n == target {
+			return p
+		}
+	}
+	return nil
 }

@@ -4,23 +4,19 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
@@ -37,86 +33,13 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
-	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
-	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
-}
-
-// terminalSuspend 可选前端能力：交出/收回终端（TUI 前端实现，/memory 系统编辑器
-// 等全屏外部程序用——审查修复：事件循环仍在读同一 stdin，不释放会互相踩踏；
-// repl 无终端态需要管理，不实现即跳过）。
-type terminalSuspend interface {
-	Suspend() error
-	Resume() error
-}
-
-// cfgWriteMu 串行化全部 config 写回（/permission、/model、/think、/effort、
-// /plugin 与 llm 的 unsupported_params 记录可能并发——读-改-写须互斥防丢更新）。
-var cfgWriteMu sync.Mutex
-
-// persistConfig 通用 config 键改写：读入 → mutate 只动目标键（map 级重排保留
-// 其余键与注释性空白）→ 唯一临时文件 + 原子换入（覆盖沿用既有权限位）。
-// /permission、/model、/think、/effort、/plugin 与 unsupported_params 共用。
-func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
-	cfgWriteMu.Lock()
-	defer cfgWriteMu.Unlock()
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return err
-	}
-	var generic map[string]any
-	if err := json.Unmarshal(data, &generic); err != nil {
-		return fmt.Errorf("解析 %s: %w", cfgPath, err)
-	}
-	mutate(generic)
-	out, err := json.MarshalIndent(generic, "", "  ")
-	if err != nil {
-		return fmt.Errorf("编码 config: %w", err)
-	}
-	if err := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); err != nil {
-		return fmt.Errorf("写入 %s: %w", cfgPath, err)
-	}
-	return nil
-}
-
-// modelSection 取/建 config 的 model 段（各写回闭包共用）。
-func modelSection(generic map[string]any) map[string]any {
-	model, _ := generic["model"].(map[string]any)
-	if model == nil {
-		model = map[string]any{}
-		generic["model"] = model
-	}
-	return model
-}
-
-// providerSection 定位 model.providers 中指定名字的条目（D110②）：
-// primary 缺省 = model.primary 键，再缺省 = 首个条目。未命中返回 nil。
-func providerSection(generic map[string]any, name string) map[string]any {
-	model := modelSection(generic)
-	providers, _ := model["providers"].([]any)
-	if len(providers) == 0 {
-		return nil
-	}
-	target := name
-	if target == "" {
-		target, _ = model["primary"].(string)
-	}
-	for _, pv := range providers {
-		p, ok := pv.(map[string]any)
-		if !ok {
-			continue
-		}
-		if n, _ := p["name"].(string); target == "" || n == target {
-			return p
-		}
-	}
-	return nil
 }
 
 // fatal 启动期致命错误：stderr 报因并返回退出码 1；控制台不可见（GUI 双击启动，
@@ -823,151 +746,3 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 }
-
-// sessionTree 会话树只读视图的装配侧代理（D80/§7.5，前置 A）：Session 构造晚于 UI，
-// 故经原子槽间接取用；零开销包装，Branches/Tail 直接转发（快照读本身无锁，§15.5）。
-type sessionTree struct{ p *atomic.Pointer[app.Session] }
-
-var _ port.TreeView = sessionTree{}
-
-func (t sessionTree) Branches(id conversation.MessageID) (port.BranchInfo, bool) {
-	s := t.p.Load()
-	if s == nil {
-		return port.BranchInfo{}, false
-	}
-	return s.Branches(id)
-}
-
-func (t sessionTree) Tail(id conversation.MessageID) (conversation.MessageID, bool) {
-	s := t.p.Load()
-	if s == nil {
-		return "", false
-	}
-	return s.Tail(id)
-}
-
-// sessionCommands 命令清单只读视图的装配侧代理（D103/S2b-1）：Session 构造晚于 UI，
-// 故经原子槽间接取用；未就绪返回空清单（补全浮层不出现）。
-type sessionCommands struct{ p *atomic.Pointer[app.Session] }
-
-var _ port.CommandCatalog = sessionCommands{}
-
-func (c sessionCommands) Commands() []port.CommandInfo {
-	s := c.p.Load()
-	if s == nil {
-		return nil
-	}
-	return s.Commands()
-}
-
-// envSecrets port.Secrets 的内置实现：按名读环境变量（矩阵 DESIGN §5.10）。
-// 返回值只在进程内传递，不落日志、不进会话树。
-type envSecrets struct{}
-
-var _ port.Secrets = envSecrets{}
-
-// levelHolder 权限等级活状态（D22 执行接入）：/permission 写回成功后 Set，
-// ToolRunner 经 Get 读取。atomic.Value 存取——TUI 状态行回调（事件循环 goroutine）
-// 与 REPL 主 goroutine 并发读写（D33 引入第二 goroutine 打破"单 goroutine"前提，
-// 审查修复，与 agentPtr 同口径）。
-type levelHolder struct{ v atomic.Value } // perm.Level
-
-// newLevelHolder 构造并写入初值。
-func newLevelHolder(l perm.Level) *levelHolder {
-	h := &levelHolder{}
-	h.v.Store(l)
-	return h
-}
-
-func (h *levelHolder) Get() perm.Level {
-	v, _ := h.v.Load().(perm.Level)
-	return v
-}
-
-func (h *levelHolder) Set(l perm.Level) { h.v.Store(l) }
-
-// pickEditor 选择系统编辑器（D24）：$VISUAL → $EDITOR → 平台默认（windows 记事本 / vi）。
-func pickEditor(visual, editor, goos string) []string {
-	if s := strings.TrimSpace(visual); s != "" {
-		return strings.Fields(s)
-	}
-	if s := strings.TrimSpace(editor); s != "" {
-		return strings.Fields(s)
-	}
-	if goos == "windows" {
-		return []string{"notepad"}
-	}
-	return []string{"vi"}
-}
-
-// openMemoryEditor /memory 的装配实现（D24）：文档名 → 磁盘路径（缺失先建空文件）
-// → 系统编辑器阻塞打开；保存后下次读取即生效。
-// stdio 来自 run() 注入的三流——保持"标准流可注入"的 e2e 契约（不直连 os.Std*）。
-func openMemoryEditor(mem *memoryfs.Store, fe uiFrontend, stdin io.Reader, stdout, stderr io.Writer) func(name string) (string, error) {
-	return func(name string) (string, error) {
-		p, err := mem.Path(name)
-		if err != nil {
-			return "", err
-		}
-		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
-			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-				return "", fmt.Errorf("创建记忆目录: %w", err)
-			}
-			if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
-				return "", fmt.Errorf("创建记忆文件 %s: %w", p, err)
-			}
-		}
-		// TUI 前端先交出终端再拉起编辑器，返回后收回（审查修复）。
-		sus, _ := fe.(terminalSuspend)
-		if sus != nil {
-			if serr := sus.Suspend(); serr != nil {
-				fmt.Fprintf(stderr, "暂停 TUI: %v\n", serr)
-			}
-			defer func() {
-				if rerr := sus.Resume(); rerr != nil {
-					fmt.Fprintf(stderr, "恢复 TUI: %v\n", rerr)
-				}
-			}()
-		}
-		argv := pickEditor(os.Getenv("VISUAL"), os.Getenv("EDITOR"), runtime.GOOS)
-		cmd := exec.Command(argv[0], append(argv[1:], p)...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("运行编辑器 %s: %w", argv[0], err)
-		}
-		return p, nil
-	}
-}
-
-func (envSecrets) Get(_ context.Context, name string) (string, error) {
-	v, ok := os.LookupEnv(name)
-	if !ok || v == "" {
-		return "", fmt.Errorf("环境变量 %s 未设置（config 的 api_key 引用它）", name)
-	}
-	return v, nil
-}
-
-// systemClock port.Clock 的内置实现：系统时钟。
-type systemClock struct{}
-
-var _ port.Clock = systemClock{}
-
-func (systemClock) Now() time.Time { return time.Now() }
-
-// yesConfirmer port.Confirmer 的内置实现：-yes 下所有确认一律同意（§5.10 矩阵）。
-type yesConfirmer struct{}
-
-var _ port.Confirmer = yesConfirmer{}
-
-func (yesConfirmer) Confirm(context.Context, string) (port.ConfirmAnswer, error) {
-	return port.ConfirmAnswer{Allow: true}, nil
-}
-
-// systemIDGen port.IDGen 的内置实现：复用 domain 的进程内单调 ULID。
-type systemIDGen struct{}
-
-var _ port.IDGen = systemIDGen{}
-
-func (systemIDGen) ConversationID() conversation.ID   { return conversation.NewID() }
-func (systemIDGen) MessageID() conversation.MessageID { return conversation.NewMessageID() }
-func (systemIDGen) CallID() tool.CallID               { return tool.CallID(conversation.NewMessageID()) }
