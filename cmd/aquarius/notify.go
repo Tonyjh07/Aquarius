@@ -67,6 +67,7 @@ func notifyWith(goos string, detached, waiting func(*exec.Cmd) error) func(title
 			if len(env) > 0 {
 				cmd.Env = append(os.Environ(), env...)
 			}
+			hideNotifyChild(cmd) // D117：子进程窗口不外露（D114 后父进程无控制台可继承）
 			return detached(cmd)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
