@@ -131,6 +131,7 @@ func uiKindDefault(kind string) string {
 // 字段。bootstrap 填 profile/配置/权限组；assemble_* 填端口组；host/sess 由后续
 // 构造回填（记忆投影与 surfaces 经字段地址读取，等价原闭包对局部变量的捕获）。
 type wiring struct {
+	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
 
@@ -175,8 +176,9 @@ type wiring struct {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	// 双击静默启动（D108/§15.1）：自建控制台即判即隐，压短黑框闪现；终端启动
-	//（挂载 ≥2）不受影响、日志照常。repl/tui 前端随后恢复显示。
+	// 双击静默启动（D108/§15.1，D114）：自建控制台即判即脱离（FreeConsole——WT 默认
+	// 终端下可见终端随会话销毁关闭）；终端启动（挂载 ≥2）不受影响、日志照常。
+	// repl/tui 前端随后恢复控制台并重绑 w.stdin/w.stdout/w.stderr。
 	hideSpawnedConsole()
 	flags := flag.NewFlagSet("aquarius", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -191,7 +193,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// 顺序骨架：profile 解析 → 端口装配 → UI → 工具/装饰器 → Agent/插件宿主/Session
 	// → 主循环；各段实现见 bootstrap_profile.go / assemble_ports.go / assemble_ui.go。
-	w := &wiring{stdout: stdout, stderr: stderr}
+	w := &wiring{stdin: stdin, stdout: stdout, stderr: stderr}
 	if err := w.bootstrap(*dataDir, *profileFlag, *modelName, *baseURL); err != nil {
 		if errors.Is(err, errFirstRun) {
 			return 0 // 首跑已写模板并打印指引（原契约：生成配置后重跑）
@@ -209,12 +211,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := w.buildLLMs(); err != nil {
 		return fatal(stderr, "%v", err)
 	}
-	w.newUI(stdin, stdout)
+	w.newUI(w.stdin, w.stdout) // D114：bootstrap 恢复控制台后可能已重绑（脱离→AllocConsole）
 	defer func() {
 		// 先停前端事件循环再写收尾换行：TUI 渲染器写同一 stdout，
-		// 直接 Fprintln 会与其并发竞争（-race 复现）。
+		// 直接 Fprintln 会与其并发竞争（-race 复现）。走 w.stdout（D114：
+		// 恢复路径重绑后的控制台流）。
 		_ = w.ui.Close()
-		fmt.Fprintln(stdout)
+		fmt.Fprintln(w.stdout)
 	}()
 	w.buildPresenter()
 	// 逐次确认（§5.10 Confirmer 矩阵）：默认走 REPL 交互；-yes 一律应 y。
@@ -277,7 +280,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Jobs:          w.jobs,
 		Ingestors:     []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs)},
 		UI:            w.presenter,
-		OpenMemory:    openMemoryEditor(w.mem, w.ui, stdin, stdout, stderr),
+		OpenMemory:    openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
 		Plugins:       hostAdmin{w.host},
 		ListModels:    func(ctx context.Context) ([]port.ModelInfo, error) { return w.client.Models(ctx) },
 		ProviderName:  func() string { return w.primary.Name }, // D110②：/model 展示（静态，重启生效）

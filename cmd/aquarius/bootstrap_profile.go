@@ -119,7 +119,10 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return fmt.Errorf("ui.kind=%q 仅支持 repl | tui | gui（D33/D43）", cfg.UI.Kind)
 	}
 	if cfg.UI.Kind != "gui" {
-		restoreConsole() // repl/tui 以终端为界面，双击启动也必须可见（D108）
+		if restoreConsole() { // repl/tui 以终端为界面，双击启动也必须可用（D108/D114）
+			// D114：脱离后原句柄失效，重挂后的控制台流经 wiring 下发（前端与编辑器子进程）。
+			w.stdin, w.stdout, w.stderr = os.Stdin, os.Stdout, os.Stderr
+		}
 	}
 	// MCP 声明校验（D30/D31，启动 fail-fast）：transport/command/url/risk/名字合法。
 	for name, srv := range cfg.MCPServers {
