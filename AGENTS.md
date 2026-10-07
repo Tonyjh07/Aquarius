@@ -44,6 +44,10 @@ gofmt -l .                     # 格式检查（应无输出）
 ## 代码风格
 
 - `gofmt` 即风格；不引入额外格式化/lint 工具，除非用户要求。
+- **行尾一律 LF**，三处同口径：`.gitattributes`（`* text=auto eol=lf`）+ 仓库级 `core.autocrlf=input`、`core.eol=lf`
+  （`.git/config`，不改全局）。核对用 `git ls-files --eol`：文本应全为 `i/lf w/lf`，二进制 `-text`。
+  若 `gofmt -l .` 突然报出一片文件 = 工作副本被写成了 CRLF（checkout/rebase 老坑），
+  `git checkout -- <file>` 让 git 按属性重写，**不要手改文件内容**；本仓无 `.bat/.cmd/.ps1/.sh`，无 CRLF 例外。
 - **接口由消费方定义、保持小**（1–3 个方法）；`context.Context` 作为外部调用的第一个参数。
 - 错误用 `fmt.Errorf("...: %w", err)` 包装保留链路；不 panic 做控制流。
 - 值对象用具名类型（如 `conversation.MessageID`），不裸用 `string`。

@@ -1,0 +1,11 @@
+# 行尾策略：文本文件一律 LF（索引、提交与检出三处一致），不随机器级 core.autocrlf 漂移。
+# 背景：Windows 上系统级 autocrlf=true 会在 checkout/rebase 时把工作副本写成 CRLF，
+# 造成 gofmt -l 误报全仓与 git stat 假 M（本仓 .go/文档均为 LF，gofmt 以 LF 为准）。
+# 本仓无 .bat/.cmd/.ps1/.sh，无需要 CRLF 的例外。
+* text=auto eol=lf
+
+# 资源与链接产物显式声明二进制（防误判为文本而被改行尾）
+*.png  -text
+*.ico  -text
+*.icns -text
+*.syso -text
