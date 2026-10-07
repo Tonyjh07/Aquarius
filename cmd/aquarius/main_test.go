@@ -1666,3 +1666,69 @@ func TestRunFallbackDegradesE2E(t *testing.T) {
 		t.Fatalf("降级请求模型应改写为 good 的 models[0]: %.200s", m)
 	}
 }
+
+// TestRunProfileSwitchRestartE2E D110③ 切换全链路（GUI 受阻，headless 等价验收）：
+// default 起步 → 改写根指针（等价设置窗「切换」）→ 重启 = 换整目录——会话落新
+// profile、请求打新 provider 的端点并用其模型名，旧 profile 数据不动。
+func TestRunProfileSwitchRestartE2E(t *testing.T) {
+	srvA, reqsA := scriptServer(t, []string{"A 的回答"})
+	srvB, reqsB := scriptServer(t, []string{"B 的回答"})
+	dir := t.TempDir()
+	t.Setenv("X", "k")
+
+	// 两个 profile 各自完整配置（A=默认起步，B=切换目标）。
+	writeProfileLayout(t, dir, fmt.Sprintf(`{
+  "model": {"providers":[{"name":"pa","base_url":%q,"api_key":"secret:X","models":["mA"]}],"name":"mA"},
+  "ui": {"kind":"repl"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`, srvA.URL))
+	work := filepath.Join(dir, "profiles", "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "config.json"), []byte(fmt.Sprintf(`{
+  "model": {"providers":[{"name":"pb","base_url":%q,"api_key":"secret:X","models":["mB"]}],"name":"mB"},
+  "ui": {"kind":"repl"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`, srvB.URL)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 第一段：跑在 default。
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("run1 code = %d, out = %q", code, out.String())
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json")); len(files) != 1 {
+		t.Fatalf("default conversations = %v, want 1", files)
+	}
+
+	// 切换 = 原子写根指针（profilesManager.Switch 同口径）。
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(pointerContent("work")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 第二段：重启生效——跑在 work，数据隔离、请求打 B 端点用 mB。
+	out.Reset()
+	if code := run([]string{"-data", dir}, strings.NewReader("hello\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("run2 code = %d, out = %q", code, out.String())
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "profiles", "work", "conversations", "*.json")); len(files) != 1 {
+		t.Fatalf("work conversations = %v, want 1（换整目录）", files)
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json")); len(files) != 1 {
+		t.Fatalf("default conversations = %v, want 仍为 1（不受切换影响）", files)
+	}
+	if reqsA.len() != 1 {
+		t.Fatalf("A 端点请求 = %d, want 1（仅第一段）", reqsA.len())
+	}
+	if reqsB.len() != 1 {
+		t.Fatalf("B 端点请求 = %d, want 1（仅第二段）", reqsB.len())
+	}
+	if m := string(reqsB.at(0).body); !strings.Contains(m, `"model":"mB"`) {
+		t.Fatalf("重启后应使用 work 的模型 mB: %.200s", m)
+	}
+	if !strings.Contains(out.String(), "B 的回答") {
+		t.Fatalf("重启后应由 B 端点回答: %q", out.String())
+	}
+}
