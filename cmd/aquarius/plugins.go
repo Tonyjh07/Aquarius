@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/mcpgate"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -298,4 +301,35 @@ func sortedStoreNames(ready map[string]plugin.Session) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// newPluginHost 构造插件宿主（M4，§6.4）：发现、授权与连接都经 host（内置不享
+// 特权，D13）。host 与 session 互依——session 经 wiring.sess 字段地址（surfaces
+// 持 **）后绑定，host 经 wiring.host 供记忆投影与 surfaces.ready 读取。
+func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
+	surfaces := &pluginSurfaces{
+		runner:  w.runner,
+		session: &w.sess,
+		ready: func() map[string]plugin.Session {
+			if w.host == nil {
+				return nil
+			}
+			return w.host.Ready()
+		},
+		callCtx:    ctx,
+		ioTimeout:  10 * time.Second,
+		logf:       func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
+		registered: map[string][]string{},
+		prompts:    map[string][]plugin.PromptInfo{},
+	}
+	w.host = plugin.New(plugin.Deps{
+		Dial:          mcpgate.NewDialer(envSecrets{}),
+		Confirm:       confirmer,
+		ConfigServers: w.cfg.MCPServers,
+		PluginsDir:    filepath.Join(w.profileDir, "plugins"),
+		States:        w.cfg.Plugins,
+		Persist:       w.persist.persistPlugins,
+		Logf:          func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
+		OnChange:      surfaces.refresh,
+	})
 }

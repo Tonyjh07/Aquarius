@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 )
 
@@ -464,4 +465,72 @@ func providerSection(generic map[string]any, name string) map[string]any {
 		}
 	}
 	return nil
+}
+
+// cfgWriter 把 UI/命令面触发的 config 写回收拢为一处（S4a）：path 即当前 profile
+// 的 config.json，lvl 供 persistLevel 写回成功后同步活等级。
+type cfgWriter struct {
+	path string
+	lvl  *levelHolder
+}
+
+// persistLevel 实现 /permission 写回 config（D22）：成功后同步活等级。
+func (c *cfgWriter) persistLevel(l perm.Level) error {
+	if err := persistConfig(c.path, func(generic map[string]any) {
+		perms, _ := generic["permissions"].(map[string]any)
+		if perms == nil {
+			perms = map[string]any{}
+			generic["permissions"] = perms
+		}
+		perms["level"] = string(l)
+	}); err != nil {
+		return err
+	}
+	c.lvl.Set(l) // 工具链路活等级（D22 执行接入）
+	return nil
+}
+
+// persistPlugins 实现 /plugin 状态写回 config 的 plugins 段（D31）：键缺失语义靠
+// 省略表达（enabled 缺省启用、granted 缺省空）。
+func (c *cfgWriter) persistPlugins(states map[string]plugin.State) error {
+	return persistConfig(c.path, func(generic map[string]any) {
+		pm := make(map[string]any, len(states))
+		for name, st := range states {
+			entry := map[string]any{}
+			if st.Enabled != nil {
+				entry["enabled"] = *st.Enabled
+			}
+			if len(st.Granted) > 0 {
+				entry["granted"] = st.Granted
+			}
+			pm[name] = entry
+		}
+		generic["plugins"] = pm
+	})
+}
+
+// persistModel 实现 /model 切换写回 config 的 model.name（D32）。
+func (c *cfgWriter) persistModel(name string) error {
+	return persistConfig(c.path, func(generic map[string]any) {
+		modelSection(generic)["name"] = name
+	})
+}
+
+// persistThink / persistEffort 实现 /think /effort 写回 config 的 model 段（D34；
+// effort 空档 = 清除键，不发送）。
+func (c *cfgWriter) persistThink(on bool) error {
+	return persistConfig(c.path, func(generic map[string]any) {
+		modelSection(generic)["think"] = on
+	})
+}
+
+func (c *cfgWriter) persistEffort(level string) error {
+	return persistConfig(c.path, func(generic map[string]any) {
+		model := modelSection(generic)
+		if level == "" {
+			delete(model, "reasoning_effort") // off = 清除（不发送）
+			return
+		}
+		model["reasoning_effort"] = level
+	})
 }
