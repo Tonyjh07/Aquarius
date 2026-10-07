@@ -100,20 +100,10 @@ func trayDelete() {
 	shellHWND.Store(0)
 }
 
-// showTrayMenu 托盘右键菜单（§15.1：显示/隐藏、置顶开关、功能窗入口（§15.7，随各窗
-// 步启用）+ 退出）；建单/呈现/分发走共享件（runMenu/menuDispatch，D72）。
+// showTrayMenu 托盘右键菜单呈现（§15.1：显示/隐藏、置顶开关、功能窗入口（§15.7，随各窗
+// 步启用）+ 退出）；项集走中性 trayMenuItems，建单/呈现/分发走共享件（D72）。
 func showTrayMenu(hwnd uintptr) {
-	items := []menuIt{
-		{id: cmdToggle, label: "显示 / 隐藏输入窗"},
-		{id: cmdTopMost, label: "窗口置顶", checked: topMostQuery()},
-		{},
-		{id: cmdSettings, label: "设置"},
-		{id: cmdHistory, label: "会话历史"},
-		{id: cmdWelcome, label: "欢迎 / 首次运行引导"},
-		{},
-		{id: cmdExit, label: "退出"},
-	}
 	if u := shellUI.Load(); u != nil {
-		menuDispatch(u, runMenu(hwnd, items))
+		menuDispatch(u, runMenu(hwnd, trayMenuItems()))
 	}
 }

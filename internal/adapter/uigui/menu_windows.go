@@ -1,7 +1,7 @@
 //go:build windows
 
-// 右键菜单（Windows，TPM）：托盘/logo/气泡三处菜单的项清单、HMENU 构建与命令
-// 分发（D72/D73/D92/D97-D99；呈现共享件 runMenu 亦在此）。
+// 右键菜单呈现（Windows，TPM）：HMENU 构建（buildMenu）、TrackPopupMenu 呈现
+// （runMenu）与命令分发（D72/D73/D92/D97-D99）。菜单**项集**是中性数据，见 menu.go。
 package uigui
 
 import (
@@ -29,52 +29,7 @@ const (
 	mfPopup     = 0x00000010 // 二级菜单：父项 uIDNewItem = 子菜单句柄（D73 权限档）
 	tpmRightBtn = 0x0002
 	tpmRetCmd   = 0x0100 // 返回命令 ID（不再发 WM_COMMAND）
-
-	cmdToggle   = 101
-	cmdExit     = 102
-	cmdTopMost  = 103
-	cmdHistory  = 104 // 功能窗入口（§15.7/D60：会话历史占位壳）
-	cmdWelcome  = 105 // 功能窗入口（§15.7/D60：欢迎/首次运行占位壳）
-	cmdSettings = 106 // 功能窗入口（§15.7/D60：设置窗核心档）
-	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
-	cmdPermBase = 108 // 权限子菜单四档基值（D73：+i 对齐 settings.go permLevels 序）
-
-	cmdBubbleEdit     = 120 // 气泡右键：编辑（D92/D97 → editMsg Fresh 进编辑态）
-	cmdBubbleRegen    = 121 // 气泡右键：重新生成（D92 → /regen 与键入同路径）
-	cmdBubbleCopy     = 122 // 气泡右键：复制（D92 → copyMsg，下一帧写剪贴板）
-	cmdBubbleEditKeep = 123 // 气泡右键：编辑并转移历史（D97 → editMsg Carry）
-	cmdBubbleEditCopy = 124 // 气泡右键：编辑并复制历史（D97 → editMsg Clone）
-	cmdBubbleQuote    = 125 // 气泡右键：引用（D98 → quoteMsg 追加引用前缀进输入框）
-	cmdBubbleRaw      = 126 // 气泡右键：查看原文（D99 → rawView 原子槽 + winRaw 次窗）
 )
-
-// menuIt 菜单项（托盘/logo 右键菜单共用，D72/D73）；id 0 = 分隔线，或二级菜单父项
-// （sub 非空时 id 不用）。
-type menuIt struct {
-	id      uintptr
-	label   string
-	checked bool
-	sub     []menuIt // 非空 = 二级菜单（D73：权限四档）
-}
-
-// logoMenuItems logo 右键菜单（D72/D73，项序/文案为契约、测试锁定）：置顶勾选随
-// topMostQuery（查询类，跨线程直调）。
-func logoMenuItems(level string) []menuIt {
-	permSub := make([]menuIt, 0, len(permLevels))
-	for i, lv := range permLevels {
-		permSub = append(permSub, menuIt{id: cmdPermBase + uintptr(i), label: lv, checked: lv == level})
-	}
-	return []menuIt{
-		{id: cmdNew, label: "新对话"},
-		{label: "权限", sub: permSub}, // D73：二级菜单四档，当前档打勾
-		{id: cmdHistory, label: "消息历史"},
-		{id: cmdSettings, label: "设置"},
-		{id: cmdTopMost, label: "置顶", checked: topMostQuery()},
-		{id: cmdToggle, label: "隐藏"},
-		{}, // 分隔线
-		{id: cmdExit, label: "退出"},
-	}
-}
 
 // postLogoMenu 投递 logo 右键菜单请求到托盘线程（D72：呈现归 shell 线程的独立消息
 // 泵，TrackPopupMenu 不嵌 Gio 泵）。shell 未就绪（启动微窗/headless）= 静默放弃。
@@ -104,36 +59,7 @@ func showLogoMenu() {
 	}
 }
 
-// permLevelOf 当前权限档（D73 子菜单勾选源）：Status 现取（shell 线程可跨 goroutine
-// 读——lvl/agent 访问器均为原子，TUI 状态行同此回调）；未就绪 = ""（不勾，切换后自愈）。
-func permLevelOf(u *UI) string {
-	if u.opts.Status == nil {
-		return ""
-	}
-	return u.opts.Status().Level
-}
-
-// bubbleMenuItems 气泡右键菜单（D92/D97/D98/D99/D100，项序/文案为契约测试锁定）：
-// user/assistant 同集七项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone
-// 深拷贝后续历史）+ 重新生成/复制/引用/查看原文；thinking 定稿块与工具 chip = 复制/
-// 查看原文两项（D100③）。
-func bubbleMenuItems(kind blockKind) []menuIt {
-	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
-	raw := menuIt{id: cmdBubbleRaw, label: "查看原文"}
-	if kind == blockThinking || kind == blockTool {
-		return []menuIt{cp, raw}
-	}
-	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
-	return []menuIt{
-		{id: cmdBubbleEdit, label: "编辑"},
-		{id: cmdBubbleEditKeep, label: "编辑并转移历史"},
-		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
-		regen, cp,
-		{id: cmdBubbleQuote, label: "引用"},
-		raw,
-	}
-}
-
+// permLevelOf 当前权限档见 menu.go（中性：只读 Status 回调）。
 // showBubbleMenu 气泡右键菜单呈现（托盘线程，D92）：上下文取 u.bubbleMenu 原子槽
 // （Gio 线程 Store 先于 PostMessage），owner = 托盘消息窗（与 logo 菜单同款 TPM 收尾）。
 func showBubbleMenu() {
