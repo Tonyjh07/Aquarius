@@ -104,4 +104,3 @@ S1/S1b/S1c/S2/S2b 增强均已落地，分步状态见 [roadmap.md](roadmap.md)�
 - 逐条决策（编号范围见该文索引表）：[decisions.md](decisions.md)（原 DESIGN §13）
 - 使用与命令：[usage.md](usage.md) ｜ 配置：[configuration.md](configuration.md)
 - 数据与备份：[storage.md](storage.md) ｜ 动手开发：[development.md](development.md)
-lopment.md)
