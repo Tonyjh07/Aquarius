@@ -10,11 +10,13 @@
 //     唤醒帧循环（Gio 文档：Invalidate is safe for concurrent use）。
 //   - Next/Confirm 对调用方呈阻塞语义（channel 桥接）；EOF 与排队输入的优先级
 //     结构与 uitui 一致：先取尽排队输入再判 EOF。
-//   - 修改性 Win32 调用一律经 Window.Run 送窗口线程（§15.6 铁律 1）。
+//   - 修改性原生调用（Win32 等）一律经窗口线程投递（§15.6 铁律 1；投递槽在平台实现内）。
 //
-// 平台边界：窗口壳仅 Windows 实测（ULW 像素管线/定位见 win32_windows.go），其余平台由
-// win32_other.go 桩接住构建、GUI 未适配。窗口循环不调 app.Main——Windows 的
-// osMain 仅 select{}（Gio 自建窗口线程），库内调用会卡死装配根。
+// 平台边界（D111/S4b）：平台能力全部收在 `internal/adapter/uigui/platform`（纯 Go、不依赖
+// gio；Windows 实测实现 + 非 Windows 降级实现），本包只经消费方接口 `u.plat` 触达，向平台
+// 回传只经 `platform.Host` 的动作枚举。从 Gio 事件里提取原生句柄的一步留在本包
+// （view_windows.go / view_other.go），平台自身不 import gio。窗口循环不调 app.Main——
+// Windows 的 osMain 仅 select{}（Gio 自建窗口线程），库内调用会卡死装配根。
 package uigui
 
 import (

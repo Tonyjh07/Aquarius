@@ -1018,7 +1018,14 @@
   ④ **降级清单（验收口径）**：非 Windows 必须可用 = Gio 常规窗渲染 + 输入/转写/次窗（设置/历史/原文）可交互 + DPI 经 Gio Metric + 深浅色经系统 API + 文件框经桌面命令（zenity/kdialog、macOS osascript）；**明确缺失** = ULW 半透明/羽化/逐像素穿透、托盘、全局热键、原生右键菜单——缺失项发**一次性降级 notice**（不静默、不假装可用），并在 README/docs 明示。
   ⑤ **验证**：Windows 侧行为零回归（既有 headless 测试 + `AQUARIUS_GUI_SMOKE=1` 冒烟 + 手工验收）；非 Windows 侧 = `go run ./cmd/linuxgate`（D119）绿灯 + 平台包自身单测（纯 Go，可在 Windows 上跑）。
 - **否决**：`uigui` 内 build tag 子面（无法脱离 gio 验证、假件注入困难）；平台包反向持有 `*uigui.UI`（依赖倒置，测试也难）；为非 Windows 造 ULW 等价物（D111④ 已判留后续独立步）；把 notice 降级做成静默 no-op（回到「桩」的老问题）。
-- **状态**：生效（设计定案；实现随 S4b 落码）
+- **落码后记（2026-10-07，S4b 已落地）**：
+  ① **搬了什么**：窗口句柄与几何（矩形/移窗/改尺寸/DPI/光标/显示器工作区/OS 命中）、整窗 ULW 像素管线、启动防闪的隐藏与揭示（D78）、任务栏与置顶、外壳线程（托盘/全局热键注册/消息泵/WM_CLOSE 子类化/系统主题广播）、原生菜单（HMENU + TrackPopupMenu）、文件选择框、次窗关闭与聚焦、快捷键解析与校验、系统深浅色与中文字体候选。
+  ② **留了什么**：显隐/呼出/置顶/退出**策略**、菜单项集与命令分发、跨窗注册表、布局/动画/状态机——平台层只回传动作枚举（`Host`），不解析业务。
+  ③ **一个只有测试能挡的坑**：原 `mainHWND` 的写入点（`onHWND` 内的 `atomic.StoreUintptr`）随迁移一度丢失，`AttachMain` 补回——否则平台上所有显隐/几何/提交都打在句柄 0 上。随迁入平台的 D78 时序测试当场暴露。
+  ④ **测试口径**：包级注入槽（`presentMain`/`revealMain`/`visMain`/`mainHWND`）退役，改为**假平台注入**（`u.plat`，记账 + 钩子）；几何用例用确定性虚拟屏（1920×1080）而非开发机显示器；平台包自带单测（快捷键解析、降级面契约——纯 Go 三平台可跑，`win32_other_test.go` 钉住「能力缺失可判定」）。
+  ⑤ **非 Windows 降级（非桩）**：`NativeWindowControl()=false` ⇒ `Decorated(true)` + 跳过离屏合成通道、位置/尺寸/停靠/位置记忆交窗口管理器；深浅色 `gsettings`/`kreadconfig`/`defaults`；字体取常见 CJK 包；文件框 `zenity`/`kdialog`/`osascript`；托盘/热键/原生菜单各发**一次性**降级提示。
+  ⑥ **验证**：Windows 侧 `go build`/`go vet`/`go test`/`-race` 全绿 + `AQUARIUS_GUI_SMOKE=1` 真窗冒烟通过 + 手工验收（悬浮球/输入栏收发、logo 右键菜单含权限二级菜单、托盘图标与菜单、设置窗渲染与滚动、Alt+A 呼出收起）用户确认正常；非 Windows 侧 `go run ./cmd/linuxgate`（D119）绿。**非 Windows 的交互行为未实测**（WSL 无 X 显示），属已知限制。
+- **状态**：生效（2026-10-07 落码完成；非 Windows 交互实测留待有图形环境的机器）
 
 ### D112 — 对话树 UI：relation-map 形态 + TreeView 只读端口扩展（S3 形态改定）
 - **动机**：S3 原规划「树状列表：分支线 + 节点标题 + 右键」。用户拍板改为 **relation-map（关系图）**——以节点 + 连线的关系图呈现整棵消息树/版本链，比列表更直观地表达分叉与版本关系。现数据面 `port.TreeView`（D80/D94）只给 `Branches(id)` + `Tail(id)`（局部兄弟信息），不足以绘整图。

@@ -25,8 +25,10 @@ func (p *Plat) ShutdownShell() {}
 // DropTray 无托盘图标可清。
 func (p *Plat) DropTray() {}
 
-// PostMenu 无原生菜单：发降级提示（右键菜单在非 Windows 缺失，D111 修订④）。
-func (p *Plat) PostMenu(MenuKind) { p.Notice(unsupported("原生右键菜单")) }
+// PostMenu 无原生菜单：首次请求发一条降级提示，此后静默（避免每次右键都刷转写区）。
+func (p *Plat) PostMenu(MenuKind) {
+	p.noticeOnce(&p.menuNotice, unsupported("原生右键菜单"))
+}
 
 // SubclassCloseToHide 无 WM_CLOSE 拦截概念：关窗即销毁（由窗口管理器与 Gio 处理）。
 func (p *Plat) SubclassCloseToHide(Handle) {}

@@ -1008,6 +1008,12 @@ repl（测试/e2e 后端）与 tui 不动（二进制默认前端为 gui，D51�
 
 ### 15.1 形态与窗口（悬浮球模型）
 
+> **平台形态分级（D111/S4b，2026-10-07）**：本节（及 §15.3 顶带/羽化，§15.8 DPI 直查）描述的
+> 悬浮胶囊 + 整窗 ULW + 逐像素穿透/羽化/半透明是 **Windows 实现**（平台自管窗口与像素提交，
+> `NativeWindowControl()=true`）。平台不能自管窗口时（非 Windows 降级）主窗退化为**常规装饰
+> 不透明窗**：内容由 Gio 自身表面渲染、**跳过**离屏全帧合成通道，停靠/吸附/位置记忆/拖动移窗
+> 随之失活（无句柄与显示器数据源）；输入栏/转写/次窗等交互同源可用。降级清单见 §15.6 平台边界修订。
+
 - **单组件悬浮球**：logo 圆钮是唯一常驻物，输入栏是它的展开态——悬浮球右侧展开输入栏，
   再次左键 logo 收起回球；**不存在球 + 胶囊两个独立组件**（两套焦点/生命周期）。
   logo **悬浮 tips** 承载启动提示（`Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C
@@ -1282,16 +1288,29 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   移窗 flush 在 `e.Frame` 之前、ULW 提交殿后），并断言 submit 时移窗**已** flush、
   帧尾已 flush；全帧合成（av = vis × g(y) × alpha 预乘）另有参考实现对照测试
   （内容不透明 / 间隙全零 / 带行渐变 / 羽化 ramp）。
+- **平台替换口径（S4b/D111 修订，2026-10-07）**：平台能力经 `uigui` 侧消费方接口注入
+  （`u.plat`），headless 测试装**假平台**（`fakeplat_test.go`：记账 + 钩子）——原包级注入槽
+  `presentMain`/`revealMain`/`visMain`/`mainHWND` 全部退役；几何用例用确定性的虚拟屏
+  （默认 1920×1080）而不读开发机显示器。平台包自身另有单测（热键解析/降级面契约，
+  纯 Go 三平台可跑）；真实窗口路径仅 `AQUARIUS_GUI_SMOKE=1` 冒烟与手工验收覆盖。
 
 ### 15.6 前置 spike 结论（2026-09 已过，D30 同款记录）
 
-> **平台边界修订（D111，2026-10-06）**：本节及 §15.1 的 ULW / 托盘 / 全局热键 / TPM 菜单 /
-> 文件框 / DPI / 系统深浅色等均为 **Windows 实测**；非 Windows 现状为 no-op 桩
-> （`win32_other.go` / `winmgr_other.go` / `theme_other.go`）。**D111 将平台边界口径改为
-> 「平台抽象层 + 各平台实现/降级，功能对等分级」**——引入平台接口（窗口/帧/显隐/像素提交/
-> 托盘/热键/文件框/菜单/DPI/深浅色），`uigui` 主体去平台化，非 Windows 走**降级实现（非桩）**
-> （Gio 常规窗可交互，无 ULW 半透明/羽化/托盘/热键）。本节 spike 结论仍作 Windows 实现的依据。
-> 实现序列见 roadmap S4b（D109 执行序第二）。
+> **平台边界修订（D111，2026-10-06；落码 S4b，2026-10-07）**：本节及 §15.1 的 ULW / 托盘 /
+> 全局热键 / TPM 菜单 / 文件框 / DPI / 系统深浅色等均为 **Windows 实测**；非 Windows 原为
+> no-op 桩（`win32_other.go` / `winmgr_other.go` / `theme_other.go`，且实测连「可构建」都不成立）。
+> 口径已改为**「平台抽象层 + 各平台实现/降级，功能对等分级」**，并已落地：
+> 平台面收在 **`internal/adapter/uigui/platform`**（纯 Go、不 import gio，三平台各自可编译与单测），
+> `uigui` 主体只经**消费方接口**（`platform_api.go`，`u.plat`）触达；平台向 UI 回传只经
+> **`Host` 回调**的动作枚举（菜单命令 ID / 显隐 / 退出 / 选中文件 / 系统主题变化），业务语义留在
+> `uigui`。**Windows 实现 = 本节实测结论的代码化**（ULW 像素管线、托盘、热键、TPM 菜单、
+> GetOpenFileNameW、注册表深浅色、GetDpiForWindow），行为零回归。**非 Windows 为降级实现
+> （非桩）**：Gio 常规不透明窗 + `Decorated(true)`（无原生句柄 → 位置/尺寸交窗口管理器）、
+> 无 ULW 半透明/羽化/逐像素穿透（并**跳过**离屏合成通道）、无托盘/全局热键/原生右键菜单
+> （各发**一次性**降级提示）、文件框走 `zenity`/`kdialog`（macOS `osascript`）、深浅色走
+> `gsettings`/`kreadconfig`/`defaults`、DPI 走 Gio Metric、中文字体取常见 CJK 字体包
+> （全缺则回落 gofont）。**不追求三平台功能对等**（ULW 等价物/托盘/热键留后续独立步，D111④）。
+> 本节 spike 结论仍是 Windows 实现的依据；非 Windows 门禁口径见 **D119**。
 
 | §15.6 清单项 | 实测结论 |
 |---|---|
@@ -1346,8 +1365,13 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   （`WS_EX_TOOLWINDOW` 只挂主窗 HWND，次窗不参与）。
 - **并发模型**：每窗独立事件循环 goroutine、**自持状态**；跨窗只经消息（沿用 `uiMsg`
   模式）与线程安全回调（`Options` 下发，同 `Status` 口径），**不共享裸字段**（`-race`
-  门禁兜底）。主窗专属全局态显式隔离、次窗一律不碰：`win32Run` 单槽（§15.6 铁律 1）、
-  `mainHWND`、ULW 像素管线（fadeState/fadeBuf）、位置记忆/停靠、`WM_CLOSE → 隐藏` 子类化。
+  门禁兜底）。主窗专属全局态显式隔离、次窗一律不碰：主窗窗口线程投递槽与主窗句柄
+  （S4b 起收在平台实现内，§15.6 铁律 1）、ULW 像素管线（fadeState/fadeBuf）、位置记忆/
+  停靠、`WM_CLOSE → 隐藏` 子类化。次窗自身的平台操作只在次窗句柄上发生（聚焦/关闭）。
+- **次窗关闭路径（S4b/D111）**：有原生句柄时走平台原生关闭消息（Windows `WM_CLOSE` →
+  Gio 默认销毁 → `DestroyEvent`，与真关闭语义一致）；平台无句柄时（非 Windows 降级）走
+  Gio 自身的窗口关闭动作（`system.ActionClose`）——两条路都落到次窗事件循环退出，
+  收编语义不变（聚焦同理：原生 `SetForegroundWindow` / Gio `ActionRaise`）。
 - **生命周期**：单实例防重开（同 kind 已开 → raise/focus）；次窗关闭 = **真关闭**
   （不走主窗「Alt+F4 = 隐藏」语义）；托盘隐藏 / Alt+A 显隐**不连带**次窗；退出只经
   托盘菜单 → 收编关闭全部次窗 → EOF 收尾。

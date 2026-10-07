@@ -21,6 +21,9 @@ type Plat struct {
 	mainHWND atomic.Uintptr
 	// mainRun 主窗 Window.Run 投递槽（runWindow 起手写入）。
 	mainRun atomic.Pointer[RunFunc]
+
+	// menuNotice 非 Windows 的「无原生菜单」提示已发标记（一次性，见 shell_other.go）。
+	menuNotice atomic.Bool
 }
 
 // New 构造平台实现（各平台方法见同目录 *_windows.go / *_other.go）。
@@ -38,6 +41,13 @@ func (p *Plat) Config() Config { return p.cfg }
 func (p *Plat) Notice(msg string) {
 	if p.host != nil {
 		p.host.Notice(msg)
+	}
+}
+
+// noticeOnce 同类降级提示只发一次（缺失能力属启动期一次性告知，不随交互重复刷转写区）。
+func (p *Plat) noticeOnce(sent *atomic.Bool, msg string) {
+	if sent.CompareAndSwap(false, true) {
+		p.Notice(msg)
 	}
 }
 

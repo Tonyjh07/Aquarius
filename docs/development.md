@@ -71,11 +71,19 @@ internal/domain   conversation(树) · tool(值对象) · perm(权限矩阵) —
 internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbuiltin / toolrun
                   + M3：blobfs / jobproc / ingestfile / ingestclip / notify / atomicfile
                   + M4：decorate(装饰器) / mcpgate(MCP→port) / uitui(TUI)
+                  + M5：uigui(Gio 悬浮球 GUI) / uigui/platform(平台能力：纯 Go、不依赖 gio，
+                        Windows 实测实现 + 非 Windows 降级实现，D111)
                   （一个适配器一个目录）
 ```
 
 接口由消费方定义；错误 `fmt.Errorf("...: %w")` 包装；值对象具名类型；
 导出符号写注释；命名与 DESIGN §2 统一语言对齐（Revise/Carry/Fresh/Head/Part/Job）。
+
+`uigui/platform` 的分家口径（D111 修订）：平台能力只在 `platform` 包实现（`*_windows.go` /
+`*_other.go` 同签名），`uigui` 侧声明所需接口并断言 `*platform.Plat` 满足——**少一个平台方法
+就编译不过**。平台向 UI 回传只经 `platform.Host` 的动作枚举（菜单命令 ID / 显隐 / 退出 /
+选中文件 / 系统主题变化），业务语义留在 `uigui`。headless 测试装假平台（`fakeplat_test.go`），
+不触真 Win32/真外壳。
 
 ## 测试手段（四种，按层选）
 
