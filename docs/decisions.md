@@ -1054,3 +1054,11 @@
 - **决策**：`runMenu`（托盘/logo/气泡三处菜单唯一呈现口）在 `TrackPopupMenu` 前把主窗 `platformSetTopMost(false)` 降出 topmost 带、返回后按 `topMostQuery()` 原值恢复——无论菜单窗在哪条带，呈现于降档之后必然在主窗之上。气泡/logo 右键时主窗本是前台窗，非 topmost 带内仍居最高，观感无跳变；置顶的持久化只在 `toggleTopMost`，菜单期降档不碰记忆值。
 - **否决**：抑制菜单期 ULW 提交（ULW 已实证不改 z 序，属无的放矢且冻结画面）；菜单期改 owner/前台归属（跨线程 TrackPopupMenu 行为无把握，改动面大）；给菜单窗挂 CBT 钩子改 topmost（重武器）。
 - **状态**：生效（2026-10-07）
+
+### D117 — 通知子进程静默隐藏：`CREATE_NO_WINDOW` + `HideWindow`（D114 连带回归修复，§7.2）
+
+- **动机**：roadmap「已知缺陷」（2026-10-07 实测）：回复完成的通知会在桌面弹出一个 powershell 控制台窗，直至气泡结束才消失。根因 = Windows 通知实现是拉起 `powershell` 子进程跑气泡脚本（`ShowBalloonTip(5000)` + `Start-Sleep 6`，子进程存活 ≈6s，正是「直至通知结束」的时长），而 **D114 双击启动 FreeConsole 后父进程无控制台可继承 → Windows 为该子进程新建可见控制台**（D114 前子进程继承的是已被隐藏的自建控制台，不可见；终端启动同样会新开窗，只是原本不显眼）。
+- **决策**：`notifyWith` 的 windows 分支在分离启动前给子进程挂 `syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW(0x08000000)}`——两旗并挂、互不冲突：`CREATE_NO_WINDOW` 断掉控制台窗创建（console 子系统正解），`HideWindow` 兜住顶层窗。实现落平台文件对 `cmd/aquarius/notify_windows.go`（`hideNotifyChild`）/ `notify_other.go`（no-op 桩，跟随 `console_*.go` 惯例），挂接在 `notifyWith` 内、注入的 `detached` 之前，故不依赖具体分离实现。通知形态（powershell 气泡脚本、文案走环境变量、detached 回收句柄）一概不变。
+- **否决**：roadmap 修法②——弃子进程改进程内 `Shell_NotifyIconW` 发气泡并顺带升级 Win10+ toast（零子进程、无 powershell 冷启，但要消息泵线程 + 平台分支 + toast 侧 WinRT COM，回归面远超本缺陷，留作可选后续）；父进程保留控制台不 FreeConsole（反向作废 D114，WT 场景实测 SW_HIDE 无效）；改同步 `cmd.Run()` 等待子进程（气泡需驻留 6s，会卡住输出器调用）。
+- **后果/限制**：① 每条通知仍拉一次 powershell（约 1s 冷启、子进程存活 ≈6s），只是不再有可见窗口；② `CREATE_NO_WINDOW` 只对 console 子系统子进程有意义，`HideWindow` 对 GUI 子进程同样生效，故两旗都挂；③ 复现测试 `TestNotifyDetachedChildHidden`（windows 构建标签）钉住 `SysProcAttr` 三要素，非 Windows 桩恒不设 `SysProcAttr`、交叉编译不受影响。
+- **状态**：生效（2026-10-07）

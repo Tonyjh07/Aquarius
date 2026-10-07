@@ -223,9 +223,10 @@
 - **出口**：三门禁全绿（含非 Windows 交叉编译 `GOOS=linux go build ./...`）+ Windows 行为零回归（headless + 手工验收）；文档明示非 Windows 已知降级。
 - **后续可选**：纯 Go CPU 光栅化自绘底座（换掉 Gio 渲染 + 各平台位图提交），本步不做。
 
-### 已知缺陷（待修，2026-10-07 记录）
+### 已知缺陷（2026-10-07 记录）
 
-- **GUI：Windows 通知弹出 powershell 窗口直至通知结束**。触发：回复完成的通知输出器（`cmd/aquarius/notify.go`，detached 分离启动）。根因：Windows 端实现 = 拉起 `powershell` 子进程跑气泡脚本（`ShowBalloonTip(5000)` + `Start-Sleep -Seconds 6`，子进程存活 ≈6s——正是"直至通知结束"）；**D114 双击启动 FreeConsole 后，子进程无控制台可继承 → Windows 为其新开控制台**（D114 前继承的是已隐藏的自建控制台，不可见——本条为 D114 连带回归；终端启动场景同样如此，只是原本就不显眼）。修法方向（动手时二选一）：① 子进程 `SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}`；② 弃子进程方案，复用主窗托盘基建（`Shell_NotifyIconW`）在自家进程发气泡，顺带升级过时的 balloon-tip 形态（Win10+ toast）。
+- **GUI：Windows 通知弹出 powershell 窗口直至通知结束 → 已修（D117，2026-10-07）**。根因：Windows 端通知 = 拉起 `powershell` 子进程跑气泡脚本（`ShowBalloonTip(5000)` + `Start-Sleep -Seconds 6`，子进程存活 ≈6s——正是"直至通知结束"），而 **D114 双击启动 FreeConsole 后父进程无控制台可继承 → Windows 为子进程新开可见控制台**（D114 前继承的是已隐藏的自建控制台，不可见；终端启动场景同样会新开，只是原本不显眼）。修法① 已落地：`notifyWith` 分离启动前挂 `SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}`（`cmd/aquarius/notify_windows.go` / `notify_other.go` 桩），复现测试 `TestNotifyDetachedChildHidden` 钉住。
+- **后续可选（修法②）**：弃子进程方案，复用主窗托盘基建（`Shell_NotifyIconW`）在自家进程发气泡，顺带升级过时的 balloon-tip 形态（Win10+ toast）——零子进程、无 powershell 冷启，但要消息泵 + 平台分支 + toast 侧 WinRT COM，留待 GUI 批次一并做。
 
 ### S6 · 工具与 MCP 管理（M9，P1，M）
 
