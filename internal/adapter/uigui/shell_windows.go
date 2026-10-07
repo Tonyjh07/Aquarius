@@ -21,37 +21,22 @@ import (
 	"sync/atomic"
 	"syscall"
 	"unsafe"
-
-	"github.com/Tonyjh07/Aquarius/assets"
-	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
-
-var shell32 = syscall.NewLazyDLL("shell32.dll")
-
-var comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 
 var (
-	procShellNotifyIconW         = shell32.NewProc("Shell_NotifyIconW")
-	procRegisterHotKey           = user32.NewProc("RegisterHotKey")
-	procUnregisterHotKey         = user32.NewProc("UnregisterHotKey")
-	procGetMessageW              = user32.NewProc("GetMessageW")
-	procTranslateMessage         = user32.NewProc("TranslateMessage")
-	procDispatchMessageW         = user32.NewProc("DispatchMessageW")
-	procPostQuitMessage          = user32.NewProc("PostQuitMessage")
-	procPostMessageW             = user32.NewProc("PostMessageW")
-	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
-	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
-	procCreatePopupMenu          = user32.NewProc("CreatePopupMenu")
-	procAppendMenuW              = user32.NewProc("AppendMenuW")
-	procTrackPopupMenu           = user32.NewProc("TrackPopupMenu")
-	procDestroyMenu              = user32.NewProc("DestroyMenu")
-	procLoadIconW                = user32.NewProc("LoadIconW")
-	procCallWindowProcW          = user32.NewProc("CallWindowProcW")
-	procCreateIconFromResourceEx = user32.NewProc("CreateIconFromResourceEx")
-	procGetOpenFileNameW         = comdlg32.NewProc("GetOpenFileNameW") // D104 附件文件选择框
+	procRegisterHotKey      = user32.NewProc("RegisterHotKey")
+	procUnregisterHotKey    = user32.NewProc("UnregisterHotKey")
+	procGetMessageW         = user32.NewProc("GetMessageW")
+	procTranslateMessage    = user32.NewProc("TranslateMessage")
+	procDispatchMessageW    = user32.NewProc("DispatchMessageW")
+	procPostQuitMessage     = user32.NewProc("PostQuitMessage")
+	procPostMessageW        = user32.NewProc("PostMessageW")
+	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
+	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
+	procCallWindowProcW     = user32.NewProc("CallWindowProcW")
 )
 
-// 托盘/快捷键/子类化常量（Win32 头文件取值）。
+// 消息泵/快捷键/子类化常量（Win32 头文件取值）。
 const (
 	wmNull          = 0x0000
 	wmDestroy       = 0x0002
@@ -62,82 +47,24 @@ const (
 	wmRButtonUp     = 0x0205
 	wmHotkey        = 0x0312
 	wmApp           = 0x8000
-	trayCallback    = wmApp + 1
 	rehotkeyMsg     = wmApp + 2 // 托盘线程内重注册全局快捷键（设置窗改 hotkey 投递，§15.1）
-	logoMenuMsg     = wmApp + 3 // 托盘线程呈现 logo 右键菜单（D72：Gio 检出右键后投递）
-	bubbleMenuMsg   = wmApp + 4 // 托盘线程呈现气泡右键菜单（D92：上下文在 u.bubbleMenu 原子槽）
-	fileDlgMsg      = wmApp + 5 // 托盘线程呈现文件选择框（D104：模态泵不嵌 Gio 泵）
 
 	swRestore = 9
 
 	gwlWndProc = ^uintptr(3) // GWLP_WNDPROC = -4（补码过 uintptr）
 
 	hwndMessage = ^uintptr(2) // HWND_MESSAGE = -3
-
-	nimAdd    = 0x00000000
-	nimDelete = 0x00000002
-	nifIcon   = 0x00000002
-	nifTip    = 0x00000004
-	nifMsg    = 0x00000001
-
-	mfString    = 0x00000000
-	mfSeparator = 0x00000800
-	mfChecked   = 0x00000008 // 勾选（置顶开关当前态）
-	mfPopup     = 0x00000010 // 二级菜单：父项 uIDNewItem = 子菜单句柄（D73 权限档）
-	tpmRightBtn = 0x0002
-	tpmRetCmd   = 0x0100 // 返回命令 ID（不再发 WM_COMMAND）
-
-	cmdToggle   = 101
-	cmdExit     = 102
-	cmdTopMost  = 103
-	cmdHistory  = 104 // 功能窗入口（§15.7/D60：会话历史占位壳）
-	cmdWelcome  = 105 // 功能窗入口（§15.7/D60：欢迎/首次运行占位壳）
-	cmdSettings = 106 // 功能窗入口（§15.7/D60：设置窗核心档）
-	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
-	cmdPermBase = 108 // 权限子菜单四档基值（D73：+i 对齐 settings.go permLevels 序）
-
-	cmdBubbleEdit     = 120 // 气泡右键：编辑（D92/D97 → editMsg Fresh 进编辑态）
-	cmdBubbleRegen    = 121 // 气泡右键：重新生成（D92 → /regen 与键入同路径）
-	cmdBubbleCopy     = 122 // 气泡右键：复制（D92 → copyMsg，下一帧写剪贴板）
-	cmdBubbleEditKeep = 123 // 气泡右键：编辑并转移历史（D97 → editMsg Carry）
-	cmdBubbleEditCopy = 124 // 气泡右键：编辑并复制历史（D97 → editMsg Clone）
-	cmdBubbleQuote    = 125 // 气泡右键：引用（D98 → quoteMsg 追加引用前缀进输入框）
-	cmdBubbleRaw      = 126 // 气泡右键：查看原文（D99 → rawView 原子槽 + winRaw 次窗）
-
-	idIApplication = 32512 // IDI_APPLICATION（图标解析失败的系统回退）
-
-	iconResVersion = 0x30000 // RT_ICON 资源版本（CreateIconFromResourceEx）
 )
 
-// shellMsg / notifyIconData：x64 布局与 C 一致。
-type (
-	shellMsg struct {
-		hwnd    uintptr
-		message uint32
-		wParam  uintptr
-		lParam  uintptr
-		time    uint32
-		pt      point
-	}
-
-	notifyIconData struct {
-		cbSize           uint32
-		hWnd             uintptr
-		uID              uint32
-		uFlags           uint32
-		uCallbackMessage uint32
-		hIcon            uintptr
-		szTip            [128]uint16
-		dwState          uint32
-		dwStateMask      uint32
-		szInfo           [256]uint16
-		uVersion         uint32
-		szInfoTitle      [64]uint16
-		dwInfoFlags      uint32
-		guidItem         [16]byte
-		hBalloonIcon     uintptr
-	}
-)
+// shellMsg：x64 布局与 C 一致。
+type shellMsg struct {
+	hwnd    uintptr
+	message uint32
+	wParam  uintptr
+	lParam  uintptr
+	time    uint32
+	pt      point
+}
 
 // 托盘线程与窗口侧的交接状态。
 var (
@@ -230,52 +157,6 @@ func reRegisterHotkey() {
 	}
 }
 
-// addTrayIcon 托盘图标 + 提示（v3 回调：legacy WM_LBUTTONUP/WM_RBUTTONUP）。
-func addTrayIcon(hwnd uintptr) {
-	icon := trayIcon()
-	var nid notifyIconData
-	nid.cbSize = uint32(unsafe.Sizeof(nid))
-	nid.hWnd = hwnd
-	nid.uID = 1
-	nid.uFlags = nifIcon | nifTip | nifMsg
-	nid.uCallbackMessage = trayCallback
-	nid.hIcon = icon
-	copy(nid.szTip[:], syscall.StringToUTF16("Aquarius"))
-	if r, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid))); r != 0 {
-		fmt.Println("[tray] Shell_NotifyIconW(NIM_ADD) = 成功（左键显隐，右键菜单）")
-	} else {
-		fmt.Printf("[tray] Shell_NotifyIconW(NIM_ADD) = 失败: %v\n", err)
-	}
-}
-
-// trayIcon 托盘图标：内嵌 ico → 16px 档 → CreateIconFromResourceEx；
-// 失败回落系统默认图标（spike 口径）。
-func trayIcon() uintptr {
-	if b, err := icoImage(assets.TrayICO, 16); err == nil && len(b) > 0 {
-		if h, _, _ := procCreateIconFromResourceEx.Call(
-			uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), 1, iconResVersion, 0, 0); h != 0 {
-			return h
-		}
-	}
-	h, _, _ := procLoadIconW.Call(0, idIApplication)
-	return h
-}
-
-// trayDelete 移除托盘图标（NIM_DELETE 自带消息投递，线程无关；幂等）。
-// 关窗销毁与退出清理两处调用，防悬浮区残留。
-func trayDelete() {
-	h := shellHWND.Load()
-	if h == 0 {
-		return
-	}
-	var nid notifyIconData
-	nid.cbSize = uint32(unsafe.Sizeof(nid))
-	nid.hWnd = h
-	nid.uID = 1
-	procShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&nid)))
-	shellHWND.Store(0)
-}
-
 // shellWndProc 托盘消息窗口过程：托盘回调 / 快捷键 / 菜单命令。
 func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	switch uMsg {
@@ -316,319 +197,6 @@ func shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	}
 	r, _, _ := procDefWindowProcW.Call(hwnd, uMsg, wParam, lParam)
 	return r
-}
-
-// menuIt 菜单项（托盘/logo 右键菜单共用，D72/D73）；id 0 = 分隔线，或二级菜单父项
-// （sub 非空时 id 不用）。
-type menuIt struct {
-	id      uintptr
-	label   string
-	checked bool
-	sub     []menuIt // 非空 = 二级菜单（D73：权限四档）
-}
-
-// logoMenuItems logo 右键菜单（D72/D73，项序/文案为契约、测试锁定）：置顶勾选随
-// topMostQuery（查询类，跨线程直调）。
-func logoMenuItems(level string) []menuIt {
-	permSub := make([]menuIt, 0, len(permLevels))
-	for i, lv := range permLevels {
-		permSub = append(permSub, menuIt{id: cmdPermBase + uintptr(i), label: lv, checked: lv == level})
-	}
-	return []menuIt{
-		{id: cmdNew, label: "新对话"},
-		{label: "权限", sub: permSub}, // D73：二级菜单四档，当前档打勾
-		{id: cmdHistory, label: "消息历史"},
-		{id: cmdSettings, label: "设置"},
-		{id: cmdTopMost, label: "置顶", checked: topMostQuery()},
-		{id: cmdToggle, label: "隐藏"},
-		{}, // 分隔线
-		{id: cmdExit, label: "退出"},
-	}
-}
-
-// postLogoMenu 投递 logo 右键菜单请求到托盘线程（D72：呈现归 shell 线程的独立消息
-// 泵，TrackPopupMenu 不嵌 Gio 泵）。shell 未就绪（启动微窗/headless）= 静默放弃。
-func postLogoMenu() {
-	if h := shellHWND.Load(); h != 0 {
-		procPostMessageW.Call(h, logoMenuMsg, 0, 0)
-	}
-}
-
-// postBubbleMenu 投递气泡右键菜单请求到托盘线程（D92：命中上下文已存 u.bubbleMenu
-// 原子槽，Gio 线程 Store 先于本调用）。shell 未就绪（启动微窗/headless）= 静默放弃。
-func postBubbleMenu() {
-	if h := shellHWND.Load(); h != 0 {
-		procPostMessageW.Call(h, bubbleMenuMsg, 0, 0)
-	}
-}
-
-// requestFileDlg 请求 shell 线程打开文件选择框（D104：对话框自带模态泵、不能嵌 Gio
-// 泵，D72 菜单同理）。shell 未就绪（启动微窗/headless）= 静默放弃。
-func (u *UI) requestFileDlg() {
-	if h := shellHWND.Load(); h != 0 {
-		procPostMessageW.Call(h, fileDlgMsg, 0, 0)
-	}
-}
-
-// openFileNameW OPENFILENAMEW（Win64 布局，GetOpenFileNameW 参数，D104）：
-// 下划线字段 = x64 对齐填充（指针 8 对齐），lStructSize 传 unsafe.Sizeof。
-type openFileNameW struct {
-	lStructSize       uint32
-	_                 uint32
-	hwndOwner         uintptr
-	hInstance         uintptr
-	lpstrFilter       *uint16
-	lpstrCustomFilter *uint16
-	nMaxCustFilter    uint32
-	nFilterIndex      uint32
-	lpstrFile         *uint16
-	nMaxFile          uint32
-	_                 uint32
-	lpstrFileTitle    *uint16
-	nMaxFileTitle     uint32
-	_                 uint32
-	lpstrInitialDir   *uint16
-	lpstrTitle        *uint16
-	flags             uint32
-	nFileOffset       uint16
-	nFileExtension    uint16
-	lpstrDefExt       *uint16
-	lCustData         uintptr
-	lpfnHook          uintptr
-	lpTemplateName    *uint16
-	pvReserved        uintptr
-	dwReserved        uint32
-	flagsEx           uint32
-}
-
-// showFileDlg 文件选择框呈现（shell 线程，D104）：GetOpenFileNameW 自带模态泵，阻塞
-// 本线程与 TrackPopupMenu 同语义（D72 先例）；选中 → attachMsg 投回 Gio inbox，
-// 取消/出错静默。单选 v1（多选留 UserInput.Raw 口径扩展，D104④）。
-func (u *UI) showFileDlg() {
-	const (
-		ofnHideReadOnly  = 0x4
-		ofnNoChangeDir   = 0x8
-		ofnPathMustExist = 0x800
-		ofnFileMustExist = 0x1000
-	)
-	filter := utf16Pairs(
-		"常见文档与图片",
-		"*.pdf;*.docx;*.xlsx;*.pptx;*.html;*.htm;*.txt;*.md;*.csv;*.json;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
-		"文档",
-		"*.pdf;*.docx;*.xlsx;*.pptx;*.html;*.htm;*.txt;*.md;*.csv;*.json",
-		"图片",
-		"*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
-		"所有文件 (*.*)",
-		"*.*",
-	)
-	title, err := syscall.UTF16FromString("选择附件")
-	if err != nil {
-		return
-	}
-	buf := make([]uint16, 32768)
-	ofn := openFileNameW{
-		lStructSize: uint32(unsafe.Sizeof(openFileNameW{})),
-		lpstrFilter: &filter[0],
-		lpstrFile:   &buf[0],
-		nMaxFile:    uint32(len(buf)),
-		lpstrTitle:  &title[0],
-		flags:       ofnHideReadOnly | ofnNoChangeDir | ofnPathMustExist | ofnFileMustExist,
-	}
-	if h := shellHWND.Load(); h != 0 {
-		ofn.hwndOwner = h
-	}
-	r, _, _ := procGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
-	if r == 0 {
-		return
-	}
-	u.post(attachMsg{path: syscall.UTF16ToString(buf)})
-}
-
-// utf16Pairs 对话框过滤器串：段间单 NUL、末尾双 NUL 的 UTF-16（段 = 显示名/模式交替）。
-func utf16Pairs(segs ...string) []uint16 {
-	var b []uint16
-	for _, s := range segs {
-		w, err := syscall.UTF16FromString(s)
-		if err != nil {
-			continue
-		}
-		b = append(b, w...) // UTF16FromString 自带终止 NUL = 段间分隔
-	}
-	return append(b, 0) // 末段收双 NUL
-}
-
-// showLogoMenu logo 右键菜单呈现（托盘线程，D72/D73）：项清单走共享件，owner = 托盘消息窗
-// （与托盘菜单同款 TPM 收尾）。
-func showLogoMenu() {
-	h := shellHWND.Load()
-	if h == 0 {
-		return
-	}
-	if u := shellUI.Load(); u != nil {
-		menuDispatch(u, runMenu(h, logoMenuItems(permLevelOf(u))))
-	}
-}
-
-// permLevelOf 当前权限档（D73 子菜单勾选源）：Status 现取（shell 线程可跨 goroutine
-// 读——lvl/agent 访问器均为原子，TUI 状态行同此回调）；未就绪 = ""（不勾，切换后自愈）。
-func permLevelOf(u *UI) string {
-	if u.opts.Status == nil {
-		return ""
-	}
-	return u.opts.Status().Level
-}
-
-// bubbleMenuItems 气泡右键菜单（D92/D97/D98/D99/D100，项序/文案为契约测试锁定）：
-// user/assistant 同集七项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone
-// 深拷贝后续历史）+ 重新生成/复制/引用/查看原文；thinking 定稿块与工具 chip = 复制/
-// 查看原文两项（D100③）。
-func bubbleMenuItems(kind blockKind) []menuIt {
-	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
-	raw := menuIt{id: cmdBubbleRaw, label: "查看原文"}
-	if kind == blockThinking || kind == blockTool {
-		return []menuIt{cp, raw}
-	}
-	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
-	return []menuIt{
-		{id: cmdBubbleEdit, label: "编辑"},
-		{id: cmdBubbleEditKeep, label: "编辑并转移历史"},
-		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
-		regen, cp,
-		{id: cmdBubbleQuote, label: "引用"},
-		raw,
-	}
-}
-
-// showBubbleMenu 气泡右键菜单呈现（托盘线程，D92）：上下文取 u.bubbleMenu 原子槽
-// （Gio 线程 Store 先于 PostMessage），owner = 托盘消息窗（与 logo 菜单同款 TPM 收尾）。
-func showBubbleMenu() {
-	h := shellHWND.Load()
-	if h == 0 {
-		return
-	}
-	u := shellUI.Load()
-	if u == nil {
-		return
-	}
-	ctx := u.bubbleMenu.Load()
-	if ctx == nil {
-		return
-	}
-	menuDispatchBubble(u, ctx, runMenu(h, bubbleMenuItems(ctx.kind)))
-}
-
-// menuDispatchBubble 气泡菜单命令分发（D92/D97/D98；托盘线程调用——修改性调用一律经
-// post，§15.6 铁律 1）：重新生成 = /regen（与键入同路径，内核分叉重发）；编辑三方式 =
-// editMsg 进编辑态（预填/提交/Esc 生命周期在 Gio 侧，mode 随项而设）；复制 = copyMsg →
-// 下一帧 gtx.Execute(clipboard.WriteCmd)（剪贴板写入必须在 Gio 帧）；引用 = quoteMsg →
-// 输入框追加引用块（Gio 侧 apply）。
-func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
-	switch r {
-	case cmdBubbleEdit:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Fresh, part: ctx.part})
-	case cmdBubbleEditKeep:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Carry, part: ctx.part})
-	case cmdBubbleEditCopy:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Clone, part: ctx.part})
-	case cmdBubbleRegen:
-		_ = u.post(inputMsg{text: "/regen " + string(ctx.id)})
-	case cmdBubbleCopy:
-		_ = u.post(copyMsg{text: ctx.copy})
-	case cmdBubbleQuote:
-		_ = u.post(quoteMsg{text: ctx.copy})
-	case cmdBubbleRaw:
-		// D99/D100 查看原文：raw 内容（bubbleCtx 按块角色组装——正文原文/思考原文/
-		// 工具 JSON）入原子槽 → 单实例次窗呈现；已开 = 聚焦 + 原地刷新（invalidateKind）。
-		raw := ctx.raw
-		u.rawView.Store(&raw)
-		u.wins.openWin(winRaw)
-		u.wins.invalidateKind(winRaw)
-	}
-}
-
-// menuDispatch 命令分发（托盘/logo 菜单共用，D72；托盘线程调用——openWin 锁内单
-// 实例、修改性调用经 onWindowThread/post，§15.6 铁律 1）。
-func menuDispatch(u *UI, r uintptr) {
-	// 权限子菜单（D73）：cmdPermBase+i → /permission permLevels[i]（与键入同路径——
-	// D22 config 写回 + Agent 热切换，菜单只做呈现与勾选）。
-	if r >= cmdPermBase && r < cmdPermBase+uintptr(len(permLevels)) {
-		_ = u.post(inputMsg{text: "/permission " + permLevels[r-cmdPermBase]})
-		return
-	}
-	switch r {
-	case cmdNew:
-		_ = u.post(inputMsg{text: "/new"}) // 新对话：与键入同路径（parseInput → inCh）
-	case cmdToggle:
-		u.toggleWindow()
-	case cmdTopMost:
-		u.toggleTopMost()
-	case cmdSettings:
-		u.wins.openWin(winSettings) // 单实例防重开（§15.7；注册表线程安全）
-	case cmdHistory:
-		u.wins.openWin(winHistory)
-	case cmdWelcome:
-		u.wins.openWin(winWelcome)
-	case cmdExit:
-		u.exitViaShell()
-	}
-}
-
-// buildMenu 建单（D73：二级菜单父项 MF_POPUP 挂子句柄、递归建单；DestroyMenu 对父单
-// 递归销毁子单）。仅建单不显示。
-func buildMenu(items []menuIt) uintptr {
-	menu, _, _ := procCreatePopupMenu.Call()
-	for _, it := range items {
-		if len(it.sub) > 0 {
-			sub := buildMenu(it.sub)
-			label, _ := syscall.UTF16PtrFromString(it.label)
-			procAppendMenuW.Call(menu, mfPopup, sub, uintptr(unsafe.Pointer(label)))
-			continue
-		}
-		if it.id == 0 {
-			procAppendMenuW.Call(menu, mfSeparator, 0, 0)
-			continue
-		}
-		lab, _ := syscall.UTF16PtrFromString(it.label)
-		f := uintptr(mfString)
-		if it.checked {
-			f |= mfChecked // 勾选 = 当前置顶态 / 当前权限档
-		}
-		procAppendMenuW.Call(menu, f, it.id, uintptr(unsafe.Pointer(lab)))
-	}
-	return menu
-}
-
-// runMenu 共享呈现件（D72/D73）：建单（buildMenu）→ 光标位 TrackPopupMenu
-// （TPM_RETURNCMD 直接返回叶子命令，不发 WM_COMMAND）→ MSDN 收尾 WM_NULL → 销毁。
-// 返回 0 = 取消。
-func runMenu(hwnd uintptr, items []menuIt) uintptr {
-	menu := buildMenu(items)
-	var pt point
-	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-	procSetForegroundWindow.Call(hwnd)
-	r, _, _ := procTrackPopupMenu.Call(menu, tpmRightBtn|tpmRetCmd,
-		uintptr(pt.x), uintptr(pt.y), 0, hwnd, 0)
-	procPostMessageW.Call(hwnd, wmNull, 0, 0) // MSDN 要求：收尾防菜单不消失
-	procDestroyMenu.Call(menu)
-	return r
-}
-
-// showTrayMenu 托盘右键菜单（§15.1：显示/隐藏、置顶开关、功能窗入口（§15.7，随各窗
-// 步启用）+ 退出）；建单/呈现/分发走共享件（runMenu/menuDispatch，D72）。
-func showTrayMenu(hwnd uintptr) {
-	items := []menuIt{
-		{id: cmdToggle, label: "显示 / 隐藏输入窗"},
-		{id: cmdTopMost, label: "窗口置顶", checked: topMostQuery()},
-		{},
-		{id: cmdSettings, label: "设置"},
-		{id: cmdHistory, label: "会话历史"},
-		{id: cmdWelcome, label: "欢迎 / 首次运行引导"},
-		{},
-		{id: cmdExit, label: "退出"},
-	}
-	if u := shellUI.Load(); u != nil {
-		menuDispatch(u, runMenu(hwnd, items))
-	}
 }
 
 // toggleTopMost 置顶开关（托盘/logo 菜单，§15.1/D72）：切换主窗 HWND_TOPMOST、持久化（与位置
