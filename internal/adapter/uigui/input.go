@@ -102,7 +102,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	// tipShown 并入 heartbeatNeed 唤帧复评（D50 心跳底座复用）。动画期抑制（D54）。
 	shown := false
 	if !inAnim {
-		cur := cursorPos()
+		cur := u.cursorPos()
 		// D85：logo 门控 = 矩形直采 × WindowFromPoint 命中直证（事件态不可靠——
 		// Enter 在「窗口出现于静止光标下/首次悬停」场景永不投递，仅 Press 会送）。
 		if u.cursorHitsLogo(cur) {

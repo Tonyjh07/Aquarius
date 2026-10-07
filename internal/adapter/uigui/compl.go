@@ -208,7 +208,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	st := clip.UniformRRect(card, gtx.Dp(10)).Push(gtx.Ops)
 	paint.Fill(gtx.Ops, tipBg)
 	st.Pop()
-	cur := cursorPos()
+	cur := u.cursorPos()
 	y := card.Min.Y + padY
 	for i := 0; i < n; i++ {
 		it := u.complList[i]

@@ -12,11 +12,14 @@ package uigui
 //   - 注册表 spawn 可注入——headless 测试用假开窗器（§15.5 不进 CI 图形路径）。
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+
 	"image"
 	"sync"
 	"sync/atomic"
 
 	"gioui.org/app"
+	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -80,12 +83,17 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 
 // winHandle 单个次窗实例（winHost 持有；字段原子存取，跨线程安全）。
 type winHandle struct {
+	// plat 平台实现（spawn 时从 UI 取；次窗平台操作经它——主窗机制不作用于次窗）。
+	plat platformAPI
 	// done 次窗事件循环退出时 close（host watcher 据此摘除登记；close 提供 happens-before）。
 	done chan struct{}
-	// runFn 次窗 Window.Run（次窗 goroutine 写；聚焦投递用——不碰 win32Run 主窗单槽）。
+	// runFn 次窗 Window.Run（次窗 goroutine 写；聚焦投递用——不碰主窗投递槽）。
 	runFn atomic.Pointer[func(func())]
-	// hwnd 次窗 HWND（Win32ViewEvent 写；独立于 mainHWND，主窗机制不作用于次窗）。
+	// hwnd 次窗 HWND（Win32ViewEvent 写；独立于主窗句柄，主窗机制不作用于次窗）。
 	hwnd atomic.Uintptr
+	// closeFn/raiseFn Gio 侧关闭/抬升动作（次窗 goroutine 装配；无原生句柄平台用）。
+	closeFn atomic.Pointer[func()]
+	raiseFn atomic.Pointer[func()]
 	// pal 主题原子快照（spawn 初存、applyTheme 广播；次窗帧内校正自身 material 主题）。
 	pal atomic.Pointer[palette]
 	// invalidate 次窗重绘请求（runSecondary 装配；Invalidate 并发安全，§15.5）。
@@ -106,8 +114,8 @@ func (h *winHandle) doneClosed() bool {
 }
 
 // attach HWND 挂接（次窗 goroutine 的 Win32ViewEvent 路径）；关闭请求先到则补投。
-func (h *winHandle) attach(hwnd uintptr) {
-	h.hwnd.Store(hwnd)
+func (h *winHandle) attach(hwnd platform.Handle) {
+	h.hwnd.Store(uintptr(hwnd))
 	if h.closePending.Load() {
 		h.postClose()
 	}
@@ -116,8 +124,33 @@ func (h *winHandle) attach(hwnd uintptr) {
 // requestClose 请求关闭次窗（幂等；host 收编调用）：置 pending，HWND 就绪即投。
 func (h *winHandle) requestClose() {
 	h.closePending.Store(true)
-	if h.hwnd.Load() != 0 {
-		h.postClose()
+	h.postClose()
+}
+
+// postClose 请求关闭次窗：有原生句柄时走平台关闭消息（Windows：WM_CLOSE → Gio 默认
+// 销毁 → DestroyEvent，与真关闭语义一致）；无句柄平台（非 Windows 降级）走 Gio 自身的
+// 窗口关闭动作——两条路都落到次窗事件循环的退出。幂等：重复请求最终只销毁一次。
+func (h *winHandle) postClose() {
+	if hwnd := h.hwnd.Load(); hwnd != 0 && h.plat != nil {
+		h.plat.CloseWindow(platform.Handle(hwnd))
+		return
+	}
+	if f := h.closeFn.Load(); f != nil {
+		(*f)()
+	}
+}
+
+// focus 尽力聚焦（单实例重开）：有原生句柄走平台（经该窗自己的窗口线程投递）；否则走
+// Gio 的抬升动作（非 Windows 降级）。
+func (h *winHandle) focus() {
+	if hwnd := h.hwnd.Load(); hwnd != 0 && h.plat != nil {
+		if run := h.runFn.Load(); run != nil {
+			h.plat.FocusWindow(platform.Handle(hwnd), *run)
+			return
+		}
+	}
+	if f := h.raiseFn.Load(); f != nil {
+		(*f)()
 	}
 }
 
@@ -232,7 +265,7 @@ func (h *winHost) propagatePalette(p *palette) {
 // spawnSecondary 起次窗（独立 goroutine + 独立 app.Window；不接主窗任何全局态，
 // §15.7 形态与并发模型）。返回的句柄由注册表持有。
 func (u *UI) spawnSecondary(k winKind) *winHandle {
-	ctl := &winHandle{done: make(chan struct{})}
+	ctl := &winHandle{done: make(chan struct{}), plat: u.plat}
 	ctl.pal.Store(u.pal.Load()) // 初始主题快照（spawn 可能在托盘线程，原子读）
 	w := new(app.Window)
 	go u.runSecondary(w, k, ctl)
@@ -246,9 +279,14 @@ func (u *UI) spawnSecondary(k winKind) *winHandle {
 func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	defer close(ctl.done)
 	runFn := w.Run
-	ctl.runFn.Store(&runFn) // 次窗自己的线程投递槽——win32Run 单槽归主窗，不碰
+	ctl.runFn.Store(&runFn) // 次窗自己的线程投递槽——主窗投递槽归平台层，不碰
 	inval := w.Invalidate
 	ctl.invalidate.Store(&inval) // 主题广播后重绘请求（并发安全）
+	// Gio 侧关闭/抬升动作（无原生句柄平台走这两条；Perform 并发安全，§15.5）。
+	closeFn := func() { w.Perform(system.ActionClose) }
+	raiseFn := func() { w.Perform(system.ActionRaise) }
+	ctl.closeFn.Store(&closeFn)
+	ctl.raiseFn.Store(&raiseFn)
 	var form *settingsForm
 	if k == winSettings {
 		form = newSettingsForm(u) // 开窗现取快照（Options 回调；nil = 空表/只读占位）

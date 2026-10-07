@@ -217,7 +217,7 @@ func TestArmHeartbeat(t *testing.T) {
 // 参数化（真实光标不可控）。
 func TestHeartbeatNeed(t *testing.T) {
 	far := point{x: -1 << 29, y: -1 << 29} // 任何带外位置
-	u := &UI{}
+	u := &UI{plat: newFakePlat()}
 	if u.heartbeatNeedAt(far) {
 		t.Fatal("展开态不应心跳")
 	}
@@ -254,7 +254,7 @@ func TestHeartbeatNeed(t *testing.T) {
 // 及其上方 approach 余量内 → 心跳；带外（转写区深处/窗外）不因光标项心跳。
 // 几何：608×460@1x，行块 = [396,444)+上下边距 = [388,460)，带顶 = 388−12 = 376。
 func TestHeartbeatInputBand(t *testing.T) {
-	u := &UI{frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	u := &UI{plat: newFakePlat(), frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
 	u.x, u.y = 100, 200 // 窗口屏幕位 → 带 = 屏幕 x∈[100,708) y∈[576,660)
 	cases := []struct {
 		cur  point
@@ -277,7 +277,7 @@ func TestHeartbeatInputBand(t *testing.T) {
 		}
 	}
 	// 帧几何未就绪（headless 构造零值）= 不心跳。
-	if (&UI{}).cursorInInputBand(point{x: 130, y: 650}) {
+	if (&UI{plat: newFakePlat()}).cursorInInputBand(point{x: 130, y: 650}) {
 		t.Fatal("frameSize 未就绪不应心跳")
 	}
 }
@@ -285,7 +285,7 @@ func TestHeartbeatInputBand(t *testing.T) {
 // TestCursorHitsLogo logo 门控（D85）：矩形直采 × WindowFromPoint 命中直证。
 // headless（hwnd=0）退化为纯矩形直采——608×460@1x 窗口系 logo 钮 = [16,396,64,444)。
 func TestCursorHitsLogo(t *testing.T) {
-	u := &UI{frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
+	u := &UI{plat: newFakePlat(), frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
 	u.x, u.y = 227, 146
 	cases := []struct {
 		x, y int
@@ -349,7 +349,7 @@ func TestConfirmBtnRects(t *testing.T) {
 // 左上方块、右钮 = 右上方块），命中 = 窗口位 + 矩形含光标屏幕坐标；帧未就绪不命中。
 // 分层窗透明像素/窗外零 pointer 事件，Hover 收不到 Leave——tips 熄灭全靠本判定。
 func TestOverInputBtn(t *testing.T) {
-	u := &UI{}
+	u := &UI{plat: newFakePlat()}
 	u.frameSize = image.Pt(760, 575)
 	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	u.x, u.y = -16, 628
@@ -451,7 +451,7 @@ func TestEndDragClickKeepsPark(t *testing.T) {
 
 	// 纯点击：光标与按下点重合（位移 ≤ dragClickSlackPx）→ 跳过夹取，贴边位原样保留。
 	u.dragging = true
-	u.dragCur0 = cursorPos()
+	u.dragCur0 = u.cursorPos()
 	u.x, u.y = -380, 628
 	u.endDrag()
 	if u.x != -380 {
@@ -464,7 +464,7 @@ func TestEndDragClickKeepsPark(t *testing.T) {
 	// 真拖动（位移 > slack）：按输入栏锚点夹取（D52——透明边距可越界，夹到
 	// 输入栏贴左缘 x = -sideMargin，而非整窗的 x ≥ 0）。
 	u.dragging = true
-	u.dragCur0 = point{x: cursorPos().x + 100, y: cursorPos().y}
+	u.dragCur0 = point{x: u.cursorPos().x + 100, y: u.cursorPos().y}
 	u.x, u.y = -380, 628
 	u.endDrag()
 	if want := int32(-dpId(sideMarginDp)); u.x != want {

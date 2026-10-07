@@ -1,4 +1,4 @@
-package uigui
+package platform
 
 import "testing"
 
@@ -54,5 +54,15 @@ func TestFallbackHotkey(t *testing.T) {
 	fb := fallbackHotkey()
 	if fb.mods != modCtrl|modAlt || fb.vk != vkA || fb.label != "Ctrl+Alt+A" {
 		t.Fatalf("fallbackHotkey = {%x,%x,%q}", fb.mods, fb.vk, fb.label)
+	}
+}
+
+// TestValidateHotkey 设置窗写配置前的校验口径：合法放行、非法报错（与注册同解析）。
+func TestValidateHotkey(t *testing.T) {
+	if err := ValidateHotkey("Alt+A"); err != nil {
+		t.Errorf("ValidateHotkey(Alt+A) = %v, want nil", err)
+	}
+	if err := ValidateHotkey("A"); err == nil {
+		t.Error("ValidateHotkey(A) 应报错（缺修饰键）")
 	}
 }

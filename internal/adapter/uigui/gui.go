@@ -31,6 +31,8 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -196,7 +198,7 @@ type UI struct {
 	complList      []complItem       // 过滤后清单（drawCompl 呈现）
 	complRows      []image.Rectangle // 行命中矩形（窗口系，随帧重登记）
 	complTag       struct{}          // 行点击手势 tag
-	hwnd           uintptr
+	hwnd           platform.Handle   // 主窗句柄（非 Windows 恒 0）
 	// revealPending 启动防闪（D78）：挂接即隐藏、首帧 ULW 提交成功才揭示（激活前台）。
 	// 事件循环写（onHWND/fadePresent）、托盘线程读（showMain 呼出门）→ atomic。
 	revealPending atomic.Bool
@@ -379,7 +381,7 @@ func newUI(opts Options, window bool) *UI {
 		u.w = w                         // go 前发布：post 侧读取无竞争
 		u.wins.spawn = u.spawnSecondary // 功能窗开窗器（§15.7；仅窗口模式）
 		go u.runWindow(w)
-		startShell(u) // 托盘 + 全局快捷键线程（§15.1；仅窗口模式，headless 不起）
+		u.startShell() // 托盘 + 全局快捷键线程（§15.1；仅窗口模式，headless 不起）
 	} else {
 		go u.runHeadless()
 	}
@@ -407,8 +409,8 @@ func (u *UI) SetWindowSize(w, h int) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	w, h = clampWindowPx(w, h, platformWindowDPI(atomic.LoadUintptr(&mainHWND)), u.zoomLoad().scale)
-	resizeWindowTo(int32(w), int32(h))
+	w, h = clampWindowPx(w, h, u.plat.MainDPI(), u.zoomLoad().scale)
+	u.resizeWindowTo(int32(w), int32(h))
 }
 
 // zoomedMetric 缩放 Metric（D90 咽喉点，§15.8）：PxPerDp ×= scale（元素几何等比）、
@@ -463,7 +465,7 @@ func (u *UI) interruptNow() {
 // 先投 drain 并等其处理：post 是异步 FIFO，保证此前 Emit/Say 全部落进状态机，
 // 再投 quit 结束循环（对齐 uitui Close 的排空语义）。
 func (u *UI) Close() error {
-	trayDelete()      // 托盘图标随前端收尾清理（真销毁未走到 DestroyEvent 的路径防残留）
+	u.plat.DropTray() // 托盘图标随前端收尾清理（S4b：平台面）（真销毁未走到 DestroyEvent 的路径防残留）
 	u.wins.closeAll() // 功能窗收编（§15.7：退出 → 关闭全部次窗；headless 无开窗 = no-op）
 	done := make(chan struct{})
 	if !u.post(drainMsg{done: done}) {

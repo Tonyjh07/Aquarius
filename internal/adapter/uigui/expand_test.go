@@ -20,7 +20,7 @@ func expandFrame(q *input.Router, u *UI) {
 // newExpandUI 展开态测试 UI（inCh 可断言；首帧焦点入编辑器）。
 func newExpandUI(t *testing.T) (*UI, *input.Router) {
 	t.Helper()
-	u := &UI{followTail: true, inCh: make(chan port.UserInput, 8)}
+	u := &UI{plat: newFakePlat(), followTail: true, inCh: make(chan port.UserInput, 8)}
 	u.m = newModel(u)
 	u.th = testTheme()
 	u.editor.Submit = true

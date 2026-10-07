@@ -52,7 +52,7 @@ func savePos(path string, p posRec) {
 func (u *UI) commitWinGeom() {
 	if u.movePending {
 		u.movePending = false
-		moveWindowTo(u.x, u.y)
+		u.moveWindowTo(u.x, u.y)
 	}
 }
 
@@ -63,8 +63,8 @@ func (u *UI) applyConfiguredSize() {
 		return
 	}
 	w, h := clampWindowPx(u.opts.WindowWidth, u.opts.WindowHeight,
-		platformWindowDPI(u.hwnd), u.zoomLoad().scale)
-	resizeWindowTo(int32(w), int32(h))
+		u.plat.WindowDPI(u.hwnd), u.zoomLoad().scale)
+	u.resizeWindowTo(int32(w), int32(h))
 }
 
 // clampWindowPx 窗口像素夹取（D90）：粗界 [200,3840]×[200,2160]，再按布局地板

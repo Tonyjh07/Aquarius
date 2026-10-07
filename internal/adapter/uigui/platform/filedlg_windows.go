@@ -1,8 +1,8 @@
 //go:build windows
 
 // 附件文件选择框（Windows，D104）：GetOpenFileNameW 模态呈现——请求投托盘线程
-// （fileDlgMsg），模态泵不嵌 Gio 泵；选中路径经 attachMsg 投回主窗。
-package uigui
+// （fileDlgMsg），模态泵不嵌 Gio 泵；选中路径经 Host.FilePicked 回传。
+package platform
 
 import (
 	"syscall"
@@ -16,9 +16,9 @@ var procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW") // D104 附件�
 // 文件框常量。
 const fileDlgMsg = wmApp + 5 // 托盘线程呈现文件选择框（D104：模态泵不嵌 Gio 泵）
 
-// requestFileDlg 请求 shell 线程打开文件选择框（D104：对话框自带模态泵、不能嵌 Gio
+// RequestFileDialog 请求 shell 线程打开文件选择框（D104：对话框自带模态泵、不能嵌 Gio
 // 泵，D72 菜单同理）。shell 未就绪（启动微窗/headless）= 静默放弃。
-func (u *UI) requestFileDlg() {
+func (p *Plat) RequestFileDialog() {
 	if h := shellHWND.Load(); h != 0 {
 		procPostMessageW.Call(h, fileDlgMsg, 0, 0)
 	}
@@ -56,9 +56,9 @@ type openFileNameW struct {
 }
 
 // showFileDlg 文件选择框呈现（shell 线程，D104）：GetOpenFileNameW 自带模态泵，阻塞
-// 本线程与 TrackPopupMenu 同语义（D72 先例）；选中 → attachMsg 投回 Gio inbox，
+// 本线程与 TrackPopupMenu 同语义（D72 先例）；选中 → Host.FilePicked 回传，
 // 取消/出错静默。单选 v1（多选留 UserInput.Raw 口径扩展，D104④）。
-func (u *UI) showFileDlg() {
+func (p *Plat) showFileDlg() {
 	const (
 		ofnHideReadOnly  = 0x4
 		ofnNoChangeDir   = 0x8
@@ -95,7 +95,9 @@ func (u *UI) showFileDlg() {
 	if r == 0 {
 		return
 	}
-	u.post(attachMsg{path: syscall.UTF16ToString(buf)})
+	if p.host != nil {
+		p.host.FilePicked(syscall.UTF16ToString(buf))
+	}
 }
 
 // utf16Pairs 对话框过滤器串：段间单 NUL、末尾双 NUL 的 UTF-16（段 = 显示名/模式交替）。

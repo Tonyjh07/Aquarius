@@ -294,7 +294,7 @@ func (u *UI) cursorHitsRect(r image.Rectangle, cur point) bool {
 	if u.hwnd == 0 {
 		return true
 	}
-	return windowFromPoint(cur) == u.hwnd
+	return u.windowFromPoint(cur) == u.hwnd
 }
 
 // anchorFor 当前状态的可见锚点（夹取/吸附共用口径，D50/D52）：收起 = 球、
@@ -329,7 +329,7 @@ func (u *UI) clampPos(x, y int32) (int32, int32) {
 	if !ok {
 		return x, y
 	}
-	work, wok := platformWorkArea(anchorCenter(point{x: x, y: y}, a))
+	work, wok := u.workArea(anchorCenter(point{x: x, y: y}, a))
 	if !wok {
 		return x, y
 	}
@@ -347,14 +347,14 @@ func (u *UI) evalDockFrame() {
 	}
 	pos := point{x: u.x, y: u.y}
 	center := anchorCenter(pos, a)
-	work, wok := platformWorkArea(center)
+	work, wok := u.workArea(center)
 	if !wok {
 		return
 	}
 	edge := ""
 	{
-		outL := !platformMonitorAt(point{x: work.left - 2, y: center.y})
-		outR := !platformMonitorAt(point{x: work.right + 2, y: center.y})
+		outL := !u.monitorAt(point{x: work.left - 2, y: center.y})
+		outR := !u.monitorAt(point{x: work.right + 2, y: center.y})
 		edge = dockableEdge(pos, a, work, int32(u.frameMetric.Dp(snapDp)), outL, outR)
 	}
 	// 召回滑行中：目标边即停靠边（中段不贴齐，dockableEdge 会落空——沿用停靠边
@@ -363,7 +363,7 @@ func (u *UI) evalDockFrame() {
 		edge = edgeName(u.dockHint.Load())
 	}
 	u.edgeNow = edge // 当帧可停靠边（心跳判据，见 armHeartbeat）
-	over := insideRect(a.Add(image.Pt(int(u.x), int(u.y))), cursorPos())
+	over := insideRect(a.Add(image.Pt(int(u.x), int(u.y))), u.cursorPos())
 	armed, act := evalDock(dockInputs{
 		docked:    u.docked,
 		collapsed: u.collapsed,
@@ -390,7 +390,7 @@ const tipBandSlackDp = 12
 // 需帧驱动，事件静默时 50ms 复评）/ 光标在输入行带内（D84）→ 需要主动唤帧；否则静默
 // 零帧。
 func (u *UI) heartbeatNeed() bool {
-	return u.heartbeatNeedAt(cursorPos())
+	return u.heartbeatNeedAt(u.cursorPos())
 }
 
 // heartbeatNeedAt 同 heartbeatNeed，光标项参数化（可测，D84）。
@@ -454,7 +454,7 @@ func (u *UI) savePosRec(docked string) {
 	if u.opts.PosFile == "" {
 		return
 	}
-	tm := topMostQuery()
+	tm := u.plat.TopMost()
 	savePos(u.opts.PosFile, posRec{X: u.x, Y: u.y, TopMost: &tm, Docked: docked})
 }
 
@@ -497,7 +497,7 @@ func (u *UI) undockInstant() {
 		u.x, u.y = u.dockAn.toPos.x, u.dockAn.toPos.y
 	} else if edge := edgeName(u.dockHint.Load()); edge != "" {
 		if a, ok := u.ballAnchor(); ok {
-			if work, wok := platformWorkArea(anchorCenter(point{x: u.x, y: u.y}, a)); wok {
+			if work, wok := u.workArea(anchorCenter(point{x: u.x, y: u.y}, a)); wok {
 				p := parkPos(point{x: u.x, y: u.y}, a, work, edge)
 				u.x, u.y = p.x, p.y
 			}
@@ -596,14 +596,6 @@ func (u *UI) stepAnim() {
 	}
 }
 
-// restorePx 恢复期 dp→px 换算（D90 治本：DPI 由 GetDpiForWindow 对主窗直查——废除旧
-// 「实测窗高 ÷ winHeightDp」反推，窗口尺寸可配后该假设必错；查询类直接调，取不到
-// （句柄无效/老系统）回落 1.0 = 100% 口径）。restoreDock 与普通恢复夹取共用（D50/D52）。
-func restorePx(h uintptr) func(dp int) int32 {
-	scale := platformWindowDPI(h)
-	return func(dp int) int32 { return int32(math.Round(float64(dp) * scale)) }
-}
-
 // restoreDock 位置记忆的停靠恢复（D50）：停靠位按当前工作区重算（存的 X/Y 忽略）；
 // 外侧边判定失效（接缝/分辨率变化）→ 返回 false 落回普通恢复（贴边可见）。
 // dp→px 比例由 platformWindowDPI 对主窗直查（D90；此刻 frameMetric 未就绪）。
@@ -612,24 +604,24 @@ func (u *UI) restoreDock(p posRec, rc rect) bool {
 	if hPx <= 0 {
 		return false
 	}
-	px := restorePx(u.hwnd)
+	px := u.restorePx(u.hwnd)
 	bx := px(sideMarginDp)
 	by := hPx - px(inputRowBandDp) + px(pillTopDp)
 	bd := px(inputRowDp)
 	anchor := image.Rect(int(bx), int(by), int(bx+bd), int(by+bd))
 	pos := point{x: p.X, y: p.Y}
 	center := anchorCenter(pos, anchor)
-	work, ok := platformWorkArea(center)
+	work, ok := u.workArea(center)
 	if !ok {
 		return false
 	}
-	outL := !platformMonitorAt(point{x: work.left - 2, y: center.y})
-	outR := !platformMonitorAt(point{x: work.right + 2, y: center.y})
+	outL := !u.monitorAt(point{x: work.left - 2, y: center.y})
+	outR := !u.monitorAt(point{x: work.right + 2, y: center.y})
 	if (p.Docked == "left" && !outL) || (p.Docked == "right" && !outR) {
 		return false
 	}
 	slide := dockSlidePos(pos, anchor, work, p.Docked, px(dockSliverDp))
-	moveWindowTo(slide.x, slide.y)
+	u.moveWindowTo(slide.x, slide.y)
 	u.x, u.y = slide.x, slide.y
 	u.alpha = dockAlpha // D62：随首帧 ULW 生效（restoreDock 在首帧前，无需单独下发）
 	u.docked = true

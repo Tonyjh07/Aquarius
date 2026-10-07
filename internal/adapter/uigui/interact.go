@@ -1,6 +1,8 @@
 package uigui
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+
 	"image"
 	"io"
 	"strings"
@@ -126,7 +128,7 @@ func (u *UI) updateClicks(gtx layout.Context) {
 		u.confirmElevate() // D86：/permission 升一档 + 放行本次
 	}
 	if u.attachBtn.Clicked(gtx) {
-		u.requestFileDlg() // D104：附件槽 → shell 线程文件选择框（模态泵不嵌 Gio 泵）
+		u.plat.RequestFileDialog() // D104：附件槽 → shell 线程文件选择框（模态泵不嵌 Gio 泵）
 	}
 	if u.attachClear.Clicked(gtx) {
 		u.m.clearAttach() // D104：暂存 chip 点击 = 取消暂存
@@ -327,7 +329,7 @@ func (u *UI) requestBubbleMenu(ctx *bubbleMenuCtx) {
 		return
 	}
 	u.bubbleMenu.Store(ctx)
-	postBubbleMenu()
+	u.plat.PostMenu(platform.MenuBubble)
 }
 
 // beginDrag 记录拖动基准（窗口左上角 + 光标位置，铁律 2 绝对跟踪；按下时窗口未
@@ -338,7 +340,7 @@ func (u *UI) requestBubbleMenu(ctx *bubbleMenuCtx) {
 func (u *UI) beginDrag() {
 	if u.hwnd != 0 {
 		u.dragWin0 = point{x: u.x, y: u.y}
-		u.dragCur0 = cursorPos()
+		u.dragCur0 = u.cursorPos()
 		u.dragging = true
 	}
 }
@@ -348,7 +350,7 @@ func (u *UI) moveDrag() {
 	if !u.dragging {
 		return
 	}
-	cur := cursorPos()
+	cur := u.cursorPos()
 	x := u.dragWin0.x + (cur.x - u.dragCur0.x)
 	y := u.dragWin0.y + (cur.y - u.dragCur0.y)
 	u.x, u.y = u.clampPos(x, y)
@@ -366,7 +368,7 @@ func (u *UI) endDrag() {
 			u.x, u.y = u.clampPos(u.x, u.y)
 			if a, ok := u.anchorFor(); ok {
 				pos := point{x: u.x, y: u.y}
-				if work, wok := platformWorkArea(anchorCenter(pos, a)); wok {
+				if work, wok := u.workArea(anchorCenter(pos, a)); wok {
 					if d := snapDelta(pos, a, work, int32(u.frameMetric.Dp(snapDp))); d != (point{}) {
 						u.x += d.x
 						u.y += d.y
@@ -385,7 +387,7 @@ func (u *UI) endDrag() {
 
 // clickHeld 抬起时位移小于阈值 = 单击（与拖窗判定互斥）。
 func (u *UI) clickHeld() bool {
-	cur := cursorPos()
+	cur := u.cursorPos()
 	dx, dy := cur.x-u.dragCur0.x, cur.y-u.dragCur0.y
 	if dx < 0 {
 		dx = -dx

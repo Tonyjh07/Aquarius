@@ -15,7 +15,7 @@ import (
 // newTestModel 无事件循环的模型 + 最小 UI（不经帧循环，直接驱动状态机）。
 func newTestModel(t *testing.T) (*model, *UI) {
 	t.Helper()
-	u := &UI{
+	u := &UI{plat: newFakePlat(),
 		inCh:  make(chan port.UserInput, inputCap),
 		eofCh: make(chan struct{}),
 	}

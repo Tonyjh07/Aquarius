@@ -14,7 +14,7 @@ import (
 // newEditUI 带 inCh 的编辑流测试 UI（newFrameUI 无 inCh——编辑提交要断言通道）。
 // 编辑器对齐生产配置（SingleLine，gui.go:326）——多行文本在 SetText/Insert 时压平。
 func newEditUI() *UI {
-	u := &UI{followTail: true, inCh: make(chan port.UserInput, 8)}
+	u := &UI{plat: newFakePlat(), followTail: true, inCh: make(chan port.UserInput, 8)}
 	u.m = newModel(u)
 	u.th = testTheme()
 	u.editor.Submit = true

@@ -13,13 +13,15 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 )
 
 // newShapeUI 形裁登记用的最小 UI（frameMetric 供淡出带剔除换算；bandBottom = 带底，
 // 生产里由 layout 每帧写入——D54 动画前恒为 §15.3 静息顶带底 Dp(fadeBandDp)）。
 func newShapeUI(pxPerDp float32) *UI {
 	m := unit.Metric{PxPerDp: pxPerDp, PxPerSp: pxPerDp}
-	return &UI{frameMetric: m, bandBottom: m.Dp(fadeBandDp)}
+	return &UI{plat: newFakePlat(), frameMetric: m, bandBottom: m.Dp(fadeBandDp)}
 }
 
 // TestRecordStoresOutlineAndClip 形状登记（D44/D45/D62）：存真轮廓（未按视口/带裁剪——
@@ -198,7 +200,7 @@ func TestOvershootStaysInFrame(t *testing.T) {
 
 // TestFrameItemsLive 帧内容（渲染视图）：定稿块 + 实时思考 + 流式草稿顺序。
 func TestFrameItemsLive(t *testing.T) {
-	u := &UI{}
+	u := &UI{plat: newFakePlat()}
 	u.m = newModel(u)
 	u.m.add(blockUser, "你好")
 	u.m.think.WriteString("想")
@@ -221,10 +223,12 @@ func TestFrameItemsLive(t *testing.T) {
 }
 
 // newFrameUI 帧级无窗口测试用的最小 UI（不起事件循环，与 TestFrameItemsLive 同法——
-// §15.5：GUI 只进无窗口 headless 测试）。followTail 初值对齐 newUI。
+// §15.5：GUI 只进无窗口 headless 测试）。followTail 初值对齐 newUI；装假平台
+// （S4b：原 presentMain/revealMain/visMain/mainHWND 注入槽的替代，取用见 fakeOf）。
 func newFrameUI() *UI {
-	representLadder = nil // D115：防梯次 goroutine 在测试结束后读全局槽（-race）
-	u := &UI{followTail: true}
+	representLadder = nil // D115：防梯次 goroutine 在测试结束后继续提交（-race）
+	u := &UI{plat: newFakePlat(), followTail: true}
+	u.plat = newFakePlat()
 	u.m = newModel(u)
 	u.th = testTheme()
 	return u
@@ -287,7 +291,7 @@ func TestFrameCommitBeforeSubmitOverlayAfter(t *testing.T) {
 
 // TestFadePresentSubmitsBitmap D62：fadePresent 把整窗位图与当前不透明度一并交
 // mainPresent（SourceConstantAlpha = u.alpha）；合成失败（composed=false）不提交，
-// 保持上一帧位图。经 presentMain 槽注入捕获（生产恒 mainPresent）。
+// 保持上一帧位图。经假平台 OnPresent 钩子捕获。
 func TestFadePresentSubmitsBitmap(t *testing.T) {
 	u := newFrameUI()
 	u.hwnd = 1 // 非 0 即过门控（windowRectPx 无真句柄 → 回退 u.x/u.y）
@@ -300,12 +304,12 @@ func TestFadePresentSubmitsBitmap(t *testing.T) {
 	var gotAlpha byte
 	var gotBits []byte
 	calls := 0
-	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+	fp := fakeOf(u)
+	fp.OnPresent = func(x, y, w, h int32, bits []byte, alpha byte) bool {
 		calls++
 		gotX, gotY, gotW, gotH, gotAlpha, gotBits = x, y, w, h, alpha, bits
 		return true
 	}
-	defer func() { presentMain = mainPresent }()
 
 	u.fadePresent(false)
 	if calls != 0 {
@@ -326,7 +330,7 @@ func TestFadePresentSubmitsBitmap(t *testing.T) {
 	}
 }
 
-// TestFadePresentRevealRepresents D88：揭示帧在 revealMain 后立即补提交一次——
+// TestFadePresentRevealRepresents D88：揭示帧在平台揭示后立即补提交一次——
 // ShowWindow 重显瞬间 DWM 可能呈现 Gio 的不透明重定向表面（构建后首启一次性竞态，
 // 无法现场复现），可见态必须有紧随的 ULW 提交焊死；revealPending 清零后不再补。
 func TestFadePresentRevealRepresents(t *testing.T) {
@@ -336,15 +340,12 @@ func TestFadePresentRevealRepresents(t *testing.T) {
 	u.fadeBuf = make([]byte, 100*80*4)
 	u.revealPending.Store(true)
 
-	oldReveal := revealMain
-	revealMain = func(uintptr) {}
-	defer func() { revealMain = oldReveal }()
+	fp := fakeOf(u)
 	calls := 0
-	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+	fp.OnPresent = func(x, y, w, h int32, bits []byte, alpha byte) bool {
 		calls++
 		return true
 	}
-	defer func() { presentMain = mainPresent }()
 
 	u.fadePresent(true)
 	if calls != 2 {
@@ -365,12 +366,12 @@ func TestRepresentAfterShow(t *testing.T) {
 
 	calls := 0
 	var gotX, gotY int32
-	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+	fp := fakeOf(u)
+	fp.OnPresent = func(x, y, w, h int32, bits []byte, alpha byte) bool {
 		calls++
 		gotX, gotY = x, y
 		return true
 	}
-	defer func() { presentMain = mainPresent }()
 
 	u.representAfterShow() // fadeBuf 未就绪
 	if calls != 0 {
@@ -390,12 +391,13 @@ func TestRepresentAfterShowLadder(t *testing.T) {
 	u.frameSize = image.Pt(10, 10)
 	u.fadeBuf = make([]byte, 10*10*4)
 
-	oldLadder, oldVis, oldPresent := representLadder, visMain, presentMain
-	defer func() { representLadder, visMain, presentMain = oldLadder, oldVis, oldPresent }()
+	oldLadder := representLadder
+	defer func() { representLadder = oldLadder }()
 	representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
-	visMain = func() bool { return true }
+	fp := fakeOf(u)
+	fp.VisibleNow = true
 	var calls int32 // 梯次 goroutine 并发写：必须原子
-	presentMain = func(int32, int32, int32, int32, []byte, byte) bool {
+	fp.OnPresent = func(int32, int32, int32, int32, []byte, byte) bool {
 		atomic.AddInt32(&calls, 1)
 		return true
 	}
@@ -416,12 +418,13 @@ func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
 	u.frameSize = image.Pt(10, 10)
 	u.fadeBuf = make([]byte, 10*10*4)
 
-	oldLadder, oldVis, oldPresent := representLadder, visMain, presentMain
-	defer func() { representLadder, visMain, presentMain = oldLadder, oldVis, oldPresent }()
+	oldLadder := representLadder
+	defer func() { representLadder = oldLadder }()
 	representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
-	visMain = func() bool { return false }
+	fp := fakeOf(u)
+	fp.VisibleNow = false
 	var calls int32
-	presentMain = func(int32, int32, int32, int32, []byte, byte) bool {
+	fp.OnPresent = func(int32, int32, int32, int32, []byte, byte) bool {
 		atomic.AddInt32(&calls, 1)
 		return true
 	}
@@ -440,9 +443,14 @@ func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
 // 否则永不首帧、永不揭示。
 func TestPresentableDuringReveal(t *testing.T) {
 	u := newFrameUI()
-	if u.presentable() != mainVisible() {
-		t.Fatalf("无揭示待定：presentable 应等于 mainVisible()（平台口径），got %v want %v",
-			u.presentable(), mainVisible())
+	fp := fakeOf(u)
+	if u.presentable() != fp.VisibleNow {
+		t.Fatalf("无揭示待定：presentable 应等于平台可见性，got %v want %v",
+			u.presentable(), fp.VisibleNow)
+	}
+	fp.VisibleNow = false
+	if u.presentable() {
+		t.Fatal("平台报告不可见时应不提交（防隐藏后仍有帧把位图唤回）")
 	}
 	u.revealPending.Store(true)
 	if !u.presentable() {
@@ -460,19 +468,18 @@ func TestFirstPresentRevealsWindow(t *testing.T) {
 	u.fadeBuf = make([]byte, 100*80*4)
 	u.x, u.y = 0, 0
 
-	oldPresent, oldReveal := presentMain, revealMain
-	defer func() { presentMain, revealMain = oldPresent, oldReveal }()
+	fp := fakeOf(u)
 	reveals := 0
-	revealMain = func(uintptr) { reveals++ }
+	fp.OnReveal = func(platform.Handle) { reveals++ }
 
 	u.revealPending.Store(true)
-	presentMain = func(int32, int32, int32, int32, []byte, byte) bool { return false }
+	fp.OnPresent = func(int32, int32, int32, int32, []byte, byte) bool { return false }
 	u.fadePresent(true)
 	if reveals != 0 || !u.revealPending.Load() {
 		t.Fatalf("提交失败不应揭示、待定保持: reveals=%d pending=%v", reveals, u.revealPending.Load())
 	}
 
-	presentMain = func(int32, int32, int32, int32, []byte, byte) bool { return true }
+	fp.OnPresent = func(int32, int32, int32, int32, []byte, byte) bool { return true }
 	u.fadePresent(true)
 	if reveals != 1 {
 		t.Fatalf("首帧提交成功应揭示一次, got %d", reveals)
@@ -710,7 +717,7 @@ func TestWheelGesturePinStateMachine(t *testing.T) {
 	if !u.wheelCap {
 		t.Fatal("滚轮真有增量后手势应挂上")
 	}
-	if cur := cursorPos(); u.wheelAnchor != cur {
+	if cur := u.cursorPos(); u.wheelAnchor != cur {
 		t.Fatalf("锚点 = %v, want 当帧光标 %v", u.wheelAnchor, cur)
 	}
 
@@ -721,7 +728,7 @@ func TestWheelGesturePinStateMachine(t *testing.T) {
 	}
 
 	// ③ 光标移位（锚点失配）：解除。
-	u.wheelAnchor = point{x: cursorPos().x + 99, y: cursorPos().y}
+	u.wheelAnchor = point{x: u.cursorPos().x + 99, y: u.cursorPos().y}
 	frame()
 	if u.wheelCap {
 		t.Fatal("光标移位应解除手势")
@@ -742,30 +749,29 @@ func TestWheelGesturePinStateMachine(t *testing.T) {
 
 // TestFadePresentPinsCursorPixelDuringGesture D71 钉点落笔：手势期间提交位图的光标
 // 所在像素 alpha 顶到 ≥1（分层窗逐像素命中保住 → 透明间隙不吞滚轮），只钉 A==0 像素、
-// 解除后不再钉、光标在帧外不落笔。经 presentMain 槽捕获提交字节（钉点须在提交前）。
+// 解除后不再钉、光标在帧外不落笔。经假平台 OnPresent 钩子捕获提交字节（钉点须在提交前）。
 func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
 	u := newFrameUI()
 	u.hwnd = 1 // 非 0 即过门控（windowRectPx 无真句柄 → 回退 u.x/u.y）
 	u.frameSize = image.Pt(400, 300)
 	u.fadeBuf = make([]byte, 400*300*4) // 全透明间隙帧
-	cur := cursorPos()
+	cur := u.cursorPos()
 	u.x, u.y = cur.x-200, cur.y-150 // 窗口对齐光标 → 光标落帧中心 (200,150)
 	oi := (150*400 + 200) * 4
 
 	var presented []byte
-	old := presentMain
-	presentMain = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+	fp := fakeOf(u)
+	fp.OnPresent = func(x, y, w, h int32, bits []byte, alpha byte) bool {
 		presented = append([]byte(nil), bits...)
 		return true
 	}
-	defer func() { presentMain = old }()
 
 	// ① 手势进行中：间隙像素钉到 alpha=1（提交字节里已含钉点）。
 	u.wheelCap = true
 	u.wheelAnchor = cur
 	u.fadePresent(true)
 	if presented == nil {
-		t.Fatal("presentMain 未被调用")
+		t.Fatal("平台 Present 未被调用")
 	}
 	if presented[oi+3] != 1 {
 		t.Fatalf("钉点像素 alpha = %d, want 1（间隙像素应钉到 ≥1 保住命中）", presented[oi+3])
@@ -776,7 +782,7 @@ func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
 	presented = nil
 	u.fadePresent(true)
 	if presented == nil {
-		t.Fatal("presentMain 未被调用")
+		t.Fatal("平台 Present 未被调用")
 	}
 	if presented[oi+3] != 40 {
 		t.Fatalf("内容像素 alpha = %d, want 40（既有可见像素不应改写）", presented[oi+3])
@@ -788,7 +794,7 @@ func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
 	presented = nil
 	u.fadePresent(true)
 	if presented == nil {
-		t.Fatal("presentMain 未被调用")
+		t.Fatal("平台 Present 未被调用")
 	}
 	if presented[oi+3] != 0 {
 		t.Fatalf("解除后 alpha = %d, want 0（恢复穿透）", presented[oi+3])
@@ -800,7 +806,7 @@ func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
 	presented = nil
 	u.fadePresent(true)
 	if presented == nil {
-		t.Fatal("presentMain 未被调用")
+		t.Fatal("平台 Present 未被调用")
 	}
 	if presented[oi+3] != 0 {
 		t.Fatalf("帧外钉点 alpha = %d, want 0", presented[oi+3])

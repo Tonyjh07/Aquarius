@@ -1,15 +1,13 @@
 //go:build windows
 
 // 托盘图标（Windows）：Shell_NotifyIconW 增删、内嵌 ico 解析呈现与托盘右键菜单
-// 呈现入口（菜单项构造在 menu_windows.go，共享 runMenu）。
-package uigui
+// 呈现入口（菜单项集回调宿主现取，见 shell_windows.go 的 PostMenu 与 menu_windows.go）。
+package platform
 
 import (
 	"fmt"
 	"syscall"
 	"unsafe"
-
-	"github.com/Tonyjh07/Aquarius/assets"
 )
 
 var shell32 = syscall.NewLazyDLL("shell32.dll")
@@ -55,8 +53,8 @@ type notifyIconData struct {
 }
 
 // addTrayIcon 托盘图标 + 提示（v3 回调：legacy WM_LBUTTONUP/WM_RBUTTONUP）。
-func addTrayIcon(hwnd uintptr) {
-	icon := trayIcon()
+func (p *Plat) addTrayIcon(hwnd uintptr) {
+	icon := p.trayIcon()
 	var nid notifyIconData
 	nid.cbSize = uint32(unsafe.Sizeof(nid))
 	nid.hWnd = hwnd
@@ -72,10 +70,10 @@ func addTrayIcon(hwnd uintptr) {
 	}
 }
 
-// trayIcon 托盘图标：内嵌 ico → 16px 档 → CreateIconFromResourceEx；
-// 失败回落系统默认图标（spike 口径）。
-func trayIcon() uintptr {
-	if b, err := icoImage(assets.TrayICO, 16); err == nil && len(b) > 0 {
+// trayIcon 托盘图标：内嵌 ico（uigui 侧已解析出 16px 档）→ CreateIconFromResourceEx；
+// 未给图标/解析失败回落系统默认图标（spike 口径）。
+func (p *Plat) trayIcon() uintptr {
+	if b := p.cfg.TrayIcon; len(b) > 0 {
 		if h, _, _ := procCreateIconFromResourceEx.Call(
 			uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), 1, iconResVersion, 0, 0); h != 0 {
 			return h
@@ -85,9 +83,9 @@ func trayIcon() uintptr {
 	return h
 }
 
-// trayDelete 移除托盘图标（NIM_DELETE 自带消息投递，线程无关；幂等）。
+// DropTray 移除托盘图标（NIM_DELETE 自带消息投递，线程无关；幂等）。
 // 关窗销毁与退出清理两处调用，防悬浮区残留。
-func trayDelete() {
+func (p *Plat) DropTray() {
 	h := shellHWND.Load()
 	if h == 0 {
 		return
@@ -101,9 +99,10 @@ func trayDelete() {
 }
 
 // showTrayMenu 托盘右键菜单呈现（§15.1：显示/隐藏、置顶开关、功能窗入口（§15.7，随各窗
-// 步启用）+ 退出）；项集走中性 trayMenuItems，建单/呈现/分发走共享件（D72）。
-func showTrayMenu(hwnd uintptr) {
-	if u := shellUI.Load(); u != nil {
-		menuDispatch(u, runMenu(hwnd, trayMenuItems()))
+// 步启用）+ 退出）；项集回调宿主现取，建单/呈现/分发走共享件（D72）。
+func (p *Plat) showTrayMenu(hwnd uintptr) {
+	if p.host == nil {
+		return
 	}
+	p.dispatch(MenuTray, p.runMenu(hwnd, p.host.MenuItems(MenuTray)))
 }

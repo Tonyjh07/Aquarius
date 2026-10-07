@@ -1,6 +1,8 @@
 package uigui
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+
 	"image"
 	"image/color"
 
@@ -137,7 +139,7 @@ func (u *UI) requestLogoMenu() {
 		u.logoMenuHook()
 		return
 	}
-	postLogoMenu()
+	u.plat.PostMenu(platform.MenuLogo)
 }
 
 // updateLogo logo 圆钮手势（§15.1 把手含 logo）：拖动移窗；单击（位移小于

@@ -1,6 +1,8 @@
 package uigui
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+
 	"fmt"
 	"strconv"
 	"strings"
@@ -63,7 +65,7 @@ func (u *UI) saveSettings(f *settingsForm) {
 		p.WindowHeight = n
 	}
 	if p.Hotkey != "" {
-		if _, err := parseHotkey(p.Hotkey); err != nil {
+		if err := platform.ValidateHotkey(p.Hotkey); err != nil {
 			f.err = true
 			f.status = "快捷键非法：" + err.Error()
 			return
@@ -315,5 +317,5 @@ func (f *settingsForm) drainTestResults() {
 // 平台 = 槽更新即止。
 func (u *UI) setHotkey(hk string) {
 	u.hotkeyCfg.Store(hk)
-	reRegisterHotkey()
+	u.plat.ReloadHotkey()
 }

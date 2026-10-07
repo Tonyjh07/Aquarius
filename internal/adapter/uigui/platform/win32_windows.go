@@ -1,22 +1,15 @@
 //go:build windows
 
-// Win32 补位（§15.6 spike 移植 + D44/§15.1、§15.3、D62）：
-//   - 整窗 ULW：mainPresent——全帧合成位图直接提主窗（位图 alpha 即形状/命中/穿透，
-//     单通道；形裁 / LWA_ALPHA / overlay 独立窗三机制随 D62 退役）
-//   - 定位/夹取/光标跟踪（位置记忆、拖动，§15.6 铁律 2）
+// Win32 平台实现（§15.6 spike 移植 + D44/§15.1、§15.3、D62）：整窗 ULW 像素提交、
+// 窗口定位/夹取/光标跟踪、显示器与 DPI 查询、置顶与任务栏屏蔽、启动防闪的隐藏/揭示。
 //
-// 修改性调用一律经 onWindowThread（Window.Run，§15.6 铁律 1）；查询类直接调用。
-// 托盘与全局快捷键在托盘步接入（spike/giospike/win32.go 为验证底本）。
-package uigui
+// 修改性调用一律经 p.onWindowThread（Gio `Window.Run`，§15.6 铁律 1）；查询类直接调用。
+package platform
 
 import (
 	"fmt"
-	"sync/atomic"
 	"syscall"
 	"unsafe"
-
-	"gioui.org/app"
-	"gioui.org/io/event"
 )
 
 var (
@@ -38,6 +31,8 @@ var (
 	procCreateWindowExW     = user32.NewProc("CreateWindowExW")
 	procDefWindowProcW      = user32.NewProc("DefWindowProcW")
 	procShowWindow          = user32.NewProc("ShowWindow")
+	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
+	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 	procUpdateLayeredWindow = user32.NewProc("UpdateLayeredWindow")
 	procCreateCompatibleDC  = gdi32.NewProc("CreateCompatibleDC")
 	procCreateDIBSection    = gdi32.NewProc("CreateDIBSection")
@@ -62,6 +57,7 @@ const (
 	wsExToolWindow = 0x00000080
 	wsExTopMost    = 0x00000008
 	swHide         = 0
+	swRestore      = 9
 
 	ulwAlpha   = 0x00000002
 	acSrcOver  = 0
@@ -70,11 +66,16 @@ const (
 	dibRGBColors = 0
 )
 
+// winRect/winPoint：x64 与 C 布局一致的私有 POD（导出 DTO Rect/Point 字段名不同，
+// 平台调用一律用这两个，边界处转换）。
+type winRect struct{ left, top, right, bottom int32 }
+type winPoint struct{ x, y int32 }
+
 // monitorInfo MONITORINFO（x64 布局与 C 一致）。
 type monitorInfo struct {
 	cbSize    uint32
-	rcMonitor rect
-	rcWork    rect
+	rcMonitor winRect
+	rcWork    winRect
 	dwFlags   uint32
 }
 
@@ -117,115 +118,131 @@ type (
 	sizeXY struct{ cx, cy int32 }
 )
 
-// viewEvent 从 Gio 事件提取窗口句柄（Win32ViewEvent 仅 Windows 定义）。
-func (u *UI) viewEvent(ev event.Event) (uintptr, bool) {
-	e, ok := ev.(app.Win32ViewEvent)
-	if !ok {
-		return 0, false
-	}
-	return e.HWND, true
+// toRect/fromPoint：私有 POD ↔ 导出 DTO。
+func toRect(r winRect) Rect {
+	return Rect{Left: r.left, Top: r.top, Right: r.right, Bottom: r.bottom}
 }
 
-// windowRectPx 取主窗口物理像素矩形（拖动基准与 ULW 定位）。
-func windowRectPx() (rect, bool) {
-	h := atomic.LoadUintptr(&mainHWND)
+func toWinPoint(p Point) winPoint { return winPoint{x: p.X, y: p.Y} }
+
+// NativeWindowControl Windows = true：平台自管窗口位置/尺寸/显隐（SetWindowPos）与像素
+// 提交（ULW 整窗位图），uigui 据此走无边框悬浮球形态 + 自管窗口的机制（停靠/吸附/拖动）。
+func (p *Plat) NativeWindowControl() bool { return true }
+
+// MainHandle 主窗句柄（0 = 未挂接）；跨 goroutine 安全（原子读）。
+func (p *Plat) MainHandle() Handle { return Handle(p.mainHWND.Load()) }
+
+// AttachMain 挂接主窗句柄（uigui 的 onHWND 调用）：此后显隐/几何/像素提交才有目标窗。
+func (p *Plat) AttachMain(h Handle) { p.mainHWND.Store(uintptr(h)) }
+
+// SetMainRun 注册主窗窗口线程投递（Gio `Window.Run`；runWindow 起手调用）。
+func (p *Plat) SetMainRun(run RunFunc) { p.mainRun.Store(&run) }
+
+// WindowRect 主窗物理像素矩形（拖动基准与 ULW 定位）。
+func (p *Plat) WindowRect() (Rect, bool) {
+	h := p.mainHWND.Load()
 	if h == 0 {
-		return rect{}, false
+		return Rect{}, false
 	}
-	var rc rect
+	var rc winRect
 	if r, _, _ := procGetWindowRect.Call(h, uintptr(unsafe.Pointer(&rc))); r == 0 {
-		return rect{}, false
+		return Rect{}, false
 	}
-	return rc, true
+	return toRect(rc), true
 }
 
-// moveWindowTo 移动主窗口（不改尺寸）；经窗口线程执行（铁律 1）。
-func moveWindowTo(x, y int32) {
-	h := atomic.LoadUintptr(&mainHWND)
+// MoveWindow 移动主窗（不改尺寸）；经窗口线程执行（铁律 1）。
+func (p *Plat) MoveWindow(x, y int32) {
+	h := p.mainHWND.Load()
 	if h == 0 {
 		return
 	}
-	onWindowThread(func() {
+	p.onWindowThread(func() {
 		procSetWindowPos.Call(h, 0, uintptr(x), uintptr(y), 0, 0,
 			swpNoSize|swpNoZOrder|swpNoActivate)
 	})
 }
 
-// resizeWindowTo 改主窗尺寸（保位，D90）；经窗口线程执行（铁律 1）。Gio 收 WM_SIZE
+// ResizeWindow 改主窗尺寸（保位，D90）；经窗口线程执行（铁律 1）。Gio 收 WM_SIZE
 // 后下帧以新 Constraints 重排；fadePresent 的尺寸竞态守卫（实测矩形 ≠ frameSize
 // 跳帧）兜底对齐一帧。
-func resizeWindowTo(w, h int32) {
-	hh := atomic.LoadUintptr(&mainHWND)
+func (p *Plat) ResizeWindow(w, h int32) {
+	hh := p.mainHWND.Load()
 	if hh == 0 {
 		return
 	}
-	onWindowThread(func() {
+	p.onWindowThread(func() {
 		procSetWindowPos.Call(hh, 0, 0, 0, uintptr(w), uintptr(h),
 			swpNoMove|swpNoZOrder|swpNoActivate)
 	})
 }
 
-// cursorPos 取光标屏幕坐标（拖动增量的绝对基准，铁律 2）。
-func cursorPos() point {
-	var pt point
+// CursorPos 取光标屏幕坐标（拖动增量的绝对基准，铁律 2）。
+func (p *Plat) CursorPos() Point {
+	var pt winPoint
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-	return pt
+	return Point{X: pt.x, Y: pt.y}
 }
 
-// windowFromPoint 光标处的顶层窗口（OS 命中判定的同款查询，D85）：返回 0 = 无窗口。
+// WindowFromPoint 光标处的顶层窗口（OS 命中判定的同款查询，D85）：返回 0 = 无窗口。
 // WindowFromPoint 的 POINT 参数按 **值** 传递（x64 单寄存器：低 32 位 = x、高 32 位 = y，
 // 两成员均为原始 32 位，负坐标不符号扩展）。
-func windowFromPoint(p point) uintptr {
-	arg := uintptr(uint32(p.x)) | uintptr(uint32(p.y))<<32
+func (p *Plat) WindowFromPoint(pt Point) Handle {
+	arg := uintptr(uint32(pt.X)) | uintptr(uint32(pt.Y))<<32
 	h, _, _ := procWindowFromPoint.Call(arg)
-	return h
+	return Handle(h)
 }
 
-// platformWorkArea 最近显示器工作区（查询类直接调）——锚点夹取/吸附/停靠共用口径
+// WorkArea 最近显示器工作区（查询类直接调）——锚点夹取/吸附/停靠共用口径
 // （D50：点取锚点中心，含多显示器）。
-func platformWorkArea(p point) (rect, bool) {
-	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&p)), monDefaultToNearest)
+func (p *Plat) WorkArea(pt Point) (Rect, bool) {
+	wp := toWinPoint(pt)
+	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&wp)), monDefaultToNearest)
 	var mi monitorInfo
 	mi.cbSize = uint32(unsafe.Sizeof(mi))
 	if r, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); r == 0 {
-		return rect{}, false
+		return Rect{}, false
 	}
-	return mi.rcWork, true
+	return toRect(mi.rcWork), true
 }
 
-// platformMonitorAt 点上是否有显示器（MONITOR_DEFAULTTONULL = 0：域外返回 0）——
+// MonitorAt 点上是否有显示器（MONITOR_DEFAULTTONULL = 0：域外返回 0）——
 // D50 停靠外侧边判定（接缝边外还有屏 → 不停靠）。
-func platformMonitorAt(p point) bool {
-	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&p)), 0)
+func (p *Plat) MonitorAt(pt Point) bool {
+	wp := toWinPoint(pt)
+	hmon, _, _ := procMonitorFromPoint.Call(uintptr(unsafe.Pointer(&wp)), 0)
 	return hmon != 0
 }
 
-// platformWindowDPI 主窗 DPI 比例（D90：GetDpiForWindow 直查，恢复期 dp→px 换算用——
+// WindowDPI 指定窗口 DPI 比例（D90：GetDpiForWindow 直查，恢复期 dp→px 换算用——
 // 废除旧「窗高÷默认高」反推，窗口尺寸可配后该假设必错）。查询类直接调（铁律 1 不限）；
 // 句柄无效或老系统无此 API → 0，回落 1.0 = 100% 口径（与旧默认行为一致）。
-func platformWindowDPI(h uintptr) float64 {
-	v, _, _ := procGetDpiForWindow.Call(h)
+func (p *Plat) WindowDPI(h Handle) float64 {
+	v, _, _ := procGetDpiForWindow.Call(uintptr(h))
 	if v == 0 {
 		return 1.0
 	}
 	return float64(v) / 96.0
 }
 
-// hideFromTaskbar 主窗不进任务栏与 Alt+Tab（D51）：置 WS_EX_TOOLWINDOW、清
+// MainDPI 主窗 DPI 比例（未挂接 = 1.0）。
+func (p *Plat) MainDPI() float64 { return p.WindowDPI(p.MainHandle()) }
+
+// HideFromTaskbar 主窗不进任务栏与 Alt+Tab（D51）：置 WS_EX_TOOLWINDOW、清
 // WS_EX_APPWINDOW——悬浮球托盘常驻、关窗即隐藏，任务栏条目与形态相斥。
-// onHWND 挂接时一次性设置，经 onWindowThread（§15.6 铁律 1）。
-func hideFromTaskbar(h uintptr) {
-	onWindowThread(func() {
-		ex, _, _ := procGetWindowLongPtrW.Call(h, gwlExStyle)
+// onHWND 挂接时一次性设置，经窗口线程（§15.6 铁律 1）。
+func (p *Plat) HideFromTaskbar(h Handle) {
+	p.onWindowThread(func() {
+		ex, _, _ := procGetWindowLongPtrW.Call(uintptr(h), gwlExStyle)
 		ne := (ex | wsExToolWindow) &^ wsExAppWindow
-		procSetWindowLongPtrW.Call(h, gwlExStyle, ne)
+		procSetWindowLongPtrW.Call(uintptr(h), gwlExStyle, ne)
 	})
 }
 
-// mainVisible 主窗可见性（查询类直接调；无句柄 = 不可见）——fadePresent 兜底：
-// 主窗隐藏时不再提交 ULW（hideMain 已藏，防隐藏后仍有帧把位图唤回）。
-func mainVisible() bool {
-	h := atomic.LoadUintptr(&mainHWND)
+// Visible 主窗可见性（查询类直接调；无句柄 = 不可见）——fadePresent 兜底：
+// 主窗隐藏时不再提交 ULW（HideWindow 已藏，防隐藏后仍有帧把位图唤回）。
+func (p *Plat) Visible() bool {
+	h := p.mainHWND.Load()
 	if h == 0 {
 		return false
 	}
@@ -233,9 +250,9 @@ func mainVisible() bool {
 	return v != 0
 }
 
-// topMostQuery 主窗置顶态**实际值**（查询类直接调，铁律 1 不限；无句柄 = 缺省置顶）。
-func topMostQuery() bool {
-	h := atomic.LoadUintptr(&mainHWND)
+// TopMost 主窗置顶态**实际值**（查询类直接调，铁律 1 不限；无句柄 = 缺省置顶）。
+func (p *Plat) TopMost() bool {
+	h := p.mainHWND.Load()
 	if h == 0 {
 		return true
 	}
@@ -251,42 +268,43 @@ func topMostHandle(on bool) uintptr {
 	return ^uintptr(1)
 }
 
-// platformSetTopMost 显式设置主窗置顶（§15.1 置顶开关）——本端 SetWindowPos 断言，
-// 不依赖 Gio 的 TopMost 应用路径（实测会意外丢失、原因未明）；经 onWindowThread（铁律 1）。
-func platformSetTopMost(on bool) {
-	h := atomic.LoadUintptr(&mainHWND)
+// SetTopMost 显式设置主窗置顶（§15.1 置顶开关）——本端 SetWindowPos 断言，
+// 不依赖 Gio 的 TopMost 应用路径（实测会意外丢失、原因未明）；经窗口线程（铁律 1）。
+func (p *Plat) SetTopMost(on bool) {
+	h := p.mainHWND.Load()
 	if h == 0 {
 		return
 	}
 	after := topMostHandle(on)
-	onWindowThread(func() {
+	p.onWindowThread(func() {
 		procSetWindowPos.Call(h, after, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
 	})
 }
 
-// mainBits 主窗 ULW 位图状态（仅窗口线程访问——全部经 onWindowThread，D62 单通道）。
-type mainBits struct {
+// dibState 主窗 ULW 位图状态（仅窗口线程访问——全部经 onWindowThread，D62 单通道）。
+type dibState struct {
 	hdc, hbm uintptr
 	w, h     int32
+	ptr      unsafe.Pointer // 当前 DIB 像素（窗口线程访问）
 }
 
+// 主窗像素管线状态（进程内单主窗，故为包级；仅窗口线程访问）。
 var (
-	mbits    mainBits
-	mbitsPtr unsafe.Pointer // 当前 DIB 像素（窗口线程访问）
-
+	mbits         dibState
 	mainPresentN  int  // 首次/失败日志节流（窗口线程访问）
 	mainULWLayerd bool // WS_EX_LAYERED 已挂（窗口线程访问）
 )
 
-// ensureMainDIB 分配/复用主窗 DIB（窗口线程内；尺寸变化时重建）。
-func ensureMainDIB(w, h int32) error {
-	if mbits.hdc != 0 && mbits.w == w && mbits.h == h {
+// ensureDIB 分配/复用主窗 DIB（窗口线程内；尺寸变化时重建）。
+func ensureDIB(w, h int32) error {
+	d := &mbits
+	if d.hdc != 0 && d.w == w && d.h == h {
 		return nil
 	}
-	if mbits.hbm != 0 {
-		procDeleteObject.Call(mbits.hbm)
-		procDeleteDC.Call(mbits.hdc)
-		mbits.hbm, mbits.hdc, mbitsPtr = 0, 0, nil
+	if d.hbm != 0 {
+		procDeleteObject.Call(d.hbm)
+		procDeleteDC.Call(d.hdc)
+		d.hbm, d.hdc, d.ptr = 0, 0, nil
 	}
 	hdc, _, _ := procCreateCompatibleDC.Call(0)
 	if hdc == 0 {
@@ -307,77 +325,82 @@ func ensureMainDIB(w, h int32) error {
 		return syscall.EINVAL
 	}
 	procSelectObject.Call(hdc, hbm)
-	mbits.hdc, mbits.hbm, mbits.w, mbits.h, mbitsPtr = hdc, hbm, w, h, bits
+	d.hdc, d.hbm, d.w, d.h, d.ptr = hdc, hbm, w, h, bits
 	return nil
 }
 
-// ensureLayeredStyle 主窗挂 WS_EX_LAYERED（onHWND 一次性，D62）：ULW 承载形状/命中/
+// EnsureLayered 主窗挂 WS_EX_LAYERED（onHWND 一次性，D62）：ULW 承载形状/命中/
 // 穿透的前提；ULW 接管后 SLWA 同窗互斥，LWA_ALPHA 已随 D62 退役。启动防闪的**显式**
 // 机制归 D78（挂接即 SW_HIDE、首帧 ULW 成功才揭示）——分层样式只作双保险，不再依赖
 // 「首 ULW 前不显示」语义（那只在建窗时挂样式才成立）。
-func ensureLayeredStyle(h uintptr) {
-	onWindowThread(func() {
+func (p *Plat) EnsureLayered(h Handle) {
+	p.onWindowThread(func() {
 		mainULWLayerd = applyLayeredStyle(h)
 	})
 }
 
 // applyLayeredStyle 置 WS_EX_LAYERED（幂等）；窗口线程调用。
-func applyLayeredStyle(h uintptr) bool {
-	ex, _, _ := procGetWindowLongPtrW.Call(h, gwlExStyle)
+func applyLayeredStyle(h Handle) bool {
+	ex, _, _ := procGetWindowLongPtrW.Call(uintptr(h), gwlExStyle)
 	if ex&wsExLayered == 0 {
-		procSetWindowLongPtrW.Call(h, gwlExStyle, ex|wsExLayered)
+		procSetWindowLongPtrW.Call(uintptr(h), gwlExStyle, ex|wsExLayered)
 	}
 	return true
 }
 
-// hideUntilFirstPresent 挂接即隐藏（D78 启动防闪）：Gio `Configure(ShowWindow)` 早于
+// HideUntilFirstPresent 挂接即隐藏（D78 启动防闪）：Gio `Configure(ShowWindow)` 早于
 // Win32ViewEvent 投递——onHWND 是最早可接管点，此处 SW_HIDE 直到首帧 ULW 提交成功经
-// revealMainWindow 揭示。经窗口线程下发（铁律 1）：onHWND 在事件循环客户端协程，
+// RevealWindow 揭示。经窗口线程下发（铁律 1）：onHWND 在事件循环客户端协程，
 // 此际窗口线程常停在 deliverEvent 的 select 发事件、不泵消息，直调 ShowWindow 永久互锁
 // （实机启动即「未响应」）。
-func hideUntilFirstPresent(h uintptr) {
-	onWindowThread(func() {
-		procShowWindow.Call(h, swHide)
+func (p *Plat) HideUntilFirstPresent(h Handle) {
+	p.onWindowThread(func() {
+		procShowWindow.Call(uintptr(h), swHide)
 	})
 }
 
-// revealMainWindow 揭示（D78）：显示 + 激活前台（与现状启动聚焦一致，D78 拍板）——
-// 首帧揭示（fadePresent）与呼出（showMain）共用，经 revealMain 槽注入可测。
-// 经窗口线程（铁律 1）。
-func revealMainWindow(h uintptr) {
-	onWindowThread(func() {
-		procShowWindow.Call(h, swRestore)
-		procSetForegroundWindow.Call(h)
+// RevealWindow 揭示（D78）：显示 + 激活前台（与现状启动聚焦一致，D78 拍板）——
+// 首帧揭示（fadePresent）与呼出（showMain）共用。经窗口线程（铁律 1）。
+func (p *Plat) RevealWindow(h Handle) {
+	p.onWindowThread(func() {
+		procShowWindow.Call(uintptr(h), swRestore)
+		procSetForegroundWindow.Call(uintptr(h))
 	})
 }
 
-// mainPresent 整窗 ULW 提交（D62 单通道）：全帧合成位图直接写主窗——位图 alpha 即
+// HideWindow 主窗隐藏（像素层随窗口一并消失，D62 后无独立 overlay）——**必须在 Gio
+// 窗口 goroutine 执行**（帧循环隐藏路径与 WM_CLOSE 拦截共用）。
+func (p *Plat) HideWindow(h Handle) {
+	procShowWindow.Call(uintptr(h), swHide)
+}
+
+// Present 整窗 ULW 提交（D62 单通道）：全帧合成位图直接写主窗——位图 alpha 即
 // 形状（自带抗锯齿）也即命中（分层窗逐像素命中：alpha=0 穿透到下层窗口），
 // SourceConstantAlpha = 统一半透明（D50 停靠淡化同帧跟随；旧 LWA_ALPHA 退役——
 // 同窗 SLWA 与 ULW 互斥，ULW 接管即生效）。bits = 预乘 BGRA（顶向、w*h*4）；
 // x/y = 屏幕坐标（物理，实测窗口矩形）、w/h = 位图尺寸（物理）。经窗口线程（铁律 1）。
-func mainPresent(x, y, w, h int32, bits []byte, alpha byte) bool {
+func (p *Plat) Present(x, y, w, h int32, bits []byte, alpha byte) bool {
 	if w <= 0 || h <= 0 || int64(w)*int64(h)*4 != int64(len(bits)) {
 		return false
 	}
 	ok := false
-	onWindowThread(func() {
-		hwnd := atomic.LoadUintptr(&mainHWND)
+	p.onWindowThread(func() {
+		hwnd := p.mainHWND.Load()
 		if hwnd == 0 {
 			return
 		}
-		if err := ensureMainDIB(w, h); err != nil {
+		if err := ensureDIB(w, h); err != nil {
 			return
 		}
 		if !mainULWLayerd {
-			mainULWLayerd = applyLayeredStyle(hwnd) // 兜底：onHWND 未跑到的防御
+			mainULWLayerd = applyLayeredStyle(Handle(hwnd)) // 兜底：onHWND 未跑到的防御
 		}
 		// 写入 DIB（顶向：bits 直接拷贝）。
-		dst := unsafe.Slice((*byte)(mbitsPtr), len(bits))
+		dst := unsafe.Slice((*byte)(mbits.ptr), len(bits))
 		copy(dst, bits)
-		dstPt := point{x: x, y: y}
+		dstPt := winPoint{x: x, y: y}
 		sz := sizeXY{cx: w, cy: h}
-		srcPt := point{}
+		srcPt := winPoint{}
 		bf := blendFunc{
 			blendOp:             acSrcOver,
 			blendFlags:          0,

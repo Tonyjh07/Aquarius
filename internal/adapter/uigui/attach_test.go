@@ -77,7 +77,7 @@ func TestAttachStageFlow(t *testing.T) {
 
 // TestAttachBufferFull D104 后果③：缓冲满投递失败 → 恢复暂存 + notice，不制造已发送错觉。
 func TestAttachBufferFull(t *testing.T) {
-	u := &UI{followTail: true, inCh: make(chan port.UserInput, 1)}
+	u := &UI{plat: newFakePlat(), followTail: true, inCh: make(chan port.UserInput, 1)}
 	u.m = newModel(u)
 	u.th = testTheme()
 	u.editor.Submit = true

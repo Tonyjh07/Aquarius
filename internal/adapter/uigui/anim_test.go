@@ -296,7 +296,7 @@ func startAt(u *UI, expand bool) time.Time {
 
 // TestExpandTimeline 展开 700ms 严格先后（D54）：输入栏 260ms 先跑完，消息区 440ms 才起。
 func TestExpandTimeline(t *testing.T) {
-	u := &UI{collapsed: true}
+	u := &UI{plat: newFakePlat(), collapsed: true}
 	t0 := startAt(u, true)
 	if u.expandAn.stop != nil {
 		t.Fatal("headless 不应起唤帧 ticker（D54）")
@@ -340,7 +340,7 @@ func TestExpandTimeline(t *testing.T) {
 
 // TestCollapseTimeline 收起 540ms 严格先后（D54）：消息区 320ms 先退，输入栏 220ms 后缩。
 func TestCollapseTimeline(t *testing.T) {
-	u := &UI{collapsed: false}
+	u := &UI{plat: newFakePlat(), collapsed: false}
 	t0 := startAt(u, false)
 	u.expandAn.advance(t0)
 	if u.expandAn.barP != 1 || u.expandAn.msgP != 1 {
@@ -370,7 +370,7 @@ func TestCollapseTimeline(t *testing.T) {
 // TestExpandReverseNoJump 中途反向（D54）：从当前进度续跑，进度连续不跳变；
 // 无距离的阶段瞬时跳过（反向后不空转吃时长）。
 func TestExpandReverseNoJump(t *testing.T) {
-	u := &UI{collapsed: true}
+	u := &UI{plat: newFakePlat(), collapsed: true}
 	t0 := startAt(u, true)
 	u.expandAn.advance(t0.Add(65 * time.Millisecond))
 	mid := u.expandAn.barP
@@ -405,7 +405,7 @@ func TestExpandReverseNoJump(t *testing.T) {
 	}
 
 	// 另一半：展开到消息半程 → 反向收起（barP 已是 1，输入栏阶段无距离）。
-	u2 := &UI{collapsed: true}
+	u2 := &UI{plat: newFakePlat(), collapsed: true}
 	s0 := startAt(u2, true)
 	u2.expandAn.advance(s0.Add((expandBarMs + 110) * time.Millisecond))
 	if u2.expandAn.barP != 1 || u2.expandAn.msgP <= 0 || u2.expandAn.msgP >= 1 {
@@ -432,7 +432,7 @@ func TestExpandReverseNoJump(t *testing.T) {
 // TestExpandProgressRest 静止态进度由 collapsed 推导（直接翻 collapsed 的调用方不必
 // 手工同步 barP/msgP）；动画中取现算值。
 func TestExpandProgressRest(t *testing.T) {
-	u := &UI{}
+	u := &UI{plat: newFakePlat()}
 	if b, m := u.expandProgress(); b != 1 || m != 1 {
 		t.Fatalf("展开静止态应为 (1,1), 得 (%v,%v)", b, m)
 	}
@@ -451,7 +451,7 @@ func TestExpandProgressRest(t *testing.T) {
 // TestBeginExpandCollapseFlips 静止态启停（headless 起落 + 逻辑态翻转）：
 // 起点进度必须在翻 collapsed **之前**读到（否则被读成终态、动画零距离瞬时完成）。
 func TestBeginExpandCollapseFlips(t *testing.T) {
-	u := &UI{collapsed: true}
+	u := &UI{plat: newFakePlat(), collapsed: true}
 	u.beginExpand()
 	if u.collapsed {
 		t.Fatal("beginExpand 应展开")
@@ -502,7 +502,7 @@ func TestBeginExpandCollapseFlips(t *testing.T) {
 
 // TestToggleExpandReverses 单击 logo = 互切；动画中则反向（D54）。
 func TestToggleExpandReverses(t *testing.T) {
-	u := &UI{collapsed: true}
+	u := &UI{plat: newFakePlat(), collapsed: true}
 	u.toggleExpand() // 静止收起 → 展开
 	if u.collapsed || !u.expandAn.active || !u.expandAn.expand {
 		t.Fatalf("静止态 toggle 应展开: collapsed=%v active=%v expand=%v",
@@ -584,7 +584,7 @@ func TestExpandMsgsDriveAnim(t *testing.T) {
 
 // TestClampedBand 淡出带夹取（D54）：带范围夹进当前窗口，绝不越窗/倒置。
 func TestClampedBand(t *testing.T) {
-	u := &UI{frameSize: image.Pt(100, 300)}
+	u := &UI{plat: newFakePlat(), frameSize: image.Pt(100, 300)}
 	u.bandTop, u.bandBottom = 10, 66
 	if top, bottom := u.clampedBand(); top != 10 || bottom != 66 {
 		t.Fatalf("正常带应原样: (%d,%d), want (10,66)", top, bottom)
@@ -601,7 +601,7 @@ func TestClampedBand(t *testing.T) {
 
 // TestClampedLowBand 底部矮带夹取（D79）：夹进当前窗口，倒置/越界一律退化为空区间 = 关。
 func TestClampedLowBand(t *testing.T) {
-	u := &UI{frameSize: image.Pt(100, 300)}
+	u := &UI{plat: newFakePlat(), frameSize: image.Pt(100, 300)}
 	u.bandLowTop, u.bandLowEnd = 288, 300 // 常规：转写区底 300、带高 12
 	if top, end := u.clampedLowBand(); top != 288 || end != 300 {
 		t.Fatalf("正常底带应原样: (%d,%d), want (288,300)", top, end)
@@ -626,7 +626,7 @@ func TestClampedLowBand(t *testing.T) {
 
 // TestStepExpandStopsTicker 动画收尾关停唤帧循环（channel 关闭、句柄清空、幂等）。
 func TestStepExpandStopsTicker(t *testing.T) {
-	u := &UI{collapsed: true}
+	u := &UI{plat: newFakePlat(), collapsed: true}
 	startAt(u, true)
 	ch := make(chan struct{})
 	u.expandAn.stop = ch
@@ -674,7 +674,7 @@ func TestRecordDynamicBand(t *testing.T) {
 // TestPillFadeExpand 淡入：展开输入栏阶段完成（进消息阶段）那一刻触发、180ms CSS ease
 // 淡满（与消息揭示并行）；触发前 bar 阶段内容恒隐；曲线/单调/端点精确。
 func TestPillFadeExpand(t *testing.T) {
-	u := &UI{collapsed: true}
+	u := &UI{plat: newFakePlat(), collapsed: true}
 	t0 := startAt(u, true)
 	// bar 阶段内（含回弹峰值）内容恒隐：无时间线 → 展开动画保持现值 0。
 	for _, ms := range []int{0, 65, 165, 259} {
@@ -710,7 +710,7 @@ func TestPillFadeExpand(t *testing.T) {
 // TestPillFadeCollapse 淡出：消息区先开始、内容后起跑（延迟 140ms）、二者**同一刻结束**
 // （= 消息区收起 320ms 终点）；此后 bar 收缩段胶囊已空（保持 0）。
 func TestPillFadeCollapse(t *testing.T) {
-	u := &UI{collapsed: false}
+	u := &UI{plat: newFakePlat(), collapsed: false}
 	if a := u.contentAlpha(time.Now()); a != 1 {
 		t.Fatalf("静止展开态内容应 1, 得 %v", a)
 	}
@@ -742,7 +742,7 @@ func TestPillFadeCollapse(t *testing.T) {
 // TestPillFadeReverse 收起中途反向（D77）：取消进行中的淡出、保持现值不闪隐；
 // bar 完成后再从现值续淡入到 1。
 func TestPillFadeReverse(t *testing.T) {
-	u := &UI{collapsed: false}
+	u := &UI{plat: newFakePlat(), collapsed: false}
 	if a := u.contentAlpha(time.Now()); a != 1 {
 		t.Fatalf("静止展开态内容应 1, 得 %v", a)
 	}

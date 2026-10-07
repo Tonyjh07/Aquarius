@@ -126,7 +126,7 @@ func TestMdUnescape(t *testing.T) {
 
 // TestMdBlocksFallback 空解析结果回退单段落原文；缓存命中返回同一实例（D65/D66）。
 func TestMdBlocksFallback(t *testing.T) {
-	u := &UI{} // mdCache 惰性初始化（不依赖 newUI）
+	u := &UI{plat: newFakePlat()} // mdCache 惰性初始化（不依赖 newUI）
 	for _, src := range []string{"   ", "\n\n"} {
 		blocks := u.mdBlocks(src)
 		if len(blocks) != 1 || blocks[0].kind != mdPara || blocks[0].text != src {
@@ -145,7 +145,7 @@ func TestMdBlocksFallback(t *testing.T) {
 
 // TestMdBlocksCacheLimit 缓存上限：超限整表重建（长会话防膨胀，D65）。
 func TestMdBlocksCacheLimit(t *testing.T) {
-	u := &UI{}
+	u := &UI{plat: newFakePlat()}
 	for i := 0; i < mdCacheLimit+1; i++ {
 		u.mdBlocks(fmt.Sprintf("消息 %d", i))
 	}

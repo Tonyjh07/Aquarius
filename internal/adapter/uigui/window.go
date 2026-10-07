@@ -1,9 +1,11 @@
 package uigui
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"math"
+
 	"image"
 	"image/color"
-	"sync/atomic"
 	"time"
 
 	"gioui.org/app"
@@ -114,9 +116,54 @@ var (
 	actionElevate = color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF}
 )
 
-// point/rect Win32 坐标对（中性定义：非 Windows 构建仅作占位类型）。
+// point/rect 屏幕几何（中性定义：小写字段，自绘几何用；与平台 DTO 在门面处转换）。
 type point struct{ x, y int32 }
 type rect struct{ left, top, right, bottom int32 }
+
+// 平台 DTO ↔ 内部几何（字段名不同，仅此两处转换）。
+func toPoint(p platform.Point) point { return point{x: p.X, y: p.Y} }
+func toRect(r platform.Rect) rect {
+	return rect{left: r.Left, top: r.Top, right: r.Right, bottom: r.Bottom}
+}
+
+// —— 平台调用门面（uigui 内部一律经这些方法；实现见 platform 包）——
+
+// cursorPos 光标屏幕坐标（拖动增量的绝对基准，§15.6 铁律 2）。
+func (u *UI) cursorPos() point { return toPoint(u.plat.CursorPos()) }
+
+// windowRect 主窗物理像素矩形（拖动基准与 ULW 定位）。
+func (u *UI) windowRect() (rect, bool) {
+	r, ok := u.plat.WindowRect()
+	return toRect(r), ok
+}
+
+// moveWindowTo 移动主窗（不改尺寸；启动路径不在帧内，直接下发）。
+func (u *UI) moveWindowTo(x, y int32) { u.plat.MoveWindow(x, y) }
+
+// resizeWindowTo 改主窗尺寸（保位，D90）。
+func (u *UI) resizeWindowTo(w, h int32) { u.plat.ResizeWindow(w, h) }
+
+// workArea 最近显示器工作区（锚点夹取/吸附/停靠共用口径）。
+func (u *UI) workArea(p point) (rect, bool) {
+	r, ok := u.plat.WorkArea(platform.Point{X: p.x, Y: p.y})
+	return toRect(r), ok
+}
+
+// monitorAt 点上是否有显示器（D50 停靠外侧边判定）。
+func (u *UI) monitorAt(p point) bool {
+	return u.plat.MonitorAt(platform.Point{X: p.x, Y: p.y})
+}
+
+// windowFromPoint 光标处的顶层窗口（OS 命中直证，D85）。
+func (u *UI) windowFromPoint(p point) platform.Handle {
+	return u.plat.WindowFromPoint(platform.Point{X: p.x, Y: p.y})
+}
+
+// restorePx 恢复期 dp→px 换算（D90 治本：DPI 对指定窗直查；取不到回落 1.0）。
+func (u *UI) restorePx(h platform.Handle) func(dp int) int32 {
+	scale := u.plat.WindowDPI(h)
+	return func(dp int) int32 { return int32(math.Round(float64(dp) * scale)) }
+}
 
 // drawShape 布局期收集的可见元素：outline = 元素**真实轮廓**（未按视口/淡出带裁剪，
 // 边缘渐隐沿此取边 → 不沿裁切线描边，消除横缝）；clip = 可见裁剪区（转写区视口/整窗，
@@ -129,37 +176,24 @@ type drawShape struct {
 	fill    color.NRGBA
 }
 
-// 主窗口句柄与窗口线程入口（win32 补位的两个跨 goroutine 交接点）。
-var (
-	mainHWND uintptr // atomic 存取：事件循环写、窗口线程读
-	win32Run atomic.Pointer[func(func())]
-)
-
-// onWindowThread 把修改性 Win32 调用送到 Gio 窗口线程执行（Window.Run）并等待完成。
-// 【§15.6 铁律 1，堆栈实证】Gio runLoop 在 deliverEvent 的 select 中服务 driverFuncs，
-// 但从客户端协程跨线程 SendMessage（SetWindowPos/SetWindowRgn 等内部回投窗口过程）
-// 会永久阻塞——runLoop 停在 select、不泵消息。查询类调用不受此限。
-func onWindowThread(f func()) {
-	if r := win32Run.Load(); r != nil {
-		(*r)(f)
-		return
-	}
-	f() // 窗口未就绪（理论上不发生）：直接执行兜底
-}
+// 【S4b 注】原先的包级全局态（mainHWND / win32Run 窗口线程投递槽）已随平台面迁入
+// platform 包，经 u.plat 触达；本文件只留帧循环视角的本地副本 u.hwnd。
 
 // runWindow Gio 窗口事件循环（本 goroutine 独占状态机与窗口侧控件）。
 // 不调 app.Main：Windows 的 osMain 仅 select{}（Gio 自建带锁线程跑窗口消息），
 // 库内调用会把装配根卡死。
 func (u *UI) runWindow(w *app.Window) {
 	defer close(u.done)
-	runFn := w.Run
-	win32Run.Store(&runFn) // 修改性 Win32 调用统一走窗口线程（§15.6 铁律 1）
+	u.plat.SetMainRun(w.Run) // 修改性原生调用统一走窗口线程（§15.6 铁律 1）
+	decorated := !u.plat.NativeWindowControl()
 	w.Option(
 		app.Title("Aquarius"),
 		app.Size(unit.Dp(winWidthDp), unit.Dp(winHeightDp)),
 		app.MinSize(unit.Dp(winMinWidth), unit.Dp(winMinHeight)),
-		app.Decorated(false), // 无边框 = 悬浮球形态前提（§15.1）
-		app.TopMost(true),    // 悬浮球常驻顶层
+		// 无边框 = 悬浮球形态前提（§15.1）；平台不能自管窗口位置时（非 Windows 降级）
+		// 改常规装饰窗——否则用户无法移动/缩放窗口（已知降级，D111 修订④）。
+		app.Decorated(decorated),
+		app.TopMost(u.plat.TopMost()), // 悬浮球常驻顶层（平台缺此能力时恒真）
 	)
 	u.th = newTheme(u.plat.SystemFontCandidates())
 	if p := u.pal.Load(); p != nil { // 初始主题快照校正默认色（§15.4/D61）
@@ -180,8 +214,8 @@ func (u *UI) runWindow(w *app.Window) {
 			// 用户关窗 = 输入流结束（Next → EOF → 装配根退出，退出码 0；
 			// 创建失败 Err 非空 → Next 上抛，退出码 1）。
 			// 正常 Alt+F4 已被 WM_CLOSE 拦截为隐藏（§15.1），走到这里 = 真销毁
-			//（装配根收尾/系统关闭）——清托盘图标防悬浮区残留。
-			trayDelete()
+			//（装配根收尾/系统关闭）——清托盘图标防悬浮区残留（S4b-3 迁入平台面）。
+			u.plat.DropTray()
 			u.signalEOF(e.Err)
 			return
 		default:
@@ -213,7 +247,12 @@ func (u *UI) frame(gtx layout.Context, submit func()) {
 	u.stepAnim() // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
 	u.layout(gtx)
 	u.phase("compose")
-	composed := u.fadeCompose() // 全帧合成：headless 同布局重渲 → av = vis × g(y) × alpha 预乘（D62）
+	// 平台不自管像素提交时（非 Windows 降级）没有 ULW 可交：跳过离屏全帧合成通道，
+	// 内容由 Gio 自身表面渲染（D111③）——省一遍全帧重渲。
+	composed := false
+	if u.plat.NativeWindowControl() {
+		composed = u.fadeCompose() // 全帧合成：headless 同布局重渲 → av = vis × g(y) × alpha 预乘（D62）
+	}
 	u.phase("commit")
 	u.commitWinGeom() // 移窗一拍 flush（先于 present：定位取实测矩形）
 	submit()
@@ -235,22 +274,25 @@ func (u *UI) requestMove() { u.movePending = true }
 // onHWND Win32ViewEvent 投递的窗口句柄：启动防闪（D78 挂接即隐藏、首帧 ULW 成功才
 // 揭示）+ 置顶断言 + 位置记忆恢复（§15.1/D44/D62）。统一半透明不在此下发（D62：首帧
 // ULW 随 SourceConstantAlpha 生效）。
-func (u *UI) onHWND(h uintptr) {
+func (u *UI) onHWND(h platform.Handle) {
 	if u.hwnd != 0 {
 		return
 	}
 	u.hwnd = h
-	atomic.StoreUintptr(&mainHWND, h)
+	u.plat.AttachMain(h)
+	if !u.plat.NativeWindowControl() {
+		return // 非 Windows 无原生窗口可接管（无句柄语义）：常规窗形态照常渲染
+	}
 	// D78 启动防闪：挂接即隐藏（最早可接管点——Gio Configure(ShowWindow) 早于本事件、
 	// 无可挂钩点，其间亚帧间隙接受）并置揭示待定；首帧 ULW 提交成功才揭示（fadePresent）。
 	// 【顺序敏感】先 SW_HIDE 再挂 WS_EX_LAYERED：层样式在**可见态**挂接、随后首帧 ULW 前
 	// 被隐藏，UpdateLayeredWindow 将永久失败（errno=87，重新显示也不恢复）——revealPending
 	// 永不清零、窗口永不揭示且呼出门死锁（实机「找不到窗口」）。隐藏态挂接则全链路正常。
 	u.revealPending.Store(true)
-	hideUntilFirstPresent(h)
-	ensureLayeredStyle(h)  // 分层样式（D62 双保险；非 Windows no-op）——须在隐藏后挂
-	subclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1；非 Windows 为 no-op 桩）
-	hideFromTaskbar(h)     // 不进任务栏与 Alt+Tab（D51；非 Windows 为 no-op 桩）
+	u.plat.HideUntilFirstPresent(h)
+	u.plat.EnsureLayered(h)       // 分层样式（D62 双保险）——须在隐藏后挂
+	u.plat.SubclassCloseToHide(h) // 关窗（Alt+F4）= 隐藏（§15.1）
+	u.plat.HideFromTaskbar(h)     // 不进任务栏与 Alt+Tab（D51）
 	// 置顶断言 + 记忆恢复（§15.1 置顶开关）：缺省置顶、菜单切换态随记忆回来——
 	// 本端 SetWindowPos 断言，不依赖 Gio 的 TopMost 应用（实测会意外丢失、原因未明）。
 	on := true
@@ -259,11 +301,11 @@ func (u *UI) onHWND(h uintptr) {
 			on = *p.TopMost
 		}
 	}
-	platformSetTopMost(on)
+	u.plat.SetTopMost(on)
 	// D90：配置像素尺寸先落（app.Size 只收 dp、建窗期 DPI 未就绪无法换算，px 口径在
 	// 挂接点经窗口线程补投）；同步等待完成后，位置恢复/停靠重算按落定矩形取值。
 	u.applyConfiguredSize()
-	rc, ok := windowRectPx()
+	rc, ok := u.windowRect()
 	if !ok {
 		return
 	}
@@ -278,14 +320,14 @@ func (u *UI) onHWND(h uintptr) {
 				return
 			}
 			nx, ny := p.X, p.Y
-			if work, wok := platformWorkArea(point{x: p.X + w/2, y: p.Y + ht/2}); wok {
-				px := restorePx(h)
+			if work, wok := u.workArea(point{x: p.X + w/2, y: p.Y + ht/2}); wok {
+				px := u.restorePx(h)
 				top := int(ht) - int(px(inputRowBandDp)) + int(px(pillTopDp))
 				a := image.Rect(int(px(sideMarginDp)), top, int(w)-int(px(sideMarginDp)), top+int(px(inputRowDp)))
 				c := clampAnchor(point{x: p.X, y: p.Y}, a, work)
 				nx, ny = c.x, c.y
 			}
-			moveWindowTo(nx, ny)
+			u.moveWindowTo(nx, ny)
 			u.x, u.y = nx, ny
 		}
 	}

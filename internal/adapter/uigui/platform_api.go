@@ -19,10 +19,57 @@ var _ platformAPI = (*platform.Plat)(nil)
 
 // platformAPI 平台能力（uigui → 平台）。
 type platformAPI interface {
-	// DarkMode 系统深浅色（§15.4/D61）。
+	// NativeWindowControl 平台是否自管窗口位置/尺寸与像素提交（Windows = true；非
+	// Windows = false → 常规装饰窗 + Gio 自身表面渲染）。
+	NativeWindowControl() bool
+
+	// —— 主窗句柄与几何 ——
+	MainHandle() platform.Handle
+	AttachMain(h platform.Handle)
+	SetMainRun(platform.RunFunc)
+	WindowRect() (platform.Rect, bool)
+	MoveWindow(x, y int32)
+	ResizeWindow(w, h int32)
+	WindowDPI(h platform.Handle) float64
+	MainDPI() float64
+	CursorPos() platform.Point
+	WindowFromPoint(platform.Point) platform.Handle
+	WorkArea(platform.Point) (platform.Rect, bool)
+	MonitorAt(platform.Point) bool
+
+	// —— 显隐 / 置顶 / 任务栏 ——
+	HideFromTaskbar(h platform.Handle)
+	Visible() bool
+	TopMost() bool
+	SetTopMost(on bool)
+
+	// —— 启动防闪的隐藏与揭示（D78）——
+	HideUntilFirstPresent(h platform.Handle)
+	EnsureLayered(h platform.Handle)
+	RevealWindow(h platform.Handle)
+	HideWindow(h platform.Handle)
+	HideMain(h platform.Handle) // 任意线程（内部走窗口线程）
+
+	// —— 整窗像素提交（ULW 或降级）——
+	Present(x, y, w, h int32, bits []byte, alpha byte) bool
+
+	// —— 系统外观 ——
 	DarkMode() bool
-	// SystemFontCandidates 系统中文字体候选路径（无 = 回落 gofont）。
 	SystemFontCandidates() []string
+
+	// —— 外壳（托盘 / 全局热键 / 原生菜单 / 文件框；非 Windows 为降级实现）——
+	SetHost(platform.Host)
+	StartShell()
+	ShutdownShell()
+	DropTray()
+	ReloadHotkey()
+	PostMenu(kind platform.MenuKind)
+	RequestFileDialog()
+	SubclassCloseToHide(h platform.Handle)
+
+	// —— 次窗 ——
+	CloseWindow(h platform.Handle)
+	FocusWindow(h platform.Handle, run platform.RunFunc)
 }
 
 // newPlatform 构造平台实现（组装点：`uigui` 内唯一 import 具体实现处）。

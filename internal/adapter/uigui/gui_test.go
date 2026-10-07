@@ -15,9 +15,11 @@ import (
 )
 
 // newHeadless 无窗口前端（§15.5：桥接层 headless 逻辑测试，无帧循环/无窗口）。
+// 装假平台（S4b）：测试不触真 Win32/真外壳，平台调用可经 fakeOf 记账断言。
 func newHeadless(t *testing.T, opts Options) *UI {
 	t.Helper()
 	u := newUI(opts, false)
+	u.plat = newFakePlat()
 	t.Cleanup(func() { _ = u.Close() })
 	return u
 }

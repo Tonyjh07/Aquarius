@@ -482,18 +482,18 @@ func (u *UI) fadePresent(composed bool) {
 		return
 	}
 	x, y := u.x, u.y
-	if rc, ok := windowRectPx(); ok { // 实际窗口矩形优先（防自跟踪位置失联）
+	if rc, ok := u.windowRect(); ok { // 实际窗口矩形优先（防自跟踪位置失联）
 		if int(rc.right-rc.left) != u.frameSize.X || int(rc.bottom-rc.top) != u.frameSize.Y {
 			return // 尺寸竞态：跳过一帧，下帧对齐后提交（防 ULW 拉伸位图/改窗尺寸）
 		}
 		x, y = rc.left, rc.top
 	}
 	if u.wheelCap { // D71 滚轮手势钉点（提交前落笔：位图 alpha 即形状/命中/穿透）
-		pinWheelCursor(u.fadeBuf, u.frameSize, x, y, cursorPos())
+		pinWheelCursor(u.fadeBuf, u.frameSize, x, y, u.cursorPos())
 	}
-	if presentMain(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha) && u.revealPending.Swap(false) {
-		revealMain(u.hwnd)     // D78：首帧 ULW 已提交 → 揭示（显示 + 激活前台），首个可见帧带内容
-		u.representAfterShow() // D88：揭示后可见态立即补提交（防 DWM 露 Gio 不透明表面）
+	if u.plat.Present(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha) && u.revealPending.Swap(false) {
+		u.plat.RevealWindow(u.hwnd) // D78：首帧 ULW 已提交 → 揭示（显示 + 激活前台），首个可见帧带内容
+		u.representAfterShow()      // D88：揭示后可见态立即补提交（防 DWM 露 Gio 不透明表面）
 	}
 }
 
@@ -507,13 +507,13 @@ func (u *UI) fadePresent(composed bool) {
 // 口径同 fadePresent（尺寸与实测矩形不符跳帧防拉伸）；跨 goroutine 读 u.frameSize/
 // fadeBuf/x/y/alpha 沿 showMain 既有口径（整型/字节/指针读，无撕裂）。
 func (u *UI) representAfterShow() {
-	u.representOnce(presentMain)
+	u.representOnce(u.plat.Present)
 	if u.w != nil {
 		u.w.Invalidate() // 并发安全（Gio）；催一帧让常规提交路径接管
 	}
 	// 梯次三件套在 spawn 前捕获（go 语句给 happens-before）：goroutine 只碰捕获值与
-	// u 字段，不读全局槽——测试恢复全局槽与 goroutine 存活期无竞态（-race）。
-	delays, vis, present := representLadder, visMain, presentMain
+	// u 字段，不迟到读平台对象（-race 口径）；测试把 representLadder 置空即不启 goroutine。
+	delays, vis, present := representLadder, u.plat.Visible, u.plat.Present
 	if len(delays) == 0 {
 		return
 	}
@@ -535,7 +535,7 @@ func (u *UI) representOnce(present func(x, y, w, h int32, bits []byte, alpha byt
 		return
 	}
 	x, y := u.x, u.y
-	if rc, ok := windowRectPx(); ok {
+	if rc, ok := u.windowRect(); ok {
 		if int(rc.right-rc.left) != u.frameSize.X || int(rc.bottom-rc.top) != u.frameSize.Y {
 			return
 		}
@@ -545,26 +545,21 @@ func (u *UI) representOnce(present func(x, y, w, h int32, bits []byte, alpha byt
 }
 
 // representLadder 揭示后补提交梯次（D115）：每次延迟一拍；测试置空防泄漏 goroutine
-// 在测试结束后读全局槽（-race）。
+// 在测试结束后继续提交（-race）。
 var representLadder = []time.Duration{
 	40 * time.Millisecond, 120 * time.Millisecond, 250 * time.Millisecond,
 }
 
-// visMain 主窗可见性查询槽（D115 测试注入点；生产恒 mainVisible）。
-var visMain = mainVisible
-
-// presentMain 提交函数槽（测试注入点；生产恒 mainPresent——Windows 实作 / 非 Windows no-op）。
-var presentMain = mainPresent
-
 // fadeStallN 揭示期合成失败计数（D88 取证日志节流；帧循环 goroutine 独占）。
 var fadeStallN int
 
-// revealMain 揭示函数槽（测试注入点；生产恒 revealMainWindow——Windows 实作 / 非 Windows no-op）。
-var revealMain = revealMainWindow
+// 【S4b】原 presentMain / visMain / revealMain 三个包级注入槽已退役：平台面迁入
+// `platform` 包后，测试改为注入假平台实现（`u.plat`），生产经 `*platform.Plat`
+// （编译期断言见 platform_api.go）。
 
-// presentable 合成/提交可否进行（D78）：主窗隐藏时不提交（hideMain 语义——防隐藏后仍有
+// presentable 合成/提交可否进行（D78）：主窗隐藏时不提交（HideWindow 语义——防隐藏后仍有
 // 帧把位图唤回）；唯启动揭示期例外（revealPending：隐藏是我方所为，须照常合成提交，
 // 否则永不首帧）。
 func (u *UI) presentable() bool {
-	return u.revealPending.Load() || mainVisible()
+	return u.revealPending.Load() || u.plat.Visible()
 }

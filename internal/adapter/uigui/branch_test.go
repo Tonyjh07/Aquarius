@@ -269,7 +269,7 @@ func TestGotoBranchDispatch(t *testing.T) {
 	}
 
 	// 缓冲满：给提示而非静默丢弃。
-	full := &UI{inCh: make(chan port.UserInput)}
+	full := &UI{plat: newFakePlat(), inCh: make(chan port.UserInput)}
 	full.m = newModel(full)
 	full.gotoBranch(branchStrip{id: "n2", ids: ids, index: 1}, +1)
 	if len(full.m.blocks) != 1 || full.m.blocks[0].kind != blockNotice {
