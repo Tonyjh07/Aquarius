@@ -1,8 +1,9 @@
 //go:build !windows
 
-// 非 Windows 桩：GUI 窗口壳仅 Windows 实测（§15.6），其余平台可构建、未适配——
-// ULW 像素管线/半透明一律 no-op，Win32ViewEvent 不投递（窗口保持普通卡片形态，
-// 内容照常渲染）。
+// 非 Windows 平台实现（降级，非桩；D111/S4b 前的过渡形态）：GUI 窗口壳仅 Windows
+// 实测（§15.6），其余平台经本文件补齐构建并给出可用降级——ULW 像素管线/半透明为
+// no-op（Gio 常规不透明窗照常渲染内容），窗口句柄/显示器/DPI 查询缺失项回落中性值，
+// 托盘/全局热键/原生菜单不发（S4b 迁入平台层后由 platform 包统一承担）。
 package uigui
 
 import "gioui.org/io/event"
@@ -21,6 +22,11 @@ func resizeWindowTo(int32, int32) {}
 
 // cursorPos 无光标跟踪。
 func cursorPos() point { return point{} }
+
+// windowFromPoint 非 Windows 无 OS 逐像素命中查询（分层窗语义是 Windows 专有）：
+// 恒 0 = 无窗口。调用点（cursorHitsRect）在 hwnd==0 时已短路，非 Windows 下 u.hwnd
+// 恒 0（Win32ViewEvent 不投递），故此实现不可达——降级语义 = 命中只看矩形。
+func windowFromPoint(point) uintptr { return 0 }
 
 // platformWorkArea 非 Windows 无显示器信息源（夹取/吸附/停靠整体不干预）。
 func platformWorkArea(point) (rect, bool) { return rect{}, false }
