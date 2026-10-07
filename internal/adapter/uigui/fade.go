@@ -497,14 +497,40 @@ func (u *UI) fadePresent(composed bool) {
 	}
 }
 
-// representAfterShow 揭示/呼出后的可见态补提交（D88）：隐藏期间 presentable=false
-// 不提交 ULW，ShowWindow 重显瞬间 DWM 可能呈现 Gio 的重定向表面（事件 pass 恒涂
-// 兜底底色 → 整幅不透明），直到下一次 ULW 才恢复——静默零帧（D50）下「下一次」
-// 就是用户的首次点击（构建后首启实测一次性）。此处立即以最后一次合成位图再提交
-// 一次，把「可见」与「分层位图生效」焊死：ShowWindow 与补提交同经 onWindowThread
-// 按序执行，事件循环与帧循环同 goroutine、fadeBuf 无并发。位图未就绪/尺寸与实测
-// 矩形不符则跳过（同 fadePresent 口径，常规帧兜底）。
+// representAfterShow 揭示/呼出后的可见态补提交（D88，D115 加固）：隐藏期间
+// presentable=false 不提交 ULW，ShowWindow 重显瞬间 DWM 可能呈现 Gio 的重定向表面
+// （事件 pass 恒涂兜底底色 → 整幅不透明），直到下一次 ULW 才恢复——D88 的单次补提交
+// 在展示过渡期可能被吞，而静默零帧（D50）下「下一次」可能久到以分钟计（用户实机复现：
+// 启动后整幅不透明，直至停靠动画催生帧才自愈）。加固为梯次：① 立即补提交一次（D88
+// 原机制，同步、窗口线程）；② Invalidate 催一帧走完整 compose→ULW（实测自愈路径）；
+// ③ representLadder 各拍再补提交，任一拍发现主窗已再隐藏（visMain）即止。位图/矩形
+// 口径同 fadePresent（尺寸与实测矩形不符跳帧防拉伸）；跨 goroutine 读 u.frameSize/
+// fadeBuf/x/y/alpha 沿 showMain 既有口径（整型/字节/指针读，无撕裂）。
 func (u *UI) representAfterShow() {
+	u.representOnce(presentMain)
+	if u.w != nil {
+		u.w.Invalidate() // 并发安全（Gio）；催一帧让常规提交路径接管
+	}
+	// 梯次三件套在 spawn 前捕获（go 语句给 happens-before）：goroutine 只碰捕获值与
+	// u 字段，不读全局槽——测试恢复全局槽与 goroutine 存活期无竞态（-race）。
+	delays, vis, present := representLadder, visMain, presentMain
+	if len(delays) == 0 {
+		return
+	}
+	go func() {
+		for _, d := range delays {
+			time.Sleep(d)
+			if !vis() {
+				return
+			}
+			u.representOnce(present)
+		}
+	}()
+}
+
+// representOnce 以最后一次合成位图按 fadePresent 同口径提交一次（present 经窗口线程，
+// 铁律 1）。提交函数作参数传：梯次 goroutine 用 spawn 前捕获的槽值，不迟到读全局。
+func (u *UI) representOnce(present func(x, y, w, h int32, bits []byte, alpha byte) bool) {
 	if u.fadeBuf == nil || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
 		return
 	}
@@ -515,8 +541,17 @@ func (u *UI) representAfterShow() {
 		}
 		x, y = rc.left, rc.top
 	}
-	presentMain(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha)
+	present(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha)
 }
+
+// representLadder 揭示后补提交梯次（D115）：每次延迟一拍；测试置空防泄漏 goroutine
+// 在测试结束后读全局槽（-race）。
+var representLadder = []time.Duration{
+	40 * time.Millisecond, 120 * time.Millisecond, 250 * time.Millisecond,
+}
+
+// visMain 主窗可见性查询槽（D115 测试注入点；生产恒 mainVisible）。
+var visMain = mainVisible
 
 // presentMain 提交函数槽（测试注入点；生产恒 mainPresent——Windows 实作 / 非 Windows no-op）。
 var presentMain = mainPresent

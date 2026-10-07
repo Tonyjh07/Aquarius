@@ -3,6 +3,7 @@ package uigui
 import (
 	"fmt"
 	"image"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -222,6 +223,7 @@ func TestFrameItemsLive(t *testing.T) {
 // newFrameUI 帧级无窗口测试用的最小 UI（不起事件循环，与 TestFrameItemsLive 同法——
 // §15.5：GUI 只进无窗口 headless 测试）。followTail 初值对齐 newUI。
 func newFrameUI() *UI {
+	representLadder = nil // D115：防梯次 goroutine 在测试结束后读全局槽（-race）
 	u := &UI{followTail: true}
 	u.m = newModel(u)
 	u.th = newTheme()
@@ -378,6 +380,56 @@ func TestRepresentAfterShow(t *testing.T) {
 	u.representAfterShow()
 	if calls != 1 || gotX != 3 || gotY != 4 {
 		t.Fatalf("calls=%d pos=(%d,%d), want 1 次 (3,4)", calls, gotX, gotY)
+	}
+}
+
+// TestRepresentAfterShowLadder D115：揭示后梯次补提交——立即一次 + 每拍一次，全部
+// 经同一矩形口径；主窗再隐藏即止。
+func TestRepresentAfterShowLadder(t *testing.T) {
+	u := newFrameUI()
+	u.frameSize = image.Pt(10, 10)
+	u.fadeBuf = make([]byte, 10*10*4)
+
+	oldLadder, oldVis, oldPresent := representLadder, visMain, presentMain
+	defer func() { representLadder, visMain, presentMain = oldLadder, oldVis, oldPresent }()
+	representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	visMain = func() bool { return true }
+	var calls int32 // 梯次 goroutine 并发写：必须原子
+	presentMain = func(int32, int32, int32, int32, []byte, byte) bool {
+		atomic.AddInt32(&calls, 1)
+		return true
+	}
+
+	u.representAfterShow()
+	for i := 0; i < 200 && atomic.LoadInt32(&calls) < 3; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Fatalf("梯次应共提交 3 次（立即 + 两拍）, got %d", got)
+	}
+}
+
+// TestRepresentAfterShowLadderStopsOnHide D115：主窗再隐藏（呼出后又被藏）→ 梯次
+// 不再补提交（防隐藏后仍有帧把位图唤回，presentable 同语义）。
+func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
+	u := newFrameUI()
+	u.frameSize = image.Pt(10, 10)
+	u.fadeBuf = make([]byte, 10*10*4)
+
+	oldLadder, oldVis, oldPresent := representLadder, visMain, presentMain
+	defer func() { representLadder, visMain, presentMain = oldLadder, oldVis, oldPresent }()
+	representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	visMain = func() bool { return false }
+	var calls int32
+	presentMain = func(int32, int32, int32, int32, []byte, byte) bool {
+		atomic.AddInt32(&calls, 1)
+		return true
+	}
+
+	u.representAfterShow() // 仅立即一拍
+	time.Sleep(30 * time.Millisecond)
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("隐藏态梯次应止步于立即一拍, got %d", got)
 	}
 }
 
