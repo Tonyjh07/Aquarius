@@ -252,6 +252,7 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	var form *settingsForm
 	if k == winSettings {
 		form = newSettingsForm(u) // 开窗现取快照（Options 回调；nil = 空表/只读占位）
+		form.win = w              // 连通性测试异步结果的 Invalidate 回灌（D110②）
 	}
 	var raw *rawViewState
 	if k == winRaw {

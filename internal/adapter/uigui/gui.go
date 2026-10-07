@@ -97,6 +97,9 @@ type Options struct {
 	// Profiles profile 管理面（D110③/修订④）：设置窗 profile 区数据面与三动作
 	//（新建/复制/切换，重启生效）；nil = 不渲染 profile 区。
 	Profiles ProfilesManager
+	// ProviderMgr provider 列表管理面（D110②/③）：设置窗 provider 编辑区数据面 +
+	// 全量应用 + 连通性测试（重启生效）；nil = 不渲染编辑区。
+	ProviderMgr ProviderManager
 }
 
 // zoomKnobs 双缩放旋钮（D90/§15.8）：元素缩放 × 正文字号，原子槽整体换存（成对生效）。

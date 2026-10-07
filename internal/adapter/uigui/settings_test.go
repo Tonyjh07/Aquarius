@@ -14,8 +14,8 @@ import (
 // fillSnapshot 标准快照（测试基准）。
 func fillSnapshot() SettingsSnapshot {
 	return SettingsSnapshot{
-		Permission: "permissive", Provider: "openai", BaseURL: "https://x/v1",
-		Model: "m1", Think: true, Effort: "high", Hotkey: "Ctrl+B", Theme: "dark",
+		Permission: "permissive",
+		Model:      "m1", Think: true, Effort: "high", Hotkey: "Ctrl+B", Theme: "dark",
 	}
 }
 
@@ -29,13 +29,8 @@ func TestNewSettingsFormSnapshot(t *testing.T) {
 	if f.readOnly {
 		t.Fatal("读写回调齐备不应只读")
 	}
-	if f.provider.Text() != "openai" || f.model.Text() != "m1" ||
-		f.baseURL.Text() != "https://x/v1" {
-		t.Errorf("文本档填表错误: provider=%q model=%q baseURL=%q",
-			f.provider.Text(), f.model.Text(), f.baseURL.Text())
-	}
-	if f.apiKey.Text() != "" {
-		t.Error("密钥只写不回显（D35）：字段必须恒空")
+	if f.model.Text() != "m1" {
+		t.Errorf("文本档填表错误: model=%q", f.model.Text())
 	}
 	if f.hotkey.Text() != "Ctrl+B" || !f.think.Value {
 		t.Errorf("快捷键/思考档填表错误: hotkey=%q think=%v", f.hotkey.Text(), f.think.Value)
@@ -82,7 +77,7 @@ func TestSaveSettingsHeadless(t *testing.T) {
 		Theme: "system",
 		Settings: func() SettingsSnapshot {
 			return SettingsSnapshot{
-				Permission: "strict", Provider: "openai", Model: "m1",
+				Permission: "strict", Model: "m1",
 				Think: true, Effort: "", Theme: "system",
 			}
 		},
@@ -98,7 +93,7 @@ func TestSaveSettingsHeadless(t *testing.T) {
 	f := newSettingsForm(u)
 	f.perm.setValue("permissive")
 	f.effort.setValue("low")
-	f.provider.SetText("  newp  ")
+	f.model.SetText("m2")
 	f.hotkey.SetText("Ctrl+B")
 	f.theme.setValue("dark")
 	u.saveSettings(f)
@@ -106,12 +101,12 @@ func TestSaveSettingsHeadless(t *testing.T) {
 	if called != 1 {
 		t.Fatalf("写回调调用 = %d, want 1", called)
 	}
-	if gotPatch.Permission != "permissive" || gotPatch.Provider != "newp" ||
-		gotPatch.Theme != "dark" || gotPatch.Hotkey != "Ctrl+B" || gotPatch.Effort != "low" {
+	if gotPatch.Permission != "permissive" || gotPatch.Theme != "dark" ||
+		gotPatch.Hotkey != "Ctrl+B" || gotPatch.Effort != "low" {
 		t.Errorf("patch = %+v", gotPatch)
 	}
-	if gotPatch.Model != "m1" {
-		t.Errorf("模型名 = %q, want m1（表单未改 = 快照原值）", gotPatch.Model)
+	if gotPatch.Model != "m2" {
+		t.Errorf("模型名 = %q, want m2（表单改动直传）", gotPatch.Model)
 	}
 	if len(u.inCh) != 2 {
 		t.Fatalf("排队命令 = %d, want 2", len(u.inCh))
@@ -132,7 +127,7 @@ func TestSaveSettingsHeadless(t *testing.T) {
 	if f.err || !strings.Contains(f.status, "已保存") {
 		t.Errorf("反馈 = (%v, %q)", f.err, f.status)
 	}
-	if f.snap.Theme != "dark" || f.snap.Provider != "newp" {
+	if f.snap.Theme != "dark" || f.snap.Model != "m2" {
 		t.Errorf("二次保存基准未更新: %+v", f.snap)
 	}
 }
@@ -404,5 +399,89 @@ func TestProfileActionsUnwired(t *testing.T) {
 	u.profileAction(f, "create")
 	if !f.err || !strings.Contains(f.status, "未接线") {
 		t.Fatalf("未接线反馈 = (%v, %q)", f.err, f.status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// provider 编辑区（D110②）
+// ---------------------------------------------------------------------------
+
+// fakeProviderMgr ProviderManager 假实现（Apply/Test 分派断言）。
+type fakeProviderMgr struct {
+	snap        []ProviderSnapshot
+	applied     [][]ProviderPatch
+	primaryGot  []string
+	testErr     error
+	testPatches []ProviderPatch
+}
+
+func (f *fakeProviderMgr) Snapshot() []ProviderSnapshot { return f.snap }
+func (f *fakeProviderMgr) Apply(primary string, ps []ProviderPatch) error {
+	for _, p := range ps { // 镜像 cmd 侧校验口径（空名拒写），失败不记账
+		if strings.TrimSpace(p.Name) == "" {
+			return errors.New("provider 名字不可为空")
+		}
+	}
+	if primary == "" {
+		return errors.New("primary 未命中")
+	}
+	f.primaryGot = append(f.primaryGot, primary)
+	f.applied = append(f.applied, ps)
+	return nil
+}
+func (f *fakeProviderMgr) Test(p ProviderPatch) error {
+	f.testPatches = append(f.testPatches, p)
+	return f.testErr
+}
+
+// TestProviderEditorHeadless 编辑区生命周期：快照填表（primary 标记、密钥恒空）、
+// 新增/设主/删除、全量应用分派（Orig 保留）、异步连通测试回灌。
+func TestProviderEditorHeadless(t *testing.T) {
+	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
+		{Name: "a", BaseURL: "http://a/v1", Models: "m1", Primary: true},
+		{Name: "b", BaseURL: "http://b/v1", Models: "mb"},
+	}}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	if len(f.provs) != 2 || f.primaryIdx != 0 {
+		t.Fatalf("编辑区 = %d 条, primary = %d", len(f.provs), f.primaryIdx)
+	}
+	if f.provs[0].apiKey.Text() != "" {
+		t.Error("密钥只写不回显（D35）：编辑档必须恒空")
+	}
+
+	// 新增 + 设主 + 应用：patch 全量（Orig 保留）+ primary 分派。
+	f.addProviderForm()
+	u.applyProviderChanges(f) // 帧外可测段：新增的第 3 条无名字 → 报错
+	if !f.provErr || !strings.Contains(f.provStatus, "名字") {
+		t.Fatalf("空名应用反馈 = (%v, %q)", f.provErr, f.provStatus)
+	}
+	latest := f.provs[len(f.provs)-1]
+	latest.name.SetText("c")
+	latest.baseURL.SetText("http://c/v1")
+	latest.models.SetText("mc")
+	u.applyProviderChanges(f)
+	if f.provErr || len(mgr.applied) != 1 {
+		t.Fatalf("应用反馈 = (%v, %q)", f.provErr, f.provStatus)
+	}
+	got := mgr.applied[0]
+	if len(got) != 3 || got[0].Orig != "a" || got[2].Orig != "" {
+		t.Fatalf("patches = %+v", got)
+	}
+	if mgr.primaryGot[0] != "a" {
+		t.Fatalf("primary = %q, want a", mgr.primaryGot[0])
+	}
+
+	// 异步连通测试：结果经 testResults 回灌（帧循环外直接读）。
+	u.runProviderTest(f, f.provs[0])
+	out := <-f.testResults
+	if out.err != nil || out.name != "a" {
+		t.Fatalf("test result = %+v", out)
+	}
+	mgr.testErr = errors.New("401 unauthorized")
+	u.runProviderTest(f, f.provs[1])
+	out = <-f.testResults
+	if out.err == nil {
+		t.Fatal("test 失败应回灌错误")
 	}
 }

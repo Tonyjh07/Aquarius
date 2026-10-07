@@ -14,16 +14,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// textSettings 设置窗文本键（config 文件即事实源；密钥永不读回——D35 只写不回显）。
-// D110②：provider 信息取自 model.providers——当前 primary（缺省首个）的 name 与 base_url。
+// textSettings 设置窗文本键（config 文件即事实源）。D110②：provider/base_url/
+// api_key 编辑走 ProviderManager（providers 列表结构），不在文本键范围。
 type textSettings struct {
-	Model struct {
-		Providers []struct {
-			Name    string `json:"name"`
-			BaseURL string `json:"base_url"`
-		} `json:"providers"`
-		Primary string `json:"primary"`
-	} `json:"model"`
 	UI struct {
 		Hotkey       string  `json:"hotkey"`
 		Theme        string  `json:"theme"`
@@ -45,20 +38,7 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return uigui.SettingsSnapshot{}
 	}
-	var provider, baseURL string
-	if len(raw.Model.Providers) > 0 {
-		p := raw.Model.Providers[0] // 缺省首个
-		for _, cand := range raw.Model.Providers {
-			if cand.Name == raw.Model.Primary {
-				p = cand
-				break
-			}
-		}
-		provider, baseURL = p.Name, p.BaseURL
-	}
 	return uigui.SettingsSnapshot{
-		Provider:     provider,
-		BaseURL:      baseURL,
 		Hotkey:       raw.UI.Hotkey,
 		Theme:        raw.UI.Theme,
 		Scale:        raw.UI.Scale,
@@ -69,10 +49,8 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 }
 
 // persistSettingsTextKeys 无内核命令覆盖的键一次泛键改写（ui.theme/hotkey + D90 三
-// 旋钮 scale/font_size/window_width/window_height + provider 选择与 primary 条目的
-// base_url/api_key。D110② 语义：provider 字段 = model.primary 选择器——须为 providers
-// 中已有名字，未知名字拒写；base_url/api_key 写入（可能刚切换的）primary 条目。
-// 空值 = 保持不变——api_key 仅用户填写时下发。有覆盖的键由命令各自写回，cfgWriteMu
+// 旋钮 scale/font_size/window_width/window_height。D110②：provider/base_url/api_key
+// 由 ProviderManager.Apply 全量写回，不在此列。有覆盖的键由命令各自写回，cfgWriteMu
 // 串行防丢更新）。
 // theme 先归一校验（"" → system），非法值拒写防落盘；旋钮数值原样落盘（UI 侧
 // clampWindowPx/clampKnobs 统一夹取，config 侧不重复校验）。
@@ -83,34 +61,6 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	case "system", "light", "dark":
 	default:
 		return fmt.Errorf("非法主题档 %q（须为 system|light|dark）", p.Theme)
-	}
-	if p.Provider != "" {
-		// provider 字段 = primary 选择器：须为 providers 中已有名字（D110③，
-		// 重启生效）；未知名字拒写防落盘坏 schema。新增/改名 provider 由设置窗
-		// 分组页（provider 编辑器）承担。
-		data, err := os.ReadFile(cfgPath)
-		if err != nil {
-			return fmt.Errorf("读取 config: %w", err)
-		}
-		var probe struct {
-			Model struct {
-				Providers []struct {
-					Name string `json:"name"`
-				} `json:"providers"`
-			} `json:"model"`
-		}
-		if err := json.Unmarshal(data, &probe); err == nil {
-			found := false
-			for _, pr := range probe.Model.Providers {
-				if pr.Name == p.Provider {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("provider %q 不在 model.providers 内（选择请用已有名字）", p.Provider)
-			}
-		}
 	}
 	return persistConfig(cfgPath, func(generic map[string]any) {
 		uiSec, _ := generic["ui"].(map[string]any)
@@ -124,20 +74,6 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		uiSec["font_size"] = p.FontSize
 		uiSec["window_width"] = p.WindowWidth
 		uiSec["window_height"] = p.WindowHeight
-		model := modelSection(generic)
-		if p.Provider != "" {
-			model["primary"] = p.Provider
-		}
-		target := providerSection(generic, "")
-		if target == nil {
-			return // 无 providers 条目：交由启动校验报因
-		}
-		if p.BaseURL != "" {
-			target["base_url"] = p.BaseURL
-		}
-		if p.APIKey != "" {
-			target["api_key"] = p.APIKey
-		}
 	})
 }
 

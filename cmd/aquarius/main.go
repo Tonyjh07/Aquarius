@@ -552,6 +552,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Settings:      settingsSnapshot,
 			ApplySettings: applySettings,
 			Profiles:      &profilesManager{dataDir: dir, current: profileName, profileCfg: cfgPath}, // D110③：profile 区
+			ProviderMgr:   &providerManager{cfgPath: cfgPath, stderr: stderr},                        // D110②：provider 编辑区
 			Tree:          sessionTree{p: &sessPtr},                                                  // D80/§7.5：分叉条只读数据面
 			Commands:      sessionCommands{p: &sessPtr},                                              // D103/S2b-1：补全浮层命令清单只读数据面
 			PosFile:       filepath.Join(profileDir, "gui_pos.json"),                                 // 位置记忆随 profile 走（D110 修订①）

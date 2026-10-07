@@ -16,13 +16,13 @@ import (
 // 文本键（provider/base_url/api_key/hotkey/theme）不进命令计划。
 func TestSettingsCommands(t *testing.T) {
 	cur := uigui.SettingsSnapshot{
-		Permission: "strict", Provider: "openai", BaseURL: "https://x/v1",
-		Model: "m1", Think: true, Effort: "medium", Hotkey: "", Theme: "system",
+		Permission: "strict",
+		Model:      "m1", Think: true, Effort: "medium", Hotkey: "", Theme: "system",
 	}
 	base := func() uigui.SettingsPatch {
 		return uigui.SettingsPatch{
-			Permission: "strict", Provider: "openai", BaseURL: "https://x/v1",
-			Model: "m1", Think: true, Effort: "medium", Theme: "system",
+			Permission: "strict",
+			Model:      "m1", Think: true, Effort: "medium", Theme: "system",
 		}
 	}
 	cases := []struct {
@@ -51,9 +51,6 @@ func TestSettingsCommands(t *testing.T) {
 			p.Effort = "low"
 		}, []string{"permission full-access", "model m2", "think off", "effort low"}},
 		{"文本键不进命令计划", func(p *uigui.SettingsPatch) {
-			p.Provider = "y"
-			p.BaseURL = "https://y/v1"
-			p.APIKey = "secret:K"
 			p.Hotkey = "Ctrl+B"
 			p.Theme = "dark"
 		}, nil},
@@ -82,25 +79,22 @@ func TestSettingsCommands(t *testing.T) {
 }
 
 // TestPersistReadTextSettingsRoundTrip 文本键写读往返：写回后 readTextSettings
-// 读回同值；其余键（permissions 段等）经泛键改写保留；快照结构无密钥字段。
-// D110②：provider 字段 = primary 选择器（须为 providers 已有名字，此处沿用模板名），
-// base_url/api_key 写入 primary 条目。
+// 读回同值；其余键（permissions 段等）经泛键改写保留。D110②：provider 编辑走
+// ProviderManager.Apply（providers 列表结构），不在文本键范围（见 providers_test）。
 func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
 	}
 	p := uigui.SettingsPatch{
-		Permission: "permissive", Provider: "openai", BaseURL: "https://x/v1",
-		APIKey: "secret:AQUARIUS_OPENAI_KEY", Model: "m9",
+		Permission: "permissive", Model: "m9",
 		Hotkey: "Ctrl+Alt+K", Theme: "dark",
 	}
 	if err := persistSettingsTextKeys(cfgPath, p); err != nil {
 		t.Fatalf("persistSettingsTextKeys: %v", err)
 	}
 	s := readTextSettings(cfgPath)
-	if s.Provider != "openai" || s.BaseURL != "https://x/v1" ||
-		s.Hotkey != "Ctrl+Alt+K" || s.Theme != "dark" {
+	if s.Hotkey != "Ctrl+Alt+K" || s.Theme != "dark" {
 		t.Errorf("文本键读回 = %+v", s)
 	}
 	data, err := os.ReadFile(cfgPath)
@@ -115,40 +109,14 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 	}
 	var back struct {
 		Model struct {
-			Primary   string `json:"primary"`
-			Providers []struct {
-				Name    string `json:"name"`
-				BaseURL string `json:"base_url"`
-				APIKey  string `json:"api_key"`
-			} `json:"providers"`
+			Primary string `json:"primary"`
 		} `json:"model"`
 	}
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatalf("解析 config: %v", err)
 	}
-	if back.Model.Primary != "openai" || len(back.Model.Providers) != 1 ||
-		back.Model.Providers[0].BaseURL != "https://x/v1" ||
-		back.Model.Providers[0].APIKey != "secret:AQUARIUS_OPENAI_KEY" {
-		t.Errorf("providers 写回 = %+v", back.Model)
-	}
-}
-
-// TestPersistSettingsTextKeysUnknownProvider D110②：provider 选择器给出 providers
-// 外的名字 → 拒写（含 ui 键一并不动，防半套落盘）。
-func TestPersistSettingsTextKeysUnknownProvider(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
-		t.Fatalf("写模板: %v", err)
-	}
-	before, _ := os.ReadFile(cfgPath)
-	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
-		Provider: "no-such", Theme: "dark",
-	}); err == nil {
-		t.Fatal("未知 provider 应拒写")
-	}
-	after, _ := os.ReadFile(cfgPath)
-	if string(before) != string(after) {
-		t.Error("拒写后文件应保持不变")
+	if back.Model.Primary != "openai" {
+		t.Errorf("model.primary = %q, want openai（文本键不触碰 provider 段）", back.Model.Primary)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gioui.org/app"
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
@@ -39,13 +40,47 @@ type ProfilesManager interface {
 	Switch(name string) error // 原子写根指针（重启生效）
 }
 
+// ProviderSnapshot provider 编辑区单条快照（D110②/③）：models/unsupported 以逗号
+// 分隔呈现在单行编辑档（表单口径）；APIKey 只写不回显（D35），不进快照。
+type ProviderSnapshot struct {
+	Name        string
+	BaseURL     string
+	Models      string // 逗号分隔（首个 = 该 provider 缺省请求模型）
+	Tokenizer   string
+	Unsupported string // 逗号分隔
+	Primary     bool   // 是否当前 primary
+}
+
+// ProviderPatch provider 编辑区单条提交（Apply 全量替换口径）。Orig = 编辑前的
+// 原名（cmd 侧按它保留原条目的 api_key 与无关键；空 = 新增条目）；APIKey 空 = 保持原值。
+type ProviderPatch struct {
+	Orig        string
+	Name        string
+	BaseURL     string
+	APIKey      string // "" = 不改（D35 只写不回显）
+	Models      string // 逗号分隔
+	Tokenizer   string
+	Unsupported string // 逗号分隔
+}
+
+// ProviderManager provider 列表管理面（D110②/③，装配根实现）：设置窗 provider
+// 编辑区数据面 + 全量应用 + 连通性测试。provider 变更重启生效（base_url/api_key/
+// tokenizer 构造期固化，port.LLM 不可热换）；Test = 真实最小请求（/models，短超时）。
+type ProviderManager interface {
+	Snapshot() []ProviderSnapshot
+	// Apply 全量替换 model.providers（primary 须命中列表；删除 = 缺席；cmd 侧
+	// 校验与 fallback 悬挂引用清理，泛键写回保留各条目无关键）。
+	Apply(primary string, providers []ProviderPatch) error
+	// Test 连通性测试（真实最小请求；调用方 goroutine 负责，不进帧循环）。
+	Test(p ProviderPatch) error
+}
+
 // SettingsSnapshot 设置窗核心档快照（开窗现取；同 Status 口径线程安全回调）。
 // Permission/Model/Think/Effort 由装配根取运行态（等级活槽与 Agent 访问器），
-// 其余取 config 文件；密钥永不进快照（D35 只写不回显）。
+// 其余取 config 文件；密钥永不进快照（D35 只写不回显）。provider 编辑数据面走
+// ProviderManager（D110②），不在本快照。
 type SettingsSnapshot struct {
 	Permission   string // 规范值 read-only|strict|permissive|full-access（perm.Level）
-	Provider     string
-	BaseURL      string
 	Model        string
 	Think        bool
 	Effort       string  // "" = 未设（D34 清除态）
@@ -57,13 +92,10 @@ type SettingsSnapshot struct {
 	WindowHeight int
 }
 
-// SettingsPatch 保存提交（表单全量；APIKey 仅在用户填写时非空 = 只写不回显）。
+// SettingsPatch 保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
 type SettingsPatch struct {
 	Permission   string
-	Provider     string
-	BaseURL      string
 	Model        string
-	APIKey       string // "" = 不改
 	Think        bool
 	Effort       string
 	Hotkey       string
@@ -126,36 +158,44 @@ func (c *cycleField) advance(gtx layout.Context) {
 	}
 }
 
-// settingsRows 表单行数（与 settingsForm 行渲染的 switch 对齐——改行数两处同步）。
-const settingsRows = 21
-
 // fieldH 文本档统一高度（dp）：单行编辑器 + 上下留白（material 无内建输入框边框）。
 const fieldH = 40
 
 // fieldLabelW 标签列宽（dp）：对齐各行控件起点。
 const fieldLabelW = 92
 
-// settingsForm 设置窗表单状态（次窗 goroutine 独占；控件即状态，不跨窗共享）。
+// settingsForm 设置窗表单状态（次窗事件循环 goroutine 独占；控件即状态，不跨窗
+// 共享）。行模型为动态行计划（rowPlan）：行数随 provider 数量变化（D110② 编辑区）。
 type settingsForm struct {
-	list       widget.List
-	provider   widget.Editor
-	model      widget.Editor
-	baseURL    widget.Editor
-	apiKey     widget.Editor
-	hotkey     widget.Editor
-	fontSize   widget.Editor // D90：正文字号 sp（数值，空 = 不改）
-	winW       widget.Editor // D90：主窗像素宽（数值，空 = 不改）
-	winH       widget.Editor // D90：主窗像素高
-	profName   widget.Editor // D110③：profile 名（新建/复制/切换共用输入档）
+	list widget.List
+	// 核心档控件（模型名/思考/档位/外观；provider 编辑走 provs）。
+	model    widget.Editor
+	hotkey   widget.Editor
+	fontSize widget.Editor // D90：正文字号 sp（数值，空 = 不改）
+	winW     widget.Editor // D90：主窗像素宽（数值，空 = 不改）
+	winH     widget.Editor // D90：主窗像素高
+	profName widget.Editor // D110③：profile 名（新建/复制/切换共用输入档）
+	think    widget.Bool
+	perm     cycleField
+	effort   cycleField
+	theme    cycleField
+	scale    cycleField // D90：元素缩放（cycle 百分比档）
+	save     widget.Clickable
+
+	// provider 编辑区（D110②）：每条一组控件 + 测试/设主/删除；provApply 全量应用。
+	provs       []*providerForm
+	primaryIdx  int // 当前 primary（provs 下标；应用时取该条名字）
+	provAdd     widget.Clickable
+	provApply   widget.Clickable
+	provStatus  string // provider 区反馈（"" = 默认提示）
+	provErr     bool
+	testResults chan testOutcome // 连通性测试异步结果（测试 goroutine 写、帧循环排空）
+	win         *app.Window      // 结果回灌的 Invalidate（headless = nil）
+
+	// profile 区（D110③）。
 	profCreate widget.Clickable
 	profCopy   widget.Clickable
 	profSwitch widget.Clickable
-	think      widget.Bool
-	perm       cycleField
-	effort     cycleField
-	theme      cycleField
-	scale      cycleField // D90：元素缩放（cycle 百分比档）
-	save       widget.Clickable
 
 	snap     SettingsSnapshot // 开窗快照（保存 diff 基准 + 变更提示）
 	profiles ProfilesSnapshot // profile 区数据面（动作后刷新，D110③）
@@ -165,21 +205,44 @@ type settingsForm struct {
 	focused  bool             // 首帧焦点入首档（其余点击自聚焦，editor.go FocusCmd）
 }
 
+// providerForm 单个 provider 的编辑控件组（D110②；本窗 goroutine 独占）。
+type providerForm struct {
+	orig        string // 快照原名（Apply 保留原 api_key 与无关键；"" = 新增）
+	name        widget.Editor
+	baseURL     widget.Editor
+	apiKey      widget.Editor // 只写不回显（D35）：留空 = 保持原值
+	models      widget.Editor // 逗号分隔
+	tokenizer   widget.Editor
+	unsupported widget.Editor // 逗号分隔
+	test        widget.Clickable
+	del         widget.Clickable
+	setPrimary  widget.Clickable
+}
+
+// testOutcome 连通性测试异步结果（testResults 单消费者 = 帧循环）。
+type testOutcome struct {
+	name string
+	err  error
+}
+
 // newSettingsForm 开窗现取快照填表：读回调缺失 = 空表单，写回调缺失 = 只读占位。
 func newSettingsForm(u *UI) *settingsForm {
 	f := &settingsForm{
-		perm:   cycleField{displays: permLevels, values: permLevels},
-		effort: cycleField{displays: effortLevels, values: effortValues},
-		theme:  cycleField{displays: themeLevels, values: themeValues},
-		scale:  cycleField{displays: zoomLevels, values: zoomValues},
+		perm:        cycleField{displays: permLevels, values: permLevels},
+		effort:      cycleField{displays: effortLevels, values: effortValues},
+		theme:       cycleField{displays: themeLevels, values: themeValues},
+		scale:       cycleField{displays: zoomLevels, values: zoomValues},
+		testResults: make(chan testOutcome, 8),
 	}
-	for _, ed := range []*widget.Editor{&f.provider, &f.model, &f.baseURL, &f.apiKey, &f.hotkey,
-		&f.fontSize, &f.winW, &f.winH, &f.profName} {
+	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
 	f.readOnly = u.opts.ApplySettings == nil
 	if u.opts.Profiles != nil {
 		f.profiles = u.opts.Profiles.Snapshot() // D110③：profile 区数据面
+	}
+	if u.opts.ProviderMgr != nil {
+		f.loadProviders(u.opts.ProviderMgr.Snapshot()) // D110②：provider 编辑区
 	}
 	if u.opts.Settings == nil {
 		return f
@@ -195,9 +258,7 @@ func newSettingsForm(u *UI) *settingsForm {
 		s.FontSize = fontSpBase
 	}
 	f.snap = s
-	f.provider.SetText(s.Provider)
 	f.model.SetText(s.Model)
-	f.baseURL.SetText(s.BaseURL)
 	// api_key 只写不回显（D35）：字段恒空，留空 = 保持不变。
 	f.hotkey.SetText(s.Hotkey)
 	f.think.Value = s.Think
@@ -215,6 +276,36 @@ func newSettingsForm(u *UI) *settingsForm {
 	return f
 }
 
+// addProviderForm 追加一个空白 provider 编辑组（帧循环与测试共用；Apply 校验必填项）。
+func (f *settingsForm) addProviderForm() {
+	pf := &providerForm{}
+	for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported} {
+		ed.SingleLine = true
+	}
+	f.provs = append(f.provs, pf)
+}
+
+// loadProviders 以快照重建 provider 编辑区（开窗填表；快照空 = 无条目，留新增入口）。
+func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
+	f.provs = make([]*providerForm, 0, len(snap))
+	f.primaryIdx = 0
+	for i, p := range snap {
+		pf := &providerForm{orig: p.Name}
+		for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported} {
+			ed.SingleLine = true
+		}
+		pf.name.SetText(p.Name)
+		pf.baseURL.SetText(p.BaseURL)
+		pf.models.SetText(p.Models)
+		pf.tokenizer.SetText(p.Tokenizer)
+		pf.unsupported.SetText(p.Unsupported)
+		if p.Primary {
+			f.primaryIdx = i
+		}
+		f.provs = append(f.provs, pf)
+	}
+}
+
 // saveSettings 保存流（渲染外的可 headless 测段）：组装 patch → 写回调（装配根持久化
 // 文本键并返回内核命令计划）→ 命令经 inCh 排队（与键入同路径串行执行、回执进转写区；
 // 队列 256 深、主循环持续排空，阻塞投递不致死锁）→ 主题/快捷键 GUI 侧热生效 →
@@ -227,10 +318,7 @@ func (u *UI) saveSettings(f *settingsForm) {
 	}
 	p := SettingsPatch{
 		Permission: f.perm.value(),
-		Provider:   strings.TrimSpace(f.provider.Text()),
-		BaseURL:    strings.TrimSpace(f.baseURL.Text()),
 		Model:      strings.TrimSpace(f.model.Text()),
-		APIKey:     strings.TrimSpace(f.apiKey.Text()),
 		Think:      f.think.Value,
 		Effort:     f.effort.value(),
 		Hotkey:     strings.TrimSpace(f.hotkey.Text()),
@@ -303,15 +391,12 @@ func (u *UI) saveSettings(f *settingsForm) {
 	}
 	f.err = false
 	f.status = "已保存"
-	switch {
-	case p.APIKey != "":
-		f.status = "已保存（密钥已写入 config，重启生效）"
-	case p.Provider != f.snap.Provider || p.BaseURL != f.snap.BaseURL:
-		f.status = "已保存（模型服务地址改动重启生效）"
+	if p.Model != f.snap.Model {
+		f.status = "已保存（模型名经 /model 热切换）"
 	}
 	f.snap = SettingsSnapshot{
-		Permission: p.Permission, Provider: p.Provider, BaseURL: p.BaseURL,
-		Model: p.Model, Think: p.Think, Effort: p.Effort, Hotkey: p.Hotkey, Theme: p.Theme,
+		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
+		Hotkey: p.Hotkey, Theme: p.Theme,
 		Scale: p.Scale, FontSize: p.FontSize,
 		WindowWidth: p.WindowWidth, WindowHeight: p.WindowHeight,
 	}
@@ -373,6 +458,95 @@ func (u *UI) profileAction(f *settingsForm, act string) {
 	}
 }
 
+// providerPatchOf 组装单条 provider 提交（编辑区现值 → patch；apiKey 只写不回显）。
+func providerPatchOf(pf *providerForm) ProviderPatch {
+	return ProviderPatch{
+		Orig:        pf.orig,
+		Name:        strings.TrimSpace(pf.name.Text()),
+		BaseURL:     strings.TrimSpace(pf.baseURL.Text()),
+		APIKey:      strings.TrimSpace(pf.apiKey.Text()),
+		Models:      strings.TrimSpace(pf.models.Text()),
+		Tokenizer:   strings.TrimSpace(pf.tokenizer.Text()),
+		Unsupported: strings.TrimSpace(pf.unsupported.Text()),
+	}
+}
+
+// applyProviderChanges provider 区「应用变更」（D110②）：全量 patch + primary →
+// ProviderManager.Apply（cmd 侧校验与泛键写回，重启生效）。与核心档保存流独立——
+// 两类写路径互不混叠。
+func (u *UI) applyProviderChanges(f *settingsForm) {
+	if u.opts.ProviderMgr == nil {
+		f.provErr = true
+		f.provStatus = "provider 编辑未接线"
+		return
+	}
+	if len(f.provs) == 0 {
+		f.provErr = true
+		f.provStatus = "至少保留一个 provider"
+		return
+	}
+	patches := make([]ProviderPatch, 0, len(f.provs))
+	for _, pf := range f.provs {
+		patches = append(patches, providerPatchOf(pf))
+	}
+	primary := ""
+	if f.primaryIdx >= 0 && f.primaryIdx < len(f.provs) {
+		primary = strings.TrimSpace(f.provs[f.primaryIdx].name.Text())
+	}
+	if err := u.opts.ProviderMgr.Apply(primary, patches); err != nil {
+		f.provErr = true
+		f.provStatus = "应用失败：" + err.Error()
+		return
+	}
+	f.provErr = false
+	f.provStatus = "已应用 provider 变更（重启生效）"
+	f.loadProviders(u.opts.ProviderMgr.Snapshot()) // 以落盘事实源重建编辑区（orig 对齐、primary 回正）
+}
+
+// runProviderTest 连通性测试（D110②，真实最小请求）：goroutine 跑 Test（网络 +
+// 短超时，不得卡帧循环），结果经 testResults 通道回灌帧循环（win.Invalidate 唤醒）。
+func (u *UI) runProviderTest(f *settingsForm, pf *providerForm) {
+	if u.opts.ProviderMgr == nil {
+		f.provErr = true
+		f.provStatus = "provider 编辑未接线"
+		return
+	}
+	patch := providerPatchOf(pf)
+	go func() {
+		err := u.opts.ProviderMgr.Test(patch)
+		select {
+		case f.testResults <- testOutcome{name: patch.Name, err: err}:
+		default: // 槽满丢弃最旧（测试结果是最简反馈，不积压）
+			select {
+			case <-f.testResults:
+			default:
+			}
+			f.testResults <- testOutcome{name: patch.Name, err: err}
+		}
+		if f.win != nil {
+			f.win.Invalidate() // 帧循环重绘排空结果（并发安全）
+		}
+	}()
+}
+
+// drainTestResults 帧循环排空连通性测试结果（最新一条覆盖展示）。
+func (f *settingsForm) drainTestResults() {
+	for {
+		select {
+		case r := <-f.testResults:
+			if r.err != nil {
+				f.provErr = true
+				f.provStatus = "连通测试 " + r.name + " 失败：" + r.err.Error()
+			} else {
+				f.provErr = false
+				f.provStatus = "连通测试 " + r.name + " 通过"
+			}
+		default:
+			return
+		}
+	}
+}
+
 // setHotkey 更新快捷键配置原子槽并请求托盘线程重注册（设置窗保存；注册归属托盘
 // 线程——RegisterHotKey 归调用线程，跨线程只能投消息，§15.1）。headless/非窗口
 // 平台 = 槽更新即止。
@@ -381,9 +555,83 @@ func (u *UI) setHotkey(hk string) {
 	reRegisterHotkey()
 }
 
-// settingsFrame 设置窗单帧：滚动表单（§15.7/D60 核心档数据面）。事件先于渲染取尽
-// （Clicked 自带 Update；点击触发重绘，新值随后续帧呈现）。常规窗不做形状位图/羽化
-// （§15.7 形态）：windowBg 铺底，与主窗内容面同底。
+// rowKind 表单行类型（动态行计划：provider 编辑区行数随 providers 数量变化，D110②）。
+type rowKind int
+
+const (
+	rowTitle rowKind = iota
+	rowProfHead
+	rowProfCurrent
+	rowProfName
+	rowProfBtns
+	rowSecModel
+	rowProvField
+	rowProvBtns
+	rowProvAdd
+	rowProvApply
+	rowSecCore
+	rowPerm
+	rowThink
+	rowEffort
+	rowSecLook
+	rowHotkey
+	rowTheme
+	rowScale
+	rowFontSize
+	rowWinSize
+	rowActions
+)
+
+// provider 字段槽位（rowDesc.field）。
+const (
+	provNameFld = iota
+	provURLFld
+	provKeyFld
+	provModelsFld
+	provTokFld
+	provUnsupFld
+	provFldN
+)
+
+// provFieldMeta provider 字段行的标签与占位提示（下标对齐字段槽位）。
+var provFieldMeta = [provFldN]struct{ label, hint string }{
+	{"名称", "provider 唯一标识（primary/fallback 按名引用）"},
+	{"接口地址", "如 https://api.openai.com/v1"},
+	{"API 密钥", "只写不回显；留空保持不变（D35）"},
+	{"模型列表", "逗号分隔；首个 = 缺省请求模型"},
+	{"Tokenizer", "本地 tokenizer.json 路径；空 = 估算"},
+	{"不认参数", "逗号分隔；服务端不认的请求参数（D34）"},
+}
+
+// rowDesc 一行的类型与定位。
+type rowDesc struct {
+	kind  rowKind
+	prov  int // rowProvField / rowProvBtns：provider 下标
+	field int // rowProvField：字段槽位
+}
+
+// rowPlan 本帧行计划（每帧现算：providers 数量在新增/删除后即变）。
+func (f *settingsForm) rowPlan() []rowDesc {
+	rows := []rowDesc{
+		{kind: rowTitle}, {kind: rowProfHead}, {kind: rowProfCurrent},
+		{kind: rowProfName}, {kind: rowProfBtns}, {kind: rowSecModel},
+	}
+	for i := range f.provs {
+		for fld := 0; fld < provFldN; fld++ {
+			rows = append(rows, rowDesc{kind: rowProvField, prov: i, field: fld})
+		}
+		rows = append(rows, rowDesc{kind: rowProvBtns, prov: i})
+	}
+	return append(rows,
+		rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply},
+		rowDesc{kind: rowSecCore}, rowDesc{kind: rowPerm}, rowDesc{kind: rowThink}, rowDesc{kind: rowEffort},
+		rowDesc{kind: rowSecLook}, rowDesc{kind: rowHotkey}, rowDesc{kind: rowTheme}, rowDesc{kind: rowScale},
+		rowDesc{kind: rowFontSize}, rowDesc{kind: rowWinSize}, rowDesc{kind: rowActions})
+}
+
+// settingsFrame 设置窗单帧：滚动表单（§15.7/D60 核心档数据面 + D110②③ 动态区）。
+// 事件先于渲染取尽（Clicked 自带 Update；点击触发重绘，新值随后续帧呈现）。常规窗
+// 不做形状位图/羽化（§15.7 形态）：windowBg 铺底，与主窗内容面同底。
 func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsForm) layout.Dimensions {
 	for f.save.Clicked(gtx) {
 		u.saveSettings(f)
@@ -397,33 +645,61 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	for f.profSwitch.Clicked(gtx) {
 		u.profileAction(f, "switch")
 	}
+	for f.provAdd.Clicked(gtx) {
+		f.addProviderForm()
+	}
+	for f.provApply.Clicked(gtx) {
+		u.applyProviderChanges(f)
+	}
+	for i, pf := range f.provs {
+		for pf.test.Clicked(gtx) {
+			u.runProviderTest(f, pf)
+		}
+		for pf.setPrimary.Clicked(gtx) {
+			f.primaryIdx = i
+		}
+		for pf.del.Clicked(gtx) {
+			if len(f.provs) > 1 { // 至少保留一条（providers 不可为空，启动校验同口径）
+				f.provs = append(f.provs[:i], f.provs[i+1:]...)
+				switch {
+				case f.primaryIdx == i:
+					f.primaryIdx = 0
+				case f.primaryIdx > i:
+					f.primaryIdx--
+				}
+			}
+		}
+	}
+	f.drainTestResults() // 连通性测试异步结果（最新一条覆盖展示）
 	f.perm.advance(gtx)
 	f.effort.advance(gtx)
 	f.theme.advance(gtx)
 	f.scale.advance(gtx)
 	if !f.focused {
 		f.focused = true
-		gtx.Execute(key.FocusCmd{Tag: &f.provider}) // 开窗焦点入首档；点击切换（editor.go 自聚焦）
+		gtx.Execute(key.FocusCmd{Tag: &f.model}) // 开窗焦点入模型名档；点击切换（editor.go 自聚焦）
 	}
+	rows := f.rowPlan()
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, windowBg,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
-			return material.List(th, &f.list).Layout(gtx, settingsRows, f.row(th))
+			return material.List(th, &f.list).Layout(gtx, len(rows), f.row(th, rows))
 		}),
 	)
 }
 
-// row 第 i 行渲染（material.List 回调；行序与 settingsRows 对齐）。
-func (f *settingsForm) row(th *material.Theme) func(layout.Context, int) layout.Dimensions {
+// row 第 i 行渲染（material.List 回调；行内容按 rowPlan 的类型分派）。
+func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Context, int) layout.Dimensions {
 	return func(gtx layout.Context, i int) layout.Dimensions {
 		return layout.UniformInset(unit.Dp(14)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			switch i {
-			case 0:
+			r := rows[i]
+			switch r.kind {
+			case rowTitle:
 				return material.H6(th, "设置").Layout(gtx)
-			case 1: // D110③：profile 区（当前 + 名字输入 + 三动作）
+			case rowProfHead: // D110③：profile 区（当前 + 名字输入 + 三动作）
 				return material.Subtitle1(th, "Profile").Layout(gtx)
-			case 2:
+			case rowProfCurrent:
 				return fieldRow(gtx, th, "当前", func(gtx layout.Context) layout.Dimensions {
 					txt := f.profiles.Current
 					if len(f.profiles.Items) > 0 {
@@ -433,45 +709,117 @@ func (f *settingsForm) row(th *material.Theme) func(layout.Context, int) layout.
 					l.Color = textDim
 					return l.Layout(gtx)
 				})
-			case 3:
+			case rowProfName:
 				return fieldRow(gtx, th, "Profile 名", editorBox(th, &f.profName, "新建 / 复制 / 切换的目标名"))
-			case 4:
+			case rowProfBtns:
 				return f.profileButtonsRow(gtx, th)
-			case 5:
+			case rowSecModel: // D110②：provider 编辑区（动态行，重启生效）
+				return material.Subtitle1(th, "模型服务（provider 列表）").Layout(gtx)
+			case rowProvField:
+				pf := f.provs[r.prov]
+				eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
+				meta := provFieldMeta[r.field]
+				return fieldRow(gtx, th, meta.label, editorBox(th, eds[r.field], meta.hint))
+			case rowProvBtns:
+				return f.providerButtonsRow(gtx, th, r.prov)
+			case rowProvAdd:
+				return f.providerAddRow(gtx, th)
+			case rowProvApply:
+				return f.providerApplyRow(gtx, th)
+			case rowSecCore:
 				return material.Subtitle1(th, "权限与思考").Layout(gtx)
-			case 6:
+			case rowPerm:
 				return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm))
-			case 7:
+			case rowThink:
 				return material.CheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）").Layout(gtx)
-			case 8:
+			case rowEffort:
 				return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort))
-			case 9:
-				return material.Subtitle1(th, "模型服务").Layout(gtx)
-			case 10:
-				return fieldRow(gtx, th, "提供方", editorBox(th, &f.provider, "primary 选择器（providers 中的名字）"))
-			case 11:
-				return fieldRow(gtx, th, "模型名", editorBox(th, &f.model, "如 gpt-4o-mini（/model 同口径热切）"))
-			case 12:
-				return fieldRow(gtx, th, "接口地址", editorBox(th, &f.baseURL, "primary 的 base_url（重启生效）"))
-			case 13:
-				return fieldRow(gtx, th, "API 密钥", editorBox(th, &f.apiKey, "只写不回显；留空保持不变（D35）"))
-			case 14:
+			case rowSecLook:
 				return material.Subtitle1(th, "外观与呼出").Layout(gtx)
-			case 15:
+			case rowHotkey:
 				return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
-			case 16:
+			case rowTheme:
 				return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme))
-			case 17:
+			case rowScale:
 				return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale))
-			case 18:
+			case rowFontSize:
 				return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
-			case 19:
+			case rowWinSize:
 				return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
 			default:
 				return f.actionsRow(gtx, th)
 			}
 		})
 	}
+}
+
+// providerButtonsRow 单个 provider 的动作按钮：连通测试 / 设为主 / 删除（D110②）。
+func (f *settingsForm) providerButtonsRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
+	pf := f.provs[i]
+	btn := func(c *widget.Clickable, label string) layout.Widget {
+		return func(gtx layout.Context) layout.Dimensions {
+			b := material.Button(th, c, label)
+			b.TextSize = unit.Sp(12)
+			return b.Layout(gtx)
+		}
+	}
+	primary := "设为主"
+	col := th.Fg
+	if f.primaryIdx == i {
+		primary, col = "★ 主", brandColor
+	}
+	pb := material.Button(th, &pf.setPrimary, primary)
+	pb.TextSize = unit.Sp(12)
+	pb.Color = col
+	del := material.Button(th, &pf.del, "删除")
+	del.TextSize = unit.Sp(12)
+	if len(f.provs) <= 1 {
+		del.Color = textDim // 仅剩一条不可删（providers 不可为空）
+	}
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(btn(&pf.test, "测试连通")),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, pb.Layout)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, del.Layout)
+		}),
+	)
+}
+
+// providerAddRow 新增 provider 入口（编辑区尾部；Apply 校验名字等必填项）。
+func (f *settingsForm) providerAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	b := material.Button(th, &f.provAdd, "＋ 新增 provider")
+	b.TextSize = unit.Sp(13)
+	return b.Layout(gtx)
+}
+
+// providerApplyRow provider 区应用按钮 + 反馈文案（成功绿/错误红 = 转写区语义色）。
+func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			b := material.Button(th, &f.provApply, "应用 provider 变更")
+			b.Background = brandColor
+			b.Color = whiteText
+			b.TextSize = unit.Sp(13)
+			return b.Layout(gtx)
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				text := f.provStatus
+				col := textSystem
+				switch {
+				case text == "":
+					text, col = "变更全量写回 config，重启生效；「测试连通」发真实最小请求。", textDim
+				case f.provErr:
+					col = textError
+				}
+				l := material.Body2(th, text)
+				l.Color = col
+				return l.Layout(gtx)
+			})
+		}),
+	)
 }
 
 // profileButtonsRow profile 区三动作按钮（D110③）：新建 / 复制当前 / 切换（重启生效）。
@@ -567,7 +915,7 @@ func (f *settingsForm) actionsRow(gtx layout.Context, th *material.Theme) layout
 				col := textSystem
 				switch {
 				case text == "":
-					text, col = "保存后立即生效；模型服务地址与密钥改动需重启。", textDim
+					text, col = "保存后立即生效；provider 列表在「模型服务」区应用（重启生效）。", textDim
 				case f.err:
 					col = textError
 				}
