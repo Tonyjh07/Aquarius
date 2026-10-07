@@ -393,393 +393,48 @@ func (s *Session) maybeSetTitle(text string) {
 func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, error) {
 	switch cmd.Name {
 	case "new":
-		title := strings.TrimSpace(strings.Join(cmd.Args, " "))
-		if title == "" {
-			title = defaultTitle
-		}
-		c, err := s.newConversation(title)
-		if err != nil {
-			return "", err
-		}
-		if err := s.store.Save(ctx, c); err != nil {
-			return "", fmt.Errorf("session: 新建会话: %w", err)
-		}
-		s.cur = c
-		if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75，修订 D72 后果④）
-			return "", err
-		}
-		return fmt.Sprintf("已新建会话 %s", c.ID), nil
-
+		return s.execNew(ctx, cmd)
 	case "list":
-		sums, err := s.store.List(ctx)
-		if err != nil {
-			return "", fmt.Errorf("session: 列出会话: %w", err)
-		}
-		if len(sums) == 0 {
-			return "（暂无会话）", nil
-		}
-		var b strings.Builder
-		for _, sm := range sums {
-			mark := " "
-			if sm.ID == s.cur.ID {
-				mark = "*"
-			}
-			fmt.Fprintf(&b, "%s %s  %d条  %s\n", mark, sm.ID, sm.MessageN, sm.Title)
-		}
-		return strings.TrimRight(b.String(), "\n"), nil
-
+		return s.execList(ctx, cmd)
 	case "switch":
-		if len(cmd.Args) != 1 {
-			return "", errors.New("用法: /switch <id前缀>（/list 查看可用会话，支持唯一前缀）")
-		}
-		id, err := s.resolveConversation(ctx, cmd.Args[0])
-		if err != nil {
-			return "", err
-		}
-		// 切前落盘当前会话：/edit 等只改内存的命令必须带上，否则切走即丢（D75）。
-		if err := s.store.Save(ctx, s.cur); err != nil {
-			return "", fmt.Errorf("session: 保存当前会话: %w", err)
-		}
-		if id != s.cur.ID {
-			next, err := s.store.Load(ctx, id)
-			if err != nil {
-				return "", fmt.Errorf("session: 载入会话 %s: %w", id, err)
-			}
-			s.cur = next
-		}
-		// 清屏后回放目标会话可见历史（目标即当前时等价重载，D75）。
-		if err := s.emitClear(ctx); err != nil {
-			return "", err
-		}
-		if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("已切换到会话 %s", s.cur.ID), nil
-
+		return s.execSwitch(ctx, cmd)
 	case "title":
-		if len(cmd.Args) == 0 {
-			return fmt.Sprintf("当前标题: %s", s.cur.Title), nil
-		}
-		title := strings.TrimSpace(strings.Join(cmd.Args, " "))
-		s.cur.Title = title
-		if err := s.store.Save(ctx, s.cur); err != nil {
-			return "", fmt.Errorf("session: 保存标题: %w", err)
-		}
-		return fmt.Sprintf("标题已改为: %s", title), nil
-
+		return s.execTitle(ctx, cmd)
 	case "goto":
-		if len(cmd.Args) != 1 {
-			return "", errors.New("用法: /goto <id>（id 可用 /branch 查看，支持唯一前缀）")
-		}
-		id, err := s.resolveNode(cmd.Args[0])
-		if err != nil {
-			return "", err
-		}
-		if err := s.cur.Checkout(id); err != nil {
-			return "", fmt.Errorf("session: 移动 Head: %w", err)
-		}
-		if err := s.persist(ctx); err != nil {
-			return "", err
-		}
-		// D81：移 Head 后清屏 + 回放新路径——转写区恒与 Head 一致（此前不回放是缺口：
-		// 切分支后界面仍停在旧分支）。口径与 /switch（D75）一致。
-		if err := s.emitClear(ctx); err != nil {
-			return "", err
-		}
-		if _, err := s.replayHistory(ctx, "已切换分支至"); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("Head → %s", id), nil
-
+		return s.execGoto(ctx, cmd)
 	case "edit":
-		target, mode, part, text, err := parseEditArgs(cmd.Args)
-		if err != nil {
-			return "", err
-		}
-		id, err := s.resolveNode(target)
-		if err != nil {
-			return "", err
-		}
-		parts, err := s.editParts(id, text, part)
-		if err != nil {
-			return "", err
-		}
-		m, err := s.cur.Revise(id, parts, mode)
-		if err != nil {
-			return "", fmt.Errorf("session: 修订: %w", err)
-		}
-		if err := s.persist(ctx); err != nil {
-			return "", err
-		}
-		// D92：Revise 已移 Head（Fresh 恒移、Carry 例外）——清屏回放新路径，
-		// 转写区恒与 Head 一致（D81 口径，/goto 同款；此前只入树不回放是缺口）。
-		if err := s.emitClear(ctx); err != nil {
-			return "", err
-		}
-		if _, err := s.replayHistory(ctx, "已修订"); err != nil {
-			return "", err
-		}
-		note := "旧分支保留"
-		switch mode {
-		case conversation.Carry:
-			note = "后续历史已转移"
-		case conversation.Clone:
-			note = "后续历史已复制"
-		}
-		// D93：编辑用户消息（Fresh 分叉）= 改写并重新生成——Head 在无回答的新节点上，
-		// 直接重跑一轮（Carry 是原地改写历史，Head 随转移子树；assistant/system 修订
-		// 不触发生成）。
-		if mode == conversation.Fresh && m.Role == conversation.RoleUser {
-			if err := s.runTurn(ctx); err != nil {
-				return "", err
-			}
-			note += "，已重新生成回答"
-		}
-		return fmt.Sprintf("已修订 %s → %s（%s，%s；Head → %s）", id, m.ID, mode, note, s.cur.Head), nil
-
+		return s.execEdit(ctx, cmd)
 	case "regen":
-		if len(cmd.Args) != 1 {
-			return "", errors.New("用法: /regen <id>（id 可为用户或助手消息，支持唯一前缀）")
-		}
-		id, err := s.resolveNode(cmd.Args[0])
-		if err != nil {
-			return "", err
-		}
-		um, err := s.upstreamUser(id)
-		if err != nil {
-			return "", err
-		}
-		forked := true
-		if len(s.cur.Children[um.ID]) == 0 {
-			// D93：上游用户消息尚无任何回答（编辑 Fresh 分叉后/空轮次）——Revise 只会
-			// 造出同文本的冗余兄弟分支；Head 不在其上则移过去，直接生成本回答。
-			forked = false
-			if s.cur.Head != um.ID {
-				if err := s.cur.Checkout(um.ID); err != nil {
-					return "", fmt.Errorf("session: 移动 Head: %w", err)
-				}
-				if err := s.persist(ctx); err != nil {
-					return "", err
-				}
-			}
-		} else {
-			// 已有回答：原 Parts 原样重发（Revise 内部 cloneParts，多模态分片保真）；
-			// Fresh 开同父兄弟节点，旧回答子树原样留作历史分支。
-			if _, err := s.cur.Revise(um.ID, um.Content, conversation.Fresh); err != nil {
-				return "", fmt.Errorf("session: 重发用户消息: %w", err)
-			}
-			if err := s.persist(ctx); err != nil {
-				return "", err
-			}
-		}
-		// Head 已就位：清屏回放（D81 口径）后重跑一轮生成。
-		if err := s.emitClear(ctx); err != nil {
-			return "", err
-		}
-		if _, err := s.replayHistory(ctx, "已重新生成"); err != nil {
-			return "", err
-		}
-		if err := s.runTurn(ctx); err != nil {
-			return "", err
-		}
-		if forked {
-			return fmt.Sprintf("已重新生成（旧回答保留为分支；Head → %s）", s.cur.Head), nil
-		}
-		return fmt.Sprintf("已重新生成（Head → %s）", s.cur.Head), nil
-
+		return s.execRegen(ctx, cmd)
 	case "branch":
-		if len(cmd.Args) > 1 {
-			return "", errors.New("用法: /branch [id]（缺省取当前 Head）")
-		}
-		id := s.cur.Head
-		if len(cmd.Args) == 1 {
-			var err error
-			if id, err = s.resolveNode(cmd.Args[0]); err != nil {
-				return "", err
-			}
-		}
-		self, ok := s.cur.Find(id)
-		if !ok {
-			return "", fmt.Errorf("session: %w", conversation.ErrNotFound)
-		}
-		// 展示自身 + 同级分叉（新旧版本对比）+ 下级（逐层下钻可发现深层 id）；
-		// Root 的"同级"按 D15 即其孩子，改标"顶层消息"且不重复列出下级。
-		isRoot := self.Role == conversation.RoleRoot
-		var b strings.Builder
-		fmt.Fprintf(&b, "当前: %s\n", branchLine(self, s.cur.Head, s.cur.RevisedFrom))
-		sibsLabel := "同级分叉"
-		if isRoot {
-			sibsLabel = "顶层消息"
-		}
-		sibs := s.cur.Branches(id)
-		if len(sibs) == 0 {
-			fmt.Fprintf(&b, "%s: 无", sibsLabel)
-		} else {
-			fmt.Fprintf(&b, "%s（%d 条，不含自身）:", sibsLabel, len(sibs))
-			for _, m := range sibs {
-				b.WriteString("\n  " + branchLine(m, s.cur.Head, s.cur.RevisedFrom))
-			}
-		}
-		if !isRoot {
-			kids := s.cur.Children[id]
-			if len(kids) == 0 {
-				b.WriteString("\n下级: 无")
-			} else {
-				fmt.Fprintf(&b, "\n下级（%d 条）:", len(kids))
-				for _, kid := range kids {
-					if m, ok := s.cur.Find(kid); ok {
-						b.WriteString("\n  " + branchLine(m, s.cur.Head, s.cur.RevisedFrom))
-					}
-				}
-			}
-		}
-		return b.String(), nil
-
+		return s.execBranch(ctx, cmd)
 	case "rm":
-		if len(cmd.Args) != 1 {
-			return "", errors.New("用法: /rm <id>（剪掉该节点及整棵子树，二次确认）")
-		}
-		id, err := s.resolveNode(cmd.Args[0])
-		if err != nil {
-			return "", err
-		}
-		m, _ := s.cur.Find(id)
-		if m.Role == conversation.RoleRoot {
-			return "", errors.New("session: root 即会话，不可删除（D19）") // 先于确认拒绝，不消费确认应答
-		}
-		if s.confirmer == nil {
-			return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rm 需要二次确认")
-		}
-		size := subtreeSize(s.cur, id)
-		prompt := fmt.Sprintf("确认删除 %s 及其子树（至少 %d 条节点）？此操作不可恢复", id, size)
-		ans, err := s.confirmer.Confirm(ctx, prompt)
-		if err != nil {
-			return "", fmt.Errorf("session: 确认删除: %w", err)
-		}
-		if !ans.Allow {
-			return fmt.Sprintf("已取消删除 %s", id), nil
-		}
-		before := len(s.cur.Nodes)
-		if err := s.cur.Prune(id); err != nil {
-			return "", fmt.Errorf("session: 删除: %w", err)
-		}
-		removed := before - len(s.cur.Nodes) // 实际删除数 = 子树大小（D95 后 Prune 恰删子树，无连带）
-		if err := s.persist(ctx); err != nil {
-			// 删除绝不"半生效"：落盘失败即回滚到最近一次成功保存的状态。
-			if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
-				s.cur = c
-				return "", fmt.Errorf("session: 落盘失败，删除已回滚（会话树未改动）: %w", err)
-			}
-			return "", fmt.Errorf("session: 落盘失败且无法回滚，删除仅存在于内存（下次成功保存会写盘，请谨慎继续）: %w", err)
-		}
-		return fmt.Sprintf("已删除 %s 子树（%d 条节点；Head → %s）", id, removed, s.cur.Head), nil
-
+		return s.execRm(ctx, cmd)
 	case "exit":
 		return "", ErrQuit
-
 	case "compact":
-		node, absorbed, err := s.agent.Compact(ctx, s.cur)
-		if errors.Is(err, ErrNothingToCompact) {
-			return "无需压缩：摘要之上没有新的历史", nil
-		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return "已取消压缩（会话未改动）", nil
-		}
-		if err != nil {
-			return "", err
-		}
-		if err := s.store.Save(ctx, s.cur); err != nil {
-			return "", fmt.Errorf("session: 保存会话: %w", err)
-		}
-		return fmt.Sprintf("已压缩 %d 条历史 → 1 条摘要（in=%d out=%d tokens）",
-			absorbed, node.Usage.InputTokens, node.Usage.OutputTokens), nil
-
+		return s.execCompact(ctx, cmd)
 	case "permission":
-		if len(cmd.Args) == 0 {
-			return s.permissionReport(), nil
-		}
-		if len(cmd.Args) > 1 {
-			return "", errors.New("用法: /permission [read-only|strict|permissive|full-access]")
-		}
-		level, err := perm.Parse(cmd.Args[0])
-		if err != nil {
-			return "", err
-		}
-		if level == s.level {
-			return fmt.Sprintf("权限等级已是 %s", level), nil
-		}
-		if s.persistLevel == nil {
-			return "", errors.New("session: 未配置权限持久化，无法切换（D22 要求写回 config）")
-		}
-		if err := s.persistLevel(level); err != nil {
-			return "", fmt.Errorf("session: 写回 config 失败: %w", err)
-		}
-		s.level = level
-		return fmt.Sprintf("权限等级已切换为 %s（已写回 config；工具链路即时生效）", level), nil
-
+		return s.execPermission(ctx, cmd)
 	case "memory":
-		if s.openMemory == nil {
-			return "", errors.New("session: 未配置记忆编辑器（SessionDeps.OpenMemory）")
-		}
-		if len(cmd.Args) > 1 {
-			return "", errors.New("用法: /memory [会话id前缀]（缺省打开全局记忆文件）")
-		}
-		name := port.GlobalMemoryDoc
-		if len(cmd.Args) == 1 {
-			id, err := s.resolveConversation(ctx, cmd.Args[0])
-			if err != nil {
-				return "", err
-			}
-			name = port.SessionMemoryDoc(id)
-		}
-		path, err := s.openMemory(name)
-		if err != nil {
-			return "", fmt.Errorf("session: 打开记忆文件: %w", err)
-		}
-		return fmt.Sprintf("已用系统编辑器打开 %s（保存后下次读取即生效）", path), nil
-
+		return s.execMemory(ctx, cmd)
 	case "usage":
-		rep, err := s.agent.UsageReport(ctx, s.cur)
-		if err != nil {
-			return "", fmt.Errorf("session: 估算用量: %w", err)
-		}
-		var b strings.Builder
-		pct := 100 * float64(rep.Estimate) / float64(rep.MaxCtx)
-		tpct := 100 * float64(rep.CompactAt) / float64(rep.MaxCtx)
-		mode := fmt.Sprintf("估算（服务端 usage 校准 ×%.2f，D26③）", rep.Ratio)
-		if rep.Exact {
-			mode = "精确（适配器 TokenCounter，D26②）"
-		}
-		fmt.Fprintf(&b, "当前上下文:≈%d / %d tokens（%.1f%%，自动压缩阈值 %d = %.0f%%）\n",
-			rep.Estimate, rep.MaxCtx, pct, rep.CompactAt, tpct)
-		fmt.Fprintf(&b, "计数方式: %s\n", mode)
-		fmt.Fprintf(&b, "上轮实测: in=%d out=%d tokens（服务端返回）\n", rep.LastIn, rep.LastOut)
-		fmt.Fprintf(&b, "本会话累计(Path): in=%d out=%d tokens（%d 次生成）",
-			rep.SumIn, rep.SumOut, rep.Gen)
-		return b.String(), nil
-
+		return s.execUsage(ctx, cmd)
 	case "jobs":
 		return s.jobsReport(ctx, cmd.Args)
-
 	case "quit":
 		return "", ErrQuit
-
 	case "help":
 		static, dyn := s.commandsSplit() // D103：help 与补全浮层同源（命令清单表渲染）
 		return renderHelp(static, dyn), nil
-
 	case "plugin":
 		return s.execPlugin(ctx, cmd.Args)
-
 	case "model":
 		return s.execModel(ctx, cmd.Args)
-
 	case "think":
 		return s.execThink(ctx, cmd.Args)
-
 	case "effort":
 		return s.execEffort(ctx, cmd.Args)
-
 	default:
 		// 动态命令（§6.1 扩展点 #4）：静态命令未命中时查询
 		//（装配根随插件启停注册 /mcp:<server>:<prompt> 等）。
@@ -788,6 +443,395 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		}
 		return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
 	}
+}
+
+// execNew 实现 /new：新建会话。
+func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error) {
+	title := strings.TrimSpace(strings.Join(cmd.Args, " "))
+	if title == "" {
+		title = defaultTitle
+	}
+	c, err := s.newConversation(title)
+	if err != nil {
+		return "", err
+	}
+	if err := s.store.Save(ctx, c); err != nil {
+		return "", fmt.Errorf("session: 新建会话: %w", err)
+	}
+	s.cur = c
+	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75，修订 D72 后果④）
+		return "", err
+	}
+	return fmt.Sprintf("已新建会话 %s", c.ID), nil
+}
+
+// execList 实现 /list：列出会话。
+func (s *Session) execList(ctx context.Context, cmd port.Command) (string, error) {
+	sums, err := s.store.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("session: 列出会话: %w", err)
+	}
+	if len(sums) == 0 {
+		return "（暂无会话）", nil
+	}
+	var b strings.Builder
+	for _, sm := range sums {
+		mark := " "
+		if sm.ID == s.cur.ID {
+			mark = "*"
+		}
+		fmt.Fprintf(&b, "%s %s  %d条  %s\n", mark, sm.ID, sm.MessageN, sm.Title)
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// execSwitch 实现 /switch：切换会话（D75 清屏回放口径）。
+func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) != 1 {
+		return "", errors.New("用法: /switch <id前缀>（/list 查看可用会话，支持唯一前缀）")
+	}
+	id, err := s.resolveConversation(ctx, cmd.Args[0])
+	if err != nil {
+		return "", err
+	}
+	// 切前落盘当前会话：/edit 等只改内存的命令必须带上，否则切走即丢（D75）。
+	if err := s.store.Save(ctx, s.cur); err != nil {
+		return "", fmt.Errorf("session: 保存当前会话: %w", err)
+	}
+	if id != s.cur.ID {
+		next, err := s.store.Load(ctx, id)
+		if err != nil {
+			return "", fmt.Errorf("session: 载入会话 %s: %w", id, err)
+		}
+		s.cur = next
+	}
+	// 清屏后回放目标会话可见历史（目标即当前时等价重载，D75）。
+	if err := s.emitClear(ctx); err != nil {
+		return "", err
+	}
+	if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("已切换到会话 %s", s.cur.ID), nil
+}
+
+// execTitle 实现 /title：查看或修改当前会话标题。
+func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) == 0 {
+		return fmt.Sprintf("当前标题: %s", s.cur.Title), nil
+	}
+	title := strings.TrimSpace(strings.Join(cmd.Args, " "))
+	s.cur.Title = title
+	if err := s.store.Save(ctx, s.cur); err != nil {
+		return "", fmt.Errorf("session: 保存标题: %w", err)
+	}
+	return fmt.Sprintf("标题已改为: %s", title), nil
+}
+
+// execGoto 实现 /goto：移动 Head（D81 清屏回放口径）。
+func (s *Session) execGoto(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) != 1 {
+		return "", errors.New("用法: /goto <id>（id 可用 /branch 查看，支持唯一前缀）")
+	}
+	id, err := s.resolveNode(cmd.Args[0])
+	if err != nil {
+		return "", err
+	}
+	if err := s.cur.Checkout(id); err != nil {
+		return "", fmt.Errorf("session: 移动 Head: %w", err)
+	}
+	if err := s.persist(ctx); err != nil {
+		return "", err
+	}
+	// D81：移 Head 后清屏 + 回放新路径——转写区恒与 Head 一致（此前不回放是缺口：
+	// 切分支后界面仍停在旧分支）。口径与 /switch（D75）一致。
+	if err := s.emitClear(ctx); err != nil {
+		return "", err
+	}
+	if _, err := s.replayHistory(ctx, "已切换分支至"); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Head → %s", id), nil
+}
+
+// execEdit 实现 /edit：Revise 修订节点（D92/D93 语义见实现内注释）。
+func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error) {
+	target, mode, part, text, err := parseEditArgs(cmd.Args)
+	if err != nil {
+		return "", err
+	}
+	id, err := s.resolveNode(target)
+	if err != nil {
+		return "", err
+	}
+	parts, err := s.editParts(id, text, part)
+	if err != nil {
+		return "", err
+	}
+	m, err := s.cur.Revise(id, parts, mode)
+	if err != nil {
+		return "", fmt.Errorf("session: 修订: %w", err)
+	}
+	if err := s.persist(ctx); err != nil {
+		return "", err
+	}
+	// D92：Revise 已移 Head（Fresh 恒移、Carry 例外）——清屏回放新路径，
+	// 转写区恒与 Head 一致（D81 口径，/goto 同款；此前只入树不回放是缺口）。
+	if err := s.emitClear(ctx); err != nil {
+		return "", err
+	}
+	if _, err := s.replayHistory(ctx, "已修订"); err != nil {
+		return "", err
+	}
+	note := "旧分支保留"
+	switch mode {
+	case conversation.Carry:
+		note = "后续历史已转移"
+	case conversation.Clone:
+		note = "后续历史已复制"
+	}
+	// D93：编辑用户消息（Fresh 分叉）= 改写并重新生成——Head 在无回答的新节点上，
+	// 直接重跑一轮（Carry 是原地改写历史，Head 随转移子树；assistant/system 修订
+	// 不触发生成）。
+	if mode == conversation.Fresh && m.Role == conversation.RoleUser {
+		if err := s.runTurn(ctx); err != nil {
+			return "", err
+		}
+		note += "，已重新生成回答"
+	}
+	return fmt.Sprintf("已修订 %s → %s（%s，%s；Head → %s）", id, m.ID, mode, note, s.cur.Head), nil
+}
+
+// execRegen 实现 /regen：重新生成回答（D93 分叉口径）。
+func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) != 1 {
+		return "", errors.New("用法: /regen <id>（id 可为用户或助手消息，支持唯一前缀）")
+	}
+	id, err := s.resolveNode(cmd.Args[0])
+	if err != nil {
+		return "", err
+	}
+	um, err := s.upstreamUser(id)
+	if err != nil {
+		return "", err
+	}
+	forked := true
+	if len(s.cur.Children[um.ID]) == 0 {
+		// D93：上游用户消息尚无任何回答（编辑 Fresh 分叉后/空轮次）——Revise 只会
+		// 造出同文本的冗余兄弟分支；Head 不在其上则移过去，直接生成本回答。
+		forked = false
+		if s.cur.Head != um.ID {
+			if err := s.cur.Checkout(um.ID); err != nil {
+				return "", fmt.Errorf("session: 移动 Head: %w", err)
+			}
+			if err := s.persist(ctx); err != nil {
+				return "", err
+			}
+		}
+	} else {
+		// 已有回答：原 Parts 原样重发（Revise 内部 cloneParts，多模态分片保真）；
+		// Fresh 开同父兄弟节点，旧回答子树原样留作历史分支。
+		if _, err := s.cur.Revise(um.ID, um.Content, conversation.Fresh); err != nil {
+			return "", fmt.Errorf("session: 重发用户消息: %w", err)
+		}
+		if err := s.persist(ctx); err != nil {
+			return "", err
+		}
+	}
+	// Head 已就位：清屏回放（D81 口径）后重跑一轮生成。
+	if err := s.emitClear(ctx); err != nil {
+		return "", err
+	}
+	if _, err := s.replayHistory(ctx, "已重新生成"); err != nil {
+		return "", err
+	}
+	if err := s.runTurn(ctx); err != nil {
+		return "", err
+	}
+	if forked {
+		return fmt.Sprintf("已重新生成（旧回答保留为分支；Head → %s）", s.cur.Head), nil
+	}
+	return fmt.Sprintf("已重新生成（Head → %s）", s.cur.Head), nil
+}
+
+// execBranch 实现 /branch：分支视图。
+func (s *Session) execBranch(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) > 1 {
+		return "", errors.New("用法: /branch [id]（缺省取当前 Head）")
+	}
+	id := s.cur.Head
+	if len(cmd.Args) == 1 {
+		var err error
+		if id, err = s.resolveNode(cmd.Args[0]); err != nil {
+			return "", err
+		}
+	}
+	self, ok := s.cur.Find(id)
+	if !ok {
+		return "", fmt.Errorf("session: %w", conversation.ErrNotFound)
+	}
+	// 展示自身 + 同级分叉（新旧版本对比）+ 下级（逐层下钻可发现深层 id）；
+	// Root 的"同级"按 D15 即其孩子，改标"顶层消息"且不重复列出下级。
+	isRoot := self.Role == conversation.RoleRoot
+	var b strings.Builder
+	fmt.Fprintf(&b, "当前: %s\n", branchLine(self, s.cur.Head, s.cur.RevisedFrom))
+	sibsLabel := "同级分叉"
+	if isRoot {
+		sibsLabel = "顶层消息"
+	}
+	sibs := s.cur.Branches(id)
+	if len(sibs) == 0 {
+		fmt.Fprintf(&b, "%s: 无", sibsLabel)
+	} else {
+		fmt.Fprintf(&b, "%s（%d 条，不含自身）:", sibsLabel, len(sibs))
+		for _, m := range sibs {
+			b.WriteString("\n  " + branchLine(m, s.cur.Head, s.cur.RevisedFrom))
+		}
+	}
+	if !isRoot {
+		kids := s.cur.Children[id]
+		if len(kids) == 0 {
+			b.WriteString("\n下级: 无")
+		} else {
+			fmt.Fprintf(&b, "\n下级（%d 条）:", len(kids))
+			for _, kid := range kids {
+				if m, ok := s.cur.Find(kid); ok {
+					b.WriteString("\n  " + branchLine(m, s.cur.Head, s.cur.RevisedFrom))
+				}
+			}
+		}
+	}
+	return b.String(), nil
+}
+
+// execRm 实现 /rm：剪掉节点子树（二次确认）。
+func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) != 1 {
+		return "", errors.New("用法: /rm <id>（剪掉该节点及整棵子树，二次确认）")
+	}
+	id, err := s.resolveNode(cmd.Args[0])
+	if err != nil {
+		return "", err
+	}
+	m, _ := s.cur.Find(id)
+	if m.Role == conversation.RoleRoot {
+		return "", errors.New("session: root 即会话，不可删除（D19）") // 先于确认拒绝，不消费确认应答
+	}
+	if s.confirmer == nil {
+		return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rm 需要二次确认")
+	}
+	size := subtreeSize(s.cur, id)
+	prompt := fmt.Sprintf("确认删除 %s 及其子树（至少 %d 条节点）？此操作不可恢复", id, size)
+	ans, err := s.confirmer.Confirm(ctx, prompt)
+	if err != nil {
+		return "", fmt.Errorf("session: 确认删除: %w", err)
+	}
+	if !ans.Allow {
+		return fmt.Sprintf("已取消删除 %s", id), nil
+	}
+	before := len(s.cur.Nodes)
+	if err := s.cur.Prune(id); err != nil {
+		return "", fmt.Errorf("session: 删除: %w", err)
+	}
+	removed := before - len(s.cur.Nodes) // 实际删除数 = 子树大小（D95 后 Prune 恰删子树，无连带）
+	if err := s.persist(ctx); err != nil {
+		// 删除绝不"半生效"：落盘失败即回滚到最近一次成功保存的状态。
+		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
+			s.cur = c
+			return "", fmt.Errorf("session: 落盘失败，删除已回滚（会话树未改动）: %w", err)
+		}
+		return "", fmt.Errorf("session: 落盘失败且无法回滚，删除仅存在于内存（下次成功保存会写盘，请谨慎继续）: %w", err)
+	}
+	return fmt.Sprintf("已删除 %s 子树（%d 条节点；Head → %s）", id, removed, s.cur.Head), nil
+}
+
+// execCompact 实现 /compact：压缩历史。
+func (s *Session) execCompact(ctx context.Context, cmd port.Command) (string, error) {
+	node, absorbed, err := s.agent.Compact(ctx, s.cur)
+	if errors.Is(err, ErrNothingToCompact) {
+		return "无需压缩：摘要之上没有新的历史", nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "已取消压缩（会话未改动）", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := s.store.Save(ctx, s.cur); err != nil {
+		return "", fmt.Errorf("session: 保存会话: %w", err)
+	}
+	return fmt.Sprintf("已压缩 %d 条历史 → 1 条摘要（in=%d out=%d tokens）",
+		absorbed, node.Usage.InputTokens, node.Usage.OutputTokens), nil
+}
+
+// execPermission 实现 /permission：查看或切换权限等级。
+func (s *Session) execPermission(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) == 0 {
+		return s.permissionReport(), nil
+	}
+	if len(cmd.Args) > 1 {
+		return "", errors.New("用法: /permission [read-only|strict|permissive|full-access]")
+	}
+	level, err := perm.Parse(cmd.Args[0])
+	if err != nil {
+		return "", err
+	}
+	if level == s.level {
+		return fmt.Sprintf("权限等级已是 %s", level), nil
+	}
+	if s.persistLevel == nil {
+		return "", errors.New("session: 未配置权限持久化，无法切换（D22 要求写回 config）")
+	}
+	if err := s.persistLevel(level); err != nil {
+		return "", fmt.Errorf("session: 写回 config 失败: %w", err)
+	}
+	s.level = level
+	return fmt.Sprintf("权限等级已切换为 %s（已写回 config；工具链路即时生效）", level), nil
+}
+
+// execMemory 实现 /memory：打开记忆文件。
+func (s *Session) execMemory(ctx context.Context, cmd port.Command) (string, error) {
+	if s.openMemory == nil {
+		return "", errors.New("session: 未配置记忆编辑器（SessionDeps.OpenMemory）")
+	}
+	if len(cmd.Args) > 1 {
+		return "", errors.New("用法: /memory [会话id前缀]（缺省打开全局记忆文件）")
+	}
+	name := port.GlobalMemoryDoc
+	if len(cmd.Args) == 1 {
+		id, err := s.resolveConversation(ctx, cmd.Args[0])
+		if err != nil {
+			return "", err
+		}
+		name = port.SessionMemoryDoc(id)
+	}
+	path, err := s.openMemory(name)
+	if err != nil {
+		return "", fmt.Errorf("session: 打开记忆文件: %w", err)
+	}
+	return fmt.Sprintf("已用系统编辑器打开 %s（保存后下次读取即生效）", path), nil
+}
+
+// execUsage 实现 /usage：用量报告。
+func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, error) {
+	rep, err := s.agent.UsageReport(ctx, s.cur)
+	if err != nil {
+		return "", fmt.Errorf("session: 估算用量: %w", err)
+	}
+	var b strings.Builder
+	pct := 100 * float64(rep.Estimate) / float64(rep.MaxCtx)
+	tpct := 100 * float64(rep.CompactAt) / float64(rep.MaxCtx)
+	mode := fmt.Sprintf("估算（服务端 usage 校准 ×%.2f，D26③）", rep.Ratio)
+	if rep.Exact {
+		mode = "精确（适配器 TokenCounter，D26②）"
+	}
+	fmt.Fprintf(&b, "当前上下文:≈%d / %d tokens（%.1f%%，自动压缩阈值 %d = %.0f%%）\n",
+		rep.Estimate, rep.MaxCtx, pct, rep.CompactAt, tpct)
+	fmt.Fprintf(&b, "计数方式: %s\n", mode)
+	fmt.Fprintf(&b, "上轮实测: in=%d out=%d tokens（服务端返回）\n", rep.LastIn, rep.LastOut)
+	fmt.Fprintf(&b, "本会话累计(Path): in=%d out=%d tokens（%d 次生成）",
+		rep.SumIn, rep.SumOut, rep.Gen)
+	return b.String(), nil
 }
 
 // persist 落盘当前会话。
