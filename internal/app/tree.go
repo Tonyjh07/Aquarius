@@ -22,18 +22,23 @@ type treeSnapshot struct {
 	branches map[conversation.MessageID]port.BranchInfo
 	// tails 每个节点 → 其版本子树的对话末端（D94：最新叶子，分支切换落点）。
 	tails map[conversation.MessageID]conversation.MessageID
+	// graph 整树快照（D112②/D120⑦，S3 relation-map 数据面）：同一构建过程产出，
+	// 与 branches/tails 自洽（同一次发布）。
+	graph port.TreeGraph
 }
 
 // makeTreeSnapshot 由会话树构建快照：每个节点一条 BranchInfo，同级按 (CreatedAt, ID)
 // 升序——与 domain `Conversation.Branches` 的排序口径一致（D15/D16：Revise 出来的
 // 兄弟节点 CreatedAt 不保证等于插入序，故必须显式排序而非依赖 Children 切片顺序）；
 // tails 按 (CreatedAt, ID) 最大叶子 post-order 聚合，与 domain `Conversation.Tail`
-// 同口径（D94）。
+// 同口径（D94）；graph 同轮产出整树节点表（节点按 (CreatedAt, ID) 升序，布局可复现）。
 func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 	snap := &treeSnapshot{
 		branches: make(map[conversation.MessageID]port.BranchInfo, len(c.Nodes)),
 		tails:    make(map[conversation.MessageID]conversation.MessageID, len(c.Nodes)),
 	}
+	sibIdx := make(map[conversation.MessageID]int, len(c.Nodes))
+	sibN := make(map[conversation.MessageID]int, len(c.Nodes))
 	for _, kids := range c.Children {
 		ordered := make([]conversation.MessageID, 0, len(kids))
 		for _, kid := range kids {
@@ -50,8 +55,36 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 		})
 		for i, kid := range ordered {
 			snap.branches[kid] = port.BranchInfo{IDs: ordered, Index: i}
+			sibIdx[kid], sibN[kid] = i, len(ordered)
 		}
 	}
+	// 整树节点表（graph）：节点集 = 全部入树节点，按 (CreatedAt, ID) 升序。
+	nodes := make([]port.GraphNode, 0, len(c.Nodes))
+	for id, m := range c.Nodes {
+		ek := port.EdgeSeq
+		if m.Parent == "" {
+			ek = "" // 结构根无父边（D120§6.1）
+		} else if _, revised := c.RevisedFrom[id]; revised {
+			ek = port.EdgeRevise
+		}
+		nodes = append(nodes, port.GraphNode{
+			ID:           id,
+			Parent:       m.Parent,
+			Role:         m.Role,
+			Snippet:      nodeSummary(m),
+			CreatedAt:    m.CreatedAt,
+			EdgeKind:     ek,
+			SiblingIdx:   sibIdx[id],
+			SiblingCount: sibN[id],
+		})
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if !nodes[i].CreatedAt.Equal(nodes[j].CreatedAt) {
+			return nodes[i].CreatedAt.Before(nodes[j].CreatedAt)
+		}
+		return nodes[i].ID < nodes[j].ID
+	})
+	snap.graph = port.TreeGraph{Anchor: c.Head, Nodes: nodes, Total: len(nodes)}
 	var tailOf func(conversation.MessageID) conversation.MessageID
 	tailOf = func(x conversation.MessageID) conversation.MessageID {
 		if t, ok := snap.tails[x]; ok {
@@ -104,4 +137,15 @@ func (s *Session) Tail(id conversation.MessageID) (conversation.MessageID, bool)
 	}
 	t, ok := snap.tails[id]
 	return t, ok
+}
+
+// Graph 实现 port.TreeView（D112②/D120⑦，S3 relation-map 数据面）：读已发布的不可变
+// 快照，无锁——口径同 Branches；尚未发布时 ok=false。返回值整体按值拷贝，Nodes 切片为
+// 快照内部数据，调用方只读、不得改写。
+func (s *Session) Graph() (port.TreeGraph, bool) {
+	snap := s.tree.Load()
+	if snap == nil {
+		return port.TreeGraph{}, false
+	}
+	return snap.graph, true
 }

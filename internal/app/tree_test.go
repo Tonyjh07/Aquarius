@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // treeFixture 建一棵显式 CreatedAt 的树，用于断言同父孩子的创建序与下标（D80/§7.5）：
@@ -218,13 +220,115 @@ func TestSessionBranchesConcurrentRead(t *testing.T) {
 					return
 				default:
 					_, _ = s.Branches("a1")
+					_, _ = s.Graph() // D120⑦：整树快照同源，并发读同契约
+					_ = s.List()     // D120⑥：会话列表快照同组发布，并发读同契约
 				}
 			}
 		}()
 	}
 	for i := 0; i < 50; i++ { // 写侧：重建整树快照并原子发布
 		s.publishTree()
+		s.publishSessions(context.Background())
 	}
 	close(stop)
 	wg.Wait()
+}
+
+// TestMakeTreeSnapshotGraph 整树快照（D112②/D120⑦）：节点集完备、Anchor = Head、
+// 结构根无父边/无版本链、顺接边为 seq、同级下标与 BranchInfo 同源、节点按 (CreatedAt, ID)
+// 升序（布局可复现）。
+func TestMakeTreeSnapshotGraph(t *testing.T) {
+	s, _ := newConfirmedSession(t, newMemStore(), nil)
+	c := buildTree(t, s)
+
+	g, ok := s.Graph()
+	if !ok {
+		t.Fatal("构造后 Graph 应已发布")
+	}
+	if g.Total != len(c.Nodes) || len(g.Nodes) != len(c.Nodes) {
+		t.Fatalf("Total/Nodes = %d/%d, want %d", g.Total, len(g.Nodes), len(c.Nodes))
+	}
+	if g.Anchor != c.Head {
+		t.Fatalf("Anchor = %q, want %q（当前 Head）", g.Anchor, c.Head)
+	}
+
+	byID := make(map[conversation.MessageID]port.GraphNode, len(g.Nodes))
+	for _, n := range g.Nodes {
+		byID[n.ID] = n
+	}
+	rootID := conversation.MessageID(c.ID)
+	root := byID[rootID]
+	if root.Parent != "" || root.EdgeKind != "" || root.Role != conversation.RoleRoot {
+		t.Fatalf("结构根 = %+v, want Parent=\"\" EdgeKind=\"\" Role=root", root)
+	}
+	if p := byID["p"]; p.Parent != rootID || p.Role != conversation.RoleSystem || p.EdgeKind != port.EdgeSeq {
+		t.Fatalf("persona = %+v, want 挂在 root 下、system、seq", p)
+	}
+	if a1 := byID["a1"]; a1.SiblingIdx != 0 || a1.SiblingCount != 1 {
+		t.Fatalf("a1 同级 = %d/%d, want 0/1", a1.SiblingIdx, a1.SiblingCount)
+	}
+	if byID["a1"].Snippet == "" {
+		t.Fatal("Snippet 不应为空（展示用摘要）")
+	}
+	// 排序：非降 (CreatedAt, ID)。
+	for i := 1; i < len(g.Nodes); i++ {
+		a, b := g.Nodes[i-1], g.Nodes[i]
+		if a.CreatedAt.After(b.CreatedAt) || (a.CreatedAt.Equal(b.CreatedAt) && a.ID > b.ID) {
+			t.Fatalf("节点序非 (CreatedAt,ID) 升序：%s 在 %s 之前", a.ID, b.ID)
+		}
+	}
+}
+
+// TestSessionGraphRevisionEdge 版本链边（D120§2.3）：/edit 产生的同级新节点，其与父的边为
+// EdgeRevise，且同级计数与 BranchInfo 一致（graph 与 branches 自洽）。
+func TestSessionGraphRevisionEdge(t *testing.T) {
+	s, _ := newConfirmedSession(t, newMemStore(), nil)
+	c := buildTree(t, s)
+	if _, err := handleCmd(s, "edit", "a1", "更优雅的回复"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	sib := revisedID(c, "a1")
+	if sib == "" {
+		t.Fatal("edit 未产生新节点")
+	}
+	g, ok := s.Graph()
+	if !ok {
+		t.Fatal("Graph 不可读")
+	}
+	var got [2]port.GraphNode
+	found := 0
+	for _, n := range g.Nodes {
+		if n.ID == "a1" || n.ID == sib {
+			got[found] = n
+			found++
+		}
+	}
+	if found != 2 {
+		t.Fatalf("快照缺分叉节点：found=%d", found)
+	}
+	for _, n := range got {
+		if n.SiblingCount != 2 {
+			t.Fatalf("%s 同级数 = %d, want 2", n.ID, n.SiblingCount)
+		}
+	}
+	if got[0].ID == "a1" {
+		if got[0].EdgeKind != port.EdgeSeq {
+			t.Fatalf("旧版本 a1 边 = %q, want seq", got[0].EdgeKind)
+		}
+		if got[1].EdgeKind != port.EdgeRevise {
+			t.Fatalf("新版本 %s 边 = %q, want revise", got[1].ID, got[1].EdgeKind)
+		}
+	} else {
+		if got[0].EdgeKind != port.EdgeRevise || got[1].EdgeKind != port.EdgeSeq {
+			t.Fatalf("版本链边型错: %+v", got)
+		}
+	}
+}
+
+// TestSessionGraphUnknownBeforePublish 未发布快照时 Graph 安全返回 ok=false。
+func TestSessionGraphUnknownBeforePublish(t *testing.T) {
+	var s Session
+	if _, ok := s.Graph(); ok {
+		t.Fatal("未发布快照应 ok=false")
+	}
 }

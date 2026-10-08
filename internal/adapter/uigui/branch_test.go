@@ -26,6 +26,11 @@ func (f fakeTree) Tail(id conversation.MessageID) (conversation.MessageID, bool)
 	return id, true
 }
 
+// Graph 整树快照（D112②/D120⑦）：固定视图不配置图 → 未发布（S3 左栏/关系图另有专项替身）。
+func (f fakeTree) Graph() (port.TreeGraph, bool) {
+	return port.TreeGraph{}, false
+}
+
 // fakeTreeTail 带末端表的树视图（D94 分派测试用）：tails 未命中的 id 回退自身。
 type fakeTreeTail struct {
 	fakeTree

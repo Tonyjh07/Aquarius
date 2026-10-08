@@ -44,6 +44,28 @@ func (t sessionTree) Tail(id conversation.MessageID) (conversation.MessageID, bo
 	return s.Tail(id)
 }
 
+func (t sessionTree) Graph() (port.TreeGraph, bool) {
+	s := t.p.Load()
+	if s == nil {
+		return port.TreeGraph{}, false
+	}
+	return s.Graph()
+}
+
+// sessionList 会话列表只读视图的装配侧代理（D120⑥，S3 左栏）：Session 构造晚于 UI，
+// 故经原子槽间接取用；未就绪返回 nil（左栏空列表）。
+type sessionList struct{ p *atomic.Pointer[app.Session] }
+
+var _ port.SessionLister = sessionList{}
+
+func (l sessionList) List() []port.SessionSummary {
+	s := l.p.Load()
+	if s == nil {
+		return nil
+	}
+	return s.List()
+}
+
 // sessionCommands 命令清单只读视图的装配侧代理（D103/S2b-1）：Session 构造晚于 UI，
 // 故经原子槽间接取用；未就绪返回空清单（补全浮层不出现）。
 type sessionCommands struct{ p *atomic.Pointer[app.Session] }

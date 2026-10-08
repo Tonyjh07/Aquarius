@@ -103,6 +103,9 @@ type Session struct {
 	// facts 会话展示事实快照（D82/§7.6，前置 B）：与 tree 同组发布点原子发布，UI 经
 	// Facts 无锁读（见 facts.go）；重算经签名门控，命令类输入不空转。
 	facts atomic.Pointer[factsSnapshot]
+	// sessions 会话列表只读快照（D120⑥，S3 左栏）：与 tree/facts 同组发布点原子发布，
+	// UI 经 List 无锁读（见 sessionlist.go）。
+	sessions atomic.Pointer[sessionSnapshot]
 	// resumed 本次启动是否恢复了既有会话（NewSession 走 Load 分支）；
 	// ReplayHistory 仅在恢复时回放（新建会话无历史可回放，D40/§7.4）。
 	resumed bool
@@ -183,6 +186,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		s.resumed = true
 		s.publishTree()     // D80/§7.5：构造完成即发布树只读快照（UI 早于首帧即可读）
 		s.publishFacts(ctx) // D82/§7.6：事实快照同组发布（恢复会话首帧 tooltip 即可用）
+		s.publishSessions(ctx)
 		return s, nil
 	}
 	s.cur, err = s.newConversation(defaultTitle)
@@ -194,6 +198,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 	}
 	s.publishTree()     // D80/§7.5：构造完成即发布树只读快照
 	s.publishFacts(ctx) // D82/§7.6：事实快照同组发布
+	s.publishSessions(ctx)
 	return s, nil
 }
 
@@ -285,6 +290,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	// （签名门控：无变更的命令输入不重算）。
 	defer s.publishTree()
 	defer s.publishFacts(ctx)
+	defer s.publishSessions(ctx)
 	if in.Command != nil {
 		return s.execCommand(ctx, *in.Command)
 	}
