@@ -261,3 +261,18 @@ func TestRelGraphRenderFullWindow(t *testing.T) {
 	historyFrame(gtx, u.th, u, st)
 	q.Frame(ops)
 }
+
+// TestRelGraphBudgetCulledNoPanic 回归：预算裁剪使可见集非连续（全局≠本地索引）时
+// 渲染不越界——曾以全局索引查本地 sol.Pos 崩溃（index out of range）。150 节点链 +
+// 默认预算 120 → 可见集 = anchor 父链一段，全局索引从 30 起、本地 0..119。
+func TestRelGraphBudgetCulledNoPanic(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
+	st := newHistoryState(u)
+	if len(st.vis.nodes) != 120 {
+		t.Fatalf("预算切片 = %d, want 120", len(st.vis.nodes))
+	}
+	q := new(input.Router)
+	gtx, ops := frameGtxSize(q.Source(), 720, 560)
+	st.graph.frame(gtx, u.th, u, st) // 不 panic = 通过
+	q.Frame(ops)
+}

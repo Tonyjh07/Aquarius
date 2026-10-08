@@ -313,10 +313,20 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 	vp := image.Rect(
 		-int(g.viewW*relCullPad), -int(g.viewH*relCullPad),
 		int(g.viewW*(1+relCullPad)), int(g.viewH*(1+relCullPad)))
+	// 全局 → 本地索引映射：relVisible.edges 存全局索引，sol.Pos 按本地（见 §6.1 两套索引）。
+	local := make(map[int]int, len(g.vis.nodes))
+	for li, gi := range g.vis.nodes {
+		local[gi] = li
+	}
 	for _, e := range g.vis.edges {
-		from, to := e[0], e[1]
-		fx, fy := g.toScreen(g.sol.Pos[from])
-		tx, ty := g.toScreen(g.sol.Pos[to])
+		from, to := e[0], e[1] // 全局索引
+		fli, lok1 := local[from]
+		tli, lok2 := local[to]
+		if !lok1 || !lok2 {
+			continue // 端点不在可见集（预算裁剪），跳过
+		}
+		fx, fy := g.toScreen(g.sol.Pos[fli])
+		tx, ty := g.toScreen(g.sol.Pos[tli])
 		if !relInBox(vp, fx, fy) && !relInBox(vp, tx, ty) {
 			continue
 		}
