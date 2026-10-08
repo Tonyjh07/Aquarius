@@ -36,16 +36,75 @@ type historyState struct {
 	sessions []port.SessionSummary // 上帧读到的左栏快照（行数对齐）
 	// sig/model/vis 右图数据面：sig = 快照签名（变化才重建模型与预算，R3 懒重排）；
 	// model = 派生模型（§6.2），vis = 当前预算切片（A7 的「呈现 M」）。
-	sig   string
-	model *relModel
-	vis   relVisible
+	sig    string
+	model  *relModel
+	vis    relVisible
+	budget int // 预算（rebudget：−/＋/展开全部，A5/A7）
+	// graph 右图帧态（第 7 步：重排/手势/绘制）。
+	graph *relGraph
+	// 状态栏控件（− / ＋ / 展开全部 / 回到当前）。
+	btnMinus, btnPlus, btnAll, btnHome widget.Clickable
 }
 
 // newHistoryState 构造 winHistory 帧状态并做首帧数据同步。
 func newHistoryState(u *UI) *historyState {
-	st := &historyState{list: widget.List{List: layout.List{Axis: layout.Vertical}}}
+	st := &historyState{
+		list:   widget.List{List: layout.List{Axis: layout.Vertical}},
+		budget: relDefaultBudget,
+		graph:  newRelGraph(),
+	}
 	st.sync(u)
 	return st
+}
+
+// title 当前会话标题（状态栏「会话：」与根节点陈述用）。
+func (st *historyState) title() string {
+	for _, s := range st.sessions {
+		if s.Current {
+			if s.Title == "" {
+				return "新会话"
+			}
+			return s.Title
+		}
+	}
+	return "（未就绪）"
+}
+
+// applyBudget rebudget：调整预算并重排（R3：数据/预算变更才重排；重排后仍收敛静止）。
+func (st *historyState) applyBudget(delta int) {
+	if st.model == nil {
+		return
+	}
+	max := st.model.total
+	if max > relHardCap {
+		max = relHardCap
+	}
+	st.budget += delta
+	if st.budget < 1 {
+		st.budget = 1
+	}
+	if st.budget > max {
+		st.budget = max
+	}
+	st.vis = relBudget(st.model, st.budget)
+	if st.graph != nil {
+		st.graph.rebuild(st.model, st.vis)
+	}
+}
+
+// expandAll 「展开全部」：预算 = 全量（上限 relHardCap，§5.4.3）。
+func (st *historyState) expandAll() {
+	if st.model == nil {
+		return
+	}
+	st.budget = st.model.total
+	if st.budget > relHardCap {
+		st.budget = relHardCap
+	}
+	st.vis = relBudget(st.model, st.budget)
+	if st.graph != nil {
+		st.graph.rebuild(st.model, st.vis)
+	}
 }
 
 // relSig 快照签名：Total + Anchor + 末节点（Nodes 按 (CreatedAt, ID) 升序，任何树变更
@@ -66,7 +125,10 @@ func (st *historyState) sync(u *UI) {
 				st.sig = sig
 				if m, ok := relNewModel(g); ok {
 					st.model = m
-					st.vis = relBudget(m, relDefaultBudget)
+					st.vis = relBudget(m, st.budget)
+					if st.graph != nil {
+						st.graph.rebuild(m, st.vis)
+					}
 				}
 			}
 		}
@@ -93,7 +155,7 @@ func (st *historyState) sendSwitch(u *UI, id conversation.ID) {
 	}
 }
 
-// dispatch 帧内点击消费：任一行的 Clicked() 即切会话（一次一个，先到先得）。
+// dispatch 帧内点击消费：会话行切换 + 状态栏控件（预算 −/＋/展开全部/回到当前）。
 func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	for i, c := range st.rows {
 		if c.Clicked(gtx) {
@@ -101,6 +163,18 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 				st.sendSwitch(u, st.sessions[i].ID)
 			}
 			return
+		}
+	}
+	switch {
+	case st.btnMinus.Clicked(gtx):
+		st.applyBudget(-10)
+	case st.btnPlus.Clicked(gtx):
+		st.applyBudget(+10)
+	case st.btnAll.Clicked(gtx):
+		st.expandAll()
+	case st.btnHome.Clicked(gtx):
+		if st.graph != nil {
+			st.graph.focusPending = true
 		}
 	}
 }
@@ -215,36 +289,30 @@ func truncRunes(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// histGraphArea 右栏：第 7 步落地右图；当前为占位（模型/预算已就绪，显示数量）。
+// histGraphArea 右栏：关系图帧（第 7 步；数据未就绪时居中占位）。
 func histGraphArea(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
+	if st.graph != nil && st.model != nil {
+		return st.graph.frame(gtx, th, u, st)
+	}
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		msg := "关系图未就绪"
-		if st.model != nil {
-			msg = fmt.Sprintf("整树 %d 节点（呈现 %d）——关系图第 7 步落地", st.model.total, len(st.vis.nodes))
-		}
-		l := material.Body2(th, msg)
+		l := material.Body2(th, "关系图未就绪")
 		l.Color = textMuted
 		return l.Layout(gtx)
 	})
 }
 
-// histStatusBar 状态栏（A7 落点）：`会话：<标题> · 共 N 条 · 呈现 M` + 深度色带图例。
+// histStatusBar 状态栏（A7 落点）：会话标题 · 共 N · 呈现 M + 预算/缩放/回到当前控件 + 图例。
 func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
-	title := "（未就绪）"
-	for _, s := range st.sessions {
-		if s.Current {
-			title = s.Title
-			if title == "" {
-				title = "新会话"
-			}
-		}
-	}
 	N, M := 0, 0
 	if st.model != nil {
 		N = st.model.total
 		M = len(st.vis.nodes)
 	}
-	text := fmt.Sprintf("会话：%s · 共 %d 条 · 呈现 %d", title, N, M)
+	zoomPct := "100%"
+	if st.graph != nil {
+		zoomPct = fmt.Sprintf("%d%%", int(st.graph.zoom*100+0.5))
+	}
+	text := fmt.Sprintf("会话：%s · 共 %d 条 · 呈现 %d", st.title(), N, M)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, cardTool,
@@ -255,9 +323,25 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 			return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Caption(th, text)
-						l.Color = textMuted
-						return l.Layout(gtx)
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								l := material.Caption(th, text)
+								l.Color = textMuted
+								return l.Layout(gtx)
+							}),
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								return layout.Spacer{}.Layout(gtx)
+							}),
+							layout.Rigid(histCtl(th, &st.btnMinus, "−")),
+							layout.Rigid(histCtl(th, &st.btnPlus, "＋")),
+							layout.Rigid(histCtl(th, &st.btnAll, "展开全部")),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								l := material.Caption(th, "缩放 "+zoomPct)
+								l.Color = textMuted
+								return l.Layout(gtx)
+							}),
+							layout.Rigid(histCtl(th, &st.btnHome, "回到当前")),
+						)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return histLegend(gtx, th)
@@ -266,6 +350,19 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 			})
 		}),
 	)
+}
+
+// histCtl 状态栏小按钮（clickable + 标签）。
+func histCtl(th *material.Theme, c *widget.Clickable, text string) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				l := material.Caption(th, text)
+				l.Color = textMuted
+				return l.Layout(gtx)
+			})
+		})
+	}
 }
 
 // histLegend 状态栏第二行：深度色带图例 + 形状图例（A2 的可解释性）。
