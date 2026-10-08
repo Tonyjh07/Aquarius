@@ -52,14 +52,14 @@ func (k winKind) title() string {
 	}
 }
 
-// placeholder 占位窗正文（会话历史/欢迎数据面留后续步；设置窗经表单渲染，
-// 此处仅作表单未构建时的回退显示）。
+// placeholder 占位窗正文（欢迎窗数据面留后续步；会话历史已由 historyFrame 接管，
+// 设置窗经表单渲染，此处仅作表单未构建时的回退显示）。
 func (k winKind) placeholder() string {
 	switch k {
 	case winSettings:
 		return "设置窗表单未就绪。"
 	case winHistory:
-		return "会话历史——即将提供（列表依赖未来切换会话命令）。"
+		return "" // D112/S3：由 historyFrame 渲染，此处不应到达
 	case winRaw:
 		return "" // D99：专用帧（rawViewFrame），不走占位正文
 	default:
@@ -73,7 +73,8 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 	case winSettings:
 		return 560, 620, 480, 420
 	case winHistory:
-		return 520, 560, 420, 360
+		// §5.4：左栏 200dp + 右栏关系图 + 状态栏；min 620×360。
+		return 720, 560, 620, 360
 	case winRaw:
 		return 560, 520, 420, 360
 	default:
@@ -296,6 +297,10 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	if k == winRaw {
 		raw = newRawViewState() // D99：查看原文帧状态（仅本窗 goroutine 读写）
 	}
+	var hist *historyState
+	if k == winHistory {
+		hist = newHistoryState(u) // D112/S3：会话历史帧状态（仅本窗 goroutine 读写）
+	}
 	width, height, minW, minH := k.geometry()
 	w.Option(
 		app.Title(k.title()),
@@ -319,6 +324,8 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 				settingsFrame(gtx, th, u, form) // 设置窗 = 核心档表单（§15.7/D60）
 			} else if raw != nil {
 				rawViewFrame(gtx, th, u, raw) // 查看原文 = 只读编辑器（D99）
+			} else if hist != nil {
+				historyFrame(gtx, th, u, hist) // 会话历史 = 左栏+右图+状态栏（D112/S3）
 			} else {
 				secondaryFrame(gtx, th, k)
 			}

@@ -98,6 +98,10 @@ type Options struct {
 	// （port.CommandCatalog 反向端口，实现方 app.Session）；nil = 无补全。
 	// 实现方须线程安全（UI 事件循环 goroutine 调用）。
 	Commands port.CommandCatalog
+	// Lister 会话列表只读数据面（D120⑥，S3 左栏）：会话历史窗左栏数据源
+	// （port.SessionLister 反向端口，实现方 app.Session）；nil = 左栏空列表。
+	// 实现方须线程安全（历史窗 goroutine 调用——快照读，无锁）。
+	Lister port.SessionLister
 	// Profiles profile 管理面（D110③/修订④）：设置窗 profile 区数据面与三动作
 	//（新建/复制/切换，重启生效）；nil = 不渲染 profile 区。
 	Profiles ProfilesManager

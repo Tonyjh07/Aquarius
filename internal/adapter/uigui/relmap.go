@@ -55,6 +55,9 @@ const (
 // relPalettePeriod 深度色带的周期（Level mod 4，A2）。
 const relPalettePeriod = 4
 
+// relDefaultBudget 关系图默认呈现节点数（预算，A5/A7；「−/＋」调整，第 7 步接入按钮）。
+const relDefaultBudget = 120
+
 // relNewModel 从整树快照派生模型：结构校验（唯一根）通过才算成功。ok=false = 快照非法
 // （空树 / 无根 / 多根 / 父缺失）——UI 侧安全回退为「解析中」态（§5.3）。
 func relNewModel(g port.TreeGraph) (*relModel, bool) {

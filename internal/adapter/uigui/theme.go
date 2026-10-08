@@ -35,7 +35,11 @@ type palette struct {
 	actionAllow   color.NRGBA // ✓ 允许
 	actionElevate color.NRGBA // 🔑 提升权限
 	tipBg         color.NRGBA // 悬浮 tips 底色
-	fg, bg        color.NRGBA // material Palette（默认文字/底）
+	// depthMap 深度色带（D120§3.2，S3 关系图）：`Level mod 4` → 节点填充色——颜色是
+	// 层号的纯投影（A2）；浅色版以品牌色为首色族（相邻色相 ≥ 40°），深色版压低明度保证
+	// 深底可分辨。加色不改代码：纯数据预设（§15.4/D61）。
+	depthMap [4]color.NRGBA
+	fg, bg   color.NRGBA // material Palette（默认文字/底）
 }
 
 // lightPalette 浅色预设（= MVP 既有配色，逐值不变——§15.4 品牌色 + 浅白/浅灰）。
@@ -60,8 +64,15 @@ func lightPalette() palette {
 		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
 		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
 		tipBg:         color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF},
-		fg:            color.NRGBA{R: 0x00, G: 0x00, B: 0x00, A: 0xFF},
-		bg:            color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
+		// 深度色带浅色版（D120§3.2）：品牌色为首色族，相邻色相 ≥ 40°（198/32/275/144）。
+		depthMap: [4]color.NRGBA{
+			{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
+			{R: 0xF0, G: 0x9A, B: 0x3E, A: 0xFF},
+			{R: 0x9B, G: 0x6B, B: 0xC4, A: 0xFF},
+			{R: 0x37, G: 0xA0, B: 0x5A, A: 0xFF},
+		},
+		fg: color.NRGBA{R: 0x00, G: 0x00, B: 0x00, A: 0xFF},
+		bg: color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
 	}
 }
 
@@ -88,8 +99,15 @@ func darkPalette() palette {
 		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
 		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
 		tipBg:         color.NRGBA{R: 0x2E, G: 0x32, B: 0x38, A: 0xFF},
-		fg:            color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
-		bg:            color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
+		// 深度色带深色版（D120§3.2）：压低明度、相邻色相 ≥ 40°（198/32/275/144）深底可辨。
+		depthMap: [4]color.NRGBA{
+			{R: 0x0B, G: 0x6F, B: 0xA8, A: 0xFF},
+			{R: 0xB9, G: 0x7A, B: 0x2F, A: 0xFF},
+			{R: 0x6B, G: 0x4F, B: 0xA0, A: 0xFF},
+			{R: 0x2E, G: 0x7D, B: 0x4F, A: 0xFF},
+		},
+		fg: color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
+		bg: color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
 	}
 }
 
@@ -131,6 +149,7 @@ func applyPalette(p palette) {
 	actionAllow = p.actionAllow
 	actionElevate = p.actionElevate
 	tipBg = p.tipBg
+	depthMap = p.depthMap
 }
 
 // currentPalette 从活动令牌槽回读（与 applyPalette 成对；供测试断言同步完整性）。
@@ -156,6 +175,7 @@ func currentPalette() palette {
 		actionAllow:   actionAllow,
 		actionElevate: actionElevate,
 		tipBg:         tipBg,
+		depthMap:      depthMap,
 	}
 }
 

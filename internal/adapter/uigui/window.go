@@ -114,6 +114,8 @@ var (
 	actionDeny    = color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF}
 	actionAllow   = color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF}
 	actionElevate = color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF}
+	// depthMap 深度色带活动槽（D120§3.2）：applyPalette 回填、关系图帧读取。
+	depthMap [4]color.NRGBA
 )
 
 // point/rect 屏幕几何（中性定义：小写字段，自绘几何用；与平台 DTO 在门面处转换）。

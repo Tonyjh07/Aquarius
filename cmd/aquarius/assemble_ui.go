@@ -66,6 +66,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			ProviderMgr:   &providerManager{cfgPath: w.cfgPath, stderr: w.stderr},                          // D110②：provider 编辑区
 			Tree:          sessionTree{p: &w.sessPtr},                                                      // D80/§7.5：分叉条只读数据面
 			Commands:      sessionCommands{p: &w.sessPtr},                                                  // D103/S2b-1：补全浮层命令清单只读数据面
+			Lister:        sessionList{p: &w.sessPtr},                                                      // D120⑥：会话历史窗左栏只读数据面
 			PosFile:       filepath.Join(w.profileDir, "gui_pos.json"),                                     // 位置记忆随 profile 走（D110 修订①）
 			Hotkey:        w.cfg.UI.Hotkey,                                                                 // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
 			Theme:         w.cfg.UI.Theme,                                                                  // 主题档 system|light|dark（§15.4/D61；空 = system）
