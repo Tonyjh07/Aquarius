@@ -26,7 +26,7 @@ func TestCommandCatalogCoversExecCommand(t *testing.T) {
 	// execCommand 的静态分支（help 不入清单——help 输出本身不列 /help）。
 	want := map[string]bool{
 		"new": true, "list": true, "switch": true, "title": true, "goto": true,
-		"edit": true, "regen": true, "branch": true, "rm": true, "exit": true,
+		"edit": true, "regen": true, "branch": true, "rm": true, "rmconv": true, "exit": true,
 		"compact": true, "permission": true, "memory": true, "usage": true,
 		"jobs": true, "quit": true, "plugin": true, "model": true,
 		"think": true, "effort": true,

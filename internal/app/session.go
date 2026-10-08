@@ -408,6 +408,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return s.execBranch(ctx, cmd)
 	case "rm":
 		return s.execRm(ctx, cmd)
+	case "rmconv":
+		return s.execRmconv(ctx, cmd)
 	case "exit":
 		return "", ErrQuit
 	case "compact":

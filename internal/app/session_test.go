@@ -1807,6 +1807,206 @@ func TestSessionRmCommand(t *testing.T) {
 	})
 }
 
+// TestSessionTitleTargetsOtherConversation /title --id 改非当前会话标题（D120⑥）：
+// 目标落盘、当前会话与其标题不受影响；无标题回显目标标题；--id 缺省作用于当前（回归）；
+// 非 --id 的 "--x" 仍按标题文本处理。
+func TestSessionTitleTargetsOtherConversation(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+	ctx := context.Background()
+
+	idA := s.Current().ID
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "new", Args: []string{"乙调"}}}); err != nil {
+		t.Fatalf("/new: %v", err)
+	}
+	idB := s.Current().ID
+
+	out, err := handleCmd(s, "title", "--id", string(idA), "甲改")
+	if err != nil || !strings.Contains(out, string(idA)) || !strings.Contains(out, "甲改") {
+		t.Fatalf("title --id = %q, %v", out, err)
+	}
+	if got := store.convs[idA].Title; got != "甲改" {
+		t.Fatalf("甲标题 = %q, want 甲改", got)
+	}
+	if s.Current().ID != idB || s.Current().Title != "乙调" {
+		t.Fatalf("当前会话被误动: %s/%q", s.Current().ID, s.Current().Title)
+	}
+	if got := store.convs[idB].Title; got != "乙调" {
+		t.Fatalf("乙标题 = %q, want 乙调", got)
+	}
+
+	// 无标题：回显目标标题（不写盘）。
+	if out, err = handleCmd(s, "title", "--id", string(idA)); err != nil || !strings.Contains(out, "甲改") {
+		t.Fatalf("title --id 查看 = %q, %v", out, err)
+	}
+	// 错误前缀：报错、不误写。
+	if _, err := handleCmd(s, "title", "--id", "ZZZ", "x"); err == nil || !strings.Contains(err.Error(), "没有会话") {
+		t.Fatalf("未知 --id err = %v", err)
+	}
+	// 缺 --id 参数：用法错误（不消费后续文本）。
+	if _, err := handleCmd(s, "title", "--id"); err == nil || !strings.Contains(err.Error(), "用法") {
+		t.Fatalf("缺参 err = %v", err)
+	}
+	// --id 缺省：改当前标题（回归）。
+	if _, err := handleCmd(s, "title", "乙改名"); err != nil {
+		t.Fatalf("title 当前: %v", err)
+	}
+	if s.Current().Title != "乙改名" {
+		t.Fatalf("当前标题 = %q, want 乙改名", s.Current().Title)
+	}
+	// "--" 开头但非 --id：按标题文本处理。
+	if _, err := handleCmd(s, "title", "--你好", "世界"); err != nil {
+		t.Fatalf("title 文本: %v", err)
+	}
+	if s.Current().Title != "--你好 世界" {
+		t.Fatalf("标题 = %q, want --你好 世界", s.Current().Title)
+	}
+}
+
+// TestSessionRmconvOtherConversation /rmconv 删非当前会话：目标从库中消失、当前会话不动、
+// 恰好一次二次确认。
+func TestSessionRmconvOtherConversation(t *testing.T) {
+	store := newMemStore()
+	s, conf := newConfirmedSession(t, store, []bool{true})
+	ctx := context.Background()
+	idA := s.Current().ID
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "new", Args: []string{"乙"}}}); err != nil {
+		t.Fatalf("/new: %v", err)
+	}
+	idB := s.Current().ID
+
+	out, err := handleCmd(s, "rmconv", string(idA))
+	if err != nil || !strings.Contains(out, "已删除会话") {
+		t.Fatalf("rmconv = %q, %v", out, err)
+	}
+	if _, ok := store.convs[idA]; ok {
+		t.Fatal("甲会话应已从库中删除")
+	}
+	if s.Current().ID != idB {
+		t.Fatalf("当前会话 = %s, want %s（删非当前不应动 Head）", s.Current().ID, idB)
+	}
+	if len(conf.asked) != 1 || !strings.Contains(conf.asked[0].prompt, string(idA)) {
+		t.Fatalf("确认 = %+v, want 恰一次且提示含目标 id", conf.asked)
+	}
+}
+
+// TestSessionRmconvCurrentSuccessor 删当前会话 → 继任到其余会话并清屏（D75/D81 口径）。
+func TestSessionRmconvCurrentSuccessor(t *testing.T) {
+	store := newMemStore()
+	rec := &recorder{}
+	conf := &scriptConfirmer{t: t, answers: []bool{true}}
+	s, err := NewSession(context.Background(), SessionDeps{
+		Store: store, Agent: newAgent(t, &scriptLLM{t: t}, rec, Deps{}, Config{}),
+		IDs: &seqIDs{}, Clock: fixedClock{testTime}, UI: rec, Confirmer: conf,
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	idA := s.Current().ID
+	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "new", Args: []string{"乙"}}}); err != nil {
+		t.Fatalf("/new: %v", err)
+	}
+	idB := s.Current().ID
+
+	// 切回甲，使「删除对象 = 当前会话」。
+	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "switch", Args: []string{string(idA)}}}); err != nil {
+		t.Fatalf("/switch: %v", err)
+	}
+	rec.events = nil
+	out, err := handleCmd(s, "rmconv", string(idA))
+	if err != nil || !strings.Contains(out, "已删除当前会话") || !strings.Contains(out, string(idB)) {
+		t.Fatalf("rmconv 当前 = %q, %v", out, err)
+	}
+	if _, ok := store.convs[idA]; ok {
+		t.Fatal("当前会话应已删除")
+	}
+	if s.Current().ID != idB {
+		t.Fatalf("继任 = %s, want %s", s.Current().ID, idB)
+	}
+	// 继任会话（仅 Root+persona）无历史：清屏、无 notice。
+	if names := eventNames(rec.events); len(names) != 1 || names[0] != "clear" {
+		t.Fatalf("events = %v, want [clear]", names)
+	}
+}
+
+// TestSessionRmconvLastCreatesEmpty 删唯一会话 → 新建空会话（保持「总有当前会话」不变量）。
+func TestSessionRmconvLastCreatesEmpty(t *testing.T) {
+	store := newMemStore()
+	s, _ := newConfirmedSession(t, store, []bool{true})
+	idA := s.Current().ID
+
+	out, err := handleCmd(s, "rmconv", string(idA))
+	if err != nil || !strings.Contains(out, "已切换到") {
+		t.Fatalf("rmconv 唯一 = %q, %v", out, err)
+	}
+	if _, ok := store.convs[idA]; ok {
+		t.Fatal("旧会话应已删除")
+	}
+	cur := s.Current()
+	if cur.ID == idA {
+		t.Fatal("应新建继任会话（旧 id 不得复用）")
+	}
+	if cur.Title != defaultTitle {
+		t.Fatalf("继任标题 = %q, want %q", cur.Title, defaultTitle)
+	}
+	if len(store.convs) != 1 {
+		t.Fatalf("库 = %d 个会话, want 仅新会话", len(store.convs))
+	}
+	if saved := store.convs[cur.ID]; saved == nil || saved.ID != cur.ID {
+		t.Fatalf("新会话未落盘: %+v", saved)
+	}
+	if err := cur.Validate(); err != nil {
+		t.Fatalf("新会话不合法: %v", err)
+	}
+}
+
+// TestSessionRmconvGuards /rmconv 的用法/确认器/拒绝三分支。
+func TestSessionRmconvGuards(t *testing.T) {
+	t.Run("用法与未知 id", func(t *testing.T) {
+		s, _ := newConfirmedSession(t, newMemStore(), nil)
+		if _, err := handleCmd(s, "rmconv"); err == nil || !strings.Contains(err.Error(), "用法") {
+			t.Fatalf("用法 err = %v", err)
+		}
+		if _, err := handleCmd(s, "rmconv", "ZZZ"); err == nil || !strings.Contains(err.Error(), "没有会话") {
+			t.Fatalf("未知 id err = %v", err)
+		}
+	})
+
+	t.Run("未配置确认器", func(t *testing.T) {
+		store := newMemStore()
+		agent := newAgent(t, &scriptLLM{t: t}, &recorder{}, Deps{}, Config{})
+		s, err := NewSession(context.Background(), SessionDeps{
+			Store: store, Agent: agent, IDs: &seqIDs{}, Clock: fixedClock{testTime},
+		})
+		if err != nil {
+			t.Fatalf("new session: %v", err)
+		}
+		id := s.Current().ID
+		if _, err := handleCmd(s, "rmconv", string(id)); err == nil || !strings.Contains(err.Error(), "未配置确认器") {
+			t.Fatalf("err = %v, want 未配置确认器", err)
+		}
+		if _, ok := store.convs[id]; !ok {
+			t.Fatal("无确认器时不得删除")
+		}
+	})
+
+	t.Run("拒绝", func(t *testing.T) {
+		store := newMemStore()
+		s, _ := newConfirmedSession(t, store, []bool{false})
+		id := s.Current().ID
+		out, err := handleCmd(s, "rmconv", string(id))
+		if err != nil || !strings.Contains(out, "已取消删除会话") {
+			t.Fatalf("deny = %q, %v", out, err)
+		}
+		if _, ok := store.convs[id]; !ok {
+			t.Fatal("拒绝后会话不应删除")
+		}
+		if s.Current().ID != id {
+			t.Fatal("拒绝后当前会话不应变")
+		}
+	})
+}
+
 // TestSessionEditPartFlag --part N 只在 flag 位识别（D107②）：与 --keep/--copy 同区、
 // 任意顺序同用；非数字/缺序号/负数按用法拒绝；字面 "--part" 之外的 "--x" 仍归文本。
 func TestSessionEditPartFlag(t *testing.T) {

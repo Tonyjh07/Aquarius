@@ -80,17 +80,123 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	return fmt.Sprintf("已切换到会话 %s", s.cur.ID), nil
 }
 
-// execTitle 实现 /title：查看或修改当前会话标题。
+// execTitle 实现 /title：查看或修改会话标题——`--id <前缀>` 改**非当前**会话（D120⑥）。
+// 形态：/title [--id <id前缀>] [<标题>]；--id 仅在**首参位**识别（未知 "--x" 视为标题文本，
+// 同 /edit 的 flag 口径）；缺省作用于当前会话。
 func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, error) {
-	if len(cmd.Args) == 0 {
-		return fmt.Sprintf("当前标题: %s", s.cur.Title), nil
+	args := cmd.Args
+	target := s.cur
+	if len(args) > 0 && args[0] == "--id" {
+		if len(args) < 2 {
+			return "", errors.New("用法: /title [--id <id前缀>] [<标题>]（--id 改非当前会话标题，/list 查看）")
+		}
+		id, err := s.resolveConversation(ctx, args[1])
+		if err != nil {
+			return "", err
+		}
+		args = args[2:]
+		if id != s.cur.ID { // 目标非当前：载入副本改标题落盘，**不动 Head、不动 s.cur**
+			c, err := s.store.Load(ctx, id)
+			if err != nil {
+				return "", fmt.Errorf("session: 载入会话 %s: %w", id, err)
+			}
+			target = c
+		}
 	}
-	title := strings.TrimSpace(strings.Join(cmd.Args, " "))
-	s.cur.Title = title
-	if err := s.store.Save(ctx, s.cur); err != nil {
+	if len(args) == 0 {
+		return fmt.Sprintf("%s 标题: %s", target.ID, target.Title), nil
+	}
+	title := strings.TrimSpace(strings.Join(args, " "))
+	target.Title = title
+	if err := s.store.Save(ctx, target); err != nil {
 		return "", fmt.Errorf("session: 保存标题: %w", err)
 	}
+	if target.ID != s.cur.ID {
+		return fmt.Sprintf("会话 %s 标题已改为: %s", target.ID, title), nil
+	}
 	return fmt.Sprintf("标题已改为: %s", title), nil
+}
+
+// execRmconv 实现 /rmconv：删除**整个会话**（区别于 /rm 删消息节点，D120⑥；二次确认）。
+// 删当前会话时自动继任（最近更新的其余会话；一个不剩则新建空会话）并清屏回放（D75/D81 口径）。
+func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, error) {
+	if len(cmd.Args) != 1 {
+		return "", errors.New("用法: /rmconv <id前缀>（删除整个会话，二次确认；/list 查看可用会话）")
+	}
+	id, err := s.resolveConversation(ctx, cmd.Args[0])
+	if err != nil {
+		return "", err
+	}
+	if s.confirmer == nil {
+		return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rmconv 需要二次确认")
+	}
+	title := s.conversationTitle(ctx, id)
+	prompt := fmt.Sprintf("确认删除会话 %s（%s）？整会话连同其消息树一并删除，此操作不可恢复", id, title)
+	ans, err := s.confirmer.Confirm(ctx, prompt)
+	if err != nil {
+		return "", fmt.Errorf("session: 确认删除会话: %w", err)
+	}
+	if !ans.Allow {
+		return fmt.Sprintf("已取消删除会话 %s", id), nil
+	}
+	deletingCurrent := id == s.cur.ID
+	if err := s.store.Remove(ctx, id); err != nil {
+		return "", fmt.Errorf("session: 删除会话: %w", err)
+	}
+	if !deletingCurrent {
+		return fmt.Sprintf("已删除会话 %s（%s）", id, title), nil
+	}
+	// 删的是当前会话：继任 + 落盘 + 清屏回放（转写区恒与 Head 一致，D75/D81）。
+	next, err := s.successorConversation(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	s.cur = next
+	if err := s.store.Save(ctx, s.cur); err != nil {
+		return "", fmt.Errorf("session: 保存继任会话: %w", err)
+	}
+	if err := s.emitClear(ctx); err != nil {
+		return "", err
+	}
+	if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("已删除当前会话 %s（%s），已切换到 %s", id, title, s.cur.ID), nil
+}
+
+// conversationTitle 取会话标题（当前会话直读内存；否则查列表，取不到回退 ID）。
+func (s *Session) conversationTitle(ctx context.Context, id conversation.ID) string {
+	if id == s.cur.ID {
+		return s.cur.Title
+	}
+	if sums, err := s.store.List(ctx); err == nil {
+		for _, sm := range sums {
+			if sm.ID == id {
+				return sm.Title
+			}
+		}
+	}
+	return string(id)
+}
+
+// successorConversation 当前会话被删后的继任会话：最近更新的其余会话（List 按时间降序）；
+// 一个不剩则新建空会话（persona 首节点）。
+func (s *Session) successorConversation(ctx context.Context, removed conversation.ID) (*conversation.Conversation, error) {
+	sums, err := s.store.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("session: 列出会话: %w", err)
+	}
+	for _, sm := range sums {
+		if sm.ID == removed {
+			continue
+		}
+		c, err := s.store.Load(ctx, sm.ID)
+		if err != nil {
+			return nil, fmt.Errorf("session: 载入会话 %s: %w", sm.ID, err)
+		}
+		return c, nil
+	}
+	return s.newConversation(defaultTitle)
 }
 
 // execGoto 实现 /goto：移动 Head（D81 清屏回放口径）。
