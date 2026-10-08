@@ -741,10 +741,18 @@ UI 要画分叉按钮（§15.3/S1-1f）与会话树界面（S3 relation-map）�
   的落点——切版本应恢复该版本的对话全程，而非停在消息节点上）；
   `BranchInfo{IDs []conversation.MessageID; Index int}`：同父全部孩子**按创建序**（含自身）、
   `Index` 为自身下标；`id` 不在树中 → `ok=false`。
-- **整树快照（D112②，S3 relation-map 数据面）**：增 `Graph()` —— 返回节点集
-  `{ID, Parent, Role, CreatedAt, Snippet}` + 版本链映射（`RevisedFrom`/`ClonedFrom`）+ 当前 Head；
-  与 `Branches`/`Tail` 同源、同一不可变快照发布（`atomic.Pointer`，发布点 = 构造完成 + 每次
-  `Handle` 返回前）。仍是**只读、无变更入口**；`Snippet` 为展示用短摘要（非推理口径）。
+- **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
+  `{Anchor, Nodes[], Total}`，`GraphNode{ID, Parent, Role, Snippet, CreatedAt, EdgeKind,
+  SiblingIdx, SiblingCount}`（`Anchor` = 当前 Head 锚点；`EdgeKind` = 与父边的种类
+  `顺接|版本链`；`Total` 供「共 N · 呈现 M」的 A7 口径）；与 `Branches`/`Tail` 同源、
+  同一不可变快照发布（`atomic.Pointer`，发布点 = 构造完成 + 每次 `Handle` 返回前）。仍是
+  **只读、无变更入口**；`Snippet` 为展示用短摘要（非推理口径）。`Level`/`Depth`/`InPath`/
+  扇区/坐标/配色**不入端口**，由 UI 侧派生。**状态规格见
+  [docs/relation-map-design.md](docs/relation-map-design.md)**（D112 的方向级描述由 D120 细化：
+  结构根/锚点拆分、类别=形状、层号=深度色带、版本链走线型）。
+- **会话列表（D120⑥，S3 左栏数据面）**：另立只读端口 `port.SessionLister{List() []SessionSummary}`
+  （`ID/Title/UpdatedAt/Messages/Current`；数据源 = 已有 `ConversationStore.List`；D80/D103 同款
+  反向端口：app 实现、UI 消费，只读无变更入口）。
 - **实现**：`*app.Session` 实现该端口（**首个 app 侧端口实现**；方向合法 —— adapter 与 app
   同依赖 port，本端口消费方是 UI 适配器、实现方是 app，与 llm/store 反向）。
 - **并发**：Session 内维护**不可变快照**（整树 → `map[MessageID]BranchInfo`），树变更后
@@ -950,7 +958,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
 | **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
 | **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统（§15.4 令牌 + `ui.theme`，D61）；**窗口管理**（§15.7/D60）：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口——本轮基建 + 设置核心档（模型/权限/think/effort/hotkey/主题）+ 两空窗壳验证宿主。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；**托盘/右键菜单可开三窗（历史/欢迎为占位壳）；设置窗改核心档写回 config 并热生效（模型/权限/think/effort/hotkey/主题），密钥只写不回显；主题深浅两版可切、`system` 跟随系统**；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
-| **M6 底座与跨平台**（D109 重排，2026-10-06） | **执行序**：① 配置底座破坏性改造（S4+S5 合批，**D110**：profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（新 S4b，**D111**：平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI：**relation-map**（S3，**D112**：`TreeView.Graph()` 整树快照 + 关系图自绘 + 内核 `/rm`/改名补洞）。S6–S8（工具/MCP 管理、提示词、语音）顺延 | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链、点节点切会话、`/rm` 任意会话与改名可用 |
+| **M6 底座与跨平台**（D109 重排，2026-10-06） | **执行序**：① 配置底座破坏性改造（S4+S5 合批，**D110**：profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（新 S4b，**D111**：平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI：**relation-map**（S3，**D112**；形态规格 **D120**：结构根/锚点拆分 + 层号深度色带 + 投影后置布局 + 左栏会话/右图，[docs/relation-map-design.md](docs/relation-map-design.md)：`TreeView.Graph()` 整树快照 + `port.SessionLister` 左栏 + 关系图自绘 + 内核删除任意会话/改名补洞）。S6–S8（工具/MCP 管理、提示词、语音）顺延 | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链（层号色带/形状=Role/主干可辨，公理集自检清单逐条过）、左栏切会话、点节点 `/goto`、任意会话删除与改名可用 |
 
 ---
 
@@ -960,7 +968,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 **M5 后续执行序（D109 重排，S4a 增补；以 roadmap §3 为准）**：日常体验（S1–S2b）与内核命令已落地后，
 顺位为 **① 配置底座破坏性改造（S4+S5 合批，D110）→ ② 大文件拆分（S4a）→ ③ 设置窗渲染异常修复（S4c，D113）
-→ ④ GUI 跨平台抽象层（S4b，D111）→ ⑤ 对话树 UI：relation-map（S3，D112）**；S6–S8 顺延。原则 = 先动 schema
+→ ④ GUI 跨平台抽象层（S4b，D111）→ ⑤ 对话树 UI：relation-map（S3，D112；形态规格 D120）**；S6–S8 顺延。原则 = 先动 schema
 （不依赖 UI 形态）→ 再拆大文件（纯代码组织）→ 再抽平台层（结构改动、不新增用户可见功能）→ 再长 UI（消费者）。
 
 ## 14. 暂缓事项（Backlog）
@@ -1349,15 +1357,20 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 三类功能窗采用**独立常规 OS 窗口**（各自 Gio `app.Window`、有边框），与悬浮球形态解耦
 ——**悬浮球本体仍不转常规窗口形态**（§14 口径不变，卡的是球自己变普通窗，不是功能窗）。
 本轮范围：**窗口管理基建 + 空窗壳**；设置窗随主题步（D61）一起落地；欢迎（首次运行）
-与会话历史只落空窗壳验证宿主，数据面留后续步。
+与会话历史只落空窗壳验证宿主，数据面留后续步（**会话历史数据面已由 S3 接续**：D112/D120 + [docs/relation-map-design.md](docs/relation-map-design.md)）。
 
 - **窗口清单**：**设置**（核心档：权限档、模型名、think/effort、`ui.hotkey`、`ui.theme`；
   **S4/D110③ 扩为全量分组页**：Profile 区（当前/新建/复制/切换，重启生效）、provider 列表
   编辑区（全量应用 + 设为主 + 删除 + 连通性「测试」= 真实最小请求，D110②）、输出/限额/提示词、
   MCP 与插件只读清单、高级 raw JSON 整文件编辑（保存前 JSON 校验，Q10）；密钥只写不回显、
-  不回显明文——D35）｜**会话历史**（**relation-map
-  关系图**——D112/S3：节点 + 父子连线（版本链虚线/异色）+ 当前 Head 路径高亮 + 点节点切会话 +
-  右键；数据面 = `port.TreeView.Graph()` 整树快照，§7.5）｜**欢迎/首次运行**（占位壳；接管
+  不回显明文——D35）｜**会话历史**（**会话树关系图 relation-map**——D112/D120/S3：
+  **左栏会话选择 + 右栏关系图 + 状态栏**（`共 N 条 · 呈现 M`，A7）；节点填充色 = **层号深度色带**
+  （`Level mod 4`）、形状 = **Role**（root 空心圆 / user 圆角方 / assistant 圆 / system 菱形）、
+  直径 = **权重**（与 degree 解耦）、描边 = **当前 Head 主干**；父子连线以父→子为向、版本链走
+  **线型**（D120③ 改判：异色改线型）；**锚点 = 当前 Head**（开窗居中）、结构根 = `Role=root` 节点
+  （D120① 拆分）；点节点 `/goto`、悬停一句话陈述、右键改名/删除/复制 ID；布局 = 斥力 + 角度/层序
+  投影（D120④）；数据面 = `port.TreeView.Graph()` 整树快照 + 左栏 `port.SessionLister`，§7.5；
+  **形态规格 = [docs/relation-map-design.md](docs/relation-map-design.md)**）｜**欢迎/首次运行**（占位壳；接管
   「写模板即退出」启动流为后续步）｜**查看原文**（D99：气泡右键「查看原文」的只读次窗——
   单实例 + 内容原子槽原地刷新）。
 - **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 ULW 形状位图（常规
