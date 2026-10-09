@@ -376,6 +376,39 @@ func TestRelGraphDragNodePinsAndSettles(t *testing.T) {
 	}
 }
 
+// TestRelGraphDragNodeNearMiss 实测修（D121）：**按下时命中落空**（低 zoom 卡片塌缩、
+// 指针差几像素）不得静默退化成平移——起拖那一刻用更宽的抓手半径补命中，命中即拖该节点。
+func TestRelGraphDragNodeNearMiss(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	li := g.anchor
+	// 复现现场：低 zoom ⇒ 标签隐藏、卡片塌缩成小徽标（点不准的典型形态）
+	g.zoom = relZoomLabelMin - 0.01
+	g.z = g.zoom * g.dpx
+	xs, ys := g.toScreen(g.sol.Pos[li])
+	bare := relBadgeBox(xs, ys, float32(g.nodeRadius(&st.model.nodes[g.vis.nodes[li]])*g.z))
+	if g.nodeCardBox(g.vis.nodes[li], xs, ys) != bare {
+		t.Fatal("低 zoom 下卡片应塌缩为裸形状（本测试的前提）")
+	}
+	// 落点：徽标右侧「命中外扩之外、抓手外扩之内」的一小段
+	near := f32.Pt(float32(bare.Max.X)+float32(relHitSlop*g.z)+1, ys)
+	if got := g.hitTest(near.X, near.Y); got >= 0 {
+		t.Fatalf("前提不成立：落点 %v 本就命中 %d", near, got)
+	}
+	ox, oy := g.offX, g.offY
+	q.Queue(relPointer(pointer.Press, near, true))
+	relGFrame(q, u, st)
+	to := f32.Pt(near.X+30, near.Y+10)
+	q.Queue(relPointer(pointer.Move, to, true))
+	relGFrame(q, u, st)
+	if g.dragNode != li {
+		t.Fatalf("补抓失败：dragNode=%d, want %d（且不得平移）", g.dragNode, li)
+	}
+	if g.offX != ox || g.offY != oy {
+		t.Fatalf("补抓时不应平移视场: off=(%v,%v), want (%v,%v)", g.offX, g.offY, ox, oy)
+	}
+}
+
 // TestRelGraphDragCancelReleasesPin 指针被取消（拖出窗口/失焦）：锚同样撤销，不得卡在拖动态。
 func TestRelGraphDragCancelReleasesPin(t *testing.T) {
 	u, st, q := relGraphFixture(t)

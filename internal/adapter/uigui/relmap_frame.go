@@ -51,9 +51,12 @@ const (
 	relDashOn     = 6.0 // 虚线段长（dp）
 	relDashOff    = 5.0 // 虚线间隔（dp）
 	relHitSlop    = 6.0 // 命中判定外扩（dp）
-	relDragSlop   = 4.0 // 按下到拖动的位移阈值（dp；未越过 = 点击）
-	relWheelMax   = 1e6 // 滚轮范围上限（放开；主窗 D71 钉点口径不适用本窗）
-	relArrowSize  = 6.0 // 箭头半长（dp × 有效缩放）
+	// relGrabSlop 抓手判定的外扩（dp，起拖时用，比点击判定宽）：低 zoom 下卡片塌缩成
+	// 小徽标，按下时命中极易差几像素落空——静默退化成平移是最糟的失败方式。
+	relGrabSlop  = 14.0
+	relDragSlop  = 4.0 // 按下到拖动的位移阈值（dp；未越过 = 点击）
+	relWheelMax  = 1e6 // 滚轮范围上限（放开；主窗 D71 钉点口径不适用本窗）
+	relArrowSize = 6.0 // 箭头半长（dp × 有效缩放）
 	// 节点卡（D121「内容入内」）：标签可见时节点 = [形状徽标 | 标签] 卡片，标签画在
 	// 卡片内部（此前在节点右侧外面飘着）。徽标仍是 Role 四形 + Level 色（A2/§3.1 不变），
 	// 卡片只承载文字。下列均为卡片内边距/圆角档位（偶然实现，§7）。
@@ -132,7 +135,8 @@ type relGraph struct {
 	// 节点拖拽（D121）：按下命中节点 + 越过 slop → 该节点临时固定于指针位置，
 	// 每帧带锚松弛（周围被斥力推开）；松手锚消失 → 恢复自由、自然收敛。
 	dragNode  int     // 被拖节点本地索引（-1 = 未拖节点）
-	dragGrabX float32 // 按下时指针相对节点中心的偏移（抓取点保持，节点不跳到指针下）
+	grabNode  int     // 抓手判定的节点（按下那一刻用 relGrabSlop 宽半径命中；-1 = 空白）
+	dragGrabX float32 // 指针相对节点中心的偏移（抓取点保持，节点不跳到指针下）
 	dragGrabY float32
 	dragPX    float32 // 最新指针位置（帧层松弛用）
 	dragPY    float32
@@ -150,7 +154,7 @@ type relGraph struct {
 
 // newRelGraph 构造右图帧态（默认 zoom = 1.0，重排后首帧适配整树）。
 func newRelGraph() *relGraph {
-	return &relGraph{zoom: 1.0, z: 1, dpx: 1, hover: -1, pressNode: -1, dragNode: -1, tag: 1}
+	return &relGraph{zoom: 1.0, z: 1, dpx: 1, hover: -1, pressNode: -1, grabNode: -1, dragNode: -1, tag: 1}
 }
 
 // rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 求解 → 重置交互态并适配视口。
@@ -172,6 +176,7 @@ func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	g.hover = -1
 	g.pressed = false
 	g.pressNode = -1
+	g.grabNode = -1
 	g.dragNode = -1
 	g.settling = false
 	g.menuOpen = false
@@ -307,13 +312,18 @@ func (g *relGraph) nodeCardBox(gi int, xs, ys float32) image.Rectangle {
 		badge.Max.X+gap+g.relLabelBoxW(txt)+pad, badge.Max.Y+pv)
 }
 
-// hitTest 屏幕点 → 命中的可见节点（本地索引；-1 无）。按节点卡盒 + 外扩判定
+// hitTest 屏幕点 → 命中的可见节点（本地索引；-1 无）。按节点卡盒 + relHitSlop 外扩判定
 // （卡含标签，故点文字也算点中这个节点）。
 func (g *relGraph) hitTest(sx, sy float32) int {
+	return g.hitTestSlop(sx, sy, relHitSlop)
+}
+
+// hitTestSlop 同 hitTest，外扩量可指定（抓手判定用更宽的 relGrabSlop，见 update）。
+func (g *relGraph) hitTestSlop(sx, sy float32, slopDp float64) int {
 	if g.sol == nil {
 		return -1
 	}
-	slop := int(relHitSlop * g.z)
+	slop := int(slopDp * g.z)
 	for li, gi := range g.vis.nodes {
 		xs, ys := g.toScreen(g.sol.Pos[li])
 		box := g.nodeCardBox(gi, xs, ys).Inset(-slop)
@@ -354,7 +364,8 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		})
 	}
 	g.draw(gtx, th, u, st)
-	g.drawTooltip(gtx, th, st)
+	// 悬停陈述（inspect，§3.4）暂缓：实测「tooltip 太大」，等改小/改位置再接回
+	// （文案派生 `relStatementOf` 与其测试仍在，恢复时只需重接 hover + drawTooltip）。
 	g.drawMenu(gtx, th, u, st)
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
@@ -377,6 +388,15 @@ func (g *relGraph) tickLayout() bool {
 		g.settling = more // 松手后收敛：收敛即停（R3）
 	}
 	return more
+}
+
+// grabAt 记录抓取偏移（指针相对节点中心的偏移）：拖动全程保持它，节点才不会跳到指下。
+func (g *relGraph) grabAt(li int, sx, sy float32) {
+	if li < 0 || li >= len(g.sol.Pos) {
+		return
+	}
+	xs, ys := g.toScreen(g.sol.Pos[li])
+	g.dragGrabX, g.dragGrabY = sx-xs, sy-ys
 }
 
 // dragPinWorld 被拖节点的世界坐标（抓取点保持：指针相对节点的偏移不随拖动改变）。
@@ -404,16 +424,12 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 		}
 		e := ev.(pointer.Event)
 		switch e.Kind {
-		case pointer.Move, pointer.Enter:
-			if !g.menuOpen {
-				g.hover = g.hitTest(e.Position.X, e.Position.Y)
-			}
 		case pointer.Leave, pointer.Cancel:
-			g.hover = -1
 			if e.Kind == pointer.Cancel {
 				g.releaseDrag() // 指针被取消（拖出窗口/失焦）：锚撤销，回归自由
 				g.pressed = false
 				g.pressNode = -1
+				g.grabNode = -1
 				g.dragging = false
 			}
 		case pointer.Scroll:
@@ -439,12 +455,19 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 				}
 				g.pressed = true
 				g.pressNode = g.hitTest(e.Position.X, e.Position.Y)
+				// 抓手判定用**更宽的半径**（D121 实测修）：低 zoom 下标签隐藏、卡片塌缩成
+				// 小徽标，严格命中极易差几像素落空，「拖节点」就静默退化成平移——最糟的
+				// 失败方式（用户以为在拖节点，实际在挪视口）。抓手在**按下那一刻**定，
+				// 拖动途中不再改判（否则拖过节点会被半路劫走）。
+				g.grabNode = g.hitTestSlop(e.Position.X, e.Position.Y, relGrabSlop)
+				if g.grabNode < 0 {
+					g.grabNode = g.pressNode
+				}
 				g.panStartOffX, g.panStartOffY = g.offX, g.offY
 				g.panStartX, g.panStartY = e.Position.X, e.Position.Y
 				g.dragging = false
-				if g.pressNode >= 0 { // 记抓取偏移（节点不跳到指针下）
-					xs, ys := g.toScreen(g.sol.Pos[g.pressNode])
-					g.dragGrabX, g.dragGrabY = e.Position.X-xs, e.Position.Y-ys
+				if g.grabNode >= 0 { // 抓取偏移此刻测（节点才在指下）
+					g.grabAt(g.grabNode, e.Position.X, e.Position.Y)
 				}
 			}
 		case pointer.Drag:
@@ -453,8 +476,8 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 				dy := float64(e.Position.Y - g.panStartY)
 				if !g.dragging && dx*dx+dy*dy > relDragSlop*relDragSlop {
 					g.dragging = true
-					if g.pressNode >= 0 { // 按在节点上 = 拖节点（不进平移）
-						g.dragNode = g.pressNode
+					if g.grabNode >= 0 { // 按在节点上 = 拖节点（不进平移）
+						g.dragNode = g.grabNode
 						g.relaxLeft = relSettleFrames
 					}
 				}
@@ -475,6 +498,7 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 					g.gotoNode(u, st, g.pressNode)
 				}
 				g.pressNode = -1
+				g.grabNode = -1
 				g.dragging = false
 			}
 		}
@@ -813,40 +837,6 @@ func relSampleArc(pts []f32.Point, c f32.Point, r float32, from, to, step float6
 			f32.Pt(c.X+r*float32(math.Cos(t1)), c.Y+r*float32(math.Sin(t1))))
 	}
 	return pts
-}
-
-// drawTooltip 悬停陈述（inspect，§3.4：一句话自足陈述）。
-func (g *relGraph) drawTooltip(gtx layout.Context, th *material.Theme, st *historyState) {
-	if g.menuOpen || g.hover < 0 || g.sol == nil || g.model == nil ||
-		g.hover >= len(g.sol.Pos) || g.dragNode >= 0 {
-		return
-	}
-	xs, ys := g.toScreen(g.sol.Pos[g.hover])
-	text := relStatementOf(g.model, g.vis.nodes[g.hover], st.title())
-	if text == "" {
-		return
-	}
-	l := material.Label(th, unit.Sp(11), truncRunes(text, 48))
-	l.Color = whiteText
-	x, y := int(xs)+10, int(ys)+10
-	if float64(x+260) > g.viewW {
-		x = int(xs) - 270
-	}
-	if float64(y+44) > g.viewH {
-		y = int(ys) - 44
-	}
-	off := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
-	layout.Stack{}.Layout(gtx,
-		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, tipBg, clip.RRect{Rect: image.Rectangle{Max: gtx.Constraints.Max},
-				SE: 6, SW: 6, NE: 6, NW: 6}.Op(gtx.Ops))
-			return layout.Dimensions{}
-		}),
-		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			return layout.UniformInset(unit.Dp(6)).Layout(gtx, l.Layout)
-		}),
-	)
-	off.Pop()
 }
 
 // drawMenu 右键菜单：复制 ID / 删除 / 回到当前。点击判定须**先于绘制**（Clickable 的
