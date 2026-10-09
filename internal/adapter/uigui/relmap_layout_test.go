@@ -1,8 +1,8 @@
 package uigui
 
-// 关系图布局求解器性质测试（D120④，relation-map-design §5.1）。
-// 力导向坐标不确定 ⇒ 只断言**不变量**：扇区不破 / 层序单调 / 动能静止 /
-// 有界盒 / 同输入可复现；另覆盖输入合法性守卫。
+// 关系图布局内核性质测试（D124，取代 D120④/D121 的梯度下降口径）。
+// 力导向坐标不确定 ⇒ 只断言**不变量**：静息树形（层序）/ 有界盒 / 同输入可复现 /
+// 物理动能降至静止 / pin 传播位移并锁死 / 松手回归静息；另覆盖输入合法性守卫。
 
 import (
 	"math"
@@ -217,79 +217,166 @@ func TestRelWeightDoesNotAffectStructure(t *testing.T) {
 	}
 }
 
-// —— D121：临时固定锚（拖拽交互的力学）——
+// —— D124：常驻物理（弹簧 + 斥力 + 阻尼 + 速度积分）——
 
-// TestRelSolvePinLocksNodeAndPushesNeighbors 钉住某节点：其坐标被锁死，其余节点被斥力推开；
-// 未被钉的节点之间层序仍严格单调（交互态只破坏「被拖者」的层位）。
-func TestRelSolvePinLocksNodeAndPushesNeighbors(t *testing.T) {
+// relStepUntilSettled 步进至静止（或达帧上限）。pin.Valid 时带着固定锚收敛。
+func relStepUntilSettled(l *relLayout, maxFrames int, pin relPin) (int, bool) {
+	for f := 0; f < maxFrames; f++ {
+		l.step(pin)
+		if l.settled {
+			return f + 1, true
+		}
+	}
+	return maxFrames, false
+}
+
+// TestRelRestLayoutIsTree 静息布局是确定性树形：根在原点、子 = 父 + (restOff, rowGap)、
+// 有界、两次构造逐点相等。
+func TestRelRestLayoutIsTree(t *testing.T) {
+	nodes := relRandTree(23, 80)
+	a, ok := newRelLayout(nodes)
+	if !ok {
+		t.Fatal("newRelLayout 拒绝合法输入")
+	}
+	b, _ := newRelLayout(nodes)
+	rest := a.restPos()
+	if rest[a.root] != (relPoint{}) {
+		t.Fatalf("根不在原点: %+v", rest[a.root])
+	}
+	rb := b.restPos()
+	for i, nd := range nodes {
+		if math.IsNaN(rest[i].X) || math.IsNaN(rest[i].Y) || math.Abs(rest[i].X) > relBound {
+			t.Fatalf("节点 %d 静息坐标越界: %+v", i, rest[i])
+		}
+		if nd.Parent >= 0 && math.Abs(rest[i].Y-(rest[nd.Parent].Y+relRowGap)) > 1e-9 {
+			t.Fatalf("节点 %d 层距 ≠ %v: %v", i, relRowGap, rest[i].Y-rest[nd.Parent].Y)
+		}
+		if rest[i] != rb[i] {
+			t.Fatalf("节点 %d 静息布局不可复现", i)
+		}
+	}
+}
+
+// TestRelPhysSettlesBoundedReproducible 物理从折叠播种出发可静止、有界、无 NaN，且同
+// 输入两跑终态逐点相等（确定性）。
+func TestRelPhysSettlesBoundedReproducible(t *testing.T) {
+	for name, nodes := range relFixtures() {
+		nodes := nodes
+		t.Run(name, func(t *testing.T) {
+			run := func() (*relLayout, int, bool) {
+				l, ok := newRelLayout(nodes)
+				if !ok {
+					t.Fatal("newRelLayout 拒绝合法输入")
+				}
+				l.seedCollapsed()
+				f, ok := relStepUntilSettled(l, 5000, relPin{})
+				return l, f, ok
+			}
+			la, fa, okA := run()
+			lb, _, _ := run()
+			if !okA {
+				t.Fatalf("未在帧预算内静止（跑了 %d 帧）", fa)
+			}
+			if !la.settled {
+				t.Fatal("settled 未置位")
+			}
+			for i := range la.x {
+				for _, v := range []float64{la.x[i], la.y[i], la.vx[i], la.vy[i]} {
+					if math.IsNaN(v) || math.IsInf(v, 0) {
+						t.Fatalf("节点 %d 出现非有限值", i)
+					}
+				}
+				if math.Abs(la.x[i]) > relBound || math.Abs(la.y[i]) > relBound {
+					t.Fatalf("节点 %d 坐标越界: (%v,%v)", i, la.x[i], la.y[i])
+				}
+				if la.x[i] != lb.x[i] || la.y[i] != lb.y[i] {
+					t.Fatalf("同输入两跑不一致（节点 %d）", i)
+				}
+			}
+		})
+	}
+}
+
+// TestRelPhysPinLocksAndPropagates 钉住某节点并拖开：其坐标被锁死，其余节点被弹簧/斥力
+// 带动（整树响应，位移 > 0），布局仍有界。
+func TestRelPhysPinLocksAndPropagates(t *testing.T) {
 	nodes := relRandTree(11, 40)
 	lay, ok := newRelLayout(nodes)
 	if !ok {
 		t.Fatal("newRelLayout 拒绝合法输入")
 	}
-	lay.relax(relMaxIter, relPin{})
+	relStepUntilSettled(lay, 3000, relPin{})
 	free := lay.solution()
 
 	const dragged = 7
-	pin := relPin{Valid: true, Index: dragged, Pos: relPoint{X: free.Pos[dragged].X + 240, Y: free.Pos[dragged].Y}}
-	lay.relax(relMaxIter, pin)
+	pin := relPin{Valid: true, Index: dragged,
+		Pos: relPoint{X: free.Pos[dragged].X + 260, Y: free.Pos[dragged].Y - 90}}
+	for f := 0; f < 120; f++ {
+		lay.step(pin)
+	}
 	got := lay.solution()
-
 	if p := got.Pos[dragged]; math.Abs(p.X-pin.Pos.X) > 1e-6 || math.Abs(p.Y-pin.Pos.Y) > 1e-6 {
 		t.Fatalf("被钉节点未锁死在锚点: %+v, want %+v", p, pin.Pos)
 	}
 	pushed := 0
 	for i := range nodes {
-		if i != dragged && math.Abs(got.Pos[i].X-free.Pos[i].X) > 0.5 {
-			pushed++
-		}
-		if i == dragged || nodes[i].Parent < 0 || nodes[i].Parent == dragged {
+		if i == dragged {
 			continue
 		}
-		if got.Pos[i].Y <= got.Pos[nodes[i].Parent].Y {
-			t.Fatalf("节点 %d 层序被破坏: y=%v, 父 y=%v", i, got.Pos[i].Y, got.Pos[nodes[i].Parent].Y)
+		if math.Hypot(got.Pos[i].X-free.Pos[i].X, got.Pos[i].Y-free.Pos[i].Y) > 0.5 {
+			pushed++
+		}
+		if math.Abs(got.Pos[i].X) > relBound || math.Abs(got.Pos[i].Y) > relBound {
+			t.Fatalf("节点 %d 越界: %+v", i, got.Pos[i])
 		}
 	}
 	if pushed == 0 {
-		t.Fatal("钉住节点后周围毫无位移（斥力未生效）")
+		t.Fatal("钉住节点后周围毫无位移（弹簧/斥力未传导）")
 	}
 }
 
-// TestRelSolvePinReleaseRestoresLayerOrder 松手（撤销锚）后：y 全回本层带、层序不变量
-// 恢复——交互态的例外不留在稳态里。
-func TestRelSolvePinReleaseRestoresLayerOrder(t *testing.T) {
-	nodes := relRandTree(13, 40)
+// TestRelPhysReleaseRestoresChain 链夹具（无亲属斥力）：拖开某节点后松手，物理收敛回
+// 静息布局附近，且层序（子恒在父之下）恢复。交互态的例外不留在稳态里。
+func TestRelPhysReleaseRestoresChain(t *testing.T) {
+	nodes := relChain(15)
 	lay, ok := newRelLayout(nodes)
 	if !ok {
 		t.Fatal("newRelLayout 拒绝合法输入")
 	}
-	lay.relax(relMaxIter, relPin{Valid: true, Index: 5, Pos: relPoint{X: 300, Y: -120}})
-	lay.relax(relMaxIter, relPin{}) // 松手：回归自由
-	sol := lay.solution()
-	for i, nd := range nodes {
-		wantY := float64(nd.Level)*relRowGap + relJitterOf(i)
-		if math.Abs(sol.Pos[i].Y-wantY) > 1e-9 {
-			t.Fatalf("节点 %d 未回本层带: y=%v, want %v", i, sol.Pos[i].Y, wantY)
+	relStepUntilSettled(lay, 3000, relPin{})
+	eq := lay.solution()
+	const dragged = 5
+	for f := 0; f < 80; f++ {
+		lay.step(relPin{Valid: true, Index: dragged,
+			Pos: relPoint{X: eq.Pos[dragged].X + 320, Y: eq.Pos[dragged].Y + 140}})
+	}
+	if _, ok := relStepUntilSettled(lay, 6000, relPin{}); !ok {
+		t.Fatal("松手后未静止")
+	}
+	got := lay.solution()
+	for i := range nodes {
+		if d := math.Hypot(got.Pos[i].X-eq.Pos[i].X, got.Pos[i].Y-eq.Pos[i].Y); d > 2 {
+			t.Fatalf("节点 %d 未回静息附近: 偏差 %v", i, d)
 		}
-		if nd.Parent >= 0 && sol.Pos[i].Y <= sol.Pos[nd.Parent].Y {
-			t.Fatalf("节点 %d 层序未恢复", i)
+		if nodes[i].Parent >= 0 && got.Pos[i].Y <= got.Pos[nodes[i].Parent].Y {
+			t.Fatalf("节点 %d 层序未恢复: y=%v, 父 y=%v", i, got.Pos[i].Y, got.Pos[nodes[i].Parent].Y)
 		}
 	}
 }
 
-// TestRelRelaxIsIncremental 增量松弛：从当前坐标接着走，而不是每帧回到结构初值
-// （否则拖拽时全场每帧瞬移，只有被拖的那个在动）。
-func TestRelRelaxIsIncremental(t *testing.T) {
+// TestRelPhysIncremental 增量物理：从当前坐标接着积分，一步只挪一点（不瞬跳回静息）。
+func TestRelPhysIncremental(t *testing.T) {
 	nodes := relRandTree(17, 30)
 	lay, ok := newRelLayout(nodes)
 	if !ok {
 		t.Fatal("newRelLayout 拒绝合法输入")
 	}
-	lay.relax(relMaxIter, relPin{})
-	home := lay.x[9]
-	lay.x[9] += 80 // 扰动（模拟刚被拖开）
-	lay.relax(1, relPin{})
-	if d := math.Abs(lay.x[9] - (home + 80)); d > 40 {
-		t.Fatalf("单步松弛跳回初值（增量失效）: 位移 %v", d)
+	relStepUntilSettled(lay, 3000, relPin{})
+	before := lay.x[9]
+	lay.x[9] += 80 // 模拟刚被扰动
+	lay.settled = false
+	lay.step(relPin{})
+	if d := math.Abs(lay.x[9] - (before + 80)); d > 40 {
+		t.Fatalf("单步就跳回静息（增量失效）: 位移 %v", d)
 	}
 }

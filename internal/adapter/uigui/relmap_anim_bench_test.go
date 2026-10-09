@@ -1,16 +1,14 @@
 package uigui
 
-// relmap_anim_bench_test.go 全程动画基准（D122 spike 固化）：200 节点下一帧全链路耗时，
-// 对照 60fps 预算（16.67ms）。**spike 结论（Ryzen 7 8700F, 900×700, PxPerDp=1.25）**：
+// relmap_anim_bench_test.go 全程物理基准（D124）：200 节点下一帧全链路耗时（物理步进 +
+// 全量绘制），对照 60fps 预算（16.67ms）。**实测（Ryzen 7 8700F, 900×700, PxPerDp=1.25）**：
 //
-//	入场动画帧（lerp + 全量绘制） ≈ 0.52 ms/帧（预算的 ~3%，裕量 >30×；1s benchtime 稳定值）
-//	拖拽帧（relax 32 步 + 绘制）  ≈ 0.49 ms/帧
-//	一次性重排（relMaxIter）     ≈ 1.5 ms/次（每条消息一次，非逐帧）
-//	纯 cascade lerp              ≈ <0.03 ms/帧
+//	物理仿真帧（6 子步 + 全量绘制） ≈ 0.88 ms/帧（预算 ~5%，裕量 ~19×）
+//	拖拽帧（带 pin 同上）          ≈ 0.88 ms/帧
 //
-// ⇒ 200 节点（≤ hardCap 240）**全程动画 + 用户拖拽**稳定 60fps，无需任何近似/降采样。
-// 注意：`-benchtime 3x` 这类小采样会被冷启动污染（曾现 5.7ms 假象），请用 ≥1s。
-// 运行：go test ./internal/adapter/uigui/ -run '^$' -bench AnimFrame -benchtime 1s
+// ⇒ 200 节点（≤ hardCap 240）**全程物理 + 用户拖拽**稳定 60fps。注意：`-benchtime 3x`
+// 这类小采样会被冷启动污染，请用 ≥1s。
+// 运行：go test ./internal/adapter/uigui/ -run '^$' -bench 'PhysFrame|DragFrame|PhysStep' -benchtime 1s
 
 import (
 	"image"
@@ -88,29 +86,37 @@ func renderFrame(b *testing.B, q *input.Router, u *UI, st *historyState, w *head
 	}
 }
 
-// BenchmarkRelmapAnimFrame200 入场动画帧（cascade lerp + 全量绘制）。
-func BenchmarkRelmapAnimFrame200(b *testing.B) {
+// BenchmarkRelmapPhysFrame200 物理仿真帧（200 节点：物理步进 + 全量绘制）。每轮注入
+// 一点速度使仿真保持运动（模拟持续扰动/展开），测一帧全链路成本。
+func BenchmarkRelmapPhysFrame200(b *testing.B) {
 	u, st, q, w := animBench(b)
 	g := st.graph
-	if !g.animOn {
-		b.Fatal("应处于入场动画态")
+	// 先跑到静止（基准测稳态物理帧）。
+	for i := 0; i < relSettleFrames*4 && g.lay != nil && !g.lay.settled; i++ {
+		renderFrame(b, q, u, st, w)
 	}
-	// 预热（字形/GPU 缓存上手）
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 10; i++ { // 预热（字形/GPU 缓存上手）
 		renderFrame(b, q, u, st, w)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		if g.lay != nil { // 注入扰动，保持物理在跑
+			for k := range g.lay.vx {
+				g.lay.vx[k], g.lay.vy[k] = 3, 1
+			}
+			g.lay.settled = false
+			g.relaxLeft = relSettleFrames
+		}
 		renderFrame(b, q, u, st, w)
 	}
 }
 
-// BenchmarkRelmapDragFrame200 拖拽帧（relax(relFrameIter, pin) + 全量绘制）。
+// BenchmarkRelmapDragFrame200 拖拽帧（带 pin 的物理步进 + 全量绘制）。
 func BenchmarkRelmapDragFrame200(b *testing.B) {
 	u, st, q, w := animBench(b)
 	g := st.graph
-	// 播完入场动画（基准测的是稳态拖拽帧）
-	for i := 0; i < relEntryFrames+2 && g.animOn; i++ {
+	// 跑完展开（基准测稳态拖拽帧）
+	for i := 0; i < relSettleFrames*4 && g.lay != nil && !g.lay.settled; i++ {
 		renderFrame(b, q, u, st, w)
 	}
 	sx, li := f32.Pt(0, 0), g.anchor
@@ -131,4 +137,32 @@ func BenchmarkRelmapDragFrame200(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		renderFrame(b, q, u, st, w)
 	}
+}
+
+// BenchmarkRelmapPhysStep200 纯物理步进（200 节点链，6 子步，不含绘制）：测物理核成本。
+func BenchmarkRelmapPhysStep200(b *testing.B) {
+	lay, ok := newRelLayout(animBenchGeo(animBenchN))
+	if !ok {
+		b.Fatal("布局构建失败")
+	}
+	lay.seedCollapsed()
+	// 跑到静止（测稳态物理步进的成本）。
+	for f := 0; f < relSettleFrames*4 && !lay.settled; f++ {
+		lay.step(relPin{})
+	}
+	pin := relPin{Valid: true, Index: 7, Pos: relPoint{X: 40, Y: 30}}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lay.step(pin)
+	}
+}
+
+// animBenchGeo 200 节点链的布局投影（质点，HalfW/HalfH = 0）。
+func animBenchGeo(n int) []relGeoNode {
+	ns := make([]relGeoNode, n)
+	for i := range ns {
+		ns[i] = relGeoNode{Parent: i - 1, Level: i, Weight: 1}
+	}
+	return ns
 }

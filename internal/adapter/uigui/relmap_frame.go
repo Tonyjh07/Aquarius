@@ -33,6 +33,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -85,16 +86,13 @@ const (
 	// relLabelMaxDp 标签区宽上限（dp × 有效缩放）：摘要可到 40 字程（CJK 40 字 ≈ 480dp），
 	// 不封顶则一张卡横跨半个视口、邻卡互相吞字。超出走 MaxLines=1 的省略号。
 	relLabelMaxDp = 96.0
-	// relSettleFrames 拖拽/收敛的续帧硬顶（帧）：正常几帧内收敛，触顶即停——
-	// 防病态输入下无限松弛（交互态也守 R3 的「稳定态不烧资源」）。
-	relSettleFrames = 240
-	// relEntryFrames 入场动画总帧数（§5.3）：开窗首帧数据的布局动画时长。180 帧 ≈
-	// 3 秒（60fps）——用户口径「几秒都可以」。分帧展开（根点 → 收敛布局，ease-out），
-	// 不做独立时间线：帧计数走既有帧循环（InvalidateCmd 续帧），播完即停（R3）。
-	relEntryFrames = 180
-	// relAnimLeadFrac 入场动画的**级联**占比：前 leadFrac 帧按层序错峰起滑（浅层先动），
-	// 后 (1-leadFrac) 帧全部滑到收敛位。树的「长出来」是逐层展开，不是整图同时平移。
-	relAnimLeadFrac = 0.5
+	// relSettleFrames 物理续帧硬顶（帧）：常见树 ~1–2s（≤180 帧）内落定；深链退化形态
+	// 需更长（chain200 ≈252、chain300 ≈311 帧），触顶即停防病态输入下无限续帧
+	// （交互态也守 R3 的「稳定态不烧资源」）。
+	relSettleFrames = 400
+	// relFitMargin 视场适配/居中的树盒外扩比例：物理平衡态比静息布局略宽（斥力把兄弟
+	// 顶开一点），留点余量免得贴边被裁。
+	relFitMargin = 0.06
 )
 
 // relEstTextW 文本宽估算（dp）：CJK/全角记 1.0em、其余记 0.55em × 字号。
@@ -135,14 +133,6 @@ type relGraph struct {
 	fitPending   bool    // 下帧把树拉回视野（拖后松手，D121 实测修；不重置 zoom）
 	everFit      bool    // 已做过首帧整树适配（此后 rebuild 不动视场——数据变更不重置 zoom/视口）
 
-	// 入场动画（§5.3）：首帧数据时从**根点**逐层展开到**收敛布局**（级联 + ease-out，
-	// 秒级）。起点统一 = 根节点的收敛位置——「树从对话起点长出来」。
-	animOn     bool
-	animFrame  int
-	animFrames int
-	animOrigin relPoint   // 展开起点（根节点的收敛位置）
-	animTo     []relPoint // 终点（收敛布局）
-
 	tag    int            // 原始指针 tag（悬停/点击/右键/平移/拖节点）
 	scroll gesture.Scroll // 滚轮（范围放开的纵向滚动 → wheel()）
 
@@ -163,10 +153,9 @@ type relGraph struct {
 	grabNode  int     // 抓手判定的节点（按下那一刻用 relGrabSlop 宽半径命中；-1 = 空白）
 	dragGrabX float32 // 指针相对节点中心的偏移（抓取点保持，节点不跳到指针下）
 	dragGrabY float32
-	dragPX    float32 // 最新指针位置（帧层松弛用）
+	dragPX    float32 // 最新指针位置（帧层物理步进用）
 	dragPY    float32
-	settling  bool // 松手后回归自由收敛中（交互态，收敛即停 = R3）
-	relaxLeft int  // 松弛帧预算（硬顶，防病态输入下无限续帧）
+	relaxLeft int // 物理续帧预算（硬顶，防病态输入下无限续帧）
 
 	menuOpen bool // 右键菜单（节点上下文）
 	menuNode int  // 菜单所属节点（本地索引）
@@ -179,15 +168,25 @@ type relGraph struct {
 
 // newRelGraph 构造右图帧态（默认 zoom = 1.0；首帧数据适配整树，见 frame 的 everFit）。
 func newRelGraph() *relGraph {
-	return &relGraph{zoom: 1.0, z: 1, dpx: 1, spx: 1, hover: -1, pressNode: -1, grabNode: -1, dragNode: -1, tag: 1}
+	return &relGraph{zoom: 1.0, z: 1, dpx: 1, spx: 1, hover: -1, pressNode: -1,
+		grabNode: -1, dragNode: -1, tag: 1, relaxLeft: relSettleFrames}
 }
 
-// rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 求解 → 重置交互态。
+// rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 新物理布局 → 播种 → 重置交互态。
 //
-// **首帧数据**（everFit 未置位，即开窗）走入场动画（§5.3）：从根点逐层展开到收敛
-// 布局（时长秒级）；此后数据变更**同步全解、不动视场**（不重置用户 zoom，D121
-// 实测修）。视场只在开窗首帧适配（A13）与拖后松手时调整（releaseDrag）。
+// **开窗首帧**（everFit 未置位）折叠播种（从根点收缩态物理展开）；此后数据变更**按节点
+// ID 保留旧位置**（新节点从父位弹出）——增量形态变化，不整树瞬移。视场只在开窗首帧
+// 适配（A13）与拖后松手时调整（releaseDrag）；数据变更不碰用户的 zoom/平移（D121）。
 func (g *relGraph) rebuild(m *relModel, vis relVisible) {
+	old := map[conversation.MessageID]relPoint{}
+	if g.model != nil && g.sol != nil {
+		for li, gi := range g.vis.nodes {
+			if gi < len(g.model.nodes) && li < len(g.sol.Pos) {
+				old[g.model.nodes[gi].id] = g.sol.Pos[li]
+			}
+		}
+	}
+	fresh := !g.everFit // 开窗首帧 → 折叠物理展开
 	g.model = m
 	g.vis = vis
 	g.geo, g.anchor = relGeo(m, vis)
@@ -196,50 +195,53 @@ func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	}
 	if lay, ok := newRelLayout(g.geo); ok {
 		g.lay = lay
-		lay.relax(relMaxIter, relPin{})
-		target := lay.solution() // 收敛布局（拖拽增量松弛也从这里接着走）
-		if !g.everFit {
-			origin := target.Pos[lay.root] // 根点：树从对话起点长出来
-			g.sol = &relSolution{Pos: make([]relPoint, len(g.geo))}
-			for i := range g.sol.Pos {
-				g.sol.Pos[i] = origin
-			}
-			g.startEntryAnim(origin, target.Pos)
+		if fresh {
+			lay.seedCollapsed()
 		} else {
-			g.sol = target
+			lay.setPositions(g.preservedSeed(old))
 		}
+		g.sol = lay.solution()
 	} else {
 		g.lay = nil
 		g.sol = &relSolution{Pos: make([]relPoint, len(g.geo))}
 	}
+	g.relaxLeft = relSettleFrames
 	g.hover = -1
 	g.pressed = false
 	g.pressNode = -1
 	g.grabNode = -1
 	g.dragNode = -1
-	g.settling = false
 	g.menuOpen = false
 }
 
-// startEntryAnim 启动入场动画（根点 → 收敛布局，级联 + ease-out，relEntryFrames 帧）。
-func (g *relGraph) startEntryAnim(origin relPoint, to []relPoint) {
-	g.animOn = true
-	g.animFrame = 0
-	g.animFrames = relEntryFrames
-	g.animOrigin = origin
-	g.animTo = to
-}
-
-// cancelEntryAnim 交互打断：任何按下即跳到收敛布局（不与用户抢控制权），并释放动画态。
-func (g *relGraph) cancelEntryAnim() {
-	if !g.animOn {
-		return
+// preservedSeed 增量播种：按消息 ID 复用旧位置；新节点（旧图没有）从**父位置**弹出，
+// 父也无则退回静息位。沿 BFS 序推进，保证父先于子确定。
+func (g *relGraph) preservedSeed(old map[conversation.MessageID]relPoint) []relPoint {
+	n := len(g.geo)
+	seed := make([]relPoint, n)
+	have := make([]bool, n)
+	for li := range g.geo {
+		gi := g.vis.nodes[li]
+		if gi >= len(g.model.nodes) {
+			continue
+		}
+		if p, ok := old[g.model.nodes[gi].id]; ok {
+			seed[li], have[li] = p, true
+		}
 	}
-	g.animOn = false
-	if g.animTo != nil {
-		g.sol = &relSolution{Pos: g.animTo}
+	rest := g.lay.restPos()
+	for _, li := range g.lay.order {
+		if have[li] {
+			continue
+		}
+		if p := g.geo[li].Parent; p >= 0 && have[p] {
+			seed[li] = seed[p]
+		} else {
+			seed[li] = rest[li]
+		}
+		have[li] = true
 	}
-	g.animTo = nil
+	return seed
 }
 
 // nodeRadius 节点半径（**dp**，不含缩放）：weight × 基准 ÷ 2（A4 与 degree 无关）。
@@ -312,7 +314,7 @@ func (g *relGraph) focusAnchor() {
 //   - **fit 下限 = relZoomLabelMin**（0.75）而非 relZoomMin（0.5）：适配把树压到
 //     0.5 时标签全隐、只剩裸点——「适配」出来的是一张不可读的图。仍装不下（树太大）
 //     则把**锚点**对准视口中心（锚点是当前对话的焦点，盒心会落到某个分支上）。
-//   - 盒子取**入场动画起终点并集**（treeBox）：动画全程不越出视野。
+//   - 盒子取**静息布局**（treeBox，物理平衡态）：当前位形会动，不适合当视场基准。
 //
 // 「回到当前」仍用 focusAnchor（A8）；数据变更**不再**重设 zoom/视口（见 frame）。
 func (g *relGraph) fitView() {
@@ -351,26 +353,24 @@ func (g *relGraph) recenterTree() {
 	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
 }
 
-// treeBox 树的外接盒（世界坐标 dp）。入场动画进行中取**收敛布局并集**——展开全程
-// 落在 [根点, 收敛位] 线段上 ⊆ 收敛盒（根点是收敛布局的一员），并集保证动画不越界。
+// treeBox 树的外接盒（世界坐标 dp）：按**静息布局**（物理平衡态）算——当前物理位形
+// 会动，不适合当视场基准；外扩 relFitMargin 容纳斥力把兄弟顶开的那点余量。
 func (g *relGraph) treeBox() (minX, minY, maxX, maxY float64, ok bool) {
-	if g.sol == nil || len(g.vis.nodes) == 0 {
+	if g.lay == nil || len(g.vis.nodes) == 0 || len(g.lay.restX) == 0 {
 		return 0, 0, 0, 0, false
 	}
+	rest := g.lay.restPos()
 	minX, minY = math.Inf(1), math.Inf(1)
 	maxX, maxY = math.Inf(-1), math.Inf(-1)
-	add := func(li int, p relPoint) {
+	for li := range g.vis.nodes {
 		hw, hh := relCardHalf(g.geo[li]) // 世界坐标下的卡片占位（不随 zoom 变）
+		p := rest[li]
 		minX, maxX = math.Min(minX, p.X-hw), math.Max(maxX, p.X+hw)
 		minY, maxY = math.Min(minY, p.Y-hh), math.Max(maxY, p.Y+hh)
 	}
-	for li := range g.vis.nodes {
-		add(li, g.sol.Pos[li])
-		if g.animOn && g.animTo != nil {
-			add(li, g.animTo[li])
-		}
-	}
-	return minX, minY, maxX, maxY, true
+	padX := (maxX - minX) * relFitMargin
+	padY := (maxY - minY) * relFitMargin
+	return minX - padX, minY - padY, maxX + padX, maxY + padY, true
 }
 
 // relCardHalf 布局输入里的卡片半宽/半高（dp）。视场适配与布局共用同一份占位，
@@ -462,7 +462,21 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		g.focusPending = false
 		g.focusAnchor()
 	}
+	// 输入区 = 本栏矩形（clip）：本窗是「左栏会话列表 + 右图」两栏（§5.4），右图被
+	// layout.Flexed 放在左栏之后转置的变换里绘制。若指针输入 op 仍挂在**根区域**
+	// （整窗、单位变换）上，事件位置是窗口坐标，与绘制坐标相差一个左栏宽——点击整体
+	// 右偏一个左栏宽（2026-10-09 实测报障），且左栏上的点击也会被本图误收。
+	// 把 event.Op / gesture.Scroll 收进本栏 clip 后，Gio 用该 clip 的变换把窗口坐标
+	// 反变换回栏内坐标，命中/拖拽/菜单位置与绘制完全对齐。
+	// 输入区 = 本栏矩形（clip）：本窗是「左栏会话列表 + 右图」两栏（§5.4），右图被
+	// layout.Flexed 放在左栏之后转置的变换里绘制。若指针输入 op 仍挂在**根区域**
+	// （整窗、单位变换）上，事件位置是窗口坐标，与绘制坐标相差一个左栏宽——点击整体
+	// 右偏一个左栏宽（2026-10-09 实测报障），且左栏上的点击也会被本图误收。
+	// 把 event.Op / gesture.Scroll 收进本栏 clip 后，Gio 用该 clip 的变换把窗口坐标
+	// 反变换回栏内坐标，命中/拖拽/菜单位置与绘制完全对齐。
+	stack := clip.Rect(image.Rectangle{Max: image.Pt(int(g.viewW), int(g.viewH))}).Push(gtx.Ops)
 	g.update(gtx, u, st)
+	stack.Pop()
 	// 拖拽/收敛中的交互态：本帧松弛后若还要继续，追加一次重绘请求（Gio 的动画口径，
 	// 比 Window.Invalidate 轻；收敛即停 → R3 随即恢复）。
 	if g.tickLayout() {
@@ -482,56 +496,15 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
-// tickLayout 交互态松弛（D121）：拖拽中每帧带「临时固定锚」走 relFrameIter 步；
-// 松手后（settling）无锚收敛；入场动画（animOn）分帧插值（不跑求解器）。
-// 返回是否需要续帧——收敛/播完即 false（不烧资源，R3）。
+// tickLayout 物理步进（D124）：无 pin 时自由收敛；拖动中带「临时固定锚」——被拖者跟手，
+// 其余节点经弹簧/斥力被带动（整树按物理规律动起来）。返回是否需要续帧——收敛即 false
+// （不烧资源，R3）；任何交互（拖拽 / rebuild）会注入能量自动唤醒。
 func (g *relGraph) tickLayout() bool {
-	// 入场动画（§5.3）：从根点**逐层展开**到收敛布局。级联 = 前 leadFrac 帧按层序错峰
-	// 起滑（浅层先动、深层后动），后 (1-leadFrac) 帧全部滑到收敛位；每节点 ease-out。
-	// 播完落定即停（R3）。直接对收敛布局插值而非跑求解器——求解器收敛太快（≈11 帧），
-	// 撑不起「几秒」的口径；且对常见树（种子≈收敛）求解路径本就几乎不动。
-	if g.animOn {
-		g.animFrame++
-		if g.animFrame >= g.animFrames {
-			g.animOn = false
-			g.sol = &relSolution{Pos: g.animTo}
-			g.animTo = nil
-			return false
-		}
-		lead := int(float64(g.animFrames) * relAnimLeadFrac)
-		slide := g.animFrames - lead
-		if slide < 1 {
-			slide = 1
-		}
-		maxLv := 0
-		for _, gn := range g.geo {
-			if gn.Level > maxLv {
-				maxLv = gn.Level
-			}
-		}
-		pos := make([]relPoint, len(g.animTo))
-		for li := range pos {
-			start := 0
-			if maxLv > 0 {
-				start = int(float64(g.geo[li].Level) / float64(maxLv) * float64(lead))
-			}
-			t := float64(g.animFrame-start) / float64(slide)
-			switch {
-			case t <= 0:
-				pos[li] = g.animOrigin
-			case t >= 1:
-				pos[li] = g.animTo[li]
-			default:
-				t = 1 - (1-t)*(1-t)*(1-t) // ease-out cubic
-				pos[li].X = g.animOrigin.X + (g.animTo[li].X-g.animOrigin.X)*t
-				pos[li].Y = g.animOrigin.Y + (g.animTo[li].Y-g.animOrigin.Y)*t
-			}
-		}
-		g.sol = &relSolution{Pos: pos}
-		return true
-	}
-	if g.lay == nil || (g.dragNode < 0 && !g.settling) {
+	if g.lay == nil {
 		return false
+	}
+	if g.lay.settled && g.dragNode < 0 {
+		return false // 静止即停（R3）
 	}
 	if g.dragNode >= 0 {
 		// 抓取偏移每帧衰减（D121 实测修：光标与节点不许错位）：起拖第一帧节点还停在
@@ -546,15 +519,14 @@ func (g *relGraph) tickLayout() bool {
 	if g.dragNode >= 0 {
 		pin = relPin{Valid: true, Index: g.dragNode, Pos: g.dragPinWorld()}
 	}
-	_, settled := g.lay.relax(relFrameIter, pin)
+	g.lay.step(pin)
 	g.sol = g.lay.solution()
-	g.relaxLeft--
-	more := !settled && g.relaxLeft > 0
+	if g.relaxLeft > 0 {
+		g.relaxLeft--
+	}
+	more := !g.lay.settled && g.relaxLeft > 0
 	if g.dragNode >= 0 && (g.dragGrabX != 0 || g.dragGrabY != 0) {
 		more = true // 抓取偏移未衰减完：继续续帧（节点在滑向光标，指针停住也要动）
-	}
-	if g.dragNode < 0 {
-		g.settling = more // 松手后收敛：收敛即停（R3）
 	}
 	return more
 }
@@ -606,7 +578,6 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 		case pointer.Scroll:
 			g.wheel(int(e.Scroll.Y))
 		case pointer.Press:
-			g.cancelEntryAnim() // 任何按下即打断入场动画（不与用户抢控制权）
 			if e.Buttons.Contain(pointer.ButtonSecondary) {
 				if h := g.hitTest(e.Position.X, e.Position.Y); h >= 0 {
 					g.menuOpen = true
@@ -680,15 +651,17 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 	g.scroll.Add(gtx.Ops)
 }
 
-// releaseDrag 松手/取消：撤销临时固定锚，节点恢复自由并自然收敛（D121/A12），
+// releaseDrag 松手/取消：撤销临时固定锚，节点恢复自由、物理自然收敛（D124），
 // 随后把树拉回视野（fitPending → recenterTree，D121 实测修：拖开摊宽的树不丢）。
 func (g *relGraph) releaseDrag() {
 	if g.dragNode < 0 {
 		return
 	}
 	g.dragNode = -1
+	if g.lay != nil {
+		g.lay.settled = false // 撤 pin：被拖节点仍有非零健康力 → 重新唤醒物理（否则会僵在拖拽位）
+	}
 	g.relaxLeft = relSettleFrames
-	g.settling = true
 	g.fitPending = true // 松手后重定视野（保持 zoom，只把树盒心对准视口）
 }
 

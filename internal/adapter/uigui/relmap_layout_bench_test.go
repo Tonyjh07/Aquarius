@@ -1,10 +1,9 @@
 package uigui
 
-// 关系图布局求解器基准（D120④，relation-map-design §5.4.4）：50 / 200 / 500 节点实测，
-// 用于定档 maxIter / hardCap / 是否需要斥力近似。基准为偶然实现层测量，不参与设计语言。
-//
-// 实测（Ryzen 7 8700F）：50 ≈ 0.034ms、200 ≈ 1.09ms、500 ≈ 178ms → hardCap 定 240。
-// 运行：go test ./internal/adapter/uigui/ -run '^$' -bench RelSolve -benchtime 3x
+// 关系图布局基准（D124）：relSolve 现在求的是**确定性静息布局**（无物理迭代），
+// 成本 ≈ O(n²)（斥力不参与，主要是扇区分配 + 树遍历）。物理逐帧成本见
+// relmap_anim_bench_test.go（BenchmarkRelmapPhysFrame200 / DragFrame200）。
+// 运行：go test ./internal/adapter/uigui/ -run '^$' -bench RelSolve -benchtime 1s
 
 import "testing"
 

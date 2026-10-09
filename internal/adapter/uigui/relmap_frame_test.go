@@ -5,6 +5,7 @@ package uigui
 // A10（点节点 → /goto）、悬停/右键菜单、拖拽平移、预算控件。
 
 import (
+	"image"
 	"math"
 	"testing"
 	"time"
@@ -12,24 +13,25 @@ import (
 	"gioui.org/f32"
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
+	"gioui.org/layout"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // relGraphFixture 右图测试夹具：固定图 + 全预算模型（本地索引 = 模型索引；锚点 u2 = 6）。
-// 首帧后跑完入场动画（§5.3，秒级分帧插值）——交互测试需要一个**已收敛的静态基线**。
+// 首帧后把物理跑完（从折叠播种展开至静止）——交互测试需要一个**已收敛的静态基线**。
 func relGraphFixture(t *testing.T) (*UI, *historyState, *input.Router) {
 	t.Helper()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
 	relGFrame(q, u, st)
-	for i := 0; i < relEntryFrames+relSettleFrames+2 && st.graph.animOn; i++ {
+	for i := 0; i < relSettleFrames*3 && st.graph.lay != nil && !st.graph.lay.settled; i++ {
 		relGFrame(q, u, st)
 	}
-	if st.graph.animOn {
-		t.Fatal("夹具入场动画未播完")
+	if st.graph.lay == nil || !st.graph.lay.settled {
+		t.Fatal("夹具物理未收敛")
 	}
 	return u, st, q
 }
@@ -48,6 +50,41 @@ func relPointer(kind pointer.Kind, p f32.Point, primary bool) pointer.Event {
 		e.Buttons = pointer.ButtonPrimary
 	}
 	return e
+}
+
+// relPaneFrame 在「左栏 + 右图」两栏布局中跑一帧右图（复刻 history.go 的 Flex：
+// Rigid 左栏 + Flexed(1) 右图）并提交 hit 树。注入事件的坐标是**窗口坐标**；右图的
+// 指针输入区必须收在本栏 clip 内，Gio 才能借该 clip 的变换把窗口坐标反变换回栏内坐标。
+func relPaneFrame(q *input.Router, u *UI, st *historyState, leftPx int) {
+	gtx, ops := frameGtxSize(q.Source(), 500, 500)
+	layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints = layout.Constraints{
+				Min: image.Pt(leftPx, 0),
+				Max: image.Pt(leftPx, gtx.Constraints.Max.Y),
+			}
+			return layout.Dimensions{Size: image.Pt(leftPx, gtx.Constraints.Max.Y)}
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return st.graph.frame(gtx, u.th, u, st)
+		}),
+	)
+	q.Frame(ops)
+}
+
+// relPaneFixture 真窗两栏结构下的右图收敛基线（从首帧起跑完物理）。
+func relPaneFixture(t *testing.T, leftPx int) (*UI, *historyState, *input.Router) {
+	t.Helper()
+	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
+	st := newHistoryState(u)
+	q := new(input.Router)
+	for i := 0; i < relSettleFrames*3 && st.graph.lay != nil && !st.graph.lay.settled; i++ {
+		relPaneFrame(q, u, st, leftPx)
+	}
+	if st.graph.lay == nil || !st.graph.lay.settled {
+		t.Fatal("两栏夹具物理未收敛")
+	}
+	return u, st, q
 }
 
 // relAnchorScreen 锚点屏幕坐标（来自布局输出，A8）。
@@ -126,6 +163,52 @@ func TestRelGraphClickGoto(t *testing.T) {
 	default:
 		t.Fatal("inCh 空：点节点未投 /goto")
 	}
+}
+
+// TestRelGraphPointerAreaIsPane 右图的指针输入区 = 右图栏：事件位置经该栏的变换反算回
+// 栏内坐标，点击位置与实际响应位置不错位（2026-10-09 实测报障：整体右偏一个左栏宽）；
+// 左栏上的点击也不得被右图误收。
+func TestRelGraphPointerAreaIsPane(t *testing.T) {
+	const leftPx = 200
+	u, st, q := relPaneFixture(t, leftPx)
+	g := st.graph
+	sx, li := relAnchorScreen(t, g)
+	want := st.model.nodes[st.vis.nodes[li]].id
+	// 点锚点的**窗口**坐标（栏内坐标 + 左栏宽）。
+	at := f32.Pt(sx.X+float32(leftPx), sx.Y)
+	q.Queue(relPointer(pointer.Press, at, true))
+	relPaneFrame(q, u, st, leftPx)
+	q.Queue(relPointer(pointer.Release, at, false))
+	relPaneFrame(q, u, st, leftPx)
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "goto" ||
+			len(in.Command.Args) != 1 || conversation.MessageID(in.Command.Args[0]) != want {
+			t.Fatalf("inCh = %+v, want /goto %s（点击位置与响应错位）", in, want)
+		}
+	default:
+		t.Fatal("inCh 空：两栏结构下点节点未投 /goto")
+	}
+	// 左栏上的点击不得被右图误收（输入区收窄为右图栏）。
+	q.Queue(relPointer(pointer.Press, f32.Pt(20, 20), true))
+	relPaneFrame(q, u, st, leftPx)
+	if g.pressed || g.pressNode != -1 || g.dragNode != -1 {
+		t.Fatalf("左栏点击被右图误收：pressed=%v pressNode=%d dragNode=%d",
+			g.pressed, g.pressNode, g.dragNode)
+	}
+	q.Queue(relPointer(pointer.Release, f32.Pt(20, 20), false))
+	relPaneFrame(q, u, st, leftPx)
+	// 拖拽同样按栏内坐标走：按在锚点的**窗口**坐标上拖动 → 该节点被 pin（不是平移）。
+	moved := f32.Pt(at.X+60, at.Y+40)
+	q.Queue(relPointer(pointer.Press, at, true))
+	relPaneFrame(q, u, st, leftPx)
+	q.Queue(relPointer(pointer.Move, moved, true))
+	relPaneFrame(q, u, st, leftPx)
+	if g.dragNode != li {
+		t.Fatalf("两栏结构下拖拽未抓到锚点节点: dragNode = %d, want %d", g.dragNode, li)
+	}
+	q.Queue(relPointer(pointer.Release, moved, false))
+	relPaneFrame(q, u, st, leftPx)
 }
 
 // TestRelGraphPanByDrag 空白拖拽 = 平移（绝对跟踪：起点 + 差值）。
@@ -212,9 +295,10 @@ func TestRelGraphRebuildKeepsView(t *testing.T) {
 	}
 }
 
-// TestRelGraphDragReleaseRefitsView 实测修（D121）：拖后松手把树**拉回视野**（保持 zoom，
-// 盒心对准视口）——此前拖开摊宽后树偏出视口、部分被切掉。
-func TestRelGraphDragReleaseRefitsView(t *testing.T) {
+// TestRelGraphDragReleaseKeepsTreeInView 拖后松手：树是常驻物理 → 松手后回到静息位，
+// 视场（开窗已按静息盒适配）仍能看到整棵树。曾（D121）靠松手 recenter 把「拖开摊宽」
+// 的树拉回；物理版树自己回去，recenter 只在用户曾平移过视场时才改变 off。
+func TestRelGraphDragReleaseKeepsTreeInView(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	sx, li := relAnchorScreen(t, g)
@@ -226,15 +310,15 @@ func TestRelGraphDragReleaseRefitsView(t *testing.T) {
 	if g.dragNode != li {
 		t.Fatalf("未拖到节点: %d", g.dragNode)
 	}
-	// 拖拽期间视场不动（那是空白拖拽的事）
-	ox, oy := g.offX, g.offY
 	q.Queue(relPointer(pointer.Release, to, false))
-	relGFrame(q, u, st) // 本帧处理 Release → releaseDrag → fitPending
-	relGFrame(q, u, st) // 下一帧消费 fitPending → recenterTree
-	if g.offX == ox && g.offY == oy {
-		t.Fatal("松手后未把树拉回视野（fitPending 未生效）")
+	relGFrame(q, u, st) // Release → releaseDrag（撤 pin、唤醒物理）
+	for i := 0; i < relSettleFrames*2 && g.lay != nil && !g.lay.settled; i++ {
+		relGFrame(q, u, st)
 	}
-	// 盒心对准视口中心（保持 zoom）
+	if g.lay == nil || !g.lay.settled {
+		t.Fatal("松手后物理未收敛")
+	}
+	// 盒心对准视口中心（recenterTree 保持 zoom、只对盒心）。
 	minX, minY, maxX, maxY, ok := g.treeBox()
 	if !ok {
 		t.Fatal("树盒不可用")
@@ -242,6 +326,13 @@ func TestRelGraphDragReleaseRefitsView(t *testing.T) {
 	if cx, cy := (minX+maxX)/2*g.z, (minY+maxY)/2*g.z; math.Abs(g.offX+cx-g.viewW/2) > 2 || math.Abs(g.offY+cy-g.viewH/2) > 2 {
 		t.Fatalf("松手后树盒心未对准视口: off=(%v,%v) 盒心=(%v,%v) 视口=(%v,%v)",
 			g.offX, g.offY, cx, cy, g.viewW/2, g.viewH/2)
+	}
+	// 所有可见节点回到视口内（物理回位 + 适配视场）。
+	for i := range g.vis.nodes {
+		xs, ys := g.toScreen(g.sol.Pos[i])
+		if xs < -1 || float64(xs) > g.viewW+1 || ys < -1 || float64(ys) > g.viewH+1 {
+			t.Fatalf("节点 %d 松手后仍在视口外: (%v,%v)", i, xs, ys)
+		}
 	}
 }
 
@@ -443,12 +534,12 @@ func TestRelGraphDragNodePinsAndSettles(t *testing.T) {
 	if g.dragNode >= 0 {
 		t.Fatalf("松手后仍固定着节点 %d（临时固定应为非持久）", g.dragNode)
 	}
-	// 松手当帧即可能收敛（settling 为假）；未收敛则继续跑帧直至停（R3：稳定态不烧资源）。
-	for i := 0; i < relSettleFrames+2 && (g.settling || g.dragNode >= 0); i++ {
+	// 松手后物理自然收敛：跑到静止即停（R3：稳定态不烧资源）。
+	for i := 0; i < relSettleFrames*4 && (g.dragNode >= 0 || (g.lay != nil && !g.lay.settled)); i++ {
 		relGFrame(q, u, st)
 	}
-	if g.settling || g.dragNode >= 0 {
-		t.Fatal("收敛帧预算用尽仍未停（R3：稳定态不烧资源）")
+	if g.dragNode >= 0 || g.lay == nil || !g.lay.settled {
+		t.Fatal("松手后未收敛即停（R3：稳定态不烧资源）")
 	}
 	// 位置本身不断言「回到拖前」：力导向是**路径相关**的——拖开过程把周遭推到了新的
 	// 平衡态，松手后收敛即停，不保证逐点还原（要还原得数据变更/rebudget 触发重排）。
@@ -562,83 +653,53 @@ func TestRelGraphDragSnapsToCursor(t *testing.T) {
 	relGFrame(q, u, st)
 }
 
-// TestRelGraphEntryAnimation §5.3：首帧数据走入场动画——从**根点逐层展开**到收敛布局
-// （级联 + ease-out，**秒级**），播完落定即停（R3）。曾一次全解 → 用户实测「布局啪一下
-// 稳定、不拖就不动、没有动画」。
-func TestRelGraphEntryAnimation(t *testing.T) {
+// TestRelGraphPhysicsUnfoldOnOpen D124：首帧数据从**折叠态**物理展开到静息布局
+// （弹簧 + 斥力 + 阻尼，秒级），收敛即停（R3）。曾为 lerp 入场动画（D123），现改为
+// 常驻物理——开窗的运动就是物理过程本身（不是独立时间线）。
+func TestRelGraphPhysicsUnfoldOnOpen(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
-	st := newHistoryState(u) // sync → rebuild → 入场动画起点（everFit 未置位）
+	st := newHistoryState(u) // sync → rebuild → 折叠播种
 	g := st.graph
 	q := new(input.Router)
-	if !g.animOn {
-		t.Fatal("rebuild 后应处于入场动画态（而非一次全解）")
+	if g.lay == nil || g.lay.settled {
+		t.Fatal("rebuild 后应处于物理展开态（而非一次全解静止）")
 	}
-	origin := g.sol.Pos[0] // 起帧全在根点
-	for _, p := range g.sol.Pos {
-		if math.Hypot(p.X-origin.X, p.Y-origin.Y) > 0.01 {
-			t.Fatalf("入场起帧应在根点: %+v vs 根点 %+v", p, origin)
+	rest := g.lay.restPos()
+	start := append([]relPoint(nil), g.sol.Pos...)
+	shrunk := 0
+	for i, p := range start {
+		if math.Hypot(p.X-rest[i].X, p.Y-rest[i].Y) > 1 {
+			shrunk++
 		}
 	}
-	target := append([]relPoint(nil), g.animTo...)
-	// 30 帧后仍在播（时长秒级，不会一帧结束）
-	for i := 0; i < 30; i++ {
+	if shrunk == 0 {
+		t.Fatal("起帧不应已是静息布局（没有可展开的初态）")
+	}
+	for i := 0; i < 20; i++ {
 		relGFrame(q, u, st)
 	}
-	if !g.animOn {
-		t.Fatalf("入场动画过早结束（%d 帧 < 总帧 %d）", 30, relEntryFrames)
-	}
 	moved := false
-	for _, p := range g.sol.Pos {
-		if math.Hypot(p.X-origin.X, p.Y-origin.Y) > 0.5 {
+	for i, p := range g.sol.Pos {
+		if math.Hypot(p.X-start[i].X, p.Y-start[i].Y) > 0.5 {
 			moved = true
 			break
 		}
 	}
 	if !moved {
-		t.Fatal("入场动画 30 帧后仍全在根点（没在动）")
+		t.Fatal("展开 20 帧后仍在原位（没有在动）")
 	}
-	// 播完：终点 = 收敛布局，此后静止
-	for i := 0; i < relEntryFrames+2 && g.animOn; i++ {
+	for i := 0; i < relSettleFrames*4 && g.lay != nil && !g.lay.settled; i++ {
 		relGFrame(q, u, st)
 	}
-	if g.animOn {
-		t.Fatal("入场动画总帧预算用尽仍未播完")
-	}
-	for i, p := range g.sol.Pos {
-		if math.Hypot(p.X-target[i].X, p.Y-target[i].Y) > 0.01 {
-			t.Fatalf("动画终点 ≠ 收敛布局（节点 %d）", i)
-		}
+	if g.lay == nil || !g.lay.settled {
+		t.Fatal("物理展开未收敛")
 	}
 	settled := append([]relPoint(nil), g.sol.Pos...)
 	relGFrame(q, u, st)
 	relGFrame(q, u, st)
 	for i, p := range g.sol.Pos {
 		if math.Hypot(p.X-settled[i].X, p.Y-settled[i].Y) > 0.01 {
-			t.Fatalf("动画结束后仍在漂移（节点 %d）", i)
-		}
-	}
-}
-
-// TestRelGraphEntryAnimationCancelledByPress 入场动画进行中按下：立即跳到收敛布局
-// （不与用户抢控制权）。
-func TestRelGraphEntryAnimationCancelledByPress(t *testing.T) {
-	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
-	st := newHistoryState(u)
-	g := st.graph
-	q := new(input.Router)
-	relGFrame(q, u, st)
-	if !g.animOn {
-		t.Fatal("应为入场动画态")
-	}
-	target := append([]relPoint(nil), g.animTo...)
-	q.Queue(relPointer(pointer.Press, f32.Pt(250, 250), true))
-	relGFrame(q, u, st)
-	if g.animOn {
-		t.Fatal("按下后入场动画未取消")
-	}
-	for i, p := range g.sol.Pos {
-		if math.Hypot(p.X-target[i].X, p.Y-target[i].Y) > 0.01 {
-			t.Fatalf("按下后应跳到收敛布局（节点 %d）", i)
+			t.Fatalf("收敛后仍在漂移（节点 %d）", i)
 		}
 	}
 }
