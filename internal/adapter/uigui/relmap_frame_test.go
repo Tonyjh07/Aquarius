@@ -18,12 +18,19 @@ import (
 )
 
 // relGraphFixture 右图测试夹具：固定图 + 全预算模型（本地索引 = 模型索引；锚点 u2 = 6）。
+// 首帧后跑完入场动画（§5.3，秒级分帧插值）——交互测试需要一个**已收敛的静态基线**。
 func relGraphFixture(t *testing.T) (*UI, *historyState, *input.Router) {
 	t.Helper()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
 	relGFrame(q, u, st)
+	for i := 0; i < relEntryFrames+relSettleFrames+2 && st.graph.animOn; i++ {
+		relGFrame(q, u, st)
+	}
+	if st.graph.animOn {
+		t.Fatal("夹具入场动画未播完")
+	}
 	return u, st, q
 }
 
@@ -162,6 +169,91 @@ func TestRelGraphWheelZoomAndDegrade(t *testing.T) {
 	}
 	if g.offY == oy {
 		t.Fatal("越界后应降级纵向平移（offY 不变 = 静默失效）")
+	}
+}
+
+// TestRelGraphWheelPanStep 实测修（D121）：滚轮越界降级平移用**定值小步**（relWheelPanPx），
+// 一格滚轮只挪 48px——原实现 16×像素增量（一格 ≈ 1600px）会把树甩出裁剪盒、完全不可见。
+func TestRelGraphWheelPanStep(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	g.zoom = relZoomMin
+	oy := g.offY
+	q.Queue(pointer.Event{Kind: pointer.Scroll, Scroll: f32.Pt(0, 120), PointerID: 7, Source: pointer.Mouse})
+	relGFrame(q, u, st)
+	if d := g.offY - oy; d <= 0 || d > relWheelPanPx*1.5 {
+		t.Fatalf("越界平移步长 = %v, want 定值小步 (0, %v]", d, relWheelPanPx*1.5)
+	}
+}
+
+// TestRelGraphRebuildKeepsView 实测修（D121）：数据变更（rebuild）**不重置 zoom、不挪
+// 视场**——用户 zoom/平移是私有的，一条新消息进来不抢。只有开窗首帧（everFit）适配、
+// 拖后松手（fitPending）拉回视野。
+func TestRelGraphRebuildKeepsView(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	if !g.everFit {
+		t.Fatal("夹具应已完成开窗首帧适配")
+	}
+	g.zoom = 1.2
+	g.z = g.zoom * g.dpx
+	ox, oy := g.offX, g.offY
+	m2, ok := relNewModel(relChainGraph(20))
+	if !ok {
+		t.Fatal("chain 模型非法")
+	}
+	g.rebuild(m2, relBudget(m2, 20))
+	if g.zoom != 1.2 {
+		t.Fatalf("rebuild 重置了 zoom: %v, want 1.2", g.zoom)
+	}
+	relGFrame(q, u, st)
+	if g.offX != ox || g.offY != oy {
+		t.Fatalf("数据变更挪动了视场: off=(%v,%v), want (%v,%v)", g.offX, g.offY, ox, oy)
+	}
+}
+
+// TestRelGraphDragReleaseRefitsView 实测修（D121）：拖后松手把树**拉回视野**（保持 zoom，
+// 盒心对准视口）——此前拖开摊宽后树偏出视口、部分被切掉。
+func TestRelGraphDragReleaseRefitsView(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	sx, li := relAnchorScreen(t, g)
+	q.Queue(relPointer(pointer.Press, sx, true))
+	relGFrame(q, u, st)
+	to := f32.Pt(sx.X+300, sx.Y+200)
+	q.Queue(relPointer(pointer.Move, to, true))
+	relGFrame(q, u, st)
+	if g.dragNode != li {
+		t.Fatalf("未拖到节点: %d", g.dragNode)
+	}
+	// 拖拽期间视场不动（那是空白拖拽的事）
+	ox, oy := g.offX, g.offY
+	q.Queue(relPointer(pointer.Release, to, false))
+	relGFrame(q, u, st) // 本帧处理 Release → releaseDrag → fitPending
+	relGFrame(q, u, st) // 下一帧消费 fitPending → recenterTree
+	if g.offX == ox && g.offY == oy {
+		t.Fatal("松手后未把树拉回视野（fitPending 未生效）")
+	}
+	// 盒心对准视口中心（保持 zoom）
+	minX, minY, maxX, maxY, ok := g.treeBox()
+	if !ok {
+		t.Fatal("树盒不可用")
+	}
+	if cx, cy := (minX+maxX)/2*g.z, (minY+maxY)/2*g.z; math.Abs(g.offX+cx-g.viewW/2) > 2 || math.Abs(g.offY+cy-g.viewH/2) > 2 {
+		t.Fatalf("松手后树盒心未对准视口: off=(%v,%v) 盒心=(%v,%v) 视口=(%v,%v)",
+			g.offX, g.offY, cx, cy, g.viewW/2, g.viewH/2)
+	}
+}
+
+// TestRelGraphFitFloorLabelMin 实测修（D121）：开窗适配的 zoom 下限 = relZoomLabelMin
+// （标签可读下限）——适配不得把树压成全裸点。超大树的适配退回锚点居中。
+func TestRelGraphFitFloorLabelMin(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
+	st := newHistoryState(u)
+	q := new(input.Router)
+	relGFrame(q, u, st) // 首帧：fitView
+	if st.graph.zoom < relZoomLabelMin {
+		t.Fatalf("fit zoom = %v, want ≥ 标签下限 %v", st.graph.zoom, relZoomLabelMin)
 	}
 }
 
@@ -425,6 +517,129 @@ func TestRelGraphDragCancelReleasesPin(t *testing.T) {
 	relGFrame(q, u, st)
 	if g.dragNode >= 0 || g.pressed || g.dragging {
 		t.Fatalf("取消后交互态未清: drag=%d pressed=%v dragging=%v", g.dragNode, g.pressed, g.dragging)
+	}
+}
+
+// TestRelGraphDragSnapsToCursor 实测修（D121）：**偏心按下**起拖后，节点中心在 ~120ms
+// 内平滑滑到光标正下方并锁死——「光标和节点的位置不一样」不得持续存在。同时验证起拖
+// 第一帧不瞬跳（偏移保留，衰减起步）。
+func TestRelGraphDragSnapsToCursor(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	li := g.anchor
+	// 偏心按下：标签区右缘（仍在卡片内；锚点 w3 在 zoom1.0 必有标签）
+	g.zoom = 1.0
+	g.z = g.zoom * g.dpx
+	xs, ys := g.toScreen(g.sol.Pos[li])
+	box := g.nodeCardBox(g.vis.nodes[li], xs, ys)
+	ecc := f32.Pt(float32(box.Max.X-4), ys)
+	if got := g.hitTest(ecc.X, ecc.Y); got != li {
+		t.Fatalf("偏心点 %v 未命中节点 %d（卡片几何变了？）", ecc, got)
+	}
+	q.Queue(relPointer(pointer.Press, ecc, true))
+	relGFrame(q, u, st)
+	to := f32.Pt(ecc.X+40, ecc.Y+15)
+	q.Queue(relPointer(pointer.Move, to, true))
+	relGFrame(q, u, st)
+	if g.dragNode != li {
+		t.Fatalf("未拖到节点: %d", g.dragNode)
+	}
+	// 起拖第一帧：偏移尚未衰减完 → 节点中心 ≠ 光标（不瞬跳，本测试的要点之一）
+	if px, py := g.toScreen(g.sol.Pos[li]); math.Abs(float64(px-to.X)) < 1 && math.Abs(float64(py-to.Y)) < 1 {
+		t.Fatalf("起拖首帧节点就贴住光标（偏移未保留，标签区起拖会瞬跳）: (%v,%v)", px, py)
+	}
+	// 衰减逐帧推进：指针停住也要继续滑向光标（tickLayout 续帧）
+	for i := 0; i < 30 && (g.dragGrabX != 0 || g.dragGrabY != 0); i++ {
+		relGFrame(q, u, st)
+	}
+	if g.dragGrabX != 0 || g.dragGrabY != 0 {
+		t.Fatalf("抓取偏移未衰减完: (%v,%v)", g.dragGrabX, g.dragGrabY)
+	}
+	if px, py := g.toScreen(g.sol.Pos[li]); math.Abs(float64(px-to.X)) > 2 || math.Abs(float64(py-to.Y)) > 2 {
+		t.Fatalf("节点中心未贴住光标: 屏幕 (%v,%v), 光标 %v", px, py, to)
+	}
+	q.Queue(relPointer(pointer.Release, to, false))
+	relGFrame(q, u, st)
+}
+
+// TestRelGraphEntryAnimation §5.3：首帧数据走入场动画——从**根点逐层展开**到收敛布局
+// （级联 + ease-out，**秒级**），播完落定即停（R3）。曾一次全解 → 用户实测「布局啪一下
+// 稳定、不拖就不动、没有动画」。
+func TestRelGraphEntryAnimation(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
+	st := newHistoryState(u) // sync → rebuild → 入场动画起点（everFit 未置位）
+	g := st.graph
+	q := new(input.Router)
+	if !g.animOn {
+		t.Fatal("rebuild 后应处于入场动画态（而非一次全解）")
+	}
+	origin := g.sol.Pos[0] // 起帧全在根点
+	for _, p := range g.sol.Pos {
+		if math.Hypot(p.X-origin.X, p.Y-origin.Y) > 0.01 {
+			t.Fatalf("入场起帧应在根点: %+v vs 根点 %+v", p, origin)
+		}
+	}
+	target := append([]relPoint(nil), g.animTo...)
+	// 30 帧后仍在播（时长秒级，不会一帧结束）
+	for i := 0; i < 30; i++ {
+		relGFrame(q, u, st)
+	}
+	if !g.animOn {
+		t.Fatalf("入场动画过早结束（%d 帧 < 总帧 %d）", 30, relEntryFrames)
+	}
+	moved := false
+	for _, p := range g.sol.Pos {
+		if math.Hypot(p.X-origin.X, p.Y-origin.Y) > 0.5 {
+			moved = true
+			break
+		}
+	}
+	if !moved {
+		t.Fatal("入场动画 30 帧后仍全在根点（没在动）")
+	}
+	// 播完：终点 = 收敛布局，此后静止
+	for i := 0; i < relEntryFrames+2 && g.animOn; i++ {
+		relGFrame(q, u, st)
+	}
+	if g.animOn {
+		t.Fatal("入场动画总帧预算用尽仍未播完")
+	}
+	for i, p := range g.sol.Pos {
+		if math.Hypot(p.X-target[i].X, p.Y-target[i].Y) > 0.01 {
+			t.Fatalf("动画终点 ≠ 收敛布局（节点 %d）", i)
+		}
+	}
+	settled := append([]relPoint(nil), g.sol.Pos...)
+	relGFrame(q, u, st)
+	relGFrame(q, u, st)
+	for i, p := range g.sol.Pos {
+		if math.Hypot(p.X-settled[i].X, p.Y-settled[i].Y) > 0.01 {
+			t.Fatalf("动画结束后仍在漂移（节点 %d）", i)
+		}
+	}
+}
+
+// TestRelGraphEntryAnimationCancelledByPress 入场动画进行中按下：立即跳到收敛布局
+// （不与用户抢控制权）。
+func TestRelGraphEntryAnimationCancelledByPress(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
+	st := newHistoryState(u)
+	g := st.graph
+	q := new(input.Router)
+	relGFrame(q, u, st)
+	if !g.animOn {
+		t.Fatal("应为入场动画态")
+	}
+	target := append([]relPoint(nil), g.animTo...)
+	q.Queue(relPointer(pointer.Press, f32.Pt(250, 250), true))
+	relGFrame(q, u, st)
+	if g.animOn {
+		t.Fatal("按下后入场动画未取消")
+	}
+	for i, p := range g.sol.Pos {
+		if math.Hypot(p.X-target[i].X, p.Y-target[i].Y) > 0.01 {
+			t.Fatalf("按下后应跳到收敛布局（节点 %d）", i)
+		}
 	}
 }
 

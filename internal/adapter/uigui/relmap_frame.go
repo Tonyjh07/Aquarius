@@ -53,10 +53,18 @@ const (
 	relHitSlop    = 6.0 // 命中判定外扩（dp）
 	// relGrabSlop 抓手判定的外扩（dp，起拖时用，比点击判定宽）：低 zoom 下卡片塌缩成
 	// 小徽标，按下时命中极易差几像素落空——静默退化成平移是最糟的失败方式。
-	relGrabSlop  = 14.0
-	relDragSlop  = 4.0 // 按下到拖动的位移阈值（dp；未越过 = 点击）
+	relGrabSlop = 14.0
+	relDragSlop = 4.0 // 按下到拖动的位移阈值（dp；未越过 = 点击）
+	// relGrabDecay 抓取偏移每帧衰减率（D121 实测修：光标与节点不许错位）。起拖第一帧
+	// 节点还停在按下时的相对位置（零跳变），随后中心**逐帧滑向光标正下方**并锁死——
+	// 若直接清零，按在标签上起拖会瞬移 100~185px（标签区离节点中心很远）。
+	relGrabDecay = 0.5 // ≈7 帧（120ms）归零
 	relWheelMax  = 1e6 // 滚轮范围上限（放开；主窗 D71 钉点口径不适用本窗）
-	relArrowSize = 6.0 // 箭头半长（dp × 有效缩放）
+	// relWheelPanPx 滚轮越界降级平移的**定值步长**（px，D121 实测修）：滚轮原始增量是
+	// 像素累计（Windows 一格 ≈ ±100），按增量乘 16 会把视场甩出裁剪盒（≈1600px/格）——
+	// 「某些缩放下树完全不可见」的元凶之一。定值 48px/格 = 一眼可见、一格一格走。
+	relWheelPanPx = 48.0
+	relArrowSize  = 6.0 // 箭头半长（dp × 有效缩放）
 	// 节点卡（D121「内容入内」）：标签可见时节点 = [形状徽标 | 标签] 卡片，标签画在
 	// 卡片内部（此前在节点右侧外面飘着）。徽标仍是 Role 四形 + Level 色（A2/§3.1 不变），
 	// 卡片只承载文字。下列均为卡片内边距/圆角档位（偶然实现，§7）。
@@ -80,6 +88,13 @@ const (
 	// relSettleFrames 拖拽/收敛的续帧硬顶（帧）：正常几帧内收敛，触顶即停——
 	// 防病态输入下无限松弛（交互态也守 R3 的「稳定态不烧资源」）。
 	relSettleFrames = 240
+	// relEntryFrames 入场动画总帧数（§5.3）：开窗首帧数据的布局动画时长。180 帧 ≈
+	// 3 秒（60fps）——用户口径「几秒都可以」。分帧展开（根点 → 收敛布局，ease-out），
+	// 不做独立时间线：帧计数走既有帧循环（InvalidateCmd 续帧），播完即停（R3）。
+	relEntryFrames = 180
+	// relAnimLeadFrac 入场动画的**级联**占比：前 leadFrac 帧按层序错峰起滑（浅层先动），
+	// 后 (1-leadFrac) 帧全部滑到收敛位。树的「长出来」是逐层展开，不是整图同时平移。
+	relAnimLeadFrac = 0.5
 )
 
 // relEstTextW 文本宽估算（dp）：CJK/全角记 1.0em、其余记 0.55em × 字号。
@@ -112,11 +127,21 @@ type relGraph struct {
 
 	zoom         float64 // 视场倍率 [relZoomMin, relZoomMax]（A9，用户口径）
 	z            float64 // **有效**缩放 = zoom × PxPerDp（dp 世界 → 屏幕 px；含 DPI 换算）
+	spx          float64 // Metric.PxPerSp（标签 px 换算；帧首刷新，0/1 = 1）
 	dpx          float64 // Metric.PxPerDp（帧首刷新；0/1 = 1）
 	offX, offY   float64 // 视口平移（screen = world×z + off）
-	viewW, viewH float64 // 视口尺寸（dp，帧首刷新）
+	viewW, viewH float64 // 视口尺寸（px，帧首刷新）
 	focusPending bool    // 下帧居中锚点（「回到当前」，A8）
-	fitPending   bool    // 下帧适配整树（开窗/重排，A13）
+	fitPending   bool    // 下帧把树拉回视野（拖后松手，D121 实测修；不重置 zoom）
+	everFit      bool    // 已做过首帧整树适配（此后 rebuild 不动视场——数据变更不重置 zoom/视口）
+
+	// 入场动画（§5.3）：首帧数据时从**根点**逐层展开到**收敛布局**（级联 + ease-out，
+	// 秒级）。起点统一 = 根节点的收敛位置——「树从对话起点长出来」。
+	animOn     bool
+	animFrame  int
+	animFrames int
+	animOrigin relPoint   // 展开起点（根节点的收敛位置）
+	animTo     []relPoint // 终点（收敛布局）
 
 	tag    int            // 原始指针 tag（悬停/点击/右键/平移/拖节点）
 	scroll gesture.Scroll // 滚轮（范围放开的纵向滚动 → wheel()）
@@ -152,12 +177,16 @@ type relGraph struct {
 	menuHome widget.Clickable
 }
 
-// newRelGraph 构造右图帧态（默认 zoom = 1.0，重排后首帧适配整树）。
+// newRelGraph 构造右图帧态（默认 zoom = 1.0；首帧数据适配整树，见 frame 的 everFit）。
 func newRelGraph() *relGraph {
-	return &relGraph{zoom: 1.0, z: 1, dpx: 1, hover: -1, pressNode: -1, grabNode: -1, dragNode: -1, tag: 1}
+	return &relGraph{zoom: 1.0, z: 1, dpx: 1, spx: 1, hover: -1, pressNode: -1, grabNode: -1, dragNode: -1, tag: 1}
 }
 
-// rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 求解 → 重置交互态并适配视口。
+// rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 求解 → 重置交互态。
+//
+// **首帧数据**（everFit 未置位，即开窗）走入场动画（§5.3）：从根点逐层展开到收敛
+// 布局（时长秒级）；此后数据变更**同步全解、不动视场**（不重置用户 zoom，D121
+// 实测修）。视场只在开窗首帧适配（A13）与拖后松手时调整（releaseDrag）。
 func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	g.model = m
 	g.vis = vis
@@ -168,7 +197,17 @@ func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	if lay, ok := newRelLayout(g.geo); ok {
 		g.lay = lay
 		lay.relax(relMaxIter, relPin{})
-		g.sol = lay.solution()
+		target := lay.solution() // 收敛布局（拖拽增量松弛也从这里接着走）
+		if !g.everFit {
+			origin := target.Pos[lay.root] // 根点：树从对话起点长出来
+			g.sol = &relSolution{Pos: make([]relPoint, len(g.geo))}
+			for i := range g.sol.Pos {
+				g.sol.Pos[i] = origin
+			}
+			g.startEntryAnim(origin, target.Pos)
+		} else {
+			g.sol = target
+		}
 	} else {
 		g.lay = nil
 		g.sol = &relSolution{Pos: make([]relPoint, len(g.geo))}
@@ -180,7 +219,27 @@ func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	g.dragNode = -1
 	g.settling = false
 	g.menuOpen = false
-	g.fitPending = true // 开窗/重排：整树适配视口（focusPending 是「回到当前」专用）
+}
+
+// startEntryAnim 启动入场动画（根点 → 收敛布局，级联 + ease-out，relEntryFrames 帧）。
+func (g *relGraph) startEntryAnim(origin relPoint, to []relPoint) {
+	g.animOn = true
+	g.animFrame = 0
+	g.animFrames = relEntryFrames
+	g.animOrigin = origin
+	g.animTo = to
+}
+
+// cancelEntryAnim 交互打断：任何按下即跳到收敛布局（不与用户抢控制权），并释放动画态。
+func (g *relGraph) cancelEntryAnim() {
+	if !g.animOn {
+		return
+	}
+	g.animOn = false
+	if g.animTo != nil {
+		g.sol = &relSolution{Pos: g.animTo}
+	}
+	g.animTo = nil
 }
 
 // nodeRadius 节点半径（**dp**，不含缩放）：weight × 基准 ÷ 2（A4 与 degree 无关）。
@@ -216,20 +275,22 @@ func (g *relGraph) zoomAt(cx, cy, factor float64) {
 }
 
 // wheel 滚轮（口径同主窗转写区：d<0 = 滚上，d>0 = 滚下）：滚上放大、滚下缩小；
-// 钳制边界后**降级为纵向平移**（A9，不静默失效）。
+// 钳制边界后**降级为纵向平移**（A9，不静默失效）。越界平移用**定值步长**
+// （relWheelPanPx，D121 实测修）——滚轮原始增量是像素累计（一格 ≈ ±100），
+// 按增量乘 16 会把视场甩出裁剪盒，树「完全不可见」。
 func (g *relGraph) wheel(d int) {
 	cx, cy := g.viewW/2, g.viewH/2
 	if d < 0 { // 滚上 = 放大
 		if g.zoom < relZoomMax {
 			g.zoomAt(cx, cy, relZoomStep)
 		} else {
-			g.offY += 16 * float64(d) // 越界：同一手势改为纵向平移（向上看更早内容）
+			g.offY -= relWheelPanPx // 越界：同一手势改为纵向平移（向上看更早内容）
 		}
 	} else { // 滚下 = 缩小
 		if g.zoom > relZoomMin {
 			g.zoomAt(cx, cy, 1/relZoomStep)
 		} else {
-			g.offY += 16 * float64(d) // 越界：向下看更晚内容
+			g.offY += relWheelPanPx // 越界：向下看更晚内容
 		}
 	}
 }
@@ -245,33 +306,71 @@ func (g *relGraph) focusAnchor() {
 	g.offY = g.viewH/2 - p.Y*g.z
 }
 
-// fitView 开窗/重排后：整棵可见树**适配视口**（A13）——按卡片外接盒算最小 zoom 并对准
-// 盒心（开窗只看锚点等于只看图的一角）。缩放仍夹 [relZoomMin, relZoomMax]（A9 不变：
-// 再小标签也不显形，「适配」到下限为止）。「回到当前」仍用 focusAnchor（A8）。
+// fitView 开窗首帧：整棵可见树**适配视口**（A13）——按卡片外接盒算最小 zoom 并对准盒心。
+// 两处实测修正（D121）：
+//
+//   - **fit 下限 = relZoomLabelMin**（0.75）而非 relZoomMin（0.5）：适配把树压到
+//     0.5 时标签全隐、只剩裸点——「适配」出来的是一张不可读的图。仍装不下（树太大）
+//     则把**锚点**对准视口中心（锚点是当前对话的焦点，盒心会落到某个分支上）。
+//   - 盒子取**入场动画起终点并集**（treeBox）：动画全程不越出视野。
+//
+// 「回到当前」仍用 focusAnchor（A8）；数据变更**不再**重设 zoom/视口（见 frame）。
 func (g *relGraph) fitView() {
-	if g.sol == nil || len(g.vis.nodes) == 0 || g.viewW <= 0 || g.viewH <= 0 {
+	minX, minY, maxX, maxY, ok := g.treeBox()
+	if !ok {
 		g.focusAnchor()
 		return
 	}
-	minX, minY := math.Inf(1), math.Inf(1)
-	maxX, maxY := math.Inf(-1), math.Inf(-1)
-	for li := range g.vis.nodes {
+	w, h := maxX-minX, maxY-minY
+	zf := math.Min(g.viewW/w, g.viewH/h) / g.dpx // 折回用户口径的 zoom（DPI 另算）
+	if floor := relZoomLabelMin; zf < floor {    // 可读下限：fit 不得压成全裸点
+		zf = floor
+	}
+	if zf > relZoomMax {
+		zf = relZoomMax
+	}
+	g.zoom = zf
+	g.z = zf * g.dpx
+	if w*g.z > g.viewW || h*g.z > g.viewH { // 夹到下限仍装不下：锚点居中（焦点优先）
+		g.focusAnchor()
+		return
+	}
+	g.offX = g.viewW/2 - (minX+maxX)/2*g.z
+	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+}
+
+// recenterTree 把树拉回视野（拖后松手，D121 实测修）：**保持用户 zoom**，只把树盒心
+// 对准视口中心。树太大时锚点居中（recenter 之后用户自己缩放）。
+func (g *relGraph) recenterTree() {
+	minX, minY, maxX, maxY, ok := g.treeBox()
+	if !ok {
+		g.focusAnchor()
+		return
+	}
+	g.offX = g.viewW/2 - (minX+maxX)/2*g.z
+	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+}
+
+// treeBox 树的外接盒（世界坐标 dp）。入场动画进行中取**收敛布局并集**——展开全程
+// 落在 [根点, 收敛位] 线段上 ⊆ 收敛盒（根点是收敛布局的一员），并集保证动画不越界。
+func (g *relGraph) treeBox() (minX, minY, maxX, maxY float64, ok bool) {
+	if g.sol == nil || len(g.vis.nodes) == 0 {
+		return 0, 0, 0, 0, false
+	}
+	minX, minY = math.Inf(1), math.Inf(1)
+	maxX, maxY = math.Inf(-1), math.Inf(-1)
+	add := func(li int, p relPoint) {
 		hw, hh := relCardHalf(g.geo[li]) // 世界坐标下的卡片占位（不随 zoom 变）
-		p := g.sol.Pos[li]
 		minX, maxX = math.Min(minX, p.X-hw), math.Max(maxX, p.X+hw)
 		minY, maxY = math.Min(minY, p.Y-hh), math.Max(maxY, p.Y+hh)
 	}
-	w, h := maxX-minX, maxY-minY
-	if w <= 0 || h <= 0 {
-		g.focusAnchor()
-		return
+	for li := range g.vis.nodes {
+		add(li, g.sol.Pos[li])
+		if g.animOn && g.animTo != nil {
+			add(li, g.animTo[li])
+		}
 	}
-	zf := math.Min(g.viewW/w, g.viewH/h) / g.dpx // 折回用户口径的 zoom（DPI 另算）
-	zf = math.Min(math.Max(zf, relZoomMin), relZoomMax)
-	g.zoom = zf
-	g.z = zf * g.dpx
-	g.offX = g.viewW/2 - (minX+maxX)/2*g.z
-	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+	return minX, minY, maxX, maxY, true
 }
 
 // relCardHalf 布局输入里的卡片半宽/半高（dp）。视场适配与布局共用同一份占位，
@@ -286,10 +385,12 @@ func relBadgeBox(xs, ys, r float32) image.Rectangle {
 	return image.Rect(int(xs-r), int(ys-r), int(xs+r), int(ys+r))
 }
 
-// relLabelBoxW 标签区宽（屏幕 px）：估宽上限封顶（relLabelMaxDp）——超出部分由
-// MaxLines=1 的省略号吃掉，避免长摘要把卡片撑成横条。
+// relLabelBoxW 标签区宽（屏幕 px）：估宽上限封顶（relLabelMaxDp × z）——超出部分由
+// MaxLines=1 的省略号吃掉，避免长摘要把卡片撑成横条。换算用 **PxPerSp**（D121 实测
+// 修）：labelFont 已把 zoom 烤进 sp，再乘 z（= zoom×PxPerDp）就是双重乘 zoom——
+// 低 zoom 下卡比文字窄、文字被截成半句。
 func (g *relGraph) relLabelBoxW(txt string) int {
-	w := relEstTextW(txt, float64(g.labelFont())) * g.z
+	w := relEstTextW(txt, float64(g.labelFont())) * g.spx
 	if max := relLabelMaxDp * g.z; w > max {
 		w = max
 	}
@@ -334,16 +435,27 @@ func (g *relGraph) hitTestSlop(sx, sy float32, slopDp float64) int {
 	return -1
 }
 
-// frame 右图单帧：手势消费 → 布局续松弛 → 视场适配/居中 → 绘制 → tooltip → 菜单。
+// frame 右图单帧：手势消费 → 布局续松弛 → 视场适配/居中 → 绘制 → 菜单。
 func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	g.viewW, g.viewH = float64(gtx.Constraints.Max.X), float64(gtx.Constraints.Max.Y)
 	g.dpx = float64(gtx.Metric.PxPerDp)
 	if g.dpx <= 0 {
 		g.dpx = 1
 	}
+	g.spx = float64(gtx.Metric.PxPerSp)
+	if g.spx <= 0 {
+		g.spx = 1
+	}
 	g.z = g.zoom * g.dpx
+	// 视场调整只在这两处：拖后松手把树拉回视野（fitPending，不重置 zoom）；
+	// 开窗首帧整树适配（everFit，A13）。**数据变更不碰视场**——用户的 zoom/平移
+	// 是私有的，一条新消息进来不抢（D121 实测修：此前每条消息都重置 zoom/视口）。
 	if g.fitPending {
 		g.fitPending = false
+		g.recenterTree()
+	}
+	if !g.everFit && g.sol != nil {
+		g.everFit = true
 		g.fitView()
 	}
 	if g.focusPending {
@@ -371,10 +483,64 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 }
 
 // tickLayout 交互态松弛（D121）：拖拽中每帧带「临时固定锚」走 relFrameIter 步；
-// 松手后（settling）无锚收敛。返回是否需要续帧——收敛或触顶即 false（不烧资源）。
+// 松手后（settling）无锚收敛；入场动画（animOn）分帧插值（不跑求解器）。
+// 返回是否需要续帧——收敛/播完即 false（不烧资源，R3）。
 func (g *relGraph) tickLayout() bool {
+	// 入场动画（§5.3）：从根点**逐层展开**到收敛布局。级联 = 前 leadFrac 帧按层序错峰
+	// 起滑（浅层先动、深层后动），后 (1-leadFrac) 帧全部滑到收敛位；每节点 ease-out。
+	// 播完落定即停（R3）。直接对收敛布局插值而非跑求解器——求解器收敛太快（≈11 帧），
+	// 撑不起「几秒」的口径；且对常见树（种子≈收敛）求解路径本就几乎不动。
+	if g.animOn {
+		g.animFrame++
+		if g.animFrame >= g.animFrames {
+			g.animOn = false
+			g.sol = &relSolution{Pos: g.animTo}
+			g.animTo = nil
+			return false
+		}
+		lead := int(float64(g.animFrames) * relAnimLeadFrac)
+		slide := g.animFrames - lead
+		if slide < 1 {
+			slide = 1
+		}
+		maxLv := 0
+		for _, gn := range g.geo {
+			if gn.Level > maxLv {
+				maxLv = gn.Level
+			}
+		}
+		pos := make([]relPoint, len(g.animTo))
+		for li := range pos {
+			start := 0
+			if maxLv > 0 {
+				start = int(float64(g.geo[li].Level) / float64(maxLv) * float64(lead))
+			}
+			t := float64(g.animFrame-start) / float64(slide)
+			switch {
+			case t <= 0:
+				pos[li] = g.animOrigin
+			case t >= 1:
+				pos[li] = g.animTo[li]
+			default:
+				t = 1 - (1-t)*(1-t)*(1-t) // ease-out cubic
+				pos[li].X = g.animOrigin.X + (g.animTo[li].X-g.animOrigin.X)*t
+				pos[li].Y = g.animOrigin.Y + (g.animTo[li].Y-g.animOrigin.Y)*t
+			}
+		}
+		g.sol = &relSolution{Pos: pos}
+		return true
+	}
 	if g.lay == nil || (g.dragNode < 0 && !g.settling) {
 		return false
+	}
+	if g.dragNode >= 0 {
+		// 抓取偏移每帧衰减（D121 实测修：光标与节点不许错位）：起拖第一帧节点还停在
+		// 按下时的相对位置（零跳变），随后中心**平滑滑到光标正下方**并锁死跟手。
+		g.dragGrabX *= relGrabDecay
+		g.dragGrabY *= relGrabDecay
+		if math.Abs(float64(g.dragGrabX)) < 0.5 && math.Abs(float64(g.dragGrabY)) < 0.5 {
+			g.dragGrabX, g.dragGrabY = 0, 0
+		}
 	}
 	pin := relPin{}
 	if g.dragNode >= 0 {
@@ -384,13 +550,18 @@ func (g *relGraph) tickLayout() bool {
 	g.sol = g.lay.solution()
 	g.relaxLeft--
 	more := !settled && g.relaxLeft > 0
+	if g.dragNode >= 0 && (g.dragGrabX != 0 || g.dragGrabY != 0) {
+		more = true // 抓取偏移未衰减完：继续续帧（节点在滑向光标，指针停住也要动）
+	}
 	if g.dragNode < 0 {
 		g.settling = more // 松手后收敛：收敛即停（R3）
 	}
 	return more
 }
 
-// grabAt 记录抓取偏移（指针相对节点中心的偏移）：拖动全程保持它，节点才不会跳到指下。
+// grabAt 记录抓取偏移（指针相对节点中心的偏移，**按下那一刻**测）。它不恒定保持：
+// 每帧衰减（tickLayout 里 relGrabDecay）——节点中心在起拖后 ~120ms 内平滑滑到光标
+// 正下方并锁死（D121 实测修：光标与节点不许错位；直接清零则标签区起拖会瞬跳）。
 func (g *relGraph) grabAt(li int, sx, sy float32) {
 	if li < 0 || li >= len(g.sol.Pos) {
 		return
@@ -399,7 +570,7 @@ func (g *relGraph) grabAt(li int, sx, sy float32) {
 	g.dragGrabX, g.dragGrabY = sx-xs, sy-ys
 }
 
-// dragPinWorld 被拖节点的世界坐标（抓取点保持：指针相对节点的偏移不随拖动改变）。
+// dragPinWorld 被拖节点的世界坐标（抓取点保持的残余偏移：衰减中的偏差让中心滑向光标）。
 func (g *relGraph) dragPinWorld() relPoint {
 	sx := float64(g.dragPX - g.dragGrabX)
 	sy := float64(g.dragPY - g.dragGrabY)
@@ -435,6 +606,7 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 		case pointer.Scroll:
 			g.wheel(int(e.Scroll.Y))
 		case pointer.Press:
+			g.cancelEntryAnim() // 任何按下即打断入场动画（不与用户抢控制权）
 			if e.Buttons.Contain(pointer.ButtonSecondary) {
 				if h := g.hitTest(e.Position.X, e.Position.Y); h >= 0 {
 					g.menuOpen = true
@@ -474,7 +646,8 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 			if g.pressed {
 				dx := float64(e.Position.X - g.panStartX)
 				dy := float64(e.Position.Y - g.panStartY)
-				if !g.dragging && dx*dx+dy*dy > relDragSlop*relDragSlop {
+				slop := relDragSlop * g.z // 阈值走有效缩放（曾漏乘：125% DPI 下 4dp 只剩 3.2dp）
+				if !g.dragging && dx*dx+dy*dy > slop*slop {
 					g.dragging = true
 					if g.grabNode >= 0 { // 按在节点上 = 拖节点（不进平移）
 						g.dragNode = g.grabNode
@@ -507,7 +680,8 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 	g.scroll.Add(gtx.Ops)
 }
 
-// releaseDrag 松手/取消：撤销临时固定锚，节点恢复自由并自然收敛（D121/A12）。
+// releaseDrag 松手/取消：撤销临时固定锚，节点恢复自由并自然收敛（D121/A12），
+// 随后把树拉回视野（fitPending → recenterTree，D121 实测修：拖开摊宽的树不丢）。
 func (g *relGraph) releaseDrag() {
 	if g.dragNode < 0 {
 		return
@@ -515,6 +689,7 @@ func (g *relGraph) releaseDrag() {
 	g.dragNode = -1
 	g.relaxLeft = relSettleFrames
 	g.settling = true
+	g.fitPending = true // 松手后重定视野（保持 zoom，只把树盒心对准视口）
 }
 
 // gotoNode 点节点 → 投 /goto <id>（A10；与键入同路径串行执行，缓冲满丢弃）。
@@ -530,7 +705,10 @@ func (g *relGraph) gotoNode(u *UI, st *historyState, li int) {
 }
 
 // draw 一帧：边（source 色 + 线型）→ 节点（形状/填充/描边）→ 标签（预算）。
+// 视口 clip（D121 实测修）：剔除盒外扩 20%，那些节点照画不误——没有 clip 时
+// 负坐标节点会盖到左栏会话列表上。
 func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *historyState) {
+	defer clip.Rect(image.Rectangle{Max: image.Pt(int(g.viewW), int(g.viewH))}).Push(gtx.Ops).Pop()
 	vp := image.Rect(
 		-int(g.viewW*relCullPad), -int(g.viewH*relCullPad),
 		int(g.viewW*(1+relCullPad)), int(g.viewH*(1+relCullPad)))
@@ -675,8 +853,8 @@ func (g *relGraph) arrowHead(gtx layout.Context, ax, ay, bx, by float32, fill co
 		return
 	}
 	ux, uy := dx/dist, dy/dist
-	px, py := -uy, ux // 垂直方向
-	s := float32(relArrowSize) * float32(g.zoom)
+	px, py := -uy, ux                         // 垂直方向
+	s := float32(relArrowSize) * float32(g.z) // 有效缩放（含 DPI；曾误用 g.zoom）
 	tip := f32.Pt(bx, by)
 	base := f32.Pt(bx-ux*s, by-uy*s)
 	var p clip.Path
