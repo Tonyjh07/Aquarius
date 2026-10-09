@@ -41,20 +41,62 @@ const (
 	relZoomMin    = 0.5
 	relZoomMax    = 1.5
 	relZoomStep   = 1.1  // 每格滚轮缩放倍率
-	relNodeBaseDp = 26.0 // w=1.00 的直径基准（dp）；直径 = weight × base（A4）
-	relRingW      = 2.5  // 主干亮环描边宽
+	relNodeBaseDp = 34.0 // w=1.00 的直径基准（dp）；直径 = weight × base（A4）
+	relRingW      = 2.5  // 分叉虚线外环描边宽
 	relEdgeW      = 1.5  // 边线宽
 	relLabelBase  = 12.0 // 标签基准字号（sp）× zoom，钳 [10,16]（A9）
 	relLabelMinSp = 10.0
 	relLabelMaxSp = 16.0
 	relCullPad    = 0.2 // 视口外扩 20% 裁剪
-	relDashOn     = 6.0 // 版本链虚线段长（dp）
-	relDashOff    = 5.0 // 版本链虚线间隔（dp）
+	relDashOn     = 6.0 // 虚线段长（dp）
+	relDashOff    = 5.0 // 虚线间隔（dp）
 	relHitSlop    = 6.0 // 命中判定外扩（dp）
 	relDragSlop   = 4.0 // 按下到拖动的位移阈值（dp；未越过 = 点击）
 	relWheelMax   = 1e6 // 滚轮范围上限（放开；主窗 D71 钉点口径不适用本窗）
-	relArrowSize  = 6.0 // 箭头半长（dp × zoom）
+	relArrowSize  = 6.0 // 箭头半长（dp × 有效缩放）
+	// 节点卡（D121「内容入内」）：标签可见时节点 = [形状徽标 | 标签] 卡片，标签画在
+	// 卡片内部（此前在节点右侧外面飘着）。徽标仍是 Role 四形 + Level 色（A2/§3.1 不变），
+	// 卡片只承载文字。下列均为卡片内边距/圆角档位（偶然实现，§7）。
+	relCardGapDp  = 7.0  // 徽标与标签间距
+	relCardPadDp  = 9.0  // 卡片左右内边距（左内边距让分叉虚线外环不越出卡片边界）
+	relCardPadV   = 7.0  // 卡片上下内边距（徽标不贴卡片上下沿——菱形/空心圆的尖会切边）
+	relCardRoundP = 0.35 // 卡片圆角 = 该系数 × 节点半径（随 weight 缩放）
+	// relCardTintF 卡片底色 = 层色向窗底色靠拢的比例（其余取窗底）。卡片因此跟着节点走：
+	// 浅色版同色系淡彩、深色版自动加深——一个公式两版都对（§15.4 加色不改代码）。
+	relCardTintF = 0.16
+	// relEdgeHalo / relEdgePathW 主干的两个杠杆（× 边宽）：窗底色粗线垫在本色细线之下
+	// 把主干从背景与相邻卡片里抬出来，本色线再加粗一档——只描边看不出「这条线更主要」。
+	relEdgeHalo  = 3.4
+	relEdgePathW = 1.9
+	// relOutlineSegs 圆/空心圆虚线环的固定段数：步长随 zoom 变，按步长采样在放大时
+	// 会多到上万段——按段数采样才是稳的。
+	relOutlineSegs = 24
+	// relLabelMaxDp 标签区宽上限（dp × 有效缩放）：摘要可到 40 字程（CJK 40 字 ≈ 480dp），
+	// 不封顶则一张卡横跨半个视口、邻卡互相吞字。超出走 MaxLines=1 的省略号。
+	relLabelMaxDp = 96.0
+	// relSettleFrames 拖拽/收敛的续帧硬顶（帧）：正常几帧内收敛，触顶即停——
+	// 防病态输入下无限松弛（交互态也守 R3 的「稳定态不烧资源」）。
+	relSettleFrames = 240
 )
+
+// relEstTextW 文本宽估算（dp）：CJK/全角记 1.0em、其余记 0.55em × 字号。
+//
+// 卡片宽度属 L4 偶然实现（§7）：只需「够宽到不挤、又不至于溢出」的量级，估宽误差
+// 表现为标签提前出省略号或卡片略宽——不引入额外测量 pass（每帧每节点的文本测量不划算）。
+func relEstTextW(txt string, sp float64) float64 {
+	w := 0.0
+	for _, r := range txt {
+		switch {
+		case r >= 0x1100: // CJK / 全角（含标点）
+			w++
+		case r == ' ':
+			w += 0.33
+		default:
+			w += 0.55
+		}
+	}
+	return w * sp
+}
 
 // relGraph 右图帧态（historyState 持有；仅历史窗 goroutine 读写）。
 type relGraph struct {
@@ -63,24 +105,39 @@ type relGraph struct {
 	geo    []relGeoNode
 	anchor int
 	sol    *relSolution
+	lay    *relLayout // 增量求解态（D121：拖拽逐帧松弛必须从当前坐标接着走）
 
-	zoom         float64 // 视场倍率 [relZoomMin, relZoomMax]（A9）
-	offX, offY   float64 // 视口平移（screen = world×zoom + off）
+	zoom         float64 // 视场倍率 [relZoomMin, relZoomMax]（A9，用户口径）
+	z            float64 // **有效**缩放 = zoom × PxPerDp（dp 世界 → 屏幕 px；含 DPI 换算）
+	dpx          float64 // Metric.PxPerDp（帧首刷新；0/1 = 1）
+	offX, offY   float64 // 视口平移（screen = world×z + off）
 	viewW, viewH float64 // 视口尺寸（dp，帧首刷新）
-	focusPending bool    // 下帧居中锚点（开窗/回到当前/重排，A8）
+	focusPending bool    // 下帧居中锚点（「回到当前」，A8）
+	fitPending   bool    // 下帧适配整树（开窗/重排，A13）
 
-	tag    int            // 原始指针 tag（悬停/点击/右键/平移）
+	tag    int            // 原始指针 tag（悬停/点击/右键/平移/拖节点）
 	scroll gesture.Scroll // 滚轮（范围放开的纵向滚动 → wheel()）
 
 	hover int // 悬停节点（本地索引；-1 无）
 
-	// 主键按下：未越过拖拽 slop = 点击（释放同点 → /goto，A10）；越过 = 平移。
+	// 主键按下：未越过拖拽 slop = 点击（释放同点 → /goto，A10）；
+	// 越过 = 平移（按下空白）或**拖节点**（按下节点，D121）。
 	pressed bool
 	// 平移基准（绝对跟踪，主窗拖动铁律 2 同款：按下记起点，拖动按差值重算——不累计增量）。
 	pressNode                  int
 	dragging                   bool
 	panStartOffX, panStartOffY float64
 	panStartX, panStartY       float32
+
+	// 节点拖拽（D121）：按下命中节点 + 越过 slop → 该节点临时固定于指针位置，
+	// 每帧带锚松弛（周围被斥力推开）；松手锚消失 → 恢复自由、自然收敛。
+	dragNode  int     // 被拖节点本地索引（-1 = 未拖节点）
+	dragGrabX float32 // 按下时指针相对节点中心的偏移（抓取点保持，节点不跳到指针下）
+	dragGrabY float32
+	dragPX    float32 // 最新指针位置（帧层松弛用）
+	dragPY    float32
+	settling  bool // 松手后回归自由收敛中（交互态，收敛即停 = R3）
+	relaxLeft int  // 松弛帧预算（硬顶，防病态输入下无限续帧）
 
 	menuOpen bool // 右键菜单（节点上下文）
 	menuNode int  // 菜单所属节点（本地索引）
@@ -91,12 +148,12 @@ type relGraph struct {
 	menuHome widget.Clickable
 }
 
-// newRelGraph 构造右图帧态（默认 zoom = 1.0，重排后首帧居中锚点）。
+// newRelGraph 构造右图帧态（默认 zoom = 1.0，重排后首帧适配整树）。
 func newRelGraph() *relGraph {
-	return &relGraph{zoom: 1.0, hover: -1, pressNode: -1, tag: 1}
+	return &relGraph{zoom: 1.0, z: 1, dpx: 1, hover: -1, pressNode: -1, dragNode: -1, tag: 1}
 }
 
-// rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 求解 → 重置交互态并居中锚点。
+// rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 求解 → 重置交互态并适配视口。
 func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	g.model = m
 	g.vis = vis
@@ -104,26 +161,32 @@ func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	if g.anchor < 0 && len(g.geo) > 0 {
 		g.anchor = 0
 	}
-	if sol, ok := relSolve(g.geo); ok {
-		g.sol = sol
+	if lay, ok := newRelLayout(g.geo); ok {
+		g.lay = lay
+		lay.relax(relMaxIter, relPin{})
+		g.sol = lay.solution()
 	} else {
+		g.lay = nil
 		g.sol = &relSolution{Pos: make([]relPoint, len(g.geo))}
 	}
 	g.hover = -1
 	g.pressed = false
 	g.pressNode = -1
+	g.dragNode = -1
+	g.settling = false
 	g.menuOpen = false
-	g.focusPending = true // A8：开窗/重排后视场居中锚点
+	g.fitPending = true // 开窗/重排：整树适配视口（focusPending 是「回到当前」专用）
 }
 
-// nodeRadius 节点屏幕半径（dp → 屏幕）：weight × 基准 ÷ 2 × zoom（A4 与 degree 无关）。
+// nodeRadius 节点半径（**dp**，不含缩放）：weight × 基准 ÷ 2（A4 与 degree 无关）。
+// 屏幕半径 = nodeRadius × g.z（含 zoom 与 DPI 换算）。
 func (g *relGraph) nodeRadius(m *relNode) float64 {
 	return m.weight * relNodeBaseDp / 2
 }
 
-// toScreen 世界 → 屏幕。
+// toScreen 世界（dp） → 屏幕（px）：screen = world × 有效缩放 + 视口平移。
 func (g *relGraph) toScreen(p relPoint) (float32, float32) {
-	return float32(p.X*g.zoom + g.offX), float32(p.Y*g.zoom + g.offY)
+	return float32(p.X*g.z + g.offX), float32(p.Y*g.z + g.offY)
 }
 
 // zoomAt 以视口内点 (cx,cy) 为不动点缩放（屏幕世界点固定）。
@@ -136,14 +199,15 @@ func (g *relGraph) zoomAt(cx, cy, factor float64) {
 	if z > relZoomMax {
 		z = relZoomMax
 	}
+	g.z = z * g.dpx // 入口处重算：直接改 zoom 的路径（测试）也自洽
 	if z == old {
 		return
 	}
-	wx := (cx - g.offX) / old
-	wy := (cy - g.offY) / old
+	wx := (cx - g.offX) / old / g.dpx
+	wy := (cy - g.offY) / old / g.dpx
 	g.zoom = z
-	g.offX = cx - wx*z
-	g.offY = cy - wy*z
+	g.offX = cx - wx*g.z
+	g.offY = cy - wy*g.z
 }
 
 // wheel 滚轮（口径同主窗转写区：d<0 = 滚上，d>0 = 滚下）：滚上放大、滚下缩小；
@@ -165,40 +229,123 @@ func (g *relGraph) wheel(d int) {
 	}
 }
 
-// focusAnchor 视场居中锚点（A8：布局器输出的锚点坐标，不窥探内部结构）。
+// focusAnchor 视场居中锚点（A8：布局器输出的锚点坐标，不窥探内部结构）。「回到当前」
+// 按钮走这条（只挪视场，不动 zoom）。
 func (g *relGraph) focusAnchor() {
 	if g.sol == nil || g.anchor < 0 || g.anchor >= len(g.sol.Pos) {
 		return
 	}
 	p := g.sol.Pos[g.anchor]
-	g.offX = g.viewW/2 - p.X*g.zoom
-	g.offY = g.viewH/2 - p.Y*g.zoom
+	g.offX = g.viewW/2 - p.X*g.z
+	g.offY = g.viewH/2 - p.Y*g.z
 }
 
-// hitTest 屏幕点 → 命中的可见节点（本地索引；-1 无）。按绘制半径 + 外扩判定。
+// fitView 开窗/重排后：整棵可见树**适配视口**（A13）——按卡片外接盒算最小 zoom 并对准
+// 盒心（开窗只看锚点等于只看图的一角）。缩放仍夹 [relZoomMin, relZoomMax]（A9 不变：
+// 再小标签也不显形，「适配」到下限为止）。「回到当前」仍用 focusAnchor（A8）。
+func (g *relGraph) fitView() {
+	if g.sol == nil || len(g.vis.nodes) == 0 || g.viewW <= 0 || g.viewH <= 0 {
+		g.focusAnchor()
+		return
+	}
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for li := range g.vis.nodes {
+		hw, hh := relCardHalf(g.geo[li]) // 世界坐标下的卡片占位（不随 zoom 变）
+		p := g.sol.Pos[li]
+		minX, maxX = math.Min(minX, p.X-hw), math.Max(maxX, p.X+hw)
+		minY, maxY = math.Min(minY, p.Y-hh), math.Max(maxY, p.Y+hh)
+	}
+	w, h := maxX-minX, maxY-minY
+	if w <= 0 || h <= 0 {
+		g.focusAnchor()
+		return
+	}
+	zf := math.Min(g.viewW/w, g.viewH/h) / g.dpx // 折回用户口径的 zoom（DPI 另算）
+	zf = math.Min(math.Max(zf, relZoomMin), relZoomMax)
+	g.zoom = zf
+	g.z = zf * g.dpx
+	g.offX = g.viewW/2 - (minX+maxX)/2*g.z
+	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+}
+
+// relCardHalf 布局输入里的卡片半宽/半高（dp）。视场适配与布局共用同一份占位，
+// 不另算一套（否则「按 A 排、按 B 装」）。
+func relCardHalf(gn relGeoNode) (float64, float64) {
+	return gn.HalfW, gn.HalfH
+}
+
+// relBadgeBox 形状徽标盒（屏幕坐标）：节点直径 = weight × 基准（A4，与 degree 无关），
+// 中心锚点即节点坐标——边连的也正是它。
+func relBadgeBox(xs, ys, r float32) image.Rectangle {
+	return image.Rect(int(xs-r), int(ys-r), int(xs+r), int(ys+r))
+}
+
+// relLabelBoxW 标签区宽（屏幕 px）：估宽上限封顶（relLabelMaxDp）——超出部分由
+// MaxLines=1 的省略号吃掉，避免长摘要把卡片撑成横条。
+func (g *relGraph) relLabelBoxW(txt string) int {
+	w := relEstTextW(txt, float64(g.labelFont())) * g.z
+	if max := relLabelMaxDp * g.z; w > max {
+		w = max
+	}
+	return int(w)
+}
+
+// nodeCardBox 节点卡盒（屏幕坐标；命中判定与绘制**共用**同一几何）。
+// 标签可见（A5 预算 + zoom 下限）时卡 = [徽标 | 标签]（向右展开），否则退化为裸形状盒。
+func (g *relGraph) nodeCardBox(gi int, xs, ys float32) image.Rectangle {
+	m := g.model.nodes[gi]
+	badge := relBadgeBox(xs, ys, float32(g.nodeRadius(&m)*g.z))
+	txt := relLabelText(g.model, gi, g.zoom)
+	if txt == "" {
+		return badge
+	}
+	gap := int(relCardGapDp * g.z)
+	pad := int(relCardPadDp * g.z)
+	pv := int(relCardPadV * g.z)
+	return image.Rect(badge.Min.X-pad, badge.Min.Y-pv,
+		badge.Max.X+gap+g.relLabelBoxW(txt)+pad, badge.Max.Y+pv)
+}
+
+// hitTest 屏幕点 → 命中的可见节点（本地索引；-1 无）。按节点卡盒 + 外扩判定
+// （卡含标签，故点文字也算点中这个节点）。
 func (g *relGraph) hitTest(sx, sy float32) int {
 	if g.sol == nil {
 		return -1
 	}
+	slop := int(relHitSlop * g.z)
 	for li, gi := range g.vis.nodes {
 		xs, ys := g.toScreen(g.sol.Pos[li])
-		r := float64(g.nodeRadius(&g.model.nodes[gi]) * g.zoom)
-		dx, dy := float64(xs-sx), float64(ys-sy)
-		if dx*dx+dy*dy <= (r+relHitSlop)*(r+relHitSlop) {
+		box := g.nodeCardBox(gi, xs, ys).Inset(-slop)
+		if image.Pt(int(sx), int(sy)).In(box) {
 			return li
 		}
 	}
 	return -1
 }
 
-// frame 右图单帧：手势消费 → 居中锚点 → 绘制 → tooltip → 菜单。
+// frame 右图单帧：手势消费 → 布局续松弛 → 视场适配/居中 → 绘制 → tooltip → 菜单。
 func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	g.viewW, g.viewH = float64(gtx.Constraints.Max.X), float64(gtx.Constraints.Max.Y)
+	g.dpx = float64(gtx.Metric.PxPerDp)
+	if g.dpx <= 0 {
+		g.dpx = 1
+	}
+	g.z = g.zoom * g.dpx
+	if g.fitPending {
+		g.fitPending = false
+		g.fitView()
+	}
 	if g.focusPending {
 		g.focusPending = false
 		g.focusAnchor()
 	}
 	g.update(gtx, u, st)
+	// 拖拽/收敛中的交互态：本帧松弛后若还要继续，追加一次重绘请求（Gio 的动画口径，
+	// 比 Window.Invalidate 轻；收敛即停 → R3 随即恢复）。
+	if g.tickLayout() {
+		gtx.Execute(op.InvalidateCmd{})
+	}
 	if g.sol == nil {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(th, "关系图未就绪")
@@ -212,7 +359,34 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
-// update 手势状态机：平移 / 缩放（gesture.Scroll）/ 悬停 / 点击 / 右键菜单。
+// tickLayout 交互态松弛（D121）：拖拽中每帧带「临时固定锚」走 relFrameIter 步；
+// 松手后（settling）无锚收敛。返回是否需要续帧——收敛或触顶即 false（不烧资源）。
+func (g *relGraph) tickLayout() bool {
+	if g.lay == nil || (g.dragNode < 0 && !g.settling) {
+		return false
+	}
+	pin := relPin{}
+	if g.dragNode >= 0 {
+		pin = relPin{Valid: true, Index: g.dragNode, Pos: g.dragPinWorld()}
+	}
+	_, settled := g.lay.relax(relFrameIter, pin)
+	g.sol = g.lay.solution()
+	g.relaxLeft--
+	more := !settled && g.relaxLeft > 0
+	if g.dragNode < 0 {
+		g.settling = more // 松手后收敛：收敛即停（R3）
+	}
+	return more
+}
+
+// dragPinWorld 被拖节点的世界坐标（抓取点保持：指针相对节点的偏移不随拖动改变）。
+func (g *relGraph) dragPinWorld() relPoint {
+	sx := float64(g.dragPX - g.dragGrabX)
+	sy := float64(g.dragPY - g.dragGrabY)
+	return relPoint{X: (sx - g.offX) / g.z, Y: (sy - g.offY) / g.z}
+}
+
+// update 手势状态机：平移 / 拖节点（D121）/ 缩放（gesture.Scroll）/ 悬停 / 点击 / 右键菜单。
 func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 	// 滚轮：范围放开（主窗转写区的 D71 钉点口径不适用本窗，§10.2）。
 	if d := g.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, gesture.Vertical,
@@ -237,6 +411,7 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 		case pointer.Leave, pointer.Cancel:
 			g.hover = -1
 			if e.Kind == pointer.Cancel {
+				g.releaseDrag() // 指针被取消（拖出窗口/失焦）：锚撤销，回归自由
 				g.pressed = false
 				g.pressNode = -1
 				g.dragging = false
@@ -267,6 +442,10 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 				g.panStartOffX, g.panStartOffY = g.offX, g.offY
 				g.panStartX, g.panStartY = e.Position.X, e.Position.Y
 				g.dragging = false
+				if g.pressNode >= 0 { // 记抓取偏移（节点不跳到指针下）
+					xs, ys := g.toScreen(g.sol.Pos[g.pressNode])
+					g.dragGrabX, g.dragGrabY = e.Position.X-xs, e.Position.Y-ys
+				}
 			}
 		case pointer.Drag:
 			if g.pressed {
@@ -274,8 +453,14 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 				dy := float64(e.Position.Y - g.panStartY)
 				if !g.dragging && dx*dx+dy*dy > relDragSlop*relDragSlop {
 					g.dragging = true
+					if g.pressNode >= 0 { // 按在节点上 = 拖节点（不进平移）
+						g.dragNode = g.pressNode
+						g.relaxLeft = relSettleFrames
+					}
 				}
-				if g.dragging {
+				if g.dragNode >= 0 {
+					g.dragPX, g.dragPY = e.Position.X, e.Position.Y
+				} else if g.dragging {
 					g.offX = g.panStartOffX + dx
 					g.offY = g.panStartOffY + dy
 				}
@@ -283,7 +468,9 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 		case pointer.Release:
 			if g.pressed {
 				g.pressed = false
-				if !g.dragging && g.pressNode >= 0 &&
+				if g.dragNode >= 0 {
+					g.releaseDrag() // 拖过 = 移动节点，不投 /goto
+				} else if !g.dragging && g.pressNode >= 0 &&
 					g.pressNode == g.hitTest(e.Position.X, e.Position.Y) {
 					g.gotoNode(u, st, g.pressNode)
 				}
@@ -294,6 +481,16 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 	}
 	event.Op(gtx.Ops, &g.tag)
 	g.scroll.Add(gtx.Ops)
+}
+
+// releaseDrag 松手/取消：撤销临时固定锚，节点恢复自由并自然收敛（D121/A12）。
+func (g *relGraph) releaseDrag() {
+	if g.dragNode < 0 {
+		return
+	}
+	g.dragNode = -1
+	g.relaxLeft = relSettleFrames
+	g.settling = true
 }
 
 // gotoNode 点节点 → 投 /goto <id>（A10；与键入同路径串行执行，缓冲满丢弃）。
@@ -331,25 +528,63 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 			continue
 		}
 		fill := depthMap[relPaletteIndex(g.model.nodes[from].level)] // 边色 = source 填充色
-		g.drawEdge(gtx, fx, fy, tx, ty, fill, g.model.nodes[to].edgeKind == port.EdgeRevise)
+		// 主干（A11）改由**边描边 + 本色加粗**表达：先铺一条窗底色的粗线当描边（把主干
+		// 从背景与相邻卡片里抬出来），再画本色细线。节点上不再套白圈。
+		path := g.model.nodes[from].inPath && g.model.nodes[to].inPath
+		if path {
+			g.strokeLineW(gtx, fx, fy, tx, ty, th.Bg, relEdgeW*relEdgeHalo*float32(g.z))
+		}
+		g.drawEdge(gtx, fx, fy, tx, ty, fill,
+			g.model.nodes[to].edgeKind == port.EdgeRevise, path)
 	}
 	for li, gi := range g.vis.nodes {
 		xs, ys := g.toScreen(g.sol.Pos[li])
 		if !relInBox(vp, xs, ys) {
 			continue
 		}
-		m := g.model.nodes[gi]
-		r := float32(g.nodeRadius(&m) * g.zoom)
-		g.drawNode(gtx, th, g.model, gi, xs, ys, r)
-		if txt := relLabelText(g.model, gi, g.zoom); txt != "" {
-			sp := g.labelFont()
-			l := material.Label(th, unit.Sp(sp), txt)
-			l.Color = th.Fg
-			off := op.Offset(image.Pt(int(xs)+int(r)+4, int(ys)-int(r))).Push(gtx.Ops)
-			l.Layout(gtx)
-			off.Pop()
-		}
+		g.drawNodeCard(gtx, th, gi, xs, ys)
 	}
+}
+
+// relCardTint 节点卡底色 = 节点层色向**窗底色**靠拢（纯函数）。卡片因此「跟着节点走」：
+// 浅色主题下是同色系淡彩，深色主题下自动变深（同一个公式，两版都对）。
+func relCardTint(fill, bg color.NRGBA) color.NRGBA {
+	mix := func(f, b uint8) uint8 {
+		return uint8(float64(f)*relCardTintF + float64(b)*(1-relCardTintF))
+	}
+	return color.NRGBA{R: mix(fill.R, bg.R), G: mix(fill.G, bg.G), B: mix(fill.B, bg.B), A: 0xFF}
+}
+
+// drawNodeCard 节点卡（D121「内容入内」）：标签可见时 = 卡片底 + 形状徽标（Role 四形 ×
+// Level 色，A2/§3.1 不变）+ 卡内标签（MaxLines=1，估宽内排版、超出走省略号）；
+// 标签不可见（A5：低 zoom / 低 weight）时退化为「裸形状」——标签仍是预算，卡不是。
+func (g *relGraph) drawNodeCard(gtx layout.Context, th *material.Theme, gi int, xs, ys float32) {
+	m := g.model.nodes[gi]
+	r := float32(g.nodeRadius(&m) * g.z)
+	txt := relLabelText(g.model, gi, g.zoom)
+	if txt == "" {
+		g.drawNode(gtx, th, g.model, gi, xs, ys, r)
+		return
+	}
+	box := g.nodeCardBox(gi, xs, ys)
+	fill := depthMap[relPaletteIndex(m.level)]
+	paint.FillShape(gtx.Ops, relCardTint(fill, th.Bg),
+		clip.UniformRRect(box, int(relCardRoundP*r)).Op(gtx.Ops))
+	g.drawNode(gtx, th, g.model, gi, xs, ys, r)
+	// 标签：徽标右侧、卡片内垂直居中。
+	badge := relBadgeBox(xs, ys, r)
+	tw := g.relLabelBoxW(txt)
+	off := op.Offset(image.Pt(badge.Max.X+int(relCardGapDp*g.z), badge.Min.Y-int(relCardPadV*g.z))).Push(gtx.Ops)
+	gtx.Constraints.Min = image.Pt(0, 0)
+	gtx.Constraints.Max = image.Pt(tw, badge.Dy()+2*int(relCardPadV*g.z))
+	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Max.X = tw
+		l := material.Label(th, unit.Sp(g.labelFont()), txt)
+		l.Color = th.Fg
+		l.MaxLines = 1 // 单行：卡片高只容一行，超出走省略号
+		return l.Layout(gtx)
+	})
+	off.Pop()
 }
 
 // labelFont 标签字号 = clamp(12×zoom, 10, 16)sp（A9 排版硬约束）。
@@ -365,38 +600,47 @@ func (g *relGraph) labelFont() float32 {
 }
 
 // drawEdge 边：source 色；版本链 = 虚线段（§2.3）；末端箭头 = 对话推进方向（A3）。
-func (g *relGraph) drawEdge(gtx layout.Context, ax, ay, bx, by float32, fill color.NRGBA, revise bool) {
+// path = 该边在主干上（`InPath` 两端）时本色线加粗一档（A11，与描边叠加）。
+func (g *relGraph) drawEdge(gtx layout.Context, ax, ay, bx, by float32, fill color.NRGBA, revise, path bool) {
 	dx, dy := bx-ax, by-ay
 	dist := float32(math.Hypot(float64(dx), float64(dy)))
 	if dist < 1 {
 		return
 	}
 	ux, uy := dx/dist, dy/dist
+	w := relEdgeW * float32(g.z)
+	if path {
+		w *= relEdgePathW
+	}
 	if revise {
-		step := float32(relDashOn+relDashOff) * float32(g.zoom)
+		step := float32(relDashOn+relDashOff) * float32(g.z)
 		n := int(dist / step)
 		for k := 0; k <= n; k++ {
 			s := float32(k) * step
-			e := s + float32(relDashOn)*float32(g.zoom)
+			e := s + float32(relDashOn)*float32(g.z)
 			if e > dist {
 				e = dist
 			}
-			g.strokeLine(gtx, ax+ux*s, ay+uy*s, ax+ux*e, ay+uy*e, fill)
+			g.strokeLineW(gtx, ax+ux*s, ay+uy*s, ax+ux*e, ay+uy*e, fill, w)
 		}
 	} else {
-		g.strokeLine(gtx, ax, ay, bx, by, fill)
+		g.strokeLineW(gtx, ax, ay, bx, by, fill, w)
 	}
 	g.arrowHead(gtx, ax, ay, bx, by, fill)
 }
 
-// strokeLine 直线段（细描边）。
+// strokeLine 直线段（细描边，默认边宽）。
 func (g *relGraph) strokeLine(gtx layout.Context, ax, ay, bx, by float32, c color.NRGBA) {
+	g.strokeLineW(gtx, ax, ay, bx, by, c, relEdgeW*float32(g.z))
+}
+
+// strokeLineW 直线段（指定线宽）：主干描边 = 先用窗底色铺一条更粗的线，再压本色细线。
+func (g *relGraph) strokeLineW(gtx layout.Context, ax, ay, bx, by float32, c color.NRGBA, w float32) {
 	var p clip.Path
 	p.Begin(gtx.Ops)
 	p.MoveTo(f32.Pt(ax, ay))
 	p.LineTo(f32.Pt(bx, by))
-	paint.FillShape(gtx.Ops, c,
-		clip.Stroke{Path: p.End(), Width: relEdgeW * float32(g.zoom)}.Op())
+	paint.FillShape(gtx.Ops, c, clip.Stroke{Path: p.End(), Width: w}.Op())
 }
 
 // arrowHead 子端小三角（父 → 子方向）。
@@ -420,64 +664,161 @@ func (g *relGraph) arrowHead(gtx layout.Context, ax, ay, bx, by float32, fill co
 	paint.FillShape(gtx.Ops, fill, clip.Outline{Path: p.End()}.Op())
 }
 
-// drawNode 节点：填充（Level mod 4 深度色带）+ 形状（Role）+ 描边（主干亮环 ⊕ 分叉虚线环）。
+// drawNode 节点徽标：填充（Level mod 4 深度色带）+ 形状（Role）+ 版本下标 +
+// 分叉虚线外环（沿形状）。形状画在 2r×2r 的盒里，圆/方/菱形贴边、空心圆改用**描边**
+// （此前「填实心 + 内填窗底」在节点卡上会露出底色错位的洞）。主干（A11）不在节点上。
 func (g *relGraph) drawNode(gtx layout.Context, th *material.Theme, m *relModel, gi int, xs, ys, r float32) {
 	fill := depthMap[relPaletteIndex(m.nodes[gi].level)]
+	shape := relShapeOf(m.nodes[gi].role)
 	box := image.Rect(int(xs-r), int(ys-r), int(xs+r), int(ys+r))
-	switch relShapeOf(m.nodes[gi].role) {
+	switch shape {
 	case relShapeSquare:
-		paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, int(r*0.3)).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, int(r*0.28)).Op(gtx.Ops))
 	case relShapeDiamond:
 		g.diamond(gtx, xs, ys, r, fill)
-	case relShapeRing: // 空心圆（结构根）
-		paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, int(r)).Op(gtx.Ops))
-		inner := r * 0.55
-		ib := image.Rect(int(xs-inner), int(ys-inner), int(xs+inner), int(ys+inner))
-		paint.FillShape(gtx.Ops, windowBg, clip.UniformRRect(ib, int(inner)).Op(gtx.Ops))
+	case relShapeRing: // 空心圆（结构根）：描边而非挖洞
+		ring := clip.UniformRRect(box, int(r)).Path(gtx.Ops)
+		paint.FillShape(gtx.Ops, fill,
+			clip.Stroke{Path: ring, Width: float32(relRingW*1.6) * float32(g.z)}.Op())
 	default: // circle
 		paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, int(r)).Op(gtx.Ops))
 	}
-	// 主干亮环（A11 一眼可辨）
-	if m.nodes[gi].inPath {
-		ring := clip.UniformRRect(box, int(r)).Path(gtx.Ops)
-		paint.FillShape(gtx.Ops, whiteText,
-			clip.Stroke{Path: ring, Width: relRingW * float32(g.zoom)}.Op())
+	// 版本下标写进**图形内部**（D121）：菱形中心宽度为 0、空心圆无底，都放不下字——
+	// 那两种形状不落字（分叉位点几乎都是 user/assistant，够用）。
+	if shape != relShapeDiamond && shape != relShapeRing {
+		if glyph := relVersionGlyph(m, gi); glyph != "" {
+			g.drawGlyph(gtx, th, xs, ys, r, glyph)
+		}
 	}
-	// 分叉位点 = 细虚线外环（不改大小，A4 的描边通道）
+	// 主干（A11）由**边**表达（描边 + 本色加粗，见 draw）：白圈会把形状切出白口、
+	// 且在卡片里读作「贴纸边框」。分叉位点的虚线外环保留（另一条通道），且
+	// **沿本节点自身形状**走（D121：圆节点套方虚线框读作两套语言）。
 	if m.nodes[gi].sibCount > 1 {
-		g.dashedRing(gtx, xs, ys, r+float32(relRingW)*float32(g.zoom))
+		g.dashedOutline(gtx, xs, ys, r+float32(relRingW)*float32(g.z), shape)
 	}
 }
 
-// diamond 菱形（system：人格 / 压缩摘要）。
+// drawGlyph 版本下标：白字居中于形状内（字号随半径缩放，小节点也不糊成一坨）。
+func (g *relGraph) drawGlyph(gtx layout.Context, th *material.Theme, xs, ys, r float32, txt string) {
+	badge := relBadgeBox(xs, ys, r*0.82)
+	sp := math.Max(8, float64(r)*0.95)
+	off := op.Offset(badge.Min).Push(gtx.Ops)
+	gtx.Constraints.Min = image.Pt(0, 0)
+	gtx.Constraints.Max = badge.Size()
+	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Max.X = badge.Dx()
+		l := material.Label(th, unit.Sp(sp), txt)
+		l.Color = whiteText
+		l.MaxLines = 1
+		return l.Layout(gtx)
+	})
+	off.Pop()
+}
+
+// diamond 菱形（system：人格 / 压缩摘要）。半对角取 0.78r：满格菱形的尖会顶出卡片
+// 内边距，看起来像被切了一刀。
 func (g *relGraph) diamond(gtx layout.Context, xs, ys, r float32, fill color.NRGBA) {
+	d := r * 0.78
 	var p clip.Path
 	p.Begin(gtx.Ops)
-	p.MoveTo(f32.Pt(xs, ys-r))
-	p.LineTo(f32.Pt(xs+r*0.75, ys))
-	p.LineTo(f32.Pt(xs, ys+r))
-	p.LineTo(f32.Pt(xs-r*0.75, ys))
+	p.MoveTo(f32.Pt(xs, ys-d))
+	p.LineTo(f32.Pt(xs+d, ys))
+	p.LineTo(f32.Pt(xs, ys+d))
+	p.LineTo(f32.Pt(xs-d, ys))
 	p.Close()
 	paint.FillShape(gtx.Ops, fill, clip.Outline{Path: p.End()}.Op())
 }
 
-// dashedRing 分叉位点虚线外环（沿圆周等分短弧）。
-func (g *relGraph) dashedRing(gtx layout.Context, xs, ys, r float32) {
-	const segs = 24
-	for k := 0; k < segs; k += 2 {
-		a0 := float32(k) / segs * 2 * math.Pi
-		a1 := float32(k+1) / segs * 2 * math.Pi
-		x0 := xs + r*float32(math.Cos(float64(a0)))
-		y0 := ys + r*float32(math.Sin(float64(a0)))
-		x1 := xs + r*float32(math.Cos(float64(a1)))
-		y1 := ys + r*float32(math.Sin(float64(a1)))
-		g.strokeLine(gtx, x0, y0, x1, y1, textMuted)
+// dashedOutline 分叉位点的虚线外环，**沿节点自身形状**走（D121）：圆走圆、方走圆角
+// 方、菱形走菱——圆节点套方虚线框会读成两套语言。
+func (g *relGraph) dashedOutline(gtx layout.Context, xs, ys, r float32, shape relShape) {
+	step := (relDashOn + relDashOff) * float64(g.z)
+	stroke := relEdgeW * float32(g.z)
+	pts := shapeOutline(shape, xs, ys, r, step)
+	for i := 0; i+1 < len(pts); i += 2 {
+		g.strokeLineW(gtx, pts[i].X, pts[i].Y, pts[i+1].X, pts[i+1].Y, textMuted, stroke)
 	}
+}
+
+// shapeOutline 形状轮廓的折线采样（步长 step；虚段 = 一步、间隔 = 一步，故成对取点）。
+func shapeOutline(shape relShape, xs, ys, r float32, step float64) []f32.Point {
+	var pts []f32.Point
+	switch shape {
+	case relShapeDiamond:
+		v := [4]f32.Point{
+			{X: xs, Y: ys - r}, {X: xs + r, Y: ys}, {X: xs, Y: ys + r}, {X: xs - r, Y: ys},
+		}
+		for i := 0; i < 4; i++ {
+			pts = relSampleSeg(pts, v[i], v[(i+1)%4], step)
+		}
+	case relShapeSquare:
+		cr := r * 0.28 // 与填充的圆角半径同值
+		c := [4]f32.Point{
+			{X: xs + r - cr, Y: ys - r}, {X: xs + r - cr, Y: ys + r},
+			{X: xs - r + cr, Y: ys + r}, {X: xs - r + cr, Y: ys - r},
+		}
+		cen := [4]f32.Point{
+			{X: xs + r - cr, Y: ys - r + cr}, {X: xs + r - cr, Y: ys + r - cr},
+			{X: xs - r + cr, Y: ys + r - cr}, {X: xs - r + cr, Y: ys - r + cr},
+		}
+		for i := 0; i < 4; i++ { // 圆角：每角按步长采样
+			pts = relSampleArc(pts, cen[i], cr, -math.Pi/2+float64(i)*math.Pi/2, float64(i)*math.Pi/2, step)
+			pts = relSampleSeg(pts, c[i], c[(i+1)%4], step)
+		}
+	default: // circle / ring
+		n := relOutlineSegs // 固定段数：步长过小时不至于采样出上万点
+		per := 2 * math.Pi / float64(n)
+		for i := 0; i < n; i++ {
+			a := float64(i) * per
+			p0 := f32.Pt(xs+r*float32(math.Cos(a)), ys+r*float32(math.Sin(a)))
+			a1 := a + per/2
+			p1 := f32.Pt(xs+r*float32(math.Cos(a1)), ys+r*float32(math.Sin(a1)))
+			pts = append(pts, p0, p1)
+		}
+	}
+	return pts
+}
+
+// relSampleSeg 直线段按步长采样（虚段/间隔交替成对取点）。
+func relSampleSeg(pts []f32.Point, a, b f32.Point, step float64) []f32.Point {
+	d := math.Hypot(float64(b.X-a.X), float64(b.Y-a.Y))
+	n := int(d / step)
+	if n < 1 {
+		n = 1
+	}
+	for i := 0; i < n; i++ {
+		t0, t1 := float64(2*i)/float64(2*n), float64(2*i+1)/float64(2*n)
+		p0 := f32.Pt(a.X+float32(t0)*(b.X-a.X), a.Y+float32(t0)*(b.Y-a.Y))
+		p1 := f32.Pt(a.X+float32(t1)*(b.X-a.X), a.Y+float32(t1)*(b.Y-a.Y))
+		pts = append(pts, p0, p1)
+	}
+	return pts
+}
+
+// relSampleArc 圆弧按步长采样（用于圆角方块的四个角）。
+func relSampleArc(pts []f32.Point, c f32.Point, r float32, from, to, step float64) []f32.Point {
+	sweep := math.Abs(to - from)
+	if sweep <= 0 {
+		return pts
+	}
+	n := int(sweep * float64(r) / step)
+	if n < 1 {
+		n = 1
+	}
+	for i := 0; i < n; i++ {
+		t0 := from + sweep*float64(2*i)/float64(2*n)
+		t1 := from + sweep*float64(2*i+1)/float64(2*n)
+		pts = append(pts,
+			f32.Pt(c.X+r*float32(math.Cos(t0)), c.Y+r*float32(math.Sin(t0))),
+			f32.Pt(c.X+r*float32(math.Cos(t1)), c.Y+r*float32(math.Sin(t1))))
+	}
+	return pts
 }
 
 // drawTooltip 悬停陈述（inspect，§3.4：一句话自足陈述）。
 func (g *relGraph) drawTooltip(gtx layout.Context, th *material.Theme, st *historyState) {
-	if g.menuOpen || g.hover < 0 || g.sol == nil || g.model == nil || g.hover >= len(g.sol.Pos) {
+	if g.menuOpen || g.hover < 0 || g.sol == nil || g.model == nil ||
+		g.hover >= len(g.sol.Pos) || g.dragNode >= 0 {
 		return
 	}
 	xs, ys := g.toScreen(g.sol.Pos[g.hover])

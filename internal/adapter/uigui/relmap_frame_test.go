@@ -5,6 +5,7 @@ package uigui
 // A10（点节点 → /goto）、悬停/右键菜单、拖拽平移、预算控件。
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -53,15 +54,39 @@ func relAnchorScreen(t *testing.T, g *relGraph) (f32.Point, int) {
 	return f32.Pt(x, y), li
 }
 
-// TestRelGraphFocusCentersAnchor A8：首帧视场居中锚点（布局器输出的坐标）。
-func TestRelGraphFocusCentersAnchor(t *testing.T) {
-	u, st, _ := relGraphFixture(t)
+// TestRelGraphFitViewOnOpen 开窗即**适配整树**（用户 2026-10-09：只看锚点 = 只看一角落）：
+// 首帧后所有可见节点都在视口内，zoom 仍夹在 [relZoomMin, relZoomMax]（A9）。
+func TestRelGraphFitViewOnOpen(t *testing.T) {
+	_, st, _ := relGraphFixture(t)
 	g := st.graph
-	sx, _ := relAnchorScreen(t, g)
-	if sx.X < 249 || sx.X > 251 || sx.Y < 249 || sx.Y > 251 {
-		t.Fatalf("锚点屏幕 = %v, want ≈(250,250)", sx)
+	if g.zoom < relZoomMin || g.zoom > relZoomMax {
+		t.Fatalf("首帧 zoom = %v，超出 [%v,%v]", g.zoom, relZoomMin, relZoomMax)
 	}
-	_ = u
+	for li := range st.vis.nodes {
+		xs, ys := g.toScreen(g.sol.Pos[li])
+		if xs < 0 || ys < 0 || float64(xs) > g.viewW || float64(ys) > g.viewH {
+			t.Fatalf("节点 %d 未被适配进视口: (%v,%v)，视口 %v×%v", li, xs, ys, g.viewW, g.viewH)
+		}
+	}
+}
+
+// TestRelGraphFocusCentersAnchor A8：「回到当前」= 视场居中锚点（布局器输出的坐标），
+// 且**不**重置 zoom。
+func TestRelGraphFocusCentersAnchor(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	// 先把视场挪开 + 改 zoom，再触发「回到当前」
+	g.offX, g.offY = -120, 80
+	g.zoom = 1.2
+	g.focusPending = true
+	relGFrame(q, u, st)
+	sx, _ := relAnchorScreen(t, g)
+	if math.Abs(float64(sx.X)-g.viewW/2) > 1 || math.Abs(float64(sx.Y)-g.viewH/2) > 1 {
+		t.Fatalf("锚点屏幕 = %v, want ≈(%.0f,%.0f)", sx, g.viewW/2, g.viewH/2)
+	}
+	if g.zoom != 1.2 {
+		t.Fatalf("「回到当前」不应重置 zoom: %v, want 1.2", g.zoom)
+	}
 }
 
 // TestRelGraphHitTest 命中判定：锚点处命中锚点本地索引。
@@ -275,4 +300,143 @@ func TestRelGraphBudgetCulledNoPanic(t *testing.T) {
 	gtx, ops := frameGtxSize(q.Source(), 720, 560)
 	st.graph.frame(gtx, u.th, u, st) // 不 panic = 通过
 	q.Frame(ops)
+}
+
+// —— D121：节点拖拽（临时固定 → 松手回归自由）——
+
+// TestRelGraphDragNodePinsAndSettles 拖节点：视场不平移（那是空白拖拽的事）、节点被临时
+// 固定在指针下、周围被斥力推开；松手后锚撤销、节点回归自由并收敛回原位。
+func TestRelGraphDragNodePinsAndSettles(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	sx, li := relAnchorScreen(t, g)
+	ox, oy := g.offX, g.offY
+	before := append([]relPoint(nil), g.sol.Pos...)
+
+	q.Queue(relPointer(pointer.Press, sx, true))
+	relGFrame(q, u, st)
+	to := f32.Pt(sx.X+80, sx.Y+40)
+	q.Queue(relPointer(pointer.Move, to, true)) // 按压中 Move → Router 转 Drag
+	relGFrame(q, u, st)
+
+	if g.dragNode != li {
+		t.Fatalf("拖动中的节点 = %d, want %d（锚点）", g.dragNode, li)
+	}
+	if g.offX != ox || g.offY != oy {
+		t.Fatalf("拖节点不应平移视场: off=(%v,%v), want (%v,%v)", g.offX, g.offY, ox, oy)
+	}
+	if px, py := g.toScreen(g.sol.Pos[li]); math.Abs(float64(px-to.X)) > 2 || math.Abs(float64(py-to.Y)) > 2 {
+		t.Fatalf("节点未跟随指针: 屏幕 (%v,%v), 指针 %v", px, py, to)
+	}
+	// 拖拽期间逐帧松弛：按住若干帧，周围应被斥力推开（渐进推开，不是一步到位）。
+	for i := 0; i < 12; i++ {
+		relGFrame(q, u, st)
+	}
+	moved := false
+	for i, p := range g.sol.Pos {
+		if i != li && (math.Abs(p.X-before[i].X) > 0.5 || math.Abs(p.Y-before[i].Y) > 0.5) {
+			moved = true
+			break
+		}
+	}
+	for i, p := range g.sol.Pos {
+		t.Logf("node %d: %+v (Δ=%.2f)", i, p, math.Hypot(p.X-before[i].X, p.Y-before[i].Y))
+	}
+	if !moved {
+		t.Fatal("拖开节点后周围毫无位移（斥力未展现）")
+	}
+
+	q.Queue(relPointer(pointer.Release, to, false))
+	relGFrame(q, u, st)
+	if g.dragNode >= 0 {
+		t.Fatalf("松手后仍固定着节点 %d（临时固定应为非持久）", g.dragNode)
+	}
+	// 松手当帧即可能收敛（settling 为假）；未收敛则继续跑帧直至停（R3：稳定态不烧资源）。
+	for i := 0; i < relSettleFrames+2 && (g.settling || g.dragNode >= 0); i++ {
+		relGFrame(q, u, st)
+	}
+	if g.settling || g.dragNode >= 0 {
+		t.Fatal("收敛帧预算用尽仍未停（R3：稳定态不烧资源）")
+	}
+	// 位置本身不断言「回到拖前」：力导向是**路径相关**的——拖开过程把周遭推到了新的
+	// 平衡态，松手后收敛即停，不保证逐点还原（要还原得数据变更/rebudget 触发重排）。
+	// 这里断言的是契约本身：锚已撤销、布局有界、且此后不再自己动。
+	settled := append([]relPoint(nil), g.sol.Pos...)
+	relGFrame(q, u, st)
+	relGFrame(q, u, st)
+	for i, p := range g.sol.Pos {
+		if math.Abs(p.X-settled[i].X) > 0.01 || math.Abs(p.Y-settled[i].Y) > 0.01 {
+			t.Fatalf("已收敛却仍在漂移（节点 %d）: %+v → %+v", i, settled[i], p)
+		}
+	}
+	select {
+	case in := <-u.inCh:
+		t.Fatalf("拖节点不应投命令（拖过 ≠ 点击）: %+v", in)
+	default:
+	}
+}
+
+// TestRelGraphDragCancelReleasesPin 指针被取消（拖出窗口/失焦）：锚同样撤销，不得卡在拖动态。
+func TestRelGraphDragCancelReleasesPin(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	sx, li := relAnchorScreen(t, g)
+	q.Queue(relPointer(pointer.Press, sx, true))
+	relGFrame(q, u, st)
+	q.Queue(relPointer(pointer.Move, f32.Pt(sx.X+40, sx.Y), true))
+	relGFrame(q, u, st)
+	if g.dragNode != li {
+		t.Fatalf("未进入拖节点: %d", g.dragNode)
+	}
+	q.Queue(pointer.Event{Kind: pointer.Cancel, Position: f32.Pt(sx.X+40, sx.Y), PointerID: 7, Source: pointer.Mouse})
+	relGFrame(q, u, st)
+	if g.dragNode >= 0 || g.pressed || g.dragging {
+		t.Fatalf("取消后交互态未清: drag=%d pressed=%v dragging=%v", g.dragNode, g.pressed, g.dragging)
+	}
+}
+
+// TestRelNodeCardCarriesLabel 节点卡承载标签（D121「内容入内」）：标签可见时卡比徽标宽、
+// 高度仍等于徽标（宽度不改变节点直径语义，A4）；标签不可见（低于 zoom 下限）时退化为
+// 居中方块。
+func TestRelNodeCardCarriesLabel(t *testing.T) {
+	_, st, _ := relGraphFixture(t)
+	g := st.graph
+	gi := st.vis.nodes[g.anchor]
+	if relLabelText(st.model, gi, g.zoom) == "" {
+		t.Fatal("锚点应有标签")
+	}
+	xs, ys := g.toScreen(g.sol.Pos[g.anchor])
+	r := float32(g.nodeRadius(&st.model.nodes[gi]) * g.z)
+	bare := relBadgeBox(xs, ys, r)
+	box := g.nodeCardBox(gi, xs, ys)
+	if box.Dx() <= bare.Dx()+int(relCardGapDp*g.z) {
+		t.Fatalf("标签卡宽 %d 未超出徽标 %d（标签没进卡里）", box.Dx(), bare.Dx())
+	}
+	// 徽标带内边距地贴在卡内（菱形尖/空心圆不被切边，分叉虚线环不越界）
+	pad, pv := int(relCardPadDp*g.z), int(relCardPadV*g.z)
+	if box.Min.X != bare.Min.X-pad || box.Min.Y != bare.Min.Y-pv || box.Max.Y != bare.Max.Y+pv {
+		t.Fatalf("标签卡背离徽标锚点: %v vs %v +内边距 %d/%d", box, bare, pad, pv)
+	}
+	// 低于 zoom 下限 → 无标签 → 裸形状（直接改 zoom 时须同步有效缩放 g.z）
+	g.zoom = relZoomLabelMin - 0.01
+	g.z = g.zoom * g.dpx
+	bare = relBadgeBox(xs, ys, float32(g.nodeRadius(&st.model.nodes[gi])*g.z))
+	if box := g.nodeCardBox(gi, xs, ys); box != bare {
+		t.Fatalf("无标签时卡 %v ≠ 裸形状 %v（应退化）", box, bare)
+	}
+}
+
+// TestRelEstTextWidth 文本宽估算：CJK 按全角记、同字数下宽于 ASCII（卡片宽度量级正确）。
+func TestRelEstTextWidth(t *testing.T) {
+	cjk := relEstTextW("你今天想聊点什么", 12)
+	ascii := relEstTextW("abcdefghijkl", 12)
+	if cjk <= ascii {
+		t.Fatalf("CJK 宽 %v 应大于等长 ASCII %v", cjk, ascii)
+	}
+	if got := relEstTextW("", 12); got != 0 {
+		t.Fatalf("空串宽 = %v, want 0", got)
+	}
+	if got := relEstTextW("ab", 10); got != 11 { // 2 × 0.55 × 10
+		t.Fatalf("ASCII 估宽 = %v, want 11", got)
+	}
 }

@@ -275,6 +275,18 @@ func relLabelText(m *relModel, i int, zoom float64) string {
 	return txt
 }
 
+// relVersionGlyph 分叉位点的版本下标（D120 §2.2 的 `i/n`：先只落 `i`，`n` 待定——
+// n 是兄弟总数、读起来要回查；i 是「这是第几个版本」，直接消歧）。非分叉位点恒为 ""。
+//
+// 画在**节点图形内部**（不在标签里）：节点图形是被缩放/预算裁剪后仍然认得出的那部分，
+// 版本下标属于「我是哪一个版本」的身份信息，不是「这条消息说了什么」的内容。
+func relVersionGlyph(m *relModel, i int) string {
+	if m.nodes[i].sibCount <= 1 {
+		return ""
+	}
+	return itoa(m.nodes[i].sibIdx + 1)
+}
+
 // relRolePrefix 低 zoom 下的 Role 前缀（形状退化时的补偿）。
 func relRolePrefix(role conversation.Role) string {
 	switch role {
@@ -452,6 +464,10 @@ func (m *relModel) byWeightDesc() []int {
 
 // relGeo 把可见节点映射为布局输入（紧凑索引）+ 锚点在其中的局部下标。
 // 父不在可见集时该节点视为根（连通洪泛下仅锚点缺失兜底路径可能出现）。
+//
+// 卡片占位（HalfW/HalfH）也在这里派生（D121）：节点卡 = [徽标 | 标签]，斥力必须按
+// **卡片边缘**算，否则邻卡压字。占位取「标签可显时的最大卡宽」且**不随 zoom 变**
+// ——否则缩放就会改布局，违反 R3。
 func relGeo(m *relModel, vis relVisible) (nodes []relGeoNode, anchorLocal int) {
 	local := make([]int, len(m.nodes))
 	for i := range local {
@@ -467,7 +483,14 @@ func relGeo(m *relModel, vis relVisible) (nodes []relGeoNode, anchorLocal int) {
 		if gp := m.nodes[gi].parent; gp >= 0 {
 			p = local[gp]
 		}
-		nodes[k] = relGeoNode{Parent: p, Level: m.nodes[gi].level, Weight: m.nodes[gi].weight}
+		r := m.nodes[gi].weight * relNodeBaseDp / 2 // 徽标半径（= 节点半径，dp）
+		// 半宽 = 卡片半宽的**精确**值（徽标半 + 左右内边距 + 间距 + 标签区半宽），
+		// 与 relmap_frame 的 nodeCardBox 同口径——少算内边距会让邻卡压掉最后一个字。
+		nodes[k] = relGeoNode{
+			Parent: p, Level: m.nodes[gi].level, Weight: m.nodes[gi].weight,
+			HalfW: r + 2*relCardPadDp + relCardGapDp + relLabelMaxDp/2,
+			HalfH: r + relCardPadV,
+		}
 		if gi == m.anchor {
 			anchorLocal = k
 		}
