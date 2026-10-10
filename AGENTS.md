@@ -60,6 +60,24 @@ go run ./cmd/linuxgate         # 非 Windows 门禁：WSL 内 linux 目标的 bu
 - 导出符号写注释；命名跟 `DESIGN.md` §2 统一语言对齐（如 Revise/Carry/Fresh/Head/Part/Job）。
 - 每个端口的实现在 `internal/adapter/<name>/`，一个适配器一个目录；测试替身放测试文件内或 `internal/adapter/fake/`。
 
+## 编辑 UTF-8 文件的纪律（严禁 PowerShell 替换）
+
+本仓文本（代码注释、文档）以 **UTF-8 中文**为主。改这类文件时按下面来，违反的代价是**把
+仓库内容写坏**：
+
+1. **优先用专用编辑工具**（edit/write），不落 shell。
+2. 必须走 shell 时，**用 Python**（`python` / `python3` / `py`，PATH 上哪个在就用哪个），
+   读写都显式 `encoding="utf-8"`。**严禁用 PowerShell 的 `-replace` / here-string /
+   重定向** 去改 UTF-8 文件：PowerShell 5.1 把无 BOM 的脚本按 ANSI 读，脚本里的中文字面量
+   先烂一遍，轻则解析失败，重则**把乱码写回文件、静默损坏仓库**（2026-10-09 实测踩中：
+   临时补丁脚本全 hang 在编码上，改也不是不改也不是）。
+3. **一次性脚本不进仓库**：写到临时目录（OpenCode 环境下优先 `C:\Users\yjh07\AppData\Local\Temp\opencode`），
+   用完删；本仓只留 `.go` 与文档。
+4. **写完自查**：`git diff --stat` 看改动面，`git diff` 抽查中文是否完好（注意终端显示本身
+   也可能是乱码，以 `git diff` 内容为准）。发现乱码 `git checkout -- <file>` 回滚重做，
+   **不要试图去"修那个乱码"**（越修越坏）。
+5. 文件写入口径与既有文件一致：UTF-8 **无 BOM**、LF 行尾。
+
 ## 测试要求
 
 - **改动 domain**：必须带/改性质测试。核心不变量三条（树合法、存在性引用、节点不可变）必须持续可证。
