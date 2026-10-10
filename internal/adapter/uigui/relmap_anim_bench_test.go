@@ -1,13 +1,16 @@
 package uigui
 
-// relmap_anim_bench_test.go 全程物理基准（D124）：200 节点下一帧全链路耗时（物理步进 +
-// 全量绘制），对照 60fps 预算（16.67ms）。**实测（Ryzen 7 8700F, 900×700, PxPerDp=1.25）**：
+// relmap_anim_bench_test.go 全程物理基准（D126 重订档：废除逐节点静息锚 → 树锚 + 卡片
+// 接触推力 + 松手采纳槽位）：200 节点下一帧全链路耗时（物理步进 + 全量绘制），对照 60fps
+// 预算（16.67ms）。**实测（Ryzen 7 8700F, 900×700, PxPerDp=1.25，benchtime ≥1s）**：
 //
-//	物理仿真帧（6 子步 + 全量绘制） ≈ 0.88 ms/帧（预算 ~5%，裕量 ~19×）
-//	拖拽帧（带 pin 同上）          ≈ 0.88 ms/帧
+//	物理仿真帧（12 子步 + 全量绘制，每轮注入扰动保持运动） ≈ 0.77 ms/帧（预算 ~5%）
+//	拖拽帧（带 pin 同上）                              ≈ 0.94 ms/帧
+//	纯物理步进（200 节点链条）                          ≈ 0.23 ms/帧（0 allocs）
 //
 // ⇒ 200 节点（≤ hardCap 240）**全程物理 + 用户拖拽**稳定 60fps。注意：`-benchtime 3x`
-// 这类小采样会被冷启动污染，请用 ≥1s。
+// 这类小采样会被冷启动污染，请用 ≥1s；帧基准每轮注入扰动（vx=vy=3），测的是**运动中**的
+// 帧（含物理步进），静止帧（tickLayout 早退）会便宜 ~0.5ms，以 PhysStep 为准更稳。
 // 运行：go test ./internal/adapter/uigui/ -run '^$' -bench 'PhysFrame|DragFrame|PhysStep' -benchtime 1s
 
 import (
@@ -139,7 +142,7 @@ func BenchmarkRelmapDragFrame200(b *testing.B) {
 	}
 }
 
-// BenchmarkRelmapPhysStep200 纯物理步进（200 节点链，6 子步，不含绘制）：测物理核成本。
+// BenchmarkRelmapPhysStep200 纯物理步进（200 节点链，12 子步，不含绘制）：测物理核成本。
 func BenchmarkRelmapPhysStep200(b *testing.B) {
 	lay, ok := newRelLayout(animBenchGeo(animBenchN))
 	if !ok {

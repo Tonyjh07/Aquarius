@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"gioui.org/f32"
+	"gioui.org/gpu/headless"
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -50,6 +53,206 @@ func relPointer(kind pointer.Kind, p f32.Point, primary bool) pointer.Event {
 		e.Buttons = pointer.ButtonPrimary
 	}
 	return e
+}
+
+// relLongSnippetGraph 长摘要会话树（D126 多行卡片回归用）：摘要 40 字程 CJK，逼出多行
+// 标签；a1 既是锚点（w3 最大徽标）又是分叉位点（版本下标 "1" + 虚线外环）。
+func relLongSnippetGraph() port.TreeGraph {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	at := func(i int) time.Time { return base.Add(time.Duration(i) * time.Second) }
+	const long = "这是一段比较长的消息摘要文字用来验证多行卡片与虚线外环的绘制是否对齐徽标中心"
+	mk := func(id, parent string, role conversation.Role, sibIdx, sibCount int) port.GraphNode {
+		return port.GraphNode{
+			ID: conversation.MessageID(id), Parent: conversation.MessageID(parent),
+			Role: role, Snippet: long, EdgeKind: port.EdgeSeq,
+			SiblingIdx: sibIdx, SiblingCount: sibCount,
+		}
+	}
+	nodes := []port.GraphNode{
+		mk("r", "", conversation.RoleRoot, 0, 1),
+		mk("p", "r", conversation.RoleSystem, 0, 1),
+		mk("u1", "p", conversation.RoleUser, 0, 2),
+		mk("u1b", "p", conversation.RoleUser, 1, 2),
+		mk("a1", "u1", conversation.RoleAssistant, 0, 2), // 锚点 + 分叉位点
+		mk("u2", "a1", conversation.RoleUser, 0, 1),
+	}
+	for i := range nodes {
+		nodes[i].CreatedAt = at(i)
+	}
+	return port.TreeGraph{Anchor: "a1", Nodes: nodes, Total: len(nodes)}
+}
+
+// TestRelDashedSquareOutlineHugsBadge D126 实测修：方形节点的虚线外环，四条**直边必须
+// 贴 ±r**（= 填充圆角方的边所在；弧心列在 ±(r−cr)）。旧版把直边画在 r−cr 上，比徽标
+// 内缩一个角半径（≈0.28r，实测 ~6.8px）——左右虚线画进节点里，读作「虚线框嵌在节点中」
+// （用户截图报障）。弧不受影响。
+func TestRelDashedSquareOutlineHugsBadge(t *testing.T) {
+	const r = 24.0
+	step := (relDashOn + relDashOff) * 1.25
+	pts := shapeOutline(relShapeSquare, 100, 100, r, step)
+	if len(pts) < 16 {
+		t.Fatalf("方形外环采样点太少: %d", len(pts))
+	}
+	minD, maxD := math.Inf(1), 0.0
+	for _, p := range pts {
+		d := math.Hypot(float64(p.X-100), float64(p.Y-100))
+		minD, maxD = math.Min(minD, d), math.Max(maxD, d)
+	}
+	// 环是「半径 r 的圆角方」：最近点 = 直边中点（恰在 r 上），最远点 = 角部弧。
+	// 旧版 minD ≈ r−cr（≈r−6.8）——虚线落在徽标内部。
+	if minD < r-0.01 {
+		t.Fatalf("虚线外环有距心 %.2f < 环半径 %.2f 的点（直边画进徽标了）", minD, r)
+	}
+	if maxD < r {
+		t.Fatalf("虚线外环没有到环半径: maxD = %.2f, want ≥ %.2f", maxD, r)
+	}
+	// 四边都得贴边：每个方向都要有 ≥ r−0.01 的采样点（否则「某一侧凹进去」测不出）
+	for _, dir := range [][2]float64{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+		best := 0.0
+		for _, p := range pts {
+			d := (float64(p.X)-100)*dir[0] + (float64(p.Y)-100)*dir[1]
+			if d > best {
+				best = d
+			}
+		}
+		if best < r-0.01 {
+			t.Fatalf("方向 %v 的虚线未贴到 ±r: 最远 %.2f < %.2f", dir, best, r)
+		}
+	}
+}
+
+// TestRelCardLabelMultiLine D126「多行占满卡片」：长摘要换行成多行、卡片随之撑高，
+// 徽标仍在卡片内垂直居中；短摘要仍是一行、卡片不比徽标高（不制造空白）。
+func TestRelCardLabelMultiLine(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
+	st := newHistoryState(u)
+	g := st.graph
+	li := g.anchor
+	gi := st.vis.nodes[li]
+	if relLabelText(st.model, gi, g.zoom) == "" {
+		t.Fatal("锚点应有标签")
+	}
+	xs, ys := g.toScreen(g.sol.Pos[li])
+	r := float32(g.nodeRadius(&st.model.nodes[gi]) * g.z)
+	bare := relBadgeBox(xs, ys, r)
+	box := g.nodeCardBox(gi, xs, ys)
+	if _, _, lines := g.labelBlock(relLabelText(st.model, gi, g.zoom)); lines < 2 {
+		t.Fatal("长摘要应换到多行")
+	}
+	if box.Dy() <= bare.Dy() {
+		t.Fatalf("多行卡片未撑高: 卡高 %d ≤ 徽标高 %d", box.Dy(), bare.Dy())
+	}
+	// 徽标仍在卡内垂直居中（卡片以节点坐标为竖直中心）
+	if c := float64(box.Min.Y+box.Max.Y) / 2; math.Abs(c-float64(ys)) > 1.5 {
+		t.Fatalf("多行卡片未以节点为竖直中心: 卡心 %.1f, 节点 y %.1f", c, ys)
+	}
+	// 短摘要（夹具图 "s-a1"）保持一行、卡片不比徽标高
+	_, st2, _ := relGraphFixture(t)
+	g2 := st2.graph
+	gi2 := st2.vis.nodes[g2.anchor]
+	x2, y2 := g2.toScreen(g2.sol.Pos[g2.anchor])
+	b2 := relBadgeBox(x2, y2, float32(g2.nodeRadius(&st2.model.nodes[gi2])*g2.z))
+	box2 := g2.nodeCardBox(gi2, x2, y2)
+	if _, _, lines := g2.labelBlock(relLabelText(st2.model, gi2, g2.zoom)); lines != 1 {
+		t.Fatalf("短摘要应占 1 行, got %d", lines)
+	}
+	if want := b2.Dy() + 2*int(relCardPadV*g2.z); box2.Dy() != want {
+		t.Fatalf("短摘要卡片高度应等于徽标 + 内边距: %d vs %d", box2.Dy(), want)
+	}
+}
+
+// TestRelCardHalfCoversDrawnCard D126：布局预留（HalfW/HalfH，relGeo）必须覆盖**任何
+// zoom 下**画出来的卡片——否则卡片画出自己的槽位（邻卡压字）且视场适配漏算边。
+// 估宽/估高都是近似，故按标签 zoom 全程扫描（下限处字号被钳、盒宽随 z 缩小：最坏情形）。
+func TestRelCardHalfCoversDrawnCard(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
+	st := newHistoryState(u)
+	g := st.graph
+	for _, zoom := range []float64{relZoomLabelMin, 0.85, 1.0, 1.2, relZoomLabelRef, relZoomMax} {
+		g.zoom, g.z = zoom, zoom*g.dpx
+		for li, gi := range st.vis.nodes {
+			xs, ys := g.toScreen(g.sol.Pos[li])
+			box := g.nodeCardBox(gi, xs, ys)
+			hw := float64(box.Dx()) / 2 / g.z
+			hh := float64(box.Dy()) / 2 / g.z
+			if hw > g.geo[li].HalfW+0.5 {
+				t.Fatalf("zoom %.2f 节点 %d 卡片半宽 %.1f > 预留 %.1f", zoom, li, hw, g.geo[li].HalfW)
+			}
+			if hh > g.geo[li].HalfH+0.5 {
+				t.Fatalf("zoom %.2f 节点 %d 卡片半高 %.1f > 预留 %.1f", zoom, li, hh, g.geo[li].HalfH)
+			}
+		}
+	}
+}
+
+// TestRelGlyphCenteredInBadge D126 实测修：版本下标（白字）必须画在形状**正中**。旧版
+// 用 `Constraints.Min=(0,0)` + layout.Center 排版——Gio 的 Center 按 max(Min, 子件尺寸)
+// 定位，Min 为 0 等于不平移，数字贴在形状左上角（用户报障「数字居中问题」）。
+// 这里渲染离屏帧后逐像素验证：白字包围盒中心 ≈ 徽标中心。
+func TestRelGlyphCenteredInBadge(t *testing.T) {
+	applyPalette(lightPalette())
+	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
+	st := newHistoryState(u)
+	g := st.graph
+	// 先离线把物理跑到静止（软物理下 ~10s 才落定；不收敛就渲染 = 拍一个运动中的帧，
+	// 之后读到的坐标与画出来的对不上）。headless 只渲染最后那一帧。
+	q := new(input.Router)
+	for i := 0; i < relSettleFrames*2 && g.lay != nil && !g.lay.settled; i++ {
+		relGFrame(q, u, st)
+	}
+	if g.lay == nil || !g.lay.settled {
+		t.Fatal("夹具物理未收敛")
+	}
+	w, err := headless.NewWindow(500, 500)
+	if err != nil {
+		t.Skipf("离屏渲染不可用: %v", err)
+	}
+	defer w.Release()
+	var ops op.Ops
+	gtx := layout.Context{Ops: &ops, Source: input.Source{},
+		Metric:      unit.Metric{PxPerDp: 1.25, PxPerSp: 1.25},
+		Constraints: layout.Exact(image.Pt(500, 500))}
+	g.frame(gtx, u.th, u, st)
+	if err := w.Frame(&ops); err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 500, 500))
+	if err := w.Screenshot(img); err != nil {
+		t.Fatalf("截图失败: %v", err)
+	}
+	// 锚点徽标盒（屏幕坐标）
+	at, li := relAnchorScreen(t, g)
+	gi := st.vis.nodes[li]
+	r := float32(g.nodeRadius(&st.model.nodes[gi]) * g.z)
+	badge := relBadgeBox(at.X, at.Y, r)
+	bx, by := float64(badge.Min.X+badge.Max.X)/2, float64(badge.Min.Y+badge.Max.Y)/2
+	// 白字像素（只取徽标内切圆内：盒角区域可能漏出边线/主干描边的窗底色，不是字形）。
+	// **像素质心**而非包围盒中心（D126 实测修）：数字字形不对称（「1」的顶部横旗向左
+	// 伸出 ~8px），包围盒中心会偏出视觉中心 3.9px——质心以笔画质量加权，量的是「看起来
+	// 在不在正中」。
+	var sx, sy float64
+	n := 0
+	inner := float64(r) * 0.9
+	for y := badge.Min.Y; y < badge.Max.Y; y++ {
+		for x := badge.Min.X; x < badge.Max.X; x++ {
+			if math.Hypot(float64(x)-bx, float64(y)-by) > inner {
+				continue
+			}
+			c := img.RGBAAt(x, y)
+			if c.R >= 0xF0 && c.G >= 0xF0 && c.B >= 0xF0 {
+				sx += float64(x)
+				sy += float64(y)
+				n++
+			}
+		}
+	}
+	if n < 6 {
+		t.Fatalf("徽标内没找到白字像素（%d）——字形没画在形状里？", n)
+	}
+	cx, cy := sx/float64(n), sy/float64(n)
+	if math.Abs(cx-bx) > 2.5 || math.Abs(cy-by) > 2.5 {
+		t.Fatalf("版本下标未居中: 字心 (%.1f,%.1f), 徽标心 (%.1f,%.1f)", cx, cy, bx, by)
+	}
 }
 
 // relPaneFrame 在「左栏 + 右图」两栏布局中跑一帧右图（复刻 history.go 的 Flex：
@@ -209,6 +412,54 @@ func TestRelGraphPointerAreaIsPane(t *testing.T) {
 	}
 	q.Queue(relPointer(pointer.Release, moved, false))
 	relPaneFrame(q, u, st, leftPx)
+}
+
+// TestRelGraphFitFollowKeepsAnchorInView D126 实测修：树太大装不下视口（zoom 触底仍
+// 超宽/超高）时，fitView 走**锚点跟随**（fitFollow）——每帧把锚点当前位对准视口中心，
+// 收敛即停。深链展开要十几秒（手风琴模式），一次性按静息位对准会把当前消息甩出视口
+// （实测 200 节点链偏 1900px；clip 还会裁掉视口外指针事件 ⇒ 拖拽直接失效）。用户一
+// 平移/缩放立即取消跟随（用户视场优先，不跟用户抢）。
+func TestRelGraphFitFollowKeepsAnchorInView(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relChainGraph(120)}, fakeLister(nil))
+	st := newHistoryState(u)
+	q := new(input.Router)
+	relGFrame(q, u, st) // 首帧：fitView 回退（120 链装不下）⇒ 开跟随
+	g := st.graph
+	if !g.fitFollow {
+		t.Fatal("树装不下视口时应开启锚点跟随")
+	}
+	// 展开中：锚点始终在视口内（当前消息不许丢）
+	for i := 0; i < 40; i++ {
+		relGFrame(q, u, st)
+		x, y := g.toScreen(g.sol.Pos[g.anchor])
+		if x < 0 || float64(x) > g.viewW || y < 0 || float64(y) > g.viewH {
+			t.Fatalf("展开中锚点跑出视口（第 %d 帧）: (%.1f,%.1f) 视口 %.0fx%.0f",
+				i, x, y, g.viewW, g.viewH)
+		}
+	}
+	// 收敛后：跟随即停、锚点正好居中（落定位置 = 视图中心）
+	for i := 0; i < relSettleFrames*4 && g.lay != nil && !g.lay.settled; i++ {
+		relGFrame(q, u, st)
+	}
+	if g.lay == nil || !g.lay.settled {
+		t.Fatal("未收敛")
+	}
+	if g.fitFollow {
+		t.Fatal("收敛后仍在跟随（空转重绘）")
+	}
+	x, y := g.toScreen(g.sol.Pos[g.anchor])
+	if math.Abs(float64(x)-g.viewW/2) > 1 || math.Abs(float64(y)-g.viewH/2) > 1 {
+		t.Fatalf("收敛后锚点未居中: (%.1f,%.1f), want (%.1f,%.1f)", x, y, g.viewW/2, g.viewH/2)
+	}
+	// 跟随中用户平移 ⇒ 取消（跟用户抢视场是 bug）
+	g.fitFollow = true
+	q.Queue(relPointer(pointer.Press, f32.Pt(10, 10), true)) // 空白处
+	relGFrame(q, u, st)
+	q.Queue(relPointer(pointer.Move, f32.Pt(40, 30), true)) // Move → Router 转 Drag
+	relGFrame(q, u, st)
+	if g.fitFollow {
+		t.Fatal("用户平移后仍跟随（跟用户抢视场）")
+	}
 }
 
 // TestRelGraphPanByDrag 空白拖拽 = 平移（绝对跟踪：起点 + 差值）。

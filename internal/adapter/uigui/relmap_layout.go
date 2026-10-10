@@ -1,6 +1,6 @@
 package uigui
 
-// 会话树关系图——布局内核（D124 重构，取代 D120④/D121 的「一次性求解 + 静止」）。
+// 会话树关系图——布局内核（D124 重构，D126 改订；取代 D120④/D121 的「一次性求解 + 静止」）。
 //
 // 本文件是 Gio / port 无关的**物理仿真核**：输入 = 极小几何投影（父索引 / 层号 / 权重 /
 // 卡片半宽），输出 = 每节点坐标 + 是否静止。port.TreeGraph → 本输入的映射在 relmap.go。
@@ -9,12 +9,13 @@ package uigui
 //
 //	① 边弹簧：子被拉向「父当前位置 + 静息偏移 (restOff, relRowGap)」，父子等大反向
 //	   施加（牛顿第三定律）→ 子树随父拖动、动量沿树传导（拖任一节点整树响应）；
-//	② 静息锚：每节点被拉向确定性静息位 (restX, restY) → 平衡态 ≈ 静息布局、快速局部收敛；
-//	   根另加根锚（拉向原点）防整树漂移；
-//	③ 斥力：全对（排除祖先-后代对，DFS 序区间 O(1) 判定）2D，软化 + 作用半径截止 +
+//	② 斥力：全对（排除祖先-后代对，DFS 序区间 O(1) 判定）2D，软化 + 作用半径截止 +
 //	   卡片相叠接触推力；
-//	④ 阻尼：速度每帧乘 relPhysDamp → 系统自然收敛；
-//	⑤ 拖拽 pin：被拖节点硬钉在指针位（速度清零），其余节点只经弹簧/斥力被带动。
+//	③ 阻尼：速度每帧乘 relPhysDamp → 系统自然收敛；
+//	④ 拖拽 pin：被拖节点硬钉在指针位（速度清零），其余节点只经弹簧/斥力被带动；
+//	⑤ 树锚：整树的包围盒中心被拉向锚点（静息盒心）——**外力均匀施加在每个节点上，
+//	   只平移、不产生内部应力**，于是单个节点完全自由（可被拖到任何位置并留在那里），
+//	   整树却不漂移、始终停在原处（D126「不锚定节点，锚定树」）。
 //
 // 积分 = 半隐式欧拉（每帧 relPhysSub 子步：高自由度节点的显式刚度会越稳定边界，
 // 子步把 ω·dt 压回稳区）：v += F·dt; v *= 阻尼; 限幅; pos += v·dt。收敛（动能 < 阈值）即
@@ -22,8 +23,8 @@ package uigui
 // 「全程都能动」。
 //
 // 静息布局（rest layout，§3）是确定性参考：restPos(子) = restPos(父) + (restOff, relRowGap)。
-// 它是物理的平衡态（无斥力时精确），也供视场适配（fit/recenter）取树盒——当前物理位形
-// 会动，不适合当视场基准。
+// 节点锚废除后（D126）它不再是逐点平衡态，只提供**播种初值 + 树锚点 + 视场基准**
+// （fit/recenter 取树盒——当前物理位形会动，不适合当视场基准）。
 //
 // 可测性：力导向坐标不确定 ⇒ 断言**不变量**：静息树形 / 层序（静息态）/ 有界盒 /
 // 同输入可复现 / 动能降至静止。
@@ -37,21 +38,20 @@ const (
 
 	// relPhysDt 每帧固定步长（帧率相关，见设计 §8）。60fps 基准。
 	relPhysDt = 1.0
-	// relPhysRepel 斥力系数基准（见下方「物理刚度/阻尼/播种档位」const 块）。
-	// relPhysSoft 斥力软化（dp²）：近重合时力有限——折叠播种不会爆炸。
-	relPhysSoft = 6.0e2
-	// relPhysCut 斥力作用半径（dp）：超出即不互斥——砍长程慢漂移模态、加速收敛。
-	relPhysCut = 420.0
-	// relPhysPushK / relPhysPushMaxDp 卡片相叠的接触推力（沿重叠方向，兜底）：斥力主导
-	// 分离，相叠时再补一把短程推力，防深压。
+	// relPhysPushK / relPhysPushMaxDp 卡片接触推力（D126 重写）：**轴隙**（水平/竖直
+	// 分别扣掉两卡半宽/半高）小于 relSlotGapDp 时，沿最小穿透轴推，力 = 间隙差 × K，
+	// 单面上限 relPhysPushMaxDp × K。静息布局的兄弟槽隙恰等于 relSlotGapDp ⇒ 静息态
+	// 受力为零 = **真正的平衡态**——不必靠逐节点静息锚维持（D126 废除节点锚的原因：
+	// 长程斥力下平衡态比静息布局宽 30%~56%，按静息盒适配的视场装不下整树）。
 	relPhysPushK     = 0.4
 	relPhysPushMaxDp = 40.0
 
-	relRowGap    = 72.0 // 层序：每层竖直间距（dp）
-	relJitter    = 12.0 // 确定性抖动幅度基准（播种用）
-	relKRepelMax = 6.0e3
+	relRowGap = 72.0 // 层序：每层竖直间距（dp）
+	relJitter = 12.0 // 确定性抖动幅度基准（播种用）
 	// relRestLen 静息边长的下限（dp）：无卡片占位（质点夹具）时的兄弟间距下限。
-	relRestLen = 90.0
+	relRestLen     = 90.0
+	relRowAdoptMin = 0.75 // 手动摆放层距钳制（× relRowGap）：保「子恒在父之下」+ 父子卡片不叠
+	relRowAdoptMax = 2.0  // 上限：防把子树推到两层外去挤别人的行
 	// relSlotGapDp 兄弟槽位之间的额外间隙（dp）：卡片并排时留条缝。
 	relSlotGapDp = 10.0
 	relBound     = 20000.0
@@ -65,20 +65,48 @@ const (
 	relCardPenetrationMax = 0.25
 )
 
-// 物理刚度/阻尼/播种档位（偶然实现，spike 调定）：
-//   - 边弹簧 0.25 + 静息锚 0.15 + 阻尼 0.90 → 播完 ~1–3s 落定（100–180 帧），拖后 ~1s；
-//   - 子步 6：高自由度节点的显式刚度（父子等大反向）会越过稳定边界，子步把 ω·dt 压回稳区；
-//   - 斥力 150：既保证交互推开，又使平衡态 ≈ 静息布局（偏差 ≤ ~30dp，fit 余量可覆盖）。
+// 物理刚度/阻尼/播种档位（偶然实现，spike 调定；D126 起废除逐节点静息锚/根锚）：
+//   - 边弹簧拆双轴：横向 1.0、纵向 2.0（刚 ⇒ 树贴身保持静息形状、平衡 ≈ 静息布局）。
+//     0.012 软弹簧实测失败（势能面太平卡局部极小 + 接触力顶离槽位 100+dp，见
+//     relPhysSpringX 注释）；用户 2026-10-09 先要「约 10s 收敛看看效果」、实测后
+//     反馈「提高阻尼，现在太晃了」——软弹簧 + 轻阻尼的组合已被否掉；
+//   - 阻尼按轴 0.5/0.5（配 relPhysFMax 力限幅挡 VMax 钳位极限环）：~0.5s 内一两下
+//     轻摆收敛（fixture 实测 ~130 帧/2.2s）；
+//   - 子步 12：最高频模态是纵向呼吸（ω=√(2×(deg+1))，deg≤240 ⇒ ω≤22，ω·dt≈1.8 < 2），
+//     12 子步留足余量，成本 ~0.25ms/帧可忽略；
+//   - 分离力只来自卡片接触（relPhysPushK）：静息布局即平衡态，视场按它适配才装得下整树。
 const (
-	relPhysSpring = 0.25  // 边弹簧刚度：力 = k × 偏移
-	relPhysRoot   = 0.25  // 根锚刚度：力 = k × (静息原点 − 根位置)
-	relPhysHome   = 0.15  // 静息锚刚度：力 = k × (静息位 − 位置)（钉住平衡态 ≈ 静息布局）
-	relPhysRepel  = 150.0 // 斥力系数基准：力 = coef/(d²+soft)，coef = 基准 × (deg+1)²，限幅 relKRepelMax
-	relPhysDamp   = 0.90  // 每帧速度阻尼
-	relPhysSub    = 6     // 每帧子步数（显式刚度稳定化）
-	relPhysVMax   = 30.0  // 速度限幅（dp/帧）
-	relPhysEps    = 0.02  // 静止阈值：Σv² < 阈值 × n
-	relSeedShrink = 0.60  // 折叠播种：静息布局向根点收缩的比例
+	relPhysSpringX = 1.0 // 横向弹簧刚度（刚 ⇒ 树贴身保持静息形状）。0.012 软弹簧实测失败：
+	//                      (1) 势能面太平，拖开松手后树卡在局部极小（rand40 根节点离静息
+	//                      103dp 却判静止）；(2) 接触推力能把节点顶离静息槽 100+dp，视场基准
+	//                      （静息盒）与平衡态脱节。刚弹簧 + relPhysFMax 限幅 + 阻尼后：
+	//                      平衡 ≈ 静息布局（D126「静息布局即平衡态」的真契约）。
+	relPhysSpringY = 2.0 // 纵向弹簧刚度（刚 ⇒ 层序结构快速归位）。深链的「手风琴模式」
+	//                      （整链均匀伸缩 = 零净力模态）松弛率 λ = ky×(1−dampY)/n ∝ ky：
+	//                      ky=0.5 时 chain150 末段慢爬 2500+ 帧，ky=2.0 快 4 倍（~600 帧，
+	//                      落在 relSettleFrames 内）。过冲由 relPhysFMax 限幅兜住，不炸。
+	relPhysTree  = 0.03 // 树锚刚度：整树盒心被拉向锚点（均匀外力 ⇒ 只平移、不变形）
+	relPhysDampX = 0.5  // 横向每帧速度阻尼（ζ≈0.25，一两下轻摆收敛 ~0.5s）。0.982 档实测
+	//                   「太晃」（ζ≈0.08，来回摆十几下才停，用户 2026-10-09 反馈「提高
+	//                   阻尼，现在太晃了」）。
+	relPhysDampY = 0.5 // 纵向每帧速度阻尼：纵向模态频率高（ω=√2≈1.4），ζ≈0.18，轻回弹
+	//                   收敛快；太重会「慢爬」（弱弹簧力被阻尼吃掉，chain150 末段 2000+ 帧）。
+	//                   配 relPhysFMax 力限幅（挡 VMax 钳位极限环）后恰到好处。x/y 弹簧与
+	//                   树锚本来就按轴解耦，拆轴干净。
+	// relPhysSub 每帧子步数（显式刚度稳定化）：**必须压住最高频模态**——星形枢纽的
+	// 「呼吸」模态 ω = √(k×(deg+1))，半隐式欧拉稳定边界 ω·dt < 2。本档最高频是纵向：
+	// ω = √(0.5×240) ≈ 11，dt = 1/12 ⇒ ω·dt ≈ 0.9，稳。不足会撞出「速度被限幅钳住、
+	// 阻尼失效」的极限环：位置看着不动、settled 永远为假、节点在帧内高频抖（k=6 时代
+	// 实测 star30 钳在 maxv=30 抖 3000 帧不收敛）。
+	relPhysSub  = 12
+	relPhysVMax = 30.0 // 速度限幅（dp/帧）
+	relPhysFMax = 12.0 // 弹簧/树锚力限幅（dp/帧²，每轴）。防「VMax 限幅打败阻尼」的
+	//                     极限环：巨幅振荡时弹簧加速度每子步把速度推回 30 钳位，阻尼永远
+	//                     追不上（chain150 实测 2140dp 超调 3000 帧不收敛）。力 ≤ 12 ⇒
+	//                     v_steady = F/(1−damp) = 24 < 30，阻尼能真正生效。平衡态不受
+	//                     影响（近平衡时力远小于限幅：kx=1 时 12dp 内不触发）。
+	relPhysEps    = 0.002 // 静止阈值：Σv² < 阈值 × n（软物理下收紧：减少「慢爬」残差）
+	relSeedShrink = 0.60  // 折叠播种：静息布局向盒心收缩的比例（盒心 = 树锚，见 seedCollapsed）
 )
 
 // relGeoNode 布局输入：几何相关的最小投影（与 port 解耦）。Parent = -1 = 结构根；
@@ -114,25 +142,28 @@ type relPin struct {
 	Pos   relPoint
 }
 
-// relLayout 常驻物理仿真态：派生量（孩子表 / 度数 / BFS 序 / 静息布局）只算一次，
+// relLayout 常驻物理仿真态：派生量（孩子表 / BFS 序 / 静息布局）只算一次，
 // 之后每帧从**当前坐标 + 速度**接着积分（拖拽/展开都不跳回初值）。
 type relLayout struct {
 	nodes     []relGeoNode
 	children  [][]int
-	deg       []int
 	root      int
 	order     []int // BFS 序（父先于子）
 	halfW     []float64
 	halfH     []float64
 	restOff   []float64 // 每节点的横向静息偏移（相对父；根 = 0）
+	restGap   []float64 // 每节点的纵向静息间距（相对父；默认 relRowGap，手动摆放后可变）
 	restX     []float64 // 静息布局坐标（确定性树形）
 	restY     []float64
 	tin, tout []int     // DFS 序区间（判祖先-后代：j 在 i 子树内 ⇔ tin_i ≤ tin_j ≤ tout_i）
 	x, y      []float64 // 当前位置
 	vx, vy    []float64 // 速度（物理积分）
 	fx, fy    []float64 // 力缓存
-	iters     int
-	settled   bool
+	// anchorX/anchorY 树锚点（世界 dp） = 静息布局的包围盒中心：整树被拉向这里。
+	// D126：节点锚废除后，单个节点只受弹簧/接触推力（完全自由），整树的位置由它兜住。
+	anchorX, anchorY float64
+	iters            int
+	settled          bool
 }
 
 // newRelLayout 结构校验 + 静息布局计算。初值 = 静息布局（settled）；需要物理展开 /
@@ -153,12 +184,12 @@ func newRelLayout(nodes []relGeoNode) (*relLayout, bool) {
 	l := &relLayout{
 		nodes:    nodes,
 		children: make([][]int, n),
-		deg:      make([]int, n),
 		root:     order[0],
 		order:    order,
 		halfW:    make([]float64, n),
 		halfH:    make([]float64, n),
 		restOff:  make([]float64, n),
+		restGap:  make([]float64, n),
 		restX:    make([]float64, n),
 		restY:    make([]float64, n),
 		x:        make([]float64, n),
@@ -171,20 +202,20 @@ func newRelLayout(nodes []relGeoNode) (*relLayout, bool) {
 	for i, nd := range nodes {
 		if nd.Parent >= 0 {
 			l.children[nd.Parent] = append(l.children[nd.Parent], i)
-			l.deg[nd.Parent]++
 		}
 		l.halfW[i], l.halfH[i] = nd.HalfW, nd.HalfH
 	}
 	l.initRest(assigned, order)
 	l.initTour()
+	l.anchorX, l.anchorY = l.restBoxCenter()
 	copy(l.x, l.restX)
 	copy(l.y, l.restY)
 	l.settled = true
 	return l, true
 }
 
-// initTour 计算 DFS 序区间（tin/tout），用于 O(1) 判祖先-后代（斥力排除亲属，
-// 使链/主干不被纵向斥力拉长，同族间距只由弹簧定义）。
+// initTour 计算 DFS 序区间（tin/tout），用于 O(1) 判祖先-后代（接触推力排除亲属，
+// 使链/主干不被横推，同族间距只由弹簧定义）。
 func (l *relLayout) initTour() {
 	n := len(l.nodes)
 	l.tin, l.tout = make([]int, n), make([]int, n)
@@ -215,16 +246,36 @@ func (l *relLayout) initRest(assigned []relSector, order []int) {
 				pitch = w
 			}
 		}
+		span := float64(len(kids)-1) * pitch
+		offs := make([]float64, len(kids))
 		lo := assigned[kids[0]].Lo
 		hi := assigned[kids[len(kids)-1]].Hi
-		span := float64(len(kids)-1) * pitch
-		for _, k := range kids {
+		for i, k := range kids {
+			// 兄弟站位：先按扇区角度中点的比例取（子树规模加权 ⇒ 大树分得宽扇区），再按
+			// 顺序右推保最小槽距 pitch（D126 实测修：等规模兄弟原来被压到 0.35×pitch，
+			// 卡片在静息布局里就相叠，接触推力只能把平衡态推离静息布局 ~20dp，视场基准
+			// 与物理平衡态于是不是同一个形状）。
 			mid := (assigned[k].Lo + assigned[k].Hi) / 2
 			t := 0.5
 			if hi > lo {
 				t = (mid - lo) / (hi - lo)
 			}
-			l.restOff[k] = (t - 0.5) * span
+			offs[i] = (t - 0.5) * span
+		}
+		for i := 1; i < len(offs); i++ { // dodge：每人至少离前人一个 pitch（保序）
+			if offs[i] < offs[i-1]+pitch {
+				offs[i] = offs[i-1] + pitch
+			}
+		}
+		if n := len(offs); n > 1 { // 回中：整体平移，不改相对间距（保形）
+			c := (offs[0] + offs[n-1]) / 2
+			for i := range offs {
+				offs[i] -= c
+			}
+		}
+		for i, k := range kids {
+			l.restOff[k] = offs[i]
+			l.restGap[k] = relRowGap
 		}
 	}
 	l.restX[l.root], l.restY[l.root] = 0, 0
@@ -234,7 +285,7 @@ func (l *relLayout) initRest(assigned []relSector, order []int) {
 		}
 		p := l.nodes[i].Parent
 		l.restX[i] = l.restX[p] + l.restOff[i]
-		l.restY[i] = l.restY[p] + relRowGap
+		l.restY[i] = l.restY[p] + l.restGap[i]
 	}
 }
 
@@ -247,23 +298,43 @@ func (l *relLayout) restPos() []relPoint {
 	return pos
 }
 
-// seedCollapsed 折叠播种（开窗 / 全新图）：初值 = 静息布局向根点收缩 relSeedShrink
+// boxCenterOf 给定位形的包围盒中心（世界 dp；含卡片半宽/半高）。整棵树的平铺位置
+// 一律用**盒心**度量——它就是 fitView/recenterTree 对准视口中心的那个点（两份口径
+// 必须一致，否则「树锚」与「视场」说的不是同一个地方）。
+func (l *relLayout) boxCenterOf(x, y []float64) (float64, float64) {
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for i := range x {
+		minX, maxX = math.Min(minX, x[i]-l.halfW[i]), math.Max(maxX, x[i]+l.halfW[i])
+		minY, maxY = math.Min(minY, y[i]-l.halfH[i]), math.Max(maxY, y[i]+l.halfH[i])
+	}
+	return (minX + maxX) / 2, (minY + maxY) / 2
+}
+
+// restBoxCenter 静息布局的包围盒中心 = 树锚点。
+func (l *relLayout) restBoxCenter() (float64, float64) {
+	return l.boxCenterOf(l.restX, l.restY)
+}
+
+// seedCollapsed 折叠播种（开窗 / 全新图）：初值 = 静息布局向**盒心**收缩 relSeedShrink
 // + 确定性小抖动，速度清零。物理据此从「缩成一小团」展开成树（展开本身即物理）。
+// **向盒心而不是向根点收缩**（D126 实测修）：向根点收缩时链/深树的盒心起点离树锚
+// （= 静息盒心）几千 dp，展开被树锚猛拽 → 整体平移过冲 + VMax 限幅极限环（chain150
+// 纵向超调 4268dp、3000 帧不收敛）。向盒心收缩 ⇒ 播种盒心 = 锚点，展开是纯扩张。
 func (l *relLayout) seedCollapsed() {
 	n := len(l.nodes)
 	if n == 0 {
 		l.settled = true
 		return
 	}
-	ox, oy := l.restX[l.root], l.restY[l.root]
+	cx, cy := l.restBoxCenter()
 	for i := range l.nodes {
 		jx := (relNoise(i, 1)*2 - 1) * relJitter * 0.25
 		jy := (relNoise(i, 2)*2 - 1) * relJitter * 0.25
-		l.x[i] = ox + (l.restX[i]-ox)*relSeedShrink + jx
-		l.y[i] = oy + (l.restY[i]-oy)*relSeedShrink + jy
+		l.x[i] = cx + (l.restX[i]-cx)*relSeedShrink + jx
+		l.y[i] = cy + (l.restY[i]-cy)*relSeedShrink + jy
 		l.vx[i], l.vy[i] = 0, 0
 	}
-	l.x[l.root], l.y[l.root] = ox, oy
 	l.iters, l.settled = 0, false
 }
 
@@ -298,9 +369,10 @@ func (l *relLayout) step(pin relPin) {
 		sub = 1
 	}
 	dt := relPhysDt / float64(sub)
-	damp := math.Pow(relPhysDamp, 1/float64(sub))
+	dampX := math.Pow(relPhysDampX, 1/float64(sub))
+	dampY := math.Pow(relPhysDampY, 1/float64(sub))
 	for s := 0; s < sub; s++ {
-		l.accumulate(dt, damp, pin)
+		l.accumulate(dt, dampX, dampY, pin)
 	}
 
 	// 有界盒 + 动能（被钉者不计）。
@@ -319,37 +391,146 @@ func (l *relLayout) step(pin relPin) {
 	}
 	l.iters++
 	l.settled = kin < relPhysEps*float64(n)
+	if l.settled && !pin.Valid {
+		l.snapToAnchor()
+	}
 }
 
-// accumulate 一个子步：累计力 → 半隐式欧拉积分（步长 dt、阻尼 damp）→ pin 硬钉。
-func (l *relLayout) accumulate(dt, damp float64, pin relPin) {
+// snapToAnchor 静止时把整树平移到树锚点（软锚的收敛残差 ≤ relPhysEps 级，视觉无感；
+// 但「树停在哪」是硬契约——D126：静止态整树盒心精确等于锚点，不偏几个 dp）。纯平移
+// 不改任何相对位置 ⇒ 弹簧/接触力的内部状态不受影响，下一帧仍静止。**钉住期间不平**
+// （pin 每子步会把被拖节点拉回指针位，平移它只会制造亚像素闪跳）。
+func (l *relLayout) snapToAnchor() {
+	cx, cy := l.boxCenterOf(l.x, l.y)
+	dx, dy := l.anchorX-cx, l.anchorY-cy
+	if dx == 0 && dy == 0 {
+		return
+	}
+	for i := range l.x {
+		l.x[i] += dx
+		l.y[i] += dy
+	}
+}
+
+// refreshRestFrom 从节点 i 起重算其子树的静息坐标（父的静息位不变），并重算树锚点。
+func (l *relLayout) refreshRestFrom(i int) {
+	if i < 0 || i >= len(l.nodes) {
+		return
+	}
+	stack := []int{i}
+	for len(stack) > 0 {
+		k := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if p := l.nodes[k].Parent; p >= 0 {
+			l.restX[k] = l.restX[p] + l.restOff[k]
+			l.restY[k] = l.restY[p] + l.restGap[k]
+		}
+		stack = append(stack, l.children[k]...)
+	}
+	l.anchorX, l.anchorY = l.restBoxCenter()
+}
+
+// adoptSlot 把节点 i 的**当前位置**固化成静息槽位（D126「不锚定节点 ⇒ 自由移动」）：
+// 弹簧的零内力平衡态本就是静息布局，光去掉节点锚只会让松手后弹回旧形状（用户实测
+// 「拖完还是回到一个固定的形状」）——所以松手时把新位置**写回**静息槽位，新形状成为
+// 平衡态。横向自由；纵向钳在本层带内（relRowAdoptMin/Max × relRowGap：保「子恒在父
+// 之下」且父子卡片不叠）。结构根没有父：整棵静息布局随它平移（= 拖着整树走）。
+func (l *relLayout) adoptSlot(i int) {
+	n := len(l.nodes)
+	if i < 0 || i >= n {
+		return
+	}
+	if p := l.nodes[i].Parent; p < 0 {
+		dx, dy := l.x[i]-l.restX[i], l.y[i]-l.restY[i]
+		if dx == 0 && dy == 0 {
+			return
+		}
+		for k := range l.nodes {
+			l.restX[k] += dx
+			l.restY[k] += dy
+		}
+	} else {
+		l.restOff[i] = l.x[i] - l.x[p]
+		gap := l.y[i] - l.y[p]
+		if lo := relRowGap * relRowAdoptMin; gap < lo {
+			gap = lo
+		}
+		if hi := relRowGap * relRowAdoptMax; gap > hi {
+			gap = hi
+		}
+		l.restGap[i] = gap
+		l.refreshRestFrom(i)
+		return
+	}
+	l.anchorX, l.anchorY = l.restBoxCenter()
+}
+
+// setSlot 帧层按消息 ID 恢复的手动槽位（rebuild 后用户的排列不被自动布局冲掉）。
+// root = 该节点是结构根：OffX/OffY 是整树平移量。
+func (l *relLayout) setSlot(i int, s relSlot) {
+	n := len(l.nodes)
+	if i < 0 || i >= n {
+		return
+	}
+	if s.Root || l.nodes[i].Parent < 0 {
+		if s.OffX != 0 || s.OffY != 0 {
+			for k := range l.nodes {
+				l.restX[k] += s.OffX
+				l.restY[k] += s.OffY
+			}
+			l.anchorX, l.anchorY = l.restBoxCenter()
+		}
+		return
+	}
+	l.restOff[i] = s.OffX
+	gap := s.Gap
+	if lo := relRowGap * relRowAdoptMin; gap < lo {
+		gap = lo
+	}
+	if hi := relRowGap * relRowAdoptMax; gap > hi {
+		gap = hi
+	}
+	l.restGap[i] = gap
+	l.refreshRestFrom(i)
+}
+
+// accumulate 一个子步：累计力 → 半隐式欧拉积分（步长 dt、阻尼按轴 dampX/dampY）→ pin 硬钉。
+func (l *relLayout) accumulate(dt, dampX, dampY float64, pin relPin) {
 	n := len(l.nodes)
 	for i := range l.fx {
 		l.fx[i], l.fy[i] = 0, 0
 	}
 
 	// ① 边弹簧（子被拉向「父当前位置 + 静息偏移」→ 子树随父拖动；父子等大反向施加，
-	//    动量沿树传导 = 整树响应）+ 根锚（根被拉向静息原点，防整树漂移）+ 可选静息锚
-	//    （每节点拉向静息位；spike 定其有无/强弱）。
+	//    动量沿树传导 = 整树响应）。**没有逐节点静息锚**（D126：节点自由移动）——
+	//    整树位置由 ⑤ 树锚兜住。
 	for i := range l.nodes {
-		if relPhysHome > 0 {
-			l.fx[i] += relPhysHome * (l.restX[i] - l.x[i])
-			l.fy[i] += relPhysHome * (l.restY[i] - l.y[i])
-		}
 		if p := l.nodes[i].Parent; p >= 0 {
-			fx := relPhysSpring * (l.x[p] + l.restOff[i] - l.x[i])
-			fy := relPhysSpring * (l.y[p] + relRowGap - l.y[i])
+			fx := relPhysSpringX * (l.x[p] + l.restOff[i] - l.x[i])
+			fy := relPhysSpringY * (l.y[p] + l.restGap[i] - l.y[i])
+			// 力限幅（D126）：防「VMax 限幅打败阻尼」极限环——巨幅振荡时若弹簧加速度
+			// 能把速度推回 30 钳位，阻尼永远追不上。限幅后阻尼真正生效（见 relPhysFMax）。
+			if fx > relPhysFMax {
+				fx = relPhysFMax
+			} else if fx < -relPhysFMax {
+				fx = -relPhysFMax
+			}
+			if fy > relPhysFMax {
+				fy = relPhysFMax
+			} else if fy < -relPhysFMax {
+				fy = -relPhysFMax
+			}
 			l.fx[i] += fx
 			l.fy[i] += fy
 			l.fx[p] -= fx // 反作用：父同样被拉（牛顿第三定律 → 动量沿树传导）
 			l.fy[p] -= fy
-		} else {
-			l.fx[i] += relPhysRoot * (l.restX[i] - l.x[i])
-			l.fy[i] += relPhysRoot * (l.restY[i] - l.y[i])
 		}
 	}
 
-	// ② 斥力：全对（排除祖先-后代），2D，软化 + 截止 + 卡片相叠接触推力。
+	// ② 卡片接触分离：全对（排除祖先-后代）。**按卡片轴隙**算——水平/竖直分别扣掉
+	//    两卡半宽/半高得轴隙；两轴都小于目标槽隙 relSlotGapDp 才算接触，沿**最小
+	//    穿透轴**推（不是中心连线方向：斜推会把卡片推歪、增出力臂抖动）。等大反向
+	//    ⇒ 动量守恒；限幅防深压（密集分支点零重叠不可达，只钉「不深压」）。
 	for i := 0; i < n; i++ {
 		for j := i + 1; j < n; j++ {
 			if relInSubtree(l.tin, l.tout, i, j) || relInSubtree(l.tin, l.tout, j, i) {
@@ -357,46 +538,59 @@ func (l *relLayout) accumulate(dt, damp float64, pin relPin) {
 			}
 			dx := l.x[i] - l.x[j]
 			dy := l.y[i] - l.y[j]
-			d2 := dx*dx + dy*dy
-			if d2 < 1e-6 { // 确定性微扰，避免重叠除零
-				dx = 0.1 + float64(i-j)*0.01
-				dy = 0.1
-				d2 = dx*dx + dy*dy
+			// 轴隙 = 目标槽隙 − 两卡在该轴上的「超过量」；≤0 = 该轴已经分得够开。
+			px := relSlotGapDp + l.halfW[i] + l.halfW[j] - math.Abs(dx)
+			py := relSlotGapDp + l.halfH[i] + l.halfH[j] - math.Abs(dy)
+			if px <= 0 || py <= 0 {
+				continue // 至少一轴分开了：不接触
 			}
-			if d2 > relPhysCut*relPhysCut { // 超出作用半径：不互斥
-				continue
+			pen := math.Min(px, py)
+			if pen > relPhysPushMaxDp {
+				pen = relPhysPushMaxDp // 力限幅：折叠播种时全卡叠在根上，不限幅会炸
 			}
-			d := math.Sqrt(d2)
-			ux, uy := dx/d, dy/d
-			coef := relPhysRepel * float64(l.deg[i]+1) * float64(l.deg[j]+1)
-			if coef > relKRepelMax {
-				coef = relKRepelMax
-			}
-			mag := coef / (d2 + relPhysSoft)
-			fx, fy := mag*ux, mag*uy
-			// 卡片相叠（D121）：按最小穿透深度沿重叠方向补一把短程推力。
-			hw := l.halfW[i] + l.halfW[j]
-			hh := l.halfH[i] + l.halfH[j]
-			if hw > 0 && hh > 0 {
-				if pen := math.Min(hw-math.Abs(dx), hh-math.Abs(dy)); pen > 0 {
-					if pen > relPhysPushMaxDp {
-						pen = relPhysPushMaxDp
-					}
-					fx += pen * relPhysPushK * ux
-					fy += pen * relPhysPushK * uy
+			f := pen * relPhysPushK
+			if px < py { // 沿最小穿透轴分离（同轴叠合时给确定性微偏，保证反向）
+				if dx == 0 {
+					dx = 0.1 + float64(i-j)*0.01
 				}
+				l.fx[i] += math.Copysign(f, dx)
+				l.fx[j] -= math.Copysign(f, dx)
+			} else {
+				if dy == 0 {
+					dy = 0.1 + float64(i-j)*0.01
+				}
+				l.fy[i] += math.Copysign(f, dy)
+				l.fy[j] -= math.Copysign(f, dy)
 			}
-			l.fx[i] += fx
-			l.fy[i] += fy
-			l.fx[j] -= fx
-			l.fy[j] -= fy
 		}
 	}
 
-	// ③ 积分：v += F·dt; v *= 阻尼; 限幅; pos += v·dt。
+	// ③ 树锚（D126「不锚定节点，锚定树」）：把**整棵树的盒心**拉向锚点。外力在每个
+	//    节点上是同一个向量（均匀）⇒ 只产生平移、不引入任何内部应力——单个节点因此
+	//    完全自由（可以被拖到任何位置并留在那里），整树却不漂移、始终停在原处
+	//    （锚点 = 静息盒心 = 视场适配对准的那个点）。
+	cx, cy := l.boxCenterOf(l.x, l.y)
+	ax := relPhysTree * (l.anchorX - cx)
+	ay := relPhysTree * (l.anchorY - cy)
+	if ax > relPhysFMax {
+		ax = relPhysFMax
+	} else if ax < -relPhysFMax {
+		ax = -relPhysFMax
+	}
+	if ay > relPhysFMax {
+		ay = relPhysFMax
+	} else if ay < -relPhysFMax {
+		ay = -relPhysFMax
+	}
+	for i := range l.nodes {
+		l.fx[i] += ax
+		l.fy[i] += ay
+	}
+
+	// ④ 积分：v += F·dt; v *= 阻尼（按轴）; 限幅; pos += v·dt。
 	for i := range l.x {
-		vx := (l.vx[i] + l.fx[i]*dt) * damp
-		vy := (l.vy[i] + l.fy[i]*dt) * damp
+		vx := (l.vx[i] + l.fx[i]*dt) * dampX
+		vy := (l.vy[i] + l.fy[i]*dt) * dampY
 		if sp2 := vx*vx + vy*vy; sp2 > relPhysVMax*relPhysVMax {
 			s := relPhysVMax / math.Sqrt(sp2)
 			vx *= s
@@ -407,7 +601,7 @@ func (l *relLayout) accumulate(dt, damp float64, pin relPin) {
 		l.y[i] += vy * dt
 	}
 
-	// ④ pin：硬钉 + 清速（被拖者跟手，其余靠物理传导）。
+	// ⑤ pin：硬钉 + 清速（被拖者跟手，其余靠物理传导）。
 	if pin.Valid {
 		l.x[pin.Index] = relBoundFinite(pin.Pos.X)
 		l.y[pin.Index] = relBoundFinite(pin.Pos.Y)

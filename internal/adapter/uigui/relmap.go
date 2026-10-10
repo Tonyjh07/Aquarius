@@ -13,6 +13,7 @@ package uigui
 // （visibleNodes/visibleAssertions/…）与帧在 relmap_frame.go（第 7 步）。
 
 import (
+	"math"
 	"sort"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -468,6 +469,10 @@ func (m *relModel) byWeightDesc() []int {
 // 卡片占位（HalfW/HalfH）也在这里派生（D121）：节点卡 = [徽标 | 标签]，斥力必须按
 // **卡片边缘**算，否则邻卡压字。占位取「标签可显时的最大卡宽」且**不随 zoom 变**
 // ——否则缩放就会改布局，违反 R3。
+//
+// HalfH 按**多行标签块的最坏缩放高度**预留（D126「多行占满卡片」）：标签可显时摘要
+// 换行到多行、把卡片撑高。取最坏缩放（zoom 下限处字号钳 10sp、盒宽随 z 缩小 ⇒
+// 行数最多、行高最大）作上界 ⇒ 任何 zoom 下文本都装得进卡。
 func relGeo(m *relModel, vis relVisible) (nodes []relGeoNode, anchorLocal int) {
 	local := make([]int, len(m.nodes))
 	for i := range local {
@@ -489,11 +494,50 @@ func relGeo(m *relModel, vis relVisible) (nodes []relGeoNode, anchorLocal int) {
 		nodes[k] = relGeoNode{
 			Parent: p, Level: m.nodes[gi].level, Weight: m.nodes[gi].weight,
 			HalfW: r + 2*relCardPadDp + relCardGapDp + relLabelMaxDp/2,
-			HalfH: r + relCardPadV,
+			HalfH: relCardHalfH(m, gi),
 		}
 		if gi == m.anchor {
 			anchorLocal = k
 		}
 	}
 	return nodes, anchorLocal
+}
+
+// relCardHalfH 节点卡半高（世界 dp）= max(徽标半径, 标签块半高) + 上下内边距。
+// 标签块按最坏缩放估（relLabelBlockWorst）；无摘要时退化为徽标 + 内边距。
+// **两种文本都取**：zoom < relRolePrefixZ 时标签会前置 Role 前缀（「AI：」≈2.1em），
+// 少算它就会少一行——实测 13 字摘要在 zoom 0.75 下绘制半高 31.9dp > 预留 24dp（卡片
+// 装不下自己的文字）。分别取 max 即上界（D126 实测修）。
+func relCardHalfH(m *relModel, gi int) float64 {
+	nd := m.nodes[gi]
+	half := nd.weight * relNodeBaseDp / 2
+	if _, h, _ := relLabelBlockWorst(nd.snippet); h/2 > half {
+		half = h / 2
+	}
+	if _, h, _ := relLabelBlockWorst(relRolePrefix(nd.role) + nd.snippet); h/2 > half {
+		half = h / 2
+	}
+	return half + relCardPadV
+}
+
+// relLabelBlockWorst 标签文本块的世界尺寸**上界**（dp）：宽 = 估宽（封顶
+// relLabelMaxDp）、高 = 行数 × relLabelLineHDp。行数按最坏缩放口径的字宽
+// （relLabelEmDp，= zoom 下限处 1em 的世界宽度）估 ⇒ 上界。绘制侧
+// （relGraph.labelBlock）按当前缩放给出精确值，恒不超过本上界。
+func relLabelBlockWorst(txt string) (w, h float64, lines int) {
+	if txt == "" {
+		return 0, 0, 0
+	}
+	est := relEstTextW(txt, relLabelEmDp)
+	lines = int(math.Ceil(est / relLabelMaxDp))
+	if lines < 1 {
+		lines = 1
+	}
+	if lines > relLabelLines {
+		lines = relLabelLines
+	}
+	if est > relLabelMaxDp {
+		est = relLabelMaxDp
+	}
+	return est, float64(lines) * relLabelLineHDp, lines
 }
