@@ -87,8 +87,9 @@ const (
 	// 不封顶则一张卡横跨半个视口、邻卡互相吞字。超出走 MaxLines=1 的省略号。
 	relLabelMaxDp = 96.0
 	// relLabelLines 标签最大行数（D126「多行占满卡片」）：摘要换行到多行、占满卡片，
-	// 不再一行省略号。上限 3 行 = 卡片内容高 ≈ 3 × 行高 + 内边距 ≈ 64dp < relRowGap
-	// (72dp) —— 卡片不会顶到上一行；再多数不过来，且静息布局的行距兜不住。
+	// 不再一行省略号。上限 3 行 = 卡片内容高 ≈ 3 × 行高 + 内边距 ≈ 64dp < 兄弟槽距
+	// （卡片 pitch，≥ relRestLen = 90dp）—— 卡片不会顶到上/下一张；再多数不过来，
+	// 且静息布局的槽距兜不住。
 	relLabelLines = 3
 	// relLabelLineLead 行高系数（sp）：LineHeight = 字号 × 本系数。**显式钉住**（不依赖
 	// 字体默认度量）⇒ 卡片高度可按「行数 × 行高」估算，与布局预留同口径。
@@ -107,6 +108,10 @@ const (
 	// relFitMargin 视场适配/居中的树盒外扩比例：物理平衡态比静息布局略宽（斥力把兄弟
 	// 顶开一点），留点余量免得贴边被裁。
 	relFitMargin = 0.06
+	// relAnchorDatumX Head（锚点）的**视场右基准位**（D127 时间轴横树；视宽比例）：
+	// 开窗首帧与「回到当前」都把 Head 放到这里——「现在」钉在右侧，左侧全留给过去。
+	// A8 的 RSM「视口原点」在树上的落实：Head 是路径终点不是几何中心，故基准点而非原点。
+	relAnchorDatumX = 0.72
 )
 
 // relEstTextW 文本宽估算（dp）：CJK/全角记 1.0em、其余记 0.55em × 字号。
@@ -190,10 +195,11 @@ type relGraph struct {
 	slots map[conversation.MessageID]relSlot
 }
 
-// relSlot 手动槽位（帧层按消息 ID 记，与 relmap_layout 的 setSlot 对接）。
-// 非根节点：OffX = 相对父的横向偏移、Gap = 相对父的纵向层距（世界 dp）。
+// relSlot 手动槽位（帧层按消息 ID 记，与 relmap_layout 的 setSlot 对接；D127 横树）。
+// 非根节点：Sib = 相对父的**纵向**兄弟槽偏移（y）、Gap = 相对父的**横向**层距（x，世界 dp）。
 // 结构根没有父：Root = true，OffX/OffY = 整树平移量（拖动根 = 拖着整树走）。
 type relSlot struct {
+	Sib        float64
 	OffX, OffY float64
 	Gap        float64
 	Root       bool
@@ -359,40 +365,43 @@ func (g *relGraph) wheel(d int) {
 	}
 }
 
-// focusAnchor 视场居中锚点（A8：布局器输出的锚点坐标，不窥探内部结构）。「回到当前」
-// 按钮走这条（只挪视场，不动 zoom）。基准 = **当前位形**的锚点位：点它的时候树已经
-// 静止，用户要看的正是那个节点此刻在哪（软物理下位形与静息布局有-contact推力造成的
-// 几十 dp 残差，按静息位对准会偏）。
+// focusAnchor 视场**右基准**对准锚点（D127 时间轴横树，A8）：Head 落到视宽
+// relAnchorDatumX 处（「现在」在右），纵向仍居中。「回到当前」按钮走这条（只挪视场，
+// 不动 zoom）。基准 = **当前位形**的锚点位：点它的时候树已经静止，用户要看的正是那个
+// 节点此刻在哪（物理位形与静息布局有接触推力造成的残差，按静息位对准会偏）。
 func (g *relGraph) focusAnchor() {
 	if g.sol == nil || g.anchor < 0 || g.anchor >= len(g.sol.Pos) {
 		return
 	}
 	p := g.sol.Pos[g.anchor]
-	g.offX = g.viewW/2 - p.X*g.z
+	g.offX = relAnchorDatumX*g.viewW - p.X*g.z
 	g.offY = g.viewH/2 - p.Y*g.z
 }
 
-// focusAnchorFollow fit 回退的**视图跟随锚点**（D126 实测修）：树太大装不下视口
-// （zoom 触底仍超宽/超高）时，**不再一次性按静息位对准**——那是假设树已经展开完。
-// 深链的手风琴模式要几秒到十几秒才落定，期间锚点（= 当前消息）离静息位上千 dp，
-// 按静息位定视场会把当前消息甩出视口（实测 200 节点链偏 1900px，「拖节点」点不到
-// 人；clip 还会裁掉视口外指针事件 ⇒ 拖拽直接失效）。改为跟随：置 fitFollow，每帧把
-// 锚点**当前位**对准视口中心，收敛即停 ⇒ 当前消息始终在视野中央、落定时正好居中
-// （每帧重算 = 不会重蹈 D125 的「按播种态一次性定视场」覆辙：那时不会跟着走才甩丢）。
+// focusAnchorFollow fit 回退的**视图跟随锚点**（D126 实测修，D127 横树沿用）：树太大
+// 装不下视口（zoom 触底仍超宽/超高；横树的长会话必然如此）时，**不再一次性按静息位
+// 对准**——那是假设树已经展开完。深链的手风琴模式要几秒到十几秒才落定，期间锚点
+// （= 当前消息）离静息位上千 dp，按静息位定视场会把当前消息甩出视口（实测 200 节点链
+// 偏 1900px，「拖节点」点不到人；clip 还会裁掉视口外指针事件 ⇒ 拖拽直接失效）。改为
+// 跟随：置 fitFollow，每帧把锚点**当前位**对准右基准位，收敛即停 ⇒ 当前消息始终可见、
+// 落定时正好在基准位（每帧重算 = 不会重蹈 D125 的「按播种态一次性定视场」覆辙）。
 func (g *relGraph) focusAnchorFollow() {
 	g.fitFollow = true
 	g.focusAnchor()
 }
 
-// fitView 开窗首帧：整棵可见树**适配视口**（A13）——按卡片外接盒算最小 zoom 并对准盒心。
-// 两处实测修正（D121）：
+// fitView 开窗首帧：整棵可见树**适配视口**（A13，D127 横树版）——按卡片外接盒算最小
+// zoom、盒心居中，再把 **Head 平移到右基准位**（relAnchorDatumX：时间轴的「现在」钉
+// 右侧、左侧全留过去；平移钳在不越界范围内）。三处口径：
 //
 //   - **fit 下限 = relZoomLabelMin**（0.75）而非 relZoomMin（0.5）：适配把树压到
-//     0.5 时标签全隐、只剩裸点——「适配」出来的是一张不可读的图。仍装不下（树太大）
-//     则把**锚点**对准视口中心（锚点是当前对话的焦点，盒心会落到某个分支上）。
+//     0.5 时标签全隐、只剩裸点——「适配」出来的是一张不可读的图。仍装不下（横树长会话
+//     必然如此）则退化为 **Head 右基准 + 视图跟随**（focusAnchorFollow）。
 //   - 盒子取**静息布局**（treeBox，物理平衡态）：当前位形会动，不适合当视场基准。
-//
-// 「回到当前」仍用 focusAnchor（A8）；数据变更**不再**重设 zoom/视口（见 frame）。
+//   - **zoom 口径含右基准**：除「整树装进视口」外，还要求「过去部分（Head 左侧）装进
+//     基准位以左、Head 卡装进右侧余量」⇒ 装得下时 Head 精确落基准位（不是盒心贴边的
+//     近似）；两者取更小 zoom。
+//   - 数据变更**不**重设 zoom/视口（见 frame）；「回到当前」走 focusAnchor（A8 右基准）。
 func (g *relGraph) fitView() {
 	minX, minY, maxX, maxY, ok := g.treeBox()
 	if !ok {
@@ -400,8 +409,22 @@ func (g *relGraph) fitView() {
 		return
 	}
 	w, h := maxX-minX, maxY-minY
-	zf := math.Min(g.viewW/w, g.viewH/h) / g.dpx // 折回用户口径的 zoom（DPI 另算）
-	if floor := relZoomLabelMin; zf < floor {    // 可读下限：fit 不得压成全裸点
+	zf := math.Min(g.viewW/w, g.viewH/h) / g.dpx // 整树装得下（折回用户口径，DPI 另算）
+	if g.anchor >= 0 && g.anchor < len(g.lay.restX) {
+		// D127：**过去部分**（Head 左侧整段）要装进「右基准位以左」的视口、Head 卡右半
+		// 装进右侧余量 ⇒ Head 精确落在基准位（时间轴的「现在」位置稳定，不随树宽漂）。
+		if hw, _ := relCardHalf(g.geo[g.anchor]); hw > 0 {
+			if past := g.lay.restX[g.anchor] - minX; past > 0 {
+				if z := (relAnchorDatumX * g.viewW / g.dpx) / past; z < zf {
+					zf = z
+				}
+			}
+			if z := ((1 - relAnchorDatumX) * g.viewW / g.dpx) / (2 * hw); z < zf {
+				zf = z
+			}
+		}
+	}
+	if floor := relZoomLabelMin; zf < floor { // 可读下限：fit 不得压成全裸点
 		zf = floor
 	}
 	if zf > relZoomMax {
@@ -409,9 +432,16 @@ func (g *relGraph) fitView() {
 	}
 	g.zoom = zf
 	g.z = zf * g.dpx
-	if w*g.z > g.viewW || h*g.z > g.viewH { // 夹到下限仍装不下：锚点居中（焦点优先）
+	if w*g.z > g.viewW || h*g.z > g.viewH { // 夹到下限仍装不下（横树的长会话必然如此）：Head 右基准 + 视图跟随（焦点优先）
 		// 树还在展开（首帧 = 折叠播种态，深链要十几秒）⇒ 一次性对准会把当前消息甩出
 		// 视口，改为**跟随**：每帧把锚点当前位对准中心，收敛即停（focusAnchorFollow）。
+		g.focusAnchorFollow()
+		return
+	}
+	// 装得下：zoom 口径（过去部分装进基准位左侧）已保证整树在视口内。开**视图跟随**——
+	// 入场展开期间 Head 也钉在右基准位（「现在」不动、历史从它身上长出来），收敛即停、
+	// 落定时正好在基准位。无锚点（理论不可达）才回退盒心居中。
+	if g.anchor >= 0 && g.anchor < len(g.lay.restX) {
 		g.focusAnchorFollow()
 		return
 	}
@@ -420,15 +450,22 @@ func (g *relGraph) fitView() {
 }
 
 // recenterTree 把树拉回视野（拖后松手，D121 实测修）：**保持用户 zoom**，只把树盒心
-// 对准视口中心。树太大时锚点居中（recenter 之后用户自己缩放）——同 fitView，用跟随。
+// 对准视口中心。树太大装不下时退化为 Head 右基准 + 跟随（recenter 之后用户自己平移/
+// 缩放）——同 fitView 的回退口径（D127）。
 func (g *relGraph) recenterTree() {
 	minX, minY, maxX, maxY, ok := g.treeBox()
 	if !ok {
 		g.focusAnchorFollow()
 		return
 	}
-	g.offX = g.viewW/2 - (minX+maxX)/2*g.z
-	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+	if (maxX-minX)*g.z <= g.viewW && (maxY-minY)*g.z <= g.viewH {
+		g.offX = g.viewW/2 - (minX+maxX)/2*g.z // 装得下：盒心对准视口中心
+		g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+		return
+	}
+	// 装不下（D127 横树的长会话必然如此）：Head 右基准 + 视图跟随——盒心对准会把
+	// 当前消息甩出视口，与 fitView 的回退口径一致。
+	g.focusAnchorFollow()
 }
 
 // treeBox 树的外接盒（世界坐标 dp）：按**静息布局**（物理平衡态）算——当前物理位形
@@ -576,10 +613,13 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	// fit 回退的视图跟随（fitFollow，见 focusAnchorFollow）：树还没收敛 ⇒ 每帧把锚点
-	// 当前位对准视口中心（当前消息始终可见）；收敛即停（落定时正好居中，不空转）。
+	// 当前位对准**右基准位**（当前消息始终可见）；收敛即停。**收敛帧也要对准一次**——
+	// 静止时 snapToAnchor 的整树平移会让锚点偏离基准位（实测差 ~114px），不对齐就
+	// 会把「差一点」留给用户看。
 	if g.fitFollow {
 		if g.lay == nil || (g.lay.settled && g.dragNode < 0) {
 			g.fitFollow = false
+			g.focusAnchor() // 收尾对准（此后静止，不会再偏）
 		} else {
 			g.focusAnchor()
 		}
@@ -795,7 +835,7 @@ func (g *relGraph) recordSlot(li int) {
 		g.slots[id] = relSlot{Root: true, OffX: g.lay.restX[li], OffY: g.lay.restY[li]}
 		return
 	}
-	g.slots[id] = relSlot{OffX: g.lay.restOff[li], Gap: g.lay.restGap[li]}
+	g.slots[id] = relSlot{Sib: g.lay.restOff[li], Gap: g.lay.restGap[li]}
 }
 
 // gotoNode 点节点 → 投 /goto <id>（A10；与键入同路径串行执行，缓冲满丢弃）。

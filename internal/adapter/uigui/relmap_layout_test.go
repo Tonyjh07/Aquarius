@@ -83,8 +83,8 @@ func relFixtures() map[string][]relGeoNode {
 	}
 }
 
-// TestRelSolveSettlesAndInvariants 主性质：解存在、收敛、层序单调（=「子恒在父之下」
-// 的 180° 硬上限）、有界。角度硬投影已废除（D121），故不再断言扇区不破。
+// TestRelSolveSettlesAndInvariants 主性质：解存在、收敛、层序单调（D127 横树 =「子恒在
+// 父之右」的 90° 硬上限）、有界。角度硬投影已废除（D121），横树几何不再有扇区（D127）。
 func TestRelSolveSettlesAndInvariants(t *testing.T) {
 	for name, nodes := range relFixtures() {
 		nodes := nodes
@@ -110,8 +110,8 @@ func TestRelSolveSettlesAndInvariants(t *testing.T) {
 				if nd.Parent < 0 {
 					continue
 				}
-				if !(p.Y > sol.Pos[nd.Parent].Y) { // 层序严格单调（jitter < rowGap/2 保证）
-					t.Fatalf("节点 %d y=%v 未在父 y=%v 之下", i, p.Y, sol.Pos[nd.Parent].Y)
+				if !(p.X > sol.Pos[nd.Parent].X) { // （x = 层/时间方向，列距恒正）
+					t.Fatalf("节点 %d x=%v 未在父 x=%v 之右", i, p.X, sol.Pos[nd.Parent].X)
 				}
 			}
 		})
@@ -248,8 +248,8 @@ func TestRelRestLayoutIsTree(t *testing.T) {
 		if math.IsNaN(rest[i].X) || math.IsNaN(rest[i].Y) || math.Abs(rest[i].X) > relBound {
 			t.Fatalf("节点 %d 静息坐标越界: %+v", i, rest[i])
 		}
-		if nd.Parent >= 0 && math.Abs(rest[i].Y-(rest[nd.Parent].Y+relRowGap)) > 1e-9 {
-			t.Fatalf("节点 %d 层距 ≠ %v: %v", i, relRowGap, rest[i].Y-rest[nd.Parent].Y)
+		if nd.Parent >= 0 && math.Abs(rest[i].X-(rest[nd.Parent].X+a.colGap)) > 1e-9 {
+			t.Fatalf("节点 %d 列距 != %v: %v", i, a.colGap, rest[i].X-rest[nd.Parent].X)
 		}
 		if rest[i] != rb[i] {
 			t.Fatalf("节点 %d 静息布局不可复现", i)
@@ -358,10 +358,10 @@ func TestRelPhysReleaseRestoresChain(t *testing.T) {
 	got := lay.solution()
 	for i := range nodes {
 		// 单点容差：链被拉变形后收敛到附近的新平衡（不比逐点还原，只不许跑飞）
-		if d := math.Hypot(got.Pos[i].X-eq.Pos[i].X, got.Pos[i].Y-eq.Pos[i].Y); d > relRowGap/2 {
+		if d := math.Hypot(got.Pos[i].X-eq.Pos[i].X, got.Pos[i].Y-eq.Pos[i].Y); d > lay.colGap/2 {
 			t.Fatalf("节点 %d 偏离拖前太远: 偏差 %v", i, d)
 		}
-		if nodes[i].Parent >= 0 && got.Pos[i].Y <= got.Pos[nodes[i].Parent].Y {
+		if nodes[i].Parent >= 0 && got.Pos[i].X <= got.Pos[nodes[i].Parent].X {
 			t.Fatalf("节点 %d 层序未恢复: y=%v, 父 y=%v", i, got.Pos[i].Y, got.Pos[nodes[i].Parent].Y)
 		}
 	}
@@ -409,7 +409,7 @@ func TestRelPhysTreeAnchorHoldsTree(t *testing.T) {
 		t.Fatalf("松手后盒心未回锚点: (%.4f,%.4f) vs (%.4f,%.4f)", cx, cy, ax, ay)
 	}
 	// 拖过的节点不被静息锚拉回槽位（只由弹簧/接触决定新平衡，容差 = 一个行距量级）
-	if d := math.Hypot(lay.x[dragged]-lay.restX[dragged], lay.y[dragged]-lay.restY[dragged]); d > relRowGap {
+	if d := math.Hypot(lay.x[dragged]-lay.restX[dragged], lay.y[dragged]-lay.restY[dragged]); d > lay.colGap {
 		t.Fatalf("被拖节点偏离静息槽位过远: %.1f", d)
 	}
 }
