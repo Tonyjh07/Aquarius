@@ -80,11 +80,38 @@ const (
 	relSrcEdgeLength    = 200.0
 	relSrcGravity       = 0.1
 	relSrcFriction      = 0.2
-	relSrcFrictionDecay = 0.992
 	relSrcFrictionFloor = 0.01
-	// relSrcWarmUp 再激励系数（拖拽起始把 friction 初值乘 0.8 ⇒ 步数 373 → 346）。
+	// relSrcWarmUp 再激励系数（拖拽起始把 friction 初值乘 0.8 ⇒ 步数随之缩短 7%）。
 	relSrcWarmUp = 0.8
+
+	// relSrcScheduleSteps **动画时长上限**（帧；60fps 下 900 帧 = 15s）。这是 D128 起
+	// 时长**配置化**的那一格：源实现把衰减率硬编码成 ×0.992，于是时长被钉死在 373 帧
+	// （≈6.2s）——一个与「要排多少东西」无关的任意常数（违 A15）。本档把「时长」变成
+	// 配置：衰减率由它反推（relSrcDecayRate），于是 `log(θ/f₀)/log(γ) = 步数` 恒等于它。
+	//
+	// 取 900（15s）而非源实现的 373：用户 2026-10-12 实测参照程序在极端情况下松弛可达
+	// **数十秒**（原档案记的 ~6s 是 51 节点那一档，不是上限）；且源实现的衰减率意味着
+	// **总位移预算** = Σfriction = f₀(1−γᴺ)/(1−γ) ≈ 24.75（dp 量级），大链根本没走完
+	// 就被时钟掐停（实测 chain24 判停时离平衡态还差 3248dp = 静息跨度的 43%）。把
+	// γ 调成 900 步对应的值（×0.99667）⇒ 总预算 ≈ 57.3，长链才有余量走到位。
+	// **上限语义**：还叠加逐帧位移早停（relSrcSettleEps），到点或到位都停、取先到者 ⇒
+	// 简单树不会傻等 15s。
+	relSrcScheduleSteps = 900
+	// relSrcSettleEps 早停阈值（dp/帧，最大逐帧位移）：低于此值在屏幕上不可见
+	// （zoom 0.75 下 <0.25px）。这是**残差判据**（A17）——源实现的停判据只看 friction
+	// 阈值（求解器内部状态代理量）。
+	relSrcSettleEps = 0.3
+	// relSrcConeK 结构锥形通道强度（见 stepSource ⑦）：子水平距不足时按 `k × 缺口 ×
+	// friction` 推。k=2.0 是实测甜点：六档夹具层序违反全 0、单帧最大位移仅比无通道基线
+	// 多 ~25dp（不甩）；k 再大更硬（k=4 时 chain60 单帧 300dp）、k 再小守不住
+	// （k=0.3 时 star30/rand200/chain60 残留 10/6/16 处违反）。
+	relSrcConeK = 2.0
 )
+
+// relSrcDecayRate 时钟衰减率 = (θ/f₀)^(1/步数)：由 relSrcScheduleSteps 反推，使
+// 「friction 跌破 θ」的步数恰好等于配置时长。var 而非 const 是为了 spike 能扫档
+// （生产只读）。
+var relSrcDecayRate = math.Pow(relSrcFrictionFloor/relSrcFriction, 1.0/relSrcScheduleSteps)
 
 // relPhysProfile 物理档位。生产默认 = 源档（relProfSource）。
 type relPhysProfile int
@@ -114,8 +141,48 @@ func init() {
 	}
 }
 
-// stepSource 源实现的步进（forceHelper.ts `step()` 的逐行移植，见文件头对照表）。
+// relContactPush 卡片接触推力（R6「卡片不深压」，源实现没有这个通道，D127 有）：
+// 按**卡片轴隙**算——水平/竖直分别扣掉两卡半宽/半高得「到目标槽隙还差多少」；两轴都
+// 还没分开才算接触，沿**最小穿透轴**推（不是中心连线方向：斜推会把卡推歪、增出力臂
+// 抖动）。等大反向 ⇒ 动量守恒。亲属对（祖先-后代）跳过：它们的间距由弹簧与结构锥形
+// 通道定义，误判成相叠会把深链横向顶开。
 //
+// 位置式（直接改坐标）且被 friction 缩放 ⇒ 连续、不钳位、不会甩；每步推力上限
+// = relPhysPushMaxDp × relPhysPushK × friction ≈ 40×0.4×0.2 = 3.2dp，折叠播种态下全卡
+// 叠在根上也不会爆。
+func relContactPush(l *relLayout, i, j int, fr float64) {
+	if relInSubtree(l.tin, l.tout, i, j) || relInSubtree(l.tin, l.tout, j, i) {
+		return
+	}
+	px := relSlotGapDp + l.halfW[i] + l.halfW[j] - math.Abs(l.x[i]-l.x[j])
+	py := relSlotGapDp + l.halfH[i] + l.halfH[j] - math.Abs(l.y[i]-l.y[j])
+	if px <= 0 || py <= 0 {
+		return // 至少一轴分开了：不接触
+	}
+	pen := math.Min(px, py)
+	if pen > relPhysPushMaxDp {
+		pen = relPhysPushMaxDp
+	}
+	f := pen * relPhysPushK * fr
+	if px < py { // 沿最小穿透轴分离（同轴叠合时给确定性微偏，保证反向）
+		dx := l.x[i] - l.x[j]
+		if dx == 0 {
+			dx = 0.1 + float64(i-j)*0.01
+		}
+		s := math.Copysign(f, dx)
+		l.x[i] += s
+		l.x[j] -= s
+	} else {
+		dy := l.y[i] - l.y[j]
+		if dy == 0 {
+			dy = 0.1 + float64(i-j)*0.01
+		}
+		s := math.Copysign(f, dy)
+		l.y[i] += s
+		l.y[j] -= s
+	}
+}
+
 // 结构与 D127 的半隐式欧拉**完全不同**，这正是它被选中的原因：
 //   - 没有速度量、没有力、没有积分——三个通道都直接改坐标；
 //   - 弹簧与引力当帧写 p，斥力却**累加进 pp**（名义上的「上一帧位置」），随后
@@ -169,16 +236,25 @@ func (l *relLayout) stepSource(pin relPin) {
 		}
 	}
 
-	// ② 引力：拉向树锚（源实现 = 画布矩形中心，见文件头偏离项）。
+	// ② 引力：**均匀树锚**（只平移、零内部应力）。源实现是「每个节点朝固定点按距离比例
+	//    移动」= 收缩，会制造内部应力把整棵树压成球——实测 chain60 被压到 109dp 列距、
+	//    chain200 压到 40dp（卡片全叠），时间轴横树「越右越新」直接读不出来。源档的
+	//    shape 通道（弹簧 + 结构锥形 + 卡片接触）已经负责形状，这里只保留它的**另一半
+	//    职责**：把整树兜在锚点上不漂移。做法与 D126「不锚定节点，锚定树」同源：算整树
+	//    相对锚点的位移，每个节点同量平移 ⇒ 内部零应力、整树不漂。
+	cx, cy := l.boxCenterOf(l.x, l.y)
+	gdx := (l.anchorX - cx) * relSrcGravity * fr
+	gdy := (l.anchorY - cy) * relSrcGravity * fr
 	for i := range l.nodes {
-		if pin.Valid && i == pin.Index {
-			continue
-		}
-		l.x[i] += (l.anchorX - l.x[i]) * relSrcGravity * fr
-		l.y[i] += (l.anchorY - l.y[i]) * relSrcGravity * fr
+		l.x[i] += gdx
+		l.y[i] += gdy
 	}
 
 	// ③ 斥力：全对，1/d²。**累加进 pp**（源实现的 pp 双角色：既是速度基准又是斥力累加器）。
+	//    同一遍配对里顺带做**卡片接触推力**（R6，源实现没有卡片占位这回事）——沿**最小
+	//    穿透轴**把相叠的卡推开，力度 = 穿透 × K，同样被 friction 缩放（位置式 ⇒
+	//    连续、不钳位 ⇒ 不会甩）。排除祖先-后代对（亲属间距由弹簧/锥形通道定义，否则
+	//    链会被横向顶开）。融进本遍是为了不额外多跑一次 O(n²)。
 	for i := 0; i < n; i++ {
 		if pin.Valid && i == pin.Index {
 			continue
@@ -199,41 +275,77 @@ func (l *relLayout) stepSource(pin relPin) {
 			l.ppy[i] += dy * f
 			l.ppx[j] -= dx * f
 			l.ppy[j] -= dy * f
+
+			if l.halfW[i]+l.halfW[j] > 0 || l.halfH[i]+l.halfH[j] > 0 {
+				relContactPush(l, i, j, fr) // R6：卡片接触（见 relContactPush）
+			}
 		}
 	}
 
-	// ④ 速度通道：p += (p − pp)·friction，然后 pp = p。pp 里混着本帧的斥力量，
+	// ④ 速度通道：p += (p − pp)·friction，然后 pp = p。pp 里混着本帧的斥力的量，
 	//    所以「速度」的真实语义是（弹簧+引力的即时位移 − 斥力的累积量）。
+	move := 0.0 // 本步最大位移（早停判据用；单位 dp/帧）
 	for i := range l.nodes {
 		if pin.Valid && i == pin.Index {
 			continue
 		}
-		l.x[i] += (l.x[i] - l.ppx[i]) * fr
-		l.y[i] += (l.y[i] - l.ppy[i]) * fr
+		nx := l.x[i] + (l.x[i]-l.ppx[i])*fr
+		ny := l.y[i] + (l.y[i]-l.ppy[i])*fr
+		if d := math.Hypot(nx-l.x[i], ny-l.y[i]); d > move {
+			move = d
+		}
+		l.x[i], l.y[i] = nx, ny
 		l.ppx[i], l.ppy[i] = l.x[i], l.y[i]
+	}
+
+	// ⑦ 结构锥形通道（D128，树形保持 = R4「子恒在父之右」）：对每条边，子相对父的
+	//    水平距不足 minGap 时，按**缺口比例**把子往右推 `relSrcConeK × 缺口 × friction`。
+	//
+	//    为什么是「通道」而不是「投影」：投影是钳位（clamp），一钳就是硬跳变——实测
+	//    硬投影在 chain24/chain60 上单帧甩 1392/3574dp（不轻柔）；限速投影在链上沿链
+	//    累加、900 步追不平（chain60 残留 27 处）。锥形通道**连续且被 friction 缩放**：
+	//    缺口越大推得越多、缺口越小推得越轻 ⇒ 永不超调、不会甩，物理仍可临时把子推到
+	//    父左边（**给自由**），锥形通道按比例把它「渐进拉回」。k 扫描（relmap 布局
+	//    spike，900 步日程）：k=0.3 时 star30/rand200/chain60 有残留（10/6/16 处），
+	//    k=2.0 时**六档夹具全部 0 违反**且单帧最大位移只比基线多 ~25dp。
+	//
+	//    minGap = 两卡半宽和（父卡右缘到子卡左缘不重叠）⇒ 树形与「卡片不横压」同源；
+	//    锥形通道只管水平方向，y（兄弟/版本方向）完全自由。
+	for _, i := range l.order {
+		p := l.nodes[i].Parent
+		if p < 0 {
+			continue
+		}
+		minGap := l.halfW[i] + l.halfW[p]
+		if gap := l.x[i] - l.x[p]; gap < minGap {
+			l.x[i] += (minGap - gap) * relSrcConeK * fr
+		}
 	}
 
 	// 有界盒 + NaN 兜底（1/d² 在近重合时会爆；源实现无此护栏，靠随机方向侥幸躲开）。
 	// 注意 relBound 的取值问题见常量处说明——本档下深链更容易撞上它。
 	for i := range l.x {
-		if math.IsNaN(l.x[i]) || math.Abs(l.x[i]) > relBound {
-			l.x[i] = relBoundFinite(l.x[i])
+		if math.IsNaN(l.x[i]) || math.Abs(l.x[i]) > l.bound {
+			l.x[i] = relBoundTo(l.x[i], l.bound)
 		}
-		if math.IsNaN(l.y[i]) || math.Abs(l.y[i]) > relBound {
-			l.y[i] = relBoundFinite(l.y[i])
+		if math.IsNaN(l.y[i]) || math.Abs(l.y[i]) > l.bound {
+			l.y[i] = relBoundTo(l.y[i], l.bound)
 		}
 		l.ppx[i], l.ppy[i] = l.x[i], l.y[i]
 	}
 	if pin.Valid {
-		l.x[pin.Index] = relBoundFinite(pin.Pos.X)
-		l.y[pin.Index] = relBoundFinite(pin.Pos.Y)
+		l.x[pin.Index] = relBoundTo(pin.Pos.X, l.bound)
+		l.y[pin.Index] = relBoundTo(pin.Pos.Y, l.bound)
 		l.ppx[pin.Index], l.ppy[pin.Index] = l.x[pin.Index], l.y[pin.Index]
 	}
 
-	// ⑤ 阻尼时钟：每步自乘衰减，跌破阈值即判停（**代理量判据**，见文件头待补项）。
+	// ⑤ 时钟与判停（D128）：衰减率由配置时长反推（relSrcDecayRate）⇒ 「到点」= 时长
+	//    上限（15s）；再叠加**逐帧位移**早停（残差判据 A17）⇒ 「到位」就停。
+	//    两者取先到者：简单树早停（不必等满 15s），长链用满时长（源档 373 步掐停时
+	//    chain24 还差 3248dp）。
 	l.iters++
-	l.friction = fr * relSrcFrictionDecay
-	l.settled = l.friction < relSrcFrictionFloor
+	l.friction = fr * relSrcDecayRate
+	l.settled = l.friction < relSrcFrictionFloor || move < relSrcSettleEps
 	if l.settled && !pin.Valid {
 		l.snapToAnchor()
 	}

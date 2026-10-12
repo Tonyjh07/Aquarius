@@ -67,12 +67,16 @@ const (
 	relColAdoptMax = 2.0
 	// relSlotGapDp 兄弟槽位之间的额外间隙（dp）：卡片叠放时留条缝。
 	relSlotGapDp = 10.0
-	// relBound 坐标兜底（NaN / 越界时钳回）。**已知不匹配深链**（D128 待补）：它是防病态
-	// 输入把坐标推爆的护栏，却比**合法**静息跨度还小——卡片占位下 colGap ≈ 328dp，于是
-	// 超过约 124 条消息的会话（164×(n−1) > 20000）首帧就把坐标钳进 ±20000，整树当场塌成
-	// 一团再"收敛"（实测 chain200：静息跨度 65,272dp → 末态盒宽 628dp、残差 32,481dp）。
-	// 修法方向：兜底随静息跨度缩放（max(relBound, k×跨度)），而不是拍一个绝对值。
+	// relBound 坐标兜底的**下限**（dp；NaN / 越界时钳回）。它原是一个绝对值，实测**小于
+	// 合法深链的静息跨度**——卡片占位下 colGap ≈ 328dp，于是超过约 124 条消息的会话
+	// （164×(n−1) > 20000）首帧就把坐标钳进 ±20000，整树当场塌成一小团再"收敛"
+	// （实测 chain200：静息跨度 65,272dp → 末态盒宽 628dp、残差 32,481dp）。D128 起
+	// 兜底改为**随静息跨度缩放**（relLayout.bound = max(本下限, relBoundScale×跨度)），
+	// 本常量只当下限——防病态输入把坐标推爆的职责不变。
 	relBound = 20000.0
+	// relBoundScale 兜底 = 跨度 × 该系数 + 余量。实测平衡态盒宽约为静息跨度的 1.0~1.1×
+	// （链/二叉/星/随机四类夹具），取 1.5 留足物理余量又不至于形同虚设。
+	relBoundScale = 1.5
 	// relCardPenetrationMax 允许的最深穿透（占卡宽比例，性质测试钉住）：密集分支点总量
 	// 本就大于可铺开宽度，零重叠在 A5 取舍下不可达，故只钉「不深压」。
 	relCardPenetrationMax = 0.25
@@ -186,8 +190,12 @@ type relLayout struct {
 	// anchorX/anchorY 树锚点（世界 dp） = 静息布局的包围盒中心：整树被拉向这里。
 	// D126：节点锚废除后，单个节点只受弹簧/接触推力（完全自由），整树的位置由它兜住。
 	anchorX, anchorY float64
-	iters            int
-	settled          bool
+	// bound 本布局的坐标兜底（dp）= max(relBound, relBoundScale × 静息跨度 + 余量)：
+	// 防病态输入把坐标推爆，同时**装得下合法深链**（绝对值 20000 曾把 >124 条消息的
+	// 会话首帧钳塌，见 relBound 处说明）。
+	bound   float64
+	iters   int
+	settled bool
 }
 
 // newRelLayout 结构校验 + 静息布局计算。初值 = 静息布局（settled）；需要物理展开 /
@@ -239,6 +247,7 @@ func newRelLayout(nodes []relGeoNode) (*relLayout, bool) {
 	l.initRest(order)
 	l.initTour()
 	l.anchorX, l.anchorY = l.restBoxCenter()
+	l.bound = math.Max(relBound, relBoundScale*l.restSpan())
 	copy(l.x, l.restX)
 	copy(l.y, l.restY)
 	copy(l.ppx, l.x) // 源档 pp 初始化 = 当前位（源实现 n.pp = clone(n.p)）
@@ -364,6 +373,19 @@ func (l *relLayout) boxCenterOf(x, y []float64) (float64, float64) {
 	return (minX + maxX) / 2, (minY + maxY) / 2
 }
 
+// restSpan 静息布局的跨度（含卡片半宽的最大外接盒宽）——坐标兜底的推导基准。
+func (l *relLayout) restSpan() float64 {
+	if len(l.restX) == 0 {
+		return 0
+	}
+	minX, maxX := math.Inf(1), math.Inf(-1)
+	for i := range l.restX {
+		minX = math.Min(minX, l.restX[i]-l.halfW[i])
+		maxX = math.Max(maxX, l.restX[i]+l.halfW[i])
+	}
+	return maxX - minX
+}
+
 // restBoxCenter 静息布局的包围盒中心 = 树锚点。
 func (l *relLayout) restBoxCenter() (float64, float64) {
 	return l.boxCenterOf(l.restX, l.restY)
@@ -441,11 +463,11 @@ func (l *relLayout) step(pin relPin) {
 	// 有界盒 + 动能（被钉者不计）。
 	kin := 0.0
 	for i := range l.x {
-		if math.IsNaN(l.x[i]) || math.Abs(l.x[i]) > relBound {
-			l.x[i], l.vx[i] = relBoundFinite(l.x[i]), 0
+		if math.IsNaN(l.x[i]) || math.Abs(l.x[i]) > l.bound {
+			l.x[i], l.vx[i] = relBoundTo(l.x[i], l.bound), 0
 		}
-		if math.IsNaN(l.y[i]) || math.Abs(l.y[i]) > relBound {
-			l.y[i], l.vy[i] = relBoundFinite(l.y[i]), 0
+		if math.IsNaN(l.y[i]) || math.Abs(l.y[i]) > l.bound {
+			l.y[i], l.vy[i] = relBoundTo(l.y[i], l.bound), 0
 		}
 		if pin.Valid && i == pin.Index {
 			continue
@@ -670,8 +692,8 @@ func (l *relLayout) accumulate(dt, dampX, dampY float64, pin relPin) {
 
 	// ⑤ pin：硬钉 + 清速（被拖者跟手，其余靠物理传导）。
 	if pin.Valid {
-		l.x[pin.Index] = relBoundFinite(pin.Pos.X)
-		l.y[pin.Index] = relBoundFinite(pin.Pos.Y)
+		l.x[pin.Index] = relBoundTo(pin.Pos.X, l.bound)
+		l.y[pin.Index] = relBoundTo(pin.Pos.Y, l.bound)
 		l.vx[pin.Index], l.vy[pin.Index] = 0, 0
 	}
 }
@@ -736,15 +758,15 @@ func relBFS(nodes []relGeoNode) ([]int, bool) {
 }
 
 // relBoundFinite 有界盒落点：NaN → 0；越界 → 夹到 ±relBound。
-func relBoundFinite(x float64) float64 {
+func relBoundTo(x, bound float64) float64 {
 	if math.IsNaN(x) {
 		return 0
 	}
-	if x > relBound {
-		return relBound
+	if x > bound {
+		return bound
 	}
-	if x < -relBound {
-		return -relBound
+	if x < -bound {
+		return -bound
 	}
 	return x
 }

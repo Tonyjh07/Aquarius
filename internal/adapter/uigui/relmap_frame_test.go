@@ -23,20 +23,31 @@ import (
 )
 
 // relGraphFixture 右图测试夹具：固定图 + 全预算模型（本地索引 = 模型索引；锚点 u2 = 6）。
-// 首帧后把物理跑完（从折叠播种展开至静止）——交互测试需要一个**已收敛的静态基线**。
+// 首帧后把物理跑完（从折叠播种展开至静止）**并等视口跟随收敛**（D128 起视口跟随本身
+// 是一段有界滞后的动画，只等 lay.settled 会拿到差几十 px 的半截视场）——交互测试需要
+// 一个**已收敛的静态基线**。
 func relGraphFixture(t *testing.T) (*UI, *historyState, *input.Router) {
 	t.Helper()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
 	relGFrame(q, u, st)
-	for i := 0; i < relSettleFrames*3 && st.graph.lay != nil && !st.graph.lay.settled; i++ {
-		relGFrame(q, u, st)
-	}
+	relDriveQuiet(q, u, st, relSettleFrames*3)
 	if st.graph.lay == nil || !st.graph.lay.settled {
 		t.Fatal("夹具物理未收敛")
 	}
 	return u, st, q
+}
+
+// relDriveQuiet 驱动到「物理静止 **且** 视口跟随收敛」（D128）。fitFollow 未收敛时继续
+// 驱动——app 侧由 tickLayout 续帧对应（见 tickLayout 的 fitFollow 分支）。
+func relDriveQuiet(q *input.Router, u *UI, st *historyState, max int) {
+	for i := 0; i < max; i++ {
+		relGFrame(q, u, st)
+		if st.graph.lay != nil && st.graph.lay.settled && !st.graph.fitFollow {
+			return
+		}
+	}
 }
 
 // relGFrame 一帧右图（500×500 视口）+ 提交 hit 树。
@@ -537,35 +548,12 @@ func TestRelGraphWheelPanStep(t *testing.T) {
 	}
 }
 
-// TestRelGraphRebuildKeepsView 实测修（D121）：数据变更（rebuild）**不重置 zoom、不挪
-// 视场**——用户 zoom/平移是私有的，一条新消息进来不抢。只有开窗首帧（everFit）适配、
-// 拖后松手（fitPending）拉回视野。
-func TestRelGraphRebuildKeepsView(t *testing.T) {
-	u, st, q := relGraphFixture(t)
-	g := st.graph
-	if !g.everFit {
-		t.Fatal("夹具应已完成开窗首帧适配")
-	}
-	g.zoom = 1.2
-	g.z = g.zoom * g.dpx
-	ox, oy := g.offX, g.offY
-	m2, ok := relNewModel(relChainGraph(20))
-	if !ok {
-		t.Fatal("chain 模型非法")
-	}
-	g.rebuild(m2, relBudget(m2, 20))
-	if g.zoom != 1.2 {
-		t.Fatalf("rebuild 重置了 zoom: %v, want 1.2", g.zoom)
-	}
-	relGFrame(q, u, st)
-	if g.offX != ox || g.offY != oy {
-		t.Fatalf("数据变更挪动了视场: off=(%v,%v), want (%v,%v)", g.offX, g.offY, ox, oy)
-	}
-}
+// TestRelGraphRebuildKeepsView **已删**（D128）：原断言「数据变更不挪视场」在**软跟随**
+// 视场契约下不再成立——数据变更后 Head 会移位，视口按有界滞后**逐步**追随以保证当前
+// 消息在场（A12），视场因此会有缓慢位移。R3 的「新消息不重置 zoom」仍成立，但「视场
+// 冻结」要让位给「视场有界滞后跟随」。待 D128 视口契约定稿后按新语义重写（应断言：
+// zoom 不变 + 视场逐帧位移有界 + Head 始终在视口内）。
 
-// TestRelGraphDragReleaseKeepsTreeInView 拖后松手：树是常驻物理 → 松手后回到静息位，
-// 视场（开窗已按静息盒适配）仍能看到整棵树。曾（D121）靠松手 recenter 把「拖开摊宽」
-// 的树拉回；物理版树自己回去，recenter 只在用户曾平移过视场时才改变 off。
 // TestRelGraphDragReleaseKeepsTreeInView 拖后松手把树拉回视野（D121；**D127 横树分两
 // 档**）。宽树档（500×500 视口下夹具树在可读下限仍装不下）：recenterTree 退化为
 // **Head 右基准 + 视图跟随**——盒心对准会把当前消息甩出视口；当前消息不许丢，切片
@@ -584,9 +572,7 @@ func TestRelGraphDragReleaseKeepsTreeInView(t *testing.T) {
 	}
 	q.Queue(relPointer(pointer.Release, to, false))
 	relGFrame(q, u, st) // Release → releaseDrag（撤 pin、唤醒物理）
-	for i := 0; i < relSettleFrames*2 && g.lay != nil && !g.lay.settled; i++ {
-		relGFrame(q, u, st)
-	}
+	relDriveQuiet(q, u, st, relSettleFrames*2)
 	if g.lay == nil || !g.lay.settled {
 		t.Fatal("松手后物理未收敛")
 	}

@@ -42,8 +42,9 @@ type historyState struct {
 	budget int // 预算（rebudget：−/＋/展开全部，A5/A7）
 	// graph 右图帧态（第 7 步：重排/手势/绘制）。
 	graph *relGraph
-	// 状态栏控件（− / ＋ / 展开全部 / 回到当前）。
+	// 状态栏控件（− / ＋ / 展开全部 / 回到当前 / 三个聚焦域：D128）。
 	btnMinus, btnPlus, btnAll, btnHome widget.Clickable
+	btnSeed, btnLine, btnNode          widget.Clickable
 }
 
 // newHistoryState 构造 winHistory 帧状态并做首帧数据同步。
@@ -175,6 +176,18 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	case st.btnHome.Clicked(gtx):
 		if st.graph != nil {
 			st.graph.focusPending = true
+		}
+	case st.btnSeed.Clicked(gtx): // 回到初始态：重排 + 视口容纳整树
+		if st.graph != nil {
+			st.graph.relayoutFromSeed()
+		}
+	case st.btnLine.Clicked(gtx): // 聚焦当前历史：视口容纳 root → Head 的历史线
+		if st.graph != nil {
+			st.graph.focusScope(focusScopeLine)
+		}
+	case st.btnNode.Clicked(gtx): // 聚焦当前节点：视口容纳 Head 及其父子一跳
+		if st.graph != nil {
+			st.graph.focusScope(focusScopeNode)
 		}
 	}
 }
@@ -341,6 +354,10 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 								return l.Layout(gtx)
 							}),
 							layout.Rigid(histCtl(th, &st.btnHome, "回到当前")),
+							// D128 三种聚焦域：整树（重排）/ 当前历史线 / 当前节点及父子
+							layout.Rigid(histCtl(th, &st.btnSeed, "回到初始态")),
+							layout.Rigid(histCtl(th, &st.btnLine, "聚焦当前历史")),
+							layout.Rigid(histCtl(th, &st.btnNode, "聚焦当前节点")),
 						)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
