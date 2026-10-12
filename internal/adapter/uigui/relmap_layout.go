@@ -1,24 +1,30 @@
 package uigui
 
-// 会话树关系图——布局内核（D124 重构，D126 改订，**D127 横树化**；取代 D120④/D121 的
+// 会话树关系图——布局内核（D124 重构，D126 改订，D127 横树化；取代 D120④/D121 的
 // 「一次性求解 + 静止」）。
 //
 // 本文件是 Gio / port 无关的**物理仿真核**：输入 = 极小几何投影（父索引 / 层号 / 权重 /
 // 卡片半宽），输出 = 每节点坐标 + 是否静止。port.TreeGraph → 本输入的映射在 relmap.go。
 //
-// 模型（§2）：节点 = 质点（质量 1），**常驻物理**——
+// **两档物理**（D128 转正）：生产默认走**源档**（`relmap_layout_source.go`：RSM v1.2 的
+// 力参数 + 源实现的步进算法——三个通道直接改坐标 + 一条 friction 衰减时钟，运动时长由
+// 日程决定而非随规模漂移）。本文件主体是保留的**对照回退档 D127**（`AQUARIUS_REL_PHYS=d127`
+// 启动时切换）：半隐式欧拉的力积分（每帧 12 子步）+ 树锚 + 卡片接触推力，判据是动能残差。
+// 两档共用静息布局、播种、拖拽 pin、视场适配与绘制，只差「每帧怎么把坐标推一步」。
+//
+// D127 档的模型（**对照档**的内部结构；生产档的模型见上面那份文件）：
 //
 //	① 边弹簧：子被拉向「父当前位置 + 静息偏移」（D127 横树：**x = 层/时间方向**，静息
 //	   偏移 = restGap 列距、刚 ⇒ 层序结构快速归位；**y = 兄弟/版本方向**，静息偏移 =
 //	   restOff 槽位、软 ⇒ 版本支松弛铺开），父子等大反向施加（牛顿第三定律）→ 子树随父
-//	   拖动、动量沿树传导（拖任一节点整树响应）；
+//	   拖动、动量沿树传导；
 //	② 斥力：全对（排除祖先-后代对，DFS 序区间 O(1) 判定）2D，软化 + 作用半径截止 +
 //	   卡片相叠接触推力；
 //	③ 阻尼：速度每帧乘 relPhysDamp → 系统自然收敛；
-//	④ 拖拽 pin：被拖节点硬钉在指针位（速度清零），其余节点只经弹簧/接触被带动；
+//	④ 拖拽 pin：被拖节点硬钉在指针位（速度清零），其余节点只经弹簧/斥力被带动；
 //	⑤ 树锚：整树的包围盒中心被拉向锚点（静息盒心）——**外力均匀施加在每个节点上，
 //	   只平移、不产生内部应力**，于是单个节点完全自由（可被拖到任何位置并留在那里），
-//	   整树却不漂移、始终停在原处（D126「不锚定节点，锚定树」）。
+//	   整树却不漂移（D126「不锚定节点，锚定树」）。
 //
 // 积分 = 半隐式欧拉（每帧 relPhysSub 子步：高自由度节点的显式刚度会越稳定边界，
 // 子步把 ω·dt 压回稳区）：v += F·dt; v *= 阻尼; 限幅; pos += v·dt。收敛（动能 < 阈值）即
@@ -27,9 +33,10 @@ package uigui
 //
 // 静息布局（rest layout，§3）是确定性参考（D127 横树）：
 // restPos(子) = restPos(父) + (restGap, restOff)——x = 层 × 列距（时间向右），
-// y = 兄弟叶数加权槽位（版本上下分杈）。节点锚废除后（D126）它不再是逐点平衡态，
-// 只提供**播种初值 + 树锚点 + 视场基准**（fit/recenter 取树盒——当前物理位形会动，
-// 不适合当视场基准）。
+// y = 兄弟叶数加权槽位（版本上下分杈）。它提供**播种初值 + 树锚点 + 视场基准**
+// （fit/recenter 取树盒——当前物理位形会动，不适合当视场基准）。**注意：源档的弹簧
+// 不看静息槽位**（它拉向「距父 200dp」），故静息布局在源档下不再等于平衡态（实测残差
+// 可达静息跨度的 43%）——这是源档转正的已知代价之一（D128 待补项）。
 //
 // 可测性：力导向坐标不确定 ⇒ 断言**不变量**：静息树形 / 层序（静息态）/ 有界盒 /
 // 同输入可复现 / 动能降至静止。
@@ -60,13 +67,20 @@ const (
 	relColAdoptMax = 2.0
 	// relSlotGapDp 兄弟槽位之间的额外间隙（dp）：卡片叠放时留条缝。
 	relSlotGapDp = 10.0
-	relBound     = 20000.0
+	// relBound 坐标兜底（NaN / 越界时钳回）。**已知不匹配深链**（D128 待补）：它是防病态
+	// 输入把坐标推爆的护栏，却比**合法**静息跨度还小——卡片占位下 colGap ≈ 328dp，于是
+	// 超过约 124 条消息的会话（164×(n−1) > 20000）首帧就把坐标钳进 ±20000，整树当场塌成
+	// 一团再"收敛"（实测 chain200：静息跨度 65,272dp → 末态盒宽 628dp、残差 32,481dp）。
+	// 修法方向：兜底随静息跨度缩放（max(relBound, k×跨度)），而不是拍一个绝对值。
+	relBound = 20000.0
 	// relCardPenetrationMax 允许的最深穿透（占卡宽比例，性质测试钉住）：密集分支点总量
 	// 本就大于可铺开宽度，零重叠在 A5 取舍下不可达，故只钉「不深压」。
 	relCardPenetrationMax = 0.25
 )
 
-// 物理刚度/阻尼/播种档位（偶然实现，spike 调定；D126 起废除逐节点静息锚/根锚）：
+// **D127 对照档**的刚度/阻尼/播种档位（偶然实现，历史 spike 调定；D126 起废除逐节点
+// 静息锚/根锚）。生产档是源档（relmap_layout_source.go），本块只服务于
+// `AQUARIUS_REL_PHYS=d127` 的对照回退——改这些值不影响默认行为。
 //   - 边弹簧拆双轴（D127 横树轴向互换）：**横向（x）= 层/时间方向 2.0**（刚 ⇒ 层序结构
 //     快速归位、时间轴不散）、**纵向（y）= 兄弟/版本方向 1.0**（松弛铺开 ⇒ 版本支有呼吸感）。
 //     0.012 软弹簧实测失败（势能面太平卡局部极小 + 接触力顶离槽位 100+dp，见
@@ -161,6 +175,13 @@ type relLayout struct {
 	tin, tout []int     // DFS 序区间（判祖先-后代：j 在 i 子树内 ⇔ tin_i ≤ tin_j ≤ tout_i）
 	x, y      []float64 // 当前位置
 	vx, vy    []float64 // 速度（物理积分）
+	// 源档（生产档）专用：ppx/ppy = 源实现的第二位置缓冲 pp（既当速度基准又当斥力累加器，
+	// 见 relmap_layout_source.go）；friction = 源实现那条既缩步长、又衰减、又判停的时钟
+	// （步数 = ⌈log(0.01/0.2)/log(0.992)⌉ = 373，与规模无关）；wasPinned = 检测拖拽起始
+	// （warmUp 再激励的上升沿）。D127 对照档不读这三个字段。
+	ppx, ppy  []float64
+	friction  float64
+	wasPinned bool
 	fx, fy    []float64 // 力缓存
 	// anchorX/anchorY 树锚点（世界 dp） = 静息布局的包围盒中心：整树被拉向这里。
 	// D126：节点锚废除后，单个节点只受弹簧/接触推力（完全自由），整树的位置由它兜住。
@@ -205,6 +226,9 @@ func newRelLayout(nodes []relGeoNode) (*relLayout, bool) {
 		vy:       make([]float64, n),
 		fx:       make([]float64, n),
 		fy:       make([]float64, n),
+		ppx:      make([]float64, n),
+		ppy:      make([]float64, n),
+		friction: relSrcFriction, // 源档时钟初值（生产档不读）
 	}
 	for i, nd := range nodes {
 		if nd.Parent >= 0 {
@@ -217,6 +241,10 @@ func newRelLayout(nodes []relGeoNode) (*relLayout, bool) {
 	l.anchorX, l.anchorY = l.restBoxCenter()
 	copy(l.x, l.restX)
 	copy(l.y, l.restY)
+	copy(l.ppx, l.x) // 源档 pp 初始化 = 当前位（源实现 n.pp = clone(n.p)）
+	copy(l.ppy, l.y)
+	l.friction = relSrcFriction
+	l.wasPinned = false
 	l.settled = true
 	return l, true
 }
@@ -359,8 +387,11 @@ func (l *relLayout) seedCollapsed() {
 		l.x[i] = cx + (l.restX[i]-cx)*relSeedShrink + jx
 		l.y[i] = cy + (l.restY[i]-cy)*relSeedShrink + jy
 		l.vx[i], l.vy[i] = 0, 0
+		l.ppx[i], l.ppy[i] = l.x[i], l.y[i] // 源档：pp 从初位起步（否则首帧速度是「初位−零」）
 	}
 	l.iters, l.settled = 0, false
+	l.friction = relSrcFriction // 源档：每次播种/再布局都重上时钟
+	l.wasPinned = false
 }
 
 // setPositions 用给定坐标重设当前位置（增量保留：数据变更时按节点 ID 复用旧位置），
@@ -373,8 +404,11 @@ func (l *relLayout) setPositions(pos []relPoint) {
 			l.x[i], l.y[i] = l.restX[i], l.restY[i]
 		}
 		l.vx[i], l.vy[i] = 0, 0
+		l.ppx[i], l.ppy[i] = l.x[i], l.y[i] // 源档同 seedCollapsed
 	}
 	l.iters, l.settled = 0, false
+	l.friction = relSrcFriction
+	l.wasPinned = false
 }
 
 // step 一个物理步进（半隐式欧拉，内部按 relPhysSub 子步——高自由度节点的显式刚度会越过
@@ -388,6 +422,10 @@ func (l *relLayout) step(pin relPin) {
 	}
 	if pin.Valid && (pin.Index < 0 || pin.Index >= n) {
 		pin.Valid = false // 越界锚视为无固定（防御：帧层本地索引与布局可能不同步）
+	}
+	if relPhysCur == relProfSource {
+		l.stepSource(pin) // 生产档：源档（RSM v1.2 力参数 + 源实现步进），见 relmap_layout_source.go
+		return
 	}
 	sub := relPhysSub
 	if sub < 1 {
