@@ -39,8 +39,16 @@ import (
 
 // 右图档位（偶然实现，§7 可调；zoom 边界即 A9 的钳制区间）。
 const (
-	relZoomMin    = 0.5
-	relZoomMax    = 1.5
+	// relZoomMin / relZoomMax zoom 钳制区间（A9）。**D130 放宽**：原 [0.5, 1.5] 是源实现
+	// `scaleLimit` 的偶然档位，实测堵死了「按树的大小动态适配」这条路——fit 算出 ~0.55 想
+	// 把整树装进视口，被 0.5 一挡（外加 0.75 的标签可见下限）就装不下，用户看到的是
+	// 「内容出视口 + 左侧大片空白」。现放到 [0.1, 2.0]：一屏能看整棵树，也能放大到逐字读。
+	// **可读性不靠 zoom 下限，靠两条既有机制**：字号钳 [relLabelMinSp, relLabelMaxSp]；
+	// 标签预算 relLabelVisible（zoom 低于 relZoomLabelMin 时标签全隐 ⇒ overview 只剩徽标
+	// 与边）。卡片预留 HalfW/HalfH 仍按 relZoomLabelMin 的最坏口径算，与「低于该 zoom 不画
+	// 标签」自洽。
+	relZoomMin    = 0.1
+	relZoomMax    = 2.0
 	relZoomStep   = 1.1  // 每格滚轮缩放倍率
 	relNodeBaseDp = 34.0 // w=1.00 的直径基准（dp）；直径 = weight × base（A4）
 	relRingW      = 2.5  // 分叉虚线外环描边宽
@@ -468,9 +476,11 @@ func (g *relGraph) clampAnchorVisible() bool {
 // zoom、盒心居中，再把 **Head 平移到右基准位**（relAnchorDatumX：时间轴的「现在」钉
 // 右侧、左侧全留过去；平移钳在不越界范围内）。三处口径：
 //
-//   - **fit 下限 = relZoomLabelMin**（0.75）而非 relZoomMin（0.5）：适配把树压到
-//     0.5 时标签全隐、只剩裸点——「适配」出来的是一张不可读的图。仍装不下（横树长会话
-//     必然如此）则退化为 **Head 右基准 + 视图跟随**（focusAnchorFollow）。
+//   - **zoom 由树的大小算出**（D130，无阅读性地板）：除「整树装进视口」外，还要求
+//     「过去部分（Head 左侧）装进基准位以左 + Head 卡装进右侧余量」，四者取最小 ⇒ 装得下
+//     时 Head 精确落基准位。只有大得连 relZoomMin 都兜不住（极端长会话）才走 **Head 右
+//     基准 + 视图跟随**（focusAnchorFollow）。可读性不在这里把关：字号有钳、标签有预算
+//     （低于 relZoomLabelMin 全隐 ⇒ overview 只剩徽标与边）。
 //   - 盒子取**静息布局**（treeBox，物理平衡态）：当前位形会动，不适合当视场基准。
 //   - **zoom 口径含右基准**：除「整树装进视口」外，还要求「过去部分（Head 左侧）装进
 //     基准位以左、Head 卡装进右侧余量」⇒ 装得下时 Head 精确落基准位（不是盒心贴边的
@@ -498,8 +508,8 @@ func (g *relGraph) fitView() {
 			}
 		}
 	}
-	if floor := relZoomLabelMin; zf < floor { // 可读下限：fit 不得压成全裸点
-		zf = floor
+	if zf < relZoomMin { // 防呆下限：树大得离谱（/vac 病态输入）也不至于除出 0
+		zf = relZoomMin
 	}
 	if zf > relZoomMax {
 		zf = relZoomMax
@@ -523,13 +533,25 @@ func (g *relGraph) fitView() {
 	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
 }
 
-// recenterTree 把树拉回视野（拖后松手，D121 实测修）：**保持用户 zoom**，只把树盒心
-// 对准视口中心。树太大装不下时退化为 Head 右基准 + 跟随（recenter 之后用户自己平移/
-// 缩放）——同 fitView 的回退口径（D127）。
+// recenterTree 拖后松手的视场善后。**默认什么都不做**（用户 2026-10-12：「不管视角被
+// 移动到哪，拖动任意节点时都会回到这个样子」；且「这样子同时是初始的样子 ⇒ 初始视角并
+// 没有适配这个树」）。
+//
+// 原实现无条件重定中（装得下就盒心对准、装不下就 Head 基准），与开窗 fit 走同一条路径
+// ⇒ 松手后看到的构图恒等于开窗构图，用户怎么移视角都会被拽回去。而源档拖拽并不把树摊宽
+// （D129 起不写回静息槽位，物理自己收敛回平衡态），D121 当年「拖开摊宽的树会丢」的顾虑
+// 已不成立。故松手该做的只剩兜底：**画面上还有节点就一个像素都不动**——用户把视角留在
+// 过去看历史是他的选择，A7 状态栏承担切片诚实性；只有把视角移到了空白处（一棵节点都不
+// 可见）才给一张装得下树的视图，否则画面全空、看着像挂了。
 func (g *relGraph) recenterTree() {
+	if g.sol == nil || g.lay == nil {
+		return
+	}
+	if g.anyNodeVisible() {
+		return
+	}
 	minX, minY, maxX, maxY, ok := g.treeBox()
 	if !ok {
-		g.focusAnchorFollow()
 		return
 	}
 	if (maxX-minX)*g.z <= g.viewW && (maxY-minY)*g.z <= g.viewH {
@@ -537,9 +559,27 @@ func (g *relGraph) recenterTree() {
 		g.offY = g.viewH/2 - (minY+maxY)/2*g.z
 		return
 	}
-	// 装不下（D127 横树的长会话必然如此）：Head 右基准 + 视图跟随——盒心对准会把
-	// 当前消息甩出视口，与 fitView 的回退口径一致。
+	// 装不下（长会话）：Head 右基准 + 视图跟随（与 fitView 的回退口径一致）——至少当前
+	// 消息可见。
 	g.focusAnchorFollow()
+}
+
+// anyNodeVisible 视口内是否还有可见节点（用于松手兜底判断）。
+func (g *relGraph) anyNodeVisible() bool {
+	if g.sol == nil {
+		return false
+	}
+	for li := range g.sol.Pos {
+		if li >= len(g.geo) {
+			continue
+		}
+		hw, hh := relCardHalf(g.geo[li])
+		xs, ys := g.sol.Pos[li].X*g.z+g.offX, g.sol.Pos[li].Y*g.z+g.offY
+		if xs+hw*g.z >= 0 && xs-hw*g.z <= g.viewW && ys+hh*g.z >= 0 && ys-hh*g.z <= g.viewH {
+			return true
+		}
+	}
+	return false
 }
 
 // ——— D128：三种聚焦域（状态栏三按钮）———

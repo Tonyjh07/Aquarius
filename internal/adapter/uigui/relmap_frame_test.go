@@ -167,8 +167,17 @@ func TestRelCardLabelMultiLine(t *testing.T) {
 	if _, _, lines := g2.labelBlock(relLabelText(st2.model, gi2, g2.zoom)); lines != 1 {
 		t.Fatalf("短摘要应占 1 行, got %d", lines)
 	}
-	if want := b2.Dy() + 2*int(relCardPadV*g2.z); box2.Dy() != want {
-		t.Fatalf("短摘要卡片高度应等于徽标 + 内边距: %d vs %d", box2.Dy(), want)
+	// 卡片高度 = max(徽标, 标签块) + 上下内边距（labelFont 有 10sp 下限：zoom 够低时
+	// 一行文字本身就比徽标高——D130 把 fit 地板放到 relZoomMin 后这条路径常态可达）。
+	txt2 := relLabelText(st2.model, gi2, g2.zoom)
+	_, bh, _ := g2.labelBlock(txt2)
+	want2 := b2.Dy()
+	if txt2 != "" { // 标签显形：max(徽标, 标签块) + 上下内边距（D130 起 fit 可把树压到
+		// 标签全隐的 zoom ⇒ 卡片塌缩为裸徽标，这条分支是「标签还在」时的契约）
+		want2 = int(math.Max(float64(b2.Dy()), float64(bh))) + 2*int(relCardPadV*g2.z)
+	}
+	if math.Abs(float64(box2.Dy())-float64(want2)) > 2 {
+		t.Fatalf("短摘要卡片高度不符: %d vs %d（txt=%q）", box2.Dy(), want2, txt2)
 	}
 }
 
@@ -319,8 +328,8 @@ func relAnchorScreen(t *testing.T, g *relGraph) (f32.Point, int) {
 func TestRelGraphFitViewOnOpen(t *testing.T) {
 	_, st, _ := relGraphFixture(t)
 	g := st.graph
-	if g.zoom < relZoomLabelMin || g.zoom > relZoomMax {
-		t.Fatalf("首帧 zoom = %v，超出 [%v,%v]", g.zoom, relZoomLabelMin, relZoomMax)
+	if g.zoom < relZoomMin || g.zoom > relZoomMax {
+		t.Fatalf("首帧 zoom = %v，超出 A9 钳制区间 [%v,%v]", g.zoom, relZoomMin, relZoomMax)
 	}
 	sx, _ := relAnchorScreen(t, g)
 	if math.Abs(float64(sx.X)-relAnchorDatumX*g.viewW) > 1 {
@@ -558,10 +567,16 @@ func TestRelGraphWheelPanStep(t *testing.T) {
 // 档**）。宽树档（500×500 视口下夹具树在可读下限仍装不下）：recenterTree 退化为
 // **Head 右基准 + 视图跟随**——盒心对准会把当前消息甩出视口；当前消息不许丢，切片
 // 诚实性由 A7 状态栏（共 N · 呈现 M）承担。
+// TestRelGraphDragReleaseKeepsTreeInView 拖节点松手：**视场一个像素都不动**（D130）——
+// 用户 2026-10-12：「不管视角被移动到哪，拖动任意节点时都会回到这个样子」。原实现松手即
+// recenterTree 重定中（装得下则盒心对准），与开窗 fit 同一条路径 ⇒ 松手构图恒等于开窗构图。
+// 现在松手只在「画面上一个节点都不剩」时才兜底给视图（那种情形抓不到节点，实际不可达），
+// 常规路径下用户的 zoom/平移完全保留；Head 仍在视口内（拖完不会丢）。
 func TestRelGraphDragReleaseKeepsTreeInView(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	sx, li := relAnchorScreen(t, g)
+	ox, oy := g.offX, g.offY
 	q.Queue(relPointer(pointer.Press, sx, true))
 	relGFrame(q, u, st)
 	to := f32.Pt(sx.X+300, sx.Y+200)
@@ -576,18 +591,50 @@ func TestRelGraphDragReleaseKeepsTreeInView(t *testing.T) {
 	if g.lay == nil || !g.lay.settled {
 		t.Fatal("松手后物理未收敛")
 	}
-	sx, _ = relAnchorScreen(t, g)
-	if math.Abs(float64(sx.X)-relAnchorDatumX*g.viewW) > 1 {
-		t.Fatalf("松手后 Head 未回右基准位: %v, want ≈%.0f", sx.X, relAnchorDatumX*g.viewW)
+	// 视场未被松手重置（跟随的收敛尾巴会为把 Head 送回基准位而缓动，故判 3px 级不变）
+	if math.Abs(g.offX-ox) > 3 || math.Abs(g.offY-oy) > 3 {
+		t.Fatalf("松手重置了视场: (%v,%v) → (%v,%v)", ox, oy, g.offX, g.offY)
 	}
+	sx, _ = relAnchorScreen(t, g)
 	if sx.X < 0 || float64(sx.X) > g.viewW || sx.Y < 0 || float64(sx.Y) > g.viewH {
 		t.Fatalf("Head 松手后仍在视口外: (%v,%v)", sx.X, sx.Y)
 	}
 }
 
-// TestRelGraphDragReleaseRecentersFittingTree 装得下的树（900×700 视口）：拖后松手 ⇒
-// recenterTree **保持 zoom**、只把树盒心对准视口中心（D121），所有可见节点在视口内。
-func TestRelGraphDragReleaseRecentersFittingTree(t *testing.T) {
+// TestRelGraphDragReleaseKeepsUserView 拖后松手**不重置视场**（D130）：用户 2026-10-12
+// 「不管视角被移动到哪，拖动任意节点时都会回到这个样子」。原契约是 recenterTree 把树盒心
+// 对准视口中心（D121）——与开窗 fit 同路径，松手构图恒等于开窗构图。现在松手只在「画面
+// 上一个节点都不剩」时才兜底（那种情形抓不到节点，实际不可达），常规路径下用户的 zoom /
+// 平移完全保留。
+func TestRelGraphDragReleaseKeepsUserView(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	g := st.graph
+	g.zoom, g.z = 0.6, 0.6*g.dpx // 压低 zoom：本夹具在 500×500 下 fit 档位装不下整树
+	ox, oy := g.offX, g.offY
+	sx, li := relAnchorScreen(t, g)
+	q.Queue(relPointer(pointer.Press, sx, true))
+	relGFrame(q, u, st)
+	to := f32.Pt(sx.X+120, sx.Y+80)
+	q.Queue(relPointer(pointer.Move, to, true))
+	relGFrame(q, u, st)
+	if g.dragNode != li {
+		t.Fatalf("未拖到节点: %d", g.dragNode)
+	}
+	q.Queue(relPointer(pointer.Release, to, false))
+	relGFrame(q, u, st)
+	relDriveQuiet(q, u, st, relSettleFrames*2)
+	if g.lay == nil || !g.lay.settled {
+		t.Fatal("松手后物理未收敛")
+	}
+	if g.offX != ox || g.offY != oy {
+		t.Fatalf("松手重置了视场: (%v,%v) → (%v,%v)", ox, oy, g.offX, g.offY)
+	}
+	if g.zoom != 0.6 {
+		t.Fatalf("松手重置了 zoom: %v, want 0.6", g.zoom)
+	}
+}
+
+func TestRelGraphFitSizeDriven(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
@@ -596,7 +643,7 @@ func TestRelGraphDragReleaseRecentersFittingTree(t *testing.T) {
 		st.graph.frame(gtx, u.th, u, st)
 		q.Frame(ops)
 	}
-	frame() // 首帧：fitView（本视口下夹具树装得下）
+	frame()
 	for i := 0; i < relSettleFrames*3 && st.graph.lay != nil && !st.graph.lay.settled; i++ {
 		frame()
 	}
@@ -604,54 +651,20 @@ func TestRelGraphDragReleaseRecentersFittingTree(t *testing.T) {
 	if g.lay == nil || !g.lay.settled {
 		t.Fatal("夹具物理未收敛")
 	}
-	// 压低 zoom 留出拖拽余量：横树卡片宽（hw≈159dp ⇒ 树盒上千 dp），fit 档位与可读
-	// 下限都装不下整树，会走 D127 回退分支（另一测试覆盖）。本测试验的是 recenter 的
-	// **盒心对准**，故压到 0.6（用户手动缩放到的最小档附近）使其装得下。
-	g.zoom, g.z = 0.6, 0.6*g.dpx
-	g.focusAnchor()
-	sx, li := relAnchorScreen(t, g)
-	q.Queue(relPointer(pointer.Press, sx, true))
-	frame()
-	to := f32.Pt(sx.X+120, sx.Y+80)
-	q.Queue(relPointer(pointer.Move, to, true))
-	frame()
-	if g.dragNode != li {
-		t.Fatalf("未拖到节点: %d", g.dragNode)
+	if g.zoom < relZoomMin || g.zoom > relZoomMax {
+		t.Fatalf("fit zoom = %v，超出 A9 区间 [%v,%v]", g.zoom, relZoomMin, relZoomMax)
 	}
-	q.Queue(relPointer(pointer.Release, to, false))
-	frame()
-	for i := 0; i < relSettleFrames*2 && g.lay != nil && !g.lay.settled; i++ {
-		frame()
-	}
-	if g.lay == nil || !g.lay.settled {
-		t.Fatal("松手后物理未收敛")
-	}
-	// 盒心对准视口中心（recenterTree 保持 zoom、只对盒心）。
-	minX, minY, maxX, maxY, ok := g.treeBox()
-	if !ok {
-		t.Fatal("树盒不可用")
-	}
-	if cx, cy := (minX+maxX)/2*g.z, (minY+maxY)/2*g.z; math.Abs(g.offX+cx-g.viewW/2) > 2 || math.Abs(g.offY+cy-g.viewH/2) > 2 {
-		t.Fatalf("松手后树盒心未对准视口: off=(%v,%v) 盒心=(%v,%v) 视口=(%v,%v)",
-			g.offX, g.offY, cx, cy, g.viewW/2, g.viewH/2)
-	}
-	for i := range g.vis.nodes {
-		xs, ys := g.toScreen(g.sol.Pos[i])
-		if xs < -1 || float64(xs) > g.viewW+1 || ys < -1 || float64(ys) > g.viewH+1 {
-			t.Fatalf("节点 %d 松手后仍在视口外: (%v,%v)", i, xs, ys)
+	// 装得下（宽树触底才有例外）：所有可见节点在视口内
+	minX, _, maxX, _, ok := g.treeBox()
+	if ok && (maxX-minX)*g.z <= g.viewW {
+		for li := range st.vis.nodes {
+			hw, hh := relCardHalf(g.geo[li])
+			xs, ys := g.toScreen(g.sol.Pos[li])
+			px, py := float64(xs), float64(ys)
+			if px-hw*g.z < -1 || px+hw*g.z > g.viewW+1 || py-hh*g.z < -1 || py+hh*g.z > g.viewH+1 {
+				t.Fatalf("节点 %d 未被装进视口: (%v,%v)±(%v,%v)，视口 %v×%v", li, xs, ys, hw*g.z, hh*g.z, g.viewW, g.viewH)
+			}
 		}
-	}
-}
-
-// TestRelGraphFitFloorLabelMin 实测修（D121）：开窗适配的 zoom 下限 = relZoomLabelMin
-// （标签可读下限）——适配不得把树压成全裸点。超大树的适配退回锚点居中。
-func TestRelGraphFitFloorLabelMin(t *testing.T) {
-	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
-	st := newHistoryState(u)
-	q := new(input.Router)
-	relGFrame(q, u, st) // 首帧：fitView
-	if st.graph.zoom < relZoomLabelMin {
-		t.Fatalf("fit zoom = %v, want ≥ 标签下限 %v", st.graph.zoom, relZoomLabelMin)
 	}
 }
 
@@ -873,8 +886,12 @@ func TestRelGraphDragNodeNearMiss(t *testing.T) {
 	g := st.graph
 	li := g.anchor
 	// 复现现场：低 zoom ⇒ 标签隐藏、卡片塌缩成小徽标（点不准的典型形态）
+	// zoom 取 relZoomLabelMin 下方一档即可——再低（D130 起 fit 可压到 0.1）抓手/命中
+	// 外扩换算成像素后都趋近 0，「命中落空」与「补抓」都不剩可测的像素窗口。
 	g.zoom = relZoomLabelMin - 0.01
 	g.z = g.zoom * g.dpx
+	g.focusAnchor() // 夹具是按 fit 档（size-driven 后可能压得很低）定的视场：改 zoom 后
+	// 重对一次，否则锚点已漂出视口，「命中落空」就不再是差几像素而是整棵树在别处。
 	xs, ys := g.toScreen(g.sol.Pos[li])
 	bare := relBadgeBox(xs, ys, float32(g.nodeRadius(&st.model.nodes[g.vis.nodes[li]])*g.z))
 	if g.nodeCardBox(g.vis.nodes[li], xs, ys) != bare {
@@ -1020,6 +1037,7 @@ func TestRelGraphPhysicsUnfoldOnOpen(t *testing.T) {
 func TestRelNodeCardCarriesLabel(t *testing.T) {
 	_, st, _ := relGraphFixture(t)
 	g := st.graph
+	g.zoom, g.z = relZoomLabelMin, relZoomLabelMin*g.dpx // 标签可见档（本测试验的是卡片承载标签）
 	gi := st.vis.nodes[g.anchor]
 	if relLabelText(st.model, gi, g.zoom) == "" {
 		t.Fatal("锚点应有标签")
