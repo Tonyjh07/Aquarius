@@ -76,8 +76,19 @@ import (
 //	时钟：friction 每步 × relSrcFrictionDecay，跌破 relSrcFrictionFloor 即判停
 //	      ⇒ 步数 = ⌈log(0.01/0.2)/log(0.992)⌉ = 373（与规模无关 ⇒ 60fps 下 6.2s）
 const (
+	// relSrcEdgeLength 边静息**距离**（源实现 `edgeLength: 200`）。**用户 2026-10-12 目视
+	// 反馈「弹簧有点长」，减半为 100dp**：横向相邻层贴得更近，整棵横树更紧凑、一屏能
+	// 看进更深的历史。副作用是父子卡在水平轴上重叠约半张卡宽——纵向由卡片接触通道
+	// （⑧）切开，链会呈斜向阶梯状。
+	//
+	// 注意：源档的间距实际由**结构锥形通道的下限**主导（它比弹簧强），故锥形下限按
+	// relSrcConeFrac 系到本常量上——只改本常量，间距一起变；否则改这里会被锥形按卡片
+	// 宽硬拉回 318dp，等于这个旋钮失效。
+	relSrcEdgeLength = 100.0
+	// relSrcConeFrac 结构锥形下限 = 该系数 × edgeLength。源实现配 200dp 弹簧时取 1.5
+	// ⇒ 300dp，与原口径「两卡半宽和」（318dp）同量级。
+	relSrcConeFrac      = 1.5
 	relSrcRepulsion     = 900.0
-	relSrcEdgeLength    = 200.0
 	relSrcGravity       = 0.1
 	relSrcFriction      = 0.2
 	relSrcFrictionFloor = 0.01
@@ -105,8 +116,26 @@ const (
 	// friction` 推。k=2.0 是实测甜点：六档夹具层序违反全 0、单帧最大位移仅比无通道基线
 	// 多 ~25dp（不甩）；k 再大更硬（k=4 时 chain60 单帧 300dp）、k 再小守不住
 	// （k=0.3 时 star30/rand200/chain60 残留 10/6/16 处违反）。
+	// 斥力累计**逐节点限幅**（防抖）：卡片堆叠时 1/d² 之和可达几千 dp，直接进速度通道
+	// 会把节点一帧甩出几百 dp（实测 binary4 单帧 743dp）。D127 的 relPhysFMax 同款思路
+	// ——限的是「这一帧斥力通道总共能贡献多少位移」，不是单对。
+	relSrcRepulseMax = 40.0
+	// relSrcConeK 结构锥形通道强度：子水平距不足时按 `k × 缺口 × friction` 推。k=2.0 是
+	// 实测甜点（六档夹具层序违反全 0、单帧最大位移仅比无通道基线多 ~25dp）。
 	relSrcConeK = 2.0
 )
+
+// relClampRepulse 把 pp（−p）的累计斥力量钳回限幅内（逐节点，保方向）。
+func relClampRepulse(l *relLayout) {
+	for i := range l.x {
+		dx, dy := l.ppx[i]-l.x[i], l.ppy[i]-l.y[i]
+		if d := math.Hypot(dx, dy); d > relSrcRepulseMax {
+			k := relSrcRepulseMax / d
+			l.ppx[i] = l.x[i] + dx*k
+			l.ppy[i] = l.y[i] + dy*k
+		}
+	}
+}
 
 // relSrcDecayRate 时钟衰减率 = (θ/f₀)^(1/步数)：由 relSrcScheduleSteps 反推，使
 // 「friction 跌破 θ」的步数恰好等于配置时长。var 而非 const 是为了 spike 能扫档
@@ -281,6 +310,7 @@ func (l *relLayout) stepSource(pin relPin) {
 			}
 		}
 	}
+	relClampRepulse(l) // 防抖：斥力累计量逐节点限幅（见 relSrcRepulseMax）
 
 	// ④ 速度通道：p += (p − pp)·friction，然后 pp = p。pp 里混着本帧的斥力的量，
 	//    所以「速度」的真实语义是（弹簧+引力的即时位移 − 斥力的累积量）。
@@ -298,25 +328,22 @@ func (l *relLayout) stepSource(pin relPin) {
 		l.ppx[i], l.ppy[i] = l.x[i], l.y[i]
 	}
 
-	// ⑦ 结构锥形通道（D128，树形保持 = R4「子恒在父之右」）：对每条边，子相对父的
-	//    水平距不足 minGap 时，按**缺口比例**把子往右推 `relSrcConeK × 缺口 × friction`。
-	//
-	//    为什么是「通道」而不是「投影」：投影是钳位（clamp），一钳就是硬跳变——实测
-	//    硬投影在 chain24/chain60 上单帧甩 1392/3574dp（不轻柔）；限速投影在链上沿链
-	//    累加、900 步追不平（chain60 残留 27 处）。锥形通道**连续且被 friction 缩放**：
-	//    缺口越大推得越多、缺口越小推得越轻 ⇒ 永不超调、不会甩，物理仍可临时把子推到
-	//    父左边（**给自由**），锥形通道按比例把它「渐进拉回」。k 扫描（relmap 布局
-	//    spike，900 步日程）：k=0.3 时 star30/rand200/chain60 有残留（10/6/16 处），
+	// ⑦ 结构锥形通道（树形保持 = R4「子恒在父之右」，见上「① 弹簧」的注释）：子相对父
+	//    的水平距不足下限（relSrcConeFrac × edgeLength）时，按**缺口比例**把子往右推
+	//    `relSrcConeK × 缺口 × friction`。
+	//    为什么是「通道」而不是「投影」：见文件头说明——投影是钳位，一钳就是硬跳变。
+	//    锥形通道**连续且被 friction 缩放**：缺口越大推得越多、缺口越小推得越轻 ⇒ 永不
+	//    超调、不会甩；物理仍可临时把子推到父左边（**给自由**），通道按比例渐进拉回。
+	//    k 扫描（900 步日程）：k=0.3 时 star30/rand200/chain60 有残留（10/6/16 处），
 	//    k=2.0 时**六档夹具全部 0 违反**且单帧最大位移只比基线多 ~25dp。
 	//
-	//    minGap = 两卡半宽和（父卡右缘到子卡左缘不重叠）⇒ 树形与「卡片不横压」同源；
-	//    锥形通道只管水平方向，y（兄弟/版本方向）完全自由。
+	//    只管水平方向，y（兄弟/版本方向）完全自由。
 	for _, i := range l.order {
 		p := l.nodes[i].Parent
 		if p < 0 {
 			continue
 		}
-		minGap := l.halfW[i] + l.halfW[p]
+		minGap := relSrcConeFrac * relSrcEdgeLength
 		if gap := l.x[i] - l.x[p]; gap < minGap {
 			l.x[i] += (minGap - gap) * relSrcConeK * fr
 		}
