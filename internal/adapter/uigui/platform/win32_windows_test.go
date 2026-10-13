@@ -9,7 +9,25 @@ import (
 	"unsafe"
 )
 
-var procDestroyWindow = user32.NewProc("DestroyWindow")
+var (
+	procDestroyWindow = user32.NewProc("DestroyWindow")
+	psapi             = syscall.NewLazyDLL("psapi.dll")
+	// GetProcessMemoryInfo 在 psapi（GDI 堆计入进程 private commit，故可作泄漏尺）。
+	procGetProcessMemoryInfo = psapi.NewProc("GetProcessMemoryInfo")
+)
+
+// procMemoryCounters PROCESS_MEMORY_COUNTERS（仅取 cb 与 PrivateUsage 字段）。
+type procMemoryCounters struct {
+	cb, pageFaultCount               uint32
+	peakWorkingSetSize               uintptr
+	workingSetSize                   uintptr
+	quotaPeakPagedPoolUsage          uintptr
+	quotaPagedPoolUsage              uintptr
+	quotaPeakNonPagedPoolUsage       uintptr
+	quotaNonPagedPoolUsage           uintptr
+	pagefileUsage, peakPagefileUsage uintptr
+	privateUsage                     uintptr
+}
 
 // TestHideUntilFirstPresentRoutesWindowThread D78 挂接即隐藏必须经窗口线程下发
 // （§15.6 铁律 1）：onHWND 跑在事件循环客户端协程（runWindow 读 w.Event()），此际
@@ -98,4 +116,60 @@ func TestWindowDPIInvalidHandle(t *testing.T) {
 	if got := p.MainDPI(); got != 1.0 {
 		t.Fatalf("MainDPI()（未挂接）= %v, want 1.0", got)
 	}
+}
+
+// TestEnsureDIBResizeReleases D134：窗口尺寸变化时重建 DIB，**旧位图必须真被释放**。
+//
+// 外部审查报此处「每次变尺寸泄漏一个 w×h×4 像素缓冲」——本测试连同规模实测（见
+// ensureDIB 注释）把该结论钉死为**不成立**：DeleteObject 对选入内存 DC 的 DIB 有效。
+// 判据用两把尺：① 释放返回值查证计数器（dibReleaseFailN）必须恒 0——真失败立即报；
+// ② 进程 private bytes 在多轮变尺寸后不得增长一张位图的量（真泄漏则线性增长，
+// 阳性对照实测 40 轮 × 1200×800 故意漏删 = +146.9MB）。
+//
+// 不用 GetGuiResources 数 GDI 对象（实测本会话恒返回 0，不可作判据）；也不用
+// GetObjectType 探句柄（GDI 句柄槽位会被立即复用，删完探仍是 OBJ_BITMAP = 假阳性）。
+func TestEnsureDIBResizeReleases(t *testing.T) {
+	defer func() {
+		if mbits.hbm != 0 {
+			procDeleteObject.Call(mbits.hbm)
+			procDeleteDC.Call(mbits.hdc)
+			mbits.hbm, mbits.hdc, mbits.ptr = 0, 0, nil
+		}
+	}()
+
+	const (
+		w, h    = 1200, 800 // ≈3.7MB/张，泄漏时增长显著
+		rounds  = 12
+		slackMB = 8 // 允许的噪声（一张位图 + 运行时杂项）
+	)
+	before := privateMB(t)
+	for i := 0; i < rounds; i++ {
+		// 变尺寸 ⇒ 走重建分支（尺寸相同则 ensureDIB 直接复用，不释放）。
+		if err := ensureDIB(int32(w), int32(h+i)); err != nil {
+			t.Fatalf("ensureDIB = %v", err)
+		}
+	}
+	if dibReleaseFailN != 0 {
+		t.Fatalf("释放异常 %d 次：DeleteObject/DeleteDC 有失败（旧位图泄漏）", dibReleaseFailN)
+	}
+	if before < 0 {
+		t.Skip("GetProcessMemoryInfo 不可用，跳过内存增长判据")
+	}
+	if grew := privateMB(t) - before; grew > slackMB {
+		t.Fatalf("变尺寸 %d 轮后进程 private +%.1fMB（判据 %dMB）= 每轮泄漏一张 DIB",
+			rounds, grew, slackMB)
+	}
+}
+
+// privateMB 进程 private bytes（GetProcessMemoryInfo）；不可用返回 -1。
+func privateMB(t *testing.T) float64 {
+	t.Helper()
+	self, _ := syscall.GetCurrentProcess()
+	var c procMemoryCounters
+	c.cb = uint32(unsafe.Sizeof(c))
+	if r, _, _ := procGetProcessMemoryInfo.Call(uintptr(self),
+		uintptr(unsafe.Pointer(&c)), uintptr(c.cb)); r == 0 {
+		return -1
+	}
+	return float64(c.privateUsage) / (1 << 20)
 }

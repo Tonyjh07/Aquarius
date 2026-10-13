@@ -1579,3 +1579,34 @@
 - **门控与 Gio 同款**：只在 `inFadePass && caretFocused` 时画（未获焦不画选区，`caretFocused`
   由真窗 pass 捕获）。回归测试 `TestFadeEditorSelectionPainted` 按**位图比对**锁定：同帧
   「有选区 vs 无选区」的差异像素必须落在胶囊内、清选区回到基线、未获焦不画。
+
+### D134 · 主窗 DIB 释放：审查报的泄漏经实测证伪，只补返回值查证
+
+> **驱动**：外部审查（2026-10-13，评语「GDI 位图泄漏——`win32_windows.go:327`
+> SelectObject 后从不恢复；`:305` 在位图仍选中 DC 时 DeleteObject 必失败且返回值未查。
+> 每次窗口尺寸变化泄漏一个 DIB（4K 约 33MB）」）。
+
+- **结论：泄漏不成立，但批评的一半是对的。** 「选入 DC 的对象不可删」这条 MSDN 约束针对
+  **窗口 DC 的笔/刷**；这里删的是选入 `CreateCompatibleDC` 建的**内存 DC** 的 DIB section
+  ——`DeleteObject` 返回非零并真正释放。
+- **规模实测**（一次性探针，40 轮 × 1200×800 ≈ 3.7MB/张，读 `GetProcessMemoryInfo`
+  的 `PrivateUsage`，GDI 堆计入进程 private commit）：
+
+  | 模式 | private 增长 |
+  |---|---|
+  | 故意跳过 `DeleteObject`（阳性对照） | **+146.9MB**（≈3.7MB/轮，正好一张） |
+  | 现有生产路径（`DeleteObject` + `DeleteDC`） | **+0.0MB** |
+  | 先 `SelectObject` 换选再删 | +0.0MB（无额外收益） |
+
+  阳性对照能测出增长 ⇒ 测量有效 ⇒ 现有路径确实不漏。
+- **顺带实测的两个坑**（都是审查这类静态推理容易踩的）：
+  - `SelectObject(hdc, stockBitmap)` 对内存 DC **失败**（stock 对象不可选入内存 DC）⇒
+    「先换回 stock 位图再删」是**伪修法**，且会在每次变尺寸时误报失败。
+  - `GetGuiResources(GR_GDIOBJECTS)` 在本会话恒返回 0，`GetObjectType` 探已删句柄仍返回
+    `OBJ_BITMAP`（GDI 句柄槽位立即复用）⇒ 两者都不能当泄漏判据；判据只能是
+    **释放返回值** + **进程 private 增长**。
+- **采纳的部分**：返回值查证（`DeleteObject`/`DeleteDC` 返回 0 = 真泄漏 ⇒ 节流留证），
+  配 `TestEnsureDIBResizeReleases` 钉住——12 轮变尺寸后释放计数器恒 0 且 private 增长
+  < 一张位图量。变异验证（故意跳过 `DeleteObject`）实测 +44.6MB ⇒ 该测试确实抓得住。
+- **教训**：Windows 资源类缺陷的判定必须**实测**，不能靠 MSDN 片段外推；且泄漏判据要用
+  能测出阳性对照的那把尺。

@@ -302,8 +302,21 @@ func ensureDIB(w, h int32) error {
 		return nil
 	}
 	if d.hbm != 0 {
-		procDeleteObject.Call(d.hbm)
-		procDeleteDC.Call(d.hdc)
+		// D134 复核（外部审查报「每次变尺寸泄漏一个 DIB」，实测**不成立**）：MSDN 的「对象
+		// 选中进 DC 即不可删」约束针对窗口 DC 的笔/刷；DIB section 选入的是 CreateCompatibleDC
+		// 建的**内存 DC**，DeleteObject 仍返回非零并真正释放。规模实测（40 轮 × 1200×800）：
+		// 故意跳过 DeleteObject → 进程 private +146.9MB（≈3.7MB/轮 = 正好一张位图）；
+		// 按本路径删 → +0.0MB。顺带实测 SelectObject(hdc, stockBitmap) 对内存 DC **失败**
+		// （stock 对象不可选入内存 DC），故「先换选再删」是伪修法，会逐次误报。
+		// 保留的真实改进只有一条：**返回值查证**——真失败时留证（节流）而不静默。
+		if r, _, _ := procDeleteObject.Call(d.hbm); r == 0 {
+			dibReleaseFail("DeleteObject 位图失败（位图将泄漏）")
+		}
+		if d.hdc != 0 {
+			if r, _, _ := procDeleteDC.Call(d.hdc); r == 0 {
+				dibReleaseFail("DeleteDC 失败（内存 DC 将泄漏）")
+			}
+		}
 		d.hbm, d.hdc, d.ptr = 0, 0, nil
 	}
 	hdc, _, _ := procCreateCompatibleDC.Call(0)
@@ -327,6 +340,16 @@ func ensureDIB(w, h int32) error {
 	procSelectObject.Call(hdc, hbm)
 	d.hdc, d.hbm, d.w, d.h, d.ptr = hdc, hbm, w, h, bits
 	return nil
+}
+
+// dibReleaseFail 位图释放异常节流留证（D134）：释放失败 = 真泄漏，让它可见而非静默。
+var dibReleaseFailN int
+
+func dibReleaseFail(what string) {
+	dibReleaseFailN++
+	if dibReleaseFailN <= 5 {
+		fmt.Printf("[dib] 释放异常 x%d：%s\n", dibReleaseFailN, what)
+	}
 }
 
 // EnsureLayered 主窗挂 WS_EX_LAYERED（onHWND 一次性，D62）：ULW 承载形状/命中/
