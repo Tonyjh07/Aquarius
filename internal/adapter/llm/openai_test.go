@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -919,5 +920,85 @@ func TestCountTokens(t *testing.T) {
 
 	if _, err := New(Config{BaseURL: "http://127.0.0.1:1/v1", Tokenizer: "no/such/tokenizer.json"}); err == nil {
 		t.Fatal("坏路径应 fail-fast")
+	}
+}
+
+// TestDefaultClientHandshakeBounds D137：默认客户端（调用方没注入 HTTPClient 时）必须给
+// 握手设界——原来 `&http.Client{}` 两个旋钮都不设，服务端收下连接却永不回首字节节即永久
+// 挂起（只有 Ctrl+C 能解；外部审查 2026-10-13 报障）。判据看 Transport 结构：dial 有界 +
+// ResponseHeaderTimeout 非零，而**整体 Timeout 必须为 0**（流式 SSE 头之后可能合法跑几十
+// 分钟，一刀切会断长流）。
+func TestDefaultClientHandshakeBounds(t *testing.T) {
+	c, err := New(Config{BaseURL: "http://127.0.0.1:1"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c.hc == nil {
+		t.Fatal("默认客户端未构造")
+	}
+	if c.hc.Timeout != 0 {
+		t.Fatalf("整体 Timeout = %v, want 0（流式不能设整体超时）", c.hc.Timeout)
+	}
+	tr, ok := c.hc.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport（握手超时挂在 Transport 上）", c.hc.Transport)
+	}
+	if tr.DialContext == nil || tr.ResponseHeaderTimeout <= 0 {
+		t.Fatalf("握手无界：DialContext 已设=%v ResponseHeaderTimeout=%v",
+			tr.DialContext != nil, tr.ResponseHeaderTimeout)
+	}
+	// 代理口径不得因自定义 Transport 丢失（否则仅因换了 Transport 就丢掉环境变量代理）。
+	if tr.Proxy == nil {
+		t.Fatal("Proxy 未设（应保持 http.ProxyFromEnvironment 口径）")
+	}
+
+	// 注入的客户端原样使用，不得被改写（D110 的 8s 探测客户端即此路径）。
+	own := &http.Client{Timeout: 8 * time.Second}
+	c2, err := New(Config{BaseURL: "http://127.0.0.1:1", HTTPClient: own})
+	if err != nil {
+		t.Fatalf("New(注入侧): %v", err)
+	}
+	if c2.hc != own {
+		t.Fatal("注入的 HTTPClient 被改写（调用方应对自己的客户端有完全控制）")
+	}
+}
+
+// TestDefaultClientHeaderTimeoutVerdicts 对面挂了（收下连接、永不回首字节节）必须由握手
+// 超时切断；ctx 取消仍应即时返回（原报障「仅 Ctrl+C 可解」的另一半）。
+func TestDefaultClientHeaderTimeoutVerdicts(t *testing.T) {
+	// 挂死服务端：收下连接但永不写响应。用 release 闸门而非长 sleep——srv.Close() 会等
+	// 在途 handler 返回，sleep 30s 会把测试拖成 30s。
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+	}))
+	defer func() {
+		close(release)
+		srv.Close()
+	}()
+
+	// 用手动缩短的 Transport 触发同一条路径（10 分钟的真值不必等）。
+	tr, ok := defaultClient().Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T", tr)
+	}
+	tr.ResponseHeaderTimeout = 60 * time.Millisecond
+	c, err := New(Config{BaseURL: srv.URL, HTTPClient: &http.Client{Transport: tr}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	start := time.Now()
+	if _, err := c.Models(context.Background()); err == nil {
+		t.Fatal("挂死服务端应报错（握手超时）")
+	}
+	if el := time.Since(start); el > 5*time.Second {
+		t.Fatalf("等待 %v 才返回——握手没被 ResponseHeaderTimeout 切断", el)
+	}
+
+	// ctx 取消优先于任何等待。
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
+	defer cancel()
+	if _, err := c.Models(ctx); err == nil {
+		t.Fatal("ctx 取消后应返回错误")
 	}
 }

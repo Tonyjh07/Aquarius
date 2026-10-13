@@ -1693,5 +1693,36 @@
   暴露面评估：本项目用 stdlib http 的形态是 **客户端**（LLM SSE / MCP streamable-http）+
   一个被拒绝授权的 MCP server 都算不上的本地 stdio，server 侧缺陷（HPACK race、
   CONNECT 反同步）实际够不着；仍建议随工具链升级一并清零。
+- **LLM 客户端握手设界**（同批评的一条，量级小但真）：原来 `&http.Client{}` 的 dial 与
+  ResponseHeaderTimeout **两个旋钮都不设**，服务端收下连接却永不回首字节节即永久挂起
+  （只有 Ctrl+C 能解）。但**不能**用 `http.Client.Timeout`——流式 SSE 头之后可能合法跑几十
+  分钟（原注释就这么写的，是对的），一刀切会断长流。改为**只在 Transport 层**补：
+  `dial 10s` + `ResponseHeaderTimeout 10min`（推理型模型「想」半分钟才出 header 也合法），
+  `Proxy` 保持 `ProxyFromEnvironment` 口径（别因换 Transport 丢了代理）；调用方注入的
+  `HTTPClient` 原样使用不被改写（D110 的 8s 探测客户端即此路径）。
+  测试：`TestDefaultClientHandshakeBounds`（整体 Timeout 必须为 0、dial/header 有界、
+  注入侧不被改）+ `TestDefaultClientHeaderTimeoutVerdicts`（缩短 header 超时后挂死服务端
+  必须报错且不用等；ctx 取消即时返回）。
+
 - **纪律补课**：审查说「没有 govulncheck」——根因确实是**依赖没有定期体检**，不是缺一行清单。
   已把 `govulncheck` 列进 AGENTS.md 门禁段（仅在能找到名单时执行，避免误判为失败）。
+
+---
+
+### D22 复核结论 · 读路径恒 Allow 维持（外部审查 2026-10-13）
+
+> **驱动**：外部审查（2026-10-13，安全项 3）：「读路径无 deny——`perm.go:90-92` OpRead 恒
+> Allow，结合提示注入可静默读取任意文件」。
+
+- **代码事实成立**：`Level.File` 对 `OpRead` 直接 `return Allow`，注释已写明理由
+  （「读不产生副作用，视为安全」）。
+- **复核结论：维持不改。** 三条理由：
+  1. **这是当初显式设计**（D22 就把读定为「无副作用的本地访问」），不是漏写；改它 = 把每个
+     读文件操作都变成一次弹窗，与 §15 交互设计冲突。
+  2. **风险面在本项目里被压缩过**：权限矩阵只约束 term_exec / job_start 等执行面（§13），
+     文件面只是 sandbox 内外的读、写分级；读任意文件的前提是模型能走到 file 工具，而那已经
+     在用户的掌控链上（用户自己配的工具/模型/提示）。
+  3. 真要收紧是**设计变更**而非补丁：路径收敛（读越出 `<dataDir>/sandbox` 走 Ask）会让
+     「全文可用 file_read」（§4.2）与附件链失效，须单开 D 决策并评估体验代价。
+- **已记入待议清单**（roadmap §后置），不在本轮缺陷批内。
+

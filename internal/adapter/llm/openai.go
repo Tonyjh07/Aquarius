@@ -12,7 +12,8 @@
 //     该字段同样剥离重试并记录（unsupported_params 含消息级字段）。
 //   - 流末尾 usage 映射为 conversation.Usage（CostUSD 恒为 0：适配器不掌握单价，
 //     成本核算由装饰器/上层按 ModelInfo 计算，D14）。
-//   - 请求时长由调用方 ctx 控制，故默认 http.Client 不设 Timeout（流式不能设整体超时）。
+//   - 请求时长由调用方 ctx 控制，故默认 http.Client 不设整体 Timeout（流式不能设整体超时）；
+//     **握手**层仍有限（dial / ResponseHeaderTimeout，见 defaultClient，D137）。
 package llm
 
 import (
@@ -22,11 +23,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm/tokenizer"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -67,6 +70,41 @@ type Client struct {
 
 var _ port.TokenCounter = (*Client)(nil)
 
+// LLM 客户端握手超时（D137）：**只卡「请求发出 → 收到首字节/响应头」这一段，不设整体
+// 超时**——流式请求（SSE）头之后可能合法地跑几十分钟，`http.Client.Timeout` 会把长流
+// 一刀切掉（ROADMAP 曾有的问题）。原来 `&http.Client{}` 两个旋钮都不设：对面收下连接
+// 却永不回首字节节时，本适配器只能干等到用户 Ctrl+C。
+//
+//   - dialTimeout：TCP/TLS 建连上限。默认 dialer 无超时，靠 OS 重传兜底
+//     （Windows 上约 21s 才失败），这里显式收紧到 10s。
+//   - headerTimeout：从写完请求到收到响应头的上限。取 10 分钟：推理型模型「想」半分钟
+//     才出 header 也合法，而真挂死的服务端会被这一刀切掉，交还给调用方/装饰器重试。
+const (
+	dialTimeout   = 10 * time.Second
+	headerTimeout = 10 * time.Minute
+)
+
+// defaultClient 默认 HTTP 客户端：自定义 Transport 提供握手超时（D137）。
+func defaultClient() *http.Client {
+	dialer := &net.Dialer{Timeout: dialTimeout}
+	return &http.Client{
+		Transport: &http.Transport{
+			// Proxy 保持与 http.DefaultTransport 同口径（走环境变量），免得
+			// 仅因自定义 Transport 就丢掉代理设置。
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.DialContext(ctx, network, addr)
+			},
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: time.Second,
+			ResponseHeaderTimeout: headerTimeout,
+		},
+	}
+}
+
 // New 创建客户端并校验 BaseURL；配置了 Tokenizer 则加载（路径错误 fail-fast，
 // 绝不静默降级成估算）。
 func New(cfg Config) (*Client, error) {
@@ -80,7 +118,7 @@ func New(cfg Config) (*Client, error) {
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
-		hc = &http.Client{}
+		hc = defaultClient()
 	}
 	c := &Client{
 		base: strings.TrimRight(raw, "/"),
