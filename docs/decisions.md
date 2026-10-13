@@ -1726,3 +1726,29 @@
      「全文可用 file_read」（§4.2）与附件链失效，须单开 D 决策并评估体验代价。
 - **已记入待议清单**（roadmap §后置），不在本轮缺陷批内。
 
+---
+
+### D137 收尾 · 工具链升到 1.27.2，可达漏洞清零（2026-10-13 当日追加）
+
+> **收尾对象**：D137 里「剩下的 8 条全是标准库、需 go1.27.2」那一段。
+
+- **工具链落地**：Windows 侧经模块代理拉到 `go1.27.2`（`go get go@1.27.2` 让 go 命令自己
+  切版本；`dl.google.com` 在本地网络不通，模块代理通）。**WSL 侧的坑单独记一笔**：
+  `linuxgate`（D119）在 WSL 里硬编码 `GOTOOLCHAIN=local`（刻意为之：不自动下载），而发行版
+  apt 装的是 go-1.26 —— 于是 go.mod 一提 1.27.2，linuxgate 立刻
+  「go.mod requires go >= 1.27.2（running go 1.26.0）」红。修法 = 把模块缓存里已下载的
+  linux/amd64 工具链 zip 解到用户级 `~/sdk/go1.27.2`，`~/.profile` 前置 PATH
+  （**不要 sudo**，apt 装不动；也不要改 linuxgate 的 `GOTOOLCHAIN=local`，那是 D119 的刻意设计）。
+- **结果**：`govulncheck ./...` = **`Your code is affected by 0 vulnerabilities`**。
+  两个残留都不可达且记明出路：
+  - `GO-2026-6222`（x/image，tiff）——间接依赖、生产无调用点；随 D137 已顺带升到 v0.45.0，
+    只剩下面这条。
+  - `GO-2026-5932`（x/crypto v0.57.0）——**上游尚无修复版**（Fixed in: N/A），且不可达；
+    下次依赖升级时自动受益。
+- **顺带清掉的一次仓库污染**（一次性命令的教训，值得记住）：PowerShell 会把 `\$HOME` 这类
+  shell 变量改写成 Windows 路径，一条 `wsl -e bash -lc "… cd \$HOME/sdk …"` 的写法被抓成
+  `cd C:Usersyjh07/sdk`，bash 在**仓库根**建出 `C:Usersyjh07/`（含整个解压的工具链，236MB /
+  12071 文件）。它当时没被 `git status` 发现（名字以 `C:` 开头，Windows 侧 Test-Path 都判
+  false），但 `gofmt -l .` 会走进去刷一屏。**教训**：PowerShell 传给 WSL 的命令一律写进
+  脚本文件再执行，变量展开只发生在 bash 内；AGENTS.md 的「编辑 UTF-8 文件别用 shell」
+  同源——凡是跨 shell 传路径/变量，就走文件。

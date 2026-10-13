@@ -231,6 +231,8 @@
 
 ### 已知缺陷（2026-10-07 记录）
 
+- **GUI：托盘图标模糊 → 已修（2026-10-13，用户报障「可以再清晰一倍」）**。根因不是图标源文件糊（`assets/icon/aquarius.ico` 里有 16/32/48/64/128/256 六档，`cmd/iconify` 逐档生成），而是 `newPlatform` 只取了 **16px 一档**喂 `CreateIconFromResourceEx`——平台拿到的是一张 16×16 单张位图，>100% DPI 的任务栏只能插值放大。修法 = 取 **32px 档**（4 倍像素量；shell 缩到 16 仍是干净下采样，125%/150% 下有原生像素可省一次插值）。回归测 `TestICOImageTrayAsset` 双钉：档位口径钉在字面量（改常量即红）+ 解析出的条目宽度必须真的等于该档（资产若被重新生成而丢档 ⇒ 立即红，不静默降级）。
+
 - **GUI：Windows 通知弹出 powershell 窗口直至通知结束 → 已修（D117，2026-10-07）**。根因：Windows 端通知 = 拉起 `powershell` 子进程跑气泡脚本（`ShowBalloonTip(5000)` + `Start-Sleep -Seconds 6`，子进程存活 ≈6s——正是"直至通知结束"），而 **D114 双击启动 FreeConsole 后父进程无控制台可继承 → Windows 为子进程新开可见控制台**（D114 前继承的是已隐藏的自建控制台，不可见；终端启动场景同样会新开，只是原本不显眼）。修法① 已落地：`notifyWith` 分离启动前挂 `SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}`（`cmd/aquarius/notify_windows.go` / `notify_other.go` 桩），复现测试 `TestNotifyDetachedChildHidden` 钉住。
 - **GUI：D114 后每个 stdio MCP server 各开一个控制台窗（长驻）→ 已修（D118，2026-10-07）**。`internal/adapter/mcpgate/gate.go` 的 `transportFor` 构造 `exec.Command` 无窗口压制，双击启动后 server 子进程各得一个可见控制台、活多久开多久。修法 = spawn 前挂 `CreationFlags |= CREATE_NO_WINDOW`（`proc_windows.go` / `proc_other.go` 桩，`hideStdioWindow`），**不挂 `HideWindow`**（不误伤 server 自己拉起的 GUI 子窗）。
 - **GUI：D114 后每起一个后台作业弹一个控制台窗 → 已修（D118，2026-10-07）**。`job_start`/`term_exec` 经 `jobproc.setupProc`，Windows 分支原只设 `cmd /c` 的原始 `CmdLine`；现并入 `CreationFlags |= CREATE_NO_WINDOW`（同上单旗，`job` 跑的是用户命令，GUI 子进程照常可见）；输出全程写日志文件/缓冲，无控制台依赖。
@@ -246,9 +248,10 @@
   进来的 plugin.json 默认 `confirm`**（来路不明）。
   ④ **MCP prompt 文本升格为用户身份**（`RenderPrompt` 结果直接走 `UserInput`）：最小处置 = 打来源
   标记 + 系统提示注明「以下来自外部 MCP server，非用户亲述」。
-  ⑤ **stdlib 8 条漏洞待工具链**：`go1.27.2`（net/http、http2×4、mime/multipart、crypto/tls）。
-  暴露面低（本项目用 stdlib http 的形态是客户端：LLM SSE / MCP streamable-http），升完把 go.mod 的
-  `go` 提到 1.27.2（D137 已记账，留待决定）。
+  ⑤ **stdlib 8 条漏洞 → 已清零（2026-10-13，D137 收尾）**：工具链升 go1.27.2（go.mod 的 `go`
+  指针随之到 1.27.2），`govulncheck ./...` 现在报 **0 个可达漏洞**。WSL 侧的坑同批修掉
+  （linuxgate 硬编码 `GOTOOLCHAIN=local`，apt 的 go-1.26 不够 → 把模块缓存里的 linux 工具链
+  解到 `~/sdk` 并前置 PATH）。残留 2 条均不可达，其中 GO-2026-5932（x/crypto）上游无修复版。
 
 - **后续可选（修法②）**：弃子进程方案，复用主窗托盘基建（`Shell_NotifyIconW`）在自家进程发气泡，顺带升级过时的 balloon-tip 形态（Win10+ toast）——零子进程、无 powershell 冷启，但要消息泵 + 平台分支 + toast 侧 WinRT COM，留待 GUI 批次一并做。
 
