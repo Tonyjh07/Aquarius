@@ -1,6 +1,8 @@
 module github.com/Tonyjh07/Aquarius/spike/giospike
 
-go 1.27.0
+// D137：与主模块口径对齐（主模块 go.mod 的 go 指针 = 1.26）。原 1.27.0 高于主模块，
+// 照文档跑 spike 的人会白装一个更高的工具链。
+go 1.26.0
 
 require gioui.org v0.10.2
 

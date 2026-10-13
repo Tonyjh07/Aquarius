@@ -916,7 +916,7 @@
   | legacy 二进制 Office（.doc/.xls/.ppt） | 无 | 不在档（Q14 口径），二进制占位 |
 - **统一口径**：① 分派按**扩展名**（OOXML 是 zip 容器，内容嗅探无能为力；pdf/html 扩展名即判）；② 解析实现居 `ingestfile` 内（parse*.go），产 `PartDoc{Ref, Text}`，装配内联零改动（§4.2③）；③ 提取文本上限 `maxDocText`(64KB) 截断标注（沿「全文可用 file_read」口径）、结构化文档文件大小上限 `maxIngestFile`(32MB) 超限不解析（zip/内存有界）；④ **解析失败（加密/损坏/超限）回落现有二进制占位文案并注明原因**——提取尽力而为，绝不让附件摄取整体失败；⑤ detectMime 扩展名校正增 pdf/html/docx/xlsx/pptx（元数据更准）；⑥ isTextish 显式排除 .rtf。
 - **否决**：**fumiama/go-docx（AGPL-3.0，连带 imgsz GPL-3.0——许可证核查发现，与 unioffice 同理由排除；换 gomutex/godocx）**；unioffice（AGPL/商业双授权，污染单二进制分发）；UniPDF（商业授权）；pdfcpu（面向操作非提取）；自写 OOXML 解析（用户明确要求现成库；三件套 XML 细节是 bug 农场）；pptx 手写 zip+xml 提取（违背「不造轮子」拍板，宁缓）。
-- **后果/限制**：① 新增 4 个直接依赖 + 若干传递依赖（THIRD-PARTY-NOTICES 同步；x/ 系钉在 go 1.25 兼容版本，go.mod 不升 1.26）；② pptx/rtf/legacy Office 附件仍走二进制占位（占位文案可 file_read 取原文）；③ PDF 文本提取对 CJK（无内嵌字体）与复杂版式尽力而为——提取后做版式碎片归一；④ xlsx 提取走 excelize OpenReader（内存 ≈ 文件大小，32MB 上限封顶）；docx 经 godocx.OpenDocument(path) 复开文件（与入库 fd 分离——两读间文件被改的竞窗可接受，入库字节才是 file_read 权威）；⑤ 上限为包级 var（测试可缩）。
+- **后果/限制**：① 新增 4 个直接依赖 + 若干传递依赖（THIRD-PARTY-NOTICES 同步；x/ 系钉在 go 1.25 兼容版本，go.mod 不升 1.26**（后经 [D137](#d137--依赖漏洞治理govulncheck-实证与-go-指针上调) 为修复 x/net 实际漏洞破例上调至 1.26）**）；② pptx/rtf/legacy Office 附件仍走二进制占位（占位文案可 file_read 取原文）；③ PDF 文本提取对 CJK（无内嵌字体）与复杂版式尽力而为——提取后做版式碎片归一；④ xlsx 提取走 excelize OpenReader（内存 ≈ 文件大小，32MB 上限封顶）；docx 经 godocx.OpenDocument(path) 复开文件（与入库 fd 分离——两读间文件被改的竞窗可接受，入库字节才是 file_read 权威）；⑤ 上限为包级 var（测试可缩）。
 - **状态**：生效
 
 ### D106 — 展开按钮实装：胶囊原地增高多行编辑（S2b-4，§15.2）
@@ -1658,3 +1658,40 @@
   断言末条正文段挂上 `a1`）。**变异验证过**：把判据改回恒假即报 `ID = ""`——正是旧实态。
   既有 `TestLiveMultiSegmentTurn`（文本 → 工具 → 文本）覆盖的是 `stamped=true` 的另一支，
   两支合起来钉住整个调和路径。
+
+### D137 · 依赖漏洞治理：govulncheck 实证与 go 指针上调
+
+> **驱动**：外部审查（2026-10-13）：「5 个可达漏洞（x/text 无限循环 DoS、goldmark XSS、x/image
+> TIFF 3 个 panic/资源漏洞），修复版本均已存在，升一次依赖即可清零」+ 「govulncheck 根本不在
+> 门禁清单里——漏洞就是这么溜进来的」。
+
+- **先实证再动手**：跑 `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`（原审查 5 条，
+  **实报 13 条**、3 个模块 + Go 标准库）。按可达性分三类处置：
+
+  | 漏洞 | 模块 | 修复版 | 审查口径核对 | 处置 |
+  |---|---|---|---|---|
+  | GO-2026-5970 | x/text v0.38.0 | ≥ v0.39.0 | 审查说的「无限循环 DoS」 | **已升**（→ v0.42.0） |
+  | GO-2026-5320 | goldmark v1.7.13 | ≥ v1.7.17 | 审查说的「XSS」 | **已升**（→ v1.7.17） |
+  | GO-2026-5032 / 5062 / 5066 | x/image v0.38.0 | ≥ v0.41 / v0.43.0 | 审查说的「TIFF 3 个 panic」 | **已升**（→ v0.43.0） |
+  | GO-2026-6603 / 6610 / 6611 / 6617 | x/net v0.56.0 | ≥ v0.60.0 | 审查漏报的 4 条（HTTP2 系） | **已升**（→ v0.60.0） |
+  | 其余 8 条（GO-2026-6605…6613） | **Go 标准库** | **go1.27.2** | 审查漏报 | **待工具链**（见下） |
+
+- **两条取证细节**（审查判断需要修正的地方）：
+  1. **goldmark 是真可达**：它不止 glamour 一处用——`internal/adapter/uigui/markdown.go`
+     **直接** import goldmark/ast/text/util（GUI 侧 markdown 渲染），uitui 侧经 glamour 的
+     `renderMD` 调 html renderer。所以那条 XSS 不是纸面风险。
+  2. **x/image 的 3 条生产不可达**：govulncheck 的调用栈只落在 `temp/imganalyze`（本地一次性
+     脚本，`.gitignore` 不入库）。生产侧 x/image 是间接依赖（gio 传进来的），没人调 tiff。
+     仍照升（间接依赖、无成本），但如实记为不可达。
+- **连带后果（必须记账的一条）**：`x/net@v0.60.0` 要求 **go ≥ 1.26**，`go get` 自动把 go.mod
+  的 `go` 指针从 **1.25.0 上调到 1.26.0**——这破掉了 **D105 里「go.mod 不升 1.26」的旧约定**。
+  取舍：为 4 个实际 HTTP2 漏洞把语言底线 +1 个小版本，代价是构建方需 Go ≥ 1.26
+  （`GOTOOLCHAIN=auto` 可自动拉）。AGENTS.md 技术栈行与 D105 条款已同步标注。
+- **剩下的 8 条全是标准库**（net/http、net/http2、mime/multipart、crypto/tls），修复版是
+  **go1.27.2**。本机工具链是 go1.27.0 ⇒ 需要用户侧升工具链（`go install golang.org/dl/go1.27.2@latest`
+  + `go1.27.2 download`）而非改代码；升完可把 go.mod 的 `go` 提到 `1.27.2`（未做，等决定）。
+  暴露面评估：本项目用 stdlib http 的形态是 **客户端**（LLM SSE / MCP streamable-http）+
+  一个被拒绝授权的 MCP server 都算不上的本地 stdio，server 侧缺陷（HPACK race、
+  CONNECT 反同步）实际够不着；仍建议随工具链升级一并清零。
+- **纪律补课**：审查说「没有 govulncheck」——根因确实是**依赖没有定期体检**，不是缺一行清单。
+  已把 `govulncheck` 列进 AGENTS.md 门禁段（仅在能找到名单时执行，避免误判为失败）。

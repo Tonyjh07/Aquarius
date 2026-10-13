@@ -6,7 +6,7 @@
 ## 项目概览
 
 - **Aquarius**：面向个人的极简 AI 助手（对话优先、多模态出入、文档记忆、可插拔工具/模型）。
-- **技术栈**：Go ≥ 1.25（D30 的 go-sdk 要求，2026-09 由 1.22 上调），单二进制交付（`go build ./cmd/aquarius`），无 cgo，纯 Go 依赖优先。
+- **技术栈**：Go ≥ 1.26（D30 的 go-sdk 要求，2026-09 由 1.22 上调；**D137 为修复 x/net 实际漏洞由 1.25 再上调**），单二进制交付（`go build ./cmd/aquarius`），无 cgo，纯 Go 依赖优先。
 - **当前状态**：M0–M4 已落地（会话树/压缩/工具记忆/任务多模态/MCP+TUI，见 docs/roadmap.md 顶部基线与 DESIGN §12）；按 §12/§14 推进后续（Tier-1 插件、GUI、语音）。
 - **语言约定**：文档与注释用中文；标识符、commit message 用英文。**进入模型上下文的字符串**（system 提示、工具声明与参数描述、工具回填结果/错误）一律英文；仅面向用户的界面、命令输出与日志用中文。
 
@@ -34,7 +34,13 @@ go test ./internal/domain/... -run TestProperty -count=50   # domain 性质测�
 go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
 go run ./cmd/linuxgate         # 非 Windows 门禁：WSL 内 linux 目标的 build + vet（D119）
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D137；需网络）
 ```
+
+- **依赖漏洞体检**（D137）：`govulncheck` 报的是**可达**漏洞（按调用栈判定，不是简单版本比对），
+  所以「升了 x/net 却仍报 stdlib」这类结论要以它的输出为准，别凭 CVE 列表猜。用法：改动
+  `go.mod`（加/升依赖）后跑一次；`exit status 3` = 有发现，非工具故障。网络不可用时跳过并
+  在 PR 说明里注明（不要因为连不上就算门禁失败）。
 
 - **非 Windows 门禁**（`go run ./cmd/linuxgate`）：Gio 在 Linux 上必须 cgo，Windows 上不存在
   「一条 `GOOS=linux go build`」的口径——该工具经 WSL 用原生 Linux 工具链跑 `go build ./...`
