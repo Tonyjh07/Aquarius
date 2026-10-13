@@ -491,7 +491,9 @@ func (c *cfgWriter) persistLevel(l perm.Level) error {
 }
 
 // persistPlugins 实现 /plugin 状态写回 config 的 plugins 段（D31）：键缺失语义靠
-// 省略表达（enabled 缺省启用、granted 缺省空）。
+// 省略表达（enabled 缺省启用、granted 缺省空、trusted 缺省未信任）。
+// trusted 是 D138 的启动信任指纹：**随 profile 走**（本文件就在 profiles/<name>/ 下）——两个
+// profile 对同一个插件可以有各自的信任决定，不会因切 profile 而串味。
 func (c *cfgWriter) persistPlugins(states map[string]plugin.State) error {
 	return persistConfig(c.path, func(generic map[string]any) {
 		pm := make(map[string]any, len(states))
@@ -502,6 +504,9 @@ func (c *cfgWriter) persistPlugins(states map[string]plugin.State) error {
 			}
 			if len(st.Granted) > 0 {
 				entry["granted"] = st.Granted
+			}
+			if st.Trusted != "" {
+				entry["trusted"] = st.Trusted
 			}
 			pm[name] = entry
 		}

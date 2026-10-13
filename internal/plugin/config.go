@@ -5,6 +5,8 @@
 package plugin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -77,6 +79,10 @@ type State struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	// Granted capability allowlist（grant 确认的落盘处）。
 	Granted []string `json:"granted,omitempty"`
+	// Trusted 启动信任指纹（D138）：发现源 = plugins 时，用户在信任门里确认过一次的
+	// 启动描述指纹（`Decl.Fingerprint()`）。**随 profile 走**（config 就在 profiles/<name>/）。
+	// 空 = 从未确认（启动期弹一次）；与当前声明指纹不符 = 描述被改过，重新问。
+	Trusted string `json:"trusted,omitempty"`
 }
 
 // IsEnabled 键缺失按启用（D31 默认值）。
@@ -107,6 +113,38 @@ func (d Decl) ToolRisk() tool.Risk {
 		return tool.Confirm
 	}
 	return tool.Safe
+}
+
+// LaunchDesc 人类可读的启动描述（D138 信任门提示词用）：stdio = 命令行原文，
+// http = 端点 URL。env/headers 不进正文（键值里可能有 secret 引用）。
+func (d Decl) LaunchDesc() string {
+	switch d.Transport {
+	case TransportStdio:
+		parts := append([]string{d.Command}, d.Args...)
+		return strings.Join(parts, " ")
+	case TransportHTTP:
+		return d.URL
+	}
+	return ""
+}
+
+// Fingerprint 启动描述的稳定指纹（D138）：transport + command + args + url。
+// env/headers **不进**指纹——它们的值是 secret 引用，随环境变化，且不改变信任的
+// 对象（「跑的是哪个程序」）。指纹只用于「描述被改过 ⇒ 重新信任」，不做安全边界。
+func (d Decl) Fingerprint() string {
+	var b strings.Builder
+	b.WriteString(d.Transport)
+	if d.Command != "" {
+		b.WriteString("\x00" + d.Command)
+		for _, a := range d.Args {
+			b.WriteString("\x00" + a)
+		}
+	}
+	if d.URL != "" {
+		b.WriteString("\x00" + d.URL)
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:8])
 }
 
 // Manifest `plugin.json`（§6.3）：与 config `mcpServers` 同为声明来源（D31）。

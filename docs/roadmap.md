@@ -241,9 +241,11 @@
   （读无副作用）、提示注入风险的前提是模型已走到 file 工具且用户自己配的工具/模型；真要收紧是
   **设计变更**（读越出 sandbox 走 Ask 会让「全文可用 file_read」失效），需单开 D 决策并评估
   弹窗体验代价。
-  ② **插件「丢文件即静默 exec」**：事实成立（`Host.grant` 在 `len(Capabilities)==0` 时直接 true，
-  无任何信任门）。用户已拍板做**首次信任确认 + 持久化 grant**（复用现成 `Confirmer`/`State.Granted`），
-  开工前需定 grant 落点（`~/.aquarius/plugins/state.json` 复用现有 State，还是走 config）。
+  ② **插件「丢文件即静默 exec」→ 已加信任门（2026-10-13，D138）**：`Host.grant` 此前对
+  capabilities 为空的 plugin.json 直通 ⇒ 静默 exec。现由 `Host.trustGate` 补门：**插件目录发现**
+  的条目首次连接前必须确认（提示含启动命令原文），指纹落 `State.Trusted`（config
+  `plugins.<name>.trusted`，**随 profile 走**）；命令/args/url 一改就重新问。config 里写的
+  server = 用户显式信任不过门（否则 MCP 日常天天弹窗）。
   ③ **MCP 默认 risk 按来源分流**：config 里写的 server 保持 `safe`（用户显式信任），**插件目录丢
   进来的 plugin.json 默认 `confirm`**（来路不明）。
   ④ **MCP prompt 文本升格为用户身份**（`RenderPrompt` 结果直接走 `UserInput`）：最小处置 = 打来源

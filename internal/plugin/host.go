@@ -150,6 +150,10 @@ func (h *Host) Start(ctx context.Context) {
 			h.setStatus(name, StatusDisabled, "")
 			continue
 		}
+		if !h.trustGate(ctx, d) {
+			h.setStatus(name, StatusRevoked, "未获信任或确认被拒绝（fail-closed）")
+			continue
+		}
 		if h.grant(ctx, d) {
 			h.connect(ctx, name)
 		} else {
@@ -215,6 +219,48 @@ func (h *Host) discover() {
 			h.logf("[plugin] %s: config 条目优先；未配置的能力/风险继承 plugin.json（D31）", m.Name)
 		}
 	}
+}
+
+// trustGate 启动期信任门（D138）：**插件目录发现**的 server 第一次见到必须先经用户确认
+// 才连接。此前 `grant` 只对显式声明了 capabilities 的条目弹窗——一个
+// capabilities 为空的 plugin.json 丢进 plugins/ 目录，会在启动时静默 exec 任意命令。
+// 边界：config `mcpServers` 里写的条目 = 用户显式信任（自己写的配置），不过门。
+// 指纹变了（command/args/url 改动）重新问；已信任且未变 → 静默起。fail-closed。
+func (h *Host) trustGate(ctx context.Context, d Decl) bool {
+	if d.Source != SourcePlugins {
+		return true // config 显式信任（D31：配置由用户本人维护）
+	}
+	fp := d.Fingerprint()
+	h.mu.Lock()
+	if h.states[d.Name].Trusted == fp {
+		h.mu.Unlock()
+		return true // 已信任且启动描述未变
+	}
+	h.mu.Unlock()
+	if h.confirm == nil {
+		h.logf("[plugin] %s: 未信任且无 Confirmer，按 fail-closed 跳过（D138）", d.Name)
+		return false
+	}
+	prompt := fmt.Sprintf("插件 %q 来自插件目录（%s），本次启动要运行它？\n启动方式：%s",
+		d.Name, SourcePlugins, d.LaunchDesc())
+	ans, err := h.confirm.Confirm(ctx, prompt)
+	if err != nil {
+		h.logf("[plugin] %s: 信任确认失败: %v", d.Name, err)
+		return false
+	}
+	if !ans.Allow {
+		h.logf("[plugin] %s: 用户拒绝信任，本次不连接", d.Name)
+		return false
+	}
+	h.mu.Lock()
+	cur := h.states[d.Name]
+	cur.Trusted = fp
+	h.states[d.Name] = cur
+	h.mu.Unlock()
+	if err := h.saveStates(); err != nil { // 指纹落盘 ⇒ 下次启动静默
+		h.logf("[plugin] %s: 信任状态写回失败: %v", d.Name, err)
+	}
+	return true
 }
 
 // grant capability 首用逐项确认（§6.4 #3）：通过则写入 State.Granted 并落盘。
@@ -403,6 +449,11 @@ func (h *Host) Enable(ctx context.Context, name string) error {
 	}
 	h.mu.Unlock()
 	perr := h.saveStates()
+	if !h.trustGate(ctx, d) {
+		h.setStatus(name, StatusRevoked, "未获信任或确认被拒绝（fail-closed）")
+		h.changed()
+		return fmt.Errorf("%s 未获信任，本次不连接", name)
+	}
 	if h.grant(ctx, d) {
 		h.connect(ctx, name)
 	} else {

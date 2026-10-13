@@ -1752,3 +1752,32 @@
   false），但 `gofmt -l .` 会走进去刷一屏。**教训**：PowerShell 传给 WSL 的命令一律写进
   脚本文件再执行，变量展开只发生在 bash 内；AGENTS.md 的「编辑 UTF-8 文件别用 shell」
   同源——凡是跨 shell 传路径/变量，就走文件。
+
+### D138 · 插件启动信任门：plugins 目录发现的条目首次须确认（信任随 profile 走）
+
+> **驱动**：外部审查（2026-10-13，安全项 1）：「插件能力授权无运行时强制——丢一个 plugin.json
+> 进目录即在启动期静默 `exec.Command` 执行任意命令」。用户 2026-10-13 拍板：**做首次信任
+> 确认 + 持久化 grant**，且**随 profile 走**（放 profile 目录）；触发时机取
+> 「只拦启动期首次发现」。
+
+- **事实认定**：`Host.grant` 只在 `len(Capabilities) > 0` 时才要确认；capabilities 为空的
+  plugin.json 走的是 `return true` 直通 ⇒ 静默启动任意命令。**但这不等于「加运行时强制」**：
+  stdio MCP server 是任意子进程，capability 无法在 OS 层强制（沙箱化=另一条产品线）。
+  能补的缺口是**信任门**：连接之前先问一次。
+- **边界（关键，不然会把 MCP 日常用废）**：config `mcpServers` 里写的条目 = **用户显式信任**
+  （自己写的配置），不过门；**插件目录**（`profiles/<name>/plugins/*/plugin.json`）发现的
+  条目才过门——这是唯一"丢个文件就执行"的入口。`Source` 字段已有（D31），直接复用。
+- **触发时机**：启动期 + 手动 Enable 两条路径都过门；`Trusted` 指纹与当前声明**不符即重新问**
+  （指纹 = sha256(transport|command|args|url)，防"先信任后偷换"）。已信任且未变 → 静默起。
+  env/headers **不进指纹**：值是 secret 引用、随环境变，且不改变信任对象（「跑的是哪个程序」）。
+- **落点（用户拍板：profile 化）**：`State.Trusted`（config `plugins.<name>.trusted`）。
+  用户否掉了 `<dataDir>/plugins/state.json`（跨 profile 串味）与独立的 state.json
+  ——config.json 本身就在 `profiles/<name>/` 下，随 profile 走，且 `Persist`/`States`
+  读写路径与 `enabled`/`granted` 完全同一条，零新机制。`persistPlugins` 只多写一个键。
+- **fail-closed 与 grant 同级**：无 Confirmer = 不连接、置 revoked；确认出错 = 不连接；
+  拒绝 = 不连接。提示词给**启动方式原文**（命令行/URL；env/headers 不进正文，可能有 secret）。
+- **回归测试**（`internal/plugin/trust_test.go`，6 条）：首次必须问且提示含命令+来源、
+  config 源不问、拒绝即 revoked 不拨号、已信任静默、改命令重新问、无 Confirmer 拒连。
+  **变异验证**：把信任门改成恒真 ⇒ 5 条红（config 源那条照旧绿，符合预期）。
+- **与既有机制的关系**：信任门**在前**、capability grant **在后**——两者答的不是同一个问题
+  （"要不要跑这个程序" vs "要不要给它某能力"）。D138 补的是前者完全缺失的那一问。
