@@ -504,17 +504,24 @@ func (u *UI) fadePresent(composed bool) {
 // 启动后整幅不透明，直至停靠动画催生帧才自愈）。加固为梯次：① 立即补提交一次（D88
 // 原机制，同步、窗口线程）；② Invalidate 催一帧走完整 compose→ULW（实测自愈路径）；
 // ③ representLadder 各拍再补提交，任一拍发现主窗已再隐藏（visMain）即止。位图/矩形
-// 口径同 fadePresent（尺寸与实测矩形不符跳帧防拉伸）；跨 goroutine 读 u.frameSize/
-// fadeBuf/x/y/alpha 沿 showMain 既有口径（整型/字节/指针读，无撕裂）。
+// 口径同 fadePresent（尺寸与实测矩形不符跳帧防拉伸）。
+//
+// **D135：梯次走位图快照，不读帧循环字段。** 立即那次在帧循环内直读 u.fadeBuf 无竞态；
+// 但跨 goroutine 直读 u.fadeBuf/frameSize/x/y/alpha 与帧循环 fadeCompose 的
+// 「重分配 + clear + 逐像素填充」并发——既是数据竞争（切片头/字段），也可能让 Present
+// 提交一张**正在被改写**的位图（撕裂帧）。故 spawn 前复制一份自洽快照（w/h/x/y/alpha +
+// 像素拷贝），梯次只碰快照与 OS 侧只读查询（WindowRect/GetWindowRect 跨线程安全）。
+// 代价：每次揭示在帧循环内多一次位图拷贝（4K 满窗约 33MB 量级，仅揭示路径，非每帧）。
 func (u *UI) representAfterShow() {
-	u.representOnce(u.plat.Present)
+	u.representOnce(u.plat.Present) // 立即那次：帧循环内，直读 u.* 无竞态
 	if u.w != nil {
 		u.w.Invalidate() // 并发安全（Gio）；催一帧让常规提交路径接管
 	}
 	// 梯次三件套在 spawn 前捕获（go 语句给 happens-before）：goroutine 只碰捕获值与
-	// u 字段，不迟到读平台对象（-race 口径）；测试把 representLadder 置空即不启 goroutine。
-	delays, vis, present := representLadder, u.plat.Visible, u.plat.Present
-	if len(delays) == 0 {
+	// 快照，不读帧循环字段（-race 口径）；测试把 u.representLadder 置空即不启 goroutine。
+	delays, vis, present := u.representLadder, u.plat.Visible, u.plat.Present
+	shot, ok := u.snapshotFade()
+	if len(delays) == 0 || !ok {
 		return
 	}
 	go func() {
@@ -523,30 +530,62 @@ func (u *UI) representAfterShow() {
 			if !vis() {
 				return
 			}
-			u.representOnce(present)
+			u.presentShot(present, shot)
 		}
 	}()
 }
 
 // representOnce 以最后一次合成位图按 fadePresent 同口径提交一次（present 经窗口线程，
 // 铁律 1）。提交函数作参数传：梯次 goroutine 用 spawn 前捕获的槽值，不迟到读全局。
+// 仅帧循环内调用（D135：跨 goroutine 路径走 presentShot）。
 func (u *UI) representOnce(present func(x, y, w, h int32, bits []byte, alpha byte) bool) {
-	if u.fadeBuf == nil || u.frameSize.X <= 0 || u.frameSize.Y <= 0 {
+	shot, ok := u.snapshotFade()
+	if !ok {
 		return
 	}
-	x, y := u.x, u.y
-	if rc, ok := u.windowRect(); ok {
-		if int(rc.right-rc.left) != u.frameSize.X || int(rc.bottom-rc.top) != u.frameSize.Y {
+	u.presentShot(present, shot)
+}
+
+// fadeShot 提交快照（D135）：一次提交所需的全部数据，自洽且只读。
+type fadeShot struct {
+	bits  []byte
+	w, h  int32
+	x, y  int32
+	alpha byte
+}
+
+// snapshotFade 复制当前合成位图与提交口径（帧循环内调用）。尺寸/长度不足即 false。
+func (u *UI) snapshotFade() (fadeShot, bool) {
+	size := u.frameSize.X * u.frameSize.Y * 4
+	if u.frameSize.X <= 0 || u.frameSize.Y <= 0 || len(u.fadeBuf) < size {
+		return fadeShot{}, false
+	}
+	return fadeShot{
+		bits:  append([]byte(nil), u.fadeBuf[:size]...),
+		w:     int32(u.frameSize.X),
+		h:     int32(u.frameSize.Y),
+		x:     int32(u.x),
+		y:     int32(u.y),
+		alpha: u.alpha,
+	}, true
+}
+
+// presentShot 提交快照：只读快照 + 实测矩形优先定位（D88：防自跟踪位置失联；实测矩形与
+// 位图尺寸不符则跳帧防拉伸）。梯次 goroutine 唯一入口（不触帧循环任何字段）。
+func (u *UI) presentShot(present func(x, y, w, h int32, bits []byte, alpha byte) bool, shot fadeShot) {
+	x, y := shot.x, shot.y
+	if rc, ok := u.windowRect(); ok { // OS 侧只读，跨 goroutine 安全
+		if int(rc.right-rc.left) != int(shot.w) || int(rc.bottom-rc.top) != int(shot.h) {
 			return
 		}
 		x, y = rc.left, rc.top
 	}
-	present(x, y, int32(u.frameSize.X), int32(u.frameSize.Y), u.fadeBuf, u.alpha)
+	present(x, y, shot.w, shot.h, shot.bits, shot.alpha)
 }
 
-// representLadder 揭示后补提交梯次（D115）：每次延迟一拍；测试置空防泄漏 goroutine
-// 在测试结束后继续提交（-race）。
-var representLadder = []time.Duration{
+// defaultRepresentLadder 揭示后补提交梯次的缺省拍距（D115）：每次延迟一拍；由
+// newUI 注入 u.representLadder，测试置空防泄漏 goroutine 在测试结束后继续提交（-race）。
+var defaultRepresentLadder = []time.Duration{
 	40 * time.Millisecond, 120 * time.Millisecond, 250 * time.Millisecond,
 }
 

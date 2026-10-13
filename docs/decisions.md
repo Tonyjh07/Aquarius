@@ -1610,3 +1610,30 @@
   < 一张位图量。变异验证（故意跳过 `DeleteObject`）实测 +44.6MB ⇒ 该测试确实抓得住。
 - **教训**：Windows 资源类缺陷的判定必须**实测**，不能靠 MSDN 片段外推；且泄漏判据要用
   能测出阳性对照的那把尺。
+
+### D135 · 揭示补提交走位图快照（揭示梯次的跨 goroutine 读修掉）
+
+> **驱动**：外部审查（2026-10-13）：「fade.go:520-544 梯次 goroutine 读 `fadeBuf` 与帧循环
+> :428-439 的重分配并发；`window_test.go:229` 把 `representLadder` 置 nil 恰好绕开该路径，
+> 所以 `-race` 全绿也没抓到」——**成立，且比它说的多一层**。
+
+- **两层问题**：① 字段层——梯次 goroutine 读 `u.fadeBuf`（切片头 3 字）/ `frameSize` /
+  `x` / `y` / `alpha`，与帧循环 `fadeCompose` 的重分配+写入并发（`-race` 实报）；② 内容层——
+  原注释「整型/字节/指针读，无撕裂」只对标量成立，**位图像素**同样在被 `clear` +
+  逐像素填充时被另一 goroutine 读走并 `Present` ⇒ 撕裂帧上屏。
+- **骗过 -race 的原因**（这才是本条的真教训）：`representLadder` 是**包级 var**，
+  `newFrameUI` 靠改包状态全局置 nil ⇒ 该路径在**所有**测试里都被屏蔽，`-race` 全绿是假绿。
+- **修法**：梯次改为只读**spawn 前复制的自洽快照** `fadeShot{bits, w, h, x, y, alpha}
+  （`snapshotFade`），提交走 `presentShot`——只读快照 + OS 侧只读查询
+  （`WindowRect` 走原子句柄 + GetWindowRect，跨线程安全），完全不触帧循环字段。
+  立即那次仍在帧循环内直读（无竞态）。
+- **梯次归属改为 UI 字段**：`representLadder` → `u.representLadder`（`newUI` 注入
+  `defaultRepresentLadder`，测试置 nil 只影响自己）——包级 var 一旦被测试全局改写，该路径
+  就再也没机会进 -race。
+- **代价记账**：每次揭示在帧循环内多一次位图拷贝（4K 满窗约 33MB 量级），仅揭示路径
+  （非每帧）；换来「梯次提交的必定是一张自洽位图」——D88/D115 的本意本来就是重交最后
+  一张合成位图，快照语义上完全等价。
+- **回归测试**：`TestRepresentLadderConcurrentWithFrames` —— 亚毫秒拍距的梯次 + 帧循环
+  并发反复重配 `fadeBuf`（交替尺寸 ⇒ 每次都重新分配，正是原缺陷触发条件）。**变异验证
+  过**：把梯次换回直读帧循环字段，本测试在 `-race` 下立刻报两处 DATA RACE
+  （`fade.go:544` 读字段 + `:562` 读内容）；换回快照即净。

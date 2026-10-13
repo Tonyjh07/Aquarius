@@ -226,8 +226,11 @@ func TestFrameItemsLive(t *testing.T) {
 // §15.5：GUI 只进无窗口 headless 测试）。followTail 初值对齐 newUI；装假平台
 // （S4b：原 presentMain/revealMain/visMain/mainHWND 注入槽的替代，取用见 fakeOf）。
 func newFrameUI() *UI {
-	representLadder = nil // D115：防梯次 goroutine 在测试结束后继续提交（-race）
 	u := &UI{plat: newFakePlat(), followTail: true}
+	// D115/D135：不给测试起补提交梯次 goroutine（结束后仍会提交，-race）。D135 起梯次是
+	// UI 字段，改它不再污染包状态——包级 var 只能靠「全局置 nil」屏蔽，等于把这条跨
+	// goroutine 路径在所有测试里藏起来，-race 也就永远抓不到它读帧循环字段的问题。
+	u.representLadder = nil
 	u.plat = newFakePlat()
 	u.m = newModel(u)
 	u.th = testTheme()
@@ -391,9 +394,7 @@ func TestRepresentAfterShowLadder(t *testing.T) {
 	u.frameSize = image.Pt(10, 10)
 	u.fadeBuf = make([]byte, 10*10*4)
 
-	oldLadder := representLadder
-	defer func() { representLadder = oldLadder }()
-	representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	u.representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
 	fp := fakeOf(u)
 	fp.VisibleNow = true
 	var calls int32 // 梯次 goroutine 并发写：必须原子
@@ -418,9 +419,7 @@ func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
 	u.frameSize = image.Pt(10, 10)
 	u.fadeBuf = make([]byte, 10*10*4)
 
-	oldLadder := representLadder
-	defer func() { representLadder = oldLadder }()
-	representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
+	u.representLadder = []time.Duration{time.Millisecond, 2 * time.Millisecond}
 	fp := fakeOf(u)
 	fp.VisibleNow = false
 	var calls int32
@@ -433,6 +432,52 @@ func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("隐藏态梯次应止步于立即一拍, got %d", got)
+	}
+}
+
+// TestRepresentLadderConcurrentWithFrames D135：梯次 goroutine 与帧循环**并发**跑，
+// -race 下必须干净。此前 representLadder 是包级 var，`newFrameUI` 全局置 nil ⇒ 所有测试
+// 都绕开这条跨 goroutine 路径，-race 全绿是假绿；真跑起来会同时命中两类问题：字段层
+// （u.fadeBuf 切片头 / frameSize / x / y / alpha 被梯次读、被帧循环写）与内容层（Present
+// 可能读到正在被 clear+逐像素填充的位图 ⇒ 撕裂帧）。
+//
+// 口径：梯次开启（亚毫秒拍距）+ 帧循环并发反复重组位图（尺寸交替 ⇒ 每次都重新分配
+// fadeBuf，正是原缺陷的触发条件），跑够多轮让两个 goroutine 的读写充分交错。
+func TestRepresentLadderConcurrentWithFrames(t *testing.T) {
+	u := newFrameUI()
+	u.hwnd = 1
+	fp := fakeOf(u)
+	fp.VisibleNow = true
+	var presents int32 // 梯次 goroutine 并发写
+	fp.OnPresent = func(x, y, w, h int32, bits []byte, alpha byte) bool {
+		if w <= 0 || int64(w)*int64(h)*4 != int64(len(bits)) {
+			t.Errorf("提交了不自洽的快照：%dx%d 但位图 %d 字节", w, h, len(bits))
+		}
+		atomic.AddInt32(&presents, 1)
+		return true
+	}
+	u.representLadder = []time.Duration{time.Millisecond, time.Millisecond}
+
+	// 帧循环侧：交替尺寸跑若干帧（每帧重新分配 fadeBuf + 填充），与梯次并发。
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			w, h := 40+i%7, 30+i%5
+			u.frameSize = image.Pt(w, h)
+			u.fadeBuf = make([]byte, w*h*4)
+			for j := range u.fadeBuf {
+				u.fadeBuf[j] = byte(i + j)
+			}
+			u.representAfterShow() // 每帧都揭示一次 ⇒ 梯次反复起停（真实呼出节奏的压测档）
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	<-done
+	// 梯次 goroutine 仍在飞，等最后一拍过去再断言。
+	time.Sleep(20 * time.Millisecond)
+	if got := atomic.LoadInt32(&presents); got == 0 {
+		t.Fatal("梯次与帧循环并发期间一次提交都没有（快照路径可能没接上）")
 	}
 }
 

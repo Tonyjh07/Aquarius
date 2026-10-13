@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gioui.org/app"
 	"gioui.org/gesture"
@@ -312,6 +313,11 @@ type UI struct {
 	// edSelRegions 编辑器选区行盒复用缓冲（D133 淡出源自绘选区，Regions 逐帧复用，
 	// 免 per-frame 分配；仅帧循环 goroutine 读写）。
 	edSelRegions []widget.Region
+	// representLadder 揭示后补提交梯次的拍距（D115；D135 起为 UI 字段而非包级 var——
+	// 包级 var 只能靠测试改包状态来禁用，等于把该路径在测试里整体屏蔽、-race 永远抓不到
+	// 跨 goroutine 读帧循环字段的问题）。缺省 defaultRepresentLadder；测试置 nil 不启
+	// goroutine。仅揭示路径读。
+	representLadder []time.Duration
 
 	// collapsed 收起态（§15.1 单组件：左键 logo 收起回球，仅渲染悬浮球；再单击球
 	// 展开）。仅事件循环 goroutine 读写。
@@ -375,8 +381,9 @@ func newUI(opts Options, window bool) *UI {
 		done:  make(chan struct{}),
 	}
 	u.m = newModel(u)
-	u.plat = newPlatform(opts, window) // 平台实现（profile/主题解析前就绪）
-	u.editor.Submit = true             // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
+	u.plat = newPlatform(opts, window)         // 平台实现（profile/主题解析前就绪）
+	u.representLadder = defaultRepresentLadder // 揭示补提交梯次拍距（D115/D135）
+	u.editor.Submit = true                     // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
 	u.followTail = true   // 初始尾随贴底（新内容贴输入栏，§15.1）
 	u.alpha = semiAlpha   // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）
