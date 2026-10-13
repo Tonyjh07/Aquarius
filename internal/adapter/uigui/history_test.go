@@ -13,7 +13,11 @@ import (
 )
 
 // fakeRelTree 固定整树快照的 TreeView 替身（Graph 有值；Branches/Tail 用不上）。
-type fakeRelTree struct{ g port.TreeGraph }
+// texts = D132 的 NodeText 数据源（按 id 给正文全文；未列出的 id = 无正文）。
+type fakeRelTree struct {
+	g     port.TreeGraph
+	texts map[conversation.MessageID]string
+}
 
 func (f fakeRelTree) Branches(conversation.MessageID) (port.BranchInfo, bool) {
 	return port.BranchInfo{}, false
@@ -22,18 +26,24 @@ func (f fakeRelTree) Tail(id conversation.MessageID) (conversation.MessageID, bo
 	return id, true
 }
 func (f fakeRelTree) Graph() (port.TreeGraph, bool) { return f.g, true }
+func (f fakeRelTree) NodeText(id conversation.MessageID) (string, bool) {
+	t, ok := f.texts[id]
+	return t, ok
+}
 
 // fakeLister 固定会话列表的 SessionLister 替身。
 type fakeLister []port.SessionSummary
 
 func (f fakeLister) List() []port.SessionSummary { return f }
 
-// newHistUI 最小历史窗测试 UI（帧级 headless + 断言 inCh）。
+// newHistUI 最小历史窗测试 UI（帧级 headless + 断言 inCh/inbox：菜单分发的 post 走 inbox，
+// 图内命令走 inCh）。
 func newHistUI(tree port.TreeView, list port.SessionLister) *UI {
 	u := newFrameUI()
 	u.opts.Tree = tree
 	u.opts.Lister = list
 	u.inCh = make(chan port.UserInput, 8)
+	u.inbox = make(chan uiMsg, 8)
 	return u
 }
 

@@ -280,6 +280,10 @@ type bubbleMenuCtx struct {
 	part int
 	copy string
 	raw  rawContent
+	// graph 该上下文来自消息管理面的图节点右键（D132）——项集与分发据此切换到
+	// nodeMenuItems（气泡七项 + 图侧三项）。两个生产方（主界面气泡 / 图节点）共用
+	// 同一呈现与同一分发，差别只有这一位与 edit/copy/raw 的取数口径。
+	graph bool
 }
 
 // bubbleCtx 组装菜单上下文（D92/D97/D99/D100）：复制文本此刻定——选区激活取选区

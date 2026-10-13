@@ -740,8 +740,7 @@ UI 要画分叉按钮（§15.3/S1-1f）与会话树界面（S3 relation-map）�
   (MessageID, bool)`（D94：版本末端 = 该节点版本子树中 CreatedAt 最新的叶子，分支切换
   的落点——切版本应恢复该版本的对话全程，而非停在消息节点上）；
   `BranchInfo{IDs []conversation.MessageID; Index int}`：同父全部孩子**按创建序**（含自身）、
-  `Index` 为自身下标；`id` 不在树中 → `ok=false`。
-- **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
+  `Index` 为自身下标；`id` 不在树中 → `ok=false`。- **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
   `{Anchor, Nodes[], Total}`，`GraphNode{ID, Parent, Role, Snippet, CreatedAt, EdgeKind,
   SiblingIdx, SiblingCount}`（`Anchor` = 当前 Head 锚点；`EdgeKind` = 与父边的种类
   `顺接|版本链`；`Total` 供「共 N · 呈现 M」的 A7 口径）；与 `Branches`/`Tail` 同源、
@@ -753,6 +752,12 @@ UI 要画分叉按钮（§15.3/S1-1f）与会话树界面（S3 relation-map）�
 - **会话列表（D120⑥，S3 左栏数据面）**：另立只读端口 `port.SessionLister{List() []SessionSummary}`
   （`ID/Title/UpdatedAt/Messages/Current`；数据源 = 已有 `ConversationStore.List`；D80/D103 同款
   反向端口：app 实现、UI 消费，只读无变更入口）。
+- **节点正文全文（D132）**：增 `NodeText(id) (string, bool)` —— 消息管理面节点右键的动作
+  （编辑/复制/引用/查看原文）与主界面气泡菜单**同权**，而 `Snippet` 只有 40 字摘要，拿它预填
+  编辑框会在提交时把消息截断成摘要（静默损坏）。口径 = `PartText` 分片依序拼接、跳过
+  思考/工具/附件分片（与气泡块正文口径同源），分隔 `\n\n` 是 `/edit` 缺省合段（D107③）的
+  逆运算；不做 TrimSpace（代码块首尾空白有内容，§9）。app 侧随整树快照存**节点只读副本**
+  （节点不可变 ⇒ 按值拷贝结构体即共享分片底层数组，不重复占内存）。
 - **实现**：`*app.Session` 实现该端口（**首个 app 侧端口实现**；方向合法 —— adapter 与 app
   同依赖 port，本端口消费方是 UI 适配器、实现方是 app，与 llm/store 反向）。
 - **并发**：Session 内维护**不可变快照**（整树 → `map[MessageID]BranchInfo`），树变更后

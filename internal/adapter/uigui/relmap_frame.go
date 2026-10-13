@@ -16,13 +16,10 @@ package uigui
 import (
 	"image"
 	"image/color"
-	"io"
 	"math"
-	"strings"
 
 	"gioui.org/f32"
 	"gioui.org/gesture"
-	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -30,7 +27,6 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
-	"gioui.org/widget"
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -189,13 +185,10 @@ type relGraph struct {
 	dragPY    float32
 	relaxLeft int // 物理续帧预算（硬顶，防病态输入下无限续帧）
 
-	menuOpen bool // 右键菜单（节点上下文）
-	menuNode int  // 菜单所属节点（本地索引）
-	menuX    float32
-	menuY    float32
-	menuCopy widget.Clickable
-	menuRm   widget.Clickable
-	menuHome widget.Clickable
+	// 右键菜单（D132：并入气泡菜单——按下武装、同指针原位抬起 = 请求菜单，项集与
+	// 分发都在 menu.go；不再自绘 Gio 浮层，与主界面同一呈现）。
+	menuArm  bool // 右键按下已武装（按在节点上）
+	menuNode int  // 武装时的节点（本地索引；-1 = 按在空白处）
 
 	// slots 手动摆放的槽位（D126「不锚定节点 ⇒ 自由移动」）：松手时把被拖节点的当前
 	// 位置**写回**静息布局（lay.adoptSlot），树按新形状收敛、不再弹回旧形状。按消息 ID
@@ -260,7 +253,8 @@ func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	g.pressNode = -1
 	g.grabNode = -1
 	g.dragNode = -1
-	g.menuOpen = false
+	g.menuArm = false
+	g.menuNode = -1
 }
 
 // restoreSlots 把手动槽位按消息 ID 套回新布局（D126）：新图里还在的节点保持用户摆过的
@@ -853,7 +847,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	g.draw(gtx, th, u, st)
 	// 悬停陈述（inspect，§3.4）暂缓：实测「tooltip 太大」，等改小/改位置再接回
 	// （文案派生 `relStatementOf` 与其测试仍在，恢复时只需重接 hover + drawTooltip）。
-	g.drawMenu(gtx, th, u, st)
+	// 右键菜单（D132）不自绘：openNodeMenu 投 shell，与主界面气泡菜单同一呈现。
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
@@ -947,27 +941,19 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 				g.grabNode = -1
 				g.dragging = false
 			}
+			g.menuArm = false
+			g.menuNode = -1
 		case pointer.Scroll:
 			g.wheel(int(e.Scroll.Y))
 		case pointer.Press:
 			if e.Buttons.Contain(pointer.ButtonSecondary) {
-				if h := g.hitTest(e.Position.X, e.Position.Y); h >= 0 {
-					g.menuOpen = true
-					g.menuNode = h
-					g.menuX, g.menuY = e.Position.X, e.Position.Y
-				}
+				// D132：右键 = 武装（同气泡口径 D92——按下武装、抬起才 fire，免得菜单在
+				// 按键未松时就弹出来吃掉这次抬起）；按在空白处不武装。
+				g.menuNode = g.hitTest(e.Position.X, e.Position.Y)
+				g.menuArm = g.menuNode >= 0
 				continue
 			}
 			if e.Buttons.Contain(pointer.ButtonPrimary) {
-				if g.menuOpen {
-					// 点菜单项（矩形内）→ 交给 Clickable 处理；菜单外 → 关闭。
-					if e.Position.X >= g.menuX && e.Position.X <= g.menuX+float32(gtx.Dp(120)) &&
-						e.Position.Y >= g.menuY && e.Position.Y <= g.menuY+float32(gtx.Dp(26)*3) {
-						continue
-					}
-					g.menuOpen = false
-					continue
-				}
 				g.pressed = true
 				g.pressNode = g.hitTest(e.Position.X, e.Position.Y)
 				// 抓手判定用**更宽的半径**（D121 实测修）：低 zoom 下标签隐藏、卡片塌缩成
@@ -1006,6 +992,15 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 				}
 			}
 		case pointer.Release:
+			if g.menuArm {
+				g.menuArm = false
+				// 「原位」抬起（同一节点）才 fire——与气泡右键同口径（D92）。
+				if h := g.menuNode; h >= 0 && h == g.hitTest(e.Position.X, e.Position.Y) {
+					g.openNodeMenu(u, h)
+				}
+				g.menuNode = -1
+				continue
+			}
 			if g.pressed {
 				g.pressed = false
 				if g.dragNode >= 0 {
@@ -1401,78 +1396,53 @@ func relSampleArc(pts []f32.Point, c f32.Point, r float32, from, to, step float6
 	return pts
 }
 
-// drawMenu 右键菜单：复制 ID / 删除 / 回到当前。点击判定须**先于绘制**（Clickable 的
-// Layout 也会消费程序化点击 requestClicks，先判后绘才可靠）；命中即就地关闭。
-func (g *relGraph) drawMenu(gtx layout.Context, th *material.Theme, u *UI, st *historyState) {
-	if !g.menuOpen {
+// openNodeMenu 图节点右键开菜单（D132）：与主界面气泡菜单**同一呈现、同一分发**——组好
+// 上下文投 shell（requestBubbleMenu），项集/命令见 menu.go 的 nodeMenuItems。
+func (g *relGraph) openNodeMenu(u *UI, li int) {
+	ctx := g.nodeMenuCtx(u, li)
+	if ctx == nil {
 		return
 	}
-	doCopy := g.menuCopy.Clicked(gtx)
-	doRm := g.menuRm.Clicked(gtx)
-	doHome := g.menuHome.Clicked(gtx)
-
-	x, y := int(g.menuX), int(g.menuY)
-	off := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
-	layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return g.menuItem(gtx, th, &g.menuCopy, "复制 ID")
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return g.menuItem(gtx, th, &g.menuRm, "删除（/rm）")
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return g.menuItem(gtx, th, &g.menuHome, "回到当前")
-		}),
-	)
-	off.Pop()
-
-	id := ""
-	if g.menuNode >= 0 && g.menuNode < len(g.vis.nodes) && g.model != nil {
-		id = string(g.model.nodes[g.vis.nodes[g.menuNode]].id)
-	}
-	switch {
-	case doCopy:
-		if id != "" {
-			gtx.Execute(clipboard.WriteCmd{Type: "application/text",
-				Data: io.NopCloser(strings.NewReader(id))})
-		}
-		g.menuOpen = false
-	case doRm:
-		if id != "" {
-			select {
-			case u.inCh <- port.UserInput{Command: &port.Command{Name: "rm", Args: []string{id}}}:
-			default:
-			}
-		}
-		g.menuOpen = false
-	case doHome:
-		g.focusPending = true
-		g.menuOpen = false
-	}
+	u.requestBubbleMenu(ctx)
 }
 
-// menuItem 菜单行（clickable + 文案，悬停底色）。
-func (g *relGraph) menuItem(gtx layout.Context, th *material.Theme, c *widget.Clickable, text string) layout.Dimensions {
-	return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Stack{}.Layout(gtx,
-			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-				bg := pillBg
-				if c.Hovered() {
-					bg = cardSystem
-				}
-				paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: image.Rectangle{Max: gtx.Constraints.Max},
-					SE: 4, SW: 4, NE: 4, NW: 4}.Op(gtx.Ops))
-				return layout.Dimensions{Size: image.Pt(gtx.Dp(120), gtx.Dp(26))}
-			}),
-			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, text)
-					l.Color = th.Fg
-					return l.Layout(gtx)
-				})
-			}),
-		)
-	})
+// nodeMenuCtx 组装图节点菜单上下文（D132）：
+//   - id/角色 → 档位（user/assistant 走气泡七项；root/system 只给复制/查看原文）；
+//   - 正文经 `port.TreeView.NodeText` 取**全文**（GraphNode.Snippet 只有 40 字摘要，拿它
+//     预填编辑框会在提交时把消息截断成摘要——D132 的要点）；取不到（节点无正文/快照
+//     未发布）→ edit/copy 空，项集随之收敛为图侧三项（nodeMenuItems 的 hasText 分支）；
+//   - part = -1（缺省合段，/edit 语义：全部正文分片并为一条；与 NodeText 的拼接口径互逆）；
+//   - raw = 正文原文（与主界面「原文 · <id>」同款标题）。
+func (g *relGraph) nodeMenuCtx(u *UI, li int) *bubbleMenuCtx {
+	if li < 0 || li >= len(g.vis.nodes) || g.model == nil {
+		return nil
+	}
+	n := g.model.nodes[g.vis.nodes[li]]
+	if n.id == "" {
+		return nil
+	}
+	ctx := &bubbleMenuCtx{id: n.id, kind: relNodeKind(n.role), part: -1, graph: true}
+	body := ""
+	if u.opts.Tree != nil {
+		if t, ok := u.opts.Tree.NodeText(n.id); ok {
+			body = sanitizeControl(t) // 与气泡块同口径：控制序列不进菜单文本（§9）
+		}
+	}
+	ctx.edit, ctx.copy = body, body
+	ctx.raw = rawContent{title: "原文 · " + shortID(string(n.id)), text: body}
+	return ctx
+}
+
+// relNodeKind 节点角色 → 气泡菜单档（D132）：user/assistant 与主界面气泡同档；root/system
+// 不可编辑（blockPlain 分支只给复制/查看原文）。
+func relNodeKind(r conversation.Role) blockKind {
+	switch r {
+	case conversation.RoleUser:
+		return blockUser
+	case conversation.RoleAssistant:
+		return blockAssistant
+	}
+	return blockPlain
 }
 
 // relInBox 屏幕点是否在视口盒内（float32 版）。

@@ -2,6 +2,7 @@ package app
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -25,6 +26,10 @@ type treeSnapshot struct {
 	// graph 整树快照（D112②/D120⑦，S3 relation-map 数据面）：同一构建过程产出，
 	// 与 branches/tails 自洽（同一次发布）。
 	graph port.TreeGraph
+	// msgs 每个节点的只读副本（D132：气泡级动作要正文全文，GraphNode.Snippet 只有 40 字
+	// 摘要）。节点**不可变**（§2 铁律 2：改动一律经 Revise 造新节点换 map 项），故按值
+	// 拷贝结构体即与整份正文共享底层分片——不重复占内存，也不会被后续 Revise 改写。
+	msgs map[conversation.MessageID]conversation.Message
 }
 
 // makeTreeSnapshot 由会话树构建快照：每个节点一条 BranchInfo，同级按 (CreatedAt, ID)
@@ -36,6 +41,7 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 	snap := &treeSnapshot{
 		branches: make(map[conversation.MessageID]port.BranchInfo, len(c.Nodes)),
 		tails:    make(map[conversation.MessageID]conversation.MessageID, len(c.Nodes)),
+		msgs:     make(map[conversation.MessageID]conversation.Message, len(c.Nodes)),
 	}
 	sibIdx := make(map[conversation.MessageID]int, len(c.Nodes))
 	sibN := make(map[conversation.MessageID]int, len(c.Nodes))
@@ -61,6 +67,7 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 	// 整树节点表（graph）：节点集 = 全部入树节点，按 (CreatedAt, ID) 升序。
 	nodes := make([]port.GraphNode, 0, len(c.Nodes))
 	for id, m := range c.Nodes {
+		snap.msgs[id] = m // D132：节点只读副本（共享分片底层数组，节点不可变）
 		ek := port.EdgeSeq
 		if m.Parent == "" {
 			ek = "" // 结构根无父边（D120§6.1）
@@ -148,4 +155,32 @@ func (s *Session) Graph() (port.TreeGraph, bool) {
 		return port.TreeGraph{}, false
 	}
 	return snap.graph, true
+}
+
+// NodeText 实现 port.TreeView（D132：气泡级动作的数据源）：快照内该节点的正文全文，
+// 无锁——口径同 Branches/Tail/Graph；尚未发布或 id 不在树中 → ok=false。
+func (s *Session) NodeText(id conversation.MessageID) (string, bool) {
+	snap := s.tree.Load()
+	if snap == nil {
+		return "", false
+	}
+	m, ok := snap.msgs[id]
+	if !ok {
+		return "", false
+	}
+	return nodeBodyText(m), true
+}
+
+// nodeBodyText 节点正文全文（D132）：PartText 分片依序拼接，跳过思考/工具/附件分片——
+// 与气泡块的正文口径一致（编辑预填、复制、引用、查看原文共用同一份）。分隔 "\n\n" 是
+// `/edit` 缺省合段（D107③ 把全部正文分片并为一条）的逆运算：原样提交即无损往返。
+// 不做 TrimSpace——正文可能是代码块，首尾空白是有内容的（§9）。
+func nodeBodyText(m conversation.Message) string {
+	var parts []string
+	for _, p := range m.Content {
+		if p.Kind == conversation.PartText && p.Text != "" {
+			parts = append(parts, p.Text)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }

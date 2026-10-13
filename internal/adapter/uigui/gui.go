@@ -284,6 +284,9 @@ type UI struct {
 	// rawView 查看原文窗内容原子槽（D99）：菜单分发处（托盘线程）Store，winRaw 次窗
 	// 帧内 Load——跨线程只经原子快照，不共享可变态（§15.7 并发模型）。
 	rawView atomic.Pointer[rawContent]
+	// nodeAction 图侧菜单动作槽（D132）：shell 线程菜单分发 Store，历史窗帧首 Swap
+	// 排空——复制 ID 要在 Gio 帧内落剪贴板、回到当前要改图状态，两者都不能在分发处直连。
+	nodeAction atomic.Pointer[nodeAction]
 
 	// 分叉条点击件（D81）：按分叉条序缓存左右两个 Clickable（get-or-create）；分叉条
 	// 消费 0 个行选键（selCount），故其增删不漂移其它行的选择键。仅事件循环 goroutine 读写。

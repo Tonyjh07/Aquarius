@@ -16,7 +16,10 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io"
+	"strings"
 
+	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -192,9 +195,28 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	}
 }
 
+// drainNodeAction 排空图侧菜单动作槽（D132）：菜单分发在 shell 线程，而**剪贴板写入必须
+// 在 Gio 帧内**、聚焦待办属图状态——故两者都经 u.nodeAction 原子槽投到本窗帧首执行。
+func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
+	act := u.nodeAction.Swap(nil)
+	if act == nil || st.graph == nil {
+		return
+	}
+	switch act.kind {
+	case nodeActCopyID:
+		if id := string(act.id); id != "" {
+			gtx.Execute(clipboard.WriteCmd{Type: "application/text",
+				Data: io.NopCloser(strings.NewReader(id))})
+		}
+	case nodeActHome:
+		st.graph.focusPending = true
+	}
+}
+
 // historyFrame winHistory 单帧：左栏 + 右图 + 状态栏（§15.7 常规窗，主题 Bg 铺底）。
 func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	st.sync(u)
+	st.drainNodeAction(u, gtx)
 	st.dispatch(u, gtx)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {

@@ -52,6 +52,15 @@ func (t sessionTree) Graph() (port.TreeGraph, bool) {
 	return s.Graph()
 }
 
+// NodeText 转发 app.Session.NodeText（D132：气泡级动作的正文全文数据源）。
+func (t sessionTree) NodeText(id conversation.MessageID) (string, bool) {
+	s := t.p.Load()
+	if s == nil {
+		return "", false
+	}
+	return s.NodeText(id)
+}
+
 // sessionList 会话列表只读视图的装配侧代理（D120⑥，S3 左栏）：Session 构造晚于 UI，
 // 故经原子槽间接取用；未就绪返回 nil（左栏空列表）。
 type sessionList struct{ p *atomic.Pointer[app.Session] }

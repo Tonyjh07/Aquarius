@@ -7,6 +7,7 @@ package uigui
 import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // 菜单命令 ID（托盘/logo/气泡三处共用一张表；平台实现只回传被选中的 ID）。
@@ -27,7 +28,29 @@ const (
 	cmdBubbleEditCopy = 124 // 气泡右键：编辑并复制历史（D97 → editMsg Clone）
 	cmdBubbleQuote    = 125 // 气泡右键：引用（D98 → quoteMsg 追加引用前缀进输入框）
 	cmdBubbleRaw      = 126 // 气泡右键：查看原文（D99 → rawView 原子槽 + winRaw 次窗）
+
+	// 图侧（消息管理面）节点右键三项（D132）：与气泡项同一张表、同一呈现（D132 决策：
+	// 图菜单并入气泡菜单，尾部加这三项；不再自绘 Gio 浮层）。
+	cmdNodeCopyID = 130 // 复制节点 ID（图侧动作槽 → 历史窗帧内落剪贴板）
+	cmdNodeRm     = 131 // 删除节点（/rm <id>，与键入同路径经 inCh）
+	cmdNodeHome   = 132 // 回到当前（视口聚焦 Head，图侧动作槽）
 )
+
+// nodeActKind 图侧动作槽的动作种类（D132：菜单分发在 shell 线程，而剪贴板写入必须在 Gio
+// 帧内、聚焦待办属图状态，故一律经原子槽投历史窗帧执行）。
+type nodeActKind uint8
+
+const (
+	nodeActCopyID nodeActKind = iota + 1 // 复制 ID
+	nodeActHome                          // 回到当前
+)
+
+// nodeAction 图侧动作（D132）：id = 目标节点；槽在 UI 上（跨窗共享的原子槽，同 rawView
+// 口径），由历史窗帧首排空。
+type nodeAction struct {
+	kind nodeActKind
+	id   conversation.MessageID
+}
 
 // menuIt 菜单项（托盘/logo/气泡右键菜单共用，D72/D73）；id 0 = 分隔线，或二级菜单父项
 // （sub 非空时 id 不用）。
@@ -92,6 +115,29 @@ func bubbleMenuItems(kind blockKind) []menuIt {
 	}
 }
 
+// nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** + 分隔线 +
+// 图侧三项（复制 ID / 删除 / 回到当前）。同一呈现、同一分发，只有尾部三项不同。
+// hasText=false（节点无正文可取：工具结果节点、或 NodeText 未就绪）时不给编辑类项——
+// 拿空文本预填编辑框等于诱导用户提交空修订（内核会拒，但菜单不该诱导）；根/系统节点
+// 不可编辑，只给复制/查看原文。
+func nodeMenuItems(kind blockKind, hasText bool) []menuIt {
+	var head []menuIt
+	switch {
+	case !hasText:
+		head = nil
+	case kind == blockUser || kind == blockAssistant:
+		head = bubbleMenuItems(kind) // 与主界面气泡同集七项
+	default:
+		head = []menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}}
+	}
+	items := append(head, menuIt{}) // 分隔线
+	return append(items,
+		menuIt{id: cmdNodeCopyID, label: "复制 ID"},
+		menuIt{id: cmdNodeRm, label: "删除（/rm）"},
+		menuIt{id: cmdNodeHome, label: "回到当前"},
+	)
+}
+
 // permLevelOf 当前权限档（D73 子菜单勾选源）：Status 现取（可跨 goroutine 读——
 // lvl/agent 访问器均为原子，TUI 状态行同此回调）；未就绪 = ""（不勾，切换后自愈）。
 func permLevelOf(u *UI) string {
@@ -112,6 +158,9 @@ func (u *UI) menuItems(kind platform.MenuKind) []platform.MenuItem {
 		ctx := u.bubbleMenu.Load()
 		if ctx == nil {
 			return nil
+		}
+		if ctx.graph { // D132：图侧节点菜单 = 气泡项集 + 图侧三项
+			return toMenuItems(nodeMenuItems(ctx.kind, ctx.copy != ""))
 		}
 		return toMenuItems(bubbleMenuItems(ctx.kind))
 	}
@@ -150,6 +199,15 @@ func (u *UI) menuChosen(kind platform.MenuKind, id uintptr) {
 // 下一帧 gtx.Execute(clipboard.WriteCmd)（剪贴板写入必须在 Gio 帧）；引用 = quoteMsg →
 // 输入框追加引用块（Gio 侧 apply）。
 func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
+	// D132：图侧触发（消息管理面在次窗）时主窗可能收在悬浮球里——编辑预填、引用、重新生成
+	// 都落在主窗的输入栏/转写区，不先唤出用户什么也看不见。气泡侧右键时主窗必在前景，
+	// 故只在 graph 上下文补一次呼出（showExpandMsg = 召回 + 展开，同 D50 口径）。
+	if ctx.graph {
+		switch r {
+		case cmdBubbleEdit, cmdBubbleEditKeep, cmdBubbleEditCopy, cmdBubbleQuote, cmdBubbleRegen:
+			_ = u.post(showExpandMsg{})
+		}
+	}
 	switch r {
 	case cmdBubbleEdit:
 		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Fresh, part: ctx.part})
@@ -170,6 +228,21 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		u.rawView.Store(&raw)
 		u.wins.openWin(winRaw)
 		u.wins.invalidateKind(winRaw)
+	case cmdNodeCopyID:
+		// D132 图侧：复制 ID。剪贴板写入必须在 Gio 帧内（shell 线程不可直达），故经图侧
+		// 动作槽投**历史窗帧**执行——那是本次交互所属、且确定在产帧的窗（不必依赖主窗
+		// 的帧调度：主窗可能收在球里）。
+		u.nodeAction.Store(&nodeAction{kind: nodeActCopyID, id: ctx.id})
+	case cmdNodeRm:
+		// D132 图侧：删除节点 = /rm <id>，与键入同路径经 inCh（缓冲满则丢弃，与图内既有
+		// 口径一致：历史窗无转写区可回显，失败不空转）。
+		select {
+		case u.inCh <- port.UserInput{Command: &port.Command{Name: "rm", Args: []string{string(ctx.id)}}}:
+		default:
+		}
+	case cmdNodeHome:
+		// D132 图侧：回到当前 = 视口聚焦 Head（聚焦待办属图状态，图侧动作槽过历史窗帧）。
+		u.nodeAction.Store(&nodeAction{kind: nodeActHome, id: ctx.id})
 	}
 }
 

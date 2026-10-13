@@ -18,6 +18,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -28,7 +29,11 @@ import (
 // 一个**已收敛的静态基线**。
 func relGraphFixture(t *testing.T) (*UI, *historyState, *input.Router) {
 	t.Helper()
-	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
+	texts := make(map[conversation.MessageID]string)
+	for _, n := range relFixtureGraph().Nodes {
+		texts[n.ID] = relFixtureBody(n.ID)
+	}
+	u := newHistUI(fakeRelTree{g: relFixtureGraph(), texts: texts}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
 	relGFrame(q, u, st)
@@ -684,38 +689,238 @@ func TestRelGraphLabelFontClamp(t *testing.T) {
 	}
 }
 
-// TestRelGraphRightClickMenuOpenClose 右键节点开菜单；菜单外左键关闭。
-func TestRelGraphRightClickMenuOpenClose(t *testing.T) {
-	u, st, q := relGraphFixture(t)
+// relFixtureBody 夹具节点的正文全文（D132）：刻意长得跟 40 字摘要（"s-<id>"）不同，
+// 断言「拿到的是全文不是摘要」一眼可辨。
+func relFixtureBody(id conversation.MessageID) string {
+	return "【全文】" + string(id) + "：这一段正文比节点摘要长得多，用来验证编辑预填取的是全文。"
+}
+
+// relRightPress / relRightReleaseAt 右键按下 / 原位抬起（本地索引 li 的屏幕位置）。
+func relRightPress(st *historyState, li int) pointer.Event {
 	g := st.graph
-	sx, _ := relAnchorScreen(t, g)
-	// 右键按下（secondary）
-	q.Queue(pointer.Event{Kind: pointer.Press, Position: sx, PointerID: 7, Source: pointer.Mouse, Buttons: pointer.ButtonSecondary})
-	relGFrame(q, u, st)
-	if !g.menuOpen || g.menuNode != g.anchor {
-		t.Fatalf("右键后 menuOpen=%v menuNode=%d, want true/%d", g.menuOpen, g.menuNode, g.anchor)
-	}
-	// 菜单外左键 → 关闭
-	q.Queue(relPointer(pointer.Press, f32.Pt(400, 400), true))
-	relGFrame(q, u, st)
-	if g.menuOpen {
-		t.Fatal("菜单外左键应关闭菜单")
+	xs, ys := g.toScreen(g.sol.Pos[li])
+	return pointer.Event{Kind: pointer.Press, Position: f32.Pt(xs, ys), PointerID: 7,
+		Source: pointer.Mouse, Buttons: pointer.ButtonSecondary}
+}
+
+func relRightReleaseAt(st *historyState, li int) pointer.Event {
+	e := relRightPress(st, li)
+	e.Kind = pointer.Release
+	e.Buttons = 0
+	return e
+}
+
+// relDrainAs 从收件箱取出指定类型的桥接消息（菜单分发经 post 投递，§15.6）。
+func relDrainAs(t *testing.T, u *UI, dst any) bool {
+	t.Helper()
+	for {
+		select {
+		case m := <-u.inbox:
+			switch d := dst.(type) {
+			case *editMsg:
+				if v, ok := m.(editMsg); ok {
+					*d = v
+					return true
+				}
+			case *inputMsg:
+				if v, ok := m.(inputMsg); ok {
+					*d = v
+					return true
+				}
+			case *quoteMsg:
+				if v, ok := m.(quoteMsg); ok {
+					*d = v
+					return true
+				}
+			case *showExpandMsg:
+				if v, ok := m.(showExpandMsg); ok {
+					*d = v
+					return true
+				}
+			}
+		default:
+			return false
+		}
 	}
 }
 
-// TestRelGraphMenuRm 菜单「删除」点击 → /rm <id> 经 inCh（程序化点击，同一 Clicked 通路）。
-func TestRelGraphMenuRm(t *testing.T) {
+// TestRelGraphRightClickMenu 图节点右键 → 菜单上下文（D132：与主界面气泡菜单同一呈现/
+// 分发，项集 = 气泡项 + 图侧三项）：右键按下武装、**原位抬起**才 fire（菜单不在按键未
+// 松时弹出，免得吃掉这次抬起）；上下文 id = 节点、正文取全文（不是 40 字摘要）。
+func TestRelGraphRightClickMenu(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	g := st.graph
-	sx, _ := relAnchorScreen(t, g)
+	sx, li := relAnchorScreen(t, g)
+	_ = li
 	want := st.model.nodes[st.vis.nodes[g.anchor]].id
-	q.Queue(pointer.Event{Kind: pointer.Press, Position: sx, PointerID: 7, Source: pointer.Mouse, Buttons: pointer.ButtonSecondary})
-	relGFrame(q, u, st) // 菜单已绘制（item 几何注册）
-	if !g.menuOpen || g.menuNode != g.anchor {
-		t.Fatalf("菜单未开: open=%v node=%d", g.menuOpen, g.menuNode)
+	if ctx := u.bubbleMenu.Load(); ctx != nil {
+		t.Fatal("夹具不应残留菜单上下文")
 	}
-	g.menuRm.Click() // 程序化点击（Router 帧序不稳定，同 TestBranchClickDispatches 口径）
+	// 右键按下（secondary）：只武装，不出菜单
+	q.Queue(pointer.Event{Kind: pointer.Press, Position: sx, PointerID: 7,
+		Source: pointer.Mouse, Buttons: pointer.ButtonSecondary})
 	relGFrame(q, u, st)
+	if !g.menuArm || g.menuNode != g.anchor {
+		t.Fatalf("按下未武装: arm=%v node=%d, want true/%d", g.menuArm, g.menuNode, g.anchor)
+	}
+	if u.bubbleMenu.Load() != nil {
+		t.Fatal("右键按下就出菜单（应为抬起才 fire）")
+	}
+	// 原位抬起 → 菜单上下文就位
+	q.Queue(pointer.Event{Kind: pointer.Release, Position: sx, PointerID: 7,
+		Source: pointer.Mouse})
+	relGFrame(q, u, st)
+	ctx := u.bubbleMenu.Load()
+	if ctx == nil {
+		t.Fatal("右键抬起未请求菜单")
+	}
+	if ctx.id != want || !ctx.graph {
+		t.Fatalf("菜单上下文 = id %q graph=%v, want %q/true", ctx.id, ctx.graph, want)
+	}
+	if ctx.edit != relFixtureBody(want) {
+		t.Fatalf("编辑预填 = %q, want 节点正文全文 %q（不是摘要）", ctx.edit, relFixtureBody(want))
+	}
+	if g.menuArm {
+		t.Fatal("fire 后武装未解除")
+	}
+	// 项集 = 气泡七项 + 分隔线 + 图侧三项
+	items := u.menuItems(platform.MenuBubble)
+	wantLabels := []string{"编辑", "编辑并转移历史", "编辑并复制历史", "重新生成", "复制",
+		"引用", "查看原文", "", "复制 ID", "删除（/rm）", "回到当前"}
+	if len(items) != len(wantLabels) {
+		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
+	}
+	for i, w := range wantLabels {
+		if items[i].Label != w {
+			t.Fatalf("第 %d 项 = %q, want %q", i, items[i].Label, w)
+		}
+	}
+}
+
+// TestRelGraphRightClickNoMenuOnDragAway 右键按下后**移开抬起**（非原位）→ 不出菜单。
+func TestRelGraphRightClickNoMenuOnDragAway(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	sx, _ := relAnchorScreen(t, st.graph)
+	q.Queue(pointer.Event{Kind: pointer.Press, Position: sx, PointerID: 7,
+		Source: pointer.Mouse, Buttons: pointer.ButtonSecondary})
+	relGFrame(q, u, st)
+	q.Queue(pointer.Event{Kind: pointer.Release, Position: f32.Pt(sx.X+260, sx.Y+180), PointerID: 7,
+		Source: pointer.Mouse})
+	relGFrame(q, u, st)
+	if u.bubbleMenu.Load() != nil {
+		t.Fatal("非原位抬起不应出菜单")
+	}
+}
+
+// TestRelGraphMenuEditDispatchesFullText 菜单「编辑并转移历史」→ editMsg 预填**全文**进
+// 编辑态（D132 的要点：摘要会截断消息）；part = -1（缺省合段，与 NodeText 的拼接口径互逆）。
+func TestRelGraphMenuEditDispatchesFullText(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	const li = 4 // a1（assistant，正文块）
+	wantID := st.model.nodes[st.vis.nodes[li]].id
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+	u.menuChosen(platform.MenuBubble, cmdBubbleEditKeep)
+	// 图侧触发时先投 showExpandMsg：主窗可能收在悬浮球里，不唤出用户看不到预填（D132）。
+	var se showExpandMsg
+	if !relDrainAs(t, u, &se) {
+		t.Fatal("图侧编辑未先投 showExpandMsg（主窗收起时看不到预填）")
+	}
+	var got editMsg
+	if !relDrainAs(t, u, &got) {
+		t.Fatal("菜单分发未投 editMsg")
+	}
+	if got.id != wantID || got.mode != conversation.Carry || got.part != -1 {
+		t.Fatalf("editMsg = %+v, want id=%s Carry part=-1", got, wantID)
+	}
+	if got.text != relFixtureBody(wantID) {
+		t.Fatalf("预填 = %q, want 全文 %q", got.text, relFixtureBody(wantID))
+	}
+}
+
+// TestRelGraphMenuRegenAndQuote 菜单「重新生成」/「引用」与主界面同命令路径：/regen <id>
+// 与 quoteMsg（引用文本 = 全文）。
+func TestRelGraphMenuRegenAndQuote(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	const li = 4
+	wantID := st.model.nodes[st.vis.nodes[li]].id
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+	u.menuChosen(platform.MenuBubble, cmdBubbleRegen)
+	var in inputMsg
+	if !relDrainAs(t, u, &in) {
+		t.Fatal("重新生成未投 inputMsg")
+	}
+	if in.text != "/regen "+string(wantID) {
+		t.Fatalf("inputMsg = %q, want /regen %s", in.text, wantID)
+	}
+	u.menuChosen(platform.MenuBubble, cmdBubbleQuote)
+	var qm quoteMsg
+	if !relDrainAs(t, u, &qm) {
+		t.Fatal("引用未投 quoteMsg")
+	}
+	if qm.text != relFixtureBody(wantID) {
+		t.Fatalf("引用文本 = %q, want 全文 %q", qm.text, relFixtureBody(wantID))
+	}
+}
+
+// TestRelGraphMenuRootNodeReduced 根节点（Role=root，不可编辑）→ 项集只给复制/查看原文 +
+// 图侧三项，不给编辑三方式与重新生成（D132：无正文可编辑的节点不给编辑类项）。
+func TestRelGraphMenuRootNodeReduced(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	q.Queue(relRightPress(st, 0)) // 0 = 局部 r（结构根）
+	q.Queue(relRightReleaseAt(st, 0))
+	relGFrame(q, u, st)
+	items := u.menuItems(platform.MenuBubble)
+	want := []string{"复制", "查看原文", "", "复制 ID", "删除（/rm）", "回到当前"}
+	if len(items) != len(want) {
+		t.Fatalf("根节点项数 = %d, want %d", len(items), len(want))
+	}
+	for i, w := range want {
+		if items[i].Label != w {
+			t.Fatalf("第 %d 项 = %q, want %q", i, items[i].Label, w)
+		}
+	}
+}
+
+// TestRelGraphMenuNoBodyNode 图侧取不到正文（NodeText 未命中）→ 只剩图侧三项：不拿空
+// 文本预填编辑框（D132 的 hasText 分支；内核也会拒空修订文本，但菜单不该诱导）。
+func TestRelGraphMenuNoBodyNode(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil)) // 不配 texts
+	st := newHistoryState(u)
+	q := new(input.Router)
+	relGFrame(q, u, st)
+	q.Queue(relRightPress(st, 4))
+	q.Queue(relRightReleaseAt(st, 4))
+	relGFrame(q, u, st)
+	ctx := u.bubbleMenu.Load()
+	if ctx == nil || ctx.copy != "" {
+		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
+	}
+	items := u.menuItems(platform.MenuBubble)
+	want := []string{"", "复制 ID", "删除（/rm）", "回到当前"}
+	if len(items) != len(want) {
+		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
+	}
+	for i, w := range want {
+		if items[i].Label != w {
+			t.Fatalf("第 %d 项 = %q, want %q", i, items[i].Label, w)
+		}
+	}
+}
+
+// TestRelGraphMenuRm 菜单「删除」→ /rm <id> 经 inCh（与键入同路径；分发在 shell 线程，
+// 故这里直接走 menuChosen）。
+func TestRelGraphMenuRm(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	const li = 4
+	want := st.model.nodes[st.vis.nodes[li]].id
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+	u.menuChosen(platform.MenuBubble, cmdNodeRm)
 	select {
 	case in := <-u.inCh:
 		if in.Command == nil || in.Command.Name != "rm" ||
@@ -725,8 +930,37 @@ func TestRelGraphMenuRm(t *testing.T) {
 	default:
 		t.Fatal("inCh 空：菜单删除未投 /rm")
 	}
-	if g.menuOpen {
-		t.Fatal("删除后菜单未关闭")
+}
+
+// TestRelGraphMenuHomeAndCopyID 图侧两项走动作槽 → **历史窗帧**内落剪贴板 / 置聚焦待办
+// （剪贴板写入必须在 Gio 帧内、聚焦待办属图状态，分发处都不能直连，§15.6）。
+func TestRelGraphMenuHomeAndCopyID(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	const li = 4
+	want := st.model.nodes[st.vis.nodes[li]].id
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+
+	u.menuChosen(platform.MenuBubble, cmdNodeHome)
+	if act := u.nodeAction.Load(); act == nil || act.kind != nodeActHome {
+		t.Fatalf("动作槽 = %+v, want nodeActHome", act)
+	}
+	st.graph.focusPending = false
+	gtx, _ := frameGtxSize(new(input.Router).Source(), 720, 560)
+	st.drainNodeAction(u, gtx) // 帧首排空 → 聚焦待办置位
+	if !st.graph.focusPending {
+		t.Fatal("排空后聚焦待办未置位")
+	}
+
+	u.menuChosen(platform.MenuBubble, cmdNodeCopyID)
+	act := u.nodeAction.Load()
+	if act == nil || act.kind != nodeActCopyID || act.id != want {
+		t.Fatalf("动作槽 = %+v, want nodeActCopyID %s", act, want)
+	}
+	st.drainNodeAction(u, gtx)      // 复制 ID 的剪贴板写入在帧内执行（headless 无外部可观察量，
+	if u.nodeAction.Load() != nil { // 故只断言「动作被消费、不重复执行」）
+		t.Fatal("动作槽未排空")
 	}
 }
 

@@ -332,3 +332,51 @@ func TestSessionGraphUnknownBeforePublish(t *testing.T) {
 		t.Fatal("未发布快照应 ok=false")
 	}
 }
+
+// TestNodeText 节点正文全文（D132）：PartText 分片依序拼接、跳过思考/工具/附件分片；
+// 与 GraphNode.Snippet 的 40 字截断摘要是两回事（编辑预填靠它，不靠摘要）。
+func TestNodeText(t *testing.T) {
+	c := conversation.New(conversation.ID("convNT"), "正文")
+	root := conversation.MessageID(c.ID)
+	commit := func(m conversation.Message) {
+		t.Helper()
+		if err := c.AppendCommitted(m); err != nil {
+			t.Fatalf("commit %s: %v", m.ID, err)
+		}
+	}
+	commit(conversation.Message{ID: "u1", Parent: root, Role: conversation.RoleAssistant,
+		CreatedAt: testTime.Add(time.Second), Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "第一段"},
+			{Kind: conversation.PartThinking, Text: "不该进正文"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{CallID: "c1", Name: "t"}},
+			{Kind: conversation.PartText, Text: "  第二段保留首尾空白  "},
+		}})
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	snap := makeTreeSnapshot(c)
+	s := &Session{}
+	s.tree.Store(snap)
+
+	// 多正文分片拼接 + 跳过非正文 + 不 TrimSpace（代码块首尾空白是有内容的，§9）
+	if got, ok := s.NodeText("u1"); !ok || got != "第一段\n\n  第二段保留首尾空白  " {
+		t.Fatalf("NodeText(u1) = %q, %v", got, ok)
+	}
+	if got, ok := s.NodeText(root); !ok || got != "" {
+		t.Fatalf("NodeText(root) = %q, %v（Root 是空消息节点，正文为空）", got, ok)
+	}
+	if _, ok := s.NodeText("不存在"); ok {
+		t.Fatal("树外 id 应 ok=false")
+	}
+	// 摘要与全文是两回事：同一节点的 Snippet 是截断摘要（40 字），不是正文全文。
+	full, _ := s.NodeText("u1")
+	for _, n := range snap.graph.Nodes {
+		if n.ID == "u1" && n.Snippet == full {
+			t.Fatal("NodeText 与 Snippet 同源（应当是全文 vs 摘要）")
+		}
+	}
+	// 未发布快照 → ok=false
+	if _, ok := (&Session{}).NodeText("u1"); ok {
+		t.Fatal("未发布快照应 ok=false")
+	}
+}

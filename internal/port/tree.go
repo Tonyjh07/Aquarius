@@ -68,6 +68,11 @@ type TreeView interface {
 	Tail(id conversation.MessageID) (conversation.MessageID, bool)
 	// Graph 返回整树只读快照（D112②/D120⑦，S3 relation-map 数据面）；尚未发布时 ok=false。
 	Graph() (TreeGraph, bool)
+	// NodeText 返回 id 的正文全文（D132：气泡级动作的数据源）——`GraphNode.Snippet` 只有
+	// 40 字摘要，拿它预填编辑框会在提交时把消息截断成摘要。口径 = 正文分片（PartText）
+	// 依序拼接，跳过思考/工具/附件分片（与气泡块的正文口径同源）；id 不在树中（或尚未
+	// 发布）时 ok=false——调用方据此退化为空文本（内核拒空修订文本，不会误改）。
+	NodeText(id conversation.MessageID) (string, bool)
 }
 
 // SessionSummary 会话列表项（D120⑥，S3 左栏数据面）：UI 只读展示用。

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // TestLogoMenuItems D73 logo 菜单契约（项序/文案固定）：新对话 / 权限（二级菜单 =
@@ -350,5 +351,85 @@ func TestToggleTopMost(t *testing.T) {
 	p, ok := loadPos(posFile)
 	if !ok || p.X != 10 || p.Y != 20 || p.TopMost == nil || *p.TopMost {
 		t.Fatalf("位置记忆 = %+v ok=%v, want X=10 Y=20 TopMost=false", p, ok)
+	}
+}
+
+// TestNodeMenuItemsContract 图侧节点菜单项序/文案契约（D132）：user/assistant 节点 =
+// 气泡七项 + 分隔线 + 图侧三项；root/system 节点只给复制/查看原文；无正文节点只剩图侧三项。
+func TestNodeMenuItemsContract(t *testing.T) {
+	bubble := []menuIt{
+		{id: cmdBubbleEdit, label: "编辑"},
+		{id: cmdBubbleEditKeep, label: "编辑并转移历史"},
+		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
+		{id: cmdBubbleRegen, label: "重新生成"},
+		{id: cmdBubbleCopy, label: "复制"},
+		{id: cmdBubbleQuote, label: "引用"},
+		{id: cmdBubbleRaw, label: "查看原文"},
+	}
+	graph := []menuIt{
+		{id: cmdNodeCopyID, label: "复制 ID"},
+		{id: cmdNodeRm, label: "删除（/rm）"},
+		{id: cmdNodeHome, label: "回到当前"},
+	}
+	full := append(append([]menuIt{}, bubble...), menuIt{})
+	full = append(full, graph...)
+
+	for _, kind := range []blockKind{blockUser, blockAssistant} {
+		got := nodeMenuItems(kind, true)
+		if len(got) != len(full) {
+			t.Fatalf("%v 图菜单项数 = %d, want %d", kind, len(got), len(full))
+		}
+		for i := range full {
+			if got[i].id != full[i].id || got[i].label != full[i].label {
+				t.Fatalf("%v 图菜单项[%d] = {%d %q}, want {%d %q}", kind, i,
+					got[i].id, got[i].label, full[i].id, full[i].label)
+			}
+		}
+	}
+	// root/system（blockPlain）：不给编辑三方式与重新生成。
+	got := nodeMenuItems(blockPlain, true)
+	want := append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, {}}, graph...)
+	if len(got) != len(want) {
+		t.Fatalf("root/system 项数 = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].id != want[i].id || got[i].label != want[i].label {
+			t.Fatalf("root/system 项[%d] = {%d %q}, want {%d %q}", i, got[i].id, got[i].label, want[i].id, want[i].label)
+		}
+	}
+	// 无正文节点：只剩图侧三项（不拿空文本预填编辑框）。
+	got = nodeMenuItems(blockUser, false)
+	want = append([]menuIt{{}}, graph...)
+	if len(got) != len(want) {
+		t.Fatalf("无正文项数 = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].id != want[i].id || got[i].label != want[i].label {
+			t.Fatalf("无正文项[%d] = {%d %q}, want {%d %q}", i, got[i].id, got[i].label, want[i].id, want[i].label)
+		}
+	}
+}
+
+// TestNodeMenuRouting 图侧上下文的项集走 nodeMenuItems（menuItems 按 ctx.graph 分派），
+// 且删除命令与键入同路径经 inCh。
+func TestNodeMenuRouting(t *testing.T) {
+	u := newUI(Options{}, false)
+	u.inCh = make(chan port.UserInput, 8)
+	u.bubbleMenu.Store(&bubbleMenuCtx{id: "u1", kind: blockUser, copy: "正文", graph: true})
+	items := u.menuItems(platform.MenuBubble)
+	if len(items) != 11 {
+		t.Fatalf("图侧项数 = %d, want 11（气泡七项 + 分隔 + 图侧三项）", len(items))
+	}
+	if items[len(items)-1].Label != "回到当前" {
+		t.Fatalf("末项 = %q, want 回到当前", items[len(items)-1].Label)
+	}
+	u.menuChosen(platform.MenuBubble, cmdNodeRm)
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "rm" || in.Command.Args[0] != "u1" {
+			t.Fatalf("inCh = %+v, want /rm u1", in)
+		}
+	default:
+		t.Fatal("inCh 空：图侧删除未投 /rm")
 	}
 }
