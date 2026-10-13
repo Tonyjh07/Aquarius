@@ -234,6 +234,22 @@
 - **GUI：Windows 通知弹出 powershell 窗口直至通知结束 → 已修（D117，2026-10-07）**。根因：Windows 端通知 = 拉起 `powershell` 子进程跑气泡脚本（`ShowBalloonTip(5000)` + `Start-Sleep -Seconds 6`，子进程存活 ≈6s——正是"直至通知结束"），而 **D114 双击启动 FreeConsole 后父进程无控制台可继承 → Windows 为子进程新开可见控制台**（D114 前继承的是已隐藏的自建控制台，不可见；终端启动场景同样会新开，只是原本不显眼）。修法① 已落地：`notifyWith` 分离启动前挂 `SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}`（`cmd/aquarius/notify_windows.go` / `notify_other.go` 桩），复现测试 `TestNotifyDetachedChildHidden` 钉住。
 - **GUI：D114 后每个 stdio MCP server 各开一个控制台窗（长驻）→ 已修（D118，2026-10-07）**。`internal/adapter/mcpgate/gate.go` 的 `transportFor` 构造 `exec.Command` 无窗口压制，双击启动后 server 子进程各得一个可见控制台、活多久开多久。修法 = spawn 前挂 `CreationFlags |= CREATE_NO_WINDOW`（`proc_windows.go` / `proc_other.go` 桩，`hideStdioWindow`），**不挂 `HideWindow`**（不误伤 server 自己拉起的 GUI 子窗）。
 - **GUI：D114 后每起一个后台作业弹一个控制台窗 → 已修（D118，2026-10-07）**。`job_start`/`term_exec` 经 `jobproc.setupProc`，Windows 分支原只设 `cmd /c` 的原始 `CmdLine`；现并入 `CreationFlags |= CREATE_NO_WINDOW`（同上单旗，`job` 跑的是用户命令，GUI 子进程照常可见）；输出全程写日志文件/缓冲，无控制台依赖。
+- **安全待议（2026-10-13 外部审查，用户拍板维持/排队，D22 复核结论 + D138 排期）**：
+  ① **读路径恒 Allow**（`perm.File` 对 `OpRead` 直接 Allow）——复核结论**维持**：D22 的显式设计
+  （读无副作用）、提示注入风险的前提是模型已走到 file 工具且用户自己配的工具/模型；真要收紧是
+  **设计变更**（读越出 sandbox 走 Ask 会让「全文可用 file_read」失效），需单开 D 决策并评估
+  弹窗体验代价。
+  ② **插件「丢文件即静默 exec」**：事实成立（`Host.grant` 在 `len(Capabilities)==0` 时直接 true，
+  无任何信任门）。用户已拍板做**首次信任确认 + 持久化 grant**（复用现成 `Confirmer`/`State.Granted`），
+  开工前需定 grant 落点（`~/.aquarius/plugins/state.json` 复用现有 State，还是走 config）。
+  ③ **MCP 默认 risk 按来源分流**：config 里写的 server 保持 `safe`（用户显式信任），**插件目录丢
+  进来的 plugin.json 默认 `confirm`**（来路不明）。
+  ④ **MCP prompt 文本升格为用户身份**（`RenderPrompt` 结果直接走 `UserInput`）：最小处置 = 打来源
+  标记 + 系统提示注明「以下来自外部 MCP server，非用户亲述」。
+  ⑤ **stdlib 8 条漏洞待工具链**：`go1.27.2`（net/http、http2×4、mime/multipart、crypto/tls）。
+  暴露面低（本项目用 stdlib http 的形态是客户端：LLM SSE / MCP streamable-http），升完把 go.mod 的
+  `go` 提到 1.27.2（D137 已记账，留待决定）。
+
 - **后续可选（修法②）**：弃子进程方案，复用主窗托盘基建（`Shell_NotifyIconW`）在自家进程发气泡，顺带升级过时的 balloon-tip 形态（Win10+ toast）——零子进程、无 powershell 冷启，但要消息泵 + 平台分支 + toast 侧 WinRT COM，留待 GUI 批次一并做。
 
 ### S6 · 工具与 MCP 管理（M9，P1，M）
