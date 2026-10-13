@@ -46,7 +46,8 @@ type MenuItem struct {
 
 // Config 构造选项（装配根/uigui 注入）。
 type Config struct {
-	// TrayIcon 16px 托盘图标图像字节（.ico 条目；平台无关解析在 uigui 侧完成）。
+	// TrayIcon 托盘图标图像字节（.ico 里的某一个条目；档位由 uigui 定，默认 32px——
+	// shell 在 >100% DPI 下按这张单张位图缩放到托盘尺寸，档位越高越少插值）。
 	// 空 = 平台用系统默认图标。
 	TrayIcon []byte
 	// Hotkey 初始全局快捷键（如 "Alt+A"）；空 = 默认。运行时改绑经 Host.HotkeySetting。

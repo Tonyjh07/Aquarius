@@ -73,11 +73,22 @@ type platformAPI interface {
 }
 
 // newPlatform 构造平台实现（组装点：`uigui` 内唯一 import 具体实现处）。
+// trayIconPx 托盘图标取哪一档（像素）：32 = 16 档的 4 倍像素量。**不是显示尺寸**——16px
+// 是 shell 在 100% DPI 下的托盘尺寸；这里给 shell 的是**单张位图**，档位越高、高 DPI 下越
+// 少插值（Windows 会自行缩到它需要的尺寸）。48/64 档也在 aquarius.ico 里，取 32 是为
+// 「清晰一倍」的最小代价：托盘图标按 16 显示，32 源在下采样时边缘干净；取 256 只会让
+// 图标文件与 DIB 变大而无进一步收益（用户 2026-10-13 报障：托盘图标模糊，可再清晰一倍）。
+const trayIconPx = 32
+
 func newPlatform(opts Options, window bool) platformAPI {
 	cfg := platform.Config{Hotkey: opts.Hotkey}
 	if window {
-		// 托盘图标：.ico 内嵌资源 → 16px 档（平台无关解析在此完成，平台只负责呈现）。
-		if b, err := icoImage(assets.TrayICO, 16); err == nil {
+		// 托盘图标：.ico 内嵌资源 → trayIconPx 档（平台无关解析在此完成，平台只负责呈现）。
+		// 档位是**交给 shell 的单张位图**：取越小，shell 在 >100% DPI 的任务栏上越要靠
+		// 插值放大（用户 2026-10-13 报「托盘图标模糊，可以再清晰一倍」）。取 32px 档 =
+		// 16px 档的 4 倍像素量，100% DPI 下 shell 缩一半仍是清晰下采样，125%/150% 下
+		// 有原生像素可用；同时不给任务栏造成显存/带宽负担（托盘图标极小）。
+		if b, err := icoImage(assets.TrayICO, trayIconPx); err == nil {
 			cfg.TrayIcon = b
 		}
 	}

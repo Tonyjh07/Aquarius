@@ -53,18 +53,51 @@ func TestICOImagePicksNearest(t *testing.T) {
 	}
 }
 
-// TestICOImageTrayAsset 内嵌托盘图标可解析出 16px 档图像（单二进制取图标路径）。
+// TestICOImageTrayAsset 内嵌托盘图标可解析出 trayIconPx 档图像（单二进制取图标路径），
+// 且解析出的必须是**那一档**的条目（否则平台侧传的就不是预期分辨率的位图）。
 func TestICOImageTrayAsset(t *testing.T) {
 	if len(assets.TrayICO) == 0 {
 		t.Fatal("assets.TrayICO 未内嵌")
 	}
-	b, err := icoImage(assets.TrayICO, 16)
+	// 档位口径钉在字面量上（不能拿 trayIconPx 自证：那边改了这边跟着变，等于没钉）。
+	// 来源：用户 2026-10-13「托盘图标模糊，可以再清晰一倍」——16 档单张位图在 >100% DPI
+	// 的任务栏上只能插值放大；32 档有 4 倍像素量，shell 下采样到 16 仍然干净。
+	if trayIconPx != 32 {
+		t.Fatalf("trayIconPx = %d，口径应为 32（改它 = 改「托盘清晰一倍」的交付档位）", trayIconPx)
+	}
+	b, err := icoImage(assets.TrayICO, trayIconPx)
 	if err != nil {
 		t.Fatalf("icoImage(aquarius.ico): %v", err)
 	}
 	if len(b) == 0 {
 		t.Fatal("图像数据为空")
 	}
+	// 逐条比对载荷，确认选中的条目宽度 = trayIconPx：资产若被重新生成而丢了该档，
+	// icoImage 会挑最近一档（静默降级），这里让它现在就响。
+	found := icoEntryWidth(t, assets.TrayICO, b)
+	if found != trayIconPx {
+		t.Fatalf("选中的条目是 %dpx，want %dpx（aquarius.ico 里缺该档 ⇒ 静默降级）", found, trayIconPx)
+	}
+}
+
+// icoEntryWidth 在 .ico 里找出载荷 == payload 的条目宽度（0 = 未找到）。
+func icoEntryWidth(t *testing.T, data, payload []byte) int {
+	t.Helper()
+	count := int(uint16(data[4]) | uint16(data[5])<<8)
+	for i := 0; i < count; i++ {
+		off := 6 + i*16
+		size := int(le32(data[off+8 : off+12]))
+		imgOff := int(le32(data[off+12 : off+16]))
+		if size == len(payload) && imgOff+size <= len(data) &&
+			string(data[imgOff:imgOff+size]) == string(payload) {
+			w := int(data[off])
+			if w == 0 {
+				w = 256
+			}
+			return w
+		}
+	}
+	return 0
 }
 
 // TestICOImageRejectsGarbage 非法输入报错（不 panic，回落由调用方处理）。
