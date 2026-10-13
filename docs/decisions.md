@@ -1637,3 +1637,24 @@
   并发反复重配 `fadeBuf`（交替尺寸 ⇒ 每次都重新分配，正是原缺陷触发条件）。**变异验证
   过**：把梯次换回直读帧循环字段，本测试在 `-race` 下立刻报两处 DATA RACE
   （`fade.go:544` 读字段 + `:562` 读内容）；换回快照即净。
+
+### D136 · 工具收场轮的分叉挂点回填（修正一处恒假判据）
+
+> **驱动**：外部审查（2026-10-13）：「`model.go:215` 已截断致 `:234` 条件恒假，'Turn 以
+> 工具收场盖节点 ID'永不执行，分叉挂点丢失」——**成立**，且失效条件比评论更明确。
+
+- **原状**：`m.flushedDrafts = m.flushedDrafts[:0]`（原 215）在 `if !stamped &&
+  len(m.flushedDrafts) > 0` 之前就清空了切片，所以该条件**恒为假** ⇒ 回填分支从未执行。
+- **失效形状**：Turn = 「助手先流式说话 → 工具边界把草稿落成正文块（D95，此时不带 ID）→
+  再调工具 → **本轮到工具为止收场**（工具被拒 / 失败中止 / 收尾轮没有后续正文）」。commit
+  时 `textSegments` 只有 1 段且被 flushed 段全部消费 ⇒ 追加循环一次都不进 ⇒ `stamped=false`
+  ⇒ 走不回那条路径 ⇒ **末条正文块拿不到 `msg.ID`**。而另一个早返回路径（`len(segs)==0 &&
+  len(flushedDrafts)==0`）也不适用（这里 segs 非空）——这正是最常见的「说话 + 工具」形态。
+- **后果**：该 Turn 的转写气泡没有分叉条挂点，`/branch` 类操作选不中它。
+- **修法**：在清空前捕获 `lastFlushed`（末个 flushed 索引），回填判据用它
+  （`!stamped && lastFlushed >= 0 && lastFlushed < len(m.blocks)`）。`flushDraftSegment` 只在
+  草稿非空时登记索引（`:262`），故不会盖到空块。
+- **回归测试**：`TestToolEndingTurnStampsBranchAnchor`（脚本流回放「文本 → 工具 → 收场」，
+  断言末条正文段挂上 `a1`）。**变异验证过**：把判据改回恒假即报 `ID = ""`——正是旧实态。
+  既有 `TestLiveMultiSegmentTurn`（文本 → 工具 → 文本）覆盖的是 `stamped=true` 的另一支，
+  两支合起来钉住整个调和路径。

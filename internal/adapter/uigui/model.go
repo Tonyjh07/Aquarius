@@ -202,6 +202,13 @@ func (m *model) commit(msg conversation.Message) {
 		// flushed 草稿段就地回填（FIFO；权威文本以节点为准），并盖段序（D107④）。
 		starts := textSegStarts(msg.Content)
 		consumed := 0
+		// D136：末个 flushed 段的索引在清空前捕获——「Turn 以工具收场（有助手正文、无
+		// 追加余段）」时 stamped 恒 false，而下面那条回填分支原来判的是**已清空的**
+		// flushedDrafts ⇒ 恒假 ⇒ 该 Turn 的挂点丢失、分叉条不出现（外部审查 2026-10-13）。
+		lastFlushed := -1
+		if n := len(m.flushedDrafts); n > 0 {
+			lastFlushed = m.flushedDrafts[n-1]
+		}
 		for _, idx := range m.flushedDrafts {
 			if consumed >= len(segs) {
 				break
@@ -231,8 +238,10 @@ func (m *model) commit(msg conversation.Message) {
 			m.blocks = append(m.blocks, blk)
 		}
 		// Turn 以工具收场（正文段全部经工具边界落块）：末个已落块盖 ID。
-		if !stamped && len(m.flushedDrafts) > 0 {
-			m.blocks[m.flushedDrafts[len(m.flushedDrafts)-1]].id = msg.ID
+		// D136：索引取**清空前捕获**的 lastFlushed——原实现判的是上面 [:0] 清空后的
+		// flushedDrafts，恒假 ⇒ 这类 Turn 一个挂点都没有、分叉条不出现（外部审查 2026-10-13）。
+		if !stamped && lastFlushed >= 0 && lastFlushed < len(m.blocks) {
+			m.blocks[lastFlushed].id = msg.ID
 		}
 		m.flushedDrafts = m.flushedDrafts[:0]
 	case conversation.RoleSystem:

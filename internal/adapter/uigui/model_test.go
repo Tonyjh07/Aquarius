@@ -318,6 +318,50 @@ func TestLiveMultiSegmentTurn(t *testing.T) {
 	}
 }
 
+// TestToolEndingTurnStampsBranchAnchor D136：Turn 以工具收场（助手正文整段经工具边界
+// 落块、commit 时**无追加余段**）时，末条落必须盖 msg.ID——分叉条（D81）每 Turn 一个
+// 挂点，丢了这一 Turn 无法分叉。原实现在 [:0] 清空后判 flushedDrafts 长度（恒假），
+// 此类 Turn 的挂点全丢（外部审查 2026-10-13 指出的死分支）。
+func TestToolEndingTurnStampsBranchAnchor(t *testing.T) {
+	m, _ := newTestModel(t)
+
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "我先看看"}})
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "echo"}})
+	m.handleEvent(port.ToolResultEvent{Result: tool.Result{
+		CallID: "c1", OK: false, Output: "denied",
+	}})
+	m.commit(conversation.Message{
+		ID:      "a1",
+		Role:    conversation.RoleAssistant,
+		Outcome: conversation.OutcomeDone,
+		Content: []conversation.Part{
+			{Kind: conversation.PartText, Text: "我先看看"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c1", Name: "echo",
+				Result: &tool.Result{CallID: "c1", OK: false, Output: "denied"},
+			}},
+		},
+	})
+
+	// 调和后：[正文段（盖 ID，无可追加余段）][chip]——末块是 chip，挂点落在正文段上。
+	wantKinds := []blockKind{blockAssistant, blockTool}
+	if len(m.blocks) != len(wantKinds) {
+		t.Fatalf("blocks = %d, want %d: %+v", len(m.blocks), len(wantKinds), m.blocks)
+	}
+	for i, want := range wantKinds {
+		if m.blocks[i].kind != want {
+			t.Fatalf("blocks[%d].kind = %d, want %d", i, m.blocks[i].kind, want)
+		}
+	}
+	if m.blocks[0].text != "我先看看" {
+		t.Fatalf("正文段文本 = %q, want 权威文本回填", m.blocks[0].text)
+	}
+	if m.blocks[0].id != "a1" {
+		t.Fatalf("工具收场轮的正文段 ID = %q, want a1（D136 挂点回填丢失 ⇒ 该 Turn 无分叉条）",
+			m.blocks[0].id)
+	}
+}
+
 func TestEventsAndCommit(t *testing.T) {
 	m, _ := newTestModel(t)
 
