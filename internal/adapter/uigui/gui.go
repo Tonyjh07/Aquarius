@@ -309,6 +309,9 @@ type UI struct {
 	// caretFocused 编辑器焦点态（真窗 pass 捕获，fade pass 读——D62 caret 自绘：
 	// material.Editor 的 caret 由 gtx.Focused 门控，零值 Source 渲染不画 caret）。
 	caretFocused bool
+	// edSelRegions 编辑器选区行盒复用缓冲（D133 淡出源自绘选区，Regions 逐帧复用，
+	// 免 per-frame 分配；仅帧循环 goroutine 读写）。
+	edSelRegions []widget.Region
 
 	// collapsed 收起态（§15.1 单组件：左键 logo 收起回球，仅渲染悬浮球；再单击球
 	// 展开）。仅事件循环 goroutine 读写。

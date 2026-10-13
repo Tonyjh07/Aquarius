@@ -295,6 +295,34 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	}
 }
 
+// drawEditorSelection 淡出源渲染的**选区高亮**自绘（D133）：material.Editor 的选区与 caret
+// 同受 gtx.Focused 门控（paintSelection 里 `if !gtx.Focused(e) { return }`），而淡出源的
+// Source 是零值（disabled）⇒ 恒 false ⇒ 输入栏拖选出的选区**从不进位图**（用户报障
+// 2026-10-13：光标跟手、看不见选区）。D62 只补了 caret，这里补选区：经 Editor.Regions
+// 取 [start,end) 的行盒、按 selection 色铺（与转写区行选区同口径 selColor）。
+//
+// **必须在 ed.Layout 之前调用**：选区要在文字**底下**（Gio 的顺序是 paintSelection →
+// paintText）；而 Regions 读的是上一次量期结果——淡出源与真窗 pass 同帧同几何同文本
+// （本函数只在 fade pass 调），量期结果一致；首帧无结果则本帧不画（下一帧即有）。
+func (u *UI) drawEditorSelection(gtx layout.Context, ed *widget.Editor) {
+	start, end := ed.Selection()
+	if start == end {
+		return
+	}
+	if start > end {
+		start, end = end, start
+	}
+	u.edSelRegions = ed.Regions(start, end, u.edSelRegions[:0])
+	for _, r := range u.edSelRegions {
+		if r.Bounds.Empty() {
+			continue
+		}
+		a := clip.Rect(r.Bounds).Push(gtx.Ops) // 只裁选区盒——paint.Fill 覆盖整个当前裁剪区
+		paint.Fill(gtx.Ops, selColor(u.th.Palette.ContrastBg))
+		a.Pop()
+	}
+}
+
 // drawCaret 淡出源渲染的 caret 自绘（D62）：material.Editor 的 caret 由 gtx.Focused
 // 门控（零值 Source 恒 false，见 editor.layout），fade pass 里编辑器不画 caret——按
 // CaretCoords（相对编辑器原点、y = 基线）补画一根 2px 实心杆，高度按行高近似

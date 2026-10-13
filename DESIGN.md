@@ -1246,6 +1246,11 @@ repl（测试/e2e 后端）与 tui 不动（二进制默认前端为 gui，D51�
 （转写区不注册拖层——`gesture.Drag` 的 pointer.Grab 先到先得，否则拖层抢走行选
 的 Drag 事件）；**编辑器焦点收口**为 `focusPending` / 自带点击取焦 / 初始焦点
 （废除每帧常驻焦点——与行获焦同帧竞态会把选区焦点抢回）。
+**输入栏编辑器同理自绘（D62 caret / D133 选区）**：`widget.Editor` 的 caret 与选区
+高亮同受 `gtx.Focused` 门控，而淡出源 pass 的 `Source` 是零值（disabled）⇒ 两者都
+不会进可见位图。故淡出源自绘：caret 按 `CaretCoords` 补（D62），选区按
+`Editor.Regions(start,end)` 逐行盒铺 `ContrastBg×0x60`（D133，与转写区行选区同公式），
+两者都在 `inFadePass && caretFocused` 下画、且**选区画在 `ed.Layout` 之前**（要在文字底下）。
 
 **跨块拖选（D91）**：选择范围 = **整个转写区跨消息连续**（锚/焦点模型，逐块
 `[lo,hi]`、中间块全选；chip 头/分叉条无选键，跳过其文本）。机制 = 转写区观察者

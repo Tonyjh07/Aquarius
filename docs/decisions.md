@@ -1557,3 +1557,25 @@
   图状态——图侧两项经 `u.nodeAction` 原子槽投历史窗帧首执行（同 `rawView` 口径）。删除
   不需要帧：`/rm <id>` 非阻塞投 `inCh`（与键入同路径），复制文本与编辑预填仍经 `post`
   （`copyMsg`/`editMsg`/`quoteMsg`/`inputMsg`），与主界面逐字同路。
+
+### D133 · 输入栏选区高亮进位图（fade pass 自绘选区）
+
+> **驱动**：用户 2026-10-13「主界面输入栏内的内容不能拖选，当前点击并拖动时会移动光标到
+> 鼠标指针位置」；追问区分现象后确认为「窗口没动、光标动了、**没有选区高亮**」。
+
+- **不是手势/选区通路坏了，是"画不出来"**：headless 回放证实输入栏的拖选**一直是好的**（按下 →
+  选区 `[1,1]`，拖动 → `[16,1]` 且选中文字）；光标也跟手。真正缺的是**可见性**。
+- **根因**：主窗可见像素来自**淡出源合成**（D62 单通道：整窗 ULW 位图），而淡出源的
+  `layout.Context` 用的是**零值 Source**（disabled）⇒ `gtx.Focused(...)` 恒 false ⇒ Gio
+  `widget.Editor` 的 `paintSelection` 首行 `if !gtx.Focused(e) { return }` 直接跳过
+  **选区高亮永不进位图**。D62 当年只补了 `drawCaret`（同一门控的另一头），选区这一头漏了。
+- **修法**：`drawEditorSelection(gtx, ed)` —— 经公开的 `Editor.Regions(start, end, …)` 取
+  选区行盒，按 `selColor(th.Palette.ContrastBg)` 逐盒铺（与转写区行选区同口径）。三处编辑器
+  布局点（单行胶囊 / 展开态胶囊 / 确认态原因框）统一调用。
+- **必须画在 `ed.Layout` 之前**：Gio 的顺序是 paintSelection → paintText，选区要在文字**底下**；
+  而 `Regions` 读的是上一次量期结果——本函数只在淡出源 pass 调，与真窗 pass **同帧同几何同
+  文本**，量期结果一致（首帧无结果则不画，下一帧即有）。行盒缓冲 `u.edSelRegions` 逐帧复用，
+  免 per-frame 分配。
+- **门控与 Gio 同款**：只在 `inFadePass && caretFocused` 时画（未获焦不画选区，`caretFocused`
+  由真窗 pass 捕获）。回归测试 `TestFadeEditorSelectionPainted` 按**位图比对**锁定：同帧
+  「有选区 vs 无选区」的差异像素必须落在胶囊内、清选区回到基线、未获焦不画。

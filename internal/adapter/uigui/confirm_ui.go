@@ -112,6 +112,9 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 						// D86：原因编辑器（拒绝原因，可留空；Enter = 拒绝附原因）。
 						re := material.Editor(u.th, &u.reasonEd, "reason……")
 						re.TextSize = unit.Sp(15)
+						if u.inFadePass && u.caretFocused {
+							u.drawEditorSelection(gtx, &u.reasonEd) // D133：选区在文字底下
+						}
 						dims := re.Layout(gtx)
 						if u.inFadePass && u.caretFocused {
 							u.drawReasonCaret(gtx, dims) // 同 D62：fade pass caret 自绘
@@ -120,6 +123,9 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 					}
 					ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
 					ed.TextSize = unit.Sp(15)
+					if u.inFadePass && u.caretFocused {
+						u.drawEditorSelection(gtx, &u.editor) // D133：选区在文字底下
+					}
 					dims := ed.Layout(gtx)
 					if u.inFadePass && u.caretFocused {
 						u.drawCaret(gtx, dims) // D62：fade pass 无 Focused 态，caret 自绘
@@ -198,6 +204,9 @@ func (u *UI) pillContentExpanded(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0 // 自然高顶对齐（原 Flex Middle 居中——首行悬半空）
 			ed := material.Editor(u.th, &u.editor, "Ask anything or type a command...")
 			ed.TextSize = unit.Sp(15)
+			if u.inFadePass && u.caretFocused {
+				u.drawEditorSelection(gtx, &u.editor) // D133：选区在文字底下
+			}
 			dims := ed.Layout(gtx)
 			if u.inFadePass && u.caretFocused {
 				u.drawCaret(gtx, dims) // D62：fade pass 无 Focused 态，caret 自绘
