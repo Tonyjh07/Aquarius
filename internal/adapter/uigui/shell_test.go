@@ -354,8 +354,9 @@ func TestToggleTopMost(t *testing.T) {
 	}
 }
 
-// TestNodeMenuItemsContract 图侧节点菜单项序/文案契约（D132）：user/assistant 节点 =
-// 气泡七项 + 分隔线 + 图侧三项；root/system 节点只给复制/查看原文；无正文节点只剩图侧三项。
+// TestNodeMenuItemsContract 图侧节点菜单项序/文案契约（D132；D139 加「在主窗定位」变四项）：
+// user/assistant 节点 = 气泡七项 + 分隔线 + 图侧四项；root/system 节点只给复制/查看原文；
+// 无正文节点只剩图侧四项。
 func TestNodeMenuItemsContract(t *testing.T) {
 	bubble := []menuIt{
 		{id: cmdBubbleEdit, label: "编辑"},
@@ -369,6 +370,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 	graph := []menuIt{
 		{id: cmdNodeCopyID, label: "复制 ID"},
 		{id: cmdNodeRm, label: "删除（/rm）"},
+		{id: cmdNodeGoto, label: "在主窗定位"},
 		{id: cmdNodeHome, label: "回到当前"},
 	}
 	full := append(append([]menuIt{}, bubble...), menuIt{})
@@ -397,7 +399,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 			t.Fatalf("root/system 项[%d] = {%d %q}, want {%d %q}", i, got[i].id, got[i].label, want[i].id, want[i].label)
 		}
 	}
-	// 无正文节点：只剩图侧三项（不拿空文本预填编辑框）。
+	// 无正文节点：只剩图侧四项（不拿空文本预填编辑框）。
 	got = nodeMenuItems(blockUser, false)
 	want = append([]menuIt{{}}, graph...)
 	if len(got) != len(want) {
@@ -417,8 +419,8 @@ func TestNodeMenuRouting(t *testing.T) {
 	u.inCh = make(chan port.UserInput, 8)
 	u.bubbleMenu.Store(&bubbleMenuCtx{id: "u1", kind: blockUser, copy: "正文", graph: true})
 	items := u.menuItems(platform.MenuBubble)
-	if len(items) != 11 {
-		t.Fatalf("图侧项数 = %d, want 11（气泡七项 + 分隔 + 图侧三项）", len(items))
+	if len(items) != 12 {
+		t.Fatalf("图侧项数 = %d, want 12（气泡七项 + 分隔 + 图侧四项）", len(items))
 	}
 	if items[len(items)-1].Label != "回到当前" {
 		t.Fatalf("末项 = %q, want 回到当前", items[len(items)-1].Label)

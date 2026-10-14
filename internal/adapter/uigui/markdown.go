@@ -252,24 +252,31 @@ func mdTrimNL(s string) string { return strings.TrimRight(s, "\n") }
 // mdCacheLimit 展开缓存上限（条）：超限整表重建——长会话防膨胀，重解析代价可忽略。
 const mdCacheLimit = 256
 
-// mdBlocks 助手定稿文本 → markdown 结构块（D65/D66）：按原文缓存（解析结果不可变）；
+// mdBlocks 助手定稿文本 → markdown 结构块（D65/D66）：主窗事件循环专用，走 UI 上的
+// 解析缓存。**次窗不得调用本方法**——该缓存是主窗 goroutine 独占的裸 map（遮罩层走
+// mdBlocksCached + 自己的缓存，见 overlay.go）。
+func (u *UI) mdBlocks(src string) []mdBlock {
+	return mdBlocksCached(src, &u.mdCache)
+}
+
+// mdBlocksCached 按原文缓存的解析（缓存由调用方持有 ⇒ 每个窗口/goroutine 一份）。
 // 空文本块剔除（空围栏等不占气泡空间）；解析 panic 或空结果回退单段落原文
 // （帧循环不可挂，goldmark 虽经模糊测试仍兜底）。
-func (u *UI) mdBlocks(src string) (blocks []mdBlock) {
-	if u.mdCache == nil {
-		u.mdCache = map[string][]mdBlock{}
+func mdBlocksCached(src string, cache *map[string][]mdBlock) (blocks []mdBlock) {
+	if *cache == nil {
+		*cache = map[string][]mdBlock{}
 	}
-	if v, ok := u.mdCache[src]; ok {
+	if v, ok := (*cache)[src]; ok {
 		return v
 	}
 	defer func() {
 		if recover() != nil || len(blocks) == 0 {
 			blocks = []mdBlock{{kind: mdPara, text: src}}
 		}
-		if len(u.mdCache) >= mdCacheLimit {
-			u.mdCache = map[string][]mdBlock{}
+		if len(*cache) >= mdCacheLimit {
+			*cache = map[string][]mdBlock{}
 		}
-		u.mdCache[src] = blocks
+		(*cache)[src] = blocks
 	}()
 	parsed := parseMarkdown(src)
 	blocks = parsed[:0]

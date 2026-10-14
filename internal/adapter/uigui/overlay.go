@@ -1,0 +1,478 @@
+package uigui
+
+// overlay.go 会话历史窗内的消息查看/编辑遮罩（D139，§15.7）：关系图**单击节点**在
+// 本窗内开一层自绘遮罩（半透暗色 scrim + 居中卡片），看/改该条消息——
+//   - `呈现` 页签 = 主窗同款 markdown 渲染的**只读**预览（复用 mdBlockWidgetTh，
+//     传 nil 行选挂接件即无选区态）；
+//   - `源码` 页签 = 原始 markdown **多行可编辑**编辑器，提交给内核的就是它；
+//   - **应用方式在界面上三选一**（另起新分支 Fresh / 转移历史 --keep / 复制历史
+//     --copy，默认 Fresh）→ 提交 = 结构化 `Command{Name:"edit", Args:[id,
+//     ("--keep"|"--copy")?, 文本]}` 经 u.inCh（与键入同路径，--part 缺省合段）。
+//
+// **隔离口径（D139 的要点，实测修正）**：Gio 把一次点击投给**所有命中**的 handler（不是
+// 「顶层命中即止」），所以「画一层 Clickable 挡住底下」这条路**不存在**。真正起作用的是
+// 两条叠加：
+//  1. **整窗输入区**（本文件 overlayFrame 里 `clip.Rect(整窗)` + `event.Op(&ov.tag)`）：
+//     Gio 的命中是**链式栈遍历**，排在链顶的整窗输入区会连带遮蔽背景——实测左栏会话行、
+//     状态栏按钮、右图手势在遮罩开启时都收不到指针事件（变异验证：去掉它 + 去掉背景门，
+//     左栏立刻恢复响应）。
+//  2. **背景显式不消费**（`historyState.dispatch` 与 `relGraph.update` 见门即返回）：
+//     纵深防御——若遮罩输入区不再是整窗、或背景控件被排到遮罩之上，隔离仍成立。
+//
+// **解析缓存**：u.mdCache 是主窗事件循环独占的裸 map，次窗不得调用 u.mdBlocks；
+// 本窗解析走 mdBlocksCached + overlayState 自己的缓存（切页签/改源码时算一次）。
+
+import (
+	"image"
+	"image/color"
+	"strings"
+
+	"gioui.org/io/event"
+	"gioui.org/io/key"
+	"gioui.org/io/pointer"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
+	"gioui.org/unit"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
+)
+
+// overlayPage 遮罩页签（D139）。
+type overlayPage uint8
+
+const (
+	overlayPageRendered overlayPage = iota // 呈现：markdown 渲染只读预览
+	overlayPageSource                      // 源码：原始 markdown 多行编辑
+)
+
+// 遮罩几何（dp；D139）：卡片居中，宽 320~560、高 ≤ 视口 70%、四周留边 32
+// （留边与卡片外的视口部分即「点空白关闭」区）。
+const (
+	overlayCardMaxWdp   unit.Dp = 560
+	overlayCardMinWdp   unit.Dp = 320
+	overlayCardMaxHFrac         = 0.7
+	overlayCardMargindp unit.Dp = 32
+	overlayCardPadDp    unit.Dp = 12
+	overlayScrimAlpha   uint8   = 0x99 // 半透暗色（约 60%）
+)
+
+// overlayState 遮罩自持帧状态（historyState 持有，**仅历史窗 goroutine 读写**，
+// §15.7 并发模型）。零值不可用——由 openOverlay 构造。
+type overlayState struct {
+	// tag 指针事件过滤器的 Tag（Gio 要求地址稳定）。
+	tag struct{}
+
+	id       conversation.MessageID
+	kind     blockKind             // user/assistant/system/root → 标题与可编辑性
+	editable bool                  // root/system 与无正文节点只读
+	page     overlayPage           // 当前页签
+	mode     conversation.KeepMode // 应用方式（Fresh 零值 = 默认）
+
+	src       string    // 源码快照（NodeText，开遮罩时取一次）
+	blocks    []mdBlock // 呈现页签的解析结果
+	blocksKey string    // blocks 对应的源码（缓存键；变化即重解析）
+	cache     map[string][]mdBlock
+
+	// 页签 / 方式 / 动作控件。
+	tabRendered, tabSource          widget.Clickable
+	modeFresh, modeCarry, modeClone widget.Clickable
+	btnSave, btnClose               widget.Clickable
+	srcList, shownList              widget.List
+	ed                              widget.Editor
+
+	card        image.Rectangle // 本帧卡片盒（窗口系；点空白关闭按它判内外）
+	focusNeeded bool            // 源码页签要把键盘焦点交给编辑器
+	focusSink   bool            // 呈现页签要把键盘焦点交给遮罩自身（Esc 落点）
+}
+
+// openOverlay 开遮罩（D139）：正文经 port.TreeView.NodeText 取**全文**（摘要不能用来
+// 编辑——会静默截断消息，D132）；取不到正文（工具结果节点/快照未发布）→ 只读空卡。
+// mode/page = 菜单项预选（右键「编辑三项」/「查看原文」）；页签落在源码时预填编辑器。
+func (st *historyState) openOverlay(u *UI, id conversation.MessageID, mode conversation.KeepMode, page overlayPage) {
+	if id == "" || u.opts.Tree == nil {
+		return
+	}
+	src, _ := u.opts.Tree.NodeText(id)
+	kind := st.nodeKindOf(id)
+	ov := &overlayState{
+		id:       id,
+		kind:     kind,
+		mode:     mode,
+		page:     page,
+		src:      src,
+		editable: src != "" && (kind == blockUser || kind == blockAssistant),
+		cache:    map[string][]mdBlock{},
+	}
+	ov.srcList.List.Axis = layout.Vertical
+	ov.shownList.List.Axis = layout.Vertical
+	// 源码编辑器：多行保真（SetText 不压平），Enter 提交 / Shift+Enter 换行
+	//（Submit=true 时 Enter 出 SubmitEvent 且不落换行，同主窗展开胶囊 D106）。
+	ov.ed.SingleLine = false
+	ov.ed.Submit = true
+	ov.ed.ReadOnly = !ov.editable
+	ov.ed.SetText(src)
+	if page == overlayPageSource {
+		ov.focusNeeded = true
+	} else {
+		// 呈现页没有编辑器可获焦，Esc 必须有落点（Gio 只投键事件给获焦 handler）。
+		ov.focusSink = true
+	}
+	st.ov = ov
+}
+
+// nodeKindOf 快照内节点的展示档位（与图的 relNodeKind 同口径；找不到 = plain）。
+func (st *historyState) nodeKindOf(id conversation.MessageID) blockKind {
+	if st.model == nil {
+		return blockPlain
+	}
+	for _, n := range st.model.nodes {
+		if n.id == id {
+			return relNodeKind(n.role)
+		}
+	}
+	return blockPlain
+}
+
+// closeOverlay 关遮罩（Esc / 点空白 / 关闭钮 / 提交后）。
+func (st *historyState) closeOverlay() { st.ov = nil }
+
+// overlayActive 遮罩是否开启（背景交互见门即返回，§15.7 + D139）。
+func (st *historyState) overlayActive() bool { return st.ov != nil }
+
+// events 遮罩键鼠事件（D139）：Esc 关闭；卡片盒外的抬起 = 点空白关闭。
+//
+// **两处 Gio 口径**（缺任一则本层收不到事件）：
+//  1. 指针：需 `event.Op` 在**整窗 clip** 内声明路由锚点（与右图同款），否则抬起根本
+//     不会命中本 tag；这条整窗输入区同时就是背景遮蔽器（见文件头「隔离口径」）。
+//  2. 键：Gio 只把键事件投给**当前获焦**的 handler。呈现页没有编辑器可获焦，故本层
+//     自带焦点落点（`key.FocusFilter{Target: &ov.tag}` + 开遮罩时一次 FocusCmd），
+//     Esc 双挂：编辑器焦点（源码页）与遮罩焦点（呈现页）各一。
+//
+// **无需 armed 守卫**：`gtx.Event` 是**排他消费**——开遮罩的那次抬起已被右图的过滤器
+// 循环抽干，遮罩层收不到（变异验证：加守卫反而吞掉开遮罩后的第一次点击）。另：抬起只投给
+// 「已进入窗口」的命中集，故真实点击是 Move → Press → Release 序列。
+func (ov *overlayState) events(gtx layout.Context, st *historyState) {
+	for {
+		ev, ok := gtx.Event(key.Filter{Focus: &ov.tag, Name: key.NameEscape})
+		if !ok {
+			break
+		}
+		if ke, isKey := ev.(key.Event); isKey && ke.State == key.Press {
+			st.closeOverlay()
+			return
+		}
+	}
+	for {
+		ev, ok := gtx.Event(key.Filter{Focus: &ov.ed, Name: key.NameEscape})
+		if !ok {
+			break
+		}
+		if ke, isKey := ev.(key.Event); isKey && ke.State == key.Press {
+			st.closeOverlay()
+			return
+		}
+	}
+	for {
+		ev, ok := gtx.Event(pointer.Filter{Target: &ov.tag, Kinds: pointer.Release})
+		if !ok {
+			break
+		}
+		e := ev.(pointer.Event)
+		p := image.Pt(int(e.Position.X), int(e.Position.Y))
+		if !p.In(ov.card) {
+			st.closeOverlay()
+			return
+		}
+	}
+}
+
+// actions 页签切换 / 方式选择 / 关闭 / 保存（帧内消费；只读节点无方式与保存）。
+func (ov *overlayState) actions(gtx layout.Context, st *historyState, u *UI) {
+	if ov.tabRendered.Clicked(gtx) {
+		ov.page = overlayPageRendered
+		ov.focusNeeded, ov.focusSink = false, true
+		wakeFrame(gtx)
+	}
+	if ov.tabSource.Clicked(gtx) {
+		ov.page = overlayPageSource
+		ov.focusNeeded, ov.focusSink = true, false
+		wakeFrame(gtx)
+	}
+	if ov.editable {
+		switch {
+		case ov.modeFresh.Clicked(gtx):
+			ov.mode = conversation.Fresh
+		case ov.modeCarry.Clicked(gtx):
+			ov.mode = conversation.Carry
+		case ov.modeClone.Clicked(gtx):
+			ov.mode = conversation.Clone
+		}
+	}
+	if ov.btnClose.Clicked(gtx) {
+		st.closeOverlay()
+		return
+	}
+	if ov.editable && ov.btnSave.Clicked(gtx) {
+		ov.submit(u, st)
+	}
+}
+
+// submit 提交修订（D139）：结构化 `/edit`（flag 紧跟 id，D97① 位置口径；--part 缺省
+// = 合段，沿用 D132 图侧口径）→ 关遮罩 + 唤出主窗展开（user + Fresh 会重新生成，
+// D93；沿用 D132 的 showExpandMsg 口径，不唤出则生成过程看不见）。
+func (ov *overlayState) submit(u *UI, st *historyState) {
+	if !ov.editable {
+		return // 只读节点（root/system/无正文）无提交可言
+	}
+	text := ov.ed.Text()
+	if strings.TrimSpace(text) == "" {
+		return // 空文本不提交（内核亦拒）
+	}
+	args := []string{string(ov.id)}
+	switch ov.mode {
+	case conversation.Carry:
+		args = append(args, "--keep")
+	case conversation.Clone:
+		args = append(args, "--copy")
+	}
+	args = append(args, text)
+	select {
+	case u.inCh <- port.UserInput{Command: &port.Command{Name: "edit", Args: args}}:
+	default:
+		// 输入通道满：命令没投出去 ⇒ **不关遮罩**（否则用户改的文本凭空消失，且无迹可寻）。
+		// 与图侧「缓冲满则丢弃」的既有口径同源，这里改成保数据。
+		return
+	}
+	st.closeOverlay()
+	_ = u.post(showExpandMsg{})
+}
+
+// shown 呈现页签的解析块（按源码缓存，变化才重解析——不逐帧跑 goldmark）。
+func (ov *overlayState) shown() []mdBlock {
+	if ov.blocksKey != ov.src {
+		ov.blocks = mdBlocksCached(ov.src, &ov.cache)
+		ov.blocksKey = ov.src
+	}
+	return ov.blocks
+}
+
+// wakeFrame 追加一帧重绘请求（Gio 动画口径，比 Window.Invalidate 轻；§15.5）。
+func wakeFrame(gtx layout.Context) { gtx.Execute(op.InvalidateCmd{}) }
+
+// overlayFrame 遮罩单帧（D139）：scrim 铺满视口 + 居中卡片。无遮罩时零尺寸空操作。
+func (st *historyState) overlayFrame(gtx layout.Context, th *material.Theme, u *UI) layout.Dimensions {
+	ov := st.ov
+	if ov == nil {
+		return layout.Dimensions{}
+	}
+	// 整窗命中区 + 路由锚点：抬起/悬停事件落到本 tag（点空白关闭的判定源）。
+	// **这一处就是隔离的主机制**：Gio 的命中按链式栈遍历，排在链顶的整窗输入区会连带
+	// 遮蔽背景（左栏 / 右图 / 状态栏实测都收不到指针事件）。背景侧的显式不取是纵深防御。
+	stack := clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Push(gtx.Ops)
+	defer stack.Pop()
+	gtx.Event(key.FocusFilter{Target: &ov.tag}) // 呈现页的键盘落点可获焦
+	event.Op(gtx.Ops, &ov.tag)
+	ov.events(gtx, st)
+	if st.ov == nil { // 事件里关了：本帧不再画
+		return layout.Dimensions{}
+	}
+	ov.actions(gtx, st, u)
+	if st.ov == nil {
+		return layout.Dimensions{}
+	}
+	card := overlayCardBox(gtx)
+	ov.card = card
+	// scrim：铺满视口的半透暗色（背景仍在其下渲染 → 观感是「压暗一层」）。
+	paint.FillShape(gtx.Ops, color.NRGBA{A: overlayScrimAlpha},
+		clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
+	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min = image.Point{}
+		gtx.Constraints.Max = card.Size()
+		return overlayCard(gtx, th, ov, st, u)
+	})
+}
+
+// overlayCardBox 卡片盒（居中、限宽限高：长消息在卡内滚，不撑窗）。
+func overlayCardBox(gtx layout.Context) image.Rectangle {
+	margin := gtx.Dp(overlayCardMargindp)
+	avail := gtx.Constraints.Max
+	maxW := avail.X - 2*margin
+	if w := gtx.Dp(overlayCardMaxWdp); maxW > w {
+		maxW = w
+	}
+	if maxW < gtx.Dp(overlayCardMinWdp) {
+		maxW = avail.X // 视口本身太窄：铺满不留边
+	}
+	maxH := int(float64(avail.Y) * overlayCardMaxHFrac)
+	if lim := avail.Y - 2*margin; maxH > lim {
+		maxH = lim
+	}
+	if maxH < 1 {
+		maxH = avail.Y
+	}
+	card := image.Rect(0, 0, maxW, maxH)
+	return card.Add(image.Pt((avail.X-card.Dx())/2, (avail.Y-card.Dy())/2))
+}
+
+// overlayCard 卡片内容：标题行 + 页签行 + 内容区（呈现/源码）+ 底行（方式三选一 + 关闭/保存）。
+func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *historyState, u *UI) layout.Dimensions {
+	paint.FillShape(gtx.Ops, th.Palette.Bg,
+		clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(radiusDp)).Op(gtx.Ops))
+	return layout.UniformInset(overlayCardPadDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return overlayTitle(gtx, th, ov)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return overlayTabs(gtx, th, ov)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return overlayBody(gtx, th, ov, st, u)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return overlayFooter(gtx, th, ov)
+			}),
+		)
+	})
+}
+
+// overlayTitle 标题行：角色 + 节点 ID 前缀（与「原文 · <id>」同款口径）。
+func overlayTitle(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
+	role := "系统"
+	switch ov.kind {
+	case blockUser:
+		role = "用户"
+	case blockAssistant:
+		role = "助手"
+	}
+	if ov.kind == blockPlain && ov.id == "" {
+		role = "会话根"
+	}
+	l := material.Body2(th, role+" 消息 · "+shortID(string(ov.id)))
+	l.Color = th.Fg
+	return l.Layout(gtx)
+}
+
+// overlayTabs 页签行：呈现 / 源码。
+func overlayTabs(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
+	return layout.Flex{}.Layout(gtx,
+		layout.Rigid(overlayTab(&ov.tabRendered, th, "呈现", ov.page == overlayPageRendered)),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+		layout.Rigid(overlayTab(&ov.tabSource, th, "源码", ov.page == overlayPageSource)),
+	)
+}
+
+// overlayTab 单个页签钮（选中态反色）。
+func overlayTab(c *widget.Clickable, th *material.Theme, text string, on bool) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		bg, fg := cardTool, textMuted
+		if on {
+			bg, fg = th.Fg, th.Bg
+		}
+		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}.
+				Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(6)).Op(gtx.Ops))
+					l := material.Caption(th, text)
+					l.Color = fg
+					return l.Layout(gtx)
+				})
+		})
+	}
+}
+
+// overlayBody 内容区：呈现页签 = 主窗同款 markdown 渲染只读预览；源码页签 = 多行编辑器。
+func overlayBody(gtx layout.Context, th *material.Theme, ov *overlayState, st *historyState, u *UI) layout.Dimensions {
+	if ov.page == overlayPageSource {
+		if ov.focusNeeded {
+			ov.focusNeeded = false
+			gtx.Execute(key.FocusCmd{Tag: &ov.ed})
+		}
+		for {
+			evt, ok := ov.ed.Update(gtx)
+			if !ok {
+				break
+			}
+			if _, isSubmit := evt.(widget.SubmitEvent); isSubmit && ov.editable {
+				ov.submit(u, st)
+				return layout.Dimensions{}
+			}
+		}
+		return ov.srcList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			return material.Editor(th, &ov.ed, "").Layout(gtx)
+		})
+	}
+	if ov.focusSink {
+		ov.focusSink = false
+		gtx.Execute(key.FocusCmd{Tag: &ov.tag})
+	}
+	blocks := ov.shown()
+	return ov.shownList.Layout(gtx, len(blocks), func(gtx layout.Context, i int) layout.Dimensions {
+		w := mdBlockWidgetTh(th, blocks[i], nil, 0, image.Point{})
+		return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, w)
+	})
+}
+
+// overlayFooter 底行：应用方式三选一（只读节点无）+ 关闭 / 保存。
+func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
+	modeBtn := func(c *widget.Clickable, text string, on bool) layout.Widget {
+		return func(gtx layout.Context) layout.Dimensions {
+			return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				l := material.Caption(th, text)
+				if on {
+					l.Color = th.Fg
+				} else {
+					l.Color = textMuted
+				}
+				return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, l.Layout)
+			})
+		}
+	}
+	children := []layout.FlexChild{}
+	if ov.editable {
+		children = append(children,
+			layout.Rigid(modeBtn(&ov.modeFresh, "另起新分支", ov.mode == conversation.Fresh)),
+			layout.Rigid(modeBtn(&ov.modeCarry, "转移历史", ov.mode == conversation.Carry)),
+			layout.Rigid(modeBtn(&ov.modeClone, "复制历史", ov.mode == conversation.Clone)),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return layout.Spacer{}.Layout(gtx)
+			}),
+			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true)),
+		)
+	} else {
+		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			l := material.Caption(th, "该节点只读")
+			l.Color = textMuted
+			return l.Layout(gtx)
+		}))
+	}
+	children = append(children, layout.Rigid(overlayBtn(&ov.btnClose, th, "关闭", false)))
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
+}
+
+// overlayBtn 底行动作钮（primary = 反色强调）。
+func overlayBtn(c *widget.Clickable, th *material.Theme, text string, primary bool) layout.Widget {
+	bg, fg := cardTool, th.Fg
+	if primary {
+		bg, fg = th.Fg, th.Bg
+	}
+	return func(gtx layout.Context) layout.Dimensions {
+		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}.
+				Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(6)).Op(gtx.Ops))
+					l := material.Caption(th, text)
+					l.Color = fg
+					return l.Layout(gtx)
+				})
+		})
+	}
+}

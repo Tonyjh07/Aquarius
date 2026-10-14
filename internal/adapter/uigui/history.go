@@ -45,6 +45,8 @@ type historyState struct {
 	budget int // 预算（rebudget：−/＋/展开全部，A5/A7）
 	// graph 右图帧态（第 7 步：重排/手势/绘制）。
 	graph *relGraph
+	// ov 消息查看/编辑遮罩（D139，nil = 未开启；开启期间背景照常渲染但不消费事件）。
+	ov *overlayState
 	// 状态栏控件（− / ＋ / 展开全部 / 回到当前 / 三个聚焦域：D128）。
 	btnMinus, btnPlus, btnAll, btnHome widget.Clickable
 	btnSeed, btnLine, btnNode          widget.Clickable
@@ -160,7 +162,14 @@ func (st *historyState) sendSwitch(u *UI, id conversation.ID) {
 }
 
 // dispatch 帧内点击消费：会话行切换 + 状态栏控件（预算 −/＋/展开全部/回到当前）。
+//
+// **遮罩开启期一律不取事件**（D139）：纵深防御——遮罩的整窗输入区已按 Gio 命中链把背景
+// 指针事件一并遮蔽（overlay.go 头注），此处再显式关一道：将来若遮罩输入区不是整窗、
+// 或背景控件被排到遮罩之上，模态语义仍在。左栏行与状态栏钮因此在遮罩期间完全失灵。
 func (st *historyState) dispatch(u *UI, gtx layout.Context) {
+	if st.overlayActive() {
+		return
+	}
 	for i, c := range st.rows {
 		if c.Clicked(gtx) {
 			if i < len(st.sessions) {
@@ -197,6 +206,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 
 // drainNodeAction 排空图侧菜单动作槽（D132）：菜单分发在 shell 线程，而**剪贴板写入必须
 // 在 Gio 帧内**、聚焦待办属图状态——故两者都经 u.nodeAction 原子槽投到本窗帧首执行。
+// D139 再加两项：开遮罩（编辑三项/查看原文改道）与「在主窗定位」（/goto + 唤出主窗）。
 func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 	act := u.nodeAction.Swap(nil)
 	if act == nil || st.graph == nil {
@@ -210,6 +220,22 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 		}
 	case nodeActHome:
 		st.graph.focusPending = true
+	case nodeActGoto:
+		st.sendGoto(u, act.id)
+		_ = u.post(showExpandMsg{}) // /goto 只改主窗转写区：主窗收在球里则等于没反应
+	case nodeActOpenOverlay:
+		st.openOverlay(u, act.id, act.mode, act.page)
+	}
+}
+
+// sendGoto 图侧「在主窗定位」（D139）：投 /goto <id>（与键入同路径，缓冲满丢弃）。
+func (st *historyState) sendGoto(u *UI, id conversation.MessageID) {
+	if id == "" {
+		return
+	}
+	select {
+	case u.inCh <- port.UserInput{Command: &port.Command{Name: "goto", Args: []string{string(id)}}}:
+	default:
 	}
 }
 
@@ -242,6 +268,10 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 					return histStatusBar(gtx, th, u, st)
 				}),
 			)
+		}),
+		// D139：遮罩层置顶（scrim + 居中卡片）。未开启时零尺寸，不影响布局。
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return st.overlayFrame(gtx, th, u)
 		}),
 	)
 }

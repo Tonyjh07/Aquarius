@@ -34,22 +34,28 @@ const (
 	cmdNodeCopyID = 130 // 复制节点 ID（图侧动作槽 → 历史窗帧内落剪贴板）
 	cmdNodeRm     = 131 // 删除节点（/rm <id>，与键入同路径经 inCh）
 	cmdNodeHome   = 132 // 回到当前（视口聚焦 Head，图侧动作槽）
+	cmdNodeGoto   = 133 // 在主窗定位（/goto <id> + 唤出主窗；D139：原为单击动作）
 )
 
 // nodeActKind 图侧动作槽的动作种类（D132：菜单分发在 shell 线程，而剪贴板写入必须在 Gio
-// 帧内、聚焦待办属图状态，故一律经原子槽投历史窗帧执行）。
+// 帧内、聚焦待办属图状态，故一律经原子槽投历史窗帧执行；D139 追加开遮罩与在主窗定位）。
 type nodeActKind uint8
 
 const (
-	nodeActCopyID nodeActKind = iota + 1 // 复制 ID
-	nodeActHome                          // 回到当前
+	nodeActCopyID      nodeActKind = iota + 1 // 复制 ID
+	nodeActHome                               // 回到当前
+	nodeActGoto                               // 在主窗定位（D139：/goto 由单击移来）
+	nodeActOpenOverlay                        // 开消息查看/编辑遮罩（D139）
 )
 
 // nodeAction 图侧动作（D132）：id = 目标节点；槽在 UI 上（跨窗共享的原子槽，同 rawView
-// 口径），由历史窗帧首排空。
+// 口径），由历史窗帧首排空。D139：开遮罩只带定位信息（id/方式/页签），**正文在帧内现取**
+// —— 大文本不过原子槽，避免跨线程搬大对象。
 type nodeAction struct {
 	kind nodeActKind
 	id   conversation.MessageID
+	mode conversation.KeepMode // 开遮罩的预选方式（Fresh 零值）
+	page overlayPage           // 开遮罩的目标页签
 }
 
 // menuIt 菜单项（托盘/logo/气泡右键菜单共用，D72/D73）；id 0 = 分隔线，或二级菜单父项
@@ -116,7 +122,8 @@ func bubbleMenuItems(kind blockKind) []menuIt {
 }
 
 // nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** + 分隔线 +
-// 图侧三项（复制 ID / 删除 / 回到当前）。同一呈现、同一分发，只有尾部三项不同。
+// 图侧**四项**（复制 ID / 删除 / **在主窗定位** / 回到当前；D139 加「在主窗定位」——
+// `/goto` 由单击移来）。同一呈现、同一分发，只有尾部不同。
 // hasText=false（节点无正文可取：工具结果节点、或 NodeText 未就绪）时不给编辑类项——
 // 拿空文本预填编辑框等于诱导用户提交空修订（内核会拒，但菜单不该诱导）；根/系统节点
 // 不可编辑，只给复制/查看原文。
@@ -134,6 +141,7 @@ func nodeMenuItems(kind blockKind, hasText bool) []menuIt {
 	return append(items,
 		menuIt{id: cmdNodeCopyID, label: "复制 ID"},
 		menuIt{id: cmdNodeRm, label: "删除（/rm）"},
+		menuIt{id: cmdNodeGoto, label: "在主窗定位"},
 		menuIt{id: cmdNodeHome, label: "回到当前"},
 	)
 }
@@ -199,12 +207,29 @@ func (u *UI) menuChosen(kind platform.MenuKind, id uintptr) {
 // 下一帧 gtx.Execute(clipboard.WriteCmd)（剪贴板写入必须在 Gio 帧）；引用 = quoteMsg →
 // 输入框追加引用块（Gio 侧 apply）。
 func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
-	// D132：图侧触发（消息管理面在次窗）时主窗可能收在悬浮球里——编辑预填、引用、重新生成
-	// 都落在主窗的输入栏/转写区，不先唤出用户什么也看不见。气泡侧右键时主窗必在前景，
-	// 故只在 graph 上下文补一次呼出（showExpandMsg = 召回 + 展开，同 D50 口径）。
+	// D132/D139：图侧触发（消息管理面在次窗）时，动作一律落到**本窗**遮罩，不再投主窗
+	// 输入栏/另开次窗——编辑三项 = 开遮罩并预选方式、「查看原文」= 开遮罩并定位源码页签。
+	// 气泡侧右键时主窗必在前景，编辑进输入栏、查看原文进 winRaw 的老口径**不变**。
 	if ctx.graph {
 		switch r {
-		case cmdBubbleEdit, cmdBubbleEditKeep, cmdBubbleEditCopy, cmdBubbleQuote, cmdBubbleRegen:
+		case cmdBubbleEdit:
+			u.openOverlayAction(ctx, conversation.Fresh, overlayPageRendered)
+			return
+		case cmdBubbleEditKeep:
+			u.openOverlayAction(ctx, conversation.Carry, overlayPageRendered)
+			return
+		case cmdBubbleEditCopy:
+			u.openOverlayAction(ctx, conversation.Clone, overlayPageRendered)
+			return
+		case cmdBubbleRaw:
+			u.openOverlayAction(ctx, conversation.Fresh, overlayPageSource)
+			return
+		case cmdNodeGoto:
+			u.nodeAction.Store(&nodeAction{kind: nodeActGoto, id: ctx.id})
+			return
+		case cmdBubbleQuote, cmdBubbleRegen:
+			// 这两项仍落在主窗输入栏/内核（引用追加、重生成），故图侧触发时先唤出主窗，
+			// 否则用户什么也看不见（D132 口径，D139 保留）。
 			_ = u.post(showExpandMsg{})
 		}
 	}
@@ -244,6 +269,12 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		// D132 图侧：回到当前 = 视口聚焦 Head（聚焦待办属图状态，图侧动作槽过历史窗帧）。
 		u.nodeAction.Store(&nodeAction{kind: nodeActHome, id: ctx.id})
 	}
+}
+
+// openOverlayAction 图侧请求开遮罩（D139）：只带 id/方式/页签过原子槽，正文由历史窗
+// 帧内经 port.TreeView.NodeText 现取（大文本不过槽）。
+func (u *UI) openOverlayAction(ctx *bubbleMenuCtx, mode conversation.KeepMode, page overlayPage) {
+	u.nodeAction.Store(&nodeAction{kind: nodeActOpenOverlay, id: ctx.id, mode: mode, page: page})
 }
 
 // menuDispatch 命令分发（托盘/logo 菜单共用，D72；可能来自托盘线程——openWin 锁内单

@@ -820,7 +820,13 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	// 把 event.Op / gesture.Scroll 收进本栏 clip 后，Gio 用该 clip 的变换把窗口坐标
 	// 反变换回栏内坐标，命中/拖拽/菜单位置与绘制完全对齐。
 	stack := clip.Rect(image.Rectangle{Max: image.Pt(int(g.viewW), int(g.viewH))}).Push(gtx.Ops)
-	g.update(gtx, u, st)
+	// D139：遮罩开启期**不取手势**（模态）。绘制与物理继续走——背景要在 scrim 下保持
+	// 可见与运动。隔离是**双保险**：遮罩的整窗 `event.Op` 输入区已按 Gio 命中链把本栏
+	// 遮蔽（实测：遮罩开启时右图收不到指针事件），此处显式不取是纵深防御，且是左栏/
+	// 状态栏这些**同链控件**的必需条件（它们不受本栏遮蔽影响，见 historyState.dispatch）。
+	if !st.overlayActive() {
+		g.update(gtx, u, st)
+	}
 	stack.Pop()
 	// 拖拽/收敛中的交互态：本帧松弛后若还要继续，追加一次重绘请求（Gio 的动画口径，
 	// 比 Window.Invalidate 轻；收敛即停 → R3 随即恢复）。
@@ -1004,10 +1010,12 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 			if g.pressed {
 				g.pressed = false
 				if g.dragNode >= 0 {
-					g.releaseDrag() // 拖过 = 移动节点，不投 /goto
+					g.releaseDrag() // 拖过 = 移动节点，不开遮罩
 				} else if !g.dragging && g.pressNode >= 0 &&
 					g.pressNode == g.hitTest(e.Position.X, e.Position.Y) {
-					g.gotoNode(u, st, g.pressNode)
+					// D139：原位抬起（未拖拽）= 开消息查看/编辑遮罩（`/goto` 移进图侧
+					// 右键菜单「在主窗定位」）。
+					g.inspectNode(u, st, g.pressNode)
 				}
 				g.pressNode = -1
 				g.grabNode = -1
@@ -1057,7 +1065,16 @@ func (g *relGraph) recordSlot(li int) {
 	g.slots[id] = relSlot{Sib: g.lay.restOff[li], Gap: g.lay.restGap[li]}
 }
 
-// gotoNode 点节点 → 投 /goto <id>（A10；与键入同路径串行执行，缓冲满丢弃）。
+// inspectNode 点节点 → 开消息查看/编辑遮罩（D139：取代原单击的 /goto/A10；正文经
+// port.TreeView.NodeText 在遮罩内取，快照未发布/取不到正文时开只读空卡）。
+func (g *relGraph) inspectNode(u *UI, st *historyState, li int) {
+	if g.model == nil || li < 0 || li >= len(g.vis.nodes) {
+		return
+	}
+	st.openOverlay(u, g.model.nodes[g.vis.nodes[li]].id, conversation.Fresh, overlayPageRendered)
+}
+
+// gotoNode 投 /goto <id>（A10；图侧右键菜单「在主窗定位」经 nodeActGoto 走同路径）。
 func (g *relGraph) gotoNode(u *UI, st *historyState, li int) {
 	if g.model == nil || li < 0 || li >= len(g.vis.nodes) {
 		return

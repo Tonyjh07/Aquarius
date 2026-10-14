@@ -387,23 +387,51 @@ func TestRelGraphHitTest(t *testing.T) {
 	}
 }
 
-// TestRelGraphClickGoto A10：左键点节点 → /goto <id> 经 inCh。
-func TestRelGraphClickGoto(t *testing.T) {
+// TestRelGraphClickOpensOverlay D139：左键**原位抬起**点节点 → 开消息查看/编辑遮罩
+// （`/goto` 已移进图侧右键菜单「在主窗定位」）。开启那一次抬起不得被遮罩自己吃掉
+// （armed 守卫：同帧广播，落点在卡片外）。
+func TestRelGraphClickOpensOverlay(t *testing.T) {
 	u, st, q := relGraphFixture(t)
+	histFrameFor(q, u, st) // 先出一帧：右图按真实面板尺寸就位
 	sx, li := relAnchorScreen(t, st.graph)
 	want := st.model.nodes[st.vis.nodes[li]].id
-	q.Queue(relPointer(pointer.Press, sx, true))
-	relGFrame(q, u, st)
-	q.Queue(relPointer(pointer.Release, sx, false))
-	relGFrame(q, u, st)
+	at := ovPaneToWindow(sx)
+	q.Queue(relPointer(pointer.Press, at, true))
+	histFrameFor(q, u, st)
+	q.Queue(relPointer(pointer.Release, at, false))
+	histFrameFor(q, u, st)
+	if st.ov == nil {
+		t.Fatal("点节点未开遮罩")
+	}
+	if st.ov.id != want {
+		t.Fatalf("遮罩节点 = %q, want %q", st.ov.id, want)
+	}
+	if st.ov.page != overlayPageRendered || st.ov.mode != conversation.Fresh {
+		t.Fatalf("遮罩初态 = %v/%v, want 呈现页/Fresh", st.ov.page, st.ov.mode)
+	}
 	select {
 	case in := <-u.inCh:
-		if in.Command == nil || in.Command.Name != "goto" ||
-			len(in.Command.Args) != 1 || conversation.MessageID(in.Command.Args[0]) != want {
-			t.Fatalf("inCh = %+v, want /goto %s", in, want)
-		}
+		t.Fatalf("单击不应再投命令（D139 改走遮罩）: %+v", in)
 	default:
-		t.Fatal("inCh 空：点节点未投 /goto")
+	}
+}
+
+// TestRelGraphDragDoesNotOpenOverlay 拖拽（位移超 slop）= 移动节点，**不开遮罩**
+// （D139：单击与拖拽共用同一次按压-抬起序列，以位移仲裁）。
+func TestRelGraphDragDoesNotOpenOverlay(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	histFrameFor(q, u, st)
+	sx, _ := relAnchorScreen(t, st.graph)
+	at := ovPaneToWindow(sx)
+	q.Queue(relPointer(pointer.Press, at, true))
+	histFrameFor(q, u, st)
+	moved := f32.Pt(at.X+70, at.Y+30)
+	q.Queue(relPointer(pointer.Move, moved, true))
+	histFrameFor(q, u, st)
+	q.Queue(relPointer(pointer.Release, moved, false))
+	histFrameFor(q, u, st)
+	if st.ov != nil {
+		t.Fatal("拖拽不应开遮罩")
 	}
 }
 
@@ -421,16 +449,11 @@ func TestRelGraphPointerAreaIsPane(t *testing.T) {
 	q.Queue(relPointer(pointer.Press, at, true))
 	relPaneFrame(q, u, st, leftPx)
 	q.Queue(relPointer(pointer.Release, at, false))
-	relPaneFrame(q, u, st, leftPx)
-	select {
-	case in := <-u.inCh:
-		if in.Command == nil || in.Command.Name != "goto" ||
-			len(in.Command.Args) != 1 || conversation.MessageID(in.Command.Args[0]) != want {
-			t.Fatalf("inCh = %+v, want /goto %s（点击位置与响应错位）", in, want)
-		}
-	default:
-		t.Fatal("inCh 空：两栏结构下点节点未投 /goto")
+	histFrameFor(q, u, st)
+	if st.ov == nil || st.ov.id != want {
+		t.Fatalf("遮罩节点 = %+v, want %s（点击位置与响应错位）", st.ov, want)
 	}
+	st.closeOverlay() // 后续手势断言需无遮罩背景
 	// 左栏上的点击不得被右图误收（输入区收窄为右图栏）。
 	q.Queue(relPointer(pointer.Press, f32.Pt(20, 20), true))
 	relPaneFrame(q, u, st, leftPx)
@@ -440,6 +463,9 @@ func TestRelGraphPointerAreaIsPane(t *testing.T) {
 	}
 	q.Queue(relPointer(pointer.Release, f32.Pt(20, 20), false))
 	relPaneFrame(q, u, st, leftPx)
+	if st.ov != nil {
+		t.Fatal("左栏点击不应开遮罩")
+	}
 	// 拖拽同样按栏内坐标走：按在锚点的**窗口**坐标上拖动 → 该节点被 pin（不是平移）。
 	moved := f32.Pt(at.X+60, at.Y+40)
 	q.Queue(relPointer(pointer.Press, at, true))
@@ -783,10 +809,10 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	if g.menuArm {
 		t.Fatal("fire 后武装未解除")
 	}
-	// 项集 = 气泡七项 + 分隔线 + 图侧三项
+	// 项集 = 气泡七项 + 分隔线 + 图侧四项（D139 加「在主窗定位」）
 	items := u.menuItems(platform.MenuBubble)
 	wantLabels := []string{"编辑", "编辑并转移历史", "编辑并复制历史", "重新生成", "复制",
-		"引用", "查看原文", "", "复制 ID", "删除（/rm）", "回到当前"}
+		"引用", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "回到当前"}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -812,9 +838,10 @@ func TestRelGraphRightClickNoMenuOnDragAway(t *testing.T) {
 	}
 }
 
-// TestRelGraphMenuEditDispatchesFullText 菜单「编辑并转移历史」→ editMsg 预填**全文**进
-// 编辑态（D132 的要点：摘要会截断消息）；part = -1（缺省合段，与 NodeText 的拼接口径互逆）。
-func TestRelGraphMenuEditDispatchesFullText(t *testing.T) {
+// TestRelGraphMenuEditOpensOverlayWithFullText 菜单「编辑并转移历史」→ **开遮罩并预选
+// Carry**（D139：不再投主窗 editMsg）；正文在遮罩内经 NodeText 现取 = **全文**（D132 的
+// 要点：摘要会截断消息）；part 缺省合段（遮罩提交不带 --part）。
+func TestRelGraphMenuEditOpensOverlayWithFullText(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	const li = 4 // a1（assistant，正文块）
 	wantID := st.model.nodes[st.vis.nodes[li]].id
@@ -822,20 +849,51 @@ func TestRelGraphMenuEditDispatchesFullText(t *testing.T) {
 	q.Queue(relRightReleaseAt(st, li))
 	relGFrame(q, u, st)
 	u.menuChosen(platform.MenuBubble, cmdBubbleEditKeep)
-	// 图侧触发时先投 showExpandMsg：主窗可能收在悬浮球里，不唤出用户看不到预填（D132）。
-	var se showExpandMsg
-	if !relDrainAs(t, u, &se) {
-		t.Fatal("图侧编辑未先投 showExpandMsg（主窗收起时看不到预填）")
+
+	act := u.nodeAction.Load()
+	if act == nil || act.kind != nodeActOpenOverlay {
+		t.Fatalf("图侧编辑未投开遮罩动作: %+v", act)
 	}
+	if act.id != wantID || act.mode != conversation.Carry || act.page != overlayPageRendered {
+		t.Fatalf("开遮罩动作 = %+v, want id=%s Carry/呈现", act, wantID)
+	}
+	// 历史窗帧首排空 → 遮罩开，正文 = 全文（不是 40 字摘要）。
+	histFrameFor(q, u, st)
+	if st.ov == nil {
+		t.Fatal("遮罩未开启")
+	}
+	if st.ov.src != relFixtureBody(wantID) {
+		t.Fatalf("遮罩源码 = %q, want 全文 %q", st.ov.src, relFixtureBody(wantID))
+	}
+	if st.ov.mode != conversation.Carry || !st.ov.editable {
+		t.Fatalf("遮罩态 = mode %v editable %v, want Carry/true", st.ov.mode, st.ov.editable)
+	}
+	// 图侧编辑**不得**再投 editMsg（否则跨窗又去主窗输入栏）。
 	var got editMsg
-	if !relDrainAs(t, u, &got) {
-		t.Fatal("菜单分发未投 editMsg")
+	if relDrainAs(t, u, &got) {
+		t.Fatal("图侧编辑不应再投 editMsg（D139 改走遮罩）")
 	}
-	if got.id != wantID || got.mode != conversation.Carry || got.part != -1 {
-		t.Fatalf("editMsg = %+v, want id=%s Carry part=-1", got, wantID)
+}
+
+// TestRelGraphMenuRawOpensOverlaySourcePage 菜单「查看原文」→ 开遮罩并**定位源码页签**
+// （D139：图侧不再另开 winRaw 次窗）。
+func TestRelGraphMenuRawOpensOverlaySourcePage(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	const li = 4
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+	u.menuChosen(platform.MenuBubble, cmdBubbleRaw)
+	act := u.nodeAction.Load()
+	if act == nil || act.kind != nodeActOpenOverlay || act.page != overlayPageSource {
+		t.Fatalf("查看原文动作 = %+v, want 开遮罩/源码页", act)
 	}
-	if got.text != relFixtureBody(wantID) {
-		t.Fatalf("预填 = %q, want 全文 %q", got.text, relFixtureBody(wantID))
+	histFrameFor(q, u, st)
+	if st.ov == nil || st.ov.page != overlayPageSource {
+		t.Fatalf("遮罩页签 = %+v, want 源码页", st.ov)
+	}
+	if st.ov.ed.Text() == "" {
+		t.Fatal("源码页编辑器未预填正文")
 	}
 }
 
@@ -867,14 +925,14 @@ func TestRelGraphMenuRegenAndQuote(t *testing.T) {
 }
 
 // TestRelGraphMenuRootNodeReduced 根节点（Role=root，不可编辑）→ 项集只给复制/查看原文 +
-// 图侧三项，不给编辑三方式与重新生成（D132：无正文可编辑的节点不给编辑类项）。
+// 图侧四项，不给编辑三方式与重新生成（D132：无正文可编辑的节点不给编辑类项）。
 func TestRelGraphMenuRootNodeReduced(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	q.Queue(relRightPress(st, 0)) // 0 = 局部 r（结构根）
 	q.Queue(relRightReleaseAt(st, 0))
 	relGFrame(q, u, st)
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"复制", "查看原文", "", "复制 ID", "删除（/rm）", "回到当前"}
+	want := []string{"复制", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "回到当前"}
 	if len(items) != len(want) {
 		t.Fatalf("根节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -900,7 +958,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"", "复制 ID", "删除（/rm）", "回到当前"}
+	want := []string{"", "复制 ID", "删除（/rm）", "在主窗定位", "回到当前"}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}

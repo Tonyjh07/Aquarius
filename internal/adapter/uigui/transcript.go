@@ -301,14 +301,20 @@ const mdCodeInsetDp unit.Dp = 6
 
 // mdBlockWidget 单个 markdown 块的行内部件（D66 复合行分派；rs/k = 该块行选挂接
 // 件与块序，off = 块原点相对行内容原点（vstack 量期已知，供 note；高亮坐标走
-// ops 局部变换——vstack 的 Offset 已在变换内，D91 ②③）。
+// ops 局部变换——vstack 的 Offset 已在变换内，D91 ②③）。**主题显式传入**：次窗各有
+// 独立主题实例（§15.7 并发模型），遮罩层渲染（D139）不能用主窗的 u.th。
 func (u *UI) mdBlockWidget(b mdBlock, rs *rowSel, k int, off image.Point) layout.Widget {
+	return mdBlockWidgetTh(u.th, b, rs, k, off)
+}
+
+// mdBlockWidgetTh 同 mdBlockWidget，主题由调用方给（主窗传 u.th；遮罩层传本窗 th）。
+func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image.Point) layout.Widget {
 	switch b.kind {
 	case mdHeading: // 大字求粗（D65 阶梯；CJK 粗体面缺省回落常规）
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				s := material.Body1(u.th, b.text)
-				s.TextSize = mdHeadingSp(u.th, b.level)
+				s := material.Body1(th, b.text)
+				s.TextSize = mdHeadingSp(th, b.level)
 				s.Font.Weight = font.SemiBold
 				s.State = rs.sel(k)
 				return s.Layout(gtx)
@@ -316,9 +322,9 @@ func (u *UI) mdBlockWidget(b mdBlock, rs *rowSel, k int, off image.Point) layout
 		}
 	case mdCode: // 等宽小卡：录宏量高 → 画底 →（高亮，卡内衬偏移）→ 重放（同 paintRow 次序，卡嵌气泡内）
 		return func(gtx layout.Context) layout.Dimensions {
-			s := material.Body2(u.th, b.text)
+			s := material.Body2(th, b.text)
 			s.Font = monoFace
-			s.TextSize = u.th.TextSize * 13.0 / 16.0
+			s.TextSize = th.TextSize * 13.0 / 16.0
 			s.State = rs.sel(k)
 			m := op.Record(gtx.Ops)
 			dims := layout.UniformInset(mdCodeInsetDp).Layout(gtx, s.Layout)
@@ -337,7 +343,7 @@ func (u *UI) mdBlockWidget(b mdBlock, rs *rowSel, k int, off image.Point) layout
 	case mdQuote: // 引用：暗色正文（前缀已在文本）
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				s := material.Body2(u.th, b.text)
+				s := material.Body2(th, b.text)
 				s.Color = textDim
 				s.State = rs.sel(k)
 				return s.Layout(gtx)
@@ -346,7 +352,7 @@ func (u *UI) mdBlockWidget(b mdBlock, rs *rowSel, k int, off image.Point) layout
 	case mdRule: // 分隔线：暗点行
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				l := material.Caption(u.th, "· · · · · ·")
+				l := material.Caption(th, "· · · · · ·")
 				l.Color = textDim
 				l.State = rs.sel(k)
 				return l.Layout(gtx)
@@ -355,7 +361,7 @@ func (u *UI) mdBlockWidget(b mdBlock, rs *rowSel, k int, off image.Point) layout
 	default: // mdPara / mdListItem：正文（列表前缀已在文本）
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				s := material.Body2(u.th, b.text)
+				s := material.Body2(th, b.text)
 				s.State = rs.sel(k)
 				return s.Layout(gtx)
 			}, k, off, image.Point{})
