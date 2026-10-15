@@ -371,7 +371,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 		{id: cmdNodeCopyID, label: "复制 ID"},
 		{id: cmdNodeRm, label: "删除（/rm）"},
 		{id: cmdNodeGoto, label: "在主窗定位"},
-		{id: cmdNodeHome, label: "回到当前"},
+		{id: cmdNodeHome, label: "装下整树"},
 	}
 	full := append(append([]menuIt{}, bubble...), menuIt{})
 	full = append(full, graph...)
@@ -422,8 +422,8 @@ func TestNodeMenuRouting(t *testing.T) {
 	if len(items) != 12 {
 		t.Fatalf("图侧项数 = %d, want 12（气泡七项 + 分隔 + 图侧四项）", len(items))
 	}
-	if items[len(items)-1].Label != "回到当前" {
-		t.Fatalf("末项 = %q, want 回到当前", items[len(items)-1].Label)
+	if items[len(items)-1].Label != "装下整树" {
+		t.Fatalf("末项 = %q, want 装下整树", items[len(items)-1].Label)
 	}
 	u.menuChosen(platform.MenuBubble, cmdNodeRm)
 	select {

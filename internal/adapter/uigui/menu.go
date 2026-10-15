@@ -33,7 +33,7 @@ const (
 	// 图菜单并入气泡菜单，尾部加这三项；不再自绘 Gio 浮层）。
 	cmdNodeCopyID = 130 // 复制节点 ID（图侧动作槽 → 历史窗帧内落剪贴板）
 	cmdNodeRm     = 131 // 删除节点（/rm <id>，与键入同路径经 inCh）
-	cmdNodeHome   = 132 // 回到当前（视口聚焦 Head，图侧动作槽）
+	cmdNodeHome   = 132 // 装下整树（视口适配当前盒，图侧动作槽；D140 由「回到当前」改名）
 	cmdNodeGoto   = 133 // 在主窗定位（/goto <id> + 唤出主窗；D139：原为单击动作）
 )
 
@@ -43,7 +43,7 @@ type nodeActKind uint8
 
 const (
 	nodeActCopyID      nodeActKind = iota + 1 // 复制 ID
-	nodeActHome                               // 回到当前
+	nodeActHome                               // 装下整树（D140）
 	nodeActGoto                               // 在主窗定位（D139：/goto 由单击移来）
 	nodeActOpenOverlay                        // 开消息查看/编辑遮罩（D139）
 )
@@ -122,8 +122,9 @@ func bubbleMenuItems(kind blockKind) []menuIt {
 }
 
 // nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** + 分隔线 +
-// 图侧**四项**（复制 ID / 删除 / **在主窗定位** / 回到当前；D139 加「在主窗定位」——
-// `/goto` 由单击移来）。同一呈现、同一分发，只有尾部不同。
+// 图侧**四项**（复制 ID / 删除 / **在主窗定位** / 装下整树；D139 加「在主窗定位」——
+// `/goto` 由单击移来；D140 把「回到当前」改名为「装下整树」）。同一呈现、同一分发，
+// 只有尾部不同。
 // hasText=false（节点无正文可取：工具结果节点、或 NodeText 未就绪）时不给编辑类项——
 // 拿空文本预填编辑框等于诱导用户提交空修订（内核会拒，但菜单不该诱导）；根/系统节点
 // 不可编辑，只给复制/查看原文。
@@ -142,7 +143,7 @@ func nodeMenuItems(kind blockKind, hasText bool) []menuIt {
 		menuIt{id: cmdNodeCopyID, label: "复制 ID"},
 		menuIt{id: cmdNodeRm, label: "删除（/rm）"},
 		menuIt{id: cmdNodeGoto, label: "在主窗定位"},
-		menuIt{id: cmdNodeHome, label: "回到当前"},
+		menuIt{id: cmdNodeHome, label: "装下整树"},
 	)
 }
 
@@ -266,7 +267,7 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		default:
 		}
 	case cmdNodeHome:
-		// D132 图侧：回到当前 = 视口聚焦 Head（聚焦待办属图状态，图侧动作槽过历史窗帧）。
+		// D132 图侧：装下整树 = 视口适配当前盒（视场待办属图状态，图侧动作槽过历史窗帧）。
 		u.nodeAction.Store(&nodeAction{kind: nodeActHome, id: ctx.id})
 	}
 }

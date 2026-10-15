@@ -5,6 +5,7 @@ package uigui
 // A10（点节点 → /goto）、悬停/右键菜单、拖拽平移、预算控件。
 
 import (
+	"fmt"
 	"image"
 	"math"
 	"testing"
@@ -300,17 +301,23 @@ func relPaneFrame(q *input.Router, u *UI, st *historyState, leftPx int) {
 	q.Frame(ops)
 }
 
-// relPaneFixture 真窗两栏结构下的右图收敛基线（从首帧起跑完物理）。
+// relPaneFixture 真窗两栏结构下的右图收敛基线（从首帧起跑完物理 + 等视口跟随收敛——
+// D140 起跟随是**真的**有界滞后动画：只等 lay.settled 会拿到还在动的相机，后续按
+// 上一帧算出的坐标做手势就会指空）。
 func relPaneFixture(t *testing.T, leftPx int) (*UI, *historyState, *input.Router) {
 	t.Helper()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
-	for i := 0; i < relSettleFrames*3 && st.graph.lay != nil && !st.graph.lay.settled; i++ {
+	for i := 0; i < relSettleFrames*4 && st.graph.lay != nil &&
+		(!st.graph.lay.settled || st.graph.fitFollow); i++ {
 		relPaneFrame(q, u, st, leftPx)
 	}
 	if st.graph.lay == nil || !st.graph.lay.settled {
 		t.Fatal("两栏夹具物理未收敛")
+	}
+	if st.graph.fitFollow {
+		t.Fatal("两栏夹具视口跟随未收敛")
 	}
 	return u, st, q
 }
@@ -326,10 +333,11 @@ func relAnchorScreen(t *testing.T, g *relGraph) (f32.Point, int) {
 	return f32.Pt(x, y), li
 }
 
-// TestRelGraphFitViewOnOpen A13（D127 横树版）：开窗 = fit 整树 + **Head 右基准平移**；
-// 触底（宽树在可读下限 relZoomLabelMin 仍装不下）时退化为 Head 右基准 + 视图跟随。
-// 断言：zoom 夹在 [relZoomLabelMin, relZoomMax]（A9），收敛后 **Head 落在右基准位**
-// （视口内，当前消息不许丢）；装得下的树另断言所有可见节点在视口内（fit 语义本体）。
+// TestRelGraphFitViewOnOpen A13（D127 横树版，D140 改口径）：开窗 = 整树适配视口 + 平移
+// 构图（Head 偏右、纵向盒心）；触底（长会话 zoom 到 relZoomMin 仍装不下）时退化为
+// 「Head 在场 + 视图跟随」。断言：zoom 夹在 [relZoomMin, relZoomMax]（A9）；**Head 在视口
+// 右半**（D7-b 起右基准位是平移**偏好**：两维贴满时它会被可行域钳到右侧贴边，不再恒等
+// 0.72·视宽）；装得下的树另断言所有可见卡片在视口内（fit 语义本体）。
 func TestRelGraphFitViewOnOpen(t *testing.T) {
 	_, st, _ := relGraphFixture(t)
 	g := st.graph
@@ -337,41 +345,92 @@ func TestRelGraphFitViewOnOpen(t *testing.T) {
 		t.Fatalf("首帧 zoom = %v，超出 A9 钳制区间 [%v,%v]", g.zoom, relZoomMin, relZoomMax)
 	}
 	sx, _ := relAnchorScreen(t, g)
-	if math.Abs(float64(sx.X)-relAnchorDatumX*g.viewW) > 1 {
-		t.Fatalf("Head 未落在右基准位: x=%v, want ≈%.0f", sx.X, relAnchorDatumX*g.viewW)
+	if float64(sx.X) < g.viewW/2 {
+		t.Fatalf("Head 未落在视口右半: x=%v, 视口宽 %.0f", sx.X, g.viewW)
 	}
-	if sx.X < 0 || float64(sx.X) > g.viewW || sx.Y < 0 || float64(sx.Y) > g.viewH {
+	if li := g.anchor; relCardOutOfView(g, li) {
 		t.Fatalf("Head 在视口外: (%v,%v)，视口 %v×%v", sx.X, sx.Y, g.viewW, g.viewH)
 	}
-	minX, _, maxX, _, ok := g.treeBox()
-	if ok && (maxX-minX)*g.z <= g.viewW { // 装得下才承诺全节点可见
+	if _, minY, _, maxY := relCurBox(g); (maxY-minY)*g.z <= g.viewH && g.zoom > relZoomMin+1e-9 {
 		for li := range st.vis.nodes {
-			xs, ys := g.toScreen(g.sol.Pos[li])
-			if xs < 0 || ys < 0 || float64(xs) > g.viewW || float64(ys) > g.viewH {
-				t.Fatalf("节点 %d 未被适配进视口: (%v,%v)，视口 %v×%v", li, xs, ys, g.viewW, g.viewH)
+			if relCardOutOfView(g, li) {
+				t.Fatalf("节点 %d 未被适配进视口（zoom %.3f），视口 %v×%v", li, g.zoom, g.viewW, g.viewH)
 			}
 		}
 	}
 }
 
-// TestRelGraphFocusDatumsAnchor A8（D127 横树版）：「回到当前」= 把 Head 送到**视场
-// 右基准位**（relAnchorDatumX——时间轴的「现在」在右、不在视口中央），纵向仍居中，
-// 且**不**重置 zoom。
-func TestRelGraphFocusDatumsAnchor(t *testing.T) {
+// TestRelGraphFitAllAdaptsView D140：「装下整树」（状态栏按钮 + 图侧菜单项；原名「回到
+// 当前」）= 把**当前盒**一次到位装进视口——**zoom 与平移一起适配**。旧版只挪视场不动 zoom，
+// 于是「树明明装不下、点了等于没点」；这也是用户 2026-10-15 报障的第二个症状。
+// 断言 V1a（盒内可见）/ V1b（上下留白对称）/ V1c（至少一维贴满）。
+func TestRelGraphFitAllAdaptsView(t *testing.T) {
+	u, st, q := relGraphFixture(t) // 已落定
+	g := st.graph
+	// 把视场挪到空白处 + 故意压小 zoom，再触发「装下整树」
+	g.offX, g.offY = -900, -800
+	g.zoom, g.z = 0.3, 0.3*g.dpx
+	g.fitFollow = false
+	g.viewPending = vaFitAll
+	relGFrame(q, u, st)
+	for li := range st.vis.nodes {
+		if relCardOutOfView(g, li) {
+			t.Fatalf("「装下整树」后节点 %d 仍在视口外（zoom %.3f）", li, g.zoom)
+		}
+	}
+	if f := relBoxFill(g); f < 0.99 {
+		t.Fatalf("「装下整树」后两维都没贴满：%.2f（zoom %.3f）", f, g.zoom)
+	}
+	top, bot := relViewGaps(g)
+	if math.Abs(top-bot) > 8 {
+		t.Fatalf("「装下整树」后上下留白不对称：上 %.0f 下 %.0f", top, bot)
+	}
+}
+
+// TestRelGraphFocusAdaptsZoom D140/D3：两个聚焦域（历史线 / 当前节点）取景时**zoom 也要
+// 适配**——只挪视场时「放大读一跳邻域」根本做不到（旧版把域装进视口后 zoom 还停在原处，
+// 域只占屏幕中间一小块）。上限 = relFocusZoomMax（3~5 倍取中）。
+func TestRelGraphFocusAdaptsZoom(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	g := st.graph
-	// 先把视场挪开 + 改 zoom，再触发「回到当前」
-	g.offX, g.offY = -120, 80
-	g.zoom = 1.2
-	g.z = g.zoom * g.dpx
-	g.focusPending = true
+	// 压小 zoom + 挪开视场，再聚焦一跳邻域 ⇒ 期望 zoom **放大**且域盒贴满视口
+	g.offX, g.offY = -400, -300
+	g.zoom, g.z = 0.2, 0.2*g.dpx
+	g.fitFollow = false
+	g.viewPending = vaFocusNode
 	relGFrame(q, u, st)
-	sx, _ := relAnchorScreen(t, g)
-	if math.Abs(float64(sx.X)-relAnchorDatumX*g.viewW) > 1 || math.Abs(float64(sx.Y)-g.viewH/2) > 1 {
-		t.Fatalf("Head 屏幕 = %v, want ≈(%.0f,%.0f)", sx, relAnchorDatumX*g.viewW, g.viewH/2)
+	if g.zoom <= 0.2 || g.zoom > relFocusZoomMax {
+		t.Fatalf("聚焦当前节点后 zoom = %.3f，want ∈ (0.2, %.1f]", g.zoom, relFocusZoomMax)
 	}
-	if g.zoom != 1.2 {
-		t.Fatalf("「回到当前」不应重置 zoom: %v, want 1.2", g.zoom)
+	idx := g.scopeIndices(focusScopeNode)
+	if len(idx) == 0 {
+		t.Fatal("当前节点域为空（夹具异常）")
+	}
+	if f := relFillOf(g, idx); f < 0.99 {
+		t.Fatalf("聚焦当前节点后域盒没贴满：%.2f（zoom %.3f）", f, g.zoom)
+	}
+	for _, li := range idx {
+		if relCardOutOfView(g, li) {
+			t.Fatalf("聚焦当前节点后域内节点 %d 出视口", li)
+		}
+	}
+	// 聚焦当前历史（root → Head 链）：域更宽 ⇒ zoom 重新适配（不沿用上一档），链装进视口
+	g.viewPending = vaFocusLine
+	relGFrame(q, u, st)
+	if g.zoom <= 0 || g.zoom > relFocusZoomMax {
+		t.Fatalf("聚焦当前历史后 zoom = %.3f，want ∈ (0, %.1f]", g.zoom, relFocusZoomMax)
+	}
+	line := g.scopeIndices(focusScopeLine)
+	if len(line) == 0 {
+		t.Fatal("历史线域为空（夹具异常）")
+	}
+	if f := relFillOf(g, line); f < 0.99 {
+		t.Fatalf("聚焦当前历史后链盒没贴满：%.2f（zoom %.3f）", f, g.zoom)
+	}
+	for _, li := range line {
+		if relCardOutOfView(g, li) {
+			t.Fatalf("聚焦当前历史后链上节点 %d 出视口（zoom %.3f）", li, g.zoom)
+		}
 	}
 }
 
@@ -503,8 +562,10 @@ func TestRelGraphFitFollowKeepsAnchorInView(t *testing.T) {
 				i, x, y, g.viewW, g.viewH)
 		}
 	}
-	// 收敛后：跟随即停、锚点正好落在右基准位（落定位置 = 视场右基准，D127）
-	for i := 0; i < relSettleFrames*4 && g.lay != nil && !g.lay.settled; i++ {
+	// 收敛后：跟随即停，锚点压在**视场右基准位**（横向，D127/A8）；纵向改用**盒心居中**
+	// （D140 P2）——Head 不在盒的纵向中点时，Head 居中会把整盒顶向一侧（实测上留白 −461px、
+	// 下留白 197px：顶端被裁、下方大片空白，正是用户截图那一幕）。
+	for i := 0; i < relSettleFrames*4 && g.lay != nil && (!g.lay.settled || g.fitFollow); i++ {
 		relGFrame(q, u, st)
 	}
 	if g.lay == nil || !g.lay.settled {
@@ -514,9 +575,14 @@ func TestRelGraphFitFollowKeepsAnchorInView(t *testing.T) {
 		t.Fatal("收敛后仍在跟随（空转重绘）")
 	}
 	x, y := g.toScreen(g.sol.Pos[g.anchor])
-	if math.Abs(float64(x)-relAnchorDatumX*g.viewW) > 1 || math.Abs(float64(y)-g.viewH/2) > 1 {
-		t.Fatalf("收敛后锚点未在右基准位: (%.1f,%.1f), want (%.1f,%.1f)",
-			x, y, relAnchorDatumX*g.viewW, g.viewH/2)
+	if math.Abs(float64(x)-relAnchorDatumX*g.viewW) > 1 {
+		t.Fatalf("收敛后锚点未在右基准位: x=%.1f, want %.1f", x, relAnchorDatumX*g.viewW)
+	}
+	if y < 0 || float64(y) > g.viewH {
+		t.Fatalf("收敛后锚点跑出视口: y=%.1f，视口高 %.0f", y, g.viewH)
+	}
+	if top, bot := relViewGaps(g); math.Abs(top-bot) > 8 {
+		t.Fatalf("收敛后上下留白不对称（P2 盒心居中）: 上 %.1f 下 %.1f", top, bot)
 	}
 	// 跟随中用户平移 ⇒ 取消（跟用户抢视场是 bug）
 	g.fitFollow = true
@@ -675,27 +741,254 @@ func TestRelGraphFitSizeDriven(t *testing.T) {
 		q.Frame(ops)
 	}
 	frame()
-	for i := 0; i < relSettleFrames*3 && st.graph.lay != nil && !st.graph.lay.settled; i++ {
+	for i := 0; i < relSettleFrames*4 && st.graph.lay != nil &&
+		(!st.graph.lay.settled || st.graph.fitFollow); i++ {
 		frame()
 	}
 	g := st.graph
 	if g.lay == nil || !g.lay.settled {
 		t.Fatal("夹具物理未收敛")
 	}
+	if g.fitFollow {
+		t.Fatal("视口跟随未收敛")
+	}
 	if g.zoom < relZoomMin || g.zoom > relZoomMax {
 		t.Fatalf("fit zoom = %v，超出 A9 区间 [%v,%v]", g.zoom, relZoomMin, relZoomMax)
 	}
-	// 装得下（宽树触底才有例外）：所有可见节点在视口内
-	minX, _, maxX, _, ok := g.treeBox()
-	if ok && (maxX-minX)*g.z <= g.viewW {
+	// 装得下（长会话触底才有例外）：所有可见卡片在视口内（D140：按**当前盒**收口）
+	if _, minY, _, maxY := relCurBox(g); (maxY-minY)*g.z <= g.viewH && g.zoom > relZoomMin+1e-9 {
 		for li := range st.vis.nodes {
-			hw, hh := relCardHalf(g.geo[li])
-			xs, ys := g.toScreen(g.sol.Pos[li])
-			px, py := float64(xs), float64(ys)
-			if px-hw*g.z < -1 || px+hw*g.z > g.viewW+1 || py-hh*g.z < -1 || py+hh*g.z > g.viewH+1 {
-				t.Fatalf("节点 %d 未被装进视口: (%v,%v)±(%v,%v)，视口 %v×%v", li, xs, ys, hw*g.z, hh*g.z, g.viewW, g.viewH)
+			if relCardOutOfView(g, li) {
+				t.Fatalf("节点 %d 未被装进视口（zoom %.3f），视口 %v×%v", li, g.zoom, g.viewW, g.viewH)
 			}
 		}
+	}
+}
+
+// ——— D140：视场契约 v2（盒优先）———
+//
+// 用户 2026-10-15 报障（截图）：开窗后从「折叠播种」舒展到平衡态时**末端节点一动不动**
+// （相机把它钉在右基准位上 ⇒ 整树的位移被相机完全抵消），而树向四周舒展 ⇒ 顶端被裁、
+// 下方大片空白。实测（500×500 视口、源档；`go test -run TestZZD140Measure -v`）：
+//
+//	fixture7  静息盒 879×208  → 落定盒 873×403（纵向 1.94×）  首帧 zoom 0.488 / 落定需 0.573
+//	wide12x3  静息盒 879×1165 → 落定盒 976×1781（纵向 1.53×） 上留白 −461px、38 节点出 27
+//	chain120  静息盒 65 高    → 落定盒 200 高（3.06×）          120 节点出 97（zoom 触底）
+//
+// 新口径（D140）：zoom 按**当前盒**收口（不是静息盒）、纵向**盒心**居中（不是 Head 居中）、
+// Head 只在装得下时落右基准位（D7-b 去掉了「过去 ≤ 基准位」那条 zoom 约束，换来两维尽量
+// 贴满）。下面三条断言 = 新不变量 V1a（盒内可见）/ V1b（上下留白对称）/ V1c（至少一维贴满）。
+
+// relWideGraph 宽树夹具：root → system → fan 个 user 分叉，每分叉再挂 depth 级链。
+// 源档按「距父 100dp」拉、不看静息槽位 ⇒ 落定盒比静息盒**纵向**大一大截（宽树的病态档）。
+func relWideGraph(fan, depth int) port.TreeGraph {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	n := 0
+	at := func() time.Time { n++; return base.Add(time.Duration(n) * time.Second) }
+	var nodes []port.GraphNode
+	mk := func(id, parent string, role conversation.Role, sibIdx, sibCount int) {
+		nodes = append(nodes, port.GraphNode{
+			ID: conversation.MessageID(id), Parent: conversation.MessageID(parent),
+			Role: role, Snippet: "s-" + id, EdgeKind: port.EdgeSeq,
+			SiblingIdx: sibIdx, SiblingCount: sibCount, CreatedAt: at(),
+		})
+	}
+	mk("r", "", conversation.RoleRoot, 0, 1)
+	mk("p", "r", conversation.RoleSystem, 0, 1)
+	last := "p"
+	for i := 0; i < fan; i++ {
+		id := fmt.Sprintf("b%d", i)
+		mk(id, "p", conversation.RoleUser, i, fan)
+		cur := id
+		for d := 1; d < depth; d++ {
+			nid := fmt.Sprintf("%s_%d", id, d)
+			role := conversation.RoleAssistant
+			if d%2 == 1 {
+				role = conversation.RoleUser
+			}
+			mk(nid, cur, role, 0, 1)
+			cur = nid
+		}
+		last = cur
+	}
+	return port.TreeGraph{Anchor: conversation.MessageID(last), Nodes: nodes, Total: len(nodes)}
+}
+
+// relBoxOf 给定本地索引集在当前物理位形下的卡片外接盒（含 relFitMargin）。测试侧**独立
+// 复算**：被测口径就是「可见卡片都在视口内」，若测试与实现借同一个函数，算错法相同就测不出错。
+func relBoxOf(g *relGraph, idx []int) (minX, minY, maxX, maxY float64) {
+	minX, minY = math.Inf(1), math.Inf(1)
+	maxX, maxY = math.Inf(-1), math.Inf(-1)
+	for _, li := range idx {
+		hw, hh := relCardHalf(g.geo[li])
+		p := g.sol.Pos[li]
+		minX, maxX = math.Min(minX, p.X-hw), math.Max(maxX, p.X+hw)
+		minY, maxY = math.Min(minY, p.Y-hh), math.Max(maxY, p.Y+hh)
+	}
+	padX := (maxX - minX) * relFitMargin
+	padY := (maxY - minY) * relFitMargin
+	return minX - padX, minY - padY, maxX + padX, maxY + padY
+}
+
+// relCurBox 全可见树的当前盒。
+func relCurBox(g *relGraph) (minX, minY, maxX, maxY float64) {
+	idx := make([]int, len(g.vis.nodes))
+	for i := range idx {
+		idx[i] = i
+	}
+	return relBoxOf(g, idx)
+}
+
+// relCardOutOfView 该可见节点的卡片盒是否越出视口（±1px 容差）。
+func relCardOutOfView(g *relGraph, li int) bool {
+	if g.sol == nil || li < 0 || li >= len(g.sol.Pos) {
+		return true
+	}
+	xs, ys := g.toScreen(g.sol.Pos[li])
+	hw, hh := relCardHalf(g.geo[li])
+	x, y := float64(xs), float64(ys)
+	return x-hw*g.z < -1 || x+hw*g.z > g.viewW+1 || y-hh*g.z < -1 || y+hh*g.z > g.viewH+1
+}
+
+// relViewGaps 盒相对视口的上/下留白（px；负 = 越界）。
+func relViewGaps(g *relGraph) (top, bottom float64) {
+	_, minY, _, maxY := relCurBox(g)
+	return minY*g.z + g.offY, g.viewH - (maxY*g.z + g.offY)
+}
+
+// relFill 给定盒在视口里的贴满度（两维取大；1 = 恰有一维贴满视口）。
+func relFill(g *relGraph, minX, minY, maxX, maxY float64) float64 {
+	return math.Max((maxX-minX)*g.z/g.viewW, (maxY-minY)*g.z/g.viewH)
+}
+
+// relFillOf 给定索引集域盒的贴满度。
+func relFillOf(g *relGraph, idx []int) float64 {
+	minX, minY, maxX, maxY := relBoxOf(g, idx)
+	return relFill(g, minX, minY, maxX, maxY)
+}
+
+// relBoxFill 全可见树盒的贴满度。
+func relBoxFill(g *relGraph) float64 {
+	minX, minY, maxX, maxY := relCurBox(g)
+	return relFill(g, minX, minY, maxX, maxY)
+}
+
+// relDriveDone 驱动到「物理静止 **且** 视口跟随收敛」，收敛不了直接失败（跟随不许空转）。
+func relDriveDone(t *testing.T, q *input.Router, u *UI, st *historyState) {
+	t.Helper()
+	relDriveQuiet(q, u, st, relSettleFrames*4)
+	if st.graph.lay == nil || !st.graph.lay.settled {
+		t.Fatal("物理未收敛")
+	}
+	if st.graph.fitFollow {
+		t.Fatal("视口跟随未收敛（空转重绘）")
+	}
+}
+
+// TestRelGraphSettledBoxStaysInView V1a/V2（D140 主复现）：舒展落定后，可见节点的卡片必须
+// **全在视口内**；只有 zoom 触底（relZoomMin，超长会话）才退化为「Head 在场」（V2）。
+// 修前：wide12x3 38 节点出 27、上越界 461px（用户截图那一幕）。
+func TestRelGraphSettledBoxStaysInView(t *testing.T) {
+	cases := []struct {
+		name string
+		g    port.TreeGraph
+	}{
+		{"fixture7", relFixtureGraph()},
+		{"wide12x3", relWideGraph(12, 3)},
+		{"wide24x1", relWideGraph(24, 1)},
+		{"chain120", relChainGraph(120)}, // zoom 触底档：只承诺 V2
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			u := newHistUI(fakeRelTree{g: c.g}, fakeLister(nil))
+			st := newHistoryState(u)
+			q := new(input.Router)
+			relGFrame(q, u, st)
+			relDriveDone(t, q, u, st)
+			g := st.graph
+			floor := g.zoom <= relZoomMin+1e-9
+			for li := range st.vis.nodes {
+				if !relCardOutOfView(g, li) || floor {
+					continue
+				}
+				xs, ys := g.toScreen(g.sol.Pos[li])
+				t.Fatalf("落定后节点 %d 出视口 (%v,%v)，视口 %v×%v（zoom %.3f）",
+					li, xs, ys, g.viewW, g.viewH, g.zoom)
+			}
+			if li := g.anchor; li >= 0 && li < len(st.vis.nodes) { // V2：Head 恒在场
+				if relCardOutOfView(g, li) {
+					xs, ys := g.toScreen(g.sol.Pos[li])
+					t.Fatalf("落定后 Head 出视口 (%v,%v)，视口 %v×%v", xs, ys, g.viewW, g.viewH)
+				}
+			}
+		})
+	}
+}
+
+// TestRelGraphSettledViewBalanced V1b/V1c（D140；用户「舒展后下方空白小一点」）：盒装得下
+// 时上下留白必须**对称**（P2 盒心居中；修前 fixture7 是 225/78、wide12x3 是 −461/197），
+// 且未触上下限时至少一维贴满（zoom 按当前盒收口，不是按静息盒）。
+func TestRelGraphSettledViewBalanced(t *testing.T) {
+	cases := []struct {
+		name string
+		g    port.TreeGraph
+	}{
+		{"fixture7", relFixtureGraph()},
+		{"wide12x3", relWideGraph(12, 3)},
+		{"wide24x1", relWideGraph(24, 1)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			u := newHistUI(fakeRelTree{g: c.g}, fakeLister(nil))
+			st := newHistoryState(u)
+			q := new(input.Router)
+			relGFrame(q, u, st)
+			relDriveDone(t, q, u, st)
+			g := st.graph
+			_, minY, _, maxY := relCurBox(g)
+			if (maxY-minY)*g.z > g.viewH {
+				return // 纵向装不下（触底档）：留白无从谈起
+			}
+			top, bot := relViewGaps(g)
+			if top < -1 || bot < -1 {
+				t.Fatalf("纵向越界：上留白 %.0f 下留白 %.0f（视口高 %.0f）", top, bot, g.viewH)
+			}
+			if math.Abs(top-bot) > 8 {
+				t.Fatalf("上下留白不对称：上 %.0f 下 %.0f（P2 应盒心居中）", top, bot)
+			}
+			if g.zoom > relZoomMin+1e-9 && g.zoom < relZoomMax-1e-9 {
+				if f := relBoxFill(g); f < 0.99 {
+					t.Fatalf("两维都没贴满（贴满度 %.2f）：zoom 没按当前盒收口", f)
+				}
+			}
+		})
+	}
+}
+
+// TestRelGraphFollowZoomNoBounce D2 改订（D140）：展开期（物理未静止）zoom **单调不增**
+// ——盒子只长 ⇒ 只缩，不会有「放大—缩回」的来回摆动（抖动会让人眼盯不住树）。落定后允许
+// 放大一次把留白填掉（V1c），故判据只在 settled 之前生效。
+func TestRelGraphFollowZoomNoBounce(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relWideGraph(12, 3)}, fakeLister(nil))
+	st := newHistoryState(u)
+	q := new(input.Router)
+	relGFrame(q, u, st)
+	g := st.graph
+	prev := g.zoom
+	expanding := false
+	for i := 0; i < relSettleFrames*4; i++ {
+		relGFrame(q, u, st)
+		if g.lay == nil || g.lay.settled {
+			break // 落定帧起的「放大填留白」不算回弹
+		}
+		expanding = true
+		if g.zoom > prev+1e-9 {
+			t.Fatalf("展开期 zoom 回弹（第 %d 帧）：%.4f → %.4f", i, prev, g.zoom)
+		}
+		prev = g.zoom
+	}
+	if !expanding {
+		t.Fatal("夹具没经历展开期（测试失效）")
 	}
 }
 
@@ -812,7 +1105,7 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	// 项集 = 气泡七项 + 分隔线 + 图侧四项（D139 加「在主窗定位」）
 	items := u.menuItems(platform.MenuBubble)
 	wantLabels := []string{"编辑", "编辑并转移历史", "编辑并复制历史", "重新生成", "复制",
-		"引用", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "回到当前"}
+		"引用", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "装下整树"}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -932,7 +1225,7 @@ func TestRelGraphMenuRootNodeReduced(t *testing.T) {
 	q.Queue(relRightReleaseAt(st, 0))
 	relGFrame(q, u, st)
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"复制", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "回到当前"}
+	want := []string{"复制", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "装下整树"}
 	if len(items) != len(want) {
 		t.Fatalf("根节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -958,7 +1251,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"", "复制 ID", "删除（/rm）", "在主窗定位", "回到当前"}
+	want := []string{"", "复制 ID", "删除（/rm）", "在主窗定位", "装下整树"}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -990,8 +1283,9 @@ func TestRelGraphMenuRm(t *testing.T) {
 	}
 }
 
-// TestRelGraphMenuHomeAndCopyID 图侧两项走动作槽 → **历史窗帧**内落剪贴板 / 置聚焦待办
-// （剪贴板写入必须在 Gio 帧内、聚焦待办属图状态，分发处都不能直连，§15.6）。
+// TestRelGraphMenuHomeAndCopyID 图侧两项走动作槽 → **历史窗帧**内落剪贴板 / 置视场待办
+// （剪贴板写入必须在 Gio 帧内、视场待办属图状态，分发处都不能直连，§15.6）。D140 起
+// 「装下整树」是 viewAction 待办（帧首按当帧视场矩阵执行）。
 func TestRelGraphMenuHomeAndCopyID(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	const li = 4
@@ -1004,11 +1298,11 @@ func TestRelGraphMenuHomeAndCopyID(t *testing.T) {
 	if act := u.nodeAction.Load(); act == nil || act.kind != nodeActHome {
 		t.Fatalf("动作槽 = %+v, want nodeActHome", act)
 	}
-	st.graph.focusPending = false
+	st.graph.viewPending = vaNone
 	gtx, _ := frameGtxSize(new(input.Router).Source(), 720, 560)
-	st.drainNodeAction(u, gtx) // 帧首排空 → 聚焦待办置位
-	if !st.graph.focusPending {
-		t.Fatal("排空后聚焦待办未置位")
+	st.drainNodeAction(u, gtx) // 帧首排空 → 视场待办置位
+	if st.graph.viewPending != vaFitAll {
+		t.Fatalf("排空后视场待办 = %v, want vaFitAll", st.graph.viewPending)
 	}
 
 	u.menuChosen(platform.MenuBubble, cmdNodeCopyID)

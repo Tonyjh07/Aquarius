@@ -47,7 +47,7 @@ type historyState struct {
 	graph *relGraph
 	// ov 消息查看/编辑遮罩（D139，nil = 未开启；开启期间背景照常渲染但不消费事件）。
 	ov *overlayState
-	// 状态栏控件（− / ＋ / 展开全部 / 回到当前 / 三个聚焦域：D128）。
+	// 状态栏控件（− / ＋ / 展开全部 / 装下整树 / 回到初始态 / 三个聚焦域：D128、D140）。
 	btnMinus, btnPlus, btnAll, btnHome widget.Clickable
 	btnSeed, btnLine, btnNode          widget.Clickable
 }
@@ -161,7 +161,8 @@ func (st *historyState) sendSwitch(u *UI, id conversation.ID) {
 	}
 }
 
-// dispatch 帧内点击消费：会话行切换 + 状态栏控件（预算 −/＋/展开全部/回到当前）。
+// dispatch 帧内点击消费：会话行切换 + 状态栏控件（预算 −/＋/展开全部/装下整树/回到初始态/
+// 两个聚焦域）。
 //
 // **遮罩开启期一律不取事件**（D139）：纵深防御——遮罩的整窗输入区已按 Gio 命中链把背景
 // 指针事件一并遮蔽（overlay.go 头注），此处再显式关一道：将来若遮罩输入区不是整窗、
@@ -185,9 +186,9 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 		st.applyBudget(+10)
 	case st.btnAll.Clicked(gtx):
 		st.expandAll()
-	case st.btnHome.Clicked(gtx):
+	case st.btnHome.Clicked(gtx): // 装下整树（D140：原「回到当前」——只对右基准位，树装不下时什么都改不了）
 		if st.graph != nil {
-			st.graph.focusPending = true
+			st.graph.viewPending = vaFitAll
 		}
 	case st.btnSeed.Clicked(gtx): // 回到初始态：重排 + 视口容纳整树
 		if st.graph != nil {
@@ -195,11 +196,11 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 		}
 	case st.btnLine.Clicked(gtx): // 聚焦当前历史：视口容纳 root → Head 的历史线
 		if st.graph != nil {
-			st.graph.focusScope(focusScopeLine)
+			st.graph.viewPending = vaFocusLine
 		}
 	case st.btnNode.Clicked(gtx): // 聚焦当前节点：视口容纳 Head 及其父子一跳
 		if st.graph != nil {
-			st.graph.focusScope(focusScopeNode)
+			st.graph.viewPending = vaFocusNode
 		}
 	}
 }
@@ -219,7 +220,7 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 				Data: io.NopCloser(strings.NewReader(id))})
 		}
 	case nodeActHome:
-		st.graph.focusPending = true
+		st.graph.viewPending = vaFitAll
 	case nodeActGoto:
 		st.sendGoto(u, act.id)
 		_ = u.post(showExpandMsg{}) // /goto 只改主窗转写区：主窗收在球里则等于没反应
@@ -366,7 +367,7 @@ func histGraphArea(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 	})
 }
 
-// histStatusBar 状态栏（A7 落点）：会话标题 · 共 N · 呈现 M + 预算/缩放/回到当前控件 + 图例。
+// histStatusBar 状态栏（A7 落点）：会话标题 · 共 N · 呈现 M + 预算/缩放/装下整树控件 + 图例。
 func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	N, M := 0, 0
 	if st.model != nil {
@@ -405,7 +406,7 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 								l.Color = textMuted
 								return l.Layout(gtx)
 							}),
-							layout.Rigid(histCtl(th, &st.btnHome, "回到当前")),
+							layout.Rigid(histCtl(th, &st.btnHome, "装下整树")),
 							// D128 三种聚焦域：整树（重排）/ 当前历史线 / 当前节点及父子
 							layout.Rigid(histCtl(th, &st.btnSeed, "回到初始态")),
 							layout.Rigid(histCtl(th, &st.btnLine, "聚焦当前历史")),

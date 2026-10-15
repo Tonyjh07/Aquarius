@@ -8,7 +8,7 @@ package uigui
 //
 // 手势（§5.2 动词表）：拖拽空白 = pan；滚轮 = zoom（夹 [0.5,1.5]，**越界降级纵向平移**
 // A9）；悬停 = 陈述 tooltip（inspect）；左键节点 = /goto <id>（A10）；右键节点 = 菜单
-// （复制 ID / 删除 / 回到当前）。
+// （复制 ID / 删除 / 装下整树；D140 由「回到当前」改名）。
 //
 // 性能纪律（§5.4）：视口外扩裁剪、懒重排（平移/缩放/悬停不重排——重排只由数据变更 /
 // rebudget 触发，R3）。
@@ -43,19 +43,23 @@ const (
 	// 标签预算 relLabelVisible（zoom 低于 relZoomLabelMin 时标签全隐 ⇒ overview 只剩徽标
 	// 与边）。卡片预留 HalfW/HalfH 仍按 relZoomLabelMin 的最坏口径算，与「低于该 zoom 不画
 	// 标签」自洽。
-	relZoomMin    = 0.1
-	relZoomMax    = 2.0
-	relZoomStep   = 1.1  // 每格滚轮缩放倍率
-	relNodeBaseDp = 34.0 // w=1.00 的直径基准（dp）；直径 = weight × base（A4）
-	relRingW      = 2.5  // 分叉虚线外环描边宽
-	relEdgeW      = 1.5  // 边线宽
-	relLabelBase  = 12.0 // 标签基准字号（sp）× zoom，钳 [10,16]（A9）
-	relLabelMinSp = 10.0
-	relLabelMaxSp = 16.0
-	relCullPad    = 0.2 // 视口外扩 20% 裁剪
-	relDashOn     = 6.0 // 虚线段长（dp）
-	relDashOff    = 5.0 // 虚线间隔（dp）
-	relHitSlop    = 6.0 // 命中判定外扩（dp）
+	relZoomMin  = 0.1
+	relZoomMax  = 2.0
+	relZoomStep = 1.1 // 每格滚轮缩放倍率
+	// relFocusZoomMax 显式取景动作（装下整树 / 聚焦当前历史 / 聚焦当前节点）的 zoom 上限
+	// （D140/D3：3~5 倍取中）。滚轮仍受 A9 的 relZoomMax 钳制——取景是「一次到位的构图」，
+	// 用户滚轮是「微调」，两者的合理区间不必相同（取景要能把一跳邻域顶到近前读）。
+	relFocusZoomMax = 4.0
+	relNodeBaseDp   = 34.0 // w=1.00 的直径基准（dp）；直径 = weight × base（A4）
+	relRingW        = 2.5  // 分叉虚线外环描边宽
+	relEdgeW        = 1.5  // 边线宽
+	relLabelBase    = 12.0 // 标签基准字号（sp）× zoom，钳 [10,16]（A9）
+	relLabelMinSp   = 10.0
+	relLabelMaxSp   = 16.0
+	relCullPad      = 0.2 // 视口外扩 20% 裁剪
+	relDashOn       = 6.0 // 虚线段长（dp）
+	relDashOff      = 5.0 // 虚线间隔（dp）
+	relHitSlop      = 6.0 // 命中判定外扩（dp）
 	// relGrabSlop 抓手判定的外扩（dp，起拖时用，比点击判定宽）：低 zoom 下卡片塌缩成
 	// 小徽标，按下时命中极易差几像素落空——静默退化成平移是最糟的失败方式。
 	relGrabSlop = 14.0
@@ -113,7 +117,8 @@ const (
 	// 顶开一点），留点余量免得贴边被裁。
 	relFitMargin = 0.06
 	// relAnchorDatumX Head（锚点）的**视场右基准位**（D127 时间轴横树；视宽比例）：
-	// 开窗首帧与「回到当前」都把 Head 放到这里——「现在」钉在右侧，左侧全留给过去。
+	// 「现在」钉在右侧、左侧全留给过去。D140 起这是**平移偏好**（P1）而非硬约束——
+	// 整盒装得下时 Head 精确落这里；装不下时由可行域钳制让步（Head 仍在场，A12）。
 	// A8 的 RSM「视口原点」在树上的落实：Head 是路径终点不是几何中心，故基准点而非原点。
 	relAnchorDatumX = 0.72
 )
@@ -146,15 +151,15 @@ type relGraph struct {
 	sol    *relSolution
 	lay    *relLayout // 增量求解态（D121：拖拽逐帧松弛必须从当前坐标接着走）
 
-	zoom         float64 // 视场倍率 [relZoomMin, relZoomMax]（A9，用户口径）
-	z            float64 // **有效**缩放 = zoom × PxPerDp（dp 世界 → 屏幕 px；含 DPI 换算）
-	spx          float64 // Metric.PxPerSp（标签 px 换算；帧首刷新，0/1 = 1）
-	dpx          float64 // Metric.PxPerDp（帧首刷新；0/1 = 1）
-	offX, offY   float64 // 视口平移（screen = world×z + off）
-	viewW, viewH float64 // 视口尺寸（px，帧首刷新）
-	focusPending bool    // 下帧居中锚点（「回到当前」，A8）
-	fitPending   bool    // 下帧把树拉回视野（拖后松手，D121 实测修；不重置 zoom）
-	everFit      bool    // 已做过首帧整树适配（此后 rebuild 不动视场——数据变更不重置 zoom/视口）
+	zoom         float64    // 视场倍率 [relZoomMin, relZoomMax]（A9，用户口径）
+	z            float64    // **有效**缩放 = zoom × PxPerDp（dp 世界 → 屏幕 px；含 DPI 换算）
+	spx          float64    // Metric.PxPerSp（标签 px 换算；帧首刷新，0/1 = 1）
+	dpx          float64    // Metric.PxPerDp（帧首刷新；0/1 = 1）
+	offX, offY   float64    // 视口平移（screen = world×z + off）
+	viewW, viewH float64    // 视口尺寸（px，帧首刷新）
+	viewPending  viewAction // 下帧执行的视场动作（显式取景；D140 统一状态栏/菜单入口）
+	fitPending   bool       // 下帧把树拉回视野（拖后松手，D121 实测修；不重置 zoom）
+	everFit      bool       // 已做过首帧整树适配（此后 rebuild 不动视场——数据变更不重置 zoom/视口）
 	// fitFollow fit 回退（树太大装不下视口）时的**视图跟随锚点**（D126 实测修）：每帧
 	// 把锚点当前位对准视口中心，收敛即停。深链展开要几秒到十几秒（手风琴模式），一
 	// 次性按静息位对准会把当前消息甩出视口（实测 200 节点链偏 1900px）。用户自己
@@ -368,9 +373,10 @@ func (g *relGraph) wheel(d int) {
 }
 
 // focusAnchor 视场**右基准**对准锚点（D127 时间轴横树，A8）：Head 落到视宽
-// relAnchorDatumX 处（「现在」在右），纵向仍居中。「回到当前」按钮走这条（只挪视场，
-// 不动 zoom）。基准 = **当前位形**的锚点位：点它的时候树已经静止，用户要看的正是那个
-// 节点此刻在哪（物理位形与静息布局有接触推力造成的残差，按静息位对准会偏）。
+// relAnchorDatumX 处（「现在」在右），纵向仍居中。D140 后只剩**兜底**用途（视场盒取不到、
+// 取景域为空）——显式取景走 fitAll/focusScope（含 zoom 适配）。只挪视场，不动 zoom。
+// 基准 = **当前位形**的锚点位：点它的时候树已经静止，用户要看的正是那个节点此刻在哪
+// （物理位形与静息布局有接触推力造成的残差，按静息位对准会偏）。
 func (g *relGraph) focusAnchor() {
 	if g.sol == nil || g.anchor < 0 || g.anchor >= len(g.sol.Pos) {
 		return
@@ -380,64 +386,125 @@ func (g *relGraph) focusAnchor() {
 	g.offY = g.viewH/2 - p.Y*g.z
 }
 
-// focusAnchorFollow 视图跟随（D126 实测修，D127 沿用右基准，D128 改**有界滞后**）：树
-// 太大装不下视口（zoom 触底仍超宽/超高；横树的长会话必然如此）时，**不再一次性按静息位
-// 对准**——那是假设树已经展开完。深链/宽树要几秒到十几秒才落定，期间锚点（= 当前消息）
-// 离静息位上千 dp，按静息位定视场会把当前消息甩出视口（实测 200 节点链偏 1900px，
-// 「拖节点」点不到人）。改为跟随：置 fitFollow，每帧把锚点**当前位**向右基准位**缓慢**
-// 逼近（followAnchorStep），收敛即停 ⇒ 当前消息始终在视口内、落定时正好在基准位。
+// followSpanStart 开视图跟随（D140）：树还在动时每帧把**当前盒**装进视口（followSpanStep），
+// 收敛即停。
 //
-// **D128：跟随不再是硬锁**（用户 2026-10-12：「视口不要锁着某个节点或者树，应该缓慢跟随，
-// 用户才看得到动」）。硬锁每帧把锚点按到基准位 ⇒ 整树的平移被相机**完全抵消**，画面上
-// 只剩相对运动；软跟随让相机带滞后地追，树自身的位移就可见了。滞后有界
-// （relFollowLagMax）⇒ 锚点不会离开可视范围。
-func (g *relGraph) focusAnchorFollow() {
+// 与「一次性对准静息位」的区别（D126 实测修，此处沿用结论）：深链/宽树要几秒到十几秒才
+// 落定，期间盒子比静息盒大一大截（实测宽树 1.53×、链 3.06×），按静息盒定的视场会把节点
+// 甩出视口（200 节点链实测偏 1900px，「拖节点」点不到人）。
+func (g *relGraph) followSpanStart() {
 	g.fitFollow = true
-	g.followAnchorStep()
+	g.followSpanStep(true)
 }
 
 // relFollowAlpha 视口跟随的每帧逼近率（0 = 硬锁、1 = 瞬间到位）。0.10 ⇒ 一帧走 10%，
 // 约 10 帧（167ms）消掉 63% 的偏差、20 帧 86%——「看得见的缓慢」，又不至于落后太多。
 // （曾试过「对称滞后钳」限幅，实测在大位移时反而把视口一帧拽 528dp，等于硬锁换了个
-// 阈值——已删，改用 followAnchorStep 里的可见性安全网。）
+// 阈值——已删，改用 followSpanStep 里的可见性安全网。）
 const relFollowAlpha = 0.10
 
-// followAnchorStep 向目标视场**有界滞后地**逼近一步。返回是否仍有可见偏差。
-//
-// 两层，分工明确：
-//   - **软**：横向朝「Head 落在右基准位」、纵向朝「Head 居中」按 relFollowAlpha 逐步
-//     逼近（不是硬锁）——树自身的平移因此在画面上可见（用户要的效果）；
-//   - **硬（安全网）**：软逼近之后若 Head 会滑出视口，才**最小幅度**把它拉回来。这层
-//     不是审美约束而是可见性约束（A12「锚点在场」），只在必要时动作。
-func (g *relGraph) followAnchorStep() bool {
-	if g.sol == nil || g.anchor < 0 || g.anchor >= len(g.sol.Pos) {
-		return false
-	}
-	p := g.sol.Pos[g.anchor]
-	tx := g.offX + (relAnchorDatumX*g.viewW-p.X*g.z-g.offX)*relFollowAlpha
-	ty := g.offY + (g.viewH/2-p.Y*g.z-g.offY)*relFollowAlpha
-	g.offX, g.offY = tx, ty
-	g.clampAnchorVisible() // 安全网：Head 卡必须留在视口内（只在必要时动）
-	dx, dy := math.Abs(tx-g.offX), math.Abs(ty-g.offY)
-	// 已经很近（< relFollowSnapPx）就**精确落位**：几何逼近会停在几 px 外（alpha 衰减
-	// 到阈值以下就不再动），而「落定时 Head 压在基准位」是硬契约（A12），差几 px 也会被
-	// 用户看见。2px 以内的修正本身不可见。
-	if dx < relFollowSnapPx || dy < relFollowSnapPx {
-		tx = relAnchorDatumX*g.viewW - p.X*g.z
-		ty = g.viewH/2 - p.Y*g.z
-		// 落位后仍要过安全网（极端视口下目标可能与可见性冲突）
-		g.offX, g.offY = tx, ty
-		return g.clampAnchorVisible()
-	}
-	g.offX, g.offY = tx, ty
-	return true
-}
-
-// relFollowSnapPx 跟随的「精确落位」阈值（px）：软逼近到这个距离内就直接落到基准位。
+// relFollowSnapPx 跟随的「精确落位」阈值（px）：两轴都逼到这条线以内就直接落到目标位。
 const relFollowSnapPx = 2.0
 
+// relZoomEps 跟随的 zoom 收敛阈值（zoom 单位）：落定后的「放大填留白」是几何逼近，不设
+// 阈值会永远差一点点 ⇒ 续帧停不下来（R3 不许空转）。
+const relZoomEps = 0.004
+
+// followSpanStep 向目标视场**有界滞后地**逼近一步（D140）。返回是否仍需续帧。
+//
+// 三件事，分工明确：
+//
+//   - **zoom 收口**：按**当前盒**算 zoomForBox——展开期**立即缩**（盒子连续地在长，缩也是
+//     连续的，V1「盒内可见」不破：这是「舒展到一半就出视口」的正面解法）；**落定后**允许
+//     迟缓放大一次，把多余留白填掉（用户 2026-10-15：「舒展后下方空白小一点」）。
+//     「只缩不放」的旧口径（D2）按此改订：展开期只缩（不回弹），落定后补一次填满。
+//   - **平移目标**：横向 P1（Head 落右基准位，装得下才保得住）+ 纵向 P2（**盒心**居中）。
+//     纵向原按 Head 居中——Head 不在盒的纵向中点时整盒被顶向一侧（实测上留白 −461px、
+//     下留白 197px：顶端被裁、下方大片空白，正是用户截图那一幕）。
+//   - **安全网**：软逼近之后才做最小幅度修正（Head 卡在场，A12）。是**可见性**约束，
+//     不是审美约束，只在必要时动作。
+//
+// **D140 修的一处判据错**：原实现把「距目标余量」写成了「安全网位移量」，且用 `||` 判定，
+// 于是几乎每帧都走进「精确落位」分支 ⇒ 跟随退化成硬锁（D128 想要的「缓慢跟随、看得见动」
+// 从未真正生效），画面上整树的位移被相机完全抵消——用户 2026-10-15 报的「末端节点完全
+// 不会动」正是这条。现在判据是**距目标余量**，且两轴都进阈值才落位。
+func (g *relGraph) followSpanStep(hard bool) bool {
+	if g.sol == nil {
+		return false
+	}
+	b, ok := g.boxNow()
+	if !ok {
+		return false
+	}
+	moved := false
+	// ① zoom 收口。上限：常规 relZoomMax，但**不许把显式取景已放大的 zoom 拉回来**——
+	// 用户按「聚焦当前节点」顶到 2.5× 时，跟随只该在盒子装不下时缩小它（D3 的取景上限
+	// 是用户意图，跟随只是兜底）。
+	cap := relZoomMax
+	if g.zoom > cap {
+		cap = g.zoom
+	}
+	if need := g.zoomForBox(b, cap); need < g.zoom {
+		g.zoom, g.z = need, need*g.dpx // 展开期：立即缩
+		moved = true
+	} else if g.lay != nil && g.lay.settled && need > g.zoom+relZoomEps {
+		g.zoom += (need - g.zoom) * relFollowAlpha // 落定后：迟缓放大填留白
+		g.z = g.zoom * g.dpx
+		moved = true
+	}
+	// ② 平移（目标已钳进可行域，见 spanTarget）
+	tgt := g.spanTarget(b)
+	tx, ty := tgt.X, tgt.Y
+	remX, remY := math.Abs(tgt.X-g.offX), math.Abs(tgt.Y-g.offY)
+	if hard {
+		remX, remY = 0, 0
+	} else if remX < relFollowSnapPx && remY < relFollowSnapPx {
+		remX, remY = 0, 0 // 精确落位：几何逼近会停在阈值外几 px
+	} else {
+		tx = g.offX + (tgt.X-g.offX)*relFollowAlpha
+		ty = g.offY + (tgt.Y-g.offY)*relFollowAlpha
+	}
+	g.offX, g.offY = tx, ty
+	// ③ 安全网
+	if g.clampAnchorVisible() {
+		moved = true
+	}
+	return moved || remX >= relFollowSnapPx || remY >= relFollowSnapPx
+}
+
+// spanTarget 跟随的平移目标（D140）：横向 P1「Head 落右基准位」（时间轴的「现在」在右，
+// A8 的偏好形式）、纵向 P2「**盒心**居中」。最后把目标本身钳进可行域——「盒在视口内」。
+//
+// 钳的必须是**目标**而不是结果：钳结果会和下一帧的目标打架（P1 每帧都想把盒顶出去、安全网
+// 每帧再拉回来）⇒ 跟随永远收敛不了、每帧空转重绘。
+// 装不下（盒比视口大）时跳过钳制：那种档位只承诺 Head 在场（V2）。
+func (g *relGraph) spanTarget(b viewBox) relPoint {
+	x := g.viewW/2 - (b.MinX+b.MaxX)/2*g.z
+	if g.anchor >= 0 && g.anchor < len(g.sol.Pos) {
+		x = relAnchorDatumX*g.viewW - g.sol.Pos[g.anchor].X*g.z
+	}
+	y := g.viewH/2 - (b.MinY+b.MaxY)/2*g.z
+	// 容差 0.5px：zoom = min(视宽/盒宽, …) 时盒宽×z 与视宽是同一个浮点乘除的往返，
+	// 精确相等会因末位误差误判成「装不下」而跳过钳制（Head 贴边几个像素）。
+	if b.w()*g.z <= g.viewW+0.5 {
+		if sx := b.MinX*g.z + x; sx < 0 {
+			x -= sx
+		} else if sx := b.MaxX*g.z + x; sx > g.viewW {
+			x -= sx - g.viewW
+		}
+	}
+	if b.h()*g.z <= g.viewH+0.5 {
+		if sy := b.MinY*g.z + y; sy < 0 {
+			y -= sy
+		} else if sy := b.MaxY*g.z + y; sy > g.viewH {
+			y -= sy - g.viewH
+		}
+	}
+	return relPoint{X: x, Y: y}
+}
+
 // clampAnchorVisible 把 Head 卡拉回视口内（最小幅度）；返回是否发生了修正。软逼近与
-// 精确落位之后都要过这一关——「Head 在场」比「Head 压在基准位」优先。
+// 精确落位之后都要过这一关——「Head 在场」（A12）比「Head 压在基准位」优先。
 func (g *relGraph) clampAnchorVisible() bool {
 	if g.sol == nil || g.anchor < 0 || g.anchor >= len(g.sol.Pos) {
 		return false
@@ -466,65 +533,31 @@ func (g *relGraph) clampAnchorVisible() bool {
 	return dx != 0 || dy != 0
 }
 
-// fitView 开窗首帧：整棵可见树**适配视口**（A13，D127 横树版）——按卡片外接盒算最小
-// zoom、盒心居中，再把 **Head 平移到右基准位**（relAnchorDatumX：时间轴的「现在」钉
-// 右侧、左侧全留过去；平移钳在不越界范围内）。三处口径：
+// fitView 开窗首帧：整棵可见树**适配视口**（A13，D127 横树版，D140 改口径）。
 //
-//   - **zoom 由树的大小算出**（D130，无阅读性地板）：除「整树装进视口」外，还要求
-//     「过去部分（Head 左侧）装进基准位以左 + Head 卡装进右侧余量」，四者取最小 ⇒ 装得下
-//     时 Head 精确落基准位。只有大得连 relZoomMin 都兜不住（极端长会话）才走 **Head 右
-//     基准 + 视图跟随**（focusAnchorFollow）。可读性不在这里把关：字号有钳、标签有预算
-//     （低于 relZoomLabelMin 全隐 ⇒ overview 只剩徽标与边）。
-//   - 盒子取**静息布局**（treeBox，物理平衡态）：当前位形会动，不适合当视场基准。
-//   - **zoom 口径含右基准**：除「整树装进视口」外，还要求「过去部分（Head 左侧）装进
-//     基准位以左、Head 卡装进右侧余量」⇒ 装得下时 Head 精确落基准位（不是盒心贴边的
-//     近似）；两者取更小 zoom。
-//   - 数据变更**不**重设 zoom/视口（见 frame）；「回到当前」走 focusAnchor（A8 右基准）。
+//   - **zoom 基准取静息盒**（restBox）：首帧树还在 0.6 折叠播种态，按当前盒会算出一个
+//     过大的 zoom，而跟随期「展开只缩不放」救不回来。展开期的实际适配由 followSpanStep
+//     每帧按**当前盒**收口（这是 D140 的正解：旧版全程按静息盒，同时落定盒比静息盒宽
+//     一大截 ⇒ 舒展完就出视口）。
+//   - **构图取当前位形**：横向 P1（Head 落右基准位）、纵向 P2（盒心居中），由
+//     followSpanStep 硬落位。装得下时两者都精确成立；装不下（宽树/长会话）时 P1 由可行域
+//     钳制让步，Head 仍在场（A12）。
+//   - **zoom 上限** = relZoomMax（滚轮档同值；显式取景动作另有 relFocusZoomMax）。
+//   - 数据变更**不**重设 zoom/视口（见 frame）；显式取景走 viewPending（D140）。
 func (g *relGraph) fitView() {
-	minX, minY, maxX, maxY, ok := g.treeBox()
+	b, ok := g.restBox()
 	if !ok {
 		g.focusAnchor()
 		return
 	}
-	w, h := maxX-minX, maxY-minY
-	zf := math.Min(g.viewW/w, g.viewH/h) / g.dpx // 整树装得下（折回用户口径，DPI 另算）
-	if g.anchor >= 0 && g.anchor < len(g.lay.restX) {
-		// D127：**过去部分**（Head 左侧整段）要装进「右基准位以左」的视口、Head 卡右半
-		// 装进右侧余量 ⇒ Head 精确落在基准位（时间轴的「现在」位置稳定，不随树宽漂）。
-		if hw, _ := relCardHalf(g.geo[g.anchor]); hw > 0 {
-			if past := g.lay.restX[g.anchor] - minX; past > 0 {
-				if z := (relAnchorDatumX * g.viewW / g.dpx) / past; z < zf {
-					zf = z
-				}
-			}
-			if z := ((1 - relAnchorDatumX) * g.viewW / g.dpx) / (2 * hw); z < zf {
-				zf = z
-			}
-		}
-	}
-	if zf < relZoomMin { // 防呆下限：树大得离谱（/vac 病态输入）也不至于除出 0
-		zf = relZoomMin
-	}
-	if zf > relZoomMax {
-		zf = relZoomMax
-	}
-	g.zoom = zf
-	g.z = zf * g.dpx
-	if w*g.z > g.viewW || h*g.z > g.viewH { // 夹到下限仍装不下（横树的长会话必然如此）：Head 右基准 + 视图跟随（焦点优先）
-		// 树还在展开（首帧 = 折叠播种态，深链要十几秒）⇒ 一次性对准会把当前消息甩出
-		// 视口，改为**跟随**：每帧把锚点当前位对准中心，收敛即停（focusAnchorFollow）。
-		g.focusAnchorFollow()
+	g.zoom = g.zoomForBox(b, relZoomMax)
+	g.z = g.zoom * g.dpx
+	if g.anchor >= 0 && g.anchor < len(g.sol.Pos) {
+		g.followSpanStart() // 入场展开期间跟随（首帧硬落位，之后有界滞后）
 		return
 	}
-	// 装得下：zoom 口径（过去部分装进基准位左侧）已保证整树在视口内。开**视图跟随**——
-	// 入场展开期间 Head 也钉在右基准位（「现在」不动、历史从它身上长出来），收敛即停、
-	// 落定时正好在基准位。无锚点（理论不可达）才回退盒心居中。
-	if g.anchor >= 0 && g.anchor < len(g.lay.restX) {
-		g.focusAnchorFollow()
-		return
-	}
-	g.offX = g.viewW/2 - (minX+maxX)/2*g.z
-	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+	// 无锚点（理论不可达）：盒心居中，不开跟随
+	g.centerBox(b)
 }
 
 // recenterTree 拖后松手的视场善后。**默认什么都不做**（用户 2026-10-12：「不管视角被
@@ -544,18 +577,17 @@ func (g *relGraph) recenterTree() {
 	if g.anyNodeVisible() {
 		return
 	}
-	minX, minY, maxX, maxY, ok := g.treeBox()
+	// D140：兜底盒取**当前位形**（用户此刻看到的树就是这一片），不是静息盒。
+	b, ok := g.boxNow()
 	if !ok {
 		return
 	}
-	if (maxX-minX)*g.z <= g.viewW && (maxY-minY)*g.z <= g.viewH {
-		g.offX = g.viewW/2 - (minX+maxX)/2*g.z // 装得下：盒心对准视口中心
-		g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+	if b.w()*g.z <= g.viewW && b.h()*g.z <= g.viewH {
+		g.centerBox(b) // 装得下：盒心对准视口中心
 		return
 	}
-	// 装不下（长会话）：Head 右基准 + 视图跟随（与 fitView 的回退口径一致）——至少当前
-	// 消息可见。
-	g.focusAnchorFollow()
+	// 装不下（长会话）：视图跟随（与 fitView 的回退口径一致）——至少当前消息可见。
+	g.followSpanStart()
 }
 
 // anyNodeVisible 视口内是否还有可见节点（用于松手兜底判断）。
@@ -580,23 +612,37 @@ func (g *relGraph) anyNodeVisible() bool {
 //
 // 同一个「把某片内容装进视口」的动作，三种取景范围（互不重叠，覆盖三个常见意图）：
 //
-//	focusScopeAll     整树：重新播种重排 + 视口容纳**整棵可见树**（回到初始态）
+//	focusScopeAll     整树：视口容纳**整棵可见树**（按钮文案「装下整树」；另有「回到初始态」
+//	                  负责重排重放，与取景分开）
 //	focusScopeLine    历史线：视口容纳 **root → Head 的祖先链**（这一轮对话的主干）
 //	focusScopeNode    当前节点：视口容纳 **Head + 其父 + 其子**（一跳邻域；按钮文案写
 //	                  「聚焦当前节点」，域比文案宽是刻意的——父是理解当前节点的前提，子是
 //	                  「接下来会是什么」的答案）
 //
-// 共同口径：只挪视场、**不重置 zoom**（A8 沿用：用户 zoom 是私有的）；内容按**当前
-// 物理位形**取盒（不是静息布局——用户此刻看到的树就是这一片）；装不下时沿用右基准 +
-// 有界滞后跟随（与 fitView 同一回退）。
+// 共同口径（D140 改订）：内容按**当前物理位形**取盒（用户此刻看到的树就是这一片），
+// **zoom 跟着一起适配**（上限 relFocusZoomMax，D3）——只挪视场不动 zoom 时，放大读一跳
+// 邻域与「一屏看整树」都做不到。装不下（长链触底）时沿用视图跟随兜底（Head 优先在场）。
+// 用户手动 zoom 仍是私有的：跟随一旦收敛就停，且 wheel/pan 立即取消跟随。
 const (
 	focusScopeAll = iota
 	focusScopeLine
 	focusScopeNode
 )
 
-// focusScope 对某片内容取盒并适配视口。indices = 参与取景的本地索引（空 = 理论不可达，
-// 退化为整树）。不重置 zoom。
+// viewAction 显式视场动作（D140）：状态栏/图侧菜单按下后**不在分发处直接算**——视场矩阵
+// （viewW/viewH/dpx）与 g.z 只在帧首刷新，故置待办、帧首统一执行（与 fitPending/everFit
+// 同一条路）。actions 由 dispatch / drainNodeAction 置位，frame 消费。
+type viewAction uint8
+
+const (
+	vaNone      viewAction = iota
+	vaFitAll               // 装下整树（状态栏按钮 + 图侧菜单项）
+	vaFocusLine            // 聚焦当前历史
+	vaFocusNode            // 聚焦当前节点
+)
+
+// focusScope 对某片内容取盒并适配视口（D140：**zoom 一起适配**）。indices = 参与取景的
+// 本地索引（空 = 理论不可达，退化为整树）。
 func (g *relGraph) focusScope(scope int) {
 	if g.sol == nil || g.lay == nil {
 		return
@@ -606,15 +652,45 @@ func (g *relGraph) focusScope(scope int) {
 		g.focusAnchor()
 		return
 	}
-	minX, minY := math.Inf(1), math.Inf(1)
-	maxX, maxY := math.Inf(-1), math.Inf(-1)
-	for _, li := range idx {
-		hw, hh := relCardHalf(g.geo[li])
-		p := g.sol.Pos[li]
-		minX, maxX = math.Min(minX, p.X-hw), math.Max(maxX, p.X+hw)
-		minY, maxY = math.Min(minY, p.Y-hh), math.Max(maxY, p.Y+hh)
+	b, ok := g.boxOf(idx)
+	if !ok {
+		g.focusAnchor()
+		return
 	}
-	g.fitBox(minX, minY, maxX, maxY)
+	g.zoom = g.zoomForBox(b, relFocusZoomMax)
+	g.z = g.zoom * g.dpx
+	if scope == focusScopeAll {
+		// 整树：与「装下整树」同口径（P1 横向基准 + P2 盒心）；树还在展开就继续跟随
+		g.followSpanStep(true)
+		g.fitFollow = !g.lay.settled
+		return
+	}
+	if b.w()*g.z > g.viewW+1 || b.h()*g.z > g.viewH+1 {
+		g.followSpanStart() // 域装不下（长链触底）：Head 优先在场（A12）
+		return
+	}
+	// 小域（历史线/当前节点）取**域盒心**居中：域偏在树一角时，P1 的右基准位会把域顶出视口。
+	g.centerBox(b)
+	g.fitFollow = false // 显式取景 = 用户选定的视场（与 wheel/pan 取消跟随同向）
+}
+
+// fitAll 「装下整树」（D140；原「回到当前」）：把**当前盒**一次到位装进视口——zoom 与
+// 平移一起适配，不重排、不动物理、不动数据。树还在展开就继续跟随，落定即停。
+//
+// 与旧「回到当前」的区别：旧版只挪视场（zoom 不动）且把 Head 钉在右基准位，于是「树明明
+// 装不下却什么都不改」。现在这条是用户视角的**显式自救**动作（滚轮缩小之外的出口）。
+func (g *relGraph) fitAll() {
+	if g.sol == nil {
+		return
+	}
+	b, ok := g.boxNow()
+	if !ok {
+		return
+	}
+	g.zoom = g.zoomForBox(b, relFocusZoomMax)
+	g.z = g.zoom * g.dpx
+	g.followSpanStep(true)
+	g.fitFollow = g.lay != nil && !g.lay.settled
 }
 
 // scopeIndices 取景范围的本地索引集。
@@ -652,25 +728,15 @@ func (g *relGraph) scopeIndices(scope int) []int {
 	}
 }
 
-// fitBox 把给定世界盒装进视口（保持 zoom）：装得下 = 盒心对准视口中心；装不下 = Head
-// 右基准 + 有界滞后跟随（与 fitView 的回退同一口径，绝不把当前消息甩出视口）。
-func (g *relGraph) fitBox(minX, minY, maxX, maxY float64) {
-	w, h := maxX-minX, maxY-minY
-	if w <= 0 || h <= 0 {
-		g.focusAnchor()
-		return
-	}
-	if w*g.z > g.viewW || h*g.z > g.viewH {
-		g.focusAnchorFollow()
-		return
-	}
-	g.offX = g.viewW/2 - (minX+maxX)/2*g.z
-	g.offY = g.viewH/2 - (minY+maxY)/2*g.z
+// centerBox 盒心对准视口中心（不重置 zoom）——小域取景（历史线/当前节点）与拖后兜底用。
+func (g *relGraph) centerBox(b viewBox) {
+	g.offX = g.viewW/2 - (b.MinX+b.MaxX)/2*g.z
+	g.offY = g.viewH/2 - (b.MinY+b.MaxY)/2*g.z
 }
 
 // relayoutFromSeed 回到初始态：重新折叠播种（速度清零、时钟重上）⇒ 整树**重新排列**
 // 一次（首帧即涌现的观感重放），并立刻把视场适配到能容下整树（剩余的排布由随后
-// 15s 的物理展开完成，followAnchorStep 负责跟随）。
+// 15s 的物理展开完成，followSpanStep 负责跟随）。
 func (g *relGraph) relayoutFromSeed() {
 	if g.lay == nil {
 		return
@@ -683,24 +749,109 @@ func (g *relGraph) relayoutFromSeed() {
 	g.everFit = false // 让下一帧的 fitView 按新播种态重新适配视口
 }
 
-// treeBox 树的外接盒（世界坐标 dp）：按**静息布局**（物理平衡态）算——当前物理位形
-// 会动，不适合当视场基准；外扩 relFitMargin 容纳斥力把兄弟顶开的那点余量。
-func (g *relGraph) treeBox() (minX, minY, maxX, maxY float64, ok bool) {
+// ——— D140：视场盒（静息盒只用于首帧 zoom，其余口径一律取当前位形）———
+
+// viewBox 世界盒（dp；含卡片占位与 relFitMargin）。
+type viewBox struct {
+	MinX, MinY, MaxX, MaxY float64
+}
+
+func (b viewBox) w() float64 { return b.MaxX - b.MinX }
+func (b viewBox) h() float64 { return b.MaxY - b.MinY }
+
+// boxAccum 盒累加器：卡片占位取 relCardHalf（与布局/绘制同源；否则「按 A 排、按 B 装」）。
+type boxAccum struct {
+	MinX, MinY, MaxX, MaxY float64
+	n                      int
+}
+
+func (a *boxAccum) add(p relPoint, hw, hh float64) {
+	if a.n == 0 {
+		a.MinX, a.MinY, a.MaxX, a.MaxY = p.X-hw, p.Y-hh, p.X+hw, p.Y+hh
+	} else {
+		a.MinX, a.MinY = math.Min(a.MinX, p.X-hw), math.Min(a.MinY, p.Y-hh)
+		a.MaxX, a.MaxY = math.Max(a.MaxX, p.X+hw), math.Max(a.MaxY, p.Y+hh)
+	}
+	a.n++
+}
+
+// box 收口成视场盒（外扩 relFitMargin：留点余量免得贴边被裁）。
+func (a *boxAccum) box() (viewBox, bool) {
+	if a.n == 0 {
+		return viewBox{}, false
+	}
+	padX := (a.MaxX - a.MinX) * relFitMargin
+	padY := (a.MaxY - a.MinY) * relFitMargin
+	return viewBox{a.MinX - padX, a.MinY - padY, a.MaxX + padX, a.MaxY + padY}, true
+}
+
+// boxNow 当前**物理位形**的盒——D140 的视场基准（静息盒只用来定首帧 zoom）。
+func (g *relGraph) boxNow() (viewBox, bool) {
+	if g.sol == nil {
+		return viewBox{}, false
+	}
+	var a boxAccum
+	for li := range g.vis.nodes {
+		if li >= len(g.sol.Pos) || li >= len(g.geo) {
+			continue
+		}
+		hw, hh := relCardHalf(g.geo[li])
+		a.add(g.sol.Pos[li], hw, hh)
+	}
+	return a.box()
+}
+
+// boxOf 给定**本地索引集**的盒（三个聚焦域用）。
+func (g *relGraph) boxOf(idx []int) (viewBox, bool) {
+	if g.sol == nil {
+		return viewBox{}, false
+	}
+	var a boxAccum
+	for _, li := range idx {
+		if li < 0 || li >= len(g.sol.Pos) || li >= len(g.geo) {
+			continue
+		}
+		hw, hh := relCardHalf(g.geo[li])
+		a.add(g.sol.Pos[li], hw, hh)
+	}
+	return a.box()
+}
+
+// restBox 静息布局的外接盒（**只用于开窗首帧的 zoom 基准**：首帧树还在 0.6 折叠播种态，
+// 按当前盒会算出过大的 zoom，而展开期只缩不放救不回来）。
+func (g *relGraph) restBox() (viewBox, bool) {
 	if g.lay == nil || len(g.vis.nodes) == 0 || len(g.lay.restX) == 0 {
-		return 0, 0, 0, 0, false
+		return viewBox{}, false
 	}
 	rest := g.lay.restPos()
-	minX, minY = math.Inf(1), math.Inf(1)
-	maxX, maxY = math.Inf(-1), math.Inf(-1)
+	var a boxAccum
 	for li := range g.vis.nodes {
 		hw, hh := relCardHalf(g.geo[li]) // 世界坐标下的卡片占位（不随 zoom 变）
-		p := rest[li]
-		minX, maxX = math.Min(minX, p.X-hw), math.Max(maxX, p.X+hw)
-		minY, maxY = math.Min(minY, p.Y-hh), math.Max(maxY, p.Y+hh)
+		a.add(rest[li], hw, hh)
 	}
-	padX := (maxX - minX) * relFitMargin
-	padY := (maxY - minY) * relFitMargin
-	return minX - padX, minY - padY, maxX + padX, maxY + padY, true
+	return a.box()
+}
+
+// zoomForBox 把盒装进视口的 zoom（D140 口径）：整盒两维都装得下；上限 maxZoom（滚轮档 =
+// relZoomMax、显式取景档 = relFocusZoomMax）、下限 relZoomMin（极端长会话装不下时由
+// followSpanStep 的 Head 安全网兜住，A12）。
+//
+// **D7-b 去掉的那条**：旧口径还要求「Head 左侧的过去部分装进右基准位以左」（按静息盒算），
+// 于是宽树永远在右边留 28% 空、且整个视场被这个语义按住不动。现在右基准位降级为**平移
+// 偏好**（spanTarget 的 P1）：装得下才落在那儿，装不下就让步——两维尽量贴满。
+func (g *relGraph) zoomForBox(b viewBox, maxZoom float64) float64 {
+	w, h := b.w(), b.h()
+	if w <= 0 || h <= 0 {
+		return g.zoom
+	}
+	zf := math.Min(g.viewW/w, g.viewH/h) / g.dpx
+	if zf < relZoomMin { // 防呆下限：树大得离谱（/vac 病态输入）也不至于除出 0
+		zf = relZoomMin
+	}
+	if zf > maxZoom {
+		zf = maxZoom
+	}
+	return zf
 }
 
 // relCardHalf 布局输入里的卡片半宽/半高（dp）。视场适配与布局共用同一份占位，
@@ -798,9 +949,11 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		g.spx = 1
 	}
 	g.z = g.zoom * g.dpx
-	// 视场调整只在这两处：拖后松手把树拉回视野（fitPending，不重置 zoom）；
-	// 开窗首帧整树适配（everFit，A13）。**数据变更不碰视场**——用户的 zoom/平移
-	// 是私有的，一条新消息进来不抢（D121 实测修：此前每条消息都重置 zoom/视口）。
+	// 视场调整只在这三处：拖后松手把树拉回视野（fitPending，不重置 zoom）；开窗首帧整树
+	// 适配（everFit，A13）；显式取景动作（viewPending：装下整树 / 两个聚焦域，D140）。
+	// **数据变更不碰视场**——用户的 zoom/平移是私有的，一条新消息进来不抢
+	// （D121 实测修：此前每条消息都重置 zoom/视口）。三者都在帧首消费：viewW/viewH/dpx
+	// 与 g.z 刚刷新完，取景算出的平移量才是本帧的（与 fitPending/everFit 同一口径）。
 	if g.fitPending {
 		g.fitPending = false
 		g.recenterTree()
@@ -809,9 +962,16 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		g.everFit = true
 		g.fitView()
 	}
-	if g.focusPending {
-		g.focusPending = false
-		g.focusAnchor()
+	if act := g.viewPending; act != vaNone {
+		g.viewPending = vaNone
+		switch act {
+		case vaFitAll:
+			g.fitAll()
+		case vaFocusLine:
+			g.focusScope(focusScopeLine)
+		case vaFocusNode:
+			g.focusScope(focusScopeNode)
+		}
 	}
 	// 输入区 = 本栏矩形（clip）：本窗是「左栏会话列表 + 右图」两栏（§5.4），右图被
 	// layout.Flexed 放在左栏之后转置的变换里绘制。若指针输入 op 仍挂在**根区域**
@@ -833,13 +993,13 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	if g.tickLayout() {
 		gtx.Execute(op.InvalidateCmd{})
 	}
-	// 视图跟随（D128 有界滞后）：运动期间相机**缓慢逼近**右基准位（不是硬锁——硬锁会
-	// 把整树的平移抵消掉，用户看不见动）；收敛后再留一条**收敛尾巴**把滞后走完，落定时
-	// 正好压在基准位（A12 的落点契约）。**拖节点期间冻结**（D121：拖节点与拖空白必须
-	// 区分开，拖节点不动视场）。
+	// 视图跟随（D140）：运动期间相机**缓慢逼近**目标视场（盒在视口内 + Head 落右基准位 +
+	// 纵向盒心居中），同时把 zoom 收到「当前盒装得下」——**不是硬锁**（硬锁会把整树的平移
+	// 抵消掉，用户看不见动，见 followSpanStep 的 D140 记录）。收敛后再留一条**收敛尾巴**把
+	// 滞后走完。**拖节点期间冻结**（D121：拖节点与拖空白必须区分开，拖节点不动视场）。
 	if g.fitFollow && g.dragNode < 0 {
 		moving := g.lay != nil && !g.lay.settled
-		if !g.followAnchorStep() && !moving {
+		if !g.followSpanStep(false) && !moving {
 			g.fitFollow = false
 		}
 	}

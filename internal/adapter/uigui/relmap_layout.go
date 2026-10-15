@@ -211,7 +211,7 @@ func newRelLayout(nodes []relGeoNode) (*relLayout, bool) {
 	}
 	// 列距 = 卡片 pitch（D127 时间轴：相邻层 x 间距按最宽卡片算 ⇒ 列对齐、卡不叠）。
 	// **源档**（D129）改按「结构锥形下限」取：弹簧距已由用户调短（200→100dp），若列距
-	// 仍按卡片宽定，静息布局会比物理平衡态宽一倍多 ⇒ 按它适配的视场（fit/treeBox/树锚/
+	// 仍按卡片宽定，静息布局会比物理平衡态宽一倍多 ⇒ 按它适配的视场（fit/restBox/树锚/
 	// 播种）全部过宽、树在视口里只占一半。两档各自的「应有间距」都在这里定。
 	colGap := relRestLen
 	if relPhysCur == relProfSource {
