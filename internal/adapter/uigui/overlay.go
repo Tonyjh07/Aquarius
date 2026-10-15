@@ -68,7 +68,8 @@ type overlayState struct {
 	tag struct{}
 
 	id       conversation.MessageID
-	kind     blockKind             // user/assistant/system/root → 标题与可编辑性
+	kind     blockKind             // user/assistant/system/root → 可编辑性
+	role     conversation.Role     // 快照内角色（标题措辞；未知 = ""）
 	editable bool                  // root/system 与无正文节点只读
 	page     overlayPage           // 当前页签
 	mode     conversation.KeepMode // 应用方式（Fresh 零值 = 默认）
@@ -99,9 +100,11 @@ func (st *historyState) openOverlay(u *UI, id conversation.MessageID, mode conve
 	}
 	src, _ := u.opts.Tree.NodeText(id)
 	kind := st.nodeKindOf(id)
+	role, _ := st.nodeRoleOf(id)
 	ov := &overlayState{
 		id:       id,
 		kind:     kind,
+		role:     role,
 		mode:     mode,
 		page:     page,
 		src:      src,
@@ -136,6 +139,19 @@ func (st *historyState) nodeKindOf(id conversation.MessageID) blockKind {
 		}
 	}
 	return blockPlain
+}
+
+// nodeRoleOf 快照内节点的 Role（找不到 = ok false；与 nodeKindOf 同一次遍历口径）。
+func (st *historyState) nodeRoleOf(id conversation.MessageID) (conversation.Role, bool) {
+	if st.model == nil {
+		return "", false
+	}
+	for _, n := range st.model.nodes {
+		if n.id == id {
+			return n.role, true
+		}
+	}
+	return "", false
 }
 
 // closeOverlay 关遮罩（Esc / 点空白 / 关闭钮 / 提交后）。
@@ -353,29 +369,35 @@ func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 	})
 }
 
-// overlayTitle 标题行：角色 + 节点 ID 前缀（与「原文 · <id>」同款口径）。
+// overlayTitle 标题行：角色词 +「消息」+ 节点 ID 前缀（ID 与「原文 · <id>」同款口径）。
 func overlayTitle(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
-	role := "系统"
-	switch ov.kind {
-	case blockUser:
-		role = "用户"
-	case blockAssistant:
-		role = "助手"
-	}
-	if ov.kind == blockPlain && ov.id == "" {
-		role = "会话根"
-	}
-	l := material.Body2(th, role+" 消息 · "+shortID(string(ov.id)))
+	l := material.Body2(th, ov.titleText())
 	l.Color = th.Fg
 	return l.Layout(gtx)
+}
+
+// titleText 标题文案（2026-10-15 用户拍板的口径）：角色词取**快照 Role**（不是 blockKind——
+// root 与 system 都落 blockPlain，会把根节点写成「系统」）；根节点是会话容器、不是一条消息，
+// 故只写「会话根 · <id>」，与图例「◯会话根」同词。Role 未知（快照未就绪）= 系统消息。
+func (ov *overlayState) titleText() string {
+	switch ov.role {
+	case conversation.RoleUser:
+		return "用户消息 · " + shortID(string(ov.id))
+	case conversation.RoleAssistant:
+		return "助手消息 · " + shortID(string(ov.id))
+	case conversation.RoleRoot:
+		return "会话根 · " + shortID(string(ov.id))
+	default:
+		return "系统消息 · " + shortID(string(ov.id))
+	}
 }
 
 // overlayTabs 页签行：呈现 / 源码。
 func overlayTabs(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	return layout.Flex{}.Layout(gtx,
-		layout.Rigid(overlayTab(&ov.tabRendered, th, "呈现", ov.page == overlayPageRendered)),
+		layout.Rigid(overlayPillBtn(&ov.tabRendered, th, "呈现", ov.page == overlayPageRendered)),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-		layout.Rigid(overlayTab(&ov.tabSource, th, "源码", ov.page == overlayPageSource)),
+		layout.Rigid(overlayPillBtn(&ov.tabSource, th, "源码", ov.page == overlayPageSource)),
 	)
 }
 
@@ -398,13 +420,19 @@ func overlayPill(gtx layout.Context, bg color.NRGBA, radius unit.Dp, content lay
 	)
 }
 
-// overlayTab 单个页签钮（选中态反色）。
-func overlayTab(c *widget.Clickable, th *material.Theme, text string, on bool) layout.Widget {
+// overlayPillColors 胶囊配色：选中 = 反色强调；未选中 = 次要底 + muted 字。
+func overlayPillColors(th *material.Theme, on bool) (bg, fg color.NRGBA) {
+	if on {
+		return th.Fg, th.Bg
+	}
+	return cardTool, textMuted
+}
+
+// overlayPillBtn 卡内胶囊钮（页签行与底行「应用方式三选一」共用一套控件语言：
+// 选中反色、未选中次要底；2026-10-15 用户拍板统一）。
+func overlayPillBtn(c *widget.Clickable, th *material.Theme, text string, on bool) layout.Widget {
+	bg, fg := overlayPillColors(th, on)
 	return func(gtx layout.Context) layout.Dimensions {
-		bg, fg := cardTool, textMuted
-		if on {
-			bg, fg = th.Fg, th.Bg
-		}
 		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return overlayPill(gtx, bg, overlayPillRadiusDp, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}.
@@ -450,27 +478,26 @@ func overlayBody(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 	})
 }
 
-// overlayFooter 底行：应用方式三选一（只读节点无）+ 关闭 / 保存。
+// overlayFooter 底行：应用方式三选一（只读节点无）+ 关闭 / 保存。方式钮 = 与页签同款胶囊。
 func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
-	modeBtn := func(c *widget.Clickable, text string, on bool) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				l := material.Caption(th, text)
-				if on {
-					l.Color = th.Fg
-				} else {
-					l.Color = textMuted
-				}
-				return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, l.Layout)
-			})
-		}
-	}
 	children := []layout.FlexChild{}
 	if ov.editable {
+		modes := []struct {
+			c    *widget.Clickable
+			text string
+			m    conversation.KeepMode
+		}{
+			{&ov.modeFresh, "另起新分支", conversation.Fresh},
+			{&ov.modeCarry, "转移历史", conversation.Carry},
+			{&ov.modeClone, "复制历史", conversation.Clone},
+		}
+		for i, md := range modes {
+			if i > 0 {
+				children = append(children, layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout))
+			}
+			children = append(children, layout.Rigid(overlayPillBtn(md.c, th, md.text, ov.mode == md.m)))
+		}
 		children = append(children,
-			layout.Rigid(modeBtn(&ov.modeFresh, "另起新分支", ov.mode == conversation.Fresh)),
-			layout.Rigid(modeBtn(&ov.modeCarry, "转移历史", ov.mode == conversation.Carry)),
-			layout.Rigid(modeBtn(&ov.modeClone, "复制历史", ov.mode == conversation.Clone)),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Spacer{}.Layout(gtx)
 			}),

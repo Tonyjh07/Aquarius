@@ -576,7 +576,7 @@ func TestOverlayCardPlateHugsHitBox(t *testing.T) {
 // 不是被裁剪切平的方角）。旧版在 Inset 内用 `gtx.Constraints.Max` 画底 ⇒ 底板从内衬之后
 // 起笔（起点 = 内衬 10dp 而不是 0）、右侧被 `widget.Clickable` 的裁剪切平（用户截图报障：
 // 「呈现/源码」「保存/关闭」字贴左边、右边多一块、右角是直角）。
-// 变异验证：把 overlayTab/overlayBtn 换回 `Inset 内 Max` 画底 ⇒ 本用例红。
+// 变异验证：把 overlayPillBtn/overlayBtn 换回 `Inset 内 Max` 画底 ⇒ 本用例红。
 func TestOverlayPillHugsItsBox(t *testing.T) {
 	u, _, _ := relGraphFixture(t)
 	const w, h = 240, 60
@@ -591,7 +591,8 @@ func TestOverlayPillHugsItsBox(t *testing.T) {
 		w    layout.Widget
 		bg   color.NRGBA
 	}{
-		{"页签（未选中）", overlayTab(new(widget.Clickable), u.th, "源码", false), cardTool},
+		{"页签（未选中）", overlayPillBtn(new(widget.Clickable), u.th, "源码", false), cardTool},
+		{"方式钮（选中）", overlayPillBtn(new(widget.Clickable), u.th, "转移历史", true), u.th.Fg},
 		{"底行次要钮", overlayBtn(new(widget.Clickable), u.th, "关闭", false, true), cardTool},
 		{"底行主钮（可用）", overlayBtn(new(widget.Clickable), u.th, "保存", true, true), u.th.Fg},
 	} {
@@ -627,6 +628,67 @@ func TestOverlayPillHugsItsBox(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOverlayTitleText 标题措辞（2026-10-15 用户拍板）：角色词 +「消息」+ ID 前缀；根节点是
+// 会话容器不是消息 ⇒ 只写「会话根 · <id>」。关键回归：root 与 system 都落 `blockPlain`，
+// 借 blockKind 措辞会把根节点写成「系统」。
+func TestOverlayTitleText(t *testing.T) {
+	u, st, _ := relGraphFixture(t)
+	for _, tc := range []struct {
+		id   conversation.MessageID
+		want string
+	}{
+		{"u1", "用户消息 · u1"},
+		{"a1", "助手消息 · a1"},
+		{"p", "系统消息 · p"},
+		{"r", "会话根 · r"},
+	} {
+		st.openOverlay(u, tc.id, conversation.Fresh, overlayPageRendered)
+		if st.ov == nil {
+			t.Fatalf("%s：遮罩未开", tc.id)
+		}
+		if got := st.ov.titleText(); got != tc.want {
+			t.Errorf("%s 标题 = %q, want %q", tc.id, got, tc.want)
+		}
+		st.closeOverlay()
+	}
+}
+
+// TestOverlayModeButtonsArePills 底行「应用方式三选一」与页签共用胶囊控件语言
+// （2026-10-15 用户拍板）：底行**首排**应数到 5 块独立底板（三方式 + 保存 + 关闭）；
+// 旧版只有字色变化时首排只有 保存/关闭 两块 ⇒ 本用例红。
+func TestOverlayModeButtonsArePills(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
+	img := ovRenderer(t, u, st, q)()
+	card := st.ov.card
+	plate := u.th.Palette.Bg
+
+	// 底行控件挨着卡片内衬下缘；扫其上方一段band，取**第一个有像素的行**（= 各胶囊顶边，
+	// 那一行还没有文字笔画，每块底板正好一段连续像素）。
+	inner := card.Inset(10) // 卡片内衬 12dp，留余量
+	band := image.Rect(inner.Min.X, inner.Max.Y-44, inner.Max.X, inner.Max.Y)
+	for y := band.Min.Y; y < band.Max.Y; y++ {
+		runs, in := 0, false
+		for x := band.Min.X; x < band.Max.X; x++ {
+			c := img.RGBAAt(x, y)
+			painted := c.A > 0 && !nearColor(c, plate, 2)
+			if painted && !in {
+				runs++
+			}
+			in = painted
+		}
+		if runs == 0 {
+			continue
+		}
+		if runs < 5 {
+			t.Fatalf("底行首排只数到 %d 块底板（want ≥5 = 三方式 + 保存 + 关闭）——方式钮还是纯文字",
+				runs)
+		}
+		return
+	}
+	t.Fatal("底行 band 内找不到控件像素")
 }
 
 // TestOverlaySaveDisabledWhenDraftEmpty 空草稿时「保存」呈禁用态（D139 ⑤）：配色取次要底
