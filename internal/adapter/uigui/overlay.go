@@ -217,22 +217,25 @@ func (ov *overlayState) actions(gtx layout.Context, st *historyState, u *UI) {
 		st.closeOverlay()
 		return
 	}
-	if ov.editable && ov.btnSave.Clicked(gtx) {
+	if ov.canSave() && ov.btnSave.Clicked(gtx) {
 		ov.submit(u, st)
 	}
+}
+
+// canSave 保存可用性（D139 ⑤）：只读节点、空/纯空白草稿 = 不可用（按钮呈禁用态，点击
+// 亦为 no-op——内核也会拒）。逐帧读编辑器文本，代价可忽略。
+func (ov *overlayState) canSave() bool {
+	return ov.editable && strings.TrimSpace(ov.ed.Text()) != ""
 }
 
 // submit 提交修订（D139）：结构化 `/edit`（flag 紧跟 id，D97① 位置口径；--part 缺省
 // = 合段，沿用 D132 图侧口径）→ 关遮罩 + 唤出主窗展开（user + Fresh 会重新生成，
 // D93；沿用 D132 的 showExpandMsg 口径，不唤出则生成过程看不见）。
 func (ov *overlayState) submit(u *UI, st *historyState) {
-	if !ov.editable {
-		return // 只读节点（root/system/无正文）无提交可言
+	if !ov.canSave() {
+		return // 只读节点 / 空草稿：无提交可言（内核亦拒）
 	}
 	text := ov.ed.Text()
-	if strings.TrimSpace(text) == "" {
-		return // 空文本不提交（内核亦拒）
-	}
 	args := []string{string(ov.id)}
 	switch ov.mode {
 	case conversation.Carry:
@@ -290,11 +293,17 @@ func (st *historyState) overlayFrame(gtx layout.Context, th *material.Theme, u *
 	// scrim：铺满视口的半透暗色（背景仍在其下渲染 → 观感是「压暗一层」）。
 	paint.FillShape(gtx.Ops, color.NRGBA{A: overlayScrimAlpha},
 		clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
-	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min = image.Point{}
-		gtx.Constraints.Max = card.Size()
-		return overlayCard(gtx, th, ov, st, u)
-	})
+	// 卡片：**显式定尺定位**到卡片盒。不能走 `layout.Center`——它只在 `Constraints.Min`
+	// 内居中，而 `layout.Stacked` 会把子项的 Min 清成 0（stack.go），于是「居中」退化成
+	// 画在窗口左上角：底板与内容贴左上，`ov.card`（命中盒/点空白判定）却仍在正中，二者
+	// 错位（2026-10-15 实测：卡片自报尺寸 = 卡片盒，但 center 偏移 = 0）。
+	// Min 也一并定成卡片盒：卡内内容按盒宽排布（长消息在盒内换行，不撑窗）。
+	gtx.Constraints.Min, gtx.Constraints.Max = card.Size(), card.Size()
+	trans := op.Offset(card.Min).Push(gtx.Ops)
+	dims := overlayCard(gtx, th, ov, st, u)
+	trans.Pop()
+	dims.Size = card.Size() // 上报卡片盒（本层是 Stacked 子项，尺寸只影响自身记录）
+	return dims
 }
 
 // overlayCardBox 卡片盒（居中、限宽限高：长消息在卡内滚，不撑窗）。
@@ -370,6 +379,25 @@ func overlayTabs(gtx layout.Context, th *material.Theme, ov *overlayState) layou
 	)
 }
 
+// overlayPill 卡内胶囊/按钮的**底板**（先量后画的正确姿势）：内容先量尺寸，底板按**内容盒**
+// 画在内容之下。
+//
+// **不能**在 Inset 内用 `gtx.Constraints.Max` 当底板宽度（2026-10-15 用户截图报障）：
+// 内衬先推了偏移，底板于是**从内衬之后起笔**、再被 `widget.Clickable` 的剪切
+// （`clip.Rect{Max: dims.Size}`，见 gio widget/button.go）在右侧切平 ⇒ 看上去「文字贴着
+// 左边、右边多出一块、右角是直角」。实测（1.25 缩放，未选中页签）：左内衬 2px / 右 14px，
+// 修好后两侧相等。
+func overlayPill(gtx layout.Context, bg color.NRGBA, radius unit.Dp, content layout.Widget) layout.Dimensions {
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			sz := gtx.Constraints.Min // Background 已把 Min 设成内容尺寸
+			paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: sz}, gtx.Dp(radius)).Op(gtx.Ops))
+			return layout.Dimensions{Size: sz}
+		},
+		content,
+	)
+}
+
 // overlayTab 单个页签钮（选中态反色）。
 func overlayTab(c *widget.Clickable, th *material.Theme, text string, on bool) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
@@ -378,13 +406,14 @@ func overlayTab(c *widget.Clickable, th *material.Theme, text string, on bool) l
 			bg, fg = th.Fg, th.Bg
 		}
 		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}.
-				Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(6)).Op(gtx.Ops))
-					l := material.Caption(th, text)
-					l.Color = fg
-					return l.Layout(gtx)
-				})
+			return overlayPill(gtx, bg, overlayPillRadiusDp, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}.
+					Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Caption(th, text)
+						l.Color = fg
+						return l.Layout(gtx)
+					})
+			})
 		})
 	}
 }
@@ -401,7 +430,7 @@ func overlayBody(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 			if !ok {
 				break
 			}
-			if _, isSubmit := evt.(widget.SubmitEvent); isSubmit && ov.editable {
+			if _, isSubmit := evt.(widget.SubmitEvent); isSubmit && ov.canSave() {
 				ov.submit(u, st)
 				return layout.Dimensions{}
 			}
@@ -445,7 +474,7 @@ func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) lay
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Spacer{}.Layout(gtx)
 			}),
-			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true)),
+			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true, ov.canSave())),
 		)
 	} else {
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -454,25 +483,41 @@ func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) lay
 			return l.Layout(gtx)
 		}))
 	}
-	children = append(children, layout.Rigid(overlayBtn(&ov.btnClose, th, "关闭", false)))
+	children = append(children,
+		layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout), // 与页签行同款间距：两钮贴在一起会读成一块
+		layout.Rigid(overlayBtn(&ov.btnClose, th, "关闭", false, true)))
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
-// overlayBtn 底行动作钮（primary = 反色强调）。
-func overlayBtn(c *widget.Clickable, th *material.Theme, text string, primary bool) layout.Widget {
-	bg, fg := cardTool, th.Fg
-	if primary {
-		bg, fg = th.Fg, th.Bg
+// overlayPillRadiusDp 卡内胶囊圆角。
+const overlayPillRadiusDp unit.Dp = 6
+
+// overlayBtnColors 底行动作钮配色：primary = 反色强调；disabled = 次要底 + 暗字
+// （D139 ⑤「空文本禁用保存」的可见形态）。
+func overlayBtnColors(th *material.Theme, primary, enabled bool) (bg, fg color.NRGBA) {
+	switch {
+	case !enabled:
+		return cardTool, textDim
+	case primary:
+		return th.Fg, th.Bg
+	default:
+		return cardTool, th.Fg
 	}
+}
+
+// overlayBtn 底行动作钮（primary = 反色强调；enabled=false 呈禁用态，点击亦为 no-op）。
+func overlayBtn(c *widget.Clickable, th *material.Theme, text string, primary, enabled bool) layout.Widget {
+	bg, fg := overlayBtnColors(th, primary, enabled)
 	return func(gtx layout.Context) layout.Dimensions {
 		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}.
-				Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					paint.FillShape(gtx.Ops, bg, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(6)).Op(gtx.Ops))
-					l := material.Caption(th, text)
-					l.Color = fg
-					return l.Layout(gtx)
-				})
+			return overlayPill(gtx, bg, overlayPillRadiusDp, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}.
+					Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Caption(th, text)
+						l.Color = fg
+						return l.Layout(gtx)
+					})
+			})
 		})
 	}
 }

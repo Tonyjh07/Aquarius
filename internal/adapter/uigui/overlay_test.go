@@ -14,6 +14,8 @@ import (
 	"gioui.org/io/input"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
+	"gioui.org/layout"
+	"gioui.org/widget"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -495,6 +497,174 @@ func TestOverlayBackgroundRowsInert(t *testing.T) {
 		t.Fatalf("遮罩开启期左栏仍响应（y=%d）: %+v", rowY, in)
 	default:
 	}
+}
+
+// ovRenderer 离屏渲染一帧整窗（720×560 @1x = 生产窗几何）；无 GPU/软件后端时自动跳过。
+// 返回的闭包可多次调用（差分判据：基线与遮罩帧各渲染一次）。
+func ovRenderer(t *testing.T, u *UI, st *historyState, q *input.Router) func() *image.RGBA {
+	t.Helper()
+	const w, h = 720, 560
+	win, err := headless.NewWindow(w, h)
+	if err != nil {
+		t.Skipf("离屏渲染不可用（无 GPU/软件后端）: %v", err)
+	}
+	t.Cleanup(win.Release)
+	return func() *image.RGBA {
+		gtx, ops := frameGtxSize(q.Source(), w, h)
+		historyFrame(gtx, u.th, u, st)
+		q.Frame(ops)
+		if err := win.Frame(ops); err != nil {
+			t.Fatalf("离屏渲染失败: %v", err)
+		}
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		if err := win.Screenshot(img); err != nil {
+			t.Fatalf("截图失败: %v", err)
+		}
+		return img
+	}
+}
+
+// nearColor 两色是否近似（容差 tol，逐通道；比较 16 位分量 ⇒ 与颜色类型无关）。
+func nearColor(a, b color.Color, tol int) bool {
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+	lim := uint32(tol) * 257
+	diff := func(x, y uint32) uint32 {
+		if x > y {
+			return x - y
+		}
+		return y - x
+	}
+	return diff(ar, br) <= lim && diff(ag, bg) <= lim && diff(ab, bb) <= lim
+}
+
+// TestOverlayCardPlateHugsHitBox 卡片**底板必须画在 `ov.card`（命中盒 = 点空白关闭的判定）里**：
+// 判据 = 「底板色像素」的包围盒 ≈ 卡片盒。
+// 变异验证：改回 `layout.Center`（`layout.Stacked` 子项 Min 被清 0、Center 只在 Min 内居中
+// ⇒ 等于不居中）时底板落在窗口左上角，本用例红（2026-10-15 用户截图报障：显示未居中，
+// 点击区域却是居中的）。
+func TestOverlayCardPlateHugsHitBox(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	render := ovRenderer(t, u, st, q)
+	render() // 基线帧（让右图物理/视口就位）
+	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
+	img := render()
+	card := st.ov.card
+	if card.Empty() {
+		t.Fatal("卡片盒未记录")
+	}
+	plate := u.th.Palette.Bg
+	bbox := image.Rectangle{}
+	for y := 0; y < 560; y++ {
+		for x := 0; x < 720; x++ {
+			if nearColor(img.RGBAAt(x, y), plate, 2) {
+				bbox = bbox.Union(image.Rect(x, y, x+1, y+1))
+			}
+		}
+	}
+	const tol = 4
+	if bbox.Empty() {
+		t.Fatal("画面里找不到卡片底板色像素")
+	}
+	if absInt(bbox.Min.X-card.Min.X) > tol || absInt(bbox.Min.Y-card.Min.Y) > tol ||
+		absInt(bbox.Max.X-card.Max.X) > tol || absInt(bbox.Max.Y-card.Max.Y) > tol {
+		t.Fatalf("底板 %v 与卡片盒 %v 不符（容差 %d）——卡片没画在命中盒里", bbox, card, tol)
+	}
+}
+
+// TestOverlayPillHugsItsBox 卡内胶囊/按钮的**底板 = 内容盒**（起于布局原点、四角自己圆、
+// 不是被裁剪切平的方角）。旧版在 Inset 内用 `gtx.Constraints.Max` 画底 ⇒ 底板从内衬之后
+// 起笔（起点 = 内衬 10dp 而不是 0）、右侧被 `widget.Clickable` 的裁剪切平（用户截图报障：
+// 「呈现/源码」「保存/关闭」字贴左边、右边多一块、右角是直角）。
+// 变异验证：把 overlayTab/overlayBtn 换回 `Inset 内 Max` 画底 ⇒ 本用例红。
+func TestOverlayPillHugsItsBox(t *testing.T) {
+	u, _, _ := relGraphFixture(t)
+	const w, h = 240, 60
+	win, err := headless.NewWindow(w, h)
+	if err != nil {
+		t.Skipf("离屏渲染不可用（无 GPU/软件后端）: %v", err)
+	}
+	defer win.Release()
+
+	for _, tc := range []struct {
+		name string
+		w    layout.Widget
+		bg   color.NRGBA
+	}{
+		{"页签（未选中）", overlayTab(new(widget.Clickable), u.th, "源码", false), cardTool},
+		{"底行次要钮", overlayBtn(new(widget.Clickable), u.th, "关闭", false, true), cardTool},
+		{"底行主钮（可用）", overlayBtn(new(widget.Clickable), u.th, "保存", true, true), u.th.Fg},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gtx, ops := frameGtxSize(input.Source{}, w, h)
+			tc.w(gtx)
+			if err := win.Frame(ops); err != nil {
+				t.Fatalf("离屏渲染失败: %v", err)
+			}
+			img := image.NewRGBA(image.Rect(0, 0, w, h))
+			if err := win.Screenshot(img); err != nil {
+				t.Fatalf("截图失败: %v", err)
+			}
+			// 底板像素：颜色匹配**且不透明**（离屏底是透明黑，否则会和主钮的黑色底板撞上）。
+			bbox := image.Rectangle{}
+			for y := 0; y < h; y++ {
+				for x := 0; x < w; x++ {
+					c := img.RGBAAt(x, y)
+					if c.A > 0 && nearColor(c, tc.bg, 2) {
+						bbox = bbox.Union(image.Rect(x, y, x+1, y+1))
+					}
+				}
+			}
+			if bbox.Empty() {
+				t.Fatal("找不到底板像素")
+			}
+			if bbox.Min.X > 1 || bbox.Min.Y > 1 {
+				t.Fatalf("底板起点 %v 不在布局原点（内衬被吞 ⇒ 底板从内衬之后起笔）", bbox.Min)
+			}
+			// 右上角：底板自带圆角 ⇒ 角上 1px 不该是底板色；被裁剪切平的方角会命中。
+			if c := img.RGBAAt(bbox.Max.X-1, bbox.Min.Y); c.A > 0 && nearColor(c, tc.bg, 2) {
+				t.Fatalf("底板右上角 %v 是直角（被裁剪切平）", image.Pt(bbox.Max.X-1, bbox.Min.Y))
+			}
+		})
+	}
+}
+
+// TestOverlaySaveDisabledWhenDraftEmpty 空草稿时「保存」呈禁用态（D139 ⑤）：配色取次要底
+// + 暗字，且不提交；有草稿才可用。只读节点恒不可用。
+func TestOverlaySaveDisabledWhenDraftEmpty(t *testing.T) {
+	u, st, _ := relGraphFixture(t)
+	th := u.th
+	if bg, _ := overlayBtnColors(th, true, false); bg != cardTool {
+		t.Fatalf("禁用态底色 = %v, want 次要底 %v", bg, cardTool)
+	}
+	if bg, _ := overlayBtnColors(th, true, true); bg != th.Fg {
+		t.Fatalf("可用主钮底色 = %v, want %v", bg, th.Fg)
+	}
+	if bg, _ := overlayBtnColors(th, false, true); bg != cardTool {
+		t.Fatalf("次要钮底色 = %v, want %v", bg, cardTool)
+	}
+
+	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageSource)
+	st.ov.ed.SetText("")
+	if st.ov.canSave() {
+		t.Fatal("空草稿应禁用保存")
+	}
+	st.ov.ed.SetText("   \n ")
+	if st.ov.canSave() {
+		t.Fatal("纯空白草稿应禁用保存")
+	}
+	st.ov.ed.SetText("改后的问题")
+	if !st.ov.canSave() {
+		t.Fatal("有草稿应可用保存")
+	}
+}
+
+// absInt 整数绝对值（测试内小工具）。
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // ovPointer 遮罩用例的鼠标事件（坐标取整像素）。

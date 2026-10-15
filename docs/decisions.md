@@ -1830,6 +1830,19 @@
   预选该方式**；「查看原文」= 开遮罩 + 定位源码页签；**新增**「在主窗定位」= `/goto` + 唤出主窗。
 - **提交后**：关遮罩 → 图按快照签名重排（看得到新分叉）→ 唤出主窗并展开（`showExpandMsg` 既有
   口径；user + Fresh 会触发重新生成，D93）。
+- **绘制两坑（2026-10-15 用户截图报障后实测修正）**：
+  ① **卡片不居中**：遮罩是 `layout.Stack` 的 `Stacked` 子项，而 Gio 会把 Stacked 子项的
+  `Constraints.Min` 清成 0（stack.go）；`layout.Center` 是 `Direction.Center`，只在 **Min** 内
+  居中 ⇒ 等于不居中，底板与内容被画到窗口左上角，而 `ov.card`（命中盒/点空白判定）另行算得
+  仍是居中的——即「显示未居中，点击区域却居中」。修法 = 显式 `op.Offset(card.Min)` +
+  `Constraints = Exact(card.Size())`（顺带让卡内内容按盒宽排布）。
+  ② **胶囊底板被裁**：卡内页签/钮的底板**不可**在 `Inset` 内用 `gtx.Constraints.Max` 画——那时
+  底板从内衬之后起笔、右侧再被 `widget.Clickable` 的 `clip.Rect{Max: dims.Size}` 切平 ⇒ 字贴
+  左边、右侧多一块、右角是直角（实测左 2px / 右 14px）。正确姿势 = `layout.Background`（先量
+  内容、底板按内容盒画在内容之下，`overlayPill`）。两条都有**离屏像素回归**
+  （`TestOverlayCardPlateHugsHitBox` / `TestOverlayPillHugsItsBox`，均已做变异验证）。
+  另：「保存」与「关闭」补 6dp 间距（原贴在一起读成一块）；空草稿时「保存」呈**禁用态**
+  （次要底 + 暗字，⑤ 的可见形态；此前只做到「点了不提交」）。
 - **后果/限制**：① 单击语义变更属破坏性交互改动（AGENTS §4 已授权 UI 交互破坏性修改）；
   ② root/system 节点与无正文节点**只读**（无方式选择与保存）；③ 呈现页签只渲染正文 `PartText`
   （thinking / 工具 chip 不进遮罩——与 `NodeText` 口径自洽）；④ 卡片高 ≤ 视口 70%、内容内滚，
