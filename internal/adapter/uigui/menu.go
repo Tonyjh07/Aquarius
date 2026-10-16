@@ -16,10 +16,11 @@ const (
 	cmdExit     = 102
 	cmdTopMost  = 103
 	cmdHistory  = 104 // 功能窗入口（§15.7/D60：会话历史占位壳）
-	cmdWelcome  = 105 // 功能窗入口（§15.7/D60：欢迎/首次运行占位壳）
 	cmdSettings = 106 // 功能窗入口（§15.7/D60：设置窗核心档）
 	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
 	cmdPermBase = 108 // 权限子菜单四档基值（D73：+i 对齐 settings.go permLevels 序）
+	// 注：105 曾为 cmdWelcome（欢迎窗入口）。D141 起欢迎窗**入口移入设置窗**，两个菜单都
+	// 不带此项，该 ID 及分发分支删除（不留死码）。
 
 	cmdBubbleEdit     = 120 // 气泡右键：编辑（D92/D97 → editMsg Fresh 进编辑态）
 	cmdBubbleRegen    = 121 // 气泡右键：重新生成（D92 → /regen 与键入同路径）
@@ -87,6 +88,7 @@ func logoMenuItems(level string, topMost bool) []menuIt {
 }
 
 // trayMenuItems 托盘右键菜单项集（§15.1：显示/隐藏、置顶开关、功能窗入口 + 退出）。
+// D141：**不带欢迎窗入口**——欢迎 / 首次运行引导从设置窗开（项集为契约、测试锁定）。
 func trayMenuItems(topMost bool) []menuIt {
 	return []menuIt{
 		{id: cmdToggle, label: "显示 / 隐藏输入窗"},
@@ -94,7 +96,6 @@ func trayMenuItems(topMost bool) []menuIt {
 		{},
 		{id: cmdSettings, label: "设置"},
 		{id: cmdHistory, label: "会话历史"},
-		{id: cmdWelcome, label: "欢迎 / 首次运行引导"},
 		{},
 		{id: cmdExit, label: "退出"},
 	}
@@ -298,8 +299,6 @@ func menuDispatch(u *UI, r uintptr) {
 		u.wins.openWin(winSettings) // 单实例防重开（§15.7；注册表线程安全）
 	case cmdHistory:
 		u.wins.openWin(winHistory)
-	case cmdWelcome:
-		u.wins.openWin(winWelcome)
 	case cmdExit:
 		u.exitViaShell()
 	}

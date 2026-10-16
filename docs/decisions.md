@@ -154,6 +154,7 @@
 | D138 | 插件启动信任门：plugins 目录发现的条目首次须确认（信任随 profile 走，§6.4） | 生效 |
 | D139 | 会话管理遮罩层 + 消息查看/编辑界面：单击节点即进遮罩，呈现/源码双页签，界面上选应用方式（S3/D132 后续，§15.7） | 生效 |
 | D140 | 视场契约 v2：跟随「当前盒」而非 Head 一点 + 取景动作带 zoom 适配 + 「回到当前」改名「装下整树」（S3，[relation-map-design.md](relation-map-design.md)） | 生效 |
+| D141 | 欢迎窗与首次运行引导：三步页 + `ui.welcomed` 标记 + 首跑启动流接管（装配前独立向导窗）；入口移入设置窗（S4③，§15.7） | 生效 |
 
 ## 记录
 
@@ -1936,3 +1937,61 @@
   夹具侧修：`relPaneFixture` 只等 `lay.settled` 会拿到**还在动的相机**（D128 起跟随是真动画），
   改等「settled + 跟随收敛」——否则按上一帧坐标算出的手势会指空（这本身就是「跟随真的动起来
   了」的旁证：改之前它是硬锁，坐标恰好不动）。
+
+### D141 · 欢迎窗与首次运行引导 + 首跑启动流接管（2026-10-16，S4③）
+
+> **驱动**：S4③ 是 M5 遗留的最后一项（`winWelcome` 自 D60 起只有占位壳正文）。而**首跑的真实观感
+> 是「球都不出现」**：`bootstrap` 发现 profile 配置不存在 → 写模板 → 把「请编辑 `model.providers`…
+> 重新运行」的指引打印到 **stdout** → `errFirstRun` → 退出 0；而双击启动在 D114 已 `FreeConsole`
+> 脱离控制台，**那段指引无处可看**（同一情形下 `stderr` 有 `notifyFatal` 的系统消息框兜底，stdout
+> 没有）。用户 2026-10-16 拍板把 S4③ 立为下一件，并追加一条：**欢迎窗入口从两个菜单移出、放进设置窗**。
+
+- **决策点（用户拍板）**：① **接管层次 = 独立向导窗、先于内核装配**（否决「内核带引导态启动 + 主窗
+  自动开欢迎窗」——那要求容忍一个半可用内核，与 D110② 启动 fail-fast 相抵，且 provider 类改动本就
+  要重启、本次运行全程是废的；亦否决「只做窗口、不改启动流」——它拦不住 ⑤ 的缺密钥场景）；
+  ② **三问落点 = 覆盖 `model.providers[0]` 并设 primary**（否决「新增一条、保留模板 openai」）；
+  ③ api_key **两种形态都收**（`secret:<环境变量名>` 引用或明文，沿用 D35 的落盘 + 启动警告口径）；
+  ④ 标记 = **`ui.welcomed` 布尔**（键缺失 = 未看），**首跑或标记缺失**时自动打开一次，完成或显式关闭
+  即置位；⑤ **缺密钥也走同一条引导路**（报出是哪条 provider 缺哪个环境变量，不再 `fatal` + 英文错误框）；
+  ⑥ **入口移入设置窗**（托盘菜单删「欢迎 / 首次运行引导」项；球右键菜单本来就没有此项——`TestLogoMenuItems`
+  锁的项集不含它）。
+- **「配置不完整」的判定（装配前，两个来源分开处置）**：
+  - **阻断启动**（必须走向导窗）：primary 或任一 `fallback` 的 `api_key` 解析失败，即 `secret:<名>` 而
+    `port.Secrets` 取不到。**探测走 `port.Secrets`、不直读 `os.Getenv`**（端口契约优先，D35）；探测
+    **不打印明文警告**（警告只在 `resolveAPIKey` 真实路径发一次，否则同一 provider 会被警告两遍）。
+  - **不阻断**（密钥可用、只是没引导过）：`ui.welcomed` 缺失 → 正常启动，启动后自动开 `winWelcome`。
+    首跑的典型情形是前者（模板 key = `secret:AQUARIUS_OPENAI_KEY`，环境变量通常未设），故首跑必见向导窗。
+- **实现**：
+  - `internal/adapter/uigui/welcome.go`（新）：`WelcomeSnapshot`/`WelcomePatch`/`WelcomeManager`（消费方
+    定义的小接口，同 `SettingsSnapshot`/`ProviderManager` 口径）+ **与 `*UI` 解耦**的 `welcomeEnv`、表单
+    状态与帧函数（**同一套帧两个宿主**）+ `RunSetupWindow(req) (SetupOutcome, error)`（装配前的独立常规窗：
+    自建 `newPlatform(Options{Theme: req.Theme}, true)` + `newTheme`，事件循环照 `runSecondary` 骨架；
+    `platform.New` 惰性，不会提前装托盘/热键）。
+  - `winmgr.go`：`k == winWelcome` 建 `welcomeForm` 走 `welcomeFrame`（占位 `secondaryFrame` 保留为回退）。
+  - `gui.go`：`Options.Welcome WelcomeManager` + `UI.OpenWelcome()`（包 `wins.openWin`；注册表本就加锁，
+    设置窗 goroutine 可直接调）。
+  - `settings_rows.go`：Profile 区后插 `rowWelcome`（「打开」按钮 → `OpenWelcome`）。
+  - `menu.go`：删托盘欢迎项 + `cmdWelcome` 常量与 `menuDispatch` 的 case（删后无引用，留则死码）。
+  - `cmd/aquarius/welcome.go`（新）：`uigui.WelcomeManager` 实现——`Snapshot`（密钥不回显）、`Apply`
+    （复用 `providerManager.Apply` 口径全量写 `providers[0]` + primary + 写 `ui.welcomed`，无关键保留；
+    另补两处一致性：primary 改名时清理该名在 `fallback` 内的悬挂引用——否则下次启动 `normalize` 直接
+    fail-fast；`model.name` 不在新 `models` 内时改写为 `models[0]`——否则旧模型名会被发给新端点）、
+    `Test`（复用一次性 client 拉 `/models`）、`MarkWelcomed`。
+  - `config.go`：`uiConfig` 加 `welcomed`；新增**不打印**的密钥可解析性探测。
+  - `bootstrap_profile.go` / `main.go`：首跑不再「写模板即退出」（gui 分支记 `firstRun` 并继续）；向导宿主是
+    **可注入的包级 var**（默认 `uigui.RunSetupWindow`），测试注入假 runner——否则首跑测试会去开真窗；
+    `SetupDone` → 重新 `loadConfig` + `normalize` 继续装配，`SetupCancelled` → 退出 0。
+- **代价 / 边界**：① 向导窗与 in-app 欢迎窗共享帧但**各有一个宿主**（代价 = 一段独立窗循环；收益 =
+  装配层零侵入，缺密钥也拦得住）；② **不做自动重启**（沿用「重启生效」提示——in-app 保存后 provider/密钥类
+  改动下次启动生效）；③ `tui`/`repl` 不走窗（保持 stdout 指引 + 退出 0）；④ 教程页先纯文字（快捷键 /
+  右键菜单 / 常用命令，不做截图）；⑤ 升级用户（配置里没有 `welcomed` 键）会在下次启动被自动打开一次
+  ——这是 ④ 标记语义的直接后果，关闭即不再打扰。
+- **测试**：uigui headless —— 向导帧离屏单帧渲染（D113 口径）、页切换 / 校验 / 提交回调序列、取消语义、
+  `winWelcome` 分支接线；设置窗「打开 → 开窗」分派（假开窗器）+ **托盘项集契约（锁定「不含欢迎项」）**
+  + **教程文案对照**（命令名与 name 表同源、两个菜单行与真实项集逐项一致——菜单/命令改了教程不改即失败）。
+  cmd/aquarius —— 判定矩阵（首跑 / `secret` 未设 / fallback 未设 / 明文不报 / 密钥可解析不拦）、`Apply`
+  写盘（`providers[0]` 覆盖 + primary + `ui.welcomed` + 无关键保留 + 悬挂 fallback 清理后能过 `normalize`
+  + `model.name` 改写）、`Test` 走 httptest 假 server、启动流三种结局（取消 / 保存后续启 / 仍不完整报因，
+  另加 tui/repl 不开窗、明文不阻断且警告恰好一次）。既有测试改订：`cmd/aquarius/main_test.go` 的
+  `TestRunFirstTimeGeneratesConfig` 与 `TestRunRelativeDataDirBecomesAbsolute`（两者都走首跑路径，注入假
+  runner；前者断言「模板已生成 + 向导被调用 + 取消 → 退出 0、不写 `welcomed`」）。

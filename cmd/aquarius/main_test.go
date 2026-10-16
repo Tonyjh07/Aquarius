@@ -21,6 +21,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -120,10 +121,26 @@ func writeConfig(t *testing.T, dir, baseURL, name string) {
 	t.Setenv("AQ_E2E_KEY", "test-key")
 }
 
-// TestRunFirstTimeGeneratesConfig 首次运行（D110）：生成根指针 + default profile
-// 模板配置并退出（README 快速开始语义）。
+// swapSetupWindowRunner 换向导窗宿主并返回还原函数（D141）：首跑/缺密钥路径的测试
+// 不得真开窗（真宿主 = uigui.RunSetupWindow，会阻塞在事件循环上）。仓库先例：
+// messageBox / notifySenderImpl 的包级可注入实现。
+func swapSetupWindowRunner(fake func(uigui.SetupRequest) (uigui.SetupOutcome, error)) func() {
+	prev := setupWindowRunner
+	setupWindowRunner = fake
+	return func() { setupWindowRunner = prev }
+}
+
+// TestRunFirstTimeGeneratesConfig 首次运行（D110 + D141）：生成根指针 + default profile
+// 模板配置。模板 ui.kind=gui ⇒ **不再「写模板即退出」**：改开欢迎向导窗（此处换假宿主），
+// 用户取消 ⇒ 退出 0、不写 welcomed 标记（配置仍不完整，下次再来）。
 func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("AQUARIUS_OPENAI_KEY", "") // 模板密钥引用取不到 ⇒ 判「配置不完整」，必走向导
+	var got []uigui.SetupRequest
+	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
+		got = append(got, req)
+		return uigui.SetupCancelled, nil // 取消：不写盘
+	})()
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 0 {
 		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
@@ -156,6 +173,19 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	}
 	if fi, err := os.Stat(filepath.Join(dir, "profiles", "default", "sandbox")); err != nil || !fi.IsDir() {
 		t.Fatalf("特权目录应自动创建（profile 内）: %v", err)
+	}
+	// D141：向导窗被调用一次，问题清单指出缺哪个环境变量；取消 ⇒ 标记未置位。
+	if len(got) != 1 {
+		t.Fatalf("向导窗调用 %d 次, want 1（reqs=%+v）", len(got), got)
+	}
+	if joined := strings.Join(got[0].Issues, "；"); !strings.Contains(joined, "AQUARIUS_OPENAI_KEY") {
+		t.Fatalf("向导窗问题清单应指出缺失的密钥: %+v", got[0].Issues)
+	}
+	if !strings.Contains(errBuf.String(), "已取消配置引导") {
+		t.Fatalf("stderr 应记取消: %q", errBuf.String())
+	}
+	if !strings.Contains(string(profCfg), `"welcomed": false`) {
+		t.Fatalf("取消不得写 welcomed 标记: %s", profCfg)
 	}
 }
 
@@ -488,6 +518,11 @@ func TestRunPlaintextKeyWarns(t *testing.T) {
 func TestRunRelativeDataDirBecomesAbsolute(t *testing.T) {
 	tmp := t.TempDir()
 	t.Chdir(tmp) // 测试内改 cwd，结束自动还原
+	t.Setenv("AQUARIUS_OPENAI_KEY", "")
+	// D141：模板 ui.kind=gui ⇒ 首跑会开向导窗；这里换假宿主并取消（配置仍不完整）。
+	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
+		return uigui.SetupCancelled, nil
+	})()
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", "data"}, strings.NewReader(""), &out, &errBuf); code != 0 {
 		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())

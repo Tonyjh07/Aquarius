@@ -38,6 +38,12 @@ var commandCatalog = []port.CommandInfo{
 // 不入清单（真实动态命令逐条入列）——保留在 help 动态段前。
 const mcpFamilyLine = "/mcp:<server>:<prompt>  MCP prompts 动态命令（随插件启停注册，见 /plugin）"
 
+// CommandCatalog 静态命令清单的只读视图（D103 单一事实源）：供装配根做「教程 / 文档文案
+// vs 真实命令清单」的对照测试（D141），消费方仍照常用 port.CommandCatalog 逐帧拉清单。
+func CommandCatalog() []port.CommandInfo {
+	return append([]port.CommandInfo(nil), commandCatalog...)
+}
+
 // commandsSplit 当前清单两段：静态表（包级不可变）+ 动态表快照（dynMu 锁内、按名排序）。
 func (s *Session) commandsSplit() (static, dyn []port.CommandInfo) {
 	static = commandCatalog

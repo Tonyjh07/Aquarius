@@ -29,6 +29,7 @@ const (
 	rowProfCurrent
 	rowProfName
 	rowProfBtns
+	rowWelcome // D141：欢迎 / 首次运行引导入口（两个菜单都不带，唯此一处 + 首跑自动）
 	rowSecModel
 	rowProvField
 	rowProvBtns
@@ -94,7 +95,7 @@ type rowDesc struct {
 func (f *settingsForm) rowPlan() []rowDesc {
 	rows := []rowDesc{
 		{kind: rowTitle}, {kind: rowProfHead}, {kind: rowProfCurrent},
-		{kind: rowProfName}, {kind: rowProfBtns}, {kind: rowSecModel},
+		{kind: rowProfName}, {kind: rowProfBtns}, {kind: rowWelcome}, {kind: rowSecModel},
 	}
 	for i := range f.provs {
 		for fld := 0; fld < provFldN; fld++ {
@@ -137,6 +138,9 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	}
 	for f.provApply.Clicked(gtx) {
 		u.applyProviderChanges(f)
+	}
+	for f.welcomeOpen.Clicked(gtx) {
+		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
 	}
 	for i, pf := range f.provs {
 		for pf.test.Clicked(gtx) {
@@ -200,6 +204,8 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 				return fieldRow(gtx, th, "Profile 名", editorBox(th, &f.profName, "新建 / 复制 / 切换的目标名"))
 			case rowProfBtns:
 				return f.profileButtonsRow(gtx, th)
+			case rowWelcome: // D141：欢迎 / 首次运行引导入口（开 winWelcome 次窗）
+				return f.welcomeRow(gtx, th)
 			case rowSecModel: // D110②：provider 编辑区（动态行，重启生效）
 				return material.Subtitle1(th, "模型服务（provider 列表）").Layout(gtx)
 			case rowProvField:
@@ -357,6 +363,28 @@ func (f *settingsForm) profileButtonsRow(gtx layout.Context, th *material.Theme)
 			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profSwitch, "切换（重启生效）"))
 		}),
 	)
+}
+
+// welcomeRow 欢迎 / 首次运行引导入口（D141）：设置窗是**唯一入口**——托盘与球右键菜单都
+// 不带此项；另有「首跑 / `ui.welcomed` 缺失」时自动打开一次（装配根接线）。按钮开次窗，
+// 单实例防重开由注册表保证（§15.7）。
+func (f *settingsForm) welcomeRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return fieldRow(gtx, th, "欢迎引导", func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				b := material.Button(th, &f.welcomeOpen, "打开")
+				b.TextSize = unit.Sp(12)
+				return b.Layout(gtx)
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					l := material.Body2(th, "模型接入向导 + 快捷键 / 右键菜单 / 常用命令")
+					l.Color = textDim
+					return l.Layout(gtx)
+				})
+			}),
+		)
+	})
 }
 
 // fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。标签列宽随

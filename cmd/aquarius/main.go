@@ -146,6 +146,10 @@ type wiring struct {
 	level       perm.Level
 	lvl         *levelHolder
 	persist     *cfgWriter
+	// firstRun 本次为该 profile 首次运行（已写模板，D141）；setupTried 装配前向导窗
+	// 本进程只尝试一次（向导后仍不完整即报因退出，不循环弹窗）。
+	firstRun   bool
+	setupTried bool
 
 	// assemble 段填充
 	store     port.ConversationStore
@@ -204,6 +208,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+
+	// D141：装配前欢迎向导窗——gui 且「配置不完整」（primary/fallback 的 secret: 取不到）
+	// 时先开窗引导；保存后重新读配置、同进程继续启动（取消 = 退出 0）。见 setupWizard。
+	if code, done := w.setupWizard(ctx, *dataDir, *profileFlag, *modelName, *baseURL); done {
+		return code
+	}
 
 	if err := w.assembleStores(ctx); err != nil {
 		return fatal(stderr, "%v", err)

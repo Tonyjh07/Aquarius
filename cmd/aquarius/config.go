@@ -168,7 +168,8 @@ func (m *modelConfig) normalize() error {
 }
 
 // uiConfig UI 形态：repl | tui | gui（D33/D43；模板与键缺省为 tui，repl 为测试/e2e
-// 后端）+ GUI 全局呼出快捷键 + 主题档 + 缩放/字号/窗口尺寸三旋钮（D90，全热生效）。
+// 后端）+ GUI 全局呼出快捷键 + 主题档 + 缩放/字号/窗口尺寸三旋钮（D90，全热生效）
+// + 欢迎引导标记（D141）。
 type uiConfig struct {
 	Kind string `json:"kind"`
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。仅 ui.kind=gui 用。
@@ -184,6 +185,9 @@ type uiConfig struct {
 	// 配置后按字面 px 建窗，UI 侧按布局地板与粗界夹取。
 	WindowWidth  int `json:"window_width,omitempty"`
 	WindowHeight int `json:"window_height,omitempty"`
+	// Welcomed 欢迎 / 首次运行引导是否已看（D141/§15.7）：键缺失 = 未看——启动后自动
+	// 打开欢迎窗一次（引导完成或用户显式关闭即置位）；入口另在设置窗。
+	Welcomed bool `json:"welcomed,omitempty"`
 }
 
 // limitsConfig 运行限额（DESIGN §8）。
@@ -214,7 +218,7 @@ const defaultConfig = `{
     "think_tool": false,
     "echo_thinking": true
   },
-  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 },
+  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },

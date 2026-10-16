@@ -52,8 +52,8 @@ func (k winKind) title() string {
 	}
 }
 
-// placeholder 占位窗正文（欢迎窗数据面留后续步；会话历史已由 historyFrame 接管，
-// 设置窗经表单渲染，此处仅作表单未构建时的回退显示）。
+// placeholder 占位窗正文（数据面留后续步；会话历史已由 historyFrame、设置窗经表单、
+// 欢迎窗经 welcomeFrame（D141）渲染，此处仅作各自帧未构建时的回退显示）。
 func (k winKind) placeholder() string {
 	switch k {
 	case winSettings:
@@ -62,6 +62,8 @@ func (k winKind) placeholder() string {
 		return "" // D112/S3：由 historyFrame 渲染，此处不应到达
 	case winRaw:
 		return "" // D99：专用帧（rawViewFrame），不走占位正文
+	case winWelcome:
+		return "" // D141：专用帧（welcomeFrame），不走占位正文
 	default:
 		return "欢迎使用 Aquarius——首次运行引导即将提供。"
 	}
@@ -77,6 +79,9 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 		return 720, 560, 620, 360
 	case winRaw:
 		return 560, 520, 420, 360
+	case winWelcome:
+		// D141：三步页（接入模型 / 教程 / 完成）+ 步骤条 + 状态行 + 底部按钮。
+		return 560, 520, 480, 420
 	default:
 		return 560, 440, 460, 320
 	}
@@ -301,6 +306,12 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	if k == winHistory {
 		hist = newHistoryState(u) // D112/S3：会话历史帧状态（仅本窗 goroutine 读写）
 	}
+	var welc *welcomeForm
+	if k == winWelcome {
+		// D141：欢迎 / 首次运行引导（in-app 宿主——设置窗入口 + 首跑自动开一次）。
+		welc = newUISideWelcome(u.opts.Welcome, ctl.requestClose)
+		welc.env.inval = w.Invalidate // 连通性测试异步结果回灌重绘
+	}
 	width, height, minW, minH := k.geometry()
 	w.Option(
 		app.Title(k.title()),
@@ -326,6 +337,8 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 				rawViewFrame(gtx, th, u, raw) // 查看原文 = 只读编辑器（D99）
 			} else if hist != nil {
 				historyFrame(gtx, th, u, hist) // 会话历史 = 左栏+右图+状态栏（D112/S3）
+			} else if welc != nil {
+				welcomeFrame(gtx, th, welc) // 欢迎 / 首次运行引导（D141）
 			} else {
 				secondaryFrame(gtx, th, k)
 			}

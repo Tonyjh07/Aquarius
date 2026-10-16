@@ -40,8 +40,12 @@ func resolveDataDir(dataDir string) (string, error) {
 // bootstrap 完成 profile 解析与 profile 配置加载（D110①/修订②）：--profile > 根
 // 指针；根 config.json 仅存指针，会话/记忆/附件等数据全部落 profiles/<name>/
 // 整目录隔离（Q1）。成功后填好 wiring 的 profile/配置/权限字段；该 profile 首次
-// 运行时写模板并返回 errFirstRun。
+// 运行写模板并置 firstRun——**gui 形态继续装配**（缺项由 run() 的欢迎向导窗接管，
+// D141），tui/repl 打完指引返回 errFirstRun（run 按退出码 0 结束）。
 func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) error {
+	// D141：同一进程内本函数可能被调用两次（装配前向导保存后重读配置）——首跑标记
+	// 每次重算，否则第二次会再报一遍「已生成配置」。
+	w.firstRun = false
 	dir, err := resolveDataDir(dataDir)
 	if err != nil {
 		return err
@@ -65,7 +69,9 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	}
 	w.sandboxDir = sandboxDir
 
-	// profile 配置：不存在 = 该 profile 首次运行，写模板并指引填写后重跑。
+	// profile 配置：不存在 = 该 profile 首次运行，写模板。D141：**gui 不再「写模板即退出」**
+	// ——模板落盘后照常装配，配置缺项（模板的密钥引用通常取不到）由 run() 的欢迎向导窗
+	// 接管；tui/repl 保持旧契约（控制台已恢复、指引可见 ⇒ 打印指引 + errFirstRun，见本节末）。
 	cfgPath := filepath.Join(profileDir, "config.json")
 	w.cfgPath = cfgPath
 	cfg, err := loadConfig(cfgPath)
@@ -73,11 +79,10 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		if werr := writeDefaultConfig(cfgPath); werr != nil {
 			return fmt.Errorf("生成配置失败: %w", werr)
 		}
-		fmt.Fprintf(w.stdout, "已生成配置: %s\n当前 profile: %s（指针: %s）\n"+
-			"请编辑 model.providers（base_url / models / api_key），并设置密钥环境变量后重新运行。\n"+
-			"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文（启动会警告，D35）\n",
-			cfgPath, profileName, filepath.Join(dir, "config.json"))
-		return errFirstRun
+		w.firstRun = true
+		if cfg, err = loadConfig(cfgPath); err != nil {
+			return fmt.Errorf("读取刚生成的配置 %s: %w", cfgPath, err)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("读取配置失败: %w", err)
@@ -146,5 +151,17 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	// goroutine 写——D33 之后"单 goroutine"前提不再成立。
 	w.lvl = newLevelHolder(level)
 	w.persist = &cfgWriter{path: cfgPath, lvl: w.lvl}
+
+	// D141：首跑落模板的可见回执（gui 双击时只控制台可见；指引全文只在 tui/repl 打）。
+	// gui 继续装配——缺密钥由 run() 的向导窗接管；tui/repl 保持旧契约（指引 + 退出 0）。
+	if w.firstRun {
+		fmt.Fprintf(w.stdout, "已生成配置: %s\n当前 profile: %s（指针: %s）\n",
+			cfgPath, profileName, filepath.Join(dir, "config.json"))
+		if cfg.UI.Kind != "gui" {
+			fmt.Fprintf(w.stdout, "请编辑 model.providers（base_url / models / api_key），并设置密钥环境变量后重新运行。\n"+
+				"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文（启动会警告，D35）\n")
+			return errFirstRun
+		}
+	}
 	return nil
 }

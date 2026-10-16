@@ -841,7 +841,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "think_tool": false,          // think 草稿工具可见性（默认隐藏，D34）
     "echo_thinking": true        // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
   },
-  "ui": { "kind": "gui", "hotkey": "", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）；scale: 元素缩放倍率（默认 1.0）；font_size: 正文字号 sp（默认 15，最终字号 = font_size × scale）；window_width/window_height: 主窗像素尺寸（0 = 缺省 608×460dp 现行为）——三旋钮口径与热生效见 §15.8/D90
+  "ui": { "kind": "gui", "hotkey": "", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）；scale: 元素缩放倍率（默认 1.0）；font_size: 正文字号 sp（默认 15，最终字号 = font_size × scale）；window_width/window_height: 主窗像素尺寸（0 = 缺省 608×460dp 现行为）——三旋钮口径与热生效见 §15.8/D90；welcomed: 欢迎 / 首次运行引导是否已看（D141；键缺失 = 未看——首跑或标记缺失时自动打开欢迎窗一次，完成或显式关闭即置位）
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
@@ -962,7 +962,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
 | **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
-| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统（§15.4 令牌 + `ui.theme`，D61）；**窗口管理**（§15.7/D60）：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口——本轮基建 + 设置核心档（模型/权限/think/effort/hotkey/主题）+ 两空窗壳验证宿主。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；**托盘/右键菜单可开三窗（历史/欢迎为占位壳）；设置窗改核心档写回 config 并热生效（模型/权限/think/effort/hotkey/主题），密钥只写不回显；主题深浅两版可切、`system` 跟随系统**；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
+| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统（§15.4 令牌 + `ui.theme`，D61）；**窗口管理**（§15.7/D60）：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口——本轮基建 + 设置核心档（模型/权限/think/effort/hotkey/主题）+ 两空窗壳验证宿主（会话历史数据面后由 S3/D112-D120 接续、欢迎引导由 D141 接续）。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；**托盘/右键菜单可开三窗（当时历史/欢迎为占位壳，后由 S3/D141 补上数据面；欢迎入口 D141 起改在设置窗）；设置窗改核心档写回 config 并热生效（模型/权限/think/effort/hotkey/主题），密钥只写不回显；主题深浅两版可切、`system` 跟随系统**；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
 | **M6 底座与跨平台**（D109 重排，2026-10-06） | **执行序**：① 配置底座破坏性改造（S4+S5 合批，**D110**：profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（新 S4b，**D111**：平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI：**relation-map**（S3，**D112**；形态规格 **D120**：结构根/锚点拆分 + 层号深度色带 + 投影后置布局 + 左栏会话/右图，[docs/relation-map-design.md](docs/relation-map-design.md)：`TreeView.Graph()` 整树快照 + `port.SessionLister` 左栏 + 关系图自绘 + 内核删除任意会话/改名补洞）。S6–S8（工具/MCP 管理、提示词、语音）顺延 | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链（层号色带/形状=Role/主干可辨，公理集自检清单逐条过）、左栏切会话、点节点 `/goto`、任意会话删除与改名可用 |
 
 ---
@@ -1368,7 +1368,7 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 三类功能窗采用**独立常规 OS 窗口**（各自 Gio `app.Window`、有边框），与悬浮球形态解耦
 ——**悬浮球本体仍不转常规窗口形态**（§14 口径不变，卡的是球自己变普通窗，不是功能窗）。
 本轮范围：**窗口管理基建 + 空窗壳**；设置窗随主题步（D61）一起落地；欢迎（首次运行）
-与会话历史只落空窗壳验证宿主，数据面留后续步（**会话历史数据面已由 S3 接续**：D112/D120 + [docs/relation-map-design.md](docs/relation-map-design.md)）。
+与会话历史只落空窗壳验证宿主，数据面留后续步（**会话历史数据面已由 S3 接续**：D112/D120 + [docs/relation-map-design.md](docs/relation-map-design.md)；**欢迎 / 首次运行引导已由 D141 接续**：三步页 + 启动流接管，见下方窗口清单与「入口」段）。
 
 - **窗口清单**：**设置**（核心档：权限档、模型名、think/effort、`ui.hotkey`、`ui.theme`；
   **S4/D110③ 扩为全量分组页**：Profile 区（当前/新建/复制/切换，重启生效）、provider 列表
@@ -1389,8 +1389,15 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   四形、权重直径、主干亮环 ⊕ 分叉虚线环、边色 = source 层号、版本链虚线、箭头父→子、标签按权重预算
   + zoom 字号钳 [10,16]（A9）；视口外扩裁剪 + 懒重排（R3）；滚轮缩放 [0.5,1.5] 越界降级纵向平移
   （A9）；预算 `hardCap=240`（超限优先收窄 maxDepth）；物理档位 D126 复测：200 节点步进 0.23ms/帧、
-物理帧 0.77ms、拖拽帧 0.94ms）｜**欢迎/首次运行**（占位壳；接管
-  「写模板即退出」启动流为后续步）｜**查看原文**（D99：气泡右键「查看原文」的只读次窗——
+物理帧 0.77ms、拖拽帧 0.94ms）｜**欢迎 / 首次运行引导**（**D141**：三步页 —— **接入模型**
+  （provider 名 / base_url / api_key / 模型名，覆盖 `model.providers[0]` 并设 primary；密钥只写不回显，
+  收 `secret:<环境变量名>` 引用**或**明文（明文落盘 + 启动警告，D35）；「测试连通性」= 一次性 client
+  拉 `/models`）/ **教程**（呼出快捷键 · 右键菜单项集 · 常用命令，文案契约测试锁定）/ **完成**（摘要 +
+  保存）；`ui.welcomed` 标记作首次运行判定。**接管「写模板即退出」启动流**：`ui.kind=gui` 且配置不完整
+  （某条 provider 的 `secret:` 解析不出）时，于**内核装配之前**先开该窗（独立常规窗，自建平台实例 +
+  同一套帧），保存后重新读配置、**同进程继续启动**；用户取消 = 退出 0；`tui`/`repl` 保持 stdout 指引 +
+  退出。装配之前先探测 `port.Secrets`（探测不打印明文警告），缺密钥不再走 `fatal` 英文错误框）｜
+  **查看原文**（D99：气泡右键「查看原文」的只读次窗——
   单实例 + 内容原子槽原地刷新）。
 - **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 ULW 形状位图（常规
   不透明窗）、无位置记忆、不置顶、不拖拽把手；任务栏条目照常
@@ -1419,8 +1426,10 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 - **生命周期**：单实例防重开（同 kind 已开 → raise/focus）；次窗关闭 = **真关闭**
   （不走主窗「Alt+F4 = 隐藏」语义）；托盘隐藏 / Alt+A 显隐**不连带**次窗；退出只经
   托盘菜单 → 收编关闭全部次窗 → EOF 收尾。
-- **入口**：托盘菜单带「设置 / 会话历史 / 欢迎」项，右键 logo 菜单带「消息历史 / 设置」项（§15.1/D72，
-  两菜单项集合各自为集），项随各窗步启用、未落地者置灰。
+- **入口**：托盘菜单带「设置 / 会话历史」项，右键 logo 菜单带「消息历史 / 设置」项（§15.1/D72，
+  两菜单项集合各自为集），项随各窗步启用、未落地者置灰。**欢迎 / 首次运行引导**（D141）**不进这两个
+  菜单**——入口在**设置窗**（Profile 区下方一行「欢迎 / 首次运行引导」+「打开」按钮），另有「首跑 /
+  `ui.welcomed` 缺失」时自动打开一次。
 - **设置窗读写契约**：读 = `Options` 快照回调（线程安全，同 `Status`；文本键以
   config 文件为事实源，权限/模型/思考/档位取运行态访问器）；写 = 单一 patch 回调
   **在装配根实现**（复用 config 泛键改写——`ui.*` 与 `model` 的 provider/base_url/

@@ -42,7 +42,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 	case "gui":
 		// GUI（D43/§15）：悬浮窗事件循环自驱；位置记忆落 profile 内（§15.1）。
 		// 不进 CI 图形路径（§15.5：GUI 测试全走 headless，门禁/e2e 仍 repl）。
-		w.ui = uigui.New(uigui.Options{
+		ui := uigui.New(uigui.Options{
 			Status: func() uigui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
 					st := uigui.Status{
@@ -74,7 +74,14 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			FontSize:      w.cfg.UI.FontSize,                                                               // 正文字号 sp（D90；0 = 15）
 			WindowWidth:   w.cfg.UI.WindowWidth,                                                            // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
 			WindowHeight:  w.cfg.UI.WindowHeight,
+			Welcome:       &welcomeManager{cfgPath: w.cfgPath, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey}, // D141：欢迎 / 首次运行引导数据面
 		})
+		w.ui = ui
+		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式
+		// 关闭即置位。刚做完装配前向导的情形标记已置位，不会二次打扰。
+		if !w.cfg.UI.Welcomed {
+			ui.OpenWelcome()
+		}
 	case "tui":
 		w.ui = uitui.New(uitui.Options{
 			In:  stdin,

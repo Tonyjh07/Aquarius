@@ -193,6 +193,8 @@ type settingsForm struct {
 	theme    cycleField
 	scale    cycleField // D90：元素缩放（cycle 百分比档）
 	save     widget.Clickable
+	// D141：欢迎 / 首次运行引导入口（设置窗是唯一入口——托盘与球右键菜单都不带此项）。
+	welcomeOpen widget.Clickable
 
 	// 全量分组页控件（S4/D110③）：输出 / 限制 / 提示词 / 高级 raw JSON。
 	notify    widget.Bool

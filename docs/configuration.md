@@ -61,6 +61,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `ui.scale` | number | `1.0` | **GUI** 元素缩放倍率（§15.8/D90）：夹 [0.75, 2.5]；设置窗百分比档；热生效；仅 gui 生效 |
 | `ui.font_size` | number | `15` | **GUI** 正文字号 sp（§15.8/D90）：最终字号 = font_size × scale；夹 [10, 28]；热生效；仅 gui 生效 |
 | `ui.window_width` / `ui.window_height` | int | `0`（= 缺省 608×460dp） | **GUI** 主窗像素尺寸（§15.8/D90）；UI 侧按地板与粗界夹取；热生效；仅 gui 生效 |
+| `ui.welcomed` | bool | `false`（键缺失） | **GUI** 欢迎 / 首次运行引导是否已看（D141/§15.7）：键缺失 = 未看——**首跑或标记缺失**时自动打开欢迎窗一次，完成或显式关闭即置位；入口另在设置窗 |
 
 ### system_prompt（人格）
 

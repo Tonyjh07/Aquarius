@@ -109,6 +109,9 @@ type Options struct {
 	// ProviderMgr provider 列表管理面（D110②/③）：设置窗 provider 编辑区数据面 +
 	// 全量应用 + 连通性测试（重启生效）；nil = 不渲染编辑区。
 	ProviderMgr ProviderManager
+	// Welcome 欢迎 / 首次运行引导数据面（D141/§15.7）：winWelcome 次窗（设置窗入口 +
+	// 首跑/标记缺失时自动开一次）；nil = 窗内为只读占位提示。
+	Welcome WelcomeManager
 }
 
 // zoomKnobs 双缩放旋钮（D90/§15.8）：元素缩放 × 正文字号，原子槽整体换存（成对生效）。
@@ -430,6 +433,13 @@ func (u *UI) SetWindowSize(w, h int) {
 	}
 	w, h = clampWindowPx(w, h, u.plat.MainDPI(), u.zoomLoad().scale)
 	u.resizeWindowTo(int32(w), int32(h))
+}
+
+// OpenWelcome 打开欢迎 / 首次运行引导窗（D141，任意 goroutine）：设置窗入口与
+// 「首跑 / ui.welcomed 缺失」的自动打开共用。单实例防重开由注册表保证；headless /
+// 无开窗器（spawn == nil）= no-op（§15.5：GUI 不进 CI 图形路径）。
+func (u *UI) OpenWelcome() {
+	u.wins.openWin(winWelcome)
 }
 
 // zoomedMetric 缩放 Metric（D90 咽喉点，§15.8）：PxPerDp ×= scale（元素几何等比）、
