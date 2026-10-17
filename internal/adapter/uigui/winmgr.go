@@ -73,7 +73,8 @@ func (k winKind) placeholder() string {
 func (k winKind) geometry() (width, height, minW, minH int) {
 	switch k {
 	case winSettings:
-		return 560, 620, 480, 420
+		// S4d/D142：左侧 140dp 导航栏 + 右页内容 + 全局底栏（分页后需要更宽的内容区）。
+		return 720, 560, 620, 420
 	case winHistory:
 		// §5.4：左栏 200dp + 右栏关系图 + 状态栏；min 620×360。
 		return 720, 560, 620, 360

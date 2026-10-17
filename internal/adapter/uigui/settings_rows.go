@@ -20,47 +20,40 @@ const fieldH = 40
 // fieldLabelW 标签列宽（dp，经 gtx.Dp 消费）：对齐各行控件起点。
 const fieldLabelW = 92
 
-// rowKind 表单行类型（动态行计划：provider 编辑区行数随 providers 数量变化，D110②）。
+// rowKind 表单行类型（动态行计划：provider 编辑区行数随 providers 数量变化，D110②；
+// S4d/D142 起按页分组——页序与页内容见 pageRows）。
 type rowKind int
 
 const (
-	rowTitle rowKind = iota
-	rowProfHead
+	rowTitle   rowKind = iota // 页标题（页名）
+	rowSection                // 分组小标题（text = 分组名）
 	rowProfCurrent
 	rowProfName
 	rowProfBtns
 	rowWelcome // D141：欢迎 / 首次运行引导入口（两个菜单都不带，唯此一处 + 首跑自动）
-	rowSecModel
-	rowProvField
-	rowProvBtns
-	rowProvAdd
-	rowProvApply
-	rowSecCore
+	rowModelName
 	rowPerm
 	rowThink
 	rowEffort
-	rowSecLook
 	rowHotkey
 	rowTheme
 	rowScale
 	rowFontSize
 	rowWinSize
-	rowSecOut
 	rowNotify
 	rowTTS
-	rowSecLimits
 	rowMaxTurns
 	rowMaxCtx
 	rowCompact
 	rowToolChars
 	rowToolTo
-	rowSecPrompt
 	rowSysPrompt
-	rowSecMCP
 	rowMCPList
-	rowSecAdv
 	rowRaw
-	rowActions
+	rowProvField
+	rowProvBtns
+	rowProvAdd
+	rowProvApply
 )
 
 // provider 字段槽位（rowDesc.field）。
@@ -87,40 +80,73 @@ var provFieldMeta = [provFldN]struct{ label, hint string }{
 // rowDesc 一行的类型与定位。
 type rowDesc struct {
 	kind  rowKind
-	prov  int // rowProvField / rowProvBtns：provider 下标
-	field int // rowProvField：字段槽位
+	text  string // rowSection / rowTitle 的文案
+	prov  int    // rowProvField / rowProvBtns：provider 下标
+	field int    // rowProvField：字段槽位
 }
 
-// rowPlan 本帧行计划（每帧现算：providers 数量在新增/删除后即变）。
-func (f *settingsForm) rowPlan() []rowDesc {
-	rows := []rowDesc{
-		{kind: rowTitle}, {kind: rowProfHead}, {kind: rowProfCurrent},
-		{kind: rowProfName}, {kind: rowProfBtns}, {kind: rowWelcome}, {kind: rowSecModel},
-	}
-	for i := range f.provs {
-		for fld := 0; fld < provFldN; fld++ {
-			rows = append(rows, rowDesc{kind: rowProvField, prov: i, field: fld})
+// sec 分组小标题行。
+func sec(text string) rowDesc { return rowDesc{kind: rowSection, text: text} }
+
+// pageRows 本页行计划（每帧现算：providers 数量在新增/删除后即变）。
+func (f *settingsForm) pageRows(page int) []rowDesc {
+	head := rowDesc{kind: rowTitle, text: settingsPageNames[page]} // 页标题 = 页名
+	switch page {
+	case pageGeneral:
+		return []rowDesc{
+			head, sec("Profile"),
+			{kind: rowProfCurrent}, {kind: rowProfName}, {kind: rowProfBtns},
+			{kind: rowWelcome},
+			sec("权限"), {kind: rowPerm},
+			sec("外观与呼出"),
+			{kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
+			{kind: rowFontSize}, {kind: rowWinSize},
+			sec("输出"), {kind: rowNotify}, {kind: rowTTS},
 		}
-		rows = append(rows, rowDesc{kind: rowProvBtns, prov: i})
+	case pageModel:
+		rows := []rowDesc{
+			head,
+			sec("当前模型"), {kind: rowModelName},
+			sec("思考与推理"), {kind: rowThink}, {kind: rowEffort},
+			sec("模型服务（provider 列表）"),
+		}
+		for i := range f.provs {
+			for fld := 0; fld < provFldN; fld++ {
+				rows = append(rows, rowDesc{kind: rowProvField, prov: i, field: fld})
+			}
+			rows = append(rows, rowDesc{kind: rowProvBtns, prov: i})
+		}
+		return append(rows, rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply})
+	case pageChat:
+		return []rowDesc{
+			head,
+			sec("限额"),
+			{kind: rowMaxTurns}, {kind: rowMaxCtx}, {kind: rowCompact},
+			{kind: rowToolChars}, {kind: rowToolTo},
+			sec("提示词"), {kind: rowSysPrompt},
+		}
+	case pageTools:
+		return []rowDesc{head, sec("MCP 与插件"), {kind: rowMCPList}}
+	default: // pageAdv
+		return []rowDesc{head, sec("config.json 原文"), {kind: rowRaw}}
 	}
-	return append(rows,
-		rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply},
-		rowDesc{kind: rowSecCore}, rowDesc{kind: rowPerm}, rowDesc{kind: rowThink}, rowDesc{kind: rowEffort},
-		rowDesc{kind: rowSecLook}, rowDesc{kind: rowHotkey}, rowDesc{kind: rowTheme}, rowDesc{kind: rowScale},
-		rowDesc{kind: rowFontSize}, rowDesc{kind: rowWinSize},
-		rowDesc{kind: rowSecOut}, rowDesc{kind: rowNotify}, rowDesc{kind: rowTTS},
-		rowDesc{kind: rowSecLimits}, rowDesc{kind: rowMaxTurns}, rowDesc{kind: rowMaxCtx},
-		rowDesc{kind: rowCompact}, rowDesc{kind: rowToolChars}, rowDesc{kind: rowToolTo},
-		rowDesc{kind: rowSecPrompt}, rowDesc{kind: rowSysPrompt},
-		rowDesc{kind: rowSecMCP}, rowDesc{kind: rowMCPList},
-		rowDesc{kind: rowSecAdv}, rowDesc{kind: rowRaw},
-		rowDesc{kind: rowActions})
 }
 
-// settingsFrame 设置窗单帧：滚动表单（§15.7/D60 核心档数据面 + D110②③ 动态区）。
-// 事件先于渲染取尽（Clicked 自带 Update；点击触发重绘，新值随后续帧呈现）。常规窗
-// 不做形状位图/羽化（§15.7 形态）：windowBg 铺底，与主窗内容面同底。
+// navColumnDp 左侧导航栏宽度（dp，经 gtx.Dp 消费）；navItemDpH 单个导航项高度。
+const (
+	navColumnDp unit.Dp = 140
+	navItemDpH  unit.Dp = 36
+)
+
+// settingsFrame 设置窗单帧（S4d/D142 分页）：左侧导航栏 + 当前页滚动表单 + 全局底栏。
+// 事件先于渲染取尽（Clicked 自带 Update；导航点击本帧即按新页渲染）。常规窗不做形状
+// 位图/羽化（§15.7 形态）：windowBg 铺底，与主窗内容面同底。
 func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsForm) layout.Dimensions {
+	for p := 0; p < settingsPageCount; p++ {
+		for f.navBtns[p].Clicked(gtx) {
+			f.page = p
+		}
+	}
 	for f.save.Clicked(gtx) {
 		u.saveSettings(f)
 	}
@@ -168,28 +194,110 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	f.scale.advance(gtx)
 	if !f.focused {
 		f.focused = true
-		gtx.Execute(key.FocusCmd{Tag: &f.model}) // 开窗焦点入模型名档；点击切换（editor.go 自聚焦）
+		if ed := f.firstEditor(); ed != nil { // 开窗焦点入当前页首个编辑档；点击切换（editor.go 自聚焦）
+			gtx.Execute(key.FocusCmd{Tag: ed})
+		}
 	}
-	rows := f.rowPlan()
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, windowBg,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
-			return material.List(th, &f.list).Layout(gtx, len(rows), f.row(th, rows))
+			return layout.Dimensions{}
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							w := gtx.Dp(navColumnDp)
+							gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
+							return f.navColumn(gtx, th)
+						}),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							rows := f.pageRows(f.page)
+							return material.List(th, &f.pages[f.page]).Layout(gtx, len(rows), f.row(th, rows))
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return f.bottomBar(gtx, th)
+				}),
+			)
 		}),
 	)
 }
 
-// row 第 i 行渲染（material.List 回调；行内容按 rowPlan 的类型分派）。
+// navColumn 左侧导航栏（S4d/D142）：页名竖排，当前页高亮；点击切页在帧首消费。
+func (f *settingsForm) navColumn(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		children := make([]layout.FlexChild, 0, settingsPageCount)
+		for p := 0; p < settingsPageCount; p++ {
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return f.navItem(gtx, th, p)
+			}))
+		}
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	})
+}
+
+// navItem 单个导航项：整宽高亮底衬（当前页）+ 页名；点击件即整项。
+func (f *settingsForm) navItem(gtx layout.Context, th *material.Theme, p int) layout.Dimensions {
+	return f.navBtns[p].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(navItemDpH))
+		return layout.Stack{Alignment: layout.W}.Layout(gtx,
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+				if f.page == p {
+					paint.FillShape(gtx.Ops, cardSystem,
+						clip.RRect{Rect: image.Rectangle{Max: size},
+							SE: gtx.Dp(6), SW: gtx.Dp(6), NE: gtx.Dp(6), NW: gtx.Dp(6)}.Op(gtx.Ops))
+				}
+				return layout.Dimensions{Size: size}
+			}),
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					l := material.Body1(th, settingsPageNames[p])
+					if f.page == p {
+						l.Color = textSystem
+					}
+					return l.Layout(gtx)
+				})
+			}),
+		)
+	})
+}
+
+// bottomBar 全局底栏（S4d/D142）：「保存并应用」+ 反馈文案任何页常驻——保存仍是一次
+// 全量 patch（跨页 diff 基准 = 开窗快照 f.snap），语义与改前一致。
+func (f *settingsForm) bottomBar(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			// 底衬（Expanded 拿到 Stacked 子项的最大尺寸）+ 1dp 顶线分隔内容区。
+			size := gtx.Constraints.Min
+			paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: size}).Op())
+			sep := textDim
+			sep.A = 0x40
+			paint.FillShape(gtx.Ops, sep,
+				clip.Rect(image.Rectangle{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))}).Op())
+			return layout.Dimensions{Size: size}
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return f.actionsRow(gtx, th)
+			})
+		}),
+	)
+}
+
+// row 第 i 行渲染（material.List 回调；行内容按 pageRows 的类型分派）。
 func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Context, int) layout.Dimensions {
 	return func(gtx layout.Context, i int) layout.Dimensions {
 		return layout.UniformInset(unit.Dp(14)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			r := rows[i]
 			switch r.kind {
 			case rowTitle:
-				return material.H6(th, "设置").Layout(gtx)
-			case rowProfHead: // D110③：profile 区（当前 + 名字输入 + 三动作）
-				return material.Subtitle1(th, "Profile").Layout(gtx)
+				return material.H6(th, r.text).Layout(gtx)
+			case rowSection:
+				return material.Subtitle1(th, r.text).Layout(gtx)
 			case rowProfCurrent:
 				return fieldRow(gtx, th, "当前", func(gtx layout.Context) layout.Dimensions {
 					txt := f.profiles.Current
@@ -206,8 +314,8 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 				return f.profileButtonsRow(gtx, th)
 			case rowWelcome: // D141：欢迎 / 首次运行引导入口（开 winWelcome 次窗）
 				return f.welcomeRow(gtx, th)
-			case rowSecModel: // D110②：provider 编辑区（动态行，重启生效）
-				return material.Subtitle1(th, "模型服务（provider 列表）").Layout(gtx)
+			case rowModelName: // S4d：当前模型名（D110② 起在 UI 上失位，本次补回）
+				return fieldRow(gtx, th, "当前模型名", editorBox(th, &f.model, "model.name；改动保存后经 /model 热切换"))
 			case rowProvField:
 				pf := f.provs[r.prov]
 				eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
@@ -219,16 +327,12 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 				return f.providerAddRow(gtx, th)
 			case rowProvApply:
 				return f.providerApplyRow(gtx, th)
-			case rowSecCore:
-				return material.Subtitle1(th, "权限与思考").Layout(gtx)
 			case rowPerm:
 				return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm))
 			case rowThink:
 				return material.CheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）").Layout(gtx)
 			case rowEffort:
 				return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort))
-			case rowSecLook:
-				return material.Subtitle1(th, "外观与呼出").Layout(gtx)
 			case rowHotkey:
 				return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
 			case rowTheme:
@@ -239,14 +343,10 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 				return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
 			case rowWinSize:
 				return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
-			case rowSecOut: // S4/D110③：输出分组
-				return material.Subtitle1(th, "输出").Layout(gtx)
 			case rowNotify:
 				return material.CheckBox(th, &f.notify, "桌面通知（回答完成时，M3）").Layout(gtx)
 			case rowTTS:
 				return material.CheckBox(th, &f.tts, "语音播报（D27 解析，尚未启用）").Layout(gtx)
-			case rowSecLimits:
-				return material.Subtitle1(th, "限额").Layout(gtx)
 			case rowMaxTurns:
 				return fieldRow(gtx, th, "最大轮数", editorBox(th, &f.maxTurns, "单次提问的工具调用轮数上限（空 = 保持）"))
 			case rowMaxCtx:
@@ -257,20 +357,12 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 				return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）"))
 			case rowToolTo:
 				return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
-			case rowSecPrompt:
-				return material.Subtitle1(th, "提示词").Layout(gtx)
 			case rowSysPrompt:
 				return editorBoxH(th, &f.sysPrompt, "人格（system prompt；空 = 内置默认。清空保存即恢复默认）", 80)(gtx)
-			case rowSecMCP:
-				return material.Subtitle1(th, "MCP 与插件（只读）").Layout(gtx)
 			case rowMCPList:
 				return mcpListRow(gtx, th, f)
-			case rowSecAdv:
-				return material.Subtitle1(th, "高级（config.json 原文）").Layout(gtx)
-			case rowRaw:
+			default: // rowRaw
 				return editorBoxH(th, &f.rawCfg, "整文件编辑；保存前 JSON 校验（解析失败原文件不动，Q10）", 220)(gtx)
-			default:
-				return f.actionsRow(gtx, th)
 			}
 		})
 	}
@@ -455,7 +547,8 @@ func editorBoxH(th *material.Theme, ed *widget.Editor, hint string, h int) layou
 	}
 }
 
-// mcpListRow MCP 与插件只读清单（S4/D110③）：声明名展示 + raw JSON 编辑指引。
+// mcpListRow MCP 与插件只读清单（S4/D110③；「工具与 MCP」页，S6/D143 升级为可交互
+// 管理面）：声明名展示 + raw JSON 编辑指引。
 func mcpListRow(gtx layout.Context, th *material.Theme, f *settingsForm) layout.Dimensions {
 	txt := "（无声明——MCP server 经 config mcpServers 声明，插件经 plugins 目录发现）"
 	var parts []string
@@ -504,7 +597,7 @@ func (f *settingsForm) actionsRow(gtx layout.Context, th *material.Theme) layout
 				col := textSystem
 				switch {
 				case text == "":
-					text, col = "保存后立即生效；provider 列表在「模型服务」区应用（重启生效）。", textDim
+					text, col = "保存后立即生效；provider 列表在「模型」页应用（重启生效）。", textDim
 				case f.err:
 					col = textError
 				}

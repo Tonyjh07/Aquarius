@@ -395,11 +395,12 @@ func TestTrayMenuItemsNoWelcome(t *testing.T) {
 	}
 }
 
-// TestSettingsRowPlanHasWelcome D141：欢迎引导行紧随 Profile 区（设置窗 = 唯一菜单外入口）。
+// TestSettingsRowPlanHasWelcome D141：欢迎引导行紧随 Profile 区（设置窗 = 唯一菜单外入口）；
+// S4d/D142 起 Profile 区与欢迎行同在「常规」页。
 func TestSettingsRowPlanHasWelcome(t *testing.T) {
 	u := newHeadless(t, Options{Settings: func() SettingsSnapshot { return fillSnapshot() }})
 	f := newSettingsForm(u)
-	rows := f.rowPlan()
+	rows := f.pageRows(pageGeneral)
 	idx := -1
 	for i, r := range rows {
 		if r.kind == rowWelcome {
@@ -408,7 +409,7 @@ func TestSettingsRowPlanHasWelcome(t *testing.T) {
 		}
 	}
 	if idx <= 0 {
-		t.Fatalf("rowPlan 缺 rowWelcome（idx=%d）", idx)
+		t.Fatalf("「常规」页列缺 rowWelcome（idx=%d）", idx)
 	}
 	if prev := rows[idx-1].kind; prev != rowProfBtns {
 		t.Fatalf("欢迎引导行应紧随 Profile 区：前一行 = %v", prev)

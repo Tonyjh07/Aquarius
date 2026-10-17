@@ -551,19 +551,22 @@ func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
 	}
 }
 
-// TestSettingsFrameRowsFillViewport 设置窗行列表真渲染回归（S4c 根因防线）。
+// TestSettingsFrameRowsFillViewport 设置窗行列表真渲染回归（S4c 根因防线；S4d 分页后按
+// 新几何与新帧结构复检）。
 //
-// 复现过的故障：`settingsForm.list` 未设 `layout.Axis` → `layout.List` 按**水平**
-// 轴向做视口预算（按视口宽 700px 而非视口高 775px 迭代），而内容仍按垂直堆叠绘制；
-// 累计两行即判定"填满"，整个表单只画出首行，其余是空白窗底与越界的整宽底色带。
+// 复现过的故障：`settingsForm` 的 `material.List` 未设 `layout.Axis` → 按**水平**轴向做
+// 视口预算（按视口宽而非视口高迭代），内容仍按垂直堆叠绘制；累计两行即判定"填满"，
+// 整个表单只画出首行，其余是空白窗底与越界的整宽底色带。
 //
-// 判据取用户可见事实而非内部结构：把设置窗按真窗尺寸/缩放离屏光栅化，要求窗体
-// **下半幅与底带确有内容**（轴向错配时下半幅恒为纯底色）。参照实现 = 真窗首帧
-// 700×775px（`winSettings` 几何 560×620dp × 1.25 缩放）。
+// 判据取用户可见事实而非内部结构：把设置窗按真窗尺寸/缩放离屏光栅化，要求**页内容区**
+// 的下半幅与底带确有内容（轴向错配时下半幅恒为纯底色）。参照实现 = 真窗首帧
+// 900×700px（`winSettings` 几何 720×560dp × 1.25 缩放）；底色取自左侧导航栏（纯
+// windowBg），统计范围限定在全局底栏之上的页内容区。
 func TestSettingsFrameRowsFillViewport(t *testing.T) {
 	const (
-		viewW, viewH = 700, 775 // 真窗首帧像素尺寸（560×620dp @1.25）
+		viewW, viewH = 900, 700 // 真窗首帧像素尺寸（720×560dp @1.25）
 		pxPerDp      = 1.25     // 真窗 Metric（Win32 DPI 96→120 档实测值）
+		navWpx       = 140 * pxPerDp
 	)
 	sz := image.Pt(viewW, viewH)
 
@@ -604,12 +607,14 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 		t.Fatalf("离屏取像失败: %v", err)
 	}
 
-	// 底色 = 窗体铺底（windowBg）；逐行统计与底色不同的像素（文字/控件/底板）。
-	bg := color.RGBAModel.Convert(img.At(2, viewH-2)).(color.RGBA)
+	// 底色 = 窗体铺底（windowBg；导航栏顶角无任何控件覆盖）；逐行统计页内容区与底色
+	// 不同的像素（文字/控件/底板）。
+	bg := color.RGBAModel.Convert(img.At(2, 2)).(color.RGBA)
+	contentBottom := viewH - 100 // 全局底栏（≈64dp@1.25）之上 = 页内容区
 	rowsWith := func(y0, y1 int) (rows, px int) {
 		for y := y0; y < y1; y++ {
 			n := 0
-			for x := 0; x < viewW; x++ {
+			for x := int(navWpx) + 2; x < viewW; x++ {
 				if color.RGBAModel.Convert(img.At(x, y)).(color.RGBA) != bg {
 					n++
 				}
@@ -622,20 +627,21 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 		return rows, px
 	}
 
-	halfRows, halfPx := rowsWith(viewH/2, viewH)
+	halfRows, halfPx := rowsWith(contentBottom/2, contentBottom)
 	if halfRows < 20 || halfPx < 300 {
-		t.Errorf("窗体下半幅内容过少：有内容的行数=%d 像素=%d（want ≥20 行 / ≥300 px）"+
+		t.Errorf("页内容区下半幅内容过少：有内容的行数=%d 像素=%d（want ≥20 行 / ≥300 px）"+
 			"——列表很可能按错误轴向迭代、只画出首行（S4c 根因）", halfRows, halfPx)
 	}
-	// 底带（末 12%）也必须有内容：轴向错配时内容在首行之后即断流。
-	bottomRows, _ := rowsWith(viewH-viewH*12/100, viewH)
+	// 底带（内容区末 12%）也必须有内容：轴向错配时内容在首行之后即断流。
+	band := contentBottom - contentBottom*12/100
+	bottomRows, _ := rowsWith(band, contentBottom)
 	if bottomRows < 5 {
-		t.Errorf("窗底带（末 12%%）内容行数=%d，want ≥5——行列表未填满视口", bottomRows)
+		t.Errorf("页内容区底带（末 12%%）内容行数=%d，want ≥5——行列表未填满视口", bottomRows)
 	}
 	// 上幅有内容（正向对照：窗体确实渲染了表单而非全空）。
-	topRows, _ := rowsWith(0, viewH/4)
+	topRows, _ := rowsWith(0, contentBottom/4)
 	if topRows < 5 {
-		t.Errorf("窗体上幅内容行数=%d，want ≥5——表单未渲染", topRows)
+		t.Errorf("页内容区上幅内容行数=%d，want ≥5——表单未渲染", topRows)
 	}
 }
 
@@ -690,5 +696,191 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 					dpi, gotCtrlMax, want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 分页导航（S4d/D142）
+// ---------------------------------------------------------------------------
+
+// TestSettingsPageNamesContract 页名集与页序为契约（导航项与页标题同源）；每页行计划
+// 非空且首行为页标题——防「某页忘了挂行」。
+func TestSettingsPageNamesContract(t *testing.T) {
+	want := []string{"常规", "模型", "对话", "工具与 MCP", "高级"}
+	if settingsPageCount != len(want) {
+		t.Fatalf("settingsPageCount = %d, want %d", int(settingsPageCount), len(want))
+	}
+	for i, name := range want {
+		if settingsPageNames[i] != name {
+			t.Errorf("页 %d 名 = %q, want %q", i, settingsPageNames[i], name)
+		}
+	}
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return fillSnapshot() },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+		Profiles:      &fakeProfiles{snap: ProfilesSnapshot{Current: "default"}},
+		ProviderMgr:   &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", Primary: true}}},
+	})
+	f := newSettingsForm(u)
+	for p := 0; p < settingsPageCount; p++ {
+		rows := f.pageRows(p)
+		if len(rows) < 2 {
+			t.Fatalf("页 %d（%s）行计划过短: %d 行", p, settingsPageNames[p], len(rows))
+		}
+		if rows[0].kind != rowTitle {
+			t.Errorf("页 %d（%s）首行 = %v, want rowTitle", p, settingsPageNames[p], rows[0].kind)
+		} else if rows[0].text != settingsPageNames[p] {
+			t.Errorf("页 %d 标题文案 = %q, want %q", p, rows[0].text, settingsPageNames[p])
+		}
+	}
+	// 「模型」页必须含模型名行（D110② 起该行在 UI 上失位，S4d 补回）。
+	found := false
+	for _, r := range f.pageRows(pageModel) {
+		if r.kind == rowModelName {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("「模型」页缺 rowModelName 行（当前模型名在 UI 上无处可改）")
+	}
+}
+
+// TestSettingsWindowGeometry S4d/D142：分页后窗加宽到 720×560（min 620×420）——左侧
+// 140dp 导航栏之外仍留 ≈552dp 页内容区（改前 = 532dp，不得倒退）。
+func TestSettingsWindowGeometry(t *testing.T) {
+	w, h, minW, minH := winSettings.geometry()
+	if w != 720 || h != 560 || minW != 620 || minH != 420 {
+		t.Fatalf("几何 = (%d,%d,%d,%d), want (720,560,620,420)", w, h, minW, minH)
+	}
+	if got := w - int(navColumnDp); got < 532 {
+		t.Errorf("页内容区宽 = %d, want ≥532（不低于分页前）", got)
+	}
+}
+
+// TestSettingsNavClickSwitchesPage 导航项点击 = 切页（帧首消费，本帧即按新页渲染）；
+// 切页不动任何控件状态（跨页编辑保留），且每页各自的滚动列表独立。
+func TestSettingsNavClickSwitchesPage(t *testing.T) {
+	restoreLight(t)
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return fillSnapshot() },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+	})
+	f := newSettingsForm(u)
+	th := testTheme()
+	frame := func() {
+		var ops op.Ops
+		settingsFrame(layout.Context{
+			Ops:         &ops,
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(720, 560)),
+		}, th, u, f)
+	}
+
+	frame()
+	if f.page != pageGeneral {
+		t.Fatalf("初始页 = %d, want %d（常规）", f.page, pageGeneral)
+	}
+	f.model.SetText("m-keep") // 跨页编辑保留探针
+	f.pages[pageGeneral].ScrollBy(3)
+	frame()
+	if f.pages[pageGeneral].Position.First < 3 {
+		t.Fatalf("常规页滚动后 First = %d, want ≥3", f.pages[pageGeneral].Position.First)
+	}
+	f.navBtns[pageAdv].Click()
+	frame()
+	if f.page != pageAdv {
+		t.Fatalf("点击「高级」导航项后 page = %d, want %d", f.page, pageAdv)
+	}
+	if f.model.Text() != "m-keep" {
+		t.Errorf("切页后模型名档 = %q, want m-keep（跨页编辑应保留）", f.model.Text())
+	}
+	// 滚动位置按页独立：别的页没滚动过，原页位置保留。
+	if got := f.pages[pageAdv].Position.First; got != 0 {
+		t.Errorf("高级页未滚动过，First = %d, want 0（每页独立列表）", got)
+	}
+	if got := f.pages[pageGeneral].Position.First; got < 3 {
+		t.Errorf("切页后常规页滚动位置丢失：First = %d, want ≥3", got)
+	}
+	// 回切：导航项可反复使用，页状态、控件状态与滚动位置都还在。
+	f.navBtns[pageModel].Click()
+	frame()
+	if f.page != pageModel {
+		t.Fatalf("回切「模型」后 page = %d, want %d", f.page, pageModel)
+	}
+	if f.model.Text() != "m-keep" {
+		t.Errorf("回切后模型名档 = %q, want m-keep", f.model.Text())
+	}
+	f.navBtns[pageGeneral].Click()
+	frame()
+	if got := f.pages[pageGeneral].Position.First; got < 3 {
+		t.Errorf("回切常规页后滚动位置丢失：First = %d, want ≥3", got)
+	}
+}
+
+// TestSettingsPagesRenderContent 逐页离屏单帧渲染：每页**内容区**必须确有内容
+// （S4c 同款防线的按页复制——分页后「某页空白」是新的可能故障）。
+func TestSettingsPagesRenderContent(t *testing.T) {
+	const (
+		viewW, viewH = 900, 700 // 真窗首帧像素尺寸（720×560dp @1.25）
+		pxPerDp      = 1.25
+		navWpx       = 175 // 140dp × 1.25
+		barPx        = 100 // 全局底栏（≈64dp@1.25）占位
+	)
+	w, err := headless.NewWindow(viewW, viewH)
+	if err != nil {
+		t.Skipf("离屏渲染不可用（无 GPU/软件后端）: %v", err)
+	}
+	defer w.Release()
+
+	u := newHeadless(t, Options{
+		Settings: func() SettingsSnapshot {
+			return SettingsSnapshot{
+				Permission: "strict", Model: "m1", Theme: "system",
+				Scale: 1.0, FontSize: 15,
+				MaxTurns: 8, MaxContextTokens: 128000, CompactThreshold: 0.8,
+				ToolOutputChars: 4000, ToolTimeoutSec: 120,
+				SystemPrompt: "persona", MCPServers: []string{"docs"},
+				RawJSON: `{"model":{"name":"m1"}}`,
+			}
+		},
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+		Profiles:      &fakeProfiles{snap: ProfilesSnapshot{Current: "default", Items: []string{"default"}}},
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{
+			{Name: "openai", BaseURL: "https://api.openai.com/v1", Models: "m1", Primary: true},
+		}},
+	})
+	f := newSettingsForm(u)
+	th := testTheme()
+
+	for p := 0; p < settingsPageCount; p++ {
+		var ops op.Ops
+		gtx := layout.Context{
+			Ops:         &ops,
+			Metric:      unit.Metric{PxPerDp: pxPerDp, PxPerSp: pxPerDp},
+			Constraints: layout.Exact(image.Pt(viewW, viewH)),
+		}
+		f.page = p
+		settingsFrame(gtx, th, u, f)
+		if err := w.Frame(&ops); err != nil {
+			t.Fatalf("页 %d 离屏帧提交失败: %v", p, err)
+		}
+		img := image.NewRGBA(image.Rectangle{Max: image.Pt(viewW, viewH)})
+		if err := w.Screenshot(img); err != nil {
+			t.Fatalf("页 %d 离屏取像失败: %v", p, err)
+		}
+		bg := color.RGBAModel.Convert(img.At(2, 2)).(color.RGBA) // 导航栏顶角 = windowBg
+		px := 0
+		for y := 0; y < viewH-barPx; y++ { // 底栏之上 = 页内容区（底栏恒有内容，不作判据）
+			for x := navWpx + 2; x < viewW; x++ {
+				if color.RGBAModel.Convert(img.At(x, y)).(color.RGBA) != bg {
+					px++
+				}
+			}
+		}
+		t.Logf("页 %d（%s）内容区非底色像素 = %d", p, settingsPageNames[p], px)
+		if px < 1000 {
+			t.Errorf("页 %d（%s）内容区非底色像素 = %d，want ≥1000——该页可能空白",
+				p, settingsPageNames[p], px)
+		}
 	}
 }

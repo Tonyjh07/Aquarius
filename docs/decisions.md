@@ -1995,3 +1995,41 @@
   另加 tui/repl 不开窗、明文不阻断且警告恰好一次）。既有测试改订：`cmd/aquarius/main_test.go` 的
   `TestRunFirstTimeGeneratesConfig` 与 `TestRunRelativeDataDirBecomesAbsolute`（两者都走首跑路径，注入假
   runner；前者断言「模板已生成 + 向导被调用 + 取消 → 退出 0、不写 `welcomed`」）。
+
+### D142 · 设置窗分组导航：五页 + 左侧导航栏 + 全局底栏（2026-10-17，S4d）
+
+> **驱动**：用户 2026-10-17 在 S6 规划时拍板「先把设置窗分开几页，而非按组在同一个窗里一长串，
+> 现在这个效果不太好」——现状是**单个 `material.List` 里 40+ 行**（Profile 区 + 每个 provider
+> 6 个字段行 + 外观 5 行 + 限额 5 行 + 提示词 + raw JSON + 保存行），找一项全靠滚动。这就是
+> roadmap §1 表 #1 里挂着的「分组导航」缺口；S4d 立为 S6 的前置步。
+
+- **决策点（用户拍板）**：① 导航形态 = **左侧导航栏 + 加宽窗**（窗 560×620 → **720×560**，
+  min 620×420；导航 140dp；内容区 ~552dp，比改前的 532dp 略宽）；② 「保存并应用」= **全局底栏
+  常驻**（否决「每页各自保存」：每页要自持 diff 基准与错误态，跨页改动漏点即丢；现在仍是一个
+  patch、一次全量提交，`f.snap` 跨页做 diff 基准）；③ 页切分 = **5 页**（常规 / 模型 / 对话 /
+  工具与 MCP / 高级），**权限等级留「常规」页**（它是全局档位，现状就在核心档）。
+- **顺带修复（常态缺陷）**：`f.model`（当前模型名）自 **D110②**（provider 列表编辑区落地）起在
+  UI 上**无处可改**——`newSettingsForm` 填表、`saveSettings` 进 patch，但旧 `rowPlan`（今
+  `pageRows`）里没有任何一行渲染它（只能靠 `/model` 命令；`settings_test.go` 一直在改一个看不见
+  的字段）。本次在「模型」页顶部补回 `rowModelName` 行。
+- **实现**：
+  - `settings.go`：页常量 `pageGeneral..pageAdv` + `settingsPageNames`（页名集为契约）；`settingsForm`
+    的 `list widget.List` → `pages [settingsPageCount]widget.List`（构造处统一 `Axis = Vertical`
+    ——S4c 防线按页复制）+ `page int` + `navBtns [settingsPageCount]widget.Clickable`；
+    `firstEditor()` 给当前页首个编辑档（开窗首帧焦点；无编辑档的页不抢焦点）。
+  - `settings_rows.go`：`rowPlan()` → `pageRows(page)`；八个 `rowSecX` 行类型收编为一个
+    `rowSection`（`rowDesc.text` 携带分组名）+ `rowTitle` 改渲染**当前页名**；`rowActions` 从页
+    列表中移出，改由**全局底栏**渲染（`bottomBar` = `th.Bg` 底衬 + 1dp 顶线 + `actionsRow`）；
+    新增 `navColumn`/`navItem`（当前页高亮）。帧结构 = 顶部事件消费（含导航点击，本帧即按新页
+    渲染）→ 垂直 Flex〔`Flexed` 横向 Flex（导航 `Rigid` 定宽 + 页 `material.List`）、
+    `Rigid` 底栏〕。
+  - `winmgr.go`：`winSettings` 几何 720×560 / min 620×420。
+- **边界 / 代价**：① 切页**不重置**各页滚动位置（每页独立 `List`）——这是有意的（回到某页接着
+  看）；② 跨页编辑只在内存（表单对象常驻），**不落盘直到「保存并应用」**——与改前一致；
+  ③ `material v0.10` 无页签/导航控件，导航栏自绘（`Clickable` + 高亮底衬）；
+  ④ 设置窗不变宽的话内容区只剩 ~390dp（provider 六字段行会挤），故窗宽与导航栏**必须同批改**。
+- **测试**：`TestSettingsPageNamesContract`（页名集/页序/每页非空且首行为页标题 = 页名；并断言「模型」页确有 `rowModelName`）、
+  `TestSettingsNavClickSwitchesPage`（`navBtns.Click()` 程序化点击 → 帧首消费切页；跨页编辑保留 + **各页滚动位置独立**）、
+  `TestSettingsPagesRenderContent`（逐页离屏单帧渲染，判据 = 每页内容区非底色像素 ≥1000——防「某页空白」）、
+  `TestSettingsFrameRowsFillViewport` 改到新几何（900×700px @1.25，判据限定在全局底栏之上的页内容区）、
+  `TestSettingsWindowGeometry`（几何 + 页内容区宽不倒退）。

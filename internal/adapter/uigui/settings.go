@@ -140,6 +140,20 @@ var (
 	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
 )
 
+// 设置窗页（S4d/D142）：内容分页呈现（左侧 140dp 导航栏 + 右页内容 + 全局底栏）。
+// 页序即导航序；页名集与页序为契约（测试锁定）。
+const (
+	pageGeneral = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
+	pageModel          // 模型：当前模型名 / 原生思考与推理档位 / provider 列表
+	pageChat           // 对话：限额 / 提示词
+	pageTools          // 工具与 MCP：MCP 与插件清单（S6/D143 起升级为可交互管理面）
+	pageAdv            // 高级：config.json 原文
+	settingsPageCount
+)
+
+// settingsPageNames 页名（导航项与页标题共用文案）。
+var settingsPageNames = [settingsPageCount]string{"常规", "模型", "对话", "工具与 MCP", "高级"}
+
 // cycleField 点击循环枚举档（material v0.10 无下拉框）：按钮显示当前项，点击进一档。
 type cycleField struct {
 	click    widget.Clickable
@@ -177,9 +191,16 @@ func (c *cycleField) advance(gtx layout.Context) {
 }
 
 // settingsForm 设置窗表单状态（次窗事件循环 goroutine 独占；控件即状态，不跨窗
-// 共享）。行模型为动态行计划（rowPlan）：行数随 provider 数量变化（D110② 编辑区）。
+// 共享）。S4d/D142 起内容分页：page = 当前页、pages = 每页各自的 material.List
+// （滚动位置按页保留）、navBtns = 导航栏点击件；控件事先常驻表单对象，**切页只是换
+// 渲染**——跨页编辑天然保留。行模型为动态行计划（pageRows）：行数随 provider 数量
+// 变化（D110② 编辑区）。
 type settingsForm struct {
-	list widget.List
+	// 分页（S4d/D142）。
+	page    int                                 // 当前页（pageGeneral..pageAdv）
+	pages   [settingsPageCount]widget.List      // 每页一个滚动列表（构造处定轴向）
+	navBtns [settingsPageCount]widget.Clickable // 左侧导航栏项（按页缓存）
+
 	// 核心档控件（模型名/思考/档位/外观；provider 编辑走 provs）。
 	model    widget.Editor
 	hotkey   widget.Editor
@@ -261,11 +282,30 @@ func newSettingsFormState() *settingsForm {
 		scale:       cycleField{displays: zoomLevels, values: zoomValues},
 		testResults: make(chan testOutcome, 8),
 	}
-	f.list.Axis = layout.Vertical // 表单行列表恒纵向（material.List 未设轴向 = Horizontal）
+	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
+	// 按视口**宽**迭代 → 只画首行、其余空白窗底）。
+	for i := range f.pages {
+		f.pages[i].Axis = layout.Vertical
+	}
 	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
 	return f
+}
+
+// firstEditor 当前页首个编辑档（开窗首帧焦点落点；无编辑档的页返回 nil = 不抢焦点）。
+func (f *settingsForm) firstEditor() *widget.Editor {
+	switch f.page {
+	case pageGeneral:
+		return &f.profName
+	case pageModel:
+		return &f.model
+	case pageChat:
+		return &f.maxTurns
+	case pageAdv:
+		return &f.rawCfg
+	}
+	return nil
 }
 
 // newSettingsForm 开窗现取快照填表：读回调缺失 = 空表单，写回调缺失 = 只读占位。
