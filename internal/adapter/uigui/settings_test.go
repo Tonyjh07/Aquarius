@@ -425,6 +425,9 @@ type fakeProviderMgr struct {
 	primaryGot  []string
 	testErr     error
 	testPatches []ProviderPatch
+	models      []string
+	modelsErr   error
+	modelsGot   []ProviderPatch
 }
 
 func (f *fakeProviderMgr) Snapshot() []ProviderSnapshot { return f.snap }
@@ -444,6 +447,11 @@ func (f *fakeProviderMgr) Apply(primary string, ps []ProviderPatch) error {
 func (f *fakeProviderMgr) Test(p ProviderPatch) error {
 	f.testPatches = append(f.testPatches, p)
 	return f.testErr
+}
+
+func (f *fakeProviderMgr) Models(p ProviderPatch) ([]string, error) {
+	f.modelsGot = append(f.modelsGot, p)
+	return f.models, f.modelsErr
 }
 
 // TestProviderEditorHeadless 编辑区生命周期：快照填表（primary 标记、密钥恒空）、
@@ -495,6 +503,101 @@ func TestProviderEditorHeadless(t *testing.T) {
 	out = <-f.testResults
 	if out.err == nil {
 		t.Fatal("test 失败应回灌错误")
+	}
+}
+
+// TestFetchModelsButton 「获取模型」（D153）：拉列表 → 自动填入模型名行 + 候选 chip；
+// 点 chip = **替换**（不追加）；失败不动输入框；结果按 provider 名回灌（期间删过条目就丢弃）。
+func TestFetchModelsButton(t *testing.T) {
+	mgr := &fakeProviderMgr{
+		snap:   []ProviderSnapshot{{Name: "a", BaseURL: "http://a/v1", Models: "old", Primary: true}},
+		models: []string{"m1", "m2", "m3"},
+	}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	pf := f.provs[0]
+	// 等异步结果（goroutine 写通道），再回投走真正的排空/落表路径。
+	wait := func() {
+		t.Helper()
+		out := <-f.testResults
+		f.testResults <- out
+		f.drainTestResults()
+	}
+
+	u.runFetchModels(f, pf)
+	wait()
+	if len(mgr.modelsGot) != 1 || mgr.modelsGot[0].Name != "a" {
+		t.Fatalf("Models 调用 = %+v", mgr.modelsGot)
+	}
+	if got := pf.models.Text(); got != "m1, m2, m3" {
+		t.Fatalf("自动填入 = %q", got)
+	}
+	if len(pf.cands) != 3 || len(pf.candClicks) != 3 {
+		t.Fatalf("候选 chip = %d/%d", len(pf.cands), len(pf.candClicks))
+	}
+	if !strings.Contains(f.provStatus, "已自动填入 3 个候选") {
+		t.Fatalf("状态行 = %q", f.provStatus)
+	}
+
+	// 点第二个 chip = 替换（不追加）。chip 的消费点在帧首事件循环里，故跑一帧真渲染。
+	th := testTheme()
+	frame := func() {
+		var ops op.Ops
+		settingsFrame(layout.Context{
+			Ops:         &ops,
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(720, 560)),
+		}, th, u, f)
+	}
+	pf.candClicks[1].Click()
+	frame()
+	if got := pf.models.Text(); got != "m2" {
+		t.Fatalf("点 chip 后模型名 = %q, want m2（替换而非追加）", got)
+	}
+
+	// 失败：不动模型名（用户手写内容不被清掉），状态行报因。
+	pf.models.SetText("hand")
+	mgr.modelsErr = errors.New("403 forbidden")
+	u.runFetchModels(f, pf)
+	wait()
+	if got := pf.models.Text(); got != "hand" {
+		t.Fatalf("失败后模型名 = %q, want hand", got)
+	}
+	if !f.provErr || !strings.Contains(f.provStatus, "失败") {
+		t.Fatalf("失败反馈 = (%v, %q)", f.provErr, f.provStatus)
+	}
+
+	// 成功但用户手写过：只挂候选，不覆盖（「未覆盖已填内容」）。
+	mgr.modelsErr = nil
+	u.runFetchModels(f, pf)
+	wait()
+	if got := pf.models.Text(); got != "hand" {
+		t.Fatalf("手写内容被覆盖：%q, want hand", got)
+	}
+	if len(pf.cands) != 3 {
+		t.Fatalf("未覆盖时仍应挂出候选：%v", pf.cands)
+	}
+	if !strings.Contains(f.provStatus, "未覆盖") {
+		t.Fatalf("状态行 = %q, want 含「未覆盖」", f.provStatus)
+	}
+
+	// 结果回灌按名字：名字对不上（期间删过该条目）→ 整条结果丢弃，不落到别的条目上。
+	other := &providerForm{}
+	for _, ed := range []*widget.Editor{&other.name, &other.baseURL, &other.apiKey, &other.models, &other.tokenizer, &other.unsupported} {
+		ed.SingleLine = true
+	}
+	other.name.SetText("b")
+	other.models.SetText("keep")
+	f.provs = []*providerForm{other}
+	mgr.modelsErr = nil
+	u.runFetchModels(f, pf) // pf 已不在列表里（名字 a）
+	<-f.testResults
+	f.drainTestResults()
+	if got := other.models.Text(); got != "keep" {
+		t.Fatalf("结果落到了别的 provider：模型名 = %q, want keep", got)
+	}
+	if len(other.cands) != 0 {
+		t.Fatalf("结果落到了别的 provider：候选 = %v", other.cands)
 	}
 }
 

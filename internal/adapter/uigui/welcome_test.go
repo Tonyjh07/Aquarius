@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"gioui.org/gpu/headless"
+	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -27,6 +28,7 @@ type fakeWelcome struct {
 	applyErr error
 	tested   []WelcomePatch
 	testErr  error
+	models   []string
 	marked   int
 	markErr  error
 }
@@ -41,6 +43,11 @@ func (f *fakeWelcome) Apply(p WelcomePatch) error {
 func (f *fakeWelcome) Test(p WelcomePatch) error {
 	f.tested = append(f.tested, p)
 	return f.testErr
+}
+
+func (f *fakeWelcome) Models(p WelcomePatch) ([]string, error) {
+	f.tested = append(f.tested, p)
+	return f.models, f.testErr
 }
 
 func (f *fakeWelcome) MarkWelcomed() error { f.marked++; return f.markErr }
@@ -226,18 +233,24 @@ func TestWelcomeFormFinishOnce(t *testing.T) {
 }
 
 // TestWelcomeFormTestConnectivity 连通性测试：立即置「正在测试…」→ 异步结果经通道回灌帧
-// 循环（drain）→ 通过/失败文案。
+// 循环（drain）→ 内联「● 连通正常 · N ms」/ 失败原因（D153：结果落在测试按钮这一行）。
 func TestWelcomeFormTestConnectivity(t *testing.T) {
 	mgr := baseFake()
 	env, _ := welcomeEnvSnap(mgr, false, nil)
 	f := newWelcomeForm(env)
 	f.onTest()
-	if !strings.Contains(f.status, "正在测试") {
-		t.Fatalf("应即时报「正在测试…」: %q", f.status)
+	if !f.probeBusy {
+		t.Fatalf("应即时报「正在测试…」（probeBusy=%v）", f.probeBusy)
 	}
-	waitStatus(t, f, "通过")
-	if f.err || len(mgr.tested) != 1 {
-		t.Fatalf("结果 = (%v, %q) 调用 %d 次", f.err, f.status, len(mgr.tested))
+	waitProbe(t, f, "连通正常")
+	if f.probeErr || len(mgr.tested) != 1 {
+		t.Fatalf("结果 = (%v, %q) 调用 %d 次", f.probeErr, f.probe, len(mgr.tested))
+	}
+	if !strings.Contains(f.probe, " ms") {
+		t.Fatalf("成功应带时延：%q", f.probe)
+	}
+	if f.status != "" {
+		t.Fatalf("测试结果不应写进页脚状态行：%q", f.status)
 	}
 
 	mgr2 := baseFake()
@@ -245,9 +258,101 @@ func TestWelcomeFormTestConnectivity(t *testing.T) {
 	env2, _ := welcomeEnvSnap(mgr2, false, nil)
 	f2 := newWelcomeForm(env2)
 	f2.onTest()
-	waitStatus(t, f2, "失败")
-	if !f2.err || !strings.Contains(f2.status, "连接超时") {
-		t.Fatalf("失败反馈 = (%v, %q)", f2.err, f2.status)
+	waitProbe(t, f2, "连通失败")
+	if !f2.probeErr || !strings.Contains(f2.probe, "连接超时") {
+		t.Fatalf("失败反馈 = (%v, %q)", f2.probeErr, f2.probe)
+	}
+	if strings.Contains(f2.probe, " ms") {
+		t.Fatalf("失败不应报时延：%q", f2.probe)
+	}
+}
+
+// waitProbe 轮询排空异步结果直到内联结果含 want（≤1s）。
+func waitProbe(t *testing.T, f *welcomeForm, want string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		f.drain()
+		if strings.Contains(f.probe, want) {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("内联结果未在时限内变为含 %q: %q", want, f.probe)
+}
+
+// waitHint 轮询排空异步结果直到候选说明含 want（≤1s）。
+func waitHint(t *testing.T, f *welcomeForm, want string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		f.drain()
+		if strings.Contains(f.modelsHint, want) {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("候选说明未在时限内变为含 %q: %q", want, f.modelsHint)
+}
+
+// TestWelcomeFetchModels 「获取模型」（D153）：拉列表 → 自动填入前 8 个 + 候选 chip；
+// 点 chip = **替换**成单选；用户手写过模型名就不覆盖（一次网络结果不能冲掉手写内容）。
+func TestWelcomeFetchModels(t *testing.T) {
+	mgr := baseFake()
+	mgr.models = []string{"m1", "m2", "m3"}
+	env, _ := welcomeEnvSnap(mgr, true, nil)
+	f := newWelcomeForm(env) // 模型名 = 快照原值（基线）→ 允许自动填入
+	f.onFetchModels()
+	if !strings.Contains(f.modelsHint, "正在获取") {
+		t.Fatalf("应即时报「正在获取…」: %q", f.modelsHint)
+	}
+	waitHint(t, f, "已自动填入")
+	if got := f.models.Text(); got != "m1, m2, m3" {
+		t.Fatalf("自动填入 = %q", got)
+	}
+	if len(f.cands) != 3 || len(f.candClicks) != 3 {
+		t.Fatalf("候选 = %d/%d", len(f.cands), len(f.candClicks))
+	}
+	if len(mgr.tested) != 1 || mgr.tested[0].Provider != "openai" {
+		t.Fatalf("Models 调用 = %+v", mgr.tested)
+	}
+
+	// chip 点击在帧首事件循环里消费（不是表单方法），故跑一帧真渲染。
+	th := testTheme()
+	router := new(input.Router)
+	clickFrame := func() {
+		var ops op.Ops
+		welcomeFrame(layout.Context{
+			Ops:         &ops,
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(660, 640)),
+			Source:      router.Source(),
+		}, th, f)
+	}
+	f.candClicks[1].Click()
+	clickFrame()
+	if got := f.models.Text(); got != "m2" {
+		t.Fatalf("点 chip 后模型名 = %q, want m2（替换而非追加）", got)
+	}
+
+	// 手写过：成功也只挂候选，不覆盖。
+	f.models.SetText("hand")
+	mgr.models = []string{"x1", "x2"}
+	f.onFetchModels()
+	waitHint(t, f, "未覆盖")
+	if got := f.models.Text(); got != "hand" {
+		t.Fatalf("手写内容被覆盖：%q", got)
+	}
+	if len(f.cands) != 2 {
+		t.Fatalf("仍应挂出候选：%v", f.cands)
+	}
+
+	// 失败：不动模型名，说明行报因。
+	mgr.testErr = errors.New("403 forbidden")
+	f.onFetchModels()
+	waitHint(t, f, "失败")
+	if got := f.models.Text(); got != "hand" {
+		t.Fatalf("失败后模型名 = %q", got)
 	}
 }
 
@@ -299,7 +404,7 @@ func TestWelcomeUISideHost(t *testing.T) {
 // （S4c 教训：轴向错配 = 只画首行、下半幅纯底色）。
 func TestWelcomeFrameRendersPages(t *testing.T) {
 	const (
-		viewW, viewH = 700, 650 // winWelcome 几何 560×520dp @1.25
+		viewW, viewH = 825, 800 // winWelcome 几何 660×640dp @1.25
 		pxPerDp      = 1.25
 	)
 	sz := image.Pt(viewW, viewH)
@@ -490,10 +595,10 @@ func TestTutorialCommandNamesLocked(t *testing.T) {
 	}
 }
 
-// TestWelcomeGeometry D141：欢迎窗几何（三页 + 步骤条 + 状态行 + 底部按钮）。
+// TestWelcomeGeometry D153：欢迎窗几何（标题 + 副标题 + 圆徽步骤条 + 四行卡 + 页脚）。
 func TestWelcomeGeometry(t *testing.T) {
 	w, h, minW, minH := winWelcome.geometry()
-	if w != 560 || h != 520 || minW != 480 || minH != 420 {
+	if w != 660 || h != 640 || minW != 560 || minH != 520 {
 		t.Fatalf("几何 = (%d,%d,%d,%d)", w, h, minW, minH)
 	}
 	if winWelcome.title() != "Aquarius 欢迎" {

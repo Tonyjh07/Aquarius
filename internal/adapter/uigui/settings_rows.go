@@ -94,6 +94,13 @@ var provFieldMeta = [provFldN]struct{ label, hint string }{
 	{"不认参数", "逗号分隔；这些参数会被剔除，不发往服务端"},
 }
 
+// provModelCandMax 候选 chip 的上限（D153）：服务端可能列出几百个模型，全部铺开会把
+// 设置页推成一面墙——取前 N 个，状态行同时给出「共 N 个」的事实。
+const (
+	provModelCandMax = 12 // chip 行最多显示
+	relModelAutoFill = 8  // 自动填入模型名行的上限
+)
+
 // rowDesc 一行的类型与定位。
 type rowDesc struct {
 	kind  rowKind
@@ -273,6 +280,18 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	for i, pf := range f.provs {
 		for pf.test.Clicked(gtx) {
 			u.runProviderTest(f, pf)
+		}
+		for pf.modelsBtn.Clicked(gtx) {
+			u.runFetchModels(f, pf)
+		}
+		for k := range pf.candClicks {
+			if !pf.candClicks[k].Clicked(gtx) {
+				continue
+			}
+			if k < len(pf.cands) {
+				// 点 chip = **替换**模型名行（模拟稿「点选替换」）：不追加，免得越点越长。
+				pf.models.SetText(pf.cands[k])
+			}
 		}
 		for pf.setPrimary.Clicked(gtx) {
 			f.primaryIdx = i
@@ -568,6 +587,31 @@ func (f *settingsForm) rowBody(gtx layout.Context, th *material.Theme, rows []ro
 		pf := f.provs[r.prov]
 		eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
 		meta := provFieldMeta[r.field]
+		if r.field == provModelsFld {
+			// 模型名行右侧挂「获取模型」（D153，模拟稿同款）：按钮与输入框同一行，
+			// 结果不自动覆盖——候选以 chip 列在行下方，点了才替换。
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return fieldRow(gtx, th, meta.label, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, editorBox(th, eds[r.field], meta.hint)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
+									paperButton(th, &pf.modelsBtn, "获取模型", paperBtnSecondary, true))
+							}),
+						)
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if len(pf.cands) == 0 {
+						return layout.Dimensions{}
+					}
+					return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return modelChips(gtx, th, pf)
+					})
+				}),
+			)
+		}
 		return fieldRow(gtx, th, meta.label, editorBox(th, eds[r.field], meta.hint))
 	case rowProvBtns:
 		return f.providerButtonsRow(gtx, th, r.prov)
@@ -744,6 +788,22 @@ func (f *settingsForm) welcomeRow(gtx layout.Context, th *material.Theme) layout
 			}),
 		)
 	})
+}
+
+// modelChips 候选模型 chip（D153）：点击 = 用该名字**替换**模型名行。每行最多 3 个、
+// 左对齐等分（最多 3 行）——候选可达几十个，铺开会把卡撑成一面墙；名字过长按 24 字截断，
+// 状态行里再给出总数。
+func modelChips(gtx layout.Context, th *material.Theme, pf *providerForm) layout.Dimensions {
+	return paperChipFlow(gtx, th, "点选替换模型名", pf.cands, pf.candClicks)
+}
+
+// trimRunes 按字符数截断（超长模型名在 chip 里以省略号收尾）。
+func trimRunes(s string, n int) string {
+	rs := []rune(s)
+	if len(rs) <= n {
+		return s
+	}
+	return string(rs[:n-1]) + "…"
 }
 
 // promptRefRow 人格引用行（S7/D144）：序号 + 引用名 + 上移/下移/删除（顺序 = 拼接顺序）。

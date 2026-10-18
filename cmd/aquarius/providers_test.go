@@ -173,3 +173,40 @@ func TestProviderManagerTest(t *testing.T) {
 	}
 	_ = context.Background()
 }
+
+// TestProviderManagerModels 「获取模型」数据面（D153）：去重保序、空 id 跳过、失败报因；
+// 密钥解析与 Test 同口径（Orig 取 config 原值）。
+func TestProviderManagerModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// 服务端乱序 + 重复 + 空 id：只按响应顺序去重，不排序（用户看到的顺序即服务端顺序）。
+		w.Write([]byte(`{"data":[{"id":"m2"},{"id":"m1"},{"id":"m2"},{"id":""},{"id":"m3"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cfgPath, _ := writeProvidersConfig(t)
+	t.Setenv("KA", "k")
+	m := &providerManager{cfgPath: cfgPath, stderr: os.Stderr}
+
+	got, err := m.Models(uigui.ProviderPatch{Orig: "a", Name: "a", BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	// 顺序 = llm 适配器给的顺序（该层已按名字排序；本层只去重、不重排）。
+	want := []string{"m1", "m2", "m3"}
+	if len(got) != len(want) {
+		t.Fatalf("Models = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Models = %v, want %v（去重保序）", got, want)
+		}
+	}
+
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(bad.Close)
+	if _, err := m.Models(uigui.ProviderPatch{Name: "x", BaseURL: bad.URL, APIKey: "k"}); err == nil {
+		t.Fatal("401 应报错")
+	}
+}

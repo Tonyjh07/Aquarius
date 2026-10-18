@@ -16,11 +16,13 @@ package uigui
 // 两者同色相（198°），观感连续，不会读成两套配色。
 
 import (
+	"image"
 	"image/color"
 	"sync/atomic"
 
 	"gioui.org/font"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -276,6 +278,109 @@ func paperCheckBox(th *material.Theme, c *widget.Bool, label string) layout.Widg
 		b.TextSize = paperBodySp(th)
 		return b.Layout(gtx)
 	}
+}
+
+// paperChip 候选项 chip（D153）：下沉面 + chip 圆角 + 主文字；点击即选中该项。与按钮
+// 的区别是**不做主操作配色**——它是一组候选项中的一个。
+func paperChip(th *material.Theme, c *widget.Clickable, label string) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		pp := paperOf()
+		b := material.Button(th, c, label)
+		b.TextSize = paperMicroSp(th)
+		b.CornerRadius = unit.Dp(pp.rChip)
+		b.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8)}
+		b.Background, b.Color = pp.brandSoft, pp.text
+		return b.Layout(gtx)
+	}
+}
+
+// paperChipFlow 候选 chip 的流式排布（D153）：说明文字与 chip 同排，**按文字量出自然
+// 宽度**再折行。
+//
+// 为什么不等分（Flexed）铺满一行：两个短名字会被拉成两条横贯整行的长条，看着像分段
+// 控件而不是候选项；名字长短不一时等分还会让长名字被截断、短名字空白一片。
+// 说明文字为错行首项（行首不留间距），放不下就整行换行。
+func paperChipFlow(gtx layout.Context, th *material.Theme, hint string, cands []string, clicks []widget.Clickable) layout.Dimensions {
+	pp := paperOf()
+	n := len(cands)
+	if n > len(clicks) {
+		n = len(clicks)
+	}
+	labels := make([]string, n)
+	widths := make([]int, n)
+	for i := 0; i < n; i++ {
+		labels[i] = trimRunes(cands[i], 24)
+		widths[i] = paperTextWidth(gtx, th, labels[i]) + gtx.Dp(16) // chip 左右内衬各 8dp
+	}
+	gap := gtx.Dp(6)
+	avail := gtx.Constraints.Max.X
+
+	type cell struct{ idx int } // idx = -1 → 说明文字
+	var rows [][]cell
+	var cur []cell
+	curW := 0
+	if hint != "" {
+		cur = append(cur, cell{idx: -1})
+		curW = paperTextWidth(gtx, th, hint)
+	}
+	for i := 0; i < n; i++ {
+		if len(cur) > 0 && curW+gap+widths[i] > avail {
+			rows = append(rows, cur)
+			cur, curW = nil, 0
+		}
+		if len(cur) > 0 {
+			curW += gap
+		}
+		cur = append(cur, cell{idx: i})
+		curW += widths[i]
+	}
+	if len(cur) > 0 {
+		rows = append(rows, cur)
+	}
+
+	kids := make([]layout.FlexChild, 0, len(rows))
+	for _, row := range rows {
+		row := row
+		kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				rowKids := make([]layout.FlexChild, 0, len(row)*2+1)
+				for c, cl := range row {
+					c, cl := c, cl
+					if c > 0 {
+						rowKids = append(rowKids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Dimensions{Size: image.Pt(gap, 0)}
+						}))
+					}
+					if cl.idx < 0 {
+						rowKids = append(rowKids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							l := material.Label(th, paperMicroSp(th), hint)
+							l.Color = pp.text3
+							return l.Layout(gtx)
+						}))
+						continue
+					}
+					rowKids = append(rowKids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return paperChip(th, &clicks[cl.idx], labels[cl.idx])(gtx)
+					}))
+				}
+				rowKids = append(rowKids, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Dimensions{}
+				}))
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, rowKids...)
+			})
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, kids...)
+}
+
+// paperTextWidth 一行小字的自然宽度（只量不画：Recording 取尺寸后丢弃）。
+func paperTextWidth(gtx layout.Context, th *material.Theme, text string) int {
+	macro := op.Record(gtx.Ops)
+	m := gtx
+	m.Constraints = layout.Constraints{Max: image.Pt(1<<20, 1<<20)}
+	d := material.Label(th, paperMicroSp(th), text).Layout(m)
+	macro.Stop()
+	return d.Size.X
 }
 
 // paperBtnKind 次窗按钮的三档语义（Paper 里只有这三种，不设第四档灰按钮）。

@@ -122,6 +122,39 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 // Test 连通性测试（D110②：真实最小请求）：以 patch 构造一次性 client（8s 超时）
 // 拉 /models。APIKey 空 = 取 config 内原条目值（按 Orig 名），再走 D35 解析。
 func (m *providerManager) Test(p uigui.ProviderPatch) error {
+	_, err := m.Models(p)
+	return err
+}
+
+// Models 拉取模型列表（「获取模型」按钮的数据面，D153）：与 Test 同一条最小请求，
+// 只是把结果带回。去重保序（服务端有时重复列出同一 id），空列表如实返回空。
+func (m *providerManager) Models(p uigui.ProviderPatch) ([]string, error) {
+	client, err := m.client(p)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	infos, err := client.Models(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(infos))
+	seen := make(map[string]bool, len(infos))
+	for _, mi := range infos {
+		name := strings.TrimSpace(mi.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out, nil
+}
+
+// client 以 patch 构造一次性 llm client（凭据解析口径 = Test/Models 共用）：
+// APIKey 空 = 取 config 内原条目值（按 Orig 名），再走 D35 解析。
+func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
 	ref := p.APIKey
 	if ref == "" && p.Orig != "" {
 		if cfg, err := loadConfig(m.cfgPath); err == nil {
@@ -135,22 +168,13 @@ func (m *providerManager) Test(p uigui.ProviderPatch) error {
 	}
 	key, err := resolveAPIKey(context.Background(), p.Name, ref, m.stderr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	client, err := llm.New(llm.Config{
+	return llm.New(llm.Config{
 		BaseURL:    strings.TrimSpace(p.BaseURL),
 		APIKey:     key,
 		HTTPClient: &http.Client{Timeout: 8 * time.Second},
 	})
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-	if _, err := client.Models(ctx); err != nil {
-		return err
-	}
-	return nil
 }
 
 // splitCSV 逗号分隔清单解析（表单单行口径）：中英文逗号皆可、去空白、丢空项。

@@ -121,6 +121,12 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 // Test 连通性测试（口径同 providerManager.Test）：以 patch 构造一次性 client（8s 超时）
 // 拉 /models。APIKey 空 = 取 config 内 providers[0] 原值，再走 D35 解析。
 func (m *welcomeManager) Test(p uigui.WelcomePatch) error {
+	_, err := m.Models(p)
+	return err
+}
+
+// Models 拉取模型列表（欢迎窗「获取模型」按钮，D153）：去重保序，只读。
+func (m *welcomeManager) Models(p uigui.WelcomePatch) ([]string, error) {
 	ref := p.APIKey
 	if ref == "" {
 		if cfg, err := loadConfig(m.cfgPath); err == nil && len(cfg.Model.Providers) > 0 {
@@ -129,7 +135,7 @@ func (m *welcomeManager) Test(p uigui.WelcomePatch) error {
 	}
 	key, err := resolveAPIKey(context.Background(), strings.TrimSpace(p.Provider), ref, m.stderr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	client, err := llm.New(llm.Config{
 		BaseURL:    strings.TrimSpace(p.BaseURL),
@@ -137,12 +143,25 @@ func (m *welcomeManager) Test(p uigui.WelcomePatch) error {
 		HTTPClient: &http.Client{Timeout: 8 * time.Second},
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	_, err = client.Models(ctx)
-	return err
+	infos, err := client.Models(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(infos))
+	seen := make(map[string]bool, len(infos))
+	for _, mi := range infos {
+		name := strings.TrimSpace(mi.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out, nil
 }
 
 // MarkWelcomed 仅置 `ui.welcomed`（用户显式关闭 = 已看，不再自动弹，D141）。

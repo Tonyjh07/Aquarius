@@ -81,8 +81,9 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 	case winRaw:
 		return 560, 520, 420, 360
 	case winWelcome:
-		// D141：三步页（接入模型 / 教程 / 完成）+ 步骤条 + 状态行 + 底部按钮。
-		return 560, 520, 480, 420
+		// D153：标题 + 副标题 + 编号圆徽步骤条 + 四行分组卡 + 候选 chip + 内联连通结果 +
+		// 页脚三钮。模拟稿比例接近 1:1，560×520 会把卡片压到只剩两行，故放宽到 660×640。
+		return 660, 640, 560, 520
 	default:
 		return 560, 440, 460, 320
 	}

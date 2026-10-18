@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
+
+	"gioui.org/widget"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -291,6 +294,7 @@ func (u *UI) applyProviderChanges(f *settingsForm) {
 
 // runProviderTest 连通性测试（D110②，真实最小请求）：goroutine 跑 Test（网络 +
 // 短超时，不得卡帧循环），结果经 testResults 通道回灌帧循环（win.Invalidate 唤醒）。
+// 只报成功时延（模拟稿「连通正常 · 128 ms」），失败报原因不带毫秒。
 func (u *UI) runProviderTest(f *settingsForm, pf *providerForm) {
 	if u.opts.ProviderMgr == nil {
 		f.provErr = true
@@ -299,38 +303,125 @@ func (u *UI) runProviderTest(f *settingsForm, pf *providerForm) {
 	}
 	patch := providerPatchOf(pf)
 	go func() {
+		start := time.Now()
 		err := u.opts.ProviderMgr.Test(patch)
-		select {
-		case f.testResults <- testOutcome{name: patch.Name, err: err}:
-		default: // 槽满丢弃最旧（测试结果是最简反馈，不积压）
-			select {
-			case <-f.testResults:
-			default:
-			}
-			f.testResults <- testOutcome{name: patch.Name, err: err}
-		}
-		if f.win != nil {
-			f.win.Invalidate() // 帧循环重绘排空结果（并发安全）
-		}
+		postOutcome(f, testOutcome{kind: probePing, name: patch.Name, err: err,
+			ms: time.Since(start).Milliseconds()})
 	}()
 }
 
-// drainTestResults 帧循环排空连通性测试结果（最新一条覆盖展示）。
+// runFetchModels 「获取模型」：拉一次 /models，把候选带回帧循环。与连通测试同一异步
+// 口径（goroutine + 结果通道 + Invalidate）；**只读**，不改配置、不自动替换输入框。
+func (u *UI) runFetchModels(f *settingsForm, pf *providerForm) {
+	if u.opts.ProviderMgr == nil {
+		f.provErr = true
+		f.provStatus = "provider 编辑未接线"
+		return
+	}
+	patch := providerPatchOf(pf)
+	go func() {
+		start := time.Now()
+		models, err := u.opts.ProviderMgr.Models(patch)
+		postOutcome(f, testOutcome{kind: probeModels, name: patch.Name, err: err,
+			ms: time.Since(start).Milliseconds(), models: models})
+	}()
+}
+
+// postOutcome 投递异步探针结果（槽满丢最旧：只是状态反馈，不积压），并唤醒帧循环。
+func postOutcome(f *settingsForm, out testOutcome) {
+	select {
+	case f.testResults <- out:
+	default:
+		select {
+		case <-f.testResults:
+		default:
+		}
+		f.testResults <- out
+	}
+	if f.win != nil {
+		f.win.Invalidate() // 帧循环重绘排空结果（并发安全）
+	}
+}
+
+// drainTestResults 帧循环排空异步探针结果（最新一条覆盖展示）。
 func (f *settingsForm) drainTestResults() {
 	for {
 		select {
 		case r := <-f.testResults:
+			if r.kind == probeModels {
+				f.applyModels(r)
+				continue
+			}
 			if r.err != nil {
 				f.provErr = true
 				f.provStatus = "连通测试 " + r.name + " 失败：" + r.err.Error()
 			} else {
 				f.provErr = false
-				f.provStatus = "连通测试 " + r.name + " 通过"
+				f.provStatus = "连通正常 · " + strconv.FormatInt(r.ms, 10) + " ms"
 			}
 		default:
 			return
 		}
 	}
+}
+
+// applyModels 「获取模型」结果落表单：候选挂到**该名字**的 provider 行（不按 index——
+// 期间用户可能新增/删除过条目），自动填入放到模型名输入框，chip 供点选替换。
+func (f *settingsForm) applyModels(r testOutcome) {
+	pf := f.provByName(r.name)
+	if pf == nil {
+		return // 该 provider 已被删除：结果丢弃，不落到别的条目上
+	}
+	if r.err != nil {
+		pf.cands, pf.candClicks = nil, nil
+		f.provErr = true
+		f.provStatus = "获取模型列表失败：" + r.err.Error()
+		return
+	}
+	if len(r.models) == 0 {
+		pf.cands, pf.candClicks = nil, nil
+		f.provErr = true
+		f.provStatus = "服务端未返回任何模型"
+		return
+	}
+	total := len(r.models)
+	fill := r.models
+	if len(fill) > relModelAutoFill {
+		fill = fill[:relModelAutoFill]
+	}
+	// 自动填入的**前提**：模型名框仍是基线内容（用户没手写过别的）。手写过就只挂候选 chip，
+	// 让用户自己点——一次网络结果不该冲掉他刚敲进去的名字。
+	autoFilled := pf.modelsPristine()
+	if autoFilled {
+		pf.models.SetText(strings.Join(fill, ", "))
+		pf.modelsOrig = pf.models.Text()
+	}
+	if len(r.models) > provModelCandMax {
+		r.models = r.models[:provModelCandMax]
+	}
+	pf.cands = r.models
+	pf.candClicks = make([]widget.Clickable, len(r.models))
+	f.provErr = false
+	if !autoFilled {
+		f.provStatus = "已取回 " + strconv.Itoa(total) + " 个候选 · 点选替换（未覆盖已填内容）"
+		return
+	}
+	if total > len(fill) {
+		f.provStatus = "已自动填入 " + strconv.Itoa(len(fill)) + " 个候选（共 " +
+			strconv.Itoa(total) + " 个）· 点选替换"
+	} else {
+		f.provStatus = "已自动填入 " + strconv.Itoa(len(fill)) + " 个候选 · 点选替换"
+	}
+}
+
+// provByName 按 provider 名找编辑行（异步结果回灌用；改名过程中按当前输入匹配）。
+func (f *settingsForm) provByName(name string) *providerForm {
+	for _, pf := range f.provs {
+		if strings.TrimSpace(pf.name.Text()) == name {
+			return pf
+		}
+	}
+	return nil
 }
 
 // setHotkey 更新快捷键配置原子槽并请求托盘线程重注册（设置窗保存；注册归属托盘

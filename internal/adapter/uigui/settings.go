@@ -65,6 +65,9 @@ type ProviderManager interface {
 	Apply(primary string, providers []ProviderPatch) error
 	// Test 连通性测试（真实最小请求；调用方 goroutine 负责，不进帧循环）。
 	Test(p ProviderPatch) error
+	// Models 拉取该 provider 的模型列表（GET /models，短超时；调用方 goroutine 负责）。
+	// 只读：不改配置、不设主。返回顺序按服务端响应（去重）。
+	Models(p ProviderPatch) ([]string, error)
 }
 
 // PromptModuleView 人格模块树单个节点的编辑视图（S7/D144）：Name 唯一（用户模块名不以
@@ -312,8 +315,21 @@ type providerForm struct {
 	tokenizer   widget.Editor
 	unsupported widget.Editor // 逗号分隔
 	test        widget.Clickable
+	modelsBtn   widget.Clickable // 「获取模型」（D153）：拉 /models 并列候选
 	del         widget.Clickable
 	setPrimary  widget.Clickable
+	// 候选（D153）：cands = 最近一次拉取结果（去重保序，最多 relModelCandMax 个），
+	// candClicks 与之一一对应。点击 chip 才替换模型名——不自动覆盖用户手写内容。
+	cands      []string
+	candClicks []widget.Clickable
+	// modelsOrig 开窗/建行时的模型名基线：「自动填入」只在这个框**没被用户改过**时发生
+	// （否则用户手写的内容会被一次网络结果冲掉）。
+	modelsOrig string
+}
+
+// modelsPristine 模型名框是否仍是基线内容。自动填入的唯一前提。
+func (pf *providerForm) modelsPristine() bool {
+	return strings.TrimSpace(pf.models.Text()) == strings.TrimSpace(pf.modelsOrig)
 }
 
 // promptModuleForm 单个模块节点的编辑控件（S7/D144；本窗 goroutine 独占）。orig = 快照
@@ -333,11 +349,20 @@ type promptRefForm struct {
 	del  widget.Clickable
 }
 
-// testOutcome 连通性测试异步结果（testResults 单消费者 = 帧循环）。
+// testOutcome 异步探针结果（testResults 单消费者 = 帧循环）：连通测试与「获取模型」共用
+// 一条通道，靠 kind 区分（同一 provider 的两次动作不该交错成两条状态行）。
 type testOutcome struct {
-	name string
-	err  error
+	kind   int // probePing / probeModels
+	name   string
+	err    error
+	ms     int64    // 耗时（毫秒；只报成功，失败不报时延）
+	models []string // kind == probeModels：候选（已去重保序）
 }
+
+const (
+	probePing   = iota // 连通测试
+	probeModels        // 获取模型列表
+)
 
 // newSettingsFormState 表单控件与固定档的构造骨架（快照无关：列表轴向/枚举档/
 // 单行档/结果通道）。与快照填表分开 = 开窗路径与测试共用同一构造口径（S4c：
@@ -582,6 +607,7 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 		pf.name.SetText(p.Name)
 		pf.baseURL.SetText(p.BaseURL)
 		pf.models.SetText(p.Models)
+		pf.modelsOrig = p.Models
 		pf.tokenizer.SetText(p.Tokenizer)
 		pf.unsupported.SetText(p.Unsupported)
 		if p.Primary {
