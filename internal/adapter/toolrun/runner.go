@@ -31,6 +31,9 @@ import (
 type Options struct {
 	// Tools 初始工具集（可后经 Add 注册，如 agent 的 context_compact）。
 	Tools []port.Tool
+	// Disabled 内置工具禁用集（S6/D143，config tools.disabled 推导）：Specs 过滤、
+	// Execute 对禁用名按 unknown 拒绝（与未注册不可区分）；可经 SetDisabled 热更新。
+	Disabled map[string]bool
 	// Confirmer 逐次确认；nil 且判定为 Ask 时执行报错（fail-closed，不静默放行）。
 	Confirmer port.Confirmer
 	// Level 当前权限等级（func 以支持 /permission 运行时切换）；nil = perm.DefaultLevel。
@@ -47,15 +50,16 @@ type Options struct {
 // mu 保护注册表：装配根的插件刷新回调可能来自崩溃重启 goroutine，
 // 与 REPL 主循环的 Specs/Execute 并发（§10；M4 接入）。
 type Runner struct {
-	mu      sync.Mutex
-	tools   []port.Tool
-	byName  map[string]port.Tool
-	order   []string
-	conf    port.Confirmer
-	level   func() perm.Level
-	sandbox string
-	timeout time.Duration
-	maxOut  int
+	mu       sync.Mutex
+	tools    []port.Tool
+	byName   map[string]port.Tool
+	order    []string
+	disabled map[string]bool
+	conf     port.Confirmer
+	level    func() perm.Level
+	sandbox  string
+	timeout  time.Duration
+	maxOut   int
 }
 
 var (
@@ -65,12 +69,13 @@ var (
 // New 创建 Runner 并注册初始工具。
 func New(opts Options) *Runner {
 	r := &Runner{
-		byName:  map[string]port.Tool{},
-		conf:    opts.Confirmer,
-		level:   opts.Level,
-		sandbox: opts.SandboxPath,
-		timeout: opts.Timeout,
-		maxOut:  opts.MaxOutput,
+		byName:   map[string]port.Tool{},
+		disabled: map[string]bool{},
+		conf:     opts.Confirmer,
+		level:    opts.Level,
+		sandbox:  opts.SandboxPath,
+		timeout:  opts.Timeout,
+		maxOut:   opts.MaxOutput,
 	}
 	if r.level == nil {
 		r.level = func() perm.Level { return perm.DefaultLevel }
@@ -78,7 +83,36 @@ func New(opts Options) *Runner {
 	for _, t := range opts.Tools {
 		r.Add(t)
 	}
+	for name, on := range opts.Disabled {
+		if on {
+			r.disabled[name] = true
+		}
+	}
 	return r
+}
+
+// SetDisabled 热更新内置工具禁用集（S6/D143：设置窗「工具与 MCP」页开关即时生效；
+// 锁内整体替换，Specs/Execute 下帧可见）。空 map = 全部启用。
+func (r *Runner) SetDisabled(disabled map[string]bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.disabled = make(map[string]bool, len(disabled))
+	for name, on := range disabled {
+		if on {
+			r.disabled[name] = true
+		}
+	}
+}
+
+// Disabled 当前禁用集拷贝（S6 快照对照用）。
+func (r *Runner) Disabled() map[string]bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]bool, len(r.disabled))
+	for name := range r.disabled {
+		out[name] = true
+	}
+	return out
 }
 
 // Add 注册工具（同名覆盖，注册序保持首次出现位置）；装配期与插件刷新期均可调。
@@ -122,13 +156,17 @@ func toolsOf(order []string, m map[string]port.Tool) []port.Tool {
 	return out
 }
 
-// Specs 返回全部工具声明（按注册序，供装配进 Prompt）。
+// Specs 返回全部工具声明（按注册序，供装配进 Prompt；禁用集之外的，S6/D143）。
 func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
 	r.mu.Lock()
 	tools := append([]port.Tool(nil), r.tools...)
+	disabled := r.disabled
 	r.mu.Unlock()
 	out := make([]tool.Spec, 0, len(tools))
 	for _, t := range tools {
+		if disabled[t.Spec().Name] {
+			continue // 禁用工具不出现在模型可见的工具面（与未注册不可区分）
+		}
 		out = append(out, t.Spec())
 	}
 	return out, nil
@@ -141,8 +179,10 @@ func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
 func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
 	r.mu.Lock()
 	t, ok := r.byName[call.Name]
+	disabled := r.disabled
 	r.mu.Unlock()
-	if !ok {
+	if !ok || disabled[call.Name] {
+		// 禁用工具按 unknown 拒绝（S6/D143：与未注册不可区分——模型拿到的工具面一致）。
 		return tool.Result{CallID: call.ID, OK: false, Err: fmt.Sprintf("unknown tool %q", call.Name)}, nil
 	}
 

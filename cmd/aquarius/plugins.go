@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/mcpgate"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
@@ -124,7 +125,10 @@ func (m *mergedMemory) Search(ctx context.Context, query string) ([]port.MemoryH
 }
 
 // hostAdmin 把 plugin.Host 适配为 app.PluginAdmin（D13：app 只见消费面接口）。
-type hostAdmin struct{ h *plugin.Host }
+type hostAdmin struct {
+	h         *plugin.Host
+	auditPath string // 审计日志路径（S6/D143：/plugin logs 读 tail）
+}
 
 var _ app.PluginAdmin = hostAdmin{}
 
@@ -157,6 +161,16 @@ func (a hostAdmin) Enable(ctx context.Context, name string) error { return a.h.E
 
 // Disable 停用并断开。
 func (a hostAdmin) Disable(name string) error { return a.h.Disable(name) }
+
+// Logs 插件调用日志（S6/D143）：tail 审计日志的 kind=tool + mcp:<name>: 行；
+// name 空 = 各插件最近调用摘要。
+func (a hostAdmin) Logs(name string) (string, error) {
+	rows, err := decorate.TailToolCalls(a.auditPath, name, pluginLogLines)
+	if err != nil {
+		return "", err
+	}
+	return formatPluginLogs(rows, name, pluginLogLines), nil
+}
 
 // pluginSurfaces 插件面刷新器（宿主 OnChange 回调）：把就绪会话的 tools/prompts
 // 同步到 ToolRunner 与 Session 动态命令表。可能来自崩溃重启 goroutine——内部串行
@@ -330,6 +344,10 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		States:        w.cfg.Plugins,
 		Persist:       w.persist.persistPlugins,
 		Logf:          func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
-		OnChange:      surfaces.refresh,
+		// S6/D143：宿主状态变化 → 刷新工具面 + 递增工具快照 Revision（设置窗据此重建行）。
+		OnChange: func() {
+			surfaces.refresh()
+			w.toolsRev.Add(1)
+		},
 	})
 }

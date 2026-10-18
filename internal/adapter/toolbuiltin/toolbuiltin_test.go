@@ -124,6 +124,31 @@ func TestNewRegistersAllTools(t *testing.T) {
 	}
 }
 
+// TestNamesAndDisplayNames S6/D143：Names() 与 New() 的 Spec 名一一对应（词表对照的
+// 单一事实源不漂移），且中文词表覆盖全部内置工具。
+func TestNamesAndDisplayNames(t *testing.T) {
+	names := Names()
+	tools := New(nil, nil, nil, "")
+	if len(names) != len(tools) {
+		t.Fatalf("Names() = %d, New() = %d, want 一致", len(names), len(tools))
+	}
+	for i, tl := range tools {
+		if want := tl.Spec().Name; names[i] != want {
+			t.Fatalf("Names()[%d] = %q, want %q（须与 Spec 名一致）", i, names[i], want)
+		}
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		if seen[n] {
+			t.Fatalf("Names 重复 %s", n)
+		}
+		seen[n] = true
+		if DisplayName(n) == "" || DisplayName(n) == n {
+			t.Fatalf("%s 缺中文词表（DisplayName 回退原名字面）", n)
+		}
+	}
+}
+
 // TestMemoryScope 记忆工具只碰全局 + 当前会话两份（DESIGN §4.4）。
 func TestMemoryScope(t *testing.T) {
 	mem := newFakeMem()

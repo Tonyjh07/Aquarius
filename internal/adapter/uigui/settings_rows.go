@@ -48,12 +48,16 @@ const (
 	rowToolChars
 	rowToolTo
 	rowSysPrompt
-	rowMCPList
 	rowRaw
 	rowProvField
 	rowProvBtns
 	rowProvAdd
 	rowProvApply
+	// S6/D143：工具与 MCP 页。
+	rowBuiltin     // 内置工具行（name = 工具名；field = 快照下标）
+	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
+	rowToolsEmpty  // 占位/空态（text = 文案）
+	rowToolsStatus // 异步动作反馈状态行
 )
 
 // provider 字段槽位（rowDesc.field）。
@@ -125,8 +129,26 @@ func (f *settingsForm) pageRows(page int) []rowDesc {
 			{kind: rowToolChars}, {kind: rowToolTo},
 			sec("提示词"), {kind: rowSysPrompt},
 		}
-	case pageTools:
-		return []rowDesc{head, sec("MCP 与插件"), {kind: rowMCPList}}
+	case pageTools: // S6/D143：内置工具启停 + 插件管理（可交互；快照每帧同步）
+		rows := []rowDesc{head}
+		if f.tools == nil {
+			return append(rows, rowDesc{kind: rowToolsEmpty, text: "未接线（只读占位）"})
+		}
+		rows = append(rows, sec("内置工具（开关即时生效，无需重启）"))
+		for i := range f.toolsSnap.Builtins {
+			rows = append(rows, rowDesc{kind: rowBuiltin, field: i})
+		}
+		rows = append(rows, sec("MCP 与插件（来源 config / 插件目录）"))
+		for i := range f.toolsSnap.Plugins {
+			rows = append(rows, rowDesc{kind: rowPlugin, field: i})
+		}
+		if len(f.toolsSnap.Plugins) == 0 {
+			rows = append(rows, rowDesc{kind: rowToolsEmpty, text: "没有已声明的插件（config mcpServers 或 插件目录）"})
+		}
+		if f.toolsStatus != "" {
+			rows = append(rows, rowDesc{kind: rowToolsStatus})
+		}
+		return rows
 	default: // pageAdv
 		return []rowDesc{head, sec("config.json 原文"), {kind: rowRaw}}
 	}
@@ -145,6 +167,21 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	for p := 0; p < settingsPageCount; p++ {
 		for f.navBtns[p].Clicked(gtx) {
 			f.page = p
+		}
+	}
+	// S6/D143：工具页动作分发（按钮只在工具页渲染；快照取上帧同步值）。
+	for key, btn := range f.toolBtns {
+		if btn.Clicked(gtx) {
+			u.dispatchToolAction(f, key)
+		}
+	}
+	f.drainToolResults() // 异步动作结果回灌状态行
+	// 工具页原子快照（Revision 变了才重建行/按钮；同历史窗口径）。
+	if f.tools != nil {
+		cur := f.tools.Snapshot()
+		if cur.Revision != f.toolsRev {
+			f.toolsRev = cur.Revision
+			f.toolsSnap = cur
 		}
 	}
 	for f.save.Clicked(gtx) {
@@ -359,8 +396,23 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 				return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
 			case rowSysPrompt:
 				return editorBoxH(th, &f.sysPrompt, "人格（system prompt；空 = 内置默认。清空保存即恢复默认）", 80)(gtx)
-			case rowMCPList:
-				return mcpListRow(gtx, th, f)
+			// S6/D143：工具与 MCP 页。
+			case rowBuiltin:
+				return f.builtinToolRow(gtx, th, f.toolsSnap.Builtins[r.field])
+			case rowPlugin:
+				return f.pluginToolRow(gtx, th, f.toolsSnap.Plugins[r.field])
+			case rowToolsEmpty:
+				l := material.Body2(th, r.text)
+				l.Color = textDim
+				return l.Layout(gtx)
+			case rowToolsStatus:
+				l := material.Body2(th, f.toolsStatus)
+				if f.toolsErr {
+					l.Color = textError
+				} else {
+					l.Color = textDim
+				}
+				return l.Layout(gtx)
 			default: // rowRaw
 				return editorBoxH(th, &f.rawCfg, "整文件编辑；保存前 JSON 校验（解析失败原文件不动，Q10）", 220)(gtx)
 			}
@@ -545,25 +597,6 @@ func editorBoxH(th *material.Theme, ed *widget.Editor, hint string, h int) layou
 		})
 		return layout.Dimensions{Size: size}
 	}
-}
-
-// mcpListRow MCP 与插件只读清单（S4/D110③；「工具与 MCP」页，S6/D143 升级为可交互
-// 管理面）：声明名展示 + raw JSON 编辑指引。
-func mcpListRow(gtx layout.Context, th *material.Theme, f *settingsForm) layout.Dimensions {
-	txt := "（无声明——MCP server 经 config mcpServers 声明，插件经 plugins 目录发现）"
-	var parts []string
-	if len(f.snap.MCPServers) > 0 {
-		parts = append(parts, "MCP: "+strings.Join(f.snap.MCPServers, ", "))
-	}
-	if len(f.snap.Plugins) > 0 {
-		parts = append(parts, "插件: "+strings.Join(f.snap.Plugins, ", "))
-	}
-	if len(parts) > 0 {
-		txt = strings.Join(parts, "；") + "。"
-	}
-	l := material.Body2(th, txt+"　声明编辑走「高级」页 raw JSON（transport/args/env 等结构化字段不设表单）。")
-	l.Color = textDim
-	return l.Layout(gtx)
 }
 
 // sizeRow 窗口尺寸双数值档（D90）：宽 × 高（px），并排等分；空 = 保持缺省。

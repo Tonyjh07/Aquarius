@@ -460,3 +460,52 @@ func TestAuditClosedAfterClose(t *testing.T) {
 		t.Fatalf("二次 close 应幂等: %v", err)
 	}
 }
+
+// TestTailToolCalls S6/D143：尾行截取 + kind=tool + mcp: 前缀过滤 + 按插件名过滤 +
+// 文件不存在 = 空结果（非错误）+ 解析失败行跳过。
+func TestTailToolCalls(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+	if rows, err := TailToolCalls(path, "", 10); err != nil || len(rows) != 0 {
+		t.Fatalf("缺失文件 = %v, %v, want 空", rows, err)
+	}
+	writeAudit := func(lines ...string) {
+		data := ""
+		for _, l := range lines {
+			data += l + "\n"
+		}
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAudit(
+		`{"ts":"t0","kind":"llm","name":"m","dur_ms":1,"ok":true}`,
+		`{"ts":"t1","kind":"tool","name":"mcp:web:search","dur_ms":5,"ok":true}`,
+		`{"ts":"t2","kind":"tool","name":"builtin_think","dur_ms":1,"ok":true}`,
+		`{"ts":"t3","kind":"tool","name":"mcp:web:fetch","dur_ms":9,"ok":false,"err":"timeout"}`,
+		`{"ts":"t4","kind":"tool","name":"mcp:docs:read","dur_ms":2,"ok":true}`,
+		`坏行`,
+	)
+	rows, err := TailToolCalls(path, "", 10)
+	if err != nil {
+		t.Fatalf("tail: %v", err)
+	}
+	var names []string
+	for _, r := range rows {
+		names = append(names, r.Name)
+	}
+	want := []string{"mcp:web:search", "mcp:web:fetch", "mcp:docs:read"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("names = %v, want %v（llm/内置/坏行应被过滤）", names, want)
+	}
+	// 按插件名过滤：mcp:web:
+	rows, err = TailToolCalls(path, "web", 10)
+	if err != nil || len(rows) != 2 || rows[0].Name != "mcp:web:search" || rows[1].Name != "mcp:web:fetch" {
+		t.Fatalf("按名过滤 = %+v, %v", rows, err)
+	}
+	// 尾行上限：只扫最后 3 行（t4 + 坏行 + 尾空行）→ 仅 mcp:docs:read。
+	rows, err = TailToolCalls(path, "", 3)
+	if err != nil || len(rows) != 1 || rows[0].Name != "mcp:docs:read" {
+		t.Fatalf("尾行上限 = %+v, %v", rows, err)
+	}
+}

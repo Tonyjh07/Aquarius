@@ -75,6 +75,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			WindowWidth:   w.cfg.UI.WindowWidth,                                                            // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
 			WindowHeight:  w.cfg.UI.WindowHeight,
 			Welcome:       &welcomeManager{cfgPath: w.cfgPath, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey}, // D141：欢迎 / 首次运行引导数据面
+			Tools:         &toolsAdmin{w: w},                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）
 		})
 		w.ui = ui
 		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式

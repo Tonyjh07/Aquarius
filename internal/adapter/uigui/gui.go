@@ -112,6 +112,9 @@ type Options struct {
 	// Welcome 欢迎 / 首次运行引导数据面（D141/§15.7）：winWelcome 次窗（设置窗入口 +
 	// 首跑/标记缺失时自动开一次）；nil = 窗内为只读占位提示。
 	Welcome WelcomeManager
+	// Tools 工具与 MCP 管理面（S6/D143）：设置窗「工具与 MCP」页数据面 + 异步动作
+	// （内置启停热生效 / 插件启停 / 授权撤销与预授权 / 信任撤销 / 日志）；nil = 该页只读占位。
+	Tools ToolsAdmin
 }
 
 // zoomKnobs 双缩放旋钮（D90/§15.8）：元素缩放 × 正文字号，原子槽整体换存（成对生效）。

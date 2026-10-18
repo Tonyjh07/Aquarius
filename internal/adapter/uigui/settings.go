@@ -201,6 +201,16 @@ type settingsForm struct {
 	pages   [settingsPageCount]widget.List      // 每页一个滚动列表（构造处定轴向）
 	navBtns [settingsPageCount]widget.Clickable // 左侧导航栏项（按页缓存）
 
+	// 工具与 MCP 页（S6/D143）。
+	tools       ToolsAdmin                   // nil = 只读占位（未接线）
+	toolsSnap   ToolsSnapshot                // 每帧原子快照（本窗 goroutine 独占）
+	toolsRev    int64                        // 上帧 Revision（变了才重建行/按钮）
+	toolBtns    map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
+	toolRes     chan toolActionResult        // 异步动作结果（回灌状态行）
+	toolWait    int                          // 在途异步动作数（UI goroutine 增减）
+	toolsStatus string                       // 反馈文案（状态行）
+	toolsErr    bool                         // 反馈是否为错误
+
 	// 核心档控件（模型名/思考/档位/外观；provider 编辑走 provs）。
 	model    widget.Editor
 	hotkey   widget.Editor
@@ -281,6 +291,8 @@ func newSettingsFormState() *settingsForm {
 		theme:       cycleField{displays: themeLevels, values: themeValues},
 		scale:       cycleField{displays: zoomLevels, values: zoomValues},
 		testResults: make(chan testOutcome, 8),
+		toolRes:     make(chan toolActionResult, 16),
+		toolBtns:    map[string]*widget.Clickable{},
 	}
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
 	// 按视口**宽**迭代 → 只画首行、其余空白窗底）。
@@ -318,6 +330,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	if u.opts.ProviderMgr != nil {
 		f.loadProviders(u.opts.ProviderMgr.Snapshot()) // D110②：provider 编辑区
 	}
+	f.tools = u.opts.Tools // S6/D143：工具与 MCP 管理面（nil = 只读占位）
 	if u.opts.Settings == nil {
 		return f
 	}

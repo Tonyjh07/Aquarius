@@ -2033,3 +2033,40 @@
   `TestSettingsPagesRenderContent`（逐页离屏单帧渲染，判据 = 每页内容区非底色像素 ≥1000——防「某页空白」）、
   `TestSettingsFrameRowsFillViewport` 改到新几何（900×700px @1.25，判据限定在全局底栏之上的页内容区）、
   `TestSettingsWindowGeometry`（几何 + 页内容区宽不倒退）。
+
+### D143 · 工具与 MCP 管理页：内置启停 + 插件授权/信任/日志（2026-10-17，S6）
+
+> **驱动**：roadmap 表 #7「工具与 MCP 管理」——插件只有 `/plugin enable|disable` 命令行，设置窗
+> 「工具与 MCP」页自 S4/D110③ 起是只读清单；内置工具（17 个 toolbuiltin + `context_compact`）**无任何
+> 启停机制**（只 `think` 经 `model.think_tool` 装配期隐藏，改后重启才生效）。S6 = 把这块做成设置窗的
+> 可交互管理面：内置工具启停（热生效）+ 插件启停 / 授权（grant）管理 / 信任撤销 / 调用日志。S4d/D142
+> 的分页先行为本页提供了落点（「工具与 MCP」页）。
+
+- **内置启停（热生效）**：统一到 config 新段 **`tools.disabled`**（内置工具禁用名清单，含 `think`
+  草稿工具与 `context_compact`）。`toolrun.Runner` 持禁用集：`Specs` 过滤、`Execute` 对禁用名按
+  **unknown 拒绝**（与未注册不可区分——模型侧拿到的工具面与旧行为一致）。**默认推导不改今天行为**：
+  键缺失 ⇒ `["think"]`（D34 现行为）；`model.think_tool == true` ⇒ 空集（兼容读取：老配置显式开了
+  草稿工具就维持可见）。**只内存推导、首次动开关才落键**（写 `tools.disabled`）；`model.think_tool`
+  退役为兼容读取。删 `assembleTools` 装配期摘 think（改为 config 驱动，重启不再参与可见性判定）。
+  `context_compact` 也走同一清单——页面写明后果：禁用后模型失去**自管理上下文**能力（自动压缩与
+  `/compact` 仍在）。
+- **授权（展示 + 撤销 + 手动预授权）**：撤销能力（`RevokeGrant`）**必须同时停用该插件并清除
+  `granted`**——capability 在能力 spawn 时注入、无法从运行中会话回收，不清会留"已授权但已停用"的
+  悬挂态；再启用即重走确认。撤销信任（`RevokeTrust`）清 D138 指纹 + 断开（仅 `source=plugins`
+  显示；config 来源 = 用户显式信任，不给撤销）。手动预授权（`GrantCap`）= 免一次确认写入
+  `granted`，UI 标注「省一次确认，不等于绕过风险」。
+- **日志**：新增 `/plugin logs [name]`——tail `audit.log`（`kind=tool` + `mcp:<name>:` 过滤，行数
+  上限 200）；无参 = 各插件最近调用摘要。`app.PluginAdmin` 增 `Logs(name string) (string, error)`
+  （命令打印文本）。设置窗「打开日志」按钮同源复用 `/memory` 的 `pickEditor`（系统编辑器打开）。
+- **数据面（消费方定义）**：`uigui.ToolsAdmin`（装配根实现）：`Snapshot()` 返回原子快照（含
+  `Revision`，任何变更递增）/ `SetBuiltinEnabled` / `SetPluginEnabled` / `GrantCap` / `RevokeGrant` /
+  `RevokeTrust` / `Logs`。内置清单词表 = `toolbuiltin.Names()` + 中文词表（`context_compact` 由装配
+  根补词）。
+- **跨窗刷新**：`host.OnChange` + 内置变更 → 装配根原子发布快照并递增 `Revision`（复用原子槽模型）；
+  设置窗每帧读原子快照，`Revision` 变了才重建行。**动作一律异步**（goroutine + 结果通道 + `Invalidate`
+  回灌）——`Host.Enable` 拨号上限 15s、信任/能力确认弹窗在主窗，次窗同步调必冻窗。
+- **边界**：安全收尾③（MCP risk 按来源分流）**不并入**本步（另作单独一小步）；工具页行内显式列出
+  「来源 = config / 插件目录」。MCP 插件工具的启停仍走插件启停（不进 `tools.disabled`）。
+- **测试**：`toolrun` 禁用集（Specs 过滤 + Execute unknown 拒绝 + `SetDisabled` 热更）；`plugin` host
+  新增 `GrantCap`/`RevokeGrant`（停用 + 清 granted）/`RevokeTrust`（清指纹 + 断开）契约；`/plugin logs`
+  过滤与摘要（假 audit.log）；`uigui` 工具页离屏渲染 + 动作异步回灌（假 `ToolsAdmin`）。

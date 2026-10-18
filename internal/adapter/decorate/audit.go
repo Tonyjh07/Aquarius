@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -204,6 +206,57 @@ func (s *auditStream) finish(err error) {
 // ---------------------------------------------------------------------------
 // 工具调用审计
 // ---------------------------------------------------------------------------
+
+// ToolCallLine 审计日志中一条工具调用行（S6/D143 日志查看面的解码形态）。
+type ToolCallLine struct {
+	TS    string `json:"ts"`
+	Name  string `json:"name"`
+	DurMS int64  `json:"dur_ms"`
+	OK    bool   `json:"ok"`
+	Err   string `json:"err,omitempty"`
+}
+
+// TailToolCalls 读审计文件尾部的工具调用行（S6/D143）：只取最后 last 行内 kind=tool
+// 且 Name 以 "mcp:" 开头的行；mcpName 非空时再按前缀 "mcp:<mcpName>:" 过滤。
+// 文件不存在 = 空结果（无记录，非错误）；解析失败的行跳过（防御：日志轮转/截断）。
+func TailToolCalls(path, mcpName string, last int) ([]ToolCallLine, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("读取审计日志: %w", err)
+	}
+	lines := strings.Split(string(data), "\n")
+	if last > 0 && len(lines) > last {
+		lines = lines[len(lines)-last:]
+	}
+	prefix := "mcp:"
+	if mcpName != "" {
+		prefix = "mcp:" + mcpName + ":"
+	}
+	out := make([]ToolCallLine, 0)
+	for _, ln := range lines {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			continue
+		}
+		var probe struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal([]byte(ln), &probe); err != nil || probe.Kind != "tool" ||
+			!strings.HasPrefix(probe.Name, prefix) {
+			continue
+		}
+		var row ToolCallLine
+		if err := json.Unmarshal([]byte(ln), &row); err != nil {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
 
 // AuditTool 工具执行审计装饰器：Execute 每次记一行（工具名/耗时/结果状态）。
 func AuditTool(inner port.ToolRunner, a *Audit) port.ToolRunner {

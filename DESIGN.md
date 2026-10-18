@@ -245,7 +245,7 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 |---|---|---|
 | `memory_list` / `memory_read` / `memory_search` | 记忆读取与检索（只见全局 + 当前会话两份，按文档名寻址） | Safe |
 | `memory_write` | 写入记忆文档（`name`=全局/当前会话；`mode`=append 缺省 / overwrite） | Confirm |
-| `think` | 显式整理思路（no-op）；可见性走 config `model.think_tool`，**默认隐藏**（D34：原生思考为主，需要草稿工具时配置启用） | Safe |
+| `think` | 显式整理思路（no-op）；可见性走 config `tools.disabled`（**默认隐藏**，D143：含 `think`；`model.think_tool` 退役为兼容读取，D34 原生思考为主，需要草稿工具时在设置窗「工具与 MCP」页启用） | Safe |
 | `sleep` | 等待 N 秒（停顿或等后台任务；取消可中断；1–3600s，超缺省超时需在调用上配 `timeout_sec`，D38/D39） | Safe |
 | `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 等级矩阵，读全盘免确认） | Safe |
 | `file_write` / `file_delete` | 文件写入 / 删除 | Confirm |
@@ -599,6 +599,12 @@ config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
    （会话终止感知 `Wait`）→ 崩溃自动重启（限次 + 退避）→ 关机优雅 `shutdown`；
    主动健康检查与按需懒加载未实现，见 §14。
 5. **可观测**：记录每个调用的 插件名/耗时/结果状态，供 `/plugin` 命令查看（同源数据进审计日志，§8）。
+6. **管理面（S6/D143）**：设置窗「工具与 MCP」页与 `/plugin` 命令共用宿主管理面——
+   `GrantCap`（手动预授权：免一次确认写入 `granted`）/ `RevokeGrant`（**撤销能力 = 同时停用该插件
+   并清除 `granted`**——capability 在能力 spawn 时注入、无法从运行中会话回收，不清会留悬挂态；
+   再启用即重走确认）/ `RevokeTrust`（撤销插件目录来源的启动信任：清 D138 指纹 + 断开，仅
+   `source=plugins`；config 来源 = 用户显式信任，不提供撤销）/ `Logs`（tail `audit.log` 的
+   `kind=tool` + `mcp:<name>:` 行，行数上限 200）。
 
 ---
 
@@ -704,7 +710,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/think [on\|off]` | 无参：显示原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发 |
 | `/effort [级别]` | 无参：显示当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off = 清除）写回 config `model.reasoning_effort`；**是否真发由 `/think` 决定**，on 且未设档则不发（交服务端默认，D34） |
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
-| `/plugin [list\|enable\|disable]` | MCP 插件管理（D31）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效 |
+| `/plugin [list\|enable\|disable\|logs]` | MCP 插件管理（D31/D143）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效；`logs [name]` = tail `audit.log` 的插件调用行（无参给各插件最近调用摘要，S6） |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
@@ -838,9 +844,11 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "name": "gpt-4o-mini",        // 当前模型名（在 primary provider 的 models 内）
     "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）
     "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
-    "think_tool": false,          // think 草稿工具可见性（默认隐藏，D34）
     "echo_thinking": true        // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
   },
+  "tools": { "disabled": ["think"] }, // 内置工具禁用清单（S6/D143）：热生效（无需重启）；键缺失 = 默认
+                                      // 推导（兼容 model.think_tool=true 则空集，否则 ["think"]——D34 现行为）；
+                                      // 首次在设置窗动开关才落键。含 think 草稿工具与 context_compact
   "ui": { "kind": "gui", "hotkey": "", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）；scale: 元素缩放倍率（默认 1.0）；font_size: 正文字号 sp（默认 15，最终字号 = font_size × scale）；window_width/window_height: 主窗像素尺寸（0 = 缺省 608×460dp 现行为）——三旋钮口径与热生效见 §15.8/D90；welcomed: 欢迎 / 首次运行引导是否已看（D141；键缺失 = 未看——首跑或标记缺失时自动打开欢迎窗一次，完成或显式关闭即置位）
   "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
   "input": { "asr": "whisper-api", "mic": true },
@@ -1374,7 +1382,8 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   **S4/D110③ 扩为全量分组页、S4d/D142 起改为五页分组导航**（见下「设置窗分组导航」）：
   Profile 区（当前/新建/复制/切换，重启生效）、provider 列表
   编辑区（全量应用 + 设为主 + 删除 + 连通性「测试」= 真实最小请求，D110②）、输出/限额/提示词、
-  MCP 与插件只读清单、高级 raw JSON 整文件编辑（保存前 JSON 校验，Q10）；密钥只写不回显、
+  **工具与 MCP 管理页（S6/D143：内置工具启停热生效 + 插件启停/授权/信任/日志）**、高级 raw JSON
+  整文件编辑（保存前 JSON 校验，Q10）；密钥只写不回显、
   不回显明文——D35）｜**会话历史**（**会话树关系图 relation-map**——D112/D120/S3：
   **左栏会话选择 + 右栏关系图 + 状态栏**（`共 N 条 · 呈现 M`，A7）；节点填充色 = **层号深度色带**
   （`Level mod 4`）、形状 = **Role**（root 空心圆 / user 圆角方 / assistant 圆 / system 菱形）、
@@ -1406,10 +1415,22 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   **720×560（min 620×420）**；内容区约 552dp，比改前的 532dp 略宽。**五页**：
   **常规**（Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出）、**模型**（当前模型名 /
   原生思考与推理档位 / provider 列表编辑区）、**对话**（限额 / 提示词）、**工具与 MCP**
-  （MCP 与插件清单；S6/D143 起升级为可交互管理面）、**高级**（config.json raw JSON）。
+  （内置工具启停 + MCP 与插件管理，S6/D143）、**高级**（config.json raw JSON）。
   控件事先常驻表单对象，**切页只是换渲染**——跨页编辑天然保留；「保存并应用」仍是一次
   **全量 patch**（`f.snap` 作跨页 diff 基准），读写契约不变（见下「设置窗读写契约」）。
   页名集与页序为契约（测试锁定）；每页必须**确有内容**（逐页离屏渲染回归，防「某页空白」）。
+- **工具与 MCP 管理页（S6/D143）**：设置窗「工具与 MCP」页 = **内置工具启停 + 插件管理**的
+  可交互面（此前为只读清单）：
+  - **内置工具**：`tools.disabled` 驱动的启停开关（热生效，无需重启）；`think` 草稿工具默认隐藏、
+    `context_compact` 默认可见；`context_compact` 禁用后果在页面写明（模型失去自管理上下文能力，
+    自动压缩与 `/compact` 仍在）。
+  - **插件**：状态/来源（config | 插件目录）/传输/能力授权（已授权/未授权）展示；动作 = 启用/
+    停用、**逐能力**撤销 / 手动预授权（标注「省一次确认，不等于绕过风险」）、撤销信任（仅
+    插件目录来源且已信任）、打开日志。撤销能力 = 同时停用该插件并清除 `granted`（再启用即重走
+    确认）。
+  - **数据面**：`uigui.ToolsAdmin`（消费方定义、装配根实现）——原子快照（含 `Revision`）+ 异步
+    动作（goroutine + 结果通道 + `Invalidate` 回灌）；`host.OnChange` 与内置变更统一递增
+    `Revision`。跨窗刷新同历史窗口径（每帧读原子快照、`Revision` 变才重建行）。
 - **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 ULW 形状位图（常规
   不透明窗）、无位置记忆、不置顶、不拖拽把手；任务栏条目照常
   （`WS_EX_TOOLWINDOW` 只挂主窗 HWND，次窗不参与）。

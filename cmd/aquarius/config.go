@@ -41,10 +41,20 @@ type fileConfig struct {
 	Permissions  permissionsConfig `json:"permissions"`
 	Output       outputConfig      `json:"output"`
 	Limits       limitsConfig      `json:"limits"`
+	// Tools 工具面（S6/D143）：内置工具禁用清单（热生效）。
+	Tools toolsConfig `json:"tools"`
 	// MCPServers MCP server 声明（D30/D31，M4 启用；校验见 plugin.MCPServer.Validate）。
 	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
 	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。
 	Plugins map[string]plugin.State `json:"plugins"`
+}
+
+// toolsConfig 工具面配置（S6/D143）。
+type toolsConfig struct {
+	// Disabled 内置工具禁用清单（含 think 草稿工具与 context_compact）；nil = 键缺失
+	// → 默认推导（兼容 model.think_tool=true 则空集，否则 ["think"]——D34 现行为）。
+	// 只在设置窗动开关时写键（推导态不写盘）。
+	Disabled []string `json:"disabled,omitempty"`
 }
 
 // outputConfig 输出器开关（DESIGN §8；M3 启用 notify，tts 见 D27 解析但不启用）。
@@ -215,9 +225,9 @@ const defaultConfig = `{
     "name": "gpt-4o-mini",
     "think": true,
     "reasoning_effort": "",
-    "think_tool": false,
     "echo_thinking": true
   },
+  "tools": { "disabled": ["think"] },
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "input": { "asr": "whisper-api", "mic": true },
@@ -541,5 +551,21 @@ func (c *cfgWriter) persistEffort(level string) error {
 			return
 		}
 		model["reasoning_effort"] = level
+	})
+}
+
+// persistToolsDisabled 写回 config 的 tools.disabled（S6/D143）：只在设置窗动开关时
+// 调用（推导态不写盘）；空集 = 显式空数组（≠ 键缺失的推导 ["think"]，见 builtinDisabled）。
+func (c *cfgWriter) persistToolsDisabled(disabled []string) error {
+	return persistConfig(c.path, func(generic map[string]any) {
+		tools, _ := generic["tools"].(map[string]any)
+		if tools == nil {
+			tools = map[string]any{}
+			generic["tools"] = tools
+		}
+		if len(disabled) == 0 {
+			disabled = []string{} // 显式空数组（≠ 键缺失推导 ["think"]；nil 会编码成 null）
+		}
+		tools["disabled"] = disabled
 	})
 }

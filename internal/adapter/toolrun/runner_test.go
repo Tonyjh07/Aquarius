@@ -723,3 +723,55 @@ func TestRunnerRemove(t *testing.T) {
 	}
 	r.Remove("不存在的工具") // 无操作不 panic
 }
+
+// TestDisabledSet S6/D143：禁用集过滤 Specs、Execute 按 unknown 拒绝、SetDisabled
+// 热更（空集 = 全部启用；恢复禁用 = 重新过滤）。
+func TestDisabledSet(t *testing.T) {
+	ctx := context.Background()
+	r := New(Options{
+		Tools:     []port.Tool{execTool("think", tool.Safe, "ok"), execTool("memory_read", tool.Safe, "m"), execTool("file_read", tool.Safe, "f")},
+		Disabled:  map[string]bool{"think": true},
+		Level:     levelFn(perm.Strict),
+		Confirmer: &scriptConf{},
+	})
+
+	specs, err := r.Specs(ctx)
+	if err != nil {
+		t.Fatalf("specs: %v", err)
+	}
+	got := map[string]bool{}
+	for _, s := range specs {
+		got[s.Name] = true
+	}
+	if !got["memory_read"] || !got["file_read"] || got["think"] {
+		t.Fatalf("Specs 过滤错误: %v（think 应被过滤）", got)
+	}
+	// Execute：禁用工具按 unknown 拒绝（与未注册不可区分）。
+	res, err := r.Execute(ctx, c("think", `{}`))
+	if err != nil || res.OK || !strings.Contains(res.Err, "unknown tool \"think\"") {
+		t.Fatalf("禁用工具执行 = %+v, %v（want unknown 拒绝）", res, err)
+	}
+	// 未禁用工具照常。
+	res, err = r.Execute(ctx, c("memory_read", `{}`))
+	if err != nil || !res.OK {
+		t.Fatalf("未禁用工具执行 = %+v, %v", res, err)
+	}
+
+	// 热更：全部启用 → think 恢复可见可执行；再禁用 → 又过滤。
+	r.SetDisabled(nil)
+	specs, _ = r.Specs(ctx)
+	if len(specs) != 3 {
+		t.Fatalf("全部启用后 specs = %d, want 3", len(specs))
+	}
+	if res, err = r.Execute(ctx, c("think", `{}`)); err != nil || !res.OK {
+		t.Fatalf("启用后 think 执行 = %+v, %v", res, err)
+	}
+	r.SetDisabled(map[string]bool{"think": true, "file_read": true})
+	specs, _ = r.Specs(ctx)
+	if len(specs) != 1 || specs[0].Name != "memory_read" {
+		t.Fatalf("再禁用后 specs = %+v, want 仅 memory_read", specs)
+	}
+	if got := r.Disabled(); !got["think"] || !got["file_read"] || len(got) != 2 {
+		t.Fatalf("Disabled() = %v", got)
+	}
+}

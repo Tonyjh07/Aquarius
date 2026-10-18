@@ -598,6 +598,156 @@ func TestHostPersistErrorSurfaced(t *testing.T) {
 // boolPtr 状态字面量辅助。
 func boolPtr(b bool) *bool { return &b }
 
+// ---------------------------------------------------------------------------
+// 管理面（S6/D143）：GrantCap / RevokeGrant / RevokeTrust
+// ---------------------------------------------------------------------------
+
+// TestHostGrantCapManual 手动预授权：免确认写入 granted + 落盘 + 触发 OnChange。
+// 未声明插件报错。
+func TestHostGrantCapManual(t *testing.T) {
+	changed := 0
+	var persisted map[string]State
+	h := New(Deps{
+		Dial: (&fakeDial{}).dialer(),
+		ConfigServers: map[string]MCPServer{
+			"web": {MCPConfig: MCPConfig{Transport: "stdio", Command: "srv"}, Capabilities: []string{"network"}},
+		},
+		Persist:  func(s map[string]State) error { persisted = s; return nil },
+		OnChange: func() { changed++ },
+	})
+	defer h.Close()
+	h.Start(context.Background()) // 无 Confirmer：revoked；授权态独立于连接态
+
+	before := changed
+	if err := h.GrantCap("web", "network"); err != nil {
+		t.Fatalf("GrantCap: %v", err)
+	}
+	st, ok := persisted["web"]
+	if !ok || !st.HasGranted("network") {
+		t.Fatalf("GrantCap 未落盘 granted: %+v", persisted)
+	}
+	found := false
+	for _, i := range h.List() {
+		if i.Name == "web" {
+			found = contains(i.Granted, "network")
+		}
+	}
+	if !found {
+		t.Fatal("List 未反映新授权")
+	}
+	if changed != before+1 {
+		t.Fatalf("OnChange 次数 %d → %d, want +1", before, changed)
+	}
+	// 幂等：重复预授权不重复追加。
+	if err := h.GrantCap("web", "network"); err != nil {
+		t.Fatalf("重复 GrantCap: %v", err)
+	}
+	for _, i := range h.List() {
+		if i.Name == "web" && countOf(i.Granted, "network") != 1 {
+			t.Fatalf("granted 重复: %v", i.Granted)
+		}
+	}
+	if err := h.GrantCap("nope", "x"); err == nil || !strings.Contains(err.Error(), "未声明") {
+		t.Fatalf("未声明插件 GrantCap err = %v, want 未声明报错", err)
+	}
+}
+
+// TestHostRevokeGrantDisables 撤销能力 = 同时停用该插件并清除 granted（S6/D143）；
+// 再启用重走能力确认。
+func TestHostRevokeGrantDisables(t *testing.T) {
+	on := true
+	var persisted map[string]State
+	conf := &fakeConfirm{answers: []bool{true}}
+	dial := &fakeDial{}
+	h := New(Deps{
+		Dial:    dial.dialer(),
+		Confirm: conf,
+		ConfigServers: map[string]MCPServer{
+			"web": {MCPConfig: MCPConfig{Transport: "stdio", Command: "srv"}, Capabilities: []string{"network"}},
+		},
+		States:  map[string]State{"web": {Enabled: &on, Granted: []string{"network"}}},
+		Persist: func(s map[string]State) error { persisted = s; return nil },
+	})
+	h.Start(context.Background())
+	defer h.Close()
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "初始就绪")
+
+	if err := h.RevokeGrant("web", "network"); err != nil {
+		t.Fatalf("RevokeGrant: %v", err)
+	}
+	st := persisted["web"]
+	if st.IsEnabled() || len(st.Granted) != 0 {
+		t.Fatalf("RevokeGrant 后 state = %+v, want 停用 + 清 granted", st)
+	}
+	if statusOf(h, "web") != StatusDisabled {
+		t.Fatalf("status = %s, want disabled", statusOf(h, "web"))
+	}
+	if len(h.Ready()) != 0 {
+		t.Fatal("撤销后不应有就绪会话")
+	}
+	// 再启用：能力确认重新弹（conf 有剩余 true）→ 重新授权 + 就绪。
+	if err := h.Enable(context.Background(), "web"); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "重启用就绪")
+	// 预授权（Granted）已在初始态：Start 不弹；重启用才重走能力确认（正好 1 条）。
+	if got := len(conf.prompts); got != 1 {
+		t.Fatalf("确认提示 = %d, want 1（仅重启用的能力确认）", got)
+	}
+}
+
+// TestHostRevokeTrust 撤销插件目录来源插件的启动信任：config 来源报错；plugins 来源
+// 清指纹 + 断开 + 状态 revoked；再启用重走信任门。
+func TestHostRevokeTrust(t *testing.T) {
+	on := true
+	h1 := New(Deps{
+		Dial:          (&fakeDial{}).dialer(),
+		ConfigServers: map[string]MCPServer{"web": stdioDecl()},
+		States:        map[string]State{"web": {Enabled: &on}},
+	})
+	if err := h1.RevokeTrust("web"); err == nil || !strings.Contains(err.Error(), "config") {
+		t.Fatalf("config 来源 RevokeTrust err = %v, want 报错", err)
+	}
+
+	h, conf, persisted, _ := trustHost(t, stdioManifest(), nil)
+	h.Start(context.Background())
+	defer h.Close()
+	if statusOf(h, "p") != StatusReady {
+		t.Fatalf("status = %s, want ready", statusOf(h, "p"))
+	}
+	before := len(conf.prompts)
+	if err := h.RevokeTrust("p"); err != nil {
+		t.Fatalf("RevokeTrust: %v", err)
+	}
+	if persisted()["p"].Trusted != "" {
+		t.Fatal("RevokeTrust 未清信任指纹")
+	}
+	if statusOf(h, "p") != StatusRevoked {
+		t.Fatalf("status = %s, want revoked", statusOf(h, "p"))
+	}
+	// 再启用：信任门重走（新确认）。
+	if err := h.Enable(context.Background(), "p"); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if len(conf.prompts) != before+1 {
+		t.Fatalf("重启用应重走信任门: prompts %d → %d", before, len(conf.prompts))
+	}
+	waitFor(t, func() bool { return statusOf(h, "p") == StatusReady }, "重信任后就绪")
+}
+
+// contains / countOf 小清单辅助（测试用）。
+func contains(list []string, s string) bool { return countOf(list, s) > 0 }
+
+func countOf(list []string, s string) int {
+	n := 0
+	for _, v := range list {
+		if v == s {
+			n++
+		}
+	}
+	return n
+}
+
 // itoa 小整数转串（测试用，避免额外依赖）。
 func itoa(n int) string {
 	if n == 0 {

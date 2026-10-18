@@ -88,17 +88,6 @@ func resolveProfile(dir, flagName string) (string, error) {
 	return name, nil
 }
 
-// dropTool 摘除指定名字的工具（model.think_tool=false 时隐藏 think，D34）。
-func dropTool(tools []port.Tool, name string) []port.Tool {
-	out := make([]port.Tool, 0, len(tools))
-	for _, t := range tools {
-		if t.Spec().Name != name {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
 // minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（DESIGN §7.1）。
 const minOutputReserve = 1024
 
@@ -177,6 +166,11 @@ type wiring struct {
 	// 闭包后绑定
 	host *plugin.Host
 	sess *app.Session
+
+	// S6/D143：工具与 MCP 管理面——内置工具禁用集的运行态持有（启动推导，开关热更）
+	// 与快照修订号（host.OnChange + 内置变更递增；设置窗按 Revision 重建行）。
+	disabledTools *disabledHolder
+	toolsRev      atomic.Int64
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -291,7 +285,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Ingestors:     []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs)},
 		UI:            w.presenter,
 		OpenMemory:    openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
-		Plugins:       hostAdmin{w.host},
+		Plugins:       hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
 		ListModels:    func(ctx context.Context) ([]port.ModelInfo, error) { return w.client.Models(ctx) },
 		ProviderName:  func() string { return w.primary.Name }, // D110②：/model 展示（静态，重启生效）
 		PersistModel:  w.persist.persistModel,

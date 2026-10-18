@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -14,6 +15,8 @@ type fakeAdmin struct {
 	enabled   []string
 	disabled  []string
 	enableErr error
+	logsOut   string
+	logsErr   error
 }
 
 func (f *fakeAdmin) Plugins() []PluginInfo { return f.list }
@@ -29,6 +32,11 @@ func (f *fakeAdmin) Enable(_ context.Context, name string) error {
 func (f *fakeAdmin) Disable(name string) error {
 	f.disabled = append(f.disabled, name)
 	return nil
+}
+
+// Logs S6/D143：/plugin logs 测试替身。
+func (f *fakeAdmin) Logs(name string) (string, error) {
+	return f.logsOut, f.logsErr
 }
 
 // TestSessionPluginCommand /plugin：list 格式（状态/能力授权/统计/报因）、
@@ -96,6 +104,32 @@ func TestSessionPluginEmptyList(t *testing.T) {
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "plugin"}})
 	if err != nil || !strings.Contains(out, "没有已声明的插件") {
 		t.Fatalf("out=%q err=%v", out, err)
+	}
+}
+
+// TestSessionPluginLogs /plugin logs [name]（S6/D143）：无参/带名透传、用法错误、
+// 实现方报错上抛。
+func TestSessionPluginLogs(t *testing.T) {
+	ctx := context.Background()
+	s := &Session{plugins: &fakeAdmin{logsOut: "插件 web 摘要…"}}
+
+	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"logs"}}})
+	if err != nil || !strings.Contains(out, "插件 web 摘要") {
+		t.Fatalf("logs 无参 = %q, %v", out, err)
+	}
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"logs", "web"}}})
+	if err != nil || !strings.Contains(out, "插件 web 摘要") {
+		t.Fatalf("logs 带名 = %q, %v", out, err)
+	}
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"logs", "a", "b"}}}); err == nil ||
+		!strings.Contains(err.Error(), "用法") {
+		t.Fatalf("logs 多参 err = %v, want 用法错误", err)
+	}
+
+	fail := &Session{plugins: &fakeAdmin{logsErr: errors.New("读取审计日志失败")}}
+	if _, err := fail.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"logs", "web"}}}); err == nil ||
+		!strings.Contains(err.Error(), "读取审计日志失败") {
+		t.Fatalf("logs 实现方报错未上抛: %v", err)
 	}
 }
 

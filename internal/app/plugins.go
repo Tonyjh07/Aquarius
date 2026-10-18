@@ -34,6 +34,9 @@ type PluginAdmin interface {
 	Enable(ctx context.Context, name string) error
 	// Disable 停用并断开；未声明的插件报错。
 	Disable(name string) error
+	// Logs 插件调用日志（S6/D143）：tail 审计日志的 kind=tool + mcp:<name>: 行；
+	// name 空 = 各插件最近调用摘要（行数上限由实现方控制）。
+	Logs(name string) (string, error)
 }
 
 // execPlugin /plugin [list|enable <name>|disable <name>]（§7.3 / D31）。
@@ -71,8 +74,21 @@ func (s *Session) execPlugin(ctx context.Context, args []string) (string, error)
 			return "", err
 		}
 		return fmt.Sprintf("已停用 %s", args[1]), nil
+	case "logs": // S6/D143：tail audit.log 的插件调用行（无参 = 各插件最近调用摘要）
+		if len(args) > 2 {
+			return "", errors.New("用法: /plugin logs [name]")
+		}
+		name := ""
+		if len(args) == 2 {
+			name = args[1]
+		}
+		out, err := s.plugins.Logs(name)
+		if err != nil {
+			return "", err
+		}
+		return out, nil
 	default:
-		return "", errors.New("用法: /plugin [list|enable <name>|disable <name>]")
+		return "", errors.New("用法: /plugin [list|enable <name>|disable <name>|logs [name]]")
 	}
 }
 

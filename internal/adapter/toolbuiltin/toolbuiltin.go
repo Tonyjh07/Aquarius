@@ -25,6 +25,12 @@ type PathOf func(name string) (string, bool)
 // sandbox 为特权沙盒目录（装配根注入）：仅用于 file_* 相对路径报错时给出
 // 可行动的替代提示（D34 反馈；空 = 不提示，测试缺省）。
 func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox string) []port.Tool {
+	return allTools(mem, pathOf, jobs, sandbox)
+}
+
+// allTools 内置工具清单（装配序 = Spec 注册序 = Names 序；S6/D143 词表对照的
+// 单一事实源——New 与 Names/DisplayName 不得各自维护一份）。
+func allTools(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox string) []port.Tool {
 	return []port.Tool{
 		&memoryList{mem: mem},
 		&memoryRead{mem: mem},
@@ -44,6 +50,44 @@ func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox stri
 		&jobLogs{jobs: jobs},
 		&jobKill{jobs: jobs},
 	}
+}
+
+// Names 内置工具名清单（装配序；S6/D143 工具管理页清单的事实源）。
+func Names() []string {
+	out := make([]string, 0, len(allTools(nil, nil, nil, "")))
+	for _, t := range allTools(nil, nil, nil, "") {
+		out = append(out, t.Spec().Name)
+	}
+	return out
+}
+
+// displayNames 内置工具中文词表（S6/D143 工具管理页展示；仅 UI 文案，非契约）。
+var displayNames = map[string]string{
+	"memory_list":   "记忆索引",
+	"memory_read":   "读取记忆",
+	"memory_search": "检索记忆",
+	"memory_write":  "写入记忆",
+	"file_read":     "读取文件",
+	"file_list":     "列出目录",
+	"file_search":   "检索文件",
+	"file_write":    "写入文件",
+	"file_delete":   "删除文件",
+	"think":         "思考草稿",
+	"sleep":         "等待",
+	"term_exec":     "执行命令",
+	"job_start":     "启动任务",
+	"job_list":      "任务列表",
+	"job_status":    "任务状态",
+	"job_logs":      "任务日志",
+	"job_kill":      "结束任务",
+}
+
+// DisplayName 内置工具中文词表查询（未收录 = 原名字面）。
+func DisplayName(name string) string {
+	if s, ok := displayNames[name]; ok {
+		return s
+	}
+	return name
 }
 
 // requireJobs 任务类工具的管理器校验（未装配时明确报错，不 panic）。

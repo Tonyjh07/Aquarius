@@ -171,13 +171,12 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 		p, err := w.mem.Path(name)
 		return p, err == nil
 	}, jobs, w.sandboxDir)
-	// think 草稿工具可见性（D34）：默认隐藏（model.think_tool 缺省 false），
-	// 配置启用后重启生效——装配期摘除，不做能力探测、运行时零开销。
-	if !w.cfg.Model.ThinkTool {
-		builtinTools = dropTool(builtinTools, "think")
-	}
+	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
+	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
+	w.disabledTools = newDisabledHolder(w.builtinDisabled())
 	w.runner = toolrun.New(toolrun.Options{
 		Tools:       builtinTools,
+		Disabled:    w.disabledTools.snapshot(),
 		Confirmer:   confirmer,
 		Level:       w.lvl.Get,
 		SandboxPath: w.sandboxDir,

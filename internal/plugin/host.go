@@ -44,6 +44,7 @@ type Info struct {
 	Risk         string
 	Enabled      bool
 	Status       Status
+	Trusted      bool // D143：启动信任指纹是否存在（source=plugins 撤销信任入口的显示条件）
 	Restarts     int
 	LastErr      string
 	Stats        Stats // 就绪时为会话实时统计，否则零值
@@ -488,6 +489,86 @@ func (h *Host) Disable(name string) error {
 	return nil
 }
 
+// GrantCap 手动预授权一个能力（S6/D143）：免一次确认写入 State.Granted 并落盘。
+// 插件未启用时仅记录授权——下一次 Enable 不再对该能力弹确认（省一次确认，不等于
+// 绕过风险；UI 需标注）。未知能力不校验（声明清单之外的能力由调用方负责，host 只记状态）。
+func (h *Host) GrantCap(name string, cap string) error {
+	h.mu.Lock()
+	if _, ok := h.decls[name]; !ok {
+		h.mu.Unlock()
+		return fmt.Errorf("未声明的插件 %q", name)
+	}
+	cur := h.states[name]
+	if !cur.HasGranted(cap) {
+		cur.Granted = append(cur.Granted, cap)
+		h.states[name] = cur
+	}
+	h.mu.Unlock()
+	perr := h.saveStates()
+	h.changed() // 授权态变化可见（设置窗快照刷新）
+	if perr != nil {
+		return fmt.Errorf("%s 已在本次运行预授权 %s，但状态写回 config 失败: %w", name, cap, perr)
+	}
+	return nil
+}
+
+// RevokeGrant 撤销一个能力（S6/D143）：**同时停用该插件并清除该能力授权**——
+// capability 在能力 spawn 时注入、无法从运行中会话回收；不清会留「已授权但半生效」
+// 的悬挂态。再启用即重走能力确认。
+func (h *Host) RevokeGrant(name string, cap string) error {
+	h.mu.Lock()
+	if _, ok := h.decls[name]; !ok {
+		h.mu.Unlock()
+		return fmt.Errorf("未声明的插件 %q", name)
+	}
+	prev := h.states[name]
+	granted := make([]string, 0, len(prev.Granted))
+	for _, g := range prev.Granted {
+		if g != cap {
+			granted = append(granted, g)
+		}
+	}
+	off := false
+	h.states[name] = State{Enabled: &off, Granted: granted}
+	h.mu.Unlock()
+	perr := h.saveStates()
+	h.stop(name)
+	h.setStatus(name, StatusDisabled, "能力已撤销并停用（再启用即重走确认）")
+	h.changed()
+	if perr != nil {
+		return fmt.Errorf("%s 已在本次运行停用并撤销能力 %s，但状态写回 config 失败: %w", name, cap, perr)
+	}
+	return nil
+}
+
+// RevokeTrust 撤销插件目录来源插件的启动信任（S6/D143）：清 D138 信任指纹 + 断开。
+// config `mcpServers` 来源 = 用户显式信任（自己写的配置），不提供撤销——报错。
+// 启用态保持不变：下次启动/启用时信任门会因指纹缺失重新确认。
+func (h *Host) RevokeTrust(name string) error {
+	h.mu.Lock()
+	d, ok := h.decls[name]
+	if !ok {
+		h.mu.Unlock()
+		return fmt.Errorf("未声明的插件 %q", name)
+	}
+	if d.Source != SourcePlugins {
+		h.mu.Unlock()
+		return fmt.Errorf("%s 来自 config（用户显式信任），不提供撤销信任", name)
+	}
+	cur := h.states[name]
+	cur.Trusted = ""
+	h.states[name] = cur
+	h.mu.Unlock()
+	perr := h.saveStates()
+	h.stop(name)
+	h.setStatus(name, StatusRevoked, "信任已撤销（下次启用重新确认）")
+	h.changed()
+	if perr != nil {
+		return fmt.Errorf("%s 已在本次运行断开并撤销信任，但状态写回 config 失败: %w", name, perr)
+	}
+	return nil
+}
+
 // stop 主动关闭一个 server 的连接（stopping 标记抑制崩溃重启）。
 // 无论有无在途会话都置位：session==nil 的"拨号中/退避中"窗口同样要被拦下
 // （审查修复：否则停用可被在途拨号/崩溃重启翻案）。
@@ -551,7 +632,7 @@ func (h *Host) List() []Info {
 		info := Info{
 			Name: name, Source: d.Source, Transport: d.Transport,
 			Capabilities: d.Capabilities, Granted: st.Granted, Risk: d.Risk,
-			Enabled: st.IsEnabled(), Status: StatusDisabled,
+			Enabled: st.IsEnabled(), Status: StatusDisabled, Trusted: st.Trusted != "",
 		}
 		if m := h.managed[name]; m != nil {
 			info.Status = m.status
