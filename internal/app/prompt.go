@@ -52,8 +52,19 @@ var DefaultPersonaRefs = []string{"@default", "@env"}
 // reservedModulePrefix 内置模块名保留前缀（用户模块不得占用，引擎侧一律以内置为准）。
 const reservedModulePrefix = "@"
 
+// ReservedModulePrefix 内置模块名保留前缀（导出供装配根/UI 校验用户模块名，D144）。
+const ReservedModulePrefix = reservedModulePrefix
+
 // builtinEnvRefs 内置 @env 组模块的子模块顺序（@env.date 恒出，其余按事实是否有值）。
 var builtinEnvRefs = []string{"@env.platform", "@env.terminal", "@env.sandbox", "@env.timeout", "@env.date"}
+
+// BuiltinModuleNames 内置模块引用名（含 `@` 前缀，展示序：@default → @env → 各子模块）。
+// 设置窗用它列出「可引用的内置模块」（S7/D144）；返回副本，调用方可安全改写。
+func BuiltinModuleNames() []string {
+	out := make([]string, 0, 2+len(builtinEnvRefs))
+	out = append(out, "@default", "@env")
+	return append(out, builtinEnvRefs...)
+}
 
 // PersonaComposer 人格组合器（D144/S7）：绑定模块规格 + 内置模块动态取值（环境事实 + 时钟）。
 // Compose 每次重新展开——@env.date 取 now()，故 persona 快照（会话创建时调用）得到「创建当天」。

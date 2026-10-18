@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
@@ -20,9 +21,10 @@ import (
 // provider/base_url/api_key 编辑走 ProviderManager（providers 列表结构），不在
 // 此处；MCPServers/Plugins 只读取名（结构化编辑走高级页 raw JSON，Q10）。
 type textSettings struct {
-	SystemPrompt string       `json:"system_prompt"`
-	Output       outputConfig `json:"output"`
-	Limits       limitsConfig `json:"limits"`
+	SystemPrompt string        `json:"system_prompt"`
+	Prompts      promptsConfig `json:"prompts"`
+	Output       outputConfig  `json:"output"`
+	Limits       limitsConfig  `json:"limits"`
 	MCPServers   map[string]struct {
 		Transport string `json:"transport"`
 	} `json:"mcpServers"`
@@ -50,6 +52,9 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 	_ = json.Unmarshal(data, &raw) // 解析失败 = 快照零值 + 原文照呈（高级页手工修）
 	snap := uigui.SettingsSnapshot{
 		SystemPrompt:     raw.SystemPrompt,
+		PromptModules:    promptViewsOf(raw.Prompts),
+		PromptPersona:    append([]string(nil), raw.Prompts.Persona...),
+		Builtins:         builtinModuleViews(),
 		Notify:           raw.Output.Notify,
 		TTS:              raw.Output.TTS,
 		MaxTurns:         raw.Limits.MaxTurns,
@@ -89,6 +94,9 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	case "system", "light", "dark":
 	default:
 		return fmt.Errorf("非法主题档 %q（须为 system|light|dark）", p.Theme)
+	}
+	if err := validatePromptModules(p.PromptModules); err != nil {
+		return err
 	}
 	if p.RawJSON != "" {
 		// 高级页（Q10）：整文件替换——JSON 对象校验后原子写（cfgWriteMu 串行与其他
@@ -141,6 +149,29 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 		// 人格（恒写：清空 = 合法语义「内置默认」，D20）。
 		generic["system_prompt"] = p.SystemPrompt
+		// 人格模块树（S7/D144，恒全量写）：modules = name → {text?, children?[]}，persona = 有序引用。
+		pSec, _ := generic["prompts"].(map[string]any)
+		if pSec == nil {
+			pSec = map[string]any{}
+			generic["prompts"] = pSec
+		}
+		mods := map[string]any{}
+		for _, m := range p.PromptModules {
+			name := strings.TrimSpace(m.Name)
+			if name == "" {
+				continue // 未填名的新增行 = 尚未创建
+			}
+			node := map[string]any{}
+			if text := strings.TrimSpace(m.Text); text != "" {
+				node["text"] = m.Text
+			}
+			if children := cleanRefs(m.Children); len(children) > 0 {
+				node["children"] = children
+			}
+			mods[name] = node
+		}
+		pSec["modules"] = mods
+		pSec["persona"] = cleanRefs(p.PromptPersona)
 	})
 }
 

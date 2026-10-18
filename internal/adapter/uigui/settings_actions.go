@@ -4,6 +4,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -121,6 +122,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 		p.ToolTimeoutSec = n
 	}
 	p.SystemPrompt = f.sysPrompt.Text()
+	// S7/D144：人格模块树 + 有序引用（恒全量写；空名行在 views 里跳过、cmd 侧校验模块名）。
+	p.PromptModules = f.promptViews()
+	p.PromptPersona = f.promptRefList()
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v
 	}
@@ -154,6 +158,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if p.RawJSON != "" {
 		f.status = "已保存（config.json 原文已替换；provider/密钥类改动重启生效）"
 	}
+	if !promptModulesEqual(f.snap.PromptModules, p.PromptModules) || !slices.Equal(f.snap.PromptPersona, p.PromptPersona) {
+		f.status = "已保存（人格组合只对新会话生效，重启后应用）"
+	}
 	f.snap = SettingsSnapshot{
 		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
 		Hotkey: p.Hotkey, Theme: p.Theme,
@@ -163,8 +170,22 @@ func (u *UI) saveSettings(f *settingsForm) {
 		MaxTurns: p.MaxTurns, MaxContextTokens: p.MaxContextTokens,
 		CompactThreshold: p.CompactThreshold, ToolOutputChars: p.ToolOutputChars,
 		ToolTimeoutSec: p.ToolTimeoutSec, SystemPrompt: p.SystemPrompt,
-		RawJSON: p.RawJSON,
+		PromptModules: p.PromptModules, PromptPersona: p.PromptPersona,
+		Builtins: f.snap.Builtins, RawJSON: p.RawJSON,
 	}
+}
+
+// promptModulesEqual 模块树视图等价（名称 + 正文 + 子模块序；保存提示的变更判定）。
+func promptModulesEqual(a, b []PromptModuleView) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || a[i].Text != b[i].Text || !slices.Equal(a[i].Children, b[i].Children) {
+			return false
+		}
+	}
+	return true
 }
 
 // profileActionLabel 三动作的反馈前缀（渲染与反馈共用）。

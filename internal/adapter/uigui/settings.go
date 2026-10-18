@@ -8,6 +8,7 @@ package uigui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gioui.org/app"
 	"gioui.org/layout"
@@ -66,6 +67,22 @@ type ProviderManager interface {
 	Test(p ProviderPatch) error
 }
 
+// PromptModuleView 人格模块树单个节点的编辑视图（S7/D144）：Name 唯一（用户模块名不以
+// `@` 开头，该前缀保留给内置模块）；Text = 叶正文（组亦可带，作组头）；Children = 子模块
+// 引用名（有序，可再嵌套 → 多级细分）。数据面真源 = config `prompts.modules`。
+type PromptModuleView struct {
+	Name     string
+	Text     string
+	Children []string
+}
+
+// BuiltinModuleView 内置只读模块展示项（S7/D144，`@default`/`@env` 及其子模块）：
+// 设置窗列出并可一键加入人格引用；不可改名/删除。
+type BuiltinModuleView struct {
+	Name  string // 引用名（含 @ 前缀）
+	Label string // 中文说明
+}
+
 // SettingsSnapshot 设置窗核心档快照（开窗现取；同 Status 口径线程安全回调）。
 // Permission/Model/Think/Effort 由装配根取运行态（等级活槽与 Agent 访问器），
 // 其余取 config 文件；密钥永不进快照（D35 只写不回显）。provider 编辑数据面走
@@ -91,10 +108,13 @@ type SettingsSnapshot struct {
 	CompactThreshold float64
 	ToolOutputChars  int
 	ToolTimeoutSec   int
-	SystemPrompt     string   // 人格（空 = 内置默认）
-	MCPServers       []string // 只读：声明名清单（sorted）
-	Plugins          []string // 只读：声明名清单（sorted）
-	RawJSON          string   // config.json 原文（高级页编辑起点）
+	SystemPrompt     string              // 默认人格（= 内置模块 @default 正文；空 = 内置默认）
+	PromptModules    []PromptModuleView  // 人格模块树（config prompts.modules，按名排序）
+	PromptPersona    []string            // 人格有序引用（config prompts.persona）
+	Builtins         []BuiltinModuleView // 内置只读模块（展示 + 引用，S7/D144）
+	MCPServers       []string            // 只读：声明名清单（sorted）
+	Plugins          []string            // 只读：声明名清单（sorted）
+	RawJSON          string              // config.json 原文（高级页编辑起点）
 }
 
 // SettingsPatch 保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
@@ -121,7 +141,11 @@ type SettingsPatch struct {
 	ToolOutputChars  int
 	ToolTimeoutSec   int
 	SystemPrompt     string
-	RawJSON          string // "" = 不改
+	// PromptModules/PromptPersona 人格模块树与有序引用（S7/D144，恒全量写：空 = 清空）。
+	// 空名模块行被跳过；模块名校验（非空/不以 @ 开头/不重复）在 cmd 侧拦截。
+	PromptModules []PromptModuleView
+	PromptPersona []string
+	RawJSON       string // "" = 不改
 }
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
@@ -145,14 +169,15 @@ var (
 const (
 	pageGeneral = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
 	pageModel          // 模型：当前模型名 / 原生思考与推理档位 / provider 列表
-	pageChat           // 对话：限额 / 提示词
+	pageChat           // 对话：限额
+	pagePrompt         // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
 	pageTools          // 工具与 MCP：MCP 与插件清单（S6/D143 起升级为可交互管理面）
 	pageAdv            // 高级：config.json 原文
 	settingsPageCount
 )
 
 // settingsPageNames 页名（导航项与页标题共用文案）。
-var settingsPageNames = [settingsPageCount]string{"常规", "模型", "对话", "工具与 MCP", "高级"}
+var settingsPageNames = [settingsPageCount]string{"常规", "模型", "对话", "系统提示词", "工具与 MCP", "高级"}
 
 // cycleField 点击循环枚举档（material v0.10 无下拉框）：按钮显示当前项，点击进一档。
 type cycleField struct {
@@ -235,8 +260,18 @@ type settingsForm struct {
 	compact   widget.Editor
 	toolChars widget.Editor
 	toolTo    widget.Editor
-	sysPrompt widget.Editor // 多行：人格（清空 = 内置默认）
+	sysPrompt widget.Editor // 多行：默认人格（= 内置 @default 正文；清空 = 内置默认）
 	rawCfg    widget.Editor // 多行：config.json 原文（Q10）
+
+	// 人格模块树（S7/D144，S7b/D145 独立成页）：「系统提示词」页的模块编辑行 + 人格有序引用 +
+	// 内置模块展示 + 组合预览。
+	promptMods   []*promptModuleForm
+	promptRefs   []*promptRefForm
+	promptModAdd widget.Clickable
+	promptRefAdd widget.Clickable
+	promptBtns   map[string]*widget.Clickable // 内置模块「引用」按钮（get-or-create 按 key）
+	promptPrev   string                       // 组合预览（每帧现算；PreviewPrompts 提供）
+	builtins     []BuiltinModuleView          // 内置只读模块展示项（开窗快照）
 
 	// provider 编辑区（D110②）：每条一组控件 + 测试/设主/删除；provApply 全量应用。
 	provs       []*providerForm
@@ -275,6 +310,24 @@ type providerForm struct {
 	setPrimary  widget.Clickable
 }
 
+// promptModuleForm 单个模块节点的编辑控件（S7/D144；本窗 goroutine 独占）。orig = 快照
+// 原名（诊断用）。text 多行：叶正文或组头；children 单行：逗号分隔子模块引用名（空 = 叶）。
+type promptModuleForm struct {
+	orig     string
+	name     widget.Editor
+	text     widget.Editor
+	children widget.Editor
+	del      widget.Clickable
+}
+
+// promptRefForm 单个人格引用的编辑控件（S7/D144；有序：上移/下移/删除）。
+type promptRefForm struct {
+	name widget.Editor
+	up   widget.Clickable
+	down widget.Clickable
+	del  widget.Clickable
+}
+
 // testOutcome 连通性测试异步结果（testResults 单消费者 = 帧循环）。
 type testOutcome struct {
 	name string
@@ -293,6 +346,7 @@ func newSettingsFormState() *settingsForm {
 		testResults: make(chan testOutcome, 8),
 		toolRes:     make(chan toolActionResult, 16),
 		toolBtns:    map[string]*widget.Clickable{},
+		promptBtns:  map[string]*widget.Clickable{},
 	}
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
 	// 按视口**宽**迭代 → 只画首行、其余空白窗底）。
@@ -314,6 +368,8 @@ func (f *settingsForm) firstEditor() *widget.Editor {
 		return &f.model
 	case pageChat:
 		return &f.maxTurns
+	case pagePrompt:
+		return &f.sysPrompt
 	case pageAdv:
 		return &f.rawCfg
 	}
@@ -384,7 +440,120 @@ func newSettingsForm(u *UI) *settingsForm {
 	}
 	f.sysPrompt.SetText(s.SystemPrompt)
 	f.rawCfg.SetText(s.RawJSON)
+	f.builtins = s.Builtins
+	f.loadPrompts(s.PromptModules, s.PromptPersona)
 	return f
+}
+
+// loadPrompts 以快照重建人格模块树与引用编辑区（开窗填表；S7/D144）。
+func (f *settingsForm) loadPrompts(mods []PromptModuleView, persona []string) {
+	f.promptMods = make([]*promptModuleForm, 0, len(mods))
+	for _, m := range mods {
+		pf := &promptModuleForm{orig: m.Name}
+		pf.name.SingleLine = true
+		pf.children.SingleLine = true
+		pf.name.SetText(m.Name)
+		pf.text.SetText(m.Text)
+		pf.children.SetText(strings.Join(m.Children, ", "))
+		f.promptMods = append(f.promptMods, pf)
+	}
+	f.promptRefs = make([]*promptRefForm, 0, len(persona))
+	for _, name := range persona {
+		rf := &promptRefForm{}
+		rf.name.SingleLine = true
+		rf.name.SetText(name)
+		f.promptRefs = append(f.promptRefs, rf)
+	}
+}
+
+// addPromptModule 追加一个空白模块编辑行（帧循环与测试共用；空名行保存时跳过）。
+func (f *settingsForm) addPromptModule() {
+	pf := &promptModuleForm{}
+	pf.name.SingleLine = true
+	pf.children.SingleLine = true
+	f.promptMods = append(f.promptMods, pf)
+}
+
+// addPromptRef 追加一个人格引用行（name 空 = 待填；内置模块「引用」按钮带名调用）。
+func (f *settingsForm) addPromptRef(name string) {
+	rf := &promptRefForm{}
+	rf.name.SingleLine = true
+	rf.name.SetText(name)
+	f.promptRefs = append(f.promptRefs, rf)
+}
+
+// movePromptRef 人格引用上/下移（delta = -1 上移 / +1 下移；越界不动）。顺序即拼接顺序。
+func (f *settingsForm) movePromptRef(i, delta int) {
+	j := i + delta
+	if i < 0 || i >= len(f.promptRefs) || j < 0 || j >= len(f.promptRefs) {
+		return
+	}
+	f.promptRefs[i], f.promptRefs[j] = f.promptRefs[j], f.promptRefs[i]
+}
+
+// delPromptRef 删除第 i 个人格引用（越界 no-op）。
+func (f *settingsForm) delPromptRef(i int) {
+	if i < 0 || i >= len(f.promptRefs) {
+		return
+	}
+	f.promptRefs = append(f.promptRefs[:i], f.promptRefs[i+1:]...)
+}
+
+// delPromptModule 删除第 i 个模块（越界 no-op）。
+func (f *settingsForm) delPromptModule(i int) {
+	if i < 0 || i >= len(f.promptMods) {
+		return
+	}
+	f.promptMods = append(f.promptMods[:i], f.promptMods[i+1:]...)
+}
+
+// promptViews 表单现状 → 模块视图（空名行跳过；子模块按逗号/空白切分去重）。
+func (f *settingsForm) promptViews() []PromptModuleView {
+	out := make([]PromptModuleView, 0, len(f.promptMods))
+	for _, pf := range f.promptMods {
+		name := strings.TrimSpace(pf.name.Text())
+		if name == "" {
+			continue
+		}
+		out = append(out, PromptModuleView{
+			Name:     name,
+			Text:     pf.text.Text(),
+			Children: splitRefList(pf.children.Text()),
+		})
+	}
+	return out
+}
+
+// promptRefList 表单现状 → 人格引用列表（空行跳过，保持表单顺序 = 拼接顺序）。
+func (f *settingsForm) promptRefList() []string {
+	out := make([]string, 0, len(f.promptRefs))
+	for _, rf := range f.promptRefs {
+		if name := strings.TrimSpace(rf.name.Text()); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// splitRefList 逗号/分号/空白分隔的引用名列表（去空、去重且保序）。
+func splitRefList(s string) []string {
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		switch r {
+		case ',', '，', ';', '；', '\n', '\r', '\t', ' ':
+			return true
+		}
+		return false
+	})
+	out := make([]string, 0, len(fields))
+	seen := map[string]bool{}
+	for _, name := range fields {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
 }
 
 // addProviderForm 追加一个空白 provider 编辑组（帧循环与测试共用；Apply 校验必填项）。

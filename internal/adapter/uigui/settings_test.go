@@ -706,9 +706,9 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestSettingsPageNamesContract 页名集与页序为契约（导航项与页标题同源）；每页行计划
-// 非空且首行为页标题——防「某页忘了挂行」。
+// 非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」页（S7b/D145）。
 func TestSettingsPageNamesContract(t *testing.T) {
-	want := []string{"常规", "模型", "对话", "工具与 MCP", "高级"}
+	want := []string{"常规", "模型", "对话", "系统提示词", "工具与 MCP", "高级"}
 	if settingsPageCount != len(want) {
 		t.Fatalf("settingsPageCount = %d, want %d", int(settingsPageCount), len(want))
 	}
@@ -744,6 +744,73 @@ func TestSettingsPageNamesContract(t *testing.T) {
 	}
 	if !found {
 		t.Error("「模型」页缺 rowModelName 行（当前模型名在 UI 上无处可改）")
+	}
+	// S7b/D145：提示词行归「系统提示词」页；「对话」页只留限额——防两页都挂或都不挂
+	// （拆页时最容易犯的错是把 pageChat 的行计划整体复制一份而忘了删原处）。行数随快照
+	// 变化的模块/引用/内置行在 TestPromptRowsLiveOnPromptPage 里带快照判定。
+	promptFixed := []rowKind{rowSysPrompt, rowPromptNote, rowPromptModAdd, rowPromptRefAdd, rowPromptPreview}
+	has := func(page int, kind rowKind) bool {
+		for _, r := range f.pageRows(page) {
+			if r.kind == kind {
+				return true
+			}
+		}
+		return false
+	}
+	for _, k := range promptFixed {
+		if !has(pagePrompt, k) {
+			t.Errorf("「系统提示词」页缺行 %v", k)
+		}
+		if has(pageChat, k) {
+			t.Errorf("「对话」页仍有提示词行 %v（D145 后应只留限额）", k)
+		}
+	}
+	for _, k := range []rowKind{rowMaxTurns, rowMaxCtx, rowCompact, rowToolChars, rowToolTo} {
+		if !has(pageChat, k) {
+			t.Errorf("「对话」页缺限额行 %v", k)
+		}
+		if has(pagePrompt, k) {
+			t.Errorf("「系统提示词」页混入限额行 %v", k)
+		}
+	}
+}
+
+// TestPromptRowsLiveOnPromptPage 带人格快照的页归属：模块/引用/内置/预览四类**行数随快照
+// 变化**的提示词行只出现在「系统提示词」页。
+func TestPromptRowsLiveOnPromptPage(t *testing.T) {
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return promptSnapshot() },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+	})
+	f := newSettingsForm(u)
+	count := func(page int, kinds ...rowKind) int {
+		n := 0
+		for _, r := range f.pageRows(page) {
+			for _, k := range kinds {
+				if r.kind == k {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	kinds := []rowKind{rowPromptModule, rowPromptRef, rowPromptBuiltin, rowPromptPreview}
+	for _, page := range []int{pageChat, pageGeneral, pageModel, pageTools, pageAdv} {
+		if n := count(page, kinds...); n != 0 {
+			t.Errorf("页 %s 出现了 %d 条提示词行（应只在「系统提示词」页）", settingsPageNames[page], n)
+		}
+	}
+	if got, want := count(pagePrompt, rowPromptModule), 2; got != want {
+		t.Errorf("「系统提示词」页模块行 = %d, want %d", got, want)
+	}
+	if got, want := count(pagePrompt, rowPromptRef), 2; got != want {
+		t.Errorf("「系统提示词」页引用行 = %d, want %d", got, want)
+	}
+	if got, want := count(pagePrompt, rowPromptBuiltin), 2; got != want {
+		t.Errorf("「系统提示词」页内置模块行 = %d, want %d", got, want)
+	}
+	if got, want := count(pagePrompt, rowPromptPreview), 1; got != want {
+		t.Errorf("「系统提示词」页预览行 = %d, want %d", got, want)
 	}
 }
 

@@ -1,6 +1,7 @@
 package uigui
 
 import (
+	"fmt"
 	"image"
 	"strings"
 
@@ -58,6 +59,14 @@ const (
 	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
 	rowToolsEmpty  // 占位/空态（text = 文案）
 	rowToolsStatus // 异步动作反馈状态行
+	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
+	rowPromptNote    // 说明（text = 文案）
+	rowPromptModule  // 模块节点行（field = promptMods 下标）
+	rowPromptModAdd  // 「＋ 新增模块」
+	rowPromptRef     // 人格引用行（field = promptRefs 下标）
+	rowPromptRefAdd  // 「＋ 添加引用」
+	rowPromptBuiltin // 内置只读模块行（field = builtins 下标）
+	rowPromptPreview // 组合预览（只读全文）
 )
 
 // provider 字段槽位（rowDesc.field）。
@@ -127,8 +136,31 @@ func (f *settingsForm) pageRows(page int) []rowDesc {
 			sec("限额"),
 			{kind: rowMaxTurns}, {kind: rowMaxCtx}, {kind: rowCompact},
 			{kind: rowToolChars}, {kind: rowToolTo},
-			sec("提示词"), {kind: rowSysPrompt},
 		}
+	case pagePrompt: // S7/D144 + S7b/D145：人格模块树独立成页（原先挂在「对话」页）
+		rows := []rowDesc{
+			head,
+			sec("人格（模块树组合）"),
+			{kind: rowPromptNote},
+			{kind: rowSysPrompt},
+			sec("人格引用（有序拼接）"),
+		}
+		for i := range f.promptRefs {
+			rows = append(rows, rowDesc{kind: rowPromptRef, field: i})
+		}
+		rows = append(rows, rowDesc{kind: rowPromptRefAdd})
+		rows = append(rows, sec("模块库（children 逗号分隔，可多级分组）"))
+		for i := range f.promptMods {
+			rows = append(rows, rowDesc{kind: rowPromptModule, field: i})
+		}
+		rows = append(rows, rowDesc{kind: rowPromptModAdd})
+		if len(f.builtins) > 0 {
+			rows = append(rows, sec("内置模块（只读，可引用）"))
+			for i := range f.builtins {
+				rows = append(rows, rowDesc{kind: rowPromptBuiltin, field: i})
+			}
+		}
+		return append(rows, sec("组合预览"), rowDesc{kind: rowPromptPreview})
 	case pageTools: // S6/D143：内置工具启停 + 插件管理（可交互；快照每帧同步）
 		rows := []rowDesc{head}
 		if f.tools == nil {
@@ -204,6 +236,40 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	}
 	for f.welcomeOpen.Clicked(gtx) {
 		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
+	}
+	// S7/D144：人格模块树与引用编辑（新增/删除/上移/下移、内置模块「引用」）。
+	for f.promptModAdd.Clicked(gtx) {
+		f.addPromptModule()
+	}
+	for f.promptRefAdd.Clicked(gtx) {
+		f.addPromptRef("")
+	}
+	for key, btn := range f.promptBtns {
+		if !btn.Clicked(gtx) {
+			continue
+		}
+		if name, ok := strings.CutPrefix(key, "ref:"); ok {
+			f.addPromptRef(name)
+		}
+	}
+	for i, pf := range f.promptMods {
+		for pf.del.Clicked(gtx) {
+			f.delPromptModule(i)
+		}
+	}
+	for i, rf := range f.promptRefs {
+		for rf.up.Clicked(gtx) {
+			f.movePromptRef(i, -1)
+		}
+		for rf.down.Clicked(gtx) {
+			f.movePromptRef(i, 1)
+		}
+		for rf.del.Clicked(gtx) {
+			f.delPromptRef(i)
+		}
+	}
+	if f.page == pagePrompt && u.opts.PreviewPrompts != nil {
+		f.promptPrev = u.opts.PreviewPrompts(f.promptViews(), f.promptRefList(), f.sysPrompt.Text())
 	}
 	for i, pf := range f.provs {
 		for pf.test.Clicked(gtx) {
@@ -395,7 +461,38 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 			case rowToolTo:
 				return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
 			case rowSysPrompt:
-				return editorBoxH(th, &f.sysPrompt, "人格（system prompt；空 = 内置默认。清空保存即恢复默认）", 80)(gtx)
+				return editorBoxH(th, &f.sysPrompt, "默认人格（= 内置 @default 正文；清空 = 内置默认）", 80)(gtx)
+			// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
+			case rowPromptNote:
+				l := material.Body2(th, "人格 = 有序引用的展开结果；模块可分组（children 逗号分隔，可多级）。"+
+					"改动只对新会话生效，且重启后应用。")
+				l.Color = textDim
+				return l.Layout(gtx)
+			case rowPromptModule:
+				return f.promptModuleRow(gtx, th, r.field)
+			case rowPromptModAdd:
+				b := material.Button(th, &f.promptModAdd, "＋ 新增模块")
+				b.TextSize = unit.Sp(13)
+				return b.Layout(gtx)
+			case rowPromptRef:
+				return f.promptRefRow(gtx, th, r.field)
+			case rowPromptRefAdd:
+				b := material.Button(th, &f.promptRefAdd, "＋ 添加引用")
+				b.TextSize = unit.Sp(13)
+				return b.Layout(gtx)
+			case rowPromptBuiltin:
+				return f.promptBuiltinRow(gtx, th, f.builtins[r.field])
+			case rowPromptPreview:
+				text := f.promptPrev
+				l := material.Body2(th, text)
+				if strings.TrimSpace(text) == "" {
+					text = "（保存后按模块树组合；预览需装配根接线）"
+					l = material.Body2(th, text)
+					l.Color = textDim
+				} else {
+					l.Color = textSystem
+				}
+				return l.Layout(gtx)
 			// S6/D143：工具与 MCP 页。
 			case rowBuiltin:
 				return f.builtinToolRow(gtx, th, f.toolsSnap.Builtins[r.field])
@@ -529,6 +626,84 @@ func (f *settingsForm) welcomeRow(gtx layout.Context, th *material.Theme) layout
 			}),
 		)
 	})
+}
+
+// promptModuleRow 单个模块节点的编辑行（S7/D144）：名称（单行）+ 正文/组头（多行）+
+// 子模块（单行，逗号分隔）+ 删除。组模块只需填子模块名；叶模块只填正文。
+func (f *settingsForm) promptModuleRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
+	pf := f.promptMods[i]
+	sub := func(w layout.Widget) layout.FlexChild {
+		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, w)
+		})
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, "模块名", editorBox(th, &pf.name, "唯一名；不以 @ 开头（保留给内置）"))
+		}),
+		sub(func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, "正文 / 组头", editorBoxH(th, &pf.text, "叶：正文；组：组头（可空）", 64))
+		}),
+		sub(func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, "子模块", editorBox(th, &pf.children, "逗号分隔引用名（空 = 叶模块）"))
+		}),
+		sub(func(gtx layout.Context) layout.Dimensions {
+			b := material.Button(th, &pf.del, "删除模块")
+			b.TextSize = unit.Sp(12)
+			return b.Layout(gtx)
+		}),
+	)
+}
+
+// promptRefRow 人格引用行（S7/D144）：序号 + 引用名 + 上移/下移/删除（顺序 = 拼接顺序）。
+func (f *settingsForm) promptRefRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
+	rf := f.promptRefs[i]
+	small := func(c *widget.Clickable, label string) layout.Widget {
+		return func(gtx layout.Context) layout.Dimensions {
+			b := material.Button(th, c, label)
+			b.TextSize = unit.Sp(12)
+			return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, b.Layout)
+		}
+	}
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			l := material.Body2(th, fmt.Sprintf("%d.", i+1))
+			l.Color = textDim
+			return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, l.Layout)
+		}),
+		layout.Flexed(1, editorBox(th, &rf.name, "引用名（模块名或内置 @名）")),
+		layout.Rigid(small(&rf.up, "↑")),
+		layout.Rigid(small(&rf.down, "↓")),
+		layout.Rigid(small(&rf.del, "✕")),
+	)
+}
+
+// promptBuiltinRow 内置只读模块行（S7/D144）：引用名 + 说明 + 「引用」按钮（加入人格引用）。
+func (f *settingsForm) promptBuiltinRow(gtx layout.Context, th *material.Theme, b BuiltinModuleView) layout.Dimensions {
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return material.Body2(th, b.Name).Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					l := material.Body2(th, b.Label)
+					l.Color = textMuted
+					return l.Layout(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			btn := f.promptBtns["ref:"+b.Name]
+			if btn == nil {
+				btn = new(widget.Clickable)
+				f.promptBtns["ref:"+b.Name] = btn
+			}
+			b := material.Button(th, btn, "引用")
+			b.TextSize = unit.Sp(12)
+			return b.Layout(gtx)
+		}),
+	)
 }
 
 // fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。标签列宽随

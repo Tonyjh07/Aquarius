@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -240,14 +239,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	auditedRunner := decorate.AuditTool(w.runner, w.audit)
 	ids := systemIDGen{}
 	// D37：运行环境块（随 config 快照进 persona）——平台、终端形态与 TERM、特权沙盒目录。
-	runtimeEnv := app.RuntimeEnv{
-		Platform:   runtime.GOOS + "/" + runtime.GOARCH,
-		Terminal:   w.cfg.UI.Kind,
-		TERM:       os.Getenv("TERM"),
-		SandboxDir: w.sandboxDir,
-		// D38：缺省调用超时随环境块披露（发现性），保留参数口径见 D38。
-		ToolTimeoutSec: int(w.toolTimeout.Seconds()),
-	}
+	runtimeEnv := w.runtimeEnv()
 	// 人格模块树（D144/S7）：Agent 兜底提示（每请求展开）与会话 persona（创建时展开，@env.date = 当天）。
 	personaSpec := w.cfg.promptSpec()
 	agentPersona := app.NewPersonaComposer(personaSpec, runtimeEnv, nil)
