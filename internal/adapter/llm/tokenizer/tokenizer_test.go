@@ -128,6 +128,52 @@ func TestLoadRejects(t *testing.T) {
 	}
 }
 
+// TestLoadToleratesQuotedPath 复现 2026-10-18 启动事故：Windows 资源管理器
+// 「复制为路径」/ PowerShell 复制会把路径连引号一起给出，粘进
+// model.providers[].tokenizer 后引号成了路径首字符，os.Open 报 ERROR_INVALID_NAME
+// （The filename, directory name, or volume label syntax is incorrect.），
+// 启动期 fail-fast（D26）直接把应用拦死——而这是粘贴事故，不是配置错误。
+// Load 应剥离成对包裹的引号（含中文引号）与首尾空白后正常加载。
+func TestLoadToleratesQuotedPath(t *testing.T) {
+	want, err := Load(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quotes := [][2]string{{`"`, `"`}, {"'", "'"}, {"“", "”"}, {"‘", "’"}}
+	for _, q := range quotes {
+		for _, raw := range []string{
+			q[0] + fixturePath + q[1],
+			"  " + q[0] + fixturePath + q[1] + "  ",
+			q[0] + q[0] + fixturePath + q[1] + q[1], // 复制两遍
+		} {
+			tok, err := Load(raw)
+			if err != nil {
+				t.Errorf("Load(%q) = %v，应剥离引号后加载", raw, err)
+				continue
+			}
+			if got, exp := tok.Count("hello world"), want.Count("hello world"); got != exp {
+				t.Errorf("Load(%q) 计数 = %d, want %d", raw, got, exp)
+			}
+		}
+	}
+	// 目录形式同样容忍引号。
+	dir := t.TempDir()
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tokenizer.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(`"` + dir + `"`); err != nil {
+		t.Errorf("带引号的目录 = %v，应剥离引号后加载", err)
+	}
+	// 剥完只剩引号/空白 ⇒ 仍按空路径报错（不静默通过）。
+	if _, err := Load(`""`); err == nil {
+		t.Error("只剩引号应报空路径错")
+	}
+}
+
 // TestSplitAddedAtomic added token 原子计 1（相邻多个、与普通文本交错）。
 func TestSplitAddedAtomic(t *testing.T) {
 	tok, err := Load(fixturePath)

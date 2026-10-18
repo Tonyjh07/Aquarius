@@ -71,9 +71,36 @@ type hfModel struct {
 	Merges json.RawMessage `json:"merges"` // "a b" 或 ["a","b"] 两种历史格式
 }
 
-// Load 加载 tokenizer.json（path 可为文件或目录）。
+// normalizePath 规整用户粘贴的路径：去首尾空白，并剥离成对包裹的引号。
+//
+// 起因（2026-10-18 启动事故）：Windows 资源管理器「复制为路径」/ PowerShell 复制
+// 会把路径连引号一起给出（`"E:\…\tokenizer.json"`），粘进配置后引号成为路径首字符，
+// os.Open 直接报 ERROR_INVALID_NAME（The filename, directory name, or volume label
+// syntax is incorrect.）；而容忍 D26「路径错 fail-fast」的代价是应用起不来，
+// 而这其实只是粘贴事故而非配置错误，故在此静默剥离。
+func normalizePath(path string) string {
+	p := strings.TrimSpace(path)
+	pairs := [][2]string{{`"`, `"`}, {"'", "'"}, {"“", "”"}, {"‘", "’"}}
+	for len(p) >= 2 {
+		trimmed := false
+		for _, pr := range pairs {
+			if strings.HasPrefix(p, pr[0]) && strings.HasSuffix(p, pr[1]) {
+				p = strings.TrimSpace(p[len(pr[0]) : len(p)-len(pr[1])])
+				trimmed = true
+				break
+			}
+		}
+		if !trimmed {
+			break
+		}
+	}
+	return p
+}
+
+// Load 加载 tokenizer.json（path 可为文件或目录；容忍粘贴时带入的首尾引号）。
 func Load(path string) (*Tokenizer, error) {
-	if strings.TrimSpace(path) == "" {
+	path = normalizePath(path)
+	if path == "" {
 		return nil, fmt.Errorf("tokenizer: 路径为空")
 	}
 	file := path
@@ -82,7 +109,7 @@ func Load(path string) (*Tokenizer, error) {
 	}
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return nil, fmt.Errorf("tokenizer: 读取 %s: %w", file, err)
+		return nil, fmt.Errorf("tokenizer: 读取 %s: %w（检查 model.providers[].tokenizer；目录亦可）", file, err)
 	}
 	var hf hfFile
 	if err := json.Unmarshal(data, &hf); err != nil {
