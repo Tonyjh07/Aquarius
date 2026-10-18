@@ -586,15 +586,17 @@ func TestOverlayPillHugsItsBox(t *testing.T) {
 	}
 	defer win.Release()
 
+	// 底色取 Paper 令牌（次窗口径）：未选中/次要 = sunken，选中/主操作 = accent。
+	pp := paperOf()
 	for _, tc := range []struct {
 		name string
 		w    layout.Widget
 		bg   color.NRGBA
 	}{
-		{"页签（未选中）", overlayPillBtn(new(widget.Clickable), u.th, "源码", false), cardTool},
-		{"方式钮（选中）", overlayPillBtn(new(widget.Clickable), u.th, "转移历史", true), u.th.Fg},
-		{"底行次要钮", overlayBtn(new(widget.Clickable), u.th, "关闭", false, true), cardTool},
-		{"底行主钮（可用）", overlayBtn(new(widget.Clickable), u.th, "保存", true, true), u.th.Fg},
+		{"页签（未选中）", overlayPillBtn(new(widget.Clickable), u.th, "源码", false), pp.sunken},
+		{"方式钮（选中）", overlayPillBtn(new(widget.Clickable), u.th, "转移历史", true), pp.accent},
+		{"底行次要钮", overlayBtn(new(widget.Clickable), u.th, "关闭", false, true), pp.sunken},
+		{"底行主钮（可用）", overlayBtn(new(widget.Clickable), u.th, "保存", true, true), pp.accent},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gtx, ops := frameGtxSize(input.Source{}, w, h)
@@ -696,14 +698,15 @@ func TestOverlayModeButtonsArePills(t *testing.T) {
 func TestOverlaySaveDisabledWhenDraftEmpty(t *testing.T) {
 	u, st, _ := relGraphFixture(t)
 	th := u.th
-	if bg, _ := overlayBtnColors(th, true, false); bg != cardTool {
-		t.Fatalf("禁用态底色 = %v, want 次要底 %v", bg, cardTool)
+	pp := paperOf()
+	if bg, _ := overlayBtnColors(th, true, false); bg != pp.sunken {
+		t.Fatalf("禁用态底色 = %v, want 下沉面 %v", bg, pp.sunken)
 	}
-	if bg, _ := overlayBtnColors(th, true, true); bg != th.Fg {
-		t.Fatalf("可用主钮底色 = %v, want %v", bg, th.Fg)
+	if bg, _ := overlayBtnColors(th, true, true); bg != pp.accent {
+		t.Fatalf("可用主钮底色 = %v, want %v", bg, pp.accent)
 	}
-	if bg, _ := overlayBtnColors(th, false, true); bg != cardTool {
-		t.Fatalf("次要钮底色 = %v, want %v", bg, cardTool)
+	if bg, _ := overlayBtnColors(th, false, true); bg != pp.sunken {
+		t.Fatalf("次要钮底色 = %v, want %v", bg, pp.sunken)
 	}
 
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageSource)

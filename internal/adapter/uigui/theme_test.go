@@ -9,16 +9,23 @@ import (
 )
 
 // slots 预设中活动令牌槽覆盖的部分：material 的 fg/bg 不落包级槽（经 u.th 快照
-// 校正），currentPalette 回读恒零值——对比时统一剥离。
+// 校正），currentPalette 回读恒零值——对比时统一剥离。themeMode/dark 是快照的来源
+// 标注（resolvePalette 写入），同样不落活动槽。
 func slots(p palette) palette {
 	p.fg, p.bg = color.NRGBA{}, color.NRGBA{}
+	p.themeMode, p.dark = "", false
 	return p
 }
 
 // restoreLight 测试后把活动令牌槽复位浅色（包级活动槽跨测试共享，保持确定性）。
+// Paper 令牌同样是包级活动槽（次窗），一并复位——否则前一个用例切到深色会让
+// 后面按浅色断言的像素测试读错档。
 func restoreLight(t *testing.T) {
 	t.Helper()
-	t.Cleanup(func() { applyPalette(lightPalette()) })
+	t.Cleanup(func() {
+		applyPalette(lightPalette())
+		applyPaper(paperLight())
+	})
 }
 
 // TestPalettePresetsTwoVersions 两版预设同构异值：底/文字/卡片全套成对换值，
@@ -64,10 +71,10 @@ func TestApplyPaletteSyncsAllTokens(t *testing.T) {
 // （系统深浅由平台层给，测试两档都走一遍——不再依赖跑测试的机器当前主题）。
 func TestResolvePalette(t *testing.T) {
 	for _, dark := range []bool{false, true} {
-		if got := resolvePalette("light", dark); got != lightPalette() {
+		if got := slots(resolvePalette("light", dark)); got != slots(lightPalette()) {
 			t.Error("light 应直取浅色预设")
 		}
-		if got := resolvePalette("dark", dark); got != darkPalette() {
+		if got := slots(resolvePalette("dark", dark)); got != slots(darkPalette()) {
 			t.Error("dark 应直取深色预设")
 		}
 		sys := lightPalette()
@@ -75,7 +82,7 @@ func TestResolvePalette(t *testing.T) {
 			sys = darkPalette()
 		}
 		for _, mode := range []string{"", "system", "bogus"} {
-			if got := resolvePalette(mode, dark); got != sys {
+			if got := slots(resolvePalette(mode, dark)); got != slots(sys) {
 				t.Errorf("mode %q（系统深色=%v）应跟随系统解析", mode, dark)
 			}
 		}

@@ -267,11 +267,17 @@ type settingsForm struct {
 	// 内置模块展示 + 组合预览。
 	promptMods   []*promptModuleForm
 	promptRefs   []*promptRefForm
-	promptModAdd widget.Clickable
 	promptRefAdd widget.Clickable
 	promptBtns   map[string]*widget.Clickable // 内置模块「引用」按钮（get-or-create 按 key）
 	promptPrev   string                       // 组合预览（每帧现算；PreviewPrompts 提供）
 	builtins     []BuiltinModuleView          // 内置只读模块展示项（开窗快照）
+
+	// 模块库网格（D148）：三列磁贴 + 右键编辑弹窗 + 左键拖动排序。
+	// modTiles 每格一个手势控件（长度随模块数增长，下标与 promptMods 对齐，
+	// 末尾多一格 = 「＋ 新增模块」）；均为本窗 goroutine 独占。
+	modTiles []*modTileCtl
+	modDrag  modDragState
+	modEdit  modEditState
 
 	// provider 编辑区（D110②）：每条一组控件 + 测试/设主/删除；provApply 全量应用。
 	provs       []*providerForm
@@ -317,7 +323,6 @@ type promptModuleForm struct {
 	name     widget.Editor
 	text     widget.Editor
 	children widget.Editor
-	del      widget.Clickable
 }
 
 // promptRefForm 单个人格引用的编辑控件（S7/D144；有序：上移/下移/删除）。

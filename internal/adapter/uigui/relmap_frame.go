@@ -2,7 +2,7 @@ package uigui
 
 // relmap_frame.go 右图自绘 + 手势 + 右键菜单（D120⑦，relation-map-design §5.2/§5.4/§6.3）。
 //
-// 绘制符号全部由派生纯函数（relmap.go）喂入：fill = depthMap[Level mod 4]、shape = Role
+// 绘制符号全部由派生纯函数（relmap.go）喂入：fill = 深度色带[Level mod 4]、shape = Role
 // 四形、直径 = weight 查表（A4：与 degree 无关）、描边 = 主干亮环 ⊕ 分叉虚线环、边色 =
 // source 填充色、边型 = EdgeKind（顺接实线 / 版本链虚线）、标签 = 权重预算 + zoom 字号。
 //
@@ -1006,7 +1006,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	if g.sol == nil {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(th, "关系图未就绪")
-			l.Color = textMuted
+			l.Color = paperOf().text2
 			return l.Layout(gtx)
 		})
 	}
@@ -1271,12 +1271,12 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 		if !relInBox(vp, fx, fy) && !relInBox(vp, tx, ty) {
 			continue
 		}
-		fill := depthMap[relPaletteIndex(g.model.nodes[from].level)] // 边色 = source 填充色
+		fill := paperOf().depth[relPaletteIndex(g.model.nodes[from].level)] // 边色 = source 填充色
 		// 主干（A11）改由**边描边 + 本色加粗**表达：先铺一条窗底色的粗线当描边（把主干
 		// 从背景与相邻卡片里抬出来），再画本色细线。节点上不再套白圈。
 		path := g.model.nodes[from].inPath && g.model.nodes[to].inPath
 		if path {
-			g.strokeLineW(gtx, fx, fy, tx, ty, th.Bg, relEdgeW*relEdgeHalo*float32(g.z))
+			g.strokeLineW(gtx, fx, fy, tx, ty, paperOf().win, relEdgeW*relEdgeHalo*float32(g.z))
 		}
 		g.drawEdge(gtx, fx, fy, tx, ty, fill,
 			g.model.nodes[to].edgeKind == port.EdgeRevise, path)
@@ -1312,8 +1312,8 @@ func (g *relGraph) drawNodeCard(gtx layout.Context, th *material.Theme, gi int, 
 		return
 	}
 	box := g.nodeCardBox(gi, xs, ys)
-	fill := depthMap[relPaletteIndex(m.level)]
-	paint.FillShape(gtx.Ops, relCardTint(fill, th.Bg),
+	fill := paperOf().depth[relPaletteIndex(m.level)]
+	paint.FillShape(gtx.Ops, relCardTint(fill, paperOf().win),
 		clip.UniformRRect(box, int(relCardRoundP*r)).Op(gtx.Ops))
 	g.drawNode(gtx, th, g.model, gi, xs, ys, r)
 	// 标签：徽标右侧、卡片内（多行块相对徽标垂直居中）。
@@ -1327,7 +1327,7 @@ func (g *relGraph) drawNodeCard(gtx layout.Context, th *material.Theme, gi int, 
 	// 根因）。Min = 盒子尺寸 → Center 才真的把子件摆到盒子中央。
 	gtx.Constraints = layout.Exact(image.Pt(int(lw), int(lh)))
 	l := material.Label(th, unit.Sp(g.labelFont()), txt)
-	l.Color = th.Fg
+	l.Color = paperOf().text
 	l.MaxLines = lines // 多行占满卡片；超出行数走省略号
 	l.LineHeight = unit.Sp(g.labelFont() * relLabelLineLead)
 	l.Layout(gtx)
@@ -1415,7 +1415,7 @@ func (g *relGraph) arrowHead(gtx layout.Context, ax, ay, bx, by float32, fill co
 // 分叉虚线外环（沿形状）。形状画在 2r×2r 的盒里，圆/方/菱形贴边、空心圆改用**描边**
 // （此前「填实心 + 内填窗底」在节点卡上会露出底色错位的洞）。主干（A11）不在节点上。
 func (g *relGraph) drawNode(gtx layout.Context, th *material.Theme, m *relModel, gi int, xs, ys, r float32) {
-	fill := depthMap[relPaletteIndex(m.nodes[gi].level)]
+	fill := paperOf().depth[relPaletteIndex(m.nodes[gi].level)]
 	shape := relShapeOf(m.nodes[gi].role)
 	box := image.Rect(int(xs-r), int(ys-r), int(xs+r), int(ys+r))
 	switch shape {
@@ -1456,7 +1456,7 @@ func (g *relGraph) drawGlyph(gtx layout.Context, th *material.Theme, xs, ys, r f
 	gtx.Constraints = layout.Exact(badge.Size())
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		l := material.Label(th, unit.Sp(float32(sp)), txt)
-		l.Color = whiteText
+		l.Color = paperOf().accentFg
 		l.MaxLines = 1
 		return l.Layout(gtx)
 	})
@@ -1484,7 +1484,7 @@ func (g *relGraph) dashedOutline(gtx layout.Context, xs, ys, r float32, shape re
 	stroke := relEdgeW * float32(g.z)
 	pts := shapeOutline(shape, xs, ys, r, step)
 	for i := 0; i+1 < len(pts); i += 2 {
-		g.strokeLineW(gtx, pts[i].X, pts[i].Y, pts[i+1].X, pts[i+1].Y, textMuted, stroke)
+		g.strokeLineW(gtx, pts[i].X, pts[i].Y, pts[i+1].X, pts[i+1].Y, paperOf().text3, stroke)
 	}
 }
 

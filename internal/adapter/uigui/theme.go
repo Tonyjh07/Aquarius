@@ -40,7 +40,17 @@ type palette struct {
 	// 深底可分辨。加色不改代码：纯数据预设（§15.4/D61）。
 	depthMap [4]color.NRGBA
 	fg, bg   color.NRGBA // material Palette（默认文字/底）
+	// themeMode 本快照来自哪一档（"system"/"light"/"dark"）：次窗要按同一档解析
+	// 自己的 Paper 令牌（D148），不能靠 fg/bg 反推明暗——深色预设的 fg 也可能偏亮。
+	themeMode string
+	dark      bool // 已解析的明暗（system 档由此带上平台查询结果，避免次窗再查一次）
 }
+
+// mode 快照的档位（" = 未知，按 system 处理）。
+func (p palette) mode() string { return p.themeMode }
+
+// isDark 快照解析后的明暗。
+func (p palette) isDark() bool { return p.dark }
 
 // lightPalette 浅色预设（= MVP 既有配色，逐值不变——§15.4 品牌色 + 浅白/浅灰）。
 func lightPalette() palette {
@@ -114,17 +124,23 @@ func darkPalette() palette {
 // resolvePalette 档位 → 预设：light/dark 直取；其余（""/"system"/未识别）
 // = 跟随系统（§15.4 默认）。dark = 系统深浅（平台查询，调用方现取传参——纯函数可测）。
 func resolvePalette(mode string, dark bool) palette {
+	var p palette
 	switch mode {
 	case "light":
-		return lightPalette()
+		p = lightPalette()
 	case "dark":
-		return darkPalette()
+		p = darkPalette()
+		dark = true
 	default:
 		if dark {
-			return darkPalette()
+			p = darkPalette()
+		} else {
+			p = lightPalette()
 		}
-		return lightPalette()
 	}
+	// 记录来源档与解析后的明暗：次窗据此解析自己的 Paper 令牌（D148）。
+	p.themeMode, p.dark = mode, dark
+	return p
 }
 
 // applyPalette 把预设写入活动令牌槽（包级 var；仅事件循环 goroutine 或
@@ -188,6 +204,7 @@ func (u *UI) applyTheme(mode string) {
 	}
 	p := resolvePalette(mode, u.plat.DarkMode())
 	applyPalette(p)
+	applyPaper(resolvePaper(mode, p.isDark()))
 	u.themeMode = mode
 	u.pal.Store(&p)
 	if u.th != nil { // headless 无主题（测试自装）；runWindow 创建后自会按快照校正

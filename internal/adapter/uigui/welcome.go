@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"gioui.org/app"
+	"gioui.org/font"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -347,7 +348,7 @@ func (f *welcomeForm) hotkeyLabel() string {
 	return "Alt+A"
 }
 
-// welcomeFrame 欢迎窗单帧（常规窗形态：windowBg 铺底，无形状位图/羽化，§15.7）。
+// welcomeFrame 欢迎窗单帧（常规窗形态：窗体面铺底，无形状位图/羽化，§15.7）。
 // 事件先于渲染取尽（Clicked 自带 Update；点击触发重绘）。
 func welcomeFrame(gtx layout.Context, th *material.Theme, f *welcomeForm) layout.Dimensions {
 	f.drain()
@@ -368,7 +369,7 @@ func welcomeFrame(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 	}
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, windowBg,
+			paint.FillShape(gtx.Ops, paperOf().win,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
 			return layout.UniformInset(unit.Dp(18)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -396,7 +397,7 @@ func welcomeHeader(th *material.Theme, f *welcomeForm) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return material.Subtitle1(th, "欢迎使用 Aquarius").Layout(gtx)
+				return paperTitle(th, "欢迎使用 Aquarius")(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -416,10 +417,12 @@ func welcomeStep(th *material.Theme, label string, active bool) layout.FlexChild
 	return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Right: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(th, label)
+			pp := paperOf()
 			if active {
-				l.Color = brandColor
+				l.Color = pp.text
+				l.Font.Weight = font.Bold
 			} else {
-				l.Color = textDim
+				l.Color = pp.text3
 			}
 			return l.Layout(gtx)
 		})
@@ -433,7 +436,7 @@ func welcomeIssues(th *material.Theme, f *welcomeForm) layout.Widget {
 			return layout.Dimensions{}
 		}
 		l := material.Body2(th, "配置尚未完成："+strings.Join(f.env.snap.Issues, "；"))
-		l.Color = textError
+		l.Color = paperOf().danger
 		return l.Layout(gtx)
 	}
 }
@@ -441,9 +444,9 @@ func welcomeIssues(th *material.Theme, f *welcomeForm) layout.Widget {
 // welcomeStatusLine 状态行（反馈 / 默认提示）。
 func welcomeStatusLine(th *material.Theme, f *welcomeForm) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		text, col := f.status, textSystem
+		text, col := f.status, paperOf().text2
 		if text == "" {
-			col = textDim
+			col = paperOf().text3
 			if f.page == welcomeDone {
 				text = "保存后写回 config；provider / 密钥类改动需重启进程生效。"
 				if f.env.setup {
@@ -453,7 +456,7 @@ func welcomeStatusLine(th *material.Theme, f *welcomeForm) layout.Widget {
 				text = "密钥只写不回显：可填 secret:<环境变量名> 引用环境变量，或直接填明文。"
 			}
 		} else if f.err {
-			col = textError
+			col = paperOf().danger
 		}
 		l := material.Body2(th, text)
 		l.Color = col
@@ -495,17 +498,14 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 	}
 }
 
-// welcomeBtn 按钮（primary = 品牌底白字）。
+// welcomeBtn 按钮（primary = 强调底 + 白字；次要 = 下沉面）。
 func welcomeBtn(th *material.Theme, c *widget.Clickable, label string, primary bool) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		b := material.Button(th, c, label)
-		b.TextSize = unit.Sp(13)
-		if primary {
-			b.Background = brandColor
-			b.Color = whiteText
-		}
-		return b.Layout(gtx)
+	kind := paperBtnSecondary
+	if primary {
+		// 强调色分两档：品牌色 #00AEEF 承载白字只有 2.53:1，按钮必须用深一档。
+		kind = paperBtnPrimary
 	}
+	return paperButton(th, c, label, kind, true)
 }
 
 // pageBody 当前页正文。
@@ -566,19 +566,19 @@ func (f *welcomeForm) tutorialPage(gtx layout.Context, th *material.Theme) layou
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						w := gtx.Dp(unit.Dp(190))
 						gtx.Constraints.Min.X, gtx.Constraints.Max.X = w, w
-						l := material.Body2(th, r.left)
-						l.Color = textSystem
+						l := material.Label(th, paperNoteSp(th), r.left)
+						l.Color = paperOf().text
 						return l.Layout(gtx)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						l := material.Body2(th, r.right)
-						l.Color = textDim
+						l := material.Label(th, paperNoteSp(th), r.right)
+						l.Color = paperOf().text2
 						return l.Layout(gtx)
 					}),
 				)
 			default:
-				l := material.Body2(th, r.left)
-				l.Color = textDim
+				l := material.Label(th, paperNoteSp(th), r.left)
+				l.Color = paperOf().text3
 				return l.Layout(gtx)
 			}
 		})
@@ -654,6 +654,7 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	plat := newPlatform(Options{Theme: req.Theme}, true)
 	p := resolvePalette(req.Theme, plat.DarkMode())
 	applyPalette(p) // 装配前：主窗 goroutine 尚未启动，写活动槽无并发（同 newUI 口径）
+	applyPaper(resolvePaper(req.Theme, p.isDark()))
 	th := newTheme(plat.SystemFontCandidates())
 	th.Palette.Fg, th.Palette.Bg = p.fg, p.bg
 

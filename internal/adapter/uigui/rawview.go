@@ -48,12 +48,16 @@ func (st *rawViewState) sync(u *UI) {
 	st.ed.SetText(c.text)
 }
 
-// rawViewFrame winRaw 单帧：主题底铺满 + 标题行 + 只读编辑器（垂直滚动）。
+// rawViewFrame winRaw 单帧：窗体面铺满 + hairline 分隔的标题行 + 下沉面只读块。
+//
+// 只读块必须有边界：整窗一个白色也就没有「这块是内容、那块是留白」的区分，长文读起来
+// 像窗子没加载完。故内容走 sunken 面 + hairline，与设置页的输入框同一口径。
 func rawViewFrame(gtx layout.Context, th *material.Theme, u *UI, st *rawViewState) layout.Dimensions {
 	st.sync(u)
+	pp := paperOf()
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, th.Bg,
+			paint.FillShape(gtx.Ops, pp.win,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
 			return layout.Dimensions{}
 		}),
@@ -65,13 +69,36 @@ func rawViewFrame(gtx layout.Context, th *material.Theme, u *UI, st *rawViewStat
 						if c := st.applied; c != nil {
 							title = c.title
 						}
-						return material.Body2(th, title).Layout(gtx)
+						l := material.Label(th, paperBodySp(th), title)
+						l.Color = pp.text2
+						l.MaxLines, l.Truncator = 1, "…"
+						return l.Layout(gtx)
 					}),
-					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+					layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return st.list.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-							return material.Editor(th, &st.ed, "").Layout(gtx)
-						})
+						// 内容块面：先铺面（Expanded 拿实际尺寸），再把编辑器排上去。
+						return layout.Stack{}.Layout(gtx,
+							layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+								// 面要**撑满**可用宽高：按 Min 铺会缩成正文文字的宽度，
+								// 右边留出一大片白——看上去像窗子只画了一半。
+								sz := gtx.Constraints.Max
+								paperSurface(gtx, pp, image.Rectangle{Max: sz},
+									gtx.Dp(unit.Dp(pp.rCard)))
+								return layout.Dimensions{Size: sz}
+							}),
+							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+								// 编辑器自身不撑宽（material.Editor 只报文字宽度），
+								// 这里补一次最小宽度约束，内容才会贴着块的左内边距排版。
+								gtx.Constraints.Min.X = gtx.Constraints.Max.X
+								return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return st.list.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+										ed := material.Editor(th, &st.ed, "")
+										ed.Color = pp.text
+										return ed.Layout(gtx)
+									})
+								})
+							}),
+						)
 					}),
 				)
 			})

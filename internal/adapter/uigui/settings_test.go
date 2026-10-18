@@ -748,7 +748,7 @@ func TestSettingsPageNamesContract(t *testing.T) {
 	// S7b/D145：提示词行归「系统提示词」页；「对话」页只留限额——防两页都挂或都不挂
 	// （拆页时最容易犯的错是把 pageChat 的行计划整体复制一份而忘了删原处）。行数随快照
 	// 变化的模块/引用/内置行在 TestPromptRowsLiveOnPromptPage 里带快照判定。
-	promptFixed := []rowKind{rowSysPrompt, rowPromptNote, rowPromptModAdd, rowPromptRefAdd, rowPromptPreview}
+	promptFixed := []rowKind{rowSysPrompt, rowPromptNote, rowPromptGrid, rowPromptRefAdd, rowPromptPreview}
 	has := func(page int, kind rowKind) bool {
 		for _, r := range f.pageRows(page) {
 			if r.kind == kind {
@@ -794,14 +794,14 @@ func TestPromptRowsLiveOnPromptPage(t *testing.T) {
 		}
 		return n
 	}
-	kinds := []rowKind{rowPromptModule, rowPromptRef, rowPromptBuiltin, rowPromptPreview}
+	kinds := []rowKind{rowPromptGrid, rowPromptRef, rowPromptBuiltin, rowPromptPreview}
 	for _, page := range []int{pageChat, pageGeneral, pageModel, pageTools, pageAdv} {
 		if n := count(page, kinds...); n != 0 {
 			t.Errorf("页 %s 出现了 %d 条提示词行（应只在「系统提示词」页）", settingsPageNames[page], n)
 		}
 	}
-	if got, want := count(pagePrompt, rowPromptModule), 2; got != want {
-		t.Errorf("「系统提示词」页模块行 = %d, want %d", got, want)
+	if got, want := count(pagePrompt, rowPromptGrid), 1; got != want {
+		t.Errorf("「系统提示词」页模块网格行 = %d, want %d", got, want)
 	}
 	if got, want := count(pagePrompt, rowPromptRef), 2; got != want {
 		t.Errorf("「系统提示词」页引用行 = %d, want %d", got, want)
@@ -1075,6 +1075,172 @@ func TestSettingsPagesRenderContent(t *testing.T) {
 			t.Errorf("页 %d（%s）内容区非底色像素 = %d，want ≥1000——该页可能空白",
 				p, settingsPageNames[p], px)
 		}
+	}
+}
+
+// TestRowInsetContract 行腔留白是六页共用的单一旋钮（D148）。
+//
+// 用户对「模块表单」与「运行卡」两处提了同一诉求（上下需要更多留白）——那说明是
+// 全局密度问题。这条测试锁住「只在一个地方定义」这个事实：如果有人把某页改回自己的
+// 内边距，六页就会重新变得疏密不一，而肉眼很难逐页比对发现。
+func TestRowInsetContract(t *testing.T) {
+	// 14 是修订前的值（文字贴描边）；抬到 18 是本决策的可观测结果。
+	if rowInsetDp < 18 {
+		t.Fatalf("rowInsetDp = %d，want ≥18（D148：行腔留白不得退回贴边密度）", rowInsetDp)
+	}
+	// 上界防止后续为了「更松」一路加码把设置页撑成一屏两行。
+	if rowInsetDp > 24 {
+		t.Fatalf("rowInsetDp = %d，want ≤24（再大设置页一屏放不下三行）", rowInsetDp)
+	}
+}
+
+// TestPromptPageHasModuleGridRow 「系统提示词」页的模块库整块占**一个**行（D148），
+// 且模块数据一行不少。网格化后如果网格自己被合并/吞掉，保存时就会丢掉用户模块
+// ——这是最容易在「改布局」名义下犯的错。
+//
+// 行数恒为 1：模块增删只改网格内容、不改行计划（这正是「一屏看到全部模块」的实现
+// 方式），所以断言的是「网格行存在且唯一」，不是「行数 == 模块数」。
+func TestPromptPageHasModuleGridRow(t *testing.T) {
+	f := &settingsForm{page: pagePrompt}
+	for _, n := range []string{"house", "identity", "style"} {
+		pf := &promptModuleForm{}
+		pf.name.SetText(n)
+		f.promptMods = append(f.promptMods, pf)
+	}
+	rows := f.pageRows(pagePrompt)
+	grid := 0
+	for _, r := range rows {
+		if r.kind == rowPromptGrid {
+			grid++
+		}
+	}
+	if grid != 1 {
+		t.Fatalf("rowPromptGrid 行数 = %d，want 1（模块库整块一行）", grid)
+	}
+	// 模块数据本身必须原样留在表里（网格只改呈现）。
+	if got := len(f.promptViews()); got != 3 {
+		t.Fatalf("模块数 = %d，want 3（网格化不得吞模块）", got)
+	}
+}
+
+// TestModuleGridMove 拖动落位 = 数组重排（D148）：从 i 挪到 j 后，原 i 的模块应
+// 落在 j 位，其余保持相对顺序。
+func TestModuleGridMove(t *testing.T) {
+	names := []string{"a", "b", "c", "d", "e"}
+	build := func() *settingsForm {
+		f := &settingsForm{}
+		for _, n := range names {
+			pf := &promptModuleForm{}
+			pf.name.SetText(n)
+			f.promptMods = append(f.promptMods, pf)
+		}
+		return f
+	}
+	cases := []struct {
+		from, to int
+		want     []string
+	}{
+		{0, 3, []string{"b", "c", "d", "a", "e"}}, // 往后移：中间元素左移填空
+		{4, 1, []string{"a", "e", "b", "c", "d"}}, // 往前移：中间元素右移腾位
+		{2, 2, []string{"a", "b", "c", "d", "e"}}, // 原地：no-op
+		{0, 4, []string{"b", "c", "d", "e", "a"}},
+		{3, 0, []string{"d", "a", "b", "c", "e"}},
+	}
+	for _, tc := range cases {
+		f := build()
+		f.movePromptModule(tc.from, tc.to)
+		got := make([]string, 0, len(f.promptMods))
+		for _, pf := range f.promptMods {
+			got = append(got, pf.name.Text())
+		}
+		if len(got) != len(tc.want) {
+			t.Fatalf("move(%d→%d)：模块数 = %d，want %d", tc.from, tc.to, len(got), len(tc.want))
+		}
+		for i := range tc.want {
+			if got[i] != tc.want[i] {
+				t.Fatalf("move(%d→%d) = %v，want %v", tc.from, tc.to, got, tc.want)
+			}
+		}
+	}
+}
+
+// TestModuleEditorRenameSyncsRefs 改名要同步人格引用（D148）。
+//
+// 模块名就是身份：引用列表里存的是名字，改名后不同步 = 组合里那一段凭空消失，
+// 而表单上看着一切正常（引用名还在，只是再也对不上任何模块）。
+func TestModuleEditorRenameSyncsRefs(t *testing.T) {
+	f := &settingsForm{page: pagePrompt}
+	pf := &promptModuleForm{}
+	pf.name.SetText("house")
+	pf.text.SetText("HOUSE:")
+	f.promptMods = append(f.promptMods, pf)
+	for _, n := range []string{"house", "style"} {
+		rf := &promptRefForm{}
+		rf.name.SetText(n)
+		f.promptRefs = append(f.promptRefs, rf)
+	}
+
+	f.openModuleEditor(0)
+	f.modEdit.name.SetText("household")
+	f.commitModuleEditor()
+
+	if got := f.promptMods[0].name.Text(); got != "household" {
+		t.Fatalf("模块名 = %q，want %q", got, "household")
+	}
+	if got := f.promptRefs[0].name.Text(); got != "household" {
+		t.Fatalf("引用 0 = %q，want %q（改名须同步引用）", got, "household")
+	}
+	if got := f.promptRefs[1].name.Text(); got != "style" {
+		t.Fatalf("引用 1 = %q，want %q（无关引用不得被改）", got, "style")
+	}
+	if f.modEdit.open {
+		t.Fatal("保存后弹窗应关闭")
+	}
+}
+
+// TestModuleEditorAddAndDelete 弹窗的新增/删除（D148）：新增追加一个模块行，
+// 删除按弹窗打开时的下标移除。
+func TestModuleEditorAddAndDelete(t *testing.T) {
+	f := &settingsForm{page: pagePrompt}
+	f.openModuleEditor(-1)
+	f.modEdit.name.SetText("fresh")
+	f.commitModuleEditor()
+	if len(f.promptMods) != 1 || f.promptMods[0].name.Text() != "fresh" {
+		t.Fatalf("新增后模块 = %v，want [fresh]", f.promptViews())
+	}
+	f.openModuleEditor(0)
+	f.delPromptModule(f.modEdit.idx)
+	f.closeModuleEditor()
+	if len(f.promptMods) != 0 {
+		t.Fatalf("删除后模块数 = %d，want 0", len(f.promptMods))
+	}
+}
+
+// TestModuleMetaRefCount 磁贴元信息给出「组/叶 + 被引用次数」（D148）：
+// 改了模块却不知道有没有被用上，就只能靠记忆去比对引用段。
+func TestModuleMetaRefCount(t *testing.T) {
+	pf := &promptModuleForm{}
+	pf.name.SetText("house")
+	pf.children.SetText("a, b")
+	refs := func(names ...string) []*promptRefForm {
+		out := make([]*promptRefForm, 0, len(names))
+		for _, n := range names {
+			rf := &promptRefForm{}
+			rf.name.SetText(n)
+			out = append(out, rf)
+		}
+		return out
+	}
+	if got, want := moduleMeta(pf, refs()), "组头 · 未引用"; got != want {
+		t.Fatalf("meta = %q，want %q", got, want)
+	}
+	if got, want := moduleMeta(pf, refs("house", "house", "style")), "组头 · 被引用 2 次"; got != want {
+		t.Fatalf("meta = %q，want %q", got, want)
+	}
+	leaf := &promptModuleForm{}
+	leaf.name.SetText("style")
+	if got, want := moduleMeta(leaf, refs("style")), "正文 · 被引用 1 次"; got != want {
+		t.Fatalf("meta = %q，want %q", got, want)
 	}
 }
 

@@ -328,7 +328,9 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 		switch e := ev.(type) {
 		case app.FrameEvent:
 			if p := ctl.pal.Load(); p != nil && p != applied {
-				th.Palette.Fg, th.Palette.Bg = p.fg, p.bg
+				// 次窗套 Paper：材料主题的默认文字/底与按钮对比色都取 Paper 令牌。
+				// 主窗的 th 不经过这里，配色因此保持原样（D148）。
+				applyPaperTheme(th, resolvePaper(p.mode(), p.isDark()))
 				applied = p
 			}
 			gtx := app.NewContext(&ops, e)
@@ -355,15 +357,15 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 }
 
 // secondaryFrame 占位窗单帧（会话历史/欢迎；设置窗走 settingsFrame）。
-// 常规窗不做形裁/羽化/淡出带（§15.7 形态）：主题 Bg 铺底 + 正文居中。
+// 常规窗不做形裁/羽化/淡出带（§15.7 形态）：Paper 窗体面铺底 + 正文居中。
 func secondaryFrame(gtx layout.Context, th *material.Theme, k winKind) layout.Dimensions {
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, th.Bg,
+			paint.FillShape(gtx.Ops, paperOf().win,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(unit.Dp(32)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Body1(th, k.placeholder()).Layout(gtx)
+					return paperBody(th, k.placeholder())(gtx)
 				})
 			})
 		}),

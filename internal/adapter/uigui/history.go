@@ -19,6 +19,7 @@ import (
 	"io"
 	"strings"
 
+	"gioui.org/font"
 	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
@@ -247,7 +248,7 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 	st.dispatch(u, gtx)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, th.Bg,
+			paint.FillShape(gtx.Ops, paperOf().win,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
 			return layout.Dimensions{}
 		}),
@@ -259,6 +260,14 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 							w := gtx.Dp(histLeftColumnDp)
 							gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
 							return histLeftColumn(gtx, th, u, st)
+						}),
+						// 左栏与右图之间一条 hairline：两栏各自整高填充同色时，没有这条线
+						// 会长成一块——读者分不出「列表到此为止」。
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							pp := paperOf()
+							paint.FillShape(gtx.Ops, pp.hairline,
+								clip.Rect(image.Rectangle{Max: image.Pt(gtx.Dp(1), gtx.Constraints.Max.Y)}).Op())
+							return layout.Dimensions{Size: image.Pt(gtx.Dp(1), gtx.Constraints.Max.Y)}
 						}),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							return histGraphArea(gtx, th, u, st)
@@ -286,8 +295,9 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 	return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, unit.Sp(12), "会话")
-				l.Color = textMuted
+				l := material.Label(th, paperMicroSp(th), "会话")
+				l.Font.Weight = font.Bold
+				l.Color = paperOf().text3
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
@@ -298,13 +308,14 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 						return layout.Stack{}.Layout(gtx,
 							layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 								s := st.sessions[i]
-								fill := pillBg
+								pp := paperOf()
+								fill := pp.win
 								if s.Current {
-									fill = cardSystem
+									fill = pp.sel
 								}
 								paint.FillShape(gtx.Ops, fill,
-									clip.RRect{Rect: image.Rectangle{Max: gtx.Constraints.Max},
-										SE: gtx.Dp(8), SW: gtx.Dp(8), NE: gtx.Dp(8), NW: gtx.Dp(8)}.Op(gtx.Ops))
+									clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max},
+										gtx.Dp(unit.Dp(pp.rChip))).Op(gtx.Ops))
 								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
 							}),
 							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
@@ -334,13 +345,14 @@ func histSessionRow(gtx layout.Context, th *material.Theme, s port.SessionSummar
 	meta := fmt.Sprintf("%s · %d 条", s.UpdatedAt.Format("01-02 15:04"), s.Messages)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			l := material.Body2(th, mark+" "+title)
-			l.Color = th.Fg
+			l := material.Label(th, paperNoteSp(th), mark+" "+title)
+			l.Color = paperOf().text
+			l.Font.Weight = font.Bold
 			return l.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			l := material.Caption(th, meta)
-			l.Color = textMuted
+			l := material.Label(th, paperMicroSp(th), meta)
+			l.Color = paperOf().text3
 			return l.Layout(gtx)
 		}),
 	)
@@ -361,8 +373,8 @@ func histGraphArea(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 		return st.graph.frame(gtx, th, u, st)
 	}
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		l := material.Body2(th, "关系图未就绪")
-		l.Color = textMuted
+		l := material.Label(th, paperNoteSp(th), "关系图未就绪")
+		l.Color = paperOf().text3
 		return l.Layout(gtx)
 	})
 }
@@ -381,7 +393,7 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 	text := fmt.Sprintf("会话：%s · 共 %d 条 · 呈现 %d", st.title(), N, M)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, cardTool,
+			paint.FillShape(gtx.Ops, paperOf().sunken,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
 			return layout.Dimensions{}
 		}),
@@ -391,8 +403,8 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								l := material.Caption(th, text)
-								l.Color = textMuted
+								l := material.Label(th, paperMicroSp(th), text)
+								l.Color = paperOf().text2
 								return l.Layout(gtx)
 							}),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -402,8 +414,8 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 							layout.Rigid(histCtl(th, &st.btnPlus, "＋")),
 							layout.Rigid(histCtl(th, &st.btnAll, "展开全部")),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								l := material.Caption(th, "缩放 "+zoomPct)
-								l.Color = textMuted
+								l := material.Label(th, paperMicroSp(th), "缩放 "+zoomPct)
+								l.Color = paperOf().text2
 								return l.Layout(gtx)
 							}),
 							layout.Rigid(histCtl(th, &st.btnHome, "装下整树")),
@@ -422,16 +434,32 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 	)
 }
 
-// histCtl 状态栏小按钮（clickable + 标签）。
+// histCtl 状态栏小按钮（clickable + 标签）。悬停/按下靠 Clickable 自带的 ripple 投影
+// 到 Paper 的次级面上——状态栏底色已是 sunken，故只给文字色，不再叠第二层底。
 func histCtl(th *material.Theme, c *widget.Clickable, text string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Caption(th, text)
-				l.Color = textMuted
+				l.Color = paperOf().text2
 				return l.Layout(gtx)
 			})
 		})
+	}
+}
+
+// swatchRing 空心色块（结构根 = 描边圆，与 drawNode 的 relShapeRing 同形态）。
+func swatchRing(c color.NRGBA) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		size := gtx.Dp(10)
+		box := image.Rectangle{Max: image.Pt(size, size)}
+		cw := gtx.Dp(1)
+		if cw < 1 {
+			cw = 1
+		}
+		out := clip.UniformRRect(box, size/2).Path(gtx.Ops)
+		paint.FillShape(gtx.Ops, c, clip.Stroke{Path: out, Width: float32(cw * 2)}.Op())
+		return layout.Dimensions{Size: image.Pt(size, size)}
 	}
 }
 
@@ -447,21 +475,26 @@ func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	}
 	label := func(s string) layout.Widget {
 		return func(gtx layout.Context) layout.Dimensions {
-			l := material.Caption(th, s)
-			l.Color = textMuted
+			l := material.Label(th, paperMicroSp(th), s)
+			l.Color = paperOf().text2
 			return l.Layout(gtx)
 		}
 	}
+	// 图例必须与画布同源：色块直接取 Paper 的深度色带，形状词与 relShapeOf 一一对应
+	// （□ user / ● assistant / ◇ system / ◯ 结构根）。此前图例列 4 色而画布只现 3 档、
+	// 结构根画成实心圆，图例与画面对不上——图例的用处就是「照着认」，对不上就是错的。
+	d := paperOf().depth
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(label("色带：")),
-		layout.Rigid(swatch(depthMap[0])),
+		layout.Rigid(label("色带")),
+		layout.Rigid(swatch(d[0])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
-		layout.Rigid(swatch(depthMap[1])),
+		layout.Rigid(swatch(d[1])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
-		layout.Rigid(swatch(depthMap[2])),
+		layout.Rigid(swatch(d[2])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
-		layout.Rigid(swatch(depthMap[3])),
+		layout.Rigid(swatch(d[3])),
+		layout.Rigid(swatchRing(d[0])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
-		layout.Rigid(label("形状：□你 ●AI ◇系统 ◯会话根")),
+		layout.Rigid(label("形状：□ 你 · ● 助手 · ◇ 系统 · ◯ 会话根")),
 	)
 }

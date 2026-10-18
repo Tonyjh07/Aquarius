@@ -25,6 +25,11 @@ const fieldLabelW = 92
 // S4d/D142 起按页分组——页序与页内容见 pageRows）。
 type rowKind int
 
+// rowInsetDp 每行上下左右的行腔留白（六页共用，D148）。
+// 原值 14dp 让表单文字几乎贴住卡片描边，抬到 18dp 后行间与卡内都有了呼吸；
+// 这是「设置页密度」的唯一旋钮，调它 = 同时调六页，不要逐页微调。
+const rowInsetDp = 18
+
 const (
 	rowTitle   rowKind = iota // 页标题（页名）
 	rowSection                // 分组小标题（text = 分组名）
@@ -61,8 +66,7 @@ const (
 	rowToolsStatus // 异步动作反馈状态行
 	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
 	rowPromptNote    // 说明（text = 文案）
-	rowPromptModule  // 模块节点行（field = promptMods 下标）
-	rowPromptModAdd  // 「＋ 新增模块」
+	rowPromptGrid    // 模块库三列网格（D148；整块占一行，模块数不影响行数）
 	rowPromptRef     // 人格引用行（field = promptRefs 下标）
 	rowPromptRefAdd  // 「＋ 添加引用」
 	rowPromptBuiltin // 内置只读模块行（field = builtins 下标）
@@ -149,11 +153,10 @@ func (f *settingsForm) pageRows(page int) []rowDesc {
 			rows = append(rows, rowDesc{kind: rowPromptRef, field: i})
 		}
 		rows = append(rows, rowDesc{kind: rowPromptRefAdd})
-		rows = append(rows, sec("模块库（children 逗号分隔，可多级分组）"))
-		for i := range f.promptMods {
-			rows = append(rows, rowDesc{kind: rowPromptModule, field: i})
-		}
-		rows = append(rows, rowDesc{kind: rowPromptModAdd})
+		rows = append(rows, sec("模块库"))
+		// 模块库整体占**一个**行（D148）：磁贴在模块库网格里自行排布，模块增删
+		// 只改网格内容、不改行数。逐模块一行是改版前的形态（一屏只能看到一个模块）。
+		rows = append(rows, rowDesc{kind: rowPromptGrid})
 		if len(f.builtins) > 0 {
 			rows = append(rows, sec("内置模块（只读，可引用）"))
 			for i := range f.builtins {
@@ -238,9 +241,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
 	}
 	// S7/D144：人格模块树与引用编辑（新增/删除/上移/下移、内置模块「引用」）。
-	for f.promptModAdd.Clicked(gtx) {
-		f.addPromptModule()
-	}
+	// D148：模块库改成三列网格——新增走网格末尾那格，模块本身的增删改走右键弹窗。
 	for f.promptRefAdd.Clicked(gtx) {
 		f.addPromptRef("")
 	}
@@ -252,10 +253,8 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 			f.addPromptRef(name)
 		}
 	}
-	for i, pf := range f.promptMods {
-		for pf.del.Clicked(gtx) {
-			f.delPromptModule(i)
-		}
+	if f.page == pagePrompt && !f.modEdit.open {
+		f.moduleGridEvents(gtx)
 	}
 	for i, rf := range f.promptRefs {
 		for rf.up.Clicked(gtx) {
@@ -303,7 +302,8 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	}
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, windowBg,
+			pp := paperOf()
+			paint.FillShape(gtx.Ops, pp.win,
 				clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
 			return layout.Dimensions{}
 		}),
@@ -327,6 +327,12 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 				}),
 			)
 		}),
+		// 编辑弹窗画在最后一层（模态）：它必须盖住内容区与底栏，否则遮罩盖不到的
+		// 「保存并应用」在弹窗背后仍是亮的，读起来像是可以直接点。D148。
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			dims, _ := f.moduleEditorFrame(gtx, th)
+			return dims
+		}),
 	)
 }
 
@@ -344,23 +350,35 @@ func (f *settingsForm) navColumn(gtx layout.Context, th *material.Theme) layout.
 }
 
 // navItem 单个导航项：整宽高亮底衬（当前页）+ 页名；点击件即整项。
+//
+// Paper 版的选中态 = 软底 + 左侧 2dp 品牌色短条。短条不与文字重叠，故可以用品牌色
+// #00AEEF 本身（承载白字的那档才需要深一档）；选中项文字同时升到 text 最亮一档。
 func (f *settingsForm) navItem(gtx layout.Context, th *material.Theme, p int) layout.Dimensions {
 	return f.navBtns[p].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(navItemDpH))
 		return layout.Stack{Alignment: layout.W}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 				if f.page == p {
-					paint.FillShape(gtx.Ops, cardSystem,
-						clip.RRect{Rect: image.Rectangle{Max: size},
-							SE: gtx.Dp(6), SW: gtx.Dp(6), NE: gtx.Dp(6), NW: gtx.Dp(6)}.Op(gtx.Ops))
+					pp := paperOf()
+					r := image.Rectangle{Max: size}
+					paint.FillShape(gtx.Ops, pp.sel,
+						clip.UniformRRect(r, gtx.Dp(unit.Dp(pp.rChip))).Op(gtx.Ops))
+					// 左条：贴着圆角内侧，上下各让 6dp——贴满整高会与圆角打架。
+					bar := image.Rect(r.Min.X+gtx.Dp(2), r.Min.Y+gtx.Dp(6),
+						r.Min.X+gtx.Dp(4), r.Max.Y-gtx.Dp(6))
+					paint.FillShape(gtx.Ops, pp.brand,
+						clip.UniformRRect(bar, gtx.Dp(1)).Op(gtx.Ops))
 				}
 				return layout.Dimensions{Size: size}
 			}),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					pp := paperOf()
 					l := material.Body1(th, settingsPageNames[p])
 					if f.page == p {
-						l.Color = textSystem
+						l.Color = pp.text
+					} else {
+						l.Color = pp.text2
 					}
 					return l.Layout(gtx)
 				})
@@ -374,12 +392,12 @@ func (f *settingsForm) navItem(gtx layout.Context, th *material.Theme, p int) la
 func (f *settingsForm) bottomBar(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			// 底衬（Expanded 拿到 Stacked 子项的最大尺寸）+ 1dp 顶线分隔内容区。
+			// 底衬（Expanded 拿到 Stacked 子项的最大尺寸）+ 1dp hairline 分隔内容区。
+			// 底栏与窗体同色、只靠这条线分层：Paper 里不出现第二块大底色。
+			pp := paperOf()
 			size := gtx.Constraints.Min
-			paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: size}).Op())
-			sep := textDim
-			sep.A = 0x40
-			paint.FillShape(gtx.Ops, sep,
+			paint.FillShape(gtx.Ops, pp.win, clip.Rect(image.Rectangle{Max: size}).Op())
+			paint.FillShape(gtx.Ops, pp.hairline,
 				clip.Rect(image.Rectangle{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))}).Op())
 			return layout.Dimensions{Size: size}
 		}),
@@ -392,128 +410,235 @@ func (f *settingsForm) bottomBar(gtx layout.Context, th *material.Theme) layout.
 }
 
 // row 第 i 行渲染（material.List 回调；行内容按 pageRows 的类型分派）。
+//
+// 版面口径（D148 Paper 版）：
+//   - **表单行**（字段/开关/按钮组）落进「分组卡」：连续的字段行合成一张卡，卡内
+//     行间一条 hairline，卡外沿 1dp 描边、组首/组尾给圆角。
+//   - **非表单行**（页标题/分区标题/说明/网格/预览/整组按钮行）自带上下留白，不落卡。
+//
+// 为什么卡底按行画而不是整块画：设置页是 material.List（虚拟化），滚出视口的行为
+// 不参与布局，拿不到「这一组的完整矩形」。按行画、组界只补外沿，视觉上仍是连续一张
+// 卡——这也是 iOS 分组表的画法（被视口切断处是直边，本来就不该有圆角）。
 func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Context, int) layout.Dimensions {
 	return func(gtx layout.Context, i int) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(14)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			r := rows[i]
-			switch r.kind {
-			case rowTitle:
-				return material.H6(th, r.text).Layout(gtx)
-			case rowSection:
-				return material.Subtitle1(th, r.text).Layout(gtx)
-			case rowProfCurrent:
-				return fieldRow(gtx, th, "当前", func(gtx layout.Context) layout.Dimensions {
-					txt := f.profiles.Current
-					if len(f.profiles.Items) > 0 {
-						txt += "（可用：" + strings.Join(f.profiles.Items, ", ") + "）"
+		r := rows[i]
+		if !rowInCard(r.kind) {
+			return layout.UniformInset(unit.Dp(rowInsetDp)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return f.rowBody(gtx, th, rows, i)
+			})
+		}
+		first := i == 0 || !rowInCard(rows[i-1].kind)
+		last := i == len(rows)-1 || !rowInCard(rows[i+1].kind)
+		// 组首/组尾与相邻标题之间留整份 rowInsetDp，组内只留一半（卡内行距）。
+		padT, padB := rowInsetDp/2, rowInsetDp/2
+		if first {
+			padT = rowInsetDp
+		}
+		if last {
+			padB = rowInsetDp
+		}
+		return layout.Inset{
+			Left: unit.Dp(rowInsetDp), Right: unit.Dp(rowInsetDp),
+			Top: unit.Dp(padT), Bottom: unit.Dp(padB),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			pp := paperOf()
+			rad := gtx.Dp(unit.Dp(pp.rCard))
+			bd := gtx.Dp(1)
+			return layout.Stack{}.Layout(gtx,
+				// 卡底 + 外沿：Expanded 拿到 Stacked 子项的最大尺寸，即「本行高度」。
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					// 卡宽取**可用宽**而不是内容宽：layout.Stack 会把 Stacked 子项的
+					// Min 归零，只报自身尺寸的内容（复选框、单个按钮）会让卡缩成一条
+					// ——同一页出现两种卡宽，读起来像排版塌了。
+					w, h := gtx.Constraints.Min.X, gtx.Constraints.Min.Y
+					if m := gtx.Constraints.Max.X; m > w {
+						w = m
 					}
-					l := material.Body1(th, txt)
-					l.Color = textDim
-					return l.Layout(gtx)
-				})
-			case rowProfName:
-				return fieldRow(gtx, th, "Profile 名", editorBox(th, &f.profName, "新建 / 复制 / 切换的目标名"))
-			case rowProfBtns:
-				return f.profileButtonsRow(gtx, th)
-			case rowWelcome: // D141：欢迎 / 首次运行引导入口（开 winWelcome 次窗）
-				return f.welcomeRow(gtx, th)
-			case rowModelName: // S4d：当前模型名（D110② 起在 UI 上失位，本次补回）
-				return fieldRow(gtx, th, "当前模型名", editorBox(th, &f.model, "model.name；改动保存后经 /model 热切换"))
-			case rowProvField:
-				pf := f.provs[r.prov]
-				eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
-				meta := provFieldMeta[r.field]
-				return fieldRow(gtx, th, meta.label, editorBox(th, eds[r.field], meta.hint))
-			case rowProvBtns:
-				return f.providerButtonsRow(gtx, th, r.prov)
-			case rowProvAdd:
-				return f.providerAddRow(gtx, th)
-			case rowProvApply:
-				return f.providerApplyRow(gtx, th)
-			case rowPerm:
-				return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm))
-			case rowThink:
-				return material.CheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）").Layout(gtx)
-			case rowEffort:
-				return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort))
-			case rowHotkey:
-				return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
-			case rowTheme:
-				return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme))
-			case rowScale:
-				return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale))
-			case rowFontSize:
-				return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
-			case rowWinSize:
-				return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
-			case rowNotify:
-				return material.CheckBox(th, &f.notify, "桌面通知（回答完成时）").Layout(gtx)
-			case rowTTS:
-				return material.CheckBox(th, &f.tts, "语音播报（已解析配置，尚未启用）").Layout(gtx)
-			case rowMaxTurns:
-				return fieldRow(gtx, th, "最大轮数", editorBox(th, &f.maxTurns, "单次提问的工具调用轮数上限（空 = 保持）"))
-			case rowMaxCtx:
-				return fieldRow(gtx, th, "上下文上限", editorBox(th, &f.maxCtx, "tokens；自动压缩与截断的预算分母（空 = 保持）"))
-			case rowCompact:
-				return fieldRow(gtx, th, "压缩阈值", editorBox(th, &f.compact, "0–1；占用超阈值触发自动压缩（空 = 保持）"))
-			case rowToolChars:
-				return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）"))
-			case rowToolTo:
-				return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
-			case rowSysPrompt:
-				return editorBoxH(th, &f.sysPrompt, "默认人格（= 内置 @default 正文；清空 = 内置默认）", 80)(gtx)
-			// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
-			case rowPromptNote:
-				l := material.Body2(th, "人格 = 有序引用的展开结果；模块可分组（children 逗号分隔，可多级）。"+
-					"改动只对新会话生效，且重启后应用。")
-				l.Color = textDim
-				return l.Layout(gtx)
-			case rowPromptModule:
-				return f.promptModuleRow(gtx, th, r.field)
-			case rowPromptModAdd:
-				b := material.Button(th, &f.promptModAdd, "＋ 新增模块")
-				b.TextSize = unit.Sp(13)
-				return b.Layout(gtx)
-			case rowPromptRef:
-				return f.promptRefRow(gtx, th, r.field)
-			case rowPromptRefAdd:
-				b := material.Button(th, &f.promptRefAdd, "＋ 添加引用")
-				b.TextSize = unit.Sp(13)
-				return b.Layout(gtx)
-			case rowPromptBuiltin:
-				return f.promptBuiltinRow(gtx, th, f.builtins[r.field])
-			case rowPromptPreview:
-				text := f.promptPrev
-				l := material.Body2(th, text)
-				if strings.TrimSpace(text) == "" {
-					text = "（保存后按模块树组合；预览需装配根接线）"
-					l = material.Body2(th, text)
-					l.Color = textDim
-				} else {
-					l.Color = textSystem
-				}
-				return l.Layout(gtx)
-			// S6/D143：工具与 MCP 页。
-			case rowBuiltin:
-				return f.builtinToolRow(gtx, th, f.toolsSnap.Builtins[r.field])
-			case rowPlugin:
-				return f.pluginToolRow(gtx, th, f.toolsSnap.Plugins[r.field])
-			case rowToolsEmpty:
-				l := material.Body2(th, r.text)
-				l.Color = textDim
-				return l.Layout(gtx)
-			case rowToolsStatus:
-				l := material.Body2(th, f.toolsStatus)
-				if f.toolsErr {
-					l.Color = textError
-				} else {
-					l.Color = textDim
-				}
-				return l.Layout(gtx)
-			default: // rowRaw
-				return editorBoxH(th, &f.rawCfg, "整文件编辑；保存前 JSON 校验（解析失败原文件不动，Q10）", 220)(gtx)
-			}
+					// 上下圆角只在组界生效：中间行直角，与相邻行拼成一张连续的卡。
+					topR, botR := 0, 0
+					if first {
+						topR = rad
+					}
+					if last {
+						botR = rad
+					}
+					// **整圈画环**：先铺描边色的圆角矩形，再内缩 bd 铺面色。逐条边画直线
+					// 会在四个角留缺口（实测：框线断成四截，读起来像渲染坏了）。
+					outer := clip.RRect{Rect: image.Rect(0, 0, w, h), NE: topR, NW: topR, SE: botR, SW: botR}
+					paint.FillShape(gtx.Ops, pp.hairline, outer.Op(gtx.Ops))
+					ir := func(v int) int {
+						if v <= bd {
+							return 0
+						}
+						return v - bd
+					}
+					inner := clip.RRect{
+						Rect: image.Rect(bd, bd, w-bd, h-bd),
+						NE:   ir(topR), NW: ir(topR), SE: ir(botR), SW: ir(botR),
+					}
+					paint.FillShape(gtx.Ops, pp.card, inner.Op(gtx.Ops))
+					// 组内：把「不该出现的那条边」用面色抹掉，再补一条让开内边距的分隔线。
+					// 抹边只能抹本行自己的像素（相邻行各有各的边界行），不会伤到邻行。
+					erase := func(rr image.Rectangle) {
+						paint.FillShape(gtx.Ops, pp.card, clip.Rect(rr).Op())
+					}
+					if !first {
+						erase(image.Rect(0, 0, w, bd))
+						paint.FillShape(gtx.Ops, pp.hairline,
+							clip.Rect(image.Rect(gtx.Dp(14), 0, w-gtx.Dp(14), bd)).Op())
+					}
+					if !last {
+						erase(image.Rect(0, h-bd, w, h))
+					}
+					return layout.Dimensions{Size: image.Pt(w, h)}
+				}),
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					// 卡内边距：上下 14 与左右一致，字段才不会贴着卡的描边。
+					return layout.Inset{
+						Top: unit.Dp(14), Bottom: unit.Dp(14),
+						Left: unit.Dp(14), Right: unit.Dp(14),
+					}.Layout(gtx, f.rowBodyFn(th, rows, i))
+				}),
+			)
 		})
+	}
+}
+
+// rowInCard 该行是否落进分组卡（表单行）。
+//
+// 口径：**可编辑/可操作的表单行**打成一张卡（iOS 分组表读法）——分隔线在卡内、
+// 圆角只在组首组尾；标题、分区标题、说明段、整块内容（代码块/网格/预览）不落卡。
+// 「人格引用」整组落卡：它们是同一份有序列表的成员，逐行浮着会被误读成互不相关的项。
+func rowInCard(k rowKind) bool {
+	switch k {
+	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
+		rowPromptPreview, rowProfBtns, rowProvBtns, rowProvAdd, rowProvApply,
+		rowPromptRefAdd:
+		return false
+	}
+	return true
+}
+
+// rowBodyFn 绑定「第 i 行内容」的 widget（Stacked 子项需要 widget 而不是立即调用）。
+func (f *settingsForm) rowBodyFn(th *material.Theme, rows []rowDesc, i int) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return f.rowBody(gtx, th, rows, i)
+	}
+}
+
+// rowBody 行内容本体（版面归 row，内容只按类型分派）。
+func (f *settingsForm) rowBody(gtx layout.Context, th *material.Theme, rows []rowDesc, i int) layout.Dimensions {
+	r := rows[i]
+	switch r.kind {
+	case rowTitle:
+		return paperTitle(th, r.text)(gtx)
+	case rowSection:
+		return paperSection(th, r.text)(gtx)
+	case rowProfCurrent:
+		return fieldRow(gtx, th, "当前", func(gtx layout.Context) layout.Dimensions {
+			txt := f.profiles.Current
+			if len(f.profiles.Items) > 0 {
+				txt += "（可用：" + strings.Join(f.profiles.Items, ", ") + "）"
+			}
+			l := material.Body1(th, txt)
+			l.Color = paperOf().text3
+			return l.Layout(gtx)
+		})
+	case rowProfName:
+		return fieldRow(gtx, th, "Profile 名", editorBox(th, &f.profName, "新建 / 复制 / 切换的目标名"))
+	case rowProfBtns:
+		return f.profileButtonsRow(gtx, th)
+	case rowWelcome: // D141：欢迎 / 首次运行引导入口（开 winWelcome 次窗）
+		return f.welcomeRow(gtx, th)
+	case rowModelName: // S4d：当前模型名（D110② 起在 UI 上失位，本次补回）
+		return fieldRow(gtx, th, "当前模型名", editorBox(th, &f.model, "model.name；改动保存后经 /model 热切换"))
+	case rowProvField:
+		pf := f.provs[r.prov]
+		eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
+		meta := provFieldMeta[r.field]
+		return fieldRow(gtx, th, meta.label, editorBox(th, eds[r.field], meta.hint))
+	case rowProvBtns:
+		return f.providerButtonsRow(gtx, th, r.prov)
+	case rowProvAdd:
+		return f.providerAddRow(gtx, th)
+	case rowProvApply:
+		return f.providerApplyRow(gtx, th)
+	case rowPerm:
+		return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm))
+	case rowThink:
+		return paperCheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）")(gtx)
+	case rowEffort:
+		return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort))
+	case rowHotkey:
+		return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
+	case rowTheme:
+		return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme))
+	case rowScale:
+		return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale))
+	case rowFontSize:
+		return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
+	case rowWinSize:
+		return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
+	case rowNotify:
+		return paperCheckBox(th, &f.notify, "桌面通知（回答完成时）")(gtx)
+	case rowTTS:
+		return paperCheckBox(th, &f.tts, "语音播报（已解析配置，尚未启用）")(gtx)
+	case rowMaxTurns:
+		return fieldRow(gtx, th, "最大轮数", editorBox(th, &f.maxTurns, "单次提问的工具调用轮数上限（空 = 保持）"))
+	case rowMaxCtx:
+		return fieldRow(gtx, th, "上下文上限", editorBox(th, &f.maxCtx, "tokens；自动压缩与截断的预算分母（空 = 保持）"))
+	case rowCompact:
+		return fieldRow(gtx, th, "压缩阈值", editorBox(th, &f.compact, "0–1；占用超阈值触发自动压缩（空 = 保持）"))
+	case rowToolChars:
+		return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）"))
+	case rowToolTo:
+		return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
+	case rowSysPrompt:
+		return editorBoxH(th, &f.sysPrompt, "默认人格（= 内置 @default 正文；清空 = 内置默认）", 80)(gtx)
+	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
+	case rowPromptNote:
+		l := material.Body2(th, "人格 = 有序引用的展开结果；模块可分组（children 逗号分隔，可多级）。"+
+			"改动只对新会话生效，且重启后应用。")
+		l.Color = paperOf().text3
+		return l.Layout(gtx)
+	case rowPromptGrid:
+		return f.moduleGridRow(gtx, th)
+	case rowPromptRef:
+		return f.promptRefRow(gtx, th, r.field)
+	case rowPromptRefAdd:
+		return paperButton(th, &f.promptRefAdd, "＋ 添加引用", paperBtnSecondary, true)(gtx)
+	case rowPromptBuiltin:
+		return f.promptBuiltinRow(gtx, th, f.builtins[r.field])
+	case rowPromptPreview:
+		text := f.promptPrev
+		l := material.Body2(th, text)
+		if strings.TrimSpace(text) == "" {
+			text = "（保存后按模块树组合；预览需装配根接线）"
+			l = material.Body2(th, text)
+			l.Color = paperOf().text3
+		} else {
+			l.Color = paperOf().text2
+		}
+		return l.Layout(gtx)
+	// S6/D143：工具与 MCP 页。
+	case rowBuiltin:
+		return f.builtinToolRow(gtx, th, f.toolsSnap.Builtins[r.field])
+	case rowPlugin:
+		return f.pluginToolRow(gtx, th, f.toolsSnap.Plugins[r.field])
+	case rowToolsEmpty:
+		l := material.Body2(th, r.text)
+		l.Color = paperOf().text3
+		return l.Layout(gtx)
+	case rowToolsStatus:
+		l := material.Body2(th, f.toolsStatus)
+		if f.toolsErr {
+			l.Color = paperOf().danger
+		} else {
+			l.Color = paperOf().text3
+		}
+		return l.Layout(gtx)
+	default: // rowRaw
+		return editorBoxH(th, &f.rawCfg, "整文件编辑；保存前 JSON 校验（解析失败原文件不动，Q10）", 220)(gtx)
 	}
 }
 
@@ -521,64 +646,51 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 func (f *settingsForm) providerButtonsRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
 	pf := f.provs[i]
 	btn := func(c *widget.Clickable, label string) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			b := material.Button(th, c, label)
-			b.TextSize = unit.Sp(12)
-			return b.Layout(gtx)
-		}
+		return paperButton(th, c, label, paperBtnSecondary, true)
 	}
 	primary := "设为主"
-	col := th.Fg
 	if f.primaryIdx == i {
-		primary, col = "★ 主", brandColor
+		primary = "★ 主"
 	}
-	pb := material.Button(th, &pf.setPrimary, primary)
-	pb.TextSize = unit.Sp(12)
-	pb.Color = col
-	del := material.Button(th, &pf.del, "删除")
-	del.TextSize = unit.Sp(12)
-	if len(f.provs) <= 1 {
-		del.Color = textDim // 仅剩一条不可删（providers 不可为空）
+	// 主 provider 的「★ 主」用强调色文字标识当前主，不铺整块实心底——一行里两块
+	// 实心按钮会互相抢视线；不可删的那条（providers 不可为空）呈禁用态。
+	mark := paperBtnSecondary
+	if f.primaryIdx == i {
+		mark = paperBtnPrimary
 	}
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(btn(&pf.test, "测试连通")),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, pb.Layout)
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.setPrimary, primary, mark, true))
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, del.Layout)
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.del, "删除", paperBtnDanger, len(f.provs) > 1))
 		}),
 	)
 }
 
 // providerAddRow 新增 provider 入口（编辑区尾部；Apply 校验名字等必填项）。
 func (f *settingsForm) providerAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	b := material.Button(th, &f.provAdd, "＋ 新增 provider")
-	b.TextSize = unit.Sp(13)
-	return b.Layout(gtx)
+	return paperButton(th, &f.provAdd, "＋ 新增 provider", paperBtnSecondary, true)(gtx)
 }
 
 // providerApplyRow provider 区应用按钮 + 反馈文案（成功绿/错误红 = 转写区语义色）。
 func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			b := material.Button(th, &f.provApply, "应用 provider 变更")
-			b.Background = brandColor
-			b.Color = whiteText
-			b.TextSize = unit.Sp(13)
-			return b.Layout(gtx)
+			return paperButton(th, &f.provApply, "应用 provider 变更", paperBtnPrimary, true)(gtx)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				text := f.provStatus
-				col := textSystem
+				col := paperOf().text2
 				switch {
 				case text == "":
-					text, col = "变更全量写回 config，重启生效；「测试连通」发真实最小请求。", textDim
+					text, col = "变更全量写回 config，重启生效；「测试连通」发真实最小请求。", paperOf().text3
 				case f.provErr:
-					col = textError
+					col = paperOf().danger
 				}
-				l := material.Body2(th, text)
+				l := material.Label(th, paperNoteSp(th), text)
 				l.Color = col
 				return l.Layout(gtx)
 			})
@@ -589,11 +701,7 @@ func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) 
 // profileButtonsRow profile 区三动作按钮（D110③）：新建 / 复制当前 / 切换（重启生效）。
 func (f *settingsForm) profileButtonsRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	btn := func(c *widget.Clickable, label string) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			b := material.Button(th, c, label)
-			b.TextSize = unit.Sp(13)
-			return b.Layout(gtx)
-		}
+		return paperButton(th, c, label, paperBtnSecondary, true)
 	}
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(btn(&f.profCreate, "新建")),
@@ -613,14 +721,12 @@ func (f *settingsForm) welcomeRow(gtx layout.Context, th *material.Theme) layout
 	return fieldRow(gtx, th, "欢迎引导", func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				b := material.Button(th, &f.welcomeOpen, "打开")
-				b.TextSize = unit.Sp(12)
-				return b.Layout(gtx)
+				return paperButton(th, &f.welcomeOpen, "打开", paperBtnSecondary, true)(gtx)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, "模型接入向导 + 快捷键 / 右键菜单 / 常用命令")
-					l.Color = textDim
+					l.Color = paperOf().text3
 					return l.Layout(gtx)
 				})
 			}),
@@ -628,47 +734,18 @@ func (f *settingsForm) welcomeRow(gtx layout.Context, th *material.Theme) layout
 	})
 }
 
-// promptModuleRow 单个模块节点的编辑行（S7/D144）：名称（单行）+ 正文/组头（多行）+
-// 子模块（单行，逗号分隔）+ 删除。组模块只需填子模块名；叶模块只填正文。
-func (f *settingsForm) promptModuleRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
-	pf := f.promptMods[i]
-	sub := func(w layout.Widget) layout.FlexChild {
-		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, w)
-		})
-	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "模块名", editorBox(th, &pf.name, "唯一名；不以 @ 开头（保留给内置）"))
-		}),
-		sub(func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "正文 / 组头", editorBoxH(th, &pf.text, "叶：正文；组：组头（可空）", 64))
-		}),
-		sub(func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "子模块", editorBox(th, &pf.children, "逗号分隔引用名（空 = 叶模块）"))
-		}),
-		sub(func(gtx layout.Context) layout.Dimensions {
-			b := material.Button(th, &pf.del, "删除模块")
-			b.TextSize = unit.Sp(12)
-			return b.Layout(gtx)
-		}),
-	)
-}
-
 // promptRefRow 人格引用行（S7/D144）：序号 + 引用名 + 上移/下移/删除（顺序 = 拼接顺序）。
 func (f *settingsForm) promptRefRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
 	rf := f.promptRefs[i]
 	small := func(c *widget.Clickable, label string) layout.Widget {
 		return func(gtx layout.Context) layout.Dimensions {
-			b := material.Button(th, c, label)
-			b.TextSize = unit.Sp(12)
-			return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, b.Layout)
+			return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, paperButton(th, c, label, paperBtnSecondary, true))
 		}
 	}
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(th, fmt.Sprintf("%d.", i+1))
-			l.Color = textDim
+			l.Color = paperOf().text3
 			return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, l.Layout)
 		}),
 		layout.Flexed(1, editorBox(th, &rf.name, "引用名（模块名或内置 @名）")),
@@ -688,7 +765,7 @@ func (f *settingsForm) promptBuiltinRow(gtx layout.Context, th *material.Theme, 
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, b.Label)
-					l.Color = textMuted
+					l.Color = paperOf().text2
 					return l.Layout(gtx)
 				}),
 			)
@@ -699,9 +776,7 @@ func (f *settingsForm) promptBuiltinRow(gtx layout.Context, th *material.Theme, 
 				btn = new(widget.Clickable)
 				f.promptBtns["ref:"+b.Name] = btn
 			}
-			b := material.Button(th, btn, "引用")
-			b.TextSize = unit.Sp(12)
-			return b.Layout(gtx)
+			return paperButton(th, btn, "引用", paperBtnSecondary, true)(gtx)
 		}),
 	)
 }
@@ -709,13 +784,20 @@ func (f *settingsForm) promptBuiltinRow(gtx layout.Context, th *material.Theme, 
 // fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。标签列宽随
 // 度量缩放（Dp）——裸 px 常量在高 DPI 下实际变窄，「接口地址」等四字标签折行。
 func fieldRow(gtx layout.Context, th *material.Theme, label string, control layout.Widget) layout.Dimensions {
-	return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
+	// **不能按基线对齐**：基线只对单行文字成立，多行控件（正文区）的基线与它的
+	// 顶边差很远，标签会掉到输入框下方去（离屏渲染实测：标签浮在框底之下）。
+	// 改为顶端对齐 + 给标签加与输入框首行等高的内衬，视觉上仍与首行文字齐平。
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			labelW := gtx.Dp(fieldLabelW)
 			gtx.Constraints.Min.X = labelW
 			gtx.Constraints.Max.X = labelW
 			return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.Body1(th, label).Layout(gtx)
+				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					l := material.Body1(th, label)
+					l.Color = paperOf().text2
+					return l.Layout(gtx)
+				})
 			})
 		}),
 		layout.Flexed(1, control),
@@ -729,10 +811,22 @@ func cycleBtn(th *material.Theme, c *cycleField) layout.Widget {
 		if len(c.displays) > 0 {
 			label = c.displays[c.idx%len(c.displays)]
 		}
-		b := material.Button(th, &c.click, label)
-		b.TextSize = unit.Sp(13)
-		return b.Layout(gtx)
+		return paperButton(th, &c.click, label, paperBtnSecondary, true)(gtx)
 	}
+}
+
+// fillFieldBg 输入框底衬：Paper 的「下沉面 + 1dp hairline」。
+//
+// Gio 没有描边，靠「先铺满描边色、再内缩 1dp 铺底色」画出真正的空心框——直接给透明
+// 底描边会把整块涂成描边色（这条坑在次窗与主窗同样成立）。
+//
+// 为什么不用窗底色当输入框底：设置页的窗体底就是白，输入框同白等于没有边界，用户
+// 看不出哪里能打字。故下沉一档（sunken），边界用 hairline。
+func fillFieldBg(gtx layout.Context, th *material.Theme, r image.Rectangle) {
+	if r.Empty() {
+		return
+	}
+	paperSurface(gtx, paperOf(), r, gtx.Dp(unit.Dp(paperOf().rCtl)))
 }
 
 // editorBox 文本档输入区（layout.Widget，供 fieldRow 装配）：满宽底衬，高度自适应
@@ -743,8 +837,10 @@ func editorBox(th *material.Theme, ed *widget.Editor, hint string) layout.Widget
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Stack{Alignment: layout.NW}.Layout(gtx,
 			// 底衬（Expanded 拿 Stacked 最大尺寸；垫底项保证下限，编辑器项决定实际高）。
+			// 浅底 + 内缩一圈的窗底 = 1dp 描边环：设置页底与窗底同色，只铺 th.Bg
+			// 等于没铺，用户看不出哪里可以打字。
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-				paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Op())
+				fillFieldBg(gtx, th, image.Rectangle{Max: gtx.Constraints.Min})
 				return layout.Dimensions{Size: gtx.Constraints.Min}
 			}),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
@@ -765,7 +861,7 @@ func editorBox(th *material.Theme, ed *widget.Editor, hint string) layout.Widget
 func editorBoxH(th *material.Theme, ed *widget.Editor, hint string, h int) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		size := image.Point{X: gtx.Constraints.Max.X, Y: gtx.Dp(unit.Dp(h))}
-		paint.FillShape(gtx.Ops, th.Bg, clip.Rect(image.Rectangle{Max: size}).Op())
+		fillFieldBg(gtx, th, image.Rectangle{Max: size})
 		gtx.Constraints = layout.Exact(size)
 		layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return material.Editor(th, ed, hint).Layout(gtx)
@@ -793,23 +889,19 @@ func sizeRow(gtx layout.Context, th *material.Theme, w, h *widget.Editor) layout
 func (f *settingsForm) actionsRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			b := material.Button(th, &f.save, "保存并应用")
-			b.Background = brandColor
-			b.Color = whiteText
-			b.TextSize = unit.Sp(14)
-			return b.Layout(gtx)
+			return paperButton(th, &f.save, "保存并应用", paperBtnPrimary, true)(gtx)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				text := f.status
-				col := textSystem
+				col := paperOf().text2
 				switch {
 				case text == "":
-					text, col = "保存后立即生效；provider 列表在「模型」页应用（重启生效）。", textDim
+					text, col = "保存后立即生效；provider 列表在「模型」页应用（重启生效）。", paperOf().text3
 				case f.err:
-					col = textError
+					col = paperOf().danger
 				}
-				l := material.Body2(th, text)
+				l := material.Label(th, paperNoteSp(th), text)
 				l.Color = col
 				return l.Layout(gtx)
 			})

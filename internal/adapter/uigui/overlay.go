@@ -309,6 +309,9 @@ func (st *historyState) overlayFrame(gtx layout.Context, th *material.Theme, u *
 	// scrim：铺满视口的半透暗色（背景仍在其下渲染 → 观感是「压暗一层」）。
 	paint.FillShape(gtx.Ops, color.NRGBA{A: overlayScrimAlpha},
 		clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
+	// 遮罩卡片是浮层：阴影必须先于卡片铺（自小而大），否则会被卡片自身盖掉。
+	cardRad := gtx.Dp(unit.Dp(paperOf().rCard))
+	paperShadow(gtx, card, cardRad, 14, 8, 0x38)
 	// 卡片：**显式定尺定位**到卡片盒。不能走 `layout.Center`——它只在 `Constraints.Min`
 	// 内居中，而 `layout.Stacked` 会把子项的 Min 清成 0（stack.go），于是「居中」退化成
 	// 画在窗口左上角：底板与内容贴左上，`ov.card`（命中盒/点空白判定）却仍在正中，二者
@@ -346,8 +349,9 @@ func overlayCardBox(gtx layout.Context) image.Rectangle {
 
 // overlayCard 卡片内容：标题行 + 页签行 + 内容区（呈现/源码）+ 底行（方式三选一 + 关闭/保存）。
 func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *historyState, u *UI) layout.Dimensions {
-	paint.FillShape(gtx.Ops, th.Palette.Bg,
-		clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(radiusDp)).Op(gtx.Ops))
+	pp := paperOf()
+	paperPanel(gtx, image.Rectangle{Max: gtx.Constraints.Max},
+		gtx.Dp(unit.Dp(pp.rCard)), gtx.Dp(1), pp.card, pp.hairline)
 	return layout.UniformInset(overlayCardPadDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -371,8 +375,8 @@ func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 
 // overlayTitle 标题行：角色词 +「消息」+ 节点 ID 前缀（ID 与「原文 · <id>」同款口径）。
 func overlayTitle(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
-	l := material.Body2(th, ov.titleText())
-	l.Color = th.Fg
+	l := material.Label(th, paperBodySp(th), ov.titleText())
+	l.Color = paperOf().text
 	return l.Layout(gtx)
 }
 
@@ -420,12 +424,13 @@ func overlayPill(gtx layout.Context, bg color.NRGBA, radius unit.Dp, content lay
 	)
 }
 
-// overlayPillColors 胶囊配色：选中 = 反色强调；未选中 = 次要底 + muted 字。
+// overlayPillColors 胶囊配色：选中 = 深一档强调底 + 白字（AA 达标）；未选中 = 下沉面 + 次级字。
 func overlayPillColors(th *material.Theme, on bool) (bg, fg color.NRGBA) {
+	pp := paperOf()
 	if on {
-		return th.Fg, th.Bg
+		return pp.accent, pp.accentFg
 	}
-	return cardTool, textMuted
+	return pp.sunken, pp.text2
 }
 
 // overlayPillBtn 卡内胶囊钮（页签行与底行「应用方式三选一」共用一套控件语言：
@@ -506,7 +511,7 @@ func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) lay
 	} else {
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(th, "该节点只读")
-			l.Color = textMuted
+			l.Color = paperOf().text2
 			return l.Layout(gtx)
 		}))
 	}
@@ -522,13 +527,14 @@ const overlayPillRadiusDp unit.Dp = 6
 // overlayBtnColors 底行动作钮配色：primary = 反色强调；disabled = 次要底 + 暗字
 // （D139 ⑤「空文本禁用保存」的可见形态）。
 func overlayBtnColors(th *material.Theme, primary, enabled bool) (bg, fg color.NRGBA) {
+	pp := paperOf()
 	switch {
 	case !enabled:
-		return cardTool, textDim
+		return pp.sunken, pp.text3
 	case primary:
-		return th.Fg, th.Bg
+		return pp.accent, pp.accentFg
 	default:
-		return cardTool, th.Fg
+		return pp.sunken, pp.text
 	}
 }
 
