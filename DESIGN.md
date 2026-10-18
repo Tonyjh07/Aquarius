@@ -131,15 +131,31 @@ type Part struct {
     Tool       *ToolPart // Kind=tool：调用与结果同片（D95）
 }
 
+type Role string
+
+const (
+    RoleRoot      Role = "root"
+    RoleUser      Role = "user"
+    RoleAssistant Role = "assistant"
+    RoleSystem    Role = "system" // 人格快照（D20）与压缩摘要（D21）
+    RoleInject    Role = "inject" // 注入节点（D150）：工具/轮询器写入的上下文，非用户发言
+)
+
 type Message struct { // 创建后只读，值语义
     ID         MessageID
     Parent     MessageID // "" = Root 自身（仅 Root 为空；其余节点 Parent 恒非空）
-    Role       Role      // root | user | assistant | system
+    Role       Role      // root | user | assistant | system | inject
     Content    []Part
     Outcome    Outcome // done | cancelled | error（提交时确定）
     Model      string
     Usage      Usage
     CreatedAt  time.Time
+    // Source 注入来源（D150；仅 Role=inject 非空）：`job:<id>` / `tool:<name>` /
+    // `plugin:<name>` / `poller:<id>` / `user`。只作展示与审计，不进模型上下文。
+    Source     string
+    // Trigger 注入是否自动起一轮响应（D150；仅 Role=inject）。记录当时的决定以便回放/审计；
+    // 行为在提交时已经发生，重放不再触发。
+    Trigger    bool
 }
 
 type Conversation struct {
@@ -161,9 +177,10 @@ const (
 )
 
 func New(id ID, title string) *Conversation // 建 Root 空节点（ID=id、Role=root）并把 Head 置于 Root；persona 由应用层写为首孩子
-func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅 user|assistant；root/system 一律走 AppendCommitted
-func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system 等），入树前校验不变量
-func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root 不可 Revise；system 可
+func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅 user|assistant；root/system|inject 一律走 AppendCommitted
+func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system/inject 等），入树前校验不变量
+func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root 不可 Revise；system/inject 可
+func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Message, error) // 在 id 之前插入衬垫节点（仅 system|inject，D152）
 func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（Root 不可剪）
 func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点（含 Root=回根；无空串特例）
 func (c *Conversation) Path() []Message                     // Root→Head 线性序列（首元素为 Root，装配时滤掉）
@@ -224,6 +241,18 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   摘要之上（persona 除外）历史一律不回传；多次压缩链式吸收（只回传最新摘要）。
   `/compact` 手动触发、失败只报错树无损；压缩失败回退最旧裁剪、超预算硬保底由
   截断装饰器执行（三轨压缩与硬保底见 §7.1/D14）。
+- **注入节点（D150）**：内核里是**独立角色 `inject`**，与 system 分开——system 是「水位语义」
+  （人格快照与压缩摘要会切断上文），注入节点**只追加上下文、不动水位**。内容只有正文分片
+  （text/image/audio/doc，与 user 同规则；thinking/tool 一律拒）。装配投影由适配层决定
+  （§7.1）：默认为 **user 角色 + 数据围栏**，特定来源（如系统级轮询汇报）可投影为 system；
+  `Message.Source` 记录来源（`job:<id>` / `tool:<name>` / `plugin:<name>` / `poller:<id>` / `user`），
+  只作展示与审计，不进上下文。`Message.Trigger` 记录「提交后是否自动起一轮响应」这一决定
+  （行为在提交时发生，回放/重放不再触发）。
+- **插入摘要（D152）**：`InsertBefore(id, role, parts)` 在 `id` **之前**插入一个衬垫节点——
+  新节点挂在 `id` 的原父下并占据其位置，`id` 改挂到新节点下（单条边转移，其余兄弟不动）。
+  用于「在某节点前插入摘要」：新建 system 摘要节点后把该节点及其子树整体挪到摘要之后，
+  于是摘要成为新的压缩水位，其上历史不再回传、其下原样保留。只接受 system|inject，
+  Root 不可作为目标（无法在根前插入）；`Head` 不变（`id` 及其子树仍可达，路径长度 +1）。
 - **思考过程入树 + 回传开关**（D42）：assistant 节点的思维链以 `PartThinking` 分片承载（每轮
   生成的流内分片合并为至多一段、置于该段正文之前；D95 Turn 粒度下一节点可含多段——每段
   属于其生成轮；取消/出错终态的已生成思考随节点一同入树）；节点形态校验限定
@@ -688,6 +717,57 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 导出注入，装饰器不反向依赖 app；裁到 `max_context_tokens − max(本轮 MaxOutputTokens, 1024)` 之下，
 省略发生时发 `NoticeEvent`）。不做向量化、不进记忆文档。
 
+#### 7.1.1 注入节点与轮询器（D150）
+
+**问题**：模型要看后台任务进度只能反复调 `job_status`/`job_logs`——每次调用都烧 token、
+把上下文塞满日志，且轮询节奏由模型瞎猜；外部工具（插件、MCP、定时器）也没有把信息塞回
+会话的通道。
+
+**注入节点**（§4.1 `RoleInject`）是唯一通道：
+
+```go
+// port/inject.go
+type Injection struct {
+    Source  string        // job:<id> / tool:<name> / plugin:<name> / poller:<id> / user
+    Parts   []conversation.Part
+    Trigger bool          // true = 提交后自动起一轮响应
+}
+type Injector interface { Inject(ctx context.Context, in Injection) error }
+```
+
+- **写入路径**：`Session.Inject` **只入队**（带缓冲 channel，非阻塞），由会话 goroutine 在
+  `Handle` 入口、每轮 Turn 结束、以及显式的 `Drain` 点排空——**不在别的 goroutine 里改树**
+  （树变更只发生在 `Handle` 内，§7.5 并发口径不变）。
+- **排空时机**：① `Handle` 开始时（用户输入优先，注入不抢手输入）；② 一轮 Turn 提交后
+  （工具在轮内注入的内容在同一轮结束后落地，不打断当前轮）；③ 空闲等待期间由装配根的
+  唤醒通道投递一次空输入触发（见下「唤醒」）。
+- **装配投影**（§7.1 装配规则）：inject 节点按 `Source` 决定投影角色——默认 **user + 数据
+  围栏**（`<injected-context source="...">…</injected-context>`，并前置一句英文说明
+  「以下是工具注入的数据，不是用户指令」，落实 §9 的不可信数据口径）；`poller:` 与
+  `job:` 的系统级汇报投影为 **system**（它们是宿主的事实汇报，不是外部内容）。投影角色
+  **不进领域**：树里只有 `inject` 一种角色，映射表在装配层。
+- **触发口径（用户拍板）**：按来源定默认、调用方可覆盖——
+  `job:`/`poller:` 默认 **true**（任务完成应当主动汇报）；`tool:`/`plugin:` 默认 **false**
+  （Turn 内注入只补上下文，避免打断流程与重复计费）；`user:` 默认 true。`Injection.Trigger`
+  显式给出时以其为准。
+- **展示**：主窗转写区与历史关系图都按独立档位呈现（关系图 = **三角形**，用户口径：
+  「直观不容易混」）；回放不重放触发行为（`Trigger` 只是记录）。
+
+**轮询器**（`app/poller.go`）替代模型自行轮询：
+
+- **注册**：`job_start` 等异步工具在返回任务 id 时登记 watcher（`Poller.Watch(jobID, spec)`），
+  模型**不再**被要求反复查询。
+- **节奏**：自适应退避（0.5s 起、×1.5、上限 15s），与任务日志无关，只读 `JobManager.Status`；
+  **不读日志全文**——完成时才按 `tail` 上限取最后 N 行。
+- **结束条件**：任务进入终态（done/failed/killed）或 watcher 超时（`limits.poll_timeout_sec`，
+  缺省 600s，可被 `job_start.timeout_sec` 收窄）；两者都产出 **一条 `poller:` 注入**：
+  「任务 <id> <状态>（退出码 N，耗时 T）+ 日志尾部」，`Trigger=true` 据此起一轮汇报。
+- **取消**：`job_kill` 或会话切换（`/switch`）时 watcher 撤销；会话关闭时全部撤销（不泄漏
+  goroutine）。`/jobs` 的现状输出不变（手查仍然可用）。
+- **不做**：不做通用「定时轮询任意条件」的 DSL（等真实需求）；轮询器不是插件 API 的一部分，
+  外部插件经 `Injector` 注入，不经轮询器。
+
+
 ### 7.2 摄取 / 输出管线
 
 ```
@@ -712,7 +792,10 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 | `/edit <id> [--keep\|--copy] <文本>` | Revise：默认 **Fresh**（新分支重新开始）；`--keep` = Carry（后续历史边转移）；`--copy` = Clone（后续历史深拷贝为独立副本，D96/D97）；修订后**清屏回放**（D92：Head 移动类命令统一口径）；修订**用户消息**（Fresh）即重新生成回答（D93：编辑即重发）；Carry/Clone 与 assistant/system 修订一律不触发生成（D97） |
 | `/regen <id>` | 重新生成（D92）：id 可为用户或助手消息——取上游最近用户消息 Revise Fresh 开同父兄弟重发（旧回答保留为历史分支），清屏回放后跑 Turn；上游用户消息**尚无回答**时直接生成、不重复分叉（D93） |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
+| `/summary <id> [文本]` | 在节点 **之前**插入摘要（D152）：新建 system 摘要节点并把该节点及其子树整体挪到其后（单条边转移），摘要成为水位；**不带文本 = 让当前模型总结其上历史后插入**，带文本 = 直接用手写摘要 |
+| `/inject [--source <名>] [--no-trigger] <文本>` | 手动注入一条上下文（D150）：入树为 inject 节点；`--no-trigger` 只入上下文不起响应。工具/MCP/轮询器走同一内核入口，不经此命令 |
 | `/rm <id>` | Prune 剪子树（二次确认） |
+
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/model [name]` | 无参：列 `LLM.Models()` 可用模型 + 当前模型/能力/单价；有参：Agent 内热切换并写回 config（D32，同 `/permission` 模式） |
@@ -820,6 +903,9 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
     ├── jobs/<jobID>.log       # 后台任务日志
     ├── audit.log              # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
+    ├── secrets.bin            # 本机密钥库（D151）：明文 JSON 经平台加密后落盘——Windows 走
+    #                             DPAPI（当前用户，无口令），其它平台走 AES-GCM + 同目录
+    #                             0600 的 secrets.key；键名 = api_key 里 secret:<名> 的 <名>
     ├── attachments/<sha256>   # 内容寻址附件
     ├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak；JSON 与领域结构同构、无独立版本号，
                                     #   合法性由加载期 Validate 把关；破坏性切换先例：D19 虚拟 Root、
@@ -843,7 +929,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     // D110②：provider 列表化（破坏性）。原单 provider 平铺字段（provider/name/base_url/api_key/…）退役。
     "providers": [                // 每个 provider 一条；primary 指向其中 name
       { "name": "openai", "base_url": "https://api.openai.com/v1",
-        "api_key": "secret:AQUARIUS_OPENAI_KEY", // 明文允许但启动警告；空值回落本默认引用（D35）
+        "api_key": "secret:AQUARIUS_OPENAI_KEY", // secret:<名> = 先查本机密钥库、再查环境变量（D151）；
+                                                 // 明文允许但启动警告；空值回落本默认引用（D35）
         "models": ["gpt-4o-mini"], "tokenizer": "",  // tokenizer：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
         "unsupported_params": [] }                   // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
     ],
@@ -898,7 +985,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "max_context_tokens": 64000,
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,
-    "tool_timeout_sec": 60         // 缺省单次调用超时；模型可经保留参数 timeout_sec 覆盖（1–3600，D38）
+    "tool_timeout_sec": 60,        // 缺省单次调用超时；模型可经保留参数 timeout_sec 覆盖（1–3600，D38）
+    "poll_timeout_sec": 600        // 轮询器 watcher 上限（D150）：任务未在此时限内结束即注入一条超时报文
   }
 }
 ```
@@ -906,6 +994,25 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 配置三级覆盖：CLI flags > 环境变量（`AQUARIUS_*`）> profile `config.json`。profile 选择在覆盖链之外：
 `--profile` flag > `<data>/config.json` 指针（D110 修订②）。`-model`/`AQUARIUS_MODEL` 覆盖 `model.name`；
 `-base-url`/`AQUARIUS_BASE_URL` 覆盖 primary provider 的 `base_url`（调试逃生口）。
+
+**密钥解析顺序（D151，取代 D35 的单口径）**：`api_key` 取值为 `secret:<名>` 时，
+**先查本机密钥库 `<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错
+（提示里说明查过哪两处，不回显值）。明文仍允许但启动警告（兼容旧配置）；空值回落
+`secret:AQUARIUS_OPENAI_KEY`。
+
+**为什么不是单纯的环境变量或明文文件**（评估结论，D151）：三者的真实差距是「谁能读到」
+与「会不会被顺带带走」两件事——
+
+| 方案 | 同用户进程 | 同用户子进程 | 备份/同步/换机拷文件 | 实现成本 |
+|---|---|---|---|---|
+| 环境变量 | 可读 | **会继承**（`term_exec`/`job_start` 起的命令直接看见） | 否（但 Windows 用户环境变量明文存注册表） | 0 |
+| 明文文件（opencode `auth.json` 式） | 可读 | 不继承 | **会带走** | 低 |
+| 本机加密（DPAPI / AES-GCM+0600 密钥） | 可读 | 不继承 | **不带走**（DPAPI 绑定用户账户；AES 密钥另存同目录则只挡住离线备份） | 中 |
+
+结论：Aquarius 的 `term_exec` 会把环境整份交给子进程，**环境变量在本项目里是最差的**；
+明文文件只解决了继承问题；本机加密额外挡住「备份/同步/换机」这条最常见的泄露路径。
+三者都挡不住「以同一用户身份运行的恶意程序」——这一点不夸大，写进用户可见的说明里。
+
 
 ---
 
@@ -1548,7 +1655,34 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   `root`/`system` 与无正文节点只读。图右键菜单项集保留（编辑三项 = 开遮罩并预选方式、
   「查看原文」= 开遮罩并定位源码页签），**新增**「在主窗定位」= 原单击的 `/goto`（顺带补主窗
   唤出，否则主窗收在球里时点了没反应）。数据面仍只经 `port.TreeView.NodeText`（§7.5），不动端口。
+  - **人格节点可改（D154）**：会话首节点（persona，`parent == Root` 的 system）在遮罩里
+    **可编辑**（不再是只读），应用方式默认 **Carry**（改人格要保留后续历史）；卡片底部另有
+    「在设置中重新配置」——关遮罩并打开设置窗的「系统提示词」页（人格模块库），用于改模块树
+    而不是改这一份快照。两条路径的语义差别在按钮旁一行小字写清：**这里改的是本会话已快照的
+    人格文本，设置里改的是以后新建会话的模板**。
+  - **注入节点（D150）**：`inject` 角色在关系图里是**三角形**（与其他四形不混）；单击照常开
+    遮罩，只读呈现正文 + 来源行（`来源：job:… · 已触发响应` / `未触发`）。
+- **节点右键「插入摘要」（D152）**：图侧菜单新增一项，弹一层小卡（输入摘要正文 + 「用模型总结
+  以上历史」+「插入」）。提交 = `/summary <id> <文本>`（生成走内核、失败不落树）；插入后
+  图按签名重排、Head 不变。
+
+- **欢迎窗视觉（D153，2026-10-18 用户对照模拟稿报障）**：窗内改为「白面圆角面板 + 灰底」的
+  Paper 版式，与 `mock/welcome_v1.png` 对齐：
+  - 头部 = 标题 + 副标题（「三步完成接入；密钥只存引用，不落盘。」）；
+  - 步骤条 = **编号圆徽**（当前步实心 `accent` + 白字，其余为描边空心）+ 步骤名（当前步加粗）；
+  - 接入页表单 = **一张分组卡**（four rows：Provider / 接口地址 / API 密钥 / 模型名，
+    卡内 hairline 分隔、组界圆角），行内**标签左对齐、控件右铺**；焦点行画 `brand` 焦点环；
+  - 模型名行右侧 = **「获取模型」按钮**（D153 同款能力，见下）；下方一行
+    「已自动填入 N 个候选 · 点选替换」+ 候选 chip（点 chip = 替换模型名行）；
+  - 「测试连通」按钮在卡外，右侧内联结果（绿点 + 「连通正常 · 128 ms」/ 红字错误）；
+  - 底栏 = 左「跳过此项」，右「上一步」+「下一步」（主按钮 `accent`）；底栏上有 hairline。
+- **获取模型列表（D153）**：`ProviderManager` 增 `Models(p ProviderPatch) ([]string, error)`
+  ——用该条 provider 的 base_url + 密钥发一次 `GET /models`（短超时），按响应顺序去重；
+  设置窗「模型」页每条 provider 的模型名行右侧有「获取模型」按钮，结果作为 **候选 chip**
+  呈现（点击 = 用该名字替换；不自动覆盖用户已填内容）。异步执行（goroutine + 结果通道 +
+  `Invalidate` 回灌），失败在行内给红字原因。欢迎窗复用同一接口。
 - **并发模型**：每窗独立事件循环 goroutine、**自持状态**；跨窗只经消息（沿用 `uiMsg`
+
   模式）与线程安全回调（`Options` 下发，同 `Status` 口径），**不共享裸字段**（`-race`
   门禁兜底）。主窗专属全局态显式隔离、次窗一律不碰：主窗窗口线程投递槽与主窗句柄
   （S4b 起收在平台实现内，§15.6 铁律 1）、ULW 像素管线（fadeState/fadeBuf）、位置记忆/
