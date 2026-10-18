@@ -1393,6 +1393,77 @@ func TestRelGraphBudgetCulledNoPanic(t *testing.T) {
 
 // —— D121：节点拖拽（临时固定 → 松手回归自由）——
 
+// TestRelGraphTwoNodeDragKeepsAnimating 2026-10-18 实测修：**少节点**（会话根 + 人格两个
+// 节点）下快速拖动后，树会僵在非平衡态，「再拖一次」才继续动。
+//
+// 根因两处：① 源档的 friction 既是步长又停判时钟，按住期间每帧衰减——两个节点时邻居
+// 早就到位、逐帧位移判停立刻成立，拖动第十几帧就 settled；② tickLayout 只在「抓取偏移
+// 未衰减完」时续帧，于是指针停住后不再有下一帧把树拉回平衡。松手只清 settled、不拨回
+// 时钟，步长≈0 ⇒ 首帧即判停（画面僵住）；再拖一次走 warmUp 才复活。
+//
+// 断言：按住期间 tickLayout 恒续帧（不被 settled 掐断）、时钟保持初值；松手后计时重上、
+// 且能在续帧预算内正常收敛。
+func TestRelGraphTwoNodeDragKeepsAnimating(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	mk := func(id, parent string, role conversation.Role, i int) port.GraphNode {
+		return port.GraphNode{
+			ID: conversation.MessageID(id), Parent: conversation.MessageID(parent),
+			Role: role, Snippet: "s-" + id, EdgeKind: port.EdgeSeq,
+			SiblingIdx: 0, SiblingCount: 1, CreatedAt: base.Add(time.Duration(i) * time.Second),
+		}
+	}
+	g := port.TreeGraph{
+		Anchor: "p",
+		Nodes: []port.GraphNode{
+			mk("r", "", conversation.RoleRoot, 0),
+			mk("p", "r", conversation.RoleSystem, 1),
+		},
+	}
+	g.Total = len(g.Nodes)
+	texts := map[conversation.MessageID]string{"r": "root", "p": "persona"}
+	u := newHistUI(fakeRelTree{g: g, texts: texts}, fakeLister(nil))
+	st := newHistoryState(u)
+	q := new(input.Router)
+	relGFrame(q, u, st)
+	relDriveQuiet(q, u, st, relSettleFrames*3)
+
+	gr := st.graph
+	li := gr.anchor
+	sx, ys := gr.toScreen(gr.sol.Pos[li])
+	at := f32.Pt(sx, ys)
+	q.Queue(relPointer(pointer.Press, at, true))
+	relGFrame(q, u, st)
+	to := f32.Pt(at.X+120, at.Y+60)
+	q.Queue(relPointer(pointer.Move, to, true))
+	relGFrame(q, u, st)
+	if gr.dragNode != li {
+		t.Fatalf("未进入拖节点: dragNode=%d, want %d", gr.dragNode, li)
+	}
+	// 按住不动：连续步进几百帧，物理时钟不得被拖拽耗尽、续帧不得断。
+	for i := 0; i < relSettleFrames/2; i++ {
+		if !gr.tickLayout() {
+			t.Fatalf("拖拽第 %d 帧起不再续帧（树会僵在半路）: settled=%v friction=%.4f",
+				i, gr.lay.settled, gr.lay.friction)
+		}
+		if gr.lay.settled {
+			t.Fatalf("拖拽第 %d 帧被判定 settled（时钟被拖拽耗尽）", i)
+		}
+	}
+	if got := gr.lay.friction; got < relSrcFriction*0.99 {
+		t.Fatalf("拖拽期间的时钟被消耗: friction=%.4f, want ≈%.2f", got, relSrcFriction)
+	}
+
+	q.Queue(relPointer(pointer.Release, to, false))
+	relGFrame(q, u, st) // Release → releaseDrag（撤 pin、重上时钟）
+	if gr.dragNode >= 0 {
+		t.Fatalf("松手后仍固定着节点 %d", gr.dragNode)
+	}
+	if got := gr.lay.friction; got < relSrcFriction*0.99 {
+		t.Fatalf("松手未重上时钟: friction=%.4f（下一帧会立刻判停）", got)
+	}
+	relDriveDone(t, q, u, st)
+}
+
 // TestRelGraphDragNodePinsAndSettles 拖节点：视场不平移（那是空白拖拽的事）、节点被临时
 // 固定在指针下、周围被斥力推开；松手后锚撤销、节点回归自由并收敛回原位。
 func TestRelGraphDragNodePinsAndSettles(t *testing.T) {

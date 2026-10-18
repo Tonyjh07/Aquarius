@@ -1057,8 +1057,11 @@ func (g *relGraph) tickLayout() bool {
 	if g.fitFollow && g.dragNode < 0 {
 		more = true
 	}
-	if g.dragNode >= 0 && (g.dragGrabX != 0 || g.dragGrabY != 0) {
-		more = true // 抓取偏移未衰减完：继续续帧（节点在滑向光标，指针停住也要动）
+	if g.dragNode >= 0 {
+		// 按住期间恒续帧（2026-10-18 实测修）：拖拽是用户驱动的一段会话，几何上「谁还在
+		// 动」不可预见（邻居被弹簧带、抓取偏移在衰减），提前判停会让树僵在非平衡态，
+		// 而指针不再产生事件时就没有下一帧来纠正它。松手后由 settled 接管，照常收敛即停。
+		more = true
 	}
 	return more
 }
@@ -1201,7 +1204,7 @@ func (g *relGraph) releaseDrag() {
 	}
 	g.dragNode = -1
 	if g.lay != nil {
-		g.lay.settled = false // 撤 pin：被拖节点仍有非零健康力 → 重新唤醒物理（否则会僵在拖拽位）
+		g.lay.wake() // 撤 pin：重上物理时钟并唤醒（否则可能僵在拖拽位，2026-10-18 实测修）
 	}
 	g.relaxLeft = relSettleFrames
 	g.fitPending = true // 松手后重定视野（保持 zoom，只把树盒心对准视口）

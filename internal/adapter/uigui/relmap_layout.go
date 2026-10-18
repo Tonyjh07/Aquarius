@@ -422,6 +422,19 @@ func (l *relLayout) seedCollapsed() {
 	l.wasPinned = false
 }
 
+// wake 重新上钟（2026-10-18 实测修）：撤销 pull/pin 或数据变更后唤醒物理，必须把
+// friction 拨回初值——否则源档的时钟可能已被上一段动画耗尽（阈值以下），新一段收敛
+// 首帧就判停，看起来是「动画不动」。与 seedCollapsed/setPositions 的复位口径一致。
+func (l *relLayout) wake() {
+	if l == nil {
+		return
+	}
+	l.friction = relSrcFriction
+	l.settled = false
+	l.wasPinned = false
+	l.iters = 0
+}
+
 // setPositions 用给定坐标重设当前位置（增量保留：数据变更时按节点 ID 复用旧位置），
 // 速度清零、进入运动态。pos 可短于节点数（缺者为静息位）。
 func (l *relLayout) setPositions(pos []relPoint) {

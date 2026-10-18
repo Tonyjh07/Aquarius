@@ -371,8 +371,18 @@ func (l *relLayout) stepSource(pin relPin) {
 	//    两者取先到者：简单树早停（不必等满 15s），长链用满时长（源档 373 步掐停时
 	//    chain24 还差 3248dp）。
 	l.iters++
-	l.friction = fr * relSrcDecayRate
-	l.settled = l.friction < relSrcFrictionFloor || move < relSrcSettleEps
+	if pin.Valid {
+		// 拖拽期间**不消耗衰减时钟**（2026-10-18 实测修）：friction 同时是步长缩放器与停判
+		// 时钟，按住不放会让它一路衰减到阈值——低节点数时干脆在拖动第十几帧就把 settled
+		// 置真，续帧断掉；松手后步长≈0、位移判停首帧即成立，画面僵在半路（再拖一次会把
+		// 时钟拨回初值，于是「再拖一下才继续」）。拖拽是用户驱动的一段会话，时钟在按住
+		// 期间保持初值，松手由 relLayout.wake 重新上钟。
+		l.friction = relSrcFriction
+		l.settled = false
+	} else {
+		l.friction = fr * relSrcDecayRate
+		l.settled = l.friction < relSrcFrictionFloor || move < relSrcSettleEps
+	}
 	if l.settled && !pin.Valid {
 		l.snapToAnchor()
 	}
