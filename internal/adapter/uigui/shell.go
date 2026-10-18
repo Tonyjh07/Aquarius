@@ -5,11 +5,7 @@ package uigui
 // 原先这些方法只存在于 shell_windows.go；迁入中性文件后非 Windows 也能编译同一套
 // 策略（只是平台侧能力降级：呼出/常驻缺失，见 platform 包）。
 
-import (
-	"fmt"
-
-	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
-)
+import "github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 
 // toggleTopMost 置顶开关（托盘/logo 菜单，§15.1/D72）：切换主窗置顶态并持久化（与位置
 // 记忆同文件）。D62：单窗单像素层，无 overlay 跟随步。
@@ -26,7 +22,6 @@ func (u *UI) toggleTopMost() {
 			savePos(u.opts.PosFile, posRec{X: rc.left, Y: rc.top, TopMost: &tm, Docked: docked})
 		}
 	}
-	fmt.Printf("[tray] 窗口置顶 → %v\n", on)
 }
 
 // toggleWindow 托盘显隐（§15.1：隐藏只经托盘；呼出 = 显示 + 展开 + 焦点入栏）。
@@ -81,7 +76,6 @@ func (u *UI) exitViaShell() {
 	if h := u.mainHandle(); h != 0 {
 		u.plat.HideMain(h)
 	}
-	fmt.Println("[tray] 菜单退出")
 	u.interruptNow() // D64：进行中的 Turn 立即取消（无轮进行 = nop，空闲退出不受影响）
 	u.signalEOF(nil)
 }

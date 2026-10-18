@@ -166,7 +166,7 @@ func relPhysProfileEnv() relPhysProfile {
 
 func init() {
 	if relPhysCur == relProfD127 {
-		fmt.Println("[relmap] 物理档 = D127 力积分对照档（AQUARIUS_REL_PHYS=d127）——生产默认是源档（RSM v1.2 力参数 + 源实现步进）")
+		fmt.Println("[relmap] 物理档 = 力积分对照档（AQUARIUS_REL_PHYS=d127）——生产默认是源档（RSM v1.2 力参数 + 源实现步进）")
 	}
 }
 

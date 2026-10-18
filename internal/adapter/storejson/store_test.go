@@ -361,7 +361,7 @@ func TestLoadRejectsLegacyToolNodeFormat(t *testing.T) {
 		t.Fatalf("write legacy: %v", err)
 	}
 	_, err = s.Load(context.Background(), conversation.ID("conv-t"))
-	if err == nil || !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "tool") {
+	if err == nil || !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "旧版工具节点") {
 		t.Fatalf("err = %v, want ErrLegacyFormat 报因", err)
 	}
 }

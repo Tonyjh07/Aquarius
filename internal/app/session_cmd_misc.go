@@ -46,7 +46,7 @@ func (s *Session) execPermission(ctx context.Context, cmd port.Command) (string,
 		return fmt.Sprintf("权限等级已是 %s", level), nil
 	}
 	if s.persistLevel == nil {
-		return "", errors.New("session: 未配置权限持久化，无法切换（D22 要求写回 config）")
+		return "", errors.New("session: 未配置权限持久化，无法切换（需能写回 config）")
 	}
 	if err := s.persistLevel(level); err != nil {
 		return "", fmt.Errorf("session: 写回 config 失败: %w", err)
@@ -87,9 +87,9 @@ func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, erro
 	var b strings.Builder
 	pct := 100 * float64(rep.Estimate) / float64(rep.MaxCtx)
 	tpct := 100 * float64(rep.CompactAt) / float64(rep.MaxCtx)
-	mode := fmt.Sprintf("估算（服务端 usage 校准 ×%.2f，D26③）", rep.Ratio)
+	mode := fmt.Sprintf("估算（按服务端返回的 usage 校准 ×%.2f）", rep.Ratio)
 	if rep.Exact {
-		mode = "精确（适配器 TokenCounter，D26②）"
+		mode = "精确（本地 tokenizer 计数）"
 	}
 	fmt.Fprintf(&b, "当前上下文:≈%d / %d tokens（%.1f%%，自动压缩阈值 %d = %.0f%%）\n",
 		rep.Estimate, rep.MaxCtx, pct, rep.CompactAt, tpct)
@@ -200,7 +200,7 @@ func (s *Session) permissionReport() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "当前权限等级: %s（默认 strict）\n", s.level)
 	fmt.Fprintf(&b, "特权目录: %s\n", s.sandboxPath)
-	b.WriteString("免确认矩阵（矩阵格外一律逐次确认，D22）:\n")
+	b.WriteString("免确认矩阵（矩阵之外的操作一律逐次确认）:\n")
 	for _, l := range perm.Levels {
 		mark := "  "
 		if l == s.level {

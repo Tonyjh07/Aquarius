@@ -156,7 +156,7 @@ func (c *Conversation) Validate() error {
 
 	// 不变量 1：Head 属于树（初始 = Root；空串即旧格式残留，D19 无空串特例）。
 	if c.Head == "" {
-		errs = append(errs, errors.New("invariant tree: empty head (legacy virtual root, D19)"))
+		errs = append(errs, errors.New("invariant tree: empty head (legacy format)"))
 	} else if _, ok := c.Nodes[c.Head]; !ok {
 		errs = append(errs, fmt.Errorf("invariant tree: head %q not in tree", c.Head))
 	}

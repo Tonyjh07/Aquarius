@@ -1,7 +1,6 @@
 package uigui
 
 import (
-	"fmt"
 	"image"
 	"math"
 	"time"
@@ -468,7 +467,6 @@ func (u *UI) startDock(edge string, pos point, a image.Rectangle, work rect) {
 	u.dockArm = false
 	u.dockHint.Store(edgeCode(edge))
 	u.savePosRec(edge)
-	fmt.Printf("[dock] 停靠 → %s\n", edge)
 	u.beginDockAnim(true, to, dockAlpha)
 }
 
@@ -482,7 +480,6 @@ func (u *UI) startUndock(pos point, a image.Rectangle, work rect) {
 	to := parkPos(pos, a, work, edge)
 	u.docked = false
 	u.dockArm = false // 下帧重算（光标在球上 → 重新布防）
-	fmt.Printf("[dock] 召回 ← %s\n", edge)
 	u.beginDockAnim(false, to, semiAlpha)
 }
 
@@ -511,7 +508,6 @@ func (u *UI) undockInstant() {
 	u.requestMove() // D55：帧内只记账，commitWinGeom 一拍提交
 	u.alpha = semiAlpha
 	if was {
-		fmt.Println("[dock] 脱离停靠")
 		u.savePosRec("")
 	}
 }

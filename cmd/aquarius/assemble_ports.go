@@ -69,7 +69,7 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 // 会按 provider 各建 client，回调须记到产生剥离的那一条。
 func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 	return func(field string) {
-		fmt.Fprintf(w.stderr, "[llm] 服务端不支持参数 %s：已剥离重试，记入 config providers[%s].unsupported_params（D34）\n", field, providerName)
+		fmt.Fprintf(w.stderr, "[llm] 服务端不支持参数 %s：已剥离并记入 config providers[%s].unsupported_params，后续不再重试\n", field, providerName)
 		if err := persistConfig(w.cfgPath, func(generic map[string]any) {
 			p := providerSection(generic, providerName)
 			if p == nil {

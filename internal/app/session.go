@@ -360,7 +360,7 @@ func (s *Session) ingest(ctx context.Context, raw port.RawInput) ([]conversation
 			return rep.Parts, rep.Note, nil
 		}
 	}
-	return nil, "", fmt.Errorf("session: 没有可用的摄取器处理 %q 输入（M3 装配 file/clipboard；语音输入见 D27）", raw.Kind)
+	return nil, "", fmt.Errorf("session: 没有可用的摄取器处理 %q 输入（当前支持文件与剪贴板；语音输入尚未启用）", raw.Kind)
 }
 
 // ingestTitle 摄取消息的标题摘要：文本分片优先，其次附件名。

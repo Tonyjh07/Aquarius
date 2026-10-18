@@ -155,7 +155,7 @@ func (f *welcomeForm) accessErr() error {
 		return fmt.Errorf("模型名不可为空（逗号可多条，首个 = 缺省请求模型）")
 	}
 	if f.env.setup && len(f.env.snap.Issues) > 0 && p.APIKey == "" {
-		return fmt.Errorf("请填写 API 密钥：可填 secret:<环境变量名> 引用，或直接填明文（启动会警告，D35）")
+		return fmt.Errorf("请填写 API 密钥：可填 secret:<环境变量名> 引用环境变量，或直接填明文（启动时会警告）")
 	}
 	return nil
 }
@@ -450,7 +450,7 @@ func welcomeStatusLine(th *material.Theme, f *welcomeForm) layout.Widget {
 					text = "保存后立刻继续启动。"
 				}
 			} else {
-				text = "密钥只写不回显：可填 secret:<环境变量名> 引用，或直接填明文（D35）。"
+				text = "密钥只写不回显：可填 secret:<环境变量名> 引用环境变量，或直接填明文。"
 			}
 		} else if f.err {
 			col = textError

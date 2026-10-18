@@ -286,7 +286,7 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	}
 	m, _ := s.cur.Find(id)
 	if m.Role == conversation.RoleRoot {
-		return "", errors.New("session: root 即会话，不可删除（D19）") // 先于确认拒绝，不消费确认应答
+		return "", errors.New("session: 会话根节点就是会话本身，不可删除") // 先于确认拒绝，不消费确认应答
 	}
 	if s.confirmer == nil {
 		return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rm 需要二次确认")

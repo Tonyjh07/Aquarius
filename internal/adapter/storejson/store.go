@@ -220,12 +220,12 @@ func decode(data []byte, id conversation.ID) (*conversation.Conversation, error)
 	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
 	root, ok := lt.Nodes[conversation.MessageID(lt.Conversation.ID)]
 	if !ok || root.Role != conversation.RoleRoot || lt.Conversation.Head == "" {
-		return nil, fmt.Errorf("%w：虚拟 Root（D19）或损坏，与实 Root 不兼容，请删除该文件重建", ErrLegacyFormat)
+		return nil, fmt.Errorf("%w：缺少会话根节点或已损坏，请删除该文件重建", ErrLegacyFormat)
 	}
 	// D95 破坏性切换：独立 tool 节点 / 遗留 tool_calls·tool_result 字段。
 	for nid, n := range lt.Nodes {
 		if n.Message.Role == conversation.Role("tool") || len(n.ToolCalls) > 0 || n.ToolResult != nil {
-			return nil, fmt.Errorf("%w：独立 tool 节点格式（D95）：%q 及其节点无法加载，请删除或手工处置", ErrLegacyFormat, nid)
+			return nil, fmt.Errorf("%w：旧版工具节点格式：%q 及其节点无法加载，请删除或手工处置", ErrLegacyFormat, nid)
 		}
 	}
 	// 影子字段全空，逐节点搬运为领域节点；空 map 归一化：JSON 里的 null 反序列化为 nil map。

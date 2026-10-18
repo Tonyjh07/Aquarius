@@ -217,7 +217,7 @@ func (h *Host) discover() {
 		}
 		h.mu.Unlock()
 		if exists {
-			h.logf("[plugin] %s: config 条目优先；未配置的能力/风险继承 plugin.json（D31）", m.Name)
+			h.logf("[plugin] %s: 以 config 条目为准；未声明的能力与风险等级继承 plugin.json", m.Name)
 		}
 	}
 }
@@ -239,7 +239,7 @@ func (h *Host) trustGate(ctx context.Context, d Decl) bool {
 	}
 	h.mu.Unlock()
 	if h.confirm == nil {
-		h.logf("[plugin] %s: 未信任且无 Confirmer，按 fail-closed 跳过（D138）", d.Name)
+		h.logf("[plugin] %s: 尚未信任且无人可确认，按失败即拒绝跳过", d.Name)
 		return false
 	}
 	prompt := fmt.Sprintf("插件 %q 来自插件目录（%s），本次启动要运行它？\n启动方式：%s",

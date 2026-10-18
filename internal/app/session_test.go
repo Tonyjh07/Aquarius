@@ -1612,7 +1612,7 @@ func TestSessionEditRejects(t *testing.T) {
 		{"flag 在 id 前", []string{"--keep", "u1", "x"}, "用法", nil},
 		{"空文本", []string{"u1", ""}, "不可为空", nil},
 		{"未知节点", []string{"zz", "x"}, "没有节点", nil},
-		{"root", []string{"convT", "x"}, "root 即会话", conversation.ErrInvalidNode},
+		{"root", []string{"convT", "x"}, "会话根节点就是会话本身", conversation.ErrInvalidNode},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1722,8 +1722,8 @@ func TestSessionRmCommand(t *testing.T) {
 		store := newMemStore()
 		s, conf := newConfirmedSession(t, store, nil) // 确认脚本为空：被调用即 Fatalf
 		buildTree(t, s)
-		if _, err := handleCmd(s, "rm", "convT"); err == nil || !strings.Contains(err.Error(), "root 即会话") {
-			t.Fatalf("err = %v, want root 即会话不可删除", err)
+		if _, err := handleCmd(s, "rm", "convT"); err == nil || !strings.Contains(err.Error(), "会话根节点就是会话本身") {
+			t.Fatalf("err = %v, want 会话根节点不可删除", err)
 		}
 		if len(conf.asked) != 0 {
 			t.Fatalf("不应消费确认: %+v", conf.asked)

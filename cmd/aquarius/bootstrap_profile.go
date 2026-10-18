@@ -121,7 +121,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	}
 	cfg.UI.Kind = uiKindDefault(cfg.UI.Kind)
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
-		return fmt.Errorf("ui.kind=%q 仅支持 repl | tui | gui（D33/D43）", cfg.UI.Kind)
+		return fmt.Errorf("ui.kind=%q 仅支持 repl | tui | gui", cfg.UI.Kind)
 	}
 	if cfg.UI.Kind != "gui" {
 		if restoreConsole() { // repl/tui 以终端为界面，双击启动也必须可用（D108/D114）
@@ -159,7 +159,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 			cfgPath, profileName, filepath.Join(dir, "config.json"))
 		if cfg.UI.Kind != "gui" {
 			fmt.Fprintf(w.stdout, "请编辑 model.providers（base_url / models / api_key），并设置密钥环境变量后重新运行。\n"+
-				"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文（启动会警告，D35）\n")
+				"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文，但启动时会警告\n")
 			return errFirstRun
 		}
 	}

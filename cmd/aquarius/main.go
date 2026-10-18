@@ -180,7 +180,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("aquarius", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	dataDir := flags.String("data", "", "数据目录（默认 ~/.aquarius）")
-	profileFlag := flags.String("profile", "", "选择 profile（进程级覆盖根 config.json 指针，D110；须已存在）")
+	profileFlag := flags.String("profile", "", "选择 profile（本次运行临时覆盖根 config.json 的指针；须已存在）")
 	modelName := flags.String("model", "", "覆盖 model.name")
 	baseURL := flags.String("base-url", "", "覆盖 model.base_url")
 	autoYes := flags.Bool("yes", false, "跳过逐次确认（等价对每个确认回答 y；危险操作慎用）")

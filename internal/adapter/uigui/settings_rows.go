@@ -84,10 +84,10 @@ const (
 var provFieldMeta = [provFldN]struct{ label, hint string }{
 	{"名称", "provider 唯一标识（primary/fallback 按名引用）"},
 	{"接口地址", "如 https://api.openai.com/v1"},
-	{"API 密钥", "只写不回显；留空保持不变（D35）"},
+	{"API 密钥", "只写不回显；留空保持不变"},
 	{"模型列表", "逗号分隔；首个 = 缺省请求模型"},
 	{"Tokenizer", "本地 tokenizer.json 路径；空 = 估算"},
-	{"不认参数", "逗号分隔；服务端不认的请求参数（D34）"},
+	{"不认参数", "逗号分隔；这些参数会被剔除，不发往服务端"},
 }
 
 // rowDesc 一行的类型与定位。
@@ -447,9 +447,9 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 			case rowWinSize:
 				return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
 			case rowNotify:
-				return material.CheckBox(th, &f.notify, "桌面通知（回答完成时，M3）").Layout(gtx)
+				return material.CheckBox(th, &f.notify, "桌面通知（回答完成时）").Layout(gtx)
 			case rowTTS:
-				return material.CheckBox(th, &f.tts, "语音播报（D27 解析，尚未启用）").Layout(gtx)
+				return material.CheckBox(th, &f.tts, "语音播报（已解析配置，尚未启用）").Layout(gtx)
 			case rowMaxTurns:
 				return fieldRow(gtx, th, "最大轮数", editorBox(th, &f.maxTurns, "单次提问的工具调用轮数上限（空 = 保持）"))
 			case rowMaxCtx:

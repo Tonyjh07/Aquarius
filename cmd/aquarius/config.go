@@ -20,7 +20,7 @@ import (
 
 // ErrLegacyConfig D110 前的旧单文件 config（沿 storejson ErrLegacyFormat 口径：
 // 显式识别报因、绝不静默当零值解析、不做自动迁移——旧文件留存原地由用户手工处置）。
-var ErrLegacyConfig = errors.New("检测到旧格式 config（D110 前）")
+var ErrLegacyConfig = errors.New("检测到旧格式 config")
 
 // defaultProfileName 首次运行创建的 profile 名（指针缺省指向它）。
 const defaultProfileName = "default"
@@ -163,7 +163,7 @@ func (m *modelConfig) primaryProvider() *providerConfig {
 // primary 缺省 = providers 首个；model.name 缺省 = primary.models[0]。
 func (m *modelConfig) normalize() error {
 	if len(m.Providers) == 0 {
-		return fmt.Errorf("model.providers 不可为空（D110②：provider 列表化，原平铺 base_url/api_key 已退役；" +
+		return fmt.Errorf("model.providers 不可为空（provider 已改为列表，原平铺的 base_url/api_key 不再支持；" +
 			"若为旧格式请手工迁移，见 docs/configuration.md）")
 	}
 	seen := map[string]bool{}
@@ -315,7 +315,7 @@ func detectLegacyModelConfig(path string, data []byte) error {
 		return nil
 	}
 	return fmt.Errorf("%w：%s 的 model 段为单 provider 平铺字段（检测到 base_url/api_key/tokenizer/provider）。\n"+
-		"D110② 起 provider 列表化（DESIGN §8）：\n"+
+		"provider 须写成列表（model.providers）：\n"+
 		"  \"model\": { \"providers\": [ { \"name\": \"openai\", \"base_url\": \"…\",\n"+
 		"    \"api_key\": \"secret:…\", \"models\": [\"…\"], \"tokenizer\": \"\", \"unsupported_params\": [] } ],\n"+
 		"    \"primary\": \"openai\", \"fallback\": [], \"name\": \"…\", … }\n"+
@@ -373,7 +373,7 @@ func parsePointerFile(path string, data []byte) (string, error) {
 	for _, k := range legacyConfigKeys {
 		if _, ok := raw[k]; ok {
 			return "", fmt.Errorf("%w：%s 含旧格式键 %q。\n"+
-				"D110 起 profile 目录化：根 config.json 仅存当前 profile 指针（{\"profile\":\"<name>\"}），\n"+
+				"profile 已改为目录化：根 config.json 仅存当前 profile 指针（{\"profile\":\"<name>\"}），\n"+
 				"主配置落 profiles/<name>/config.json。请手工处置（不做自动迁移），例如迁移到 %s profile：\n"+
 				"  1. 把 %s 移动为 %s\n"+
 				"  2. 新建根 %s，内容：{\"profile\": \"%s\"}\n"+
@@ -385,7 +385,7 @@ func parsePointerFile(path string, data []byte) (string, error) {
 	}
 	v, ok := raw["profile"]
 	if !ok {
-		return "", fmt.Errorf("%s 缺 profile 键（指针格式：{\"profile\":\"<name>\"}，D110）", path)
+		return "", fmt.Errorf("%s 缺 profile 键（指针格式：{\"profile\":\"<name>\"}）", path)
 	}
 	name, ok := v.(string)
 	if !ok || name == "" {
@@ -423,7 +423,7 @@ func secretName(ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	name := strings.TrimPrefix(ref, "secret:")
 	if ref == name || name == "" {
-		return "", fmt.Errorf("api_key 的 secret: 引用缺少环境变量名，当前为 %q（或直接填明文，D35）", ref)
+		return "", fmt.Errorf("api_key 的 secret: 引用缺少环境变量名，当前为 %q（或改为直接填明文）", ref)
 	}
 	return name, nil
 }
@@ -439,7 +439,7 @@ func resolveAPIKey(ctx context.Context, provider, ref string, stderr io.Writer) 
 		ref = "secret:AQUARIUS_OPENAI_KEY"
 	}
 	if !strings.HasPrefix(ref, "secret:") {
-		fmt.Fprintf(stderr, "警告：provider %q 的 api_key 为明文（D35）——密钥直接落在 config.json，"+
+		fmt.Fprintf(stderr, "警告：provider %q 的 api_key 为明文——密钥直接落在 config.json，"+
 			"本机任意可读进程、备份与同步都可能取用；建议改用 \"secret:<环境变量名>\" 引用环境变量。\n", provider)
 		return ref, nil
 	}

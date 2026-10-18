@@ -11,7 +11,7 @@ n1 [root]
     n3 [user] 你好
       n4 [assistant] 你好 ← Head
 > /edit n1 不行
-! error: session: 修订: revise "n1": conversation: invalid node: root 即会话，不可修订
+! error: session: 修订: revise "n1": conversation: invalid node: 会话根节点就是会话本身，不可修订
 会话树:
 n1 [root]
   n2 [system] You are Aquarius, a minimalist personal …
@@ -34,7 +34,7 @@ n1 [root]
     n3 [user] 你好
       n4 [assistant] 你好 ← Head
 > /rm n1
-! error: session: root 即会话，不可删除（D19）
+! error: session: 会话根节点就是会话本身，不可删除
 会话树:
 n1 [root]
   n2 [system] You are Aquarius, a minimalist personal …

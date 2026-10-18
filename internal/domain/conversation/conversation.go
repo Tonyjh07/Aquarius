@@ -152,7 +152,7 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 		return Message{}, fmt.Errorf("revise %q: %w", id, ErrNotFound)
 	}
 	if old.Role == RoleRoot {
-		return Message{}, fmt.Errorf("revise %q: %w: root 即会话，不可修订", id, ErrInvalidNode)
+		return Message{}, fmt.Errorf("revise %q: %w: 会话根节点就是会话本身，不可修订", id, ErrInvalidNode)
 	}
 
 	m := Message{
@@ -238,7 +238,7 @@ func (c *Conversation) Prune(id MessageID) error {
 		return fmt.Errorf("prune %q: %w", id, ErrNotFound)
 	}
 	if m.Role == RoleRoot {
-		return fmt.Errorf("prune %q: %w: root 即会话，不可删除", id, ErrInvalidNode)
+		return fmt.Errorf("prune %q: %w: 会话根节点就是会话本身，不可删除", id, ErrInvalidNode)
 	}
 	sub := map[MessageID]bool{}
 	c.collectSubtree(id, sub)
