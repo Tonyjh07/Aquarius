@@ -429,14 +429,10 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 		}
 		first := i == 0 || !rowInCard(rows[i-1].kind)
 		last := i == len(rows)-1 || !rowInCard(rows[i+1].kind)
-		// 组首/组尾与相邻标题之间留整份 rowInsetDp，组内只留一半（卡内行距）。
-		padT, padB := rowInsetDp/2, rowInsetDp/2
-		if first {
-			padT = rowInsetDp
-		}
-		if last {
-			padB = rowInsetDp
-		}
+		// 组首/组尾与相邻标题之间留整份 rowInsetDp；**组内上下不留**——卡内行距由
+		// Stacked 的内边距给。留了的话相邻行的卡之间会插进一段白，竖边逐行断开，
+		// 整张卡看上去被切成几截（实测：放大后左右各缺一块，像没画完）。
+		padT, padB := cardPad(first, last)
 		return layout.Inset{
 			Left: unit.Dp(rowInsetDp), Right: unit.Dp(rowInsetDp),
 			Top: unit.Dp(padT), Bottom: unit.Dp(padB),
@@ -477,18 +473,20 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 						NE:   ir(topR), NW: ir(topR), SE: ir(botR), SW: ir(botR),
 					}
 					paint.FillShape(gtx.Ops, pp.card, inner.Op(gtx.Ops))
-					// 组内：把「不该出现的那条边」用面色抹掉，再补一条让开内边距的分隔线。
-					// 抹边只能抹本行自己的像素（相邻行各有各的边界行），不会伤到邻行。
+					// 组内：把「不该出现的那条横边」用面色抹掉，再补一条让开内边距的分隔线。
+					// **抹边必须让开左右 bd**：抹整宽会把两条竖边一起凿掉，卡在每行交界
+					// 处断成一段（实测：放大后左右各缺一块，整张卡看着像没画完）。
+					// 抹边只碰本行自己的边界像素（相邻行各有各的边界行），不会伤到邻行。
 					erase := func(rr image.Rectangle) {
 						paint.FillShape(gtx.Ops, pp.card, clip.Rect(rr).Op())
 					}
 					if !first {
-						erase(image.Rect(0, 0, w, bd))
+						erase(image.Rect(bd, 0, w-bd, bd))
 						paint.FillShape(gtx.Ops, pp.hairline,
 							clip.Rect(image.Rect(gtx.Dp(14), 0, w-gtx.Dp(14), bd)).Op())
 					}
 					if !last {
-						erase(image.Rect(0, h-bd, w, h))
+						erase(image.Rect(bd, h-bd, w-bd, h))
 					}
 					return layout.Dimensions{Size: image.Pt(w, h)}
 				}),
@@ -502,6 +500,20 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 			)
 		})
 	}
+}
+
+// cardPad 卡在组首/组尾的上下外边距（dp）：只在组界留，组内为 0。
+//
+// 组内留边距 = 相邻卡的竖边之间插进一段白，整张卡被切成几截；卡内行距由内容的
+// 内边距承担，不靠行间空隙。
+func cardPad(first, last bool) (top, bottom int) {
+	if first {
+		top = rowInsetDp
+	}
+	if last {
+		bottom = rowInsetDp
+	}
+	return top, bottom
 }
 
 // rowInCard 该行是否落进分组卡（表单行）。

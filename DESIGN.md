@@ -1364,6 +1364,9 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   分隔线在卡内、`rowInsetDp = 18`）；标题、分区标题、说明段与整块内容（代码块、网格、
   组合预览）不落卡。**卡片宽度取可用宽**：`layout.Stack` 会把 Stacked 子项的 `Min` 归零，
   只报自身尺寸的内容（复选框、单个按钮）会让卡缩成一条——同页出现两种卡宽。
+  **上下外边距只在组界留、组内为 0**（`cardPad`）：组内留空会在相邻卡之间插入白条，
+  左右竖边逐行断开，整张卡被切成几截。抹行间横边时也要让开左右 `bd`，否则连竖边一起
+  凿掉、症状相同。
 - **按库件投影**：`applyPaperTheme` 把 `paperPalette` 投影到次窗自己的 `material.Theme`
   （`Fg/Bg` + `ContrastBg/ContrastFg`）。**必须投影**：`material.Button` 默认取
   `ContrastBg`（Gio 靛蓝 `#3f51b5`），不投影的次窗按钮是蓝底白字。复选框另有
