@@ -263,24 +263,12 @@ type settingsForm struct {
 	compact   widget.Editor
 	toolChars widget.Editor
 	toolTo    widget.Editor
-	sysPrompt widget.Editor // 多行：默认人格（= 内置 @default 正文；清空 = 内置默认）
 	rawCfg    widget.Editor // 多行：config.json 原文（Q10）
 
-	// 人格模块树（S7/D144，S7b/D145 独立成页）：「系统提示词」页的模块编辑行 + 人格有序引用 +
-	// 内置模块展示 + 组合预览。
-	promptMods   []*promptModuleForm
-	promptRefs   []*promptRefForm
-	promptRefAdd widget.Clickable
-	promptBtns   map[string]*widget.Clickable // 内置模块「引用」按钮（get-or-create 按 key）
-	promptPrev   string                       // 组合预览（每帧现算；PreviewPrompts 提供）
-	builtins     []BuiltinModuleView          // 内置只读模块展示项（开窗快照）
-
-	// 模块库网格（D148）：三列磁贴 + 右键编辑弹窗 + 左键拖动排序。
-	// modTiles 每格一个手势控件（长度随模块数增长，下标与 promptMods 对齐，
-	// 末尾多一格 = 「＋ 新增模块」）；均为本窗 goroutine 独占。
-	modTiles []*modTileCtl
-	modDrag  modDragState
-	modEdit  modEditState
+	// 人格模块树（S7/D144，S7b/D145 独立成页）：编辑区实现收在 promptEditor 里，
+	// 与历史窗遮罩的「默认模板」页签共用（D154）——字段仍按原名提升，设置页侧
+	// 代码不必改称。
+	promptEditor
 
 	// provider 编辑区（D110②）：每条一组控件 + 测试/设主/删除；provApply 全量应用。
 	provs       []*providerForm
@@ -332,23 +320,6 @@ func (pf *providerForm) modelsPristine() bool {
 	return strings.TrimSpace(pf.models.Text()) == strings.TrimSpace(pf.modelsOrig)
 }
 
-// promptModuleForm 单个模块节点的编辑控件（S7/D144；本窗 goroutine 独占）。orig = 快照
-// 原名（诊断用）。text 多行：叶正文或组头；children 单行：逗号分隔子模块引用名（空 = 叶）。
-type promptModuleForm struct {
-	orig     string
-	name     widget.Editor
-	text     widget.Editor
-	children widget.Editor
-}
-
-// promptRefForm 单个人格引用的编辑控件（S7/D144；有序：上移/下移/删除）。
-type promptRefForm struct {
-	name widget.Editor
-	up   widget.Clickable
-	down widget.Clickable
-	del  widget.Clickable
-}
-
 // testOutcome 异步探针结果（testResults 单消费者 = 帧循环）：连通测试与「获取模型」共用
 // 一条通道，靠 kind 区分（同一 provider 的两次动作不该交错成两条状态行）。
 type testOutcome struct {
@@ -376,8 +347,8 @@ func newSettingsFormState() *settingsForm {
 		testResults: make(chan testOutcome, 8),
 		toolRes:     make(chan toolActionResult, 16),
 		toolBtns:    map[string]*widget.Clickable{},
-		promptBtns:  map[string]*widget.Clickable{},
 	}
+	f.promptEditor.init()
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
 	// 按视口**宽**迭代 → 只画首行、其余空白窗底）。
 	for i := range f.pages {
@@ -473,96 +444,6 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.builtins = s.Builtins
 	f.loadPrompts(s.PromptModules, s.PromptPersona)
 	return f
-}
-
-// loadPrompts 以快照重建人格模块树与引用编辑区（开窗填表；S7/D144）。
-func (f *settingsForm) loadPrompts(mods []PromptModuleView, persona []string) {
-	f.promptMods = make([]*promptModuleForm, 0, len(mods))
-	for _, m := range mods {
-		pf := &promptModuleForm{orig: m.Name}
-		pf.name.SingleLine = true
-		pf.children.SingleLine = true
-		pf.name.SetText(m.Name)
-		pf.text.SetText(m.Text)
-		pf.children.SetText(strings.Join(m.Children, ", "))
-		f.promptMods = append(f.promptMods, pf)
-	}
-	f.promptRefs = make([]*promptRefForm, 0, len(persona))
-	for _, name := range persona {
-		rf := &promptRefForm{}
-		rf.name.SingleLine = true
-		rf.name.SetText(name)
-		f.promptRefs = append(f.promptRefs, rf)
-	}
-}
-
-// addPromptModule 追加一个空白模块编辑行（帧循环与测试共用；空名行保存时跳过）。
-func (f *settingsForm) addPromptModule() {
-	pf := &promptModuleForm{}
-	pf.name.SingleLine = true
-	pf.children.SingleLine = true
-	f.promptMods = append(f.promptMods, pf)
-}
-
-// addPromptRef 追加一个人格引用行（name 空 = 待填；内置模块「引用」按钮带名调用）。
-func (f *settingsForm) addPromptRef(name string) {
-	rf := &promptRefForm{}
-	rf.name.SingleLine = true
-	rf.name.SetText(name)
-	f.promptRefs = append(f.promptRefs, rf)
-}
-
-// movePromptRef 人格引用上/下移（delta = -1 上移 / +1 下移；越界不动）。顺序即拼接顺序。
-func (f *settingsForm) movePromptRef(i, delta int) {
-	j := i + delta
-	if i < 0 || i >= len(f.promptRefs) || j < 0 || j >= len(f.promptRefs) {
-		return
-	}
-	f.promptRefs[i], f.promptRefs[j] = f.promptRefs[j], f.promptRefs[i]
-}
-
-// delPromptRef 删除第 i 个人格引用（越界 no-op）。
-func (f *settingsForm) delPromptRef(i int) {
-	if i < 0 || i >= len(f.promptRefs) {
-		return
-	}
-	f.promptRefs = append(f.promptRefs[:i], f.promptRefs[i+1:]...)
-}
-
-// delPromptModule 删除第 i 个模块（越界 no-op）。
-func (f *settingsForm) delPromptModule(i int) {
-	if i < 0 || i >= len(f.promptMods) {
-		return
-	}
-	f.promptMods = append(f.promptMods[:i], f.promptMods[i+1:]...)
-}
-
-// promptViews 表单现状 → 模块视图（空名行跳过；子模块按逗号/空白切分去重）。
-func (f *settingsForm) promptViews() []PromptModuleView {
-	out := make([]PromptModuleView, 0, len(f.promptMods))
-	for _, pf := range f.promptMods {
-		name := strings.TrimSpace(pf.name.Text())
-		if name == "" {
-			continue
-		}
-		out = append(out, PromptModuleView{
-			Name:     name,
-			Text:     pf.text.Text(),
-			Children: splitRefList(pf.children.Text()),
-		})
-	}
-	return out
-}
-
-// promptRefList 表单现状 → 人格引用列表（空行跳过，保持表单顺序 = 拼接顺序）。
-func (f *settingsForm) promptRefList() []string {
-	out := make([]string, 0, len(f.promptRefs))
-	for _, rf := range f.promptRefs {
-		if name := strings.TrimSpace(rf.name.Text()); name != "" {
-			out = append(out, name)
-		}
-	}
-	return out
 }
 
 // splitRefList 逗号/分号/空白分隔的引用名列表（去空、去重且保序）。

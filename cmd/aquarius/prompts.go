@@ -111,6 +111,40 @@ func (w *wiring) previewPrompts(mods []uigui.PromptModuleView, persona []string,
 	return text
 }
 
+// applyPromptTemplate 人格模板窄写回（D154）：只改 config 的 system_prompt 与 prompts
+// 两键。历史窗遮罩的「默认模板」页签走这条路——不进全量 SettingsPatch，免得把同时开着的
+// 设置窗刚改的主题/限额用旧快照盖回去。校验口径与设置页保存一致（模块名校验）。
+func (w *wiring) applyPromptTemplate(p uigui.PromptTemplatePatch) error {
+	if err := validatePromptModules(p.Modules); err != nil {
+		return err
+	}
+	return persistConfig(w.cfgPath, func(generic map[string]any) {
+		generic["system_prompt"] = p.SystemPrompt
+		pSec, _ := generic["prompts"].(map[string]any)
+		if pSec == nil {
+			pSec = map[string]any{}
+			generic["prompts"] = pSec
+		}
+		mods := map[string]any{}
+		for _, m := range p.Modules {
+			name := strings.TrimSpace(m.Name)
+			if name == "" {
+				continue
+			}
+			node := map[string]any{}
+			if strings.TrimSpace(m.Text) != "" {
+				node["text"] = m.Text
+			}
+			if children := cleanRefs(m.Children); len(children) > 0 {
+				node["children"] = children
+			}
+			mods[name] = node
+		}
+		pSec["modules"] = mods
+		pSec["persona"] = cleanRefs(p.Persona)
+	})
+}
+
 // runtimeEnv 运行环境事实（D37 口径）：平台、终端形态与 TERM、特权沙盒目录，以及缺省调用
 // 超时（D38 发现性，保留参数口径）。装配与设置窗预览共用，避免两处漂移。
 func (w *wiring) runtimeEnv() app.RuntimeEnv {

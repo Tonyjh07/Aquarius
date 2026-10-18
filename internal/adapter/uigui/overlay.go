@@ -42,23 +42,31 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// overlayPage 遮罩页签（D139）。
+// overlayPage 遮罩页签（D139/D154）。
 type overlayPage uint8
 
 const (
 	overlayPageRendered overlayPage = iota // 呈现：markdown 渲染只读预览
 	overlayPageSource                      // 源码：原始 markdown 多行编辑
+	overlayPageTemplate                    // 默认模板：人格编辑区（仅 persona 节点）
 )
 
 // 遮罩几何（dp；D139）：卡片居中，宽 320~560、高 ≤ 视口 70%、四周留边 32
 // （留边与卡片外的视口部分即「点空白关闭」区）。
+//
+// D154 人格模式另有一套上限（640dp / 视口 85%）：模板页签要放三列模块网格 +
+// 组合预览，560dp 会被压成单列、预览被挤出可视区。上限只在人格节点生效。
 const (
 	overlayCardMaxWdp   unit.Dp = 560
+	overlayCardMaxHFac          = 0.7
 	overlayCardMinWdp   unit.Dp = 320
-	overlayCardMaxHFrac         = 0.7
 	overlayCardMargindp unit.Dp = 32
 	overlayCardPadDp    unit.Dp = 12
 	overlayScrimAlpha   uint8   = 0x99 // 半透暗色（约 60%）
+
+	// 人格模式（模板页签）的放宽上限。
+	overlayPersonaMaxWdp  unit.Dp = 640
+	overlayPersonaMaxHFac         = 0.85
 )
 
 // overlayState 遮罩自持帧状态（historyState 持有，**仅历史窗 goroutine 读写**，
@@ -70,9 +78,11 @@ type overlayState struct {
 	id       conversation.MessageID
 	kind     blockKind             // user/assistant/system/root → 可编辑性
 	role     conversation.Role     // 快照内角色（标题措辞；未知 = ""）
-	editable bool                  // root/system 与无正文节点只读
+	editable bool                  // root 与无正文节点只读；system 里只有 persona 可编辑
+	persona  bool                  // 会话首节点（parent == Root 的 system，D154）
+	name     string                // 节点名（persona = "人格节点" 之类，标题行用）
 	page     overlayPage           // 当前页签
-	mode     conversation.KeepMode // 应用方式（Fresh 零值 = 默认）
+	mode     conversation.KeepMode // 应用方式（Fresh 零值 = 默认；persona 锁 Carry）
 
 	src       string    // 源码快照（NodeText，开遮罩时取一次）
 	blocks    []mdBlock // 呈现页签的解析结果
@@ -80,11 +90,20 @@ type overlayState struct {
 	cache     map[string][]mdBlock
 
 	// 页签 / 方式 / 动作控件。
-	tabRendered, tabSource          widget.Clickable
-	modeFresh, modeCarry, modeClone widget.Clickable
-	btnSave, btnClose               widget.Clickable
-	srcList, shownList              widget.List
-	ed                              widget.Editor
+	tabRendered, tabSource, tabTemplate widget.Clickable
+	modeFresh, modeCarry, modeClone     widget.Clickable
+	btnSave, btnClose                   widget.Clickable
+	srcList, shownList                  widget.List
+	ed                                  widget.Editor
+
+	// 模板页签（D154）：人格编辑区现状 + 页脚两钮 + 反馈行。编辑区只在打开遮罩且
+	// 是 persona 时构造（首次切页签或开卡即建），关遮罩随遮罩一起丢弃。
+	prompt     *promptEditor
+	btnSaveTpl widget.Clickable // 保存模板（写回 config 的两键）
+	btnApply   widget.Clickable // 应用到本会话（/edit --keep）
+	tplList    widget.List
+	tplStatus  string
+	tplErr     bool
 
 	card        image.Rectangle // 本帧卡片盒（窗口系；点空白关闭按它判内外）
 	focusNeeded bool            // 源码页签要把键盘焦点交给编辑器
@@ -101,31 +120,69 @@ func (st *historyState) openOverlay(u *UI, id conversation.MessageID, mode conve
 	src, _ := u.opts.Tree.NodeText(id)
 	kind := st.nodeKindOf(id)
 	role, _ := st.nodeRoleOf(id)
+	persona := st.isPersona(id)
+	// persona 在 relNodeKind 里落 blockPlain（system），但它可以改首节点快照（D154）。
+	editable := src != "" && (kind == blockUser || kind == blockAssistant || persona)
+	if persona {
+		// D154：改人格必须保留后续历史——Carry 是边转移，新人格接管整棵对话；
+		// Fresh 会把 Head 挪到新人格上、整段历史变成旧分支（用户看到的是
+		// 「改一句人格，对话没了」）。故预选并锁定 Carry，不看菜单预选了哪一档。
+		mode = conversation.Carry
+	} else if page == overlayPageTemplate {
+		page = overlayPageRendered // 模板页签只属于 persona（防调用方误传）
+	}
 	ov := &overlayState{
 		id:       id,
 		kind:     kind,
 		role:     role,
+		persona:  persona,
+		editable: editable,
 		mode:     mode,
 		page:     page,
 		src:      src,
-		editable: src != "" && (kind == blockUser || kind == blockAssistant),
 		cache:    map[string][]mdBlock{},
+	}
+	if persona && ov.page == overlayPageTemplate {
+		ov.ensureTemplate(u)
 	}
 	ov.srcList.List.Axis = layout.Vertical
 	ov.shownList.List.Axis = layout.Vertical
+	ov.tplList.List.Axis = layout.Vertical
 	// 源码编辑器：多行保真（SetText 不压平），Enter 提交 / Shift+Enter 换行
 	//（Submit=true 时 Enter 出 SubmitEvent 且不落换行，同主窗展开胶囊 D106）。
 	ov.ed.SingleLine = false
 	ov.ed.Submit = true
 	ov.ed.ReadOnly = !ov.editable
 	ov.ed.SetText(src)
-	if page == overlayPageSource {
+	switch page {
+	case overlayPageSource:
 		ov.focusNeeded = true
-	} else {
+	case overlayPageTemplate:
+		// 模板页没有会话编辑器可获焦：Esc 落在遮罩自身。
+		ov.focusSink = true
+	default:
 		// 呈现页没有编辑器可获焦，Esc 必须有落点（Gio 只投键事件给获焦 handler）。
 		ov.focusSink = true
 	}
 	st.ov = ov
+}
+
+// isPersona 是否会话首节点（persona）：system 角色且父节点是结构根（D154）。
+// 摘要等其余 system 节点不可编辑。
+func (st *historyState) isPersona(id conversation.MessageID) bool {
+	if st.model == nil {
+		return false
+	}
+	for _, n := range st.model.nodes {
+		if n.id != id {
+			continue
+		}
+		if n.role != conversation.RoleSystem || n.parent < 0 || n.parent >= len(st.model.nodes) {
+			return false
+		}
+		return st.model.nodes[n.parent].role == conversation.RoleRoot
+	}
+	return false
 }
 
 // nodeKindOf 快照内节点的展示档位（与图的 relNodeKind 同口径；找不到 = plain）。
@@ -208,6 +265,7 @@ func (ov *overlayState) events(gtx layout.Context, st *historyState) {
 }
 
 // actions 页签切换 / 方式选择 / 关闭 / 保存（帧内消费；只读节点无方式与保存）。
+// 人格节点多一档页签「默认模板」，且只有那一档可保存模板 / 应用到本会话（D154）。
 func (ov *overlayState) actions(gtx layout.Context, st *historyState, u *UI) {
 	if ov.tabRendered.Clicked(gtx) {
 		ov.page = overlayPageRendered
@@ -219,13 +277,19 @@ func (ov *overlayState) actions(gtx layout.Context, st *historyState, u *UI) {
 		ov.focusNeeded, ov.focusSink = true, false
 		wakeFrame(gtx)
 	}
-	if ov.editable {
+	if ov.persona && ov.tabTemplate.Clicked(gtx) {
+		ov.page = overlayPageTemplate
+		ov.focusNeeded, ov.focusSink = false, true
+		ov.ensureTemplate(u)
+		wakeFrame(gtx)
+	}
+	if ov.editable && ov.page != overlayPageTemplate {
 		switch {
-		case ov.modeFresh.Clicked(gtx):
+		case ov.modeFresh.Clicked(gtx) && !ov.persona:
 			ov.mode = conversation.Fresh
 		case ov.modeCarry.Clicked(gtx):
 			ov.mode = conversation.Carry
-		case ov.modeClone.Clicked(gtx):
+		case ov.modeClone.Clicked(gtx) && !ov.persona:
 			ov.mode = conversation.Clone
 		}
 	}
@@ -233,8 +297,38 @@ func (ov *overlayState) actions(gtx layout.Context, st *historyState, u *UI) {
 		st.closeOverlay()
 		return
 	}
+	if ov.page == overlayPageTemplate {
+		if ov.prompt != nil {
+			// 编辑弹窗开着时整块编辑区是模态的：页脚钮不再响应（否则会在旧内容上保存）。
+			if ov.prompt.modEdit.open {
+				return
+			}
+			ov.prompt.refEvents(gtx)
+			ov.prompt.moduleGridEvents(gtx)
+			ov.prompt.preview(u)
+			if ov.btnSaveTpl.Clicked(gtx) {
+				ov.saveTemplate(u)
+			}
+			if ov.btnApply.Clicked(gtx) {
+				ov.applyTemplate(u, st)
+			}
+		}
+		return
+	}
 	if ov.canSave() && ov.btnSave.Clicked(gtx) {
 		ov.submit(u, st)
+	}
+}
+
+// ensureTemplate 构造模板页签的编辑区（D154）：现取 config 快照，只在人格遮罩里存在。
+// 已构造就保留现状——切页签不该丢掉刚改的模板（关遮罩才是放弃）。
+func (ov *overlayState) ensureTemplate(u *UI) {
+	if ov.prompt != nil || !ov.persona {
+		return
+	}
+	ov.prompt = newPromptEditor(u)
+	if u.opts.PreviewPrompts != nil {
+		ov.prompt.preview(u)
 	}
 }
 
@@ -304,7 +398,7 @@ func (st *historyState) overlayFrame(gtx layout.Context, th *material.Theme, u *
 	if st.ov == nil {
 		return layout.Dimensions{}
 	}
-	card := overlayCardBox(gtx)
+	card := overlayCardBoxFor(gtx, ov.persona)
 	ov.card = card
 	// scrim：铺满视口的半透暗色（背景仍在其下渲染 → 观感是「压暗一层」）。
 	paint.FillShape(gtx.Ops, color.NRGBA{A: overlayScrimAlpha},
@@ -327,16 +421,26 @@ func (st *historyState) overlayFrame(gtx layout.Context, th *material.Theme, u *
 
 // overlayCardBox 卡片盒（居中、限宽限高：长消息在卡内滚，不撑窗）。
 func overlayCardBox(gtx layout.Context) image.Rectangle {
+	return overlayCardBoxFor(gtx, false)
+}
+
+// overlayCardBoxFor 按节点类型取卡片盒（D154）：人格模式上限放宽到 640dp / 视口 85%，
+// 其余节点沿用 560dp / 70%。
+func overlayCardBoxFor(gtx layout.Context, persona bool) image.Rectangle {
 	margin := gtx.Dp(overlayCardMargindp)
 	avail := gtx.Constraints.Max
 	maxW := avail.X - 2*margin
-	if w := gtx.Dp(overlayCardMaxWdp); maxW > w {
+	limW, limHf := overlayCardMaxWdp, float64(overlayCardMaxHFac)
+	if persona {
+		limW, limHf = overlayPersonaMaxWdp, overlayPersonaMaxHFac
+	}
+	if w := gtx.Dp(limW); maxW > w {
 		maxW = w
 	}
 	if maxW < gtx.Dp(overlayCardMinWdp) {
 		maxW = avail.X // 视口本身太窄：铺满不留边
 	}
-	maxH := int(float64(avail.Y) * overlayCardMaxHFrac)
+	maxH := int(float64(avail.Y) * limHf)
 	if lim := avail.Y - 2*margin; maxH > lim {
 		maxH = lim
 	}
@@ -384,6 +488,9 @@ func overlayTitle(gtx layout.Context, th *material.Theme, ov *overlayState) layo
 // root 与 system 都落 blockPlain，会把根节点写成「系统」）；根节点是会话容器、不是一条消息，
 // 故只写「会话根 · <id>」，与图例「◯会话根」同词。Role 未知（快照未就绪）= 系统消息。
 func (ov *overlayState) titleText() string {
+	if ov.persona {
+		return "人格节点 · " + shortID(string(ov.id))
+	}
 	switch ov.role {
 	case conversation.RoleUser:
 		return "用户消息 · " + shortID(string(ov.id))
@@ -396,13 +503,19 @@ func (ov *overlayState) titleText() string {
 	}
 }
 
-// overlayTabs 页签行：呈现 / 源码。
+// overlayTabs 页签行：呈现 / 源码（人格节点多一档「默认模板」，D154）。
 func overlayTabs(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
-	return layout.Flex{}.Layout(gtx,
+	children := []layout.FlexChild{
 		layout.Rigid(overlayPillBtn(&ov.tabRendered, th, "呈现", ov.page == overlayPageRendered)),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
 		layout.Rigid(overlayPillBtn(&ov.tabSource, th, "源码", ov.page == overlayPageSource)),
-	)
+	}
+	if ov.persona {
+		children = append(children,
+			layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+			layout.Rigid(overlayPillBtn(&ov.tabTemplate, th, "默认模板", ov.page == overlayPageTemplate)))
+	}
+	return layout.Flex{}.Layout(gtx, children...)
 }
 
 // overlayPill 卡内胶囊/按钮的**底板**（先量后画的正确姿势）：内容先量尺寸，底板按**内容盒**
@@ -451,8 +564,12 @@ func overlayPillBtn(c *widget.Clickable, th *material.Theme, text string, on boo
 	}
 }
 
-// overlayBody 内容区：呈现页签 = 主窗同款 markdown 渲染只读预览；源码页签 = 多行编辑器。
+// overlayBody 内容区：呈现页签 = 主窗同款 markdown 渲染只读预览；源码页签 = 多行编辑器；
+// 模板页签 = 人格编辑区（与设置窗「系统提示词」页同一份实现，D154）。
 func overlayBody(gtx layout.Context, th *material.Theme, ov *overlayState, st *historyState, u *UI) layout.Dimensions {
+	if ov.page == overlayPageTemplate {
+		return overlayTemplateBody(gtx, th, ov)
+	}
 	if ov.page == overlayPageSource {
 		if ov.focusNeeded {
 			ov.focusNeeded = false
@@ -484,9 +601,46 @@ func overlayBody(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 }
 
 // overlayFooter 底行：应用方式三选一（只读节点无）+ 关闭 / 保存。方式钮 = 与页签同款胶囊。
+// 人格节点（D154）：方式锁 Carry（另两档禁用 + 一行说明），模板页签换成两枚模板钮。
 func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	children := []layout.FlexChild{}
-	if ov.editable {
+	switch {
+	case ov.persona && ov.page == overlayPageTemplate:
+		children = append(children,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return overlayTplStatus(gtx, th, ov)
+			}),
+			layout.Rigid(overlayBtn(&ov.btnSaveTpl, th, "保存模板", false, ov.prompt != nil)),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+			layout.Rigid(overlayBtn(&ov.btnApply, th, "应用到本会话", true, ov.prompt != nil)),
+		)
+	case ov.persona:
+		// 改人格必须保留后续历史：三档都画出来（不是隐藏），另两档禁用——用户要
+		// 知道「另外两种应用方式存在，但这里不适用」，而不是以为功能被砍了。
+		modes := []struct {
+			c    *widget.Clickable
+			text string
+			m    conversation.KeepMode
+		}{
+			{&ov.modeFresh, "另起新分支", conversation.Fresh},
+			{&ov.modeCarry, "转移历史", conversation.Carry},
+			{&ov.modeClone, "复制历史", conversation.Clone},
+		}
+		for i, md := range modes {
+			if i > 0 {
+				children = append(children, layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout))
+			}
+			children = append(children, layout.Rigid(overlayPillBtnMode(md.c, th, md.text, ov.mode == md.m, ov.mode == md.m)))
+		}
+		children = append(children,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				l := material.Caption(th, "人格固定「转移历史」：旧人格留成无子叶。")
+				l.Color = paperOf().text3
+				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, l.Layout)
+			}),
+			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true, ov.canSave())),
+		)
+	case ov.editable:
 		modes := []struct {
 			c    *widget.Clickable
 			text string
@@ -508,7 +662,7 @@ func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) lay
 			}),
 			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true, ov.canSave())),
 		)
-	} else {
+	default:
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(th, "该节点只读")
 			l.Color = paperOf().text2
@@ -519,6 +673,25 @@ func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) lay
 		layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout), // 与页签行同款间距：两钮贴在一起会读成一块
 		layout.Rigid(overlayBtn(&ov.btnClose, th, "关闭", false, true)))
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
+}
+
+// overlayPillBtnMode 方式胶囊的可禁用变体（人格节点锁 Carry，D154）：选中档仍用强调底，
+// 禁用档用下沉面 + 三级字（点击不响应——调用方只在非 persona 分支消费 Clicked）。
+func overlayPillBtnMode(c *widget.Clickable, th *material.Theme, text string, on, enabled bool) layout.Widget {
+	if enabled {
+		return overlayPillBtn(c, th, text, on)
+	}
+	pp := paperOf()
+	return func(gtx layout.Context) layout.Dimensions {
+		return overlayPill(gtx, pp.sunken, overlayPillRadiusDp, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}.
+				Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					l := material.Caption(th, text)
+					l.Color = pp.text3
+					return l.Layout(gtx)
+				})
+		})
+	}
 }
 
 // overlayPillRadiusDp 卡内胶囊圆角。

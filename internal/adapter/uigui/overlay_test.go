@@ -390,8 +390,8 @@ func TestOverlayCardGeometryFitsViewport(t *testing.T) {
 	_, _, _ = relGraphFixture(t)
 	gtx, _ := frameGtxSize(input.Source{}, 720, 560)
 	card := overlayCardBox(gtx)
-	if card.Dx() > 560 || card.Dy() > int(560*overlayCardMaxHFrac) {
-		t.Fatalf("卡片盒 = %dx%d, want ≤560 x ≤%d", card.Dx(), card.Dy(), int(560*overlayCardMaxHFrac))
+	if card.Dx() > 560 || card.Dy() > int(560*overlayCardMaxHFac) {
+		t.Fatalf("卡片盒 = %dx%d, want ≤560 x ≤%d", card.Dx(), card.Dy(), int(560*overlayCardMaxHFac))
 	}
 	if card.Min.X <= 0 || card.Min.Y <= 0 ||
 		card.Max.X >= gtx.Constraints.Max.X || card.Max.Y >= gtx.Constraints.Max.Y {
@@ -643,7 +643,7 @@ func TestOverlayTitleText(t *testing.T) {
 	}{
 		{"u1", "用户消息 · u1"},
 		{"a1", "助手消息 · a1"},
-		{"p", "系统消息 · p"},
+		{"p", "人格节点 · p"},
 		{"r", "会话根 · r"},
 	} {
 		st.openOverlay(u, tc.id, conversation.Fresh, overlayPageRendered)

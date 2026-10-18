@@ -118,6 +118,18 @@ type Options struct {
 	// PreviewPrompts 人格组合预览（S7/D144，装配根实现）：按设置窗当前（未保存）模块树 +
 	// 引用展开最终 system 文本（纯计算，与新建会话同口径；不落盘、不阻断）。nil = 无预览行。
 	PreviewPrompts func(nodes []PromptModuleView, persona []string, legacy string) string
+	// ApplyPromptTemplate 人格模板写回（D154，装配根实现）：只改 config 的 system_prompt +
+	// prompts 两键——历史窗遮罩「默认模板」页签保存走这条路，避免全量设置 patch 盖掉同时
+	// 开着的设置窗刚改的其它字段。nil = 模板页签只读。
+	ApplyPromptTemplate func(p PromptTemplatePatch) error
+}
+
+// PromptTemplatePatch 人格模板的窄写回（D154；与 SettingsPatch 分开：全量 patch 带
+// 主题/限额等无关字段，跨窗同时编辑会互相覆盖）。
+type PromptTemplatePatch struct {
+	SystemPrompt string             // 默认人格（= 内置 @default 正文；空 = 内置默认）
+	Modules      []PromptModuleView // 模块树（空名行已跳过）
+	Persona      []string           // 有序引用（拼接顺序）
 }
 
 // zoomKnobs 双缩放旋钮（D90/§15.8）：元素缩放 × 正文字号，原子槽整体换存（成对生效）。

@@ -60,23 +60,24 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 				}
 				return uigui.Status{}
 			},
-			Settings:       w.settingsSnapshot,
-			ApplySettings:  w.applySettings,
-			Profiles:       &profilesManager{dataDir: w.dir, current: w.profileName, profileCfg: w.cfgPath}, // D110③：profile 区
-			ProviderMgr:    &providerManager{cfgPath: w.cfgPath, stderr: w.stderr},                          // D110②：provider 编辑区
-			Tree:           sessionTree{p: &w.sessPtr},                                                      // D80/§7.5：分叉条只读数据面
-			Commands:       sessionCommands{p: &w.sessPtr},                                                  // D103/S2b-1：补全浮层命令清单只读数据面
-			Lister:         sessionList{p: &w.sessPtr},                                                      // D120⑥：会话历史窗左栏只读数据面
-			PosFile:        filepath.Join(w.profileDir, "gui_pos.json"),                                     // 位置记忆随 profile 走（D110 修订①）
-			Hotkey:         w.cfg.UI.Hotkey,                                                                 // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
-			Theme:          w.cfg.UI.Theme,                                                                  // 主题档 system|light|dark（§15.4/D61；空 = system）
-			Scale:          w.cfg.UI.Scale,                                                                  // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
-			FontSize:       w.cfg.UI.FontSize,                                                               // 正文字号 sp（D90；0 = 15）
-			WindowWidth:    w.cfg.UI.WindowWidth,                                                            // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
-			WindowHeight:   w.cfg.UI.WindowHeight,
-			Welcome:        &welcomeManager{cfgPath: w.cfgPath, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey}, // D141：欢迎 / 首次运行引导数据面
-			Tools:          &toolsAdmin{w: w},                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）
-			PreviewPrompts: w.previewPrompts,                                                               // S7/D144：人格组合预览（当前表单 → 最终 system 文本）
+			Settings:            w.settingsSnapshot,
+			ApplySettings:       w.applySettings,
+			Profiles:            &profilesManager{dataDir: w.dir, current: w.profileName, profileCfg: w.cfgPath}, // D110③：profile 区
+			ProviderMgr:         &providerManager{cfgPath: w.cfgPath, stderr: w.stderr},                          // D110②：provider 编辑区
+			Tree:                sessionTree{p: &w.sessPtr},                                                      // D80/§7.5：分叉条只读数据面
+			Commands:            sessionCommands{p: &w.sessPtr},                                                  // D103/S2b-1：补全浮层命令清单只读数据面
+			Lister:              sessionList{p: &w.sessPtr},                                                      // D120⑥：会话历史窗左栏只读数据面
+			PosFile:             filepath.Join(w.profileDir, "gui_pos.json"),                                     // 位置记忆随 profile 走（D110 修订①）
+			Hotkey:              w.cfg.UI.Hotkey,                                                                 // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:               w.cfg.UI.Theme,                                                                  // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Scale:               w.cfg.UI.Scale,                                                                  // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
+			FontSize:            w.cfg.UI.FontSize,                                                               // 正文字号 sp（D90；0 = 15）
+			WindowWidth:         w.cfg.UI.WindowWidth,                                                            // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
+			WindowHeight:        w.cfg.UI.WindowHeight,
+			Welcome:             &welcomeManager{cfgPath: w.cfgPath, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey}, // D141：欢迎 / 首次运行引导数据面
+			Tools:               &toolsAdmin{w: w},                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）
+			PreviewPrompts:      w.previewPrompts,                                                               // S7/D144：人格组合预览（当前表单 → 最终 system 文本）
+			ApplyPromptTemplate: w.applyPromptTemplate,                                                          // D154：人格模板窄写回（遮罩「默认模板」页签保存）
 		})
 		w.ui = ui
 		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式

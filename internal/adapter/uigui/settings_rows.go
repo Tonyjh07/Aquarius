@@ -148,29 +148,9 @@ func (f *settingsForm) pageRows(page int) []rowDesc {
 			{kind: rowMaxTurns}, {kind: rowMaxCtx}, {kind: rowCompact},
 			{kind: rowToolChars}, {kind: rowToolTo},
 		}
-	case pagePrompt: // S7/D144 + S7b/D145：人格模块树独立成页（原先挂在「对话」页）
-		rows := []rowDesc{
-			head,
-			sec("人格（模块树组合）"),
-			{kind: rowPromptNote},
-			{kind: rowSysPrompt},
-			sec("人格引用（有序拼接）"),
-		}
-		for i := range f.promptRefs {
-			rows = append(rows, rowDesc{kind: rowPromptRef, field: i})
-		}
-		rows = append(rows, rowDesc{kind: rowPromptRefAdd})
-		rows = append(rows, sec("模块库"))
-		// 模块库整体占**一个**行（D148）：磁贴在模块库网格里自行排布，模块增删
-		// 只改网格内容、不改行数。逐模块一行是改版前的形态（一屏只能看到一个模块）。
-		rows = append(rows, rowDesc{kind: rowPromptGrid})
-		if len(f.builtins) > 0 {
-			rows = append(rows, sec("内置模块（只读，可引用）"))
-			for i := range f.builtins {
-				rows = append(rows, rowDesc{kind: rowPromptBuiltin, field: i})
-			}
-		}
-		return append(rows, sec("组合预览"), rowDesc{kind: rowPromptPreview})
+	case pagePrompt: // S7/D144 + S7b/D145：人格模块树独立成页（原先挂在「对话」页）；
+		// 编辑区本体由 promptEditor 给行表（D154 起与遮罩「默认模板」页签同一份）。
+		return append([]rowDesc{head}, f.promptEditor.rows()...)
 	case pageTools: // S6/D143：内置工具启停 + 插件管理（可交互；快照每帧同步）
 		rows := []rowDesc{head}
 		if f.tools == nil {
@@ -249,33 +229,13 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	}
 	// S7/D144：人格模块树与引用编辑（新增/删除/上移/下移、内置模块「引用」）。
 	// D148：模块库改成三列网格——新增走网格末尾那格，模块本身的增删改走右键弹窗。
-	for f.promptRefAdd.Clicked(gtx) {
-		f.addPromptRef("")
-	}
-	for key, btn := range f.promptBtns {
-		if !btn.Clicked(gtx) {
-			continue
-		}
-		if name, ok := strings.CutPrefix(key, "ref:"); ok {
-			f.addPromptRef(name)
-		}
-	}
+	// D154：这一组动作收在 promptEditor 里（与遮罩「默认模板」页签共用）。
+	f.promptEditor.refEvents(gtx)
 	if f.page == pagePrompt && !f.modEdit.open {
 		f.moduleGridEvents(gtx)
 	}
-	for i, rf := range f.promptRefs {
-		for rf.up.Clicked(gtx) {
-			f.movePromptRef(i, -1)
-		}
-		for rf.down.Clicked(gtx) {
-			f.movePromptRef(i, 1)
-		}
-		for rf.del.Clicked(gtx) {
-			f.delPromptRef(i)
-		}
-	}
-	if f.page == pagePrompt && u.opts.PreviewPrompts != nil {
-		f.promptPrev = u.opts.PreviewPrompts(f.promptViews(), f.promptRefList(), f.sysPrompt.Text())
+	if f.page == pagePrompt {
+		f.promptEditor.preview(u)
 	}
 	for i, pf := range f.provs {
 		for pf.test.Clicked(gtx) {
@@ -440,85 +400,89 @@ func (f *settingsForm) bottomBar(gtx layout.Context, th *material.Theme) layout.
 // 卡——这也是 iOS 分组表的画法（被视口切断处是直边，本来就不该有圆角）。
 func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Context, int) layout.Dimensions {
 	return func(gtx layout.Context, i int) layout.Dimensions {
-		r := rows[i]
-		if !rowInCard(r.kind) {
-			return layout.UniformInset(unit.Dp(rowInsetDp)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return f.rowBody(gtx, th, rows, i)
-			})
-		}
-		first := i == 0 || !rowInCard(rows[i-1].kind)
-		last := i == len(rows)-1 || !rowInCard(rows[i+1].kind)
-		// 组首/组尾与相邻标题之间留整份 rowInsetDp；**组内上下不留**——卡内行距由
-		// Stacked 的内边距给。留了的话相邻行的卡之间会插进一段白，竖边逐行断开，
-		// 整张卡看上去被切成几截（实测：放大后左右各缺一块，像没画完）。
-		padT, padB := cardPad(first, last)
-		return layout.Inset{
-			Left: unit.Dp(rowInsetDp), Right: unit.Dp(rowInsetDp),
-			Top: unit.Dp(padT), Bottom: unit.Dp(padB),
-		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			pp := paperOf()
-			rad := gtx.Dp(unit.Dp(pp.rCard))
-			bd := gtx.Dp(1)
-			return layout.Stack{}.Layout(gtx,
-				// 卡底 + 外沿：Expanded 拿到 Stacked 子项的最大尺寸，即「本行高度」。
-				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-					// 卡宽取**可用宽**而不是内容宽：layout.Stack 会把 Stacked 子项的
-					// Min 归零，只报自身尺寸的内容（复选框、单个按钮）会让卡缩成一条
-					// ——同一页出现两种卡宽，读起来像排版塌了。
-					w, h := gtx.Constraints.Min.X, gtx.Constraints.Min.Y
-					if m := gtx.Constraints.Max.X; m > w {
-						w = m
-					}
-					// 上下圆角只在组界生效：中间行直角，与相邻行拼成一张连续的卡。
-					topR, botR := 0, 0
-					if first {
-						topR = rad
-					}
-					if last {
-						botR = rad
-					}
-					// **整圈画环**：先铺描边色的圆角矩形，再内缩 bd 铺面色。逐条边画直线
-					// 会在四个角留缺口（实测：框线断成四截，读起来像渲染坏了）。
-					outer := clip.RRect{Rect: image.Rect(0, 0, w, h), NE: topR, NW: topR, SE: botR, SW: botR}
-					paint.FillShape(gtx.Ops, pp.hairline, outer.Op(gtx.Ops))
-					ir := func(v int) int {
-						if v <= bd {
-							return 0
-						}
-						return v - bd
-					}
-					inner := clip.RRect{
-						Rect: image.Rect(bd, bd, w-bd, h-bd),
-						NE:   ir(topR), NW: ir(topR), SE: ir(botR), SW: ir(botR),
-					}
-					paint.FillShape(gtx.Ops, pp.card, inner.Op(gtx.Ops))
-					// 组内：把「不该出现的那条横边」用面色抹掉，再补一条让开内边距的分隔线。
-					// **抹边必须让开左右 bd**：抹整宽会把两条竖边一起凿掉，卡在每行交界
-					// 处断成一段（实测：放大后左右各缺一块，整张卡看着像没画完）。
-					// 抹边只碰本行自己的边界像素（相邻行各有各的边界行），不会伤到邻行。
-					erase := func(rr image.Rectangle) {
-						paint.FillShape(gtx.Ops, pp.card, clip.Rect(rr).Op())
-					}
-					if !first {
-						erase(image.Rect(bd, 0, w-bd, bd))
-						paint.FillShape(gtx.Ops, pp.hairline,
-							clip.Rect(image.Rect(gtx.Dp(14), 0, w-gtx.Dp(14), bd)).Op())
-					}
-					if !last {
-						erase(image.Rect(bd, h-bd, w-bd, h))
-					}
-					return layout.Dimensions{Size: image.Pt(w, h)}
-				}),
-				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-					// 卡内边距：上下 14 与左右一致，字段才不会贴着卡的描边。
-					return layout.Inset{
-						Top: unit.Dp(14), Bottom: unit.Dp(14),
-						Left: unit.Dp(14), Right: unit.Dp(14),
-					}.Layout(gtx, f.rowBodyFn(th, rows, i))
-				}),
-			)
-		})
+		return rowLayout(gtx, rows, i, f.rowBodyFn(th, rows, i))
 	}
+}
+
+// rowLayout 单行版面（卡片分组 + 留白），行内容由 body 给（D154 起抽成自由函数：
+// 设置页与遮罩「默认模板」页签的行表不同，版面必须同一份，否则两处卡片粗细不一样）。
+func rowLayout(gtx layout.Context, rows []rowDesc, i int, body layout.Widget) layout.Dimensions {
+	r := rows[i]
+	if !rowInCard(r.kind) {
+		return layout.UniformInset(unit.Dp(rowInsetDp)).Layout(gtx, body)
+	}
+	first := i == 0 || !rowInCard(rows[i-1].kind)
+	last := i == len(rows)-1 || !rowInCard(rows[i+1].kind)
+	// 组首/组尾与相邻标题之间留整份 rowInsetDp；**组内上下不留**——卡内行距由
+	// Stacked 的内边距给。留了的话相邻行的卡之间会插进一段白，竖边逐行断开，
+	// 整张卡看上去被切成几截（实测：放大后左右各缺一块，像没画完）。
+	padT, padB := cardPad(first, last)
+	return layout.Inset{
+		Left: unit.Dp(rowInsetDp), Right: unit.Dp(rowInsetDp),
+		Top: unit.Dp(padT), Bottom: unit.Dp(padB),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		pp := paperOf()
+		rad := gtx.Dp(unit.Dp(pp.rCard))
+		bd := gtx.Dp(1)
+		return layout.Stack{}.Layout(gtx,
+			// 卡底 + 外沿：Expanded 拿到 Stacked 子项的最大尺寸，即「本行高度」。
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+				// 卡宽取**可用宽**而不是内容宽：layout.Stack 会把 Stacked 子项的
+				// Min 归零，只报自身尺寸的内容（复选框、单个按钮）会让卡缩成一条
+				// ——同一页出现两种卡宽，读起来像排版塌了。
+				w, h := gtx.Constraints.Min.X, gtx.Constraints.Min.Y
+				if m := gtx.Constraints.Max.X; m > w {
+					w = m
+				}
+				// 上下圆角只在组界生效：中间行直角，与相邻行拼成一张连续的卡。
+				topR, botR := 0, 0
+				if first {
+					topR = rad
+				}
+				if last {
+					botR = rad
+				}
+				// **整圈画环**：先铺描边色的圆角矩形，再内缩 bd 铺面色。逐条边画直线
+				// 会在四个角留缺口（实测：框线断成四截，读起来像渲染坏了）。
+				outer := clip.RRect{Rect: image.Rect(0, 0, w, h), NE: topR, NW: topR, SE: botR, SW: botR}
+				paint.FillShape(gtx.Ops, pp.hairline, outer.Op(gtx.Ops))
+				ir := func(v int) int {
+					if v <= bd {
+						return 0
+					}
+					return v - bd
+				}
+				inner := clip.RRect{
+					Rect: image.Rect(bd, bd, w-bd, h-bd),
+					NE:   ir(topR), NW: ir(topR), SE: ir(botR), SW: ir(botR),
+				}
+				paint.FillShape(gtx.Ops, pp.card, inner.Op(gtx.Ops))
+				// 组内：把「不该出现的那条横边」用面色抹掉，再补一条让开内边距的分隔线。
+				// **抹边必须让开左右 bd**：抹整宽会把两条竖边一起凿掉，卡在每行交界
+				// 处断成一段（实测：放大后左右各缺一块，整张卡看着像没画完）。
+				// 抹边只碰本行自己的边界像素（相邻行各有各的边界行），不会伤到邻行。
+				erase := func(rr image.Rectangle) {
+					paint.FillShape(gtx.Ops, pp.card, clip.Rect(rr).Op())
+				}
+				if !first {
+					erase(image.Rect(bd, 0, w-bd, bd))
+					paint.FillShape(gtx.Ops, pp.hairline,
+						clip.Rect(image.Rect(gtx.Dp(14), 0, w-gtx.Dp(14), bd)).Op())
+				}
+				if !last {
+					erase(image.Rect(bd, h-bd, w-bd, h))
+				}
+				return layout.Dimensions{Size: image.Pt(w, h)}
+			}),
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				// 卡内边距：上下 14 与左右一致，字段才不会贴着卡的描边。
+				return layout.Inset{
+					Top: unit.Dp(14), Bottom: unit.Dp(14),
+					Left: unit.Dp(14), Right: unit.Dp(14),
+				}.Layout(gtx, body)
+			}),
+		)
+	})
 }
 
 // cardPad 卡在组首/组尾的上下外边距（dp）：只在组界留，组内为 0。
@@ -649,33 +613,12 @@ func (f *settingsForm) rowBody(gtx layout.Context, th *material.Theme, rows []ro
 		return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）"))
 	case rowToolTo:
 		return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
-	case rowSysPrompt:
-		return editorBoxH(th, &f.sysPrompt, "默认人格（= 内置 @default 正文；清空 = 内置默认）", 80)(gtx)
-	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
-	case rowPromptNote:
-		l := material.Body2(th, "人格 = 有序引用的展开结果；模块可分组（children 逗号分隔，可多级）。"+
-			"改动只对新会话生效，且重启后应用。")
-		l.Color = paperOf().text3
-		return l.Layout(gtx)
-	case rowPromptGrid:
-		return f.moduleGridRow(gtx, th)
-	case rowPromptRef:
-		return f.promptRefRow(gtx, th, r.field)
-	case rowPromptRefAdd:
-		return paperButton(th, &f.promptRefAdd, "＋ 添加引用", paperBtnSecondary, true)(gtx)
-	case rowPromptBuiltin:
-		return f.promptBuiltinRow(gtx, th, f.builtins[r.field])
-	case rowPromptPreview:
-		text := f.promptPrev
-		l := material.Body2(th, text)
-		if strings.TrimSpace(text) == "" {
-			text = "（保存后按模块树组合；预览需装配根接线）"
-			l = material.Body2(th, text)
-			l.Color = paperOf().text3
-		} else {
-			l.Color = paperOf().text2
-		}
-		return l.Layout(gtx)
+	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）——行内容由
+	// promptEditor 提供（D154 起与遮罩「默认模板」页签共用一份实现）。
+	case rowSysPrompt, rowPromptNote, rowPromptGrid, rowPromptRef, rowPromptRefAdd,
+		rowPromptBuiltin, rowPromptPreview:
+		dims, _ := f.promptEditor.rowBody(gtx, th, rows, i)
+		return dims
 	// S6/D143：工具与 MCP 页。
 	case rowBuiltin:
 		return f.builtinToolRow(gtx, th, f.toolsSnap.Builtins[r.field])
