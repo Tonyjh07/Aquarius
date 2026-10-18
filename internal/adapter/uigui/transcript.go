@@ -310,11 +310,13 @@ func (u *UI) mdBlockWidget(b mdBlock, rs *rowSel, k int, off image.Point) layout
 // mdBlockWidgetTh 同 mdBlockWidget，主题由调用方给（主窗传 u.th；遮罩层传本窗 th）。
 func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image.Point) layout.Widget {
 	switch b.kind {
-	case mdHeading: // 大字求粗（D65 阶梯；CJK 粗体面缺省回落常规）
+	case mdHeading: // 大字求粗（D65 阶梯；粗体由系统字面提供，见 D147）
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				s := material.Body1(th, b.text)
 				s.TextSize = mdHeadingSp(th, b.level)
+				// SemiBold 在 CJK 字体族里吸附到 Bold（无 Medium 面）——层级主要靠
+				// 上面的字号阶梯，字重只做「正文/强调」的二元区分（D147）。
 				s.Font.Weight = font.SemiBold
 				s.State = rs.sel(k)
 				return s.Layout(gtx)

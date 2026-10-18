@@ -1319,6 +1319,22 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   §8）：`system` 经 Win32 `AppsUseLightTheme` 注册表读取、主窗 `WM_SETTINGCHANGE`
   广播实时刷新；切换**热生效**（下一帧重绘），设置窗主题档同口径；次窗经原子快照
   同读同一预设（§15.7 并发模型）。
+- **字体（D147）**：字重是**二元档**（正文 / 强调），不做 400·500·700 三级。
+  - **载体**：`text.NewShaper(text.WithCollection(faces))` 只**追加**预加载面，
+    Gio 仍会扫描系统字体库并参与候选——粗体实际由系统那份 `msyhbd.ttc` 提供，
+    不依赖我们手动加载。故「候选表首个可解析即返回」**不影响**字重的可得性；
+    `loadCJKFaces` 的真实职责是**定默认家族**（雅黑优先，缺失才退到黑体/宋体），
+    不是做字重分层。
+  - **为什么不做三档**：微软雅黑只有 Regular + Bold，无 Medium；`font.SemiBold`
+    必然吸附到 Bold（与 `font.Bold` 像素全等）。补中间档只能内嵌字体——拉丁可变体
+    会让中英混排出现「英文三档、中文两档」的割裂，中文 Medium 则要 ~10MB，与单二进制
+    轻量底线冲突。
+  - **层级主力是字号与颜色**，字重只区分「正文 vs 强调」：标题走 `mdHeadingSp`
+    阶梯（h1 20sp → h2 17sp → h3 15sp），配色走 `text` / `text2` / `text3`。
+    新增界面元素时**先问字号和颜色够不够**，不要指望第三个字重档。
+  - **守卫**：`zz_weight_test.go` 用离屏渲染锁定「Bold 的着墨量显著大于 Normal」
+    与「SemiBold ≡ Bold」（后者是当前字体族的事实，换成带 Medium 的家族时该断言
+    会失败——那正是提醒你更新本节的信号）。
 
 ### 15.5 契约与并发
 
@@ -1367,7 +1383,7 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 | 系统托盘 | ✅ `Shell_NotifyIconW` + 消息窗口 + 右键菜单（纯 Go syscall） |
 | 全局快捷键 | ✅ `RegisterHotKey` 注册成功（spike 用 Alt+Space 验机制；默认值改 **Alt+A**——组合键与注册无关，Ctrl+Alt+A 回退逻辑备着） |
 | 多显示器 + 位置记忆 | ✅ 显示器枚举/工作区夹取/`SetWindowPos` 定位 + JSON 位置记忆 + 重启恢复 |
-| 中文字形 | ✅ 系统 `msyh.ttc` → `opentype.ParseCollection` 加载成功（gofont 无 CJK，M5 中文渲染走系统字体） |
+| 中文字形 | ✅ 系统 `msyh.ttc` → `opentype.ParseCollection` 加载成功（gofont 无 CJK，M5 中文渲染走系统字体）；**粗体面由 Gio 的系统字体扫描补齐**，与手动加载的候选表无关（D147） |
 | Gio 真透明 | ❌ 不存在（`gpu.Clear` 强制不透明白，仅 js 平台透明）；每像素透明需 `UpdateLayeredWindow` CPU 位图或 DirectComposition，与 Gio GPU 路径冲突——D44–D59 形裁绕开，D62 起经 headless 全帧重渲 + 主窗 ULW 承载 |
 | 淡出像素源（headless 离屏渲染） | ✅ spike/headless：`gpu/headless` 清屏 = 透明（alpha 通道 = 内容覆盖，**免布局掩码**）；零值 `Source` 纯渲染不 panic（含 `gtx.Execute`/material 控件）；`PxPerDp` 可控（125% 缩放实测通过）；像素语义 = **预乘线性 + sRGB 存储**（ULW 前需 decode/encode 转字节预乘） |
 | 主窗捕获（PrintWindow） | ❌ spike/printwin：`PW_RENDERFULLCONTENT` **连可见区都返回全零** → 捕获路线排除；淡出像素源改 headless 离屏渲染（D44） |

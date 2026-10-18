@@ -60,8 +60,9 @@ func pickMonoFace(faces []text.FontFace) font.Font {
 	return font.Font{}
 }
 
-// mdHeadingSp 标题字号阶梯（D65）：h1 20sp → h2 17sp → h3 15sp，h4 以下与正文同大
-// （Weight 求粗仍区分；CJK 粗体面缺省时回落常规渲染）。
+// mdHeadingSp 标题字号阶梯（D65）：h1 20sp → h2 17sp → h3 15sp，h4 以下与正文同大。
+// **层级主力是字号**（D147）：CJK 只有 Regular/Bold 两面，SemiBold 会吸附到 Bold，
+// 所以标题必须靠字号拉开，不能指望再加一个中间字重档。
 func mdHeadingSp(th *material.Theme, level int) unit.Sp {
 	switch level {
 	case 1:
@@ -75,8 +76,13 @@ func mdHeadingSp(th *material.Theme, level int) unit.Sp {
 	}
 }
 
-// loadCJKFaces 加载系统中文字体（§15.6 spike 实证：msyh.ttc → opentype；非 Windows
-// 由平台层给常见 CJK 字体路径，全缺失 = nil → 上层回落 gofont）。
+// loadCJKFaces 挑系统字体里的**默认家族**（§15.6 spike 实证：msyh.ttc → opentype；
+// 非 Windows 由平台层给常见 CJK 字体路径，全缺失 = nil → 上层回落 gofont）。
+//
+// 语义是「首个能解析的候选胜出」——候选表的其余项（msyhbd/simhei/simsun）只在首选
+// 缺失时才轮到，它们**不参与**字重分层。字重能生效是因为 Gio 的 shaper 默认还会扫描
+// 整机字体库（WithCollection 是**追加**而非替换），粗体面由系统那份提供；若改用
+// text.NoSystemFonts()，粗体才会真的退化成常规（D147）。
 func loadCJKFaces(paths []string) []text.FontFace {
 	for _, p := range paths {
 		src, err := os.ReadFile(p)
