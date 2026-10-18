@@ -776,8 +776,8 @@ func TestBuildRequestConfigFallbackWithoutPersona(t *testing.T) {
 	if len(req.Messages) != 3 {
 		t.Fatalf("messages = %d, want 3 (config system, 摘要, 新问题): %+v", len(req.Messages), req.Messages)
 	}
-	if req.Messages[0].Role != "system" || req.Messages[0].Content[0].Text != defaultSystem {
-		t.Fatalf("messages[0] = %+v, want config/内置 system 兜底", req.Messages[0])
+	if req.Messages[0].Role != "system" || !strings.HasPrefix(req.Messages[0].Content[0].Text, defaultSystem) {
+		t.Fatalf("messages[0] = %+v, want 内置 system 兜底", req.Messages[0])
 	}
 	if req.Messages[1].Role != "system" || req.Messages[1].Content[0].Text != "摘要" {
 		t.Fatalf("messages[1] = %+v, want 摘要水位", req.Messages[1])
@@ -787,11 +787,12 @@ func TestBuildRequestConfigFallbackWithoutPersona(t *testing.T) {
 	}
 }
 
-// TestBuildRequestFallbackSystemIncludesEnv D37：兜底注入的 config system 同样带环境块。
+// TestBuildRequestFallbackSystemIncludesEnv D37/D144：兜底注入的 system 由人格模块树展开（带环境块）。
 func TestBuildRequestFallbackSystemIncludesEnv(t *testing.T) {
 	llm := &scriptLLM{t: t}
 	rec := &recorder{}
-	a := newAgent(t, llm, rec, Deps{}, Config{Env: RuntimeEnv{Platform: "linux/amd64", Terminal: "repl"}})
+	persona := NewPersonaComposer(PromptSpec{}, RuntimeEnv{Platform: "linux/amd64", Terminal: "repl"}, nil)
+	a := newAgent(t, llm, rec, Deps{}, Config{Persona: persona})
 	c := conversation.New(conversation.ID("envp"), "envp")
 	commitNode(t, c, conversation.MessageID(c.ID), conversation.RoleUser, "hi")
 

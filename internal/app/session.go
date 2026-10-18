@@ -28,10 +28,9 @@ type SessionDeps struct {
 	Agent *Agent
 	IDs   port.IDGen
 	Clock port.Clock // persona 节点 CreatedAt
-	// SystemPrompt 人格提示：空 = 内置默认；新建会话时快照进 persona 首节点（D20）。
-	SystemPrompt string
-	// Env 运行环境块（D37）：附加在 SystemPrompt/默认提示之后一并快照进 persona。
-	Env RuntimeEnv
+	// Persona 人格组合器（D144/S7）：新建会话时展开为最终 system 文本快照进 persona 首节点
+	// （@env.date 取展开时刻 ⇒ 创建当天）。nil = 空规格默认人格。
+	Persona *PersonaComposer
 	// Level 权限等级（D22）；空 = perm.DefaultLevel。
 	Level perm.Level
 	// SandboxPath 特权目录（<dataDir>/sandbox），仅用于 /permission 展示。
@@ -80,8 +79,7 @@ type Session struct {
 	agent         *Agent
 	ids           port.IDGen
 	clock         port.Clock
-	systemPrompt  string
-	env           RuntimeEnv
+	persona       *PersonaComposer
 	level         perm.Level
 	sandboxPath   string
 	persistLevel  func(perm.Level) error
@@ -149,13 +147,16 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 	if level == "" {
 		level = perm.DefaultLevel
 	}
+	persona := d.Persona
+	if persona == nil { // nil = 空规格默认人格（内置 @default + @env）
+		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)
+	}
 	s := &Session{
 		store:         d.Store,
 		agent:         d.Agent,
 		ids:           d.IDs,
 		clock:         d.Clock,
-		systemPrompt:  strings.TrimSpace(d.SystemPrompt),
-		env:           d.Env,
+		persona:       persona,
 		level:         level,
 		sandboxPath:   d.SandboxPath,
 		persistLevel:  d.PersistLevel,
@@ -205,11 +206,10 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 // newConversation 建会话：Root + persona 首节点（system 角色，D20），Head 落在 persona。
 func (s *Session) newConversation(title string) (*conversation.Conversation, error) {
 	c := conversation.New(s.ids.ConversationID(), title)
-	prompt := s.systemPrompt
-	if prompt == "" {
+	prompt, _ := s.persona.Compose() // D144/S7：人格模块树展开（@env.date = 会话创建当天）
+	if strings.TrimSpace(prompt) == "" {
 		prompt = defaultSystem
 	}
-	prompt = systemWithEnv(prompt, s.env) // D37：环境块随 config 快照进 persona
 	persona := conversation.Message{
 		ID:        s.ids.MessageID(),
 		Parent:    conversation.MessageID(c.ID),

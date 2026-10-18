@@ -37,8 +37,10 @@ type Deps struct {
 
 // Config Agent 行为配置。
 type Config struct {
-	Model    string
-	System   string // 空 = 内置默认 system 提示
+	Model string
+	// Persona 人格组合器（D144/S7）：无树内 persona 时兜底注入的 system 文本由它展开
+	// （nil = 空规格默认人格）。取代原 System/Env 两字段（环境块并入 @env 内置模块）。
+	Persona  *PersonaComposer
 	Sampling port.Sampling
 	Budget   port.TokenBudget
 	MaxTurns int // <=0 = 8
@@ -55,9 +57,6 @@ type Config struct {
 	// 由适配器映射 reasoning_content；false = 装配时过滤。config `model.echo_thinking` 键缺失 =
 	// 回传、显式 false 才关（缺省解析在装配根完成，app 只见 bool）。
 	EchoThinking bool
-	// Env 运行环境块（D37）：附加到 system 提示（含 config 自定义提示）之后；
-	// 全空 = 不附加。
-	Env RuntimeEnv
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（DESIGN §7.1，内核唯一的编排）。
@@ -73,7 +72,7 @@ type Agent struct {
 	model     atomic.Value // string：当前生成模型（/model 热切换，D32；取代 cfg.Model 读取）
 	think     atomic.Pointer[bool]
 	effort    atomic.Value // string：推理档位（/effort 热切换，D34）
-	system    string
+	persona   *PersonaComposer
 	maxTurns  int
 	est       *estimator // 三级 token 计数链②③（D26）
 	compactAt int        // 自动压缩阈值 tokens（= CompactThreshold × MaxContextTokens）
@@ -94,11 +93,10 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	case strings.TrimSpace(cfg.Model) == "":
 		return nil, errors.New("agent: model 为空")
 	}
-	system := strings.TrimSpace(cfg.System)
-	if system == "" {
-		system = defaultSystem
+	persona := cfg.Persona
+	if persona == nil { // nil = 空规格默认人格（内置 @default + @env）
+		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)
 	}
-	system = systemWithEnv(system, cfg.Env) // D37：兜底注入的 system 同样带环境块
 	maxTurns := cfg.MaxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
@@ -125,7 +123,7 @@ func New(d Deps, cfg Config) (*Agent, error) {
 		blobs:     d.Blobs,
 		memory:    d.Memory,
 		cfg:       cfg,
-		system:    system,
+		persona:   persona,
 		maxTurns:  maxTurns,
 		est:       newEstimator(counter),
 		compactAt: int(threshold*float64(maxCtx) + 0.5),
@@ -365,11 +363,12 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 		return port.GenerateRequest{}, err
 	}
 	msgs := make([]port.PromptMessage, 0, len(path)+1)
-	// persona 恒回传（D20）：树内 persona 在位则由它充当 system；否则 config/内置提示兜底注入。
+	// persona 恒回传（D20）：树内 persona 在位则由它充当 system；否则按人格模块树兜底注入（D144）。
 	if !(len(treePath) > 1 && treePath[1].Role == conversation.RoleSystem) {
+		sysText, _ := a.persona.Compose()
 		msgs = append(msgs, port.PromptMessage{
 			Role:    "system",
-			Content: []port.PromptPart{{Kind: "text", Text: a.system}},
+			Content: []port.PromptPart{{Kind: "text", Text: sysText}},
 		})
 	}
 	msgs = append(msgs, path...)

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
@@ -109,7 +110,8 @@ func TestSessionPersonaIncludesEnv(t *testing.T) {
 		Agent: agent,
 		IDs:   &seqIDs{},
 		Clock: fixedClock{testTime},
-		Env:   RuntimeEnv{Platform: "windows/amd64", Terminal: "tui", SandboxDir: `C:\data\sandbox`},
+		Persona: NewPersonaComposer(PromptSpec{}, RuntimeEnv{Platform: "windows/amd64",
+			Terminal: "tui", SandboxDir: `C:\data\sandbox`}, func() time.Time { return testTime }),
 	})
 	if err != nil {
 		t.Fatalf("new session: %v", err)
@@ -136,7 +138,7 @@ func TestNewSessionWritesPersonaFirstNode(t *testing.T) {
 	if persona.Role != conversation.RoleSystem || persona.Parent != path[0].ID {
 		t.Fatalf("persona = %+v, want system under root", persona)
 	}
-	if len(persona.Content) != 1 || persona.Content[0].Text != defaultSystem {
+	if len(persona.Content) != 1 || !strings.HasPrefix(persona.Content[0].Text, defaultSystem) {
 		t.Fatalf("persona content = %+v, want 内置默认人格", persona.Content)
 	}
 	if s.Current().Head != persona.ID {

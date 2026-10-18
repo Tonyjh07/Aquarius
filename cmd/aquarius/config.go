@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 )
@@ -37,7 +38,8 @@ var legacyConfigKeys = []string{
 type fileConfig struct {
 	Model        modelConfig       `json:"model"`
 	UI           uiConfig          `json:"ui"`
-	SystemPrompt string            `json:"system_prompt"` // 人格：空 = 内置默认（快照进 persona 首节点，D20）
+	SystemPrompt string            `json:"system_prompt"` // 人格兜底单串：空 = 内置默认（D20；S7/D144 起由 prompts 段优先组合）
+	Prompts      promptsConfig     `json:"prompts"`       // 人格模块化（S7/D144）：模块库 + 有序组合 + 兜底模块
 	Permissions  permissionsConfig `json:"permissions"`
 	Output       outputConfig      `json:"output"`
 	Limits       limitsConfig      `json:"limits"`
@@ -47,6 +49,35 @@ type fileConfig struct {
 	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
 	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。
 	Plugins map[string]plugin.State `json:"plugins"`
+}
+
+// promptsConfig 人格模块树（S7/D144）：模块树 + 有序顶层引用。
+// 组合经 app.PersonaComposer（模块树递归展开，见 D144）；`system_prompt` 退居内置 @default 正文来源。
+type promptsConfig struct {
+	// Modules 模块树：name → 节点（叶 = text；组 = children，亦可带 text 作组头）。
+	Modules map[string]promptModule `json:"modules"`
+	// Persona 人格 = 有序顶层引用列表；空 = 默认 ["@default","@env"]。
+	Persona []string `json:"persona"`
+}
+
+// promptModule 模块树节点（D144）。
+type promptModule struct {
+	// Text 叶正文（组亦可带——作组头）。
+	Text string `json:"text,omitempty"`
+	// Children 子模块名有序列表（组；可多级嵌套）。
+	Children []string `json:"children,omitempty"`
+}
+
+// promptSpec 构造人格装配规格（D144/S7）：模块树 + 有序顶层引用 + 兼容单串（system_prompt → @default 正文）。
+func (c *fileConfig) promptSpec() app.PromptSpec {
+	spec := app.PromptSpec{Persona: c.Prompts.Persona, Legacy: c.SystemPrompt}
+	if len(c.Prompts.Modules) > 0 {
+		spec.Modules = make(map[string]app.PromptModule, len(c.Prompts.Modules))
+		for name, m := range c.Prompts.Modules {
+			spec.Modules[name] = app.PromptModule{Text: m.Text, Children: m.Children}
+		}
+	}
+	return spec
 }
 
 // toolsConfig 工具面配置（S6/D143）。
@@ -230,6 +261,7 @@ const defaultConfig = `{
   "tools": { "disabled": ["think"] },
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
+  "prompts": { "modules": {}, "persona": [] },
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {},

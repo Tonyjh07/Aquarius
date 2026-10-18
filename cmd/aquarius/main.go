@@ -248,17 +248,23 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		// D38：缺省调用超时随环境块披露（发现性），保留参数口径见 D38。
 		ToolTimeoutSec: int(w.toolTimeout.Seconds()),
 	}
+	// 人格模块树（D144/S7）：Agent 兜底提示（每请求展开）与会话 persona（创建时展开，@env.date = 当天）。
+	personaSpec := w.cfg.promptSpec()
+	agentPersona := app.NewPersonaComposer(personaSpec, runtimeEnv, nil)
+	sessPersona := app.NewPersonaComposer(personaSpec, runtimeEnv, systemClock{}.Now)
+	if _, missing := agentPersona.Compose(); len(missing) > 0 {
+		fmt.Fprintf(stderr, "警告：人格模块树存在缺失引用 %v（已跳过；请检查 config prompts.modules / prompts.persona）\n", missing)
+	}
 	agent, err := app.New(
 		app.Deps{
 			LLM: gen, UI: w.presenter, IDs: ids, Clock: systemClock{},
 			Tools: auditedRunner, Memory: w.merged, Blobs: w.blobs,
 		},
 		app.Config{
-			Model: w.cfg.Model.Name, System: w.cfg.SystemPrompt, MaxTurns: w.cfg.Limits.MaxTurns,
+			Model: w.cfg.Model.Name, Persona: agentPersona, MaxTurns: w.cfg.Limits.MaxTurns,
 			CompactThreshold: w.cfg.Limits.CompactThreshold, MaxContextTokens: w.cfg.Limits.MaxContextTokens,
 			Think: w.cfg.Model.Think, ReasoningEffort: w.cfg.Model.ReasoningEffort, // D34 初值
 			EchoThinking: w.cfg.Model.EchoThinking == nil || *w.cfg.Model.EchoThinking, // D42：键缺失 = 回传
-			Env:          runtimeEnv,                                                   // D37
 		},
 	)
 	if err != nil {
@@ -275,8 +281,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Agent:         agent,
 		IDs:           ids,
 		Clock:         systemClock{},
-		SystemPrompt:  w.cfg.SystemPrompt,
-		Env:           runtimeEnv, // D37：persona 快照带环境块
+		Persona:       sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
 		Level:         w.level,
 		SandboxPath:   w.sandboxDir,
 		PersistLevel:  w.persist.persistLevel,

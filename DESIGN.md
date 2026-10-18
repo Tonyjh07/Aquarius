@@ -207,10 +207,19 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - **Root 即会话**（D19）：Root 实节点 ID 复用会话 ID（不另造第二个 ID），Role=root、空内容，仅作树管理；
   `Prune`/`Revise` 均拒 Root（删/改 Root 即破坏唯一根）。M0 的虚拟 Root 落盘格式**破坏性切换**——
   旧会话文件加载即报错，删除重建。
-- **persona 进树**（D20）：会话首节点 = system 角色（值为 config `system_prompt` 快照 + 运行环境块
-  D37：platform、UI 形态与 TERM、特权沙盒目录、缺省调用超时与 `timeout_sec` 说明，字段为空跳过；空则内置默认），
-  压缩水位之上也**恒回传**；可 Revise（/edit 重写人格）、可 Prune（= 清空对话，走 /rm 二次确认；
-  清空后装配回退 config 兜底注入）。
+- **persona 进树**（D20）：会话首节点 = system 角色（值为**人格模块树**展开结果快照）。**人格模块树
+  （D144/S7）**：config `prompts.modules` = **模块树**（`name → {text?, children?[]}`——组模块挂子模块、
+  可多级嵌套）、`prompts.persona` = **有序顶层引用列表**。展开 = 深度优先：组自身文本在前、子模块换行
+  接续（子模块文本以空行连接）；**空组不出**（有 children 但子模块全部无文本 ⇒ 整组含组文本一并不输出，
+  保住 D37「环境全空则不附加」语义）。**内置模块**（只读、`@` 保留前缀，可在库中引用/排序/移除）：
+  `@default`（默认人格；顶层 `system_prompt` 非空即为其正文）、`@env`（**环境信息组**，子模块
+  `@env.platform` / `@env.terminal` / `@env.sandbox` / `@env.timeout` / `@env.date`——事实取自
+  `RuntimeEnv`，`@env.date` = **会话创建当天**日期）。`prompts.persona` 为空 ⇒ 默认引用
+  `["@default","@env"]`；`system_prompt` 退居 `@default` 的正文来源（兼容旧配置单串）。
+  **解析时机**：Agent 兜底系统提示在装配/请求时组合、会话 persona 在**新建会话**时组合（故日期 = 创建当天；
+  更远期「日期变更后新建节点注入上下文」见 §14）。展开结果整体作为**纯字符串**下传内核——装配/水位
+  路径零改动。压缩水位之上也**恒回传**；可 Revise（/edit 重写人格）、可 Prune（= 清空对话，走 /rm
+  二次确认；清空后装配回退兜底注入）。
 - **上下文压缩水位**（D21）：压缩摘要以 system 节点入树；装配 = [persona] + [最新摘要] + [摘要之后]，
   摘要之上（persona 除外）历史一律不回传；多次压缩链式吸收（只回传最新摘要）。
   `/compact` 手动触发、失败只报错树无损；压缩失败回退最旧裁剪、超预算硬保底由
@@ -850,7 +859,17 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
                                       // 推导（兼容 model.think_tool=true 则空集，否则 ["think"]——D34 现行为）；
                                       // 首次在设置窗动开关才落键。含 think 草稿工具与 context_compact
   "ui": { "kind": "gui", "hotkey": "", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/§15；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A，§15.1）；theme: system | light | dark（GUI 深浅，键缺失 = system，§15.4/D61）；scale: 元素缩放倍率（默认 1.0）；font_size: 正文字号 sp（默认 15，最终字号 = font_size × scale）；window_width/window_height: 主窗像素尺寸（0 = 缺省 608×460dp 现行为）——三旋钮口径与热生效见 §15.8/D90；welcomed: 欢迎 / 首次运行引导是否已看（D141；键缺失 = 未看——首跑或标记缺失时自动打开欢迎窗一次，完成或显式关闭即置位）
-  "system_prompt": "",           // 人格（进树为会话首节点的快照源；空 = 内置默认）
+  "system_prompt": "",           // 人格兜底单串（兼容）：作为内置模块 @default 的正文来源（S7/D144）
+  "prompts": {                   // 人格模块树（S7/D144）：模块树 + 有序顶层引用
+    // 内置只读模块（可在 persona 引用/排序/移除）：@default（默认人格，正文 = system_prompt 或内置默认）、
+    // @env（环境信息组：子 = @env.platform / @env.terminal / @env.sandbox / @env.timeout / @env.date）
+    "modules": {
+      "identity": { "text": "You are Aquarius, a minimalist personal AI assistant." },
+      "style":    { "text": "Reply concisely." },
+      "house":    { "children": ["identity", "style"] } // 组模块：展开即「identity + 空行 + style」
+    },
+    "persona": ["house", "@env"] // 人格 = 有序顶层引用；空 = 默认 ["@default","@env"]
+  },
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {
@@ -1414,11 +1433,23 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   滚动位置按页保留）+ **全局底栏**（「保存并应用」+ 反馈文案，任何页常驻）。窗几何
   **720×560（min 620×420）**；内容区约 552dp，比改前的 532dp 略宽。**五页**：
   **常规**（Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出）、**模型**（当前模型名 /
-  原生思考与推理档位 / provider 列表编辑区）、**对话**（限额 / 提示词）、**工具与 MCP**
+  原生思考与推理档位 / provider 列表编辑区）、**对话**（限额 / 人格模块库与组合预览，S7/D144）、**工具与 MCP**
   （内置工具启停 + MCP 与插件管理，S6/D143）、**高级**（config.json raw JSON）。
   控件事先常驻表单对象，**切页只是换渲染**——跨页编辑天然保留；「保存并应用」仍是一次
   **全量 patch**（`f.snap` 作跨页 diff 基准），读写契约不变（见下「设置窗读写契约」）。
   页名集与页序为契约（测试锁定）；每页必须**确有内容**（逐页离屏渲染回归，防「某页空白」）。
+- **人格模块树编辑器（S7/D144）**：设置窗「对话」页的提示词区由**单行 `system_prompt`** 扩为
+  **模块树 + 人格组合**编辑器：
+  - **模块树**：树形呈现（缩进 + 组/叶图标）。每个模块 = 名称 + 正文（叶，多行编辑）或子模块列表
+    （组，可多级）；动作 = 上移/下移、新增子模块、转为组/叶、删除。**内置模块**（`@default`/`@env`
+    及其子）以只读块展示、可引用可排序、不可改名/删除。
+  - **人格组合**：`persona` = 有序顶层引用列表；每项 = 引用名 + 上移/下移 + 移除；「添加引用」从
+    模块树（含内置）选取。
+  - **兜底行**：`system_prompt` 单串（= 内置 `@default` 正文，标注「未改用默认人格时生效」）。
+  - **预览**：展开后的最终 system 组合全文（即快照进新会话首节点的文本）。
+  - **明示「只对新会话生效」**（Q4/D20：存量会话 persona 已快照在树内，改配置不动它们；新建会话时
+    才重新组合——含 `@env.date` = 创建当天）。
+  - 保存仍走**全量 config patch**（写 `prompts` 段 + `system_prompt`）；未知键保留、配置文件即事实源。
 - **工具与 MCP 管理页（S6/D143）**：设置窗「工具与 MCP」页 = **内置工具启停 + 插件管理**的
   可交互面（此前为只读清单）：
   - **内置工具**：`tools.disabled` 驱动的启停开关（热生效，无需重启）；`think` 草稿工具默认隐藏、

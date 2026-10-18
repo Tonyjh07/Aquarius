@@ -63,11 +63,35 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `ui.window_width` / `ui.window_height` | int | `0`（= 缺省 608×460dp） | **GUI** 主窗像素尺寸（§15.8/D90）；UI 侧按地板与粗界夹取；热生效；仅 gui 生效 |
 | `ui.welcomed` | bool | `false`（键缺失） | **GUI** 欢迎 / 首次运行引导是否已看（D141/§15.7）：键缺失 = 未看——**首跑或标记缺失**时自动打开欢迎窗一次，完成或显式关闭即置位；入口另在设置窗 |
 
-### system_prompt（人格）
+### prompts（人格模块树，S7/D144）
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `system_prompt` | string | `""`（内置默认） | 新建会话时**快照进 persona 首节点**；改它只影响之后新建的会话 |
+| `prompts.modules` | object | `{}` | **模块树**：`name → { text?, children?[] }`。叶 = 仅 `text`（命名片段）；组 = `children`（子模块名有序列表，可多级嵌套），亦可带 `text` 作组头 |
+| `prompts.persona` | string[] | `[]` | **人格** = 有序顶层引用列表；空 = 默认 `["@default","@env"]` |
+
+**展开（组装最终 system 人格）**：深度优先——组自身 `text` 在前、子模块文本换行接续（子模块间以空行
+连接），顶层引用间以空行连接；**空组不出**（有子模块但全部无文本 ⇒ 整组不输出）；缺名跳过、不阻断。
+**内置只读模块**（`@` 保留前缀，用户不可占用，可在 `persona` 引用/排序/移除）：
+
+| 内置模块 | 展开内容 |
+|---|---|
+| `@default` | 默认人格正文 = 顶层 `system_prompt` 或内置默认 |
+| `@env` | **环境信息组**（组头 `Runtime environment:`），子模块见下 |
+| `@env.platform` | `- Platform: <os/arch>` |
+| `@env.terminal` | `- Terminal: <ui 形态> (TERM=… \| TERM unset)` |
+| `@env.sandbox` | `- Privileged sandbox directory: …`（仅绝对路径时出） |
+| `@env.timeout` | `- Tool timeout: …`（仅配置了超时时出） |
+| `@env.date` | `- Current date: YYYY-MM-DD`（**会话创建当天**） |
+
+结果在**新建会话**时快照进 persona 首节点（Q4/D20：改动只影响新建会话，存量会话的 persona 已在
+树内、可 `/edit`）。
+
+### system_prompt（人格兜底单串）
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `system_prompt` | string | `""`（内置默认） | 作为内置模块 `@default` 的正文来源（兼容旧配置）；`persona` 不引用 `@default` 时不影响组合结果 |
 
 ### permissions
 
@@ -170,6 +194,7 @@ profile 配置 `<data>/profiles/default/config.json`：
   },
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 },
   "system_prompt": "",
+  "prompts": { "modules": {}, "persona": [] },
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
   "mcpServers": {},
@@ -190,5 +215,5 @@ profile 配置 `<data>/profiles/default/config.json`：
 - 「Profile」区：当前 profile 展示 + 新建 / 复制当前 / 切换（重启生效）。
 - 「模型服务」区：provider 列表**全量编辑**（名称/接口地址/密钥/模型列表/tokenizer/不认参数）+ 设为主 + 删除 + 连通性「测试」（真实最小请求 `/models`，8s 超时）；「应用 provider 变更」整体写回，重启生效。
 - 「权限与思考」「外观与呼出」：热生效项照旧；模型名经 `/model` 热切换。
-- 「输出」「限额」「提示词」：保存即写回（提示词只影响之后新建的会话）。
+- 「输出」「限额」「人格模块树（S7/D144）」：保存即写回；人格组合**只影响之后新建的会话**，且**重启后生效**（与 `system_prompt` 同口径）。
 - 「MCP 与插件」：只读清单；「高级」页 = config.json **原文整文件编辑**（保存前 JSON 校验，解析失败原文件不动；未知键天然保留，Q10）。

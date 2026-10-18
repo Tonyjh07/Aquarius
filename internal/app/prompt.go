@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -27,34 +28,163 @@ type RuntimeEnv struct {
 	ToolTimeoutSec int
 }
 
-// systemWithEnv 在基础 system 提示后附加运行环境块（D37）。
-// 字段为空的行跳过；全部为空时原样返回（无环境注入的缺省行为不变）。
-func systemWithEnv(base string, env RuntimeEnv) string {
-	var b strings.Builder
+// PromptModule 模块树节点（D144/S7）：叶 = 仅 Text（命名片段）；组 = Children（子模块名有序
+// 列表，可多级嵌套），亦可同时带 Text（组头）。真源在 config `prompts.modules`。
+type PromptModule struct {
+	Text     string
+	Children []string
+}
+
+// PromptSpec 人格装配规格（D144/S7）：模块树 + 有序顶层引用 + 兼容单串。
+// 由装配根从 config `prompts` 段构造；app 侧只做纯组合、不读配置文件。
+type PromptSpec struct {
+	// Modules 模块树：name → 节点。用户模块名不得以 `@` 开头（保留给内置模块）。
+	Modules map[string]PromptModule
+	// Persona 人格 = 有序顶层引用列表；空 = 默认 DefaultPersonaRefs。
+	Persona []string
+	// Legacy 顶层 system_prompt（兼容）：作为内置 @default 的正文来源。
+	Legacy string
+}
+
+// DefaultPersonaRefs prompts.persona 为空时的默认顶层引用（D144）。
+var DefaultPersonaRefs = []string{"@default", "@env"}
+
+// reservedModulePrefix 内置模块名保留前缀（用户模块不得占用，引擎侧一律以内置为准）。
+const reservedModulePrefix = "@"
+
+// builtinEnvRefs 内置 @env 组模块的子模块顺序（@env.date 恒出，其余按事实是否有值）。
+var builtinEnvRefs = []string{"@env.platform", "@env.terminal", "@env.sandbox", "@env.timeout", "@env.date"}
+
+// PersonaComposer 人格组合器（D144/S7）：绑定模块规格 + 内置模块动态取值（环境事实 + 时钟）。
+// Compose 每次重新展开——@env.date 取 now()，故 persona 快照（会话创建时调用）得到「创建当天」。
+type PersonaComposer struct {
+	spec PromptSpec
+	env  RuntimeEnv
+	now  func() time.Time
+}
+
+// NewPersonaComposer 组装人格组合器；now 为 nil 时用 time.Now（@env.date 取值）。
+func NewPersonaComposer(spec PromptSpec, env RuntimeEnv, now func() time.Time) *PersonaComposer {
+	if now == nil {
+		now = time.Now
+	}
+	return &PersonaComposer{spec: spec, env: env, now: now}
+}
+
+// Compose 展开人格为最终 system 文本，并返回缺失的模块名（供装配根记 warning、不静默）。
+// 展开 = 深度优先：组自身 Text 在前、子模块换行接续（子模块间以换行连接）；顶层引用间以空行
+// 连接；**空组不出**（有 children 但子模块全部无文本 ⇒ 整组含组文本一并不输出）；整段全空 ⇒
+// 回落内置默认人格。环引用按递归栈截断。
+func (c *PersonaComposer) Compose() (string, []string) {
+	mods := c.modules()
+	refs := c.spec.Persona
+	if len(refs) == 0 {
+		refs = DefaultPersonaRefs
+	}
+	var missing []string
+	parts := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if t := expandModule(ref, mods, &missing, map[string]bool{}); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	text := strings.Join(parts, "\n\n")
+	if strings.TrimSpace(text) == "" {
+		text = defaultSystem
+	}
+	return text, missing
+}
+
+// modules 合并内置模块与用户模块（用户模块名以 `@` 开头的被忽略——保留给内置）。
+func (c *PersonaComposer) modules() map[string]PromptModule {
+	mods := map[string]PromptModule{
+		"@default": {Text: defaultPersonaText(c.spec.Legacy)},
+		"@env":     {Text: "Runtime environment:", Children: builtinEnvRefs},
+	}
+	for name, text := range envLines(c.env) {
+		mods[name] = PromptModule{Text: text}
+	}
+	// 缺席的 @env.* 显式置空（空字段不出行，但不是"缺失引用"——不算 missing）。
+	for _, name := range builtinEnvRefs {
+		if _, ok := mods[name]; !ok {
+			mods[name] = PromptModule{}
+		}
+	}
+	mods["@env.date"] = PromptModule{Text: "- Current date: " + c.now().Format("2006-01-02")}
+	for name, m := range c.spec.Modules {
+		if strings.HasPrefix(name, reservedModulePrefix) {
+			continue
+		}
+		mods[name] = m
+	}
+	return mods
+}
+
+// defaultPersonaText @default 正文 = system_prompt 或内置默认（D20/D37 兼容）。
+func defaultPersonaText(legacy string) string {
+	if s := strings.TrimSpace(legacy); s != "" {
+		return s
+	}
+	return defaultSystem
+}
+
+// envLines 环境信息内置模块取值（D37 口径）：字段为空不出行（空值不回传）。
+func envLines(env RuntimeEnv) map[string]string {
+	lines := map[string]string{}
 	if env.Platform != "" {
-		fmt.Fprintf(&b, "- Platform: %s\n", env.Platform)
+		lines["@env.platform"] = "- Platform: " + env.Platform
 	}
 	if env.Terminal != "" {
 		term := "TERM unset"
 		if env.TERM != "" {
 			term = "TERM=" + env.TERM
 		}
-		fmt.Fprintf(&b, "- Terminal: %s (%s)\n", env.Terminal, term)
+		lines["@env.terminal"] = fmt.Sprintf("- Terminal: %s (%s)", env.Terminal, term)
 	}
 	// 沙盒提示必须是绝对路径——不能建议一个会被同一规则再拒的相对路径（139d585）。
 	if filepath.IsAbs(env.SandboxDir) {
-		fmt.Fprintf(&b, "- Privileged sandbox directory: %q — writes there skip confirmation from the strict permission level upward.\n",
+		lines["@env.sandbox"] = fmt.Sprintf("- Privileged sandbox directory: %q — writes there skip confirmation from the strict permission level upward.",
 			env.SandboxDir)
 	}
 	// 超时发现性（D38）：保留参数的口径一句话讲清，避免模型逐个工具试错。
 	if env.ToolTimeoutSec > 0 {
-		fmt.Fprintf(&b, "- Tool timeout: default %ds per call; pass the optional \"timeout_sec\" argument (1-%d) on any tool call to override it.\n",
+		lines["@env.timeout"] = fmt.Sprintf("- Tool timeout: default %ds per call; pass the optional \"timeout_sec\" argument (1-%d) on any tool call to override it.",
 			env.ToolTimeoutSec, port.MaxCallTimeoutSec)
 	}
-	if b.Len() == 0 {
-		return base
+	return lines
+}
+
+// expandModule 递归展开一个模块引用：组自身文本 + 子模块文本（换行接续）。
+// 缺失名记入 missing 并返回空串；seen 为递归栈（截断环引用）。
+func expandModule(name string, mods map[string]PromptModule, missing *[]string, seen map[string]bool) string {
+	node, ok := mods[name]
+	if !ok {
+		*missing = append(*missing, name)
+		return ""
 	}
-	return base + "\n\nRuntime environment:\n" + strings.TrimRight(b.String(), "\n")
+	if seen[name] {
+		return "" // 环引用：截断
+	}
+	seen[name] = true
+	defer delete(seen, name)
+
+	var parts []string
+	if s := strings.TrimSpace(node.Text); s != "" {
+		parts = append(parts, s)
+	}
+	if len(node.Children) > 0 {
+		childTexts := make([]string, 0, len(node.Children))
+		for _, child := range node.Children {
+			if t := expandModule(child, mods, missing, seen); t != "" {
+				childTexts = append(childTexts, t)
+			}
+		}
+		if len(childTexts) == 0 {
+			return "" // 空组：整组（含组文本）不出
+		}
+		parts = append(parts, strings.Join(childTexts, "\n"))
+	}
+	return strings.Join(parts, "\n")
 }
 
 // waterline 计算装配水位（D21/D20）：persona = path[1] 的 system 节点；

@@ -168,6 +168,9 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if !strings.Contains(string(profCfg), `"system_prompt"`) {
 		t.Fatalf("模板应含 system_prompt 键: %s", profCfg)
 	}
+	if !strings.Contains(string(profCfg), `"prompts"`) {
+		t.Fatalf("模板应含 prompts 段（S7/D144）: %s", profCfg)
+	}
 	if !strings.Contains(string(profCfg), `"kind": "gui"`) {
 		t.Fatalf("模板默认 ui.kind 应为 gui（D51）: %s", profCfg)
 	}
