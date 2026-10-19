@@ -181,6 +181,7 @@ func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅
 func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system/inject 等），入树前校验不变量
 func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root 不可 Revise；system/inject 可
 func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Message, error) // 在 id 之前插入衬垫节点（仅 system|inject，D152）
+func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, error) // 同上，但接受已组装的衬垫节点（模型生成的摘要带 Model/Usage，与 AppendCommitted 同口径）
 func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（Root 不可剪）
 func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点（含 Root=回根；无空串特例）
 func (c *Conversation) Path() []Message                     // Root→Head 线性序列（首元素为 Root，装配时滤掉）
@@ -253,6 +254,8 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   用于「在某节点前插入摘要」：新建 system 摘要节点后把该节点及其子树整体挪到摘要之后，
   于是摘要成为新的压缩水位，其上历史不再回传、其下原样保留。只接受 system|inject，
   Root 不可作为目标（无法在根前插入）；`Head` 不变（`id` 及其子树仍可达，路径长度 +1）。
+  另设 `InsertCommitted(id, pad)`：语义同上，但衬垫节点由装配层**组装好**（模型生成的摘要要
+  记 `Model`/`Usage`，与 `AppendCommitted` 同口径）；手写摘要走 `InsertBefore`（只给内容）。
 - **思考过程入树 + 回传开关**（D42）：assistant 节点的思维链以 `PartThinking` 分片承载（每轮
   生成的流内分片合并为至多一段、置于该段正文之前；D95 Turn 粒度下一节点可含多段——每段
   属于其生成轮；取消/出错终态的已生成思考随节点一同入树）；节点形态校验限定
@@ -1691,8 +1694,10 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   确认通路，自动获得同一弹窗。卡片模态成立机制与 D139 同源：整窗输入区按链式命中遮蔽背景，
   背景侧（左栏、状态栏、右图手势）再显式不取事件作纵深防御。
 - **节点右键「插入摘要」（D152）**：图侧菜单新增一项，弹一层小卡（输入摘要正文 + 「用模型总结
-  以上历史」+「插入」）。提交 = `/summary <id> <文本>`（生成走内核、失败不落树）；插入后
-  图按签名重排、Head 不变。
+  以上历史」+「插入」）。**两个按钮 = 两种来源，各自一键落树**：「用模型总结以上历史」= `/summary
+  <id>`（模型总结该节点之上的历史后直接插入），「插入」= `/summary <id> <输入框文本>`（手写；
+  文本为空时禁用）。生成与插入都在内核、失败不落树；插入后图按签名重排、`Head` 不变、转写区
+  清屏回放（水位随之可见）。会话根没有这一项（根前无处可插）。
 
 - **欢迎窗视觉（D153，2026-10-18 用户对照模拟稿报障）**：窗内改为「白面圆角面板 + 灰底」的
   Paper 版式，与 `mock/welcome_v1.png` 对齐：

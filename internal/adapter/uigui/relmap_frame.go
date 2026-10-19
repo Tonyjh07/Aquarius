@@ -1602,6 +1602,10 @@ func (g *relGraph) nodeMenuCtx(u *UI, li int) *bubbleMenuCtx {
 		return nil
 	}
 	ctx := &bubbleMenuCtx{id: n.id, kind: relNodeKind(n.role), part: -1, graph: true}
+	// D152：会话根与会话首节点人格之外都可以插摘要（父是结构根的 system = persona）。
+	ctx.canSummary = n.role != conversation.RoleRoot &&
+		!(n.parent >= 0 && n.parent < len(g.model.nodes) &&
+			g.model.nodes[n.parent].role == conversation.RoleRoot)
 	body := ""
 	if u.opts.Tree != nil {
 		if t, ok := u.opts.Tree.NodeText(n.id); ok {

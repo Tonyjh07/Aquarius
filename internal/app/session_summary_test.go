@@ -1,0 +1,252 @@
+package app
+
+// session_summary_test.go D152：/summary 两档（手写直插 / 模型总结后插入）、
+// 目标约束、失败不落树、水位效果与清屏回放。
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
+)
+
+// summaryFixture 建 [root,persona,user,assistant] 的四节点会话，返回会话与两个可见节点。
+func summaryFixture(t *testing.T, store port.ConversationStore,
+	streams ...*scriptStream) (*Session, *scriptLLM, *recorder, conversation.Message, conversation.Message) {
+	t.Helper()
+	s, llm, rec := newTestSession(t, store, streams...)
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	path := s.Current().Path()
+	if len(path) != 4 {
+		t.Fatalf("path = %v, want [root persona user assistant]", roles(path))
+	}
+	return s, llm, rec, path[2], path[3]
+}
+
+// TestSessionSummaryHandwritten 手写档：摘要插到目标之前（目标仍在摘要之后），落盘，
+// 无模型调用，Head 不变，清屏回放。
+func TestSessionSummaryHandwritten(t *testing.T) {
+	store := newMemStore()
+	s, llm, rec, user, assistant := summaryFixture(t, store, textStream("模型回复"))
+	pathBefore := len(s.Current().Path())
+
+	out, err := handleCmd(s, "summary", string(assistant.ID), "手写", "摘要")
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if !strings.Contains(out, "已在 "+string(assistant.ID)+" 之前插入摘要（手写）") {
+		t.Fatalf("out = %q", out)
+	}
+	if len(llm.requests) != 1 { // 只有首轮回复那一次；手写档不调模型
+		t.Fatalf("llm requests = %d, want 1", len(llm.requests))
+	}
+	path := s.Current().Path()
+	if len(path) != pathBefore+1 {
+		t.Fatalf("path = %v, want 长度 +1", roles(path))
+	}
+	pad := path[3]
+	if pad.Role != conversation.RoleSystem || pad.Content[0].Text != "手写 摘要" {
+		t.Fatalf("pad = %+v, want system 摘要", pad)
+	}
+	if path[4].ID != assistant.ID || path[2].ID != user.ID {
+		t.Fatalf("path = %v, want 摘要夹在 user 与 assistant 之间", roles(path))
+	}
+	if s.Current().Head != assistant.ID {
+		t.Fatalf("head = %s, want 不变 %s", s.Current().Head, assistant.ID)
+	}
+	if _, ok := store.convs[s.Current().ID].Nodes[pad.ID]; !ok {
+		t.Fatal("摘要节点应已落盘")
+	}
+	if got := eventNames(rec.events); !contains(got, "clear") {
+		t.Fatalf("events = %v, want 清屏回放", got)
+	}
+	if err := s.Current().Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestSessionSummaryModel 模型档：总结「目标之上的历史」后插入；入树节点带 Model/Usage 记账；
+// 目标自身的内容不进摘要输入（它留在水位之后）。
+func TestSessionSummaryModel(t *testing.T) {
+	store := newMemStore()
+	s, llm, _, _, assistant := summaryFixture(t, store,
+		textStream("模型回复"),
+		withUsage(textStream("## Objective\n- 模型摘要"), conversation.Usage{InputTokens: 40, OutputTokens: 15}),
+	)
+
+	out, err := handleCmd(s, "summary", string(assistant.ID))
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if !strings.Contains(out, "已在 "+string(assistant.ID)+" 之前插入摘要（in=40 out=15 tokens）") {
+		t.Fatalf("out = %q", out)
+	}
+	pad := s.Current().Path()[3]
+	if pad.Role != conversation.RoleSystem || pad.Content[0].Text != "## Objective\n- 模型摘要" {
+		t.Fatalf("pad = %+v", pad)
+	}
+	if pad.Model == "" || pad.Usage.InputTokens != 40 || pad.Outcome != conversation.OutcomeDone {
+		t.Fatalf("pad 缺记账: %+v", pad)
+	}
+	// 摘要输入 = 目标之上的历史（persona + 用户消息），不含目标自身。
+	req := llm.requests[1]
+	if txt := reqText(req); !strings.Contains(txt, "Do not mention the summary process") || !strings.Contains(txt, "hi") {
+		t.Fatalf("摘要请求不符合压缩提示词口径:\n%s", txt)
+	}
+	if strings.Contains(reqText(req), "模型回复") {
+		t.Fatal("目标节点自身的内容不得进摘要输入（它留在水位之后）")
+	}
+	if _, ok := store.convs[s.Current().ID].Nodes[pad.ID]; !ok {
+		t.Fatal("摘要节点应已落盘")
+	}
+}
+
+// TestSessionSummarySecondRunShortCircuits 水位之上无新历史：第二次对同一目标 /summary
+// 不再发起生成、会话树不动（模型档短路在生成之前）。
+func TestSessionSummarySecondRunShortCircuits(t *testing.T) {
+	store := newMemStore()
+	s, llm, _, _, assistant := summaryFixture(t, store,
+		textStream("模型回复"),
+		textStream("## Objective\n- 模型摘要"),
+	)
+	if _, err := handleCmd(s, "summary", string(assistant.ID)); err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	before := len(s.Current().Nodes)
+	reqs := len(llm.requests)
+
+	out, err := handleCmd(s, "summary", string(assistant.ID))
+	if err != nil || !strings.Contains(out, "没有可总结的历史") {
+		t.Fatalf("second summary = %q, %v", out, err)
+	}
+	if len(llm.requests) != reqs {
+		t.Fatalf("llm requests = %d, want %d（无可总结内容不得发起生成）", len(llm.requests), reqs)
+	}
+	if len(s.Current().Nodes) != before {
+		t.Fatalf("nodes = %d, want %d", len(s.Current().Nodes), before)
+	}
+}
+
+// TestSessionSummaryRejects 目标约束与用法错误：根、顶层节点（含人格）一律拒；
+// 未知节点报错；失败不改树。
+func TestSessionSummaryRejects(t *testing.T) {
+	store := newMemStore()
+	s, _, _, user, _ := summaryFixture(t, store, textStream("模型回复"))
+	persona := s.Current().Path()[1]
+	before := len(s.Current().Nodes)
+
+	if _, err := handleCmd(s, "summary"); err == nil || !strings.Contains(err.Error(), "用法") {
+		t.Fatalf("无参数 = %v, want 用法提示", err)
+	}
+	for _, tc := range []struct {
+		name   string
+		id     conversation.MessageID
+		substr string
+	}{
+		{"根节点", conversation.MessageID(s.Current().ID), "不能在会话根或会话首节点之前插入摘要"},
+		{"人格节点", persona.ID, "不能在会话根或会话首节点之前插入摘要"},
+		{"未知节点", "nope", "没有节点"},
+	} {
+		_, err := handleCmd(s, "summary", string(tc.id), "文本")
+		if err == nil || !strings.Contains(err.Error(), tc.substr) {
+			t.Fatalf("%s: err = %v, want 含 %q", tc.name, err, tc.substr)
+		}
+		if len(s.Current().Nodes) != before {
+			t.Fatalf("%s: 失败不得改动会话树", tc.name)
+		}
+	}
+
+	// 首条 user 消息之前可以手写插入：人格快照之后、任何往来之前都是合法水位位。
+	if _, err := handleCmd(s, "summary", string(user.ID), "开篇摘要"); err != nil {
+		t.Fatalf("summary before first user message: %v", err)
+	}
+	path := s.Current().Path()
+	if len(path) != 5 || path[2].Content[0].Text != "开篇摘要" || path[3].ID != user.ID {
+		t.Fatalf("path = %v, want [root persona 开篇摘要 user assistant]", roles(path))
+	}
+}
+
+// TestSessionSummaryModelFailureKeepsTree 生成失败（含模板不合格、取消、传输错误）
+// 一律只报错：会话树与落盘状态都不动。
+func TestSessionSummaryModelFailureKeepsTree(t *testing.T) {
+	cases := []struct {
+		name    string
+		streams []*scriptStream // 空输出/缺模板会带提醒重试一次 → 两次生成
+		want    string
+	}{
+		{"空输出", []*scriptStream{textStream("   "), textStream("   ")}, "empty output"},
+		{"缺模板小节", []*scriptStream{textStream("随便写点什么"), textStream("还是随便写")}, "summary template"},
+		{"取消", []*scriptStream{{steps: []scriptStep{{err: context.Canceled}}}}, "已取消插入摘要"},
+	}
+	for _, tc := range cases {
+		store := newMemStore()
+		s, _, _, _, assistant := summaryFixture(t, store, append([]*scriptStream{textStream("模型回复")}, tc.streams...)...)
+		before := len(s.Current().Nodes)
+
+		out, err := handleCmd(s, "summary", string(assistant.ID))
+		if err == nil {
+			if !strings.Contains(out, tc.want) {
+				t.Fatalf("%s: out = %q, want 含 %q", tc.name, out, tc.want)
+			}
+		} else if !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: err = %v, want 含 %q", tc.name, err, tc.want)
+		}
+		if len(s.Current().Nodes) != before {
+			t.Fatalf("%s: 失败不得改动会话树", tc.name)
+		}
+		if len(store.convs[s.Current().ID].Nodes) != before {
+			t.Fatalf("%s: 失败不得落盘", tc.name)
+		}
+	}
+}
+
+// TestSessionSummaryTransportErrorFails 传输错误原样上抛（不吞成友好文案）。
+func TestSessionSummaryTransportErrorFails(t *testing.T) {
+	store := newMemStore()
+	s, llm, _, _, assistant := summaryFixture(t, store, textStream("模型回复"))
+	llm.genErr = errors.New("boom")
+
+	if _, err := handleCmd(s, "summary", string(assistant.ID)); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v, want boom", err)
+	}
+}
+
+// TestSessionSummaryWaterlineApplies 插入摘要后装配只回传到它：其后往来的装配请求里
+// 不再出现被吸收的历史（水位生效）。
+func TestSessionSummaryWaterlineApplies(t *testing.T) {
+	store := newMemStore()
+	s, llm, _, _, assistant := summaryFixture(t, store,
+		textStream("模型回复"),
+		textStream("## Objective\n- 模型摘要"),
+		textStream("新回答"),
+	)
+	if _, err := handleCmd(s, "summary", string(assistant.ID)); err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	// 水位之后继续对话：装配应只带 persona + 摘要 + 其后往来，"hi" 不再回传。
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "继续"}); err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	txt := reqText(llm.requests[len(llm.requests)-1])
+	if !strings.Contains(txt, "模型摘要") || !strings.Contains(txt, "继续") {
+		t.Fatalf("装配缺摘要/新往来:\n%s", txt)
+	}
+	if strings.Contains(txt, "hi") {
+		t.Fatalf("摘要之上的历史仍被回传（水位未生效）:\n%s", txt)
+	}
+}
+
+// contains 查字符串切片是否含目标（断言用）。
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}

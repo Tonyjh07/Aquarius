@@ -50,8 +50,9 @@ func sameCopy(a, b Message) bool {
 	return reflect.DeepEqual(x, y)
 }
 
-// propDriver 随机操作序列驱动：覆盖 Append / AppendCommitted / Revise(Fresh|Carry) / Prune / Checkout，
-// 并混入必然失败的操作（违规工具分片形态，D95），验证失败路径同样不破坏不变量。
+// propDriver 随机操作序列驱动：覆盖 Append / AppendCommitted / Revise(Fresh|Carry|Clone) / Prune /
+// Checkout / InsertBefore，并混入必然失败的操作（违规工具分片形态，D95；根前插入，D152），
+// 验证失败路径同样不破坏不变量。
 type propDriver struct {
 	rng     *rand.Rand
 	callSeq int
@@ -107,7 +108,7 @@ func (d *propDriver) toolParts(n int) []Part {
 // step 执行一个随机操作并返回操作序号（8 = Prune；-1 = 跳过）。
 func (d *propDriver) step(t *testing.T, c *Conversation) int {
 	t.Helper()
-	op := d.rng.Intn(12)
+	op := d.rng.Intn(13)
 	switch op {
 	case 0:
 		if _, err := c.Append(RoleUser, textParts(fmt.Sprintf("u%d", d.rng.Int63()))); err != nil {
@@ -254,6 +255,17 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 		}
 		if err := c.Checkout(""); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("checkout empty = %v, want ErrNotFound", err)
+		}
+		if _, err := c.InsertBefore(root, RoleSystem, textParts("x")); !errors.Is(err, ErrInvalidNode) {
+			t.Fatalf("insert before root = %v, want ErrInvalidNode", err)
+		}
+	case 12: // D152：衬垫插入（随机目标 + system 衬垫）——位置/边转移后不变量仍成立
+		target := d.pickNode(c, false)
+		if target == "" {
+			return -1
+		}
+		if _, err := c.InsertBefore(target, RoleSystem, textParts(fmt.Sprintf("pad%d", d.rng.Int63()))); err != nil {
+			t.Fatalf("insert before %s: %v", target, err)
 		}
 	}
 	return op

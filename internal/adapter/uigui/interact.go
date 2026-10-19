@@ -281,9 +281,12 @@ type bubbleMenuCtx struct {
 	copy string
 	raw  rawContent
 	// graph 该上下文来自消息管理面的图节点右键（D132）——项集与分发据此切换到
-	// nodeMenuItems（气泡七项 + 图侧三项）。两个生产方（主界面气泡 / 图节点）共用
+	// nodeMenuItems（气泡七项 + 图侧四项）。两个生产方（主界面气泡 / 图节点）共用
 	// 同一呈现与同一分发，差别只有这一位与 edit/copy/raw 的取数口径。
 	graph bool
+	// canSummary 目标节点能否「插入摘要」（D152；仅图侧置位）：会话根与会话首节点人格
+	// 之外都可以——前者根前无处可插，后者之前插摘要会让摘要顶到路径第二位（被装配当 persona）。
+	canSummary bool
 }
 
 // bubbleCtx 组装菜单上下文（D92/D97/D99/D100）：复制文本此刻定——选区激活取选区

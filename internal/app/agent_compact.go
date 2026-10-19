@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -56,60 +55,11 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 		return conversation.Message{}, 0, fmt.Errorf("assemble compact input: %w", err)
 	}
 	// 提示词两态：水位存在 = 已有旧摘要 → 合并更新，否则首次压缩（compact_prompt.go）。
-	base := make([]port.PromptMessage, 0, len(history)+2)
-	base = append(base, port.PromptMessage{
-		Role:    "system",
-		Content: []port.PromptPart{{Kind: "text", Text: compactPrompt(watermarkIdx >= 0)}},
-	})
-	base = append(base, history...)
-	base = append(base, port.PromptMessage{
-		Role:    "user",
-		Content: []port.PromptPart{{Kind: "text", Text: compactNudge}},
-	})
-
-	mid := a.ids.MessageID() // 预分配关联 ID（重试复用，作流事件关联 ID）
-	var (
-		usage conversation.Usage
-		text  string
-	)
-	// 至多两次生成：输出缺模板小节（或为空）→ NoticeEvent + 带提醒重试一次；
-	// 两次都不合格按失败返回（树无损），失败原因区分"为空"与"未匹配模板"。
-	for attempt := 0; attempt < 2; attempt++ {
-		msgs := make([]port.PromptMessage, 0, len(base)+1)
-		msgs = append(msgs, base...)
-		if attempt > 0 {
-			_ = a.ui.Emit(ctx, port.NoticeEvent{Text: "摘要输出未匹配模板，正在带提醒重试"})
-			msgs = append(msgs, port.PromptMessage{
-				Role:    "user",
-				Content: []port.PromptPart{{Kind: "text", Text: compactRetryReminder}},
-			})
-		}
-		buf := newTurnBuffer(mid)
-		stream, err := a.llm.Generate(ctx, port.GenerateRequest{
-			Model:    a.modelName(),
-			Messages: msgs,
-			Budget:   a.cfg.Budget,
-		})
-		if err != nil {
-			return conversation.Message{}, 0, fmt.Errorf("generate summary: %w", err)
-		}
-		// 流式过程只进 UI；失败不提交（树无损）。
-		if _, err := a.consume(ctx, stream, buf, mid); err != nil {
-			return conversation.Message{}, 0, fmt.Errorf("generate summary: %w", err)
-		}
-		usage.InputTokens += buf.round.InputTokens
-		usage.OutputTokens += buf.round.OutputTokens
-		usage.CostUSD += buf.round.CostUSD
-		text = strings.TrimSpace(buf.text.String())
-		if text != "" && hasSummarySection(text) {
-			break
-		}
-		if attempt == 1 {
-			if text == "" {
-				return conversation.Message{}, 0, errors.New("generate summary: model returned empty output")
-			}
-			return conversation.Message{}, 0, errors.New("generate summary: output did not match the summary template")
-		}
+	// 生成/重试/模板校验与 /summary 共用（agent_summary.go）。
+	mid := a.ids.MessageID() // 预分配关联 ID（重试复用，作流事件关联 ID；随后即节点 ID）
+	text, usage, err := a.generateSummary(ctx, mid, history, watermarkIdx >= 0)
+	if err != nil {
+		return conversation.Message{}, 0, err
 	}
 	node := conversation.Message{
 		ID:        mid,

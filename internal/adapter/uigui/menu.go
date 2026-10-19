@@ -32,10 +32,11 @@ const (
 
 	// 图侧（消息管理面）节点右键三项（D132）：与气泡项同一张表、同一呈现（D132 决策：
 	// 图菜单并入气泡菜单，尾部加这三项；不再自绘 Gio 浮层）。
-	cmdNodeCopyID = 130 // 复制节点 ID（图侧动作槽 → 历史窗帧内落剪贴板）
-	cmdNodeRm     = 131 // 删除节点（/rm <id>，与键入同路径经 inCh）
-	cmdNodeHome   = 132 // 装下整树（视口适配当前盒，图侧动作槽；D140 由「回到当前」改名）
-	cmdNodeGoto   = 133 // 在主窗定位（/goto <id> + 唤出主窗；D139：原为单击动作）
+	cmdNodeCopyID  = 130 // 复制节点 ID（图侧动作槽 → 历史窗帧内落剪贴板）
+	cmdNodeRm      = 131 // 删除节点（/rm <id>，与键入同路径经 inCh）
+	cmdNodeHome    = 132 // 装下整树（视口适配当前盒，图侧动作槽；D140 由「回到当前」改名）
+	cmdNodeGoto    = 133 // 在主窗定位（/goto <id> + 唤出主窗；D139：原为单击动作）
+	cmdNodeSummary = 134 // 插入摘要（D152：弹本窗小卡，卡片两钮分别投 /summary <id> [文本]）
 )
 
 // nodeActKind 图侧动作槽的动作种类（D132：菜单分发在 shell 线程，而剪贴板写入必须在 Gio
@@ -47,6 +48,7 @@ const (
 	nodeActHome                               // 装下整树（D140）
 	nodeActGoto                               // 在主窗定位（D139：/goto 由单击移来）
 	nodeActOpenOverlay                        // 开消息查看/编辑遮罩（D139）
+	nodeActSummary                            // 开「插入摘要」小卡（D152）
 )
 
 // nodeAction 图侧动作（D132）：id = 目标节点；槽在 UI 上（跨窗共享的原子槽，同 rawView
@@ -123,13 +125,15 @@ func bubbleMenuItems(kind blockKind) []menuIt {
 }
 
 // nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** + 分隔线 +
-// 图侧**四项**（复制 ID / 删除 / **在主窗定位** / 装下整树；D139 加「在主窗定位」——
-// `/goto` 由单击移来；D140 把「回到当前」改名为「装下整树」）。同一呈现、同一分发，
-// 只有尾部不同。
+// 图侧**五项**（复制 ID / 插入摘要 / 删除 / **在主窗定位** / 装下整树；D139 加「在主窗定位」——
+// `/goto` 由单击移来；D140 把「回到当前」改名为「装下整树」；D152 加「插入摘要」）。同一呈现、
+// 同一分发，只有尾部不同。
 // hasText=false（节点无正文可取：工具结果节点、或 NodeText 未就绪）时不给编辑类项——
 // 拿空文本预填编辑框等于诱导用户提交空修订（内核会拒，但菜单不该诱导）；根/系统节点
 // 不可编辑，只给复制/查看原文。
-func nodeMenuItems(kind blockKind, hasText bool) []menuIt {
+// canSummary=false（会话根与会话首节点人格）时不给「插入摘要」：根前无处可插；人格之前
+// 也不该出现摘要——摘要会顶到路径第二位、被装配当成 persona（水位语义随之失效）。
+func nodeMenuItems(kind blockKind, hasText, canSummary bool) []menuIt {
 	var head []menuIt
 	switch {
 	case !hasText:
@@ -140,8 +144,11 @@ func nodeMenuItems(kind blockKind, hasText bool) []menuIt {
 		head = []menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}}
 	}
 	items := append(head, menuIt{}) // 分隔线
+	items = append(items, menuIt{id: cmdNodeCopyID, label: "复制 ID"})
+	if canSummary {
+		items = append(items, menuIt{id: cmdNodeSummary, label: "插入摘要"})
+	}
 	return append(items,
-		menuIt{id: cmdNodeCopyID, label: "复制 ID"},
 		menuIt{id: cmdNodeRm, label: "删除（/rm）"},
 		menuIt{id: cmdNodeGoto, label: "在主窗定位"},
 		menuIt{id: cmdNodeHome, label: "装下整树"},
@@ -169,8 +176,8 @@ func (u *UI) menuItems(kind platform.MenuKind) []platform.MenuItem {
 		if ctx == nil {
 			return nil
 		}
-		if ctx.graph { // D132：图侧节点菜单 = 气泡项集 + 图侧三项
-			return toMenuItems(nodeMenuItems(ctx.kind, ctx.copy != ""))
+		if ctx.graph { // D132：图侧节点菜单 = 气泡项集 + 图侧四项
+			return toMenuItems(nodeMenuItems(ctx.kind, ctx.copy != "", ctx.canSummary))
 		}
 		return toMenuItems(bubbleMenuItems(ctx.kind))
 	}
@@ -267,6 +274,9 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		case u.inCh <- port.UserInput{Command: &port.Command{Name: "rm", Args: []string{string(ctx.id)}}}:
 		default:
 		}
+	case cmdNodeSummary:
+		// D152 图侧：插入摘要 = 本窗开小卡（正文在卡里写；两钮分别投 /summary）。
+		u.nodeAction.Store(&nodeAction{kind: nodeActSummary, id: ctx.id})
 	case cmdNodeHome:
 		// D132 图侧：装下整树 = 视口适配当前盒（视场待办属图状态，图侧动作槽过历史窗帧）。
 		u.nodeAction.Store(&nodeAction{kind: nodeActHome, id: ctx.id})

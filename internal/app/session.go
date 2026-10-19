@@ -420,6 +420,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return "", ErrQuit
 	case "compact":
 		return s.execCompact(ctx, cmd)
+	case "summary":
+		return s.execSummary(ctx, cmd)
 	case "permission":
 		return s.execPermission(ctx, cmd)
 	case "memory":

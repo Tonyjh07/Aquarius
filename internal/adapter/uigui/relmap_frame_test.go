@@ -1029,6 +1029,18 @@ func relRightReleaseAt(st *historyState, li int) pointer.Event {
 	return e
 }
 
+// relNodeIndex 本地索引 li（st.vis.nodes[li]）满足模型节点 id 命中（全预算夹具里节点全可见）。
+func relNodeIndex(t *testing.T, st *historyState, id conversation.MessageID) int {
+	t.Helper()
+	for li, mi := range st.vis.nodes {
+		if st.model.nodes[mi].id == id {
+			return li
+		}
+	}
+	t.Fatalf("节点 %s 不在可见集", id)
+	return -1
+}
+
 // relDrainAs 从收件箱取出指定类型的桥接消息（菜单分发经 post 投递，§15.6）。
 func relDrainAs(t *testing.T, u *UI, dst any) bool {
 	t.Helper()
@@ -1102,10 +1114,10 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	if g.menuArm {
 		t.Fatal("fire 后武装未解除")
 	}
-	// 项集 = 气泡七项 + 分隔线 + 图侧四项（D139 加「在主窗定位」）
+	// 项集 = 气泡七项 + 分隔线 + 图侧五项（D139 加「在主窗定位」；D152 加「插入摘要」）
 	items := u.menuItems(platform.MenuBubble)
 	wantLabels := []string{"编辑", "编辑并转移历史", "编辑并复制历史", "重新生成", "复制",
-		"引用", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "装下整树"}
+		"引用", "查看原文", "", "复制 ID", "插入摘要", "删除（/rm）", "在主窗定位", "装下整树"}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -1113,6 +1125,34 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 		if items[i].Label != w {
 			t.Fatalf("第 %d 项 = %q, want %q", i, items[i].Label, w)
 		}
+	}
+	if !ctx.canSummary {
+		t.Fatal("普通节点（非根/非人格）应可插摘要")
+	}
+}
+
+// TestRelGraphRightClickNoSummaryForRootAndPersona 会话根与会话首节点（人格）不出
+// 「插入摘要」：根前无处可插；人格之前插摘要会让摘要顶到路径第二位、被装配当成 persona。
+func TestRelGraphRightClickNoSummaryForRootAndPersona(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	for _, id := range []conversation.MessageID{"r", "p"} {
+		li := relNodeIndex(t, st, id)
+		q.Queue(relRightPress(st, li))
+		q.Queue(relRightReleaseAt(st, li))
+		relGFrame(q, u, st)
+		ctx := u.bubbleMenu.Load()
+		if ctx == nil || ctx.id != id {
+			t.Fatalf("节点 %s 右键未出上下文: %+v", id, ctx)
+		}
+		if ctx.canSummary {
+			t.Fatalf("节点 %s（kind=%v）不应可插摘要", id, ctx.kind)
+		}
+		for _, it := range u.menuItems(platform.MenuBubble) {
+			if it.Label == "插入摘要" {
+				t.Fatalf("节点 %s 的菜单不该有「插入摘要」", id)
+			}
+		}
+		u.bubbleMenu.Store(nil)
 	}
 }
 
@@ -1236,7 +1276,7 @@ func TestRelGraphMenuRootNodeReduced(t *testing.T) {
 	}
 }
 
-// TestRelGraphMenuNoBodyNode 图侧取不到正文（NodeText 未命中）→ 只剩图侧三项：不拿空
+// TestRelGraphMenuNoBodyNode 图侧取不到正文（NodeText 未命中）→ 只剩图侧项：不拿空
 // 文本预填编辑框（D132 的 hasText 分支；内核也会拒空修订文本，但菜单不该诱导）。
 func TestRelGraphMenuNoBodyNode(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil)) // 不配 texts
@@ -1251,7 +1291,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"", "复制 ID", "删除（/rm）", "在主窗定位", "装下整树"}
+	want := []string{"", "复制 ID", "插入摘要", "删除（/rm）", "在主窗定位", "装下整树"}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}

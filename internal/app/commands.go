@@ -23,6 +23,8 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"rm"}, Usage: "<id>", Desc: "删除节点及整棵子树（二次确认）"},
 	{Names: []string{"rmconv"}, Usage: "<id前缀>", Desc: "删除整个会话（二次确认；删当前会话会自动切换到另一个）"},
 	{Names: []string{"compact"}, Desc: "触发上下文压缩（把较早的往来压成一条摘要）"},
+	{Names: []string{"summary"}, Usage: "<id> [文本]",
+		Desc: "在节点之前插入摘要（成为新的水位）：带文本 = 手写；不带 = 让当前模型总结该节点之上的历史"},
 	{Names: []string{"permission"}, Usage: "[等级]", Desc: "查看/切换权限等级（read-only/strict/permissive/full-access）"},
 	{Names: []string{"memory"}, Usage: "[会话id]", Desc: "用系统编辑器打开记忆文件（缺省为全局 memories.md）"},
 	{Names: []string{"usage"}, Desc: "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）"},

@@ -57,6 +57,9 @@ type historyState struct {
 	// cfm 跨窗同步的二次确认弹窗（D157）：帧态无常驻开关——弹窗在屏与否由主窗发布的
 	// 确认投影（u.confirmShare）决定，这里只存控件与滚动位。
 	cfm confirmDialog
+	// sum 「插入摘要」小卡（D152，nil = 未开启）：图侧菜单动作开卡，卡内两钮各投一条
+	// /summary；同样在屏期间按 modalActive 遮住背景。
+	sum *summaryDialog
 }
 
 // newHistoryState 构造 winHistory 帧状态并做首帧数据同步。
@@ -266,6 +269,8 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 		_ = u.post(showExpandMsg{}) // /goto 只改主窗转写区：主窗收在球里则等于没反应
 	case nodeActOpenOverlay:
 		st.openOverlay(u, act.id, act.mode, act.page)
+	case nodeActSummary:
+		st.openSummary(u, act.id)
 	}
 }
 
@@ -325,6 +330,10 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 		// D157：同步确认弹窗再置顶（模态；主窗确认态与它同源，点任一处都作答）。
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return st.confirmFrame(gtx, th, u)
+		}),
+		// D152：「插入摘要」小卡置顶（模态；由节点右键菜单开，两钮各投一条 /summary）。
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return st.summaryFrame(gtx, th, u)
 		}),
 	)
 }
