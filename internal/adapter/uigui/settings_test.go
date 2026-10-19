@@ -808,16 +808,27 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 // 分页导航（S4d/D142）
 // ---------------------------------------------------------------------------
 
-// TestSettingsPageNamesContract 页名集与页序为契约（导航项与页标题同源）；每页行计划
-// 非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」页（S7b/D145）。
+// TestSettingsPageNamesContract 页名集与页序为契约（导航项与页标题同源，D162 起由注册表
+// 推导）；每页行计划非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」
+// 页（S7b/D145）。另锁两条注册表结构不变量：页常量与注册表长度一致、Key 唯一。
 func TestSettingsPageNamesContract(t *testing.T) {
 	want := []string{"常规", "模型", "对话", "系统提示词", "工具与 MCP", "高级"}
 	if settingsPageCount != len(want) {
-		t.Fatalf("settingsPageCount = %d, want %d", int(settingsPageCount), len(want))
+		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(want))
+	}
+	if int(pageConstCount) != settingsPageCount {
+		t.Fatalf("pageConstCount = %d, settingsPageCount = %d（加页必须同时改常量块与注册表）",
+			int(pageConstCount), settingsPageCount)
 	}
 	for i, name := range want {
 		if settingsPageNames[i] != name {
 			t.Errorf("页 %d 名 = %q, want %q", i, settingsPageNames[i], name)
+		}
+		if settingsPages[i].Key() != name {
+			t.Errorf("注册表页 %d Key = %q, want %q", i, settingsPages[i].Key(), name)
+		}
+		if i > 0 && settingsPages[i].Key() == settingsPages[i-1].Key() {
+			t.Errorf("注册表页 %d 与上一页 Key 重复（%q）", i, settingsPages[i].Key())
 		}
 	}
 	u := newHeadless(t, Options{
@@ -838,6 +849,7 @@ func TestSettingsPageNamesContract(t *testing.T) {
 			t.Errorf("页 %d 标题文案 = %q, want %q", p, rows[0].text, settingsPageNames[p])
 		}
 	}
+
 	// 「模型」页必须含模型名行（D110② 起该行在 UI 上失位，S4d 补回）。
 	found := false
 	for _, r := range f.pageRows(pageModel) {
@@ -878,8 +890,42 @@ func TestSettingsPageNamesContract(t *testing.T) {
 	}
 }
 
-// TestPromptRowsLiveOnPromptPage 带人格快照的页归属：模块/引用/内置/预览四类**行数随快照
-// 变化**的提示词行只出现在「系统提示词」页。
+// TestSettingsNativeRowsCoveredEveryPage D162：**行型覆盖**——每页 Rows() 产出的每一行
+// 都必须被「框架通用行型」或「该页 Body」认领。改前未认领的行静默落进 rowBody 的 default
+// 兜底、被画成别的控件（高级页 raw JSON 编辑器）；这里把那条静默去掉，用本测试响亮兜住：
+// 新增行型忘了在对应页分派 = 本测试立刻红。
+func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
+	u := newHeadless(t, Options{
+		Settings:    func() SettingsSnapshot { return promptSnapshot() },
+		Tools:       &fakeToolsAdmin{snap: ToolsSnapshot{Revision: 1, Builtins: []BuiltinToolState{{Name: "think", Enabled: true}}, Plugins: []PluginToolState{{Name: "p", Source: "config", Enabled: true}}}},
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", Primary: true}}},
+	})
+	f := newSettingsForm(u)
+	f.page = pageTools
+	f.syncToolsSnapshot() // 帧首同款：同步工具快照（铺出内置/插件行）
+	f.toolsStatus = "ok"  // 让状态行也进行表（覆盖 rowToolsStatus 行型）
+	th := testTheme()
+
+	for p := 0; p < settingsPageCount; p++ {
+		rows := f.pageRows(p)
+		for i := range rows {
+			var ops op.Ops
+			gtx := layout.Context{
+				Ops:         &ops,
+				Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+				Constraints: layout.Constraints{Max: image.Pt(540, 400)},
+			}
+			if _, ok := frameworkRow(gtx, th, rows[i]); ok {
+				continue
+			}
+			if _, ok := settingsPages[p].Body(gtx, th, f, rows, i); !ok {
+				t.Errorf("页 %d（%s）第 %d 行（kind=%d）无人认领——加行型时忘了在对应页 Body 分派",
+					p, settingsPageNames[p], i, rows[i].kind)
+			}
+		}
+	}
+}
+
 func TestPromptRowsLiveOnPromptPage(t *testing.T) {
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return promptSnapshot() },

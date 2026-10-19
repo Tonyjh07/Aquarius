@@ -102,6 +102,19 @@ func (f *settingsForm) drainToolResults() {
 	}
 }
 
+// syncToolsSnapshot 工具页原子快照同步（Revision 变了才重建行与按钮；同历史窗口径）。
+// 帧首调用一次（settingsFrame）；测试可直接调以铺好行表。
+func (f *settingsForm) syncToolsSnapshot() {
+	if f.tools == nil {
+		return
+	}
+	cur := f.tools.Snapshot()
+	if cur.Revision != f.toolsRev {
+		f.toolsRev = cur.Revision
+		f.toolsSnap = cur
+	}
+}
+
 // dispatchToolAction 工具页按钮分发（key = 动作签名，见各构建处）。按钮只在
 // 「工具与 MCP」页渲染；快照取上帧同步值（1 帧滞后可接受）。一律异步。
 func (u *UI) dispatchToolAction(f *settingsForm, key string) {

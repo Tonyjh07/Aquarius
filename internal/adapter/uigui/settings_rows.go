@@ -1,9 +1,7 @@
 package uigui
 
 import (
-	"fmt"
 	"image"
-	"strings"
 
 	"gioui.org/io/key"
 	"gioui.org/layout"
@@ -112,68 +110,11 @@ type rowDesc struct {
 // sec 分组小标题行。
 func sec(text string) rowDesc { return rowDesc{kind: rowSection, text: text} }
 
-// pageRows 本页行计划（每帧现算：providers 数量在新增/删除后即变）。
+// pageRows 本页行计划（每帧现算：providers / 密钥条目数在增删后即变）。首行恒为页标题
+// （页名 = 注册表 Key），其余由该页模块给（D162）。
 func (f *settingsForm) pageRows(page int) []rowDesc {
-	head := rowDesc{kind: rowTitle, text: settingsPageNames[page]} // 页标题 = 页名
-	switch page {
-	case pageGeneral:
-		return []rowDesc{
-			head, sec("Profile"),
-			{kind: rowProfCurrent}, {kind: rowProfName}, {kind: rowProfBtns},
-			{kind: rowWelcome},
-			sec("权限"), {kind: rowPerm},
-			sec("外观与呼出"),
-			{kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
-			{kind: rowFontSize}, {kind: rowWinSize},
-			sec("输出"), {kind: rowNotify}, {kind: rowTTS},
-		}
-	case pageModel:
-		rows := []rowDesc{
-			head,
-			sec("当前模型"), {kind: rowModelName},
-			sec("思考与推理"), {kind: rowThink}, {kind: rowEffort},
-			sec("模型服务（provider 列表）"),
-		}
-		for i := range f.provs {
-			for fld := 0; fld < provFldN; fld++ {
-				rows = append(rows, rowDesc{kind: rowProvField, prov: i, field: fld})
-			}
-			rows = append(rows, rowDesc{kind: rowProvBtns, prov: i})
-		}
-		return append(rows, rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply})
-	case pageChat:
-		return []rowDesc{
-			head,
-			sec("限额"),
-			{kind: rowMaxTurns}, {kind: rowMaxCtx}, {kind: rowCompact},
-			{kind: rowToolChars}, {kind: rowToolTo},
-		}
-	case pagePrompt: // S7/D144 + S7b/D145：人格模块树独立成页（原先挂在「对话」页）；
-		// 编辑区本体由 promptEditor 给行表（D154 起与遮罩「默认模板」页签同一份）。
-		return append([]rowDesc{head}, f.promptEditor.rows()...)
-	case pageTools: // S6/D143：内置工具启停 + 插件管理（可交互；快照每帧同步）
-		rows := []rowDesc{head}
-		if f.tools == nil {
-			return append(rows, rowDesc{kind: rowToolsEmpty, text: "未接线（只读占位）"})
-		}
-		rows = append(rows, sec("内置工具（开关即时生效，无需重启）"))
-		for i := range f.toolsSnap.Builtins {
-			rows = append(rows, rowDesc{kind: rowBuiltin, field: i})
-		}
-		rows = append(rows, sec("MCP 与插件（来源 config / 插件目录）"))
-		for i := range f.toolsSnap.Plugins {
-			rows = append(rows, rowDesc{kind: rowPlugin, field: i})
-		}
-		if len(f.toolsSnap.Plugins) == 0 {
-			rows = append(rows, rowDesc{kind: rowToolsEmpty, text: "没有已声明的插件（config mcpServers 或 插件目录）"})
-		}
-		if f.toolsStatus != "" {
-			rows = append(rows, rowDesc{kind: rowToolsStatus})
-		}
-		return rows
-	default: // pageAdv
-		return []rowDesc{head, sec("config.json 原文"), {kind: rowRaw}}
-	}
+	head := rowDesc{kind: rowTitle, text: settingsPageNames[page]}
+	return append([]rowDesc{head}, settingsPages[page].Rows(f)...)
 }
 
 // navColumnDp 左侧导航栏宽度（dp，经 gtx.Dp 消费）；navItemDpH 单个导航项高度。
@@ -182,100 +123,35 @@ const (
 	navItemDpH  unit.Dp = 36
 )
 
-// settingsFrame 设置窗单帧（S4d/D142 分页）：左侧导航栏 + 当前页滚动表单 + 全局底栏。
-// 事件先于渲染取尽（Clicked 自带 Update；导航点击本帧即按新页渲染）。常规窗不做形状
-// 位图/羽化（§15.7 形态）：windowBg 铺底，与主窗内容面同底。
+// settingsFrame 设置窗单帧（S4d/D142 分页；D162 页面注册表）：左侧导航栏 + 当前页滚动
+// 表单 + 全局底栏。事件先于渲染取尽（Clicked 自带 Update；导航点击本帧即按新页渲染）。
+//
+// 事件分两层：**帧级**（保存键、开窗焦点、异步结果排空、工具页快照同步——与页无关，恒执行）
+// 与**页级**（settingsPages[i].Events，逐页各调一次：未渲染的控件 Clicked 恒假，故等价于
+// 只处理当前页，却省掉了「按页分支」）。常规窗不做形状位图/羽化（§15.7 形态）：windowBg 铺底，
+// 与主窗内容面同底。
 func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsForm) layout.Dimensions {
 	for p := 0; p < settingsPageCount; p++ {
 		for f.navBtns[p].Clicked(gtx) {
 			f.page = p
 		}
 	}
-	// S6/D143：工具页动作分发（按钮只在工具页渲染；快照取上帧同步值）。
-	for key, btn := range f.toolBtns {
-		if btn.Clicked(gtx) {
-			u.dispatchToolAction(f, key)
-		}
-	}
-	f.drainToolResults() // 异步动作结果回灌状态行
+	f.drainTestResults() // 连通性 / 获取模型异步结果（最新一条覆盖展示）
+	f.drainToolResults() // 工具页异步动作结果回灌状态行
 	// 工具页原子快照（Revision 变了才重建行/按钮；同历史窗口径）。
-	if f.tools != nil {
-		cur := f.tools.Snapshot()
-		if cur.Revision != f.toolsRev {
-			f.toolsRev = cur.Revision
-			f.toolsSnap = cur
-		}
-	}
+	f.syncToolsSnapshot()
 	for f.save.Clicked(gtx) {
 		u.saveSettings(f)
 	}
-	for f.profCreate.Clicked(gtx) {
-		u.profileAction(f, "create")
+	// 当前页事件（D162：页模块自带事件，谁持有控件谁处理）。**所有页都调一次**：改前
+	// provider / 工具页 / profile 等动作本就是帧级无条件消费（未渲染的控件 Clicked 恒假），
+	// 这样口径与改前一致；页内需要按当前页收窄的（如模块网格手势）由该页自行判 f.page。
+	for _, p := range settingsPages {
+		p.Events(gtx, u, f)
 	}
-	for f.profCopy.Clicked(gtx) {
-		u.profileAction(f, "copy")
-	}
-	for f.profSwitch.Clicked(gtx) {
-		u.profileAction(f, "switch")
-	}
-	for f.provAdd.Clicked(gtx) {
-		f.addProviderForm()
-	}
-	for f.provApply.Clicked(gtx) {
-		u.applyProviderChanges(f)
-	}
-	for f.welcomeOpen.Clicked(gtx) {
-		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
-	}
-	// S7/D144：人格模块树与引用编辑（新增/删除/上移/下移、内置模块「引用」）。
-	// D148：模块库改成三列网格——新增走网格末尾那格，模块本身的增删改走右键弹窗。
-	// D154：这一组动作收在 promptEditor 里（与遮罩「默认模板」页签共用）。
-	f.promptEditor.refEvents(gtx)
-	if f.page == pagePrompt && !f.modEdit.open {
-		f.moduleGridEvents(gtx)
-	}
-	if f.page == pagePrompt {
-		f.promptEditor.preview(u)
-	}
-	for i, pf := range f.provs {
-		for pf.test.Clicked(gtx) {
-			u.runProviderTest(f, pf)
-		}
-		for pf.modelsBtn.Clicked(gtx) {
-			u.runFetchModels(f, pf)
-		}
-		for k := range pf.candClicks {
-			if !pf.candClicks[k].Clicked(gtx) {
-				continue
-			}
-			if k < len(pf.cands) {
-				// 点 chip = **替换**模型名行（模拟稿「点选替换」）：不追加，免得越点越长。
-				pf.models.SetText(pf.cands[k])
-			}
-		}
-		for pf.setPrimary.Clicked(gtx) {
-			f.primaryIdx = i
-		}
-		for pf.del.Clicked(gtx) {
-			if len(f.provs) > 1 { // 至少保留一条（providers 不可为空，启动校验同口径）
-				f.provs = append(f.provs[:i], f.provs[i+1:]...)
-				switch {
-				case f.primaryIdx == i:
-					f.primaryIdx = 0
-				case f.primaryIdx > i:
-					f.primaryIdx--
-				}
-			}
-		}
-	}
-	f.drainTestResults() // 连通性测试异步结果（最新一条覆盖展示）
-	f.perm.advance(gtx)
-	f.effort.advance(gtx)
-	f.theme.advance(gtx)
-	f.scale.advance(gtx)
 	if !f.focused {
 		f.focused = true
-		if ed := f.firstEditor(); ed != nil { // 开窗焦点入当前页首个编辑档；点击切换（editor.go 自聚焦）
+		if ed := settingsPages[f.page].FirstEditor(f); ed != nil { // 开窗焦点入当前页首个编辑档
 			gtx.Execute(key.FocusCmd{Tag: ed})
 		}
 	}
@@ -521,223 +397,21 @@ func (f *settingsForm) rowBodyFn(th *material.Theme, rows []rowDesc, i int) layo
 	}
 }
 
-// rowBody 行内容本体（版面归 row，内容只按类型分派）。
+// rowBody 行内容本体（版面归 row，内容按注册表分派，D162）：先问框架通用行型
+// （页标题 / 分区标题），未命中再交给**当前页**的模块认领。未认领的行不再有 `default`
+// 静默兜底——交由行型覆盖测试断言恒被认领。
 func (f *settingsForm) rowBody(gtx layout.Context, th *material.Theme, rows []rowDesc, i int) layout.Dimensions {
 	r := rows[i]
-	switch r.kind {
-	case rowTitle:
-		return paperTitle(th, r.text)(gtx)
-	case rowSection:
-		return paperSection(th, r.text)(gtx)
-	case rowProfCurrent:
-		return fieldRow(gtx, th, "当前", func(gtx layout.Context) layout.Dimensions {
-			txt := f.profiles.Current
-			if len(f.profiles.Items) > 0 {
-				txt += "（可用：" + strings.Join(f.profiles.Items, ", ") + "）"
-			}
-			l := material.Body1(th, txt)
-			l.Color = paperOf().text3
-			return l.Layout(gtx)
-		})
-	case rowProfName:
-		return fieldRow(gtx, th, "Profile 名", editorBox(th, &f.profName, "新建 / 复制 / 切换的目标名"))
-	case rowProfBtns:
-		return f.profileButtonsRow(gtx, th)
-	case rowWelcome: // D141：欢迎 / 首次运行引导入口（开 winWelcome 次窗）
-		return f.welcomeRow(gtx, th)
-	case rowModelName: // S4d：当前模型名（D110② 起在 UI 上失位，本次补回）
-		return fieldRow(gtx, th, "当前模型名", editorBox(th, &f.model, "model.name；改动保存后经 /model 热切换"))
-	case rowProvField:
-		pf := f.provs[r.prov]
-		eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
-		meta := provFieldMeta[r.field]
-		if r.field == provModelsFld {
-			// 模型名行右侧挂「获取模型」（D153，模拟稿同款）：按钮与输入框同一行，
-			// 结果不自动覆盖——候选以 chip 列在行下方，点了才替换。
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return fieldRow(gtx, th, meta.label, func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-							layout.Flexed(1, editorBox(th, eds[r.field], meta.hint)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
-									paperButton(th, &pf.modelsBtn, "获取模型", paperBtnSecondary, true))
-							}),
-						)
-					})
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if len(pf.cands) == 0 {
-						return layout.Dimensions{}
-					}
-					return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return modelChips(gtx, th, pf)
-					})
-				}),
-			)
-		}
-		return fieldRow(gtx, th, meta.label, editorBox(th, eds[r.field], meta.hint))
-	case rowProvBtns:
-		return f.providerButtonsRow(gtx, th, r.prov)
-	case rowProvAdd:
-		return f.providerAddRow(gtx, th)
-	case rowProvApply:
-		return f.providerApplyRow(gtx, th)
-	case rowPerm:
-		return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm))
-	case rowThink:
-		return paperCheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）")(gtx)
-	case rowEffort:
-		return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort))
-	case rowHotkey:
-		return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）"))
-	case rowTheme:
-		return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme))
-	case rowScale:
-		return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale))
-	case rowFontSize:
-		return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）"))
-	case rowWinSize:
-		return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH))
-	case rowNotify:
-		return paperCheckBox(th, &f.notify, "桌面通知（回答完成时）")(gtx)
-	case rowTTS:
-		return paperCheckBox(th, &f.tts, "语音播报（已解析配置，尚未启用）")(gtx)
-	case rowMaxTurns:
-		return fieldRow(gtx, th, "最大轮数", editorBox(th, &f.maxTurns, "单次提问的工具调用轮数上限（空 = 保持）"))
-	case rowMaxCtx:
-		return fieldRow(gtx, th, "上下文上限", editorBox(th, &f.maxCtx, "tokens；自动压缩与截断的预算分母（空 = 保持）"))
-	case rowCompact:
-		return fieldRow(gtx, th, "压缩阈值", editorBox(th, &f.compact, "0–1；占用超阈值触发自动压缩（空 = 保持）"))
-	case rowToolChars:
-		return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）"))
-	case rowToolTo:
-		return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）"))
-	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）——行内容由
-	// promptEditor 提供（D154 起与遮罩「默认模板」页签共用一份实现）。
-	case rowSysPrompt, rowPromptNote, rowPromptGrid, rowPromptRef, rowPromptRefAdd,
-		rowPromptBuiltin, rowPromptPreview:
-		dims, _ := f.promptEditor.rowBody(gtx, th, rows, i)
+	if dims, ok := frameworkRow(gtx, th, r); ok {
 		return dims
-	// S6/D143：工具与 MCP 页。
-	case rowBuiltin:
-		return f.builtinToolRow(gtx, th, f.toolsSnap.Builtins[r.field])
-	case rowPlugin:
-		return f.pluginToolRow(gtx, th, f.toolsSnap.Plugins[r.field])
-	case rowToolsEmpty:
-		l := material.Body2(th, r.text)
-		l.Color = paperOf().text3
-		return l.Layout(gtx)
-	case rowToolsStatus:
-		l := material.Body2(th, f.toolsStatus)
-		if f.toolsErr {
-			l.Color = paperOf().danger
-		} else {
-			l.Color = paperOf().text3
-		}
-		return l.Layout(gtx)
-	default: // rowRaw
-		return editorBoxH(th, &f.rawCfg, "整文件编辑；保存前 JSON 校验（解析失败原文件不动，Q10）", 220)(gtx)
 	}
-}
-
-// providerButtonsRow 单个 provider 的动作按钮：连通测试 / 设为主 / 删除（D110②）。
-func (f *settingsForm) providerButtonsRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
-	pf := f.provs[i]
-	btn := func(c *widget.Clickable, label string) layout.Widget {
-		return paperButton(th, c, label, paperBtnSecondary, true)
+	dims, ok := settingsPages[f.page].Body(gtx, th, f, rows, i)
+	if !ok {
+		// 认不出的行型曾静默落进 default 兜底（D162 取消）；这里退化成空 Dimensions，
+		// 让行型覆盖测试与离屏像素回归去发现，而不是悄悄画成别的控件。
+		return layout.Dimensions{}
 	}
-	primary := "设为主"
-	if f.primaryIdx == i {
-		primary = "★ 主"
-	}
-	// 主 provider 的「★ 主」用强调色文字标识当前主，不铺整块实心底——一行里两块
-	// 实心按钮会互相抢视线；不可删的那条（providers 不可为空）呈禁用态。
-	mark := paperBtnSecondary
-	if f.primaryIdx == i {
-		mark = paperBtnPrimary
-	}
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(btn(&pf.test, "测试连通")),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.setPrimary, primary, mark, true))
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.del, "删除", paperBtnDanger, len(f.provs) > 1))
-		}),
-	)
-}
-
-// providerAddRow 新增 provider 入口（编辑区尾部；Apply 校验名字等必填项）。
-func (f *settingsForm) providerAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return paperButton(th, &f.provAdd, "＋ 新增 provider", paperBtnSecondary, true)(gtx)
-}
-
-// providerApplyRow provider 区应用按钮 + 反馈文案（成功绿/错误红 = 转写区语义色）。
-func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return paperButton(th, &f.provApply, "应用 provider 变更", paperBtnPrimary, true)(gtx)
-		}),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				text := f.provStatus
-				col := paperOf().text2
-				switch {
-				case text == "":
-					text, col = "变更全量写回 config，重启生效；「测试连通」发真实最小请求。", paperOf().text3
-				case f.provErr:
-					col = paperOf().danger
-				}
-				l := material.Label(th, paperNoteSp(th), text)
-				l.Color = col
-				return l.Layout(gtx)
-			})
-		}),
-	)
-}
-
-// profileButtonsRow profile 区三动作按钮（D110③）：新建 / 复制当前 / 切换（重启生效）。
-func (f *settingsForm) profileButtonsRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	btn := func(c *widget.Clickable, label string) layout.Widget {
-		return paperButton(th, c, label, paperBtnSecondary, true)
-	}
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(btn(&f.profCreate, "新建")),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profCopy, "复制当前"))
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profSwitch, "切换（重启生效）"))
-		}),
-	)
-}
-
-// welcomeRow 欢迎 / 首次运行引导入口（D141）：设置窗是**唯一入口**——托盘与球右键菜单都
-// 不带此项；另有「首跑 / `ui.welcomed` 缺失」时自动打开一次（装配根接线）。按钮开次窗，
-// 单实例防重开由注册表保证（§15.7）。
-func (f *settingsForm) welcomeRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return fieldRow(gtx, th, "欢迎引导", func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return paperButton(th, &f.welcomeOpen, "打开", paperBtnSecondary, true)(gtx)
-			}),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, "模型接入向导 + 快捷键 / 右键菜单 / 常用命令")
-					l.Color = paperOf().text3
-					return l.Layout(gtx)
-				})
-			}),
-		)
-	})
-}
-
-// modelChips 候选模型 chip（D153）：点击 = 用该名字**替换**模型名行。每行最多 3 个、
-// 左对齐等分（最多 3 行）——候选可达几十个，铺开会把卡撑成一面墙；名字过长按 24 字截断，
-// 状态行里再给出总数。
-func modelChips(gtx layout.Context, th *material.Theme, pf *providerForm) layout.Dimensions {
-	return paperChipFlow(gtx, th, "点选替换模型名", pf.cands, pf.candClicks)
+	return dims
 }
 
 // trimRunes 按字符数截断（超长模型名在 chip 里以省略号收尾）。
@@ -747,53 +421,6 @@ func trimRunes(s string, n int) string {
 		return s
 	}
 	return string(rs[:n-1]) + "…"
-}
-
-// promptRefRow 人格引用行（S7/D144）：序号 + 引用名 + 上移/下移/删除（顺序 = 拼接顺序）。
-func (f *settingsForm) promptRefRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
-	rf := f.promptRefs[i]
-	small := func(c *widget.Clickable, label string) layout.Widget {
-		return func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, paperButton(th, c, label, paperBtnSecondary, true))
-		}
-	}
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			l := material.Body2(th, fmt.Sprintf("%d.", i+1))
-			l.Color = paperOf().text3
-			return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, l.Layout)
-		}),
-		layout.Flexed(1, editorBox(th, &rf.name, "引用名（模块名或内置 @名）")),
-		layout.Rigid(small(&rf.up, "↑")),
-		layout.Rigid(small(&rf.down, "↓")),
-		layout.Rigid(small(&rf.del, "✕")),
-	)
-}
-
-// promptBuiltinRow 内置只读模块行（S7/D144）：引用名 + 说明 + 「引用」按钮（加入人格引用）。
-func (f *settingsForm) promptBuiltinRow(gtx layout.Context, th *material.Theme, b BuiltinModuleView) layout.Dimensions {
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.Body2(th, b.Name).Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, b.Label)
-					l.Color = paperOf().text2
-					return l.Layout(gtx)
-				}),
-			)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := f.promptBtns["ref:"+b.Name]
-			if btn == nil {
-				btn = new(widget.Clickable)
-				f.promptBtns["ref:"+b.Name] = btn
-			}
-			return paperButton(th, btn, "引用", paperBtnSecondary, true)(gtx)
-		}),
-	)
 }
 
 // fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。标签列宽随

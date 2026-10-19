@@ -168,19 +168,19 @@ var (
 )
 
 // 设置窗页（S4d/D142）：内容分页呈现（左侧 140dp 导航栏 + 右页内容 + 全局底栏）。
-// 页序即导航序；页名集与页序为契约（测试锁定）。
+// 页序即导航序 = settingsPages 注册序（D162）；页名集与页序为契约（测试锁定）。
+// 这里的常量只是**可读的页索引**——加页时必须在 settingsPages 追加一页，并在此加对应常量；
+// pageConstCount 与注册表长度的等式由测试锁住，两处漏一处就响亮失败。
 const (
 	pageGeneral = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
 	pageModel          // 模型：当前模型名 / 原生思考与推理档位 / provider 列表
 	pageChat           // 对话：限额
 	pagePrompt         // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
-	pageTools          // 工具与 MCP：MCP 与插件清单（S6/D143 起升级为可交互管理面）
+	pageTools          // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
 	pageAdv            // 高级：config.json 原文
-	settingsPageCount
+	// pageConstCount 页常量个数（编译期锚；见上方说明）。
+	pageConstCount
 )
-
-// settingsPageNames 页名（导航项与页标题共用文案）。
-var settingsPageNames = [settingsPageCount]string{"常规", "模型", "对话", "系统提示词", "工具与 MCP", "高级"}
 
 // cycleField 点击循环枚举档（material v0.10 无下拉框）：按钮显示当前项，点击进一档。
 type cycleField struct {
@@ -224,10 +224,10 @@ func (c *cycleField) advance(gtx layout.Context) {
 // 渲染**——跨页编辑天然保留。行模型为动态行计划（pageRows）：行数随 provider 数量
 // 变化（D110② 编辑区）。
 type settingsForm struct {
-	// 分页（S4d/D142）。
-	page    int                                 // 当前页（pageGeneral..pageAdv）
-	pages   [settingsPageCount]widget.List      // 每页一个滚动列表（构造处定轴向）
-	navBtns [settingsPageCount]widget.Clickable // 左侧导航栏项（按页缓存）
+	// 分页（S4d/D142；D162 起按注册表长度构造——页数不再是编译期常量）。
+	page    int                // 当前页（pageGeneral..pageAdv）
+	pages   []widget.List      // 每页一个滚动列表（构造处定轴向）
+	navBtns []widget.Clickable // 左侧导航栏项（按页缓存）
 
 	// 工具与 MCP 页（S6/D143）。
 	tools       ToolsAdmin                   // nil = 只读占位（未接线）
@@ -335,8 +335,8 @@ const (
 	probeModels        // 获取模型列表
 )
 
-// newSettingsFormState 表单控件与固定档的构造骨架（快照无关：列表轴向/枚举档/
-// 单行档/结果通道）。与快照填表分开 = 开窗路径与测试共用同一构造口径（S4c：
+// newSettingsFormState 表单控件与固定档的构造骨架（快照无关：列表轴向 / 枚举档 /
+// 单行档 / 结果通道）。与快照填表分开 = 开窗路径与测试共用同一构造口径（S4c：
 // 列表轴向属构造不变量——轴向错配会让 material.List 按视口**宽**迭代，只画首行）。
 func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
@@ -350,7 +350,9 @@ func newSettingsFormState() *settingsForm {
 	}
 	f.promptEditor.init()
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
-	// 按视口**宽**迭代 → 只画首行、其余空白窗底）。
+	// 按视口**宽**迭代 → 只画首行、其余空白窗底）。页数按注册表长度给（D162）。
+	f.pages = make([]widget.List, settingsPageCount)
+	f.navBtns = make([]widget.Clickable, settingsPageCount)
 	for i := range f.pages {
 		f.pages[i].Axis = layout.Vertical
 	}
@@ -358,23 +360,6 @@ func newSettingsFormState() *settingsForm {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
 	return f
-}
-
-// firstEditor 当前页首个编辑档（开窗首帧焦点落点；无编辑档的页返回 nil = 不抢焦点）。
-func (f *settingsForm) firstEditor() *widget.Editor {
-	switch f.page {
-	case pageGeneral:
-		return &f.profName
-	case pageModel:
-		return &f.model
-	case pageChat:
-		return &f.maxTurns
-	case pagePrompt:
-		return &f.sysPrompt
-	case pageAdv:
-		return &f.rawCfg
-	}
-	return nil
 }
 
 // newSettingsForm 开窗现取快照填表：读回调缺失 = 空表单，写回调缺失 = 只读占位。
