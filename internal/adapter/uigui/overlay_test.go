@@ -354,7 +354,7 @@ func TestOverlayPagesPresentAndSource(t *testing.T) {
 	_ = q
 }
 
-// TestOverlayGotoMenuItem 图侧「在主窗定位」→ /goto 经 inCh + 唤出主窗（D139：`/goto`
+// TestOverlayGotoMenuItem 图侧「转到」→ /goto 经 inCh + 唤出主窗（D139：`/goto`
 // 由单击移来；顺带补唤出，否则主窗收在悬浮球里时点了没反应）。
 func TestOverlayGotoMenuItem(t *testing.T) {
 	u, st, q := relGraphFixture(t)
@@ -367,7 +367,7 @@ func TestOverlayGotoMenuItem(t *testing.T) {
 
 	act := u.nodeAction.Load()
 	if act == nil || act.kind != nodeActGoto || act.id != want {
-		t.Fatalf("动作槽 = %+v, want 在主窗定位 %s", act, want)
+		t.Fatalf("动作槽 = %+v, want 转到 %s", act, want)
 	}
 	histFrameFor(q, u, st)
 	select {

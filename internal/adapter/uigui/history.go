@@ -250,7 +250,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 
 // drainNodeAction 排空图侧菜单动作槽（D132）：菜单分发在 shell 线程，而**剪贴板写入必须
 // 在 Gio 帧内**、聚焦待办属图状态——故两者都经 u.nodeAction 原子槽投到本窗帧首执行。
-// D139 再加两项：开遮罩（编辑三项/查看原文改道）与「在主窗定位」（/goto + 唤出主窗）。
+// D139 再加两项：开遮罩（编辑三项/查看原文改道）与「转到」（/goto + 唤出主窗）。
 func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 	act := u.nodeAction.Swap(nil)
 	if act == nil || st.graph == nil {
@@ -262,8 +262,6 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 			gtx.Execute(clipboard.WriteCmd{Type: "application/text",
 				Data: io.NopCloser(strings.NewReader(id))})
 		}
-	case nodeActHome:
-		st.graph.viewPending = vaFitAll
 	case nodeActGoto:
 		st.sendGoto(u, act.id)
 		_ = u.post(showExpandMsg{}) // /goto 只改主窗转写区：主窗收在球里则等于没反应
@@ -274,7 +272,7 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 	}
 }
 
-// sendGoto 图侧「在主窗定位」（D139）：投 /goto <id>（与键入同路径，缓冲满丢弃）。
+// sendGoto 图侧「转到」（D139；2026-10-19 由「在主窗定位」缩短）：投 /goto <id>（与键入同路径，缓冲满丢弃）。
 func (st *historyState) sendGoto(u *UI, id conversation.MessageID) {
 	if id == "" {
 		return
@@ -548,9 +546,11 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 							layout.Rigid(histCtl(th, &st.btnPlus, "＋")),
 							layout.Rigid(histCtl(th, &st.btnAll, "展开全部")),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								l := material.Label(th, paperMicroSp(th), "缩放 "+zoomPct)
-								l.Color = paperOf().text2
-								return l.Layout(gtx)
+								return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									l := material.Label(th, paperMicroSp(th), "缩放 "+zoomPct)
+									l.Color = paperOf().text2
+									return l.Layout(gtx)
+								})
 							}),
 							layout.Rigid(histCtl(th, &st.btnHome, "装下整树")),
 							// D128 三种聚焦域：整树（重排）/ 当前历史线 / 当前节点及父子
@@ -582,21 +582,6 @@ func histCtl(th *material.Theme, c *widget.Clickable, text string) layout.Widget
 	}
 }
 
-// swatchRing 空心色块（结构根 = 描边圆，与 drawNode 的 relShapeRing 同形态）。
-func swatchRing(c color.NRGBA) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		size := gtx.Dp(10)
-		box := image.Rectangle{Max: image.Pt(size, size)}
-		cw := gtx.Dp(1)
-		if cw < 1 {
-			cw = 1
-		}
-		out := clip.UniformRRect(box, size/2).Path(gtx.Ops)
-		paint.FillShape(gtx.Ops, c, clip.Stroke{Path: out, Width: float32(cw * 2)}.Op())
-		return layout.Dimensions{Size: image.Pt(size, size)}
-	}
-}
-
 // histLegend 状态栏第二行：深度色带图例 + 形状图例（A2 的可解释性）。
 func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	swatch := func(c color.NRGBA) layout.Widget {
@@ -617,6 +602,8 @@ func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	// 图例必须与画布同源：色块直接取 Paper 的深度色带，形状词与 relShapeOf 一一对应
 	// （□ user / ● assistant / ◇ system / ◯ 结构根）。此前图例列 4 色而画布只现 3 档、
 	// 结构根画成实心圆，图例与画面对不上——图例的用处就是「照着认」，对不上就是错的。
+	// 2026-10-19 撤掉色带后面那个空心圆：它没有标签，读起来像第 5 档色带（用户批注
+	// 「这里不知道哪来的圆」），而「◯ 会话根」在下面的形状组里已经写明。
 	d := paperOf().depth
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(label("色带")),
@@ -627,7 +614,6 @@ func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 		layout.Rigid(swatch(d[2])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 		layout.Rigid(swatch(d[3])),
-		layout.Rigid(swatchRing(d[0])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
 		layout.Rigid(label("形状：□ 你 · ● 助手 · ◇ 系统 · ◯ 会话根")),
 	)

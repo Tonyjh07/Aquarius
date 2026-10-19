@@ -360,7 +360,7 @@ func TestRelGraphFitViewOnOpen(t *testing.T) {
 	}
 }
 
-// TestRelGraphFitAllAdaptsView D140：「装下整树」（状态栏按钮 + 图侧菜单项；原名「回到
+// TestRelGraphFitAllAdaptsView D140：「装下整树」（状态栏按钮；原名「回到
 // 当前」）= 把**当前盒**一次到位装进视口——**zoom 与平移一起适配**。旧版只挪视场不动 zoom，
 // 于是「树明明装不下、点了等于没点」；这也是用户 2026-10-15 报障的第二个症状。
 // 断言 V1a（盒内可见）/ V1b（上下留白对称）/ V1c（至少一维贴满）。
@@ -447,7 +447,7 @@ func TestRelGraphHitTest(t *testing.T) {
 }
 
 // TestRelGraphClickOpensOverlay D139：左键**原位抬起**点节点 → 开消息查看/编辑遮罩
-// （`/goto` 已移进图侧右键菜单「在主窗定位」）。开启那一次抬起不得被遮罩自己吃掉
+// （`/goto` 已移进图侧右键菜单「转到」）。开启那一次抬起不得被遮罩自己吃掉
 // （armed 守卫：同帧广播，落点在卡片外）。
 func TestRelGraphClickOpensOverlay(t *testing.T) {
 	u, st, q := relGraphFixture(t)
@@ -1114,10 +1114,10 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	if g.menuArm {
 		t.Fatal("fire 后武装未解除")
 	}
-	// 项集 = 气泡七项 + 分隔线 + 图侧五项（D139 加「在主窗定位」；D152 加「插入摘要」）
+	// 项集 = 气泡七项 + 分隔线 + 图侧四项（D139 加「转到」；D152 加「插入摘要」）
 	items := u.menuItems(platform.MenuBubble)
 	wantLabels := []string{"编辑", "编辑并转移历史", "编辑并复制历史", "重新生成", "复制",
-		"引用", "查看原文", "", "复制 ID", "插入摘要", "删除（/rm）", "在主窗定位", "装下整树"}
+		"引用", "查看原文", "", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -1265,7 +1265,7 @@ func TestRelGraphMenuRootNodeReduced(t *testing.T) {
 	q.Queue(relRightReleaseAt(st, 0))
 	relGFrame(q, u, st)
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"复制", "查看原文", "", "复制 ID", "删除（/rm）", "在主窗定位", "装下整树"}
+	want := []string{"复制", "查看原文", "", "复制 ID", "删除该节点及子树", "转到"}
 	if len(items) != len(want) {
 		t.Fatalf("根节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -1291,7 +1291,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"", "复制 ID", "插入摘要", "删除（/rm）", "在主窗定位", "装下整树"}
+	want := []string{"", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -1323,10 +1323,9 @@ func TestRelGraphMenuRm(t *testing.T) {
 	}
 }
 
-// TestRelGraphMenuHomeAndCopyID 图侧两项走动作槽 → **历史窗帧**内落剪贴板 / 置视场待办
-// （剪贴板写入必须在 Gio 帧内、视场待办属图状态，分发处都不能直连，§15.6）。D140 起
-// 「装下整树」是 viewAction 待办（帧首按当帧视场矩阵执行）。
-func TestRelGraphMenuHomeAndCopyID(t *testing.T) {
+// TestRelGraphMenuCopyIDAction 图侧「复制 ID」走动作槽 → **历史窗帧**内落剪贴板
+// （剪贴板写入必须在 Gio 帧内，分发处不能直连，§15.6）。
+func TestRelGraphMenuCopyIDAction(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	const li = 4
 	want := st.model.nodes[st.vis.nodes[li]].id
@@ -1334,22 +1333,12 @@ func TestRelGraphMenuHomeAndCopyID(t *testing.T) {
 	q.Queue(relRightReleaseAt(st, li))
 	relGFrame(q, u, st)
 
-	u.menuChosen(platform.MenuBubble, cmdNodeHome)
-	if act := u.nodeAction.Load(); act == nil || act.kind != nodeActHome {
-		t.Fatalf("动作槽 = %+v, want nodeActHome", act)
-	}
-	st.graph.viewPending = vaNone
-	gtx, _ := frameGtxSize(new(input.Router).Source(), 720, 560)
-	st.drainNodeAction(u, gtx) // 帧首排空 → 视场待办置位
-	if st.graph.viewPending != vaFitAll {
-		t.Fatalf("排空后视场待办 = %v, want vaFitAll", st.graph.viewPending)
-	}
-
 	u.menuChosen(platform.MenuBubble, cmdNodeCopyID)
 	act := u.nodeAction.Load()
 	if act == nil || act.kind != nodeActCopyID || act.id != want {
 		t.Fatalf("动作槽 = %+v, want nodeActCopyID %s", act, want)
 	}
+	gtx, _ := frameGtxSize(new(input.Router).Source(), 720, 560)
 	st.drainNodeAction(u, gtx)      // 复制 ID 的剪贴板写入在帧内执行（headless 无外部可观察量，
 	if u.nodeAction.Load() != nil { // 故只断言「动作被消费、不重复执行」）
 		t.Fatal("动作槽未排空")

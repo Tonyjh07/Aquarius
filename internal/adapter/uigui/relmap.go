@@ -242,7 +242,6 @@ const (
 	relZoomLabelRef  = 1.50 // 阈值参考 zoom（= 上限）
 	relLabelWBase    = 0.70 // 参考 zoom 下的权重阈值（= w0：全显）
 	relLabelWSlope   = 0.20 // zoom 每降 1.0 权重阈值上抬量
-	relRolePrefixZ   = 1.00 // zoom 低于此值：标签补 Role 前缀（补偿形状退化，§3.2）
 	relStatementNone = ""
 )
 
@@ -264,16 +263,14 @@ func relLabelVisible(weight, zoom float64) bool {
 	return weight >= relLabelThreshold(zoom)
 }
 
-// relLabelText 标签文案：低 zoom 补 Role 前缀（§3.2 代价条目），否则纯摘要。
+// relLabelText 标签文案 = 摘要原文（**不带 Role 前缀**）：角色由节点图形（四形）区分，
+// 前缀是把已经画出来的信息用文字再说一遍，只会吃掉标签宽度、挤掉真正的摘要（2026-10-19
+// 用户批注「看形状看得出来，不用前缀」）。标签不可见时返回 ""。
 func relLabelText(m *relModel, i int, zoom float64) string {
 	if !relLabelVisible(m.nodes[i].weight, zoom) {
 		return ""
 	}
-	txt := m.nodes[i].snippet
-	if zoom < relRolePrefixZ {
-		txt = relRolePrefix(m.nodes[i].role) + txt
-	}
-	return txt
+	return m.nodes[i].snippet
 }
 
 // relVersionGlyph 分叉位点的版本下标（D120 §2.2 的 `i/n`：先只落 `i`，`n` 待定——
@@ -286,20 +283,6 @@ func relVersionGlyph(m *relModel, i int) string {
 		return ""
 	}
 	return itoa(m.nodes[i].sibIdx + 1)
-}
-
-// relRolePrefix 低 zoom 下的 Role 前缀（形状退化时的补偿）。
-func relRolePrefix(role conversation.Role) string {
-	switch role {
-	case conversation.RoleUser:
-		return "你："
-	case conversation.RoleSystem:
-		return "系统："
-	case conversation.RoleRoot:
-		return "会话："
-	default:
-		return "AI："
-	}
 }
 
 // relStatementOf 悬停一句话关系陈述（§3.4，必须自足）。convTitle 供会话根陈述。
@@ -505,16 +488,11 @@ func relGeo(m *relModel, vis relVisible) (nodes []relGeoNode, anchorLocal int) {
 
 // relCardHalfH 节点卡半高（世界 dp）= max(徽标半径, 标签块半高) + 上下内边距。
 // 标签块按最坏缩放估（relLabelBlockWorst）；无摘要时退化为徽标 + 内边距。
-// **两种文本都取**：zoom < relRolePrefixZ 时标签会前置 Role 前缀（「AI：」≈2.1em），
-// 少算它就会少一行——实测 13 字摘要在 zoom 0.75 下绘制半高 31.9dp > 预留 24dp（卡片
-// 装不下自己的文字）。分别取 max 即上界（D126 实测修）。
+// 标签文案 = 摘要原文（无 Role 前缀，见 relLabelText），故只估这一种文本。
 func relCardHalfH(m *relModel, gi int) float64 {
 	nd := m.nodes[gi]
 	half := nd.weight * relNodeBaseDp / 2
 	if _, h, _ := relLabelBlockWorst(nd.snippet); h/2 > half {
-		half = h / 2
-	}
-	if _, h, _ := relLabelBlockWorst(relRolePrefix(nd.role) + nd.snippet); h/2 > half {
 		half = h / 2
 	}
 	return half + relCardPadV

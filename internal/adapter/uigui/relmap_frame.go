@@ -8,7 +8,7 @@ package uigui
 //
 // 手势（§5.2 动词表）：拖拽空白 = pan；滚轮 = zoom（夹 [0.5,1.5]，**越界降级纵向平移**
 // A9）；悬停 = 陈述 tooltip（inspect）；左键节点 = /goto <id>（A10）；右键节点 = 菜单
-// （复制 ID / 删除 / 装下整树；D140 由「回到当前」改名）。
+// （复制 ID / 插入摘要 / 删除该节点及子树 / 转到）。
 //
 // 性能纪律（§5.4）：视口外扩裁剪、懒重排（平移/缩放/悬停不重排——重排只由数据变更 /
 // rebudget 触发，R3）。
@@ -629,14 +629,14 @@ const (
 	focusScopeNode
 )
 
-// viewAction 显式视场动作（D140）：状态栏/图侧菜单按下后**不在分发处直接算**——视场矩阵
+// viewAction 显式视场动作（D140）：状态栏按下后**不在分发处直接算**——视场矩阵
 // （viewW/viewH/dpx）与 g.z 只在帧首刷新，故置待办、帧首统一执行（与 fitPending/everFit
 // 同一条路）。actions 由 dispatch / drainNodeAction 置位，frame 消费。
 type viewAction uint8
 
 const (
 	vaNone      viewAction = iota
-	vaFitAll               // 装下整树（状态栏按钮 + 图侧菜单项）
+	vaFitAll               // 装下整树（仅状态栏按钮；2026-10-19 撤掉图侧菜单项）
 	vaFocusLine            // 聚焦当前历史
 	vaFocusNode            // 聚焦当前节点
 )
@@ -1177,7 +1177,7 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 				} else if !g.dragging && g.pressNode >= 0 &&
 					g.pressNode == g.hitTest(e.Position.X, e.Position.Y) {
 					// D139：原位抬起（未拖拽）= 开消息查看/编辑遮罩（`/goto` 移进图侧
-					// 右键菜单「在主窗定位」）。
+					// 右键菜单「转到」）。
 					g.inspectNode(u, st, g.pressNode)
 				}
 				g.pressNode = -1
@@ -1237,7 +1237,7 @@ func (g *relGraph) inspectNode(u *UI, st *historyState, li int) {
 	st.openOverlay(u, g.model.nodes[g.vis.nodes[li]].id, conversation.Fresh, overlayPageRendered)
 }
 
-// gotoNode 投 /goto <id>（A10；图侧右键菜单「在主窗定位」经 nodeActGoto 走同路径）。
+// gotoNode 投 /goto <id>（A10；图侧右键菜单「转到」经 nodeActGoto 走同路径）。
 func (g *relGraph) gotoNode(u *UI, st *historyState, li int) {
 	if g.model == nil || li < 0 || li >= len(g.vis.nodes) {
 		return

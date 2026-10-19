@@ -271,9 +271,12 @@ func TestRelShapeAndStatement(t *testing.T) {
 			t.Fatalf("节点 %s 陈述为空", m.nodes[i].id)
 		}
 	}
-	// 低 zoom：可见标签补 Role 前缀。
-	txt := relLabelText(m, relIdx(t, m, "u2"), 0.9)
-	if txt == "" || txt[:len("你：")] != "你：" {
-		t.Fatalf("低 zoom 标签缺 Role 前缀: %q", txt)
+	// 标签 = 摘要原文，**不带 Role 前缀**：角色由节点图形（四形）区分，前缀只是重复
+	// 已经画出来的信息（2026-10-19 用户批注「看形状看得出来，不用前缀」）。
+	gi := relIdx(t, m, "u2")
+	for _, z := range []float64{relZoomLabelMin, 0.9, 1.0, relZoomLabelRef} {
+		if txt := relLabelText(m, gi, z); txt != m.nodes[gi].snippet {
+			t.Fatalf("zoom %.2f 标签 = %q, want 摘要原文 %q", z, txt, m.nodes[gi].snippet)
+		}
 	}
 }
