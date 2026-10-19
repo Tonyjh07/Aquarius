@@ -374,6 +374,11 @@ type UI struct {
 	// m 渲染状态机：仅事件循环 goroutine 读写；测试经 drainSync 取 happens-before 后读。
 	m *model
 
+	// confirmShare 进行中的确认在窗间的**只读投影**（D157）：主窗事件循环在 startConfirm
+	// 发布、replyConfirm 收尾时清空；历史窗每帧读它并在窗内画同步确认弹窗——跨窗只经原子
+	// 快照 + Invalidate（§15.7），两窗显示的是**同一次**确认（内核侧只有一条应答通道）。
+	confirmShare atomic.Pointer[confirmShare]
+
 	// wins 功能窗注册表（§15.7/D60）：单实例防重开 + 退出收编。互斥锁保护，
 	// 托盘线程/事件循环均可开窗；headless 构造成无开窗器（openWin no-op）。
 	wins *winHost
@@ -543,6 +548,22 @@ func (u *UI) post(m uiMsg) bool {
 	}
 }
 
+// confirmShare 进行中的确认在窗间的只读投影（D157）。**指针身份即「哪一次确认」**：
+// 历史窗的应答带着自己 Load 到的那个指针回灌，主窗据此丢弃迟到应答——否则一次「上一条
+// 确认的点击」可能落在刚好新起的下一条确认上。构造后只读（跨窗共享，不得改字段）。
+type confirmShare struct {
+	prompt string // 确认问句（与输入栏确认态同源文本）
+}
+
+// publishConfirm 发布 / 撤下（nil）进行中的确认投影，并催历史窗重绘（D157）。
+// 仅主窗事件循环 goroutine 调用（headless 测试经 apply/drainSync 同路径）。
+func (u *UI) publishConfirm(p *confirmShare) {
+	u.confirmShare.Store(p)
+	if u.wins != nil {
+		u.wins.invalidateKind(winHistory)
+	}
+}
+
 // signalEOF 标记输入流结束（幂等；close 广播给 Next/Confirm）。
 // err 非空 = 底层读取错误（Next 原样上抛，装配根以退出码 1 结束）。
 func (u *UI) signalEOF(err error) {
@@ -659,7 +680,11 @@ type (
 		reply  chan port.ConfirmAnswer
 	}
 	// confirmResultMsg Confirm 侧自行得出应答后的确认态收尾（关态 + 记转写）。
-	confirmResultMsg struct{ ans port.ConfirmAnswer }
+	// share 非空 = 次窗（历史窗确认弹窗）的应答，其指针身份须与当前确认一致才生效（D157）。
+	confirmResultMsg struct {
+		ans   port.ConfirmAnswer
+		share *confirmShare
+	}
 	// drainMsg 排空标记（Close 投递：处理到它即代表此前 post 全部落进状态机）。
 	drainMsg struct{ done chan struct{} }
 	// eofMsg 输入流结束（关窗/外部泵投递；err 非空 = 读取错误，Next 原样上抛）。
@@ -713,6 +738,11 @@ func (u *UI) apply(msg uiMsg) bool {
 	case confirmMsg:
 		u.m.startConfirm(m.prompt, m.reply)
 	case confirmResultMsg:
+		// D157：带快照身份的应答（历史窗弹窗）只对**同一次**确认生效——迟到应答丢弃，
+		// 不得误答刚好新起的下一条确认。无身份（Confirm 侧自行收尾）照旧直接应答。
+		if m.share != nil && (u.m.confirm == nil || u.m.confirm.share != m.share) {
+			break
+		}
 		u.m.replyConfirm(m.ans)
 	case eofMsg:
 		u.signalEOF(m.err)

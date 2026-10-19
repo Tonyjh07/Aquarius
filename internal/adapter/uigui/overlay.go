@@ -217,6 +217,16 @@ func (st *historyState) closeOverlay() { st.ov = nil }
 // overlayActive 遮罩是否开启（背景交互见门即返回，§15.7 + D139）。
 func (st *historyState) overlayActive() bool { return st.ov != nil }
 
+// confirmActive 二次确认弹窗是否在屏（D157）：主窗发布的确认投影非空 = 本窗正在显示
+// 模态确认卡片（弹窗状态不在本窗，而在主窗的快照里——所以关窗重开也照旧呈现）。
+func (st *historyState) confirmActive(u *UI) bool { return u.confirmShare.Load() != nil }
+
+// modalActive 任一模态层在屏（遮罩 **或** 确认弹窗，D157）：背景（左栏 / 状态栏 /
+// 右图手势）一律不取指针事件。
+func (st *historyState) modalActive(u *UI) bool {
+	return st.overlayActive() || st.confirmActive(u)
+}
+
 // events 遮罩键鼠事件（D139）：Esc 关闭；卡片盒外的抬起 = 点空白关闭。
 //
 // **两处 Gio 口径**（缺任一则本层收不到事件）：

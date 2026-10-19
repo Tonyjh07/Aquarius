@@ -980,11 +980,11 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	// 把 event.Op / gesture.Scroll 收进本栏 clip 后，Gio 用该 clip 的变换把窗口坐标
 	// 反变换回栏内坐标，命中/拖拽/菜单位置与绘制完全对齐。
 	stack := clip.Rect(image.Rectangle{Max: image.Pt(int(g.viewW), int(g.viewH))}).Push(gtx.Ops)
-	// D139：遮罩开启期**不取手势**（模态）。绘制与物理继续走——背景要在 scrim 下保持
-	// 可见与运动。隔离是**双保险**：遮罩的整窗 `event.Op` 输入区已按 Gio 命中链把本栏
-	// 遮蔽（实测：遮罩开启时右图收不到指针事件），此处显式不取是纵深防御，且是左栏/
+	// D139/D157：遮罩或确认弹窗开启期**不取手势**（模态）。绘制与物理继续走——背景要在
+	// scrim 下保持可见与运动。隔离是**双保险**：模态层的整窗 `event.Op` 输入区已按 Gio 命中链
+	// 把本栏遮蔽（实测：遮罩开启时右图收不到指针事件），此处显式不取是纵深防御，且是左栏/
 	// 状态栏这些**同链控件**的必需条件（它们不受本栏遮蔽影响，见 historyState.dispatch）。
-	if !st.overlayActive() {
+	if !st.modalActive(u) {
 		g.update(gtx, u, st)
 	}
 	stack.Pop()

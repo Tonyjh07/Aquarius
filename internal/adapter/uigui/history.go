@@ -22,6 +22,7 @@ import (
 	"gioui.org/font"
 	"gioui.org/io/clipboard"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -37,6 +38,8 @@ type historyState struct {
 	// list/rows 左栏滚动与点击件（行数变化时 get-or-create，按序缓存）。
 	list     widget.List
 	rows     []*widget.Clickable
+	dels     []*widget.Clickable   // 行尾「✕」删除钮（D157；同上按行序缓存）
+	delShown []bool                // 上帧「✕」显隐（悬浮态翻转时补一帧，见 rowDelSlot）
 	sessions []port.SessionSummary // 上帧读到的左栏快照（行数对齐）
 	// sig/model/vis 右图数据面：sig = 快照签名（变化才重建模型与预算，R3 懒重排）；
 	// model = 派生模型（§6.2），vis = 当前预算切片（A7 的「呈现 M」）。
@@ -51,6 +54,9 @@ type historyState struct {
 	// 状态栏控件（− / ＋ / 展开全部 / 装下整树 / 回到初始态 / 三个聚焦域：D128、D140）。
 	btnMinus, btnPlus, btnAll, btnHome widget.Clickable
 	btnSeed, btnLine, btnNode          widget.Clickable
+	// cfm 跨窗同步的二次确认弹窗（D157）：帧态无常驻开关——弹窗在屏与否由主窗发布的
+	// 确认投影（u.confirmShare）决定，这里只存控件与滚动位。
+	cfm confirmDialog
 }
 
 // newHistoryState 构造 winHistory 帧状态并做首帧数据同步。
@@ -60,6 +66,8 @@ func newHistoryState(u *UI) *historyState {
 		budget: relDefaultBudget,
 		graph:  newRelGraph(),
 	}
+	// 问句区竖向可滚（layout.List 的零值轴是**横向**，不显式设会变成横滚 + 横向滚动条）。
+	st.cfm.promptList.List.Axis = layout.Vertical
 	st.sync(u)
 	return st
 }
@@ -162,21 +170,52 @@ func (st *historyState) sendSwitch(u *UI, id conversation.ID) {
 	}
 }
 
-// dispatch 帧内点击消费：会话行切换 + 状态栏控件（预算 −/＋/展开全部/装下整树/回到初始态/
-// 两个聚焦域）。
-//
-// **遮罩开启期一律不取事件**（D139）：纵深防御——遮罩的整窗输入区已按 Gio 命中链把背景
-// 指针事件一并遮蔽（overlay.go 头注），此处再显式关一道：将来若遮罩输入区不是整窗、
-// 或背景控件被排到遮罩之上，模态语义仍在。左栏行与状态栏钮因此在遮罩期间完全失灵。
-func (st *historyState) dispatch(u *UI, gtx layout.Context) {
-	if st.overlayActive() {
+// rowDelClick 行尾「✕」点击件 get-or-create（同上按行序缓存）。
+func (st *historyState) rowDelClick(i int) *widget.Clickable {
+	for len(st.dels) <= i {
+		st.dels = append(st.dels, new(widget.Clickable))
+	}
+	return st.dels[i]
+}
+
+// sendRmconv 点行尾「✕」→ 投 /rmconv <完整 ID>（D157）：删除整会话（消息树一并删除、
+// 删当前会话自动继任）——**复用内核既有命令**，与键入同路径，壳内不做任何删除逻辑。
+// 二次确认由内核侧发出、两窗同步呈现（本窗弹窗见 confirmFrame）。缓冲满丢弃（同 sendSwitch）。
+func (st *historyState) sendRmconv(u *UI, id conversation.ID) {
+	if id == "" {
 		return
 	}
-	for i, c := range st.rows {
-		if c.Clicked(gtx) {
-			if i < len(st.sessions) {
-				st.sendSwitch(u, st.sessions[i].ID)
-			}
+	select {
+	case u.inCh <- port.UserInput{Command: &port.Command{Name: "rmconv", Args: []string{string(id)}}}:
+	default:
+	}
+}
+
+// dispatch 帧内点击消费：会话行切换 + 行尾「✕」删除 + 状态栏控件（预算 −/＋/展开全部/
+// 装下整树/回到初始态/两个聚焦域）。
+//
+// **遮罩或确认弹窗开启期一律不取事件**（D139/D157）：纵深防御——两者的整窗输入区已按
+// Gio 命中链把背景指针事件一并遮蔽（overlay.go 头注），此处再显式关一道：将来若输入区不是
+// 整窗、或背景控件被排到弹窗之上，模态语义仍在。左栏行与状态栏钮因此在模态期间完全失灵。
+func (st *historyState) dispatch(u *UI, gtx layout.Context) {
+	if st.modalActive(u) {
+		return
+	}
+	// D157：行尾「✕」**先收**。实测点 ✕ 时只投 /rmconv（✕ 的命中区把同位置的行遮掉），
+	// 但顺序照旧钉死在前：不依赖「谁遮了谁」这种命中链细节——将来排版挪动、或 Gio 的
+	// 遮挡口径变化，也不会一次点击既删会话又切会话。
+	//
+	// 两个循环都只走**当前快照的行数**：点击件是按行序缓存的，会话删过之后尾部的旧件
+	// 已经不在屏上（收不到事件），不该再有机会参与判读。
+	for i := 0; i < len(st.sessions) && i < len(st.dels); i++ {
+		if st.dels[i].Clicked(gtx) {
+			st.sendRmconv(u, st.sessions[i].ID)
+			return
+		}
+	}
+	for i := 0; i < len(st.sessions) && i < len(st.rows); i++ {
+		if st.rows[i].Clicked(gtx) {
+			st.sendSwitch(u, st.sessions[i].ID)
 			return
 		}
 	}
@@ -283,6 +322,10 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return st.overlayFrame(gtx, th, u)
 		}),
+		// D157：同步确认弹窗再置顶（模态；主窗确认态与它同源，点任一处都作答）。
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return st.confirmFrame(gtx, th, u)
+		}),
 	)
 }
 
@@ -304,27 +347,43 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return st.list.Layout(gtx, len(st.sessions), func(gtx layout.Context, i int) layout.Dimensions {
 					c := st.rowClick(i)
-					return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layout.Stack{}.Layout(gtx,
-							layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-								s := st.sessions[i]
-								pp := paperOf()
-								fill := pp.win
-								if s.Current {
-									fill = pp.sel
-								}
-								paint.FillShape(gtx.Ops, fill,
-									clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max},
-										gtx.Dp(unit.Dp(pp.rChip))).Op(gtx.Ops))
-								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
-							}),
-							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-								return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Stack{}.Layout(gtx,
+						// 行底板（纯绘制，不取事件）：整行面，当前会话用选中色。
+						layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+							s := st.sessions[i]
+							pp := paperOf()
+							fill := pp.win
+							if s.Current {
+								fill = pp.sel
+							}
+							paint.FillShape(gtx.Ops, fill,
+								clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max},
+									gtx.Dp(unit.Dp(pp.rChip))).Op(gtx.Ops))
+							return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
+						}),
+						// 行命中区（点行 = 切会话；悬浮行 = 显示「✕」）：上报**整行**盒，
+						// 文字按内衬排布、右侧让出 ✕ 槽。
+						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+							return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								layout.Inset{
+									Top: unit.Dp(6), Bottom: unit.Dp(6),
+									Left: unit.Dp(6), Right: unit.Dp(6) + histRowDelSlotDp,
+								}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return histSessionRow(gtx, th, st.sessions[i])
 								})
-							}),
-						)
-					})
+								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
+							})
+						}),
+						// 「✕」：与行点击件**同级兄弟**，排在它之后（命中链更靠前）。
+						//
+						// **不能**把它嵌进行点击件的 widget 里（2026-10-19 探针实测）：嵌
+						// 进去的控件收不到任何指针事件——✕ 永远不悬浮、点了也没反应（逐点
+						// 扫描：整行 hover 正常、✕ 恒 false）。同级后 ✕ 正常命中，且它会把
+						// 同一位置的行的命中遮掉（点 ✕ 只投 /rmconv，不会顺带切会话）。
+						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+							return st.rowDelSlot(gtx, th, c, i, rowH)
+						}),
+					)
 				})
 			}),
 		)
@@ -348,11 +407,15 @@ func histSessionRow(gtx layout.Context, th *material.Theme, s port.SessionSummar
 			l := material.Label(th, paperNoteSp(th), mark+" "+title)
 			l.Color = paperOf().text
 			l.Font.Weight = font.Bold
+			// D157：行尾让出「✕」槽后可用宽度变窄。标题已按 rune 截断，这里再钉一行
+			// ——否则超长标题会折成两行把行高撑开，左栏行高参差。
+			l.MaxLines = 1
 			return l.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			l := material.Label(th, paperMicroSp(th), meta)
 			l.Color = paperOf().text3
+			l.MaxLines = 1
 			return l.Layout(gtx)
 		}),
 	)
@@ -365,6 +428,68 @@ func truncRunes(s string, n int) string {
 		return s
 	}
 	return string(r[:n]) + "…"
+}
+
+// histRowDelSlotDp 「✕」槽边长（D157）。行内容右侧**恒**让出这么多（`histLeftColumn` 的
+// 内衬），故 ✕ 的显隐不引起行内文字重排；✕ 自己的盒也按这个边长定尺。
+const histRowDelSlotDp unit.Dp = 20
+
+// rowDelSlot 行尾「✕」槽（D157）：**仅指针在该行上时**绘制并登记点击件；未悬浮时连事件
+// op 都不发（不显形、不占命中）。
+//
+// 判据取「行 ∪ ✕」两件（`row.Hovered() || del.Hovered()`）。两件都要看，是因为**指针一旦
+// 停在 ✕ 上，行的 hover 就没了**（实测：✕ 的命中区在链上更靠前，会把同一位置的行的命中
+// 遮掉——见 `histLeftColumn` 里兄弟结构的记录）；此时只有 `del.Hovered()` 能把 ✕ 撑住。
+// 反过来，指针从右侧直接进入 ✕ 槽时，行的 hover 先成立一帧把 ✕ 登记出来，之后才轮到 ✕
+// 自己接管——两帧之间不会闪空（进入/离开事件同一批投递，判据不会同时为假）。
+//
+// 悬浮态翻转时补一帧（wakeFrame）：保证「登记 ✕ / 撤下 ✕」与绘制落在同一帧，光标移入后
+// 的第一次点击不会因为差一帧而落空。
+//
+// rowH 由调用方给（Stack 的 Stacked 子项拿到的 Max.Y 是整栏剩余高度，不是行高），用于
+// 纵向居中；横向靠 `op.Offset` 贴行右缘（Stacked 子项 Min 被清 0，不能靠 Center/Right）。
+func (st *historyState) rowDelSlot(gtx layout.Context, th *material.Theme, row *widget.Clickable, i, rowH int) layout.Dimensions {
+	side := gtx.Dp(histRowDelSlotDp)
+	del := st.rowDelClick(i)
+	show := row.Hovered() || del.Hovered()
+	if st.setDelShown(i, show) {
+		wakeFrame(gtx)
+	}
+	if !show {
+		return layout.Dimensions{}
+	}
+	margin := gtx.Dp(6) // 与行内容右侧内衬同宽：✕ 右缘和文字右缘对齐
+	// 纵向：槽内居中后再上抬 2px——「✕」(U+2715) 的墨迹在行盒里偏下（CJK 字体的 ascent 大），
+	// 直接居中看着往下掉；这点偏移是按默认字族调的（字体换了也仍是个位数像素的偏差）。
+	y := (rowH-side)/2 - gtx.Dp(2)
+	off := op.Offset(image.Pt(gtx.Constraints.Max.X-margin-side, y)).Push(gtx.Ops)
+	defer off.Pop()
+	gtx.Constraints = layout.Exact(image.Pt(side, side))
+	return del.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		pp := paperOf()
+		l := material.Label(th, paperNoteSp(th), "✕")
+		l.Color = pp.text2
+		if del.Hovered() {
+			// 压在 ✕ 上：字形转**危险色**（在任何行面上都看得出来——下沉底与选中面几乎同色，
+			// 只靠底色读不出来），并垫一层浅底下沉面，明确「这一下点的是删除」。
+			l.Color = pp.danger
+			paint.FillShape(gtx.Ops, pp.sunken,
+				clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(unit.Dp(pp.rCtl))).Op(gtx.Ops))
+		}
+		return layout.Center.Layout(gtx, l.Layout)
+	})
+}
+
+// setDelShown 记下第 i 行「✕」的显隐，返回是否**翻转**（true = 需要补一帧重绘）。
+func (st *historyState) setDelShown(i int, v bool) bool {
+	for len(st.delShown) <= i {
+		st.delShown = append(st.delShown, false)
+	}
+	if st.delShown[i] == v {
+		return false
+	}
+	st.delShown[i] = v
+	return true
 }
 
 // histGraphArea 右栏：关系图帧（第 7 步；数据未就绪时居中占位）。

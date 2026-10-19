@@ -62,6 +62,9 @@ type toolChip struct {
 type pendingConfirm struct {
 	prompt string
 	reply  chan port.ConfirmAnswer
+	// share 本次确认在窗间的投影身份（D157）：由 startConfirm 发布、replyConfirm 撤下；
+	// 次窗应答据此校验「答的是不是这一次」（迟到应答不得落到下一次确认上）。
+	share *confirmShare
 }
 
 // model 渲染状态机：事件面口径对齐 uitui/model.go（§15.5）——
@@ -629,6 +632,9 @@ func (m *model) closeOpenChips() {
 // 其余（/rm 二次确认等）保持独立文本行。
 func (m *model) startConfirm(prompt string, reply chan port.ConfirmAnswer) {
 	m.confirm = &pendingConfirm{prompt: sanitizeControl(prompt), reply: reply}
+	// D157：发布跨窗投影（历史窗据此画同步确认弹窗；窗口未开则只存快照）。
+	m.confirm.share = &confirmShare{prompt: m.confirm.prompt}
+	m.u.publishConfirm(m.confirm.share)
 	m.u.reasonEd.SetText("") // D86：原因框清空待填
 	m.u.reasonFocus = true   // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性口径）
 	if i := m.openChipFor(m.confirm.prompt); i >= 0 {
@@ -672,6 +678,7 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	}
 	m.confirm = nil
 	m.confirmChip = -1
+	m.u.publishConfirm(nil) // D157：收尾即撤下跨窗投影（历史窗下一帧收起弹窗）
 	if prompt != "" {
 		m.add(blockPlain, prompt+" → "+confirmEcho(ans))
 	}
