@@ -89,10 +89,10 @@ func New(id ID, title string) *Conversation {
 }
 
 // Append 追加一条 user|assistant 内容消息，父节点为当前 Head；成功后 Head 移到新节点。
-// root/system 一律走 AppendCommitted（Root 由 New 创建，system 为组装节点）。
+// root/system/inject 一律走 AppendCommitted（Root 由 New 创建，system/inject 为组装节点）。
 func (c *Conversation) Append(role Role, content []Part) (Message, error) {
 	if role != RoleUser && role != RoleAssistant {
-		return Message{}, fmt.Errorf("append: %w: 仅 user|assistant 可走 Append，root/system 用 AppendCommitted", ErrInvalidNode)
+		return Message{}, fmt.Errorf("append: %w: 仅 user|assistant 可走 Append，root/system/inject 用 AppendCommitted", ErrInvalidNode)
 	}
 	m := Message{
 		ID:        NewMessageID(),
@@ -136,7 +136,8 @@ func (c *Conversation) AppendCommitted(m Message) error {
 }
 
 // Revise 创建 id 的同级新版本节点（同父、同角色，内容替换），并记录版本链 RevisedFrom 新→旧。
-// root 不可 Revise（Root 即会话，D19）；system 可以（persona/摘要可改写）。
+// root 不可 Revise（Root 即会话，D19）；system/inject 可以（persona/摘要/注入内容可改写，
+// D150——Source/Trigger 随原节点）。
 // id 为顶层消息时新节点同为顶层（挂 Root 下，D15 语义）。
 // 内容整体替换：旧节点的工具分片随旧版本保留，新版本不含（修订即改写该版本，D95）。
 //
@@ -163,7 +164,11 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 		// Outcome 随原节点（D107 补）：修订 = 同一轮的改写版，终态语义随行——缺省零值
 		// 会命中呈现层「非 done 终态标记」分支（修订消息顶部多出 `[]`）。
 		// Model/Usage 不随：改写文本出自用户，不误标模型/用量。
-		Outcome:   old.Outcome,
+		Outcome: old.Outcome,
+		// Source/Trigger 随原节点（D150）：改一条注入只应换内容，不该丢掉来源与触发记录
+		// ——否则呈现层与审计面会把改写后的注入写成「无来源注入」。
+		Source:    old.Source,
+		Trigger:   old.Trigger,
 		CreatedAt: nowFunc(),
 	}
 	prevHead := c.Head

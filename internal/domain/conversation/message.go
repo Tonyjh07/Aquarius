@@ -67,6 +67,9 @@ const (
 	RoleAssistant Role = "assistant"
 	// RoleSystem 系统节点：会话首节点 persona（D20）与上下文压缩摘要（D21）。
 	RoleSystem Role = "system"
+	// RoleInject 注入节点（D150）：工具/轮询器写入的上下文，非用户发言。与 system 区别在
+	// 语义：system 带**水位**（persona 与压缩摘要会切断其上历史），inject **只追加、不动水位**。
+	RoleInject Role = "inject"
 )
 
 // Outcome 节点终态，提交时确定（DESIGN §4.1）。
@@ -89,15 +92,21 @@ type Usage struct {
 //
 // 结构边指针 Parent 可随 Revise Carry 边转移改写（DESIGN §4.1 / D16）；
 // 其余字段（Content/Outcome/Model/Usage/CreatedAt）一经入树永不改写。
-// 角色约束：user/system 纯内容节点；assistant 可携带思考分片（D42）与工具分片（D95）。
+// 角色约束：user/system/inject 纯内容节点；assistant 可携带思考分片（D42）与工具分片（D95）。
 type Message struct {
-	ID        MessageID `json:"id"`
-	Parent    MessageID `json:"parent"` // "" = Root 自身；其余节点恒非空（D19）
-	Role      Role      `json:"role"`
-	Content   []Part    `json:"content,omitempty"`
-	Outcome   Outcome   `json:"outcome,omitempty"`
-	Model     string    `json:"model,omitempty"`
-	Usage     Usage     `json:"usage"`
+	ID      MessageID `json:"id"`
+	Parent  MessageID `json:"parent"` // "" = Root 自身；其余节点恒非空（D19）
+	Role    Role      `json:"role"`
+	Content []Part    `json:"content,omitempty"`
+	Outcome Outcome   `json:"outcome,omitempty"`
+	Model   string    `json:"model,omitempty"`
+	Usage   Usage     `json:"usage"`
+	// Source 注入来源（D150；仅 Role=inject 非空）：`job:<id>` / `tool:<name>` /
+	// `plugin:<name>` / `poller:<id>` / `user`。只作展示与审计，不进模型上下文。
+	Source string `json:"source,omitempty"`
+	// Trigger 本条落地时是否随附起了一轮响应（D150；仅 Role=inject 有意义）。
+	// 记的是**实际发生**的事，供回放/审计——重放不再触发（否则加载会话就自己跑起 Turn）。
+	Trigger   bool      `json:"trigger,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

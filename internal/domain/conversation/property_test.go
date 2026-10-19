@@ -51,8 +51,8 @@ func sameCopy(a, b Message) bool {
 }
 
 // propDriver 随机操作序列驱动：覆盖 Append / AppendCommitted / Revise(Fresh|Carry|Clone) / Prune /
-// Checkout / InsertBefore，并混入必然失败的操作（违规工具分片形态，D95；根前插入，D152），
-// 验证失败路径同样不破坏不变量。
+// Checkout / InsertBefore / 注入节点（D150），并混入必然失败的操作（违规工具分片形态，D95；
+// 根前插入，D152；非 inject 节点带 Source/Trigger，D150），验证失败路径同样不破坏不变量。
 type propDriver struct {
 	rng     *rand.Rand
 	callSeq int
@@ -105,10 +105,10 @@ func (d *propDriver) toolParts(n int) []Part {
 	return parts
 }
 
-// step 执行一个随机操作并返回操作序号（8 = Prune；-1 = 跳过）。
+// step 执行一个随机操作并返回操作序号（8 = Prune；13/14 = 注入节点与误标拒绝；-1 = 跳过）。
 func (d *propDriver) step(t *testing.T, c *Conversation) int {
 	t.Helper()
-	op := d.rng.Intn(13)
+	op := d.rng.Intn(15)
 	switch op {
 	case 0:
 		if _, err := c.Append(RoleUser, textParts(fmt.Sprintf("u%d", d.rng.Int63()))); err != nil {
@@ -266,6 +266,44 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 		}
 		if _, err := c.InsertBefore(target, RoleSystem, textParts(fmt.Sprintf("pad%d", d.rng.Int63()))); err != nil {
 			t.Fatalf("insert before %s: %v", target, err)
+		}
+	case 13: // D150：注入节点（AppendCommitted / InsertBefore 两路）+ Source/Trigger 校验
+		source := []string{"user", "tool:think", "plugin:demo", "job:j1", "poller:p1"}[d.rng.Intn(5)]
+		trigger := d.rng.Intn(2) == 0
+		body := textParts(fmt.Sprintf("inj%d", d.rng.Int63()))
+		if d.rng.Intn(2) == 0 { // 衬垫路：插在某节点之前
+			target := d.pickNode(c, false)
+			if target == "" {
+				return -1
+			}
+			if _, err := c.InsertCommitted(target, Message{
+				ID: NewMessageID(), Role: RoleInject, Content: body,
+				Source: source, Trigger: trigger, CreatedAt: nowFunc(),
+			}); err != nil {
+				t.Fatalf("insert inject before %s: %v", target, err)
+			}
+			return op
+		}
+		err := c.AppendCommitted(Message{
+			ID: NewMessageID(), Parent: d.parent(c), Role: RoleInject,
+			Content: body, Source: source, Trigger: trigger, CreatedAt: nowFunc(),
+		})
+		if err != nil {
+			t.Fatalf("commit inject: %v", err)
+		}
+	case 14: // D150 必然失败路径：非 inject 节点带 Source/Trigger 必须被拒（防误标）
+		bad := []Message{
+			{ID: NewMessageID(), Parent: c.Head, Role: RoleUser,
+				Content: textParts("x"), Source: "tool:x", CreatedAt: nowFunc()},
+			{ID: NewMessageID(), Parent: c.Head, Role: RoleSystem,
+				Content: textParts("x"), Trigger: true, CreatedAt: nowFunc()},
+			{ID: NewMessageID(), Parent: c.Head, Role: RoleAssistant,
+				Content: textParts("x"), Source: "job:j", CreatedAt: nowFunc()},
+		}
+		for _, m := range bad {
+			if err := c.AppendCommitted(m); err == nil {
+				t.Fatalf("non-inject node with source/trigger accepted: %+v", m)
+			}
 		}
 	}
 	return op

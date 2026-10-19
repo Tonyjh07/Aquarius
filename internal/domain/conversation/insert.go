@@ -15,9 +15,10 @@ package conversation
 
 import "fmt"
 
-// insertablePadRole 衬垫节点可用的角色（D152）：衬垫是上下文/水位，不是伪造的发言，故只放
-// system。inject 角色要等注入节点落地（D150）后才存在，届时在这里一并放开。
-func insertablePadRole(role Role) bool { return role == RoleSystem }
+// insertablePadRole 衬垫节点可用的角色（D152/D150）：衬垫是上下文/水位，不是伪造的发言，
+// 故只放 system（水位）与 inject（只追加的上下文）。D152 先把闸门按 system 收，注入节点
+// 落地（D150）后在此一并放开。
+func insertablePadRole(role Role) bool { return role == RoleSystem || role == RoleInject }
 
 // InsertBefore 在 id 之前插入一个衬垫节点（D152）：内容由调用方给，ID/父/时间戳由领域定。
 func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Message, error) {
@@ -25,7 +26,7 @@ func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Mess
 }
 
 // InsertCommitted 在 id 之前插入一个已组装好的衬垫节点（D152）。
-//   - pad.Role 必须是 system（insertablePadRole）；pad.ID 为空则由领域分配，非空则沿用
+//   - pad.Role 必须是 system|inject（insertablePadRole）；pad.ID 为空则由领域分配，非空则沿用
 //     （模型生成的摘要要先用该 ID 关联流式事件，再随节点入树）且不得与树中节点撞车；
 //   - pad.Parent 不作数（位置由 id 决定，恒为 id 的原父），pad.CreatedAt 为空则取当前时刻；
 //   - id 必须是树中节点且不是 Root（根前无处可插）；校验不过一律 ErrInvalidNode/ErrNotFound，
@@ -40,7 +41,7 @@ func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, erro
 		return Message{}, fmt.Errorf("insert before %q: %w: 会话根节点之前无处可插", id, ErrInvalidNode)
 	}
 	if !insertablePadRole(pad.Role) {
-		return Message{}, fmt.Errorf("insert before %q: %w: 衬垫节点角色仅限 system（实为 %q）",
+		return Message{}, fmt.Errorf("insert before %q: %w: 衬垫节点角色仅限 system|inject（实为 %q）",
 			id, ErrInvalidNode, pad.Role)
 	}
 	if len(pad.Content) == 0 {

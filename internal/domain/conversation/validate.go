@@ -9,11 +9,16 @@ import (
 
 // checkNodeShape 校验单个节点的形态约束（与树无关）：
 // 空 ID、Root/非 Root 的 Parent 规则、思考/工具分片仅 assistant 可携带（D42/D95）、
-// 工具分片 CallID 非空且节点内唯一、Result.CallID 与分片一致（D95）。
+// 工具分片 CallID 非空且节点内唯一、Result.CallID 与分片一致（D95）、
+// Source/Trigger 仅 inject 节点可携带（D150）。
 // D95 后无跨节点引用检查——调用与结果同片，不存在失联。
 func checkNodeShape(m Message) error {
 	if m.ID == "" {
 		return fmt.Errorf("%w: empty id", ErrInvalidNode)
+	}
+	// D150：Source/Trigger 是注入节点专有字段，防未来某条路径把它们写到别的角色上。
+	if m.Role != RoleInject && (m.Source != "" || m.Trigger) {
+		return fmt.Errorf("node %q: %w: source/trigger only allowed on inject message", m.ID, ErrInvalidNode)
 	}
 	if m.Role == RoleRoot {
 		// Root 即会话（D19）：唯一空 Parent、空内容、无生成痕迹节点。
@@ -28,7 +33,7 @@ func checkNodeShape(m Message) error {
 	if m.Parent == "" {
 		return fmt.Errorf("node %q: %w: non-root node requires a parent", m.ID, ErrInvalidNode)
 	}
-	if m.Role != RoleUser && m.Role != RoleAssistant && m.Role != RoleSystem {
+	if m.Role != RoleUser && m.Role != RoleAssistant && m.Role != RoleSystem && m.Role != RoleInject {
 		return fmt.Errorf("node %q: %w: unknown role %q", m.ID, ErrInvalidNode, m.Role)
 	}
 	// 思考分片（D42）与工具分片（D95）仅 assistant 可携带：入树入口统一把关。
