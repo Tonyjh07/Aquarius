@@ -31,8 +31,12 @@ const (
 type GraphNode struct {
 	ID      conversation.MessageID
 	Parent  conversation.MessageID // 结构根为空串
-	Role    conversation.Role      // root/user/assistant/system（类别）
+	Role    conversation.Role      // root/user/assistant/system/inject（类别）
 	Snippet string                 // 展示用短摘要（渲染文本首行片段；非推理口径）
+	// Source/Trigger 注入节点的来源与触发记录（D150；仅 Role=inject 非零值），与
+	// Role/Snippet 同族、出自同一快照：展示侧据此画来源行与「已触发/未触发」。
+	Source  string
+	Trigger bool
 	// CreatedAt 节点创建时刻（D96 的 Clone 保留原值，故不保证与 ID 序一致）。
 	CreatedAt time.Time
 	// EdgeKind 与父边的种类；结构根无父边，为零值（""）。

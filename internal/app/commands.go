@@ -21,6 +21,8 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"regen"}, Usage: "<id>", Desc: "重新生成：已有回答则在其上游分叉重发；无回答则直接生成"},
 	{Names: []string{"respond"}, Usage: "<id>",
 		Desc: "从所选节点继续生成一条响应：把其水位以上至该节点的上下文发给模型（已有子节点则开新分支）"},
+	{Names: []string{"inject"}, Usage: "[--source <名>] [--no-trigger] <文本>",
+		Desc: "手动注入一条上下文（入树为注入节点）：默认起一轮响应，--no-trigger 只塞进上下文；--source 标注来源"},
 	{Names: []string{"branch"}, Usage: "[id]", Desc: "展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）"},
 	{Names: []string{"rm"}, Usage: "<id>", Desc: "删除节点及整棵子树（二次确认）"},
 	{Names: []string{"rmconv"}, Usage: "<id前缀>", Desc: "删除整个会话（二次确认；删当前会话会自动切换到另一个）"},

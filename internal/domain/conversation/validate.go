@@ -75,6 +75,15 @@ func checkNodeShape(m Message) error {
 	return nil
 }
 
+// ValidateInjectParts 校验一组待注入内容分片的形态（D150）：与节点入树走**同一条**规则
+// （思考/工具分片仅 assistant 可携带 ⇒ 注入内容一律拒），供外部生产者（工具/MCP/轮询器）
+// 在**入队前**当场拒掉坏包——不必先改树再回滚。空包由调用方按语义拒，此处不判空。
+//
+// 实现 = 拿一份注入形态的探针节点过 checkNodeShape：规则只有一处，避免两边各写一套词表。
+func ValidateInjectParts(parts []Part) error {
+	return checkNodeShape(Message{ID: "inject-content", Parent: "inject-parent", Role: RoleInject, Content: parts})
+}
+
 // Validate 整树自检：不变量 1（树合法：唯一实根、双向一致、无环、Head 在树）必须恒成立，
 // 另查结构元数据一致性（RevisedFrom 两端存在、Children 父节点存在）。
 // 不变量 2（节点不可变）由操作 API 保证，性质测试以快照比对守护（DESIGN §11）。

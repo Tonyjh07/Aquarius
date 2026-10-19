@@ -107,6 +107,10 @@ type Session struct {
 	// resumed 本次启动是否恢复了既有会话（NewSession 走 Load 分支）；
 	// ReplayHistory 仅在恢复时回放（新建会话无历史可回放，D40/§7.4）。
 	resumed bool
+	// injectCh 注入队列（D150）：工具/MCP/轮询器等外部生产者经 Inject 非阻塞入队，
+	// 落地由会话 goroutine 在排空点（Handle 入口 / 轮末 / 驱动式命令）独占执行——
+	// 树变更始终单线程（§7.5），外部 goroutine 只碰这个 channel。
+	injectCh chan pendingInjection
 
 	// dynMu 保护 dynamic/dynamicMeta：REPL 主循环读、插件启停回调（可能来自崩溃重启的
 	// watch goroutine）写，须加锁（§10 并发语义）。
@@ -172,6 +176,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persistThink:  d.PersistThink,
 		persistEffort: d.PersistEffort,
 		dynamic:       map[string]CommandHandler{},
+		injectCh:      make(chan pendingInjection, injectQueueCap),
 	}
 
 	list, err := d.Store.List(ctx)
@@ -291,6 +296,11 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	defer s.publishTree()
 	defer s.publishFacts(ctx)
 	defer s.publishSessions(ctx)
+	// D150 排空点①：用户输入优先，先把外部生产者攒下的注入落地（只落地、不起轮，
+	// 触发留给本轮——用户马上就发话，不必为注入单起一轮）。
+	if _, _, err := s.drainInjections(ctx, false, true); err != nil {
+		return "", err
+	}
 	if in.Command != nil {
 		return s.execCommand(ctx, *in.Command)
 	}
@@ -309,6 +319,9 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 }
 
 // runTurn 执行一轮 Turn 并落盘：成败都保存（error/cancelled 终态的节点同样持久化）。
+//
+// D150 排空点②：本 Turn 提交后，把轮内（工具等）攒下的注入落地——**只落地、不打断当前轮**
+// （Trigger 记 false）；轮内注入是补上下文，何时起响应交给用户的下一条输入或空闲唤醒。
 func (s *Session) runTurn(ctx context.Context) error {
 	runErr := s.agent.Run(ctx, s.cur)
 	if err := s.store.Save(ctx, s.cur); err != nil {
@@ -318,7 +331,13 @@ func (s *Session) runTurn(ctx context.Context) error {
 		}
 		return fmt.Errorf("session: 保存会话: %w", err)
 	}
-	return runErr
+	if runErr != nil {
+		return runErr
+	}
+	// 轮内注入的落地：只落地、Trigger 记 false；发 HistoryEvent 让转写区补上这条记录
+	// （轮末不清屏，与 /goto 的回放口径区分）。
+	_, _, err := s.drainInjections(ctx, false, true)
+	return err
 }
 
 // ingestAndRun 多模态输入管线（M3，D27：/attach 等触发命令面留 §14，D27/D33）：
@@ -412,6 +431,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return s.execRegen(ctx, cmd)
 	case "respond":
 		return s.execRespond(ctx, cmd)
+	case "inject":
+		return s.execInject(ctx, cmd)
 	case "branch":
 		return s.execBranch(ctx, cmd)
 	case "rm":

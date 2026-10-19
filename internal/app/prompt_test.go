@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // convWithUser 造带一条 user 消息的会话。
@@ -351,5 +352,114 @@ func TestAssemblePathSkipsEmptyNodes(t *testing.T) {
 	}
 	if len(msgs) != 1 || msgs[0].Role != "user" {
 		t.Fatalf("msgs = %+v, want 只剩首条 user", msgs)
+	}
+}
+
+// appendInject 在会话尾部追加一条注入节点（D150，测试用）。
+func appendInject(t *testing.T, c *conversation.Conversation, source, text string) {
+	t.Helper()
+	err := c.AppendCommitted(conversation.Message{
+		ID: conversation.NewMessageID(), Parent: c.Head, Role: conversation.RoleInject,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: text}},
+		Source:  source, CreatedAt: testTime,
+	})
+	if err != nil {
+		t.Fatalf("append inject: %v", err)
+	}
+}
+
+// TestAssemblePathInjectionProjection D150 投影矩阵：来源决定角色与围栏——
+//   - user: 直投影 user、不套围栏；
+//   - job:/poller: 投影 system、不套围栏（宿主的事实汇报）；
+//   - tool:/plugin:/未知: 投影 user + 围栏 + 前置英文说明句（不可信数据口径，§9）。
+func TestAssemblePathInjectionProjection(t *testing.T) {
+	joinText := func(m port.PromptMessage) string {
+		var b strings.Builder
+		for _, p := range m.Content {
+			b.WriteString(p.Text)
+		}
+		return b.String()
+	}
+
+	cases := []struct {
+		source     string
+		text       string
+		wantRole   string
+		wantFenced bool
+	}{
+		{"user", "手动补充", "user", false},
+		{"job:j1", "任务完成", "system", false},
+		{"poller:p1", "轮询状态", "system", false},
+		{"tool:think", "工具上下文", "user", true},
+		{"plugin:demo", "插件输出", "user", true},
+		{"custom:thing", "未知来源", "user", true},
+	}
+	for _, tc := range cases {
+		c := convWithUser(t)
+		appendInject(t, c, tc.source, tc.text)
+		msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+		if err != nil {
+			t.Fatalf("%s: assemble: %v", tc.source, err)
+		}
+		inj := msgs[len(msgs)-1]
+		if inj.Role != tc.wantRole {
+			t.Fatalf("%s: role = %q, want %q", tc.source, inj.Role, tc.wantRole)
+		}
+		body := joinText(inj)
+		if !strings.Contains(body, tc.text) {
+			t.Fatalf("%s: 正文缺内容: %q", tc.source, body)
+		}
+		fenced := strings.Contains(body, "<injected-context") && strings.Contains(body, "</injected-context>")
+		if fenced != tc.wantFenced {
+			t.Fatalf("%s: 围栏 = %v, want %v（body=%q）", tc.source, fenced, tc.wantFenced, body)
+		}
+		if tc.wantFenced {
+			if !strings.Contains(body, "not a user instruction") {
+				t.Fatalf("%s: 围栏缺前置说明句: %q", tc.source, body)
+			}
+			if !strings.Contains(body, `source="`+escapeFenceAttr(tc.source)+`"`) {
+				t.Fatalf("%s: 围栏缺来源属性: %q", tc.source, body)
+			}
+		}
+	}
+}
+
+// TestAssemblePathInjectionFenceEscapesSource 围栏属性转义（§9）：来源名来自外部（MCP
+// 工具名），含 `"`/`<`/`>` 时不得提前闭合标签。
+func TestAssemblePathInjectionFenceEscapesSource(t *testing.T) {
+	c := convWithUser(t)
+	appendInject(t, c, `tool:a"><b`, "x")
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	inj := msgs[len(msgs)-1]
+	var body strings.Builder
+	for _, p := range inj.Content {
+		body.WriteString(p.Text)
+	}
+	if strings.Contains(body.String(), `"><b`) {
+		t.Fatalf("原始危险字符未被转义: %q", body.String())
+	}
+	if !strings.Contains(body.String(), "&quot;&gt;&lt;") {
+		t.Fatalf("转义结果不符: %q", body.String())
+	}
+}
+
+// TestAssemblePathInjectionEmptySkipped 空注入节点不占一条消息（与 user/system 同规则）。
+func TestAssemblePathInjectionEmptySkipped(t *testing.T) {
+	c := convWithUser(t)
+	if err := c.AppendCommitted(conversation.Message{
+		ID: conversation.NewMessageID(), Parent: c.Head, Role: conversation.RoleInject,
+		Source: "job:j", CreatedAt: testTime,
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].Role != "user" {
+		t.Fatalf("msgs = %+v, want 仅首条 user", msgs)
 	}
 }

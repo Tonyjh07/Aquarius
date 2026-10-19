@@ -79,6 +79,8 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 			Parent:       m.Parent,
 			Role:         m.Role,
 			Snippet:      nodeSummary(m),
+			Source:       m.Source,
+			Trigger:      m.Trigger,
 			CreatedAt:    m.CreatedAt,
 			EdgeKind:     ek,
 			SiblingIdx:   sibIdx[id],
