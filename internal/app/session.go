@@ -410,6 +410,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return s.execEdit(ctx, cmd)
 	case "regen":
 		return s.execRegen(ctx, cmd)
+	case "respond":
+		return s.execRespond(ctx, cmd)
 	case "branch":
 		return s.execBranch(ctx, cmd)
 	case "rm":

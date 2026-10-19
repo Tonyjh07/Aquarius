@@ -19,6 +19,8 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"edit"}, Usage: "<id> [--keep|--copy] [--part N] <文本>",
 		Desc: "修改消息：缺省开新分支（等同重新回答）；--keep 把后续历史转到新分支；--copy 深拷贝后续历史；--part N 只改第 N 个正文分片、其余原样保留"},
 	{Names: []string{"regen"}, Usage: "<id>", Desc: "重新生成：已有回答则在其上游分叉重发；无回答则直接生成"},
+	{Names: []string{"respond"}, Usage: "<id>",
+		Desc: "从所选节点继续生成一条响应：把其水位以上至该节点的上下文发给模型（已有子节点则开新分支）"},
 	{Names: []string{"branch"}, Usage: "[id]", Desc: "展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）"},
 	{Names: []string{"rm"}, Usage: "<id>", Desc: "删除节点及整棵子树（二次确认）"},
 	{Names: []string{"rmconv"}, Usage: "<id前缀>", Desc: "删除整个会话（二次确认；删当前会话会自动切换到另一个）"},
