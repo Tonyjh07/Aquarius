@@ -911,6 +911,7 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 	f.page = pageSecrets
 	f.syncSecretsSnapshot() // 同步密钥库快照（铺出条目行）
 	f.secretsStatus = "ok"  // 覆盖 rowSecretStatus 行型
+	f.importStatus = "ok"   // 覆盖 rowSecretImport 行型里的导入反馈分支
 	th := testTheme()
 
 	for p := 0; p < settingsPageCount; p++ {
@@ -1546,11 +1547,13 @@ func TestToolsPageNotWired(t *testing.T) {
 // fakeSecretsAdmin SecretsAdmin 测试替身：内存键值表 + Revision 递增 + 动作记录。
 // 语义对齐 secretbin：Put 空值/空名报错、Delete 不存在报错、快照按名字排序。
 type fakeSecretsAdmin struct {
-	mu      sync.Mutex
-	snap    SecretsSnapshot
-	rev     int64
-	store   map[string]string
-	actions []string
+	mu        sync.Mutex
+	snap      SecretsSnapshot
+	rev       int64
+	store     map[string]string
+	actions   []string
+	importRes SecretsImportResult
+	importErr error
 }
 
 func (a *fakeSecretsAdmin) Snapshot() SecretsSnapshot {
@@ -1589,6 +1592,15 @@ func (a *fakeSecretsAdmin) Delete(name string) error {
 	delete(a.store, name)
 	a.rebuild()
 	return nil
+}
+
+// Import 一键导入的测试替身：按预设的 importRes / importErr 返回（真口径见
+// cmd/aquarius 侧；本层只关心动作分派、状态行与「值不回显」）。
+func (a *fakeSecretsAdmin) Import() (SecretsImportResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.actions = append(a.actions, "import")
+	return a.importRes, a.importErr
 }
 
 // rebuild 从 store 重建快照条目（按名字排序，掩码只出尾 4 位；与 secretbin 口径一致）。
@@ -1808,6 +1820,58 @@ func TestSecretsPageConfirmClearedOnSnapshot(t *testing.T) {
 	_ = u
 }
 
+// TestSecretsPageImport 一键导入：动作分派到管理面，状态行只报条数、**不含值**；
+// 失败项以错误态呈现。
+func TestSecretsPageImport(t *testing.T) {
+	restoreLight(t)
+	u, f, sa := secretsPageUI(t, SecretsSnapshot{}, nil)
+	sa.importRes = SecretsImportResult{
+		Imported:  []string{"AQUARIUS_OPENAI_API_KEY", "MCP_DOCS_TOKEN"},
+		Rewritten: []string{"AQUARIUS_OPENAI_API_KEY"},
+		Skipped:   []string{"AQ_NOT_SET"},
+	}
+	u.secretsAction(f, "import", "")
+	if got := sa.actionList(); len(got) != 1 || got[0] != "import" {
+		t.Fatalf("动作 = %v", got)
+	}
+	if f.importErr {
+		t.Fatalf("无失败项不应是错误态: %q", f.importStatus)
+	}
+	// 反馈只报条数（名字在上方列表里），故断言条数 + 改写说明，不列键名。
+	for _, want := range []string{"已导入 2 条", "1 条配置里的明文已改为 secret: 引用", "1 条两处都取不到"} {
+		if !strings.Contains(f.importStatus, want) {
+			t.Fatalf("状态行应含 %q: %q", want, f.importStatus)
+		}
+	}
+	if strings.Contains(f.importStatus, "sk-") {
+		t.Fatalf("状态行不得回显值: %q", f.importStatus)
+	}
+
+	// 失败项 → 错误态（红字），并点名失败说明。
+	sa.importRes = SecretsImportResult{Failed: []string{`provider "a" 写入密钥库失败：磁盘满`}}
+	u.secretsAction(f, "import", "")
+	if !f.importErr || !strings.Contains(f.importStatus, "磁盘满") {
+		t.Fatalf("失败项反馈 = (%v, %q)", f.importErr, f.importStatus)
+	}
+
+	// 管理面报错（如库解不开被拒）→ 错误态。
+	sa.importErr = errors.New("本机密钥库解不开")
+	u.secretsAction(f, "import", "")
+	if !f.importErr || !strings.Contains(f.importStatus, "导入失败") {
+		t.Fatalf("拒绝导入反馈 = (%v, %q)", f.importErr, f.importStatus)
+	}
+}
+
+// TestSecretsPageImportNoSource 没有可导入的来源：状态行如实说明（不是错误态）。
+func TestSecretsPageImportNoSource(t *testing.T) {
+	restoreLight(t)
+	u, f, _ := secretsPageUI(t, SecretsSnapshot{}, nil)
+	u.secretsAction(f, "import", "")
+	if f.importErr || !strings.Contains(f.importStatus, "没有需要导入") {
+		t.Fatalf("空导入反馈 = (%v, %q)", f.importErr, f.importStatus)
+	}
+}
+
 // TestSecretsPageNotWired 未接线（Secrets = nil）：只读占位 + 存入按钮禁用，动作报错。
 func TestSecretsPageNotWired(t *testing.T) {
 	restoreLight(t)
@@ -1828,5 +1892,10 @@ func TestSecretsPageNotWired(t *testing.T) {
 	u.secretsAction(f, "put", "")
 	if !f.secretsErr || !strings.Contains(f.secretsStatus, "未接线") {
 		t.Fatalf("未接线反馈 = (%v, %q)", f.secretsErr, f.secretsStatus)
+	}
+	// 「导入旧密钥」同样只置只读反馈（未接线时不触达管理面）。
+	u.secretsAction(f, "import", "")
+	if !f.importErr || !strings.Contains(f.importStatus, "未接线") {
+		t.Fatalf("未接线导入反馈 = (%v, %q)", f.importErr, f.importStatus)
 	}
 }

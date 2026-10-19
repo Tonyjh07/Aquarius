@@ -11,6 +11,9 @@ package uigui
 // 状态行与错误串都不含值。
 
 import (
+	"fmt"
+	"strings"
+
 	"gioui.org/layout"
 	"gioui.org/widget/material"
 )
@@ -23,6 +26,24 @@ type SecretsAdmin interface {
 	Put(name, value string) error
 	// Delete 删除一条；名字不存在报错（不静默成功）。
 	Delete(name string) error
+	// Import 一键把「旧处的密钥」收进密钥库：config 里仍是明文的 api_key（收库后把 config
+	// 改写成 `secret:<名>` 引用），以及「库里没有、只存在于同名环境变量里」的引用值。
+	// 同步执行（本地小文件 IO + 一次配置改写）。**库解不开时拒绝**——写库会从空表起步，
+	// 那等于把库里已有条目整份丢掉。返回结果只含键名与说明，永不含值。
+	Import() (SecretsImportResult, error)
+}
+
+// SecretsImportResult 一键导入的结果（只报条数与键名，永不含值）。
+type SecretsImportResult struct {
+	// Imported 已存入密钥库的键名（按名字排序）。
+	Imported []string
+	// Rewritten 其中配置里原为明文、已改写为 `secret:` 引用的键名（按名字排序）。
+	Rewritten []string
+	// Skipped 两处（密钥库与环境变量）都取不到的引用名（按名字排序）——没有可收的来源，
+	// 不是错误；列出来是让用户知道哪些引用还空着。
+	Skipped []string
+	// Failed 未能导入的说明（点名 provider 与引用名，不含值）。
+	Failed []string
 }
 
 // SecretsSnapshot 密钥库页的原子快照。
@@ -67,9 +88,17 @@ func secretsSnapHas(s SecretsSnapshot, name string) bool {
 }
 
 // secretsAction 密钥库页动作分发（同步；帧首调用）。动作不接线时只置只读反馈。
+//
+// 反馈分两条槽：存入/删除用 `secretsStatus`（状态行在新增区之后），导入用 `importStatus`
+// （状态行紧贴导入按钮）——合成一条的话导入结果会落到整页末尾，按钮点完看不见反馈。
 func (u *UI) secretsAction(f *settingsForm, act string, name string) {
 	if f.secrets == nil {
-		f.secretsErr, f.secretsStatus = true, "密钥库未接线（只读占位）"
+		// 反馈落在本动作自己的槽位上（导入那条状态行在导入按钮旁边）。
+		if act == "import" {
+			f.importErr, f.importStatus = true, "密钥库未接线（只读占位）"
+		} else {
+			f.secretsErr, f.secretsStatus = true, "密钥库未接线（只读占位）"
+		}
 		return
 	}
 	switch act {
@@ -98,14 +127,51 @@ func (u *UI) secretsAction(f *settingsForm, act string, name string) {
 		}
 		f.secretsErr, f.secretsStatus = false, "已删除："+name
 		f.secretConfirm = ""
+	case "import":
+		res, err := f.secrets.Import()
+		if err != nil {
+			f.importErr, f.importStatus = true, "导入失败："+err.Error()
+			break
+		}
+		status, isErr := importSummary(res)
+		f.importErr, f.importStatus = isErr, status
 	}
 	f.syncSecretsSnapshot() // 动作后立刻重取快照（Revision 已递增），本帧即刷新列表
 }
 
-// secretStatusRow 密钥库页反馈行（错误红 / 普通灰）。
+// importSummary 一键导入的反馈文案（只报条数，永不含值）。**不列键名**：收到库里的名字
+// 就在上方「已存密钥」列表里，重复列一遍只会把这条反馈撑成三行、在按钮右侧挤到窗底。
+// 失败项一律红字呈现；无失败项时按普通灰呈现。
+func importSummary(r SecretsImportResult) (string, bool) {
+	var b strings.Builder
+	switch len(r.Imported) {
+	case 0:
+		b.WriteString("没有需要导入的密钥")
+	default:
+		fmt.Fprintf(&b, "已导入 %d 条", len(r.Imported))
+		if len(r.Rewritten) > 0 {
+			fmt.Fprintf(&b, "（其中 %d 条配置里的明文已改为 secret: 引用）", len(r.Rewritten))
+		}
+	}
+	if len(r.Skipped) > 0 {
+		fmt.Fprintf(&b, "；另有 %d 条两处都取不到，未导入", len(r.Skipped))
+	}
+	if len(r.Failed) > 0 {
+		fmt.Fprintf(&b, "；%d 条失败：%s", len(r.Failed), strings.Join(r.Failed, "；"))
+		return b.String(), true
+	}
+	return b.String(), false
+}
+
+// secretStatusRow 密钥库页反馈行（错误红 / 普通灰）；文案取 f.secretsStatus（存入/删除）。
 func (f *settingsForm) secretStatusRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	l := material.Body2(th, f.secretsStatus)
-	if f.secretsErr {
+	return f.secretStatusRowOf(gtx, th, f.secretsStatus, f.secretsErr)
+}
+
+// secretStatusRowOf 密钥库页反馈行本体（导入与存入/删除各自一条，故文案与错误态作参数）。
+func (f *settingsForm) secretStatusRowOf(gtx layout.Context, th *material.Theme, text string, isErr bool) layout.Dimensions {
+	l := material.Body2(th, text)
+	if isErr {
 		l.Color = paperOf().danger
 	} else {
 		l.Color = paperOf().text3

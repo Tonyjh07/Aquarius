@@ -419,6 +419,10 @@ func listProfiles(dir string) []string {
 	return names
 }
 
+// defaultSecretRef 密钥引用缺省回落（D35）：api_key 为空时按它取用（resolveAPIKey 与
+// 一键导入共用同一口径——不一致会让「启动用环境变量、导入却跳过」看起来像漏导入）。
+const defaultSecretRef = "secret:AQUARIUS_OPENAI_KEY"
+
 // secretName 校验 secret 引用并返回环境变量名。
 func secretName(ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
@@ -437,7 +441,7 @@ func secretName(ref string) (string, error) {
 func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, stderr io.Writer) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		ref = "secret:AQUARIUS_OPENAI_KEY"
+		ref = defaultSecretRef
 	}
 	if !strings.HasPrefix(ref, "secret:") {
 		secretBoundWarn(stderr, provider)
