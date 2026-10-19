@@ -197,7 +197,9 @@ func TestSummaryModalBlocksGraph(t *testing.T) {
 	li, sx := -1, f32.Point{}
 	for i, gi := range st.graph.vis.nodes {
 		x, y := st.graph.toScreen(st.graph.sol.Pos[gi])
-		if st.graph.hitTest(x, y) == i && st.model.nodes[gi].id != "a1" {
+		// 排除卡目标与**会话根**：根左键是复制会话 ID（2026-10-25 用户批注），不开遮罩。
+		if st.graph.hitTest(x, y) == i && st.model.nodes[gi].id != "a1" &&
+			st.model.nodes[gi].role != conversation.RoleRoot {
 			li, sx = i, f32.Pt(x, y)
 			break
 		}

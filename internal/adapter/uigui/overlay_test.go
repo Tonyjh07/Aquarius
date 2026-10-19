@@ -246,6 +246,10 @@ func TestOverlayOpenClickDoesNotCloseItself(t *testing.T) {
 	li := -1
 	var pos f32.Point
 	for i, gi := range st.graph.vis.nodes {
+		// 排除**会话根**：根左键是复制会话 ID（2026-10-25 用户批注），不开遮罩。
+		if st.graph.isRoot(i) {
+			continue
+		}
 		x, y := st.graph.toScreen(st.graph.sol.Pos[gi])
 		p := f32.Pt(x, y)
 		if p.X < float32(card.Min.X) || p.X > float32(card.Max.X) {

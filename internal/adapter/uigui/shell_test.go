@@ -369,6 +369,8 @@ func TestNodeMenuItemsContract(t *testing.T) {
 		{id: cmdBubbleQuote, label: "引用"},
 		{id: cmdBubbleRaw, label: "查看原文"},
 	}
+	// 「生成响应」贴在气泡项组末尾、分隔线之前（2026-10-25 用户批注，任何非根节点都给）。
+	respond := menuIt{id: cmdNodeRespond, label: "生成响应"}
 	graph := []menuIt{
 		{id: cmdNodeCopyID, label: "复制 ID"},
 		{id: cmdNodeSummary, label: "插入摘要"},
@@ -376,7 +378,8 @@ func TestNodeMenuItemsContract(t *testing.T) {
 		{id: cmdNodeGoto, label: "转到"},
 	}
 	graphNoSummary := append(append([]menuIt{}, graph[:1]...), graph[2:]...)
-	full := append(append([]menuIt{}, bubble...), menuIt{})
+	full := append(append([]menuIt{}, bubble...), respond)
+	full = append(full, menuIt{})
 	full = append(full, graph...)
 
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
@@ -391,9 +394,10 @@ func TestNodeMenuItemsContract(t *testing.T) {
 			}
 		}
 	}
-	// root/system（blockPlain）：不给编辑三方式与重新生成。
+	// root/system（blockPlain）：不给编辑三方式与重新生成，但仍给「生成响应」（从系统
+	// 节点续写也合法；根节点整份菜单在图侧另拦，不在此处）。
 	got := nodeMenuItems(blockPlain, true, true)
-	want := append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, {}}, graph...)
+	want := append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, respond, {}}, graph...)
 	if len(got) != len(want) {
 		t.Fatalf("root/system 项数 = %d, want %d", len(got), len(want))
 	}
@@ -402,9 +406,9 @@ func TestNodeMenuItemsContract(t *testing.T) {
 			t.Fatalf("root/system 项[%d] = {%d %q}, want {%d %q}", i, got[i].id, got[i].label, want[i].id, want[i].label)
 		}
 	}
-	// 无正文节点：只剩图侧项（不拿空文本预填编辑框）。
+	// 无正文节点：只剩「生成响应」 + 图侧项（不拿空文本预填编辑框）。
 	got = nodeMenuItems(blockUser, false, true)
-	want = append([]menuIt{{}}, graph...)
+	want = append([]menuIt{respond, {}}, graph...)
 	if len(got) != len(want) {
 		t.Fatalf("无正文项数 = %d, want %d", len(got), len(want))
 	}
@@ -415,7 +419,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 	}
 	// 不可插目标（会话根 / 会话首节点人格）：少「插入摘要」，其余不变。
 	got = nodeMenuItems(blockPlain, true, false)
-	want = append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, {}}, graphNoSummary...)
+	want = append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, respond, {}}, graphNoSummary...)
 	if len(got) != len(want) {
 		t.Fatalf("不可插目标项数 = %d, want %d", len(got), len(want))
 	}
@@ -433,8 +437,8 @@ func TestNodeMenuRouting(t *testing.T) {
 	u.inCh = make(chan port.UserInput, 8)
 	u.bubbleMenu.Store(&bubbleMenuCtx{id: "u1", kind: blockUser, copy: "正文", graph: true, canSummary: true})
 	items := u.menuItems(platform.MenuBubble)
-	if len(items) != 12 {
-		t.Fatalf("图侧项数 = %d, want 12（气泡七项 + 分隔 + 图侧四项）", len(items))
+	if len(items) != 13 {
+		t.Fatalf("图侧项数 = %d, want 13（气泡七项 + 生成响应 + 分隔 + 图侧四项）", len(items))
 	}
 	if items[len(items)-1].Label != "转到" {
 		t.Fatalf("末项 = %q, want 转到", items[len(items)-1].Label)

@@ -1114,10 +1114,11 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	if g.menuArm {
 		t.Fatal("fire 后武装未解除")
 	}
-	// 项集 = 气泡七项 + 分隔线 + 图侧四项（D139 加「转到」；D152 加「插入摘要」）
+	// 项集 = 气泡七项 + 生成响应 + 分隔线 + 图侧四项（D139 加「转到」；D152 加「插入摘要」；
+	// 2026-10-25 加「生成响应」，贴气泡项组末尾、分隔线之前）
 	items := u.menuItems(platform.MenuBubble)
 	wantLabels := []string{"编辑", "编辑并转移历史", "编辑并复制历史", "重新生成", "复制",
-		"引用", "查看原文", "", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
+		"引用", "查看原文", "生成响应", "", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -1133,26 +1134,33 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 
 // TestRelGraphRightClickNoSummaryForRootAndPersona 会话根与会话首节点（人格）不出
 // 「插入摘要」：根前无处可插；人格之前插摘要会让摘要顶到路径第二位、被装配当成 persona。
+// 会话根整份菜单已删（2026-10-25 用户批注），故根只断言「不弹菜单」。
 func TestRelGraphRightClickNoSummaryForRootAndPersona(t *testing.T) {
 	u, st, q := relGraphFixture(t)
-	for _, id := range []conversation.MessageID{"r", "p"} {
-		li := relNodeIndex(t, st, id)
-		q.Queue(relRightPress(st, li))
-		q.Queue(relRightReleaseAt(st, li))
-		relGFrame(q, u, st)
-		ctx := u.bubbleMenu.Load()
-		if ctx == nil || ctx.id != id {
-			t.Fatalf("节点 %s 右键未出上下文: %+v", id, ctx)
+	// 会话根：右键不弹任何菜单。
+	li := relNodeIndex(t, st, "r")
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+	if ctx := u.bubbleMenu.Load(); ctx != nil {
+		t.Fatalf("会话根右键不应出上下文: %+v", ctx)
+	}
+	// 会话首节点（人格）：出菜单但没有「插入摘要」。
+	li = relNodeIndex(t, st, "p")
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+	ctx := u.bubbleMenu.Load()
+	if ctx == nil || ctx.id != "p" {
+		t.Fatalf("节点 p 右键未出上下文: %+v", ctx)
+	}
+	if ctx.canSummary {
+		t.Fatalf("节点 p（kind=%v）不应可插摘要", ctx.kind)
+	}
+	for _, it := range u.menuItems(platform.MenuBubble) {
+		if it.Label == "插入摘要" {
+			t.Fatal("节点 p 的菜单不该有「插入摘要」")
 		}
-		if ctx.canSummary {
-			t.Fatalf("节点 %s（kind=%v）不应可插摘要", id, ctx.kind)
-		}
-		for _, it := range u.menuItems(platform.MenuBubble) {
-			if it.Label == "插入摘要" {
-				t.Fatalf("节点 %s 的菜单不该有「插入摘要」", id)
-			}
-		}
-		u.bubbleMenu.Store(nil)
 	}
 }
 
@@ -1257,22 +1265,25 @@ func TestRelGraphMenuRegenAndQuote(t *testing.T) {
 	}
 }
 
-// TestRelGraphMenuRootNodeReduced 根节点（Role=root，不可编辑）→ 项集只给复制/查看原文 +
-// 图侧四项，不给编辑三方式与重新生成（D132：无正文可编辑的节点不给编辑类项）。
-func TestRelGraphMenuRootNodeReduced(t *testing.T) {
+// TestRelGraphMenuRootNodeNoMenu 会话根节点右键**不弹任何菜单**（2026-10-25 用户批注：
+// root 的右键菜单整份删掉；root 左键改为复制会话 ID，见 TestRelGraphRootLeftClickCopiesID）。
+func TestRelGraphMenuRootNodeNoMenu(t *testing.T) {
 	u, st, q := relGraphFixture(t)
 	q.Queue(relRightPress(st, 0)) // 0 = 局部 r（结构根）
 	q.Queue(relRightReleaseAt(st, 0))
 	relGFrame(q, u, st)
-	items := u.menuItems(platform.MenuBubble)
-	want := []string{"复制", "查看原文", "", "复制 ID", "删除该节点及子树", "转到"}
-	if len(items) != len(want) {
-		t.Fatalf("根节点项数 = %d, want %d", len(items), len(want))
+	if !st.graph.isRoot(0) {
+		t.Fatal("夹具局部 0 应为结构根")
 	}
-	for i, w := range want {
-		if items[i].Label != w {
-			t.Fatalf("第 %d 项 = %q, want %q", i, items[i].Label, w)
-		}
+	if st.graph.menuArm {
+		t.Fatal("会话根右键不应武装（整份菜单已去掉）")
+	}
+	if ctx := u.bubbleMenu.Load(); ctx != nil {
+		t.Fatalf("会话根右键不应弹菜单: %+v", ctx)
+	}
+	items := u.menuItems(platform.MenuBubble)
+	if len(items) != 0 {
+		t.Fatalf("会话根菜单项数 = %d, want 0（不弹菜单）", len(items))
 	}
 }
 
@@ -1291,7 +1302,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
+	want := []string{"生成响应", "", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -1342,6 +1353,68 @@ func TestRelGraphMenuCopyIDAction(t *testing.T) {
 	st.drainNodeAction(u, gtx)      // 复制 ID 的剪贴板写入在帧内执行（headless 无外部可观察量，
 	if u.nodeAction.Load() != nil { // 故只断言「动作被消费、不重复执行」）
 		t.Fatal("动作槽未排空")
+	}
+	if !st.toast.active(gtx.Now) || st.toast.text != "已复制节点 ID" {
+		t.Fatalf("复制 ID 未弹轻提示: %+v", st.toast)
+	}
+}
+
+// TestRelGraphMenuRespond 图侧「生成响应」→ 唤出主窗 + 投 /respond <id>（与键入同路径）。
+func TestRelGraphMenuRespond(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	const li = 4
+	want := st.model.nodes[st.vis.nodes[li]].id
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+
+	ctx := u.bubbleMenu.Load()
+	if ctx == nil || ctx.id != want {
+		t.Fatalf("菜单上下文 = %+v, want id %s", ctx, want)
+	}
+	u.menuChosen(platform.MenuBubble, cmdNodeRespond)
+	// 分发先 post showExpandMsg（唤出主窗），再 post inputMsg（/respond）——按序取。
+	var se showExpandMsg
+	if !relDrainAs(t, u, &se) {
+		t.Fatal("生成响应未唤出主窗")
+	}
+	var im inputMsg
+	if !relDrainAs(t, u, &im) {
+		t.Fatal("生成响应未投 inputMsg")
+	}
+	if im.text != "/respond "+string(want) {
+		t.Fatalf("投递命令 = %q, want /respond %s", im.text, want)
+	}
+}
+
+// TestRelGraphRootLeftClickCopiesID 会话根**原位左键**抬起 → 复制会话 ID（= 根节点 ID，
+// D19）+ 轻提示，**不开遮罩**（2026-10-25 用户批注：root 左键改为复制会话 ID、不弹窗）。
+func TestRelGraphRootLeftClickCopiesID(t *testing.T) {
+	u, st, q := relGraphFixture(t)
+	histFrameFor(q, u, st)
+	if !st.graph.isRoot(0) {
+		t.Fatal("夹具局部 0 应为结构根")
+	}
+	xs, ys := st.graph.toScreen(st.graph.sol.Pos[0])
+	rootID := st.model.nodes[st.vis.nodes[0]].id
+	at := ovPaneToWindow(f32.Pt(xs, ys))
+	q.Queue(relPointer(pointer.Press, at, true))
+	histFrameFor(q, u, st)
+	q.Queue(relPointer(pointer.Release, at, false))
+	histFrameFor(q, u, st)
+	if st.ov != nil {
+		t.Fatal("会话根左键不应开遮罩")
+	}
+	if !st.toast.active(time.Now()) || st.toast.text != "已复制会话 ID" {
+		t.Fatalf("会话根左键未弹「已复制会话 ID」: %+v", st.toast)
+	}
+	if string(rootID) == "" {
+		t.Fatal("根节点 ID 为空")
+	}
+	select {
+	case in := <-u.inCh:
+		t.Fatalf("左键复制不应投命令: %+v", in)
+	default:
 	}
 }
 

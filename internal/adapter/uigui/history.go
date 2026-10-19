@@ -68,6 +68,8 @@ type historyState struct {
 	// sum 「插入摘要」小卡（D152，nil = 未开启）：图侧菜单动作开卡，卡内两钮各投一条
 	// /summary；同样在屏期间按 modalActive 遮住背景。
 	sum *summaryDialog
+	// toast 窗内轻提示（复制 ID / 复制会话 ID 等的即时反馈）：帧尾渲染，约 2 秒后自动消失。
+	toast toastState
 }
 
 // newHistoryState 构造 winHistory 帧状态并做首帧数据同步。
@@ -271,6 +273,7 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 		if id := string(act.id); id != "" {
 			gtx.Execute(clipboard.WriteCmd{Type: "application/text",
 				Data: io.NopCloser(strings.NewReader(id))})
+			st.toast.show("已复制节点 ID", gtx.Now)
 		}
 	case nodeActGoto:
 		st.sendGoto(u, act.id)
@@ -307,29 +310,39 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							// D159：左栏可收起——收起态只剩一条窄轨（展开钮），宽度让给关系图。
-							// 两态都读**本帧**的 st.leftCollapsed：钮在同帧 dispatch 里翻转，
-							// 故点一下当帧就换宽度，不等到下一帧。
-							w, body := histLeftColumnDp, histLeftColumn
-							if st.leftCollapsed {
-								w, body = histLeftRailDp, histLeftRail
-							}
-							px := gtx.Dp(w)
-							gtx.Constraints = layout.Constraints{Min: image.Pt(px, 0), Max: image.Pt(px, gtx.Constraints.Max.Y)}
-							return body(gtx, th, u, st)
+					// 内容区（左栏 + 右图）与轻提示同层：轻提示贴**内容区**底缘，
+					// 不让开状态栏会在顶层 Stack 里压住状态栏（顶层只知整窗高，取像实测）。
+					return layout.Stack{}.Layout(gtx,
+						layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									// D159：左栏可收起——收起态只剩一条窄轨（展开钮），宽度让给关系图。
+									// 两态都读**本帧**的 st.leftCollapsed：钮在同帧 dispatch 里翻转，
+									// 故点一下当帧就换宽度，不等到下一帧。
+									w, body := histLeftColumnDp, histLeftColumn
+									if st.leftCollapsed {
+										w, body = histLeftRailDp, histLeftRail
+									}
+									px := gtx.Dp(w)
+									gtx.Constraints = layout.Constraints{Min: image.Pt(px, 0), Max: image.Pt(px, gtx.Constraints.Max.Y)}
+									return body(gtx, th, u, st)
+								}),
+								// 左栏与右图之间一条 hairline：两栏各自整高填充同色时，没有这条线
+								// 会长成一块——读者分不出「列表到此为止」。
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									pp := paperOf()
+									paint.FillShape(gtx.Ops, pp.hairline,
+										clip.Rect(image.Rectangle{Max: image.Pt(gtx.Dp(1), gtx.Constraints.Max.Y)}).Op())
+									return layout.Dimensions{Size: image.Pt(gtx.Dp(1), gtx.Constraints.Max.Y)}
+								}),
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									return histGraphArea(gtx, th, u, st)
+								}),
+							)
 						}),
-						// 左栏与右图之间一条 hairline：两栏各自整高填充同色时，没有这条线
-						// 会长成一块——读者分不出「列表到此为止」。
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							pp := paperOf()
-							paint.FillShape(gtx.Ops, pp.hairline,
-								clip.Rect(image.Rectangle{Max: image.Pt(gtx.Dp(1), gtx.Constraints.Max.Y)}).Op())
-							return layout.Dimensions{Size: image.Pt(gtx.Dp(1), gtx.Constraints.Max.Y)}
-						}),
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return histGraphArea(gtx, th, u, st)
+						// 轻提示（复制 ID / 复制会话 ID 反馈）：贴内容区底缘、短促、不拦截输入。
+						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+							return toastFrame(gtx, th, &st.toast, paperOf().tipBg)
 						}),
 					)
 				}),

@@ -36,6 +36,7 @@ const (
 	cmdNodeRm      = 131 // 删除该节点及子树（/rm <id>，与键入同路径经 inCh）
 	cmdNodeGoto    = 132 // 转到（/goto <id> + 唤出主窗；D139：原为单击动作）
 	cmdNodeSummary = 133 // 插入摘要（D152：弹本窗小卡，卡片两钮分别投 /summary <id> [文本]）
+	cmdNodeRespond = 134 // 生成响应（/respond <id> + 唤出主窗：从所选节点继续生成）
 )
 
 // nodeActKind 图侧动作槽的动作种类（D132：菜单分发在 shell 线程，而剪贴板写入必须在 Gio
@@ -122,16 +123,18 @@ func bubbleMenuItems(kind blockKind) []menuIt {
 	}
 }
 
-// nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** + 分隔线 +
-// 图侧**四项**（复制 ID / 插入摘要 / 删除该节点及子树 / 转到；D139 加「转到」——`/goto` 由单击
-// 移来，原叫「在主窗定位」；D152 加「插入摘要」；2026-10-19 用户批注：删除项改写成后果
-// （不再露出 `/rm` 命令名）、「在主窗定位」缩短为「转到」、撤掉与状态栏重复的「装下整树」）。
-// 同一呈现、同一分发，只有尾部不同。
+// nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** +
+// 「生成响应」 + 分隔线 + 图侧四项（复制 ID / 插入摘要 / 删除该节点及子树 / 转到；D139
+// 加「转到」——`/goto` 由单击移来，原叫「在主窗定位」；D152 加「插入摘要」；2026-10-19
+// 用户批注：删除项改写成后果（不再露出 `/rm` 命令名）、「在主窗定位」缩短为「转到」、
+// 撤掉与状态栏重复的「装下整树」；2026-10-25 用户批注：加「生成响应」，放在气泡项组末尾、
+// 分隔线之前）。同一呈现、同一分发，只有尾部不同。
 // hasText=false（节点无正文可取：工具结果节点、或 NodeText 未就绪）时不给编辑类项——
 // 拿空文本预填编辑框等于诱导用户提交空修订（内核会拒，但菜单不该诱导）；根/系统节点
 // 不可编辑，只给复制/查看原文。
 // canSummary=false（会话根与会话首节点人格）时不给「插入摘要」：根前无处可插；人格之前
 // 也不该出现摘要——摘要会顶到路径第二位、被装配当成 persona（水位语义随之失效）。
+// 注：会话根整份菜单在 openNodeMenu 处已被拦（2026-10-25 用户批注），本函数不再对根设门。
 func nodeMenuItems(kind blockKind, hasText, canSummary bool) []menuIt {
 	var head []menuIt
 	switch {
@@ -142,7 +145,11 @@ func nodeMenuItems(kind blockKind, hasText, canSummary bool) []menuIt {
 	default:
 		head = []menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}}
 	}
-	items := append(head, menuIt{}) // 分隔线
+	// 「生成响应」贴在**气泡项组末尾、分隔线之前**（2026-10-25 用户批注）：它是「对
+	// 这条消息做什么」，与编辑类同组更顺；且**任何非根节点都给**（含人格/系统/工具
+	// 节点）——从任意节点续写都合法（根节点整份菜单已去掉，故这里不再单独设门）。
+	items := append(head, menuIt{id: cmdNodeRespond, label: "生成响应"})
+	items = append(items, menuIt{}) // 分隔线
 	items = append(items, menuIt{id: cmdNodeCopyID, label: "复制 ID"})
 	if canSummary {
 		items = append(items, menuIt{id: cmdNodeSummary, label: "插入摘要"})
@@ -234,9 +241,9 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		case cmdNodeGoto:
 			u.nodeAction.Store(&nodeAction{kind: nodeActGoto, id: ctx.id})
 			return
-		case cmdBubbleQuote, cmdBubbleRegen:
-			// 这两项仍落在主窗输入栏/内核（引用追加、重生成），故图侧触发时先唤出主窗，
-			// 否则用户什么也看不见（D132 口径，D139 保留）。
+		case cmdBubbleQuote, cmdBubbleRegen, cmdNodeRespond:
+			// 这三项仍落在主窗输入栏/内核（引用追加、重生成、从节点续写），故图侧触发时
+			// 先唤出主窗，否则用户什么也看不见（D132 口径，D139 保留）。
 			_ = u.post(showExpandMsg{})
 		}
 	}
@@ -249,6 +256,9 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Clone, part: ctx.part})
 	case cmdBubbleRegen:
 		_ = u.post(inputMsg{text: "/regen " + string(ctx.id)})
+	case cmdNodeRespond:
+		// 图侧：从所选节点继续生成（与键入同路径，清屏回放后跑一轮）。
+		_ = u.post(inputMsg{text: "/respond " + string(ctx.id)})
 	case cmdBubbleCopy:
 		_ = u.post(copyMsg{text: ctx.copy})
 	case cmdBubbleQuote:

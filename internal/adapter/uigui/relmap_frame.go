@@ -7,8 +7,9 @@ package uigui
 // source 填充色、边型 = EdgeKind（顺接实线 / 版本链虚线）、标签 = 权重预算 + zoom 字号。
 //
 // 手势（§5.2 动词表）：拖拽空白 = pan；滚轮 = zoom（夹 [0.5,1.5]，**越界降级纵向平移**
-// A9）；悬停 = 陈述 tooltip（inspect）；左键节点 = /goto <id>（A10）；右键节点 = 菜单
-// （复制 ID / 插入摘要 / 删除该节点及子树 / 转到）。
+// A9）；悬停 = 陈述 tooltip（inspect，暂缓）；左键节点 = 开消息查看/编辑遮罩（D139；
+// 会话根 = 复制会话 ID，2026-10-25 用户批注）；右键节点 = 菜单（生成响应 / 复制 ID /
+// 插入摘要 / 删除该节点及子树 / 转到；会话根无菜单）。
 //
 // 性能纪律（§5.4）：视口外扩裁剪、懒重排（平移/缩放/悬停不重排——重排只由数据变更 /
 // rebudget 触发，R3）。
@@ -16,10 +17,13 @@ package uigui
 import (
 	"image"
 	"image/color"
+	"io"
 	"math"
+	"strings"
 
 	"gioui.org/f32"
 	"gioui.org/gesture"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -1118,7 +1122,11 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 			if e.Buttons.Contain(pointer.ButtonSecondary) {
 				// D132：右键 = 武装（同气泡口径 D92——按下武装、抬起才 fire，免得菜单在
 				// 按键未松时就弹出来吃掉这次抬起）；按在空白处不武装。
+				// 会话根**不武装**（2026-10-25 用户批注：root 的右键菜单整份删掉）。
 				g.menuNode = g.hitTest(e.Position.X, e.Position.Y)
+				if g.menuNode >= 0 && g.isRoot(g.menuNode) {
+					g.menuNode = -1
+				}
 				g.menuArm = g.menuNode >= 0
 				continue
 			}
@@ -1176,9 +1184,9 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 					g.releaseDrag() // 拖过 = 移动节点，不开遮罩
 				} else if !g.dragging && g.pressNode >= 0 &&
 					g.pressNode == g.hitTest(e.Position.X, e.Position.Y) {
-					// D139：原位抬起（未拖拽）= 开消息查看/编辑遮罩（`/goto` 移进图侧
-					// 右键菜单「转到」）。
-					g.inspectNode(u, st, g.pressNode)
+					// 原位抬起（未拖拽）：会话根 = 复制会话 ID（2026-10-25 用户批注）；
+					// 其余节点 = 开消息查看/编辑遮罩（D139，`/goto` 移进图侧右键菜单「转到」）。
+					g.activateNode(gtx, u, st, g.pressNode)
 				}
 				g.pressNode = -1
 				g.grabNode = -1
@@ -1235,6 +1243,49 @@ func (g *relGraph) inspectNode(u *UI, st *historyState, li int) {
 		return
 	}
 	st.openOverlay(u, g.model.nodes[g.vis.nodes[li]].id, conversation.Fresh, overlayPageRendered)
+}
+
+// isRoot 本地索引 li 是否为会话根节点（Role == root）。快照未就绪/越界一律 false。
+func (g *relGraph) isRoot(li int) bool {
+	return g.nodeRole(li) == conversation.RoleRoot
+}
+
+// nodeRole 本地索引 li 的节点角色；模型未就绪/越界 = ""（零值，不等于任何角色）。
+func (g *relGraph) nodeRole(li int) conversation.Role {
+	if g.model == nil || li < 0 || li >= len(g.vis.nodes) {
+		return ""
+	}
+	return g.model.nodes[g.vis.nodes[li]].role
+}
+
+// activateNode 原位左键抬起的落点（2026-10-25 用户批注）：会话根 = 复制会话 ID（轻提示，
+// 不弹窗）；其余节点 = 开消息查看/编辑遮罩（D139）。根没有消息内容可查看，复制它的 ID
+// 才有意义（根节点 ID 即会话 ID，D19）。
+func (g *relGraph) activateNode(gtx layout.Context, u *UI, st *historyState, li int) {
+	if g.isRoot(li) {
+		g.copyNodeID(gtx, st, li, "已复制会话 ID")
+		return
+	}
+	g.inspectNode(u, st, li)
+}
+
+// copyNodeID 把本地索引 li 的节点 ID 写进剪贴板并弹轻提示（剪贴板写入必须在 Gio 帧内）。
+// hint 是提示文案（会话根与普通节点措辞不同）。
+func (g *relGraph) copyNodeID(gtx layout.Context, st *historyState, li int, hint string) {
+	if g.model == nil || li < 0 || li >= len(g.vis.nodes) {
+		return
+	}
+	id := string(g.model.nodes[g.vis.nodes[li]].id)
+	if id == "" {
+		return
+	}
+	writeClipboard(gtx, id)
+	st.toast.show(hint, gtx.Now)
+}
+
+// writeClipboard 帧内写剪贴板文本（gtx.Execute(clipboard.WriteCmd)；Gio 帧内唯一可写点）。
+func writeClipboard(gtx layout.Context, text string) {
+	gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
 }
 
 // gotoNode 投 /goto <id>（A10；图侧右键菜单「转到」经 nodeActGoto 走同路径）。
@@ -1578,7 +1629,12 @@ func relSampleArc(pts []f32.Point, c f32.Point, r float32, from, to, step float6
 
 // openNodeMenu 图节点右键开菜单（D132）：与主界面气泡菜单**同一呈现、同一分发**——组好
 // 上下文投 shell（requestBubbleMenu），项集/命令见 menu.go 的 nodeMenuItems。
+// 会话根不弹菜单（2026-10-25 用户批注：根整份菜单删掉；武装阶段已拦，这里是纵深防御——
+// 将来命中链/抬起判定有变动也不会复发）。
 func (g *relGraph) openNodeMenu(u *UI, li int) {
+	if g.isRoot(li) {
+		return
+	}
 	ctx := g.nodeMenuCtx(u, li)
 	if ctx == nil {
 		return
