@@ -19,6 +19,7 @@ import (
 	"io"
 	"strings"
 
+	"gioui.org/f32"
 	"gioui.org/font"
 	"gioui.org/io/clipboard"
 	"gioui.org/layout"
@@ -58,6 +59,9 @@ type historyState struct {
 	// leftCollapsed 是它的帧态（本窗自持，不落盘——收起是临时视图选择，不是配置）。
 	btnLeft       widget.Clickable
 	leftCollapsed bool
+	// btnNew 左栏标题行的「＋」新建对话（D160）：与键入 /new 同路径投命令，壳内不做任何
+	// 建会话逻辑（铁律 5）——内核对完自会发布新快照，左栏与右图随签名单帧刷新。
+	btnNew widget.Clickable
 	// cfm 跨窗同步的二次确认弹窗（D157）：帧态无常驻开关——弹窗在屏与否由主窗发布的
 	// 确认投影（u.confirmShare）决定，这里只存控件与滚动位。
 	cfm confirmDialog
@@ -162,6 +166,15 @@ func (st *historyState) sendSwitch(u *UI, id conversation.ID) {
 	}
 }
 
+// sendNew 点左栏标题行「＋」→ 投 /new（无参 = 默认标题，D160）：经 u.inCh 与键入同路径，
+// 壳内不建会话（铁律 5）。缓冲满丢弃（同 sendSwitch）。
+func (st *historyState) sendNew(u *UI) {
+	select {
+	case u.inCh <- port.UserInput{Command: &port.Command{Name: "new"}}:
+	default:
+	}
+}
+
 // rowDelClick 行尾「✕」点击件 get-or-create（同上按行序缓存）。
 func (st *historyState) rowDelClick(i int) *widget.Clickable {
 	for len(st.dels) <= i {
@@ -196,6 +209,11 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	// 左栏收起/展开（D159）：收起态只剩窄条，那颗钮仍要能点开（它是收起态唯一的交互件）。
 	if st.btnLeft.Clicked(gtx) {
 		st.leftCollapsed = !st.leftCollapsed
+		return
+	}
+	// 左栏标题行「＋」新建对话（D160）：投 /new，与键入同路径。
+	if st.btnNew.Clicked(gtx) {
+		st.sendNew(u)
 		return
 	}
 	// D157：行尾「✕」**先收**。实测点 ✕ 时只投 /rmconv（✕ 的命中区把同位置的行遮掉），
@@ -356,7 +374,14 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 						return l.Layout(gtx)
 					}),
 					layout.Flexed(1, layout.Spacer{}.Layout),
-					layout.Rigid(histRailToggle(th, &st.btnLeft, "◀")),
+					// D160：标题行右端两颗钮——「＋」新建对话（左） + 「◀」收起左栏（右）。
+					// 新建排在收起**左侧**：收起钮语义是「把这条栏收掉」，贴边最右更顺；
+					// 且两颗钮都在这条标题行里，它们的位置语义与其它行操作一致。
+					layout.Rigid(histPlusBtn(&st.btnNew)),
+					// 两颗钮留 8dp 间隔：加号是细笔画、三角是实心块，贴在一起会读成
+					// 一个「＋▶」连字（2026-10-19 取像 4x 复看确认需要分开）。
+					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+					layout.Rigid(histGlyphBtn(th, &st.btnLeft, "◀")),
 				)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
@@ -418,7 +443,7 @@ func histLeftRail(gtx layout.Context, th *material.Theme, _ *UI, st *historyStat
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, layout.Spacer{}.Layout),
-					layout.Rigid(histRailToggle(th, &st.btnLeft, "▶")),
+					layout.Rigid(histGlyphBtn(th, &st.btnLeft, "▶")),
 					layout.Flexed(1, layout.Spacer{}.Layout),
 				)
 			}),
@@ -426,16 +451,45 @@ func histLeftRail(gtx layout.Context, th *material.Theme, _ *UI, st *historyStat
 	})
 }
 
-// histRailToggle 左栏收起/展开钮（◀ 收起 / ▶ 展开）。与其它状态栏钮同款：Clickable
-// 自带 hover 反馈，文字用次级色，不另铺底（收起态底色已是 sunken）。
-func histRailToggle(th *material.Theme, c *widget.Clickable, glyph string) layout.Widget {
+// histChromeBtn 左栏标题行 / 收起窄轨上的小钮外壳：Clickable 自带 hover 反馈 + 左右 2dp 内衬。
+// 内容由调用方给（文字字形或自绘图标）。
+func histChromeBtn(c *widget.Clickable, content layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			l := material.Caption(th, glyph)
-			l.Color = paperOf().text2
-			return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, l.Layout)
+			return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, content)
 		})
 	}
+}
+
+// histGlyphBtn 文字字形小钮（◀ 收起 / ▶ 展开）。
+func histGlyphBtn(th *material.Theme, c *widget.Clickable, glyph string) layout.Widget {
+	return histChromeBtn(c, func(gtx layout.Context) layout.Dimensions {
+		l := material.Caption(th, glyph)
+		l.Color = paperOf().text2
+		return l.Layout(gtx)
+	})
+}
+
+// histPlusBtn 「＋」新建对话钮。
+func histPlusBtn(c *widget.Clickable) layout.Widget {
+	return histChromeBtn(c, histPlusGlyph)
+}
+
+// histPlusGlyph 自绘加号：全角「＋」是细十字，同字号下比 ◀/▶ 的实心三角淡一档（1x 几乎糊在
+// 底上，加粗也没有粗体面可用）。两笔描边按 dp 定粗细与臂长，视觉重量与三角拉平。
+func histPlusGlyph(gtx layout.Context) layout.Dimensions {
+	d := gtx.Dp(unit.Dp(11))
+	cx, cy := float32(d)/2, float32(d)/2
+	a := float32(d) / 2
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(f32.Pt(cx-a, cy))
+	p.LineTo(f32.Pt(cx+a, cy))
+	p.MoveTo(f32.Pt(cx, cy-a))
+	p.LineTo(f32.Pt(cx, cy+a))
+	paint.FillShape(gtx.Ops, paperOf().text2,
+		clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(unit.Dp(2)))}.Op())
+	return layout.Dimensions{Size: image.Pt(d, d)}
 }
 
 // histSessionRow 单行内容：标题 + （时间 · N 条）；当前会话带「●」。

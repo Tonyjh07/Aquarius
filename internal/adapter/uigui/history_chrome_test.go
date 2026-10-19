@@ -1,16 +1,18 @@
 package uigui
 
-// 历史窗去噪（D159）测试：
+// 历史窗去噪（D159）与左栏「＋」新建（D160）测试：
 //   - 状态栏项集契约：不再有「展开全部」；控件文案与序锁死（绘制只按这份项集排）；
 //   - −/＋ 仍调预算（上限 relHardCap）；
 //   - 左栏收起/展开：点收起钮 → 当帧换窄轨、关系图栏宽拿到让出的宽度；点展开钮 → 还原；
-//     收起态下会话行不再取事件（行不在屏上）。
+//     收起态下会话行不再取事件（行不在屏上）；
+//   - 左栏标题行「＋」 → 投 /new（且不串到相邻的收起钮）。
 
 import (
 	"testing"
 
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
+	"gioui.org/widget"
 )
 
 // TestHistStatusBarCtlItems 状态栏控件项集契约（D159：删掉「展开全部」）。
@@ -100,6 +102,59 @@ func TestHistLeftColumnCollapse(t *testing.T) {
 	}
 	if got := st.graph.viewW; got > expandedW+2 {
 		t.Fatalf("还原后关系图栏宽 %.0f，不应比收起前 %.0f 还宽", got, expandedW)
+	}
+}
+
+// TestHistNewConversationButton 左栏标题行「＋」（D160）：点它投出 `/new`（与键入同路径），
+// 且**不**投 /switch——两颗钮相邻，命中区不许串。
+func TestHistNewConversationButton(t *testing.T) {
+	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister{
+		{ID: "C1", Title: "甲", Messages: 3, Current: true},
+	})
+	st := newHistoryState(u)
+	q := new(input.Router)
+	histFrameFor(q, u, st)
+	drainCh(u)
+
+	x, y := histBtnXY(t, q, u, st, &st.btnNew, "新建对话")
+	q.Queue(ovPointer(pointer.Move, x, y))
+	histFrameFor(q, u, st)
+	ovClick(q, x, y)
+	histFrameFor(q, u, st)
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "new" {
+			t.Fatalf("「＋」投出 %+v, want /new", in.Command)
+		}
+	default:
+		t.Fatal("「＋」未投出任何命令")
+	}
+}
+
+// histBtnXY 扫出某个点击件在窗口里的坐标（判据 = Hovered，真指针驱动；不硬编码排版常数）。
+func histBtnXY(t *testing.T, q *input.Router, u *UI, st *historyState, c *widget.Clickable, what string) (int, int) {
+	t.Helper()
+	for y := 1; y < 60; y++ {
+		for x := 1; x < 220; x++ {
+			q.Queue(ovPointer(pointer.Move, x, y))
+			histFrameFor(q, u, st)
+			if c.Hovered() {
+				return x, y
+			}
+		}
+	}
+	t.Fatalf("扫不到%s钮", what)
+	return 0, 0
+}
+
+// drainCh 丢掉输入通道里的残留（扫描悬浮会顺带改指针位置，先清干净再断言「这次点击投了什么」）。
+func drainCh(u *UI) {
+	for {
+		select {
+		case <-u.inCh:
+		default:
+			return
+		}
 	}
 }
 
