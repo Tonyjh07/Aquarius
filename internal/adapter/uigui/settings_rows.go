@@ -23,9 +23,9 @@ const fieldLabelW = 92
 // S4d/D142 起按页分组——页序与页内容见 pageRows）。
 type rowKind int
 
-// rowInsetDp 每行上下左右的行腔留白（六页共用，D148）。
+// rowInsetDp 每行上下左右的行腔留白（各页共用，D148）。
 // 原值 14dp 让表单文字几乎贴住卡片描边，抬到 18dp 后行间与卡内都有了呼吸；
-// 这是「设置页密度」的唯一旋钮，调它 = 同时调六页，不要逐页微调。
+// 这是「设置页密度」的唯一旋钮，调它 = 同时调所有页，不要逐页微调。
 const rowInsetDp = 18
 
 const (
@@ -69,6 +69,13 @@ const (
 	rowPromptRefAdd  // 「＋ 添加引用」
 	rowPromptBuiltin // 内置只读模块行（field = builtins 下标）
 	rowPromptPreview // 组合预览（只读全文）
+	// S9-6b/D161：密钥库页（名字 + 尾 4 位掩码；值永不回显）。
+	rowSecretEntry  // 已存条目行（name = 键名；行内删除/二次确认）
+	rowSecretEmpty  // 空态/未接线占位（text = 文案）
+	rowSecretName   // 新增/覆盖的键名（单行编辑档）
+	rowSecretValue  // 新增/覆盖的值（单行编辑档；动作后恒清空）
+	rowSecretAdd    // 「存入」按钮行
+	rowSecretStatus // 动作反馈状态行
 )
 
 // provider 字段槽位（rowDesc.field）。
@@ -140,6 +147,8 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	f.drainToolResults() // 工具页异步动作结果回灌状态行
 	// 工具页原子快照（Revision 变了才重建行/按钮；同历史窗口径）。
 	f.syncToolsSnapshot()
+	// 密钥库页原子快照（同口径：Revision 变了才重建条目行）。
+	f.syncSecretsSnapshot()
 	for f.save.Clicked(gtx) {
 		u.saveSettings(f)
 	}
@@ -384,7 +393,7 @@ func rowInCard(k rowKind) bool {
 	switch k {
 	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
 		rowPromptPreview, rowProfBtns, rowProvBtns, rowProvAdd, rowProvApply,
-		rowPromptRefAdd:
+		rowPromptRefAdd, rowSecretEmpty, rowSecretAdd, rowSecretStatus:
 		return false
 	}
 	return true

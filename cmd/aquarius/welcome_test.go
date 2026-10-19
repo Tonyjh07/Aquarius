@@ -122,12 +122,16 @@ func TestWelcomeManagerSnapshot(t *testing.T) {
 func TestWelcomeManagerApply(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
 	ch, bin := testChain(t, nil)
-	m := &welcomeManager{cfgPath: cfgPath, secrets: ch, bin: bin, stderr: io.Discard}
+	stores := 0
+	m := &welcomeManager{cfgPath: cfgPath, secrets: ch, bin: bin, stderr: io.Discard, onStore: func() { stores++ }}
 	err := m.Apply(uigui.WelcomePatch{
 		Provider: "myapi", BaseURL: "http://my/v1", APIKey: "sk-plain", Models: "mm1, mm2",
 	})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
+	}
+	if stores != 1 {
+		t.Fatalf("onStore 调用 = %d, want 1（填入明文落库；S9-6b/D163）", stores)
 	}
 	generic := readCfgMap(t, cfgPath)
 	model := generic["model"].(map[string]any)

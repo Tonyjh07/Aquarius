@@ -174,6 +174,7 @@ var (
 const (
 	pageGeneral = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
 	pageModel          // 模型：当前模型名 / 原生思考与推理档位 / provider 列表
+	pageSecrets        // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
 	pageChat           // 对话：限额
 	pagePrompt         // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
 	pageTools          // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
@@ -238,6 +239,19 @@ type settingsForm struct {
 	toolWait    int                          // 在途异步动作数（UI goroutine 增减）
 	toolsStatus string                       // 反馈文案（状态行）
 	toolsErr    bool                         // 反馈是否为错误
+
+	// 密钥库页（S9-6b/D161）：数据面见 settings_secrets.go。动作**同步**（本地小文件 IO），
+	// 故没有工具页那套结果通道；`secretBtns` 按键名分派（动作按钮 + 行内二次确认）。
+	secrets       SecretsAdmin                 // nil = 只读占位（未接线）
+	secretsSnap   SecretsSnapshot              // 每帧原子快照（Revision 变了才重建）
+	secretsRev    int64                        // 上帧 Revision
+	secretBtns    map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
+	secretAdd     widget.Clickable             // 「＋ 存入」按钮
+	secretName    widget.Editor                // 新增/覆盖的键名（单行）
+	secretValue   widget.Editor                // 新增/覆盖的值（单行；动作后恒清空）
+	secretsStatus string                       // 反馈文案（状态行；不含值）
+	secretsErr    bool                         // 反馈是否为错误
+	secretConfirm string                       // 待删目标名（"" = 无；行内二次确认）
 
 	// 核心档控件（模型名/思考/档位/外观；provider 编辑走 provs）。
 	model    widget.Editor
@@ -347,6 +361,11 @@ func newSettingsFormState() *settingsForm {
 		testResults: make(chan testOutcome, 8),
 		toolRes:     make(chan toolActionResult, 16),
 		toolBtns:    map[string]*widget.Clickable{},
+		secretBtns:  map[string]*widget.Clickable{},
+		// 密钥库快照「上次 Revision」起点 −1：**首帧必采纳**。若起点取 0，库
+		// Revision 恰为 0（空库、或本进程 provider 写路径直接落库未经过本管理面）
+		// 时会被当「没变」而跳过，窗口打开即显示空列表。
+		secretsRev: -1,
 	}
 	f.promptEditor.init()
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
@@ -359,6 +378,10 @@ func newSettingsFormState() *settingsForm {
 	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
+	// 密钥库页（S9-6b）：键名与值都是单行档；值档掩码显示（肩上可视读，落盘/日志仍不回显）。
+	f.secretName.SingleLine = true
+	f.secretValue.SingleLine = true
+	f.secretValue.Mask = '•'
 	return f
 }
 
@@ -372,7 +395,9 @@ func newSettingsForm(u *UI) *settingsForm {
 	if u.opts.ProviderMgr != nil {
 		f.loadProviders(u.opts.ProviderMgr.Snapshot()) // D110②：provider 编辑区
 	}
-	f.tools = u.opts.Tools // S6/D143：工具与 MCP 管理面（nil = 只读占位）
+	f.tools = u.opts.Tools     // S6/D143：工具与 MCP 管理面（nil = 只读占位）
+	f.secrets = u.opts.Secrets // S9-6b：密钥库管理面（nil = 只读占位）
+	f.syncSecretsSnapshot()    // 开窗即取一次（帧首同款；动作后再取）
 	if u.opts.Settings == nil {
 		return f
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -812,7 +813,7 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 // 推导）；每页行计划非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」
 // 页（S7b/D145）。另锁两条注册表结构不变量：页常量与注册表长度一致、Key 唯一。
 func TestSettingsPageNamesContract(t *testing.T) {
-	want := []string{"常规", "模型", "对话", "系统提示词", "工具与 MCP", "高级"}
+	want := []string{"常规", "模型", "密钥库", "对话", "系统提示词", "工具与 MCP", "高级"}
 	if settingsPageCount != len(want) {
 		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(want))
 	}
@@ -895,15 +896,21 @@ func TestSettingsPageNamesContract(t *testing.T) {
 // 兜底、被画成别的控件（高级页 raw JSON 编辑器）；这里把那条静默去掉，用本测试响亮兜住：
 // 新增行型忘了在对应页分派 = 本测试立刻红。
 func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
+	secretsAdmin := &fakeSecretsAdmin{snap: SecretsSnapshot{Entries: []SecretEntry{{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"}}}}
+	secretsAdmin.rev = 1 // 让开窗/帧首同步即采纳（Revision 变了）
 	u := newHeadless(t, Options{
 		Settings:    func() SettingsSnapshot { return promptSnapshot() },
 		Tools:       &fakeToolsAdmin{snap: ToolsSnapshot{Revision: 1, Builtins: []BuiltinToolState{{Name: "think", Enabled: true}}, Plugins: []PluginToolState{{Name: "p", Source: "config", Enabled: true}}}},
 		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", Primary: true}}},
+		Secrets:     secretsAdmin,
 	})
 	f := newSettingsForm(u)
 	f.page = pageTools
 	f.syncToolsSnapshot() // 帧首同款：同步工具快照（铺出内置/插件行）
 	f.toolsStatus = "ok"  // 让状态行也进行表（覆盖 rowToolsStatus 行型）
+	f.page = pageSecrets
+	f.syncSecretsSnapshot() // 同步密钥库快照（铺出条目行）
+	f.secretsStatus = "ok"  // 覆盖 rowSecretStatus 行型
 	th := testTheme()
 
 	for p := 0; p < settingsPageCount; p++ {
@@ -944,7 +951,7 @@ func TestPromptRowsLiveOnPromptPage(t *testing.T) {
 		return n
 	}
 	kinds := []rowKind{rowPromptGrid, rowPromptRef, rowPromptBuiltin, rowPromptPreview}
-	for _, page := range []int{pageChat, pageGeneral, pageModel, pageTools, pageAdv} {
+	for _, page := range []int{pageChat, pageGeneral, pageModel, pageSecrets, pageTools, pageAdv} {
 		if n := count(page, kinds...); n != 0 {
 			t.Errorf("页 %s 出现了 %d 条提示词行（应只在「系统提示词」页）", settingsPageNames[page], n)
 		}
@@ -1529,5 +1536,297 @@ func TestToolsPageNotWired(t *testing.T) {
 	rows := f.pageRows(pageTools)
 	if len(rows) < 2 || rows[0].kind != rowTitle || rows[1].kind != rowToolsEmpty {
 		t.Fatalf("未接线页行计划 = %+v, want 标题 + 占位", rows)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 密钥库页（S9-6b/D161）
+// ---------------------------------------------------------------------------
+
+// fakeSecretsAdmin SecretsAdmin 测试替身：内存键值表 + Revision 递增 + 动作记录。
+// 语义对齐 secretbin：Put 空值/空名报错、Delete 不存在报错、快照按名字排序。
+type fakeSecretsAdmin struct {
+	mu      sync.Mutex
+	snap    SecretsSnapshot
+	rev     int64
+	store   map[string]string
+	actions []string
+}
+
+func (a *fakeSecretsAdmin) Snapshot() SecretsSnapshot {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s := a.snap
+	s.Revision = a.rev
+	return s
+}
+
+func (a *fakeSecretsAdmin) Put(name, value string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.actions = append(a.actions, "put:"+name)
+	if strings.TrimSpace(name) == "" {
+		return errors.New("密钥名不可为空")
+	}
+	if strings.TrimSpace(value) == "" {
+		return errors.New("值不可为空")
+	}
+	if a.store == nil {
+		a.store = map[string]string{}
+	}
+	a.store[name] = value
+	a.rebuild()
+	return nil
+}
+
+func (a *fakeSecretsAdmin) Delete(name string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.actions = append(a.actions, "delete:"+name)
+	if _, ok := a.store[name]; !ok {
+		return errors.New("密钥库中已没有同名条目")
+	}
+	delete(a.store, name)
+	a.rebuild()
+	return nil
+}
+
+// rebuild 从 store 重建快照条目（按名字排序，掩码只出尾 4 位；与 secretbin 口径一致）。
+func (a *fakeSecretsAdmin) rebuild() {
+	names := make([]string, 0, len(a.store))
+	for n := range a.store {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	a.snap.Entries = a.snap.Entries[:0]
+	for _, n := range names {
+		v := []rune(a.store[n])
+		mask := strings.Repeat("•", 6)
+		if len(v) >= 8 {
+			mask += string(v[len(v)-4:])
+		}
+		a.snap.Entries = append(a.snap.Entries, SecretEntry{Name: n, Mask: mask})
+	}
+	a.rev++
+}
+
+func (a *fakeSecretsAdmin) actionList() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.actions...)
+}
+
+// secretsPageUI 搭一个带假 SecretsAdmin 的 headless 设置窗。
+func secretsPageUI(t *testing.T, snap SecretsSnapshot, store map[string]string) (*UI, *settingsForm, *fakeSecretsAdmin) {
+	t.Helper()
+	sa := &fakeSecretsAdmin{snap: snap, store: store}
+	if store == nil {
+		sa.store = map[string]string{}
+	}
+	// Revision 起点 0 会被 newSettingsForm 当成「未变」而跳过——带初始条目的用例把
+	// rev 抬到 1，开窗即采纳快照（帧首同款语义）。
+	if len(snap.Entries) > 0 {
+		sa.rev = 1
+	}
+	u := newHeadless(t, Options{
+		Settings: func() SettingsSnapshot { return fillSnapshot() },
+		Secrets:  sa,
+	})
+	f := newSettingsForm(u)
+	return u, f, sa
+}
+
+// TestSecretsPageRows 密钥库页行计划：有条目时每有一条 → 一行（名字），再加新增区。
+func TestSecretsPageRows(t *testing.T) {
+	u, f, _ := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{
+		{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"},
+		{Name: "MCP_DOCS_TOKEN", Mask: "••••••"},
+	}}, nil)
+	_ = u
+	f.secretsSnap = f.secrets.Snapshot() // 铺快照（帧首同款）
+	var names []string
+	for _, r := range f.pageRows(pageSecrets) {
+		if r.kind == rowSecretEntry {
+			names = append(names, r.text)
+		}
+	}
+	if len(names) != 2 || names[0] != "AQUARIUS_OPENAI_API_KEY" || names[1] != "MCP_DOCS_TOKEN" {
+		t.Fatalf("条目行 = %v, want 两条按名排", names)
+	}
+}
+
+// TestSecretsPagePut 新增/覆盖：填入键名与值 → 存入 → 假管理面记录 + 状态行含名字 +
+// **值字段恒清空**（值永不回显）。
+func TestSecretsPagePut(t *testing.T) {
+	restoreLight(t)
+	u, f, sa := secretsPageUI(t, SecretsSnapshot{}, nil)
+	f.secretName.SetText("AQUARIUS_OPENAI_API_KEY")
+	f.secretValue.SetText("sk-secret-value-1234")
+	u.secretsAction(f, "put", "")
+
+	if got := sa.actionList(); len(got) != 1 || got[0] != "put:AQUARIUS_OPENAI_API_KEY" {
+		t.Fatalf("动作 = %v", got)
+	}
+	if f.secretsErr || !strings.Contains(f.secretsStatus, "AQUARIUS_OPENAI_API_KEY") {
+		t.Fatalf("反馈 = (%v, %q)", f.secretsErr, f.secretsStatus)
+	}
+	if f.secretsStatus == "" || strings.Contains(f.secretsStatus, "sk-secret-value-1234") {
+		t.Fatalf("状态行不得回显值：%q", f.secretsStatus)
+	}
+	if f.secretValue.Text() != "" {
+		t.Fatalf("值字段应恒清空，实为 %q", f.secretValue.Text())
+	}
+	if f.secretName.Text() != "" {
+		t.Fatalf("成功后键名应清空，实为 %q", f.secretName.Text())
+	}
+	// 快照已刷新（Revision 变了 → 条目行出现）。
+	if len(f.secretsSnap.Entries) != 1 || f.secretsSnap.Entries[0].Name != "AQUARIUS_OPENAI_API_KEY" {
+		t.Fatalf("快照未刷新: %+v", f.secretsSnap)
+	}
+}
+
+// TestSecretsPagePutValidation 空名/空值拦截：不触达管理面，值字段仍清空（不留在框里）。
+func TestSecretsPagePutValidation(t *testing.T) {
+	restoreLight(t)
+	cases := []struct{ name, value, wantMsg string }{
+		{"", "sk-x-1234", "密钥名"},
+		{"KEY", "", "密钥值"},
+	}
+	for _, c := range cases {
+		u, f, sa := secretsPageUI(t, SecretsSnapshot{}, nil)
+		f.secretName.SetText(c.name)
+		f.secretValue.SetText(c.value)
+		u.secretsAction(f, "put", "")
+		if !f.secretsErr || !strings.Contains(f.secretsStatus, c.wantMsg) {
+			t.Fatalf("%q/%q: 反馈 = (%v, %q), want 含 %q",
+				c.name, c.value, f.secretsErr, f.secretsStatus, c.wantMsg)
+		}
+		if n := len(sa.actionList()); n != 0 {
+			t.Fatalf("%q/%q: 不应触达管理面，实 %d 次", c.name, c.value, n)
+		}
+		if f.secretValue.Text() != "" {
+			t.Fatalf("校验失败也应清空值字段：%q", f.secretValue.Text())
+		}
+	}
+}
+
+// TestSecretsPageMask 掩码口径：只出尾 4 位；值短于 8 位整条打码（长值不可整条暴露）。
+func TestSecretsPageMask(t *testing.T) {
+	_, _, sa := secretsPageUI(t, SecretsSnapshot{}, nil)
+	if err := sa.Put("LONG", "sk-abcdefgh-9876"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sa.Put("SHORT", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	snap := sa.Snapshot()
+	byName := map[string]string{}
+	for _, e := range snap.Entries {
+		byName[e.Name] = e.Mask
+	}
+	if got := byName["LONG"]; got != "••••••9876" {
+		t.Fatalf("长值掩码 = %q, want ••••••9876", got)
+	}
+	if got := byName["SHORT"]; got != "••••••" {
+		t.Fatalf("短值掩码 = %q, want 整条打码", got)
+	}
+	if strings.Contains(byName["LONG"], "abcdefgh") {
+		t.Fatalf("掩码泄漏了中段值：%q", byName["LONG"])
+	}
+}
+
+// TestSecretsPageDeleteNeedsConfirm 删除走行内二次确认：点「删除」只进确认态（不触达）；
+// 点「取消」退回；点「确认删除」才真删。
+func TestSecretsPageDeleteNeedsConfirm(t *testing.T) {
+	restoreLight(t)
+	u, f, sa := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{{Name: "K1", Mask: "••••••1234"}}}, map[string]string{"K1": "sk-1234abcd"})
+	f.syncSecretsSnapshot() // 帧首同款：铺条目行与按钮
+	th := testTheme()
+	frame := func() {
+		var ops op.Ops
+		settingsFrame(layout.Context{
+			Ops:         &ops,
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(720, 560)),
+		}, th, u, f)
+	}
+	f.page = pageSecrets
+	frame()
+	if f.secretBtns["del:K1"] == nil {
+		t.Fatalf("删除按钮未渲染（已渲染 %d 个）", len(f.secretBtns))
+	}
+
+	// ① 点「删除」→ 进确认态，不触达管理面。
+	f.secretBtns["del:K1"].Click()
+	frame()
+	if f.secretConfirm != "K1" {
+		t.Fatalf("点删除后 secretConfirm = %q, want K1", f.secretConfirm)
+	}
+	if n := len(sa.actionList()); n != 0 {
+		t.Fatalf("二次确认前不应删除，实 %d 次", n)
+	}
+
+	// ② 点「取消」→ 退出确认态。
+	f.secretBtns["cancel:K1"].Click()
+	frame()
+	if f.secretConfirm != "" {
+		t.Fatalf("取消后 secretConfirm = %q, want 空", f.secretConfirm)
+	}
+	if n := len(sa.actionList()); n != 0 {
+		t.Fatalf("取消不应删除，实 %d 次", n)
+	}
+
+	// ③ 再点删除 → 确认删除 → 真删 + 快照条目消失。
+	f.secretBtns["del:K1"].Click()
+	frame()
+	f.secretBtns["confirm:K1"].Click()
+	frame()
+	if got := sa.actionList(); len(got) != 1 || got[0] != "delete:K1" {
+		t.Fatalf("确认删除动作 = %v", got)
+	}
+	if f.secretsErr || !strings.Contains(f.secretsStatus, "K1") {
+		t.Fatalf("删除反馈 = (%v, %q)", f.secretsErr, f.secretsStatus)
+	}
+	if len(f.secretsSnap.Entries) != 0 {
+		t.Fatalf("删除后快照条目 = %+v, want 空", f.secretsSnap.Entries)
+	}
+}
+
+// TestSecretsPageConfirmClearedOnSnapshot 条目在别处被删（Revision 变化且条目消失）→
+// 行内二次确认目标被清掉，免得确认按钮指着一条已不在的条目。
+func TestSecretsPageConfirmClearedOnSnapshot(t *testing.T) {
+	u, f, sa := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{{Name: "K1", Mask: "••••••1234"}}}, map[string]string{"K1": "sk-1234abcd"})
+	f.syncSecretsSnapshot()
+	f.secretConfirm = "K1"
+	if err := sa.Delete("K1"); err != nil { // 外部删除（Revision 递增且 K1 消失）
+		t.Fatal(err)
+	}
+	f.syncSecretsSnapshot()
+	if f.secretConfirm != "" {
+		t.Fatalf("条目消失后 secretConfirm = %q, want 空", f.secretConfirm)
+	}
+	_ = u
+}
+
+// TestSecretsPageNotWired 未接线（Secrets = nil）：只读占位 + 存入按钮禁用，动作报错。
+func TestSecretsPageNotWired(t *testing.T) {
+	restoreLight(t)
+	u := newHeadless(t, Options{Settings: func() SettingsSnapshot { return fillSnapshot() }})
+	f := newSettingsForm(u)
+	rows := f.pageRows(pageSecrets)
+	found := false
+	for _, r := range rows {
+		if r.kind == rowSecretEmpty {
+			found = true
+		}
+	}
+	if len(rows) < 2 || rows[0].kind != rowTitle || !found {
+		t.Fatalf("未接线页行计划 = %+v, want 标题 + 占位", rows)
+	}
+	f.secretName.SetText("X")
+	f.secretValue.SetText("sk-val-1234")
+	u.secretsAction(f, "put", "")
+	if !f.secretsErr || !strings.Contains(f.secretsStatus, "未接线") {
+		t.Fatalf("未接线反馈 = (%v, %q)", f.secretsErr, f.secretsStatus)
 	}
 }

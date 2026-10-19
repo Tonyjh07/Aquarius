@@ -36,6 +36,9 @@ type welcomeManager struct {
 	bin     *secretbin.Store // D161：界面明文密钥的写入口（nil = 未接线）
 	stderr  io.Writer        // D35 明文警告出口（os.Stderr；测试可注入）
 	hotkey  string           // ui.hotkey（教程页展示用；空 = Alt+A）
+	// onStore 明文真的写进密钥库后的回调（S9-6b/D163）：递增密钥库快照 Revision，
+	// 让别处（设置窗「密钥库」页）也能看见新条目。
+	onStore func()
 }
 
 // Snapshot 欢迎窗快照（开窗现取；**密钥不回显**）：primary provider 三项 + 标记。
@@ -131,6 +134,7 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 // welcomeKeyRef 欢迎窗密钥写入口径（D161 落点①）：明文 → 写进本机密钥库、返回
 // `secret:<名>` 引用；引用 → 原样保留；空 → 返回 ""（保持原值）。
 // 键名沿用 providers[0] 现有引用名（改名不 churn），否则按 provider 名生成。
+// 明文真的落库时回调 onStore（S9-6b/D163：递增密钥库快照 Revision）。
 func welcomeKeyRef(m *welcomeManager, name, typed string) (string, error) {
 	if strings.TrimSpace(typed) == "" {
 		return "", nil
@@ -139,7 +143,14 @@ func welcomeKeyRef(m *welcomeManager, name, typed string) (string, error) {
 	if cfg, err := loadConfig(m.cfgPath); err == nil && len(cfg.Model.Providers) > 0 {
 		origRef = cfg.Model.Providers[0].APIKey
 	}
-	return storePlaintextKey(context.Background(), m.bin, name, origRef, typed)
+	ref, err := storePlaintextKey(context.Background(), m.bin, name, origRef, typed)
+	if err != nil {
+		return "", err
+	}
+	if m.onStore != nil && !strings.HasPrefix(strings.TrimSpace(typed), "secret:") {
+		m.onStore()
+	}
+	return ref, nil
 }
 
 // Test 连通性测试（口径同 providerManager.Test）：以 patch 构造一次性 client（8s 超时）
@@ -262,6 +273,7 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		Mgr: &welcomeManager{
 			cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin,
 			stderr: w.stderr, hotkey: w.cfg.UI.Hotkey,
+			onStore: func() { w.secretsRev.Add(1) }, // S9-6b/D163：明文落库递增快照 Revision
 		},
 		Issues: issues,
 	})

@@ -176,6 +176,10 @@ type wiring struct {
 	// 与快照修订号（host.OnChange + 内置变更递增；设置窗按 Revision 重建行）。
 	disabledTools *disabledHolder
 	toolsRev      atomic.Int64
+
+	// S9-6b/D161：密钥库管理面快照修订号（设置窗按 Revision 重建条目行；每次写入/删除
+	// 递增）。库本体是 secretsBin（本地文件 IO，无进程内缓存）。
+	secretsRev atomic.Int64
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {

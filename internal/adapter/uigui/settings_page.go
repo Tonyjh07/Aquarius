@@ -43,6 +43,7 @@ type settingsPage interface {
 var settingsPages = []settingsPage{
 	generalPage{}, // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
 	modelPage{},   // 模型：当前模型名 / 原生思考与推理档位 / provider 列表
+	secretsPage{}, // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
 	chatPage{},    // 对话：限额
 	promptPage{},  // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览
 	toolsPage{},   // 工具与 MCP：内置工具启停 + 插件管理

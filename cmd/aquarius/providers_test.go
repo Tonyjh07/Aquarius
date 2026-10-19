@@ -140,7 +140,8 @@ func TestProviderManagerApplyValidation(t *testing.T) {
 func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
 	ch, bin := testChain(t, nil)
-	m := &providerManager{cfgPath: cfgPath, secrets: ch, bin: bin, stderr: io.Discard}
+	stores := 0
+	m := &providerManager{cfgPath: cfgPath, secrets: ch, bin: bin, stderr: io.Discard, onStore: func() { stores++ }}
 
 	// 改名 a→a2 并填新明文：键名沿用原引用名 KA（改名不 churn 引用）。
 	err := m.Apply("a2", []uigui.ProviderPatch{
@@ -167,6 +168,10 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 	if got := cfg.Model.Providers[1].APIKey; got != "secret:KB" {
 		t.Fatalf("留空应保持原引用: %q", got)
 	}
+	// onStore 每次明文真的落库才回调（S9-6b/D163）：第一次 Apply 只填了一条 → 恰好 1 次。
+	if stores != 1 {
+		t.Fatalf("onStore 调用 = %d, want 1（只有一条填了明文）", stores)
+	}
 
 	// 新 provider 从空起步 + 填明文：键名按 provider 名派生。
 	if err := m.Apply("a2", []uigui.ProviderPatch{
@@ -181,6 +186,10 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 	}
 	if got, _ := bin.Get(context.Background(), "AQUARIUS_MY_API_API_KEY"); got != "sk-typed-plain-2" {
 		t.Fatalf("新条目明文应已入库: %q", got)
+	}
+	// 第二次 Apply 填了一条新明文 → 累计 2 次。
+	if stores != 2 {
+		t.Fatalf("onStore 累计 = %d, want 2", stores)
 	}
 
 	// 库未接线：填明文即报错，且 config 不被改动。

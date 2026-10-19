@@ -26,6 +26,9 @@ type providerManager struct {
 	secrets port.Secrets     // D151/D161：读链（库 → 同名环境变量）
 	bin     *secretbin.Store // D161：界面明文密钥的写入口（nil = 未接线）
 	stderr  io.Writer        // D35 明文警告出口（os.Stderr；测试可注入）
+	// onStore 明文真的写进密钥库后的回调（S9-6b/D163）：递增密钥库快照 Revision，
+	// 让同一次设置窗会话里刚改过 provider 密钥后切到「密钥库」页也能看见新条目。
+	onStore func()
 }
 
 // Snapshot provider 编辑区数据面（开窗现取；读失败 = 空，不阻断开窗）。
@@ -89,11 +92,17 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 		if strings.TrimSpace(p.APIKey) == "" {
 			continue // 空 = 保持原值（D35 只写不回显）
 		}
-		ref, err := storePlaintextKey(context.Background(), m.bin, strings.TrimSpace(p.Name), origRefs[p.Orig], p.APIKey)
+		typed := strings.TrimSpace(p.APIKey)
+		ref, err := storePlaintextKey(context.Background(), m.bin, strings.TrimSpace(p.Name), origRefs[p.Orig], typed)
 		if err != nil {
 			return err
 		}
 		keyRefs[i] = ref
+		// 明文真的落库了（非空且不是引用）：递增密钥库快照 Revision，让同一次设置窗
+		// 会话里切到「密钥库」页也能看见新条目（S9-6b/D163）。
+		if m.onStore != nil && typed != "" && !strings.HasPrefix(typed, "secret:") {
+			m.onStore()
+		}
 	}
 	return persistConfig(m.cfgPath, func(generic map[string]any) {
 		model := modelSection(generic)

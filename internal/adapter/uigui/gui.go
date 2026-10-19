@@ -115,6 +115,10 @@ type Options struct {
 	// Tools 工具与 MCP 管理面（S6/D143）：设置窗「工具与 MCP」页数据面 + 异步动作
 	// （内置启停热生效 / 插件启停 / 授权撤销与预授权 / 信任撤销 / 日志）；nil = 该页只读占位。
 	Tools ToolsAdmin
+	// Secrets 密钥库管理面（S9-6b/D161）：设置窗「密钥库」页数据面 + 同步动作
+	// （列出 / 新增覆盖 / 删除任意名字；本地小文件 IO，不走工具页那套异步通道）；
+	// nil = 该页只读占位。
+	Secrets SecretsAdmin
 	// PreviewPrompts 人格组合预览（S7/D144，装配根实现）：按设置窗当前（未保存）模块树 +
 	// 引用展开最终 system 文本（纯计算，与新建会话同口径；不落盘、不阻断）。nil = 无预览行。
 	PreviewPrompts func(nodes []PromptModuleView, persona []string, legacy string) string
