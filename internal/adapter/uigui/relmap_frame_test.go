@@ -1345,7 +1345,7 @@ func TestRelGraphMenuCopyIDAction(t *testing.T) {
 	}
 }
 
-// TestRelBudgetControls 预算 −/＋ 钳制与「展开全部」（用 150 节点链验证非平凡预算）。
+// TestRelBudgetControls 预算 −/＋ 钳制（用 150 节点链验证非平凡预算）。
 func TestRelBudgetControls(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
 	st := newHistoryState(u)
@@ -1362,12 +1362,8 @@ func TestRelBudgetControls(t *testing.T) {
 	if st.budget != 1 {
 		t.Fatalf("− 应钳到 1，实为 %d", st.budget)
 	}
-	st.expandAll()
-	if st.budget != 150 { // 150 < relHardCap → 全量
-		t.Fatalf("展开全部 = %d, want 150", st.budget)
-	}
-	if len(st.vis.nodes) != 150 {
-		t.Fatalf("展开全部呈现 = %d, want 150", len(st.vis.nodes))
+	if len(st.vis.nodes) != 1 {
+		t.Fatalf("预算 1 的呈现 = %d, want 1", len(st.vis.nodes))
 	}
 	_ = u
 }

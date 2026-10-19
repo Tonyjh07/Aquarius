@@ -46,14 +46,18 @@ type historyState struct {
 	sig    string
 	model  *relModel
 	vis    relVisible
-	budget int // 预算（rebudget：−/＋/展开全部，A5/A7）
+	budget int // 预算（rebudget：−/＋，A5/A7）
 	// graph 右图帧态（第 7 步：重排/手势/绘制）。
 	graph *relGraph
 	// ov 消息查看/编辑遮罩（D139，nil = 未开启；开启期间背景照常渲染但不消费事件）。
 	ov *overlayState
-	// 状态栏控件（− / ＋ / 展开全部 / 装下整树 / 回到初始态 / 三个聚焦域：D128、D140）。
-	btnMinus, btnPlus, btnAll, btnHome widget.Clickable
-	btnSeed, btnLine, btnNode          widget.Clickable
+	// 状态栏控件（− / ＋ / 装下整树 / 回到初始态 / 三个聚焦域：D128、D140）。
+	btnMinus, btnPlus, btnHome widget.Clickable
+	btnSeed, btnLine, btnNode  widget.Clickable
+	// btnLeft 左栏收起/展开（D159）：展开时画在左栏标题行右端、收起时画在窄条顶部；
+	// leftCollapsed 是它的帧态（本窗自持，不落盘——收起是临时视图选择，不是配置）。
+	btnLeft       widget.Clickable
+	leftCollapsed bool
 	// cfm 跨窗同步的二次确认弹窗（D157）：帧态无常驻开关——弹窗在屏与否由主窗发布的
 	// 确认投影（u.confirmShare）决定，这里只存控件与滚动位。
 	cfm confirmDialog
@@ -103,21 +107,6 @@ func (st *historyState) applyBudget(delta int) {
 	}
 	if st.budget > max {
 		st.budget = max
-	}
-	st.vis = relBudget(st.model, st.budget)
-	if st.graph != nil {
-		st.graph.rebuild(st.model, st.vis)
-	}
-}
-
-// expandAll 「展开全部」：预算 = 全量（上限 relHardCap，§5.4.3）。
-func (st *historyState) expandAll() {
-	if st.model == nil {
-		return
-	}
-	st.budget = st.model.total
-	if st.budget > relHardCap {
-		st.budget = relHardCap
 	}
 	st.vis = relBudget(st.model, st.budget)
 	if st.graph != nil {
@@ -194,7 +183,7 @@ func (st *historyState) sendRmconv(u *UI, id conversation.ID) {
 	}
 }
 
-// dispatch 帧内点击消费：会话行切换 + 行尾「✕」删除 + 状态栏控件（预算 −/＋/展开全部/
+// dispatch 帧内点击消费：会话行切换 + 行尾「✕」删除 + 左栏收起 + 状态栏控件（预算 −/＋/
 // 装下整树/回到初始态/两个聚焦域）。
 //
 // **遮罩或确认弹窗开启期一律不取事件**（D139/D157）：纵深防御——两者的整窗输入区已按
@@ -202,6 +191,11 @@ func (st *historyState) sendRmconv(u *UI, id conversation.ID) {
 // 整窗、或背景控件被排到弹窗之上，模态语义仍在。左栏行与状态栏钮因此在模态期间完全失灵。
 func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	if st.modalActive(u) {
+		return
+	}
+	// 左栏收起/展开（D159）：收起态只剩窄条，那颗钮仍要能点开（它是收起态唯一的交互件）。
+	if st.btnLeft.Clicked(gtx) {
+		st.leftCollapsed = !st.leftCollapsed
 		return
 	}
 	// D157：行尾「✕」**先收**。实测点 ✕ 时只投 /rmconv（✕ 的命中区把同位置的行遮掉），
@@ -227,8 +221,6 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 		st.applyBudget(-10)
 	case st.btnPlus.Clicked(gtx):
 		st.applyBudget(+10)
-	case st.btnAll.Clicked(gtx):
-		st.expandAll()
 	case st.btnHome.Clicked(gtx): // 装下整树（D140：原「回到当前」——只对右基准位，树装不下时什么都改不了）
 		if st.graph != nil {
 			st.graph.viewPending = vaFitAll
@@ -299,9 +291,16 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							w := gtx.Dp(histLeftColumnDp)
-							gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
-							return histLeftColumn(gtx, th, u, st)
+							// D159：左栏可收起——收起态只剩一条窄轨（展开钮），宽度让给关系图。
+							// 两态都读**本帧**的 st.leftCollapsed：钮在同帧 dispatch 里翻转，
+							// 故点一下当帧就换宽度，不等到下一帧。
+							w, body := histLeftColumnDp, histLeftColumn
+							if st.leftCollapsed {
+								w, body = histLeftRailDp, histLeftRail
+							}
+							px := gtx.Dp(w)
+							gtx.Constraints = layout.Constraints{Min: image.Pt(px, 0), Max: image.Pt(px, gtx.Constraints.Max.Y)}
+							return body(gtx, th, u, st)
 						}),
 						// 左栏与右图之间一条 hairline：两栏各自整高填充同色时，没有这条线
 						// 会长成一块——读者分不出「列表到此为止」。
@@ -336,19 +335,29 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 	)
 }
 
-// histLeftColumnDp 左栏固定宽度（§5.4）。
+// histLeftColumnDp 左栏展开态宽度（§5.4）。
 const histLeftColumnDp unit.Dp = 200
 
-// histLeftColumn 左栏：会话列表（标题 / 时间 / 消息数；当前会话高亮）。
+// histLeftRailDp 左栏收起态宽度（D159）：一条窄轨，只放展开钮——左栏存在的意义是选会话，
+// 选完就收起把宽度让给关系图（长会话横向本来就不够看）。
+const histLeftRailDp unit.Dp = 30
+
+// histLeftColumn 左栏：会话列表（标题 / 时间 / 消息数；当前会话高亮）+ 标题行右端的收起钮。
 func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	rowH := gtx.Dp(44)
 	return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperMicroSp(th), "会话")
-				l.Font.Weight = font.Bold
-				l.Color = paperOf().text3
-				return l.Layout(gtx)
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						l := material.Label(th, paperMicroSp(th), "会话")
+						l.Font.Weight = font.Bold
+						l.Color = paperOf().text3
+						return l.Layout(gtx)
+					}),
+					layout.Flexed(1, layout.Spacer{}.Layout),
+					layout.Rigid(histRailToggle(th, &st.btnLeft, "◀")),
+				)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -395,6 +404,38 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 			}),
 		)
 	})
+}
+
+// histLeftRail 左栏收起态（D159）：整条铺 sunken 底色 + 顶部展开钮，钮外整条不取事件
+// （收起态唯一的交互件就是那颗钮，点空白不该有反应）。u 不参与绘制，只为与 histLeftColumn
+// 同签名（帧里按状态二选一）。
+func histLeftRail(gtx layout.Context, th *material.Theme, _ *UI, st *historyState) layout.Dimensions {
+	pp := paperOf()
+	paint.FillShape(gtx.Ops, pp.sunken,
+		clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op())
+	return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, layout.Spacer{}.Layout),
+					layout.Rigid(histRailToggle(th, &st.btnLeft, "▶")),
+					layout.Flexed(1, layout.Spacer{}.Layout),
+				)
+			}),
+		)
+	})
+}
+
+// histRailToggle 左栏收起/展开钮（◀ 收起 / ▶ 展开）。与其它状态栏钮同款：Clickable
+// 自带 hover 反馈，文字用次级色，不另铺底（收起态底色已是 sunken）。
+func histRailToggle(th *material.Theme, c *widget.Clickable, glyph string) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			l := material.Caption(th, glyph)
+			l.Color = paperOf().text2
+			return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, l.Layout)
+		})
+	}
 }
 
 // histSessionRow 单行内容：标题 + （时间 · N 条）；当前会话带「●」。
@@ -511,16 +552,39 @@ func histGraphArea(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 	})
 }
 
-// histStatusBar 状态栏（A7 落点）：会话标题 · 共 N · 呈现 M + 预算/缩放/装下整树控件 + 图例。
+// histCtlItem 状态栏一个控件：click 非空 = 按钮，空 = 只读文字（缩放百分比）。
+// 项集由 histStatusCtlItems 一处给出——测试锁定「有哪些控件 / 什么文案」，绘制侧只按序排
+// （加减控件必须改这一处，不会出现「改了绘制、忘了改契约测试」）。
+type histCtlItem struct {
+	label string
+	click *widget.Clickable
+}
+
+// histStatusCtlItems 状态栏控件项集（自左向右）。2026-10-19 删掉「展开全部」：会话在默认
+// 预算内就已是全量，点了没有任何变化（用户批注「没什么效果，删了」）；预算仍由 −/＋ 调
+// （上限 relHardCap）。
+func (st *historyState) histStatusCtlItems() []histCtlItem {
+	zoomPct := "100%"
+	if st.graph != nil {
+		zoomPct = fmt.Sprintf("%d%%", int(st.graph.zoom*100+0.5))
+	}
+	return []histCtlItem{
+		{label: "−", click: &st.btnMinus},
+		{label: "＋", click: &st.btnPlus},
+		{label: "缩放 " + zoomPct}, // 只读文字
+		{label: "装下整树", click: &st.btnHome},
+		{label: "回到初始态", click: &st.btnSeed},
+		{label: "聚焦当前历史", click: &st.btnLine},
+		{label: "聚焦当前节点", click: &st.btnNode},
+	}
+}
+
+// histStatusBar 状态栏（A7 落点）：会话标题 · 共 N · 呈现 M + 控件项集 + 图例。
 func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	N, M := 0, 0
 	if st.model != nil {
 		N = st.model.total
 		M = len(st.vis.nodes)
-	}
-	zoomPct := "100%"
-	if st.graph != nil {
-		zoomPct = fmt.Sprintf("%d%%", int(st.graph.zoom*100+0.5))
 	}
 	text := fmt.Sprintf("会话：%s · 共 %d 条 · 呈现 %d", st.title(), N, M)
 	return layout.Stack{}.Layout(gtx,
@@ -533,31 +597,21 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 			return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						kids := []layout.FlexChild{
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								l := material.Label(th, paperMicroSp(th), text)
 								l.Color = paperOf().text2
 								return l.Layout(gtx)
 							}),
-							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								return layout.Spacer{}.Layout(gtx)
-							}),
-							layout.Rigid(histCtl(th, &st.btnMinus, "−")),
-							layout.Rigid(histCtl(th, &st.btnPlus, "＋")),
-							layout.Rigid(histCtl(th, &st.btnAll, "展开全部")),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									l := material.Label(th, paperMicroSp(th), "缩放 "+zoomPct)
-									l.Color = paperOf().text2
-									return l.Layout(gtx)
-								})
-							}),
-							layout.Rigid(histCtl(th, &st.btnHome, "装下整树")),
-							// D128 三种聚焦域：整树（重排）/ 当前历史线 / 当前节点及父子
-							layout.Rigid(histCtl(th, &st.btnSeed, "回到初始态")),
-							layout.Rigid(histCtl(th, &st.btnLine, "聚焦当前历史")),
-							layout.Rigid(histCtl(th, &st.btnNode, "聚焦当前节点")),
-						)
+							layout.Flexed(1, layout.Spacer{}.Layout),
+						}
+						for _, it := range st.histStatusCtlItems() {
+							it := it
+							kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return histCtl(gtx, th, it)
+							}))
+						}
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return histLegend(gtx, th)
@@ -568,18 +622,21 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 	)
 }
 
-// histCtl 状态栏小按钮（clickable + 标签）。悬停/按下靠 Clickable 自带的 ripple 投影
-// 到 Paper 的次级面上——状态栏底色已是 sunken，故只给文字色，不再叠第二层底。
-func histCtl(th *material.Theme, c *widget.Clickable, text string) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				l := material.Caption(th, text)
-				l.Color = paperOf().text2
-				return l.Layout(gtx)
-			})
-		})
-	}
+// histCtl 状态栏一个小控件（click 空 = 只读文字）。悬停/按下靠 Clickable 自带的 ripple
+// 投影到 Paper 的次级面上——状态栏底色已是 sunken，故只给文字色，不再叠第二层底。
+// 每个控件左侧留 8dp 间距（否则「＋ 缩放 98%」会连成一句，见 D158）。
+func histCtl(gtx layout.Context, th *material.Theme, it histCtlItem) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		mk := func(gtx layout.Context) layout.Dimensions {
+			l := material.Caption(th, it.label)
+			l.Color = paperOf().text2
+			return l.Layout(gtx)
+		}
+		if it.click == nil {
+			return mk(gtx)
+		}
+		return it.click.Layout(gtx, mk)
+	})
 }
 
 // histLegend 状态栏第二行：深度色带图例 + 形状图例（A2 的可解释性）。

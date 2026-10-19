@@ -63,7 +63,11 @@ func animBench(b *testing.B) (*UI, *historyState, *input.Router, *headless.Windo
 	applyPalette(lightPalette())
 	u := newHistUI(fakeRelTree{g: animBenchGraph(animBenchN)}, fakeLister(nil))
 	st := newHistoryState(u)
-	st.expandAll() // 预算 = 200（≤ hardCap 240）
+	// 预算全开（200 ≤ relHardCap 240）：基准要测的是 200 节点全程物理，不是默认 120 的切片
+	//（状态栏只有 −/＋ 两档，没有「一步全开」，基准直接置位）。
+	st.budget = animBenchN
+	st.vis = relBudget(st.model, st.budget)
+	st.graph.rebuild(st.model, st.vis)
 	q := new(input.Router)
 	w, err := headless.NewWindow(900, 700)
 	if err != nil {

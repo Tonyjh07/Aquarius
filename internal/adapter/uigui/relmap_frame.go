@@ -281,7 +281,7 @@ func (g *relGraph) restoreSlots(m *relModel) {
 				break
 			}
 		}
-		if li < 0 { // 被预算裁掉：槽位还记着（展开全部时要用）
+		if li < 0 { // 被预算裁掉：槽位还记着（预算放开时要用）
 			continue
 		}
 		g.lay.setSlot(li, s)
