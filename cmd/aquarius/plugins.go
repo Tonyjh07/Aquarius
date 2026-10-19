@@ -337,7 +337,7 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		prompts:    map[string][]plugin.PromptInfo{},
 	}
 	w.host = plugin.New(plugin.Deps{
-		Dial:          mcpgate.NewDialer(envSecrets{}),
+		Dial:          mcpgate.NewDialer(w.secrets),
 		Confirm:       confirmer,
 		ConfigServers: w.cfg.MCPServers,
 		PluginsDir:    filepath.Join(w.profileDir, "plugins"),

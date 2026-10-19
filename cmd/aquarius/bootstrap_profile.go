@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 )
@@ -68,6 +69,16 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return fmt.Errorf("创建特权目录 %s: %w", sandboxDir, err)
 	}
 	w.sandboxDir = sandboxDir
+
+	// 本机密钥库（D151/D161）：密钥库落在 profile 内（随 profile 隔离），读链 = 库 → 同名
+	// 环境变量；装配前向导窗（setupWizard）要用它探测缺密钥，故在此就位——profileDir 一
+	// 定，两处（探测与真实构造）就是同一份链。库解不开不阻断：警告 + 环境变量兜底。
+	bin, err := secretbin.New(profileDir)
+	if err != nil {
+		return fmt.Errorf("装配本机密钥库: %w", err)
+	}
+	w.secretsBin = bin
+	w.secrets = newSecretChain(bin, w.stderr)
 
 	// profile 配置：不存在 = 该 profile 首次运行，写模板。D141：**gui 不再「写模板即退出」**
 	// ——模板落盘后照常装配，配置缺项（模板的密钥引用通常取不到）由 run() 的欢迎向导窗

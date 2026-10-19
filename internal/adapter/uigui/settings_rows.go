@@ -88,7 +88,7 @@ const (
 var provFieldMeta = [provFldN]struct{ label, hint string }{
 	{"名称", "provider 唯一标识（primary/fallback 按名引用）"},
 	{"接口地址", "如 https://api.openai.com/v1"},
-	{"API 密钥", "只写不回显；留空保持不变"},
+	{"API 密钥", "明文存入本机加密库、配置只留引用；留空保持不变"},
 	{"模型列表", "逗号分隔；首个 = 缺省请求模型"},
 	{"Tokenizer", "本地 tokenizer.json 路径；空 = 估算"},
 	{"不认参数", "逗号分隔；这些参数会被剔除，不发往服务端"},

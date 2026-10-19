@@ -30,7 +30,9 @@ go build ./cmd/aquarius
 
 1. 编辑 `~/.aquarius/profiles/default/config.json`：在 `model.providers` 填端点与模型
    （`base_url` / `models` / `api_key`；多 provider + 降级顺序 `model.fallback`，见[配置参考](docs/configuration.md)）；
-2. 密钥推荐写 `secret:AQUARIUS_OPENAI_KEY` 并存入同名环境变量（也允许明文填入 `api_key`，启动会打印警告）；
+2. 密钥推荐写 `secret:<名>`：真实值按名取用（先查本机加密密钥库 `<profile>/secrets.bin`，未命中再
+   查同名环境变量）；在设置窗填明文会自动转入密钥库、config 里只留引用（也允许明文直填 `api_key`，
+   启动会打印警告）；
 3. 重新运行即可直接对话；`/help` 查看命令，完整命令参考见[使用手册](docs/usage.md)。
 
 数据全部在 `~/.aquarius/`（`-data` 可指定目录）：根 `config.json` 仅存当前 profile 指针，

@@ -15,13 +15,17 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // providerManager uigui.ProviderManager 的装配根实现（D110②/③）。
 type providerManager struct {
 	cfgPath string
-	stderr  io.Writer // D35 明文警告出口（os.Stderr；测试可注入）
+	secrets port.Secrets     // D151/D161：读链（库 → 同名环境变量）
+	bin     *secretbin.Store // D161：界面明文密钥的写入口（nil = 未接线）
+	stderr  io.Writer        // D35 明文警告出口（os.Stderr；测试可注入）
 }
 
 // Snapshot provider 编辑区数据面（开窗现取；读失败 = 空，不阻断开窗）。
@@ -47,6 +51,10 @@ func (m *providerManager) Snapshot() []uigui.ProviderSnapshot {
 // primary 命中）→ 泛键写回。原条目无关键（含 api_key）按 Orig 名保留——改名不丢密钥，
 // 新条目从空起步。fallback 悬挂引用（删除/改名产生的）一并清理；model.name 不动
 // （启动 normalize 兜底缺省）。
+//
+// 密钥入口径（D151/D161，取代原先「填什么写什么」）：编辑区填的**明文**写进本机密钥库，
+// config 里只落 `secret:<名>` 引用（名沿用原引用名，否则按 provider 名生成）；填的本来就
+// 是引用则照写。**写库失败即报错、config 不动**——绝不静默退回明文。
 func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) error {
 	if len(patches) == 0 {
 		return fmt.Errorf("至少保留一个 provider")
@@ -73,6 +81,20 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 	if !names[primary] {
 		return fmt.Errorf("primary %q 不在 provider 列表内", primary)
 	}
+	// 密钥先落库（config 写回之前）：任何一条写库失败就整体放弃，不留「config 已是引用、
+	// 库里却没有值」的半个状态。
+	origRefs := m.origRefsByName()
+	keyRefs := make([]string, len(patches))
+	for i, p := range patches {
+		if strings.TrimSpace(p.APIKey) == "" {
+			continue // 空 = 保持原值（D35 只写不回显）
+		}
+		ref, err := storePlaintextKey(context.Background(), m.bin, strings.TrimSpace(p.Name), origRefs[p.Orig], p.APIKey)
+		if err != nil {
+			return err
+		}
+		keyRefs[i] = ref
+	}
 	return persistConfig(m.cfgPath, func(generic map[string]any) {
 		model := modelSection(generic)
 		old, _ := model["providers"].([]any)
@@ -88,7 +110,7 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			return nil
 		}
 		list := make([]any, 0, len(patches))
-		for _, p := range patches {
+		for i, p := range patches {
 			entry := map[string]any{}
 			if base := byOrig(p.Orig); base != nil {
 				for k, v := range base {
@@ -97,8 +119,8 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			}
 			entry["name"] = strings.TrimSpace(p.Name)
 			entry["base_url"] = strings.TrimSpace(p.BaseURL)
-			if p.APIKey != "" { // 空 = 保持原值（D35 只写不回显）
-				entry["api_key"] = strings.TrimSpace(p.APIKey)
+			if keyRefs[i] != "" { // 空 = 保持原值（D35 只写不回显）
+				entry["api_key"] = keyRefs[i]
 			}
 			entry["models"] = anyList(splitCSV(p.Models))
 			entry["tokenizer"] = strings.TrimSpace(p.Tokenizer)
@@ -117,6 +139,20 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			model["fallback"] = kept
 		}
 	})
+}
+
+// origRefsByName 读 config 里各 provider 现有 api_key 引用（按名索引；读失败返回空表）。
+// 用途：界面改填明文时，**原引用名**决定库里写哪个槽（改名不 churn 引用，D161 落点③）。
+func (m *providerManager) origRefsByName() map[string]string {
+	out := map[string]string{}
+	cfg, err := loadConfig(m.cfgPath)
+	if err != nil {
+		return out
+	}
+	for _, p := range cfg.Model.Providers {
+		out[p.Name] = p.APIKey
+	}
+	return out
 }
 
 // Test 连通性测试（D110②：真实最小请求）：以 patch 构造一次性 client（8s 超时）
@@ -166,7 +202,7 @@ func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
 			}
 		}
 	}
-	key, err := resolveAPIKey(context.Background(), p.Name, ref, m.stderr)
+	key, err := resolveAPIKey(context.Background(), p.Name, ref, m.secrets, m.stderr)
 	if err != nil {
 		return nil, err
 	}

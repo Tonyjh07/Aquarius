@@ -547,7 +547,7 @@ func welcomeHeader(th *material.Theme, f *welcomeForm) layout.Widget {
 				return paperTitle(th, "欢迎使用 Aquarius")(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperNoteSp(th), "三步完成接入；密钥只写不回显。")
+				l := material.Label(th, paperNoteSp(th), "三步完成接入；密钥存入本机加密库，配置里只留引用。")
 				l.Color = paperOf().text2
 				return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, l.Layout)
 			}),
@@ -746,7 +746,7 @@ func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.
 			return fieldRow(gtx, th, "接口地址", editorBox(th, &f.baseURL, "如 https://api.openai.com/v1"))
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "API 密钥", editorBox(th, &f.apiKey, "secret:环境变量名 或明文；只写不回显"))
+			return fieldRow(gtx, th, "API 密钥", editorBox(th, &f.apiKey, "明文（存入本机加密库）或 secret:名 引用；只写不回显"))
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return fieldRow(gtx, th, "模型名", func(gtx layout.Context) layout.Dimensions {

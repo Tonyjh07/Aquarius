@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // setupWindowRunner 装配前向导窗宿主：默认 = uigui.RunSetupWindow（真窗）；测试换假实现
@@ -30,8 +32,10 @@ var setupWindowRunner = uigui.RunSetupWindow
 // welcomeManager uigui.WelcomeManager 的装配根实现（D141）。
 type welcomeManager struct {
 	cfgPath string
-	stderr  io.Writer // D35 明文警告出口（os.Stderr；测试可注入）
-	hotkey  string    // ui.hotkey（教程页展示用；空 = Alt+A）
+	secrets port.Secrets     // D151/D161：读链（库 → 同名环境变量）
+	bin     *secretbin.Store // D161：界面明文密钥的写入口（nil = 未接线）
+	stderr  io.Writer        // D35 明文警告出口（os.Stderr；测试可注入）
+	hotkey  string           // ui.hotkey（教程页展示用；空 = Alt+A）
 }
 
 // Snapshot 欢迎窗快照（开窗现取；**密钥不回显**）：primary provider 三项 + 标记。
@@ -67,6 +71,12 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 	case len(models) == 0:
 		return fmt.Errorf("模型名不可为空（首个 = 缺省请求模型）")
 	}
+	// 密钥先落库（config 写回之前，D151/D161）：填的是明文写进本机库、config 只留引用；
+	// 填的是引用则照写。写库失败整体放弃，不留「config 已是引用、库里没有值」的半个状态。
+	keyRef, err := welcomeKeyRef(m, name, p.APIKey)
+	if err != nil {
+		return err
+	}
 	return persistConfig(m.cfgPath, func(generic map[string]any) {
 		model := modelSection(generic)
 		old, _ := model["providers"].([]any)
@@ -80,8 +90,8 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 		}
 		entry["name"] = name
 		entry["base_url"] = baseURL
-		if p.APIKey != "" { // 空 = 保持原值（D35 只写不回显）
-			entry["api_key"] = strings.TrimSpace(p.APIKey)
+		if keyRef != "" { // 空 = 保持原值（D35 只写不回显）
+			entry["api_key"] = keyRef
 		}
 		entry["models"] = anyList(models)
 		// 首条 = 本次填写；其余条目原样保留（只覆盖 providers[0]）。
@@ -118,6 +128,20 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 	})
 }
 
+// welcomeKeyRef 欢迎窗密钥写入口径（D161 落点①）：明文 → 写进本机密钥库、返回
+// `secret:<名>` 引用；引用 → 原样保留；空 → 返回 ""（保持原值）。
+// 键名沿用 providers[0] 现有引用名（改名不 churn），否则按 provider 名生成。
+func welcomeKeyRef(m *welcomeManager, name, typed string) (string, error) {
+	if strings.TrimSpace(typed) == "" {
+		return "", nil
+	}
+	origRef := ""
+	if cfg, err := loadConfig(m.cfgPath); err == nil && len(cfg.Model.Providers) > 0 {
+		origRef = cfg.Model.Providers[0].APIKey
+	}
+	return storePlaintextKey(context.Background(), m.bin, name, origRef, typed)
+}
+
 // Test 连通性测试（口径同 providerManager.Test）：以 patch 构造一次性 client（8s 超时）
 // 拉 /models。APIKey 空 = 取 config 内 providers[0] 原值，再走 D35 解析。
 func (m *welcomeManager) Test(p uigui.WelcomePatch) error {
@@ -133,7 +157,7 @@ func (m *welcomeManager) Models(p uigui.WelcomePatch) ([]string, error) {
 			ref = cfg.Model.Providers[0].APIKey
 		}
 	}
-	key, err := resolveAPIKey(context.Background(), strings.TrimSpace(p.Provider), ref, m.stderr)
+	key, err := resolveAPIKey(context.Background(), strings.TrimSpace(p.Provider), ref, m.secrets, m.stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -178,8 +202,9 @@ func (m *welcomeManager) MarkWelcomed() error {
 
 // apiKeyGap 密钥可解析性探测（D141，装配前）：空值回落默认引用与 resolveAPIKey 同口径；
 // 明文恒可解析（**不打警告**——警告只在真实构造路径发一次，D35）；引用型经 port.Secrets
-// 按名取用（不直读 os.Getenv，端口契约优先）。返回 "" = 可用。
-func apiKeyGap(ctx context.Context, p providerConfig) string {
+// 按名取用（先本机密钥库、再同名环境变量；不直读 os.Getenv，端口契约优先，D151/D161）。
+// 返回 "" = 可用。
+func apiKeyGap(ctx context.Context, p providerConfig, sec port.Secrets) string {
 	ref := strings.TrimSpace(p.APIKey)
 	if ref == "" {
 		ref = "secret:AQUARIUS_OPENAI_KEY"
@@ -187,25 +212,25 @@ func apiKeyGap(ctx context.Context, p providerConfig) string {
 	if !strings.HasPrefix(ref, "secret:") {
 		return ""
 	}
-	envName, err := secretName(ref)
+	name, err := secretName(ref)
 	if err != nil {
 		return fmt.Sprintf("provider %q 的密钥引用非法：%v", p.Name, err)
 	}
-	if _, err := (envSecrets{}).Get(ctx, envName); err != nil {
-		return fmt.Sprintf("provider %q 缺密钥：环境变量 %s 未设置", p.Name, envName)
+	if _, err := sec.Get(ctx, name); err != nil {
+		return fmt.Sprintf("provider %q 取不到密钥：%v", p.Name, err)
 	}
 	return ""
 }
 
 // missingKeys 装配前「配置不完整」判定（D141）：primary 与 fallback[] 逐条探测密钥。
 // 非空即阻断启动（gui 走向导窗，其余形态 fatal 报因）。
-func missingKeys(ctx context.Context, m *modelConfig) []string {
+func missingKeys(ctx context.Context, m *modelConfig, sec port.Secrets) []string {
 	var out []string
 	check := func(p *providerConfig) {
 		if p == nil {
 			return
 		}
-		if gap := apiKeyGap(ctx, *p); gap != "" {
+		if gap := apiKeyGap(ctx, *p, sec); gap != "" {
 			out = append(out, gap)
 		}
 	}
@@ -227,14 +252,17 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 	if w.cfg.UI.Kind != "gui" || w.setupTried {
 		return 0, false
 	}
-	issues := missingKeys(ctx, &w.cfg.Model)
+	issues := missingKeys(ctx, &w.cfg.Model, w.secrets)
 	if len(issues) == 0 {
 		return 0, false
 	}
 	w.setupTried = true
 	outcome, err := setupWindowRunner(uigui.SetupRequest{
-		Theme:  w.cfg.UI.Theme,
-		Mgr:    &welcomeManager{cfgPath: w.cfgPath, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey},
+		Theme: w.cfg.UI.Theme,
+		Mgr: &welcomeManager{
+			cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin,
+			stderr: w.stderr, hotkey: w.cfg.UI.Hotkey,
+		},
 		Issues: issues,
 	})
 	if err != nil {
@@ -250,7 +278,7 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		}
 		return fatal(w.stderr, "%v", err), true
 	}
-	if issues := missingKeys(ctx, &w.cfg.Model); len(issues) > 0 {
+	if issues := missingKeys(ctx, &w.cfg.Model, w.secrets); len(issues) > 0 {
 		return fatal(w.stderr, "配置仍不完整：%s", strings.Join(issues, "；")), true
 	}
 	return 0, false

@@ -91,7 +91,7 @@ func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 // buildClient 构建 provider 客户端（D110②/修订③）：base_url/api_key/tokenizer
 // 构造期固化（port.LLM 不可热换）。密钥逐 provider 解析（D35）。
 func (w *wiring) buildClient(p *providerConfig) (*llm.Client, port.TokenCounter, error) {
-	key, kerr := resolveAPIKey(context.Background(), p.Name, p.APIKey, w.stderr)
+	key, kerr := resolveAPIKey(context.Background(), p.Name, p.APIKey, w.secrets, w.stderr)
 	if kerr != nil {
 		return nil, nil, kerr
 	}

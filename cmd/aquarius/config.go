@@ -16,6 +16,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // ErrLegacyConfig D110 前的旧单文件 config（沿 storejson ErrLegacyFormat 口径：
@@ -430,24 +431,23 @@ func secretName(ref string) (string, error) {
 
 // resolveAPIKey 解析某 provider 的 api_key（D35，文件内值优先；D110② 逐 provider 独立）：
 //   - 空 → 回落默认引用 secret:AQUARIUS_OPENAI_KEY（经 Secrets 按名取用；
-//     环境变量缺失由 Secrets 报因）
-//   - secret:<环境变量名> → 经 port.Secrets 按名取用
+//     库与同名环境变量都缺由 Secrets 报因）
+//   - secret:<名> → 经 port.Secrets 按名取用（**先本机密钥库、再同名环境变量**，D151/D161）
 //   - 其余 → 视为明文直接使用，启动打印警告（**不回显密钥值**）
-func resolveAPIKey(ctx context.Context, provider, ref string, stderr io.Writer) (string, error) {
+func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, stderr io.Writer) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ref = "secret:AQUARIUS_OPENAI_KEY"
 	}
 	if !strings.HasPrefix(ref, "secret:") {
-		fmt.Fprintf(stderr, "警告：provider %q 的 api_key 为明文——密钥直接落在 config.json，"+
-			"本机任意可读进程、备份与同步都可能取用；建议改用 \"secret:<环境变量名>\" 引用环境变量。\n", provider)
+		secretBoundWarn(stderr, provider)
 		return ref, nil
 	}
 	name, err := secretName(ref)
 	if err != nil {
 		return "", fmt.Errorf("provider %q: %w", provider, err)
 	}
-	return (envSecrets{}).Get(ctx, name)
+	return sec.Get(ctx, name)
 }
 
 // cfgWriteMu 串行化全部 config 写回（/permission、/model、/think、/effort、

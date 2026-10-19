@@ -906,9 +906,11 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
     ├── jobs/<jobID>.log       # 后台任务日志
     ├── audit.log              # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
-    ├── secrets.bin            # 本机密钥库（D151）：明文 JSON 经平台加密后落盘——Windows 走
+    ├── secrets.bin            # 本机密钥库（D151/D161）：明文 JSON 经平台加密后落盘——Windows 走
     #                             DPAPI（当前用户，无口令），其它平台走 AES-GCM + 同目录
-    #                             0600 的 secrets.key；键名 = api_key 里 secret:<名> 的 <名>
+    #                             0600 的 secrets.key；键名 = api_key 里 secret:<名> 的 <名>；
+    #                             写前留一代 .bak，解不开时（换机/账户不同/损坏）警告并回落同名环境变量
+    ├── secrets.key            # 仅非 Windows：AES-GCM 档的 32 字节密钥（0600，首次写入才生成）
     ├── attachments/<sha256>   # 内容寻址附件
     ├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak；JSON 与领域结构同构、无独立版本号，
                                     #   合法性由加载期 Validate 把关；破坏性切换先例：D19 虚拟 Root、
@@ -933,7 +935,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "providers": [                // 每个 provider 一条；primary 指向其中 name
       { "name": "openai", "base_url": "https://api.openai.com/v1",
         "api_key": "secret:AQUARIUS_OPENAI_KEY", // secret:<名> = 先查本机密钥库、再查环境变量（D151）；
-                                                 // 明文允许但启动警告；空值回落本默认引用（D35）
+                                                 // 明文允许但启动警告；界面填的明文会转入库并改成引用（D161）；
+                                                 // 空值回落本默认引用（D35）
         "models": ["gpt-4o-mini"], "tokenizer": "",  // tokenizer：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
         "unsupported_params": [] }                   // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
     ],
@@ -998,10 +1001,18 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 `--profile` flag > `<data>/config.json` 指针（D110 修订②）。`-model`/`AQUARIUS_MODEL` 覆盖 `model.name`；
 `-base-url`/`AQUARIUS_BASE_URL` 覆盖 primary provider 的 `base_url`（调试逃生口）。
 
-**密钥解析顺序（D151，取代 D35 的单口径）**：`api_key` 取值为 `secret:<名>` 时，
-**先查本机密钥库 `<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错
-（提示里说明查过哪两处，不回显值）。明文仍允许但启动警告（兼容旧配置）；空值回落
+**密钥解析顺序（D151/D161）**：`api_key` 取值为 `secret:<名>` 时，**先查本机密钥库
+`<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错（提示里说明查过哪两处，
+不回显值）。**库解不开**（profile 拷到别的机器、DPAPI 绑的是别的账户、文件损坏）时打一行
+警告后**回落同名环境变量**继续启动，不 fatal——「换机拷 profile」是这套方案自己预期的场景，
+把它变成硬故障只会让人以为程序坏了（D161）。明文仍允许但启动警告（兼容旧配置）；空值回落
 `secret:AQUARIUS_OPENAI_KEY`。
+
+**写入路径（D161）**：设置窗 provider 编辑区与欢迎窗填的**明文**密钥，写进本机密钥库，config
+里只落 `secret:<名>`；**写库失败即报错**，不静默退回明文。键名 = 原引用名（改填明文只在原地
+换值，引用不 churn），否则按 provider 名派生 `AQUARIUS_<PROVIDER>_API_KEY`。设置窗另有
+「密钥库」页管理任意名字（MCP 插件 `env`/`headers` 的 `secret:` 也存这里），列表只显示名字 +
+尾 4 位掩码，值永不回显。
 
 **为什么不是单纯的环境变量或明文文件**（评估结论，D151）：三者的真实差距是「谁能读到」
 与「会不会被顺带带走」两件事——
@@ -1726,8 +1737,9 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   Paper 版式，与 `mock/welcome_v1.png` 对齐：
   - 几何从 560×520 放宽到 **660×640**（下限 560×520）：模拟稿是「标题 + 副标题 + 步骤条 +
     四行卡 + 候选行 + 测试行 + 页脚」，560×520 会把卡压到只剩两行；
-  - 头部 = 标题 + 副标题（「三步完成接入；密钥只写不回显。」——模拟稿的「密钥只存引用，不落盘」
-    属本机加密密钥库落地后才成立的口径，当前明文仍受支持，不写没做的承诺）；
+  - 头部 = 标题 + 副标题（「三步完成接入；密钥存入本机加密库，配置里只留引用。」——D153 当时
+    因本机加密密钥库尚未落地而写成「密钥只写不回显」，D151/D161 落地后改成本句：界面填的明文
+    确实会转入库、config 只留引用，这句话现在成立）；
   - 步骤条 = **编号圆徽**（当前步实心 `accent` + 白字，其余为描边空心）+ 步骤名（当前步加粗）；
   - 头部与正文之间、页脚之上各一条**贯通面板**的 hairline；
   - 接入页表单 = **一张分组卡**（four rows：Provider / 接口地址 / API 密钥 / 模型名，

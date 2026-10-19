@@ -137,8 +137,13 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 - **启动报"发现旧格式会话（虚拟 Root，D19）"**：M0 早期数据不兼容，按报因点名的
   ID 删除 `profiles/<name>/conversations/<id>.json`（含 `.bak`）后重试，详见 [storage.md](storage.md)。
 - **启动警告"api_key 为明文"**（D35）：明文密钥直接写在 config.json 里，任何能读
-  该文件的进程都可取用——建议改为 `"api_key": "secret:AQUARIUS_OPENAI_KEY"` + 同名环境变量；
-  该项留空也会自动回落默认引用（环境变量缺失时才报错退出）。
+  该文件的进程都可取用——到设置窗 provider 编辑区（或欢迎窗）重填一次即转入本机加密密钥库，
+  config 里只留 `secret:<名>` 引用；也可手工改成 `"api_key": "secret:名"` 再配同名环境变量。
+  该项留空也会自动回落默认引用（两处都取不到时才报错退出）。
+- **密钥库**：真实值存 `<profile>/secrets.bin`（本机加密；Windows 用系统账户加密，其它平台用
+  同目录 `secrets.key`）。取用顺序 = **先查库、再查同名环境变量**。设置窗「密钥库」页可列出/
+  新增/覆盖/删除任意名字（列表只显示名字与尾 4 位掩码）。**备份/同步/换机拷走的 `secrets.bin`
+  解不开**，这是预期行为；那种情况下启动只打一行警告、继续用同名环境变量兜底，不会阻断。
 - **思考链路（D34/D42）**：`/think off` 关闭原生思考（不发 `reasoning_effort`/`enable_thinking`）；
   `/effort high` 只存档位、配合 `/think on` 才发送；`reasoning_effort` 非法值启动即报因
   （`minimal|low|medium|high`）；服务端不认的参数会被自动剥离并记入

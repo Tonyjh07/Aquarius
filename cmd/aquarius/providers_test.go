@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,7 +41,7 @@ func writeProvidersConfig(t *testing.T) (string, string) {
 
 func TestProviderManagerSnapshot(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
-	m := &providerManager{cfgPath: cfgPath, stderr: os.Stderr}
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 	snap := m.Snapshot()
 	if len(snap) != 2 || snap[0].Name != "a" || snap[1].Name != "b" {
 		t.Fatalf("snapshot = %+v", snap)
@@ -52,14 +53,14 @@ func TestProviderManagerSnapshot(t *testing.T) {
 		t.Fatalf("models 展示 = %q", snap[0].Models)
 	}
 	// 旧格式/缺失文件：容错返回空（不阻断开窗）。
-	if got := (&providerManager{cfgPath: "missing.json"}).Snapshot(); got != nil {
+	if got := (&providerManager{cfgPath: "missing.json", secrets: testSecrets(t)}).Snapshot(); got != nil {
 		t.Fatalf("缺失文件 snapshot = %+v, want nil", got)
 	}
 }
 
 func TestProviderManagerApply(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
-	m := &providerManager{cfgPath: cfgPath, stderr: os.Stderr}
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 
 	// 改名 a→a2（保 Orig 密钥与无关键）+ 删除 b + 新增 c。
 	err := m.Apply("a2", []uigui.ProviderPatch{
@@ -111,7 +112,7 @@ func TestProviderManagerApply(t *testing.T) {
 
 func TestProviderManagerApplyValidation(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
-	m := &providerManager{cfgPath: cfgPath, stderr: os.Stderr}
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 	ok := func(name, base, models string) uigui.ProviderPatch {
 		return uigui.ProviderPatch{Orig: name, Name: name, BaseURL: base, Models: models}
 	}
@@ -134,6 +135,67 @@ func TestProviderManagerApplyValidation(t *testing.T) {
 	}
 }
 
+// TestProviderManagerApplyStoresPlaintext D161：编辑区填明文 → 写进本机密钥库 +
+// config 只留 `secret:<名>`；config 字节里搜不到明文；写库失败即报错、config 不动。
+func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
+	cfgPath, _ := writeProvidersConfig(t)
+	ch, bin := testChain(t, nil)
+	m := &providerManager{cfgPath: cfgPath, secrets: ch, bin: bin, stderr: io.Discard}
+
+	// 改名 a→a2 并填新明文：键名沿用原引用名 KA（改名不 churn 引用）。
+	err := m.Apply("a2", []uigui.ProviderPatch{
+		{Orig: "a", Name: "a2", BaseURL: "http://a2/v1", APIKey: "sk-typed-plain-1", Models: "m1"},
+		{Orig: "b", Name: "b", BaseURL: "http://b/v1", Models: "mb"},
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := cfg.Model.Providers[0].APIKey; got != "secret:KA" {
+		t.Fatalf("api_key = %q，want 沿用原引用名", got)
+	}
+	if got, _ := bin.Get(context.Background(), "KA"); got != "sk-typed-plain-1" {
+		t.Fatalf("明文应已入库: %q", got)
+	}
+	if raw, _ := os.ReadFile(cfgPath); strings.Contains(string(raw), "sk-typed-plain-1") {
+		t.Fatalf("config 里不该再出现明文密钥")
+	}
+	// 第二条没填密钥：原引用保持（只写不回显）。
+	if got := cfg.Model.Providers[1].APIKey; got != "secret:KB" {
+		t.Fatalf("留空应保持原引用: %q", got)
+	}
+
+	// 新 provider 从空起步 + 填明文：键名按 provider 名派生。
+	if err := m.Apply("a2", []uigui.ProviderPatch{
+		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", Models: "m1"},
+		{Orig: "", Name: "My-API", BaseURL: "http://my/v1", APIKey: "sk-typed-plain-2", Models: "m2"},
+	}); err != nil {
+		t.Fatalf("Apply2: %v", err)
+	}
+	cfg, _ = loadConfig(cfgPath)
+	if got := cfg.Model.Providers[1].APIKey; got != "secret:AQUARIUS_MY_API_API_KEY" {
+		t.Fatalf("新条目键名应派生: %q", got)
+	}
+	if got, _ := bin.Get(context.Background(), "AQUARIUS_MY_API_API_KEY"); got != "sk-typed-plain-2" {
+		t.Fatalf("新条目明文应已入库: %q", got)
+	}
+
+	// 库未接线：填明文即报错，且 config 不被改动。
+	before, _ := os.ReadFile(cfgPath)
+	mNoBin := &providerManager{cfgPath: cfgPath, secrets: ch, stderr: io.Discard}
+	if err := mNoBin.Apply("a2", []uigui.ProviderPatch{
+		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", APIKey: "sk-typed-plain-3", Models: "m1"},
+	}); err == nil {
+		t.Fatal("库未接线时填明文应报错（不得静默退回明文）")
+	}
+	if after, _ := os.ReadFile(cfgPath); string(after) != string(before) {
+		t.Fatal("写库失败时 config 不应被改动")
+	}
+}
+
 func TestProviderManagerTest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/models" {
@@ -147,7 +209,7 @@ func TestProviderManagerTest(t *testing.T) {
 
 	cfgPath, _ := writeProvidersConfig(t)
 	t.Setenv("KA", "k") // Orig 取回的 config 密钥引用 secret:KA
-	m := &providerManager{cfgPath: cfgPath, stderr: os.Stderr}
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 
 	// 原密钥（APIKey 空按 Orig 取 config 值）+ 真实最小请求（假 server）。
 	if err := m.Test(uigui.ProviderPatch{Orig: "a", Name: "a", BaseURL: srv.URL, Models: "m"}); err != nil {
@@ -185,7 +247,7 @@ func TestProviderManagerModels(t *testing.T) {
 	t.Cleanup(srv.Close)
 	cfgPath, _ := writeProvidersConfig(t)
 	t.Setenv("KA", "k")
-	m := &providerManager{cfgPath: cfgPath, stderr: os.Stderr}
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 
 	got, err := m.Models(uigui.ProviderPatch{Orig: "a", Name: "a", BaseURL: srv.URL})
 	if err != nil {

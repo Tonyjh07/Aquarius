@@ -21,6 +21,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
@@ -138,6 +139,11 @@ type wiring struct {
 	// 本进程只尝试一次（向导后仍不完整即报因退出，不循环弹窗）。
 	firstRun   bool
 	setupTried bool
+
+	// 本机密钥库（D151/D161）：secrets 装配根读链（库里没有才查同名环境变量）、
+	// secretsBin 库本体（界面明文密钥的写入口）。bootstrap 填（profileDir 一就位就有）。
+	secrets    *secretChain
+	secretsBin *secretbin.Store
 
 	// assemble 段填充
 	store     port.ConversationStore

@@ -60,7 +60,7 @@ func TestAPIKeyGapMatrix(t *testing.T) {
 			if c.env != "" {
 				t.Setenv(c.env, c.envVal)
 			}
-			gap := apiKeyGap(ctx, providerConfig{Name: "p", APIKey: c.ref})
+			gap := apiKeyGap(ctx, providerConfig{Name: "p", APIKey: c.ref}, testSecrets(t))
 			if (gap != "") != c.wantGap {
 				t.Fatalf("gap = %q, wantGap = %v", gap, c.wantGap)
 			}
@@ -82,12 +82,12 @@ func TestMissingKeysCoversFallback(t *testing.T) {
 		Primary:  "a",
 		Fallback: []string{"b"},
 	}
-	got := missingKeys(ctx, m)
+	got := missingKeys(ctx, m, testSecrets(t))
 	if len(got) != 1 || !strings.Contains(got[0], `provider "b"`) {
 		t.Fatalf("缺失清单 = %+v, want 仅 provider b", got)
 	}
 	m.Fallback = nil
-	if got := missingKeys(ctx, m); len(got) != 0 {
+	if got := missingKeys(ctx, m, testSecrets(t)); len(got) != 0 {
 		t.Fatalf("无 fallback 时不应报: %+v", got)
 	}
 }
@@ -96,7 +96,7 @@ func TestMissingKeysCoversFallback(t *testing.T) {
 // 读失败/无 provider = 零值（不阻断开窗）。
 func TestWelcomeManagerSnapshot(t *testing.T) {
 	cfgPath, cfg := writeProvidersConfig(t)
-	m := &welcomeManager{cfgPath: cfgPath, hotkey: "Ctrl+B"}
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), hotkey: "Ctrl+B"}
 	snap := m.Snapshot()
 	if snap.Provider != "a" || snap.BaseURL != "http://a/v1" || snap.Models != "m1" {
 		t.Fatalf("快照 = %+v", snap)
@@ -111,17 +111,18 @@ func TestWelcomeManagerSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = cfg
-	if got := (&welcomeManager{cfgPath: "missing.json"}).Snapshot(); got.Provider != "" {
+	if got := (&welcomeManager{cfgPath: "missing.json", secrets: testSecrets(t)}).Snapshot(); got.Provider != "" {
 		t.Fatalf("缺失文件快照应为零值: %+v", got)
 	}
 }
 
 // TestWelcomeManagerApply 写回（D141）：覆盖 `providers[0]` 三项 + primary + `ui.welcomed`；
 // 无关键（tokenizer / 自定义键）按原条目保留；`model.name` 不在新 models 内 ⇒ 改写为
-// models[0]（否则旧模型名发给新端点）。
+// models[0]（否则旧模型名发给新端点）。密钥口径见 D161：填的明文入库、config 只留引用。
 func TestWelcomeManagerApply(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
-	m := &welcomeManager{cfgPath: cfgPath, stderr: io.Discard}
+	ch, bin := testChain(t, nil)
+	m := &welcomeManager{cfgPath: cfgPath, secrets: ch, bin: bin, stderr: io.Discard}
 	err := m.Apply(uigui.WelcomePatch{
 		Provider: "myapi", BaseURL: "http://my/v1", APIKey: "sk-plain", Models: "mm1, mm2",
 	})
@@ -135,8 +136,19 @@ func TestWelcomeManagerApply(t *testing.T) {
 		t.Fatalf("providers 数 = %d, want 2（只覆盖首条，第二条原样保留）", len(providers))
 	}
 	first := providers[0].(map[string]any)
-	if first["name"] != "myapi" || first["base_url"] != "http://my/v1" || first["api_key"] != "sk-plain" {
+	if first["name"] != "myapi" || first["base_url"] != "http://my/v1" {
 		t.Fatalf("providers[0] = %+v", first)
+	}
+	// D161：明文已被改写成 `secret:<名>`（沿用原引用名，引用不 churn），值落在库内；
+	// config 里搜不到明文。
+	if first["api_key"] != "secret:KA" {
+		t.Fatalf("api_key 应改写为引用: %+v", first)
+	}
+	if got, _ := bin.Get(context.Background(), "KA"); got != "sk-plain" {
+		t.Fatalf("明文应已入库原引用名槽位: %q", got)
+	}
+	if raw, _ := os.ReadFile(cfgPath); strings.Contains(string(raw), "sk-plain") {
+		t.Fatalf("config 里不该再出现明文密钥")
 	}
 	if fmt.Sprint(first["models"]) != "[mm1 mm2]" {
 		t.Fatalf("models = %v", first["models"])
@@ -162,7 +174,7 @@ func TestWelcomeManagerApply(t *testing.T) {
 // 首条原引用不被清掉。
 func TestWelcomeManagerApplyKeepsKeyOnEmpty(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
-	m := &welcomeManager{cfgPath: cfgPath, stderr: io.Discard}
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
 	if err := m.Apply(uigui.WelcomePatch{Provider: "a", BaseURL: "http://a/v2", Models: "m1"}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -186,7 +198,7 @@ func TestWelcomeManagerApplyDropsDanglingFallback(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := &welcomeManager{cfgPath: cfgPath, stderr: io.Discard}
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
 	if err := m.Apply(uigui.WelcomePatch{Provider: "a2", BaseURL: "http://a2/v1", Models: "m1"}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -212,7 +224,7 @@ func TestWelcomeManagerApplyDropsDanglingFallback(t *testing.T) {
 // TestWelcomeManagerApplyValidation 校验矩阵：三类必填项缺失即报因、不落盘。
 func TestWelcomeManagerApplyValidation(t *testing.T) {
 	cfgPath, cfg := writeProvidersConfig(t)
-	m := &welcomeManager{cfgPath: cfgPath, stderr: io.Discard}
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
 	cases := []struct {
 		name string
 		p    uigui.WelcomePatch
@@ -235,7 +247,7 @@ func TestWelcomeManagerApplyValidation(t *testing.T) {
 // TestWelcomeManagerMarkWelcomed 仅置标记：其余 ui 键（kind 等）保留。
 func TestWelcomeManagerMarkWelcomed(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
-	m := &welcomeManager{cfgPath: cfgPath, stderr: io.Discard}
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
 	if err := m.MarkWelcomed(); err != nil {
 		t.Fatalf("MarkWelcomed: %v", err)
 	}
@@ -260,7 +272,7 @@ func TestWelcomeManagerTest(t *testing.T) {
 
 	cfgPath, _ := writeProvidersConfig(t)
 	t.Setenv("KA", "k")
-	m := &welcomeManager{cfgPath: cfgPath, stderr: io.Discard}
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
 	if err := m.Test(uigui.WelcomePatch{Provider: "a", BaseURL: srv.URL, Models: "m1"}); err != nil {
 		t.Fatalf("Test: %v", err)
 	}
