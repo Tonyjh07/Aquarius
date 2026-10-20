@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"gioui.org/widget"
-
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -298,7 +296,7 @@ func providerPatchOf(pf *providerForm) ProviderPatch {
 				win = n
 			}
 		}
-		mp := ProviderModelPatch{Name: name, ContextWindow: win}
+		mp := ProviderModelPatch{Name: name, ContextWindow: win, Disabled: !mf.enabled.Value}
 		// 只有用户动过能力勾选才把声明固化成显式（未动 = nil，保持键缺失/原声明形态）。
 		if mf.touched() {
 			names := mf.capNames()
@@ -375,10 +373,15 @@ func (u *UI) runProviderTest(f *settingsForm, pf *providerForm) {
 	}()
 }
 
-// runFetchModels 「获取模型」：拉一次 /models，把候选带回帧循环。与连通测试同一异步
-// 口径（goroutine + 结果通道 + Invalidate）；**只读**，不改配置、不自动替换输入框。
-func (u *UI) runFetchModels(f *settingsForm, pf *providerForm) {
+// runFetchModels 拉一次 /models 并落进模型列表（D153/D181）：auto = 切到本页时自动触发
+// （每窗一次），否则是用户点「获取模型」。两者走同一条结果路径——新增行一律**默认未启用**，
+// 由用户勾选后随「应用 provider 变更」落盘。与连通测试同一异步口径（goroutine + 结果通道
+// + Invalidate）；**只读**，不改配置。
+func (u *UI) runFetchModels(f *settingsForm, pf *providerForm, auto bool) {
 	if u.opts.ProviderMgr == nil {
+		if auto {
+			return // 自动拉取没接线就静默（这是进入页面的附带动作，不该报错占屏）
+		}
 		f.provErr = true
 		f.provStatus = "provider 编辑未接线"
 		return
@@ -388,7 +391,7 @@ func (u *UI) runFetchModels(f *settingsForm, pf *providerForm) {
 		start := time.Now()
 		models, err := u.opts.ProviderMgr.Models(patch)
 		postOutcome(f, testOutcome{kind: probeModels, name: patch.Name, err: err,
-			ms: time.Since(start).Milliseconds(), models: models})
+			ms: time.Since(start).Milliseconds(), models: models, auto: auto})
 	}()
 }
 
@@ -435,6 +438,8 @@ func (f *settingsForm) drainTestResults() {
 }
 
 // applyProbeResult 「探测能力」结果落回该模型行（行内反馈）与 provider 区状态行。
+// D181：判定明确的结论**一律**回填勾选——写回配置了就跟基线一起推进；没写回（模型还没
+// 应用，或声明本就一致）就只改勾选，让 touched() 为真，等「应用 provider 变更」一并落盘。
 func (f *settingsForm) applyProbeResult(r testOutcome) {
 	pf := f.provByName(r.name)
 	if pf == nil {
@@ -445,31 +450,39 @@ func (f *settingsForm) applyProbeResult(r testOutcome) {
 		return
 	}
 	if r.err != nil {
+		mf.probeBusy = false
 		mf.probeErr = true
 		mf.probeStatus = "探测失败：" + r.err.Error()
 		return
 	}
+	mf.probeBusy = false
 	mf.probeErr = false
 	mf.probeStatus = probeSummary(r.outcome)
-	if r.outcome.Written {
-		mf.explicit = true // 写回后配置里已有显式声明，声明形态注脚随之更新
-		// 写回了能力声明：把勾选同步成探测结果（写回的是生效值，界面应与之一致）。
-		// 同步后基线也一并推进，避免把探测写回误判成「用户动了勾选」而重复固化。
-		for _, res := range r.outcome.Results {
-			if res.Verdict == port.ProbeInconclusive {
-				continue
-			}
-			on := res.Verdict == port.ProbeSupported
-			switch res.Capability {
-			case port.CapTools:
-				mf.capsTools.Value = on
-			case port.CapReasoning:
-				mf.capsReason.Value = on
-			case port.CapVision:
-				mf.capsVision.Value = on
-			}
+	definite := 0
+	for _, res := range r.outcome.Results {
+		if res.Verdict == port.ProbeInconclusive {
+			continue
 		}
+		definite++
+		on := res.Verdict == port.ProbeSupported
+		switch res.Capability {
+		case port.CapTools:
+			mf.capsTools.Value = on
+		case port.CapReasoning:
+			mf.capsReason.Value = on
+		case port.CapVision:
+			mf.capsVision.Value = on
+		}
+	}
+	if r.outcome.Written {
+		mf.explicit = true
+		// 写回了能力声明：勾选就是配置里的生效值，基线一并推进——避免把「探测写回」
+		// 误判成「用户动了勾选」再固化一次。
 		mf.baseTools, mf.baseReason, mf.baseVision = mf.capsTools.Value, mf.capsReason.Value, mf.capsVision.Value
+	} else if definite > 0 {
+		// 没写回但拿到了明确结论：勾选已按结论更新、基线保持不动（touched() 即为真），
+		// 点「应用 provider 变更」时就会把这几位固化成显式声明。
+		mf.probeStatus = probeSummary(r.outcome)
 	}
 }
 
@@ -483,23 +496,30 @@ func (pf *providerForm) modelByName(name string) *providerModelForm {
 	return nil
 }
 
-// applyModels 「获取模型」结果落表单：把服务端返回的模型名**追加成模型能力表行**
-// （已存在的名字跳过——重复点一次不该长出两行同名），超出上限的留作候选 chip 供点选追加。
+// applyModels 「获取模型」/自动拉取的结果落表单（D181）：服务端报的模型名全部并进模型列表
+// （已存在的名字跳过——重复拉一次不该长出两行同名），新增行默认**未启用**，由用户勾选。
+// 反馈只落在本卡片的模型列表头下（auto 时不占全局状态行）。
 func (f *settingsForm) applyModels(r testOutcome) {
 	pf := f.provByName(r.name)
 	if pf == nil {
 		return // 该 provider 已被删除：结果丢弃，不落到别的条目上
 	}
 	if r.err != nil {
-		pf.cands, pf.candClicks = nil, nil
-		f.provErr = true
-		f.provStatus = "获取模型列表失败：" + r.err.Error()
+		pf.fetchErr = true
+		pf.fetchNote = "拉取模型列表失败：" + r.err.Error()
+		if !r.auto {
+			f.provErr = true
+			f.provStatus = pf.fetchNote
+		}
 		return
 	}
 	if len(r.models) == 0 {
-		pf.cands, pf.candClicks = nil, nil
-		f.provErr = true
-		f.provStatus = "服务端未返回任何模型"
+		pf.fetchErr = true
+		pf.fetchNote = "服务端未返回任何模型"
+		if !r.auto {
+			f.provErr = true
+			f.provStatus = pf.fetchNote
+		}
 		return
 	}
 	total := len(r.models)
@@ -509,33 +529,26 @@ func (f *settingsForm) applyModels(r testOutcome) {
 			existing[n] = true
 		}
 	}
-	added, rest := 0, []string{}
+	added := 0
 	for _, name := range r.models {
 		if existing[name] {
 			continue
 		}
-		if added >= provModelCandMax {
-			rest = append(rest, name)
-			continue
-		}
-		pf.modelForms = append(pf.modelForms, newModelRow(name, pf.kind.value()))
+		pf.modelForms = append(pf.modelForms, newModelRow(name, pf.kind.value(), false))
 		existing[name] = true
 		added++
 	}
-	if len(rest) > provModelCandMax {
-		rest = rest[:provModelCandMax]
-	}
-	pf.cands = rest
-	pf.candClicks = make([]widget.Clickable, len(rest))
-	f.provErr = false
+	pf.fetchErr = false
 	switch {
-	case added == 0 && len(rest) == 0:
-		f.provStatus = "服务端返回的 " + strconv.Itoa(total) + " 个模型都已在列表中"
-	case len(rest) == 0:
-		f.provStatus = "已追加 " + strconv.Itoa(added) + " 个模型行（共 " + strconv.Itoa(total) + " 个）"
+	case added == 0:
+		pf.fetchNote = "服务端返回 " + strconv.Itoa(total) + " 个模型，都已在列表中"
 	default:
-		f.provStatus = "已追加 " + strconv.Itoa(added) + " 个模型行，余下 " +
-			strconv.Itoa(len(rest)) + " 个作候选（点选追加）"
+		pf.fetchNote = "已补入 " + strconv.Itoa(added) + " 个模型（共 " + strconv.Itoa(total) +
+			" 个，新行默认未启用）"
+	}
+	if !r.auto {
+		f.provErr = false
+		f.provStatus = pf.fetchNote
 	}
 }
 
@@ -550,7 +563,7 @@ func (pf *providerForm) appendModelCand(name string) {
 			return
 		}
 	}
-	pf.modelForms = append(pf.modelForms, newModelRow(name, pf.kind.value()))
+	pf.modelForms = append(pf.modelForms, newModelRow(name, pf.kind.value(), true))
 }
 
 // runProbeModel 单个模型行的「探测能力」（S11-7③/D174）：与 `/model probe` 同一条写回
@@ -561,6 +574,9 @@ func (u *UI) runProbeModel(f *settingsForm, pf *providerForm, mf *providerModelF
 		mf.probeErr = true
 		mf.probeStatus = "provider 编辑未接线"
 		return
+	}
+	if mf.probeBusy {
+		return // 还在跑：重复点不叠发请求（否则一轮点击能连开好几条 30s 探测）
 	}
 	model := strings.TrimSpace(mf.name.Text())
 	if model == "" {
@@ -574,27 +590,40 @@ func (u *UI) runProbeModel(f *settingsForm, pf *providerForm, mf *providerModelF
 		return
 	}
 	patch := providerPatchOf(pf)
+	// 开跑即置忙并清掉上一轮结论：转圈要立刻出现，旧结论留着会让人以为是这次的。
+	mf.probeBusy, mf.probeErr, mf.probeStatus = true, false, ""
 	go func() {
 		out, err := u.opts.ProviderMgr.Probe(model, patch)
 		postOutcome(f, testOutcome{kind: probeCaps, name: patch.Name, model: model, err: err, outcome: out})
 	}()
 }
 
-// probeSummary 探测结论一行文案（三态）：支持/不支持/无结论逐项列出。只报判定明确的。
+// probeSummary 探测结论一行文案：三项逐档计数（支持 / 不支持 / 无结论），三档相加恒等于
+// 实际探测项数——只写前两档会让人以为「第三项没测」。无结论的项保持原声明不动。
 func probeSummary(out ProbeOutcome) string {
-	var sup, unsup int
+	var sup, unsup, unk int
 	for _, r := range out.Results {
 		switch r.Verdict {
 		case port.ProbeSupported:
 			sup++
 		case port.ProbeUnsupported:
 			unsup++
+		default:
+			unk++
 		}
 	}
 	s := strconv.Itoa(sup) + " 项支持 / " + strconv.Itoa(unsup) + " 项不支持"
-	if out.Written {
+	if unk > 0 {
+		s += " / " + strconv.Itoa(unk) + " 项无结论"
+	}
+	switch {
+	case out.Written:
 		s += "（已写回配置，重启生效）"
-	} else {
+	case out.Pending && sup+unsup > 0:
+		s += "（已按结论勾选；点「应用 provider 变更」写入配置）"
+	case sup+unsup > 0:
+		s += "（与现有声明一致）"
+	default:
 		s += "（无明确结论，未改动声明）"
 	}
 	return s

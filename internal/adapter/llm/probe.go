@@ -33,7 +33,11 @@ import (
 var _ port.Prober = (*Client)(nil)
 
 // probeMaxTokens 探测请求的输出上限：只要模型开个头就能判定，不必让它写作文。
-const probeMaxTokens = 64
+//
+// 别压得太狠：思考型模型会先把额度花在思考上，正文还没开始就被截断（`finish_reason`
+// = "length"），于是「其实答上来了」被洗成空正文。64 曾在实测里正好踩中这种情况——
+// 思考吃掉全部 64 tokens，正文为空，结论只能落成「无结论」。
+const probeMaxTokens = 256
 
 // probeVisionColor 探测图的主色（判定基准）。纯红：几乎所有视觉模型都会一口答对，
 // 不会像浅色/灰那样答成 "light gray" 这种无法判定的词。
@@ -181,18 +185,34 @@ func (c *Client) probeOnce(ctx context.Context, capability string, a probeAttemp
 		return finish(port.ProbeInconclusive, "请求被接受，但模型没发起工具调用（可能只是没照着做）")
 	case port.CapVision:
 		text := strings.TrimSpace(msg.text())
+		reason := strings.TrimSpace(msg.reasoning())
 		switch visionVerdict(text) {
 		case port.ProbeSupported:
 			return finish(port.ProbeSupported, fmt.Sprintf("带图请求答对了颜色（%s）", snippet(text, 40)))
 		case port.ProbeUnsupported:
 			return finish(port.ProbeUnsupported, fmt.Sprintf("带图请求拿到了「%s」，不是图里的%s——图没被真正解码",
 				snippet(text, 40), probeVisionColor))
-		default:
-			if text == "" {
-				return finish(port.ProbeInconclusive, "请求被接受，但回复为空")
-			}
-			return finish(port.ProbeInconclusive, fmt.Sprintf("回复没给出可判定的颜色：%s", snippet(text, 40)))
 		}
+		// 正文没给出可判定的答案（含空正文）：退而看**否定证据**。思考型模型常把额度
+		// 花在思考上、正文只剩一句 "Unknown"；而「图没送到」这句话多半出现在思考里。
+		// 只采信「看不到 / 复述占位文本」这类否定说法——思考里蹦出个颜色词不能算答对。
+		if visionSaysBlind(text) || visionSaysPlaceholder(text) {
+			return finish(port.ProbeUnsupported,
+				fmt.Sprintf("模型在回复里说图没送到（%s）——服务端把图片换成了占位文本",
+					snippet(text, 60)))
+		}
+		if visionSaysBlind(reason) || visionSaysPlaceholder(reason) {
+			return finish(port.ProbeUnsupported,
+				fmt.Sprintf("模型在思考里说图没送到（%s）——服务端把图片换成了占位文本",
+					snippet(reason, 60)))
+		}
+		if text == "" {
+			if payload.Choices[0].FinishReason == "length" {
+				return finish(port.ProbeInconclusive, "输出额度被思考用尽，没留下正文（提高额度后重试）")
+			}
+			return finish(port.ProbeInconclusive, "请求被接受，但回复为空")
+		}
+		return finish(port.ProbeInconclusive, fmt.Sprintf("回复没给出可判定的颜色：%s", snippet(text, 40)))
 	case port.CapReasoning:
 		if strings.TrimSpace(msg.reasoning()) != "" {
 			return finish(port.ProbeSupported, fmt.Sprintf("按「%s」问法拿到了思考内容", a.label))
@@ -333,13 +353,32 @@ func visionVerdict(text string) port.ProbeVerdict {
 // visionBlindPhrases 明确「看不到图」的说法（这比答错颜色更确定：它连图都没收到）。
 var visionBlindPhrases = []string{
 	"cannot see", "can't see", "can not see", "unable to see", "no image", "not an image",
-	"看不到", "看不见", "无法看到", "没有图", "不是图片",
+	"no image provided", "image unsupported", "unsupported image", "without an image",
+	"看不到", "看不见", "无法看到", "没有图", "不是图片", "未提供图片", "图片不支持",
 }
 
 // visionSaysBlind 回复是否明说看不到图片。
 func visionSaysBlind(text string) bool {
 	t := strings.ToLower(text)
 	for _, p := range visionBlindPhrases {
+		if strings.Contains(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// visionPlaceholderPhrases 服务端用来顶替图片的占位文本（端点收下了请求，但把图片
+// 换成了这串字递给模型——思考里往往会原样复述出来）。这是「图没送到」的直接证据。
+var visionPlaceholderPhrases = []string{
+	"[unsupported image]", "<unsupported image>", "[image omitted]", "<image omitted>",
+	"[image not supported]", "unsupported image type",
+}
+
+// visionSaysPlaceholder 回复是否复述了服务端的图片占位文本。
+func visionSaysPlaceholder(text string) bool {
+	t := strings.ToLower(text)
+	for _, p := range visionPlaceholderPhrases {
 		if strings.Contains(t, p) {
 			return true
 		}
@@ -426,7 +465,8 @@ func probeRejected(capability, snippet string) bool {
 // probeResponse 非流式响应里探测关心的字段（其余一概忽略）。
 type probeResponse struct {
 	Choices []struct {
-		Message probeMessage `json:"message"`
+		Message      probeMessage `json:"message"`
+		FinishReason string       `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
 		PromptTokens     int `json:"prompt_tokens"`

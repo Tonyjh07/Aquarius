@@ -45,12 +45,12 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
+| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个启用的条目 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
-| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局） |
+| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000, "enabled": false }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局）；`enabled` 省略 = 启用，**只有 `false` 才参与落键**——未启用的条目保留声明但不参与选型（不进降级链候选、不进 `/model` 清单、不作为该 provider 的缺省模型）；每家的模型**至少要有一个启用**，否则启动与设置窗应用都明确报错 |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
-| `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 的 `models[0]`。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连不降级 |
-| `model.name` | string | primary 的 `models[0]` | 当前模型名；`/model` 热切换并写回本字段（provider/base_url 重启生效）。切到**没在 `models` 里声明**的名字也允许——按协议缺省给能力 |
+| `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 首个**启用**的模型。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连不降级 |
+| `model.name` | string | primary 首个**启用**的模型 | 当前模型名；`/model` 热切换并写回本字段（provider/base_url 重启生效）。切到**没在 `models` 里声明**的名字也允许——按协议缺省给能力 |
 | `model.think` | bool | `true`（键缺失） | 原生思考**总开关**（D34）：`off` 时 `reasoning_effort` 与 `enable_thinking` 一律不发；`/think` 切换写回本字段。当前链的模型没有 `reasoning` 能力时同样不发 |
 | `model.reasoning_effort` | string | `""` | 推理档位（D34）：`minimal` / `low` / `medium` / `high`，空 = 不发送；`/effort` 切换写回（`off` 即清除）；非法值启动报错 |
 | `model.think_tool` | bool | `false` | `think` 草稿工具是否列给模型——默认隐藏（D34），改后重启生效 |
@@ -81,6 +81,20 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 全局那项是"我想用多少"（省钱就调小），模型窗口是"服务端最多收多少"（超了直接拒），两者都生效、谁小听谁的。
 模型没写窗口（或写 0）= 只看全局。窗口**不随降级链取小**——装配发生在换模型之前，按当前模型算；
 降级到窗口更小的模型属于自己配的链，可能被服务端拒。`/model` 会显示生效值与「是谁在压」。
+
+**模型启用位**（`models[].enabled`，D180）：键缺失 = 启用，只有 `false` 会落键。未启用的条目**保留声明
+但不参与选型**——不进降级链候选、不进 `/model` 清单（当前模型例外：它正在跑）、不作为该 provider 的
+缺省请求模型。日常用途是「把服务端列出来的模型都登记着，只勾现在要用的那几个」：设置窗「模型服务」页
+切进去时自动拉一遍各家的 `/models`，新补进来的行默认未启用，勾选后随「应用 provider 变更」写回。
+每家的模型**至少有一个启用**，否则启动与应用都会明确报错。
+
+```json
+"models": [
+  { "name": "mimo-v2.6-flash" },                    // 键缺失 = 启用
+  { "name": "mimo-v2.6-pro" },
+  { "name": "mimo-v2.6-preview", "enabled": false }  // 登记着，但先不用
+]
+```
 
 ### ui
 
@@ -291,7 +305,7 @@ profile 配置 `<data>/profiles/default/config.json`：
 
 - 「Profile」区：当前 profile 展示 + 新建 / 复制当前 / 切换（重启生效）。
 - 「模型」页：当前模型名 + 原生思考与推理档位 + 有序降级链（每项 `provider / model`，可增删与上移下移；链窄于当前模型能力时上方给一行警示）。
-- 「模型服务」页：provider 管理（**折叠卡片**，同时只展开一张）——名称/协议/接口地址/密钥池/模型能力表（名字 + 三能力勾选 + 上下文窗口）/tokenizer/不认参数，+ 设为主 + 删除 + 连通性「测试」（真实最小请求，8s 超时）+ 逐模型「探测能力」；「获取模型」把服务端返回的模型名**追加成模型行**。密钥值**只写不回显**（留空 = 保持原值）；能力勾选**动过才固化成显式声明**（未动 = 保持原形态）。「应用 provider 变更」整体写回，重启生效。
+- 「模型服务」页：provider 管理（**折叠卡片**，同时只展开一张）——名称/协议/接口地址/密钥池/**模型列表**/tokenizer/不认参数，+ 设为主 + 删除 + 连通性「测试」（真实最小请求，8s 超时）。模型列表每行 = **启用**勾选 + 名字 + 上下文窗口 + 三能力勾选 +「探测能力」；表头有「共 N 个 · 已启用 M 个」与「获取模型」，下面一行是本卡片的拉取反馈，尾部「＋ 添加模型」。切进本页时会**自动拉一轮**各家的 `/models`（每窗一次），结果全部并进列表、新增行默认未启用；行数不设上限，超过 8 行分页。密钥值**只写不回显**（留空 = 保持原值）；能力勾选**动过才固化成显式声明**（未动 = 保持原形态），「探测能力」以**编辑区现值**探（模型还没应用也能探，结论先回填勾选）。「应用 provider 变更」整体写回，重启生效。
 - 「权限与思考」「外观与呼出」：热生效项照旧；模型名经 `/model` 热切换。
 - 「输出」「限额」「人格模块树（S7/D144）」：保存即写回；人格组合**只影响之后新建的会话**，且**重启后生效**（与 `system_prompt` 同口径）。
 - 「MCP 与插件」：只读清单；「高级」页 = config.json **原文整文件编辑**（保存前 JSON 校验，解析失败原文件不动；未知键天然保留，Q10）。
@@ -305,7 +319,7 @@ profile 配置 `<data>/profiles/default/config.json`：
 | `"api_key": "secret:K"`（provider 上单值） | `"keys": [ { "api_key": "secret:K" } ]`（多把即密钥池） |
 | `"models": ["m1","m2"]`（字符串数组） | `"models": [ { "name": "m1" }, { "name": "m2" } ]` |
 | `"vision": true`（provider 上） | 挪到对应模型：`"models": [ { "name": "m1", "caps": ["tools","vision"] } ]` |
-| `"fallback": ["b"]`（provider 名字数组） | `"fallback": [ { "provider": "b", "model": "mb" } ]`（省略 `model` = 该 provider 的 `models[0]`） |
+| `"fallback": ["b"]`（provider 名字数组） | `"fallback": [ { "provider": "b", "model": "mb" } ]`（省略 `model` = 该 provider 首个启用的模型） |
 
 上下文窗口是**新**能力，没有旧形状要迁：想知道模型能吃多少就加 `"context_window": 128000`，
 不加就仍按 `limits.max_context_tokens` 走。

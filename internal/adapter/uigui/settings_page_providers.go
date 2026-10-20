@@ -12,6 +12,11 @@ package uigui
 // ProviderManager.Probe（与 `/model probe` 同一条写回逻辑，D174）。
 
 import (
+	"fmt"
+	"image"
+	"strconv"
+	"strings"
+
 	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -36,7 +41,6 @@ func (providersPage) Rows(f *settingsForm) []rowDesc {
 			rowDesc{kind: rowProvName, prov: i},
 			rowDesc{kind: rowProvKind, prov: i},
 			rowDesc{kind: rowProvBase, prov: i},
-			rowDesc{kind: rowProvGetModels, prov: i},
 			rowDesc{kind: rowProvTok, prov: i},
 			rowDesc{kind: rowProvUnsup, prov: i},
 			rowDesc{kind: rowProvHead, prov: i, text: "密钥池"},
@@ -45,14 +49,36 @@ func (providersPage) Rows(f *settingsForm) []rowDesc {
 			rows = append(rows, rowDesc{kind: rowProvKey, prov: i, field: k})
 		}
 		rows = append(rows, rowDesc{kind: rowProvKeyAdd, prov: i},
-			rowDesc{kind: rowProvHead, prov: i, text: "模型能力表"},
+			rowDesc{kind: rowProvModels, prov: i},
 		)
-		for m := range pf.modelForms {
+		start, end := pf.modelPageBounds()
+		for m := start; m < end; m++ {
 			rows = append(rows, rowDesc{kind: rowProvModel, prov: i, field: m})
+		}
+		if pf.modelPageCount() > 1 {
+			rows = append(rows, rowDesc{kind: rowProvModelPager, prov: i})
 		}
 		rows = append(rows, rowDesc{kind: rowProvModelAdd, prov: i}, rowDesc{kind: rowProvBtns, prov: i})
 	}
 	return append(rows, rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply})
+}
+
+// OnEnter 首次切到本页时自动拉一轮各家服务端模型清单（D181）：结果并入模型列表（新增行
+// 默认未启用），随「应用 provider 变更」落盘。每窗只拉一次——来回切页不该反复打网络。
+func (providersPage) OnEnter(u *UI, f *settingsForm) {
+	if f.provFetched || f.readOnly || u.opts.ProviderMgr == nil {
+		return
+	}
+	f.provFetched = true
+	for _, pf := range f.provs {
+		switch {
+		case pf.fetchNote != "": // 已有结果（例如刚被「获取模型」拉过）：不重复请求
+			continue
+		case strings.TrimSpace(pf.baseURL.Text()) == "": // 没填端点的卡片问不出东西
+			continue
+		}
+		u.runFetchModels(f, pf, true)
+	}
 }
 
 func (providersPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
@@ -80,35 +106,8 @@ func (providersPage) Body(gtx layout.Context, th *material.Theme, f *settingsFor
 	case rowProvBase:
 		pf := f.provs[r.prov]
 		return fieldRow(gtx, th, "接口地址", editorBox(th, &pf.baseURL, "如 https://api.openai.com/v1")), true
-	case rowProvGetModels:
-		pf := f.provs[r.prov]
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return fieldRow(gtx, th, "模型列表", func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							l := material.Label(th, paperNoteSp(th), "下方「模型能力表」逐行管理；点右侧按钮拉服务端清单自动追加")
-							l.Color = paperOf().text3
-							return l.Layout(gtx)
-						}),
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return layout.Dimensions{}
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return paperButton(th, &pf.modelsBtn, "获取模型", paperBtnSecondary, true)(gtx)
-						}),
-					)
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				if len(pf.cands) == 0 {
-					return layout.Dimensions{}
-				}
-				return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return modelChips(gtx, th, pf)
-				})
-			}),
-		), true
+	case rowProvModels:
+		return f.providerModelsHead(gtx, th, r.prov), true
 	case rowProvTok:
 		pf := f.provs[r.prov]
 		return fieldRow(gtx, th, "Tokenizer", editorBox(th, &pf.tokenizer, "本地 tokenizer.json 路径；空 = 估算")), true
@@ -124,6 +123,8 @@ func (providersPage) Body(gtx layout.Context, th *material.Theme, f *settingsFor
 		return paperButton(th, &pf.keyAdd, "＋ 添加密钥", paperBtnSecondary, true)(gtx), true
 	case rowProvModel:
 		return f.providerModelRow(gtx, th, r.prov, r.field), true
+	case rowProvModelPager:
+		return f.providerModelPager(gtx, th, r.prov), true
 	case rowProvModelAdd:
 		pf := f.provs[r.prov]
 		return paperButton(th, &pf.modelAdd, "＋ 添加模型", paperBtnSecondary, true)(gtx), true
@@ -157,11 +158,16 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			u.runProviderTest(f, pf)
 		}
 		for pf.modelsBtn.Clicked(gtx) {
-			u.runFetchModels(f, pf)
+			u.runFetchModels(f, pf, false)
 		}
-		for k := range pf.candClicks {
-			if pf.candClicks[k].Clicked(gtx) && k < len(pf.cands) {
-				pf.appendModelCand(pf.cands[k]) // 点 chip = 追加模型行（已存在则跳过）
+		for pf.modelPagePrev.Clicked(gtx) {
+			if pf.modelPage > 0 {
+				pf.modelPage--
+			}
+		}
+		for pf.modelPageNext.Clicked(gtx) {
+			if pf.modelPage < pf.modelPageCount()-1 {
+				pf.modelPage++
 			}
 		}
 		for pf.keyAdd.Clicked(gtx) {
@@ -175,7 +181,8 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			}
 		}
 		for pf.modelAdd.Clicked(gtx) {
-			pf.modelForms = append(pf.modelForms, newModelRow("", pf.kind.value()))
+			pf.modelForms = append(pf.modelForms, newModelRow("", pf.kind.value(), true))
+			pf.modelPage = pf.modelPageCount() - 1 // 新行在末页：跳过去，免得以为没加上
 		}
 		for m, mf := range pf.modelForms {
 			for mf.probe.Clicked(gtx) {
@@ -184,6 +191,7 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			for mf.del.Clicked(gtx) {
 				if len(pf.modelForms) > 1 { // 至少留一行（models 不可为空，启动校验同口径）
 					pf.modelForms = append(pf.modelForms[:m], pf.modelForms[m+1:]...)
+					pf.modelPage = min(pf.modelPage, pf.modelPageCount()-1) // 删到末页空 = 退一页
 				}
 			}
 		}
@@ -310,19 +318,116 @@ func keySlotNote(kf *providerKeyForm) string {
 	}
 }
 
-// providerModelRow 模型能力表单行（S11-7③/D173）：名字 + 上下文窗口 + 删除；下一行三个
-// 能力勾选 + 「探测能力」；再一行探测反馈（有才显示）。能力位右侧标出声明形态——「按协议
-// 缺省」意味着配置里没这项声明，勾选任一即把它固化成显式声明（这是它能被真正改动的开关）。
+// providerModelsHead 「模型列表」块头（D181）：左侧标题 + 一段「共 N 个 · 已启用 M 个」的
+// 轻量事实，右侧「获取模型」按钮；下面一行是本卡片自己的拉取反馈（成功/失败都只落在这里，
+// 不占全局状态行）。
+func (f *settingsForm) providerModelsHead(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
+	pf := f.provs[i]
+	total, on := len(pf.modelForms), 0
+	for _, mf := range pf.modelForms {
+		if mf.enabled.Value {
+			on++
+		}
+	}
+	count := fmt.Sprintf("共 %d 个 · 已启用 %d 个", total, on)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					// 标题用 Rigid：右侧按钮才拿得到自己的自然宽度（D181 修「按钮被挤扁」）。
+					return provHeadRow(gtx, th, "模型列表")
+				}),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Label(th, paperMicroSp(th), count)
+						l.Color = paperOf().text3
+						return l.Layout(gtx)
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return paperButton(th, &pf.modelsBtn, "获取模型", paperBtnSecondary, true)(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if pf.fetchNote == "" {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperMicroSp(th), pf.fetchNote)
+				col := paperOf().text3
+				if pf.fetchErr {
+					col = paperOf().danger
+				}
+				l.Color = col
+				return l.Layout(gtx)
+			})
+		}),
+	)
+}
+
+// providerModelPager 模型列表分页条（D181）：只在一页装不下时出现。
+func (f *settingsForm) providerModelPager(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
+	pf := f.provs[i]
+	pages := pf.modelPageCount()
+	page := pf.modelPage + 1
+	if page > pages {
+		page = pages
+	}
+	hint := "第 " + strconv.Itoa(page) + "/" + strconv.Itoa(pages) + " 页"
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return paperButton(th, &pf.modelPagePrev, "‹ 上一页", paperBtnSecondary, pf.modelPage > 0)(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperMicroSp(th), hint)
+				l.Color = paperOf().text3
+				return l.Layout(gtx)
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return paperButton(th, &pf.modelPageNext, "下一页 ›", paperBtnSecondary, pf.modelPage < pages-1)(gtx)
+		}),
+	)
+}
+
+// modelPageCount 模型列表页数（至少 1 页）。
+func (pf *providerForm) modelPageCount() int {
+	if len(pf.modelForms) <= 0 {
+		return 1
+	}
+	return (len(pf.modelForms) + provModelPageSize - 1) / provModelPageSize
+}
+
+// modelPageBounds 当前页的行下标区间（越界夹回；行计划与渲染共用一处口径）。
+func (pf *providerForm) modelPageBounds() (start, end int) {
+	pages := pf.modelPageCount()
+	if pf.modelPage >= pages {
+		pf.modelPage = pages - 1
+	}
+	if pf.modelPage < 0 {
+		pf.modelPage = 0
+	}
+	start = pf.modelPage * provModelPageSize
+	end = min(start+provModelPageSize, len(pf.modelForms))
+	return start, end
+}
+
+// providerModelRow 模型列表单行（S11-7③/D173；D181 改版）：启用勾选 + 名字 + 上下文窗口 +
+// 删除；下一行三个能力勾选 + 「探测能力」；再一行探测反馈（有才显示）。能力位的声明形态
+// 不写注脚——勾选本身就是声明，解释留在文档里（用户不读那行小字，却要为它让出按钮宽度）。
 func (f *settingsForm) providerModelRow(gtx layout.Context, th *material.Theme, prov, idx int) layout.Dimensions {
 	mf := f.provs[prov].modelForms[idx]
-	capsNote := "（按协议缺省，改动即固化声明）"
-	if mf.explicit || mf.touched() {
-		capsNote = "（已显式声明）"
-	}
 	kids := []layout.FlexChild{
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(2, editorBox(th, &mf.name, "模型名（服务端标识）")),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return capCheck(th, &mf.enabled, "启用")(gtx)
+				}),
+				layout.Flexed(2, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, editorBox(th, &mf.name, "模型名（服务端标识）"))
+				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.contextWin, "窗口 tokens"))
 				}),
@@ -342,16 +447,17 @@ func (f *settingsForm) providerModelRow(gtx layout.Context, th *material.Theme, 
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, capCheck(th, &mf.capsVision, capLabels[2]))
 					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							l := material.Label(th, paperMicroSp(th), capsNote)
-							l.Color = paperOf().text3
-							return l.Layout(gtx)
-						})
-					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return paperButton(th, &mf.probe, "探测能力", paperBtnSecondary, true)(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !mf.probeBusy {
+							return layout.Dimensions{}
+						}
+						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return probeSpinner(gtx, th)
+						})
 					}),
 				)
 			})
@@ -376,6 +482,17 @@ func (f *settingsForm) providerModelRow(gtx layout.Context, th *material.Theme, 
 // capCheck 能力位勾选（点击即 touched = 把声明固化成显式；渲染时经 Bool 自身消费）。
 func capCheck(th *material.Theme, b *widget.Bool, label string) layout.Widget {
 	return paperCheckBox(th, b, label)
+}
+
+// probeSpinner 「探测能力」按钮右侧的在途转圈：直径 = 一个正文行高，颜色取次级文字。
+// material.Loader 自己按帧时间推进并唤帧（op.InvalidateCmd），探测结束由 probeBusy
+// 翻回 false 收掉——不必自己做 ticker，也不依赖别的动画在跑。
+func probeSpinner(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	d := gtx.Dp(unit.Dp(16))
+	gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(d, d), image.Pt(d, d)
+	l := material.Loader(th)
+	l.Color = paperOf().text3
+	return l.Layout(gtx)
 }
 
 // providerButtonsRow 单个 provider 的动作按钮：连通测试 / 设为主 / 删除（D110②）。
@@ -432,10 +549,4 @@ func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) 
 			})
 		}),
 	)
-}
-
-// modelChips 候选模型 chip（D153）：点击 = **追加**一个模型能力表行（已存在则跳过）。
-// 每行最多 3 个、左对齐等分（最多 3 行）——候选可达几十个，铺开会把卡撑成一面墙。
-func modelChips(gtx layout.Context, th *material.Theme, pf *providerForm) layout.Dimensions {
-	return paperChipFlow(gtx, th, "点选追加模型行", pf.cands, pf.candClicks)
 }

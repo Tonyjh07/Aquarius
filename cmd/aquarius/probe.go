@@ -38,33 +38,103 @@ func (w *wiring) probeModel(ctx context.Context, model string) (app.ProbeReport,
 	return w.probeProvider(ctx, p, name)
 }
 
-// probeForSettings 设置窗「探测能力」按钮的数据面（S11-7③/D174）：指名 provider 名 +
-// 模型名，走与 `/model probe` **同一条**写回逻辑（probeProvider），只是把结论包成设置窗
-// 契约的形态（界面按行展示；不写会话输出，也不碰运行态）。
-func (w *wiring) probeForSettings(ctx context.Context, provider, model string) (uigui.ProbeOutcome, error) {
-	provider = strings.TrimSpace(provider)
+// probeForSettings 设置窗「探测能力」按钮的数据面（S11-7③/D174；D181 修口径）：用**编辑区
+// 当前值**（端点 / 协议 / 第一把钥匙）造一次性客户端——改了端点还没应用时，该测的是「将要
+// 应用的那份」，而不是启动快照里那份。结论一律带回界面；写回 config 只在该模型**已经在
+// 配置里**的时候发生，否则留给「应用 provider 变更」一并落盘（Pending）。
+//
+// 为什么不要求先保存：模型行是不是「已声明」由配置文件决定，而用户眼里表格里那一行就是
+// 声明。以前直接报「不在 models 里」，用户无从下手——他并没有别的地方可以声明。
+func (w *wiring) probeForSettings(ctx context.Context, patch uigui.ProviderPatch, model string) (uigui.ProbeOutcome, error) {
+	provider := strings.TrimSpace(patch.Name)
 	model = strings.TrimSpace(model)
-	p := w.cfg.Model.byName(provider)
-	if p == nil {
-		return uigui.ProbeOutcome{}, fmt.Errorf("provider %q 不在配置里（可能被外部改过）", provider)
+	if provider == "" {
+		return uigui.ProbeOutcome{}, errors.New("先填 provider 名再探测")
 	}
-	if p.modelByName(model) == nil {
-		return uigui.ProbeOutcome{}, fmt.Errorf("模型 %q 不在 provider %q 的 models 里；先保存把它声明进去再探测"+
-			"（探测结果要写回该模型条目的能力声明）", model, provider)
+	if model == "" {
+		return uigui.ProbeOutcome{}, errors.New("先填模型名再探测")
 	}
-	report, err := w.probeProvider(ctx, p, model)
-	return uigui.ProbeOutcome{
-		Provider: report.Provider, Model: report.Model,
-		Results: report.Results, Written: report.Written,
-	}, err
+	if strings.TrimSpace(patch.BaseURL) == "" {
+		return uigui.ProbeOutcome{}, fmt.Errorf("provider %q 的接口地址为空，先填 base_url 再探测", provider)
+	}
+	pc := w.providerFromPatch(patch)
+	client, err := w.probeClient(pc)
+	if err != nil {
+		return uigui.ProbeOutcome{}, err
+	}
+	report, perr := w.probeWithClient(ctx, pc, client, model)
+	out := uigui.ProbeOutcome{Provider: report.Provider, Model: report.Model, Results: report.Results}
+	if perr != nil {
+		return out, perr
+	}
+	// 写回的目标名：改名还没应用时，磁盘上那条还挂在 Orig 名下（写到新名字上会找不到）。
+	diskName := strings.TrimSpace(patch.Orig)
+	if diskName == "" {
+		diskName = pc.Name
+	}
+	written, declared, werr := w.writeProbeCaps(diskName, model, report.Results)
+	out.Written, out.Pending = written, !declared
+	return out, werr
 }
 
-// probeProvider 对确定 provider 下的某模型跑三项探测并写回（两种入口共用）。
+// providerFromPatch 把编辑区提交拼成一个临时 providerConfig（探测只用到名字 / 协议 /
+// 端点 / 第一把钥匙 / 不认参数）。钥匙引用：编辑区填了就用填的（明文或 secret:），空则
+// 回落落盘 config 里同一条 provider 的原引用（按 Orig 名——改名过程中引用不丢）。
+func (w *wiring) providerFromPatch(patch uigui.ProviderPatch) *providerConfig {
+	pc := &providerConfig{
+		Name:              strings.TrimSpace(patch.Name),
+		Kind:              strings.TrimSpace(patch.Kind),
+		BaseURL:           strings.TrimSpace(patch.BaseURL),
+		Tokenizer:         strings.TrimSpace(patch.Tokenizer),
+		UnsupportedParams: splitCSV(patch.Unsupported),
+	}
+	ref := ""
+	if len(patch.Keys) > 0 {
+		ref = strings.TrimSpace(patch.Keys[0].Value)
+	}
+	if ref == "" {
+		disk, err := loadConfig(w.cfgPath)
+		if err == nil {
+			name := strings.TrimSpace(patch.Orig)
+			if name == "" {
+				name = pc.Name
+			}
+			if p := disk.Model.byName(name); p != nil {
+				if refs := p.keyRefs(); len(refs) > 0 {
+					ref = refs[0]
+				}
+			}
+		}
+	}
+	pc.Keys = []keyConfig{{APIKey: ref}}
+	return pc
+}
+
+// probeProvider 对确定 provider 下的某模型跑三项探测并写回（`/model probe` 入口）。
 func (w *wiring) probeProvider(ctx context.Context, p *providerConfig, name string) (app.ProbeReport, error) {
 	client, err := w.probeClient(p)
 	if err != nil {
 		return app.ProbeReport{}, err
 	}
+	report, perr := w.probeWithClient(ctx, p, client, name)
+	if perr != nil {
+		return report, perr
+	}
+	written, declared, werr := w.writeProbeCaps(p.Name, name, report.Results)
+	if werr != nil {
+		return report, werr
+	}
+	if !declared {
+		// 命令行入口的前提是「模型已在配置里声明」（probeTarget 校验过），到这里说明
+		// 配置在同一进程里被外部改过——必须说出来，不能让用户以为结论已落盘。
+		return report, fmt.Errorf("探测目标已不在配置里（配置被外部改过）")
+	}
+	report.Written = written
+	return report, nil
+}
+
+// probeWithClient 用给定客户端跑三项探测（入口共用；协议相关部分在适配器里）。
+func (w *wiring) probeWithClient(ctx context.Context, p *providerConfig, client *llm.Client, name string) (app.ProbeReport, error) {
 	prober, ok := any(client).(port.Prober)
 	if !ok {
 		return app.ProbeReport{}, fmt.Errorf("provider %q 的协议暂不支持能力探测", p.Name)
@@ -84,10 +154,7 @@ func (w *wiring) probeProvider(ctx context.Context, p *providerConfig, name stri
 		}
 		report.Results = append(report.Results, res)
 	}
-
-	written, werr := w.writeProbeCaps(p, name, report.Results)
-	report.Written = written
-	return report, werr
+	return report, nil
 }
 
 // probeTarget 定位要探测的模型条目（D174 口径四：度量单位是「模型条目」）。
@@ -142,23 +209,24 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 }
 
 // writeProbeCaps 把判定明确的几位合并进该模型条目并写回 config（D174 口径二）。
-// 返回是否真的写回了（无明确结论且声明没变 = 不打扰文件）。
+// 返回 written（是否真的写回了——无明确结论且声明没变 = 不打扰文件）与 declared
+// （该模型条目在**磁盘配置**里是否存在；false = 还没应用，结论只能留在界面上）。
 //
 // 比较基准是**磁盘上的声明**而不是内存里的：同一进程里连探两次，第二次看到的应当是
 // 上次写回的结果，否则每次都会「写回」一遍。内存那份不动——它驱动的是运行中的装配
 // 口径（重启才生效），这里改了会让 /model 显示与实际发出去的请求不一致。
-func (w *wiring) writeProbeCaps(p *providerConfig, model string, results []port.ProbeResult) (bool, error) {
+func (w *wiring) writeProbeCaps(providerName, model string, results []port.ProbeResult) (written, declared bool, err error) {
 	disk, err := loadConfig(w.cfgPath)
 	if err != nil {
-		return false, fmt.Errorf("读取配置: %w", err)
+		return false, false, fmt.Errorf("读取配置: %w", err)
 	}
-	dp := disk.Model.byName(p.Name)
+	dp := disk.Model.byName(providerName)
 	if dp == nil {
-		return false, errors.New("探测目标已不在配置里（配置被外部改过）")
+		return false, false, nil
 	}
 	entry := dp.modelByName(model)
 	if entry == nil {
-		return false, errors.New("探测目标已不在配置里（配置被外部改过）")
+		return false, false, nil
 	}
 	// 起点是**生效值**而不是空集：键缺失时按协议缺省，直接写探测结果会把另外几位
 	// 从「缺省开」悄悄降成「关」。
@@ -176,10 +244,10 @@ func (w *wiring) writeProbeCaps(p *providerConfig, model string, results []port.
 	}
 	names := caps.CapNames()
 	if !definite || sameCaps(entry.Caps, names) {
-		return false, nil
+		return false, true, nil
 	}
 	err = persistConfig(w.cfgPath, func(generic map[string]any) {
-		ps := providerSection(generic, p.Name)
+		ps := providerSection(generic, providerName)
 		if ps == nil {
 			return
 		}
@@ -196,9 +264,9 @@ func (w *wiring) writeProbeCaps(p *providerConfig, model string, results []port.
 		}
 	})
 	if err != nil {
-		return false, fmt.Errorf("写回能力声明: %w", err)
+		return false, true, fmt.Errorf("写回能力声明: %w", err)
 	}
-	return true, nil
+	return true, true, nil
 }
 
 // setCap 按能力名置位（未知名字忽略——探测只跑三项，不会到这里）。

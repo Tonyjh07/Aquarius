@@ -27,9 +27,9 @@ type providerManager struct {
 	secrets port.Secrets     // D151/D161：读链（库 → 同名环境变量）
 	bin     *secretbin.Store // D161：界面明文密钥的写入口（nil = 未接线）
 	stderr  io.Writer        // D35 明文警告出口（os.Stderr；测试可注入）
-	// probe 能力探测数据面（S11-7③/D174）：由装配根接到 wiring.probeForSettings（走
-	// `/model probe` 同一写回逻辑）。nil = 未接线（探测按钮报因）。
-	probe func(ctx context.Context, provider, model string) (uigui.ProbeOutcome, error)
+	// probe 能力探测数据面（S11-7③/D174；D181 起以编辑区 patch 为准）：由装配根接到
+	// wiring.probeForSettings。nil = 未接线（探测按钮报因）。
+	probe func(ctx context.Context, patch uigui.ProviderPatch, model string) (uigui.ProbeOutcome, error)
 	// onStore 明文真的写进密钥库后的回调（S9-6b/D163）：递增密钥库快照 Revision，
 	// 让同一次设置窗会话里刚改过 provider 密钥后切到「密钥库」页也能看见新条目。
 	onStore func()
@@ -76,6 +76,7 @@ func modelSnapshots(p *providerConfig) []uigui.ProviderModelSnapshot {
 			Caps:          p.capsOf(*e).CapNames(),
 			CapsExplicit:  e.Caps != nil,
 			ContextWindow: e.ContextWindow,
+			Enabled:       e.isEnabled(),
 		})
 	}
 	return out
@@ -132,6 +133,17 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 		}
 		if len(p.Models) == 0 {
 			return fmt.Errorf("provider %q 的 models 不可为空（首个 = 缺省请求模型）", p.Name)
+		}
+		enabled := 0
+		for _, me := range p.Models {
+			if !me.Disabled {
+				enabled++
+			}
+		}
+		if enabled == 0 {
+			// 写出去的配置必须能过启动校验（normalize 同一条口径）：没有启用的模型
+			// 等于这家 provider 没有可请求的模型，与其等到重启才报错，不如现在拦住。
+			return fmt.Errorf("provider %q 的模型全部未启用；至少勾选一个", p.Name)
 		}
 	}
 	if primary == "" {
@@ -302,6 +314,11 @@ func writeModels(base map[string]any, models []uigui.ProviderModelPatch) []any {
 		} else {
 			delete(entry, "context_window")
 		}
+		if me.Disabled {
+			entry["enabled"] = false // 显式落键；启用是缺省形态，键不落盘（D180）
+		} else {
+			delete(entry, "enabled")
+		}
 		if me.Caps != nil {
 			entry["caps"] = anyList(*me.Caps) // 显式声明（含空数组 = 三项全关）
 		}
@@ -364,14 +381,15 @@ func (m *providerManager) Models(p uigui.ProviderPatch) ([]string, error) {
 	return out, nil
 }
 
-// Probe 对某模型发起三项能力探测并写回判定明确的结果（S11-7③/D174）：指名 provider
-// （同一模型名可能挂在多家下面，按钮在谁的行里就探谁）+ 模型，走 `/model probe` 同一条
-// 写回逻辑。model = 该 provider 下**已声明**的模型名（未声明无处写回）。
+// Probe 对某模型发起三项能力探测并带回结论（S11-7③/D174；D181 修口径）：以**编辑区当前
+// patch**（端点 / 协议 / 第一把钥匙）构造客户端并探测——改了端点还没应用时测的是「将
+// 要应用的那份」，模型行是编辑区里新建的也能探。结论**无条件带回界面**（回填勾选）；
+// 是否写回配置由装配根按「该模型是否已在配置里」判定（未声明 → Pending，等应用落盘）。
 func (m *providerManager) Probe(model string, p uigui.ProviderPatch) (uigui.ProbeOutcome, error) {
 	if m.probe == nil {
 		return uigui.ProbeOutcome{}, fmt.Errorf("能力探测未接线")
 	}
-	return m.probe(context.Background(), strings.TrimSpace(p.Name), strings.TrimSpace(model))
+	return m.probe(context.Background(), p, strings.TrimSpace(model))
 }
 
 // client 以 patch 构造一次性 llm client（凭据解析口径 = Test/Models 共用）：协议取

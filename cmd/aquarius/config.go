@@ -138,7 +138,14 @@ type modelEntry struct {
 	// limits.max_context_tokens。这是模型的硬上限，不是「想用多少」——想省钱的旋钮仍
 	// 是全局那项（见 effectiveMaxContext）。
 	ContextWindow int `json:"context_window,omitempty"`
+	// Enabled 是否启用（D180）：键缺失 = 启用（旧配置零迁移）；显式 false = 保留声明但
+	// 不参与选型（不再出现在降级链选项与缺省模型选择里）。用指针区分「没写」与「写了
+	// false」——写回时只有 false 才落键，配置不会因为一次应用长出满屏 enabled: true。
+	Enabled *bool `json:"enabled,omitempty"`
 }
+
+// isEnabled 该模型条目是否启用（D180：键缺失 = 启用）。
+func (m *modelEntry) isEnabled() bool { return m.Enabled == nil || *m.Enabled }
 
 // fallbackEntry 降级链一项（D173）：provider + 可选模型。Model 空 = 该 provider 的
 // models[0]；同一 provider 可重复出现（同家不同型号兜底），但二元组不得重复。
@@ -218,8 +225,28 @@ func (p *providerConfig) modelByName(name string) *modelEntry {
 	return nil
 }
 
-// models0 该 provider 的缺省请求模型（normalize 保证非空）。
-func (p *providerConfig) models0() string { return p.Models[0].Name }
+// models0 该 provider 的缺省请求模型：首个**启用**的条目（D180）。启动校验会拒掉
+// 「一家一个都没启用」的配置，所以正常路径上这里总能拿到名字；末尾的兜底只针对运行期
+// 手改内存的行（界面全部取消勾选但还没应用时，类名解析不该炸）。
+func (p *providerConfig) models0() string {
+	for i := range p.Models {
+		if p.Models[i].isEnabled() {
+			return p.Models[i].Name
+		}
+	}
+	return p.Models[0].Name
+}
+
+// enabledModels 该 provider 参与选型的模型名（D180：禁用项保留声明但不进可选清单）。
+func (p *providerConfig) enabledModels() []string {
+	out := make([]string, 0, len(p.Models))
+	for i := range p.Models {
+		if p.Models[i].isEnabled() {
+			out = append(out, p.Models[i].Name)
+		}
+	}
+	return out
+}
 
 // byName 按名取 provider（未命中返回 nil）。
 func (m *modelConfig) byName(name string) *providerConfig {
@@ -247,7 +274,7 @@ func (m *modelConfig) entryCaps(provider, model string) port.ModelCaps {
 	}
 	var e *modelEntry
 	if model == "" {
-		e = &p.Models[0]
+		e = p.modelByName(p.models0()) // 缺省模型 = 首个启用项（D180）
 	} else {
 		e = p.modelByName(model)
 	}
@@ -278,15 +305,21 @@ func (m *modelConfig) chainCaps() port.ModelCaps {
 // enrichModels 用配置补齐服务端模型列表里缺的元信息（D173/D177）：服务端 `/models`
 // 只返回名字，能力位与上下文窗口只能来自 config。只填不删——列表的可用性以服务端为准，
 // 但声明过的元信息要能显示出来，否则 `/model` 里满屏都是没有标注的裸名字。
+//
+// D180：**声明过但未启用**的模型不进可选清单（「保留声明但不参与选型」）；当前模型例外
+// ——它是正在跑的事实，藏起来只会让人以为配错了。
 func (m *modelConfig) enrichModels(infos []port.ModelInfo) []port.ModelInfo {
 	p := m.primaryProvider()
-	out := make([]port.ModelInfo, len(infos))
-	copy(out, infos)
-	for i := range out {
-		if e := p.modelByName(out[i].Name); e != nil {
-			out[i].Caps = p.capsOf(*e)
-			out[i].ContextWindow = e.ContextWindow
+	out := make([]port.ModelInfo, 0, len(infos))
+	for _, info := range infos {
+		if e := p.modelByName(info.Name); e != nil {
+			if !e.isEnabled() && info.Name != m.Name {
+				continue
+			}
+			info.Caps = p.capsOf(*e)
+			info.ContextWindow = e.ContextWindow
 		}
+		out = append(out, info)
 	}
 	return out
 }
@@ -406,6 +439,7 @@ func (m *modelConfig) normalize() error {
 			return fmt.Errorf("model.providers[%d] (%s) 的 models 不可为空（首个 = 缺省请求模型）", i, p.Name)
 		}
 		modelSeen := map[string]bool{}
+		enabled := 0
 		for j := range p.Models {
 			e := &p.Models[j]
 			e.Name = strings.TrimSpace(e.Name)
@@ -416,10 +450,17 @@ func (m *modelConfig) normalize() error {
 				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 重复", i, p.Name, e.Name)
 			}
 			modelSeen[e.Name] = true
+			if e.isEnabled() {
+				enabled++
+			}
 			if e.ContextWindow < 0 {
 				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 的 context_window 不可为负数（%d）；不声明就留空",
 					i, p.Name, e.Name, e.ContextWindow)
 			}
+		}
+		if enabled == 0 {
+			return fmt.Errorf("model.providers[%d] (%s) 的模型全部未启用；至少启用一个（enabled: false 只是清单占位，不参与选型）",
+				i, p.Name)
 		}
 		for j := range p.Keys {
 			p.Keys[j].Label = strings.TrimSpace(p.Keys[j].Label)

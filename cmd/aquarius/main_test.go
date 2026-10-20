@@ -601,6 +601,58 @@ func TestModelEnrichModels(t *testing.T) {
 	}
 }
 
+// TestModelEnabledFlag D180：模型启用位——键缺失 = 启用；缺省请求模型取首个启用项；
+// `/model` 清单不列未启用的声明项（当前模型例外，它是正在跑的事实）；一家全关 = 启动校验拒绝。
+func TestModelEnabledFlag(t *testing.T) {
+	off, on := false, true
+	m := modelConfig{
+		Providers: []providerConfig{{
+			Name: "a", BaseURL: "http://a",
+			Models: []modelEntry{
+				{Name: "m1", Enabled: &off, ContextWindow: 8000},
+				{Name: "m2", ContextWindow: 128000},
+				{Name: "m3", Enabled: &on},
+			},
+		}},
+		// 未指定 name：normalize 落到首个启用项（m2），不是 m1。
+	}
+	if err := m.normalize(); err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if m.Name != "m2" {
+		t.Fatalf("缺省模型 = %q, want m2（首个启用）", m.Name)
+	}
+	if got := m.primaryProvider().models0(); got != "m2" {
+		t.Fatalf("models0 = %q", got)
+	}
+	if got := m.primaryProvider().enabledModels(); len(got) != 2 || got[0] != "m2" || got[1] != "m3" {
+		t.Fatalf("enabledModels = %v", got)
+	}
+
+	// 清单：m1 声明了但未启用 → 不列；m4 未声明 → 照旧列出（可用性以服务端为准）。
+	got := m.enrichModels([]port.ModelInfo{{Name: "m1"}, {Name: "m2"}, {Name: "m4"}})
+	if len(got) != 2 || got[0].Name != "m2" || got[1].Name != "m4" {
+		t.Fatalf("enrich 应滤掉未启用项: %+v", got)
+	}
+	// 当前模型即使未启用也要留（否则用户以为配错了）。
+	m.Name = "m1"
+	got = m.enrichModels([]port.ModelInfo{{Name: "m1"}, {Name: "m2"}})
+	if len(got) != 2 || got[0].Name != "m1" {
+		t.Fatalf("当前模型应保留: %+v", got)
+	}
+
+	// 一家全关：启动校验拒绝，并指名是哪一家。
+	bad := modelConfig{
+		Providers: []providerConfig{{
+			Name: "a", BaseURL: "http://a",
+			Models: []modelEntry{{Name: "m1", Enabled: &off}},
+		}},
+	}
+	if err := bad.normalize(); err == nil || !strings.Contains(err.Error(), "全部未启用") {
+		t.Fatalf("全部未启用 = %v, want 拒绝", err)
+	}
+}
+
 // TestRunPermissionSwitchWritesBackConfig /permission 切换写回：其余配置键与数值类型不丢、无半截文件残留（D22）。
 func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
 	dir := t.TempDir()

@@ -228,6 +228,73 @@ func TestProviderManagerApplyKeyPoolAndCaps(t *testing.T) {
 	}
 }
 
+// TestProviderManagerEnabledFlag 模型启用位往返（D180）：缺省 = 启用（不落键）；关掉写
+// `enabled: false`；再打开删键恢复缺省形态；同一家的其他模型不受影响。全部关掉 = 拒绝
+// 应用（启动校验同一口径）。
+func TestProviderManagerEnabledFlag(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := `{
+  "model": {
+    "providers": [
+      {"name": "a", "base_url": "http://a/v1", "models": [{"name": "m1"}, {"name": "m2"}]}
+    ],
+    "primary": "a",
+    "name": "m1"
+  },
+  "ui": {"kind": "repl"}
+}`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
+	if s := m.Snapshot(); !s[0].Models[0].Enabled || !s[0].Models[1].Enabled {
+		t.Fatalf("键缺失应视为启用: %+v", s[0].Models)
+	}
+
+	// 关掉 m2：只给这一条加键，m1 仍是缺省形态。
+	if err := m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Models: []uigui.ProviderModelPatch{{Name: "m1"}, {Name: "m2", Disabled: true}},
+	}}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	raw, _ := os.ReadFile(cfgPath)
+	if n := strings.Count(string(raw), `"enabled"`); n != 1 {
+		t.Fatalf("只该有 1 处 enabled 键（关掉的那条），实际 %d:\n%s", n, raw)
+	}
+	cfgOut, _ := loadConfig(cfgPath)
+	if e := cfgOut.Model.Providers[0].modelByName("m2"); e == nil || e.isEnabled() {
+		t.Fatalf("m2 应为未启用: %+v", e)
+	}
+	if e := cfgOut.Model.Providers[0].modelByName("m1"); e == nil || !e.isEnabled() {
+		t.Fatalf("m1 应仍为启用: %+v", e)
+	}
+	if s := m.Snapshot(); s[0].Models[1].Enabled {
+		t.Fatalf("快照应反映未启用: %+v", s[0].Models)
+	}
+
+	// 全部关掉：拒绝（写出去的配置会过不了启动校验）。
+	err := m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Models: []uigui.ProviderModelPatch{{Name: "m1", Disabled: true}, {Name: "m2", Disabled: true}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "至少") {
+		t.Fatalf("全部未启用 = %v, want 拒绝", err)
+	}
+
+	// 再打开：键删掉，回到缺省形态。
+	if err := m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Models: []uigui.ProviderModelPatch{{Name: "m1"}, {Name: "m2"}},
+	}}); err != nil {
+		t.Fatalf("Apply2: %v", err)
+	}
+	raw, _ = os.ReadFile(cfgPath)
+	if strings.Contains(string(raw), `"enabled"`) {
+		t.Fatalf("启用是缺省形态，不该落键:\n%s", raw)
+	}
+}
+
 func TestProviderManagerApplyValidation(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
 	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}

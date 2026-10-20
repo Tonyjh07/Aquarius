@@ -52,6 +52,7 @@ type ProviderModelSnapshot struct {
 	Caps          []string // 生效能力名（port.CapTools/CapReasoning/CapVision 的子集）
 	CapsExplicit  bool     // false = 键缺失（按协议缺省）
 	ContextWindow int      // 该模型上下文窗口 tokens（0 = 不声明，跟随全局）
+	Enabled       bool     // 是否启用（D180：键缺失 = true；不启用 = 保留声明但不参与选型）
 }
 
 // ProviderSnapshot provider 编辑区单条快照（D110②/③）：模型条目与密钥池都以结构化
@@ -77,10 +78,13 @@ type ProviderKeyPatch struct {
 
 // ProviderModelPatch provider 模型条目提交（S11-7③）：Caps nil = 保持原声明（键缺失
 // 与显式都原样保留）；非 nil（含空数组）= 以本次为准（显式声明）。ContextWindow 0 = 不声明。
+// Disabled = true 时落盘为显式 `enabled: false`（D180）；缺省（false）= 启用、不落键。
+// 用「禁用」而不是「启用」命名，是为了让零值等于默认行为：忘了填的提交不会把模型全关掉。
 type ProviderModelPatch struct {
 	Name          string
 	Caps          *[]string
 	ContextWindow int
+	Disabled      bool
 }
 
 // ProviderPatch provider 编辑区单条提交（Apply 全量替换口径）。Orig = 编辑前的
@@ -102,7 +106,11 @@ type ProbeOutcome struct {
 	Provider string
 	Model    string
 	Results  []port.ProbeResult
-	Written  bool // 是否真的写回了 config（无明确结论且声明没变 = false）
+	// Written 是否真的写回了 config（无明确结论且声明没变 = false）。
+	Written bool
+	// Pending 该模型还没写进配置（编辑区新加、尚未应用）：结论只回填到勾选，
+	// 等「应用 provider 变更」一并落盘（D181）。此时 Written 恒 false。
+	Pending bool
 }
 
 // FallbackLink 降级链一项（D173/D176 口径三）：provider + 模型名。模型可为空
@@ -385,6 +393,7 @@ type settingsForm struct {
 	provApply   widget.Clickable
 	provStatus  string // provider 区反馈（"" = 默认提示）
 	provErr     bool
+	provFetched bool             // 本窗会话已自动拉过一轮服务端清单（D181：一窗一次）
 	testResults chan testOutcome // 连通性测试异步结果（测试 goroutine 写、帧循环排空）
 	win         *app.Window      // 结果回灌的 Invalidate（headless = nil）
 
@@ -433,14 +442,19 @@ type providerForm struct {
 	// 密钥池（S11-7③/D173）：每把一组（label + 值只写不回显 + 删除），尾部「＋ 添加」。
 	keyForms []*providerKeyForm
 	keyAdd   widget.Clickable
-	// 模型能力表（S11-7③/D173）：每行一组（名字 + 三能力勾选 + 上下文窗口 + 探测 + 删除），
-	// 尾部「＋ 添加模型」。
+	// 模型列表（S11-7③/D173；D181 起一张表装全部模型）：每行一组（启用 + 名字 + 三能力
+	// 勾选 + 上下文窗口 + 探测 + 删除），尾部「＋ 添加模型」；行数不设上限，界面按
+	// provModelPageSize 分页（modelPage = 当前页，越界由 Rows 夹回）。
 	modelForms []*providerModelForm
 	modelAdd   widget.Clickable
-	// 候选（D153）：cands = 最近一次拉取结果（去重保序，最多 relModelCandMax 个），
-	// candClicks 与之一一对应。点 chip = 追加一个模型行（已存在则跳过）。
-	cands      []string
-	candClicks []widget.Clickable
+	modelPage  int
+	// 分页按钮（D181）：行数超过一页时才画（provModelPageSize）。
+	modelPagePrev widget.Clickable
+	modelPageNext widget.Clickable
+	// 服务端清单一行的反馈（自动拉取 / 「获取模型」共用）：成功报新增了几个、
+	// 失败报原因；空 = 还没拉过。只挂在本卡片里，不占全局状态行。
+	fetchNote string
+	fetchErr  bool
 }
 
 // providerKeyForm 密钥池单槽编辑控件组（S11-7③）。
@@ -451,10 +465,11 @@ type providerKeyForm struct {
 	del   widget.Clickable
 }
 
-// providerModelForm 模型能力表单行编辑控件组（S11-7③）：能力位三勾选 + 上下文窗口 +
-// 探测按钮。base* 记录填表基线（快照生效值），只有用户动过勾选才把能力位固化成显式
-// 声明（键缺失 = 协议缺省；不动就保持「缺省」这个形态）。
+// providerModelForm 模型能力表单行编辑控件组（S11-7③）：启用勾选 + 能力位三勾选 +
+// 上下文窗口 + 探测按钮。base* 记录填表基线（快照生效值），只有用户动过勾选才把能力位
+// 固化成显式声明（键缺失 = 协议缺省；不动就保持「缺省」这个形态）。
 type providerModelForm struct {
+	enabled     widget.Bool // D180：是否启用（勾选态；不启用 = 保留声明但不参与选型）
 	name        widget.Editor
 	capsTools   widget.Bool
 	capsReason  widget.Bool
@@ -466,6 +481,7 @@ type providerModelForm struct {
 	contextWin  widget.Editor // 上下文窗口 tokens（空/0 = 不声明，跟随全局）
 	probe       widget.Clickable
 	del         widget.Clickable
+	probeBusy   bool   // 探测在途（按钮右侧转圈；结果回灌即收）
 	probeStatus string // 探测反馈（成功绿/错误红，行内）
 	probeErr    bool
 }
@@ -533,6 +549,7 @@ type testOutcome struct {
 	err     error
 	ms      int64        // 耗时（毫秒；只报成功，失败不报时延）
 	models  []string     // kind == probeModels：候选（已去重保序）
+	auto    bool         // kind == probeModels：切到本页时的自动拉取（结果只与本卡片有关）
 	outcome ProbeOutcome // kind == probeCaps：探测结论
 }
 
@@ -690,7 +707,7 @@ func newProviderForm() *providerForm {
 		ed.SingleLine = true
 	}
 	pf.keyForms = append(pf.keyForms, newProviderKeyForm(ProviderKeySnapshot{}))
-	pf.modelForms = append(pf.modelForms, newModelRow("", ""))
+	pf.modelForms = append(pf.modelForms, newModelRow("", "", true))
 	return pf
 }
 
@@ -722,6 +739,7 @@ func defaultCapsFor(kind string) []string {
 // （缺省时按协议缺省给全），并记下基线用于判定用户是否动过（动了才固化显式声明）。
 func newProviderModelForm(m ProviderModelSnapshot) *providerModelForm {
 	mf := &providerModelForm{explicit: m.CapsExplicit}
+	mf.enabled.Value = m.Enabled
 	mf.name.SingleLine = true
 	mf.contextWin.SingleLine = true
 	mf.name.SetText(m.Name)
@@ -743,9 +761,10 @@ func newProviderModelForm(m ProviderModelSnapshot) *providerModelForm {
 }
 
 // newModelRow 新建一个模型行（「＋ 添加模型」/「获取模型」/候选 chip 三处共用）：按该
-// provider 当前协议把缺省能力位画进勾选初值（未声明 → 写回时仍为键缺失）。
-func newModelRow(name, kind string) *providerModelForm {
-	return newProviderModelForm(ProviderModelSnapshot{Name: name, Caps: defaultCapsFor(kind)})
+// provider 当前协议把缺省能力位画进勾选初值（未声明 → 写回时仍为键缺失）。enabled 区分
+// 来路（D180）：用户主动加的行默认启用；自动拉回的清单默认不启用，由用户挑。
+func newModelRow(name, kind string, enabled bool) *providerModelForm {
+	return newProviderModelForm(ProviderModelSnapshot{Name: name, Caps: defaultCapsFor(kind), Enabled: enabled})
 }
 
 // loadProviders 以快照重建 provider 编辑区（开窗填表；快照空 = 无条目，留新增入口）。
@@ -775,7 +794,7 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 			pf.modelForms = append(pf.modelForms, newProviderModelForm(m))
 		}
 		if len(pf.modelForms) == 0 {
-			pf.modelForms = append(pf.modelForms, newModelRow("", p.Kind))
+			pf.modelForms = append(pf.modelForms, newModelRow("", p.Kind, true))
 		}
 		if p.Primary {
 			f.primaryIdx = i
@@ -784,14 +803,17 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 	}
 }
 
-// loadChainChoices 降级链的 provider 选项（名字 + 声明的模型名）：取自 provider 编辑区
+// loadChainChoices 降级链的 provider 选项（名字 + 启用的模型名）：取自 provider 编辑区
 // 快照（同一份事实），故「模型服务」页改动后重开窗即同步；本窗内改 provider 列表不
-// 影响链选项（那类改动要重启才生效，运行态本就不同步）。
+// 影响链选项（那类改动要重启才生效，运行态本就不同步）。未启用的模型不进候选（D180）。
 func (f *settingsForm) loadChainChoices(snap []ProviderSnapshot) {
 	f.chainChoices = make([]ProviderChoice, 0, len(snap))
 	for _, p := range snap {
 		names := make([]string, 0, len(p.Models))
 		for _, m := range p.Models {
+			if !m.Enabled {
+				continue
+			}
 			names = append(names, m.Name)
 		}
 		f.chainChoices = append(f.chainChoices, ProviderChoice{Name: p.Name, Models: names})

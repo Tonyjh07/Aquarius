@@ -37,6 +37,10 @@ type settingsPage interface {
 	FirstEditor(f *settingsForm) *widget.Editor
 }
 
+// enterHook 可选钩子：切到本页时被调用（每帧由 settingsFrame 在渲染前触发）。页面用
+// 表单上的标记自行去重（D181：「模型服务」页借此在首次进入时自动拉一轮服务端清单）。
+type enterHook interface{ OnEnter(u *UI, f *settingsForm) }
+
 // settingsPages 页注册表：**页序 = 注册序**。加一页在这里追加一行即可（各页面模块见
 // settings_page_*.go）。页索引常量（pageGeneral…）仍保留供代码与测试引用可读，其值与
 // 本表次序由 TestSettingsPageNamesContract 锁定。

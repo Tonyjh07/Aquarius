@@ -29,7 +29,7 @@ import (
 func snapProv(name, base string, primary bool, models ...string) ProviderSnapshot {
 	s := ProviderSnapshot{Name: name, BaseURL: base, Primary: primary}
 	for _, m := range models {
-		s.Models = append(s.Models, ProviderModelSnapshot{Name: m})
+		s.Models = append(s.Models, ProviderModelSnapshot{Name: m, Enabled: true})
 	}
 	return s
 }
@@ -438,6 +438,7 @@ type fakeProviderMgr struct {
 	testPatches  []ProviderPatch
 	models       []string
 	modelsErr    error
+	modelsMu     sync.Mutex
 	modelsGot    []ProviderPatch
 	probeErr     error
 	probeOutcome ProbeOutcome
@@ -470,8 +471,17 @@ func (f *fakeProviderMgr) Test(p ProviderPatch) error {
 }
 
 func (f *fakeProviderMgr) Models(p ProviderPatch) ([]string, error) {
+	f.modelsMu.Lock()
 	f.modelsGot = append(f.modelsGot, p)
+	f.modelsMu.Unlock()
 	return f.models, f.modelsErr
+}
+
+// modelsCalls Models 调用留痕的快照（自动拉取会并发起多个 goroutine，读取须走锁）。
+func (f *fakeProviderMgr) modelsCalls() []ProviderPatch {
+	f.modelsMu.Lock()
+	defer f.modelsMu.Unlock()
+	return append([]ProviderPatch(nil), f.modelsGot...)
 }
 
 func (f *fakeProviderMgr) Probe(model string, p ProviderPatch) (ProbeOutcome, error) {
@@ -570,7 +580,7 @@ func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{snapProv("a", "", true)}},
 	})
 	f := newSettingsForm(u)
-	provKinds := []rowKind{rowProvName, rowProvKind, rowProvBase, rowProvGetModels,
+	provKinds := []rowKind{rowProvName, rowProvKind, rowProvBase, rowProvModels,
 		rowProvTok, rowProvUnsup, rowProvKey, rowProvKeyAdd, rowProvModel, rowProvModelAdd,
 		rowProvBtns, rowProvAdd, rowProvApply}
 	chainKinds := []rowKind{rowChainItem, rowChainAdd}
@@ -720,6 +730,17 @@ func TestProviderEditorHeadless(t *testing.T) {
 		t.Fatalf("动过勾选应固化能力声明: %+v", mgr.applied[1][0].Models[0])
 	}
 
+	// 启用位（D180）：缺省启用不进 patch 的禁用位；取消勾选 = Disabled。
+	if mgr.applied[1][0].Models[0].Disabled {
+		t.Fatal("默认启用不该标成 Disabled")
+	}
+	f.provs[0].modelForms[0].enabled.Value = false
+	u.applyProviderChanges(f)
+	if !mgr.applied[2][0].Models[0].Disabled {
+		t.Fatal("取消勾选应提交 Disabled")
+	}
+	f.provs[0].modelForms[0].enabled.Value = true
+
 	// 异步连通测试：结果经 testResults 回灌（帧循环外直接读）。
 	u.runProviderTest(f, f.provs[0])
 	out := <-f.testResults
@@ -825,13 +846,13 @@ func TestProviderModelTableHeadless(t *testing.T) {
 	}
 }
 
-// TestFetchModelsAppendsRows 「获取模型」（S11-7③）：拉列表 → 追加成模型能力表行
-// （已存在的名字跳过）；超出上限的留作候选 chip（点选追加）；失败不动表；结果按 provider
-// 名回灌（期间删过条目就丢弃）。
+// TestFetchModelsAppendsRows 拉服务端清单（S11-7③；D181 改版）：**全部**并进模型列表
+// （已存在的名字跳过），新增行默认未启用、只落在本卡片的反馈里；失败不动表；结果按
+// provider 名回灌（期间删过条目就丢弃）。
 func TestFetchModelsAppendsRows(t *testing.T) {
 	mgr := &fakeProviderMgr{
 		snap:   []ProviderSnapshot{snapProv("a", "http://a/v1", true, "m1")},
-		models: []string{"m1", "m2", "m3"}, // m1 已存在 → 只追加 m2/m3
+		models: []string{"m1", "m2", "m3"}, // m1 已存在 → 只补 m2/m3
 	}
 	u := newHeadless(t, Options{ProviderMgr: mgr})
 	f := newSettingsForm(u)
@@ -843,48 +864,68 @@ func TestFetchModelsAppendsRows(t *testing.T) {
 		f.drainTestResults()
 	}
 
-	u.runFetchModels(f, pf)
+	u.runFetchModels(f, pf, false)
 	wait()
-	if len(mgr.modelsGot) != 1 || mgr.modelsGot[0].Name != "a" {
-		t.Fatalf("Models 调用 = %+v", mgr.modelsGot)
+	if got := mgr.modelsCalls(); len(got) != 1 || got[0].Name != "a" {
+		t.Fatalf("Models 调用 = %+v", got)
 	}
 	if len(pf.modelForms) != 3 {
-		t.Fatalf("模型行 = %d, want 3（追加 m2/m3）", len(pf.modelForms))
+		t.Fatalf("模型行 = %d, want 3（补入 m2/m3）", len(pf.modelForms))
 	}
 	if n := pf.modelForms[1].name.Text(); n != "m2" {
-		t.Fatalf("追加行 = %q", n)
+		t.Fatalf("补入行 = %q", n)
 	}
-	if !strings.Contains(f.provStatus, "已追加 2 个模型行") {
-		t.Fatalf("状态行 = %q", f.provStatus)
+	if !pf.modelForms[0].enabled.Value {
+		t.Fatal("原有模型应保持启用")
+	}
+	if pf.modelForms[1].enabled.Value || pf.modelForms[2].enabled.Value {
+		t.Fatal("补入的模型行应默认未启用（要用户自己勾）")
+	}
+	if !strings.Contains(pf.fetchNote, "已补入 2 个模型") || pf.fetchErr {
+		t.Fatalf("卡片反馈 = (%v, %q)", pf.fetchErr, pf.fetchNote)
+	}
+	if !strings.Contains(f.provStatus, "已补入 2 个模型") {
+		t.Fatalf("手动拉取也应写全局状态行：%q", f.provStatus)
 	}
 
-	// 点候选 chip = 追加（不替换）。这里服务端全在表内（无余量）→ 候选为空；换一批验证。
-	mgr.models = []string{"m4", "m5"}
-	u.runFetchModels(f, pf)
+	// 再拉同一批：都在表里 → 不生长、反馈说明。
+	u.runFetchModels(f, pf, false)
 	wait()
-	if len(pf.cands) != 0 { // 8 行内全追加完，无余量
-		t.Fatalf("无余量时不该有候选：%v", pf.cands)
+	if len(pf.modelForms) != 3 {
+		t.Fatalf("重复拉取不该生长行：%d", len(pf.modelForms))
 	}
-	// 失败：不动模型表，状态行报因。
+	if !strings.Contains(pf.fetchNote, "都已在列表中") {
+		t.Fatalf("重复拉取反馈 = %q", pf.fetchNote)
+	}
+
+	// 失败：不动模型表，反馈报因。
 	before := len(pf.modelForms)
 	mgr.modelsErr = errors.New("403 forbidden")
-	u.runFetchModels(f, pf)
+	u.runFetchModels(f, pf, false)
 	wait()
 	if len(pf.modelForms) != before {
 		t.Fatalf("失败不该改模型表：%d → %d", before, len(pf.modelForms))
 	}
-	if !f.provErr || !strings.Contains(f.provStatus, "失败") {
-		t.Fatalf("失败反馈 = (%v, %q)", f.provErr, f.provStatus)
+	if !pf.fetchErr || !strings.Contains(pf.fetchNote, "失败") {
+		t.Fatalf("失败反馈 = (%v, %q)", pf.fetchErr, pf.fetchNote)
+	}
+
+	// 自动拉取失败不该污染全局状态行（那是进页面的附带动作）。
+	f.provStatus = ""
+	u.runFetchModels(f, pf, true)
+	wait()
+	if f.provStatus != "" || !pf.fetchErr {
+		t.Fatalf("自动拉取失败只落卡片：status=%q note=%q", f.provStatus, pf.fetchNote)
 	}
 
 	// 结果回灌按名字：名字对不上（期间删过该条目）→ 整条结果丢弃，不落到别的条目上。
 	other := &providerForm{}
 	other.name.SetText("b")
-	other.modelForms = []*providerModelForm{newProviderModelForm(ProviderModelSnapshot{Name: "keep"})}
+	other.modelForms = []*providerModelForm{newProviderModelForm(ProviderModelSnapshot{Name: "keep", Enabled: true})}
 	f.provs = []*providerForm{other}
 	mgr.modelsErr = nil
 	mgr.models = []string{"x1"}
-	u.runFetchModels(f, pf) // pf 已不在列表里（名字 a）
+	u.runFetchModels(f, pf, false) // pf 已不在列表里（名字 a）
 	<-f.testResults
 	f.drainTestResults()
 	if len(other.modelForms) != 1 || other.modelForms[0].name.Text() != "keep" {
@@ -892,11 +933,11 @@ func TestFetchModelsAppendsRows(t *testing.T) {
 	}
 }
 
-// TestFetchModelsOverflowChips 「获取模型」超出上限的部分作候选 chip，点选才追加单行
-// （服务端可列出几百个模型，全铺开会把卡撑成一面墙）。
-func TestFetchModelsOverflowChips(t *testing.T) {
+// TestFetchModelsPagination 清单不设上限、界面分页（D181）：一页 provModelPageSize 行，
+// 页数按行数算，末页不整；行计划只在当前页给模型行（未渲染的行不排版）；删行后页码夹回。
+func TestFetchModelsPagination(t *testing.T) {
 	var listed []string
-	for i := 0; i < provModelCandMax+3; i++ {
+	for i := 0; i < provModelPageSize*2+3; i++ { // 2 整页 + 3 行
 		listed = append(listed, fmt.Sprintf("mm%02d", i))
 	}
 	mgr := &fakeProviderMgr{
@@ -905,25 +946,91 @@ func TestFetchModelsOverflowChips(t *testing.T) {
 	}
 	u := newHeadless(t, Options{ProviderMgr: mgr})
 	f := newSettingsForm(u)
+	f.provOpen = 0
 	pf := f.provs[0]
-	u.runFetchModels(f, pf)
+	u.runFetchModels(f, pf, false)
 	out := <-f.testResults
 	f.testResults <- out
 	f.drainTestResults()
-	if len(pf.modelForms) != 1+provModelCandMax {
-		t.Fatalf("追加行 = %d, want %d", len(pf.modelForms), 1+provModelCandMax)
+
+	want := 1 + len(listed)
+	if len(pf.modelForms) != want {
+		t.Fatalf("模型行 = %d, want %d（不设上限，全部入表）", len(pf.modelForms), want)
 	}
-	if len(pf.cands) != 3 || len(pf.candClicks) != 3 {
-		t.Fatalf("候选 chip = %d/%d, want 3", len(pf.cands), len(pf.candClicks))
+	if pages := pf.modelPageCount(); pages != 3 {
+		t.Fatalf("页数 = %d, want 3", pages)
 	}
-	pf.appendModelCand(pf.cands[0])
-	if len(pf.modelForms) != 2+provModelCandMax {
-		t.Fatalf("点选候选后追加失败：%d", len(pf.modelForms))
+	// 第 1 页：只排 provModelPageSize 行。
+	if n := len(pageRowsOfKind(f, pageProviders, rowProvModel)); n != provModelPageSize {
+		t.Fatalf("首页模型行 = %d, want %d", n, provModelPageSize)
 	}
-	// 重复点同一个候选 = no-op（不生长两行同名）。
-	pf.appendModelCand(pf.cands[0])
-	if len(pf.modelForms) != 2+provModelCandMax {
-		t.Fatalf("重复候选应跳过：%d", len(pf.modelForms))
+	// 翻到最后一页：余下 4 行 + 分页条。
+	pf.modelPage = 2
+	rows := pageRowsOfKind(f, pageProviders, rowProvModel)
+	if len(rows) != 4 {
+		t.Fatalf("末页模型行 = %d, want 4", len(rows))
+	}
+	if rows[0].field != provModelPageSize*2 {
+		t.Fatalf("末页首行下标 = %d, want %d", rows[0].field, provModelPageSize*2)
+	}
+	if n := len(pageRowsOfKind(f, pageProviders, rowProvModelPager)); n != 1 {
+		t.Fatalf("多页时应有分页条 = %d, want 1", n)
+	}
+	// 行数回落到一页：分页条消失、页码夹回首页。
+	pf.modelForms = pf.modelForms[:2]
+	pf.modelPage = 5
+	if start, end := pf.modelPageBounds(); start != 0 || end != 2 {
+		t.Fatalf("bounds = (%d,%d), want (0,2)", start, end)
+	}
+	if n := len(pageRowsOfKind(f, pageProviders, rowProvModelPager)); n != 0 {
+		t.Fatalf("单页不该有分页条 = %d", n)
+	}
+}
+
+// pageRowsOfKind 当前页行计划里某行型的行（测试用小工具）。
+func pageRowsOfKind(f *settingsForm, page int, kind rowKind) []rowDesc {
+	var out []rowDesc
+	for _, r := range f.pageRows(page) {
+		if r.kind == kind {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// TestProvidersAutoFetchOnce 切到「模型服务」页自动拉一轮（D181）：每家一次、每窗一次；
+// 先手动拉过的卡片不重复请求；只读窗不拉。
+func TestProvidersAutoFetchOnce(t *testing.T) {
+	mgr := &fakeProviderMgr{
+		snap: []ProviderSnapshot{
+			snapProv("a", "http://a/v1", true, "m1"),
+			snapProv("b", "http://b/v1", false, "bm1"),
+		},
+		models: []string{"m1", "m2"},
+	}
+	u := newHeadless(t, Options{ProviderMgr: mgr,
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil }})
+	f := newSettingsForm(u)
+	if f.provFetched {
+		t.Fatal("开窗不该已经拉过")
+	}
+	providersPage{}.OnEnter(u, f)
+	if !f.provFetched {
+		t.Fatal("进页面应标记已拉取")
+	}
+	// 两家各一次（结果通道按「最新一条覆盖」设计，自动拉取不依赖逐条回灌）。
+	deadline := time.Now().Add(2 * time.Second)
+	for len(mgr.modelsCalls()) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	f.drainTestResults()
+	if n := len(mgr.modelsCalls()); n != 2 {
+		t.Fatalf("Models 调用 = %d, want 2（每家一次）", n)
+	}
+	// 再来一次 OnEnter：不重复请求。
+	providersPage{}.OnEnter(u, f)
+	if n := len(mgr.modelsCalls()); n != 2 {
+		t.Fatalf("重复进页面不该再拉：%d", n)
 	}
 }
 
@@ -943,7 +1050,17 @@ func TestProbeModelRow(t *testing.T) {
 	u := newHeadless(t, Options{ProviderMgr: mgr})
 	f := newSettingsForm(u)
 	pf := f.provs[0]
-	u.runProbeModel(f, pf, pf.modelForms[0])
+	mf := pf.modelForms[0]
+	u.runProbeModel(f, pf, mf)
+	// 开跑即置忙（按钮右侧转圈）：这是同步置位的，不必等 goroutine 回灌。
+	if !mf.probeBusy {
+		t.Fatal("探测在途应置忙（转圈要立刻出现）")
+	}
+	if mf.probeStatus != "" {
+		t.Fatalf("在途应清掉上一轮结论，实为 %q", mf.probeStatus)
+	}
+	// 在途重复点不叠发：否则连点几下会开好几条 30s 探测。
+	u.runProbeModel(f, pf, mf)
 	out := <-f.testResults
 	if out.err != nil || out.kind != probeCaps || out.model != "m1" {
 		t.Fatalf("probe result = %+v", out)
@@ -951,14 +1068,36 @@ func TestProbeModelRow(t *testing.T) {
 	f.testResults <- out
 	f.drainTestResults()
 	if len(mgr.probeGot) != 1 || mgr.probeGot[0].model != "m1" || mgr.probeGot[0].provider != "a" {
-		t.Fatalf("Probe 调用 = %+v", mgr.probeGot)
+		t.Fatalf("Probe 调用 = %+v（在途重复点不该再发一次）", mgr.probeGot)
 	}
-	mf := pf.modelForms[0]
+	if mf.probeBusy {
+		t.Fatal("结果回灌后应解除在途态（转圈收掉）")
+	}
 	if mf.probeStatus == "" || mf.probeErr {
 		t.Fatalf("行内反馈 = (%v, %q)", mf.probeErr, mf.probeStatus)
 	}
 	if !mf.capsTools.Value || mf.capsReason.Value {
 		t.Fatalf("写回后勾选应与结论一致: tools=%v reason=%v", mf.capsTools.Value, mf.capsReason.Value)
+	}
+
+	// 三项探测必须**三项都报**：只统计支持/不支持会把「无结论」那一项藏起来，看起来
+	// 像是少测了一项（实测踩中：图片返回空正文 → 界面只显示「2 项支持 / 0 项不支持」）。
+	f.provs[0].modelForms[0].probeStatus = ""
+	mgr.probeOutcome = ProbeOutcome{
+		Provider: "a", Model: "m1",
+		Results: []port.ProbeResult{
+			{Capability: port.CapTools, Verdict: port.ProbeSupported},
+			{Capability: port.CapReasoning, Verdict: port.ProbeSupported},
+			{Capability: port.CapVision, Verdict: port.ProbeInconclusive, Reason: "回复为空"},
+		},
+	}
+	u.runProbeModel(f, pf, pf.modelForms[0])
+	out = <-f.testResults
+	f.testResults <- out
+	f.drainTestResults()
+	want := "2 项支持 / 0 项不支持 / 1 项无结论"
+	if !strings.Contains(mf.probeStatus, want) {
+		t.Fatalf("三项都要报数：%q 缺 %q", mf.probeStatus, want)
 	}
 	// 空模型名不发探测。
 	empty := pf.modelForms[0]

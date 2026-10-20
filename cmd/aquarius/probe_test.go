@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -263,19 +264,24 @@ func TestProbeProtocolDispatch(t *testing.T) {
 	}
 }
 
-// TestProbeForSettings 设置窗「探测能力」数据面（S11-7③）：指名 provider + 模型，走
-// `probeModel` 同一条写回；provider 不存在 / 模型未声明都指名报因（没地方写回就不探）。
+// TestProbeForSettings 设置窗「探测能力」数据面（S11-7③/D181）：以编辑区 patch 造瞬时
+// 客户端——改了端点还没应用时，测的是「将要应用的那份」；模型**还没落盘**也照常探，结论
+// 只带回界面（Pending），声明过的才写回（Written）。
 func TestProbeForSettings(t *testing.T) {
 	srv := probeServer(t, probeReply{VisionStatus: http.StatusBadRequest,
 		Vision: `{"error":{"message":"image input is not supported"}}`})
 	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1"}`)
 	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	patch := uigui.ProviderPatch{
+		Name: "a", Orig: "a", Kind: "openai-chat", BaseURL: srv.URL,
+		Keys: []uigui.ProviderKeyPatch{{Value: "plain-key"}},
+	}
 
-	out, err := w.probeForSettings(context.Background(), "a", "m1")
+	out, err := w.probeForSettings(context.Background(), patch, "m1")
 	if err != nil {
 		t.Fatalf("probeForSettings: %v", err)
 	}
-	if out.Provider != "a" || out.Model != "m1" || len(out.Results) != 3 || !out.Written {
+	if out.Provider != "a" || out.Model != "m1" || len(out.Results) != 3 || !out.Written || out.Pending {
 		t.Fatalf("outcome = %+v", out)
 	}
 	// 写回同 `probeModel`：config 里已固化显式声明。
@@ -283,14 +289,48 @@ func TestProbeForSettings(t *testing.T) {
 	if e := after.Model.Providers[0].modelByName("m1"); e == nil || e.Caps == nil {
 		t.Fatalf("未写回能力声明: %+v", e)
 	}
-	// 未声明的模型 / 不存在的 provider：指名报因，且不再打网络。
-	if _, err := w.probeForSettings(context.Background(), "a", "nope"); err == nil ||
-		!strings.Contains(err.Error(), "models 里") {
-		t.Fatalf("未声明模型 = %v, want 报因", err)
+
+	// 还没应用的模型（编辑区新加的一行）：照常探，结论只带回界面——不报错、不写盘。
+	out, err = w.probeForSettings(context.Background(), patch, "m2")
+	if err != nil {
+		t.Fatalf("未落盘模型也该能探: %v", err)
 	}
-	if _, err := w.probeForSettings(context.Background(), "zz", "m1"); err == nil ||
-		!strings.Contains(err.Error(), "不在配置里") {
-		t.Fatalf("不存在 provider = %v, want 报因", err)
+	if !out.Pending || out.Written || len(out.Results) != 3 {
+		t.Fatalf("未落盘结论 = %+v, want Pending", out)
+	}
+	after, _ = loadConfig(cfgPath)
+	if e := after.Model.Providers[0].modelByName("m2"); e != nil {
+		t.Fatalf("未落盘模型不该被探测写进配置: %+v", e)
+	}
+
+	// 改名过程中：写回目标仍是磁盘上的原名（Orig），别写到新名字上找不到。
+	renamedPath, renamedCfg := probeCfg(t, srv.URL, `{"name": "m1"}`)
+	w2 := &wiring{cfg: renamedCfg, cfgPath: renamedPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	renamed := patch
+	renamed.Name, renamed.Orig = "a2", "a"
+	if out, err = w2.probeForSettings(context.Background(), renamed, "m1"); err != nil || !out.Written {
+		t.Fatalf("改名后探测 = (%+v, %v), want 写回原名", out, err)
+	}
+	if after, _ = loadConfig(renamedPath); after.Model.Providers[0].Name != "a" {
+		t.Fatalf("写回不该改 provider 名: %q", after.Model.Providers[0].Name)
+	}
+	if e := after.Model.Providers[0].modelByName("m1"); e == nil || e.Caps == nil {
+		t.Fatalf("改名后应写回原名的模型条目: %+v", e)
+	}
+
+	// 编辑区没填全 / 协议问不了：指名报因，不打网络。
+	for _, bad := range []uigui.ProviderPatch{
+		{Name: "", BaseURL: srv.URL},
+		{Name: "a", BaseURL: ""},
+		{Name: "a", Orig: "a", Kind: "anthropic", BaseURL: srv.URL},
+	} {
+		if _, err := w.probeForSettings(context.Background(), bad, "m1"); err == nil {
+			t.Fatalf("patch %+v 应指名报因", bad)
+		}
+	}
+	if _, err := w.probeForSettings(context.Background(), patch, ""); err == nil ||
+		!strings.Contains(err.Error(), "模型名") {
+		t.Fatalf("空模型名 = %v, want 报因", err)
 	}
 }
 

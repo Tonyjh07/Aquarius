@@ -165,6 +165,7 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
   `read-only|strict|permissive|full-access`。
 - **`ui.kind` 报未支持**：只接受 `gui`（默认，D51 悬浮球）、`tui`（D33）与 `repl`（行式，测试/e2e 后端）。
 - **想换模型/端点**：模型名 `/model`（热切）或 config `model.name`；provider/端点改
-  `model.providers`（设置窗「模型服务」页可全量编辑：协议 / 端点 / 密钥池 / 模型能力表，含连通性
-  测试与逐模型「探测能力」，重启生效）；或用
+  `model.providers`（设置窗「模型服务」页可全量编辑：协议 / 端点 / 密钥池 / 模型列表，含连通性
+  测试与逐模型「探测能力」；切到该页会自动拉一遍各家服务端的模型清单，新拉到的行默认未启用，
+  勾上「启用」再把这次变更应用出去，重启生效）；或用
   `-model`/`-base-url` flag、`AQUARIUS_MODEL`/`AQUARIUS_BASE_URL` 环境变量临时覆盖。

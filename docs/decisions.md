@@ -193,6 +193,8 @@
 | D177 | 模型条目声明 `context_window`；装配预算 = min(模型窗口, 全局预算)，不参与整链取与（§8） | 生效 |
 | D178 | 屏幕捕获：`port.Capture` + `screencap` 适配器；`window_list`（Safe）/`screen_capture`（Confirm）两件工具，抓图走附件库与 `tool.Result.Images`（§4.3/§5.11/§10） | 生效 |
 | D179 | 语音：ASR/TTS 走厂商 chat-completions 音频形状；配置 `audio.asr`/`audio.tts` 引用 provider；转写回填不直发；播报整段合成后播放（§5.6/§7.2/§8） | 生效 |
+| D180 | 模型启用位：`models[].enabled`（键缺失 = 启用；未启用保留声明但不参与选型）；每家至少一个启用（§8/§15.7） | 生效 |
+| D181 | 「模型服务」页：模型列表 + 切页自动登记服务端清单（新增行默认未启用）+ 分页；探测以编辑区现值为准（未落盘也能探）（§8/§15.7） | 生效 |
 
 
 ## 记录
@@ -3245,7 +3247,7 @@
 - **口径三：生效能力 = 整链取与**。降级发生在半路上，图片那时已经进了请求体，剥不掉；工具与思考
   同口径。代价是「加一条弱模型会静默削能力」，所以**启动时打一行警告**、`/model` 逐项标注是哪一环
   拉低的——不让人自己发现。
-- **口径四：`fallback` 逐项 `{provider, model}`**。`model` 省略 = 该 provider 的 `models[0]`；
+- **口径四：`fallback` 逐项 `{provider, model}`**。`model` 省略 = 该 provider 首个**启用**的模型（D180）；
   同一 provider 可重复出现（同家不同型号兜底）；`{provider, model}` 二元组不得重复。
 - **口径五：`keys[]` 密钥池**。同 provider 内按序轮换，逐把独立冷却（`Retry-After`，缺省 60s）。
   顺序固定「先换钥匙、再换 provider」，否则多账号场景白跨一次 provider。写入路径仍走密钥库，
@@ -3318,6 +3320,14 @@
 >   思考内容」），否则用户没法判断该在配置里依赖哪个参数。
 > - 探测取**非流式**响应：一次读全，省掉 SSE 状态机，也避免「流中思考分片」这类只在特定端点
 >   成立的判据。两套思考参数各自的流式差异由正式请求承担，不由探测承担。
+> - **修订（2026-10-20，实测踩中）**：视觉探测原先只看正文，且输出额度只有 64 tokens。实测
+>   `deepseek-v4-pro` 收到图片后，服务端把图替换成 `[Unsupported Image]` 占位文本，模型在
+>   **思考里**说「no image provided / cannot see image」，而 64 token 全被思考吃掉
+>   （`finish_reason = length`），正文为空 → 结论只能是「无结论」，界面上又只统计支持/不支持，
+>   于是「三项探测只报出两项」。三处修订：① 输出额度提到 256，让思考完还有正文空间；
+>   ② 「明说看不到图」与「复述服务端占位文本」在**正文和思考里都算否定证据**（只采信否定，
+>   思考里蹦出颜色词不算答对）；③ 结论行三档计数，（支持 + 不支持 + 无结论）恒等于探测项数。
+>   另外额度耗尽导致正文为空时，理由写清「额度被思考用尽」，不写成「回复为空」。
 
 ### D175 · 多协议适配器：`openai-responses` 与 `anthropic`（2026-10-20）
 
@@ -3539,5 +3549,52 @@
   `internal/adapter/micwin/`、`internal/adapter/audioplay/`、`cmd/aquarius/config.go`（`audio` 段 + `input.language`）、
   `internal/adapter/uigui/settings_page_audio.go`。
 
+### D180 · 模型启用位：登记与选用分开（2026-10-20）
+
+> **背景**：服务端 `/models` 常列出几百个模型。用户要的是「把它们登记在册，只勾我现在用的那几个」，
+> 而原来的模型表只有「在表里 = 会参与选型」一种状态——于是要么全删掉（下次拉清单再补），要么留一堆
+> 永远不会用的行，既难看又会被降级链与 `/model` 误选。
+
+- **口径一：`models[].enabled`（`*bool`），键缺失 = 启用**。只有 `false` 落键，启用是缺省形态——
+  升级前的配置一条都不用改，一次保存也不会让 config 长满 `"enabled": true`。
+- **口径二：未启用 = 保留声明、不参与选型**。不进降级链的可选模型、不进 `/model` 清单（**当前模型
+  例外**：它正在跑，藏起来只会让人以为配错了）、不作为该 provider 的缺省请求模型（`models0()` 取
+  首个启用项，`entryCaps("")` 同口径）。
+- **口径三：每家至少一个启用**。`normalize`（启动）与 `Apply`（设置窗应用）同口径拒绝「一家全关」：
+  那样的配置里这家 provider 没有可请求的模型，与其等重启才报错，不如应用时就拦住并说明原因。
+- **口径四：提交用 `Disabled` 而不是 `Enabled`**（`ProviderModelPatch.Disabled`）。零值 = 启用，
+  与「键缺失 = 启用」同一方向；忘了填的提交不会把用户的模型全关掉。
+- **否决**：单独的「已启用模型清单」键（同一事实两处声明，必然漂移）；按 provider 开关（粒度太粗，
+  一个 provider 下的模型能力差很多）。
+- **模型**：`cmd/aquarius/config.go`（`modelEntry.Enabled`/`isEnabled`/`enabledModels`/`models0`/
+  `enrichModels`/`normalize`）、`cmd/aquarius/providers.go`（`writeModels`/`Apply`）、
+  `uigui/settings.go`（快照与 patch 形状）、`uigui/settings_page_providers.go`（行内勾选）。
+
+### D181 · 「模型服务」页：模型列表 ＋ 切页自动登记 ＋ 探测以编辑区为准（2026-10-20）
+
+> **背景**：三个各自独立、但都指向「这一页不好用」的问题——(1) 模型清单要用户先点一次「获取模型」
+> 才知道有哪些；(2) 「探测能力」在模型**还没应用**时直接报「不在 models 里」，而用户眼里表里那一行
+> 就是声明，他并没有别的地方可以声明；(3) 窄窗下「探测能力」被挤成竖排、模型名输入框贴着描边。
+
+- **口径一：模型列表（原「模型能力表」）＋ 表头动作**。删掉原来那行「模型列表」说明行，把「获取模型」
+  移进新的块头：小标题 + 「共 N 个 · 已启用 M 个」+ 右侧按钮；「＋ 添加模型」在列表下方。
+- **口径二：切到本页自动拉一轮**。进入「模型服务」页时（每窗一次，`f.provFetched` 去重）对每家
+  拉一次 `/models`，结果**全部并入**模型列表（已存在的名字跳过），新增行**默认未启用**（D180）；
+  与手工「获取模型」走同一条路径（`runFetchModels(f, pf, auto)`）。结果随「应用 provider 变更」
+  写回 config——**不设独立缓存键**（缓存与声明两处事实必然漂移）。失败只在该卡片内标一行，不占
+  全局状态行：进页面的附带动作不该抢提示。
+- **口径三：行数不设上限，界面分页**（`provModelPageSize = 8`）。行计划只给当前页的行（未渲染的行
+  不排版），删行后页码夹回。原候选 chip（`provModelCandMax`）在设置页取消，只留给欢迎窗。
+- **口径四：探测以编辑区现值为准**。`Probe` 收 `ProviderPatch`，装配根用它造瞬时 client（端点 /
+  协议 / 第一把钥匙），**不要求模型先落盘**：结论一律回填勾选；磁盘上已声明就顺手写回（`Written`，
+  推进基线），未声明则 `Pending`（勾选改动由 `touched()` 捕获，随「应用 provider 变更」落盘）。
+  改名过程中写回目标仍取 `Orig`（磁盘上的原名）。
+- **口径五：删掉能力位的声明形态注脚**（「按协议缺省，改动即固化声明」/「已显式声明」）。勾选本身
+  就是声明，那行小字用户不读，却要为它让出按钮宽度。
+- **口径六：行内第一列加「启用」勾选**（D180），模型名输入框与它之间留间距、按钮不再被挤压。
+- **模型**：`uigui/settings_page_providers.go`（行计划 / 分页 / 表头 / `OnEnter`）、
+  `uigui/settings_page.go`（可选 `enterHook`）、`uigui/settings_actions.go`（`runFetchModels`/
+  `applyModels`/`applyProbeResult`/`probeSummary`）、`cmd/aquarius/probe.go`（`probeForSettings`
+  以 patch 造 client、`writeProbeCaps` 未声明时宽容返回）。
 
 

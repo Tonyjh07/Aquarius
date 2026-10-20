@@ -176,6 +176,62 @@ func TestProbeVisionVerdicts(t *testing.T) {
 	}
 }
 
+// TestProbeVisionEmptyContent 正文为空时的判定：思考型模型可能把额度花在思考上，正文
+// 还没开始就被截断。思考里**明说图没送到**（看不到 / 复述服务端的占位文本）= 不支持；
+// 仅仅额度用尽 = 无结论（不能据此把图片位关掉）。占位文本 [Unsupported Image] 是端点
+// 收下请求却把图换掉时递给模型的原文，思考里会原样复述。
+func TestProbeVisionEmptyContent(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want port.ProbeVerdict
+	}{
+		{
+			"blind in reasoning",
+			`{"choices":[{"finish_reason":"length","message":{"content":"","reasoning_content":"We need answer one word color of image. But no image provided? User says [Unsupported Image]. We cannot see image."}}]}`,
+			port.ProbeUnsupported,
+		},
+		{
+			"placeholder only",
+			`{"choices":[{"finish_reason":"stop","message":{"content":"","reasoning_content":"The content says [Unsupported Image], so I cannot tell."}}]}`,
+			port.ProbeUnsupported,
+		},
+		{
+			"truncated in reasoning",
+			`{"choices":[{"finish_reason":"length","message":{"content":"","reasoning_content":"Let me think about what color it might be"}}]}`,
+			port.ProbeInconclusive,
+		},
+		{
+			"guess in reasoning is not proof",
+			`{"choices":[{"finish_reason":"stop","message":{"content":"","reasoning_content":"The image is probably blue or red, hard to say."}}]}`,
+			port.ProbeInconclusive,
+		},
+		{
+			// 实测形状：端点把图换成 [Unsupported Image]，模型在思考里说没图，正文只剩
+			// 一句没法判定的 "Unknown"。不能因为正文非空就无视思考里的否定证据。
+			"content unknown but reasoning blind",
+			`{"choices":[{"finish_reason":"stop","message":{"content":"Unknown","reasoning_content":"But no image provided? User says [Unsupported Image]. We cannot see image."}}]}`,
+			port.ProbeUnsupported,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := probeServer(t, http.StatusOK, tc.body)
+			c, _ := New(Config{BaseURL: srv.URL})
+			res, err := c.Probe(context.Background(), "m", port.CapVision)
+			if err != nil {
+				t.Fatalf("probe: %v", err)
+			}
+			if res.Verdict != tc.want {
+				t.Fatalf("verdict = %v, want %v（reason %s）", res.Verdict, tc.want, res.Reason)
+			}
+			if strings.TrimSpace(res.Reason) == "" {
+				t.Fatal("结论必须带一句话说明")
+			}
+		})
+	}
+}
+
 func TestProbeVisionRejected(t *testing.T) {
 	srv, _ := probeServer(t, http.StatusBadRequest, `{"error":{"message":"image input is not supported"}}`)
 	c, _ := New(Config{BaseURL: srv.URL})

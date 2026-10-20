@@ -58,13 +58,14 @@ const (
 	rowProvName    // 名称（单行档）
 	rowProvKind    // 协议（循环选择：chat/responses/anthropic）
 	rowProvBase    // 接口地址
-	rowProvGetModels
+	rowProvModels  // 「模型列表」块头（标题 + 「获取模型」按钮 + 拉取反馈；D181）
 	rowProvTok
 	rowProvUnsup
-	rowProvHead // 展开区内小标题（text = 「密钥池」/「模型能力表」）
+	rowProvHead // 展开区内小标题（text = 分区名，如「密钥池」）
 	rowProvKey  // 密钥池单行（field = keyForms 下标）
 	rowProvKeyAdd
-	rowProvModel // 模型能力表单行（field = modelForms 下标）
+	rowProvModel      // 模型列表单行（field = modelForms 下标）
+	rowProvModelPager // 模型列表分页条（prov = 下标；仅一页装不下时出现）
 	rowProvModelAdd
 	rowProvBtns
 	rowProvAdd
@@ -96,12 +97,17 @@ const (
 	rowSecretStatus // 存入/删除反馈状态行
 )
 
-// provModelCandMax 候选 chip 的上限（D153）：服务端可能列出几百个模型，全部铺开会把
-// 设置页推成一面墙——取前 N 个，状态行同时给出「共 N 个」的事实。
+// provModelCandMax 候选 chip 的上限（D153；欢迎窗「获取模型」仍用它）：服务端可能列出
+// 几百个模型，全部铺开会把引导页推成一面墙。设置窗的模型列表已改成「全量装进表 + 分页」，
+// 不再受这个上限约束（D181）。
 const (
-	provModelCandMax = 12 // 「模型服务」页单次「获取模型」追加成模型行的上限
+	provModelCandMax = 12 // 欢迎窗单次「获取模型」铺成候选 chip 的上限
 	relModelAutoFill = 8  // 欢迎窗自动填入模型名行的上限
 )
+
+// provModelPageSize 设置窗「模型列表」每页行数（D181）：服务端清单可能有几百个，
+// 一屏全铺既找不到东西也拖慢排版——按页切，页内仍然只有可见的那些行在排版。
+const provModelPageSize = 8
 
 // rowDesc 一行的类型与定位。
 type rowDesc struct {
@@ -139,6 +145,11 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 		for f.navBtns[p].Clicked(gtx) {
 			f.page = p
 		}
+	}
+	// 切页钩子（D181）：进入某页时的一次性动作——「模型服务」页借它在首次进入时自动
+	// 拉一轮各家服务端清单。页面自己用表单标记去重（本窗只拉一次）。
+	if h, ok := settingsPages[f.page].(enterHook); ok {
+		h.OnEnter(u, f)
 	}
 	f.drainTestResults() // 连通性 / 获取模型异步结果（最新一条覆盖展示）
 	f.drainToolResults() // 工具页异步动作结果回灌状态行
