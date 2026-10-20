@@ -3367,6 +3367,27 @@
 > （D175 口径四：参数被点名拒绝就照实报错，只发一次请求）。装配根 `newLLMClient` 按 `kind` 映射
 > 到 `llm.Protocol`（唯一分派落点）。
 
+> **落地补充（S11-6，2026-10-20）**：`anthropic` 适配器落档（`internal/adapter/llm/anthropic.go`）。
+> 线上形状：`POST {base_url}/messages`，鉴权头是 `x-api-key` + `anthropic-version: 2023-06-01`
+> （不发 Bearer），比 chat/responses 多一个**必填**的 `max_tokens`（未配置输出预算时取适配器
+> 兜底 8192）。请求侧：`system` 走**顶层字段**（所有 system 角色消息按原序并进去），消息只认
+> user/assistant 且**角色必须交替**——相邻同角色自动合并（工具结果 `tool_result` 与紧随的工具图片
+> 正好合成一条 user）；图片是 `{type:"image",source:{type:"base64",media_type,data}}`；assistant
+> 的思考是 `{type:"thinking",thinking,signature}`（**必须在内容块最前且原样回传**，签名缺一不回放）；
+> 工具调用是 `{type:"tool_use",id,name,input}` 且 `input` 是 **JSON 对象**（chat 是字符串）；
+> 工具应答是 user 里的 `{type:"tool_result",tool_use_id,content}`；工具声明用 `input_schema`；
+> `stop` 叫 `stop_sequences`。响应侧事件族：`message_start`（input_tokens）、
+> `content_block_start`（tool_use 的 id/名字）、`content_block_delta`（`text_delta` /
+> `thinking_delta` / `signature_delta` / `input_json_delta`）、`message_delta`（累计 output_tokens）、
+> `message_stop`（收流，usage 在此时合并发出）、`error`。签名编码 = `anthropic:` + 原样串
+> （本身是高熵 base64，不必再压）。**思考映射**：`thinking` 对象把「开关 + 强度」合成一件事——
+> 键缺失且无档位 = 不发；显式 false = `{"type":"disabled"}`；显式 true 或给了 `reasoning_effort`
+> = `{"type":"enabled","budget_tokens":档位映射}`（minimal/low/medium/high → 1024/2048/3072/4096，
+> 无档位取 2048）。开启思考时 `temperature` 恒省略（该组合下服务端只接受 1），且 `max_tokens`
+> 自动补到「装得下思考预算」（`budget_tokens < max_tokens` 是硬约束）。**无剥离重试**（同口径四）。
+> 装配根 `llmProtocol` 把 `kind` 映射到 `llm.Protocol`，三协议同一条分派。能力探测仍只有
+> chat 的问法，responses/anthropic 会明确报「暂不支持能力探测」——补齐问法留待后续。
+
 ### D176 · 设置窗「模型服务」页与折叠卡片（2026-10-20）
 
 > **背景**：provider 编辑区与「当前模型 / 思考档位」挤在同一页，每家摊开 6 个输入框 + 4 个按钮，

@@ -1264,9 +1264,9 @@ S6–S8 顺延。原则 = 先动 schema
 ## 14. 暂缓事项（Backlog）
 
 - MCP sampling（server 借用宿主模型）
-- **厂商私有思考块回传**：Anthropic extended thinking 工具续跑须原样回传 thinking block；
-  GPT-OSS/vLLM 系回传键名 `reasoning`（D42 现发 `reasoning_content`，vLLM 兼容两者）——
-  接入此类提供商时由适配器做键名/块格式映射
+- **厂商私有思考块回传**：Anthropic extended thinking 工具续跑须原样回传 thinking block——**已落地**
+  （D175 的签名贯通 + `anthropic` 适配器按 `anthropic:` 前缀原样回传）；GPT-OSS/vLLM 系回传键名
+  `reasoning`（D42 现发 `reasoning_content`，vLLM 兼容两者）——接入此类提供商时由适配器做键名映射
 - 非 GBK 的遗留代码页（CP437/latin-1 等）终端输出识别（D41 内容探测只有 UTF-8/GBK 两档，会误判成乱码中文）
 - `file_read` 等文件文本入口的遗留编码解码（与 D41 同算法，终端之外的文本入口）
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）

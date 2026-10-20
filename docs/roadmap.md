@@ -414,7 +414,7 @@
 | S11-3 | 能力探测：三条最小请求 + 「只写回判定明确的」+ `/model probe`（设置窗按钮随 S11-7 的模型行落地） | D174 | 已完成 |
 | S11-4 | 密钥池：逐钥匙客户端 + `ErrQuota` + 轮换与冷却装饰器 | D173 | 已完成 |
 | S11-5 | `openai-responses` 适配器（`input` items、`function_call_output`、SSE 事件族）；思考块签名贯通（`Part.Signature` → `PromptMessage.ReasoningSignature`，两协议共用） | D175 | 已完成 |
-| S11-6 | `anthropic` 适配器（`system` 顶层、`tool_use`/`tool_result` 块；thinking 签名复用 S11-5 的贯通机制） | D175 | 待开始 |
+| S11-6 | `anthropic` 适配器（`system` 顶层、`tool_use`/`tool_result` 块；thinking 签名复用 S11-5 的贯通机制） | D175 | 已完成 |
 | S11-7 | 设置窗：「模型服务」页（折叠卡片 / 密钥池 / 模型能力表 + 每行「探测能力」）+「模型」页收薄（只留路由） | D176/D174 | 待开始 |
 | S11-8 | 模板、`docs/configuration.md`、`docs/usage.md`、迁移说明收尾 | — | 待开始 |
 

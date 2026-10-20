@@ -255,16 +255,24 @@ func (m *providerManager) Models(p uigui.ProviderPatch) ([]string, error) {
 }
 
 // client 以 patch 构造一次性 llm client（凭据解析口径 = Test/Models 共用）：
-// APIKey 空 = 取 config 内原条目值（按 Orig 名），再走 D35 解析。
+// APIKey 空 = 取 config 内原条目值（按 Orig 名），再走 D35 解析。协议也按 Orig 名
+// 从 config 取——`kind` 不在编辑面（改协议是 S11-7 的事），但漏掉它会让 anthropic
+// 的「测试」永远失败：拿 chat 的 Bearer 打 Messages 端点必然 401，报回来的因还看不出
+// 是配置不对还是服务端的事。
 func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
 	ref := p.APIKey
-	if ref == "" && p.Orig != "" {
+	proto := llm.ProtoChat
+	if p.Orig != "" {
 		if cfg, err := loadConfig(m.cfgPath); err == nil {
-			for _, pr := range cfg.Model.Providers {
-				if pr.Name == p.Orig {
-					ref = pr.keyRefs()[0]
-					break
+			for i := range cfg.Model.Providers {
+				if cfg.Model.Providers[i].Name != p.Orig {
+					continue
 				}
+				if ref == "" {
+					ref = cfg.Model.Providers[i].keyRefs()[0]
+				}
+				proto = llmProtocol(cfg.Model.Providers[i].protocolKind())
+				break
 			}
 		}
 	}
@@ -275,6 +283,7 @@ func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
 	return llm.New(llm.Config{
 		BaseURL:    strings.TrimSpace(p.BaseURL),
 		APIKey:     key,
+		Protocol:   proto,
 		HTTPClient: &http.Client{Timeout: 8 * time.Second},
 	})
 }

@@ -150,10 +150,8 @@ func New(cfg Config) (*Client, error) {
 	switch p := Protocol(strings.TrimSpace(string(cfg.Protocol))); p {
 	case "":
 		c.proto = ProtoChat
-	case ProtoChat, ProtoResponses:
+	case ProtoChat, ProtoResponses, ProtoAnthropic:
 		c.proto = p
-	case ProtoAnthropic:
-		return nil, errors.New("llm: anthropic 协议尚未接入")
 	default:
 		return nil, fmt.Errorf("llm: 未知协议 %q", cfg.Protocol)
 	}
@@ -192,6 +190,9 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 	}
 	if c.proto == ProtoResponses {
 		return c.generateResponses(ctx, req)
+	}
+	if c.proto == ProtoAnthropic {
+		return c.generateAnthropic(ctx, req)
 	}
 	return c.generateChat(ctx, req)
 }
@@ -446,8 +447,18 @@ func retryAfter(resp *http.Response) time.Duration {
 	return 0
 }
 
-// authorize 附加 Authorization 头（有密钥才发）。
+// authorize 附加鉴权头（两套协议各自的规矩）：
+//   - openai 系：`Authorization: Bearer <key>`（无密钥 = 本地服务，不发）；
+//   - anthropic：密钥走 `x-api-key`，另需 `anthropic-version`（**不论有无密钥都要发**，
+//     Messages API 缺版本头直接拒）。
 func (c *Client) authorize(req *http.Request) {
+	if c.proto == ProtoAnthropic {
+		req.Header.Set("anthropic-version", anthropicVersion)
+		if c.key != "" {
+			req.Header.Set("x-api-key", c.key)
+		}
+		return
+	}
 	if c.key != "" {
 		req.Header.Set("Authorization", "Bearer "+c.key)
 	}

@@ -209,10 +209,9 @@ func TestProbeTargetResolution(t *testing.T) {
 }
 
 // TestProbeProtocolDispatch 协议分派与探测的两处口径：
-//   - `openai-responses` 现在由装配根按 kind 分派（D175），客户端能建起来；
+//   - 三种协议的 provider 都能由装配根按 kind 造出客户端（D175）；
 //   - 探测目前只有 chat 的问法，responses/anthropic 都会明确报因（不能拿 chat 请求
-//     去打别的规范——那会以「密钥无效」「模型不存在」之类的假象暴露，排查方向全错）；
-//   - 还没接入的 anthropic 在适配器层 fail-fast。
+//     去打别的规范——那会以「密钥无效」「模型不存在」之类的假象暴露，排查方向全错）。
 func TestProbeProtocolDispatch(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	raw := `{
@@ -238,25 +237,24 @@ func TestProbeProtocolDispatch(t *testing.T) {
 	}
 	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
 
-	// responses：装配根按 kind 造出 responses 客户端（不再是「尚未接入」）。
-	c, _, err := w.newLLMClient(cfg.Model.byName("r"), "", nil)
-	if err != nil {
-		t.Fatalf("responses 客户端应能建起来: %v", err)
+	// 装配根按 kind 造客户端：chat / responses / anthropic 都建得起来，
+	// 且走的是各自的线上形状（协议标识由适配器持有，这里只验映射）。
+	for _, name := range []string{"r", "a"} {
+		if _, _, err := w.newLLMClient(cfg.Model.byName(name), "", nil); err != nil {
+			t.Fatalf("provider %s 的客户端应能建起来: %v", name, err)
+		}
 	}
-	_ = c
 	if got := llmProtocol(kindOpenAIResponses); got != llm.ProtoResponses {
 		t.Fatalf("llmProtocol(openai-responses) = %q", got)
 	}
 	if got := llmProtocol(kindOpenAIChat); got != llm.ProtoChat {
 		t.Fatalf("llmProtocol(openai-chat) = %q", got)
 	}
-
-	// anthropic：适配器层仍未接入 → fail-fast。
-	if _, _, err := w.newLLMClient(cfg.Model.byName("a"), "", nil); err == nil ||
-		!strings.Contains(err.Error(), "尚未接入") {
-		t.Fatalf("anthropic err = %v, want 尚未接入", err)
+	if got := llmProtocol(kindAnthropic); got != llm.ProtoAnthropic {
+		t.Fatalf("llmProtocol(anthropic) = %q", got)
 	}
-	// 探测：两种非 chat 协议都指名报因。
+
+	// 探测：两种非 chat 协议都指名报因（探测器只有 chat 的问法）。
 	for _, name := range []string{"m1", "m2"} {
 		if _, err := w.probeModel(context.Background(), name); err == nil ||
 			!strings.Contains(err.Error(), "暂不支持能力探测") {

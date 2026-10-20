@@ -1009,6 +1009,53 @@ func TestRunResponsesProtocol(t *testing.T) {
 	}
 }
 
+// TestRunAnthropicProtocol 端到端：kind = anthropic 的 provider 由装配根造出 Messages
+// 客户端——请求发到 /messages（不是 /chat/completions），正文照常显示。
+func TestRunAnthropicProtocol(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var apiKeys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		apiKeys = append(apiKeys, r.Header.Get("x-api-key"))
+		mu.Unlock()
+		if r.URL.Path != "/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello-anthropic"}}`+"\n"+
+			`data: {"type":"message_stop"}`+"\n")
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","kind":"anthropic","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"},
+  "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
+	writeProfileLayout(t, dir, cfg)
+	t.Setenv("X", "k")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	mu.Lock()
+	snapshot := append([]string(nil), paths...)
+	keys := append([]string(nil), apiKeys...)
+	mu.Unlock()
+	if len(snapshot) == 0 || snapshot[0] != "/messages" {
+		t.Fatalf("请求路径 = %v, want 首个为 /messages", snapshot)
+	}
+	// 密钥经 x-api-key（不是 Bearer）——协议选对了鉴权头才跟着对。
+	if len(keys) == 0 || keys[0] != "k" {
+		t.Fatalf("x-api-key = %v, want k", keys)
+	}
+	if !strings.Contains(out.String(), "hello-anthropic") {
+		t.Fatalf("正文未显示：%q", out.String())
+	}
+}
+
 // TestRunRecordsUnsupportedParams 服务端点名拒绝某参数：本请求剥离重试成功后写回
 // config providers[0].unsupported_params，且不改动原档位（只记不改）。
 func TestRunRecordsUnsupportedParams(t *testing.T) {

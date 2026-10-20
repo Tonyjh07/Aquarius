@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
@@ -247,6 +248,61 @@ func TestProviderManagerTest(t *testing.T) {
 		t.Fatal("缺失密钥环境变量应报错")
 	}
 	_ = context.Background()
+}
+
+// TestProviderManagerTestRespectsKind kind = anthropic 的 provider：「测试/获取模型」
+// 要按该协议造客户端（x-api-key + anthropic-version），否则拿 Bearer 打必然 401——
+// 报回来的因还看不出是配置不对还是服务端的事。kind 不在编辑面，故按 Orig 名回查 config。
+func TestProviderManagerTestRespectsKind(t *testing.T) {
+	var mu sync.Mutex
+	var apiKeys, versions, auths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		apiKeys = append(apiKeys, r.Header.Get("x-api-key"))
+		versions = append(versions, r.Header.Get("anthropic-version"))
+		auths = append(auths, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"id":"claude-x"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := `{
+  "model": {
+    "providers": [
+      {"name": "an", "kind": "anthropic", "base_url": "http://an/v1",
+       "keys": [{"api_key": "secret:KA"}], "models": [{"name": "claude-x"}]}
+    ],
+    "primary": "an",
+    "name": "claude-x"
+  },
+  "ui": {"kind": "repl"}
+}`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("KA", "k-an")
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
+
+	got, err := m.Models(uigui.ProviderPatch{Orig: "an", Name: "an", BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if len(got) != 1 || got[0] != "claude-x" {
+		t.Fatalf("models = %v", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(apiKeys) != 1 || apiKeys[0] != "k-an" {
+		t.Fatalf("x-api-key = %v, want k-an", apiKeys)
+	}
+	if len(versions) != 1 || versions[0] != "2023-06-01" {
+		t.Fatalf("anthropic-version = %v", versions)
+	}
+	if auths[0] != "" {
+		t.Fatalf("不该发 Authorization: %q", auths[0])
+	}
 }
 
 // TestProviderManagerModels 「获取模型」数据面（D153）：去重保序、空 id 跳过、失败报因；

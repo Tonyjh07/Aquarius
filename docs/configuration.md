@@ -45,7 +45,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`，适配器**尚未接入**，写了会在启动时报错而不是拿错协议去请求）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
+| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
 | `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局） |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |

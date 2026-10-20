@@ -529,18 +529,13 @@ func TestResponsesNoStripRetry(t *testing.T) {
 	}
 }
 
-// TestNewProtocolValidation 协议取值校验：空 = chat、responses 认得、anthropic 未接入、
-// 其它词 fail-fast。
+// TestNewProtocolValidation 协议取值校验：空 = chat、responses 认得、anthropic 现已接入、
+// 其它词 fail-fast。三协议的接受面由 anthropic_test.go 的 TestAnthropicProtocolValidation
+// 统一覆盖，这里只留「未知词 fail-fast」这一条。
 func TestNewProtocolValidation(t *testing.T) {
 	base := "http://127.0.0.1:1"
 	if c, err := New(Config{BaseURL: base}); err != nil || c.proto != ProtoChat {
 		t.Fatalf("空协议应落到 chat: %v %q", err, c.proto)
-	}
-	if c, err := New(Config{BaseURL: base, Protocol: ProtoResponses}); err != nil || c.proto != ProtoResponses {
-		t.Fatalf("responses 应被接受: %v %q", err, c.proto)
-	}
-	if _, err := New(Config{BaseURL: base, Protocol: ProtoAnthropic}); err == nil {
-		t.Fatal("anthropic 尚未接入，应报错")
 	}
 	if _, err := New(Config{BaseURL: base, Protocol: Protocol("grpc")}); err == nil {
 		t.Fatal("未知协议应报错")

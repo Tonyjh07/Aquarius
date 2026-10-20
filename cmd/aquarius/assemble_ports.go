@@ -170,8 +170,8 @@ func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string)) 
 }
 
 // llmProtocol config 的 kind → 适配器协议标识（D175）。认得的词在这里一一对上；
-// 不认得的词（含尚未接入的 anthropic）原样传给适配器，由它统一 fail-fast 报因——
-// 启动时的配置错误该由校验拦下（config.normalize 已拦），这里是第二道保险。
+// 不认得的词原样传给适配器，由它统一 fail-fast 报因——启动时的配置错误该由校验拦下
+// （config.normalize 已拦），这里是第二道保险。
 func llmProtocol(kind string) llm.Protocol {
 	switch kind {
 	case kindOpenAIResponses:
