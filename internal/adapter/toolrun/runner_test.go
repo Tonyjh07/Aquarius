@@ -293,7 +293,7 @@ func TestConfirmDenyReason(t *testing.T) {
 		if err != nil || res.OK {
 			t.Fatalf("res=%+v err=%v", res, err)
 		}
-		want := "user denied fw: " + strings.Repeat("长", 200) + "…"
+		want := "user denied fw: " + strings.Repeat("长", 200) + "..."
 		if res.Err != want {
 			t.Fatalf("Err 长度 = %d runes, want %d", len([]rune(res.Err)), len([]rune(want)))
 		}

@@ -63,10 +63,10 @@ type jobRec struct {
 // New 创建任务管理器并确保日志目录存在。
 func New(logDir string) (*Manager, error) {
 	if strings.TrimSpace(logDir) == "" {
-		return nil, errors.New("jobproc: log directory is empty")
+		return nil, errors.New("log directory is empty")
 	}
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return nil, fmt.Errorf("jobproc: create log directory %s: %w", logDir, err)
+		return nil, fmt.Errorf("create log directory %s: %w", logDir, err)
 	}
 	return &Manager{logDir: logDir, byID: map[port.JobID]*jobRec{}}, nil
 }
@@ -78,7 +78,7 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 		return port.Job{}, err
 	}
 	if strings.TrimSpace(spec.Command) == "" {
-		return port.Job{}, errors.New("jobproc: missing command")
+		return port.Job{}, errors.New("missing command")
 	}
 	id, logPath, logFile, err := m.allocLog()
 	if err != nil {
@@ -93,7 +93,7 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		_ = os.Remove(logPath)
-		return port.Job{}, fmt.Errorf("jobproc: start %s: %w", spec.Command, err)
+		return port.Job{}, fmt.Errorf("start %s: %w", spec.Command, err)
 	}
 	rec := &jobRec{
 		job:     port.Job{ID: id, Spec: spec, Status: port.JobRunning, PID: cmd.Process.Pid, StartedAt: time.Now()},
@@ -185,7 +185,7 @@ func (b *capBuffer) Write(p []byte) (int, error) {
 func (b *capBuffer) String() string {
 	out := decodeOutput(b.buf.String())
 	if b.truncated {
-		return out + "\n…[output exceeded the capture cap, truncated]"
+		return out + "\n...[output exceeded the capture cap, truncated]"
 	}
 	return out
 }
@@ -219,7 +219,7 @@ func (m *Manager) Status(ctx context.Context, id port.JobID) (port.Job, error) {
 	defer m.mu.Unlock()
 	r, ok := m.byID[id]
 	if !ok {
-		return port.Job{}, fmt.Errorf("jobproc: no task %s", id)
+		return port.Job{}, fmt.Errorf("no task %s", id)
 	}
 	return r.job, nil
 }
@@ -238,19 +238,19 @@ func (m *Manager) Logs(ctx context.Context, id port.JobID, tail int) (string, er
 	}
 	m.mu.Unlock()
 	if !ok {
-		return "", fmt.Errorf("jobproc: no task %s", id)
+		return "", fmt.Errorf("no task %s", id)
 	}
 	f, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("jobproc: read log %s: %w", id, err)
+		return "", fmt.Errorf("read log %s: %w", id, err)
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		return "", fmt.Errorf("jobproc: read log %s: %w", id, err)
+		return "", fmt.Errorf("read log %s: %w", id, err)
 	}
 	size := fi.Size()
 	if size == 0 {
@@ -262,7 +262,7 @@ func (m *Manager) Logs(ctx context.Context, id port.JobID, tail int) (string, er
 	}
 	buf := make([]byte, size-start)
 	if _, err := f.ReadAt(buf, start); err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("jobproc: read log %s: %w", id, err)
+		return "", fmt.Errorf("read log %s: %w", id, err)
 	}
 	text := decodeOutput(string(buf)) // 日志字节按 D41 解码为 UTF-8（与 Run 同口径）
 	if tail > 0 {
@@ -277,7 +277,7 @@ func (m *Manager) Logs(ctx context.Context, id port.JobID, tail int) (string, er
 		text = strings.Join(lines, "\n")
 	}
 	if start > 0 {
-		text = "…[log exceeds the read window, tail only]\n" + text
+		text = "...[log exceeds the read window, tail only]\n" + text
 	}
 	return text, nil
 }
@@ -291,11 +291,11 @@ func (m *Manager) Kill(ctx context.Context, id port.JobID) error {
 	r, ok := m.byID[id]
 	if !ok {
 		m.mu.Unlock()
-		return fmt.Errorf("jobproc: no task %s", id)
+		return fmt.Errorf("no task %s", id)
 	}
 	if r.job.Status != port.JobRunning {
 		m.mu.Unlock()
-		return fmt.Errorf("jobproc: task %s already finished (%s)", id, r.job.Status)
+		return fmt.Errorf("task %s already finished (%s)", id, r.job.Status)
 	}
 	r.killed = true // 先置位：killTree 成功与 wait 收割存在竞态，须让 wait 看见
 	m.mu.Unlock()
@@ -309,7 +309,7 @@ func (m *Manager) Kill(ctx context.Context, id port.JobID) error {
 		if st != port.JobRunning {
 			return nil // 检查后进程已自然结束：终止目的已达（幂等成功）
 		}
-		return fmt.Errorf("jobproc: kill %s: %w", id, err)
+		return fmt.Errorf("kill %s: %w", id, err)
 	}
 	return nil
 }
@@ -328,7 +328,7 @@ func (m *Manager) allocLog() (port.JobID, string, *os.File, error) {
 			continue // 上一进程留下的同号日志：跳号
 		}
 		if err != nil {
-			return "", "", nil, fmt.Errorf("jobproc: reserve log %s: %w", p, err)
+			return "", "", nil, fmt.Errorf("reserve log %s: %w", p, err)
 		}
 		return id, p, f, nil
 	}

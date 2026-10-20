@@ -34,7 +34,7 @@ func (r resourceStore) Index(ctx context.Context) ([]port.MemoryIndexEntry, erro
 			summary = res.URI
 		}
 		if res.Description != "" {
-			summary += " — " + res.Description
+			summary += ": " + res.Description
 		}
 		if res.MIMEType != "" {
 			summary += " [" + res.MIMEType + "]"

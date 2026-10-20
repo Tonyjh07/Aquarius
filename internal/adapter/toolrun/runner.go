@@ -210,7 +210,7 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 			denied := "user denied " + call.Name
 			if reason := strings.TrimSpace(ans.Reason); reason != "" {
 				if r := []rune(reason); len(r) > 200 {
-					reason = string(r[:200]) + "…"
+					reason = string(r[:200]) + "..."
 				}
 				denied += ": " + reason
 			}
@@ -460,7 +460,7 @@ func evalExisting(p string) string {
 func confirmPrompt(call tool.Call, target string) string {
 	args := strings.Join(strings.Fields(string(call.Args)), " ")
 	if r := []rune(args); len(r) > 160 {
-		args = string(r[:160]) + "…"
+		args = string(r[:160]) + "..."
 	}
 	if target != "" {
 		return fmt.Sprintf("允许 %s 访问 %s？参数: %s", call.Name, target, args)
@@ -477,5 +477,5 @@ func trim(s string, max int) string {
 	if len(r) <= max {
 		return s
 	}
-	return string(r[:max]) + fmt.Sprintf("\n…[output truncated, original %d chars]", len(r))
+	return string(r[:max]) + fmt.Sprintf("\n...[output truncated, original %d chars]", len(r))
 }
