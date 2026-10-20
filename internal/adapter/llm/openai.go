@@ -1,6 +1,7 @@
-// Package llm 实现 port.LLM 的 OpenAI 兼容适配器（Chat Completions + SSE 流式）。
+// Package llm 实现 port.LLM 的 OpenAI 兼容适配器（Chat Completions / Responses + SSE 流式）。
 //
-// 兼容目标：OpenAI / DeepSeek / vLLM / Ollama 等提供 /chat/completions、stream=true SSE 的服务。
+// 兼容目标：OpenAI / DeepSeek / vLLM / Ollama 等提供 /chat/completions、stream=true SSE 的服务；
+// 以及 OpenAI 的 /responses（协议形状见 responses.go，D175）。
 // 语义约定：
 //   - Params.Temperature == 0 视作"不发送"（交由服务端默认值）；MaxTokens 同理，
 //     两者与 Budget.MaxOutputTokens 冲突时以 Budget 为准。
@@ -41,32 +42,48 @@ const modelsPath = "/models"
 
 var _ port.LLM = (*Client)(nil)
 
+// Protocol 协议形状（D175）：决定 Generate 用哪一套请求体与流解析。取值与 config
+// `model.providers[].kind` 同一套词表（`openai-chat` / `openai-responses` / `anthropic`），
+// 避免两处各自定义一遍又对不上。零值 = openai-chat。
+type Protocol string
+
+const (
+	ProtoChat      Protocol = "openai-chat"
+	ProtoResponses Protocol = "openai-responses"
+	ProtoAnthropic Protocol = "anthropic"
+)
+
 // Config 适配器配置。
 type Config struct {
 	BaseURL string // 如 https://api.openai.com/v1（末尾斜杠可省）
 	APIKey  string // 空 = 不带 Authorization（本地服务）
+	// Protocol 协议形状（D175）；空 = openai-chat。
+	Protocol Protocol
 	// Tokenizer 本地 tokenizer.json 路径（文件或目录；空 = 不启用精确计数，
 	// app 回落通用估算——三级计数链 D26②/③）。
 	Tokenizer string
 	// UnsupportedParams 启动注入的"服务端已知不认"参数名（D34：由上一次 400 剥离
-	// 成功后记录进 config，重启生效）；命中者编码时直接省略。
+	// 成功后记录进 config，重启生效）；命中者编码时直接省略。**只对 openai-chat 生效**
+	// （D175 口径四：Responses/Anthropic 是自家规范，参数写错就是 bug，不该静默剥离）。
 	UnsupportedParams []string
 	// NoteUnsupported 剥离成功后的记录回调（装配根写回 config `model.unsupported_params`）；
-	// nil = 只在本进程内记住。
+	// nil = 只在本进程内记住。**只对 openai-chat 生效**（同上）。
 	NoteUnsupported func(field string)
 	// HTTPClient 为 nil 时使用无整体超时的默认客户端（由 ctx 控制时长）。
 	HTTPClient *http.Client
 }
 
-// Client OpenAI 兼容生成客户端。
+// Client OpenAI 兼容生成客户端（chat / responses 两套形状共用 HTTP、鉴权、错误分类与
+// 计数实现，D175 口径一：差异全在线上格式）。
 type Client struct {
-	base string
-	key  string
-	hc   *http.Client
-	tok  *tokenizer.Tokenizer // 配置了本地 tokenizer 时非 nil（D26②）
-	mu   sync.Mutex           // 保护 omit（记录回调与编码并发取快照）
-	omit map[string]bool      // 服务端已知不认的参数（启动注入 + 本次运行记录，D34）
-	note func(field string)
+	base  string
+	key   string
+	hc    *http.Client
+	proto Protocol
+	tok   *tokenizer.Tokenizer // 配置了本地 tokenizer 时非 nil（D26②）
+	mu    sync.Mutex           // 保护 omit（记录回调与编码并发取快照）
+	omit  map[string]bool      // 服务端已知不认的参数（启动注入 + 本次运行记录，D34；仅 chat 用）
+	note  func(field string)
 }
 
 var _ port.TokenCounter = (*Client)(nil)
@@ -128,6 +145,18 @@ func New(cfg Config) (*Client, error) {
 		omit: make(map[string]bool, len(cfg.UnsupportedParams)),
 		note: cfg.NoteUnsupported,
 	}
+	// 协议校验（D175）：只在认得的取值里挑；写错一个词就 fail-fast——把请求发给
+	// 另一套形状的服务端，报回来的错根本看不出是配置还是服务端的问题。
+	switch p := Protocol(strings.TrimSpace(string(cfg.Protocol))); p {
+	case "":
+		c.proto = ProtoChat
+	case ProtoChat, ProtoResponses:
+		c.proto = p
+	case ProtoAnthropic:
+		return nil, errors.New("llm: anthropic 协议尚未接入")
+	default:
+		return nil, fmt.Errorf("llm: 未知协议 %q", cfg.Protocol)
+	}
 	for _, f := range cfg.UnsupportedParams {
 		if f = strings.TrimSpace(f); f != "" {
 			c.omit[f] = true
@@ -152,7 +181,8 @@ func (c *Client) CountTokens(_ context.Context, text string) (int, error) {
 	return c.tok.Count(text), nil
 }
 
-// Generate 发起流式生成，返回 SSE 生成流。
+// Generate 发起流式生成，返回 SSE 生成流。端口语义与协议无关，形状差异按 c.proto 分派
+// （D175 口径一）。
 func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.Stream, error) {
 	if ctx == nil {
 		return nil, errors.New("llm: nil context")
@@ -160,6 +190,14 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, errors.New("llm: model 为空")
 	}
+	if c.proto == ProtoResponses {
+		return c.generateResponses(ctx, req)
+	}
+	return c.generateChat(ctx, req)
+}
+
+// generateChat openai-chat 协议的生成（chatPath + 剥离重试，D34）。
+func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (port.Stream, error) {
 	body, err := encodeChatRequest(req, true, c.omitCopy())
 	if err != nil {
 		return nil, err
@@ -208,21 +246,27 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 		}
 		if resp == nil {
 			cancel()
-			switch {
-			case code == http.StatusTooManyRequests:
-				// 429（D173 密钥池）：限流/配额耗尽。标 ErrTransient 照旧走重试，
-				// 同时包成 *port.Quota 带上冷却时长，让密钥池层先换下一把钥匙——
-				// 多账号场景下「换钥匙」比「退避等同一把」更快也更符合用户意图。
-				return nil, fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, chatPath, code, sn,
-					&port.Quota{After: after, Cause: port.ErrTransient})
-			case transientStatus(code):
-				// §10：429/408/5xx 标注瞬时错误，供装配根的重试装饰器限次退避。
-				return nil, fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, chatPath, code, sn, port.ErrTransient)
-			}
-			return nil, fmt.Errorf("llm: POST %s%s: 状态码 %d: %s", c.base, chatPath, code, sn)
+			return nil, c.statusError(chatPath, code, sn, after)
 		}
 	}
 	return newStream(streamCtx, cancel, resp.Body), nil
+}
+
+// statusError 非 200 响应的统一报因（两套协议共用；D175 口径一）。
+//
+//   - 429（D173 密钥池）：限流/配额耗尽。标 ErrTransient 照旧走重试，同时包成
+//     *port.Quota 带上冷却时长，让密钥池层先换下一把钥匙——多账号场景下「换钥匙」
+//     比「退避等同一把」更快也更符合用户意图。
+//   - 408/5xx（§10）：标注瞬时错误，供装配根的重试装饰器限次退避。
+func (c *Client) statusError(path string, code int, sn string, after time.Duration) error {
+	switch {
+	case code == http.StatusTooManyRequests:
+		return fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, path, code, sn,
+			&port.Quota{After: after, Cause: port.ErrTransient})
+	case transientStatus(code):
+		return fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, path, code, sn, port.ErrTransient)
+	}
+	return fmt.Errorf("llm: POST %s%s: 状态码 %d: %s", c.base, path, code, sn)
 }
 
 // unsupportedFields 判定报错片段点名了哪些本次实际发送、但服务端不认的参数（D34）。
