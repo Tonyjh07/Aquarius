@@ -21,7 +21,7 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 		if err != nil {
 			return "", fmt.Errorf("session: 列出可用模型: %w", err)
 		}
-		return formatModels(s.providerName, s.agent.modelName(), models), nil
+		return formatModels(s.providerName, s.agent.modelName(), models, s.vision), nil
 	}
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return "", errors.New("用法: /model [name]")
@@ -39,13 +39,21 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 }
 
 // formatModels /model 无参输出：provider 行（D110②，未注入时省略）+ 当前模型行 +
-// 可用清单（能力/单价标注）。
-func formatModels(provider func() string, current string, models []port.ModelInfo) string {
+// 视觉能力行（D169）+ 可用清单（能力/单价标注）。
+func formatModels(provider func() string, current string, models []port.ModelInfo, vision func() bool) string {
 	var b strings.Builder
 	if provider != nil && provider() != "" {
 		fmt.Fprintf(&b, "当前 provider: %s\n", provider())
 	}
 	fmt.Fprintf(&b, "当前模型: %s\n", current)
+	// 服务端不报模态，图片能力只来自配置；不显示的话，用户只能靠"发张图试试"来发现它关着。
+	if vision != nil {
+		if vision() {
+			b.WriteString("图片输入: 支持\n")
+		} else {
+			b.WriteString("图片输入: 不支持（在 model.providers 里为该 provider 声明 vision: true 才会开启）\n")
+		}
+	}
 	if len(models) == 0 {
 		return b.String() + "（模型服务未返回可用列表，可直接 /model <name> 切换）"
 	}

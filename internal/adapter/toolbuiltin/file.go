@@ -2,6 +2,7 @@ package toolbuiltin
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // 单页读取预算（D169）：行数、字符、单行长度三重上限。
@@ -27,6 +29,9 @@ const (
 	maxReadPageChars = 16000
 	maxReadLineChars = 2000
 )
+
+// maxImageBytes 单张图片上限（D169）：超过就报错并给出实际大小，不静默降级成文本。
+const maxImageBytes = 20 << 20
 
 // 目录列举与搜索结果上限（防爆上下文）。
 const (
@@ -54,18 +59,23 @@ func requireAbs(sandbox, path string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-// fileRead 读取文本文件（按行分页）。
-type fileRead struct{ sandbox string }
+// fileRead 读取文本文件（按行分页），或把图片作为附件交给模型（D169）。
+type fileRead struct {
+	sandbox string
+	blobs   port.AttachmentStore
+	vision  bool
+}
 
 func (t *fileRead) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "file_read",
-		Description: fmt.Sprintf("Read a text file (absolute path). Binary files are rejected. "+
-			"Read in pages: offset is the 1-based first line, limit is how many lines to return (default and maximum %d, "+
-			"one page is also capped at %d characters). Every returned line is prefixed with its line number; "+
-			"the prefix is for orientation only and is not part of the file content. "+
+		Description: fmt.Sprintf("Read a text file (absolute path), or an image which is attached to the conversation for you to look at "+
+			"(png, jpeg, gif or webp, up to %s). Other binary files are rejected. "+
+			"Text files are read in pages: offset is the 1-based first line, limit is how many lines to return "+
+			"(default and maximum %d, one page is also capped at %d characters). Every returned line is prefixed with "+
+			"its line number; the prefix is for orientation only and is not part of the file content. "+
 			"When a page ends before the file does, the last line says which offset to continue from. "+
-			"Reading never needs confirmation.", maxReadLines, maxReadPageChars),
+			"Reading never needs confirmation.", humanBytes(maxImageBytes), maxReadLines, maxReadPageChars),
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
@@ -139,11 +149,14 @@ func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	}
 	defer f.Close()
 
-	// 先嗅探头部再决定怎么读（D169）：二进制与图片都在这里分流，
+	// 先嗅探头部再决定怎么读（D169）：图片、二进制与文本都在这里分流，
 	// 不能先按大小截断再看——截断会把二进制切成一堆"看起来合法"的文本。
 	head, err := sniffHead(f)
 	if err != nil {
 		return tool.Result{}, err
+	}
+	if mime := imageMIME(head); mime != "" {
+		return t.readImage(ctx, f, p, mime)
 	}
 	if isBinary(head) {
 		return tool.Result{}, fmt.Errorf("%s looks like a binary file; file_read only reads text", p)
@@ -170,6 +183,56 @@ func sniffHead(f *os.File) ([]byte, error) {
 		return nil, fmt.Errorf("read file head: %w", err)
 	}
 	return head[:n], nil
+}
+
+// imageMIME 按文件头魔数判定图片类型（D169）：只看内容，不看扩展名——
+// 扩展名是用户随便写的，模型拿到"后缀像图片、内容不是"的文件只会更困惑。
+// 返回空串 = 不是受支持的图片格式。
+func imageMIME(head []byte) string {
+	switch {
+	case len(head) >= 8 && bytes.Equal(head[:8], []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}):
+		return "image/png"
+	case len(head) >= 3 && head[0] == 0xff && head[1] == 0xd8 && head[2] == 0xff:
+		return "image/jpeg"
+	case len(head) >= 6 && (bytes.Equal(head[:6], []byte("GIF87a")) || bytes.Equal(head[:6], []byte("GIF89a"))):
+		return "image/gif"
+	case len(head) >= 12 && bytes.Equal(head[:4], []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	return ""
+}
+
+// readImage 把图片写进附件库并回填引用（D169）。
+//
+// 字节不进 tool 结果 JSON：工具结果会落盘进会话树，图片按内容寻址单独存一份，
+// 装配时再投影成紧随 tool 应答之后的一条 user 消息（OpenAI 兼容端点不接受
+// tool 角色带图片块）。模型不支持看图时**明确报因**，不静默转成文本占位。
+func (t *fileRead) readImage(ctx context.Context, f *os.File, path, mime string) (tool.Result, error) {
+	if !t.vision {
+		return tool.Result{}, fmt.Errorf("%s is an image; the current model does not accept image input", path)
+	}
+	if t.blobs == nil {
+		return tool.Result{}, errors.New("image input is not available in this build")
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return tool.Result{}, fmt.Errorf("stat file: %w", err)
+	}
+	if fi.Size() > maxImageBytes {
+		return tool.Result{}, fmt.Errorf("%s is %s; the image limit is %s", path, humanBytes(fi.Size()), humanBytes(maxImageBytes))
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return tool.Result{}, fmt.Errorf("rewind file: %w", err)
+	}
+	ref, err := t.blobs.Put(ctx, f, mime, filepath.Base(path))
+	if err != nil {
+		return tool.Result{}, fmt.Errorf("store image: %w", err)
+	}
+	return tool.Result{
+		OK:     true,
+		Output: fmt.Sprintf("attached %s (%s, %s); the image itself is provided with this result.", filepath.Base(path), mime, humanBytes(ref.Size)),
+		Images: []tool.ImageRef{{Hash: ref.Hash, MIME: ref.MIME, Name: ref.Name, Size: ref.Size}},
+	}, nil
 }
 
 // readPage 从 1-based offset 开始读取至多 limit 行，返回带行号的页面。

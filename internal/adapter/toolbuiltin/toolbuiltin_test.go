@@ -128,7 +128,7 @@ func TestNewRegistersAllTools(t *testing.T) {
 // 单一事实源不漂移），且中文词表覆盖全部内置工具。
 func TestNamesAndDisplayNames(t *testing.T) {
 	names := Names()
-	tools := New(nil, nil, nil, "")
+	tools := New(Deps{})
 	if len(names) != len(tools) {
 		t.Fatalf("Names() = %d, New() = %d, want 一致", len(names), len(tools))
 	}
@@ -257,7 +257,7 @@ func TestMemoryFileTargetWithoutPathOf(t *testing.T) {
 func TestRelativePathSuggestsSandbox(t *testing.T) {
 	ctx := context.Background()
 	sbx := filepath.Join(t.TempDir(), "sandbox") // 平台合法绝对路径
-	tools := New(newFakeMem(), nil, &fakeJobs{}, sbx)
+	tools := New(Deps{Memory: newFakeMem(), Jobs: &fakeJobs{}, Sandbox: sbx})
 	w := pick(t, tools, "file_write")
 	args := call(`{"path":"rel/x.md","content":"c"}`)
 	_, err := w.Execute(ctx, args)
@@ -280,7 +280,7 @@ func TestRelativePathSuggestsSandbox(t *testing.T) {
 		t.Fatalf("空沙盒 err = %v, want 原消息无提示", err)
 	}
 	// 相对沙盒同样不提示——不能建议一个会被同一条规则再次拒绝的路径。
-	rel := pick(t, New(newFakeMem(), nil, &fakeJobs{}, "rel-sandbox"), "file_write")
+	rel := pick(t, New(Deps{Memory: newFakeMem(), Jobs: &fakeJobs{}, Sandbox: "rel-sandbox"}), "file_write")
 	_, err = rel.Execute(ctx, args)
 	if err == nil || strings.Contains(err.Error(), "privileged sandbox") {
 		t.Fatalf("相对沙盒 err = %v, want 无提示", err)

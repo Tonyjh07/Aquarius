@@ -50,7 +50,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 	}
 
 	// 压缩输入 = 当前上下文（已水位化：链式吸收只吞旧摘要与其后的新历史）。
-	history, err := assemblePath(ctx, path, a.blobs, a.cfg.EchoThinking)
+	history, err := assemblePath(ctx, path, a.assembleOpts())
 	if err != nil {
 		return conversation.Message{}, 0, fmt.Errorf("assemble compact input: %w", err)
 	}

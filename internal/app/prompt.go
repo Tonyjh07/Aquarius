@@ -210,12 +210,22 @@ func waterline(path []conversation.Message) (personaIdx, watermarkIdx int) {
 	return personaIdx, -1
 }
 
+// assembleOpts 装配口径（DESIGN §7.1）：附件库、思考回传（D42）、视觉能力（D169）。
+//
+// 三件事都只影响「怎么投影」，不影响树本身，收进一个结构体是为了让调用方
+// 显式回答它们——散成多个布尔参数时，新加一个能力位很容易在某个调用点漏掉。
+type assembleOpts struct {
+	blobs        port.AttachmentStore
+	echoThinking bool
+	// vision = 当前模型接受图片输入。false 时图片一律降级为文字占位并写明原因，
+	// 而不是把图片块发给一个不收图片的端点（那是一次没有出路的 400）。
+	vision bool
+}
+
 // assemblePath 把 Path() 装配为模型消息序列（DESIGN §7.1，含 D21 水位裁剪）：
 // persona（path[1] 的 system 节点）恒回传；最新压缩摘要之上的历史（persona 之外）一律不回传；
-// Root 空节点不进上下文。blobs 为 nil 时图片以内联占位文本代替（附件库就绪于 M3）。
-// echoThinking 控制思考回传（D42）：true = 置入 assistant 的 PromptMessage.Reasoning
-// （适配器映射 reasoning_content），false = 丢弃（仅展示/回放口径仍含思考）。
-func assemblePath(ctx context.Context, path []conversation.Message, blobs port.AttachmentStore, echoThinking bool) ([]port.PromptMessage, error) {
+// Root 空节点不进上下文。
+func assemblePath(ctx context.Context, path []conversation.Message, opt assembleOpts) ([]port.PromptMessage, error) {
 	personaIdx, watermarkIdx := waterline(path)
 	start := 1 // 起点恒 ≥ 1：Root 不进上下文
 	if watermarkIdx >= 0 {
@@ -242,7 +252,7 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 			continue // Root 空节点不进上下文（D19）
 		case conversation.RoleSystem:
 			// 系统节点（persona / 压缩摘要）映射为 system 角色（D20/D21）。
-			parts, err := assembleParts(ctx, m.Content, blobs)
+			parts, err := assembleParts(ctx, m.Content, opt)
 			if err != nil {
 				return nil, err
 			}
@@ -250,7 +260,7 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 		case conversation.RoleInject:
 			// 注入节点按来源投影（D150）：手动/系统级事实汇报 → system（不套围栏）；
 			// 其余（工具/插件/未知）→ user + 数据围栏（§9 不可信数据口径，防伪装成用户指令）。
-			pm, err := projectInjection(ctx, m, blobs)
+			pm, err := projectInjection(ctx, m, opt)
 			if err != nil {
 				return nil, err
 			}
@@ -260,7 +270,7 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 		case conversation.RoleAssistant:
 			// D95 Turn 粒度：一个节点可含多段"思考/正文 + 工具分片"交错——按 tool 边界
 			// 切段投影（调用与结果同片恒成对；Result=nil 的分片不声明也不应答）。
-			msgs, err := assembleAssistantNode(ctx, m, blobs, echoThinking)
+			msgs, err := assembleAssistantNode(ctx, m, opt)
 			if err != nil {
 				return nil, err
 			}
@@ -269,7 +279,7 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 			if len(m.Content) == 0 {
 				continue
 			}
-			parts, err := assembleParts(ctx, m.Content, blobs)
+			parts, err := assembleParts(ctx, m.Content, opt)
 			if err != nil {
 				return nil, err
 			}
@@ -293,11 +303,11 @@ func assemblePath(ctx context.Context, path []conversation.Message, blobs port.A
 //   - 其余（`tool:` / `plugin:` / 未知）→ user + 数据围栏 + 前置说明句（不可信数据口径）。
 //
 // 空内容返回 nil（不占一条消息，与 user/system 空节点同规则）。
-func projectInjection(ctx context.Context, m conversation.Message, blobs port.AttachmentStore) (*port.PromptMessage, error) {
+func projectInjection(ctx context.Context, m conversation.Message, opt assembleOpts) (*port.PromptMessage, error) {
 	if len(m.Content) == 0 {
 		return nil, nil
 	}
-	parts, err := assembleParts(ctx, m.Content, blobs)
+	parts, err := assembleParts(ctx, m.Content, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +356,7 @@ func escapeFenceAttr(s string) string {
 // 每段产出 1 条 assistant 消息（Reasoning=段内思考拼接、Content=段内正文、
 // ToolCalls=段内 Result≠nil 的调用）+ N 条 tool 应答消息——与 OpenAI 协议的
 // assistant(tool_calls)→tool 应答交错要求一致。全空段不发（如仅 nil 结果分片的轮）。
-func assembleAssistantNode(ctx context.Context, m conversation.Message, blobs port.AttachmentStore, echoThinking bool) ([]port.PromptMessage, error) {
+func assembleAssistantNode(ctx context.Context, m conversation.Message, opt assembleOpts) ([]port.PromptMessage, error) {
 	var out []port.PromptMessage
 	var (
 		reasoning []string
@@ -371,7 +381,7 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, blobs po
 	for _, p := range m.Content {
 		switch p.Kind {
 		case conversation.PartThinking:
-			if echoThinking { // 关（显式 false）= 丢弃，不回传（D42）
+			if opt.echoThinking { // 关（显式 false）= 丢弃，不回传（D42）
 				if len(calls) > 0 || len(replies) > 0 {
 					flush() // tool 之后再来的思考：开启新段
 				}
@@ -381,7 +391,7 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, blobs po
 			if len(calls) > 0 || len(replies) > 0 {
 				flush() // tool 之后再来的正文：开启新段
 			}
-			pp, err := assembleParts(ctx, []conversation.Part{p}, blobs)
+			pp, err := assembleParts(ctx, []conversation.Part{p}, opt)
 			if err != nil {
 				return nil, err
 			}
@@ -400,16 +410,60 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, blobs po
 				CallID:  p.Tool.CallID,
 				Content: []port.PromptPart{{Kind: "text", Text: toolResultText(p.Tool.Result)}},
 			})
+			// 工具产出的图片（D169）：tool 角色之后紧跟一条 user 消息承载图片块，
+			// 因为 OpenAI 兼容端点不接受 tool 角色带图片。
+			img, err := toolImageMessage(ctx, p.Tool.Name, p.Tool.Result.Images, opt)
+			if err != nil {
+				return nil, err
+			}
+			if img != nil {
+				replies = append(replies, *img)
+			}
 		}
 	}
 	flush()
 	return out, nil
 }
 
+// toolImageMessage 把工具结果里的图片引用投影为一条 user 消息（D169）。
+//
+// 为什么是 user 而不是 tool：OpenAI 兼容端点的 tool 角色只收文本，图片块挂在
+// tool 应答上会被拒。位置「紧随该 tool 应答之后」是唯一让模型能把图片和调用对上
+// 的地方——放到 Turn 末尾就变成一堆无主图片。
+// 视觉得不到时同样投影为文字占位并写明原因：静默丢掉图片，模型会以为工具没产出。
+func toolImageMessage(ctx context.Context, toolName string, refs []tool.ImageRef, opt assembleOpts) (*port.PromptMessage, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	parts := make([]port.PromptPart, 0, len(refs)+1)
+	parts = append(parts, port.PromptPart{Kind: "text", Text: fmt.Sprintf(toolImageNoteFmt, toolName)})
+	for _, ref := range refs {
+		if !opt.vision {
+			parts = append(parts, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageUnsupportedFmt, ref.Name)})
+			continue
+		}
+		if opt.blobs == nil {
+			parts = append(parts, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageOmittedFmt, ref.Name)})
+			continue
+		}
+		rc, err := opt.blobs.Get(ctx, conversation.BlobRef{Hash: ref.Hash, MIME: ref.MIME, Name: ref.Name, Size: ref.Size})
+		if err != nil {
+			return nil, fmt.Errorf("read image %s: %w", ref.Name, err)
+		}
+		data, rerr := io.ReadAll(rc)
+		_ = rc.Close()
+		if rerr != nil {
+			return nil, fmt.Errorf("read image %s: %w", ref.Name, rerr)
+		}
+		parts = append(parts, port.PromptPart{Kind: "image", MIME: ref.MIME, Data: data})
+	}
+	return &port.PromptMessage{Role: "user", Content: parts}, nil
+}
+
 // assembleParts 把领域分片装配为提示词分片：
 // audio 取转写文本、doc 取提取文本（D10）、image 经 AttachmentStore 内联字节（DESIGN §4.2）；
 // thinking 不进 Content——由 assemblePath 经 PromptMessage.Reasoning 独立回传（D42）。
-func assembleParts(ctx context.Context, parts []conversation.Part, blobs port.AttachmentStore) ([]port.PromptPart, error) {
+func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleOpts) ([]port.PromptPart, error) {
 	out := make([]port.PromptPart, 0, len(parts))
 	for _, p := range parts {
 		switch p.Kind {
@@ -429,11 +483,15 @@ func assembleParts(ctx context.Context, parts []conversation.Part, blobs port.At
 			if p.Ref == nil {
 				continue
 			}
-			if blobs == nil {
+			if !opt.vision {
+				out = append(out, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageUnsupportedFmt, p.Ref.Name)})
+				continue
+			}
+			if opt.blobs == nil {
 				out = append(out, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageOmittedFmt, p.Ref.Name)})
 				continue
 			}
-			rc, err := blobs.Get(ctx, *p.Ref)
+			rc, err := opt.blobs.Get(ctx, *p.Ref)
 			if err != nil {
 				return nil, fmt.Errorf("读取附件 %s: %w", p.Ref.Name, err)
 			}

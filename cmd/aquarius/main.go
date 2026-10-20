@@ -272,6 +272,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			CompactThreshold: w.cfg.Limits.CompactThreshold, MaxContextTokens: w.cfg.Limits.MaxContextTokens,
 			Think: w.cfg.Model.Think, ReasoningEffort: w.cfg.Model.ReasoningEffort, // D34 初值
 			EchoThinking: w.cfg.Model.EchoThinking == nil || *w.cfg.Model.EchoThinking, // D42：键缺失 = 回传
+			Vision:       w.cfg.Model.vision(),                                         // D169：降级链取与
 		},
 	)
 	if err != nil {
@@ -301,6 +302,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
 		ListModels:     func(ctx context.Context) ([]port.ModelInfo, error) { return w.client.Models(ctx) },
 		ProviderName:   func() string { return w.primary.Name }, // D110②：/model 展示（静态，重启生效）
+		Vision:         w.cfg.Model.vision,                      // D169：/model 展示图片能力
 		PersistModel:   w.persist.persistModel,
 		PersistThink:   w.persist.persistThink,  // D34
 		PersistEffort:  w.persist.persistEffort, // D34

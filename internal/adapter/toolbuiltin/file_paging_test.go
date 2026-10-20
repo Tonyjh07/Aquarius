@@ -20,7 +20,7 @@ func TestFileReadChecksBinaryBeforePaging(t *testing.T) {
 	if err := os.WriteFile(bin, buf, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := pick(t, New(nil, nil, nil, ""), "file_read")
+	r := pick(t, New(Deps{}), "file_read")
 	_, err := r.Execute(context.Background(), call(`{"path":`+js(bin)+`}`))
 	if err == nil || !strings.Contains(err.Error(), "binary") {
 		t.Fatalf("err = %v, want a binary rejection", err)
@@ -41,7 +41,7 @@ func TestFileReadPagesLargeText(t *testing.T) {
 	if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := pick(t, New(nil, nil, nil, ""), "file_read")
+	r := pick(t, New(Deps{}), "file_read")
 
 	res, err := r.Execute(context.Background(), call(`{"path":`+js(p)+`,"limit":2}`))
 	if err != nil {

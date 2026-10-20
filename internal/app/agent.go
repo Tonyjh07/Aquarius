@@ -57,6 +57,9 @@ type Config struct {
 	// 由适配器映射 reasoning_content；false = 装配时过滤。config `model.echo_thinking` 键缺失 =
 	// 回传、显式 false 才关（缺省解析在装配根完成，app 只见 bool）。
 	EchoThinking bool
+	// Vision 当前降级链是否接受图片输入（D169；装配根按 providers[].vision 取与）。
+	// false = 图片（用户附件与 file_read 产出）一律降级为文字占位并写明原因。
+	Vision bool
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（DESIGN §7.1，内核唯一的编排）。
@@ -350,6 +353,11 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 	return rep, nil
 }
 
+// assembleOpts 本轮装配口径（DESIGN §7.1）：附件库 + 思考回传（D42）+ 视觉能力（D169）。
+func (a *Agent) assembleOpts() assembleOpts {
+	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Vision}
+}
+
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（DESIGN §7.1）。
 // Turn 粒度（D95）：buf 非空时把未提交缓冲投影为合成 assistant 消息追加在 Path 尾部——
 // 第 2 轮起模型能看到本 Turn 前几轮的调用与结果（合成节点不进树，仅本次请求可见）。
@@ -358,7 +366,7 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	if buf != nil && !buf.empty() {
 		treePath = append(treePath, buf.inFlight())
 	}
-	path, err := assemblePath(ctx, treePath, a.blobs, a.cfg.EchoThinking)
+	path, err := assemblePath(ctx, treePath, a.assembleOpts())
 	if err != nil {
 		return port.GenerateRequest{}, err
 	}

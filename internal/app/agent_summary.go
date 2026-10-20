@@ -126,7 +126,7 @@ func (a *Agent) SummarizeBefore(ctx context.Context, c *conversation.Conversatio
 		return conversation.Message{}, ErrNoHistoryAbove
 	}
 
-	history, err := assemblePath(ctx, chain, a.blobs, a.cfg.EchoThinking)
+	history, err := assemblePath(ctx, chain, a.assembleOpts())
 	if err != nil {
 		return conversation.Message{}, fmt.Errorf("assemble summary input: %w", err)
 	}

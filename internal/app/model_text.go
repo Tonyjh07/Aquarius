@@ -23,6 +23,12 @@ const (
 	toolFailedNoReason = "the tool failed without a reason; check the arguments and retry"
 	// imageOmittedFmt 附件库未接入时的图片占位（字节未内联）。
 	imageOmittedFmt = "[image: %s (not inlined in this context)]"
+	// imageUnsupportedFmt 当前模型不接受图片输入时的占位（D169）：写明原因，
+	// 而不是把同一张图换个说法再发一遍。
+	imageUnsupportedFmt = "[image: %s (the current model does not accept image input)]"
+	// toolImageNoteFmt 工具产出的图片随附说明（D169）：图片块挂在紧随 tool 应答之后的
+	// user 消息上，需要一句话说清它来自哪次调用。
+	toolImageNoteFmt = "Image returned by the %s call:"
 
 	// 后台任务完成报告（poller）：状态行、空日志占位、日志段前的不可信说明。
 	// 报告整体走 system 角色，所以状态行写成宿主陈述而不是指令。

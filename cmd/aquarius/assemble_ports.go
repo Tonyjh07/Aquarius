@@ -188,10 +188,17 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 	if maxOutput <= 0 {
 		maxOutput = 20000
 	}
-	builtinTools := toolbuiltin.New(w.merged, func(name string) (string, bool) {
-		p, err := w.mem.Path(name)
-		return p, err == nil
-	}, w.jobs, w.sandboxDir)
+	builtinTools := toolbuiltin.New(toolbuiltin.Deps{
+		Memory: w.merged,
+		PathOf: func(name string) (string, bool) {
+			p, err := w.mem.Path(name)
+			return p, err == nil
+		},
+		Jobs:    w.jobs,
+		Sandbox: w.sandboxDir,
+		Blobs:   w.blobs,
+		Vision:  w.cfg.Model.vision(),
+	})
 	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
 	w.disabledTools = newDisabledHolder(w.builtinDisabled())

@@ -55,4 +55,16 @@ type Result struct {
 	OK     bool   `json:"ok"`
 	Output string `json:"output,omitempty"` // 结果文本，已按 tool_output_chars 裁剪
 	Err    string `json:"err,omitempty"`    // 失败原因文本
+	// Images 本次调用产出的图片引用（D169）：字节进附件库，这里只留寻址所需的最小事实。
+	// 不直接引 conversation.BlobRef——domain/tool 不 import conversation（依赖方向）。
+	Images []ImageRef `json:"images,omitempty"`
+}
+
+// ImageRef 工具产出的图片引用（内容寻址，D169）：装配时经 AttachmentStore 取字节，
+// 投影为紧随 tool 应答之后的一条 user 消息（OpenAI 兼容端点的 tool 角色不收图片块）。
+type ImageRef struct {
+	Hash string `json:"hash"`
+	MIME string `json:"mime"`
+	Name string `json:"name,omitempty"`
+	Size int64  `json:"size,omitempty"`
 }

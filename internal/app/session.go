@@ -62,6 +62,9 @@ type SessionDeps struct {
 	// ProviderName 当前生效 provider 名（D110②：/model 无参展示；装配根注入
 	// 静态值——provider 运行态不热切，切换 = 重启生效）；nil 时省略该行。
 	ProviderName func() string
+	// Vision 当前模型是否接受图片输入（D169，装配根按 providers[].vision 取与）。
+	// 服务端 /models 不返回模态，能力只能来自配置，所以由装配根声明；nil 时省略该行。
+	Vision func() bool
 	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
 	// nil 时 /think 有参报"未配置持久化"。
 	PersistThink func(on bool) error
@@ -96,6 +99,7 @@ type Session struct {
 	listModels     func(ctx context.Context) ([]port.ModelInfo, error)
 	persistModel   func(name string) error
 	providerName   func() string
+	vision         func() bool
 	persistThink   func(on bool) error
 	persistEffort  func(level string) error
 	cur            *conversation.Conversation
@@ -178,6 +182,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		listModels:     d.ListModels,
 		persistModel:   d.PersistModel,
 		providerName:   d.ProviderName,
+		vision:         d.Vision,
 		persistThink:   d.PersistThink,
 		persistEffort:  d.PersistEffort,
 		dynamic:        map[string]CommandHandler{},

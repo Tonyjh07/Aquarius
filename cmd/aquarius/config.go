@@ -115,6 +115,9 @@ type providerConfig struct {
 	Models []string `json:"models"`
 	// Tokenizer 本地 tokenizer.json 路径（精确计数②，D26）；空 = 通用估算③。
 	Tokenizer string `json:"tokenizer"`
+	// Vision 该 provider 的模型是否接受图片输入（D169）。缺省 false：服务端 /models
+	// 不返回模态，只能由用户声明；降级链取**与**（任一 provider 未声明即按不支持处理）。
+	Vision bool `json:"vision,omitempty"`
 	// UnsupportedParams 服务端已知不认的请求参数（D34 自动记录，启动注入省略）。
 	UnsupportedParams []string `json:"unsupported_params,omitempty"`
 }
@@ -158,6 +161,24 @@ func (m *modelConfig) primaryProvider() *providerConfig {
 		return p
 	}
 	return &m.Providers[0]
+}
+
+// vision 当前降级链是否接受图片输入（D169）：取**与**——任一 provider 未声明
+// vision 就按不支持处理。降级只在网络类错误时发生，模型无法预知这一次会落到
+// 哪条链上；按"与"处理最多是保守地不读图，按"或"处理则会在某次降级后把图片
+// 发给一个不收图片的端点，那是一次没有出路的 400。
+func (m *modelConfig) vision() bool {
+	p := m.primaryProvider()
+	if !p.Vision {
+		return false
+	}
+	for _, name := range m.Fallback {
+		fb := m.byName(name)
+		if fb == nil || !fb.Vision {
+			return false
+		}
+	}
+	return true
 }
 
 // normalize 应用缺省值并 fail-fast 校验 model 段（D110②，启动期调用）：

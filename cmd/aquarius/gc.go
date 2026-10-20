@@ -26,6 +26,14 @@ func collectBlobRefs(ctx context.Context, store port.ConversationStore) (map[str
 				if p.Ref != nil {
 					keep[p.Ref.Hash] = true
 				}
+				// 工具产出的图片（D169）：字节同样在附件库，引用挂在工具结果里。
+				// 漏扫这里，下一次启动 GC 会把刚读过的图片删掉，而会话树里的
+				// 引用还在——模型再被问起同一张图时会拿到「附件不存在」。
+				if p.Tool != nil && p.Tool.Result != nil {
+					for _, img := range p.Tool.Result.Images {
+						keep[img.Hash] = true
+					}
+				}
 			}
 		}
 	}

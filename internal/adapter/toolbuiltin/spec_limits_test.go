@@ -15,7 +15,7 @@ import (
 // 改了常量却忘了改描述（或反过来），测试就红。
 func TestSpecsDeriveLimitsFromConstants(t *testing.T) {
 	specs := map[string]string{}
-	for _, tl := range New(nil, nil, nil, "") {
+	for _, tl := range New(Deps{}) {
 		s := tl.Spec()
 		specs[s.Name] = s.Description + "\n" + string(s.Schema)
 	}

@@ -29,14 +29,24 @@ func TestSessionModelCommand(t *testing.T) {
 			{Name: "mini"},
 		}, nil
 	}
+	s.vision = func() bool { return true }
 	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	for _, want := range []string{"当前模型: test-model", "gpt-a", "[视觉]", "$0.001/$0.002", "mini"} {
+	for _, want := range []string{"当前模型: test-model", "图片输入: 支持", "gpt-a", "[视觉]", "$0.001/$0.002", "mini"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("/model 缺 %q: %s", want, out)
 		}
+	}
+	// 未声明视觉：显示不支持并说明怎么开（服务端不报模态，用户没有别的途径知道）。
+	s.vision = func() bool { return false }
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}})
+	if err != nil {
+		t.Fatalf("list(no vision): %v", err)
+	}
+	if !strings.Contains(out, "图片输入: 不支持") || !strings.Contains(out, "vision: true") {
+		t.Fatalf("/model 未说明视觉能力: %s", out)
 	}
 	// 列表服务故障上抛。
 	s.listModels = func(context.Context) ([]port.ModelInfo, error) { return nil, errors.New("404") }

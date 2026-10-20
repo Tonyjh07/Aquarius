@@ -25,7 +25,7 @@ func newRawSession(t *testing.T, streams ...*scriptStream) (*Session, *scriptLLM
 	}
 	rec := &recorder{}
 	llm := &scriptLLM{t: t, streams: streams}
-	agent := newAgent(t, llm, rec, Deps{Blobs: blobs}, Config{})
+	agent := newAgent(t, llm, rec, Deps{Blobs: blobs}, Config{Vision: true})
 	s, err := NewSession(context.Background(), SessionDeps{
 		Store:     newMemStore(),
 		Agent:     agent,

@@ -19,43 +19,51 @@ import (
 // 由装配根注入（与 memoryfs 同源，D23 布局单一事实源）；nil 或未命中 = 不申报。
 type PathOf func(name string) (string, bool)
 
+// Deps 内置工具的装配依赖（全部来自端口，内置不享特权，D13）。
+type Deps struct {
+	Memory  port.MemoryStore     // 记忆存储；nil = memory_* 报未配置
+	PathOf  PathOf               // 记忆文档名 → 磁盘路径（FileTarget 申报）
+	Jobs    port.JobManager      // 任务端口（term_exec / job_*）
+	Sandbox string               // 特权沙盒目录（相对路径报错时给可行动的替代提示）
+	Blobs   port.AttachmentStore // 附件库：file_read 读图片时落盘（nil = 图片不可用）
+	Vision  bool                 // 当前模型是否接受图片输入（D169；false 必须明确报因）
+}
+
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
-// jobs 为任务端口（term_exec / job_* 用）：装配根必传；测试不关心时可传 nil，
-// 此类调用执行会明确报"未配置任务管理器"而非 panic。
-// sandbox 为特权沙盒目录（装配根注入）：仅用于 file_* 相对路径报错时给出
-// 可行动的替代提示（D34 反馈；空 = 不提示，测试缺省）。
-func New(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox string) []port.Tool {
-	return allTools(mem, pathOf, jobs, sandbox)
+// 缺依赖时对应工具执行会明确报"本构建未提供该能力"，而不是 panic。
+func New(d Deps) []port.Tool {
+	return allTools(d)
 }
 
 // allTools 内置工具清单（装配序 = Spec 注册序 = Names 序；S6/D143 词表对照的
 // 单一事实源——New 与 Names/DisplayName 不得各自维护一份）。
-func allTools(mem port.MemoryStore, pathOf PathOf, jobs port.JobManager, sandbox string) []port.Tool {
+func allTools(d Deps) []port.Tool {
 	return []port.Tool{
-		&memoryList{mem: mem},
-		&memoryRead{mem: mem},
-		&memorySearch{mem: mem},
-		&memoryWrite{mem: mem, pathOf: pathOf},
-		&fileRead{sandbox: sandbox},
-		&fileList{sandbox: sandbox},
-		&fileSearch{sandbox: sandbox},
-		&fileWrite{sandbox: sandbox},
-		&fileDelete{sandbox: sandbox},
+		&memoryList{mem: d.Memory},
+		&memoryRead{mem: d.Memory},
+		&memorySearch{mem: d.Memory},
+		&memoryWrite{mem: d.Memory, pathOf: d.PathOf},
+		&fileRead{sandbox: d.Sandbox, blobs: d.Blobs, vision: d.Vision},
+		&fileList{sandbox: d.Sandbox},
+		&fileSearch{sandbox: d.Sandbox},
+		&fileWrite{sandbox: d.Sandbox},
+		&fileDelete{sandbox: d.Sandbox},
 		&thinkTool{},
 		&sleepTool{},
-		&termExec{jobs: jobs},
-		&jobStart{jobs: jobs},
-		&jobList{jobs: jobs},
-		&jobStatus{jobs: jobs},
-		&jobLogs{jobs: jobs},
-		&jobKill{jobs: jobs},
+		&termExec{jobs: d.Jobs},
+		&jobStart{jobs: d.Jobs},
+		&jobList{jobs: d.Jobs},
+		&jobStatus{jobs: d.Jobs},
+		&jobLogs{jobs: d.Jobs},
+		&jobKill{jobs: d.Jobs},
 	}
 }
 
 // Names 内置工具名清单（装配序；S6/D143 工具管理页清单的事实源）。
 func Names() []string {
-	out := make([]string, 0, len(allTools(nil, nil, nil, "")))
-	for _, t := range allTools(nil, nil, nil, "") {
+	all := allTools(Deps{})
+	out := make([]string, 0, len(all))
+	for _, t := range all {
 		out = append(out, t.Spec().Name)
 	}
 	return out

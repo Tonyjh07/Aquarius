@@ -23,7 +23,7 @@ func TestAssemblePathBasicRoles(t *testing.T) {
 	if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{{Kind: conversation.PartText, Text: "你好"}}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestAssemblePathEchoThinking(t *testing.T) {
 		t.Fatalf("append thinking-only: %v", err)
 	}
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, true)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: true})
 	if err != nil {
 		t.Fatalf("assemble(echo): %v", err)
 	}
@@ -65,7 +65,7 @@ func TestAssemblePathEchoThinking(t *testing.T) {
 		t.Fatalf("echo on: 正文分片 = %+v, want 仅 text 答案", msgs[1].Content)
 	}
 
-	msgs, err = assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err = assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble(no-echo): %v", err)
 	}
@@ -87,7 +87,7 @@ func TestAssemblePathMediaParts(t *testing.T) {
 		{Kind: conversation.PartDoc, Text: "文档提取文本"},
 		{Kind: conversation.PartImage, Ref: &conversation.BlobRef{Name: "a.png", MIME: "image/png", Hash: "H"}},
 	}
-	got, err := assembleParts(context.Background(), parts, nil)
+	got, err := assembleParts(context.Background(), parts, assembleOpts{})
 	if err != nil {
 		t.Fatalf("assembleParts: %v", err)
 	}
@@ -97,8 +97,8 @@ func TestAssemblePathMediaParts(t *testing.T) {
 	if got[1].Text != "语音转写" || got[2].Text != "文档提取文本" {
 		t.Fatalf("media texts = %+v", got)
 	}
-	if got[3].Kind != "text" || !strings.Contains(got[3].Text, "a.png") {
-		t.Fatalf("image 占位 = %+v, want 附件库未接入时的占位文本", got[3])
+	if got[3].Kind != "text" || !strings.Contains(got[3].Text, "does not accept image input") {
+		t.Fatalf("image 占位 = %+v, want 视觉不支持时的说明", got[3])
 	}
 }
 
@@ -107,7 +107,7 @@ func TestAssemblePathImageInlinesBytes(t *testing.T) {
 	parts := []conversation.Part{
 		{Kind: conversation.PartImage, Ref: &conversation.BlobRef{Name: "a.png", MIME: "image/png", Hash: "H"}},
 	}
-	got, err := assembleParts(context.Background(), parts, blobs)
+	got, err := assembleParts(context.Background(), parts, assembleOpts{blobs: blobs, vision: true})
 	if err != nil {
 		t.Fatalf("assembleParts: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestAssemblePathToolPartProjectsCallAndResult(t *testing.T) {
 		t.Fatalf("append assistant: %v", err)
 	}
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestAssemblePathSegmentedTurnNode(t *testing.T) {
 		t.Fatalf("append assistant: %v", err)
 	}
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, true)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: true})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestAssemblePathSegmentedTurnNode(t *testing.T) {
 	}
 
 	// echo_thinking=false：思考丢弃，正文分段不变。
-	msgs, err = assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err = assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble(off): %v", err)
 	}
@@ -207,7 +207,72 @@ func TestAssemblePathSegmentedTurnNode(t *testing.T) {
 	}
 }
 
-// TestAssemblePathNilResultPartSkipped D95：Result=nil 的工具分片（未执行/被取消）
+// TestAssemblePathToolImageProjectsUserMessage 工具产出的图片（D169）：tool 应答之后
+// 紧跟一条 user 消息承载图片块——OpenAI 兼容端点的 tool 角色只收文本。
+// 不支持视觉时同一位置降级为文字占位并写明原因，不能整段消失。
+func TestAssemblePathToolImageProjectsUserMessage(t *testing.T) {
+	blobs := &fakeBlobs{data: map[string][]byte{"H1": []byte("\x89PNG")}}
+	build := func() *conversation.Conversation {
+		c := convWithUser(t)
+		user1 := c.Path()[1]
+		asst := conversation.Message{
+			ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
+			Content: []conversation.Part{{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c1", Name: "file_read",
+				Result: &tool.Result{
+					CallID: "c1", OK: true, Output: "attached shot.png",
+					Images: []tool.ImageRef{{Hash: "H1", MIME: "image/png", Name: "shot.png", Size: 4}},
+				},
+			}}},
+		}
+		if err := c.AppendCommitted(asst); err != nil {
+			t.Fatalf("append assistant: %v", err)
+		}
+		return c
+	}
+
+	msgs, err := assemblePath(context.Background(), build().Path(), assembleOpts{blobs: blobs, vision: true})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	// user + assistant(tool_calls) + tool + user(image)
+	if len(msgs) != 4 {
+		t.Fatalf("msgs = %d, want 4: %+v", len(msgs), msgs)
+	}
+	if msgs[2].Role != "tool" || msgs[3].Role != "user" {
+		t.Fatalf("roles = %s,%s; want tool,user", msgs[2].Role, msgs[3].Role)
+	}
+	var img *port.PromptPart
+	for i := range msgs[3].Content {
+		if msgs[3].Content[i].Kind == "image" {
+			img = &msgs[3].Content[i]
+		}
+	}
+	if img == nil || string(img.Data) != "\x89PNG" || img.MIME != "image/png" {
+		t.Fatalf("image part = %+v", msgs[3].Content)
+	}
+	if !strings.Contains(msgs[3].Content[0].Text, "file_read") {
+		t.Fatalf("image note = %q, want 说明来自哪次调用", msgs[3].Content[0].Text)
+	}
+
+	// 不支持视觉：仍占一条消息，但只留占位文本与原因。
+	msgs, err = assemblePath(context.Background(), build().Path(), assembleOpts{blobs: blobs, vision: false})
+	if err != nil {
+		t.Fatalf("assemble(no vision): %v", err)
+	}
+	if len(msgs) != 4 || msgs[3].Role != "user" {
+		t.Fatalf("no-vision msgs = %+v", msgs)
+	}
+	for _, p := range msgs[3].Content {
+		if p.Kind == "image" {
+			t.Fatalf("不支持视觉时不应有图片块: %+v", p)
+		}
+	}
+	if !strings.Contains(msgs[3].Content[1].Text, "does not accept image input") {
+		t.Fatalf("no-vision placeholder = %+v", msgs[3].Content)
+	}
+}
+
 // 不声明调用也不产出应答消息；纯 nil 分片节点整条不发。
 func TestAssemblePathNilResultPartSkipped(t *testing.T) {
 	c := convWithUser(t)
@@ -221,7 +286,7 @@ func TestAssemblePathNilResultPartSkipped(t *testing.T) {
 	if err := c.AppendCommitted(asst); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -278,7 +343,7 @@ func TestAssemblePathWatermarkDropsAboveSummary(t *testing.T) {
 	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
 	commitNode(t, c, c.Head, conversation.RoleAssistant, "新回答")
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -307,7 +372,7 @@ func TestAssemblePathChainedSummariesKeepLatest(t *testing.T) {
 	sum2 := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要二")
 	commitNode(t, c, sum2.ID, conversation.RoleUser, "q3")
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -328,7 +393,7 @@ func TestAssemblePathWatermarkWithoutPersona(t *testing.T) {
 	sum := commitNode(t, c, c.Head, conversation.RoleSystem, "摘要")
 	commitNode(t, c, sum.ID, conversation.RoleUser, "新问题")
 
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -346,7 +411,7 @@ func TestAssemblePathSkipsEmptyNodes(t *testing.T) {
 	if _, err := c.Append(conversation.RoleUser, nil); err != nil {
 		t.Fatalf("append empty user: %v", err)
 	}
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -397,7 +462,7 @@ func TestAssemblePathInjectionProjection(t *testing.T) {
 	for _, tc := range cases {
 		c := convWithUser(t)
 		appendInject(t, c, tc.source, tc.text)
-		msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+		msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 		if err != nil {
 			t.Fatalf("%s: assemble: %v", tc.source, err)
 		}
@@ -429,7 +494,7 @@ func TestAssemblePathInjectionProjection(t *testing.T) {
 func TestAssemblePathInjectionFenceEscapesSource(t *testing.T) {
 	c := convWithUser(t)
 	appendInject(t, c, `tool:a"><b`, "x")
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -455,7 +520,7 @@ func TestAssemblePathInjectionEmptySkipped(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	msgs, err := assemblePath(context.Background(), c.Path(), nil, false)
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}

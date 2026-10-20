@@ -11,7 +11,7 @@ import (
 // 逐字段检查 Name / Description / 参数描述与枚举值：出现非 ASCII 字符即失败——
 // 工具描述漏进中文不会改变任何行为，只有门禁能拦住。
 func TestSpecsAreASCIIModelFacing(t *testing.T) {
-	for _, tl := range New(nil, nil, nil, "") {
+	for _, tl := range New(Deps{}) {
 		s := tl.Spec()
 		checkASCII(t, s.Name, "name")
 		checkASCII(t, s.Description, "description")

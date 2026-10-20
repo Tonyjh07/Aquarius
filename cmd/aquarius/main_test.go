@@ -23,6 +23,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -335,6 +336,25 @@ func TestModelNormalize(t *testing.T) {
 		c.Fallback = []string{"b"}
 		if err := c.normalize(); err != nil {
 			t.Fatalf("normalize: %v", err)
+		}
+	})
+	// 视觉能力位（D169）：降级链取**与**——任一环节没声明就不按支持处理。
+	t.Run("vision 取与", func(t *testing.T) {
+		c := good()
+		if c.vision() {
+			t.Fatal("未声明 vision 时不应报支持")
+		}
+		c.Providers[0].Vision = true
+		if !c.vision() {
+			t.Fatal("仅 primary 声明时应报支持（无 fallback）")
+		}
+		c.Fallback = []string{"b"}
+		if c.vision() {
+			t.Fatal("fallback 未声明时不应报支持")
+		}
+		c.Providers[1].Vision = true
+		if !c.vision() {
+			t.Fatal("全链声明后应报支持")
 		}
 	})
 	for _, tc := range []struct {
@@ -820,9 +840,33 @@ func TestRunAttachmentGC(t *testing.T) {
 		t.Fatalf("put orphan: %v", err)
 	}
 
+	// 工具产出的图片（D169）：引用挂在工具结果里，与 Part.Ref 同属活引用。
+	// 漏扫这里 → 下次启动把刚读过的图片删掉，而会话树里的引用还在。
+	toolImg, err := blobs.Put(ctx, bytes.NewReader([]byte("shot")), "image/png", "shot.png")
+	if err != nil {
+		t.Fatalf("put tool image: %v", err)
+	}
+	if err := c.AppendCommitted(conversation.Message{
+		ID: "m2", Parent: "m1", Role: conversation.RoleAssistant,
+		Content: []conversation.Part{{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+			CallID: "c1", Name: "file_read",
+			Result: &tool.Result{CallID: "c1", OK: true, Output: "attached shot.png",
+				Images: []tool.ImageRef{{Hash: toolImg.Hash, MIME: toolImg.MIME, Name: toolImg.Name, Size: toolImg.Size}}},
+		}}},
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("append tool: %v", err)
+	}
+	if err := store.Save(ctx, c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
 	keep, err := collectBlobRefs(ctx, store)
 	if err != nil || !keep[ref.Hash] {
 		t.Fatalf("keep = %v, err = %v", keep, err)
+	}
+	if !keep[toolImg.Hash] {
+		t.Fatal("工具结果里的图片引用应进 keep")
 	}
 	if keep[orphan.Hash] {
 		t.Fatal("孤儿不应进 keep")
@@ -831,6 +875,9 @@ func TestRunAttachmentGC(t *testing.T) {
 	runAttachmentGC(ctx, store, blobs, &warn)
 	if ok, _ := blobs.Stat(ctx, ref); !ok {
 		t.Fatal("被引用附件不应被清")
+	}
+	if ok, _ := blobs.Stat(ctx, toolImg); !ok {
+		t.Fatal("工具结果引用的图片不应被清")
 	}
 	if ok, _ := blobs.Stat(ctx, orphan); ok {
 		t.Fatal("孤儿附件应被清")
