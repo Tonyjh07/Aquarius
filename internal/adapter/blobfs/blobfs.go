@@ -36,10 +36,10 @@ type Store struct {
 // New 创建附件库并确保目录存在。
 func New(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
-		return nil, errors.New("blobfs: 目录为空")
+		return nil, errors.New("attachment directory must not be empty")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("blobfs: 创建目录 %s: %w", dir, err)
+		return nil, fmt.Errorf("create attachment directory %s: %w", dir, err)
 	}
 	return &Store{dir: dir}, nil
 }
@@ -52,7 +52,7 @@ func (s *Store) Put(ctx context.Context, r io.Reader, mime, name string) (conver
 	}
 	tmp, err := os.CreateTemp(s.dir, ".put-*.tmp")
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("blobfs: 建临时文件: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("create temporary file: %w", err)
 	}
 	tmpName := tmp.Name()
 	drop := true
@@ -74,7 +74,7 @@ func (s *Store) Put(ctx context.Context, r io.Reader, mime, name string) (conver
 		if n > 0 {
 			if _, werr := tmp.Write(buf[:n]); werr != nil {
 				_ = tmp.Close()
-				return conversation.BlobRef{}, fmt.Errorf("blobfs: 写入: %w", werr)
+				return conversation.BlobRef{}, fmt.Errorf("write attachment: %w", werr)
 			}
 			_, _ = h.Write(buf[:n])
 			total += int64(n)
@@ -84,17 +84,17 @@ func (s *Store) Put(ctx context.Context, r io.Reader, mime, name string) (conver
 		}
 		if rerr != nil {
 			_ = tmp.Close()
-			return conversation.BlobRef{}, fmt.Errorf("blobfs: 读取输入: %w", rerr)
+			return conversation.BlobRef{}, fmt.Errorf("read attachment input: %w", rerr)
 		}
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		// 崩溃安全：不 Sync 就 rename 可能留下"哈希名与内容不符"的损坏文件
 		//（Put 的去重与 Get 都不会再校验内容），宁可失败。
-		return conversation.BlobRef{}, fmt.Errorf("blobfs: 落盘: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("flush attachment: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("blobfs: 关闭临时文件: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("close temporary file: %w", err)
 	}
 
 	ref := conversation.BlobRef{
@@ -110,7 +110,7 @@ func (s *Store) Put(ctx context.Context, r io.Reader, mime, name string) (conver
 	if err := os.Rename(tmpName, final); err != nil {
 		// 并发 Put 同内容竞态：目标已在则视为成功。
 		if _, serr := os.Stat(final); serr != nil {
-			return conversation.BlobRef{}, fmt.Errorf("blobfs: 换入 %s: %w", ref.Hash, err)
+			return conversation.BlobRef{}, fmt.Errorf("store attachment %s: %w", ref.Hash, err)
 		}
 		return ref, nil
 	}
@@ -126,10 +126,10 @@ func (s *Store) Get(_ context.Context, ref conversation.BlobRef) (io.ReadCloser,
 	}
 	f, err := os.Open(p)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("blobfs: 附件不存在 %.12s…（%s）", ref.Hash, ref.Name)
+		return nil, fmt.Errorf("attachment %.12s... (%s) does not exist", ref.Hash, ref.Name)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("blobfs: 打开附件: %w", err)
+		return nil, fmt.Errorf("open attachment: %w", err)
 	}
 	return f, nil
 }
@@ -145,7 +145,7 @@ func (s *Store) Stat(_ context.Context, ref conversation.BlobRef) (bool, error) 
 	} else if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
-	return false, fmt.Errorf("blobfs: 检查附件: %w", err)
+	return false, fmt.Errorf("stat attachment: %w", err)
 }
 
 // GC 清扫 keep 之外的附件与过期临时文件。keep 的键为内容哈希（BlobRef.Hash）。
@@ -153,7 +153,7 @@ func (s *Store) Stat(_ context.Context, ref conversation.BlobRef) (bool, error) 
 func (s *Store) GC(_ context.Context, keep map[string]bool) error {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
-		return fmt.Errorf("blobfs: 列目录: %w", err)
+		return fmt.Errorf("list attachment directory: %w", err)
 	}
 	var firstErr error
 	for _, e := range entries {
@@ -167,7 +167,7 @@ func (s *Store) GC(_ context.Context, keep map[string]bool) error {
 		p := filepath.Join(s.dir, name)
 		if isHash(name) {
 			if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) && firstErr == nil {
-				firstErr = fmt.Errorf("blobfs: 清除 %s: %w", name, err)
+				firstErr = fmt.Errorf("remove stale attachment %s: %w", name, err)
 			}
 			continue
 		}
@@ -182,7 +182,7 @@ func (s *Store) GC(_ context.Context, keep map[string]bool) error {
 // pathOf 引用 → 磁盘路径；哈希必须是 64 位小写 hex（防路径穿越）。
 func (s *Store) pathOf(ref conversation.BlobRef) (string, error) {
 	if !isHash(ref.Hash) {
-		return "", fmt.Errorf("blobfs: 非法附件哈希 %q", ref.Hash)
+		return "", fmt.Errorf("invalid attachment hash %q", ref.Hash)
 	}
 	return filepath.Join(s.dir, ref.Hash), nil
 }
