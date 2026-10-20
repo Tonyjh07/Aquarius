@@ -95,6 +95,7 @@ func TestNewRegistersAllTools(t *testing.T) {
 		"memory_list": tool.Safe, "memory_read": tool.Safe, "memory_search": tool.Safe,
 		"memory_write": tool.Confirm,
 		"file_read":    tool.Safe, "file_list": tool.Safe, "file_search": tool.Safe,
+		"file_edit":  tool.Confirm,
 		"file_write": tool.Confirm, "file_delete": tool.Confirm,
 		"think":     tool.Safe,
 		"sleep":     tool.Safe,

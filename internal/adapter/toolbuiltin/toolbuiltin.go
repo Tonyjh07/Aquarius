@@ -46,6 +46,7 @@ func allTools(d Deps) []port.Tool {
 		&fileRead{sandbox: d.Sandbox, blobs: d.Blobs, vision: d.Vision},
 		&fileList{sandbox: d.Sandbox},
 		&fileSearch{sandbox: d.Sandbox},
+		&fileEdit{sandbox: d.Sandbox},
 		&fileWrite{sandbox: d.Sandbox},
 		&fileDelete{sandbox: d.Sandbox},
 		&thinkTool{},
@@ -78,6 +79,7 @@ var displayNames = map[string]string{
 	"file_read":     "读取文件",
 	"file_list":     "列出目录",
 	"file_search":   "检索文件",
+	"file_edit":     "编辑文件",
 	"file_write":    "写入文件",
 	"file_delete":   "删除文件",
 	"think":         "思考草稿",
@@ -167,6 +169,8 @@ var (
 	_ port.FileTarget = (*fileList)(nil)
 	_ port.Tool       = (*fileSearch)(nil)
 	_ port.FileTarget = (*fileSearch)(nil)
+	_ port.Tool       = (*fileEdit)(nil)
+	_ port.FileTarget = (*fileEdit)(nil)
 	_ port.Tool       = (*fileWrite)(nil)
 	_ port.FileTarget = (*fileWrite)(nil)
 	_ port.Tool       = (*fileDelete)(nil)

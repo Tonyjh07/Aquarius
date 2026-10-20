@@ -526,6 +526,198 @@ func (t *fileWrite) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 	return okResult(fmt.Sprintf("wrote %s (%d chars)", p, len([]rune(a.Content)))), nil
 }
 
+// fileEdit 按精确子串替换文件内容（D172；Risk=Confirm，与 file_write 同权限口径）。
+type fileEdit struct{ sandbox string }
+
+func (t *fileEdit) Spec() tool.Spec {
+	return tool.Spec{
+		Name: "file_edit",
+		Description: "Replace an exact substring in an existing text file (absolute path). " +
+			"old_string must appear exactly once unless replace_all is true; when it appears more than once this fails " +
+			"instead of guessing which occurrence you meant. The file's line endings and byte order mark are preserved. " +
+			"May require user confirmation depending on the permission level and the target path.",
+		Schema: jsonSchema(`{
+			"type": "object",
+			"properties": {
+				"path": {"type": "string", "description": "absolute path"},
+				"old_string": {"type": "string", "description": "exact text to replace (include enough context to make it unique)"},
+				"new_string": {"type": "string", "description": "replacement text"},
+				"replace_all": {"type": "boolean", "description": "replace every occurrence instead of requiring exactly one (default false)"}
+			},
+			"required": ["path", "old_string", "new_string"]
+		}`),
+		Risk: tool.Confirm,
+	}
+}
+
+func (t *fileEdit) Target(_ context.Context, call tool.Call) (string, perm.Op, bool) {
+	p, ok := targetPath(call, t.sandbox)
+	if !ok {
+		return "", 0, false
+	}
+	return p, perm.OpWrite, true
+}
+
+func (t *fileEdit) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tool.Result{}, err
+	}
+	var a struct {
+		Path       string `json:"path"`
+		OldString  string `json:"old_string"`
+		NewString  string `json:"new_string"`
+		ReplaceAll bool   `json:"replace_all"`
+	}
+	if err := decodeArgs(call, &a); err != nil {
+		return tool.Result{}, err
+	}
+	p, err := requireAbs(t.sandbox, a.Path)
+	if err != nil {
+		return tool.Result{}, err
+	}
+	if a.OldString == "" {
+		return tool.Result{}, errors.New("old_string must not be empty; use file_write to create or replace a whole file")
+	}
+	if a.OldString == a.NewString {
+		return tool.Result{}, errors.New("old_string and new_string are identical; nothing to change")
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return tool.Result{}, fmt.Errorf("stat file: %w", err)
+	}
+	if info.IsDir() {
+		return tool.Result{}, fmt.Errorf("%s is a directory", p)
+	}
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return tool.Result{}, fmt.Errorf("read file: %w", err)
+	}
+	if isBinary(raw) {
+		return tool.Result{}, fmt.Errorf("%s looks like a binary file; file_edit only edits text", p)
+	}
+
+	// 换行与 BOM 原样保留（D172 口径四）：文件是 CRLF 就还按 CRLF 比对与写回，
+	// 模型给的 \n 在比对前先规约——否则同一段内容会因行尾差异而"找不到"。
+	bom, body := splitBOM(raw)
+	crlf := bytes.Contains(body, []byte("\r\n"))
+	text := string(body)
+	oldStr, newStr := a.OldString, a.NewString
+	if crlf {
+		oldStr = toCRLF(oldStr)
+		newStr = toCRLF(newStr)
+	}
+
+	updated, n, err := replaceUnique(text, oldStr, newStr, a.ReplaceAll, crlf)
+	if err != nil {
+		return tool.Result{}, err
+	}
+	out := append(bom, []byte(updated)...)
+	// 保留原权限位；原子换入避免半截文件（与 file_write 同一写入路径）。
+	mode := info.Mode().Perm()
+	if err := atomicfile.WriteFile(p, out, mode); err != nil {
+		return tool.Result{}, fmt.Errorf("write: %w", err)
+	}
+	return okResult(fmt.Sprintf("edited %s (%d replacement(s))", p, n)), nil
+}
+
+// replaceUnique 精确替换并守住唯一性（D172 口径二/三）：
+// 唯一命中才能改；多处命中且未开 replace_all 一律报错——猜测"应该是哪一处"
+// 是模型最容易悄悄改错地方的地方。精确匹配失败时逐级降级：行尾归一 → 去首尾空白。
+func replaceUnique(text, oldStr, newStr string, all, crlf bool) (string, int, error) {
+	if n := strings.Count(text, oldStr); n > 0 {
+		if n > 1 && !all {
+			return "", 0, fmt.Errorf("old_string appears %d times; include more surrounding context to make it unique, or pass replace_all", n)
+		}
+		if all {
+			return strings.ReplaceAll(text, oldStr, newStr), n, nil
+		}
+		return strings.Replace(text, oldStr, newStr, 1), 1, nil
+	}
+	// 降级一：忽略行尾差异（模型常把 CRLF 写成 LF）。
+	norm := strings.ReplaceAll(text, "\r\n", "\n")
+	oldLF := strings.ReplaceAll(oldStr, "\r\n", "\n")
+	newLF := strings.ReplaceAll(newStr, "\r\n", "\n")
+	if n := strings.Count(norm, oldLF); n == 1 {
+		out := strings.Replace(norm, oldLF, newLF, 1)
+		return finishEdits(out, crlf), 1, nil
+	} else if n > 1 && !all {
+		return "", 0, fmt.Errorf("old_string appears %d times; include more surrounding context to make it unique, or pass replace_all", n)
+	} else if n > 0 {
+		return finishEdits(strings.ReplaceAll(norm, oldLF, newLF), crlf), n, nil
+	}
+	// 降级二：逐行去首尾空白后再比对（缩进被模型改过一点点）。
+	if out, ok := replaceLoose(text, oldStr, newStr); ok {
+		return finishEdits(out, crlf), 1, nil
+	}
+	return "", 0, errors.New("old_string was not found in the file; read the file again and copy the exact text")
+}
+
+// replaceLoose 按"去首尾空白逐行相等"定位唯一片段，再用 newStr 的缩进重写。
+func replaceLoose(text, oldStr, newStr string) (string, bool) {
+	tLines := strings.Split(text, "\n")
+	oLines := strings.Split(strings.ReplaceAll(oldStr, "\r\n", "\n"), "\n")
+	// 末尾换行会切出一个空元素：它是"片段到此结束"的标记，不是要比较的空行。
+	if n := len(oLines); n > 1 && oLines[n-1] == "" {
+		oLines = oLines[:n-1]
+	}
+	if len(oLines) == 0 || len(tLines) < len(oLines) {
+		return "", false
+	}
+	matches := 0
+	start := -1
+	for i := 0; i+len(oLines) <= len(tLines); i++ {
+		ok := true
+		for j := range oLines {
+			if strings.TrimSpace(tLines[i+j]) != strings.TrimSpace(oLines[j]) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			matches++
+			start = i
+			if matches > 1 {
+				return "", false // 多处命中：不做模糊替换
+			}
+		}
+	}
+	if matches != 1 {
+		return "", false
+	}
+	nLines := strings.Split(strings.ReplaceAll(newStr, "\r\n", "\n"), "\n")
+	if n := len(nLines); n > 1 && nLines[n-1] == "" {
+		nLines = nLines[:n-1]
+	}
+	out := make([]string, 0, len(tLines)-len(oLines)+len(nLines))
+	out = append(out, tLines[:start]...)
+	out = append(out, nLines...)
+	out = append(out, tLines[start+len(oLines):]...)
+	return strings.Join(out, "\n"), true
+}
+
+// splitBOM 拆分 UTF-8 BOM 与正文（BOM 必须原样写回，否则某些工具会认不出编码）。
+func splitBOM(b []byte) (bom, body []byte) {
+	if len(b) >= 3 && b[0] == 0xef && b[1] == 0xbb && b[2] == 0xbf {
+		return b[:3], b[3:]
+	}
+	return nil, b
+}
+
+// toCRLF 把模型给的 LF 文本规约成 CRLF 以匹配 CRLF 文件。
+func toCRLF(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\n", "\r\n")
+}
+
+// finishEdits 把降级匹配得到的 LF 文本还原成文件原本的换行风格。
+// 只在文件确实是 CRLF 时还原——无条件转换会把 LF 文件的行尾全改掉，
+// 那是一次模型没要求、也没被告知的大范围重写。
+func finishEdits(s string, crlf bool) string {
+	if !crlf {
+		return s
+	}
+	return toCRLF(s)
+}
+
 // fileDelete 删除文件或空目录（Risk=Confirm；路径格判定）。
 type fileDelete struct{ sandbox string }
 

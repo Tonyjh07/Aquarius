@@ -27,6 +27,11 @@ func TestResultsAreASCIIModelFacing(t *testing.T) {
 	if err := os.WriteFile(bin, []byte{1, 0, 2}, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// 图片：不支持视觉时回填文本必须仍是英文（名字之外不夹中文）。
+	img := filepath.Join(dir, "shot.png")
+	if err := os.WriteFile(img, append([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}, make([]byte, 16)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	empty := filepath.Join(dir, "empty")
 	if err := os.Mkdir(empty, 0o755); err != nil {
 		t.Fatal(err)
@@ -48,10 +53,15 @@ func TestResultsAreASCIIModelFacing(t *testing.T) {
 		{"file_read", `{"path":` + js(bin) + `}`},
 		{"file_read", `{"path":` + js(filepath.Join(dir, "missing.txt")) + `}`},
 		{"file_read", `{"path":"relative.txt"}`},
+		{"file_read", `{"path":` + js(img) + `}`},
 		{"file_list", `{"path":` + js(dir) + `}`},
 		{"file_list", `{"path":` + js(empty) + `}`},
+		{"file_list", `{"path":` + js(dir) + `,"offset":9999}`},
 		{"file_search", `{"path":` + js(dir) + `,"query":"note"}`},
 		{"file_search", `{"path":` + js(dir) + `,"query":"nope"}`},
+		{"file_edit", `{"path":` + js(text) + `,"old_string":"hello","new_string":"HELLO"}`},
+		{"file_edit", `{"path":` + js(text) + `,"old_string":"nope","new_string":"x"}`},
+		{"file_edit", `{"path":` + js(text) + `,"old_string":"","new_string":"x"}`},
 		{"file_write", `{"path":` + js(filepath.Join(dir, "out", "x.txt")) + `,"content":"x"}`},
 		{"file_delete", `{"path":` + js(filepath.Join(dir, "out", "x.txt")) + `}`},
 		{"file_delete", `{"path":` + js(filepath.Join(dir, "out", "x.txt")) + `}`},
