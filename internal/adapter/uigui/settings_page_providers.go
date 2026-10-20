@@ -23,10 +23,13 @@ func (providersPage) Key() string { return "模型服务" }
 func (providersPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec("模型服务（provider 列表）")}
 	for i := range f.provs {
-		for fld := 0; fld < provFldN; fld++ {
-			rows = append(rows, rowDesc{kind: rowProvField, prov: i, field: fld})
+		rows = append(rows, rowDesc{kind: rowProvSummary, prov: i})
+		if f.provOpen == i { // 同一时刻只展开一张（D176 口径二）
+			for fld := 0; fld < provFldN; fld++ {
+				rows = append(rows, rowDesc{kind: rowProvField, prov: i, field: fld})
+			}
+			rows = append(rows, rowDesc{kind: rowProvBtns, prov: i})
 		}
-		rows = append(rows, rowDesc{kind: rowProvBtns, prov: i})
 	}
 	return append(rows, rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply})
 }
@@ -34,6 +37,8 @@ func (providersPage) Rows(f *settingsForm) []rowDesc {
 func (providersPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
 	r := rows[i]
 	switch r.kind {
+	case rowProvSummary:
+		return f.providerSummaryRow(gtx, th, r.prov), true
 	case rowProvField:
 		pf := f.provs[r.prov]
 		eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
@@ -82,6 +87,13 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 		u.applyProviderChanges(f)
 	}
 	for i, pf := range f.provs {
+		for pf.toggle.Clicked(gtx) {
+			if f.provOpen == i {
+				f.provOpen = -1 // 再点一次收起
+			} else {
+				f.provOpen = i // 展开本张即收起其它（只展开一张）
+			}
+		}
 		for pf.test.Clicked(gtx) {
 			u.runProviderTest(f, pf)
 		}
@@ -109,16 +121,52 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 				case f.primaryIdx > i:
 					f.primaryIdx--
 				}
+				// 展开态跟随删除重算：删的就是展开的那张 → 全收起；删在它之前 → 下标前移。
+				switch {
+				case f.provOpen == i:
+					f.provOpen = -1
+				case f.provOpen > i:
+					f.provOpen--
+				}
 			}
 		}
 	}
 }
 
 func (providersPage) FirstEditor(f *settingsForm) *widget.Editor {
-	if len(f.provs) == 0 {
-		return nil // 空列表（快照无条目）时无编辑档可聚焦
+	if f.provOpen < 0 || f.provOpen >= len(f.provs) {
+		return nil // 全收起：无编辑档可聚焦（展开哪张才聚焦哪张）
 	}
-	return &f.provs[0].name
+	return &f.provs[f.provOpen].name
+}
+
+// providerSummaryRow 折叠卡片收起态（S11-7②/D176 口径二）：整行可点（点击展开/收起），
+// 左侧一个 caret（▸ 收起 / ▾ 展开），右侧一行摘要（名字 · 协议 · N 个模型 · M 把钥匙 · 是否主）。
+// 摘要行落进分组卡（rowInCard 为真），展开后的字段行与它在同一张卡里——收起态一眼看全有几家，
+// 展开哪家看哪家。
+func (f *settingsForm) providerSummaryRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
+	pf := f.provs[i]
+	caret := "▸"
+	if f.provOpen == i {
+		caret = "▾"
+	}
+	return pf.toggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X // 整行可点
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperBodySp(th), caret)
+				l.Color = paperOf().text2
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					l := material.Label(th, paperBodySp(th), pf.providerSummary(f.primaryIdx == i))
+					l.Color = paperOf().text
+					return l.Layout(gtx)
+				})
+			}),
+		)
+	})
 }
 
 // providerButtonsRow 单个 provider 的动作按钮：连通测试 / 设为主 / 删除（D110②）。

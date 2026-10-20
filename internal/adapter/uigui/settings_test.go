@@ -559,9 +559,19 @@ func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 		}
 		return n
 	}
+	// 收起态：只有摘要行（rowProvSummary），没有字段/按钮行；展开后才露出。
+	if n := count(pageProviders, rowProvSummary); n != 1 {
+		t.Errorf("「模型服务」页收起态摘要行 = %d, want 1", n)
+	}
+	for _, k := range []rowKind{rowProvField, rowProvBtns} {
+		if n := count(pageProviders, k); n != 0 {
+			t.Errorf("「模型服务」页收起态不应有 %v 行（收起只露摘要）", k)
+		}
+	}
+	f.provOpen = 0 // 展开第一张卡片
 	for _, k := range provKinds {
 		if n := count(pageProviders, k); n == 0 {
-			t.Errorf("「模型服务」页缺 provider 行型 %v", k)
+			t.Errorf("「模型服务」页展开后缺 provider 行型 %v", k)
 		}
 		if n := count(pageModel, k); n != 0 {
 			t.Errorf("「模型」页仍有 provider 行型 %v（D176 拆页后应搬到「模型服务」）", k)
@@ -572,6 +582,61 @@ func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 	}
 	if n := count(pageProviders, chainKinds...); n != 0 {
 		t.Errorf("「模型服务」页不应有降级链行")
+	}
+}
+
+// TestProviderCardCollapse 折叠卡片（S11-7②/D176 口径二）：同一时刻只展开一张；
+// 再点摘要行收起；新增条目自动展开；收起后行计划里只留摘要行。
+func TestProviderCardCollapse(t *testing.T) {
+	restoreLight(t)
+	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
+		{Name: "a", Kind: "openai-chat", BaseURL: "http://a/v1", Models: "am1, am2", Keys: 2, Primary: true},
+		{Name: "b", Kind: "anthropic", BaseURL: "http://b/v1", Models: "bm1", Keys: 1},
+	}}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	if f.provOpen != -1 {
+		t.Fatalf("开窗应全收起: provOpen = %d", f.provOpen)
+	}
+	// 摘要文案：名字 · 协议 · N 个模型 · M 把钥匙 · 是否主。
+	if got := f.provs[0].providerSummary(true); !strings.Contains(got, "a · chat · 2 个模型 · 2 把钥匙 · ★ 主") {
+		t.Fatalf("摘要[0] = %q", got)
+	}
+	if got := f.provs[1].providerSummary(false); !strings.Contains(got, "b · anthropic · 1 个模型 · 1 把钥匙") || strings.Contains(got, "★") {
+		t.Fatalf("摘要[1] = %q", got)
+	}
+
+	th := testTheme()
+	frame := func() {
+		var ops op.Ops
+		settingsFrame(layout.Context{
+			Ops:         &ops,
+			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(720, 560)),
+		}, th, u, f)
+	}
+	// 点第 2 张摘要行 = 展开它（同时收起其它）。
+	f.provs[1].toggle.Click()
+	frame()
+	if f.provOpen != 1 {
+		t.Fatalf("点第 2 张后 provOpen = %d, want 1", f.provOpen)
+	}
+	// 点第 1 张 = 只展开第 1 张（第 2 张自动收起）。
+	f.provs[0].toggle.Click()
+	frame()
+	if f.provOpen != 0 {
+		t.Fatalf("点第 1 张后 provOpen = %d, want 0（只展开一张）", f.provOpen)
+	}
+	// 再点第 1 张 = 收起。
+	f.provs[0].toggle.Click()
+	frame()
+	if f.provOpen != -1 {
+		t.Fatalf("再点应收起: provOpen = %d, want -1", f.provOpen)
+	}
+	// 新增条目自动展开且成为唯一展开项。
+	f.addProviderForm()
+	if f.provOpen != 2 {
+		t.Fatalf("新增后应展开新条目: provOpen = %d, want 2", f.provOpen)
 	}
 }
 
@@ -1032,6 +1097,7 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 	f.syncSecretsSnapshot() // 同步密钥库快照（铺出条目行）
 	f.secretsStatus = "ok"  // 覆盖 rowSecretStatus 行型
 	f.importStatus = "ok"   // 覆盖 rowSecretImport 行型里的导入反馈分支
+	f.provOpen = 0          // 展开首张 provider 卡片（覆盖字段/按钮行型；收起态只有摘要行）
 	th := testTheme()
 
 	for p := 0; p < settingsPageCount; p++ {

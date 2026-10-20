@@ -33,13 +33,16 @@ type ProfilesManager interface {
 }
 
 // ProviderSnapshot provider 编辑区单条快照（D110②/③）：models/unsupported 以逗号
-// 分隔呈现在单行编辑档（表单口径）；APIKey 只写不回显（D35），不进快照。
+// 分隔呈现在单行编辑档（表单口径）；APIKey 只写不回显（D35），不进快照。Kind/Keys
+// 供折叠卡片收起态的一行摘要（D176 口径二）——摘要要在不展开的情况下说清「怎么连」。
 type ProviderSnapshot struct {
 	Name        string
+	Kind        string // 协议（空 = openai-chat，读侧归一展示）
 	BaseURL     string
 	Models      string // 逗号分隔（首个 = 该 provider 缺省请求模型）
 	Tokenizer   string
 	Unsupported string // 逗号分隔
+	Keys        int    // 密钥引用数（≥1：0 条声明也按缺省引用算一把）
 	Primary     bool   // 是否当前 primary
 }
 
@@ -315,8 +318,11 @@ type settingsForm struct {
 	promptEditor
 
 	// provider 编辑区（D110②）：每条一组控件 + 测试/设主/删除；provApply 全量应用。
+	// S11-7② 起按卡片折叠（D176 口径二）：每张卡片一行摘要，同一时刻只展开一张
+	// （provOpen = 展开的下标；-1 = 全收起）。
 	provs       []*providerForm
 	primaryIdx  int // 当前 primary（provs 下标；应用时取该条名字）
+	provOpen    int // 展开的卡片下标（-1 = 全收起；界面状态，不进 config）
 	provAdd     widget.Clickable
 	provApply   widget.Clickable
 	provStatus  string // provider 区反馈（"" = 默认提示）
@@ -347,7 +353,9 @@ type settingsForm struct {
 	focused  bool             // 首帧焦点入首档（其余点击自聚焦，editor.go FocusCmd）
 }
 
-// providerForm 单个 provider 的编辑控件组（D110②；本窗 goroutine 独占）。
+// providerForm 单个 provider 的编辑控件组（D110②；本窗 goroutine 独占）。S11-7② 起
+// 折叠成一张卡片（D176 口径二）：收起态只露一行摘要（`rowProvSummary`），展开才露出
+// 下面的字段行。同一时刻只展开一张（展开多张又回到「一堵墙」）。
 type providerForm struct {
 	orig        string // 快照原名（Apply 保留原 api_key 与无关键；"" = 新增）
 	name        widget.Editor
@@ -360,6 +368,11 @@ type providerForm struct {
 	modelsBtn   widget.Clickable // 「获取模型」（D153）：拉 /models 并列候选
 	del         widget.Clickable
 	setPrimary  widget.Clickable
+	// 折叠卡片（S11-7②/D176 口径二）：toggle = 摘要行点击件；expanded 由表单级
+	// provOpen 决定（同一时刻只展开一张），kindLabel/keyCount 供摘要行显示协议与钥匙数。
+	toggle    widget.Clickable
+	kindLabel string
+	keyCount  int
 	// 候选（D153）：cands = 最近一次拉取结果（去重保序，最多 relModelCandMax 个），
 	// candClicks 与之一一对应。点击 chip 才替换模型名——不自动覆盖用户手写内容。
 	cands      []string
@@ -367,6 +380,34 @@ type providerForm struct {
 	// modelsOrig 开窗/建行时的模型名基线：「自动填入」只在这个框**没被用户改过**时发生
 	// （否则用户手写的内容会被一次网络结果冲掉）。
 	modelsOrig string
+}
+
+// providerSummary 折叠卡片收起态的一行摘要：名字 · 协议 · N 个模型 · M 把钥匙 · 是否主。
+// 名字取自**当前编辑值**（改名过程中也如实反映），其余取快照（协议与钥匙数不在编辑面）。
+func (pf *providerForm) providerSummary(primary bool) string {
+	name := strings.TrimSpace(pf.name.Text())
+	if name == "" {
+		name = "（未命名）"
+	}
+	kind := strings.TrimSpace(pf.kindLabel)
+	switch kind {
+	case "openai-responses":
+		kind = "responses"
+	case "anthropic":
+		kind = "anthropic"
+	case "", "openai-chat":
+		kind = "chat"
+	}
+	n := len(splitCSVNames(pf.models.Text()))
+	keys := pf.keyCount
+	if keys < 1 {
+		keys = 1 // 0 条声明也按缺省引用算一把（读侧同口径）
+	}
+	s := fmt.Sprintf("%s · %s · %d 个模型 · %d 把钥匙", name, kind, n, keys)
+	if primary {
+		s += " · ★ 主"
+	}
+	return s
 }
 
 // modelsPristine 模型名框是否仍是基线内容。自动填入的唯一前提。
@@ -415,6 +456,7 @@ const (
 // 列表轴向属构造不变量——轴向错配会让 material.List 按视口**宽**迭代，只画首行）。
 func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
+		provOpen:    -1, // S11-7②：开窗全收起（第一张也不自动展开——展开是用户的动作）
 		perm:        cycleField{displays: permLevels, values: permLevels},
 		effort:      cycleField{displays: effortLevels, values: effortValues},
 		theme:       cycleField{displays: themeLevels, values: themeValues},
@@ -542,18 +584,22 @@ func splitRefList(s string) []string {
 }
 
 // addProviderForm 追加一个空白 provider 编辑组（帧循环与测试共用；Apply 校验必填项）。
+// S11-7②：新条目直接展开（刚建好就等着填，收起态反而要多点一次）。
 func (f *settingsForm) addProviderForm() {
 	pf := &providerForm{}
 	for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported} {
 		ed.SingleLine = true
 	}
 	f.provs = append(f.provs, pf)
+	f.provOpen = len(f.provs) - 1 // 展开新条目（同时收起其它）
 }
 
 // loadProviders 以快照重建 provider 编辑区（开窗填表；快照空 = 无条目，留新增入口）。
+// S11-7②：重建后全收起（展开态不跨重建保留——它是界面状态，重建即回到稳定落点）。
 func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 	f.provs = make([]*providerForm, 0, len(snap))
 	f.primaryIdx = 0
+	f.provOpen = -1
 	for i, p := range snap {
 		pf := &providerForm{orig: p.Name}
 		for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported} {
@@ -565,6 +611,8 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 		pf.modelsOrig = p.Models
 		pf.tokenizer.SetText(p.Tokenizer)
 		pf.unsupported.SetText(p.Unsupported)
+		pf.kindLabel = p.Kind
+		pf.keyCount = p.Keys
 		if p.Primary {
 			f.primaryIdx = i
 		}

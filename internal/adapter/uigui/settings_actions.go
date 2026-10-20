@@ -314,6 +314,7 @@ func (u *UI) applyProviderChanges(f *settingsForm) {
 	f.provErr = false
 	f.provStatus = "已应用 provider 变更（重启生效）"
 	f.loadProviders(u.opts.ProviderMgr.Snapshot()) // 以落盘事实源重建编辑区（orig 对齐、primary 回正）
+	f.provOpen = -1                                // 重建后全收起（新形态下的稳定落点）
 }
 
 // runProviderTest 连通性测试（D110②，真实最小请求）：goroutine 跑 Test（网络 +

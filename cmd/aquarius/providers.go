@@ -43,11 +43,16 @@ func (m *providerManager) Snapshot() []uigui.ProviderSnapshot {
 		for _, e := range p.Models {
 			names = append(names, e.Name)
 		}
+		keys := len(p.Keys)
+		if keys < 1 {
+			keys = 1 // 0 条声明 = 缺省引用一把（读侧同口径）
+		}
 		out = append(out, uigui.ProviderSnapshot{
-			Name: p.Name, BaseURL: p.BaseURL,
+			Name: p.Name, Kind: p.protocolKind(), BaseURL: p.BaseURL,
 			Models:      joinCSV(names),
 			Tokenizer:   p.Tokenizer,
 			Unsupported: joinCSV(p.UnsupportedParams),
+			Keys:        keys,
 			Primary:     i == 0 && cfg.Model.Primary == "" || p.Name == cfg.Model.Primary,
 		})
 	}

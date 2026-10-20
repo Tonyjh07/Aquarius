@@ -54,6 +54,7 @@ const (
 	rowSysPrompt
 	rowRaw
 	rowProvField
+	rowProvSummary // 折叠卡片收起态摘要行（S11-7②/D176 口径二；点击展开/收起）
 	rowProvBtns
 	rowProvAdd
 	rowProvApply
