@@ -148,6 +148,15 @@ func (u *UI) updateClicks(gtx layout.Context) {
 			u.chipOpen[i] = !u.chipOpen[i]
 		}
 	}
+	// 思考块折叠行点击 → 展开/收起（D182；定稿默认折叠，流式条目没有折叠行）。
+	for i, b := range u.m.blocks {
+		if b.kind == blockThinking && u.thinkClick(i).Clicked(gtx) {
+			if u.thinkOpen == nil {
+				u.thinkOpen = map[int]bool{}
+			}
+			u.thinkOpen[i] = !u.thinkOpen[i]
+		}
+	}
 	// 分叉条左右切换（D81）：投递 `/goto <兄弟id>` 经输入通道（与键入同路径，壳内不
 	// 旁路）；已在边界则不环绕（按钮置暗且不投递）。
 	for _, s := range u.branchStrips() {
@@ -293,9 +302,9 @@ type bubbleMenuCtx struct {
 }
 
 // bubbleCtx 组装菜单上下文（D92/D97/D99/D100）：复制文本此刻定——选区激活取选区
-// （D91 后果⑤：副键留菜单复用选态），否则按块角色（chip 用其态字段，见 D100④——
-// 折叠态键未铺开、blockText 不可靠；其余逐键 Text 拼接与 selCopy 同口径）；编辑预填
-// 仅 user/assistant；raw 按块角色组装。
+// （D91 后果⑤：副键留菜单复用选态），否则按块角色（chip 用其态字段，见 D100④；
+// thinking 定稿折叠后键未铺开，见 D182——两者都不是行选键能取到的文本；其余逐键
+// Text 拼接与 selCopy 同口径）；编辑预填仅 user/assistant；raw 按块角色组装。
 func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	it := u.bubbleRects[h]
 	ctx := &bubbleMenuCtx{id: it.id, kind: it.kind}
@@ -305,6 +314,10 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 		ctx.copy = u.selText()
 	case chip != nil:
 		ctx.copy = chipCopyText(chip)
+	case it.kind == blockThinking:
+		// D182：思考块定稿默认折叠，正文不铺开 → 行选键里没有文本（D100④ 同款问题）。
+		// 复制口径改取所源块原文，与「思考原文」窗同源。
+		ctx.copy = u.m.blocks[it.bi].text
 	default:
 		ctx.copy = u.blockText(it.keyBase, it.keyN)
 	}

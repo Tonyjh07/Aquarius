@@ -329,6 +329,11 @@ type UI struct {
 	chipOpen   map[int]bool
 	chipClicks []*widget.Clickable
 
+	// 思考块视图态（D182）：定稿思考默认折叠成一行，用户点开才铺正文。与 chip 同口径
+	// ——按块序缓存、不进 model、清屏（会话重建）时复位。仅事件循环 goroutine 读写。
+	thinkOpen   map[int]bool
+	thinkClicks []*widget.Clickable
+
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
 	reasonFocus  bool // D86：确认开启后把焦点让入原因框（一次性，同 focusPending 口径）

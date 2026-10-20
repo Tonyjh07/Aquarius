@@ -1,7 +1,6 @@
 package uigui
 
 import (
-	"fmt"
 	"hash"
 	"hash/fnv"
 	"image"
@@ -213,29 +212,37 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			}
 			return vs.dims()
 		}, pillBg, radiusDp, false, true
-	case blockThinking: // 思考行：头部（元信息，不选）+ 正文
-		header := "已思考"
-		if it.live {
-			header = "思考中…"
-		} else if it.secs >= 0 {
-			header = fmt.Sprintf("已思考 · %ds", it.secs)
+	case blockThinking: // 思考行（D182）：折叠行（元信息，可点开）+ 正文（仅展开时铺）
+		open := it.live || u.thinkIsOpen(it.bi)
+		header := thinkHeaderText(it, open)
+		// 折叠行 = 一个点击件（与工具 chip 头部同法：热区 = 那行字的盒子）；展开态
+		// 只让头部可点，正文要能拖选（点击件会抢走按下事件）。
+		head := func(gtx layout.Context) layout.Dimensions {
+			s := material.Caption(u.th, header)
+			s.Color = textDim
+			return s.Layout(gtx)
+		}
+		if !it.live {
+			cl := u.thinkClick(it.bi)
+			plain := head
+			head = func(gtx layout.Context) layout.Dimensions {
+				return cl.Layout(gtx, plain)
+			}
 		}
 		return func(gtx layout.Context) layout.Dimensions {
 			vs := beginVStack(gtx)
-			vs.add(func(gtx layout.Context) layout.Dimensions {
-				s := material.Caption(u.th, header)
-				s.Color = textDim
-				return s.Layout(gtx)
-			})
-			off := image.Pt(0, vs.y)
-			vs.add(func(gtx layout.Context) layout.Dimensions {
-				return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					s := material.Body2(u.th, it.text)
-					s.Color = textDim
-					s.State = rs.sel(0)
-					return s.Layout(gtx)
-				}, 0, off, image.Point{})
-			})
+			vs.add(head)
+			if open {
+				off := image.Pt(0, vs.y)
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						s := material.Body2(u.th, it.text)
+						s.Color = textDim
+						s.State = rs.sel(0)
+						return s.Layout(gtx)
+					}, 0, off, image.Point{})
+				})
+			}
 			return vs.dims()
 		}, cardThinking, cardR, false, false
 	case blockInject: // 注入节点（D166）：暗卡片——头部来源/触发（元信息，不选）+ 正文可选

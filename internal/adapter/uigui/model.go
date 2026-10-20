@@ -174,6 +174,9 @@ func (m *model) clear() {
 	m.u.sel.clear() // D91 ④：清屏也清转写选区（键清零 → 指纹失配自愈）
 	m.u.keyRects = m.u.keyRects[:0]
 	m.u.keyFp = 0
+	// D182：思考块折叠态按块序缓存（块只增不减），清屏后块序从 0 重排——一并复位，
+	// 新会话的思考块回到默认折叠，不继承上一会话某个序位的开合。
+	m.u.thinkOpen = nil
 }
 
 // commit 提交节点定稿（D95 Turn 粒度：每 Turn 一次）：system 节点（/compact 摘要）
