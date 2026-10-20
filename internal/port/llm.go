@@ -3,6 +3,7 @@ package port
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -74,6 +75,76 @@ type ModelInfo struct {
 // 能力位只描述**模型能做什么**，不描述「协议怎么写」——后者是适配器的事。
 type ModelCaps struct {
 	Tools, Reasoning, Vision bool
+}
+
+// 能力位名字（D173）：配置文件 caps 数组的取值，也是探测请求的能力标识。
+const (
+	CapTools     = "tools"
+	CapReasoning = "reasoning"
+	CapVision    = "vision"
+)
+
+// CapNames 已开启的能力位名字，顺序固定为 tools / reasoning / vision
+// （配置写回与界面展示共用，避免同一集合出两种顺序）。
+func (c ModelCaps) CapNames() []string {
+	out := make([]string, 0, 3)
+	if c.Tools {
+		out = append(out, CapTools)
+	}
+	if c.Reasoning {
+		out = append(out, CapReasoning)
+	}
+	if c.Vision {
+		out = append(out, CapVision)
+	}
+	return out
+}
+
+// CapsFromNames 名字集合 → 能力位；认不出的名字忽略（写错一个词不该作废整条声明，
+// 也不需要为此拒绝启动——真正要用某项能力时会有明确报因）。
+func CapsFromNames(names []string) ModelCaps {
+	var c ModelCaps
+	for _, n := range names {
+		switch strings.ToLower(strings.TrimSpace(n)) {
+		case CapTools:
+			c.Tools = true
+		case CapReasoning:
+			c.Reasoning = true
+		case CapVision:
+			c.Vision = true
+		}
+	}
+	return c
+}
+
+// ProbeVerdict 单项能力探测的三态结论（D174）。探不通 ≠ 不支持：只有 Supported /
+// Unsupported 会被写回声明，Inconclusive 一律保持原样。
+type ProbeVerdict int
+
+const (
+	ProbeInconclusive ProbeVerdict = iota // 无结论：网络/超时/5xx，或参数被静默忽略
+	ProbeSupported
+	ProbeUnsupported
+)
+
+// ProbeResult 单项能力探测结果（D174）。
+type ProbeResult struct {
+	Capability string // port.CapTools / CapReasoning / CapVision
+	Verdict    ProbeVerdict
+	// Reason 判定依据或没得出结论的原因（一句话）。会显示给用户，用中文；
+	// 其中可能夹带服务端原文片段——那是数据，不是本项目的文案。
+	Reason  string
+	Elapsed time.Duration
+	Usage   conversation.Usage // 服务端回报的用量；探测不强制要 usage，零值 = 未知
+}
+
+// Prober 可选能力：适配器自行构造最小请求，实测某模型是否具备某项能力（D174）。
+// 判定逻辑在适配器——「怎么问」和「什么算答上来了」都是协议相关的知识。
+//
+// err != nil 仅表示「这次探测根本没跑起来」（模型名为空、上下文已取消等）；
+// 网络/超时/服务端报错属于探测结论的一部分，走 ProbeInconclusive 返回。
+type Prober interface {
+	Probe(ctx context.Context, model, capability string) (ProbeResult, error)
 }
 
 // Delta 流式增量。Usage 为流末尾的用量（domain/conversation.Usage，D17）。
