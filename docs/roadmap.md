@@ -379,9 +379,9 @@
 | S10-2 | 描述与行为对齐：确认措辞条件化、`sleep`/`context_compact` 措辞、上限数字由常量生成 | D171 | 已完成 |
 | S10-3 | 文案一致性：压缩提示词去掉本产品不存在的概念、记忆块标题不点名工具、空态收敛到三种、不可信措辞单源化 | D171 | 已完成 |
 | S10-4 | 门禁扩张：结果文本 ASCII 门禁（真跑工具）、常量与描述对账 | D171 | 已完成 |
-| S10-5 | `file_read` 分页：`offset`/`limit`、行号前缀、续读标注、`file_list` 分页 | D169 | 进行中 |
-| S10-6 | `file_read` 读图片：MIME 嗅探、附件库落盘、`tool.Result.Images`、装配投影为 user 消息、GC 扫工具结果 | D169 | 待办 |
-| S10-7 | 多模态能力位：`model.providers[].vision` → `ModelInfo`、不支持时明确报因、user 附件同步降级 | D169 | 待办 |
+| S10-5 | `file_read` 分页：`offset`/`limit`、行号前缀、续读标注、`file_list` 分页 | D169 | 已完成 |
+| S10-6 | `file_read` 读图片：MIME 嗅探、附件库落盘、`tool.Result.Images`、装配投影为 user 消息、GC 扫工具结果 | D169 | 已完成 |
+| S10-7 | 多模态能力位：`model.providers[].vision` → `ModelInfo`、不支持时明确报因、user 附件同步降级 | D169 | 已完成 |
 | S10-8 | `file_edit`：精确子串替换、唯一性校验、三级匹配、保留换行与 BOM | D172 | 待办 |
 | S10-9 | 信任级显式化：`Injection.Trust`、围栏正文中和、常驻声明句、摘要不洗指令 | D170 | 待办 |
 
