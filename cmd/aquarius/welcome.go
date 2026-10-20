@@ -52,7 +52,11 @@ func (m *welcomeManager) Snapshot() uigui.WelcomeSnapshot {
 	p := cfg.Model.primaryProvider()
 	snap.Provider = p.Name
 	snap.BaseURL = p.BaseURL
-	snap.Models = joinCSV(p.Models)
+	names := make([]string, 0, len(p.Models))
+	for _, e := range p.Models {
+		names = append(names, e.Name)
+	}
+	snap.Models = joinCSV(names)
 	snap.Welcomed = cfg.UI.Welcomed
 	return snap
 }
@@ -93,10 +97,9 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 		}
 		entry["name"] = name
 		entry["base_url"] = baseURL
-		if keyRef != "" { // 空 = 保持原值（D35 只写不回显）
-			entry["api_key"] = keyRef
-		}
-		entry["models"] = anyList(models)
+		base, _ := old[0].(map[string]any)
+		entry["keys"] = mergedKeys(base, keyRef) // 空 = 保持原值（D35 只写不回显）
+		entry["models"] = mergedModels(base, models)
 		// 首条 = 本次填写；其余条目原样保留（只覆盖 providers[0]）。
 		names := map[string]bool{name: true}
 		rest := make([]any, 0, len(old))
@@ -113,8 +116,13 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 		if fbs, ok := model["fallback"].([]any); ok {
 			kept := make([]any, 0, len(fbs))
 			for _, fb := range fbs {
-				if s, ok := fb.(string); ok && names[s] && s != name {
-					kept = append(kept, s) // 悬挂引用（改名/删除）清理
+				pm, ok := fb.(map[string]any)
+				if !ok {
+					continue
+				}
+				prov, _ := pm["provider"].(string)
+				if names[prov] && !(prov == name && pm["model"] == model["name"]) {
+					kept = append(kept, fb) // 悬挂引用（改名/删除）清理
 				}
 			}
 			model["fallback"] = kept
@@ -141,7 +149,7 @@ func welcomeKeyRef(m *welcomeManager, name, typed string) (string, error) {
 	}
 	origRef := ""
 	if cfg, err := loadConfig(m.cfgPath); err == nil && len(cfg.Model.Providers) > 0 {
-		origRef = cfg.Model.Providers[0].APIKey
+		origRef = cfg.Model.Providers[0].keyRefs()[0]
 	}
 	ref, err := storePlaintextKey(context.Background(), m.bin, name, origRef, typed)
 	if err != nil {
@@ -165,7 +173,7 @@ func (m *welcomeManager) Models(p uigui.WelcomePatch) ([]string, error) {
 	ref := p.APIKey
 	if ref == "" {
 		if cfg, err := loadConfig(m.cfgPath); err == nil && len(cfg.Model.Providers) > 0 {
-			ref = cfg.Model.Providers[0].APIKey
+			ref = cfg.Model.Providers[0].keyRefs()[0]
 		}
 	}
 	key, err := resolveAPIKey(context.Background(), strings.TrimSpace(p.Provider), ref, m.secrets, m.stderr)
@@ -214,33 +222,47 @@ func (m *welcomeManager) MarkWelcomed() error {
 // apiKeyGap 密钥可解析性探测（D141，装配前）：空值回落默认引用与 resolveAPIKey 同口径；
 // 明文恒可解析（**不打警告**——警告只在真实构造路径发一次，D35）；引用型经 port.Secrets
 // 按名取用（先本机密钥库、再同名环境变量；不直读 os.Getenv，端口契约优先，D151/D161）。
+// D173 密钥池：**任一把**能取到就算可用（轮换本来就是为「某把用完」准备的），
+// 全取不到才报因，报第一把的错。
 // 返回 "" = 可用。
 func apiKeyGap(ctx context.Context, p providerConfig, sec port.Secrets) string {
-	ref := strings.TrimSpace(p.APIKey)
-	if ref == "" {
-		ref = "secret:AQUARIUS_OPENAI_KEY"
-	}
-	if !strings.HasPrefix(ref, "secret:") {
+	var first string
+	for _, ref := range p.keyRefs() {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			ref = "secret:AQUARIUS_OPENAI_KEY"
+		}
+		if !strings.HasPrefix(ref, "secret:") {
+			return ""
+		}
+		name, err := secretName(ref)
+		if err != nil {
+			if first == "" {
+				first = fmt.Sprintf("provider %q 的密钥引用非法：%v", p.Name, err)
+			}
+			continue
+		}
+		if _, err := sec.Get(ctx, name); err != nil {
+			if first == "" {
+				first = fmt.Sprintf("provider %q 取不到密钥：%v", p.Name, err)
+			}
+			continue
+		}
 		return ""
 	}
-	name, err := secretName(ref)
-	if err != nil {
-		return fmt.Sprintf("provider %q 的密钥引用非法：%v", p.Name, err)
-	}
-	if _, err := sec.Get(ctx, name); err != nil {
-		return fmt.Sprintf("provider %q 取不到密钥：%v", p.Name, err)
-	}
-	return ""
+	return first
 }
 
 // missingKeys 装配前「配置不完整」判定（D141）：primary 与 fallback[] 逐条探测密钥。
 // 非空即阻断启动（gui 走向导窗，其余形态 fatal 报因）。
 func missingKeys(ctx context.Context, m *modelConfig, sec port.Secrets) []string {
 	var out []string
+	seen := map[string]bool{}
 	check := func(p *providerConfig) {
-		if p == nil {
+		if p == nil || seen[p.Name] {
 			return
 		}
+		seen[p.Name] = true
 		if gap := apiKeyGap(ctx, *p, sec); gap != "" {
 			out = append(out, gap)
 		}
@@ -249,7 +271,7 @@ func missingKeys(ctx context.Context, m *modelConfig, sec port.Secrets) []string
 		check(m.primaryProvider())
 	}
 	for _, fb := range m.Fallback {
-		check(m.byName(fb))
+		check(m.byName(fb.Provider))
 	}
 	return out
 }

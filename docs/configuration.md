@@ -31,25 +31,46 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | 来源 | 项 |
 |---|---|
 | flag | `-data`（数据目录）、`-profile`（profile 选择）、`-model`（覆盖 model.name）、`-base-url`（覆盖 **primary provider** 的 base_url——调试逃生口，D110 修订②） |
-| 环境变量 | `AQUARIUS_MODEL`（覆盖 model.name）、`AQUARIUS_BASE_URL`（同 `-base-url`）；以及各 provider `api_key` 引用的任意密钥变量 |
+| 环境变量 | `AQUARIUS_MODEL`（覆盖 model.name）、`AQUARIUS_BASE_URL`（同 `-base-url`）；以及各把密钥引用（`secret:<名>`）指向的同名环境变量 |
 | config | 下表全部字段 |
 
 首次运行会写入一份可运行模板并退出；改好后重新运行。
 
 ## 字段全表
 
-### model（D110②：provider 列表化，原平铺字段 provider/base_url/api_key/tokenizer/unsupported_params 已退役）
+### model（v2：provider 承载「怎么连」，模型承载「能做什么」）
+
+> **改版提示**：`api_key` 单值、`models` 字符串数组、provider 上的 `vision`、`fallback` 名字数组
+> 都已是旧形状——启动会**显式报错并打印改写示例**，不会自动迁移（见文末「从旧形状迁移」）。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`base_url`（OpenAI 兼容端点，非空）、`api_key`（见密钥规则，逐 provider 独立）、`models`（模型清单，**首个 = 该 provider 缺省请求模型**——fallback 降级时使用，D110 修订③）、`vision`（该 provider 的模型是否接受图片输入；缺省 `false`——服务端 `/models` 不返回模态，只能由用户声明，见 D169）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略） |
+| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档）/ `openai-responses` / `anthropic`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
+| `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
+| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"] }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表） |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
-| `model.fallback` | []string | `[]` | 有序降级顺序（Q5）：**仅网络类错误**（429/408/5xx/连接/超时，`port.ErrTransient` 口径）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；降级请求模型 = 目标 provider 的 `models[0]`；无粘态（每次调用仍从 primary 起试）；流中途断连不降级（既有 retry 边界）；降级经状态行一次性提示。名字须在 providers 内、不含 primary、无重复，否则启动报错 |
-| `model.name` | string | primary 的 `models[0]` | 当前模型名（在 primary 的 models 内）；`/model` 热切换并写回本字段（provider/base_url 重启生效） |
-| `model.think` | bool | `true`（键缺失） | 原生思考**总开关**（D34）：`off` 时 `reasoning_effort` 与 `enable_thinking` 一律不发；`/think` 切换写回本字段 |
+| `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 的 `models[0]`。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连不降级 |
+| `model.name` | string | primary 的 `models[0]` | 当前模型名；`/model` 热切换并写回本字段（provider/base_url 重启生效）。切到**没在 `models` 里声明**的名字也允许——按协议缺省给能力 |
+| `model.think` | bool | `true`（键缺失） | 原生思考**总开关**（D34）：`off` 时 `reasoning_effort` 与 `enable_thinking` 一律不发；`/think` 切换写回本字段。当前链的模型没有 `reasoning` 能力时同样不发 |
 | `model.reasoning_effort` | string | `""` | 推理档位（D34）：`minimal` / `low` / `medium` / `high`，空 = 不发送；`/effort` 切换写回（`off` 即清除）；非法值启动报错 |
 | `model.think_tool` | bool | `false` | `think` 草稿工具是否列给模型——默认隐藏（D34），改后重启生效 |
 | `model.echo_thinking` | bool | `true`（键缺失） | **思考回传开关**（D42）：思维链是否回传给提供商。键缺失 = 回传（DeepSeek 等兼容端点带 `tools` 时强制回传，缺失会 400）；显式 `false` = 不发。端点点名不认时自动剥离重试并记入该 provider 的 `unsupported_params`。改后重启生效 |
+
+**能力位与协议缺省**（省略 `caps` 时生效）：
+
+| kind | tools | reasoning | vision | 说明 |
+|---|---|---|---|---|
+| `openai-chat` | 开 | 开 | **关** | 兼容生态里多数端点支持工具调用；思考参数不认时有「剥离重试」兜底。图片端点差异太大，不猜 |
+| `openai-responses` | 开 | 开 | 开 | `input_image` 是标准字段 |
+| `anthropic` | 开 | **关** | 开 | 图片与工具全系支持；extended thinking 要显式给 `budget_tokens`，旧模型不接受 |
+
+**生效能力 = 整条链取与**：primary 当前模型与每个降级项的模型，三项各自取与。链上任一模型缺某项，
+整轮就按缺该项处理（不发工具清单 / 不发思考参数 / 图片降级为文字占位）。加一条弱模型会削掉整链的
+能力，所以启动时若链窄于当前模型会打印一行警告，`/model` 也会列出生效能力。
+
+**能力探测**：能力位是声明，写错了要到用的时候才炸。设置窗「模型服务」页每个模型行可手动发起探测
+（三条最小请求试 工具调用 / 图片输入 / 思考），结果只在**判定明确**时写回 `caps`——网络失败之类
+的「无结论」不会清掉已有声明。探测会真实消耗少量 token，故不自动运行。
 
 ### ui
 
@@ -151,27 +172,33 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 未知键解析时忽略，**写回时原样保留**（provider 条目内的无关键同样保留——编辑器按
 原名合并，Q10 口径）。
 
-## 密钥规则（逐 provider，D35/D110②/D151）
+## 密钥规则（逐 provider、逐把钥匙，D35/D151/D173）
 
 ```json
-"api_key": "secret:AQUARIUS_OPENAI_KEY"
+"keys": [
+  { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" },
+  { "label": "备用",   "api_key": "secret:AQUARIUS_OPENAI_KEY_2" }
+]
 ```
 
 - 推荐：配置里只有引用名 `secret:<名>`，真实值按名取用——**先查本机密钥库、未命中再查同名环境变量**（D151）。
 - **本机密钥库**落 `<profile>/secrets.bin`（随 profile 隔离）：Windows 走 DPAPI（绑定当前用户账户，
   无口令、无额外密钥文件），其它平台走 AES-256-GCM + 同目录 `secrets.key`（0600）。整库加密，
   键名与值都在密文内；写前留一代 `.bak`。
-- **界面填的明文会转入库**（D161）：设置窗 provider 编辑区 / 欢迎窗填明文 → 写进密钥库，
-  config 里只落 `secret:<名>`（名沿用原引用名，否则按 provider 名生成 `AQUARIUS_<PROVIDER>_API_KEY`）。
-  密钥库不可写时直接报错，不会静默把明文留在盘上。
+- **界面填的明文会转入库**（D161）：设置窗 / 欢迎窗填明文 → 写进密钥库，config 里只落 `secret:<名>`
+  （名沿用原引用名，否则按 provider 名生成 `AQUARIUS_<PROVIDER>_API_KEY`；同 provider 的第 N 把
+  追加 `_<N>` 后缀）。密钥库不可写时直接报错，不会静默把明文留在盘上。
 - 明文密钥（D35）：允许直接填或手改 config，**启动打印警告**（不回显密钥值）；建议确保 config
   不被提交/同步，或到设置窗重填一次转入密钥库。
 - 值为空（或整项删除）→ 该 provider 回落默认 `secret:AQUARIUS_OPENAI_KEY`。
+- **密钥池**（D173）：同一 provider 配多把，按序轮换。某把返回 429 / 配额耗尽即换成下一把并立刻重试；
+  被拒的那把进入**进程内冷却**（读响应头的 `Retry-After`，缺省 60s），冷却期内直接跳过。全都在冷却
+  = 该 provider 这一轮失败，交给降级链。顺序固定「先换钥匙、再换 provider」。冷却状态不落盘，重启清空。
 - **库解不开时**（profile 拷到别的机器、换了账户、文件损坏）：打一行警告后**回落同名环境变量**继续
   启动（不阻断）；原文件原地保留，不会被改写。
 - 备份 `secrets.bin` 到另一台机器**解不开**——这是绑定本机/本账户的预期行为。
 - 无论哪种形态，密钥都不进会话树、附件、日志；stdio 插件子进程环境剔除 `AQUARIUS_*` 变量。
-- 设置窗 provider 编辑区密钥**只写不回显**：留空 = 保持原值（按编辑前原名匹配保留，改名不丢密钥）。
+- 设置窗密钥输入**只写不回显**：留空 = 保持原值（按编辑前原名匹配保留，改名不丢密钥）。
 - MCP 声明的 `env`/`headers` 值同样可用 `secret:<名>` 引用；任意名字可在设置窗「密钥库」页新增/
   覆盖/删除，列表只显示名字与尾 4 位掩码。
 
@@ -191,9 +218,15 @@ profile 配置 `<data>/profiles/default/config.json`：
 {
   "model": {
     "providers": [
-      { "name": "openai", "base_url": "https://api.openai.com/v1",
-        "api_key": "secret:AQUARIUS_OPENAI_KEY",
-        "models": ["gpt-4o-mini"], "vision": false, "tokenizer": "",
+      { "name": "openai",
+        "kind": "openai-chat",
+        "base_url": "https://api.openai.com/v1",
+        "keys": [ { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
+        "models": [
+          { "name": "gpt-4o-mini" },
+          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"] }
+        ],
+        "tokenizer": "",
         "unsupported_params": [] }
     ],
     "primary": "openai",
@@ -225,7 +258,18 @@ profile 配置 `<data>/profiles/default/config.json`：
 ## 设置窗与 config 的关系（S4/D110③）
 
 - 「Profile」区：当前 profile 展示 + 新建 / 复制当前 / 切换（重启生效）。
-- 「模型服务」区：provider 列表**全量编辑**（名称/接口地址/密钥/模型列表/tokenizer/不认参数）+ 设为主 + 删除 + 连通性「测试」（真实最小请求 `/models`，8s 超时）；「应用 provider 变更」整体写回，重启生效。
+- 「模型服务」区：provider 列表**全量编辑**（名称/协议/接口地址/密钥池/模型列表/能力位/tokenizer/不认参数）+ 设为主 + 删除 + 连通性「测试」（真实最小请求 `/models`，8s 超时）+ 模型能力「探测」；「应用 provider 变更」整体写回，重启生效。
 - 「权限与思考」「外观与呼出」：热生效项照旧；模型名经 `/model` 热切换。
 - 「输出」「限额」「人格模块树（S7/D144）」：保存即写回；人格组合**只影响之后新建的会话**，且**重启后生效**（与 `system_prompt` 同口径）。
 - 「MCP 与插件」：只读清单；「高级」页 = config.json **原文整文件编辑**（保存前 JSON 校验，解析失败原文件不动；未知键天然保留，Q10）。
+
+## 从旧形状迁移
+
+启动时若检测到下列任一形状，会**报错退出并打印改写示例**（不做自动迁移，避免程序偷偷改你的配置）：
+
+| 旧形状 | 改成 |
+|---|---|
+| `"api_key": "secret:K"`（provider 上单值） | `"keys": [ { "api_key": "secret:K" } ]`（多把即密钥池） |
+| `"models": ["m1","m2"]`（字符串数组） | `"models": [ { "name": "m1" }, { "name": "m2" } ]` |
+| `"vision": true`（provider 上） | 挪到对应模型：`"models": [ { "name": "m1", "caps": ["tools","vision"] } ]` |
+| `"fallback": ["b"]`（provider 名字数组） | `"fallback": [ { "provider": "b", "model": "mb" } ]`（省略 `model` = 该 provider 的 `models[0]`） |

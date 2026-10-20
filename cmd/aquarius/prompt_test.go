@@ -41,7 +41,7 @@ func TestPromptSpecMapping(t *testing.T) {
 func TestRunPersonaModulesE2E(t *testing.T) {
 	srv, reqs := scriptServer(t, []string{"好的"})
 	dir := t.TempDir()
-	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m"},"ui":{"kind":"repl"},
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"},
   "system_prompt":"LEGACY-IGNORED-WHEN-PERSONA",
   "prompts":{"modules":{"identity":{"text":"IDENT"},"style":{"text":"STYLE"},"house":{"text":"HOUSE:","children":["identity","style"]}},"persona":["house"]},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)

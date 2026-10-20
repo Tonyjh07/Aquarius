@@ -60,7 +60,7 @@ func TestAPIKeyGapMatrix(t *testing.T) {
 			if c.env != "" {
 				t.Setenv(c.env, c.envVal)
 			}
-			gap := apiKeyGap(ctx, providerConfig{Name: "p", APIKey: c.ref}, testSecrets(t))
+			gap := apiKeyGap(ctx, providerConfig{Name: "p", Keys: []keyConfig{{APIKey: c.ref}}}, testSecrets(t))
 			if (gap != "") != c.wantGap {
 				t.Fatalf("gap = %q, wantGap = %v", gap, c.wantGap)
 			}
@@ -76,11 +76,11 @@ func TestMissingKeysCoversFallback(t *testing.T) {
 	t.Setenv("KB", "")
 	m := &modelConfig{
 		Providers: []providerConfig{
-			{Name: "a", BaseURL: "http://a/v1", APIKey: "secret:KA", Models: []string{"m1"}},
-			{Name: "b", BaseURL: "http://b/v1", APIKey: "secret:KB", Models: []string{"mb"}},
+			{Name: "a", BaseURL: "http://a/v1", Keys: []keyConfig{{APIKey: "secret:KA"}}, Models: []modelEntry{{Name: "m1"}}},
+			{Name: "b", BaseURL: "http://b/v1", Keys: []keyConfig{{APIKey: "secret:KB"}}, Models: []modelEntry{{Name: "mb"}}},
 		},
 		Primary:  "a",
-		Fallback: []string{"b"},
+		Fallback: []fallbackEntry{{Provider: "b"}},
 	}
 	got := missingKeys(ctx, m, testSecrets(t))
 	if len(got) != 1 || !strings.Contains(got[0], `provider "b"`) {
@@ -145,7 +145,7 @@ func TestWelcomeManagerApply(t *testing.T) {
 	}
 	// D161：明文已被改写成 `secret:<名>`（沿用原引用名，引用不 churn），值落在库内；
 	// config 里搜不到明文。
-	if first["api_key"] != "secret:KA" {
+	if got := firstKeyRef(first); got != "secret:KA" {
 		t.Fatalf("api_key 应改写为引用: %+v", first)
 	}
 	if got, _ := bin.Get(context.Background(), "KA"); got != "sk-plain" {
@@ -154,7 +154,7 @@ func TestWelcomeManagerApply(t *testing.T) {
 	if raw, _ := os.ReadFile(cfgPath); strings.Contains(string(raw), "sk-plain") {
 		t.Fatalf("config 里不该再出现明文密钥")
 	}
-	if fmt.Sprint(first["models"]) != "[mm1 mm2]" {
+	if fmt.Sprint(modelNames(first)) != "[mm1 mm2]" {
 		t.Fatalf("models = %v", first["models"])
 	}
 	if first["tokenizer"] != "" || first["custom_hint"] != "keep-me" {
@@ -169,9 +169,33 @@ func TestWelcomeManagerApply(t *testing.T) {
 	if ui := generic["ui"].(map[string]any); ui["welcomed"] != true {
 		t.Fatalf("ui.welcomed 应置位: %v", ui)
 	}
-	if second := providers[1].(map[string]any); second["name"] != "b" || second["api_key"] != "secret:KB" {
+	if second := providers[1].(map[string]any); second["name"] != "b" || firstKeyRef(second) != "secret:KB" {
 		t.Fatalf("第二条应原样保留: %+v", second)
 	}
+}
+
+// firstKeyRef / modelNames 读泛键写回后的 provider 条目（D173 形状：keys[] / models[]）。
+func firstKeyRef(p map[string]any) string {
+	keys, _ := p["keys"].([]any)
+	if len(keys) == 0 {
+		return ""
+	}
+	km, _ := keys[0].(map[string]any)
+	s, _ := km["api_key"].(string)
+	return s
+}
+
+func modelNames(p map[string]any) []string {
+	list, _ := p["models"].([]any)
+	out := make([]string, 0, len(list))
+	for _, mv := range list {
+		if m, ok := mv.(map[string]any); ok {
+			if n, _ := m["name"].(string); n != "" {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
 }
 
 // TestWelcomeManagerApplyKeepsKeyOnEmpty D141：api_key 留空 = 保持原值（只写不回显）——
@@ -183,7 +207,7 @@ func TestWelcomeManagerApplyKeepsKeyOnEmpty(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 	first := readCfgMap(t, cfgPath)["model"].(map[string]any)["providers"].([]any)[0].(map[string]any)
-	if first["api_key"] != "secret:KA" {
+	if got := firstKeyRef(first); got != "secret:KA" {
 		t.Fatalf("留空应保持原引用: %+v", first)
 	}
 	if first["base_url"] != "http://a/v2" {
@@ -196,9 +220,9 @@ func TestWelcomeManagerApplyKeepsKeyOnEmpty(t *testing.T) {
 func TestWelcomeManagerApplyDropsDanglingFallback(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := `{"model":{"providers":[
-	  {"name":"a","base_url":"http://a/v1","api_key":"secret:KA","models":["m1"]},
-	  {"name":"b","base_url":"http://b/v1","api_key":"secret:KB","models":["mb"]}],
-	  "primary":"b","fallback":["a"],"name":"mb"},"ui":{"kind":"repl"}}`
+	  {"name":"a","base_url":"http://a/v1","keys":[{"api_key":"secret:KA"}],"models":[{"name":"m1"}]},
+	  {"name":"b","base_url":"http://b/v1","keys":[{"api_key":"secret:KB"}],"models":[{"name":"mb"}]}],
+	  "primary":"b","fallback":[{"provider":"a"}],"name":"mb"},"ui":{"kind":"repl"}}`
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +342,7 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 		if joined := strings.Join(req.Issues, "；"); !strings.Contains(joined, "AQUARIUS_OPENAI_KEY") {
 			t.Errorf("问题清单应指名缺失的环境变量: %+v", req.Issues)
 		}
-		cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"openai","base_url":%q,"api_key":"secret:AQ_KEY","models":["m1"]}],"name":"m1"},"ui":{"kind":"repl","welcomed":true}}`, srv.URL)
+		cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"openai","base_url":%q,"keys":[{"api_key":"secret:AQ_KEY"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"repl","welcomed":true}}`, srv.URL)
 		if err := os.WriteFile(profCfg, []byte(cfg), 0o644); err != nil {
 			t.Errorf("假宿主写回失败: %v", err)
 		}
@@ -343,7 +367,7 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 // 取不到的引用）⇒ 只尝试一次、报因退出 1——不循环弹窗。
 func TestSetupWizardStillIncompleteFatal(t *testing.T) {
 	dir := t.TempDir()
-	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","api_key":"secret:AQ_MISSING","models":["m1"]}],"name":"m1"},"ui":{"kind":"gui"}}`)
+	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_MISSING"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"gui"}}`)
 	t.Setenv("AQ_MISSING", "")
 	calls := 0
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
@@ -366,7 +390,7 @@ func TestSetupWizardStillIncompleteFatal(t *testing.T) {
 // 并指出缺哪个 provider 的哪个环境变量（不再是 fatal 英文错误框，Q4）。
 func TestSetupWizardCancelledExitsZero(t *testing.T) {
 	dir := t.TempDir()
-	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","api_key":"secret:AQ_MISSING","models":["m1"]}],"name":"m1"},"ui":{"kind":"gui"}}`)
+	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_MISSING"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"gui"}}`)
 	t.Setenv("AQ_MISSING", "")
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		return uigui.SetupCancelled, nil
@@ -384,7 +408,7 @@ func TestSetupWizardCancelledExitsZero(t *testing.T) {
 // fatal 报因（旧口径）。
 func TestSetupWizardSkippedForREPL(t *testing.T) {
 	dir := t.TempDir()
-	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","api_key":"secret:AQ_MISSING","models":["m1"]}],"name":"m1"},"ui":{"kind":"repl"}}`)
+	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_MISSING"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"repl"}}`)
 	t.Setenv("AQ_MISSING", "")
 	calls := 0
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
@@ -408,7 +432,7 @@ func TestSetupWizardSkippedForREPL(t *testing.T) {
 func TestSetupWizardPlaintextNotBlocked(t *testing.T) {
 	srv, _ := scriptServer(t, []string{"好的"})
 	dir := t.TempDir()
-	writeProfileLayout(t, dir, fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"api_key":"sk-plain","models":["m1"]}],"name":"m1"},"ui":{"kind":"repl","welcomed":true}}`, srv.URL))
+	writeProfileLayout(t, dir, fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"sk-plain"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"repl","welcomed":true}}`, srv.URL))
 	calls := 0
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		calls++

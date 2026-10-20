@@ -120,10 +120,10 @@ func writeImportConfig(t *testing.T) string {
 	cfg := `{
   "model": {
     "providers": [
-      {"name": "plain", "base_url": "http://a/v1", "api_key": "sk-plain-INLINE-7777", "models": ["m1"]},
-      {"name": "envonly", "base_url": "http://b/v1", "api_key": "secret:AQ_IMPORT_ENV", "models": ["m2"]},
-      {"name": "inbin", "base_url": "http://c/v1", "api_key": "secret:AQ_IMPORT_BIN", "models": ["m3"]},
-      {"name": "missing", "base_url": "http://d/v1", "api_key": "secret:AQ_IMPORT_MISSING", "models": ["m4"]}
+      {"name": "plain", "base_url": "http://a/v1", "keys": [{"api_key": "sk-plain-INLINE-7777"}], "models": [{"name": "m1"}]},
+      {"name": "envonly", "base_url": "http://b/v1", "keys": [{"api_key": "secret:AQ_IMPORT_ENV"}], "models": [{"name": "m2"}]},
+      {"name": "inbin", "base_url": "http://c/v1", "keys": [{"api_key": "secret:AQ_IMPORT_BIN"}], "models": [{"name": "m3"}]},
+      {"name": "missing", "base_url": "http://d/v1", "keys": [{"api_key": "secret:AQ_IMPORT_MISSING"}], "models": [{"name": "m4"}]}
     ],
     "primary": "plain",
     "name": "m1"
@@ -199,7 +199,7 @@ func TestSecretsAdminImport(t *testing.T) {
 	}
 	byName := map[string]string{}
 	for _, p := range cfg.Model.Providers {
-		byName[p.Name] = p.APIKey
+		byName[p.Name] = p.keyRefs()[0]
 	}
 	if byName["plain"] != "secret:AQUARIUS_PLAIN_API_KEY" {
 		t.Fatalf("plain 的 api_key = %q, want 引用", byName["plain"])
@@ -215,7 +215,7 @@ func TestSecretsAdminImport(t *testing.T) {
 // TestSecretsAdminImportNothing 没有可导入的来源：不动库、Report 全空、Revision 不动。
 func TestSecretsAdminImportNothing(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
-	cfg := `{"model":{"providers":[{"name":"a","base_url":"http://a/v1","api_key":"secret:AQ_NOPE_IMPORT","models":["m"]}],"primary":"a"},"ui":{"kind":"repl"}}`
+	cfg := `{"model":{"providers":[{"name":"a","base_url":"http://a/v1","keys":[{"api_key":"secret:AQ_NOPE_IMPORT"}],"models":[{"name":"m"}]}],"primary":"a"},"ui":{"kind":"repl"}}`
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestSecretsAdminImportUnwired(t *testing.T) {
 // 该引用只存在于环境变量里时也应收进库（否则「启动能用、导入却没动」看着像漏了）。
 func TestSecretsAdminImportDefaultsEmptyRef(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
-	cfg := `{"model":{"providers":[{"name":"a","base_url":"http://a/v1","api_key":"","models":["m"]}],"primary":"a"},"ui":{"kind":"repl"}}`
+	cfg := `{"model":{"providers":[{"name":"a","base_url":"http://a/v1","keys":[{"api_key":""}],"models":[{"name":"m"}]}],"primary":"a"},"ui":{"kind":"repl"}}`
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}

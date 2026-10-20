@@ -25,28 +25,28 @@ func TestSessionModelCommand(t *testing.T) {
 
 	s.listModels = func(context.Context) ([]port.ModelInfo, error) {
 		return []port.ModelInfo{
-			{Name: "gpt-a", Vision: true, CostIn: 0.001, CostOutUSD: 0.002},
+			{Name: "gpt-a", Caps: port.ModelCaps{Tools: true, Vision: true}, CostIn: 0.001, CostOutUSD: 0.002},
 			{Name: "mini"},
 		}, nil
 	}
-	s.vision = func() bool { return true }
+	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true, Reasoning: true, Vision: true} }
 	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	for _, want := range []string{"当前模型: test-model", "图片输入: 支持", "gpt-a", "[视觉]", "$0.001/$0.002", "mini"} {
+	for _, want := range []string{"当前模型: test-model", "生效能力: 工具 / 思考 / 图片", "gpt-a", "[工具/图片]", "$0.001/$0.002", "mini"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("/model 缺 %q: %s", want, out)
 		}
 	}
-	// 未声明视觉：显示不支持并说明怎么开（服务端不报模态，用户没有别的途径知道）。
-	s.vision = func() bool { return false }
+	// 未声明能力：逐项说明缺什么、去哪儿声明（服务端不报模态，用户没有别的途径知道）。
+	s.caps = func() port.ModelCaps { return port.ModelCaps{} }
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
-		t.Fatalf("list(no vision): %v", err)
+		t.Fatalf("list(no caps): %v", err)
 	}
-	if !strings.Contains(out, "图片输入: 不支持") || !strings.Contains(out, "vision: true") {
-		t.Fatalf("/model 未说明视觉能力: %s", out)
+	if !strings.Contains(out, "生效能力: （三项均未声明）") || !strings.Contains(out, "未启用: 工具调用、思考、图片输入") {
+		t.Fatalf("/model 未说明能力缺失: %s", out)
 	}
 	// 列表服务故障上抛。
 	s.listModels = func(context.Context) ([]port.ModelInfo, error) { return nil, errors.New("404") }

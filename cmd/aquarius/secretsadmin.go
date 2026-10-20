@@ -107,51 +107,57 @@ func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 		return res, err
 	}
 
-	rewrite := map[string]string{} // provider 名 → 改写后的 `secret:<名>`
-	imported := map[string]bool{}  // 已导入的键名（去重：多条 provider 可共享同一引用名）
+	rewrite := map[string]map[int]string{} // provider 名 → 钥匙下标 → 改写后的 `secret:<名>`
+	imported := map[string]bool{}          // 已导入的键名（去重：多条 provider 可共享同一引用名）
 	for _, p := range cfg.Model.Providers {
-		raw := strings.TrimSpace(p.APIKey)
-		if raw == "" {
-			raw = defaultSecretRef // 与 resolveAPIKey 同口径回落
-		}
-		if !strings.HasPrefix(raw, "secret:") {
-			// 明文：写进库（键名按 provider 名派生），并登记 config 改写。
-			name := deriveKeyName(p.Name)
-			if err := a.w.secretsBin.Set(ctx, name, raw); err != nil {
-				res.Failed = append(res.Failed, fmt.Sprintf("provider %q 写入密钥库失败：%v", p.Name, err))
+		refs := p.keyRefs()
+		for i, raw := range refs {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				raw = defaultSecretRef // 与 resolveAPIKey 同口径回落
+			}
+			if !strings.HasPrefix(raw, "secret:") {
+				// 明文：写进库（键名按 provider 名与钥匙位派生），并登记 config 改写。
+				name := keySlotName(p.Name, "", i)
+				if err := a.w.secretsBin.Set(ctx, name, raw); err != nil {
+					res.Failed = append(res.Failed, fmt.Sprintf("provider %q 第 %d 把密钥写入密钥库失败：%v", p.Name, i+1, err))
+					continue
+				}
+				imported[name] = true
+				if rewrite[p.Name] == nil {
+					rewrite[p.Name] = map[int]string{}
+				}
+				rewrite[p.Name][i] = name
+				continue
+			}
+			name, nerr := secretName(raw)
+			if nerr != nil {
+				res.Failed = append(res.Failed, fmt.Sprintf("provider %q 第 %d 把密钥引用非法：%v", p.Name, i+1, nerr))
+				continue
+			}
+			if imported[name] {
+				continue // 同名引用已处理过（含多处 provider 共用一把钥的情形）
+			}
+			// 库里已有这条：无需搬运（也不覆盖——库里那份就是用户要用的）。
+			if _, gerr := a.w.secretsBin.Get(ctx, name); gerr == nil {
+				continue
+			} else if !errors.Is(gerr, secretbin.ErrNotFound) {
+				res.Failed = append(res.Failed, fmt.Sprintf("读取密钥库失败（%s）：%v", name, gerr))
+				continue
+			}
+			// 只读环境变量这一半：库这一半已在上面确认没有这条。直接走 envSecrets（而非
+			// 整条读链）是为了让「库里没有、环境里有」这个判据与上面那次 Get 互不干扰。
+			v, eerr := envSecrets{}.Get(ctx, name)
+			if eerr != nil {
+				res.Skipped = append(res.Skipped, name) // 两处都没有：没得可收，不是错误
+				continue
+			}
+			if err := a.w.secretsBin.Set(ctx, name, v); err != nil {
+				res.Failed = append(res.Failed, fmt.Sprintf("密钥 %q 写入密钥库失败：%v", name, err))
 				continue
 			}
 			imported[name] = true
-			rewrite[p.Name] = name
-			continue
 		}
-		name, nerr := secretName(raw)
-		if nerr != nil {
-			res.Failed = append(res.Failed, fmt.Sprintf("provider %q 的密钥引用非法：%v", p.Name, nerr))
-			continue
-		}
-		if imported[name] {
-			continue // 同名引用已处理过（含多处 provider 共用一把钥的情形）
-		}
-		// 库里已有这条：无需搬运（也不覆盖——库里那份就是用户要用的）。
-		if _, gerr := a.w.secretsBin.Get(ctx, name); gerr == nil {
-			continue
-		} else if !errors.Is(gerr, secretbin.ErrNotFound) {
-			res.Failed = append(res.Failed, fmt.Sprintf("读取密钥库失败（%s）：%v", name, gerr))
-			continue
-		}
-		// 只读环境变量这一半：库这一半已在上面确认没有这条。直接走 envSecrets（而非
-		// 整条读链）是为了让「库里没有、环境里有」这个判据与上面那次 Get 互不干扰。
-		v, eerr := envSecrets{}.Get(ctx, name)
-		if eerr != nil {
-			res.Skipped = append(res.Skipped, name) // 两处都没有：没得可收，不是错误
-			continue
-		}
-		if err := a.w.secretsBin.Set(ctx, name, v); err != nil {
-			res.Failed = append(res.Failed, fmt.Sprintf("密钥 %q 写入密钥库失败：%v", name, err))
-			continue
-		}
-		imported[name] = true
 	}
 	// 明文那部分改 config：只在确有改写时动文件（无改写就一个字节都不碰）。
 	if len(rewrite) > 0 {
@@ -164,16 +170,32 @@ func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 					continue
 				}
 				n, _ := pm["name"].(string)
-				if slot, ok := rewrite[n]; ok {
-					pm["api_key"] = keyStoreURI(slot)
+				slots, ok := rewrite[n]
+				if !ok {
+					continue
 				}
+				keys, _ := pm["keys"].([]any)
+				for idx, slot := range slots {
+					for len(keys) <= idx {
+						keys = append(keys, map[string]any{})
+					}
+					km, ok := keys[idx].(map[string]any)
+					if !ok {
+						km = map[string]any{}
+						keys[idx] = km
+					}
+					km["api_key"] = keyStoreURI(slot)
+				}
+				pm["keys"] = keys
 			}
 		}); err != nil {
 			// 值已在库里（读取链优先取库），只是 config 还留着明文——如实报出，别假装成功。
 			res.Failed = append(res.Failed, fmt.Sprintf("配置里的明文未能改写为引用（密钥已入库，明文仍在 config.json，请重试）：%v", err))
 		} else {
-			for _, name := range rewrite {
-				res.Rewritten = append(res.Rewritten, name)
+			for _, slots := range rewrite {
+				for _, name := range slots {
+					res.Rewritten = append(res.Rewritten, name)
+				}
 			}
 		}
 	}

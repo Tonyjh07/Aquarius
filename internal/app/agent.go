@@ -57,7 +57,7 @@ type Config struct {
 	// 由适配器映射 reasoning_content；false = 装配时过滤。config `model.echo_thinking` 键缺失 =
 	// 回传、显式 false 才关（缺省解析在装配根完成，app 只见 bool）。
 	EchoThinking bool
-	// Vision 当前降级链是否接受图片输入（D169；装配根按 providers[].vision 取与）。
+	// Vision 当前降级链是否接受图片输入（D173：装配根按各模型 caps 整链取与）。
 	// false = 图片（用户附件与 file_read 产出）一律降级为文字占位并写明原因。
 	Vision bool
 }

@@ -3,6 +3,7 @@ package port
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -55,9 +56,21 @@ type GenerateRequest struct {
 
 // ModelInfo 模型能力与单价声明；不支持的模态遇之明确报因（DESIGN §4.2）。
 type ModelInfo struct {
-	Name               string
-	Vision, Audio      bool
+	Name string
+	// Caps 能力位（D173）；服务端 /models 不报模态，零值 = 未知（调用方按自己的
+	// 配置声明补齐，不要拿零值当「不支持」展示给用户）。
+	Caps               ModelCaps
 	CostIn, CostOutUSD float64 // 每千 token 单价
+}
+
+// ModelCaps 模型能力位（D173）：三项独立声明，缺省按协议给（DESIGN §8）。
+//   - Tools：能否接收 function calling 的工具清单并按 schema 发起调用
+//   - Reasoning：能否接受原生思考参数（reasoning_effort / enable_thinking）并产出思维链
+//   - Vision：能否接收图片输入（image 内容块）
+//
+// 能力位只描述**模型能做什么**，不描述「协议怎么写」——后者是适配器的事。
+type ModelCaps struct {
+	Tools, Reasoning, Vision bool
 }
 
 // Delta 流式增量。Usage 为流末尾的用量（domain/conversation.Usage，D17）。
@@ -95,6 +108,41 @@ type LLM interface {
 // ErrTransient 瞬时错误哨兵（§10 装饰器重试判据）：适配器把 429/5xx/连接中断等
 // 可重试错误用 %w 包进错误链；未标注的错误一律视为不可重试，ctx 取消不算瞬时。
 var ErrTransient = errors.New("port: 瞬时错误（可重试）")
+
+// ErrQuota 配额/限流哨兵（D173）：适配器把「这把密钥被限流或额度耗尽」的 429 额外
+// 标成本错误，**同时仍 Is(ErrTransient)**——重试层照旧退避重试，密钥池层先换下一把
+// 钥匙（换钥匙比退避更快，且多账号场景下这本来就是用户要的语义）。
+var ErrQuota = errors.New("port: 密钥被限流或额度耗尽")
+
+// Quota 带「多久之后可重试」的配额错误包装（D173 密钥池冷却）：适配器从
+// Retry-After 取 After（0 = 未知，由密钥池取缺省冷却）。Is 同时命中 ErrQuota 与
+// ErrTransient，故不必在调用方逐个判两遍。
+type Quota struct {
+	After time.Duration
+	Cause error
+}
+
+func (q *Quota) Error() string {
+	if q.Cause != nil {
+		return q.Cause.Error()
+	}
+	return ErrQuota.Error()
+}
+
+func (q *Quota) Unwrap() error { return q.Cause }
+
+// Is 让 Quota 同时命中两个哨兵：调用方判 ErrQuota 是「该换钥匙」，判 ErrTransient
+// 是「值得重试」——两者对同一件事的不同处置层，必须都成立。
+func (q *Quota) Is(target error) bool { return target == ErrQuota || target == ErrTransient }
+
+// QuotaAfter 取错误链里的冷却时长（非配额错误返回 0）。
+func QuotaAfter(err error) time.Duration {
+	var q *Quota
+	if errors.As(err, &q) {
+		return q.After
+	}
+	return 0
+}
 
 // TokenCounter 可选精确计数能力（三级计数链②，D26）：LLM 适配器可选择性实现——
 // 本地 tokenizer（config model.tokenizer 指向 tokenizer.json）或服务端 count_tokens API。

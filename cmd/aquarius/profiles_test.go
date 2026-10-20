@@ -16,7 +16,7 @@ import (
 func newProfilesManager(t *testing.T) (*profilesManager, string) {
 	t.Helper()
 	dir := t.TempDir()
-	prof := writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"p","base_url":"http://x","api_key":"secret:K","models":["m"]}],"name":"m"},"ui":{"kind":"repl"}}`)
+	prof := writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"p","base_url":"http://x","keys":[{"api_key":"secret:K"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`)
 	return &profilesManager{dataDir: dir, current: "default", profileCfg: filepath.Join(prof, "config.json")}, dir
 }
 

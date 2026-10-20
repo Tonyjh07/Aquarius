@@ -101,37 +101,56 @@ type permissionsConfig struct {
 	Level string `json:"level"` // 空 = strict（perm.DefaultLevel）
 }
 
-// providerConfig 单个 provider 接入（D110②，openai-compatible 端点一套连接参数）。
+// providerConfig 单个 provider 接入（D173 起含协议与密钥池）：承载「怎么连」。
 type providerConfig struct {
 	// Name provider 唯一标识（model.primary / model.fallback 按名引用）。
 	Name string `json:"name"`
-	// BaseURL openai-compatible 端点地址。
+	// Kind 协议（D173）：openai-chat（空 = 该档）| openai-responses | anthropic。
+	// 决定装配根造哪个适配器；base_url 是路径前缀，适配器在其后追加各自端点。
+	Kind string `json:"kind,omitempty"`
+	// BaseURL 端点路径前缀（如 https://api.openai.com/v1）。
 	BaseURL string `json:"base_url"`
-	// APIKey "secret:<环境变量名>" 引用（port.Secrets 按名取用）或明文（D35：
-	// 启动打印警告、不回显）；空值回落默认 secret:AQUARIUS_OPENAI_KEY。逐 provider 独立。
-	APIKey string `json:"api_key"`
-	// Models 可用模型清单（advisory：/model 与设置窗补全用；首个 = 该 provider
-	// 的缺省请求模型——fallback 降级时使用，D110 修订③）。
-	Models []string `json:"models"`
+	// Keys 密钥池（D173）：按序轮换，逐把独立冷却。空 = 一条空引用（回落默认 secret）。
+	Keys []keyConfig `json:"keys"`
+	// Models 模型条目：名字 + 能力位。首个 = 该 provider 的缺省请求模型。
+	Models []modelEntry `json:"models"`
 	// Tokenizer 本地 tokenizer.json 路径（精确计数②，D26）；空 = 通用估算③。
 	Tokenizer string `json:"tokenizer"`
-	// Vision 该 provider 的模型是否接受图片输入（D169）。缺省 false：服务端 /models
-	// 不返回模态，只能由用户声明；降级链取**与**（任一 provider 未声明即按不支持处理）。
-	Vision bool `json:"vision,omitempty"`
 	// UnsupportedParams 服务端已知不认的请求参数（D34 自动记录，启动注入省略）。
+	// D173：只对 openai-chat 生效（另两种协议是自家规范，参数写错就是 bug）。
 	UnsupportedParams []string `json:"unsupported_params,omitempty"`
 }
 
-// modelConfig 模型接入配置（D110② provider 列表化：原单 provider 平铺字段
-// provider/base_url/api_key/tokenizer/unsupported_params 随批退役）。
+// keyConfig 密钥池条目（D173）。Label 只用于界面展示（「主账号」「备用」），不参与
+// 解析；APIKey 的取值规则与旧 provider.api_key 完全一致（D35/D151/D161）。
+type keyConfig struct {
+	Label  string `json:"label,omitempty"`
+	APIKey string `json:"api_key"`
+}
+
+// modelEntry 模型条目（D173）：名字 + 能力位，不继承 provider。
+type modelEntry struct {
+	Name string `json:"name"`
+	// Caps 能力位：nil = 键缺失（按协议缺省，DESIGN §8 的表）；非 nil = 以声明为准
+	// （空数组 = 三项全关——「没写」与「写了空」是两回事，所以要指针区分）。
+	Caps *[]string `json:"caps,omitempty"`
+}
+
+// fallbackEntry 降级链一项（D173）：provider + 可选模型。Model 空 = 该 provider 的
+// models[0]；同一 provider 可重复出现（同家不同型号兜底），但二元组不得重复。
+type fallbackEntry struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+}
+
+// modelConfig 模型接入配置（D173 v2：能力位下沉到模型、密钥池、逐项降级链）。
 type modelConfig struct {
 	// Providers provider 列表，至少一条。
 	Providers []providerConfig `json:"providers"`
 	// Primary 当前生效 provider（providers 中的 name；缺省 = 首个）。
 	Primary string `json:"primary,omitempty"`
-	// Fallback 有序降级顺序（Q5/D110 修订③：仅网络类错误触发；名字须在 providers
-	// 内、不含 primary 与重复项）。
-	Fallback []string `json:"fallback,omitempty"`
+	// Fallback 有序降级顺序（Q5：仅网络类错误触发；二元组不得重复、不含 primary 当前模型）。
+	Fallback []fallbackEntry `json:"fallback,omitempty"`
 	// Name 当前模型名（在 primary 的 models 内；缺省 = primary.models[0]）。
 	Name string `json:"name"`
 	// Think 原生思考总开关（/think 写回，D34）；nil = 键缺失（展示为开、不发布尔）。
@@ -144,6 +163,70 @@ type modelConfig struct {
 	// tools 时强制回传 reasoning_content，缺失即 400）；显式 false = 不回传，改后重启生效。
 	EchoThinking *bool `json:"echo_thinking,omitempty"`
 }
+
+// 协议标识（D173）；空 kind 归一为 openai-chat。
+const (
+	kindOpenAIChat      = "openai-chat"
+	kindOpenAIResponses = "openai-responses"
+	kindAnthropic       = "anthropic"
+)
+
+// protocolKind 归一后的协议标识（空 = openai-chat）。
+func (p *providerConfig) protocolKind() string {
+	if k := strings.TrimSpace(p.Kind); k != "" {
+		return k
+	}
+	return kindOpenAIChat
+}
+
+// defaultCaps 协议缺省能力位（D173，DESIGN §8 的表）：只在模型条目省略 caps 时使用。
+func defaultCaps(kind string) port.ModelCaps {
+	switch kind {
+	case kindOpenAIResponses:
+		return port.ModelCaps{Tools: true, Reasoning: true, Vision: true}
+	case kindAnthropic:
+		// Messages API 全系支持图片与工具；extended thinking 要显式给 budget_tokens，
+		// 旧模型不接受——不猜。
+		return port.ModelCaps{Tools: true, Vision: true}
+	default:
+		// openai-chat：思考参数不认时有「剥离重试 + unsupported_params」兜底（D34），
+		// 猜错的代价只是一次往返；图片各端点差异太大，不猜。
+		return port.ModelCaps{Tools: true, Reasoning: true}
+	}
+}
+
+// capsOf 解析某模型条目的能力位：键缺失 = 协议缺省；写了就以声明为准。
+// 未识别的名字忽略（集合只有三个词；写错一个拼写不该把整条声明作废）。
+func (p *providerConfig) capsOf(m modelEntry) port.ModelCaps {
+	if m.Caps == nil {
+		return defaultCaps(p.protocolKind())
+	}
+	var caps port.ModelCaps
+	for _, name := range *m.Caps {
+		switch strings.TrimSpace(name) {
+		case "tools":
+			caps.Tools = true
+		case "reasoning":
+			caps.Reasoning = true
+		case "vision":
+			caps.Vision = true
+		}
+	}
+	return caps
+}
+
+// modelByName 按名取模型条目（未命中返回 nil）。
+func (p *providerConfig) modelByName(name string) *modelEntry {
+	for i := range p.Models {
+		if p.Models[i].Name == name {
+			return &p.Models[i]
+		}
+	}
+	return nil
+}
+
+// models0 该 provider 的缺省请求模型（normalize 保证非空）。
+func (p *providerConfig) models0() string { return p.Models[0].Name }
 
 // byName 按名取 provider（未命中返回 nil）。
 func (m *modelConfig) byName(name string) *providerConfig {
@@ -163,30 +246,68 @@ func (m *modelConfig) primaryProvider() *providerConfig {
 	return &m.Providers[0]
 }
 
-// vision 当前降级链是否接受图片输入（D169）：取**与**——任一 provider 未声明
-// vision 就按不支持处理。降级只在网络类错误时发生，模型无法预知这一次会落到
-// 哪条链上；按"与"处理最多是保守地不读图，按"或"处理则会在某次降级后把图片
-// 发给一个不收图片的端点，那是一次没有出路的 400。
-func (m *modelConfig) vision() bool {
-	p := m.primaryProvider()
-	if !p.Vision {
-		return false
+// entryCaps 链上一项的能力位（未声明的模型名按协议缺省，与 currentCaps 同口径）。
+func (m *modelConfig) entryCaps(provider, model string) port.ModelCaps {
+	p := m.byName(provider)
+	if p == nil {
+		return port.ModelCaps{}
 	}
-	for _, name := range m.Fallback {
-		fb := m.byName(name)
-		if fb == nil || !fb.Vision {
-			return false
-		}
+	var e *modelEntry
+	if model == "" {
+		e = &p.Models[0]
+	} else {
+		e = p.modelByName(model)
 	}
-	return true
+	if e == nil {
+		return defaultCaps(p.protocolKind())
+	}
+	return p.capsOf(*e)
 }
 
-// normalize 应用缺省值并 fail-fast 校验 model 段（D110②，启动期调用）：
+// currentCaps primary 当前模型自己的能力位（不含链上其他环节）。
+func (m *modelConfig) currentCaps() port.ModelCaps {
+	return m.entryCaps(m.primaryProvider().Name, m.Name)
+}
+
+// chainCaps 整条降级链的生效能力（D173：三项各自取与）。降级发生在半路上——图片
+// 那时已经进了请求体，剥不掉；工具与思考同口径（发出去就收不回）。
+func (m *modelConfig) chainCaps() port.ModelCaps {
+	caps := m.currentCaps()
+	for _, fb := range m.Fallback {
+		c := m.entryCaps(fb.Provider, fb.Model)
+		caps.Tools = caps.Tools && c.Tools
+		caps.Reasoning = caps.Reasoning && c.Reasoning
+		caps.Vision = caps.Vision && c.Vision
+	}
+	return caps
+}
+
+// narrowNote 链窄于当前模型时的提示（空 = 没窄）。启动期打一行警告——D173：加一条
+// 弱模型会静默削能力，不能让人自己发现。
+func (m *modelConfig) narrowNote() string {
+	cur, chain := m.currentCaps(), m.chainCaps()
+	var lost []string
+	if cur.Tools && !chain.Tools {
+		lost = append(lost, "工具调用")
+	}
+	if cur.Reasoning && !chain.Reasoning {
+		lost = append(lost, "思考")
+	}
+	if cur.Vision && !chain.Vision {
+		lost = append(lost, "图片输入")
+	}
+	if len(lost) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("降级链窄于当前模型 %s 的能力，整链按不支持 %s 处理（检查 model.fallback 各模型的 caps）",
+		m.Name, strings.Join(lost, "、"))
+}
+
+// normalize 应用缺省值并 fail-fast 校验 model 段（D173，启动期调用）：
 // primary 缺省 = providers 首个；model.name 缺省 = primary.models[0]。
 func (m *modelConfig) normalize() error {
 	if len(m.Providers) == 0 {
-		return fmt.Errorf("model.providers 不可为空（provider 已改为列表，原平铺的 base_url/api_key 不再支持；" +
-			"若为旧格式请手工迁移，见 docs/configuration.md）")
+		return fmt.Errorf("model.providers 不可为空（provider 已改为列表；若为旧格式请手工迁移，见 docs/configuration.md）")
 	}
 	seen := map[string]bool{}
 	for i := range m.Providers {
@@ -198,11 +319,33 @@ func (m *modelConfig) normalize() error {
 			return fmt.Errorf("model.providers[%d].name %q 重复", i, p.Name)
 		}
 		seen[p.Name] = true
+		switch p.protocolKind() {
+		case kindOpenAIChat, kindOpenAIResponses, kindAnthropic:
+		default:
+			return fmt.Errorf("model.providers[%d] (%s) 的 kind %q 不认识（可选：%s / %s / %s）",
+				i, p.Name, p.Kind, kindOpenAIChat, kindOpenAIResponses, kindAnthropic)
+		}
 		if p.BaseURL == "" {
 			return fmt.Errorf("model.providers[%d] (%s) 的 base_url 不可为空", i, p.Name)
 		}
-		if len(p.Models) == 0 || p.Models[0] == "" {
+		if len(p.Models) == 0 || strings.TrimSpace(p.Models[0].Name) == "" {
 			return fmt.Errorf("model.providers[%d] (%s) 的 models 不可为空（首个 = 缺省请求模型）", i, p.Name)
+		}
+		modelSeen := map[string]bool{}
+		for j := range p.Models {
+			e := &p.Models[j]
+			e.Name = strings.TrimSpace(e.Name)
+			if e.Name == "" {
+				return fmt.Errorf("model.providers[%d] (%s) 的 models[%d].name 不可为空", i, p.Name, j)
+			}
+			if modelSeen[e.Name] {
+				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 重复", i, p.Name, e.Name)
+			}
+			modelSeen[e.Name] = true
+		}
+		for j := range p.Keys {
+			p.Keys[j].Label = strings.TrimSpace(p.Keys[j].Label)
+			p.Keys[j].APIKey = strings.TrimSpace(p.Keys[j].APIKey)
 		}
 	}
 	if m.Primary == "" {
@@ -211,21 +354,27 @@ func (m *modelConfig) normalize() error {
 	if m.byName(m.Primary) == nil {
 		return fmt.Errorf("model.primary %q 不在 model.providers 内", m.Primary)
 	}
+	if m.Name == "" {
+		m.Name = m.primaryProvider().models0()
+	}
 	fbSeen := map[string]bool{}
 	for _, fb := range m.Fallback {
-		if fb == m.Primary {
-			return fmt.Errorf("model.fallback 不应含当前 provider %q", fb)
+		fb.Provider = strings.TrimSpace(fb.Provider)
+		fb.Model = strings.TrimSpace(fb.Model)
+		if fb.Provider == "" {
+			return fmt.Errorf("model.fallback 每项都要写 provider")
 		}
-		if fbSeen[fb] {
-			return fmt.Errorf("model.fallback 重复项 %q", fb)
+		if m.byName(fb.Provider) == nil {
+			return fmt.Errorf("model.fallback %q 不在 model.providers 内", fb.Provider)
 		}
-		fbSeen[fb] = true
-		if m.byName(fb) == nil {
-			return fmt.Errorf("model.fallback %q 不在 model.providers 内", fb)
+		if fb.Provider == m.Primary && (fb.Model == "" || fb.Model == m.Name) {
+			return fmt.Errorf("model.fallback 不应含当前生效的 %s/%s（那就是 primary 本身）", fb.Provider, m.Name)
 		}
-	}
-	if m.Name == "" {
-		m.Name = m.primaryProvider().Models[0]
+		key := fb.Provider + "/" + fb.Model
+		if fbSeen[key] {
+			return fmt.Errorf("model.fallback 重复项 %q", key)
+		}
+		fbSeen[key] = true
 	}
 	return nil
 }
@@ -268,9 +417,15 @@ type limitsConfig struct {
 const defaultConfig = `{
   "model": {
     "providers": [
-      { "name": "openai", "base_url": "https://api.openai.com/v1",
-        "api_key": "secret:AQUARIUS_OPENAI_KEY",
-        "models": ["gpt-4o-mini"], "tokenizer": "",
+      { "name": "openai",
+        "kind": "openai-chat",
+        "base_url": "https://api.openai.com/v1",
+        "keys": [ { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
+        "models": [
+          { "name": "gpt-4o-mini" },
+          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"] }
+        ],
+        "tokenizer": "",
         "unsupported_params": [] }
     ],
     "primary": "openai",
@@ -316,33 +471,75 @@ func loadConfig(path string) (*fileConfig, error) {
 	return &cfg, nil
 }
 
-// detectLegacyModelConfig 旧单 provider 平铺字段判别（D110② 破坏性）：model 段含
-// 平铺 base_url/api_key/tokenizer/provider 且无 providers → 报 ErrLegacyConfig 与
-// 手工改写指引（D95 影子结构同口径，绝不静默丢配置）。
+// detectLegacyModelConfig 旧形状判别（D110② 单 provider 平铺 / D173 之前 provider 列表
+// 单值密钥）：两种都报 ErrLegacyConfig 与手工改写指引。Unmarshal 对旧键静默零值——
+// 不先判别的话，旧配置会「看起来正常」地丢光模型与密钥（D95 影子结构同口径）。
 func detectLegacyModelConfig(path string, data []byte) error {
 	var probe struct {
 		Model struct {
-			Providers []json.RawMessage `json:"providers"`
-			BaseURL   string            `json:"base_url"`
-			APIKey    string            `json:"api_key"`
-			Tokenizer string            `json:"tokenizer"`
-			Provider  string            `json:"provider"`
+			Providers []map[string]json.RawMessage `json:"providers"`
+			Fallback  []json.RawMessage            `json:"fallback"`
+			BaseURL   string                       `json:"base_url"`
+			APIKey    string                       `json:"api_key"`
+			Tokenizer string                       `json:"tokenizer"`
+			Provider  string                       `json:"provider"`
 		} `json:"model"`
 	}
-	if err := json.Unmarshal(data, &probe); err != nil || len(probe.Model.Providers) > 0 {
-		return nil // 非 JSON / 无 model 段 / 已是新格式：交由后续解析与校验处置
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return nil // 非 JSON：交由后续解析报因
 	}
 	m := probe.Model
-	if m.BaseURL == "" && m.APIKey == "" && m.Tokenizer == "" && m.Provider == "" {
-		return nil
+	if len(m.Providers) == 0 {
+		if m.BaseURL == "" && m.APIKey == "" && m.Tokenizer == "" && m.Provider == "" {
+			return nil // 无 model 段：交由后续校验（providers 不可为空）
+		}
+		return fmt.Errorf("%w：%s 的 model 段为单 provider 平铺字段（检测到 base_url/api_key/tokenizer/provider）。\n"+
+			"provider 须写成列表（model.providers）：\n"+
+			"  \"model\": { \"providers\": [ { \"name\": \"openai\", \"kind\": \"openai-chat\",\n"+
+			"    \"base_url\": \"…\", \"keys\": [ { \"api_key\": \"secret:…\" } ],\n"+
+			"    \"models\": [ { \"name\": \"…\" } ], \"tokenizer\": \"\", \"unsupported_params\": [] } ],\n"+
+			"    \"primary\": \"openai\", \"fallback\": [], \"name\": \"…\", … }\n"+
+			"请手工改写（不做自动迁移），原平铺字段退役；字段说明见 docs/configuration.md。",
+			ErrLegacyConfig, path)
 	}
-	return fmt.Errorf("%w：%s 的 model 段为单 provider 平铺字段（检测到 base_url/api_key/tokenizer/provider）。\n"+
-		"provider 须写成列表（model.providers）：\n"+
-		"  \"model\": { \"providers\": [ { \"name\": \"openai\", \"base_url\": \"…\",\n"+
-		"    \"api_key\": \"secret:…\", \"models\": [\"…\"], \"tokenizer\": \"\", \"unsupported_params\": [] } ],\n"+
-		"    \"primary\": \"openai\", \"fallback\": [], \"name\": \"…\", … }\n"+
-		"请手工改写（不做自动迁移），原平铺字段退役；字段说明见 docs/configuration.md。",
-		ErrLegacyConfig, path)
+	// D173 前的 provider 列表：api_key 是单值字符串、models 是字符串数组、vision 挂在
+	// provider 上。三者任一出现即判旧形状。
+	for i, p := range m.Providers {
+		_, hasKey := p["api_key"]
+		_, hasVision := p["vision"]
+		var models []json.RawMessage
+		if raw, ok := p["models"]; ok {
+			_ = json.Unmarshal(raw, &models)
+		}
+		oldModels := len(models) > 0 && len(models[0]) > 0 && models[0][0] == '"'
+		if hasKey || hasVision || oldModels {
+			return fmt.Errorf("%w：%s 的 model.providers[%d] 是旧形状（api_key 单值 / models 字符串数组 / provider 上的 vision）。\n"+
+				"模型与提供商已改版：provider 承载「怎么连」，模型承载「能做什么」。\n"+
+				"  \"model\": { \"providers\": [ { \"name\": \"openai\", \"kind\": \"openai-chat\",\n"+
+				"    \"base_url\": \"…\",\n"+
+				"    \"keys\": [ { \"label\": \"主账号\", \"api_key\": \"secret:…\" } ],\n"+
+				"    \"models\": [ { \"name\": \"gpt-4o-mini\" },\n"+
+				"                 { \"name\": \"gpt-4o\", \"caps\": [\"tools\",\"reasoning\",\"vision\"] } ],\n"+
+				"    \"tokenizer\": \"\", \"unsupported_params\": [] } ],\n"+
+				"    \"primary\": \"openai\",\n"+
+				"    \"fallback\": [ { \"provider\": \"mimo\", \"model\": \"mimo-v2.6-flash\" } ],\n"+
+				"    \"name\": \"…\", … }\n"+
+				"迁移要点：api_key → keys[]（多把即密钥池）；models 字符串 → 对象（能力位写进 caps，\n"+
+				"省略 caps 按协议缺省）；provider 上的 vision 移到对应模型的 caps；fallback 字符串 →\n"+
+				"provider/model 二元组（省略 model = 该 provider 的 models[0]）。\n"+
+				"请手工改写（不做自动迁移）；字段说明见 docs/configuration.md。",
+				ErrLegacyConfig, path, i)
+		}
+	}
+	for _, fb := range m.Fallback {
+		if len(fb) > 0 && fb[0] == '"' {
+			return fmt.Errorf("%w：%s 的 model.fallback 仍是 provider 名字数组。\n"+
+				"降级链已改为逐项指定模型：\"fallback\": [ { \"provider\": \"mimo\", \"model\": \"mimo-v2.6-flash\" } ]\n"+
+				"（省略 model = 该 provider 的 models[0]）。请手工改写（不做自动迁移），见 docs/configuration.md。",
+				ErrLegacyConfig, path)
+		}
+	}
+	return nil
 }
 
 // writeDefaultConfig 落首次运行模板。
@@ -454,7 +651,7 @@ func secretName(ref string) (string, error) {
 	return name, nil
 }
 
-// resolveAPIKey 解析某 provider 的 api_key（D35，文件内值优先；D110② 逐 provider 独立）：
+// resolveAPIKey 解析某把密钥引用（D35，文件内值优先；D173 逐 provider、逐钥匙独立）：
 //   - 空 → 回落默认引用 secret:AQUARIUS_OPENAI_KEY（经 Secrets 按名取用；
 //     库与同名环境变量都缺由 Secrets 报因）
 //   - secret:<名> → 经 port.Secrets 按名取用（**先本机密钥库、再同名环境变量**，D151/D161）
@@ -473,6 +670,29 @@ func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, 
 		return "", fmt.Errorf("provider %q: %w", provider, err)
 	}
 	return sec.Get(ctx, name)
+}
+
+// keyRefs 该 provider 的密钥引用清单（D173）：空 = 一条空引用（沿用 D35 的缺省回落）。
+// 空串条目保留——「没填」与「不填」在密钥池里的语义都是「回落缺省引用」，但位置
+// 有意义（第 N 把决定派生名后缀）。
+func (p *providerConfig) keyRefs() []string {
+	if len(p.Keys) == 0 {
+		return []string{""}
+	}
+	out := make([]string, 0, len(p.Keys))
+	for _, k := range p.Keys {
+		out = append(out, strings.TrimSpace(k.APIKey))
+	}
+	return out
+}
+
+// resolveKeyAt 解析第 i 把钥匙（越界回落缺省引用）。label 只用于报因，不回显值。
+func (p *providerConfig) resolveKeyAt(ctx context.Context, i int, sec port.Secrets, stderr io.Writer) (string, error) {
+	refs := p.keyRefs()
+	if i < 0 || i >= len(refs) {
+		i = 0
+	}
+	return resolveAPIKey(ctx, p.Name, refs[i], sec, stderr)
 }
 
 // cfgWriteMu 串行化全部 config 写回（/permission、/model、/think、/effort、

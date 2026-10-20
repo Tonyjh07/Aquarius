@@ -90,6 +90,17 @@ func keyNameFor(providerName, origRef string) string {
 	return deriveKeyName(providerName)
 }
 
+// keySlotName 密钥池第 i 把钥匙的库键名（D173）：第一把沿用 keyNameFor 的既有命名
+// （旧配置升级后引用不变），后续追加 `_<N>`（N = 下标+1）——同一 provider 的多账号
+// 因此各有独立槽位，不会互相覆盖。
+func keySlotName(providerName, origRef string, i int) string {
+	base := keyNameFor(providerName, origRef)
+	if i <= 0 {
+		return base
+	}
+	return fmt.Sprintf("%s_%d", base, i+1)
+}
+
 // deriveKeyName provider 名 → 环境变量味的键名：转大写、非 [A-Z0-9] 折成下划线、
 // 连续下划线压成一个、首尾下划线去掉。
 func deriveKeyName(providerName string) string {

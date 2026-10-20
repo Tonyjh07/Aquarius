@@ -39,9 +39,13 @@ func (m *providerManager) Snapshot() []uigui.ProviderSnapshot {
 	}
 	out := make([]uigui.ProviderSnapshot, 0, len(cfg.Model.Providers))
 	for i, p := range cfg.Model.Providers {
+		names := make([]string, 0, len(p.Models))
+		for _, e := range p.Models {
+			names = append(names, e.Name)
+		}
 		out = append(out, uigui.ProviderSnapshot{
 			Name: p.Name, BaseURL: p.BaseURL,
-			Models:      joinCSV(p.Models),
+			Models:      joinCSV(names),
 			Tokenizer:   p.Tokenizer,
 			Unsupported: joinCSV(p.UnsupportedParams),
 			Primary:     i == 0 && cfg.Model.Primary == "" || p.Name == cfg.Model.Primary,
@@ -50,10 +54,14 @@ func (m *providerManager) Snapshot() []uigui.ProviderSnapshot {
 	return out
 }
 
-// Apply 全量替换 providers（D110②）：校验（名字唯一非空、base_url/models 非空、
-// primary 命中）→ 泛键写回。原条目无关键（含 api_key）按 Orig 名保留——改名不丢密钥，
-// 新条目从空起步。fallback 悬挂引用（删除/改名产生的）一并清理；model.name 不动
-// （启动 normalize 兜底缺省）。
+// Apply 全量替换 providers（D173：provider 列表 + 每家的密钥池与模型条目）：
+// 校验（名字唯一非空、base_url/models 非空、primary 命中）→ 泛键写回。原条目无关键
+// （含 keys 与 model 的 caps）按 Orig 名保留——改名不丢密钥与能力声明，新条目从空起步。
+// fallback 悬挂引用（删除/改名产生的）一并清理；model.name 不动（启动 normalize 兜底缺省）。
+//
+// 本步（S11-1）界面仍是旧口径：models 是逗号分隔的名字表，故**按名字继承原有的
+// caps**，新增的模型不写 caps（= 协议缺省）；密钥仍只编辑第一把。完整的能力表与
+// 密钥池编辑在设置窗拆页（S11-7）时补上。
 //
 // 密钥入口径（D151/D161，取代原先「填什么写什么」）：编辑区填的**明文**写进本机密钥库，
 // config 里只落 `secret:<名>` 引用（名沿用原引用名，否则按 provider 名生成）；填的本来就
@@ -121,17 +129,16 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 		list := make([]any, 0, len(patches))
 		for i, p := range patches {
 			entry := map[string]any{}
-			if base := byOrig(p.Orig); base != nil {
+			base := byOrig(p.Orig)
+			if base != nil {
 				for k, v := range base {
 					entry[k] = v // 无关键保留（Q10 口径：未知键不丢）
 				}
 			}
 			entry["name"] = strings.TrimSpace(p.Name)
 			entry["base_url"] = strings.TrimSpace(p.BaseURL)
-			if keyRefs[i] != "" { // 空 = 保持原值（D35 只写不回显）
-				entry["api_key"] = keyRefs[i]
-			}
-			entry["models"] = anyList(splitCSV(p.Models))
+			entry["keys"] = mergedKeys(base, keyRefs[i])
+			entry["models"] = mergedModels(base, splitCSV(p.Models))
 			entry["tokenizer"] = strings.TrimSpace(p.Tokenizer)
 			entry["unsupported_params"] = anyList(splitCSV(p.Unsupported))
 			list = append(list, entry)
@@ -141,8 +148,10 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 		if fbs, ok := model["fallback"].([]any); ok {
 			kept := make([]any, 0, len(fbs))
 			for _, fb := range fbs {
-				if s, ok := fb.(string); ok && names[s] {
-					kept = append(kept, s) // 悬挂引用（删除/改名）清理
+				if pm, ok := fb.(map[string]any); ok {
+					if s, _ := pm["provider"].(string); names[s] {
+						kept = append(kept, fb) // 悬挂引用（删除/改名）清理
+					}
 				}
 			}
 			model["fallback"] = kept
@@ -150,7 +159,55 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 	})
 }
 
-// origRefsByName 读 config 里各 provider 现有 api_key 引用（按名索引；读失败返回空表）。
+// mergedKeys 密钥池写回（D173）：原条目的 keys 原样保留（label 等），新引用非空时
+// 覆盖**第一把**的 api_key（本步界面只编辑一把）。空引用 = 保持原值（D35 只写不回显）。
+func mergedKeys(base map[string]any, newRef string) []any {
+	var keys []any
+	if base != nil {
+		if old, ok := base["keys"].([]any); ok {
+			keys = append(keys, old...)
+		}
+	}
+	if newRef != "" {
+		if len(keys) == 0 {
+			keys = []any{map[string]any{"api_key": newRef}}
+		} else if pm, ok := keys[0].(map[string]any); ok {
+			pm["api_key"] = newRef
+		}
+	}
+	if keys == nil {
+		keys = []any{} // 空数组而非 null：键存在但为空 = 一条缺省引用（读侧同口径）
+	}
+	return keys
+}
+
+// mergedModels 模型条目写回（D173）：按名字继承原有的 caps（本步界面仍是名字表），
+// 新增的名字不写 caps（= 协议缺省）。顺序以本次编辑为准。
+func mergedModels(base map[string]any, names []string) []any {
+	byName := map[string]any{}
+	if base != nil {
+		if old, ok := base["models"].([]any); ok {
+			for _, mv := range old {
+				if pm, ok := mv.(map[string]any); ok {
+					if n, _ := pm["name"].(string); n != "" {
+						byName[n] = pm
+					}
+				}
+			}
+		}
+	}
+	out := make([]any, 0, len(names))
+	for _, n := range names {
+		if pm, ok := byName[n]; ok {
+			out = append(out, pm)
+			continue
+		}
+		out = append(out, map[string]any{"name": n})
+	}
+	return out
+}
+
+// origRefsByName 读 config 里各 provider 现有第一把密钥的引用（按名索引；读失败返回空表）。
 // 用途：界面改填明文时，**原引用名**决定库里写哪个槽（改名不 churn 引用，D161 落点③）。
 func (m *providerManager) origRefsByName() map[string]string {
 	out := map[string]string{}
@@ -159,7 +216,7 @@ func (m *providerManager) origRefsByName() map[string]string {
 		return out
 	}
 	for _, p := range cfg.Model.Providers {
-		out[p.Name] = p.APIKey
+		out[p.Name] = p.keyRefs()[0]
 	}
 	return out
 }
@@ -205,7 +262,7 @@ func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
 		if cfg, err := loadConfig(m.cfgPath); err == nil {
 			for _, pr := range cfg.Model.Providers {
 				if pr.Name == p.Orig {
-					ref = pr.APIKey
+					ref = pr.keyRefs()[0]
 					break
 				}
 			}

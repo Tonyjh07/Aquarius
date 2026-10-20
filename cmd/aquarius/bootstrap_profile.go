@@ -99,7 +99,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return fmt.Errorf("读取配置失败: %w", err)
 	}
 
-	// provider 列表校验与缺省归一（D110②，启动 fail-fast）：primary 缺省 = 首个，
+	// provider 列表校验与缺省归一（D173，启动 fail-fast）：primary 缺省 = 首个，
 	// model.name 缺省 = primary.models[0]。
 	if err := cfg.Model.normalize(); err != nil {
 		return err
@@ -107,6 +107,9 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	w.cfg = cfg
 	primary := cfg.Model.primaryProvider()
 	w.primary = primary
+	if note := cfg.Model.narrowNote(); note != "" {
+		fmt.Fprintf(w.stderr, "警告：%s\n", note)
+	}
 
 	// 环境变量与 flag 覆盖（flags > 环境变量 > config；D110 修订②：-model 覆盖
 	// model.name，-base-url 覆盖 primary provider 的 base_url——调试逃生口）。

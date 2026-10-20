@@ -24,11 +24,11 @@ func writeProvidersConfig(t *testing.T) (string, string) {
 	cfg := `{
   "model": {
     "providers": [
-      {"name": "a", "base_url": "http://a/v1", "api_key": "secret:KA", "models": ["m1"], "tokenizer": "", "custom_hint": "keep-me"},
-      {"name": "b", "base_url": "http://b/v1", "api_key": "secret:KB", "models": ["mb"], "tokenizer": ""}
+      {"name": "a", "base_url": "http://a/v1", "keys": [{"api_key": "secret:KA"}], "models": [{"name": "m1", "caps": ["tools", "vision"]}], "tokenizer": "", "custom_hint": "keep-me"},
+      {"name": "b", "base_url": "http://b/v1", "keys": [{"api_key": "secret:KB"}], "models": [{"name": "mb"}], "tokenizer": ""}
     ],
     "primary": "a",
-    "fallback": ["b"],
+    "fallback": [{"provider": "b"}],
     "name": "m1"
   },
   "ui": {"kind": "repl"}
@@ -77,11 +77,15 @@ func TestProviderManagerApply(t *testing.T) {
 	if len(cfg.Model.Providers) != 2 || cfg.Model.Providers[0].Name != "a2" || cfg.Model.Providers[1].Name != "c" {
 		t.Fatalf("providers = %+v", cfg.Model.Providers)
 	}
-	if cfg.Model.Providers[0].APIKey != "secret:KA" {
+	if got := cfg.Model.Providers[0].keyRefs()[0]; got != "secret:KA" {
 		t.Fatalf("改名后 api_key 丢失: %+v", cfg.Model.Providers[0])
 	}
-	if len(cfg.Model.Providers[0].Models) != 2 || cfg.Model.Providers[0].Models[1] != "m2" {
+	if len(cfg.Model.Providers[0].Models) != 2 || cfg.Model.Providers[0].Models[1].Name != "m2" {
 		t.Fatalf("models 解析 = %+v", cfg.Model.Providers[0].Models)
+	}
+	// 能力位按名字继承（D173）：改模型列表不该把已有的 caps 抹掉。
+	if e := cfg.Model.Providers[0].modelByName("m1"); e == nil || e.Caps == nil {
+		t.Fatalf("m1 的 caps 应保留: %+v", cfg.Model.Providers[0].Models)
 	}
 	if len(cfg.Model.Providers[0].UnsupportedParams) != 1 || cfg.Model.Providers[0].UnsupportedParams[0] != "reasoning_effort" {
 		t.Fatalf("unsupported 解析 = %+v", cfg.Model.Providers[0].UnsupportedParams)
@@ -105,7 +109,7 @@ func TestProviderManagerApply(t *testing.T) {
 		t.Fatalf("Apply2: %v", err)
 	}
 	cfg, _ = loadConfig(cfgPath)
-	if cfg.Model.Providers[1].APIKey != "secret:KC" {
+	if got := cfg.Model.Providers[1].keyRefs()[0]; got != "secret:KC" {
 		t.Fatalf("APIKey 空应保持原值: %+v", cfg.Model.Providers[1])
 	}
 }
@@ -155,7 +159,7 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := cfg.Model.Providers[0].APIKey; got != "secret:KA" {
+	if got := cfg.Model.Providers[0].keyRefs()[0]; got != "secret:KA" {
 		t.Fatalf("api_key = %q，want 沿用原引用名", got)
 	}
 	if got, _ := bin.Get(context.Background(), "KA"); got != "sk-typed-plain-1" {
@@ -165,7 +169,7 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 		t.Fatalf("config 里不该再出现明文密钥")
 	}
 	// 第二条没填密钥：原引用保持（只写不回显）。
-	if got := cfg.Model.Providers[1].APIKey; got != "secret:KB" {
+	if got := cfg.Model.Providers[1].keyRefs()[0]; got != "secret:KB" {
 		t.Fatalf("留空应保持原引用: %q", got)
 	}
 	// onStore 每次明文真的落库才回调（S9-6b/D163）：第一次 Apply 只填了一条 → 恰好 1 次。
@@ -181,7 +185,7 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 		t.Fatalf("Apply2: %v", err)
 	}
 	cfg, _ = loadConfig(cfgPath)
-	if got := cfg.Model.Providers[1].APIKey; got != "secret:AQUARIUS_MY_API_API_KEY" {
+	if got := cfg.Model.Providers[1].keyRefs()[0]; got != "secret:AQUARIUS_MY_API_API_KEY" {
 		t.Fatalf("新条目键名应派生: %q", got)
 	}
 	if got, _ := bin.Get(context.Background(), "AQUARIUS_MY_API_API_KEY"); got != "sk-typed-plain-2" {

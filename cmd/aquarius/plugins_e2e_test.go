@@ -38,7 +38,7 @@ func newMCPFixture() *mcp.Server {
 func writeMCPConfig(t *testing.T, dir, llmURL, model, mcpURL string) {
 	t.Helper()
 	cfg := fmt.Sprintf(`{
-  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"api_key":"secret:AQ_E2E_KEY","models":[%q]}],"name":%q},
+  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"keys":[{"api_key":"secret:AQ_E2E_KEY"}],"models":[{"name":%q}]}],"name":%q},
   "ui": {"kind":"repl"},
   "mcpServers": {"fake": {"transport":"streamable-http","url":%q}},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}

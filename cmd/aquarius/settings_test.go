@@ -125,7 +125,9 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 		Model struct {
 			Primary   string `json:"primary"`
 			Providers []struct {
-				APIKey string `json:"api_key"`
+				Keys []struct {
+					APIKey string `json:"api_key"`
+				} `json:"keys"`
 			} `json:"providers"`
 		} `json:"model"`
 	}
@@ -135,7 +137,8 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 	if back.Model.Primary != "openai" {
 		t.Errorf("model.primary = %q, want openai（文本键不触碰 provider 段）", back.Model.Primary)
 	}
-	if back.Model.Providers[0].APIKey != "secret:AQUARIUS_OPENAI_KEY" {
+	if len(back.Model.Providers) == 0 || len(back.Model.Providers[0].Keys) == 0 ||
+		back.Model.Providers[0].Keys[0].APIKey != "secret:AQUARIUS_OPENAI_KEY" {
 		t.Errorf("providers 密钥应不受文本键影响: %+v", back.Model)
 	}
 }

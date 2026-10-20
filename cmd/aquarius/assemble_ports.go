@@ -88,10 +88,10 @@ func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 	}
 }
 
-// buildClient 构建 provider 客户端（D110②/修订③）：base_url/api_key/tokenizer
-// 构造期固化（port.LLM 不可热换）。密钥逐 provider 解析（D35）。
+// buildClient 构建 provider 客户端（D173）：base_url/tokenizer 构造期固化
+// （port.LLM 不可热换）。密钥池在 S11-4 接入轮换；当前取第一把（与旧行为一致）。
 func (w *wiring) buildClient(p *providerConfig) (*llm.Client, port.TokenCounter, error) {
-	key, kerr := resolveAPIKey(context.Background(), p.Name, p.APIKey, w.secrets, w.stderr)
+	key, kerr := p.resolveKeyAt(context.Background(), 0, w.secrets, w.stderr)
 	if kerr != nil {
 		return nil, nil, kerr
 	}
@@ -118,20 +118,27 @@ func (w *wiring) buildLLMs() error {
 		return err
 	}
 	w.client = client
-	// 降级链条目（D110 修订③）：Model 空 = 透传 req.Model（primary——agent 每轮
-	// 注入当前模型，热切换不失效）；降级目标 = 其 models[0]。
+	// 降级链条目（D173）：Model 空 = 透传 req.Model（primary——agent 每轮注入当前
+	// 模型，热切换不失效）；降级目标 = 该项声明的模型，省略时取该 provider 的 models[0]。
 	w.fallbackEntries = []decorate.FallbackEntry{{Name: w.primary.Name, LLM: client}}
 	w.fallbackCounters = map[string]port.TokenCounter{w.primary.Name: primaryCounter}
-	for _, fbName := range w.cfg.Model.Fallback {
-		p := w.cfg.Model.byName(fbName)
+	for _, fb := range w.cfg.Model.Fallback {
+		p := w.cfg.Model.byName(fb.Provider)
+		if p == nil {
+			return fmt.Errorf("model.fallback 引用的 provider %q 不存在", fb.Provider)
+		}
 		c, counter, ferr := w.buildClient(p)
 		if ferr != nil {
 			return ferr
 		}
+		target := fb.Model
+		if target == "" {
+			target = p.models0()
+		}
 		w.fallbackEntries = append(w.fallbackEntries, decorate.FallbackEntry{
-			Name: fbName, LLM: c, Model: p.Models[0],
+			Name: fb.Provider, LLM: c, Model: target,
 		})
-		w.fallbackCounters[fbName] = counter
+		w.fallbackCounters[fb.Provider] = counter
 	}
 	return nil
 }
@@ -197,7 +204,7 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 		Jobs:    w.jobs,
 		Sandbox: w.sandboxDir,
 		Blobs:   w.blobs,
-		Vision:  w.cfg.Model.vision(),
+		Vision:  w.cfg.Model.chainCaps().Vision,
 	})
 	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。

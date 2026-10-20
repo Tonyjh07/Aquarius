@@ -114,7 +114,7 @@ func writeProfileLayout(t *testing.T, dir, cfgJSON string) string {
 func writeConfig(t *testing.T, dir, baseURL, name string) {
 	t.Helper()
 	cfg := fmt.Sprintf(`{
-  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"api_key":"secret:AQ_E2E_KEY","models":[%q]}],"name":%q},
+  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"keys":[{"api_key":"secret:AQ_E2E_KEY"}],"models":[{"name":%q}]}],"name":%q},
   "ui": {"kind":"repl"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, baseURL, name, name)
@@ -219,7 +219,7 @@ func TestRunProfileFlagSwitchesData(t *testing.T) {
 	srv, _ := scriptServer(t, []string{"好的"})
 	dir := t.TempDir()
 	writeProfileLayout(t, dir, fmt.Sprintf(`{
-  "model": {"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m"},
+  "model": {"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},
   "ui": {"kind":"repl"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, srv.URL))
@@ -229,7 +229,7 @@ func TestRunProfileFlagSwitchesData(t *testing.T) {
 		t.Fatalf("mkdir work: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(work, "config.json"),
-		[]byte(fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m"},"ui":{"kind":"repl"}}`, srv.URL)), 0o644); err != nil {
+		[]byte(fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`, srv.URL)), 0o644); err != nil {
 		t.Fatalf("write work config: %v", err)
 	}
 	t.Setenv("X", "k")
@@ -252,7 +252,7 @@ func TestRunProfileFlagSwitchesData(t *testing.T) {
 // 可用名，不自动创建（D110 修订②）。
 func TestRunProfileFlagMissingRejected(t *testing.T) {
 	dir := t.TempDir()
-	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":["m"]}],"name":"m"},"ui":{"kind":"repl"}}`)
+	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`)
 	t.Setenv("X", "k")
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir, "-profile", "nope"}, strings.NewReader(""), &out, &errBuf); code != 1 {
@@ -305,14 +305,14 @@ func TestValidProfileName(t *testing.T) {
 	}
 }
 
-// TestModelNormalize D110② provider 列表校验矩阵：缺省归一（primary/name）与
+// TestModelNormalize D173 provider 列表校验矩阵：缺省归一（primary/name）与
 // 非法配置逐项报因。
 func TestModelNormalize(t *testing.T) {
 	// good 每用例重建：Providers 底层数组随 struct 拷贝共享，先例污染后续用例。
 	good := func() modelConfig {
 		return modelConfig{Providers: []providerConfig{
-			{Name: "a", BaseURL: "http://a", Models: []string{"m1", "m2"}},
-			{Name: "b", BaseURL: "http://b", Models: []string{"mb"}},
+			{Name: "a", BaseURL: "http://a", Models: []modelEntry{{Name: "m1"}, {Name: "m2"}}},
+			{Name: "b", BaseURL: "http://b", Models: []modelEntry{{Name: "mb"}}},
 		}}
 	}
 	t.Run("缺省归一", func(t *testing.T) {
@@ -333,28 +333,58 @@ func TestModelNormalize(t *testing.T) {
 	})
 	t.Run("fallback 合法", func(t *testing.T) {
 		c := good()
-		c.Fallback = []string{"b"}
+		c.Fallback = []fallbackEntry{{Provider: "b"}}
 		if err := c.normalize(); err != nil {
 			t.Fatalf("normalize: %v", err)
 		}
 	})
-	// 视觉能力位（D169）：降级链取**与**——任一环节没声明就不按支持处理。
-	t.Run("vision 取与", func(t *testing.T) {
+	t.Run("同 provider 不同模型可同时兜底", func(t *testing.T) {
 		c := good()
-		if c.vision() {
-			t.Fatal("未声明 vision 时不应报支持")
+		c.Fallback = []fallbackEntry{{Provider: "a", Model: "m2"}, {Provider: "b", Model: "mb"}}
+		if err := c.normalize(); err != nil {
+			t.Fatalf("normalize: %v", err)
 		}
-		c.Providers[0].Vision = true
-		if !c.vision() {
-			t.Fatal("仅 primary 声明时应报支持（无 fallback）")
+	})
+	// 能力位（D173）：整链取**与**——任一环节缺某项就整轮按不支持处理。
+	t.Run("能力位取与", func(t *testing.T) {
+		c := good()
+		if !c.chainCaps().Tools || c.chainCaps().Vision {
+			t.Fatalf("openai-chat 缺省应只有工具+思考: %+v", c.chainCaps())
 		}
-		c.Fallback = []string{"b"}
-		if c.vision() {
-			t.Fatal("fallback 未声明时不应报支持")
+		if !c.chainCaps().Tools || !c.chainCaps().Reasoning {
+			t.Fatalf("openai-chat 缺省工具+思考应为开: %+v", c.chainCaps())
 		}
-		c.Providers[1].Vision = true
-		if !c.vision() {
+		vision := []string{"tools", "vision"}
+		c.Providers[0].Models[0].Caps = &vision
+		if !c.chainCaps().Vision {
+			t.Fatal("仅 primary 声明时（无 fallback）应报支持")
+		}
+		c.Fallback = []fallbackEntry{{Provider: "b"}}
+		if c.chainCaps().Vision {
+			t.Fatal("fallback 未声明 vision 时不应报支持")
+		}
+		c.Providers[1].Models[0].Caps = &vision
+		if !c.chainCaps().Vision {
 			t.Fatal("全链声明后应报支持")
+		}
+	})
+	t.Run("协议缺省能力位", func(t *testing.T) {
+		c := good()
+		c.Providers[0].Kind = kindAnthropic
+		caps := c.currentCaps()
+		if !caps.Tools || !caps.Vision || caps.Reasoning {
+			t.Fatalf("anthropic 缺省 = %+v, want 工具+图片", caps)
+		}
+		c.Providers[0].Kind = kindOpenAIResponses
+		caps = c.currentCaps()
+		if !caps.Tools || !caps.Vision || !caps.Reasoning {
+			t.Fatalf("openai-responses 缺省 = %+v, want 全开", caps)
+		}
+		// 显式空数组 = 三项全关（与「键缺失」是两回事）。
+		empty := []string{}
+		c.Providers[0].Models[0].Caps = &empty
+		if caps := c.currentCaps(); caps.Tools || caps.Reasoning || caps.Vision {
+			t.Fatalf("显式空 caps = %+v, want 全关", caps)
 		}
 	})
 	for _, tc := range []struct {
@@ -367,10 +397,14 @@ func TestModelNormalize(t *testing.T) {
 		{"名字重复", func(c *modelConfig) { c.Providers[1].Name = "a" }, "重复"},
 		{"base_url 缺失", func(c *modelConfig) { c.Providers[0].BaseURL = "" }, "base_url 不可为空"},
 		{"models 缺失", func(c *modelConfig) { c.Providers[0].Models = nil }, "models 不可为空"},
+		{"模型名缺失", func(c *modelConfig) { c.Providers[0].Models[1].Name = "" }, "models[1].name 不可为空"},
+		{"模型重复", func(c *modelConfig) { c.Providers[0].Models[1].Name = "m1" }, "模型 \"m1\" 重复"},
+		{"kind 不认识", func(c *modelConfig) { c.Providers[0].Kind = "ollama" }, "kind \"ollama\" 不认识"},
 		{"primary 未命中", func(c *modelConfig) { c.Primary = "zz" }, "不在 model.providers"},
-		{"fallback 未命中", func(c *modelConfig) { c.Fallback = []string{"zz"} }, "不在 model.providers"},
-		{"fallback 含 primary", func(c *modelConfig) { c.Primary = "a"; c.Fallback = []string{"a"} }, "不应含当前 provider"},
-		{"fallback 重复", func(c *modelConfig) { c.Fallback = []string{"b", "b"} }, "重复项"},
+		{"fallback 未命中", func(c *modelConfig) { c.Fallback = []fallbackEntry{{Provider: "zz"}} }, "不在 model.providers"},
+		{"fallback 缺 provider", func(c *modelConfig) { c.Fallback = []fallbackEntry{{Model: "x"}} }, "都要写 provider"},
+		{"fallback 是 primary 本身", func(c *modelConfig) { c.Fallback = []fallbackEntry{{Provider: "a"}} }, "不应含当前生效"},
+		{"fallback 重复", func(c *modelConfig) { c.Fallback = []fallbackEntry{{Provider: "b"}, {Provider: "b"}} }, "重复项"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := good()
@@ -409,11 +443,41 @@ func TestRunLegacyProfileConfigRejected(t *testing.T) {
 	}
 }
 
+// TestRunLegacyProviderShapeRejected D173 前的 provider 列表形状（api_key 单值 /
+// models 字符串 / provider 上的 vision / fallback 名字数组）启动即显式报因：泛键解析
+// 会把它们静默读成零值，等于悄悄丢掉所有模型与密钥。
+func TestRunLegacyProviderShapeRejected(t *testing.T) {
+	cases := map[string]string{
+		"api_key 单值":         `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`,
+		"models 字符串":         `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":["m"]}],"name":"m"},"ui":{"kind":"repl"}}`,
+		"provider 上的 vision": `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}],"vision":true}],"name":"m"},"ui":{"kind":"repl"}}`,
+		"fallback 名字数组":      `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"fallback":["q"],"name":"m"},"ui":{"kind":"repl"}}`,
+	}
+	for name, cfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			prof := writeProfileLayout(t, dir, cfg)
+			t.Setenv("X", "k")
+			var out, errBuf bytes.Buffer
+			if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
+				t.Fatalf("code = %d, want 1", code)
+			}
+			msg := errBuf.String()
+			if !strings.Contains(msg, "手工改写") || !strings.Contains(msg, "不做自动迁移") {
+				t.Fatalf("stderr 应给出迁移指引: %q", msg)
+			}
+			if _, err := os.Stat(filepath.Join(prof, "config.json")); err != nil {
+				t.Fatalf("报因时不得改写配置: %v", err)
+			}
+		})
+	}
+}
+
 // TestRunPermissionSwitchWritesBackConfig /permission 切换写回：其余配置键与数值类型不丢、无半截文件残留（D22）。
 func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{
-  "model": {"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":["m"]}],"name":"m"},
+  "model": {"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},
   "ui": {"kind":"repl"},
   "system_prompt": "",
   "memory": {"dir": "~/.aquarius/memory"},
@@ -461,7 +525,7 @@ func TestRunPermissionSwitchWritesBackConfig(t *testing.T) {
 func TestRunModelSwitchWritesBackConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{
-  "model": {"providers":[{"name":"openai-compatible","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":["old-model"]}],"name":"old-model"},
+  "model": {"providers":[{"name":"openai-compatible","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"old-model"}]}],"name":"old-model"},
   "ui": {"kind":"repl"},
   "system_prompt": "人格不动",
   "permissions": {"level": "strict"},
@@ -503,7 +567,7 @@ func TestRunModelSwitchWritesBackConfig(t *testing.T) {
 // TestRunRejectsInvalidPermissionLevel 非法 permissions.level 启动即报因。
 func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":["m"]}],"name":"m"},"ui":{"kind":"repl"},"permissions":{"level":"root"}}`
+	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"},"permissions":{"level":"root"}}`
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 	var out, errBuf bytes.Buffer
@@ -519,7 +583,7 @@ func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
 // 给出 secret: 建议，且不回显密钥值。
 func TestRunPlaintextKeyWarns(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"sk-plain-abc","models":["m"]}],"name":"m"},"ui":{"kind":"repl"}}`
+	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"sk-plain-abc"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`
 	writeProfileLayout(t, dir, cfg)
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, &errBuf); code != 0 {
@@ -558,7 +622,7 @@ func TestRunRelativeDataDirBecomesAbsolute(t *testing.T) {
 
 func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"","models":["m"]}],"name":"m"},"ui":{"kind":"repl"}}`
+	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":""}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("AQUARIUS_OPENAI_KEY", "k") // 环境变量就位 → 正常启动
 	var out, errBuf bytes.Buffer
@@ -580,7 +644,7 @@ func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
 // TestRunRejectsBadEffort D34：reasoning_effort 非法值启动即报因（与 /effort 同口径）。
 func TestRunRejectsBadEffort(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":["m"]}],"name":"m","reasoning_effort":"extreme"},"ui":{"kind":"repl"}}`
+	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m","reasoning_effort":"extreme"},"ui":{"kind":"repl"}}`
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 	var out, errBuf bytes.Buffer
@@ -622,7 +686,7 @@ func TestRunThinkToolVisibility(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, reqs := scriptServer(t, []string{"好的"})
 			dir := t.TempDir()
-			model := `"providers":[{"name":"p","base_url":` + fmt.Sprintf("%q", srv.URL) + `,"api_key":"secret:X","models":["m"]}]`
+			model := `"providers":[{"name":"p","base_url":` + fmt.Sprintf("%q", srv.URL) + `,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}]`
 			if tc.thinkTool != "" {
 				model += "," + tc.thinkTool
 			}
@@ -647,7 +711,7 @@ func TestRunThinkToolVisibility(t *testing.T) {
 func TestRunPersonaEnvironmentE2E(t *testing.T) {
 	srv, reqs := scriptServer(t, []string{"好的"})
 	dir := t.TempDir()
-	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m"},"ui":{"kind":"repl"},
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
@@ -692,7 +756,7 @@ func TestRunRecordsUnsupportedParams(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m","think":true,"reasoning_effort":"high"},"ui":{"kind":"repl"},
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m","think":true,"reasoning_effort":"high"},"ui":{"kind":"repl"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
@@ -737,7 +801,7 @@ func TestRunTUIReasoningE2E(t *testing.T) {
 	reasonLine := `data: {"choices":[{"delta":{"reasoning_content":"先想一想"}}]}`
 	srv, reqs := rawScriptServer(t, [][]string{{reasonLine, contentData("答案")}})
 	dir := t.TempDir()
-	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m"},"ui":{"kind":"tui"},
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"tui"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
@@ -776,7 +840,7 @@ func TestRunEchoThinkingE2E(t *testing.T) {
 				{contentData("第二答")},
 			})
 			dir := t.TempDir()
-			cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m"%s},"ui":{"kind":"repl"},
+			cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"%s},"ui":{"kind":"repl"},
   "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`,
 				srv.URL, tc.modelExtra)
 			writeProfileLayout(t, dir, cfg)
@@ -1074,7 +1138,7 @@ func TestRunTUIAcceptsKind(t *testing.T) {
 	srv, reqs := scriptServer(t, []string{"TUI 好的"})
 	dir := t.TempDir()
 	cfg := fmt.Sprintf(`{
-  "model": {"providers":[{"name":"p","base_url":%q,"api_key":"secret:X","models":["m"]}],"name":"m"},
+  "model": {"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},
   "ui": {"kind":"tui"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000}
 }`, srv.URL)
@@ -1114,7 +1178,7 @@ func TestRunTUIConfirmE2E(t *testing.T) {
 		{contentData("已删除")},
 	})
 	cfg := fmt.Sprintf(`{
-  "model": {"providers":[{"name":"p","base_url":%q,"api_key":"secret:AQ_E2E_KEY","models":["m"]}],"name":"m"},
+  "model": {"providers":[{"name":"p","base_url":%q,"keys":[{"api_key":"secret:AQ_E2E_KEY"}],"models":[{"name":"m"}]}],"name":"m"},
   "ui": {"kind":"tui"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, srv.URL)
@@ -1156,7 +1220,7 @@ func TestRunDefaultsToGUIWhenKeyMissing(t *testing.T) {
 // TestRunRejectsUnknownUIKind 非法 ui.kind 启动即报因（D33/D43 仅 repl | tui | gui）。
 func TestRunRejectsUnknownUIKind(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":["m"]}],"name":"m"},"ui":{"kind":"web"}}`
+	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"web"}}`
 	writeProfileLayout(t, dir, cfg)
 	t.Setenv("X", "k")
 	var out, errBuf bytes.Buffer
@@ -1359,7 +1423,7 @@ func TestOpenMemoryEditorCreatesFile(t *testing.T) {
 func writeConfigLevel(t *testing.T, dir, baseURL, name, level string) {
 	t.Helper()
 	cfg := fmt.Sprintf(`{
-  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"api_key":"secret:AQ_E2E_KEY","models":[%q]}],"name":%q},
+  "model": {"providers":[{"name":"openai-compatible","base_url":%q,"keys":[{"api_key":"secret:AQ_E2E_KEY"}],"models":[{"name":%q}]}],"name":%q},
   "ui": {"kind":"repl"},
   "permissions": {"level": %q},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
@@ -1721,9 +1785,9 @@ func TestRunFallbackDegradesE2E(t *testing.T) {
 	dir := t.TempDir()
 	cfg := fmt.Sprintf(`{
   "model": {"providers":[
-      {"name":"bad","base_url":%q,"api_key":"secret:X","models":["bm"]},
-      {"name":"good","base_url":%q,"api_key":"secret:X","models":["gm"]}],
-    "primary":"bad","fallback":["good"],"name":"bm"},
+      {"name":"bad","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"bm"}]},
+      {"name":"good","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"gm"}]}],
+    "primary":"bad","fallback":[{"provider":"good"}],"name":"bm"},
   "ui": {"kind":"repl"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, bad.URL, good.URL)
@@ -1763,7 +1827,7 @@ func TestRunProfileSwitchRestartE2E(t *testing.T) {
 
 	// 两个 profile 各自完整配置（A=默认起步，B=切换目标）。
 	writeProfileLayout(t, dir, fmt.Sprintf(`{
-  "model": {"providers":[{"name":"pa","base_url":%q,"api_key":"secret:X","models":["mA"]}],"name":"mA"},
+  "model": {"providers":[{"name":"pa","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"mA"}]}],"name":"mA"},
   "ui": {"kind":"repl"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, srvA.URL))
@@ -1772,7 +1836,7 @@ func TestRunProfileSwitchRestartE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(work, "config.json"), []byte(fmt.Sprintf(`{
-  "model": {"providers":[{"name":"pb","base_url":%q,"api_key":"secret:X","models":["mB"]}],"name":"mB"},
+  "model": {"providers":[{"name":"pb","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"mB"}]}],"name":"mB"},
   "ui": {"kind":"repl"},
   "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
 }`, srvB.URL)), 0o644); err != nil {
