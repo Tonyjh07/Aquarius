@@ -18,7 +18,7 @@ func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, erro
 	if a.tools == nil {
 		// 未声明工具却收到 tool_calls（嵌入方/配置缺陷）：按装配级错误中止，
 		// 不让空指针 panic、也不回填让模型空转。
-		return tool.Result{}, errors.New("no tool executor configured (Deps.Tools)")
+		return tool.Result{}, errors.New("tool execution is not configured in this build")
 	}
 	res, err := a.tools.Execute(ctx, call)
 	if err != nil {
@@ -45,9 +45,10 @@ func (a *Agent) runTools(ctx context.Context, buf *turnBuffer, mid conversation.
 			for _, rest := range calls[i+1:] {
 				_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: rest})
 			}
-			cause := fmt.Errorf("tool %s failed: %w", call.Name, err)
-			a.abortToolCalls(ctx, buf, calls[i:], cause)
-			return cause
+			// 回填只放原因：toolResultText 会加 "Tool failed: " 前缀，再带一次
+			// "tool X failed" 就是两层前缀；调用与结果同片，模型知道是哪个工具。
+			a.abortToolCalls(ctx, buf, calls[i:], err)
+			return fmt.Errorf("tool %s failed: %w", call.Name, err)
 		}
 		buf.addToolPart(call, &res)
 		_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})

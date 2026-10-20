@@ -150,12 +150,13 @@ func envLines(env RuntimeEnv) map[string]string {
 	}
 	// 沙盒提示必须是绝对路径——不能建议一个会被同一规则再拒的相对路径（139d585）。
 	if filepath.IsAbs(env.SandboxDir) {
-		lines["@env.sandbox"] = fmt.Sprintf("- Privileged sandbox directory: %q — writes there skip confirmation from the strict permission level upward.",
+		lines["@env.sandbox"] = fmt.Sprintf("- Privileged sandbox directory: %q (writes there skip confirmation from the strict permission level upward).",
 			env.SandboxDir)
 	}
-	// 超时发现性（D38）：保留参数的口径一句话讲清，避免模型逐个工具试错。
+	// @env.timeout 保留参数的口径（D38/D171）：`job_start` 的 `timeout_sec` 是任务超时、
+	// 自有语义，不参与保留参数（runner 按 schema 判定），所以这里不能写成"任何工具"。
 	if env.ToolTimeoutSec > 0 {
-		lines["@env.timeout"] = fmt.Sprintf("- Tool timeout: default %ds per call; pass the optional \"timeout_sec\" argument (1-%d) on any tool call to override it.",
+		lines["@env.timeout"] = fmt.Sprintf("- Tool timeout: default %ds per call; pass the optional \"timeout_sec\" argument (1-%d) on any tool call to override it for that call (tools whose schema declares their own \"timeout_sec\" keep their own meaning).",
 			env.ToolTimeoutSec, port.MaxCallTimeoutSec)
 	}
 	return lines

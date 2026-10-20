@@ -285,7 +285,7 @@ func TestRunMissingToolsRunnerGuard(t *testing.T) {
 	c := newConv(t)
 
 	err := a.Run(context.Background(), c)
-	if err == nil || !strings.Contains(err.Error(), "no tool executor") {
+	if err == nil || !strings.Contains(err.Error(), "tool execution is not configured") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(llm.requests) != 1 {

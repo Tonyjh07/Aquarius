@@ -42,9 +42,8 @@ var (
 func (t *contextCompactTool) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "context_compact",
-		Description: "Trigger a context compaction (equivalent to /compact): transcribe the current history into a single " +
-			"summary watermark node, above which older history is no longer sent back. Call it when the context grows too long " +
-			"or you want to deliberately drop mid-conversation details.",
+		Description: "Compact this conversation's history into a single summary node; turns above that point are no longer sent back. " +
+			"Call it when the context grows too long or you want to deliberately drop mid-conversation details.",
 		Schema: jsonSchemaEmptyObject(),
 		Risk:   tool.Safe,
 	}

@@ -90,6 +90,6 @@ func trimHeadTail(s string, max int) string {
 	}
 	keep := max / 2
 	return string(r[:keep]) +
-		fmt.Sprintf("\n…[output too long: middle %d chars omitted, %d chars total]\n", len(r)-2*keep, len(r)) +
+		fmt.Sprintf("\n...[output too long: middle %d chars omitted, %d chars total]\n", len(r)-2*keep, len(r)) +
 		string(r[len(r)-keep:])
 }

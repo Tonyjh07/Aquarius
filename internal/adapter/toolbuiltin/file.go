@@ -50,8 +50,9 @@ type fileRead struct{ sandbox string }
 
 func (t *fileRead) Spec() tool.Spec {
 	return tool.Spec{
-		Name:        "file_read",
-		Description: "Read a text file (absolute path). Binary files are rejected; files larger than 4MB are truncated.",
+		Name: "file_read",
+		Description: fmt.Sprintf("Read a text file (absolute path). Binary files are rejected; files larger than %s are truncated. "+
+			"Reading never needs confirmation.", humanBytes(maxFileRead)),
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
@@ -60,6 +61,21 @@ func (t *fileRead) Spec() tool.Spec {
 			"required": ["path"]
 		}`),
 		Risk: tool.Safe,
+	}
+}
+
+// humanBytes 把字节上限写成描述里的可读单位（4MB / 512KB）：描述里的数字必须与常量同源，
+// 手写数字在常量改动后不会报错，只会悄悄说谎（D171）。
+func humanBytes(n int64) string {
+	const mb = 1 << 20
+	const kb = 1 << 10
+	switch {
+	case n >= mb && n%mb == 0:
+		return fmt.Sprintf("%dMB", n/mb)
+	case n >= kb && n%kb == 0:
+		return fmt.Sprintf("%dKB", n/kb)
+	default:
+		return fmt.Sprintf("%dB", n)
 	}
 }
 
@@ -94,14 +110,13 @@ func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	if err != nil {
 		return tool.Result{}, fmt.Errorf("read file: %w", err)
 	}
-	// 先判二进制再截断：反过来的话，超过上限的二进制文件会先被截成文本塞进上下文，
-	// 二进制检查永远看不到它。
+	// 先判二进制再截断：反过来的话，大二进制文件会先被截成 4MB 文本塞进上下文。
 	if isBinary(data) {
 		return tool.Result{}, fmt.Errorf("%s looks like a binary file; file_read only reads text", p)
 	}
 	if len(data) > maxFileRead {
 		data = data[:maxFileRead]
-		return okResult(string(data) + "\n…[file too large, only the first 4MB was read]"), nil
+		return okResult(string(data) + fmt.Sprintf("\n...[file too large, only the first %s was read]", humanBytes(maxFileRead))), nil
 	}
 	return okResult(string(data)), nil
 }
@@ -125,8 +140,9 @@ type fileList struct{ sandbox string }
 
 func (t *fileList) Spec() tool.Spec {
 	return tool.Spec{
-		Name:        "file_list",
-		Description: "List directory entries (absolute path; directories suffixed with /). At most 500 entries are returned.",
+		Name: "file_list",
+		Description: fmt.Sprintf("List directory entries (absolute path; directories suffixed with /). At most %d entries are returned.",
+			maxListEntries),
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
@@ -167,7 +183,7 @@ func (t *fileList) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	var b strings.Builder
 	for i, e := range entries {
 		if i >= maxListEntries {
-			fmt.Fprintf(&b, "…[total %d entries, showing the first %d]", len(entries), maxListEntries)
+			fmt.Fprintf(&b, "...[total %d entries, showing the first %d]", len(entries), maxListEntries)
 			return okResult(b.String()), nil
 		}
 		name := e.Name()
@@ -177,7 +193,7 @@ func (t *fileList) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 		b.WriteString(name + "\n")
 	}
 	if b.Len() == 0 {
-		return okResult("(empty directory)"), nil
+		return okResult(emptyEntries), nil
 	}
 	return okResult(strings.TrimRight(b.String(), "\n")), nil
 }
@@ -187,8 +203,9 @@ type fileSearch struct{ sandbox string }
 
 func (t *fileSearch) Spec() tool.Spec {
 	return tool.Spec{
-		Name:        "file_search",
-		Description: "Recursively search by filename substring (case-insensitive) from a directory; returns matching absolute paths, at most 200. Start from a narrow directory: huge trees can hit the tool timeout.",
+		Name: "file_search",
+		Description: fmt.Sprintf("Recursively search by filename substring (case-insensitive) from a directory; returns matching absolute paths, "+
+			"at most %d. Start from a narrow directory: huge trees can hit the tool timeout.", maxSearchHits),
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
@@ -245,12 +262,12 @@ func (t *fileSearch) Execute(ctx context.Context, call tool.Call) (tool.Result, 
 		return tool.Result{}, fmt.Errorf("search: %w", err)
 	}
 	if len(hits) == 0 {
-		return okResult("(no matches)"), nil
+		return okResult(emptyMatches), nil
 	}
 	sort.Strings(hits)
 	out := strings.Join(hits, "\n")
 	if len(hits) == maxSearchHits {
-		out += fmt.Sprintf("\n…[hit the limit of %d matches]", maxSearchHits)
+		out += fmt.Sprintf("\n...[hit the limit of %d matches]", maxSearchHits)
 	}
 	return okResult(out), nil
 }
@@ -261,7 +278,7 @@ type fileWrite struct{ sandbox string }
 func (t *fileWrite) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "file_write",
-		Description: "Overwrite a text file (absolute path; missing parent directories are created automatically). Writing requests user confirmation.",
+		Description: "Overwrite a text file (absolute path; missing parent directories are created automatically). May require user confirmation depending on the permission level and the target path.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
@@ -313,7 +330,7 @@ type fileDelete struct{ sandbox string }
 func (t *fileDelete) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "file_delete",
-		Description: "Delete a file or empty directory (absolute path). Non-empty directories are rejected. Deleting requests user confirmation.",
+		Description: "Delete a file or empty directory (absolute path). Non-empty directories are rejected. May require user confirmation depending on the permission level and the target path.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {

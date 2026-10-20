@@ -354,7 +354,7 @@ func TestFileTools(t *testing.T) {
 	if err := os.Mkdir(empty, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if res, err = l.Execute(ctx, call(`{"path":`+js(empty)+`}`)); err != nil || res.Output != "(empty directory)" {
+	if res, err = l.Execute(ctx, call(`{"path":`+js(empty)+`}`)); err != nil || res.Output != "(no entries)" {
 		t.Fatalf("empty list = %q, %v", res.Output, err)
 	}
 

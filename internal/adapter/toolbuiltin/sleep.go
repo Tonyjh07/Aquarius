@@ -16,15 +16,16 @@ type sleepTool struct{}
 func (t *sleepTool) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "sleep",
-		Description: "Wait for N seconds (pacing, or waiting for a background task to finish). Cancellable via interruption. " +
-			"Sleeps longer than the default tool timeout must pass a matching \"timeout_sec\" argument (1-3600) on the call.",
-		Schema: jsonSchema(`{
+		Description: fmt.Sprintf("Wait for N seconds to pace yourself. Cancellable via interruption. "+
+			"Do not use it to wait for a background task: the session is notified when a task finishes, so polling or sleeping is unnecessary. "+
+			"Sleeps longer than the default tool timeout must pass a matching \"timeout_sec\" argument (1-%d) on the call.", port.MaxCallTimeoutSec),
+		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
-				"seconds": {"type": "integer", "description": "seconds to wait (1-3600)"}
+				"seconds": {"type": "integer", "description": "seconds to wait (1-%d)"}
 			},
 			"required": ["seconds"]
-		}`),
+		}`, port.MaxCallTimeoutSec)),
 		Risk: tool.Safe,
 	}
 }

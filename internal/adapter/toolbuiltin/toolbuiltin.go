@@ -137,6 +137,15 @@ func allowedDocNames(ctx context.Context) map[string]bool {
 // okResult 构造成功结果。
 func okResult(out string) tool.Result { return tool.Result{OK: true, Output: out} }
 
+// 空态三档（D171）：模型靠工具名就能区分语义，不需要「no hits / no matches /
+// no memory documents yet」这类同义分叉。
+const (
+	// emptyEntries 列举类工具没有条目（目录为空、没有记忆文档、没有后台任务）。
+	emptyEntries = "(no entries)"
+	// emptyMatches 检索类工具没有命中（文件名搜索、记忆关键词检索）。
+	emptyMatches = "(no matches)"
+)
+
 // 声明 port 接口实现（编译期护栏）。
 var (
 	_ port.Tool       = (*memoryList)(nil)

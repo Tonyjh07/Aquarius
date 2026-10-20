@@ -417,7 +417,7 @@ func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
 		var lines []string
 		for _, e := range entries {
 			if want[e.Name] {
-				lines = append(lines, "- "+e.Name+" — "+e.Summary)
+				lines = append(lines, "- "+e.Name+": "+e.Summary)
 			}
 		}
 		if len(lines) > 0 {

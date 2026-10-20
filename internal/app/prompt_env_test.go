@@ -65,7 +65,8 @@ func TestPersonaComposerEnv(t *testing.T) {
 	// 超时说明行（D38 发现性）：缺省秒数与保留参数口径；0 不附。
 	got = compose(RuntimeEnv{Platform: "linux/amd64", ToolTimeoutSec: 60})
 	if !strings.Contains(got, "- Tool timeout: default 60s per call") ||
-		!strings.Contains(got, `"timeout_sec" argument (1-3600)`) {
+		!strings.Contains(got, `"timeout_sec" argument (1-3600)`) ||
+		!strings.Contains(got, "keep their own meaning") {
 		t.Fatalf("tool timeout line missing:\n%s", got)
 	}
 	if g := compose(RuntimeEnv{Platform: "linux/amd64"}); strings.Contains(g, "Tool timeout") {

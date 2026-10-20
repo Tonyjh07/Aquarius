@@ -35,11 +35,11 @@ func (t *memoryList) Execute(ctx context.Context, _ tool.Call) (tool.Result, err
 		if !allowed[e.Name] {
 			continue
 		}
-		fmt.Fprintf(&b, "%s — %s\n", e.Name, e.Summary)
+		fmt.Fprintf(&b, "%s: %s\n", e.Name, e.Summary)
 		n++
 	}
 	if n == 0 {
-		return okResult("(no memory documents yet)"), nil
+		return okResult(emptyEntries), nil
 	}
 	return okResult(strings.TrimRight(b.String(), "\n")), nil
 }
@@ -120,7 +120,7 @@ func (t *memorySearch) Execute(ctx context.Context, call tool.Call) (tool.Result
 		n++
 	}
 	if n == 0 {
-		return okResult("(no hits)"), nil
+		return okResult(emptyMatches), nil
 	}
 	return okResult(strings.TrimRight(b.String(), "\n")), nil
 }
@@ -135,7 +135,7 @@ func (t *memoryWrite) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "memory_write",
 		Description: "Write a memory document (the global memories.md or the current session's memory). mode=append appends to the end (default); " +
-			"overwrite replaces the whole document (memory_read first, then edit, then overwrite). Writing requests user confirmation.",
+			"overwrite replaces the whole document (memory_read first, then edit, then overwrite). May require user confirmation depending on the permission level and the target path.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {

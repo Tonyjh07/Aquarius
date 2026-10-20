@@ -204,7 +204,7 @@ func TestJobStartSpecs(t *testing.T) {
 func TestJobListOutput(t *testing.T) {
 	jl := &jobList{jobs: &fakeJobs{}}
 	res, err := jl.Execute(context.Background(), call(`{}`))
-	if err != nil || !strings.Contains(res.Output, "no background tasks") {
+	if err != nil || !strings.Contains(res.Output, "no entries") {
 		t.Fatalf("res = %+v, err = %v", res, err)
 	}
 	jl = &jobList{jobs: &fakeJobs{jobs: []port.Job{{
@@ -258,7 +258,7 @@ func TestJobLogsTail(t *testing.T) {
 	}
 	jobs.logs = "  \n"
 	res, err = jl.Execute(context.Background(), call(`{"id":"j001"}`))
-	if err != nil || !strings.Contains(res.Output, "log is empty") {
+	if err != nil || !strings.Contains(res.Output, "no entries") {
 		t.Fatalf("res = %+v, err = %v", res, err)
 	}
 }
