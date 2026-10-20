@@ -326,6 +326,8 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `job_start` | 后台任务启动 | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理 | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
+| `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
+| `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（**含被遮挡、非顶层、最小化的窗口**）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -338,6 +340,16 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - `term_exec` 与 `job_*` 的**终端输出在 jobproc 适配器内按行解码为 UTF-8**（D41）：UTF-8 合法则原样
   （含显式 `chcp 65001` 的输出），否则按 GBK/CP936 解码；模型无需再手工 `chcp` 切换代码页。
 - 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`。
+- **屏幕捕获（D178）**：拆成 `window_list`（纯元数据，Safe）与 `screen_capture`（产图，Confirm）两件——
+  截屏是隐私敏感动作，逐次确认在 strict 下是默认；`window_list` 没有副作用，列清单不该被确认打断。
+  - 抓取实现在 `internal/adapter/screencap`（Windows = `PrintWindow(PW_RENDERFULLCONTENT)`，失败且窗口可见时
+    回退到屏幕区域 `BitBlt`；两者都拿不到就明确报因，**不静默回黑图**）。全屏 = 整个虚拟桌面（`SM_XVIRTUALSCREEN`
+    一族），物理像素，不做 DPI 缩放。
+  - **本进程自己的窗口不出现在 `window_list` 里**（模型不该抓自己），但仍会出现在全屏截图里。
+  - 图片上限与降采样口径同 `file_read`：长边超过 `maxCaptureEdge` 时按比例缩小再编码 PNG，避免截图把上下文撑爆。
+  - 非 Windows 平台：适配器返回「本平台不支持」的明确错误（随 linuxgate 编译，不新增构建标签外的桩）。
+- 截图工具需要 `Deps.Vision`：链上没有视觉能力时**照常注册**（工具清单与设置窗「工具与 MCP」页保持稳定，
+  也与 `file_read` 同口径），但执行时明确报因——不静默截一张没人能看的图。
 
 ### 4.4 记忆文档
 
@@ -509,13 +521,31 @@ type AttachmentStore interface {
 ### 5.6 `modality.go` —— 语音模态端口
 
 ```go
-type Transcriber interface { // ASR：whisper API / 本地引擎 / 系统听写
-    Transcribe(ctx context.Context, audio BlobRef, lang string) (string, error)
+type Transcriber interface { // ASR：云转写（首发 MiMo 形状）/ 本地引擎（后续）
+    Transcribe(ctx context.Context, audio conversation.BlobRef, lang string) (string, error)
 }
-type Synthesizer interface { // TTS：云 TTS / 系统朗读
-    Synthesize(ctx context.Context, text, voice string) (BlobRef, error)
+
+// SpeechRequest 一次合成请求（D179）：正文之外，风格与音色都是配置项，
+// 不进模型上下文、不进会话树。
+type SpeechRequest struct {
+    Text  string // 要播报的正文（进合成请求的 assistant 消息）
+    Voice string // 预置音色名（preset 模式）；design/clone 模式下为空
+    Style string // 自然语言风格指令（进 user 消息；空 = 不发）
+    Tags  string // 风格标签（如 "温柔 语速稍快"）：非空时拼成 "(标签)" 前缀置于正文开头
+}
+
+type Synthesizer interface { // TTS：云 TTS（厂商适配器）/ 系统朗读（后续）
+    Synthesize(ctx context.Context, req SpeechRequest) (conversation.BlobRef, error)
 }
 ```
+
+- **厂商形状差异只在适配器里**：首发适配器按 MiMo 的 chat-completions 音频形状实现（ASR = `input_audio`
+  内容块 + `asr_options.language`，TTS = `messages[user 风格, assistant 正文]` + `audio{format,voice}`）；
+  换厂商 = 换适配器，端口与上层不动。
+- **不复用 LLM 装饰器链**（D179）：重试/降级/密钥池那套围绕流式生成写，音频调用是「一次请求一次响应」，
+  只做单次请求 + 明确报错；密钥仍经同一把 `resolveAPIKey` 解析，不另存一份。
+- **音频只在内存与附件库之间流动**：合成结果落 `AttachmentStore`（可重播、可 GC），播放器从库里取；
+  录音的 Base64 上限由采集侧按秒数封顶（见 §7.2）。
 
 ### 5.7 `ingest.go` —— 输入/输出方式端口
 
@@ -612,11 +642,40 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `ConversationStore` | storejson（一树一 JSON + .bak） | — | in-memory |
 | `MemoryStore` | memoryfs（markdown） | MCP resources / Tier-1 | in-memory |
 | `AttachmentStore` | blobfs（内容寻址） | — | in-memory |
-| `Transcriber` / `Synthesizer` | whisper API / 系统朗读 | Tier-1 Go 插件 | 假转写 |
+| `Capture` | screencap（Windows `PrintWindow`/`BitBlt`；非 Windows 报不支持） | — | 假抓屏（固定 PNG） |
+| `Transcriber` / `Synthesizer` | asrchat（chat-completions 音频形状，D179）/ mimotts（MiMo TTS 三种模型）/ micwin（`waveIn` 采集）/ audioplay（`PlaySound` 播放） | Tier-1 Go 插件 | 假转写 / 假合成 |
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/导出 | Tier-1 Go 插件 | 脚本 |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
 | `Presenter` / `Prompter` | uitui（TUI）、repl、uigui（GUI 悬浮球，D43/M5） | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | Tier-1（keychain） | 固定 / map |
+
+### 5.11 `capture.go` —— 屏幕捕获端口（D178）
+
+```go
+type WindowInfo struct {
+    Handle  uintptr // 平台句柄（不透明；仅回传给 Capture 用）
+    Title   string
+    App     string // 可执行文件名（进程已退出/无权限时为空）
+    Rect    Rect   // 屏幕坐标（物理 px，含 Min 不含 Max）
+    Foreground bool
+}
+
+// Rect 屏幕矩形（物理 px，语义同 image.Rectangle：含 Left/Top、不含 Right/Bottom）。
+type Rect struct{ Left, Top, Right, Bottom int }
+
+type Capture interface {
+    Windows(ctx context.Context) ([]WindowInfo, error) // 顶层可见窗口，z 序自顶向下
+    Screen(ctx context.Context) (Image, error)         // 整个虚拟桌面
+    Window(ctx context.Context, h uintptr) (Image, error) // 指定窗口，含被遮挡/最小化
+}
+
+// Image 已编码的图片字节（PNG）与像素尺寸。
+type Image struct{ Data []byte; Width, Height int }
+```
+
+- `Rect` 复用平台无关的屏幕矩形（`Left, Top, Right, Bottom`，物理 px，含 Min 不含 Max）。
+- 不做 DPI 缩放：调用方按物理像素拿图，需要缩小时自己缩（`Capture` 只负责「抓得到」）。
+- 非 Windows 实现三个方法都返回 `ErrCaptureUnsupported`，由工具层翻成给模型的可行动提示。
 
 ---
 
@@ -866,6 +925,24 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
       Outcome=done 的 assistant 提交文本 Deliver；app 与 UI 适配器均不感知输出器。
 ```
 
+**语音输入（D179）**：`mic` 摄取 = 采集器产出 WAV（16kHz 单声道 16bit，默认上限 60s）→ 入附件库（`PartAudio`
+的 BlobRef 来源）→ `Transcriber.Transcribe` 拿文本 → 文本作为**唯一的 Part** 入树（音频本身不随消息发给模型：
+模型只见转写文本，§4.2）。转写失败时整条输入失败并报因，不静默发一条空消息。
+
+- **转写结果先回填输入框、不直接发送**（GUI）：语音识别有误差，直接发送等于替用户按了回车。
+  `/mic` 命令（repl/tui）无输入框可回填，走「录 → 转写 → 作为一条用户输入提交」，并在转写区标注来源。
+- **采集串行**：同一时刻只允许一个录音，重复触发提示「正在录音」而不是开第二路。
+- **非 Windows**：采集器报不支持（`ErrCaptureUnsupported` 同族），命令与按钮照常存在但明确告知。
+
+**语音播报（D179）**：`output.tts` = 总开关（缺省关，键缺失也关）。开启后 `CommittedEvent` 的 assistant
+正文经 `Synthesizer` 合成 → 附件库 → 播放器异步播放；**只播正文**（思考与工具分片不进播报，同 notify 筛选口径）。
+
+- 播报失败只记日志、不打断主流程（同 notify）。
+- 新一条播报开始前停掉上一条（避免叠音）；停止键取消本轮时同时静音。
+- 正文超过 `maxSpeechChars` 时截断并在末尾不加提示音（播报是辅助通道，不追求完整还原长答案）。
+- 播报不写回会话树，也不产生 `PartAudio`——它是一次性的输出动作，不是对话内容。
+
+
 ### 7.3 命令体系
 
 | 命令 | 作用 |
@@ -1059,8 +1136,24 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     },
     "persona": ["house", "@env"] // 人格 = 有序顶层引用；空 = 默认 ["@default","@env"]
   },
-  "input": { "asr": "whisper-api", "mic": true },
-  "output": { "tts": false, "notify": true },
+  "input": { "language": "auto" }, // 录音语种提示（D179）：auto | zh | en；仅作用于语音识别，缺省 auto
+  "audio": {                      // 语音（D179）：识别与合成各引用一个 provider，密钥不另存
+    "asr": {
+      "provider": "mimo",          // 引用 model.providers 里的 name：借它的 base_url 与密钥池
+      "model": "mimo-v2.5-asr",    // 转写模型
+      "kind": "chat-audio"         // 协议：chat-audio（chat/completions 携带音频，缺省）——未来本地引擎加新值
+    },
+    "tts": {
+      "provider": "mimo",
+      "model": "mimo-v2.5-tts",    // mimo-v2.5-tts（预置音色）| -voicedesign（文本设计）| -voiceclone（样本复刻）
+      "kind": "chat-audio",
+      "voice": "冰糖",              // 预置音色名；voiceclone 模式填样本文件的绝对路径
+      "design": "",                // voicedesign 模式的音色描述（进 user 消息；该模型必填）
+      "style": "",                 // 自然语言风格指令（进 user 消息；空 = 不发）
+      "tags": ""                   // 风格标签，如 "温柔 语速稍快"；非空时拼成 "(标签)" 前缀
+    }
+  },
+  "output": { "tts": false, "notify": true }, // tts = 播报总开关（缺省关，D179）
   "mcpServers": {
     "web-search": {
       "transport": "stdio",
@@ -1118,6 +1211,21 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 按大窗口装好再换小窗口模型只能靠服务端报错。所以按当前模型算预算，降级到窗口更小的模型属于
 「用户自己配的降级链，接受可能超限」。`/model` 展示窗口与该值来源，窗口比全局小时提示是模型侧
 在压预算。
+
+**语音配置（D179）**：`audio.asr` / `audio.tts` 各引用一个 provider 名——**只借它的 `base_url` 与密钥池**，
+不继承 `kind`、不继承模型能力位、不进降级链。理由：音频模型与对话模型常常不是同一类端点，也不该被
+「主模型挂了换备用」那套语义牵连（播报失败降级成另一个音色，比不播更怪）。
+
+- `audio.*.provider` 必须指向 `model.providers` 里的名字；未配置或名字不存在 = 该能力不可用，
+  启动打一行提示，按钮与命令明确报因。
+- `audio.*.kind` = 协议位：`chat-audio`（缺省）= chat/completions 携带音频。未来本地引擎
+  （whisper.cpp 等）或别家协议在此加新值，上层不动。
+- `audio.tts.model` 决定形态：`-voicedesign` 用 `design` 文本，`-voiceclone` 用 `voice` 里的
+  **样本文件绝对路径**（适配器读文件转 `data:audio/...;base64,`，路径按读取矩阵判权限），
+  其余用 `voice` 里的预置音色名。
+- `input.language` 只喂给 ASR：`auto | zh | en`，缺省 `auto`。
+- **录音时长上限**：线上限由厂商的 Base64 体积上限反推（16kHz 单声道 16bit ≈ 32KB/s，Base64 膨胀 4/3）
+  ——MiMo 当前 10MB ⇒ 约 4 分钟；产品侧默认 60s，命令可带秒数覆盖但不得超过硬顶。
 
 **密钥解析顺序（D151/D161）**：`api_key` 取值为 `secret:<名>` 时，**先查本机密钥库
 `<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错（提示里说明查过哪两处，
@@ -1245,6 +1353,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 | **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
 | **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
 | **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
+| **M11 屏幕捕获与语音**（2026-10-20 立，D178/D179） | `port.Capture` + `screencap`（`PrintWindow`/`BitBlt`）；`window_list` / `screen_capture` 内置工具；`port.Transcriber`/`Synthesizer` 实现（MiMo chat-completions 音频）+ `micwin` 采集 + `audioplay` 播放；`/mic` 命令与 GUI 语音槽；设置窗「语音」页（含风格控制与试听） | 模型能列窗口、抓全屏、抓**被遮挡窗口**并正确描述画面；语音键说话 → 转写回填输入框 → 发送；`output.tts` 开启后回答自动播报，风格指令与标签实际改变音色表现；非 Windows 明示不支持；全门禁通过 |
 | **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
 | **M5 GUI 前端** | Gio 悬浮球 GUI（D43/§15）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统（§15.4 令牌 + `ui.theme`，D61）；**窗口管理**（§15.7/D60）：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口——本轮基建 + 设置核心档（模型/权限/think/effort/hotkey/主题）+ 两空窗壳验证宿主（会话历史数据面后由 S3/D112-D120 接续、欢迎引导由 D141 接续）。**spike 已过**（2026-09，§15.6：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；**托盘/右键菜单可开三窗（当时历史/欢迎为占位壳，后由 S3/D141 补上数据面；欢迎入口 D141 起改在设置窗）；设置窗改核心档写回 config 并热生效（模型/权限/think/effort/hotkey/主题），密钥只写不回显；主题深浅两版可切、`system` 跟随系统**；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
 | **M6 底座与跨平台**（D109 重排，2026-10-06） | **执行序**：① 配置底座破坏性改造（S4+S5 合批，**D110**：profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（新 S4b，**D111**：平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI：**relation-map**（S3，**D112**；形态规格 **D120**：结构根/锚点拆分 + 层号深度色带 + 投影后置布局 + 左栏会话/右图，[docs/relation-map-design.md](docs/relation-map-design.md)：`TreeView.Graph()` 整树快照 + `port.SessionLister` 左栏 + 关系图自绘 + 内核删除任意会话/改名补洞）。S6–S8（工具/MCP 管理、提示词、语音）顺延 | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链（层号色带/形状=Role/主干可辨，公理集自检清单逐条过）、左栏切会话、点节点 `/goto`、任意会话删除与改名可用 |
@@ -1270,18 +1379,22 @@ S6–S8 顺延。原则 = 先动 schema
 - 非 GBK 的遗留代码页（CP437/latin-1 等）终端输出识别（D41 内容探测只有 UTF-8/GBK 两档，会误判成乱码中文）
 - `file_read` 等文件文本入口的遗留编码解码（与 D41 同算法，终端之外的文本入口）
 - MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
+- **MCP 富内容回传**：工具结果里的 `ImageContent` 落附件库并回填 `tool.Result.Images`、
+  `EmbeddedResource` 的文本展开、`ResourceLink` 可读一次——当前一律降级为 `[image content omitted]` 之类的占位
+  （本轮冲刺内做，口径落定后再编号）
+- **语音后续**：本地 ASR 引擎（whisper.cpp 类，需 cgo 或外挂二进制，与单二进制口径冲突）、
+  TTS 流式合成（边合成边播）、导出文件输出器
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
 - **GUI 后续（M5/D43 之外，§15 预留）**：悬浮球本体转常规窗口形态（D43 只预留设计
   不实现；功能窗用独立常规窗已入正册 §15.7/D60）、多颜色主题预设（M5 只做品牌色
-  `#00AEEF` + 深/浅两版）、拖拽/粘贴/语音按钮（走同一
-  `UserInput.Raw` 入口，摄取管线已就绪，见下方语音条目）
+  `#00AEEF` + 深/浅两版）、拖拽/粘贴入口（走同一 `UserInput.Raw` 入口，摄取管线已就绪；
+  语音按钮已在 D179 落地）
 - **语音输入与播报（D27 移入）**：
-  - ASR（`Transcriber`）/ TTS（`Synthesizer`）适配器选型与实现（whisper-api / 系统朗读 / 云 TTS）
-  - 麦克风采集（`Kind=mic` 摄取）
-  - `/attach` `/clip` `/mic` 输入命令与 TUI 拖拽/粘贴/语音按钮（M4 TUI 为 MVP 不含，D33——
-    留 TUI 后续迭代或 GUI，走同一 `UserInput.Raw` 入口）
-  - 导出文件输出器（`output.tts` 同批启用）
+  - **已落地（D179，2026-10-20）**：`Transcriber`/`Synthesizer` 适配器（首发 = MiMo 形状的 chat-completions
+    音频：ASR `mimo-v2.5-asr`、TTS `mimo-v2.5-tts` 三模型）、麦克风采集（`waveIn`，Windows）、`/mic`
+    命令与 GUI 语音槽、`output.tts` 输出器（整段合成后播放）。
+  - 剩余：TUI 侧拖拽/粘贴/语音按钮（M4 TUI 为 MVP 不含，D33）、导出文件输出器、本地 ASR 引擎与其他协议。
 - **M2 审查遗留（P3，2026-09 评审；P2 的 trim 工具 schema 估算已修）**：
   - regexp2 `MatchTimeout` 与计数路径的 ctx 检查（模型可控输入的回溯爆炸防护）
   - Agent/Runner 共享可变状态的并发模型显式化（多会话共享实例时加锁；含 LLM 适配器

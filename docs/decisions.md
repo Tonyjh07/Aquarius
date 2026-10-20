@@ -191,6 +191,8 @@
 | D175 | 多协议适配器：`openai-responses` / `anthropic`，思考块签名以协议前缀随节点落盘（§5.1/§8） | 生效 |
 | D176 | 设置窗拆出「模型服务」页：provider 折叠卡片、密钥池与模型能力表；「模型」页只管路由（§15.7） | 生效 |
 | D177 | 模型条目声明 `context_window`；装配预算 = min(模型窗口, 全局预算)，不参与整链取与（§8） | 生效 |
+| D178 | 屏幕捕获：`port.Capture` + `screencap` 适配器；`window_list`（Safe）/`screen_capture`（Confirm）两件工具，抓图走附件库与 `tool.Result.Images`（§4.3/§5.11/§10） | 生效 |
+| D179 | 语音：ASR/TTS 走厂商 chat-completions 音频形状；配置 `audio.asr`/`audio.tts` 引用 provider；转写回填不直发；播报整段合成后播放（§5.6/§7.2/§8） | 生效 |
 
 
 ## 记录
@@ -3470,5 +3472,72 @@
 - **模型**：`cmd/aquarius/config.go`（`modelEntry.ContextWindow` + `effectiveMaxContext`）、
   `cmd/aquarius/main.go`（装配 `Config.MaxContextTokens`）、`internal/port/llm.go`
   （`ModelInfo.ContextWindow`）、`internal/app/model.go`（`/model` 展示）。
+
+### D178 · 屏幕捕获：模型自己看屏幕（2026-10-20）
+
+> **背景**：助手能读文件、能看图，唯独看不见「你现在在干什么」。用户说「这个报错怎么修」「这个界面哪里不对」，
+> 模型手里只有文字。屏幕是桌面助手的天然输入源，而截屏本身又是隐私面最大的一个动作——口径必须写死。
+
+- **口径一：拆两件工具**。`window_list`（Safe）= 顶层窗口清单（标题 / 程序名 / 矩形 / 是否前台，z 序自顶向下），
+  `screen_capture`（Confirm）= 产图。列清单没有副作用，不该被逐次确认打断；截屏有，且 strict 下默认逐次问一句
+  是恰当的。**不合并成一件带 action 的工具**——风险等级是按工具判的（§9），合并就必须在工具内部自己判风险，
+  等于把权限矩阵搬进适配器。
+- **口径二：非顶层窗口也要抓得到**。`PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT)` 让窗口把自己画进 DIB，
+  不依赖它是否被遮挡、是否最小化；失败（部分 GPU 直绘窗口返回黑图）且窗口可见时回退到「屏幕 DC 的区域 BitBlt」；
+  两者都拿不到就**明确报因**，不静默回一张黑图——模型会一本正经地分析纯黑画面。
+  黑图判定 = 解码后取中心区域采样，全零/单色即判失败。
+- **口径三：全屏 = 整个虚拟桌面**（`SM_XVIRTUALSCREEN`/`SM_CXVIRTUALSCREEN` 一族），多显示器拼成一张，
+  坐标用物理像素、不做 DPI 缩放。分屏拼接的边界由屏幕 DC 自己处理，比逐屏抓再拼稳。
+- **口径四：不抓自己**。`window_list` 过滤掉本进程的窗口（按 PID 比对）——模型抓自己那扇窗只会看到
+  「请把问题描述给我」的输入框，纯浪费一次视觉预算；全屏截图里它在就在，不特殊处理。
+- **口径五：入图走既有通道**。截图编码 PNG → `AttachmentStore.Put` → `tool.Result.Images`（D169 已铺好的路），
+  装配层把它转成紧跟在 tool 应答后的一条 user 图片消息。长边超过 `maxCaptureEdge`（1600）时按比例缩小再编码，
+  避免一张 4K 截图把上下文吃掉小半。链上无 `vision` 能力时**照常注册、执行时报因**（与 `file_read` 同口径：
+  工具清单不随模型能力忽隐忽现）。
+- **口径六：端口而非平台包**。新增 `port.Capture`（`Windows` / `Screen` / `Window`），适配器
+  `internal/adapter/screencap`，Windows 实现直接吃 `user32`/`gdi32` 的 syscall（平台层 `uigui/platform`
+  里的 DIB 经验可参照，但**不互相 import**——内置工具不享特权）。非 Windows 三个方法都返回
+  「本平台不支持」，随 linuxgate 一起编译。
+- **否决**：把截图做成 GUI 按钮（用户想要的不是自己截图，而是让模型看）；把截图塞进 `term_exec` 里
+  让模型自己跑 PowerShell（模型面工具不该依赖宿主机脚本能力，且 PowerShell 截屏拿不到被遮挡窗口）；
+  在工具内部按窗口标题猜「用户想抓哪个」（标题是模型输入，猜错代价是一次错误分析）。
+- **模型**：`internal/port/capture.go`、`internal/adapter/screencap/`（`capture_windows.go` / `capture_other.go`）、
+  `internal/adapter/toolbuiltin/screen.go`、`cmd/aquarius/assemble_ports.go`（装配 + `Deps.Capture`）。
+
+### D179 · 语音：厂商适配器的 ASR 与 TTS（2026-10-20）
+
+> **背景**：`port.Transcriber`/`Synthesizer` 从 M3 起就摆在那里，`output.tts` 开关一直「解析但不启用」，
+> Q7 选型留空至今。首发要落地，且用户明确要走**厂商适配器**而不是通用 OpenAI 音频接口。
+
+- **口径一：协议位 = `chat-audio`**。MiMo 的 ASR/TTS 都长在 `/chat/completions` 上：ASR = user 消息里
+  `{type:"input_audio", input_audio:{data:"data:audio/wav;base64,…"}}` + `asr_options.language`；
+  TTS = `messages[user=风格指令, assistant=正文]` + `audio{format:"wav", voice}`，音频在
+  `choices[0].message.audio.data`（base64）。所以适配器不是 `/audio/transcriptions` 那套 multipart。
+  `audio.*.kind` 显式留位：未来本地引擎（whisper.cpp）或别家协议加新值，上层不动。
+- **口径二：配置引用 provider，不另存密钥**。`audio.asr` / `audio.tts` 各写 `{provider, model, kind}`，
+  **只借** `model.providers.<name>` 的 `base_url` 与密钥池，不继承 `kind`、不继承能力位、**不进降级链**——
+  音频模型不是对话模型的替补，播报失败降级成另一个音色比不播更怪。
+- **口径三：不复用 LLM 装饰器链**。重试 / 降级 / 密钥池那一层是围绕流式生成写的；音频是「一次请求一次响应」，
+  单发 + 明确报错就够，硬套只会引入一堆与音频无关的语义。
+- **口径四：转写回填不直发**。GUI 语音键 = 录 → 转写 → **填进输入框**，用户改完再回车。ASR 有误差，
+  直接发送等于替用户按了回车。`/mic`（repl/tui）没有输入框可回填，走「录 → 转写 → 作为一条用户输入提交」
+  并在转写区标注来源。
+- **口径五：整段合成后播放**。请求 `format:"wav"`，拿到完整音频 → 附件库（可重播、随 GC）→ 临时文件 →
+  `PlaySound(SND_ASYNC)`。不做流式边合成边播：打断语义、流式解码、各家协议差异三件事一起进来，首发不值。
+  新一条播报开始前停上一条；停止键取消本轮时同时静音。
+- **口径六：风格控制是配置项，进设置窗**。MiMo 的两种控制手段正好对应两个字段：**自然语言指令**进 user 消息
+  （`audio.tts.style`），**风格标签**拼成 `(标签)` 前缀置于 assistant 正文开头（`audio.tts.tags`）。
+  音色按模型分派：`voice` = 预置音色名（`mimo-v2.5-tts`）/ 音色描述（`-voicedesign` 用 `design` 字段）/
+  样本文件绝对路径（`-voiceclone`，适配器读文件转 `data:` URL）。设置窗「语音」页提供这些字段的编辑、
+  模型下拉与**试听**（固定样例句走一次真实合成并播放）——风格调参没有试听就没法调。
+- **口径七：采集只有 Windows、只有默认设备**。`waveIn` 系列 syscall（纯 Go、无 cgo），16kHz 单声道 16bit WAV。
+  设备选择、VAD、回声消除全部不做：首发要的是「按一下能说话」，不是录音棚。时长默认 60s，硬顶由厂商
+  Base64 体积上限反推（MiMo 10MB ≈ 4 分钟）。
+- **否决**：系统 SAPI 朗读（音色与风格控制远不如厂商模型，且用户已定云 TTS）；流式合成；
+  把音频作为 `PartAudio` 随消息发给模型（模型不吃音频，§4.2 口径不变）。
+- **模型**：`internal/port/modality.go`（`SpeechRequest`）、`internal/adapter/asrchat/`、`internal/adapter/mimotts/`、
+  `internal/adapter/micwin/`、`internal/adapter/audioplay/`、`cmd/aquarius/config.go`（`audio` 段 + `input.language`）、
+  `internal/adapter/uigui/settings_page_audio.go`。
+
 
 

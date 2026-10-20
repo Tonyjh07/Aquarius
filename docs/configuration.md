@@ -152,12 +152,30 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 | `limits.tool_output_chars` | int | 20000 | 工具结果截断 |
 | `limits.tool_timeout_sec` | int | 60 | 单次工具执行超时秒（模型可经保留参数 `timeout_sec` 逐次覆盖，D38） |
 
+### input / audio（语音）
+
+语音识别与合成各引用一个 provider 名——**只借它的 `base_url` 与密钥池**，不继承协议与能力位，
+也不进降级链（音频模型不是对话模型的替补）。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `input.language` | string | `auto` | 录音语种提示：`auto` / `zh` / `en`，只喂给识别 |
+| `audio.asr.provider` | string | — | 引用 `model.providers` 里的 name；缺省 = 语音输入不可用 |
+| `audio.asr.model` | string | — | 转写模型，如 `mimo-v2.5-asr` |
+| `audio.asr.kind` | string | `chat-audio` | 协议位：`chat/completions` 携带音频（未来本地引擎加新值） |
+| `audio.tts.provider` | string | — | 同上；缺省 = 不能播报 |
+| `audio.tts.model` | string | — | `mimo-v2.5-tts`（预置音色）/ `-voicedesign`（文本设计）/ `-voiceclone`（样本复刻） |
+| `audio.tts.voice` | string | — | 预置音色名（如 `冰糖`）；voiceclone 模式填**样本文件绝对路径** |
+| `audio.tts.design` | string | — | voicedesign 模式的音色描述，该模型必填 |
+| `audio.tts.style` | string | — | 自然语言风格指令（如 `语速稍快，语气轻松`） |
+| `audio.tts.tags` | string | — | 风格标签，非空时拼成 `(标签)` 前缀置于正文开头 |
+
 ### output（M3 起）
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `output.notify` | bool | 模板 `true`；键缺失 = `false` | 已提交的回答触发系统通知（发送失败只记日志，D28 扇出） |
-| `output.tts` | bool | `false` | 语音播报：解析但不启用（ASR/TTS 移入 backlog，D27） |
+| `output.tts` | bool | `false` | 语音播报**总开关**：开启后已提交的回答自动合成并播放（需 `audio.tts` 配好） |
 
 ### mcpServers / plugins（M4 起）
 
@@ -178,7 +196,7 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 
 ### 暂未消费的键（模板自带，随里程碑启用）
 
-`input`（asr/mic）、`output.tts`。
+`audio.tts.style` / `audio.tts.tags` 之外的 TUI 语音入口（拖拽/粘贴/语音按钮）。
 未知键解析时忽略，**写回时原样保留**（provider 条目内的无关键同样保留——编辑器按
 原名合并，Q10 口径）。
 

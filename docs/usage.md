@@ -43,6 +43,7 @@ go build ./cmd/aquarius
 | `/memory [会话id]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`，带参会话记忆；保存后下次读取生效） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/jobs [list\|logs <id> [行数]\|kill <id>]` | 后台任务管理（M3）：缺省 `list`；`logs` 取末尾行（缺省 50）；`kill` 终止（连同子进程）。任务由模型经 `job_start` 启动，ID 支持唯一前缀 |
+| `/mic [秒数]` | 录一段话（缺省 60 秒，上限由服务端体积反推）→ 转写 → 作为一条用户输入提交；录音中再触发会提示正在录音。需配好 `audio.asr`，非 Windows 平台明确报不支持 |
 | `/model [name]` | 无参：当前 provider + 当前模型 + **生效能力**（工具/思考/图片，整条降级链取与，并指名哪一环在拉低）+ **上下文预算**（生效值，以及是被模型窗口还是全局上限压住的）+ 降级链逐环 + 可用清单（单价标注）；有参：先写回 config `model.name` 再 Agent 内热切换（D32，同 `/permission` 模式），下一轮即生效；provider/端点/降级链/窗口改设置窗或 config（重启生效） |
 | `/model probe [模型名]` | 实测某模型到底收不收得下工具调用、思考、图片：三条最小请求、逐项三态结论（支持/不支持/无结论，附依据与耗时用量）。图片那一项给一张纯色图让它说颜色——说对才算支持。**只把判定明确的几位写回** `models[].caps`（无结论不动现有声明），重启后生效。省略模型名 = 当前模型；探测是真请求、真花钱，故只在手动发起时跑 |
 | `/think [on\|off]` | 无参：原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发（覆盖 `/effort`）；当前链的模型未声明思考能力时同样不发 |
@@ -76,6 +77,8 @@ go build ./cmd/aquarius
 | `term_exec` | 同步执行终端命令行（`cmd /c` / `sh -c`；超时统一控制，输出保头尾截断；输出自动转 UTF-8，无须 `chcp`；执行类看工具列） | Confirm |
 | `job_start` | 启动后台任务（独立进程，日志落盘 `profiles/<name>/jobs/<id>.log`，不随对话取消；**任务结束时自动汇报**，无需反复查） | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理（列表/状态/日志尾部/终止） | Safe |
+| `window_list` | 列出可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；`handle` 传给 `screen_capture` | Safe |
+| `screen_capture` | 截屏给模型看：`target` = `screen`（整个虚拟桌面）或窗口 `handle`（**被遮挡、非顶层、最小化的窗口也能抓**）；PNG 进附件库并随结果内联（长边超 1600 会缩小）。仅 **Windows** 支持；当前链上的模型未声明图片能力时调用即报因 | Confirm |
 
 ## 上下文压缩（三轨特色功能）
 
