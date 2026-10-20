@@ -422,13 +422,13 @@ func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
 		}
 		if len(lines) > 0 {
 			sort.Strings(lines) // 确定性（索引顺序不承诺）
-			b.WriteString("\n\n# Memory index (use memory_read/memory_search for details)\n")
+			b.WriteString(memoryIndexHeading)
 			b.WriteString(strings.Join(lines, "\n"))
 		}
 	}
 	if doc, err := a.memory.Read(ctx, port.SessionMemoryDoc(id)); err == nil {
 		if strings.TrimSpace(doc.Content) != "" {
-			b.WriteString("\n\n# Session memory (this conversation's notepad)\n")
+			b.WriteString(sessionMemoryHeading)
 			b.WriteString(doc.Content)
 		}
 	}

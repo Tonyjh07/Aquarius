@@ -240,14 +240,14 @@ func TestAssemblePathNilResultPartSkipped(t *testing.T) {
 }
 
 func TestAssemblePathFailedToolResultText(t *testing.T) {
-	text := toolResultText(&tool.Result{CallID: "c", OK: false, Err: "权限拒绝", Output: "partial"})
-	if !strings.HasPrefix(text, "错误: 权限拒绝") || !strings.Contains(text, "partial") {
+	text := toolResultText(&tool.Result{CallID: "c", OK: false, Err: "permission denied", Output: "partial"})
+	if !strings.HasPrefix(text, "Tool failed: permission denied") || !strings.Contains(text, "partial") {
 		t.Fatalf("failed result text = %q", text)
 	}
-	if got := toolResultText(&tool.Result{CallID: "c", OK: true}); got != "（无输出）" {
+	if got := toolResultText(&tool.Result{CallID: "c", OK: true}); got != "(no output)" {
 		t.Fatalf("empty ok text = %q", got)
 	}
-	if got := toolResultText(nil); got != "（无输出）" {
+	if got := toolResultText(nil); got != "(no output)" {
 		t.Fatalf("nil text = %q", got)
 	}
 }
