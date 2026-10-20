@@ -118,6 +118,26 @@ func TestFileEditKeepsLFWhenFileIsLF(t *testing.T) {
 	}
 }
 
+// TestFileEditTypographicVariants 从文档粘贴时常见的弯引号/破折号/不断行空格：
+// 屏幕上几乎一样，逐字节比较必然不中，所以降到"排版归一视图"匹配。
+func TestFileEditTypographicVariants(t *testing.T) {
+	tl, p := editFile(t, "say \u201chello\u201d now\n")
+	_, err := tl.Execute(context.Background(), call(`{"path":`+js(p)+`,"old_string":"say \"hello\" now","new_string":"say \"bye\" now"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, p); got != "say \"bye\" now\n" {
+		t.Fatalf("file = %q", got)
+	}
+
+	// 命中多处仍要拒绝（模糊匹配只用来找位置）。
+	tl2, p2 := editFile(t, "\u2014a\u2014b\n")
+	_, err = tl2.Execute(context.Background(), call(`{"path":`+js(p2)+`,"old_string":"-","new_string":"+"}`))
+	if err == nil || !strings.Contains(err.Error(), "appears 2 times") {
+		t.Fatalf("err = %v, want 多处命中报错", err)
+	}
+}
+
 // TestFileEditErrors 空 old_string、新旧相同、未命中、二进制、目录：各自报因，不猜。
 func TestFileEditErrors(t *testing.T) {
 	tl, p := editFile(t, "hello\n")

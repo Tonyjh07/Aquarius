@@ -649,7 +649,78 @@ func replaceUnique(text, oldStr, newStr string, all, crlf bool) (string, int, er
 	if out, ok := replaceLoose(text, oldStr, newStr); ok {
 		return finishEdits(out, crlf), 1, nil
 	}
+	// 降级三：排版变体（弯引号 / 破折号 / 不断行空格）。从文档里粘贴时最常见，
+	// 逐字节比较必然不中，而模型看不出这两串在屏幕上几乎一样。
+	if out, n, err := replaceTypographic(text, oldStr, newStr, all); err != nil {
+		return "", 0, err
+	} else if n > 0 {
+		return finishEdits(out, crlf), n, nil
+	}
 	return "", 0, errors.New("old_string was not found in the file; read the file again and copy the exact text")
+}
+
+// replaceTypographic 在"排版归一视图"上匹配，再按映射回到原字节区间替换。
+// 归一视图只改字形不改语义；替换时写回原文件的字节，未触碰区域逐字节不变。
+// n=0 = 没命中，交给上层报"未找到"；err 只在命中多处且未开 replace_all 时非空。
+func replaceTypographic(text, oldStr, newStr string, all bool) (string, int, error) {
+	norm, src := normalizeTypographic(text)
+	oldNorm, _ := normalizeTypographic(oldStr)
+	if oldNorm == "" {
+		return "", 0, nil
+	}
+	var starts []int
+	for i := 0; ; {
+		j := strings.Index(norm[i:], oldNorm)
+		if j < 0 {
+			break
+		}
+		starts = append(starts, i+j)
+		i += j + len(oldNorm)
+	}
+	if len(starts) == 0 {
+		return "", 0, nil
+	}
+	if len(starts) > 1 && !all {
+		return "", 0, fmt.Errorf("old_string appears %d times (ignoring typographic variants); include more surrounding context to make it unique, or pass replace_all", len(starts))
+	}
+	if !all {
+		starts = starts[:1]
+	}
+	out := text
+	// 从后往前替换：前面的区间不会因后面的长度变化而错位。
+	for i := len(starts) - 1; i >= 0; i-- {
+		s := starts[i]
+		e := s + len(oldNorm) - 1
+		from, to := src[s][0], src[e][1]
+		out = out[:from] + newStr + out[to:]
+	}
+	return out, len(starts), nil
+}
+
+// normalizeTypographic 生成排版归一视图，并给出每个视图字节对应的原字节区间
+// （起止各记一份）：视图里一个字形可能来自原文字节长度不同的字符，
+// 只有区间映射才不会把替换边界切在某个字符中间。
+func normalizeTypographic(s string) (string, [][2]int) {
+	repl := map[rune]string{
+		'\u2018': "'", '\u2019': "'", '\u201a': "'", '\u201b': "'",
+		'\u201c': `"`, '\u201d': `"`, '\u201e': `"`, '\u201f': `"`,
+		'\u2013': "-", '\u2014': "-", '\u2015': "-", '\u2212': "-",
+		'\u00a0': " ", '\u2007': " ", '\u202f': " ",
+	}
+	var b strings.Builder
+	src := make([][2]int, 0, len(s))
+	for i, r := range s {
+		rep, ok := repl[r]
+		if !ok {
+			rep = string(r)
+		}
+		b.WriteString(rep)
+		span := [2]int{i, i + len(string(r))}
+		for j := 0; j < len(rep); j++ {
+			src = append(src, span)
+		}
+	}
+	return b.String(), src
 }
 
 // replaceLoose 按"去首尾空白逐行相等"定位唯一片段，再用 newStr 的缩进重写。
