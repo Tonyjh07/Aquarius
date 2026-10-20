@@ -301,7 +301,8 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 // 说明，防止工具/MCP 注入的内容伪装成用户指令。常量在 model_text.go（D36 集中处）。
 
 // projectInjection 把一条 inject 节点投影为模型消息（D150/D170，投影表只在本处）：
-//   - 可信（`conversation.TrustHost`）= 宿主事实 → system，不套围栏；
+//   - 可信（`conversation.TrustHost`）= 宿主事实 → system；来源是用户自己的动作时仍取
+//     user 角色（换成 system 会让模型把用户原话当成系统设定）。两种情况都不套围栏；
 //   - 外部（`conversation.TrustExternal`，零值）→ user + 数据围栏 + 前置说明句。
 //
 // **判定只看 `m.Trust`，不看 `Source` 前缀**：前缀是生产者自报的字符串（MCP 工具名、

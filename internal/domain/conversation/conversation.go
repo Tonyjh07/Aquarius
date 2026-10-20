@@ -167,7 +167,9 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 		Outcome: old.Outcome,
 		// Source/Trigger 随原节点（D150）：改一条注入只应换内容，不该丢掉来源与触发记录
 		// ——否则呈现层与审计面会把改写后的注入写成「无来源注入」。
+		// Trust 同理（D170）：改内容不是改信任级的操作，丢了会让宿主事实降级成外部数据。
 		Source:    old.Source,
+		Trust:     old.Trust,
 		Trigger:   old.Trigger,
 		CreatedAt: nowFunc(),
 	}

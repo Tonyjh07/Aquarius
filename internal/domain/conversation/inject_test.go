@@ -85,6 +85,7 @@ func TestNonInjectRejectsSourceTrigger(t *testing.T) {
 		{ID: NewMessageID(), Parent: u1.ID, Role: RoleUser, Content: textParts("x"), Source: "tool:x", CreatedAt: nowFunc()},
 		{ID: NewMessageID(), Parent: u1.ID, Role: RoleAssistant, Content: textParts("x"), Trigger: true, CreatedAt: nowFunc()},
 		{ID: NewMessageID(), Parent: u1.ID, Role: RoleSystem, Content: textParts("x"), Source: "user", CreatedAt: nowFunc()},
+		{ID: NewMessageID(), Parent: u1.ID, Role: RoleUser, Content: textParts("x"), Trust: TrustHost, CreatedAt: nowFunc()},
 	}
 	for _, m := range bad {
 		if err := c.AppendCommitted(m); !errors.Is(err, ErrInvalidNode) {
@@ -99,15 +100,15 @@ func TestNonInjectRejectsSourceTrigger(t *testing.T) {
 	}
 }
 
-// TestReviseInjectKeepsSourceTrigger 修订注入节点只换内容：Source/Trigger 随原节点
-// （否则改写后就成了「无来源注入」）。
+// TestReviseInjectKeepsSourceTrigger 修订注入节点只换内容：Source/Trust/Trigger 随原节点
+// （否则改写后就成了「无来源注入」，或宿主事实被降级成外部数据）。
 func TestReviseInjectKeepsSourceTrigger(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
 	u1 := mustAppend(t, c, RoleUser, "u1")
 	in := mustCommit(t, c, Message{
 		ID: NewMessageID(), Parent: u1.ID, Role: RoleInject,
-		Content: textParts("旧"), Source: "poller:p1", Trigger: true, CreatedAt: nowFunc(),
+		Content: textParts("旧"), Source: "poller:p1", Trust: TrustHost, Trigger: true, CreatedAt: nowFunc(),
 	})
 	rev, err := c.Revise(in.ID, textParts("新"), Fresh)
 	if err != nil {
@@ -115,6 +116,9 @@ func TestReviseInjectKeepsSourceTrigger(t *testing.T) {
 	}
 	if rev.Role != RoleInject || rev.Source != "poller:p1" || !rev.Trigger {
 		t.Fatalf("revised inject lost source/trigger: %+v", rev)
+	}
+	if rev.Trust != TrustHost {
+		t.Fatalf("revised trust = %q, want host（改内容不改信任级）", rev.Trust)
 	}
 	if rev.Content[0].Text != "新" {
 		t.Fatalf("revised content = %q, want 新", rev.Content[0].Text)
