@@ -39,7 +39,7 @@ func WriteFile(path string, data []byte, perm fs.FileMode) error {
 
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("atomicfile: 建临时文件: %w", err)
+		return fmt.Errorf("atomicfile: create temp file: %w", err)
 	}
 	tmp := f.Name()
 	done := false
@@ -55,14 +55,14 @@ func WriteFile(path string, data []byte, perm fs.FileMode) error {
 	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		return fmt.Errorf("atomicfile: 写入: %w", err)
+		return fmt.Errorf("atomicfile: write: %w", err)
 	}
 	if err := f.Chmod(final); err != nil {
 		_ = f.Close()
-		return fmt.Errorf("atomicfile: 设置权限: %w", err)
+		return fmt.Errorf("atomicfile: chmod: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return fmt.Errorf("atomicfile: 关闭: %w", err)
+		return fmt.Errorf("atomicfile: close: %w", err)
 	}
 	// rename 换入：瞬时共享冲突（Windows 目标被并发占用）稍候重试。
 	for attempt := 0; ; attempt++ {
@@ -70,7 +70,7 @@ func WriteFile(path string, data []byte, perm fs.FileMode) error {
 			done = true
 			return nil
 		} else if attempt+1 >= renameAttempts {
-			return fmt.Errorf("atomicfile: 换入 %s: %w", path, err)
+			return fmt.Errorf("atomicfile: rename into %s: %w", path, err)
 		}
 		time.Sleep(renameBackoff)
 	}

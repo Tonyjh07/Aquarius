@@ -128,7 +128,7 @@ func TestIngestLargeTextTruncates(t *testing.T) {
 	if !strings.HasPrefix(text, "abcdefghij") {
 		t.Fatalf("text 前缀 = %.40q", text)
 	}
-	if !strings.Contains(text, "已截断") || !strings.Contains(text, p) {
+	if !strings.Contains(text, "truncated") || !strings.Contains(text, p) {
 		t.Fatalf("缺截断标注/原文路径: %.120q", text)
 	}
 	if n := len([]rune(text)); n > maxExtractText+120 {
@@ -348,7 +348,7 @@ func TestIngestPDFCorruptFallback(t *testing.T) {
 		t.Fatalf("解析失败不应整体报错（D105④ 回落占位）: %v", err)
 	}
 	txt := partText(t, rep)
-	if !strings.Contains(txt, "解析失败") || !strings.Contains(txt, "file_read") {
+	if !strings.Contains(txt, "failed to parse") || !strings.Contains(txt, "file_read") {
 		t.Fatalf("回落占位文案 = %q", txt)
 	}
 }
@@ -367,7 +367,7 @@ func TestIngestDeferredFormats(t *testing.T) {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 		txt := partText(t, rep)
-		if !strings.Contains(txt, "二进制内容未提取") {
+		if !strings.Contains(txt, "binary content not extracted") {
 			t.Fatalf("%s 应回落二进制占位，got %q", tc.name, txt)
 		}
 	}
@@ -386,7 +386,7 @@ func TestIngestDocTruncation(t *testing.T) {
 		t.Fatalf("ingest: %v", err)
 	}
 	txt := partText(t, rep)
-	if !strings.Contains(txt, "提取文本已截断") {
+	if !strings.Contains(txt, "truncated") {
 		t.Fatalf("截断标注缺失: %q", txt)
 	}
 }
@@ -403,7 +403,7 @@ func TestIngestDocOversize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	if txt := partText(t, rep); !strings.Contains(txt, "解析失败") {
+	if txt := partText(t, rep); !strings.Contains(txt, "failed to parse") {
 		t.Fatalf("超限应回落占位: %q", txt)
 	}
 }

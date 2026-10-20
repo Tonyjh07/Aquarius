@@ -93,7 +93,7 @@ func DisplayName(name string) string {
 // requireJobs 任务类工具的管理器校验（未装配时明确报错，不 panic）。
 func requireJobs(jobs port.JobManager, name string) (port.JobManager, error) {
 	if jobs == nil {
-		return nil, fmt.Errorf("%s: no job manager configured (port.JobManager)", name)
+		return nil, fmt.Errorf("%s: background tasks are not available in this build", name)
 	}
 	return jobs, nil
 }

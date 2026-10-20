@@ -22,7 +22,7 @@ var _ port.MemoryStore = resourceStore{}
 func (r resourceStore) Index(ctx context.Context) ([]port.MemoryIndexEntry, error) {
 	list, err := r.s.cs.ListResources(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("resources/list（插件 %s）: %w", r.s.name, err)
+		return nil, fmt.Errorf("resources/list (plugin %s): %w", r.s.name, err)
 	}
 	out := make([]port.MemoryIndexEntry, 0, len(list.Resources))
 	for _, res := range list.Resources {
@@ -37,7 +37,7 @@ func (r resourceStore) Index(ctx context.Context) ([]port.MemoryIndexEntry, erro
 			summary += " — " + res.Description
 		}
 		if res.MIMEType != "" {
-			summary += "（" + res.MIMEType + "）"
+			summary += " [" + res.MIMEType + "]"
 		}
 		out = append(out, port.MemoryIndexEntry{Name: res.URI, Summary: summary})
 	}
@@ -69,12 +69,12 @@ func (r resourceStore) Read(ctx context.Context, name string) (port.MemoryDoc, e
 
 // Write 只读投影：拒绝（§6.3 写走自有记忆）。
 func (r resourceStore) Write(context.Context, port.MemoryDoc) error {
-	return fmt.Errorf("MCP resources (plugin %s) are a read-only projection; write to your own memory instead (DESIGN 6.3)", r.s.name)
+	return fmt.Errorf("MCP resources (plugin %s) are read-only; use memory_write for your own memory instead", r.s.name)
 }
 
 // Remove 只读投影：拒绝。
 func (r resourceStore) Remove(context.Context, string) error {
-	return fmt.Errorf("MCP resources (plugin %s) are a read-only projection; delete from your own memory instead (DESIGN 6.3)", r.s.name)
+	return fmt.Errorf("MCP resources (plugin %s) are read-only; use memory_write to remove entries from your own memory instead", r.s.name)
 }
 
 // Search 关键词检索：对索引的 URI 与 Summary 做包含匹配（内容级检索先 Read 再查，

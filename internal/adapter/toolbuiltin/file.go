@@ -186,7 +186,7 @@ type fileSearch struct{ sandbox string }
 func (t *fileSearch) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "file_search",
-		Description: "Recursively search by filename substring (case-insensitive) from a directory; returns matching absolute paths, at most 200. Start from a narrow directory — huge trees can hit the tool timeout.",
+		Description: "Recursively search by filename substring (case-insensitive) from a directory; returns matching absolute paths, at most 200. Start from a narrow directory: huge trees can hit the tool timeout.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {

@@ -144,7 +144,7 @@ func TestTermExecTrimsHeadTail(t *testing.T) {
 func TestTermExecNilJobs(t *testing.T) {
 	te := &termExec{}
 	if _, err := te.Execute(context.Background(), call(`{"command":"x"}`)); err == nil ||
-		!strings.Contains(err.Error(), "no job manager") {
+		!strings.Contains(err.Error(), "not available in this build") {
 		t.Fatalf("err = %v", err)
 	}
 }

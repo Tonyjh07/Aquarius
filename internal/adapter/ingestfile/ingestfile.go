@@ -88,14 +88,14 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 		text, truncated, perr := extractStructured(kind, f, path)
 		if perr != nil {
 			// 解析失败（加密/损坏/超大）：占位并注明原因——提取尽力而为（D105④）。
-			text = fmt.Sprintf("〔文档 %s〕内容解析失败（%v），原文路径：%s（可用 file_read 读取）。", name, perr, path)
+			text = fmt.Sprintf("[document %s] failed to parse (%v); source file: %s (use file_read to read it).", name, perr, path)
 			return port.IngestReport{
 				Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
 				Note:  fmt.Sprintf("已附文件 %s（解析失败，回落占位：%v）", name, perr),
 			}, nil
 		}
 		if truncated {
-			text += fmt.Sprintf("\n…[提取文本已截断，全文可用 file_read 读取：%s]", path)
+			text += fmt.Sprintf("\n...[truncated; use file_read: %s]", path)
 		}
 		what := map[string]string{"pdf": "PDF", "docx": "Word", "xlsx": "Excel", "html": "HTML"}[kind]
 		return port.IngestReport{
@@ -106,7 +106,7 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 	case isTextish(mime, head, path):
 		text := strings.ToValidUTF8(string(head), "")
 		if more {
-			text += fmt.Sprintf("\n…[提取文本已截断，全文可用 file_read 读取：%s]", path)
+			text += fmt.Sprintf("\n...[truncated; use file_read: %s]", path)
 		}
 		return port.IngestReport{
 			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
@@ -115,7 +115,7 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 
 	default:
 		// 二进制（含音频：M3 无 ASR，不做转写）：模型侧只给取用说明。
-		text := fmt.Sprintf("〔文档 %s〕二进制内容未提取，原文路径：%s（可用 file_read 读取）。", name, path)
+		text := fmt.Sprintf("[document %s] binary content not extracted; source file: %s (use file_read to read it).", name, path)
 		return port.IngestReport{
 			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
 			Note:  fmt.Sprintf("已附文件 %s（二进制，%d 字节）", name, ref.Size),

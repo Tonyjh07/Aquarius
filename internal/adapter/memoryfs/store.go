@@ -34,7 +34,7 @@ type Store struct {
 // New 创建记忆存储。global 为全局记忆文件路径，convDir 为会话记忆目录（与会话树同目录）。
 func New(global, convDir string) (*Store, error) {
 	if strings.TrimSpace(global) == "" || strings.TrimSpace(convDir) == "" {
-		return nil, errors.New("memoryfs: 路径不能为空")
+		return nil, errors.New("memoryfs: path must not be empty")
 	}
 	return &Store{global: global, convDir: convDir}, nil
 
@@ -52,18 +52,18 @@ func (s *Store) path(name string) (string, error) {
 	// 会话文档：文件名必须恰好是 <id>.memory.md，id 不含分隔符与 ..
 	base := name
 	if i := strings.IndexAny(base, `/\`); i >= 0 {
-		return "", fmt.Errorf("memoryfs: 非法记忆文档名 %q", name)
+		return "", fmt.Errorf("memoryfs: invalid memory document name %q", name)
 	}
 	if base != filepath.Base(base) || strings.Contains(base, "..") {
-		return "", fmt.Errorf("memoryfs: 非法记忆文档名 %q", name)
+		return "", fmt.Errorf("memoryfs: invalid memory document name %q", name)
 	}
 	if !strings.HasSuffix(base, port.SessionMemorySuffix) {
-		return "", fmt.Errorf("memoryfs: 未知记忆文档 %q（可用：%s 或 <会话ID>%s）",
+		return "", fmt.Errorf("memoryfs: unknown memory document %q (use %q or a session memory name ending in %q)",
 			name, port.GlobalMemoryDoc, port.SessionMemorySuffix)
 	}
 	id := strings.TrimSuffix(base, port.SessionMemorySuffix)
 	if id == "" || strings.Contains(id, "..") {
-		return "", fmt.Errorf("memoryfs: 非法记忆文档名 %q", name)
+		return "", fmt.Errorf("memoryfs: invalid memory document name %q", name)
 	}
 	return filepath.Join(s.convDir, base), nil
 }
@@ -75,7 +75,7 @@ func docAt(name, file string) (port.MemoryDoc, bool, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return port.MemoryDoc{}, false, nil
 		}
-		return port.MemoryDoc{}, false, fmt.Errorf("memoryfs: 读取 %s: %w", name, err)
+		return port.MemoryDoc{}, false, fmt.Errorf("memoryfs: read %s: %w", name, err)
 	}
 	fi, err := os.Stat(file)
 	if err != nil {
@@ -108,7 +108,7 @@ func (s *Store) Index(ctx context.Context) ([]port.MemoryIndexEntry, error) {
 	entries, err := os.ReadDir(s.convDir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("memoryfs: 列出会话记忆 %s: %w", s.convDir, err)
+			return nil, fmt.Errorf("memoryfs: list session memories %s: %w", s.convDir, err)
 		}
 		return out, nil // 会话目录尚未创建：只有全局项
 	}
@@ -174,11 +174,11 @@ func (s *Store) Write(ctx context.Context, doc port.MemoryDoc) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-		return fmt.Errorf("memoryfs: 创建目录: %w", err)
+		return fmt.Errorf("memoryfs: create directory: %w", err)
 	}
 	// 唯一临时文件 + 原子换入：并发写互不踩踏，覆盖沿用既有权限位（§14 遗留）。
 	if err := atomicfile.WriteFile(file, []byte(doc.Content), 0o644); err != nil {
-		return fmt.Errorf("memoryfs: 写入 %s: %w", file, err)
+		return fmt.Errorf("memoryfs: write %s: %w", file, err)
 	}
 	return nil
 }
@@ -196,7 +196,7 @@ func (s *Store) Remove(ctx context.Context, name string) error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("%w: %s", ErrNotFound, name)
 		}
-		return fmt.Errorf("memoryfs: 删除 %s: %w", name, err)
+		return fmt.Errorf("memoryfs: delete %s: %w", name, err)
 	}
 	return nil
 }
@@ -205,7 +205,7 @@ func (s *Store) Remove(ctx context.Context, name string) error {
 func (s *Store) Search(ctx context.Context, query string) ([]port.MemoryHit, error) {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
-		return nil, errors.New("memoryfs: 检索词不能为空")
+		return nil, errors.New("memoryfs: search query must not be empty")
 	}
 	const maxHits = 50
 	var out []port.MemoryHit

@@ -53,7 +53,7 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 		}, nil
 	}
 	// 非图片附件（如剪贴板带的文件）：按文档处理并给取用说明。
-	text := fmt.Sprintf("〔文档 %s〕MIME=%s，哈希=%s（附件已入库，可经装配查看）。",
+	text := fmt.Sprintf("[document %s] MIME=%s, sha256=%s (stored as an attachment).",
 		raw.Blob.Name, raw.Blob.MIME, raw.Blob.Hash)
 	return port.IngestReport{
 		Parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: raw.Blob, Text: text}},

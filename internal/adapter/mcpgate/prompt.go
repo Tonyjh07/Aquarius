@@ -33,7 +33,7 @@ func (s *Server) RenderPrompt(ctx context.Context, name string, args []string) (
 	}
 	res, err := s.cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: name, Arguments: arguments})
 	if err != nil {
-		return "", fmt.Errorf("prompts/get %s（插件 %s）: %w", name, s.name, err)
+		return "", fmt.Errorf("prompts/get %s (plugin %s): %w", name, s.name, err)
 	}
 	var b strings.Builder
 	for _, m := range res.Messages {
@@ -45,7 +45,7 @@ func (s *Server) RenderPrompt(ctx context.Context, name string, args []string) (
 			if b.Len() > 0 {
 				b.WriteString("\n\n")
 			}
-			fmt.Fprintf(&b, "[%s 非文本内容]", m.Role)
+			fmt.Fprintf(&b, "[%s non-text content]", m.Role)
 			continue
 		}
 		if b.Len() > 0 {
