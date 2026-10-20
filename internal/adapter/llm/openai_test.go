@@ -770,6 +770,98 @@ func TestGenerateTransportErrorTagging(t *testing.T) {
 	}
 }
 
+// TestGenerateQuotaTagging 429（D173）除瞬时外还标 port.ErrQuota，并带上响应头里的
+// 冷却时长；其他瞬时状态（5xx/408）不标配额——那种错误换钥匙没用。
+func TestGenerateQuotaTagging(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "42")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"rate limited"}}`)
+	}))
+	defer srv.Close()
+
+	c, _ := New(Config{BaseURL: srv.URL})
+	_, err := c.Generate(context.Background(), port.GenerateRequest{
+		Model:    "m",
+		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+	})
+	if err == nil || !errors.Is(err, port.ErrQuota) {
+		t.Fatalf("err = %v, want 标 ErrQuota", err)
+	}
+	if !errors.Is(err, port.ErrTransient) {
+		t.Fatalf("配额错误须同时标瞬时（重试层照旧退避）: %v", err)
+	}
+	if d := port.QuotaAfter(err); d != 42*time.Second {
+		t.Fatalf("冷却 = %v, want 42s（读 Retry-After）", d)
+	}
+}
+
+// TestGenerateNonQuotaTransientNotTagged 5xx/408 不标配额（不该触发换钥匙）。
+func TestGenerateNonQuotaTransientNotTagged(t *testing.T) {
+	for _, code := range []int{http.StatusInternalServerError, http.StatusRequestTimeout} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(code)
+			fmt.Fprint(w, `{"error":{"message":"nope"}}`)
+		}))
+		c, _ := New(Config{BaseURL: srv.URL})
+		_, err := c.Generate(context.Background(), port.GenerateRequest{
+			Model:    "m",
+			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		})
+		srv.Close()
+		if err == nil || !errors.Is(err, port.ErrTransient) || errors.Is(err, port.ErrQuota) {
+			t.Fatalf("%d: err = %v, want 瞬时但非配额", code, err)
+		}
+		if d := port.QuotaAfter(err); d != 0 {
+			t.Fatalf("%d: QuotaAfter = %v, want 0", code, d)
+		}
+	}
+}
+
+// TestGenerateQuotaRetryAfterVariants Retry-After 的三种写法：秒数、HTTP 日期、
+// 缺失（= 0，由密钥池取缺省冷却）。
+func TestGenerateQuotaRetryAfterVariants(t *testing.T) {
+	cases := []struct {
+		header string
+		want   time.Duration
+	}{
+		{"120", 120 * time.Second},
+		{"", 0},
+		{"0", 0},
+		{"-5", 0},
+		{"not-a-number", 0},
+		{time.Now().Add(90 * time.Second).UTC().Format(http.TimeFormat), 0}, // 日期型在毫秒级断言里不便精确比，交由范围检查
+	}
+	for _, tc := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if tc.header != "" {
+				w.Header().Set("Retry-After", tc.header)
+			}
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"rate limited"}}`)
+		}))
+		c, _ := New(Config{BaseURL: srv.URL})
+		_, err := c.Generate(context.Background(), port.GenerateRequest{
+			Model:    "m",
+			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		})
+		got := port.QuotaAfter(err)
+		srv.Close()
+		if tc.header == "" || tc.header == "0" || tc.header == "-5" || tc.header == "not-a-number" {
+			if got != tc.want {
+				t.Fatalf("Retry-After %q: 冷却 = %v, want %v", tc.header, got, tc.want)
+			}
+			continue
+		}
+		if tc.want > 0 && got != tc.want {
+			t.Fatalf("Retry-After %q: 冷却 = %v, want %v", tc.header, got, tc.want)
+		}
+		if tc.want == 0 && (got < 80*time.Second || got > 91*time.Second) {
+			t.Fatalf("Retry-After %q: 日期型应解出约 90s，实为 %v", tc.header, got)
+		}
+	}
+}
+
 func TestGenerateMidStreamErrorPayload(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

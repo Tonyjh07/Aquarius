@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -173,6 +174,7 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 	if resp.StatusCode != http.StatusOK {
 		code := resp.StatusCode
 		sn := readSnippet(resp.Body)
+		after := retryAfter(resp)
 		_ = resp.Body.Close()
 		resp = nil
 		// D34：服务端点名不认的参数 → 本次剥离重试，成功后记录（装配根写回 config，
@@ -199,13 +201,21 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 				} else {
 					code = resp2.StatusCode
 					sn = readSnippet(resp2.Body)
+					after = retryAfter(resp2)
 					_ = resp2.Body.Close()
 				}
 			}
 		}
 		if resp == nil {
 			cancel()
-			if transientStatus(code) {
+			switch {
+			case code == http.StatusTooManyRequests:
+				// 429（D173 密钥池）：限流/配额耗尽。标 ErrTransient 照旧走重试，
+				// 同时包成 *port.Quota 带上冷却时长，让密钥池层先换下一把钥匙——
+				// 多账号场景下「换钥匙」比「退避等同一把」更快也更符合用户意图。
+				return nil, fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, chatPath, code, sn,
+					&port.Quota{After: after, Cause: port.ErrTransient})
+			case transientStatus(code):
 				// §10：429/408/5xx 标注瞬时错误，供装配根的重试装饰器限次退避。
 				return nil, fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, chatPath, code, sn, port.ErrTransient)
 			}
@@ -365,6 +375,31 @@ func transientStatus(code int) bool {
 	return code == http.StatusTooManyRequests ||
 		code == http.StatusRequestTimeout ||
 		code >= http.StatusInternalServerError
+}
+
+// retryAfter 从响应头读冷却时长（D173 密钥池）：`Retry-After` 支持秒数（RFC 7231 的
+// delta-seconds）与 HTTP 日期两种写法；缺省或读不出 = 0（由密钥池取缺省冷却）。
+// 负数/过去时刻一律归 0——「早就该能用了」不该被解释成「再等一会儿」。
+func retryAfter(resp *http.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+	raw := strings.TrimSpace(resp.Header.Get("Retry-After"))
+	if raw == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(raw); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if when, err := http.ParseTime(raw); err == nil {
+		if d := time.Until(when); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // authorize 附加 Authorization 头（有密钥才发）。
