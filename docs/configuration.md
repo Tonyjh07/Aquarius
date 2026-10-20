@@ -45,7 +45,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档）/ `openai-responses` / `anthropic`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
+| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档）/ `openai-responses` / `anthropic`；后两种的适配器**尚未接入**，写了会在启动时报错而不是拿错协议去请求）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
 | `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局） |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
@@ -68,9 +68,14 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 整轮就按缺该项处理（不发工具清单 / 不发思考参数 / 图片降级为文字占位）。加一条弱模型会削掉整链的
 能力，所以启动时若链窄于当前模型会打印一行警告，`/model` 也会列出生效能力。
 
-**能力探测**：能力位是声明，写错了要到用的时候才炸。设置窗「模型服务」页每个模型行可手动发起探测
-（三条最小请求试 工具调用 / 图片输入 / 思考），结果只在**判定明确**时写回 `caps`——网络失败之类
-的「无结论」不会清掉已有声明。探测会真实消耗少量 token，故不自动运行。
+**能力探测**：能力位是声明，写错了要到用的时候才炸。`/model probe [模型名]`（省略 = 当前模型）
+发三条最小请求试 工具调用 / 图片输入 / 思考，**只把判定明确的**写回 `caps`——网络失败、超时、
+参数被静默忽略这类「无结论」不会清掉已有声明。图片输入那一项是**给一张纯色图让它说颜色**：
+说对了才算支持（说明图被真正解码了，而不只是收下了字段），说成别的颜色或明说看不到算不支持。
+探测之后该模型的能力位就是**显式声明**了（无结论的项保留探测前的生效值），重启后生效；
+探测会真实消耗少量 token，故不自动运行。设置窗「模型服务」页的模型行也提供同一操作。
+思考参数有 `reasoning_effort` 与 `enable_thinking` 两套（各家认的不一样），探测会**分别各试一次**
+再合并——任意一套能出思考就算支持，两套都被拒才算不支持。
 
 **上下文窗口**（`models[].context_window`）：装配预算 = **min(当前模型的窗口, `limits.max_context_tokens`)**。
 全局那项是"我想用多少"（省钱就调小），模型窗口是"服务端最多收多少"（超了直接拒），两者都生效、谁小听谁的。

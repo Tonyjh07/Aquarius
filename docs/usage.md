@@ -44,6 +44,7 @@ go build ./cmd/aquarius
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/jobs [list\|logs <id> [行数]\|kill <id>]` | 后台任务管理（M3）：缺省 `list`；`logs` 取末尾行（缺省 50）；`kill` 终止（连同子进程）。任务由模型经 `job_start` 启动，ID 支持唯一前缀 |
 | `/model [name]` | 无参：当前 provider + 当前模型 + **生效能力**（工具/思考/图片，整条降级链取与，并指名哪一环在拉低）+ **上下文预算**（生效值，以及是被模型窗口还是全局上限压住的）+ 降级链逐环 + 可用清单（单价标注）；有参：先写回 config `model.name` 再 Agent 内热切换（D32，同 `/permission` 模式），下一轮即生效；provider/端点/降级链/窗口改设置窗或 config（重启生效） |
+| `/model probe [模型名]` | 实测某模型到底收不收得下工具调用、思考、图片：三条最小请求、逐项三态结论（支持/不支持/无结论，附依据与耗时用量）。图片那一项给一张纯色图让它说颜色——说对才算支持。**只把判定明确的几位写回** `models[].caps`（无结论不动现有声明），重启后生效。省略模型名 = 当前模型；探测是真请求、真花钱，故只在手动发起时跑 |
 | `/think [on\|off]` | 无参：原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发（覆盖 `/effort`）；当前链的模型未声明思考能力时同样不发 |
 | `/effort [级别]` | 无参：当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off 清除）写回 config `model.reasoning_effort`。是否真发由 `/think` 决定；on 且未设档 = 不发（交服务端默认） |
 | `/plugin [list\|enable <name>\|disable <name>]` | MCP 插件管理（M4，D31）：list 显示状态/来源/传输/能力授权/调用统计/重启与报因，并列出可用动态命令；enable 走 capability 首用确认并写回 config；disable 即时摘除其工具与命令 |

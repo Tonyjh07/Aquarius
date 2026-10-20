@@ -300,7 +300,8 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   所以任一环节不支持就整轮按不支持处理。不支持时 `file_read` 回填
   `the current model does not accept image input`，user 附件里的 Image Part 同样降级为文字占位
   （本段的「明确报因」口径）。能力位可由用户**手动发起探测**（D174）：探测只写回判定明确的
-  几位，「无结论」不动已有声明。
+  几位，「无结论」不动已有声明。视觉这一项靠**一张纯色图 + 让它说出颜色**判定——说对了 =
+  真解码了图；说成别的颜色、或明说看不到 = 不支持。
 
 ### 4.3 内置工具（全部经 `port.Tool` 契约，与三方插件同权）
 
@@ -870,7 +871,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
-| `/model [name]` | 无参：列 `LLM.Models()` 可用模型 + 当前模型/能力/单价；有参：Agent 内热切换并写回 config（D32，同 `/permission` 模式） |
+| `/model [name]` | 无参：列 `LLM.Models()` 可用模型 + 当前模型/能力/单价；有参：Agent 内热切换并写回 config（D32，同 `/permission` 模式）。`/model probe [名字]` = 实测能力并只写回判定明确的位（D174） |
 | `/think [on\|off]` | 无参：显示原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发。当前链的模型不支持思考（D173 `caps` 无 `reasoning`）时同样不发，无参显示里注明「当前模型未声明思考能力」 |
 | `/effort [级别]` | 无参：显示当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off = 清除）写回 config `model.reasoning_effort`；**是否真发由 `/think` 决定**，on 且未设档则不发（交服务端默认，D34） |
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
