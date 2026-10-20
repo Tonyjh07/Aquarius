@@ -51,7 +51,7 @@ const compactSummaryRules = `Rules:
 // compactShared 两态共用段：只总结用户与助手的言行（persona/系统设定恒回传、不入摘要）、
 // 模板、规则、禁止续写与工具调用、只输出模板正文。
 var compactShared = []string{
-	"Summarize only what the user and the assistant said and did. Leave out instructions and setup the assistant was given rather than told by the user: the persona/system configuration, repository conventions, instruction files such as AGENTS.md, and environment details like the session ID. The next agent receives current versions of all of these separately.",
+	"Summarize only what the user and the assistant said and did. Leave out the setup the assistant was given rather than told by the user: the persona and system configuration, and runtime environment details. The next agent receives current versions of both separately.",
 	compactSummaryTemplate,
 	compactSummaryRules,
 	"Do not continue the task or call tools.",

@@ -16,7 +16,7 @@ func TestCompactPromptInitial(t *testing.T) {
 		"## Objective", "## Requirements", "## Decisions",
 		"### Completed", "### Active", "### Blocked",
 		"## Next Move", "## Relevant Files", "## Important Context",
-		"persona/system configuration",
+		"persona and system configuration",
 		"Do not continue the task or call tools.",
 		"Do not mention the summary process",
 	} {
