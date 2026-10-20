@@ -1,6 +1,7 @@
 package toolbuiltin
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -16,8 +17,16 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
-// maxFileRead 单文件读取上限（超出截断并标注；最终视图仍按 tool_output_chars 裁剪）。
-const maxFileRead = 4 << 20 // 4MB
+// 单页读取预算（D169）：行数、字符、单行长度三重上限。
+//
+// 字符预算（16000）刻意略小于缺省的 tool_output_chars（20000），与 term_exec 的
+// 保头尾预算同口径——这样 ToolRunner 的统一裁剪不会二次触发，页尾那条
+// 「continue with offset」才不会被裁掉；分页是 file_read 唯一的截断方式。
+const (
+	maxReadLines     = 2000
+	maxReadPageChars = 16000
+	maxReadLineChars = 2000
+)
 
 // 目录列举与搜索结果上限（防爆上下文）。
 const (
@@ -45,18 +54,24 @@ func requireAbs(sandbox, path string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-// fileRead 读取文本文件。
+// fileRead 读取文本文件（按行分页）。
 type fileRead struct{ sandbox string }
 
 func (t *fileRead) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "file_read",
-		Description: fmt.Sprintf("Read a text file (absolute path). Binary files are rejected; files larger than %s are truncated. "+
-			"Reading never needs confirmation.", humanBytes(maxFileRead)),
+		Description: fmt.Sprintf("Read a text file (absolute path). Binary files are rejected. "+
+			"Read in pages: offset is the 1-based first line, limit is how many lines to return (default and maximum %d, "+
+			"one page is also capped at %d characters). Every returned line is prefixed with its line number; "+
+			"the prefix is for orientation only and is not part of the file content. "+
+			"When a page ends before the file does, the last line says which offset to continue from. "+
+			"Reading never needs confirmation.", maxReadLines, maxReadPageChars),
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
-				"path": {"type": "string", "description": "absolute path"}
+				"path": {"type": "string", "description": "absolute path"},
+				"offset": {"type": "integer", "description": "1-based line number to start from (default 1)"},
+				"limit": {"type": "integer", "description": "maximum number of lines to return (default 2000)"}
 			},
 			"required": ["path"]
 		}`),
@@ -92,7 +107,9 @@ func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 		return tool.Result{}, err // 入口即响应取消（DESIGN §10：工具执行同受 ctx 约束）
 	}
 	var a struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Offset int    `json:"offset"`
+		Limit  int    `json:"limit"`
 	}
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
@@ -101,24 +118,124 @@ func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	if err != nil {
 		return tool.Result{}, err
 	}
+	if a.Offset < 0 {
+		return tool.Result{}, fmt.Errorf("offset must be 1 or greater, got %d", a.Offset)
+	}
+	if a.Limit < 0 {
+		return tool.Result{}, fmt.Errorf("limit must be positive, got %d", a.Limit)
+	}
+	offset := a.Offset
+	if offset == 0 {
+		offset = 1 // 缺省从第一行开始
+	}
+	limit := a.Limit
+	if limit == 0 || limit > maxReadLines {
+		limit = maxReadLines
+	}
+
 	f, err := os.Open(p)
 	if err != nil {
 		return tool.Result{}, fmt.Errorf("open file: %w", err)
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxFileRead+1))
+
+	// 先嗅探头部再决定怎么读（D169）：二进制与图片都在这里分流，
+	// 不能先按大小截断再看——截断会把二进制切成一堆"看起来合法"的文本。
+	head, err := sniffHead(f)
 	if err != nil {
-		return tool.Result{}, fmt.Errorf("read file: %w", err)
+		return tool.Result{}, err
 	}
-	// 先判二进制再截断：反过来的话，大二进制文件会先被截成 4MB 文本塞进上下文。
-	if isBinary(data) {
+	if isBinary(head) {
 		return tool.Result{}, fmt.Errorf("%s looks like a binary file; file_read only reads text", p)
 	}
-	if len(data) > maxFileRead {
-		data = data[:maxFileRead]
-		return okResult(string(data) + fmt.Sprintf("\n...[file too large, only the first %s was read]", humanBytes(maxFileRead))), nil
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return tool.Result{}, fmt.Errorf("rewind file: %w", err)
 	}
-	return okResult(string(data)), nil
+
+	page, empty, err := readPage(f, offset, limit)
+	if err != nil {
+		return tool.Result{}, err
+	}
+	if empty {
+		return okResult(fmt.Sprintf("(empty page: the file ends before line %d)", offset)), nil
+	}
+	return okResult(page), nil
+}
+
+// sniffHead 读前 8KB 用于二进制/媒体判定（不改文件偏移，调用方自行 Seek）。
+func sniffHead(f *os.File) ([]byte, error) {
+	head := make([]byte, 8192)
+	n, err := io.ReadFull(f, head)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, fmt.Errorf("read file head: %w", err)
+	}
+	return head[:n], nil
+}
+
+// readPage 从 1-based offset 开始读取至多 limit 行，返回带行号的页面。
+//
+// 三重上限：行数（limit）、整页字符（maxReadPageChars）、单行字符（maxReadLineChars）。
+// 任何一档先到就收尾，并在页尾写一条续读指引——**这条指引必须留在页面里**，
+// 被通用裁剪吃掉就等于把「只给开头、无法续读」重新装了回来。所以这里不统计总行数：
+// 数一遍要把整个文件读完，而续读只需要知道下一页从哪一行开始。
+func readPage(f *os.File, offset, limit int) (page string, empty bool, err error) {
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20) // 单行最长 1MB，超长行按扫描错误处理
+
+	var b strings.Builder
+	lineNo := 0
+	start, end := 0, 0
+	chars := 0
+	more := false
+	for sc.Scan() {
+		lineNo++
+		if lineNo < offset {
+			continue
+		}
+		line := sc.Text()
+		if r := []rune(line); len(r) > maxReadLineChars {
+			line = string(r[:maxReadLineChars]) + fmt.Sprintf("...[line clamped at %d chars]", maxReadLineChars)
+		}
+		entries := len([]rune(line)) + len(itoa(lineNo)) + 2
+		if start > 0 && (end-start+1 >= limit || chars+entries > maxReadPageChars) {
+			more = true
+			continue
+		}
+		b.WriteString(itoa(lineNo))
+		b.WriteString(": ")
+		b.WriteString(line)
+		b.WriteString("\n")
+		chars += entries
+		if start == 0 {
+			start = lineNo
+		}
+		end = lineNo
+	}
+	if err := sc.Err(); err != nil {
+		return "", false, fmt.Errorf("read file: %w", err)
+	}
+	if start == 0 {
+		return "", true, nil // 空文件，或 offset 已越过末行
+	}
+	if more {
+		b.WriteString(fmt.Sprintf("...[truncated; continue with offset: %d]", end+1))
+	}
+	return strings.TrimRight(b.String(), "\n"), false, nil
+}
+
+// itoa 行号转十进制（热点路径，避免 fmt 的反射开销与分配）。
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 // isBinary 前 8KB 含 NUL 判定为二进制。
@@ -141,12 +258,16 @@ type fileList struct{ sandbox string }
 func (t *fileList) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "file_list",
-		Description: fmt.Sprintf("List directory entries (absolute path; directories suffixed with /). At most %d entries are returned.",
+		Description: fmt.Sprintf("List directory entries (absolute path; directories suffixed with /). "+
+			"Read in pages: offset is the 0-based index of the first entry, limit is how many to return "+
+			"(default and maximum %d). When a page ends before the directory does, the last line says which offset to continue from.",
 			maxListEntries),
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {
-				"path": {"type": "string", "description": "absolute directory path"}
+				"path": {"type": "string", "description": "absolute directory path"},
+				"offset": {"type": "integer", "description": "0-based index of the first entry (default 0)"},
+				"limit": {"type": "integer", "description": "maximum number of entries to return (default 500)"}
 			},
 			"required": ["path"]
 		}`),
@@ -167,7 +288,9 @@ func (t *fileList) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 		return tool.Result{}, err
 	}
 	var a struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Offset int    `json:"offset"`
+		Limit  int    `json:"limit"`
 	}
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
@@ -176,24 +299,40 @@ func (t *fileList) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	if err != nil {
 		return tool.Result{}, err
 	}
+	if a.Offset < 0 {
+		return tool.Result{}, fmt.Errorf("offset must be 0 or greater, got %d", a.Offset)
+	}
+	if a.Limit < 0 {
+		return tool.Result{}, fmt.Errorf("limit must be positive, got %d", a.Limit)
+	}
+	limit := a.Limit
+	if limit == 0 || limit > maxListEntries {
+		limit = maxListEntries
+	}
 	entries, err := os.ReadDir(p)
 	if err != nil {
 		return tool.Result{}, fmt.Errorf("list dir: %w", err)
 	}
+	if len(entries) == 0 {
+		return okResult(emptyEntries), nil
+	}
+	if a.Offset >= len(entries) {
+		return okResult(fmt.Sprintf("(empty page: the directory has %d entries; offset %d is past the end)", len(entries), a.Offset)), nil
+	}
 	var b strings.Builder
-	for i, e := range entries {
-		if i >= maxListEntries {
-			fmt.Fprintf(&b, "...[total %d entries, showing the first %d]", len(entries), maxListEntries)
-			return okResult(b.String()), nil
-		}
+	end := a.Offset + limit
+	if end > len(entries) {
+		end = len(entries)
+	}
+	for _, e := range entries[a.Offset:end] {
 		name := e.Name()
 		if e.IsDir() {
 			name += "/"
 		}
 		b.WriteString(name + "\n")
 	}
-	if b.Len() == 0 {
-		return okResult(emptyEntries), nil
+	if end < len(entries) {
+		fmt.Fprintf(&b, "...[truncated; continue with offset: %d]", end)
 	}
 	return okResult(strings.TrimRight(b.String(), "\n")), nil
 }

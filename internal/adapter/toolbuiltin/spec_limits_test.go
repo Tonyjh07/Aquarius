@@ -24,7 +24,8 @@ func TestSpecsDeriveLimitsFromConstants(t *testing.T) {
 		tool  string
 		limit string
 	}{
-		{"file_read", humanBytes(maxFileRead)},
+		{"file_read", fmt.Sprint(maxReadLines)},
+		{"file_read", fmt.Sprint(maxReadPageChars)},
 		{"file_list", fmt.Sprint(maxListEntries)},
 		{"file_search", fmt.Sprint(maxSearchHits)},
 		{"job_logs", fmt.Sprint(defaultJobLogsTail)},

@@ -323,7 +323,7 @@ func TestFileTools(t *testing.T) {
 	}
 	r := pick(t, tools, "file_read")
 	res, err := r.Execute(ctx, call(`{"path":`+js(target)+`}`))
-	if err != nil || res.Output != "你好 world" {
+	if err != nil || res.Output != "1: 你好 world" {
 		t.Fatalf("read = %q, %v", res.Output, err)
 	}
 	// 申报：读/写分开。
