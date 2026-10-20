@@ -94,12 +94,14 @@ func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	if err != nil {
 		return tool.Result{}, fmt.Errorf("read file: %w", err)
 	}
+	// 先判二进制再截断：反过来的话，超过上限的二进制文件会先被截成文本塞进上下文，
+	// 二进制检查永远看不到它。
+	if isBinary(data) {
+		return tool.Result{}, fmt.Errorf("%s looks like a binary file; file_read only reads text", p)
+	}
 	if len(data) > maxFileRead {
 		data = data[:maxFileRead]
 		return okResult(string(data) + "\n…[file too large, only the first 4MB was read]"), nil
-	}
-	if isBinary(data) {
-		return tool.Result{}, fmt.Errorf("%s looks like a binary file; file_read only reads text", p)
 	}
 	return okResult(string(data)), nil
 }
