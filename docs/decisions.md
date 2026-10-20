@@ -3214,7 +3214,7 @@
   检测到 BOM 则写回时保留。**不做**格式化（无 formatter 装配）。
 - **口径五：与 `file_write` 同权限口径**。`Risk=Confirm` + 路径格判定（`rw` 格免确认，
   其余逐次确认），不因 `Confirm` 再叠加抬高。
-- **口径六：回填只说结果**。成功 `Edited <path> (N replacement(s))`；失败给出可行动原因
+- **口径六：回填只说结果**。成功 `edited <path> (N replacement(s))`（与其余内置工具一样小写开头）；失败给出可行动原因
   （找不到 / 命中多处 / 新旧相同 / `old_string` 为空时提示改用 `file_write`）。
 - **模型**：`adapter/toolbuiltin/file.go`（新工具 + 实现）、`adapter/toolbuiltin/toolbuiltin.go`
   （清单与中文词表）、`DESIGN.md` §4.3、`app/model_text.go`（如需）。

@@ -759,6 +759,11 @@ func replaceLoose(text, oldStr, newStr string) (string, bool) {
 	if n := len(nLines); n > 1 && nLines[n-1] == "" {
 		nLines = nLines[:n-1]
 	}
+	// 整段删除（new_string 为空）时不要留下一个空行：那会把"删掉这两行"变成
+	// "删掉内容但留个空行"，下游 formatter/lint 立刻报错。
+	if newStr == "" {
+		nLines = nil
+	}
 	out := make([]string, 0, len(tLines)-len(oLines)+len(nLines))
 	out = append(out, tLines[:start]...)
 	out = append(out, nLines...)

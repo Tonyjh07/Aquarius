@@ -138,6 +138,23 @@ func TestFileEditTypographicVariants(t *testing.T) {
 	}
 }
 
+// TestFileEditDeletesWholeLines 空 new_string = 删除这段：不能留下一个空行。
+// 模型删一行通常就是把 new_string 留空——留下空行会让 formatter/lint 立刻报错，
+// 而模型以为自己只是"删掉了内容"。
+func TestFileEditDeletesWholeLines(t *testing.T) {
+	tl, p := editFile(t, "keep\ndrop me\nalso keep\n")
+	res, err := tl.Execute(context.Background(), call(`{"path":`+js(p)+`,"old_string":"drop me\n","new_string":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, p); got != "keep\nalso keep\n" {
+		t.Fatalf("file = %q, want 整行删除不留空行", got)
+	}
+	if !strings.Contains(res.Output, "1 replacement") {
+		t.Fatalf("output = %q", res.Output)
+	}
+}
+
 // TestFileEditErrors 空 old_string、新旧相同、未命中、二进制、目录：各自报因，不猜。
 func TestFileEditErrors(t *testing.T) {
 	tl, p := editFile(t, "hello\n")
