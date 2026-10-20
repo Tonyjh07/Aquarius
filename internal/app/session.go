@@ -68,6 +68,8 @@ type SessionDeps struct {
 	// Chain 降级链逐环快照（D173：/model 标注是哪一环拉低了整链；nil 时省略）。
 	// provider 运行态不热切，故装配根注入的是启动期静态值。
 	Chain func() []ModelLink
+	// Budget 上下文预算口径（D177：min(当前模型窗口, 全局上限)；nil 时省略该行）。
+	Budget func() ContextBudget
 	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
 	// nil 时 /think 有参报"未配置持久化"。
 	PersistThink func(on bool) error
@@ -104,6 +106,7 @@ type Session struct {
 	providerName   func() string
 	caps           func() port.ModelCaps
 	chain          func() []ModelLink
+	budget         func() ContextBudget
 	persistThink   func(on bool) error
 	persistEffort  func(level string) error
 	cur            *conversation.Conversation
@@ -188,6 +191,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		providerName:   d.ProviderName,
 		caps:           d.Caps,
 		chain:          d.Chain,
+		budget:         d.Budget,
 		persistThink:   d.PersistThink,
 		persistEffort:  d.PersistEffort,
 		dynamic:        map[string]CommandHandler{},

@@ -221,6 +221,39 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 	return nil
 }
 
+// maxContextBudget 装配与截断共用的上下文预算（D177）：min(当前模型窗口, 全局上限)。
+// 压缩阈值（Agent）、/usage 占用、装饰器硬保底截断三处必须同源——各算各的就会出现
+// 「界面说还有空间，发出去却被服务端拒」这种最难查的分叉。全局值 <= 0 时用内置缺省。
+func (w *wiring) maxContextBudget() int {
+	global := w.cfg.Limits.MaxContextTokens
+	if global <= 0 {
+		global = app.DefaultMaxContextTokens
+	}
+	return w.cfg.Model.effectiveMaxContext(global)
+}
+
+// contextBudget /model 展示用的预算口径（D177）：生效值 + 这个值是谁决定的。
+func (w *wiring) contextBudget() app.ContextBudget {
+	global := w.cfg.Limits.MaxContextTokens
+	if global <= 0 {
+		global = app.DefaultMaxContextTokens
+	}
+	return app.ContextBudget{
+		Effective:   w.cfg.Model.effectiveMaxContext(global),
+		ModelWindow: w.cfg.Model.currentContextWindow(),
+		GlobalLimit: global,
+	}
+}
+
+// listModels /model 无参的可用清单：服务端名字表 + 配置里的能力位/窗口（D177）。
+func (w *wiring) listModels(ctx context.Context) ([]port.ModelInfo, error) {
+	infos, err := w.client.Models(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return w.cfg.Model.enrichModels(infos), nil
+}
+
 // stackDecorators 叠横切装饰器链（D14/§10，装配根叠加，铁律 9）：审计记每次真实
 // 调用，重试包在审计之外（一次用户可见的 Generate = 多条审计行），硬保底截断最内
 // （发给服务端前裁到预算内）；跨 provider 降级（D110②/Q5/修订③）罩全体最外——
@@ -231,10 +264,7 @@ func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 		return nil, err
 	}
 	w.audit = audit
-	maxCtx := w.cfg.Limits.MaxContextTokens
-	if maxCtx <= 0 {
-		maxCtx = app.DefaultMaxContextTokens
-	}
+	maxCtx := w.maxContextBudget()
 	// fit 闭包工厂：逐 provider 用各自 tokenizer 计数（fallback client 可配不同
 	// tokenizer；est 链恒取 primary）。
 	fitFor := func(cnt port.TokenCounter) func(context.Context, port.GenerateRequest) (port.GenerateRequest, int) {

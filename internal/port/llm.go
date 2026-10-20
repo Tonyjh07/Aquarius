@@ -59,7 +59,10 @@ type ModelInfo struct {
 	Name string
 	// Caps 能力位（D173）；服务端 /models 不报模态，零值 = 未知（调用方按自己的
 	// 配置声明补齐，不要拿零值当「不支持」展示给用户）。
-	Caps               ModelCaps
+	Caps ModelCaps
+	// ContextWindow 上下文窗口 tokens（D177）；0 = 未声明/未知。服务端 /models 不返回
+	// 窗口，只能来自 config；0 表示「按全局预算」，不是「窗口为零」。
+	ContextWindow      int
 	CostIn, CostOutUSD float64 // 每千 token 单价
 }
 

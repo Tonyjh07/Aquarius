@@ -16,8 +16,20 @@ type ModelLink struct {
 	Primary         bool
 }
 
+// ContextBudget 上下文预算的可读口径（D177：`/model` 展示用）。三处消费者（压缩阈值、
+// /usage 占用、硬保底截断）用的是同一个 Effective，这里只解释它从哪儿来。
+type ContextBudget struct {
+	// Effective 实际生效的预算 tokens。
+	Effective int
+	// ModelWindow 当前模型声明的窗口；0 = 未声明（预算完全来自全局上限）。
+	ModelWindow int
+	// GlobalLimit 全局上限（limits.max_context_tokens）。
+	GlobalLimit int
+}
+
 // execModel /model [name]（DESIGN §7.3，D32）：
-// 无参 = 当前 provider（D173）+ 当前模型 + 生效能力 + LLM.Models() 可用列表（能力/单价标注）；
+// 无参 = 当前 provider（D173）+ 当前模型 + 生效能力 + 上下文窗口（D177）+
+// LLM.Models() 可用列表（能力/单价标注）；
 // 有参 = 先写回 config（同 /permission 的原子写回模式）再 Agent 内热切换。
 func (s *Session) execModel(ctx context.Context, args []string) (string, error) {
 	if len(args) == 0 {
@@ -28,7 +40,7 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 		if err != nil {
 			return "", fmt.Errorf("session: 列出可用模型: %w", err)
 		}
-		return formatModels(s.providerName, s.agent.modelName(), models, s.caps, s.chain), nil
+		return formatModels(s.providerName, s.agent.modelName(), models, s.caps, s.chain, s.budget), nil
 	}
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return "", errors.New("用法: /model [name]")
@@ -49,12 +61,19 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 // 生效能力行（D173 整链取与）+ 降级链逐环标注（哪一环拉低了能力）+ 可用清单
 // （能力/单价标注）。
 func formatModels(provider func() string, current string, models []port.ModelInfo,
-	caps func() port.ModelCaps, chain func() []ModelLink) string {
+	caps func() port.ModelCaps, chain func() []ModelLink, budget func() ContextBudget) string {
 	var b strings.Builder
 	if provider != nil && provider() != "" {
 		fmt.Fprintf(&b, "当前 provider: %s\n", provider())
 	}
 	fmt.Fprintf(&b, "当前模型: %s\n", current)
+	// 上下文窗口（D177）：预算 = min(模型窗口, 全局上限)。不显示的话，用户看到压缩
+	// 提前触发只会以为是 bug——窗口比全局小时必须说明是模型侧在压。
+	if budget != nil {
+		if line := formatBudget(budget()); line != "" {
+			b.WriteString(line + "\n")
+		}
+	}
 	// 服务端不报模态，能力只来自配置；不显示的话，用户只能靠"发张图试试"来发现它关着。
 	var effective port.ModelCaps
 	haveCaps := false
@@ -141,6 +160,31 @@ func narrowLinks(links []ModelLink, effective port.ModelCaps) []string {
 		}
 	}
 	return out
+}
+
+// formatBudget 上下文预算行（D177）：写清生效值，以及是谁决定的。
+func formatBudget(cb ContextBudget) string {
+	if cb.Effective <= 0 {
+		return ""
+	}
+	switch {
+	case cb.ModelWindow <= 0:
+		return fmt.Sprintf("上下文预算: %s tokens（全局上限；模型未声明窗口）", humanTokens(cb.Effective))
+	case cb.ModelWindow <= cb.GlobalLimit || cb.GlobalLimit <= 0:
+		return fmt.Sprintf("上下文预算: %s tokens（模型窗口 %s 在压；全局上限 %s）",
+			humanTokens(cb.Effective), humanTokens(cb.ModelWindow), humanTokens(cb.GlobalLimit))
+	default:
+		return fmt.Sprintf("上下文预算: %s tokens（全局上限在压；模型窗口 %s）",
+			humanTokens(cb.Effective), humanTokens(cb.ModelWindow))
+	}
+}
+
+// humanTokens token 数 → 「64k」这类紧凑写法（>=1000 且整除 1000 才缩）。
+func humanTokens(n int) string {
+	if n >= 1000 && n%1000 == 0 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return fmt.Sprint(n)
 }
 
 // formatCaps 能力位 → 「工具/思考/图片」或「（三项均未声明）」。

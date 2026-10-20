@@ -47,7 +47,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 |---|---|---|---|
 | `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档）/ `openai-responses` / `anthropic`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
-| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"] }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表） |
+| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局） |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
 | `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 的 `models[0]`。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连不降级 |
 | `model.name` | string | primary 的 `models[0]` | 当前模型名；`/model` 热切换并写回本字段（provider/base_url 重启生效）。切到**没在 `models` 里声明**的名字也允许——按协议缺省给能力 |
@@ -71,6 +71,11 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 **能力探测**：能力位是声明，写错了要到用的时候才炸。设置窗「模型服务」页每个模型行可手动发起探测
 （三条最小请求试 工具调用 / 图片输入 / 思考），结果只在**判定明确**时写回 `caps`——网络失败之类
 的「无结论」不会清掉已有声明。探测会真实消耗少量 token，故不自动运行。
+
+**上下文窗口**（`models[].context_window`）：装配预算 = **min(当前模型的窗口, `limits.max_context_tokens`)**。
+全局那项是"我想用多少"（省钱就调小），模型窗口是"服务端最多收多少"（超了直接拒），两者都生效、谁小听谁的。
+模型没写窗口（或写 0）= 只看全局。窗口**不随降级链取小**——装配发生在换模型之前，按当前模型算；
+降级到窗口更小的模型属于自己配的链，可能被服务端拒。`/model` 会显示生效值与「是谁在压」。
 
 ### ui
 
@@ -137,7 +142,7 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `limits.max_turns` | int | 8 | 单次请求内"生成+工具"循环上限 |
-| `limits.max_context_tokens` | int | 64000 | 上下文预算（硬保底由截断装饰器执行，D14） |
+| `limits.max_context_tokens` | int | 64000 | 上下文预算**上限**：实际预算 = min(本值, 当前模型声明的 `context_window`)，见上文「上下文窗口」。硬保底由截断装饰器执行（D14） |
 | `limits.compact_threshold` | float | 0.7 | 自动压缩阈值（×max_context_tokens） |
 | `limits.tool_output_chars` | int | 20000 | 工具结果截断 |
 | `limits.tool_timeout_sec` | int | 60 | 单次工具执行超时秒（模型可经保留参数 `timeout_sec` 逐次覆盖，D38） |
@@ -223,8 +228,8 @@ profile 配置 `<data>/profiles/default/config.json`：
         "base_url": "https://api.openai.com/v1",
         "keys": [ { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
         "models": [
-          { "name": "gpt-4o-mini" },
-          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"] }
+          { "name": "gpt-4o-mini", "context_window": 128000 },
+          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"], "context_window": 128000 }
         ],
         "tokenizer": "",
         "unsupported_params": [] }
@@ -273,3 +278,6 @@ profile 配置 `<data>/profiles/default/config.json`：
 | `"models": ["m1","m2"]`（字符串数组） | `"models": [ { "name": "m1" }, { "name": "m2" } ]` |
 | `"vision": true`（provider 上） | 挪到对应模型：`"models": [ { "name": "m1", "caps": ["tools","vision"] } ]` |
 | `"fallback": ["b"]`（provider 名字数组） | `"fallback": [ { "provider": "b", "model": "mb" } ]`（省略 `model` = 该 provider 的 `models[0]`） |
+
+上下文窗口是**新**能力，没有旧形状要迁：想知道模型能吃多少就加 `"context_window": 128000`，
+不加就仍按 `limits.max_context_tokens` 走。

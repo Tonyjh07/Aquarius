@@ -376,6 +376,7 @@ type GenerateRequest struct {
 type ModelInfo struct {
     Name           string
     Caps           ModelCaps   // 能力位（D173）；空集 = 什么都不做假设
+    ContextWindow  int         // 上下文窗口 tokens（D177）；0 = 未声明/未知
     CostIn, CostOutUSD float64 // 每千 token 单价
 }
 
@@ -1009,11 +1010,11 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
                                                                           // 明文允许但启动警告；界面填的明文会转入库并改成引用（D161）
           { "label": "备用",   "api_key": "secret:AQUARIUS_OPENAI_KEY_2" }
         ],
-        "models": [               // 模型条目：名字 + 能力位（都是这个模型自己的属性，不继承 provider）
-          { "name": "gpt-4o-mini" },                            // 省略 caps = 按协议缺省（下表）
+        "models": [               // 模型条目：名字 + 能力位 + 上下文窗口（都是这个模型自己的属性，不继承 provider）
+          { "name": "gpt-4o-mini", "context_window": 128000 },  // 省略 caps = 按协议缺省（下表）
           { "name": "o3-mini", "caps": ["reasoning"] },         // 显式声明 = 以声明为准（空数组 = 三项全关）
-          { "name": "gpt-4o",  "caps": ["tools", "reasoning", "vision"] }
-        ],
+          { "name": "gpt-4o",  "caps": ["tools", "reasoning", "vision"], "context_window": 128000 }
+        ],                                                      // context_window 省略/0 = 不声明，预算只看全局 limits
         "tokenizer": "",          // 本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
         "unsupported_params": []  // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
       }
@@ -1068,7 +1069,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   "permissions": { "level": "strict" },
   "limits": {
     "max_turns": 8,
-    "max_context_tokens": 64000,
+    "max_context_tokens": 64000,    // 上下文预算上限：实际预算 = min(本值, 当前模型声明的 context_window，D177)
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,
     "tool_timeout_sec": 60         // 缺省单次调用超时；模型可经保留参数 timeout_sec 覆盖（1–3600，D38）
@@ -1092,6 +1093,16 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 某项，整轮就按缺该项处理（不发工具清单 / 不发思考参数 / 图片降级为文字占位）。代价是「加一条弱模型
 会静默削能力」，所以启动时若链的能力窄于 primary 就打一行警告，`/model` 列出链时逐项标注是哪一环
 拉低的——**不让人自己发现**。
+
+**上下文窗口（D177）**：模型条目可声明 `context_window`（token 数）。装配预算 =
+**min(当前 primary 模型的 `context_window`, `limits.max_context_tokens`)**——全局那项是用户给自己
+定的预算上限（想省钱就调小），模型声明是硬窗口（超了服务端直接拒），两者都生效、谁小听谁的。
+模型省略该键（或 0）= 不声明，预算完全看全局值（升级前的行为）。
+
+窗口**不参与整链取与**：装配发生在请求发出前，那时用的是 primary 的模型；降级换模型是半路发生的，
+按大窗口装好再换小窗口模型只能靠服务端报错。所以按当前模型算预算，降级到窗口更小的模型属于
+「用户自己配的降级链，接受可能超限」。`/model` 展示窗口与该值来源，窗口比全局小时提示是模型侧
+在压预算。
 
 **密钥解析顺序（D151/D161）**：`api_key` 取值为 `secret:<名>` 时，**先查本机密钥库
 `<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错（提示里说明查过哪两处，

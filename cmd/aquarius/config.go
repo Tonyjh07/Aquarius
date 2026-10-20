@@ -128,12 +128,16 @@ type keyConfig struct {
 	APIKey string `json:"api_key"`
 }
 
-// modelEntry 模型条目（D173）：名字 + 能力位，不继承 provider。
+// modelEntry 模型条目（D173）：名字 + 能力位 + 上下文窗口，不继承 provider。
 type modelEntry struct {
 	Name string `json:"name"`
 	// Caps 能力位：nil = 键缺失（按协议缺省，DESIGN §8 的表）；非 nil = 以声明为准
 	// （空数组 = 三项全关——「没写」与「写了空」是两回事，所以要指针区分）。
 	Caps *[]string `json:"caps,omitempty"`
+	// ContextWindow 该模型的上下文窗口 tokens（D177）；0/省略 = 不声明，预算只看全局
+	// limits.max_context_tokens。这是模型的硬上限，不是「想用多少」——想省钱的旋钮仍
+	// 是全局那项（见 effectiveMaxContext）。
+	ContextWindow int `json:"context_window,omitempty"`
 }
 
 // fallbackEntry 降级链一项（D173）：provider + 可选模型。Model 空 = 该 provider 的
@@ -282,6 +286,22 @@ func (m *modelConfig) chainCaps() port.ModelCaps {
 	return caps
 }
 
+// enrichModels 用配置补齐服务端模型列表里缺的元信息（D173/D177）：服务端 `/models`
+// 只返回名字，能力位与上下文窗口只能来自 config。只填不删——列表的可用性以服务端为准，
+// 但声明过的元信息要能显示出来，否则 `/model` 里满屏都是没有标注的裸名字。
+func (m *modelConfig) enrichModels(infos []port.ModelInfo) []port.ModelInfo {
+	p := m.primaryProvider()
+	out := make([]port.ModelInfo, len(infos))
+	copy(out, infos)
+	for i := range out {
+		if e := p.modelByName(out[i].Name); e != nil {
+			out[i].Caps = p.capsOf(*e)
+			out[i].ContextWindow = e.ContextWindow
+		}
+	}
+	return out
+}
+
 // modelChain 降级链逐环快照（D173：/model 标注「哪一环拉低了整链」）。
 // 首项 = primary 的当前模型，其后按 fallback 顺序。
 func (m *modelConfig) modelChain() []app.ModelLink {
@@ -301,6 +321,30 @@ func (m *modelConfig) modelChain() []app.ModelLink {
 		})
 	}
 	return links
+}
+
+// currentContextWindow primary 当前模型声明的上下文窗口（0 = 未声明）。
+func (m *modelConfig) currentContextWindow() int {
+	p := m.primaryProvider()
+	e := p.modelByName(m.Name)
+	if e == nil {
+		return 0
+	}
+	return e.ContextWindow
+}
+
+// effectiveMaxContext 装配用的上下文预算（D177）：min(当前模型的窗口, 全局预算)。
+// 全局那项是用户给自己定的上限（想省钱就调小），模型窗口是硬上限（超了服务端直接
+// 拒）；两者都生效、谁小听谁的。模型未声明窗口 = 全局值（升级前行为）。
+//
+// 为什么不参与整链取与：装配发生在请求发出前，那时用的是 primary 的当前模型；
+// 降级换模型是半路发生的，按大窗口装好再换小窗口模型只能靠服务端报错。压缩阈值、
+// /usage 占用、截断水位三处必须同源，否则「显示还有空间」与「真发得出去」会打架。
+func (m *modelConfig) effectiveMaxContext(global int) int {
+	if w := m.currentContextWindow(); w > 0 && (global <= 0 || w < global) {
+		return w
+	}
+	return global
 }
 
 // narrowNote 链窄于当前模型时的提示（空 = 没窄）。启动期打一行警告——D173：加一条
@@ -383,6 +427,10 @@ func (m *modelConfig) normalize() error {
 				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 重复", i, p.Name, e.Name)
 			}
 			modelSeen[e.Name] = true
+			if e.ContextWindow < 0 {
+				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 的 context_window 不可为负数（%d）；不声明就留空",
+					i, p.Name, e.Name, e.ContextWindow)
+			}
 		}
 		for j := range p.Keys {
 			p.Keys[j].Label = strings.TrimSpace(p.Keys[j].Label)

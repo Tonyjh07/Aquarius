@@ -125,6 +125,47 @@ func TestModelCommandChainAnnotation(t *testing.T) {
 	}
 }
 
+// TestModelCommandBudget D177：/model 要说明上下文预算的生效值，以及它是被模型窗口
+// 还是全局上限压住的——压缩提前触发时用户得能看出原因。
+func TestModelCommandBudget(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	s.listModels = func(context.Context) ([]port.ModelInfo, error) {
+		return []port.ModelInfo{{Name: "m1"}}, nil
+	}
+	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true} }
+
+	s.budget = func() ContextBudget { return ContextBudget{Effective: 64000, GlobalLimit: 64000} }
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	if !strings.Contains(out, "上下文预算: 64k tokens（全局上限；模型未声明窗口）") {
+		t.Fatalf("/model 未说明预算来源:\n%s", out)
+	}
+
+	s.budget = func() ContextBudget {
+		return ContextBudget{Effective: 32000, ModelWindow: 32000, GlobalLimit: 200000}
+	}
+	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	if !strings.Contains(out, "模型窗口 32k 在压；全局上限 200k") {
+		t.Fatalf("/model 未指出是模型窗口在压:\n%s", out)
+	}
+
+	s.budget = func() ContextBudget {
+		return ContextBudget{Effective: 64000, ModelWindow: 128000, GlobalLimit: 64000}
+	}
+	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	if !strings.Contains(out, "全局上限在压；模型窗口 128k") {
+		t.Fatalf("/model 未指出是全局上限在压:\n%s", out)
+	}
+}
+
 // TestAgentModelHotSwitch /model 热切换后下一次生成请求即用新模型（D32）。
 func TestAgentModelHotSwitch(t *testing.T) {
 	llm := &scriptLLM{t: t, streams: []*scriptStream{

@@ -22,6 +22,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -387,6 +388,51 @@ func TestModelNormalize(t *testing.T) {
 			t.Fatalf("显式空 caps = %+v, want 全关", caps)
 		}
 	})
+	// 上下文窗口（D177）：预算 = min(模型窗口, 全局上限)；不声明 = 全局。
+	t.Run("上下文窗口取小", func(t *testing.T) {
+		c := good()
+		if err := c.normalize(); err != nil {
+			t.Fatalf("normalize: %v", err)
+		}
+		if got := c.effectiveMaxContext(64000); got != 64000 {
+			t.Fatalf("未声明窗口应只看全局: %d", got)
+		}
+		if got := c.currentContextWindow(); got != 0 {
+			t.Fatalf("未声明窗口 = %d, want 0", got)
+		}
+		c.Providers[0].Models[0].ContextWindow = 128000
+		if got := c.effectiveMaxContext(64000); got != 64000 {
+			t.Fatalf("全局更小时应取全局: %d", got)
+		}
+		if got := c.currentContextWindow(); got != 128000 {
+			t.Fatalf("当前窗口 = %d, want 128000", got)
+		}
+		if got := c.effectiveMaxContext(200000); got != 128000 {
+			t.Fatalf("模型窗口更小时应取模型: %d", got)
+		}
+		if got := c.effectiveMaxContext(0); got != 128000 {
+			t.Fatalf("全局未设时应落到模型窗口: %d", got)
+		}
+	})
+	t.Run("窗口只看当前模型", func(t *testing.T) {
+		// 降级链上的小窗口不压当前预算（D177 口径三）：装配发生在换模型之前。
+		c := good()
+		if err := c.normalize(); err != nil {
+			t.Fatalf("normalize: %v", err)
+		}
+		c.Providers[0].Models[0].ContextWindow = 128000
+		c.Providers[1].Models[0].ContextWindow = 8000
+		c.Fallback = []fallbackEntry{{Provider: "b"}}
+		if got := c.effectiveMaxContext(200000); got != 128000 {
+			t.Fatalf("预算不该被降级目标拉低: %d", got)
+		}
+		// 切到别的模型名后按新模型算。
+		c.Name = "m2"
+		c.Providers[0].Models[1].ContextWindow = 32000
+		if got := c.effectiveMaxContext(200000); got != 32000 {
+			t.Fatalf("切模型后应按新窗口: %d", got)
+		}
+	})
 	for _, tc := range []struct {
 		name string
 		mut  func(*modelConfig)
@@ -398,6 +444,7 @@ func TestModelNormalize(t *testing.T) {
 		{"base_url 缺失", func(c *modelConfig) { c.Providers[0].BaseURL = "" }, "base_url 不可为空"},
 		{"models 缺失", func(c *modelConfig) { c.Providers[0].Models = nil }, "models 不可为空"},
 		{"模型名缺失", func(c *modelConfig) { c.Providers[0].Models[1].Name = "" }, "models[1].name 不可为空"},
+		{"窗口负数", func(c *modelConfig) { c.Providers[0].Models[0].ContextWindow = -1 }, "context_window 不可为负数"},
 		{"模型重复", func(c *modelConfig) { c.Providers[0].Models[1].Name = "m1" }, "模型 \"m1\" 重复"},
 		{"kind 不认识", func(c *modelConfig) { c.Providers[0].Kind = "ollama" }, "kind \"ollama\" 不认识"},
 		{"primary 未命中", func(c *modelConfig) { c.Primary = "zz" }, "不在 model.providers"},
@@ -470,6 +517,87 @@ func TestRunLegacyProviderShapeRejected(t *testing.T) {
 				t.Fatalf("报因时不得改写配置: %v", err)
 			}
 		})
+	}
+}
+
+// TestWiringContextBudget D177：装配根的三处消费者（压缩阈值 / /usage / 截断）都读
+// maxContextBudget；它必须与 /model 展示的口径同源，否则会出现「显示还有空间，发出去
+// 却被拒」这种分叉。
+func TestWiringContextBudget(t *testing.T) {
+	cfg := &fileConfig{}
+	cfg.Limits.MaxContextTokens = 64000
+	cfg.Model = modelConfig{
+		Providers: []providerConfig{{
+			Name: "a", BaseURL: "http://a",
+			Models: []modelEntry{
+				{Name: "plain"},
+				{Name: "small", ContextWindow: 32000},
+				{Name: "big", ContextWindow: 200000},
+			},
+		}},
+	}
+	if err := cfg.Model.normalize(); err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	w := &wiring{cfg: cfg}
+
+	// 当前模型没声明窗口（normalize 把 name 落到 models[0] = plain）→ 全局。
+	if got := w.maxContextBudget(); got != 64000 {
+		t.Fatalf("未声明窗口 = %d, want 64000", got)
+	}
+	// 模型窗口更小 → 模型侧压。
+	cfg.Model.Name = "small"
+	if got := w.maxContextBudget(); got != 32000 {
+		t.Fatalf("小窗口模型 = %d, want 32000", got)
+	}
+	if b := w.contextBudget(); b.Effective != 32000 || b.ModelWindow != 32000 || b.GlobalLimit != 64000 {
+		t.Fatalf("contextBudget = %+v", b)
+	}
+	// 模型窗口更大 → 全局压。
+	cfg.Model.Name = "big"
+	if got := w.maxContextBudget(); got != 64000 {
+		t.Fatalf("大窗口模型 = %d, want 64000", got)
+	}
+	// 全局未设 → 内置缺省兜底，再和模型取小。
+	cfg.Limits.MaxContextTokens = 0
+	if got := w.maxContextBudget(); got != app.DefaultMaxContextTokens {
+		t.Fatalf("全局未设 = %d, want %d", got, app.DefaultMaxContextTokens)
+	}
+	cfg.Model.Name = "small"
+	if got := w.maxContextBudget(); got != 32000 {
+		t.Fatalf("全局未设 + 小窗口 = %d, want 32000", got)
+	}
+}
+
+// TestModelEnrichModels D177：服务端 /models 只给名字，能力位与窗口来自配置——
+// 补齐只填不删（列表可用性以服务端为准），未声明的模型保持零值。
+func TestModelEnrichModels(t *testing.T) {
+	m := modelConfig{
+		Providers: []providerConfig{{
+			Name: "a", BaseURL: "http://a", Kind: kindOpenAIResponses,
+			Models: []modelEntry{
+				{Name: "gpt-big", ContextWindow: 128000},
+			},
+		}},
+	}
+	if err := m.normalize(); err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	got := m.enrichModels([]port.ModelInfo{
+		{Name: "gpt-big"}, {Name: "unlisted"},
+	})
+	if len(got) != 2 || got[0].Name != "gpt-big" || got[1].Name != "unlisted" {
+		t.Fatalf("enrich = %+v", got)
+	}
+	if got[0].ContextWindow != 128000 {
+		t.Fatalf("声明窗口未补齐: %+v", got[0])
+	}
+	// 未声明 caps → 按协议缺省（responses = 全开）。
+	if !got[0].Caps.Tools || !got[0].Caps.Reasoning || !got[0].Caps.Vision {
+		t.Fatalf("协议缺省能力未补齐: %+v", got[0])
+	}
+	if got[1].ContextWindow != 0 || got[1].Caps != (port.ModelCaps{}) {
+		t.Fatalf("未声明的模型应保持零值: %+v", got[1])
 	}
 }
 
