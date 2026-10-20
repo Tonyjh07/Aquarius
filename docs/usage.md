@@ -66,7 +66,8 @@ go build ./cmd/aquarius
 |---|---|---|
 | `memory_list` / `memory_read` / `memory_search` | 记忆索引/读取/关键词检索（只见全局 + 当前会话两份） | Safe |
 | `memory_write` | 写入记忆（`mode=append` 缺省 / `overwrite`；strict 下路径格外需确认） | Confirm |
-| `file_read` / `file_list` / `file_search` | 读文件 / 列目录 / 按文件名递归搜索（**绝对路径**，读全盘免确认） | Safe |
+| `file_read` / `file_list` / `file_search` | 读文件（可分页：`offset`/`limit`，带行号与续读标注；图片直接给模型看，需该 provider 声明 `vision`）/ 列目录 / 按文件名递归搜索（**绝对路径**，读全盘免确认） | Safe |
+| `file_edit` | 精确子串替换（`old_string` 须唯一，`replace_all` 放开；保留原换行与 BOM） | Confirm |
 | `file_write` / `file_delete` | 覆盖写 / 删除（写按权限矩阵路径格判定） | Confirm |
 | `think` | 显式整理思路（no-op，内容随调用入树）——**默认不列给模型**（D34），`model.think_tool: true` 启用 | Safe |
 | `sleep` | 等待 N 秒（停顿或等后台任务；Ctrl+C 可中断；1–3600s，超缺省超时须在该次调用上带 `timeout_sec`，D38/D39） | Safe |

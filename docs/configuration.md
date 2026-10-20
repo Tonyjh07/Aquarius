@@ -42,7 +42,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`base_url`（OpenAI 兼容端点，非空）、`api_key`（见密钥规则，逐 provider 独立）、`models`（模型清单，**首个 = 该 provider 缺省请求模型**——fallback 降级时使用，D110 修订③）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略） |
+| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`base_url`（OpenAI 兼容端点，非空）、`api_key`（见密钥规则，逐 provider 独立）、`models`（模型清单，**首个 = 该 provider 缺省请求模型**——fallback 降级时使用，D110 修订③）、`vision`（该 provider 的模型是否接受图片输入；缺省 `false`——服务端 `/models` 不返回模态，只能由用户声明，见 D169）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略） |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
 | `model.fallback` | []string | `[]` | 有序降级顺序（Q5）：**仅网络类错误**（429/408/5xx/连接/超时，`port.ErrTransient` 口径）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；降级请求模型 = 目标 provider 的 `models[0]`；无粘态（每次调用仍从 primary 起试）；流中途断连不降级（既有 retry 边界）；降级经状态行一次性提示。名字须在 providers 内、不含 primary、无重复，否则启动报错 |
 | `model.name` | string | primary 的 `models[0]` | 当前模型名（在 primary 的 models 内）；`/model` 热切换并写回本字段（provider/base_url 重启生效） |
@@ -193,7 +193,7 @@ profile 配置 `<data>/profiles/default/config.json`：
     "providers": [
       { "name": "openai", "base_url": "https://api.openai.com/v1",
         "api_key": "secret:AQUARIUS_OPENAI_KEY",
-        "models": ["gpt-4o-mini"], "tokenizer": "",
+        "models": ["gpt-4o-mini"], "vision": false, "tokenizer": "",
         "unsupported_params": [] }
     ],
     "primary": "openai",
