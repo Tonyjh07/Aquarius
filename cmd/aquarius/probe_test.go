@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -207,16 +208,24 @@ func TestProbeTargetResolution(t *testing.T) {
 	}
 }
 
-// TestProbeUnwiredProtocolFailsLoud 协议还没接入时探测必须报因：拿 chat/completions
-// 去打别的规范的端点，会以「密钥无效」「模型不存在」之类的假象暴露，排查方向全错。
-func TestProbeUnwiredProtocolFailsLoud(t *testing.T) {
+// TestProbeProtocolDispatch 协议分派与探测的两处口径：
+//   - `openai-responses` 现在由装配根按 kind 分派（D175），客户端能建起来；
+//   - 探测目前只有 chat 的问法，responses/anthropic 都会明确报因（不能拿 chat 请求
+//     去打别的规范——那会以「密钥无效」「模型不存在」之类的假象暴露，排查方向全错）；
+//   - 还没接入的 anthropic 在适配器层 fail-fast。
+func TestProbeProtocolDispatch(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	raw := `{
   "model": {
-    "providers": [{"name": "a", "kind": "anthropic", "base_url": "http://127.0.0.1:1",
-      "models": [{"name": "m1"}]}],
-    "primary": "a",
-    "name": "m1"
+    "providers": [
+      {"name": "a", "kind": "anthropic", "base_url": "http://127.0.0.1:1",
+       "models": [{"name": "m1"}]},
+      {"name": "r", "kind": "openai-responses", "base_url": "http://127.0.0.1:1",
+       "models": [{"name": "m2"}]}
+    ],
+    "primary": "r",
+    "name": "m2",
+    "fallback": [{"provider": "a"}]
   },
   "ui": {"kind": "repl"}
 }`
@@ -228,13 +237,31 @@ func TestProbeUnwiredProtocolFailsLoud(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
-	if _, err := w.probeModel(context.Background(), ""); err == nil ||
-		!strings.Contains(err.Error(), "anthropic") {
-		t.Fatalf("err = %v, want 指名协议", err)
+
+	// responses：装配根按 kind 造出 responses 客户端（不再是「尚未接入」）。
+	c, _, err := w.newLLMClient(cfg.Model.byName("r"), "", nil)
+	if err != nil {
+		t.Fatalf("responses 客户端应能建起来: %v", err)
 	}
-	if _, _, err := w.newLLMClient(&cfg.Model.Providers[0], "", nil); err == nil ||
+	_ = c
+	if got := llmProtocol(kindOpenAIResponses); got != llm.ProtoResponses {
+		t.Fatalf("llmProtocol(openai-responses) = %q", got)
+	}
+	if got := llmProtocol(kindOpenAIChat); got != llm.ProtoChat {
+		t.Fatalf("llmProtocol(openai-chat) = %q", got)
+	}
+
+	// anthropic：适配器层仍未接入 → fail-fast。
+	if _, _, err := w.newLLMClient(cfg.Model.byName("a"), "", nil); err == nil ||
 		!strings.Contains(err.Error(), "尚未接入") {
-		t.Fatalf("err = %v, want 尚未接入（不能拿 chat 的请求去打别的规范）", err)
+		t.Fatalf("anthropic err = %v, want 尚未接入", err)
+	}
+	// 探测：两种非 chat 协议都指名报因。
+	for _, name := range []string{"m1", "m2"} {
+		if _, err := w.probeModel(context.Background(), name); err == nil ||
+			!strings.Contains(err.Error(), "暂不支持能力探测") {
+			t.Fatalf("probe(%s) err = %v, want 指名协议不支持探测", name, err)
+		}
 	}
 }
 

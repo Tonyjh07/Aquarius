@@ -97,8 +97,9 @@ func (w *wiring) providerOf(model string) (*providerConfig, string, error) {
 
 // probeClient 造探测用的一次性客户端：第一把钥匙、不记录 unsupported_params（探测只读）。
 func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
-	// 探测只实现了 chat/completions 的问法。别的协议的端点收到它只会回些含糊的错，
-	// 结论会变成三条「无结论」——那比直接说「这个协议还问不了」更容易误导。
+	// 探测只实现了 chat/completions 的问法（响应形状的判定逻辑一种协议一份）。别的协议的
+	// 端点收到 chat 形状的请求只会回些含糊的错，结论会变成三条「无结论」——那比直接说
+	// 「这个协议还问不了」更容易误导。
 	if kind := p.protocolKind(); kind != kindOpenAIChat {
 		return nil, fmt.Errorf("provider %q 的协议 %q 暂不支持能力探测（当前只测 %s）",
 			p.Name, kind, kindOpenAIChat)

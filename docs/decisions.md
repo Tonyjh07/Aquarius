@@ -3352,6 +3352,21 @@
 > （签名随请求发出去，估算口径要与发送口径一致）。跨 provider 归属由**值里的协议前缀**判定，
 > 装配层不做过滤——那是各适配器读的时候只认自家前缀的事。
 
+> **落地补充（S11-5 第二步，2026-10-20）**：`openai-responses` 适配器落档。`internal/adapter/llm/`
+> 新增 `responses.go`（形状全在这一个文件），`openai.go` 的 `Generate` 按 `Config.Protocol` 分派
+> （零值 = openai-chat），共用 HTTP / 鉴权 / tokenizer / `statusError`（429 仍包 `*port.Quota`）；
+> `stream.go` 把 SSE 骨架的载荷解析抽成可插拔 `decode`，`finish` 标志支持「本片发完即收流」。
+> 请求侧：`input` item 数组（system/user → message、图片 → `input_image` data URL、assistant →
+> reasoning item + message(`output_text`) + `function_call`、tool → `function_call_output`），
+> 工具声明为扁平 `{type,name,description,parameters}`，`store:false` 恒定，`include`/`reasoning`
+> 只在请求了思考时才发。响应侧：`response.output_text.delta`、`response.reasoning_summary_text.delta`
+> /`response.reasoning_text.delta`、`response.function_call_arguments.delta`（端点漏发 item 事件时
+> 从 `response.output_item.done` / `response.completed` 的 `response.output` 补齐参数与签名）、
+> `reasoning.encrypted_content` 只取 `output_item.done` 的完整值、usage 取 `response.completed`。
+> 签名编码 = `responses:` + base64(flate(JSON{id,encrypted_content}))，只认自家前缀。**无剥离重试**
+> （D175 口径四：参数被点名拒绝就照实报错，只发一次请求）。装配根 `newLLMClient` 按 `kind` 映射
+> 到 `llm.Protocol`（唯一分派落点）。
+
 ### D176 · 设置窗「模型服务」页与折叠卡片（2026-10-20）
 
 > **背景**：provider 编辑区与「当前模型 / 思考档位」挤在同一页，每家摊开 6 个输入框 + 4 个按钮，

@@ -148,19 +148,14 @@ func (w *wiring) emitNotice(ctx context.Context, text string) {
 	_ = w.presenter.Emit(ctx, port.NoticeEvent{Text: text})
 }
 
-// newLLMClient 建客户端本体（协议分派的唯一落点，D175 会在此按 kind 分叉）。
+// newLLMClient 建客户端本体（协议分派的唯一落点，D175 口径一）：config 里的 `kind`
+// 词表与适配器的 `llm.Protocol` 是同一套，这里做一次映射就够，两处不会再各定义一遍。
 // key 由调用方解析（密钥池逐把解析后再进来）。note 为 nil = 不记录服务端不认的参数
 // （能力探测用：探测刻意发可能不被支持的参数，不该把结论记成正式请求的剥离清单）。
 func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string)) (*llm.Client, port.TokenCounter, error) {
-	// 协议分派尚未接入（OpenAI Responses / Anthropic 在后续步骤）：宁可启动时报因，
-	// 也不能拿 chat/completions 的请求去打一个别的规范的端点——那会以「密钥无效」
-	// 「模型不存在」这类假象暴露，排查方向全错。
-	if kind := p.protocolKind(); kind != kindOpenAIChat {
-		return nil, nil, fmt.Errorf("provider %q 的协议 %q 尚未接入（当前可用：%s）",
-			p.Name, kind, kindOpenAIChat)
-	}
 	c, cerr := llm.New(llm.Config{
 		BaseURL: p.BaseURL, APIKey: key, Tokenizer: p.Tokenizer,
+		Protocol:          llmProtocol(p.protocolKind()),
 		UnsupportedParams: p.UnsupportedParams,
 		NoteUnsupported:   note,
 	})
@@ -172,6 +167,20 @@ func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string)) 
 		counter = cc
 	}
 	return c, counter, nil
+}
+
+// llmProtocol config 的 kind → 适配器协议标识（D175）。认得的词在这里一一对上；
+// 不认得的词（含尚未接入的 anthropic）原样传给适配器，由它统一 fail-fast 报因——
+// 启动时的配置错误该由校验拦下（config.normalize 已拦），这里是第二道保险。
+func llmProtocol(kind string) llm.Protocol {
+	switch kind {
+	case kindOpenAIResponses:
+		return llm.ProtoResponses
+	case kindAnthropic:
+		return llm.ProtoAnthropic
+	default:
+		return llm.ProtoChat
+	}
 }
 
 // buildLLMs 为 primary 与 fallback[] 各建一具客户端（含 fallback——避免降级时才

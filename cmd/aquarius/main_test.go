@@ -969,6 +969,46 @@ func TestRunKeyPoolKeepsKeyOnNonQuota(t *testing.T) {
 	}
 }
 
+// TestRunResponsesProtocol D175 端到端：provider kind=openai-responses 时请求打到
+// `/responses`（不是 `/chat/completions`），并按 Responses 的事件族解析出正文与用量。
+func TestRunResponsesProtocol(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path != "/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"type":"response.output_text.delta","output_index":0,"delta":"hello-responses"}`+"\n"+
+			`data: {"type":"response.completed","response":{"output":[],"usage":{"input_tokens":1,"output_tokens":2}}}`+"\n")
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","kind":"openai-responses","base_url":%q,"keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"},
+  "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
+	writeProfileLayout(t, dir, cfg)
+	t.Setenv("X", "k")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, out = %q", code, out.String())
+	}
+	mu.Lock()
+	snapshot := append([]string(nil), paths...)
+	mu.Unlock()
+	if len(snapshot) == 0 || snapshot[0] != "/responses" {
+		t.Fatalf("请求路径 = %v, want 首个为 /responses", snapshot)
+	}
+	if !strings.Contains(out.String(), "hello-responses") {
+		t.Fatalf("正文未显示：%q", out.String())
+	}
+}
+
 // TestRunRecordsUnsupportedParams 服务端点名拒绝某参数：本请求剥离重试成功后写回
 // config providers[0].unsupported_params，且不改动原档位（只记不改）。
 func TestRunRecordsUnsupportedParams(t *testing.T) {
