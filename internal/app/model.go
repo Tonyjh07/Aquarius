@@ -179,8 +179,11 @@ func formatBudget(cb ContextBudget) string {
 	}
 }
 
-// humanTokens token 数 → 「64k」这类紧凑写法（>=1000 且整除 1000 才缩）。
+// humanTokens token 数 → 「1M / 64k」这类紧凑写法（整除才缩，否则原样）。
 func humanTokens(n int) string {
+	if n >= 1000000 && n%1000000 == 0 {
+		return fmt.Sprintf("%dM", n/1000000)
+	}
 	if n >= 1000 && n%1000 == 0 {
 		return fmt.Sprintf("%dk", n/1000)
 	}

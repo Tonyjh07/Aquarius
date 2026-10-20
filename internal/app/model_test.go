@@ -161,8 +161,19 @@ func TestModelCommandBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model: %v", err)
 	}
-	if !strings.Contains(out, "全局上限在压；模型窗口 128k") {
+	if !strings.Contains(out, "上下文预算: 64k tokens（全局上限在压；模型窗口 128k）") {
 		t.Fatalf("/model 未指出是全局上限在压:\n%s", out)
+	}
+}
+
+// TestHumanTokens 窗口数值的紧凑写法：整 M / 整 k / 原样三档（1M 写成 1000k 没人看）。
+func TestHumanTokens(t *testing.T) {
+	for in, want := range map[int]string{
+		1000000: "1M", 200000: "200k", 128000: "128k", 64000: "64k", 32000: "32k", 0: "0", 1500: "1500",
+	} {
+		if got := humanTokens(in); got != want {
+			t.Errorf("humanTokens(%d) = %q, want %q", in, got, want)
+		}
 	}
 }
 
