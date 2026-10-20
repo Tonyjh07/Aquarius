@@ -19,6 +19,7 @@ type pendingInjection struct {
 	source  string
 	parts   []conversation.Part
 	trigger bool
+	session conversation.ID // 目标会话（D167）；空 = 落地时取当前会话
 }
 
 // Session 实现注入端口（D150）：外部生产者只经此入队，树变更仍由会话 goroutine 独占。
@@ -38,6 +39,7 @@ func (s *Session) Inject(_ context.Context, in port.Injection) error {
 		source:  strings.TrimSpace(in.Source),
 		parts:   in.Parts,
 		trigger: resolveInjectTrigger(in.Source, in.Trigger),
+		session: in.Session,
 	}
 	select {
 	case s.injectCh <- item:
@@ -80,6 +82,11 @@ func (s *Session) drainInjections(ctx context.Context, driven, announce bool) (l
 	for {
 		select {
 		case item := <-s.injectCh:
+			// 目标会话已不是当前会话（D167）：切换瞬间入队的报告整条丢弃，
+			// 不把别的会话的后台任务塞进这里。
+			if item.session != "" && item.session != s.cur.ID {
+				continue
+			}
 			trigger := item.trigger && driven
 			node, err := s.landInjection(item, trigger)
 			if err != nil {

@@ -151,6 +151,7 @@ type wiring struct {
 	mem       *memoryfs.Store
 	merged    *mergedMemory
 	jobs      port.JobManager
+	poller    *app.Poller
 	runner    *toolrun.Runner
 	audit     *decorate.Audit
 	client    *llm.Client
@@ -241,6 +242,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := w.assembleTools(confirmer); err != nil {
 		return fatal(stderr, "%v", err)
 	}
+	// D167：先停 watcher 再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
+	defer w.poller.Close()
 	gen, err := w.stackDecorators(ctx)
 	if err != nil {
 		return fatal(stderr, "%v", err)
@@ -279,25 +282,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	w.newPluginHost(ctx, confirmer)
 
 	w.sess, err = app.NewSession(ctx, app.SessionDeps{
-		Store:         w.store,
-		Agent:         agent,
-		IDs:           ids,
-		Clock:         systemClock{},
-		Persona:       sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
-		Level:         w.level,
-		SandboxPath:   w.sandboxDir,
-		PersistLevel:  w.persist.persistLevel,
-		Confirmer:     confirmer,
-		Jobs:          w.jobs,
-		Ingestors:     []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs)},
-		UI:            w.presenter,
-		OpenMemory:    openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
-		Plugins:       hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
-		ListModels:    func(ctx context.Context) ([]port.ModelInfo, error) { return w.client.Models(ctx) },
-		ProviderName:  func() string { return w.primary.Name }, // D110②：/model 展示（静态，重启生效）
-		PersistModel:  w.persist.persistModel,
-		PersistThink:  w.persist.persistThink,  // D34
-		PersistEffort: w.persist.persistEffort, // D34
+		Store:          w.store,
+		Agent:          agent,
+		IDs:            ids,
+		Clock:          systemClock{},
+		Persona:        sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
+		Level:          w.level,
+		SandboxPath:    w.sandboxDir,
+		PersistLevel:   w.persist.persistLevel,
+		Confirmer:      confirmer,
+		Jobs:           w.jobs,
+		CancelWatchers: w.poller.CancelSession, // D167：切走/新建/删当前会话时撤销该会话的 watcher
+		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs)},
+		UI:             w.presenter,
+		OpenMemory:     openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
+		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
+		ListModels:     func(ctx context.Context) ([]port.ModelInfo, error) { return w.client.Models(ctx) },
+		ProviderName:   func() string { return w.primary.Name }, // D110②：/model 展示（静态，重启生效）
+		PersistModel:   w.persist.persistModel,
+		PersistThink:   w.persist.persistThink,  // D34
+		PersistEffort:  w.persist.persistEffort, // D34
 	})
 	if err != nil {
 		if ctx.Err() != nil {

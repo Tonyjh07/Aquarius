@@ -21,7 +21,8 @@ func (t *jobStart) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "job_start",
 		Description: "Start a background task (a separate process; logs are written to disk, not cancelled with the conversation). " +
-			"Returns a task ID; manage it with job_status/job_logs/job_kill.",
+			"Returns a task ID. The session is notified automatically when the task finishes; do not poll it. " +
+			"job_status/job_logs/job_kill remain available for manual checks.",
 		Schema: jsonSchema(`{
 			"type": "object",
 			"properties": {

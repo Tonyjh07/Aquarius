@@ -157,7 +157,23 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 	if err != nil {
 		return err
 	}
-	w.jobs = jobs
+	// D167：轮询器观察所有 Start（job_start 与未来异步工具），完成时注入 + 唤醒；
+	// 注入端口延迟取（会话在工具装配之后才建好），Wake 走 UI 的空闲唤醒通道。
+	w.poller = app.NewPoller(app.PollerOptions{
+		Jobs: jobs,
+		Injector: func() port.Injector {
+			if s := w.sessPtr.Load(); s != nil {
+				return s
+			}
+			return nil
+		},
+		Logf: func(format string, args ...any) {
+			if w.stderr != nil {
+				fmt.Fprintf(w.stderr, format+"\n", args...)
+			}
+		},
+	})
+	w.jobs = app.NewWatchingJobs(jobs, w.poller)
 	toolTimeout := time.Duration(w.cfg.Limits.ToolTimeoutSec) * time.Second
 	if w.cfg.Limits.ToolTimeoutSec <= 0 {
 		toolTimeout = 60 * time.Second
@@ -170,7 +186,7 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 	builtinTools := toolbuiltin.New(w.merged, func(name string) (string, bool) {
 		p, err := w.mem.Path(name)
 		return p, err == nil
-	}, jobs, w.sandboxDir)
+	}, w.jobs, w.sandboxDir)
 	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
 	w.disabledTools = newDisabledHolder(w.builtinDisabled())
