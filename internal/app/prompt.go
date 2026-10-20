@@ -263,8 +263,8 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			}
 			out = append(out, port.PromptMessage{Role: "system", Content: parts})
 		case conversation.RoleInject:
-			// 注入节点按来源投影（D150）：手动/系统级事实汇报 → system（不套围栏）；
-			// 其余（工具/插件/未知）→ user + 数据围栏（§9 不可信数据口径，防伪装成用户指令）。
+			// 注入节点按**显式信任位**投影（D170）：宿主事实 → system（用户动作仍取 user）；
+			// 其余（工具/插件/未知/未声明）→ user + 数据围栏（§9 口径，防伪装成用户指令）。
 			pm, err := projectInjection(ctx, m, opt)
 			if err != nil {
 				return nil, err

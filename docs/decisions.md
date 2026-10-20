@@ -2980,7 +2980,7 @@
   runTurn → agent.Run → runTools → tools.Execute` 全在会话 goroutine 内，不存在跨 goroutine
   的工具注入），故③随轮询器留 S9-8。工具侧 ctx 接线（把 `Injector` 塞进 `context` 给工具用）
   同样随 S9-8，因为那时才有跨 goroutine 生产者。
-- **投影四路**（D150 决策②的落点）：`user:` → **user、不套围栏**；`job:`/`poller:` → **system、
+- **投影四路**（D150 决策②的落点，信任口径已由 D170 改为显式信任位）：`user:` → **user、不套围栏**；`job:`/`poller:` → **system、
   不套围栏**；`tool:`/`plugin:`/未知 → **user + `<injected-context>` 围栏 + 前置英文说明句**。
   与 D150 措辞的差异有二：① `user:` 原先只说「默认 user + 围栏」，落码改为**不套围栏**——
   手动注入是用户自己的动作，套围栏等于让模型怀疑用户；② 来源属性值转义 `"`/`<`/`>`，防
