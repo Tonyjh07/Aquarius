@@ -2331,6 +2331,9 @@
 
 ### D150 · 注入节点与轮询器：内核独立角色 `inject`，轮询从模型手里收回内核（2026-10-18）
 
+> **落地口径见 D167（2026-10-20）**：watcher 改挂 `JobManager` 装饰器、不设 watcher 超时、
+> 空闲唤醒与 poller 日志围栏以 D167 为准。
+
 > **驱动**：用户提出两条内核级改动——①「加入『注入』节点，允许内外部工具注入模型上下文，
 > 并可选择是否触发响应」；②「加入轮询器，替代模型自行轮询（费 token、浪费上下文），
 > 任务结束或超时后再注入模型上下文」。补充口径（用户原话）：「注入在内核中为单独的 role，
@@ -2946,6 +2949,9 @@
 
 ### D166 · 注入节点落码口径：`Trigger *bool`、排空点只落地、投影四路与来源友好化（2026-10-19）
 
+> **落地口径见 D167（2026-10-20）**：轮询器与空闲唤醒的最终取舍（不设 watcher 超时、
+> watcher 挂 `JobManager` 装饰器、poller 日志正文围栏）以 D167 为准。
+
 > **驱动**：D150 定下了注入节点的方案，本条记**落码时的取舍**（S9-7）。范围不含轮询器
 > （`app/poller.go`、`job_start` watcher、`limits.poll_timeout_sec`、空闲唤醒通道）与工具/MCP
 > 侧的 `Injector` ctx 接线——那些留 S9-8 或后续步。
@@ -3001,6 +3007,56 @@
 - **否决的替代**：① `Trigger` 留 `bool`（见上，与默认表冲突）；② `Message.Trigger` 记「请求」
   （回放时会看到「本该触发却标了触发」的假记录）；③ `/inject` 白名单来源（用户明确要任意名）；
   ④ 本步就接线工具 ctx 的 `Injector`（工具是同步内联的，跨 goroutine 生产者留 S9-8 才有）。
+
+
+### D167 · 轮询器落码口径：`JobManager` 装饰器、不设 watcher 超时、会话归属与空闲唤醒（2026-10-20）
+
+> **驱动**：S9-8 落地 D150 的轮询器。用户对三处口径重新拍板——任务结束/超时注入后**空闲时
+> 自动跑一轮**；启动任务的会话被切走后 **watcher 撤销、不跨会话**；**不设 watcher 超时**
+> （只依赖 `job_start.timeout_sec`）。本条记落码时的取舍，范围不含通用轮询 DSL 与插件 API
+> 的注入面。
+
+- **决策 ①：watcher 挂在 `JobManager` 装饰器上，不挂 `job_start` 工具**。装配根把 `jobproc.Manager`
+  包一层：`Start` 成功即登记、`Kill` 成功即撤销，其余方法转发。理由：`job_start` 只是当下唯一
+  的异步启动入口，未来工具/插件也可能 `Start`；装饰器一次覆盖所有入口，且 `/jobs kill` 与
+  工具侧 `job_kill` 共用同一条撤销路径，不必给 `toolbuiltin` 增加轮询器依赖（铁律 9 同向）。
+- **决策 ②：不设 watcher 超时（用户拍板，覆盖 D150 的 `poll_timeout_sec`）**。watcher 只等任务
+  终态（done/failed/killed），`limits.poll_timeout_sec` 设计项删除；任务自身的时限只由
+  `job_start.timeout_sec` 决定。**后果**：`job_start` 不写 `timeout_sec` 且进程永不结束时，
+  watcher 会以 15s 间隔一直观察到任务结束、被 kill、切会话或退出——这是明确选择的语义，
+  不另加兜底。
+- **决策 ③：会话归属 + 双重防跨会话**。登记时从工具执行 ctx 的 `port.SessionIDFrom` 取启动会话；
+  `Injection` 增加可选目标会话，排空时与当前会话不一致的包整条丢弃（防「切换瞬间已入队」）；
+  同时 `/new`、`/switch`、删当前会话时显式 `CancelSession(oldID)`。只做后者仍有竞态窗口，
+  只做前者会让已切走的 watcher 白跑，故两条都留。
+- **决策 ④：空闲唤醒走独立的 `Wake` 通道，不混输入队列**。`port.UserInput` 加 `Wake` 标记，
+  三个前端各加容量 1 的 `wakeCh`（多次完成合并成一次唤醒）与 `Wake()`；`Next` 先取真实输入、
+  再取唤醒；`Confirm` 完全不碰 `wakeCh`——否则一次任务完成会被当成 `y/N` 回答。主循环
+  `Session.Handle` 看到 `Wake` 时走**驱动式**排空（不发 user 节点、`announce=true`），有触发型
+  注入才跑一轮；它必须排在入口的普通排空之前，否则报告会先被落地成未触发。
+- **决策 ⑤：忙碌时只落地，不插队**。Turn 正在跑时 watcher 仍注入并 `Wake`，但轮末排空点②
+  只落地、`Trigger` 记 `false`；排队的唤醒随后是一次 no-op，不会在当前轮结束后再补一轮。
+  这样既守住「不打断当前轮」，也避免连续计费。`Trigger` 继续记**实际发生**。
+- **决策 ⑥：poller 报告 = system，日志段在正文里单独围栏**。状态/退出码/耗时是宿主事实，
+  保持 `system`、不套外层围栏；日志尾部是外部进程写的不可信数据，用
+  `<injected-context source="poller:…">…</injected-context>` 在正文里包住并前置英文警告。
+  围栏是**信号**不是密码学边界（与既有投影围栏同口径）；报告正文按进入模型上下文的口径
+  用英文，日志原样保留（不转义，免得读日志时满屏 `&lt;`）。日志尾部沿用 50 行，空日志写
+  `(empty)`。
+- **决策 ⑦：`job_start` 描述不再引导轮询**。改为「结束会自动通知，不要轮询；`job_status`/
+  `job_logs` 仍可手查」——系统提示不重复提，工具描述是模型最容易读到的地方。
+- **模型**：`app/poller.go`（`Poller`：`Watch/Unwatch/CancelSession/Close`、自适应退避
+  0.5s×1.5/上限 15s、终态报告、注入+唤醒、注入满有限重试）；`app/watching_jobs.go`（JobManager
+  装饰器）；`port.Injection.Session`；`port.UserInput.Wake`；`SessionDeps.CancelWatchers` 与
+  `Handle` 的 Wake 分支；三前端 `Wake()`。
+- **否决的替代**：① watcher 超时（用户明确不要）；② `job_start` 工具内直接 `Watch`（入口窄、
+  `/jobs kill` 还要另接）；③ poller 报告投影改 user+围栏（用户选 system + 正文围栏；状态事实
+  仍按宿主事实呈现）；④ 在 poller goroutine 里直接改树（违反 §7.5）；⑤ 关闭时只靠进程退出
+  收尾（测试/长驻场景会泄漏 goroutine，故 `Close` 取消并等待）。
+- **测试**：poller——终态只注入一次、退避单调到 15s 封顶、kill 撤销、按会话撤销、`Close`
+  不迟到、日志尾部 50 行、注入满重试、报告含正文围栏；装饰器——`Start` 登记、`Kill` 撤销；
+  Session——`Wake` 跑一轮且不落 user 节点、非触发注入只落地、跨会话包被丢弃、`/new`/
+  `/switch`/`/rmconv` 调撤销；三前端——`Wake` 可被 `Next` 取到，repl 的 `Confirm` 不吃唤醒。
 
 
 

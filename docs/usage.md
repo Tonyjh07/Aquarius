@@ -72,7 +72,7 @@ go build ./cmd/aquarius
 | `sleep` | 等待 N 秒（停顿或等后台任务；Ctrl+C 可中断；1–3600s，超缺省超时须在该次调用上带 `timeout_sec`，D38/D39） | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，自我管理上下文） | Safe |
 | `term_exec` | 同步执行终端命令行（`cmd /c` / `sh -c`；超时统一控制，输出保头尾截断；输出自动转 UTF-8，无须 `chcp`；执行类看工具列） | Confirm |
-| `job_start` | 启动后台任务（独立进程，日志落盘 `profiles/<name>/jobs/<id>.log`，不随对话取消） | Confirm |
+| `job_start` | 启动后台任务（独立进程，日志落盘 `profiles/<name>/jobs/<id>.log`，不随对话取消；**任务结束时自动汇报**，无需反复查） | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理（列表/状态/日志尾部/终止） | Safe |
 
 ## 上下文压缩（三轨特色功能）

@@ -721,7 +721,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 导出注入，装饰器不反向依赖 app；裁到 `max_context_tokens − max(本轮 MaxOutputTokens, 1024)` 之下，
 省略发生时发 `NoticeEvent`）。不做向量化、不进记忆文档。
 
-#### 7.1.1 注入节点与轮询器（D150）
+#### 7.1.1 注入节点与轮询器（D150/D167）
 
 **问题**：模型要看后台任务进度只能反复调 `job_status`/`job_logs`——每次调用都烧 token、
 把上下文塞满日志，且轮询节奏由模型瞎猜；外部工具（插件、MCP、定时器）也没有把信息塞回
@@ -735,6 +735,7 @@ type Injection struct {
     Source  string        // job:<id> / tool:<name> / plugin:<name> / poller:<id> / user
     Parts   []conversation.Part
     Trigger *bool         // nil = 按来源取默认；非 nil = 显式覆盖（D166）
+    Session conversation.ID // 可选目标会话（D167）；空 = 落地时取当前会话
 }
 type Injector interface { Inject(ctx context.Context, in Injection) error }
 ```
@@ -742,17 +743,20 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 - **写入路径**：`Session.Inject` **先校验、后只入队**（带缓冲 channel，非阻塞，队列满立即
   报错）——坏包（思考/工具分片、空内容）当场拒给调用方，不让它无声落进树；排空由会话
   goroutine 在 `Handle` 入口、每轮 Turn 结束、以及显式的驱动式排空点执行——**不在别的
-  goroutine 里改树**（树变更只发生在 `Handle` 内，§7.5 并发口径不变）。
+  goroutine 里改树**（树变更只发生在 `Handle` 内，§7.5 并发口径不变）。注入可带**目标会话**：
+  排空时若当前会话已不是它，整条丢弃，避免切换瞬间的竞态把报告投进别的会话。
 - **排空时机**：① `Handle` 开始时（用户输入优先，注入不抢手输入）；② 一轮 Turn 提交后
   （工具在轮内注入的内容在同一轮结束后落地，不打断当前轮）；③ 空闲等待期间由装配根的
-  唤醒通道投递一次空输入触发（见下「唤醒」）。①②只**落地**、`Trigger` 记 `false`（记的是
-  **实际发生**：本轮确未随附起响应）；③与 `/inject` 是**驱动式**排空——触发型注入落地后
-  自己跑一轮，`Trigger` 记 `true`。
+  `Wake` 通道投递一次唤醒输入（`port.UserInput.Wake`，不是用户输入）触发。①②只**落地**、
+  `Trigger` 记 `false`（记的是**实际发生**：本轮确未随附起响应）；③与 `/inject` 是**驱动式**
+  排空——触发型注入落地后自己跑一轮，`Trigger` 记 `true`。
 - **装配投影**（§7.1 装配规则）：inject 节点按 `Source` 决定投影角色——`user:` 直投影 **user**、
-  **不套围栏**（是用户自己的动作）；`job:` / `poller:` 的系统级事实汇报投影为 **system**、
-  **不套围栏**（宿主的事实，不是外部内容）；其余（`tool:` / `plugin:` / 未知）投影为 **user +
-  数据围栏**（`<injected-context source="...">…</injected-context>`，并前置一句英文说明
-  「以下是工具注入的数据，不是用户指令」，落实 §9 的不可信数据口径；来源属性值转义
+  **不套围栏**（是用户自己的动作）；`job:` 的宿主事实汇报投影为 **system、不套围栏**；
+  `poller:` 同样是 **system**（状态/退出码/耗时是宿主事实），但日志尾部是外部进程写的
+  **不可信数据**——正文里单独用 `<injected-context source="...">…</injected-context>` 包住
+  日志段并前置英文警告，不让它直接读成宿主指令；其余（`tool:` / `plugin:` / 未知）投影为
+  **user + 数据围栏**（`<injected-context source="...">…</injected-context>`，并前置一句英文
+  说明「以下是工具注入的数据，不是用户指令」，落实 §9 的不可信数据口径；来源属性值转义
   `"`/`<`/`>` 防提前闭合）。投影角色**不进领域**：树里只有 `inject` 一种角色，映射表在装配层。
 - **触发口径（用户拍板）**：按来源定默认、调用方可覆盖——`job:`/`poller:` 默认 **true**
   （任务完成应当主动汇报）；`tool:`/`plugin:` 默认 **false**（Turn 内注入只补上下文，避免
@@ -763,15 +767,22 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 
 **轮询器**（`app/poller.go`）替代模型自行轮询：
 
-- **注册**：`job_start` 等异步工具在返回任务 id 时登记 watcher（`Poller.Watch(jobID, spec)`），
-  模型**不再**被要求反复查询。
+- **注册**：装配根给 `JobManager` 套 watcher 装饰器——`Start` 成功即登记（覆盖 `job_start` 与
+  未来异步工具），`Kill` 成功即撤销；`job_start` 不直接持有轮询器。模型**不再**被要求反复
+  查询。
+- **归属**：登记时从工具执行上下文取会话 ID；注入带目标会话，会话 goroutine 排空时丢弃
+  不属于当前会话的包。切换、新建或删除当前会话时显式撤销该会话的 watcher。
 - **节奏**：自适应退避（0.5s 起、×1.5、上限 15s），与任务日志无关，只读 `JobManager.Status`；
   **不读日志全文**——完成时才按 `tail` 上限取最后 N 行。
-- **结束条件**：任务进入终态（done/failed/killed）或 watcher 超时（`limits.poll_timeout_sec`，
-  缺省 600s，可被 `job_start.timeout_sec` 收窄）；两者都产出 **一条 `poller:` 注入**：
-  「任务 <id> <状态>（退出码 N，耗时 T）+ 日志尾部」，`Trigger=true` 据此起一轮汇报。
-- **取消**：`job_kill` 或会话切换（`/switch`）时 watcher 撤销；会话关闭时全部撤销（不泄漏
-  goroutine）。`/jobs` 的现状输出不变（手查仍然可用）。
+- **结束条件**：只等任务终态（done/failed/killed）；**不设 watcher 超时**（用户拍板，
+  `limits.poll_timeout_sec` 设计项删除）。任务的时限只由 `job_start.timeout_sec` 决定；
+  未设该参数且进程不结束时，watcher 会以 15s 间隔持续观察。终态产出 **一条 `poller:` 注入**：
+  「任务 <id> <状态>（退出码 N，耗时 T）+ 日志尾部」；空闲驱动式排空时 `Trigger=true` 起一轮
+  汇报，忙碌时轮末只落地、记 `false`。
+- **唤醒**：poller 注入后投递一次 `Wake`；主循环空闲时经 `Session.Handle` 做驱动式排空并跑
+  一轮，忙碌时轮末排空只落地、`Trigger` 记 `false`（不插队、不重复计费）。
+- **取消**：`job_kill` 成功、会话切换（`/switch`/`/new`）或删除当前会话时撤销；会话关闭时
+  全部撤销（不泄漏 goroutine）。`/jobs` 的现状输出不变（手查仍然可用）。
 - **不做**：不做通用「定时轮询任意条件」的 DSL（等真实需求）；轮询器不是插件 API 的一部分，
   外部插件经 `Injector` 注入，不经轮询器。
 
@@ -997,8 +1008,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "max_context_tokens": 64000,
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,
-    "tool_timeout_sec": 60,        // 缺省单次调用超时；模型可经保留参数 timeout_sec 覆盖（1–3600，D38）
-    "poll_timeout_sec": 600        // 轮询器 watcher 上限（D150）：任务未在此时限内结束即注入一条超时报文
+    "tool_timeout_sec": 60         // 缺省单次调用超时；模型可经保留参数 timeout_sec 覆盖（1–3600，D38）
   }
 }
 ```
