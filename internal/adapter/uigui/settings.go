@@ -55,6 +55,21 @@ type ProviderPatch struct {
 	Unsupported string // 逗号分隔
 }
 
+// FallbackLink 降级链一项（D173/D176 口径三）：provider + 模型名。模型可为空
+// （= 取该 provider 的缺省模型），也可手填未声明的名字——链是运行时路由，不要求
+// 目标模型已写进 provider 的 models 声明（声明只影响能力位与窗口）。
+type FallbackLink struct {
+	Provider string
+	Model    string
+}
+
+// ProviderChoice 「模型」页降级链编辑用的 provider 选项：名字 + 它声明的模型名。
+// 与 ProviderManager 的编辑面分开——那边编辑 provider 本体（怎么连），这里只挑路由目标。
+type ProviderChoice struct {
+	Name   string
+	Models []string
+}
+
 // ProviderManager provider 列表管理面（D110②/③，装配根实现）：设置窗 provider
 // 编辑区数据面 + 全量应用 + 连通性测试。provider 变更重启生效（base_url/api_key/
 // tokenizer 构造期固化，port.LLM 不可热换）；Test = 真实最小请求（/models，短超时）。
@@ -118,6 +133,13 @@ type SettingsSnapshot struct {
 	MCPServers       []string            // 只读：声明名清单（sorted）
 	Plugins          []string            // 只读：声明名清单（sorted）
 	RawJSON          string              // config.json 原文（高级页编辑起点）
+
+	// Fallback 降级链（D173/D176 口径三）。模型 "" = 取该 provider 的缺省模型。
+	// 链条目可指向声明之外的模型名——它是运行时路由，不要求目标先在 provider 里声明。
+	Fallback []FallbackLink
+	// FallbackNote 链窄于当前模型能力时的警示文案（cmd 侧按 caps 现算；空 = 不窄）。
+	// 与其余快照同口径：开窗取一次（降级链改动要重启才生效，运行态本就不同步）。
+	FallbackNote string
 }
 
 // SettingsPatch 保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
@@ -149,6 +171,9 @@ type SettingsPatch struct {
 	PromptModules []PromptModuleView
 	PromptPersona []string
 	RawJSON       string // "" = 不改
+	// Fallback 降级链（D176 口径三；恒全量写：空 = 清空）。链条目 {provider, model}，
+	// 模型可为空（取该 provider 的缺省模型）；cmd 侧校验 provider 名存在。
+	Fallback []FallbackLink
 }
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
@@ -172,13 +197,14 @@ var (
 // 这里的常量只是**可读的页索引**——加页时必须在 settingsPages 追加一页，并在此加对应常量；
 // pageConstCount 与注册表长度的等式由测试锁住，两处漏一处就响亮失败。
 const (
-	pageGeneral = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
-	pageModel          // 模型：当前模型名 / 原生思考与推理档位 / provider 列表
-	pageSecrets        // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
-	pageChat           // 对话：限额
-	pagePrompt         // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
-	pageTools          // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
-	pageAdv            // 高级：config.json 原文
+	pageGeneral   = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
+	pageModel            // 模型：当前模型名 / 原生思考与推理档位 / 降级链（D176 口径一）
+	pageProviders        // 模型服务：provider 编辑区（协议 / 端点 / 密钥池 / 模型能力表；D176）
+	pageSecrets          // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
+	pageChat             // 对话：限额
+	pagePrompt           // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
+	pageTools            // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
+	pageAdv              // 高级：config.json 原文
 	// pageConstCount 页常量个数（编译期锚；见上方说明）。
 	pageConstCount
 )
@@ -298,6 +324,16 @@ type settingsForm struct {
 	testResults chan testOutcome // 连通性测试异步结果（测试 goroutine 写、帧循环排空）
 	win         *app.Window      // 结果回灌的 Invalidate（headless = nil）
 
+	// 降级链（D176 口径三）：链是列表不是文本框——每项 provider / model，可上移/下移/删除/
+	// 添加。chain/snapChain 以「磁盘快照」为基线（保存 diff + 未改动判定），链改动随
+	// 「保存并应用」写回（重启生效，与 provider 变更同口径）。
+	chain     []*fallbackForm
+	snapChain []FallbackLink
+	chainAdd  widget.Clickable
+	// chainChoices 每项的 provider 下拉选项（快照现取：provider 列表可能被「模型服务」页改过，
+	// 但那一改要重启才生效，故以开窗快照为准，不每帧重取）。
+	chainChoices []ProviderChoice
+
 	// profile 区（D110③）。
 	profCreate widget.Clickable
 	profCopy   widget.Clickable
@@ -336,6 +372,27 @@ type providerForm struct {
 // modelsPristine 模型名框是否仍是基线内容。自动填入的唯一前提。
 func (pf *providerForm) modelsPristine() bool {
 	return strings.TrimSpace(pf.models.Text()) == strings.TrimSpace(pf.modelsOrig)
+}
+
+// fallbackForm 降级链一项的编辑控件组（D176 口径三；本窗 goroutine 独占）。
+// 提供者与模型都得能改：provider 走「循环选择器」（material v0.10 无下拉框，与档位同款），
+// 模型是单行编辑档（可填未声明的名字——链是运行时路由）。
+type fallbackForm struct {
+	provIdx  int           // 在 f.chainChoices 里的下标（-1 = 未命中，保留旧名）
+	provName string        // 当前 provider 名（provIdx 未命中时的兜底）
+	model    widget.Editor // 模型名；空 = 取该 provider 的缺省模型
+	prov     widget.Clickable
+	up       widget.Clickable
+	down     widget.Clickable
+	del      widget.Clickable
+}
+
+// chainProvider 该项当前 provider 名（下拉命中名字，否则用保留的原始名）。
+func (ff *fallbackForm) chainProvider(choices []ProviderChoice) string {
+	if ff.provIdx >= 0 && ff.provIdx < len(choices) {
+		return choices[ff.provIdx].Name
+	}
+	return ff.provName
 }
 
 // testOutcome 异步探针结果（testResults 单消费者 = 帧循环）：连通测试与「获取模型」共用
@@ -397,7 +454,9 @@ func newSettingsForm(u *UI) *settingsForm {
 		f.profiles = u.opts.Profiles.Snapshot() // D110③：profile 区数据面
 	}
 	if u.opts.ProviderMgr != nil {
-		f.loadProviders(u.opts.ProviderMgr.Snapshot()) // D110②：provider 编辑区
+		snap := u.opts.ProviderMgr.Snapshot()
+		f.loadProviders(snap)    // D110②：provider 编辑区
+		f.loadChainChoices(snap) // D176 口径三：降级链的 provider 选项
 	}
 	f.tools = u.opts.Tools     // S6/D143：工具与 MCP 管理面（nil = 只读占位）
 	f.secrets = u.opts.Secrets // S9-6b：密钥库管理面（nil = 只读占位）
@@ -457,6 +516,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.rawCfg.SetText(s.RawJSON)
 	f.builtins = s.Builtins
 	f.loadPrompts(s.PromptModules, s.PromptPersona)
+	f.loadFallback(s.Fallback, f.chainChoices) // D176 口径三：降级链
 	return f
 }
 
@@ -510,4 +570,67 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 		}
 		f.provs = append(f.provs, pf)
 	}
+}
+
+// loadChainChoices 降级链的 provider 选项（名字 + 声明的模型名）：取自 provider 编辑区
+// 快照（同一份事实），故「模型服务」页改动后重开窗即同步；本窗内改 provider 列表不
+// 影响链选项（那类改动要重启才生效，运行态本就不同步）。
+func (f *settingsForm) loadChainChoices(snap []ProviderSnapshot) {
+	f.chainChoices = make([]ProviderChoice, 0, len(snap))
+	for _, p := range snap {
+		f.chainChoices = append(f.chainChoices, ProviderChoice{
+			Name:   p.Name,
+			Models: splitCSVNames(p.Models),
+		})
+	}
+}
+
+// loadFallback 以快照重建降级链（开窗填表；空链 = 只留「添加」入口）。
+func (f *settingsForm) loadFallback(chain []FallbackLink, choices []ProviderChoice) {
+	f.snapChain = append([]FallbackLink(nil), chain...)
+	f.chain = make([]*fallbackForm, 0, len(chain))
+	for _, l := range chain {
+		f.chain = append(f.chain, newFallbackForm(l, choices))
+	}
+}
+
+// addFallbackForm 追加一项空白降级链（帧循环与测试共用；provider 缺省取首个选项）。
+func (f *settingsForm) addFallbackForm() {
+	f.chain = append(f.chain, newFallbackForm(FallbackLink{}, f.chainChoices))
+}
+
+// newFallbackForm 由一项链配置造编辑控件组；provIdx 按名命中选项（未命中 = -1，保留名）。
+func newFallbackForm(l FallbackLink, choices []ProviderChoice) *fallbackForm {
+	provIdx := -1
+	for i, c := range choices {
+		if c.Name == l.Provider {
+			provIdx = i
+			break
+		}
+	}
+	if provIdx < 0 && len(choices) > 0 && strings.TrimSpace(l.Provider) == "" {
+		provIdx = 0 // 新增项缺省指向首个 provider
+	}
+	ff := &fallbackForm{provIdx: provIdx, provName: strings.TrimSpace(l.Provider)}
+	ff.model.SingleLine = true
+	if s := strings.TrimSpace(l.Model); s != "" {
+		ff.model.SetText(s)
+	}
+	return ff
+}
+
+// splitCSVNames 逗号分隔的名字表（去空、去重保序；provider 模型名解析，与 cmd 侧
+// splitCSV 同口径但与中文逗号无关——这里只处理 config 快照里的英文名）。
+func splitCSVNames(s string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.Split(s, ",") {
+		v := strings.TrimSpace(part)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }

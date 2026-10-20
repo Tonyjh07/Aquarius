@@ -21,6 +21,10 @@ func (w *wiring) settingsSnapshot() uigui.SettingsSnapshot {
 		s.Think = agent.ThinkOn()
 		s.Effort = agent.CurrentEffort()
 	}
+	// S11-7①/D176 口径三：降级链取**启动时载入的** config（链改动与 provider 变更同
+	// 口径——重启生效），并现算链窄于当前模型的警示。
+	s.Fallback = fallbackLinksOf(w.cfg.Model.Fallback)
+	s.FallbackNote = w.cfg.Model.narrowNote()
 	return s
 }
 

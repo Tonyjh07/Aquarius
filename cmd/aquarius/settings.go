@@ -98,6 +98,13 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	if err := validatePromptModules(p.PromptModules); err != nil {
 		return err
 	}
+	// 降级链（S11-7①/D176）：仅当 patch 带链（nil = 本条路径不管链）时才校验与写回；
+	// 高级页整文件替换时跳过校验（那时 facts 来自用户手写的文件本身）。
+	if p.Fallback != nil && p.RawJSON == "" {
+		if err := validateFallbackChain(cfgPath, p.Fallback); err != nil {
+			return err
+		}
+	}
 	if p.RawJSON != "" {
 		// 高级页（Q10）：整文件替换——JSON 对象校验后原子写（cfgWriteMu 串行与其他
 		// 写回互斥）；原文即最终态，未知键天然保留。后续 mutate 在新文件上照常叠加
@@ -172,7 +179,70 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 		pSec["modules"] = mods
 		pSec["persona"] = cleanRefs(p.PromptPersona)
+		// 降级链（S11-7①/D176 口径三）：恒全量写（空 = 清空）；链条目 {provider, model?}。
+		if p.Fallback != nil {
+			fbs := make([]any, 0, len(p.Fallback))
+			for _, l := range p.Fallback {
+				entry := map[string]any{"provider": strings.TrimSpace(l.Provider)}
+				if m := strings.TrimSpace(l.Model); m != "" {
+					entry["model"] = m
+				}
+				fbs = append(fbs, entry)
+			}
+			model := modelSection(generic)
+			model["fallback"] = fbs
+		}
 	})
+}
+
+// validateFallbackChain 降级链校验（S11-7①/D176）：provider 名不得为空、必须存在于
+// config 的 providers 列表；二元组不得重复；不得指向当前生效的 primary 当前模型。
+// 与启动期 modelConfig.normalize 同口径，只是运行在这里以「设置窗保存前」拦截
+// （否则落盘即进入一份启动会被拒的配置）。
+func validateFallbackChain(cfgPath string, links []uigui.FallbackLink) error {
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for _, p := range cfg.Model.Providers {
+		known[p.Name] = true
+	}
+	curModel := cfg.Model.Name
+	if curModel == "" {
+		if pp := cfg.Model.primaryProvider(); pp != nil {
+			curModel = pp.models0()
+		}
+	}
+	seen := map[string]bool{}
+	for _, l := range links {
+		prov := strings.TrimSpace(l.Provider)
+		model := strings.TrimSpace(l.Model)
+		if prov == "" {
+			return fmt.Errorf("降级链每项都要选提供者")
+		}
+		if !known[prov] {
+			return fmt.Errorf("降级链的提供者 %q 不在 provider 列表内（先在「模型服务」页添加或改名）", prov)
+		}
+		if prov == cfg.Model.Primary && (model == "" || model == curModel) {
+			return fmt.Errorf("降级链不应含当前生效的 %s/%s（那就是主模型本身）", prov, curModel)
+		}
+		key := prov + "/" + model
+		if seen[key] {
+			return fmt.Errorf("降级链重复项 %q", key)
+		}
+		seen[key] = true
+	}
+	return nil
+}
+
+// fallbackLinksOf 降级链配置 → 设置窗快照项（model 空 = 该 provider 的缺省模型）。
+func fallbackLinksOf(fbs []fallbackEntry) []uigui.FallbackLink {
+	out := make([]uigui.FallbackLink, 0, len(fbs))
+	for _, fb := range fbs {
+		out = append(out, uigui.FallbackLink{Provider: fb.Provider, Model: fb.Model})
+	}
+	return out
 }
 
 // writeRawConfig 高级页整文件替换（S4/D110③/Q10）：JSON 对象校验通过才落盘，

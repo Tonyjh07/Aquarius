@@ -222,6 +222,102 @@ func TestPersistSettingsTextKeysTheme(t *testing.T) {
 	}
 }
 
+// TestPersistFallbackChainRoundTrip 降级链写回（S11-7①/D176）：patch.Fallback 全量写回
+// model.fallback（空 model 落省略键）；读回快照同值；nil = 这条写路径不管链（保持不变）。
+func TestPersistFallbackChainRoundTrip(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	// 先加第二个 provider 与一条链（默认模板只有一个 provider，且 primary=openai）。
+	add := `{"model":{"providers":[{"name":"openai","kind":"openai-chat","base_url":"https://api.openai.com/v1","keys":[{"api_key":"secret:AQUARIUS_OPENAI_KEY"}],"models":[{"name":"gpt-4o-mini"},{"name":"gpt-4o"}]},{"name":"mimo","base_url":"https://api.mimo.ai/v1","keys":[{"api_key":"secret:MIMO_KEY"}],"models":[{"name":"mimo-v2.6-flash"}]}],"primary":"openai","name":"gpt-4o-mini"}}`
+	if err := writeRawConfig(cfgPath, add); err != nil {
+		t.Fatalf("预置配置: %v", err)
+	}
+
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme:    "system",
+		Fallback: []uigui.FallbackLink{{Provider: "mimo", Model: "mimo-v2.6-flash"}, {Provider: "mimo"}},
+	}); err != nil {
+		t.Fatalf("persistSettingsTextKeys: %v", err)
+	}
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("回读配置: %v", err)
+	}
+	if len(cfg.Model.Fallback) != 2 || cfg.Model.Fallback[0].Provider != "mimo" ||
+		cfg.Model.Fallback[0].Model != "mimo-v2.6-flash" || cfg.Model.Fallback[1].Model != "" {
+		t.Fatalf("降级链写回 = %+v", cfg.Model.Fallback)
+	}
+	// provider 段与密钥不受文本键改写影响。
+	if len(cfg.Model.Providers) != 2 || cfg.Model.Providers[1].keyRefs()[0] != "secret:MIMO_KEY" {
+		t.Fatalf("provider 段被触碰: %+v", cfg.Model.Providers)
+	}
+
+	// nil = 不管链（高级页/其它窄写路径），原链保持不变。
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "dark"}); err != nil {
+		t.Fatalf("nil 链写回: %v", err)
+	}
+	cfg, _ = loadConfig(cfgPath)
+	if len(cfg.Model.Fallback) != 2 {
+		t.Fatalf("nil 链不应改动原链: %+v", cfg.Model.Fallback)
+	}
+
+	// 空链 = 清空（键存在但为空数组语义）。
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "dark", Fallback: []uigui.FallbackLink{}}); err != nil {
+		t.Fatalf("清空链: %v", err)
+	}
+	cfg, _ = loadConfig(cfgPath)
+	if len(cfg.Model.Fallback) != 0 {
+		t.Fatalf("空链应清空: %+v", cfg.Model.Fallback)
+	}
+}
+
+// TestFallbackChainValidation 降级链保存前校验（S11-7①/D176）：provider 空/未知、
+// 指向 primary 当前模型、重复项都拦下且原文件不动。
+func TestFallbackChainValidation(t *testing.T) {
+	base := func(t *testing.T) string {
+		t.Helper()
+		cfgPath := filepath.Join(t.TempDir(), "config.json")
+		cfg := `{"model":{"providers":[{"name":"openai","base_url":"http://a/v1","models":[{"name":"m1"},{"name":"m2"}]},{"name":"b","base_url":"http://b/v1","models":[{"name":"mb"}]}],"primary":"openai","name":"m1"}}`
+		if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+			t.Fatalf("写配置: %v", err)
+		}
+		return cfgPath
+	}
+	cases := []struct {
+		name  string
+		links []uigui.FallbackLink
+		want  string // "" = 通过
+	}{
+		{"正常", []uigui.FallbackLink{{Provider: "b", Model: "mb"}}, ""},
+		{"空 provider", []uigui.FallbackLink{{Provider: "", Model: "x"}}, "提供者"},
+		{"未知 provider", []uigui.FallbackLink{{Provider: "zz", Model: "x"}}, "不在 provider 列表内"},
+		{"指向 primary 当前模型", []uigui.FallbackLink{{Provider: "openai", Model: "m1"}}, "当前生效"},
+		{"重复项", []uigui.FallbackLink{{Provider: "b", Model: "mb"}, {Provider: "b", Model: "mb"}}, "重复"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfgPath := base(t)
+			before, _ := os.ReadFile(cfgPath)
+			err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "system", Fallback: c.links})
+			if c.want == "" {
+				if err != nil {
+					t.Fatalf("应通过但报错: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want 含 %q", err, c.want)
+			}
+			after, _ := os.ReadFile(cfgPath)
+			if string(before) != string(after) {
+				t.Error("校验失败后原文件应保持不变")
+			}
+		})
+	}
+}
+
 // TestReadTextSettingsFallback 读失败/解析失败返回零值（快照容错不阻断开窗）。
 func TestReadTextSettingsFallback(t *testing.T) {
 	if s := readTextSettings(filepath.Join(t.TempDir(), "missing.json")); s.Hotkey != "" || s.Theme != "" ||

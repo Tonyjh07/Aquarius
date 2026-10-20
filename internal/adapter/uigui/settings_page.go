@@ -41,13 +41,14 @@ type settingsPage interface {
 // settings_page_*.go）。页索引常量（pageGeneral…）仍保留供代码与测试引用可读，其值与
 // 本表次序由 TestSettingsPageNamesContract 锁定。
 var settingsPages = []settingsPage{
-	generalPage{}, // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
-	modelPage{},   // 模型：当前模型名 / 原生思考与推理档位 / provider 列表
-	secretsPage{}, // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
-	chatPage{},    // 对话：限额
-	promptPage{},  // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览
-	toolsPage{},   // 工具与 MCP：内置工具启停 + 插件管理
-	advPage{},     // 高级：config.json 原文
+	generalPage{},   // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
+	modelPage{},     // 模型：当前模型名 / 原生思考与推理档位 / 有序降级链（D176 口径一）
+	providersPage{}, // 模型服务：provider 管理（协议/端点/密钥池/模型能力表；D176 口径二）
+	secretsPage{},   // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
+	chatPage{},      // 对话：限额
+	promptPage{},    // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览
+	toolsPage{},     // 工具与 MCP：内置工具启停 + 插件管理
+	advPage{},       // 高级：config.json 原文
 }
 
 // settingsPageCount 页数 = 注册表长度（不是独立常量：加页只改 settingsPages）。

@@ -455,6 +455,126 @@ func (f *fakeProviderMgr) Models(p ProviderPatch) ([]string, error) {
 	return f.models, f.modelsErr
 }
 
+// TestFallbackChainEditorHeadless 降级链编辑（S11-7①/D176 口径三）：快照填表 →
+// 每项 provider/model 控件就位；添加/上移/下移/删除；保存时链恒全量进 patch。
+func TestFallbackChainEditorHeadless(t *testing.T) {
+	restoreLight(t)
+	var got SettingsPatch
+	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
+		{Name: "a", BaseURL: "http://a/v1", Models: "am1, am2", Primary: true},
+		{Name: "b", BaseURL: "http://b/v1", Models: "bm1"},
+	}}
+	u := newHeadless(t, Options{
+		ProviderMgr: mgr,
+		Settings: func() SettingsSnapshot {
+			s := fillSnapshot()
+			s.Fallback = []FallbackLink{{Provider: "b", Model: "bm1"}}
+			return s
+		},
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
+	})
+	f := newSettingsForm(u)
+	if len(f.chain) != 1 || len(f.chainChoices) != 2 {
+		t.Fatalf("链加载 = %d 项, 选项 = %d", len(f.chain), len(f.chainChoices))
+	}
+	if f.chain[0].chainProvider(f.chainChoices) != "b" || f.chain[0].model.Text() != "bm1" {
+		t.Fatalf("首项 = %q/%q", f.chain[0].chainProvider(f.chainChoices), f.chain[0].model.Text())
+	}
+
+	// 添加一项（缺省指向首个选项）→ 上移交换 → 删除。
+	f.addFallbackForm()
+	if len(f.chain) != 2 || f.chain[1].chainProvider(f.chainChoices) != "a" {
+		t.Fatalf("添加后 = %d 项, 末项 = %q", len(f.chain), f.chain[1].chainProvider(f.chainChoices))
+	}
+	f.chain[1].model.SetText("am2")
+	f.moveFallback(1, -1) // 上移：与首项交换
+	if f.chain[0].chainProvider(f.chainChoices) != "a" || f.chain[0].model.Text() != "am2" {
+		t.Fatalf("上移后首项 = %q/%q", f.chain[0].chainProvider(f.chainChoices), f.chain[0].model.Text())
+	}
+	f.moveFallback(0, -1) // 越界 no-op
+	f.cycleChainProvider(0)
+	if f.chain[0].chainProvider(f.chainChoices) != "b" {
+		t.Fatalf("循环选择后 = %q, want b", f.chain[0].chainProvider(f.chainChoices))
+	}
+
+	u.saveSettings(f)
+	want := []FallbackLink{{Provider: "b", Model: "am2"}, {Provider: "b", Model: "bm1"}}
+	if len(got.Fallback) != len(want) {
+		t.Fatalf("patch.Fallback = %+v, want %+v", got.Fallback, want)
+	}
+	for i := range want {
+		if got.Fallback[i] != want[i] {
+			t.Errorf("链[%d] = %+v, want %+v", i, got.Fallback[i], want[i])
+		}
+	}
+
+	f.removeFallback(0)
+	u.saveSettings(f)
+	if len(got.Fallback) != 1 || got.Fallback[0].Model != "bm1" {
+		t.Fatalf("删除后 patch.Fallback = %+v", got.Fallback)
+	}
+}
+
+// TestFallbackChainEmptyAddRowSkipped 「＋ 添加」后未填任何内容 = 空行不落盘（链里不出现
+// 无主项）；且清空链 = 全量写空（键存在但为空数组）。
+func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
+	restoreLight(t)
+	var got SettingsPatch
+	u := newHeadless(t, Options{
+		ProviderMgr:   &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", BaseURL: "http://a/v1", Models: "m1", Primary: true}}},
+		Settings:      func() SettingsSnapshot { return fillSnapshot() },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
+	})
+	f := newSettingsForm(u)
+	// 空链快照 → 添加一个控件但名字/模型都空；选项只有一个 provider，故 provIdx=0。
+	// 先把该项 provider 名清空（模拟「没选任何东西」）再保存。
+	f.addFallbackForm()
+	f.chain[0].provIdx = -1
+	f.chain[0].provName = ""
+	u.saveSettings(f)
+	if got.Fallback == nil || len(got.Fallback) != 0 {
+		t.Fatalf("空行应被跳过：patch.Fallback = %+v", got.Fallback)
+	}
+}
+
+// TestProviderRowsLiveOnProvidersPage 拆页契约（S11-7①/D176 口径一）：provider 编辑行
+// 只挂「模型服务」页，「模型」页只剩 当前模型/思考/档位/降级链——防两页都挂或都不挂
+// （拆页时最容易犯的错是把行计划整体复制一份而忘了删原处）。
+func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
+	u := newHeadless(t, Options{
+		Settings:    func() SettingsSnapshot { return fillSnapshot() },
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", Primary: true}}},
+	})
+	f := newSettingsForm(u)
+	provKinds := []rowKind{rowProvField, rowProvBtns, rowProvAdd, rowProvApply}
+	chainKinds := []rowKind{rowChainItem, rowChainAdd}
+	count := func(page int, kinds ...rowKind) int {
+		n := 0
+		for _, r := range f.pageRows(page) {
+			for _, k := range kinds {
+				if r.kind == k {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	for _, k := range provKinds {
+		if n := count(pageProviders, k); n == 0 {
+			t.Errorf("「模型服务」页缺 provider 行型 %v", k)
+		}
+		if n := count(pageModel, k); n != 0 {
+			t.Errorf("「模型」页仍有 provider 行型 %v（D176 拆页后应搬到「模型服务」）", k)
+		}
+	}
+	if n := count(pageModel, chainKinds...); n == 0 {
+		t.Errorf("「模型」页缺降级链行（rowChainItem/rowChainAdd）")
+	}
+	if n := count(pageProviders, chainKinds...); n != 0 {
+		t.Errorf("「模型服务」页不应有降级链行")
+	}
+}
+
 // TestProviderEditorHeadless 编辑区生命周期：快照填表（primary 标记、密钥恒空）、
 // 新增/设主/删除、全量应用分派（Orig 保留）、异步连通测试回灌。
 func TestProviderEditorHeadless(t *testing.T) {
@@ -813,7 +933,7 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 // 推导）；每页行计划非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」
 // 页（S7b/D145）。另锁两条注册表结构不变量：页常量与注册表长度一致、Key 唯一。
 func TestSettingsPageNamesContract(t *testing.T) {
-	want := []string{"常规", "模型", "密钥库", "对话", "系统提示词", "工具与 MCP", "高级"}
+	want := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "高级"}
 	if settingsPageCount != len(want) {
 		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(want))
 	}

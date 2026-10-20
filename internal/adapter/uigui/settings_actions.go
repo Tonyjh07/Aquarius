@@ -128,6 +128,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	// S7/D144：人格模块树 + 有序引用（恒全量写；空名行在 views 里跳过、cmd 侧校验模块名）。
 	p.PromptModules = f.promptViews()
 	p.PromptPersona = f.promptRefList()
+	// S11-7①/D176：降级链恒全量写（空 = 清空）；provider 名为空的行为空行被跳过，
+	// cmd 侧再校验 provider 名存在于 providers 列表。
+	p.Fallback = f.fallbackList()
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v
 	}
@@ -164,6 +167,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if !promptModulesEqual(f.snap.PromptModules, p.PromptModules) || !slices.Equal(f.snap.PromptPersona, p.PromptPersona) {
 		f.status = "已保存（人格组合只对新会话生效，重启后应用）"
 	}
+	if !slices.Equal(p.Fallback, f.snapChain) {
+		f.status = "已保存（降级链改动重启后生效）"
+	}
 	f.snap = SettingsSnapshot{
 		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
 		Hotkey: p.Hotkey, Theme: p.Theme,
@@ -175,7 +181,25 @@ func (u *UI) saveSettings(f *settingsForm) {
 		ToolTimeoutSec: p.ToolTimeoutSec, SystemPrompt: p.SystemPrompt,
 		PromptModules: p.PromptModules, PromptPersona: p.PromptPersona,
 		Builtins: f.snap.Builtins, RawJSON: p.RawJSON,
+		Fallback: p.Fallback, FallbackNote: f.snap.FallbackNote,
 	}
+	f.snapChain = append([]FallbackLink(nil), p.Fallback...)
+}
+
+// fallbackList 组装降级链提交（编辑区现值 → []FallbackLink）。provider 名与模型名都为空
+// 的行整体跳过（用户点了「添加」却没填任何东西）——避免落一条无主的链项；模型名允许为空
+// （= 取该 provider 的缺省模型）。
+func (f *settingsForm) fallbackList() []FallbackLink {
+	out := make([]FallbackLink, 0, len(f.chain))
+	for _, ff := range f.chain {
+		prov := strings.TrimSpace(ff.chainProvider(f.chainChoices))
+		model := strings.TrimSpace(ff.model.Text())
+		if prov == "" && model == "" {
+			continue
+		}
+		out = append(out, FallbackLink{Provider: prov, Model: model})
+	}
+	return out
 }
 
 // promptModulesEqual 模块树视图等价（名称 + 正文 + 子模块序；保存提示的变更判定）。

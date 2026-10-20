@@ -1,9 +1,11 @@
 package uigui
 
-// settings_page_model.go 「模型」页（D162 页面注册表）：当前模型名 / 原生思考与
-// 推理档位 / provider 列表编辑区（D110②；全量应用 + 设为主 + 删除 + 连通测试 +
-// 获取模型 D153）。控件事件与异步结果回灌的语义与改前一致，只是从 settingsFrame
-// 的帧级 switch 收进本页。
+// settings_page_model.go 「模型」页（D162 页面注册表；D176 口径一）：**用哪个**——当前
+// 模型名 / 原生思考与推理档位 / 有序降级链。provider 本体（怎么连：协议 / 端点 / 密钥池 /
+// 模型能力表）搬到「模型服务」页（settings_page_providers.go），这一页只做路由决策。
+//
+// 降级链是**列表**不是文本框（D176 口径三）：每项一行 provider / model，可上移/下移/删除，
+// 尾部「＋ 添加」。链改动随「保存并应用」全量写回 config（重启生效，与 provider 变更同口径）。
 
 import (
 	"gioui.org/layout"
@@ -21,15 +23,15 @@ func (modelPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{
 		sec("当前模型"), {kind: rowModelName},
 		sec("思考与推理"), {kind: rowThink}, {kind: rowEffort},
-		sec("模型服务（provider 列表）"),
+		sec("降级链"),
 	}
-	for i := range f.provs {
-		for fld := 0; fld < provFldN; fld++ {
-			rows = append(rows, rowDesc{kind: rowProvField, prov: i, field: fld})
-		}
-		rows = append(rows, rowDesc{kind: rowProvBtns, prov: i})
+	if f.snap.FallbackNote != "" {
+		rows = append(rows, rowDesc{kind: rowChainNote, text: f.snap.FallbackNote})
 	}
-	return append(rows, rowDesc{kind: rowProvAdd}, rowDesc{kind: rowProvApply})
+	for i := range f.chain {
+		rows = append(rows, rowDesc{kind: rowChainItem, field: i})
+	}
+	return append(rows, rowDesc{kind: rowChainAdd})
 }
 
 func (modelPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
@@ -41,82 +43,32 @@ func (modelPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 		return paperCheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）")(gtx), true
 	case rowEffort:
 		return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort)), true
-	case rowProvField:
-		pf := f.provs[r.prov]
-		eds := []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported}
-		meta := provFieldMeta[r.field]
-		if r.field == provModelsFld {
-			// 模型名行右侧挂「获取模型」（D153，模拟稿同款）：按钮与输入框同一行，
-			// 结果不自动覆盖——候选以 chip 列在行下方，点了才替换。
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return fieldRow(gtx, th, meta.label, func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-							layout.Flexed(1, editorBox(th, eds[r.field], meta.hint)),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
-									paperButton(th, &pf.modelsBtn, "获取模型", paperBtnSecondary, true))
-							}),
-						)
-					})
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if len(pf.cands) == 0 {
-						return layout.Dimensions{}
-					}
-					return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return modelChips(gtx, th, pf)
-					})
-				}),
-			), true
-		}
-		return fieldRow(gtx, th, meta.label, editorBox(th, eds[r.field], meta.hint)), true
-	case rowProvBtns:
-		return f.providerButtonsRow(gtx, th, r.prov), true
-	case rowProvAdd:
-		return f.providerAddRow(gtx, th), true
-	case rowProvApply:
-		return f.providerApplyRow(gtx, th), true
+	case rowChainNote:
+		return chainNoteRow(gtx, th, r.text), true
+	case rowChainItem:
+		return f.chainItemRow(gtx, th, r.field), true
+	case rowChainAdd:
+		return f.chainAddRow(gtx, th), true
 	}
 	return layout.Dimensions{}, false
 }
 
 func (modelPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
-	for f.provAdd.Clicked(gtx) {
-		f.addProviderForm()
+	for f.chainAdd.Clicked(gtx) {
+		f.addFallbackForm()
 	}
-	for f.provApply.Clicked(gtx) {
-		u.applyProviderChanges(f)
-	}
-	for i, pf := range f.provs {
-		for pf.test.Clicked(gtx) {
-			u.runProviderTest(f, pf)
+	for i, ff := range f.chain {
+		for ff.prov.Clicked(gtx) {
+			f.cycleChainProvider(i) // 循环选择器：点击进一个 provider
 		}
-		for pf.modelsBtn.Clicked(gtx) {
-			u.runFetchModels(f, pf)
+		for ff.up.Clicked(gtx) {
+			f.moveFallback(i, -1)
 		}
-		for k := range pf.candClicks {
-			if !pf.candClicks[k].Clicked(gtx) {
-				continue
-			}
-			if k < len(pf.cands) {
-				// 点 chip = **替换**模型名行（模拟稿「点选替换」）：不追加，免得越点越长。
-				pf.models.SetText(pf.cands[k])
-			}
+		for ff.down.Clicked(gtx) {
+			f.moveFallback(i, 1)
 		}
-		for pf.setPrimary.Clicked(gtx) {
-			f.primaryIdx = i
-		}
-		for pf.del.Clicked(gtx) {
-			if len(f.provs) > 1 { // 至少保留一条（providers 不可为空，启动校验同口径）
-				f.provs = append(f.provs[:i], f.provs[i+1:]...)
-				switch {
-				case f.primaryIdx == i:
-					f.primaryIdx = 0
-				case f.primaryIdx > i:
-					f.primaryIdx--
-				}
-			}
+		for ff.del.Clicked(gtx) {
+			f.removeFallback(i)
 		}
 	}
 	f.effort.advance(gtx)
@@ -124,65 +76,79 @@ func (modelPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 
 func (modelPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.model }
 
-// providerButtonsRow 单个 provider 的动作按钮：连通测试 / 设为主 / 删除（D110②）。
-func (f *settingsForm) providerButtonsRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
-	pf := f.provs[i]
-	btn := func(c *widget.Clickable, label string) layout.Widget {
-		return paperButton(th, c, label, paperBtnSecondary, true)
+// moveFallback 上移/下移降级链一项（dir = -1 / +1；越界 no-op）。
+func (f *settingsForm) moveFallback(i, dir int) {
+	j := i + dir
+	if i < 0 || i >= len(f.chain) || j < 0 || j >= len(f.chain) {
+		return
 	}
-	primary := "设为主"
-	if f.primaryIdx == i {
-		primary = "★ 主"
-	}
-	// 主 provider 的「★ 主」用强调色文字标识当前主，不铺整块实心底——一行里两块
-	// 实心按钮会互相抢视线；不可删的那条（providers 不可为空）呈禁用态。
-	mark := paperBtnSecondary
-	if f.primaryIdx == i {
-		mark = paperBtnPrimary
-	}
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(btn(&pf.test, "测试连通")),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.setPrimary, primary, mark, true))
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.del, "删除", paperBtnDanger, len(f.provs) > 1))
-		}),
-	)
+	f.chain[i], f.chain[j] = f.chain[j], f.chain[i]
 }
 
-// providerAddRow 新增 provider 入口（编辑区尾部；Apply 校验名字等必填项）。
-func (f *settingsForm) providerAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return paperButton(th, &f.provAdd, "＋ 新增 provider", paperBtnSecondary, true)(gtx)
+// removeFallback 删除降级链一项（越界 no-op）。
+func (f *settingsForm) removeFallback(i int) {
+	if i < 0 || i >= len(f.chain) {
+		return
+	}
+	f.chain = append(f.chain[:i], f.chain[i+1:]...)
 }
 
-// providerApplyRow provider 区应用按钮 + 反馈文案（成功绿/错误红 = 转写区语义色）。
-func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
+// cycleChainProvider 把第 i 项的 provider 选择前进一档（循环选择器：material v0.10 无
+// 下拉框，与推理档位同款）。选项为空时 no-op（无 provider 可切）。
+func (f *settingsForm) cycleChainProvider(i int) {
+	if i < 0 || i >= len(f.chain) || len(f.chainChoices) == 0 {
+		return
+	}
+	ff := f.chain[i]
+	ff.provIdx = (ff.provIdx + 1) % len(f.chainChoices)
+}
+
+// chainNoteRow 链窄于当前模型能力时的一行警示（cmd 侧按 caps 现算；空 = 不窄，行不出现）。
+func chainNoteRow(gtx layout.Context, th *material.Theme, text string) layout.Dimensions {
+	l := material.Label(th, paperNoteSp(th), text)
+	l.Color = paperOf().danger
+	return l.Layout(gtx)
+}
+
+// chainItemRow 降级链一项：提供者（循环选择器）/ 模型（单行档）/ 上移 / 下移 / 删除。
+// 提供者走「循环选择器」而非下拉（material v0.10 无下拉框，与推理档位同款）；模型名
+// 允许手填未声明的名字——链是运行时路由。
+func (f *settingsForm) chainItemRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
+	ff := f.chain[i]
+	provLabel := ff.chainProvider(f.chainChoices)
+	if provLabel == "" {
+		provLabel = "（无 provider）"
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return paperButton(th, &f.provApply, "应用 provider 变更", paperBtnPrimary, true)(gtx)
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return fieldRow(gtx, th, "提供者", paperButton(th, &ff.prov, provLabel, paperBtnSecondary, true))
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(paperButton(th, &ff.up, "↑", paperBtnSecondary, true)),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, paperButton(th, &ff.down, "↓", paperBtnSecondary, true))
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, paperButton(th, &ff.del, "删除", paperBtnDanger, true))
+							}),
+						)
+					})
+				}),
+			)
 		}),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				text := f.provStatus
-				col := paperOf().text2
-				switch {
-				case text == "":
-					text, col = "变更全量写回 config，重启生效；「测试连通」发真实最小请求。", paperOf().text3
-				case f.provErr:
-					col = paperOf().danger
-				}
-				l := material.Label(th, paperNoteSp(th), text)
-				l.Color = col
-				return l.Layout(gtx)
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return fieldRow(gtx, th, "模型", editorBox(th, &ff.model, "空 = 取该提供者的缺省模型；可填未声明的名字"))
 			})
 		}),
 	)
 }
 
-// modelChips 候选模型 chip（D153）：点击 = 用该名字**替换**模型名行。每行最多 3 个、
-// 左对齐等分（最多 3 行）——候选可达几十个，铺开会把卡撑成一面墙；名字过长按 24 字截断，
-// 状态行里再给出总数。
-func modelChips(gtx layout.Context, th *material.Theme, pf *providerForm) layout.Dimensions {
-	return paperChipFlow(gtx, th, "点选替换模型名", pf.cands, pf.candClicks)
+// chainAddRow 「＋ 添加降级项」入口（链尾；项目为空时仍是唯一入口）。
+func (f *settingsForm) chainAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return paperButton(th, &f.chainAdd, "＋ 添加降级项", paperBtnSecondary, true)(gtx)
 }

@@ -57,6 +57,10 @@ const (
 	rowProvBtns
 	rowProvAdd
 	rowProvApply
+	// S11-7①/D176：降级链行（「模型」页）。
+	rowChainNote // 链窄于当前模型能力时的警示（text = 文案）
+	rowChainItem // 降级链一项（field = f.chain 下标）
+	rowChainAdd  // 「＋ 添加降级项」
 	// S6/D143：工具与 MCP 页。
 	rowBuiltin     // 内置工具行（name = 工具名；field = 快照下标）
 	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
@@ -395,7 +399,8 @@ func rowInCard(k rowKind) bool {
 	switch k {
 	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
 		rowPromptPreview, rowProfBtns, rowProvBtns, rowProvAdd, rowProvApply,
-		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus:
+		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus,
+		rowChainNote, rowChainAdd:
 		return false
 	}
 	return true
@@ -550,7 +555,7 @@ func (f *settingsForm) actionsRow(gtx layout.Context, th *material.Theme) layout
 				col := paperOf().text2
 				switch {
 				case text == "":
-					text, col = "保存后立即生效；provider 列表在「模型」页应用（重启生效）。", paperOf().text3
+					text, col = "保存后立即生效；provider 列表在「模型服务」页应用（重启生效）。", paperOf().text3
 				case f.err:
 					col = paperOf().danger
 				}

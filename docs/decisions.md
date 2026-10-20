@@ -3406,6 +3406,17 @@
   `settings_page_providers.go`、`settings.go`（表单态）、`cmd/aquarius/providers.go`（patch 形状）。
 - **不做**：不做主从两栏（框架层要加第二种布局，收益不抵改动）；不做拖拽排序（上移/下移够用）。
 
+> **落地补充（S11-7 第一步，2026-10-20）**：拆页与降级链列表落档。口径一与口径三先落地
+> ——provider 编辑区整块搬到新「模型服务」页（`settings_page_providers.go`，卡片仍是全展开的旧
+> 形态），「模型」页收薄为 当前模型 / 思考 / 档位 + **降级链列表**（每项 provider 走循环选择器、
+> model 走单行档，可上移/下移/删除，尾部「＋ 添加」）。页序常量与注册表加 `pageProviders`
+> （页名契约测试的 `want` 同步插「模型服务」）。数据面：`SettingsSnapshot.Fallback` +
+> `FallbackNote`（cmd 侧由**启动时载入的** `model.fallback` 填、`narrowNote()` 现算警示）、
+> `SettingsPatch.Fallback` 恒全量写回 `model.fallback`（nil = 这条窄写路径不管链，高级页整文件
+> 替换与人格模板写回都走 nil）；保存前 `validateFallbackChain` 拦下 provider 空/未知、指向
+> primary 当前模型、重复项（与启动期 `normalize` 同口径，避免落一份启动会被拒的配置）。折叠卡片
+> （口径二）与密钥池/能力表编辑（每行「探测能力」）留待第二步 / 第三步。
+
 ### D177 · 模型自带上下文窗口，装配预算取小（2026-10-20）
 
 > **背景**：`limits.max_context_tokens` 是全局单值（缺省 64000）。换到大窗口模型时这个值把它白白
