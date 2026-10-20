@@ -3060,5 +3060,34 @@
   Session——`Wake` 跑一轮且不落 user 节点、非触发注入只落地、跨会话包被丢弃、`/new`/
   `/switch`/`/rmconv` 调撤销；三前端——`Wake` 可被 `Next` 取到，repl 的 `Confirm` 不吃唤醒。
 
+### D168 · 模型面文案集中 + ASCII 门禁：把「一律英文」从约定变成测试（2026-10-20）
 
+> **背景**：审查系统/工具两面提示词时发现，D36「进模型上下文的字符串一律英文」只在
+> 声明与回填的**主干**上成立：工具结果的空/失败包装、附件占位、MCP 内容占位、
+> 记忆与原子写盘的错误链里仍混着中文，而 `job_start` 的描述与自动通知口径也互相矛盾。
+> 这类漏点**不改变任何行为**，人肉评审抓不住，只有测试能拦。
+
+- **口径一：文案集中，但不抽资源文件**。内核自产的模型面文案集中到 `internal/app/model_text.go`；
+  工具声明（`Spec()` 的描述与参数描述）**留在各工具文件原地**——它们与 schema 强耦合，
+  分开放会让描述与参数漂移。压缩提示词的模板/规则**也保留在 Go 常量**里：含占位符或需
+  `go vet` printf 校验的格式串一旦挪进 `go:embed` 资源，动词检查就失效，收益不抵风险。
+- **口径二：两处 ASCII 断言**。`internal/app/model_text_test.go` 用 `go/parser` 逐 `StringLit`
+  断言 `model_text.go` 全 ASCII（新增文案不必改测试）；`toolbuiltin` 侧遍历全部 `Spec()`，
+  断言名字、描述、参数 schema 的 `description`/`enum` 行全 ASCII。两处只查字面量，
+  不碰注释与标识符（注释本来就该是中文）。
+- **口径三：空/失败回填给下一步，不只给结论**。`(no output)` 保持中性；失败一律
+  `Tool failed: <原因>`，无原因时补一句「检查参数后重试」；工具输出作为独立段落跟在后面，
+  不再与错误串拼成一行——否则模型容易把进程输出当成结论。
+- **口径四：占位按语义命名，不打印实现类型**。MCP 非文本内容按 `image/audio/resource
+  link/embedded` 分档占位（带 MIME 或 URI），不再输出 Go 类型名；附件库未接入时的图片
+  占位改为 `[image: <name> (not inlined in this context)]`。
+- **口径五：内部编号与端口名不进回填**。`memoryfs`/`atomicfile`/`mcpgate` 的错误链改英文，
+  并删掉 `(DESIGN 6.3)`、`(port.JobManager)` 这类内部引用——模型读得懂「后台任务在本构建
+  不可用」，读不懂端口名。
+- **模型**：`app/model_text.go`（新增）、`app/prompt.go`、`app/agent.go`、`app/poller.go`、
+  `adapter/toolbuiltin`、`adapter/mcpgate`、`adapter/memoryfs`、`adapter/atomicfile`、
+  `adapter/ingestfile`、`adapter/ingestclip`；测试 `app/model_text_test.go`、
+  `toolbuiltin/spec_ascii_test.go`。
+- **不做**：不引入 i18n 框架（模型面只有英文一种），不做运行时可覆盖的提示词目录
+  （用户自定义人格已有 `prompts.persona` / `prompts.modules` 这条路），不把工具描述搬进资源文件。
 

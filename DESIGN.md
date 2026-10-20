@@ -301,6 +301,9 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - 后台任务 = 独立进程 + 日志落盘 `~/.aquarius/jobs/<id>.log`；任务表 v1 内存态（§13-D8）。
 - 工具声明与回填一律英文（D36）；任何调用可带**保留参数** `timeout_sec`（整数 1–3600）逐次覆盖缺省超时，
   schema 自声明该参数的工具（`job_start`）不受保留参数约束（D38）。
+- **模型面文案集中 + 门禁**（D168）：内核自产的英文文案（默认人格、注入围栏说明、工具回填空/失败态、
+  后台任务报告、记忆块标题）集中在 `internal/app/model_text.go`、`toolbuiltin` 的 `Spec()` 就地声明，
+  两处各有 ASCII 断言测试；`go vet` 的 printf 检查要求**含占位符的格式串留在 Go 里**，不抽成资源文件。
 - `term_exec` 与 `job_*` 的**终端输出在 jobproc 适配器内按行解码为 UTF-8**（D41）：UTF-8 合法则原样
   （含显式 `chcp 65001` 的输出），否则按 GBK/CP936 解码；模型无需再手工 `chcp` 切换代码页。
 - 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`。
