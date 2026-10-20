@@ -153,6 +153,15 @@ func TestFileEditDeletesWholeLines(t *testing.T) {
 	if !strings.Contains(res.Output, "1 replacement") {
 		t.Fatalf("output = %q", res.Output)
 	}
+
+	// 走降级路径时同样不能留空行：模型把缩进写错、新文本为空，这一行该整行消失。
+	tl2, p2 := editFile(t, "keep\n\tdrop me\nend\n")
+	if _, err := tl2.Execute(context.Background(), call(`{"path":`+js(p2)+`,"old_string":"  drop me","new_string":""}`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, p2); got != "keep\nend\n" {
+		t.Fatalf("file = %q, want 降级删除也不留空行", got)
+	}
 }
 
 // TestFileEditErrors 空 old_string、新旧相同、未命中、二进制、目录：各自报因，不猜。
