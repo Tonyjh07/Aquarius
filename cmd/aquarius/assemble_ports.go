@@ -91,6 +91,20 @@ func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 // buildClient 构建 provider 客户端（D173）：base_url/tokenizer 构造期固化
 // （port.LLM 不可热换）。密钥池在 S11-4 接入轮换；当前取第一把（与旧行为一致）。
 func (w *wiring) buildClient(p *providerConfig) (*llm.Client, port.TokenCounter, error) {
+	return w.newLLMClient(p, w.noteUnsupportedFor(p.Name))
+}
+
+// newLLMClient 建客户端本体（协议分派的唯一落点，D175 会在此按 kind 分叉）。
+// note 为 nil = 不记录服务端不认的参数（能力探测用：探测刻意发可能不被支持的参数，
+// 不该把结论记成正式请求的剥离清单）。
+func (w *wiring) newLLMClient(p *providerConfig, note func(string)) (*llm.Client, port.TokenCounter, error) {
+	// 协议分派尚未接入（OpenAI Responses / Anthropic 在后续步骤）：宁可启动时报因，
+	// 也不能拿 chat/completions 的请求去打一个别的规范的端点——那会以「密钥无效」
+	// 「模型不存在」这类假象暴露，排查方向全错。
+	if kind := p.protocolKind(); kind != kindOpenAIChat {
+		return nil, nil, fmt.Errorf("provider %q 的协议 %q 尚未接入（当前可用：%s）",
+			p.Name, kind, kindOpenAIChat)
+	}
 	key, kerr := p.resolveKeyAt(context.Background(), 0, w.secrets, w.stderr)
 	if kerr != nil {
 		return nil, nil, kerr
@@ -98,7 +112,7 @@ func (w *wiring) buildClient(p *providerConfig) (*llm.Client, port.TokenCounter,
 	c, cerr := llm.New(llm.Config{
 		BaseURL: p.BaseURL, APIKey: key, Tokenizer: p.Tokenizer,
 		UnsupportedParams: p.UnsupportedParams,
-		NoteUnsupported:   w.noteUnsupportedFor(p.Name),
+		NoteUnsupported:   note,
 	})
 	if cerr != nil {
 		return nil, nil, cerr

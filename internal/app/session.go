@@ -70,6 +70,9 @@ type SessionDeps struct {
 	Chain func() []ModelLink
 	// Budget 上下文预算口径（D177：min(当前模型窗口, 全局上限)；nil 时省略该行）。
 	Budget func() ContextBudget
+	// Probe 能力探测（D174：/model probe）。model 空 = 当前模型；装配根实现
+	// （造一次性客户端 → 真请求 → 写回 config → 返回逐项结论）。nil 时该子命令报错。
+	Probe func(ctx context.Context, model string) (ProbeReport, error)
 	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
 	// nil 时 /think 有参报"未配置持久化"。
 	PersistThink func(on bool) error
@@ -107,6 +110,7 @@ type Session struct {
 	caps           func() port.ModelCaps
 	chain          func() []ModelLink
 	budget         func() ContextBudget
+	probe          func(ctx context.Context, model string) (ProbeReport, error)
 	persistThink   func(on bool) error
 	persistEffort  func(level string) error
 	cur            *conversation.Conversation
@@ -192,6 +196,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		caps:           d.Caps,
 		chain:          d.Chain,
 		budget:         d.Budget,
+		probe:          d.Probe,
 		persistThink:   d.PersistThink,
 		persistEffort:  d.PersistEffort,
 		dynamic:        map[string]CommandHandler{},

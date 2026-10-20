@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -163,6 +164,83 @@ func TestModelCommandBudget(t *testing.T) {
 	}
 	if !strings.Contains(out, "上下文预算: 64k tokens（全局上限在压；模型窗口 128k）") {
 		t.Fatalf("/model 未指出是全局上限在压:\n%s", out)
+	}
+}
+
+// TestModelProbeCommand D174 `/model probe`：逐项结论 + 「无结论 = 未改动」必须写清楚；
+// 没注入探测能力时报因，且不误把 probe 当模型名切走。
+func TestModelProbeCommand(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	ctx := context.Background()
+
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}}); err == nil ||
+		!strings.Contains(err.Error(), "未配置能力探测") {
+		t.Fatalf("err = %v, want 未配置能力探测", err)
+	}
+
+	var asked string
+	s.probe = func(_ context.Context, model string) (ProbeReport, error) {
+		asked = model
+		return ProbeReport{
+			Provider: "p1", Model: "m1", Written: true,
+			Results: []port.ProbeResult{
+				{Capability: port.CapTools, Verdict: port.ProbeSupported, Reason: "模型发起了工具调用（probe_ping）",
+					Elapsed: 800 * time.Millisecond, Usage: conversation.Usage{InputTokens: 12, OutputTokens: 5}},
+				{Capability: port.CapReasoning, Verdict: port.ProbeInconclusive, Reason: "参数被接受，但回复里没有思考内容"},
+				{Capability: port.CapVision, Verdict: port.ProbeUnsupported, Reason: "服务端拒绝（400）：image input is not supported"},
+			},
+		}, nil
+	}
+	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe", "m2"}}})
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if asked != "m2" {
+		t.Fatalf("探测目标 = %q, want m2", asked)
+	}
+	for _, want := range []string{
+		"能力探测 p1 / m1",
+		"工具调用: 支持",
+		"思考: 无结论",
+		"图片输入: 不支持",
+		"0.8s",
+		"用量 12→5 tokens",
+		"已按判定明确的项写回配置，重启后生效",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("探测输出缺 %q:\n%s", want, out)
+		}
+	}
+
+	// 无明确结论 = 明确告诉用户「没改」，别让人以为探过就生效了。
+	s.probe = func(context.Context, string) (ProbeReport, error) {
+		return ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
+			{Capability: port.CapTools, Verdict: port.ProbeInconclusive, Reason: "5xx"},
+		}}, nil
+	}
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}})
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if !strings.Contains(out, "未改动配置") {
+		t.Fatalf("无结论时应说明未改动:\n%s", out)
+	}
+
+	// 探测失败：已得结论照常呈现，错误一并上抛。
+	s.probe = func(context.Context, string) (ProbeReport, error) {
+		return ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
+			{Capability: port.CapTools, Verdict: port.ProbeSupported},
+		}}, errors.New("boom")
+	}
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}})
+	if err == nil || !strings.Contains(err.Error(), "boom") || !strings.Contains(out, "工具调用: 支持") {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+
+	// 参数过多 = 用法错误。
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe", "a", "b"}}}); err == nil ||
+		!strings.Contains(err.Error(), "用法") {
+		t.Fatalf("err = %v, want 用法", err)
 	}
 }
 

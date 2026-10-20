@@ -305,6 +305,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Caps:           w.cfg.Model.chainCaps,                   // D173：/model 展示能力与链路
 		Chain:          w.cfg.Model.modelChain,                  // D173：/model 逐环标注
 		Budget:         w.contextBudget,                         // D177：/model 展示窗口与来源
+		Probe:          w.probeModel,                            // D174：/model probe 实测能力并写回
 		PersistModel:   w.persist.persistModel,
 		PersistThink:   w.persist.persistThink,  // D34
 		PersistEffort:  w.persist.persistEffort, // D34

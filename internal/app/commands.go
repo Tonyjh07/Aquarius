@@ -35,7 +35,7 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"jobs"}, Usage: "[list|logs <id> [行数]|kill <id>]", Desc: "后台任务管理（查看、日志、终止）"},
 	{Names: []string{"quit", "exit"}, Desc: "退出"},
 	{Names: []string{"plugin"}, Usage: "[list|enable <name>|disable <name>]", Desc: "MCP 插件管理（列表、启用、停用）"},
-	{Names: []string{"model"}, Usage: "[name]", Desc: "查看可用模型 / 切换并写回配置"},
+	{Names: []string{"model"}, Usage: "[name] | probe [name]", Desc: "查看可用模型 / 切换并写回配置 / 实测能力（probe）"},
 	{Names: []string{"think"}, Usage: "[on|off]", Desc: "原生思考总开关（写回配置；off 优先于 /effort）"},
 	{Names: []string{"effort"}, Usage: "[档位]", Desc: "推理档位 minimal|low|medium|high|off（写回配置）"},
 }

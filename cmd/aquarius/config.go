@@ -205,18 +205,7 @@ func (p *providerConfig) capsOf(m modelEntry) port.ModelCaps {
 	if m.Caps == nil {
 		return defaultCaps(p.protocolKind())
 	}
-	var caps port.ModelCaps
-	for _, name := range *m.Caps {
-		switch strings.TrimSpace(name) {
-		case "tools":
-			caps.Tools = true
-		case "reasoning":
-			caps.Reasoning = true
-		case "vision":
-			caps.Vision = true
-		}
-	}
-	return caps
+	return port.CapsFromNames(*m.Caps)
 }
 
 // modelByName 按名取模型条目（未命中返回 nil）。

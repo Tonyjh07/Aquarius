@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -27,11 +28,25 @@ type ContextBudget struct {
 	GlobalLimit int
 }
 
-// execModel /model [name]（DESIGN §7.3，D32）：
+// ProbeReport 一次能力探测的结果（D174）：逐项结论 + 是否写回了配置。
+// 探测请求的构造与判定在适配器（协议相关），这里只负责定位目标与呈现。
+type ProbeReport struct {
+	Provider string
+	Model    string
+	Results  []port.ProbeResult
+	// Written 本次是否把判定明确的几位写回了配置（true = 重启后生效）。
+	Written bool
+}
+
+// execModel /model [name] | /model probe [name]（DESIGN §7.3，D32/D174）：
 // 无参 = 当前 provider（D173）+ 当前模型 + 生效能力 + 上下文窗口（D177）+
 // LLM.Models() 可用列表（能力/单价标注）；
-// 有参 = 先写回 config（同 /permission 的原子写回模式）再 Agent 内热切换。
+// 有参 = 先写回 config（同 /permission 的原子写回模式）再 Agent 内热切换；
+// probe 子命令 = 实测能力并写回判定明确的结果（D174）。
 func (s *Session) execModel(ctx context.Context, args []string) (string, error) {
+	if len(args) > 0 && strings.EqualFold(strings.TrimSpace(args[0]), "probe") {
+		return s.execProbe(ctx, args[1:])
+	}
 	if len(args) == 0 {
 		if s.listModels == nil {
 			return "", errors.New("session: 未配置模型服务（SessionDeps.ListModels），/model 不可用")
@@ -43,7 +58,7 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 		return formatModels(s.providerName, s.agent.modelName(), models, s.caps, s.chain, s.budget), nil
 	}
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		return "", errors.New("用法: /model [name]")
+		return "", errors.New("用法: /model [name] 或 /model probe [name]")
 	}
 	name := strings.TrimSpace(args[0])
 	if s.persistModel == nil {
@@ -138,6 +153,91 @@ func formatModels(provider func() string, current string, models []port.ModelInf
 		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// execProbe /model probe [name]（D174 口径三）：手动发起的能力探测。
+// 探测是真请求、真花钱，所以绝不自动跑；结果只写回「判定明确」的位。
+func (s *Session) execProbe(ctx context.Context, args []string) (string, error) {
+	if s.probe == nil {
+		return "", errors.New("session: 未配置能力探测（SessionDeps.Probe），/model probe 不可用")
+	}
+	if len(args) > 1 {
+		return "", errors.New("用法: /model probe [模型名]（省略 = 当前模型）")
+	}
+	name := ""
+	if len(args) == 1 {
+		name = strings.TrimSpace(args[0])
+	}
+	report, err := s.probe(ctx, name)
+	out := formatProbe(report)
+	if err != nil {
+		if out != "" {
+			return out, fmt.Errorf("session: 探测: %w", err)
+		}
+		return "", fmt.Errorf("session: 探测: %w", err)
+	}
+	return out, nil
+}
+
+// formatProbe 探测结果（D174）：三项一行一项，写清判定与依据；没结论的要说明「未改动」，
+// 否则用户会以为「探测过了 = 支持」。
+func formatProbe(r ProbeReport) string {
+	if r.Model == "" && len(r.Results) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "能力探测 %s / %s\n", r.Provider, r.Model)
+	for _, res := range r.Results {
+		label := probeLabel(res.Capability)
+		fmt.Fprintf(&b, "  %s: %s", label, probeVerdictLabel(res.Verdict))
+		if res.Reason != "" {
+			fmt.Fprintf(&b, "（%s）", res.Reason)
+		}
+		fmt.Fprintf(&b, " · %s\n", shortDuration(res.Elapsed))
+		if res.Verdict == port.ProbeSupported && res.Usage.OutputTokens > 0 {
+			// 探测会花真钱，用量要让人看得到。
+			fmt.Fprintf(&b, "      用量 %d→%d tokens\n", res.Usage.InputTokens, res.Usage.OutputTokens)
+		}
+	}
+	if r.Written {
+		b.WriteString("已按判定明确的项写回配置，重启后生效（无结论的项保持原声明）")
+	} else {
+		b.WriteString("未改动配置（没有判定明确的项，或结果与现有声明一致）")
+	}
+	return b.String()
+}
+
+// probeLabel 能力名 → 界面用词（与 /model 的能力行同口径）。
+func probeLabel(capability string) string {
+	switch capability {
+	case port.CapTools:
+		return "工具调用"
+	case port.CapReasoning:
+		return "思考"
+	case port.CapVision:
+		return "图片输入"
+	}
+	return capability
+}
+
+// probeVerdictLabel 三态判定 → 中文。
+func probeVerdictLabel(v port.ProbeVerdict) string {
+	switch v {
+	case port.ProbeSupported:
+		return "支持"
+	case port.ProbeUnsupported:
+		return "不支持"
+	default:
+		return "无结论"
+	}
+}
+
+// shortDuration 耗时（探测是人工操作，秒级足够；零值不显示）。
+func shortDuration(d time.Duration) string {
+	if d <= 0 {
+		return "耗时未知"
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
 // narrowLinks 链上哪些环节比整链生效能力更宽（即它们自己有能力、被别的环节拖下来
