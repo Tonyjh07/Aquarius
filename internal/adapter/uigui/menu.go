@@ -102,11 +102,11 @@ func trayMenuItems(topMost bool) []menuIt {
 	}
 }
 
-// bubbleMenuItems 气泡右键菜单（D92/D97/D98/D99/D100，项序/文案为契约测试锁定）：
-// user/assistant 同集七项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 / Clone
-// 深拷贝后续历史）+ 重新生成/复制/引用/查看原文；thinking 定稿块与工具 chip = 复制/
-// 查看原文两项（D100③）。
-func bubbleMenuItems(kind blockKind) []menuIt {
+// bubbleMenuBase 气泡右键菜单的基础项组（D92/D97/D98/D99/D100，项序/文案为契约测试
+// 锁定）：user/assistant 同集七项——编辑三方式（Fresh 新分叉 / Carry 边转移后续历史 /
+// Clone 深拷贝后续历史）+ 重新生成/复制/引用/查看原文；thinking 定稿块与工具 chip =
+// 复制/查看原文两项（D100③）。「生成响应」（D183）由 bubbleMenuItems 追加在末尾。
+func bubbleMenuBase(kind blockKind) []menuIt {
 	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
 	raw := menuIt{id: cmdBubbleRaw, label: "查看原文"}
 	if kind == blockThinking || kind == blockTool {
@@ -121,6 +121,18 @@ func bubbleMenuItems(kind blockKind) []menuIt {
 		{id: cmdBubbleQuote, label: "引用"},
 		raw,
 	}
+}
+
+// bubbleMenuItems 主界面气泡右键菜单（D183）：基础项组 + 「生成响应」。
+// canRespond=false（该块拿不到所源节点 ID——实时草稿、工具 chip）时不给这一项：
+// `/respond` 要一个节点 ID 才有意义，菜单不该给一个点了没反应的动作。
+// 位置与图侧一致（气泡项组末尾），两处菜单里「生成响应」的落点因此统一。
+func bubbleMenuItems(kind blockKind, canRespond bool) []menuIt {
+	items := bubbleMenuBase(kind)
+	if !canRespond {
+		return items
+	}
+	return append(items, menuIt{id: cmdNodeRespond, label: "生成响应"})
 }
 
 // nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** +
@@ -141,7 +153,7 @@ func nodeMenuItems(kind blockKind, hasText, canSummary bool) []menuIt {
 	case !hasText:
 		head = nil
 	case kind == blockUser || kind == blockAssistant:
-		head = bubbleMenuItems(kind) // 与主界面气泡同集七项
+		head = bubbleMenuBase(kind) // 与主界面气泡同集七项
 	default:
 		head = []menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}}
 	}
@@ -184,7 +196,7 @@ func (u *UI) menuItems(kind platform.MenuKind) []platform.MenuItem {
 		if ctx.graph { // D132：图侧节点菜单 = 气泡项集 + 图侧四项
 			return toMenuItems(nodeMenuItems(ctx.kind, ctx.copy != "", ctx.canSummary))
 		}
-		return toMenuItems(bubbleMenuItems(ctx.kind))
+		return toMenuItems(bubbleMenuItems(ctx.kind, ctx.id != ""))
 	}
 	return nil
 }

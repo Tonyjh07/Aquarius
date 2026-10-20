@@ -191,8 +191,21 @@ func TestMenuDispatchBubble(t *testing.T) {
 		t.Fatalf("rawView = %+v, want 标题含 8 字符前缀 + 原文", c)
 	}
 
-	// 项集 user/assistant 同集七项（D97 三方式 + D98 引用 + D99 查看原文；kind 参数
-	// 留 thinking/chip 差异化）。
+	// 生成响应（D183）：主界面气泡也能从该消息续写——与键入同路径投 /respond <id>，
+	// 不唤主窗（右键时主窗必在前景，不像图侧那样可能在球里）。
+	menuDispatchBubble(u, &bubbleMenuCtx{id: "a1", kind: blockAssistant}, cmdNodeRespond)
+	drainSync(t, u)
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "respond" || len(in.Command.Args) != 1 || in.Command.Args[0] != "a1" {
+			t.Fatalf("inCh 输入 = %+v, want /respond a1", in)
+		}
+	default:
+		t.Fatal("inCh 未收到 /respond")
+	}
+
+	// 项集 user/assistant 同集七项 + 「生成响应」（D183：主界面气泡也能从该消息续写，
+	// 与图侧同一落点——气泡项组末尾；kind 参数留 thinking/chip 差异化）。
 	want := []struct {
 		id    uintptr
 		label string
@@ -204,9 +217,10 @@ func TestMenuDispatchBubble(t *testing.T) {
 		{cmdBubbleCopy, "复制"},
 		{cmdBubbleQuote, "引用"},
 		{cmdBubbleRaw, "查看原文"},
+		{cmdNodeRespond, "生成响应"},
 	}
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
-		items := bubbleMenuItems(kind)
+		items := bubbleMenuItems(kind, true)
 		if len(items) != len(want) {
 			t.Fatalf("%v 菜单项数 = %d, want %d", kind, len(items), len(want))
 		}
@@ -214,6 +228,10 @@ func TestMenuDispatchBubble(t *testing.T) {
 			if items[i].id != w.id || items[i].label != w.label {
 				t.Fatalf("%v 菜单项[%d] = {%d %q}, want {%d %q}", kind, i, items[i].id, items[i].label, w.id, w.label)
 			}
+		}
+		// 拿不到节点 ID（实时草稿等）时不给「生成响应」：动作点了没反应不如不给。
+		if got := bubbleMenuItems(kind, false); len(got) != len(want)-1 {
+			t.Fatalf("%v 无 ID 项数 = %d, want %d", kind, len(got), len(want)-1)
 		}
 	}
 }

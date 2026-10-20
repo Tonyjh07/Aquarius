@@ -209,11 +209,16 @@ func TestBubbleRectsThinkingChip(t *testing.T) {
 		t.Fatalf("chip raw = %+v", cc.raw)
 	}
 
-	// 项集：thinking/tool 两项（复制/查看原文）。
-	for _, kind := range []blockKind{blockThinking, blockTool} {
-		items := bubbleMenuItems(kind)
-		if len(items) != 2 || items[0].label != "复制" || items[1].label != "查看原文" {
-			t.Fatalf("%v 菜单项 = %+v, want 复制/查看原文", kind, items)
-		}
+	// 项集：thinking/tool 两项（复制/查看原文）；thinking 定稿块已盖章节点 ID，
+	// 故多给一项「生成响应」（D183——从该思考所属节点续写）；工具 chip 无节点 ID
+	// （chip 态自足、命中不带 id）不给——`/respond` 要 ID 才有意义。
+	items := bubbleMenuItems(blockThinking, true)
+	if len(items) != 3 || items[0].label != "复制" || items[1].label != "查看原文" ||
+		items[2].id != cmdNodeRespond || items[2].label != "生成响应" {
+		t.Fatalf("thinking 菜单项 = %+v, want 复制/查看原文/生成响应", items)
+	}
+	items = bubbleMenuItems(blockTool, false)
+	if len(items) != 2 || items[0].label != "复制" || items[1].label != "查看原文" {
+		t.Fatalf("tool 菜单项 = %+v, want 复制/查看原文", items)
 	}
 }
