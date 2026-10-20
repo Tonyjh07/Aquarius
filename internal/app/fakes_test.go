@@ -402,6 +402,9 @@ func newConv(t *testing.T) *conversation.Conversation {
 }
 
 // newAgent 组装带全套替身的 Agent。
+//
+// Caps 零值 = 三项能力全关（D173 的显式空声明），会让工具与思考都不发；绝大多数
+// 测试只想验证别的事，故这里默认全开。要测能力裁剪的测试直接用 New 构造。
 func newAgent(t *testing.T, llm *scriptLLM, rec *recorder, d Deps, cfg Config) *Agent {
 	t.Helper()
 	d.LLM = llm
@@ -414,6 +417,9 @@ func newAgent(t *testing.T, llm *scriptLLM, rec *recorder, d Deps, cfg Config) *
 	}
 	if cfg.Model == "" {
 		cfg.Model = "test-model"
+	}
+	if cfg.Caps == (port.ModelCaps{}) {
+		cfg.Caps = port.ModelCaps{Tools: true, Reasoning: true, Vision: true}
 	}
 	a, err := New(d, cfg)
 	if err != nil {

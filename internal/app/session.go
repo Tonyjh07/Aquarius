@@ -65,6 +65,9 @@ type SessionDeps struct {
 	// Caps 当前降级链的生效能力（D173：整链取与）。服务端 /models 不返回模态，
 	// 能力只能来自配置，所以由装配根声明；nil 时省略能力行。
 	Caps func() port.ModelCaps
+	// Chain 降级链逐环快照（D173：/model 标注是哪一环拉低了整链；nil 时省略）。
+	// provider 运行态不热切，故装配根注入的是启动期静态值。
+	Chain func() []ModelLink
 	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
 	// nil 时 /think 有参报"未配置持久化"。
 	PersistThink func(on bool) error
@@ -100,6 +103,7 @@ type Session struct {
 	persistModel   func(name string) error
 	providerName   func() string
 	caps           func() port.ModelCaps
+	chain          func() []ModelLink
 	persistThink   func(on bool) error
 	persistEffort  func(level string) error
 	cur            *conversation.Conversation
@@ -183,6 +187,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persistModel:   d.PersistModel,
 		providerName:   d.ProviderName,
 		caps:           d.Caps,
+		chain:          d.Chain,
 		persistThink:   d.PersistThink,
 		persistEffort:  d.PersistEffort,
 		dynamic:        map[string]CommandHandler{},

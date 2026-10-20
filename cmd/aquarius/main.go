@@ -272,7 +272,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			CompactThreshold: w.cfg.Limits.CompactThreshold, MaxContextTokens: w.cfg.Limits.MaxContextTokens,
 			Think: w.cfg.Model.Think, ReasoningEffort: w.cfg.Model.ReasoningEffort, // D34 初值
 			EchoThinking: w.cfg.Model.EchoThinking == nil || *w.cfg.Model.EchoThinking, // D42：键缺失 = 回传
-			Vision:       w.cfg.Model.chainCaps().Vision,                               // D173：降级链取与
+			Caps:         w.cfg.Model.chainCaps(),                                      // D173：降级链取与
 		},
 	)
 	if err != nil {
@@ -303,6 +303,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		ListModels:     func(ctx context.Context) ([]port.ModelInfo, error) { return w.client.Models(ctx) },
 		ProviderName:   func() string { return w.primary.Name }, // D173：/model 展示（静态，重启生效）
 		Caps:           w.cfg.Model.chainCaps,                   // D173：/model 展示能力与链路
+		Chain:          w.cfg.Model.modelChain,                  // D173：/model 逐环标注
 		PersistModel:   w.persist.persistModel,
 		PersistThink:   w.persist.persistThink,  // D34
 		PersistEffort:  w.persist.persistEffort, // D34

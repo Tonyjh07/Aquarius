@@ -57,9 +57,11 @@ type Config struct {
 	// 由适配器映射 reasoning_content；false = 装配时过滤。config `model.echo_thinking` 键缺失 =
 	// 回传、显式 false 才关（缺省解析在装配根完成，app 只见 bool）。
 	EchoThinking bool
-	// Vision 当前降级链是否接受图片输入（D173：装配根按各模型 caps 整链取与）。
-	// false = 图片（用户附件与 file_read 产出）一律降级为文字占位并写明原因。
-	Vision bool
+	// Caps 当前整条降级链的**生效能力**（D173：装配根按各模型 caps 三项取与）。
+	// 三项各自决定请求里发不发：Tools = 是否列工具清单；Reasoning = 是否发思考参数；
+	// Vision = 图片是直接给模型看，还是降级为文字占位并写明原因。
+	// 零值 = 三项全关（显式空 caps 就是这个意思，不是「不知道」）。
+	Caps port.ModelCaps
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（DESIGN §7.1，内核唯一的编排）。
@@ -353,9 +355,9 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 	return rep, nil
 }
 
-// assembleOpts 本轮装配口径（DESIGN §7.1）：附件库 + 思考回传（D42）+ 视觉能力（D169）。
+// assembleOpts 本轮装配口径（DESIGN §7.1）：附件库 + 思考回传（D42）+ 视觉能力（D173）。
 func (a *Agent) assembleOpts() assembleOpts {
-	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Vision}
+	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Caps.Vision}
 }
 
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（DESIGN §7.1）。
@@ -399,18 +401,24 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 		Params:   a.cfg.Sampling,
 		Budget:   a.cfg.Budget,
 	}
-	// 思考参数（D34）：/think 是总开关，off 时 reasoning_effort 与 enable_thinking
-	// 一律不发（覆盖 /effort）；on/缺省时 effort 空则不发（交服务端默认）。
-	think := a.thinkState()
-	if think != nil { // 键缺失（nil）不发布尔：缺省零字段变化
-		req.Params.Thinking = think
+	// 思考参数（D34 + D173）：两道闸门。`/think` 是总开关，off 时 reasoning_effort
+	// 与 enable_thinking 一律不发（覆盖 /effort）；整条链没有思考能力时两个参数同样
+	// 不发——发了也只会换来一次 400 与一次剥离重试。
+	// 键缺失（nil）不发布尔：缺省零字段变化。
+	if a.cfg.Caps.Reasoning {
+		think := a.thinkState()
+		if think != nil {
+			req.Params.Thinking = think
+		}
+		if think != nil && !*think {
+			req.Params.ReasoningEffort = ""
+		} else {
+			req.Params.ReasoningEffort = a.Effort()
+		}
 	}
-	if think != nil && !*think {
-		req.Params.ReasoningEffort = ""
-	} else {
-		req.Params.ReasoningEffort = a.Effort()
-	}
-	if a.tools != nil {
+	// 工具清单（D173）：链上没有工具能力就整份不发。只省声明不够——模型会因为
+	// 看到工具而尝试调用，而那条路本来就走不通。
+	if a.tools != nil && a.cfg.Caps.Tools {
 		specs, err := a.tools.Specs(ctx)
 		if err != nil {
 			return port.GenerateRequest{}, fmt.Errorf("工具清单: %w", err)

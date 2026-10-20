@@ -115,6 +115,56 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	}
 }
 
+// TestThinkEffortWithoutReasoningCaps D173：整条链没有思考能力时，参数根本不发，
+// 命令面必须说清「为什么不发」——否则用户会以为设了档位却没生效是 bug。
+func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true, Vision: true} }
+	var thinks []bool
+	s.persistThink = func(on bool) error { thinks = append(thinks, on); return nil }
+
+	// 无参显示：状态照常，但明确写出未声明思考能力。
+	out, err := thinkCmd(t, s, "think")
+	if err != nil {
+		t.Fatalf("think: %v", err)
+	}
+	if !strings.Contains(out, "未声明思考能力") {
+		t.Fatalf("think 报告应说明能力缺失: %q", out)
+	}
+	if strings.Contains(out, "推理档位") {
+		t.Fatalf("能力缺失时不该再列档位: %q", out)
+	}
+
+	// /think off→on 仍可切换（配置照写），但切到 on 要提示不会发送。
+	if _, err := thinkCmd(t, s, "think", "off"); err != nil {
+		t.Fatalf("think off: %v", err)
+	}
+	out, err = thinkCmd(t, s, "think", "on")
+	if err != nil {
+		t.Fatalf("think on: %v", err)
+	}
+	if len(thinks) != 2 || !thinks[1] {
+		t.Fatalf("thinks = %v, want 照常写回", thinks)
+	}
+	if !strings.Contains(out, "仍不会发送") {
+		t.Fatalf("切到 on 应提示不会发送: %q", out)
+	}
+}
+
+// TestEffortWithoutReasoningCaps D173：档位照存，但提示不会发送。
+func TestEffortWithoutReasoningCaps(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true} }
+	s.persistEffort = func(string) error { return nil }
+	out, err := thinkCmd(t, s, "effort", "high")
+	if err != nil {
+		t.Fatalf("effort: %v", err)
+	}
+	if !strings.Contains(out, "未声明思考能力") {
+		t.Fatalf("effort 切换应提示能力缺失: %q", out)
+	}
+}
+
 // TestRunReasoningCommitted D42：思维链随节点入树——事件面带 Reasoning 标记实时可见；
 // 提交节点 Content = [thinking 分片, text 分片]（思考在前、正文不被污染）。
 func TestRunReasoningCommitted(t *testing.T) {

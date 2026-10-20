@@ -47,8 +47,7 @@ func TestSessionModelCommand(t *testing.T) {
 	}
 	if !strings.Contains(out, "生效能力: （三项均未声明）") || !strings.Contains(out, "未启用: 工具调用、思考、图片输入") {
 		t.Fatalf("/model 未说明能力缺失: %s", out)
-	}
-	// 列表服务故障上抛。
+	} // 列表服务故障上抛。
 	s.listModels = func(context.Context) ([]port.ModelInfo, error) { return nil, errors.New("404") }
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}}); err == nil ||
 		!strings.Contains(err.Error(), "404") {
@@ -87,6 +86,41 @@ func TestSessionModelCommand(t *testing.T) {
 		if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: args}}); err == nil ||
 			!strings.Contains(err.Error(), "用法") {
 			t.Fatalf("args=%v err=%v, want 用法", args, err)
+		}
+	}
+}
+
+// TestModelCommandChainAnnotation D173：降级链拉低了能力时，/model 要指名是哪一环
+// 失去的——否则用户只看到「工具关了」，得一个个去猜配置。
+func TestModelCommandChainAnnotation(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	s.providerName = func() string { return "a" }
+	s.listModels = func(context.Context) ([]port.ModelInfo, error) {
+		return []port.ModelInfo{{Name: "m1"}}, nil
+	}
+	primary := port.ModelCaps{Tools: true, Reasoning: true, Vision: true}
+	weak := port.ModelCaps{Tools: true}
+	s.caps = func() port.ModelCaps { return weak }
+	s.chain = func() []ModelLink {
+		return []ModelLink{
+			{Provider: "a", Model: "m1", Caps: primary, Primary: true},
+			{Provider: "b", Model: "mb", Caps: weak},
+		}
+	}
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
+	if err != nil {
+		t.Fatalf("model: %v", err)
+	}
+	for _, want := range []string{
+		"生效能力: 工具",
+		"未启用: 思考、图片输入",
+		"拉低整链的是 a/m1 失去了 思考、图片", // 逐环标注：谁本来有能力、因何没用上
+		"降级链:",
+		"1. a / m1 [工具 / 思考 / 图片]",
+		"2. b / mb [工具]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("/model 缺 %q:\n%s", want, out)
 		}
 	}
 }

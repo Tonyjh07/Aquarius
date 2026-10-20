@@ -107,9 +107,6 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	w.cfg = cfg
 	primary := cfg.Model.primaryProvider()
 	w.primary = primary
-	if note := cfg.Model.narrowNote(); note != "" {
-		fmt.Fprintf(w.stderr, "警告：%s\n", note)
-	}
 
 	// 环境变量与 flag 覆盖（flags > 环境变量 > config；D110 修订②：-model 覆盖
 	// model.name，-base-url 覆盖 primary provider 的 base_url——调试逃生口）。
@@ -124,6 +121,11 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	}
 	if baseURL != "" {
 		primary.BaseURL = baseURL
+	}
+	// 能力位警告放在覆盖之后：-model / AQUARIUS_MODEL 可能换成链上另一个模型，
+	// 生效能力随之变化，警告得按最终生效的那个算（D173）。
+	if note := cfg.Model.narrowNote(); note != "" {
+		fmt.Fprintf(w.stderr, "警告：%s\n", note)
 	}
 	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 口径。
 	if raw := strings.TrimSpace(cfg.Model.ReasoningEffort); raw != "" {

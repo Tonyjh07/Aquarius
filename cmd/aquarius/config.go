@@ -282,8 +282,29 @@ func (m *modelConfig) chainCaps() port.ModelCaps {
 	return caps
 }
 
+// modelChain 降级链逐环快照（D173：/model 标注「哪一环拉低了整链」）。
+// 首项 = primary 的当前模型，其后按 fallback 顺序。
+func (m *modelConfig) modelChain() []app.ModelLink {
+	p := m.primaryProvider()
+	links := []app.ModelLink{{
+		Provider: p.Name, Model: m.Name, Caps: m.currentCaps(), Primary: true,
+	}}
+	for _, fb := range m.Fallback {
+		model := fb.Model
+		if model == "" {
+			if tp := m.byName(fb.Provider); tp != nil {
+				model = tp.models0()
+			}
+		}
+		links = append(links, app.ModelLink{
+			Provider: fb.Provider, Model: model, Caps: m.entryCaps(fb.Provider, fb.Model),
+		})
+	}
+	return links
+}
+
 // narrowNote 链窄于当前模型时的提示（空 = 没窄）。启动期打一行警告——D173：加一条
-// 弱模型会静默削能力，不能让人自己发现。
+// 弱模型会静默削能力，不能让人自己发现，所以要指名是哪一环。
 func (m *modelConfig) narrowNote() string {
 	cur, chain := m.currentCaps(), m.chainCaps()
 	var lost []string
@@ -299,8 +320,28 @@ func (m *modelConfig) narrowNote() string {
 	if len(lost) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("降级链窄于当前模型 %s 的能力，整链按不支持 %s 处理（检查 model.fallback 各模型的 caps）",
+	note := fmt.Sprintf("降级链窄于当前模型 %s 的能力，整链按不支持 %s 处理",
 		m.Name, strings.Join(lost, "、"))
+	var weak []string
+	for _, l := range m.modelChain()[1:] {
+		var missing []string
+		if cur.Tools && !l.Caps.Tools {
+			missing = append(missing, "工具")
+		}
+		if cur.Reasoning && !l.Caps.Reasoning {
+			missing = append(missing, "思考")
+		}
+		if cur.Vision && !l.Caps.Vision {
+			missing = append(missing, "图片")
+		}
+		if len(missing) > 0 {
+			weak = append(weak, fmt.Sprintf("%s/%s 缺 %s", l.Provider, l.Model, strings.Join(missing, "、")))
+		}
+	}
+	if len(weak) > 0 {
+		note += "（" + strings.Join(weak, "；") + "）"
+	}
+	return note + "；检查 model.fallback 各模型的 caps"
 }
 
 // normalize 应用缺省值并 fail-fast 校验 model 段（D173，启动期调用）：

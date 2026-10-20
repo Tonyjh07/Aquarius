@@ -26,13 +26,21 @@ func ParseEffort(raw string) (string, error) {
 // execThink /think [on|off]（D34）：无参显示原生思考开关与当前档位；有参先写回
 // config 再切 Agent 热态（同 /permission"写回失败不动运行态"口径）。
 // 语义：总开关——off 时 reasoning_effort 与 enable_thinking 一律不发（覆盖 /effort）。
+// D173：整条链没有思考能力时，即便开着也不发送，无参显示里要说明——否则用户会
+// 以为「设了档位却没生效」是 bug。
 func (s *Session) execThink(_ context.Context, args []string) (string, error) {
+	// reasoningOn 当前链是否声明了思考能力（未注入 = 不判断，按老口径走）。
+	reasoningOn := func() bool { return s.caps == nil || s.caps().Reasoning }
 	if len(args) == 0 {
 		state := "开"
 		if v := s.agent.thinkState(); v != nil && !*v {
 			state = "关"
 		}
 		out := fmt.Sprintf("原生思考: %s（/think 总开关，off 时不发 reasoning_effort 与 enable_thinking）", state)
+		if !reasoningOn() {
+			out += "\n当前模型未声明思考能力（模型服务的 caps 里没有 reasoning），整条降级链取与后为关，参数不会发送"
+			return out, nil
+		}
 		if s.agent.ThinkOn() {
 			if e := s.agent.Effort(); e != "" {
 				out += fmt.Sprintf("\n推理档位: %s（/effort；随开关发送）", e)
@@ -59,7 +67,11 @@ func (s *Session) execThink(_ context.Context, args []string) (string, error) {
 		return "", fmt.Errorf("session: 写回 config: %w", err)
 	}
 	s.agent.setThink(&want)
-	return fmt.Sprintf("原生思考已切到 %s（已写回 config，重启沿用）", map[bool]string{true: "on", false: "off"}[want]), nil
+	out := fmt.Sprintf("原生思考已切到 %s（已写回 config，重启沿用）", map[bool]string{true: "on", false: "off"}[want])
+	if want && !reasoningOn() {
+		out += "\n注意：当前模型未声明思考能力，参数仍不会发送（到设置窗「模型服务」里给模型加上 reasoning，或重新探测一次）"
+	}
+	return out, nil
 }
 
 // execEffort /effort [档位]（D34）：无参显示当前档位；有参校验（off=清除）后写回
@@ -91,8 +103,12 @@ func (s *Session) execEffort(_ context.Context, args []string) (string, error) {
 		return "", fmt.Errorf("session: 写回 config: %w", err)
 	}
 	s.agent.setEffort(v)
+	note := ""
+	if s.caps != nil && !s.caps().Reasoning {
+		note = "\n注意：当前模型未声明思考能力，档位不会发送（到设置窗「模型服务」里给模型加上 reasoning）"
+	}
 	if v == "" {
 		return "推理档位已清除（已写回 config；/think on 时不再发送 reasoning_effort）", nil
 	}
-	return fmt.Sprintf("推理档位已切换为 %s（已写回 config，重启沿用；是否发送由 /think 决定）", v), nil
+	return fmt.Sprintf("推理档位已切换为 %s（已写回 config，重启沿用；是否发送由 /think 决定）%s", v, note), nil
 }

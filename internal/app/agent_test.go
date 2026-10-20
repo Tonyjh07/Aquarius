@@ -868,3 +868,68 @@ func TestBuildRequestTools(t *testing.T) {
 		t.Fatalf("tools = %+v", llm.requests[0].Tools)
 	}
 }
+
+// TestBuildRequestCapsTrimTools D173：整条链没有工具能力时，工具清单整份不发——
+// 只省声明不够，模型看到工具就会尝试调用，而那条路本来就走不通。
+func TestBuildRequestCapsTrimTools(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{textStream("x")}}
+	rec := &recorder{}
+	specs := []tool.Spec{{Name: "echo", Schema: json.RawMessage(`{"type":"object"}`)}}
+	a := newAgent(t, llm, rec, Deps{Tools: &fakeRunner{specs: specs}},
+		Config{Caps: port.ModelCaps{Reasoning: true, Vision: true}})
+	c := newConv(t)
+
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := llm.requests[0].Tools; len(got) != 0 {
+		t.Fatalf("caps 无 tools 时不该发工具清单: %+v", got)
+	}
+}
+
+// TestBuildRequestCapsTrimReasoning D173：整条链没有思考能力时 reasoning_effort 与
+// enable_thinking 都不发（发了只会换来一次 400 与一次剥离重试）。
+func TestBuildRequestCapsTrimReasoning(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{textStream("x")}}
+	rec := &recorder{}
+	on := true
+	a := newAgent(t, llm, rec, Deps{}, Config{
+		Caps:            port.ModelCaps{Tools: true, Vision: true},
+		Think:           &on,
+		ReasoningEffort: "high",
+	})
+	c := newConv(t)
+
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	p := llm.requests[0].Params
+	if p.Thinking != nil {
+		t.Fatalf("caps 无 reasoning 时不该发 enable_thinking: %+v", p.Thinking)
+	}
+	if p.ReasoningEffort != "" {
+		t.Fatalf("caps 无 reasoning 时不该发 reasoning_effort: %q", p.ReasoningEffort)
+	}
+}
+
+// TestBuildRequestCapsReasoningKeepsEffort 对照：有思考能力时两道闸门各自独立——
+// /think on 且档位非空就发。
+func TestBuildRequestCapsReasoningKeepsEffort(t *testing.T) {
+	llm := &scriptLLM{t: t, streams: []*scriptStream{textStream("x")}}
+	rec := &recorder{}
+	on := true
+	a := newAgent(t, llm, rec, Deps{}, Config{
+		Caps:            port.ModelCaps{Tools: true, Reasoning: true, Vision: true},
+		Think:           &on,
+		ReasoningEffort: "high",
+	})
+	c := newConv(t)
+
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	p := llm.requests[0].Params
+	if p.Thinking == nil || !*p.Thinking || p.ReasoningEffort != "high" {
+		t.Fatalf("params = %+v, want thinking=true effort=high", p)
+	}
+}
