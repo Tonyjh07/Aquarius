@@ -69,6 +69,9 @@ type UserInput struct {
 	Text    string    // "" = 命令
 	Command *Command  // 斜杠命令
 	Raw     *RawInput // 拖拽文件 / 粘贴图片 / 语音按钮走同一入口
+	// Wake 空闲唤醒（D167）：后台任务完成等外部生产者敲醒会话，不是用户输入——
+	// 内核据此只做驱动式排空（触发型注入自己跑一轮），不追加 user 节点。
+	Wake bool
 }
 
 // Command 斜杠命令。

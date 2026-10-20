@@ -102,6 +102,8 @@ type uiFrontend interface {
 	Prompt()
 	// SetInterrupt 注入 Ctrl+C 行为（repl = no-op 走 os.Interrupt；TUI = 取消当前 Turn）。
 	SetInterrupt(fn func())
+	// Wake 空闲唤醒（D167）：后台任务完成等外部生产者敲醒 Next；不是用户输入。
+	Wake()
 	// Close 前端收尾（TUI 恢复终端；repl no-op）。
 	Close() error
 }

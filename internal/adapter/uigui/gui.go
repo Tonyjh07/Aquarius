@@ -190,6 +190,7 @@ type UI struct {
 	// 桥接通道（装配根 goroutine ↔ 事件循环 goroutine）。
 	inbox   chan uiMsg
 	inCh    chan port.UserInput
+	wakeCh  chan struct{} // 空闲唤醒（D167）：容量 1，多次后台完成合并成一次
 	eofCh   chan struct{} // 关闭 = 输入流结束（广播：Next/Confirm 同时唤醒，天然粘滞）
 	eofOnce sync.Once
 	eofErr  error         // 写于 close 之前；close 提供 happens-before，读者安全
@@ -404,11 +405,12 @@ func New(opts Options) *UI {
 // 只是没有帧循环与窗口侧控件）。
 func newUI(opts Options, window bool) *UI {
 	u := &UI{
-		opts:  opts,
-		inbox: make(chan uiMsg, inboxCap),
-		inCh:  make(chan port.UserInput, inputCap),
-		eofCh: make(chan struct{}),
-		done:  make(chan struct{}),
+		opts:   opts,
+		inbox:  make(chan uiMsg, inboxCap),
+		inCh:   make(chan port.UserInput, inputCap),
+		wakeCh: make(chan struct{}, 1),
+		eofCh:  make(chan struct{}),
+		done:   make(chan struct{}),
 	}
 	u.m = newModel(u)
 	u.plat = newPlatform(opts, window)         // 平台实现（profile/主题解析前就绪）
@@ -577,6 +579,15 @@ func (u *UI) signalEOF(err error) {
 	})
 }
 
+// Wake 空闲唤醒（D167）：后台任务完成等外部生产者敲醒 Next。非阻塞、容量 1——
+// 多次完成合并成一次唤醒；Confirm 不读这个通道，不会被误当成 y/N 回答。
+func (u *UI) Wake() {
+	select {
+	case u.wakeCh <- struct{}{}:
+	default:
+	}
+}
+
 // Next 阻塞读取下一条输入（斜杠命令解析与 repl 同口径）；
 // io.EOF = 用户关窗（DestroyEvent）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
 // 广播到达时先取尽排队输入（eofMsg 经 inbox 排队，先于它的提交必已入队），
@@ -591,6 +602,8 @@ func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 		select {
 		case in := <-u.inCh:
 			return in, nil
+		case <-u.wakeCh:
+			return port.UserInput{Wake: true}, nil
 		case <-u.eofCh:
 			select {
 			case in := <-u.inCh:

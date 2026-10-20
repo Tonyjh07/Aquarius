@@ -167,6 +167,11 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 			}
 			return nil
 		},
+		Wake: func() {
+			if w.ui != nil {
+				w.ui.Wake()
+			}
+		},
 		Logf: func(format string, args ...any) {
 			if w.stderr != nil {
 				fmt.Fprintf(w.stderr, format+"\n", args...)

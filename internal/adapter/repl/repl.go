@@ -29,34 +29,91 @@ const inputLineLimit = 1 << 20
 // toolPreviewLen 工具事件的预览截断长度（rune）。
 const toolPreviewLen = 120
 
+// lineResult 输入泵读出的一行（或读取错误）。
+type lineResult struct {
+	text string
+	err  error
+}
+
 // UI 基于 Reader/Writer 的会话界面。
+// 输入由后台泵 goroutine 读成行，Next/Confirm 经 channel 取——这样唤醒通道
+// （D167）才能和阻塞的 stdin 一起 select；Confirm 只读 lines，不读 wakeCh。
 type UI struct {
-	scanner  *bufio.Scanner
+	lines    chan lineResult
+	wakeCh   chan struct{} // 空闲唤醒（D167）：容量 1，多次完成合并成一次
 	out      io.Writer
 	inDelta  bool // 上一事件是流式增量：写非增量行前先补换行
 	thinking bool // 思维链行进行中（D34：[thinking] 前缀已打，等正文/事件收尾）
+	prompted bool // 已打过输入提示符、尚未被任何输出消费（避免唤醒空转时多打一个 "> "）
 }
 
 // New 创建 REPL UI。
 func New(in io.Reader, out io.Writer) *UI {
+	u := &UI{
+		lines:  make(chan lineResult, 1),
+		wakeCh: make(chan struct{}, 1),
+		out:    out,
+	}
+	go u.pump(in)
+	return u
+}
+
+// pump 后台按行读取输入；EOF/扫描错误经 channel 上报后关闭（读者恒先取尽缓冲行）。
+func (u *UI) pump(in io.Reader) {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64<<10), inputLineLimit)
-	return &UI{scanner: sc, out: out}
+	for sc.Scan() {
+		u.lines <- lineResult{text: sc.Text()}
+	}
+	if err := sc.Err(); err != nil {
+		u.lines <- lineResult{err: err}
+	}
+	close(u.lines)
+}
+
+// Wake 空闲唤醒（D167）：后台任务完成等外部生产者敲醒 Next。非阻塞、容量 1；
+// Confirm 不读这个通道，不会被误当成 y/N 回答。
+func (u *UI) Wake() {
+	select {
+	case u.wakeCh <- struct{}{}:
+	default:
+	}
 }
 
 // Next 读取一行输入：斜杠开头解析为 Command，其余为文本；io.EOF = 输入流结束。
-// 空行返回零值 UserInput（调用方视为无操作）。
+// 空行返回零值 UserInput（调用方视为无操作）；用户输入优先于唤醒。
 func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 	if err := ctx.Err(); err != nil {
 		return port.UserInput{}, err
 	}
-	if !u.scanner.Scan() {
-		if err := u.scanner.Err(); err != nil {
-			return port.UserInput{}, fmt.Errorf("repl: 读取输入: %w", err)
+	// 用户输入优先：先非阻塞取一行，取空才和唤醒/取消一起等。
+	select {
+	case r, ok := <-u.lines:
+		return u.inputFromLine(r, ok)
+	default:
+	}
+	for {
+		select {
+		case r, ok := <-u.lines:
+			return u.inputFromLine(r, ok)
+		case <-u.wakeCh:
+			return port.UserInput{Wake: true}, nil
+		case <-ctx.Done():
+			return port.UserInput{}, ctx.Err()
 		}
+	}
+}
+
+// inputFromLine 把泵出的一行解析为 UserInput（空行/命令/文本；EOF 与读取错误原样上抛）。
+func (u *UI) inputFromLine(r lineResult, ok bool) (port.UserInput, error) {
+	if !ok {
 		return port.UserInput{}, io.EOF
 	}
-	line := strings.TrimSpace(u.scanner.Text())
+	if r.err != nil {
+		return port.UserInput{}, fmt.Errorf("repl: 读取输入: %w", r.err)
+	}
+	u.prompted = false // 消费了一行真实输入，下一轮重新打提示符
+	line := strings.TrimSpace(r.text)
 	if line == "" {
 		return port.UserInput{}, nil
 	}
@@ -70,10 +127,14 @@ func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 	return port.UserInput{Text: line}, nil
 }
 
-// Prompt 打印输入提示符（先断开未完的流式行）。
+// Prompt 打印输入提示符（先断开未完的流式行）；已打过且未被输出消费时不再重复。
 func (u *UI) Prompt() {
 	u.flushDelta()
+	if u.prompted {
+		return
+	}
 	_, _ = fmt.Fprint(u.out, "> ")
+	u.prompted = true
 }
 
 // Say 输出一行会话文本（命令输出、启动提示等）。
@@ -82,11 +143,13 @@ func (u *UI) Say(text string) {
 		return
 	}
 	u.flushDelta()
+	u.prompted = false
 	_, _ = fmt.Fprint(u.out, text+"\n")
 }
 
 // Confirm 逐次确认（/rm 二次确认、Risk=Confirm 工具等）：
 // 打印提示并读取一行回答；y/yes（大小写不敏感）为同意，其余与输入流结束均为拒绝。
+// 只读 lines，不理会 wakeCh——任务完成不能替用户回答确认。
 func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ConfirmAnswer{}, err
@@ -95,17 +158,25 @@ func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, er
 	if _, err := fmt.Fprint(u.out, prompt+" [y/N] "); err != nil {
 		return port.ConfirmAnswer{}, fmt.Errorf("repl: 输出确认提示: %w", err)
 	}
-	if !u.scanner.Scan() {
-		if err := u.scanner.Err(); err != nil {
-			return port.ConfirmAnswer{}, fmt.Errorf("repl: 读取确认: %w", err)
+	for {
+		select {
+		case r, ok := <-u.lines:
+			if !ok {
+				return port.ConfirmAnswer{}, nil // 输入流结束：不替用户做破坏性决定
+			}
+			if r.err != nil {
+				return port.ConfirmAnswer{}, fmt.Errorf("repl: 读取确认: %w", r.err)
+			}
+			u.prompted = false
+			switch strings.ToLower(strings.TrimSpace(r.text)) {
+			case "y", "yes":
+				return port.ConfirmAnswer{Allow: true}, nil
+			default:
+				return port.ConfirmAnswer{}, nil
+			}
+		case <-ctx.Done():
+			return port.ConfirmAnswer{}, ctx.Err()
 		}
-		return port.ConfirmAnswer{}, nil // 输入流结束：不替用户做破坏性决定
-	}
-	switch strings.ToLower(strings.TrimSpace(u.scanner.Text())) {
-	case "y", "yes":
-		return port.ConfirmAnswer{Allow: true}, nil
-	default:
-		return port.ConfirmAnswer{}, nil
 	}
 }
 
@@ -118,6 +189,7 @@ func (u *UI) Close() error { return nil }
 
 // Emit 呈现 Turn 事件。
 func (u *UI) Emit(_ context.Context, ev port.Event) error {
+	u.prompted = false // 有输出发生，下一轮 Prompt 重新打提示符
 	switch e := ev.(type) {
 	case port.DeltaEvent:
 		if e.Delta.Text == "" {

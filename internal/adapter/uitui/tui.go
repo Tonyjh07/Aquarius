@@ -65,6 +65,7 @@ type Options struct {
 type UI struct {
 	prog      *tea.Program
 	inCh      chan port.UserInput
+	wakeCh    chan struct{} // 空闲唤醒（D167）：容量 1，Confirm 不读
 	eofCh     chan struct{} // 关闭 = 输入流结束（广播：Next/Confirm 同时唤醒，天然粘滞）
 	eofOnce   sync.Once
 	eofErr    error // 写于 close 之前；close 提供 happens-before，读者安全
@@ -84,10 +85,11 @@ func New(opts Options) *UI {
 		opts.History = 50
 	}
 	u := &UI{
-		inCh:  make(chan port.UserInput, inputCap),
-		eofCh: make(chan struct{}),
-		done:  make(chan struct{}),
-		opts:  opts,
+		inCh:   make(chan port.UserInput, inputCap),
+		wakeCh: make(chan struct{}, 1),
+		eofCh:  make(chan struct{}),
+		done:   make(chan struct{}),
+		opts:   opts,
 	}
 	if opts.Interrupt != nil {
 		u.SetInterrupt(opts.Interrupt)
@@ -178,6 +180,15 @@ func (u *UI) signalEOF(err error) {
 	})
 }
 
+// Wake 空闲唤醒（D167）：后台任务完成等外部生产者敲醒 Next。非阻塞、容量 1；
+// Confirm 不读这个通道，不会被误当成 y/N 回答。
+func (u *UI) Wake() {
+	select {
+	case u.wakeCh <- struct{}{}:
+	default:
+	}
+}
+
 // Next 阻塞读取下一条输入（斜杠命令解析与 repl 同口径）；
 // io.EOF = Ctrl+D（空输入）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
 // 广播到达时先取尽排队输入（eofMsg 经事件循环排队，先于它的提交必已入队），
@@ -192,6 +203,8 @@ func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 		select {
 		case in := <-u.inCh:
 			return in, nil
+		case <-u.wakeCh:
+			return port.UserInput{Wake: true}, nil
 		case <-u.eofCh:
 			select {
 			case in := <-u.inCh:
