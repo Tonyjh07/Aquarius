@@ -24,6 +24,16 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// snapProv 测试用 provider 快照（名字 / 端点 / 主标记 + 声明模型名；能力位与窗口留空，
+// 需要时用例自己填）。
+func snapProv(name, base string, primary bool, models ...string) ProviderSnapshot {
+	s := ProviderSnapshot{Name: name, BaseURL: base, Primary: primary}
+	for _, m := range models {
+		s.Models = append(s.Models, ProviderModelSnapshot{Name: m})
+	}
+	return s
+}
+
 // fillSnapshot 标准快照（测试基准）。
 func fillSnapshot() SettingsSnapshot {
 	return SettingsSnapshot{
@@ -419,16 +429,25 @@ func TestProfileActionsUnwired(t *testing.T) {
 // provider 编辑区（D110②）
 // ---------------------------------------------------------------------------
 
-// fakeProviderMgr ProviderManager 假实现（Apply/Test 分派断言）。
+// fakeProviderMgr ProviderManager 假实现（Apply/Test/Models/Probe 分派断言）。
 type fakeProviderMgr struct {
-	snap        []ProviderSnapshot
-	applied     [][]ProviderPatch
-	primaryGot  []string
-	testErr     error
-	testPatches []ProviderPatch
-	models      []string
-	modelsErr   error
-	modelsGot   []ProviderPatch
+	snap         []ProviderSnapshot
+	applied      [][]ProviderPatch
+	primaryGot   []string
+	testErr      error
+	testPatches  []ProviderPatch
+	models       []string
+	modelsErr    error
+	modelsGot    []ProviderPatch
+	probeErr     error
+	probeOutcome ProbeOutcome
+	probeGot     []probeCall
+}
+
+// probeCall 一次 Probe 调用的入参留痕。
+type probeCall struct {
+	provider string
+	model    string
 }
 
 func (f *fakeProviderMgr) Snapshot() []ProviderSnapshot { return f.snap }
@@ -455,14 +474,19 @@ func (f *fakeProviderMgr) Models(p ProviderPatch) ([]string, error) {
 	return f.models, f.modelsErr
 }
 
+func (f *fakeProviderMgr) Probe(model string, p ProviderPatch) (ProbeOutcome, error) {
+	f.probeGot = append(f.probeGot, probeCall{provider: p.Name, model: model})
+	return f.probeOutcome, f.probeErr
+}
+
 // TestFallbackChainEditorHeadless 降级链编辑（S11-7①/D176 口径三）：快照填表 →
 // 每项 provider/model 控件就位；添加/上移/下移/删除；保存时链恒全量进 patch。
 func TestFallbackChainEditorHeadless(t *testing.T) {
 	restoreLight(t)
 	var got SettingsPatch
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
-		{Name: "a", BaseURL: "http://a/v1", Models: "am1, am2", Primary: true},
-		{Name: "b", BaseURL: "http://b/v1", Models: "bm1"},
+		snapProv("a", "http://a/v1", true, "am1", "am2"),
+		snapProv("b", "http://b/v1", false, "bm1"),
 	}}
 	u := newHeadless(t, Options{
 		ProviderMgr: mgr,
@@ -521,7 +545,7 @@ func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
 	restoreLight(t)
 	var got SettingsPatch
 	u := newHeadless(t, Options{
-		ProviderMgr:   &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", BaseURL: "http://a/v1", Models: "m1", Primary: true}}},
+		ProviderMgr:   &fakeProviderMgr{snap: []ProviderSnapshot{snapProv("a", "http://a/v1", true, "m1")}},
 		Settings:      func() SettingsSnapshot { return fillSnapshot() },
 		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
 	})
@@ -543,10 +567,12 @@ func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
 func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 	u := newHeadless(t, Options{
 		Settings:    func() SettingsSnapshot { return fillSnapshot() },
-		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", Primary: true}}},
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{snapProv("a", "", true)}},
 	})
 	f := newSettingsForm(u)
-	provKinds := []rowKind{rowProvField, rowProvBtns, rowProvAdd, rowProvApply}
+	provKinds := []rowKind{rowProvName, rowProvKind, rowProvBase, rowProvGetModels,
+		rowProvTok, rowProvUnsup, rowProvKey, rowProvKeyAdd, rowProvModel, rowProvModelAdd,
+		rowProvBtns, rowProvAdd, rowProvApply}
 	chainKinds := []rowKind{rowChainItem, rowChainAdd}
 	count := func(page int, kinds ...rowKind) int {
 		n := 0
@@ -563,7 +589,7 @@ func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 	if n := count(pageProviders, rowProvSummary); n != 1 {
 		t.Errorf("「模型服务」页收起态摘要行 = %d, want 1", n)
 	}
-	for _, k := range []rowKind{rowProvField, rowProvBtns} {
+	for _, k := range []rowKind{rowProvName, rowProvBtns} {
 		if n := count(pageProviders, k); n != 0 {
 			t.Errorf("「模型服务」页收起态不应有 %v 行（收起只露摘要）", k)
 		}
@@ -590,8 +616,12 @@ func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 func TestProviderCardCollapse(t *testing.T) {
 	restoreLight(t)
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
-		{Name: "a", Kind: "openai-chat", BaseURL: "http://a/v1", Models: "am1, am2", Keys: 2, Primary: true},
-		{Name: "b", Kind: "anthropic", BaseURL: "http://b/v1", Models: "bm1", Keys: 1},
+		{Name: "a", Kind: "openai-chat", BaseURL: "http://a/v1", Primary: true,
+			Models: []ProviderModelSnapshot{{Name: "am1"}, {Name: "am2"}},
+			Keys:   []ProviderKeySnapshot{{Saved: true, Ref: "secret:K1"}, {Saved: true, Ref: "secret:K2"}}},
+		{Name: "b", Kind: "anthropic", BaseURL: "http://b/v1",
+			Models: []ProviderModelSnapshot{{Name: "bm1"}},
+			Keys:   []ProviderKeySnapshot{{Saved: true, Ref: "secret:K3"}}},
 	}}
 	u := newHeadless(t, Options{ProviderMgr: mgr})
 	f := newSettingsForm(u)
@@ -640,19 +670,20 @@ func TestProviderCardCollapse(t *testing.T) {
 	}
 }
 
-// TestProviderEditorHeadless 编辑区生命周期：快照填表（primary 标记、密钥恒空）、
-// 新增/设主/删除、全量应用分派（Orig 保留）、异步连通测试回灌。
+// TestProviderEditorHeadless 编辑区生命周期：快照填表（primary 标记、密钥恒空、能力位
+// 与窗口）、新增/设主/删除、全量应用分派（Orig 保留、能力位只在动过勾选时固化）、异步
+// 连通测试回灌。
 func TestProviderEditorHeadless(t *testing.T) {
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
-		{Name: "a", BaseURL: "http://a/v1", Models: "m1", Primary: true},
-		{Name: "b", BaseURL: "http://b/v1", Models: "mb"},
+		snapProv("a", "http://a/v1", true, "m1"),
+		snapProv("b", "http://b/v1", false, "mb"),
 	}}
 	u := newHeadless(t, Options{ProviderMgr: mgr})
 	f := newSettingsForm(u)
 	if len(f.provs) != 2 || f.primaryIdx != 0 {
 		t.Fatalf("编辑区 = %d 条, primary = %d", len(f.provs), f.primaryIdx)
 	}
-	if f.provs[0].apiKey.Text() != "" {
+	if f.provs[1].keyForms[0].value.Text() != "" {
 		t.Error("密钥只写不回显（D35）：编辑档必须恒空")
 	}
 
@@ -665,7 +696,7 @@ func TestProviderEditorHeadless(t *testing.T) {
 	latest := f.provs[len(f.provs)-1]
 	latest.name.SetText("c")
 	latest.baseURL.SetText("http://c/v1")
-	latest.models.SetText("mc")
+	latest.modelForms[0].name.SetText("mc")
 	u.applyProviderChanges(f)
 	if f.provErr || len(mgr.applied) != 1 {
 		t.Fatalf("应用反馈 = (%v, %q)", f.provErr, f.provStatus)
@@ -676,6 +707,17 @@ func TestProviderEditorHeadless(t *testing.T) {
 	}
 	if mgr.primaryGot[0] != "a" {
 		t.Fatalf("primary = %q, want a", mgr.primaryGot[0])
+	}
+	// 未动过勾选 → 能力位不出现在 patch（保留原声明形态）。
+	if got[0].Models[0].Caps != nil {
+		t.Fatalf("未动勾选不应固化能力声明: %+v", got[0].Models[0])
+	}
+
+	// 动过勾选 → patch 带显式能力列表。
+	f.provs[0].modelForms[0].capsVision.Value = true
+	u.applyProviderChanges(f)
+	if caps := mgr.applied[1][0].Models[0].Caps; caps == nil || len(*caps) == 0 {
+		t.Fatalf("动过勾选应固化能力声明: %+v", mgr.applied[1][0].Models[0])
 	}
 
 	// 异步连通测试：结果经 testResults 回灌（帧循环外直接读）。
@@ -692,17 +734,108 @@ func TestProviderEditorHeadless(t *testing.T) {
 	}
 }
 
-// TestFetchModelsButton 「获取模型」（D153）：拉列表 → 自动填入模型名行 + 候选 chip；
-// 点 chip = **替换**（不追加）；失败不动输入框；结果按 provider 名回灌（期间删过条目就丢弃）。
-func TestFetchModelsButton(t *testing.T) {
+// TestProviderKeyPoolHeadless 密钥池多把编辑（S11-7③）：快照逐槽填表（值恒空、形态只标
+// 已入库/明文/空）、添加/删除槽（≥1）、patch 逐槽带上 Value（空 = 保持）与 Label。
+func TestProviderKeyPoolHeadless(t *testing.T) {
+	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{{
+		Name: "a", BaseURL: "http://a/v1", Primary: true,
+		Keys: []ProviderKeySnapshot{
+			{Label: "主账号", Saved: true, Ref: "secret:KA"},
+			{Plain: true},
+			{Saved: true, Ref: "secret:KC", Label: "备用"},
+		},
+		Models: []ProviderModelSnapshot{{Name: "m1"}},
+	}}}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	pf := f.provs[0]
+	if len(pf.keyForms) != 3 {
+		t.Fatalf("密钥槽 = %d, want 3", len(pf.keyForms))
+	}
+	// 值档恒空（D35）；展示名按快照填；形态注脚区分已入库/明文/空。
+	if pf.keyForms[0].label.Text() != "主账号" || pf.keyForms[2].label.Text() != "备用" {
+		t.Fatalf("展示名未填表: %q / %q", pf.keyForms[0].label.Text(), pf.keyForms[2].label.Text())
+	}
+	// 形态注脚三种形态各就其位（已入库露引用名、明文只标形态、空标缺省回落）。
+	if !strings.Contains(keySlotNote(pf.keyForms[0]), "secret:KA") ||
+		!strings.Contains(keySlotNote(pf.keyForms[1]), "明文") ||
+		!strings.Contains(keySlotNote(pf.keyForms[2]), "secret:KC") {
+		t.Fatalf("形态注脚 = %q / %q / %q",
+			keySlotNote(pf.keyForms[0]), keySlotNote(pf.keyForms[1]), keySlotNote(pf.keyForms[2]))
+	}
+
+	// 填第 0 槽明文 + 改第 1 槽名 → patch 逐槽带值（空槽 = 保持）。
+	pf.keyForms[0].value.SetText("sk-typed")
+	pf.keyForms[1].label.SetText("轮换")
+	u.applyProviderChanges(f)
+	got := mgr.applied[0][0].Keys
+	if len(got) != 3 {
+		t.Fatalf("patch 密钥槽 = %d, want 3", len(got))
+	}
+	if got[0].Value != "sk-typed" || got[1].Value != "" || got[1].Label != "轮换" {
+		t.Fatalf("patch 密钥 = %+v", got)
+	}
+
+	// 添加一槽（空）+ 删除一槽：仍 ≥1 槽。
+	pf.keyForms = append(pf.keyForms, newProviderKeyForm(ProviderKeySnapshot{}))
+	if len(pf.keyForms) != 4 {
+		t.Fatalf("添加后槽数 = %d, want 4", len(pf.keyForms))
+	}
+	f.removeProvider(0)
+	if len(f.provs) != 1 {
+		t.Fatalf("唯一 provider 不该被删掉: %d", len(f.provs))
+	}
+}
+
+// TestProviderModelTableHeadless 模型能力表（S11-7③）：勾选初值 = 生效能力（缺省按协议
+// 给全）；上下文窗口填表；「未动」→ Caps nil、「动过」→ 显式列表。
+func TestProviderModelTableHeadless(t *testing.T) {
+	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{{
+		Name: "a", Kind: "anthropic", BaseURL: "http://a/v1", Primary: true,
+		Models: []ProviderModelSnapshot{
+			{Name: "claude", Caps: []string{port.CapTools, port.CapVision}, CapsExplicit: false, ContextWindow: 200000},
+		},
+	}}}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	mf := f.provs[0].modelForms[0]
+	// 生效能力（anthropic 缺省 = 工具 + 图片）画进勾选，思考不勾。
+	if !mf.capsTools.Value || mf.capsReason.Value || !mf.capsVision.Value {
+		t.Fatalf("勾选初值 = tools:%v reason:%v vision:%v", mf.capsTools.Value, mf.capsReason.Value, mf.capsVision.Value)
+	}
+	if mf.contextWin.Text() != "200000" {
+		t.Fatalf("窗口填表 = %q", mf.contextWin.Text())
+	}
+	// 未动 → patch 不带 Caps（保留「键缺失」这个形态）；窗口照写。
+	u.applyProviderChanges(f)
+	got := mgr.applied[0][0].Models[0]
+	if got.Caps != nil {
+		t.Fatalf("未动能力位不该固化声明: %+v", got)
+	}
+	if got.ContextWindow != 200000 {
+		t.Fatalf("窗口 = %d, want 200000", got.ContextWindow)
+	}
+	// 动一下思考 → patch 带显式列表（含新勾的思考）。
+	mf = f.provs[0].modelForms[0] // 上一轮 apply 已按快照重建编辑区，需重新取指针
+	mf.capsReason.Value = true
+	u.applyProviderChanges(f)
+	got = mgr.applied[1][0].Models[0]
+	if got.Caps == nil || len(*got.Caps) != 3 {
+		t.Fatalf("动过能力位应固化显式声明: %+v", got)
+	}
+}
+
+// TestFetchModelsAppendsRows 「获取模型」（S11-7③）：拉列表 → 追加成模型能力表行
+// （已存在的名字跳过）；超出上限的留作候选 chip（点选追加）；失败不动表；结果按 provider
+// 名回灌（期间删过条目就丢弃）。
+func TestFetchModelsAppendsRows(t *testing.T) {
 	mgr := &fakeProviderMgr{
-		snap:   []ProviderSnapshot{{Name: "a", BaseURL: "http://a/v1", Models: "old", Primary: true}},
-		models: []string{"m1", "m2", "m3"},
+		snap:   []ProviderSnapshot{snapProv("a", "http://a/v1", true, "m1")},
+		models: []string{"m1", "m2", "m3"}, // m1 已存在 → 只追加 m2/m3
 	}
 	u := newHeadless(t, Options{ProviderMgr: mgr})
 	f := newSettingsForm(u)
 	pf := f.provs[0]
-	// 等异步结果（goroutine 写通道），再回投走真正的排空/落表路径。
 	wait := func() {
 		t.Helper()
 		out := <-f.testResults
@@ -715,75 +848,124 @@ func TestFetchModelsButton(t *testing.T) {
 	if len(mgr.modelsGot) != 1 || mgr.modelsGot[0].Name != "a" {
 		t.Fatalf("Models 调用 = %+v", mgr.modelsGot)
 	}
-	if got := pf.models.Text(); got != "m1, m2, m3" {
-		t.Fatalf("自动填入 = %q", got)
+	if len(pf.modelForms) != 3 {
+		t.Fatalf("模型行 = %d, want 3（追加 m2/m3）", len(pf.modelForms))
 	}
-	if len(pf.cands) != 3 || len(pf.candClicks) != 3 {
-		t.Fatalf("候选 chip = %d/%d", len(pf.cands), len(pf.candClicks))
+	if n := pf.modelForms[1].name.Text(); n != "m2" {
+		t.Fatalf("追加行 = %q", n)
 	}
-	if !strings.Contains(f.provStatus, "已自动填入 3 个候选") {
+	if !strings.Contains(f.provStatus, "已追加 2 个模型行") {
 		t.Fatalf("状态行 = %q", f.provStatus)
 	}
 
-	// 点第二个 chip = 替换（不追加）。chip 的消费点在帧首事件循环里，故跑一帧真渲染。
-	th := testTheme()
-	frame := func() {
-		var ops op.Ops
-		settingsFrame(layout.Context{
-			Ops:         &ops,
-			Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
-			Constraints: layout.Exact(image.Pt(720, 560)),
-		}, th, u, f)
+	// 点候选 chip = 追加（不替换）。这里服务端全在表内（无余量）→ 候选为空；换一批验证。
+	mgr.models = []string{"m4", "m5"}
+	u.runFetchModels(f, pf)
+	wait()
+	if len(pf.cands) != 0 { // 8 行内全追加完，无余量
+		t.Fatalf("无余量时不该有候选：%v", pf.cands)
 	}
-	pf.candClicks[1].Click()
-	frame()
-	if got := pf.models.Text(); got != "m2" {
-		t.Fatalf("点 chip 后模型名 = %q, want m2（替换而非追加）", got)
-	}
-
-	// 失败：不动模型名（用户手写内容不被清掉），状态行报因。
-	pf.models.SetText("hand")
+	// 失败：不动模型表，状态行报因。
+	before := len(pf.modelForms)
 	mgr.modelsErr = errors.New("403 forbidden")
 	u.runFetchModels(f, pf)
 	wait()
-	if got := pf.models.Text(); got != "hand" {
-		t.Fatalf("失败后模型名 = %q, want hand", got)
+	if len(pf.modelForms) != before {
+		t.Fatalf("失败不该改模型表：%d → %d", before, len(pf.modelForms))
 	}
 	if !f.provErr || !strings.Contains(f.provStatus, "失败") {
 		t.Fatalf("失败反馈 = (%v, %q)", f.provErr, f.provStatus)
 	}
 
-	// 成功但用户手写过：只挂候选，不覆盖（「未覆盖已填内容」）。
-	mgr.modelsErr = nil
-	u.runFetchModels(f, pf)
-	wait()
-	if got := pf.models.Text(); got != "hand" {
-		t.Fatalf("手写内容被覆盖：%q, want hand", got)
-	}
-	if len(pf.cands) != 3 {
-		t.Fatalf("未覆盖时仍应挂出候选：%v", pf.cands)
-	}
-	if !strings.Contains(f.provStatus, "未覆盖") {
-		t.Fatalf("状态行 = %q, want 含「未覆盖」", f.provStatus)
-	}
-
 	// 结果回灌按名字：名字对不上（期间删过该条目）→ 整条结果丢弃，不落到别的条目上。
 	other := &providerForm{}
-	for _, ed := range []*widget.Editor{&other.name, &other.baseURL, &other.apiKey, &other.models, &other.tokenizer, &other.unsupported} {
-		ed.SingleLine = true
-	}
 	other.name.SetText("b")
-	other.models.SetText("keep")
+	other.modelForms = []*providerModelForm{newProviderModelForm(ProviderModelSnapshot{Name: "keep"})}
 	f.provs = []*providerForm{other}
 	mgr.modelsErr = nil
+	mgr.models = []string{"x1"}
 	u.runFetchModels(f, pf) // pf 已不在列表里（名字 a）
 	<-f.testResults
 	f.drainTestResults()
-	if got := other.models.Text(); got != "keep" {
-		t.Fatalf("结果落到了别的 provider：模型名 = %q, want keep", got)
+	if len(other.modelForms) != 1 || other.modelForms[0].name.Text() != "keep" {
+		t.Fatalf("结果落到了别的 provider：%+v", other.modelForms)
 	}
-	if len(other.cands) != 0 {
-		t.Fatalf("结果落到了别的 provider：候选 = %v", other.cands)
+}
+
+// TestFetchModelsOverflowChips 「获取模型」超出上限的部分作候选 chip，点选才追加单行
+// （服务端可列出几百个模型，全铺开会把卡撑成一面墙）。
+func TestFetchModelsOverflowChips(t *testing.T) {
+	var listed []string
+	for i := 0; i < provModelCandMax+3; i++ {
+		listed = append(listed, fmt.Sprintf("mm%02d", i))
+	}
+	mgr := &fakeProviderMgr{
+		snap:   []ProviderSnapshot{snapProv("a", "http://a/v1", true, "keep")},
+		models: listed,
+	}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	pf := f.provs[0]
+	u.runFetchModels(f, pf)
+	out := <-f.testResults
+	f.testResults <- out
+	f.drainTestResults()
+	if len(pf.modelForms) != 1+provModelCandMax {
+		t.Fatalf("追加行 = %d, want %d", len(pf.modelForms), 1+provModelCandMax)
+	}
+	if len(pf.cands) != 3 || len(pf.candClicks) != 3 {
+		t.Fatalf("候选 chip = %d/%d, want 3", len(pf.cands), len(pf.candClicks))
+	}
+	pf.appendModelCand(pf.cands[0])
+	if len(pf.modelForms) != 2+provModelCandMax {
+		t.Fatalf("点选候选后追加失败：%d", len(pf.modelForms))
+	}
+	// 重复点同一个候选 = no-op（不生长两行同名）。
+	pf.appendModelCand(pf.cands[0])
+	if len(pf.modelForms) != 2+provModelCandMax {
+		t.Fatalf("重复候选应跳过：%d", len(pf.modelForms))
+	}
+}
+
+// TestProbeModelRow 「探测能力」按钮（S11-7③/D174）：走 ProviderManager.Probe，结论回灌
+// 该模型行（写回时同步勾选）。
+func TestProbeModelRow(t *testing.T) {
+	mgr := &fakeProviderMgr{
+		snap: []ProviderSnapshot{snapProv("a", "http://a/v1", true, "m1")},
+		probeOutcome: ProbeOutcome{
+			Provider: "a", Model: "m1", Written: true,
+			Results: []port.ProbeResult{
+				{Capability: port.CapTools, Verdict: port.ProbeSupported},
+				{Capability: port.CapReasoning, Verdict: port.ProbeUnsupported},
+			},
+		},
+	}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	pf := f.provs[0]
+	u.runProbeModel(f, pf, pf.modelForms[0])
+	out := <-f.testResults
+	if out.err != nil || out.kind != probeCaps || out.model != "m1" {
+		t.Fatalf("probe result = %+v", out)
+	}
+	f.testResults <- out
+	f.drainTestResults()
+	if len(mgr.probeGot) != 1 || mgr.probeGot[0].model != "m1" || mgr.probeGot[0].provider != "a" {
+		t.Fatalf("Probe 调用 = %+v", mgr.probeGot)
+	}
+	mf := pf.modelForms[0]
+	if mf.probeStatus == "" || mf.probeErr {
+		t.Fatalf("行内反馈 = (%v, %q)", mf.probeErr, mf.probeStatus)
+	}
+	if !mf.capsTools.Value || mf.capsReason.Value {
+		t.Fatalf("写回后勾选应与结论一致: tools=%v reason=%v", mf.capsTools.Value, mf.capsReason.Value)
+	}
+	// 空模型名不发探测。
+	empty := pf.modelForms[0]
+	empty.name.SetText("")
+	u.runProbeModel(f, pf, empty)
+	if !empty.probeErr || empty.probeStatus == "" {
+		t.Fatalf("空模型名应就地报因: (%v, %q)", empty.probeErr, empty.probeStatus)
 	}
 }
 
@@ -1382,7 +1564,7 @@ func TestSettingsPagesRenderContent(t *testing.T) {
 		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
 		Profiles:      &fakeProfiles{snap: ProfilesSnapshot{Current: "default", Items: []string{"default"}}},
 		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{
-			{Name: "openai", BaseURL: "https://api.openai.com/v1", Models: "m1", Primary: true},
+			snapProv("openai", "https://api.openai.com/v1", true, "m1"),
 		}},
 	})
 	f := newSettingsForm(u)

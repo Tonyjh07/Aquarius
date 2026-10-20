@@ -263,6 +263,37 @@ func TestProbeProtocolDispatch(t *testing.T) {
 	}
 }
 
+// TestProbeForSettings 设置窗「探测能力」数据面（S11-7③）：指名 provider + 模型，走
+// `probeModel` 同一条写回；provider 不存在 / 模型未声明都指名报因（没地方写回就不探）。
+func TestProbeForSettings(t *testing.T) {
+	srv := probeServer(t, probeReply{VisionStatus: http.StatusBadRequest,
+		Vision: `{"error":{"message":"image input is not supported"}}`})
+	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1"}`)
+	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+
+	out, err := w.probeForSettings(context.Background(), "a", "m1")
+	if err != nil {
+		t.Fatalf("probeForSettings: %v", err)
+	}
+	if out.Provider != "a" || out.Model != "m1" || len(out.Results) != 3 || !out.Written {
+		t.Fatalf("outcome = %+v", out)
+	}
+	// 写回同 `probeModel`：config 里已固化显式声明。
+	after, _ := loadConfig(cfgPath)
+	if e := after.Model.Providers[0].modelByName("m1"); e == nil || e.Caps == nil {
+		t.Fatalf("未写回能力声明: %+v", e)
+	}
+	// 未声明的模型 / 不存在的 provider：指名报因，且不再打网络。
+	if _, err := w.probeForSettings(context.Background(), "a", "nope"); err == nil ||
+		!strings.Contains(err.Error(), "models 里") {
+		t.Fatalf("未声明模型 = %v, want 报因", err)
+	}
+	if _, err := w.probeForSettings(context.Background(), "zz", "m1"); err == nil ||
+		!strings.Contains(err.Error(), "不在配置里") {
+		t.Fatalf("不存在 provider = %v, want 报因", err)
+	}
+}
+
 // TestProbeClientIsReadOnly 探测不记 unsupported_params（那是正式请求的事），
 // 也不写进 config 的 provider 段。
 func TestProbeClientIsReadOnly(t *testing.T) {

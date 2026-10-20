@@ -129,6 +129,12 @@ func deriveKeyName(providerName string) string {
 // 返回写进 config 的 `secret:<名>` 引用；填的本来就是引用则原样保留、不动库。
 // **写库失败即报错**——绝不静默退回明文（那等于把用户以为存住的东西留在盘上明文）。
 func storePlaintextKey(ctx context.Context, bin *secretbin.Store, providerName, origRef, typed string) (string, error) {
+	return storePlaintextKeyAt(ctx, bin, providerName, origRef, typed, 0)
+}
+
+// storePlaintextKeyAt 密钥池第 slot 把的明文入库（D173）：键名规则同 keySlotName——
+// 第一把沿用原引用名或派生名，后续追 `_<N>`，同一 provider 的多账号各占独立槽位。
+func storePlaintextKeyAt(ctx context.Context, bin *secretbin.Store, providerName, origRef, typed string, slot int) (string, error) {
 	ref := strings.TrimSpace(typed)
 	if strings.HasPrefix(ref, "secret:") {
 		return ref, nil // 用户填的就是引用：照写，不进库
@@ -136,7 +142,7 @@ func storePlaintextKey(ctx context.Context, bin *secretbin.Store, providerName, 
 	if bin == nil {
 		return "", fmt.Errorf("provider %q：本机密钥库未接线，无法保存明文密钥", providerName)
 	}
-	name := keyNameFor(providerName, origRef)
+	name := keySlotName(providerName, origRef, slot)
 	if err := bin.Set(ctx, name, ref); err != nil {
 		return "", fmt.Errorf("provider %q：写入本机密钥库失败: %w", providerName, err)
 	}

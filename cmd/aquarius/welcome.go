@@ -98,8 +98,8 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 		entry["name"] = name
 		entry["base_url"] = baseURL
 		base, _ := old[0].(map[string]any)
-		entry["keys"] = mergedKeys(base, keyRef) // 空 = 保持原值（D35 只写不回显）
-		entry["models"] = mergedModels(base, models)
+		entry["keys"] = welcomeKeys(base, keyRef) // 空 = 保持原值（D35 只写不回显）
+		entry["models"] = welcomeModels(base, models)
 		// 首条 = 本次填写；其余条目原样保留（只覆盖 providers[0]）。
 		names := map[string]bool{name: true}
 		rest := make([]any, 0, len(old))
@@ -159,6 +159,56 @@ func welcomeKeyRef(m *welcomeManager, name, typed string) (string, error) {
 		m.onStore()
 	}
 	return ref, nil
+}
+
+// welcomeKeys 欢迎窗密钥写回（口径同 writeKeys，但欢迎窗只编辑第一把）：原条目的
+// 密钥池原样保留（label / 后续槽位记忆不丢），keyRef 非空时覆盖**第一把**的 api_key。
+// 空 = 保持原值（D35 只写不回显）。
+func welcomeKeys(base map[string]any, keyRef string) []any {
+	var keys []any
+	if base != nil {
+		if old, ok := base["keys"].([]any); ok {
+			keys = append(keys, old...)
+		}
+	}
+	if keyRef != "" {
+		if len(keys) == 0 {
+			keys = []any{map[string]any{"api_key": keyRef}}
+		} else if pm, ok := keys[0].(map[string]any); ok {
+			pm["api_key"] = keyRef
+		}
+	}
+	if keys == nil {
+		keys = []any{} // 空数组而非 null：键存在但为空 = 一条缺省引用（读侧同口径）
+	}
+	return keys
+}
+
+// welcomeModels 欢迎窗模型条目写回（口径同 writeModels，但欢迎窗只给名字表）：按名字
+// 继承原条目的能力位与上下文窗口（欢迎窗不编辑这些）；新增的名字从空起步。顺序以本次
+// 编辑为准。
+func welcomeModels(base map[string]any, names []string) []any {
+	byName := map[string]map[string]any{}
+	if base != nil {
+		if old, ok := base["models"].([]any); ok {
+			for _, mv := range old {
+				if pm, ok := mv.(map[string]any); ok {
+					if n, _ := pm["name"].(string); n != "" {
+						byName[n] = pm
+					}
+				}
+			}
+		}
+	}
+	out := make([]any, 0, len(names))
+	for _, n := range names {
+		if pm, ok := byName[n]; ok {
+			out = append(out, pm)
+			continue
+		}
+		out = append(out, map[string]any{"name": n})
+	}
+	return out
 }
 
 // Test 连通性测试（口径同 providerManager.Test）：以 patch 构造一次性 client（8s 超时）

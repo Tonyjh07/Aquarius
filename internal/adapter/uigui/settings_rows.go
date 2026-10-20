@@ -53,8 +53,19 @@ const (
 	rowToolTo
 	rowSysPrompt
 	rowRaw
-	rowProvField
-	rowProvSummary // 折叠卡片收起态摘要行（S11-7②/D176 口径二；点击展开/收起）
+	// S11-7③/D176 口径二：「模型服务」页 provider 卡片。
+	rowProvSummary // 折叠卡片收起态摘要行（点击展开/收起）
+	rowProvName    // 名称（单行档）
+	rowProvKind    // 协议（循环选择：chat/responses/anthropic）
+	rowProvBase    // 接口地址
+	rowProvGetModels
+	rowProvTok
+	rowProvUnsup
+	rowProvHead // 展开区内小标题（text = 「密钥池」/「模型能力表」）
+	rowProvKey  // 密钥池单行（field = keyForms 下标）
+	rowProvKeyAdd
+	rowProvModel // 模型能力表单行（field = modelForms 下标）
+	rowProvModelAdd
 	rowProvBtns
 	rowProvAdd
 	rowProvApply
@@ -85,40 +96,19 @@ const (
 	rowSecretStatus // 存入/删除反馈状态行
 )
 
-// provider 字段槽位（rowDesc.field）。
-const (
-	provNameFld = iota
-	provURLFld
-	provKeyFld
-	provModelsFld
-	provTokFld
-	provUnsupFld
-	provFldN
-)
-
-// provFieldMeta provider 字段行的标签与占位提示（下标对齐字段槽位）。
-var provFieldMeta = [provFldN]struct{ label, hint string }{
-	{"名称", "provider 唯一标识（primary/fallback 按名引用）"},
-	{"接口地址", "如 https://api.openai.com/v1"},
-	{"API 密钥", "明文存入本机加密库、配置只留引用；留空保持不变"},
-	{"模型列表", "逗号分隔；首个 = 缺省请求模型"},
-	{"Tokenizer", "本地 tokenizer.json 路径；空 = 估算"},
-	{"不认参数", "逗号分隔；这些参数会被剔除，不发往服务端"},
-}
-
 // provModelCandMax 候选 chip 的上限（D153）：服务端可能列出几百个模型，全部铺开会把
 // 设置页推成一面墙——取前 N 个，状态行同时给出「共 N 个」的事实。
 const (
-	provModelCandMax = 12 // chip 行最多显示
-	relModelAutoFill = 8  // 自动填入模型名行的上限
+	provModelCandMax = 12 // 「模型服务」页单次「获取模型」追加成模型行的上限
+	relModelAutoFill = 8  // 欢迎窗自动填入模型名行的上限
 )
 
 // rowDesc 一行的类型与定位。
 type rowDesc struct {
 	kind  rowKind
-	text  string // rowSection / rowTitle 的文案
-	prov  int    // rowProvField / rowProvBtns：provider 下标
-	field int    // rowProvField：字段槽位
+	text  string // rowSection / rowTitle / rowProvHead 的文案
+	prov  int    // provider 行：provider 下标
+	field int    // rowProvKey/rowProvModel：密钥/模型行下标
 }
 
 // sec 分组小标题行。
@@ -400,6 +390,7 @@ func rowInCard(k rowKind) bool {
 	switch k {
 	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
 		rowPromptPreview, rowProfBtns, rowProvBtns, rowProvAdd, rowProvApply,
+		rowProvKeyAdd, rowProvModelAdd,
 		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus,
 		rowChainNote, rowChainAdd:
 		return false

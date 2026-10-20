@@ -13,6 +13,8 @@ import (
 	"gioui.org/app"
 	"gioui.org/layout"
 	"gioui.org/widget"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // ProfilesSnapshot profile 区快照（D110③）：当前生效 profile + 可用清单。
@@ -32,30 +34,75 @@ type ProfilesManager interface {
 	Switch(name string) error // 原子写根指针（重启生效）
 }
 
-// ProviderSnapshot provider 编辑区单条快照（D110②/③）：models/unsupported 以逗号
-// 分隔呈现在单行编辑档（表单口径）；APIKey 只写不回显（D35），不进快照。Kind/Keys
-// 供折叠卡片收起态的一行摘要（D176 口径二）——摘要要在不展开的情况下说清「怎么连」。
+// ProviderKeySnapshot provider 密钥池单槽快照（S11-7③/D173）：Label = 展示名；
+// Saved = 引用是 `secret:<名>`（值在库里，Ref 给名字供展示与「沿用键名」）；
+// Plain = 引用是明文（**只标形态、永不含值**，D35：密钥只写不回显）。
+type ProviderKeySnapshot struct {
+	Label string // 展示名（空 = 「第 N 把」）
+	Saved bool   // true = 引用形如 secret:<名>（已入库）
+	Plain bool   // true = 引用是明文（不回显值，只标形态）
+	Ref   string // 仅 Saved：`secret:<名>`（只含名、永不含值）
+}
+
+// ProviderModelSnapshot provider 模型条目快照（S11-7③/D173）：能力位取**生效值**
+// （缺省时按协议缺省），CapsExplicit 区分「缺省」与「显式声明」——只有用户真动过
+// 能力位才把它固化成显式声明。
+type ProviderModelSnapshot struct {
+	Name          string
+	Caps          []string // 生效能力名（port.CapTools/CapReasoning/CapVision 的子集）
+	CapsExplicit  bool     // false = 键缺失（按协议缺省）
+	ContextWindow int      // 该模型上下文窗口 tokens（0 = 不声明，跟随全局）
+}
+
+// ProviderSnapshot provider 编辑区单条快照（D110②/③）：模型条目与密钥池都以结构化
+// 列表呈现（S11-7③）；APIKey 只写不回显（D35），不进快照。Kind 供折叠卡片摘要。
 type ProviderSnapshot struct {
 	Name        string
 	Kind        string // 协议（空 = openai-chat，读侧归一展示）
 	BaseURL     string
-	Models      string // 逗号分隔（首个 = 该 provider 缺省请求模型）
+	Models      []ProviderModelSnapshot
 	Tokenizer   string
 	Unsupported string // 逗号分隔
-	Keys        int    // 密钥引用数（≥1：0 条声明也按缺省引用算一把）
-	Primary     bool   // 是否当前 primary
+	Keys        []ProviderKeySnapshot
+	Primary     bool // 是否当前 primary
+}
+
+// ProviderKeyPatch provider 密钥池单槽提交（S11-7③）：Value 空 = 保持不变（含沿用键名，
+// D161 落点③——原引用名从落盘 config 按槽位下标读取）；Value 以 `secret:` 开头 = 照写
+// 引用（不进库）；否则明文写库后 config 只落引用。Label 空 = 不留展示名。
+type ProviderKeyPatch struct {
+	Value string
+	Label string
+}
+
+// ProviderModelPatch provider 模型条目提交（S11-7③）：Caps nil = 保持原声明（键缺失
+// 与显式都原样保留）；非 nil（含空数组）= 以本次为准（显式声明）。ContextWindow 0 = 不声明。
+type ProviderModelPatch struct {
+	Name          string
+	Caps          *[]string
+	ContextWindow int
 }
 
 // ProviderPatch provider 编辑区单条提交（Apply 全量替换口径）。Orig = 编辑前的
-// 原名（cmd 侧按它保留原条目的 api_key 与无关键；空 = 新增条目）；APIKey 空 = 保持原值。
+// 原名（cmd 侧按它保留原条目的无关键；空 = 新增条目）。
 type ProviderPatch struct {
 	Orig        string
 	Name        string
+	Kind        string // 协议（S11-7③ 起进编辑面）；空 = openai-chat
 	BaseURL     string
-	APIKey      string // "" = 不改（D35 只写不回显）
-	Models      string // 逗号分隔
+	Keys        []ProviderKeyPatch
+	Models      []ProviderModelPatch
 	Tokenizer   string
 	Unsupported string // 逗号分隔
+}
+
+// ProbeOutcome 一次能力探测的结果快照（S11-7③/D174）：设置窗「探测能力」按钮经
+// ProviderManager.Probe 走与 `/model probe` 同一条写回逻辑，只把结论带回界面展示。
+type ProbeOutcome struct {
+	Provider string
+	Model    string
+	Results  []port.ProbeResult
+	Written  bool // 是否真的写回了 config（无明确结论且声明没变 = false）
 }
 
 // FallbackLink 降级链一项（D173/D176 口径三）：provider + 模型名。模型可为空
@@ -86,6 +133,10 @@ type ProviderManager interface {
 	// Models 拉取该 provider 的模型列表（GET /models，短超时；调用方 goroutine 负责）。
 	// 只读：不改配置、不设主。返回顺序按服务端响应（去重）。
 	Models(p ProviderPatch) ([]string, error)
+	// Probe 对某模型发起三项能力探测并写回判定明确的结果（S11-7③/D174）：与
+	// `/model probe` 走**同一条**写回逻辑（装配根 probeModel），只是把结论带回界面。
+	// 调用方 goroutine 负责（三次真请求，可能数十秒，不进帧循环）。
+	Probe(model string, p ProviderPatch) (ProbeOutcome, error)
 }
 
 // PromptModuleView 人格模块树单个节点的编辑视图（S7/D144）：Name 唯一（用户模块名不以
@@ -193,6 +244,13 @@ var (
 	// 键值为 string 的既有口径，表单侧 ParseFloat 换算；%g 往返一致）。
 	zoomLevels = []string{"100%", "125%", "150%", "175%", "200%"}
 	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
+	// kindLevels 协议档（S11-7③/D173）：展示名短（chat/responses/anthropic），键值为
+	// config 里的 kind 原文；空 = openai-chat（读侧归一）。
+	kindLevels = []string{"chat", "responses", "anthropic"}
+	kindValues = []string{"openai-chat", "openai-responses", "anthropic"}
+	// capLevels 模型能力位三勾选的展示名与键名（S11-7③）：顺序与 port.CapNames 一致。
+	capLabels = []string{"工具", "思考", "图片"}
+	capNames  = []string{port.CapTools, port.CapReasoning, port.CapVision}
 )
 
 // 设置窗页（S4d/D142）：内容分页呈现（左侧 140dp 导航栏 + 右页内容 + 全局底栏）。
@@ -355,13 +413,14 @@ type settingsForm struct {
 
 // providerForm 单个 provider 的编辑控件组（D110②；本窗 goroutine 独占）。S11-7② 起
 // 折叠成一张卡片（D176 口径二）：收起态只露一行摘要（`rowProvSummary`），展开才露出
-// 下面的字段行。同一时刻只展开一张（展开多张又回到「一堵墙」）。
+// 下面的字段行。S11-7③ 起展开区含**密钥池**（多把，`keyForms`）与**模型能力表**
+// （每行 name + 三个能力勾选 + 上下文窗口 + 「探测能力」按钮，`modelForms`）。
+// 同一时刻只展开一张（展开多张又回到「一堵墙」）。
 type providerForm struct {
-	orig        string // 快照原名（Apply 保留原 api_key 与无关键；"" = 新增）
+	orig        string // 快照原名（Apply 保留无关键；"" = 新增）
 	name        widget.Editor
+	kind        cycleField // 协议（openai-chat / openai-responses / anthropic）
 	baseURL     widget.Editor
-	apiKey      widget.Editor // 只写不回显（D35）：留空 = 保持原值
-	models      widget.Editor // 逗号分隔
 	tokenizer   widget.Editor
 	unsupported widget.Editor // 逗号分隔
 	test        widget.Clickable
@@ -369,50 +428,79 @@ type providerForm struct {
 	del         widget.Clickable
 	setPrimary  widget.Clickable
 	// 折叠卡片（S11-7②/D176 口径二）：toggle = 摘要行点击件；expanded 由表单级
-	// provOpen 决定（同一时刻只展开一张），kindLabel/keyCount 供摘要行显示协议与钥匙数。
-	toggle    widget.Clickable
-	kindLabel string
-	keyCount  int
+	// provOpen 决定。
+	toggle widget.Clickable
+	// 密钥池（S11-7③/D173）：每把一组（label + 值只写不回显 + 删除），尾部「＋ 添加」。
+	keyForms []*providerKeyForm
+	keyAdd   widget.Clickable
+	// 模型能力表（S11-7③/D173）：每行一组（名字 + 三能力勾选 + 上下文窗口 + 探测 + 删除），
+	// 尾部「＋ 添加模型」。
+	modelForms []*providerModelForm
+	modelAdd   widget.Clickable
 	// 候选（D153）：cands = 最近一次拉取结果（去重保序，最多 relModelCandMax 个），
-	// candClicks 与之一一对应。点击 chip 才替换模型名——不自动覆盖用户手写内容。
+	// candClicks 与之一一对应。点 chip = 追加一个模型行（已存在则跳过）。
 	cands      []string
 	candClicks []widget.Clickable
-	// modelsOrig 开窗/建行时的模型名基线：「自动填入」只在这个框**没被用户改过**时发生
-	// （否则用户手写的内容会被一次网络结果冲掉）。
-	modelsOrig string
+}
+
+// providerKeyForm 密钥池单槽编辑控件组（S11-7③）。
+type providerKeyForm struct {
+	snap  ProviderKeySnapshot // 快照（读侧形态：已入库 / 明文 / 空；值不回显）
+	label widget.Editor       // 展示名（空 = 「第 N 把」）
+	value widget.Editor       // 值（只写不回显；空 = 保持；secret: 前缀 = 照写引用；否则明文入库）
+	del   widget.Clickable
+}
+
+// providerModelForm 模型能力表单行编辑控件组（S11-7③）：能力位三勾选 + 上下文窗口 +
+// 探测按钮。base* 记录填表基线（快照生效值），只有用户动过勾选才把能力位固化成显式
+// 声明（键缺失 = 协议缺省；不动就保持「缺省」这个形态）。
+type providerModelForm struct {
+	name        widget.Editor
+	capsTools   widget.Bool
+	capsReason  widget.Bool
+	capsVision  widget.Bool
+	explicit    bool // 快照里该条目本来就是显式声明（用于摘要/回灌判定，不改变写回路径）
+	baseTools   bool // 填表基线（判定「用户是否动过勾选」）
+	baseReason  bool
+	baseVision  bool
+	contextWin  widget.Editor // 上下文窗口 tokens（空/0 = 不声明，跟随全局）
+	probe       widget.Clickable
+	del         widget.Clickable
+	probeStatus string // 探测反馈（成功绿/错误红，行内）
+	probeErr    bool
+}
+
+// touched 用户是否动过能力勾选（与填表基线比对）。
+func (mf *providerModelForm) touched() bool {
+	return mf.capsTools.Value != mf.baseTools ||
+		mf.capsReason.Value != mf.baseReason ||
+		mf.capsVision.Value != mf.baseVision
 }
 
 // providerSummary 折叠卡片收起态的一行摘要：名字 · 协议 · N 个模型 · M 把钥匙 · 是否主。
-// 名字取自**当前编辑值**（改名过程中也如实反映），其余取快照（协议与钥匙数不在编辑面）。
+// 名字与协议取自**当前编辑值**（改动过程中也如实反映），钥匙数取编辑区行数。
 func (pf *providerForm) providerSummary(primary bool) string {
 	name := strings.TrimSpace(pf.name.Text())
 	if name == "" {
 		name = "（未命名）"
 	}
-	kind := strings.TrimSpace(pf.kindLabel)
-	switch kind {
+	switch strings.TrimSpace(pf.kind.value()) {
 	case "openai-responses":
-		kind = "responses"
+		name += " · responses"
 	case "anthropic":
-		kind = "anthropic"
-	case "", "openai-chat":
-		kind = "chat"
+		name += " · anthropic"
+	default:
+		name += " · chat"
 	}
-	n := len(splitCSVNames(pf.models.Text()))
-	keys := pf.keyCount
+	keys := len(pf.keyForms)
 	if keys < 1 {
 		keys = 1 // 0 条声明也按缺省引用算一把（读侧同口径）
 	}
-	s := fmt.Sprintf("%s · %s · %d 个模型 · %d 把钥匙", name, kind, n, keys)
+	s := fmt.Sprintf("%s · %d 个模型 · %d 把钥匙", name, len(pf.modelForms), keys)
 	if primary {
 		s += " · ★ 主"
 	}
 	return s
-}
-
-// modelsPristine 模型名框是否仍是基线内容。自动填入的唯一前提。
-func (pf *providerForm) modelsPristine() bool {
-	return strings.TrimSpace(pf.models.Text()) == strings.TrimSpace(pf.modelsOrig)
 }
 
 // fallbackForm 降级链一项的编辑控件组（D176 口径三；本窗 goroutine 独占）。
@@ -436,19 +524,22 @@ func (ff *fallbackForm) chainProvider(choices []ProviderChoice) string {
 	return ff.provName
 }
 
-// testOutcome 异步探针结果（testResults 单消费者 = 帧循环）：连通测试与「获取模型」共用
-// 一条通道，靠 kind 区分（同一 provider 的两次动作不该交错成两条状态行）。
+// testOutcome 异步探针结果（testResults 单消费者 = 帧循环）：连通测试 / 「获取模型」/
+// 「探测能力」共用一条通道，靠 kind 区分（同一 provider 的多次动作不该交错成一条状态行）。
 type testOutcome struct {
-	kind   int // probePing / probeModels
-	name   string
-	err    error
-	ms     int64    // 耗时（毫秒；只报成功，失败不报时延）
-	models []string // kind == probeModels：候选（已去重保序）
+	kind    int // probePing / probeModels / probeCaps
+	name    string
+	model   string // kind == probeCaps：被探测的模型名
+	err     error
+	ms      int64        // 耗时（毫秒；只报成功，失败不报时延）
+	models  []string     // kind == probeModels：候选（已去重保序）
+	outcome ProbeOutcome // kind == probeCaps：探测结论
 }
 
 const (
 	probePing   = iota // 连通测试
 	probeModels        // 获取模型列表
+	probeCaps          // 探测能力（D174/S11-7③）
 )
 
 // newSettingsFormState 表单控件与固定档的构造骨架（快照无关：列表轴向 / 枚举档 /
@@ -586,12 +677,75 @@ func splitRefList(s string) []string {
 // addProviderForm 追加一个空白 provider 编辑组（帧循环与测试共用；Apply 校验必填项）。
 // S11-7②：新条目直接展开（刚建好就等着填，收起态反而要多点一次）。
 func (f *settingsForm) addProviderForm() {
-	pf := &providerForm{}
-	for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported} {
+	f.provs = append(f.provs, newProviderForm())
+	f.provOpen = len(f.provs) - 1 // 展开新条目（同时收起其它）
+}
+
+// newProviderForm 空白 provider 编辑组（字段单行档 + 默认一个模型行与一把钥匙）。
+func newProviderForm() *providerForm {
+	pf := &providerForm{
+		kind: cycleField{displays: kindLevels, values: kindValues},
+	}
+	for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.tokenizer, &pf.unsupported} {
 		ed.SingleLine = true
 	}
-	f.provs = append(f.provs, pf)
-	f.provOpen = len(f.provs) - 1 // 展开新条目（同时收起其它）
+	pf.keyForms = append(pf.keyForms, newProviderKeyForm(ProviderKeySnapshot{}))
+	pf.modelForms = append(pf.modelForms, newModelRow("", ""))
+	return pf
+}
+
+// newProviderKeyForm 由快照造一把钥匙的编辑控件组（值恒空——只写不回显，D35）。
+func newProviderKeyForm(k ProviderKeySnapshot) *providerKeyForm {
+	kf := &providerKeyForm{snap: k}
+	kf.label.SingleLine = true
+	kf.value.SingleLine = true
+	kf.value.Mask = '•'
+	kf.label.SetText(k.Label)
+	return kf
+}
+
+// defaultCapsFor 某协议的缺省能力位（与装配根按协议给的缺省同口径，DESIGN §8）：
+// 只用于**新建模型行**时把勾选初值画成「缺省生效的样子」——这些行尚未写进 config，
+// 拿不到生效值。键缺失的语义（写回时 Caps 仍为 nil）不受影响。
+func defaultCapsFor(kind string) []string {
+	switch kind {
+	case "openai-responses":
+		return []string{port.CapTools, port.CapReasoning, port.CapVision}
+	case "anthropic":
+		return []string{port.CapTools, port.CapVision}
+	default: // openai-chat
+		return []string{port.CapTools, port.CapReasoning}
+	}
+}
+
+// newProviderModelForm 由快照造一个模型行的编辑控件组；勾选初值 = 快照生效能力
+// （缺省时按协议缺省给全），并记下基线用于判定用户是否动过（动了才固化显式声明）。
+func newProviderModelForm(m ProviderModelSnapshot) *providerModelForm {
+	mf := &providerModelForm{explicit: m.CapsExplicit}
+	mf.name.SingleLine = true
+	mf.contextWin.SingleLine = true
+	mf.name.SetText(m.Name)
+	for _, c := range m.Caps {
+		switch c {
+		case port.CapTools:
+			mf.capsTools.Value = true
+		case port.CapReasoning:
+			mf.capsReason.Value = true
+		case port.CapVision:
+			mf.capsVision.Value = true
+		}
+	}
+	mf.baseTools, mf.baseReason, mf.baseVision = mf.capsTools.Value, mf.capsReason.Value, mf.capsVision.Value
+	if m.ContextWindow > 0 {
+		mf.contextWin.SetText(strconv.Itoa(m.ContextWindow))
+	}
+	return mf
+}
+
+// newModelRow 新建一个模型行（「＋ 添加模型」/「获取模型」/候选 chip 三处共用）：按该
+// provider 当前协议把缺省能力位画进勾选初值（未声明 → 写回时仍为键缺失）。
+func newModelRow(name, kind string) *providerModelForm {
+	return newProviderModelForm(ProviderModelSnapshot{Name: name, Caps: defaultCapsFor(kind)})
 }
 
 // loadProviders 以快照重建 provider 编辑区（开窗填表；快照空 = 无条目，留新增入口）。
@@ -601,18 +755,28 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 	f.primaryIdx = 0
 	f.provOpen = -1
 	for i, p := range snap {
-		pf := &providerForm{orig: p.Name}
-		for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.apiKey, &pf.models, &pf.tokenizer, &pf.unsupported} {
-			ed.SingleLine = true
-		}
+		pf := newProviderForm()
+		pf.orig = p.Name
 		pf.name.SetText(p.Name)
+		pf.kind.setValue(p.Kind)
 		pf.baseURL.SetText(p.BaseURL)
-		pf.models.SetText(p.Models)
-		pf.modelsOrig = p.Models
 		pf.tokenizer.SetText(p.Tokenizer)
 		pf.unsupported.SetText(p.Unsupported)
-		pf.kindLabel = p.Kind
-		pf.keyCount = p.Keys
+		// 密钥池与模型能力表按快照重建（值恒空、能力勾选取生效值、记下基线）。
+		pf.keyForms = make([]*providerKeyForm, 0, len(p.Keys))
+		for _, k := range p.Keys {
+			pf.keyForms = append(pf.keyForms, newProviderKeyForm(k))
+		}
+		if len(pf.keyForms) == 0 {
+			pf.keyForms = append(pf.keyForms, newProviderKeyForm(ProviderKeySnapshot{}))
+		}
+		pf.modelForms = make([]*providerModelForm, 0, len(p.Models))
+		for _, m := range p.Models {
+			pf.modelForms = append(pf.modelForms, newProviderModelForm(m))
+		}
+		if len(pf.modelForms) == 0 {
+			pf.modelForms = append(pf.modelForms, newModelRow("", p.Kind))
+		}
 		if p.Primary {
 			f.primaryIdx = i
 		}
@@ -626,10 +790,11 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 func (f *settingsForm) loadChainChoices(snap []ProviderSnapshot) {
 	f.chainChoices = make([]ProviderChoice, 0, len(snap))
 	for _, p := range snap {
-		f.chainChoices = append(f.chainChoices, ProviderChoice{
-			Name:   p.Name,
-			Models: splitCSVNames(p.Models),
-		})
+		names := make([]string, 0, len(p.Models))
+		for _, m := range p.Models {
+			names = append(names, m.Name)
+		}
+		f.chainChoices = append(f.chainChoices, ProviderChoice{Name: p.Name, Models: names})
 	}
 }
 
@@ -665,20 +830,4 @@ func newFallbackForm(l FallbackLink, choices []ProviderChoice) *fallbackForm {
 		ff.model.SetText(s)
 	}
 	return ff
-}
-
-// splitCSVNames 逗号分隔的名字表（去空、去重保序；provider 模型名解析，与 cmd 侧
-// splitCSV 同口径但与中文逗号无关——这里只处理 config 快照里的英文名）。
-func splitCSVNames(s string) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, part := range strings.Split(s, ",") {
-		v := strings.TrimSpace(part)
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		out = append(out, v)
-	}
-	return out
 }

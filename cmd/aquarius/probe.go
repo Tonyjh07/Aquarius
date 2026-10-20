@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -34,6 +35,32 @@ func (w *wiring) probeModel(ctx context.Context, model string) (app.ProbeReport,
 	if err != nil {
 		return app.ProbeReport{}, err
 	}
+	return w.probeProvider(ctx, p, name)
+}
+
+// probeForSettings 设置窗「探测能力」按钮的数据面（S11-7③/D174）：指名 provider 名 +
+// 模型名，走与 `/model probe` **同一条**写回逻辑（probeProvider），只是把结论包成设置窗
+// 契约的形态（界面按行展示；不写会话输出，也不碰运行态）。
+func (w *wiring) probeForSettings(ctx context.Context, provider, model string) (uigui.ProbeOutcome, error) {
+	provider = strings.TrimSpace(provider)
+	model = strings.TrimSpace(model)
+	p := w.cfg.Model.byName(provider)
+	if p == nil {
+		return uigui.ProbeOutcome{}, fmt.Errorf("provider %q 不在配置里（可能被外部改过）", provider)
+	}
+	if p.modelByName(model) == nil {
+		return uigui.ProbeOutcome{}, fmt.Errorf("模型 %q 不在 provider %q 的 models 里；先保存把它声明进去再探测"+
+			"（探测结果要写回该模型条目的能力声明）", model, provider)
+	}
+	report, err := w.probeProvider(ctx, p, model)
+	return uigui.ProbeOutcome{
+		Provider: report.Provider, Model: report.Model,
+		Results: report.Results, Written: report.Written,
+	}, err
+}
+
+// probeProvider 对确定 provider 下的某模型跑三项探测并写回（两种入口共用）。
+func (w *wiring) probeProvider(ctx context.Context, p *providerConfig, name string) (app.ProbeReport, error) {
 	client, err := w.probeClient(p)
 	if err != nil {
 		return app.ProbeReport{}, err

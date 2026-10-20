@@ -2,8 +2,9 @@ package main
 
 // provider 列表管理面（D110②/③）：设置窗 provider 编辑区的装配根实现。
 // 快照 = config providers（容错：旧格式/解析失败返回空，不阻断开窗——Q10 口径）；
-// Apply = 全量替换 model.providers（泛键写回：按 Orig 名保留原条目的 api_key 与
-// 无关键、清理 fallback 悬挂引用）；Test = 真实最小请求（/models，短超时）。
+// Apply = 全量替换 model.providers（泛键写回：按 Orig 名保留原条目的无关键与逐槽密钥、
+// 清理 fallback 悬挂引用）；Test = 真实最小请求（/models，短超时）；Probe = 能力探测
+// 写回（与 `/model probe` 同一条逻辑，D174）。
 // provider 变更一律重启生效（port.LLM 构造期固化，D110②）。
 
 import (
@@ -26,9 +27,19 @@ type providerManager struct {
 	secrets port.Secrets     // D151/D161：读链（库 → 同名环境变量）
 	bin     *secretbin.Store // D161：界面明文密钥的写入口（nil = 未接线）
 	stderr  io.Writer        // D35 明文警告出口（os.Stderr；测试可注入）
+	// probe 能力探测数据面（S11-7③/D174）：由装配根接到 wiring.probeForSettings（走
+	// `/model probe` 同一写回逻辑）。nil = 未接线（探测按钮报因）。
+	probe func(ctx context.Context, provider, model string) (uigui.ProbeOutcome, error)
 	// onStore 明文真的写进密钥库后的回调（S9-6b/D163）：递增密钥库快照 Revision，
 	// 让同一次设置窗会话里刚改过 provider 密钥后切到「密钥库」页也能看见新条目。
 	onStore func()
+}
+
+// keyEntry 磁盘上某 provider 现有密钥池的一槽（label + 引用原文）。
+// 只在装配根内部流转，**不进快照**——引用原文可能含明文密钥（D35 只写不回显）。
+type keyEntry struct {
+	label string
+	ref   string
 }
 
 // Snapshot provider 编辑区数据面（开窗现取；读失败 = 空，不阻断开窗）。
@@ -38,38 +49,70 @@ func (m *providerManager) Snapshot() []uigui.ProviderSnapshot {
 		return nil
 	}
 	out := make([]uigui.ProviderSnapshot, 0, len(cfg.Model.Providers))
-	for i, p := range cfg.Model.Providers {
-		names := make([]string, 0, len(p.Models))
-		for _, e := range p.Models {
-			names = append(names, e.Name)
-		}
-		keys := len(p.Keys)
-		if keys < 1 {
-			keys = 1 // 0 条声明 = 缺省引用一把（读侧同口径）
-		}
+	for i := range cfg.Model.Providers {
+		p := &cfg.Model.Providers[i]
 		out = append(out, uigui.ProviderSnapshot{
-			Name: p.Name, Kind: p.protocolKind(), BaseURL: p.BaseURL,
-			Models:      joinCSV(names),
+			Name:        p.Name,
+			Kind:        p.protocolKind(),
+			BaseURL:     p.BaseURL,
 			Tokenizer:   p.Tokenizer,
 			Unsupported: joinCSV(p.UnsupportedParams),
-			Keys:        keys,
+			Models:      modelSnapshots(p),
+			Keys:        keySnapshots(p),
 			Primary:     i == 0 && cfg.Model.Primary == "" || p.Name == cfg.Model.Primary,
 		})
 	}
 	return out
 }
 
+// modelSnapshots 该 provider 模型条目的展示快照（S11-7③）：Caps 取**生效值**（键缺失时
+// 按协议缺省），CapsExplicit 区分「缺省」与「显式声明」（用户没动过就不固化声明）。
+func modelSnapshots(p *providerConfig) []uigui.ProviderModelSnapshot {
+	out := make([]uigui.ProviderModelSnapshot, 0, len(p.Models))
+	for i := range p.Models {
+		e := &p.Models[i]
+		out = append(out, uigui.ProviderModelSnapshot{
+			Name:          e.Name,
+			Caps:          p.capsOf(*e).CapNames(),
+			CapsExplicit:  e.Caps != nil,
+			ContextWindow: e.ContextWindow,
+		})
+	}
+	return out
+}
+
+// keySnapshots 密钥池逐槽的**形态**快照（值绝不进快照，D35）：已入库的只给引用名，
+// 明文的只标形态，空的标缺省回落。Label 为空的槽不给展示名（界面按「第 N 把」显示）。
+func keySnapshots(p *providerConfig) []uigui.ProviderKeySnapshot {
+	refs := p.keyRefs()
+	out := make([]uigui.ProviderKeySnapshot, 0, len(refs))
+	for i, ref := range refs {
+		s := uigui.ProviderKeySnapshot{}
+		if i < len(p.Keys) {
+			s.Label = strings.TrimSpace(p.Keys[i].Label)
+		}
+		switch {
+		case ref == "":
+			// 缺省引用：界面按「回落缺省」显示。
+		case strings.HasPrefix(ref, "secret:"):
+			s.Saved = true
+			s.Ref = ref
+		default:
+			s.Plain = true
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 // Apply 全量替换 providers（D173：provider 列表 + 每家的密钥池与模型条目）：
 // 校验（名字唯一非空、base_url/models 非空、primary 命中）→ 泛键写回。原条目无关键
-// （含 keys 与 model 的 caps）按 Orig 名保留——改名不丢密钥与能力声明，新条目从空起步。
-// fallback 悬挂引用（删除/改名产生的）一并清理；model.name 不动（启动 normalize 兜底缺省）。
+// （含 keys 与 model 的 caps/context_window）按 Orig 名保留——改名不丢密钥与能力声明，
+// 新条目从空起步。fallback 悬挂引用（删除/改名产生的）一并清理；model.name 不动
+// （启动 normalize 兜底缺省）。
 //
-// 本步（S11-1）界面仍是旧口径：models 是逗号分隔的名字表，故**按名字继承原有的
-// caps**，新增的模型不写 caps（= 协议缺省）；密钥仍只编辑第一把。完整的能力表与
-// 密钥池编辑在设置窗拆页（S11-7）时补上。
-//
-// 密钥入口径（D151/D161，取代原先「填什么写什么」）：编辑区填的**明文**写进本机密钥库，
-// config 里只落 `secret:<名>` 引用（名沿用原引用名，否则按 provider 名生成）；填的本来就
+// 密钥入口径（D151/D161）：编辑区填的**明文**写进本机密钥库，config 里只落
+// `secret:<名>` 引用（名沿用同槽原引用名，否则按 provider 名 + 槽号生成）；填的本来就
 // 是引用则照写。**写库失败即报错、config 不动**——绝不静默退回明文。
 func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) error {
 	if len(patches) == 0 {
@@ -87,7 +130,7 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 		if strings.TrimSpace(p.BaseURL) == "" {
 			return fmt.Errorf("provider %q 的 base_url 不可为空", p.Name)
 		}
-		if len(splitCSV(p.Models)) == 0 {
+		if len(p.Models) == 0 {
 			return fmt.Errorf("provider %q 的 models 不可为空（首个 = 缺省请求模型）", p.Name)
 		}
 	}
@@ -98,23 +141,33 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 		return fmt.Errorf("primary %q 不在 provider 列表内", primary)
 	}
 	// 密钥先落库（config 写回之前）：任何一条写库失败就整体放弃，不留「config 已是引用、
-	// 库里却没有值」的半个状态。
-	origRefs := m.origRefsByName()
-	keyRefs := make([]string, len(patches))
-	for i, p := range patches {
-		if strings.TrimSpace(p.APIKey) == "" {
-			continue // 空 = 保持原值（D35 只写不回显）
-		}
-		typed := strings.TrimSpace(p.APIKey)
-		ref, err := storePlaintextKey(context.Background(), m.bin, strings.TrimSpace(p.Name), origRefs[p.Orig], typed)
-		if err != nil {
-			return err
-		}
-		keyRefs[i] = ref
-		// 明文真的落库了（非空且不是引用）：递增密钥库快照 Revision，让同一次设置窗
-		// 会话里切到「密钥库」页也能看见新条目（S9-6b/D163）。
-		if m.onStore != nil && typed != "" && !strings.HasPrefix(typed, "secret:") {
-			m.onStore()
+	// 库里却没有值」的半个状态。逐槽原引用名从落盘 config 读——改名不 churn 引用。
+	disk, _ := loadConfig(m.cfgPath)
+	writes := make([][]keyWrite, len(patches))
+	for i := range patches {
+		p := &patches[i]
+		orig := keyEntriesOf(disk, p.Orig)
+		for j := range p.Keys {
+			kp := p.Keys[j]
+			w := keyWrite{label: strings.TrimSpace(kp.Label)}
+			typed := strings.TrimSpace(kp.Value)
+			if typed != "" {
+				var origRef string
+				if j < len(orig) {
+					origRef = orig[j].ref
+				}
+				ref, err := storePlaintextKeyAt(context.Background(), m.bin, strings.TrimSpace(p.Name), origRef, typed, j)
+				if err != nil {
+					return err
+				}
+				w.ref = ref
+				// 明文真的落库了（非空且不是引用）：递增密钥库快照 Revision，让同一次
+				// 设置窗会话里切到「密钥库」页也能看见新条目（S9-6b/D163）。
+				if m.onStore != nil && !strings.HasPrefix(typed, "secret:") {
+					m.onStore()
+				}
+			}
+			writes[i] = append(writes[i], w)
 		}
 	}
 	return persistConfig(m.cfgPath, func(generic map[string]any) {
@@ -132,9 +185,10 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			return nil
 		}
 		list := make([]any, 0, len(patches))
-		for i, p := range patches {
-			entry := map[string]any{}
+		for i := range patches {
+			p := &patches[i]
 			base := byOrig(p.Orig)
+			entry := map[string]any{}
 			if base != nil {
 				for k, v := range base {
 					entry[k] = v // 无关键保留（Q10 口径：未知键不丢）
@@ -142,8 +196,13 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			}
 			entry["name"] = strings.TrimSpace(p.Name)
 			entry["base_url"] = strings.TrimSpace(p.BaseURL)
-			entry["keys"] = mergedKeys(base, keyRefs[i])
-			entry["models"] = mergedModels(base, splitCSV(p.Models))
+			if k := strings.TrimSpace(p.Kind); k != "" {
+				entry["kind"] = k
+			} else {
+				delete(entry, "kind") // 空 = openai-chat（读侧归一）
+			}
+			entry["keys"] = writeKeys(base, writes[i])
+			entry["models"] = writeModels(base, p.Models)
 			entry["tokenizer"] = strings.TrimSpace(p.Tokenizer)
 			entry["unsupported_params"] = anyList(splitCSV(p.Unsupported))
 			list = append(list, entry)
@@ -164,32 +223,56 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 	})
 }
 
-// mergedKeys 密钥池写回（D173）：原条目的 keys 原样保留（label 等），新引用非空时
-// 覆盖**第一把**的 api_key（本步界面只编辑一把）。空引用 = 保持原值（D35 只写不回显）。
-func mergedKeys(base map[string]any, newRef string) []any {
-	var keys []any
-	if base != nil {
-		if old, ok := base["keys"].([]any); ok {
-			keys = append(keys, old...)
-		}
-	}
-	if newRef != "" {
-		if len(keys) == 0 {
-			keys = []any{map[string]any{"api_key": newRef}}
-		} else if pm, ok := keys[0].(map[string]any); ok {
-			pm["api_key"] = newRef
-		}
-	}
-	if keys == nil {
-		keys = []any{} // 空数组而非 null：键存在但为空 = 一条缺省引用（读侧同口径）
-	}
-	return keys
+// keyWrite 单槽密钥的落库结果：ref 空 = 保持原值（含原引用名）；label 空 = 沿用原 label。
+type keyWrite struct {
+	ref   string
+	label string
 }
 
-// mergedModels 模型条目写回（D173）：按名字继承原有的 caps（本步界面仍是名字表），
-// 新增的名字不写 caps（= 协议缺省）。顺序以本次编辑为准。
-func mergedModels(base map[string]any, names []string) []any {
-	byName := map[string]any{}
+// writeKeys 密钥池写回（D173）：逐槽以上次落盘条目为底（无关键保留），ref 非空覆盖
+// api_key、label 非空覆盖 label；槽数少于一前次声明的按本次编辑为准（多余槽消失）。
+// ws 为空（本次没提交任何密钥槽）= 整池保持原值（与「配置文件外部编辑」并存的口径）。
+func writeKeys(base map[string]any, ws []keyWrite) []any {
+	var old []any
+	if base != nil {
+		if v, ok := base["keys"].([]any); ok {
+			old = v
+		}
+	}
+	if len(ws) == 0 {
+		if old != nil {
+			return append([]any(nil), old...)
+		}
+		return []any{}
+	}
+	out := make([]any, 0, len(ws))
+	for i, w := range ws {
+		entry := map[string]any{}
+		if i < len(old) {
+			if pm, ok := old[i].(map[string]any); ok {
+				for k, v := range pm {
+					entry[k] = v
+				}
+			}
+		}
+		if w.ref != "" {
+			entry["api_key"] = w.ref
+		} else if _, ok := entry["api_key"]; !ok {
+			entry["api_key"] = "" // 键恒存在（读侧 keyRefs 同口径）
+		}
+		if w.label != "" {
+			entry["label"] = w.label
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// writeModels 模型条目写回（D173）：按名字继承原有条目的无关键与 caps（未动能力位时
+// Caps = nil → 原样保留，含「键缺失」这个形态）；动了就以本次为准（含显式空数组）。
+// context_window > 0 写入，否则不声明（跟随全局）。顺序以本次编辑为准。
+func writeModels(base map[string]any, models []uigui.ProviderModelPatch) []any {
+	byName := map[string]map[string]any{}
 	if base != nil {
 		if old, ok := base["models"].([]any); ok {
 			for _, mv := range old {
@@ -201,33 +284,55 @@ func mergedModels(base map[string]any, names []string) []any {
 			}
 		}
 	}
-	out := make([]any, 0, len(names))
-	for _, n := range names {
-		if pm, ok := byName[n]; ok {
-			out = append(out, pm)
-			continue
+	out := make([]any, 0, len(models))
+	for _, me := range models {
+		name := strings.TrimSpace(me.Name)
+		if name == "" {
+			continue // 空名条目跳过（同启动 normalize 口径）
 		}
-		out = append(out, map[string]any{"name": n})
+		entry := map[string]any{}
+		if pm, ok := byName[name]; ok {
+			for k, v := range pm {
+				entry[k] = v
+			}
+		}
+		entry["name"] = name
+		if me.ContextWindow > 0 {
+			entry["context_window"] = me.ContextWindow
+		} else {
+			delete(entry, "context_window")
+		}
+		if me.Caps != nil {
+			entry["caps"] = anyList(*me.Caps) // 显式声明（含空数组 = 三项全关）
+		}
+		out = append(out, entry)
 	}
 	return out
 }
 
-// origRefsByName 读 config 里各 provider 现有第一把密钥的引用（按名索引；读失败返回空表）。
-// 用途：界面改填明文时，**原引用名**决定库里写哪个槽（改名不 churn 引用，D161 落点③）。
-func (m *providerManager) origRefsByName() map[string]string {
-	out := map[string]string{}
-	cfg, err := loadConfig(m.cfgPath)
-	if err != nil {
-		return out
+// keyEntriesOf 读磁盘配置里某 provider 现有密钥池（label + 引用原文）；未命中返回 nil。
+func keyEntriesOf(cfg *fileConfig, orig string) []keyEntry {
+	if cfg == nil || orig == "" {
+		return nil
 	}
-	for _, p := range cfg.Model.Providers {
-		out[p.Name] = p.keyRefs()[0]
+	p := cfg.Model.byName(orig)
+	if p == nil {
+		return nil
+	}
+	refs := p.keyRefs()
+	out := make([]keyEntry, 0, len(refs))
+	for i, ref := range refs {
+		e := keyEntry{ref: ref}
+		if i < len(p.Keys) {
+			e.label = strings.TrimSpace(p.Keys[i].Label)
+		}
+		out = append(out, e)
 	}
 	return out
 }
 
 // Test 连通性测试（D110②：真实最小请求）：以 patch 构造一次性 client（8s 超时）
-// 拉 /models。APIKey 空 = 取 config 内原条目值（按 Orig 名），再走 D35 解析。
+// 拉 /models。
 func (m *providerManager) Test(p uigui.ProviderPatch) error {
 	_, err := m.Models(p)
 	return err
@@ -259,27 +364,38 @@ func (m *providerManager) Models(p uigui.ProviderPatch) ([]string, error) {
 	return out, nil
 }
 
-// client 以 patch 构造一次性 llm client（凭据解析口径 = Test/Models 共用）：
-// APIKey 空 = 取 config 内原条目值（按 Orig 名），再走 D35 解析。协议也按 Orig 名
-// 从 config 取——`kind` 不在编辑面（改协议是 S11-7 的事），但漏掉它会让 anthropic
-// 的「测试」永远失败：拿 chat 的 Bearer 打 Messages 端点必然 401，报回来的因还看不出
-// 是配置不对还是服务端的事。
+// Probe 对某模型发起三项能力探测并写回判定明确的结果（S11-7③/D174）：指名 provider
+// （同一模型名可能挂在多家下面，按钮在谁的行里就探谁）+ 模型，走 `/model probe` 同一条
+// 写回逻辑。model = 该 provider 下**已声明**的模型名（未声明无处写回）。
+func (m *providerManager) Probe(model string, p uigui.ProviderPatch) (uigui.ProbeOutcome, error) {
+	if m.probe == nil {
+		return uigui.ProbeOutcome{}, fmt.Errorf("能力探测未接线")
+	}
+	return m.probe(context.Background(), strings.TrimSpace(p.Name), strings.TrimSpace(model))
+}
+
+// client 以 patch 构造一次性 llm client（凭据解析口径 = Test/Models 共用）：协议取
+// patch 的 Kind（S11-7③ 起协议在编辑面）；Kind 空则回退按 Orig 名从 config 取（兼容不
+// 填 Kind 的调用方）。第一把密钥值空 = 取 config 内原条目同槽引用（按 Orig 名），再走
+// D35 解析。
 func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
-	ref := p.APIKey
-	proto := llm.ProtoChat
-	if p.Orig != "" {
-		if cfg, err := loadConfig(m.cfgPath); err == nil {
-			for i := range cfg.Model.Providers {
-				if cfg.Model.Providers[i].Name != p.Orig {
-					continue
-				}
-				if ref == "" {
-					ref = cfg.Model.Providers[i].keyRefs()[0]
-				}
-				proto = llmProtocol(cfg.Model.Providers[i].protocolKind())
-				break
+	cfg := m.loadCfg()
+	var ref, kind string
+	if len(p.Keys) > 0 {
+		ref = strings.TrimSpace(p.Keys[0].Value)
+	}
+	if p.Orig != "" && cfg != nil {
+		if e := keyEntriesOf(cfg, p.Orig); len(e) > 0 && ref == "" {
+			ref = e[0].ref
+		}
+		if p.Kind == "" {
+			if op := cfg.Model.byName(p.Orig); op != nil {
+				kind = op.protocolKind()
 			}
 		}
+	}
+	if p.Kind != "" {
+		kind = p.Kind
 	}
 	key, err := resolveAPIKey(context.Background(), p.Name, ref, m.secrets, m.stderr)
 	if err != nil {
@@ -288,9 +404,18 @@ func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
 	return llm.New(llm.Config{
 		BaseURL:    strings.TrimSpace(p.BaseURL),
 		APIKey:     key,
-		Protocol:   proto,
+		Protocol:   llmProtocol(kind),
 		HTTPClient: &http.Client{Timeout: 8 * time.Second},
 	})
+}
+
+// loadCfg 读配置（失败返回 nil；client 的凭据回落用）。
+func (m *providerManager) loadCfg() *fileConfig {
+	cfg, err := loadConfig(m.cfgPath)
+	if err != nil {
+		return nil
+	}
+	return cfg
 }
 
 // splitCSV 逗号分隔清单解析（表单单行口径）：中英文逗号皆可、去空白、丢空项。

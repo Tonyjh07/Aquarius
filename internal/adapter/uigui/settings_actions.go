@@ -271,17 +271,57 @@ func (u *UI) profileAction(f *settingsForm, act string) {
 	}
 }
 
-// providerPatchOf 组装单条 provider 提交（编辑区现值 → patch；apiKey 只写不回显）。
+// providerPatchOf 组装单条 provider 提交（编辑区现值 → patch；密钥值只写不回显）。
 func providerPatchOf(pf *providerForm) ProviderPatch {
-	return ProviderPatch{
+	p := ProviderPatch{
 		Orig:        pf.orig,
 		Name:        strings.TrimSpace(pf.name.Text()),
+		Kind:        pf.kind.value(),
 		BaseURL:     strings.TrimSpace(pf.baseURL.Text()),
-		APIKey:      strings.TrimSpace(pf.apiKey.Text()),
-		Models:      strings.TrimSpace(pf.models.Text()),
 		Tokenizer:   strings.TrimSpace(pf.tokenizer.Text()),
 		Unsupported: strings.TrimSpace(pf.unsupported.Text()),
 	}
+	for _, kf := range pf.keyForms {
+		p.Keys = append(p.Keys, ProviderKeyPatch{
+			Value: strings.TrimSpace(kf.value.Text()),
+			Label: strings.TrimSpace(kf.label.Text()),
+		})
+	}
+	for _, mf := range pf.modelForms {
+		name := strings.TrimSpace(mf.name.Text())
+		if name == "" {
+			continue // 空名模型行 = 尚未创建（cmd 侧同口径跳过）
+		}
+		win := 0
+		if v := strings.TrimSpace(mf.contextWin.Text()); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				win = n
+			}
+		}
+		mp := ProviderModelPatch{Name: name, ContextWindow: win}
+		// 只有用户动过能力勾选才把声明固化成显式（未动 = nil，保持键缺失/原声明形态）。
+		if mf.touched() {
+			names := mf.capNames()
+			mp.Caps = &names
+		}
+		p.Models = append(p.Models, mp)
+	}
+	return p
+}
+
+// capNames 该模型行勾选的能力名（按 port.CapNames 顺序；空 = 三项全关的显式声明）。
+func (mf *providerModelForm) capNames() []string {
+	var out []string
+	if mf.capsTools.Value {
+		out = append(out, port.CapTools)
+	}
+	if mf.capsReason.Value {
+		out = append(out, port.CapReasoning)
+	}
+	if mf.capsVision.Value {
+		out = append(out, port.CapVision)
+	}
+	return out
 }
 
 // applyProviderChanges provider 区「应用变更」（D110②）：全量 patch + primary →
@@ -373,8 +413,12 @@ func (f *settingsForm) drainTestResults() {
 	for {
 		select {
 		case r := <-f.testResults:
-			if r.kind == probeModels {
+			switch r.kind {
+			case probeModels:
 				f.applyModels(r)
+				continue
+			case probeCaps:
+				f.applyProbeResult(r)
 				continue
 			}
 			if r.err != nil {
@@ -390,8 +434,57 @@ func (f *settingsForm) drainTestResults() {
 	}
 }
 
-// applyModels 「获取模型」结果落表单：候选挂到**该名字**的 provider 行（不按 index——
-// 期间用户可能新增/删除过条目），自动填入放到模型名输入框，chip 供点选替换。
+// applyProbeResult 「探测能力」结果落回该模型行（行内反馈）与 provider 区状态行。
+func (f *settingsForm) applyProbeResult(r testOutcome) {
+	pf := f.provByName(r.name)
+	if pf == nil {
+		return // provider 已被删除：结果丢弃
+	}
+	mf := pf.modelByName(r.model)
+	if mf == nil {
+		return
+	}
+	if r.err != nil {
+		mf.probeErr = true
+		mf.probeStatus = "探测失败：" + r.err.Error()
+		return
+	}
+	mf.probeErr = false
+	mf.probeStatus = probeSummary(r.outcome)
+	if r.outcome.Written {
+		mf.explicit = true // 写回后配置里已有显式声明，声明形态注脚随之更新
+		// 写回了能力声明：把勾选同步成探测结果（写回的是生效值，界面应与之一致）。
+		// 同步后基线也一并推进，避免把探测写回误判成「用户动了勾选」而重复固化。
+		for _, res := range r.outcome.Results {
+			if res.Verdict == port.ProbeInconclusive {
+				continue
+			}
+			on := res.Verdict == port.ProbeSupported
+			switch res.Capability {
+			case port.CapTools:
+				mf.capsTools.Value = on
+			case port.CapReasoning:
+				mf.capsReason.Value = on
+			case port.CapVision:
+				mf.capsVision.Value = on
+			}
+		}
+		mf.baseTools, mf.baseReason, mf.baseVision = mf.capsTools.Value, mf.capsReason.Value, mf.capsVision.Value
+	}
+}
+
+// modelByName 该 provider 编辑区里按名找模型行（异步探测结果回灌）。
+func (pf *providerForm) modelByName(name string) *providerModelForm {
+	for _, mf := range pf.modelForms {
+		if strings.TrimSpace(mf.name.Text()) == name {
+			return mf
+		}
+	}
+	return nil
+}
+
+// applyModels 「获取模型」结果落表单：把服务端返回的模型名**追加成模型能力表行**
+// （已存在的名字跳过——重复点一次不该长出两行同名），超出上限的留作候选 chip 供点选追加。
 func (f *settingsForm) applyModels(r testOutcome) {
 	pf := f.provByName(r.name)
 	if pf == nil {
@@ -410,33 +503,101 @@ func (f *settingsForm) applyModels(r testOutcome) {
 		return
 	}
 	total := len(r.models)
-	fill := r.models
-	if len(fill) > relModelAutoFill {
-		fill = fill[:relModelAutoFill]
+	existing := map[string]bool{}
+	for _, mf := range pf.modelForms {
+		if n := strings.TrimSpace(mf.name.Text()); n != "" {
+			existing[n] = true
+		}
 	}
-	// 自动填入的**前提**：模型名框仍是基线内容（用户没手写过别的）。手写过就只挂候选 chip，
-	// 让用户自己点——一次网络结果不该冲掉他刚敲进去的名字。
-	autoFilled := pf.modelsPristine()
-	if autoFilled {
-		pf.models.SetText(strings.Join(fill, ", "))
-		pf.modelsOrig = pf.models.Text()
+	added, rest := 0, []string{}
+	for _, name := range r.models {
+		if existing[name] {
+			continue
+		}
+		if added >= provModelCandMax {
+			rest = append(rest, name)
+			continue
+		}
+		pf.modelForms = append(pf.modelForms, newModelRow(name, pf.kind.value()))
+		existing[name] = true
+		added++
 	}
-	if len(r.models) > provModelCandMax {
-		r.models = r.models[:provModelCandMax]
+	if len(rest) > provModelCandMax {
+		rest = rest[:provModelCandMax]
 	}
-	pf.cands = r.models
-	pf.candClicks = make([]widget.Clickable, len(r.models))
+	pf.cands = rest
+	pf.candClicks = make([]widget.Clickable, len(rest))
 	f.provErr = false
-	if !autoFilled {
-		f.provStatus = "已取回 " + strconv.Itoa(total) + " 个候选 · 点选替换（未覆盖已填内容）"
+	switch {
+	case added == 0 && len(rest) == 0:
+		f.provStatus = "服务端返回的 " + strconv.Itoa(total) + " 个模型都已在列表中"
+	case len(rest) == 0:
+		f.provStatus = "已追加 " + strconv.Itoa(added) + " 个模型行（共 " + strconv.Itoa(total) + " 个）"
+	default:
+		f.provStatus = "已追加 " + strconv.Itoa(added) + " 个模型行，余下 " +
+			strconv.Itoa(len(rest)) + " 个作候选（点选追加）"
+	}
+}
+
+// appendModelCand 点选候选 chip = 追加一个模型行（已存在则跳过）。
+func (pf *providerForm) appendModelCand(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
 		return
 	}
-	if total > len(fill) {
-		f.provStatus = "已自动填入 " + strconv.Itoa(len(fill)) + " 个候选（共 " +
-			strconv.Itoa(total) + " 个）· 点选替换"
-	} else {
-		f.provStatus = "已自动填入 " + strconv.Itoa(len(fill)) + " 个候选 · 点选替换"
+	for _, mf := range pf.modelForms {
+		if strings.TrimSpace(mf.name.Text()) == name {
+			return
+		}
 	}
+	pf.modelForms = append(pf.modelForms, newModelRow(name, pf.kind.value()))
+}
+
+// runProbeModel 单个模型行的「探测能力」（S11-7③/D174）：与 `/model probe` 同一条写回
+// 逻辑（ProviderManager.Probe → 装配根 probeModel），只是把结论带回这一行展示。
+// goroutine 跑（网络 + 可能 30s×3，不得卡帧循环），结果经 testResults 回灌。
+func (u *UI) runProbeModel(f *settingsForm, pf *providerForm, mf *providerModelForm) {
+	if u.opts.ProviderMgr == nil {
+		mf.probeErr = true
+		mf.probeStatus = "provider 编辑未接线"
+		return
+	}
+	model := strings.TrimSpace(mf.name.Text())
+	if model == "" {
+		mf.probeErr = true
+		mf.probeStatus = "先填模型名再探测"
+		return
+	}
+	if strings.TrimSpace(pf.name.Text()) == "" {
+		mf.probeErr = true
+		mf.probeStatus = "先填 provider 名再探测"
+		return
+	}
+	patch := providerPatchOf(pf)
+	go func() {
+		out, err := u.opts.ProviderMgr.Probe(model, patch)
+		postOutcome(f, testOutcome{kind: probeCaps, name: patch.Name, model: model, err: err, outcome: out})
+	}()
+}
+
+// probeSummary 探测结论一行文案（三态）：支持/不支持/无结论逐项列出。只报判定明确的。
+func probeSummary(out ProbeOutcome) string {
+	var sup, unsup int
+	for _, r := range out.Results {
+		switch r.Verdict {
+		case port.ProbeSupported:
+			sup++
+		case port.ProbeUnsupported:
+			unsup++
+		}
+	}
+	s := strconv.Itoa(sup) + " 项支持 / " + strconv.Itoa(unsup) + " 项不支持"
+	if out.Written {
+		s += "（已写回配置，重启生效）"
+	} else {
+		s += "（无明确结论，未改动声明）"
+	}
+	return s
 }
 
 // provByName 按 provider 名找编辑行（异步结果回灌用；改名过程中按当前输入匹配）。

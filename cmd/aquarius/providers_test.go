@@ -50,8 +50,20 @@ func TestProviderManagerSnapshot(t *testing.T) {
 	if !snap[0].Primary || snap[1].Primary {
 		t.Fatalf("primary 标记 = %+v", snap)
 	}
-	if snap[0].Models != "m1" {
-		t.Fatalf("models 展示 = %q", snap[0].Models)
+	if len(snap[0].Models) != 1 || snap[0].Models[0].Name != "m1" {
+		t.Fatalf("models 展示 = %+v", snap[0].Models)
+	}
+	// 能力位取生效值（m1 显式声明 tools+vision），CapsExplicit 标记「显式」。
+	if m := snap[0].Models[0]; !m.CapsExplicit || len(m.Caps) != 2 {
+		t.Fatalf("m1 能力快照 = %+v", m)
+	}
+	// b 的 mb 未声明 caps = 协议缺省（openai-chat：tools+reasoning），CapsExplicit=false。
+	if m := snap[1].Models[0]; m.CapsExplicit || len(m.Caps) != 2 {
+		t.Fatalf("mb 能力快照 = %+v", m)
+	}
+	// 密钥池形态快照：只露路由形态（已入库 = secret:<名>），不含值。
+	if k := snap[0].Keys; len(k) != 1 || !k[0].Saved || k[0].Ref != "secret:KA" {
+		t.Fatalf("密钥快照 = %+v", k)
 	}
 	// 旧格式/缺失文件：容错返回空（不阻断开窗）。
 	if got := (&providerManager{cfgPath: "missing.json", secrets: testSecrets(t)}).Snapshot(); got != nil {
@@ -65,8 +77,10 @@ func TestProviderManagerApply(t *testing.T) {
 
 	// 改名 a→a2（保 Orig 密钥与无关键）+ 删除 b + 新增 c。
 	err := m.Apply("a2", []uigui.ProviderPatch{
-		{Orig: "a", Name: "a2", BaseURL: "http://a2/v1", Models: "m1, m2", Tokenizer: "", Unsupported: "reasoning_effort"},
-		{Orig: "", Name: "c", BaseURL: "http://c/v1", APIKey: "secret:KC", Models: "mc"},
+		{Orig: "a", Name: "a2", BaseURL: "http://a2/v1", Tokenizer: "", Unsupported: "reasoning_effort",
+			Models: []uigui.ProviderModelPatch{{Name: "m1"}, {Name: "m2"}}},
+		{Orig: "", Name: "c", BaseURL: "http://c/v1", Keys: []uigui.ProviderKeyPatch{{Value: "secret:KC"}},
+			Models: []uigui.ProviderModelPatch{{Name: "mc"}}},
 	})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -84,7 +98,7 @@ func TestProviderManagerApply(t *testing.T) {
 	if len(cfg.Model.Providers[0].Models) != 2 || cfg.Model.Providers[0].Models[1].Name != "m2" {
 		t.Fatalf("models 解析 = %+v", cfg.Model.Providers[0].Models)
 	}
-	// 能力位按名字继承（D173）：改模型列表不该把已有的 caps 抹掉。
+	// 能力位按名字继承（D173）：改模型列表（Caps 未动 = nil）不该把已有的 caps 抹掉。
 	if e := cfg.Model.Providers[0].modelByName("m1"); e == nil || e.Caps == nil {
 		t.Fatalf("m1 的 caps 应保留: %+v", cfg.Model.Providers[0].Models)
 	}
@@ -102,16 +116,115 @@ func TestProviderManagerApply(t *testing.T) {
 		t.Fatal("provider 条目无关键未保留（Q10 口径破坏）")
 	}
 
-	// APIKey 空 = 保持原值。
+	// 密钥值空 = 保持原值（只写不回显：Keys 槽位不带 Value）。
 	if err := m.Apply("c", []uigui.ProviderPatch{
-		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", Models: "m1"},
-		{Orig: "c", Name: "c", BaseURL: "http://c/v1", Models: "mc"},
+		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", Models: []uigui.ProviderModelPatch{{Name: "m1"}}},
+		{Orig: "c", Name: "c", BaseURL: "http://c/v1", Models: []uigui.ProviderModelPatch{{Name: "mc"}}},
 	}); err != nil {
 		t.Fatalf("Apply2: %v", err)
 	}
 	cfg, _ = loadConfig(cfgPath)
 	if got := cfg.Model.Providers[1].keyRefs()[0]; got != "secret:KC" {
-		t.Fatalf("APIKey 空应保持原值: %+v", cfg.Model.Providers[1])
+		t.Fatalf("密钥值空应保持原值: %+v", cfg.Model.Providers[1])
+	}
+}
+
+// TestProviderManagerApplyKeyPoolAndCaps S11-7③：密钥池逐槽（改一把不动别一把、删槽、
+// 新增槽按 `_N` 派生名）；模型能力表「动过才固化」（Caps nil 保留原声明、显式空数组 =
+// 三项全关）；上下文窗口写回与清除。
+func TestProviderManagerApplyKeyPoolAndCaps(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := `{
+  "model": {
+    "providers": [
+      {"name": "a", "base_url": "http://a/v1",
+       "keys": [{"api_key": "secret:KA", "label": "主账号"}, {"api_key": "secret:KB"}],
+       "models": [{"name": "m1", "caps": ["tools"]}]}
+    ],
+    "primary": "a",
+    "name": "m1"
+  },
+  "ui": {"kind": "repl"}
+}`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("KA", "k1")
+	t.Setenv("KB", "k2")
+	ch, bin := testChain(t, nil)
+	m := &providerManager{cfgPath: cfgPath, secrets: ch, bin: bin, stderr: io.Discard}
+
+	// 三个槽：第 0 槽填明文（沿用 KA 名）、第 1 槽留空（保持 secret:KB）、第 2 槽新增明文。
+	caps := []string{"tools", "vision"}
+	win := 123456
+	err := m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Keys: []uigui.ProviderKeyPatch{
+			{Value: "sk-new-0", Label: "主"},
+			{},
+			{Value: "sk-new-2", Label: "备用"},
+		},
+		Models: []uigui.ProviderModelPatch{{Name: "m1", Caps: &caps, ContextWindow: win}},
+	}})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	cfgOut, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	p := cfgOut.Model.Providers[0]
+	refs := p.keyRefs()
+	if len(refs) != 3 {
+		t.Fatalf("密钥槽数 = %d, want 3", len(refs))
+	}
+	if refs[0] != "secret:KA" || refs[1] != "secret:KB" || refs[2] != "secret:AQUARIUS_A_API_KEY_3" {
+		t.Fatalf("密钥引用 = %v", refs)
+	}
+	if got, _ := bin.Get(context.Background(), "KA"); got != "sk-new-0" {
+		t.Fatalf("第 0 槽明文应入库: %q", got)
+	}
+	if got, _ := bin.Get(context.Background(), "AQUARIUS_A_API_KEY_3"); got != "sk-new-2" {
+		t.Fatalf("第 2 槽明文应入库（派生名 + 槽号）: %q", got)
+	}
+	if p.keyLabelAt(0) != "主" || p.keyLabelAt(2) != "备用" {
+		t.Fatalf("label = %q / %q", p.keyLabelAt(0), p.keyLabelAt(2))
+	}
+	// 能力位：动过 = 以本次为准（显式声明）；窗口 >0 写入。
+	e := p.modelByName("m1")
+	if e == nil || e.Caps == nil || len(*e.Caps) != 2 || e.ContextWindow != win {
+		t.Fatalf("m1 写回 = %+v", e)
+	}
+
+	// 再 Apply：能力位「未动」= Caps nil 保留原声明（含显式形态）；窗口空 = 不再声明。
+	err = m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Keys:   []uigui.ProviderKeyPatch{{}, {}, {}}, // 全留空 = 全保持
+		Models: []uigui.ProviderModelPatch{{Name: "m1"}},
+	}})
+	if err != nil {
+		t.Fatalf("Apply2: %v", err)
+	}
+	cfgOut, _ = loadConfig(cfgPath)
+	e = cfgOut.Model.Providers[0].modelByName("m1")
+	if e == nil || e.Caps == nil || len(*e.Caps) != 2 {
+		t.Fatalf("未动能力位应保留显式声明: %+v", e)
+	}
+	if e.ContextWindow != 0 {
+		t.Fatalf("窗口空应清除声明: %+v", e)
+	}
+	// 删到只剩一槽：只留第 0 槽。
+	err = m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Keys:   []uigui.ProviderKeyPatch{{}},
+		Models: []uigui.ProviderModelPatch{{Name: "m1"}},
+	}})
+	if err != nil {
+		t.Fatalf("Apply3: %v", err)
+	}
+	cfgOut, _ = loadConfig(cfgPath)
+	if got := cfgOut.Model.Providers[0].keyRefs(); len(got) != 1 || got[0] != "secret:KA" {
+		t.Fatalf("删槽后密钥 = %v", got)
 	}
 }
 
@@ -119,7 +232,8 @@ func TestProviderManagerApplyValidation(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
 	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 	ok := func(name, base, models string) uigui.ProviderPatch {
-		return uigui.ProviderPatch{Orig: name, Name: name, BaseURL: base, Models: models}
+		return uigui.ProviderPatch{Orig: name, Name: name, BaseURL: base,
+			Models: []uigui.ProviderModelPatch{{Name: models}}}
 	}
 	for _, tc := range []struct {
 		name    string
@@ -128,10 +242,10 @@ func TestProviderManagerApplyValidation(t *testing.T) {
 		want    string
 	}{
 		{"空列表", "a", nil, "至少保留一个"},
-		{"名字为空", "a", []uigui.ProviderPatch{{Name: "", BaseURL: "http://x", Models: "m"}}, "名字不可为空"},
-		{"名字重复", "a", []uigui.ProviderPatch{ok("a", "http://a", "m"), {Name: "a", BaseURL: "http://x", Models: "m"}}, "重复"},
-		{"base_url 空", "a", []uigui.ProviderPatch{{Name: "a", BaseURL: " ", Models: "m"}}, "base_url 不可为空"},
-		{"models 空", "a", []uigui.ProviderPatch{{Name: "a", BaseURL: "http://a", Models: ", "}}, "models 不可为空"},
+		{"名字为空", "a", []uigui.ProviderPatch{{Name: "", BaseURL: "http://x", Models: []uigui.ProviderModelPatch{{Name: "m"}}}}, "名字不可为空"},
+		{"名字重复", "a", []uigui.ProviderPatch{ok("a", "http://a", "m"), {Name: "a", BaseURL: "http://x", Models: []uigui.ProviderModelPatch{{Name: "m"}}}}, "重复"},
+		{"base_url 空", "a", []uigui.ProviderPatch{{Name: "a", BaseURL: " ", Models: []uigui.ProviderModelPatch{{Name: "m"}}}}, "base_url 不可为空"},
+		{"models 空", "a", []uigui.ProviderPatch{{Name: "a", BaseURL: "http://a"}}, "models 不可为空"},
 		{"primary 未命中", "zz", []uigui.ProviderPatch{ok("a", "http://a", "m")}, "不在 provider 列表"},
 	} {
 		if err := m.Apply(tc.primary, tc.patches); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -150,8 +264,9 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 
 	// 改名 a→a2 并填新明文：键名沿用原引用名 KA（改名不 churn 引用）。
 	err := m.Apply("a2", []uigui.ProviderPatch{
-		{Orig: "a", Name: "a2", BaseURL: "http://a2/v1", APIKey: "sk-typed-plain-1", Models: "m1"},
-		{Orig: "b", Name: "b", BaseURL: "http://b/v1", Models: "mb"},
+		{Orig: "a", Name: "a2", BaseURL: "http://a2/v1", Keys: []uigui.ProviderKeyPatch{{Value: "sk-typed-plain-1"}},
+			Models: []uigui.ProviderModelPatch{{Name: "m1"}}},
+		{Orig: "b", Name: "b", BaseURL: "http://b/v1", Models: []uigui.ProviderModelPatch{{Name: "mb"}}},
 	})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -180,8 +295,9 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 
 	// 新 provider 从空起步 + 填明文：键名按 provider 名派生。
 	if err := m.Apply("a2", []uigui.ProviderPatch{
-		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", Models: "m1"},
-		{Orig: "", Name: "My-API", BaseURL: "http://my/v1", APIKey: "sk-typed-plain-2", Models: "m2"},
+		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", Models: []uigui.ProviderModelPatch{{Name: "m1"}}},
+		{Orig: "", Name: "My-API", BaseURL: "http://my/v1", Keys: []uigui.ProviderKeyPatch{{Value: "sk-typed-plain-2"}},
+			Models: []uigui.ProviderModelPatch{{Name: "m2"}}},
 	}); err != nil {
 		t.Fatalf("Apply2: %v", err)
 	}
@@ -201,7 +317,8 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 	before, _ := os.ReadFile(cfgPath)
 	mNoBin := &providerManager{cfgPath: cfgPath, secrets: ch, stderr: io.Discard}
 	if err := mNoBin.Apply("a2", []uigui.ProviderPatch{
-		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", APIKey: "sk-typed-plain-3", Models: "m1"},
+		{Orig: "a2", Name: "a2", BaseURL: "http://a2/v1", Keys: []uigui.ProviderKeyPatch{{Value: "sk-typed-plain-3"}},
+			Models: []uigui.ProviderModelPatch{{Name: "m1"}}},
 	}); err == nil {
 		t.Fatal("库未接线时填明文应报错（不得静默退回明文）")
 	}
@@ -225,8 +342,8 @@ func TestProviderManagerTest(t *testing.T) {
 	t.Setenv("KA", "k") // Orig 取回的 config 密钥引用 secret:KA
 	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 
-	// 原密钥（APIKey 空按 Orig 取 config 值）+ 真实最小请求（假 server）。
-	if err := m.Test(uigui.ProviderPatch{Orig: "a", Name: "a", BaseURL: srv.URL, Models: "m"}); err != nil {
+	// 原密钥（密钥值空按 Orig 取 config 值）+ 真实最小请求（假 server）。
+	if err := m.Test(uigui.ProviderPatch{Orig: "a", Name: "a", BaseURL: srv.URL}); err != nil {
 		t.Fatalf("Test: %v", err)
 	}
 	// 显式密钥 + 失败路径。
@@ -234,17 +351,17 @@ func TestProviderManagerTest(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	t.Cleanup(bad.Close)
-	if err := m.Test(uigui.ProviderPatch{Name: "x", BaseURL: bad.URL, APIKey: "secret:NOPE", Models: "m"}); err == nil {
+	if err := m.Test(uigui.ProviderPatch{Name: "x", BaseURL: bad.URL, Keys: []uigui.ProviderKeyPatch{{Value: "secret:NOPE"}}}); err == nil {
 		t.Fatal("401 应报错")
 	}
 	// base_url 非法。
-	if err := m.Test(uigui.ProviderPatch{Name: "x", BaseURL: "not-a-url", APIKey: "k", Models: "m"}); err == nil || !errors.Is(err, err) {
+	if err := m.Test(uigui.ProviderPatch{Name: "x", BaseURL: "not-a-url", Keys: []uigui.ProviderKeyPatch{{Value: "k"}}}); err == nil || !errors.Is(err, err) {
 		t.Fatal("非法 base_url 应报错")
 	}
 	// 密钥环境变量缺失 → 指名报因。
 	t.Setenv("NOPE2", "")
 	t.Setenv("AQ_MISSING", "")
-	if err := m.Test(uigui.ProviderPatch{Name: "x", BaseURL: srv.URL, APIKey: "secret:AQ_MISSING", Models: "m"}); err == nil {
+	if err := m.Test(uigui.ProviderPatch{Name: "x", BaseURL: srv.URL, Keys: []uigui.ProviderKeyPatch{{Value: "secret:AQ_MISSING"}}}); err == nil {
 		t.Fatal("缺失密钥环境变量应报错")
 	}
 	_ = context.Background()
@@ -252,7 +369,8 @@ func TestProviderManagerTest(t *testing.T) {
 
 // TestProviderManagerTestRespectsKind kind = anthropic 的 provider：「测试/获取模型」
 // 要按该协议造客户端（x-api-key + anthropic-version），否则拿 Bearer 打必然 401——
-// 报回来的因还看不出是配置不对还是服务端的事。kind 不在编辑面，故按 Orig 名回查 config。
+// 报回来的因还看不出是配置不对还是服务端的事。S11-7③ 起协议进编辑面，故直接取 patch
+// 的 Kind；Kind 空才按 Orig 名回查 config（兼容不填 Kind 的调用方）。
 func TestProviderManagerTestRespectsKind(t *testing.T) {
 	var mu sync.Mutex
 	var apiKeys, versions, auths []string
@@ -285,7 +403,7 @@ func TestProviderManagerTestRespectsKind(t *testing.T) {
 	t.Setenv("KA", "k-an")
 	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 
-	got, err := m.Models(uigui.ProviderPatch{Orig: "an", Name: "an", BaseURL: srv.URL})
+	got, err := m.Models(uigui.ProviderPatch{Orig: "an", Name: "an", Kind: "anthropic", BaseURL: srv.URL})
 	if err != nil {
 		t.Fatalf("Models: %v", err)
 	}
@@ -337,7 +455,7 @@ func TestProviderManagerModels(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	t.Cleanup(bad.Close)
-	if _, err := m.Models(uigui.ProviderPatch{Name: "x", BaseURL: bad.URL, APIKey: "k"}); err == nil {
+	if _, err := m.Models(uigui.ProviderPatch{Name: "x", BaseURL: bad.URL, Keys: []uigui.ProviderKeyPatch{{Value: "k"}}}); err == nil {
 		t.Fatal("401 应报错")
 	}
 }
