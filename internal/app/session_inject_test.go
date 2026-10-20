@@ -78,6 +78,10 @@ func TestInjectDrainAtHandleEntry(t *testing.T) {
 	if inject.Source != "job:j1" || inject.Trigger {
 		t.Fatalf("inject 节点 = %+v, want source=job:j1 trigger=false", inject)
 	}
+	// 信任位随节点落树（D170）：没声明就是外部内容，装配时会被围栏。
+	if inject.Trust != conversation.TrustExternal {
+		t.Fatalf("Trust = %q, want 零值/外部（调用方未声明）", inject.Trust)
+	}
 	if len(llm.requests) != 0 {
 		t.Fatalf("llm requests = %d, want 0（排空点①不起轮）", len(llm.requests))
 	}
@@ -140,6 +144,10 @@ func TestInjectCommandTriggersTurn(t *testing.T) {
 	inject := path[4]
 	if inject.Role != conversation.RoleInject || !inject.Trigger || inject.Source != "user" {
 		t.Fatalf("注入 = %+v, want user + 已触发", inject)
+	}
+	// 手动注入是用户自己的动作 → 宿主信任（D170），装配为 user 且不套围栏。
+	if inject.Trust != conversation.TrustHost {
+		t.Fatalf("Trust = %q, want host", inject.Trust)
 	}
 	if path[5].Role != conversation.RoleAssistant || path[5].Parent != inject.ID {
 		t.Fatalf("产物 = %+v, want 注入的子节点", path[5])

@@ -256,6 +256,11 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			if err != nil {
 				return nil, err
 			}
+			// 摘要是模型写的、且吸收了其上的不可信内容，进去时标成"上下文"（D170）：
+			// 否则等于把命令输出/文件内容经摘要洗成系统设定。persona 不套这句。
+			if i == watermarkIdx {
+				parts = append([]port.PromptPart{{Kind: "text", Text: summaryPrefix}}, parts...)
+			}
 			out = append(out, port.PromptMessage{Role: "system", Content: parts})
 		case conversation.RoleInject:
 			// 注入节点按来源投影（D150）：手动/系统级事实汇报 → system（不套围栏）；
@@ -295,12 +300,13 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 // 注入内容的数据围栏（D150/§9）：不可信上下文一律被这对标签包住，并前置一句英文
 // 说明，防止工具/MCP 注入的内容伪装成用户指令。常量在 model_text.go（D36 集中处）。
 
-// projectInjection 把一条 inject 节点投影为模型消息（D150，投影表只在本处）：
-//   - `user:` 手动注入 → 直投影 user（是用户自己的动作，无需围栏）；
-//   - `job:` 宿主事实汇报 → system（不套围栏）；
-//   - `poller:` 宿主事实（状态/退出码/耗时）→ system；日志段由生产者按 D167 在正文里
-//     单独围栏（不可信进程输出），不再套第二层；
-//   - 其余（`tool:` / `plugin:` / 未知）→ user + 数据围栏 + 前置说明句（不可信数据口径）。
+// projectInjection 把一条 inject 节点投影为模型消息（D150/D170，投影表只在本处）：
+//   - 可信（`conversation.TrustHost`）= 宿主事实 → system，不套围栏；
+//   - 外部（`conversation.TrustExternal`，零值）→ user + 数据围栏 + 前置说明句。
+//
+// **判定只看 `m.Trust`，不看 `Source` 前缀**：前缀是生产者自报的字符串（MCP 工具名、
+// 插件名都进这条路径），拿它当信任依据等于把"谁能造前缀"变成"谁能写宿主指令"。
+// 前缀仍用于展示与审计。
 //
 // 空内容返回 nil（不占一条消息，与 user/system 空节点同规则）。
 func projectInjection(ctx context.Context, m conversation.Message, opt assembleOpts) (*port.PromptMessage, error) {
@@ -311,37 +317,47 @@ func projectInjection(ctx context.Context, m conversation.Message, opt assembleO
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case m.Source == "user":
-		return &port.PromptMessage{Role: "user", Content: parts}, nil
-	case hasSourcePrefix(m.Source, "job:", "poller:"):
-		return &port.PromptMessage{Role: "system", Content: parts}, nil
-	default:
-		fenced := make([]port.PromptPart, 0, len(parts)+2)
-		fenced = append(fenced, port.PromptPart{Kind: "text", Text: injectFenceNote})
-		fenced = append(fenced, port.PromptPart{
-			Kind: "text",
-			Text: fmt.Sprintf(injectFenceOpen, escapeFenceAttr(m.Source)),
-		})
-		fenced = append(fenced, parts...)
-		fenced = append(fenced, port.PromptPart{Kind: "text", Text: injectFenceClose})
-		return &port.PromptMessage{Role: "user", Content: fenced}, nil
+	if m.Trust == conversation.TrustHost {
+		// 用户自己的动作仍是 user 角色：换成 system 会让模型把用户的原话当成
+		// 系统设定，回答语气与优先级都会跑偏。
+		role := "system"
+		if m.Source == "user" || strings.HasPrefix(m.Source, "user:") {
+			role = "user"
+		}
+		return &port.PromptMessage{Role: role, Content: parts}, nil
 	}
+	// 围栏正文同样中和闭合标签（D170 口径二）：否则外部内容可以提前收尾，
+	// 把后文伪装成围栏之外的用户/宿主说明。
+	fenced := make([]port.PromptPart, 0, len(parts)+2)
+	fenced = append(fenced, port.PromptPart{Kind: "text", Text: injectFenceNote})
+	fenced = append(fenced, port.PromptPart{
+		Kind: "text",
+		Text: fmt.Sprintf(injectFenceOpen, escapeFenceAttr(m.Source)),
+	})
+	for _, p := range parts {
+		if p.Kind == "text" {
+			p.Text = neutralizeFence(p.Text)
+		}
+		fenced = append(fenced, p)
+	}
+	fenced = append(fenced, port.PromptPart{Kind: "text", Text: injectFenceClose})
+	return &port.PromptMessage{Role: "user", Content: fenced}, nil
 }
 
-// hasSourcePrefix 判断来源前缀（首个冒号分界；`user` 无冒号故只精确比）。
-func hasSourcePrefix(source string, prefixes ...string) bool {
-	i := strings.IndexByte(source, ':')
-	if i < 0 {
-		return false
-	}
-	head := source[:i+1]
-	for _, p := range prefixes {
-		if head == p {
-			return true
+// neutralizeFence 中和注入正文里的围栏闭合标签（大小写不敏感）。
+//
+// 只动这一个标签，不整体做 HTML 转义：查询串、代码片段、正则里的 `<` `>` 一旦被改写，
+// 模型读到的东西就和真实文件不一致，而它要靠读到的内容做判断。
+func neutralizeFence(s string) string {
+	lower := strings.ToLower(s)
+	for {
+		i := strings.Index(lower, injectFenceClose)
+		if i < 0 {
+			return s
 		}
+		s = s[:i] + "&lt;/injected-context&gt;" + s[i+len(injectFenceClose):]
+		lower = strings.ToLower(s)
 	}
-	return false
 }
 
 // escapeFenceAttr 转义围栏属性值（§9）：`"` 与 `<`/`>` 是标签边界字符，来源名可能来自

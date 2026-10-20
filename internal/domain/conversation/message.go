@@ -106,9 +106,23 @@ type Message struct {
 	Source string `json:"source,omitempty"`
 	// Trigger 本条落地时是否随附起了一轮响应（D150；仅 Role=inject 有意义）。
 	// 记的是**实际发生**的事，供回放/审计——重放不再触发（否则加载会话就自己跑起 Turn）。
-	Trigger   bool      `json:"trigger,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	Trigger bool `json:"trigger,omitempty"`
+	// Trust 注入节点的信任级（D170；仅 Role=inject 有意义）。
+	// 随树持久化：重载后装配仍要区分"宿主事实"与"外部内容"，只按 Source 前缀猜是
+	// fail-open（前缀由生产者自报）。零值 = 外部内容，装配时套围栏。
+	Trust     InjectTrust `json:"trust,omitempty"`
+	CreatedAt time.Time   `json:"created_at"`
 }
+
+// InjectTrust 注入内容的信任级（D170）：只影响装配投影，不新增领域角色。
+type InjectTrust string
+
+const (
+	// TrustExternal 外部内容（零值，fail-closed）：工具输出、插件、MCP、日志尾部。
+	TrustExternal InjectTrust = ""
+	// TrustHost 宿主事实：用户自己的动作、任务状态/退出码/耗时。
+	TrustHost InjectTrust = "host"
+)
 
 // Clone 返回 m 的深拷贝（含切片与指针），用于入树防御拷贝与快照比对。
 func (m Message) Clone() Message {

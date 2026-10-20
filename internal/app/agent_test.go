@@ -681,7 +681,7 @@ func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 1 || msgs[0].Role != "system" || msgs[0].Content[0].Text != summaryText {
+	if len(msgs) != 1 || msgs[0].Role != "system" || msgText(msgs[0]) != summaryPrefix+summaryText {
 		t.Fatalf("msgs = %+v, want 水位裁剪后仅 [摘要]", msgs)
 	}
 	if err := c.Validate(); err != nil {
@@ -779,7 +779,7 @@ func TestBuildRequestConfigFallbackWithoutPersona(t *testing.T) {
 	if req.Messages[0].Role != "system" || !strings.HasPrefix(req.Messages[0].Content[0].Text, defaultSystem) {
 		t.Fatalf("messages[0] = %+v, want 内置 system 兜底", req.Messages[0])
 	}
-	if req.Messages[1].Role != "system" || req.Messages[1].Content[0].Text != "摘要" {
+	if req.Messages[1].Role != "system" || msgText(req.Messages[1]) != summaryPrefix+"摘要" {
 		t.Fatalf("messages[1] = %+v, want 摘要水位", req.Messages[1])
 	}
 	if req.Messages[2].Role != "user" || req.Messages[2].Content[0].Text != "新问题" {

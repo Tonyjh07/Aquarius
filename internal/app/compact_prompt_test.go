@@ -194,7 +194,7 @@ func TestAgentCompactUpdatesExistingSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 1 || msgs[0].Content[0].Text != merged {
+	if len(msgs) != 1 || msgText(msgs[0]) != summaryPrefix+merged {
 		t.Fatalf("msgs = %+v, want 水位裁剪后仅 [新摘要]", msgs)
 	}
 }

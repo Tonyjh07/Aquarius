@@ -105,6 +105,38 @@ func TestRoundtripThinkingPart(t *testing.T) {
 	}
 }
 
+// TestRoundtripInjectTrust 注入节点的信任位随树落盘（D170）：装配在重载后仍要区分
+// 宿主事实与外部内容，只按 Source 前缀猜是 fail-open。
+func TestRoundtripInjectTrust(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	if err := c.AppendCommitted(conversation.Message{
+		ID: "I1", Parent: c.Head, Role: conversation.RoleInject,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "任务完成"}},
+		Source:  "job:j1", Trust: conversation.TrustHost,
+	}); err != nil {
+		t.Fatalf("append inject: %v", err)
+	}
+	if err := s.Save(ctx, c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := s.Load(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	node, ok := got.Find("I1")
+	if !ok {
+		t.Fatal("node I1 missing")
+	}
+	if node.Trust != conversation.TrustHost || node.Source != "job:j1" {
+		t.Fatalf("trust/source = %q/%q, want host/job:j1", node.Trust, node.Source)
+	}
+}
+
 func TestSaveKeepsOneGenerationBak(t *testing.T) {
 	s, err := New(t.TempDir())
 	if err != nil {

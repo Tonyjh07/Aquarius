@@ -17,6 +17,7 @@ const injectQueueCap = 64
 // pendingInjection 队列里的一条待落地注入（触发口径已解析好，排空时只看这一个布尔）。
 type pendingInjection struct {
 	source  string
+	trust   conversation.InjectTrust
 	parts   []conversation.Part
 	trigger bool
 	session conversation.ID // 目标会话（D167）；空 = 落地时取当前会话
@@ -37,6 +38,7 @@ func (s *Session) Inject(_ context.Context, in port.Injection) error {
 	}
 	item := pendingInjection{
 		source:  strings.TrimSpace(in.Source),
+		trust:   injectTrust(in.Trust),
 		parts:   in.Parts,
 		trigger: resolveInjectTrigger(in.Source, in.Trigger),
 		session: in.Session,
@@ -47,6 +49,15 @@ func (s *Session) Inject(_ context.Context, in port.Injection) error {
 	default:
 		return errors.New("session: 注入队列已满（稍后重试）")
 	}
+}
+
+// injectTrust 端口信任级 → 领域信任级（D170）。两处各自定义是为了守住依赖方向
+// （domain 不认识 port），映射只在这一处。未知值按外部处理，不猜。
+func injectTrust(t port.TrustLevel) conversation.InjectTrust {
+	if t == port.TrustHost {
+		return conversation.TrustHost
+	}
+	return conversation.TrustExternal
 }
 
 // resolveInjectTrigger 触发口径（D150，内核唯一一处默认表）：显式覆盖优先；
@@ -122,6 +133,7 @@ func (s *Session) landInjection(item pendingInjection, trigger bool) (conversati
 		Content:   item.parts,
 		Source:    item.source,
 		Trigger:   trigger,
+		Trust:     item.trust,
 		CreatedAt: s.clock.Now(),
 	}
 	if err := s.cur.AppendCommitted(node); err != nil {

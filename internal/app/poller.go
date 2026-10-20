@@ -242,7 +242,9 @@ func (p *Poller) report(ctx context.Context, id port.JobID, j port.Job, session 
 	} else {
 		b.WriteString(jobLogNote)
 		fmt.Fprintf(&b, "<injected-context source=\"%s\">\n", escapeFenceAttr(source))
-		b.WriteString(logs)
+		// 日志是外部进程写的：正文里的闭合标签必须中和，否则一行日志就能提前收尾，
+		// 把后面伪装成宿主说明（D170）。报告整体是宿主事实，装配层不会再包一层。
+		b.WriteString(neutralizeFence(logs))
 		b.WriteString("\n</injected-context>")
 	}
 	if ctx.Err() != nil {
@@ -250,6 +252,7 @@ func (p *Poller) report(ctx context.Context, id port.JobID, j port.Job, session 
 	}
 	in := port.Injection{
 		Source:  source,
+		Trust:   port.TrustHost, // 状态/退出码/耗时是宿主事实（D170）；日志段已在正文里单独围栏
 		Parts:   []conversation.Part{{Kind: conversation.PartText, Text: b.String()}},
 		Session: session,
 	}

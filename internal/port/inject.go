@@ -6,12 +6,29 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
+// TrustLevel 注入内容的信任级（D170）。
+//
+// 为什么不按 Source 前缀推断：前缀是**生产者自报的字符串**，MCP 工具名与插件名都进这条路径，
+// 谁能造出 `job:` 开头就谁的内容被当成宿主事实读——那是 fail-open。信任必须由调用方**显式声明**，
+// 前缀继续只用于展示与审计。
+type TrustLevel int
+
+const (
+	// TrustExternal 外部内容（缺省）：工具输出、插件、MCP、日志尾部。投影为 user + 数据围栏。
+	TrustExternal TrustLevel = iota
+	// TrustHost 宿主事实：用户自己的动作、任务状态/退出码、轮询器汇报。投影为 system/user 不套围栏。
+	TrustHost
+)
+
 // Injection 一条待注入会话的上下文（D150）：来源 + 内容分片 + 触发口径。
 // 值语义；调用方经 Injector 交给内核，内核负责落地为 `Role=inject` 节点。
 type Injection struct {
 	// Source 注入来源（D150）：`job:<id>` / `tool:<name>` / `plugin:<name>` / `poller:<id>` / `user`。
 	// 只作展示与审计（不进模型上下文）；未知前缀按普通来源处理，不设白名单。
 	Source string
+	// Trust 信任级（D170）：决定装配投影角色。零值 = 外部内容（fail-closed）——
+	// 生产者若忘声明，代价是内容被当成数据而不是指令，不会反过来。
+	Trust TrustLevel
 	// Parts 注入内容分片——与 user 同规则（text/image/audio/doc；thinking/tool 一律拒），
 	// 由内核在入队前校验：坏包当场报给调用方，不让它无声落进树。
 	Parts []conversation.Part

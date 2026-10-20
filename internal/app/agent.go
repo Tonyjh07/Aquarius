@@ -385,6 +385,13 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	if block := a.memoryBlock(ctx, c.ID); block != "" && len(msgs) > 0 && msgs[0].Role == "system" {
 		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: "text", Text: block})
 	}
+	// 常驻声明（D170 口径三）：工具输出、文件内容、命令输出是**数据**而不是指令。
+	// 每次装配追加进首条 system——它在树外，`/system` 改人格不会把它改掉；也不逐条给
+	// 工具结果套围栏（那会把上下文撑爆，还让正常代码读起来像可疑数据）。
+	// 单列一条 system 会让"首条 system 是人格"的既有口径分叉，故并进同一条正文。
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: "text", Text: "\n\n" + untrustedDataNote})
+	}
 
 	req := port.GenerateRequest{
 		Model:    a.modelName(),
