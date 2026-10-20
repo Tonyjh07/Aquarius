@@ -446,6 +446,34 @@ func TestHistoryReplay(t *testing.T) {
 	}
 }
 
+// TestHistoryReplayInject 注入节点回放（D166）：独立块种，头部来源经友好化表、
+// 末尾记实际触发状态；不落 user 提示符。
+func TestHistoryReplayInject(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleInject,
+		Source:  "job:j1",
+		Trigger: true,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "任务完成"}},
+	}})
+	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleInject,
+		Source:  "tool:think",
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "工具上下文"}},
+	}})
+	if len(m.blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2", len(m.blocks))
+	}
+	for i, want := range []string{"注入 · 任务 j1 · 已触发响应", "注入 · 工具 think · 未触发"} {
+		if m.blocks[i].kind != blockInject || !strings.Contains(m.blocks[i].text, want) {
+			t.Fatalf("blocks[%d] = %+v, 缺 %q", i, m.blocks[i], want)
+		}
+		if strings.Contains(m.blocks[i].text, "> ") {
+			t.Fatalf("注入块不应带用户提示符: %q", m.blocks[i].text)
+		}
+	}
+}
+
 // TestHistoryReplayThinking D42：回放口径恒含思考——思考分片渲染为独立暗块、不并入正文；
 // 实时流场景下"思考分片 → 节点提交（Content 带思考）"恰好落一个暗块，不重复渲染。
 func TestHistoryReplayThinking(t *testing.T) {

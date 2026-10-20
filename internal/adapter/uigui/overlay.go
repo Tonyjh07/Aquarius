@@ -76,13 +76,17 @@ type overlayState struct {
 	tag struct{}
 
 	id       conversation.MessageID
-	kind     blockKind             // user/assistant/system/root → 可编辑性
-	role     conversation.Role     // 快照内角色（标题措辞；未知 = ""）
-	editable bool                  // root 与无正文节点只读；system 里只有 persona 可编辑
-	persona  bool                  // 会话首节点（parent == Root 的 system，D154）
-	name     string                // 节点名（persona = "人格节点" 之类，标题行用）
-	page     overlayPage           // 当前页签
-	mode     conversation.KeepMode // 应用方式（Fresh 零值 = 默认；persona 锁 Carry）
+	kind     blockKind         // user/assistant/system/root → 可编辑性
+	role     conversation.Role // 快照内角色（标题措辞；未知 = ""）
+	editable bool              // root 与无正文节点只读；system 里只有 persona 可编辑
+	persona  bool              // 会话首节点（parent == Root 的 system，D154）
+	name     string            // 节点名（persona = "人格节点" 之类，标题行用）
+	// source/trigger 注入节点的来源与触发记录（D166；仅 role == inject 有意义）：
+	// 来源行与转写头部共用 port.InjectSourceLabel 一张表。
+	source  string
+	trigger bool
+	page    overlayPage           // 当前页签
+	mode    conversation.KeepMode // 应用方式（Fresh 零值 = 默认；persona 锁 Carry）
 
 	src       string    // 源码快照（NodeText，开遮罩时取一次）
 	blocks    []mdBlock // 呈现页签的解析结果
@@ -122,6 +126,7 @@ func (st *historyState) openOverlay(u *UI, id conversation.MessageID, mode conve
 	kind := st.nodeKindOf(id)
 	role, _ := st.nodeRoleOf(id)
 	persona := st.isPersona(id)
+	source, trigger := st.injectInfoOf(id)
 	// persona 在 relNodeKind 里落 blockPlain（system），但它可以改首节点快照（D154）。
 	editable := src != "" && (kind == blockUser || kind == blockAssistant || persona)
 	if persona {
@@ -141,6 +146,8 @@ func (st *historyState) openOverlay(u *UI, id conversation.MessageID, mode conve
 		mode:     mode,
 		page:     page,
 		src:      src,
+		source:   source,
+		trigger:  trigger,
 		cache:    map[string][]mdBlock{},
 	}
 	if persona && ov.page == overlayPageTemplate {
@@ -207,6 +214,20 @@ func (st *historyState) nodeRoleOf(id conversation.MessageID) (conversation.Role
 	for _, n := range st.model.nodes {
 		if n.id == id {
 			return n.role, true
+		}
+	}
+	return "", false
+}
+
+// injectInfoOf 注入节点的来源与触发记录（D166）：遮罩来源行用；非注入节点或快照
+// 未就绪 = 零值。与 nodeRoleOf 同一次遍历口径（模型里 Source/Trigger 只在 inject 上有值）。
+func (st *historyState) injectInfoOf(id conversation.MessageID) (source string, trigger bool) {
+	if st.model == nil {
+		return "", false
+	}
+	for _, n := range st.model.nodes {
+		if n.id == id {
+			return n.source, n.trigger
 		}
 	}
 	return "", false
@@ -468,7 +489,7 @@ func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 	paperPanel(gtx, image.Rectangle{Max: gtx.Constraints.Max},
 		gtx.Dp(unit.Dp(pp.rCard)), gtx.Dp(1), pp.card, pp.hairline)
 	return layout.UniformInset(overlayCardPadDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		children := []layout.FlexChild{
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return overlayTitle(gtx, th, ov)
 			}),
@@ -476,6 +497,16 @@ func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return overlayTabs(gtx, th, ov)
 			}),
+		}
+		// 注入节点（D166）：页签下方一行来源 + 触发状态——两个页签都看得到「这条从哪来」。
+		if ov.role == conversation.RoleInject {
+			children = append(children,
+				layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return overlayInjectSource(gtx, th, ov)
+				}))
+		}
+		children = append(children,
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return overlayBody(gtx, th, ov, st, u)
@@ -485,7 +516,16 @@ func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 				return overlayFooter(gtx, th, ov)
 			}),
 		)
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
+}
+
+// overlayInjectSource 注入节点的来源行（D166）：「来源：<友好化来源> · 已触发响应/未触发」。
+// 与主窗转写头部共用 port.InjectSourceLabel，措辞恒一致。
+func overlayInjectSource(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
+	l := material.Caption(th, "来源："+port.InjectSourceLabel(ov.source)+" · "+injectState(ov.trigger))
+	l.Color = paperOf().text2
+	return l.Layout(gtx)
 }
 
 // overlayTitle 标题行：角色词 +「消息」+ 节点 ID 前缀（ID 与「原文 · <id>」同款口径）。
@@ -509,6 +549,8 @@ func (ov *overlayState) titleText() string {
 		return "助手消息 · " + shortID(string(ov.id))
 	case conversation.RoleRoot:
 		return "会话根 · " + shortID(string(ov.id))
+	case conversation.RoleInject: // D166：注入上下文（只读；来源行在页签下方）
+		return "注入上下文 · " + shortID(string(ov.id))
 	default:
 		return "系统消息 · " + shortID(string(ov.id))
 	}

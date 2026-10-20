@@ -739,6 +739,6 @@ func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 		layout.Rigid(swatch(d[3])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
-		layout.Rigid(label("形状：□ 你 · ● 助手 · ◇ 系统 · ◯ 会话根")),
+		layout.Rigid(label("形状：□ 你 · ● 助手 · ◇ 系统 · ◯ 会话根 · △ 注入")),
 	)
 }

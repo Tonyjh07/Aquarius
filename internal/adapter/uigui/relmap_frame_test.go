@@ -138,8 +138,29 @@ func TestRelDashedSquareOutlineHugsBadge(t *testing.T) {
 	}
 }
 
-// TestRelCardLabelMultiLine D126「多行占满卡片」：长摘要换行成多行、卡片随之撑高，
-// 徽标仍在卡片内垂直居中；短摘要仍是一行、卡片不比徽标高（不制造空白）。
+// TestRelTriangleOutline 注入节点的三角外环（D166）：三顶点朝上，采样点闭合在盒内，
+// 且与其余四形的轮廓语言不同（上尖下宽）。
+func TestRelTriangleOutline(t *testing.T) {
+	const r = 24.0
+	step := (relDashOn + relDashOff) * 1.25
+	pts := shapeOutline(relShapeTriangle, 100, 100, r, step)
+	if len(pts) < 9 {
+		t.Fatalf("三角外环采样点太少: %d", len(pts))
+	}
+	top, bottom := math.Inf(1), math.Inf(-1)
+	for _, p := range pts {
+		y := float64(p.Y - 100)
+		top, bottom = math.Min(top, y), math.Max(bottom, y)
+	}
+	// 顶点在 −0.95r，底边在 +0.475r：上下不对称是三角语言的一部分。
+	if math.Abs(top+r*0.95) > 0.5 {
+		t.Fatalf("三角顶点 y = %.2f, want %.2f", top, -r*0.95)
+	}
+	if math.Abs(bottom-r*0.475) > 0.5 {
+		t.Fatalf("三角底边 y = %.2f, want %.2f", bottom, r*0.475)
+	}
+}
+
 func TestRelCardLabelMultiLine(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
 	st := newHistoryState(u)

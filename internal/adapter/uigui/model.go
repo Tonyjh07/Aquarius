@@ -27,6 +27,7 @@ const (
 	blockSystem                     // system 节点（/compact 摘要等）
 	blockThinking                   // 思考块（D42；流式实时 + 定稿折叠，§15.3）
 	blockBranch                     // 分叉行（D81）：气泡下方的 `◀ i/n ▶` 切换条
+	blockInject                     // 注入节点（D166）：暗卡片 + 来源/触发头部，正文可选
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
@@ -39,6 +40,10 @@ type block struct {
 	secs int
 	chip *toolChip
 	id   conversation.MessageID
+	// source/trigger 仅注入块使用（D166）：来源键（展示期经 port.InjectSourceLabel
+	// 翻成用户面措辞）与落地时是否随附起了响应。只作展示，不改标题、不挂分叉条。
+	source  string
+	trigger bool
 	// part 正文分片序号（D107②）：该块所源正文段内首个 PartText 在节点 Content 中的
 	// 序号（0 起；编辑回传 --part 用）——回放/提交调和两路盖章；-1 = 未盖章（草稿期/
 	// 非正文块）。
@@ -252,6 +257,11 @@ func (m *model) commit(msg conversation.Message) {
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
 		}
+	case conversation.RoleInject:
+		// 注入节点（D166）：独立成档，不落 user 盖章、不改标题、不挂分叉条——
+		// 头部由渲染期按 kind 生成（来源 + 触发状态），正文原样可选。
+		m.resetDraft()
+		m.addInject(text, msg.Source, msg.Trigger)
 	default:
 		// user 无独立事件面：输入行已在 submit 时回显入块——但回显时节点尚不存在、
 		// 块无 ID（D87），此处按「最早未盖章且文本一致」回填节点 ID，分叉条（D81）
@@ -471,6 +481,8 @@ func (m *model) replay(msg conversation.Message) {
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
 		}
+	case conversation.RoleInject:
+		m.addInject(text, msg.Source, msg.Trigger) // D166：暗色卡片，不参与 user 盖章/分叉
 	default: // root 等不该出现在回放区间
 	}
 }
@@ -737,6 +749,17 @@ func (m *model) addMsg(kind blockKind, text string, id conversation.MessageID) {
 		b.secs = -1
 	}
 	m.blocks = append(m.blocks, b)
+}
+
+// addInject 追加注入块（D166）：来源/触发只作头部展示（D150 的落地事实）。
+// 空正文的注入不落块——没有可读内容，头部单独成行只会制造噪声。
+func (m *model) addInject(text, source string, trigger bool) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	m.blocks = append(m.blocks, block{
+		kind: blockInject, text: text, source: source, trigger: trigger, part: -1,
+	})
 }
 
 // partsText 节点文本：文本分片直连，其余留占位（§4.2 多模态呈现 MVP）；

@@ -34,6 +34,9 @@ type relNode struct {
 	inPath   bool
 	subtree  int
 	weight   float64
+	// source/trigger 仅注入节点有值（D166）：遮罩来源行用；图侧只用形状区分角色。
+	source  string
+	trigger bool
 }
 
 // relModel 由整树快照派生的展示模型。
@@ -86,6 +89,8 @@ func relNewModel(g port.TreeGraph) (*relModel, bool) {
 			sibIdx:   gn.SiblingIdx,
 			sibCount: gn.SiblingCount,
 			parent:   -1,
+			source:   gn.Source,
+			trigger:  gn.Trigger,
 		}
 		if gn.Parent != "" {
 			p, ok := m.index[gn.Parent]
@@ -216,10 +221,11 @@ func relPaletteIndex(level int) int {
 type relShape int
 
 const (
-	relShapeCircle  relShape = iota // assistant
-	relShapeSquare                  // user
-	relShapeDiamond                 // system（人格 / 压缩摘要）
-	relShapeRing                    // root（空心圆 = 结构根）
+	relShapeCircle   relShape = iota // assistant
+	relShapeSquare                   // user
+	relShapeDiamond                  // system（人格 / 压缩摘要）
+	relShapeRing                     // root（空心圆 = 结构根）
+	relShapeTriangle                 // inject（D166：注入上下文，与其余四形不混）
 )
 
 // relShapeOf 由 Role 查形状（纯查表，无散落分支）。
@@ -231,6 +237,8 @@ func relShapeOf(role conversation.Role) relShape {
 		return relShapeSquare
 	case conversation.RoleSystem:
 		return relShapeDiamond
+	case conversation.RoleInject:
+		return relShapeTriangle
 	default:
 		return relShapeCircle
 	}

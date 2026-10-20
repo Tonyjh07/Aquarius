@@ -288,6 +288,18 @@ func (u *UI) history(msg conversation.Message) error {
 		}
 		_, err := fmt.Fprintf(u.out, "%s\n", text)
 		return err
+	case conversation.RoleInject:
+		// 注入节点（D166）：头部来源/触发状态 + 正文；行式输出不画卡片，靠缩进分档。
+		if strings.TrimSpace(text) == "" {
+			return nil
+		}
+		state := "未触发"
+		if msg.Trigger {
+			state = "已触发响应"
+		}
+		_, err := fmt.Fprintf(u.out, "注入 · %s · %s\n%s\n",
+			port.InjectSourceLabel(msg.Source), state, text)
+		return err
 	default:
 		return nil
 	}

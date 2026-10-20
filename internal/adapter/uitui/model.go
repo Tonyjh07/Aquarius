@@ -24,6 +24,7 @@ const (
 	blockError                      // 错误行
 	blockSystem                     // system 节点（/compact 摘要等）
 	blockThinking                   // 思维链暗块（D34 展示；节点侧 PartThinking 入树，D42）
+	blockInject                     // 注入节点（D166）：头部来源/触发 + 正文
 )
 
 // block 一段定稿转写（text 已含样式）。
@@ -414,6 +415,12 @@ func (m *model) commit(msg conversation.Message) {
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
 		}
+	case conversation.RoleInject:
+		// 注入节点（D166）：独立成档（头部 = 来源 + 触发状态），不落 user 提示符。
+		m.resetDraft()
+		if strings.TrimSpace(text) != "" {
+			m.add(blockInject, injectHeader(msg.Source, msg.Trigger)+"\n"+text)
+		}
 	default:
 		// user 节点无事件面（输入已单独入块）；工具结果随 assistant 节点分片呈现（D95）。
 		m.resetDraft()
@@ -513,9 +520,22 @@ func (m *model) replay(msg conversation.Message) {
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
 		}
+	case conversation.RoleInject:
+		if strings.TrimSpace(text) != "" {
+			m.add(blockInject, injectHeader(msg.Source, msg.Trigger)+"\n"+text)
+		}
 	default: // root 等不该出现在回放区间
 	}
 	m.scroll = 0
+}
+
+// injectHeader 注入块头部（D166）：来源经友好化表翻成用户面措辞，末尾记实际触发与否。
+func injectHeader(source string, trigger bool) string {
+	state := "未触发"
+	if trigger {
+		state = "已触发响应"
+	}
+	return "注入 · " + port.InjectSourceLabel(source) + " · " + state
 }
 
 // partsText 节点文本：文本分片直连，其余留占位（§4.2 多模态呈现 MVP）；
@@ -599,6 +619,8 @@ func (m *model) style(kind blockKind, text string) string {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Render(text)
 	case blockThinking:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true).Render(text)
+	case blockInject:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Render(text)
 	default:
 		return text
 	}

@@ -29,6 +29,9 @@ type blockView struct {
 	bi      int
 	id      conversation.MessageID
 	keyBase int
+	// source/trigger 注入块的头部数据（D166）：来源键与落地时是否触发了响应。
+	source  string
+	trigger bool
 }
 
 // menuable 该条目是否响应气泡右键（D92/D100）：user/assistant 需带节点 ID（编辑/

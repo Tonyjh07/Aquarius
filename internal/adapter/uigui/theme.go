@@ -28,8 +28,14 @@ type palette struct {
 	cardNotice   color.NRGBA
 	cardError    color.NRGBA
 	cardSystem   color.NRGBA
-	whiteText    color.NRGBA // 品牌底/深色 tips 上的文字
-	iconDim      color.NRGBA // 图标槽占位灰
+	// 注入卡片（D166）：两版都用暗底 + 亮字——注入是「旁白」，与用户气泡（品牌色）、
+	// 助手气泡（浅白）在视觉上分档。底色带 alpha（浅色版更透）：卡片浮在桌面之上、
+	// 不带底板边缘，半透明让它读作「附注」而不是又一条消息；深色版透得少一档，
+	// 免得在深桌面上糊成一团。
+	cardInject color.NRGBA
+	textInject color.NRGBA
+	whiteText  color.NRGBA // 品牌底/深色 tips 上的文字
+	iconDim    color.NRGBA // 图标槽占位灰
 	// 确认态三钮（D86）：实色圆白字，两版同值（饱和实色，两主题对比度均足）。
 	actionDeny    color.NRGBA // ✗ 拒绝
 	actionAllow   color.NRGBA // ✓ 允许
@@ -68,6 +74,8 @@ func lightPalette() palette {
 		cardNotice:    color.NRGBA{R: 0xFD, G: 0xF2, B: 0xDC, A: 0xFF},
 		cardError:     color.NRGBA{R: 0xFB, G: 0xE4, B: 0xE4, A: 0xFF},
 		cardSystem:    color.NRGBA{R: 0xF1, G: 0xEB, B: 0xFA, A: 0xFF},
+		cardInject:    color.NRGBA{R: 0x2E, G: 0x34, B: 0x3C, A: 0x80},
+		textInject:    color.NRGBA{R: 0xEE, G: 0xF1, B: 0xF5, A: 0xFF},
 		whiteText:     color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
 		iconDim:       color.NRGBA{R: 0x94, G: 0xA3, B: 0xB8, A: 0xFF},
 		actionDeny:    color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
@@ -103,6 +111,8 @@ func darkPalette() palette {
 		cardNotice:    color.NRGBA{R: 0x34, G: 0x2D, B: 0x1E, A: 0xFF},
 		cardError:     color.NRGBA{R: 0x35, G: 0x24, B: 0x24, A: 0xFF},
 		cardSystem:    color.NRGBA{R: 0x2B, G: 0x27, B: 0x35, A: 0xFF},
+		cardInject:    color.NRGBA{R: 0x3A, G: 0x40, B: 0x48, A: 0xB3},
+		textInject:    color.NRGBA{R: 0xE6, G: 0xEA, B: 0xF0, A: 0xFF},
 		whiteText:     color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
 		iconDim:       color.NRGBA{R: 0x7C, G: 0x87, B: 0x98, A: 0xFF},
 		actionDeny:    color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
@@ -159,6 +169,8 @@ func applyPalette(p palette) {
 	cardNotice = p.cardNotice
 	cardError = p.cardError
 	cardSystem = p.cardSystem
+	cardInject = p.cardInject
+	textInject = p.textInject
 	whiteText = p.whiteText
 	iconDim = p.iconDim
 	actionDeny = p.actionDeny
@@ -185,6 +197,8 @@ func currentPalette() palette {
 		cardNotice:    cardNotice,
 		cardError:     cardError,
 		cardSystem:    cardSystem,
+		cardInject:    cardInject,
+		textInject:    textInject,
 		whiteText:     whiteText,
 		iconDim:       iconDim,
 		actionDeny:    actionDeny,

@@ -35,7 +35,10 @@ func (u *UI) frameItems() []blockView {
 			// bi 同填（D100：chip 右键经 bubbleHit.bi 回查 chip 态；chipIdx = 点击件缓存槽）。
 			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi, bi: bi})
 		default:
-			items = append(items, blockView{kind: b.kind, text: b.text, secs: b.secs, bi: bi, id: b.id})
+			items = append(items, blockView{
+				kind: b.kind, text: b.text, secs: b.secs, bi: bi, id: b.id,
+				source: b.source, trigger: b.trigger,
+			})
 		}
 		if next < len(strips) && strips[next].blockIdx == bi {
 			s := strips[next] // 拷贝：条目持值，避免共享切片元素

@@ -262,6 +262,7 @@ func TestRelShapeAndStatement(t *testing.T) {
 	if relShapeOf(conversation.RoleRoot) != relShapeRing ||
 		relShapeOf(conversation.RoleUser) != relShapeSquare ||
 		relShapeOf(conversation.RoleSystem) != relShapeDiamond ||
+		relShapeOf(conversation.RoleInject) != relShapeTriangle ||
 		relShapeOf(conversation.RoleAssistant) != relShapeCircle {
 		t.Fatal("形状查表错误")
 	}

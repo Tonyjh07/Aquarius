@@ -1477,6 +1477,8 @@ func (g *relGraph) drawNode(gtx layout.Context, th *material.Theme, m *relModel,
 		paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, int(r*0.28)).Op(gtx.Ops))
 	case relShapeDiamond:
 		g.diamond(gtx, xs, ys, r, fill)
+	case relShapeTriangle: // 注入节点（D166）：正三角，与圆/方/菱/环都不混
+		g.triangle(gtx, xs, ys, r, fill)
 	case relShapeRing: // 空心圆（结构根）：描边而非挖洞
 		ring := clip.UniformRRect(box, int(r)).Path(gtx.Ops)
 		paint.FillShape(gtx.Ops, fill,
@@ -1531,6 +1533,25 @@ func (g *relGraph) diamond(gtx layout.Context, xs, ys, r float32, fill color.NRG
 	paint.FillShape(gtx.Ops, fill, clip.Outline{Path: p.End()}.Op())
 }
 
+// triangle 正三角（inject：注入上下文，D166）。外接半径 0.95r——顶点朝上，底边
+// 只向下压 0.475r，整体仍在 2r 盒内（与菱形同口径，尖不顶出卡片内边距）。
+func (g *relGraph) triangle(gtx layout.Context, xs, ys, r float32, fill color.NRGBA) {
+	d := r * 0.95
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(f32.Pt(xs, ys-d))
+	p.LineTo(f32.Pt(xs+relTriCos*d, ys+relTriSin*d))
+	p.LineTo(f32.Pt(xs-relTriCos*d, ys+relTriSin*d))
+	p.Close()
+	paint.FillShape(gtx.Ops, fill, clip.Outline{Path: p.End()}.Op())
+}
+
+// 正三角的两个方向常量（cos30°/sin30°）：填充与虚线轮廓共用同一组顶点。
+const (
+	relTriCos = float32(0.8660254)
+	relTriSin = float32(0.5)
+)
+
 // dashedOutline 分叉位点的虚线外环，**沿节点自身形状**走（D121）：圆走圆、方走圆角
 // 方、菱形走菱——圆节点套方虚线框会读成两套语言。
 func (g *relGraph) dashedOutline(gtx layout.Context, xs, ys, r float32, shape relShape) {
@@ -1552,6 +1573,16 @@ func shapeOutline(shape relShape, xs, ys, r float32, step float64) []f32.Point {
 		}
 		for i := 0; i < 4; i++ {
 			pts = relSampleSeg(pts, v[i], v[(i+1)%4], step)
+		}
+	case relShapeTriangle:
+		d := r * 0.95 // 与填充同值
+		v := [3]f32.Point{
+			{X: xs, Y: ys - d},
+			{X: xs + relTriCos*d, Y: ys + relTriSin*d},
+			{X: xs - relTriCos*d, Y: ys + relTriSin*d},
+		}
+		for i := 0; i < 3; i++ {
+			pts = relSampleSeg(pts, v[i], v[(i+1)%3], step)
 		}
 	case relShapeSquare:
 		cr := r * 0.28 // 与填充的圆角半径同值

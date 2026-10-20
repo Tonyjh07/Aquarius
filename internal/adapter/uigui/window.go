@@ -100,13 +100,18 @@ var (
 	textNotice = color.NRGBA{R: 0xC0, G: 0x77, B: 0x00, A: 0xFF}
 	textSystem = color.NRGBA{R: 0x8E, G: 0x6B, B: 0xC4, A: 0xFF}
 
-	// 行卡底色（全部实色——位图合成下元素外无底板，半透明只能整窗 SourceConstantAlpha 叠加）。
+	// 行卡底色（除注入卡外全部实色——位图合成下元素外无底板，半透明只能整窗
+	// SourceConstantAlpha 叠加；注入卡带 alpha 是有意的：它是浮在桌面上的旁注）。
 	cardThinking = color.NRGBA{R: 0xE9, G: 0xEB, B: 0xF0, A: 0xFF}
 	cardTool     = color.NRGBA{R: 0xE7, G: 0xEA, B: 0xEF, A: 0xFF}
 	cardNotice   = color.NRGBA{R: 0xFD, G: 0xF2, B: 0xDC, A: 0xFF}
 	cardError    = color.NRGBA{R: 0xFB, G: 0xE4, B: 0xE4, A: 0xFF}
 	cardSystem   = color.NRGBA{R: 0xF1, G: 0xEB, B: 0xFA, A: 0xFF}
-	whiteText    = color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
+	// 注入卡片（D166）：两版暗底 + 亮字，与用户/助手气泡分档；底色带 alpha（浅色版
+	// 更透），读作浮在桌面上的旁注而非又一条消息。
+	cardInject = color.NRGBA{R: 0x2E, G: 0x34, B: 0x3C, A: 0x80}
+	textInject = color.NRGBA{R: 0xEE, G: 0xF1, B: 0xF5, A: 0xFF}
+	whiteText  = color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
 
 	// 图标槽占位灰（canvas 稿 #94A3B8；配色为占位，D49）。
 	iconDim = color.NRGBA{R: 0x94, G: 0xA3, B: 0xB8, A: 0xFF}

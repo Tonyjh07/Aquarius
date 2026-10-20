@@ -64,7 +64,7 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 	if node.Trigger {
 		state = "已触发响应"
 	}
-	return fmt.Sprintf("已注入一条 %s 上下文（%s；Head → %s）", injectSourceLabel(node.Source), state, s.cur.Head), nil
+	return fmt.Sprintf("已注入一条 %s 上下文（%s；Head → %s）", port.InjectSourceLabel(node.Source), state, s.cur.Head), nil
 }
 
 // parseInjectArgs 解析 /inject 参数：`[--source <名>] [--no-trigger] <文本>`（顺序自由、
@@ -93,42 +93,4 @@ func parseInjectArgs(args []string) (source string, noTrigger bool, text string,
 	return source, noTrigger, text, nil
 }
 
-// injectSourceLabel 注入来源的用户面措辞（D150）：把来源前缀翻成「手动 / 任务 <id> /
-// 轮询 <id> / 工具 <名> / 插件 <名>」，未知回落原文——用户读到的是来自哪儿，不是内部键。
-// 主窗转写头部、遮罩来源行共用这一张表。
-func injectSourceLabel(source string) string {
-	if source == "" {
-		return "未知来源"
-	}
-	if source == "user" {
-		return "手动"
-	}
-	name, rest, ok := splitSource(source)
-	if !ok {
-		return source
-	}
-	switch name {
-	case "user": // 防御：`user:<x>` 少见形态也归「手动」（不静默吞掉余下）
-		return "手动 " + rest
-	case "job":
-		return "任务 " + rest
-	case "poller":
-		return "轮询 " + rest
-	case "tool":
-		return "工具 " + rest
-	case "plugin":
-		return "插件 " + rest
-	default:
-		return source
-	}
-}
-
-// splitSource 拆 `前缀:余下`：余下可含冒号（如 MCP 工具名），首个冒号即分界。
-func splitSource(source string) (name, rest string, ok bool) {
-	for i := 0; i < len(source); i++ {
-		if source[i] == ':' {
-			return source[:i], source[i+1:], true
-		}
-	}
-	return source, "", false
-}
+// 来源友好化表在 port.InjectSourceLabel——命令输出与 GUI 展示共用同一张表（D166）。

@@ -28,3 +28,43 @@ type Injection struct {
 type Injector interface {
 	Inject(ctx context.Context, in Injection) error
 }
+
+// InjectSourceLabel 注入来源的用户面措辞（D150/D166）：把来源前缀翻成「手动 / 任务 <id> /
+// 轮询 <id> / 工具 <名> / 插件 <名>」，未知回落原文——用户读到的是来自哪儿，不是内部键。
+// 命令输出、主窗转写头部与遮罩来源行共用这一张表（措辞一致是验收点）。
+func InjectSourceLabel(source string) string {
+	if source == "" {
+		return "未知来源"
+	}
+	if source == "user" {
+		return "手动"
+	}
+	name, rest, ok := splitInjectSource(source)
+	if !ok {
+		return source
+	}
+	switch name {
+	case "user": // 防御：`user:<x>` 少见形态也归「手动」（不静默吞掉余下）
+		return "手动 " + rest
+	case "job":
+		return "任务 " + rest
+	case "poller":
+		return "轮询 " + rest
+	case "tool":
+		return "工具 " + rest
+	case "plugin":
+		return "插件 " + rest
+	default:
+		return source
+	}
+}
+
+// splitInjectSource 拆 `前缀:余下`：余下可含冒号（如 MCP 工具名），首个冒号即分界。
+func splitInjectSource(source string) (name, rest string, ok bool) {
+	for i := 0; i < len(source); i++ {
+		if source[i] == ':' {
+			return source[:i], source[i+1:], true
+		}
+	}
+	return source, "", false
+}

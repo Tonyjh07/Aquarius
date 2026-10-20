@@ -16,6 +16,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // transcript 转写区：两遍布局（量高 → 滚动定界 → 绘制），**底部锚定**——新消息贴着
@@ -236,6 +238,26 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			})
 			return vs.dims()
 		}, cardThinking, cardR, false, false
+	case blockInject: // 注入节点（D166）：暗卡片——头部来源/触发（元信息，不选）+ 正文可选
+		header := injectHeadline(it.source, it.trigger)
+		return func(gtx layout.Context) layout.Dimensions {
+			vs := beginVStack(gtx)
+			vs.add(func(gtx layout.Context) layout.Dimensions {
+				s := material.Caption(u.th, header)
+				s.Color = textInject
+				return s.Layout(gtx)
+			})
+			off := image.Pt(0, vs.y)
+			vs.add(func(gtx layout.Context) layout.Dimensions {
+				return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					s := material.Body2(u.th, it.text)
+					s.Color = textInject
+					s.State = rs.sel(0)
+					return s.Layout(gtx)
+				}, 0, off, image.Point{})
+			})
+			return vs.dims()
+		}, cardInject, cardR, false, false
 	case blockTool:
 		if it.chip == nil { // 兜底：无 chip 的工具行（防御，正常路径都有 chip）
 			return func(gtx layout.Context) layout.Dimensions {
@@ -295,6 +317,20 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 
 // mdBlockGapDp 气泡内 markdown 块间距（D66 复合行）。
 const mdBlockGapDp unit.Dp = 4
+
+// injectHeadline 注入卡片头部（D166）：来源（友好化表） + 落地时是否触发了响应。
+// 转写头部与遮罩来源行共用 injectState 一词，措辞不漂移。
+func injectHeadline(source string, trigger bool) string {
+	return "注入 · " + port.InjectSourceLabel(source) + " · " + injectState(trigger)
+}
+
+// injectState 触发状态词（D166）：记录的是**实际发生**（Message.Trigger），不是来源默认表。
+func injectState(trigger bool) string {
+	if trigger {
+		return "已触发响应"
+	}
+	return "未触发"
+}
 
 // mdCodeInsetDp 代码小卡内边距（D66：卡嵌气泡内）。
 const mdCodeInsetDp unit.Dp = 6

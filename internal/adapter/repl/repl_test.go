@@ -264,6 +264,29 @@ func TestEmitHistoryReplay(t *testing.T) {
 	}
 }
 
+// TestEmitHistoryReplayInject 注入节点回放（D166）：头部来源（友好化） + 触发状态，
+// 正文另起一行；与 TUI 同口径。
+func TestEmitHistoryReplayInject(t *testing.T) {
+	var buf bytes.Buffer
+	ui := New(strings.NewReader(""), &buf)
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleInject,
+		Source:  "poller:p1",
+		Trigger: true,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "轮询结果"}},
+	}})
+	emit(t, ui, port.HistoryEvent{Message: conversation.Message{
+		Role:    conversation.RoleInject,
+		Source:  "tool:think",
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "工具上下文"}},
+	}})
+	want := "注入 · 轮询 p1 · 已触发响应\n轮询结果\n" +
+		"注入 · 工具 think · 未触发\n工具上下文\n"
+	if buf.String() != want {
+		t.Fatalf("buf = %q, want %q", buf.String(), want)
+	}
+}
+
 // TestEmitHistoryReplayThinking D42：回放口径恒含思考——[thinking] 行在工具/正文之前，
 // 思考不并入正文行。
 func TestEmitHistoryReplayThinking(t *testing.T) {
