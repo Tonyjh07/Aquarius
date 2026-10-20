@@ -19,7 +19,7 @@
 - [ ] **进程内插件** — Go 级进程内扩展，规划中
 - [x] **本地优先** — 数据全部在 `~/.aquarius/`（profile 整目录隔离），卸载 = 删二进制 + 删目录
 - [x] **TUI + GUI** — bubbletea 终端界面；Gio 悬浮球为默认前端（托盘常驻、全局快捷键、深浅主题跟随）
-- [x] **跨平台（功能分级）** — GUI 平台层已抽出（D111/S4b）：Windows 为完整形态（整窗 ULW 半透明/羽化、托盘、全局热键、原生菜单）；**非 Windows 为可用降级**——常规不透明窗 + 输入/转写/设置窗可用、深浅色与文件选择框走系统命令，**无**半透明/羽化、托盘、全局热键与原生右键菜单（缺失项在转写区提示一次）。详见 [DESIGN §15.6](DESIGN.md)
+- [x] **跨平台（功能分级）** — GUI 平台层已抽出：Windows 为完整形态（整窗 ULW 半透明/羽化、托盘、全局热键、原生菜单）；**非 Windows 为可用降级**——常规不透明窗 + 输入/转写/设置窗可用、深浅色与文件选择框走系统命令，**无**半透明/羽化、托盘、全局热键与原生右键菜单（缺失项在转写区提示一次）。详见 [DESIGN.md](DESIGN.md) 的平台差异一节。
 
 ## 快速开始
 
@@ -28,8 +28,10 @@ go build ./cmd/aquarius
 ./aquarius.exe      # 首次运行生成 ~/.aquarius/config.json 指针 + profiles/default/ 模板
 ```
 
-1. 编辑 `~/.aquarius/profiles/default/config.json`：在 `model.providers` 填端点与模型
-   （`base_url` / `models` / `api_key`；多 provider + 降级顺序 `model.fallback`，见[配置参考](docs/configuration.md)）；
+1. 编辑 `~/.aquarius/profiles/default/config.json`（或直接在设置窗「模型服务」页编辑）：在
+   `model.providers` 填端点与模型——`name`/`kind`（协议）/`base_url`/`keys`（密钥池）/`models`
+   （每个模型自带 `caps` 能力位与 `context_window` 窗口）；多 provider + 逐项降级 `model.fallback`
+   （见[配置参考](docs/configuration.md)）；
 2. 密钥推荐写 `secret:<名>`：真实值按名取用（先查本机加密密钥库 `<profile>/secrets.bin`，未命中再
    查同名环境变量）；在设置窗填明文会自动转入密钥库、config 里只留引用（也允许明文直填 `api_key`，
    启动会打印警告）；
@@ -45,7 +47,7 @@ go build ./cmd/aquarius
 |---|---|
 | [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型（会话树/Revise）、端口设计、插件架构（MCP）、权限模型与里程碑 |
 | [docs/decisions.md](docs/decisions.md) | **决策记录 ADR**：逐条决策与否决方案（编号范围见该文索引表） |
-| [docs/roadmap.md](docs/roadmap.md) | **进度与阶段规划**：TODO 盘点、S1–S8 分步路线（含 S1b/S1c/S2b/S4b 半步）与落地状态（里程碑进度以此为准） |
+| [docs/roadmap.md](docs/roadmap.md) | **进度与阶段规划**：TODO 盘点、分步路线与落地状态（里程碑进度以此为准） |
 | [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令、测试与提交要求 |
 | [docs/overview.md](docs/overview.md) | 架构导读：10 分钟地图——内核三事、依赖铁律、目录与端口矩阵 |
 | [docs/usage.md](docs/usage.md) | 使用手册：命令参考、三轨压缩、权限等级、常见问题 |

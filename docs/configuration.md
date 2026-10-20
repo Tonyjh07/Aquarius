@@ -250,7 +250,8 @@ profile 配置 `<data>/profiles/default/config.json`：
     "think_tool": false,
     "echo_thinking": true
   },
-  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0 },
+  "tools": { "disabled": ["think"] },
+  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "prompts": { "modules": {}, "persona": [] },
   "input": { "asr": "whisper-api", "mic": true },
@@ -271,7 +272,8 @@ profile 配置 `<data>/profiles/default/config.json`：
 ## 设置窗与 config 的关系（S4/D110③）
 
 - 「Profile」区：当前 profile 展示 + 新建 / 复制当前 / 切换（重启生效）。
-- 「模型服务」区：provider 列表**全量编辑**（名称/协议/接口地址/密钥池/模型列表/能力位/tokenizer/不认参数）+ 设为主 + 删除 + 连通性「测试」（真实最小请求 `/models`，8s 超时）+ 模型能力「探测」；「应用 provider 变更」整体写回，重启生效。
+- 「模型」页：当前模型名 + 原生思考与推理档位 + 有序降级链（每项 `provider / model`，可增删与上移下移；链窄于当前模型能力时上方给一行警示）。
+- 「模型服务」页：provider 管理（**折叠卡片**，同时只展开一张）——名称/协议/接口地址/密钥池/模型能力表（名字 + 三能力勾选 + 上下文窗口）/tokenizer/不认参数，+ 设为主 + 删除 + 连通性「测试」（真实最小请求，8s 超时）+ 逐模型「探测能力」；「获取模型」把服务端返回的模型名**追加成模型行**。密钥值**只写不回显**（留空 = 保持原值）；能力勾选**动过才固化成显式声明**（未动 = 保持原形态）。「应用 provider 变更」整体写回，重启生效。
 - 「权限与思考」「外观与呼出」：热生效项照旧；模型名经 `/model` 热切换。
 - 「输出」「限额」「人格模块树（S7/D144）」：保存即写回；人格组合**只影响之后新建的会话**，且**重启后生效**（与 `system_prompt` 同口径）。
 - 「MCP 与插件」：只读清单；「高级」页 = config.json **原文整文件编辑**（保存前 JSON 校验，解析失败原文件不动；未知键天然保留，Q10）。

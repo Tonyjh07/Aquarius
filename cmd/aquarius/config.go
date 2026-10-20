@@ -500,8 +500,8 @@ const defaultConfig = `{
         "base_url": "https://api.openai.com/v1",
         "keys": [ { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
         "models": [
-          { "name": "gpt-4o-mini" },
-          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"] }
+          { "name": "gpt-4o-mini", "context_window": 128000 },
+          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"], "context_window": 128000 }
         ],
         "tokenizer": "",
         "unsupported_params": [] }
@@ -511,6 +511,7 @@ const defaultConfig = `{
     "name": "gpt-4o-mini",
     "think": true,
     "reasoning_effort": "",
+    "think_tool": false,
     "echo_thinking": true
   },
   "tools": { "disabled": ["think"] },

@@ -141,7 +141,7 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 - **启动报"发现旧格式会话（虚拟 Root，D19）"**：M0 早期数据不兼容，按报因点名的
   ID 删除 `profiles/<name>/conversations/<id>.json`（含 `.bak`）后重试，详见 [storage.md](storage.md)。
 - **启动警告"api_key 为明文"**（D35）：明文密钥直接写在 config.json 里，任何能读
-  该文件的进程都可取用——到设置窗 provider 编辑区（或欢迎窗）重填一次即转入本机加密密钥库，
+  该文件的进程都可取用——到设置窗「模型服务」页（或欢迎窗）重填一次即转入本机加密密钥库，
   config 里只留 `secret:<名>` 引用；也可手工改成 `"api_key": "secret:名"` 再配同名环境变量。
   该项留空也会自动回落默认引用（两处都取不到时才报错退出）。
 - **密钥库**：真实值存 `<profile>/secrets.bin`（本机加密；Windows 用系统账户加密，其它平台用
@@ -162,5 +162,6 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
   `read-only|strict|permissive|full-access`。
 - **`ui.kind` 报未支持**：只接受 `gui`（默认，D51 悬浮球）、`tui`（D33）与 `repl`（行式，测试/e2e 后端）。
 - **想换模型/端点**：模型名 `/model`（热切）或 config `model.name`；provider/端点改
-  `model.providers`（设置窗「模型服务」区可全量编辑 + 连通性测试，重启生效，D110②）；或用
+  `model.providers`（设置窗「模型服务」页可全量编辑：协议 / 端点 / 密钥池 / 模型能力表，含连通性
+  测试与逐模型「探测能力」，重启生效）；或用
   `-model`/`-base-url` flag、`AQUARIUS_MODEL`/`AQUARIUS_BASE_URL` 环境变量临时覆盖。
