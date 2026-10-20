@@ -5,7 +5,11 @@ package uigui
 // 原先这些方法只存在于 shell_windows.go；迁入中性文件后非 Windows 也能编译同一套
 // 策略（只是平台侧能力降级：呼出/常驻缺失，见 platform 包）。
 
-import "github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+import (
+	"fmt"
+
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+)
 
 // toggleTopMost 置顶开关（托盘/logo 菜单，§15.1/D72）：切换主窗置顶态并持久化（与位置
 // 记忆同文件）。D62：单窗单像素层，无 overlay 跟随步。
@@ -76,6 +80,8 @@ func (u *UI) exitViaShell() {
 	if h := u.mainHandle(); h != 0 {
 		u.plat.HideMain(h)
 	}
+	// GUI 下没有别的可见回执：保留这行终端日志，供用户确认菜单退出已触发。
+	fmt.Println("[tray] 菜单退出")
 	u.interruptNow() // D64：进行中的 Turn 立即取消（无轮进行 = nop，空闲退出不受影响）
 	u.signalEOF(nil)
 }
