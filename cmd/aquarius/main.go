@@ -19,7 +19,6 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
-	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
@@ -156,7 +155,7 @@ type wiring struct {
 	poller    *app.Poller
 	runner    *toolrun.Runner
 	audit     *decorate.Audit
-	client    *llm.Client
+	client    port.LLM
 	ui        uiFrontend
 	presenter *outputsPresenter
 

@@ -105,7 +105,11 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 	}
 	// note 传 nil：探测刻意发可能不被支持的参数，那些结论不该被记成「这个 provider
 	// 不认该参数」——正式请求的剥离记录归正式请求。
-	c, _, err := w.newLLMClient(p, nil)
+	key, err := p.resolveKeyAt(context.Background(), 0, w.secrets, w.stderr)
+	if err != nil {
+		return nil, err
+	}
+	c, _, err := w.newLLMClient(p, key, nil)
 	return c, err
 }
 

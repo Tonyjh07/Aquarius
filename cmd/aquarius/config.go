@@ -773,6 +773,17 @@ func (p *providerConfig) resolveKeyAt(ctx context.Context, i int, sec port.Secre
 	return resolveAPIKey(ctx, p.Name, refs[i], sec, stderr)
 }
 
+// keyLabelAt 第 i 把钥匙的展示名（D173）：用户填的 label 优先，空则「第 N 把」。
+// 只用于界面与日志，不参与解析。
+func (p *providerConfig) keyLabelAt(i int) string {
+	if i >= 0 && i < len(p.Keys) {
+		if l := strings.TrimSpace(p.Keys[i].Label); l != "" {
+			return l
+		}
+	}
+	return fmt.Sprintf("第 %d 把", i+1)
+}
+
 // cfgWriteMu 串行化全部 config 写回（/permission、/model、/think、/effort、
 // /plugin 与 llm 的 unsupported_params 记录可能并发——读-改-写须互斥防丢更新）。
 var cfgWriteMu sync.Mutex

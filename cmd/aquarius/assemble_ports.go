@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
@@ -89,25 +90,74 @@ func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 }
 
 // buildClient 构建 provider 客户端（D173）：base_url/tokenizer 构造期固化
-// （port.LLM 不可热换）。密钥池在 S11-4 接入轮换；当前取第一把（与旧行为一致）。
-func (w *wiring) buildClient(p *providerConfig) (*llm.Client, port.TokenCounter, error) {
-	return w.newLLMClient(p, w.noteUnsupportedFor(p.Name))
+// （port.LLM 不可热换）。密钥池在这里展开：一把钥匙一具 client（有的钥匙可能
+// 解析失败——那种钥匙不进池，启动打一行警告而不是整体失败），多把时用 KeyPool
+// 装饰器串起来（重试罩在它外面，见 stackDecorators）。
+func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, error) {
+	refs := p.keyRefs()
+	keys := make([]decorate.KeyEntry, 0, len(refs))
+	var counter port.TokenCounter
+	var firstErr error
+	for i, ref := range refs {
+		key, err := resolveAPIKey(context.Background(), p.Name, ref, w.secrets, w.stderr)
+		if err != nil {
+			// 单把解析失败不打断启动：还有别的钥匙可用（D141 的「任一把可用即算配置完整」
+			// 同一口径）。一把都没有才算失败，用第一条错误报因。
+			if firstErr == nil {
+				firstErr = err
+			}
+			fmt.Fprintf(w.stderr, "[llm] provider %q 第 %d 把密钥不可用，本次启动跳过它：%v\n",
+				p.Name, i+1, err)
+			continue
+		}
+		c, cnt, cerr := w.newLLMClient(p, key, w.noteUnsupportedFor(p.Name))
+		if cerr != nil {
+			return nil, nil, cerr
+		}
+		if counter == nil {
+			counter = cnt
+		}
+		keys = append(keys, decorate.KeyEntry{Label: strings.TrimSpace(p.keyLabelAt(i)), LLM: c})
+	}
+	if len(keys) == 0 {
+		if firstErr != nil {
+			return nil, nil, firstErr
+		}
+		return nil, nil, fmt.Errorf("provider %q 没有可用的密钥", p.Name)
+	}
+	if len(keys) == 1 {
+		return keys[0].LLM, counter, nil // 没有别的钥匙可换，轮换层没有存在意义
+	}
+	// 提示走 presentener 扇出：presenter 晚于 buildLLMs 才装配，故用惰性回调
+	// （调用时才读 w.presenter），装配顺序不成为约束。
+	pool := decorate.NewKeyPool(keys).
+		OnRotate(func(ctx context.Context, from, to string) {
+			w.emitNotice(ctx, fmt.Sprintf("密钥 %s 被限流或额度耗尽，本轮改用 %s", from, to))
+		}).
+		OnExhaust(func(ctx context.Context, until time.Time) {
+			w.emitNotice(ctx, fmt.Sprintf("%s 的密钥都在冷却，最早 %s 之后恢复", p.Name, until.Format("15:04:05")))
+		})
+	return pool, counter, nil
+}
+
+// emitNotice 发一条面向用户的提示（presenter 未就绪时静默——装配早期没有界面可发）。
+func (w *wiring) emitNotice(ctx context.Context, text string) {
+	if w.presenter == nil {
+		return
+	}
+	_ = w.presenter.Emit(ctx, port.NoticeEvent{Text: text})
 }
 
 // newLLMClient 建客户端本体（协议分派的唯一落点，D175 会在此按 kind 分叉）。
-// note 为 nil = 不记录服务端不认的参数（能力探测用：探测刻意发可能不被支持的参数，
-// 不该把结论记成正式请求的剥离清单）。
-func (w *wiring) newLLMClient(p *providerConfig, note func(string)) (*llm.Client, port.TokenCounter, error) {
+// key 由调用方解析（密钥池逐把解析后再进来）。note 为 nil = 不记录服务端不认的参数
+// （能力探测用：探测刻意发可能不被支持的参数，不该把结论记成正式请求的剥离清单）。
+func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string)) (*llm.Client, port.TokenCounter, error) {
 	// 协议分派尚未接入（OpenAI Responses / Anthropic 在后续步骤）：宁可启动时报因，
 	// 也不能拿 chat/completions 的请求去打一个别的规范的端点——那会以「密钥无效」
 	// 「模型不存在」这类假象暴露，排查方向全错。
 	if kind := p.protocolKind(); kind != kindOpenAIChat {
 		return nil, nil, fmt.Errorf("provider %q 的协议 %q 尚未接入（当前可用：%s）",
 			p.Name, kind, kindOpenAIChat)
-	}
-	key, kerr := p.resolveKeyAt(context.Background(), 0, w.secrets, w.stderr)
-	if kerr != nil {
-		return nil, nil, kerr
 	}
 	c, cerr := llm.New(llm.Config{
 		BaseURL: p.BaseURL, APIKey: key, Tokenizer: p.Tokenizer,

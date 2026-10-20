@@ -232,7 +232,7 @@ func TestProbeUnwiredProtocolFailsLoud(t *testing.T) {
 		!strings.Contains(err.Error(), "anthropic") {
 		t.Fatalf("err = %v, want 指名协议", err)
 	}
-	if _, _, err := w.newLLMClient(&cfg.Model.Providers[0], nil); err == nil ||
+	if _, _, err := w.newLLMClient(&cfg.Model.Providers[0], "", nil); err == nil ||
 		!strings.Contains(err.Error(), "尚未接入") {
 		t.Fatalf("err = %v, want 尚未接入（不能拿 chat 的请求去打别的规范）", err)
 	}

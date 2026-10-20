@@ -864,6 +864,113 @@ func TestRunPersonaEnvironmentE2E(t *testing.T) {
 
 // TestRunRecordsUnsupportedParams D34 全链路：服务端 400 点名不认 reasoning_effort
 // → 同请求剥离重试成功 → 自动写回 config model.unsupported_params（重启后不再发送）。
+// TestRunKeyPoolRotatesOn429 密钥池端到端（D173/S11-4）：第一把钥匙 429（带 Retry-After）
+// 时立刻换第二把钥匙重试（不退避），并把被拒的那把拉进冷却。
+func TestRunKeyPoolRotatesOn429(t *testing.T) {
+	var mu sync.Mutex
+	var keys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		keys = append(keys, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		mu.Unlock()
+		if len(keys) == 1 {
+			w.Header().Set("Retry-After", "30")
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"rate limited"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[
+      {"label":"主账号","api_key":"secret:KEY_A"},{"label":"备用","api_key":"secret:KEY_B"}],
+      "models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"},
+  "limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
+	writeProfileLayout(t, dir, cfg)
+	t.Setenv("KEY_A", "key-a")
+	t.Setenv("KEY_B", "key-b")
+
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
+	}
+	mu.Lock()
+	snapshot := append([]string(nil), keys...)
+	mu.Unlock()
+	if len(snapshot) != 2 || snapshot[0] != "key-a" || snapshot[1] != "key-b" {
+		t.Fatalf("请求用的密钥 = %v, want [key-a key-b]（先第一把，429 后换第二把）", snapshot)
+	}
+	if !strings.Contains(out.String(), "ok") {
+		t.Fatalf("第二轮应正常出结果：%q", out.String())
+	}
+	if strings.Contains(out.String(), "key-b") || strings.Contains(errBuf.String(), "key-b") {
+		t.Fatal("用户面不得出现密钥值")
+	}
+}
+
+// TestRunKeyPoolKeepsKeyOnNonQuota 5xx 不换钥匙（端点故障换钥匙没用，交重试/降级）。
+func TestRunKeyPoolKeepsKeyOnNonQuota(t *testing.T) {
+	var mu sync.Mutex
+	var keys []string
+	count := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		keys = append(keys, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		count++
+		n := count
+		mu.Unlock()
+		if n == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"error":{"message":"boom"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+"data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"p","base_url":%q,"keys":[
+      {"api_key":"secret:KEY_A"},{"api_key":"secret:KEY_B"}],"models":[{"name":"m"}]}],"name":"m"},
+  "ui":{"kind":"repl"},"limits":{"max_turns":8,"max_context_tokens":64000,"tool_output_chars":20000,"tool_timeout_sec":60}}`, srv.URL)
+	writeProfileLayout(t, dir, cfg)
+	t.Setenv("KEY_A", "key-a")
+	t.Setenv("KEY_B", "key-b")
+
+	var out bytes.Buffer
+	if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, io.Discard); code != 0 {
+		t.Fatalf("code = %d", code)
+	}
+	mu.Lock()
+	snapshot := append([]string(nil), keys...)
+	mu.Unlock()
+	// 重试层（3 次）都该是第一把；不该出现第二把。
+	for _, k := range snapshot {
+		if k == "key-b" {
+			t.Fatalf("5xx 不该换钥匙：keys = %v", snapshot)
+		}
+	}
+	if len(snapshot) < 2 {
+		t.Fatalf("应经重试层再试一次：keys = %v", snapshot)
+	}
+	if !strings.Contains(out.String(), "ok") {
+		t.Fatalf("重试后应给出结果：%q", out.String())
+	}
+}
+
+// TestRunRecordsUnsupportedParams 服务端点名拒绝某参数：本请求剥离重试成功后写回
+// config providers[0].unsupported_params，且不改动原档位（只记不改）。
 func TestRunRecordsUnsupportedParams(t *testing.T) {
 	var mu sync.Mutex
 	var n int
