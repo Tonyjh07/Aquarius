@@ -153,6 +153,9 @@ type Message struct { // 创建后只读，值语义
     // Source 注入来源（D150；仅 Role=inject 非空）：`job:<id>` / `tool:<name>` /
     // `plugin:<name>` / `poller:<id>` / `user`。只作展示与审计，不进模型上下文。
     Source     string
+    // Trust 注入内容的信任级（D170；仅 Role=inject）：决定装配投影角色。
+    // 零值 = 外部内容（fail-closed），装配时套数据围栏。随树落盘，重载后口径不变。
+    Trust      InjectTrust // "" (external) | "host"
     // Trigger 注入是否自动起一轮响应（D150；仅 Role=inject）。记录当时的决定以便回放/审计；
     // 行为在提交时已经发生，重放不再触发。
     Trigger    bool
@@ -245,11 +248,13 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - **注入节点（D150）**：内核里是**独立角色 `inject`**，与 system 分开——system 是「水位语义」
   （人格快照与压缩摘要会切断上文），注入节点**只追加上下文、不动水位**。内容只有正文分片
   （text/image/audio/doc，与 user 同规则；thinking/tool 一律拒）。装配投影由适配层决定
-  （§7.1）：默认为 **user 角色 + 数据围栏**，特定来源（如系统级轮询汇报）可投影为 system；
-  `Message.Source` 记录来源（`job:<id>` / `tool:<name>` / `plugin:<name>` / `poller:<id>` / `user`），
-  只作展示与审计，不进上下文。`Message.Trigger` 记录本条落地时**实际**是否随附起了一轮响应
-  （排空点只落地记 `false`、驱动式排空触发记 `true`）——重放不再触发（否则加载会话就自己跑起
-  Turn）。注入的字段口径与投影/触发默认表见 §7.1.1。
+  （§7.1）：默认为 **user 角色 + 数据围栏**，显式声明 `Trust=host` 的（用户动作、任务汇报）
+  投影为 system（用户动作仍取 user 角色）且不套围栏。`Message.Source` 记录来源
+  （`job:<id>` / `tool:<name>` / `plugin:<name>` / `poller:<id>` / `user`），只作展示与审计，
+  不进上下文；`Message.Trust`（D170）是**信任依据本身**，随树落盘——装配发生在节点落地之后、
+  也可能跨进程重载，只靠来源字符串猜是 fail-open。`Message.Trigger` 记录本条落地时**实际**
+  是否随附起了一轮响应（排空点只落地记 `false`、驱动式排空触发记 `true`）——重放不再触发
+  （否则加载会话就自己跑起 Turn）。注入的字段口径与投影/触发默认表见 §7.1.1。
 - **插入摘要（D152）**：`InsertBefore(id, role, parts)` 在 `id` **之前**插入一个衬垫节点——
   新节点挂在 `id` 的原父下并占据其位置，`id` 改挂到新节点下（单条边转移，其余兄弟不动）。
   用于「在某节点前插入摘要」：新建 system 摘要节点后把该节点及其子树整体挪到摘要之后，
@@ -762,6 +767,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 // port/inject.go
 type Injection struct {
     Source  string        // job:<id> / tool:<name> / plugin:<name> / poller:<id> / user
+    Trust   TrustLevel    // TrustHost = 宿主事实；零值/TrustExternal = 外部内容（D170）
     Parts   []conversation.Part
     Trigger *bool         // nil = 按来源取默认；非 nil = 显式覆盖（D166）
     Session conversation.ID // 可选目标会话（D167）；空 = 落地时取当前会话
