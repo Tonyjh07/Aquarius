@@ -295,9 +295,12 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - **图片经 `file_read` 内联**（D169）：MIME 属 png/jpeg/gif/webp 且原始大小在 20MB 内的文件整篇
   入附件库，`tool.Result.Images` 只带哈希引用（字节不进树、不进落盘 JSON）；装配时投影为
   **紧随该 tool 应答之后的一条 user 消息**——OpenAI 兼容端点的 tool 角色不收图片块。
-  视觉能力由配置声明（`model.providers[].vision`），降级链取**与**：任一 provider 未声明即按
-  不支持处理。不支持时 `file_read` 回填 `the current model does not accept image input`，
-  user 附件里的 Image Part 同样降级为文字占位（本段的「明确报因」口径）。
+  视觉能力由配置按**模型**声明（`model.providers[].models[].caps` 含 `vision`，D173）；
+  **生效能力 = 整条降级链取与**——降级发生在半路上，图片那时已经进了请求体，再剥来不及，
+  所以任一环节不支持就整轮按不支持处理。不支持时 `file_read` 回填
+  `the current model does not accept image input`，user 附件里的 Image Part 同样降级为文字占位
+  （本段的「明确报因」口径）。能力位可由用户**手动发起探测**（D174）：探测只写回判定明确的
+  几位，「无结论」不动已有声明。
 
 ### 4.3 内置工具（全部经 `port.Tool` 契约，与三方插件同权）
 
@@ -372,8 +375,17 @@ type GenerateRequest struct {
 
 type ModelInfo struct {
     Name           string
-    Vision, Audio  bool
+    Caps           ModelCaps   // 能力位（D173）；空集 = 什么都不做假设
     CostIn, CostOutUSD float64 // 每千 token 单价
+}
+
+// ModelCaps 模型能力位（D173）：三项独立声明，缺省按协议给（见 §8）。
+//   Tools     能否接收 function calling 的工具清单并按 schema 发起调用
+//   Reasoning 能否接受原生思考参数（reasoning_effort / enable_thinking）并产出思维链
+//   Vision    能否接收图片输入（image 内容块）
+// 能力位只描述**模型能做什么**，不描述「协议怎么写」——后者是适配器的事。
+type ModelCaps struct {
+    Tools, Reasoning, Vision bool
 }
 
 // Usage 见 domain/conversation.Usage（与 Message.Usage 同型，port 直接引用，不另造 DTO）
@@ -577,7 +589,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 
 | 端口 | v1 内置适配器 | 三方接入 | 测试替身 |
 |---|---|---|---|
-| `LLM` | openai 兼容 / anthropic / ollama（+可选 `TokenCounter`） | Tier-1 Go 插件 | 脚本化 Stream |
+| `LLM` | openai-chat（缺省）/ openai-responses / anthropic（+可选 `TokenCounter`，D173/D175） | Tier-1 Go 插件 | 脚本化 Stream |
 | `Tool` | memory_*、file_*、term_*、job_*、think | **MCP server** | fake tool |
 | `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
 | `Confirmer` | TUI 确认 / `--yes` | — | 自动应答 |
@@ -858,7 +870,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
 | `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
 | `/model [name]` | 无参：列 `LLM.Models()` 可用模型 + 当前模型/能力/单价；有参：Agent 内热切换并写回 config（D32，同 `/permission` 模式） |
-| `/think [on\|off]` | 无参：显示原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发 |
+| `/think [on\|off]` | 无参：显示原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发。当前链的模型不支持思考（D173 `caps` 无 `reasoning`）时同样不发，无参显示里注明「当前模型未声明思考能力」 |
 | `/effort [级别]` | 无参：显示当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off = 清除）写回 config `model.reasoning_effort`；**是否真发由 `/think` 决定**，on 且未设档则不发（交服务端默认，D34） |
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
 | `/plugin [list\|enable\|disable\|logs]` | MCP 插件管理（D31/D143）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效；`logs [name]` = tail `audit.log` 的插件调用行（无参给各插件最近调用摘要，S6） |
@@ -987,20 +999,32 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 ```json
 {
   "model": {
-    // D110②：provider 列表化（破坏性）。原单 provider 平铺字段（provider/name/base_url/api_key/…）退役。
+    // D173：模型与提供商 v2（破坏性）。provider 承载「怎么连」，model 承载「能做什么」。
     "providers": [                // 每个 provider 一条；primary 指向其中 name
-      { "name": "openai", "base_url": "https://api.openai.com/v1",
-        "api_key": "secret:AQUARIUS_OPENAI_KEY", // secret:<名> = 先查本机密钥库、再查环境变量（D151）；
-                                                 // 明文允许但启动警告；界面填的明文会转入库并改成引用（D161）；
-                                                 // 空值回落本默认引用（D35）
-        "models": ["gpt-4o-mini"], "tokenizer": "",  // tokenizer：本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
-        "unsupported_params": [] }                   // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
+      { "name": "openai",
+        "kind": "openai-chat",    // 协议：openai-chat（缺省，/chat/completions）| openai-responses（/responses）| anthropic（/messages）
+        "base_url": "https://api.openai.com/v1",  // 路径前缀；适配器在其后追加各自端点
+        "keys": [                 // 密钥池（D173）：按序轮换，逐把独立冷却
+          { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" }, // secret:<名> = 先查本机密钥库、再查环境变量（D151）；
+                                                                          // 明文允许但启动警告；界面填的明文会转入库并改成引用（D161）
+          { "label": "备用",   "api_key": "secret:AQUARIUS_OPENAI_KEY_2" }
+        ],
+        "models": [               // 模型条目：名字 + 能力位（都是这个模型自己的属性，不继承 provider）
+          { "name": "gpt-4o-mini" },                            // 省略 caps = 按协议缺省（下表）
+          { "name": "o3-mini", "caps": ["reasoning"] },         // 显式声明 = 以声明为准（空数组 = 三项全关）
+          { "name": "gpt-4o",  "caps": ["tools", "reasoning", "vision"] }
+        ],
+        "tokenizer": "",          // 本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
+        "unsupported_params": []  // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
+      }
     ],
-    "primary": "openai",          // 当前生效 provider（原 model.provider 关系由 primary 承载）
-    "fallback": [],               // 有序 = 降级顺序（Q5：仅网络类 429/5xx/网络/超时 触发；401/400 不降级；
-                                  //   降级目标 provider 的请求模型 = 其 models[0]，D110 修订③）
-    "name": "gpt-4o-mini",        // 当前模型名（在 primary provider 的 models 内）
-    "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）
+    "primary": "openai",          // 当前生效 provider
+    "fallback": [                 // 有序 = 降级顺序（Q5：仅网络类 429/5xx/网络/超时 触发；401/400 不降级）
+      { "provider": "mimo", "model": "mimo-v2.6-flash" } // 逐项自带模型（省略 model = 该 provider 的 models[0]）；
+                                                         // 同一 provider 可重复出现（同家不同型号兜底）
+    ],
+    "name": "gpt-4o-mini",        // 当前模型名（在 primary 的 models 内）
+    "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）；模型无 reasoning 能力时不发
     "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
     "echo_thinking": true        // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
   },
@@ -1056,6 +1080,19 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 `--profile` flag > `<data>/config.json` 指针（D110 修订②）。`-model`/`AQUARIUS_MODEL` 覆盖 `model.name`；
 `-base-url`/`AQUARIUS_BASE_URL` 覆盖 primary provider 的 `base_url`（调试逃生口）。
 
+**能力位缺省（D173）**：模型条目省略 `caps` 时按协议给缺省，显式写了（含空数组）就以声明为准：
+
+| kind | tools | reasoning | vision | 理由 |
+|---|---|---|---|---|
+| `openai-chat` | 开 | 开 | **关** | 生态里绝大多数兼容端点支持 tools；思考参数不认时已有「剥离重试 + `unsupported_params`」兜底（D34），猜错的代价只是一次往返。图片各端点差异太大，不猜 |
+| `openai-responses` | 开 | 开 | 开 | `input_image` 是 Responses 的标准字段 |
+| `anthropic` | 开 | **关** | 开 | Messages API 全系支持图片与工具；extended thinking 要显式给 `budget_tokens`，旧模型不接受，不猜 |
+
+**生效能力 = 整条链取与**：primary 的当前模型与每个 fallback 项的模型，三项能力各自取与。链上任一模型缺
+某项，整轮就按缺该项处理（不发工具清单 / 不发思考参数 / 图片降级为文字占位）。代价是「加一条弱模型
+会静默削能力」，所以启动时若链的能力窄于 primary 就打一行警告，`/model` 列出链时逐项标注是哪一环
+拉低的——**不让人自己发现**。
+
 **密钥解析顺序（D151/D161）**：`api_key` 取值为 `secret:<名>` 时，**先查本机密钥库
 `<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错（提示里说明查过哪两处，
 不回显值）。**库解不开**（profile 拷到别的机器、DPAPI 绑的是别的账户、文件损坏）时打一行
@@ -1063,9 +1100,10 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 把它变成硬故障只会让人以为程序坏了（D161）。明文仍允许但启动警告（兼容旧配置）；空值回落
 `secret:AQUARIUS_OPENAI_KEY`。
 
-**写入路径（D161）**：设置窗 provider 编辑区与欢迎窗填的**明文**密钥，写进本机密钥库，config
+**写入路径（D161）**：设置窗「模型服务」页与欢迎窗填的**明文**密钥，写进本机密钥库，config
 里只落 `secret:<名>`；**写库失败即报错**，不静默退回明文。键名 = 原引用名（改填明文只在原地
-换值，引用不 churn），否则按 provider 名派生 `AQUARIUS_<PROVIDER>_API_KEY`。设置窗另有
+换值，引用不 churn），否则按 provider 名派生 `AQUARIUS_<PROVIDER>_API_KEY`（同一 provider 的
+第 N 把钥匙追加 `_<N>` 后缀，D173）。设置窗另有
 「密钥库」页管理任意名字（MCP 插件 `env`/`headers` 的 `secret:` 也存这里），列表只显示名字 +
 尾 4 位掩码，值永不回显。
 
@@ -1150,6 +1188,11 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   不回填让模型空转；取消按"取消提交"收场（返回 nil，主循环经 ctx 收尾）。
 - **模型/网络错误**：装饰器层重试（幂等 Generate 的**瞬时错误**——适配器以 `port.ErrTransient`
   哨兵标注 429/5xx/连接中断，装饰器限次 + 指数退避，ctx 取消一律不重试）；仍失败则 `Outcome: error` 提交并上抛 UI。
+- **密钥轮换（D173）**：429 由适配器额外标注 `port.ErrQuota`（该错误同时 `Is(ErrTransient)`），
+  **同 provider 内**先换下一把钥匙（立刻重试，不退避），被拒的钥匙在进程内冷却（读
+  `Retry-After`，缺省 60s），冷却期内跳过它。钥匙全在冷却 = 该 provider 失败，交外层降级。
+  顺序固定为**先换钥匙、再换 provider**：否则多账号场景下会白跨一次 provider。
+  `ErrQuota` 之外的其他瞬时错误（5xx/网络）不换钥匙——换钥匙对端点故障没用。
 - **并发**：单会话内 Turn 串行（Head 唯一）；多会话并行安全（一会话一文件）；Job 自管并发。
 
 ---
@@ -1689,9 +1732,11 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 - **设置窗分组导航（S4d/D142）**：设置窗内容由「一长串分组行」改为**分页呈现**——左侧
   **140dp 竖向导航栏**（当前页高亮；点击切页）+ 右侧页内容（每页各自一个 `material.List`，
   滚动位置按页保留）+ **全局底栏**（「保存并应用」+ 反馈文案，任何页常驻）。窗几何
-  **720×560（min 620×420）**；内容区约 552dp，比改前的 532dp 略宽。**七页**：
+  **720×560（min 620×420）**；内容区约 552dp，比改前的 532dp 略宽。**八页**：
   **常规**（Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出）、**模型**（当前模型名 /
-  原生思考与推理档位 / provider 列表编辑区）、**密钥库**（本机加密密钥库：已存名字 + 尾 4 位掩码 /
+  原生思考与推理档位 / **有序降级链**，S11/D173 起只管路由）、**模型服务**（provider 管理：
+  折叠卡片，收起态一行摘要、展开才是端点/密钥池/模型能力表，S11/D173）、
+  **密钥库**（本机加密密钥库：已存名字 + 尾 4 位掩码 /
   新增覆盖 / 行内二次确认删除，S9-6b/D161）、**对话**（限额）、**系统提示词**（人格模块库 /
   有序引用 / 内置只读模块 / 组合预览，S7/D144；S7b/D145 由「对话」页拆出）、**工具与 MCP**
   （内置工具启停 + MCP 与插件管理，S6/D143）、**高级**（config.json raw JSON）。
