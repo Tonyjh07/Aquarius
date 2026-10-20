@@ -78,6 +78,19 @@ func TestPayloadIncludesReasoning(t *testing.T) {
 	}
 }
 
+// TestPayloadIncludesReasoningSignature D175：思考块签名也随请求发出去，估算必须计入——
+// 否则 /usage 与压缩阈值会系统性低估（签名串可以很长）。
+func TestPayloadIncludesReasoningSignature(t *testing.T) {
+	sig := strings.Repeat("s", 200)
+	req := port.GenerateRequest{
+		Messages: []port.PromptMessage{{Role: "assistant", ReasoningSignature: sig}},
+	}
+	p, _ := payloadOf(req)
+	if got := strings.Count(p, "s"); got != 200 {
+		t.Fatalf("签名计入 = %d, want 200", got)
+	}
+}
+
 // fakeCounter 假精确计数器（②覆盖③）。
 type fakeCounter struct {
 	n   int

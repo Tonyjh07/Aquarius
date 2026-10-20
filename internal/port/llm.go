@@ -25,8 +25,12 @@ type PromptMessage struct {
 	// Reasoning role=assistant 的思维链回传承载（D42）：适配器映射为 reasoning_content 等
 	// 消息级字段；空 = 无思考或 config `model.echo_thinking` 关闭（装配层过滤）。
 	Reasoning string
-	ToolCalls []tool.Call
-	CallID    string // role=tool：对应 assistant 调用的 ID
+	// ReasoningSignature 思考块签名回传（D175）：树内 PartThinking.Signature 原样带上，
+	// 适配器按协议前缀识别归属（`anthropic:` / `responses:`）——只认自家前缀、其余忽略，
+	// 避免跨 provider 复制会话时把 A 家的签名发给 B 家。空 = 无签名（Chat Completions 现状）。
+	ReasoningSignature string
+	ToolCalls          []tool.Call
+	CallID             string // role=tool：对应 assistant 调用的 ID
 }
 
 // Sampling 采样参数。
@@ -156,6 +160,10 @@ type Delta struct {
 	// 同时进 commit buffer 提交为 PartThinking 分片；是否回传由装配层的
 	// config `model.echo_thinking` 决定（port.Delta 本身不带口径）。
 	Reasoning bool
+	// ReasoningSignature 思考块签名（D175）：协议适配器在思考结束后一次性给出（Anthropic
+	// 的 thinking block signature、Responses 的 encrypted_content），随当前轮思考缓冲
+	// 并入 PartThinking.Signature。空 = 本次没有签名（多数端点）。
+	ReasoningSignature string
 }
 
 // ToolCallDelta 工具调用的流式分片：同一 Index 的分片聚合为一个 tool.Call。

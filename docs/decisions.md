@@ -3343,6 +3343,15 @@
 - **不做**：不做 Responses 的 `store=true` 服务端会话（本产品自己管会话树）；不做 Anthropic 的
   `cache_control` 显式缓存（等有实测收益再说）；不做流式 tool 参数之外的增量事件透传。
 
+> **落地补充（S11-5 第一步，2026-10-20）**：口径三的签名贯通先于两个适配器落地，因为它协议无关、
+> 两边都要用。落点：`conversation.Part.Signature`（`json:"signature,omitempty"`，仅 `PartThinking`
+> 可携带——写在别的分片上入树时当场拒，避免「签名写了却没生效」难定位）、
+> `port.PromptMessage.ReasoningSignature`、`port.Delta.ReasoningSignature`、
+> `turnBuffer.thinkSig`（只带签名不带文本也留片——否则续跑时签名没了）、
+> `prompt.go` 装配逐段带上（`echo_thinking` 关时随思考一起丢弃）、`est.payloadOf` 计入
+> （签名随请求发出去，估算口径要与发送口径一致）。跨 provider 归属由**值里的协议前缀**判定，
+> 装配层不做过滤——那是各适配器读的时候只认自家前缀的事。
+
 ### D176 · 设置窗「模型服务」页与折叠卡片（2026-10-20）
 
 > **背景**：provider 编辑区与「当前模型 / 思考档位」挤在同一页，每家摊开 6 个输入框 + 4 个按钮，

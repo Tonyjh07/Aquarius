@@ -377,23 +377,25 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 	var out []port.PromptMessage
 	var (
 		reasoning []string
+		thinkSig  string
 		content   []port.PromptPart
 		calls     []tool.Call
 		replies   []port.PromptMessage
 	)
 	flush := func() {
-		if len(content) == 0 && len(reasoning) == 0 && len(calls) == 0 {
-			reasoning, content, calls, replies = nil, nil, nil, nil
+		if len(content) == 0 && len(reasoning) == 0 && len(calls) == 0 && thinkSig == "" {
+			reasoning, thinkSig, content, calls, replies = nil, "", nil, nil, nil
 			return
 		}
 		out = append(out, port.PromptMessage{
-			Role:      "assistant",
-			Content:   content,
-			Reasoning: strings.Join(reasoning, "\n\n"),
-			ToolCalls: calls,
+			Role:               "assistant",
+			Content:            content,
+			Reasoning:          strings.Join(reasoning, "\n\n"),
+			ReasoningSignature: thinkSig,
+			ToolCalls:          calls,
 		})
 		out = append(out, replies...)
-		reasoning, content, calls, replies = nil, nil, nil, nil
+		reasoning, thinkSig, content, calls, replies = nil, "", nil, nil, nil
 	}
 	for _, p := range m.Content {
 		switch p.Kind {
@@ -403,6 +405,9 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 					flush() // tool 之后再来的思考：开启新段
 				}
 				reasoning = append(reasoning, p.Text)
+				if p.Signature != "" {
+					thinkSig = p.Signature // D175：段内后到的签名覆盖先到的（一轮一签）
+				}
 			}
 		case conversation.PartText, conversation.PartImage, conversation.PartAudio, conversation.PartDoc:
 			if len(calls) > 0 || len(replies) > 0 {

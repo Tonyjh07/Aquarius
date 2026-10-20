@@ -39,6 +39,7 @@ type turnBuffer struct {
 	content  []conversation.Part
 	text     strings.Builder    // 当前轮正文
 	thinking strings.Builder    // 当前轮思考
+	thinkSig string             // 当前轮思考块签名（D175；空 = 无）
 	calls    callAssembler      // 当前轮调用聚合（takeCalls 后复位，轮界隔离）
 	usage    conversation.Usage // Turn 累计（各轮流末 usage 求和）
 	round    conversation.Usage // 当前轮流末 usage（校准用，sealRound 并入 usage）
@@ -55,6 +56,9 @@ func (b *turnBuffer) add(d port.Delta) {
 	} else {
 		b.text.WriteString(d.Text)
 	}
+	if d.ReasoningSignature != "" {
+		b.thinkSig = d.ReasoningSignature // D175：整块签名一次给出，后到的覆盖先到的（同一轮只有一个思考块）
+	}
 	b.calls.add(d.ToolCalls)
 	if d.Usage != nil {
 		b.round = *d.Usage
@@ -70,10 +74,15 @@ func (b *turnBuffer) takeCalls() []tool.Call {
 
 // sealRound 把当前轮的思考/正文定稿进 content（幂等：builder 空时 no-op），
 // 并把本轮 usage 并入 Turn 累计。思考段在前、正文段在后（D42 段内序）。
+// 思考块签名（D175）随思考分片一并定稿；只带签名不带文本（Anthropic 的 signature_delta
+// 可能先于/后于文本落定）也要留片——否则回传时签名没了，续跑会被服务端拒。
 func (b *turnBuffer) sealRound() {
-	if b.thinking.Len() > 0 {
-		b.content = append(b.content, conversation.Part{Kind: conversation.PartThinking, Text: b.thinking.String()})
+	if b.thinking.Len() > 0 || b.thinkSig != "" {
+		b.content = append(b.content, conversation.Part{
+			Kind: conversation.PartThinking, Text: b.thinking.String(), Signature: b.thinkSig,
+		})
 		b.thinking.Reset()
+		b.thinkSig = ""
 	}
 	if b.text.Len() > 0 {
 		b.content = append(b.content, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})
@@ -97,7 +106,7 @@ func (b *turnBuffer) addToolPart(call tool.Call, res *tool.Result) {
 
 // empty 缓冲是否没有任何可提交内容。
 func (b *turnBuffer) empty() bool {
-	return len(b.content) == 0 && b.text.Len() == 0 && b.thinking.Len() == 0
+	return len(b.content) == 0 && b.text.Len() == 0 && b.thinking.Len() == 0 && b.thinkSig == ""
 }
 
 // inFlight 未提交缓冲的只读投影（轮间 buildRequest 用）：合成 assistant 节点，
@@ -105,8 +114,10 @@ func (b *turnBuffer) empty() bool {
 func (b *turnBuffer) inFlight() conversation.Message {
 	parts := make([]conversation.Part, len(b.content), len(b.content)+2)
 	copy(parts, b.content)
-	if b.thinking.Len() > 0 {
-		parts = append(parts, conversation.Part{Kind: conversation.PartThinking, Text: b.thinking.String()})
+	if b.thinking.Len() > 0 || b.thinkSig != "" {
+		parts = append(parts, conversation.Part{
+			Kind: conversation.PartThinking, Text: b.thinking.String(), Signature: b.thinkSig,
+		})
 	}
 	if b.text.Len() > 0 {
 		parts = append(parts, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})

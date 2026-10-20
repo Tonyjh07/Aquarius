@@ -204,6 +204,40 @@ func TestThinkingPartOnlyOnAssistant(t *testing.T) {
 	}
 }
 
+// TestPartSignatureOnlyOnThinking D175：思考块签名只属于思考分片——写在别的分片上
+// 说明适配器接线有误，必须当场被拒（静默忽略会让「签名写了却没生效」难以定位）。
+func TestPartSignatureOnlyOnThinking(t *testing.T) {
+	useFixedClock(t)
+	c := New(NewID(), "sig")
+	mustAppend(t, c, RoleUser, "q")
+
+	// 思考分片带签名：合法，且原样落树。
+	th := []Part{{Kind: PartThinking, Text: "想", Signature: "anthropic:abc"}}
+	a, err := c.Append(RoleAssistant, th)
+	if err != nil {
+		t.Fatalf("append thinking+sig: %v", err)
+	}
+	if a.Content[0].Signature != "anthropic:abc" {
+		t.Fatalf("signature = %q, want 原样", a.Content[0].Signature)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+
+	// 文本分片带签名：拒绝。
+	if _, err := c.Append(RoleAssistant, []Part{{Kind: PartText, Text: "x", Signature: "s"}}); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("append(text+sig) = %v, want ErrInvalidNode", err)
+	}
+	// 工具分片带签名：拒绝。
+	if _, err := c.Append(RoleAssistant, []Part{{Kind: PartTool, Tool: &ToolPart{CallID: "c1", Name: "x"}, Signature: "s"}}); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("append(tool+sig) = %v, want ErrInvalidNode", err)
+	}
+	// user 节点带思考签名：先撞「思考仅 assistant」规则，同样被拒。
+	if _, err := c.Append(RoleUser, th); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("append(user, thinking+sig) = %v, want ErrInvalidNode", err)
+	}
+}
+
 func TestReviseFreshStartsNewBranch(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")

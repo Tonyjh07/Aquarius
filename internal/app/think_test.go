@@ -252,6 +252,66 @@ func TestRunCancelledKeepsThinking(t *testing.T) {
 	}
 }
 
+// TestRunReasoningSignatureCommitted D175：思考块签名随流式分片收集，并入当前轮的
+// PartThinking 分片一并入树——回传时（PromptMessage.ReasoningSignature）才有东西可带。
+func TestRunReasoningSignatureCommitted(t *testing.T) {
+	stream := &scriptStream{steps: []scriptStep{
+		{delta: port.Delta{Text: "先想一想", Reasoning: true}},
+		{delta: port.Delta{Text: "再算一算", Reasoning: true, ReasoningSignature: "anthropic:sig-xyz"}},
+		{delta: port.Delta{Text: "答案"}},
+	}}
+	s, _, rec := newTestSession(t, newMemStore(), stream)
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+
+	var committed port.CommittedEvent
+	var found bool
+	for _, ev := range rec.events {
+		if e, ok := ev.(port.CommittedEvent); ok && e.Message.Role == conversation.RoleAssistant {
+			committed, found = e, true
+		}
+	}
+	if !found {
+		t.Fatal("未见 assistant CommittedEvent")
+	}
+	if len(committed.Message.Content) != 2 ||
+		committed.Message.Content[0].Kind != conversation.PartThinking {
+		t.Fatalf("content = %+v, want [thinking, text]", committed.Message.Content)
+	}
+	if got := committed.Message.Content[0].Signature; got != "anthropic:sig-xyz" {
+		t.Fatalf("thinking signature = %q, want 原样入树", got)
+	}
+}
+
+// TestRunReasoningSignatureOnlyKept D175：只带签名不带文本的轮也要留思考分片——
+// 否则回传时签名没了，Anthropic 续跑会被服务端拒。
+func TestRunReasoningSignatureOnlyKept(t *testing.T) {
+	stream := &scriptStream{steps: []scriptStep{
+		{delta: port.Delta{Reasoning: true, ReasoningSignature: "anthropic:only-sig"}},
+	}}
+	s, _, rec := newTestSession(t, newMemStore(), stream)
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	var committed port.CommittedEvent
+	var found bool
+	for _, ev := range rec.events {
+		if e, ok := ev.(port.CommittedEvent); ok && e.Message.Role == conversation.RoleAssistant {
+			committed, found = e, true
+		}
+	}
+	if !found {
+		t.Fatal("未见 assistant CommittedEvent")
+	}
+	if len(committed.Message.Content) != 1 ||
+		committed.Message.Content[0].Kind != conversation.PartThinking ||
+		committed.Message.Content[0].Text != "" ||
+		committed.Message.Content[0].Signature != "anthropic:only-sig" {
+		t.Fatalf("content = %+v, want 仅签名思考分片", committed.Message.Content)
+	}
+}
+
 // TestBuildRequestReasoningInjection D34 注入矩阵：三态 think × effort 档位
 // 决定 reasoning_effort / enable_thinking 是否随请求发送。
 func TestBuildRequestReasoningInjection(t *testing.T) {

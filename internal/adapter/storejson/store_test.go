@@ -70,7 +70,7 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
-// TestRoundtripThinkingPart D42：思考分片落盘回环——kind/text 原样保留且整树校验通过。
+// TestRoundtripThinkingPart D42/D175：思考分片落盘回环——kind/text/signature 原样保留且整树校验通过。
 func TestRoundtripThinkingPart(t *testing.T) {
 	s, err := New(t.TempDir())
 	if err != nil {
@@ -79,7 +79,7 @@ func TestRoundtripThinkingPart(t *testing.T) {
 	ctx := context.Background()
 	c := mustConv(t)
 	if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{
-		{Kind: conversation.PartThinking, Text: "先想一想"},
+		{Kind: conversation.PartThinking, Text: "先想一想", Signature: "anthropic:sig-1"},
 		{Kind: conversation.PartText, Text: "答案"},
 	}); err != nil {
 		t.Fatalf("append assistant: %v", err)
@@ -100,8 +100,9 @@ func TestRoundtripThinkingPart(t *testing.T) {
 	}
 	if len(node.Content) != 2 ||
 		node.Content[0].Kind != conversation.PartThinking || node.Content[0].Text != "先想一想" ||
+		node.Content[0].Signature != "anthropic:sig-1" ||
 		node.Content[1].Kind != conversation.PartText || node.Content[1].Text != "答案" {
-		t.Fatalf("content = %+v, want [thinking 先想一想, text 答案]", node.Content)
+		t.Fatalf("content = %+v, want [thinking 先想一想, text 答案]（含签名）", node.Content)
 	}
 }
 

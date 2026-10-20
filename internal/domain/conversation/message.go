@@ -54,6 +54,11 @@ type Part struct {
 	Ref        *BlobRef  `json:"ref,omitempty"`        // Kind=image|audio|doc：附件引用
 	Transcript string    `json:"transcript,omitempty"` // Kind=audio：ASR 转写文本（模型只见文本）
 	Tool       *ToolPart `json:"tool,omitempty"`       // Kind=tool：调用与结果同片（D95）
+	// Signature Kind=thinking 的思考块签名（D175）：适配器写入的不透明串（**带协议前缀**，
+	// 如 `anthropic:<sig>` / `responses:<压缩 JSON>`），装配时原样回传，由各协议适配器按前缀
+	// 识别归属——跨 provider 复制会话时不会把 A 家的签名发给 B 家。空 = 该协议无回传要求
+	// （Chat Completions 现状：只回文本，无签名）。
+	Signature string `json:"signature,omitempty"`
 }
 
 // Role 消息角色（D95：RoleTool 删除——工具调用/结果内嵌为 assistant 的 PartTool 分片）。

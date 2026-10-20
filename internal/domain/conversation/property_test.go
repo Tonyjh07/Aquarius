@@ -116,9 +116,14 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 		}
 	case 1:
 		// D42：思考分片随 assistant 随机入树——形态校验与三不变量在同一批随机序列中受证。
+		// D175：思考分片偶尔带签名（协议适配器写入的不透明串），同样受形态校验守护。
 		content := textParts(fmt.Sprintf("a%d", d.rng.Int63()))
 		if d.rng.Intn(2) == 0 {
-			content = append([]Part{{Kind: PartThinking, Text: fmt.Sprintf("t%d", d.rng.Int63())}}, content...)
+			th := Part{Kind: PartThinking, Text: fmt.Sprintf("t%d", d.rng.Int63())}
+			if d.rng.Intn(2) == 0 {
+				th.Signature = fmt.Sprintf("sig:%d", d.rng.Int63())
+			}
+			content = append([]Part{th}, content...)
 		}
 		if _, err := c.Append(RoleAssistant, content); err != nil {
 			t.Fatalf("append assistant: %v", err)

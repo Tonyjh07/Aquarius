@@ -207,6 +207,52 @@ func TestAssemblePathSegmentedTurnNode(t *testing.T) {
 	}
 }
 
+// TestAssemblePathReasoningSignature D175：思考块签名随思考一并回传——段内思考分片的
+// 签名置入该段 assistant 消息的 ReasoningSignature；echo_thinking 关时随思考一起丢弃
+// （签名只有和思考一起回传才有意义，单独留着是死数据）。
+func TestAssemblePathReasoningSignature(t *testing.T) {
+	c := convWithUser(t)
+	user1 := c.Path()[1]
+	if err := c.AppendCommitted(conversation.Message{
+		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
+		Content: []conversation.Part{
+			{Kind: conversation.PartThinking, Text: "想一", Signature: "anthropic:sig-1"},
+			{Kind: conversation.PartText, Text: "先看"},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c1", Name: "echo",
+				Result: &tool.Result{CallID: "c1", OK: true, Output: "pong"},
+			}},
+			{Kind: conversation.PartThinking, Text: "想二", Signature: "anthropic:sig-2"},
+			{Kind: conversation.PartText, Text: "答案"},
+		},
+		Outcome: conversation.OutcomeDone,
+	}); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: true})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(msgs) != 4 {
+		t.Fatalf("msgs = %d, want 4: %+v", len(msgs), msgs)
+	}
+	if msgs[1].ReasoningSignature != "anthropic:sig-1" || msgs[3].ReasoningSignature != "anthropic:sig-2" {
+		t.Fatalf("signatures = %q / %q, want 逐段签名", msgs[1].ReasoningSignature, msgs[3].ReasoningSignature)
+	}
+
+	// echo_thinking=false：签名随思考一起丢弃。
+	msgs, err = assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
+	if err != nil {
+		t.Fatalf("assemble(off): %v", err)
+	}
+	for _, m := range msgs {
+		if m.ReasoningSignature != "" {
+			t.Fatalf("echo off 不该带签名: %+v", m)
+		}
+	}
+}
+
 // TestAssemblePathToolImageProjectsUserMessage 工具产出的图片（D169）：tool 应答之后
 // 紧跟一条 user 消息承载图片块——OpenAI 兼容端点的 tool 角色只收文本。
 // 不支持视觉时同一位置降级为文字占位并写明原因，不能整段消失。

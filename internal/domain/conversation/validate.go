@@ -47,6 +47,13 @@ func checkNodeShape(m Message) error {
 			}
 		}
 	}
+	// 思考块签名（D175）只属于思考分片：写错位置（如文本分片带上签名）说明适配器接线有误，
+	// 静默忽略会让「签名明明写了却没生效」变成难以定位的问题。
+	for _, p := range m.Content {
+		if p.Signature != "" && p.Kind != PartThinking {
+			return fmt.Errorf("node %q: %w: signature only allowed on thinking part (kind %q)", m.ID, ErrInvalidNode, p.Kind)
+		}
+	}
 	// 工具分片：CallID 节点内唯一且非空、工具名非空、Result.CallID 与分片一致（D95）。
 	seen := map[string]bool{}
 	for _, p := range m.Content {

@@ -129,6 +129,9 @@ type Part struct {
     Ref        *BlobRef  // Kind=image|audio|doc：附件引用
     Transcript string    // Kind=audio：ASR 转写文本（模型只见文本，音频留附件库回放）
     Tool       *ToolPart // Kind=tool：调用与结果同片（D95）
+    // Signature Kind=thinking 的思考块签名（D175）：适配器写入的不透明串（带协议前缀，如
+    // `anthropic:<sig>`），装配时原样回传；空 = 该协议无回传要求（Chat Completions 现状）。
+    Signature  string
 }
 
 type Role string
@@ -273,6 +276,11 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   **`model.echo_thinking`** 控制（`*bool`：**键缺失 = 回传**，显式 `false` 才关，改后重启生效）。
   展示口径（实时暗块 + 启动回放）恒含思考，与模型口径（回传开关）解耦——
   回放展示树里有什么，装配决定发什么。
+  **思考块签名**（D175）：`Part.Signature` 承载适配器写入的不透明串（带协议前缀，如
+  `anthropic:` / `responses:`），装配时经 `PromptMessage.ReasoningSignature` 原样回传，由
+  各协议适配器按前缀识别归属（跨 provider 复制会话时不会把 A 家签名发给 B 家）；
+  空签名 = 该协议无回传要求（Chat Completions 现状）。签名的收集随流式思考分片进行
+  （`port.Delta.ReasoningSignature`），并入当前轮的 `PartThinking` 分片。
 - `Prune` 是唯一破坏性操作；`storejson` 写文件前保留一代 `.bak` 防误删（§13-D7）。
 
 ### 4.2 附件与多模态承载
@@ -362,6 +370,9 @@ type PromptMessage struct {
                     // Tool 分片拆出（D95）
     Content   []PromptPart
     Reasoning string // role=assistant：思维链回传承载（D42），适配器映射为 reasoning_content 等字段
+    // ReasoningSignature 思考块签名回传（D175）：树内 PartThinking.Signature 原样带上，适配器按协议
+    // 前缀识别归属（`anthropic:` / `responses:`）；空 = 无签名（Chat Completions 现状）。
+    ReasoningSignature string
     ToolCalls []tool.Call
     CallID    string // role=tool
 }
@@ -396,6 +407,9 @@ type Usage = conversation.Usage
 type Delta struct {
     Text      string
     Reasoning bool            // 思维链分片（D34 展示 / D42 入树）：随节点提交为 PartThinking，回传走 PromptMessage.Reasoning
+    // ReasoningSignature 思考块签名分片（D175）：协议适配器在思考结束后一次性给出（如 Anthropic 的
+    // thinking block signature、Responses 的 encrypted_content）；随当前轮思考缓冲并入 PartThinking.Signature。
+    ReasoningSignature string
     ToolCalls []ToolCallDelta // Index 分片聚合（app 层 ToolCallAssembler）
     Usage     *Usage          // 流末尾
 }
