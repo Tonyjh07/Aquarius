@@ -50,15 +50,15 @@
 | `github.com/muesli/cancelreader` | `v0.2.2` | MIT | `Copyright (c) 2022 Erik Geiser and Christian Muehlhaeuser` |
 | `github.com/muesli/reflow` | `v0.3.0` | MIT | `Copyright (c) 2019 Christian Muehlhaeuser` |
 | `github.com/muesli/termenv` | `v0.16.0` | MIT | `Copyright (c) 2019 Christian Muehlhaeuser` |
-| `github.com/richardlehane/mscfb` | `v1.0.7` | Apache-2.0 | `Copyright 2013 Richard Lehane. All rights reserved.` |
+| `github.com/richardlehane/mscfb` | `v1.0.8` | Apache-2.0 | `Copyright 2013 Richard Lehane. All rights reserved.` |
 | `github.com/richardlehane/msoleps` | `v1.0.6` | Apache-2.0 | `Copyright 2014 Richard Lehane. All rights reserved.` |
 | `github.com/rivo/uniseg` | `v0.4.7` | MIT | `Copyright (c) 2019 Oliver Kuederle` |
 | `github.com/segmentio/asm` | `v1.1.3` | MIT | `Copyright (c) 2021 Segment` |
 | `github.com/segmentio/encoding` | `v0.5.4` | MIT | `Copyright (c) 2019 Segment.io, Inc.` |
 | `github.com/tiendc/go-deepcopy` | `v1.7.2` | MIT | `Copyright (c) 2023 tiendc` |
 | `github.com/xo/terminfo` | `v0.0.0-20220910002029-abceb7e1c41e` | MIT | `Copyright (c) 2016 Anmol Sethi` |
-| `github.com/xuri/efp` | `v0.0.1` | BSD-3-Clause | `Copyright (c) 2017 - 2025 Ri Xu All rights reserved.` |
-| `github.com/xuri/excelize/v2` | `v2.11.0` | Apache-2.0 | `Copyright (c) 2016-2026 The excelize Authors.` |
+| `github.com/xuri/efp` | `v0.0.2` | BSD-3-Clause | `Copyright (c) 2017 - 2025 Ri Xu All rights reserved.` |
+| `github.com/xuri/excelize/v2` | `v2.11.1-0.20260930021559-01a9ff32fb3c` | Apache-2.0 | `Copyright (c) 2016-2026 The excelize Authors.` |
 | `github.com/xuri/nfp` | `v0.0.2-0.20250530014748-2ddeb826f9a9` | BSD-3-Clause | `Copyright (c) 2022-2025 Ri Xu All rights reserved.` |
 | `github.com/yosida95/uritemplate/v3` | `v3.0.2` | BSD-3-Clause | `Copyright (C) 2016, Kohei YOSHIDA <https://yosida95.com/>. All rights reserved.` |
 | `github.com/yuin/goldmark` | `v1.7.13` | MIT | `Copyright (c) 2019 Yusuke Inuzuka` |
