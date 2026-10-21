@@ -122,8 +122,9 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			}
 			shown = true
 		}
-		// D104/D186：附件槽 tooltip（D85 直采；收起态有暂存 = 汇总 chip、无 tooltip——chip 自示意）。
-		if !shown && u.m.confirm == nil && len(u.m.stagedFiles) == 0 &&
+		// D104/D186：附件槽 tooltip（D85 直采；收起态有附件 chip = 自示意、不叠 tooltip）。
+		// D188：编辑态的已有附件同样占住附件位，口径一致。
+		if !shown && u.m.confirm == nil && len(u.chipItems()) == 0 &&
 			u.cursorHitsRect(attachSlotRect(pillEnd, gtx.Dp(inputPadDp), rowH,
 				gtx.Dp(inputIconDp)).Add(image.Pt(0, absY)), cur) {
 			u.hoverTip(gtx, absY, "附件", false)
@@ -443,7 +444,8 @@ func (u *UI) submitEditor() {
 		return // D86/D184：确认态与提问态都不走主编辑器提交
 	}
 	text := strings.TrimSpace(u.editor.Text())
-	if text == "" && len(u.m.stagedFiles) == 0 {
+	// D188：编辑态带附件操作（删已有 / 加新的）时，空文本也照常提交——那是「只改附件」。
+	if text == "" && !u.m.editHasAttachOp() {
 		if u.m.editTarget != "" { // D92：编辑态空提交 = 取消
 			u.cancelEdit()
 		}
@@ -459,11 +461,14 @@ func (u *UI) submitEditor() {
 }
 
 // cancelEdit 退出编辑态（D92）：清目标节点与编辑框（Esc / 空提交共用）；分片序号随收
-// （D107② 生命周期与 editTarget 同步）。
+// （D107② 生命周期与 editTarget 同步）。D188：已有附件快照与删除标记一起清，新增暂存
+// 保留（用户在选择文件时已经花过力气，Esc 不该把它们一起扔掉）。
 func (u *UI) cancelEdit() {
 	u.m.editTarget = ""
 	u.m.editMode = conversation.Fresh
 	u.m.editPart = -1
+	u.m.editAtts = nil
+	u.m.editDropped = nil
 	u.editor.SetText("")
 }
 

@@ -236,8 +236,10 @@ type UI struct {
 	attachBtn    widget.Clickable    // D104：附件槽（文件选择框入口，D49 灰槽实装）
 	attachClear  widget.Clickable    // D186：收起态汇总 chip（点击清空全部暂存）
 	attachClicks []*widget.Clickable // D186：展开态逐项 chip（按暂存序号缓存，点删该项）
-	expandBtn    widget.Clickable    // D106：展开槽（输入框放大切换，D49 灰槽实装）
-	expanded     bool                // D106：展开态（胶囊原地增高、编辑器多行；会话级不落盘）
+	// editAttClicks D188：编辑态已有附件的 chip（按节点内附件序号缓存，点击 = 标记删除/恢复）。
+	editAttClicks map[int]*widget.Clickable
+	expandBtn     widget.Clickable // D106：展开槽（输入框放大切换，D49 灰槽实装）
+	expanded      bool             // D106：展开态（胶囊原地增高、编辑器多行；会话级不落盘）
 	// 提问面板（D184，§15.2）：面板长在展开态胶囊里，字段只在事件循环 goroutine 读写。
 	askEd        widget.Editor                     // 「自己输入」编辑器
 	askList      layout.List                       // 中部滚动区（题干 + 选项 + 自由输入行）
@@ -724,12 +726,14 @@ type (
 	inputMsg struct{ text string }
 	// editMsg 进入编辑态（D92/D97/D107 气泡右键编辑三方式经 shell 菜单分发投递）：目标
 	// 节点 + 预填原文 + 修订方式（zero = Fresh）+ 正文分片序号（D107②，-1 = 缺省合段）；
+	// D188 另带目标节点的已有附件快照（数据面 = port.TreeView.NodeAttachments）。
 	// 提交/Esc 的生命周期见 model.editTarget 与 cancelEdit。
 	editMsg struct {
 		id   conversation.MessageID
 		text string
 		mode conversation.KeepMode
 		part int
+		atts []port.AttachmentView
 	}
 	// copyMsg 写剪贴板请求（D92 气泡菜单复制项经 shell 线程分发投递）：记账到
 	// pendingCopy，下一帧经 gtx.Execute(clipboard.WriteCmd) 落盘（剪贴板写入必须在
@@ -812,7 +816,11 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.m.editTarget = m.id
 		u.m.editMode = m.mode
 		u.m.editPart = m.part // D107②：编辑目标正文分片序号（提交转 --part token）
-		if strings.Contains(m.text, "\n") {
+		// D188：进编辑态先清掉上一次的删除标记，再挂上目标节点的已有附件；已在暂存的
+		// 新附件保留（它们就在 chip 排里，用户看得见，提交时一并加进这次修订）。
+		u.m.editAtts = m.atts
+		u.m.editDropped = nil
+		if strings.Contains(m.text, "\n") || len(m.atts) > 0 {
 			u.setExpanded(true)
 		}
 		u.editor.SetText(m.text)

@@ -77,6 +77,21 @@ type TreeView interface {
 	// 依序拼接，跳过思考/工具/附件分片（与气泡块的正文口径同源）；id 不在树中（或尚未
 	// 发布）时 ok=false——调用方据此退化为空文本（内核拒空修订文本，不会误改）。
 	NodeText(id conversation.MessageID) (string, bool)
+	// NodeAttachments 返回 id 的附件分片清单（D188：编辑态 chip 的数据源），按节点内
+	// 附件分片（image/doc/audio）的出现序编号——序号即 `/edit --drop N` 的 N。仍只读、
+	// 无变更入口：增删一律经 `/edit --attach/--drop`。
+	NodeAttachments(id conversation.MessageID) []AttachmentView
+}
+
+// AttachmentView 一个附件分片的只读投影（D188）：序号 + 展示名 + 媒体类型 + 字节数。
+// 不含路径与哈希——UI 只需要"这是哪个附件"，增删的口径是节点内的**序号**（按名删
+// 在重名时无法消歧）。
+type AttachmentView struct {
+	// Index 节点内附件分片的 0 基出现序（`/edit --drop N` 的 N）。
+	Index int
+	Name  string
+	MIME  string
+	Size  int64
 }
 
 // SessionSummary 会话列表项（D120⑥，S3 左栏数据面）：UI 只读展示用。

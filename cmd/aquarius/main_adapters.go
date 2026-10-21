@@ -61,6 +61,15 @@ func (t sessionTree) NodeText(id conversation.MessageID) (string, bool) {
 	return s.NodeText(id)
 }
 
+// NodeAttachments 转发 app.Session.NodeAttachments（D188：编辑态附件 chip 数据源）。
+func (t sessionTree) NodeAttachments(id conversation.MessageID) []port.AttachmentView {
+	s := t.p.Load()
+	if s == nil {
+		return nil
+	}
+	return s.NodeAttachments(id)
+}
+
 // sessionList 会话列表只读视图的装配侧代理（D120⑥，S3 左栏）：Session 构造晚于 UI，
 // 故经原子槽间接取用；未就绪返回 nil（左栏空列表）。
 type sessionList struct{ p *atomic.Pointer[app.Session] }

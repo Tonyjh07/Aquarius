@@ -1,5 +1,5 @@
 # Aquarius 阶段规划（TODO 整理与分阶段路线）
-<!-- docs-sync: 2026-10-21 @ 8a64386 -->
+<!-- docs-sync: 2026-10-21 @ 22c6366 -->
 
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
@@ -473,8 +473,14 @@
    `WM_DROPFILES` 拖拽 + 暂存缩略图（像素预算门控）+ 单图 20MB；转写气泡内嵌缩略图另起一笔。
    手工验收：截图后 Ctrl+V 出缩略图 chip；拖单个/多个文件入窗暂存；拖文件夹有明确提示；
    剪贴板为文字时 Ctrl+V 仍是文本粘贴；>20MB 图片报「图片过大」。
-5. **编辑消息增删附件**（D188）：`/edit --attach/--drop/--drop-all`（文本可空、只对用户消息）+
-   `port.TreeView.NodeAttachments` + GUI 编辑态附件 chip（可删可增，提交时翻成 Args tokens）。
+5. **编辑消息增删附件**（D188，**已落地 2026-10-21**）：`/edit --attach/--drop/--drop-all`
+   （文本可空 = 只改附件、只对用户消息）+ `port.TreeView.NodeAttachments` +
+   `port.Command.Attachments`（GUI 新增附件统一走结构化载荷：贴图无路径、路径项与贴图混排
+   时靠一条通道保住次序）+ GUI 编辑态附件 chip（已有附件点一下标记移除、再点恢复；回形针/
+   贴图/拖拽新增；提交时翻成 `--drop` 与 `Command.Attachments`）。
+   手工验收：右键一条带附件的用户消息 → 编辑，输入栏列出已有附件；点掉一个再提交，新节点少了
+   这个附件、原节点分支不变；编辑态贴一张图后文字留空直接回车，新节点多出这个附件；Esc 取消
+   编辑时已选的新文件仍在暂存里。
 
 验收：每项独立 commit 独立过门禁（`gofmt` / `go vet` / `go test` / `-race` / linuxgate /
 domain 性质测试 / `docsync -check`）；面板与入口的 GUI 侧要有手工验收步骤写进 `docs/guide.md`。

@@ -78,4 +78,9 @@ type UserInput struct {
 type Command struct {
 	Name string
 	Args []string
+	// Attachments 结构化附件载荷（D188）：GUI 编辑态新增的附件以 port.Attachment 形态
+	// 随命令送达——这样路径项与已入库贴图（无文件路径）走**同一条通道**，混排时次序才
+	// 不会在两条追加路径之间被打乱；`--attach <路径>` 仍是纯文本界面（repl/TUI）的入口。
+	// 目前仅 /edit 消费。
+	Attachments []Attachment
 }

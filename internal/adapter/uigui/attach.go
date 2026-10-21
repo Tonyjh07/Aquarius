@@ -88,18 +88,46 @@ func (u *UI) attachSlot(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// attachToolSlot 收起态（单行胶囊）的附件位（D186 口径四）：无暂存 = 图标槽；
+// chipItem 一条附件 chip 的统一视图（D188）：非编辑态 = 新暂存项；编辑态 = 目标节点
+// 的已有附件（序号 >= 0，可标记删除）+ 新暂存项。渲染与量测都只看这个切片。
+type chipItem struct {
+	label   string
+	thumb   *thumbSrc
+	click   *widget.Clickable
+	dropped bool // 编辑态已有附件：已标记删除（提交时翻成 --drop N）
+}
+
+// chipItems 当前应显示的 chip 列表（D188）：编辑态先摆目标节点的已有附件（按序号），
+// 再摆这次新增的暂存项——顺序与提交后的节点分片序一致。
+func (u *UI) chipItems() []chipItem {
+	out := make([]chipItem, 0, len(u.m.editAtts)+len(u.m.stagedFiles))
+	if u.m.editTarget != "" {
+		for _, att := range u.m.editAtts {
+			out = append(out, chipItem{
+				label:   att.Name,
+				click:   u.editAttClick(att.Index),
+				dropped: u.m.editDropped[att.Index],
+			})
+		}
+	}
+	for i, att := range u.m.stagedFiles {
+		out = append(out, chipItem{label: att.displayName(), thumb: att.thumb, click: u.attachClick(i)})
+	}
+	return out
+}
+
+// attachToolSlot 收起态（单行胶囊）的附件位（D186 口径四）：无附件 = 图标槽；
 // 一个 = 该附件的 chip；多个 = 汇总 chip（点一下清空全部——逐项删除在展开态做）。
 func (u *UI) attachToolSlot(gtx layout.Context) layout.Dimensions {
-	n := len(u.m.stagedFiles)
-	switch {
-	case n == 0:
+	items := u.chipItems()
+	switch len(items) {
+	case 0:
 		return u.attachSlot(gtx)
-	case n == 1:
-		att := u.m.stagedFiles[0]
-		return u.attachChip(gtx, att.displayName(), att.thumb, u.attachClick(0))
+	case 1:
+		it := items[0]
+		return u.attachChipState(gtx, it.label, it.thumb, it.click, it.dropped)
 	default:
-		return u.attachChip(gtx, fmt.Sprintf("%d 个文件", n), nil, &u.attachClear)
+		return u.attachChip(gtx, fmt.Sprintf("%d 个文件", len(items)), nil, &u.attachClear)
 	}
 }
 
@@ -131,6 +159,15 @@ func (u *UI) attachChipMetrics(gtx layout.Context, label string, iconDp, cap int
 // 宽截断）+ ×，深底圆角条；整 chip 点击 = 从暂存列表移除这一项（chip 无第二动作，
 // 命中面最大化）。
 func (u *UI) attachChip(gtx layout.Context, label string, thumb *thumbSrc, cl *widget.Clickable) layout.Dimensions {
+	return u.attachChipState(gtx, label, thumb, cl, false)
+}
+
+// attachChipState 同上，另带「已标记删除」态（D188 编辑态已有附件）：文字压暗 + 删除线、
+// 右侧 × 变 +（点击即恢复）——不能让它看起来像普通 chip。
+func (u *UI) attachChipState(gtx layout.Context, label string, thumb *thumbSrc, cl *widget.Clickable, dropped bool) layout.Dimensions {
+	// 压暗色 = tips 白字降不透明度（两主题同口径，不新增主题令牌）。
+	dimFg := whiteText
+	dimFg.A = 0x70
 	return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		h := gtx.Dp(attachChipDp)
 		iconDp := chipIconDp(thumb)
@@ -139,6 +176,9 @@ func (u *UI) attachChip(gtx layout.Context, label string, thumb *thumbSrc, cl *w
 		nameOp, nameDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, shown)
 			s.TextSize = unit.Sp(13)
+			if dropped {
+				s.Color = dimFg
+			}
 			return s.Layout(gtx)
 		})
 		box := image.Rectangle{Max: image.Pt(w, h)}
@@ -155,31 +195,53 @@ func (u *UI) attachChip(gtx layout.Context, label string, thumb *thumbSrc, cl *w
 		tr := op.Offset(image.Pt(padX+iconD+gap, (h-nameDims.Size.Y)/2)).Push(gtx.Ops)
 		nameOp.Add(gtx.Ops)
 		tr.Pop()
-		// ×（两杆，白字色）。
+		if dropped {
+			// 删除线：横穿名称中间，与压暗的文字一起表达「这一项会从修订里去掉」。
+			y := float32(h) / 2
+			x0, x1 := float32(padX+iconD+gap), float32(padX+iconD+gap+nameDims.Size.X)
+			var lp clip.Path
+			lp.Begin(gtx.Ops)
+			lp.MoveTo(f32.Pt(x0, y))
+			lp.LineTo(f32.Pt(x1, y))
+			paint.FillShape(gtx.Ops, dimFg, clip.Stroke{Path: lp.End(), Width: float32(gtx.Dp(1))}.Op())
+		}
+		// ×（两杆）；已删除态画「+」= 点一下恢复。
 		cx, cy := float32(w-padX-gtx.Dp(7)), float32(h)/2
 		a := float32(gtx.Dp(5))
 		var p clip.Path
 		p.Begin(gtx.Ops)
-		p.MoveTo(f32.Pt(cx-a, cy-a))
-		p.LineTo(f32.Pt(cx+a, cy+a))
-		p.MoveTo(f32.Pt(cx+a, cy-a))
-		p.LineTo(f32.Pt(cx-a, cy+a))
-		paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
+		if dropped {
+			p.MoveTo(f32.Pt(cx, cy-a))
+			p.LineTo(f32.Pt(cx, cy+a))
+			p.MoveTo(f32.Pt(cx-a, cy))
+			p.LineTo(f32.Pt(cx+a, cy))
+		} else {
+			p.MoveTo(f32.Pt(cx-a, cy-a))
+			p.LineTo(f32.Pt(cx+a, cy+a))
+			p.MoveTo(f32.Pt(cx+a, cy-a))
+			p.LineTo(f32.Pt(cx-a, cy+a))
+		}
+		stroke := whiteText
+		if dropped {
+			stroke = dimFg
+		}
+		paint.FillShape(gtx.Ops, stroke, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
 		return layout.Dimensions{Size: box.Size()}
 	})
 }
 
-// attachRows 把暂存附件按可用宽分行（D186 口径四：横排、超宽换行）：返回每行下标。
+// attachRows 把附件 chip 按可用宽分行（D186 口径四：横排、超宽换行）：返回每行下标。
 func (u *UI) attachRows(gtx layout.Context, maxW int) [][]int {
-	if len(u.m.stagedFiles) == 0 || maxW <= 0 {
+	items := u.chipItems()
+	if len(items) == 0 || maxW <= 0 {
 		return nil
 	}
 	rowGap := gtx.Dp(attachChipGapDp)
 	var rows [][]int
 	var cur []int
 	curW := 0
-	for i, att := range u.m.stagedFiles {
-		w, _ := u.attachChipMetrics(gtx, att.displayName(), chipIconDp(att.thumb), maxW)
+	for i, it := range items {
+		w, _ := u.attachChipMetrics(gtx, it.label, chipIconDp(it.thumb), maxW)
 		if len(cur) > 0 && curW+rowGap+w > maxW {
 			rows = append(rows, cur)
 			cur, curW = nil, 0
@@ -196,7 +258,7 @@ func (u *UI) attachRows(gtx layout.Context, maxW int) [][]int {
 	return rows
 }
 
-// attachFlowHeightPx chip 排总高（行数×chip 高 + 行间距）；无暂存 = 0。
+// attachFlowHeightPx chip 排总高（行数×chip 高 + 行间距）；无附件 = 0。
 func (u *UI) attachFlowHeightPx(gtx layout.Context, maxW int) int {
 	rows := u.attachRows(gtx, maxW)
 	if len(rows) == 0 {
@@ -218,7 +280,7 @@ func (u *UI) attachFlowMaxW(gtx layout.Context) int {
 
 // attachOverflowPx 展开态胶囊因 chip 换行需要的增高（单行 chip 的高度已由定高容纳）。
 func (u *UI) attachOverflowPx(gtx layout.Context) int {
-	if len(u.m.stagedFiles) == 0 {
+	if len(u.chipItems()) == 0 {
 		return 0
 	}
 	flow := u.attachFlowHeightPx(gtx, u.attachFlowMaxW(gtx))
@@ -239,6 +301,7 @@ func (u *UI) attachChipsFlow(gtx layout.Context, maxW int) layout.Dimensions {
 	if gtx.Constraints.Min.X > maxW {
 		gtx.Constraints.Min.X = maxW
 	}
+	items := u.chipItems()
 	rows := u.attachRows(gtx, maxW)
 	if len(rows) == 0 {
 		return layout.Dimensions{}
@@ -255,8 +318,8 @@ func (u *UI) attachChipsFlow(gtx layout.Context, maxW int) layout.Dimensions {
 				idx, ci := idx, ci
 				chips = append(chips, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					chip := func(gtx layout.Context) layout.Dimensions {
-						att := u.m.stagedFiles[idx]
-						return u.attachChip(gtx, att.displayName(), att.thumb, u.attachClick(idx))
+						it := items[idx]
+						return u.attachChipState(gtx, it.label, it.thumb, it.click, it.dropped)
 					}
 					if ci == 0 {
 						return chip(gtx)
@@ -285,6 +348,20 @@ func (u *UI) attachClick(i int) *widget.Clickable {
 		u.attachClicks = append(u.attachClicks, new(widget.Clickable))
 	}
 	return u.attachClicks[i]
+}
+
+// editAttClick 编辑态已有附件的点击控件（D188：按节点内附件序号缓存，与暂存的序号缓存
+// 分开——两套序号含义不同，同一帧里可能同时出现在 chip 排中）。
+func (u *UI) editAttClick(i int) *widget.Clickable {
+	if u.editAttClicks == nil {
+		u.editAttClicks = map[int]*widget.Clickable{}
+	}
+	cl, ok := u.editAttClicks[i]
+	if !ok {
+		cl = new(widget.Clickable)
+		u.editAttClicks[i] = cl
+	}
+	return cl
 }
 
 // drawPaperclip 附件图标占位（灰、不可点）：回形针折线 = 三段直线 + 三段半圆（24 视图的

@@ -31,6 +31,11 @@ func (f fakeRelTree) NodeText(id conversation.MessageID) (string, bool) {
 	return t, ok
 }
 
+// NodeAttachments D188：测试替身默认无附件（附件 chip 另有专项用例）。
+func (f fakeRelTree) NodeAttachments(conversation.MessageID) []port.AttachmentView {
+	return nil
+}
+
 // fakeLister 固定会话列表的 SessionLister 替身。
 type fakeLister []port.SessionSummary
 

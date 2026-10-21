@@ -34,6 +34,9 @@ func (f fakeTree) Graph() (port.TreeGraph, bool) {
 // NodeText 节点正文全文（D132）：固定视图不配置正文 → 未命中。
 func (f fakeTree) NodeText(conversation.MessageID) (string, bool) { return "", false }
 
+// NodeAttachments 节点附件清单（D188）：固定视图不配置附件 → 空。
+func (f fakeTree) NodeAttachments(conversation.MessageID) []port.AttachmentView { return nil }
+
 // fakeTreeTail 带末端表的树视图（D94 分派测试用）：tails 未命中的 id 回退自身。
 type fakeTreeTail struct {
 	fakeTree

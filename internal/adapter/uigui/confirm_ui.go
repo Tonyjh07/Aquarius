@@ -100,8 +100,9 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm != nil {
 					return layout.Dimensions{} // D86：确认态灰槽隐藏（本就不可点占位）
 				}
-				// D104 附件槽实装：无暂存 = 20dp 可点图标槽；有暂存 = chip（收起态汇总，点清空）。
-				if len(u.m.stagedFiles) > 0 {
+				// D104 附件槽实装：无附件 = 20dp 可点图标槽；有附件 = chip（收起态汇总，点清空）。
+				// D188：编辑态目标节点的已有附件也算「有附件」——收起态同样显示汇总 chip。
+				if len(u.chipItems()) > 0 {
 					return u.attachToolSlot(gtx)
 				}
 				return u.attachSlot(gtx)
@@ -195,7 +196,7 @@ func (u *UI) pillContentExpanded(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Rigid(u.attachSlot),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if len(u.m.stagedFiles) == 0 {
+						if len(u.chipItems()) == 0 {
 							return layout.Dimensions{}
 						}
 						return layout.Inset{Left: unit.Dp(inputGapDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

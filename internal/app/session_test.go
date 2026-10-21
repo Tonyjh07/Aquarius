@@ -1455,7 +1455,7 @@ func TestSessionEditKeepFlagPosition(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			id, mode, part, text, err := parseEditArgs(tc.args)
+			opt, err := parseEditArgs(tc.args)
 			if tc.fail != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.fail) {
 					t.Fatalf("err = %v, want 含 %q", err, tc.fail)
@@ -1465,8 +1465,9 @@ func TestSessionEditKeepFlagPosition(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			if id != tc.args[0] || mode != tc.mode || part != -1 || text != tc.text {
-				t.Fatalf("got %q/%v/%d/%q, want %q/%v/-1/%q", id, mode, part, text, tc.args[0], tc.mode, tc.text)
+			if opt.target != tc.args[0] || opt.mode != tc.mode || opt.part != -1 || opt.text != tc.text {
+				t.Fatalf("got %q/%v/%d/%q, want %q/%v/-1/%q",
+					opt.target, opt.mode, opt.part, opt.text, tc.args[0], tc.mode, tc.text)
 			}
 		})
 	}
@@ -2111,7 +2112,7 @@ func TestSessionEditPartFlag(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			id, mode, part, text, err := parseEditArgs(tc.args)
+			opt, err := parseEditArgs(tc.args)
 			if tc.fail != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.fail) {
 					t.Fatalf("err = %v, want 含 %q", err, tc.fail)
@@ -2121,8 +2122,9 @@ func TestSessionEditPartFlag(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			if id != "a1" || part != tc.part || mode != tc.mode || text != tc.text {
-				t.Fatalf("got %q/%d/%v/%q, want a1/%d/%v/%q", id, part, mode, text, tc.part, tc.mode, tc.text)
+			if opt.target != "a1" || opt.part != tc.part || opt.mode != tc.mode || opt.text != tc.text {
+				t.Fatalf("got %q/%d/%v/%q, want a1/%d/%v/%q",
+					opt.target, opt.part, opt.mode, opt.text, tc.part, tc.mode, tc.text)
 			}
 		})
 	}

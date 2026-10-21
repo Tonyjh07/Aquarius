@@ -173,6 +173,52 @@ func (s *Session) NodeText(id conversation.MessageID) (string, bool) {
 	return nodeBodyText(m), true
 }
 
+// NodeAttachments 实现 port.TreeView（D188）：节点内附件分片（image/doc/audio）按出现序
+// 编号，只读。id 不在树中 → nil（UI 侧据此不画附件 chip 排）。
+func (s *Session) NodeAttachments(id conversation.MessageID) []port.AttachmentView {
+	snap := s.tree.Load()
+	if snap == nil {
+		return nil
+	}
+	m, ok := snap.msgs[id]
+	if !ok {
+		return nil
+	}
+	return nodeAttachments(m)
+}
+
+// nodeAttachments 节点附件分片清单（D188）：序号即 `/edit --drop N` 的 N——与 editParts
+// 的删除口径同源（都按 image/doc/audio 分片的出现序数），两处必须一起改。
+func nodeAttachments(m conversation.Message) []port.AttachmentView {
+	var out []port.AttachmentView
+	n := 0
+	for _, p := range m.Content {
+		if !isAttachmentPart(p.Kind) {
+			continue
+		}
+		v := port.AttachmentView{Index: n, MIME: string(p.Kind)}
+		if p.Ref != nil {
+			v.Name, v.MIME, v.Size = p.Ref.Name, p.Ref.MIME, p.Ref.Size
+		}
+		if v.Name == "" {
+			v.Name = "(未命名附件)"
+		}
+		out = append(out, v)
+		n++
+	}
+	return out
+}
+
+// isAttachmentPart 附件分片判定（D188）：image/doc/audio——与 nodeBodyText 跳过的分片、
+// editParts 保留的分片同一口径，三处共用这一个判据。
+func isAttachmentPart(k conversation.PartKind) bool {
+	switch k {
+	case conversation.PartImage, conversation.PartDoc, conversation.PartAudio:
+		return true
+	}
+	return false
+}
+
 // nodeBodyText 节点正文全文（D132）：PartText 分片依序拼接，跳过思考/工具/附件分片——
 // 与气泡块的正文口径一致（编辑预填、复制、引用、查看原文共用同一份）。分隔 "\n\n" 是
 // `/edit` 缺省合段（D107③ 把全部正文分片并为一条）的逆运算：原样提交即无损往返。

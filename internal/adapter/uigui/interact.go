@@ -158,6 +158,15 @@ func (u *UI) updateClicks(gtx layout.Context) {
 	if u.attachClear.Clicked(gtx) {
 		u.m.clearAttach() // D186：收起态汇总 chip 点击 = 清空全部暂存
 	}
+	// D188：编辑态已有附件的 chip 点击 = 标记删除/恢复（提交时翻成 --drop N）。
+	if u.m.editTarget != "" {
+		for _, att := range u.m.editAtts {
+			if u.editAttClick(att.Index).Clicked(gtx) {
+				u.m.toggleEditAtt(att.Index)
+				break
+			}
+		}
+	}
 	for i := range u.m.stagedFiles {
 		if u.attachClick(i).Clicked(gtx) {
 			u.m.unstageAttach(i) // D186：展开态 chip 点击 = 移除该项

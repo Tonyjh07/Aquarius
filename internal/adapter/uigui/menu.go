@@ -277,11 +277,11 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 	}
 	switch r {
 	case cmdBubbleEdit:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Fresh, part: ctx.part})
+		_ = u.post(u.editMsgFor(ctx, conversation.Fresh))
 	case cmdBubbleEditKeep:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Carry, part: ctx.part})
+		_ = u.post(u.editMsgFor(ctx, conversation.Carry))
 	case cmdBubbleEditCopy:
-		_ = u.post(editMsg{id: ctx.id, text: ctx.edit, mode: conversation.Clone, part: ctx.part})
+		_ = u.post(u.editMsgFor(ctx, conversation.Clone))
 	case cmdBubbleRegen:
 		_ = u.post(inputMsg{text: "/regen " + string(ctx.id)})
 	case cmdNodeRespond:
@@ -314,6 +314,16 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		// D152 图侧：插入摘要 = 本窗开小卡（正文在卡里写；两钮分别投 /summary）。
 		u.nodeAction.Store(&nodeAction{kind: nodeActSummary, id: ctx.id})
 	}
+}
+
+// editMsgFor 组一条 editMsg（D188）：顺带取目标节点的附件快照，编辑态据此画 chip 排。
+// 取不到（快照未发布/节点不在树中）就是空列表——编辑正文照常可用。
+func (u *UI) editMsgFor(ctx *bubbleMenuCtx, mode conversation.KeepMode) editMsg {
+	var atts []port.AttachmentView
+	if u.opts.Tree != nil {
+		atts = u.opts.Tree.NodeAttachments(ctx.id)
+	}
+	return editMsg{id: ctx.id, text: ctx.edit, mode: mode, part: ctx.part, atts: atts}
 }
 
 // openOverlayAction 图侧请求开遮罩（D139）：只带 id/方式/页签过原子槽，正文由历史窗

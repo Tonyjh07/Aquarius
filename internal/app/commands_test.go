@@ -84,7 +84,7 @@ func TestHelpFromCatalog(t *testing.T) {
 	}
 	for _, want := range []string{
 		"/quit, /exit", "退出",
-		"/edit <id> [--keep|--copy] [--part N] <文本>",
+		"/edit <id> [--keep|--copy] [--part N] [--attach <路径>]... [--drop N]... [--drop-all] [<文本>]",
 		mcpFamilyLine,
 		"/mcp:srv:probe", "探测一下",
 	} {

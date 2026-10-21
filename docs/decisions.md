@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-21 @ 8a64386 -->
+<!-- docs-sync: 2026-10-21 @ 22c6366 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -202,7 +202,7 @@
 | D185 | 无人值守：越界确认当场拒绝并说明，轮次不阻塞；只包工具链，用户键入的命令确认照常问（§9） | 生效 |
 | D186 | 多附件：`RawInput.Attachments` 列表 + 逐个摄取（部分成功）+ 单条上限 8 个（§5.7/§15.2） | 生效 |
 | D187 | 图片附件入口：Ctrl+V 读剪贴板位图、拖拽走 `WM_DROPFILES`、暂存出缩略图、单图 20MB（§4.2/§15.2） | 生效 |
-| D188 | 编辑消息可增删附件：`/edit --attach/--drop/--drop-all` + GUI 编辑态附件槽（§7.3/§15.2） | 待落码 |
+| D188 | 编辑消息可增删附件：`/edit --attach/--drop/--drop-all` + GUI 编辑态附件槽（§7.3/§15.2） | 生效 |
 
 
 ## 记录
@@ -3870,6 +3870,27 @@
   与 Args 生成；`TreeView.NodeAttachments` 快照。
 - **否决**：① 附件按名称删（重名无法消歧，改名就失效）；② GUI 另起一条结构化编辑通道
   （与 `/edit` 两套语义，迟早漂）；③ 删附件时顺手删库里的字节（别的节点可能还在引用）。
+- **落码（2026-10-21）**：内核在 `app/session_cmd_edit.go`——`parseEditArgs` 改为返回
+  `editOptions` 结构体（target / mode / part / text / attach / drop / dropAll），flag 区
+  仍只在紧跟 id 的位置识别，`--attach <路径>`（可重复）/`--drop N`（可重复）/`--drop-all`
+  与 `--keep`/`--copy`/`--part` 同区；用法文案收敛到 `editUsage` 常量（命令面与解析错误
+  共用，避免两处漂移）。`editPartsWithAttachments` 承接口径二/三：文本为空 = 取原分片，
+  删除按旧节点的附件分片出现序、新增逐项走 `ingest` 后追加到末尾，改完为空或超上限都报错。
+  `TreeView.NodeAttachments` 由 `app/tree.go` 实现（`port.AttachmentView{Index,Name,MIME,Size}`）。
+  **GUI 的新增附件一律走结构化载荷**：`port.Command.Attachments []Attachment` 与 `--attach`
+  路径项同源（`Attachment{Path}` / `Attachment{Blob}`），新增 `parseEditArgsWith(args, extra)`
+  把结构化附件并入 flag 区——否则「只贴一张图、正文留空」会被当成空文本拒绝；`execEdit`
+  一律走带 `extra` 的入口。走一条通道而非「路径发 `--attach`、贴图发载荷」，是为了**保住
+  顺序**：混排时两条通道各自追加，新附件在节点里的次序会跟 chip 排对不上。`--attach` 仍是
+  纯文本界面（repl/TUI）的入口；`port.Command` 的这条字段是**编辑专用**（普通消息走
+  `RawInput`），别处不得借道。
+- **GUI 落码**：进编辑态时 `editMsgFor` 取一次 `NodeAttachments` 快照存 `editAtts`；chip 排
+  = 已有附件（点击标记删除：文字压暗 + 删除线 + 「+」可恢复）在前、新暂存项在后，两者共用
+  同一条 chip 渲染与换行量测（`chipItems` 统一视图）。提交时保留项不发、删掉的发 `--drop N`
+  （升序）、新增项按 chip 序进 `Command.Attachments`；空文本 + 有附件操作 = 只改附件
+  （`editHasAttachOp` 放行），既没改文本也没动附件仍是取消。收起态汇总 chip 的「清空全部」
+  在编辑态 = 全部标记删除 + 清空暂存。Esc 清 `editAtts`/`editDropped` 但保留 `stagedFiles`
+  （挑过的文件不该被顺手扔掉）；投递缓冲满时编辑态照常收尾，暂存附件退回（挑文件比打字贵）。
 
 
 

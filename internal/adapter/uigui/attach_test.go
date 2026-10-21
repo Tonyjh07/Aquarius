@@ -2,6 +2,7 @@ package uigui
 
 import (
 	"image"
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,8 +60,9 @@ func TestAttachStageFlow(t *testing.T) {
 		t.Fatalf("多项回显 = %+v", u.m.blocks)
 	}
 
-	// 编辑态不消费暂存（修订不夹带新附件，D104①；增删走 /edit flag，D188）。
-	u.apply(editMsg{id: "u1", text: "旧问题"})
+	// 编辑态消费暂存（D188 作废 D104⑤ 的「编辑态不消费」）：新增附件随 /edit 走
+	// Command.Attachments（顺序即 chip 排顺序），无文本的已有附件用 --drop 表达（下一段覆盖）。
+	u.apply(editMsg{id: "u1", text: "旧问题", part: -1})
 	u.apply(attachMsg{paths: []string{`C:\x\c.md`}})
 	u.editor.SetText("新文本")
 	u.submitEditor()
@@ -69,17 +71,23 @@ func TestAttachStageFlow(t *testing.T) {
 		if in.Command == nil || in.Command.Name != "edit" {
 			t.Fatalf("编辑态应走结构化 /edit, got %+v", in)
 		}
+		if want := []string{"u1", "新文本"}; !slices.Equal(in.Command.Args, want) {
+			t.Fatalf("Args = %v, want %v", in.Command.Args, want)
+		}
+		if len(in.Command.Attachments) != 1 || in.Command.Attachments[0].Path != `C:\x\c.md` {
+			t.Fatalf("Attachments = %+v, want 一项路径附件", in.Command.Attachments)
+		}
 	default:
 		t.Fatal("inCh 未收到")
 	}
-	if n := len(u.m.stagedFiles); n != 1 || u.m.stagedFiles[0].path != `C:\x\c.md` {
-		t.Fatalf("编辑态不应消费暂存: %+v", u.m.stagedFiles)
+	if n := len(u.m.stagedFiles); n != 0 {
+		t.Fatalf("编辑态提交后应清空暂存: %+v", u.m.stagedFiles)
 	}
 
-	// 逐项移除（展开态 chip 点击同路径）。
-	u.apply(attachMsg{paths: []string{`C:\x\d.txt`}})
+	// 逐项移除（展开态 chip 点击同路径）：暂两项，删第一项。
+	u.apply(attachMsg{paths: []string{`C:\x\d.txt`, `C:\x\e.txt`}})
 	u.m.unstageAttach(0)
-	if n := len(u.m.stagedFiles); n != 1 || u.m.stagedFiles[0].path != `C:\x\d.txt` {
+	if n := len(u.m.stagedFiles); n != 1 || u.m.stagedFiles[0].path != `C:\x\e.txt` {
 		t.Fatalf("移除第 0 项后 = %+v", u.m.stagedFiles)
 	}
 	u.m.clearAttach()
