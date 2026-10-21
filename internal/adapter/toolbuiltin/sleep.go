@@ -17,7 +17,8 @@ func (t *sleepTool) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "sleep",
 		Description: fmt.Sprintf("Wait for N seconds to pace yourself. Cancellable via interruption. "+
-			"Do not use it to wait for a background task - call job_wait for that. "+
+			"Do not use it to wait for a background task - call job_wait for that; do not use it to wait for an "+
+			"external state to change (a CI run, a log line) - declare watch_start for that. "+
 			"Sleeps longer than the default tool timeout must pass a matching \"timeout_sec\" argument (1-%d) on the call.", port.MaxCallTimeoutSec),
 		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",

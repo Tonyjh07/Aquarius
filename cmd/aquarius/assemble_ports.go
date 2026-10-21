@@ -20,6 +20,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/mimotts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/notify"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/probe"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/screencap"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
@@ -344,6 +345,27 @@ func (w *wiring) assembleTools(confirmer port.Confirmer, asker port.Asker) error
 		},
 	})
 	w.jobs = app.NewWatchingJobs(jobs, w.jobWatch)
+	// D190：观察器与任务收尾是两件事——任务有终态（等完成事件），观察器盯不确定的
+	// 外部状态（按模型给的节奏取样）。探针走端口，注入与唤醒复用同一条通道。
+	w.watcher = app.NewWatcher(app.WatcherOptions{
+		Prober: probe.New(),
+		Injector: func() port.Injector {
+			if s := w.sessPtr.Load(); s != nil {
+				return s
+			}
+			return nil
+		},
+		Wake: func() {
+			if w.ui != nil {
+				w.ui.Wake()
+			}
+		},
+		Logf: func(format string, args ...any) {
+			if w.stderr != nil {
+				fmt.Fprintf(w.stderr, format+"\n", args...)
+			}
+		},
+	})
 	toolTimeout := time.Duration(w.cfg.Limits.ToolTimeoutSec) * time.Second
 	if w.cfg.Limits.ToolTimeoutSec <= 0 {
 		toolTimeout = 60 * time.Second
@@ -365,6 +387,7 @@ func (w *wiring) assembleTools(confirmer port.Confirmer, asker port.Asker) error
 		Vision:  w.cfg.Model.chainCaps().Vision,
 		Capture: screencap.New(),
 		Asker:   asker,
+		Watches: w.watcher,
 	})
 	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。

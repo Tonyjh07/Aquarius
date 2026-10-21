@@ -29,6 +29,7 @@ type Deps struct {
 	Vision  bool                 // 当前模型是否接受图片输入（D169/D173：装配根按整链 caps 取与；false 必须明确报因）
 	Capture port.Capture         // 屏幕捕获（D178；nil = 截图工具明确报「本构建未提供」）
 	Asker   port.Asker           // 提问通道（D184；nil = ask_user 明确报「本构建未提供」）
+	Watches port.WatchManager    // 观察器（D190）：watch_* 工具；nil = 明确报「本构建未提供」。
 }
 
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
@@ -62,6 +63,9 @@ func allTools(d Deps) []port.Tool {
 		&jobKill{jobs: d.Jobs},
 		&windowList{capture: d.Capture},
 		&screenCapture{capture: d.Capture, blobs: d.Blobs, vision: d.Vision},
+		&watchStart{watches: d.Watches},
+		&watchList{watches: d.Watches},
+		&watchStop{watches: d.Watches},
 		&askUser{asker: d.Asker},
 	}
 }
@@ -99,6 +103,9 @@ var displayNames = map[string]string{
 	"job_kill":       "结束任务",
 	"window_list":    "窗口列表",
 	"screen_capture": "屏幕截图",
+	"watch_start":    "开始观察",
+	"watch_list":     "观察列表",
+	"watch_stop":     "停止观察",
 	"ask_user":       "提问",
 }
 

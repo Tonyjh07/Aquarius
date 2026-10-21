@@ -7,7 +7,7 @@ func TestInjectSourceLabel(t *testing.T) {
 	cases := map[string]string{
 		"user":         "手动",
 		"job:j1":       "任务 j1",
-		"poller:p1":    "轮询 p1",
+		"poller:p1":    "观察 p1",
 		"tool:think":   "工具 think",
 		"plugin:demo":  "插件 demo",
 		"weird":        "weird",

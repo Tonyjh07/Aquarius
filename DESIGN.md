@@ -334,6 +334,8 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `job_start` | 后台任务启动；结束自动通知（完成事件，不轮询），要在本轮拿结果用 `job_wait` | Confirm |
 | `job_wait` | 等后台任务到终态并回填状态/退出码/耗时/日志尾部（D189）；不传 `timeout_sec` 一直等（用户可中断），等超时只回填「仍在跑」、任务不受影响 | Safe |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理 | Safe |
+| `watch_start` | 声明一条观察器（D190）：`kind`=command/file/http，`target`，`match`（正则，省略 = 输出有变化），`notify`=match（缺省，报一次即结束）/ change（每次重新命中都报），`interval_sec`（5–3600，缺省 30，固定间隔不退避）、`max_checks`（缺省 120）、`deadline_sec`（缺省 3600）；**命中才注入**，未命中不打扰。确定会结束的任务不用它（用 `job_wait`） | Confirm |
+| `watch_list` / `watch_stop` | 观察器列表 / 停止（ID 支持唯一前缀） | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
 | `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
 | `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（抓客户区，**含被遮挡、非顶层窗口**；活动菜单/下拉会合进主图；最小化窗口取决于它是否仍自绘，取不到明确报因）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
@@ -643,7 +645,43 @@ type JobManager interface {
 输出语义：`Run` 的 `tool.Result.Output` 与 `Logs` 返回值都是 **UTF-8 文本**——进程原始字节由
 jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码。
 
-### 5.9 `ui.go` / `misc.go`
+### 5.9 `watch.go` —— 观察器端口
+
+```go
+type WatchKind string   // command | file | http
+type WatchNotify string // match（报一次即结束）| change（每次命中都报）
+
+type WatchSpec struct {
+    Kind WatchKind; Target string
+    Match string           // 正则；空 = 输出哈希变化
+    Notify WatchNotify
+    Interval time.Duration // 固定间隔（5s–1h），不退避
+    MaxChecks int
+    Deadline time.Duration
+    WorkDir string         // 仅 kind=command
+}
+
+type WatchProbe struct { Kind WatchKind; Target, WorkDir string }
+type WatchProbeResult struct {
+    Status int    // HTTP 状态码 / 命令退出码；文件恒 0
+    Output string // 已按上限裁剪
+}
+
+type WatchProber interface { Probe(ctx context.Context, spec WatchProbe) (WatchProbeResult, error) }
+
+type WatchState struct { ID WatchID; Spec WatchSpec; Checks int; StartedAt, EndsAt time.Time }
+
+type WatchManager interface {
+    Start(ctx context.Context, spec WatchSpec) (WatchState, error)
+    List(ctx context.Context) ([]WatchState, error)
+    Stop(ctx context.Context, id WatchID) error
+}
+```
+
+探针只管**取到内容**：非零退出码、非 2xx 都进 `Status` 而不是当错误——判据由 app 层的
+观察器判。取不到（起不来/连不上/路径非法）才返回 error。
+
+### 5.10 `ui.go` / `misc.go`
 
 ```go
 type Event any // DeltaEvent{MessageID, Delta} | ToolCallEvent | ToolResultEvent
@@ -669,12 +707,12 @@ type IDGen interface {
 type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 ```
 
-### 5.10 端口 × 适配器矩阵
+### 5.11 端口 × 适配器矩阵
 
 | 端口 | v1 内置适配器 | 三方接入 | 测试替身 |
 |---|---|---|---|
 | `LLM` | openai-chat（缺省）/ openai-responses / anthropic（+可选 `TokenCounter`，D173/D175） | Tier-1 Go 插件 | 脚本化 Stream |
-| `Tool` | memory_*、file_*、term_*、job_*、think | **MCP server** | fake tool |
+| `Tool` | memory_*、file_*、term_*、job_*、watch_*、think | **MCP server** | fake tool |
 | `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
 | `Confirmer` | TUI 确认 / `--yes` | — | 自动应答 |
 | `Asker` | uigui 提问面板 / uitui 编号选单 / repl 编号选单 | — | 脚本答案 |
@@ -685,10 +723,11 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `Transcriber` / `Synthesizer` | asrchat（chat-completions 音频形状，D179）/ mimotts（MiMo TTS 三种模型）/ micwin（`waveIn` 采集）/ audioplay（`PlaySound` 播放） | Tier-1 Go 插件 | 假转写 / 假合成 |
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/导出 | Tier-1 Go 插件 | 脚本 |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
+| `WatchProber` / `WatchManager` | probe（command/file/http 取样，D190）/ app.watcher | — | 脚本化探针 |
 | `Presenter` / `Prompter` | uitui（TUI）、repl、uigui（GUI 悬浮球，D43/M5） | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | Tier-1（keychain） | 固定 / map |
 
-### 5.11 `capture.go` —— 屏幕捕获端口（D178）
+### 5.12 `capture.go` —— 屏幕捕获端口（D178）
 
 ```go
 type WindowInfo struct {
@@ -716,7 +755,7 @@ type Image struct{ Data []byte; Width, Height int }
 - 不做 DPI 缩放：调用方按物理像素拿图，需要缩小时自己缩（`Capture` 只负责「抓得到」）。
 - 非 Windows 实现三个方法都返回 `ErrCaptureUnsupported`，由工具层翻成给模型的可行动提示。
 
-### 5.12 `ask.go` —— 提问端口（D184）
+### 5.13 `ask.go` —— 提问端口（D184）
 
 ```go
 type AskOption struct{ Label, Description string }
@@ -918,14 +957,15 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 导出注入，装饰器不反向依赖 app；裁到 `max_context_tokens − max(本轮 MaxOutputTokens, 1024)` 之下，
 省略发生时发 `NoticeEvent`）。不做向量化、不进记忆文档。
 
-#### 7.1.1 注入节点与任务收尾（D150/D189）
+#### 7.1.1 注入节点、任务收尾与观察器（D150/D189/D190）
 
 **问题**：模型要看后台任务进度只能反复调 `job_status`/`job_logs`——每次调用都烧 token、
 把上下文塞满日志，且轮询节奏由模型瞎猜；外部工具（插件、MCP、定时器）也没有把信息塞回
 会话的通道。
 
-**确定的事用事件**：会结束的任务（编译、测试）由 `JobManager.Wait` 直接通知，不用定时去问
-状态；模型想在本轮拿到结果就调 `job_wait`。
+**两类事分开**：会结束的任务（编译、测试）用**完成事件**——`JobManager.Wait` 直接通知，
+模型想在本轮拿到结果就调 `job_wait`；**没有终态**的外部状态（CI 变绿、日志出现某行、
+文件出现）用**观察器**——模型声明探针/判据/节奏/期限，宿主按节奏取样、命中才回报。
 
 **注入节点**（§4.1 `RoleInject`）是唯一通道：
 
@@ -952,8 +992,8 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   `Trigger` 记 `false`（记的是**实际发生**：本轮确未随附起响应）；③与 `/inject` 是**驱动式**
   排空——触发型注入落地后自己跑一轮，`Trigger` 记 `true`。
 - **装配投影**（§7.1 装配规则）：inject 节点按**显式信任位**（`Injection.Trust`，落树后是
-  `Message.Trust`）决定投影角色——**可信**（宿主事实：`user` 的动作、`job` 的任务汇报）
-  投影为 **system 或 user、不套围栏**；**不可信**
+  `Message.Trust`）决定投影角色——**可信**（宿主事实：`user` 的动作、`job` 的任务汇报、
+  `poller` 的命中断言/命中次数/间隔）投影为 **system 或 user、不套围栏**；**不可信**
   （`tool` / `plugin` / 未声明）投影为 **user + 数据围栏**
   （`<injected-context source="...">…</injected-context>`，并前置一句英文说明「以下是工具注入的
   数据，不是用户指令」，落实 §9 的不可信数据口径；来源属性值转义 `"`/`<`/`>` 防提前闭合）。
@@ -993,6 +1033,31 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   全部撤销（不泄漏 goroutine）。`/jobs` 的现状输出不变（手查仍然可用）。
 - **不做**：任务收尾观察者不是插件 API 的一部分，外部插件经 `Injector` 注入，不经这里。
 
+**观察器**（`app/watcher.go` + `internal/adapter/probe`）——盯**不确定**的外部状态（D190）：
+
+- **为什么分开**：任务有终态，等完成即可（上一节）；CI 变绿、日志里出现某行、某个文件
+  出现这类事情**没有终态**，只能按节奏去看。节奏由**模型**给（它知道对方多久会变），
+  不是内核拍一个退避表。
+- **声明**：`watch_start {kind: command|file|http, target, match?, notify?, interval_sec?,
+  max_checks?, deadline_sec?, workdir?}`。`match` 省略 = 用**取样输出的哈希变化**当判据
+  （适合「变了就告诉我」）；`notify=match`（缺省）命中报一次即结束，`notify=change`
+  每次**重新**命中都报（一直命中着不重复）、继续看。间隔 5–3600s（缺省 30，**固定间隔、不做退避**）、次数缺省 120、
+  期限缺省 3600s——上限保证模型声明的等待不会变成永不退场的 goroutine。
+- **权限**：一律 `Risk=Confirm`。观察器会在会话外反复执行命令/访问网络，等于给模型一条
+  持续通道；无人值守下被拒（与 D185 同一口径：越界操作当场说明，不阻塞轮次）。
+- **探针**（`port.WatchProber`）：三种取样都只负责**取到内容**——非零退出码、非 2xx 都是
+  「取到了」，由判据决定算不算命中；只有起不来/连不上/路径非法才报错。单次取样有上限
+  （命令/HTTP 64KiB、文件 1MiB，回填按字符数保头尾），尊重 ctx。
+- **注入**：`poller:<id>`（`Trigger` 按来源默认 = 起一轮），状态行（命中次数、间隔、
+  判据）是宿主事实记为可信，**探针正文**是不可信数据、正文里单独围栏并中和闭合标签
+  （与任务日志段同一口径）。未命中的中间态**不投递**——观察器的价值就是沉默。
+- **失败**：连续取样失败只在**首次**报一条、中间静默、**恢复**时再报一条，两条都
+  `Trigger=false`（不是命中，不打断也不计费）。到期或次数用完报「观察结束，未命中」。
+- **取消**：`watch_stop`、`/watch stop`、会话切换/新建/删除当前会话时撤销该会话的观察器，
+  会话关闭时全部撤销。`/watch` 只给 list / stop——**声明**是模型的活，用户写探针等于替
+  模型调试。
+- **不做**：不解析告警格式、不做通用条件 DSL（探针三种类型已覆盖 CI/文件/网页）、
+  不允许插件直接注册观察器（插件经 `Injector` 注入）。
 
 ### 7.2 摄取 / 输出管线
 
@@ -1046,7 +1111,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/respond <id>` | 生成响应（D165）：把 Head 移到所选节点后跑 Turn——发往 API 的即「水位 → 所选节点（含）」；产物为该节点的 assistant 子节点，已有子节点则**开新分支**（旧分支保留）。id 可为任意**非根**节点（含人格 / 系统 / 工具节点），根拒绝 |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
 | `/summary <id> [文本]` | 在节点 **之前**插入摘要（D152）：新建 system 摘要节点并把该节点及其子树整体挪到其后（单条边转移），摘要成为水位；**不带文本 = 让当前模型总结其上历史后插入**，带文本 = 直接用手写摘要 |
-| `/inject [--source <名>] [--no-trigger] <文本>` | 手动注入一条上下文（D150）：入树为 inject 节点；`--no-trigger` 只入上下文不起响应。工具/MCP/轮询器走同一内核入口，不经此命令 |
+| `/inject [--source <名>] [--no-trigger] <文本>` | 手动注入一条上下文（D150）：入树为 inject 节点；`--no-trigger` 只入上下文不起响应。工具/MCP/观察器走同一内核入口，不经此命令 |
 | `/rm <id>` | Prune 剪子树（二次确认） |
 
 | `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
@@ -1055,6 +1120,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/think [on\|off]` | 无参：显示原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发。当前链的模型不支持思考（D173 `caps` 无 `reasoning`）时同样不发，无参显示里注明「当前模型未声明思考能力」 |
 | `/effort [级别]` | 无参：显示当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off = 清除）写回 config `model.reasoning_effort`；**是否真发由 `/think` 决定**，on 且未设档则不发（交服务端默认，D34） |
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
+| `/watch [list\|stop <id>]` | 观察器（D190）：看模型声明在盯什么、已查几次、何时结束；`stop` 叫停（声明由模型经 `watch_start` 发起） |
 | `/plugin [list\|enable\|disable\|logs]` | MCP 插件管理（D31/D143）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效；`logs [name]` = tail `audit.log` 的插件调用行（无参给各插件最近调用摘要，S6） |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |

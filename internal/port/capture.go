@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// ErrCaptureUnsupported 本平台不提供屏幕捕获（DESIGN §5.11）。
+// ErrCaptureUnsupported 本平台不提供屏幕捕获（DESIGN §5.12）。
 // 工具层据此翻成给模型的可行动提示，而不是静默返回空清单。
 var ErrCaptureUnsupported = errors.New("screen capture is not supported on this platform")
 

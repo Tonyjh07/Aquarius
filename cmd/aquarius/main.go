@@ -26,6 +26,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -162,6 +163,7 @@ type wiring struct {
 	merged    *mergedMemory
 	jobs      port.JobManager
 	jobWatch  *app.JobWatcher
+	watcher   *app.Watcher
 	runner    *toolrun.Runner
 	audit     *decorate.Audit
 	client    port.LLM
@@ -260,7 +262,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(w.stdout)
 	}()
 	w.buildPresenter()
-	// 逐次确认（§5.10 Confirmer 矩阵）与提问通道（D184）：默认都走前端交互面。
+	// 逐次确认（§5.11 Confirmer 矩阵）与提问通道（D184）：默认都走前端交互面。
 	tc := toolChannelsFor(w.ui, *autoYes, w.unattended.Get)
 	if *autoYes && w.cfg.Permissions.Unattended {
 		// 口径三：-yes = 自动允许，优先于无人值守（自动拒绝）。活开关压到关——状态行与
@@ -274,6 +276,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	// D189：先停任务收尾观察者再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
 	defer w.jobWatch.Close()
+	// D190：观察器同样在 UI 之前停掉（它的报告会唤醒前端）。
+	defer w.watcher.Close()
 	gen, err := w.stackDecorators(ctx)
 	if err != nil {
 		return fatal(stderr, "%v", err)
@@ -325,20 +329,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		PersistUnattended: w.persist.persistUnattended,
 		Confirmer:         tc.confirmer,
 		Jobs:              w.jobs,
-		CancelWatchers:    w.jobWatch.CancelSession, // D167：切走/新建/删当前会话时撤销该会话的 watcher
-		Ingestors:         []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
-		UI:                w.presenter,
-		OpenMemory:        openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
-		Plugins:           hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
-		ListModels:        func(ctx context.Context) ([]port.ModelInfo, error) { return w.listModels(ctx) },
-		ProviderName:      func() string { return w.primary.Name }, // D173：/model 展示（静态，重启生效）
-		Caps:              w.cfg.Model.chainCaps,                   // D173：/model 展示能力与链路
-		Chain:             w.cfg.Model.modelChain,                  // D173：/model 逐环标注
-		Budget:            w.contextBudget,                         // D177：/model 展示窗口与来源
-		Probe:             w.probeModel,                            // D174：/model probe 实测能力并写回
-		PersistModel:      w.persist.persistModel,
-		PersistThink:      w.persist.persistThink,  // D34
-		PersistEffort:     w.persist.persistEffort, // D34
+		Watches:           w.watcher,
+		CancelWatchers: func(id conversation.ID) {
+			w.jobWatch.CancelSession(id) // 切走/新建/删当前会话：不再往别的会话塞报告
+			w.watcher.CancelSession(id)
+		},
+		Ingestors:     []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
+		UI:            w.presenter,
+		OpenMemory:    openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
+		Plugins:       hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
+		ListModels:    func(ctx context.Context) ([]port.ModelInfo, error) { return w.listModels(ctx) },
+		ProviderName:  func() string { return w.primary.Name }, // D173：/model 展示（静态，重启生效）
+		Caps:          w.cfg.Model.chainCaps,                   // D173：/model 展示能力与链路
+		Chain:         w.cfg.Model.modelChain,                  // D173：/model 逐环标注
+		Budget:        w.contextBudget,                         // D177：/model 展示窗口与来源
+		Probe:         w.probeModel,                            // D174：/model probe 实测能力并写回
+		PersistModel:  w.persist.persistModel,
+		PersistThink:  w.persist.persistThink,  // D34
+		PersistEffort: w.persist.persistEffort, // D34
 	})
 	if err != nil {
 		if ctx.Err() != nil {

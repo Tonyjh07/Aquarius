@@ -29,7 +29,7 @@ func TestCommandCatalogCoversExecCommand(t *testing.T) {
 		"edit": true, "regen": true, "respond": true, "inject": true, "branch": true, "rm": true, "rmconv": true, "exit": true,
 		"compact": true, "summary": true, "permission": true, "unattended": true, "memory": true, "usage": true,
 		"mic":  true,
-		"jobs": true, "quit": true, "plugin": true, "model": true,
+		"jobs": true, "watch": true, "quit": true, "plugin": true, "model": true,
 		"think": true, "effort": true,
 	}
 	for n := range want {

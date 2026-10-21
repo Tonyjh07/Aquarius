@@ -1,4 +1,4 @@
-// Package screencap 是 port.Capture 的 Windows 实现（DESIGN §5.11 / D178）：
+// Package screencap 是 port.Capture 的 Windows 实现（DESIGN §5.12 / D178）：
 // 窗口清单走 EnumWindows，抓窗口先 PrintWindow（PW_RENDERFULLCONTENT，不依赖是否被遮挡），
 // 失败且窗口可见时回退到屏幕区域的 BitBlt；整屏 = 整个虚拟桌面。
 //

@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-21 @ 5945598 -->
+<!-- docs-sync: 2026-10-21 @ fcf26c3 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -103,7 +103,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 
 ### 新增一个端口适配器
 
-1. 先在 DESIGN §5/§5.10 补契约与矩阵行（**先改文档再改代码**，[decisions.md](decisions.md) 补决策如适用）；
+1. 先在 DESIGN §5/§5.11 补契约与矩阵行（**先改文档再改代码**，[decisions.md](decisions.md) 补决策如适用）；
 2. `internal/port` 定义/复用接口（消费方定义、保持小）；
 3. `internal/adapter/<name>/` 实现 + 同目录契约测试（临时目录 / 假 server）；
 4. `cmd/aquarius` 装配注入；横切能力（重试（含退避）/硬保底截断/审计）在装配根做装饰器，不进适配器。

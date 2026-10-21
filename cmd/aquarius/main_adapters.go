@@ -98,7 +98,7 @@ func (c sessionCommands) Commands() []port.CommandInfo {
 	return s.Commands()
 }
 
-// envSecrets port.Secrets 的内置实现：按名读环境变量（矩阵 DESIGN §5.10）。
+// envSecrets port.Secrets 的内置实现：按名读环境变量（矩阵 DESIGN §5.11）。
 // 返回值只在进程内传递，不落日志、不进会话树。
 type envSecrets struct{}
 
@@ -155,7 +155,7 @@ var _ port.Clock = systemClock{}
 
 func (systemClock) Now() time.Time { return time.Now() }
 
-// yesConfirmer port.Confirmer 的内置实现：-yes 下所有确认一律同意（§5.10 矩阵）。
+// yesConfirmer port.Confirmer 的内置实现：-yes 下所有确认一律同意（§5.11 矩阵）。
 type yesConfirmer struct{}
 
 var _ port.Confirmer = yesConfirmer{}

@@ -36,6 +36,7 @@ var commandCatalog = []port.CommandInfo{
 		Desc: "无人值守：越界操作当场拒绝并说明、不再等人确认（权限等级不变；无参 = 切换）"},
 	{Names: []string{"memory"}, Usage: "[会话id]", Desc: "用系统编辑器打开记忆文件（缺省为全局 memories.md）"},
 	{Names: []string{"usage"}, Desc: "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）"},
+	{Names: []string{"watch"}, Usage: "[list|stop <id>]", Desc: "观察器：模型的声明式定时观察（看命令/文件/网页命中什么），查看或叫停"},
 	{Names: []string{"jobs"}, Usage: "[list|logs <id> [行数]|kill <id>]", Desc: "后台任务管理（查看、日志、终止）"},
 	{Names: []string{"quit", "exit"}, Desc: "退出"},
 	{Names: []string{"plugin"}, Usage: "[list|enable <name>|disable <name>]", Desc: "MCP 插件管理（列表、启用、停用）"},

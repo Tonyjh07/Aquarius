@@ -46,6 +46,8 @@ type SessionDeps struct {
 	Confirmer port.Confirmer
 	// Jobs 后台任务管理（/jobs，DESIGN §7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
 	Jobs port.JobManager
+	// Watches 观察器（/watch，D190）；nil 时 /watch 报"未配置观察器"。
+	Watches port.WatchManager
 	// CancelWatchers 撤销某会话的后台任务观察者（D167）：切换 / 新建 / 删除当前会话时调用，
 	// 保证任务完成报告不跨会话；nil 时跳过（测试或未接轮询器的装配）。
 	CancelWatchers func(conversation.ID)
@@ -106,6 +108,7 @@ type Session struct {
 	persistUnatt   func(on bool) error
 	confirmer      port.Confirmer
 	jobs           port.JobManager
+	watches        port.WatchManager
 	cancelWatchers func(conversation.ID)
 	ingestors      []port.Ingestor
 	ui             port.Presenter
@@ -194,6 +197,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persistUnatt:   d.PersistUnattended,
 		confirmer:      d.Confirmer,
 		jobs:           d.Jobs,
+		watches:        d.Watches,
 		cancelWatchers: d.CancelWatchers,
 		ingestors:      d.Ingestors,
 		ui:             d.UI,
@@ -510,6 +514,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return s.execUsage(ctx, cmd)
 	case "jobs":
 		return s.jobsReport(ctx, cmd.Args)
+	case "watch":
+		return s.watchReport(ctx, cmd.Args)
 	case "quit":
 		return "", ErrQuit
 	case "help":

@@ -280,7 +280,7 @@ func TestEmitHistoryReplayInject(t *testing.T) {
 		Source:  "tool:think",
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "工具上下文"}},
 	}})
-	want := "注入 · 轮询 p1 · 已触发响应\n轮询结果\n" +
+	want := "注入 · 观察 p1 · 已触发响应\n轮询结果\n" +
 		"注入 · 工具 think · 未触发\n工具上下文\n"
 	if buf.String() != want {
 		t.Fatalf("buf = %q, want %q", buf.String(), want)

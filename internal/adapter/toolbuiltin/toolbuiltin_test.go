@@ -101,6 +101,7 @@ func TestNewRegistersAllTools(t *testing.T) {
 		"sleep":     tool.Safe,
 		"term_exec": tool.Confirm, "job_start": tool.Confirm,
 		"job_list": tool.Safe, "job_status": tool.Safe, "job_logs": tool.Safe, "job_kill": tool.Safe, "job_wait": tool.Safe,
+		"watch_start": tool.Confirm, "watch_list": tool.Safe, "watch_stop": tool.Safe,
 		"window_list": tool.Safe, "screen_capture": tool.Confirm,
 		"ask_user": tool.Safe,
 	}
