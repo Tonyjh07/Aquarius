@@ -129,6 +129,16 @@ func (u *UI) saveSettings(f *settingsForm) {
 	// S11-7①/D176：降级链恒全量写（空 = 清空）；provider 名为空的行为空行被跳过，
 	// cmd 侧再校验 provider 名存在于 providers 列表。
 	p.Fallback = f.fallbackList()
+	// 语音（D179）：恒全量写；provider 空 = 该能力关闭（模型名原样保留）。
+	p.ASRProvider = f.asrProv.value()
+	p.ASRModel = strings.TrimSpace(f.asrModel.Text())
+	p.ASRLang = f.asrLang.value()
+	p.TTSProvider = f.ttsProv.value()
+	p.TTSModel = strings.TrimSpace(f.ttsModel.Text())
+	p.TTSVoice = strings.TrimSpace(f.ttsVoice.Text())
+	p.TTSDesign = strings.TrimSpace(f.ttsDesign.Text())
+	p.TTSStyle = strings.TrimSpace(f.ttsStyle.Text())
+	p.TTSTags = strings.TrimSpace(f.ttsTags.Text())
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v
 	}
@@ -159,6 +169,10 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if p.Model != f.snap.Model {
 		f.status = "已保存（模型名经 /model 热切换）"
 	}
+	if p.ASRProvider != f.snap.ASRProvider || p.ASRModel != f.snap.ASRModel ||
+		p.TTSProvider != f.snap.TTSProvider || p.TTSModel != f.snap.TTSModel {
+		f.status = "已保存（语音服务与模型的改动重启后生效）"
+	}
 	if p.RawJSON != "" {
 		f.status = "已保存（config.json 原文已替换；provider/密钥类改动重启生效）"
 	}
@@ -180,6 +194,10 @@ func (u *UI) saveSettings(f *settingsForm) {
 		PromptModules: p.PromptModules, PromptPersona: p.PromptPersona,
 		Builtins: f.snap.Builtins, RawJSON: p.RawJSON,
 		Fallback: p.Fallback, FallbackNote: f.snap.FallbackNote,
+		ASRProvider: p.ASRProvider, ASRModel: p.ASRModel, ASRLang: p.ASRLang,
+		TTSProvider: p.TTSProvider, TTSModel: p.TTSModel,
+		TTSVoice: p.TTSVoice, TTSDesign: p.TTSDesign,
+		TTSStyle: p.TTSStyle, TTSTags: p.TTSTags,
 	}
 	f.snapChain = append([]FallbackLink(nil), p.Fallback...)
 }

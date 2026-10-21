@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
@@ -20,6 +21,29 @@ func (w *wiring) voiceInput(ctx context.Context) (string, error) {
 	}
 	text, _, err := w.mic.Listen(ctx, 0)
 	return text, err
+}
+
+// previewVoice 设置窗「语音」页试听（D179）：用表单草稿的音色/描述/风格合成一句并
+// 播放；服务与模型来自启动装配（这两项保存后重启才生效，与「模型服务」页同口径）。
+func (w *wiring) previewVoice(req port.SpeechRequest) error {
+	if w.ttsSynth == nil {
+		return errors.New("语音合成未配置：先在「语音」页选服务与模型（保存后重启生效）")
+	}
+	if w.blobs == nil || w.player == nil {
+		return errors.New("语音播放未装配")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	ref, err := w.ttsSynth.Synthesize(ctx, req)
+	if err != nil {
+		return err
+	}
+	rc, err := w.blobs.Get(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("读取合成音频：%w", err)
+	}
+	defer rc.Close()
+	return w.player.Play(ctx, ref, rc)
 }
 
 // settingsSnapshot 设置窗快照（§15.7/D60-D61）：config 文本键（文件即事实源）+
@@ -95,6 +119,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			PreviewPrompts:      w.previewPrompts,                                                                                                                                               // S7/D144：人格组合预览（当前表单 → 最终 system 文本）
 			ApplyPromptTemplate: w.applyPromptTemplate,                                                                                                                                          // D154：人格模板窄写回（遮罩「默认模板」页签保存）
 			Voice:               w.voiceInput,                                                                                                                                                   // D179：空输入时右钮 = 录音键（录→转写→回填，不自动发送）
+			PreviewVoice:        w.previewVoice,                                                                                                                                                 // D179：设置窗「语音」页试听
 		})
 		w.ui = ui
 		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式

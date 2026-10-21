@@ -52,6 +52,7 @@ var settingsPages = []settingsPage{
 	chatPage{},      // 对话：限额
 	promptPage{},    // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览
 	toolsPage{},     // 工具与 MCP：内置工具启停 + 插件管理
+	audioPage{},     // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	advPage{},       // 高级：config.json 原文
 }
 

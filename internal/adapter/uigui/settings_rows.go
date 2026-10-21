@@ -95,6 +95,18 @@ const (
 	rowSecretValue  // 新增/覆盖的值（单行编辑档；动作后恒清空）
 	rowSecretAdd    // 「存入」按钮行
 	rowSecretStatus // 存入/删除反馈状态行
+	// D179：语音页（识别 / 合成 / 音色与风格 / 试听）。
+	rowAudioASRProvider // 识别服务（循环选 provider）
+	rowAudioASRModel    // 识别模型（单行档）
+	rowAudioLang        // 录音语种提示（循环档）
+	rowAudioTTSProvider // 合成服务（循环选 provider）
+	rowAudioTTSModel    // 合成模型（单行档）
+	rowAudioVoice       // 音色（预置名 / 克隆样本路径）
+	rowAudioDesign      // 音色描述（音色设计模型）
+	rowAudioStyle       // 风格指令
+	rowAudioTags        // 风格标签
+	rowAudioPreview     // 试听按钮 + 行内反馈
+	rowAudioNote        // 说明（重启生效 / 各字段适用模型）
 )
 
 // provModelCandMax 候选 chip 的上限（D153；欢迎窗「获取模型」仍用它）：服务端可能列出

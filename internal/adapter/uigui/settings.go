@@ -7,6 +7,7 @@ package uigui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -196,6 +197,18 @@ type SettingsSnapshot struct {
 	Plugins          []string            // 只读：声明名清单（sorted）
 	RawJSON          string              // config.json 原文（高级页编辑起点）
 
+	// 语音（D179）：ASR/TTS 各自引用 model.providers 里的一个 name；空 = 该能力未配置。
+	// 只借 base_url 与密钥池，不继承 kind/能力位、不进降级链。
+	ASRProvider string
+	ASRModel    string
+	ASRLang     string // 录音语种提示：auto | zh | en
+	TTSProvider string
+	TTSModel    string
+	TTSVoice    string // 预置音色名；-voiceclone 模型填样本文件绝对路径
+	TTSDesign   string // -voicedesign 模型的音色描述
+	TTSStyle    string // 自然语言风格指令
+	TTSTags     string // 风格标签（拼成 "(标签)" 前缀）
+
 	// Fallback 降级链（D173/D176 口径三）。模型 "" = 取该 provider 的缺省模型。
 	// 链条目可指向声明之外的模型名——它是运行时路由，不要求目标先在 provider 里声明。
 	Fallback []FallbackLink
@@ -236,6 +249,17 @@ type SettingsPatch struct {
 	// Fallback 降级链（D176 口径三；恒全量写：空 = 清空）。链条目 {provider, model}，
 	// 模型可为空（取该 provider 的缺省模型）；cmd 侧校验 provider 名存在。
 	Fallback []FallbackLink
+	// 语音（D179；恒全量写）：provider 空 = 该能力关闭；model 非空且 provider 空时
+	// 原样保留（不生效但不丢用户输入）；cmd 侧校验引用的 provider 存在。
+	ASRProvider string
+	ASRModel    string
+	ASRLang     string // auto | zh | en
+	TTSProvider string
+	TTSModel    string
+	TTSVoice    string
+	TTSDesign   string
+	TTSStyle    string
+	TTSTags     string
 }
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
@@ -252,6 +276,9 @@ var (
 	// 键值为 string 的既有口径，表单侧 ParseFloat 换算；%g 往返一致）。
 	zoomLevels = []string{"100%", "125%", "150%", "175%", "200%"}
 	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
+	// langLevels 录音语种提示（D179）：只喂给识别，不改变界面语言。
+	langLevels = []string{"自动识别", "中文", "英文"}
+	langValues = []string{"auto", "zh", "en"}
 	// kindLevels 协议档（S11-7③/D173）：展示名短（chat/responses/anthropic），键值为
 	// config 里的 kind 原文；空 = openai-chat（读侧归一）。
 	kindLevels = []string{"chat", "responses", "anthropic"}
@@ -273,6 +300,7 @@ const (
 	pageChat             // 对话：限额
 	pagePrompt           // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
 	pageTools            // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
+	pageAudio            // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	pageAdv              // 高级：config.json 原文
 	// pageConstCount 页常量个数（编译期锚；见上方说明）。
 	pageConstCount
@@ -406,6 +434,23 @@ type settingsForm struct {
 	// chainChoices 每项的 provider 下拉选项（快照现取：provider 列表可能被「模型服务」页改过，
 	// 但那一改要重启才生效，故以开窗快照为准，不每帧重取）。
 	chainChoices []ProviderChoice
+
+	// 语音页（D179）：识别/合成各引用一个 provider（循环档，选项同 chainChoices），
+	// 音色与风格是自由文本；试听在后台合成一句，结果经 voiceRes 回灌行内状态。
+	asrProv     cycleField
+	asrModel    widget.Editor
+	asrLang     cycleField
+	ttsProv     cycleField
+	ttsModel    widget.Editor
+	ttsVoice    widget.Editor
+	ttsDesign   widget.Editor
+	ttsStyle    widget.Editor
+	ttsTags     widget.Editor
+	voiceTry    widget.Clickable
+	voiceRes    chan error
+	voiceBusy   bool   // 试听合成在途
+	voiceStatus string // 试听反馈（成功/失败）
+	voiceErr    bool
 
 	// profile 区（D110③）。
 	profCreate widget.Clickable
@@ -569,8 +614,10 @@ func newSettingsFormState() *settingsForm {
 		effort:      cycleField{displays: effortLevels, values: effortValues},
 		theme:       cycleField{displays: themeLevels, values: themeValues},
 		scale:       cycleField{displays: zoomLevels, values: zoomValues},
+		asrLang:     cycleField{displays: langLevels, values: langValues},
 		testResults: make(chan testOutcome, 8),
 		toolRes:     make(chan toolActionResult, 16),
+		voiceRes:    make(chan error, 2),
 		toolBtns:    map[string]*widget.Clickable{},
 		secretBtns:  map[string]*widget.Clickable{},
 		// 密钥库快照「上次 Revision」起点 −1：**首帧必采纳**。若起点取 0，库
@@ -624,7 +671,8 @@ func newSettingsForm(u *UI) *settingsForm {
 	if s.FontSize == 0 {
 		s.FontSize = fontSpBase
 	}
-	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo} {
+	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo,
+		&f.asrModel, &f.ttsModel, &f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags} {
 		ed.SingleLine = true
 	}
 	// f.sysPrompt / f.rawCfg 保持多行（表单仅有的多行档）。
@@ -665,6 +713,16 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.sysPrompt.SetText(s.SystemPrompt)
 	f.rawCfg.SetText(s.RawJSON)
 	f.builtins = s.Builtins
+	// 语音页填表（D179）：provider 选项来自本窗的 provider 快照；未配置 = 首项。
+	f.setAudioProviderChoices(s.ASRProvider, &f.asrProv)
+	f.setAudioProviderChoices(s.TTSProvider, &f.ttsProv)
+	f.asrLang.setValue(s.ASRLang)
+	f.asrModel.SetText(s.ASRModel)
+	f.ttsModel.SetText(s.TTSModel)
+	f.ttsVoice.SetText(s.TTSVoice)
+	f.ttsDesign.SetText(s.TTSDesign)
+	f.ttsStyle.SetText(s.TTSStyle)
+	f.ttsTags.SetText(s.TTSTags)
 	f.loadPrompts(s.PromptModules, s.PromptPersona)
 	f.loadFallback(s.Fallback, f.chainChoices) // D176 口径三：降级链
 	return f
@@ -827,6 +885,26 @@ func (f *settingsForm) loadFallback(chain []FallbackLink, choices []ProviderChoi
 	for _, l := range chain {
 		f.chain = append(f.chain, newFallbackForm(l, choices))
 	}
+}
+
+// setAudioProviderChoices 语音页 provider 循环档选项：首项「未配置」，其后为 provider
+// 快照里的名字；当前值不在快照内时补一项，避免开窗即把它悄悄改成「未配置」。
+func (f *settingsForm) setAudioProviderChoices(cur string, c *cycleField) {
+	displays := []string{"未配置"}
+	values := []string{""}
+	for _, p := range f.chainChoices {
+		if p.Name == "" || slices.Contains(values, p.Name) {
+			continue
+		}
+		displays = append(displays, p.Name)
+		values = append(values, p.Name)
+	}
+	if cur != "" && !slices.Contains(values, cur) {
+		displays = append(displays, cur)
+		values = append(values, cur)
+	}
+	c.displays, c.values = displays, values
+	c.setValue(cur) // "" 命中首项 = 未配置
 }
 
 // addFallbackForm 追加一项空白降级链（帧循环与测试共用；provider 缺省取首个选项）。

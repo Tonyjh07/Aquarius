@@ -24,6 +24,8 @@ type textSettings struct {
 	SystemPrompt string        `json:"system_prompt"`
 	Prompts      promptsConfig `json:"prompts"`
 	Output       outputConfig  `json:"output"`
+	Input        inputConfig   `json:"input"` // D179：录音语种
+	Audio        audioConfig   `json:"audio"` // D179：识别与合成
 	Limits       limitsConfig  `json:"limits"`
 	MCPServers   map[string]struct {
 		Transport string `json:"transport"`
@@ -69,6 +71,16 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		WindowWidth:      raw.UI.WindowWidth,
 		WindowHeight:     raw.UI.WindowHeight,
 		RawJSON:          string(data),
+		// 语音（D179）：文件即事实源（服务/模型改动重启生效，与快照口径一致）。
+		ASRProvider: raw.Audio.ASR.Provider,
+		ASRModel:    raw.Audio.ASR.Model,
+		ASRLang:     raw.Input.Language,
+		TTSProvider: raw.Audio.TTS.Provider,
+		TTSModel:    raw.Audio.TTS.Model,
+		TTSVoice:    raw.Audio.TTS.Voice,
+		TTSDesign:   raw.Audio.TTS.Design,
+		TTSStyle:    raw.Audio.TTS.Style,
+		TTSTags:     raw.Audio.TTS.Tags,
 	}
 	for name := range raw.MCPServers {
 		snap.MCPServers = append(snap.MCPServers, name)
@@ -105,6 +117,13 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 			return err
 		}
 	}
+	// 语音（D179）：引用的 provider 必须存在、配了服务就要有模型名，语种只认三档。
+	// 高级页整文件替换时跳过（与降级链同口径：那一份配置以用户手写的文件为准）。
+	if p.RawJSON == "" {
+		if err := validateAudioSettings(cfgPath, p); err != nil {
+			return err
+		}
+	}
 	if p.RawJSON != "" {
 		// 高级页（Q10）：整文件替换——JSON 对象校验后原子写（cfgWriteMu 串行与其他
 		// 写回互斥）；原文即最终态，未知键天然保留。后续 mutate 在新文件上照常叠加
@@ -133,6 +152,45 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 		outSec["notify"] = p.Notify
 		outSec["tts"] = p.TTS
+		// 语音（D179，恒全量写）：audio.asr / audio.tts 各自引用 provider；kind 不在此
+		// 管理（高级页手写的值原样保留），voice/design/style/tags 清空 = 回到缺省。
+		audioSec, _ := generic["audio"].(map[string]any)
+		if audioSec == nil {
+			audioSec = map[string]any{}
+			generic["audio"] = audioSec
+		}
+		setChannel := func(name string, ch map[string]any) {
+			sec, _ := audioSec[name].(map[string]any)
+			if sec == nil {
+				sec = map[string]any{}
+				audioSec[name] = sec
+			}
+			for k, v := range ch {
+				sec[k] = v
+			}
+		}
+		setChannel("asr", map[string]any{
+			"provider": p.ASRProvider,
+			"model":    p.ASRModel,
+		})
+		setChannel("tts", map[string]any{
+			"provider": p.TTSProvider,
+			"model":    p.TTSModel,
+			"voice":    p.TTSVoice,
+			"design":   p.TTSDesign,
+			"style":    p.TTSStyle,
+			"tags":     p.TTSTags,
+		})
+		inSec, _ := generic["input"].(map[string]any)
+		if inSec == nil {
+			inSec = map[string]any{}
+			generic["input"] = inSec
+		}
+		lang := strings.TrimSpace(p.ASRLang)
+		if lang == "" {
+			lang = "auto"
+		}
+		inSec["language"] = lang
 		// 限额（数值 0 = 不改，表单留空口径）。
 		limSec, _ := generic["limits"].(map[string]any)
 		if limSec == nil {
@@ -232,6 +290,46 @@ func validateFallbackChain(cfgPath string, links []uigui.FallbackLink) error {
 			return fmt.Errorf("降级链重复项 %q", key)
 		}
 		seen[key] = true
+	}
+	return nil
+}
+
+// validateAudioSettings 语音配置保存前校验（D179）：provider 可留空（= 关闭该能力），
+// 填了就必须存在于 providers 列表；填了 provider 就必须有模型名；语种只认三档。
+// 与 normalizeAudio 同口径，只是提前到落盘前——否则写进去的是一份启动会拒的配置。
+func validateAudioSettings(cfgPath string, p uigui.SettingsPatch) error {
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for _, pc := range cfg.Model.Providers {
+		known[pc.Name] = true
+	}
+	check := func(label, prov, model string) error {
+		prov = strings.TrimSpace(prov)
+		model = strings.TrimSpace(model)
+		if prov == "" {
+			return nil
+		}
+		if !known[prov] {
+			return fmt.Errorf("%s引用的服务 %q 不在 provider 列表内（先在「模型服务」页添加）", label, prov)
+		}
+		if model == "" {
+			return fmt.Errorf("%s选了服务就要填模型名", label)
+		}
+		return nil
+	}
+	if err := check("语音识别", p.ASRProvider, p.ASRModel); err != nil {
+		return err
+	}
+	if err := check("语音合成", p.TTSProvider, p.TTSModel); err != nil {
+		return err
+	}
+	switch strings.TrimSpace(p.ASRLang) {
+	case "", "auto", "zh", "en":
+	default:
+		return fmt.Errorf("录音语种只能是自动识别、中文或英文")
 	}
 	return nil
 }

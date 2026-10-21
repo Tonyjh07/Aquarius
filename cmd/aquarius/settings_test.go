@@ -359,3 +359,82 @@ func TestPersistReadTextSettingsZoomKnobs(t *testing.T) {
 		t.Error("limits 段未保留（泛键改写口径破坏了无关键）")
 	}
 }
+
+// TestPersistAudioSettingsRoundTrip 语音页写读往返（D179）：识别/合成的服务、模型、
+// 音色、描述、风格、标签与录音语种都按表单落盘并可读回。
+func TestPersistAudioSettingsRoundTrip(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	p := uigui.SettingsPatch{
+		Theme:       "system",
+		ASRProvider: "openai", ASRModel: "mimo-v2.5-asr", ASRLang: "zh",
+		TTSProvider: "openai", TTSModel: "mimo-v2.5-tts", TTSVoice: "冰糖",
+		TTSDesign: "温柔女声", TTSStyle: "语速稍快", TTSTags: "温柔 慢速",
+	}
+	if err := persistSettingsTextKeys(cfgPath, p); err != nil {
+		t.Fatalf("persistSettingsTextKeys: %v", err)
+	}
+	s := readTextSettings(cfgPath)
+	if s.ASRProvider != "openai" || s.ASRModel != "mimo-v2.5-asr" || s.ASRLang != "zh" {
+		t.Errorf("识别读回 = %q/%q/%q", s.ASRProvider, s.ASRModel, s.ASRLang)
+	}
+	if s.TTSProvider != "openai" || s.TTSModel != "mimo-v2.5-tts" || s.TTSVoice != "冰糖" ||
+		s.TTSDesign != "温柔女声" || s.TTSStyle != "语速稍快" || s.TTSTags != "温柔 慢速" {
+		t.Errorf("合成读回 = %q/%q/%q/%q/%q/%q",
+			s.TTSProvider, s.TTSModel, s.TTSVoice, s.TTSDesign, s.TTSStyle, s.TTSTags)
+	}
+	// 配置能过启动侧归一（不因写回造出非法 kind 或空模型之类的组合）。
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("读配置: %v", err)
+	}
+	if cfg.Audio.ASR.Model != "mimo-v2.5-asr" || cfg.Audio.TTS.Voice != "冰糖" {
+		t.Errorf("loadConfig 语音 = %+v", cfg.Audio)
+	}
+}
+
+// TestPersistAudioSettingsKeepsKindAndValidates 语音写回不动 kind（高级页手写值原样
+// 保留）；非法 provider、缺模型名、非法语种一律拒写。
+func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
+	raw := strings.Replace(defaultConfig,
+		`"audio": { "asr": {}, "tts": {} }`,
+		`"audio": { "asr": { "kind": "chat-audio" }, "tts": { "kind": "chat-audio" } }`, 1)
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme: "system", ASRProvider: "openai", ASRModel: "mimo-v2.5-asr", ASRLang: "auto",
+	}); err != nil {
+		t.Fatalf("persistSettingsTextKeys: %v", err)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("读回 config: %v", err)
+	}
+	if strings.Count(string(data), `"kind": "chat-audio"`) != 2 {
+		t.Errorf("kind 未保留:\n%s", data)
+	}
+
+	cases := []struct {
+		name string
+		mut  func(*uigui.SettingsPatch)
+		want string
+	}{
+		{"失联的提供者", func(p *uigui.SettingsPatch) { p.ASRProvider = "nope" }, "provider 列表"},
+		{"有服务无模型", func(p *uigui.SettingsPatch) { p.TTSProvider = "openai"; p.TTSModel = "" }, "模型名"},
+		{"非法语种", func(p *uigui.SettingsPatch) { p.ASRLang = "ja" }, "语种"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := uigui.SettingsPatch{Theme: "system"}
+			c.mut(&p)
+			err := persistSettingsTextKeys(cfgPath, p)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want 含 %q", err, c.want)
+			}
+		})
+	}
+}

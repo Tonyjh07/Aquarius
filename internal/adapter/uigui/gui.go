@@ -129,6 +129,9 @@ type Options struct {
 	// Voice 语音输入（D179）：录一段 → 转写 → 返回文本（不提交，由界面回填输入框）；
 	// 阻塞调用，UI 在后台 goroutine 跑、经 inbox 回投。nil = 语音不可用（右钮保持发送）。
 	Voice func(ctx context.Context) (string, error)
+	// PreviewVoice 设置窗「语音」页试听（D179）：用表单草稿的音色/风格合成一句并播放。
+	// 阻塞调用，设置窗在后台 goroutine 跑。nil = 试听不可用。
+	PreviewVoice func(req port.SpeechRequest) error
 }
 
 // PromptTemplatePatch 人格模板的窄写回（D154；与 SettingsPatch 分开：全量 patch 带

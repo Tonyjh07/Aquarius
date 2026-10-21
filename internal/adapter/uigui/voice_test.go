@@ -96,17 +96,17 @@ func TestToggleVoiceRoundTrip(t *testing.T) {
 		t.Fatal("应处于录音态")
 	}
 	u.toggleVoice() // 停止
-	// 事件循环在另一 goroutine：用 drain 屏障等录音结果应用进状态机，之后才读输入框。
+	// 录音结果由后台 goroutine 经 inbox 回投。recording 在 finishVoice 里先清零、随后
+	// 才回填输入框（同一帧内），所以先等它清零，再用 drain 屏障保证那次 apply 已走完，
+	// 之后读输入框才不与之竞争。
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		drainSync(t, u)
-		if !u.recording.Load() {
-			break
-		}
+	for u.recording.Load() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
 	}
 	if u.recording.Load() {
 		t.Fatal("录音态应结束")
 	}
+	drainSync(t, u)
 	if got := u.editor.Text(); got != "半句话" {
 		t.Fatalf("输入框 = %q", got)
 	}

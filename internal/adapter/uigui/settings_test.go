@@ -1319,7 +1319,7 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 // 推导）；每页行计划非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」
 // 页（S7b/D145）。另锁两条注册表结构不变量：页常量与注册表长度一致、Key 唯一。
 func TestSettingsPageNamesContract(t *testing.T) {
-	want := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "高级"}
+	want := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "语音", "高级"}
 	if settingsPageCount != len(want) {
 		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(want))
 	}
