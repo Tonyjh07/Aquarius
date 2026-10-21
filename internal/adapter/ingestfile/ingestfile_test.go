@@ -54,14 +54,19 @@ func refContent(t *testing.T, blobs *blobfs.Store, ref conversation.BlobRef) []b
 	return data
 }
 
+// TestAccepts 接受面（D186：Kind=file + 任一附件形式）。
 func TestAccepts(t *testing.T) {
 	in := New(nil)
+	blob := &conversation.BlobRef{Hash: "abc", MIME: "image/png", Name: "p.png"}
 	for _, tc := range []struct {
 		raw  port.RawInput
 		want bool
 	}{
 		{port.RawInput{Kind: "file", File: "/abs/a.txt"}, true},
 		{port.RawInput{Kind: "file", File: "  "}, false},
+		{port.RawInput{Kind: "file", Attachments: []port.Attachment{{Path: "/abs/b.txt"}}}, true},
+		{port.RawInput{Kind: "file", Attachments: []port.Attachment{{Blob: blob}}}, true},
+		{port.RawInput{Kind: "file"}, false},
 		{port.RawInput{Kind: "text", Text: "hi"}, false},
 		{port.RawInput{Kind: "clipboard"}, false},
 	} {
@@ -69,6 +74,117 @@ func TestAccepts(t *testing.T) {
 			t.Fatalf("Accepts(%+v) = %v, want %v", tc.raw, got, tc.want)
 		}
 	}
+}
+
+// TestIngestMultipleAllOK D186：多个附件全成功 → 分片按输入序、回执逐条列出。
+func TestIngestMultipleAllOK(t *testing.T) {
+	in, blobs, dir := newIngestor(t)
+	a := writeFile(t, dir, "a.txt", []byte("第一个"))
+	b := writeFile(t, dir, "b.txt", []byte("第二个"))
+
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", Text: "看看这两份",
+		Attachments: []port.Attachment{{Path: a}, {Path: b}}})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if len(rep.Parts) != 3 {
+		t.Fatalf("parts = %d, want 3（随附文本 + 两个文档）", len(rep.Parts))
+	}
+	if rep.Parts[0].Kind != conversation.PartText {
+		t.Fatalf("首分片 = %+v, want PartText", rep.Parts[0])
+	}
+	if got := refContent(t, blobs, *rep.Parts[1].Ref); string(got) != "第一个" {
+		t.Fatalf("第 1 个附件 = %q", got)
+	}
+	if got := refContent(t, blobs, *rep.Parts[2].Ref); string(got) != "第二个" {
+		t.Fatalf("第 2 个附件 = %q", got)
+	}
+	if !strings.Contains(rep.Note, "a.txt") || !strings.Contains(rep.Note, "b.txt") {
+		t.Fatalf("note = %q", rep.Note)
+	}
+}
+
+// TestIngestMultiplePartialFailure D186 口径二：坏文件只跳过它自己，其余照常入树，
+// 回执里逐条列出被跳过的文件名与原因。
+func TestIngestMultiplePartialFailure(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	good := writeFile(t, dir, "good.txt", []byte("好的"))
+	missing := filepath.Join(dir, "missing.txt")
+
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file",
+		Attachments: []port.Attachment{{Path: missing}, {Path: good}}})
+	if err != nil {
+		t.Fatalf("部分失败不应整体报错: %v", err)
+	}
+	if len(rep.Parts) != 1 || rep.Parts[0].Kind != conversation.PartDoc {
+		t.Fatalf("parts = %+v, want 只留成功项", rep.Parts)
+	}
+	if !strings.Contains(rep.Note, "跳过") || !strings.Contains(rep.Note, "missing.txt") {
+		t.Fatalf("note = %q, want 列出被跳过项", rep.Note)
+	}
+}
+
+// TestIngestMultipleAllFail D186 口径二：全部失败才报错，错误里列出每一项的原因。
+func TestIngestMultipleAllFail(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	_, err := in.Ingest(context.Background(), port.RawInput{Kind: "file",
+		Attachments: []port.Attachment{
+			{Path: filepath.Join(dir, "m1.txt")},
+			{Path: "rel/not-abs.txt"},
+		}})
+	if err == nil {
+		t.Fatal("全失败应报错")
+	}
+	for _, want := range []string{"全部摄取失败", "m1.txt", "not-abs.txt", "绝对路径"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want 含 %q", err, want)
+		}
+	}
+}
+
+// TestIngestTooManyAttachments D186 口径三：超过单条上限直接拒收，报因里带上限数字。
+func TestIngestTooManyAttachments(t *testing.T) {
+	in, _, dir := newIngestor(t)
+	p := writeFile(t, dir, "x.txt", []byte("x"))
+	atts := make([]port.Attachment, port.MaxAttachments+1)
+	for i := range atts {
+		atts[i] = port.Attachment{Path: p}
+	}
+	_, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", Attachments: atts})
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprint(port.MaxAttachments)) {
+		t.Fatalf("超上限 err = %v", err)
+	}
+}
+
+// TestIngestBlobAttachment D187：已入库项按引用出分片，不再读文件系统。
+func TestIngestBlobAttachment(t *testing.T) {
+	in, blobs, dir := newIngestor(t)
+	content := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{7}, 32)...)
+	ref, err := blobs.Put(context.Background(), bytes.NewReader(content), "image/png", "clip.png")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	rep, err := in.Ingest(context.Background(), port.RawInput{Kind: "file",
+		Attachments: []port.Attachment{{Blob: &ref}}})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if len(rep.Parts) != 1 || rep.Parts[0].Kind != conversation.PartImage {
+		t.Fatalf("parts = %+v, want PartImage", rep.Parts)
+	}
+	if rep.Parts[0].Ref == nil || rep.Parts[0].Ref.Hash != ref.Hash {
+		t.Fatalf("ref = %+v, want 原引用", rep.Parts[0].Ref)
+	}
+	// 库里没有的引用照常报「全部失败」。
+	missing := ref
+	missing.Hash = strings.Repeat("0", 64)
+	_, err = in.Ingest(context.Background(), port.RawInput{Kind: "file",
+		Attachments: []port.Attachment{{Blob: &missing}}})
+	if err == nil || !strings.Contains(err.Error(), "clip.png") {
+		t.Fatalf("缺库项 err = %v", err)
+	}
+	_ = dir
 }
 
 // TestIngestTextFile 文本文件：PartDoc 带完整提取文本，附件已入库且内容一致。

@@ -156,7 +156,13 @@ func (u *UI) updateClicks(gtx layout.Context) {
 		u.plat.RequestFileDialog() // D104：附件槽 → shell 线程文件选择框（模态泵不嵌 Gio 泵）
 	}
 	if u.attachClear.Clicked(gtx) {
-		u.m.clearAttach() // D104：暂存 chip 点击 = 取消暂存
+		u.m.clearAttach() // D186：收起态汇总 chip 点击 = 清空全部暂存
+	}
+	for i := range u.m.stagedFiles {
+		if u.attachClick(i).Clicked(gtx) {
+			u.m.unstageAttach(i) // D186：展开态 chip 点击 = 移除该项
+			break
+		}
 	}
 	if u.expandBtn.Clicked(gtx) {
 		u.setExpanded(!u.expanded) // D106：展开/收起切换

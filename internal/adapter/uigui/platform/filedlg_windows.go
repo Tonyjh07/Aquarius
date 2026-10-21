@@ -22,9 +22,7 @@ func (p *Plat) RequestFileDialog() {
 	if h := shellHWND.Load(); h != 0 {
 		procPostMessageW.Call(h, fileDlgMsg, 0, 0)
 	}
-}
-
-// openFileNameW OPENFILENAMEW（Win64 布局，GetOpenFileNameW 参数，D104）：
+} // openFileNameW OPENFILENAMEW（Win64 布局，GetOpenFileNameW 参数，D104）：
 // 下划线字段 = x64 对齐填充（指针 8 对齐），lStructSize 传 unsafe.Sizeof。
 type openFileNameW struct {
 	lStructSize       uint32
@@ -56,14 +54,17 @@ type openFileNameW struct {
 }
 
 // showFileDlg 文件选择框呈现（shell 线程，D104）：GetOpenFileNameW 自带模态泵，阻塞
-// 本线程与 TrackPopupMenu 同语义（D72 先例）；选中 → Host.FilePicked 回传，
-// 取消/出错静默。单选 v1（多选留 UserInput.Raw 口径扩展，D104④）。
+// 本线程与 TrackPopupMenu 同语义（D72 先例）；选中 → Host.FilesPicked 回传，
+// 取消/出错静默。
+// D186 口径五：开 OFN_ALLOWMULTISELECT | OFN_EXPLORER，一次可选多个附件。
 func (p *Plat) showFileDlg() {
 	const (
-		ofnHideReadOnly  = 0x4
-		ofnNoChangeDir   = 0x8
-		ofnPathMustExist = 0x800
-		ofnFileMustExist = 0x1000
+		ofnHideReadOnly     = 0x4
+		ofnNoChangeDir      = 0x8
+		ofnAllowMultiSelect = 0x200
+		ofnPathMustExist    = 0x800
+		ofnFileMustExist    = 0x1000
+		ofnExplorer         = 0x80000
 	)
 	filter := utf16Pairs(
 		"常见文档与图片",
@@ -86,7 +87,8 @@ func (p *Plat) showFileDlg() {
 		lpstrFile:   &buf[0],
 		nMaxFile:    uint32(len(buf)),
 		lpstrTitle:  &title[0],
-		flags:       ofnHideReadOnly | ofnNoChangeDir | ofnPathMustExist | ofnFileMustExist,
+		flags: ofnHideReadOnly | ofnNoChangeDir | ofnAllowMultiSelect | ofnExplorer |
+			ofnPathMustExist | ofnFileMustExist,
 	}
 	if h := shellHWND.Load(); h != 0 {
 		ofn.hwndOwner = h
@@ -95,9 +97,14 @@ func (p *Plat) showFileDlg() {
 	if r == 0 {
 		return
 	}
-	if p.host != nil {
-		p.host.FilePicked(syscall.UTF16ToString(buf))
+	if p.host == nil {
+		return
 	}
+	paths := parseMultiSelect(buf)
+	if len(paths) == 0 {
+		return
+	}
+	p.host.FilesPicked(paths)
 }
 
 // utf16Pairs 对话框过滤器串：段间单 NUL、末尾双 NUL 的 UTF-16（段 = 显示名/模式交替）。

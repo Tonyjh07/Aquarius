@@ -100,9 +100,9 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm != nil {
 					return layout.Dimensions{} // D86：确认态灰槽隐藏（本就不可点占位）
 				}
-				// D104 附件槽实装：无暂存 = 20dp 可点图标槽；有暂存 = chip（点取消）。
-				if u.m.stagedFile != "" {
-					return u.attachChip(gtx)
+				// D104 附件槽实装：无暂存 = 20dp 可点图标槽；有暂存 = chip（收起态汇总，点清空）。
+				if len(u.m.stagedFiles) > 0 {
+					return u.attachToolSlot(gtx)
 				}
 				return u.attachSlot(gtx)
 			}),
@@ -187,17 +187,22 @@ func (u *UI) expandSlot(gtx layout.Context) layout.Dimensions {
 // pillContentExpanded 展开态胶囊内竖排（D106 修订⑵⑸）：[工具行 20 + 顶距 10][编辑区
 // 自然高]——附件左上、展开右上（顶距避开 24dp 圆角曲线），编辑器**顶对齐**（Vertical
 // Flex 默认 Start，不居中）。
+// D186：暂存附件在工具行里横排 chip（超宽换行，每个可点删），附件槽恒在最左（继续加）。
 func (u *UI) pillContentExpanded(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(pillToolTopDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Rigid(u.attachSlot),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						// 附件左上（D104：无暂存 = 图标槽、有暂存 = chip）。
-						if u.m.stagedFile != "" {
-							return u.attachChip(gtx)
+						if len(u.m.stagedFiles) == 0 {
+							return layout.Dimensions{}
 						}
-						return u.attachSlot(gtx)
+						return layout.Inset{Left: unit.Dp(inputGapDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							// 右端给展开槽留位：chip 排不能把右上角的展开钮挤出胶囊。
+							reserve := gtx.Dp(inputIconDp + inputGapDp)
+							return u.attachChipsFlow(gtx, gtx.Constraints.Max.X-reserve)
+						})
 					}),
 					layout.Flexed(1, layout.Spacer{}.Layout),
 					layout.Rigid(u.expandSlot), // 展开右上

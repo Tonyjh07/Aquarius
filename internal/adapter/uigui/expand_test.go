@@ -1,6 +1,7 @@
 package uigui
 
 import (
+	"strings"
 	"testing"
 
 	"gioui.org/f32"
@@ -54,6 +55,34 @@ func TestExpandGeometry(t *testing.T) {
 	expandFrame(q, u)
 	if u.transH != 388 {
 		t.Fatalf("收起 transH = %d, want 388", u.transH)
+	}
+}
+
+// TestExpandAttachChipsGrow D186：展开态暂存多个附件 → chip 排换行、胶囊按行数长高、
+// 转写区相应压缩；清空后几何回到展开基线。渲染路径冒烟（不出 panic、几何单调）。
+func TestExpandAttachChipsGrow(t *testing.T) {
+	u, q := newExpandUI(t)
+	u.m.add(blockUser, "问")
+	u.setExpanded(true)
+	expandFrame(q, u)
+	base := u.transH
+
+	for i := 0; i < 6; i++ {
+		u.m.stageAttach(`C:\docs\` + strings.Repeat("很长的文件名", 3) + string(rune('A'+i)) + ".pdf")
+	}
+	expandFrame(q, u)
+	gtxW, _ := frameGtx(input.Source{})
+	if extra := u.attachOverflowPx(gtxW); extra <= 0 {
+		t.Fatalf("多附件应换行长高: overflow = %d", extra)
+	}
+	if u.transH >= base {
+		t.Fatalf("transH = %d, want 小于基线 %d（胶囊变高）", u.transH, base)
+	}
+
+	u.m.clearAttach()
+	expandFrame(q, u)
+	if u.transH != base {
+		t.Fatalf("清空后 transH = %d, want 回到 %d", u.transH, base)
 	}
 }
 

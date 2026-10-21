@@ -5,7 +5,10 @@
 //   - 其余二进制（含音频，M3 无 ASR）→ PartDoc 只留引用与取用说明，
 //     原文经 file_read 按路径读取。
 //
-// 前置动作（打开/读取/入库）都在本适配器内完成——RawInput.File 是路径，
+// 多附件（D186）：一条输入可带多项（RawInput.File 是单附件简写），逐个摄取、
+// **允许部分成功**——失败项跳过并在 Note 里逐条列因，全部失败才整体报错。
+//
+// 前置动作（打开/读取/入库）都在本适配器内完成——附件项是路径或已入库引用，
 // Session 只负责分派与入树。
 package ingestfile
 
@@ -36,51 +39,138 @@ type Ingestor struct {
 // New 创建文件摄取器（blobs 为附件库，装配根注入）。
 func New(blobs port.AttachmentStore) *Ingestor { return &Ingestor{blobs: blobs} }
 
-// Accepts 仅接受 Kind=file 且带路径的输入。
+// Accepts 仅接受 Kind=file 且至少带一项附件的输入。
 func (in *Ingestor) Accepts(raw port.RawInput) bool {
-	return raw.Kind == "file" && strings.TrimSpace(raw.File) != ""
+	return raw.Kind == "file" && raw.HasAttachments()
 }
 
-// Ingest 读文件 → 附件入库 → 产出 Part（见包注释的分类规则）。
-// 全程单次打开：分类/提取文本与入库字节取自同一快照（防两次读取间文件被改）。
+// Ingest 逐个摄取附件 → 合并分片（D186：部分成功）。
+// 全程每个文件单次打开：分类/提取文本与入库字节取自同一快照（防两次读取间文件被改）。
 func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestReport, error) {
 	if in.blobs == nil {
 		return port.IngestReport{}, fmt.Errorf("ingestfile: 未配置附件库（port.AttachmentStore）")
 	}
-	path := strings.TrimSpace(raw.File)
+	atts := raw.AttachmentList()
+	if len(atts) > port.MaxAttachments {
+		return port.IngestReport{}, fmt.Errorf("ingestfile: 一条消息最多 %d 个附件（本次 %d 个）",
+			port.MaxAttachments, len(atts))
+	}
+
+	var (
+		parts  []conversation.Part
+		notes  []string
+		failed []string
+	)
+	for _, att := range atts {
+		rep, err := in.ingestOne(ctx, att)
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s（%v）", attachmentName(att), err))
+			continue
+		}
+		parts = append(parts, rep.parts...)
+		if rep.note != "" {
+			notes = append(notes, rep.note)
+		}
+	}
+	if len(parts) == 0 {
+		return port.IngestReport{}, fmt.Errorf("ingestfile: 附件全部摄取失败：%s", strings.Join(failed, "；"))
+	}
+	note := strings.Join(notes, "；")
+	if len(failed) > 0 {
+		if note != "" {
+			note += "；"
+		}
+		note += fmt.Sprintf("已跳过 %d 个附件：%s", len(failed), strings.Join(failed, "；"))
+	}
+	return port.IngestReport{Parts: in.withCaption(raw, parts), Note: note}, nil
+}
+
+// ingestItem 单个附件的摄取结果（分片 + 一条回执）。
+type ingestItem struct {
+	parts []conversation.Part
+	note  string
+}
+
+// attachmentName 附件显示名（路径取文件名、已入库项取库内名）。
+func attachmentName(att port.Attachment) string {
+	if att.Blob != nil && att.Blob.Name != "" {
+		return att.Blob.Name
+	}
+	if p := strings.TrimSpace(att.Path); p != "" {
+		return filepath.Base(p)
+	}
+	return "(未命名附件)"
+}
+
+// ingestOne 分派一项附件：已入库字节（粘贴图片，D187）或待读路径。
+func (in *Ingestor) ingestOne(ctx context.Context, att port.Attachment) (ingestItem, error) {
+	if att.Blob != nil {
+		return in.ingestBlob(ctx, att.Blob)
+	}
+	return in.ingestPath(ctx, strings.TrimSpace(att.Path))
+}
+
+// ingestBlob 已入库附件的摄取：字节不重复读，只按 MIME 生成分片（D187）。
+func (in *Ingestor) ingestBlob(ctx context.Context, ref *conversation.BlobRef) (ingestItem, error) {
+	ok, err := in.blobs.Stat(ctx, *ref)
+	if err != nil {
+		return ingestItem{}, fmt.Errorf("检查附件: %w", err)
+	}
+	if !ok {
+		return ingestItem{}, fmt.Errorf("附件不存在（须先入附件库）")
+	}
+	if strings.HasPrefix(ref.MIME, "image/") {
+		return ingestItem{
+			parts: []conversation.Part{{Kind: conversation.PartImage, Ref: ref}},
+			note:  fmt.Sprintf("已附图片 %s（%d 字节）", ref.Name, ref.Size),
+		}, nil
+	}
+	text := fmt.Sprintf("[document %s] MIME=%s, sha256=%s (stored as an attachment).",
+		ref.Name, ref.MIME, ref.Hash)
+	return ingestItem{
+		parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: ref, Text: text}},
+		note:  fmt.Sprintf("已附文件 %s（%s）", ref.Name, ref.MIME),
+	}, nil
+}
+
+// ingestPath 路径附件的摄取（打开 → 分类 → 入库 → 分片）。
+func (in *Ingestor) ingestPath(ctx context.Context, path string) (ingestItem, error) {
+	if path == "" {
+		return ingestItem{}, fmt.Errorf("附件路径为空")
+	}
 	if !filepath.IsAbs(path) {
-		return port.IngestReport{}, fmt.Errorf("ingestfile: 路径必须是绝对路径（本产品无工作区概念），当前为 %q", path)
+		return ingestItem{}, fmt.Errorf("路径必须是绝对路径（本产品无工作区概念），当前为 %q", path)
 	}
 	path = filepath.Clean(path)
 	name := filepath.Base(path)
 
 	f, err := os.Open(path)
 	if err != nil {
-		return port.IngestReport{}, fmt.Errorf("ingestfile: 打开文件: %w", err)
+		return ingestItem{}, fmt.Errorf("打开文件: %w", err)
 	}
 	defer f.Close()
 
 	// 头部分类与文本提取（读 maxExtractText+1 以判定是否截断）。
 	head, more, err := readHead(f)
 	if err != nil {
-		return port.IngestReport{}, err
+		return ingestItem{}, err
 	}
 	mime := detectMime(head, path)
 
 	// 回到文件头，同一 fd 的完整内容入附件库（DESIGN §7.2 输入管线第一步）。
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return port.IngestReport{}, fmt.Errorf("ingestfile: 回到文件头: %w", err)
+		return ingestItem{}, fmt.Errorf("回到文件头: %w", err)
 	}
 	ref, err := in.blobs.Put(ctx, f, mime, name)
 	if err != nil {
-		return port.IngestReport{}, fmt.Errorf("ingestfile: 附件入库: %w", err)
+		return ingestItem{}, fmt.Errorf("附件入库: %w", err)
 	}
 
 	switch {
 	case strings.HasPrefix(mime, "image/"):
-		return port.IngestReport{
-			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartImage, Ref: &ref}}),
-			Note:  fmt.Sprintf("已附图片 %s（%d 字节）", name, ref.Size),
+		return ingestItem{
+			parts: []conversation.Part{{Kind: conversation.PartImage, Ref: &ref}},
+			note:  fmt.Sprintf("已附图片 %s（%d 字节）", name, ref.Size),
 		}, nil
 
 	case structuredKind(path) != "": // D105：常见文档转文本（解析失败回落占位）
@@ -89,18 +179,18 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 		if perr != nil {
 			// 解析失败（加密/损坏/超大）：占位并注明原因——提取尽力而为（D105④）。
 			text = fmt.Sprintf("[document %s] failed to parse (%v); source file: %s (use file_read to read it).", name, perr, path)
-			return port.IngestReport{
-				Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
-				Note:  fmt.Sprintf("已附文件 %s（解析失败，回落占位：%v）", name, perr),
+			return ingestItem{
+				parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}},
+				note:  fmt.Sprintf("已附文件 %s（解析失败，回落占位：%v）", name, perr),
 			}, nil
 		}
 		if truncated {
 			text += fmt.Sprintf("\n...[truncated; use file_read: %s]", path)
 		}
 		what := map[string]string{"pdf": "PDF", "docx": "Word", "xlsx": "Excel", "html": "HTML"}[kind]
-		return port.IngestReport{
-			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
-			Note:  fmt.Sprintf("已附%s文档 %s（提取文本 %d 字符已内联）", what, name, len([]rune(text))),
+		return ingestItem{
+			parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}},
+			note:  fmt.Sprintf("已附%s文档 %s（提取文本 %d 字符已内联）", what, name, len([]rune(text))),
 		}, nil
 
 	case isTextish(mime, head, path):
@@ -108,17 +198,17 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 		if more {
 			text += fmt.Sprintf("\n...[truncated; use file_read: %s]", path)
 		}
-		return port.IngestReport{
-			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
-			Note:  fmt.Sprintf("已附文档 %s（提取文本 %d 字符已内联）", name, len([]rune(text))),
+		return ingestItem{
+			parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}},
+			note:  fmt.Sprintf("已附文档 %s（提取文本 %d 字符已内联）", name, len([]rune(text))),
 		}, nil
 
 	default:
 		// 二进制（含音频：M3 无 ASR，不做转写）：模型侧只给取用说明。
 		text := fmt.Sprintf("[document %s] binary content not extracted; source file: %s (use file_read to read it).", name, path)
-		return port.IngestReport{
-			Parts: in.withCaption(raw, []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}}),
-			Note:  fmt.Sprintf("已附文件 %s（二进制，%d 字节）", name, ref.Size),
+		return ingestItem{
+			parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: &ref, Text: text}},
+			note:  fmt.Sprintf("已附文件 %s（二进制，%d 字节）", name, ref.Size),
 		}, nil
 	}
 }

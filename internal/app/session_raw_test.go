@@ -249,6 +249,71 @@ func TestSessionRawClipboardPipeline(t *testing.T) {
 	}
 }
 
+// TestSessionRawMultiAttachmentPipeline D186 链路验收：一条输入带多个附件 → 逐个摄取 →
+// 全部入树（按输入序）→ 装配把每个附件都内联进请求；坏文件跳过但整轮照常进行。
+func TestSessionRawMultiAttachmentPipeline(t *testing.T) {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x22}, 24)...)
+	s, llm, rec, _ := newRawSession(t,
+		textStream("都收到了"),
+		textStream("少了一个也能干活"),
+	)
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "a.png")
+	docPath := filepath.Join(dir, "b.txt")
+	if err := os.WriteFile(imgPath, png, 0o644); err != nil {
+		t.Fatalf("write png: %v", err)
+	}
+	if err := os.WriteFile(docPath, []byte("第二份材料"), 0o644); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+
+	if _, err := s.Handle(context.Background(), port.UserInput{
+		Raw: &port.RawInput{Kind: "file", Text: "看这两份",
+			Attachments: []port.Attachment{{Path: imgPath}, {Path: docPath}}},
+	}); err != nil {
+		t.Fatalf("handle multi: %v", err)
+	}
+	user := s.Current().Nodes
+	var kinds []conversation.PartKind
+	for _, m := range user {
+		if m.Role != conversation.RoleUser {
+			continue
+		}
+		for _, p := range m.Content {
+			kinds = append(kinds, p.Kind)
+		}
+	}
+	// 随附文本 + 图片 + 文档，顺序与输入一致。
+	want := []conversation.PartKind{conversation.PartText, conversation.PartImage, conversation.PartDoc}
+	if len(kinds) != len(want) {
+		t.Fatalf("分片 = %v, want %v", kinds, want)
+	}
+	for i := range want {
+		if kinds[i] != want[i] {
+			t.Fatalf("分片 = %v, want %v", kinds, want)
+		}
+	}
+	if parts := findUserParts(llm.requests[0], conversation.PartImage); parts == nil {
+		t.Fatalf("请求缺图片分片: %+v", llm.requests[0].Messages)
+	}
+
+	// 部分失败：坏路径被跳过，Note 说明，本轮照常跑完。
+	if _, err := s.Handle(context.Background(), port.UserInput{
+		Raw: &port.RawInput{Kind: "file", Attachments: []port.Attachment{
+			{Path: filepath.Join(dir, "失踪.txt")}, {Path: docPath},
+		}},
+	}); err != nil {
+		t.Fatalf("部分失败应照常进行: %v", err)
+	}
+	joined := strings.Join(eventNames(rec.events), ",")
+	if !strings.Contains(joined, "notice") {
+		t.Fatalf("events = %v, want notice（跳过项说明）", eventNames(rec.events))
+	}
+	if err := s.Current().Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
 // TestSessionRawTextDirect Kind=text 直通入树并触发 Turn（无需注册摄取器）。
 func TestSessionRawTextDirect(t *testing.T) {
 	store := newMemStore()

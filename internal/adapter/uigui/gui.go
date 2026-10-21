@@ -222,16 +222,17 @@ type UI struct {
 	stopBtn   widget.Clickable
 	// 语音输入（D179）：空输入时右钮 = 录音键；录音中变停止键。recording 供帧循环
 	// 读（点击路径与完成回投都在事件循环 goroutine 改）。
-	recording   atomic.Bool
-	voiceMu     sync.Mutex
-	voiceCancel context.CancelFunc
-	allowBtn    widget.Clickable
-	denyBtn     widget.Clickable
-	elevateBtn  widget.Clickable // D86：提升权限钮（仅工具确认且有下一档时布局）
-	attachBtn   widget.Clickable // D104：附件槽（文件选择框入口，D49 灰槽实装）
-	attachClear widget.Clickable // D104：暂存 chip（点击取消暂存）
-	expandBtn   widget.Clickable // D106：展开槽（输入框放大切换，D49 灰槽实装）
-	expanded    bool             // D106：展开态（胶囊原地增高、编辑器多行；会话级不落盘）
+	recording    atomic.Bool
+	voiceMu      sync.Mutex
+	voiceCancel  context.CancelFunc
+	allowBtn     widget.Clickable
+	denyBtn      widget.Clickable
+	elevateBtn   widget.Clickable    // D86：提升权限钮（仅工具确认且有下一档时布局）
+	attachBtn    widget.Clickable    // D104：附件槽（文件选择框入口，D49 灰槽实装）
+	attachClear  widget.Clickable    // D186：收起态汇总 chip（点击清空全部暂存）
+	attachClicks []*widget.Clickable // D186：展开态逐项 chip（按暂存序号缓存，点删该项）
+	expandBtn    widget.Clickable    // D106：展开槽（输入框放大切换，D49 灰槽实装）
+	expanded     bool                // D106：展开态（胶囊原地增高、编辑器多行；会话级不落盘）
 	// 提问面板（D184，§15.2）：面板长在展开态胶囊里，字段只在事件循环 goroutine 读写。
 	askEd        widget.Editor                     // 「自己输入」编辑器
 	askList      layout.List                       // 中部滚动区（题干 + 选项 + 自由输入行）
@@ -732,9 +733,9 @@ type (
 	// quoteMsg 引用请求（D98 气泡菜单「引用」经 shell 线程分发投递）：文本口径与复制
 	// 一致（选区优先/整条渲染文本，D98①），Gio 侧经 quoteInto 追加引用块进输入框。
 	quoteMsg struct{ text string }
-	// attachMsg 文件选择框选中结果（D104 暂存随文发：shell 线程对话框 → Gio inbox
-	// → 暂存；chip 呈现，发送随 Enter 走 Raw）。
-	attachMsg struct{ path string }
+	// attachMsg 文件选择框 / 拖拽 / 粘贴的结果（D104/D186/D187：shell 或平台线程 →
+	// Gio inbox → 暂存列表；chip 呈现，发送随 Enter 走 Raw）。
+	attachMsg struct{ paths []string }
 	// askMsg 提问请求（D184：ask_user 经 port.Asker 投递，输入栏原地展开成面板）。
 	askMsg struct {
 		req   port.AskRequest
@@ -805,9 +806,11 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.editor.SetText(quoteInto(u.editor.Text(), m.text))
 		u.focusPending = true
 	case attachMsg:
-		// D104 暂存随文发：选中即暂存（chip 呈现、点 chip 取消、再选替换），焦点入框
-		// 便于接着写问题；发送随 Enter 走 Raw（model.submit 暂存分支）。
-		u.m.stageAttach(m.path)
+		// D186 多附件暂存：一次选中多个就都暂存（超上限的后几项逐条提示）；已有同名项
+		// 不重复加。焦点入框便于接着写问题；发送随 Enter 走 Raw（model.submit 暂存分支）。
+		for _, p := range m.paths {
+			u.m.stageAttach(p)
+		}
 		u.focusPending = true
 	case askMsg:
 		u.m.startAsk(m.req, m.reply)

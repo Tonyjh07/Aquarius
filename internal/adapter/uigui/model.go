@@ -2,7 +2,6 @@ package uigui
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -99,9 +98,10 @@ type model struct {
 	// editPart 编辑态正文分片序号（D107②）：随 editMsg 进入时设定（-1 = 缺省合段），
 	// 提交时转为 --part token；编辑态生命周期与 editTarget 同步收尾。
 	editPart int
-	// stagedFile 已暂存附件路径（D104 暂存随文发）：非空时附件槽显示 chip、Enter
-	// 提交 Raw{Kind:"file", File, Text:已输入文本}；编辑态不消费（修订不夹带新附件）。
-	stagedFile string
+	// stagedFiles 已暂存附件（D186 多附件）：非空时附件槽显示 chip、Enter 提交
+	// Raw{Kind:"file", Attachments, Text:已输入文本}；编辑态不消费（修订不夹带新附件，
+	// 增删附件走 /edit 的 --attach / --drop，D188）。
+	stagedFiles []stagedAtt
 
 	// flushedDrafts 待调和的草稿正文段块序（D95 Turn 粒度）：工具事件先于
 	// CommittedEvent 到达——工具边界把流式草稿落为正文气泡（重构前观感：正文先于
@@ -509,11 +509,11 @@ func (m *model) submit(text string) {
 		return
 	}
 	line := strings.TrimSpace(text)
-	// D104 暂存随文发：有暂存附件 → Raw 提交（文本可空 = 仅附件，暂存清空）；
-	// 编辑态不消费（修订不夹带新附件，暂存保留待正常输入）。不回显常规 blockUser
-	// 以外的附加块——用户节点无 CommittedEvent（D104③），本地回显见 submitRaw。
-	if m.editTarget == "" && m.stagedFile != "" {
-		m.submitRaw(m.stagedFile, line)
+	// D186 暂存随文发：有暂存附件 → Raw 提交（文本可空 = 仅附件，暂存清空）；
+	// 编辑态不消费（修订不夹带新附件，增删走 /edit 的 --attach/--drop，D188）。不回显
+	// 常规 blockUser 以外的附加块——用户节点无 CommittedEvent（D104③），本地回显见 submitRaw。
+	if m.editTarget == "" && len(m.stagedFiles) > 0 {
+		m.submitRaw(m.stagedFiles, line)
 		return
 	}
 	if line == "" {
@@ -560,16 +560,22 @@ func (m *model) submit(text string) {
 	}
 }
 
-// submitRaw 投递 Raw 摄取输入（D104 暂存随文发）：文件 + 已输入文本一并进摄取管线；
+// submitRaw 投递 Raw 摄取输入（D186 多附件）：附件列表 + 已输入文本一并进摄取管线；
 // 用户节点无 CommittedEvent（Agent 只广播 Turn/system 节点）→ 本地回显 blockUser
 // （文本 + 附件名示意——与回放的摄取分片呈现存在口径差，D104③ 后果①）。
 // 缓冲满：恢复暂存 + notice（编辑框已清、文本丢失，D104 后果③）。
-func (m *model) submitRaw(file, text string) {
+func (m *model) submitRaw(atts []stagedAtt, text string) {
+	if len(atts) == 0 {
+		return
+	}
+	raw := port.RawInput{Kind: "file", Text: text}
+	for _, a := range atts {
+		raw.Attachments = append(raw.Attachments, a.attachment())
+	}
 	select {
-	case m.u.inCh <- port.UserInput{Raw: &port.RawInput{Kind: "file", File: file, Text: text}}:
-		m.stagedFile = "" // 提交即清暂存（D104①）
+	case m.u.inCh <- port.UserInput{Raw: &raw}:
+		m.stagedFiles = nil // 提交即清暂存（D186）
 	default:
-		m.stagedFile = file
 		m.add(blockNotice, "[notice] 输入缓冲已满，附件未发送")
 		return
 	}
@@ -577,17 +583,59 @@ func (m *model) submitRaw(file, text string) {
 	if echo != "" {
 		echo += " "
 	}
-	m.add(blockUser, echo+"〔附件："+filepath.Base(file)+"〕")
+	names := make([]string, 0, len(atts))
+	for _, a := range atts {
+		names = append(names, a.displayName())
+	}
+	if len(names) == 1 {
+		echo += "〔附件：" + names[0] + "〕"
+	} else {
+		echo += fmt.Sprintf("〔附件 %d 个：%s〕", len(names), strings.Join(names, "、"))
+	}
+	m.add(blockUser, echo)
 }
 
-// stageAttach 暂存/替换附件（D104：单槽——再选即替换，点 chip 取消）。
+// stageAttach 暂存一项附件（D186）：已在列表里则不重复添加（同一文件附两遍只会白占
+// 上下文）；超过单条上限后拒收并提示——报错文案由端口常量生成。
 func (m *model) stageAttach(path string) {
-	m.stagedFile = path
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	m.stageAtt(stagedAtt{path: path})
 }
 
-// clearAttach 取消暂存（chip 点击）。
+// stageBlob 暂存一项已入库附件（D187 粘贴图片，字节已在库里）。
+func (m *model) stageBlob(ref conversation.BlobRef) {
+	m.stageAtt(stagedAtt{blob: &ref})
+}
+
+// stageAtt 暂存展开的公共段：去重 + 上限。
+func (m *model) stageAtt(att stagedAtt) {
+	key := att.key()
+	for _, a := range m.stagedFiles {
+		if a.key() == key {
+			return
+		}
+	}
+	if len(m.stagedFiles) >= port.MaxAttachments {
+		m.add(blockNotice, fmt.Sprintf("[notice] 一条消息最多 %d 个附件，已忽略 %s",
+			port.MaxAttachments, att.displayName()))
+		return
+	}
+	m.stagedFiles = append(m.stagedFiles, att)
+}
+
+// unstageAttach 从暂存列表移除第 i 项（chip 点击，D186）。
+func (m *model) unstageAttach(i int) {
+	if i < 0 || i >= len(m.stagedFiles) {
+		return
+	}
+	m.stagedFiles = append(m.stagedFiles[:i], m.stagedFiles[i+1:]...)
+}
+
+// clearAttach 清空暂存（收起态汇总 chip 点击）。
 func (m *model) clearAttach() {
-	m.stagedFile = ""
+	m.stagedFiles = nil
 }
 
 // submitCommand 投递一条命令且**不入转写块**（D81 分叉按钮）：与 model.submit 同走

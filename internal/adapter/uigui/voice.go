@@ -14,7 +14,7 @@ func (u *UI) micButton() bool {
 	if u.recording.Load() {
 		return true
 	}
-	if u.generating.Load() || u.m.confirm != nil || u.m.editTarget != "" || u.m.stagedFile != "" {
+	if u.generating.Load() || u.m.confirm != nil || u.m.editTarget != "" || len(u.m.stagedFiles) > 0 {
 		return false
 	}
 	return strings.TrimSpace(u.editor.Text()) == ""

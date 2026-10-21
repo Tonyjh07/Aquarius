@@ -23,11 +23,11 @@ func TestMicButtonOnlyWhenEmpty(t *testing.T) {
 	if !u.micButton() {
 		t.Fatal("纯空白应为语音键")
 	}
-	u.m.stagedFile = "C:/x.png"
+	u.m.stagedFiles = []stagedAtt{{path: "C:/x.png"}}
 	if u.micButton() {
 		t.Fatal("有暂存附件应为发送键")
 	}
-	u.m.stagedFile = ""
+	u.m.stagedFiles = nil
 	u.m.editTarget = "m1"
 	if u.micButton() {
 		t.Fatal("编辑态应为发送键")

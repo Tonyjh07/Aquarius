@@ -122,8 +122,8 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			}
 			shown = true
 		}
-		// D104：附件槽 tooltip（D85 直采；暂存态换 chip、无 tooltip——chip 自示意）。
-		if !shown && u.m.confirm == nil && u.m.stagedFile == "" &&
+		// D104/D186：附件槽 tooltip（D85 直采；收起态有暂存 = 汇总 chip、无 tooltip——chip 自示意）。
+		if !shown && u.m.confirm == nil && len(u.m.stagedFiles) == 0 &&
 			u.cursorHitsRect(attachSlotRect(pillEnd, gtx.Dp(inputPadDp), rowH,
 				gtx.Dp(inputIconDp)).Add(image.Pt(0, absY)), cur) {
 			u.hoverTip(gtx, absY, "附件", false)
@@ -182,7 +182,12 @@ func (u *UI) inputExtraPx(gtx layout.Context) int {
 		}
 		return 0
 	}
-	return gtx.Dp(unit.Dp(u.inputExtraDp()))
+	// D186：暂存 chip 换行时胶囊按行数再长高（单行 chip 的高度已含在展开态定高里）。
+	extra := gtx.Dp(unit.Dp(u.inputExtraDp()))
+	if extra == 0 {
+		return 0 // 收起态不受暂存影响（汇总 chip 恒单行）
+	}
+	return extra + u.attachOverflowPx(gtx)
 }
 
 // inputRowRects 三段几何（纯逻辑，可测，D49/§15.2）：拓扑 = 边距 | logo | 间隙 | 胶囊 |
@@ -435,7 +440,7 @@ func (u *UI) submitEditor() {
 		return // D86/D184：确认态与提问态都不走主编辑器提交
 	}
 	text := strings.TrimSpace(u.editor.Text())
-	if text == "" && u.m.stagedFile == "" {
+	if text == "" && len(u.m.stagedFiles) == 0 {
 		if u.m.editTarget != "" { // D92：编辑态空提交 = 取消
 			u.cancelEdit()
 		}

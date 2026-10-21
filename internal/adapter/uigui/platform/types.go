@@ -68,8 +68,8 @@ type Host interface {
 	ToggleTopMost()
 	// Exit 经菜单退出（收编次窗、中断进行中轮次、走 EOF 收尾）。
 	Exit()
-	// FilePicked 文件选择框选中路径（空 = 取消）。
-	FilePicked(path string)
+	// FilesPicked 文件选择框选中路径（可多选；空 = 取消）。
+	FilesPicked(paths []string)
 	// SystemThemeChanged 系统深浅色变化（仅 system 档需重解析）。
 	SystemThemeChanged()
 	// HotkeySetting 当前快捷键配置（改绑时现取）。

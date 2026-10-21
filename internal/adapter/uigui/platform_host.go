@@ -31,12 +31,12 @@ func (h *platHost) ToggleTopMost() { h.u.toggleTopMost() }
 // Exit 菜单退出（中断进行中轮次 → EOF 收尾）。
 func (h *platHost) Exit() { h.u.exitViaShell() }
 
-// FilePicked 文件选择框选中（空 = 取消）：投 attachMsg 进事件循环暂存。
-func (h *platHost) FilePicked(path string) {
-	if path == "" {
+// FilesPicked 文件选择框选中（可多选；空 = 取消）：投 attachMsg 进事件循环暂存。
+func (h *platHost) FilesPicked(paths []string) {
+	if len(paths) == 0 {
 		return
 	}
-	h.u.post(attachMsg{path: path})
+	h.u.post(attachMsg{paths: paths})
 }
 
 // SystemThemeChanged 系统深浅变化（仅 system 档重解析）。

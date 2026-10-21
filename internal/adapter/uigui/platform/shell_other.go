@@ -39,44 +39,55 @@ func (p *Plat) RequestFileDialog() { go p.showFileDlg() }
 
 // showFileDlg 呈现文件选择框（独立 goroutine）：选中回传宿主，取消/失败静默或提示。
 func (p *Plat) showFileDlg() {
-	path, ok := pickFileCommand()
+	paths, ok := pickFileCommand()
 	if !ok {
 		p.Notice(unsupported("文件选择框（Linux 需 zenity 或 kdialog）"))
 		return
 	}
-	if path == "" || p.host == nil {
+	if len(paths) == 0 || p.host == nil {
 		return // 用户取消
 	}
-	p.host.FilePicked(path)
+	p.host.FilesPicked(paths)
 }
 
-// pickFileCommand 按平台挑一条可用命令取文件路径；ok=false = 无可用命令。
-// 返回 path 为空 = 用户取消（命令成功但未选）。
-func pickFileCommand() (path string, ok bool) {
+// pickFileCommand 按平台挑一条可用命令取文件路径（可多选，D186）；ok=false = 无可用命令。
+// 返回空列表 = 用户取消（命令成功但未选）。
+func pickFileCommand() (paths []string, ok bool) {
 	switch runtime.GOOS {
 	case "darwin":
 		out, err := exec.Command("osascript", "-e",
-			`POSIX path of (choose file with prompt "选择附件")`).Output()
+			`POSIX path of (choose file with prompt "选择附件" with multiple selections allowed)`).Output()
 		if err != nil {
-			return "", true // 命令存在但用户取消/报错：视同取消，不再降级
+			return nil, true // 命令存在但用户取消/报错：视同取消，不再降级
 		}
-		return strings.TrimSpace(string(out)), true
+		return splitLines(string(out)), true
 	default:
 		for _, cmd := range [][]string{
-			{"zenity", "--file-selection", "--title=选择附件"},
-			{"kdialog", "--getopenfilename", ".", "*"},
+			{"zenity", "--file-selection", "--multiple", "--separator=\n", "--title=选择附件"},
+			{"kdialog", "--getopenfilename", ".", "*", "--multiple", "--separate-output"},
 		} {
 			if _, err := exec.LookPath(cmd[0]); err != nil {
 				continue
 			}
 			out, err := exec.Command(cmd[0], cmd[1:]...).Output()
 			if err != nil {
-				return "", true // 取消/失败：视同取消（避免回落第二条命令再弹一次）
+				return nil, true // 取消/失败：视同取消（避免回落第二条命令再弹一次）
 			}
-			return strings.TrimSpace(string(out)), true
+			return splitLines(string(out)), true
 		}
-		return "", false
+		return nil, false
 	}
+}
+
+// splitLines 按行切非空路径（多选命令的输出格式：一行一个）。
+func splitLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		if p := strings.TrimSpace(line); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // CloseWindow 非 Windows 无原生关闭消息：Gio 侧由调用方走窗口自身关闭路径
