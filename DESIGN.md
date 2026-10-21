@@ -302,7 +302,9 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   走文本分页、图片内联还是报 binary——先按大小截断再判二进制，会把大二进制文件当文本塞进上下文。
 - **图片经 `file_read` 内联**（D169）：MIME 属 png/jpeg/gif/webp 且原始大小在 20MB 内的文件整篇
   入附件库，`tool.Result.Images` 只带哈希引用（字节不进树、不进落盘 JSON）；装配时投影为
-  **紧随该 tool 应答之后的一条 user 消息**——OpenAI 兼容端点的 tool 角色不收图片块。
+  **这一段全部 tool 应答之后的一条 user 消息**——OpenAI 兼容端点的 tool 角色不收图片块，
+  而协议要求 tool_calls 后必须紧跟齐每条调用的应答，图片夹在应答之间会被判
+  「insufficient tool messages following tool calls」（同轮多次带图调用必踩）。
   视觉能力由配置按**模型**声明（`model.providers[].models[].caps` 含 `vision`，D173）；
   **生效能力 = 整条降级链取与**——降级发生在半路上，图片那时已经进了请求体，再剥来不及，
   所以任一环节不支持就整轮按不支持处理。不支持时 `file_read` 回填

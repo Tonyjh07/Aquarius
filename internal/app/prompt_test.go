@@ -319,6 +319,82 @@ func TestAssemblePathToolImageProjectsUserMessage(t *testing.T) {
 	}
 }
 
+// TestAssembleAssistantNodeAllToolRepliesBeforeImages 一轮多调用各自带图：全部 tool
+// 应答必须排在任何 user（图片）消息之前，否则 OpenAI 兼容端点判
+// "insufficient tool messages following tool calls"（实测 two screen_capture 400）。
+func TestAssembleAssistantNodeAllToolRepliesBeforeImages(t *testing.T) {
+	blobs := &fakeBlobs{data: map[string][]byte{"H1": []byte("\x89PNG"), "H2": []byte("\x89PNG")}}
+	c := convWithUser(t)
+	user1 := c.Path()[1]
+	asst := conversation.Message{
+		ID: "A1", Parent: user1.ID, Role: conversation.RoleAssistant,
+		Content: []conversation.Part{
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c1", Name: "screen_capture",
+				Result: &tool.Result{CallID: "c1", OK: true, Output: "shot 1",
+					Images: []tool.ImageRef{{Hash: "H1", MIME: "image/png", Name: "1.png", Size: 4}}},
+			}},
+			{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
+				CallID: "c2", Name: "screen_capture",
+				Result: &tool.Result{CallID: "c2", OK: true, Output: "shot 2",
+					Images: []tool.ImageRef{{Hash: "H2", MIME: "image/png", Name: "2.png", Size: 4}}},
+			}},
+		},
+	}
+	if err := c.AppendCommitted(asst); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{blobs: blobs, vision: true})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	// user + assistant(2 calls) + tool + tool + user(2 images)
+	if len(msgs) != 5 {
+		t.Fatalf("msgs = %d, want 5: %+v", len(msgs), promptRoles(msgs))
+	}
+	if len(msgs[1].ToolCalls) != 2 {
+		t.Fatalf("assistant calls = %d, want 2", len(msgs[1].ToolCalls))
+	}
+	if msgs[2].Role != "tool" || msgs[2].CallID != "c1" ||
+		msgs[3].Role != "tool" || msgs[3].CallID != "c2" {
+		t.Fatalf("tool 应答不连续: %+v", promptRoles(msgs))
+	}
+	if msgs[4].Role != "user" {
+		t.Fatalf("图片消息应在全部应答之后: %+v", promptRoles(msgs))
+	}
+	images := 0
+	for _, p := range msgs[4].Content {
+		if p.Kind == "image" {
+			images++
+		}
+	}
+	if images != 2 {
+		t.Fatalf("图片块 = %d, want 2", images)
+	}
+	// 调用与响应用「连续 tool 段覆盖全部调用」这一协议不变量收口。
+	nTools := 0
+	for i := 2; i < len(msgs) && msgs[i].Role == "tool"; i++ {
+		nTools++
+	}
+	if nTools != len(msgs[1].ToolCalls) {
+		t.Fatalf("连续 tool 应答 %d 条，调用 %d 个（端点会判 insufficient tool messages）", nTools, len(msgs[1].ToolCalls))
+	}
+}
+
+// promptRoles 断言失败时打印的紧凑角色/调用序列。
+func promptRoles(msgs []port.PromptMessage) []string {
+	out := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		s := m.Role
+		if m.CallID != "" {
+			s += ":" + m.CallID
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 // 不声明调用也不产出应答消息；纯 nil 分片节点整条不发。
 func TestAssemblePathNilResultPartSkipped(t *testing.T) {
 	c := convWithUser(t)

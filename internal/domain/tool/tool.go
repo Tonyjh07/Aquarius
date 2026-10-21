@@ -69,7 +69,8 @@ type Result struct {
 }
 
 // ImageRef 工具产出的图片引用（内容寻址，D169）：装配时经 AttachmentStore 取字节，
-// 投影为紧随 tool 应答之后的一条 user 消息（OpenAI 兼容端点的 tool 角色不收图片块）。
+// 投影为一段 tool 应答之后的一条 user 消息（OpenAI 兼容端点的 tool 角色不收图片块，
+// 且必须排在全部应答之后，否则一轮多次带图调用会被判 tool_calls 未应答）。
 type ImageRef struct {
 	Hash string `json:"hash"`
 	MIME string `json:"mime"`

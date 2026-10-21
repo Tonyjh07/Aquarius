@@ -35,7 +35,7 @@ const (
 	// imageUnsupportedFmt 当前模型不接受图片输入时的占位（D169）：写明原因，
 	// 而不是把同一张图换个说法再发一遍。
 	imageUnsupportedFmt = "[image: %s (the current model does not accept image input)]"
-	// toolImageNoteFmt 工具产出的图片随附说明（D169）：图片块挂在紧随 tool 应答之后的
+	// toolImageNoteFmt 工具产出的图片随附说明（D169）：图片块挂在 tool 应答之后的
 	// user 消息上，需要一句话说清它来自哪次调用。
 	toolImageNoteFmt = "Image returned by the %s call:"
 

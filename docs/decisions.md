@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-21 @ 0594885 -->
+<!-- docs-sync: 2026-10-21 @ ddf5b40 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -3159,9 +3159,13 @@
   `tool.Result.Images` 只携带 `{Hash, MIME, Name, Size}`（字节不进会话树、不进落盘 JSON，
   与 image Part 同口径）。上限 20MB（对齐对照实现）；超限按失败回填，附实际大小。
 - **口径四：图片以 user 消息投影**。OpenAI 兼容端点的 **tool 角色不收图片块**，所以装配时把
-  工具返回的图片投影为**紧随该 tool 应答之后的一条 user 消息**（正文一句话说明来自哪个调用、
-  哪个文件）。`domain/tool` 不能 import `conversation`（后者已 import 前者），故引用用
-  `tool.ImageRef` 这个 4 字段值对象声明，装配层转成 `conversation.BlobRef`。
+  工具返回的图片投影为**这一段全部 tool 应答之后的一条 user 消息**（正文一句话说明来自哪个
+  调用、哪个文件；同段多图合成一条）。位置是 2026-10-21 修订的：原先「紧随该 tool 应答之后」
+  在一轮多次带图调用时（同轮两次 `screen_capture`）会把第二条 tool 应答挤到 user 消息之后，
+  端点按「assistant 的 tool_calls 后必须紧跟齐全部 tool 应答」判 400
+  （`insufficient tool messages following tool calls`）。`domain/tool` 不能 import
+  `conversation`（后者已 import 前者），故引用用 `tool.ImageRef` 这个 4 字段值对象声明，
+  装配层转成 `conversation.BlobRef`。
 - **口径五：视觉能力由配置声明，缺省不支持**。服务端 `GET /models` 只回名字、不回模态，
   `port.ModelInfo.Vision` 一直没人填。新增 `model.providers[].vision`（该 provider 的模型是否
   接受图片输入，缺省 `false`），装配时填进 `ModelInfo` 供 `/model` 与设置窗展示；降级链取

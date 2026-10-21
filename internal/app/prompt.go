@@ -373,6 +373,11 @@ func escapeFenceAttr(s string) string {
 // 每段产出 1 条 assistant 消息（Reasoning=段内思考拼接、Content=段内正文、
 // ToolCalls=段内 Result≠nil 的调用）+ N 条 tool 应答消息——与 OpenAI 协议的
 // assistant(tool_calls)→tool 应答交错要求一致。全空段不发（如仅 nil 结果分片的轮）。
+//
+// 工具产图（D169）投影的 user 消息必须排在**全部** tool 应答之后：协议要求
+// assistant(tool_calls) 后面紧跟每一条调用对应的 tool 应答，中间夹一条 user 会让
+// 「两图两调用」的轮次被判成 insufficient tool messages（各自紧随其后只在前一调用
+// 带图、后一调用不带图时碰巧成立）。
 func assembleAssistantNode(ctx context.Context, m conversation.Message, opt assembleOpts) ([]port.PromptMessage, error) {
 	var out []port.PromptMessage
 	var (
@@ -380,11 +385,12 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 		thinkSig  string
 		content   []port.PromptPart
 		calls     []tool.Call
-		replies   []port.PromptMessage
+		replies   []port.PromptMessage // tool 应答（紧跟 assistant 的全部调用）
+		images    []port.PromptMessage // 工具产图（全部应答之后）
 	)
 	flush := func() {
 		if len(content) == 0 && len(reasoning) == 0 && len(calls) == 0 && thinkSig == "" {
-			reasoning, thinkSig, content, calls, replies = nil, "", nil, nil, nil
+			reasoning, thinkSig, content, calls, replies, images = nil, "", nil, nil, nil, nil
 			return
 		}
 		out = append(out, port.PromptMessage{
@@ -395,13 +401,22 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 			ToolCalls:          calls,
 		})
 		out = append(out, replies...)
-		reasoning, thinkSig, content, calls, replies = nil, "", nil, nil, nil
+		if len(images) > 0 {
+			// 多张工具图合成一条 user 消息：连续 user 消息虽然多数端点接受，但
+			// 一条消息里「说明句 + 图片」成组更不容易被端点的多模态校验挑刺。
+			var parts []port.PromptPart
+			for _, im := range images {
+				parts = append(parts, im.Content...)
+			}
+			out = append(out, port.PromptMessage{Role: "user", Content: parts})
+		}
+		reasoning, thinkSig, content, calls, replies, images = nil, "", nil, nil, nil, nil
 	}
 	for _, p := range m.Content {
 		switch p.Kind {
 		case conversation.PartThinking:
 			if opt.echoThinking { // 关（显式 false）= 丢弃，不回传（D42）
-				if len(calls) > 0 || len(replies) > 0 {
+				if len(calls) > 0 || len(replies) > 0 || len(images) > 0 {
 					flush() // tool 之后再来的思考：开启新段
 				}
 				reasoning = append(reasoning, p.Text)
@@ -410,7 +425,7 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 				}
 			}
 		case conversation.PartText, conversation.PartImage, conversation.PartAudio, conversation.PartDoc:
-			if len(calls) > 0 || len(replies) > 0 {
+			if len(calls) > 0 || len(replies) > 0 || len(images) > 0 {
 				flush() // tool 之后再来的正文：开启新段
 			}
 			pp, err := assembleParts(ctx, []conversation.Part{p}, opt)
@@ -432,14 +447,15 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 				CallID:  p.Tool.CallID,
 				Content: []port.PromptPart{{Kind: "text", Text: toolResultText(p.Tool.Result)}},
 			})
-			// 工具产出的图片（D169）：tool 角色之后紧跟一条 user 消息承载图片块，
-			// 因为 OpenAI 兼容端点不接受 tool 角色带图片。
+			// 工具产出的图片（D169）：tool 应答之后另起一条 user 消息承载图片块，
+			// 因为 OpenAI 兼容端点不接受 tool 角色带图片。先攒着，段末排在全部
+			// tool 应答之后发（见函数头注释）。
 			img, err := toolImageMessage(ctx, p.Tool.Name, p.Tool.Result.Images, opt)
 			if err != nil {
 				return nil, err
 			}
 			if img != nil {
-				replies = append(replies, *img)
+				images = append(images, *img)
 			}
 		}
 	}
@@ -450,8 +466,10 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 // toolImageMessage 把工具结果里的图片引用投影为一条 user 消息（D169）。
 //
 // 为什么是 user 而不是 tool：OpenAI 兼容端点的 tool 角色只收文本，图片块挂在
-// tool 应答上会被拒。位置「紧随该 tool 应答之后」是唯一让模型能把图片和调用对上
-// 的地方——放到 Turn 末尾就变成一堆无主图片。
+// tool 应答上会被拒。位置在**这一段全部 tool 应答之后**（D169 修订）：协议要求
+// assistant(tool_calls) 后紧跟每条调用的 tool 应答，图片只能排在应答之后——放在
+// 每条应答的紧后方时，一轮里两个带图调用会让第二条应答落在 user 之后而被拒。
+// 同段多图时靠首行「Image returned by the X call:」把图片与调用对上。
 // 视觉得不到时同样投影为文字占位并写明原因：静默丢掉图片，模型会以为工具没产出。
 func toolImageMessage(ctx context.Context, toolName string, refs []tool.ImageRef, opt assembleOpts) (*port.PromptMessage, error) {
 	if len(refs) == 0 {

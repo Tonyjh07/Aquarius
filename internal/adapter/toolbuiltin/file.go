@@ -206,8 +206,9 @@ func imageMIME(head []byte) string {
 // readImage 把图片写进附件库并回填引用（D169）。
 //
 // 字节不进 tool 结果 JSON：工具结果会落盘进会话树，图片按内容寻址单独存一份，
-// 装配时再投影成紧随 tool 应答之后的一条 user 消息（OpenAI 兼容端点不接受
-// tool 角色带图片块）。模型不支持看图时**明确报因**，不静默转成文本占位。
+// 装配时再投影成 tool 应答之后的一条 user 消息（OpenAI 兼容端点不接受 tool 角色带
+// 图片块；必须排齐同一段全部应答之后，见 app.prompt 的装配说明）。模型不支持看图时
+// **明确报因**，不静默转成文本占位。
 func (t *fileRead) readImage(ctx context.Context, f *os.File, path, mime string) (tool.Result, error) {
 	if !t.vision {
 		return tool.Result{}, fmt.Errorf("%s is an image; the current model does not accept image input", path)
