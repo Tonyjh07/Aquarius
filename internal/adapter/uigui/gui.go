@@ -30,6 +30,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/gesture"
+	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -51,6 +52,7 @@ var (
 	_ port.Presenter = (*UI)(nil)
 	_ port.Prompter  = (*UI)(nil)
 	_ port.Confirmer = (*UI)(nil)
+	_ port.Asker     = (*UI)(nil)
 )
 
 // Status 状态行数据（浮层底栏生成时经回调现取）。自 D82 起与 uitui.Status 形状分叉：
@@ -229,7 +231,24 @@ type UI struct {
 	attachClear widget.Clickable // D104：暂存 chip（点击取消暂存）
 	expandBtn   widget.Clickable // D106：展开槽（输入框放大切换，D49 灰槽实装）
 	expanded    bool             // D106：展开态（胶囊原地增高、编辑器多行；会话级不落盘）
-	drag        gesture.Drag
+	// 提问面板（D184，§15.2）：面板长在展开态胶囊里，字段只在事件循环 goroutine 读写。
+	askEd        widget.Editor                     // 「自己输入」编辑器
+	askList      layout.List                       // 中部滚动区（题干 + 选项 + 自由输入行）
+	askOptClicks [askMaxOptions]widget.Clickable   // 选项行（每题按下标复用）
+	askTabClicks [askMaxQuestions]widget.Clickable // 顶部进度段（点 = 跳题）
+	askFreeClick widget.Clickable                  // 「自己输入」行（不占选项下标：9 项时不能撞车）
+	askPrev      widget.Clickable                  // 上一步
+	askNextBtn   widget.Clickable                  // 下一步 / 提交
+	askIgnore    widget.Clickable                  // 忽略（放弃全部）
+	askMiniBtn   widget.Clickable                  // 最小化 / 展开
+	askTag       struct{}                          // 面板键盘焦点标签
+	askFocus     bool                              // 下一帧把焦点让给面板
+	askFreeFocus bool                              // 下一帧把焦点让给「自己输入」
+	askCaret     bool                              // 「自己输入」编辑器持焦点（fade pass 自绘 caret）
+	// askOpen 提问面板是否打开（原子快照：事件循环写、外部只读）。m.ask 本身仅在事件循环
+	// goroutine 读写，跨 goroutine 只经这个开关观察。
+	askOpen atomic.Bool
+	drag    gesture.Drag
 	// D103 补全浮层（仅事件循环 goroutine 读写）：词法相/过滤清单每帧重算（命令清单
 	// 端口每帧拉取——动态命令随插件启停变化）；complRows 行矩形随帧登记（窗口系）。
 	complText      string            // 上一帧编辑框文本（变更 → 重置 dismissed/高亮）
@@ -559,7 +578,14 @@ func (u *UI) Close() error {
 }
 
 // post 投递桥接消息并唤醒帧循环；事件循环已退出时静默丢弃（false）。
+// 先非阻塞探一次 done：Close 之后 inbox 仍有空位，单靠 select 会与 done 同时就绪而
+// 随机入队（消息永不处理，调用方可能永久等待）。
 func (u *UI) post(m uiMsg) bool {
+	select {
+	case <-u.done:
+		return false
+	default:
+	}
 	select {
 	case u.inbox <- m:
 		if u.w != nil {
@@ -708,6 +734,13 @@ type (
 	// attachMsg 文件选择框选中结果（D104 暂存随文发：shell 线程对话框 → Gio inbox
 	// → 暂存；chip 呈现，发送随 Enter 走 Raw）。
 	attachMsg struct{ path string }
+	// askMsg 提问请求（D184：ask_user 经 port.Asker 投递，输入栏原地展开成面板）。
+	askMsg struct {
+		req   port.AskRequest
+		reply chan port.AskAnswer
+	}
+	// askDoneMsg 提问面板收尾（Ask 侧因取消/关窗自行收场时投递，撤下没人等的面板）。
+	askDoneMsg struct{}
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
 		prompt string
@@ -775,6 +808,13 @@ func (u *UI) apply(msg uiMsg) bool {
 		// 便于接着写问题；发送随 Enter 走 Raw（model.submit 暂存分支）。
 		u.m.stageAttach(m.path)
 		u.focusPending = true
+	case askMsg:
+		u.m.startAsk(m.req, m.reply)
+	case askDoneMsg:
+		u.m.endAsk()
+		if u.expanded {
+			u.setExpanded(false)
+		}
 	case confirmMsg:
 		u.m.startConfirm(m.prompt, m.reply)
 	case confirmResultMsg:

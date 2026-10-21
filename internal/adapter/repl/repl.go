@@ -21,6 +21,7 @@ var (
 	_ port.Presenter = (*UI)(nil)
 	_ port.Prompter  = (*UI)(nil)
 	_ port.Confirmer = (*UI)(nil)
+	_ port.Asker     = (*UI)(nil)
 )
 
 // inputLineLimit 单行输入上限（防超长粘贴撑爆 Scanner）。

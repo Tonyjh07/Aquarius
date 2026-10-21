@@ -317,7 +317,7 @@ func (w *wiring) silence() {
 
 // assembleTools 装配内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
 // 后台任务（DESIGN §5.8/D8）：日志落盘 <profile>/jobs，任务表内存态。
-func (w *wiring) assembleTools(confirmer port.Confirmer) error {
+func (w *wiring) assembleTools(confirmer port.Confirmer, asker port.Asker) error {
 	jobs, err := jobproc.New(filepath.Join(w.profileDir, "jobs"))
 	if err != nil {
 		return err
@@ -364,6 +364,7 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 		Blobs:   w.blobs,
 		Vision:  w.cfg.Model.chainCaps().Vision,
 		Capture: screencap.New(),
+		Asker:   asker,
 	})
 	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。

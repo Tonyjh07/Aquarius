@@ -30,8 +30,9 @@ import (
 func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	rowH := gtx.Dp(inputRowDp)
 	// D106：展开态胶囊原地增高（瞬时切换；动画期照常 48——D76 几何不动）。
+	// D184：提问面板按内容算高（inputExtraPx 同源）。
 	pillH := rowH
-	if extra := u.inputExtraDp(); extra > 0 {
+	if extra := u.inputExtraPx(gtx); extra > 0 {
 		pillH = rowH + extra
 	}
 	// 圆钮贴胶囊底缘：展开态下移 extra（常态 extra=0 = D49 原位、D76 不变量不动）。
@@ -161,7 +162,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 }
 
 // inputExtraDp 展开态输入带增高量（D106 单源，dp）：胶囊增高超出常排 48 的部分。
-// 动画期恒 0（D76 几何不动）。
+// 动画期恒 0（D76 几何不动）。提问面板（D184）按内容算高，另走 inputExtraPx。
 func (u *UI) inputExtraDp() int {
 	if !u.expanded || u.expandAn.active {
 		return 0
@@ -171,6 +172,16 @@ func (u *UI) inputExtraDp() int {
 
 // inputExtraPx 增高量换算（layout 与 inputBar 同帧同值——经同一 gtx.Metric）。
 func (u *UI) inputExtraPx(gtx layout.Context) int {
+	if u.expandAn.active {
+		return 0
+	}
+	if u.m.ask != nil {
+		// 提问面板（D184）：高 = 内容自然高（夹 70% 窗高），与常态展开态不同源。
+		if px := u.askPanelPx(gtx); px > gtx.Dp(inputRowDp) {
+			return px - gtx.Dp(inputRowDp)
+		}
+		return 0
+	}
 	return gtx.Dp(unit.Dp(u.inputExtraDp()))
 }
 
@@ -254,6 +265,9 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 // D92：编辑态额外拉取 Esc = 取消（清目标与编辑框；与 D91 选区 Escape 清除同为广播
 // 过滤器，同按时二者皆发生——语义相容）。
 func (u *UI) updateEditor(gtx layout.Context) {
+	if u.m.ask != nil {
+		return // D184：提问面板持键盘（面板内的「自己输入」由 updateAsk 消费）
+	}
 	if u.m.confirm != nil {
 		u.updateReasonEditor(gtx) // D86：确认态 = 原因编辑器消费按键（主编辑器隐藏）
 		return
@@ -417,8 +431,8 @@ func (u *UI) confirmReason() string {
 // submitEditor 提交编辑器内容（发送键与 Enter 同路）；确认态无动作——D86：应答经
 // 三钮/原因框 Enter，拦截以防主编辑器旧草稿被 submit 误当 y/N 应答。
 func (u *UI) submitEditor() {
-	if u.m.confirm != nil {
-		return
+	if u.m.confirm != nil || u.m.ask != nil {
+		return // D86/D184：确认态与提问态都不走主编辑器提交
 	}
 	text := strings.TrimSpace(u.editor.Text())
 	if text == "" && u.m.stagedFile == "" {

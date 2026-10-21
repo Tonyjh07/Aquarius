@@ -139,6 +139,16 @@ func (yesConfirmer) Confirm(context.Context, string) (port.ConfirmAnswer, error)
 	return port.ConfirmAnswer{Allow: true}, nil
 }
 
+// askNone 无人应答的提问通道（-yes 无人值守，D184/D185）：立即回填「用户不在」，
+// 不阻塞轮次。与「忽略」区分——用户不在是事实，不是「你自己看着办」。
+type askNone struct{}
+
+var _ port.Asker = askNone{}
+
+func (askNone) Ask(context.Context, port.AskRequest) (port.AskAnswer, error) {
+	return port.AskAnswer{Away: true}, nil
+}
+
 // systemIDGen port.IDGen 的内置实现：复用 domain 的进程内单调 ULID。
 type systemIDGen struct{}
 

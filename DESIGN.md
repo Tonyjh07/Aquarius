@@ -724,6 +724,7 @@ type AskRequest struct{ Questions []AskQuestion } // 1–4 题
 type AskAnswer struct {
     Answers   [][]string
     Dismissed bool // 「忽略」= 放弃全部（不是跳过本题）
+    Away      bool // 无人值守：没人可问（-yes / 非交互），与 Dismissed 文案和期望都不同
 }
 
 type Asker interface {
@@ -738,7 +739,7 @@ type Asker interface {
   中断仍靠 Ctrl+C 取消本轮。
 - **「自己输入」项由 UI 追加**，不进 `AskQuestion.Options`——模型列的选项里不该再有一个自由项。
 - **无人值守**：`decorate.UnattendedAsker`（D185）在开关打开时立即返回
-  `AskAnswer{Dismissed:true}`，不调用内层。
+  `AskAnswer{Away:true}`（而不是 `Dismissed`），不调用内层。
 - **取消**：`ctx` 取消（Esc / 停止键 / Ctrl+C）= `Ask` 返回 `ctx.Err`，`ToolRunner` 按装配级
   故障中止本轮（§10），不是「放弃全部」。
 
@@ -1392,7 +1393,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   - 只包**模型发起**的那条链（`toolrun`）；`/rm`、`/rmconv` 等用户亲手输入的命令确认、
     插件能力授权照常询问——人就在键盘前。
   - 与 `-yes`（自动允许）互斥优先：装了 `-yes` 就不装该装饰器，两者同时配置启动告警。
-  - `Asker` 同款（`decorate.UnattendedAsker`）：立即回填「用户不在」，提问不阻塞轮次。
+  - `Asker` 同款（`decorate.UnattendedAsker`）：立即回填「用户不在」（`AskAnswer.Away`），提问不阻塞轮次。
   - 开启期间状态行常驻「无人值守」标记，否则用户回来只看到一串「已拒绝」会当成 bug。
 - 输出安全：终端/任务输出视为**不可信数据**，只渲染不执行；工具结果统一截断（`tool_output_chars`）。
 - **信任级显式化**（D170）：注入内容的信任级由调用方在 `Injection.Trust` 显式声明

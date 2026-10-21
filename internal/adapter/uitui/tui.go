@@ -35,6 +35,7 @@ var (
 	_ port.Presenter = (*UI)(nil)
 	_ port.Prompter  = (*UI)(nil)
 	_ port.Confirmer = (*UI)(nil)
+	_ port.Asker     = (*UI)(nil)
 )
 
 // inputCap 输入缓冲容量：打字/管道行快于 REPL 消费时暂存（审查修复：16 在

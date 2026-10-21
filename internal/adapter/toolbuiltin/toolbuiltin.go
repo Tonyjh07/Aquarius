@@ -28,6 +28,7 @@ type Deps struct {
 	Blobs   port.AttachmentStore // 附件库：file_read 读图片时落盘（nil = 图片不可用）
 	Vision  bool                 // 当前模型是否接受图片输入（D169/D173：装配根按整链 caps 取与；false 必须明确报因）
 	Capture port.Capture         // 屏幕捕获（D178；nil = 截图工具明确报「本构建未提供」）
+	Asker   port.Asker           // 提问通道（D184；nil = ask_user 明确报「本构建未提供」）
 }
 
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
@@ -60,6 +61,7 @@ func allTools(d Deps) []port.Tool {
 		&jobKill{jobs: d.Jobs},
 		&windowList{capture: d.Capture},
 		&screenCapture{capture: d.Capture, blobs: d.Blobs, vision: d.Vision},
+		&askUser{asker: d.Asker},
 	}
 }
 
@@ -95,6 +97,7 @@ var displayNames = map[string]string{
 	"job_kill":       "结束任务",
 	"window_list":    "窗口列表",
 	"screen_capture": "屏幕截图",
+	"ask_user":       "提问",
 }
 
 // DisplayName 内置工具中文词表查询（未收录 = 原名字面）。
@@ -163,33 +166,35 @@ const (
 
 // 声明 port 接口实现（编译期护栏）。
 var (
-	_ port.Tool       = (*memoryList)(nil)
-	_ port.Tool       = (*memoryRead)(nil)
-	_ port.Tool       = (*memorySearch)(nil)
-	_ port.Tool       = (*memoryWrite)(nil)
-	_ port.FileTarget = (*memoryWrite)(nil)
-	_ port.Tool       = (*fileRead)(nil)
-	_ port.FileTarget = (*fileRead)(nil)
-	_ port.Tool       = (*fileList)(nil)
-	_ port.FileTarget = (*fileList)(nil)
-	_ port.Tool       = (*fileSearch)(nil)
-	_ port.FileTarget = (*fileSearch)(nil)
-	_ port.Tool       = (*fileEdit)(nil)
-	_ port.FileTarget = (*fileEdit)(nil)
-	_ port.Tool       = (*fileWrite)(nil)
-	_ port.FileTarget = (*fileWrite)(nil)
-	_ port.Tool       = (*fileDelete)(nil)
-	_ port.FileTarget = (*fileDelete)(nil)
-	_ port.Tool       = (*thinkTool)(nil)
-	_ port.Tool       = (*sleepTool)(nil)
-	_ port.Tool       = (*termExec)(nil)
-	_ port.Tool       = (*jobStart)(nil)
-	_ port.Tool       = (*jobList)(nil)
-	_ port.Tool       = (*jobStatus)(nil)
-	_ port.Tool       = (*jobLogs)(nil)
-	_ port.Tool       = (*jobKill)(nil)
-	_ port.Tool       = (*windowList)(nil)
-	_ port.Tool       = (*screenCapture)(nil)
+	_ port.Tool        = (*memoryList)(nil)
+	_ port.Tool        = (*memoryRead)(nil)
+	_ port.Tool        = (*memorySearch)(nil)
+	_ port.Tool        = (*memoryWrite)(nil)
+	_ port.FileTarget  = (*memoryWrite)(nil)
+	_ port.Tool        = (*fileRead)(nil)
+	_ port.FileTarget  = (*fileRead)(nil)
+	_ port.Tool        = (*fileList)(nil)
+	_ port.FileTarget  = (*fileList)(nil)
+	_ port.Tool        = (*fileSearch)(nil)
+	_ port.FileTarget  = (*fileSearch)(nil)
+	_ port.Tool        = (*fileEdit)(nil)
+	_ port.FileTarget  = (*fileEdit)(nil)
+	_ port.Tool        = (*fileWrite)(nil)
+	_ port.FileTarget  = (*fileWrite)(nil)
+	_ port.Tool        = (*fileDelete)(nil)
+	_ port.FileTarget  = (*fileDelete)(nil)
+	_ port.Tool        = (*thinkTool)(nil)
+	_ port.Tool        = (*sleepTool)(nil)
+	_ port.Tool        = (*termExec)(nil)
+	_ port.Tool        = (*jobStart)(nil)
+	_ port.Tool        = (*jobList)(nil)
+	_ port.Tool        = (*jobStatus)(nil)
+	_ port.Tool        = (*jobLogs)(nil)
+	_ port.Tool        = (*jobKill)(nil)
+	_ port.Tool        = (*windowList)(nil)
+	_ port.Tool        = (*screenCapture)(nil)
+	_ port.Tool        = (*askUser)(nil)
+	_ port.Interactive = (*askUser)(nil)
 )
 
 // 解析辅助（Target 申报共用）：取 path 参数并规约为绝对路径。

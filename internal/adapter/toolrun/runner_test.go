@@ -23,15 +23,19 @@ import (
 
 // stubTool 固定返回的工具；可选实现 FileTarget。
 type stubTool struct {
-	spec   tool.Spec
-	target string  // 非空 = 申报文件目标（op 恒 write，够用）
-	op     perm.Op // 申报的操作（默认 write）
-	out    string
-	delay  time.Duration // 模拟慢工具
-	err    error
+	spec        tool.Spec
+	target      string  // 非空 = 申报文件目标（op 恒 write，够用）
+	op          perm.Op // 申报的操作（默认 write）
+	out         string
+	delay       time.Duration // 模拟慢工具
+	err         error
+	interactive bool // 申报 port.Interactive（D184）
 }
 
 func (s *stubTool) Spec() tool.Spec { return s.spec }
+
+// Interactive 可选能力（D184）：等人应答的工具不吃默认超时。
+func (s *stubTool) Interactive() bool { return s.interactive }
 
 func (s *stubTool) Execute(ctx context.Context, _ tool.Call) (tool.Result, error) {
 	if s.delay > 0 {
@@ -530,6 +534,61 @@ func TestExecuteParentCancelPropagates(t *testing.T) {
 	cancel()
 	if _, err := r.Execute(ctx, c("slow", `{}`)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 交互工具的超时豁免（D184）
+// ---------------------------------------------------------------------------
+
+// TestInteractiveSkipsDefaultTimeout 等人应答不是「卡住」：声明 Interactive 的工具
+// 不吃缺省超时，慢于缺省也照常完成。
+func TestInteractiveSkipsDefaultTimeout(t *testing.T) {
+	r := New(Options{
+		Tools: []port.Tool{&stubTool{
+			spec:        tool.Spec{Name: "ask", Risk: tool.Safe},
+			delay:       150 * time.Millisecond,
+			out:         "answered",
+			interactive: true,
+		}},
+		Timeout: 20 * time.Millisecond,
+	})
+	res, err := r.Execute(context.Background(), c("ask", `{}`))
+	if err != nil || !res.OK || res.Output != "answered" {
+		t.Fatalf("res=%+v err=%v, want 豁免缺省超时", res, err)
+	}
+	// 对照：同样延迟的非交互工具仍按缺省超时回填。
+	r = New(Options{
+		Tools:   []port.Tool{&stubTool{spec: tool.Spec{Name: "slow", Risk: tool.Safe}, delay: 150 * time.Millisecond}},
+		Timeout: 20 * time.Millisecond,
+	})
+	res, err = r.Execute(context.Background(), c("slow", `{}`))
+	if err != nil || res.OK || !strings.Contains(res.Err, "timed out") {
+		t.Fatalf("res=%+v err=%v, want 非交互工具仍超时", res, err)
+	}
+}
+
+// TestInteractiveHonoursExplicitTimeout 模型自己要求的期限要认：显式 timeout_sec
+// 对交互工具照样生效（只是缺省值不再套）。
+func TestInteractiveHonoursExplicitTimeout(t *testing.T) {
+	r := New(Options{
+		Tools: []port.Tool{&stubTool{
+			spec:        tool.Spec{Name: "ask", Risk: tool.Safe},
+			delay:       3 * time.Second,
+			interactive: true,
+		}},
+		Timeout: 20 * time.Millisecond,
+	})
+	start := time.Now()
+	res, err := r.Execute(context.Background(), c("ask", `{"timeout_sec":1}`))
+	if err != nil {
+		t.Fatalf("超时应作结果回填: %v", err)
+	}
+	if res.OK || !strings.Contains(res.Err, "timed out (1s)") {
+		t.Fatalf("res=%+v, want 按显式 1s 超时", res)
+	}
+	if d := time.Since(start); d > 2500*time.Millisecond {
+		t.Fatalf("显式超时未生效: %s", d)
 	}
 }
 

@@ -102,6 +102,7 @@ type uiFrontend interface {
 	port.Presenter
 	port.Prompter
 	port.Confirmer
+	port.Asker
 	// Say 输出一行会话文本（命令输出、启动提示）。
 	Say(text string)
 	// Prompt 输入提示（TUI 输入行常驻，等价 no-op）。
@@ -260,10 +261,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	w.buildPresenter()
 	// 逐次确认（§5.10 Confirmer 矩阵）：默认走 REPL 交互；-yes 一律应 y。
 	var confirmer port.Confirmer = w.ui
+	// 提问通道（D184）：前端面板/选单；-yes 不等人，统一按「无人值守」当场回填。
+	var asker port.Asker = w.ui
 	if *autoYes {
 		confirmer = yesConfirmer{}
+		asker = askNone{}
 	}
-	if err := w.assembleTools(confirmer); err != nil {
+	if err := w.assembleTools(confirmer, asker); err != nil {
 		return fatal(stderr, "%v", err)
 	}
 	// D167：先停 watcher 再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。

@@ -85,7 +85,9 @@ type model struct {
 	think    strings.Builder // 进行中的思维链（流式实时可见，D42）
 	thinkAt  time.Time       // 首个思考增量时刻（flush → secs 定稿耗时）
 
-	confirm     *pendingConfirm
+	confirm *pendingConfirm
+	// ask 进行中的提问面板（D184）：非空时输入栏画面板、按键走面板语义。
+	ask         *pendingAsk
 	confirmChip int                // 确认归属的 chip 块序（D67；-1 = 非 chip 确认，如 /rm）
 	usage       conversation.Usage // 节点权威累计（用量详情后补进 logo 菜单，§15.1）
 	// editTarget 编辑态目标节点（D92 气泡右键「编辑」）：非空时提交 = 结构化 /edit
@@ -162,6 +164,9 @@ func (m *model) handleEvent(ev port.Event) {
 // 用量归零（前端累计值，/usage 走节点汇总不受影响）；转写滚动与行选态在 UI 侧
 // 一并归零——内容没了，偏移/高度失去意义，恢复跟随贴底。
 func (m *model) clear() {
+	if m.ask != nil {
+		m.askDismiss() // D184：清屏（/switch、/new）时提问面板一并收场（放弃全部）
+	}
 	m.blocks = nil
 	m.draft.Reset()
 	m.drafting = false
@@ -490,9 +495,15 @@ func (m *model) replay(msg conversation.Message) {
 	}
 }
 
-// submit 提交一行：确认态优先应答，编辑态走结构化 /edit，空行忽略，其余先投递再入转写。
+// submit 提交一行：确认态优先应答，提问态优先作答，编辑态走结构化 /edit，空行忽略，
+// 其余先投递再入转写。
 // 投递失败（缓冲满）时明确标注"未执行"——不制造"已执行"错觉（uitui 审查修复同款）。
 func (m *model) submit(text string) {
+	if m.ask != nil {
+		// D184：提问面板持键盘时，键入行不参与会话——按面板语义解释（编号 / 文字答案）。
+		m.submitAsk(text)
+		return
+	}
 	if m.confirm != nil {
 		m.replyConfirm(port.ConfirmAnswer{Allow: isYes(text)})
 		return

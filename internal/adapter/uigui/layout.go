@@ -17,13 +17,14 @@ import (
 // 本函数也被 fadeCompose 以零值 Source 二次调用（纯渲染，无事件消费）；移窗不在这里
 // 下发——帧内只记账，由 commitWinGeom 统一 flush（D55）。
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
-	if u.focusPending && !u.collapsed {
+	if u.focusPending && !u.collapsed && u.m.ask == nil {
 		u.focusPending = false
 		gtx.Execute(key.FocusCmd{Tag: &u.editor}) // 唤出（托盘/快捷键）后焦点进输入栏
 	}
 	if !u.collapsed {
 		u.updateSel(gtx)    // D91 跨块拖选消费者：先于编辑器（Ctrl+C 抢先，焦点纪律同帧生效）
 		u.updateCompl(gtx)  // D103 补全浮层消费者：先于编辑器（Enter 接管 SubmitEvent、Esc 让渡）
+		u.updateAsk(gtx)    // D184 提问面板：先于编辑器（面板持键盘时主编辑器不吃键）
 		u.updateEditor(gtx) // 收起态不消费按键（编辑器不可见，防隐形收字）
 	}
 	u.updateClicks(gtx)

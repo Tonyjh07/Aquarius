@@ -189,7 +189,13 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	// 单次调用超时覆盖（D38）：保留参数 timeout_sec（1–port.MaxCallTimeoutSec，允许高于
 	// config 缺省）；schema 自声明该参数的工具（job_start）不参与保留参数、原样下传。
 	// 值域外/非整数 → OK=false 回填让模型纠正（不静默夹取，避免 0 被误读为不限时）。
-	call, callTimeout, terr := applyCallTimeout(t.Spec(), call, r.timeout)
+	// D184：声明 Interactive 的工具（ask_user）缺省不吃超时——等人应答不是「卡住」；
+	// 模型显式给了 timeout_sec 仍照给（自己要求的期限要认）。
+	defTimeout := r.timeout
+	if it, ok := t.(port.Interactive); ok && it.Interactive() {
+		defTimeout = 0
+	}
+	call, callTimeout, terr := applyCallTimeout(t.Spec(), call, defTimeout)
 	if terr != nil {
 		return tool.Result{CallID: call.ID, OK: false, Err: terr.Error()}, nil
 	}

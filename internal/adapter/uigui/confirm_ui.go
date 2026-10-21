@@ -85,6 +85,10 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Left: unit.Dp(inputPadDp), Right: unit.Dp(inputPadDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		// D106 修订⑵：展开态 = 竖排 composer——附件左上/展开右上工具行 + 顶对齐多行
 		// 编辑区；确认态仍走单行布局（原因编辑器，灰槽本就隐藏）。
+		// D184：提问面板优先（面板有自己的头部/底部，不画工具行）。
+		if u.m.ask != nil {
+			return u.askPanel(gtx)
+		}
 		if u.expanded && u.m.confirm == nil {
 			return u.pillContentExpanded(gtx)
 		}

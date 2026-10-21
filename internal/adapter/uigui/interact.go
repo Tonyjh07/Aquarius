@@ -143,6 +143,7 @@ func (u *UI) updateClicks(gtx layout.Context) {
 	if u.expandBtn.Clicked(gtx) {
 		u.setExpanded(!u.expanded) // D106：展开/收起切换
 	}
+	u.updateAskClicks(gtx) // D184：提问面板控件（进度段/选项/底部按钮/最小化）
 	// 工具 chip 头部点击 → 折叠/展开（D67；m.blocks 只增，块序即 chipIdx）。
 	for i, b := range u.m.blocks {
 		if b.kind == blockTool && b.chip != nil && u.chipClick(i).Clicked(gtx) {

@@ -43,6 +43,13 @@ type FileTarget interface {
 	Target(ctx context.Context, call tool.Call) (path string, op perm.Op, ok bool)
 }
 
+// Interactive 可选能力（D184）：工具要等人应答（ask_user 这类）。
+// ToolRunner 对声明者不套默认超时（limits.tool_timeout_sec）——用户思考两分钟
+// 不该被当成工具超时；显式 timeout_sec 与 ctx 取消仍然生效。
+type Interactive interface {
+	Interactive() bool
+}
+
 // sessionKey 会话上下文的私有键（ctx 值只在进程内传递，不进网络/树/日志）。
 type sessionKey struct{}
 

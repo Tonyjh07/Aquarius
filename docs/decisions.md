@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-21 @ 87b5308 -->
+<!-- docs-sync: 2026-10-21 @ ebc8ce2 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -198,7 +198,7 @@
 | D181 | 「模型服务」页：模型列表 + 切页自动登记服务端清单（新增行默认未启用）+ 分页；探测以编辑区现值为准（未落盘也能探）（§8/§15.7） | 生效 |
 | D182 | 思考块定稿默认折叠（`▸ 已思考 N 秒`，点开才铺正文；流式不折叠）（§15.3） | 生效 |
 | D183 | 主界面气泡菜单加「生成响应」（有节点 ID 才给；项组拆 base + 尾项）（§15.9） | 生效 |
-| D184 | 提问工具 `ask_user`：`port.Asker` + 输入栏展开态提问面板；Esc = 中断本轮、「忽略」= 放弃全部（§4.3/§5.9/§15.2） | 待落码 |
+| D184 | 提问工具 `ask_user`：`port.Asker` + 输入栏展开态提问面板；Esc = 中断本轮、「忽略」= 放弃全部（§4.3/§5.9/§15.2） | 生效 |
 | D185 | 无人值守：越界确认当场拒绝并说明，轮次不阻塞；只包工具链，用户键入的命令确认照常问（§9） | 待落码 |
 | D186 | 多附件：`RawInput.Attachments` 列表 + 逐个摄取（部分成功）+ 单条上限 8 个（§5.7/§15.2） | 待落码 |
 | D187 | 图片附件入口：Ctrl+V 读剪贴板位图、拖拽走 `WM_DROPFILES`、暂存出缩略图、单图 20MB（§4.2/§15.2） | 待落码 |
@@ -3690,13 +3690,13 @@
   `{questions:[{header, question, options:[{label, description}], multiple}]}`，
   1–4 题、每题 **0–9** 项（0 项 = 纯自由输入，模型只想听用户怎么说），
   `header` ≤ 30 字、`question` ≤ 500 字、`label` ≤ 40 字、`description` ≤ 200 字；
-  输出 `{answers: [][]string}`，与题序对齐，未答 = 空数组。Risk = **Safe**（提问没有副作用，
+  输出回填一行英文（见口径二），与题序对齐，未答 = `"Unanswered"`。Risk = **Safe**（提问没有副作用，
   不该被权限等级拦住）。「自己输入」由 UI 自动追加为末项，模型不得再列自由项；推荐项放第一位、
   `label` 末尾标 `(Recommended)`（这两条写进参数描述，靠描述约束而不是靠校验）。
 - **口径二：模型面文案英文**（D168 同口径，集中放 `model_text.go` 并有 ASCII 断言）：
   已回答 = `User has answered your questions: "Q1"="A1, A2"; "Q2"="Unanswered".`；
   放弃全部 = `The user dismissed the questions without answering. Proceed with your best judgement and state your assumptions.`；
-  无人值守 = `The user is away; no answer is available. Proceed with your best judgement and state your assumptions.`
+  无人值守 = `The user is not available to answer (unattended run). Proceed with your best judgement, state your assumptions, and do not ask again.`
 - **口径三：两个退出面语义分开**（用户拍板）：
   - **Esc = 中断本轮**。与点停止生成同一条路径（`interruptNow()` 取消 ctx），`Ask` 返回
     `ctx.Err`，`ToolRunner` 按装配级故障中止本轮——「我现在不想答」= 别继续往下跑。
@@ -3721,8 +3721,9 @@
   不弹补全浮层（题干不是命令）。
 - **口径八：问答落树 = 工具分片**。调用与结果同片（D95），气泡 chip 可回看；不新增领域概念、
   不新开节点、不写进会话标题。
-- **口径九：无人值守兜底**（D185）。`Asker` 被装饰器包住时立即返回 `Dismissed`，模型拿到
-  「用户不在」照常继续——提问不能把无人值守的轮次卡死。
+- **口径九：无人值守兜底**（D185）。`Asker` 被装饰器包住时立即返回 `Away`（不是 `Dismissed`：
+  「没人可问」是事实，「你自己看着办」是用户决定），模型拿到「用户不在」照常继续——提问不能
+  把无人值守的轮次卡死。`-yes` 走的 `askNone` 同一语义。
 - **测试**：`toolbuiltin` 契约（题数/项数上下界、答案对齐、0 选项、放弃与无人值守文案 ASCII）；
   `toolrun` 不吃默认超时 + Esc 归类为取消；`uigui` 面板状态机（切题 / 多选 / 自由输入 /
   最小化 / 忽略 / 键位 / 高度上限）；`uitui` 与 `repl` 降级各一组。
@@ -3749,8 +3750,8 @@
   （无参 = 切换）、主界面与托盘右键菜单的勾选项；设置窗「常规」页权限区加一行开关。
 - **口径五：状态行要说明原因**。开启期间状态行常驻「无人值守」标记（与权限等级并列）——
   否则用户回来只看到一串「已拒绝」，会当成 bug。
-- **口径六：`Asker` 同款**。`decorate.UnattendedAsker` 在开启时立即返回 `Dismissed`
-  （D184 口径九），提问也不阻塞轮次。
+- **口径六：`Asker` 同款**。`decorate.UnattendedAsker` 在开启时立即返回 `Away`（D184 口径九；
+  与「忽略」的 `Dismissed` 分开——没人可问不是用户决定「你自己看着办」），提问也不阻塞轮次。
 - **测试**：装饰器单测（开 = 不调内层且原因稳定 / 关 = 透传 / ctx 取消优先）；
   装配级（`-yes` 不装、`/rm` 仍问、菜单勾选写回 config）；GUI 状态行标记与开关联动。
 - **否决**：① 用 full-access 顶替（放大权限，越界操作会被真执行）；② 拒绝时不带原因
