@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -29,6 +30,10 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
+
+// version 构建版本号：发布构建用 `-ldflags "-X main.version=v0.1.0"` 注入，开发构建
+// 保持 dev。只进 `-version` 输出与欢迎信息，不参与任何行为分支。
+var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -207,8 +212,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	modelName := flags.String("model", "", "覆盖 model.name")
 	baseURL := flags.String("base-url", "", "覆盖 model.base_url")
 	autoYes := flags.Bool("yes", false, "跳过逐次确认（等价对每个确认回答 y；危险操作慎用）")
+	showVersion := flags.Bool("version", false, "打印版本并退出")
 	if err := flags.Parse(args); err != nil {
 		return 2
+	}
+	if *showVersion {
+		fmt.Fprintf(stdout, "Aquarius %s (%s/%s, %s)\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
+		return 0
 	}
 
 	// 顺序骨架：profile 解析 → 端口装配 → UI → 工具/装饰器 → Agent/插件宿主/Session

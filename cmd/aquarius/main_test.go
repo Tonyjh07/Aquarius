@@ -132,6 +132,21 @@ func swapSetupWindowRunner(fake func(uigui.SetupRequest) (uigui.SetupOutcome, er
 	return func() { setupWindowRunner = prev }
 }
 
+// TestVersionFlag -version 打印版本并退出 0：不读配置、不装配端口（发版冒烟用）。
+func TestVersionFlag(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-version"}, strings.NewReader(""), &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
+	}
+	line := strings.TrimSpace(out.String())
+	if !strings.HasPrefix(line, "Aquarius ") || !strings.Contains(line, version) {
+		t.Fatalf("版本输出 = %q", out.String())
+	}
+	if !strings.Contains(line, runtime.GOOS+"/"+runtime.GOARCH) || !strings.Contains(line, runtime.Version()) {
+		t.Fatalf("版本输出缺平台信息 = %q", out.String())
+	}
+}
+
 // TestRunFirstTimeGeneratesConfig 首次运行（D110 + D141）：生成根指针 + default profile
 // 模板配置。模板 ui.kind=gui ⇒ **不再「写模板即退出」**：改开欢迎向导窗（此处换假宿主），
 // 用户取消 ⇒ 退出 0、不写 welcomed 标记（配置仍不完整，下次再来）。
