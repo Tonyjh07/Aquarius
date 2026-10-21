@@ -340,7 +340,7 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `watch_list` / `watch_stop` | 观察器列表 / 停止（ID 支持唯一前缀） | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
 | `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
-| `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（抓客户区，**含被遮挡、非顶层窗口**；活动菜单/下拉会合进主图；最小化窗口取决于它是否仍自绘，取不到明确报因）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
+| `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（抓客户区，**含被遮挡、非顶层窗口**；活动菜单/下拉会合进主图；最小化窗口经桌面合成器的预览取整窗，不还原窗口、不抢焦点）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
 | `ask_user` | 向用户提问（D184）：1–4 题、每题 0–9 个选项（可多选），UI 自动追加「自己输入」项；答案随工具结果回填。**不吃默认工具超时**（用户思考不该超时），无人值守时立即回填「用户不在」 | Safe |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
@@ -362,9 +362,16 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - **屏幕捕获（D178）**：拆成 `window_list`（纯元数据，Safe）与 `screen_capture`（产图，Confirm）两件——
   截屏是隐私敏感动作，逐次确认在 strict 下是默认；`window_list` 没有副作用，列清单不该被确认打断。
   - 抓取实现在 `internal/adapter/screencap`（Windows = `PrintWindow(PW_CLIENTONLY|PW_RENDERFULLCONTENT)` 抓客户区，
-    活动弹窗（菜单/下拉/owned 对话框）按屏幕偏移合成；失败且窗口未最小化时回退到客户区屏幕 `BitBlt`；
+    活动弹窗（菜单/下拉/owned 对话框）按屏幕偏移合成；失败时回退到客户区屏幕 `BitBlt`；
     两者都拿不到就明确报因，**不静默回黑图**）。全屏 = 整个虚拟桌面（`SM_XVIRTUALSCREEN`
     一族），物理像素，不做 DPI 缩放；DPI 不感知的宿主进程里会先补上 per-monitor v2，避免逻辑像素错位。
+  - **最小化窗口走桌面合成器的预览（`DwmRegisterThumbnail`）**：最小化窗口不接收 `WM_PAINT`，
+    `PrintWindow` 只能拿到被压成占位矩形的客户区（几张标题栏残留像素）而且**照样返回成功**——
+    这正是「看起来成功」的来源。系统里现成的那帧画面由 DWM 持有（任务栏悬停预览就是这么来的），
+    故把源的缩略图合成到本进程一个**离屏**窗口（虚拟桌面最右侧之外、无边框、无标题、工具窗口、
+    不激活）上，再 `PrintWindow(PW_RENDERFULLCONTENT)` 读那个窗口。源窗口不动、不还原、不抢焦点；
+    代价是整窗入图（含标题栏）——最小化时客户区尺寸无从可靠取得（`GetClientRect` 塌成占位框、
+    按窗口样式反推对自绘边框的窗口不准），不做会猜错的裁剪。合成器不给预览时明确报因。
   - **本进程自己的窗口不出现在 `window_list` 里**（模型不该抓自己），但仍会出现在全屏截图里。
   - 图片上限与降采样口径同 `file_read`：长边超过 `maxCaptureEdge` 时按比例缩小再编码 PNG，避免截图把上下文撑爆。
   - 非 Windows 平台：适配器返回「本平台不支持」的明确错误（随 linuxgate 编译，不新增构建标签外的桩）。
@@ -751,7 +758,7 @@ type Rect struct{ Left, Top, Right, Bottom int }
 type Capture interface {
     Windows(ctx context.Context) ([]WindowInfo, error) // 顶层可见窗口，z 序自顶向下
     Screen(ctx context.Context) (Image, error)         // 整个虚拟桌面
-    Window(ctx context.Context, h uintptr) (Image, error) // 指定窗口，含被遮挡/最小化
+    Window(ctx context.Context, h uintptr) (Image, error) // 指定窗口，含被遮挡/最小化（最小化时经合成器预览取整窗）
 }
 
 // Image 已编码的图片字节（PNG）与像素尺寸。

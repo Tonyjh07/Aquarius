@@ -84,7 +84,9 @@ func (t *screenCapture) Spec() tool.Spec {
 		Description: fmt.Sprintf("Capture the screen and attach the image to the conversation for you to look at. "+
 			"target \"screen\" captures the whole desktop (all monitors); a handle from window_list captures that window's "+
 			"client area, including when it is covered or in the background, plus any open menu or dropdown owned by it. "+
-			"Some minimized or GPU-only windows cannot be rendered and report an error instead. "+
+			"A minimized window is captured through the desktop compositor's own preview, so it comes back as the whole "+
+			"window including its title bar; the window is not restored and does not take focus. "+
+			"Some GPU-only windows cannot be rendered and report an error instead. "+
 			"Long edges are scaled down to %d pixels. Every capture needs confirmation.", maxCaptureEdge),
 		Schema: jsonSchema(`{
 			"type": "object",

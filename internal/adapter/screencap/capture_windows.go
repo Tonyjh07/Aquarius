@@ -5,6 +5,7 @@ package screencap
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -47,11 +49,33 @@ var (
 	procDeleteObject           = gdi32.NewProc("DeleteObject")
 	procDeleteDC               = gdi32.NewProc("DeleteDC")
 	procBitBlt                 = gdi32.NewProc("BitBlt")
+	procCreateSolidBrush       = gdi32.NewProc("CreateSolidBrush")
 	procGetCurrentProcessID    = kernel32.NewProc("GetCurrentProcessId")
 	procOpenProcess            = kernel32.NewProc("OpenProcess")
 	procQueryFullProcessImage  = kernel32.NewProc("QueryFullProcessImageNameW")
 	procCloseHandle            = kernel32.NewProc("CloseHandle")
+	procGetModuleHandleW       = kernel32.NewProc("GetModuleHandleW")
 	procDwmGetWindowAttribute  = dwmapi.NewProc("DwmGetWindowAttribute")
+
+	// 最小化窗口走 DWM 缩略图（见 capture_thumb_windows.go）。
+	procDwmRegisterThumbnail         = dwmapi.NewProc("DwmRegisterThumbnail")
+	procDwmUnregisterThumbnail       = dwmapi.NewProc("DwmUnregisterThumbnail")
+	procDwmUpdateThumbnailProperties = dwmapi.NewProc("DwmUpdateThumbnailProperties")
+	procDwmQueryThumbnailSourceSize  = dwmapi.NewProc("DwmQueryThumbnailSourceSize")
+	procRegisterClassExW             = user32.NewProc("RegisterClassExW")
+	procCreateWindowExW              = user32.NewProc("CreateWindowExW")
+	procDefWindowProcW               = user32.NewProc("DefWindowProcW")
+	procShowWindow                   = user32.NewProc("ShowWindow")
+	procSetWindowPos                 = user32.NewProc("SetWindowPos")
+	procPeekMessageW                 = user32.NewProc("PeekMessageW")
+	procTranslateMessage             = user32.NewProc("TranslateMessage")
+	procDispatchMessageW             = user32.NewProc("DispatchMessageW")
+
+	// defWindowProc 是辅助窗口的消息过程回调，必须留成活引用（NewCallback 的返回值要一直可达）。
+	defWindowProc = syscall.NewCallback(func(hwnd, msg, wParam, lParam uintptr) uintptr {
+		r, _, _ := procDefWindowProcW.Call(hwnd, msg, wParam, lParam)
+		return r
+	})
 )
 
 // 常量（Win32 头文件取值）。
@@ -72,6 +96,21 @@ const (
 
 	dwmwaExtendedFrameBounds = 9
 	dwmwaCloaked             = 14
+
+	// DWM 缩略图（最小化窗口截图通道）。
+	dtpRectDestination = 0x00000001
+	dtpVisible         = 0x00000008
+	dtpOpacity         = 0x00000004
+
+	wsPopup          = 0x80000000
+	wsExToolWindow   = 0x00000080
+	wsExNoActivate   = 0x08000000
+	csHRedraw        = 0x0002
+	csVRedraw        = 0x0001
+	pmRemove         = 0x0001
+	swShowNoActivate = 4
+	swpNoZOrder      = 0x0004
+	swpNoActivate    = 0x0010
 )
 
 // dpiAwareOnce 保证本进程按物理像素取图（D178：不缩放的另一种说法是不虚拟化）。
@@ -91,6 +130,71 @@ type winRect struct{ left, top, right, bottom int32 }
 
 // winPoint 与 C 布局一致的 POINT。
 type winPoint struct{ x, y int32 }
+
+// wndClassExW WNDCLASSEXW（x64 布局与 C 一致）。
+type wndClassExW struct {
+	cbSize        uint32
+	style         uint32
+	lpfnWndProc   uintptr
+	cbClsExtra    int32
+	cbWndExtra    int32
+	hInstance     uintptr
+	hIcon         uintptr
+	hCursor       uintptr
+	hbrBackground uintptr
+	lpszMenuName  *uint16
+	lpszClassName *uint16
+	hIconSm       uintptr
+}
+
+// thumbnailProperties DWM_THUMBNAIL_PROPERTIES。字段顺序即 ABI：opacity 与 fVisible
+// 之间没有填充（BYTE + BOOL 对齐到 4），fVisible 与 fSourceClientAreaOnly 都必须显式带上，
+// 否则 DWM 会读到栈上的垃圾值。
+type thumbnailProperties struct {
+	flags   uint32
+	dest    winRect
+	source  winRect
+	opacity byte
+	visible int32
+	client  int32
+}
+
+// winMsg MSG（x64 布局与 C 一致）。
+type winMsg struct {
+	hwnd    uintptr
+	message uint32
+	wParam  uintptr
+	lParam  uintptr
+	time    uint32
+	pt      winPoint
+}
+
+// pumpMessages 抽干本线程的消息队列：DWM 缩略图的合成结果要经消息循环才落到窗口上。
+func pumpMessages() {
+	var m winMsg
+	for {
+		if r, _, _ := procPeekMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0, pmRemove); r == 0 {
+			return
+		}
+		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
+		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
+	}
+}
+
+// waitFrames 泵一段时间的消息：给合成器时间把缩略图画到辅助窗口上。
+func waitFrames(d time.Duration) {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		pumpMessages()
+		time.Sleep(4 * time.Millisecond)
+	}
+}
+
+// offscreenAnchorX 辅助窗口的水平落点：虚拟桌面最右侧再往右 thumbOffscreenGap 像素。
+// 它在任何显示器布局之外，用户永远看不到，也不会被全屏截图框进来。
+func offscreenAnchorX(virtualLeft, virtualWidth int32) int32 {
+	return virtualLeft + virtualWidth + thumbOffscreenGap
+}
 
 // bitmapInfoHeader BITMAPINFOHEADER（x64 布局与 C 一致）。
 type bitmapInfoHeader struct {
@@ -191,8 +295,8 @@ func (capture) Screen(ctx context.Context) (port.Image, error) {
 	return encode(pix, w, h)
 }
 
-// Window 抓指定窗口的客户区：PrintWindow 优先（被遮挡/非顶层也抓得到），
-// 失败且窗口未最小化时回退到屏幕上的客户区 BitBlt；两者都拿不到就明确报因（D178 口径二）。
+// Window 抓指定窗口：最小化窗口经桌面合成器的预览取整窗；其余走 PrintWindow 抓客户区
+// （被遮挡/非顶层也抓得到），失败时回退到屏幕上的客户区 BitBlt；都拿不到就明确报因（D178 口径二）。
 // 活动弹窗（菜单/下拉/owned 对话框）是独立顶层窗口，按屏幕偏移合成进主图。
 func (capture) Window(ctx context.Context, h uintptr) (port.Image, error) {
 	if err := ctx.Err(); err != nil {
@@ -204,6 +308,12 @@ func (capture) Window(ctx context.Context, h uintptr) (port.Image, error) {
 	}
 	if ok, _, _ := procIsWindow.Call(h); ok == 0 {
 		return port.Image{}, fmt.Errorf("window capture: %#x is not a window; get a current handle from window_list", h)
+	}
+	// 最小化窗口必须在任何 PrintWindow 之前分流：它的客户区已被系统压成占位矩形
+	// （159x27 一类），PrintWindow 会在那块占位画布上留下标题栏残留并返回成功，
+	// 几张非黑像素就足以让「纯黑才算没画」的判定放行——这正是要避免的「看起来成功」。
+	if iconic(h) {
+		return captureMinimizedWindow(ctx, h)
 	}
 	w, ht, ok := clientSize(h)
 	if !ok || w <= 0 || ht <= 0 {
@@ -227,11 +337,7 @@ func (capture) Window(ctx context.Context, h uintptr) (port.Image, error) {
 		return encode(pix, w, ht)
 	}
 
-	// 二、未最小化时抓屏幕上的客户区。最小化窗口的屏幕位置被别的窗口占着，
-	// 抓到的不是它自己——这种「看起来成功」比报错更糟（D178 口径二）。
-	if iconic(h) {
-		return port.Image{}, fmt.Errorf("window capture: the window is minimized and did not render itself; restore it, or capture target \"screen\"")
-	}
+	// 二、窗口不肯自绘时抓屏幕上的客户区。
 	pix, err = bitblt(screenDC, ox, oy, w, ht)
 	if err != nil {
 		return port.Image{}, fmt.Errorf("window capture: %w", err)
@@ -240,6 +346,19 @@ func (capture) Window(ctx context.Context, h uintptr) (port.Image, error) {
 		return port.Image{}, fmt.Errorf("window capture: the window did not render anything (it may be GPU-composited); try target \"screen\" instead")
 	}
 	return encode(pix, w, ht)
+}
+
+// captureMinimizedWindow 最小化窗口的取图入口：由 DWM 缩略图得到整窗画面（含标题栏），
+// 编码后返回。失败时明确报因，不回填占位框。
+func captureMinimizedWindow(ctx context.Context, h uintptr) (port.Image, error) {
+	pix, w, hh, err := captureMinimized(ctx, h)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return port.Image{}, err
+		}
+		return port.Image{}, fmt.Errorf("window capture: %w", err)
+	}
+	return encode(pix, w, hh)
 }
 
 // mergeActivePopup 把主窗的活动弹窗（右键菜单、下拉、owned 对话框）按各自客户区在屏幕上的

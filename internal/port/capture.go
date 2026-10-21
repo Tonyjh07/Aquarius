@@ -35,6 +35,6 @@ type Capture interface {
 	Windows(ctx context.Context) ([]WindowInfo, error)
 	// Screen 整个虚拟桌面（多显示器合成）。
 	Screen(ctx context.Context) (Image, error)
-	// Window 指定窗口，含被遮挡、非顶层、最小化。
+	// Window 指定窗口，含被遮挡、非顶层、最小化（最小化时经桌面合成器的预览取整窗）。
 	Window(ctx context.Context, h uintptr) (Image, error)
 }

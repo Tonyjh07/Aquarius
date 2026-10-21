@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-21 @ ddf5b40 -->
+<!-- docs-sync: 2026-10-21 @ c518d38 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -3534,8 +3534,9 @@
   暗色编辑器的空白区都是合法内容，按单色判会把用户正要看的画面拒掉。
   - 抓**客户区**而非整窗（借 MAA 的经验）：窗口边框/标题栏对「这个界面哪里不对」没有信息量，
     客户区尺寸也直接对应 `GetClientRect`，与 `ClientToScreen` 拼回屏幕坐标时不会差一个边框。
-  - 最小化窗口**只走 PrintWindow**：`IsWindowVisible` 对最小化窗口仍为真，此时屏幕 BitBlt 抓到的是
+  - 最小化窗口**先走 PrintWindow**：`IsWindowVisible` 对最小化窗口仍为真，此时屏幕 BitBlt 抓到的是
     那块被别的窗口占据的区域（或桌面），把别人的画面当成本窗口回填比报错更糟。
+    （**已被 D192 修订**：最小化窗口改由桌面合成器的预览取整窗。）
   - **活动弹窗合并**：`GetAncestor(GA_ROOTOWNER)` + `GetLastActivePopup`，把可见的活动弹窗（右键菜单、
     下拉、owned 对话框）按各自客户区在屏幕上的偏移合成进主图——它们通常是独立顶层窗口，
     单抓主窗会把用户正在指的那个菜单漏掉；合成失败就退回主图，不因此整次失败。
@@ -3556,6 +3557,7 @@
   在工具内部按窗口标题猜「用户想抓哪个」（标题是模型输入，猜错代价是一次错误分析）。
 - **模型**：`internal/port/capture.go`、`internal/adapter/screencap/`（`capture_windows.go` / `capture_other.go`）、
   `internal/adapter/toolbuiltin/screen.go`、`cmd/aquarius/assemble_ports.go`（装配 + `Deps.Capture`）。
+- **口径二的最小化部分已修订**：见 D192（最小化窗口改走桌面合成器的预览）。
 
 ### D179 · 语音：厂商适配器的 ASR 与 TTS（2026-10-20）
 
@@ -4014,3 +4016,56 @@
   `toolbuiltin/{sleep,file,job,watch,memory,screen}.go`、`adapter/llm/{wire,anthropic,
   responses,probe}.go`、`app/tools.go`、`adapter/mcpgate/tools.go`、
   `toolbuiltin/spec_schema_test.go`（新增）、`toolbuiltin/spec_limits_test.go`（扩表）。
+
+### D192 · 最小化窗口改走桌面合成器的预览（2026-10-21 用户批注）
+
+> **背景**：D178 口径二原写「最小化窗口只走 `PrintWindow`，取不到明确报因」。实测不成立：最小化后
+> 系统把客户区压成占位矩形（典型 159×27），`PrintWindow` 在那块画布上留下的是标题栏残留，
+> **而且照样返回成功**；几张非黑像素就足够让「纯黑才算没画」的判定放行，于是回填出一张近乎空白却
+> 报成功的图——正是 D178 最想避免的那类结果。另一边，模型要看的常常就是「刚才那个页面」，
+> 让用户先还原窗口再抓，等于把「不打扰」这个前提丢掉。
+
+- **口径一：截不到就借合成器的那一帧**。最小化窗口不接收 `WM_PAINT`，系统里现成的那帧画面由
+  DWM 持有（任务栏悬停预览用的就是它）。做法是 `DwmRegisterThumbnail` 把源窗口的缩略图合成到
+  **本进程**的一个离屏辅助窗口（DWM 要求目的地窗口属于调用方），再
+  `PrintWindow(PW_RENDERFULLCONTENT)` 读那个辅助窗口。源窗口不动、不还原、不抢焦点。
+- **口径二：整窗入图，不裁剪**。最小化时客户区尺寸无从可靠取得：`GetClientRect` 塌成占位框；
+  `AdjustWindowRectEx` 反推对自绘边框的窗口不准（实测 7 个窗口 3 个对不上）；
+  `DWM_TNP_SOURCECLIENTAREAONLY` 实测并不裁边框。猜错的裁剪会切掉真实内容，故整窗渲染、
+  标题栏一并入图——它是干净的事实，而且通用。
+- **口径三：分流必须在任何 `PrintWindow` 之前**。占位框阶段的非黑像素会骗过「纯黑才算没画」的判定
+  （实测 Steam 占位框有 185 个非黑像素），所以 `Window` 一进来就先问 `IsIconic`，最小化直接进缩略图
+  通道，不去碰占位框。**`blank` 的语义不动**——拦截靠前置分流，不靠按单色判。
+- **口径四：辅助窗口必须常驻在一个钉住的线程上**。Win32 窗口有线程亲和性：每次现建现毁会卡死并
+  留下无响应的窗口（实测）。故用 `LockOSThread` 的专用 goroutine 建一次窗口、自己泵消息、按请求改尺寸
+  与缩略图属性；窗口无边框（整窗即客户区）、无标题（不进 `window_list`）、工具窗口（不进任务栏与
+  Alt+Tab）、不激活，位置在虚拟桌面最右侧之外 2000 像素（全屏截图也框不到）。
+  读辅助窗口只能用 `PW_RENDERFULLCONTENT`：`PW_CLIENTONLY` 打在挂了缩略图的窗口上会死锁；
+  而且它读的是**合成结果**，往窗口 DC 上直接画的东西读不到。
+- **口径五：首帧要等，判定不靠颜色**。注册缩略图后轮询到出现内容为止（预算 1.5 秒，尊重 `ctx`
+  取消），实测单次约 85ms。判定分两件事，都不能按「单色」做——纯黑、纯白、单色面板都是合法内容
+  （真机的 Twinkle Tray 面板整张近单色，按单色判会被误杀，与 `blank` 的口径一致）：
+  - **到没到**：辅助窗口底色取洋红当哨兵，先读一张稳定基线帧（放大后客户区还有未初始化区域、
+    系统擦背景也会滞后一帧，只读一张会把中间态当基线），之后「与基线不同」就是缩略图已经盖上来了。
+  - **边条**：合成器给目标矩形边缘留 1–2 像素底色，且是抗锯齿混合过的（纯洋红会变成
+    `(181,47,181)` 一类）。那点粉色对模型没信息量却像「界面里有条粉线」，故按阈值识别并裁掉
+    **整条边都是底色**的行列，内容里的同色像素不削。
+  合成器不给预览（`WS_EX_LAYERED|WS_EX_NOREDIRECTIONBITMAP` 一类无重定向位图的窗口、合成被关掉的
+  会话）就在预算内明确报因并提示改用整屏，**不回填空底色**。抓到后无论成败都注销缩略图并把辅助
+  窗口缩回原位，避免下一次请求看到上一张图。
+- **否决**：临时还原窗口→截→复原（用户面前闪一下，最小化的本意就是别打扰）；把窗口还原到屏幕外
+  （Windows 会把窗口夹回屏内，实测矩形回到原点）；`DwmSetWindowAttribute(DWMWA_CLOAK)` 隐藏
+  （跨进程调用返回 `0x80070005`，只有窗口所属进程能设）。
+- **验证**：测试自己开一个画着四色块的窗口、最小化、走生产的 `Window` 路径抓回来，断言图里认得出
+  那些颜色，且抓取前后仍是最小化、placement 未变；另一个测试专门用**整片同色**的面板覆盖「单色
+  不能被误判」；另测离屏落点、哨兵底色识别、边条裁剪、`ctx` 取消、服务复用。
+  真机 9 个最小化窗口（浏览器、聊天、终端、文件管理器、游戏客户端）全部取到真实画面，单次约
+  0.1–0.5 秒；唯一取不到的是 Twinkle Tray 那种无重定向位图的面板，它明确报因（此前会回填一张
+  「洋红角 + 黑底」的假图）。
+- **落码（2026-10-21）**：`internal/adapter/screencap/capture_thumb_windows.go`（新增，
+  `thumbService` / `captureMinimized` / `grabViaThumbnail` / `newThumbWindow` / `stableFrame` /
+  `trimSentinelBorder` / `sentinelLike` / `offscreenAnchorX`）、
+  `capture_windows.go`（`Window` 的 `IsIconic` 前置分流、缩略图 procs/常量/结构体、
+  `pumpMessages` / `waitFrames`）、`capture_thumb_windows_test.go`（新增）、
+  `toolbuiltin/screen.go`（工具描述）、`internal/port/capture.go`（`Window` 注释）、
+  `DESIGN.md` §4.3 与 §5.12。
