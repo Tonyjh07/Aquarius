@@ -78,7 +78,7 @@ go build ./cmd/aquarius
 | `job_start` | 启动后台任务（独立进程，日志落盘 `profiles/<name>/jobs/<id>.log`，不随对话取消；**任务结束时自动汇报**，无需反复查） | Confirm |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理（列表/状态/日志尾部/终止） | Safe |
 | `window_list` | 列出可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；`handle` 传给 `screen_capture` | Safe |
-| `screen_capture` | 截屏给模型看：`target` = `screen`（整个虚拟桌面）或窗口 `handle`（**被遮挡、非顶层、最小化的窗口也能抓**）；PNG 进附件库并随结果内联（长边超 1600 会缩小）。仅 **Windows** 支持；当前链上的模型未声明图片能力时调用即报因 | Confirm |
+| `screen_capture` | 截屏给模型看：`target` = `screen`（整个虚拟桌面）或窗口 `handle`（抓客户区，**被遮挡、非顶层的窗口也抓得到**；最小化/纯 GPU 自绘窗口能否取到取决于它是否仍自绘，取不到会明确报因）；打开着的菜单/下拉会合进主图。PNG 进附件库并随结果内联（长边超 1600 会缩小）。仅 **Windows** 支持；当前链上的模型未声明图片能力时调用即报因 | Confirm |
 
 ## 上下文压缩（三轨特色功能）
 

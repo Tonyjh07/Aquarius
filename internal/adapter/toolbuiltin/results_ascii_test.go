@@ -80,6 +80,10 @@ func TestResultsAreASCIIModelFacing(t *testing.T) {
 		{"job_kill", `{"id":"j1"}`},
 		{"term_exec", `{"command":"true"}`},
 		{"term_exec", `{"command":""}`},
+		{"window_list", `{}`},
+		{"screen_capture", `{"target":"screen"}`},
+		{"screen_capture", `{"target":"nope"}`},
+		{"screen_capture", `{}`},
 	}
 
 	for _, tc := range cases {

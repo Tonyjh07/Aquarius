@@ -327,7 +327,7 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理 | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
 | `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
-| `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（**含被遮挡、非顶层、最小化的窗口**）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
+| `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（抓客户区，**含被遮挡、非顶层窗口**；活动菜单/下拉会合进主图；最小化窗口取决于它是否仍自绘，取不到明确报因）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -342,9 +342,10 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`。
 - **屏幕捕获（D178）**：拆成 `window_list`（纯元数据，Safe）与 `screen_capture`（产图，Confirm）两件——
   截屏是隐私敏感动作，逐次确认在 strict 下是默认；`window_list` 没有副作用，列清单不该被确认打断。
-  - 抓取实现在 `internal/adapter/screencap`（Windows = `PrintWindow(PW_RENDERFULLCONTENT)`，失败且窗口可见时
-    回退到屏幕区域 `BitBlt`；两者都拿不到就明确报因，**不静默回黑图**）。全屏 = 整个虚拟桌面（`SM_XVIRTUALSCREEN`
-    一族），物理像素，不做 DPI 缩放。
+  - 抓取实现在 `internal/adapter/screencap`（Windows = `PrintWindow(PW_CLIENTONLY|PW_RENDERFULLCONTENT)` 抓客户区，
+    活动弹窗（菜单/下拉/owned 对话框）按屏幕偏移合成；失败且窗口未最小化时回退到客户区屏幕 `BitBlt`；
+    两者都拿不到就明确报因，**不静默回黑图**）。全屏 = 整个虚拟桌面（`SM_XVIRTUALSCREEN`
+    一族），物理像素，不做 DPI 缩放；DPI 不感知的宿主进程里会先补上 per-monitor v2，避免逻辑像素错位。
   - **本进程自己的窗口不出现在 `window_list` 里**（模型不该抓自己），但仍会出现在全屏截图里。
   - 图片上限与降采样口径同 `file_read`：长边超过 `maxCaptureEdge` 时按比例缩小再编码 PNG，避免截图把上下文撑爆。
   - 非 Windows 平台：适配器返回「本平台不支持」的明确错误（随 linuxgate 编译，不新增构建标签外的桩）。

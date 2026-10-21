@@ -14,6 +14,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/notify"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/screencap"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
@@ -278,6 +279,7 @@ func (w *wiring) assembleTools(confirmer port.Confirmer) error {
 		Sandbox: w.sandboxDir,
 		Blobs:   w.blobs,
 		Vision:  w.cfg.Model.chainCaps().Vision,
+		Capture: screencap.New(),
 	})
 	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
