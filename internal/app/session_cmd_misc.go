@@ -195,6 +195,34 @@ func jobCommand(spec port.JobSpec) string {
 	return strings.Join(append(parts, spec.Args...), " ")
 }
 
+// micDefaultSeconds /mic 的缺省录音时长；micMaxSeconds 与其硬顶（采集侧还会再夹一次）。
+const (
+	micDefaultSeconds = 60
+	micMaxSeconds     = 240
+)
+
+// execMic 实现 /mic [秒数]：录音 → 转写 → 作为用户输入提交（D179）。
+// 录音期间提示一次（命令在事件循环里同步跑，不给提示就像卡住了）。
+func (s *Session) execMic(ctx context.Context, cmd port.Command) (string, error) {
+	secs := micDefaultSeconds
+	if len(cmd.Args) > 1 {
+		return "", errors.New("用法：/mic [秒数]")
+	}
+	if len(cmd.Args) == 1 {
+		n, err := strconv.Atoi(cmd.Args[0])
+		if err != nil || n < 1 || n > micMaxSeconds {
+			return "", fmt.Errorf("秒数需在 1–%d 之间", micMaxSeconds)
+		}
+		secs = n
+	}
+	if s.ui != nil {
+		_ = s.ui.Emit(ctx, port.NoticeEvent{
+			Text: fmt.Sprintf("正在录音，最长 %d 秒…", secs),
+		})
+	}
+	return s.ingestAndRun(ctx, port.RawInput{Kind: "mic", Seconds: secs})
+}
+
 // permissionReport /permission 无参输出：当前等级 + 全档免确认矩阵（由 perm 判定推导，单一事实源）+ 特权目录。
 func (s *Session) permissionReport() string {
 	var b strings.Builder

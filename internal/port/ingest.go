@@ -12,6 +12,8 @@ type RawInput struct {
 	Text string                `json:"text,omitempty"`
 	File string                `json:"file,omitempty"`
 	Blob *conversation.BlobRef `json:"blob,omitempty"` // clipboard 图片 / mic 音频（已先入附件库）
+	// Seconds mic 录音时长（D179；0 = 缺省 60 秒，硬顶由采集侧夹取）。
+	Seconds int `json:"seconds,omitempty"`
 }
 
 // IngestReport 摄取结果：可入消息的内容分片 + 备注（如"已由 ASR 转写"）。

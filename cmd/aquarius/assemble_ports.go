@@ -8,12 +8,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/asrchat"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/audioplay"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestmic"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/micwin"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/mimotts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/notify"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/screencap"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
@@ -224,10 +230,88 @@ func (w *wiring) buildPresenter() {
 	if w.cfg.Output.Notify {
 		outs = append(outs, notify.New(notifySenderImpl(runtime.GOOS)))
 	}
+	if w.cfg.Output.TTS && w.ttsSynth != nil {
+		out, err := outputtts.New(outputtts.Config{
+			Synth:  w.ttsSynth,
+			Player: w.player,
+			Blobs:  w.blobs,
+			Voice:  w.cfg.Audio.TTS.Voice,
+			Design: w.cfg.Audio.TTS.Design,
+			Style:  w.cfg.Audio.TTS.Style,
+			Tags:   w.cfg.Audio.TTS.Tags,
+			Logf: func(format string, args ...any) {
+				if w.stderr != nil {
+					fmt.Fprintf(w.stderr, format+"\n", args...)
+				}
+			},
+		})
+		if err != nil {
+			fmt.Fprintf(w.stderr, "警告：语音播报不可用：%v\n", err)
+		} else {
+			w.ttsOut = out
+			outs = append(outs, out)
+		}
+	}
 	w.presenter = &outputsPresenter{
 		inner: w.ui,
 		outs:  outs,
 		log:   func(err error) { fmt.Fprintf(w.stderr, "[输出器] %v\n", err) },
+	}
+}
+
+// assembleAudio 装配语音端口（D179）：录音/播放恒在（未配置时执行报因），识别与
+// 合成按 audio.* 引用的 provider 现建。引用的 provider 不存在只让该能力不可用——
+// 启动时已提示，不阻断对话。
+func (w *wiring) assembleAudio(ctx context.Context) {
+	w.recorder = micwin.New()
+	w.player = audioplay.New()
+
+	if p, why := w.cfg.audioProvider("asr"); p != nil {
+		key, err := p.resolveKeyAt(ctx, 0, w.secrets, w.stderr)
+		if err != nil {
+			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%v\n", err)
+		} else if c, err := asrchat.New(asrchat.Config{
+			BaseURL: p.BaseURL, APIKey: key, Model: w.cfg.Audio.ASR.Model, Blobs: w.blobs,
+		}); err != nil {
+			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%v\n", err)
+		} else {
+			w.asr = c
+		}
+	} else if w.cfg.Audio.ASR.Provider != "" {
+		fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s\n", why)
+	}
+
+	if p, why := w.cfg.audioProvider("tts"); p != nil {
+		key, err := p.resolveKeyAt(ctx, 0, w.secrets, w.stderr)
+		if err != nil {
+			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%v\n", err)
+		} else if c, err := mimotts.New(mimotts.Config{
+			BaseURL: p.BaseURL, APIKey: key, Model: w.cfg.Audio.TTS.Model, Blobs: w.blobs,
+		}); err != nil {
+			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%v\n", err)
+		} else {
+			w.ttsSynth = c
+		}
+	} else if w.cfg.Audio.TTS.Provider != "" {
+		fmt.Fprintf(w.stderr, "警告：语音合成不可用：%s\n", why)
+	}
+
+	// 语音键与 /mic 共用同一摄取器：录 → 附件库 → 转写。
+	w.mic = ingestmic.New(w.recorder, w.blobs, w.asr, w.cfg.Input.Language)
+}
+
+// closeAudio 收尾：停播放并清临时文件。
+func (w *wiring) closeAudio() {
+	if w.ttsOut != nil {
+		w.ttsOut.Close()
+	}
+	w.silence()
+}
+
+// silence 停掉正在播放的语音（停止键与退出共用）。
+func (w *wiring) silence() {
+	if w.player != nil {
+		w.player.Stop()
 	}
 }
 

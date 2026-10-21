@@ -527,12 +527,13 @@ type Transcriber interface { // ASR：云转写（首发 MiMo 形状）/ 本地�
 }
 
 // SpeechRequest 一次合成请求（D179）：正文之外，风格与音色都是配置项，
-// 不进模型上下文、不进会话树。
+// 不进模型上下文、不进会话树。字段与 audio.tts 一一对应，适配器按模型决定用哪个。
 type SpeechRequest struct {
-    Text  string // 要播报的正文（进合成请求的 assistant 消息）
-    Voice string // 预置音色名（preset 模式）；design/clone 模式下为空
-    Style string // 自然语言风格指令（进 user 消息；空 = 不发）
-    Tags  string // 风格标签（如 "温柔 语速稍快"）：非空时拼成 "(标签)" 前缀置于正文开头
+    Text   string // 要播报的正文（进合成请求的 assistant 消息）
+    Voice  string // 预置音色名；voiceclone 模式是样本文件绝对路径；voicedesign 模式不用
+    Design string // voicedesign 模式的音色描述（该模型必填）
+    Style  string // 自然语言风格指令（进 user 消息；空 = 不发）
+    Tags   string // 风格标签（如 "温柔 语速稍快"）：非空时拼成 "(标签)" 前缀置于正文开头
 }
 
 type Synthesizer interface { // TTS：云 TTS（厂商适配器）/ 系统朗读（后续）
@@ -1234,7 +1235,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 - `audio.*.kind` = 协议位：`chat-audio`（缺省）= chat/completions 携带音频。未来本地引擎
   （whisper.cpp 等）或别家协议在此加新值，上层不动。
 - `audio.tts.model` 决定形态：`-voicedesign` 用 `design` 文本，`-voiceclone` 用 `voice` 里的
-  **样本文件绝对路径**（适配器读文件转 `data:audio/...;base64,`，路径按读取矩阵判权限），
+  **样本文件绝对路径**（适配器读文件转 **Base64**——接口只收 Base64，不是 `data:` URL；路径按读取矩阵判权限），
   其余用 `voice` 里的预置音色名。
 - `input.language` 只喂给 ASR：`auto | zh | en`，缺省 `auto`。
 - **录音时长上限**：线上限由厂商的 Base64 体积上限反推（16kHz 单声道 16bit ≈ 32KB/s，Base64 膨胀 4/3）
@@ -1596,7 +1597,7 @@ repl（测试/e2e 后端）与 tui 不动（二进制默认前端为 gui，D51�
 
 胶囊内（左右内边距 16、元素间距 12）：**附件图标槽**（20×20 灰占位、不可点，实现附件时启用）｜占位 *"Ask anything or type a command..."* 15sp（`grow`）｜**展开图标槽**（20×20 灰占位、不可点）｜状态动作区（生成中无动作——停止在右圆；**确认态整行切换，D86**：占位编辑器换为**原因编辑器**（占位 `reason……`、可留空）+ 右侧 [✗ 拒绝][✓ 允许][🔑 提升权限] 三枚 ⌀36 圆钮（间距 8、右内边距 12、垂直居中；配色 拒绝 `#D93A3A` / 允许 `#2EA857` / 提升 `#F5A623`），附件/展开灰槽隐藏，问句只在 chip（D67 强制展开）/转写行展示）。
 
-**发送键 = 主题色圆形钮 + 向上箭头图标**（悬停 tooltip「发送」）；生成中右圆变**停止键**（错误色 + 方块图标，`SetInterrupt`）；确认态右圆**不特判**（D86：工具确认发生在 Turn 内 = 停止键照常可点，取消整轮语义不变、迟到应答缓冲兜底；非工具确认遇 idle 则为发送键，空文本点击无动作；几何不随状态变）。
+**发送键 = 主题色圆形钮 + 向上箭头图标**（悬停 tooltip「发送」）；**输入框为空时换成语音键**（麦克风图标，tooltip「语音输入」；D179）：点一下开始录音，录音中变停止键（错误色方块，tooltip「停止录音」），转写结果回填输入框、不自动发送；未配置语音时保持发送键。生成中右圆变**停止键**（错误色 + 方块图标，`SetInterrupt`）；确认态右圆**不特判**（D86：工具确认发生在 Turn 内 = 停止键照常可点，取消整轮语义不变、迟到应答缓冲兜底；非工具确认遇 idle 则为发送键/语音键——语音键在确认态不触发，空文本点击无动作；几何不随状态变）。
 
 | 交互 | 语义 |
 |---|---|

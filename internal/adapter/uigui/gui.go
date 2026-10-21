@@ -126,6 +126,9 @@ type Options struct {
 	// prompts 两键——历史窗遮罩「默认模板」页签保存走这条路，避免全量设置 patch 盖掉同时
 	// 开着的设置窗刚改的其它字段。nil = 模板页签只读。
 	ApplyPromptTemplate func(p PromptTemplatePatch) error
+	// Voice 语音输入（D179）：录一段 → 转写 → 返回文本（不提交，由界面回填输入框）；
+	// 阻塞调用，UI 在后台 goroutine 跑、经 inbox 回投。nil = 语音不可用（右钮保持发送）。
+	Voice func(ctx context.Context) (string, error)
 }
 
 // PromptTemplatePatch 人格模板的窄写回（D154；与 SettingsPatch 分开：全量 patch 带
@@ -203,14 +206,19 @@ type UI struct {
 	w *app.Window
 
 	// 窗口侧状态（仅帧循环 goroutine 读写；headless 不触碰，构造成零值可用）。
-	th          *material.Theme
-	editor      widget.Editor
-	reasonEd    widget.Editor // D86：确认态原因编辑器（拒绝原因，可留空）
-	logoDrag    gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
-	logoRight   logoRight     // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
-	tipShown    bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
-	sendBtn     widget.Clickable
-	stopBtn     widget.Clickable
+	th        *material.Theme
+	editor    widget.Editor
+	reasonEd  widget.Editor // D86：确认态原因编辑器（拒绝原因，可留空）
+	logoDrag  gesture.Drag  // logo 圆钮：拖动移窗（§15.1 把手含 logo）
+	logoRight logoRight     // D72 logo 右键菜单手势（武装-抬手；仅事件循环 goroutine 读写）
+	tipShown  bool          // 当帧有 tips 在显（心跳判据 D53；仅事件循环 goroutine 读写）
+	sendBtn   widget.Clickable
+	stopBtn   widget.Clickable
+	// 语音输入（D179）：空输入时右钮 = 录音键；录音中变停止键。recording 供帧循环
+	// 读（点击路径与完成回投都在事件循环 goroutine 改）。
+	recording   atomic.Bool
+	voiceMu     sync.Mutex
+	voiceCancel context.CancelFunc
 	allowBtn    widget.Clickable
 	denyBtn     widget.Clickable
 	elevateBtn  widget.Clickable // D86：提升权限钮（仅工具确认且有下一档时布局）
@@ -528,6 +536,7 @@ func (u *UI) interruptNow() {
 // 先投 drain 并等其处理：post 是异步 FIFO，保证此前 Emit/Say 全部落进状态机，
 // 再投 quit 结束循环（对齐 uitui Close 的排空语义）。
 func (u *UI) Close() error {
+	u.cancelVoice()   // 录音中退出：先停采集（转写结果无人接收，随进程结束）
 	u.plat.DropTray() // 托盘图标随前端收尾清理（S4b：平台面）（真销毁未走到 DestroyEvent 的路径防残留）
 	u.wins.closeAll() // 功能窗收编（§15.7：退出 → 关闭全部次窗；headless 无开窗 = no-op）
 	done := make(chan struct{})
@@ -721,6 +730,12 @@ type (
 	themeMsg struct{ mode string }
 	// sysThemeMsg 系统深浅变化（主窗 WM_SETTINGCHANGE 广播 → 仅 system 档重解析）。
 	sysThemeMsg struct{}
+	// voiceMsg 语音键结果（D179）：text = 转写文本（回填输入框、不自动发送）；
+	// err 非空 = 录音/转写失败（状态行提示）。
+	voiceMsg struct {
+		text string
+		err  error
+	}
 )
 
 // apply 把桥接消息应用到状态机（仅事件循环 goroutine 调用）；false = 循环应退出。
@@ -780,6 +795,8 @@ func (u *UI) apply(msg uiMsg) bool {
 		if u.themeMode == "system" {
 			u.applyTheme("system") // 仅 system 档跟随；固定档忽略广播
 		}
+	case voiceMsg:
+		u.finishVoice(m.text, m.err)
 	case quitMsg:
 		return false
 	}

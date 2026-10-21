@@ -25,6 +25,9 @@ func TestDefaultConfigTemplateIsValidV2(t *testing.T) {
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("模板应能过校验: %v", err)
 	}
+	if err := cfg.normalizeAudio(); err != nil {
+		t.Fatalf("模板的语音段应能过校验: %v", err)
+	}
 	if len(cfg.Model.Providers) != 1 {
 		t.Fatalf("providers = %d, want 1", len(cfg.Model.Providers))
 	}

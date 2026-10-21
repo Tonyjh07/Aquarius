@@ -64,7 +64,7 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 	case rowNotify:
 		return paperCheckBox(th, &f.notify, "桌面通知（回答完成时）")(gtx), true
 	case rowTTS:
-		return paperCheckBox(th, &f.tts, "语音播报（已解析配置，尚未启用）")(gtx), true
+		return paperCheckBox(th, &f.tts, "语音播报（回答完成后自动播放）")(gtx), true
 	}
 	return layout.Dimensions{}, false
 }

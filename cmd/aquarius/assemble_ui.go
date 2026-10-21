@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -10,6 +12,15 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
+
+// voiceInput 界面语音键（D179）：录一段 → 转写 → 回文本（不提交，界面回填输入框）。
+func (w *wiring) voiceInput(ctx context.Context) (string, error) {
+	if w.mic == nil {
+		return "", errors.New("语音输入未装配")
+	}
+	text, _, err := w.mic.Listen(ctx, 0)
+	return text, err
+}
 
 // settingsSnapshot 设置窗快照（§15.7/D60-D61）：config 文本键（文件即事实源）+
 // 运行态（等级活槽与 Agent 访问器，同状态行口径）。
@@ -83,6 +94,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Secrets:             &secretsAdmin{w: w},                                                                                                                                            // S9-6b/D161：密钥库管理面（secretsBin 由 bootstrap 填，开窗时已就绪）
 			PreviewPrompts:      w.previewPrompts,                                                                                                                                               // S7/D144：人格组合预览（当前表单 → 最终 system 文本）
 			ApplyPromptTemplate: w.applyPromptTemplate,                                                                                                                                          // D154：人格模板窄写回（遮罩「默认模板」页签保存）
+			Voice:               w.voiceInput,                                                                                                                                                   // D179：空输入时右钮 = 录音键（录→转写→回填，不自动发送）
 		})
 		w.ui = ui
 		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式

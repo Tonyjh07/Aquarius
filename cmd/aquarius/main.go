@@ -19,7 +19,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestmic"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/app"
@@ -159,6 +161,15 @@ type wiring struct {
 	ui        uiFrontend
 	presenter *outputsPresenter
 
+	// assembleAudio 填充（D179）：录音/播放恒在，识别与合成按配置现建；mic 是
+	// /mic 与界面语音键共用的摄取器。
+	recorder port.Recorder
+	player   port.AudioPlayer
+	asr      port.Transcriber
+	ttsSynth port.Synthesizer
+	mic      *ingestmic.Ingestor
+	ttsOut   *outputtts.Adapter
+
 	// buildLLMs 填充（stackDecorators 消费）
 	fallbackEntries  []decorate.FallbackEntry
 	fallbackCounters map[string]port.TokenCounter
@@ -223,6 +234,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := w.assembleStores(ctx); err != nil {
 		return fatal(stderr, "%v", err)
 	}
+	w.assembleAudio(ctx)
+	defer w.closeAudio()
 	if err := w.buildLLMs(); err != nil {
 		return fatal(stderr, "%v", err)
 	}
@@ -295,7 +308,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Confirmer:      confirmer,
 		Jobs:           w.jobs,
 		CancelWatchers: w.poller.CancelSession, // D167：切走/新建/删当前会话时撤销该会话的 watcher
-		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs)},
+		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
 		UI:             w.presenter,
 		OpenMemory:     openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
 		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
@@ -349,7 +362,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			// 每轮独立 ctx（§10 取消语义）：TUI 的 Ctrl+C 经 SetInterrupt 取消本轮；
 			// repl 的 os.Interrupt 仍由外层 signal ctx 传导到本 ctx。
 			hctx, hcancel := context.WithCancel(ctx)
-			w.ui.SetInterrupt(hcancel)
+			// 停止键：取消本轮的同时静音（D179：正在播报的回答不该继续念）。
+			w.ui.SetInterrupt(func() {
+				hcancel()
+				w.silence()
+			})
 			defer func() {
 				hcancel()
 				w.ui.SetInterrupt(nil)

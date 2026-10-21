@@ -43,6 +43,8 @@ type fileConfig struct {
 	Prompts      promptsConfig     `json:"prompts"`       // 人格模块化（S7/D144）：模块库 + 有序组合 + 兜底模块
 	Permissions  permissionsConfig `json:"permissions"`
 	Output       outputConfig      `json:"output"`
+	Input        inputConfig       `json:"input"` // 录音语种提示（D179）
+	Audio        audioConfig       `json:"audio"` // 语音识别与合成（D179）
 	Limits       limitsConfig      `json:"limits"`
 	// Tools 工具面（S6/D143）：内置工具禁用清单（热生效）。
 	Tools toolsConfig `json:"tools"`
@@ -89,12 +91,45 @@ type toolsConfig struct {
 	Disabled []string `json:"disabled,omitempty"`
 }
 
-// outputConfig 输出器开关（DESIGN §8；M3 启用 notify，tts 见 D27 解析但不启用）。
+// outputConfig 输出器开关（DESIGN §8；M3 启用 notify，tts 见 D179）。
 // 键缺失 = false（保守：老配置不自动弹通知，模板默认 notify=true）。
 type outputConfig struct {
 	Notify bool `json:"notify"`
 	TTS    bool `json:"tts"`
 }
+
+// inputConfig 输入侧配置（D179）：目前只有录音语种提示。
+type inputConfig struct {
+	// Language 语种提示，只喂给 ASR：auto | zh | en；空 = auto。
+	Language string `json:"language,omitempty"`
+}
+
+// audioConfig 语音配置（D179）：识别与合成各自引用一个 provider——只借它的
+// base_url 与密钥池，不继承 kind、能力位，也不进降级链。
+type audioConfig struct {
+	ASR audioChannel `json:"asr"`
+	TTS audioChannel `json:"tts"`
+}
+
+// audioChannel 一路语音能力的引用与参数。
+// 未配置（provider 为空）= 该能力不可用；上层据此隐藏入口并报因，而不是启动失败。
+type audioChannel struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	// Kind 协议位：chat-audio（空 = 该档，chat/completions 携带音频）。
+	Kind string `json:"kind,omitempty"`
+	// Voice 预置音色名 / 音色设计描述之外的模式：`-voiceclone` 时是样本文件绝对路径。
+	Voice string `json:"voice,omitempty"`
+	// Design 音色描述（`-voicedesign` 模型必填，进 user 消息）。
+	Design string `json:"design,omitempty"`
+	// Style 自然语言风格指令（进 user 消息；空 = 不发）。
+	Style string `json:"style,omitempty"`
+	// Tags 风格标签（如 "温柔 语速稍快"）：非空时拼成 "(标签)" 前缀置于正文开头。
+	Tags string `json:"tags,omitempty"`
+}
+
+// kindChatAudio 首发音频协议：chat/completions 携带音频（D179）。
+const kindChatAudio = "chat-audio"
 
 // permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
 type permissionsConfig struct {
@@ -498,6 +533,65 @@ func (m *modelConfig) normalize() error {
 	return nil
 }
 
+// normalizeAudio 语音配置归一与校验（D179；在 model.normalize 之后调用）。
+// 引用的 provider **不存在不算启动失败**：语音是可选能力，按「不可用 + 明确报因」
+// 处理，用户配错一行不该连对话都开不起来。协议词与语种写错则 fail-fast——那是
+// 永远不会生效的配置，留着只会让人以为开了。
+func (c *fileConfig) normalizeAudio() error {
+	c.Input.Language = strings.ToLower(strings.TrimSpace(c.Input.Language))
+	switch c.Input.Language {
+	case "":
+		c.Input.Language = "auto"
+	case "auto", "zh", "en":
+	default:
+		return fmt.Errorf("input.language=%q 仅支持 auto | zh | en", c.Input.Language)
+	}
+	for name, ch := range map[string]*audioChannel{"audio.asr": &c.Audio.ASR, "audio.tts": &c.Audio.TTS} {
+		ch.Provider = strings.TrimSpace(ch.Provider)
+		ch.Model = strings.TrimSpace(ch.Model)
+		ch.Kind = strings.TrimSpace(ch.Kind)
+		ch.Voice = strings.TrimSpace(ch.Voice)
+		ch.Design = strings.TrimSpace(ch.Design)
+		ch.Style = strings.TrimSpace(ch.Style)
+		ch.Tags = strings.TrimSpace(ch.Tags)
+		if ch.Provider == "" {
+			continue // 未配置 = 该能力不可用
+		}
+		if ch.Kind == "" {
+			ch.Kind = kindChatAudio
+		}
+		if ch.Kind != kindChatAudio {
+			return fmt.Errorf("%s.kind=%q 不认识（当前支持 %s）", name, ch.Kind, kindChatAudio)
+		}
+		if ch.Model == "" {
+			return fmt.Errorf("%s.model 不可为空（配置了 provider 就要写明音频模型名）", name)
+		}
+	}
+	return nil
+}
+
+// audioProvider 解析一路语音能力引用的 provider（D179）。
+// 返回 (nil, 原因) = 该能力不可用；原因面向用户，可直接展示。
+func (c *fileConfig) audioProvider(which string) (*providerConfig, string) {
+	var ch *audioChannel
+	switch which {
+	case "asr":
+		ch = &c.Audio.ASR
+	case "tts":
+		ch = &c.Audio.TTS
+	default:
+		return nil, fmt.Sprintf("未知的语音能力 %q", which)
+	}
+	if ch.Provider == "" {
+		return nil, "未配置语音服务"
+	}
+	p := c.Model.byName(ch.Provider)
+	if p == nil {
+		return nil, fmt.Sprintf("语音服务引用的 provider %q 不在 model.providers 内", ch.Provider)
+	}
+	return p, ""
+}
+
 // uiConfig UI 形态：repl | tui | gui（D33/D43；模板与键缺省为 tui，repl 为测试/e2e
 // 后端）+ GUI 全局呼出快捷键 + 主题档 + 缩放/字号/窗口尺寸三旋钮（D90，全热生效）
 // + 欢迎引导标记（D141）。
@@ -559,7 +653,8 @@ const defaultConfig = `{
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "prompts": { "modules": {}, "persona": [] },
-  "input": { "asr": "whisper-api", "mic": true },
+  "input": { "language": "auto" },
+  "audio": { "asr": {}, "tts": {} },
   "output": { "tts": false, "notify": true },
   "mcpServers": {},
   "plugins": {},

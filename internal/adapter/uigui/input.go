@@ -73,17 +73,24 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	pst.Pop()
 	u.record(pill.Add(image.Pt(0, absY)), rowH/2, pillBg, clipRect)
 
-	// 右圆钮（恒在，几何不随状态变、动画期只平移，D49）：idle = 发送、生成中 = 停止
-	// ——确认态不特判（D86：工具确认发生在 Turn 内，停止键照常可点，取消整轮语义
-	// 不变、迟到应答缓冲兜底；/rm 等非生成中确认遇 idle 为发送键，submitEditor 拦截）。
-	fill, stop, cl := brandColor, false, &u.sendBtn
-	if u.generating.Load() {
-		fill, stop, cl = textError, true, &u.stopBtn
+	// 右圆钮（恒在，几何不随状态变、动画期只平移，D49）：有输入 = 发送、空输入 =
+	// 语音输入（D179）、生成中 = 停止——确认态不特判（D86：工具确认发生在 Turn 内，
+	// 停止键照常可点，取消整轮语义不变、迟到应答缓冲兜底；/rm 等非生成中确认遇
+	// 空输入为语音键，toggleVoice 在确认态不触发）。
+	fill, icon, cl := brandColor, iconSend, &u.sendBtn
+	switch {
+	case u.generating.Load():
+		fill, icon, cl = textError, iconStop, &u.stopBtn
+	case u.micButton():
+		icon = iconMic
+		if u.recording.Load() {
+			fill, icon = textError, iconStop
+		}
 	}
 	off := op.Offset(send.Min).Push(gtx.Ops)
 	gtxS := gtx
 	gtxS.Constraints = layout.Exact(send.Size())
-	actionCircle(gtxS, cl, fill, stop)
+	actionCircle(gtxS, cl, fill, icon)
 	off.Pop()
 	u.record(send.Add(image.Pt(0, absY)), rowH/2, fill, clipRect)
 
@@ -130,7 +137,14 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			}
 		} else if u.sendBtn.Hovered() && !u.generating.Load() &&
 			u.overInputBtn(true, cur) {
-			u.hoverTip(gtx, absY, "发送", true)
+			txt := "发送"
+			if u.micButton() {
+				txt = "语音输入"
+				if u.recording.Load() {
+					txt = "停止录音"
+				}
+			}
+			u.hoverTip(gtx, absY, txt, true)
 			shown = true
 		}
 		if u.generating.Load() && u.stopBtn.Hovered() &&

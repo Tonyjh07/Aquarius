@@ -29,6 +29,8 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"compact"}, Desc: "触发上下文压缩（把较早的往来压成一条摘要）"},
 	{Names: []string{"summary"}, Usage: "<id> [文本]",
 		Desc: "在节点之前插入摘要（成为新的水位）：带文本 = 手写；不带 = 让当前模型总结该节点之上的历史"},
+	{Names: []string{"mic"}, Usage: "[秒数]",
+		Desc: "录一段语音，转成文字后作为输入发送（缺省 60 秒，最长 4 分钟）"},
 	{Names: []string{"permission"}, Usage: "[等级]", Desc: "查看/切换权限等级（read-only/strict/permissive/full-access）"},
 	{Names: []string{"memory"}, Usage: "[会话id]", Desc: "用系统编辑器打开记忆文件（缺省为全局 memories.md）"},
 	{Names: []string{"usage"}, Desc: "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）"},

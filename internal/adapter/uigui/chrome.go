@@ -171,16 +171,26 @@ func (u *UI) updateLogo(gtx layout.Context) {
 	}
 }
 
+// actionIcon 右侧主操作圆钮的图标（D49/§15.2）：发送 / 停止 / 语音输入。
+type actionIcon int
+
+const (
+	iconSend actionIcon = iota // 向上箭头
+	iconStop                   // 圆角方块
+	iconMic                    // 麦克风
+)
+
 // actionCircle 右侧主操作圆钮（D49/§15.2：⌀ = 行高，三态恒在同一位置、几何不随状态变）：
-// idle = 发送（向上箭头）、生成中 = 停止（方块图标）、确认态 = 置灰（cl=nil 不可点）。
+// 空输入 = 语音键（麦克风）、有输入 = 发送（向上箭头）、生成中 = 停止（方块图标）。
 // 坐标 = 当前原点（调用方偏移到 send 位）；Gio Clickable 在原点登记面积（无居中），
 // 走同一 updateClicks 路径。
-func actionCircle(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, stop bool) layout.Dimensions {
+func actionCircle(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, icon actionIcon) layout.Dimensions {
 	d := gtx.Dp(inputRowDp)
 	draw := func(gtx layout.Context) layout.Dimensions {
 		box := image.Rectangle{Max: image.Pt(d, d)}
 		paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, d/2).Op(gtx.Ops))
-		if stop {
+		switch icon {
+		case iconStop:
 			// 停止 = 圆角方块。
 			s := d / 3
 			r := image.Rectangle{
@@ -188,24 +198,60 @@ func actionCircle(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, st
 				Max: image.Pt((d+s)/2, (d+s)/2),
 			}
 			paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(r, gtx.Dp(2)).Op(gtx.Ops))
-			return layout.Dimensions{Size: image.Pt(d, d)}
+		case iconMic:
+			drawMic(gtx, d)
+		default:
+			// 向上箭头 = 竖杆 + 人字头（白色描边）。
+			cx, cy := float32(d)/2, float32(d)/2
+			a := float32(d) * 0.18
+			var p clip.Path
+			p.Begin(gtx.Ops)
+			p.MoveTo(f32.Pt(cx, cy+a)) // 竖杆
+			p.LineTo(f32.Pt(cx, cy-a))
+			p.MoveTo(f32.Pt(cx-a, cy)) // 人字头
+			p.LineTo(f32.Pt(cx, cy-a))
+			p.LineTo(f32.Pt(cx+a, cy))
+			paint.FillShape(gtx.Ops, whiteText,
+				clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
 		}
-		// 向上箭头 = 竖杆 + 人字头（白色描边）。
-		cx, cy := float32(d)/2, float32(d)/2
-		a := float32(d) * 0.18
-		var p clip.Path
-		p.Begin(gtx.Ops)
-		p.MoveTo(f32.Pt(cx, cy+a)) // 竖杆
-		p.LineTo(f32.Pt(cx, cy-a))
-		p.MoveTo(f32.Pt(cx-a, cy)) // 人字头
-		p.LineTo(f32.Pt(cx, cy-a))
-		p.LineTo(f32.Pt(cx+a, cy))
-		paint.FillShape(gtx.Ops, whiteText,
-			clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
 		return layout.Dimensions{Size: image.Pt(d, d)}
 	}
 	if cl == nil {
 		return draw(gtx)
 	}
 	return cl.Layout(gtx, draw)
+}
+
+// drawMic 麦克风图标：胶囊头 + U 形托架 + 细杆底座。认得出是麦克风靠的是托架那道
+// 弧——只有「头 + 棍」会读成棒棒糖/人形。尺寸随圆钮直径缩放。
+func drawMic(gtx layout.Context, d int) {
+	fd := float32(d)
+	cx := fd / 2
+
+	// 头：竖胶囊（宽 0.19d、高 0.37d）。
+	w := fd * 0.19
+	top, bottom := fd*0.18, fd*0.55
+	head := image.Rect(int(cx-w/2+0.5), int(top+0.5), int(cx+w/2+0.5), int(bottom+0.5))
+	paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(head, int(w/2)).Op(gtx.Ops))
+
+	// 托架/细杆/底座：白色描边，线宽随直径走（小尺寸下不低于 2px）。
+	stroke := float32(gtx.Dp(2))
+	if s := fd * 0.055; s > stroke {
+		stroke = s
+	}
+	half := fd * 0.175 // 托架半宽（包住头）
+	arcTop := fd * 0.44
+	arcBottom := fd * 0.70
+	baseY := fd * 0.845
+
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(f32.Pt(cx-half, arcTop)) // 左臂
+	p.QuadTo(f32.Pt(cx-half, arcBottom), f32.Pt(cx, arcBottom))
+	p.QuadTo(f32.Pt(cx+half, arcBottom), f32.Pt(cx+half, arcTop)) // 右臂
+	p.MoveTo(f32.Pt(cx, arcBottom))                               // 竖杆
+	p.LineTo(f32.Pt(cx, baseY))
+	p.MoveTo(f32.Pt(cx-fd*0.115, baseY)) // 底座
+	p.LineTo(f32.Pt(cx+fd*0.115, baseY))
+	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: stroke}.Op())
 }

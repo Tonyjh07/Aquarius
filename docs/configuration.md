@@ -210,9 +210,8 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 
 ### 暂未消费的键（模板自带，随里程碑启用）
 
-`audio.tts.style` / `audio.tts.tags` 之外的 TUI 语音入口（拖拽/粘贴/语音按钮）。
 未知键解析时忽略，**写回时原样保留**（provider 条目内的无关键同样保留——编辑器按
-原名合并，Q10 口径）。
+原名合并，Q10 口径）。GUI 语音键与 `/mic` 已可用；TUI 尚无语音入口（用 `/mic`）。
 
 ## 密钥规则（逐 provider、逐把钥匙，D35/D151/D173）
 

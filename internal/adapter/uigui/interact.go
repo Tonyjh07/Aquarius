@@ -116,7 +116,11 @@ func (u *UI) updateClicks(gtx layout.Context) {
 		return
 	}
 	if u.sendBtn.Clicked(gtx) {
-		u.submitEditor()
+		if u.micButton() {
+			u.toggleVoice() // 空输入：右钮是语音键（D179）
+		} else {
+			u.submitEditor()
+		}
 	}
 	if u.stopBtn.Clicked(gtx) {
 		u.interruptNow() // 生成中发送键变停止键（§15.2）
