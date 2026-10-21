@@ -23,6 +23,18 @@ func (w *wiring) voiceInput(ctx context.Context) (string, error) {
 	return text, err
 }
 
+// voiceSlot 界面语音键槽（D179）：语音识别没装配就给 nil。
+//
+// 摄取器本身总会建出来（`/mic` 靠它报因，入口不该静默消失），所以「可有语音键」
+// 不能拿摄取器是否为空来判——那样麦克风键会在一台根本没配语音的机器上照样亮着，
+// 按下去只会得到「语音识别未配置」。界面据此保持发送键。
+func (w *wiring) voiceSlot() func(context.Context) (string, error) {
+	if w.asr == nil {
+		return nil
+	}
+	return w.voiceInput
+}
+
 // previewVoice 设置窗「语音」页试听（D179）：用表单草稿的音色/描述/风格合成一句并
 // 播放；服务与模型来自启动装配（这两项保存后重启才生效，与「模型服务」页同口径）。
 func (w *wiring) previewVoice(req port.SpeechRequest) error {
@@ -124,7 +136,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Secrets:             &secretsAdmin{w: w},                                                                                                                                            // S9-6b/D161：密钥库管理面（secretsBin 由 bootstrap 填，开窗时已就绪）
 			PreviewPrompts:      w.previewPrompts,                                                                                                                                               // S7/D144：人格组合预览（当前表单 → 最终 system 文本）
 			ApplyPromptTemplate: w.applyPromptTemplate,                                                                                                                                          // D154：人格模板窄写回（遮罩「默认模板」页签保存）
-			Voice:               w.voiceInput,                                                                                                                                                   // D179：空输入时右钮 = 录音键（录→转写→回填，不自动发送）
+			Voice:               w.voiceSlot(),                                                                                                                                                  // D179：空输入时右钮 = 录音键（录→转写→回填，不自动发送）；识别未配置则为 nil（右钮保持发送）
 			PreviewVoice:        w.previewVoice,                                                                                                                                                 // D179：设置窗「语音」页试听
 			Blobs:               w.blobs,                                                                                                                                                        // D187：Ctrl+V 贴图直入附件库（nil = 禁用该入口）
 		})

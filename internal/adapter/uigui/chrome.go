@@ -222,36 +222,86 @@ func actionCircle(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, ic
 	return cl.Layout(gtx, draw)
 }
 
+// micKappa 四分之一圆的三次贝塞尔逼近系数（圆的标准常量 0.5523）。
+const micKappa = 0.5523
+
+// micGeom 麦克风图标的几何（px）：drawMic 与测试共用这一份推导——「间隙处处相等」
+// 是要拿数证明的性质，不能只活在绘制代码里。
+type micGeom struct {
+	cx, w               float32 // 圆心 x、胶囊头宽
+	headTop, headBottom float32
+	rIn                 float32 // 头圆角半径 = 头半宽
+	capCy               float32 // 头下圆角圆心 y（托架底部半圆与它同心）
+	gap                 float32 // 头表面到托架描边的净间隙
+	half                float32 // 托架中心线半宽
+	arcBottom           float32 // 托架最底（中心线）
+	armTop              float32
+	baseY, baseHalf     float32
+	stroke              float32
+}
+
+// micGeomOf 按画布直径 d 与描边宽 stroke 推导图标几何。
+func micGeomOf(d int, stroke float32) micGeom {
+	fd := float32(d)
+	g := micGeom{
+		cx:       fd / 2,
+		w:        fd * 0.19,
+		headTop:  fd * 0.18,
+		baseY:    fd * 0.845,
+		baseHalf: fd * 0.115,
+		stroke:   stroke,
+	}
+	g.headBottom = fd * 0.55
+	g.rIn = g.w / 2
+	g.capCy = g.headBottom - g.rIn
+	g.gap = fd * 0.0525
+	// 托架中心线半宽 = 头半宽 + 净间隙 + 半个描边（描边向两侧各扩一半）。
+	g.half = g.rIn + g.gap + stroke/2
+	g.arcBottom = g.capCy + g.half
+	// 臂顶 0.39d——高出头下圆角圆心一截，托架才像「托」住头而不是只兜住下缘。
+	g.armTop = min(fd*0.39, g.capCy-fd*0.001)
+	return g
+}
+
+// sideGap 托架臂内缘到胶囊头侧边的净距离。
+func (g micGeom) sideGap() float32 { return g.half - g.rIn - g.stroke/2 }
+
+// bottomGap 托架弧内缘到胶囊头下缘的净距离。
+func (g micGeom) bottomGap() float32 { return g.arcBottom - g.stroke/2 - g.headBottom }
+
 // drawMic 麦克风图标：胶囊头 + U 形托架 + 细杆底座。认得出是麦克风靠的是托架那道
 // 弧——只有「头 + 棍」会读成棒棒糖/人形。尺寸随圆钮直径缩放。
+//
+// 托架 = 头下半轮廓的**等距外扩**：两臂与头的侧边平行、底部半圆与头下圆角同心，
+// 于是头与托架描边的空隙在侧面和底部一样宽（观感上是一圈匀称的留白）。这比按
+// 矩形倒角画 U 更耐看：倒角的转角半径与头圆角对不上时，底部会挤、侧面会松。
 func drawMic(gtx layout.Context, d int) {
-	fd := float32(d)
-	cx := fd / 2
-
-	// 头：竖胶囊（宽 0.19d、高 0.37d）。
-	w := fd * 0.19
-	top, bottom := fd*0.18, fd*0.55
-	head := image.Rect(int(cx-w/2+0.5), int(top+0.5), int(cx+w/2+0.5), int(bottom+0.5))
-	paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(head, int(w/2)).Op(gtx.Ops))
-
-	// 托架/细杆/底座：白色描边，线宽随直径走（小尺寸下不低于 2px）。
+	// 线宽随直径走（小尺寸下不低于 2px）。
 	stroke := float32(gtx.Dp(2))
-	if s := fd * 0.055; s > stroke {
+	if s := float32(d) * 0.055; s > stroke {
 		stroke = s
 	}
-	half := fd * 0.175 // 托架半宽（包住头）
-	arcTop := fd * 0.44
-	arcBottom := fd * 0.70
-	baseY := fd * 0.845
+	g := micGeomOf(d, stroke)
+
+	head := image.Rect(int(g.cx-g.w/2+0.5), int(g.headTop+0.5), int(g.cx+g.w/2+0.5), int(g.headBottom+0.5))
+	paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(head, int(g.w/2)).Op(gtx.Ops))
 
 	var p clip.Path
 	p.Begin(gtx.Ops)
-	p.MoveTo(f32.Pt(cx-half, arcTop)) // 左臂
-	p.QuadTo(f32.Pt(cx-half, arcBottom), f32.Pt(cx, arcBottom))
-	p.QuadTo(f32.Pt(cx+half, arcBottom), f32.Pt(cx+half, arcTop)) // 右臂
-	p.MoveTo(f32.Pt(cx, arcBottom))                               // 竖杆
-	p.LineTo(f32.Pt(cx, baseY))
-	p.MoveTo(f32.Pt(cx-fd*0.115, baseY)) // 底座
-	p.LineTo(f32.Pt(cx+fd*0.115, baseY))
-	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: stroke}.Op())
+	p.MoveTo(f32.Pt(g.cx-g.half, g.armTop)) // 左臂
+	p.LineTo(f32.Pt(g.cx-g.half, g.capCy))
+	p.CubeTo( // 左下四分之一圆（与头下圆角同心）
+		f32.Pt(g.cx-g.half, g.capCy+micKappa*g.half),
+		f32.Pt(g.cx-micKappa*g.half, g.arcBottom),
+		f32.Pt(g.cx, g.arcBottom))
+	p.CubeTo( // 右下四分之一圆
+		f32.Pt(g.cx+micKappa*g.half, g.arcBottom),
+		f32.Pt(g.cx+g.half, g.capCy+micKappa*g.half),
+		f32.Pt(g.cx+g.half, g.capCy))
+	p.LineTo(f32.Pt(g.cx+g.half, g.armTop)) // 右臂
+	p.MoveTo(f32.Pt(g.cx, g.arcBottom))     // 竖杆
+	p.LineTo(f32.Pt(g.cx, g.baseY))
+	p.MoveTo(f32.Pt(g.cx-g.baseHalf, g.baseY)) // 底座
+	p.LineTo(f32.Pt(g.cx+g.baseHalf, g.baseY))
+	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: g.stroke}.Op())
 }
