@@ -6,11 +6,13 @@ package uigui
 import (
 	"context"
 	"errors"
+	"image"
 	"testing"
 	"time"
 
 	"gioui.org/io/input"
 	"gioui.org/io/key"
+	"gioui.org/layout"
 	"gioui.org/unit"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -255,6 +257,46 @@ func TestAskPanelPxClamp(t *testing.T) {
 	u.m.ask.mini = true
 	if got := u.askPanelPx(gtx); got != gtx.Dp(inputRowDp) {
 		t.Fatalf("最小化高 = %d, want 单行 %d", got, gtx.Dp(inputRowDp))
+	}
+}
+
+// TestAskBodyScrollsVertically 中部滚动区必须是竖向（layout.List 零值轴是横向）：
+// 横向时题干与各选项并排成列，右侧选项被面板裁掉、选中行淡底撑满整列高度。
+func TestAskBodyScrollsVertically(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.startAsk(askReq(), make(chan port.AskAnswer, 1))
+	if got := m.u.askList.Axis; got != layout.Vertical {
+		t.Fatalf("提问面板滚动轴 = %v, want 竖向（layout.List 零值是横向）", got)
+	}
+}
+
+// TestAskBodyLaysRowsOutVertically 中部滚动区把各行向下堆：列表高 = 各行高之和（竖向），
+// 而不是「最高一行」（横轴把每行当成一列，列表高 = 列里最高的元素）。
+func TestAskBodyLaysRowsOutVertically(t *testing.T) {
+	u := newFrameUI()
+	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
+	a := u.m.ask
+	q := a.req.Questions[a.cur]
+
+	const w = 400
+	rowGtx := func() layout.Context {
+		gtx, _ := frameGtxSize(input.Source{}, w, 300)
+		gtx.Constraints = layout.Constraints{Max: image.Pt(w, 300)} // 只给上限，量自然高
+		return gtx
+	}
+	total := 0
+	total += u.askQuestionRow(rowGtx(), q).Size.Y
+	for i := range q.Options {
+		total += u.askOptionRow(rowGtx(), i, q.Options[i]).Size.Y
+	}
+	total += u.askFreeRow(rowGtx()).Size.Y
+
+	dim := u.askBody(rowGtx())
+	if dim.Size.X != w {
+		t.Fatalf("列表宽 = %d, want %d（每行占满面板宽）", dim.Size.X, w)
+	}
+	if dim.Size.Y != total {
+		t.Fatalf("列表高 = %d，各行高之和 = %d：行被并排当成列（横轴）而非向下堆", dim.Size.Y, total)
 	}
 }
 

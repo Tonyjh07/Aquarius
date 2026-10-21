@@ -164,16 +164,21 @@ func (u *UI) askBody(gtx layout.Context) layout.Dimensions {
 	return u.askList.Layout(gtx, n, func(gtx layout.Context, i int) layout.Dimensions {
 		switch {
 		case i == 0:
-			l := material.Body2(u.th, sanitizeControl(q.Question))
-			l.TextSize = unit.Sp(15)
-			l.Color = u.th.Palette.Fg
-			return l.Layout(gtx)
+			return u.askQuestionRow(gtx, q)
 		case i <= len(q.Options):
 			return u.askOptionRow(gtx, i-1, q.Options[i-1])
 		default:
 			return u.askFreeRow(gtx)
 		}
 	})
+}
+
+// askQuestionRow 题干行（列表第 0 行）：多行正文，宽度由列表给定。
+func (u *UI) askQuestionRow(gtx layout.Context, q port.AskQuestion) layout.Dimensions {
+	l := material.Body2(u.th, sanitizeControl(q.Question))
+	l.TextSize = unit.Sp(15)
+	l.Color = u.th.Palette.Fg
+	return l.Layout(gtx)
 }
 
 // askOptionRow 选项行：[○/☑] label（+ 说明小字）。键盘游标（↑↓）落在这行时整行淡底。

@@ -87,6 +87,10 @@ func (m *model) startAsk(req port.AskRequest, reply chan port.AskAnswer) {
 		cursor: -1,
 	}
 	m.u.askEd.SetText("")
+	// layout.List 的零值轴是**横向**（`layout.Axis` 的零值 = Horizontal），不显式设成竖向的话
+	// 题干与各选项会被排成一列列并排：题干在左、选项挤到右侧被面板裁掉，选中行淡底还会
+	// 撑满整列高度。与 history.go / welcome.go 的滚动区同一处口径。
+	m.u.askList.Axis = layout.Vertical
 	m.u.askList.Position = layout.Position{}
 	if m.u.collapsed || m.u.expandAn.active {
 		m.u.beginExpand() // 收起成球时来提问：先把窗口展开（否则面板无处显示、问题永远没人答）
