@@ -310,6 +310,14 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   （本段的「明确报因」口径）。能力位可由用户**手动发起探测**（D174）：探测只写回判定明确的
   几位，「无结论」不动已有声明。视觉这一项靠**一张纯色图 + 让它说出颜色**判定——说对了 =
   真解码了图；说成别的颜色、或明说看不到 = 不支持。
+- **一条消息可带多个附件**（D186）：`RawInput.Attachments` 是列表，`File` / `Blob` 保留为
+  单附件简写；摄取逐个进行，**允许部分成功**（失败项进 `Note`，全失败才报错）。
+  单条消息 ≤ 8 个附件；图片单文件 ≤ 20MB（与 `file_read` 同口径）。
+- **图片入口**（D187）：GUI 支持 `Ctrl+V` 收剪贴板位图（优先 `PNG` 格式，退 `CF_DIB`/`CF_DIBV5`
+  自行转 PNG）、拖拽走 `WM_DROPFILES`、文件框多选；已入库的字节以 `Attachment{Blob}` 暂存，
+  不再从文件系统读第二遍。暂存 chip 对图片出 20dp 缩略图（解码前按像素预算门控）。
+- **编辑消息可增删附件**（D188）：`/edit` 的 `--attach` / `--drop` / `--drop-all` 走同一条
+  摄取管线；删掉的附件只从新节点移除，附件库字节按引用集合 GC。
 
 ### 4.3 内置工具（全部经 `port.Tool` 契约，与三方插件同权）
 
@@ -328,6 +336,7 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
 | `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
 | `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（抓客户区，**含被遮挡、非顶层窗口**；活动菜单/下拉会合进主图；最小化窗口取决于它是否仍自绘，取不到明确报因）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
+| `ask_user` | 向用户提问（D184）：1–4 题、每题 0–9 个选项（可多选），UI 自动追加「自己输入」项；答案随工具结果回填。**不吃默认工具超时**（用户思考不该超时），无人值守时立即回填「用户不在」 | Safe |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -351,6 +360,14 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   - 非 Windows 平台：适配器返回「本平台不支持」的明确错误（随 linuxgate 编译，不新增构建标签外的桩）。
 - 截图工具需要 `Deps.Vision`：链上没有视觉能力时**照常注册**（工具清单与设置窗「工具与 MCP」页保持稳定，
   也与 `file_read` 同口径），但执行时明确报因——不静默截一张没人能看的图。
+- **提问工具（D184）**：`ask_user` 走 `port.Asker`，与 `Confirmer` 并列——两者都是「内核反向问人」，
+  但确认面答的是「准不准做」（布尔 + 原因），提问面答的是「选哪个」（多题 × 多选 × 自由文本），
+  语义不重叠，故不合并成一个端口。
+  - **两个退出面**：`Esc` = 中断本轮（与点停止生成同路径取消 ctx），「忽略」= 放弃全部
+    （`OK=false` + 明确文案，模型继续但不得把猜的当用户说的）。
+  - **无人值守**（D185）下立即回填「用户不在」，不阻塞轮次；`Interactive()` 能力让
+    `toolrun` 不套默认超时。
+  - 问答落**工具分片**（调用与结果同片，D95），不新开节点、不新增领域概念。
 
 ### 4.4 记忆文档
 
@@ -468,6 +485,11 @@ type FileTarget interface {
     Target(ctx context.Context, call tool.Call) (path string, op perm.Op, ok bool)
 }
 
+// Interactive 可选能力（D184）：工具需要等人应答（如 ask_user）。
+// ToolRunner 对声明者不套默认超时（limits.tool_timeout_sec），仍受 ctx 与显式
+// timeout_sec 约束——用户思考两分钟不该被当成工具超时。
+type Interactive interface{ Interactive() bool }
+
 // 会话上下文：Agent.Run 执行工具时注入当前会话 ID（值拷贝、只读），
 // 供 memory_* 的 session 作用域等定位资源；不暴露会话树对象（插件不得直接操作树）。
 func WithSessionID(ctx context.Context, id conversation.ID) context.Context
@@ -555,9 +577,13 @@ type Synthesizer interface { // TTS：云 TTS（厂商适配器）/ 系统朗读
 type RawInput struct {
     Kind string // "text" | "file" | "clipboard" | "mic"
     Text string
-    File string
-    Blob *BlobRef // clipboard 图片 / mic 音频（已先入附件库）
+    File string      // 单文件简写（等价于 Attachments 只带一项）
+    Blob *BlobRef    // clipboard 图片 / mic 音频（已先入附件库）
+    Attachments []Attachment // 多附件（D186）：逐个摄取，允许部分成功
 }
+
+// Attachment 一项附件：Path（待摄取的文件路径）与 Blob（已入库字节）二选一。
+type Attachment struct{ Path string; Blob *BlobRef }
 
 type IngestReport struct {
     Parts []conversation.Part
@@ -641,6 +667,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `Tool` | memory_*、file_*、term_*、job_*、think | **MCP server** | fake tool |
 | `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
 | `Confirmer` | TUI 确认 / `--yes` | — | 自动应答 |
+| `Asker` | uigui 提问面板 / uitui 编号选单 / repl 编号选单 | — | 脚本答案 |
 | `ConversationStore` | storejson（一树一 JSON + .bak） | — | in-memory |
 | `MemoryStore` | memoryfs（markdown） | MCP resources / Tier-1 | in-memory |
 | `AttachmentStore` | blobfs（内容寻址） | — | in-memory |
@@ -678,6 +705,42 @@ type Image struct{ Data []byte; Width, Height int }
 - `Rect` 复用平台无关的屏幕矩形（`Left, Top, Right, Bottom`，物理 px，含 Min 不含 Max）。
 - 不做 DPI 缩放：调用方按物理像素拿图，需要缩小时自己缩（`Capture` 只负责「抓得到」）。
 - 非 Windows 实现三个方法都返回 `ErrCaptureUnsupported`，由工具层翻成给模型的可行动提示。
+
+### 5.12 `ask.go` —— 提问端口（D184）
+
+```go
+type AskOption struct{ Label, Description string }
+
+type AskQuestion struct {
+    Header   string      // 短标题（页签与进度条用）
+    Question string      // 题干
+    Options  []AskOption // 0–9 项；0 项 = 纯自由输入
+    Multiple bool        // 多选
+}
+
+type AskRequest struct{ Questions []AskQuestion } // 1–4 题
+
+// Answers 与 Questions 等长，逐题给选中项（自由输入的原样成一个元素）；未答 = 空切片。
+type AskAnswer struct {
+    Answers   [][]string
+    Dismissed bool // 「忽略」= 放弃全部（不是跳过本题）
+}
+
+type Asker interface {
+    Ask(ctx context.Context, req AskRequest) (AskAnswer, error)
+}
+```
+
+- **与 `Confirmer` 分开**（§5.2）：确认答「准不准做」（布尔 + 原因），提问答「选哪个」
+  （多题 × 多选 × 自由文本），合并会把两套语义挤进一个结构体。
+- **降级实现**：`uitui` / `repl` 逐题打印编号选单、读一行（数字 = 选项、逗号/空格分隔 =
+  多选、其他文本 = 自由答案、空行 = 未答、`/dismiss` = 放弃全部）；命令行没有 Esc 输入通道，
+  中断仍靠 Ctrl+C 取消本轮。
+- **「自己输入」项由 UI 追加**，不进 `AskQuestion.Options`——模型列的选项里不该再有一个自由项。
+- **无人值守**：`decorate.UnattendedAsker`（D185）在开关打开时立即返回
+  `AskAnswer{Dismissed:true}`，不调用内层。
+- **取消**：`ctx` 取消（Esc / 停止键 / Ctrl+C）= `Ask` 返回 `ctx.Err`，`ToolRunner` 按装配级
+  故障中止本轮（§10），不是「放弃全部」。
 
 ---
 
@@ -927,6 +990,13 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
       Outcome=done 的 assistant 提交文本 Deliver；app 与 UI 适配器均不感知输出器。
 ```
 
+- **多附件（D186）**：一次输入可带多个附件（`RawInput.Attachments`，`File` 为单附件简写）。
+  `Ingestor` 逐个摄取、合并分片，**允许部分成功**：失败项写进 `IngestReport.Note`
+  （文件名 + 原因）随消息回执给用户，只有全部失败才返回 error——一个坏文件不该废掉整条消息。
+  单条消息 ≤ 8 个附件；图片单文件 ≤ 20MB。
+- **已入库附件（D187）**：粘贴的图片以 `Attachment{Blob}` 进同一条路——字节已入库，不再从
+  文件系统读第二遍；与路径附件混排时按列表顺序生成分片。
+
 **语音输入（D179）**：`mic` 摄取 = 采集器产出 WAV（16kHz 单声道 16bit，默认上限 60s）→ 入附件库（`PartAudio`
 的 BlobRef 来源）→ `Transcriber.Transcribe` 拿文本 → 文本作为**唯一的 Part** 入树（音频本身不随消息发给模型：
 模型只见转写文本，§4.2）。转写失败时整条输入失败并报因，不静默发一条空消息。
@@ -953,8 +1023,9 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/title [文本]` | 查看 / 改写会话标题（会话元数据，即时落盘） |
 | `/compact` | 触发上下文压缩：生成 system 摘要节点，水位上历史不再回传（§7.1 三轨之一） |
 | `/permission [等级]` | 查看 / 切换权限等级（read-only/strict/permissive/full-access，写回 config） |
+| `/unattended [on\|off]` | 查看 / 切换**无人值守**（D185）：开关写回 config；开启期间模型发起的越界确认一律当场拒绝并说明，轮次不阻塞。用户亲手输入的命令确认（`/rm` 等）照常询问 |
+| `/edit <id> [--keep\|--copy] [--part N] [--attach <路径>] [--drop <序号>] [--drop-all] <文本>` | Revise：默认 **Fresh**（新分支重新开始）；`--keep` = Carry（后续历史边转移）；`--copy` = Clone（后续历史深拷贝为独立副本，D96/D97）；`--part N` 只替换第 N 个正文分片；**附件增删**（D188）：`--attach` 可重复（走摄取管线追加到末尾）、`--drop` 按附件分片 0 基序移除、`--drop-all` 全删，有附件操作时文本可空（只改附件）；修订后**清屏回放**（D92：Head 移动类命令统一口径）；修订**用户消息**（Fresh）即重新生成回答（D93：编辑即重发）；Carry/Clone 与 assistant/system 修订一律不触发生成（D97） |
 | `/goto <id>` | Head 移到任意节点（分支导航）；**清屏 + 回放**新路径（D81，与 `/switch` 同口径） |
-| `/edit <id> [--keep\|--copy] <文本>` | Revise：默认 **Fresh**（新分支重新开始）；`--keep` = Carry（后续历史边转移）；`--copy` = Clone（后续历史深拷贝为独立副本，D96/D97）；修订后**清屏回放**（D92：Head 移动类命令统一口径）；修订**用户消息**（Fresh）即重新生成回答（D93：编辑即重发）；Carry/Clone 与 assistant/system 修订一律不触发生成（D97） |
 | `/regen <id>` | 重新生成（D92）：id 可为用户或助手消息——取上游最近用户消息 Revise Fresh 开同父兄弟重发（旧回答保留为历史分支），清屏回放后跑 Turn；上游用户消息**尚无回答**时直接生成、不重复分叉（D93） |
 | `/respond <id>` | 生成响应（D165）：把 Head 移到所选节点后跑 Turn——发往 API 的即「水位 → 所选节点（含）」；产物为该节点的 assistant 子节点，已有子节点则**开新分支**（旧分支保留）。id 可为任意**非根**节点（含人格 / 系统 / 工具节点），根拒绝 |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
@@ -1314,6 +1385,15 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 - `/permission <level>` 切换**写回 config.json 的 `permissions.level`**（保留其余配置键、仅重排格式），
   立即生效、下次启动沿用；无参则展示当前等级 + 矩阵 + sandbox 路径。
+- **无人值守**（D185）：`permissions.unattended`（config，缺省 false；`/unattended [on|off]`
+  与主界面/托盘菜单勾选写回，热生效）。开启时 `Confirmer` 被 `decorate.Unattended` 装饰：
+  **矩阵外的确认不调内层、直接拒绝**并回传「没人能批准，别重试，在权限允许的范围内继续，
+  把需要批准的事列出来」——**权限边界不变**，只是不再阻塞等人。
+  - 只包**模型发起**的那条链（`toolrun`）；`/rm`、`/rmconv` 等用户亲手输入的命令确认、
+    插件能力授权照常询问——人就在键盘前。
+  - 与 `-yes`（自动允许）互斥优先：装了 `-yes` 就不装该装饰器，两者同时配置启动告警。
+  - `Asker` 同款（`decorate.UnattendedAsker`）：立即回填「用户不在」，提问不阻塞轮次。
+  - 开启期间状态行常驻「无人值守」标记，否则用户回来只看到一串「已拒绝」会当成 bug。
 - 输出安全：终端/任务输出视为**不可信数据**，只渲染不执行；工具结果统一截断（`tool_output_chars`）。
 - **信任级显式化**（D170）：注入内容的信任级由调用方在 `Injection.Trust` 显式声明
   （`TrustHost` = 宿主事实、`TrustExternal` = 外部内容），缺省 = 外部；**不再按 `Source` 前缀
@@ -1329,6 +1409,9 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 ## 10. 错误、取消与并发语义
 
 - **取消**：`ctx` 取消 ≡ `Stream.Close()`；工具执行同受 `ctx` 约束；Job 后台运行不受会话取消影响（`job_kill` 显式终止）。
+- **提问的取消与放弃是两件事**（D184）：提问面板里 `Esc` / 停止键 / Ctrl+C = **中断本轮**
+  （`Ask` 返回 `ctx.Err`，走上面的装配级故障口径）；「忽略」= **放弃全部**（`AskAnswer{Dismissed}`
+  → 工具回填 `OK=false`，Turn 继续）。前者是「我不想现在答」，后者是「别问了，你自己看着办」。
 - **取消提交**：已生成文本以 `Outcome: cancelled` 提交为节点（可 `/edit` 重试），不留半节点。
 - **工具失败**：`Result{OK:false, Err}` 照常回填给模型（让模型自行决定重试或改道），不中断 Turn。
 - **装配级故障**：`ToolRunner.Execute` 返回 `error`（确认器缺失/报错、父 ctx 取消）——
@@ -1402,8 +1485,8 @@ S6–S8 顺延。原则 = 先动 schema
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
 - **GUI 后续（M5/D43 之外，§15 预留）**：悬浮球本体转常规窗口形态（D43 只预留设计
   不实现；功能窗用独立常规窗已入正册 §15.7/D60）、多颜色主题预设（M5 只做品牌色
-  `#00AEEF` + 深/浅两版）、拖拽/粘贴入口（走同一 `UserInput.Raw` 入口，摄取管线已就绪；
-  语音按钮已在 D179 落地）
+  `#00AEEF` + 深/浅两版）；语音按钮已在 D179 落地，**拖拽/粘贴与多附件已排期**
+  （D186/D187，入口口径见 §15.2），转写气泡内嵌图片缩略图仍留在此处
 - **语音输入与播报（D27 移入）**：
   - **已落地（D179，2026-10-20）**：`Transcriber`/`Synthesizer` 适配器（首发 = MiMo 形状的 chat-completions
     音频：ASR `mimo-v2.5-asr`、TTS `mimo-v2.5-tts` 三模型）、麦克风采集（`waveIn`，Windows）、`/mic`
@@ -1604,7 +1687,10 @@ repl（测试/e2e 后端）与 tui 不动（二进制默认前端为 gui，D51�
 |---|---|
 | 展开按钮 | 输入栏变大（多行长文本编辑），可再收起 |
 | Enter / Shift+Enter | 发送 / 换行（展开态多行编辑同规则） |
-| 附件按钮 | 系统文件选择框（shell 线程 `GetOpenFileNameW`，D104）→ **暂存**（槽位变 chip：文件名 + × 取消、再选替换）→ Enter 随已输入文本一起提交 `UserInput.Raw{Kind:"file", File, Text}` → ingestfile 既有管线（文本并入首分片，D104②）；拖拽/粘贴/语音留 §14 |
+| 附件按钮 | 系统文件选择框（shell 线程 `GetOpenFileNameW` + `OFN_ALLOWMULTISELECT`，D104/D186）→ **暂存列表**（chip 横排、超宽换行：文件名 + × 取消；图片类 chip 出 20dp 缩略图，D187）→ Enter 随已输入文本一起提交 `UserInput.Raw{Kind:"file", Attachments, Text}` → ingestfile 既有管线（文本并入首分片，D104②）；单条 ≤ 8 个附件，失败项在回执里逐条列出 |
+| 粘贴图片（D187） | `Ctrl+V` 时先探剪贴板格式：有位图（`PNG` 优先，退 `CF_DIB`/`CF_DIBV5`）就收图入附件库并暂存；没有位图则按键原样交给编辑器做文本粘贴 |
+| 拖拽文件（D187） | `WM_DROPFILES` → 逐项取路径 → 一次落多个暂存（与多选同一条路）；目录不支持，明确提示 |
+| 提问面板（D184） | 模型调 `ask_user` 时输入栏**原地展开**（不遮转写区、不换确认态）：顶部 `1/3 个问题` + 可点跳题的进度段 + `⌄` 最小化；中部题干 + 选项行（单选 ○ / 多选 ☑ + label + description）+ 末项「自己输入」（点开就地变输入框）；底部左「忽略」右「上一步」/「下一步 · 提交」。键位 `1..9` 选项、`↑↓` 移动、`Enter` 确认并进下一题、`Ctrl+Enter` 下一步/提交、`Alt+←` 上一步；`Esc` = **中断本轮**（与停止生成同路径），「忽略」= **放弃全部**（不是跳过本题）。选项多时面板内部滚动，面板高 ≤ 窗高 70% |
 | 输入 `/` | 命令补全浮层（D103/S2b-1）：命令词法相（`/` 开头且无空格）实时前缀过滤，含 MCP 动态命令 `/mcp:*`；数据源 = `port.CommandCatalog` 只读清单（与 /help 同源，D103）；↑↓/Enter/点击选中、Esc 关闭；Enter 高亮名与已输入一致即直接提交、否则补全为 `/名 `；超 8 行截断提示 |
 | 生成中 | 发送键变**停止键**（`SetInterrupt` 取消本轮）；输入框保持可输入，新消息**排队**待本轮结束 |
 | Confirm（工具确认） | 输入栏**切换为确认态**（D86：胶囊内 = 原因编辑器 + [✗/✓/🔑] 三圆钮——**拒绝可带原因**回传模型（`port.ConfirmAnswer{Allow, Reason}`，空原因 = 干拒）、**🔑 = `/permission` 升一档 + 放行本次**（仅工具确认且当前档未到 full-access 时显示；写回 config，转写回显由 /permission 报告承载）、**Enter = 拒绝**（附原因编辑器文本）、排队行仍按 y/N 应答（headless/输入泵兼容）；悬停 tooltip 三钮齐备（D85 直采口径）；右圆保持停止键），非模态弹窗 |
