@@ -13,6 +13,9 @@ import (
 // 手写数字不是「有点旧」，而是**说谎**：常量改了、描述没跟，模型会按错的上限规划分页，
 // 然后拿到一段被截断的结果还以为读完了。这里把每个声明里出现的上限逐个对账——
 // 改了常量却忘了改描述（或反过来），测试就红。
+//
+// 边界值本身是否落进 schema 关键字，由 spec_schema_test.go 的
+// TestSpecBoundsMatchConstants 管；两条分工：这里查「人读到没」，那里查「机器读到没」。
 func TestSpecsDeriveLimitsFromConstants(t *testing.T) {
 	specs := map[string]string{}
 	for _, tl := range New(Deps{}) {
@@ -30,7 +33,19 @@ func TestSpecsDeriveLimitsFromConstants(t *testing.T) {
 		{"file_search", fmt.Sprint(maxSearchHits)},
 		{"job_logs", fmt.Sprint(defaultJobLogsTail)},
 		{"job_start", fmt.Sprint(maxJobTimeoutSec)},
+		{"job_wait", fmt.Sprint(maxJobTimeoutSec)},
 		{"sleep", fmt.Sprint(port.MaxCallTimeoutSec)},
+		{"watch_start", fmt.Sprint(watchMinIntervalSec)},
+		{"watch_start", fmt.Sprint(watchMaxIntervalSec)},
+		{"watch_start", fmt.Sprint(watchDefaultIntervalSec)},
+		{"watch_start", fmt.Sprint(watchDefaultMaxChecks)},
+		{"watch_start", fmt.Sprint(watchMaxChecksBound)},
+		{"watch_start", fmt.Sprint(watchDefaultDeadlineSec)},
+		{"watch_start", fmt.Sprint(watchMaxDeadlineSec)},
+		{"ask_user", fmt.Sprint(maxAskQuestions)},
+		{"ask_user", fmt.Sprint(maxAskOptions)},
+		{"ask_user", fmt.Sprint(maxAskHeaderChars)},
+		{"ask_user", fmt.Sprint(maxAskLabelChars)},
 	}
 	for _, tc := range cases {
 		text, ok := specs[tc.tool]

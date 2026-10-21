@@ -313,7 +313,7 @@ func toAnthropicTools(specs []tool.Spec) []anthropicTool {
 	for _, s := range specs {
 		params := s.Schema
 		if len(params) == 0 {
-			params = json.RawMessage(`{"type":"object","properties":{}}`)
+			params = tool.NoArgsSchema
 		}
 		out = append(out, anthropicTool{Name: s.Name, Description: s.Description, InputSchema: params})
 	}

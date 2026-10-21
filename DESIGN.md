@@ -346,6 +346,11 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 - 后台任务 = 独立进程 + 日志落盘 `~/.aquarius/jobs/<id>.log`；任务表 v1 内存态（§13-D8）。
 - 工具声明与回填一律英文（D36）；任何调用可带**保留参数** `timeout_sec`（整数 1–3600）逐次覆盖缺省超时，
   schema 自声明该参数的工具（`job_start`）不受保留参数约束（D38）。
+- **参数声明要能被机器和人都读到**（D191）：数值边界写进 schema 的 `minimum`/`maximum`（不只写在描述里），
+  描述里也保留可读的数字（模型多半读描述）；**无参工具统一用 `tool.NoArgsSchema`
+  （`{"type":"object","properties":{}}`）**——工具自声明、适配器空兜底、能力探针三处同形。
+  它**刻意不含 `additionalProperties:false`**：任何调用都可带保留参数 `timeout_sec`，
+  封闭对象会把一条合法调用写成 off-schema。
 - **模型面文案集中 + 门禁**（D168）：内核自产的英文文案（默认人格、注入围栏说明、工具回填空/失败态、
   后台任务报告、记忆块标题）集中在 `internal/app/model_text.go`、`toolbuiltin` 的 `Spec()` 就地声明，
   两处各有 ASCII 断言测试；`go vet` 的 printf 检查要求**含占位符的格式串留在 Go 里**，不抽成资源文件。

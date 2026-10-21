@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-21 @ fcf26c3 -->
+<!-- docs-sync: 2026-10-21 @ 0594885 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -205,6 +205,7 @@
 | D188 | 编辑消息可增删附件：`/edit --attach/--drop/--drop-all` + GUI 编辑态附件槽（§7.3/§15.2） | 生效 |
 | D189 | 任务收尾 = 完成事件：`JobManager.Wait` + `job_wait` 本轮取结果，删退避轮询（§4.3/§5.8/§7.1.1） | 生效 |
 | D190 | 模型声明的观察器：`watch_start`（command/file/http + 正则或变化检测 + 固定间隔 + 次数/期限）、命中才注入 `poller:`、`/watch` 查/停（§4.3/§5.9/§7.1.1） | 生效 |
+| D191 | 工具参数声明收口：数值边界进 `minimum`/`maximum`、无参工具统一 `tool.NoArgsSchema`（不含 `additionalProperties:false`，保留参数 `timeout_sec` 合法）、schema 门禁测试（§4.3） | 生效 |
 
 
 ## 记录
@@ -3979,7 +3980,33 @@
   在编辑态 = 全部标记删除 + 清空暂存。Esc 清 `editAtts`/`editDropped` 但保留 `stagedFiles`
   （挑过的文件不该被顺手扔掉）；投递缓冲满时编辑态照常收尾，暂存附件退回（挑文件比打字贵）。
 
+### D191 · 工具参数声明收口：边界进 schema、无参一个形状、门禁兜住（2026-10-21）
 
+> **驱动**：工具声明只有散文描述，参数约束全靠模型读句子猜——`sleep` 说「1-3600 秒」
+> 但 schema 里 `seconds` 没有 `minimum`/`maximum`；`file_read.limit` 的 2000 行上限只在
+> 描述里；`job_start.timeout_sec` 的上限是常量却从没进声明。与此同时「无参工具」的参数
+> 在两处直接写 `{}`、在适配器空兜底处又写成 `{"type":"object"}`，同一个事实长出四种
+> 形态，严格端点会因为缺 `properties` 挑剔，模型也读不出「这个工具没有参数」。
 
-
-
+- **口径一：数值边界进 schema**。所有有界数值参数同时写 `minimum`/`maximum`（整数用
+  JSON 整数常量，不写浮点），**并且**描述里保留可读数字——模型先读描述、端点校验 schema，
+  两处都要能回答「多大算合法」。`file_read.offset` ≥ 1、`file_list.offset` ≥ 0 这类
+  起点差异按各自的序号口径如实声明（行号 1 起、目录项 0 起）。
+- **口径二：`sleep` 不声明 `timeout_sec`**。它是 runner 的**调用级保留参数**
+  （`applyCallTimeout` + `specDeclaresTimeout`）：工具一旦自声明该参数，runner 就不再按
+  调用覆盖超时，300 秒的 sleep 会被缺省工具超时提前掐掉。所以做法是描述里说清
+  「要睡超过缺省超时就同一次调用里给 `timeout_sec`」，而不是声明它。
+- **口径三：无参工具一个形状**。`tool.NoArgsSchema = {"type":"object","properties":{}}`
+  是单一事实源：工具自声明、适配器对空 Schema 的兜底（chat/anthropic/responses/probe）、
+  能力探针全部走它。**刻意不含 `additionalProperties:false`**——任何调用都可带保留参数
+  `timeout_sec`，把对象声明成封闭的会把一条合法调用写成 off-schema（初版加了又撤回）。
+- **口径四：门禁分两层测**。`spec_schema_test.go` 测「机器读到没」：Schema 可解析、根是
+  object、每个参数有 `type` 与 `description`、`required` 只列已声明参数、无参工具必须
+  等于 `tool.NoArgsSchema`、边界值等于代码里的常量。`spec_limits_test.go` 测「人读到没」：
+  描述里仍写着可读的数字（常量改了描述没跟上会红）。
+- **不做**：`OutputSchema` 输出契约（收益有限，端点支持面参差）；MCP 工具名
+  `mcp:<server>:<tool>` 的冒号在严格端点上不可移植（要先改命名口径，单独评估）。
+- **落码（2026-10-21）**：`domain/tool/tool.go`（`NoArgsSchema`）、
+  `toolbuiltin/{sleep,file,job,watch,memory,screen}.go`、`adapter/llm/{wire,anthropic,
+  responses,probe}.go`、`app/tools.go`、`adapter/mcpgate/tools.go`、
+  `toolbuiltin/spec_schema_test.go`（新增）、`toolbuiltin/spec_limits_test.go`（扩表）。

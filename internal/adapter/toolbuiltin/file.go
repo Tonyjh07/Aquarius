@@ -77,15 +77,15 @@ func (t *fileRead) Spec() tool.Spec {
 			"its line number; the prefix is for orientation only and is not part of the file content. "+
 			"When a page ends before the file does, the last line says which offset to continue from. "+
 			"Reading never needs confirmation.", humanBytes(maxImageBytes), maxReadLines, maxReadPageChars),
-		Schema: jsonSchema(`{
+		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
 				"path": {"type": "string", "description": "absolute path"},
-				"offset": {"type": "integer", "description": "1-based line number to start from (default 1)"},
-				"limit": {"type": "integer", "description": "maximum number of lines to return (default 2000)"}
+				"offset": {"type": "integer", "minimum": 1, "description": "1-based line number to start from (default 1)"},
+				"limit": {"type": "integer", "minimum": 1, "maximum": %d, "description": "maximum number of lines to return (default %d)"}
 			},
 			"required": ["path"]
-		}`),
+		}`, maxReadLines, maxReadLines)),
 		Risk: tool.Safe,
 	}
 }
@@ -326,15 +326,15 @@ func (t *fileList) Spec() tool.Spec {
 			"Read in pages: offset is the 0-based index of the first entry, limit is how many to return "+
 			"(default and maximum %d). When a page ends before the directory does, the last line says which offset to continue from.",
 			maxListEntries),
-		Schema: jsonSchema(`{
+		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
 				"path": {"type": "string", "description": "absolute directory path"},
-				"offset": {"type": "integer", "description": "0-based index of the first entry (default 0)"},
-				"limit": {"type": "integer", "description": "maximum number of entries to return (default 500)"}
+				"offset": {"type": "integer", "minimum": 0, "description": "0-based index of the first entry (default 0)"},
+				"limit": {"type": "integer", "minimum": 1, "maximum": %d, "description": "maximum number of entries to return (default %d)"}
 			},
 			"required": ["path"]
-		}`),
+		}`, maxListEntries, maxListEntries)),
 		Risk: tool.Safe,
 	}
 }

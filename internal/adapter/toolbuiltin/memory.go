@@ -18,7 +18,7 @@ func (t *memoryList) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "memory_list",
 		Description: "List the index of accessible memory documents (global memory and current-session memory), with each summary.",
-		Schema:      jsonSchema(`{"type":"object","properties":{}}`),
+		Schema:      tool.NoArgsSchema,
 		Risk:        tool.Safe,
 	}
 }

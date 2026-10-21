@@ -33,7 +33,7 @@ func (t *windowList) Spec() tool.Spec {
 		Description: "List the visible top-level windows on this computer, topmost first: handle, program, screen rectangle " +
 			"(physical pixels, left,top,right,bottom) and whether the window is in the foreground. " +
 			"Pass a handle to screen_capture to capture that window. Listing never needs confirmation.",
-		Schema: jsonSchema(`{"type":"object","properties":{}}`),
+		Schema: tool.NoArgsSchema,
 		Risk:   tool.Safe,
 	}
 }

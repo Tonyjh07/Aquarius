@@ -68,5 +68,5 @@ func (t *contextCompactTool) Execute(ctx context.Context, _ tool.Call) (tool.Res
 	}, nil
 }
 
-// jsonSchemaEmptyObject 无参工具的空参数 Schema。
-func jsonSchemaEmptyObject() []byte { return []byte(`{"type":"object","properties":{}}`) }
+// jsonSchemaEmptyObject 无参工具的空参数 Schema（单一事实源在领域层）。
+func jsonSchemaEmptyObject() []byte { return tool.NoArgsSchema }

@@ -258,7 +258,7 @@ func toResponsesTools(specs []tool.Spec) []responsesTool {
 	for _, s := range specs {
 		params := s.Schema
 		if len(params) == 0 {
-			params = json.RawMessage(`{"type":"object","properties":{}}`)
+			params = tool.NoArgsSchema
 		}
 		out = append(out, responsesTool{
 			Type:        "function",

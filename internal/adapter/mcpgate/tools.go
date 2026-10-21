@@ -57,11 +57,11 @@ func (s *Server) Tools(ctx context.Context) ([]port.Tool, error) {
 // 缺失/不可序列化时退回空对象 schema（模型仍可发起无参调用）。
 func schemaBytes(schema any) []byte {
 	if schema == nil {
-		return []byte(`{"type":"object"}`)
+		return tool.NoArgsSchema
 	}
 	b, err := json.Marshal(schema)
 	if err != nil || len(b) == 0 {
-		return []byte(`{"type":"object"}`)
+		return tool.NoArgsSchema
 	}
 	return b
 }

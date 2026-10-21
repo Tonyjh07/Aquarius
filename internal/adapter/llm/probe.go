@@ -272,7 +272,7 @@ func probeAttempts(model, capability string) ([]probeAttempt, error) {
 		req.Tools = []tool.Spec{{
 			Name:        probeToolName,
 			Description: "Probe tool: takes no arguments, returns nothing. Call it to acknowledge.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{}}`),
+			Schema:      tool.NoArgsSchema,
 		}}
 		return []probeAttempt{{label: "工具清单", req: req}}, nil
 	case port.CapVision:

@@ -39,14 +39,15 @@ func (t *watchStart) Spec() tool.Spec {
 				"target": {"type": "string", "description": "command line, file path, or URL"},
 				"match": {"type": "string", "description": "regular expression matched against the probe output; omit to report when the output changes"},
 				"notify": {"type": "string", "enum": ["match", "change"], "description": "match = report once and stop (default); change = report each time the criterion becomes true again and keep watching"},
-				"interval_sec": {"type": "integer", "description": "seconds between probes (%d-%d, default %d)"},
-				"max_checks": {"type": "integer", "description": "give up after this many probes (default %d, max %d)"},
-				"deadline_sec": {"type": "integer", "description": "give up after this long in seconds (default %d, max %d)"},
+				"interval_sec": {"type": "integer", "minimum": %d, "maximum": %d, "description": "seconds between probes (%d-%d, default %d)"},
+				"max_checks": {"type": "integer", "minimum": 1, "maximum": %d, "description": "give up after this many probes (default %d, max %d)"},
+				"deadline_sec": {"type": "integer", "minimum": 1, "maximum": %d, "description": "give up after this long in seconds (default %d, max %d)"},
 				"workdir": {"type": "string", "description": "working directory for kind=command (optional)"}
 			},
 			"required": ["kind", "target"]
-		}`, watchMinIntervalSec, watchMaxIntervalSec, watchDefaultIntervalSec,
-			watchDefaultMaxChecks, watchMaxChecksBound, watchDefaultDeadlineSec, watchMaxDeadlineSec)),
+		}`, watchMinIntervalSec, watchMaxIntervalSec, watchMinIntervalSec, watchMaxIntervalSec, watchDefaultIntervalSec,
+			watchMaxChecksBound, watchDefaultMaxChecks, watchMaxChecksBound,
+			watchMaxDeadlineSec, watchDefaultDeadlineSec, watchMaxDeadlineSec)),
 		Risk: tool.Confirm,
 	}
 }
@@ -155,7 +156,7 @@ func (t *watchList) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "watch_list",
 		Description: "List running observations with their probe, criterion, interval and how many checks have run.",
-		Schema:      jsonSchema(`{"type": "object", "properties": {}}`),
+		Schema:      tool.NoArgsSchema,
 		Risk:        tool.Safe,
 	}
 }

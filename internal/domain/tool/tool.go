@@ -40,6 +40,14 @@ type Spec struct {
 	Risk        Risk            `json:"risk"`
 }
 
+// NoArgsSchema 无参工具的参数 Schema（单一事实源）。
+//
+// 三处必须同形：工具自己声明、适配器对空 Schema 的兜底、能力探测的探针工具——各自
+// 手写会让「没有参数」在不同端点上长成不同样子。**刻意不加 `additionalProperties:
+// false`**：任何调用都可带保留参数 `timeout_sec`（DESIGN §4.3），声明成封闭对象会把
+// 一条合法调用写成 off-schema。
+var NoArgsSchema = json.RawMessage(`{"type":"object","properties":{}}`)
+
 // Call 模型发起的一次工具调用。Args 为模型产出的原始 JSON 参数对象，创建后只读。
 type Call struct {
 	ID   CallID          `json:"id"`

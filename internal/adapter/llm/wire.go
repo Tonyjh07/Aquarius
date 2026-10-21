@@ -217,7 +217,7 @@ func toChatTools(specs []tool.Spec) []chatTool {
 	for _, s := range specs {
 		params := s.Schema
 		if len(params) == 0 {
-			params = json.RawMessage(`{"type":"object","properties":{}}`)
+			params = tool.NoArgsSchema
 		}
 		out = append(out, chatTool{
 			Type: "function",

@@ -30,10 +30,10 @@ func (t *jobStart) Spec() tool.Spec {
 				"command": {"type": "string", "description": "executable file"},
 				"args": {"type": "array", "items": {"type": "string"}, "description": "argument list"},
 				"workdir": {"type": "string", "description": "working directory (absolute path; defaults to the home directory)"},
-				"timeout_sec": {"type": "integer", "description": "the task's own timeout in seconds (0/omitted = no limit, at most %d); this is not the per-call tool timeout"}
+				"timeout_sec": {"type": "integer", "minimum": 0, "maximum": %d, "description": "the task's own timeout in seconds (0/omitted = no limit, at most %d); this is not the per-call tool timeout"}
 			},
 			"required": ["command"]
-		}`, maxJobTimeoutSec)),
+		}`, maxJobTimeoutSec, maxJobTimeoutSec)),
 		Risk: tool.Confirm,
 	}
 }
@@ -87,7 +87,7 @@ func (t *jobList) Spec() tool.Spec {
 	return tool.Spec{
 		Name:        "job_list",
 		Description: "List all background tasks (ID, status, PID, command).",
-		Schema:      jsonSchema(`{"type": "object", "properties": {}}`),
+		Schema:      tool.NoArgsSchema,
 		Risk:        tool.Safe,
 	}
 }
@@ -185,7 +185,7 @@ func (t *jobLogs) Spec() tool.Spec {
 			"type": "object",
 			"properties": {
 				"id": {"type": "string", "description": "task ID"},
-				"tail": {"type": "integer", "description": "number of trailing lines to return (default %d)"}
+				"tail": {"type": "integer", "minimum": 1, "description": "number of trailing lines to return (default %d)"}
 			},
 			"required": ["id"]
 		}`, defaultJobLogsTail)),
@@ -287,14 +287,14 @@ func (t *jobWait) Spec() tool.Spec {
 			"and log tail. Use it for tasks that are expected to finish (builds, test runs) so the result is available " +
 			"in this turn instead of waiting for the automatic completion notice. Without timeout_sec it waits until the " +
 			"task ends (the user can still interrupt); with it, a timeout returns 'still running' and the task keeps going.",
-		Schema: jsonSchema(`{
+		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
 				"id": {"type": "string", "description": "task ID (visible via job_list or job_start)"},
-				"timeout_sec": {"type": "integer", "description": "how long to wait at most, in seconds (omitted = until the task ends)"}
+				"timeout_sec": {"type": "integer", "minimum": 0, "maximum": %d, "description": "how long to wait at most, in seconds (omitted or 0 = until the task ends; at most %d)"}
 			},
 			"required": ["id"]
-		}`),
+		}`, maxJobTimeoutSec, maxJobTimeoutSec)),
 		Risk: tool.Safe,
 	}
 }
