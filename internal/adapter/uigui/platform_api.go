@@ -67,6 +67,10 @@ type platformAPI interface {
 	RequestFileDialog()
 	SubclassCloseToHide(h platform.Handle)
 
+	// —— 剪贴板位图（D187：Ctrl+V 贴图；非 Windows 恒无图）——
+	ClipboardHasImage() bool
+	ClipboardImage() ([]byte, error)
+
 	// —— 次窗 ——
 	CloseWindow(h platform.Handle)
 	FocusWindow(h platform.Handle, run platform.RunFunc)

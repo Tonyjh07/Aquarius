@@ -126,6 +126,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			ApplyPromptTemplate: w.applyPromptTemplate,                                                                                                                                          // D154：人格模板窄写回（遮罩「默认模板」页签保存）
 			Voice:               w.voiceInput,                                                                                                                                                   // D179：空输入时右钮 = 录音键（录→转写→回填，不自动发送）
 			PreviewVoice:        w.previewVoice,                                                                                                                                                 // D179：设置窗「语音」页试听
+			Blobs:               w.blobs,                                                                                                                                                        // D187：Ctrl+V 贴图直入附件库（nil = 禁用该入口）
 		})
 		w.ui = ui
 		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式

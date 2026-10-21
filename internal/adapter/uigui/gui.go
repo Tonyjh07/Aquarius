@@ -135,6 +135,9 @@ type Options struct {
 	// PreviewVoice 设置窗「语音」页试听（D179）：用表单草稿的音色/风格合成一句并播放。
 	// 阻塞调用，设置窗在后台 goroutine 跑。nil = 试听不可用。
 	PreviewVoice func(req port.SpeechRequest) error
+	// Blobs 附件库（D187）：Ctrl+V 贴图把 PNG 字节直接入库，暂存为已入库附件项
+	// （提交时不再回读文件系统）。nil = 粘贴图片不可用，其余附件入口照常。
+	Blobs port.AttachmentStore
 }
 
 // PromptTemplatePatch 人格模板的窄写回（D154；与 SettingsPatch 分开：全量 patch 带
@@ -207,6 +210,8 @@ type UI struct {
 
 	interrupt  atomic.Pointer[func()]
 	generating atomic.Bool // 生成中（SetInterrupt 非空 = 一轮 Turn 进行中；驱动停止键）
+	// pasting 粘贴图片进行中（D187）：一次只跑一张（连按不排队），也用于阻止重入。
+	pasting atomic.Bool
 
 	// w Gio 窗口句柄（构造后只读；headless = nil）。
 	w *app.Window
@@ -733,9 +738,23 @@ type (
 	// quoteMsg 引用请求（D98 气泡菜单「引用」经 shell 线程分发投递）：文本口径与复制
 	// 一致（选区优先/整条渲染文本，D98①），Gio 侧经 quoteInto 追加引用块进输入框。
 	quoteMsg struct{ text string }
-	// attachMsg 文件选择框 / 拖拽 / 粘贴的结果（D104/D186/D187：shell 或平台线程 →
+	// attachMsg 文件选择框 / 拖拽的结果（D104/D186：shell 或平台线程 →
 	// Gio inbox → 暂存列表；chip 呈现，发送随 Enter 走 Raw）。
 	attachMsg struct{ paths []string }
+	// pasteMsg 剪贴板贴图结果（D187）：ref = 已入附件库的引用，thumb = 缩略图
+	// （nil = 解码超预算/失败，chip 回落回形针）；err / tooLarge / full 三选一 = 失败。
+	pasteMsg struct {
+		ref      *conversation.BlobRef
+		thumb    *thumbSrc
+		err      error
+		tooLarge int64
+		full     bool
+	}
+	// thumbMsg 路径附件的缩略图就绪（D187）：key = 暂存去重键（同一次输入的同一文件）。
+	thumbMsg struct {
+		key   string
+		thumb *thumbSrc
+	}
 	// askMsg 提问请求（D184：ask_user 经 port.Asker 投递，输入栏原地展开成面板）。
 	askMsg struct {
 		req   port.AskRequest
@@ -809,9 +828,19 @@ func (u *UI) apply(msg uiMsg) bool {
 		// D186 多附件暂存：一次选中多个就都暂存（超上限的后几项逐条提示）；已有同名项
 		// 不重复加。焦点入框便于接着写问题；发送随 Enter 走 Raw（model.submit 暂存分支）。
 		for _, p := range m.paths {
-			u.m.stageAttach(p)
+			u.stagePath(p)
 		}
 		u.focusPending = true
+	case pasteMsg:
+		u.finishPaste(m)
+	case thumbMsg:
+		// 缩略图迟到也是常态（用户已经删掉那条附件）：按去重键找，找不到就丢。
+		for i := range u.m.stagedFiles {
+			if u.m.stagedFiles[i].key() == m.key {
+				u.m.stagedFiles[i].thumb = m.thumb
+				break
+			}
+		}
 	case askMsg:
 		u.m.startAsk(m.req, m.reply)
 	case askDoneMsg:

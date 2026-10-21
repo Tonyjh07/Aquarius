@@ -25,6 +25,9 @@ import (
 type stagedAtt struct {
 	path string
 	blob *conversation.BlobRef
+	// thumb 缩略图（D187 口径四）：图片类附件解码出的方图小样，chip 里替代回形针。
+	// nil = 不是图片、或像素数超预算没解（回落回形针，绝不为了小图标卡帧）。
+	thumb *thumbSrc
 }
 
 // displayName 附件显示名（路径取文件名、已入库项取库内名）。
@@ -59,12 +62,21 @@ func (a stagedAtt) key() string {
 const (
 	attachChipDp    = 32  // chip 高（单行胶囊 48 内垂直居中）
 	attachNameMaxDp = 200 // 名称显示预算（超宽截断）
-	attachIconDp    = 12  // 回形针小图边长
+	attachIconDp    = 12  // 回形针小图边长（非图片附件、或无缩略图时）
 	attachPadDp     = 10
 	attachGapDp     = 6
 	attachChipGapDp = 8 // 同一行 chip 之间的横向间距
 	attachRowGapDp  = 6 // 换行后的纵向间距
 )
+
+// iconDp chip 左侧图标的边长（dp）：有缩略图用 20dp 小图，否则 12dp 回形针——
+// 两者不同宽，chip 宽度量测必须用同一个判据（attachChipMetrics 与 attachChip 同源）。
+func chipIconDp(thumb *thumbSrc) int {
+	if thumb != nil {
+		return attachThumbDp
+	}
+	return attachIconDp
+}
 
 // attachSlot 附件槽实装（D104⑤）：20dp 命中 + 回形针图标（canvas 1:1，D49 灰槽启用）。
 func (u *UI) attachSlot(gtx layout.Context) layout.Dimensions {
@@ -84,20 +96,21 @@ func (u *UI) attachToolSlot(gtx layout.Context) layout.Dimensions {
 	case n == 0:
 		return u.attachSlot(gtx)
 	case n == 1:
-		return u.attachChip(gtx, u.m.stagedFiles[0].displayName(), u.attachClick(0))
+		att := u.m.stagedFiles[0]
+		return u.attachChip(gtx, att.displayName(), att.thumb, u.attachClick(0))
 	default:
-		return u.attachChip(gtx, fmt.Sprintf("%d 个文件", n), &u.attachClear)
+		return u.attachChip(gtx, fmt.Sprintf("%d 个文件", n), nil, &u.attachClear)
 	}
 }
 
 // attachChipFixedPx chip 除名称外的固定宽（左右内边距 + 图标 + 两处间距 + × 位）。
-func attachChipFixedPx(gtx layout.Context) int {
-	return 2*gtx.Dp(attachPadDp) + gtx.Dp(attachIconDp) + 2*gtx.Dp(attachGapDp) + gtx.Dp(14)
+func attachChipFixedPx(gtx layout.Context, iconDp int) int {
+	return 2*gtx.Dp(attachPadDp) + gtx.Dp(unit.Dp(iconDp)) + 2*gtx.Dp(attachGapDp) + gtx.Dp(14)
 }
 
 // attachChipMetrics 量出 chip 宽与被截断后的显示名（文本量测不落笔）。
-func (u *UI) attachChipMetrics(gtx layout.Context, label string, cap int) (int, string) {
-	fixed := attachChipFixedPx(gtx)
+func (u *UI) attachChipMetrics(gtx layout.Context, label string, iconDp, cap int) (int, string) {
+	fixed := attachChipFixedPx(gtx, iconDp)
 	budget := cap - fixed
 	if maxB := gtx.Dp(attachNameMaxDp); budget > maxB {
 		budget = maxB
@@ -114,13 +127,15 @@ func (u *UI) attachChipMetrics(gtx layout.Context, label string, cap int) (int, 
 	return fixed + dims.Size.X, shown
 }
 
-// attachChip 暂存附件 chip（D186）：回形针 + 名称（按剩余宽截断）+ ×，深底圆角条；
-// 整 chip 点击 = 从暂存列表移除这一项（chip 无第二动作，命中面最大化）。
-func (u *UI) attachChip(gtx layout.Context, label string, cl *widget.Clickable) layout.Dimensions {
+// attachChip 暂存附件 chip（D186）：图标（图片 = 缩略图、其余 = 回形针）+ 名称（按剩余
+// 宽截断）+ ×，深底圆角条；整 chip 点击 = 从暂存列表移除这一项（chip 无第二动作，
+// 命中面最大化）。
+func (u *UI) attachChip(gtx layout.Context, label string, thumb *thumbSrc, cl *widget.Clickable) layout.Dimensions {
 	return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		h := gtx.Dp(attachChipDp)
-		w, shown := u.attachChipMetrics(gtx, label, gtx.Constraints.Max.X)
-		padX, iconD, gap := gtx.Dp(attachPadDp), gtx.Dp(attachIconDp), gtx.Dp(attachGapDp)
+		iconDp := chipIconDp(thumb)
+		w, shown := u.attachChipMetrics(gtx, label, iconDp, gtx.Constraints.Max.X)
+		padX, iconD, gap := gtx.Dp(attachPadDp), gtx.Dp(unit.Dp(iconDp)), gtx.Dp(attachGapDp)
 		nameOp, nameDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, shown)
 			s.TextSize = unit.Sp(13)
@@ -128,9 +143,13 @@ func (u *UI) attachChip(gtx layout.Context, label string, cl *widget.Clickable) 
 		})
 		box := image.Rectangle{Max: image.Pt(w, h)}
 		paint.FillShape(gtx.Ops, tipBg, clip.UniformRRect(box, h/2).Op(gtx.Ops))
-		// 回形针（品牌色小图）。
+		// 图标：图片附件画缩略图（圆角小图），其余画回形针（品牌色小图）。
 		off := op.Offset(image.Pt(padX, (h-iconD)/2)).Push(gtx.Ops)
-		drawPaperclip(gtx, image.Rectangle{Max: image.Pt(iconD, iconD)})
+		if img, ok := thumb.imageOp(); ok {
+			drawThumb(gtx, image.Rectangle{Max: image.Pt(iconD, iconD)}, img)
+		} else {
+			drawPaperclip(gtx, image.Rectangle{Max: image.Pt(iconD, iconD)})
+		}
 		off.Pop()
 		// 名称。
 		tr := op.Offset(image.Pt(padX+iconD+gap, (h-nameDims.Size.Y)/2)).Push(gtx.Ops)
@@ -160,7 +179,7 @@ func (u *UI) attachRows(gtx layout.Context, maxW int) [][]int {
 	var cur []int
 	curW := 0
 	for i, att := range u.m.stagedFiles {
-		w, _ := u.attachChipMetrics(gtx, att.displayName(), maxW)
+		w, _ := u.attachChipMetrics(gtx, att.displayName(), chipIconDp(att.thumb), maxW)
 		if len(cur) > 0 && curW+rowGap+w > maxW {
 			rows = append(rows, cur)
 			cur, curW = nil, 0
@@ -236,7 +255,8 @@ func (u *UI) attachChipsFlow(gtx layout.Context, maxW int) layout.Dimensions {
 				idx, ci := idx, ci
 				chips = append(chips, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					chip := func(gtx layout.Context) layout.Dimensions {
-						return u.attachChip(gtx, u.m.stagedFiles[idx].displayName(), u.attachClick(idx))
+						att := u.m.stagedFiles[idx]
+						return u.attachChip(gtx, att.displayName(), att.thumb, u.attachClick(idx))
 					}
 					if ci == 0 {
 						return chip(gtx)

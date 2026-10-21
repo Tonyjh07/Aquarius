@@ -11,6 +11,10 @@ import (
 // 报错与提示文案由它生成（不各写一个数字）。
 const MaxAttachments = 8
 
+// MaxImageBytes 单张图片的字节上限（D169/D187）：读图工具与粘贴/拖拽入口共用，
+// 超限一律明确报错（界面报「图片过大」），不静默降级成占位。
+const MaxImageBytes = 20 << 20
+
 // Attachment 一项待摄取附件（D186）：Path（文件路径）与 Blob（已入库字节）二选一。
 // Blob 供粘贴图片走（D187）——字节已入库，不再从文件系统读第二遍。
 type Attachment struct {

@@ -31,6 +31,10 @@ type fakePlat struct {
 	PresentOK  bool // Present 返回值
 	Dark       bool
 	Fonts      []string
+	// ClipImage 剪贴板位图（D187：nil = 剪贴板里没有图；入口据此决定是否消费 Ctrl+V）。
+	ClipImage []byte
+	// ClipErr ClipboardImage 的读取错误（模拟剪贴板被别的程序占用）。
+	ClipErr error
 
 	// —— 调用钩子（nil = 仅记账）——
 	OnPresent  func(x, y, w, h int32, bits []byte, alpha byte) bool
@@ -179,6 +183,19 @@ func (f *fakePlat) PostMenu(kind platform.MenuKind) {
 func (f *fakePlat) RequestFileDialog() { f.FileRequests++ }
 func (f *fakePlat) SubclassCloseToHide(platform.Handle) {
 	f.Subclassed++
+}
+
+// —— 剪贴板位图（D187）——
+func (f *fakePlat) ClipboardHasImage() bool { return f.ClipImage != nil }
+
+func (f *fakePlat) ClipboardImage() ([]byte, error) {
+	if f.ClipErr != nil {
+		return nil, f.ClipErr
+	}
+	if f.ClipImage == nil {
+		return nil, platform.ErrNoClipboardImage
+	}
+	return f.ClipImage, nil
 }
 
 func (f *fakePlat) CloseWindow(h platform.Handle) {

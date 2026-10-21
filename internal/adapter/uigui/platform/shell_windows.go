@@ -26,6 +26,9 @@ var (
 	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
 	procPostMessageW     = user32.NewProc("PostMessageW")
 	procCallWindowProcW  = user32.NewProc("CallWindowProcW")
+	procDragAcceptFiles  = shell32.NewProc("DragAcceptFiles") // D187：主窗接受拖放
+	procDragQueryFileW   = shell32.NewProc("DragQueryFileW")  // D187：逐项取路径
+	procDragFinish       = shell32.NewProc("DragFinish")      // D187：交还全局内存
 )
 
 // 消息泵/快捷键/子类化常量（Win32 头文件取值）。
@@ -37,6 +40,7 @@ const (
 	wmCommand       = 0x0111
 	wmLButtonUp     = 0x0202
 	wmRButtonUp     = 0x0205
+	wmDropFiles     = 0x0233 // D187：拖放进窗（HDROP 句柄在 wParam）
 	wmHotkey        = 0x0312
 	wmApp           = 0x8000
 	rehotkeyMsg     = wmApp + 2 // 托盘线程内重注册全局快捷键（设置窗改 hotkey 投递，§15.1）
@@ -183,8 +187,10 @@ func (p *Plat) shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	return r
 }
 
-// SubclassCloseToHide 子类化主窗过程：吞 WM_CLOSE → 隐藏（关窗 = 隐藏，§15.1）。
-// Gio 无关闭拦截 API（WM_CLOSE 直落 DefWindowProc → DestroyWindow）。
+// SubclassCloseToHide 子类化主窗过程：吞 WM_CLOSE → 隐藏（关窗 = 隐藏，§15.1）；
+// 同时接管拖放（D187）：DragAcceptFiles(TRUE) 之后 WM_DROPFILES 投到本窗。
+// Gio 无关闭拦截 API（WM_CLOSE 直落 DefWindowProc → DestroyWindow），Windows 后端也
+// 没有 DnD——两件事都只能子类化自己做。
 // 经 onWindowThread 在窗口 goroutine 内执行：原过程指针的写入与 subClassProc
 // 读取同 goroutine，无竞态；幂等（重复调用跳过）。
 func (p *Plat) SubclassCloseToHide(h Handle) {
@@ -194,19 +200,27 @@ func (p *Plat) SubclassCloseToHide(h Handle) {
 		}
 		proc := syscall.NewCallback(p.subClassProc)
 		r, _, _ := procSetWindowLongPtrW.Call(uintptr(h), gwlWndProc, proc)
-		if r != 0 {
-			shellPrevProc = r
-			fmt.Println("[tray] WM_CLOSE 拦截已挂（关窗 = 隐藏）")
+		if r == 0 {
+			return // 接管失败：不接拖放（否则 WM_DROPFILES 没人接，掉的路径白收）
 		}
+		shellPrevProc = r
+		fmt.Println("[tray] WM_CLOSE 拦截已挂（关窗 = 隐藏）")
+		// 拖放与关窗拦截同一时刻挂（同一子类过程、同一生命周期）。
+		procDragAcceptFiles.Call(uintptr(h), 1)
 	})
 }
 
 // subClassProc 子类化窗口过程：WM_CLOSE 隐藏；WM_SETTINGCHANGE（Explorer 广播
-// 系统深浅等设置变化）→ 回调宿主重解析 system 档（§15.4/D61）；其余原样转发。
+// 系统深浅等设置变化）→ 回调宿主重解析 system 档（§15.4/D61）；WM_DROPFILES（D187）
+// → 取路径交宿主暂存；其余原样转发。
 // 本回调在 Gio 窗口 goroutine 上执行，回调线程安全、此处不触修改性调用。
 func (p *Plat) subClassProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	if uMsg == wmClose {
 		p.HideWindow(Handle(hwnd))
+		return 0
+	}
+	if uMsg == wmDropFiles {
+		p.handleDropFiles(wParam)
 		return 0
 	}
 	if uMsg == wmSettingChange {
@@ -222,6 +236,40 @@ func (p *Plat) subClassProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	// 原过程尚未存好（微秒窗口）：兜底直落 DefWindowProc。
 	r, _, _ := procDefWindowProcW.Call(hwnd, uMsg, wParam, lParam)
 	return r
+}
+
+// handleDropFiles 处理 WM_DROPFILES（D187 口径三）：wParam = HDROP，逐项 DragQueryFileW
+// 取路径，取完立刻 DragFinish 交还系统内存（不交还 = 泄漏）。
+// 路径一次全交宿主（与文件框多选同一条暂存路），目录判定留给 uigui。
+func (p *Plat) handleDropFiles(hdrop uintptr) {
+	if hdrop == 0 {
+		return
+	}
+	defer procDragFinish.Call(hdrop)
+	if p.host == nil {
+		return
+	}
+	n, _, _ := procDragQueryFileW.Call(hdrop, ^uintptr(0), 0, 0) // 0xFFFFFFFF = 取项数
+	if n == 0 || n > 4096 {
+		return
+	}
+	paths := collectDropPaths(int(n), func(i int) []uint16 {
+		// 先问长度（含终止 NUL），再按长度取——固定缓冲会截断长路径。
+		l, _, _ := procDragQueryFileW.Call(hdrop, uintptr(i), 0, 0)
+		if l == 0 || l > 32768 {
+			return nil
+		}
+		buf := make([]uint16, l+1)
+		r, _, _ := procDragQueryFileW.Call(hdrop, uintptr(i),
+			uintptr(unsafe.Pointer(&buf[0])), l+1)
+		if r == 0 {
+			return nil
+		}
+		return buf
+	})
+	if len(paths) > 0 {
+		p.host.FilesPicked(paths)
+	}
 }
 
 // HideMain 从任意线程隐藏主窗（托盘/菜单线程调用）：经窗口线程下发（铁律 1）。

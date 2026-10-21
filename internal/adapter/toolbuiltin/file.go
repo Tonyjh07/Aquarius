@@ -31,7 +31,8 @@ const (
 )
 
 // maxImageBytes 单张图片上限（D169）：超过就报错并给出实际大小，不静默降级成文本。
-const maxImageBytes = 20 << 20
+// 与粘贴/拖拽入口共用端口常量——两处口径必须一致，否则同一个文件「能贴不能读」。
+const maxImageBytes = port.MaxImageBytes
 
 // 目录列举与搜索结果上限（防爆上下文）。
 const (

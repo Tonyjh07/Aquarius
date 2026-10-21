@@ -314,6 +314,9 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	// Selectable.Focused() 滞后一帧，编辑器会把刚点选的行的焦点抢回（选区隐没、
 	// Ctrl+C 失效）。焦点来源收口为：focusPending（呼出/展开，anim.go）、编辑器
 	// 自带点击取焦、newUI 初始焦点。
+	// D187：剪贴板里有图就抢这一下 Ctrl+V（没图不注册过滤器，按键留给编辑器做文本
+	// 粘贴）。必须在 editor.Update 之前——Gio 的事件先取先得，编辑器会把键吞掉。
+	u.pasteImageKey(gtx)
 	for {
 		evt, ok := u.editor.Update(gtx)
 		if !ok {
