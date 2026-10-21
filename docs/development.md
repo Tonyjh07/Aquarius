@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-21 @ f1b9ed1 -->
+<!-- docs-sync: 2026-10-21 @ 5945598 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -144,6 +144,19 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
    重生成 `rsrc_windows_<arch>.syso` 并随包提交（`go run ...@v0.3.3` 走模块缓存，不进 go.mod）。
    文件名构建约束保证这些对象只链入 Windows 目标，`GOOS=linux/darwin` 交叉编译不受影响；
    改版本号同步改 winres.json 的 `fixed`/`info` 两处。
+
+## 发版构建
+
+- **版本号只在一处注入**：`go build -ldflags "-X main.version=v0.1.0" -o aquarius.exe ./cmd/aquarius`
+  （不注入时 `-version` 显示 `dev`）。`aquarius.exe -version` 打印版本、平台与 Go 版本后直接
+  退出——发版冒烟与问题排查都用它。
+- **Windows 资源版本**在 `cmd/aquarius/winres/winres.json`（`fixed` / `info` 两处），发版前与
+  ldflags 同步改，再 `go generate ./cmd/aquarius` 重生成 `.syso` 并提交。
+- **发布物** = 单个二进制 + `README.md` / `LICENSE` / `THIRD-PARTY-NOTICES.md`（MPL-2.0 与
+  第三方署名义务）。依赖有增减时，先按 `THIRD-PARTY-NOTICES.md` 顶部命令核对清单再打包。
+- **发版前**：全量门禁（含 `-race` 与 `linuxgate`）+ `govulncheck`，并从一个**干净 clone**
+  构建一次（排除工作区未跟踪文件与本地 `go.work` 的影响），用 `-version` 确认注入生效。
+- 发布说明放 `docs/releases/<tag>.md`，与 tag 一起提交；内容面向用户，不写内部决策编号。
 
 ## 文档头部标记（更新日期 + 代码基线）
 

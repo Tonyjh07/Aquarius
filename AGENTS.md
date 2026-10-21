@@ -43,6 +43,7 @@ go test ./internal/domain/... -run TestProperty -count=50   # domain 性质测�
 go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
 go run ./cmd/linuxgate         # 非 Windows 门禁：WSL 内 linux 目标的 build + vet（D119）
+go run ./cmd/docsync           # 刷新改动过的文档头「更新日期 + 代码基线」标记
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D137；需网络）
 ```
 
@@ -111,6 +112,9 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
 - 若设计与 `DESIGN.md` 不一致：**先改文档（`DESIGN.md` / `docs/decisions.md`）再改代码**，并在 `docs/decisions.md`（原 §13）补决策记录。
 - 改动 `DESIGN.md` 某节时，同步检查 `docs/` 对应篇（各篇头部标注了来源节号；冲突以 DESIGN 为准）；
   涉及里程碑进度时同步 docs/roadmap.md（进度只维护这一处）。
+- **改了 `docs/**/*.md` 或 `README.md` → 提交前跑 `go run ./cmd/docsync`**：它只刷新工作区里改过的
+  文档，把头部标记（更新日期 + 代码基线哈希）刷成本次提交之前的状态。标记是 HTML 注释，渲染后
+  不出现，别手写、别删。
 
 ## 目录速查
 
@@ -118,6 +122,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
 cmd/aquarius/        组装根（wiring：config → 插件/授权 → 端口装配含装饰器 → UI）
 cmd/iconify/         开发工具：图标集生成（多尺寸 PNG / ICO / ICNS，纯 Go 无三方依赖）
 cmd/linuxgate/       开发工具：非 Windows 门禁（WSL 内跑 linux 目标 build + vet，D119）
+cmd/docsync/         开发工具：维护文档头「更新日期 + 代码基线」标记
 assets/              源图标 icon.png 与生成物 icon/（README、Windows 资源嵌入共用）
 pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；D29 后移出 M4，目录见"待建"）
 internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）、perm（权限矩阵）

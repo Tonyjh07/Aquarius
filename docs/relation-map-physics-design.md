@@ -1,4 +1,5 @@
 # 关系图「全程物理动画」重构设计（D124 / D126 修订）
+<!-- docs-sync: 2026-10-19 @ ff7d04d -->
 
 > 状态：**已批准并实现（2026-10-09，D124；同日按 D126 修订）**。对应
 > `internal/adapter/uigui/relmap_layout.go`（布局内核）与 `relmap_frame.go`（帧层）的重构

@@ -1,4 +1,5 @@
 # Aquarius 阶段规划（TODO 整理与分阶段路线）
+<!-- docs-sync: 2026-10-21 @ 6ad3b11 -->
 
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
