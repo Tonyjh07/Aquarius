@@ -1,4 +1,5 @@
 # 开发指南
+<!-- docs-sync: 2026-10-21 @ f1b9ed1 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -143,6 +144,31 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
    重生成 `rsrc_windows_<arch>.syso` 并随包提交（`go run ...@v0.3.3` 走模块缓存，不进 go.mod）。
    文件名构建约束保证这些对象只链入 Windows 目标，`GOOS=linux/darwin` 交叉编译不受影响；
    改版本号同步改 winres.json 的 `fixed`/`info` 两处。
+
+## 文档头部标记（更新日期 + 代码基线）
+
+`docs/` 各篇与 `README.md` 的首个 H1 下面有一行标记，记「这份文档对应哪份代码」：
+
+```markdown
+# 用户手册
+<!-- docs-sync: 2026-10-21 @ f1b9ed1 -->
+```
+
+- 标记是 HTML 注释：源码里一眼可见，**渲染后不出现**——面向用户的文档不该露出提交号。
+- 日期 = 该文档**最近一次内容改动**的日期；哈希 = 那次改动**之前**的提交（文档不改代码，
+  指向代码基线才有意义）。
+- 由 `cmd/docsync` 维护，不手写：
+
+```bash
+go run ./cmd/docsync                # 只刷新工作区里改过的文档（提交前跑）
+go run ./cmd/docsync -commit HEAD   # 只刷新该提交改过的文档（提交后补；需 --amend 并回）
+go run ./cmd/docsync -all           # 全部刷成今天 + HEAD
+go run ./cmd/docsync -check         # 门禁：有文档缺标记即退出 1
+```
+
+- 没改过的文档保持旧标记不动（仍然准确），所以一次文档提交只会动到那几篇。
+- 覆盖 `docs/**/*.md` 与根 `README.md`；`DESIGN.md`、`AGENTS.md` 不参与（与代码同批改，
+  标记会立刻过时）。
 
 ## 提交规范
 
