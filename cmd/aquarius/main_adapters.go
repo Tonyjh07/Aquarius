@@ -115,6 +115,22 @@ func (h *levelHolder) Get() perm.Level {
 
 func (h *levelHolder) Set(l perm.Level) { h.v.Store(l) }
 
+// unattendedHolder 无人值守开关活状态（D185）：`/unattended`、球/托盘菜单勾选、设置窗
+// 写回成功后 Set，装配根的装饰器与状态行经 Get 现取。atomic 存取与 levelHolder 同口径
+// （GUI/TUI 事件循环 goroutine 读、主 goroutine 写）。
+type unattendedHolder struct{ v atomic.Bool }
+
+// newUnattendedHolder 构造并写入初值（启动取 config，缺省 false）。
+func newUnattendedHolder(on bool) *unattendedHolder {
+	h := &unattendedHolder{}
+	h.v.Store(on)
+	return h
+}
+
+func (h *unattendedHolder) Get() bool { return h.v.Load() }
+
+func (h *unattendedHolder) Set(on bool) { h.v.Store(on) }
+
 func (envSecrets) Get(_ context.Context, name string) (string, error) {
 	v, ok := os.LookupEnv(name)
 	if !ok || v == "" {

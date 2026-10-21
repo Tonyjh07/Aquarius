@@ -143,6 +143,7 @@ type wiring struct {
 	primary     *providerConfig
 	level       perm.Level
 	lvl         *levelHolder
+	unattended  *unattendedHolder
 	persist     *cfgWriter
 	// firstRun 本次为该 profile 首次运行（已写模板，D141）；setupTried 装配前向导窗
 	// 本进程只尝试一次（向导后仍不完整即报因退出，不循环弹窗）。
@@ -259,15 +260,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(w.stdout)
 	}()
 	w.buildPresenter()
-	// 逐次确认（§5.10 Confirmer 矩阵）：默认走 REPL 交互；-yes 一律应 y。
-	var confirmer port.Confirmer = w.ui
-	// 提问通道（D184）：前端面板/选单；-yes 不等人，统一按「无人值守」当场回填。
-	var asker port.Asker = w.ui
-	if *autoYes {
-		confirmer = yesConfirmer{}
-		asker = askNone{}
+	// 逐次确认（§5.10 Confirmer 矩阵）与提问通道（D184）：默认都走前端交互面。
+	tc := toolChannelsFor(w.ui, *autoYes, w.unattended.Get)
+	if *autoYes && w.cfg.Permissions.Unattended {
+		// 口径三：-yes = 自动允许，优先于无人值守（自动拒绝）。活开关压到关——状态行与
+		// 菜单勾选必须反映真实判定，否则用户回来看到「无人值守」标记却什么都没被拒。
+		fmt.Fprintf(stderr, "警告：配置里开着无人值守，但本次带 -yes——自动允许优先，"+
+			"越界操作会被执行而不是拒绝；本次不启用无人值守（配置文件未改动）\n")
+		w.unattended.Set(false)
 	}
-	if err := w.assembleTools(confirmer, asker); err != nil {
+	if err := w.assembleTools(tc.toolConfirmer, tc.toolAsker); err != nil {
 		return fatal(stderr, "%v", err)
 	}
 	// D167：先停 watcher 再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
@@ -308,33 +310,35 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	w.runner.Add(agent.ContextCompactTool()) // 装配期注册（agent 依赖 runner，反向补注册）
 
 	// 插件宿主（M4，§6.4）：面刷新先备好（host 与 session 互依，经闭包后绑定）。
-	w.newPluginHost(ctx, confirmer)
+	w.newPluginHost(ctx, tc.confirmer)
 
 	w.sess, err = app.NewSession(ctx, app.SessionDeps{
-		Store:          w.store,
-		Agent:          agent,
-		IDs:            ids,
-		Clock:          systemClock{},
-		Persona:        sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
-		Level:          w.level,
-		SandboxPath:    w.sandboxDir,
-		PersistLevel:   w.persist.persistLevel,
-		Confirmer:      confirmer,
-		Jobs:           w.jobs,
-		CancelWatchers: w.poller.CancelSession, // D167：切走/新建/删当前会话时撤销该会话的 watcher
-		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
-		UI:             w.presenter,
-		OpenMemory:     openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
-		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
-		ListModels:     func(ctx context.Context) ([]port.ModelInfo, error) { return w.listModels(ctx) },
-		ProviderName:   func() string { return w.primary.Name }, // D173：/model 展示（静态，重启生效）
-		Caps:           w.cfg.Model.chainCaps,                   // D173：/model 展示能力与链路
-		Chain:          w.cfg.Model.modelChain,                  // D173：/model 逐环标注
-		Budget:         w.contextBudget,                         // D177：/model 展示窗口与来源
-		Probe:          w.probeModel,                            // D174：/model probe 实测能力并写回
-		PersistModel:   w.persist.persistModel,
-		PersistThink:   w.persist.persistThink,  // D34
-		PersistEffort:  w.persist.persistEffort, // D34
+		Store:             w.store,
+		Agent:             agent,
+		IDs:               ids,
+		Clock:             systemClock{},
+		Persona:           sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
+		Level:             w.level,
+		SandboxPath:       w.sandboxDir,
+		PersistLevel:      w.persist.persistLevel,
+		Unattended:        w.unattended.Get,
+		PersistUnattended: w.persist.persistUnattended,
+		Confirmer:         tc.confirmer,
+		Jobs:              w.jobs,
+		CancelWatchers:    w.poller.CancelSession, // D167：切走/新建/删当前会话时撤销该会话的 watcher
+		Ingestors:         []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
+		UI:                w.presenter,
+		OpenMemory:        openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),
+		Plugins:           hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
+		ListModels:        func(ctx context.Context) ([]port.ModelInfo, error) { return w.listModels(ctx) },
+		ProviderName:      func() string { return w.primary.Name }, // D173：/model 展示（静态，重启生效）
+		Caps:              w.cfg.Model.chainCaps,                   // D173：/model 展示能力与链路
+		Chain:             w.cfg.Model.modelChain,                  // D173：/model 逐环标注
+		Budget:            w.contextBudget,                         // D177：/model 展示窗口与来源
+		Probe:             w.probeModel,                            // D174：/model probe 实测能力并写回
+		PersistModel:      w.persist.persistModel,
+		PersistThink:      w.persist.persistThink,  // D34
+		PersistEffort:     w.persist.persistEffort, // D34
 	})
 	if err != nil {
 		if ctx.Err() != nil {

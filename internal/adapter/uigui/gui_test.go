@@ -285,6 +285,34 @@ func TestStatusTextPhase(t *testing.T) {
 	}
 }
 
+// TestStatusTextUnattended D185 口径五：无人值守开启时状态行常驻标记（空闲也显示），
+// 生成态并列在最后；关闭后回到原状。理由：用户回来只看到一串「已拒绝」会当成 bug。
+func TestStatusTextUnattended(t *testing.T) {
+	on := true
+	u := newHeadless(t, Options{
+		Status: func() Status { return Status{Model: "m", Level: "strict", Unattended: on} },
+	})
+	if got := u.statusText(); !strings.Contains(got, "无人值守") {
+		t.Fatalf("空闲态应常驻无人值守标记: %q", got)
+	}
+	// 生成态：模型/权限之后追加标记（不顶掉阶段词）。
+	u.generating.Store(true)
+	if got := u.statusText(); !strings.Contains(got, "生成中") || !strings.Contains(got, "无人值守") {
+		t.Fatalf("生成态 statusText = %q", got)
+	}
+	u.generating.Store(false)
+	// 编辑态：标记在前，编辑提示仍在（否则提交前看不到修订方式）。
+	u.m.editTarget = "m1"
+	if got := u.statusText(); !strings.Contains(got, "无人值守") || !strings.Contains(got, "编辑中") {
+		t.Fatalf("编辑态 statusText = %q", got)
+	}
+	u.m.editTarget = ""
+	on = false
+	if got := u.statusText(); got != "" {
+		t.Fatalf("关闭后 statusText = %q, want 空", got)
+	}
+}
+
 // TestExpandMsgs 呼出/互切消息（§15.1）：showExpand 展开并置焦点入栏；
 // toggleExpand 互切、展开时置焦点。drainSync 提供 happens-before 后读取无竞争。
 func TestExpandMsgs(t *testing.T) {

@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-21 @ 9d29a50 -->
+<!-- docs-sync: 2026-10-21 @ abc0ce4 -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §8/§9；**冲突以 DESIGN.md 为准**。
 > D110（破坏性改造）起配置**以 profile 为隔离单位**：
@@ -144,6 +144,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `permissions.level` | string | `strict` | `read-only` / `strict` / `permissive` / `full-access`；非法值启动报错；`/permission` 切换**写回**本字段 |
+| `permissions.unattended` | bool | `false` | 无人值守：模型发起的越界操作**当场拒绝**并说明，不再弹确认等人；权限等级本身不变。`/unattended [on|off]`、球/托盘菜单「无人值守」、设置窗「常规」→「权限」勾选都会**写回**本字段并热生效。你自己键入的命令确认（删除会话等）与插件授权照常询问 |
 
 等级语义（矩阵格 = 免确认范围，矩阵外逐次确认）：
 
@@ -156,6 +157,16 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 两列分工、互不叠加：文件类看路径格（读全盘免确认），执行类看工具列（Safe 免、
 Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secret` 授权流不随等级变化。
+
+无人值守（`unattended`）与等级是两件事，别混着理解：
+
+- **等级**决定「哪些操作免确认」；**无人值守**决定「需要确认时怎么办」——不弹窗问人，直接
+  拒绝并告诉模型原因（没人能批准、别重试、在允许范围内继续、把待批事项列出来）。
+- 它不是提权：越界操作**不会**被执行，也不会被悄悄跳过；模型会改道去用权限内的手段。
+- 与 `-yes` 相反：`-yes` 是自动放行（越界操作照做）。两者同时出现时 `-yes` 优先（命令行显式
+  意图压过配置），启动会打一条警告说明本次没启用无人值守。
+- 开启期间状态行常驻「无人值守」标记；回来看到一串「已拒绝」时，看状态行就知道原因。
+- 模型提问（`ask_user`）同款：没人可问时直接回「用户不在」，不让轮次卡在提问面板上。
 
 ### limits
 
@@ -290,7 +301,7 @@ profile 配置 `<data>/profiles/default/config.json`：
   "output": { "tts": false, "notify": true },
   "mcpServers": {},
   "plugins": {},
-  "permissions": { "level": "strict" },
+  "permissions": { "level": "strict", "unattended": false },
   "limits": {
     "max_turns": 8,
     "max_context_tokens": 64000,

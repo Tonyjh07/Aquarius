@@ -32,6 +32,8 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"mic"}, Usage: "[秒数]",
 		Desc: "录一段语音，转成文字后作为输入发送（缺省 60 秒，最长 4 分钟）"},
 	{Names: []string{"permission"}, Usage: "[等级]", Desc: "查看/切换权限等级（read-only/strict/permissive/full-access）"},
+	{Names: []string{"unattended"}, Usage: "[on|off]",
+		Desc: "无人值守：越界操作当场拒绝并说明、不再等人确认（权限等级不变；无参 = 切换）"},
 	{Names: []string{"memory"}, Usage: "[会话id]", Desc: "用系统编辑器打开记忆文件（缺省为全局 memories.md）"},
 	{Names: []string{"usage"}, Desc: "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）"},
 	{Names: []string{"jobs"}, Usage: "[list|logs <id> [行数]|kill <id>]", Desc: "后台任务管理（查看、日志、终止）"},

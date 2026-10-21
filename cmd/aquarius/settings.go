@@ -365,6 +365,14 @@ func settingsCommands(cur uigui.SettingsSnapshot, p uigui.SettingsPatch) []port.
 	if p.Permission != "" && p.Permission != cur.Permission {
 		cmds = append(cmds, port.Command{Name: "permission", Args: []string{p.Permission}})
 	}
+	if p.Unattended != cur.Unattended {
+		// D185：开关是布尔，命令面要显式档位（无参 = 切换，设置窗必须能表达「设成这个值」）。
+		on := "off"
+		if p.Unattended {
+			on = "on"
+		}
+		cmds = append(cmds, port.Command{Name: "unattended", Args: []string{on}})
+	}
 	if p.Model != "" && p.Model != cur.Model {
 		cmds = append(cmds, port.Command{Name: "model", Args: []string{p.Model}})
 	}

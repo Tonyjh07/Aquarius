@@ -30,6 +30,54 @@ func (s *Session) execCompact(ctx context.Context, cmd port.Command) (string, er
 		absorbed, node.Usage.InputTokens, node.Usage.OutputTokens), nil
 }
 
+// execUnattended 实现 /unattended [on|off]（D185 口径四）：无参 = 切换，有参 = 显式
+// 设置；写回 config 成功后活开关即时生效（装饰器每次调用现取）。
+// 开关语义是「越界即拒」，与 `-yes`（自动允许）相反——报告里必须说清，否则用户会
+// 把它当成另一种免确认档。
+func (s *Session) execUnattended(_ context.Context, args []string) (string, error) {
+	if len(args) > 1 {
+		return "", errors.New("用法: /unattended [on|off]")
+	}
+	cur := s.unattendedOn()
+	want := !cur
+	if len(args) == 1 {
+		switch strings.ToLower(strings.TrimSpace(args[0])) {
+		case "on":
+			want = true
+		case "off":
+			want = false
+		default:
+			return "", fmt.Errorf("用法: /unattended [on|off]（当前 %s）", onOff(cur))
+		}
+	}
+	if want == cur && len(args) == 1 {
+		return fmt.Sprintf("无人值守已是 %s", onOff(cur)), nil
+	}
+	if s.persistUnatt == nil {
+		return "", errors.New("session: 未配置无人值守持久化，无法切换（需能写回 config）")
+	}
+	if err := s.persistUnatt(want); err != nil {
+		return "", fmt.Errorf("session: 写回 config 失败: %w", err)
+	}
+	if !want {
+		return "无人值守已关闭（越界操作恢复逐次确认；已写回 config）", nil
+	}
+	return "无人值守已开启（已写回 config，工具链路即时生效）\n" +
+		"权限边界不变：模型发起的越界操作会被当场拒绝并说明，不再弹确认等人；" +
+		"你自己输入的命令（删除会话等）与插件授权照常询问。与 -yes 相反——那个是自动放行。", nil
+}
+
+// unattendedOn 无人值守当前是否开着；未接线 = 关（与装饰器同口径）。
+func (s *Session) unattendedOn() bool { return s.unattended != nil && s.unattended() }
+
+// onOff 布尔的中文短写（命令回执用）。
+func onOff(on bool) string {
+	if on {
+		return "开"
+	}
+	return "关"
+}
+
 // execPermission 实现 /permission：查看或切换权限等级。
 func (s *Session) execPermission(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) == 0 {

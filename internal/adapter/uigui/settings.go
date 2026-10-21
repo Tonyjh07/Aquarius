@@ -170,7 +170,9 @@ type BuiltinModuleView struct {
 // ProviderManager（D110②），不在本快照。MCPServers/Plugins 只读展示（编辑走
 // 高级页 raw JSON，Q10）；RawJSON = config.json 原文（高级页，解析失败不阻断开窗）。
 type SettingsSnapshot struct {
-	Permission   string // 规范值 read-only|strict|permissive|full-access（perm.Level）
+	Permission string // 规范值 read-only|strict|permissive|full-access（perm.Level）
+	// Unattended 无人值守开（D185）：运行态现取，与 Permission 同口径。
+	Unattended   bool
 	Model        string
 	Think        bool
 	Effort       string  // "" = 未设（D34 清除态）
@@ -222,7 +224,9 @@ type SettingsSnapshot struct {
 // 留空语义）；SystemPrompt 恒写（清空 = 合法语义「内置默认」）；RawJSON 非空 =
 // 高级页整文件替换（保存前 cmd 侧 JSON 校验）。
 type SettingsPatch struct {
-	Permission   string
+	Permission string
+	// Unattended 无人值守（D185）：恒写（布尔无留空语义）；与 Permission 一起走内核命令。
+	Unattended   bool
 	Model        string
 	Think        bool
 	Effort       string
@@ -388,6 +392,7 @@ type settingsForm struct {
 	winH     widget.Editor // D90：主窗像素高
 	profName widget.Editor // D110③：profile 名（新建/复制/切换共用输入档）
 	think    widget.Bool
+	unattend widget.Bool // D185：无人值守开关（常规页权限区）
 	perm     cycleField
 	effort   cycleField
 	theme    cycleField
@@ -681,6 +686,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	// api_key 只写不回显（D35）：字段恒空，留空 = 保持不变。
 	f.hotkey.SetText(s.Hotkey)
 	f.think.Value = s.Think
+	f.unattend.Value = s.Unattended
 	f.perm.setValue(s.Permission)
 	f.effort.setValue(s.Effort)
 	f.theme.setValue(s.Theme) // "" 未命中 → 首项 = 跟随系统

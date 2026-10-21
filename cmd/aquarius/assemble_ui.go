@@ -51,6 +51,7 @@ func (w *wiring) previewVoice(req port.SpeechRequest) error {
 func (w *wiring) settingsSnapshot() uigui.SettingsSnapshot {
 	s := readTextSettings(w.cfgPath)
 	s.Permission = w.lvl.Get().String()
+	s.Unattended = w.unattended.Get()
 	if agent := w.agentPtr.Load(); agent != nil {
 		s.Model = agent.CurrentModel()
 		s.Think = agent.ThinkOn()
@@ -89,9 +90,10 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Status: func() uigui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
 					st := uigui.Status{
-						Model:  agent.CurrentModel(),
-						Level:  w.lvl.Get().String(),
-						Effort: agent.CurrentEffort(), // D34：effort 档位（off 时为空）
+						Model:      agent.CurrentModel(),
+						Level:      w.lvl.Get().String(),
+						Effort:     agent.CurrentEffort(), // D34：effort 档位（off 时为空）
+						Unattended: w.unattended.Get(),    // D185：状态行常驻标记 + 菜单勾选源
 						// D82：logo 事实卡（§15.1/S1-1g）——D110 起为真实 profile 名，
 						// 会话事实取 app 侧发布快照（无锁原子读，§15.5 同口径）。
 						Profile: w.profileName,
@@ -138,9 +140,10 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Status: func() uitui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
 					return uitui.Status{
-						Model:  agent.CurrentModel(),
-						Level:  w.lvl.Get().String(),
-						Effort: agent.CurrentEffort(), // D34：effort 档位（off 时为空）
+						Model:      agent.CurrentModel(),
+						Level:      w.lvl.Get().String(),
+						Effort:     agent.CurrentEffort(), // D34：effort 档位（off 时为空）
+						Unattended: w.unattended.Get(),    // D185：状态行常驻标记
 					}
 				}
 				return uitui.Status{}

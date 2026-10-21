@@ -818,6 +818,86 @@ func TestSessionPermissionCommand(t *testing.T) {
 	}
 }
 
+// TestSessionUnattendedCommand /unattended（D185 口径四/五）：无参 = 切换、有参 = 显式
+// 设置；写回成功后活开关同步；回执要说清与 -yes 的反向关系（拒绝 vs 放行）。
+func TestSessionUnattendedCommand(t *testing.T) {
+	on := false
+	var persisted []bool
+	agent := newAgent(t, &scriptLLM{t: t}, &recorder{}, Deps{}, Config{})
+	s, err := NewSession(context.Background(), SessionDeps{
+		Store:             newMemStore(),
+		Agent:             agent,
+		IDs:               &seqIDs{},
+		Clock:             fixedClock{testTime},
+		Unattended:        func() bool { return on },
+		PersistUnattended: func(v bool) error { persisted = append(persisted, v); on = v; return nil },
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	run := func(args ...string) (string, error) {
+		return s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "unattended", Args: args}})
+	}
+
+	// 无参 = 切换（关 → 开）。
+	out, err := run()
+	if err != nil {
+		t.Fatalf("toggle on: %v", err)
+	}
+	if !on || len(persisted) != 1 || !persisted[0] {
+		t.Fatalf("切换后 on=%v persisted=%v", on, persisted)
+	}
+	for _, want := range []string{"无人值守已开启", "-yes", "权限边界不变"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("开启回执缺 %q:\n%s", want, out)
+		}
+	}
+
+	// 显式设置同值 = 短路（不重复写回）。
+	if _, err := run("on"); err != nil {
+		t.Fatalf("set on: %v", err)
+	}
+	if len(persisted) != 1 {
+		t.Fatalf("同值不应重复写回: %v", persisted)
+	}
+	// 显式关闭。
+	out, err = run("off")
+	if err != nil || on || len(persisted) != 2 || persisted[1] {
+		t.Fatalf("off = %q, %v, on=%v persisted=%v", out, err, on, persisted)
+	}
+	if !strings.Contains(out, "恢复逐次确认") {
+		t.Fatalf("关闭回执: %q", out)
+	}
+	// 大小写不敏感（同值 = 短路，不重复写回）+ 非法值报因。
+	out, err = run("OFF")
+	if err != nil {
+		t.Fatalf("OFF: %v", err)
+	}
+	if !strings.Contains(out, "已是") {
+		t.Fatalf("同值时回执应说明已是该状态: %q", out)
+	}
+	if on || len(persisted) != 2 {
+		t.Fatalf("同值不应写回: on=%v persisted=%v", on, persisted)
+	}
+	if _, err := run("maybe"); err == nil {
+		t.Fatal("非法值应报错")
+	}
+	if _, err := run("on", "off"); err == nil {
+		t.Fatal("多参应报错")
+	}
+
+	// 无持久化回调：有参报错，无参也报错（无法落盘就不该假装切了）。
+	s2, err := NewSession(context.Background(), SessionDeps{
+		Store: newMemStore(), Agent: agent, IDs: &seqIDs{}, Clock: fixedClock{testTime},
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	if _, err := s2.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "unattended", Args: []string{"on"}}}); err == nil {
+		t.Fatal("无持久化回调应报错")
+	}
+}
+
 // TestSessionCompactCommand D21 手动轨：/compact 生成摘要节点、落盘、报记账；重复压缩短路。
 func TestSessionCompactCommand(t *testing.T) {
 	store := newMemStore()

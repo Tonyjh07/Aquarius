@@ -669,6 +669,15 @@ func TestReasoningFlow(t *testing.T) {
 	if line := m.statusLine(); strings.Contains(line, "effort") {
 		t.Fatalf("effort 为空不应标注: %q", line)
 	}
+	// D185：无人值守标记常驻（与权限档并列）。
+	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict", Unattended: true} }
+	if line := m.statusLine(); !strings.Contains(line, "无人值守") {
+		t.Fatalf("status = %q, want 无人值守", line)
+	}
+	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict"} }
+	if line := m.statusLine(); strings.Contains(line, "无人值守") {
+		t.Fatalf("关闭后不应标注: %q", line)
+	}
 }
 
 // TestSanitizeControlStripsSequences 终端注入面：CSI、OSC（BEL 与 ST 收尾）、

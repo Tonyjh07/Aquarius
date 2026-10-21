@@ -177,7 +177,8 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	// atomic 存取（审查修复）：TUI 状态行在事件循环 goroutine 读、/permission 在主
 	// goroutine 写——D33 之后"单 goroutine"前提不再成立。
 	w.lvl = newLevelHolder(level)
-	w.persist = &cfgWriter{path: cfgPath, lvl: w.lvl}
+	w.unattended = newUnattendedHolder(cfg.Permissions.Unattended)
+	w.persist = &cfgWriter{path: cfgPath, lvl: w.lvl, unattended: w.unattended}
 
 	// D141：首跑落模板的可见回执（gui 双击时只控制台可见；指引全文只在 tui/repl 打）。
 	// gui 继续装配——缺密钥由 run() 的向导窗接管；tui/repl 保持旧契约（指引 + 退出 0）。

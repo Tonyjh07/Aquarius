@@ -1,5 +1,5 @@
 # Aquarius 阶段规划（TODO 整理与分阶段路线）
-<!-- docs-sync: 2026-10-21 @ ebc8ce2 -->
+<!-- docs-sync: 2026-10-21 @ abc0ce4 -->
 
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
@@ -452,7 +452,7 @@
 3. 截图 → `AttachmentStore` → `tool.Result.Images`（复用 D169 通道），长边超 1600 按比例缩小；
 4. 无 `vision` 能力时照常注册、执行报因；`docs/usage.md` 工具表与手工验收（遮挡窗口）。
 
-### S13 · 对话交互补强（P1，L，**口径已定 2026-10-21，D184–D188；① 已落地，②–⑤ 待落码**）
+### S13 · 对话交互补强（P1，L，**口径已定 2026-10-21，D184–D188；①② 已落地，③–⑤ 待落码**）
 
 用户一轮提的五件，按「先内核后入口」排：
 
@@ -460,9 +460,10 @@
    `toolbuiltin/askuser`（1–4 题、每题 0–9 项、答案对齐、放弃/无人值守文案）→ `uitui` / `repl`
    降级为编号选单 → `uigui` 输入栏展开态提问面板（多题页签、进度段、最小化、自由输入、键位）。
    `Esc` = 中断本轮，「忽略」= 放弃全部。**其余四项在它之后。**
-2. **无人值守**（D185）：`decorate.Unattended`（只包 `toolrun` 那条链）+ `UnattendedAsker`；
-   `permissions.unattended` + `/unattended` + 主界面/托盘菜单勾选 + 设置窗「常规」页开关 +
-   状态行标记；`-yes` 优先、两者同开启动告警。
+2. **无人值守**（D185，**已落地 2026-10-21**）：`decorate.Unattended` + `UnattendedAsker`（只包
+   `toolrun` 与 `ask_user` 那条链，用户键入的命令确认与插件授权照常问）；`permissions.unattended` +
+   `/unattended [on|off]` + 球/托盘菜单勾选 + 设置窗「常规」页开关 + 状态行常驻标记；`-yes` 优先
+   （不装装饰器、同开时启动告警并压掉活开关）。
 3. **多附件**（D186）：`port.RawInput.Attachments` + `ingestfile` 逐个摄取（部分成功）+
    单条 ≤ 8 个；GUI 暂存列表与 chip 排；文件框 `OFN_ALLOWMULTISELECT`（单选/多选两种缓冲形态都要解对）。
 4. **图片附件入口**（D187）：`Ctrl+V` 读剪贴板位图（`PNG` 优先、退 `CF_DIB`/`CF_DIBV5` 自转 PNG）+

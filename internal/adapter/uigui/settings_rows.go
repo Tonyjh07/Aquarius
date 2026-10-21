@@ -37,6 +37,7 @@ const (
 	rowWelcome // D141：欢迎 / 首次运行引导入口（两个菜单都不带，唯此一处 + 首跑自动）
 	rowModelName
 	rowPerm
+	rowUnattended // D185：无人值守开关（权限区内，紧跟权限等级）
 	rowThink
 	rowEffort
 	rowHotkey

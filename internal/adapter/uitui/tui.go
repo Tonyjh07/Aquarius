@@ -44,9 +44,10 @@ const inputCap = 256
 
 // Status 状态行数据（View 时经回调现取，反映 /model、/permission、/effort 热切换）。
 type Status struct {
-	Model  string
-	Level  string
-	Effort string // D34：推理档位（think off 时为空——effort 不发送）
+	Model      string
+	Level      string
+	Effort     string // D34：推理档位（think off 时为空——effort 不发送）
+	Unattended bool   // D185：无人值守开（状态行常驻标记）
 }
 
 // Options 装配选项（装配根注入）。

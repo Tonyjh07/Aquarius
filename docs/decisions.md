@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-21 @ ebc8ce2 -->
+<!-- docs-sync: 2026-10-21 @ abc0ce4 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -199,7 +199,7 @@
 | D182 | 思考块定稿默认折叠（`▸ 已思考 N 秒`，点开才铺正文；流式不折叠）（§15.3） | 生效 |
 | D183 | 主界面气泡菜单加「生成响应」（有节点 ID 才给；项组拆 base + 尾项）（§15.9） | 生效 |
 | D184 | 提问工具 `ask_user`：`port.Asker` + 输入栏展开态提问面板；Esc = 中断本轮、「忽略」= 放弃全部（§4.3/§5.9/§15.2） | 生效 |
-| D185 | 无人值守：越界确认当场拒绝并说明，轮次不阻塞；只包工具链，用户键入的命令确认照常问（§9） | 待落码 |
+| D185 | 无人值守：越界确认当场拒绝并说明，轮次不阻塞；只包工具链，用户键入的命令确认照常问（§9） | 生效 |
 | D186 | 多附件：`RawInput.Attachments` 列表 + 逐个摄取（部分成功）+ 单条上限 8 个（§5.7/§15.2） | 待落码 |
 | D187 | 图片附件入口：Ctrl+V 读剪贴板位图、拖拽走 `WM_DROPFILES`、暂存出缩略图、单图 20MB（§4.2/§15.2） | 待落码 |
 | D188 | 编辑消息可增删附件：`/edit --attach/--drop/--drop-all` + GUI 编辑态附件槽（§7.3/§15.2） | 待落码 |
@@ -3739,9 +3739,11 @@
 > **不阻塞**。要的是：权限边界原样，越界的一律当场拒绝并说明，模型自己改道。
 
 - **口径一：拒绝而非放行**。`Confirmer` 装饰器（`decorate.Unattended`）在开关打开时**不调内层**，
-  直接返回 `ConfirmAnswer{Allow:false, Reason: unattended mode: nobody is available to approve this; ...}`，
-  回填 `user denied <tool>: <reason>`。不弹窗、不闪窗、不抢输入栏；拒绝原因要写清「别重试、
-  在权限允许的范围内继续、把需要批准的事列出来」，否则模型会反复重试同一动作。
+  直接返回 `ConfirmAnswer{Allow:false, Reason: decorate.UnattendedReason}`（`unattended mode: nobody is
+  available to approve this call. Do not retry it; continue with what the current permission level allows
+  and list anything that still needs approval.`），回填 `user denied <tool>: <reason>`。不弹窗、不闪窗、
+  不抢输入栏；拒绝原因要写清「别重试、在权限允许的范围内继续、把需要批准的事列出来」，否则模型会
+  反复重试同一动作。
 - **口径二：只管模型发起的确认**。只有 `toolrun` 拿到装饰后的 `Confirmer`；`/rm`、`/rmconv`
   这类**用户亲手输入**的确认照常询问（人就在键盘前），插件能力授权同理不套。
 - **口径三：与 `-yes` 的优先级**。`-yes` = 自动允许（显式命令行意图），此时不装该装饰器；
@@ -3754,6 +3756,12 @@
   与「忽略」的 `Dismissed` 分开——没人可问不是用户决定「你自己看着办」），提问也不阻塞轮次。
 - **测试**：装饰器单测（开 = 不调内层且原因稳定 / 关 = 透传 / ctx 取消优先）；
   装配级（`-yes` 不装、`/rm` 仍问、菜单勾选写回 config）；GUI 状态行标记与开关联动。
+  **落码口径（2026-10-21）**：装配根把两条链拆开——`toolChannelsFor`（`cmd/aquarius/channels.go`）
+  返回用户面 `confirmer/asker`（`/rm`、`/rmconv`、插件授权用）与模型链 `toolConfirmer/toolAsker`
+  （`toolrun` + `ask_user` 用），只有后者套装饰器；`-yes` 时两条链都换 `yesConfirmer`/`askNone`
+  且不装装饰器，并在启动时把活开关压到关（状态行与菜单勾选必须反映真实判定，config 不动）。
+  活开关是 `unattendedHolder`（`atomic.Bool`），装饰器每次调用现问，故三处入口都热生效。
+  菜单项 ID 必须避开权限子菜单区间 `[cmdPermBase, cmdPermBase+4)`，取 112。
 - **否决**：① 用 full-access 顶替（放大权限，越界操作会被真执行）；② 拒绝时不带原因
   （模型只看到 `user denied`，会反复重试）；③ 连用户键入的命令确认也拒（`/rm` 变哑巴，纯属自伤）。
 

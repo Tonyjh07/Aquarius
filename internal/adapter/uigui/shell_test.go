@@ -14,17 +14,18 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestLogoMenuItems D73 logo 菜单契约（项序/文案固定）：新对话 / 权限（二级菜单 =
-// settings.go permLevels 四档、当前档打勾）/ 消息历史 / 设置 / 置顶（勾选）/ 隐藏 /
-// 分隔 / 退出；档位空（Status 未就绪）则四档均不勾。
+// TestLogoMenuItems D73/D185 logo 菜单契约（项序/文案固定）：新对话 / 权限（二级菜单 =
+// settings.go permLevels 四档、当前档打勾）/ 无人值守（勾选）/ 消息历史 / 设置 / 置顶（勾选）/
+// 隐藏 / 分隔 / 退出；档位空（Status 未就绪）则四档均不勾。
 func TestLogoMenuItems(t *testing.T) {
-	items := logoMenuItems("strict", true)
+	items := logoMenuItems("strict", true, true)
 	want := []struct {
 		id    uintptr
 		label string
 	}{
 		{cmdNew, "新对话"},
 		{0, "权限"},
+		{cmdUnattended, "无人值守"},
 		{cmdHistory, "消息历史"},
 		{cmdSettings, "设置"},
 		{cmdTopMost, "置顶"},
@@ -41,8 +42,14 @@ func TestLogoMenuItems(t *testing.T) {
 				i, items[i].id, items[i].label, w.id, w.label)
 		}
 	}
-	if !items[4].checked {
+	if !items[5].checked {
 		t.Fatal("置顶项应勾选（平台 TopMost 传入为真）")
+	}
+	if !items[2].checked {
+		t.Fatal("无人值守项应勾选（传入为真）")
+	}
+	if logoMenuItems("strict", true, false)[2].checked {
+		t.Fatal("无人值守关闭时不应勾选")
 	}
 	// 权限二级菜单：四档 id = cmdPermBase+i、文案同 permLevels，当前档打勾。
 	sub := items[1].sub
@@ -58,7 +65,7 @@ func TestLogoMenuItems(t *testing.T) {
 			t.Fatalf("sub[%d](%s) 勾选 = %v, want %v", i, lv, sub[i].checked, want)
 		}
 	}
-	for _, it := range logoMenuItems("", true) {
+	for _, it := range logoMenuItems("", true, false) {
 		for _, s := range it.sub {
 			if s.checked {
 				t.Fatalf("空档位时 %q 不应勾选", s.label)
@@ -117,6 +124,45 @@ func TestMenuDispatchNew(t *testing.T) {
 		}
 	default:
 		t.Fatal("inCh 未收到 /new")
+	}
+}
+
+// TestMenuDispatchUnattended D185 口径四：球/托盘勾选 = 注入 /unattended（无参切换，
+// 与键入同路径——写回 config + 装饰器热生效都在命令里）。
+func TestMenuDispatchUnattended(t *testing.T) {
+	u := newHeadless(t, Options{})
+	menuDispatch(u, cmdUnattended)
+	drainSync(t, u)
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "unattended" || len(in.Command.Args) != 0 {
+			t.Fatalf("inCh 输入 = %+v, want /unattended（无参切换）", in)
+		}
+	default:
+		t.Fatal("inCh 未收到 /unattended")
+	}
+}
+
+// TestMenuUnattendedChecked D185：菜单勾选源 = Status.Unattended（与状态行同一回调），
+// 现取而非缓存——开关一变，下次弹菜单就是新态。
+func TestMenuUnattendedChecked(t *testing.T) {
+	on := false
+	u := newHeadless(t, Options{Status: func() Status { return Status{Level: "strict", Unattended: on} }})
+	checked := func() bool {
+		for _, it := range u.menuItems(platform.MenuTray) {
+			if it.ID == cmdUnattended {
+				return it.Checked
+			}
+		}
+		t.Fatal("托盘菜单缺无人值守项")
+		return false
+	}
+	if checked() {
+		t.Fatal("关闭时不应勾选")
+	}
+	on = true
+	if !checked() {
+		t.Fatal("开启后应勾选")
 	}
 }
 

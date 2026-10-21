@@ -65,7 +65,7 @@ func TestNewSettingsFormSnapshot(t *testing.T) {
 }
 
 // TestNewSettingsFormDefaults 快照空值：权限对齐默认档 strict（防误发切换）、
-// 主题对齐 system、档位 = 未设。
+// 主题对齐 system、档位 = 未设、无人值守为关。
 func TestNewSettingsFormDefaults(t *testing.T) {
 	u := newHeadless(t, Options{Settings: func() SettingsSnapshot { return SettingsSnapshot{} }})
 	f := newSettingsForm(u)
@@ -74,6 +74,49 @@ func TestNewSettingsFormDefaults(t *testing.T) {
 	}
 	if f.theme.value() != "system" || f.effort.value() != "" {
 		t.Errorf("空快照枚举档: theme=%q effort=%q", f.theme.value(), f.effort.value())
+	}
+	if f.unattend.Value {
+		t.Error("无人值守缺省应为关")
+	}
+}
+
+// TestSettingsUnattendedRow D185：无人值守开关在「常规」页权限区、紧跟权限等级行
+// （同一个议题的开关不该散到别的页）；快照 true 时勾上、保存回写 patch。
+func TestSettingsUnattendedRow(t *testing.T) {
+	var got SettingsPatch
+	snap := fillSnapshot()
+	snap.Unattended = true
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return snap },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
+	})
+	f := newSettingsForm(u)
+	rows := f.pageRows(pageGeneral)
+	idx := -1
+	for i, r := range rows {
+		if r.kind == rowUnattended {
+			idx = i
+			break
+		}
+	}
+	if idx <= 0 {
+		t.Fatalf("「常规」页缺 rowUnattended（idx=%d）", idx)
+	}
+	if prev := rows[idx-1].kind; prev != rowPerm {
+		t.Fatalf("无人值守行应紧跟权限等级行：前一行 = %v", prev)
+	}
+	if !f.unattend.Value {
+		t.Fatal("快照 Unattended=true 时开关应勾上")
+	}
+	u.saveSettings(f)
+	if !got.Unattended {
+		t.Fatal("保存应把开关状态带进 patch")
+	}
+	// 关掉再保存 → patch 反映关（布尔恒写，不做「留空 = 不改」）。
+	f.unattend.Value = false
+	u.saveSettings(f)
+	if got.Unattended {
+		t.Fatal("取消勾选后 patch 应为 false")
 	}
 }
 

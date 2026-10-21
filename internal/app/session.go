@@ -37,6 +37,11 @@ type SessionDeps struct {
 	SandboxPath string
 	// PersistLevel 把等级切换写回 config（D22）；nil 时 /permission 切换报错。
 	PersistLevel func(perm.Level) error
+	// Unattended 无人值守开关现取（D185）；nil = 恒关（测试/未接线装配）。
+	Unattended func() bool
+	// PersistUnattended 把无人值守开关写回 config（D185 口径四）；nil 时 /unattended
+	// 有参报错（无参仍可报告当前状态）。
+	PersistUnattended func(on bool) error
 	// Confirmer 逐次确认（/rm 二次确认等）；nil 时破坏性命令报"未配置确认器"。
 	Confirmer port.Confirmer
 	// Jobs 后台任务管理（/jobs，DESIGN §7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
@@ -97,6 +102,8 @@ type Session struct {
 	level          perm.Level
 	sandboxPath    string
 	persistLevel   func(perm.Level) error
+	unattended     func() bool
+	persistUnatt   func(on bool) error
 	confirmer      port.Confirmer
 	jobs           port.JobManager
 	cancelWatchers func(conversation.ID)
@@ -183,6 +190,8 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		level:          level,
 		sandboxPath:    d.SandboxPath,
 		persistLevel:   d.PersistLevel,
+		unattended:     d.Unattended,
+		persistUnatt:   d.PersistUnattended,
 		confirmer:      d.Confirmer,
 		jobs:           d.Jobs,
 		cancelWatchers: d.CancelWatchers,
@@ -493,6 +502,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return s.execMic(ctx, cmd)
 	case "permission":
 		return s.execPermission(ctx, cmd)
+	case "unattended":
+		return s.execUnattended(ctx, cmd.Args)
 	case "memory":
 		return s.execMemory(ctx, cmd)
 	case "usage":

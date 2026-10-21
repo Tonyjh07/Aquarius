@@ -471,16 +471,17 @@ func contentRows(img *image.RGBA, bg color.RGBA, y0, y1, width int) (rows, px in
 	return rows, px
 }
 
-// TestTrayMenuItemsNoWelcome D141：托盘项集**不含**欢迎窗入口（入口在设置窗）——项序与
-// 文案为契约（与 logo 菜单的 TestLogoMenuItems 对偶）。
+// TestTrayMenuItemsNoWelcome D141/D185：托盘项集**不含**欢迎窗入口（入口在设置窗）、
+// 含无人值守勾选项——项序与文案为契约（与 logo 菜单的 TestLogoMenuItems 对偶）。
 func TestTrayMenuItemsNoWelcome(t *testing.T) {
-	items := trayMenuItems(true)
+	items := trayMenuItems(true, false)
 	want := []struct {
 		id    uintptr
 		label string
 	}{
 		{cmdToggle, "显示 / 隐藏输入窗"},
 		{cmdTopMost, "窗口置顶"},
+		{cmdUnattended, "无人值守"},
 		{0, ""},
 		{cmdSettings, "设置"},
 		{cmdHistory, "会话历史"},
@@ -497,6 +498,12 @@ func TestTrayMenuItemsNoWelcome(t *testing.T) {
 		if strings.Contains(items[i].label, "欢迎") {
 			t.Fatalf("托盘菜单不应再带欢迎窗入口（D141 移入设置窗）: %q", items[i].label)
 		}
+	}
+	if items[2].checked {
+		t.Fatal("无人值守关闭时托盘项不应勾选")
+	}
+	if !trayMenuItems(true, true)[2].checked {
+		t.Fatal("无人值守开启时托盘项应勾选")
 	}
 }
 
@@ -548,8 +555,8 @@ func TestOpenWelcomeSpawnsWindow(t *testing.T) {
 // **逐项一致**（项集是契约、文案是用户可见事实——菜单改了两行不同步即测试失败）。
 func TestTutorialTipsMatchMenus(t *testing.T) {
 	menus := map[string][]menuIt{
-		"球右键：":  logoMenuItems("strict", true),
-		"托盘右键：": trayMenuItems(true),
+		"球右键：":  logoMenuItems("strict", true, false),
+		"托盘右键：": trayMenuItems(true, false),
 	}
 	found := map[string]bool{}
 	for _, tip := range TutorialTips() {

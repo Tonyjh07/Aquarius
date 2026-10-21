@@ -60,7 +60,13 @@ func (u *UI) frameItems() []blockView {
 }
 
 // statusText 状态行文本（数据源同 uitui Status 回调：Model/Level/Effort 现取）。
+// D185：无人值守开启时「无人值守」标记**常驻**（空闲也显示）——否则用户回来只看到
+// 一串「已拒绝」，会当成 bug。
 func (u *UI) statusText() string {
+	unattended := false
+	if u.opts.Status != nil {
+		unattended = u.opts.Status().Unattended
+	}
 	if u.generating.Load() {
 		phase := "生成中"
 		if u.m.think.Len() > 0 {
@@ -79,18 +85,30 @@ func (u *UI) statusText() string {
 				parts = append(parts, st.Effort)
 			}
 		}
+		if unattended {
+			parts = append(parts, "无人值守")
+		}
 		return strings.Join(parts, " · ")
 	}
 	// D92/D97 编辑态提示（无生成状态时占用状态行；生成优先——编辑可跨生成提交排队）；
 	// 方式后缀让当前修订方式在提交前始终可见（D97④）。
 	if u.m.editTarget != "" {
+		var hint string
 		switch u.m.editMode {
 		case conversation.Carry:
-			return "编辑中（转移历史）· Enter 提交 / Esc 取消"
+			hint = "编辑中（转移历史）· Enter 提交 / Esc 取消"
 		case conversation.Clone:
-			return "编辑中（复制历史）· Enter 提交 / Esc 取消"
+			hint = "编辑中（复制历史）· Enter 提交 / Esc 取消"
+		default:
+			hint = "编辑中 · Enter 提交 / Esc 取消"
 		}
-		return "编辑中 · Enter 提交 / Esc 取消"
+		if unattended {
+			return "无人值守 · " + hint
+		}
+		return hint
+	}
+	if unattended {
+		return "无人值守 · 越界操作会被拒绝"
 	}
 	return ""
 }

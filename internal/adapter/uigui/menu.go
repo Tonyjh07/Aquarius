@@ -19,6 +19,10 @@ const (
 	cmdSettings = 106 // 功能窗入口（§15.7/D60：设置窗核心档）
 	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
 	cmdPermBase = 108 // 权限子菜单四档基值（D73：+i 对齐 settings.go permLevels 序）
+	// 无人值守勾选项（D185 口径四：与 /unattended 同路径）。ID 必须避开权限子菜单的
+	// [cmdPermBase, cmdPermBase+len(permLevels)) 区间——分发先按区间拦，落在里面会被
+	// 当成某档权限（112 = 108+4，紧随其后）。
+	cmdUnattended = 112
 	// 注：105 曾为 cmdWelcome（欢迎窗入口）。D141 起欢迎窗**入口移入设置窗**，两个菜单都
 	// 不带此项，该 ID 及分发分支删除（不留死码）。
 
@@ -69,16 +73,17 @@ type menuIt struct {
 	sub     []menuIt // 非空 = 二级菜单（D73：权限四档）
 }
 
-// logoMenuItems logo 右键菜单（D72/D73，项序/文案为契约、测试锁定）：置顶勾选随
-// topMostQuery（查询类，跨线程直调）。
-func logoMenuItems(level string, topMost bool) []menuIt {
+// logoMenuItems logo 右键菜单（D72/D73/D185，项序/文案为契约、测试锁定）：置顶勾选随
+// topMostQuery（查询类，跨线程直调）；无人值守勾选源同权限档（Status 现取）。
+func logoMenuItems(level string, topMost, unattended bool) []menuIt {
 	permSub := make([]menuIt, 0, len(permLevels))
 	for i, lv := range permLevels {
 		permSub = append(permSub, menuIt{id: cmdPermBase + uintptr(i), label: lv, checked: lv == level})
 	}
 	return []menuIt{
 		{id: cmdNew, label: "新对话"},
-		{label: "权限", sub: permSub}, // D73：二级菜单四档，当前档打勾
+		{label: "权限", sub: permSub},                             // D73：二级菜单四档，当前档打勾
+		{id: cmdUnattended, label: "无人值守", checked: unattended}, // D185：越界即拒
 		{id: cmdHistory, label: "消息历史"},
 		{id: cmdSettings, label: "设置"},
 		{id: cmdTopMost, label: "置顶", checked: topMost},
@@ -90,10 +95,12 @@ func logoMenuItems(level string, topMost bool) []menuIt {
 
 // trayMenuItems 托盘右键菜单项集（§15.1：显示/隐藏、置顶开关、功能窗入口 + 退出）。
 // D141：**不带欢迎窗入口**——欢迎 / 首次运行引导从设置窗开（项集为契约、测试锁定）。
-func trayMenuItems(topMost bool) []menuIt {
+// D185：加无人值守勾选项（托盘与球右键两处都能开关，热生效）。
+func trayMenuItems(topMost, unattended bool) []menuIt {
 	return []menuIt{
 		{id: cmdToggle, label: "显示 / 隐藏输入窗"},
 		{id: cmdTopMost, label: "窗口置顶", checked: topMost},
+		{id: cmdUnattended, label: "无人值守", checked: unattended},
 		{},
 		{id: cmdSettings, label: "设置"},
 		{id: cmdHistory, label: "会话历史"},
@@ -181,13 +188,22 @@ func permLevelOf(u *UI) string {
 	return u.opts.Status().Level
 }
 
+// unattendedOf 无人值守当前态（D185 勾选源）：与权限档同一条 Status 回调现取
+// （装配根读原子开关），因此菜单打开瞬间就是真实态。
+func unattendedOf(u *UI) bool {
+	if u.opts.Status == nil {
+		return false
+	}
+	return u.opts.Status().Unattended
+}
+
 // menuItems 按出处现组项集并转平台 DTO（平台呈现前回调，见 platHost.MenuItems）。
 func (u *UI) menuItems(kind platform.MenuKind) []platform.MenuItem {
 	switch kind {
 	case platform.MenuTray:
-		return toMenuItems(trayMenuItems(u.plat.TopMost()))
+		return toMenuItems(trayMenuItems(u.plat.TopMost(), unattendedOf(u)))
 	case platform.MenuLogo:
-		return toMenuItems(logoMenuItems(permLevelOf(u), u.plat.TopMost()))
+		return toMenuItems(logoMenuItems(permLevelOf(u), u.plat.TopMost(), unattendedOf(u)))
 	case platform.MenuBubble:
 		ctx := u.bubbleMenu.Load()
 		if ctx == nil {
@@ -316,6 +332,9 @@ func menuDispatch(u *UI, r uintptr) {
 		return
 	}
 	switch r {
+	case cmdUnattended:
+		// D185：勾选 = 切换（与键入同路径——config 写回 + 装饰器热生效都在 /unattended 里）。
+		_ = u.post(inputMsg{text: "/unattended"})
 	case cmdNew:
 		_ = u.post(inputMsg{text: "/new"}) // 新对话：与键入同路径（parseInput → inCh）
 	case cmdToggle:

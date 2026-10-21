@@ -23,7 +23,7 @@ func (generalPage) Rows(f *settingsForm) []rowDesc {
 		sec("Profile"),
 		{kind: rowProfCurrent}, {kind: rowProfName}, {kind: rowProfBtns},
 		{kind: rowWelcome},
-		sec("权限"), {kind: rowPerm},
+		sec("权限"), {kind: rowPerm}, {kind: rowUnattended},
 		sec("外观与呼出"),
 		{kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
 		{kind: rowFontSize}, {kind: rowWinSize},
@@ -51,6 +51,20 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 		return f.welcomeRow(gtx, th), true
 	case rowPerm:
 		return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm)), true
+	case rowUnattended:
+		// D185：越界即拒——说明必须写在开关旁，否则「无人值守」会被读成「免确认」。
+		return fieldRow(gtx, th, "无人值守", func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(paperCheckBox(th, &f.unattend, "越界操作当场拒绝，不等人确认")),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Body2(th, "权限等级不变；你自己输入的命令确认照常询问")
+						l.Color = paperOf().text3
+						return l.Layout(gtx)
+					})
+				}),
+			)
+		}), true
 	case rowHotkey:
 		return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）")), true
 	case rowTheme:

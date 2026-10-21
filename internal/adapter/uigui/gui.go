@@ -59,11 +59,12 @@ var (
 // GUI 额外携带 logo 事实卡（§15.1/S1-1g）要的 profile 与会话事实快照（port.SessionFacts，
 // app 侧原子发布零值安全）——tooltip 按 roadmap 只做 GUI（同 Q15 口径），TUI 不扩展。
 type Status struct {
-	Model   string
-	Level   string
-	Effort  string            // D34：推理档位（think off 时为空——effort 不显示）
-	Profile string            // D82：当前 profile 名（D110 起装配根传真值）
-	Facts   port.SessionFacts // D82：会话展示事实（零值 = 未就绪，事实卡回退启动提示）
+	Model      string
+	Level      string
+	Effort     string            // D34：推理档位（think off 时为空——effort 不显示）
+	Unattended bool              // D185：无人值守开（状态行常驻标记；回来才明白为何一串「已拒绝」）
+	Profile    string            // D82：当前 profile 名（D110 起装配根传真值）
+	Facts      port.SessionFacts // D82：会话展示事实（零值 = 未就绪，事实卡回退启动提示）
 }
 
 // Options 装配选项（装配根注入）。

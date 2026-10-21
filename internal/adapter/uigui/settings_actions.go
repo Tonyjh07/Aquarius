@@ -24,6 +24,7 @@ func (u *UI) saveSettings(f *settingsForm) {
 	}
 	p := SettingsPatch{
 		Permission: f.perm.value(),
+		Unattended: f.unattend.Value,
 		Model:      strings.TrimSpace(f.model.Text()),
 		Think:      f.think.Value,
 		Effort:     f.effort.value(),

@@ -700,6 +700,9 @@ func (m *model) statusLine() string {
 		if st.Level != "" {
 			parts = append(parts, "权限 "+st.Level)
 		}
+		if st.Unattended {
+			parts = append(parts, "无人值守")
+		}
 		if st.Effort != "" {
 			parts = append(parts, "effort "+st.Effort)
 		}

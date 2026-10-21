@@ -36,3 +36,32 @@ func TestLevelHolderConcurrent(t *testing.T) {
 		t.Fatalf("初值 = %s", got)
 	}
 }
+
+// TestUnattendedHolderConcurrent D185：GUI/TUI 事件循环 goroutine 读（状态行与菜单勾选）、
+// 主 goroutine 写（/unattended 与设置窗）——atomic 存取，-race 必须干净。
+func TestUnattendedHolderConcurrent(t *testing.T) {
+	h := newUnattendedHolder(false)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				_ = h.Get()
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				h.Set(j%2 == 0)
+			}
+		}()
+	}
+	wg.Wait()
+	if !newUnattendedHolder(true).Get() {
+		t.Fatal("初值语义：构造即存")
+	}
+	if newUnattendedHolder(false).Get() {
+		t.Fatal("缺省应为关")
+	}
+}

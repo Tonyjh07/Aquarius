@@ -134,6 +134,9 @@ const kindChatAudio = "chat-audio"
 // permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
 type permissionsConfig struct {
 	Level string `json:"level"` // 空 = strict（perm.DefaultLevel）
+	// Unattended 无人值守（D185）：true 时模型发起的越界调用当场拒绝并说明，不阻塞轮次。
+	// 权限档本身不变——它只关掉「等人点确认」这一环。缺省 false。
+	Unattended bool `json:"unattended,omitempty"`
 }
 
 // providerConfig 单个 provider 接入（D173 起含协议与密钥池）：承载「怎么连」。
@@ -658,7 +661,7 @@ const defaultConfig = `{
   "output": { "tts": false, "notify": true },
   "mcpServers": {},
   "plugins": {},
-  "permissions": { "level": "strict" },
+  "permissions": { "level": "strict", "unattended": false },
   "limits": {
     "max_turns": 8,
     "max_context_tokens": 64000,
@@ -987,8 +990,9 @@ func providerSection(generic map[string]any, name string) map[string]any {
 // cfgWriter 把 UI/命令面触发的 config 写回收拢为一处（S4a）：path 即当前 profile
 // 的 config.json，lvl 供 persistLevel 写回成功后同步活等级。
 type cfgWriter struct {
-	path string
-	lvl  *levelHolder
+	path       string
+	lvl        *levelHolder
+	unattended *unattendedHolder
 }
 
 // persistLevel 实现 /permission 写回 config（D22）：成功后同步活等级。
@@ -1004,6 +1008,25 @@ func (c *cfgWriter) persistLevel(l perm.Level) error {
 		return err
 	}
 	c.lvl.Set(l) // 工具链路活等级（D22 执行接入）
+	return nil
+}
+
+// persistUnattended 实现 /unattended 与菜单/设置窗开关写回 config 的
+// permissions.unattended（D185 口径四）：成功后同步活开关，工具与提问链路即时生效。
+func (c *cfgWriter) persistUnattended(on bool) error {
+	if err := persistConfig(c.path, func(generic map[string]any) {
+		perms, _ := generic["permissions"].(map[string]any)
+		if perms == nil {
+			perms = map[string]any{}
+			generic["permissions"] = perms
+		}
+		perms["unattended"] = on
+	}); err != nil {
+		return err
+	}
+	if c.unattended != nil {
+		c.unattended.Set(on)
+	}
 	return nil
 }
 
