@@ -70,6 +70,16 @@ func (f *fakeJobs) Kill(_ context.Context, id port.JobID) error {
 	return nil
 }
 
+// Wait 立即返回预设的终态快照（fakeJobs 的任务表是静态的）。
+func (f *fakeJobs) Wait(_ context.Context, id port.JobID) (port.Job, error) {
+	for _, j := range f.jobs {
+		if j.ID == id {
+			return j, nil
+		}
+	}
+	return port.Job{}, fmt.Errorf("没有任务 %s", id)
+}
+
 // newAllTools 用脚本任务管理器注册全部内置工具（测试缺省；无沙盒提示）。
 func newAllTools(mem port.MemoryStore, pathOf PathOf) []port.Tool {
 	return New(Deps{Memory: mem, PathOf: pathOf, Jobs: &fakeJobs{}})
@@ -273,6 +283,92 @@ func TestJobKill(t *testing.T) {
 	}
 	if len(jobs.killed) != 1 || jobs.killed[0] != "j001" {
 		t.Fatalf("killed = %v", jobs.killed)
+	}
+}
+
+// TestJobWaitReturnsResult job_wait：等到终态就地回填状态行与日志尾部，
+// 不传 timeout_sec 一直等（D189）。
+func TestJobWaitReturnsResult(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	jobs := &fakeJobs{
+		logs: "line one\nline two\n",
+		jobs: []port.Job{{
+			ID: "j001", Status: port.JobDone, ExitCode: 0,
+			StartedAt: now, EndedAt: now.Add(90 * time.Second),
+		}},
+	}
+	jw := &jobWait{jobs: jobs}
+	res, err := jw.Execute(context.Background(), call(`{"id":"j0"}`))
+	if err != nil || !res.OK {
+		t.Fatalf("res = %+v, err = %v", res, err)
+	}
+	for _, want := range []string{"j001 status=done exit=0 duration=1m30s", "untrusted process output", "line one", "line two"} {
+		if !strings.Contains(res.Output, want) {
+			t.Fatalf("output = %q, want 含 %q", res.Output, want)
+		}
+	}
+	if len(jobs.runTails) != 1 || jobs.runTails[0] != defaultJobLogsTail {
+		t.Fatalf("tails = %v, want [%d]", jobs.runTails, defaultJobLogsTail)
+	}
+	// 参数校验：缺 id / 负数 / 超上限。
+	if _, err := jw.Execute(context.Background(), call(`{}`)); err == nil {
+		t.Fatal("缺 id 应报错")
+	}
+	if _, err := jw.Execute(context.Background(), call(`{"id":"j001","timeout_sec":-1}`)); err == nil ||
+		!strings.Contains(err.Error(), "non-negative") {
+		t.Fatalf("负 timeout_sec err = %v, want 拒收", err)
+	}
+	if _, err := jw.Execute(context.Background(), call(`{"id":"j001","timeout_sec":9999999999}`)); err == nil ||
+		!strings.Contains(err.Error(), "exceeds the upper bound") {
+		t.Fatalf("超上限 timeout_sec err = %v, want 拒收", err)
+	}
+}
+
+// blockingJobs 等不到终态的任务管理器：Wait 阻塞到 ctx 结束（测 job_wait 的
+// 「仍在跑」回填与「不吃默认工具超时」的口径）。
+type blockingJobs struct {
+	fakeJobs
+}
+
+func (b *blockingJobs) Wait(ctx context.Context, _ port.JobID) (port.Job, error) {
+	<-ctx.Done()
+	return port.Job{}, ctx.Err()
+}
+
+func (b *blockingJobs) Status(context.Context, port.JobID) (port.Job, error) {
+	return port.Job{ID: "j001", Status: port.JobRunning}, nil
+}
+
+// TestJobWaitTimeoutKeepsTaskRunning 自己等超时只回填「仍在跑」，不是错误：
+// 任务继续跑，收尾时仍由观察者汇报。
+func TestJobWaitTimeoutKeepsTaskRunning(t *testing.T) {
+	jobs := &blockingJobs{fakeJobs: fakeJobs{jobs: []port.Job{{ID: "j001", Status: port.JobRunning}}}}
+	jw := &jobWait{jobs: jobs}
+	start := time.Now()
+	res, err := jw.Execute(context.Background(), call(`{"id":"j001","timeout_sec":1}`))
+	if err != nil || !res.OK {
+		t.Fatalf("res = %+v, err = %v", res, err)
+	}
+	if !strings.Contains(res.Output, "still running after waiting 1s") {
+		t.Fatalf("output = %q", res.Output)
+	}
+	if el := time.Since(start); el < 900*time.Millisecond {
+		t.Fatalf("应等满约 1s，实际 %v", el)
+	}
+	// 用户中断（父 ctx 取消）照常上抛，不吞成「仍在跑」。
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := jw.Execute(ctx, call(`{"id":"j001"}`)); err == nil {
+		t.Fatal("父 ctx 取消应上抛")
+	}
+}
+
+// TestJobWaitNotInteractiveChain job_wait 申报 Interactive（不吃缺省工具超时），
+// 否则「等到任务结束」会被 limits.tool_timeout_sec 拦腰截断。
+func TestJobWaitNotInteractiveChain(t *testing.T) {
+	var it port.Interactive = &jobWait{}
+	if !it.Interactive() {
+		t.Fatal("job_wait 应申报 Interactive")
 	}
 }
 

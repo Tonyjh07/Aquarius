@@ -39,7 +39,7 @@ const (
 	// user 消息上，需要一句话说清它来自哪次调用。
 	toolImageNoteFmt = "Image returned by the %s call:"
 
-	// 后台任务完成报告（poller）：状态行、空日志占位、日志段前的不可信说明。
+	// 后台任务完成报告（D189）：状态行、空日志占位、日志段前的不可信说明。
 	// 报告整体走 system 角色，所以状态行写成宿主陈述而不是指令。
 	jobReportFmt = "Background task %s finished with status %s (exit %d, duration %s).\n"
 	jobLogEmpty  = "Log tail: (no entries)"

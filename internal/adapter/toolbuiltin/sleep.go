@@ -9,15 +9,15 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// sleepTool 等待工具（D39）：给模型一个可控停顿——控制节奏或等后台任务收尾。
-// 相比 job_start + 轮询日志更轻量；ctx 取消（Ctrl+C / 调用超时）立即中断。
+// sleepTool 等待工具（D39）：给模型一个可控停顿——控制节奏。
+// 等后台任务用 job_wait（D189），不用 sleep 猜时长。
 type sleepTool struct{}
 
 func (t *sleepTool) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "sleep",
 		Description: fmt.Sprintf("Wait for N seconds to pace yourself. Cancellable via interruption. "+
-			"Do not use it to wait for a background task: the session is notified when a task finishes, so polling or sleeping is unnecessary. "+
+			"Do not use it to wait for a background task - call job_wait for that. "+
 			"Sleeps longer than the default tool timeout must pass a matching \"timeout_sec\" argument (1-%d) on the call.", port.MaxCallTimeoutSec),
 		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",

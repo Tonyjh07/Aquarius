@@ -58,6 +58,9 @@ type jobRec struct {
 	logFile  *os.File
 	killed   bool // 显式 Kill（区分自然退出）
 	timedOut bool // Timeout 到点终止
+	// done 进入终态时关闭（D189）：Wait 阻塞在这个 channel 上，而不是让调用方
+	// 定时间去问 Status——收割者本来就知道进程什么时候退出。
+	done chan struct{}
 }
 
 // New 创建任务管理器并确保日志目录存在。
@@ -100,6 +103,7 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 		logPath: logPath,
 		cmd:     cmd,
 		logFile: logFile,
+		done:    make(chan struct{}),
 	}
 	m.mu.Lock()
 	m.byID[id] = rec
@@ -376,9 +380,33 @@ func (m *Manager) wait(r *jobRec) {
 	r.job.Status = status
 	r.job.ExitCode = code
 	r.job.EndedAt = time.Now()
+	done := r.done
 	m.mu.Unlock()
 	_, _ = fmt.Fprintf(r.logFile, "[exit code=%d status=%s]\n", code, status)
 	_ = r.logFile.Close()
+	// 终态已写进 job 并释放锁：此处关闭 = 唤醒所有 Wait（close 是同步点，
+	// 醒来后取快照必然看得到终态）。
+	close(done)
+}
+
+// Wait 阻塞到任务进入终态并返回最终快照（D189）；已结束立即返回。
+// 不设端口级超时——等待时长由 ctx 决定，取消返回 ctx.Err()。
+func (m *Manager) Wait(ctx context.Context, id port.JobID) (port.Job, error) {
+	if err := ctx.Err(); err != nil {
+		return port.Job{}, err
+	}
+	m.mu.Lock()
+	r, ok := m.byID[id]
+	m.mu.Unlock()
+	if !ok {
+		return port.Job{}, fmt.Errorf("no task %s", id)
+	}
+	select {
+	case <-r.done:
+		return m.snap(r), nil
+	case <-ctx.Done():
+		return port.Job{}, ctx.Err()
+	}
 }
 
 // snap 在锁内取任务快照。

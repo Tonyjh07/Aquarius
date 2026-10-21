@@ -277,6 +277,63 @@ func TestStartKill(t *testing.T) {
 	}
 }
 
+// TestWaitReturnsOnExit 完成是事件（D189）：不必反复问 Status，Wait 在进程收割者
+// 写终态时返回；已结束的任务立即返回；ctx 取消只停止等待、不动任务。
+func TestWaitReturnsOnExit(t *testing.T) {
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "echo", "wait ok"))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	j, err := m.Wait(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if j.Status != port.JobDone || j.ExitCode != 0 || j.EndedAt.IsZero() {
+		t.Fatalf("终态快照 = %+v", j)
+	}
+	// 已结束：再 Wait 立即返回（不阻塞）。
+	done := make(chan struct{})
+	go func() {
+		if _, err := m.Wait(context.Background(), job.ID); err != nil {
+			t.Errorf("重复 wait: %v", err)
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("已结束的任务 Wait 不该阻塞")
+	}
+	if _, err := m.Wait(context.Background(), "j999"); err == nil || !strings.Contains(err.Error(), "no task") {
+		t.Fatalf("未知任务 err = %v", err)
+	}
+}
+
+// TestWaitCancelDoesNotKill 等待方取消只结束等待，不影响任务本身（任务不随会话取消）。
+func TestWaitCancelDoesNotKill(t *testing.T) {
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "sleep"))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = m.Kill(context.Background(), job.ID) }()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := m.Wait(ctx, job.ID); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want DeadlineExceeded", err)
+	}
+	if j, err := m.Status(context.Background(), job.ID); err != nil || j.Status != port.JobRunning {
+		t.Fatalf("等待取消后任务应在跑: %+v, err = %v", j, err)
+	}
+}
+
 // treeSpec 构造"父包装 + 子进程写标记"的任务（§14 M3 遗留：进程树终止的自动化验证）：
 // 父 = 被 Kill 的直接进程（cmd/sh），子 = 每秒追加 marker 的进程（ping / 内层 sh 循环）。
 // 若 killTree 只杀父进程，孤儿子进程会继续追加 → marker 增长 → 测试判失败。

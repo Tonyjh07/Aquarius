@@ -322,9 +322,9 @@ func (w *wiring) assembleTools(confirmer port.Confirmer, asker port.Asker) error
 	if err != nil {
 		return err
 	}
-	// D167：轮询器观察所有 Start（job_start 与未来异步工具），完成时注入 + 唤醒；
+	// D189：任务收尾观察者阻塞在 JobManager.Wait 上（完成事件，不轮询），终态注入 + 唤醒；
 	// 注入端口延迟取（会话在工具装配之后才建好），Wake 走 UI 的空闲唤醒通道。
-	w.poller = app.NewPoller(app.PollerOptions{
+	w.jobWatch = app.NewJobWatcher(app.JobWatcherOptions{
 		Jobs: jobs,
 		Injector: func() port.Injector {
 			if s := w.sessPtr.Load(); s != nil {
@@ -343,7 +343,7 @@ func (w *wiring) assembleTools(confirmer port.Confirmer, asker port.Asker) error
 			}
 		},
 	})
-	w.jobs = app.NewWatchingJobs(jobs, w.poller)
+	w.jobs = app.NewWatchingJobs(jobs, w.jobWatch)
 	toolTimeout := time.Duration(w.cfg.Limits.ToolTimeoutSec) * time.Second
 	if w.cfg.Limits.ToolTimeoutSec <= 0 {
 		toolTimeout = 60 * time.Second

@@ -52,6 +52,11 @@ type JobManager interface {
 	Status(ctx context.Context, id JobID) (Job, error)
 	Logs(ctx context.Context, id JobID, tail int) (string, error)
 	Kill(ctx context.Context, id JobID) error
+	// Wait 阻塞到任务进入终态（done/failed/killed）并返回最终快照；任务已结束则
+	// 立即返回。实现方由进程收割者直接通知，**不需要调用方定时去问 Status**——
+	// 「任务结束」是确定事件，不是待猜的状态（D189）。等待时长由 ctx 决定：
+	// 取消即返回 ctx.Err()，端口本身不设超时。
+	Wait(ctx context.Context, id JobID) (Job, error)
 }
 
 // ResolveJobID 按任务标识解析：精确匹配优先，其次唯一前缀；无命中或歧义返回错误。

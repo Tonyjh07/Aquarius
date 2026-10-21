@@ -43,9 +43,9 @@ type FileTarget interface {
 	Target(ctx context.Context, call tool.Call) (path string, op perm.Op, ok bool)
 }
 
-// Interactive 可选能力（D184）：工具要等人应答（ask_user 这类）。
-// ToolRunner 对声明者不套默认超时（limits.tool_timeout_sec）——用户思考两分钟
-// 不该被当成工具超时；显式 timeout_sec 与 ctx 取消仍然生效。
+// Interactive 可选能力（D184/D189）：工具自己的等待时长由它管，ToolRunner 不套默认
+// 超时（limits.tool_timeout_sec）——等人应答（ask_user）、等外部事件（job_wait 等任务
+// 收尾）都不该被当成「卡住」；显式 timeout_sec 与 ctx 取消仍然生效。
 type Interactive interface {
 	Interactive() bool
 }

@@ -161,7 +161,7 @@ type wiring struct {
 	mem       *memoryfs.Store
 	merged    *mergedMemory
 	jobs      port.JobManager
-	poller    *app.Poller
+	jobWatch  *app.JobWatcher
 	runner    *toolrun.Runner
 	audit     *decorate.Audit
 	client    port.LLM
@@ -272,8 +272,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := w.assembleTools(tc.toolConfirmer, tc.toolAsker); err != nil {
 		return fatal(stderr, "%v", err)
 	}
-	// D167：先停 watcher 再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
-	defer w.poller.Close()
+	// D189：先停任务收尾观察者再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
+	defer w.jobWatch.Close()
 	gen, err := w.stackDecorators(ctx)
 	if err != nil {
 		return fatal(stderr, "%v", err)
@@ -325,7 +325,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		PersistUnattended: w.persist.persistUnattended,
 		Confirmer:         tc.confirmer,
 		Jobs:              w.jobs,
-		CancelWatchers:    w.poller.CancelSession, // D167：切走/新建/删当前会话时撤销该会话的 watcher
+		CancelWatchers:    w.jobWatch.CancelSession, // D167：切走/新建/删当前会话时撤销该会话的 watcher
 		Ingestors:         []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
 		UI:                w.presenter,
 		OpenMemory:        openMemoryEditor(w.mem, w.ui, w.stdin, w.stdout, w.stderr),

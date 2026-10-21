@@ -303,6 +303,16 @@ func (f *fakeJobs) Kill(_ context.Context, id port.JobID) error {
 	return nil
 }
 
+// Wait 立即返回任务快照（fakeJobs 的任务表是静态的，没有"还在跑"的过程）。
+func (f *fakeJobs) Wait(_ context.Context, id port.JobID) (port.Job, error) {
+	for _, j := range f.jobs {
+		if j.ID == id {
+			return j, nil
+		}
+	}
+	return port.Job{}, fmt.Errorf("fakeJobs: 没有任务 %s", id)
+}
+
 // ---------------------------------------------------------------------------
 // 记忆端口替身（M2）
 // ---------------------------------------------------------------------------

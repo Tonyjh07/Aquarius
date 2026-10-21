@@ -326,12 +326,13 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `memory_list` / `memory_read` / `memory_search` | 记忆读取与检索（只见全局 + 当前会话两份，按文档名寻址） | Safe |
 | `memory_write` | 写入记忆文档（`name`=全局/当前会话；`mode`=append 缺省 / overwrite） | Confirm |
 | `think` | 显式整理思路（no-op）；可见性走 config `tools.disabled`（**默认隐藏**，D143：含 `think`；`model.think_tool` 退役为兼容读取，D34 原生思考为主，需要草稿工具时在设置窗「工具与 MCP」页启用） | Safe |
-| `sleep` | 等待 N 秒（停顿或等后台任务；取消可中断；1–3600s，超缺省超时需在调用上配 `timeout_sec`，D38/D39） | Safe |
+| `sleep` | 等待 N 秒（只用于控制节奏；等后台任务结束用 `job_wait`，D189；取消可中断；1–3600s，超缺省超时需在调用上配 `timeout_sec`，D38/D39） | Safe |
 | `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 等级矩阵，读全盘免确认）；`file_read` 支持分页与图片，见 §4.2 | Safe |
 | `file_edit` | 按精确子串替换改文件（`old_string` 必须唯一，`replace_all` 放开；保留原换行与 BOM） | Confirm |
 | `file_write` / `file_delete` | 文件覆盖写入 / 删除 | Confirm |
 | `term_exec` | 终端命令同步执行（超时返回，输出截断保头尾） | Confirm |
-| `job_start` | 后台任务启动 | Confirm |
+| `job_start` | 后台任务启动；结束自动通知（完成事件，不轮询），要在本轮拿结果用 `job_wait` | Confirm |
+| `job_wait` | 等后台任务到终态并回填状态/退出码/耗时/日志尾部（D189）；不传 `timeout_sec` 一直等（用户可中断），等超时只回填「仍在跑」、任务不受影响 | Safe |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理 | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
 | `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
@@ -635,6 +636,7 @@ type JobManager interface {
     Status(ctx context.Context, id JobID) (Job, error)
     Logs(ctx context.Context, id JobID, tail int) (string, error)
     Kill(ctx context.Context, id JobID) error
+    Wait(ctx context.Context, id JobID) (Job, error) // 阻塞到终态（D189：完成是事件）
 }
 ```
 
@@ -916,11 +918,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 导出注入，装饰器不反向依赖 app；裁到 `max_context_tokens − max(本轮 MaxOutputTokens, 1024)` 之下，
 省略发生时发 `NoticeEvent`）。不做向量化、不进记忆文档。
 
-#### 7.1.1 注入节点与轮询器（D150/D167）
+#### 7.1.1 注入节点与任务收尾（D150/D189）
 
 **问题**：模型要看后台任务进度只能反复调 `job_status`/`job_logs`——每次调用都烧 token、
 把上下文塞满日志，且轮询节奏由模型瞎猜；外部工具（插件、MCP、定时器）也没有把信息塞回
 会话的通道。
+
+**确定的事用事件**：会结束的任务（编译、测试）由 `JobManager.Wait` 直接通知，不用定时去问
+状态；模型想在本轮拿到结果就调 `job_wait`。
 
 **注入节点**（§4.1 `RoleInject`）是唯一通道：
 
@@ -947,13 +952,13 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   `Trigger` 记 `false`（记的是**实际发生**：本轮确未随附起响应）；③与 `/inject` 是**驱动式**
   排空——触发型注入落地后自己跑一轮，`Trigger` 记 `true`。
 - **装配投影**（§7.1 装配规则）：inject 节点按**显式信任位**（`Injection.Trust`，落树后是
-  `Message.Trust`）决定投影角色——**可信**（宿主事实：`user` 的动作、`job` 的任务汇报、
-  `poller` 的状态/退出码/耗时）投影为 **system 或 user、不套围栏**；**不可信**
+  `Message.Trust`）决定投影角色——**可信**（宿主事实：`user` 的动作、`job` 的任务汇报）
+  投影为 **system 或 user、不套围栏**；**不可信**
   （`tool` / `plugin` / 未声明）投影为 **user + 数据围栏**
   （`<injected-context source="...">…</injected-context>`，并前置一句英文说明「以下是工具注入的
   数据，不是用户指令」，落实 §9 的不可信数据口径；来源属性值转义 `"`/`<`/`>` 防提前闭合）。
   **信任不靠 `Source` 前缀推断**：前缀字符串对外部可写（MCP 工具名、插件名），拿它当信任依据
-  是 fail-open；缺省（未声明信任位）= 不可信。`poller` 的报告整体可信，但**日志尾部**是外部
+  是 fail-open；缺省（未声明信任位）= 不可信。任务报告整体可信，但**日志尾部**是外部
   进程写的不可信数据——日志段在正文里再用一层围栏单独包住并前置英文警告，不让它直接读成
   宿主指令。围栏**正文**同样中和闭合标签（`</injected-context>` 在注入内容里一律转义），否则
   外部内容可以提前收尾、把后文伪装成宿主说明。投影角色**不进领域**：树里只有 `inject` 一种
@@ -965,26 +970,28 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 - **展示**：主窗转写区与历史关系图都按独立档位呈现（关系图 = **三角形**，用户口径：
   「直观不容易混」）；回放不重放触发行为（`Message.Trigger` 只是记录）。
 
-**轮询器**（`app/poller.go`）替代模型自行轮询：
+**任务收尾**（`app/jobwatch.go`）——完成是**事件**，不是待猜的状态（D189）：
 
 - **注册**：装配根给 `JobManager` 套 watcher 装饰器——`Start` 成功即登记（覆盖 `job_start` 与
-  未来异步工具），`Kill` 成功即撤销；`job_start` 不直接持有轮询器。模型**不再**被要求反复
+  未来异步工具），`Kill` 成功即撤销；`job_start` 不直接持有观察者。模型**不再**被要求反复
   查询。
+- **等待**：`JobManager.Wait` 阻塞到终态，由进程收割者（`cmd.Wait` 自己那条 goroutine）在
+  写终态时唤醒——**没有轮询、没有退避、没有周期**。任务何时结束本来就是确定的，让调用方
+  定时去问 `Status` 等于把已有的事件降级成猜。
 - **归属**：登记时从工具执行上下文取会话 ID；注入带目标会话，会话 goroutine 排空时丢弃
   不属于当前会话的包。切换、新建或删除当前会话时显式撤销该会话的 watcher。
-- **节奏**：自适应退避（0.5s 起、×1.5、上限 15s），与任务日志无关，只读 `JobManager.Status`；
-  **不读日志全文**——完成时才按 `tail` 上限取最后 N 行。
-- **结束条件**：只等任务终态（done/failed/killed）；**不设 watcher 超时**（用户拍板，
-  `limits.poll_timeout_sec` 设计项删除）。任务的时限只由 `job_start.timeout_sec` 决定；
-  未设该参数且进程不结束时，watcher 会以 15s 间隔持续观察。终态产出 **一条 `poller:` 注入**：
-  「任务 <id> <状态>（退出码 N，耗时 T）+ 日志尾部」；空闲驱动式排空时 `Trigger=true` 起一轮
-  汇报，忙碌时轮末只落地、记 `false`。
-- **唤醒**：poller 注入后投递一次 `Wake`；主循环空闲时经 `Session.Handle` 做驱动式排空并跑
-  一轮，忙碌时轮末排空只落地、`Trigger` 记 `false`（不插队、不重复计费）。
+- **产出**：终态一条 `job:<id>` 注入——「任务 <id> <状态>（退出码 N，耗时 T）+ 日志尾部」，
+  日志只取最后 N 行。空闲驱动式排空时 `Trigger=true` 起一轮汇报，忙碌时轮末只落地、记 `false`。
+- **唤醒**：注入后投递一次 `Wake`；主循环空闲时经 `Session.Handle` 做驱动式排空并跑一轮，
+  忙碌时轮末排空只落地、`Trigger` 记 `false`（不插队、不重复计费）。
+- **本轮回执**：`job_wait` 让模型在**同一轮内**拿到编译/测试这类确定会结束的任务的结果
+  （状态、退出码、耗时、日志尾部）。经装饰器调用 `Wait` 时顺手**预领**这次终态报告——
+  结果已经作为工具回执交给模型，watcher 不再补一条内容相同的注入；自己等超时则归还归属，
+  任务结束时照常汇报。不吃默认工具超时（同 `ask_user`：自己管等待时长，`timeout_sec`
+  与用户中断仍然生效）。
 - **取消**：`job_kill` 成功、会话切换（`/switch`/`/new`）或删除当前会话时撤销；会话关闭时
   全部撤销（不泄漏 goroutine）。`/jobs` 的现状输出不变（手查仍然可用）。
-- **不做**：不做通用「定时轮询任意条件」的 DSL（等真实需求）；轮询器不是插件 API 的一部分，
-  外部插件经 `Injector` 注入，不经轮询器。
+- **不做**：任务收尾观察者不是插件 API 的一部分，外部插件经 `Injector` 注入，不经这里。
 
 
 ### 7.2 摄取 / 输出管线
