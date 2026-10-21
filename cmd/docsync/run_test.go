@@ -111,6 +111,46 @@ func TestRunCommitModeOnlyTouchesThatCommit(t *testing.T) {
 	}
 }
 
+// TestRunCommitModeSkipsMarkerOnlyCommit 只改了标记行的提交不刷新日期（否则一次
+// 提交会把顺带加标记的页面日期全刷成同一天）。
+func TestRunCommitModeSkipsMarkerOnlyCommit(t *testing.T) {
+	dir := gitRepo(t)
+
+	// 先给 docs/a.md 补标记并提交（这一步是「只动标记」）。
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-root", dir}, &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
+	}
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", "markers"}} {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if cmdErr := cmd.Run(); cmdErr != nil {
+			t.Fatalf("git %v: %v", args, cmdErr)
+		}
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "docs", "a.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasMarker(string(before)) {
+		t.Fatalf("测试前提：docs/a.md 应已带标记:\n%s", before)
+	}
+	// 用 -commit 处理那笔「只动标记」的提交：应报「没有改动文档」，标记一字不动。
+	out.Reset()
+	if code := run([]string{"-root", dir, "-commit", "HEAD"}, &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
+	}
+	if !strings.Contains(out.String(), "没有改动文档") {
+		t.Fatalf("只改标记的提交不该被刷新:\n%s", out.String())
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "docs", "a.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("标记被无谓改动:\nbefore %s\nafter  %s", before, after)
+	}
+}
+
 // TestRunCheckReportsMissing 缺标记 → 退出 1；补齐后 → 退出 0。
 func TestRunCheckReportsMissing(t *testing.T) {
 	dir := gitRepo(t)

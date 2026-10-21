@@ -276,11 +276,11 @@ func stripMarker(src string) string {
 
 // headContent 取该路径在 HEAD 里的内容；tracked = 是否存在于 HEAD。
 func headContent(root, rel string) (string, bool) {
-	out, err := exec.Command("git", "-C", root, "show", "HEAD:"+rel).Output()
+	s, err := revContent(root, "HEAD", rel)
 	if err != nil {
 		return "", false
 	}
-	return string(out), true
+	return s, true
 }
 
 // targets 收集待维护的文件：docs/ 下全部 markdown（递归）+ 根 README.md。
@@ -306,7 +306,8 @@ func targets(root string) ([]string, error) {
 	return files, nil
 }
 
-// commitDocs 该提交改动过的文档（相对仓库根、斜杠分隔）；按 targets 口径过滤。
+// commitDocs 该提交**内容真的改过**的文档（相对仓库根、斜杠分隔）。
+// 只改了标记行的不算：与默认模式同口径，避免一次提交把顺带加标记的页面日期全刷掉。
 func commitDocs(root, rev string) ([]string, error) {
 	out, err := exec.Command("git", "-C", root, "show", "--name-only", "--pretty=format:", rev).Output()
 	if err != nil {
@@ -321,10 +322,30 @@ func commitDocs(root, rev string) ([]string, error) {
 		if !fileExists(filepath.Join(root, filepath.FromSlash(rel))) {
 			continue // 该提交里被删掉/改名的旧路径
 		}
+		now, err := revContent(root, rev, rel)
+		if err != nil {
+			return nil, err
+		}
+		before, err := revContent(root, rev+"^", rel)
+		if err != nil {
+			before = "" // 新增文件：一定算改动
+		}
+		if stripMarker(now) == stripMarker(before) {
+			continue
+		}
 		docs = append(docs, rel)
 	}
 	sort.Strings(docs)
 	return docs, nil
+}
+
+// revContent 取某提交里某路径的内容。
+func revContent(root, rev, rel string) (string, error) {
+	out, err := exec.Command("git", "-C", root, "show", rev+":"+rel).Output()
+	if err != nil {
+		return "", fmt.Errorf("读 %s:%s 失败: %w", rev, rel, err)
+	}
+	return string(out), nil
 }
 
 // isDocPath 与 targets 同一口径：docs/ 下的 .md，或根 README.md。
