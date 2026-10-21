@@ -69,6 +69,10 @@ func (w *wiring) applySettings(p uigui.SettingsPatch) ([]port.Command, error) {
 	if err := persistSettingsTextKeys(w.cfgPath, p); err != nil {
 		return nil, fmt.Errorf("写回 config: %w", err)
 	}
+	// D179：音色与风格对此后的播报立即生效（服务与模型仍在启动装配时定，改动重启生效）。
+	if w.ttsOut != nil {
+		w.ttsOut.SetStyle(p.TTSVoice, p.TTSDesign, p.TTSStyle, p.TTSTags)
+	}
 	return settingsCommands(w.settingsSnapshot(), p), nil
 }
 

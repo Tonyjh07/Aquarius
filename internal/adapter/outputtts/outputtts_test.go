@@ -127,6 +127,33 @@ func TestDeliverSkipsWhenNoBody(t *testing.T) {
 	}
 }
 
+// TestSetStyleAppliesToNextDeliver 设置窗保存后改音色/风格：下一条播报用新值（D179）。
+func TestSetStyleAppliesToNextDeliver(t *testing.T) {
+	blobs, ref := newBlobs(t, []byte("WAVE"))
+	synth := &fakeSynth{ref: ref}
+	a, err := New(Config{Synth: synth, Player: newFakePlayer(), Blobs: blobs, Voice: "旧音色"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	a.SetStyle("新音色", "新描述", "新风格", "新标签")
+	if err := a.Deliver(context.Background(), port.OutputRequest{Parts: []conversation.Part{
+		{Kind: conversation.PartText, Text: "你好"},
+	}}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if req := synth.request(); req.Voice != "" {
+			if req.Voice != "新音色" || req.Design != "新描述" || req.Style != "新风格" || req.Tags != "新标签" {
+				t.Fatalf("合成参数 = %+v", req)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("超时：没有发合成请求")
+}
+
 // TestDeliverLogsFailure 合成失败只记日志，不 panic、不阻塞。
 func TestDeliverLogsFailure(t *testing.T) {
 	blobs, _ := newBlobs(t, []byte("x"))

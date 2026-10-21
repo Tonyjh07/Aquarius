@@ -57,6 +57,17 @@ func New(cfg Config) (*Adapter, error) {
 // Name 输出器名（日志/报错用）。
 func (a *Adapter) Name() string { return "语音播报" }
 
+// SetStyle 更新此后播报的音色与风格（设置窗保存后调用，D179「音色/风格立即生效」）。
+// 正在合成或播放的那一条不受影响；空值 = 交给合成器的缺省。
+func (a *Adapter) SetStyle(voice, design, style, tags string) {
+	a.mu.Lock()
+	a.cfg.Voice = voice
+	a.cfg.Design = design
+	a.cfg.Style = style
+	a.cfg.Tags = tags
+	a.mu.Unlock()
+}
+
 // Deliver 取正文、起一条后台合成任务并立即返回。新任务取消上一条。
 func (a *Adapter) Deliver(ctx context.Context, req port.OutputRequest) error {
 	text := bodyText(req.Parts)
@@ -102,13 +113,7 @@ func (a *Adapter) speak(ctx context.Context, seq uint64, text string) {
 		}
 		a.mu.Unlock()
 	}()
-	ref, err := a.cfg.Synth.Synthesize(ctx, port.SpeechRequest{
-		Text:   text,
-		Voice:  a.cfg.Voice,
-		Design: a.cfg.Design,
-		Style:  a.cfg.Style,
-		Tags:   a.cfg.Tags,
-	})
+	ref, err := a.cfg.Synth.Synthesize(ctx, a.speechRequest(text))
 	if err != nil {
 		if ctx.Err() == nil {
 			a.logf("语音播报失败：%v", err)
@@ -135,6 +140,19 @@ func (a *Adapter) latest(seq uint64) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.seq == seq
+}
+
+// speechRequest 取当前音色与风格快照（与 SetStyle 互斥：合成请求发出那一刻的取值）。
+func (a *Adapter) speechRequest(text string) port.SpeechRequest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return port.SpeechRequest{
+		Text:   text,
+		Voice:  a.cfg.Voice,
+		Design: a.cfg.Design,
+		Style:  a.cfg.Style,
+		Tags:   a.cfg.Tags,
+	}
 }
 
 func (a *Adapter) logf(format string, args ...any) {
