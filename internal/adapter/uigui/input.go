@@ -184,8 +184,9 @@ func inputRowRects(w, top, rowH, gap, margin int) (logo, pill, send image.Rectan
 	return
 }
 
-// startupHint 启动提示（装配根对 GUI 不再发 Say 启动行，§15.1）。
-const startupHint = "Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成"
+// startupHint 启动提示（装配根对 GUI 不再发 Say 启动行，§15.1）。GUI 没有 Ctrl+C
+// 取消绑定（选区存续期 Ctrl+C 只做复制），停止生成走右钮方块——提示照实写。
+const startupHint = "Aquarius — 输入 /help 查看命令，/quit 退出；停止生成点右侧方块"
 
 // tipBg 悬浮 tips 底色（实色——位图合成下元素必须自带底板）。
 var tipBg = color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF}

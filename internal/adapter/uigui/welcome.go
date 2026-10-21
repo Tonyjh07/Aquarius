@@ -383,8 +383,8 @@ func (f *welcomeForm) applyModels(r testOutcome) {
 // 有对照测试（菜单改了教程不改即测试失败）。
 func TutorialTips() []string {
 	return []string{
-		"发送消息：Enter；换行：Shift+Enter",
-		"取消当前生成：Ctrl+C；复制选中文本：Ctrl+C",
+		"发送消息：Enter；换行：先点展开成多行，再 Shift+Enter",
+		"停止生成：点右侧方块；复制选中文本：Ctrl+C",
 		"Esc：关补全浮层 / 取消编辑 / 收起展开态",
 		"消息右键：编辑、编辑并转移历史、编辑并复制历史、重新生成、复制、引用、查看原文",
 		"球右键：新对话、权限、消息历史、设置、置顶、隐藏、退出",
