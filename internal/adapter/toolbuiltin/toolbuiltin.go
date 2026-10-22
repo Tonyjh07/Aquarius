@@ -36,6 +36,8 @@ type Deps struct {
 	// WebCount / WebMaxChars 联网工具的缺省预算（0 = 内置缺省）。
 	WebCount    int
 	WebMaxChars int
+	// Skills 技能目录（D201）：nil = skill 工具明确报「本构建未提供」。
+	Skills port.SkillCatalog
 }
 
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
@@ -75,6 +77,7 @@ func allTools(d Deps) []port.Tool {
 		&askUser{asker: d.Asker},
 		&webSearchTool{search: d.WebSearch, count: d.WebCount},
 		&webFetchTool{fetch: d.WebFetch, maxChars: d.WebMaxChars},
+		&skillTool{skills: d.Skills},
 	}
 }
 
@@ -117,6 +120,7 @@ var displayNames = map[string]string{
 	"ask_user":       "提问",
 	"web_search":     "联网搜索",
 	"web_fetch":      "读取网页",
+	"skill":          "载入技能",
 }
 
 // DisplayName 内置工具中文词表查询（未收录 = 原名字面）。
@@ -216,6 +220,7 @@ var (
 	_ port.Interactive = (*askUser)(nil)
 	_ port.Tool        = (*webSearchTool)(nil)
 	_ port.Tool        = (*webFetchTool)(nil)
+	_ port.Tool        = (*skillTool)(nil)
 )
 
 // 解析辅助（Target 申报共用）：取 path 参数并规约为绝对路径。

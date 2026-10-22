@@ -86,6 +86,8 @@ func TestResultsAreASCIIModelFacing(t *testing.T) {
 		{"screen_capture", `{}`},
 		{"ask_user", `{"questions":[]}`},
 		{"ask_user", `{"questions":[{"header":"Target","question":"Which one?","options":[{"label":"a"},{"label":"b"}],"multiple":true}]}`},
+		{"skill", `{}`},
+		{"skill", `{"name":"not-installed"}`},
 	}
 
 	for _, tc := range cases {
