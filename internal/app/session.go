@@ -50,6 +50,9 @@ type SessionDeps struct {
 	Watches port.WatchManager
 	// Skills 技能清单（/skill，D201）；nil 时 /skill 报"未配置技能目录"。
 	Skills port.SkillCatalog
+	// SkillAdmin 技能安装面（/skill install|remove|update，D202）；nil 时子命令报未接入。
+	// 与 Skills 分开：读侧是只读端口，安装面是用户面动作（不进 port）。
+	SkillAdmin SkillAdmin
 	// CancelWatchers 撤销某会话的后台任务观察者（D167）：切换 / 新建 / 删除当前会话时调用，
 	// 保证任务完成报告不跨会话；nil 时跳过（测试或未接轮询器的装配）。
 	CancelWatchers func(conversation.ID)
@@ -112,6 +115,7 @@ type Session struct {
 	jobs           port.JobManager
 	watches        port.WatchManager
 	skills         port.SkillCatalog
+	skillAdmin     SkillAdmin
 	cancelWatchers func(conversation.ID)
 	ingestors      []port.Ingestor
 	ui             port.Presenter
@@ -202,6 +206,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		jobs:           d.Jobs,
 		watches:        d.Watches,
 		skills:         d.Skills,
+		skillAdmin:     d.SkillAdmin,
 		cancelWatchers: d.CancelWatchers,
 		ingestors:      d.Ingestors,
 		ui:             d.UI,

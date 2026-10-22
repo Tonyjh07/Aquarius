@@ -16,18 +16,23 @@ import (
 // 生成（与 /inject --no-trigger 同口径）。注入落地后走「清屏 + 回放」（移 Head 类命令
 // 统一口径，D81/D92），让转写区与 Head 恒一致。
 func (s *Session) execSkill(ctx context.Context, args []string) (string, error) {
+	// 安装面（D202）：install / remove / update 先分派，避免被「带名字 = 载入」吃掉；
+	// 也不依赖清单（装之前可能一个技能都没有）。
+	if out, handled, err := s.execSkillAdmin(ctx, args); handled {
+		return out, err
+	}
 	if s.skills == nil {
 		return "", errors.New("session: 未配置技能目录，/skill 不可用")
 	}
 	name := strings.TrimSpace(strings.Join(args, " "))
 	if name == "" || name == "list" {
 		if name == "list" && len(args) > 1 {
-			return "", errors.New("用法: /skill [list|<名字>]")
+			return "", fmt.Errorf("%s", skillAdminUsage)
 		}
 		return s.skillList(ctx)
 	}
 	if strings.ContainsAny(name, " \t") {
-		return "", errors.New("用法: /skill [list|<名字>]（名字里不含空格）")
+		return "", fmt.Errorf("%s（技能名里不含空格）", skillAdminUsage)
 	}
 
 	doc, err := s.skills.Load(ctx, name)
