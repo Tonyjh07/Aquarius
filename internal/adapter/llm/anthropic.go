@@ -124,7 +124,8 @@ type anthropicTool struct {
 
 // encodeAnthropicRequest 把 GenerateRequest 编码为 Messages 请求体（stream 恒为 true）。
 func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
-	msgs, system, err := anthropicMessages(req.Messages)
+	wn := newWireNames(req.Tools)
+	msgs, system, err := anthropicMessages(req.Messages, wn)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,7 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 		Model:       req.Model,
 		System:      system,
 		Messages:    msgs,
-		Tools:       toAnthropicTools(req.Tools),
+		Tools:       toAnthropicTools(req.Tools, wn),
 		Stream:      true,
 		Temperature: req.Params.Temperature,
 		StopSeqs:    req.Params.Stop,
@@ -180,7 +181,7 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 //     并进顶层 system（相对顺序保留；与其它消息的前后位置就此丢失——API 没有别的表达方式）。
 //   - tool 结果不是独立角色，而是 **user 消息里的 tool_result 内容块**；且 API 要求角色
 //     交替，所以相邻的同角色消息必须合并（工具结果 + 紧随其后的工具图片正好合成一条）。
-func anthropicMessages(msgs []port.PromptMessage) ([]anthropicInbound, []anthropicText, error) {
+func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInbound, []anthropicText, error) {
 	var (
 		out    []anthropicInbound
 		system []anthropicText
@@ -220,7 +221,7 @@ func anthropicMessages(msgs []port.PromptMessage) ([]anthropicInbound, []anthrop
 				Type: "tool_result", ToolUseID: m.CallID, Content: flattenText(m.Content),
 			})
 		case "assistant":
-			blocks, err := anthropicAssistantBlocks(m)
+			blocks, err := anthropicAssistantBlocks(m, wn)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -266,7 +267,7 @@ func anthropicBlocks(parts []port.PromptPart, allowImage bool) ([]any, error) {
 
 // anthropicAssistantBlocks assistant 消息 → 内容块。顺序固定为
 // 思考 → 正文 → 工具调用：思考块必须在其 assistant 消息的开头且原样（含签名）。
-func anthropicAssistantBlocks(m port.PromptMessage) ([]any, error) {
+func anthropicAssistantBlocks(m port.PromptMessage, wn *wireNames) ([]any, error) {
 	var blocks []any
 	if sig, ok := decodeAnthropicSignature(m.ReasoningSignature); ok && strings.TrimSpace(m.Reasoning) != "" {
 		blocks = append(blocks, anthropicThinkingBlock{
@@ -284,7 +285,7 @@ func anthropicAssistantBlocks(m port.PromptMessage) ([]any, error) {
 			return nil, ierr
 		}
 		blocks = append(blocks, anthropicToolUse{
-			Type: "tool_use", ID: string(call.ID), Name: call.Name, Input: input,
+			Type: "tool_use", ID: string(call.ID), Name: wn.Wire(call.Name), Input: input,
 		})
 	}
 	return blocks, nil
@@ -308,14 +309,15 @@ func anthropicToolInput(raw json.RawMessage) (map[string]any, error) {
 }
 
 // toAnthropicTools 工具声明转换；空 Schema 补默认对象结构（input_schema 必填）。
-func toAnthropicTools(specs []tool.Spec) []anthropicTool {
+// 名字经 wireNames 换成端点安全别名（D195）。
+func toAnthropicTools(specs []tool.Spec, wn *wireNames) []anthropicTool {
 	out := make([]anthropicTool, 0, len(specs))
 	for _, s := range specs {
 		params := s.Schema
 		if len(params) == 0 {
 			params = tool.NoArgsSchema
 		}
-		out = append(out, anthropicTool{Name: s.Name, Description: s.Description, InputSchema: params})
+		out = append(out, anthropicTool{Name: wn.Wire(s.Name), Description: s.Description, InputSchema: params})
 	}
 	return out
 }
@@ -368,7 +370,7 @@ func (c *Client) generateAnthropic(ctx context.Context, req port.GenerateRequest
 		cancel()
 		return nil, c.statusError(anthropicPath, code, sn, after)
 	}
-	s := newRawStream(streamCtx, cancel, resp.Body)
+	s := newRawStream(streamCtx, cancel, resp.Body, newWireNames(req.Tools))
 	st := &anthropicStreamState{}
 	s.decode = func(payload string) (port.Delta, bool, error) {
 		return decodeAnthropicEvent(s, st, payload)

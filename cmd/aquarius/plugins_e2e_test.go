@@ -57,7 +57,7 @@ func TestRunPluginMCPFullChain(t *testing.T) {
 	defer mcpSrv.Close()
 
 	llmSrv, reqs := rawScriptServer(t, [][]string{
-		{toolCallData("c1", "mcp:fake:echo", `{"text":"ping"}`)},
+		{toolCallData("c1", "mcp_fake_echo", `{"text":"ping"}`)}, // 端点别名（D195）
 		{contentData("执行完成")},
 		{contentData("greeted")},
 	})
@@ -87,9 +87,10 @@ func TestRunPluginMCPFullChain(t *testing.T) {
 	if reqs.len() != 3 {
 		t.Fatalf("llm requests = %d, want 3（工具调用/回答/prompt 轮）", reqs.len())
 	}
-	// 请求1 带 mcp: 工具声明（发现）。
-	if !strings.Contains(string(reqs.at(0).body), "mcp:fake:echo") {
-		t.Fatalf("请求1 缺 mcp 工具声明: %.300s", reqs.at(0).body)
+	// 请求1 带端点安全别名声明（内部名 mcp:fake:echo 发出去会 400，D195）。
+	if !strings.Contains(string(reqs.at(0).body), "mcp_fake_echo") ||
+		strings.Contains(string(reqs.at(0).body), `mcp:fake:echo`) {
+		t.Fatalf("请求1 工具声明未换算成别名: %.300s", reqs.at(0).body)
 	}
 	// 请求2 回填 MCP 结果（tool 消息里是 JSON 转义后的 structured content 文本）。
 	if !strings.Contains(string(reqs.at(1).body), "\\\"echo\\\":\\\"ping\\\"") {

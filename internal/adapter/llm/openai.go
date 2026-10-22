@@ -250,7 +250,7 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 			return nil, c.statusError(chatPath, code, sn, after)
 		}
 	}
-	return newStream(streamCtx, cancel, resp.Body), nil
+	return newStream(streamCtx, cancel, resp.Body, newWireNames(req.Tools)), nil
 }
 
 // statusError 非 200 响应的统一报因（两套协议共用；D175 口径一）。

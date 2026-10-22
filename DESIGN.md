@@ -358,7 +358,8 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   两处各有 ASCII 断言测试；`go vet` 的 printf 检查要求**含占位符的格式串留在 Go 里**，不抽成资源文件。
 - `term_exec` 与 `job_*` 的**终端输出在 jobproc 适配器内按行解码为 UTF-8**（D41）：UTF-8 合法则原样
   （含显式 `chcp 65001` 的输出），否则按 GBK/CP936 解码；模型无需再手工 `chcp` 切换代码页。
-- 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`。
+- 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`（内部形态；出站到模型时换算为
+  端点安全别名，见 §6.3）。
 - **屏幕捕获（D178）**：拆成 `window_list`（纯元数据，Safe）与 `screen_capture`（产图，Confirm）两件——
   截屏是隐私敏感动作，逐次确认在 strict 下是默认；`window_list` 没有副作用，列清单不该被确认打断。
   - 抓取实现在 `internal/adapter/screencap`（Windows = `PrintWindow(PW_CLIENTONLY|PW_RENDERFULLCONTENT)` 抓客户区，
@@ -845,6 +846,11 @@ type Asker interface {
 | `prompts/list` / `get` | `CommandHandler` | 暴露为 `/mcp:<server>:<prompt>` |
 | `initialize` | 插件宿主校验 | 版本协商不兼容 → 拒载并报因 |
 | sampling 反向调用 | **拒绝**（v1） | server 借用宿主模型的能力暂不支持 |
+
+**端点名换算（D195）**：`mcp:<server>:<tool>` 是内部形态（审计归组、`/plugin` 过滤、权限矩阵都按
+冒号解析）。严格端点只接受 `^[a-zA-Z0-9_-]+$` 且 ≤64 字符，所以 llm 适配器在出站时把名字换成
+`mcp_<server>_<tool>`（非法字符 → `_`，超长截断加短哈希，清洗后碰撞同批哈希消歧），声明、历史调用
+用同一别名；回传的调用名在流收口处换回内部名。换算只发生在适配器边界，领域与应用层看不到别名。
 
 `plugin.json` = MCP server 启动描述：
 

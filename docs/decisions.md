@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-21 @ aaaa344 -->
+<!-- docs-sync: 2026-10-22 @ 24a8d50 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -4119,3 +4119,25 @@
   `uigui/voice_test.go` 既有 `TestMicButtonNeedsVoice` 继续锁界面侧判空。
 - **落码（2026-10-21）**：`cmd/aquarius/assemble_ui.go`（`voiceSlot`）、
   `DESIGN.md` §15.2、`docs/guide.md`、`docs/usage.md`。
+
+### D195 · 工具名出入端点换算：内部保留 `mcp:<server>:<tool>`，出站发别名（2026-10-22 实测报障）
+
+> **背景**：接上终端 MCP 后 DeepSeek 直接 400：`Invalid 'tools[25].function.name': string does not
+> match pattern '^[a-zA-Z0-9_-]+$'`。内核的 MCP 命名一直带冒号（可解析，审计归组与 `/plugin` 过滤都
+> 靠它），而 OpenAI 系与 Anthropic 的函数名规范都不允许冒号、长度上限 64。D191 当时把这条列为
+> 「单独评估」，现在有了真实触发。
+
+- **口径一：只换算出入边界的名字，不动内部命名**。内部仍是 `mcp:<server>:<tool>`——审计日志按冒号
+  归组、`/plugin` 按 server 过滤、会话树与权限矩阵都读这个形态；改内部名会让这些解析同时失去依据。
+- **口径二：换算集中在适配器层**。`internal/adapter/llm/names.go` 按本次请求的声明集合生成双向表：
+  非法字符（含冒号）→ `_`；超长按原名哈希截到 64；清洗后同名碰撞时同组一律追加 8 位短哈希（与声明
+  顺序无关、跨轮稳定）。三条协议共用这张表：声明与历史 `tool_calls` / `tool_use` / `function_call`
+  都发别名，回传的调用名在流收口处一次性换回内部名。
+- **口径三：认不出就原样放行**。模型臆造的别名不翻译，交给 runner 按未知工具回填——适配器不替它猜。
+- **否决**：把内部名直接改成 `mcp_<server>_<tool>`（漂移面大：日志归组、前缀过滤、权限键全要跟着改，
+  且下划线让 server 与 tool 的边界不可反解）；靠 `tool_descriptions` 之类的配置规避（名字不是描述，
+  不能靠配置修）。
+- **验证**：`internal/adapter/llm/names_test.go`——别名规则（冒号/非法字符/超长/碰撞/未知）、三条协议
+  请求体不含 `mcp:` 且历史调用与声明同名、流回传别名换回内部名。
+- **落码（2026-10-22）**：`internal/adapter/llm/names.go`（新增）、`wire.go`、`stream.go`、
+  `anthropic.go`、`responses.go`、`DESIGN.md` §6.3、`docs/usage.md`。

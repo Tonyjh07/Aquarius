@@ -1,5 +1,5 @@
 # 参考手册
-<!-- docs-sync: 2026-10-21 @ aaaa344 -->
+<!-- docs-sync: 2026-10-22 @ 24a8d50 -->
 
 > **第一次使用请先看[用户手册](guide.md)**——那本按「怎么用起来」写，不要求懂编程；
 > 本文是逐条命令与参数的速查，写给要抠细节的人。
@@ -133,6 +133,7 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 - **授权**：声明的 `capabilities` 首次启用逐项 `[y/N]` 确认，通过即写入 `granted`；
   未配置确认器时 fail-closed 不启动；`risk=confirm` 的工具仍逐次确认（不随授权放行）。
 - **工具**：`tools/list` 注册为 `mcp:<server>:<tool>`，与内置工具同权过 ToolRunner 权限矩阵；
+  出站到模型时换成端点安全别名 `mcp_<server>_<tool>`（严格端点不接受冒号），会话树与日志仍是冒号形态；
   server 崩溃自动重启（1s/2s/4s 退避、限 3 次），超限置 `crashed`；重启与调用统计见 `/plugin`。
 - **resources** 只读并入记忆索引与 `memory_*` 读取面（写/删仍走自有记忆，§6.3）；
   **prompts** 暴露为 `/mcp:<server>:<prompt>` 动态命令。

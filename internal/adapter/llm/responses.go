@@ -111,16 +111,17 @@ type responsesSummaryPart struct {
 
 // encodeResponsesRequest 把 GenerateRequest 编码为 Responses 请求体（stream 恒为 true）。
 func encodeResponsesRequest(req port.GenerateRequest) ([]byte, error) {
+	wn := newWireNames(req.Tools)
 	out := responsesRequest{Model: req.Model, Stream: true}
 	for _, m := range req.Messages {
-		items, err := responsesItems(m)
+		items, err := responsesItems(m, wn)
 		if err != nil {
 			return nil, err
 		}
 		out.Input = append(out.Input, items...)
 	}
 	if len(req.Tools) > 0 {
-		out.Tools = toResponsesTools(req.Tools)
+		out.Tools = toResponsesTools(req.Tools, wn)
 	}
 	out.Temperature = req.Params.Temperature
 	out.MaxOutputTokens = req.Budget.MaxOutputTokens
@@ -142,7 +143,7 @@ func encodeResponsesRequest(req port.GenerateRequest) ([]byte, error) {
 
 // responsesItems 一条端口消息 → 0..n 个 input item。工具调用/思考不塞进 assistant 消息的
 // content，而是按 Responses 的模型各占一个 item（这是它与 chat 最大的形状差异）。
-func responsesItems(m port.PromptMessage) ([]any, error) {
+func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 	switch m.Role {
 	case "system", "user":
 		content, err := responsesContents(m.Content, "input_text", m.Role == "user")
@@ -179,7 +180,7 @@ func responsesItems(m port.PromptMessage) ([]any, error) {
 				args = "{}"
 			}
 			items = append(items, responsesFunctionCall{
-				Type: "function_call", CallID: string(call.ID), Name: call.Name, Arguments: args,
+				Type: "function_call", CallID: string(call.ID), Name: wn.Wire(call.Name), Arguments: args,
 			})
 		}
 		// 服务端要求 reasoning item 后面紧跟它产出的 assistant 消息或 function_call，
@@ -253,7 +254,8 @@ func responsesReasoningOf(p port.Sampling) *responsesReasoning {
 }
 
 // toResponsesTools 工具声明转换；空 Schema 补默认对象结构（部分服务强制要求 parameters）。
-func toResponsesTools(specs []tool.Spec) []responsesTool {
+// 名字经 wireNames 换成端点安全别名（D195）。
+func toResponsesTools(specs []tool.Spec, wn *wireNames) []responsesTool {
 	out := make([]responsesTool, 0, len(specs))
 	for _, s := range specs {
 		params := s.Schema
@@ -262,7 +264,7 @@ func toResponsesTools(specs []tool.Spec) []responsesTool {
 		}
 		out = append(out, responsesTool{
 			Type:        "function",
-			Name:        s.Name,
+			Name:        wn.Wire(s.Name),
 			Description: s.Description,
 			Parameters:  params,
 		})
@@ -298,7 +300,7 @@ func (c *Client) generateResponses(ctx context.Context, req port.GenerateRequest
 		cancel()
 		return nil, c.statusError(responsesPath, code, sn, after)
 	}
-	s := newRawStream(streamCtx, cancel, resp.Body)
+	s := newRawStream(streamCtx, cancel, resp.Body, newWireNames(req.Tools))
 	s.decode = s.decodeResponses
 	return s, nil
 }

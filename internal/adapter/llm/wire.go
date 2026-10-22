@@ -76,6 +76,7 @@ type chatToolFunc struct {
 // includeUsage=false 时省略 stream_options（兼容性回退用）；omit 命中的参数一律不发
 // （D34：服务端已知不认的字段，启动注入或本次 400 记录）。nil omit 不省略。
 func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[string]bool) ([]byte, error) {
+	wn := newWireNames(req.Tools)
 	out := chatRequest{
 		Model:    req.Model,
 		Stream:   true,
@@ -85,7 +86,7 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 		out.StreamOptions = &chatStreamOptions{IncludeUsage: true}
 	}
 	for _, m := range req.Messages {
-		cm, err := toChatMessage(m, omit)
+		cm, err := toChatMessage(m, omit, wn)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +96,7 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 		out.Messages = append(out.Messages, cm)
 	}
 	if len(req.Tools) > 0 {
-		out.Tools = toChatTools(req.Tools)
+		out.Tools = toChatTools(req.Tools, wn)
 	}
 	out.Temperature = req.Params.Temperature
 	out.Stop = req.Params.Stop
@@ -118,7 +119,8 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 }
 
 // toChatMessage 转换单条消息。omit 命中的 reasoning_content 不回传（D42 剥离兜底）。
-func toChatMessage(m port.PromptMessage, omit map[string]bool) (chatMessage, error) {
+// 历史里的工具调用名同样换算成端点别名（D195）：端点看到的名字必须与声明一致。
+func toChatMessage(m port.PromptMessage, omit map[string]bool, wn *wireNames) (chatMessage, error) {
 	cm := chatMessage{Role: m.Role}
 	switch m.Role {
 	case "tool":
@@ -138,7 +140,7 @@ func toChatMessage(m port.PromptMessage, omit map[string]bool) (chatMessage, err
 				cm.ToolCalls = append(cm.ToolCalls, chatToolCall{
 					ID:       string(call.ID),
 					Type:     "function",
-					Function: chatFuncCall{Name: call.Name, Arguments: args},
+					Function: chatFuncCall{Name: wn.Wire(call.Name), Arguments: args},
 				})
 			}
 			if text := flattenText(m.Content); text != "" {
@@ -212,7 +214,8 @@ func flattenText(parts []port.PromptPart) string {
 }
 
 // toChatTools 工具声明转换；空 Schema 补默认对象结构（部分服务强制要求 parameters）。
-func toChatTools(specs []tool.Spec) []chatTool {
+// 名字经 wireNames 换成端点安全别名（D195）。
+func toChatTools(specs []tool.Spec, wn *wireNames) []chatTool {
 	out := make([]chatTool, 0, len(specs))
 	for _, s := range specs {
 		params := s.Schema
@@ -222,7 +225,7 @@ func toChatTools(specs []tool.Spec) []chatTool {
 		out = append(out, chatTool{
 			Type: "function",
 			Function: chatToolFunc{
-				Name:        s.Name,
+				Name:        wn.Wire(s.Name),
 				Description: s.Description,
 				Parameters:  params,
 			},

@@ -32,18 +32,20 @@ type stream struct {
 	// 供收尾事件（output_item.done、response.completed）补发缺漏时去重。
 	argsSeen map[int]bool
 	sigSeen  map[int]bool
+	// names 端点别名 → 内部工具名（D195）：回传的调用先换算，再交给上层派发。
+	names *wireNames
 }
 
 // newRawStream 建流但不设解码器（调用方随后自行指定，见 responses.go）。
-func newRawStream(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser) *stream {
+func newRawStream(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser, names *wireNames) *stream {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64<<10), 16<<20) // 单条 SSE 分片上限 16MB
-	return &stream{ctx: ctx, cancel: cancel, body: body, scanner: sc}
+	return &stream{ctx: ctx, cancel: cancel, body: body, scanner: sc, names: names}
 }
 
 // newStream chat 协议的生成流（默认解码器）。
-func newStream(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser) *stream {
-	s := newRawStream(ctx, cancel, body)
+func newStream(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser, names *wireNames) *stream {
+	s := newRawStream(ctx, cancel, body, names)
 	s.decode = decodeChatPayload
 	return s
 }
@@ -80,7 +82,7 @@ func (s *stream) Recv() (port.Delta, error) {
 		if s.finish {
 			s.done = true // 本片增量照发，但流到此为止
 		}
-		return d, nil
+		return s.localize(d), nil
 	}
 	s.done = true
 	if err := s.scanner.Err(); err != nil {
@@ -99,6 +101,18 @@ func (s *stream) Close() error {
 	s.done = true
 	s.cancel()
 	return s.body.Close()
+}
+
+// localize 回传的工具调用名 → 内部名（D195）：声明发的是端点别名，进会话树/派发
+// 必须换回 `mcp:<server>:<tool>`。
+func (s *stream) localize(d port.Delta) port.Delta {
+	if s.names == nil || len(d.ToolCalls) == 0 {
+		return d
+	}
+	for i := range d.ToolCalls {
+		d.ToolCalls[i].Name = s.names.Local(d.ToolCalls[i].Name)
+	}
+	return d
 }
 
 // markArgsSeen / markSigSeen 记忆某输出序号已收过内容（懒建 map）。
