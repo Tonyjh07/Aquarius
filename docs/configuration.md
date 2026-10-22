@@ -101,7 +101,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `ui.kind` | string | `gui`（D51 模板与键缺省） | `gui` = Gio 悬浮球 GUI（D43/§15，仅 Windows）；`tui` = bubbletea TUI（D33）；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
+| `ui.kind` | string | `gui`（D51 模板与键缺省） | `gui` = Gio 桌面窗口（D43/§15；Windows 为完整形态，其它平台为降级实现，见 DESIGN §15.6）；`tui` = bubbletea TUI（D33）；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
 | `ui.hotkey` | string | `""`（= `Alt+A`） | **GUI** 全局呼出/收起快捷键（§15.1）：`修饰键+键`（如 `Alt+A`）；注册失败回退 `Ctrl+Alt+A`；仅 gui 生效 |
 | `ui.theme` | string | `system`（键缺失） | **GUI** 深浅主题（§15.4/D61）：`system`/`light`/`dark`，切换热生效；仅 gui 生效 |
 | `ui.scale` | number | `1.0` | **GUI** 元素缩放倍率（§15.8/D90）：夹 [0.75, 2.5]；设置窗百分比档；热生效；仅 gui 生效 |
