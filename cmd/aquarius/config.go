@@ -275,6 +275,29 @@ func (c *fileConfig) normalizeSkills() error {
 	return nil
 }
 
+// persistSkillDirs 把额外技能根写回 config 的 `skills.dirs`（设置窗「技能」页的目录增删）。
+//
+// 只写「额外目录」：兜底根 `<profile>/skills` 恒在最后，不进配置（D201 口径二）。
+// 空表 = 删除该键（老配置里只有空数组时不留下 `"dirs": []` 噪音）。
+func (w *wiring) persistSkillDirs(dirs []string) error {
+	return persistConfig(w.cfgPath, func(generic map[string]any) {
+		if len(dirs) == 0 {
+			delete(generic, "skills")
+			return
+		}
+		sec, _ := generic["skills"].(map[string]any)
+		if sec == nil {
+			sec = map[string]any{}
+			generic["skills"] = sec
+		}
+		list := make([]any, 0, len(dirs))
+		for _, d := range dirs {
+			list = append(list, d)
+		}
+		sec["dirs"] = list
+	})
+}
+
 // permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
 type permissionsConfig struct {
 	Level string `json:"level"` // 空 = strict（perm.DefaultLevel）

@@ -387,6 +387,20 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		fmt.Fprintf(w.stderr, "技能：%s\n", warn)
 	}
 	w.skills = skills
+	// D202：安装面内核（副本落 `<profile>/skills`、git 检出进 `skill-cache`、台账
+	// `skill-installs.json`）。装配根在 cmd/aquarius/skillsadmin.go 把它适配成
+	// uigui.SkillsAdmin / app.SkillAdmin 两套消费方接口。
+	installer, err := skillfs.NewInstaller(skillfs.InstallOptions{
+		Root:       filepath.Join(w.profileDir, "skills"),
+		CacheDir:   filepath.Join(w.profileDir, "skill-cache"),
+		LedgerPath: filepath.Join(w.profileDir, "skill-installs.json"),
+		Catalog:    skills,
+		Logf:       func(format string, args ...any) { fmt.Fprintf(w.stderr, "技能："+format+"\n", args...) },
+	})
+	if err != nil {
+		return fmt.Errorf("技能安装面: %w", err)
+	}
+	w.skillInstall = installer
 	builtinTools := toolbuiltin.New(toolbuiltin.Deps{
 		Memory: w.merged,
 		PathOf: func(name string) (string, bool) {

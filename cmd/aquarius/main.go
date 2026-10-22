@@ -158,19 +158,21 @@ type wiring struct {
 	secretsBin *secretbin.Store
 
 	// assemble 段填充
-	store     port.ConversationStore
-	blobs     port.AttachmentStore
-	mem       *memoryfs.Store
-	merged    *mergedMemory
-	jobs      port.JobManager
-	jobWatch  *app.JobWatcher
-	watcher   *app.Watcher
-	skills    *skillfs.Catalog
-	runner    *toolrun.Runner
-	audit     *decorate.Audit
-	client    port.LLM
-	ui        uiFrontend
-	presenter *outputsPresenter
+	store    port.ConversationStore
+	blobs    port.AttachmentStore
+	mem      *memoryfs.Store
+	merged   *mergedMemory
+	jobs     port.JobManager
+	jobWatch *app.JobWatcher
+	watcher  *app.Watcher
+	skills   *skillfs.Catalog
+	// skillInstall 技能安装面内核（D202；装配根在 skillsadmin.go 适配两套消费方接口）。
+	skillInstall *skillfs.Installer
+	runner       *toolrun.Runner
+	audit        *decorate.Audit
+	client       port.LLM
+	ui           uiFrontend
+	presenter    *outputsPresenter
 
 	// assembleAudio 填充（D179）：录音/播放恒在，识别与合成按配置现建；mic 是
 	// /mic 与界面语音键共用的摄取器。
@@ -204,6 +206,9 @@ type wiring struct {
 	// S9-6b/D161：密钥库管理面快照修订号（设置窗按 Revision 重建条目行；每次写入/删除
 	// 递增）。库本体是 secretsBin（本地文件 IO，无进程内缓存）。
 	secretsRev atomic.Int64
+
+	// D202/D203：技能管理面快照修订号（安装/卸载/更新/重扫/目录增删都递增）。
+	skillsRev atomic.Int64
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -332,7 +337,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Confirmer:         tc.confirmer,
 		Jobs:              w.jobs,
 		Watches:           w.watcher,
-		Skills:            w.skills, // D201：/skill 与 skill 工具同一份清单
+		Skills:            w.skills,             // D201：/skill 与 skill 工具同一份清单
+		SkillAdmin:        skillsAdminApp{w: w}, // D202：/skill install|remove|update
 		CancelWatchers: func(id conversation.ID) {
 			w.jobWatch.CancelSession(id) // 切走/新建/删当前会话：不再往别的会话塞报告
 			w.watcher.CancelSession(id)
