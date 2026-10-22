@@ -1,5 +1,5 @@
 # 参考手册
-<!-- docs-sync: 2026-10-22 @ 4373d9e -->
+<!-- docs-sync: 2026-10-22 @ e4db687 -->
 
 > **第一次使用请先看[用户手册](guide.md)**——那本按「怎么用起来」写，不要求懂编程；
 > 本文是逐条命令与参数的速查，写给要抠细节的人。
@@ -63,6 +63,7 @@ go build ./cmd/aquarius
 | `/think [on\|off]` | 无参：原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发（覆盖 `/effort`）；当前链的模型未声明思考能力时同样不发 |
 | `/effort [级别]` | 无参：当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off 清除）写回 config `model.reasoning_effort`。是否真发由 `/think` 决定；on 且未设档 = 不发（交服务端默认） |
 | `/plugin [list\|enable <name>\|disable <name>]` | MCP 插件管理（M4，D31）：list 显示状态/来源/传输/能力授权/调用统计/重启与报因，并列出可用动态命令；enable 走 capability 首用确认并写回 config；disable 即时摘除其工具与命令 |
+| `/skill [list\|<名字>]` | 技能（D201）：无参或 `list` 列出已安装的技能（名字、一句说明、来自哪个目录、加载失败的条目与原因）；带名字 = 把该技能的 `SKILL.md` 正文注入上下文（**不触发新一轮**，下一句话就能用上），并显示技能目录路径 |
 | `/mcp:<server>:<prompt> [args]` | MCP prompts 动态命令（随插件启停注册/注销，`/plugin list` 查看可用项）；渲染结果作为用户消息走完整一轮 |
 | `/quit` `/exit` | 退出（`/exit` 为别名） |
 | `/help` | 命令帮助 |
@@ -99,6 +100,7 @@ go build ./cmd/aquarius
 | `ask_user` | 向你提问（一次 1–4 题，每题最多 9 个选项，可多选，也可以自己输入）：GUI 在输入栏原地展开问答面板，命令行前端逐题打印编号选单。**不吃默认工具超时**——想多久都行；无人值守或 `-yes` 时立即回「用户不在」，不阻塞轮次 | Safe |
 | `web_search` | 联网搜索：`query`（1–128 字符，支持 `site:` / `"短语"` / `-词` / `lang:zh,en` / `after:2025-01-01` 等算符）+ `count`（1–20）+ `freshness`（day/week/month/year）。按 `web.search.providers` 的顺序换家，回填里注明这次实际用了哪家、之前哪家失败了 | Safe |
 | `web_fetch` | 抓一个网页并转成 Markdown（`url` + `max_chars` 500–20000）：导航与脚本被剔除，长文按预算截断并提示还能继续读。本地抓取遵守 `robots.txt`，拒绝内网/回环目标 | Safe |
+| `skill` | 载入一个已安装技能（D201）：常驻清单里只有名字与一句说明；调用后拿到该技能 `SKILL.md` 的正文 + 技能目录绝对路径。需要读 `references/` 或跑 `scripts/` 时用 `file_read` / `term_exec` 自己深入 | Safe |
 
 联网能力由配置决定，两件工具**始终注册**（没配就调用会明确告诉你缺哪一段）：
 
@@ -149,6 +151,24 @@ Tier-2 = 任意 MCP server（stdio 或 streamable HTTP 双传输，D30 官方 go
 - **resources** 只读并入记忆索引与 `memory_*` 读取面（写/删仍走自有记忆，§6.3）；
   **prompts** 暴露为 `/mcp:<server>:<prompt>` 动态命令。
 - `/plugin list` 看状态，`enable`/`disable` 即时启停（写回 config，重启沿用）。
+
+## 技能（D201）
+
+技能 = 一个目录 + 一个 `SKILL.md`（YAML frontmatter 写 `name` 与 `description`，下面是给模型的
+指令）。它和「系统提示词」不一样：**只有你要用的时候才进上下文**——平时模型只看到名字和一句说明，
+真命中才把整篇正文读进来，所以装十来个技能也不会把每轮的上下文撑大。
+
+- **放哪**：`<profile>/skills/<名字>/SKILL.md` 就生效（开箱可用）；也可以在自己的
+  `config.json` 里加 `skills.dirs`（绝对路径、按顺序）指向别处的技能目录，比如你用 git 管的仓库。
+  同名技能先声明者生效。
+- **写什么**：`name` 必须与目录名一致（小写字母、数字、连字符，≤64 字符），`description` 一句
+  话写清「这个技能做什么、什么时候该用」——模型就是靠这一句决定要不要载入的。
+  目录里还可以放 `scripts/`（脚本）、`references/`（参考资料）、`assets/`（模板），模型载入技能后
+  会拿到目录路径，需要时自己读、自己跑。**脚本不会自动执行**，跑脚本一样要过权限确认。
+- **怎么用**：直接说需求即可，模型会自己判断该载入哪个技能；也可以 `/skill` 看装了哪些、
+  `/skill <名字>` 手动把某个技能载入上下文（不触发回答，下一句话就能用上）。
+- **坏技能不会拖垮启动**：缺字段、名字不合规、YAML 写坏的技能会被跳过，`/skill list` 里能看到
+  哪一条没加载上、为什么。
 
 ## 权限等级
 

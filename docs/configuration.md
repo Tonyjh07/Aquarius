@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-22 @ 4373d9e -->
+<!-- docs-sync: 2026-10-22 @ e4db687 -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §8/§9；**冲突以 DESIGN.md 为准**。
 > D110（破坏性改造）起配置**以 profile 为隔离单位**：
@@ -196,6 +196,23 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 | `audio.tts.style` | string | — | 自然语言风格指令（如 `语速稍快，语气轻松`） |
 | `audio.tts.tags` | string | — | 风格标签，非空时拼成 `(标签)` 前缀置于正文开头 |
 
+### skills（技能，D201）
+
+技能 = 一个目录 + `SKILL.md`（YAML frontmatter 必填 `name` / `description`，正文是给模型的
+指令）。助手只在**要用的时候**才载入正文：常驻上下文里的只有名字与一句说明。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `skills.dirs` | []string | `[]` | 追加技能根（**绝对路径**，按声明序优先）；空 = 只用 `<profile>/skills` |
+
+- 每个技能根下最多找两层（根自身 / 一级子目录 / 二级子目录）的 `SKILL.md`；**目录名必须与
+  frontmatter 的 `name` 相同**（小写字母、数字、连字符，≤64 字符）。
+- 多个根出现同名技能时**先声明的生效**，后面的跳过并记一条警告（启动日志里能看到）。
+- 目录可以放 `scripts/`、`references/`、`assets/`：模型载入技能后会拿到技能目录的绝对路径，
+  需要时用 `file_read` / `term_exec` 自己深入（脚本执行照常走权限矩阵与逐次确认）。
+- 装坏的技能（缺字段、名字不合规、YAML 解析失败）不会让助手起不来：跳过它并记警告。
+- 改动 `skills.dirs` 或增删技能目录后**重启生效**（不做文件监听）；GUI 侧将来有「重新扫描」。
+
 ### output（M3 起）
 
 | 字段 | 类型 | 默认 | 说明 |
@@ -327,6 +344,7 @@ profile 配置 `<data>/profiles/default/config.json`：
   "system_prompt": "",
   "prompts": { "modules": {}, "persona": [] },
   "input": { "asr": "whisper-api", "mic": true },
+  "skills": { "dirs": [] },
   "output": { "tts": false, "notify": true },
   "web": {
     "search": {

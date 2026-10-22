@@ -56,6 +56,7 @@
 | 输出器 | OutputAdapter | 输出方式适配器：TTS 播报 / 系统通知 / 导出文件 |
 | 转写 / 合成 | Transcriber / Synthesizer | 语音模态端口：ASR（音频→文本）/ TTS（文本→音频） |
 | 记忆文档 | MemoryDoc | 一篇 markdown 记忆（name + 文本） |
+| 技能 | Skill | 一个目录 + `SKILL.md`：按需载入的指令包（发现只读 name/description，命中才载入正文，D201） |
 | MCP 网关 | mcpgate | 把 MCP server 适配为内核端口实现的适配器（Tier-2 插件面） |
 | 增量 | Delta | 流式返回的文本/工具调用片段 |
 
@@ -344,6 +345,7 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `ask_user` | 向用户提问（D184）：1–4 题、每题 0–9 个选项（可多选），UI 自动追加「自己输入」项；答案随工具结果回填。**不吃默认工具超时**（用户思考不该超时），无人值守时立即回填「用户不在」 | Safe |
 | `web_search` | 联网搜索（D197）：`query`（1–128 字符，支持 `site:` / `"短语"` / `-词` / `lang:` / `after:` 等算符）、`count`（1–20）、`freshness`（day/week/month/year）；按配置顺序换家，回填里注明实际应答者与降级痕迹 | Safe |
 | `web_fetch` | 抓取单个网页并转 Markdown（D197）：`url`、`max_chars`（500–20000）；本地实现遵守 robots.txt 并拒绝内网目标 | Safe |
+| `skill` | 载入一个已安装技能（D201）：`name` = 技能目录名。回填该技能 `SKILL.md` 的正文 + 技能目录绝对路径（深入 `references/`、跑 `scripts/` 用 `file_read` / `term_exec`）。技能清单（name + description）直接写在工具描述里，**零技能时也照常注册**，执行时明确报 `no skills are installed` | Safe |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -913,6 +915,41 @@ type WebFetch interface {
 deepseek/local），选不出启动会拒的组合。密钥只写不回显（框恒空 = 保持原引用）；列表留空 =
 清空 = 该能力不可用。保存前按与 `normalizeWeb` 同一口径校验，写坏的配置进不了盘。
 
+### 5.15 `skill.go` —— 技能目录端口（D201）
+
+```go
+type SkillInfo struct {
+    Name        string // frontmatter name（= 目录名；小写字母/数字/连字符）
+    Description string // frontmatter description（工具描述里的一行说明）
+    Dir         string // 技能目录绝对路径（回填给模型做深入读取的锚点）
+    Source      string // 来自哪个技能根（多根同名时说明「哪个生效了」）
+}
+
+type SkillContent struct {
+    Info     SkillInfo
+    Body     string // SKILL.md 正文（frontmatter 之后，行尾归一为 LF，未截断）
+    Path     string // SKILL.md 绝对路径（正文超预算时给 file_read 续读）
+    BodyLine int    // 正文首行在 SKILL.md 里的行号（1 基：续读 offset 要对齐）
+}
+
+type SkillCatalog interface {
+    List(ctx context.Context) ([]SkillInfo, error)  // 按根序 + 目录名排序，确定性
+    Load(ctx context.Context, name string) (SkillContent, error) // 未知名返回 ErrSkillNotFound
+    Warnings(ctx context.Context) []string          // 跳过/被覆盖的条目（用户面，不进模型上下文）
+}
+```
+
+- **只读端口**：技能的安装/卸载是用户面动作（D202），不进 `port`——模型侧只有「列」与「载」。
+- **`Body` 返回未截断正文**：预算（16000 字符页上限、`limits.tool_output_chars`）统一在工具层与
+  ToolRunner 收口，适配器不猜调用方要多少（与 §5.14 同口径）。
+- **`BodyLine` 为什么在端口里**：正文超页后要提示「用 `file_read` 从第 N 行续读」，而 `SKILL.md`
+  开头还有 frontmatter——行号不能假设正文从第 1 行开始（差几行模型就会读到 half 一条指令）。
+- **实现 `skillfs`**：扫描有序技能根、解析 YAML frontmatter、校验名称/长度/目录同名；非法条目
+  跳过并累积 `Warnings()`（启动日志 + `/skill list` + 未来的技能页展示）。目录内容变化不热监听，
+  由 `Rescan()` 显式重扫（硬性规则 7：不做文件监听）；`Load` 每次现读，改正文不必重扫。
+- **零配置可用**：`<profile>/skills` 不存在 = 没有技能（不是错误）；`skills.dirs` 里的路径不存在
+  同样只记警告。
+
 ---
 
 ## 6. 插件架构
@@ -1248,6 +1285,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/jobs [list\|logs\|kill]` | 后台任务管理 |
 | `/watch [list\|stop <id>]` | 观察器（D190）：看模型声明在盯什么、已查几次、何时结束；`stop` 叫停（声明由模型经 `watch_start` 发起） |
 | `/plugin [list\|enable\|disable\|logs]` | MCP 插件管理（D31/D143）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效；`logs [name]` = tail `audit.log` 的插件调用行（无参给各插件最近调用摘要，S6） |
+| `/skill [list\|<名字>]` | 技能（D201，§5.15）：无参或 `list` 列出已安装技能（名字 / 说明 / 来源目录 / 加载失败的条目与原因）；带名字 = 把该技能 `SKILL.md` 正文**注入成一条宿主上下文节点**（不触发新一轮，模型下次装配即可见），并显示目录绝对路径 |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
@@ -1350,6 +1388,10 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     ├── config.json            # 主配置（密钥默认存引用名，明文允许但启动警告 D35；permissions.level 权限等级）
     ├── sandbox/               # Agent 特权目录（权限矩阵免确认读写，启动自动创建）
     ├── memories.md            # 全局记忆（markdown 单文件，D23）
+    ├── skills/<name>/SKILL.md    # 技能（D201）：一个目录一个技能；<profile>/skills 是兜底技能根，
+    #                             config skills.dirs 可追加其它绝对路径（按声明序优先）
+    ├── skill-cache/<repo-key>/   # git 安装的技能检出缓存（D202，待落码；更新 = pull + 重新同步副本）
+    ├── skill-installs.json       # 技能安装台账（D202，待落码）：来源/引用/安装时间，原子写
     ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
     ├── jobs/<jobID>.log       # 后台任务日志
     ├── audit.log              # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
@@ -1425,6 +1467,9 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "persona": ["house", "@env"] // 人格 = 有序顶层引用；空 = 默认 ["@default","@env"]
   },
   "input": { "language": "auto" }, // 录音语种提示（D179）：auto | zh | en；仅作用于语音识别，缺省 auto
+  "skills": {                     // 技能（D201）：技能根有序列表（绝对路径），先命中者胜；
+    "dirs": []                    // 空 = 只用 <profile>/skills。改动重启生效（不做文件监听）
+  },
   "audio": {                      // 语音（D179）：识别与合成各引用一个 provider，密钥不另存
     "asr": {
       "provider": "mimo",          // 引用 model.providers 里的 name：借它的 base_url 与密钥池

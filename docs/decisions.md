@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-22 @ 4373d9e -->
+<!-- docs-sync: 2026-10-22 @ e4db687 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -215,6 +215,8 @@
 | D198 | 本地抓取的安全默认：拨号层拒私网、重定向逐跳复核、遵守 robots.txt、5MB 体积与 30s 超时、字符集探测（§5.14） | 生效 |
 | D199 | 提问面板改版：题号在左、进度段右对齐、去掉最小化；底部按钮行贴底缘、主按钮文字垂直居中（§15.2） | 生效 |
 | D200 | 设置窗新增「联网」页：两组提供商有序列表（搜索 deepseek/brave、抓取 deepseek/local）+ 本地抓取参数；密钥只写不回显、保存前与 `normalizeWeb` 同口径校验（§5.14/§15.7） | 生效 |
+| D201 | 技能（Agent Skills）= 目录 + `SKILL.md` 的按需指令包：技能根有序、只读 name/description 进工具描述、命中才载入正文；正文走工具回填/注入节点，**不进 system**（§4.3/§5.15） | 生效 |
+| D202 | 技能安装/导入/更新：`SKILL.md` / 文件夹 / 压缩包 / GitHub 链接；有 git 则克隆（`pull` 即更新），否则下载压缩包；**安装面只在用户面**，不提供模型可调用的安装工具（§5.15/§15.7） | 待落码 |
 
 ## 记录
 
@@ -4299,3 +4301,72 @@
 - **落码（2026-10-22）**：`internal/adapter/uigui/settings_page_web.go`、
   `cmd/aquarius/web_settings.go`、`settings.go` / `settings_actions.go` / `settings_rows.go`、
   `DESIGN.md` §5.14/§15.7、`docs/configuration.md`。
+
+### D201 · 技能（Agent Skills）：目录 + `SKILL.md` 的按需指令包（2026-10-22）
+
+> **背景**：用户要求「加入 skill 的支持」。业界已有开放格式（Agent Skills：一个目录 + `SKILL.md`，
+> YAML frontmatter 必填 `name`/`description`，可选 `license`/`compatibility`/`metadata`/`allowed-tools`，
+> 附 `scripts/`、`references/`、`assets/`），OpenCode/Claude Code 等都已按它实现。
+> 不自造格式，直接吃这个规范；难的是**放进 Aquarius 的哪条缝**。
+
+- **口径一：格式跟开放规范，不自造**。`SKILL.md` = YAML frontmatter + Markdown 正文。
+  必填 `name`（≤64、小写字母/数字/连字符、首尾非连字符、**必须与所在目录同名**）与
+  `description`（1–1024 字符）；可选字段原样保留但不驱动行为（`allowed-tools` 只展示、不强制——
+  它是实验字段，语义各家不同）。非法条目**跳过并记警告**，不阻断启动：一个装坏的技能不该让助手起不来。
+- **口径二：没有工作区概念 ⇒ 技能只能来自显式目录**。不照抄「从 cwd 向上找 `.claude/skills`」那套：
+  硬性规则 7 明确无 cwd/项目根。技能根 = `config.skills.dirs`（绝对路径、按声明序）在前 +
+  `<profile>/skills` 兜底最后；每个根向下最多 **2 层**找 `SKILL.md`（根自身 / 一级子目录 / 二级子目录），
+  父目录名必须等于 `name`。同名先命中者胜，后面的同名条目记警告（可解释「为什么改的那个没生效」）。
+- **口径三：三级渐进披露，成本按需**。① 启动/每轮只读 `name` + `description` 进 `skill` 工具的
+  描述（总预算 8000 字符，超出的技能只记数量不逐个列——列全了工具声明本身就吃掉几千 token）；
+  ② 命中才载入整篇 `SKILL.md`；③ `references/`/`scripts/`/`assets/` **不新造端口**，模型拿回填里的
+  绝对路径后走已有的 `file_read` / `term_exec`（后者本就是 Confirm 级，权限矩阵自然覆盖）。
+- **口径四：正文进「工具回填 / 注入节点」，绝不进 system**。理由三条：① 不改 `PersonaComposer`，
+  `/system` 与人格预览里不会冒出用户没写过的东西；② 天然受 `limits.tool_output_chars` 约束；
+  ③ 载入一次就留在树里，压缩时才丢——这正是渐进披露想要的「按需占用」。
+- **口径五：信任级别单独说清**。技能正文是「用户安装、要求模型遵循的指令」，所以回填里带一句英文
+  前缀明确这一点；但**技能目录里的其它文件仍是数据**（`file_read` 读到的照旧按 `untrustedDataNote`
+  处理）。全局声明只加**一条窄豁免**（「唯一例外是技能正文」），不放宽其余半句：不这样写，
+  「工具输出是数据」会与回填里的「照它做」自相矛盾，模型只能二选一地猜。豁免只覆盖载入进来的
+  正文，网页、文件与命令输出一条都没松。
+- **口径六：`skill` 工具照常注册（零技能时也注册）**。与 `screen_capture` / `web_*` 同口径：工具清单
+  与设置窗「工具与 MCP」页保持稳定，执行时明确报 `no skills are installed`，而不是让「工具时有时无」
+  变成另一种不可解释的行为。
+- **口径七：超长正文给续读，不硬截断**。`SKILL.md` 回填上限 16000 字符（与 `file_read` 单页同量级，
+  刻意小于缺省 `tool_output_chars`，让 ToolRunner 的统一裁剪不二次触发）；超出时回填带
+  「用 `file_read` 从第 N 行继续 + 绝对路径」，而不是丢一句 truncated。
+- **否决**：① 照抄 cwd 向上找技能目录（与「无工作区」冲突，且会隐式依赖启动目录）；
+  ② 把技能正文塞进 system 提示（人格变成两份事实源，用户改人格时不可预期）；
+  ③ 给技能开新工具类型/新领域概念（技能不是树节点、不是工具，只是「可载入的文本 + 一个目录」）；
+  ④ 只支持单文件 `SKILL.md`（`references/` 是这套规范的主要价值，砍掉就只剩提示词片段）。
+- **落码（2026-10-22）**：`internal/port/skill.go`、`internal/adapter/skillfs/`、
+  `internal/adapter/toolbuiltin/skill.go`、`internal/app/session_cmd_skill.go`、
+  `cmd/aquarius/config.go`（`skills.dirs`）、`DESIGN.md` §4.3/§5.15/§8、`docs/configuration.md`。
+
+### D202 · 技能的安装 / 导入 / 更新（2026-10-22，**待落码**）
+
+> **背景**：技能得能装进来才算可用。用户要求支持 `SKILL.md` 单文件、文件夹、压缩包、GitHub 链接，
+> 并在主机有 git 时直接克隆（方便更新）。
+
+- **口径一：安装面只在用户面，不提供模型可调用的安装工具**。让模型能从网络拉一份「自己必须遵循的
+  指令包」等于把注入面与代码执行面交给远端内容；技能页按钮与 `/skill install` 都是用户亲手发起。
+- **口径二：四种导入源**——单文件 `SKILL.md`（复制进 `skills/<name>/`）/ 文件夹（递归复制，跳过
+  `.git`）/ `.zip`（校验后解压，含多技能的包逐个安装）/ GitHub 链接（**有 git 就 `git clone --depth 1`**，
+  支持 `url#分支`；没有 git 则下载 codeload 压缩包）。
+- **口径三：落位统一为副本**。内容一律进 `<profile>/skills/<name>/`；git 检出缓存在
+  `<profile>/skill-cache/<repo-key>/`，安装台账 `<profile>/skill-installs.json`（原子写，目录消失即清条目）。
+  副本的好处是「一个目录 = 一个技能」，卸载就是删目录，不会因为删了一个技能把同仓库的兄弟技能一起带走。
+- **口径四：更新 = 覆盖**。git 来源 `git pull --ff-only` 后重新同步副本；压缩包来源重新下载；
+  **更新会覆盖本地改动**（页面上写明，且不给「三路合并」——技能是别人维护的包，不是你的工作区）。
+  复制来源没有更新动作，重新导入即可。
+- **口径五：同名不覆盖**。安装遇同名直接报错并要求先卸载，避免出现「一半新一半旧」的目录。
+- **口径六：校验前置 + 解压门禁**。先解到临时目录、通过 frontmatter 校验才落位，失败不留残渣；
+  压缩包解压做 zip-slip 防护（拒绝绝对路径/`..`/盘符/符号链接），总量与条目数设上限。
+- **口径七：`skills.dirs` 可在页面增删**——这是「我自己用 git 管技能、不想被复制一份」的出口，
+  与「复制安装」并存而不是二选一。
+- **否决**：① 做成模型工具（见口径一）；② 直接把 clone 的仓库当技能根（删一个技能会拆掉整份检出，
+  且 `name` 与目录名规则在多技能仓库里会打架）；③ 自动执行 `scripts/`（脚本一律经 `term_exec`，
+  Confirm + 权限矩阵，不做「安装即授权」）。
+- **落码**：待做（`internal/adapter/skillfs/install.go`、`cmd/aquarius/skillsadmin.go`、
+  `internal/adapter/uigui/settings_page_skills.go`、`/skill install|remove|update`）。
+
