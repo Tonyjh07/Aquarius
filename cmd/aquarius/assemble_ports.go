@@ -22,6 +22,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/probe"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/screencap"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
@@ -378,6 +379,14 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	// D197：联网能力按配置顺序装配（缺密钥只警告并跳过该家）；未配置 = nil，工具
 	// 照常注册但执行时明确报因。
 	webSearch, webFetch := w.buildWeb(ctx)
+	// D201：技能清单（config 追加根在前，<profile>/skills 恒垫底）。坏技能只记警告，
+	// 不阻断启动——先扫一次，把跳过的条目打到 stderr（/skill 里也能再看）。
+	skills := skillfs.New(skillfs.Options{Dirs: append(append([]string{}, w.cfg.Skills.Dirs...),
+		filepath.Join(w.profileDir, "skills"))})
+	for _, warn := range skills.Warnings(ctx) {
+		fmt.Fprintf(w.stderr, "技能：%s\n", warn)
+	}
+	w.skills = skills
 	builtinTools := toolbuiltin.New(toolbuiltin.Deps{
 		Memory: w.merged,
 		PathOf: func(name string) (string, bool) {
@@ -395,6 +404,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		WebFetch:    webFetch,
 		WebCount:    w.cfg.Web.Search.Count,
 		WebMaxChars: w.cfg.Web.Fetch.MaxChars,
+		Skills:      skills, // D201：skill 工具（nil 时工具明确报「本构建未提供」）
 	}) // S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
 	w.disabledTools = newDisabledHolder(w.builtinDisabled())

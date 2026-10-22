@@ -24,6 +24,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -164,6 +165,7 @@ type wiring struct {
 	jobs      port.JobManager
 	jobWatch  *app.JobWatcher
 	watcher   *app.Watcher
+	skills    *skillfs.Catalog
 	runner    *toolrun.Runner
 	audit     *decorate.Audit
 	client    port.LLM
@@ -330,6 +332,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Confirmer:         tc.confirmer,
 		Jobs:              w.jobs,
 		Watches:           w.watcher,
+		Skills:            w.skills, // D201：/skill 与 skill 工具同一份清单
 		CancelWatchers: func(id conversation.ID) {
 			w.jobWatch.CancelSession(id) // 切走/新建/删当前会话：不再往别的会话塞报告
 			w.watcher.CancelSession(id)

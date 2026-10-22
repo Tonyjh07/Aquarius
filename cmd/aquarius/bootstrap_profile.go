@@ -69,6 +69,12 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return fmt.Errorf("创建特权目录 %s: %w", sandboxDir, err)
 	}
 	w.sandboxDir = sandboxDir
+	// 技能兜底根（D201）：<profile>/skills 存在即生效（用户把技能目录放这儿最省事）；
+	// 预先建好空目录，用户不必自己找路径。
+	skillsDir := filepath.Join(profileDir, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return fmt.Errorf("创建技能目录 %s: %w", skillsDir, err)
+	}
 
 	// 本机密钥库（D151/D161）：密钥库落在 profile 内（随 profile 隔离），读链 = 库 → 同名
 	// 环境变量；装配前向导窗（setupWizard）要用它探测缺密钥，故在此就位——profileDir 一
@@ -108,6 +114,9 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return err
 	}
 	if err := cfg.normalizeWeb(); err != nil {
+		return err
+	}
+	if err := cfg.normalizeSkills(); err != nil {
 		return err
 	}
 	// 语音不可用的原因只在「用户明显想用」时提示：配了 provider 却找不到，或开了

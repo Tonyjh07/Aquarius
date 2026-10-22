@@ -49,6 +49,8 @@ type fileConfig struct {
 	Limits       limitsConfig      `json:"limits"`
 	// Tools 工具面（S6/D143）：内置工具禁用清单（热生效）。
 	Tools toolsConfig `json:"tools"`
+	// Skills 技能目录（D201）：额外技能根（绝对路径、按声明序，先命中者胜）。
+	Skills skillsConfig `json:"skills"`
 	// MCPServers MCP server 声明（D30/D31，M4 启用；校验见 plugin.MCPServer.Validate）。
 	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
 	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。
@@ -90,6 +92,14 @@ type toolsConfig struct {
 	// → 默认推导（兼容 model.think_tool=true 则空集，否则 ["think"]——D34 现行为）。
 	// 只在设置窗动开关时写键（推导态不写盘）。
 	Disabled []string `json:"disabled,omitempty"`
+}
+
+// skillsConfig 技能配置（D201）：dirs = 追加技能根。
+//
+// 只有「额外的目录」：<profile>/skills 恒为最后兜底，不需要写在这里。路径必须是绝对路径
+// （本仓没有工作区/cwd 概念，相对路径无处可依，启动期直接报错而不是猜）。
+type skillsConfig struct {
+	Dirs []string `json:"dirs,omitempty"`
 }
 
 // outputConfig 输出器开关（DESIGN §8；M3 启用 notify，tts 见 D179）。
@@ -237,6 +247,32 @@ func webProviderFrom(p webProvider) string {
 		return s
 	}
 	return p.Kind
+}
+
+// normalizeSkills 校验技能目录（启动期一次）：只收绝对路径。
+//
+// 为什么不「相对 → 转绝对」：本仓没有工作区概念，相对路径的解释要依赖进程 cwd，
+// 那是同一个配置在不同启动方式下指向不同技能——静默的不可复现比启动报错更糟。
+func (c *fileConfig) normalizeSkills() error {
+	out := make([]string, 0, len(c.Skills.Dirs))
+	seen := map[string]bool{}
+	for i, d := range c.Skills.Dirs {
+		d = strings.TrimSpace(d)
+		if d == "" {
+			continue
+		}
+		if !filepath.IsAbs(d) {
+			return fmt.Errorf("skills.dirs[%d]=%q 不是绝对路径（技能目录必须写绝对路径）", i, d)
+		}
+		d = filepath.Clean(d)
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	c.Skills.Dirs = out
+	return nil
 }
 
 // permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
@@ -761,6 +797,7 @@ const defaultConfig = `{
     "echo_thinking": true
   },
   "tools": { "disabled": ["think"] },
+  "skills": { "dirs": [] },
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "prompts": { "modules": {}, "persona": [] },
