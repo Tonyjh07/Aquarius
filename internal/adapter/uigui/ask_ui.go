@@ -22,8 +22,8 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 提问面板呈现与交互（D184，§15.2）：顶部进度段（可点跳题）+ 最小化、中部滚动区
-// （题干 / 选项行 / 「自己输入」）、底部「忽略 | 上一步 | 下一步·提交」。
+// 提问面板呈现与交互（D184/D199，§15.2）：顶部左侧题号 + 右侧进度段（可点跳题）、
+// 中部滚动区（题干 / 选项行 / 「自己输入」）、底部「忽略 | 上一步 | 下一步·提交」。
 // 面板高随内容增长并夹到窗高 70%，超出部分内部滚动。
 
 // askPanel 面板主体（胶囊内，约束 = 胶囊尺寸）。
@@ -33,14 +33,12 @@ func (u *UI) askPanel(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 	// 焦点落点（与遮罩同一套：FocusFilter 使其可获焦 + event.Op 登记命中面），否则
-	// FocusCmd 无处落地——面板会拿不到任何键盘事件。最小化时同样保留（Esc 仍可中断）。
+	// FocusCmd 无处落地——面板会拿不到任何键盘事件。
 	gtx.Event(key.FocusFilter{Target: &u.askTag})
 	event.Op(gtx.Ops, &u.askTag)
-	if a.mini {
-		return u.askMiniRow(gtx)
-	}
 	// 面板内边距只给上下：左右由 pillContent 的 inputPadDp 统一（避免双层缩进）。
-	pad := layout.Inset{Top: unit.Dp(askPadDp), Bottom: unit.Dp(askPadDp)}
+	// 下边距略小于上边距（D199）：底部按钮行贴底缘，面板下半不显浮空。
+	pad := layout.Inset{Top: unit.Dp(askPadDp), Bottom: unit.Dp(askPadBotDp)}
 	return pad.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(u.askHead),
@@ -52,51 +50,9 @@ func (u *UI) askPanel(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// askMiniRow 最小化形态：一行摘要（题号 + 页签 + 已答数），整行点击展开。
-func (u *UI) askMiniRow(gtx layout.Context) layout.Dimensions {
-	a := u.m.ask
-	h := gtx.Dp(inputRowDp)
-	return u.askMiniBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min.Y = h
-		pad := layout.Inset{Left: unit.Dp(inputPadDp), Right: unit.Dp(inputPadDp)}
-		return pad.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(u.th, u.askSummary(a))
-					l.TextSize = unit.Sp(14)
-					l.Color = textMuted
-					l.MaxLines = 1
-					return l.Layout(gtx)
-				}),
-				layout.Flexed(1, layout.Spacer{}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					d := gtx.Dp(inputIconDp)
-					box := image.Rectangle{Max: image.Pt(d, d)}
-					drawMaximize(gtx, box)
-					return layout.Dimensions{Size: box.Size()}
-				}),
-			)
-		})
-	})
-}
-
-// askSummary 最小化行文本：`提问 1/3 · <页签> · 已答 N`。
-func (u *UI) askSummary(a *pendingAsk) string {
-	if a == nil || len(a.req.Questions) == 0 {
-		return "提问"
-	}
-	q := a.req.Questions[a.cur]
-	done := 0
-	for i := range a.req.Questions {
-		if len(a.sel[i]) > 0 || a.free[i] != "" {
-			done++
-		}
-	}
-	return "提问 " + strconv.Itoa(a.cur+1) + "/" + strconv.Itoa(len(a.req.Questions)) +
-		" · " + sanitizeControl(q.Header) + " · 已答 " + strconv.Itoa(done)
-}
-
-// askHead 顶部：`1/3 个问题` + 进度段（点 = 跳题）+ 最小化。
+// askHead 顶部：左侧 `1/3 个问题`，右侧进度段（点 = 跳题）。
+// 面板不设最小化：它在输入栏原地展开、高 ≤ 窗高 70%，没有「收起成一行」的必要
+// （D199：原先右上角的收起钮与进度段抢位置，用户批注移除）。
 func (u *UI) askHead(gtx layout.Context) layout.Dimensions {
 	a := u.m.ask
 	gtx.Constraints.Min.Y = gtx.Dp(askHeadDp)
@@ -106,20 +62,9 @@ func (u *UI) askHead(gtx layout.Context) layout.Dimensions {
 			l.Color = textMuted
 			return l.Layout(gtx)
 		}),
-		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
+		layout.Flexed(1, layout.Spacer{}.Layout),
 	}
 	kids = append(kids, u.askTabSegments(gtx)...)
-	kids = append(kids,
-		layout.Flexed(1, layout.Spacer{}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return u.askMiniBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				d := gtx.Dp(inputIconDp)
-				box := image.Rectangle{Max: image.Pt(d, d)}
-				drawMinimize(gtx, box)
-				return layout.Dimensions{Size: box.Size()}
-			})
-		}),
-	)
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)
 }
 
@@ -191,7 +136,7 @@ func (u *UI) askOptionRow(gtx layout.Context, i int, o port.AskOption) layout.Di
 		dims := layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					d := gtx.Dp(16)
+					d := gtx.Dp(askCheckDp)
 					box := image.Rectangle{Max: image.Pt(d, d)}
 					// 垂直对齐首行文字：图标顶到行中偏上。
 					off := op.Offset(image.Pt(0, gtx.Dp(2))).Push(gtx.Ops)
@@ -199,7 +144,7 @@ func (u *UI) askOptionRow(gtx layout.Context, i int, o port.AskOption) layout.Di
 					off.Pop()
 					return layout.Dimensions{Size: image.Pt(d, gtx.Dp(askOptRowDp))}
 				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(askOptGapDp)}.Layout),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -245,38 +190,46 @@ func askRowBg() color.NRGBA {
 }
 
 // askFreeRow 「自己输入」行：未展开 = 一行提示（点开就地变输入框）；展开 = 编辑器。
+// 与选项文字左对齐（缩进 = 勾选直径 + 间距），不与勾选圈对齐——这行没有勾选。
 func (u *UI) askFreeRow(gtx layout.Context) layout.Dimensions {
 	a := u.m.ask
+	indent := layout.Inset{Left: unit.Dp(askCheckDp + askOptGapDp)}
 	if a.open[a.cur] {
-		return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.Y = gtx.Dp(askFreeRowDp)
-			ed := material.Editor(u.th, &u.askEd, "自己输入答案…")
-			ed.TextSize = unit.Sp(14)
-			if u.inFadePass && u.askCaret {
-				u.drawEditorSelection(gtx, &u.askEd)
-			}
-			dims := ed.Layout(gtx)
-			if u.inFadePass && u.askCaret {
-				u.drawCaret(gtx, dims)
-			}
-			return dims
+		return layout.Inset{Top: unit.Dp(askFreeTopDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return indent.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.Y = gtx.Dp(askFreeRowDp)
+				ed := material.Editor(u.th, &u.askEd, "自己输入答案…")
+				ed.TextSize = unit.Sp(14)
+				if u.inFadePass && u.askCaret {
+					u.drawEditorSelection(gtx, &u.askEd)
+				}
+				dims := ed.Layout(gtx)
+				if u.inFadePass && u.askCaret {
+					u.drawCaret(gtx, dims)
+				}
+				return dims
+			})
 		})
 	}
 	on := a.free[a.cur] != ""
-	return u.askFreeClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min.Y = gtx.Dp(askFreeRowDp)
-		label := "自己输入…"
-		if on {
-			label = "自己输入：" + a.free[a.cur]
-		}
-		l := material.Body2(u.th, sanitizeControl(label))
-		l.TextSize = unit.Sp(14)
-		l.Color = textMuted
-		if on {
-			l.Color = brandColor
-		}
-		l.MaxLines = 1
-		return l.Layout(gtx)
+	return layout.Inset{Top: unit.Dp(askFreeTopDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return indent.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return u.askFreeClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.Y = gtx.Dp(askFreeRowDp)
+				label := "自己输入…"
+				if on {
+					label = "自己输入：" + a.free[a.cur]
+				}
+				l := material.Body2(u.th, sanitizeControl(label))
+				l.TextSize = unit.Sp(14)
+				l.Color = textMuted
+				if on {
+					l.Color = brandColor
+				}
+				l.MaxLines = 1
+				return l.Layout(gtx)
+			})
+		})
 	})
 }
 
@@ -303,10 +256,13 @@ func (u *UI) askFoot(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)
 }
 
-// askTextBtn 面板文字按钮（primary = 品牌色实底白字；否则灰字）。
+// askTextBtn 面板文字按钮（primary = 品牌色实底白字；否则灰字）。盒高 = 文字 + 上下
+// 内边距，由 Flex 在底部行里垂直居中——**不能**继承行的 Min.Y（那会把文字顶到盒顶、
+// 主按钮胶囊里文字偏上）。
 func (u *UI) askTextBtn(gtx layout.Context, cl *widget.Clickable, label string, primary bool) func(gtx layout.Context) layout.Dimensions {
 	return func(gtx layout.Context) layout.Dimensions {
 		return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.Y = 0
 			padX, padY := gtx.Dp(14), gtx.Dp(7)
 			l := material.Body2(u.th, label)
 			l.TextSize = unit.Sp(13)
@@ -368,7 +324,7 @@ func drawAskCheck(gtx layout.Context, box image.Rectangle, multiple, on bool) {
 // askPanelPx 面板高（px）：内容自然高，夹在 [最小, 窗高 × 70%]。
 func (u *UI) askPanelPx(gtx layout.Context) int {
 	a := u.m.ask
-	if a == nil || a.mini {
+	if a == nil {
 		return gtx.Dp(inputRowDp)
 	}
 	dpPerPx := float64(gtx.Metric.PxPerDp)
@@ -407,15 +363,15 @@ func (u *UI) askNaturalDp(winW float64) float64 {
 	if inner < 80 {
 		inner = 80
 	}
-	h := float64(2*askPadDp + askHeadDp + askFootDp + 2*askGapDp)
-	h += float64(askTextLines(q.Question, inner)) * 21
+	h := float64(askPadDp + askPadBotDp + askHeadDp + askFootDp + 2*askGapDp)
+	h += float64(askTextLines(q.Question, inner)) * askQLineDp
 	for _, o := range q.Options {
 		h += askOptRowDp + 6 // 行高 + 上下各 3dp 内边距
 		if strings.TrimSpace(o.Description) != "" {
 			h += askOptDescDp
 		}
 	}
-	h += askFreeRowDp
+	h += askFreeTopDp + askFreeRowDp
 	return h
 }
 
@@ -566,20 +522,10 @@ func (u *UI) askMove(d int) {
 	u.askFocus = true
 }
 
-// updateAskClicks 面板点击：最小化、进度段、选项行、自由输入行、底部按钮。
+// updateAskClicks 面板点击：进度段、选项行、自由输入行、底部按钮。
 func (u *UI) updateAskClicks(gtx layout.Context) {
 	a := u.m.ask
 	if a == nil {
-		return
-	}
-	if u.askMiniBtn.Clicked(gtx) {
-		a.mini = !a.mini
-		if !a.mini {
-			u.askFocus = true
-		}
-		return
-	}
-	if a.mini {
 		return
 	}
 	for i := range a.req.Questions {

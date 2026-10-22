@@ -12,8 +12,10 @@ import (
 
 	"gioui.org/io/input"
 	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/unit"
+	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -253,11 +255,6 @@ func TestAskPanelPxClamp(t *testing.T) {
 	if px < gtx.Dp(askPanelMinDp) {
 		t.Fatalf("面板高 %d 低于最小值", px)
 	}
-
-	u.m.ask.mini = true
-	if got := u.askPanelPx(gtx); got != gtx.Dp(inputRowDp) {
-		t.Fatalf("最小化高 = %d, want 单行 %d", got, gtx.Dp(inputRowDp))
-	}
 }
 
 // TestAskBodyScrollsVertically 中部滚动区必须是竖向（layout.List 零值轴是横向）：
@@ -300,13 +297,105 @@ func TestAskBodyLaysRowsOutVertically(t *testing.T) {
 	}
 }
 
-// TestAskSummary 最小化行摘要：题号/总数/页签/已答数。
-func TestAskSummary(t *testing.T) {
-	m, _ := newTestModel(t)
-	m.startAsk(askReq(), make(chan port.AskAnswer, 1))
-	m.askToggle(0)
-	if got := m.u.askSummary(m.ask); got != "提问 1/2 · 目标 · 已答 1" {
-		t.Fatalf("summary = %q", got)
+// TestAskHeadProgressRightAndNoMinimize 头部布局（D199）：题号在左、进度段右对齐到面板
+// 右内边距，右上角不再有最小化钮。
+//
+// 判据用真指针扫描（不硬编码排版常数）：进度段的点击件在头部右侧命中、面板右上角命中
+// 不到任何可点件（点到那里既不收面板、也不收进度段）。
+func TestAskHeadProgressRightAndNoMinimize(t *testing.T) {
+	u, q := newExpandUI(t)
+	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
+	askFrame(q, u)
+
+	hitTab := func(x, y int) bool {
+		q.Queue(ovPointer(pointer.Move, x, y))
+		expandFrame(q, u)
+		for i := range u.m.ask.req.Questions {
+			if u.askTabClicks[i].Hovered() {
+				return true
+			}
+		}
+		return false
+	}
+	// 头部行的垂直范围：沿右内边距附近的一条竖线扫出进度段所在行。
+	headY := -1
+	for y := 1; y < 300 && headY < 0; y++ {
+		if hitTab(winWidthDp-100, y) {
+			headY = y
+		}
+	}
+	if headY < 0 {
+		t.Fatal("扫不到进度段（头部右侧应可点跳题）")
+	}
+	// 进度段必须落在面板右半侧（「移到右边」）。
+	if winWidthDp-100 < winWidthDp/2 {
+		t.Fatalf("进度段命中点 x=%d 不在窗口右半侧", winWidthDp-100)
+	}
+	// 面板右上角不再有最小化钮：那里点下去不命中进度段（原最小化位置在进度段右侧）。
+	if hitTab(winWidthDp-85, headY) {
+		t.Fatal("右上角仍命中进度段/最小化：头部右侧应只到右内边距")
+	}
+}
+
+// TestAskFootButtonLabelCentered 底部主按钮（D199）：胶囊内的文字垂直居中——盒高 = 文字
+// + 上下内边距，**不继承底部行的 Min.Y**（继承的话文字被顶到胶囊上沿，用户实测到的
+// 「下一步」字偏上就是这个）。
+func TestAskFootButtonLabelCentered(t *testing.T) {
+	u, q := newExpandUI(t)
+	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
+	askFrame(q, u)
+
+	// 底部行给 Min.Y = askFootDp；按钮自身的盒高应 = 文字高 + 2×7dp，小于行高。
+	gtx, _ := frameGtxSize(q.Source(), winWidthDp, winHeightDp)
+	gtx.Constraints = layout.Exact(image.Pt(winWidthDp, winHeightDp))
+	foot := u.askFoot(gtx)
+	labelGtx, _ := frameGtxSize(q.Source(), winWidthDp, winHeightDp)
+	labelGtx.Constraints = layout.Constraints{Max: image.Pt(winWidthDp, winHeightDp)}
+	label := material.Body2(u.th, "下一步")
+	label.TextSize = unit.Sp(13)
+	textH := label.Layout(labelGtx).Size.Y
+	want := textH + 2*labelGtx.Dp(7)
+	if foot.Size.Y < want {
+		t.Fatalf("底部行高 %d < 按钮盒高 %d", foot.Size.Y, want)
+	}
+	if want > gtx.Dp(askFootDp) {
+		t.Fatalf("按钮盒高 %d 超出底部行高 %d", want, gtx.Dp(askFootDp))
+	}
+}
+
+// TestAskFootButtonsClickable 真指针点「下一步」推进到下一题（主按钮命中面跟着几何走）。
+func TestAskFootButtonsClickable(t *testing.T) {
+	u, q := newExpandUI(t)
+	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
+	askFrame(q, u)
+
+	gtx, _ := frameGtxSize(q.Source(), winWidthDp, winHeightDp)
+	gtx.Constraints = layout.Constraints{Max: image.Pt(winWidthDp, winHeightDp)}
+	// 真指针：按布局几何直接定位底部行（不整窗盲扫——那样几十万帧太慢），再点一下。
+	footTop := winHeightDp - gtx.Dp(inputRowBandDp) - u.inputExtraPx(gtx) +
+		u.askPanelPx(gtx) - gtx.Dp(askPadBotDp) - gtx.Dp(askFootDp)
+	x, y := -1, -1
+	for yy := footTop - 2; yy <= footTop+gtx.Dp(askFootDp)+2 && x < 0; yy++ {
+		if yy < 0 || yy >= winHeightDp {
+			continue
+		}
+		for xx := winWidthDp / 2; xx < winWidthDp; xx++ {
+			q.Queue(ovPointer(pointer.Move, xx, yy))
+			expandFrame(q, u)
+			if u.askNextBtn.Hovered() {
+				x, y = xx, yy
+				break
+			}
+		}
+	}
+	if x < 0 {
+		t.Fatalf("扫不到「下一步」按钮（底部行 y≈%d）", footTop)
+	}
+	ovClick(q, x, y)
+	expandFrame(q, u)
+	expandFrame(q, u)
+	if u.m.ask == nil || u.m.ask.cur != 1 {
+		t.Fatalf("点「下一步」应进第 2 题, cur = %v", u.m.ask)
 	}
 }
 

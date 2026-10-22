@@ -1,5 +1,5 @@
 # Aquarius 阶段规划（TODO 整理与分阶段路线）
-<!-- docs-sync: 2026-10-21 @ fcf26c3 -->
+<!-- docs-sync: 2026-10-22 @ d1b98b9 -->
 
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
@@ -459,7 +459,7 @@
 
 1. **提问工具 `ask_user`**（D184，**已落地 2026-10-21**）：`port.Asker` + `port.Interactive`（不吃默认工具超时）+
    `toolbuiltin/askuser`（1–4 题、每题 0–9 项、答案对齐、放弃/无人值守文案）→ `uitui` / `repl`
-   降级为编号选单 → `uigui` 输入栏展开态提问面板（多题页签、进度段、最小化、自由输入、键位）。
+   降级为编号选单 → `uigui` 输入栏展开态提问面板（多题进度段、自由输入、键位）。
    `Esc` = 中断本轮，「忽略」= 放弃全部。**其余四项在它之后。**
 2. **无人值守**（D185，**已落地 2026-10-21**）：`decorate.Unattended` + `UnattendedAsker`（只包
    `toolrun` 与 `ask_user` 那条链，用户键入的命令确认与插件授权照常问）；`permissions.unattended` +

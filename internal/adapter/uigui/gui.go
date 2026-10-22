@@ -249,7 +249,6 @@ type UI struct {
 	askPrev      widget.Clickable                  // 上一步
 	askNextBtn   widget.Clickable                  // 下一步 / 提交
 	askIgnore    widget.Clickable                  // 忽略（放弃全部）
-	askMiniBtn   widget.Clickable                  // 最小化 / 展开
 	askTag       struct{}                          // 面板键盘焦点标签
 	askFocus     bool                              // 下一帧把焦点让给面板
 	askFreeFocus bool                              // 下一帧把焦点让给「自己输入」

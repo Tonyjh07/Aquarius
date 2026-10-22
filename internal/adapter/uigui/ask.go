@@ -12,7 +12,7 @@ import (
 )
 
 // 提问面板（D184，§15.2）：模型调 ask_user 时输入栏**原地展开**成面板——不遮转写区、
-// 不换确认态。1–4 题用顶部进度段表示（可点跳题），每题 0–9 个选项（单选 ○ / 多选 ☑），
+// 不换确认态。1–4 题用顶部右侧进度段表示（可点跳题），每题 0–9 个选项（单选 ○ / 多选 ☑），
 // 末行「自己输入」点开就地变输入框。
 //
 // 取消与放弃是两件事（D184 口径三）：
@@ -22,13 +22,18 @@ const (
 	askMaxQuestions = 4 // 题量上限（与 ask_user 声明同口径）
 	askMaxOptions   = 9 // 每题选项上限
 
-	askPadDp      = 16  // 面板内边距（与胶囊 padding 同源）
+	askPadDp      = 16  // 面板上内边距（与胶囊 padding 同源）
+	askPadBotDp   = 12  // 面板下内边距（略紧于上方：底部按钮行贴底缘，面板下半不显浮空）
 	askHeadDp     = 22  // 顶部进度行高
-	askFootDp     = 32  // 底部按钮行高
+	askFootDp     = 38  // 底部按钮行高（容得下 13sp 字 + 上下 7dp 的主按钮胶囊）
 	askGapDp      = 8   // 段间距
+	askCheckDp    = 16  // 选项勾选圆点/方框直径
+	askOptGapDp   = 10  // 勾选与选项文字间距（也是「自己输入」行相对题干缩进）
 	askOptRowDp   = 28  // 选项行高（无说明）
-	askOptDescDp  = 17  // 选项说明行追加高
+	askOptDescDp  = 8   // 选项说明行追加高（12sp 小字实际行高）
+	askQLineDp    = 20  // 题干行高（15sp 正文实际行高）
 	askFreeRowDp  = 30  // 「自己输入」行高
+	askFreeTopDp  = 6   // 「自己输入」行与上方选项的额外间距
 	askPanelFrac  = 0.7 // 面板高上限 = 窗高 × 该比例（D184）
 	askPanelMinDp = 140 // 面板最小高（再小内容没法看）
 )
@@ -41,7 +46,6 @@ type pendingAsk struct {
 	sel    [][]int  // 每题已选选项下标（升序）
 	free   []string // 每题自由输入（非空 = 与已选项一起回填）
 	open   []bool   // 自由输入行是否已展开（点开就地变输入框）
-	mini   bool     // 最小化（收起成一行摘要，进度不丢）
 	cursor int      // 键盘游标：0..len(options)-1 = 选项，len(options) = 「自己输入」，-1 = 无
 }
 
