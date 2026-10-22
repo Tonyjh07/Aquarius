@@ -1,5 +1,5 @@
 # 参考手册
-<!-- docs-sync: 2026-10-22 @ 4bb7226 -->
+<!-- docs-sync: 2026-10-22 @ 4373d9e -->
 
 > **第一次使用请先看[用户手册](guide.md)**——那本按「怎么用起来」写，不要求懂编程；
 > 本文是逐条命令与参数的速查，写给要抠细节的人。
@@ -107,6 +107,7 @@ go build ./cmd/aquarius
   `"web": { "search": { "providers": [ { "kind": "deepseek" } ] } }`——`deepseek` 借
   `model.providers` 里同名 provider 的地址与密钥；也可以用 `{ "kind": "brave", "key": "secret:AQUARIUS_BRAVE_API_KEY" }`。
   两家的顺序就是优先级，前面那家挂了会自动换后面那家（详见 [configuration.md](configuration.md)）。
+- GUI 用户不必手写这段：设置窗「联网」页可以增删、调序、换类型，密钥框留空 = 沿用原值。
 
 ## 上下文压缩（三轨特色功能）
 

@@ -140,6 +140,44 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.TTSDesign = strings.TrimSpace(f.ttsDesign.Text())
 	p.TTSStyle = strings.TrimSpace(f.ttsStyle.Text())
 	p.TTSTags = strings.TrimSpace(f.ttsTags.Text())
+	// 联网（D200）：两组提供商恒全量写（空 = 清空，= 该能力不可用）；数值空 = 保持
+	// 快照原值、非法拦截；布尔恒写。密钥框留空 = 不带值（cmd 侧保持原引用）。
+	p.WebSearchProviders = f.webProviderPatches(true)
+	p.WebFetchProviders = f.webProviderPatches(false)
+	p.WebSearchCount = f.snap.WebSearchCount
+	if v := strings.TrimSpace(f.webCount.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 1 || n > 20 {
+			f.err = true
+			f.status = "搜索条数须为 1–20 的整数"
+			return
+		}
+		p.WebSearchCount = n
+	}
+	p.WebFetchMaxChars = f.snap.WebFetchMaxChars
+	if v := strings.TrimSpace(f.webMaxChars.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 500 || n > 20000 {
+			f.err = true
+			f.status = "抓取正文上限须为 500–20000 的整数"
+			return
+		}
+		p.WebFetchMaxChars = n
+	}
+	p.WebFetchTimeoutSec = f.snap.WebFetchTimeoutSec
+	if v := strings.TrimSpace(f.webTimeout.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 1 || n > 600 {
+			f.err = true
+			f.status = "抓取超时须为 1–600 秒的整数"
+			return
+		}
+		p.WebFetchTimeoutSec = n
+	}
+	p.WebFetchProxy = strings.TrimSpace(f.webProxy.Text())
+	p.WebFetchUserAgent = strings.TrimSpace(f.webUA.Text())
+	p.WebFetchRobots = f.webRobots.Value
+	p.WebFetchPrivate = f.webPrivate.Value
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v
 	}
@@ -183,6 +221,10 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if !slices.Equal(p.Fallback, f.snapChain) {
 		f.status = "已保存（降级链改动重启后生效）"
 	}
+	if !webProvidersEqual(p.WebSearchProviders, f.snap.WebSearchProviders) ||
+		!webProvidersEqual(p.WebFetchProviders, f.snap.WebFetchProviders) {
+		f.status = "已保存（联网提供商改动重启后生效）"
+	}
 	f.snap = SettingsSnapshot{
 		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
 		Hotkey: p.Hotkey, Theme: p.Theme,
@@ -199,8 +241,66 @@ func (u *UI) saveSettings(f *settingsForm) {
 		TTSProvider: p.TTSProvider, TTSModel: p.TTSModel,
 		TTSVoice: p.TTSVoice, TTSDesign: p.TTSDesign,
 		TTSStyle: p.TTSStyle, TTSTags: p.TTSTags,
+		WebSearchProviders: webProviderViews(p.WebSearchProviders, f.snap.WebSearchProviders),
+		WebSearchCount:     p.WebSearchCount,
+		WebFetchProviders:  webProviderViews(p.WebFetchProviders, f.snap.WebFetchProviders),
+		WebFetchMaxChars:   p.WebFetchMaxChars,
+		WebFetchProxy:      p.WebFetchProxy,
+		WebFetchUserAgent:  p.WebFetchUserAgent,
+		WebFetchRobots:     p.WebFetchRobots,
+		WebFetchPrivate:    p.WebFetchPrivate,
+		WebFetchTimeoutSec: p.WebFetchTimeoutSec,
 	}
 	f.snapChain = append([]FallbackLink(nil), p.Fallback...)
+}
+
+// webProvidersEqual 联网提供商列表等价（kind/来源/端点/国家语言/条数；密钥**不参与**
+// ——值不回显，patch 里的空 = 保持，不能拿它判变更）。用于保存提示的变更判定。
+func webProvidersEqual(a []WebProviderPatch, b []WebProviderView) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Kind != b[i].Kind || a[i].From != b[i].From || a[i].BaseURL != b[i].BaseURL ||
+			a[i].Country != b[i].Country || a[i].Lang != b[i].Lang || a[i].Count != b[i].Count {
+			return false
+		}
+	}
+	return true
+}
+
+// webProviderViews 提交值 + 旧快照的密钥形态 → 新快照视图（密钥永不回显，只带形态）：
+// 填了新值 = 明文（除非是 `secret:` 引用）；没填 = 沿用旧形态。
+//
+// 旧形态按 **kind** 对齐（与装配根侧写回同口径）：用户在前面插一条、或删掉一条，下标会
+// 整体错位，按位置硬套会把 brave 的引用名贴到 deepseek 条目上——那条本来就不用自己的
+// 密钥，界面会凭空显示一行「已存引用」。同类型多条按出现顺序依次认领。
+func webProviderViews(ps []WebProviderPatch, old []WebProviderView) []WebProviderView {
+	used := make([]bool, len(old))
+	out := make([]WebProviderView, 0, len(ps))
+	for _, p := range ps {
+		v := WebProviderView{
+			Kind: p.Kind, From: p.From, BaseURL: p.BaseURL,
+			Country: p.Country, Lang: p.Lang, Count: p.Count,
+		}
+		for i := range old {
+			if used[i] || old[i].Kind != p.Kind {
+				continue
+			}
+			used[i] = true
+			v.KeySaved, v.KeyPlain, v.KeyRef = old[i].KeySaved, old[i].KeyPlain, old[i].KeyRef
+			break
+		}
+		if p.Key != "" {
+			if strings.HasPrefix(p.Key, "secret:") {
+				v.KeySaved, v.KeyPlain, v.KeyRef = true, false, p.Key
+			} else {
+				v.KeySaved, v.KeyPlain, v.KeyRef = false, true, ""
+			}
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 // fallbackList 组装降级链提交（编辑区现值 → []FallbackLink）。provider 名与模型名都为空

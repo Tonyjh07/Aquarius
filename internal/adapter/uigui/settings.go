@@ -129,6 +129,33 @@ type ProviderChoice struct {
 	Models []string
 }
 
+// WebProviderView 联网提供商一条的编辑视图（D200）：kind 决定怎么连，其余字段按 kind
+// 取用（与 cmd 侧 webProvider 同构）。密钥**永不回显**：只给形态标记（Saved = config 里
+// 是 `secret:<名>` 引用、Plain = 明文、Ref = 仅 Saved 时的引用名）。
+type WebProviderView struct {
+	Kind     string // 搜索侧 deepseek|brave；抓取侧 deepseek|local
+	From     string // 复用哪个 model.providers（deepseek 缺省 = "deepseek"）
+	BaseURL  string // 端点覆盖（空 = 官方端点）
+	Country  string // 仅 brave
+	Lang     string // 仅 brave
+	Count    int    // 仅搜索：这一家的缺省条数（0 = 用 web.search.count）
+	KeySaved bool
+	KeyPlain bool
+	KeyRef   string
+}
+
+// WebProviderPatch 联网提供商一条的提交（D200）。Key 空 = 保持原值（只写不回显）；
+// `secret:` 前缀照写引用，否则按明文落盘（启动期会警告，与 provider 密钥同口径）。
+type WebProviderPatch struct {
+	Kind    string
+	From    string
+	Key     string
+	BaseURL string
+	Country string
+	Lang    string
+	Count   int
+}
+
 // ProviderManager provider 列表管理面（D110②/③，装配根实现）：设置窗 provider
 // 编辑区数据面 + 全量应用 + 连通性测试。provider 变更重启生效（base_url/api_key/
 // tokenizer 构造期固化，port.LLM 不可热换）；Test = 真实最小请求（/models，短超时）。
@@ -211,6 +238,19 @@ type SettingsSnapshot struct {
 	TTSStyle    string // 自然语言风格指令
 	TTSTags     string // 风格标签（拼成 "(标签)" 前缀）
 
+	// 联网（D200）：搜索与抓取各自一组**有序**提供商（顺序即优先级），加本地抓取的
+	// 网络与安全参数。提供商本体只给「怎么连」的展示值，密钥永不进快照（只给
+	// KeySaved / KeyPlain 这两个形态标记，D35 同口径）。
+	WebSearchProviders []WebProviderView
+	WebSearchCount     int // 0 = 缺省 8
+	WebFetchProviders  []WebProviderView
+	WebFetchMaxChars   int    // 0 = 缺省 16000
+	WebFetchProxy      string // 空 = 读 HTTP(S)_PROXY
+	WebFetchUserAgent  string // 空 = 浏览器形态缺省
+	WebFetchRobots     bool   // 遵守 robots.txt（键缺失 = 遵守，读侧归一为 true）
+	WebFetchPrivate    bool   // 允许回环/私网目标（调试用）
+	WebFetchTimeoutSec int    // 0 = 缺省 30
+
 	// Fallback 降级链（D173/D176 口径三）。模型 "" = 取该 provider 的缺省模型。
 	// 链条目可指向声明之外的模型名——它是运行时路由，不要求目标先在 provider 里声明。
 	Fallback []FallbackLink
@@ -264,6 +304,19 @@ type SettingsPatch struct {
 	TTSDesign   string
 	TTSStyle    string
 	TTSTags     string
+
+	// 联网（D200）：两组提供商列表恒全量写（nil = 这条写路径不管联网，空数组 = 清空）。
+	// 数值 0 = 不改（留空保持快照原值）；布尔恒写（robots 的「键缺失 = 遵守」在写侧
+	// 归一为显式 true/false）。
+	WebSearchProviders []WebProviderPatch
+	WebSearchCount     int
+	WebFetchProviders  []WebProviderPatch
+	WebFetchMaxChars   int
+	WebFetchProxy      string
+	WebFetchUserAgent  string
+	WebFetchRobots     bool
+	WebFetchPrivate    bool
+	WebFetchTimeoutSec int
 }
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
@@ -304,6 +357,7 @@ const (
 	pageChat             // 对话：限额
 	pagePrompt           // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
 	pageTools            // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
+	pageWeb              // 联网：搜索与抓取提供商、本地抓取参数（D200）
 	pageAudio            // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	pageAdv              // 高级：config.json 原文
 	// pageConstCount 页常量个数（编译期锚；见上方说明）。
@@ -456,6 +510,20 @@ type settingsForm struct {
 	voiceBusy   bool   // 试听合成在途
 	voiceStatus string // 试听反馈（成功/失败）
 	voiceErr    bool
+
+	// 联网页（D200）：搜索与抓取各自一组有序提供商（顺序即优先级），加本地抓取的
+	// 网络与安全参数。密钥只写不回显（空 = 保持），与 provider 密钥池同口径。
+	webSearch    []*webProviderForm
+	webFetch     []*webProviderForm
+	webSearchAdd widget.Clickable
+	webFetchAdd  widget.Clickable
+	webCount     widget.Editor // 缺省条数（空 = 不改）
+	webMaxChars  widget.Editor // 正文上限（空 = 不改）
+	webProxy     widget.Editor
+	webUA        widget.Editor
+	webTimeout   widget.Editor
+	webRobots    widget.Bool // 遵守 robots.txt
+	webPrivate   widget.Bool // 允许私网/回环目标（调试）
 
 	// profile 区（D110③）。
 	profCreate widget.Clickable
@@ -677,7 +745,8 @@ func newSettingsForm(u *UI) *settingsForm {
 		s.FontSize = fontSpBase
 	}
 	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo,
-		&f.asrModel, &f.ttsModel, &f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags} {
+		&f.asrModel, &f.ttsModel, &f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags,
+		&f.webCount, &f.webMaxChars, &f.webProxy, &f.webUA, &f.webTimeout} {
 		ed.SingleLine = true
 	}
 	// f.sysPrompt / f.rawCfg 保持多行（表单仅有的多行档）。
@@ -731,6 +800,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.ttsTags.SetText(s.TTSTags)
 	f.loadPrompts(s.PromptModules, s.PromptPersona)
 	f.loadFallback(s.Fallback, f.chainChoices) // D176 口径三：降级链
+	f.loadWeb(s)                               // D200：联网提供商与本地抓取参数
 	return f
 }
 

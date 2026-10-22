@@ -26,6 +26,7 @@ type textSettings struct {
 	Output       outputConfig  `json:"output"`
 	Input        inputConfig   `json:"input"` // D179：录音语种
 	Audio        audioConfig   `json:"audio"` // D179：识别与合成
+	Web          webConfig     `json:"web"`   // D200：联网搜索与抓取
 	Limits       limitsConfig  `json:"limits"`
 	MCPServers   map[string]struct {
 		Transport string `json:"transport"`
@@ -81,6 +82,16 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		TTSDesign:   raw.Audio.TTS.Design,
 		TTSStyle:    raw.Audio.TTS.Style,
 		TTSTags:     raw.Audio.TTS.Tags,
+		// 联网（D200）：提供商列表与本地抓取参数，文件即事实源。
+		WebSearchProviders: webProviderViewsOf(raw.Web.Search.Providers),
+		WebSearchCount:     raw.Web.Search.Count,
+		WebFetchProviders:  webProviderViewsOf(raw.Web.Fetch.Providers),
+		WebFetchMaxChars:   raw.Web.Fetch.MaxChars,
+		WebFetchProxy:      raw.Web.Fetch.Proxy,
+		WebFetchUserAgent:  raw.Web.Fetch.UserAgent,
+		WebFetchRobots:     raw.Web.Fetch.RespectRobots == nil || *raw.Web.Fetch.RespectRobots,
+		WebFetchPrivate:    raw.Web.Fetch.AllowPrivateIPs,
+		WebFetchTimeoutSec: raw.Web.Fetch.TimeoutSec,
 	}
 	for name := range raw.MCPServers {
 		snap.MCPServers = append(snap.MCPServers, name)
@@ -121,6 +132,10 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	// 高级页整文件替换时跳过（与降级链同口径：那一份配置以用户手写的文件为准）。
 	if p.RawJSON == "" {
 		if err := validateAudioSettings(cfgPath, p); err != nil {
+			return err
+		}
+		// 联网（D200）：kind / 借用的对话 provider / 数值范围，与启动期 normalizeWeb 同口径。
+		if err := validateWebSettings(cfgPath, p); err != nil {
 			return err
 		}
 	}
@@ -250,6 +265,9 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 			model := modelSection(generic)
 			model["fallback"] = fbs
 		}
+		// 联网（D200）：提供商列表恒全量写（nil = 这条路径不管联网）；本地抓取参数
+		// 数值 0 = 不改、布尔恒写。
+		writeWebSection(generic, p)
 	})
 }
 

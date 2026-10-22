@@ -108,6 +108,19 @@ const (
 	rowAudioTags        // 风格标签
 	rowAudioPreview     // 试听按钮 + 行内反馈
 	rowAudioNote        // 说明（重启生效 / 各字段适用模型）
+	// D200：联网页（搜索 / 抓取提供商 + 本地抓取参数）。
+	rowWebSearchItem  // 搜索提供商一项（field = webSearch 下标）
+	rowWebSearchAdd   // 「＋ 添加搜索提供商」
+	rowWebSearchCount // 缺省条数
+	rowWebFetchItem   // 抓取提供商一项（field = webFetch 下标）
+	rowWebFetchAdd    // 「＋ 添加抓取提供商」
+	rowWebFetchChars  // 单次回填正文上限
+	rowWebProxy       // 本地抓取代理
+	rowWebUA          // 本地抓取 UA
+	rowWebRobots      // 遵守 robots.txt
+	rowWebPrivate     // 允许私网/回环目标（调试）
+	rowWebTimeout     // 本地抓取超时
+	rowWebNote        // 说明（降级顺序 / 重启生效 / 密钥形态）
 )
 
 // provModelCandMax 候选 chip 的上限（D153；欢迎窗「获取模型」仍用它）：服务端可能列出
@@ -416,7 +429,7 @@ func rowInCard(k rowKind) bool {
 		rowPromptPreview, rowProfBtns, rowProvBtns, rowProvAdd, rowProvApply,
 		rowProvKeyAdd, rowProvModelAdd,
 		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus,
-		rowChainNote, rowChainAdd:
+		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote:
 		return false
 	}
 	return true
