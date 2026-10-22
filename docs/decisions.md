@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-22 @ fe476fc -->
+<!-- docs-sync: 2026-10-22 @ 4bb7226 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -209,7 +209,10 @@
 | D192 | 最小化窗口改走桌面合成器的预览：`DwmRegisterThumbnail` → 离屏辅助窗口 → `PrintWindow(PW_RENDERFULLCONTENT)`；整窗入图、分流前置、常驻钉线程（§4.3/§5.12） | 生效 |
 | D193 | 麦克风图标几何：托架取胶囊头下半轮廓的等距外扩（两臂平行头侧边、底部半圆同心），头与托架的空隙处处相等（§15.2） | 生效 |
 | D194 | 语音键的可用性口径：语音识别未装配则不提供界面语音键（`Voice` 槽给 nil，右钮保持发送）；`/mic` 仍可发现、用时报因（§15.2/D179） | 生效 |
-
+| D195 | 工具名出入端点换算：内部保留 `mcp:<server>:<tool>`，出站发 `mcp_<server>_<tool>` 别名，回传换回（§6.3） | 生效 |
+| D196 | 默认轮次上限 8 → 32（终端与多文件任务常见步数；上限是止损线不是配额）（§8） | 生效 |
+| D197 | 联网能力提供商化：`port.WebSearch`/`port.WebFetch` + `webchain` 有序降级；`web_search`/`web_fetch` 两件工具；DeepSeek（搜索+抓取）/Brave（搜索）/本地抓取（§4.3/§5.14/§8） | 生效 |
+| D198 | 本地抓取的安全默认：拨号层拒私网、重定向逐跳复核、遵守 robots.txt、5MB 体积与 30s 超时、字符集探测（§5.14） | 生效 |
 
 ## 记录
 
@@ -4157,3 +4160,67 @@
 - **验证**：`go test ./...`；模板、`DESIGN.md` §8 示例与 `docs/configuration.md` 默认值表三处同步。
 - **落码（2026-10-22）**：`internal/app/agent.go`、`cmd/aquarius/config.go`、`DESIGN.md` §8、
   `docs/configuration.md`。
+
+### D197 · 联网能力提供商化：搜索/抓取各排各的优先级（2026-10-22）
+
+> **背景**：模型需要读实时网页。两条现成路都不合适——Responses API 的托管 `web_search` 只在个别
+> 模型上生效（换模型静默失效）且来源不可审计；接一个搜索 MCP server 则把「用哪家、什么顺序、
+> 失败怎么办」交给插件，用户无法统一配置。同时「抓网页转 Markdown」是通用能力，不该被绑在
+> 某个模型或某个插件上。
+
+- **口径一：能力进端口，提供商可换**。`port.WebSearch` / `port.WebFetch` 各一个方法（+ `Provider()`
+  用于回填与审计），适配器一家一个目录：`webdeepseek`（搜索+抓取）、`webbrave`（搜索）、
+  `webfetchlocal`（本地抓取）。
+- **口径二：顺序即优先级，失败换家**。`web.search.providers` / `web.fetch.providers` 是有序列表；
+  网络/超时/401/402/403/429/5xx 换下一家，**400 不换**（输入本身有问题，换家只是多花钱），
+  200 但空结果换一次，同一家连续失败 3 次冷却 60 秒。路由在 `internal/adapter/webchain`，
+  提供商只做一次请求（横切能力不进适配器）。
+- **口径三：保留一家无需密钥的本地实现**。`webfetchlocal` 是纯 Go（`readeck/go-readability` 提正文 +
+  `html-to-markdown` 转 Markdown），缺省就装配：没有密钥也能读网页，也是远端抓取失败时的兜底。
+  搜索没有免密钥选项（Brave/DeepSeek 都要密钥），故缺省不启用搜索——用户配了才出现。
+- **口径四：DeepSeek 复用对话 provider 的 base_url 与密钥池**（`from`，省略 = 同名 `deepseek`），
+  与语音同口径：联网端点与对话端点是同一家、同一把钥匙，不另存一份。Brave 只有搜索端点，
+  密钥走独立的 `key`（`secret:` 引用，空 = 回落 `AQUARIUS_BRAVE_API_KEY`）。
+- **口径五：回填如实标注来源**。实际应答的提供商与之前失败的提供商都写进工具结果（英文），
+  模型才能说明「这次是换了一家搜到的」；这也是降级唯一在会话树里留痕的地方。
+- **口径六：工具常驻、能力按配置**。两件工具都 `Safe`、始终注册（工具清单与设置窗稳定，
+  与 `screen_capture` 同口径），未配置提供商时执行明确报因——不给模型静默的空结果。
+- **否决**：托管 `web_search`（模型绑定 + 不可审计）；只接一个搜索 MCP server（顺序与降级交给插件，
+  用户配不了）；`go-trafilatura`（依赖 wazero/re2-wasm，为一个抓取器引入 WASM 运行时太重）；
+  自建 HTML→Markdown（正文提取是难题，现成实现更可靠）。
+- **验证**：`go test ./internal/adapter/webdeepseek/ ./internal/adapter/webbrave/
+  ./internal/adapter/webfetchlocal/ ./internal/adapter/webchain/ ./internal/adapter/toolbuiltin/`；
+  各适配器用 `httptest` 假 server 覆盖成功/400/401/429/空结果，链覆盖降级、冷却、坏输入不降级，
+  工具覆盖参数校验、截断与降级标注；`TestSpecsAreASCIIModelFacing` 保证声明全英文。
+- **落码（2026-10-22）**：`internal/port/web.go`、`internal/adapter/webdeepseek`、
+  `internal/adapter/webbrave`、`internal/adapter/webfetchlocal`、`internal/adapter/webchain`、
+  `internal/adapter/toolbuiltin/web.go`、`cmd/aquarius/web.go`、`cmd/aquarius/config.go`、
+  `DESIGN.md` §4.3/§5.11/§5.14/§8/§9、`docs/configuration.md`、`docs/usage.md`。
+
+### D198 · 本地抓取的安全默认：拨号层拒私网、逐跳复核重定向（2026-10-22）
+
+> **背景**：本地抓取意味着内核进程能发起任意 HTTP 请求。模型可以自己造 URL，网页里也可以放
+> 跳转——「读一个链接」很容易变成「读内网面板 / 云元数据」。这不是假设：`169.254.169.254`
+> 这类地址在真实事故里就是一次 GET 的事。
+
+- **口径一：校验在拨号层，不在 URL 层**。`net.Dialer` 前先解析域名并逐个 IP 判定
+  （回环/私网/链路本地/组播/未指定一律拒绝），所以「域名解析到内网」与 DNS rebinding 都挡得住；
+  只查 URL 字符串挡不住这两种。
+- **口径一之补：代理自身要放行，目标仍要复核**。用户配的代理常在本机（`127.0.0.1:7897`），
+  一刀切会把「配了代理」变成「全拒绝」；但走代理时拨号层只看得见代理地址，目标由代理解析——
+  所以另加一道请求前解析（`checkTarget`），把目标域名的私网判定补回来，字面量 IP 直接判。
+- **口径二：重定向逐跳复核**。`CheckRedirect` 对每一跳重跑同一套校验，最多 10 跳——
+  「公网 302 到内网」是绕过 URL 校验最常见的方式。
+- **口径三：遵守 robots.txt**。按 host 缓存 10 分钟；取不到或非 2xx 视为无限制，只有明确
+  `Disallow` 才拒绝（与主流抓取器同口径，不因网络抖动把能力整个关掉）。
+- **口径四：资源边界固定**。5 MB 响应上限（超出按截断处理并仍尽量给正文）、30 秒超时、
+  只接受 HTML/XHTML/纯文本/Markdown（二进制明确报不支持）、字符集按 `Content-Type` 与
+  `<meta charset>` 归一。
+- **口径五：`allow_private_ips` 是调试开关**。只为「抓本机跑着的服务」而存在，缺省关闭；
+  开着时用户应当知道自己在做什么。
+- **否决**：只在 URL 层做黑名单（挡不住 DNS rebinding 与跳转）；不遵守 robots（对站点不友好，
+  且与「个人助手偶尔读一页」的定位不符）；把体积上限交给 `limits.tool_output_chars`
+  （那是回填预算，不是下载预算——先读完再截断等于让模型的一次调用把内存吃满）。
+- **验证**：`webfetchlocal_test.go`——私网/回环/元数据地址、重定向到非 http(s)、robots 禁止与
+  robots 不可用、超大响应截断、二进制类型拒绝、字符集与 Markdown 结构。
+- **落码（2026-10-22）**：`internal/adapter/webfetchlocal/webfetchlocal.go`、`DESIGN.md` §5.14。

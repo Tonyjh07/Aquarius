@@ -1,5 +1,5 @@
 # 参考手册
-<!-- docs-sync: 2026-10-22 @ 24a8d50 -->
+<!-- docs-sync: 2026-10-22 @ 4bb7226 -->
 
 > **第一次使用请先看[用户手册](guide.md)**——那本按「怎么用起来」写，不要求懂编程；
 > 本文是逐条命令与参数的速查，写给要抠细节的人。
@@ -97,6 +97,16 @@ go build ./cmd/aquarius
 | `window_list` | 列出可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；`handle` 传给 `screen_capture` | Safe |
 | `screen_capture` | 截屏给模型看：`target` = `screen`（整个虚拟桌面）或窗口 `handle`（抓客户区，**被遮挡、非顶层的窗口也抓得到**；最小化窗口经系统合成器的预览取整窗，不还原窗口、不抢焦点；纯 GPU 自绘窗口取不到会明确报因）；打开着的菜单/下拉会合进主图。PNG 进附件库并随结果内联（长边超 1600 会缩小）。仅 **Windows** 支持；当前链上的模型未声明图片能力时调用即报因 | Confirm |
 | `ask_user` | 向你提问（一次 1–4 题，每题最多 9 个选项，可多选，也可以自己输入）：GUI 在输入栏原地展开问答面板，命令行前端逐题打印编号选单。**不吃默认工具超时**——想多久都行；无人值守或 `-yes` 时立即回「用户不在」，不阻塞轮次 | Safe |
+| `web_search` | 联网搜索：`query`（1–128 字符，支持 `site:` / `"短语"` / `-词` / `lang:zh,en` / `after:2025-01-01` 等算符）+ `count`（1–20）+ `freshness`（day/week/month/year）。按 `web.search.providers` 的顺序换家，回填里注明这次实际用了哪家、之前哪家失败了 | Safe |
+| `web_fetch` | 抓一个网页并转成 Markdown（`url` + `max_chars` 500–20000）：导航与脚本被剔除，长文按预算截断并提示还能继续读。本地抓取遵守 `robots.txt`，拒绝内网/回环目标 | Safe |
+
+联网能力由配置决定，两件工具**始终注册**（没配就调用会明确告诉你缺哪一段）：
+
+- 抓取开箱可用：模板默认带本地实现（纯 Go，无需密钥）。
+- 搜索需要先配一家提供商，例如在 profile 的 `config.json` 里写
+  `"web": { "search": { "providers": [ { "kind": "deepseek" } ] } }`——`deepseek` 借
+  `model.providers` 里同名 provider 的地址与密钥；也可以用 `{ "kind": "brave", "key": "secret:AQUARIUS_BRAVE_API_KEY" }`。
+  两家的顺序就是优先级，前面那家挂了会自动换后面那家（详见 [configuration.md](configuration.md)）。
 
 ## 上下文压缩（三轨特色功能）
 

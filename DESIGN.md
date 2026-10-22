@@ -342,6 +342,8 @@ func (c *Conversation) Validate() error                     // 两条不变量�
 | `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
 | `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（抓客户区，**含被遮挡、非顶层窗口**；活动菜单/下拉会合进主图；最小化窗口经桌面合成器的预览取整窗，不还原窗口、不抢焦点）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
 | `ask_user` | 向用户提问（D184）：1–4 题、每题 0–9 个选项（可多选），UI 自动追加「自己输入」项；答案随工具结果回填。**不吃默认工具超时**（用户思考不该超时），无人值守时立即回填「用户不在」 | Safe |
+| `web_search` | 联网搜索（D197）：`query`（1–128 字符，支持 `site:` / `"短语"` / `-词` / `lang:` / `after:` 等算符）、`count`（1–20）、`freshness`（day/week/month/year）；按配置顺序换家，回填里注明实际应答者与降级痕迹 | Safe |
+| `web_fetch` | 抓取单个网页并转 Markdown（D197）：`url`、`max_chars`（500–20000）；本地实现遵守 robots.txt 并拒绝内网目标 | Safe |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -386,6 +388,19 @@ func (c *Conversation) Validate() error                     // 两条不变量�
   - **无人值守**（D185）下立即回填「用户不在」，不阻塞轮次；`Interactive()` 能力让
     `toolrun` 不套默认超时。
   - 问答落**工具分片**（调用与结果同片，D95），不新开节点、不新增领域概念。
+- **联网工具（D197）**：`web_search` 与 `web_fetch` 都是 `Safe`（读网络没有副作用，与 `file_read` 同口径：
+  读操作不该被逐次确认打断），能力边界由配置决定——`web.search.providers` / `web.fetch.providers`
+  **有序**列出提供商，顺序即优先级，失败由 `webchain` 换下一家（§5.14）。
+  - **未配置也照常注册**：工具清单与设置窗「工具与 MCP」页保持稳定（与 `screen_capture` 同口径），
+    执行时明确报「未配置提供商」，而不是给模型一个静默的空结果。
+  - **搜索不是托管工具**：走提供商自己的 REST 端点，不用 Responses API 的 `web_search` 托管工具——
+    那条路只有个别模型支持，换个模型就静默失效，且来源不可审计。
+  - **抓取优先本地**：本地实现无需密钥、结果可复现、隐私面最小；远端抓取（DeepSeek）在站点对本地
+    出口不友好（反爬、JS 壳）时兜底。反过来配也可以，顺序由用户决定。
+  - **回填如实标注来源**：实际应答的提供商与之前失败的提供商都写进回填文本，模型才能说明
+    「这次是换了一家搜到的」，审计里也留痕。
+  - **正文按预算截断**：`web.fetch.max_chars`（缺省 16000，硬顶 20000）之外还有
+    `limits.tool_output_chars`；截断时回填明确的续读提示，不静默丢尾部。
 
 ### 4.4 记忆文档
 
@@ -727,7 +742,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | 端口 | v1 内置适配器 | 三方接入 | 测试替身 |
 |---|---|---|---|
 | `LLM` | openai-chat（缺省）/ openai-responses / anthropic（+可选 `TokenCounter`，D173/D175） | Tier-1 Go 插件 | 脚本化 Stream |
-| `Tool` | memory_*、file_*、term_*、job_*、watch_*、think | **MCP server** | fake tool |
+| `Tool` | memory_*、file_*、term_*、job_*、watch_*、web_*、think | **MCP server** | fake tool |
 | `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
 | `Confirmer` | TUI 确认 / `--yes` | — | 自动应答 |
 | `Asker` | uigui 提问面板 / uitui 编号选单 / repl 编号选单 | — | 脚本答案 |
@@ -735,6 +750,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `MemoryStore` | memoryfs（markdown） | MCP resources / Tier-1 | in-memory |
 | `AttachmentStore` | blobfs（内容寻址） | — | in-memory |
 | `Capture` | screencap（Windows `PrintWindow`/`BitBlt`；非 Windows 报不支持） | — | 假抓屏（固定 PNG） |
+| `WebSearch` / `WebFetch` | webdeepseek（Search + Fetch，D197）/ webbrave（Search）/ webfetchlocal（HTTP + readability + html-to-markdown）；webchain 串成有序降级链 | — | 脚本化提供商 |
 | `Transcriber` / `Synthesizer` | asrchat（chat-completions 音频形状，D179）/ mimotts（MiMo TTS 三种模型）/ micwin（`waveIn` 采集）/ audioplay（`PlaySound` 播放） | Tier-1 Go 插件 | 假转写 / 假合成 |
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/导出 | Tier-1 Go 插件 | 脚本 |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
@@ -806,6 +822,90 @@ type Asker interface {
   `AskAnswer{Away:true}`（而不是 `Dismissed`），不调用内层。
 - **取消**：`ctx` 取消（Esc / 停止键 / Ctrl+C）= `Ask` 返回 `ctx.Err`，`ToolRunner` 按装配级
   故障中止本轮（§10），不是「放弃全部」。
+
+### 5.14 `web.go` —— 联网搜索与抓取端口（D197）
+
+```go
+type WebQuery struct {
+    Query     string
+    Count     int    // 1-20；0 = 适配器缺省
+    Freshness string // "" | day | week | month | year
+}
+
+type WebResult struct {
+    Title, URL, Snippet, Summary string
+    SiteName, Date               string
+    Score     float64 // 相关性分（各家量纲不同，只在本批内比较）
+    Authority int     // 0-4；-1 = 未知
+}
+
+type WebResults struct {
+    Items     []WebResult
+    Provider  string   // 实际应答的提供商名
+    Fallbacks []string // 应答之前失败的提供商（非空 = 这次是降级结果）
+}
+
+type WebPage struct {
+    URL, Title, Markdown string
+    Provider             string
+    Fallbacks            []string
+}
+
+type WebSearch interface {
+    Search(ctx context.Context, q WebQuery) (WebResults, error)
+    Provider() string
+}
+
+type WebFetch interface {
+    Fetch(ctx context.Context, rawURL string) (WebPage, error)
+    Provider() string
+}
+```
+
+- **两个端口，不合成一个**：搜索与抓取的提供商集合天然不同（Brave 只有搜索，本地只有抓取），
+  配置也各排各的优先级；合成一个接口就得让每家声明「这一半我不支持」。
+- **适配器只做一次请求**：重试、冷却、换家都在 `internal/adapter/webchain`（横切能力不进提供商，
+  铁律 9 同口径），工具层只看到「一次搜索/一次抓取」。
+- **`Provider` / `Fallbacks` 进回填文本**：模型需要知道这次是降级结果才能如实说明来源；
+  这也是「换了一家」唯一能被审计的地方（工具结果在会话树里留痕）。
+- **`ErrWebBadInput`** 标注「调用方输入有问题」（查询为空/超长、URL 非法、非 http(s)）：
+  链**不**为它降级——换一家也是同样的结果，换了只是多花一次钱。
+- **实现返回未截断正文**：预算（`web.fetch.max_chars`、工具参数、`limits.tool_output_chars`）
+  统一在工具层与 ToolRunner 收口，适配器不猜调用方要多少。
+- 缺省不启用任何搜索提供商（搜索都要密钥），抓取缺省带一家**本地**实现：无需密钥即可用，
+  也是远端抓取不可用时的兜底。
+
+**提供商矩阵（v1）**：
+
+| kind | 搜索 | 抓取 | 端点 / 依赖 | 密钥 |
+|---|---|---|---|---|
+| `deepseek` | √ | √ | `POST {base_url}/v1/tools/{search,fetch}`（与对话同家同钥；base_url 带不带 `/v1` 都认） | 借 `model.providers` 的密钥池 |
+| `brave` | √ | — | `GET https://api.search.brave.com/res/v1/web/search`（`X-Subscription-Token`） | `key`（`secret:` 引用） |
+| `local` | — | √ | 进程内 HTTP：`readeck/go-readability` 提正文 + `html-to-markdown` 转 Markdown | 无 |
+
+**失败切换与冷却**（`webchain`）：
+
+| 情况 | 行为 |
+|---|---|
+| 网络错误 / 超时 / 401 / 402 / 403 / 429 / 5xx | 换下一家 |
+| 400（参数或查询非法） | **不换**，原样上抛 |
+| 200 但结果为空 | 换下一家试一次；全链都空则回「最后一家 + 空结果 + 降级痕迹」 |
+| 同一家连续失败 3 次 | 冷却 60 秒内直接跳过（不再为挂掉的服务付超时） |
+| 全部失败 | 错误里按顺序列出每家失败原因（便于用户判断是配额还是网络） |
+
+**本地抓取的安全门禁**（`webfetchlocal`，D198）：
+
+- 只允许 `http`/`https`，URL 不得带用户名密码；
+- **拨号层**校验目标 IP（DNS 解析之后）：回环、私网、链路本地（含 `169.254.169.254`）、组播、
+  未指定地址一律拒绝——在 Dial 层做才能同时挡住「域名解析到内网」与 DNS rebinding；
+- 配了代理时，**代理自身**的地址是唯一例外（代理常装在本机 `127.0.0.1:7897`），但目标地址另走
+  一遍独立校验（走代理时拨号层只看得见代理，所以请求前先解析目标域名查私网；字面量 IP 直接判）；
+- **重定向逐跳复核**（`CheckRedirect` 重新走同一套校验），最多 10 跳；
+- 默认遵守 `robots.txt`（按 host 缓存 10 分钟；取不到或非 2xx 视为无限制，只有明确 `Disallow` 才拒绝）；
+- 响应体上限 5 MB（超出按截断处理并仍尽量给出正文）、30 秒超时、只接受 HTML / XHTML / 纯文本 / Markdown；
+- 字符集按 `Content-Type` 与 `<meta charset>` 归一（`x/net/html/charset`，GBK 等常见编码直接可读）；
+- 代理：显式 `web.fetch.proxy` 优先，其次 `HTTP(S)_PROXY` 环境变量（Go 缺省 Transport 的口径）。
+- `allow_private_ips` 只为调试本机服务而存在，缺省关闭。
 
 ---
 
@@ -1336,6 +1436,27 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     }
   },
   "output": { "tts": false, "notify": true }, // tts = 播报总开关（缺省关，D179）
+  "web": {                        // 联网搜索与抓取（D197）：两组列表都是**有序 = 优先级**
+    "search": {
+      "providers": [
+        { "kind": "deepseek" },                        // 借 model.providers 里同名 provider 的 base_url 与密钥池
+        { "kind": "brave", "key": "secret:AQUARIUS_BRAVE_API_KEY", "country": "CN", "lang": "zh-hans" }
+      ],
+      "count": 8                  // 缺省条数（工具参数可逐次覆盖，1-20）
+    },
+    "fetch": {
+      "providers": [
+        { "kind": "deepseek" },    // 远端抓取：站点反爬/JS 壳时兜底
+        { "kind": "local" }        // 本地纯 Go：无需密钥，遵守 robots.txt、拒绝内网目标
+      ],
+      "max_chars": 16000,         // 单次回填正文上限（500-20000）
+      "proxy": "",                // 本地抓取代理（如 http://127.0.0.1:7897）；空 = 读 HTTP(S)_PROXY
+      "user_agent": "",           // 空 = 浏览器形态缺省 UA
+      "respect_robots": true,     // 键缺失 = 遵守
+      "allow_private_ips": false, // 只为调试本机服务，缺省关闭
+      "timeout_sec": 30
+    }
+  },
   "mcpServers": {
     "web-search": {
       "transport": "stdio",
@@ -1419,6 +1540,18 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 - **录音时长上限**：线上限由厂商的 Base64 体积上限反推（16kHz 单声道 16bit ≈ 32KB/s，Base64 膨胀 4/3）
   ——MiMo 当前 10MB ⇒ 约 4 分钟；产品侧默认 60s，命令可带秒数覆盖但不得超过硬顶。
 
+**联网配置（D197）**：`web.search.providers` / `web.fetch.providers` 都是**有序**列表，顺序即优先级；
+某一家的失败（网络/超时/401/402/403/429/5xx）会换下一家，`400` 不换（输入本身有问题）。
+
+- `kind=deepseek` 的 `from` 指向 `model.providers` 里的名字（省略 = 找同名的 `deepseek`），
+  **只借它的 `base_url` 与密钥池**（与语音同口径）：联网端点与对话端点是同一家、同一把钥匙。
+- `kind=brave` 用 `key`（`secret:` 引用或明文）——Brave 只有搜索端点，`country`/`lang` 控制结果
+  国家与语言（空 = 服务端缺省）。
+- `kind=local` 无密钥，参数在 `web.fetch` 这一层（代理、UA、robots、私网、超时）。
+- 某一家装不起来（缺密钥、`base_url` 为空）只**警告并跳过**，其余提供商继续可用；全空 = 该工具
+  执行时明确报「未配置提供商」，启动不失败。
+- 计费只在「HTTP 200 且结果非空」时发生：空结果换下一家试一次，全链都空就如实回空结果（不是错误）。
+
 **密钥解析顺序（D151/D161）**：`api_key` 取值为 `secret:<名>` 时，**先查本机密钥库
 `<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错（提示里说明查过哪两处，
 不回显值）。**库解不开**（profile 拷到别的机器、DPAPI 绑的是别的账户、文件损坏）时打一行
@@ -1487,7 +1620,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 | `fs-read` | 文件读取 | 矩阵 r 格（全等级免确认） | `file_*`、Doc 提取 |
 | `fs-write` | 文件写入/删除 | 矩阵 rw 格；`r` 格/矩阵外 ask | `file_write/delete`、`memory_write` |
 | `exec` | 执行命令 | 工具列（`full-access` 免，其余 ask） | `term_exec`、`job_start` |
-| `network` | 网络访问 | 首次 ask 进 allowlist（不变） | MCP 插件声明 |
+| `network` | 网络访问 | 首次 ask 进 allowlist（不变） | MCP 插件声明；内置 `web_*` 工具按配置启用（不逐次确认，D197） |
 | `secret` | 读取密钥 | 按名 allowlist（不变） | 仅经 `Secrets` 注入，不回显进上下文 |
 
 - `/permission <level>` 切换**写回 config.json 的 `permissions.level`**（保留其余配置键、仅重排格式），

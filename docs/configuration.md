@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-22 @ fe476fc -->
+<!-- docs-sync: 2026-10-22 @ 4bb7226 -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §8/§9；**冲突以 DESIGN.md 为准**。
 > D110（破坏性改造）起配置**以 profile 为隔离单位**：
@@ -203,6 +203,32 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 | `output.notify` | bool | 模板 `true`；键缺失 = `false` | 已提交的回答触发系统通知（发送失败只记日志，D28 扇出） |
 | `output.tts` | bool | `false` | 语音播报**总开关**：开启后已提交的回答自动合成并播放（需 `audio.tts` 配好） |
 
+### web（联网搜索与抓取）
+
+两组列表都是**有序 = 优先级**：先试第一家，失败换下一家（网络/超时/401/402/403/429/5xx 换，
+400 不换）。回填里会注明实际应答的提供商与之前的失败，模型据此说明来源。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `web.search.providers` | []object | `[]` | 搜索提供商（有序）；空 = 搜索不可用 |
+| `web.search.providers[].kind` | string | — | `deepseek` / `brave` |
+| `web.search.providers[].from` | string | 同 `kind` | `deepseek` 借哪个 `model.providers` 的 `base_url` 与密钥池 |
+| `web.search.providers[].key` | string | `secret:AQUARIUS_BRAVE_API_KEY` | `brave` 的订阅令牌（`secret:` 引用或明文） |
+| `web.search.providers[].base_url` | string | 官方端点 | 覆盖端点（自建网关/镜像） |
+| `web.search.providers[].country` / `lang` | string | 服务端缺省 | 仅 `brave`：结果国家（`CN`）与语言（`zh-hans`） |
+| `web.search.count` | int | `8` | 缺省条数（1–20，工具参数可逐次覆盖） |
+| `web.fetch.providers` | []object | 模板带 `[{"kind":"local"}]` | 抓取提供商（有序）：`deepseek` / `local` |
+| `web.fetch.max_chars` | int | `16000` | 单次回填正文上限（500–20000） |
+| `web.fetch.proxy` | string | 空 | 本地抓取代理（如 `http://127.0.0.1:7897`）；空 = 读 `HTTP(S)_PROXY` |
+| `web.fetch.user_agent` | string | 浏览器形态 | 本地抓取 UA（很多站点拒绝非浏览器 UA） |
+| `web.fetch.respect_robots` | bool | `true` | 本地抓取遵守 `robots.txt`（键缺失 = 遵守） |
+| `web.fetch.allow_private_ips` | bool | `false` | 放开回环/私网目标（只用于调试本机服务） |
+| `web.fetch.timeout_sec` | int | `30` | 本地抓取单次超时 |
+
+`deepseek` 用的是它自己的 Search / Fetch REST 端点（与模型无关，按成功次数计费）；
+`local` 是纯 Go 抓取（正文提取 + Markdown 转换），不需要密钥，缺省就开。某一家装不起来
+（缺密钥、`base_url` 为空）只打一行警告并跳过，其余提供商继续可用。
+
 ### mcpServers / plugins（M4 起）
 
 `mcpServers` 声明 MCP server；`plugins` 存**启停与授权状态**（声明也可来自
@@ -299,6 +325,21 @@ profile 配置 `<data>/profiles/default/config.json`：
   "prompts": { "modules": {}, "persona": [] },
   "input": { "asr": "whisper-api", "mic": true },
   "output": { "tts": false, "notify": true },
+  "web": {
+    "search": {
+      "providers": [
+        { "kind": "deepseek" },
+        { "kind": "brave", "key": "secret:AQUARIUS_BRAVE_API_KEY", "country": "CN", "lang": "zh-hans" }
+      ],
+      "count": 8
+    },
+    "fetch": {
+      "providers": [ { "kind": "deepseek" }, { "kind": "local" } ],
+      "max_chars": 16000,
+      "proxy": "",
+      "respect_robots": true
+    }
+  },
   "mcpServers": {},
   "plugins": {},
   "permissions": { "level": "strict", "unattended": false },
