@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-22 @ 24a8d50 -->
+<!-- docs-sync: 2026-10-22 @ fe476fc -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -4141,3 +4141,19 @@
   请求体不含 `mcp:` 且历史调用与声明同名、流回传别名换回内部名。
 - **落码（2026-10-22）**：`internal/adapter/llm/names.go`（新增）、`wire.go`、`stream.go`、
   `anthropic.go`、`responses.go`、`DESIGN.md` §6.3、`docs/usage.md`。
+
+### D196 · 默认轮次上限 8 → 32（2026-10-22 实测不够用）
+
+> **背景**：本机会话 `01M5GYK7YD0W619A59ZZ6S9J8V` 里一个「跑个 vim 试试」就用掉了 8 轮
+> （open → which vim → vim → setline → wq → cat -A → cat → close），最后一轮之后没有再生成收尾文本。
+> 终端类工具天然多步（开窗、轮询状态、发命令、读输出、收尾），8 轮装不下一个完整任务。
+
+- **口径一：默认取 32，不取 64**。32 覆盖终端与多文件任务的常见步数；64 只是把失控循环的代价翻倍——
+  每轮都是一次完整请求，轮次上限是止损线，不是能力配额。
+- **口径二：默认值只影响没显式配置的 profile**。`limits.max_turns` 写进 config 就按配置走；
+  本机现有 profile 已同步改成 32，免得模板是新的、老 profile 仍是 8。
+- **口径三：回落值与模板同源**。`app.defaultMaxTurns`（`<=0` 的回退）与首次运行模板一起改，
+  避免「新建 profile 32、老 profile 缺该键却回落 8」。
+- **验证**：`go test ./...`；模板、`DESIGN.md` §8 示例与 `docs/configuration.md` 默认值表三处同步。
+- **落码（2026-10-22）**：`internal/app/agent.go`、`cmd/aquarius/config.go`、`DESIGN.md` §8、
+  `docs/configuration.md`。

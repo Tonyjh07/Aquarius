@@ -1358,7 +1358,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   },
   "permissions": { "level": "strict" },
   "limits": {
-    "max_turns": 8,
+    "max_turns": 32,
     "max_context_tokens": 64000,    // 上下文预算上限：实际预算 = min(本值, 当前模型声明的 context_window，D177)
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,

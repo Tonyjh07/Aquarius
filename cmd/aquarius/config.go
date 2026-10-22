@@ -663,7 +663,7 @@ const defaultConfig = `{
   "plugins": {},
   "permissions": { "level": "strict", "unattended": false },
   "limits": {
-    "max_turns": 8,
+    "max_turns": 32,
     "max_context_tokens": 64000,
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,

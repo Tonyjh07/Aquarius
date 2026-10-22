@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-21 @ abc0ce4 -->
+<!-- docs-sync: 2026-10-22 @ fe476fc -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §8/§9；**冲突以 DESIGN.md 为准**。
 > D110（破坏性改造）起配置**以 profile 为隔离单位**：
@@ -172,7 +172,7 @@ Confirm 仅 full-access 免）。**执行接入 M2 起生效**；`network`/`secr
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `limits.max_turns` | int | 8 | 单次请求内"生成+工具"循环上限 |
+| `limits.max_turns` | int | 32 | 单次请求内"生成+工具"循环上限（终端类多步任务常见 8 轮以上，D196） |
 | `limits.max_context_tokens` | int | 64000 | 上下文预算**上限**：实际预算 = min(本值, 当前模型声明的 `context_window`)，见上文「上下文窗口」。硬保底由截断装饰器执行（D14） |
 | `limits.compact_threshold` | float | 0.7 | 自动压缩阈值（×max_context_tokens） |
 | `limits.tool_output_chars` | int | 20000 | 工具结果截断 |
@@ -303,7 +303,7 @@ profile 配置 `<data>/profiles/default/config.json`：
   "plugins": {},
   "permissions": { "level": "strict", "unattended": false },
   "limits": {
-    "max_turns": 8,
+    "max_turns": 32,
     "max_context_tokens": 64000,
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,

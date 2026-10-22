@@ -19,8 +19,8 @@ import (
 // ErrMaxTurns 单次 Run 的"生成 + 工具"循环次数用尽（DESIGN §7.1）。
 var ErrMaxTurns = errors.New("agent: 超过最大轮次数")
 
-// defaultMaxTurns Config.MaxTurns <= 0 时的默认值（DESIGN §8 limits.max_turns）。
-const defaultMaxTurns = 8
+// defaultMaxTurns Config.MaxTurns <= 0 时的默认值（DESIGN §8 limits.max_turns；D196）。
+const defaultMaxTurns = 32
 
 // Deps Agent 依赖（全部端口，测试注入替身）。
 type Deps struct {
@@ -43,7 +43,7 @@ type Config struct {
 	Persona  *PersonaComposer
 	Sampling port.Sampling
 	Budget   port.TokenBudget
-	MaxTurns int // <=0 = 8
+	MaxTurns int // <=0 = 32
 	// CompactThreshold 自动压缩阈值系数（×MaxContextTokens；<=0 = 0.7，D21 轨2/M2）。
 	CompactThreshold float64
 	// MaxContextTokens 上下文预算 tokens（<=0 = 64000，DESIGN §8）。
