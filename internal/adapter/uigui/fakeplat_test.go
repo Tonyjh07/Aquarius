@@ -58,10 +58,12 @@ type fakePlat struct {
 	ShellStops   int
 	Reloads      int
 	FileRequests int
-	MenuPosts    []platform.MenuKind
-	Notices      []string
-	Closes       []platform.Handle
-	Focuses      []platform.Handle
+	// SkillPicks 技能导入选择框请求（D203：记录用途，不真弹框）。
+	SkillPicks []platform.PickKind
+	MenuPosts  []platform.MenuKind
+	Notices    []string
+	Closes     []platform.Handle
+	Focuses    []platform.Handle
 }
 
 // newFakePlat 构造假平台：缺省对齐「Windows 实测档」的可用语义（自管窗口、可见、置顶、
@@ -181,6 +183,13 @@ func (f *fakePlat) PostMenu(kind platform.MenuKind) {
 }
 
 func (f *fakePlat) RequestFileDialog() { f.FileRequests++ }
+
+func (f *fakePlat) RequestPathPick(kind platform.PickKind) {
+	f.mu.Lock()
+	f.SkillPicks = append(f.SkillPicks, kind)
+	f.mu.Unlock()
+}
+
 func (f *fakePlat) SubclassCloseToHide(platform.Handle) {
 	f.Subclassed++
 }

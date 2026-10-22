@@ -80,6 +80,17 @@ const (
 	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
 	rowToolsEmpty  // 占位/空态（text = 文案）
 	rowToolsStatus // 异步动作反馈状态行
+	// D202/D203：技能页。
+	rowSkillItem   // 已安装技能一行（field = Skills 下标；行内更新/卸载）
+	rowSkillEmpty  // 空态/未接线占位（text = 文案）
+	rowSkillNote   // 说明（text 忽略；文案在 Body 内）
+	rowSkillSource // 安装来源输入档（+「安装」按钮）
+	rowSkillPick   // 「选择文件…」/「选择文件夹…」（原生选择框只填来源框）
+	rowSkillDir    // 技能根一项（field = Dirs 下标）
+	rowSkillDirAdd // 新增额外技能根（输入档 + 「添加」）
+	rowSkillRescan // 「重新扫描」页级动作
+	rowSkillWarn   // 未加载条目一项（field = Warnings 下标）
+	rowSkillStatus // 异步动作反馈状态行
 	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
 	rowPromptNote    // 说明（text = 文案）
 	rowPromptGrid    // 模块库三列网格（D148；整块占一行，模块数不影响行数）
@@ -177,12 +188,16 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	if h, ok := settingsPages[f.page].(enterHook); ok {
 		h.OnEnter(u, f)
 	}
-	f.drainTestResults() // 连通性 / 获取模型异步结果（最新一条覆盖展示）
-	f.drainToolResults() // 工具页异步动作结果回灌状态行
+	f.drainTestResults()  // 连通性 / 获取模型异步结果（最新一条覆盖展示）
+	f.drainToolResults()  // 工具页异步动作结果回灌状态行
+	f.drainSkillResults() // 技能页异步动作结果回灌状态行
+	f.drainSkillPicks(u)  // 技能导入选择框结果（只填来源框，不直接落盘）
 	// 工具页原子快照（Revision 变了才重建行/按钮；同历史窗口径）。
 	f.syncToolsSnapshot()
 	// 密钥库页原子快照（同口径：Revision 变了才重建条目行）。
 	f.syncSecretsSnapshot()
+	// 技能页原子快照（同口径）。
+	f.syncSkillsSnapshot()
 	for f.save.Clicked(gtx) {
 		u.saveSettings(f)
 	}
@@ -435,7 +450,8 @@ func rowInCard(k rowKind) bool {
 	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
 		rowPromptPreview, rowProfBtns, rowProvAdd, rowProvApply,
 		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus,
-		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote:
+		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote,
+		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus:
 		return false
 	}
 	return true

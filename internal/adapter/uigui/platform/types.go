@@ -44,6 +44,17 @@ type MenuItem struct {
 	Sub     []MenuItem
 }
 
+// PickKind 专用选择框的用途（技能导入，D203 口径四）：决定过滤器与是否选目录。
+// 附件槽用固定的「多选附件」语义（RequestFileDialog + FilesPicked），不复用本枚举。
+type PickKind int
+
+const (
+	// PickSkillFile 单个文件：`SKILL.md` 或 `.zip`。
+	PickSkillFile PickKind = iota
+	// PickSkillDir 文件夹（技能目录，递归复制）。
+	PickSkillDir
+)
+
 // Config 构造选项（装配根/uigui 注入）。
 type Config struct {
 	// TrayIcon 托盘图标图像字节（.ico 里的某一个条目；档位由 uigui 定，默认 32px——
@@ -76,4 +87,7 @@ type Host interface {
 	HotkeySetting() string
 	// Notice 降级提示（缺失能力告知用户；平台层不直接碰 UI）。
 	Notice(msg string)
+	// SkillPathPicked 技能导入的专用选择框结果（kind 区分文件/文件夹；空路径 = 取消）。
+	// 与 FilesPicked 分开：附件槽是「多选 + 直投附件」，用途与语义都不同（D203 口径四）。
+	SkillPathPicked(kind PickKind, path string)
 }

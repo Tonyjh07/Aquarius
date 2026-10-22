@@ -65,6 +65,9 @@ type platformAPI interface {
 	ReloadHotkey()
 	PostMenu(kind platform.MenuKind)
 	RequestFileDialog()
+	// RequestPathPick 专用选择框（技能导入，D203）：kind 区分文件/文件夹，结果经
+	// Host.SkillPathPicked 回传；与附件槽的多选语义分开。
+	RequestPathPick(kind platform.PickKind)
 	SubclassCloseToHide(h platform.Handle)
 
 	// —— 剪贴板位图（D187：Ctrl+V 贴图；非 Windows 恒无图）——

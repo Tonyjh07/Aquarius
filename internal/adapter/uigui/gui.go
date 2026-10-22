@@ -122,6 +122,9 @@ type Options struct {
 	// （列出 / 新增覆盖 / 删除任意名字；本地小文件 IO，不走工具页那套异步通道）；
 	// nil = 该页只读占位。
 	Secrets SecretsAdmin
+	// Skills 技能管理面（D202/D203）：设置窗「技能」页数据面 + 异步动作（安装/更新/
+	// 卸载/重扫/技能目录增删）；nil = 该页只读占位。
+	Skills SkillsAdmin
 	// PreviewPrompts 人格组合预览（S7/D144，装配根实现）：按设置窗当前（未保存）模块树 +
 	// 引用展开最终 system 文本（纯计算，与新建会话同口径；不落盘、不阻断）。nil = 无预览行。
 	PreviewPrompts func(nodes []PromptModuleView, persona []string, legacy string) string
@@ -431,6 +434,10 @@ type UI struct {
 	// 托盘线程/事件循环均可开窗；headless 构造成无开窗器（openWin no-op）。
 	wins *winHost
 
+	// skillPicks 技能导入选择框结果通道（平台线程 → 设置窗 goroutine，D203）：容量小，
+	// 满即丢（结果只是「填进来源框」，丢了重选一次即可）；读出后 invalidate 设置窗重绘。
+	skillPicks chan skillPathPick
+
 	// pal 主题原子快照（spawn 次窗时读取——applyTheme 在 goroutine 启动前写初始值，
 	// 运行时仅事件循环 goroutine 写；§15.7 跨窗只经原子快照）。
 	pal atomic.Pointer[palette]
@@ -464,6 +471,7 @@ func newUI(opts Options, window bool) *UI {
 	u.alpha = semiAlpha   // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）
 	u.focusPending = true // 初始焦点入输入栏（D63：编辑器不再每帧回投常驻焦点）
 	u.wins = newWinHost(nil)
+	u.skillPicks = make(chan skillPathPick, 4)
 	u.applyTheme(opts.Theme)                            // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
 	u.hotkeyCfg.Store(opts.Hotkey)                      // 快捷键槽预存（托盘线程 hotkeySetting 读）
 	u.zoom.Store(clampKnobs(opts.Scale, opts.FontSize)) // 缩放槽预存（D90，夹取回落）

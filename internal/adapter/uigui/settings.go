@@ -357,6 +357,7 @@ const (
 	pageChat             // 对话：限额
 	pagePrompt           // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
 	pageTools            // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
+	pageSkills           // 技能：已装清单 + 四种导入入口 + 更新/卸载 + 额外目录（D202/D203）
 	pageWeb              // 联网：搜索与抓取提供商、本地抓取参数（D200）
 	pageAudio            // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	pageAdv              // 高级：config.json 原文
@@ -420,6 +421,25 @@ type settingsForm struct {
 	toolWait    int                          // 在途异步动作数（UI goroutine 增减）
 	toolsStatus string                       // 反馈文案（状态行）
 	toolsErr    bool                         // 反馈是否为错误
+
+	// 技能页（D202/D203）：数据面见 settings_skills.go。安装/更新会联网与拉起 git，
+	// 故与工具页同款异步（旁路 goroutine + 结果通道 + Invalidate）；卸载走行内二次确认。
+	skills        SkillsAdmin                  // nil = 只读占位（未接线）
+	skillsSnap    SkillsSnapshot               // 每帧原子快照（Revision 变了才重建）
+	skillsRev     int64                        // 上帧 Revision（起点 −1 = 首帧必采纳）
+	skillBtns     map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
+	skillSource   widget.Editor                // 安装来源（路径或链接；选择框只填这里）
+	skillInstall  widget.Clickable             // 「安装」按钮
+	skillPickFile widget.Clickable             // 「选择文件…」
+	skillPickDir  widget.Clickable             // 「选择文件夹…」
+	skillDirAdd   widget.Clickable             // 「＋ 添加技能目录」
+	skillDirInput widget.Editor                // 新增技能目录输入档
+	skillRescan   widget.Clickable             // 「重新扫描」
+	skillRes      chan skillActionResult       // 异步动作结果（回灌状态行）
+	skillWait     int                          // 在途异步动作数（UI goroutine 增减）
+	skillsStatus  string                       // 反馈文案（状态行）
+	skillsErr     bool                         // 反馈是否为错误
+	skillConfirm  string                       // 待卸载的技能名（"" = 无；行内二次确认）
 
 	// 密钥库页（S9-6b/D161）：数据面见 settings_secrets.go。动作**同步**（本地小文件 IO），
 	// 故没有工具页那套结果通道；`secretBtns` 按键名分派（动作按钮 + 行内二次确认）。
@@ -690,13 +710,17 @@ func newSettingsFormState() *settingsForm {
 		asrLang:     cycleField{displays: langLevels, values: langValues},
 		testResults: make(chan testOutcome, 8),
 		toolRes:     make(chan toolActionResult, 16),
+		skillRes:    make(chan skillActionResult, 16),
 		voiceRes:    make(chan error, 2),
 		toolBtns:    map[string]*widget.Clickable{},
+		skillBtns:   map[string]*widget.Clickable{},
 		secretBtns:  map[string]*widget.Clickable{},
 		// 密钥库快照「上次 Revision」起点 −1：**首帧必采纳**。若起点取 0，库
 		// Revision 恰为 0（空库、或本进程 provider 写路径直接落库未经过本管理面）
 		// 时会被当「没变」而跳过，窗口打开即显示空列表。
 		secretsRev: -1,
+		// 技能页快照同理：起点 −1 让首帧必采纳（空安装面 Revision 常为 0）。
+		skillsRev: -1,
 	}
 	f.promptEditor.init()
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
@@ -731,6 +755,10 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.tools = u.opts.Tools     // S6/D143：工具与 MCP 管理面（nil = 只读占位）
 	f.secrets = u.opts.Secrets // S9-6b：密钥库管理面（nil = 只读占位）
 	f.syncSecretsSnapshot()    // 开窗即取一次（帧首同款；动作后再取）
+	f.skills = u.opts.Skills   // D202/D203：技能管理面（nil = 只读占位）
+	f.syncSkillsSnapshot()     // 开窗即取一次（帧首同款；动作后再取）
+	f.skillSource.SingleLine = true
+	f.skillDirInput.SingleLine = true
 	if u.opts.Settings == nil {
 		return f
 	}

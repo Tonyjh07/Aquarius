@@ -22,7 +22,7 @@ import (
 // 推导）；每页行计划非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」
 // 页（S7b/D145）。另锁两条注册表结构不变量：页常量与注册表长度一致、Key 唯一。
 func TestSettingsPageNamesContract(t *testing.T) {
-	want := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "联网", "语音", "高级"}
+	want := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "技能", "联网", "语音", "高级"}
 	if settingsPageCount != len(want) {
 		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(want))
 	}
@@ -112,6 +112,16 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 		Tools:       &fakeToolsAdmin{snap: ToolsSnapshot{Revision: 1, Builtins: []BuiltinToolState{{Name: "think", Enabled: true}}, Plugins: []PluginToolState{{Name: "p", Source: "config", Enabled: true}}}},
 		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", Primary: true}}},
 		Secrets:     secretsAdmin,
+		Skills: &fakeSkillsAdmin{snap: SkillsSnapshot{
+			Revision:    1,
+			ManagedRoot: "/profile/skills",
+			Skills: []SkillState{{
+				Name: "pdf", Description: "Fill PDFs.", Dir: "/profile/skills/pdf",
+				Source: "/profile/skills", Managed: true, Kind: "git", Updated: "2026-10-22",
+			}},
+			Dirs:     []SkillDir{{Path: "/extra"}, {Path: "/profile/skills", Fallback: true}},
+			Warnings: []string{"技能 /extra/bad 已跳过：缺少 name"},
+		}},
 	})
 	f := newSettingsForm(u)
 	f.page = pageTools
@@ -121,7 +131,10 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 	f.syncSecretsSnapshot() // 同步密钥库快照（铺出条目行）
 	f.secretsStatus = "ok"  // 覆盖 rowSecretStatus 行型
 	f.importStatus = "ok"   // 覆盖 rowSecretImport 行型里的导入反馈分支
-	f.provOpen = 0          // 展开首张 provider 卡片（覆盖字段/按钮行型；收起态只有摘要行）
+	f.page = pageSkills
+	f.syncSkillsSnapshot() // 同步技能快照（铺出技能/目录/警告行）
+	f.skillsStatus = "ok"  // 覆盖 rowSkillStatus 行型
+	f.provOpen = 0         // 展开首张 provider 卡片（覆盖字段/按钮行型；收起态只有摘要行）
 	th := testTheme()
 
 	for p := 0; p < settingsPageCount; p++ {
@@ -162,7 +175,7 @@ func TestPromptRowsLiveOnPromptPage(t *testing.T) {
 		return n
 	}
 	kinds := []rowKind{rowPromptGrid, rowPromptRef, rowPromptBuiltin, rowPromptPreview}
-	for _, page := range []int{pageChat, pageGeneral, pageModel, pageSecrets, pageTools, pageAdv} {
+	for _, page := range []int{pageChat, pageGeneral, pageModel, pageSecrets, pageTools, pageSkills, pageAdv} {
 		if n := count(page, kinds...); n != 0 {
 			t.Errorf("页 %s 出现了 %d 条提示词行（应只在「系统提示词」页）", settingsPageNames[page], n)
 		}
