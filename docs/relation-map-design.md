@@ -1,5 +1,5 @@
 # 会话树关系图 · 设计语言（relation-map · 时间轴横树）
-<!-- docs-sync: 2026-10-19 @ 1df49cf -->
+<!-- docs-sync: 2026-10-22 @ f2ae7c9 -->
 
 > **一句话抽象**：以**当前 Head 消息**为右端基准、按「跳数与条数」预算化展开的、
 > **时间成轴、版本分杈**的有向图——`uigui` 会话历史次窗（winHistory）的形态规格
@@ -591,6 +591,10 @@ boundsOf(visible)           → Box         // 盒优先取景的输入（A13；
 | 测试 | `relmap_layout_test.go` / `relmap_frame_test.go` | 纵梯断言换横轴口径：层序单调改 **x 单调**；adopt 带断言改横向；A8/A13 守门改右基准；A11/A12 等沿用 |
 | 基准 | `relmap_anim_bench_test.go` | 横树夹具复测（收敛帧/残差预期变化） |
 | 绘制 | `draw*` | **预期零改**（几何无关：边/箭头按坐标向量、卡片按节点中心） |
+
+> 文件组织备注（2026-10-22）：帧层已按关注点拆成同包的 `relmap_frame.go`（帧态与帧循环）、
+> `relmap_view.go`（视场取景）、`relmap_geom.go`（几何与命中）、`relmap_draw.go`（绘制）、
+> `relmap_node.go`（节点动作与右键菜单）；上表按当时的单文件口径记录，符号归属不变。
 
 ### 10.2 与主窗转写区的纪律对齐
 

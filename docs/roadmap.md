@@ -1,5 +1,5 @@
 # Aquarius 阶段规划（TODO 整理与分阶段路线）
-<!-- docs-sync: 2026-10-22 @ d1b98b9 -->
+<!-- docs-sync: 2026-10-22 @ f2ae7c9 -->
 
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
@@ -180,6 +180,7 @@
 - **P2（可选顺手）**：`llm/openai.go` → client / wire / stream 三份；`uigui/shell_windows.go` → tray / menu / filedlg 三份；`app/agent.go` → 核心循环 + `agent_compact.go` + `turnbuffer.go` + `agent_tools.go`。`uitui/model.go`、`uigui/gui.go`、`uigui/select.go`（内聚的选区子系统）、`plugin/host.go` 暂不动。
 - **验证与节奏**：每个源文件一个 commit（`refactor: split … by concern`）；每步 `gofmt -l .` 空 + `go vet` + `go test ./...`（含 `-race`）全绿；app 侧拆函数重点看 golden 回放不变；window.go 拆完全量跑一次 uigui 测试（同包搬移不影响测试对未导出标识符的引用）+ GUI 冒烟收尾。
 - **非目标**：不动包边界、命名与行为；不拆测试文件（`session_test.go` 1924、`main_test.go` 1535 留待按需）。
+  测试文件的「按需」条件已于 2026-10-22 成立并补齐（见下方状态末条）。
 - **状态（2026-10-07）**：**已落地**（8 个 refactor commit）。实测口径修订：`window.go` 2791 → 骨架 322 + **11 文件**
   （theme_font/winpos/layout/transcript/chip/input/confirm_ui/attach/chrome/branch/interact；预研表"10 文件"为笔误）；
   `execCommand` 399 行 21 命名 case（分发壳 + execXxx 方法，先拆函数后拆文件）；`main.go` 973（D110 后）/`run()` 610 行 →
@@ -189,6 +190,13 @@
   S4a 时用户拍板留待 S4c 一并处理；**S4c（2026-10-07，D113）落地时仍未拆**（渲染修复不需要拆分），
   拆分按需留待。备注：`GOOS=linux` 全仓交叉编译受 gio/cgo 限制不可达（基线如此，实证与替代
   口径见 **D119**：非 Windows 门禁 = WSL 内原生 linux 工具链 `go build ./...` + `go vet ./...`）。
+- **按需补齐（2026-10-22）**：当年留待按需的测试文件与后续长大的右图生产文件一并拆分，纯搬移、
+  声明清单守恒、逐文件一笔 commit：
+  `cmd/aquarius/main_test.go` 2273 → `main_test.go`（夹具 + 启动/profile）+ model/run/llm/attach/e2e/
+  memory/job 七份；`internal/app/session_test.go` 2209 → 基础 + misc/edit/tree/part 五份；
+  `uigui/relmap_frame_test.go` 1856 → 夹具 + render/view/settle/menu/drag 六份；
+  `uigui/relmap_frame.go` 1724 → 帧态与帧循环 + `relmap_view.go`（视场）+ `relmap_geom.go`（几何与命中）+
+  `relmap_draw.go`（绘制）+ `relmap_node.go`（节点动作与菜单）。同包私有符号跨文件引用，零 import 变更。
 
 ### S4c · 设置窗渲染异常修复（M8，P1，M~L，**新增 2026-10-07，已落地 D113**）
 - **症状（用户验收截图，2026-10-07）**：设置次窗（winSettings）表单渲染破碎——多行行内容横向
