@@ -945,10 +945,27 @@ type SkillCatalog interface {
 - **`BodyLine` 为什么在端口里**：正文超页后要提示「用 `file_read` 从第 N 行续读」，而 `SKILL.md`
   开头还有 frontmatter——行号不能假设正文从第 1 行开始（差几行模型就会读到 half 一条指令）。
 - **实现 `skillfs`**：扫描有序技能根、解析 YAML frontmatter、校验名称/长度/目录同名；非法条目
-  跳过并累积 `Warnings()`（启动日志 + `/skill list` + 未来的技能页展示）。目录内容变化不热监听，
+  跳过并累积 `Warnings()`（启动日志 + `/skill list` + 技能页展示）。目录内容变化不热监听，
   由 `Rescan()` 显式重扫（硬性规则 7：不做文件监听）；`Load` 每次现读，改正文不必重扫。
 - **零配置可用**：`<profile>/skills` 不存在 = 没有技能（不是错误）；`skills.dirs` 里的路径不存在
   同样只记警告。
+- **安装面（D202/D203）不在端口里**：`port.SkillCatalog` 保持只读三方法；安装/卸载/更新是
+  **用户面动作**，接口由消费方定义——`app.SkillAdmin`（`/skill install|remove|update`）与
+  `uigui.SkillsAdmin`（设置窗「技能」页），实现都在装配根，落在 `adapter/skillfs` 的
+  `Installer` 上（范式同 `app.PluginAdmin`、`uigui.ToolsAdmin`）。
+- **四种安装源 + 统一副本落位**：单文件 `SKILL.md` / 文件夹 / `.zip` / GitHub 链接（`url#分支`）；
+  一律复制进 `<profile>/skills/<name>/`（`<name>` = frontmatter 的 `name`），git 检出留在
+  `<profile>/skill-cache/<repo-key>/`，来源与时间记在 `<profile>/skill-installs.json`（原子写）。
+  副本的好处是「一个技能 = 一个目录」：卸载就是删目录，不会连带同仓库的兄弟技能。
+- **更新 = 覆盖**：git 来源 `pull --ff-only`（或按 `#分支` 重新取）后重新同步副本；压缩包来源
+  重新下载；**会覆盖本地改动**（技能是别人维护的包，不是工作区，故不提供三路合并）。
+  复制来源（单文件/文件夹）没有更新动作，重新导入即可。
+- **校验前置 + 解压门禁**：先在临时目录落地并通过 frontmatter 校验才换入正式目录，失败不留残渣；
+  zip 解压拒绝绝对路径 / `..` / 盘符 / 符号链接（zip-slip），条目数与展开总量设上限。
+- **同名不覆盖**：安装遇同名（含 `skills.dirs` 里已生效的同名技能）直接报错并要求先卸载，
+  避免出现「一半新一半旧」的目录。
+- **不做「安装即授权」**：`scripts/` 一律经 `term_exec` 走 Confirm 与权限矩阵；安装动作本身
+  不授予任何执行能力。
 
 ---
 
@@ -1286,6 +1303,9 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/watch [list\|stop <id>]` | 观察器（D190）：看模型声明在盯什么、已查几次、何时结束；`stop` 叫停（声明由模型经 `watch_start` 发起） |
 | `/plugin [list\|enable\|disable\|logs]` | MCP 插件管理（D31/D143）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效；`logs [name]` = tail `audit.log` 的插件调用行（无参给各插件最近调用摘要，S6） |
 | `/skill [list\|<名字>]` | 技能（D201，§5.15）：无参或 `list` 列出已安装技能（名字 / 说明 / 来源目录 / 加载失败的条目与原因）；带名字 = 把该技能 `SKILL.md` 正文**注入成一条宿主上下文节点**（不触发新一轮，模型下次装配即可见），并显示目录绝对路径 |
+| `/skill install <路径\|链接>` | 安装技能（D202/D203，§5.15）：单文件 `SKILL.md` / 文件夹 / `.zip` / GitHub 链接（`url#分支`）；同名不覆盖 |
+| `/skill remove <名字>` | 卸载安装副本（仅 `<profile>/skills/<名字>`；来自 `skills.dirs` 的技能请在文件系统里处理） |
+| `/skill update <名字\|all>` | 更新：git 来源拉取、压缩包来源重新下载后覆盖副本；不带名字 = 更新全部可更新项 |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
@@ -1390,8 +1410,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     ├── memories.md            # 全局记忆（markdown 单文件，D23）
     ├── skills/<name>/SKILL.md    # 技能（D201）：一个目录一个技能；<profile>/skills 是兜底技能根，
     #                             config skills.dirs 可追加其它绝对路径（按声明序优先）
-    ├── skill-cache/<repo-key>/   # git 安装的技能检出缓存（D202，待落码；更新 = pull + 重新同步副本）
-    ├── skill-installs.json       # 技能安装台账（D202，待落码）：来源/引用/安装时间，原子写
+    ├── skill-cache/<repo-key>/   # git 安装的技能检出缓存（D202）：更新 = pull + 重新同步副本
+    ├── skill-installs.json       # 技能安装台账（D202）：来源/引用/相对子目录/时间，原子写
     ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
     ├── jobs/<jobID>.log       # 后台任务日志
     ├── audit.log              # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
@@ -2242,7 +2262,7 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 与会话历史只落空窗壳验证宿主，数据面留后续步（**会话历史数据面已由 S3 接续**：D112/D120 + [docs/relation-map-design.md](docs/relation-map-design.md)；**欢迎 / 首次运行引导已由 D141 接续**：三步页 + 启动流接管，见下方窗口清单与「入口」段）。
 
 - **窗口清单**：**设置**（核心档：权限档、模型名、think/effort、`ui.hotkey`、`ui.theme`；
-  **S4/D110③ 扩为全量分组页、S4d/D142 起改为五页分组导航、S7b/D145 起六页、S9-6b/D161 起七页、D200 起十页**（见下「设置窗分组导航」）：
+  **S4/D110③ 扩为全量分组页、S4d/D142 起改为五页分组导航、S7b/D145 起六页、S9-6b/D161 起七页、D200 起十页、D203 起十一页**（见下「设置窗分组导航」）：
   Profile 区（当前/新建/复制/切换，重启生效）、provider 列表
   编辑区（全量应用 + 设为主 + 删除 + 连通性「测试」= 真实最小请求，D110②）、输出、限额、
   **系统提示词页（S7/D144 人格模块树与组合预览，S7b/D145 独立成页）**、
@@ -2279,7 +2299,7 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
 - **设置窗分组导航（S4d/D142）**：设置窗内容由「一长串分组行」改为**分页呈现**——左侧
   **140dp 竖向导航栏**（当前页高亮；点击切页）+ 右侧页内容（每页各自一个 `material.List`，
   滚动位置按页保留）+ **全局底栏**（「保存并应用」+ 反馈文案，任何页常驻）。窗几何
-  **720×560（min 620×420）**；内容区约 552dp，比改前的 532dp 略宽。**十页**：
+  **720×560（min 620×420）**；内容区约 552dp，比改前的 532dp 略宽。**十一页**：
   **常规**（Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出）、**模型**（当前模型名 /
   原生思考与推理档位 / **有序降级链**，S11/D173 起只管路由）、**模型服务**（provider 管理：
   折叠卡片，收起态一行摘要、展开才是端点/密钥池/**模型列表**——每行「启用」勾选 + 名字 +
@@ -2287,7 +2307,8 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   **密钥库**（本机加密密钥库：已存名字 + 尾 4 位掩码 /
   新增覆盖 / 行内二次确认删除，S9-6b/D161）、**对话**（限额）、**系统提示词**（人格模块库 /
   有序引用 / 内置只读模块 / 组合预览，S7/D144；S7b/D145 由「对话」页拆出）、**工具与 MCP**
-  （内置工具启停 + MCP 与插件管理，S6/D143）、**联网**（搜索与抓取的提供商链 + 本地抓取
+  （内置工具启停 + MCP 与插件管理，S6/D143）、**技能**（已安装清单 + 四种导入入口 + 更新/卸载 +
+  额外技能目录增删 + 重新扫描，D202/D203）、**联网**（搜索与抓取的提供商链 + 本地抓取
    参数，D200）、**语音**（识别与合成服务、模型、音色与风格、
    试听，D179）、**高级**（config.json raw JSON）。
   控件事先常驻表单对象，**切页只是换渲染**——跨页编辑天然保留；「保存并应用」仍是一次

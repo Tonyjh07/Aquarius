@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-22 @ e4db687 -->
+<!-- docs-sync: 2026-10-23 @ e6315a5 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -216,7 +216,8 @@
 | D199 | 提问面板改版：题号在左、进度段右对齐、去掉最小化；底部按钮行贴底缘、主按钮文字垂直居中（§15.2） | 生效 |
 | D200 | 设置窗新增「联网」页：两组提供商有序列表（搜索 deepseek/brave、抓取 deepseek/local）+ 本地抓取参数；密钥只写不回显、保存前与 `normalizeWeb` 同口径校验（§5.14/§15.7） | 生效 |
 | D201 | 技能（Agent Skills）= 目录 + `SKILL.md` 的按需指令包：技能根有序、只读 name/description 进工具描述、命中才载入正文；正文走工具回填/注入节点，**不进 system**（§4.3/§5.15） | 生效 |
-| D202 | 技能安装/导入/更新：`SKILL.md` / 文件夹 / 压缩包 / GitHub 链接；有 git 则克隆（`pull` 即更新），否则下载压缩包；**安装面只在用户面**，不提供模型可调用的安装工具（§5.15/§15.7） | 待落码 |
+| D202 | 技能安装/导入/更新：`SKILL.md` / 文件夹 / 压缩包 / GitHub 链接；有 git 则克隆（`pull` 即更新），否则下载压缩包；**安装面只在用户面**，不提供模型可调用的安装工具（§5.15/§15.7） | 生效 |
+| D203 | 设置窗新增「技能」页 + 原生文件/文件夹选择框（`RequestPathPick`，用途区分于附件多选）；页集十一页、页序「工具与 MCP」之后（§15.7） | 生效 |
 
 ## 记录
 
@@ -4343,7 +4344,7 @@
   `internal/adapter/toolbuiltin/skill.go`、`internal/app/session_cmd_skill.go`、
   `cmd/aquarius/config.go`（`skills.dirs`）、`DESIGN.md` §4.3/§5.15/§8、`docs/configuration.md`。
 
-### D202 · 技能的安装 / 导入 / 更新（2026-10-22，**待落码**）
+### D202 · 技能的安装 / 导入 / 更新（2026-10-22，**已落码**）
 
 > **背景**：技能得能装进来才算可用。用户要求支持 `SKILL.md` 单文件、文件夹、压缩包、GitHub 链接，
 > 并在主机有 git 时直接克隆（方便更新）。
@@ -4367,6 +4368,35 @@
 - **否决**：① 做成模型工具（见口径一）；② 直接把 clone 的仓库当技能根（删一个技能会拆掉整份检出，
   且 `name` 与目录名规则在多技能仓库里会打架）；③ 自动执行 `scripts/`（脚本一律经 `term_exec`，
   Confirm + 权限矩阵，不做「安装即授权」）。
-- **落码**：待做（`internal/adapter/skillfs/install.go`、`cmd/aquarius/skillsadmin.go`、
-  `internal/adapter/uigui/settings_page_skills.go`、`/skill install|remove|update`）。
+- **落码（2026-10-22）**：`internal/adapter/skillfs/install.go`（四来源 + 台账 + zip-slip 防护 +
+  总量上限）、`cmd/aquarius/skillsadmin.go`（`uigui.SkillsAdmin` / `app.SkillAdmin` 的装配根实现）、
+  `internal/app/session_cmd_skill.go`（`/skill install|remove|update`）、
+  `internal/adapter/uigui/settings_page_skills.go` + `settings_skills.go`（设置窗「技能」页）、
+  `platform.RequestPathPick`（文件/文件夹选择框，D203）。
+
+### D203 · 设置窗「技能」页与原生文件/文件夹选择框（2026-10-22）
+
+> **背景**：D202 的安装动作需要用户面入口——命令面能装，但个人助手的常态入口是设置窗；
+> 导入还要能挑文件夹与压缩包，不能要求用户手打绝对路径。
+
+- **口径一：页序**——「技能」页插在「工具与 MCP」之后、「联网」之前：两者同属能力管理面，
+  相邻便于对照「装了哪些工具 / 装了哪些技能」。页集由注册表次序决定，加页 = 一个文件 + 一行注册
+  （`settings_page.go`），页名契约测试同改。
+- **口径二：页面内容**——① 已安装清单（名字 / 一句说明 / 来源种类与引用 / 更新时间；可更新与卸载的
+  行才显示动作，卸载走行内二次确认）；② 四种导入入口（来源输入框 + 「选择文件…」「选择文件夹…」+
+  「安装」）；③ 额外技能目录（`skills.dirs`）增删，兜底根 `<profile>/skills` 只读展示；④ 「重新扫描」；
+  ⑤ 加载失败的条目与原因（灰字，不进模型上下文）。
+- **口径三：不另起「市场 / 搜索」**——只认用户给的路径或链接；远端内容的发现留给用户自己的浏览器
+  （安装面越像应用商店，越容易把「远端说了算」的指令包塞进上下文）。
+- **口径四：原生选择框按用途分离**——附件槽仍是「多选附件」语义（D104/D186）；技能导入另走
+  `RequestPathPick(kind)`，`kind` 区分文件（`SKILL.md` / `.zip`）与文件夹。Windows 用
+  `GetOpenFileNameW` 单选 + `SHBrowseForFolderW`，非 Windows 走 zenity/kdialog 的
+  `--file-selection` / `--directory`。选中路径**只填入来源输入框**，用户再点「安装」——选择框不直接
+  触发落盘，避免误点即刻复制一整棵树。
+- **口径五：动作异步、快照只读**——安装/更新/卸载/重扫都在旁路 goroutine 执行（网络与 git 会阻塞），
+  结果经通道回灌状态行；页面只读 `Snapshot()`（含 `Revision`），任何变更递增。与工具页同口径。
+- **否决**：① 复用附件文件框（多选 + 直投附件槽：语义与用途都不对）；② 编辑框手打路径就够
+  （Windows 上粘贴 Explorer 地址可行，但选文件夹是这类动作的常态入口）；③ 在页面里内嵌浏览仓库
+  （等于自建应用商店，见口径三）。
+
 

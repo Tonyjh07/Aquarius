@@ -1,5 +1,5 @@
 # Aquarius 阶段规划（TODO 整理与分阶段路线）
-<!-- docs-sync: 2026-10-22 @ 4dc469b -->
+<!-- docs-sync: 2026-10-23 @ e6315a5 -->
 
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
@@ -498,7 +498,7 @@
 验收：每项独立 commit 独立过门禁（`gofmt` / `go vet` / `go test` / `-race` / linuxgate /
 domain 性质测试 / `docsync -check`）；面板与入口的 GUI 侧要有手工验收步骤写进 `docs/guide.md`。
 
-### S14 · 技能（Agent Skills）（P1，L，**口径已定 2026-10-22，D201/D202；①读侧已落地，②安装面待落码**）
+### S14 · 技能（Agent Skills）（P1，L，**口径已定 2026-10-22，D201/D202/D203；①② 均已落地**）
 
 用户提的两件：① 「加入 skill 的支持」；② 技能管理页要能安装/导入（`SKILL.md`、文件夹、压缩包、
 GitHub 链接），主机有 git 时直接克隆以方便更新。按「先读侧、后安装面」拆：
@@ -520,7 +520,7 @@ GitHub 链接），主机有 git 时直接克隆以方便更新。按「先读�
      空态、未知名候选、正文分页续读行号；`/skill` 的列表与注入（宿主信任、不触发、清屏回放）；
      ASCII 门禁（声明与回填都英文）。
 
-2. **安装 / 导入 / 更新（D202，待落码）**：
+2. **安装 / 导入 / 更新（D202，已落地 2026-10-22）**：
    - `skillfs` 的安装面：单文件 `SKILL.md` / 文件夹 / `.zip`（zip-slip 防护 + 总量与条目上限）/
      GitHub 链接（有 git 则 `clone --depth 1`，否则 codeload 压缩包）；落位 `<profile>/skills/<name>/`，
      git 检出缓存在 `skill-cache/`，台账 `skill-installs.json`（原子写）。
