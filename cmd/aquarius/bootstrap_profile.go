@@ -107,6 +107,9 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	if err := cfg.normalizeAudio(); err != nil {
 		return err
 	}
+	if err := cfg.normalizeWeb(); err != nil {
+		return err
+	}
 	// 语音不可用的原因只在「用户明显想用」时提示：配了 provider 却找不到，或开了
 	// 播报却没配置。完全没碰语音的配置不该每次启动都挨一行警告。
 	if _, why := cfg.audioProvider("tts"); why != "" && cfg.Output.TTS {

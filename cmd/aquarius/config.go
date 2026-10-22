@@ -45,6 +45,7 @@ type fileConfig struct {
 	Output       outputConfig      `json:"output"`
 	Input        inputConfig       `json:"input"` // 录音语种提示（D179）
 	Audio        audioConfig       `json:"audio"` // 语音识别与合成（D179）
+	Web          webConfig         `json:"web"`   // 联网搜索与抓取（D197）
 	Limits       limitsConfig      `json:"limits"`
 	// Tools 工具面（S6/D143）：内置工具禁用清单（热生效）。
 	Tools toolsConfig `json:"tools"`
@@ -130,6 +131,113 @@ type audioChannel struct {
 
 // kindChatAudio 首发音频协议：chat/completions 携带音频（D179）。
 const kindChatAudio = "chat-audio"
+
+// webConfig 联网搜索与抓取（D197）：两组**有序**提供商列表，顺序即优先级。
+//
+// 空列表 = 该能力不可用：对应工具照常注册（工具清单与设置窗保持稳定），执行时
+// 明确报「未配置提供商」，而不是静默返回空结果。
+type webConfig struct {
+	Search webSearchConfig `json:"search"`
+	Fetch  webFetchConfig  `json:"fetch"`
+}
+
+// webSearchConfig 搜索侧。
+type webSearchConfig struct {
+	// Providers 有序提供商：先试第一个，失败换下一个（D197）。
+	Providers []webProvider `json:"providers"`
+	// Count 缺省返回条数（工具参数可逐次覆盖）；0 = 8。
+	Count int `json:"count,omitempty"`
+}
+
+// webFetchConfig 抓取侧 + 本地抓取的安全/网络参数。
+type webFetchConfig struct {
+	// Providers 有序提供商：deepseek（远端）/ local（本地纯 Go）。
+	Providers []webProvider `json:"providers"`
+	// MaxChars 单次回填正文的缺省上限（字符）；0 = 16000，硬顶 20000。
+	MaxChars int `json:"max_chars,omitempty"`
+	// Proxy 本地抓取用的代理（如 http://127.0.0.1:7897）；空 = 读 HTTP(S)_PROXY。
+	Proxy string `json:"proxy,omitempty"`
+	// UserAgent 本地抓取的 UA；空 = 浏览器形态缺省值（很多站点拒绝非浏览器 UA）。
+	UserAgent string `json:"user_agent,omitempty"`
+	// RespectRobots 本地抓取是否遵守 robots.txt；键缺失 = 遵守。
+	RespectRobots *bool `json:"respect_robots,omitempty"`
+	// AllowPrivateIPs 放开回环/私网目标（调试本机服务用）；缺省关闭。
+	AllowPrivateIPs bool `json:"allow_private_ips,omitempty"`
+	// TimeoutSec 本地抓取超时秒；0 = 30。
+	TimeoutSec int `json:"timeout_sec,omitempty"`
+}
+
+// webProvider 一家提供商（kind 决定怎么连，其余字段按 kind 取用）。
+type webProvider struct {
+	// Kind 提供商类型：搜索侧 deepseek | brave，抓取侧 deepseek | local。
+	Kind string `json:"kind"`
+	// From 复用某个 model.providers 的 base_url 与密钥池（deepseek 缺省 = "deepseek"）。
+	From string `json:"from,omitempty"`
+	// Key 直接给密钥引用（secret:名 或明文）；brave 必填。
+	Key string `json:"key,omitempty"`
+	// BaseURL 覆盖端点前缀（自建网关/镜像）。
+	BaseURL string `json:"base_url,omitempty"`
+	// Count 这一家的缺省条数（覆盖 web.search.count）。
+	Count int `json:"count,omitempty"`
+	// Country / Lang 结果国家与语言（仅 brave；空 = 服务端缺省）。
+	Country string `json:"country,omitempty"`
+	Lang    string `json:"lang,omitempty"`
+}
+
+// 联网提供商类型标识。
+const (
+	webKindDeepSeek = "deepseek"
+	webKindBrave    = "brave"
+	webKindLocal    = "local"
+)
+
+// normalizeWeb 校验联网配置（启动期一次）：只拦「写错了」的声明——未知 kind、
+// 抓取侧写了只做搜索的 kind、deepseek 引用了不存在的 provider。
+// 密钥缺失不在这里报错（装配根警告并跳过该家，其余提供商继续可用）。
+func (c *fileConfig) normalizeWeb() error {
+	for i, p := range c.Web.Search.Providers {
+		switch p.Kind {
+		case webKindDeepSeek:
+			if c.Model.byName(webProviderFrom(p)) == nil {
+				return fmt.Errorf("web.search.providers[%d].from=%q 不在 model.providers 内"+
+					"（deepseek 搜索借它的 base_url 与密钥池）", i, webProviderFrom(p))
+			}
+		case webKindBrave:
+			// 只借 key（或 base_url），不引用对话 provider。
+		default:
+			return fmt.Errorf("web.search.providers[%d].kind=%q 不认识（搜索侧支持 %s / %s）",
+				i, p.Kind, webKindDeepSeek, webKindBrave)
+		}
+	}
+	for i, p := range c.Web.Fetch.Providers {
+		switch p.Kind {
+		case webKindDeepSeek:
+			if c.Model.byName(webProviderFrom(p)) == nil {
+				return fmt.Errorf("web.fetch.providers[%d].from=%q 不在 model.providers 内"+
+					"（deepseek 抓取借它的 base_url 与密钥池）", i, webProviderFrom(p))
+			}
+		case webKindLocal:
+		default:
+			return fmt.Errorf("web.fetch.providers[%d].kind=%q 不认识（抓取侧支持 %s / %s）",
+				i, p.Kind, webKindDeepSeek, webKindLocal)
+		}
+	}
+	if n := c.Web.Search.Count; n < 0 || n > 20 {
+		return fmt.Errorf("web.search.count=%d 超出范围（1-20；0 = 缺省 8）", n)
+	}
+	if n := c.Web.Fetch.MaxChars; n < 0 || n > 20000 {
+		return fmt.Errorf("web.fetch.max_chars=%d 超出范围（500-20000；0 = 缺省 16000）", n)
+	}
+	return nil
+}
+
+// webProviderFrom 该提供商引用的对话 provider 名（deepseek 缺省按 kind 同名找）。
+func webProviderFrom(p webProvider) string {
+	if s := strings.TrimSpace(p.From); s != "" {
+		return s
+	}
+	return p.Kind
+}
 
 // permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
 type permissionsConfig struct {
@@ -659,6 +767,10 @@ const defaultConfig = `{
   "input": { "language": "auto" },
   "audio": { "asr": {}, "tts": {} },
   "output": { "tts": false, "notify": true },
+  "web": {
+    "search": { "providers": [], "count": 8 },
+    "fetch": { "providers": [ { "kind": "local" } ], "max_chars": 16000 }
+  },
   "mcpServers": {},
   "plugins": {},
   "permissions": { "level": "strict", "unattended": false },

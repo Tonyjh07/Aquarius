@@ -30,6 +30,12 @@ type Deps struct {
 	Capture port.Capture         // 屏幕捕获（D178；nil = 截图工具明确报「本构建未提供」）
 	Asker   port.Asker           // 提问通道（D184；nil = ask_user 明确报「本构建未提供」）
 	Watches port.WatchManager    // 观察器（D190）：watch_* 工具；nil = 明确报「本构建未提供」。
+	// WebSearch / WebFetch 联网能力（D197）：nil = 未配置提供商，对应工具明确报因。
+	WebSearch port.WebSearch
+	WebFetch  port.WebFetch
+	// WebCount / WebMaxChars 联网工具的缺省预算（0 = 内置缺省）。
+	WebCount    int
+	WebMaxChars int
 }
 
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
@@ -67,6 +73,8 @@ func allTools(d Deps) []port.Tool {
 		&watchList{watches: d.Watches},
 		&watchStop{watches: d.Watches},
 		&askUser{asker: d.Asker},
+		&webSearchTool{search: d.WebSearch, count: d.WebCount},
+		&webFetchTool{fetch: d.WebFetch, maxChars: d.WebMaxChars},
 	}
 }
 
@@ -107,6 +115,8 @@ var displayNames = map[string]string{
 	"watch_list":     "观察列表",
 	"watch_stop":     "停止观察",
 	"ask_user":       "提问",
+	"web_search":     "联网搜索",
+	"web_fetch":      "读取网页",
 }
 
 // DisplayName 内置工具中文词表查询（未收录 = 原名字面）。
@@ -204,6 +214,8 @@ var (
 	_ port.Tool        = (*screenCapture)(nil)
 	_ port.Tool        = (*askUser)(nil)
 	_ port.Interactive = (*askUser)(nil)
+	_ port.Tool        = (*webSearchTool)(nil)
+	_ port.Tool        = (*webFetchTool)(nil)
 )
 
 // 解析辅助（Target 申报共用）：取 path 参数并规约为绝对路径。

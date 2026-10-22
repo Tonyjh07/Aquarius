@@ -318,7 +318,7 @@ func (w *wiring) silence() {
 
 // assembleTools 装配内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
 // 后台任务（DESIGN §5.8/D8）：日志落盘 <profile>/jobs，任务表内存态。
-func (w *wiring) assembleTools(confirmer port.Confirmer, asker port.Asker) error {
+func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, asker port.Asker) error {
 	jobs, err := jobproc.New(filepath.Join(w.profileDir, "jobs"))
 	if err != nil {
 		return err
@@ -375,21 +375,27 @@ func (w *wiring) assembleTools(confirmer port.Confirmer, asker port.Asker) error
 	if maxOutput <= 0 {
 		maxOutput = 20000
 	}
+	// D197：联网能力按配置顺序装配（缺密钥只警告并跳过该家）；未配置 = nil，工具
+	// 照常注册但执行时明确报因。
+	webSearch, webFetch := w.buildWeb(ctx)
 	builtinTools := toolbuiltin.New(toolbuiltin.Deps{
 		Memory: w.merged,
 		PathOf: func(name string) (string, bool) {
 			p, err := w.mem.Path(name)
 			return p, err == nil
 		},
-		Jobs:    w.jobs,
-		Sandbox: w.sandboxDir,
-		Blobs:   w.blobs,
-		Vision:  w.cfg.Model.chainCaps().Vision,
-		Capture: screencap.New(),
-		Asker:   asker,
-		Watches: w.watcher,
-	})
-	// S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
+		Jobs:        w.jobs,
+		Sandbox:     w.sandboxDir,
+		Blobs:       w.blobs,
+		Vision:      w.cfg.Model.chainCaps().Vision,
+		Capture:     screencap.New(),
+		Asker:       asker,
+		Watches:     w.watcher,
+		WebSearch:   webSearch,
+		WebFetch:    webFetch,
+		WebCount:    w.cfg.Web.Search.Count,
+		WebMaxChars: w.cfg.Web.Fetch.MaxChars,
+	}) // S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
 	w.disabledTools = newDisabledHolder(w.builtinDisabled())
 	w.runner = toolrun.New(toolrun.Options{

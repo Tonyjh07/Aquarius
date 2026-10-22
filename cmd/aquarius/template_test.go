@@ -28,6 +28,12 @@ func TestDefaultConfigTemplateIsValidV2(t *testing.T) {
 	if err := cfg.normalizeAudio(); err != nil {
 		t.Fatalf("模板的语音段应能过校验: %v", err)
 	}
+	if err := cfg.normalizeWeb(); err != nil {
+		t.Fatalf("模板的联网段应能过校验: %v", err)
+	}
+	if len(cfg.Web.Fetch.Providers) != 1 || cfg.Web.Fetch.Providers[0].Kind != webKindLocal {
+		t.Fatalf("模板应默认开启本地抓取（无需密钥即可用）：%+v", cfg.Web.Fetch.Providers)
+	}
 	if len(cfg.Model.Providers) != 1 {
 		t.Fatalf("providers = %d, want 1", len(cfg.Model.Providers))
 	}

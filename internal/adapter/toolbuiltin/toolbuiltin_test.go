@@ -103,7 +103,8 @@ func TestNewRegistersAllTools(t *testing.T) {
 		"job_list": tool.Safe, "job_status": tool.Safe, "job_logs": tool.Safe, "job_kill": tool.Safe, "job_wait": tool.Safe,
 		"watch_start": tool.Confirm, "watch_list": tool.Safe, "watch_stop": tool.Safe,
 		"window_list": tool.Safe, "screen_capture": tool.Confirm,
-		"ask_user": tool.Safe,
+		"ask_user":   tool.Safe,
+		"web_search": tool.Safe, "web_fetch": tool.Safe,
 	}
 	if len(tools) != len(want) {
 		t.Fatalf("tools = %d, want %d", len(tools), len(want))

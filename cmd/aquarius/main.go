@@ -271,7 +271,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			"越界操作会被执行而不是拒绝；本次不启用无人值守（配置文件未改动）\n")
 		w.unattended.Set(false)
 	}
-	if err := w.assembleTools(tc.toolConfirmer, tc.toolAsker); err != nil {
+	if err := w.assembleTools(ctx, tc.toolConfirmer, tc.toolAsker); err != nil {
 		return fatal(stderr, "%v", err)
 	}
 	// D189：先停任务收尾观察者再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
