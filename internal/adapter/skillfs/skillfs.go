@@ -86,7 +86,10 @@ func (c *Catalog) Rescan() {
 	var skills []entry
 	var warnings []string
 	owner := map[string]string{} // name → 目录（同名先命中者胜）
-	for _, root := range c.dirs {
+	c.mu.RLock()
+	dirs := append([]string(nil), c.dirs...)
+	c.mu.RUnlock()
+	for _, root := range dirs {
 		fi, err := os.Stat(root)
 		if err != nil || !fi.IsDir() {
 			warnings = append(warnings, fmt.Sprintf("技能目录 %s 不存在或不是目录，已跳过", root))
@@ -215,9 +218,20 @@ func (c *Catalog) Warnings(ctx context.Context) []string {
 
 // Dirs 当前生效的技能根（只读快照；装配根/设置页展示用）。
 func (c *Catalog) Dirs() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	out := make([]string, len(c.dirs))
 	copy(out, c.dirs)
 	return out
+}
+
+// SetDirs 替换技能根并重扫（设置页「技能」页增删目录）：调用方负责把兜底根排最后。
+// 相对路径仍按启动口径丢弃（无 cwd 可依）。
+func (c *Catalog) SetDirs(dirs []string) {
+	c.mu.Lock()
+	c.dirs = normalizeDirs(dirs)
+	c.mu.Unlock()
+	c.Rescan()
 }
 
 // Names 按名字排序的可用技能名（工具报「名字打错了」时给候选，长度由调用方截断）。
