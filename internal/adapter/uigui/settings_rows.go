@@ -327,11 +327,12 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 // 设置页与遮罩「默认模板」页签的行表不同，版面必须同一份，否则两处卡片粗细不一样）。
 func rowLayout(gtx layout.Context, rows []rowDesc, i int, body layout.Widget) layout.Dimensions {
 	r := rows[i]
-	if !rowInCard(r.kind) {
+	g := rowCardGroup(r)
+	if g < 0 {
 		return layout.UniformInset(unit.Dp(rowInsetDp)).Layout(gtx, body)
 	}
-	first := i == 0 || !rowInCard(rows[i-1].kind)
-	last := i == len(rows)-1 || !rowInCard(rows[i+1].kind)
+	first := i == 0 || rowCardGroup(rows[i-1]) != g
+	last := i == len(rows)-1 || rowCardGroup(rows[i+1]) != g
 	// 组首/组尾与相邻标题之间留整份 rowInsetDp；**组内上下不留**——卡内行距由
 	// Stacked 的内边距给。留了的话相邻行的卡之间会插进一段白，竖边逐行断开，
 	// 整张卡看上去被切成几截（实测：放大后左右各缺一块，像没画完）。
@@ -423,16 +424,48 @@ func cardPad(first, last bool) (top, bottom int) {
 // 口径：**可编辑/可操作的表单行**打成一张卡（iOS 分组表读法）——分隔线在卡内、
 // 圆角只在组首组尾；标题、分区标题、说明段、整块内容（代码块/网格/预览）不落卡。
 // 「人格引用」整组落卡：它们是同一份有序列表的成员，逐行浮着会被误读成互不相关的项。
+//
+// **归属按「属于谁」判，不按「是不是按钮」判**：provider 卡片里的「＋ 添加密钥」
+// 「＋ 添加模型」与底部动作行（测试连通 / 设为主 / 删除）都是**这一张卡自己的**动作，
+// 必须落卡——否则卡在这里收边、按钮浮在卡外，同一个 provider 被切成两张卡（实测：
+// 密钥池一张、模型列表一张、按钮行谁也不属于）。页级动作（＋ 新增 provider、应用变更）
+// 才不落卡。
 func rowInCard(k rowKind) bool {
 	switch k {
 	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
-		rowPromptPreview, rowProfBtns, rowProvBtns, rowProvAdd, rowProvApply,
-		rowProvKeyAdd, rowProvModelAdd,
+		rowPromptPreview, rowProfBtns, rowProvAdd, rowProvApply,
 		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus,
 		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote:
 		return false
 	}
 	return true
+}
+
+// rowCardGroup 行所属的卡组（同组 = 同一张卡；-1 = 不落卡）。
+//
+// 一般表单行同属卡组 0（连续的字段行拼成一张卡）。**provider 卡片按 provider 分卡组**：
+// 每家一张卡，展开区里那些「属于这一家」的按钮行（＋ 添加密钥 / ＋ 添加模型 / 测试连通 ·
+// 设为主 · 删除）与字段行同组，卡片才不会在按钮前收边；同时相邻两家不会因为都是落卡行
+// 而拼进同一张卡（收起的摘要行必须属于它自己那一张）。
+func rowCardGroup(r rowDesc) int {
+	if !rowInCard(r.kind) {
+		return -1
+	}
+	if provCardRow(r.kind) {
+		return 1 + r.prov
+	}
+	return 0
+}
+
+// provCardRow 该行是否属于某一家 provider 的折叠卡片。
+func provCardRow(k rowKind) bool {
+	switch k {
+	case rowProvSummary, rowProvName, rowProvKind, rowProvBase, rowProvModels,
+		rowProvTok, rowProvUnsup, rowProvHead, rowProvKey, rowProvKeyAdd,
+		rowProvModel, rowProvModelPager, rowProvModelAdd, rowProvBtns:
+		return true
+	}
+	return false
 }
 
 // rowBodyFn 绑定「第 i 行内容」的 widget（Stacked 子项需要 widget 而不是立即调用）。

@@ -2097,6 +2097,11 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   **上下外边距只在组界留、组内为 0**（`cardPad`）：组内留空会在相邻卡之间插入白条，
   左右竖边逐行断开，整张卡被切成几截。抹行间横边时也要让开左右 `bd`，否则连竖边一起
   凿掉、症状相同。
+  **归属按「属于谁」判，不按「是不是按钮」判**（`rowCardGroup`）：一张卡里的动作按钮
+  （provider 卡片内的「＋ 添加密钥」「＋ 添加模型」、底部的「测试连通 / 设为主 / 删除」）
+  与它的字段行同组落卡——按「按钮不落卡」一刀切会把同一个 provider 切成几张卡、按钮浮在
+  卡外。provider 卡还按**条目**分卡组（每家一张），相邻两家不拼卡。页级动作
+  （如「＋ 新增 provider」「应用 provider 变更」）不落卡。
 - **按库件投影**：`applyPaperTheme` 把 `paperPalette` 投影到次窗自己的 `material.Theme`
   （`Fg/Bg` + `ContrastBg/ContrastFg`）。**必须投影**：`material.Button` 默认取
   `ContrastBg`（Gio 靛蓝 `#3f51b5`），不投影的次窗按钮是蓝底白字。复选框另有
