@@ -30,7 +30,7 @@ func TestCommandCatalogCoversExecCommand(t *testing.T) {
 		"compact": true, "summary": true, "permission": true, "unattended": true, "memory": true, "usage": true,
 		"mic":  true,
 		"jobs": true, "watch": true, "quit": true, "plugin": true, "model": true,
-		"think": true, "effort": true,
+		"think": true, "effort": true, "skill": true,
 	}
 	for n := range want {
 		if !got[n] {

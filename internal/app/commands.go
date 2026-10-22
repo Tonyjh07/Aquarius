@@ -38,6 +38,8 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"usage"}, Desc: "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）"},
 	{Names: []string{"watch"}, Usage: "[list|stop <id>]", Desc: "观察器：模型的声明式定时观察（看命令/文件/网页命中什么），查看或叫停"},
 	{Names: []string{"jobs"}, Usage: "[list|logs <id> [行数]|kill <id>]", Desc: "后台任务管理（查看、日志、终止）"},
+	{Names: []string{"skill"}, Usage: "[list|<名字>]",
+		Desc: "技能：列出已安装技能 / 把某个技能的指令载入上下文（不触发回答）"},
 	{Names: []string{"quit", "exit"}, Desc: "退出"},
 	{Names: []string{"plugin"}, Usage: "[list|enable <name>|disable <name>]", Desc: "MCP 插件管理（列表、启用、停用）"},
 	{Names: []string{"model"}, Usage: "[name] | probe [name]", Desc: "查看可用模型 / 切换并写回配置 / 实测能力（probe）"},

@@ -48,6 +48,8 @@ type SessionDeps struct {
 	Jobs port.JobManager
 	// Watches 观察器（/watch，D190）；nil 时 /watch 报"未配置观察器"。
 	Watches port.WatchManager
+	// Skills 技能清单（/skill，D201）；nil 时 /skill 报"未配置技能目录"。
+	Skills port.SkillCatalog
 	// CancelWatchers 撤销某会话的后台任务观察者（D167）：切换 / 新建 / 删除当前会话时调用，
 	// 保证任务完成报告不跨会话；nil 时跳过（测试或未接轮询器的装配）。
 	CancelWatchers func(conversation.ID)
@@ -109,6 +111,7 @@ type Session struct {
 	confirmer      port.Confirmer
 	jobs           port.JobManager
 	watches        port.WatchManager
+	skills         port.SkillCatalog
 	cancelWatchers func(conversation.ID)
 	ingestors      []port.Ingestor
 	ui             port.Presenter
@@ -198,6 +201,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		confirmer:      d.Confirmer,
 		jobs:           d.Jobs,
 		watches:        d.Watches,
+		skills:         d.Skills,
 		cancelWatchers: d.CancelWatchers,
 		ingestors:      d.Ingestors,
 		ui:             d.UI,
@@ -516,6 +520,8 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 		return s.jobsReport(ctx, cmd.Args)
 	case "watch":
 		return s.watchReport(ctx, cmd.Args)
+	case "skill":
+		return s.execSkill(ctx, cmd.Args)
 	case "quit":
 		return "", ErrQuit
 	case "help":

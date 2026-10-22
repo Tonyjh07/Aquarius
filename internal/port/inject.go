@@ -75,6 +75,8 @@ func InjectSourceLabel(source string) string {
 		return "工具 " + rest
 	case "plugin":
 		return "插件 " + rest
+	case "skill":
+		return "技能 " + rest
 	default:
 		return source
 	}

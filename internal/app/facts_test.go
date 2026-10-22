@@ -37,13 +37,20 @@ func TestFactsPublishOnConstruct(t *testing.T) {
 }
 
 // TestFactsRecomputedAfterTurn Turn 后重算（D82/§7.6）：签名随标题/Head/用量变更，
-// 重算后实测用量与上轮就位、上下文占用增长（est 链计入新节点）。
+// 重算后实测用量与上轮就位、上下文占用随新节点增长（est 链计入新节点）。
 func TestFactsRecomputedAfterTurn(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store, withUsage(textStream("答"),
 		conversation.Usage{InputTokens: 100, OutputTokens: 20}))
 
-	before := s.Facts()
+	// 「新节点计入」不能用发布快照的绝对值验：服务端实测会校准估算比值（这里实测比原始
+	// 估算低，比值 < 1），校准后的绝对占用可能反而下降。钉住比值各估一次，才是在验增量。
+	s.agent.est.ratio = 1
+	before, err := s.agent.UsageReport(context.Background(), s.Current())
+	if err != nil {
+		t.Fatalf("usage before: %v", err)
+	}
+
 	if _, err := s.Handle(context.Background(), port.UserInput{Text: "你好"}); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
@@ -54,11 +61,20 @@ func TestFactsRecomputedAfterTurn(t *testing.T) {
 	if after.LastIn != 100 || after.LastOut != 20 {
 		t.Fatalf("Last = %d/%d, want 100/20（上轮实测）", after.LastIn, after.LastOut)
 	}
-	if after.Title == before.Title {
+	if after.Title == defaultTitle {
 		t.Fatalf("Title 未随首条消息改写: %q", after.Title)
 	}
-	if after.CtxTokens <= before.CtxTokens {
-		t.Fatalf("CtxTokens = %d, want > %d（计入新节点）", after.CtxTokens, before.CtxTokens)
+	if after.CtxTokens <= 0 {
+		t.Fatalf("CtxTokens = %d, want > 0（Turn 后已重算）", after.CtxTokens)
+	}
+
+	s.agent.est.ratio = 1
+	grown, err := s.agent.UsageReport(context.Background(), s.Current())
+	if err != nil {
+		t.Fatalf("usage after: %v", err)
+	}
+	if grown.Estimate <= before.Estimate {
+		t.Fatalf("Estimate = %d, want > %d（计入新节点）", grown.Estimate, before.Estimate)
 	}
 }
 
