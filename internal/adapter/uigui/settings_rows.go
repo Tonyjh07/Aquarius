@@ -136,6 +136,15 @@ const (
 	rowWebPrivate     // 允许私网/回环目标（调试）
 	rowWebTimeout     // 本地抓取超时
 	rowWebNote        // 说明（降级顺序 / 重启生效 / 密钥形态）
+	// D208：关于页（纯信息页，无配置项）。
+	rowAboutHero      // 图标 + 名字 + 一句话（不落卡）
+	rowAboutVersion   // 构建版本
+	rowAboutRuntime   // 运行环境（平台 · Go 版本）
+	rowAboutProject   // 项目主页（链接全文 + 打开 / 复制链接）
+	rowAboutCopyright // 版权
+	rowAboutLicense   // 许可证
+	rowAboutNote      // 说明（隐私口径 / 图标与产品名归属；不落卡）
+	rowAboutStatus    // 打开 / 复制反馈（不落卡）
 )
 
 // provModelCandMax 候选 chip 的上限（D153；欢迎窗「获取模型」仍用它）：服务端可能列出
@@ -456,7 +465,8 @@ func rowInCard(k rowKind) bool {
 		rowPromptRefAdd, rowSecretEmpty, rowSecretAdd, rowSecretStatus,
 		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote,
 		rowSamplingNote,
-		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus:
+		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus,
+		rowAboutHero, rowAboutNote, rowAboutStatus:
 		return false
 	}
 	return true

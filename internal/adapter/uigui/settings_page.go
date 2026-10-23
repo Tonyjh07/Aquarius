@@ -56,6 +56,7 @@ var settingsPages = []settingsPage{
 	webPage{},       // 联网：搜索与抓取提供商、本地抓取参数（D200）
 	audioPage{},     // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	advPage{},       // 高级：config.json 原文
+	aboutPage{},     // 关于：图标 / 版本 / 运行环境 / 项目主页 / 版权与许可（D208）
 }
 
 // settingsPageCount 页数 = 注册表长度（不是独立常量：加页只改 settingsPages）。

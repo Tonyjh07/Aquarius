@@ -166,6 +166,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Voice:               w.voiceSlot(),                                                                                                                                                  // D179：空输入时右钮 = 录音键（录→转写→回填，不自动发送）；识别未配置则为 nil（右钮保持发送）
 			PreviewVoice:        w.previewVoice,                                                                                                                                                 // D179：设置窗「语音」页试听
 			Blobs:               w.blobs,                                                                                                                                                        // D187：Ctrl+V 贴图直入附件库（nil = 禁用该入口）
+			Version:             version,                                                                                                                                                        // 设置窗「关于」页的构建版本（-ldflags 注入；dev = 开发构建）
 		})
 		w.ui = ui
 		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式

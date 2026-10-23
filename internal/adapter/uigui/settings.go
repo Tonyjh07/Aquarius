@@ -385,6 +385,7 @@ const (
 	pageWeb              // 联网：搜索与抓取提供商、本地抓取参数（D200）
 	pageAudio            // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	pageAdv              // 高级：config.json 原文
+	pageAbout            // 关于：图标 / 名字与一句话 / 构建版本 / 运行环境 / 项目主页 / 版权与许可
 	// pageConstCount 页常量个数（编译期锚；见上方说明）。
 	pageConstCount
 )
@@ -432,7 +433,7 @@ func (c *cycleField) advance(gtx layout.Context) {
 // 变化（D110② 编辑区）。
 type settingsForm struct {
 	// 分页（S4d/D142；D162 起按注册表长度构造——页数不再是编译期常量）。
-	page    int                // 当前页（pageGeneral..pageAdv）
+	page    int                // 当前页（pageGeneral..pageAbout）
 	pages   []widget.List      // 每页一个滚动列表（构造处定轴向）
 	navBtns []widget.Clickable // 左侧导航栏项（按页缓存）
 
@@ -579,6 +580,15 @@ type settingsForm struct {
 	samplingTopP widget.Editor
 	samplingMax  widget.Editor
 	samplingStop widget.Editor
+
+	// 关于页（D208）：纯信息页——没有配置项，不进快照也不会进 patch。aboutVersion 取
+	// 装配根注入的 Options.Version；图标缓存与两个动作件、反馈文案挂在这里（本窗独占）。
+	aboutVersion string
+	aboutIcon    aboutIconCache
+	aboutOpen    widget.Clickable
+	aboutCopy    widget.Clickable
+	aboutStatus  string
+	aboutErr     bool
 
 	snap     SettingsSnapshot // 开窗快照（保存 diff 基准 + 变更提示）
 	profiles ProfilesSnapshot // profile 区数据面（动作后刷新，D110③）
@@ -775,6 +785,7 @@ func newSettingsFormState() *settingsForm {
 // newSettingsForm 开窗现取快照填表：读回调缺失 = 空表单，写回调缺失 = 只读占位。
 func newSettingsForm(u *UI) *settingsForm {
 	f := newSettingsFormState()
+	f.aboutVersion = u.opts.Version // 关于页的构建版本（空/dev = 开发构建）
 	f.readOnly = u.opts.ApplySettings == nil
 	if u.opts.Profiles != nil {
 		f.profiles = u.opts.Profiles.Snapshot() // D110③：profile 区数据面

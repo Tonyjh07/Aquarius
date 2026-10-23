@@ -141,6 +141,9 @@ type Options struct {
 	// Blobs 附件库（D187）：Ctrl+V 贴图把 PNG 字节直接入库，暂存为已入库附件项
 	// （提交时不再回读文件系统）。nil = 粘贴图片不可用，其余附件入口照常。
 	Blobs port.AttachmentStore
+	// Version 构建版本号（装配根注入 `-ldflags -X main.version` 的那个值）：只给设置窗
+	// 「关于」页展示，空 或 "dev" = 开发构建。不参与任何行为分支。
+	Version string
 }
 
 // PromptTemplatePatch 人格模板的窄写回（D154；与 SettingsPatch 分开：全量 patch 带

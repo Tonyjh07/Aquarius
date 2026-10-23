@@ -74,6 +74,10 @@ type platformAPI interface {
 	ClipboardHasImage() bool
 	ClipboardImage() ([]byte, error)
 
+	// OpenURL 用系统默认浏览器打开链接（设置窗「关于」页的项目主页）。失败返回可读
+	// 原因（界面就地显示，不静默丢弃）。
+	OpenURL(url string) error
+
 	// —— 次窗 ——
 	CloseWindow(h platform.Handle)
 	FocusWindow(h platform.Handle, run platform.RunFunc)

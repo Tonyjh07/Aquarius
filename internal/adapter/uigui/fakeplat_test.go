@@ -64,6 +64,9 @@ type fakePlat struct {
 	Notices    []string
 	Closes     []platform.Handle
 	Focuses    []platform.Handle
+	// OpenURLs 请求用默认浏览器打开的链接；OpenURLErr 非 nil = 该请求失败（界面反馈）。
+	OpenURLs   []string
+	OpenURLErr error
 }
 
 // newFakePlat 构造假平台：缺省对齐「Windows 实测档」的可用语义（自管窗口、可见、置顶、
@@ -209,6 +212,15 @@ func (f *fakePlat) ClipboardImage() ([]byte, error) {
 
 func (f *fakePlat) CloseWindow(h platform.Handle) {
 	f.Closes = append(f.Closes, h)
+}
+
+// —— 打开链接（「关于」页的项目主页）——
+func (f *fakePlat) OpenURL(url string) error {
+	f.mu.Lock()
+	f.OpenURLs = append(f.OpenURLs, url)
+	err := f.OpenURLErr
+	f.mu.Unlock()
+	return err
 }
 
 func (f *fakePlat) FocusWindow(h platform.Handle, _ platform.RunFunc) {
