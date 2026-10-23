@@ -15,9 +15,13 @@ import (
 	"time"
 
 	"gioui.org/f32"
+	"gioui.org/gpu/headless"
 	"gioui.org/io/input"
 	"gioui.org/io/key"
+	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -460,6 +464,106 @@ func TestImageClickOpensPreview(t *testing.T) {
 	frame()
 	if c := u.imageView.Load(); c == nil || c.ref.blob.Hash != "h3" {
 		t.Fatalf("展开 chip 的图格应打开 c.png(h3), got %+v", c)
+	}
+}
+
+// TestImageViewLargeImageCentered 大图 + 小视口：适配缩放后必须居中且不溢出。
+//
+// 复现过的故障：绘制变换分三次 Push，Gio 的变换栈是右乘级联，实际组合成
+// T(-中心)·S·T(+中心) 的反序——图被推到视口左上角之外，窗口装不下图时几乎整张
+// 看不见（用户可见：预览窗只剩左上角一小块内容）。
+//
+// 判据取用户可见事实而非内部结构：按真窗尺寸离屏光栅化，图像像素的包围盒须等于
+// 「按适配比例缩放后的居中矩形」——垂直方向正好铺满视口，左右余量相等且露出视口
+// 底色（不是窗底，也不是被截断）。
+func TestImageViewLargeImageCentered(t *testing.T) {
+	const w, h = 707, 650
+	win, err := headless.NewWindow(w, h)
+	if err != nil {
+		t.Skipf("离屏渲染不可用（无 GPU/软件后端）: %v", err)
+	}
+	defer win.Release()
+
+	u := frameUIWithInbox()
+	st := newImageViewState(nil, nil)
+	// 左上角一小块蓝、其余红：红定包围盒，蓝验证缩放方向没翻转。
+	const iw, ih = 2000, 1800
+	img := image.NewRGBA(image.Rect(0, 0, iw, ih))
+	for y := 0; y < ih; y++ {
+		for x := 0; x < iw; x++ {
+			c := color.NRGBA{R: 0xFF, A: 0xFF}
+			if x < 200 && y < 180 {
+				c = color.NRGBA{B: 0xFF, A: 0xFF}
+			}
+			img.Set(x, y, c)
+		}
+	}
+	st.img, st.imgOp, st.hasOp = img, paint.NewImageOp(img), true
+	st.pix, st.settled = image.Pt(iw, ih), true
+
+	q := new(input.Router)
+	var ops op.Ops
+	gtx := layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(image.Pt(w, h)),
+		Source:      q.Source(),
+	}
+	imgViewFrame(gtx, testTheme(), u, st)
+	q.Frame(&ops)
+	if err := win.Frame(&ops); err != nil {
+		t.Fatalf("离屏帧提交失败: %v", err)
+	}
+	shot := image.NewRGBA(image.Rect(0, 0, w, h))
+	if err := win.Screenshot(shot); err != nil {
+		t.Fatalf("离屏取像失败: %v", err)
+	}
+
+	isImg := func(c color.RGBA) bool {
+		return (c.R > 200 && c.G < 60 && c.B < 60) || (c.B > 200 && c.R < 60 && c.G < 60)
+	}
+	minX, minY, maxX, maxY := w, h, -1, -1
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if c := color.RGBAModel.Convert(shot.At(x, y)).(color.RGBA); isImg(c) {
+				minX, minY = min(minX, x), min(minY, y)
+				maxX, maxY = max(maxX, x), max(maxY, y)
+			}
+		}
+	}
+	if maxX < 0 {
+		t.Fatal("预览窗里没有画出图像（变换可能把图整个推到视口之外）")
+	}
+
+	// 尺寸：按适配比例缩放的宽高（容 2px 取整误差）。
+	s := st.fitScale()
+	wantW := float64(st.pix.X) * s
+	wantH := float64(st.pix.Y) * s
+	if got := float64(maxX - minX + 1); math.Abs(got-wantW) > 2 {
+		t.Errorf("图像宽 = %.0f, want ≈%.0f（适配比例 %v）", got, wantW, s)
+	}
+	if got := float64(maxY - minY + 1); math.Abs(got-wantH) > 2 {
+		t.Errorf("图像高 = %.0f, want ≈%.0f", got, wantH)
+	}
+	// 不溢出视口：图像不得超出视口框（否则等于 1:1 未缩放）。
+	vp := st.viewport
+	if float64(maxX-minX+1) > float64(vp.Dx())+2 || float64(maxY-minY+1) > float64(vp.Dy())+2 {
+		t.Errorf("图像 %dx%d 溢出了 %dx%d 的视口（说明没按适配比例缩放）",
+			maxX-minX+1, maxY-minY+1, vp.Dx(), vp.Dy())
+	}
+	// 居中：左右余量相等 → 两侧对称位置都露出视口底色，且两处颜色一致。
+	// （图贴左上角的故障态下，左侧取到的是窗底、右侧是视口底色，两者不同。）
+	leftC := color.RGBAModel.Convert(shot.At(minX-2, minY+5)).(color.RGBA)
+	rightC := color.RGBAModel.Convert(shot.At(maxX+2, minY+5)).(color.RGBA)
+	if isImg(leftC) || isImg(rightC) {
+		t.Fatalf("左右余量取到了图像像素（左侧 %v / 右侧 %v），说明没留出适配余量", leftC, rightC)
+	}
+	if leftC != rightC {
+		t.Errorf("图像未居中：左右余量底色不同（左 %v / 右 %v）——偏向左上角的典型征兆", leftC, rightC)
+	}
+	// 缩放方向没翻转：蓝块仍在图像左上角。
+	if c := color.RGBAModel.Convert(shot.At(minX+2, minY+2)).(color.RGBA); !(c.B > 200 && c.R < 60) {
+		t.Errorf("图像左上角 = %v, want 蓝块（缩放/平移没翻转方向）", c)
 	}
 }
 

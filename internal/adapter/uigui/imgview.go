@@ -342,17 +342,22 @@ func (st *imageViewState) viewportFrame(gtx layout.Context, th *material.Theme) 
 	s := st.fitScale()
 	cx := float32(sz.X)/2 + st.pan.X
 	cy := float32(sz.Y)/2 + st.pan.Y
-	// 变换顺序：图像中心移到原点 → 按 s 缩放 → 移到视口中心 + 平移。整数偏移会在
-	// 拖动时逐像素跳（亚像素被截掉），三处一律用浮点仿射；图仍在 area 的 clip 内，
-	// 放大后不会溢出到标题行/提示行。
-	t1 := op.Affine(f32.Affine2D{}.Offset(f32.Pt(-float32(st.pix.X)/2, -float32(st.pix.Y)/2))).Push(gtx.Ops)
-	t2 := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(float32(s), float32(s)))).Push(gtx.Ops)
-	t3 := op.Affine(f32.Affine2D{}.Offset(f32.Pt(cx, cy))).Push(gtx.Ops)
+	// 变换：图像中心移到原点 → 按 s 缩放 → 移到视口中心 + 平移。整数偏移会在拖动时
+	// 逐像素跳（亚像素被截掉），一律用浮点仿射；图仍在 area 的 clip 内，放大后不会
+	// 溢出到标题行/提示行。
+	//
+	// 必须合成成一个矩阵再压栈：Gio 的变换栈是右乘级联（先压的在外层、后压的先生效），
+	// 分三次 Push 会得到 T(-c)·S·T(+c) 这种反序组合——图被推到视口左上角之外（视口
+	// 装不下时几乎整张不见）。Affine2D 的链式方法在左侧叠加（a.Scale = S·a），所以
+	// 从左到右就按「先作用」的顺序写。
+	mat := f32.Affine2D{}.
+		Offset(f32.Pt(-float32(st.pix.X)/2, -float32(st.pix.Y)/2)).
+		Scale(f32.Point{}, f32.Pt(float32(s), float32(s))).
+		Offset(f32.Pt(cx, cy))
+	tr := op.Affine(mat).Push(gtx.Ops)
 	st.imgOp.Add(gtx.Ops)
 	paint.PaintOp{}.Add(gtx.Ops)
-	t3.Pop()
-	t2.Pop()
-	t1.Pop()
+	tr.Pop()
 	area.Pop()
 	return layout.Dimensions{Size: sz}
 }
