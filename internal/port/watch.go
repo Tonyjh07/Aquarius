@@ -92,25 +92,17 @@ func ResolveWatchID(list []WatchState, arg string) (WatchID, error) {
 	if arg == "" {
 		return "", errors.New("missing watch id")
 	}
-	var hits []WatchID
-	for _, w := range list {
-		switch {
-		case string(w.ID) == arg:
-			return w.ID, nil
-		case strings.HasPrefix(string(w.ID), arg):
-			hits = append(hits, w.ID)
-		}
+	ids := make([]WatchID, len(list))
+	for i, w := range list {
+		ids[i] = w.ID
 	}
-	switch len(hits) {
-	case 0:
+	id, hits, ok := MatchPrefix(ids, arg)
+	switch {
+	case ok:
+		return id, nil
+	case len(hits) == 0:
 		return "", fmt.Errorf("no watch %q", arg)
-	case 1:
-		return hits[0], nil
 	default:
-		ids := make([]string, len(hits))
-		for i, h := range hits {
-			ids[i] = string(h)
-		}
-		return "", fmt.Errorf("ambiguous watch id %q (matches %s); use a longer prefix", arg, strings.Join(ids, ", "))
+		return "", fmt.Errorf("ambiguous watch id %q (matches %s); use a longer prefix", arg, strings.Join(hits, ", "))
 	}
 }

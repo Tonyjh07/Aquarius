@@ -60,31 +60,23 @@ type JobManager interface {
 }
 
 // ResolveJobID 按任务标识解析：精确匹配优先，其次唯一前缀；无命中或歧义返回错误。
-// job_* 工具与 /jobs 命令共用（纯 DTO 函数，无外部状态）。
+// job_* 工具与 /jobs 命令共用（纯 DTO 函数，无外部状态）。匹配策略见 MatchPrefix。
 func ResolveJobID(jobs []Job, arg string) (JobID, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
 		return "", errors.New("missing task id")
 	}
-	var hits []JobID
-	for _, j := range jobs {
-		switch {
-		case string(j.ID) == arg:
-			return j.ID, nil
-		case strings.HasPrefix(string(j.ID), arg):
-			hits = append(hits, j.ID)
-		}
+	ids := make([]JobID, len(jobs))
+	for i, j := range jobs {
+		ids[i] = j.ID
 	}
-	switch len(hits) {
-	case 0:
+	id, hits, ok := MatchPrefix(ids, arg)
+	switch {
+	case ok:
+		return id, nil
+	case len(hits) == 0:
 		return "", fmt.Errorf("no task %q", arg)
-	case 1:
-		return hits[0], nil
 	default:
-		ids := make([]string, len(hits))
-		for i, h := range hits {
-			ids[i] = string(h)
-		}
-		return "", fmt.Errorf("ambiguous task id %q (matches %s); use a longer prefix", arg, strings.Join(ids, ", "))
+		return "", fmt.Errorf("ambiguous task id %q (matches %s); use a longer prefix", arg, strings.Join(hits, ", "))
 	}
 }

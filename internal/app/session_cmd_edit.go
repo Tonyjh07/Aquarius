@@ -143,31 +143,20 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 
 // resolveNode 把用户给出的节点标识解析为树中节点：先精确匹配，再按唯一前缀匹配
 // （Root 节点 ID = 会话 ID，/goto <会话ID> 即回根）；前缀命中多个时报歧义。
+// 匹配策略与任务/观察器/会话共用 port.MatchPrefix（§2.1），这里只负责中文措辞。
 func (s *Session) resolveNode(arg string) (conversation.MessageID, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
 		return "", errors.New("缺少节点 id")
 	}
-	if _, ok := s.cur.Find(conversation.MessageID(arg)); ok {
-		return conversation.MessageID(arg), nil
-	}
-	var hits []conversation.MessageID
-	for _, id := range s.cur.IDs() { // 已按 ID 升序，命中集天然有序（歧义提示可读）
-		if strings.HasPrefix(string(id), arg) {
-			hits = append(hits, id)
-		}
-	}
-	switch len(hits) {
-	case 0:
+	id, hits, ok := port.MatchPrefix(s.cur.IDs(), arg) // 已按 ID 升序，歧义提示可读
+	switch {
+	case ok:
+		return id, nil
+	case len(hits) == 0:
 		return "", fmt.Errorf("会话树中没有节点 %q（/branch 可查看同级 id）", arg)
-	case 1:
-		return hits[0], nil
 	default:
-		ids := make([]string, len(hits))
-		for i, h := range hits {
-			ids[i] = string(h)
-		}
-		return "", fmt.Errorf("节点标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(ids, ", "))
+		return "", fmt.Errorf("节点标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(hits, ", "))
 	}
 }
 
@@ -376,6 +365,7 @@ func countAttachmentParts(parts []conversation.Part) int {
 
 // resolveConversation 按会话 ID（精确或唯一前缀）解析会话（/memory [会话id] 用）；
 // 前缀命中多个时报歧义（会话列表按时间降序，命中序确定）。
+// 匹配策略与任务/观察器/节点共用 port.MatchPrefix（§2.1），这里只负责中文措辞。
 func (s *Session) resolveConversation(ctx context.Context, arg string) (conversation.ID, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
@@ -385,26 +375,18 @@ func (s *Session) resolveConversation(ctx context.Context, arg string) (conversa
 	if err != nil {
 		return "", fmt.Errorf("session: 列出会话: %w", err)
 	}
-	var hits []conversation.ID
-	for _, sm := range list {
-		if string(sm.ID) == arg {
-			return sm.ID, nil
-		}
-		if strings.HasPrefix(string(sm.ID), arg) {
-			hits = append(hits, sm.ID)
-		}
+	ids := make([]conversation.ID, len(list))
+	for i, sm := range list {
+		ids[i] = sm.ID
 	}
-	switch len(hits) {
-	case 0:
+	id, hits, ok := port.MatchPrefix(ids, arg)
+	switch {
+	case ok:
+		return id, nil
+	case len(hits) == 0:
 		return "", fmt.Errorf("没有会话 %q（/list 查看可用会话）", arg)
-	case 1:
-		return hits[0], nil
 	default:
-		ids := make([]string, len(hits))
-		for i, h := range hits {
-			ids[i] = string(h)
-		}
-		return "", fmt.Errorf("会话标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(ids, ", "))
+		return "", fmt.Errorf("会话标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(hits, ", "))
 	}
 }
 
