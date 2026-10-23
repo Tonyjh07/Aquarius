@@ -2,6 +2,7 @@ package uigui
 
 import (
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -56,6 +57,10 @@ func chipHeaderText(c *toolChip, open bool) string {
 	line := "🔧 " + c.name
 	if args != "" {
 		line += " · " + args
+	}
+	// D207：折叠态也要能看出这次调用带了图（否则展开才发现的图等于被藏起来）。
+	if n := len(c.images); n > 0 {
+		line += fmt.Sprintf(" · 🖼%d", n)
 	}
 	return arrow + " " + line + " · " + status
 }
@@ -177,6 +182,11 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 					l.Color = textDim
 					return l.Layout(gtx)
 				})
+			}
+			// D207：工具产出的图（截屏、内联图）排在结果之后，按小一档的方格铺。
+			if imgs := imgRefOfChip(c.images); len(imgs) > 0 {
+				vs.gap(mdBlockGapDp)
+				vs.add(u.imgFlow(it.bi, imgs, imgChipCellDp))
 			}
 		}
 		return vs.dims()

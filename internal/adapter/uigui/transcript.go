@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"image"
 	"image/color"
+	"strings"
 
 	"gioui.org/font"
 	"gioui.org/io/event"
@@ -186,21 +187,38 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 	radiusDp, cardR := gtx.Dp(radiusDp), gtx.Dp(cardRadiusDp)
 	switch it.kind {
 	case blockUser: // 用户气泡：品牌色底白字、右对齐（§15.3 双色气泡）
+		// D207：正文 + 图片纵向组合（图片居正文下方；纯图消息只有图片格）。
+		hasText := strings.TrimSpace(it.text) != ""
+		imgs := it.imgs
 		return func(gtx layout.Context) layout.Dimensions {
-			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				s := material.Body2(u.th, it.text)
-				s.Color = whiteText
-				s.State = rs.sel(0)
-				return s.Layout(gtx)
-			}, 0, image.Point{}, image.Point{})
+			vs := beginVStack(gtx)
+			if hasText {
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						s := material.Body2(u.th, it.text)
+						s.Color = whiteText
+						s.State = rs.sel(0)
+						return s.Layout(gtx)
+					}, 0, image.Point{}, image.Point{})
+				})
+			}
+			if len(imgs) > 0 {
+				if hasText {
+					vs.gap(mdBlockGapDp)
+				}
+				vs.add(u.imgFlow(it.bi, imgs, imgCellDp))
+			}
+			return vs.dims()
 		}, brandColor, radiusDp, true, true
 	case blockAssistant: // 助手气泡：浅白底、左对齐；markdown 复合行 = 垂直多块共底板（D66）
 		blocks := it.md
-		if len(blocks) == 0 {
+		if len(blocks) == 0 && strings.TrimSpace(it.text) != "" {
 			blocks = []mdBlock{{kind: mdPara, text: it.text}} // live 草稿/兜底：纯文本单块
 		}
 		// D91 ② 手排纵列：量期即知块偏移（Flex 的 Offset 回放期才施加，量期不可知
 		// ——行盒/高亮定位须块内偏移）；尺寸口径与 Flex Rigid 逐像素一致。
+		// D207：段内图片排在正文块之后（同一个气泡里，不另起一条）。
+		imgs := it.imgs
 		return func(gtx layout.Context) layout.Dimensions {
 			vs := beginVStack(gtx)
 			for k, b := range blocks {
@@ -209,6 +227,12 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				}
 				off := image.Pt(0, vs.y) // add 的 offY 即当前 y（先 gap 后取）
 				vs.add(u.mdBlockWidget(b, rs, k, off))
+			}
+			if len(imgs) > 0 {
+				if len(blocks) > 0 {
+					vs.gap(mdBlockGapDp)
+				}
+				vs.add(u.imgFlow(it.bi, imgs, imgCellDp))
 			}
 			return vs.dims()
 		}, pillBg, radiusDp, false, true

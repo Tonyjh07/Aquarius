@@ -352,6 +352,10 @@ type UI struct {
 	// rawView 查看原文窗内容原子槽（D99）：菜单分发处（托盘线程）Store，winRaw 次窗
 	// 帧内 Load——跨线程只经原子快照，不共享可变态（§15.7 并发模型）。
 	rawView atomic.Pointer[rawContent]
+	// imageView 图片预览窗内容原子槽（D207）：主窗事件循环（点击格子的那一刻）Store，
+	// winImage 次窗帧内 Load——同 rawView 口径，跨线程只经原子快照；窗单实例，
+	// 已开 = 聚焦 + 原地换图。
+	imageView atomic.Pointer[imageContent]
 	// nodeAction 图侧菜单动作槽（D132）：shell 线程菜单分发 Store，历史窗帧首 Swap
 	// 排空——复制 ID 要在 Gio 帧内落剪贴板、开遮罩/开小卡要碰图状态与帧内文本，都不能在分发处直连。
 	nodeAction atomic.Pointer[nodeAction]
@@ -369,6 +373,16 @@ type UI struct {
 	// 序稳定；视图态不进 model，会话重建后复位折叠）。仅事件循环 goroutine 读写。
 	chipOpen   map[int]bool
 	chipClicks []*widget.Clickable
+
+	// 转写区图片缩略图（D207）：imgLookup = 内容寻址 → 已解好的方图（nil 值 =
+	// 解码失败的墓碑，不再重试）；imgLoading = 在途集合（同一张图只起一个 goroutine）；
+	// imgOrder = 插入序（超上限从头淘汰）；imgClicks = 格子点击件（按「块序 + 图序」
+	// 缓存，照 chipClick 口径）。字节来源走 opts.Blobs（已入库）或本地路径。
+	// 仅事件循环 goroutine 读写。
+	imgLookup  map[string]*thumbSrc
+	imgLoading map[string]bool
+	imgOrder   []string
+	imgClicks  map[imgClickKey]*widget.Clickable
 
 	// 思考块视图态（D182）：定稿思考默认折叠成一行，用户点开才铺正文。与 chip 同口径
 	// ——按块序缓存、不进 model、清屏（会话重建）时复位。仅事件循环 goroutine 读写。
@@ -856,6 +870,9 @@ func (u *UI) apply(msg uiMsg) bool {
 				break
 			}
 		}
+	case imgMsg:
+		// D207：转写区缩略图就绪（内容寻址键；迟到与重投都按首份为准）。
+		u.applyImg(m)
 	case askMsg:
 		u.m.startAsk(m.req, m.reply)
 	case askDoneMsg:

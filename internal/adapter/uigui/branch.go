@@ -3,6 +3,7 @@ package uigui
 import (
 	"fmt"
 	"image/color"
+	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -29,6 +30,9 @@ type blockView struct {
 	bi      int
 	id      conversation.MessageID
 	keyBase int
+	// imgs 该条目的图片（D207）：user/assistant 正文块由 model 块带出，渲染期按
+	// 固定方图排在正文下方（不占行选键——图片不可选文本）。
+	imgs []imgRef
 	// source/trigger 注入块的头部数据（D166）：来源键与落地时是否触发了响应。
 	source  string
 	trigger bool
@@ -49,7 +53,8 @@ func (it blockView) menuable() bool {
 
 // selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数；工具 chip = 恒 2
 // （参数/结果——开合切换不漂移后续行序号，D67）；**分叉条 = 0**（D81：无文本可选，且
-// 不占键 → 分叉条的增删不漂移其它行的选择序号）；其余行恒 1。
+// 不占键 → 分叉条的增删不漂移其它行的选择序号）；**纯图气泡 = 0**（D207：没有文本可
+// 选，图格只响应点击）；其余行恒 1。
 func (it blockView) selCount() int {
 	switch {
 	case it.kind == blockBranch:
@@ -58,6 +63,10 @@ func (it blockView) selCount() int {
 		return len(it.md)
 	case it.kind == blockTool && it.chip != nil:
 		return 2
+	case it.kind == blockUser || it.kind == blockAssistant:
+		if len(it.imgs) > 0 && strings.TrimSpace(it.text) == "" && len(it.md) == 0 {
+			return 0
+		}
 	}
 	return 1
 }

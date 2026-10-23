@@ -56,8 +56,14 @@ func TestAttachStageFlow(t *testing.T) {
 	default:
 		t.Fatal("inCh 未收到仅附件提交")
 	}
-	if n := len(u.m.blocks); n == 0 || !strings.Contains(u.m.blocks[n-1].text, "附件 2 个") {
+	// 多项回显：图片进缩略图（D207），文字只列非图片附件。
+	if n := len(u.m.blocks); n == 0 || !strings.Contains(u.m.blocks[n-1].text, "附件：b.txt") {
 		t.Fatalf("多项回显 = %+v", u.m.blocks)
+	}
+	if n := len(u.m.blocks); n > 0 {
+		if imgs := u.m.blocks[n-1].imgs; len(imgs) != 1 || imgs[0].path != `C:\docs\a.png` {
+			t.Fatalf("多项回显的图片 = %+v, want 一项 a.png", imgs)
+		}
 	}
 
 	// 编辑态消费暂存（D188 作废 D104⑤ 的「编辑态不消费」）：新增附件随 /edit 走
@@ -216,7 +222,10 @@ func TestAttachBlobStaged(t *testing.T) {
 	default:
 		t.Fatal("inCh 未收到")
 	}
-	if n := len(u.m.blocks); n == 0 || !strings.Contains(u.m.blocks[n-1].text, "粘贴.png") {
+	// D207：纯图提交的本地回显没有文字（图片以缩略图呈现），回显块带一项路径引用。
+	if n := len(u.m.blocks); n == 0 {
 		t.Fatalf("回显 = %+v", u.m.blocks)
+	} else if imgs := u.m.blocks[n-1].imgs; len(imgs) != 1 || imgs[0].name != "粘贴.png" {
+		t.Fatalf("回显 = %+v（want 一项图片缩略图）", u.m.blocks)
 	}
 }

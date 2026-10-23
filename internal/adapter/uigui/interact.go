@@ -30,14 +30,22 @@ func (u *UI) frameItems() []blockView {
 	for bi, b := range u.m.blocks {
 		switch {
 		case b.kind == blockAssistant:
-			items = append(items, blockView{kind: blockAssistant, md: u.mdBlocks(b.text), bi: bi, id: b.id})
+			// D207：纯图段（有图无字）不解析 markdown——mdBlocks("") 会兜底回一个
+			// 空段落，白占一行高。
+			var md []mdBlock
+			if strings.TrimSpace(b.text) != "" {
+				md = u.mdBlocks(b.text)
+			}
+			items = append(items, blockView{
+				kind: blockAssistant, md: md, imgs: b.imgs, bi: bi, id: b.id,
+			})
 		case b.kind == blockTool && b.chip != nil:
 			// bi 同填（D100：chip 右键经 bubbleHit.bi 回查 chip 态；chipIdx = 点击件缓存槽）。
 			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi, bi: bi})
 		default:
 			items = append(items, blockView{
 				kind: b.kind, text: b.text, secs: b.secs, bi: bi, id: b.id,
-				source: b.source, trigger: b.trigger,
+				imgs: b.imgs, source: b.source, trigger: b.trigger,
 			})
 		}
 		if next < len(strips) && strips[next].blockIdx == bi {
@@ -205,6 +213,24 @@ func (u *UI) updateClicks(gtx layout.Context) {
 			u.gotoBranch(s, +1)
 		}
 	}
+	// 转写区图片格点击 → 图片预览次窗（D207）。展开的 chip 与气泡共用一套格序键：
+	// 一个块要么是 chip、要么带正文图，键空间不会撞。
+	for bi := range u.m.blocks {
+		b := &u.m.blocks[bi]
+		refs := b.imgs
+		if b.chip != nil {
+			if !u.chipIsOpen(bi, b.chip) {
+				continue // 折叠时格子没铺开，点击件也不会记录点击
+			}
+			refs = imgRefOfChip(b.chip.images)
+		}
+		for ii, r := range refs {
+			if u.imgClick(imgClickKey{bi: bi, ii: ii}).Clicked(gtx) {
+				u.openImage(r)
+				break
+			}
+		}
+	}
 }
 
 // updateDrag 拖动定位（§15.6 铁律 2：按下记「窗口左上角 + 光标屏幕坐标」按差值
@@ -358,6 +384,10 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 		ctx.copy = u.m.blocks[it.bi].text
 	default:
 		ctx.copy = u.blockText(it.keyBase, it.keyN)
+		if strings.TrimSpace(ctx.copy) == "" && it.bi < len(u.m.blocks) {
+			// D207：纯图气泡没有可选文本——复制落到图片名上，总比复制空串强。
+			ctx.copy = imgNames(u.m.blocks[it.bi].imgs)
+		}
 	}
 	if (it.kind == blockUser || it.kind == blockAssistant) && it.bi < len(u.m.blocks) {
 		ctx.edit = u.m.blocks[it.bi].text
@@ -369,7 +399,17 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	case it.kind == blockThinking && it.bi < len(u.m.blocks):
 		ctx.raw = rawContent{title: "思考原文 · " + shortID(string(it.id)), text: u.m.blocks[it.bi].text}
 	case it.bi < len(u.m.blocks):
-		ctx.raw = rawContent{title: "原文 · " + shortID(string(it.id)), text: u.m.blocks[it.bi].text}
+		b := u.m.blocks[it.bi]
+		txt := b.text
+		if strings.TrimSpace(txt) == "" && len(b.imgs) > 0 {
+			// D207：纯图块没有正文——原文窗至少要能读出「这条消息带的是哪几张图」。
+			names := make([]string, 0, len(b.imgs))
+			for _, r := range b.imgs {
+				names = append(names, "〔图片："+r.name+"〕")
+			}
+			txt = strings.Join(names, "\n")
+		}
+		ctx.raw = rawContent{title: "原文 · " + shortID(string(it.id)), text: txt}
 	}
 	return ctx
 }

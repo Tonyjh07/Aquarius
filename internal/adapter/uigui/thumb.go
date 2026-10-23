@@ -60,6 +60,12 @@ func loadThumb(r io.Reader) *thumbSrc { return loadThumbLimit(r, thumbMaxPixels)
 
 // loadThumbLimit 同上，解码预算参数化（单测用小预算验证门槛，不必真造一张巨图）。
 func loadThumbLimit(r io.Reader, maxPixels int) *thumbSrc {
+	return loadThumbSide(r, thumbPx, maxPixels)
+}
+
+// loadThumbSide 解码成边长 side 的方图（转写区缩略图比 chip 图标大一档，共用同一
+// 预算门与方图口径：方图意味着绘制方只需要按格宽等比铺，不必在两处各写一遍比例）。
+func loadThumbSide(r io.Reader, side, maxPixels int) *thumbSrc {
 	// 只读一遍字节：DecodeConfig 与 Decode 都从头开始，读成字节再各包一个 Reader，
 	// 避免对同一文件句柄做两次 seek。
 	data, err := io.ReadAll(io.LimitReader(r, thumbReadBytes))
@@ -77,7 +83,7 @@ func loadThumbLimit(r io.Reader, maxPixels int) *thumbSrc {
 	if err != nil {
 		return nil
 	}
-	img := scaleToSquare(src, thumbPx)
+	img := scaleToSquare(src, side)
 	if img == nil {
 		return nil
 	}

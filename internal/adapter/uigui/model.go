@@ -48,10 +48,15 @@ type block struct {
 	// 序号（0 起；编辑回传 --part 用）——回放/提交调和两路盖章；-1 = 未盖章（草稿期/
 	// 非正文块）。
 	part int
+	// imgs 该块要显示的图片（D207）：附件分片（PartImage）与工具产出的图片都收在这里，
+	// 渲染期按固定方图排（见 imgthumb.go）。空 = 纯文本块。
+	imgs []imgRef
 }
 
 // toolChip 一次工具调用的合并视图（D67/§15.3）：调用 + 权限确认 + 结果同组，
 // 默认折叠、点击展开。args/result 为不可信数据，只渲染（§9），全文不截断。
+// images 本次调用产出的图片（D207：截屏、file_read 内联图）——折叠态只给张数记号，
+// 展开后按方格出缩略图。
 type toolChip struct {
 	id       tool.CallID
 	name     string
@@ -61,6 +66,7 @@ type toolChip struct {
 	done     bool
 	ok       bool
 	result   string // 输出（ok）或错误（!ok）全文
+	images   []tool.ImageRef
 }
 
 // pendingConfirm 进行中的确认（输入栏确认态，§15.2 非模态按钮组）。
@@ -209,7 +215,7 @@ func (m *model) commit(msg conversation.Message) {
 			}
 		}
 		m.resetDraft()
-		segs := textSegments(msg.Content)
+		segs := nodeSegments(msg.Content)
 		if len(segs) == 0 && len(m.flushedDrafts) == 0 {
 			// 空内容的取消/错误也要有反馈（首个 token 前取消是最常见场景）；
 			// 纯工具/思考轮（chip/思考卡已实时入块）走 D89 锚点回填节点 ID。
@@ -222,7 +228,6 @@ func (m *model) commit(msg conversation.Message) {
 			return
 		}
 		// flushed 草稿段就地回填（FIFO；权威文本以节点为准），并盖段序（D107④）。
-		starts := textSegStarts(msg.Content)
 		consumed := 0
 		// D136：末个 flushed 段的索引在清空前捕获——「Turn 以工具收场（有助手正文、无
 		// 追加余段）」时 stamped 恒 false，而下面那条回填分支原来判的是**已清空的**
@@ -235,10 +240,9 @@ func (m *model) commit(msg conversation.Message) {
 			if consumed >= len(segs) {
 				break
 			}
-			m.blocks[idx].text = segs[consumed]
-			if consumed < len(starts) {
-				m.blocks[idx].part = starts[consumed]
-			}
+			m.blocks[idx].text = segs[consumed].text
+			m.blocks[idx].imgs = segs[consumed].imgs // D207：段内图片随段调和
+			m.blocks[idx].part = segs[consumed].start
 			consumed++
 		}
 		m.flushedDrafts = m.flushedDrafts[:0]
@@ -246,12 +250,14 @@ func (m *model) commit(msg conversation.Message) {
 		// ——分叉条（D81）每 Turn 一个挂点，挂在回答气泡下。
 		stamped := false
 		for i := consumed; i < len(segs); i++ {
-			blk := block{kind: blockAssistant, text: segs[i], part: -1}
-			if i < len(starts) {
-				blk.part = starts[i]
-			}
+			blk := block{kind: blockAssistant, text: segs[i].text, part: segs[i].start, imgs: segs[i].imgs}
 			if msg.Outcome != "" && msg.Outcome != conversation.OutcomeDone && i == len(segs)-1 {
-				blk.text = fmt.Sprintf("[%s]\n%s", msg.Outcome, segs[i])
+				mark := fmt.Sprintf("[%s]", msg.Outcome)
+				if strings.TrimSpace(blk.text) == "" {
+					blk.text = mark
+				} else {
+					blk.text = mark + "\n" + blk.text
+				}
 			}
 			if i == len(segs)-1 {
 				blk.id = msg.ID
@@ -280,8 +286,11 @@ func (m *model) commit(msg conversation.Message) {
 		// user 无独立事件面：输入行已在 submit 时回显入块——但回显时节点尚不存在、
 		// 块无 ID（D87），此处按「最早未盖章且文本一致」回填节点 ID，分叉条（D81）
 		// 在实时会话才能出现；工具结果随 assistant 节点分片呈现（D95）。
-		if msg.Role == conversation.RoleUser && text != "" {
-			m.stampUserBlock(text, msg.ID)
+		// D207：纯图提交（无正文）也要盖章——回显块的正文同样为空，按空串配对。
+		if msg.Role == conversation.RoleUser {
+			if imgs := nodeImages(msg.Content); text != "" || len(imgs) > 0 {
+				m.stampUserBlock(text, msg.ID, imgs)
+			}
 		}
 		m.resetDraft()
 	}
@@ -302,41 +311,34 @@ func (m *model) flushDraftSegment() {
 	m.blocks = append(m.blocks, block{kind: blockAssistant, text: text, part: -1}) // 段序提交调和时盖（D107④）
 }
 
-// textSegments 按工具分片把节点正文切段（D95 Turn 粒度）：段 = tool 分片之间的连续
-// text/image/audio/doc 分片，渲染口径与 partsText 一致（§4.2 占位、§9 出口消毒）。
-// thinking 分片不进正文（回放单独成块，D42）。
-func textSegments(parts []conversation.Part) []string {
-	var segs []string
-	var b strings.Builder
-	flush := func() {
-		if s := sanitizeControl(b.String()); strings.TrimSpace(s) != "" {
-			segs = append(segs, s)
-		}
-		b.Reset()
-	}
-	for _, p := range parts {
-		if p.Kind == conversation.PartTool {
-			flush()
-			continue
-		}
-		appendPartText(&b, p)
-	}
-	flush()
-	return segs
+// nodeSeg 节点正文的一段（D95 Turn 粒度 + D207 图片）：text = 段内可读文本（§4.2 占位、
+// §9 出口消毒），imgs = 段内图片（按出现序），start = 段内首个 PartText 的 Content 序号。
+type nodeSeg struct {
+	text  string
+	imgs  []imgRef
+	start int
 }
 
-// textSegStarts 各正文段的首个正文分片序号（D107④）：与 textSegments 同分口径（仅工具
-// 边界断段、空段不产出），段序 = 段内首个 PartText 在 Content 中的序号（0 起）——提交
-// 调和时给正文块盖 part，编辑回传 --part 用。
-func textSegStarts(parts []conversation.Part) []int {
-	var starts []int
-	var b strings.Builder
-	ord, start := -1, -1
+// nodeSegments 按工具分片把节点正文切段（D95）：段 = tool 分片之间的连续
+// text/image/audio/doc 分片；thinking 不进正文（回放单独成块，D42）。
+//
+// 判空口径（D207 修订）：**有图且无字也要成段**——纯图消息原来会被 TrimSpace 判空整段
+// 丢掉，图就再也不出现。段序与 textSegments 原口径一致（仅工具边界断段）。
+func nodeSegments(parts []conversation.Part) []nodeSeg {
+	var (
+		segs  []nodeSeg
+		b     strings.Builder
+		imgs  []imgRef
+		ord   = -1
+		start = -1
+	)
 	flush := func() {
-		if s := sanitizeControl(b.String()); strings.TrimSpace(s) != "" {
-			starts = append(starts, start)
+		text := sanitizeControl(b.String())
+		if strings.TrimSpace(text) != "" || len(imgs) > 0 {
+			segs = append(segs, nodeSeg{text: text, imgs: imgs, start: start})
 		}
 		b.Reset()
+		imgs = nil
 		start = -1
 	}
 	for _, p := range parts {
@@ -350,10 +352,41 @@ func textSegStarts(parts []conversation.Part) []int {
 				start = ord
 			}
 		}
+		if p.Kind == conversation.PartImage {
+			if r, ok := imageRefOf(p); ok {
+				imgs = append(imgs, r)
+				continue // 图片由真图承载，正文里不再留文字占位
+			}
+			// 缺 BlobRef 的分片没有可寻址的图：回落文字占位（见 appendPartText）。
+		}
 		appendPartText(&b, p)
 	}
 	flush()
-	return starts
+	return segs
+}
+
+// imageRefOf 附件分片 → 转写区图片引用（D207）：BlobRef 齐备才算（Hash 是缓存键，
+// 缺了没法定址）；缺引用的分片退回文字占位，不至于凭空消失。
+func imageRefOf(p conversation.Part) (imgRef, bool) {
+	if p.Ref == nil || p.Ref.Hash == "" {
+		return imgRef{}, false
+	}
+	return imgRef{blob: p.Ref, name: p.Ref.Name}, true
+}
+
+// nodeImages 节点正文里的全部图片（按出现序）：用户消息整条归一在一个气泡里显示，
+// 不需要按工具边界分段。
+func nodeImages(parts []conversation.Part) []imgRef {
+	var out []imgRef
+	for _, p := range parts {
+		if p.Kind != conversation.PartImage {
+			continue
+		}
+		if r, ok := imageRefOf(p); ok {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // stampAssistantAnchor 无正文 assistant 节点的分叉锚点回填（D89）：纯工具轮（模型
@@ -398,7 +431,11 @@ func (m *model) findChipBlock(id tool.CallID) int {
 // ——回显与提交同经输入通道串行 FIFO，重名按序对齐；命令行回显以 "/" 开头、
 // parseInput 恒路由为命令、永不会成为节点文本，插队也不会被错盖。找不到匹配
 // （如附件等无文本提交）静默跳过，维持无 ID 现状。
-func (m *model) stampUserBlock(text string, id conversation.MessageID) {
+//
+// D207：顺手把图片换成节点里的权威引用（内容屏蔽路径项——暂存时按本地路径解的缩略图，
+// 换成入库后的哈希，文件此后被移走/改名也不影响显示）。纯图消息的 want 为空串，
+// 与「只有图片没有正文」的回显块配对，同样能盖上 ID（分叉条才有挂点）。
+func (m *model) stampUserBlock(text string, id conversation.MessageID, imgs []imgRef) {
 	want := sanitizeControl(text)
 	for i := range m.blocks {
 		b := &m.blocks[i]
@@ -407,6 +444,9 @@ func (m *model) stampUserBlock(text string, id conversation.MessageID) {
 		}
 		b.id = id
 		b.part = 0 // D107④：user 节点单正文分片（标题/随文合并后恒一段）
+		if len(imgs) > 0 {
+			b.imgs = imgs
+		}
 		return
 	}
 }
@@ -418,21 +458,29 @@ func (m *model) replay(msg conversation.Message) {
 	text := partsText(msg.Content)
 	switch msg.Role {
 	case conversation.RoleUser:
-		if strings.TrimSpace(text) != "" {
-			m.addMsg(blockUser, text, msg.ID)
+		// D207：纯图消息（有附件无文字）也要成块——否则图整条消失。
+		imgs := nodeImages(msg.Content)
+		if strings.TrimSpace(text) != "" || len(imgs) > 0 {
+			m.blocks = append(m.blocks, block{
+				kind: blockUser, text: text, id: msg.ID, part: 0, imgs: imgs,
+			})
 		}
 	case conversation.RoleAssistant:
 		start := len(m.blocks)
 		var seg strings.Builder
+		var segImgs []imgRef
 		// D107④：段序盖章——segStart = 本段首个 PartText 在 Content 中的序号（0 起），
 		// 编辑回传 --part 用；flushSeg 产出块即盖。
 		textOrd, segStart := -1, -1
 		flushSeg := func() {
-			if s := sanitizeControl(seg.String()); strings.TrimSpace(s) != "" {
-				m.addMsg(blockAssistant, s, "") // 段先不带 ID：末段统一盖
-				m.blocks[len(m.blocks)-1].part = segStart
+			s := sanitizeControl(seg.String())
+			if strings.TrimSpace(s) != "" || len(segImgs) > 0 {
+				// 段先不带 ID：末段统一盖。**不用 addMsg**——它按空文本丢弃，
+				// 纯图段（有图无字）会整段消失（D207）。
+				m.blocks = append(m.blocks, block{kind: blockAssistant, text: s, part: segStart, imgs: segImgs})
 			}
 			seg.Reset()
+			segImgs = nil
 			segStart = -1
 		}
 		for _, p := range msg.Content {
@@ -456,6 +504,12 @@ func (m *model) replay(msg conversation.Message) {
 					textOrd++
 					if segStart == -1 {
 						segStart = textOrd
+					}
+				}
+				if p.Kind == conversation.PartImage {
+					if r, ok := imageRefOf(p); ok {
+						segImgs = append(segImgs, r)
+						continue
 					}
 				}
 				appendPartText(&seg, p)
@@ -608,16 +662,23 @@ func (m *model) submitRaw(atts []stagedAtt, text string) {
 	if echo != "" {
 		echo += " "
 	}
+	// D207：图片附件不再以文字占位回显——它们以缩略图入块（imgs），回显文本只列
+	// 非图片附件（文档等仍需要名字，否则提交后到回放前看不出附了什么）。
 	names := make([]string, 0, len(atts))
+	var imgs []imgRef
 	for _, a := range atts {
+		if r, ok := imgRefOfAtt(a); ok {
+			imgs = append(imgs, r)
+			continue
+		}
 		names = append(names, a.displayName())
 	}
 	if len(names) == 1 {
 		echo += "〔附件：" + names[0] + "〕"
-	} else {
+	} else if len(names) > 1 {
 		echo += fmt.Sprintf("〔附件 %d 个：%s〕", len(names), strings.Join(names, "、"))
 	}
-	m.add(blockUser, echo)
+	m.blocks = append(m.blocks, block{kind: blockUser, text: strings.TrimSpace(echo), id: "", part: -1, imgs: imgs})
 }
 
 // stageAttach 暂存一项附件（D186）：已在列表里则不重复添加（同一文件附两遍只会白占
@@ -744,12 +805,14 @@ func (m *model) attachToolResult(r tool.Result) {
 		} else {
 			c.result = sanitizeControl(r.Err)
 		}
+		c.images = append(c.images, r.Images...) // D207：工具产出的图进 chip 展开体
 		return
 	}
 	m.blocks = append(m.blocks, block{kind: blockTool, chip: &toolChip{
 		done:   true,
 		ok:     r.OK,
 		result: sanitizeControl(resultText(r)),
+		images: append([]tool.ImageRef(nil), r.Images...),
 	}})
 }
 
@@ -914,11 +977,12 @@ func appendPartText(b *strings.Builder, p conversation.Part) {
 	case conversation.PartText:
 		b.WriteString(p.Text)
 	case conversation.PartImage:
-		name := "图片"
-		if p.Ref != nil {
-			name = "图片：" + p.Ref.Name
+		// D207：图片由真缩略图承载（块里的 imgs），正文不再留文字占位——否则
+		// 「图 + 名字」两行并排，纯图消息还会因为占位而变成一条假正文。
+		// 没有可寻址引用的分片留在正文里当占位，至少不至于凭空消失。
+		if p.Ref == nil || p.Ref.Hash == "" {
+			b.WriteString("〔图片〕")
 		}
-		fmt.Fprintf(b, "〔%s〕", name)
 	case conversation.PartAudio:
 		b.WriteString("〔音频转写〕")
 	case conversation.PartDoc:

@@ -35,7 +35,8 @@ const (
 	winSettings winKind = iota
 	winHistory
 	winWelcome
-	winRaw // 查看原文（D99：气泡右键原始块只读次窗）
+	winRaw   // 查看原文（D99：气泡右键原始块只读次窗）
+	winImage // 图片预览（D207：转写区缩略图点击 → 看原图）
 )
 
 // title 窗标题（app.Title）。
@@ -47,6 +48,8 @@ func (k winKind) title() string {
 		return "Aquarius 会话历史"
 	case winRaw:
 		return "Aquarius 查看原文"
+	case winImage:
+		return "Aquarius 图片预览"
 	default:
 		return "Aquarius 欢迎"
 	}
@@ -62,6 +65,8 @@ func (k winKind) placeholder() string {
 		return "" // D112/S3：由 historyFrame 渲染，此处不应到达
 	case winRaw:
 		return "" // D99：专用帧（rawViewFrame），不走占位正文
+	case winImage:
+		return "" // D207：专用帧（imgViewFrame），不走占位正文
 	case winWelcome:
 		return "" // D141：专用帧（welcomeFrame），不走占位正文
 	default:
@@ -80,6 +85,9 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 		return 720, 560, 620, 360
 	case winRaw:
 		return 560, 520, 420, 360
+	case winImage:
+		// 预览要够大才看得出细节；最小尺寸留出「图 + 标题 + 提示」三行。
+		return 900, 700, 480, 360
 	case winWelcome:
 		// D153：标题 + 副标题 + 编号圆徽步骤条 + 四行分组卡 + 候选 chip + 内联连通结果 +
 		// 页脚三钮。模拟稿比例接近 1:1，560×520 会把卡片压到只剩两行，故放宽到 660×640。
@@ -304,6 +312,11 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	if k == winRaw {
 		raw = newRawViewState() // D99：查看原文帧状态（仅本窗 goroutine 读写）
 	}
+	var iview *imageViewState
+	if k == winImage {
+		// D207：图片预览帧状态（Esc = 真关窗）；解码 goroutine 完成后请求本窗重绘。
+		iview = newImageViewState(ctl.requestClose, w.Invalidate)
+	}
 	var hist *historyState
 	if k == winHistory {
 		hist = newHistoryState(u) // D112/S3：会话历史帧状态（仅本窗 goroutine 读写）
@@ -339,6 +352,8 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 				settingsFrame(gtx, th, u, form) // 设置窗 = 核心档表单（§15.7/D60）
 			} else if raw != nil {
 				rawViewFrame(gtx, th, u, raw) // 查看原文 = 只读编辑器（D99）
+			} else if iview != nil {
+				imgViewFrame(gtx, th, u, iview) // 图片预览 = 适配 + 缩放平移（D207）
 			} else if hist != nil {
 				historyFrame(gtx, th, u, hist) // 会话历史 = 左栏+右图+状态栏（D112/S3）
 			} else if welc != nil {
