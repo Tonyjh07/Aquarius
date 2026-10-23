@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"gioui.org/gpu/headless"
+	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -494,5 +495,153 @@ func TestRowInsetContract(t *testing.T) {
 	// 上界防止后续为了「更松」一路加码把设置页撑成一屏两行。
 	if rowInsetDp > 24 {
 		t.Fatalf("rowInsetDp = %d，want ≤24（再大设置页一屏放不下三行）", rowInsetDp)
+	}
+}
+
+// TestSectionTitleHugsItsGroup 分区标题的「间距有亲疏」：上留白必须明显大于下留白，
+// 标题才读作「下面那一组的标题」而不是浮在两组中间。
+//
+// 复现过的排版故障：标题上下各 rowInsetDp，叠上卡片组界各一份，上下完全对称——读者
+// 无法判断「思考与推理」属于上面那张卡还是下面那张（用户拿排版规范图指出：标签上下
+// 各 20px 是反例，上 20 下 10 才对）。这条测试把关系钉住，防止日后又被「对称才整齐」
+// 改回去。
+func TestSectionTitleHugsItsGroup(t *testing.T) {
+	// 组间空档 = 标题上留白 + 上一组卡片的下组界；组内空档 = 标题下留白 + 本组卡片的
+	// 上组界 + 卡内上边距。判据取用户看到的事实，不取常量比值。
+	between := rowInsetDp + rowSectionTopDp
+	inside := rowSectionGapDp + rowInsetDp + cardInnerDp
+	if between <= inside {
+		t.Fatalf("组间空档 %ddp ≤ 组内空档 %ddp——组与组的间距必须大于组内的间距",
+			between, inside)
+	}
+
+	// 首个分区标题（紧跟页标题）不占「与上一组之间」的留白，否则每页开头空出一截。
+	rows := []rowDesc{
+		{kind: rowTitle},
+		{kind: rowSection},
+		{kind: rowModelName},
+		{kind: rowThink},
+		{kind: rowSection},
+	}
+	if top, _ := rowInset(rows, 1); top != rowInsetDp {
+		t.Errorf("紧跟页标题的分区标题上留白 = %d, want %d（页首不该空一截）", top, rowInsetDp)
+	}
+	if top, bot := rowInset(rows, 4); top != rowSectionTopDp || bot != rowSectionGapDp {
+		t.Errorf("组间分区标题留白 = (%d,%d), want (%d,%d)", top, bot, rowSectionTopDp, rowSectionGapDp)
+	}
+	// 非分区标题行恒对称：说明段/网格/按钮行不领起一个组。
+	if top, bot := rowInset(rows, 3); top != rowInsetDp || bot != rowInsetDp {
+		t.Errorf("普通非卡行留白 = (%d,%d), want 对称 (%d,%d)", top, bot, rowInsetDp, rowInsetDp)
+	}
+	// 上留白必须真的比下留白大（不对称的方向不能反）。
+	if rowSectionTopDp <= rowSectionGapDp {
+		t.Errorf("标题留白 上=%d 下=%d，want 上 > 下", rowSectionTopDp, rowSectionGapDp)
+	}
+}
+
+// TestSectionTitleSpacingRendered 真实渲染：分区标题到下面那张卡的空档必须**小于**到
+// 上面那张卡的空档。
+//
+// 上一条件只锁 rowInset 的决策；这条在真帧上量像素（常量写对、但某页换了渲染分支时，
+// 上一条仍是绿的）。判据 = 扫描页内容列上「卡边框行」之间的大段空白：以标题文字行为
+// 界，上下两侧的空白高度之比要明显 < 1。
+func TestSectionTitleSpacingRendered(t *testing.T) {
+	const (
+		viewW, viewH = 900, 746
+		pxPerDp      = 1.25
+	)
+	sz := image.Pt(viewW, viewH)
+	w, err := headless.NewWindow(viewW, viewH)
+	if err != nil {
+		t.Skipf("离屏渲染不可用: %v", err)
+	}
+	defer w.Release()
+
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return promptSnapshot() },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+	})
+	th := testTheme()
+	f := newSettingsForm(u)
+	f.page = pageModel
+	f.focused = true
+
+	var ops op.Ops
+	src := new(input.Router).Source()
+	mk := func() layout.Context {
+		return layout.Context{
+			Ops:         &ops,
+			Metric:      unit.Metric{PxPerDp: pxPerDp, PxPerSp: pxPerDp},
+			Constraints: layout.Exact(sz),
+			Source:      src,
+		}
+	}
+	settingsFrame(mk(), th, u, f)
+	ops.Reset()
+	settingsFrame(mk(), th, u, f)
+	if err := w.Frame(&ops); err != nil {
+		t.Fatalf("帧提交: %v", err)
+	}
+	img := image.NewRGBA(image.Rectangle{Max: sz})
+	if err := w.Screenshot(img); err != nil {
+		t.Fatalf("取像: %v", err)
+	}
+
+	// 在页内容区里找「文字行」（有非底色像素的行），再找夹在两张卡之间的标题行：
+	// 模型页首屏的版式是 页标题 → 分组标题 → 卡 → 分组标题 → 卡 ……，所以取岔开
+	// 两组卡的那一行标题即可。
+	bg := color.RGBAModel.Convert(img.At(2, 2)).(color.RGBA)
+	navPx := int(140 * pxPerDp)
+	contentBottom := viewH - 100 // 底栏之上
+	inkRows := func(y int) int {
+		n := 0
+		// 右侧 24px 排除：滚动条竖线会让每一行都算「有内容」，行段永远切不开。
+		for x := navPx + 2; x < viewW-24; x++ {
+			if color.RGBAModel.Convert(img.At(x, y)).(color.RGBA) != bg {
+				n++
+			}
+		}
+		return n
+	}
+	// 收集所有「有内容」的连续行段。
+	type band struct{ y0, y1 int }
+	bands := []band{}
+	cur := -1
+	for y := 0; y < contentBottom; y++ {
+		if inkRows(y) > 0 {
+			if cur < 0 {
+				cur = y
+			}
+			continue
+		}
+		if cur >= 0 {
+			bands = append(bands, band{cur, y - 1})
+			cur = -1
+		}
+	}
+	if cur >= 0 {
+		bands = append(bands, band{cur, contentBottom - 1})
+	}
+	// 找「矮且有文字」的段 = 分组标题（行高 ≈ 文字高，比卡矮得多）。
+	titleIdx := -1
+	nTitles := 0
+	for i, b := range bands {
+		h := b.y1 - b.y0 + 1
+		if h >= 10 && float64(h) < 26*pxPerDp { // 文字行高，远小于一张卡
+			nTitles++
+			if nTitles == 2 { // 第一个通常是页标题
+				titleIdx = i
+			}
+		}
+	}
+	if nTitles < 2 || titleIdx <= 0 || titleIdx >= len(bands)-1 {
+		t.Skipf("首屏只找到 %d 个像标题的行段（%v），不足以判定间距", nTitles, bands)
+	}
+	b := bands[titleIdx]
+	above := b.y0 - bands[titleIdx-1].y1 - 1
+	below := bands[titleIdx+1].y0 - b.y1 - 1
+	if above <= below {
+		t.Errorf("分组标题上方空档 %dpx ≤ 下方 %dpx——标题没有贴住下面那一组"+
+			"（排版规范：标签上留白要大于下留白）", above, below)
 	}
 }

@@ -28,6 +28,20 @@ type rowKind int
 // 这是「设置页密度」的唯一旋钮，调它 = 同时调所有页，不要逐页微调。
 const rowInsetDp = 18
 
+// rowSectionTopDp 分区标题的**上**留白；下留白用 rowSectionGapDp。
+//
+// 间距要有亲疏（D209）：标签贴住它自己那一组。改前标题上下各 18dp、叠上卡片组界的
+// 18dp 后正好浮在两组中间（上下各 36dp），读者分不清它属于上面还是下面那组——实测
+// 在「模型」页「思考与推理」与上下两张卡之间完全对称。现在上留白 > 下留白：标题
+// 视觉上归到下面那张卡，组与组之间的空档也明显大于卡内行距。
+const (
+	rowSectionTopDp = 30 // 标题与**上一组**之间（组间）
+	rowSectionGapDp = 6  // 标题与**自己那一组**之间（组内）
+)
+
+// cardInnerDp 卡内四边留白（dp）：字段不贴着卡片描边，行距也由它承担。
+const cardInnerDp = 14
+
 const (
 	rowTitle   rowKind = iota // 页标题（页名）
 	rowSection                // 分组小标题（text = 分组名）
@@ -357,7 +371,13 @@ func rowLayout(gtx layout.Context, rows []rowDesc, i int, body layout.Widget) la
 	r := rows[i]
 	g := rowCardGroup(r)
 	if g < 0 {
-		return layout.UniformInset(unit.Dp(rowInsetDp)).Layout(gtx, body)
+		// 分区标题按「间距有亲疏」单独给不对称留白（见 rowInset）；其余非卡行（说明段、
+		// 网格、整组按钮行）上下对称——它们不领起一个组，贴谁都不对。
+		top, bottom := rowInset(rows, i)
+		return layout.Inset{
+			Left: unit.Dp(rowInsetDp), Right: unit.Dp(rowInsetDp),
+			Top: unit.Dp(top), Bottom: unit.Dp(bottom),
+		}.Layout(gtx, body)
 	}
 	first := i == 0 || rowCardGroup(rows[i-1]) != g
 	last := i == len(rows)-1 || rowCardGroup(rows[i+1]) != g
@@ -425,8 +445,8 @@ func rowLayout(gtx layout.Context, rows []rowDesc, i int, body layout.Widget) la
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				// 卡内边距：上下 14 与左右一致，字段才不会贴着卡的描边。
 				return layout.Inset{
-					Top: unit.Dp(14), Bottom: unit.Dp(14),
-					Left: unit.Dp(14), Right: unit.Dp(14),
+					Top: unit.Dp(cardInnerDp), Bottom: unit.Dp(cardInnerDp),
+					Left: unit.Dp(cardInnerDp), Right: unit.Dp(cardInnerDp),
 				}.Layout(gtx, body)
 			}),
 		)
@@ -445,6 +465,25 @@ func cardPad(first, last bool) (top, bottom int) {
 		bottom = rowInsetDp
 	}
 	return top, bottom
+}
+
+// rowInset 非卡行（不落卡）的上下留白（dp）。
+//
+// 只有分区标题（rowSection）用不对称留白——间距要有亲疏（D209）：标题贴住**它自己
+// 那一组**，所以上留白（与上一组之间）远大于下留白（与自己那组之间）。改前上下各
+// rowInsetDp，叠上卡片组界后上下完全对称，读者分不清标题属于上面还是下面那组。
+//
+// 特例：紧跟在页标题后的首个分区标题上面没有「上一组」，按对称留白处理，否则每页
+// 开头都会空出一截。其余非卡行（说明段、网格、整组按钮行）不领起一个组，恒对称。
+func rowInset(rows []rowDesc, i int) (top, bottom int) {
+	if rows[i].kind != rowSection {
+		return rowInsetDp, rowInsetDp
+	}
+	top = rowSectionTopDp
+	if i == 0 || rows[i-1].kind == rowTitle {
+		top = rowInsetDp
+	}
+	return top, rowSectionGapDp
 }
 
 // rowInCard 该行是否落进分组卡（表单行）。
