@@ -1774,6 +1774,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 | 层 | 手段 |
 |---|---|
+| **架构** | `internal/arch` 解析全仓生产文件的 import，断言分层方向（`adapter → port ← app → domain`）与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；判定函数另有正反例自检，防「永远绿」。测试文件不受约束——借用真实适配器做链路级验收是允许的 |
 | domain | 性质测试：随机 Append/Revise(Fresh\|Carry\|Clone)/Prune/Checkout 序列 → 不变量 1–2 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写）；Clone 深拷贝子树与原子树零共享、原子树字节级不变（D96）；节点形态校验含思考分片与工具分片仅 assistant 可携带、工具分片 CallID 节点内唯一（D42/D95） |
 | app | 脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter → 交互回放（golden）；摄取管线用假 Transcriber；思考入树（分片顺序）与回传开关两态装配（D42） |
 | adapter | LLM 录制流回放；storejson/blobfs/jobproc/memoryfs 契约测试（临时目录） |

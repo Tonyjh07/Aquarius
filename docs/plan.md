@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-10-23 @ 3c2767b -->
+<!-- docs-sync: 2026-10-23 @ 7fbb89a -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。
 > 已经落成的看 [roadmap.md](roadmap.md)（进度档案）；逐条决策看 [decisions.md](decisions.md)；
@@ -41,44 +41,23 @@
 **来源**：v0.1.0 发布前的三方代码 review（`temp/review-feedback/1–3.md`），逐条核实后的取舍。
 被证伪或有意的设计取舍列在 §1.3，不重复讨论。
 
-### 1.0 P0 · 先立守规（约 1 天）
+### 1.0 P0 · 先立守规（已完成 2026-10-23）
 
-> 三件小事，做完后所有后续工作都有自动守门人。先做它们，再做任何结构改动。
+> 三件小事，做完后所有后续工作都有自动守门人。**已完成，从本文件移除**，
+> 落地细节见 [roadmap.md](roadmap.md) §2 的 `v0.2.0-P0` 行与决策 D211/D212/D213。
 
-| # | 任务 | 做法 | 验收 |
-|---|---|---|---|
-| P0-1 | **架构守卫测试** | 新增 `internal/arch/`（`doc.go` + `arch_test.go`）：用 `go/parser` 解析全仓 import（不跑外部进程、不受构建标签影响），断言分层方向（见下）。同时钉住两条现状约束：没有任何包 import `cmd/*`；`uigui` 不被其他 adapter 依赖 | 当前 52 个包 0 违规；**故意插一条 `app`→`adapter` 的违规 import，测试必须红** |
+| # | 任务 | 结论 |
+|---|---|---|
+| P0-1 | 架构守卫测试 | `internal/arch`：解析全仓生产文件 import、断言分层方向 + 两条反向约束（D211） |
+| P0-2 | 命令清单单一事实源 | `/help` 入表；期望集改为从 `execCommand` 的 switch 反推（D212） |
+| P0-3 | 展示文本归一 | 四份 `sanitizeControl` / 三份 `partsText` / 三份 `appendPartText` → `uicommon`（D213） |
 
-> `doc.go` 不是装饰：目录里**只有 `_test.go`** 时 `go build ./...` 会报
-> 「no non-test Go files」直接挂掉门禁。扫描根由 `go.mod` 定位（测试从包目录向上找），
-> 跳过 `temp/`、`spike/` 这类脚手架目录。
+留下的两条经验，后续任务要沿用：
 
-**P0-1 的分层规则**（按实测的合法边集合写，不要写成「谁也不许互相引」）：
-
-| 层 | 允许 import 的内部层 |
-|---|---|
-| `domain` | 只允许同层（`conversation` ↔ `tool`、`perm` ↔ `tool` 已存在） |
-| `port` | `domain` |
-| `app` | `domain`、`port` |
-| `adapter` | `domain`、`port`、同层 adapter（现有 7 条：`llm`↔`llm/tokenizer`、`atomicfile` 被 4 个包复用、`uigui`↔`uigui/platform`、`ingestmic`↔`micwin`）、`plugin`（只有 `mcpgate`） |
-| `plugin` | `domain`、`port` |
-| `cmd` | 全部（装配根） |
-
-> **为什么允许 adapter 横向引用**：`atomicfile` 是纯工具包、`llm/tokenizer` 与 `uigui/platform` 是子包，
-> 抽这些共用的低层件正是消除重复的手段（P0-3 的 `uicommon` 也走这条）。真正要禁的是
-> **反向依赖**（`uigui` 被别的 adapter 引用）与 **跨层**（`app` 摸 `adapter`）。
-| P0-2 | **命令清单单一事实源** | `commandCatalog` 缺 `help`（switch 有 29 个 case、catalog 只有 28 条 ⇒ 补全浮层少了 `/help`）。补上，并在 `commands_test.go` 加反向断言：**switch 的每个 case 都必须出现在 catalog** | 补全浮层出现 `/help`；以后再漏一条 catalog 测试直接红 |
-| P0-3 | **展示文本函数归一** | `sanitizeControl`（4 份）、`partsText`（3 份逐字节相同）、`appendPartText`（3 份互不相同）收进新包 `internal/adapter/uicommon` | 三个前端调用点全改走同一份；行为不变（见下） |
-
-**P0-3 的合并口径**（三份差异必须在这里定掉，否则等于没合并）：
-
-- `sanitizeControl` 的 `notify` 版**故意不同**：它保留 `\n`/`\t`，再由后续 `collapseSpaces`
-  压平——通知要单行但不该提前吞掉换行。归一后用一个显式选项表达这个差异，
-  并保留注释说明为什么，不断言「四份必须逐字节相同」。
-- `appendPartText` 三份的差异全在**图片占位的渲染策略**：`uigui` 画真缩略图（无引用时才留占位）、
-  `uitui` 写字面文件名、`repl` 只写「〔图片〕」。所以归一不是「选一份当标准」，而是
-  **一份实现 + 一个「图片如何呈现」的策略参数**——三个前端各自传入自己的策略，显示效果逐一不变。
-  合并的意义在于消掉三份的复制粘贴（转义、截断、分隔符），不是强行统一显示。
+- **守门测试必须自检**。`TestGuardCatchesViolation` 不是摆设：判定函数喂正反例，才不会被
+  「规则写错 / 扫描根找错 / 跳过规则吃掉整棵树」这类事故变成永远绿。
+- **手抄的期望表是 bug 的温床**。P0-2 的根因不是漏了一行，而是测试自带一份硬编码清单，
+  把错误固化成了断言。改成从源码反推之后，「只改一半」必然变红。
 
 ### 1.1 P1 · 聚合根归位（约 4–5 天）
 
@@ -99,14 +78,21 @@
 **边界**：不引入工作区/cwd/文件索引之类的抽象；`/rm` 的确认提示照旧走同一份子树统计数据，
 数据面不变；测试文件不强制私有化（读公共访问器即可）。
 
+**P1 的落码口径**（P0 期间确认过的约束，避免踩坑）：
+
+- `domain` 里已有的 `Find`/`Branches`/`Tail`/`Path` 就是访问器的一部分，别再起 `Node(id)` 这类
+  同义名——一个概念一个名字。
+- 私有化之后 `storejson` 必须自己定义 wire 结构：domain 不该为「持久化长什么样」负责，
+  这也是让 `.bak` 兼容验证（旧文件仍能加载）成为 adapter 自己的验收项。
+- `internal/arch` 会盯着这条改动：`app` 若在 P1-1 期间引入任何 adapter import 会直接变红。
+
 ### 1.2 出口与节奏
 
-- **出口**：`internal/arch` 守着依赖方向；`/help` 出现在补全浮层；三处展示文本只有一份实现；
-  `Conversation` 的 map 不再导出且 `.bak` 兼容验证通过。发布说明按「内部质量版」写，
-  用户可见变化只有 `/help` 补全与（可能的）图片占位文案统一。
-- **节奏**：一笔 commit 一件事，P0 三笔 + P1 四笔，每笔都跑全门禁（`gofmt` / `vet` /
-  `test -race`）加一次 GUI 冒烟。**P1-2 与 P1-4 必须显式写出删除量**——这是让
-  「净删除」在历史里可见的唯一位置。
+- **出口**：`Conversation` 的 map 不再导出、`app` 零直读、`.bak` 兼容验证通过。
+  发布说明按「内部质量版」写——用户可见变化只有 `/help` 出现在补全浮层（P0 已做）
+  与图片占位文案的中性化。
+- **节奏**：P1 四笔，每笔独立过全门禁（`gofmt` / `vet` / `test -race`）加一次 GUI 冒烟。
+  **P1-2 与 P1-4 必须显式写出删除量**——这是让「净删除」在历史里可见的唯一位置。
 - **不做**：不在这一版碰 `uigui` 的文件组织、不拆 `SessionDeps`、不动 `relmap`。
 
 ### 1.3 已否决或延期（核实后的取舍，备查、不排期）
