@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -104,7 +103,7 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 		return "", err
 	}
 	forked := true
-	if len(s.cur.Children[um.ID]) == 0 {
+	if len(s.cur.ChildIDs(um.ID)) == 0 {
 		// D93：上游用户消息尚无任何回答（编辑 Fresh 分叉后/空轮次）——Revise 只会
 		// 造出同文本的冗余兄弟分支；Head 不在其上则移过去，直接生成本回答。
 		forked = false
@@ -153,7 +152,7 @@ func (s *Session) resolveNode(arg string) (conversation.MessageID, error) {
 		return conversation.MessageID(arg), nil
 	}
 	var hits []conversation.MessageID
-	for id := range s.cur.Nodes {
+	for _, id := range s.cur.IDs() { // 已按 ID 升序，命中集天然有序（歧义提示可读）
 		if strings.HasPrefix(string(id), arg) {
 			hits = append(hits, id)
 		}
@@ -164,7 +163,6 @@ func (s *Session) resolveNode(arg string) (conversation.MessageID, error) {
 	case 1:
 		return hits[0], nil
 	default:
-		sort.Slice(hits, func(i, j int) bool { return hits[i] < hits[j] })
 		ids := make([]string, len(hits))
 		for i, h := range hits {
 			ids[i] = string(h)

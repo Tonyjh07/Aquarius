@@ -249,7 +249,7 @@ func (s *Session) execBranch(ctx context.Context, cmd port.Command) (string, err
 	// Root 的"同级"按 D15 即其孩子，改标"顶层消息"且不重复列出下级。
 	isRoot := self.Role == conversation.RoleRoot
 	var b strings.Builder
-	fmt.Fprintf(&b, "当前: %s\n", branchLine(self, s.cur.Head, s.cur.RevisedFrom))
+	fmt.Fprintf(&b, "当前: %s\n", branchLine(s.cur, self))
 	sibsLabel := "同级分叉"
 	if isRoot {
 		sibsLabel = "顶层消息"
@@ -260,18 +260,18 @@ func (s *Session) execBranch(ctx context.Context, cmd port.Command) (string, err
 	} else {
 		fmt.Fprintf(&b, "%s（%d 条，不含自身）:", sibsLabel, len(sibs))
 		for _, m := range sibs {
-			b.WriteString("\n  " + branchLine(m, s.cur.Head, s.cur.RevisedFrom))
+			b.WriteString("\n  " + branchLine(s.cur, m))
 		}
 	}
 	if !isRoot {
-		kids := s.cur.Children[id]
+		kids := s.cur.ChildIDs(id)
 		if len(kids) == 0 {
 			b.WriteString("\n下级: 无")
 		} else {
 			fmt.Fprintf(&b, "\n下级（%d 条）:", len(kids))
 			for _, kid := range kids {
 				if m, ok := s.cur.Find(kid); ok {
-					b.WriteString("\n  " + branchLine(m, s.cur.Head, s.cur.RevisedFrom))
+					b.WriteString("\n  " + branchLine(s.cur, m))
 				}
 			}
 		}
@@ -295,7 +295,7 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	if s.confirmer == nil {
 		return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rm 需要二次确认")
 	}
-	size := subtreeSize(s.cur, id)
+	size := s.cur.SubtreeSize(id)
 	prompt := fmt.Sprintf("确认删除 %s 及其子树（至少 %d 条节点）？此操作不可恢复", id, size)
 	ans, err := s.confirmer.Confirm(ctx, prompt)
 	if err != nil {
@@ -304,11 +304,11 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	if !ans.Allow {
 		return fmt.Sprintf("已取消删除 %s", id), nil
 	}
-	before := len(s.cur.Nodes)
+	before := s.cur.NodeCount()
 	if err := s.cur.Prune(id); err != nil {
 		return "", fmt.Errorf("session: 删除: %w", err)
 	}
-	removed := before - len(s.cur.Nodes) // 实际删除数 = 子树大小（D95 后 Prune 恰删子树，无连带）
+	removed := before - s.cur.NodeCount() // 实际删除数 = 子树大小（D95 后 Prune 恰删子树，无连带）
 	if err := s.persist(ctx); err != nil {
 		// 删除绝不"半生效"：落盘失败即回滚到最近一次成功保存的状态。
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
@@ -320,28 +320,15 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	return fmt.Sprintf("已删除 %s 子树（%d 条节点；Head → %s）", id, removed, s.cur.Head), nil
 }
 
-// subtreeSize 统计 id 及其整棵子树的节点数（/rm 确认提示用；树无环，遍历必终止）。
-func subtreeSize(c *conversation.Conversation, id conversation.MessageID) int {
-	n := 0
-	var walk func(conversation.MessageID)
-	walk = func(x conversation.MessageID) {
-		n++
-		for _, ch := range c.Children[x] {
-			walk(ch)
-		}
-	}
-	walk(id)
-	return n
-}
-
 // branchLine 渲染一行分支摘要：<id> [角色] 内容预览 [← Head] [（修订自 <id>）]。
-func branchLine(m conversation.Message, head conversation.MessageID, revisedFrom map[conversation.MessageID]conversation.MessageID) string {
+// 版本链查询走 domain 的 Edition 访问器，不直接读 map。
+func branchLine(c *conversation.Conversation, m conversation.Message) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s [%s] %s", m.ID, m.Role, nodeSummary(m))
-	if m.ID == head {
+	if m.ID == c.Head {
 		b.WriteString(" ← Head")
 	}
-	if old, ok := revisedFrom[m.ID]; ok {
+	if old, ok := c.Edition(m.ID); ok {
 		fmt.Fprintf(&b, "（修订自 %s）", old)
 	}
 	return b.String()
