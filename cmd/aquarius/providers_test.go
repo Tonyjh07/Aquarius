@@ -321,6 +321,82 @@ func TestProviderManagerApplyValidation(t *testing.T) {
 	}
 }
 
+// TestProviderManagerApplyCost 单价往返（D205）：填了才落键、留空删键、快照回显同一数；
+// 负数被 Apply 拒绝（写出去的配置要能过启动校验）。
+func TestProviderManagerApplyCost(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := `{
+  "model": {
+    "providers": [
+      {"name": "a", "base_url": "http://a/v1", "models": [{"name": "m1"}, {"name": "m2"}]}
+    ],
+    "primary": "a",
+    "name": "m1"
+  },
+  "ui": {"kind": "repl"}
+}`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
+
+	// m1 填两个单价、m2 留空（= 不声明）。
+	if err := m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Models: []uigui.ProviderModelPatch{
+			{Name: "m1", CostIn: 0.15, CostOut: 0.6},
+			{Name: "m2"},
+		},
+	}}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	raw, _ := os.ReadFile(cfgPath)
+	s := string(raw)
+	if !strings.Contains(s, `"cost_in": 0.15`) || !strings.Contains(s, `"cost_out": 0.6`) {
+		t.Fatalf("单价应落键:\n%s", s)
+	}
+	if n := strings.Count(s, `"cost_in"`); n != 1 {
+		t.Fatalf("只有填了的那条该落 cost_in，实际 %d 处:\n%s", n, s)
+	}
+	out, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if e := out.Model.Providers[0].modelByName("m1"); e == nil || e.CostIn != 0.15 || e.CostOut != 0.6 {
+		t.Fatalf("m1 单价 = %+v", e)
+	}
+	if in, o := out.Model.costFor("a", "m1"); in != 0.15 || o != 0.6 {
+		t.Fatalf("costFor = (%v, %v)", in, o)
+	}
+	if in, o := out.Model.costFor("a", "m2"); in != 0 || o != 0 {
+		t.Fatalf("未声明应为零值: (%v, %v)", in, o)
+	}
+	if snap := m.Snapshot(); snap[0].Models[0].CostIn != 0.15 || snap[0].Models[1].CostOut != 0 {
+		t.Fatalf("快照单价 = %+v", snap[0].Models)
+	}
+
+	// 清空：键删掉（回到「未声明」这个形态，不落一个假的 0）。
+	if err := m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Models: []uigui.ProviderModelPatch{{Name: "m1"}, {Name: "m2"}},
+	}}); err != nil {
+		t.Fatalf("Apply2: %v", err)
+	}
+	raw, _ = os.ReadFile(cfgPath)
+	if strings.Contains(string(raw), `"cost_in"`) {
+		t.Fatalf("留空不该落键:\n%s", raw)
+	}
+
+	// 负数：拒绝（与启动期 normalize 同口径）。
+	err = m.Apply("a", []uigui.ProviderPatch{{
+		Orig: "a", Name: "a", BaseURL: "http://a/v1",
+		Models: []uigui.ProviderModelPatch{{Name: "m1", CostIn: -1}},
+	}})
+	if err == nil {
+		t.Fatal("负单价应被拒绝")
+	}
+}
+
 // TestProviderManagerApplyStoresPlaintext D161：编辑区填明文 → 写进本机密钥库 +
 // config 只留 `secret:<名>`；config 字节里搜不到明文；写库失败即报错、config 不动。
 func TestProviderManagerApplyStoresPlaintext(t *testing.T) {

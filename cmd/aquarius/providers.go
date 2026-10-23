@@ -77,6 +77,8 @@ func modelSnapshots(p *providerConfig) []uigui.ProviderModelSnapshot {
 			CapsExplicit:  e.Caps != nil,
 			ContextWindow: e.ContextWindow,
 			Enabled:       e.isEnabled(),
+			CostIn:        e.CostIn,
+			CostOut:       e.CostOut,
 		})
 	}
 	return out
@@ -138,6 +140,11 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 		for _, me := range p.Models {
 			if !me.Disabled {
 				enabled++
+			}
+			// 单价（D205）：写出去的配置必须能过启动校验（normalize 同一条口径）——
+			// 负数与其等到重启才报错，不如现在拦住。
+			if me.CostIn < 0 || me.CostOut < 0 {
+				return fmt.Errorf("provider %q 的模型 %q 单价不可为负数（每百万 token）", p.Name, me.Name)
 			}
 		}
 		if enabled == 0 {
@@ -282,7 +289,7 @@ func writeKeys(base map[string]any, ws []keyWrite) []any {
 
 // writeModels 模型条目写回（D173）：按名字继承原有条目的无关键与 caps（未动能力位时
 // Caps = nil → 原样保留，含「键缺失」这个形态）；动了就以本次为准（含显式空数组）。
-// context_window > 0 写入，否则不声明（跟随全局）。顺序以本次编辑为准。
+// context_window > 0 写入，否则不声明（跟随全局）。单价（D205）> 0 写入、0 删键。顺序以本次编辑为准。
 func writeModels(base map[string]any, models []uigui.ProviderModelPatch) []any {
 	byName := map[string]map[string]any{}
 	if base != nil {
@@ -313,6 +320,17 @@ func writeModels(base map[string]any, models []uigui.ProviderModelPatch) []any {
 			entry["context_window"] = me.ContextWindow
 		} else {
 			delete(entry, "context_window")
+		}
+		// 单价（D205）：> 0 才落键；0 = 未声明（留空即此形态，不写一个假的「免费」）。
+		if me.CostIn > 0 {
+			entry["cost_in"] = me.CostIn
+		} else {
+			delete(entry, "cost_in")
+		}
+		if me.CostOut > 0 {
+			entry["cost_out"] = me.CostOut
+		} else {
+			delete(entry, "cost_out")
 		}
 		if me.Disabled {
 			entry["enabled"] = false // 显式落键；启用是缺省形态，键不落盘（D180）

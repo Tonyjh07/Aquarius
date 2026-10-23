@@ -347,6 +347,12 @@ type modelEntry struct {
 	// 不参与选型（不再出现在降级链选项与缺省模型选择里）。用指针区分「没写」与「写了
 	// false」——写回时只有 false 才落键，配置不会因为一次应用长出满屏 enabled: true。
 	Enabled *bool `json:"enabled,omitempty"`
+	// Sampling 逐模型采样参数覆盖（D204）：只写想改的那几项，其余继承 model.sampling
+	// （Overlay 合并）。键缺失 = 完全继承。
+	Sampling *samplingConfig `json:"sampling,omitempty"`
+	// CostIn / CostOut 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明。
+	CostIn  float64 `json:"cost_in,omitempty"`
+	CostOut float64 `json:"cost_out,omitempty"`
 }
 
 // isEnabled 该模型条目是否启用（D180：键缺失 = 启用）。
@@ -357,6 +363,28 @@ func (m *modelEntry) isEnabled() bool { return m.Enabled == nil || *m.Enabled }
 type fallbackEntry struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model,omitempty"`
+}
+
+// samplingConfig 采样参数声明（D204）。**浮点用指针**：键缺失 / null = 不发送（交服务端
+// 默认），写 0 就是真的发 0——temperature 0（要确定性输出）不能与「没写」共用零值。
+type samplingConfig struct {
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
+	MaxTokens   int      `json:"max_tokens,omitempty"` // 0 = 不发送（真实上限仍由本轮预算决定）
+	Stop        []string `json:"stop,omitempty"`       // 空 = 不发送
+}
+
+// toSampling 声明 → 端口采样参数。
+//
+// Stop **原样保留**（不做 trim）：`"\n"`、`" "` 这类本身就是合法停止串，去掉首尾空白
+// 会把用户写的串改成另一个串；只拒绝**空串**（那没法当停止条件）。
+func (s samplingConfig) toSampling() port.Sampling {
+	return port.Sampling{
+		Temperature: s.Temperature,
+		TopP:        s.TopP,
+		MaxTokens:   s.MaxTokens,
+		Stop:        append([]string(nil), s.Stop...),
+	}
 }
 
 // modelConfig 模型接入配置（D173 v2：能力位下沉到模型、密钥池、逐项降级链）。
@@ -378,6 +406,9 @@ type modelConfig struct {
 	// EchoThinking 思考回传开关（D42）；nil = 键缺失 = 回传（DeepSeek 等兼容端点带
 	// tools 时强制回传 reasoning_content，缺失即 400）；显式 false = 不回传，改后重启生效。
 	EchoThinking *bool `json:"echo_thinking,omitempty"`
+	// Sampling 整链缺省采样参数（D204）；键缺失 = 全不发送。逐模型覆盖见
+	// modelEntry.Sampling（Overlay 合并）。
+	Sampling samplingConfig `json:"sampling,omitempty"`
 }
 
 // 协议标识（D173）；空 kind 归一为 openai-chat。
@@ -494,6 +525,94 @@ func (m *modelConfig) currentCaps() port.ModelCaps {
 	return m.entryCaps(m.primaryProvider().Name, m.Name)
 }
 
+// samplingTables 采样参数的热生效快照（D204）：整链缺省 + 逐模型覆盖。装配根保存一个
+// 原子指针，Agent 每轮按当前模型名现取；设置窗「保存并应用」后换掉整份即可热生效，
+// 不必重建 Agent。
+type samplingTables struct {
+	base    port.Sampling
+	byModel map[string]port.Sampling
+}
+
+// For 取某模型的生效采样参数：缺省叠该模型的覆盖（没覆盖就只返回缺省）。
+func (t *samplingTables) For(model string) port.Sampling {
+	if t == nil {
+		return port.Sampling{}
+	}
+	if o, ok := t.byModel[model]; ok {
+		return t.base.Overlay(o)
+	}
+	return t.base
+}
+
+// samplingTables 从模型配置现算一份快照。
+func (m *modelConfig) samplingTables() *samplingTables {
+	return &samplingTables{base: m.Sampling.toSampling(), byModel: m.samplingOverrides()}
+}
+
+// samplingFor 某模型（provider+model 二元组）的生效采样参数（D204）：model.sampling 作
+// 整链缺省，该模型条目自带的覆盖只改它写了的项。
+//
+// 降级路径要用**降级目标自己那份**：模型名在装饰器里才确定，而参数得跟着改。
+func (m *modelConfig) samplingFor(provider, model string) port.Sampling {
+	base := m.Sampling.toSampling()
+	p := m.byName(provider)
+	if p == nil {
+		return base
+	}
+	var e *modelEntry
+	if model == "" {
+		e = p.modelByName(p.models0())
+	} else {
+		e = p.modelByName(model)
+	}
+	if e == nil || e.Sampling == nil {
+		return base
+	}
+	return base.Overlay(e.Sampling.toSampling())
+}
+
+// samplingOverrides 逐模型覆盖表（D204）：模型名 → 该条目的覆盖（不含整链缺省）。
+// Agent 每轮按当前模型名合并，故这张表只放「这个模型与缺省不同的那几项」。
+// 同名模型出现在多个 provider 时取首个声明（primary 在列表前，符合直觉）。
+func (m *modelConfig) samplingOverrides() map[string]port.Sampling {
+	out := map[string]port.Sampling{}
+	for _, p := range m.Providers {
+		for _, e := range p.Models {
+			if e.Sampling == nil {
+				continue
+			}
+			if _, seen := out[e.Name]; seen {
+				continue
+			}
+			out[e.Name] = e.Sampling.toSampling()
+		}
+	}
+	return out
+}
+
+// currentSampling primary 当前模型的生效采样参数（Agent 每轮注入的那份）。
+func (m *modelConfig) currentSampling() port.Sampling {
+	return m.samplingFor(m.primaryProvider().Name, m.Name)
+}
+
+// costFor 某模型的单价（D205，每百万 token）；未声明 = 零值（界面不显示费用）。
+func (m *modelConfig) costFor(provider, model string) (in, out float64) {
+	p := m.byName(provider)
+	if p == nil {
+		return 0, 0
+	}
+	var e *modelEntry
+	if model == "" {
+		e = p.modelByName(p.models0())
+	} else {
+		e = p.modelByName(model)
+	}
+	if e == nil {
+		return 0, 0
+	}
+	return e.CostIn, e.CostOut
+}
+
 // chainCaps 整条降级链的生效能力（D173：三项各自取与）。降级发生在半路上——图片
 // 那时已经进了请求体，剥不掉；工具与思考同口径（发出去就收不回）。
 func (m *modelConfig) chainCaps() port.ModelCaps {
@@ -523,6 +642,8 @@ func (m *modelConfig) enrichModels(infos []port.ModelInfo) []port.ModelInfo {
 			}
 			info.Caps = p.capsOf(*e)
 			info.ContextWindow = e.ContextWindow
+			// D205：单价每百万 token，来自 config 声明（服务端 /models 不报价格）。
+			info.CostIn, info.CostOutUSD = e.CostIn, e.CostOut
 		}
 		out = append(out, info)
 	}
@@ -615,6 +736,35 @@ func (m *modelConfig) narrowNote() string {
 	return note + "；检查 model.fallback 各模型的 caps"
 }
 
+// validateSampling 采样参数的取值范围校验（D204，启动期一次）。只拦「服务端必然拒收」的
+// 声明，不替用户改值——温度 1.5 被静默截到 1.0，比启动报错更难查（用户以为设的是 1.5）。
+//
+// 协议差异：Chat Completions / Responses 接受 temperature 0..2；Anthropic Messages API
+// 只接受 0..1。top_p 三协议都是 0..1。
+func validateSampling(s port.Sampling, kind, where string) error {
+	if t := s.Temperature; t != nil {
+		hi := 2.0
+		if kind == kindAnthropic {
+			hi = 1.0
+		}
+		if *t < 0 || *t > hi {
+			return fmt.Errorf("%s 的 sampling.temperature = %v 超出范围（该协议接受 0..%g）", where, *t, hi)
+		}
+	}
+	if p := s.TopP; p != nil && (*p < 0 || *p > 1) {
+		return fmt.Errorf("%s 的 sampling.top_p = %v 超出范围（接受 0..1）", where, *p)
+	}
+	if s.MaxTokens < 0 {
+		return fmt.Errorf("%s 的 sampling.max_tokens 不可为负数（%d）；不限制就留空", where, s.MaxTokens)
+	}
+	for _, v := range s.Stop {
+		if v == "" {
+			return fmt.Errorf("%s 的 sampling.stop 含空串（停止串不能为空）", where)
+		}
+	}
+	return nil
+}
+
 // normalize 应用缺省值并 fail-fast 校验 model 段（D173，启动期调用）：
 // primary 缺省 = providers 首个；model.name 缺省 = primary.models[0]。
 func (m *modelConfig) normalize() error {
@@ -661,6 +811,20 @@ func (m *modelConfig) normalize() error {
 			if e.ContextWindow < 0 {
 				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 的 context_window 不可为负数（%d）；不声明就留空",
 					i, p.Name, e.Name, e.ContextWindow)
+			}
+			// 采样参数（D204）：逐模型按**合并后**的生效值校验（该模型自己的覆盖叠在
+			// model.sampling 上）——只校验将来真会发出去的那份。
+			var overlay port.Sampling
+			if e.Sampling != nil {
+				overlay = e.Sampling.toSampling()
+			}
+			if err := validateSampling(m.Sampling.toSampling().Overlay(overlay), p.protocolKind(), p.Name+" / "+e.Name); err != nil {
+				return err
+			}
+			// 单价（D205）：负数没有意义，也不该被当成「未声明」静默吞掉。
+			if e.CostIn < 0 || e.CostOut < 0 {
+				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 的 cost_in / cost_out 不可为负数",
+					i, p.Name, e.Name)
 			}
 		}
 		if enabled == 0 {

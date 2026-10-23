@@ -59,9 +59,12 @@ type anthropicRequest struct {
 	Messages  []anthropicInbound `json:"messages"`
 	Tools     []anthropicTool    `json:"tools,omitempty"`
 	Stream    bool               `json:"stream"`
-	// Temperature 采样温度（0 = 不发送，交服务端默认 1.0）。Messages API 只接受 0..1。
-	Temperature float64  `json:"temperature,omitempty"`
-	StopSeqs    []string `json:"stop_sequences,omitempty"`
+	// Temperature 采样温度（nil = 不发送，交服务端默认 1.0；0 会照发，D204）。
+	// Messages API 只接受 0..1，超范围在启动校验时报因。
+	Temperature *float64 `json:"temperature,omitempty"`
+	// TopP 核采样（D204）；nil = 不发送（开扩展思考时该协议不接受，适配器置 nil）。
+	TopP     *float64 `json:"top_p,omitempty"`
+	StopSeqs []string `json:"stop_sequences,omitempty"`
 	// Thinking 扩展思考开关（省略 = 交服务端默认）。
 	Thinking *anthropicThinking `json:"thinking,omitempty"`
 }
@@ -143,6 +146,7 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 		Tools:       toAnthropicTools(req.Tools, wn),
 		Stream:      true,
 		Temperature: req.Params.Temperature,
+		TopP:        req.Params.TopP,
 		StopSeqs:    req.Params.Stop,
 	}
 	// max_tokens 必填：本轮预算 → 采样上限 → 适配器兜底。
@@ -163,8 +167,10 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 				out.MaxTokens = need
 			}
 			// 开启思考时温度只能是 1：省略即取服务端默认（1.0）；用户设的其它档位
-			// 在这个组合下必然 400，省掉一次白跑。
-			out.Temperature = 0
+			// 在这个组合下必然 400，省掉一次白跑。top_p 同理——该协议在扩展思考下
+			// 不接受采样参数（D204）。
+			out.Temperature = nil
+			out.TopP = nil
 		}
 	}
 	data, err := json.Marshal(out)

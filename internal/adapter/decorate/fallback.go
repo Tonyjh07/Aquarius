@@ -12,10 +12,15 @@ import (
 // Model 语义（D110 修订③）：空 = 透传 req.Model（primary 用——agent 每轮注入当前
 // 模型，热切换不失效）；非空 = 每次尝试改写 req.Model（降级目标 provider 用其
 // models[0]——服务端模型清单互不相通，primary 的模型名在目标端往往不存在）。
+//
+// Sampling 语义（D204）：active 后（Model 非空）用它整份替换 req.Params.Sampling 部分
+// ——降级目标的采样参数是它自己的声明（model.sampling 叠该模型的采样覆盖），与
+// primary 的当前模型无关；nil = 不动（primary 那条）。
 type FallbackEntry struct {
-	Name  string
-	LLM   port.LLM
-	Model string
+	Name     string
+	LLM      port.LLM
+	Model    string
+	Sampling *port.Sampling
 }
 
 // Fallback 跨 provider 降级装饰器（D110②/Q5/修订③，S5）：按序尝试 entries——
@@ -43,6 +48,15 @@ func (f *Fallback) Generate(ctx context.Context, req port.GenerateRequest) (port
 		attempt := req
 		if e.Model != "" {
 			attempt.Model = e.Model
+		}
+		if e.Sampling != nil {
+			// 采样参数跟着降级目标走（D204）：思考三件套（Thinking / ReasoningEffort）
+			// 是会话级开关、由 app 按整链能力位统一决定，降级不该改它们；这里只换
+			// 温度 / top_p / max_tokens / stop 这四项「模型侧偏好」。
+			attempt.Params.Temperature = e.Sampling.Temperature
+			attempt.Params.TopP = e.Sampling.TopP
+			attempt.Params.MaxTokens = e.Sampling.MaxTokens
+			attempt.Params.Stop = e.Sampling.Stop
 		}
 		stream, err := e.LLM.Generate(ctx, attempt)
 		if err == nil {

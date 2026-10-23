@@ -42,8 +42,11 @@ type Config struct {
 	// （nil = 空规格默认人格）。取代原 System/Env 两字段（环境块并入 @env 内置模块）。
 	Persona  *PersonaComposer
 	Sampling port.Sampling
-	Budget   port.TokenBudget
-	MaxTurns int // <=0 = 32
+	// SamplingFor 按模型名取生效采样参数（D204 逐模型覆盖）：nil = 只用 Sampling。
+	// 每轮装配时现取——模型可被 /model 热切换，逐模型覆盖得跟着名字走。
+	SamplingFor func(model string) port.Sampling
+	Budget      port.TokenBudget
+	MaxTurns    int // <=0 = 32
 	// CompactThreshold 自动压缩阈值系数（×MaxContextTokens；<=0 = 0.7，D21 轨2/M2）。
 	CompactThreshold float64
 	// MaxContextTokens 上下文预算 tokens（<=0 = 64000，DESIGN §8）。
@@ -162,6 +165,17 @@ func (a *Agent) setEffort(v string) { a.effort.Store(v) }
 func (a *Agent) Effort() string {
 	v, _ := a.effort.Load().(string)
 	return v
+}
+
+// Sampling 当前生效的采样参数（按当前模型合并了逐模型覆盖，D204）。
+//
+// SamplingFor 由装配根注入并读它自己的原子快照——设置窗「保存并应用」后换掉那份
+// 快照即可热生效，不需要重建 Agent。
+func (a *Agent) Sampling() port.Sampling {
+	if a.cfg.SamplingFor != nil {
+		return a.cfg.SamplingFor(a.modelName())
+	}
+	return a.cfg.Sampling
 }
 
 // CurrentEffort 状态行口径（D34）：think off 时 effort 不发送，故显示空。
@@ -321,6 +335,7 @@ type UsageReport struct {
 	Ratio     float64 // ③的服务端 usage 校准比值
 	SumIn     int     // Path 内累计输入 tokens（服务端实测）
 	SumOut    int     // Path 内累计输出 tokens（服务端实测）
+	CostUSD   float64 // Path 内累计费用（D205；单价未声明的回合不计入）
 	Gen       int     // Path 内带用量的生成次数
 	LastIn    int     // 最近一次实测输入 tokens
 	LastOut   int     // 最近一次实测输出 tokens
@@ -349,6 +364,7 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 		}
 		rep.SumIn += m.Usage.InputTokens
 		rep.SumOut += m.Usage.OutputTokens
+		rep.CostUSD += m.Usage.CostUSD
 		rep.Gen++
 		rep.LastIn, rep.LastOut = m.Usage.InputTokens, m.Usage.OutputTokens
 	}
@@ -398,7 +414,7 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	req := port.GenerateRequest{
 		Model:    a.modelName(),
 		Messages: msgs,
-		Params:   a.cfg.Sampling,
+		Params:   a.Sampling(),
 		Budget:   a.cfg.Budget,
 	}
 	// 思考参数（D34 + D173）：两道闸门。`/think` 是总开关，off 时 reasoning_effort

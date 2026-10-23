@@ -33,15 +33,46 @@ type PromptMessage struct {
 	CallID             string // role=tool：对应 assistant 调用的 ID
 }
 
-// Sampling 采样参数。
+// Sampling 采样参数（D204）。
+//
+// **浮点参数用指针**：nil = 不发送（交服务端默认），非 nil = 照发。temperature 的 0 是
+// 「要确定性输出」这个有意义的取值，用零值兼作「不发送」就永远表达不出来。整数
+// （MaxTokens）仍以 0 表示不发送——0 个输出 token 没有语义。
 type Sampling struct {
-	Temperature float64
-	MaxTokens   int
-	Stop        []string
+	Temperature *float64
+	// TopP 核采样（D204）；nil = 不发送。
+	TopP      *float64
+	MaxTokens int      // 0 = 不发送；本轮预算 Budget.MaxOutputTokens 非零时以预算为准
+	Stop      []string // 空 = 不发送
 	// ReasoningEffort 推理档位（D34；空 = 不发送，交服务端默认）。
 	ReasoningEffort string
 	// Thinking enable_thinking 布尔（D34；dashscope 系思考开关）；nil = 不发送。
 	Thinking *bool
+}
+
+// Overlay 用 o 里非 nil / 非零的字段覆盖 s（D204 逐模型覆盖用）：调用方给整链缺省，
+// 模型条目只写「想改的那几项」，其余继承缺省。Stop 非空即整体替换——停止串没有
+// 「部分覆盖」的语义（拼起来会得到用户没写过的组合）。
+func (s Sampling) Overlay(o Sampling) Sampling {
+	if o.Temperature != nil {
+		s.Temperature = o.Temperature
+	}
+	if o.TopP != nil {
+		s.TopP = o.TopP
+	}
+	if o.MaxTokens != 0 {
+		s.MaxTokens = o.MaxTokens
+	}
+	if len(o.Stop) > 0 {
+		s.Stop = o.Stop
+	}
+	if o.ReasoningEffort != "" {
+		s.ReasoningEffort = o.ReasoningEffort
+	}
+	if o.Thinking != nil {
+		s.Thinking = o.Thinking
+	}
+	return s
 }
 
 // TokenBudget 本轮生成预算（超出由装饰器层截断，D14）。
@@ -67,8 +98,10 @@ type ModelInfo struct {
 	Caps ModelCaps
 	// ContextWindow 上下文窗口 tokens（D177）；0 = 未声明/未知。服务端 /models 不返回
 	// 窗口，只能来自 config；0 表示「按全局预算」，不是「窗口为零」。
-	ContextWindow      int
-	CostIn, CostOutUSD float64 // 每千 token 单价
+	ContextWindow int
+	// CostIn, CostOutUSD 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明
+	// （「没填」不等于「免费」，故不显示费用）。按一次调用的用量折算时除以 1e6。
+	CostIn, CostOutUSD float64
 }
 
 // ModelCaps 模型能力位（D173）：三项独立声明，缺省按协议给（DESIGN §8）。

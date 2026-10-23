@@ -17,7 +17,8 @@ type chatRequest struct {
 	Stream        bool               `json:"stream"`
 	StreamOptions *chatStreamOptions `json:"stream_options,omitempty"`
 	Tools         []chatTool         `json:"tools,omitempty"`
-	Temperature   float64            `json:"temperature,omitempty"` // 0 = 不发送
+	Temperature   *float64           `json:"temperature,omitempty"` // nil = 不发送（0 会照发，D204）
+	TopP          *float64           `json:"top_p,omitempty"`       // nil = 不发送（D204）
 	MaxTokens     int                `json:"max_tokens,omitempty"`  // 0 = 不发送
 	Stop          []string           `json:"stop,omitempty"`
 	// ReasoningEffort 推理档位（D34；空 = 不发送）。
@@ -99,6 +100,7 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 		out.Tools = toChatTools(req.Tools, wn)
 	}
 	out.Temperature = req.Params.Temperature
+	out.TopP = req.Params.TopP
 	out.Stop = req.Params.Stop
 	if req.Params.ReasoningEffort != "" && !omit["reasoning_effort"] {
 		out.ReasoningEffort = req.Params.ReasoningEffort

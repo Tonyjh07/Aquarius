@@ -28,7 +28,12 @@ type textSettings struct {
 	Audio        audioConfig   `json:"audio"` // D179：识别与合成
 	Web          webConfig     `json:"web"`   // D200：联网搜索与抓取
 	Limits       limitsConfig  `json:"limits"`
-	MCPServers   map[string]struct {
+	// Model 采样参数（D204）：只读 model.sampling 这一段——provider/模型编辑走
+	// ProviderManager，不在这里。
+	Model struct {
+		Sampling samplingConfig `json:"sampling"`
+	} `json:"model"`
+	MCPServers map[string]struct {
 		Transport string `json:"transport"`
 	} `json:"mcpServers"`
 	Plugins map[string]struct {
@@ -92,6 +97,11 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		WebFetchRobots:     raw.Web.Fetch.RespectRobots == nil || *raw.Web.Fetch.RespectRobots,
 		WebFetchPrivate:    raw.Web.Fetch.AllowPrivateIPs,
 		WebFetchTimeoutSec: raw.Web.Fetch.TimeoutSec,
+		// 采样参数（D204）：整链缺省；空串 = 该项不发送（与写 0 区分）。
+		SamplingTemperature: numText(raw.Model.Sampling.Temperature),
+		SamplingTopP:        numText(raw.Model.Sampling.TopP),
+		SamplingMaxTokens:   intText(raw.Model.Sampling.MaxTokens),
+		SamplingStop:        stopsText(raw.Model.Sampling.Stop),
 	}
 	for name := range raw.MCPServers {
 		snap.MCPServers = append(snap.MCPServers, name)
@@ -144,6 +154,18 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		// 写回互斥）；原文即最终态，未知键天然保留。后续 mutate 在新文件上照常叠加
 		// 本 patch 的其余键（读-改-写重新读盘，口径一致）。
 		if err := writeRawConfig(cfgPath, p.RawJSON); err != nil {
+			return err
+		}
+	}
+	// 采样参数（D204）：只有设置窗整段提交时才管这一段（窄写回不碰采样）。写前跑一遍
+	// 启动期同一条 normalize——落盘的配置必须能过启动校验，否则重启后连对话都起不来。
+	var sampling samplingConfig
+	if p.SamplingSet && p.RawJSON == "" {
+		var err error
+		if sampling, err = formSampling(p); err != nil {
+			return err
+		}
+		if err := validateSamplingSettings(cfgPath, sampling); err != nil {
 			return err
 		}
 	}
@@ -268,6 +290,10 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		// 联网（D200）：提供商列表恒全量写（nil = 这条路径不管联网）；本地抓取参数
 		// 数值 0 = 不改、布尔恒写。
 		writeWebSection(generic, p)
+		// 采样参数（D204）：整段替换（空 = 删掉该段 = 全不发送）。
+		if p.SamplingSet {
+			writeSamplingSection(generic, sampling)
+		}
 	})
 }
 

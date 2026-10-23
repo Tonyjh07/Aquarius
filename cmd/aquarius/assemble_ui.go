@@ -82,11 +82,37 @@ func (w *wiring) applySettings(p uigui.SettingsPatch) ([]port.Command, error) {
 	if err := persistSettingsTextKeys(w.cfgPath, p); err != nil {
 		return nil, fmt.Errorf("写回 config: %w", err)
 	}
+	// D204：采样参数热生效——从刚写回的 config 现算一份快照换上去，下一次请求就用新值
+	// （逐模型覆盖也跟着刷新；降级目标那份在装配时定，随重启生效）。
+	if p.SamplingSet {
+		w.refreshSampling()
+	}
 	// D179：音色与风格对此后的播报立即生效（服务与模型仍在启动装配时定，改动重启生效）。
 	if w.ttsOut != nil {
 		w.ttsOut.SetStyle(p.TTSVoice, p.TTSDesign, p.TTSStyle, p.TTSTags)
 	}
 	return settingsCommands(w.settingsSnapshot(), p), nil
+}
+
+// refreshSampling 重读 config 的 model 段、换掉采样快照（D204）。读失败/解析失败 = 保留
+// 上一份——配置刚刚写成功，读不回来多半是外部并发改坏，不该让下一次请求发不出参数。
+func (w *wiring) refreshSampling() {
+	cfg, err := loadConfig(w.cfgPath)
+	if err != nil {
+		return
+	}
+	if err := cfg.Model.normalize(); err != nil {
+		return
+	}
+	w.sampling.Store(cfg.Model.samplingTables())
+}
+
+// samplingFor Agent 每轮取采样参数的回调（D204）：按当前模型名在快照里查。
+func (w *wiring) samplingFor(model string) port.Sampling {
+	if t := w.sampling.Load(); t != nil {
+		return t.For(model)
+	}
+	return w.cfg.Model.currentSampling()
 }
 
 // newUI 装配 UI 前端（D33/D43/D51）：Gio GUI（默认，§15）、bubbletea TUI

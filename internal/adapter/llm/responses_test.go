@@ -200,7 +200,7 @@ func TestResponsesRequestShape(t *testing.T) {
 			{Role: "tool", CallID: "call_1", Content: []port.PromptPart{{Kind: "text", Text: "pong"}}},
 		},
 		Tools:  []tool.Spec{{Name: "echo", Description: "回声", Schema: json.RawMessage(`{"type":"object","properties":{}}`)}},
-		Params: port.Sampling{ReasoningEffort: "high", Thinking: &on, Temperature: 0.5},
+		Params: port.Sampling{ReasoningEffort: "high", Thinking: &on, Temperature: fptr(0.5)},
 		Budget: port.TokenBudget{MaxOutputTokens: 128},
 	})
 	if err != nil {
@@ -214,7 +214,8 @@ func TestResponsesRequestShape(t *testing.T) {
 		Store           bool     `json:"store"`
 		Include         []string `json:"include"`
 		MaxOutputTokens int      `json:"max_output_tokens"`
-		Temperature     float64  `json:"temperature"`
+		Temperature     *float64 `json:"temperature"`
+		TopP            *float64 `json:"top_p"`
 		Reasoning       *struct {
 			Effort  string `json:"effort"`
 			Summary string `json:"summary"`
@@ -233,7 +234,7 @@ func TestResponsesRequestShape(t *testing.T) {
 	if body.Model != "gpt-5" || !body.Stream || body.Store {
 		t.Fatalf("头部字段 = %+v（store 必须 false）", body)
 	}
-	if body.MaxOutputTokens != 128 || body.Temperature != 0.5 {
+	if body.MaxOutputTokens != 128 || body.Temperature == nil || *body.Temperature != 0.5 {
 		t.Fatalf("预算/采样 = %d / %v", body.MaxOutputTokens, body.Temperature)
 	}
 	if body.Reasoning == nil || body.Reasoning.Effort != "high" || body.Reasoning.Summary != "auto" {

@@ -209,6 +209,10 @@ type wiring struct {
 
 	// D202/D203：技能管理面快照修订号（安装/卸载/更新/重扫/目录增删都递增）。
 	skillsRev atomic.Int64
+
+	// D204：采样参数热生效快照（整链缺省 + 逐模型覆盖）。装配时填一份，设置窗
+	// 「保存并应用」后整份换掉——Agent 每轮按当前模型名现取，不必重建。
+	sampling atomic.Pointer[samplingTables]
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -301,6 +305,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if _, missing := agentPersona.Compose(); len(missing) > 0 {
 		fmt.Fprintf(stderr, "警告：人格模块树存在缺失引用 %v（已跳过；请检查 config prompts.modules / prompts.persona）\n", missing)
 	}
+	// D204：采样参数快照（整链缺省 + 逐模型覆盖）——Agent 每轮按模型名现取。
+	w.sampling.Store(w.cfg.Model.samplingTables())
 	agent, err := app.New(
 		app.Deps{
 			LLM: gen, UI: w.presenter, IDs: ids, Clock: systemClock{},
@@ -312,6 +318,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Think: w.cfg.Model.Think, ReasoningEffort: w.cfg.Model.ReasoningEffort, // D34 初值
 			EchoThinking: w.cfg.Model.EchoThinking == nil || *w.cfg.Model.EchoThinking, // D42：键缺失 = 回传
 			Caps:         w.cfg.Model.chainCaps(),                                      // D173：降级链取与
+			// D204：采样参数走原子快照——整链缺省 + 逐模型覆盖；设置窗保存后换掉整份即热生效。
+			Sampling:    w.cfg.Model.Sampling.toSampling(),
+			SamplingFor: w.samplingFor,
 		},
 	)
 	if err != nil {

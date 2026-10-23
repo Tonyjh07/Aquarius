@@ -145,6 +145,10 @@ func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, erro
 	fmt.Fprintf(&b, "上轮实测: in=%d out=%d tokens（服务端返回）\n", rep.LastIn, rep.LastOut)
 	fmt.Fprintf(&b, "本会话累计(Path): in=%d out=%d tokens（%d 次生成）",
 		rep.SumIn, rep.SumOut, rep.Gen)
+	// D205：费用只在单价声明过时才有意义；未声明就整段不出现（写「$0.0000」会被读成免费）。
+	if rep.CostUSD > 0 {
+		fmt.Fprintf(&b, "，约 $%.4f", rep.CostUSD)
+	}
 	return b.String(), nil
 }
 

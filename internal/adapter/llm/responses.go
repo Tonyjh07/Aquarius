@@ -46,7 +46,8 @@ type responsesRequest struct {
 	Include         []string            `json:"include,omitempty"`
 	Tools           []responsesTool     `json:"tools,omitempty"`
 	Reasoning       *responsesReasoning `json:"reasoning,omitempty"`
-	Temperature     float64             `json:"temperature,omitempty"` // 0 = 不发送
+	Temperature     *float64            `json:"temperature,omitempty"` // nil = 不发送（D204）
+	TopP            *float64            `json:"top_p,omitempty"`       // nil = 不发送（D204）
 	MaxOutputTokens int                 `json:"max_output_tokens,omitempty"`
 }
 
@@ -124,6 +125,7 @@ func encodeResponsesRequest(req port.GenerateRequest) ([]byte, error) {
 		out.Tools = toResponsesTools(req.Tools, wn)
 	}
 	out.Temperature = req.Params.Temperature
+	out.TopP = req.Params.TopP
 	out.MaxOutputTokens = req.Budget.MaxOutputTokens
 	if out.MaxOutputTokens == 0 {
 		out.MaxOutputTokens = req.Params.MaxTokens

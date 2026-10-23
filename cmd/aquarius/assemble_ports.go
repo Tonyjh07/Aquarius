@@ -217,8 +217,11 @@ func (w *wiring) buildLLMs() error {
 		if target == "" {
 			target = p.models0()
 		}
+		// D204：降级目标带自己那份合并后的采样参数（model.sampling 叠该模型的覆盖），
+		// 由降级装饰器在改写模型名时一并换上——模型名在装饰器里才确定，参数得跟着走。
+		sampling := w.cfg.Model.samplingFor(fb.Provider, target)
 		w.fallbackEntries = append(w.fallbackEntries, decorate.FallbackEntry{
-			Name: fb.Provider, LLM: c, Model: target,
+			Name: fb.Provider, LLM: c, Model: target, Sampling: &sampling,
 		})
 		w.fallbackCounters[fb.Provider] = counter
 	}
@@ -502,10 +505,18 @@ func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 	stacked := make([]decorate.FallbackEntry, 0, len(w.fallbackEntries))
 	for _, e := range w.fallbackEntries {
 		var inner port.LLM = e.LLM
+		// D205：费用折算贴在最内（最靠近适配器）——只加工流末的 Usage，不改请求；放在
+		// 降级之内，改写后的模型名才能取到正确单价。单价按**本条链自己那家 provider**
+		// 查：不同 provider 可能给同名模型标不同价。
+		provider := e.Name
+		price := func(model string) (float64, float64) {
+			return w.cfg.Model.costFor(provider, model)
+		}
+		inner = decorate.NewCost(inner, price)
 		inner = decorate.NewTruncate(inner, fitFor(w.fallbackCounters[e.Name]), truncateNotice)
 		inner = decorate.AuditLLM(inner, audit)
 		inner = decorate.NewRetry(inner)
-		stacked = append(stacked, decorate.FallbackEntry{Name: e.Name, LLM: inner, Model: e.Model})
+		stacked = append(stacked, decorate.FallbackEntry{Name: e.Name, LLM: inner, Model: e.Model, Sampling: e.Sampling})
 	}
 	var gen port.LLM = stacked[0].LLM
 	if len(stacked) > 1 {

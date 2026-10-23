@@ -178,7 +178,7 @@ func TestAnthropicRequestShape(t *testing.T) {
 			{Role: "tool", CallID: "toolu_1", Content: []port.PromptPart{{Kind: "text", Text: "pong"}}},
 		},
 		Tools:  []tool.Spec{{Name: "echo", Description: "回声", Schema: json.RawMessage(`{"type":"object","properties":{}}`)}},
-		Params: port.Sampling{Thinking: &on, ReasoningEffort: "low", Temperature: 0.5, Stop: []string{"\n"}},
+		Params: port.Sampling{Thinking: &on, ReasoningEffort: "low", Temperature: fptr(0.5), Stop: []string{"\n"}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -301,7 +301,7 @@ func TestAnthropicThinkingDisabled(t *testing.T) {
 	s1, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
 		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
-		Params:   port.Sampling{Temperature: 0.3},
+		Params:   port.Sampling{Temperature: fptr(0.3)},
 	})
 	if err != nil {
 		t.Fatalf("generate1: %v", err)

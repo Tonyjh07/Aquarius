@@ -18,6 +18,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// fptr 采样参数的指针形（D204：nil = 不发送、非 nil 照发，含 0）。
+func fptr(v float64) *float64 { return &v }
+
 // sseScript 覆盖：文本分片、碎片化工具调用参数（Index 聚合）、finish 分片、usage 分片、[DONE]。
 const sseScript = "" +
 	": keep-alive\n" +
@@ -82,7 +85,7 @@ func TestGenerateStreamsTextAndToolCalls(t *testing.T) {
 			{Role: "tool", CallID: "call_1", Content: []port.PromptPart{{Kind: "text", Text: "pong"}}},
 		},
 		Tools:  []tool.Spec{{Name: "echo", Description: "回声", Schema: json.RawMessage(`{"type":"object","properties":{}}`)}},
-		Params: port.Sampling{Temperature: 0.7, Stop: []string{"\n"}},
+		Params: port.Sampling{Temperature: fptr(0.7), TopP: fptr(0.9), Stop: []string{"\n"}},
 		Budget: port.TokenBudget{MaxOutputTokens: 128},
 	})
 	if err != nil {
@@ -122,8 +125,9 @@ func TestGenerateStreamsTextAndToolCalls(t *testing.T) {
 		StreamOptions *struct {
 			IncludeUsage bool `json:"include_usage"`
 		} `json:"stream_options"`
-		Temperature float64 `json:"temperature"`
-		MaxTokens   int     `json:"max_tokens"`
+		Temperature *float64 `json:"temperature"`
+		TopP        *float64 `json:"top_p"`
+		MaxTokens   int      `json:"max_tokens"`
 		Stop        []string
 		Messages    []struct {
 			Role      string `json:"role"`
@@ -154,8 +158,9 @@ func TestGenerateStreamsTextAndToolCalls(t *testing.T) {
 	if body.StreamOptions == nil || !body.StreamOptions.IncludeUsage {
 		t.Fatal("stream_options.include_usage 应为 true")
 	}
-	if body.Temperature != 0.7 || body.MaxTokens != 128 || len(body.Stop) != 1 {
-		t.Fatalf("params = temp %v max %v stop %v", body.Temperature, body.MaxTokens, body.Stop)
+	if body.Temperature == nil || *body.Temperature != 0.7 || body.TopP == nil || *body.TopP != 0.9 ||
+		body.MaxTokens != 128 || len(body.Stop) != 1 {
+		t.Fatalf("params = temp %v top_p %v max %v stop %v", body.Temperature, body.TopP, body.MaxTokens, body.Stop)
 	}
 	if len(body.Messages) != 4 {
 		t.Fatalf("messages = %d, want 4", len(body.Messages))

@@ -148,7 +148,7 @@ func formatModels(provider func() string, current string, models []port.ModelInf
 			fmt.Fprintf(&b, " [%s]", strings.Join(marks, "/"))
 		}
 		if m.CostIn > 0 || m.CostOutUSD > 0 {
-			fmt.Fprintf(&b, " $%.3f/$%.3f 每千token", m.CostIn, m.CostOutUSD)
+			fmt.Fprintf(&b, " $%g/$%g 每百万token", m.CostIn, m.CostOutUSD)
 		}
 		b.WriteByte('\n')
 	}
