@@ -25,6 +25,18 @@ var (
 	ErrInvalidNode = errors.New("conversation: invalid node")
 )
 
+// checkInvariants 在 ValidateEveryChange 打开时做整树自检（op 用于错误溯源）。
+// 生产构建下 ValidateEveryChange 为 false，此函数被内联成 no-op，无扫描开销。
+func (c *Conversation) checkInvariants(op string) error {
+	if !ValidateEveryChange {
+		return nil
+	}
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("%s: %w: %w", op, ErrInvalidNode, err)
+	}
+	return nil
+}
+
 // nowFunc 取当前时间；测试可替换以获得确定性输出。
 var nowFunc = time.Now
 
@@ -132,6 +144,9 @@ func (c *Conversation) AppendCommitted(m Message) error {
 	c.Children[stored.Parent] = append(c.Children[stored.Parent], stored.ID)
 	c.Head = stored.ID
 	c.UpdatedAt = nowFunc()
+	if err := c.checkInvariants("append"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -195,6 +210,9 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 		if headInSubtree {
 			c.Head = prevHead // 历史随行，Head 保持在被转移子树内
 			c.UpdatedAt = nowFunc()
+			if err := c.checkInvariants("revise carry"); err != nil {
+				return Message{}, err
+			}
 			return c.Nodes[m.ID], nil
 		}
 	case Clone:
@@ -203,12 +221,18 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 			if mapped, ok := mapping[prevHead]; ok {
 				c.Head = mapped // 历史随行，Head 平移到拷贝对应节点
 				c.UpdatedAt = nowFunc()
+				if err := c.checkInvariants("revise clone"); err != nil {
+					return Message{}, err
+				}
 				return c.Nodes[m.ID], nil
 			}
 		}
 	}
 	c.Head = m.ID
 	c.UpdatedAt = nowFunc()
+	if err := c.checkInvariants("revise"); err != nil {
+		return Message{}, err
+	}
 	return c.Nodes[m.ID], nil
 }
 
@@ -282,6 +306,9 @@ func (c *Conversation) Prune(id MessageID) error {
 		}
 	}
 	c.UpdatedAt = nowFunc()
+	if err := c.checkInvariants("prune"); err != nil {
+		return err
+	}
 	return nil
 }
 
