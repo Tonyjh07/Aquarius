@@ -3,7 +3,7 @@
 </p>
 
 # Aquarius
-<!-- docs-sync: 2026-10-23 @ 7912324 -->
+<!-- docs-sync: 2026-10-23 @ cb256b8 -->
 
 面向个人的 AI 助手。对话优先，支持图片、文档与语音输入，长期记忆以 markdown 文档存放，模型与工具均可替换。Go 编写，交付单个二进制。
 
@@ -52,6 +52,7 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 
 | 文档 | 内容 |
 |---|---|
+| [docs/README.md](docs/README.md) | **文档地图**：每篇写给谁看、管哪部分事实、谁是权威 |
 | [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型、端口设计、权限模型、平台边界与里程碑 |
 | [docs/decisions.md](docs/decisions.md) | **决策记录**：逐条决策、动机与被否决的方案（编号见文内索引表） |
 | [docs/plan.md](docs/plan.md) | **未来规划**：待做事项、执行顺序与节奏、验收与人工拍板点（工作稿，会被频繁重排，别按节号引用） |
@@ -65,7 +66,7 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 | [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令与提交要求 |
 | [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md) | v0.1.0 发布说明：功能、安装、已知限制 |
 
-`docs/` 各篇均由 DESIGN.md 派生，`decisions.md` 为权威决策记录；有冲突时以 DESIGN.md 与决策记录为准。
+每篇文档的读者与权威范围见 [docs/README.md](docs/README.md)。有冲突时以 DESIGN.md 与决策记录为准。
 
 ## 状态
 
