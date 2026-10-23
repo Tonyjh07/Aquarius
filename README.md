@@ -14,13 +14,16 @@
 - **会话树**：消息创建后即不可变，修改一条消息会从该节点分叉，新旧分支并存，可随时回溯、切换。
 - **上下文压缩**：`/compact` 手动、超阈值自动、模型经工具自触发三轨；压缩失败时回退到裁剪最旧消息。
 - **多模态输入**：文件与剪贴板摄取，pdf/docx/xlsx/html 自动转文本，图片直接进入对话。
+- **语音输入与朗读**（Windows）：空输入时发送键变麦克风，录完把转写结果回填输入框而不自动发送；回答可整段合成后朗读，音色、风格与试听在设置窗「语音」页。
+- **截图问答**（Windows）：内置 `window_list` 与 `screen_capture`，能列窗口、抓全屏，也能抓被其它窗口遮挡的窗口，图片直接进对话。
+- **完成通知**：回答提交后弹系统通知，Windows 走 PowerShell、Linux 走 `notify-send`、macOS 走 `osascript`。
 - **记忆即文档**：markdown 文件就是记忆。用户可直接编辑，模型经工具读写。
 - **内置工具**：文件读写与精确替换编辑、命令执行、后台任务、技能载入、网页抓取。
 - **技能**：Agent Skills 开放格式（目录 + `SKILL.md`），与 Claude Code、OpenCode 等现成技能目录通用。正文按需载入。
 - **MCP 扩展**：stdio 与 streamable HTTP 两种传输，接入现成 server 即得新工具，与内置工具同权。
 - **本地优先**：数据全在 `~/.aquarius/`，profile 整目录隔离。卸载即删程序与该目录。
 - **三种界面**：Gio 桌面窗口（默认）、bubbletea 终端界面、行式 repl。
-- **平台支持**：Windows 为完整形态。Linux 与 macOS 可构建运行，界面为降级实现；屏幕捕获与语音采集仅 Windows。
+- **平台支持**：Windows 为完整形态。Linux 与 macOS 可构建运行，界面为降级实现。
 - **规划中**：Go 级进程内插件（Tier-1）。
 
 ## 构建
@@ -68,4 +71,3 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 ## 许可证
 
 [Mozilla Public License 2.0](LICENSE)
-E)
