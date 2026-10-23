@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-23 @ 3c2767b -->
+<!-- docs-sync: 2026-10-23 @ 2f5f488 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -10,6 +10,7 @@
 go build ./cmd/aquarius        # 构建单二进制
 go test ./...                  # 全量测试
 go test -race ./...            # 竞态检测（合入前必过）
+go test -tags aqvalidate ./... # 变更后整树自检（改领域变更路径时必跑，D215）
 go test ./internal/domain/... -run TestProperty -count=50   # 性质测试加密跑
 go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
@@ -90,7 +91,9 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 
 | 层 | 手段 | 样板位置 |
 |---|---|---|
+| arch | **架构守卫**：`go/parser` 读全仓生产文件 import，断言分层方向与反向约束；另断言聚合根不导出 map 字段 | `internal/arch/arch_test.go` |
 | domain | **性质测试**：随机操作序列 → 两条不变量恒成立；快照比对证明不可变 | `domain/conversation/property_test.go` |
+| domain | **变更后自检**：`go test -tags aqvalidate ./...` 下每次变更末尾跑全树 `Validate`（生产构建零开销） | `domain/conversation/validate_tag_test.go` |
 | app | **交互回放**：脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter | `app/fakes_test.go`、`app/agent_test.go` |
 | app | **golden 回放**：命令脚本 → 归一化 transcript（ID 归一为标签）与 `testdata/golden/` 基准比对；改语义后 `go test ./internal/app -run TestGoldenReplay -update` 重写基准并人工检视 | `app/golden_test.go` |
 | adapter | **契约测试**：storejson/memoryfs 临时目录；LLM 用 httptest 假 SSE 录制流回放；toolrun 全等级矩阵表 + 脚本确认器 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go`、`adapter/toolrun/runner_test.go` |

@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-23 @ 7fbb89a -->
+<!-- docs-sync: 2026-10-23 @ 2f5f488 -->
 
 > **定位（2026-10-23 起）**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，
 > 以及里程碑基线。**未来要做什么、按什么顺序、什么节奏**，一律看 [plan.md](plan.md)。
@@ -28,7 +28,8 @@
 | M11 屏幕捕获与语音 | `window_list`/`screen_capture`、转写与播报、`/mic`、语音设置页 | 已落地（S12/S8） |
 
 **版本基线**：`v0.1.0` 已于 2026-10-23 发布（tag `v0.1.0` → `3c2767b`）。
-当前开发分支 `feat/v0.2.0`，规划见 [plan.md](plan.md) §1。
+当前开发分支 `feat/v0.2.0`：v0.2.0 已落地（P0 守规 + P1 聚合根归位），下一阶段规划见
+[plan.md](plan.md) §2（v0.3.0）。
 
 ---
 
@@ -86,6 +87,16 @@
 | S14 | 技能（Agent Skills）读侧 + 安装面 | 已落地（D201/D202/D203；S14-1 读侧 / S14-2 安装面） |
 | S15 | 生态兼容与轻度角色扮演（对照调查） | **未排期 → 已迁至 [plan.md](plan.md) §3** |
 | v0.2.0-P0 | 架构守卫测试（D211）、`/help` 入清单（D212）、展示文本归一（D213） | 已落地 2026-10-23 |
+| v0.2.0-P1 | 会话聚合根归位：只读访问器与 `View()`、`ValidateEveryChange` 自检开关、三张 map 私有 + `Snapshot`/`Restore`、`storejson` 自带 wire DTO（D214/D215/D216） | 已落地 2026-10-23 |
+
+**`v0.2.0-P1` 的落笔顺序**（每笔独立过全门禁、可单独回退）：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| P1-1 | `06cb4e3 refactor: read the conversation tree through accessors` | 加 `NodeCount`/`ChildIDs`/`IDs`/`SubtreeSize`/`Edition`；`app` 生产代码直读清零；删掉 `app` 的 `subtreeSize` 副本（5 files, +278/−42） |
+| P1-2 | `77b9e10 refactor: let the domain produce the tree view` | `View()`/`SiblingGroup`/`nodeLess` 归领域；`makeTreeSnapshot` 只做形状转换，`tree.go` 251→194 行（3 files, +176/−79） |
+| P1-3 | `9ff9523 test: verify the whole tree after every change, behind a build tag` | `ValidateEveryChange` 开关 + 四条变更路径接入（含 `Revise` 的 carry/clone 提前返回分支）；`-tags aqvalidate` 下全量绿（4 files, +70） |
+| P1-4 | `2f5f488 refactor: close the conversation tree behind the aggregate root` | 三张 map 私有；`Snapshot`/`Restore` 契约；`storejson` 自带 `wireTree`/`wireNode`；新增聚合根守门测试；测试直读改走访问器（33 files, +777/−393） |
 
 > 里程碑与步骤是两套编号：里程碑（M<n>）是 `DESIGN.md` §12 的验收单位，
 > 步骤（S<n>）是当时的执行批次。多个步骤可以落在同一个里程碑里。

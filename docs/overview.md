@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-10-23 @ 3c2767b -->
+<!-- docs-sync: 2026-10-23 @ 2f5f488 -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §1/§3/§5/§6，定位是 **10 分钟建立索引的地图**；
 > **冲突以 DESIGN.md / [decisions.md](decisions.md) 为准**（决策记录原 §13 已独立成篇）。
@@ -28,6 +28,9 @@ Go 单二进制交付，数据全在 `~/.aquarius/`。不是编码工作流产�
                        ▲
               cmd/aquarius（装配根：config → 端口 → 会话 → REPL）
 ```
+
+内核另含 `internal/plugin`（插件宿主：发现、grant、崩溃限次重启）——它只依赖 `domain`/`port`，
+和 `app` 同层；`mcpgate` 是它的协议适配器（`mcpgate → plugin` 方向正确）。
 
 铁律（AGENTS.md 全文为准）：
 

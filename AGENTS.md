@@ -41,6 +41,7 @@
 go build ./cmd/aquarius        # 构建二进制
 go test ./...                  # 全量测试
 go test -race ./...            # 竞态检测（合入前必过）
+go test -tags aqvalidate ./... # 变更后整树自检（改领域变更路径时必跑，D215）
 go test ./internal/domain/... -run TestProperty -count=50   # domain 性质测试加密跑
 go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
@@ -98,7 +99,9 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
 
 ## 测试要求
 
-- **改动 domain**：必须带/改性质测试。核心不变量三条（树合法、存在性引用、节点不可变）必须持续可证。
+- **改动 domain**：必须带/改性质测试。核心不变量两条（树合法、节点不可变）必须持续可证；
+  改到变更路径（`AppendCommitted`/`Revise`/`Prune`/`InsertCommitted`）时，另跑
+  `go test -tags aqvalidate ./...`（该构建下每次变更后自检整树，D215）。
 - **改动 app**：用脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter 做交互回放（golden 测试），
   禁止测试里起真实网络。
 - **改动 adapter**：跑该适配器的契约测试（临时目录/假 server）；LLM 适配器用录制流回放。

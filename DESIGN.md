@@ -165,14 +165,20 @@ type Message struct { // 创建后只读，值语义
     Trigger    bool
 }
 
+// Conversation 是**聚合根**：树只能经方法改动（D214）。
+// 三张结构表一律私有——导出 map 等于把「只有方法能改」作废
+// （任何一处 c.Nodes[id] = ... 都能绕过不变量检查）。
 type Conversation struct {
-    ID           ID
-    Title        string
-    Nodes        map[MessageID]Message       // 只增
-    Children     map[MessageID][]MessageID   // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root 自身）
-    Head         MessageID
-    RevisedFrom  map[MessageID]MessageID     // 新→旧：版本链（纯结构元数据）
+    ID    ID
+    Title string
+    // Head 当前游标（初始 = Root）。单个标量，留作导出字段；
+    // 移动语义仍走 Checkout（写 Head 而不更新 UpdatedAt 会破坏一致性）。
+    Head                 MessageID
     CreatedAt, UpdatedAt time.Time
+
+    nodes       map[MessageID]Message     // 只增（Prune 硬删除外）
+    children    map[MessageID][]MessageID // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root 自身）
+    revisedFrom map[MessageID]MessageID   // 新→旧：版本链（纯结构元数据）
 }
 
 type KeepMode int
@@ -189,29 +195,48 @@ func (c *Conversation) AppendCommitted(m Message) error                   // 提
 func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root 不可 Revise；system/inject 可
 func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Message, error) // 在 id 之前插入衬垫节点（仅 system|inject，D152）
 func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, error) // 同上，但接受已组装的衬垫节点（模型生成的摘要带 Model/Usage，与 AppendCommitted 同口径）
-func (c *Conversation) Prune(id MessageID) error            // 剪掉 id 及整棵子树（Root 不可剪）
-func (c *Conversation) Checkout(id MessageID) error         // Head 移到任意节点（含 Root=回根；无空串特例）
-func (c *Conversation) Path() []Message                     // Root→Head 线性序列（首元素为 Root，装配时滤掉）
-func (c *Conversation) Branches(id MessageID) []Message     // 同级分叉（UI 对比新旧版本；id=Root 时为顶层消息）
+func (c *Conversation) Prune(id MessageID) error              // 剪掉 id 及整棵子树（Root 不可剪）
+func (c *Conversation) Checkout(id MessageID) error           // Head 移到任意节点（含 Root=回根；无空串特例）
+func (c *Conversation) Path() []Message                        // Root→Head 线性序列（首元素为 Root，装配时滤掉）
+func (c *Conversation) Branches(id MessageID) []Message        // 同级分叉（UI 对比新旧版本；id=Root 时为顶层消息）
 func (c *Conversation) Find(id MessageID) (Message, bool)
-func (c *Conversation) Validate() error                     // 两条不变量整体自检（加载后/测试用）
+func (c *Conversation) NodeCount() int                         // 节点总数
+func (c *Conversation) ChildIDs(id MessageID) []MessageID      // 直接孩子，按结构插入序（副本）；"" 查 Root 挂点
+func (c *Conversation) IDs() []MessageID                       // 全部节点 ID，按 ID 升序
+func (c *Conversation) SubtreeSize(id MessageID) int           // id 及整棵子树的节点数（/rm 确认提示）
+func (c *Conversation) Edition(id MessageID) (MessageID, bool) // 版本链上游（被它修订掉的节点）
+func (c *Conversation) View() View                             // 整树只读视图：节点序 + 分叉组 + 末端表
+func (c *Conversation) Snapshot() Snapshot                     // 整树只读导出（持久化/迁移用，D214）
+func Restore(s Snapshot) (*Conversation, error)                // 唯一重建入口，进来先跑 Validate
+func (c *Conversation) Validate() error                        // 两条不变量整体自检（加载后/测试用）
 ```
+
+**读出口与持久化出口（D214）**：外部只能经上面这些方法读树——`View` 负责展示口径
+（节点按 (CreatedAt, ID) 升序、分叉组、每个节点的版本子树末端，口径与 `Tail` 一致），
+`Snapshot` 负责搬运口径（节点按 ID 升序、边按父 ID 升序、版本链按新 ID 升序，均为确定性顺序，
+返回的切片不与内部表共享）。`Restore` 是**唯一**的重建入口，且进来就跑 `Validate`——
+磁盘数据同样是不可信输入。领域不为「磁盘上长什么样」负责：`Conversation` **没有任何 JSON tag**，
+直接 `json.Marshal` 它只会得到标量字段、静默丢掉整棵树；wire 格式（字段名、旧格式识别、
+`.bak` 兼容）归适配器（如 `storejson` 的 `wireTree`/`wireNode`）。
+
+**封装守护**：`internal/arch` 的 `TestAggregateRootHidesItsMaps` 断言 `Conversation` 没有任何
+导出 map 字段——要重新导出，必须先改这条守卫（D216）。
 
 **不变量（2 条，性质测试守护）**：
 
 1. **树合法**：以 **Root 实节点为唯一根**——Root 是空消息节点（`ID == 会话 ID`、`Role == root`、`Parent == ""`），
    `Parent == ""` 的节点仅 Root 一个；顶层消息 = Root 的孩子（允许多条，支撑 Revise 首条消息）；
-   无环；`Parent/Children` 双向一致；`Head` 属于树（初始 = Root，**无空串特例**）。
+   无环；父边与孩子边双向一致；`Head` 属于树（初始 = Root，**无空串特例**）。
    节点形态校验（`checkNodeShape`）另把守分片级约束：思考分片与工具分片**仅 assistant 可携带**
    （D42/D95）、工具分片 CallID 节点内唯一且非空、Result.CallID 与分片一致（D95）。
-2. **节点不可变**：`Nodes` 只增不改（节点内容创建后只读）；一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
+2. **节点不可变**：节点表只增不改（节点内容创建后只读）；一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
    （旧不变量 2"存在性引用"随 D95 Tool as Part 取消——调用与结果同片，无跨节点引用可失联。）
 
 **关键语义**：
 
 - **Revise Carry = 边转移**（D2）：节点内容不依赖祖先指纹（不像 git commit），
-  改写历史只需把 `Children[id]` 这批边改挂到新节点，树仍是一棵树，无 DAG。精确语义（D16）：
-  被转移子树**零拷贝、身份不变**，`Children` 边与**直接孩子的 `Parent` 边指针**随之改写，
+  改写历史只需把 `id` 的孩子边这批边改挂到新节点，树仍是一棵树，无 DAG。精确语义（D16）：
+  被转移子树**零拷贝、身份不变**，孩子边与**直接孩子的 `Parent` 边指针**随之改写，
   孙代及更深节点字节级不动；节点内容（Content/Usage/Model/Outcome/CreatedAt）永不改写。
 - **Revise Clone = 深拷贝分叉**（D96）：第三种并列模式——新节点 + 整棵子树深拷贝（全新 ID、
   与原子树零共享，原子树字节级不动），供"复制整段历史另试走向"的显式选用；仅领域 API，不接命令。
@@ -565,6 +590,11 @@ type ConversationStore interface { // 整树存取（一会话一 JSON），写�
     Remove(ctx context.Context, id conversation.ID) error
 }
 ```
+
+**磁盘形状不在端口契约里**（D214）：端口只收发聚合根与摘要，落盘格式（字段名、旧格式识别、
+`.bak` 代际）是各适配器自己的事。内置实现 `storejson` 用 `conversation.Snapshot()` 导出整树、
+经自己的 `wireTree`/`wireNode` 映射成 JSON，读回时 `conversation.Restore()` 重建并自检——
+换一种存储介质只需实现这 4 个方法，领域与端口都不用动。
 
 ### 5.4 `memory.go` —— 记忆端口
 
@@ -1774,14 +1804,16 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 | 层 | 手段 |
 |---|---|
-| **架构** | `internal/arch` 解析全仓生产文件的 import，断言分层方向（`adapter → port ← app → domain`）与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；判定函数另有正反例自检，防「永远绿」。测试文件不受约束——借用真实适配器做链路级验收是允许的 |
-| domain | 性质测试：随机 Append/Revise(Fresh\|Carry\|Clone)/Prune/Checkout 序列 → 不变量 1–2 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写）；Clone 深拷贝子树与原子树零共享、原子树字节级不变（D96）；节点形态校验含思考分片与工具分片仅 assistant 可携带、工具分片 CallID 节点内唯一（D42/D95） |
+| **架构** | `internal/arch` 解析全仓生产文件的 import，断言分层方向（`adapter → port ← app → domain`）与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；判定函数另有正反例自检，防「永远绿」。同一包内另有一条聚合根守卫：`Conversation` 不得有任何导出的 map 字段（D216——导出即等于「只有方法能改树」失效）。测试文件不受约束——借用真实适配器做链路级验收是允许的 |
+| domain | 性质测试：随机 Append/Revise(Fresh\|Carry\|Clone)/Prune/Checkout 序列 → 不变量 1–2 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写）；Clone 深拷贝子树与原子树零共享、原子树字节级不变（D96）；节点形态校验含思考分片与工具分片仅 assistant 可携带、工具分片 CallID 节点内唯一（D42/D95）；`Snapshot`→`Restore` 往返得到同一棵树，坏快照（重复节点/悬空边/Head 不在树）被拒（D214） |
+| domain（变更后自检） | `ValidateEveryChange` 置于 `-tags aqvalidate` 之后（D215）：该构建下四条变更路径（`AppendCommitted`/`Revise`/`Prune`/`InsertCommitted`，含 Revise 的 carry/clone 提前返回分支）末尾都跑一次全树 `Validate`；生产构建为常量 `false`，检查被编译掉、零开销。`validate_tag_test.go` 双向验证这条开关本身（开 tag 时弄坏树必须被拒，不开时自动跳过） |
 | app | 脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter → 交互回放（golden）；摄取管线用假 Transcriber；思考入树（分片顺序）与回传开关两态装配（D42） |
 | adapter | LLM 录制流回放；storejson/blobfs/jobproc/memoryfs 契约测试（临时目录） |
 | MCP | 测试内起假 MCP server（stdio）跑 mcpgate 契约：发现/调用/超时/崩溃重启/授权拒绝 |
 | e2e | 编译出二进制 + repl 适配器喂 stdin 断言 stdout；装配假 MCP server 验证 `mcp:` 工具全链路 |
 
-质量门禁：`go vet` + `gofmt` + 全量 `go test`（含 `-race`）通过方可合入。
+质量门禁：`go vet` + `gofmt` + 全量 `go test`（含 `-race`）通过方可合入；
+改动领域变更路径时另跑一遍 `go test -tags aqvalidate ./...`（D215）。
 
 ---
 

@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-23 @ 7fbb89a -->
+<!-- docs-sync: 2026-10-23 @ 2f5f488 -->
 
 > **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
@@ -228,6 +228,9 @@
 | D211 | 分层方向由 `internal/arch` 测试守护：解析全仓生产文件 import，断言 `adapter → port ← app → domain` 与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；adapter 同层互引合法（§11） | 生效 |
 | D212 | 命令清单是**唯一**事实源：`/help` 补进 `commandCatalog`（补全浮层此前看不到它），并删掉测试里手抄的期望表，改为用 AST 从 `execCommand` 的 switch 反推——分支与条目互为镜像（D103②） | 生效 |
 | D213 | 展示文本实现收拢到 `internal/adapter/uicommon`：转义剥离/控制字符剔除/分片拼接一份实现，差异（换行保不保留、图片占位怎么呈现）收成显式参数；`notify` 保留「连空白一并剥」的单行口径（§11） | 生效 |
+| D214 | 会话聚合根经 `Snapshot`/`Restore` 搬运：三张结构表私有、只读访问器是唯一读口；`Restore` 进来先跑 `Validate`；`storejson` 自带 wire DTO，`Conversation` 删除全部 JSON tag（§4.1/§5.3） | 生效 |
+| D215 | 变更后整树自检放在 `-tags aqvalidate` 之后：开 tag 时四条变更路径末尾跑全树 `Validate`，生产构建为常量 `false`、检查被编译掉（§4.1/§11） | 生效 |
+| D216 | 聚合根不得导出 map 字段：`internal/arch` 解析 AST 断言 `Conversation` 无导出 map，扫不到该类型也算失败（§11） | 生效 |
 
 ## 记录
 
@@ -4642,3 +4645,65 @@
   统一（GUI 有缩略图、TUI 只有文件名、终端只有字符，统一任何一版都是让另两个退步）。
 - **后果/限制**：净删约 168 行，算法只剩一份；`notify` 的顺序差异（先剥控制字符再压空白，
   还是反过来）现在由参数表达，不会再有人只改一处。新增前端只要选两个参数即可接入。
+
+---
+
+### D214 — 聚合根经 `Snapshot`/`Restore` 搬运，不为持久化形状负责（v0.2.0，§4.1/§5.3）
+
+- **动机**：`Conversation` 的三张 map（`Nodes`/`Children`/`RevisedFrom`）全是导出字段，
+  「只有方法能改」只是口头约定：`app` 生产代码直读 23 处、`storejson` 逐字段重建整棵树、
+  测试里约 150 处直读，任何人都能一行 `c.Nodes[id] = ...` 绕过所有不变量检查。同时
+  `Conversation` 本身带 JSON tag，等于领域在替适配器定义「磁盘上长什么样」——连 `.bak` 兼容
+  这种纯持久化问题都只能到领域里解决。
+- **决策**：
+  ① 三张结构表私有，读一律走访问器（`Find`/`ChildIDs`/`IDs`/`NodeCount`/`SubtreeSize`/
+  `Edition`/`View`/`Branches`/`Tail`）。`Head`/`Title`/`ID`/时间戳仍导出：它们是单个标量而非
+  结构表，改动面过大且不构成「结构可被绕过改写」的风险（`Head` 的移动语义仍走 `Checkout`）。
+  ② 领域提供一对搬运契约：`Snapshot()` 导出整棵树的**只读副本**（节点按 ID 升序、边按父 ID
+  升序、版本链按新 ID 升序，均为确定性顺序），`Restore(Snapshot)` 是唯一的重建入口且**进来
+  就跑 `Validate`**——磁盘数据同样是不可信输入。
+  ③ `storejson` 定义自己的 `wireTree`/`wireNode` DTO（字段名与旧格式保持一致，旧文件仍可读），
+  `Conversation` 上的 JSON tag 全部删除：直接 `json.Marshal` 聚合根只会得到标量字段，落盘会
+  静默丢掉整棵树——这个「看起来能存」的假象必须消掉。
+- **否决**：① 只把 map 私有、让适配器用 `AppendCommitted` 逐节点重放（会重写 ID、丢失结构
+  顺序与版本链，载入后不是同一棵树）；② `Snapshot` 直接暴露三张 map（等于换个名字继续导出）；
+  ③ 给 `Message` 也做一套 wire DTO（约 40 个字段的映射，`Message` 是不可变值对象、其序列化
+  形状稳定，复制一份的风险大于收益；结构表归适配器、节点负载留在值对象上，这条边界写在此处）。
+- **后果/限制**：聚合根封装现在由编译器保证，另加 `internal/arch` 的
+  `TestAggregateRootHidesItsMaps` 盯着「别哪天又导出回去」。载入路径的失败信息更具体
+  （`restore: duplicate node ...` / `head not in tree`）。测试不再能直读内部状态，
+  改用 `nodeOf` 之类的辅助器；e2e 测试改为经 `storejson` 读回落盘文件，顺带覆盖了
+  真实读回路径。
+
+---
+
+### D215 — 变更后整树自检放在 build tag 后面（v0.2.0，§4.1/§11）
+
+- **动机**：领域的变更方法（`AppendCommitted`/`Revise`/`Prune`/`InsertCommitted`）此前只校验
+  传入的节点本身，不校验它们**产出的整棵树**。一条打破不变量的路径（丢孩子边、留悬空父、
+  Head 落在树外）要等到很久以后某次读树才炸，报错位置与肇事改动完全脱节。
+- **决策**：加 `ValidateEveryChange`——`-tags aqvalidate` 构建时为 `true`，变更末尾跑全树
+  `Validate`；生产构建为常量 `false`，检查被编译掉、每次追加零扫描开销。四条变更路径全部接入，
+  含 `Revise` 的 carry/clone 提前返回分支（那两条最容易只改一半）。
+- **否决**：① 生产环境也常开（O(n) 全表扫描挂在每次追加上，长会话里是实打实的成本，而它防的是
+  「代码有 bug」这种开发期问题）；② 用 panic 做自检（AGENTS.md 明文禁止用 panic 做控制流，
+  且被测代码的错误处理会把 panic 变成更难定位的崩溃）。
+- **后果/限制**：`validate_tag_test.go` 双向验证——开 tag 时手工弄坏一棵树必须被拒，不开 tag
+  时该测试自动跳过（这本身就是「生产零开销」的证据）。CI/本地需要显式跑
+  `go test -tags aqvalidate ./...` 才能获得这层守护，命令写进 `AGENTS.md` 与
+  `docs/development.md`。
+
+---
+
+### D216 — 聚合根不得导出 map 字段（v0.2.0，§11）
+
+- **动机**：D214 把三张 map 私有化之后，「不要重新导出」靠的是记忆。导出 map 的破坏力不是
+  风格问题——它让「只有方法能改树」这条聚合根底线直接作废，而且这种回归非常容易被当成
+  「先导出一下方便」的临时便利。
+- **决策**：`internal/arch` 新增 `TestAggregateRootHidesItsMaps`：解析
+  `internal/domain/conversation/conversation.go` 的 AST，断言 `Conversation` 没有任何导出的
+  map 类型字段；顺带断言「确实找到了这个类型」，避免扫描错文件导致永远绿。
+- **否决**：① 泛化到全仓所有结构体（`View`/`Snapshot` 是只读值，导出是有意的，误报会逼人加
+  例外表）；② 只在注释里写规矩（已证明会被下一轮追加冲掉）。
+- **后果/限制**：要重新导出必须先改这条守卫——把「顺手」变成「显式决定」。实测临时注入一个
+  `Bogus map[MessageID]int` 会让它变红。
