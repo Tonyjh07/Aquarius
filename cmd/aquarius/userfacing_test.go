@@ -8,6 +8,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -25,6 +26,53 @@ import (
 //   - § + 数字（DESIGN 节号）
 //   - 里程碑 M0–M4（同样的词边界）
 var userFacingIDPattern = regexp.MustCompile(`\bD\d{2,}\b|§\d|\bM[0-4]\b`)
+
+// userFacingDocs 用户面 Markdown：面向使用者、不含内部编号的文档（docs/README.md 是
+// 贡献者的文档地图，会拿编号当例子讲，故不在此列；发布说明逐版累积，按 glob 全扫）。
+// 新增用户面文档时把路径加进来——否则这条守卫管不到它。
+var userFacingDocs = []string{
+	"README.md",
+	"docs/guide.md",
+	"docs/usage.md",
+	"docs/configuration.md",
+	"docs/storage.md",
+}
+
+// TestNoDecisionIDsInUserFacingDocs 守住用户面文档：正文（含代码块——那是用户会看到的
+// 命令与报错原文）里出现决策编号 / 节号 / 里程碑即失败。
+//
+// 与字符串字面量守卫互补：那条防代码往界面上写编号，这条防文档正文里写。两边都失效时
+// 用户就会读到「（D34）」这种只有维护者看得懂的东西。
+func TestNoDecisionIDsInUserFacingDocs(t *testing.T) {
+	root := filepath.Join("..", "..")
+	docs := append([]string{}, userFacingDocs...)
+	releases, err := filepath.Glob(filepath.Join(root, "docs", "releases", "*.md"))
+	if err != nil {
+		t.Fatalf("列发布说明: %v", err)
+	}
+	for _, p := range releases {
+		if rel, rerr := filepath.Rel(root, p); rerr == nil {
+			docs = append(docs, filepath.ToSlash(rel))
+		}
+	}
+	var bad []string
+	for _, rel := range docs {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		raw, rerr := os.ReadFile(path)
+		if rerr != nil {
+			t.Fatalf("读取 %s: %v", rel, rerr)
+		}
+		for i, line := range strings.Split(string(raw), "\n") {
+			if m := userFacingIDPattern.FindString(line); m != "" {
+				bad = append(bad, fmt.Sprintf("%s:%d  →  %s  in  %s", rel, i+1, m, strings.TrimSpace(line)))
+			}
+		}
+	}
+	if len(bad) > 0 {
+		t.Fatalf("用户面文档里仍有开发决策编号 / 里程碑（铁律第 10 条）：\n  %s\n"+
+			"改成行为与后果的说明；编号只留在贡献者面文档与代码注释里。", strings.Join(bad, "\n  "))
+	}
+}
 
 // TestNoDecisionIDsInUserFacingStrings 遍历 cmd/ 与 internal/ 的非测试源码，
 // 解析出所有字符串字面量（含 raw string），命中内部标记即失败。

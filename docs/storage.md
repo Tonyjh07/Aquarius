@@ -1,34 +1,33 @@
 # 数据布局与备份
-<!-- docs-sync: 2026-10-07 @ a93f461 -->
+<!-- docs-sync: 2026-10-23 @ 931b852 -->
 
-> 本文衍生自 [DESIGN.md](../DESIGN.md) §8/§4，结合 storejson 实现；
-> **冲突以 DESIGN.md 为准**。原则：**本地优先、用户数据主权**——全部明文、
+> 本文与 `storejson` 的落盘实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。原则：**本地优先、用户数据主权**——全部明文、
 > 卸载 = 删二进制 + 删目录，任何文件都可用编辑器直接查看修改。
 
 ## 目录布局
 
 ```
 ~/.aquarius/                     # -data 可整体改指
-├── config.json                  # 当前 profile 指针（{"profile":"<name>"}；D110）
-└── profiles/<name>/             # profile 整目录隔离（D110：会话/记忆/附件随 profile 走，Q1）
+├── config.json                  # 当前 profile 指针（{"profile":"<name>"}）
+└── profiles/<name>/             # profile 整目录隔离（会话/记忆/附件随 profile 走）
     ├── config.json              # 主配置（写回 = tmp+rename 原子换入；字段见 configuration.md）
     ├── sandbox/                 # Agent 特权目录（权限矩阵 rw 格，启动自动创建）
-    ├── memories.md              # 全局记忆（markdown 单文件，D23；/memory 直开）
+    ├── memories.md              # 全局记忆（markdown 单文件；/memory 直开）
     ├── conversations/           # 会话树，一会话一 JSON
     │   ├── <id>.json            # 当前代
-    │   ├── <id>.json.bak        # 上一代（Save 换代前留一代，D7）
+    │   ├── <id>.json.bak        # 上一代（Save 换代前留一代）
     │   ├── <id>.json.<随机>.tmp # 写入中的临时文件（唯一随机名，正常结束不存在）
-    │   └── <id>.memory.md       # 该会话的会话记忆（随会话就近存放，D23）
-    ├── jobs/<jobID>.log         # 后台任务日志（M3：命令头 + 输出 + 退出标记行；任务表内存态 D8）
-    ├── audit.log                # 审计日志（M4：JSONL，装饰器写入 LLM/工具调用的耗时与结果状态；超限轮转一代）
-    ├── attachments/<sha256>     # 内容寻址附件（M3：同内容去重；启动按全量会话引用 GC，随 profile 清扫——D110 修订①）
-    ├── gui_pos.json             # 主窗位置记忆（§15.1，随 profile 走——D110 修订①）
-    └── plugins/<name>/plugin.json # MCP server 描述（M4 起）
+    │   └── <id>.memory.md       # 该会话的会话记忆（随会话就近存放）
+    ├── jobs/<jobID>.log         # 后台任务日志（命令头 + 输出 + 退出标记行；任务表只在内存）
+    ├── audit.log                # 审计日志（JSONL：装饰器写入 LLM/工具调用的耗时与结果状态；超限轮转一代）
+    ├── attachments/<sha256>     # 内容寻址附件（同内容去重；启动按全量会话引用 GC，随 profile 清扫）
+    ├── gui_pos.json             # 主窗位置记忆（随 profile 走）
+    └── plugins/<name>/plugin.json # MCP server 描述
 ```
 
-**profile 切换（D110③）**：`--profile <name>` 进程级覆盖，或设置窗切换（原子写根指针）
-——均重启生效；切换 = 换整目录，会话/记忆/附件互相隔离。旧单文件 config（D110 前布局）
-启动显式报 `ErrLegacyConfig` 并给手工迁移步骤，不做自动迁移（D110④）。
+**profile 切换**：`--profile <name>` 进程级覆盖，或设置窗切换（原子写根指针）
+——均重启生效；切换 = 换整目录，会话/记忆/附件互相隔离。旧单文件 config（目录化之前的布局）
+启动显式报 `ErrLegacyConfig` 并给手工迁移步骤，不做自动迁移。
 
 ## 会话 JSON 结构
 
@@ -57,7 +56,7 @@
 }
 ```
 
-要点（详见 DESIGN §4.1 / D19–D21）：
+要点：
 
 - **role=`root`**：唯一根，`id` = 会话 ID、空内容、`parent` 为空；
   `children` 里键 `""` 只挂 Root 自己。
@@ -81,13 +80,13 @@ Move-Item ~/.aquarius/conversations/<id>.json.bak ~/.aquarius/conversations/<id>
 - `Remove`（未来 `/rm` 会话级）与手工删除会连 `.bak` 一起删——想留底先拷走；
   `<id>.memory.md` 不随 JSON 删除联动（会话级删除落地时再一并处理，当前无此入口）。
 
-## D19 旧格式（M0 早期数据）处置
+## 早期格式数据处置
 
-实 Root 切换是**破坏性**的：虚拟 Root 时代的文件（无 root 节点、`head` 为空）
+实 Root 切换是**破坏性**的：更早的原型数据（无 root 节点、`head` 为空）
 加载会报：
 
 ```
-storejson: 发现旧格式会话（虚拟 Root，D19）: <id>, <id>——请删除对应 .json 文件后重试
+storejson: 发现旧格式会话: <id>, <id>——请删除对应 .json 文件后重试
 ```
 
 按报因点名逐个删除**两个文件**（只删 `.json` 会被 `.bak` 回退"复活"）：
