@@ -226,7 +226,7 @@ func (m *welcomeManager) Models(p uigui.WelcomePatch) ([]string, error) {
 			ref = cfg.Model.Providers[0].keyRefs()[0]
 		}
 	}
-	key, err := resolveAPIKey(context.Background(), strings.TrimSpace(p.Provider), ref, m.secrets, m.stderr)
+	key, err := resolvePatchKey(context.Background(), strings.TrimSpace(p.Provider), ref, m.secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -326,17 +326,24 @@ func missingKeys(ctx context.Context, m *modelConfig, sec port.Secrets) []string
 	return out
 }
 
-// setupWizard 装配前向导窗（D141）：gui 且「配置不完整」（primary/fallback 的 secret:
-// 取不到）时，**先于内核装配**开独立向导窗——保存 → 重新读配置（重跑 bootstrap 的读配置
-// 段）→ 同进程继续启动；取消 → 退出 0。只尝试一次：向导后仍不完整即 fatal 报因，不循环弹窗。
+// setupWizard 装配前向导窗（D141）：gui 且「需要引导」时，**先于内核装配**开独立向导窗
+// ——保存 → 重新读配置（重跑 bootstrap 的读配置段）→ 同进程继续启动；取消 → 退出 0。
+// 只尝试一次：向导后仍不完整即 fatal 报因，不循环弹窗。
 // tui/repl 不走窗（首跑已在 bootstrap 打指引退出；密钥缺失仍走 buildLLMs 的 fatal 报因）。
+//
+// 「需要引导」= **缺密钥 或 本次是这个 profile 的首跑**（D210）。改前只看缺密钥：模板里的
+// 引用常常正好由环境变量顶上（`secret:AQUARIUS_OPENAI_KEY` 一旦设了就别处也能取到），于是
+// 「配置够用」被当成「用户已经确认过」，装配前向导被跳过；可模板里 `ui.welcomed` 是 false，
+// 主窗起来后又自动弹了应用内欢迎窗——两个窗口同屏，用户不知道该跟哪个走。首跑一律先引导：
+// 保存即置位 `welcomed`，主窗不再二次打扰，用户填的 key 也一定走在「入库 + 引用」这条路上。
+//
 // 返回 (退出码, 是否结束 run)。
 func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelName, baseURL string) (int, bool) {
 	if w.cfg.UI.Kind != "gui" || w.setupTried {
 		return 0, false
 	}
 	issues := missingKeys(ctx, &w.cfg.Model, w.secrets)
-	if len(issues) == 0 {
+	if len(issues) == 0 && !w.firstRun {
 		return 0, false
 	}
 	w.setupTried = true

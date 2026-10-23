@@ -180,7 +180,7 @@ func (f *welcomeForm) accessErr() error {
 		return fmt.Errorf("模型名不可为空（逗号可多条，首个 = 缺省请求模型）")
 	}
 	if f.env.setup && len(f.env.snap.Issues) > 0 && p.APIKey == "" {
-		return fmt.Errorf("请填写 API 密钥：可填 secret:<环境变量名> 引用环境变量，或直接填明文（启动时会警告）")
+		return fmt.Errorf("请填写 API 密钥：可填 secret:<环境变量名> 引用环境变量，或直接填明文（保存时转入本机加密密钥库）")
 	}
 	return nil
 }
@@ -956,12 +956,16 @@ func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Di
 }
 
 // keyForm 密钥形态描述（**不回显值**，D35）。
+//
+// 明文那一档说的必须是**保存后**的形态：向导填的明文由 `welcomeManager.Apply` 转入本机
+// 密钥库，config 里只留引用（D161）。早先这里写「写入 config，启动会警告」，与真实行为
+// 相反，用户据此以为密钥存成了明文（D210）。
 func (f *welcomeForm) keyForm(apiKey string) string {
 	switch {
 	case strings.HasPrefix(apiKey, "secret:"):
 		return "环境变量引用 secret:" + strings.TrimPrefix(apiKey, "secret:") + "（密钥不落盘）"
 	case apiKey != "":
-		return "明文（写入 config，启动会警告）"
+		return "明文（保存时转入本机加密密钥库，config 只留引用）"
 	default:
 		return "保持原值（未改）"
 	}

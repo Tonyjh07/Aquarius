@@ -199,8 +199,9 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 			p.Name, kind, kindOpenAIChat)
 	}
 	// note 传 nil：探测刻意发可能不被支持的参数，那些结论不该被记成「这个 provider
-	// 不认该参数」——正式请求的剥离记录归正式请求。
-	key, err := p.resolveKeyAt(context.Background(), 0, w.secrets, w.stderr)
+	// 不认该参数」——正式请求的剥离记录归正式请求。凭据同样按「草稿」解析：探测不该
+	// 补发落盘形态警告，那条留给真实构造路径（D210）。
+	key, err := resolvePatchKey(context.Background(), p.Name, p.keyRefs()[0], w.secrets)
 	if err != nil {
 		return nil, err
 	}

@@ -1211,12 +1211,31 @@ func secretName(ref string) (string, error) {
 //   - secret:<名> → 经 port.Secrets 按名取用（**先本机密钥库、再同名环境变量**，D151/D161）
 //   - 其余 → 视为明文直接使用，启动打印警告（**不回显密钥值**）
 func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, stderr io.Writer) (string, error) {
+	return resolveAPIKeyTo(ctx, provider, ref, sec, stderr)
+}
+
+// resolvePatchKey 界面草稿凭据的一次性解析（探测路径专用，D210）：口径与 resolveAPIKey
+// 完全一致，只是**不打明文警告**。
+//
+// 为什么：那句警告说的是「密钥直接落在 config.json」——一项**已写盘**的事实。但探测用的
+// 是编辑框里的草稿，它根本还没落盘（保存时才入库、config 只留引用）；拿它警告等于告诉用户
+// 一件没发生的事。叠加一个现实后果：欢迎窗的「测试连通」与「获取模型」各探一次，同一份
+// 草稿会被警告两遍（用户实测日志里就是两条一模一样的话）。落盘形态的警告仍由真实构造路径
+// （resolveAPIKey）负责，那里每次启动最多一遍。
+func resolvePatchKey(ctx context.Context, provider, ref string, sec port.Secrets) (string, error) {
+	return resolveAPIKeyTo(ctx, provider, ref, sec, nil)
+}
+
+// resolveAPIKeyTo 解析主体；warn == nil = 只在内存里用一次、不报落盘形态。
+func resolveAPIKeyTo(ctx context.Context, provider, ref string, sec port.Secrets, warn io.Writer) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ref = defaultSecretRef
 	}
 	if !strings.HasPrefix(ref, "secret:") {
-		secretBoundWarn(stderr, provider)
+		if warn != nil {
+			secretBoundWarn(warn, provider)
+		}
 		return ref, nil
 	}
 	name, err := secretName(ref)

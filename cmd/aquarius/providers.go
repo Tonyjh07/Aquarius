@@ -433,7 +433,7 @@ func (m *providerManager) client(p uigui.ProviderPatch) (*llm.Client, error) {
 	if p.Kind != "" {
 		kind = p.Kind
 	}
-	key, err := resolveAPIKey(context.Background(), p.Name, ref, m.secrets, m.stderr)
+	key, err := resolvePatchKey(context.Background(), p.Name, ref, m.secrets)
 	if err != nil {
 		return nil, err
 	}

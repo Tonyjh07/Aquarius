@@ -9,12 +9,15 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -221,6 +224,63 @@ func TestResolveAPIKeyPlaintextWarnsOnce(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), secret) {
 		t.Fatalf("警告不得回显密钥值: %q", buf.String())
+	}
+}
+
+// TestResolvePatchKeyNoPlaintextWarn D210（用户实测故障的回归）：探测路径解析草稿里的
+// 明文**不得**打落盘警告。
+//
+// 复现过的误报：欢迎窗「测试连通」与「获取模型」各解析一次输入框里的 key，`resolveAPIKey`
+// 见到非 `secret:` 就打「密钥直接落在 config.json」——可那份草稿根本还没落盘（保存时才入库、
+// config 只留引用），于是同一次填写在日志里留下两条一模一样的假警告。
+//
+// 判据：解析结果与 resolveAPIKey 一致（明文照用），但**日志端一个字都不写**；真实构造路径
+// 那份警告由 TestResolveAPIKeyPlaintextWarnsOnce 锁定，两边不重复。
+func TestResolvePatchKeyNoPlaintextWarn(t *testing.T) {
+	var buf bytes.Buffer
+	ch, _ := testChain(t, &buf)
+	const draft = "sk-draft-NEVER-ON-DISK-1234"
+	key, err := resolvePatchKey(context.Background(), "p", draft, ch)
+	if err != nil || key != draft {
+		t.Fatalf("草稿明文应照用: (%q, %v)", key, err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("探测路径不该打落盘警告（草稿还没落盘）: %q", buf.String())
+	}
+	// 引用形态两边同口径（走 Secrets 按名取用，成功即静默）。
+	t.Setenv("AQ_PATCH_REF", "sk-from-env")
+	if got, err := resolvePatchKey(context.Background(), "p", "secret:AQ_PATCH_REF", ch); err != nil || got != "sk-from-env" {
+		t.Fatalf("引用应正常解析: (%q, %v)", got, err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("引用解析不该产生警告: %q", buf.String())
+	}
+}
+
+// TestWelcomeProbeDoesNotWarnPlaintextDraft D210 端到端那半条：管理器收到的日志端（
+// `welcomeManager.stderr`——就是用户的控制台）在「测试连通 / 获取模型」时不得出现落盘警告。
+//
+// 上一条只锁 resolvePatchKey 本身；这条从 `WelcomeManager.Test` / `Models` 这两个真实入口
+// 走一遍，防「哪天有人把它们改回 resolveAPIKey」。
+func TestWelcomeProbeDoesNotWarnPlaintextDraft(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"id":"m1"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfgPath, _ := writeProvidersConfig(t)
+	var logBuf bytes.Buffer
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: &logBuf}
+	patch := uigui.WelcomePatch{Provider: "draftprov", BaseURL: srv.URL, APIKey: "sk-draft-NEVER-ON-DISK", Models: "m1"}
+	if err := m.Test(patch); err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	if _, err := m.Models(patch); err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if s := logBuf.String(); strings.Contains(s, "明文") || strings.Contains(s, "config.json") {
+		t.Fatalf("探测不得输出落盘形态警告（草稿还没落盘）: %q", s)
 	}
 }
 

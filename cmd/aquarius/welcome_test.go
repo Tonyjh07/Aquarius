@@ -363,7 +363,77 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 	}
 }
 
-// TestSetupWizardStillIncompleteFatal D141 启动流③：向导报成功但配置仍不完整（用户填了
+// TestSetupWizardRunsOnFirstRunEvenWithKey D210（用户实测故障的回归）：**首跑**即使
+// 密钥已能从环境变量取到，也必须开装配前向导。
+//
+// 复现过的观感：模板里的引用是 `secret:AQUARIUS_OPENAI_KEY`，用户恰好设了这个环境变量，
+// 于是 `missingKeys` 为空、向导被跳过；可模板里 `ui.welcomed = false`，主窗起来后又自动
+// 弹了应用内欢迎窗——**欢迎窗与主窗同屏**，用户不知道该跟哪个走，填进去的 key 也落在了
+// 「应用内引导」这条较晚的路径上。
+//
+// 判据：① 密钥可用（不报缺）也照样调一次向导；② 取消后 `welcomed` 仍为 false（下次仍会引导，
+// 不静默吞掉首跑）；③ 保存路径（假宿主写回）之后主窗不再二次开窗——由 `welcomed` 已置位保证。
+func TestSetupWizardRunsOnFirstRunEvenWithKey(t *testing.T) {
+	dir := t.TempDir()                             // 空目录 = 真首跑（bootstrap 会写模板）
+	t.Setenv("AQUARIUS_OPENAI_KEY", "sk-from-env") // 模板引用恰好解析得出来
+	profCfg := filepath.Join(dir, "profiles", "default", "config.json")
+	var reqs []uigui.SetupRequest
+	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
+		reqs = append(reqs, req)
+		return uigui.SetupCancelled, nil
+	})()
+	w := &wiring{stdout: io.Discard, stderr: io.Discard}
+	if err := w.bootstrap(dir, "", "", ""); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if !w.firstRun {
+		t.Fatal("空目录 bootstrap 应标记首跑")
+	}
+	code, done := w.setupWizard(context.Background(), dir, "", "", "")
+	if !done || code != 0 {
+		t.Fatalf("setupWizard = (%d, %v), want (0, true)", code, done)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("首跑应开一次向导窗（密钥可用也要确认），实际 %d 次", len(reqs))
+	}
+	if len(reqs[0].Issues) != 0 {
+		t.Fatalf("密钥可用时问题清单应为空，实际 %+v", reqs[0].Issues)
+	}
+	cfg := readCfgMap(t, profCfg)
+	if ui, _ := cfg["ui"].(map[string]any); ui["welcomed"] != false {
+		t.Fatalf("取消不得写 welcomed: %+v", ui)
+	}
+}
+
+// TestSetupWizardSkippedWhenWelcomedAndKeyOK D210 的另一半：**不是首跑**、密钥也可用时
+// 不再打扰——向导只拦「缺密钥」与「首跑」两种情形，日常启动不该每次都弹窗。
+//
+// 直接调 setupWizard（不跑 run）：gui 形态的全量 run 会进真实事件循环，门禁里不能走。
+func TestSetupWizardSkippedWhenWelcomedAndKeyOK(t *testing.T) {
+	dir := t.TempDir()
+	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_KEY"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"gui","welcomed":true}}`)
+	t.Setenv("AQ_KEY", "k")
+	calls := 0
+	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
+		calls++
+		return uigui.SetupCancelled, nil
+	})()
+	w := &wiring{stdout: io.Discard, stderr: io.Discard}
+	if err := w.bootstrap(dir, "", "", ""); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if w.firstRun {
+		t.Fatal("该 profile 不是首跑（配置已存在）")
+	}
+	code, done := w.setupWizard(context.Background(), dir, "", "", "")
+	if done || code != 0 {
+		t.Fatalf("setupWizard = (%d, %v), want (0, false)", code, done)
+	}
+	if calls != 0 {
+		t.Fatalf("已引导过且密钥可用时不应开向导窗，实际 %d 次", calls)
+	}
+}
+
 // 取不到的引用）⇒ 只尝试一次、报因退出 1——不循环弹窗。
 func TestSetupWizardStillIncompleteFatal(t *testing.T) {
 	dir := t.TempDir()
