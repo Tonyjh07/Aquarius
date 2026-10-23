@@ -116,6 +116,21 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
   文档，把头部标记（更新日期 + 代码基线哈希）刷成本次提交之前的状态。标记是 HTML 注释，渲染后
   不出现，别手写、别删。
 
+### 发版与版本 tag
+
+- **版本信息单独成笔、tag 打在它上面**：发版时把「Windows 资源版本 + 发布说明」收成一笔
+  提交（如 `chore(release): v0.1.0`），**`vX.Y.Z` 版本 tag 指的就是这一笔**——不要打在之前
+  任意一笔功能提交上，也不要让版本号散落在多笔里。
+- 该笔通常包含：`docs/releases/vX.Y.Z.md`（发布说明）、`cmd/aquarius/winres/winres.json` 的
+  `fixed` / `info` 两处版本（改了才动）、以及 `go generate ./cmd/aquarius` 重生成的
+  `rsrc_windows_<arch>.syso`。三者口径必须一致（`-ldflags -X main.version`、资源版本、
+  发布说明里的 `-version` 示例输出）。
+- **tag 用 annotated**：`git tag -a vX.Y.Z -m "Aquarius vX.Y.Z"`，与提交说明同口径。
+- 推送分支与 tag、创建 GitHub release 由**用户**执行；代理做完提交与本地门禁即可，不主动 push、
+  不打 tag（除非用户明确要求）。
+- 发版前门禁 + 构建核对见 `docs/development.md`「发版构建」；核对方式：用发版那组
+  `-ldflags` 实际构建一次并跑 `-version`，确认输出与发布说明写的一致。
+
 ## 目录速查
 
 ```
