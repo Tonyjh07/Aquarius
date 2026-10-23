@@ -1724,14 +1724,9 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 **权限等级矩阵（D22，取代 D6）**：`config.permissions.level` 四档预设，默认 `strict`。
 矩阵格 = **免确认范围**；矩阵外的操作一律逐次确认（`Confirmer`）。`~/.aquarius/sandbox`
 （`<dataDir>/sandbox`，启动自动创建）是 Agent 特权目录。读操作全等级免确认（覆盖全盘），
-写与工具执行按等级区分：
-
-| 权限等级 | 特权目录 sandbox | 其他目录 | 工具调用 |
-|---|---|---|---|
-| `read-only` | r | r | （`Confirm` 逐次） |
-| `strict` | **rw** | r | （`Confirm` 逐次） |
-| `permissive` | **rw** | **rw** | （`Confirm` 逐次） |
-| `full-access` | **rw** | **rw** | **√ 全免** |
+写与工具执行按等级区分。**四档各自的免确认格**（哪个目录可写、哪些工具免问）是面向用户的
+操作细节，详表只在 [configuration.md](docs/configuration.md) 的 `permissions` 段——
+改矩阵时改那里，本节只定规则。
 
 - **两列分工、互不叠加**（D22）：
   - **文件类**（`file_*`、`memory_write`…）只看**路径格**：`rw` 格内免确认；`r` 格写入
@@ -1740,8 +1735,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     `Confirm` 仅 `full-access` 免、其余等级逐次确认。
 - 判定顺序：**等级矩阵（免确认）→ 矩阵外 ask（`Confirmer`）**；deny 面由"矩阵不覆盖的能力
   不开放"体现（network/secret 见下表）。
-- 策略是纯函数（等级 × 路径格 × Risk → Allow/Ask），落 `domain/perm`；**本轮落配置/策略/展示，
-  执行接入在 M2 ToolRunner**。
+- 策略是纯函数（等级 × 路径格 × Risk → Allow/Ask），落 `domain/perm`；执行接入在
+  `adapter/toolrun`（每次执行现读等级，切换即时生效）。
 - capability 表：`fs-*` 与 `exec` 由上述矩阵/工具列接管；`network`/`secret` 属插件与密钥授权流
   （§6.4、按名 allowlist），**不随等级变化**：
 
