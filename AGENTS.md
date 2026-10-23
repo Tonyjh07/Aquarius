@@ -16,6 +16,16 @@
   当前开发分支 `feat/v0.2.0`。
 - **语言约定**：文档与注释用中文；标识符、commit message 用英文。**进入模型上下文的字符串**（system 提示、工具声明与参数描述、工具回填结果/错误）一律英文；仅面向用户的界面、命令输出与日志用中文。文档文风（陈述事实、结论在前、不写总结段与客套话）见 [docs/README.md](docs/README.md) 的「文风」。
 
+## 本机环境
+
+与这台机器绑定的东西——工具链绝对路径、WSL 发行版与已装的 apt 包、镜像与 DNS、临时目录——
+写在 `AGENTS.local.md`，**不入库**（`.gitignore` 已排除）。它不是仓库规则的一部分：换一台机器
+就没有这份文件，下面各节的命令照常跑，只是要先按 [docs/development.md](docs/development.md)
+把工具链、WSL、模块代理配好。本文件只管「需要配什么、为什么」，配成了什么样放在本地那份。
+
+`AGENTS.local.md` 建议只记：Go 用户级 env 的 `CC` 指向、WSL 发行版与一次性 apt 清单、
+受限网络下可用的 apt 镜像与 DNS、代理工具的临时目录。
+
 ## 硬性规则（违反即错误，无例外）
 
 1. **依赖方向**：`domain` 不得 import 任何端口、适配器或三方 SDK；只允许 `adapter → port ← app → domain`。
@@ -67,11 +77,14 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
   + `go vet ./...`（vet 覆盖 `_test.go`）。前置与网络注意事项见
   [docs/development.md](docs/development.md) 的"非 Windows 门禁"。
 
-- **`-race` 在 Windows 需要 C 编译器**（`-race` 走 cgo——"需要 C 工具链"这句本身没错），但**本机已配好**：
-  Go 用户级 env 的 `CC` 已指向 MinGW gcc（`go env -w` 写入，不入库）——**直接跑 `go test -race ./...` 即可，
-  不需要自己设环境变量或改 `PATH`**。PATH 上第一个 `gcc` 是 Cygwin 的（`C:\msys64\usr\bin\gcc.exe`），
-  Go 明确拒绝它（报 `don't use the cygwin compiler to build native Windows programs; use MinGW instead`）；
-  若真遇到该错，用 `go env CC` 确认它指向 `…\mingw64\bin\gcc.exe`。详见 [docs/development.md](docs/development.md) 的"环境与门禁"。
+- **`-race` 在 Windows 需要 C 编译器**（`-race` 走 cgo）。装一个 MinGW 系的编译器（WinLibs 的
+  gcc 或 LLVM-MinGW 的 clang 都行），再把 Go **用户级** env 的 `CC` 指过去
+  （`go env -w CC="…\bin\<编译器>.exe"`，写入 `go env GOENV` 那个文件、**不进仓库**），
+  之后 `go test -race ./...` 直接可用，不必每次设环境变量或改 `PATH`。
+  只把编译器追加到 `PATH` 末尾不够：`PATH` 上常见的第一个 `gcc` 是 Cygwin 的，Go 明确拒绝它
+  （`don't use the cygwin compiler to build native Windows programs; use MinGW instead`），
+  必须用 `CC` 显式指定。自检 `go env CC`，排障细节见 [docs/development.md](docs/development.md)
+  的「环境与门禁」；这台机器上配成了什么写在 `AGENTS.local.md`。
 
 ## 代码风格
 
@@ -97,7 +110,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
    重定向** 去改 UTF-8 文件：PowerShell 5.1 把无 BOM 的脚本按 ANSI 读，脚本里的中文字面量
    先烂一遍，轻则解析失败，重则**把乱码写回文件、静默损坏仓库**（2026-10-09 实测踩中：
    临时补丁脚本全 hang 在编码上，改也不是不改也不是）。
-3. **一次性脚本不进仓库**：写到临时目录（OpenCode 环境下优先 `C:\Users\yjh07\AppData\Local\Temp\opencode`），
+3. **一次性脚本不进仓库**：写到系统临时目录（本机常用哪个见 `AGENTS.local.md`），
    用完删；本仓只留 `.go` 与文档。
 4. **写完自查**：`git diff --stat` 看改动面，`git diff` 抽查中文是否完好（注意终端显示本身
    也可能是乱码，以 `git diff` 内容为准）。发现乱码 `git checkout -- <file>` 回滚重做，

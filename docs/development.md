@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-23 @ f9308a8 -->
+<!-- docs-sync: 2026-10-23 @ 1c7444c -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -19,13 +19,13 @@ go run ./cmd/linuxgate         # 非 Windows 门禁（WSL 内 build + vet，见�
 
 - 语言约定：文档/注释中文；标识符、commit message 英文祈使句。
 - **Windows 下 `-race` 需要 CGO + C 编译器**（`-race` 走 cgo，说"需要 C 工具链"没错）。
-  本机用 WinGet 装的 **WinLibs MinGW**，并已把 Go **用户级** env 的 `CC` 指到它：
-  `go env -w CC="…\mingw64\bin\gcc.exe"`（写在 `go env GOENV` 指向的文件里，**不入库、换机需重配**）。
-  **PATH 上第一个 `gcc` 是 Cygwin 的**（`C:\msys64\usr\bin\gcc.exe`），Go 明确拒绝它：
-  `runtime/cgo: #error "don't use the cygwin compiler to build native Windows programs; use MinGW instead"`
-  ——所以只把 MinGW 追加到 PATH 末尾**不够**，必须用 `CC` 显式指过去。
-  自检：`go env CC` 应指向 `…\mingw64\bin\gcc.exe`，之后 `go test -race ./...` 直接可用、无需任何临时环境变量。
-  未装时：`winget install BrechtSanders.WinLibs.MCF.UCRT`；取路径可用
+  装一个 MinGW 系的编译器（WinLibs 的 gcc 或 LLVM-MinGW 的 clang 都行），再把 Go **用户级**
+  env 的 `CC` 指到它的可执行文件：`go env -w CC="…\bin\<编译器>.exe"`（写在 `go env GOENV`
+  指向的文件里，**不入库**）。只把编译器加进 `PATH` 末尾**不够**：`PATH` 上常见的第一个
+  `gcc` 是 Cygwin 的，Go 明确拒绝它——`runtime/cgo: #error "don't use the cygwin compiler to
+  build native Windows programs; use MinGW instead"`——所以必须用 `CC` 显式指定。
+  自检 `go env CC` 指向该编译器后，`go test -race ./...` 直接可用，无需临时环境变量。
+  WinLibs 的安装与取路径：`winget install BrechtSanders.WinLibs.MCF.UCRT`、
   `(Get-Command gcc -All | ? { $_.Source -notmatch 'msys64' })[0].Source`。
 - 全部测试**默认不起真实网络**：LLM 用脚本流/httptest 假 SSE 服务，存储用临时目录；
   门控的真实 MCP 验收（`AQUARIUS_E2E_REAL_MCP=1`，拉现成 npx server）除外，缺省 skip。
@@ -36,27 +36,33 @@ GUI（`uigui`）依赖 Gio，而 **Gio 在 Linux 上必须 cgo**（X11/Wayland/E
 cgo；`CGO_ENABLED=0 GOOS=linux` 时 `gioui.org/internal/vk` 报「build constraints exclude
 all Go files」，加 `-tags novulkan` 又栽在 `gioui.org/internal/gl` 的 `Functions` 无定义）。
 所以**不存在**「Windows 上一条 `GOOS=linux go build ./...` 验完」的口径——Linux 目标需要
-Linux 的 C 工具链与开发头。本机口径 = **在 WSL 里用原生 Linux 工具链跑**：
+Linux 的 C 工具链与开发头。Windows 宿主的口径 = **在 WSL 里用原生 Linux 工具链跑**：
 
 ```bash
 go run ./cmd/linuxgate          # 缺省：WSL 发行版 Ubuntu，目标 linux/amd64
-go run ./cmd/linuxgate -distro Ubuntu -proxy https://goproxy.cn,direct
+go run ./cmd/linuxgate -distro <发行版> -proxy <模块代理>
 ```
 
 工具做两件事（与本地门禁同口径）：`go build ./...` + `go vet ./...`。**vet 会一并类型检查
 `_test.go`**，能挡住「测试文件依赖 Windows 专属符号」这类只在非 Windows 才暴露的缺口。
-非 Windows 宿主（真 Linux/macOS）直接本地跑同一命令。
+非 Windows 宿主（真 Linux/macOS）直接本地跑同一命令。本机已配成什么样（发行版名、工具链
+位置、镜像与 DNS）记在不入库的 `AGENTS.local.md`。
 
-一次性前置（WSL Ubuntu，本机实测清单）：
+WSL 里的一次性前置（Gio 的 cgo 依赖）：
 
 ```bash
 sudo apt-get install -y golang-go xorg-dev libx11-xcb-dev libxkbcommon-dev \
     libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libvulkan-dev
 ```
 
-- 校园网/受限网络：`proxy.golang.org` 与 `go.dev` 不通，apt 换 `mirrors.aliyun.com`、
-  Go 模块走 `goproxy.cn`（`cmd/linuxgate` 的 `-proxy` 缺省即此）。WSL 的 DNS 若解析异常，
-  在 `/etc/resolv.conf` 写校园 DNS（本机 `222.201.54.123`）后 `wsl --shutdown` 重启。
+- 发行版自带的 `golang-go` 往往落后于 `go.mod` 要求，而工具刻意固定 `GOTOOLCHAIN=local`
+  （不自动下载）。做法：把模块缓存里已下载的 linux 工具链解到用户级目录，再把它的 `bin`
+  前置到 `~/.profile` 的 `PATH`（**不要 sudo**，`apt` 装不动工具链版本）。版本号随
+  `go.mod` 一起升，`linuxgate` 报「requires go >= x.y.z」即为此。
+- 受限网络：`proxy.golang.org` 与 `go.dev` 可能不通，apt 可换 `mirrors.aliyun.com`、
+  Go 模块走 `goproxy.cn`（`cmd/linuxgate` 的 `-proxy` 缺省即此）。DNS 解析异常时改
+  `/etc/resolv.conf` 后 `wsl --shutdown` 重启。具体镜像与 DNS 地址随网络环境变，
+  不必写进本文。
 - 工具缺省**共享 Windows 侧的 `GOMODCACHE`**（`-modcache` 可覆盖），避免在 WSL 内重下
   2GB 级依赖；`GOCACHE` 用 WSL 原生目录（构建缓存不跨系统复用）。
 - 门禁只覆盖编译 + vet，**不跑 Linux 下的 GUI/交互**（WSL 无 X 显示）；非 Windows 的功能

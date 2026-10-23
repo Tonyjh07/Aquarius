@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# 本机环境补充说明（工具链路径、WSL 发行版、镜像与 DNS 等，只对本机有效）
+AGENTS.local.md
+
 # 本地 tokenizer 词表（6MB 级，不入库；真实向量测试经环境变量或此路径发现）
 internal/adapter/llm/tokenizer/testdata/tokenizer.json
 

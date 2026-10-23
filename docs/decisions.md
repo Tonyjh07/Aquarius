@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-23 @ 80ef6ae -->
+<!-- docs-sync: 2026-10-23 @ 1c7444c -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -1201,7 +1201,7 @@
 ### D119 — 非 Windows 门禁口径：WSL 原生 Linux 工具链 + `cmd/linuxgate`（S4b 出口项）
 
 - **动机**：D111④/roadmap S4b 的出口项写着「三门禁全绿（含非 Windows 交叉编译 `GOOS=linux go build ./...`）」。动手前实测该口径在 Windows 宿主上**不可达**，若不改口径就等于「出口项无法验收」；而 S4b 恰要把 GUI 的平台实现抽出去，正需要一个能真验证非 Windows 的门禁才能边改边证。
-- **实证（本机，逐条跑过）**：
+- **实证（逐条跑过）**：
   ① `CGO_ENABLED=0 GOOS=linux go build ./internal/adapter/uigui/` → `imports gioui.org/internal/vk: build constraints exclude all Go files`；加 `-tags novulkan` 后改栽在 `gioui.org/internal/gl`：`undefined: Functions`（`gl_unix.go` 是 cgo 文件，`CGO_ENABLED=0` 时整文件被排除，`Functions` 无定义）。Gio 的 Linux 后端（X11/Wayland/EGL/Vulkan/GL）**全走 cgo**，无纯 Go 通路，也没有能把它们一起关掉的 tag 组合。
   ② `CGO_ENABLED=1 GOOS=linux` 需要 **Linux 目标 C 工具链 + X11/xkbcommon/xcb/xcursor/xfixes/Wayland/EGL/GL/Vulkan 的开发头与库**，Windows 侧不存在（MinGW 只产 Windows 目标）；WSL 发行版则是现成的**原生** Linux 环境，cgo 天然可用。
   ③ 顺带发现：非 Windows 侧**并非「可构建的 no-op 桩」**——`dock.go` 的 `windowFromPoint` 与附件按钮的 `u.requestFileDlg` 只有 `_windows.go` 定义，linux 下直接编译失败；测试文件亦依赖 `menu_windows.go` 里的 `bubbleMenuItems`（`_test.go` 类型检查一并红）。即「仅 Windows 实测、其余平台可构建」这句在 D111 之前就已不成立。
@@ -1831,11 +1831,11 @@
 > **收尾对象**：D137 里「剩下的 8 条全是标准库、需 go1.27.2」那一段。
 
 - **工具链落地**：Windows 侧经模块代理拉到 `go1.27.2`（`go get go@1.27.2` 让 go 命令自己
-  切版本；`dl.google.com` 在本地网络不通，模块代理通）。**WSL 侧的坑单独记一笔**：
+  切版本；`dl.google.com` 在该网络环境下不通，模块代理通）。**WSL 侧的坑单独记一笔**：
   `linuxgate`（D119）在 WSL 里硬编码 `GOTOOLCHAIN=local`（刻意为之：不自动下载），而发行版
   apt 装的是 go-1.26 —— 于是 go.mod 一提 1.27.2，linuxgate 立刻
   「go.mod requires go >= 1.27.2（running go 1.26.0）」红。修法 = 把模块缓存里已下载的
-  linux/amd64 工具链 zip 解到用户级 `~/sdk/go1.27.2`，`~/.profile` 前置 PATH
+  linux/amd64 工具链 zip 解到用户级 `~/sdk/go<版本>`，`~/.profile` 前置 PATH
   （**不要 sudo**，apt 装不动；也不要改 linuxgate 的 `GOTOOLCHAIN=local`，那是 D119 的刻意设计）。
 - **结果**：`govulncheck ./...` = **`Your code is affected by 0 vulnerabilities`**。
   两个残留都不可达且记明出路：
@@ -1845,9 +1845,9 @@
     下次依赖升级时自动受益。
 - **顺带清掉的一次仓库污染**（一次性命令的教训，值得记住）：PowerShell 会把 `\$HOME` 这类
   shell 变量改写成 Windows 路径，一条 `wsl -e bash -lc "… cd \$HOME/sdk …"` 的写法被抓成
-  `cd C:Usersyjh07/sdk`，bash 在**仓库根**建出 `C:Usersyjh07/`（含整个解压的工具链，236MB /
-  12071 文件）。它当时没被 `git status` 发现（名字以 `C:` 开头，Windows 侧 Test-Path 都判
-  false），但 `gofmt -l .` 会走进去刷一屏。**教训**：PowerShell 传给 WSL 的命令一律写进
+  `cd C:Users<用户名>/sdk`，bash 在**仓库根**建出 `C:Users<用户名>/`（含整个解压的工具链，
+  236MB / 12071 文件）。它当时没被 `git status` 发现（名字以 `C:` 开头，Windows 侧 Test-Path
+  都判 false），但 `gofmt -l .` 会走进去刷一屏。**教训**：PowerShell 传给 WSL 的命令一律写进
   脚本文件再执行，变量展开只发生在 bash 内；AGENTS.md 的「编辑 UTF-8 文件别用 shell」
   同源——凡是跨 shell 传路径/变量，就走文件。
 
@@ -1861,7 +1861,7 @@
   最高的那个；v2.11.1 正式版尚未发），连带 `mscfb` v1.0.7→1.0.8、`efp` v0.0.1→0.0.2。
   `THIRD-PARTY-NOTICES.md` 三行版本同步改。
 - **工具链**：`go.mod` 的 `go` 与 `toolchain` 都提到 `1.27.3`（`GOTOOLCHAIN=auto` 下 go 命令
-  自己拉）。WSL 侧的 `~/sdk/go1.27.2` 需同样换到 1.27.3，否则 linuxgate 会报
+  自己拉）。WSL 侧 `~/sdk` 下那份 Linux 工具链需同样换到 1.27.3，否则 linuxgate 会报
   「requires go >= 1.27.3」——同 D137 收尾的坑，修法一样。
 - **结果**：`govulncheck ./...` = `Your code is affected by 0 vulnerabilities`。
 - **教训**：漏洞体检要放在**发版前**而不是「改动 go.mod 之后」——`crypto/x509` 那条是
@@ -3170,7 +3170,7 @@
 > `tool_output_chars`（默认 20000 rune）二次截断——**只保头、没有续读手段**。读一个 1MB 日志，
 > 模型只能看到开头 2 万字符，剩下 98% 拿不到，也没有任何合法办法再取（`term_exec` 能凑但要过
 > 确认）。另有两个附带缺陷：二进制判定发生在 4MB 截断**之后**（大二进制文件绕过 NUL 检查、
-> 4MB 乱码进上下文）；图片一律被当二进制拒绝，模型无法看图。对照 `E:\opencode` 的 `read`：
+> 4MB 乱码进上下文）；图片一律被当二进制拒绝，模型无法看图。对照同类 agent 工具的 `read`：
 > `offset`/`limit` 分页（2000 行 / 50KB 双上限）、行号前缀、`[... continue with offset: N]` 续读、
 > 媒体按字节嗅探（png/jpeg/gif/webp/pdf，20MB 上限）后直接交给模型。
 
@@ -3271,7 +3271,7 @@
 ### D172 · `file_edit`：只改一处，不重吐整个文件（2026-10-20）
 
 > **背景**：`file_write` 只能整篇覆盖。改一行要么让模型重吐整个文件（大文件既费 token 又容易
-> 改坏别处），要么改用 `term_exec` + 编辑器（要过确认、且不跨平台）。对照 `E:\opencode` 的
+> 改坏别处），要么改用 `term_exec` + 编辑器（要过确认、且不跨平台）。对照同类 agent 工具的
 > `edit`：`oldString`/`newString`/`replaceAll`，唯一性校验 + 三级匹配降级 + 保留换行与 BOM。
 
 - **口径一：参数用下划线命名**（与 `file_*` 其余工具一致的 JSON 风格）：
