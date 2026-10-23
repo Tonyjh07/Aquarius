@@ -2,14 +2,22 @@ package app
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestCommandCatalogCoversExecCommand 静态清单覆盖 execCommand 全部静态分支（D103②
-// 单一事实源：help/补全数据与可执行命令不漂移；/help 自身与 /mcp 家族说明行不入清单）。
+// TestCommandCatalogCoversExecCommand 静态清单与 execCommand 分支必须一一对应（D103②
+// 单一事实源：help/补全数据与可执行命令不漂移）。
+//
+// 断言集**从 session.go 的 switch 解析得来**，不手抄：手工维护的 want 表正是当初漏掉
+// /help 的原因（清单说自己是单一事实源，实际有两处手工维护）。新增命令只改一处就会
+// 在这里红或自然通过；改错地方（只在 switch 加分支、或只在表里加条目）则必红。
 func TestCommandCatalogCoversExecCommand(t *testing.T) {
 	got := map[string]bool{}
 	for _, ci := range commandCatalog {
@@ -23,25 +31,73 @@ func TestCommandCatalogCoversExecCommand(t *testing.T) {
 			}
 		}
 	}
-	// execCommand 的静态分支（help 不入清单——help 输出本身不列 /help）。
-	want := map[string]bool{
-		"new": true, "list": true, "switch": true, "title": true, "goto": true,
-		"edit": true, "regen": true, "respond": true, "inject": true, "branch": true, "rm": true, "rmconv": true, "exit": true,
-		"compact": true, "summary": true, "permission": true, "unattended": true, "memory": true, "usage": true,
-		"mic":  true,
-		"jobs": true, "watch": true, "quit": true, "plugin": true, "model": true,
-		"think": true, "effort": true, "skill": true,
-	}
+
+	want := execCommandCases(t)
 	for n := range want {
 		if !got[n] {
-			t.Fatalf("清单缺命令 %s", n)
+			t.Errorf("execCommand 有分支 %q 但清单里没有（补全浮层将看不到它）", n)
 		}
 	}
 	for n := range got {
 		if !want[n] {
-			t.Fatalf("清单多出不可执行命令 %s", n)
+			t.Errorf("清单里有 %q 但 execCommand 没有对应分支（不可执行的幽灵命令）", n)
 		}
 	}
+}
+
+// execCommandCases 用 AST 读 session.go 里 execCommand 的 switch 分支名。
+func execCommandCases(t *testing.T) map[string]bool {
+	t.Helper()
+	f, err := parser.ParseFile(token.NewFileSet(), "session.go", nil, 0)
+	if err != nil {
+		t.Fatalf("解析 session.go 失败: %v", err)
+	}
+	var fn *ast.FuncDecl
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == "execCommand" {
+			fn = fd
+			break
+		}
+	}
+	if fn == nil {
+		t.Fatal("session.go 里找不到 execCommand")
+	}
+	var sw *ast.SwitchStmt
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if sw != nil {
+			return false // 只取最外层的命令分派 switch
+		}
+		if s, ok := n.(*ast.SwitchStmt); ok {
+			sw = s
+			return false
+		}
+		return true
+	})
+	if sw == nil {
+		t.Fatal("execCommand 里找不到 switch")
+	}
+	out := map[string]bool{}
+	for _, stmt := range sw.Body.List {
+		cc, ok := stmt.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+		for _, expr := range cc.List {
+			lit, ok := expr.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				continue
+			}
+			name, unquoteErr := strconv.Unquote(lit.Value)
+			if unquoteErr != nil {
+				t.Fatalf("无法解析分支名 %s: %v", lit.Value, unquoteErr)
+			}
+			out[name] = true
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("execCommand 的分支为空，对照无意义")
+	}
+	return out
 }
 
 // TestSessionCommandsPort Commands() 快照（D103②）：静态在前；动态缀尾按名排序；

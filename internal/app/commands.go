@@ -45,6 +45,7 @@ var commandCatalog = []port.CommandInfo{
 	{Names: []string{"model"}, Usage: "[name] | probe [name]", Desc: "查看可用模型 / 切换并写回配置 / 实测能力（probe）"},
 	{Names: []string{"think"}, Usage: "[on|off]", Desc: "原生思考总开关（写回配置；off 优先于 /effort）"},
 	{Names: []string{"effort"}, Usage: "[档位]", Desc: "推理档位 minimal|low|medium|high|off（写回配置）"},
+	{Names: []string{"help"}, Desc: "列出全部命令（静态清单 + 已注册的动态命令）"},
 }
 
 // mcpFamilyLine MCP prompts 家族说明行（D103）：命名规则的说明性文案，非可执行命令、
