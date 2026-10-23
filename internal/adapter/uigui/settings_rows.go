@@ -85,7 +85,7 @@ const (
 	rowProvBtns
 	rowProvAdd
 	rowProvApply
-	// S11-7①/D176：降级链行（「模型」页）。
+	// 模型页·降级链：一项一行，链窄于当前模型能力时顶部出警示行（D176）。
 	rowChainNote // 链窄于当前模型能力时的警示（text = 文案）
 	rowChainItem // 降级链一项（field = f.chain 下标）
 	rowChainAdd  // 「＋ 添加降级项」
@@ -95,12 +95,12 @@ const (
 	rowSamplingMax  // max_tokens（单行档；空 = 不发送）
 	rowSamplingStop // stop（JSON 数组文本，如 ["\n"]）
 	rowSamplingNote // 说明（0 与留空的区别）
-	// S6/D143：工具与 MCP 页。
+	// 工具与 MCP 页：内置工具逐条开关 + 已连 server 的状态行与动作按钮（D143）。
 	rowBuiltin     // 内置工具行（name = 工具名；field = 快照下标）
 	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
 	rowToolsEmpty  // 占位/空态（text = 文案）
 	rowToolsStatus // 异步动作反馈状态行
-	// D202/D203：技能页。
+	// 技能页：技能根目录、已装技能（行内更新/卸载）、安装来源输入档（D202/D203）。
 	rowSkillItem   // 已安装技能一行（field = Skills 下标；行内更新/卸载）
 	rowSkillEmpty  // 空态/未接线占位（text = 文案）
 	rowSkillNote   // 说明（text 忽略；文案在 Body 内）
@@ -150,7 +150,7 @@ const (
 	rowWebPrivate     // 允许私网/回环目标（调试）
 	rowWebTimeout     // 本地抓取超时
 	rowWebNote        // 说明（降级顺序 / 重启生效 / 密钥形态）
-	// D208：关于页（纯信息页，无配置项）。
+	// 关于页：版本、运行环境、项目主页与版权，只展示不写配置（D208）。
 	rowAboutHero      // 图标 + 名字 + 一句话（不落卡）
 	rowAboutVersion   // 构建版本
 	rowAboutRuntime   // 运行环境（平台 · Go 版本）

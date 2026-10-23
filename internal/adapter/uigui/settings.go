@@ -437,7 +437,7 @@ type settingsForm struct {
 	pages   []widget.List      // 每页一个滚动列表（构造处定轴向）
 	navBtns []widget.Clickable // 左侧导航栏项（按页缓存）
 
-	// 工具与 MCP 页（S6/D143）。
+	// 工具与 MCP 页：内置工具逐条开关 + 已连 server 的状态与动作（D143）。
 	tools       ToolsAdmin                   // nil = 只读占位（未接线）
 	toolsSnap   ToolsSnapshot                // 每帧原子快照（本窗 goroutine 独占）
 	toolsRev    int64                        // 上帧 Revision（变了才重建行/按钮）
@@ -570,7 +570,7 @@ type settingsForm struct {
 	webRobots    widget.Bool // 遵守 robots.txt
 	webPrivate   widget.Bool // 允许私网/回环目标（调试）
 
-	// profile 区（D110③）。
+	// profile 区：新建 / 复制 / 切换配置档，切换须重启才生效（D110③）。
 	profCreate widget.Clickable
 	profCopy   widget.Clickable
 	profSwitch widget.Clickable
@@ -839,7 +839,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	if s.WindowHeight > 0 {
 		f.winH.SetText(strconv.Itoa(s.WindowHeight))
 	}
-	// S4/D110③ 全量分组页填表。
+	// 通用页与分组页的开关/数值项填表（D110③ 起 config 全量字段都在设置窗可见）。
 	f.notify.Value = s.Notify
 	f.tts.Value = s.TTS
 	if s.MaxTurns > 0 {

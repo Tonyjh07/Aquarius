@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-23 @ c439d1a -->
+<!-- docs-sync: 2026-10-23 @ dccbccf -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -92,6 +92,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 | 层 | 手段 | 样板位置 |
 |---|---|---|
 | arch | **架构守卫**：`go/parser` 读全仓生产文件 import，断言分层方向与反向约束；另断言聚合根不导出 map 字段 | `internal/arch/arch_test.go` |
+| arch | **注释守卫**：连续 `//` 注释去掉决策编号后不足 12 个可见字符即失败（编号可以当索引或溯源，不能代替说明） | `cmd/aquarius/comments_test.go` |
 | domain | **性质测试**：随机操作序列 → 两条不变量恒成立；快照比对证明不可变 | `domain/conversation/property_test.go` |
 | domain | **变更后自检**：`go test -tags aqvalidate ./...` 下每次变更末尾跑全树 `Validate`（生产构建零开销） | `domain/conversation/validate_tag_test.go` |
 | app | **交互回放**：脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter | `app/fakes_test.go`、`app/agent_test.go` |

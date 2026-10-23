@@ -20,7 +20,7 @@ type Session interface {
 	RenderPrompt(ctx context.Context, prompt string, args []string) (string, error)
 	// Wait 阻塞至连接终止（崩溃检测入口）；返回终止原因。
 	Wait() error
-	// Close 优雅关闭（§6.4 #4）。
+	// Close 关闭连接并回收 stdio 子进程 / HTTP 会话；宿主重启 server 时先走这里。
 	Close() error
 	// Stats 调用统计快照（§6.4 #5，/plugin list 展示）。
 	Stats() Stats

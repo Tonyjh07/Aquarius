@@ -3,7 +3,7 @@
 </p>
 
 # Aquarius
-<!-- docs-sync: 2026-10-23 @ c439d1a -->
+<!-- docs-sync: 2026-10-23 @ dccbccf -->
 
 面向个人的 AI 助手。对话优先，支持图片、文档与语音输入，长期记忆以 markdown 文档存放，模型与工具均可替换。Go 编写，交付单个二进制。
 
@@ -52,23 +52,13 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 
 | 文档 | 内容 |
 |---|---|
-| [docs/README.md](docs/README.md) | **文档地图**：每篇写给谁看、管哪部分事实、谁是权威 |
-| [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型、端口设计、权限模型、平台边界与里程碑 |
-| [docs/decisions.md](docs/decisions.md) | **决策记录**：逐条决策、动机与被否决的方案（编号见文内索引表） |
-| [docs/plan.md](docs/plan.md) | **未来规划**：待做事项、执行顺序与节奏、验收与人工拍板点（工作稿，会被频繁重排，别按节号引用） |
-| [docs/roadmap.md](docs/roadmap.md) | **进度档案**：里程碑基线与已落地步骤、早期决议、破坏性授权范围 |
-| [docs/overview.md](docs/overview.md) | 架构导读：内核职责、依赖方向、目录与端口矩阵 |
-| [docs/gui-design.md](docs/gui-design.md) | GUI 实现规格：悬浮球形态、输入栏与转写、主题令牌、多窗宿主、缩放、气泡菜单 |
-| [docs/relation-map-design.md](docs/relation-map-design.md) | 会话树关系图的形态规格：通道分配、布局算法、行为契约 |
 | [docs/guide.md](docs/guide.md) | **用户手册**：安装、对话、附件、语音、分支、设置窗逐页、故障排查 |
-| [docs/usage.md](docs/usage.md) | 参考手册：命令与参数、内置工具、压缩、权限等级、常见问题 |
+| [docs/usage.md](docs/usage.md) | 参考手册：命令与参数、内置工具、压缩、权限等级 |
 | [docs/configuration.md](docs/configuration.md) | 配置参考：`config.json` 逐字段、覆盖顺序、密钥规则 |
 | [docs/storage.md](docs/storage.md) | 数据布局与备份：目录树、会话文件、`.bak` 恢复 |
-| [docs/development.md](docs/development.md) | 开发指南：质量门禁、测试手段、新增工具与命令的分步说明 |
-| [AGENTS.md](AGENTS.md) | AI 编码代理协作指南：硬性规则、命令与提交要求 |
-| [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md) | v0.1.0 发布说明：功能、安装、已知限制 |
 
-每篇文档的读者与权威范围见 [docs/README.md](docs/README.md)。有冲突时以 DESIGN.md 与决策记录为准。
+设计、决策、进度与开发指南等在 [docs/README.md](docs/README.md) 里按读者分列（文档地图）。
+有冲突时以 [DESIGN.md](DESIGN.md) 与[决策记录](docs/decisions.md)为准。
 
 ## 状态
 

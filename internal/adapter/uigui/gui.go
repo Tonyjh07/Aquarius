@@ -420,7 +420,8 @@ type UI struct {
 	pillFade  pillFade
 	pillAlpha float64
 
-	// 形状与全帧合成（D44/D62/§15.1、§15.3）。
+	// 形状与全帧合成：本帧可见元素的矩形清单，连同当帧 Metric 与窗口尺寸一起供离屏渲染
+	// 与命中测试复用（D44/D62，坐标口径见 docs/gui-design.md §15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
 	frameMetric unit.Metric // 当前帧 Metric（headless 同源渲染用）
 	frameSize   image.Point // 当前帧窗口尺寸（物理 px）

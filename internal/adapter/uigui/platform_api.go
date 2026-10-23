@@ -43,7 +43,7 @@ type platformAPI interface {
 	TopMost() bool
 	SetTopMost(on bool)
 
-	// —— 启动防闪的隐藏与揭示（D78）——
+	// 启动防闪：首帧呈现前先隐藏窗口，摆好第一帧再揭示，避免露出半截白窗（D78）。
 	HideUntilFirstPresent(h platform.Handle)
 	EnsureLayered(h platform.Handle)
 	RevealWindow(h platform.Handle)

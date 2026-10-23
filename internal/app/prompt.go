@@ -515,7 +515,7 @@ func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleO
 				out = append(out, port.PromptPart{Kind: "text", Text: p.Transcript})
 			}
 		case conversation.PartDoc:
-			// 提取文本（截断）已存于节点（D10）。
+			// 文档正文在入库时已提取并截断存进节点，装配时直接取这段文本（D10）。
 			if p.Text != "" {
 				out = append(out, port.PromptPart{Kind: "text", Text: p.Text})
 			}

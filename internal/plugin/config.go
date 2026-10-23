@@ -15,7 +15,8 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
-// 传输与风险的合法取值（D30/§6.3、§8）。
+// 传输方式与风险档的合法取值：只认 stdio 与 streamable-http 两种传输（D30，声明口径见
+// DESIGN §6.3、§8）。
 const (
 	TransportStdio = "stdio"
 	TransportHTTP  = "streamable-http"

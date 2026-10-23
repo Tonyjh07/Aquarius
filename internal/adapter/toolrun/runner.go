@@ -200,7 +200,7 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		return tool.Result{CallID: call.ID, OK: false, Err: terr.Error()}, nil
 	}
 
-	// 权限判定（D22 两列分工）。
+	// 权限判定：工具声明的风险档与调用目标的路径档各管一列、取更严者（D22）。
 	decision, target := r.decide(ctx, t, call)
 	if decision == perm.Ask {
 		if r.conf == nil {
