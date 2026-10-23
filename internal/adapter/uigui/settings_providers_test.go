@@ -403,7 +403,8 @@ func TestProviderModelTableHeadless(t *testing.T) {
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{{
 		Name: "a", Kind: "anthropic", BaseURL: "http://a/v1", Primary: true,
 		Models: []ProviderModelSnapshot{
-			{Name: "claude", Caps: []string{port.CapTools, port.CapVision}, CapsExplicit: false, ContextWindow: 200000},
+			{Name: "claude", Caps: []string{port.CapTools, port.CapVision}, CapsExplicit: false, ContextWindow: 200000,
+				CostIn: 3, CostOut: 15},
 		},
 	}}}
 	u := newHeadless(t, Options{ProviderMgr: mgr})
@@ -416,7 +417,11 @@ func TestProviderModelTableHeadless(t *testing.T) {
 	if mf.contextWin.Text() != "200000" {
 		t.Fatalf("窗口填表 = %q", mf.contextWin.Text())
 	}
-	// 未动 → patch 不带 Caps（保留「键缺失」这个形态）；窗口照写。
+	// 单价（D205）回显：填过的照抄，留空的不写「0」。
+	if mf.costIn.Text() != "3" || mf.costOut.Text() != "15" {
+		t.Fatalf("单价填表 = (%q, %q)", mf.costIn.Text(), mf.costOut.Text())
+	}
+	// 未动 → patch 不带 Caps（保留「键缺失」这个形态）；窗口与单价照写。
 	u.applyProviderChanges(f)
 	got := mgr.applied[0][0].Models[0]
 	if got.Caps != nil {
@@ -425,6 +430,9 @@ func TestProviderModelTableHeadless(t *testing.T) {
 	if got.ContextWindow != 200000 {
 		t.Fatalf("窗口 = %d, want 200000", got.ContextWindow)
 	}
+	if got.CostIn != 3 || got.CostOut != 15 {
+		t.Fatalf("单价 = (%v, %v)", got.CostIn, got.CostOut)
+	}
 	// 动一下思考 → patch 带显式列表（含新勾的思考）。
 	mf = f.provs[0].modelForms[0] // 上一轮 apply 已按快照重建编辑区，需重新取指针
 	mf.capsReason.Value = true
@@ -432,6 +440,47 @@ func TestProviderModelTableHeadless(t *testing.T) {
 	got = mgr.applied[1][0].Models[0]
 	if got.Caps == nil || len(*got.Caps) != 3 {
 		t.Fatalf("动过能力位应固化显式声明: %+v", got)
+	}
+}
+
+// TestProviderModelCostValidation 单价语法（D205）：留空合法（不声明）；非法或负数在
+// 应用前就拦下，且反馈指名道姓地说是哪家的哪个模型。
+func TestProviderModelCostValidation(t *testing.T) {
+	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{{
+		Name: "a", BaseURL: "http://a/v1", Primary: true,
+		Models: []ProviderModelSnapshot{{Name: "m1", Enabled: true}},
+	}}}
+	u := newHeadless(t, Options{ProviderMgr: mgr})
+	f := newSettingsForm(u)
+	mf := f.provs[0].modelForms[0]
+
+	mf.costIn.SetText("abc")
+	u.applyProviderChanges(f)
+	if !f.provErr || !strings.Contains(f.provStatus, "单价") {
+		t.Fatalf("非法单价反馈 = (%v, %q)", f.provErr, f.provStatus)
+	}
+	if len(mgr.applied) != 0 {
+		t.Fatalf("校验失败不该落盘: %+v", mgr.applied)
+	}
+
+	mf = f.provs[0].modelForms[0]
+	mf.costIn.SetText("-1")
+	u.applyProviderChanges(f)
+	if !f.provErr {
+		t.Fatal("负单价应被拦截")
+	}
+
+	mf = f.provs[0].modelForms[0]
+	mf.costIn.SetText("0.15")
+	if err := func() error {
+		p := providerPatchOf(f.provs[0])
+		if p.Models[0].CostIn != 0.15 {
+			t.Fatalf("单价解析 = %v", p.Models[0].CostIn)
+		}
+		u.applyProviderChanges(f)
+		return nil
+	}(); err != nil || f.provErr {
+		t.Fatalf("合法单价应放行: %v / %q", err, f.provStatus)
 	}
 }
 

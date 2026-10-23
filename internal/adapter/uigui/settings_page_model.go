@@ -23,6 +23,10 @@ func (modelPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{
 		sec("当前模型"), {kind: rowModelName},
 		sec("思考与推理"), {kind: rowThink}, {kind: rowEffort},
+		sec("采样参数（留空 = 交服务端默认）"),
+		{kind: rowSamplingTemp}, {kind: rowSamplingTopP},
+		{kind: rowSamplingMax}, {kind: rowSamplingStop},
+		{kind: rowSamplingNote},
 		sec("降级链"),
 	}
 	if f.snap.FallbackNote != "" {
@@ -43,6 +47,16 @@ func (modelPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 		return paperCheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）")(gtx), true
 	case rowEffort:
 		return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort)), true
+	case rowSamplingTemp:
+		return fieldRow(gtx, th, "温度", editorBox(th, &f.samplingTemp, "0–2；越低越稳，越高越发散。留空 = 服务端默认，写 0 = 每次都取最可能的词")), true
+	case rowSamplingTopP:
+		return fieldRow(gtx, th, "top_p", editorBox(th, &f.samplingTopP, "0–1；只从概率累计到该比例的候选里挑。留空 = 服务端默认")), true
+	case rowSamplingMax:
+		return fieldRow(gtx, th, "输出上限", editorBox(th, &f.samplingMax, "tokens；单轮最多生成多少。留空 = 不发送（仍受本轮预算约束）")), true
+	case rowSamplingStop:
+		return fieldRow(gtx, th, "停止串", editorBox(th, &f.samplingStop, "JSON 数组，如 [\"\\n\", \"END\"]；生成到这些串就停。留空 = 不发送")), true
+	case rowSamplingNote:
+		return samplingNoteRow(gtx, th), true
 	case rowChainNote:
 		return chainNoteRow(gtx, th, r.text), true
 	case rowChainItem:
@@ -108,6 +122,14 @@ func chainNoteRow(gtx layout.Context, th *material.Theme, text string) layout.Di
 	l := material.Label(th, paperNoteSp(th), text)
 	l.Color = paperOf().danger
 	return l.Layout(gtx)
+}
+
+// samplingNoteRow 采样参数的说明段：讲清「留空」与「写 0」的区别——这是这一组字段
+// 最容易误解的地方（留空 = 不发这个字段，由服务端取默认；写 0 = 明确要 0）。
+func samplingNoteRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return paperNote(th,
+		"留空 = 这个字段不发，由服务端取自家默认；写 0 = 明确要 0（温度 0 就是每次取最可能的词）。"+
+			"这里填的是整条链的缺省；只想改某个模型，就在配置文件里给那个模型加 sampling。")(gtx)
 }
 
 // chainItemRow 降级链一项：提供者（循环选择器）/ 模型（单行档）/ 上移 / 下移 / 删除。

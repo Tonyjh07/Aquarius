@@ -75,6 +75,12 @@ const (
 	rowChainNote // 链窄于当前模型能力时的警示（text = 文案）
 	rowChainItem // 降级链一项（field = f.chain 下标）
 	rowChainAdd  // 「＋ 添加降级项」
+	// D204：采样参数（「模型」页），整链缺省 + 逐模型覆盖在「模型服务」页。
+	rowSamplingTemp // temperature（单行档；空 = 不发送）
+	rowSamplingTopP // top_p（单行档；空 = 不发送）
+	rowSamplingMax  // max_tokens（单行档；空 = 不发送）
+	rowSamplingStop // stop（JSON 数组文本，如 ["\n"]）
+	rowSamplingNote // 说明（0 与留空的区别）
 	// S6/D143：工具与 MCP 页。
 	rowBuiltin     // 内置工具行（name = 工具名；field = 快照下标）
 	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
@@ -451,6 +457,7 @@ func rowInCard(k rowKind) bool {
 		rowPromptPreview, rowProfBtns, rowProvAdd, rowProvApply,
 		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus,
 		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote,
+		rowSamplingNote,
 		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus:
 		return false
 	}

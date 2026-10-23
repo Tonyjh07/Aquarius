@@ -3,6 +3,7 @@ package uigui
 import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -178,6 +179,45 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.WebFetchUserAgent = strings.TrimSpace(f.webUA.Text())
 	p.WebFetchRobots = f.webRobots.Value
 	p.WebFetchPrivate = f.webPrivate.Value
+	// 采样参数（D204）：空串 = 该项不发送；有值必须是合法数字（0 是有效取值）。
+	// SamplingSet = 本次保存整段管采样（窄写回不设这个位，别把用户配好的参数抹平）。
+	p.SamplingSet = true
+	p.SamplingTemperature = strings.TrimSpace(f.samplingTemp.Text())
+	if p.SamplingTemperature != "" {
+		n, perr := strconv.ParseFloat(p.SamplingTemperature, 64)
+		if perr != nil || n < 0 || n > 2 {
+			f.err = true
+			f.status = "采样温度须为 0–2 的数值（留空 = 交服务端默认）"
+			return
+		}
+	}
+	p.SamplingTopP = strings.TrimSpace(f.samplingTopP.Text())
+	if p.SamplingTopP != "" {
+		n, perr := strconv.ParseFloat(p.SamplingTopP, 64)
+		if perr != nil || n < 0 || n > 1 {
+			f.err = true
+			f.status = "top_p 须为 0–1 的数值（留空 = 交服务端默认）"
+			return
+		}
+	}
+	p.SamplingMaxTokens = strings.TrimSpace(f.samplingMax.Text())
+	if p.SamplingMaxTokens != "" {
+		n, perr := strconv.Atoi(p.SamplingMaxTokens)
+		if perr != nil || n < 1 {
+			f.err = true
+			f.status = "输出上限须为正整数（留空 = 不发送）"
+			return
+		}
+	}
+	p.SamplingStop = strings.TrimSpace(f.samplingStop.Text())
+	if p.SamplingStop != "" {
+		var stops []string
+		if err := json.Unmarshal([]byte(p.SamplingStop), &stops); err != nil {
+			f.err = true
+			f.status = "停止串须写成 JSON 数组，如 [\"\\n\", \"END\"]（留空 = 不发送）"
+			return
+		}
+	}
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v
 	}
@@ -416,6 +456,8 @@ func providerPatchOf(pf *providerForm) ProviderPatch {
 			}
 		}
 		mp := ProviderModelPatch{Name: name, ContextWindow: win, Disabled: !mf.enabled.Value}
+		mp.CostIn = parseCost(mf.costIn.Text())
+		mp.CostOut = parseCost(mf.costOut.Text())
 		// 只有用户动过能力勾选才把声明固化成显式（未动 = nil，保持键缺失/原声明形态）。
 		if mf.touched() {
 			names := mf.capNames()
@@ -424,6 +466,31 @@ func providerPatchOf(pf *providerForm) ProviderPatch {
 		p.Models = append(p.Models, mp)
 	}
 	return p
+}
+
+// parseCost 单价文本 → 数值（每百万 token，D205）：空 = 0（未声明、不折算）；非法或负数
+// 按 0 取值——报错由 applyProviderChanges 先行拦截（那里能给出「哪家的哪个模型」，patch
+// 组装本身不带错返回）。
+func parseCost(s string) float64 {
+	v := strings.TrimSpace(s)
+	if v == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f < 0 {
+		return 0
+	}
+	return f
+}
+
+// badCost 单价格子的语法问题（空 = 合法）：非法数字或负数。留空合法 = 不声明。
+func badCost(s string) bool {
+	v := strings.TrimSpace(s)
+	if v == "" {
+		return false
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	return err != nil || f < 0
 }
 
 // capNames 该模型行勾选的能力名（按 port.CapNames 顺序；空 = 三项全关的显式声明）。
@@ -454,6 +521,17 @@ func (u *UI) applyProviderChanges(f *settingsForm) {
 		f.provErr = true
 		f.provStatus = "至少保留一个 provider"
 		return
+	}
+	// 单价语法先在表单侧拦（D205）：留空合法（不声明），填了就必须是非负数字。
+	for _, pf := range f.provs {
+		for _, mf := range pf.modelForms {
+			if badCost(mf.costIn.Text()) || badCost(mf.costOut.Text()) {
+				f.provErr = true
+				f.provStatus = fmt.Sprintf("模型 %q 的单价须为非负数字（每百万 token，留空 = 不声明）",
+					strings.TrimSpace(mf.name.Text()))
+				return
+			}
+		}
 	}
 	patches := make([]ProviderPatch, 0, len(f.provs))
 	for _, pf := range f.provs {

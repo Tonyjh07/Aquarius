@@ -54,6 +54,10 @@ type ProviderModelSnapshot struct {
 	CapsExplicit  bool     // false = 键缺失（按协议缺省）
 	ContextWindow int      // 该模型上下文窗口 tokens（0 = 不声明，跟随全局）
 	Enabled       bool     // 是否启用（D180：键缺失 = true；不启用 = 保留声明但不参与选型）
+	// CostIn / CostOut 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明，
+	// 未声明就不折算费用（宁可没有数，也不给一个猜的）。
+	CostIn  float64
+	CostOut float64
 }
 
 // ProviderSnapshot provider 编辑区单条快照（D110②/③）：模型条目与密钥池都以结构化
@@ -86,6 +90,9 @@ type ProviderModelPatch struct {
 	Caps          *[]string
 	ContextWindow int
 	Disabled      bool
+	// CostIn / CostOut 单价（每百万 token，D205）；0 = 不声明（界面留空即此值）。
+	CostIn  float64
+	CostOut float64
 }
 
 // ProviderPatch provider 编辑区单条提交（Apply 全量替换口径）。Orig = 编辑前的
@@ -257,6 +264,13 @@ type SettingsSnapshot struct {
 	// FallbackNote 链窄于当前模型能力时的警示文案（cmd 侧按 caps 现算；空 = 不窄）。
 	// 与其余快照同口径：开窗取一次（降级链改动要重启才生效，运行态本就不同步）。
 	FallbackNote string
+
+	// 采样参数（D204）：整链缺省。**空串 = 不发送**（交服务端默认），"0" = 真的发 0。
+	// 用字符串而不是 float 承载，是为了让「留空」与「写了 0」在表单里可区分。
+	SamplingTemperature string
+	SamplingTopP        string
+	SamplingMaxTokens   string
+	SamplingStop        string // JSON 数组文本，如 ["\n"]（空 = 不发送）
 }
 
 // SettingsPatch 保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
@@ -317,6 +331,16 @@ type SettingsPatch struct {
 	WebFetchRobots     bool
 	WebFetchPrivate    bool
 	WebFetchTimeoutSec int
+
+	// 采样参数（D204；恒全量写）：空串 = 该项不发送（删键），有值 = 照写（含 0）。
+	// 与「数值 0 = 不改」的限额口径不同——这里 0 是有效取值，不能被当成「没填」。
+	// SamplingSet 区分「设置窗保存（整段替换）」与「窄写回（别动采样）」——窄写回
+	// （人格模板、provider 应用等）给的是零值，不该顺手把用户的采样参数抹平。
+	SamplingSet         bool
+	SamplingTemperature string
+	SamplingTopP        string
+	SamplingMaxTokens   string
+	SamplingStop        string
 }
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
@@ -550,6 +574,12 @@ type settingsForm struct {
 	profCopy   widget.Clickable
 	profSwitch widget.Clickable
 
+	// 采样参数（D204）：整链缺省的四项（空 = 不发送）。
+	samplingTemp widget.Editor
+	samplingTopP widget.Editor
+	samplingMax  widget.Editor
+	samplingStop widget.Editor
+
 	snap     SettingsSnapshot // 开窗快照（保存 diff 基准 + 变更提示）
 	profiles ProfilesSnapshot // profile 区数据面（动作后刷新，D110③）
 	status   string           // 保存反馈（本 goroutine 独占；"" = 默认提示）
@@ -617,6 +647,8 @@ type providerModelForm struct {
 	baseReason  bool
 	baseVision  bool
 	contextWin  widget.Editor // 上下文窗口 tokens（空/0 = 不声明，跟随全局）
+	costIn      widget.Editor // 输入单价（每百万 token；空/0 = 不声明）
+	costOut     widget.Editor // 输出单价（每百万 token；空/0 = 不声明）
 	probe       widget.Clickable
 	del         widget.Clickable
 	probeBusy   bool   // 探测在途（按钮右侧转圈；结果回灌即收）
@@ -774,7 +806,8 @@ func newSettingsForm(u *UI) *settingsForm {
 	}
 	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo,
 		&f.asrModel, &f.ttsModel, &f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags,
-		&f.webCount, &f.webMaxChars, &f.webProxy, &f.webUA, &f.webTimeout} {
+		&f.webCount, &f.webMaxChars, &f.webProxy, &f.webUA, &f.webTimeout,
+		&f.samplingTemp, &f.samplingTopP, &f.samplingMax, &f.samplingStop} {
 		ed.SingleLine = true
 	}
 	// f.sysPrompt / f.rawCfg 保持多行（表单仅有的多行档）。
@@ -829,6 +862,11 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.loadPrompts(s.PromptModules, s.PromptPersona)
 	f.loadFallback(s.Fallback, f.chainChoices) // D176 口径三：降级链
 	f.loadWeb(s)                               // D200：联网提供商与本地抓取参数
+	// D204：采样参数填表（空串 = 不发送，保持空）。
+	f.samplingTemp.SetText(s.SamplingTemperature)
+	f.samplingTopP.SetText(s.SamplingTopP)
+	f.samplingMax.SetText(s.SamplingMaxTokens)
+	f.samplingStop.SetText(s.SamplingStop)
 	return f
 }
 
@@ -904,6 +942,8 @@ func newProviderModelForm(m ProviderModelSnapshot) *providerModelForm {
 	mf.enabled.Value = m.Enabled
 	mf.name.SingleLine = true
 	mf.contextWin.SingleLine = true
+	mf.costIn.SingleLine = true
+	mf.costOut.SingleLine = true
 	mf.name.SetText(m.Name)
 	for _, c := range m.Caps {
 		switch c {
@@ -918,6 +958,13 @@ func newProviderModelForm(m ProviderModelSnapshot) *providerModelForm {
 	mf.baseTools, mf.baseReason, mf.baseVision = mf.capsTools.Value, mf.capsReason.Value, mf.capsVision.Value
 	if m.ContextWindow > 0 {
 		mf.contextWin.SetText(strconv.Itoa(m.ContextWindow))
+	}
+	// 单价（D205）：只在真的声明过时回显（0 = 未声明 = 留空），避免满屏「0」被当成免费。
+	if m.CostIn > 0 {
+		mf.costIn.SetText(strconv.FormatFloat(m.CostIn, 'f', -1, 64))
+	}
+	if m.CostOut > 0 {
+		mf.costOut.SetText(strconv.FormatFloat(m.CostOut, 'f', -1, 64))
 	}
 	return mf
 }

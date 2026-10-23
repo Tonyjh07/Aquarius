@@ -431,6 +431,13 @@ func (f *settingsForm) providerModelRow(gtx layout.Context, th *material.Theme, 
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.contextWin, "窗口 tokens"))
 				}),
+				// 单价（D205，每百万 token）：与厂商报价同口径，留空 = 未声明、不折算费用。
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.costIn, "输入 $/M"))
+				}),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.costOut, "输出 $/M"))
+				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
 						paperButton(th, &mf.del, "删除", paperBtnDanger, len(f.provs[prov].modelForms) > 1))
