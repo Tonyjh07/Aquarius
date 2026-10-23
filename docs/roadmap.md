@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-23 @ 7793d58 -->
+<!-- docs-sync: 2026-10-23 @ 7912324 -->
 
 > **定位（2026-10-23 起）**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，
 > 以及里程碑基线。**未来要做什么、按什么顺序、什么节奏**，一律看 [plan.md](plan.md)。
@@ -29,7 +29,7 @@
 
 **版本基线**：`v0.1.0` 已于 2026-10-23 发布（tag `v0.1.0` → `3c2767b`）。
 当前开发分支 `feat/v0.2.0`：前半程（P0 守规 + P1 聚合根归位）已落地，后半程（P2 收口与拆包）
-按 [plan.md](plan.md) §2 进行。
+按 [plan.md](plan.md) 的「收口与拆包」批次进行。
 
 ---
 
@@ -85,10 +85,17 @@
 | S12 | 屏幕捕获 | 已落地（D178） |
 | S13 | 对话交互补强（提问面板/无人值守/多附件/图片入口/编辑附件） | 已落地（D184–D188） |
 | S14 | 技能（Agent Skills）读侧 + 安装面 | 已落地（D201/D202/D203；S14-1 读侧 / S14-2 安装面） |
-| S15 | 生态兼容与轻度角色扮演（对照调查） | **未排期 → 已迁至 [plan.md](plan.md) §3** |
+| S15 | 生态兼容与轻度角色扮演（对照调查） | **未排期 → 已迁至 [plan.md](plan.md) 的角色扮演清单** |
 | v0.2.0-P0 | 架构守卫测试（D211）、`/help` 入清单（D212）、展示文本归一（D213） | 已落地 2026-10-23 |
 | v0.2.0-P1 | 会话聚合根归位：只读访问器与 `View()`、`ValidateEveryChange` 自检开关、三张 map 私有 + `Snapshot`/`Restore`、`storejson` 自带 wire DTO（D214/D215/D216） | 已落地 2026-10-23 |
-| v0.2.0-P2 | 收口与拆包：前缀解析归一、`JobManager` 按消费方拆、提示词具名类型、`uigui` 拆包、`SessionDeps` 拆端口、设置逻辑归位、零碎真债（D217；§2.1–§2.7） | 进行中 |
+| v0.2.0-P2 | 收口与拆包：前缀解析归一、`JobManager` 按消费方拆、提示词具名类型、`uigui` 拆包、`SessionDeps` 拆端口、设置逻辑归位、零碎真债（D217；批次 P2-1…P2-7） | 进行中 |
+
+**`v0.2.0-P2` 已落地**（批次号固定，剩余项见 [plan.md](plan.md)「收口与拆包」）：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| P2-1 | `3a00d69 refactor: resolve identifiers through one prefix matcher` | 四处前缀解析（`ResolveJobID`/`ResolveWatchID`/`resolveNode`/`resolveConversation`）共用 `port.MatchPrefix`，措辞仍分层（工具面英文、命令面中文）；补匹配优先级与命中序单测（5 files, +109/−70，净减 34 行） |
+| P2-2 | `7912324 refactor: split the job port by consumer` | `JobManager` 拆成 `JobStarter`/`JobRunner`/`JobReader`/`JobKiller`，组合体保留；各工具与 `/jobs` 只声明实际用到的方法；`requireJobs` 改泛型以保住入参的窄类型（7 files, +66/−18） |
 
 **`v0.2.0-P1` 的落笔顺序**（每笔独立过全门禁、可单独回退）：
 
@@ -183,7 +190,7 @@ Revise/Carry 语义；流式不进领域；依赖方向 `adapter → port ← ap
 
 ## 7. 已知缺陷档案
 
-> 已修的一行一条（根因与修法见对应决策）。**仍未修的列在 [plan.md](plan.md) §4**，
+> 已修的一行一条（根因与修法见对应决策）。**仍未修的列在 [plan.md](plan.md) 的「已知未修项」**，
 > 本表只留档案。
 
 | 缺陷 | 状态 |

@@ -8,7 +8,9 @@
 - **Aquarius**：面向个人的极简 AI 助手（对话优先、多模态出入、文档记忆、可插拔工具/模型）。
 - **技术栈**：Go ≥ 1.27.3（D30 的 go-sdk 要求 1.25 → D137 为 x/net 漏洞 1.26 → 为清 stdlib 漏洞升到 1.27.2 → 同一理由升 1.27.3），单二进制交付（`go build ./cmd/aquarius`），无 cgo，纯 Go 依赖优先。
 - **当前状态**：里程碑现状见 [docs/roadmap.md](docs/roadmap.md)（进度档案）；**接下来做什么见
-  [docs/plan.md](docs/plan.md)**（规划的唯一维护处）；设计与 backlog 见 DESIGN §12/§14。
+  [docs/plan.md](docs/plan.md)**（规划的唯一维护处，工作稿：会频繁重排，**别的文档不要引用它的
+  节号**）；设计与 backlog 见 DESIGN §12/§14。工程经验与边界见
+  [docs/development.md](docs/development.md) 的「工程准则与边界」。
   当前开发分支 `feat/v0.2.0`。
 - **语言约定**：文档与注释用中文；标识符、commit message 用英文。**进入模型上下文的字符串**（system 提示、工具声明与参数描述、工具回填结果/错误）一律英文；仅面向用户的界面、命令输出与日志用中文。
 
