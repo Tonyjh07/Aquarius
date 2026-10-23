@@ -130,7 +130,6 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 	f.page = pageSecrets
 	f.syncSecretsSnapshot() // 同步密钥库快照（铺出条目行）
 	f.secretsStatus = "ok"  // 覆盖 rowSecretStatus 行型
-	f.importStatus = "ok"   // 覆盖 rowSecretImport 行型里的导入反馈分支
 	f.page = pageSkills
 	f.syncSkillsSnapshot() // 同步技能快照（铺出技能/目录/警告行）
 	f.skillsStatus = "ok"  // 覆盖 rowSkillStatus 行型

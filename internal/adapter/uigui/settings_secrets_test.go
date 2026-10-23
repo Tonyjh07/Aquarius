@@ -138,6 +138,24 @@ func TestSecretsPageRows(t *testing.T) {
 	}
 }
 
+// TestSecretsPageHasNoImportEntry 导入入口已从界面撤下（D206：功能保留、不给入口）：
+// 行计划里既不该再有「从旧处收进来」分区，也不该有导入按钮。功能本身见
+// TestSecretsPageImport（动作分支保留、照常可用）。
+func TestSecretsPageHasNoImportEntry(t *testing.T) {
+	_, f, _ := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{
+		{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"},
+	}}, nil)
+	f.secretsSnap = f.secrets.Snapshot()
+	for _, r := range f.pageRows(pageSecrets) {
+		if r.kind == rowSection && strings.Contains(r.text, "旧") {
+			t.Fatalf("密钥库页仍有导入分区: %q", r.text)
+		}
+		if strings.Contains(r.text, "导入") {
+			t.Fatalf("密钥库页仍有导入相关行: %q", r.text)
+		}
+	}
+}
+
 // TestSecretsPagePut 新增/覆盖：填入键名与值 → 存入 → 假管理面记录 + 状态行含名字 +
 // **值字段恒清空**（值永不回显）。
 func TestSecretsPagePut(t *testing.T) {

@@ -89,11 +89,12 @@ func secretsSnapHas(s SecretsSnapshot, name string) bool {
 
 // secretsAction 密钥库页动作分发（同步；帧首调用）。动作不接线时只置只读反馈。
 //
-// 反馈分两条槽：存入/删除用 `secretsStatus`（状态行在新增区之后），导入用 `importStatus`
-// （状态行紧贴导入按钮）——合成一条的话导入结果会落到整页末尾，按钮点完看不见反馈。
+// 反馈两条槽：存入/删除用 `secretsStatus`（状态行在新增区之后），导入用 `importStatus`。
+// 导入入口已从界面撤下（D206：功能保留、不给按钮），这条槽位同样保留——动作还有别处
+// 可以直接调，反馈不该因为没有行渲染就丢掉。
 func (u *UI) secretsAction(f *settingsForm, act string, name string) {
 	if f.secrets == nil {
-		// 反馈落在本动作自己的槽位上（导入那条状态行在导入按钮旁边）。
+		// 反馈落在本动作自己的槽位上。
 		if act == "import" {
 			f.importErr, f.importStatus = true, "密钥库未接线（只读占位）"
 		} else {

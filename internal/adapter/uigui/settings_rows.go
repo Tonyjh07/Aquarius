@@ -107,8 +107,6 @@ const (
 	// S9-6b/D161：密钥库页（名字 + 尾 4 位掩码；值永不回显）。
 	rowSecretEntry  // 已存条目行（name = 键名；行内删除/二次确认）
 	rowSecretEmpty  // 空态/未接线占位（text = 文案）
-	rowSecretNote   // 导入区说明（text 忽略；文案在 Body 内）
-	rowSecretImport // 「导入旧密钥」按钮行（按钮 + 右侧一行导入反馈；S9-6c）
 	rowSecretName   // 新增/覆盖的键名（单行编辑档）
 	rowSecretValue  // 新增/覆盖的值（单行编辑档；动作后恒清空）
 	rowSecretAdd    // 「存入」按钮行
@@ -455,7 +453,7 @@ func rowInCard(k rowKind) bool {
 	switch k {
 	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
 		rowPromptPreview, rowProfBtns, rowProvAdd, rowProvApply,
-		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretAdd, rowSecretImport, rowSecretStatus,
+		rowPromptRefAdd, rowSecretEmpty, rowSecretAdd, rowSecretStatus,
 		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote,
 		rowSamplingNote,
 		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus:
