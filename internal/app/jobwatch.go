@@ -28,7 +28,7 @@ const (
 // watcher 在自己的 goroutine 里只等 Wait 并读 Status/Logs，**不碰会话树**——落地仍经
 // port.Injector 回到会话 goroutine。Close 取消全部并等待，避免测试/长驻场景泄漏。
 type JobWatcher struct {
-	jobs   port.JobManager
+	jobs   port.JobReader
 	inject func() port.Injector
 	wake   func()
 	logf   func(format string, args ...any)
@@ -89,7 +89,7 @@ func (e *jobEntry) takeByWatcher() bool {
 
 // JobWatcherOptions 依赖（全部由装配根注入）。
 type JobWatcherOptions struct {
-	Jobs port.JobManager
+	Jobs port.JobReader
 	// Injector 延迟取注入端口（会话在工具装配之后才建好）；返回 nil = 正在退出，丢弃。
 	Injector func() port.Injector
 	// Wake 完成报告注入后的空闲唤醒（D167）；nil = 只注入不唤醒（测试/无 UI）。

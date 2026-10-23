@@ -15,7 +15,7 @@ import (
 const defaultJobLogsTail = 50
 
 // jobStart 启动后台任务（执行类：Risk=Confirm，仅 full-access 免确认，D22）。
-type jobStart struct{ jobs port.JobManager }
+type jobStart struct{ jobs port.JobStarter }
 
 func (t *jobStart) Spec() tool.Spec {
 	return tool.Spec{
@@ -81,7 +81,7 @@ func (t *jobStart) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 }
 
 // jobList 列出后台任务（Safe）。
-type jobList struct{ jobs port.JobManager }
+type jobList struct{ jobs port.JobReader }
 
 func (t *jobList) Spec() tool.Spec {
 	return tool.Spec{
@@ -123,7 +123,7 @@ func specCommand(spec port.JobSpec) string {
 }
 
 // jobStatus 查询单个任务状态（Safe）。
-type jobStatus struct{ jobs port.JobManager }
+type jobStatus struct{ jobs port.JobReader }
 
 func (t *jobStatus) Spec() tool.Spec {
 	return tool.Spec{
@@ -174,7 +174,7 @@ func (t *jobStatus) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 }
 
 // jobLogs 拉取任务日志尾部（Safe）。
-type jobLogs struct{ jobs port.JobManager }
+type jobLogs struct{ jobs port.JobReader }
 
 func (t *jobLogs) Spec() tool.Spec {
 	return tool.Spec{
@@ -231,7 +231,19 @@ func (t *jobLogs) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 }
 
 // jobKill 终止后台任务（Safe：只影响本应用启动的任务；启动本身已过确认）。
-type jobKill struct{ jobs port.JobManager }
+// jobLister 只列任务：job_list 与「按前缀解析 id」只需这一项（§2.2）。
+// 定在消费方而不是 port——它没有独立的端口语义，只是 job_* 工具的解析前置。
+type jobLister interface {
+	List(ctx context.Context) ([]port.Job, error)
+}
+
+// jobKillDeps 终止一个任务要两件事：先按前缀认出是哪个（读），再终止（写）。
+type jobKillDeps interface {
+	jobLister
+	port.JobKiller
+}
+
+type jobKill struct{ jobs jobKillDeps }
 
 func (t *jobKill) Spec() tool.Spec {
 	return tool.Spec{
@@ -278,7 +290,7 @@ func (t *jobKill) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 
 // jobWait 等后台任务收尾（Safe）：跑编译/测试这类确定会结束的任务时，直接在这一轮
 // 拿结果，不必等下一轮的报告（D189）。不传 timeout_sec = 一直等到结束（用户可中断）。
-type jobWait struct{ jobs port.JobManager }
+type jobWait struct{ jobs port.JobReader }
 
 func (t *jobWait) Spec() tool.Spec {
 	return tool.Spec{
@@ -359,7 +371,7 @@ func (t *jobWait) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 
 // jobWaitText 终态回执：状态行 + 日志尾部（与 watcher 报告同一份口径，只是走工具
 // 回填而不是注入）。日志是不可信进程输出，正文里点明一句。
-func jobWaitText(ctx context.Context, mgr port.JobManager, j port.Job) string {
+func jobWaitText(ctx context.Context, mgr port.JobReader, j port.Job) string {
 	dur := time.Duration(0)
 	if !j.StartedAt.IsZero() && !j.EndedAt.IsZero() {
 		dur = j.EndedAt.Sub(j.StartedAt)
@@ -397,7 +409,7 @@ func absWorkDir(p string) bool {
 
 // resolveJobID 解析任务标识（精确优先 + 唯一前缀，port 共用实现）；
 // 失败附上发现线索（job_list 可查可用 ID）。
-func resolveJobID(ctx context.Context, jobs port.JobManager, arg string) (port.JobID, error) {
+func resolveJobID(ctx context.Context, jobs jobLister, arg string) (port.JobID, error) {
 	list, err := jobs.List(ctx)
 	if err != nil {
 		return "", fmt.Errorf("list tasks: %w", err)

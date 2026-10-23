@@ -112,7 +112,7 @@ type Session struct {
 	unattended     func() bool
 	persistUnatt   func(on bool) error
 	confirmer      port.Confirmer
-	jobs           port.JobManager
+	jobs           jobAdmin
 	watches        port.WatchManager
 	skills         port.SkillCatalog
 	skillAdmin     SkillAdmin

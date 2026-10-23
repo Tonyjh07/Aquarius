@@ -17,7 +17,7 @@ const maxTermOut = 16000
 
 // termExec 终端命令同步执行。执行类工具：不实现 FileTarget，
 // 按工具列判定（D22 两列分工：Risk=Confirm，仅 full-access 免确认）。
-type termExec struct{ jobs port.JobManager }
+type termExec struct{ jobs port.JobRunner }
 
 var _ port.Tool = (*termExec)(nil)
 

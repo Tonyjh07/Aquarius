@@ -152,6 +152,15 @@ func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, erro
 	return b.String(), nil
 }
 
+// jobAdmin 命令面看到的任务面（§2.2）：/jobs 只列、看日志、终止，从不启动任务——
+// 启动是模型经 job_* 工具做的事。只声明这三项，「命令面能不能偷偷起任务」就不再是
+// 靠读实现才能确认的问题。
+type jobAdmin interface {
+	List(ctx context.Context) ([]port.Job, error)
+	Logs(ctx context.Context, id port.JobID, tail int) (string, error)
+	Kill(ctx context.Context, id port.JobID) error
+}
+
 // jobsReport /jobs 命令（DESIGN §7.3）：list（缺省）/ logs <id> [行数] / kill <id>。
 // 任务由模型经 job_* 工具启动，状态与日志同源（port.JobManager）。
 func (s *Session) jobsReport(ctx context.Context, args []string) (string, error) {

@@ -132,9 +132,12 @@ func DisplayName(name string) string {
 }
 
 // requireJobs 任务类工具的管理器校验（未装配时明确报错，不 panic）。
-func requireJobs(jobs port.JobManager, name string) (port.JobManager, error) {
-	if jobs == nil {
-		return nil, fmt.Errorf("%s: background tasks are not available in this build", name)
+// 泛型是为了让每个工具用自己的窄接口做校验（§2.2）：返回类型跟着入参走，
+// 于是 job_list 拿到的仍是 port.JobReader，不因为过了一次校验就多出一张方法表。
+func requireJobs[T any](jobs T, name string) (T, error) {
+	if any(jobs) == nil {
+		var zero T
+		return zero, fmt.Errorf("%s: background tasks are not available in this build", name)
 	}
 	return jobs, nil
 }
