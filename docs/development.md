@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-23 @ 7912324 -->
+<!-- docs-sync: 2026-10-23 @ c439d1a -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -60,7 +60,7 @@ sudo apt-get install -y golang-go xorg-dev libx11-xcb-dev libxkbcommon-dev \
 - 工具缺省**共享 Windows 侧的 `GOMODCACHE`**（`-modcache` 可覆盖），避免在 WSL 内重下
   2GB 级依赖；`GOCACHE` 用 WSL 原生目录（构建缓存不跨系统复用）。
 - 门禁只覆盖编译 + vet，**不跑 Linux 下的 GUI/交互**（WSL 无 X 显示）；非 Windows 的功能
-  对等分级见 DESIGN §15.6 与 D111，平台层落地后按降级清单走查。
+  对等分级见 [gui-design.md](gui-design.md) §15.6 与 D111，平台层落地后按降级清单走查。
 - Windows 行为回归仍以本地门禁 + `AQUARIUS_GUI_SMOKE=1` 冒烟为准，不要用 Linux 门禁替代。
 
 ## 代码分层速查

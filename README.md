@@ -3,7 +3,7 @@
 </p>
 
 # Aquarius
-<!-- docs-sync: 2026-10-23 @ cb256b8 -->
+<!-- docs-sync: 2026-10-23 @ c439d1a -->
 
 面向个人的 AI 助手。对话优先，支持图片、文档与语音输入，长期记忆以 markdown 文档存放，模型与工具均可替换。Go 编写，交付单个二进制。
 
@@ -58,6 +58,8 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 | [docs/plan.md](docs/plan.md) | **未来规划**：待做事项、执行顺序与节奏、验收与人工拍板点（工作稿，会被频繁重排，别按节号引用） |
 | [docs/roadmap.md](docs/roadmap.md) | **进度档案**：里程碑基线与已落地步骤、早期决议、破坏性授权范围 |
 | [docs/overview.md](docs/overview.md) | 架构导读：内核职责、依赖方向、目录与端口矩阵 |
+| [docs/gui-design.md](docs/gui-design.md) | GUI 实现规格：悬浮球形态、输入栏与转写、主题令牌、多窗宿主、缩放、气泡菜单 |
+| [docs/relation-map-design.md](docs/relation-map-design.md) | 会话树关系图的形态规格：通道分配、布局算法、行为契约 |
 | [docs/guide.md](docs/guide.md) | **用户手册**：安装、对话、附件、语音、分支、设置窗逐页、故障排查 |
 | [docs/usage.md](docs/usage.md) | 参考手册：命令与参数、内置工具、压缩、权限等级、常见问题 |
 | [docs/configuration.md](docs/configuration.md) | 配置参考：`config.json` 逐字段、覆盖顺序、密钥规则 |

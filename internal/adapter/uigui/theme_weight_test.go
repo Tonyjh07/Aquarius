@@ -136,7 +136,7 @@ func TestWeightTiersBoldIsHeavier(t *testing.T) {
 // TestWeightTiersNoMediumFace 记录「当前 CJK 字体族没有 Medium 面」这一事实。
 //
 // SemiBold 与 Bold 必须渲染成**同一个字形**（像素哈希全等）。这条断言失败意味着
-// 换到了带 Medium 的家族——那是好消息，但必须同步更新 DESIGN §15.4 与 D147
+// 换到了带 Medium 的家族——那是好消息，但必须同步更新 docs/gui-design.md §15.4 与 D147
 // 的「二元档」结论，否则文档就与实现脱节了。
 func TestWeightTiersNoMediumFace(t *testing.T) {
 	if os.Getenv("AQUARIUS_SKIP_PIXEL") != "" {
@@ -152,7 +152,7 @@ func TestWeightTiersNoMediumFace(t *testing.T) {
 
 	if semi.hash != bold.hash {
 		t.Fatalf("SemiBold 与 Bold 字形不同（hash %016x vs %016x）：当前字体族已提供 Medium 面。\n"+
-			"这是能力升级，但请同步更新 DESIGN §15.4「字体」段与 docs/decisions.md D147 "+
+			"这是能力升级，但请同步更新 docs/gui-design.md §15.4「字体」段与 docs/decisions.md D147 "+
 			"的「二元档」结论，再改本断言。", semi.hash, bold.hash)
 	}
 	// 顺带守住：SemiBold 也不能等同于 Regular（否则「强调」就没有视觉差异了）。

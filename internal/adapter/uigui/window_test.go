@@ -126,7 +126,7 @@ func TestFeatherWidthUnifiedToInputCapsule(t *testing.T) {
 func TestInputRowRectsFollowsDesign(t *testing.T) {
 	// 设计稿 1:1 契约（canvas：48/12/16/20、行 576 + 双侧 16 = 608）。
 	if inputRowDp != 48 || inputGapDp != 12 || inputPadDp != 16 || inputIconDp != 20 || winWidthDp != 608 {
-		t.Fatalf("常量偏离设计稿: row=%d gap=%d pad=%d icon=%d win=%d（DESIGN §15.2/D49）",
+		t.Fatalf("常量偏离设计稿: row=%d gap=%d pad=%d icon=%d win=%d（docs/gui-design.md §15.2/D49）",
 			inputRowDp, inputGapDp, inputPadDp, inputIconDp, winWidthDp)
 	}
 	const top, margin = 8, 16

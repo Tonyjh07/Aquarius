@@ -1,8 +1,9 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-23 @ 7912324 -->
+<!-- docs-sync: 2026-10-23 @ c439d1a -->
 
-> **权威设计文档之一**：原 [DESIGN.md](../DESIGN.md) §13 于 2026-09 拆出，与 DESIGN.md 同级同权威
-> （`docs/` 其余篇目为衍生导读）。编号**跨文件不变**（D69 实施后已撤销），编号范围以本文件**索引表**为准；各处 `§13` / `Dn` 引用均指本文件。
+> **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
+> （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
+> （D69 实施后已撤销），编号范围以本文件**索引表**为准；全仓的 `Dn` 引用都指本文件。
 >
 > **维护规则**
 >
@@ -1816,7 +1817,7 @@
 - **复核结论：维持不改。** 三条理由：
   1. **这是当初显式设计**（D22 就把读定为「无副作用的本地访问」），不是漏写；改它 = 把每个
      读文件操作都变成一次弹窗，与 §15 交互设计冲突。
-  2. **风险面在本项目里被压缩过**：权限矩阵只约束 term_exec / job_start 等执行面（§13），
+  2. **风险面在本项目里被压缩过**：权限矩阵只约束 term_exec / job_start 等执行面，
      文件面只是 sandbox 内外的读、写分级；读任意文件的前提是模型能走到 file 工具，而那已经
      在用户的掌控链上（用户自己配的工具/模型/提示）。
   3. 真要收紧是**设计变更**而非补丁：路径收敛（读越出 `<dataDir>/sandbox` 走 Ask）会让
@@ -4122,7 +4123,7 @@
   < 头底 < 托架最底 < 杆底的次序）。真图渲染 48px（放大 8 倍）与 480px 各一版肉眼确认。
 - **落码（2026-10-21）**：`internal/adapter/uigui/chrome.go`（`micKappa` / `micGeom` /
   `micGeomOf` / `sideGap` / `bottomGap` / `drawMic`）、`uigui/mic_geom_test.go`（新增）、
-  `DESIGN.md` §15.2。
+  `docs/gui-design.md` §15.2。
 
 ### D194 · 语音键只在语音识别可用时出现（2026-10-21 用户报障）
 
@@ -4142,7 +4143,7 @@
 - **验证**：`cmd/aquarius/voice_slot_test.go` 锁「识别未装配 → 槽为 nil；装配后 → 非 nil」；
   `uigui/voice_test.go` 既有 `TestMicButtonNeedsVoice` 继续锁界面侧判空。
 - **落码（2026-10-21）**：`cmd/aquarius/assemble_ui.go`（`voiceSlot`）、
-  `DESIGN.md` §15.2、`docs/guide.md`、`docs/usage.md`。
+  `docs/gui-design.md` §15.2、`docs/guide.md`、`docs/usage.md`。
 
 ### D195 · 工具名出入端点换算：内部保留 `mcp:<server>:<tool>`，出站发别名（2026-10-22 实测报障）
 
@@ -4276,7 +4277,7 @@
 - **验证**：`ask_test.go` 新增三组——头部（真指针扫进度段落在右半侧、右上角不再有可点件）、
   底部按钮（盒高 = 文字 + 内边距、真指针点「下一步」推进到第 2 题）、面板高（自然高不再
   高估）；离屏渲染目视核对面板整体排布。
-- **落码（2026-10-22）**：`internal/adapter/uigui/ask_ui.go`、`ask.go`、`gui.go`、`DESIGN.md` §15.2。
+- **落码（2026-10-22）**：`internal/adapter/uigui/ask_ui.go`、`ask.go`、`gui.go`、`docs/gui-design.md` §15.2。
 
 ### D200 · 设置窗新增「联网」页：搜索与抓取的提供商链可编辑（2026-10-22）
 
@@ -4316,7 +4317,7 @@
   我不支持」）；④ 密钥回显打码值（打码值一旦被提交就会被当成新密钥写回）。
 - **落码（2026-10-22）**：`internal/adapter/uigui/settings_page_web.go`、
   `cmd/aquarius/web_settings.go`、`settings.go` / `settings_actions.go` / `settings_rows.go`、
-  `DESIGN.md` §5.14/§15.7、`docs/configuration.md`。
+  `DESIGN.md` §5.14、`docs/gui-design.md` §15.7、`docs/configuration.md`。
 
 ### D201 · 技能（Agent Skills）：目录 + `SKILL.md` 的按需指令包（2026-10-22）
 

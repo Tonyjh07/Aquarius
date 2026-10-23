@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-10-23 @ cb256b8 -->
+<!-- docs-sync: 2026-10-23 @ c439d1a -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找它的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -36,6 +36,7 @@
 | [overview.md](overview.md) | 架构导读：内核三件事、依赖方向、目录与端口矩阵 | 十分钟地图；与 DESIGN 冲突以 DESIGN 为准 |
 | [development.md](development.md) | 门禁、测试手段、工程准则与边界、How-to | 开发流程的唯一处 |
 | [relation-map-design.md](relation-map-design.md) | 会话树关系图的形态规格（通道分配、行为契约） | uigui 实现规格；可被测试断言的部分以本文为准 |
+| [gui-design.md](gui-design.md) | GUI 壳内实现规格：悬浮球形态、输入栏与转写、主题令牌、多窗、缩放、气泡菜单 | uigui 实现规格；`§15.x` 引用指本文 |
 | [AGENTS.md](../AGENTS.md) | 硬性规则、常用命令、提交要求 | **规则的唯一处**（development.md 是汇编，冲突以本文为准） |
 | [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) | 第三方组件的版本与许可证 | 再分发合规依据 |
 

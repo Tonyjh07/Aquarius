@@ -1,8 +1,8 @@
 # 架构导读
-<!-- docs-sync: 2026-10-23 @ 2f5f488 -->
+<!-- docs-sync: 2026-10-23 @ c439d1a -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §1/§3/§5/§6，定位是 **10 分钟建立索引的地图**；
-> **冲突以 DESIGN.md / [decisions.md](decisions.md) 为准**（决策记录原 §13 已独立成篇）。
+> **冲突以 DESIGN.md / [decisions.md](decisions.md) 为准**。
 
 ## Aquarius 是什么
 
@@ -106,6 +106,6 @@ S1/S1b/S1c/S2/S2b 增强均已落地，已落地步骤见 [roadmap.md](roadmap.m
 
 ## 延伸阅读
 
-- 逐条决策（编号范围见该文索引表）：[decisions.md](decisions.md)（原 DESIGN §13）
+- 逐条决策（编号范围见该文索引表）：[decisions.md](decisions.md)
 - 使用与命令：[用户手册](guide.md)（日常使用）｜[参考手册](usage.md)（命令与参数）｜ 配置：[configuration.md](configuration.md)
 - 数据与备份：[storage.md](storage.md) ｜ 动手开发：[development.md](development.md)

@@ -1,4 +1,4 @@
-// Package uigui Gio 悬浮球 GUI 前端（DESIGN D43/§15，M5）：与 repl/tui 同权实现
+// Package uigui Gio 悬浮球 GUI 前端（D43，壳内规格见 docs/gui-design.md §15，M5）：与 repl/tui 同权实现
 // uiFrontend 六面（port.Presenter + Prompter + Confirmer + Say/Prompt/SetInterrupt/
 // Close），装配根按 ui.kind=gui 换壳——薄壳零业务逻辑，D28 输出器装饰器自动继承。
 //
