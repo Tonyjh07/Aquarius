@@ -1,9 +1,7 @@
 package app
 
 import (
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -32,54 +30,39 @@ type treeSnapshot struct {
 	msgs map[conversation.MessageID]conversation.Message
 }
 
-// makeTreeSnapshot 由会话树构建快照：每个节点一条 BranchInfo，同级按 (CreatedAt, ID)
-// 升序——与 domain `Conversation.Branches` 的排序口径一致（D15/D16：Revise 出来的
-// 兄弟节点 CreatedAt 不保证等于插入序，故必须显式排序而非依赖 Children 切片顺序）；
-// tails 按 (CreatedAt, ID) 最大叶子 post-order 聚合，与 domain `Conversation.Tail`
-// 同口径（D94）；graph 同轮产出整树节点表（节点按 (CreatedAt, ID) 升序，布局可复现）。
+// makeTreeSnapshot 把领域视图翻译成展示面端口结构（D80/§7.5）。
+//
+// 排序与末端口径都不在这里：同级按 (CreatedAt, ID) 升序（D15/D16）与「子树最新叶子」
+// （D94）都是领域规则，由 `Conversation.View` 给出——展示面只做形状转换。
+// 此前这里各写了一份，规则一改就要改两处。
 func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
-	total := c.NodeCount()
+	view := c.View()
+	total := len(view.Nodes)
 	snap := &treeSnapshot{
 		branches: make(map[conversation.MessageID]port.BranchInfo, total),
-		tails:    make(map[conversation.MessageID]conversation.MessageID, total),
+		tails:    view.Tails,
 		msgs:     make(map[conversation.MessageID]conversation.Message, total),
 	}
 	sibIdx := make(map[conversation.MessageID]int, total)
 	sibN := make(map[conversation.MessageID]int, total)
-	for _, parent := range childGroupParents(c) {
-		kids := c.ChildIDs(parent)
-		ordered := make([]conversation.MessageID, 0, len(kids))
-		for _, kid := range kids {
-			if _, ok := c.Find(kid); ok {
-				ordered = append(ordered, kid)
-			}
-		}
-		sort.Slice(ordered, func(i, j int) bool {
-			a, _ := c.Find(ordered[i])
-			b, _ := c.Find(ordered[j])
-			if !a.CreatedAt.Equal(b.CreatedAt) {
-				return a.CreatedAt.Before(b.CreatedAt)
-			}
-			return a.ID < b.ID
-		})
-		for i, kid := range ordered {
-			snap.branches[kid] = port.BranchInfo{IDs: ordered, Index: i}
-			sibIdx[kid], sibN[kid] = i, len(ordered)
+	for _, group := range view.Groups {
+		for i, kid := range group.IDs {
+			snap.branches[kid] = port.BranchInfo{IDs: group.IDs, Index: i}
+			sibIdx[kid], sibN[kid] = i, len(group.IDs)
 		}
 	}
-	// 整树节点表（graph）：节点集 = 全部入树节点，按 (CreatedAt, ID) 升序。
+	// 整树节点表（graph）：View.Nodes 已按 (CreatedAt, ID) 升序，布局可复现。
 	nodes := make([]port.GraphNode, 0, total)
-	for _, id := range c.IDs() {
-		m, _ := c.Find(id)
-		snap.msgs[id] = m // D132：节点只读副本（共享分片底层数组，节点不可变）
+	for _, m := range view.Nodes {
+		snap.msgs[m.ID] = m // D132：节点只读副本（共享分片底层数组，节点不可变）
 		ek := port.EdgeSeq
 		if m.Parent == "" {
 			ek = "" // 结构根无父边（D120§6.1）
-		} else if _, revised := c.Edition(id); revised {
+		} else if _, revised := c.Edition(m.ID); revised {
 			ek = port.EdgeRevise
 		}
 		nodes = append(nodes, port.GraphNode{
-			ID:           id,
+			ID:           m.ID,
 			Parent:       m.Parent,
 			Role:         m.Role,
 			Snippet:      nodeSummary(m),
@@ -87,52 +70,12 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 			Trigger:      m.Trigger,
 			CreatedAt:    m.CreatedAt,
 			EdgeKind:     ek,
-			SiblingIdx:   sibIdx[id],
-			SiblingCount: sibN[id],
+			SiblingIdx:   sibIdx[m.ID],
+			SiblingCount: sibN[m.ID],
 		})
 	}
-	sort.Slice(nodes, func(i, j int) bool {
-		if !nodes[i].CreatedAt.Equal(nodes[j].CreatedAt) {
-			return nodes[i].CreatedAt.Before(nodes[j].CreatedAt)
-		}
-		return nodes[i].ID < nodes[j].ID
-	})
-	snap.graph = port.TreeGraph{Anchor: c.Head, Nodes: nodes, Total: len(nodes)}
-	var tailOf func(conversation.MessageID) conversation.MessageID
-	tailOf = func(x conversation.MessageID) conversation.MessageID {
-		if t, ok := snap.tails[x]; ok {
-			return t
-		}
-		best, bestAt := conversation.MessageID(""), time.Time{}
-		kids := c.ChildIDs(x)
-		if len(kids) == 0 {
-			m, _ := c.Find(x)
-			best, bestAt = x, m.CreatedAt
-		}
-		for _, kid := range kids {
-			t := tailOf(kid)
-			n, _ := c.Find(t)
-			if best == "" || n.CreatedAt.After(bestAt) || (n.CreatedAt.Equal(bestAt) && t > best) {
-				best, bestAt = t, n.CreatedAt
-			}
-		}
-		snap.tails[x] = best
-		return best
-	}
-	tailOf(conversation.MessageID(c.ID))
+	snap.graph = port.TreeGraph{Anchor: view.Head, Nodes: nodes, Total: len(nodes)}
 	return snap
-}
-
-// childGroupParents 全部「有孩子」的父节点：结构根挂点 "" 在前，其余按 ID 序。
-// 视图侧不直接读 Children 表（聚合根封装），枚举父节点只能由节点集合推出。
-func childGroupParents(c *conversation.Conversation) []conversation.MessageID {
-	out := []conversation.MessageID{""}
-	for _, id := range c.IDs() {
-		if len(c.ChildIDs(id)) > 0 {
-			out = append(out, id)
-		}
-	}
-	return out
 }
 
 // publishTree 重建并原子发布树只读快照（D80/§7.5）：树变更后调用。发布点只有两个——

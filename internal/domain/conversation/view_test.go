@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"sort"
 	"testing"
 	"time"
 )
@@ -139,8 +140,7 @@ func TestTailMatchesSubtreeNewestLeaf(t *testing.T) {
 	}
 }
 
-// newestLeafForTest 独立于 Tail 实现，用「先收集全部叶子、再逐个比较」的最直白写法给出
-// 期望值——与被测实现不共用遍历逻辑，否则错了也一起错。
+// newestLeafForTest 独立于 Tail 实现，用「先收集全部叶子、再逐个比较」的最直白写法给出// 期望值——与被测实现不共用遍历逻辑，否则错了也一起错。
 func newestLeafForTest(t *testing.T, c *Conversation, root MessageID) MessageID {
 	t.Helper()
 	var leaves []MessageID
@@ -168,4 +168,67 @@ func newestLeafForTest(t *testing.T, c *Conversation, root MessageID) MessageID 
 		}
 	}
 	return best
+}
+
+// TestViewMatchesTailAndBranches View 是展示面唯一的数据来源，它给的口径必须与
+// Tail / Branches 逐节点一致——否则「切到某个版本的末端」与界面画出的分叉会各说各话。
+func TestViewMatchesTailAndBranches(t *testing.T) {
+	c := buildTree(t)
+	view := c.View()
+
+	if view.Head != c.Head {
+		t.Fatalf("View.Head = %s, want %s", view.Head, c.Head)
+	}
+	if len(view.Nodes) != c.NodeCount() {
+		t.Fatalf("View.Nodes %d 条, want %d", len(view.Nodes), c.NodeCount())
+	}
+	for i := 1; i < len(view.Nodes); i++ {
+		prev, cur := view.Nodes[i-1], view.Nodes[i]
+		if cur.CreatedAt.Before(prev.CreatedAt) || (cur.CreatedAt.Equal(prev.CreatedAt) && cur.ID < prev.ID) {
+			t.Fatalf("View.Nodes 未按 (CreatedAt, ID) 升序：%s 紧跟 %s", prev.ID, cur.ID)
+		}
+	}
+	for _, m := range view.Nodes {
+		want, ok := c.Tail(m.ID)
+		if !ok {
+			t.Fatalf("Tail(%s) 不存在，但 View 列了它", m.ID)
+		}
+		if got := view.Tails[m.ID]; got != want {
+			t.Fatalf("View.Tails[%s] = %s, want %s（与 Tail 同口径）", m.ID, got, want)
+		}
+	}
+	// 分组表 = 每个父节点的全部孩子，顺序按 (CreatedAt, ID) 升序；Root 挂在 "" 组下。
+	if len(view.Groups) == 0 || view.Groups[0].Parent != "" {
+		t.Fatalf("分组表首项应为结构根挂点，got %+v", view.Groups)
+	}
+	if ids := view.Groups[0].IDs; len(ids) != 1 || ids[0] != MessageID(c.ID) {
+		t.Fatalf(`分组 "" = %v, want 只有 Root %q（D19 唯一实根）`, ids, c.ID)
+	}
+	total := 0
+	for _, group := range view.Groups {
+		want := c.ChildIDs(group.Parent)
+		if len(want) != len(group.IDs) {
+			t.Fatalf("父 %q 的分组 %d 个孩子, 访问器给出 %d 个", group.Parent, len(group.IDs), len(want))
+		}
+		sorted := make([]Message, 0, len(want))
+		for _, id := range want {
+			m, ok := c.Find(id)
+			if !ok {
+				t.Fatalf("ChildIDs(%q) 给出树外节点 %q", group.Parent, id)
+			}
+			sorted = append(sorted, m)
+		}
+		sort.Slice(sorted, func(i, j int) bool { return nodeLess(sorted[i], sorted[j]) })
+		for i, m := range sorted {
+			if group.IDs[i] != m.ID {
+				t.Fatalf("父 %q 的分叉序第 %d 位 = %s, want %s（(CreatedAt, ID) 升序）",
+					group.Parent, i, group.IDs[i], m.ID)
+			}
+		}
+		total += len(group.IDs)
+	}
+	// 每个节点恰好出现在一个分组里（孩子数之和 = 节点数：Root 算在 "" 组）。
+	if total != c.NodeCount() {
+		t.Fatalf("分组内孩子总数 = %d, want 节点数 %d", total, c.NodeCount())
+	}
 }
