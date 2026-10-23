@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-22 @ e4db687 -->
+<!-- docs-sync: 2026-10-23 @ 5d644b5 -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §8/§9；**冲突以 DESIGN.md 为准**。
 > D110（破坏性改造）起配置**以 profile 为隔离单位**：
@@ -48,7 +48,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 |---|---|---|---|
 | `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个启用的条目 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数② D26；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，D34/D42 自动记录、启动省略；**只对 `openai-chat` 生效**） |
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
-| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000, "enabled": false }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局）；`enabled` 省略 = 启用，**只有 `false` 才参与落键**——未启用的条目保留声明但不参与选型（不进降级链候选、不进 `/model` 清单、不作为该 provider 的缺省模型）；每家的模型**至少要有一个启用**，否则启动与设置窗应用都明确报错 |
+| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000, "enabled": false, "cost_in": 0.15, "cost_out": 0.6 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局）；`enabled` 省略 = 启用，**只有 `false` 才参与落键**——未启用的条目保留声明但不参与选型（不进降级链候选、不进 `/model` 清单、不作为该 provider 的缺省模型）；每家的模型**至少要有一个启用**，否则启动与设置窗应用都明确报错；`cost_in`/`cost_out` = 单价（**每百万 token**，与厂商报价同口径），省略 = 未声明（界面不显示费用，不当免费）；`sampling` = 该模型的采样覆盖，见下「采样参数」 |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
 | `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 首个**启用**的模型。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连不降级 |
 | `model.name` | string | primary 首个**启用**的模型 | 当前模型名；`/model` 热切换并写回本字段（provider/base_url 重启生效）。切到**没在 `models` 里声明**的名字也允许——按协议缺省给能力 |
@@ -56,6 +56,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `model.reasoning_effort` | string | `""` | 推理档位（D34）：`minimal` / `low` / `medium` / `high`，空 = 不发送；`/effort` 切换写回（`off` 即清除）；非法值启动报错 |
 | `model.think_tool` | bool | `false` | `think` 草稿工具是否列给模型——默认隐藏（D34），改后重启生效 |
 | `model.echo_thinking` | bool | `true`（键缺失） | **思考回传开关**（D42）：思维链是否回传给提供商。键缺失 = 回传（DeepSeek 等兼容端点带 `tools` 时强制回传，缺失会 400）；显式 `false` = 不发。端点点名不认时自动剥离重试并记入该 provider 的 `unsupported_params`。改后重启生效 |
+| `model.sampling` | object | — | **采样参数**（D204，整链缺省）：`{ "temperature": 0.7, "top_p": 0.9, "max_tokens": 1024, "stop": ["END"] }`。四项都可省；**浮点项用「写了才发」语义**：键缺失 = 不发送（交服务端默认），`0` = 真的发 0。`stop` 是字符串数组（可含换行），空串非法 |
 
 **能力位与协议缺省**（省略 `caps` 时生效）：
 
@@ -78,11 +79,9 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 思考参数有 `reasoning_effort` 与 `enable_thinking` 两套（各家认的不一样），探测会**分别各试一次**
 再合并——任意一套能出思考就算支持，两套都被拒才算不支持。
 
-**上下文窗口**（`models[].context_window`）：装配预算 = **min(当前模型的窗口, `limits.max_context_tokens`)**。
-全局那项是"我想用多少"（省钱就调小），模型窗口是"服务端最多收多少"（超了直接拒），两者都生效、谁小听谁的。
+**上下文窗口**（`models[].context_window`）：装配预算 = **min(当前模型的窗口, `limits.max_context_tokens`)**。全局那项是"我想用多少"（省钱就调小），模型窗口是"服务端最多收多少"（超了直接拒），两者都生效、谁小听谁的。
 模型没写窗口（或写 0）= 只看全局。窗口**不随降级链取小**——装配发生在换模型之前，按当前模型算；
 降级到窗口更小的模型属于自己配的链，可能被服务端拒。`/model` 会显示生效值与「是谁在压」。
-
 **模型启用位**（`models[].enabled`，D180）：键缺失 = 启用，只有 `false` 会落键。未启用的条目**保留声明
 但不参与选型**——不进降级链候选、不进 `/model` 清单（当前模型例外：它正在跑）、不作为该 provider 的
 缺省请求模型。日常用途是「把服务端列出来的模型都登记着，只勾现在要用的那几个」：设置窗「模型服务」页
@@ -96,6 +95,33 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
   { "name": "mimo-v2.6-preview", "enabled": false }  // 登记着，但先不用
 ]
 ```
+
+**采样参数**（`model.sampling` 与 `models[].sampling`，D204）：温度 / top_p / 输出上限 / 停止串四项。
+`model.sampling` 是**整链缺省**（primary 与每个降级目标都按它），模型条目里的 `sampling` 只写「想改的那几项」，
+其余继承缺省——降级换模型时跟着换成目标自己那份。
+
+```json
+"model": {
+  "sampling": { "temperature": 0.7, "top_p": 0.9, "max_tokens": 1024 },
+  "providers": [{ "name": "a", "models": [
+    { "name": "want-code", "sampling": { "temperature": 0 } },
+    { "name": "want-long", "sampling": { "max_tokens": 8192, "stop": ["\\n\\n---"] } }
+  ]}]
+}
+```
+
+- **留空 ≠ 0**：浮点项（`temperature` / `top_p`）键缺失 = 这个参数根本不发，交服务端默认；写得 `0` 就是真的发 0。
+  想「什么都不指定」就整段删掉，而不是填 0；
+- **范围**：`temperature` 0–2（`anthropic` 只接 0–1），`top_p` 0–1，`max_tokens` 正整数；超范围启动即报因（不静默截断）；
+- **思考开着时不发采样参数**（`anthropic` 的扩展思考不接受温度 / top_p），此时配了也不生效；
+- 输出上限不压过「思考预算」：开了思考且给了 `budget_tokens` 时以预算为准；
+- 改完**保存即生效**（设置窗「模型」页保存就换这份快照），不必重启；降级目标那份随重启装配。
+  入口只有设置窗「模型」页与 config 两处。
+
+**单价与费用**（`models[].cost_in` / `cost_out`，D205）：单位是**每百万 token**（与厂商报价同口径），
+填的是美元。两个都填了才折算：每轮结束后 `Usage.CostUSD` 按当轮用量累加，`/usage` 汇总显示；
+缺任意一项就不给数（宁可没有，也不给一个猜的）。`/model` 列表里带单价的模型会标注 `$入/$出 每百万token`。
+设置窗「模型服务」页的模型行可直接填这两格，留空 = 未声明。
 
 ### ui
 

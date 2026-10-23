@@ -446,15 +446,34 @@ type GenerateRequest struct {
     Model    string
     Messages []PromptMessage
     Tools    []tool.Spec
-    Params   Sampling        // Temperature、MaxTokens、Stop、ReasoningEffort、Thinking（enable_thinking，D34）
+    Params   Sampling        // 采样参数（D204）：Temperature、TopP、MaxTokens、Stop、ReasoningEffort、Thinking
     Budget   TokenBudget     // MaxOutputTokens、MaxCostUSD
 }
+
+// Sampling 采样参数（D204）。**浮点参数用指针**：nil = 不发送（交服务端默认），
+// 非 nil = 照发——temperature 0 是「要确定性输出」这个有意义的取值，用零值兼作
+// 「不发送」就永远表达不出来。整数（MaxTokens）仍以 0 表示不发送。
+type Sampling struct {
+    Temperature *float64
+    TopP        *float64
+    MaxTokens   int      // 0 = 不发送；本轮预算 Budget.MaxOutputTokens 非零时以预算为准
+    Stop        []string
+    ReasoningEffort string // 空 = 不发送（D34）
+    Thinking    *bool      // nil = 不发送（D34）
+}
+
+// Overlay 用 o 里**非 nil / 非零**的字段覆盖 s（D204 逐模型覆盖用）：调用方给全局
+// 缺省，模型条目自带的那份只写「想改的那几项」，其余继承缺省。Stop 非空即整体替换
+// （采样停止串没有「部分覆盖」的语义）。
+func (s Sampling) Overlay(o Sampling) Sampling
 
 type ModelInfo struct {
     Name           string
     Caps           ModelCaps   // 能力位（D173）；空集 = 什么都不做假设
     ContextWindow  int         // 上下文窗口 tokens（D177）；0 = 未声明/未知
-    CostIn, CostOutUSD float64 // 每千 token 单价
+    // CostIn, CostOutUSD 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明。
+    // 换算到一次调用的金额时除以 1e6。
+    CostIn, CostOutUSD float64
 }
 
 // ModelCaps 模型能力位（D173）：三项独立声明，缺省按协议给（见 §8）。
@@ -1453,8 +1472,10 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
         ],
         "models": [               // 模型条目：名字 + 能力位 + 上下文窗口（都是这个模型自己的属性，不继承 provider）
           { "name": "gpt-4o-mini", "context_window": 128000 },  // 省略 caps = 按协议缺省（下表）
-          { "name": "o3-mini", "caps": ["reasoning"] },         // 显式声明 = 以声明为准（空数组 = 三项全关）
-          { "name": "gpt-4o",  "caps": ["tools", "reasoning", "vision"], "context_window": 128000 },
+          { "name": "o3-mini", "caps": ["reasoning"],
+            "sampling": { "temperature": 1 } },                 // 逐模型覆盖（D204）：只写想改的项，其余继承 model.sampling
+          { "name": "gpt-4o",  "caps": ["tools", "reasoning", "vision"], "context_window": 128000,
+            "cost_in": 2.5, "cost_out": 10 },                   // 单价每百万 token（D205，抄厂商报价）；省略 = 不显示费用
           { "name": "gpt-5-preview", "enabled": false }         // 保留声明但不参与选型（D180）；键缺失 = 启用
         ],                                                      // context_window 省略/0 = 不声明，预算只看全局 limits
         "tokenizer": "",          // 本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
@@ -1469,7 +1490,14 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "name": "gpt-4o-mini",        // 当前模型名（在 primary 的 models 内）
     "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）；模型无 reasoning 能力时不发
     "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
-    "echo_thinking": true        // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
+    "echo_thinking": true,       // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
+    "sampling": {                 // 采样参数（D204）：整链缺省；**键缺失 / null = 不发送**（交服务端默认），
+                                  // 写 0 就是真的发 0（temperature 0 = 要确定性输出，这点不能用零值兼作「不发送」）
+      "temperature": null,        // 0..2（Anthropic 只接 0..1，超范围启动报因）
+      "top_p": null,              // 0..1 核采样
+      "max_tokens": 0,            // 单轮输出上限；0 = 不发送（真实上限仍由本轮预算 Budget 决定）
+      "stop": []                  // 停止串；空数组 = 不发送
+    }
   },
   "tools": { "disabled": ["think"] }, // 内置工具禁用清单（S6/D143）：热生效（无需重启）；键缺失 = 默认
                                       // 推导（兼容 model.think_tool=true 则空集，否则 ["think"]——D34 现行为）；
@@ -1637,7 +1665,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 「密钥库」页管理任意名字（MCP 插件 `env`/`headers` 的 `secret:` 也存这里），列表只显示名字 +
 尾 4 位掩码，值永不回显。
 
-**导入旧密钥（D164）**：同一页还提供一键入口，把**存量**密钥从旧形态收进库——config 里仍是
+**导入旧密钥（D164；入口自 D206 起不提供，能力保留）**：同一页曾提供一键入口，把**存量**密钥从旧形态收进库——config 里仍是
 明文直填的 provider `api_key`（收库后退化为 `secret:<名>` 引用）、以及「config 只写引用、真值
 只在同名环境变量里」的那些（值抄进库、config 不动）。只处理 **config 真正引用到的名字**，不
 扫全部 `AQUARIUS_*` 环境变量（那会把无关变量也固化下来）。库解不开时**拒绝导入**（不套用普通
@@ -2301,11 +2329,13 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   滚动位置按页保留）+ **全局底栏**（「保存并应用」+ 反馈文案，任何页常驻）。窗几何
   **720×560（min 620×420）**；内容区约 552dp，比改前的 532dp 略宽。**十一页**：
   **常规**（Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出）、**模型**（当前模型名 /
-  原生思考与推理档位 / **有序降级链**，S11/D173 起只管路由）、**模型服务**（provider 管理：
+  原生思考与推理档位 / **采样参数**（temperature / top_p / max_tokens / stop，D204）/
+  **有序降级链**，S11/D173 起只管路由）、**模型服务**（provider 管理：
   折叠卡片，收起态一行摘要、展开才是端点/密钥池/**模型列表**——每行「启用」勾选 + 名字 +
-  窗口 + 探测，表头带「获取模型」与计数，超一页分页，S11/D173 + D180/D181）、
+  窗口 + 探测 + 单价，表头带「获取模型」与计数，超一页分页，S11/D173 + D180/D181 + D205）、
   **密钥库**（本机加密密钥库：已存名字 + 尾 4 位掩码 /
-  新增覆盖 / 行内二次确认删除，S9-6b/D161）、**对话**（限额）、**系统提示词**（人格模块库 /
+  新增覆盖 / 行内二次确认删除，S9-6b/D161；D206 起「导入旧密钥」入口不提供，功能保留在
+  `SecretsAdmin.Import`）、**对话**（限额）、**系统提示词**（人格模块库 /
   有序引用 / 内置只读模块 / 组合预览，S7/D144；S7b/D145 由「对话」页拆出）、**工具与 MCP**
   （内置工具启停 + MCP 与插件管理，S6/D143）、**技能**（已安装清单 + 四种导入入口 + 更新/卸载 +
   额外技能目录增删 + 重新扫描，D202/D203）、**联网**（搜索与抓取的提供商链 + 本地抓取
@@ -2403,6 +2433,7 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
     「库里没有、只存在于同名环境变量」的引用值抄进库（config 不动）。**库解不开即拒绝**（普通
     写路径的「从空表起步」在批量导入里等于丢掉已有条目）；**先落库、后改 config**（失败留
     「库里有值、config 还是明文」这个可用中间态）；已有条目一律不动；反馈只报条数，值永不回显。
+    **界面入口自 D206 起不提供**（那一整块行不再产出）：动作与数据面照旧，只是页面上没有入口。
   - **数据面**：`uigui.SecretsAdmin`（消费方定义、装配根实现）——`Snapshot()`（含 `Revision` +
     库路径 + 名字/掩码条目）+ `Put` / `Delete` / `Import`（同步动作）；装配根实现 over
     `secretbin.Store`，每写入/删除递增 `Revision`。未接线（`Options.Secrets == nil`）= 只读占位
