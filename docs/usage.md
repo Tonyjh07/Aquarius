@@ -1,5 +1,5 @@
 # 参考手册
-<!-- docs-sync: 2026-10-22 @ e4db687 -->
+<!-- docs-sync: 2026-10-23 @ 3a68073 -->
 
 > **第一次使用请先看[用户手册](guide.md)**——那本按「怎么用起来」写，不要求懂编程；
 > 本文是逐条命令与参数的速查，写给要抠细节的人。
@@ -64,6 +64,9 @@ go build ./cmd/aquarius
 | `/effort [级别]` | 无参：当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off 清除）写回 config `model.reasoning_effort`。是否真发由 `/think` 决定；on 且未设档 = 不发（交服务端默认） |
 | `/plugin [list\|enable <name>\|disable <name>]` | MCP 插件管理（M4，D31）：list 显示状态/来源/传输/能力授权/调用统计/重启与报因，并列出可用动态命令；enable 走 capability 首用确认并写回 config；disable 即时摘除其工具与命令 |
 | `/skill [list\|<名字>]` | 技能（D201）：无参或 `list` 列出已安装的技能（名字、一句说明、来自哪个目录、加载失败的条目与原因）；带名字 = 把该技能的 `SKILL.md` 正文注入上下文（**不触发新一轮**，下一句话就能用上），并显示技能目录路径 |
+| `/skill install <路径\|链接>` | 安装技能（D202）：单个 `SKILL.md`、技能文件夹、`.zip` 压缩包或 GitHub 链接（`…#分支`）；先校验再落位，同名不覆盖 |
+| `/skill remove <名字>` | 卸载安装副本（只删 `<配置目录>/skills/<名字>`，二次确认；来自其它技能目录的同名技能不受影响） |
+| `/skill update <名字\|all>` | 更新：git 来源拉取、压缩包来源重新下载，然后覆盖副本（**会覆盖本地改动**）；不带名字 = 更新全部可更新项，复制来源需重新导入 |
 | `/mcp:<server>:<prompt> [args]` | MCP prompts 动态命令（随插件启停注册/注销，`/plugin list` 查看可用项）；渲染结果作为用户消息走完整一轮 |
 | `/quit` `/exit` | 退出（`/exit` 为别名） |
 | `/help` | 命令帮助 |
