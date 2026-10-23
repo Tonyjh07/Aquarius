@@ -258,6 +258,14 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 						}),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							rows := f.pageRows(f.page)
+							if fp, ok := settingsPages[f.page].(fillPage); ok {
+								// 撑满页：最后一个块吸走窗口多出来的高度（高级页整文件编辑）。
+								// 只在目标行确实排在末尾时走这条路——它后面还有行的话，Flex
+								// 会先把剩余高度分给目标行、再把后续行挤成 0 高，不如照旧滚动。
+								if i := fp.FillRow(rows); i >= 0 && i == len(rows)-1 {
+									return f.fillRows(gtx, th, rows, i)
+								}
+							}
 							return material.List(th, &f.pages[f.page]).Layout(gtx, len(rows), f.row(th, rows))
 						}),
 					)
@@ -363,6 +371,29 @@ func (f *settingsForm) row(th *material.Theme, rows []rowDesc) func(layout.Conte
 	return func(gtx layout.Context, i int) layout.Dimensions {
 		return rowLayout(gtx, rows, i, f.rowBodyFn(th, rows, i))
 	}
+}
+
+// fillRows 撑满页的行布局（见 fillPage）：fill 之前的行按自然高度，fill 那一行吸走
+// 剩余高度。
+//
+// 与 material.List 的差别只在「谁决定高度」：列表给每行的上限是无穷大，行只能按内容
+// 自己定高；这里整页排进 Flex，撑满行的约束上限就是「窗口减去上面那些行」，于是
+// 「还剩多少就用多少」成为可表达的意图。代价是没有虚拟化与滚动——走这条路的页只有
+// 一个可变高度块、行数是个位数，不需要虚拟化；版面仍用同一份 rowLayout，卡片与留白
+// 才和别的页一致（两处排版分家就会出现卡粗细不一）。
+func (f *settingsForm) fillRows(gtx layout.Context, th *material.Theme, rows []rowDesc, fill int) layout.Dimensions {
+	children := make([]layout.FlexChild, 0, len(rows))
+	for i := range rows {
+		w := func(gtx layout.Context) layout.Dimensions {
+			return rowLayout(gtx, rows, i, f.rowBodyFn(th, rows, i))
+		}
+		if i == fill {
+			children = append(children, layout.Flexed(1, w))
+			continue
+		}
+		children = append(children, layout.Rigid(w))
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 }
 
 // rowLayout 单行版面（卡片分组 + 留白），行内容由 body 给（D154 起抽成自由函数：
@@ -646,18 +677,35 @@ func editorBox(th *material.Theme, ed *widget.Editor, hint string) layout.Widget
 	}
 }
 
-// editorBoxH 定高多行编辑区（编辑框的加高变体）：提示词与高级 raw JSON 用。高度
-// 随度量缩放（Dp）——多行内容超高走编辑器内部滚动，但首行行高必须容得下。
+// editorBoxH 定高多行编辑区（编辑框的加高变体）：提示词用。高度随度量缩放（Dp）——
+// 多行内容超高走编辑器内部滚动，但首行行高必须容得下。
 func editorBoxH(th *material.Theme, ed *widget.Editor, hint string, h int) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		size := image.Point{X: gtx.Constraints.Max.X, Y: gtx.Dp(unit.Dp(h))}
-		fillFieldBg(gtx, th, image.Rectangle{Max: size})
-		gtx.Constraints = layout.Exact(size)
-		layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return material.Editor(th, ed, hint).Layout(gtx)
-		})
-		return layout.Dimensions{Size: size}
+		return editorBlock(gtx, th, ed, hint, image.Point{X: gtx.Constraints.Max.X, Y: gtx.Dp(unit.Dp(h))})
 	}
+}
+
+// editorBoxFill 撑满可用高度的多行编辑区（高级页整文件编辑）：高度取约束上限，由外层
+// 撑满行决定——上层把「页内容区减去它上面的行」作为确切高度给下来。
+//
+// 为什么不能像 editorBoxH 那样写死一个数值：这个框没有内容决定的「自然高度」，只有
+// 窗口愿意给多高。写死 220dp 在窗口拉高后底下就是一大片空白，窗口压低时同一块又显得
+// 顶到边。约束上限在这里恰好就是「剩下的空间」，照抄即可。
+func editorBoxFill(th *material.Theme, ed *widget.Editor, hint string) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return editorBlock(gtx, th, ed, hint, gtx.Constraints.Max)
+	}
+}
+
+// editorBlock 两种高度口径共用的编辑区本体：下沉底衬 + 内缩一圈窗底（1dp 描边环）+
+// 内边距 8dp。
+func editorBlock(gtx layout.Context, th *material.Theme, ed *widget.Editor, hint string, size image.Point) layout.Dimensions {
+	fillFieldBg(gtx, th, image.Rectangle{Max: size})
+	gtx.Constraints = layout.Exact(size)
+	layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return material.Editor(th, ed, hint).Layout(gtx)
+	})
+	return layout.Dimensions{Size: size}
 }
 
 // sizeRow 窗口尺寸双数值档（D90）：宽 × 高（px），并排等分；空 = 保持缺省。

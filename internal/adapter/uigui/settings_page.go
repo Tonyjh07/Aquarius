@@ -41,6 +41,19 @@ type settingsPage interface {
 // 表单上的标记自行去重（D181：「模型服务」页借此在首次进入时自动拉一轮服务端清单）。
 type enterHook interface{ OnEnter(u *UI, f *settingsForm) }
 
+// fillPage 可选钩子：本页有一个「撑满剩余高度」的行，整页不滚动，该行吸走窗口多出来的
+// 高度（FillRow 返回它的下标）。
+//
+// 为什么要这条：常规页是 material.List（虚拟化、可滚动），行拿到的高度上限是无穷大，
+// 无从知道视口还剩多少；一个块要不要截断由内容自己定。整文件编辑区恰好相反——它没有
+// 「自然高度」，只有「窗口给多少就用多少」。这类页按 Flex 排（前面的行按自然高，目标行
+// Flexed(1)），行才能拿到确切高度。不这么做的结果：编辑区写死一个高度，窗口拉高后底下
+// 留一大片空白，而缩小窗口时又冒出滚动条。
+type fillPage interface {
+	// FillRow 返回该行在本页行表里的下标（每帧现算，行数可能随快照变化）。
+	FillRow(rows []rowDesc) int
+}
+
 // settingsPages 页注册表：**页序 = 注册序**。加一页在这里追加一行即可（各页面模块见
 // settings_page_*.go）。页索引常量（pageGeneral…）仍保留供代码与测试引用可读，其值与
 // 本表次序由 TestSettingsPageNamesContract 锁定。
