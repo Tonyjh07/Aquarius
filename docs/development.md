@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-21 @ fcf26c3 -->
+<!-- docs-sync: 2026-10-23 @ 3c2767b -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -188,5 +188,5 @@ go run ./cmd/docsync -check         # 门禁：有文档缺标记即退出 1
 - 祈使句英文：`feat:` / `fix:` / `test:` / `docs:` / `refactor:`；一个 commit 只做一件事。
 - PR/提交说明写清：改了什么、对应 DESIGN 哪节/哪条决策（如 D22）、如何验证。
 - **改 DESIGN 某节 → 同步检查 `docs/` 对应篇**（各篇头部标了来源节号）；
-  docs/roadmap.md 涉及进度也一并更新。
+  已落地的写进 `docs/roadmap.md`，还没做的写进 `docs/plan.md`（两者不混写）。
 - 质量门禁全绿（含 `-race`）才算完成。

@@ -7,7 +7,9 @@
 
 - **Aquarius**：面向个人的极简 AI 助手（对话优先、多模态出入、文档记忆、可插拔工具/模型）。
 - **技术栈**：Go ≥ 1.27.3（D30 的 go-sdk 要求 1.25 → D137 为 x/net 漏洞 1.26 → 为清 stdlib 漏洞升到 1.27.2 → 同一理由升 1.27.3），单二进制交付（`go build ./cmd/aquarius`），无 cgo，纯 Go 依赖优先。
-- **当前状态**：M0–M4 已落地（会话树/压缩/工具记忆/任务多模态/MCP+TUI，见 docs/roadmap.md 顶部基线与 DESIGN §12）；按 §12/§14 推进后续（Tier-1 插件、GUI、语音）。
+- **当前状态**：里程碑现状见 [docs/roadmap.md](docs/roadmap.md)（进度档案）；**接下来做什么见
+  [docs/plan.md](docs/plan.md)**（规划的唯一维护处）；设计与 backlog 见 DESIGN §12/§14。
+  当前开发分支 `feat/v0.2.0`。
 - **语言约定**：文档与注释用中文；标识符、commit message 用英文。**进入模型上下文的字符串**（system 提示、工具声明与参数描述、工具回填结果/错误）一律英文；仅面向用户的界面、命令输出与日志用中文。
 
 ## 硬性规则（违反即错误，无例外）
@@ -24,7 +26,7 @@
 8. **密钥安全**：密钥优先经 `port.Secrets` 按名取用；`config model.api_key` 允许明文但启动必警告、空值回落 `secret:AQUARIUS_OPENAI_KEY`（D35）；密钥不写入日志、会话树或附件。
 9. **横切能力走装饰器**：重试（含 429 退避）/截断/审计在 main 的装配处叠加端口装饰器，不进插件 API、不散落进业务代码。
 10. **决策编号不进用户面**：`D<n>` / `§<n>` / 里程碑（`M0–M4`）/ 内部迭代标记（`S4c`、`S7b`、`Tier-1`）只属于
-    `DESIGN.md`、`docs/decisions.md`、`docs/roadmap.md` 与**代码注释**。**禁止出现在**：
+    `DESIGN.md`、`docs/decisions.md`、`docs/roadmap.md`、`docs/plan.md` 与**代码注释**。**禁止出现在**：
     - 界面文案（标签、提示、占位、按钮、空态、确认句、关于页）；
     - `port.CommandInfo.Desc` / `Usage`（`/help` 与命令浮层共用的用户面文本）；
     - 会进用户视野的日志与报错（CLI 的 `stderr`/`stdout`、`warnf`/`logf` 的面向用户行）；
@@ -111,7 +113,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
 - 一个 commit 只做一件事；PR 说明里写清：改了什么、对应 `DESIGN.md` 哪一节/哪条决策（如 D22）、如何验证。
 - 若设计与 `DESIGN.md` 不一致：**先改文档（`DESIGN.md` / `docs/decisions.md`）再改代码**，并在 `docs/decisions.md`（原 §13）补决策记录。
 - 改动 `DESIGN.md` 某节时，同步检查 `docs/` 对应篇（各篇头部标注了来源节号；冲突以 DESIGN 为准）；
-  涉及里程碑进度时同步 docs/roadmap.md（进度只维护这一处）。
+  **已落地**的写进 `docs/roadmap.md`（进度档案），**还没做**的写进 `docs/plan.md`（规划唯一维护处），两者不混写。
 - **改了 `docs/**/*.md` 或 `README.md` → 提交前跑 `go run ./cmd/docsync`**：它只刷新工作区里改过的
   文档，把头部标记（更新日期 + 代码基线哈希）刷成本次提交之前的状态。标记是 HTML 注释，渲染后
   不出现，别手写、别删。
@@ -149,7 +151,8 @@ internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（mem
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、
                      mcpgate（MCP client → port 投影，D30）、uitui（bubbletea TUI，D33）、
-                     uigui（Gio 悬浮球 GUI，D43/§15）
-待建：                pluginapi/v1、plugingo（后移出 M4，D29）；
-                     asr、tts（backlog，D27）
+                     uigui（Gio 悬浮球 GUI，D43/§15）、screencap、asrchat、mimotts、outputtts、
+                     micwin、ingestmic、audioplay、secretbin、probe、skillfs、
+                     webbrave/webchain/webdeepseek/webfetchlocal
+待建：                pluginapi/v1、plugingo（后移出 M4，D29）
 ```

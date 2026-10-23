@@ -3,7 +3,7 @@
 </p>
 
 # Aquarius
-<!-- docs-sync: 2026-10-23 @ dbab2ae -->
+<!-- docs-sync: 2026-10-23 @ 3c2767b -->
 
 面向个人的 AI 助手。对话优先，支持图片、文档与语音输入，长期记忆以 markdown 文档存放，模型与工具均可替换。Go 编写，交付单个二进制。
 
@@ -54,7 +54,8 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 |---|---|
 | [DESIGN.md](DESIGN.md) | **权威设计文档**：定位、领域模型、端口设计、权限模型、平台边界与里程碑 |
 | [docs/decisions.md](docs/decisions.md) | **决策记录**：逐条决策、动机与被否决的方案（编号见文内索引表） |
-| [docs/roadmap.md](docs/roadmap.md) | **进度与规划**：待办盘点、分步路线与落地状态（进度以此为准） |
+| [docs/plan.md](docs/plan.md) | **未来规划**：待做事项、执行顺序与节奏、验收与人工拍板点（规划以此为准） |
+| [docs/roadmap.md](docs/roadmap.md) | **进度档案**：里程碑基线与已落地步骤、早期决议、破坏性授权范围 |
 | [docs/overview.md](docs/overview.md) | 架构导读：内核职责、依赖方向、目录与端口矩阵 |
 | [docs/guide.md](docs/guide.md) | **用户手册**：安装、对话、附件、语音、分支、设置窗逐页、故障排查 |
 | [docs/usage.md](docs/usage.md) | 参考手册：命令与参数、内置工具、压缩、权限等级、常见问题 |
@@ -68,7 +69,8 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 
 ## 状态
 
-开发进行中，里程碑进度见 [docs/roadmap.md](docs/roadmap.md)。
+开发进行中，已落地的里程碑见 [docs/roadmap.md](docs/roadmap.md)，下一步计划见
+[docs/plan.md](docs/plan.md)。
 
 ## 许可证
 

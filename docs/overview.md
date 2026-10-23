@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-10-21 @ 5945598 -->
+<!-- docs-sync: 2026-10-23 @ 3c2767b -->
 
 > 本文衍生自 [DESIGN.md](../DESIGN.md) §1/§3/§5/§6，定位是 **10 分钟建立索引的地图**；
 > **冲突以 DESIGN.md / [decisions.md](decisions.md) 为准**（决策记录原 §13 已独立成篇）。
@@ -73,8 +73,9 @@ Root(实节点, ID=会话ID, role=root)
 （M4）：`decorate`（横切装饰器）/ `mcpgate`（MCP → port 投影）/ `uitui`（bubbletea TUI）+
 `internal/plugin` 宿主（发现/grant/崩溃限次重启）；
 （M5 主体已落位）：`uigui`（Gio 悬浮球 GUI，D43/§15——悬浮球/托盘/快捷键/主题/设置核心档与
-S1/S1b/S1c/S2/S2b 增强均已落地，分步状态见 [roadmap.md](roadmap.md)）；
-待落位：`plugingo` + `pluginapi/v1`（D29 后移）、`asr`/`tts`（backlog，D27）。
+S1/S1b/S1c/S2/S2b 增强均已落地，已落地步骤见 [roadmap.md](roadmap.md)，后续计划见 [plan.md](plan.md)）；
+待落位：`plugingo` + `pluginapi/v1`（D29 后移）；语音侧适配器（`asrchat`/`mimotts`/`micwin`/
+`audioplay`/`outputtts`）与屏幕捕获（`screencap`）已随 M11 落位。
 
 ## 端口 × 内置适配器（落地里程碑）
 
