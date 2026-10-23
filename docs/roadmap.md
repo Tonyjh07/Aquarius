@@ -1,5 +1,5 @@
 # Aquarius 阶段规划（TODO 整理与分阶段路线）
-<!-- docs-sync: 2026-10-23 @ 5d644b5 -->
+<!-- docs-sync: 2026-10-23 @ 88ceeee -->
 
 > 来源：无对应 DESIGN 节——本文是**阶段规划与工作清单**（权威设计 = `DESIGN.md`，决策 = `docs/decisions.md`；
 > 与二者冲突时以后者为准）。§5 决议在动手落码时按惯例仍需回写 DESIGN/decisions（先文档后代码）。
@@ -484,7 +484,7 @@
    收起态单项 chip / 汇总 `N 个文件`）+ 文件框 `OFN_ALLOWMULTISELECT`（单选/多选两种缓冲形态经
    `parseMultiSelect` 解析，非 Windows 的 zenity/kdialog/osascript 同开多选）。
 4. **图片附件入口**（D187，**已落地 2026-10-21**）：`Ctrl+V` 读剪贴板位图（`PNG` 优先、退 `CF_DIB`/`CF_DIBV5` 自转 PNG）+
-   `WM_DROPFILES` 拖拽 + 暂存缩略图（像素预算门控）+ 单图 20MB；转写气泡内嵌缩略图另起一笔。
+   `WM_DROPFILES` 拖拽 + 暂存缩略图（像素预算门控）+ 单图 20MB；**转写气泡内的图片缩略图 + 点击预览次窗已由 D207 接续落地（2026-10-23）**。
    手工验收：截图后 Ctrl+V 出缩略图 chip；拖单个/多个文件入窗暂存；拖文件夹有明确提示；
    剪贴板为文字时 Ctrl+V 仍是文本粘贴；>20MB 图片报「图片过大」。
 5. **编辑消息增删附件**（D188，**已落地 2026-10-21**）：`/edit --attach/--drop/--drop-all`
