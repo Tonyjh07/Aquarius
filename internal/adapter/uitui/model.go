@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -542,33 +543,14 @@ func injectHeader(source string, trigger bool) string {
 // 出口统一剥控制序列（提交内容是不可信模型输出，§9/审查修复）。
 // 思考分片不并入正文——回放路径单独渲染为暗块（D42）；
 // 工具分片不并入正文——回放路径单独渲染为工具行（D95）。
+// 实现与终端/GUI 共用（uicommon）；图片留占位并带上文件名。
 func partsText(parts []conversation.Part) string {
-	var b strings.Builder
-	for _, p := range parts {
-		appendPartText(&b, p)
-	}
-	return sanitizeControl(b.String())
+	return uicommon.PartsText(parts, uicommon.ImageNamed)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用口径）；
-// 思考/工具分片不并入正文（各自单独成块，D42/D95）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用口径）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
-	switch p.Kind {
-	case conversation.PartText:
-		b.WriteString(p.Text)
-	case conversation.PartImage:
-		name := "图片"
-		if p.Ref != nil {
-			name = "图片：" + p.Ref.Name
-		}
-		fmt.Fprintf(b, "〔%s〕", name)
-	case conversation.PartAudio:
-		b.WriteString("〔音频转写〕")
-	case conversation.PartDoc:
-		b.WriteString(p.Text)
-	case conversation.PartThinking, conversation.PartTool:
-		// 单独成块（思考暗块 / 工具行），不混正文。
-	}
+	uicommon.AppendPartText(b, p, uicommon.ImageNamed)
 }
 
 // addUsage 用量累加。

@@ -11,8 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -87,54 +87,12 @@ func Preview(text string, max int) string {
 	return string(r[:max]) + "…"
 }
 
-// sanitizeControl 剔除控制序列与控制字符（§14 M3 遗留）：
-// 先吞完整 ANSI 转义序列（CSI `ESC[…终止`、OSC `ESC]…BEL/ESC\`、其余两字符转义），
-// 再剔除残余 C0 控制符（保留空白已被 collapseSpaces 压平）、DEL 与 C1——
+// sanitizeControl 剔除控制序列与控制字符（§14 M3 遗留）：先吞完整 ANSI 转义序列，
+// 再剔除残余 C0 控制符（连空白一并剔除——通知是单行摘要）、DEL 与 C1。
 // 正文是不可信模型输出，ESC 剥净即瓦解注入面（§9：只渲染不执行）。
+// 实现在 internal/adapter/uicommon，与三个前端共用；差异只在「换行保不保留」。
 func sanitizeControl(s string) string {
-	var b strings.Builder
-	rs := []rune(s)
-	for i := 0; i < len(rs); i++ {
-		r := rs[i]
-		if r == 0x1b && i+1 < len(rs) {
-			switch rs[i+1] {
-			case '[': // CSI：吞至终结字节（0x40–0x7E）
-				j := i + 2
-				for j < len(rs) && (rs[j] < 0x40 || rs[j] > 0x7e) {
-					j++
-				}
-				if j < len(rs) {
-					i = j
-				} else {
-					i = len(rs) - 1
-				}
-				continue
-			case ']': // OSC：吞至 BEL 或 ESC\
-				j := i + 2
-				for j < len(rs) && rs[j] != 0x07 && !(rs[j] == 0x1b && j+1 < len(rs) && rs[j+1] == '\\') {
-					j++
-				}
-				if j < len(rs) {
-					if rs[j] == 0x1b {
-						i = j + 1 // ST 的 ESC\ 两字符都要跳过（审查修复：旧实现漏掉反斜杠）
-					} else {
-						i = j
-					}
-				} else {
-					i = len(rs) - 1
-				}
-				continue
-			default: // 其余两字符转义（如 ESC M）
-				i++
-				continue
-			}
-		}
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return uicommon.SanitizeControl(s, uicommon.DropLayout)
 }
 
 // collapseSpaces 压平空白（含换行/制表）为空格。

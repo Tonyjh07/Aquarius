@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -962,34 +962,14 @@ func (m *model) addInject(text, source string, trigger bool) {
 // 出口统一剥控制序列（提交内容是不可信模型输出，§9）。
 // 思考分片不并入正文——回放路径单独渲染为思考块（D42）；
 // 工具分片不并入正文——回放路径单独渲染为 chip（D95）。
+// 实现与终端/TUI 共用（uicommon）；图片由真缩略图承载，正文只在无引用时留占位（D207）。
 func partsText(parts []conversation.Part) string {
-	var b strings.Builder
-	for _, p := range parts {
-		appendPartText(&b, p)
-	}
-	return sanitizeControl(b.String())
+	return uicommon.PartsText(parts, uicommon.ImageWhenUnaddressable)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用口径）；
-// 思考/工具分片不并入正文（各自单独成块，D42/D95）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用口径）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
-	switch p.Kind {
-	case conversation.PartText:
-		b.WriteString(p.Text)
-	case conversation.PartImage:
-		// D207：图片由真缩略图承载（块里的 imgs），正文不再留文字占位——否则
-		// 「图 + 名字」两行并排，纯图消息还会因为占位而变成一条假正文。
-		// 没有可寻址引用的分片留在正文里当占位，至少不至于凭空消失。
-		if p.Ref == nil || p.Ref.Hash == "" {
-			b.WriteString("〔图片〕")
-		}
-	case conversation.PartAudio:
-		b.WriteString("〔音频转写〕")
-	case conversation.PartDoc:
-		b.WriteString(p.Text)
-	case conversation.PartThinking, conversation.PartTool:
-		// 单独成块（思考卡 / chip），不混正文。
-	}
+	uicommon.AppendPartText(b, p, uicommon.ImageWhenUnaddressable)
 }
 
 // addUsage 用量累加。
@@ -1001,50 +981,7 @@ func addUsage(a, b conversation.Usage) conversation.Usage {
 }
 
 // sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。
-// 算法与 internal/adapter/notify、uitui 的同名函数一致——分别守护通知面/终端转写面/
-// GUI 出口面。
+// 实现在 internal/adapter/uicommon，四个消费方共用。
 func sanitizeControl(s string) string {
-	var b strings.Builder
-	rs := []rune(s)
-	for i := 0; i < len(rs); i++ {
-		r := rs[i]
-		if r == 0x1b && i+1 < len(rs) {
-			switch rs[i+1] {
-			case '[': // CSI：吞至终结字节（0x40–0x7E）
-				j := i + 2
-				for j < len(rs) && (rs[j] < 0x40 || rs[j] > 0x7e) {
-					j++
-				}
-				if j < len(rs) {
-					i = j
-				} else {
-					i = len(rs) - 1
-				}
-				continue
-			case ']': // OSC：吞至 BEL 或 ESC\
-				j := i + 2
-				for j < len(rs) && rs[j] != 0x07 && !(rs[j] == 0x1b && j+1 < len(rs) && rs[j+1] == '\\') {
-					j++
-				}
-				if j < len(rs) {
-					if rs[j] == 0x1b {
-						i = j + 1 // ST 的 ESC\ 两字符都要跳过
-					} else {
-						i = j
-					}
-				} else {
-					i = len(rs) - 1
-				}
-				continue
-			default: // 其余两字符转义
-				i++
-				continue
-			}
-		}
-		if r < 0x20 && r != '\n' && r != '\t' || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return uicommon.SanitizeControl(s, uicommon.KeepLayout)
 }

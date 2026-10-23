@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -378,33 +378,16 @@ func (u *UI) history(msg conversation.Message) error {
 	}
 }
 
-// partsText 节点文本拼接（与 uitui 同语义）：文本/文档分片直连，图片/音频留占位；
-// 思考分片不并入正文（回放单独打 [thinking] 行，D42）；
-// 工具分片不并入正文（回放单独打 [tool] 行，D95）；
-// 出口剥控制序列（历史内容同样是不可信数据，§9）。
+// partsText 节点文本拼接：文本/文档分片直连，图片/音频留占位；思考分片不并入正文
+// （回放单独打 [thinking] 行，D42）；工具分片不并入正文（回放单独打 [tool] 行，D95）；
+// 出口剥控制序列（历史内容同样是不可信数据，§9）。实现与 TUI/GUI 共用（uicommon）。
 func partsText(parts []conversation.Part) string {
-	var b strings.Builder
-	for _, p := range parts {
-		appendPartText(&b, p)
-	}
-	return sanitizeControl(b.String())
+	return uicommon.PartsText(parts, uicommon.ImageAlways)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/回放分段共用口径）；
-// 思考/工具分片不并入正文（各自单独成行，D42/D95）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/回放分段共用口径）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
-	switch p.Kind {
-	case conversation.PartText:
-		b.WriteString(p.Text)
-	case conversation.PartImage:
-		b.WriteString("〔图片〕")
-	case conversation.PartAudio:
-		b.WriteString("〔音频转写〕")
-	case conversation.PartDoc:
-		b.WriteString(p.Text)
-	case conversation.PartThinking, conversation.PartTool:
-		// 单独成行（思考行 / 工具行），不混正文。
-	}
+	uicommon.AppendPartText(b, p, uicommon.ImageAlways)
 }
 
 // preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。
@@ -421,50 +404,7 @@ func preview(b []byte) string {
 }
 
 // sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。
-// 算法与 internal/adapter/uitui、notify 的同名函数一致——三处分别守护通知面与
-// 两个前端的转写面。
+// 实现在 internal/adapter/uicommon，四个消费方共用。
 func sanitizeControl(s string) string {
-	var b strings.Builder
-	rs := []rune(s)
-	for i := 0; i < len(rs); i++ {
-		r := rs[i]
-		if r == 0x1b && i+1 < len(rs) {
-			switch rs[i+1] {
-			case '[': // CSI：吞至终结字节（0x40–0x7E）
-				j := i + 2
-				for j < len(rs) && (rs[j] < 0x40 || rs[j] > 0x7e) {
-					j++
-				}
-				if j < len(rs) {
-					i = j
-				} else {
-					i = len(rs) - 1
-				}
-				continue
-			case ']': // OSC：吞至 BEL 或 ESC\
-				j := i + 2
-				for j < len(rs) && rs[j] != 0x07 && !(rs[j] == 0x1b && j+1 < len(rs) && rs[j+1] == '\\') {
-					j++
-				}
-				if j < len(rs) {
-					if rs[j] == 0x1b {
-						i = j + 1 // ST 的 ESC\ 两字符都要跳过
-					} else {
-						i = j
-					}
-				} else {
-					i = len(rs) - 1
-				}
-				continue
-			default: // 其余两字符转义
-				i++
-				continue
-			}
-		}
-		if r < 0x20 && r != '\n' && r != '\t' || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return uicommon.SanitizeControl(s, uicommon.KeepLayout)
 }
