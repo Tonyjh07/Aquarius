@@ -46,7 +46,7 @@ func buildTree(t *testing.T, s *Session) *conversation.Conversation {
 		if err := c.AppendCommitted(m); err != nil {
 			t.Fatalf("commit %s: %v", m.ID, err)
 		}
-		return c.Nodes[m.ID]
+		return nodeOf(t, c, m.ID)
 	}
 	txt := func(s string) []conversation.Part {
 		return []conversation.Part{{Kind: conversation.PartText, Text: s}}
@@ -75,11 +75,12 @@ func handleCmd(s *Session, name string, args ...string) (string, error) {
 	return s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: name, Args: args}})
 }
 
-// revisedID 找出以 old 为旧版本的新节点 ID。
+// revisedID 找出以 old 为旧版本的新节点 ID（反向查询：Edition 是从新到旧，
+// 测试里通常已知旧节点要捞新节点，所以走快照遍历）。
 func revisedID(c *conversation.Conversation, old conversation.MessageID) conversation.MessageID {
-	for n, o := range c.RevisedFrom {
-		if o == old {
-			return n
+	for _, ed := range c.Snapshot().RevisedFrom {
+		if ed.Old == old {
+			return ed.New
 		}
 	}
 	return ""
@@ -262,9 +263,9 @@ func TestSessionEditUserRegenerates(t *testing.T) {
 	}
 	c := s.Current()
 	n := revisedID(c, userID)
-	if n == "" || c.Nodes[c.Head].Parent != n ||
-		c.Nodes[c.Head].Content[0].Text != "改后回答" {
-		t.Fatalf("编辑后未重新生成: head=%s (%+v) n=%s", c.Head, c.Nodes[c.Head], n)
+	if n == "" || nodeOf(t, c, c.Head).Parent != n ||
+		nodeOf(t, c, c.Head).Content[0].Text != "改后回答" {
+		t.Fatalf("编辑后未重新生成: head=%s (%+v) n=%s", c.Head, nodeOf(t, c, c.Head), n)
 	}
 	names := eventNames(rec.events)
 	if len(names) < 3 || names[0] != "clear" || names[1] != "notice" {
@@ -301,19 +302,19 @@ func TestSessionRegenCommand(t *testing.T) {
 	if nu == "" {
 		t.Fatal("RevisedFrom 应记录 新user→u1")
 	}
-	nuMsg := c.Nodes[nu]
+	nuMsg := nodeOf(t, c, nu)
 	if nuMsg.Parent != "p" || nuMsg.Role != conversation.RoleUser || nuMsg.Content[0].Text != "问题" {
 		t.Fatalf("新 user 节点 = %+v, want 同父同角色原内容", nuMsg)
 	}
 	// 旧分支原样保留：u1 → a1 → t1 → u2 仍在。
-	if got := c.Children["u1"]; len(got) != 1 || got[0] != "a1" {
+	if got := c.ChildIDs("u1"); len(got) != 1 || got[0] != "a1" {
 		t.Fatalf("children[u1] = %v, want 旧分支保留", got)
 	}
 	// 新回答生成在新 user 之下，Head 到位。
-	if c.Nodes[c.Head].Role != conversation.RoleAssistant || c.Nodes[c.Head].Parent != nu {
-		t.Fatalf("head = %s (parent %s), want 新 user 下的 assistant 回答", c.Head, c.Nodes[c.Head].Parent)
+	if nodeOf(t, c, c.Head).Role != conversation.RoleAssistant || nodeOf(t, c, c.Head).Parent != nu {
+		t.Fatalf("head = %s (parent %s), want 新 user 下的 assistant 回答", c.Head, nodeOf(t, c, c.Head).Parent)
 	}
-	if got := c.Nodes[c.Head].Content[0].Text; got != "新的回答" {
+	if got := nodeOf(t, c, c.Head).Content[0].Text; got != "新的回答" {
 		t.Fatalf("新回答 = %q, want 新的回答", got)
 	}
 	// 事件序：clear → notice → 回放新路径（nu）→ 新一轮 Turn 流式。
@@ -343,7 +344,7 @@ func TestSessionRegenCommand(t *testing.T) {
 	if revisedID(c, "u2") != "" {
 		t.Fatal("无回答的 u2 不应分叉出冗余兄弟")
 	}
-	ans := c.Nodes[c.Head]
+	ans := nodeOf(t, c, c.Head)
 	if ans.Parent != "u2" || ans.Role != conversation.RoleAssistant || ans.Content[0].Text != "重发回答" {
 		t.Fatalf("u2 的新回答 = %+v, want 直接生成在 u2 之下", ans)
 	}
@@ -385,17 +386,17 @@ func TestSessionEditFresh(t *testing.T) {
 		!strings.Contains(out, "已重新生成回答") || !strings.Contains(out, string(n)) {
 		t.Fatalf("out = %q, want fresh/旧分支保留/已重新生成回答/新节点 id", out)
 	}
-	nm := c.Nodes[n]
+	nm := nodeOf(t, c, n)
 	if nm.Parent != "p" || nm.Role != conversation.RoleUser || nm.Content[0].Text != "新问题" {
 		t.Fatalf("new node = %+v, want 同父同角色新内容", nm)
 	}
-	if got := c.Children["u1"]; len(got) != 1 || got[0] != "a1" {
+	if got := c.ChildIDs("u1"); len(got) != 1 || got[0] != "a1" {
 		t.Fatalf("children[u1] = %v, want 旧分支原样保留", got)
 	}
 	// Head = 新分支的回答（编辑即重发，D93）。
-	if c.Nodes[c.Head].Parent != n || c.Nodes[c.Head].Role != conversation.RoleAssistant ||
-		c.Nodes[c.Head].Content[0].Text != "新回答" {
-		t.Fatalf("head = %s (%+v), want 新节点下的回答", c.Head, c.Nodes[c.Head])
+	if nodeOf(t, c, c.Head).Parent != n || nodeOf(t, c, c.Head).Role != conversation.RoleAssistant ||
+		nodeOf(t, c, c.Head).Content[0].Text != "新回答" {
+		t.Fatalf("head = %s (%+v), want 新节点下的回答", c.Head, nodeOf(t, c, c.Head))
 	}
 	if saved := store.convs[c.ID]; saved == nil || saved.Head != c.Head {
 		t.Fatalf("saved = %+v, want 已落盘新 Head", saved)
@@ -410,8 +411,8 @@ func TestSessionEditCarry(t *testing.T) {
 	store := newMemStore()
 	s, _ := newConfirmedSession(t, store, nil)
 	c := buildTree(t, s)
-	a1Before := c.Nodes["a1"].Clone()
-	u2Before := c.Nodes["u2"].Clone()
+	a1Before := nodeOf(t, c, "a1").Clone()
+	u2Before := nodeOf(t, c, "u2").Clone()
 
 	out, err := handleCmd(s, "edit", "u1", "--keep", "新问题")
 	if err != nil {
@@ -424,14 +425,14 @@ func TestSessionEditCarry(t *testing.T) {
 	if !strings.Contains(out, "carry") || !strings.Contains(out, "后续历史已转移") {
 		t.Fatalf("out = %q, want carry/后续历史已转移", out)
 	}
-	if got := c.Children[n]; len(got) != 1 || got[0] != "a1" {
+	if got := c.ChildIDs(n); len(got) != 1 || got[0] != "a1" {
 		t.Fatalf("children[new] = %v, want 边转移 a1", got)
 	}
-	if _, ok := c.Children["u1"]; ok {
+	if len(c.ChildIDs("u1")) != 0 {
 		t.Fatal("旧节点应成为无孩子的旧版本叶子")
 	}
-	if c.Nodes["a1"].Parent != n {
-		t.Fatalf("a1.parent = %s, want %s（直接孩子 Parent 指针改写）", c.Nodes["a1"].Parent, n)
+	if nodeOf(t, c, "a1").Parent != n {
+		t.Fatalf("a1.parent = %s, want %s（直接孩子 Parent 指针改写）", nodeOf(t, c, "a1").Parent, n)
 	}
 	// 被转移后代整节点字节不变（剔除 Parent 结构边；M1 验收）。
 	snap := func(m conversation.Message) string {
@@ -445,13 +446,13 @@ func TestSessionEditCarry(t *testing.T) {
 	for id, before := range map[conversation.MessageID]conversation.Message{
 		"a1": a1Before, "u2": u2Before,
 	} {
-		if snap(before) != snap(c.Nodes[id]) {
-			t.Fatalf("被转移后代 %s 字节被改写:\nbefore %s\nafter  %s", id, snap(before), snap(c.Nodes[id]))
+		if snap(before) != snap(nodeOf(t, c, id)) {
+			t.Fatalf("被转移后代 %s 字节被改写:\nbefore %s\nafter  %s", id, snap(before), snap(nodeOf(t, c, id)))
 		}
 	}
 	// 零拷贝：只 +1 个修订节点（子树各节点仍是原对象，无复制）。
-	if len(c.Nodes) != 6 {
-		t.Fatalf("nodes = %d, want 6（5 + 1 修订节点，零拷贝）", len(c.Nodes))
+	if c.NodeCount() != 6 {
+		t.Fatalf("nodes = %d, want 6（5 + 1 修订节点，零拷贝）", c.NodeCount())
 	}
 	// 旧 Head（u2）是 u1 的严格后代 → 随子树转移，Head 保持不变（D16）。
 	if c.Head != "u2" {
@@ -511,11 +512,11 @@ func TestSessionEditClone(t *testing.T) {
 	store := newMemStore()
 	s, _ := newConfirmedSession(t, store, nil)
 	c := buildTree(t, s)
-	a1Before, err := json.Marshal(c.Nodes["a1"])
+	a1Before, err := json.Marshal(nodeOf(t, c, "a1"))
 	if err != nil {
 		t.Fatalf("marshal a1: %v", err)
 	}
-	u2Before, err := json.Marshal(c.Nodes["u2"])
+	u2Before, err := json.Marshal(nodeOf(t, c, "u2"))
 	if err != nil {
 		t.Fatalf("marshal u2: %v", err)
 	}
@@ -533,39 +534,39 @@ func TestSessionEditClone(t *testing.T) {
 		t.Fatalf("out = %q, want clone/后续历史已复制 且不重发", out)
 	}
 	// 新节点：同父同角色新内容；旧分支原样保留。
-	nm := c.Nodes[n]
+	nm := nodeOf(t, c, n)
 	if nm.Parent != "p" || nm.Role != conversation.RoleUser || nm.Content[0].Text != "新问题" {
 		t.Fatalf("new node = %+v, want 同父同角色新内容", nm)
 	}
-	if got := c.Children["u1"]; len(got) != 1 || got[0] != "a1" {
+	if got := c.ChildIDs("u1"); len(got) != 1 || got[0] != "a1" {
 		t.Fatalf("children[u1] = %v, want 旧分支原样保留", got)
 	}
 	// 拷贝子树：ID 全新、内容保真、CreatedAt 保留（D96）。
-	copied := c.Children[n]
+	copied := c.ChildIDs(n)
 	if len(copied) != 1 || copied[0] == "a1" {
 		t.Fatalf("children[new] = %v, want 拷贝出的新 a1（ID 全新）", copied)
 	}
-	a1c := c.Nodes[copied[0]]
+	a1c := nodeOf(t, c, copied[0])
 	if a1c.Parent != n || len(a1c.Content) != 2 || a1c.Content[0].Text != "回复" ||
 		a1c.Content[1].Tool == nil || a1c.Content[1].Tool.CallID != "k1" {
 		t.Fatalf("copied a1 = %+v, want 挂新节点下且内容保真", a1c)
 	}
-	u2c := c.Children[a1c.ID]
-	if len(u2c) != 1 || u2c[0] == "u2" || c.Nodes[u2c[0]].Content[0].Text != "追问" {
-		t.Fatalf("copied u2 = %v (%+v), want 新 ID 且内容保真", u2c, c.Nodes[u2c[0]])
+	u2c := c.ChildIDs(a1c.ID)
+	if len(u2c) != 1 || u2c[0] == "u2" || nodeOf(t, c, u2c[0]).Content[0].Text != "追问" {
+		t.Fatalf("copied u2 = %v (%+v), want 新 ID 且内容保真", u2c, nodeOf(t, c, u2c[0]))
 	}
-	if !a1c.CreatedAt.Equal(c.Nodes["a1"].CreatedAt) {
-		t.Fatalf("copied CreatedAt = %v, want 保留原值 %v", a1c.CreatedAt, c.Nodes["a1"].CreatedAt)
+	if !a1c.CreatedAt.Equal(nodeOf(t, c, "a1").CreatedAt) {
+		t.Fatalf("copied CreatedAt = %v, want 保留原值 %v", a1c.CreatedAt, nodeOf(t, c, "a1").CreatedAt)
 	}
 	// 旧子树字节级不动（Clone 不改写任何原有对象）。
-	after, err := json.Marshal(c.Nodes["a1"])
+	after, err := json.Marshal(nodeOf(t, c, "a1"))
 	if err != nil {
 		t.Fatalf("marshal a1 after: %v", err)
 	}
 	if string(after) != string(a1Before) {
 		t.Fatalf("旧 a1 被改写:\nbefore %s\nafter  %s", a1Before, after)
 	}
-	after, err = json.Marshal(c.Nodes["u2"])
+	after, err = json.Marshal(nodeOf(t, c, "u2"))
 	if err != nil {
 		t.Fatalf("marshal u2 after: %v", err)
 	}
@@ -573,8 +574,8 @@ func TestSessionEditClone(t *testing.T) {
 		t.Fatalf("旧 u2 被改写:\nbefore %s\nafter  %s", u2Before, after)
 	}
 	// 节点数 = 5 + 1 修订 + 2 拷贝；Head 平移到拷贝对应节点（旧 Head u2 在原子树内）。
-	if len(c.Nodes) != 8 {
-		t.Fatalf("nodes = %d, want 8（5 + 1 修订 + 2 拷贝）", len(c.Nodes))
+	if c.NodeCount() != 8 {
+		t.Fatalf("nodes = %d, want 8（5 + 1 修订 + 2 拷贝）", c.NodeCount())
 	}
 	if c.Head != u2c[0] {
 		t.Fatalf("head = %s, want 拷贝末端 %s（D96 Head 平移）", c.Head, u2c[0])
@@ -605,7 +606,7 @@ func TestSessionEditAssistantNoRegen(t *testing.T) {
 	if c.Head != n {
 		t.Fatalf("head = %s, want 修订节点 %s（Fresh 恒移）", c.Head, n)
 	}
-	nm := c.Nodes[n]
+	nm := nodeOf(t, c, n)
 	// D107③：缺省（无 --part）= 非正文分片原位保留、正文并为新文本——a1 的工具分片
 	//（buildTree 产生）随行，不再是 D95 后果⑥ 的整节点替换。
 	if nm.Role != conversation.RoleAssistant || len(nm.Content) != 2 ||
@@ -614,11 +615,11 @@ func TestSessionEditAssistantNoRegen(t *testing.T) {
 		nm.Content[1].Tool.CallID != "k1" {
 		t.Fatalf("new node = %+v, want 正文替换 + 工具分片保留", nm)
 	}
-	if got := c.Children["a1"]; len(got) != 1 || got[0] != "u2" {
+	if got := c.ChildIDs("a1"); len(got) != 1 || got[0] != "u2" {
 		t.Fatalf("children[a1] = %v, want 旧分支原样保留", got)
 	}
-	if len(c.Nodes) != 6 {
-		t.Fatalf("nodes = %d, want 6（修订不触发生成，无追加）", len(c.Nodes))
+	if c.NodeCount() != 6 {
+		t.Fatalf("nodes = %d, want 6（修订不触发生成，无追加）", c.NodeCount())
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -652,7 +653,7 @@ func TestSessionEditUserAttachmentKept(t *testing.T) {
 	if _, err := handleCmd(s, "edit", string(m.ID), "改写文本"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	nm := c.Nodes[revisedID(c, m.ID)]
+	nm := nodeOf(t, c, revisedID(c, m.ID))
 	if len(nm.Content) != 2 ||
 		nm.Content[0].Kind != conversation.PartText || nm.Content[0].Text != "改写文本" ||
 		nm.Content[1].Kind != conversation.PartImage || nm.Content[1].Ref == nil || *nm.Content[1].Ref != *ref {
@@ -661,7 +662,7 @@ func TestSessionEditUserAttachmentKept(t *testing.T) {
 	if _, err := handleCmd(s, "edit", string(m2.ID), "并为一"); err != nil {
 		t.Fatalf("edit2: %v", err)
 	}
-	nm2 := c.Nodes[revisedID(c, m2.ID)]
+	nm2 := nodeOf(t, c, revisedID(c, m2.ID))
 	if len(nm2.Content) != 2 ||
 		nm2.Content[0].Kind != conversation.PartDoc || nm2.Content[0].Ref == nil || *nm2.Content[0].Ref != *ref2 ||
 		nm2.Content[1].Kind != conversation.PartText || nm2.Content[1].Text != "并为一" {
@@ -690,21 +691,21 @@ func TestSessionEditPersonaKeep(t *testing.T) {
 	if n == "" {
 		t.Fatal("RevisedFrom 应记录 新→p")
 	}
-	nm := c.Nodes[n]
+	nm := nodeOf(t, c, n)
 	if nm.Role != conversation.RoleSystem || nm.Parent != conversation.MessageID(c.ID) || nm.Content[0].Text != "新的人格" {
 		t.Fatalf("new persona = %+v, want root 下的 system 新节点", nm)
 	}
-	if got := c.Children[n]; len(got) != 1 || got[0] != "u1" {
+	if got := c.ChildIDs(n); len(got) != 1 || got[0] != "u1" {
 		t.Fatalf("children[new] = %v, want 整棵对话树转移", got)
 	}
-	if _, ok := c.Children["p"]; ok {
+	if len(c.ChildIDs("p")) != 0 {
 		t.Fatal("旧 persona 应成为无孩子的旧版本叶子")
 	}
 	if c.Head != "u2" {
 		t.Fatalf("head = %s, want u2（随树保持）", c.Head)
 	}
-	if len(c.Nodes) != 6 {
-		t.Fatalf("nodes = %d, want 6（5 + 1 修订节点，零拷贝）", len(c.Nodes))
+	if c.NodeCount() != 6 {
+		t.Fatalf("nodes = %d, want 6（5 + 1 修订节点，零拷贝）", c.NodeCount())
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -732,7 +733,7 @@ func TestSessionEditRejects(t *testing.T) {
 			store := newMemStore()
 			s, _ := newConfirmedSession(t, store, nil)
 			buildTree(t, s)
-			before := len(s.cur.Nodes)
+			before := s.cur.NodeCount()
 			_, err := handleCmd(s, "edit", tc.args...)
 			if err == nil {
 				t.Fatal("want error")
@@ -743,7 +744,7 @@ func TestSessionEditRejects(t *testing.T) {
 			if tc.is != nil && !errors.Is(err, tc.is) {
 				t.Fatalf("err = %v, want errors.Is(%v)", err, tc.is)
 			}
-			if len(s.cur.Nodes) != before {
+			if s.cur.NodeCount() != before {
 				t.Fatal("失败的修订不应改树")
 			}
 		})

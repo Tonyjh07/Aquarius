@@ -50,20 +50,20 @@ func TestInsertBeforeTakesTargetSlot(t *testing.T) {
 	if pad.Role != RoleSystem || pad.Parent != u1.ID {
 		t.Fatalf("pad = {%s %s parent %s}, want system under %s", pad.ID, pad.Role, pad.Parent, u1.ID)
 	}
-	if got := c.Children[u1.ID]; len(got) != 2 || got[0] != pad.ID || got[1] != u1b.ID {
+	if got := c.children[u1.ID]; len(got) != 2 || got[0] != pad.ID || got[1] != u1b.ID {
 		t.Fatalf("children[%s] = %v, want [%s %s]（原位置 + 兄弟不动）", u1.ID, got, pad.ID, u1b.ID)
 	}
-	if got := c.Children[pad.ID]; len(got) != 1 || got[0] != a1.ID {
+	if got := c.children[pad.ID]; len(got) != 1 || got[0] != a1.ID {
 		t.Fatalf("children[%s] = %v, want [%s]", pad.ID, got, a1.ID)
 	}
-	if moved := c.Nodes[a1.ID]; moved.Parent != pad.ID {
+	if moved := c.nodes[a1.ID]; moved.Parent != pad.ID {
 		t.Fatalf("target parent = %s, want %s", moved.Parent, pad.ID)
 	}
 	// 子树零拷贝：下游节点 ID 与内容不变，边照旧。
-	if got := c.Children[a1.ID]; len(got) != 1 || got[0] != a2.ID {
+	if got := c.children[a1.ID]; len(got) != 1 || got[0] != a2.ID {
 		t.Fatalf("children[%s] = %v, want [%s]", a1.ID, got, a2.ID)
 	}
-	if got := c.Nodes[a2.ID]; got.Content[0].Text != "a2" || got.Parent != a1.ID {
+	if got := c.nodes[a2.ID]; got.Content[0].Text != "a2" || got.Parent != a1.ID {
 		t.Fatalf("descendant mutated: %+v", got)
 	}
 	if c.Head != headBefore {
@@ -162,8 +162,8 @@ func TestInsertCommittedKeepsAssembledNode(t *testing.T) {
 func TestInsertBeforeRejects(t *testing.T) {
 	c, u1, a1, _, _ := insertFixture(t)
 	root := MessageID(c.ID)
-	before := len(c.Nodes)
-	kidsBefore := len(c.Children[u1.ID])
+	before := len(c.nodes)
+	kidsBefore := len(c.children[u1.ID])
 
 	cases := []struct {
 		name string
@@ -204,10 +204,10 @@ func TestInsertBeforeRejects(t *testing.T) {
 		if _, err := tc.ins(); !errors.Is(err, tc.want) {
 			t.Fatalf("%s: err = %v, want %v", tc.name, err, tc.want)
 		}
-		if len(c.Nodes) != before {
-			t.Fatalf("%s: node count = %d, want %d（失败不得入树）", tc.name, len(c.Nodes), before)
+		if len(c.nodes) != before {
+			t.Fatalf("%s: node count = %d, want %d（失败不得入树）", tc.name, len(c.nodes), before)
 		}
-		if len(c.Children[u1.ID]) != kidsBefore {
+		if len(c.children[u1.ID]) != kidsBefore {
 			t.Fatalf("%s: children[%s] 被改动", tc.name, u1.ID)
 		}
 		if err := c.Validate(); err != nil {

@@ -124,7 +124,7 @@ func TestSessionRawFilePipeline(t *testing.T) {
 	}
 	// 树：两个 user 节点，图片引用可经附件库解析（装配内联依赖）。
 	var imgRef *conversation.BlobRef
-	for _, m := range s.Current().Nodes {
+	for _, m := range s.Current().Snapshot().Nodes {
 		if m.Role != conversation.RoleUser {
 			continue
 		}
@@ -205,7 +205,7 @@ func TestSessionRawKeepsDefaultTitle(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", len(llm.requests))
 	}
 	var hasAudio bool
-	for _, m := range s.Current().Nodes {
+	for _, m := range s.Current().Snapshot().Nodes {
 		for _, p := range m.Content {
 			if p.Kind == conversation.PartAudio && p.Transcript == "语音转写" {
 				hasAudio = true
@@ -273,7 +273,7 @@ func TestSessionRawMultiAttachmentPipeline(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("handle multi: %v", err)
 	}
-	user := s.Current().Nodes
+	user := s.Current().Snapshot().Nodes
 	var kinds []conversation.PartKind
 	for _, m := range user {
 		if m.Role != conversation.RoleUser {
@@ -327,7 +327,7 @@ func TestSessionRawTextDirect(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", len(llm.requests))
 	}
 	var text string
-	for _, m := range s.Current().Nodes {
+	for _, m := range s.Current().Snapshot().Nodes {
 		if m.Role == conversation.RoleUser {
 			for _, p := range m.Content {
 				text += p.Text

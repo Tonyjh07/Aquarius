@@ -99,7 +99,7 @@ func (c *Conversation) Validate() error {
 	var errs []error
 
 	kidsOf := map[MessageID]map[MessageID]bool{}
-	for pid, kids := range c.Children {
+	for pid, kids := range c.children {
 		set := map[MessageID]bool{}
 		for _, k := range kids {
 			if set[k] {
@@ -109,7 +109,7 @@ func (c *Conversation) Validate() error {
 		}
 		kidsOf[pid] = set
 		if pid != "" {
-			if _, ok := c.Nodes[pid]; !ok {
+			if _, ok := c.nodes[pid]; !ok {
 				errs = append(errs, fmt.Errorf("invariant tree: children key %q not in tree", pid))
 			}
 		}
@@ -117,12 +117,12 @@ func (c *Conversation) Validate() error {
 
 	// 不变量 1：唯一实根（D19）——Root 即会话：ID = 会话 ID、Role = root、Parent = ""。
 	rootID := MessageID(c.ID)
-	if root, ok := c.Nodes[rootID]; !ok {
+	if root, ok := c.nodes[rootID]; !ok {
 		errs = append(errs, fmt.Errorf("invariant tree: root %q missing", rootID))
 	} else if root.Role != RoleRoot {
 		errs = append(errs, fmt.Errorf("invariant tree: node %q must have role root, got %q", rootID, root.Role))
 	}
-	for nid, m := range c.Nodes {
+	for nid, m := range c.nodes {
 		if m.Role == RoleRoot && nid != rootID {
 			errs = append(errs, fmt.Errorf("invariant tree: stray root-role node %q", nid))
 		}
@@ -130,11 +130,11 @@ func (c *Conversation) Validate() error {
 			errs = append(errs, fmt.Errorf("invariant tree: node %q has empty parent but is not root", nid))
 		}
 	}
-	if top := c.Children[""]; len(top) != 1 || top[0] != rootID {
+	if top := c.children[""]; len(top) != 1 || top[0] != rootID {
 		errs = append(errs, fmt.Errorf("invariant tree: children[\"\"] = %v, want exactly [%q]", top, rootID))
 	}
 
-	for nid, m := range c.Nodes {
+	for nid, m := range c.nodes {
 		if m.ID != nid {
 			errs = append(errs, fmt.Errorf("invariant immutable: node key %q holds message %q", nid, m.ID))
 		}
@@ -148,7 +148,7 @@ func (c *Conversation) Validate() error {
 			errs = append(errs, fmt.Errorf("invariant tree: missing child edge %q -> %q", m.Parent, nid))
 		}
 		for k := range kidsOf[nid] {
-			km, ok := c.Nodes[k]
+			km, ok := c.nodes[k]
 			if !ok {
 				errs = append(errs, fmt.Errorf("invariant tree: edge %q -> %q points outside tree", nid, k))
 				continue
@@ -166,7 +166,7 @@ func (c *Conversation) Validate() error {
 				break
 			}
 			seen[cur] = true
-			p, ok := c.Nodes[cur]
+			p, ok := c.nodes[cur]
 			if !ok {
 				errs = append(errs, fmt.Errorf("invariant tree: node %q has dangling parent %q", nid, cur))
 				break
@@ -178,16 +178,16 @@ func (c *Conversation) Validate() error {
 	// 不变量 1：Head 属于树（初始 = Root；空串即旧格式残留，D19 无空串特例）。
 	if c.Head == "" {
 		errs = append(errs, errors.New("invariant tree: empty head (legacy format)"))
-	} else if _, ok := c.Nodes[c.Head]; !ok {
+	} else if _, ok := c.nodes[c.Head]; !ok {
 		errs = append(errs, fmt.Errorf("invariant tree: head %q not in tree", c.Head))
 	}
 
 	// 版本链元数据：两端都在树中。
-	for newID, oldID := range c.RevisedFrom {
-		if _, ok := c.Nodes[newID]; !ok {
+	for newID, oldID := range c.revisedFrom {
+		if _, ok := c.nodes[newID]; !ok {
 			errs = append(errs, fmt.Errorf("metadata: revised_from key %q not in tree", newID))
 		}
-		if _, ok := c.Nodes[oldID]; !ok {
+		if _, ok := c.nodes[oldID]; !ok {
 			errs = append(errs, fmt.Errorf("metadata: revised_from %q -> %q: old node not in tree", newID, oldID))
 		}
 	}

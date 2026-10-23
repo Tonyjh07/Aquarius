@@ -322,7 +322,7 @@ func TestSessionCompactCommand(t *testing.T) {
 	if last.Role != conversation.RoleSystem || last.Content[0].Text != "## Objective\n- 压缩后的摘要" {
 		t.Fatalf("last = %+v, want 摘要节点", last)
 	}
-	if _, ok := store.convs[s.Current().ID].Nodes[last.ID]; !ok {
+	if _, ok := store.convs[s.Current().ID].Find(last.ID); !ok {
 		t.Fatal("摘要节点应已落盘")
 	}
 
@@ -343,14 +343,14 @@ func TestSessionCompactCancelFriendly(t *testing.T) {
 	if _, err := s.Handle(context.Background(), port.UserInput{Text: "hi"}); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
-	before := len(s.Current().Nodes)
+	before := s.Current().NodeCount()
 
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "compact"}})
 	if err != nil || !strings.Contains(out, "已取消压缩") {
 		t.Fatalf("compact cancel = %q, %v", out, err)
 	}
-	if len(s.Current().Nodes) != before {
-		t.Fatalf("nodes = %d, want 会话未改动 %d", len(s.Current().Nodes), before)
+	if s.Current().NodeCount() != before {
+		t.Fatalf("nodes = %d, want 会话未改动 %d", s.Current().NodeCount(), before)
 	}
 }
 

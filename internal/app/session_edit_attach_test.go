@@ -218,13 +218,13 @@ func TestSessionEditDropAll(t *testing.T) {
 // TestSessionEditDropOutOfRange --drop 越界：报因且不改树。
 func TestSessionEditDropOutOfRange(t *testing.T) {
 	s, _ := editFixture(t)
-	before := len(s.cur.Nodes)
+	before := s.cur.NodeCount()
 
 	_, err := handleCmd(s, "edit", "u1", "--drop", "7")
 	if err == nil || !strings.Contains(err.Error(), "越界") {
 		t.Fatalf("err = %v, want 越界", err)
 	}
-	if len(s.cur.Nodes) != before {
+	if s.cur.NodeCount() != before {
 		t.Fatal("失败的修订不应改树")
 	}
 }

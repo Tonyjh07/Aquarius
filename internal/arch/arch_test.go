@@ -1,6 +1,7 @@
 package arch
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -150,6 +151,59 @@ func TestGuardCatchesViolation(t *testing.T) {
 		if got := allows(c.src, c.dst); got != c.want {
 			t.Errorf("allows(%s, %s) = %v, want %v", c.src, c.dst, got, c.want)
 		}
+	}
+}
+
+// TestAggregateRootHidesItsMaps 聚合根不得导出 map 字段。
+//
+// 为什么单立一条：`Conversation.Nodes` 曾经是导出的 map，于是 app、适配器、测试都能
+// 绕过方法直接读写整棵树——不变量只在「大家都守规矩」时成立，而这一点没有编译器或
+// 运行时兜底。私有化之后，这条规则必须有人盯着，否则下一次「就先导出一下方便」又会
+// 把门打开。
+//
+// 只查 Conversation 一个类型：领域里其它结构（View/Snapshot）是**只读值**，导出是
+// 有意的；聚合根自己持有可变结构，才必须封装。
+func TestAggregateRootHidesItsMaps(t *testing.T) {
+	root, _ := moduleRoot(t)
+	file := filepath.Join(root, "internal", "domain", "conversation", "conversation.go")
+	f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+	if err != nil {
+		t.Fatalf("解析 %s 失败: %v", file, err)
+	}
+
+	found := false
+	for _, decl := range f.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			ts, ok := spec.(*ast.TypeSpec)
+			if !ok || ts.Name.Name != "Conversation" {
+				continue
+			}
+			st, ok := ts.Type.(*ast.StructType)
+			if !ok {
+				t.Fatalf("Conversation 不是结构体")
+			}
+			found = true
+			for _, field := range st.Fields.List {
+				if len(field.Names) == 0 {
+					continue // 嵌入字段
+				}
+				for _, name := range field.Names {
+					if !name.IsExported() {
+						continue
+					}
+					if _, isMap := field.Type.(*ast.MapType); isMap {
+						t.Errorf("Conversation.%s 是导出 map：外部可绕过方法改树，聚合根封装失效", name.Name)
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("没找到 Conversation 定义——守门测试扫错了文件，等于没跑")
 	}
 }
 

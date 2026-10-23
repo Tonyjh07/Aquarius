@@ -443,7 +443,7 @@ func TestAssemblePathFailedToolResultText(t *testing.T) {
 func commitNode(t *testing.T, c *conversation.Conversation, parent conversation.MessageID, role conversation.Role, text string) conversation.Message {
 	t.Helper()
 	m := conversation.Message{
-		ID:      conversation.MessageID(fmt.Sprintf("n%d", len(c.Nodes)+1)),
+		ID:      conversation.MessageID(fmt.Sprintf("n%d", c.NodeCount()+1)),
 		Parent:  parent,
 		Role:    role,
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: text}},
@@ -451,7 +451,7 @@ func commitNode(t *testing.T, c *conversation.Conversation, parent conversation.
 	if err := c.AppendCommitted(m); err != nil {
 		t.Fatalf("commit %s: %v", role, err)
 	}
-	return c.Nodes[m.ID]
+	return nodeOf(t, c, m.ID)
 }
 
 // msgText 拼接一条投影消息的文本分片（断言用）。摘要消息会带一行 wrapper（D170），

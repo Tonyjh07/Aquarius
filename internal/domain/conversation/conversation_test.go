@@ -23,7 +23,7 @@ func mustCommit(t *testing.T, c *Conversation, m Message) Message {
 	if err := c.AppendCommitted(m); err != nil {
 		t.Fatalf("append committed(%s): %v", m.ID, err)
 	}
-	return c.Nodes[m.ID]
+	return c.nodes[m.ID]
 }
 
 func TestNewMessageIDMonotonic(t *testing.T) {
@@ -253,15 +253,15 @@ func TestReviseFreshStartsNewBranch(t *testing.T) {
 	if m.Parent != a1.ID || m.Role != RoleUser {
 		t.Fatalf("revised node = %+v, want sibling of %s", m, u2.ID)
 	}
-	if c.RevisedFrom[m.ID] != u2.ID {
-		t.Fatalf("revised_from[%s] = %q, want %q", m.ID, c.RevisedFrom[m.ID], u2.ID)
+	if c.revisedFrom[m.ID] != u2.ID {
+		t.Fatalf("revised_from[%s] = %q, want %q", m.ID, c.revisedFrom[m.ID], u2.ID)
 	}
 	if c.Head != m.ID {
 		t.Fatalf("head = %q, want new node %q", c.Head, m.ID)
 	}
 	// 旧分支原样保留。
-	if c.Nodes[a2.ID].Parent != u2.ID {
-		t.Fatalf("old subtree moved on Fresh: a2.parent = %q", c.Nodes[a2.ID].Parent)
+	if c.nodes[a2.ID].Parent != u2.ID {
+		t.Fatalf("old subtree moved on Fresh: a2.parent = %q", c.nodes[a2.ID].Parent)
 	}
 	br := c.Branches(u2.ID)
 	if len(br) != 1 || br[0].ID != m.ID {
@@ -286,14 +286,14 @@ func TestReviseCarryMovesSubtreeAndKeepsHead(t *testing.T) {
 		t.Fatalf("revise carry: %v", err)
 	}
 	// 边转移：a2 整批改挂到新节点，旧节点成为旧版本叶子。
-	if c.Nodes[a2.ID].Parent != m.ID {
-		t.Fatalf("a2.parent = %q, want %q", c.Nodes[a2.ID].Parent, m.ID)
+	if c.nodes[a2.ID].Parent != m.ID {
+		t.Fatalf("a2.parent = %q, want %q", c.nodes[a2.ID].Parent, m.ID)
 	}
-	if len(c.Children[u2.ID]) != 0 {
-		t.Fatalf("old node keeps children: %v", c.Children[u2.ID])
+	if len(c.children[u2.ID]) != 0 {
+		t.Fatalf("old node keeps children: %v", c.children[u2.ID])
 	}
-	if c.Nodes[u3.ID].Parent != a2.ID {
-		t.Fatalf("deep node re-parented: u3.parent = %q", c.Nodes[u3.ID].Parent)
+	if c.nodes[u3.ID].Parent != a2.ID {
+		t.Fatalf("deep node re-parented: u3.parent = %q", c.nodes[u3.ID].Parent)
 	}
 	// 旧 Head 是 u2 的严格后代：历史随行，Head 保持。
 	if c.Head != u3.ID {
@@ -337,7 +337,7 @@ func TestReviseCloneDeepCopiesSubtree(t *testing.T) {
 	a2 := mustAppend(t, c, RoleAssistant, "a2") // Head，在 u1 子树内
 
 	before := map[MessageID]Message{}
-	for nid, m := range c.Nodes {
+	for nid, m := range c.nodes {
 		before[nid] = m.Clone()
 	}
 
@@ -348,12 +348,12 @@ func TestReviseCloneDeepCopiesSubtree(t *testing.T) {
 	if m.Parent != u1.Parent || m.Role != RoleUser {
 		t.Fatalf("new node = %+v, want 同父同角色", m)
 	}
-	if c.RevisedFrom[m.ID] != u1.ID || len(c.RevisedFrom) != 1 {
-		t.Fatalf("revised_from = %v, want 仅 新根→旧根 一条", c.RevisedFrom)
+	if c.revisedFrom[m.ID] != u1.ID || len(c.revisedFrom) != 1 {
+		t.Fatalf("revised_from = %v, want 仅 新根→旧根 一条", c.revisedFrom)
 	}
 	// 原子树字节级不动（内容 + Parent 边）。
 	for nid, want := range before {
-		got, ok := c.Nodes[nid]
+		got, ok := c.nodes[nid]
 		if !ok {
 			t.Fatalf("原节点 %s 消失", nid)
 		}
@@ -362,17 +362,17 @@ func TestReviseCloneDeepCopiesSubtree(t *testing.T) {
 		}
 	}
 	// 拷贝镜像结构：a1 的全新拷贝挂在 m 下，内容与 CreatedAt 保真。
-	kids := c.Children[m.ID]
+	kids := c.children[m.ID]
 	if len(kids) != 1 || kids[0] == a1.ID {
 		t.Fatalf("children[new] = %v, want a1 的全新拷贝", kids)
 	}
-	ca1 := c.Nodes[kids[0]]
+	ca1 := c.nodes[kids[0]]
 	if ca1.Parent != m.ID || !sameCopy(before[a1.ID], ca1) {
 		t.Fatalf("拷贝 a1 = %+v, want 内容保真、挂到新节点", ca1)
 	}
 	// 节点数 = 原 5 + 新版本 1 + 拷贝 3。
-	if len(c.Nodes) != len(before)+1+3 {
-		t.Fatalf("nodes = %d, want %d", len(c.Nodes), len(before)+1+3)
+	if len(c.nodes) != len(before)+1+3 {
+		t.Fatalf("nodes = %d, want %d", len(c.nodes), len(before)+1+3)
 	}
 	// Head 平移到拷贝对应节点：Head → a1 拷贝 → m 的链路成立，且不是原子树节点。
 	if c.Head == a2.ID || c.Head == a1.ID || c.Head == u2.ID {
@@ -380,7 +380,7 @@ func TestReviseCloneDeepCopiesSubtree(t *testing.T) {
 	}
 	hops := 0
 	for cur := c.Head; cur != m.ID; hops++ {
-		n, ok := c.Nodes[cur]
+		n, ok := c.nodes[cur]
 		if !ok || hops > 3 {
 			t.Fatalf("Head 链断裂于 %s", cur)
 		}
@@ -461,8 +461,8 @@ func TestPruneSubtreeAndHeadFallback(t *testing.T) {
 	if err := c.Prune(u1.ID); err != nil {
 		t.Fatalf("prune top-level: %v", err)
 	}
-	if len(c.Nodes) != 1 || c.Head != MessageID(c.ID) {
-		t.Fatalf("nodes = %d head = %q, want only root", len(c.Nodes), c.Head)
+	if len(c.nodes) != 1 || c.Head != MessageID(c.ID) {
+		t.Fatalf("nodes = %d head = %q, want only root", len(c.nodes), c.Head)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -531,18 +531,18 @@ func TestTail(t *testing.T) {
 	}
 
 	// 旧叶子时钟推后 → 它成为末端（CreatedAt 优先于 ID 序）。
-	old := c.Nodes[a2.ID]
+	old := c.nodes[a2.ID]
 	old.CreatedAt = old.CreatedAt.Add(time.Hour)
-	c.Nodes[a2.ID] = old
+	c.nodes[a2.ID] = old
 	if got, _ := c.Tail(u1.ID); got != a2.ID {
 		t.Fatalf("Tail(u1) = %q, want 被推后的旧叶子 a2", got)
 	}
 
 	// 时钟全部相同 → 按 ID 序最大（确定性）。
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for id, n := range c.Nodes {
+	for id, n := range c.nodes {
 		n.CreatedAt = base
-		c.Nodes[id] = n
+		c.nodes[id] = n
 	}
 	want := a2.ID
 	if a2n.ID > want {

@@ -109,11 +109,11 @@ func dfsOrder(c *conversation.Conversation) []conversation.MessageID {
 		}
 		seen[id] = true
 		out = append(out, id)
-		for _, ch := range c.Children[id] {
+		for _, ch := range c.ChildIDs(id) {
 			walk(ch)
 		}
 	}
-	for _, top := range c.Children[""] {
+	for _, top := range c.ChildIDs("") {
 		walk(top)
 	}
 	return out
@@ -152,7 +152,7 @@ func (r *replay) renderTree() {
 		if id == c.Head {
 			b.WriteString(" ← Head")
 		}
-		if old, ok := c.RevisedFrom[id]; ok {
+		if old, ok := c.Edition(id); ok {
 			fmt.Fprintf(&b, "（修订自 %s）", old)
 		}
 		r.line(b.String())

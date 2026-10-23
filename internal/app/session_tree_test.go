@@ -23,7 +23,7 @@ func TestSessionBranchCommand(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	n := revisedID(c, "u1")
-	if n == "" || c.Nodes[c.Head].Parent != n {
+	if n == "" || nodeOf(t, c, c.Head).Parent != n {
 		t.Fatalf("编辑后 Head 应在新分支回答上: head=%s n=%s", c.Head, n)
 	}
 
@@ -113,8 +113,8 @@ func TestSessionRmCommand(t *testing.T) {
 		if err != nil || !strings.Contains(out, "已取消删除 u1") {
 			t.Fatalf("deny = %q, %v", out, err)
 		}
-		if len(c.Nodes) != 5 {
-			t.Fatalf("nodes = %d, want 树未改动 5", len(c.Nodes))
+		if c.NodeCount() != 5 {
+			t.Fatalf("nodes = %d, want 树未改动 5", c.NodeCount())
 		}
 	})
 
@@ -134,15 +134,15 @@ func TestSessionRmCommand(t *testing.T) {
 			t.Fatalf("out = %q, want Head 回退到 p", out)
 		}
 		for _, id := range []string{"u1", "a1", "u2"} {
-			if _, ok := c.Nodes[conversation.MessageID(id)]; ok {
+			if _, ok := c.Find(conversation.MessageID(id)); ok {
 				t.Fatalf("节点 %s 应已删除", id)
 			}
 		}
-		if len(c.Nodes) != 2 || c.Head != "p" {
-			t.Fatalf("nodes/head = %d/%s, want 2/p", len(c.Nodes), c.Head)
+		if c.NodeCount() != 2 || c.Head != "p" {
+			t.Fatalf("nodes/head = %d/%s, want 2/p", c.NodeCount(), c.Head)
 		}
 		saved := store.convs[c.ID]
-		if saved == nil || saved.Head != "p" || len(saved.Nodes) != 2 {
+		if saved == nil || saved.Head != "p" || saved.NodeCount() != 2 {
 			t.Fatalf("saved = %+v, want 删除结果已落盘", saved)
 		}
 		if err := c.Validate(); err != nil {
@@ -163,10 +163,10 @@ func TestSessionRmCommand(t *testing.T) {
 			t.Fatalf("err = %v, want 回滚且保留 disk full", err)
 		}
 		// 内存与已存副本都回到删除前状态：删除绝不"半生效"。
-		if len(s.cur.Nodes) != 5 {
-			t.Fatalf("nodes = %d, want 回滚到 5", len(s.cur.Nodes))
+		if s.cur.NodeCount() != 5 {
+			t.Fatalf("nodes = %d, want 回滚到 5", s.cur.NodeCount())
 		}
-		if saved := store.convs[c.ID]; saved == nil || len(saved.Nodes) != 5 {
+		if saved := store.convs[c.ID]; saved == nil || saved.NodeCount() != 5 {
 			t.Fatalf("saved = %v, want 5 节点副本未被改写", saved)
 		}
 	})

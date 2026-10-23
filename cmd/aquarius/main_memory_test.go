@@ -140,27 +140,12 @@ func writeConfigLevel(t *testing.T, dir, baseURL, name, level string) {
 // loadTree 读取唯一会话树并做不变量自检（D110：数据落 profiles/default/）。
 func loadTree(t *testing.T, dir string) *conversation.Conversation {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json"))
-	if err != nil || len(files) != 1 {
-		t.Fatalf("conversation files = %v, %v", files, err)
-	}
-	data, err := os.ReadFile(files[0])
-	if err != nil {
-		t.Fatalf("read tree: %v", err)
-	}
-	var c conversation.Conversation
-	if err := json.Unmarshal(data, &c); err != nil {
-		t.Fatalf("parse tree: %v", err)
-	}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("落盘会话破坏不变量: %v", err)
-	}
-	return &c
+	return loadStored(t, dir)
 }
 
 // findToolPart 找到首个工具分片（D95：调用+结果内嵌 assistant 节点）。
 func findToolPart(c *conversation.Conversation) (*conversation.ToolPart, bool) {
-	for _, m := range c.Nodes {
+	for _, m := range c.Snapshot().Nodes {
 		for _, p := range m.Content {
 			if p.Kind == conversation.PartTool && p.Tool != nil {
 				return p.Tool, true

@@ -5,7 +5,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -35,17 +34,16 @@ func (m *memStore) Save(_ context.Context, c *conversation.Conversation) error {
 	return nil
 }
 
-// cloneConv 经 JSON 往返做深拷贝（会话树全字段可序列化；测试替身，编码失败即缺陷）。
+// cloneConv 经 Snapshot/Restore 做深拷贝（测试替身，重建失败即缺陷）。
+//
+// 这里顺带验证了一件事：任何一棵合法的树都能原样搬进搬出——不再依赖「整个结构体
+// 恰好可 JSON 序列化」这种隐含假设。
 func cloneConv(c *conversation.Conversation) *conversation.Conversation {
-	data, err := json.Marshal(c)
+	out, err := conversation.Restore(c.Snapshot())
 	if err != nil {
-		panic(fmt.Sprintf("memStore: marshal conversation: %v", err))
+		panic(fmt.Sprintf("memStore: restore conversation: %v", err))
 	}
-	var out conversation.Conversation
-	if err := json.Unmarshal(data, &out); err != nil {
-		panic(fmt.Sprintf("memStore: unmarshal conversation: %v", err))
-	}
-	return &out
+	return out
 }
 
 func (m *memStore) Load(_ context.Context, id conversation.ID) (*conversation.Conversation, error) {
@@ -60,7 +58,7 @@ func (m *memStore) List(context.Context) ([]port.ConversationSummary, error) {
 	var out []port.ConversationSummary
 	for _, c := range m.convs {
 		out = append(out, port.ConversationSummary{
-			ID: c.ID, Title: c.Title, MessageN: len(c.Nodes) - 1, UpdatedAt: c.UpdatedAt, // 不含 Root，与 storejson 对齐
+			ID: c.ID, Title: c.Title, MessageN: c.NodeCount() - 1, UpdatedAt: c.UpdatedAt, // 不含 Root，与 storejson 对齐
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -164,22 +162,22 @@ func TestSessionTextRoundPersists(t *testing.T) {
 		t.Fatalf("llm requests = %d, want 1", len(llm.requests))
 	}
 	cur := s.Current()
-	if len(cur.Nodes) != 4 {
-		t.Fatalf("nodes = %d, want 4（root+persona+user+assistant）", len(cur.Nodes))
+	if cur.NodeCount() != 4 {
+		t.Fatalf("nodes = %d, want 4（root+persona+user+assistant）", cur.NodeCount())
 	}
 	if cur.Title != "讲个笑话" {
 		t.Fatalf("title = %q, want 首条消息摘要", cur.Title)
 	}
 	// 已落盘且可跨"进程"恢复。
 	saved := store.convs[cur.ID]
-	if saved == nil || len(saved.Nodes) != 4 {
+	if saved == nil || saved.NodeCount() != 4 {
 		t.Fatalf("saved = %+v, want 落盘 4 节点", saved)
 	}
 
 	// 重启会话：恢复同一棵树继续对话。
 	s2, llm2, _ := newTestSession(t, store, textStream("继续"))
-	if s2.Current().ID != cur.ID || len(s2.Current().Nodes) != 4 {
-		t.Fatalf("resume = %s/%d nodes, want 同一会话", s2.Current().ID, len(s2.Current().Nodes))
+	if s2.Current().ID != cur.ID || s2.Current().NodeCount() != 4 {
+		t.Fatalf("resume = %s/%d nodes, want 同一会话", s2.Current().ID, s2.Current().NodeCount())
 	}
 	if _, err := s2.Handle(context.Background(), port.UserInput{Text: "再来一个"}); err != nil {
 		t.Fatalf("handle after resume: %v", err)

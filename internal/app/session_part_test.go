@@ -86,7 +86,7 @@ func TestSessionEditAssistantPartFidelity(t *testing.T) {
 		t.Fatalf("edit --part 1: %v", err)
 	}
 	n1 := revisedID(c, mk.ID)
-	nm1 := c.Nodes[n1]
+	nm1 := nodeOf(t, c, n1)
 	if len(nm1.Content) != 4 ||
 		nm1.Content[0].Kind != conversation.PartThinking || nm1.Content[0].Text != "思考过程" ||
 		nm1.Content[1].Text != "前半段" ||
@@ -103,7 +103,7 @@ func TestSessionEditAssistantPartFidelity(t *testing.T) {
 	if _, err := handleCmd(s, "edit", string(cur), "--part", "0", "改写前半段"); err != nil {
 		t.Fatalf("edit --part 0: %v", err)
 	}
-	nm0 := c.Nodes[revisedID(c, cur)]
+	nm0 := nodeOf(t, c, revisedID(c, cur))
 	if len(nm0.Content) != 4 || nm0.Content[1].Text != "改写前半段" || nm0.Content[3].Text != "改写后半段" {
 		t.Fatalf("--part 0 内容 = %+v", nm0.Content)
 	}
@@ -113,7 +113,7 @@ func TestSessionEditAssistantPartFidelity(t *testing.T) {
 	if _, err := handleCmd(s, "edit", string(cur), "合并正文"); err != nil {
 		t.Fatalf("edit 缺省: %v", err)
 	}
-	nmD := c.Nodes[revisedID(c, cur)]
+	nmD := nodeOf(t, c, revisedID(c, cur))
 	if len(nmD.Content) != 3 ||
 		nmD.Content[0].Kind != conversation.PartThinking ||
 		nmD.Content[1].Text != "合并正文" ||

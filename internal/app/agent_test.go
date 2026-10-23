@@ -740,14 +740,14 @@ func TestAgentCompactFailureLeavesTreeIntact(t *testing.T) {
 			rec := &recorder{}
 			a := newAgent(t, tc.llm, rec, Deps{}, Config{})
 			c := newConv(t)
-			before := len(c.Nodes)
+			before := c.NodeCount()
 
 			_, _, err := a.Compact(context.Background(), c)
 			if err == nil {
 				t.Fatal("want error")
 			}
-			if len(c.Nodes) != before {
-				t.Fatalf("nodes = %d, want 树无损 %d", len(c.Nodes), before)
+			if c.NodeCount() != before {
+				t.Fatalf("nodes = %d, want 树无损 %d", c.NodeCount(), before)
 			}
 			for _, ev := range rec.events {
 				if _, ok := ev.(port.CommittedEvent); ok {

@@ -42,23 +42,9 @@ func TestRunFullTextConversation(t *testing.T) {
 	}
 
 	// 会话树已落盘且合法。
-	files, err := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json"))
-	if err != nil || len(files) != 1 {
-		t.Fatalf("conversation files = %v, %v", files, err)
-	}
-	data, err := os.ReadFile(files[0])
-	if err != nil {
-		t.Fatalf("read tree: %v", err)
-	}
-	var c conversation.Conversation
-	if err := json.Unmarshal(data, &c); err != nil {
-		t.Fatalf("parse tree: %v", err)
-	}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("落盘会话破坏不变量: %v", err)
-	}
-	if len(c.Nodes) != 4 {
-		t.Fatalf("nodes = %d, want 4（root+persona+user+assistant；/quit 不入树）", len(c.Nodes))
+	c := loadStored(t, dir)
+	if c.NodeCount() != 4 {
+		t.Fatalf("nodes = %d, want 4（root+persona+user+assistant；/quit 不入树）", c.NodeCount())
 	}
 	if c.Title != "你好" {
 		t.Fatalf("title = %q, want 首条消息摘要", c.Title)
@@ -131,18 +117,12 @@ func TestRunFullTextConversation(t *testing.T) {
 	}
 
 	// 恢复后追加到同一棵树：4 节点。
-	data, err = os.ReadFile(files[0])
-	if err != nil {
-		t.Fatalf("read tree: %v", err)
-	}
-	if err := json.Unmarshal(data, &c); err != nil {
-		t.Fatalf("parse tree: %v", err)
-	}
+	c = loadStored(t, dir)
 	if err := c.Validate(); err != nil {
 		t.Fatalf("第二轮后不变量: %v", err)
 	}
-	if len(c.Nodes) != 6 {
-		t.Fatalf("nodes = %d, want 6", len(c.Nodes))
+	if c.NodeCount() != 6 {
+		t.Fatalf("nodes = %d, want 6", c.NodeCount())
 	}
 }
 
@@ -255,22 +235,7 @@ func TestRunRmConfirmE2E(t *testing.T) {
 
 	load := func() *conversation.Conversation {
 		t.Helper()
-		files, err := filepath.Glob(filepath.Join(dir, "profiles", "default", "conversations", "*.json"))
-		if err != nil || len(files) != 1 {
-			t.Fatalf("conversation files = %v, %v", files, err)
-		}
-		data, err := os.ReadFile(files[0])
-		if err != nil {
-			t.Fatalf("read tree: %v", err)
-		}
-		var c conversation.Conversation
-		if err := json.Unmarshal(data, &c); err != nil {
-			t.Fatalf("parse tree: %v", err)
-		}
-		if err := c.Validate(); err != nil {
-			t.Fatalf("落盘会话破坏不变量: %v", err)
-		}
-		return &c
+		return loadStored(t, dir)
 	}
 	runStdin := func(args []string, stdin string) string {
 		t.Helper()
@@ -284,8 +249,8 @@ func TestRunRmConfirmE2E(t *testing.T) {
 	// 建树：两轮对话 → root, persona, u1, a1, u2, a2。
 	runStdin(nil, "hi\nagain\n/quit\n")
 	c := load()
-	if len(c.Nodes) != 6 {
-		t.Fatalf("nodes = %d, want 6", len(c.Nodes))
+	if c.NodeCount() != 6 {
+		t.Fatalf("nodes = %d, want 6", c.NodeCount())
 	}
 	path := c.Path()
 	u1, a1, u2 := path[2].ID, path[3].ID, path[4].ID
@@ -297,8 +262,8 @@ func TestRunRmConfirmE2E(t *testing.T) {
 			t.Fatalf("stdout 缺 %q: %q", want, got)
 		}
 	}
-	if c = load(); len(c.Nodes) != 6 {
-		t.Fatalf("拒绝后 nodes = %d, want 6", len(c.Nodes))
+	if c = load(); c.NodeCount() != 6 {
+		t.Fatalf("拒绝后 nodes = %d, want 6", c.NodeCount())
 	}
 
 	// 同意：剪掉 {u2, a2}，Head 回退到最近存活祖先 a1，落盘合法。
@@ -306,8 +271,8 @@ func TestRunRmConfirmE2E(t *testing.T) {
 	if !strings.Contains(got, "已删除") {
 		t.Fatalf("stdout = %q, want 已删除", got)
 	}
-	if c = load(); len(c.Nodes) != 4 || c.Head != a1 {
-		t.Fatalf("同意后 nodes/head = %d/%s, want 4/%s", len(c.Nodes), c.Head, a1)
+	if c = load(); c.NodeCount() != 4 || c.Head != a1 {
+		t.Fatalf("同意后 nodes/head = %d/%s, want 4/%s", c.NodeCount(), c.Head, a1)
 	}
 
 	// -yes：跳过确认直接删。
@@ -318,8 +283,8 @@ func TestRunRmConfirmE2E(t *testing.T) {
 	if !strings.Contains(got, "已删除") {
 		t.Fatalf("stdout = %q, want 已删除", got)
 	}
-	if c = load(); len(c.Nodes) != 2 {
-		t.Fatalf("-yes 后 nodes = %d, want 2（root+persona）", len(c.Nodes))
+	if c = load(); c.NodeCount() != 2 {
+		t.Fatalf("-yes 后 nodes = %d, want 2（root+persona）", c.NodeCount())
 	}
 	// 只有首轮对话花生成请求（其余均为命令）。
 	if reqs.len() != 2 {

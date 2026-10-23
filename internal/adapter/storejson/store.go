@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -58,7 +59,7 @@ func (s *Store) Save(ctx context.Context, c *conversation.Conversation) error {
 	if err := c.Validate(); err != nil {
 		return fmt.Errorf("storejson: 保存 %s 被拒（不变量校验失败）: %w", c.ID, err)
 	}
-	data, err := json.MarshalIndent(c, "", "  ")
+	data, err := json.MarshalIndent(encode(c), "", "  ")
 	if err != nil {
 		return fmt.Errorf("storejson: 序列化 %s: %w", c.ID, err)
 	}
@@ -148,7 +149,7 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 		out = append(out, port.ConversationSummary{
 			ID:        c.ID,
 			Title:     c.Title,
-			MessageN:  len(c.Nodes) - 1, // 不含 Root 节点
+			MessageN:  c.NodeCount() - 1, // 不含 Root 节点
 			UpdatedAt: c.UpdatedAt,
 		})
 	}
@@ -191,59 +192,102 @@ func (s *Store) path(id conversation.ID) string {
 	return filepath.Join(s.dir, string(id)+".json")
 }
 
-// legacyNode 承接 D95 前磁盘格式的遗留字段：assistant 的 tool_calls 与独立 tool 节点的
-// tool_result。普通反序列化会把未知字段**静默丢弃**——残留 tool 角色节点的文件还能靠
-// Validate 失败暴露，纯 tool_calls 文件则会"看起来正常"地丢数据，因此解码必须走影子
-// 结构显式识别（D95 破坏切换，同 D19 先例：不自动迁移）。
-type legacyNode struct {
+// wireTree 磁盘格式（本适配器自己的 DTO）。领域的三张结构表私有之后，这里必须自己定义
+// 「磁盘上长什么样」：字段名、嵌套形状、兼容策略都归适配器。领域只提供
+// Conversation.Snapshot / conversation.Restore 这一对搬运契约。
+//
+// 与改造前的形状保持一致（仍然有 nodes/children/revised_from 三个键），所以已有文件
+// 与新文件可以互相读取——wire 格式变了才需要迁移，这次只是把定义搬到适配器里。
+type wireTree struct {
+	ID          conversation.ID                                     `json:"id"`
+	Title       string                                              `json:"title"`
+	Head        conversation.MessageID                              `json:"head"`
+	Nodes       map[conversation.MessageID]wireNode                 `json:"nodes"`
+	Children    map[conversation.MessageID][]conversation.MessageID `json:"children"`
+	RevisedFrom map[conversation.MessageID]conversation.MessageID   `json:"revised_from"`
+	CreatedAt   time.Time                                           `json:"created_at"`
+	UpdatedAt   time.Time                                           `json:"updated_at"`
+}
+
+// wireNode 磁盘上的节点：D95 之前的遗留字段在此显式承接（见 legacyTree 的说明）。
+//
+// 普通反序列化会把未知字段**静默丢弃**——残留 tool 角色节点的文件还能靠自检失败暴露，
+// 纯 tool_calls 文件则会「看起来正常」地丢数据。所以影子字段必须在这里有名有姓。
+type wireNode struct {
 	conversation.Message
 	ToolCalls  []tool.Call  `json:"tool_calls,omitempty"`
 	ToolResult *tool.Result `json:"tool_result,omitempty"`
 }
 
-// legacyTree 影子载体：仅 nodes 覆盖为影子节点（JSON 同名键取浅层），其余字段直落内嵌结构。
-type legacyTree struct {
-	conversation.Conversation
-	Nodes map[conversation.MessageID]legacyNode `json:"nodes"`
+// encode 领域快照 → wire 格式。
+func encode(c *conversation.Conversation) wireTree {
+	s := c.Snapshot()
+	w := wireTree{
+		ID:          s.ID,
+		Title:       s.Title,
+		Head:        s.Head,
+		Nodes:       make(map[conversation.MessageID]wireNode, len(s.Nodes)),
+		Children:    make(map[conversation.MessageID][]conversation.MessageID, len(s.Edges)),
+		RevisedFrom: make(map[conversation.MessageID]conversation.MessageID, len(s.RevisedFrom)),
+		CreatedAt:   s.CreatedAt,
+		UpdatedAt:   s.UpdatedAt,
+	}
+	for _, m := range s.Nodes {
+		w.Nodes[m.ID] = wireNode{Message: m}
+	}
+	for _, e := range s.Edges {
+		w.Children[e.Parent] = e.Childs
+	}
+	for _, ed := range s.RevisedFrom {
+		w.RevisedFrom[ed.New] = ed.Old
+	}
+	return w
 }
 
-// decode 反序列化 + 旧格式显式识别（D19/D95）+ ID 一致性检查 + 空 map 归一化 + 不变量自检
-// （加载后自检，DESIGN §4.1）。
+// decode 反序列化 + 旧格式显式识别（D19/D95）+ ID 一致性检查 + 不变量自检。
 func decode(data []byte, id conversation.ID) (*conversation.Conversation, error) {
-	var lt legacyTree
-	if err := json.Unmarshal(data, &lt); err != nil {
+	var w wireTree
+	if err := json.Unmarshal(data, &w); err != nil {
 		return nil, fmt.Errorf("解析 JSON: %w", err)
 	}
-	if lt.Conversation.ID != id {
-		return nil, fmt.Errorf("文件内容属于会话 %q 而非 %q", lt.Conversation.ID, id)
+	if w.ID != id {
+		return nil, fmt.Errorf("文件内容属于会话 %q 而非 %q", w.ID, id)
 	}
 	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
-	root, ok := lt.Nodes[conversation.MessageID(lt.Conversation.ID)]
-	if !ok || root.Role != conversation.RoleRoot || lt.Conversation.Head == "" {
+	root, ok := w.Nodes[conversation.MessageID(w.ID)]
+	if !ok || root.Role != conversation.RoleRoot || w.Head == "" {
 		return nil, fmt.Errorf("%w：缺少会话根节点或已损坏，请删除该文件重建", ErrLegacyFormat)
 	}
 	// D95 破坏性切换：独立 tool 节点 / 遗留 tool_calls·tool_result 字段。
-	for nid, n := range lt.Nodes {
+	for nid, n := range w.Nodes {
 		if n.Message.Role == conversation.Role("tool") || len(n.ToolCalls) > 0 || n.ToolResult != nil {
 			return nil, fmt.Errorf("%w：旧版工具节点格式：%q 及其节点无法加载，请删除或手工处置", ErrLegacyFormat, nid)
 		}
 	}
-	// 影子字段全空，逐节点搬运为领域节点；空 map 归一化：JSON 里的 null 反序列化为 nil map。
-	c := lt.Conversation
-	c.Nodes = make(map[conversation.MessageID]conversation.Message, len(lt.Nodes))
-	for nid, n := range lt.Nodes {
-		c.Nodes[nid] = n.Message
+	s := conversation.Snapshot{
+		ID:          w.ID,
+		Title:       w.Title,
+		Head:        w.Head,
+		Nodes:       make([]conversation.Message, 0, len(w.Nodes)),
+		Edges:       make([]conversation.SnapshotEdge, 0, len(w.Children)),
+		RevisedFrom: make([]conversation.SnapshotEdition, 0, len(w.RevisedFrom)),
+		CreatedAt:   w.CreatedAt,
+		UpdatedAt:   w.UpdatedAt,
 	}
-	if c.Children == nil {
-		c.Children = map[conversation.MessageID][]conversation.MessageID{}
+	for _, n := range w.Nodes {
+		s.Nodes = append(s.Nodes, n.Message)
 	}
-	if c.RevisedFrom == nil {
-		c.RevisedFrom = map[conversation.MessageID]conversation.MessageID{}
+	for parent, kids := range w.Children {
+		s.Edges = append(s.Edges, conversation.SnapshotEdge{Parent: parent, Childs: kids})
 	}
-	if err := c.Validate(); err != nil {
+	for newID, oldID := range w.RevisedFrom {
+		s.RevisedFrom = append(s.RevisedFrom, conversation.SnapshotEdition{New: newID, Old: oldID})
+	}
+	c, err := conversation.Restore(s)
+	if err != nil {
 		return nil, fmt.Errorf("不变量校验失败: %w", err)
 	}
-	return &c, nil
+	return c, nil
 }
 
 // checkCtx 校验 context 可用。

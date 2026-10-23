@@ -59,7 +59,7 @@ func TestSessionSummaryHandwritten(t *testing.T) {
 	if s.Current().Head != assistant.ID {
 		t.Fatalf("head = %s, want 不变 %s", s.Current().Head, assistant.ID)
 	}
-	if _, ok := store.convs[s.Current().ID].Nodes[pad.ID]; !ok {
+	if _, ok := store.convs[s.Current().ID].Find(pad.ID); !ok {
 		t.Fatal("摘要节点应已落盘")
 	}
 	if got := eventNames(rec.events); !contains(got, "clear") {
@@ -101,7 +101,7 @@ func TestSessionSummaryModel(t *testing.T) {
 	if strings.Contains(reqText(req), "模型回复") {
 		t.Fatal("目标节点自身的内容不得进摘要输入（它留在水位之后）")
 	}
-	if _, ok := store.convs[s.Current().ID].Nodes[pad.ID]; !ok {
+	if _, ok := store.convs[s.Current().ID].Find(pad.ID); !ok {
 		t.Fatal("摘要节点应已落盘")
 	}
 }
@@ -117,7 +117,7 @@ func TestSessionSummarySecondRunShortCircuits(t *testing.T) {
 	if _, err := handleCmd(s, "summary", string(assistant.ID)); err != nil {
 		t.Fatalf("summary: %v", err)
 	}
-	before := len(s.Current().Nodes)
+	before := s.Current().NodeCount()
 	reqs := len(llm.requests)
 
 	out, err := handleCmd(s, "summary", string(assistant.ID))
@@ -127,8 +127,8 @@ func TestSessionSummarySecondRunShortCircuits(t *testing.T) {
 	if len(llm.requests) != reqs {
 		t.Fatalf("llm requests = %d, want %d（无可总结内容不得发起生成）", len(llm.requests), reqs)
 	}
-	if len(s.Current().Nodes) != before {
-		t.Fatalf("nodes = %d, want %d", len(s.Current().Nodes), before)
+	if s.Current().NodeCount() != before {
+		t.Fatalf("nodes = %d, want %d", s.Current().NodeCount(), before)
 	}
 }
 
@@ -138,7 +138,7 @@ func TestSessionSummaryRejects(t *testing.T) {
 	store := newMemStore()
 	s, _, _, user, _ := summaryFixture(t, store, textStream("模型回复"))
 	persona := s.Current().Path()[1]
-	before := len(s.Current().Nodes)
+	before := s.Current().NodeCount()
 
 	if _, err := handleCmd(s, "summary"); err == nil || !strings.Contains(err.Error(), "用法") {
 		t.Fatalf("无参数 = %v, want 用法提示", err)
@@ -156,7 +156,7 @@ func TestSessionSummaryRejects(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.substr) {
 			t.Fatalf("%s: err = %v, want 含 %q", tc.name, err, tc.substr)
 		}
-		if len(s.Current().Nodes) != before {
+		if s.Current().NodeCount() != before {
 			t.Fatalf("%s: 失败不得改动会话树", tc.name)
 		}
 	}
@@ -186,7 +186,7 @@ func TestSessionSummaryModelFailureKeepsTree(t *testing.T) {
 	for _, tc := range cases {
 		store := newMemStore()
 		s, _, _, _, assistant := summaryFixture(t, store, append([]*scriptStream{textStream("模型回复")}, tc.streams...)...)
-		before := len(s.Current().Nodes)
+		before := s.Current().NodeCount()
 
 		out, err := handleCmd(s, "summary", string(assistant.ID))
 		if err == nil {
@@ -196,10 +196,10 @@ func TestSessionSummaryModelFailureKeepsTree(t *testing.T) {
 		} else if !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: err = %v, want 含 %q", tc.name, err, tc.want)
 		}
-		if len(s.Current().Nodes) != before {
+		if s.Current().NodeCount() != before {
 			t.Fatalf("%s: 失败不得改动会话树", tc.name)
 		}
-		if len(store.convs[s.Current().ID].Nodes) != before {
+		if store.convs[s.Current().ID].NodeCount() != before {
 			t.Fatalf("%s: 失败不得落盘", tc.name)
 		}
 	}

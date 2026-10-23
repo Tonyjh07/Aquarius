@@ -18,7 +18,7 @@ func TestValidateEveryChangeCatchesBrokenTree(t *testing.T) {
 		t.Fatal("造树失败：根没有孩子")
 	}
 	// 弄坏：把 Children 里的孩子边删掉，但节点仍在 Nodes 里。
-	delete(c.Children, root)
+	delete(c.children, root)
 
 	if err := c.checkInvariants("手动破坏"); err == nil {
 		t.Fatal("树已不合法（孩子边缺失），自检却放行")

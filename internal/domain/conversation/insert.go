@@ -33,7 +33,7 @@ func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Mess
 //     树保持原样（失败不落半截变更）。
 //   - 成功后 Head 不变、RevisedFrom 不变、UpdatedAt 刷新；返回入树存本。
 func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, error) {
-	target, ok := c.Nodes[id]
+	target, ok := c.nodes[id]
 	if !ok {
 		return Message{}, fmt.Errorf("insert before %q: %w", id, ErrNotFound)
 	}
@@ -52,7 +52,7 @@ func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, erro
 	if pad.ID == "" {
 		pad.ID = NewMessageID()
 	}
-	if _, dup := c.Nodes[pad.ID]; dup {
+	if _, dup := c.nodes[pad.ID]; dup {
 		return Message{}, fmt.Errorf("insert before %q: %w: duplicate id %q", id, ErrInvalidNode, pad.ID)
 	}
 	if pad.CreatedAt.IsZero() {
@@ -63,7 +63,7 @@ func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, erro
 	}
 
 	// 占据 T 在 Children[P] 中的原位置（原地改写切片，兄弟顺序保真）。
-	kids := c.Children[parent]
+	kids := c.children[parent]
 	idx := -1
 	for i, k := range kids {
 		if k == id {
@@ -76,12 +76,15 @@ func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, erro
 			id, ErrInvalidNode, parent)
 	}
 	stored := pad.Clone()
-	c.Nodes[stored.ID] = stored
+	c.nodes[stored.ID] = stored
 	kids[idx] = stored.ID
-	c.Children[stored.ID] = []MessageID{id}
-	moved := c.Nodes[id]
+	c.children[stored.ID] = []MessageID{id}
+	moved := c.nodes[id]
 	moved.Parent = stored.ID // 单条边转移：子树随行、零拷贝
-	c.Nodes[id] = moved
+	c.nodes[id] = moved
 	c.UpdatedAt = nowFunc()
-	return c.Nodes[stored.ID], nil
+	if err := c.checkInvariants("insert before"); err != nil {
+		return Message{}, err
+	}
+	return c.nodes[stored.ID], nil
 }

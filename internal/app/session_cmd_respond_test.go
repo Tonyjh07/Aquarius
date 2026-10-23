@@ -37,7 +37,7 @@ func TestSessionRespondLeaf(t *testing.T) {
 		t.Fatalf("首轮: %v", err)
 	}
 	assistant := s.Current().Head
-	kidsBefore := len(s.Current().Children[assistant])
+	kidsBefore := len(s.Current().ChildIDs(assistant))
 	mark := len(rec.events) // 只看 respond 这一轮
 
 	out, err := handleCmd(s, "respond", string(assistant))
@@ -51,12 +51,12 @@ func TestSessionRespondLeaf(t *testing.T) {
 	if c.Head == assistant {
 		t.Fatalf("Head 未前移：%s", c.Head)
 	}
-	born := c.Nodes[c.Head]
+	born := nodeOf(t, c, c.Head)
 	if born.Parent != assistant || born.Role != conversation.RoleAssistant {
 		t.Fatalf("产物 = %+v, want assistant 子节点 of %s", born, assistant)
 	}
-	if len(c.Children[assistant]) != kidsBefore+1 {
-		t.Fatalf("子节点数 = %d, want %d（叶子追加，不分叉）", len(c.Children[assistant]), kidsBefore+1)
+	if len(c.ChildIDs(assistant)) != kidsBefore+1 {
+		t.Fatalf("子节点数 = %d, want %d（叶子追加，不分叉）", len(c.ChildIDs(assistant)), kidsBefore+1)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -103,13 +103,13 @@ func TestSessionRespondSendsWaterlineToTarget(t *testing.T) {
 	}
 
 	c := s.Current()
-	born := c.Nodes[c.Head]
+	born := nodeOf(t, c, c.Head)
 	if born.Parent != user.ID || born.Role != conversation.RoleAssistant {
 		t.Fatalf("产物 = %+v, want assistant 子节点 of %s", born, user.ID)
 	}
 	// 旧回答仍是 user 的孩子（旧分支保留）。
 	found := false
-	for _, k := range c.Children[user.ID] {
+	for _, k := range c.ChildIDs(user.ID) {
 		if k == oldAssistant.ID {
 			found = true
 		}
@@ -126,14 +126,14 @@ func TestSessionRespondSendsWaterlineToTarget(t *testing.T) {
 func TestSessionRespondRejectsRoot(t *testing.T) {
 	s, _, _ := respondFixture(t, textStream("首答"))
 	root := conversation.MessageID(s.Current().ID)
-	before := len(s.Current().Nodes)
+	before := s.Current().NodeCount()
 
 	_, err := handleCmd(s, "respond", string(root))
 	if err == nil || !strings.Contains(err.Error(), "会话根") {
 		t.Fatalf("err = %v, want 拒绝会话根", err)
 	}
-	if len(s.Current().Nodes) != before {
-		t.Fatalf("失败不得改动会话树：节点数 %d → %d", before, len(s.Current().Nodes))
+	if s.Current().NodeCount() != before {
+		t.Fatalf("失败不得改动会话树：节点数 %d → %d", before, s.Current().NodeCount())
 	}
 }
 

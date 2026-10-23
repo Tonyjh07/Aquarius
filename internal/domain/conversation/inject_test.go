@@ -50,7 +50,7 @@ func TestInjectNodeRejectsThinkingAndTool(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
 	u1 := mustAppend(t, c, RoleUser, "u1")
-	before := len(c.Nodes)
+	before := len(c.nodes)
 
 	cases := []struct {
 		name string
@@ -67,7 +67,7 @@ func TestInjectNodeRejectsThinkingAndTool(t *testing.T) {
 		if !errors.Is(err, ErrInvalidNode) {
 			t.Fatalf("%s in inject: err = %v, want ErrInvalidNode", tc.name, err)
 		}
-		if len(c.Nodes) != before {
+		if len(c.nodes) != before {
 			t.Fatalf("%s in inject: 失败不得入树", tc.name)
 		}
 	}
@@ -79,7 +79,7 @@ func TestNonInjectRejectsSourceTrigger(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
 	u1 := mustAppend(t, c, RoleUser, "u1")
-	before := len(c.Nodes)
+	before := len(c.nodes)
 
 	bad := []Message{
 		{ID: NewMessageID(), Parent: u1.ID, Role: RoleUser, Content: textParts("x"), Source: "tool:x", CreatedAt: nowFunc()},
@@ -91,7 +91,7 @@ func TestNonInjectRejectsSourceTrigger(t *testing.T) {
 		if err := c.AppendCommitted(m); !errors.Is(err, ErrInvalidNode) {
 			t.Fatalf("role %s with source/trigger: err = %v, want ErrInvalidNode", m.Role, err)
 		}
-		if len(c.Nodes) != before {
+		if len(c.nodes) != before {
 			t.Fatalf("role %s: 失败不得入树", m.Role)
 		}
 	}

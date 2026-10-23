@@ -245,8 +245,8 @@ func TestMakeTreeSnapshotGraph(t *testing.T) {
 	if !ok {
 		t.Fatal("构造后 Graph 应已发布")
 	}
-	if g.Total != len(c.Nodes) || len(g.Nodes) != len(c.Nodes) {
-		t.Fatalf("Total/Nodes = %d/%d, want %d", g.Total, len(g.Nodes), len(c.Nodes))
+	if g.Total != c.NodeCount() || len(g.Nodes) != c.NodeCount() {
+		t.Fatalf("Total/Nodes = %d/%d, want %d", g.Total, len(g.Nodes), c.NodeCount())
 	}
 	if g.Anchor != c.Head {
 		t.Fatalf("Anchor = %q, want %q（当前 Head）", g.Anchor, c.Head)

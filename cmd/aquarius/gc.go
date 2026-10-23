@@ -21,7 +21,7 @@ func collectBlobRefs(ctx context.Context, store port.ConversationStore) (map[str
 		if err != nil {
 			return nil, fmt.Errorf("加载会话 %s: %w", sm.ID, err)
 		}
-		for _, m := range c.Nodes {
+		for _, m := range c.Snapshot().Nodes {
 			for _, p := range m.Content {
 				if p.Ref != nil {
 					keep[p.Ref.Hash] = true

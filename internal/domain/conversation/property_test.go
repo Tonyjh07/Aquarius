@@ -61,7 +61,7 @@ type propDriver struct {
 // pickNode 从池中挑节点：includeRoot=false 排除 Root（Root 不可 Revise/Prune，D19）。
 func (d *propDriver) pickNode(c *Conversation, includeRoot bool) MessageID {
 	var pool []MessageID
-	for nid, m := range c.Nodes {
+	for nid, m := range c.nodes {
 		if m.Role == RoleRoot && !includeRoot {
 			continue
 		}
@@ -144,7 +144,7 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 		}
 	case 3: // 跨节点复用 CallID（D95 后仅节点内唯一）：必须被接受
 		var callIDs []string
-		for _, m := range c.Nodes {
+		for _, m := range c.nodes {
 			for _, p := range m.Content {
 				if p.Kind == PartTool && p.Tool != nil {
 					callIDs = append(callIDs, p.Tool.CallID)
@@ -323,23 +323,23 @@ func checkInvariants(t *testing.T, c *Conversation, snap map[MessageID]Message, 
 	}
 	if !allowRemoval {
 		for nid := range snap {
-			if _, ok := c.Nodes[nid]; !ok {
+			if _, ok := c.nodes[nid]; !ok {
 				t.Fatalf("node %s disappeared without Prune", nid)
 			}
 		}
 	}
-	for nid, m := range c.Nodes {
+	for nid, m := range c.nodes {
 		if want, ok := snap[nid]; ok && !sameContent(want, m) {
 			t.Fatalf("node %s content mutated in place", nid)
 		}
 	}
-	for nid, m := range c.Nodes {
+	for nid, m := range c.nodes {
 		if _, ok := snap[nid]; !ok {
 			snap[nid] = m.Clone()
 		}
 	}
 	for nid := range snap {
-		if _, ok := c.Nodes[nid]; !ok {
+		if _, ok := c.nodes[nid]; !ok {
 			delete(snap, nid)
 		}
 	}
@@ -405,7 +405,7 @@ func TestPropertyPathChain(t *testing.T) {
 				if self.Role == RoleRoot {
 					sibParent = nid // Root 的分叉 = 顶层消息
 				}
-				for _, sib := range c.Children[sibParent] {
+				for _, sib := range c.children[sibParent] {
 					if sib == nid {
 						continue
 					}
@@ -419,8 +419,8 @@ func TestPropertyPathChain(t *testing.T) {
 }
 
 func nodeIDs(c *Conversation) []MessageID {
-	out := make([]MessageID, 0, len(c.Nodes))
-	for nid := range c.Nodes {
+	out := make([]MessageID, 0, len(c.nodes))
+	for nid := range c.nodes {
 		out = append(out, nid)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
@@ -443,10 +443,10 @@ func TestPropertyCarryEdgeTransfer(t *testing.T) {
 		}
 
 		before := map[MessageID]Message{}
-		for nid, m := range c.Nodes {
+		for nid, m := range c.nodes {
 			before[nid] = m.Clone()
 		}
-		direct := append([]MessageID{}, c.Children[target]...)
+		direct := append([]MessageID{}, c.children[target]...)
 		directSet := map[MessageID]bool{}
 		moved := map[MessageID]bool{}
 		for _, ch := range direct {
@@ -460,11 +460,11 @@ func TestPropertyCarryEdgeTransfer(t *testing.T) {
 		}
 
 		// 零拷贝、身份不变：节点只多出新版本这一个。
-		if len(c.Nodes) != len(before)+1 {
-			t.Fatalf("seed %d: nodes = %d, want %d (subtree copied or lost)", seed, len(c.Nodes), len(before)+1)
+		if len(c.nodes) != len(before)+1 {
+			t.Fatalf("seed %d: nodes = %d, want %d (subtree copied or lost)", seed, len(c.nodes), len(before)+1)
 		}
 		for nid := range moved {
-			got, ok := c.Nodes[nid]
+			got, ok := c.nodes[nid]
 			if !ok {
 				t.Fatalf("seed %d: moved node %s disappeared", seed, nid)
 			}
@@ -480,7 +480,7 @@ func TestPropertyCarryEdgeTransfer(t *testing.T) {
 			}
 		}
 		// 修订目标本身字节级不变（含 Parent）：成为旧版本叶子。
-		if !reflect.DeepEqual(c.Nodes[target], before[target]) {
+		if !reflect.DeepEqual(c.nodes[target], before[target]) {
 			t.Fatalf("seed %d: revised target %s mutated", seed, target)
 		}
 		if err := c.Validate(); err != nil {
@@ -505,7 +505,7 @@ func TestPropertyCloneZeroSharing(t *testing.T) {
 		}
 
 		before := map[MessageID]Message{}
-		for nid, m := range c.Nodes {
+		for nid, m := range c.nodes {
 			before[nid] = m.Clone()
 		}
 		sub := map[MessageID]bool{}
@@ -518,7 +518,7 @@ func TestPropertyCloneZeroSharing(t *testing.T) {
 
 		// 原子树节点一个不少、一个不改（内容 + Parent 边）。
 		for nid, want := range before {
-			got, ok := c.Nodes[nid]
+			got, ok := c.nodes[nid]
 			if !ok {
 				t.Fatalf("seed %d: original node %s disappeared", seed, nid)
 			}
@@ -528,7 +528,7 @@ func TestPropertyCloneZeroSharing(t *testing.T) {
 		}
 		// 新增节点 = 新版本 + 子树拷贝（不含新版本自身恰为子树大小-1）；拷贝 ID 全新。
 		copied := 0
-		for nid := range c.Nodes {
+		for nid := range c.nodes {
 			if _, ok := before[nid]; !ok && nid != m.ID {
 				if _, was := before[nid]; was {
 					t.Fatalf("seed %d: copied node reuses old id %s", seed, nid)
@@ -542,12 +542,12 @@ func TestPropertyCloneZeroSharing(t *testing.T) {
 		// 并行遍历原子树与拷贝子树：结构镜像、内容与 CreatedAt 深相等（sameContent 覆盖）。
 		var walk func(src, dst MessageID)
 		walk = func(src, dst MessageID) {
-			srcKids, dstKids := c.Children[src], c.Children[dst]
+			srcKids, dstKids := c.children[src], c.children[dst]
 			if len(srcKids) != len(dstKids) {
 				t.Fatalf("seed %d: copy fanout mismatch at %s (%d vs %d)", seed, src, len(srcKids), len(dstKids))
 			}
 			for i := range srcKids {
-				if !sameCopy(c.Nodes[srcKids[i]], c.Nodes[dstKids[i]]) {
+				if !sameCopy(c.nodes[srcKids[i]], c.nodes[dstKids[i]]) {
 					t.Fatalf("seed %d: copied node %s content mismatch", seed, srcKids[i])
 				}
 				walk(srcKids[i], dstKids[i])

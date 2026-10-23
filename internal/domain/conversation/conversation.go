@@ -68,15 +68,32 @@ func (k KeepMode) String() string {
 // Conversation 一棵不可变消息树 + 一个 Head 游标。
 //
 // 一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head；单会话内操作串行（Head 唯一）。
+//
+// 树的三份结构（节点表、边表、版本链）一律**私有**：外部只能经方法读（View/Find/
+// ChildIDs/Branches/Tail/NodeCount/SubtreeSize/Edition...）、经方法改（Append/Revise/
+// Prune/Checkout/InsertBefore）。这是聚合根成立的底线——导出 map 等于把「只有方法能改」
+// 的约束作废，任何一处 `c.Nodes[id] = {...}` 都能绕过不变量检查。
+//
+// 持久化走 Snapshot/Restore（snapshot.go）：适配器拿一份只读的整树导出，映射成自己的
+// wire 格式；反过来用 Restore 重建并自检。领域不为「磁盘上长什么样」负责。
+//
+// 因此本类型**不是** wire 格式：它故意没有任何 JSON tag——直接 json.Marshal 它只会得到
+// ID/Title/Head 与两个时间戳（三张结构表是私有的），落盘会静默丢掉整棵树。要存盘请走
+// Snapshot，要读盘请走 Restore。
 type Conversation struct {
-	ID          ID                        `json:"id"`
-	Title       string                    `json:"title"`
-	Nodes       map[MessageID]Message     `json:"nodes"`        // 只增不改（Prune 硬删除外）
-	Children    map[MessageID][]MessageID `json:"children"`     // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root）
-	Head        MessageID                 `json:"head"`         // 初始 = Root ID；无空串特例（D19）
-	RevisedFrom map[MessageID]MessageID   `json:"revised_from"` // 新→旧：版本链（纯结构元数据）
-	CreatedAt   time.Time                 `json:"created_at"`
-	UpdatedAt   time.Time                 `json:"updated_at"`
+	ID    ID
+	Title string
+
+	nodes       map[MessageID]Message     // 只增不改（Prune 硬删除外）
+	children    map[MessageID][]MessageID // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root）
+	revisedFrom map[MessageID]MessageID   // 新→旧：版本链（纯结构元数据）
+
+	// Head 初始 = Root ID；无空串特例（D19）。留作导出字段：它是单个游标而非结构表，
+	// 移动语义仍走 Checkout（写 Head 而不更新 UpdatedAt 才会破坏一致性，那是加载路径的事）。
+	Head MessageID
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // New 创建空会话：Root 空节点（ID = id、Role = root）入树，Children[""] = [Root]，Head 指向 Root。
@@ -91,10 +108,10 @@ func New(id ID, title string) *Conversation {
 	return &Conversation{
 		ID:          id,
 		Title:       title,
-		Nodes:       map[MessageID]Message{root.ID: root},
-		Children:    map[MessageID][]MessageID{"": {root.ID}},
+		nodes:       map[MessageID]Message{root.ID: root},
+		children:    map[MessageID][]MessageID{"": {root.ID}},
 		Head:        root.ID,
-		RevisedFrom: map[MessageID]MessageID{},
+		revisedFrom: map[MessageID]MessageID{},
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -116,7 +133,7 @@ func (c *Conversation) Append(role Role, content []Part) (Message, error) {
 	if err := c.AppendCommitted(m); err != nil {
 		return Message{}, err
 	}
-	return c.Nodes[m.ID], nil
+	return c.nodes[m.ID], nil
 }
 
 // AppendCommitted 提交一个已组装好的不可变节点（system 等；Turn 结束一次性 Commit 的入口）。
@@ -130,18 +147,18 @@ func (c *Conversation) AppendCommitted(m Message) error {
 	if err := checkNodeShape(m); err != nil {
 		return err
 	}
-	if _, exists := c.Nodes[m.ID]; exists {
+	if _, exists := c.nodes[m.ID]; exists {
 		return fmt.Errorf("append %q: %w: duplicate id", m.ID, ErrInvalidNode)
 	}
 	if m.Parent != "" {
-		if _, ok := c.Nodes[m.Parent]; !ok {
+		if _, ok := c.nodes[m.Parent]; !ok {
 			return fmt.Errorf("append %q: %w: parent %q not in tree", m.ID, ErrInvalidNode, m.Parent)
 		}
 	}
 
 	stored := m.Clone()
-	c.Nodes[stored.ID] = stored
-	c.Children[stored.Parent] = append(c.Children[stored.Parent], stored.ID)
+	c.nodes[stored.ID] = stored
+	c.children[stored.Parent] = append(c.children[stored.Parent], stored.ID)
 	c.Head = stored.ID
 	c.UpdatedAt = nowFunc()
 	if err := c.checkInvariants("append"); err != nil {
@@ -163,7 +180,7 @@ func (c *Conversation) AppendCommitted(m Message) error {
 //   - Clone：id 的子树深拷贝到新节点下（全新 ID，原子树不动）；旧 Head 若在原子树内
 //     则平移到拷贝对应节点，否则移到新节点。
 func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) {
-	old, ok := c.Nodes[id]
+	old, ok := c.nodes[id]
 	if !ok {
 		return Message{}, fmt.Errorf("revise %q: %w", id, ErrNotFound)
 	}
@@ -192,19 +209,19 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	if err := c.AppendCommitted(m); err != nil {
 		return Message{}, err
 	}
-	c.RevisedFrom[m.ID] = id
+	c.revisedFrom[m.ID] = id
 
 	// Head 判定必须在子树处置（转移/拷贝）之前：转移会改写链路，之后旧 Head 就不再可达 id。
 	headInSubtree := c.isStrictDescendant(id, prevHead)
 	switch mode {
 	case Carry:
-		if moved := c.Children[id]; len(moved) > 0 {
-			c.Children[m.ID] = moved // 边转移：整批边零拷贝改挂
-			delete(c.Children, id)
+		if moved := c.children[id]; len(moved) > 0 {
+			c.children[m.ID] = moved // 边转移：整批边零拷贝改挂
+			delete(c.children, id)
 			for _, ch := range moved { // 仅直接孩子的 Parent 边指针改写（D16）
-				cm := c.Nodes[ch]
+				cm := c.nodes[ch]
 				cm.Parent = m.ID
-				c.Nodes[ch] = cm
+				c.nodes[ch] = cm
 			}
 		}
 		if headInSubtree {
@@ -213,7 +230,7 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 			if err := c.checkInvariants("revise carry"); err != nil {
 				return Message{}, err
 			}
-			return c.Nodes[m.ID], nil
+			return c.nodes[m.ID], nil
 		}
 	case Clone:
 		mapping := c.cloneSubtree(id, m.ID) // 深拷贝子树：全新 ID、原子树字节级不动（D96）
@@ -224,7 +241,7 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 				if err := c.checkInvariants("revise clone"); err != nil {
 					return Message{}, err
 				}
-				return c.Nodes[m.ID], nil
+				return c.nodes[m.ID], nil
 			}
 		}
 	}
@@ -233,7 +250,7 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	if err := c.checkInvariants("revise"); err != nil {
 		return Message{}, err
 	}
-	return c.Nodes[m.ID], nil
+	return c.nodes[m.ID], nil
 }
 
 // cloneSubtree 把 id 的整棵子树深拷贝到 parent 之下（不含 id 自身——新节点即其"新版本"）：
@@ -243,17 +260,17 @@ func (c *Conversation) cloneSubtree(id, parent MessageID) map[MessageID]MessageI
 	mapping := map[MessageID]MessageID{}
 	var walk func(src, dstParent MessageID)
 	walk = func(src, dstParent MessageID) {
-		cm := c.Nodes[src].Clone()
+		cm := c.nodes[src].Clone()
 		cm.ID = NewMessageID()
 		cm.Parent = dstParent
-		c.Nodes[cm.ID] = cm
-		c.Children[dstParent] = append(c.Children[dstParent], cm.ID)
+		c.nodes[cm.ID] = cm
+		c.children[dstParent] = append(c.children[dstParent], cm.ID)
 		mapping[src] = cm.ID
-		for _, ch := range c.Children[src] {
+		for _, ch := range c.children[src] {
 			walk(ch, cm.ID)
 		}
 	}
-	for _, ch := range c.Children[id] {
+	for _, ch := range c.children[id] {
 		walk(ch, parent)
 	}
 	return mapping
@@ -264,7 +281,7 @@ func (c *Conversation) cloneSubtree(id, parent MessageID) map[MessageID]MessageI
 // Head 落在被移除子树内时，回退到最近存活祖先（Root 不可删，链必止于 Root）。
 // D95 后无跨节点引用，不存在失联节点——剪除范围即子树本身。
 func (c *Conversation) Prune(id MessageID) error {
-	m, ok := c.Nodes[id]
+	m, ok := c.nodes[id]
 	if !ok {
 		return fmt.Errorf("prune %q: %w", id, ErrNotFound)
 	}
@@ -275,24 +292,24 @@ func (c *Conversation) Prune(id MessageID) error {
 	c.collectSubtree(id, sub)
 
 	if sub[c.Head] {
-		cur := c.Nodes[c.Head].Parent
+		cur := c.nodes[c.Head].Parent
 		for sub[cur] {
-			cur = c.Nodes[cur].Parent
+			cur = c.nodes[cur].Parent
 		}
 		c.Head = cur
 	}
 
 	for nid := range sub {
-		delete(c.Nodes, nid)
-		delete(c.Children, nid)
-		delete(c.RevisedFrom, nid)
+		delete(c.nodes, nid)
+		delete(c.children, nid)
+		delete(c.revisedFrom, nid)
 	}
-	for newID, oldID := range c.RevisedFrom {
+	for newID, oldID := range c.revisedFrom {
 		if sub[oldID] {
-			delete(c.RevisedFrom, newID)
+			delete(c.revisedFrom, newID)
 		}
 	}
-	for pid, kids := range c.Children {
+	for pid, kids := range c.children {
 		kept := kids[:0]
 		for _, k := range kids {
 			if !sub[k] {
@@ -300,9 +317,9 @@ func (c *Conversation) Prune(id MessageID) error {
 			}
 		}
 		if len(kept) == 0 {
-			delete(c.Children, pid)
+			delete(c.children, pid)
 		} else {
-			c.Children[pid] = kept
+			c.children[pid] = kept
 		}
 	}
 	c.UpdatedAt = nowFunc()
@@ -315,7 +332,7 @@ func (c *Conversation) Prune(id MessageID) error {
 // Checkout 将 Head 移到任意节点（分支导航；含 Root = 回根）。
 // 无空串特例（D19）：id 不在树中（含 ""）一律 ErrNotFound。
 func (c *Conversation) Checkout(id MessageID) error {
-	if _, ok := c.Nodes[id]; !ok {
+	if _, ok := c.nodes[id]; !ok {
 		return fmt.Errorf("checkout %q: %w", id, ErrNotFound)
 	}
 	c.Head = id
@@ -328,19 +345,19 @@ func (c *Conversation) Checkout(id MessageID) error {
 // 切换消息版本应恢复该版本的对话全程——Head 停在消息节点上时其回答不在 Head 路径上。
 // id 不在树中 → ok=false。
 func (c *Conversation) Tail(id MessageID) (MessageID, bool) {
-	if _, ok := c.Nodes[id]; !ok {
+	if _, ok := c.nodes[id]; !ok {
 		return "", false
 	}
-	if len(c.Children[id]) == 0 {
+	if len(c.children[id]) == 0 {
 		return id, true
 	}
 	var best MessageID
 	var bestAt time.Time
 	var walk func(MessageID)
 	walk = func(x MessageID) {
-		kids := c.Children[x]
+		kids := c.children[x]
 		if len(kids) == 0 {
-			n := c.Nodes[x]
+			n := c.nodes[x]
 			if best == "" || n.CreatedAt.After(bestAt) || (n.CreatedAt.Equal(bestAt) && n.ID > best) {
 				best, bestAt = x, n.CreatedAt
 			}
@@ -358,7 +375,7 @@ func (c *Conversation) Tail(id MessageID) (MessageID, bool) {
 func (c *Conversation) Path() []Message {
 	var rev []Message
 	for cur := c.Head; cur != ""; {
-		m, ok := c.Nodes[cur]
+		m, ok := c.nodes[cur]
 		if !ok {
 			break
 		}
@@ -375,7 +392,7 @@ func (c *Conversation) Path() []Message {
 // Branches 返回 id 的同级分叉（同一父节点下的其他孩子，不含 id 自身），按创建时间升序；
 // 供 UI 做新旧版本对比。Root 的分叉 = 其孩子（顶层消息）；id 不在树中返回 nil。
 func (c *Conversation) Branches(id MessageID) []Message {
-	m, ok := c.Nodes[id]
+	m, ok := c.nodes[id]
 	if !ok {
 		return nil
 	}
@@ -384,11 +401,11 @@ func (c *Conversation) Branches(id MessageID) []Message {
 		parent = id // Root 的"同级"取其孩子：顶层消息（D15 语义）
 	}
 	var out []Message
-	for _, nid := range c.Children[parent] {
+	for _, nid := range c.children[parent] {
 		if nid == id {
 			continue
 		}
-		if m, ok := c.Nodes[nid]; ok {
+		if m, ok := c.nodes[nid]; ok {
 			out = append(out, m)
 		}
 	}
@@ -403,7 +420,7 @@ func (c *Conversation) Branches(id MessageID) []Message {
 
 // Find 查找节点。
 func (c *Conversation) Find(id MessageID) (Message, bool) {
-	m, ok := c.Nodes[id]
+	m, ok := c.nodes[id]
 	return m, ok
 }
 
@@ -413,7 +430,7 @@ func (c *Conversation) collectSubtree(id MessageID, out map[MessageID]bool) {
 		return
 	}
 	out[id] = true
-	for _, ch := range c.Children[id] {
+	for _, ch := range c.children[id] {
 		c.collectSubtree(ch, out)
 	}
 }
@@ -421,7 +438,7 @@ func (c *Conversation) collectSubtree(id MessageID, out map[MessageID]bool) {
 // isStrictDescendant 判断 node 是否为 id 的严格后代（至少隔一代）。
 func (c *Conversation) isStrictDescendant(id, node MessageID) bool {
 	for cur := node; cur != ""; {
-		m, ok := c.Nodes[cur]
+		m, ok := c.nodes[cur]
 		if !ok {
 			return false
 		}

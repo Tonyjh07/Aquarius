@@ -24,7 +24,7 @@ func injectableSession(t *testing.T, store port.ConversationStore, streams ...*s
 // 坏包不占队列、不落树。
 func TestInjectRejectsBadParts(t *testing.T) {
 	s, _, _ := injectableSession(t, newMemStore())
-	before := len(s.Current().Nodes)
+	before := s.Current().NodeCount()
 
 	cases := []struct {
 		name string
@@ -39,7 +39,7 @@ func TestInjectRejectsBadParts(t *testing.T) {
 			t.Fatalf("%s：坏包应被拒", tc.name)
 		}
 	}
-	if len(s.Current().Nodes) != before {
+	if s.Current().NodeCount() != before {
 		t.Fatal("坏包不得改树")
 	}
 	if len(s.injectCh) != 0 {
@@ -159,7 +159,7 @@ func TestInjectCommandTriggersTurn(t *testing.T) {
 	if !containsSeq(names, "clear", "notice", "history") {
 		t.Fatalf("应清屏回放: %v", names)
 	}
-	if saved := store.convs[s.Current().ID]; saved == nil || len(saved.Nodes) != 6 {
+	if saved := store.convs[s.Current().ID]; saved == nil || saved.NodeCount() != 6 {
 		t.Fatalf("落盘 = %+v", saved)
 	}
 }

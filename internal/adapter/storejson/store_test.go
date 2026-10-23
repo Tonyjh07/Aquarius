@@ -49,19 +49,19 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	if got.ID != src.ID || got.Title != src.Title || got.Head != src.Head {
 		t.Fatalf("meta mismatch: got %+v want %+v", got, src)
 	}
-	if len(got.Nodes) != len(src.Nodes) {
-		t.Fatalf("nodes = %d, want %d", len(got.Nodes), len(src.Nodes))
+	if got.NodeCount() != src.NodeCount() {
+		t.Fatalf("nodes = %d, want %d", got.NodeCount(), src.NodeCount())
 	}
-	for id, want := range src.Nodes {
-		gnode, ok := got.Find(id)
+	for _, want := range src.Snapshot().Nodes {
+		gnode, ok := got.Find(want.ID)
 		if !ok {
-			t.Fatalf("node %s missing", id)
+			t.Fatalf("node %s missing", want.ID)
 		}
 		if gnode.Role != want.Role || len(gnode.Content) != len(want.Content) {
-			t.Fatalf("node %s mismatch: got %+v want %+v", id, gnode, want)
+			t.Fatalf("node %s mismatch: got %+v want %+v", want.ID, gnode, want)
 		}
 		if len(want.Content) > 0 && gnode.Content[0].Text != want.Content[0].Text {
-			t.Fatalf("node %s text = %q, want %q", id, gnode.Content[0].Text, want.Content[0].Text)
+			t.Fatalf("node %s text = %q, want %q", want.ID, gnode.Content[0].Text, want.Content[0].Text)
 		}
 	}
 	// 首次保存不应产生 .bak（无旧文件可留）。
@@ -162,23 +162,23 @@ func TestSaveKeepsOneGenerationBak(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read .bak: %v", err)
 	}
-	var bak conversation.Conversation
-	if err := json.Unmarshal(bakData, &bak); err != nil {
+	bak, err := decode(bakData, conversation.ID("conv-1"))
+	if err != nil {
 		t.Fatalf("parse .bak: %v", err)
 	}
 	if bak.Title != "测试会话" {
 		t.Fatalf(".bak title = %q, want 上一代标题", bak.Title)
 	}
-	if len(bak.Nodes) != 3 {
-		t.Fatalf(".bak nodes = %d, want 3（上一代：root+u+a）", len(bak.Nodes))
+	if bak.NodeCount() != 3 {
+		t.Fatalf(".bak nodes = %d, want 3（上一代：root+u+a）", bak.NodeCount())
 	}
 
 	cur, err := s.Load(ctx, c.ID)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cur.Nodes) != 4 || cur.Title != "改过标题" {
-		t.Fatalf("current = %d nodes title %q, want 4 nodes 改过标题", len(cur.Nodes), cur.Title)
+	if cur.NodeCount() != 4 || cur.Title != "改过标题" {
+		t.Fatalf("current = %d nodes title %q, want 4 nodes 改过标题", cur.NodeCount(), cur.Title)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestLoadFallsBackToBakWhenMainCorrupt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load should fall back to .bak: %v", err)
 	}
-	if len(got.Nodes) != 3 {
-		t.Fatalf("fallback nodes = %d, want 3（.bak 一代：root+u+a）", len(got.Nodes))
+	if got.NodeCount() != 3 {
+		t.Fatalf("fallback nodes = %d, want 3（.bak 一代：root+u+a）", got.NodeCount())
 	}
 }
 
