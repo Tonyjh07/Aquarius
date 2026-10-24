@@ -264,41 +264,39 @@ func (w *wiring) buildPresenter() {
 	}
 }
 
-// assembleAudio 装配语音端口（D179）：录音/播放恒在（未配置时执行报因），识别与
-// 合成按 audio.* 引用的 provider 现建。引用的 provider 不存在只让该能力不可用——
-// 启动时已提示，不阻断对话。
+// assembleAudio 装配语音端口（D179/D222）：录音/播放恒在（未配置时执行报因），识别与
+// 合成按 audio.* 的端点与密钥现建——可以独立填，也可以借 model.providers 里的条目。
+// 配错（借的条目不存在、密钥取不到）只让该能力不可用——启动时已提示，不阻断对话。
 func (w *wiring) assembleAudio(ctx context.Context) {
 	w.recorder = micwin.New()
 	w.player = audioplay.New()
 
-	if p, why := w.cfg.audioProvider("asr"); p != nil {
-		key, err := p.resolveKeyAt(ctx, 0, w.secrets, w.stderr)
-		if err != nil {
+	if w.cfg.Audio.ASR.configured() {
+		if ep, why := w.cfg.audioProvider("asr"); why != "" {
+			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s\n", why)
+		} else if key, err := resolveAPIKey(ctx, "语音识别", ep.KeyRef, w.secrets, w.stderr); err != nil {
 			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%v\n", err)
 		} else if c, err := asrchat.New(asrchat.Config{
-			BaseURL: p.BaseURL, APIKey: key, Model: w.cfg.Audio.ASR.Model, Blobs: w.blobs,
+			BaseURL: ep.BaseURL, APIKey: key, Model: w.cfg.Audio.ASR.Model, Blobs: w.blobs,
 		}); err != nil {
 			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%v\n", err)
 		} else {
 			w.asr = c
 		}
-	} else if w.cfg.Audio.ASR.Provider != "" {
-		fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s\n", why)
 	}
 
-	if p, why := w.cfg.audioProvider("tts"); p != nil {
-		key, err := p.resolveKeyAt(ctx, 0, w.secrets, w.stderr)
-		if err != nil {
+	if w.cfg.Audio.TTS.configured() {
+		if ep, why := w.cfg.audioProvider("tts"); why != "" {
+			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%s\n", why)
+		} else if key, err := resolveAPIKey(ctx, "语音合成", ep.KeyRef, w.secrets, w.stderr); err != nil {
 			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%v\n", err)
 		} else if c, err := mimotts.New(mimotts.Config{
-			BaseURL: p.BaseURL, APIKey: key, Model: w.cfg.Audio.TTS.Model, Blobs: w.blobs,
+			BaseURL: ep.BaseURL, APIKey: key, Model: w.cfg.Audio.TTS.Model, Blobs: w.blobs,
 		}); err != nil {
 			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%v\n", err)
 		} else {
 			w.ttsSynth = c
 		}
-	} else if w.cfg.Audio.TTS.Provider != "" {
-		fmt.Fprintf(w.stderr, "警告：语音合成不可用：%s\n", why)
 	}
 
 	// 语音键与 /mic 共用同一摄取器：录 → 附件库 → 转写。

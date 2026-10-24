@@ -57,9 +57,9 @@ func TestNormalizeAudioTrimsAndFillsKind(t *testing.T) {
 	if cfg.Audio.TTS.Voice != "冰糖" || cfg.Audio.TTS.Style != "语速稍快" {
 		t.Fatalf("TTS 归一 = %+v", cfg.Audio.TTS)
 	}
-	p, why := cfg.audioProvider("tts")
-	if p == nil || why != "" {
-		t.Fatalf("TTS 应解析到 provider，得到 %v / %q", p, why)
+	ep, why := cfg.audioProvider("tts")
+	if why != "" || ep.BaseURL == "" || ep.Borrowed != "mimo" {
+		t.Fatalf("TTS 应解析到借来的端点，得到 %+v / %q", ep, why)
 	}
 }
 
@@ -104,7 +104,87 @@ func TestAudioProviderUnknownName(t *testing.T) {
 	if err := cfg.normalizeAudio(); err != nil {
 		t.Fatalf("名字写错不应阻断启动: %v", err)
 	}
-	if p, why := cfg.audioProvider("asr"); p != nil || why == "" || !strings.Contains(why, "nope") {
-		t.Fatalf("应明确报告 provider 不存在，得到 %v / %q", p, why)
+	if _, why := cfg.audioProvider("asr"); why == "" || !strings.Contains(why, "nope") {
+		t.Fatalf("应明确报告 provider 不存在，得到 %q", why)
+	}
+}
+
+// TestAudioEndpointIndependent 独立端点与密钥（D222）：不引用任何 provider 也能用；
+// 只填端点时密钥按能力回落 secret:AQUARIUS_<ASR|TTS>_API_KEY。
+func TestAudioEndpointIndependent(t *testing.T) {
+	cfg := audioTestConfig(
+		audioChannel{BaseURL: "https://asr.example.com/v1", APIKey: "secret:MY_ASR", Model: "m1"},
+		audioChannel{BaseURL: "https://tts.example.com/v1", Model: "m2"},
+	)
+	if err := cfg.Model.normalize(); err != nil {
+		t.Fatalf("model.normalize: %v", err)
+	}
+	if err := cfg.normalizeAudio(); err != nil {
+		t.Fatalf("独立配置应通过校验: %v", err)
+	}
+	asr, why := cfg.audioProvider("asr")
+	if why != "" || asr.BaseURL != "https://asr.example.com/v1" || asr.KeyRef != "secret:MY_ASR" {
+		t.Fatalf("ASR = %+v / %q", asr, why)
+	}
+	tts, why := cfg.audioProvider("tts")
+	if why != "" || tts.BaseURL != "https://tts.example.com/v1" {
+		t.Fatalf("TTS = %+v / %q", tts, why)
+	}
+	if tts.KeyRef != "secret:AQUARIUS_TTS_API_KEY" {
+		t.Fatalf("只填端点时密钥应回落按能力派生的引用，得 %q", tts.KeyRef)
+	}
+	if asr.Borrowed != "" || tts.Borrowed != "" {
+		t.Fatalf("独立配置不该记为借用: %q / %q", asr.Borrowed, tts.Borrowed)
+	}
+}
+
+// TestAudioEndpointOverridesBorrow 显式字段只覆盖缺的那一项：填了端点仍借密钥，
+// 填了密钥仍借端点（D222）。
+func TestAudioEndpointOverridesBorrow(t *testing.T) {
+	cfg := audioTestConfig(
+		audioChannel{Provider: "mimo", BaseURL: "https://mirror.example.com/v1", Model: "m1"},
+		audioChannel{Provider: "mimo", APIKey: "secret:MY_TTS", Model: "m2"},
+	)
+	if err := cfg.Model.normalize(); err != nil {
+		t.Fatalf("model.normalize: %v", err)
+	}
+	if err := cfg.normalizeAudio(); err != nil {
+		t.Fatalf("normalizeAudio: %v", err)
+	}
+	asr, _ := cfg.audioProvider("asr")
+	if asr.BaseURL != "https://mirror.example.com/v1" {
+		t.Fatalf("自己的端点应生效，得 %q", asr.BaseURL)
+	}
+	if asr.KeyRef != "k" { // 借用 mimo 的第一把（引用原文，可能是明文）
+		t.Fatalf("没填密钥时应借 mimo 的，得 %q", asr.KeyRef)
+	}
+	tts, _ := cfg.audioProvider("tts")
+	if tts.BaseURL != "https://api.example.com/v1" {
+		t.Fatalf("没填端点时应借 mimo 的，得 %q", tts.BaseURL)
+	}
+	if tts.KeyRef != "secret:MY_TTS" {
+		t.Fatalf("自己的密钥应生效，得 %q", tts.KeyRef)
+	}
+}
+
+// TestAudioEndpointBorrowMissingNeedsOwnURL 借的条目不存在时：只填了密钥还不够（端点
+// 无从定位），必须自己填端点。
+func TestAudioEndpointBorrowMissingNeedsOwnURL(t *testing.T) {
+	cfg := audioTestConfig(audioChannel{Provider: "gone", APIKey: "secret:K", Model: "m"}, audioChannel{})
+	if err := cfg.Model.normalize(); err != nil {
+		t.Fatalf("model.normalize: %v", err)
+	}
+	if _, why := cfg.audioProvider("asr"); why == "" || !strings.Contains(why, "端点") {
+		t.Fatalf("端点无着落应明确报因，得到 %q", why)
+	}
+
+	cfg = audioTestConfig(audioChannel{
+		Provider: "gone", BaseURL: "https://asr.example.com/v1", Model: "m",
+	}, audioChannel{})
+	if err := cfg.Model.normalize(); err != nil {
+		t.Fatalf("model.normalize: %v", err)
+	}
+	if ep, why := cfg.audioProvider("asr"); why != "" || ep.BaseURL == "" {
+		t.Fatalf("自己填了端点就该可用，得到 %+v / %q", ep, why)
 	}
 }

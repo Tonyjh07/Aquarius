@@ -115,18 +115,27 @@ type inputConfig struct {
 	Language string `json:"language,omitempty"`
 }
 
-// audioConfig 语音配置（D179）：识别与合成各自引用一个 provider——只借它的
-// base_url 与密钥池，不继承 kind、能力位，也不进降级链。
+// audioConfig 语音配置（D179/D222）：识别与合成各自是一条**完整**的服务配置，
+// 端点与密钥可以自己填，也可以借 model.providers 里的一条（不继承 kind、能力位，
+// 也不进降级链）。
 type audioConfig struct {
 	ASR audioChannel `json:"asr"`
 	TTS audioChannel `json:"tts"`
 }
 
-// audioChannel 一路语音能力的引用与参数。
-// 未配置（provider 为空）= 该能力不可用；上层据此隐藏入口并报因，而不是启动失败。
+// audioChannel 一路语音能力的端点、密钥与参数。
+//
+// 三种形态（D222）：
+//   - 什么都不填 = 该能力不可用；上层据此隐藏入口并报因，而不是启动失败；
+//   - 只填 provider = 借它的端点与密钥（老配置的形状，行为不变）；
+//   - 填了 base_url / api_key = 独立配置，填了的那项覆盖借来的。
 type audioChannel struct {
 	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
+	// BaseURL 独立端点（如 https://api.example.com/v1）；空 = 借用 provider 的。
+	BaseURL string `json:"base_url,omitempty"`
+	// APIKey 独立密钥（`secret:名` 或明文）；空 = 借用 provider 的第一把。
+	APIKey string `json:"api_key,omitempty"`
+	Model  string `json:"model,omitempty"`
 	// Kind 协议位：chat-audio（空 = 该档，chat/completions 携带音频）。
 	Kind string `json:"kind,omitempty"`
 	// Voice 预置音色名 / 音色设计描述之外的模式：`-voiceclone` 时是样本文件绝对路径。
@@ -181,11 +190,13 @@ type webFetchConfig struct {
 type webProvider struct {
 	// Kind 提供商类型：搜索侧 deepseek | brave，抓取侧 deepseek | local。
 	Kind string `json:"kind"`
-	// From 复用某个 model.providers 的 base_url 与密钥池（deepseek 缺省 = "deepseek"）。
+	// From 借哪个 model.providers 条目（缺省 = 同 kind 名）。只补本条目没填的端点与
+	// 密钥；两项都自己填了就不必写它。老配置只写 kind 照样能用。
 	From string `json:"from,omitempty"`
-	// Key 直接给密钥引用（secret:名 或明文）；brave 必填。
+	// Key 自己的密钥引用（secret:名 或明文）；空 = 借 From 那一条的第一把，
+	// 连 From 也没有则按侧回落（deepseek 走 _SEARCH_/_FETCH_，brave 走 _BRAVE_）。
 	Key string `json:"key,omitempty"`
-	// BaseURL 覆盖端点前缀（自建网关/镜像）。
+	// BaseURL 自己的端点前缀（自建网关/镜像）；空 = 借 From 那一条的。
 	BaseURL string `json:"base_url,omitempty"`
 	// Count 这一家的缺省条数（覆盖 web.search.count）。
 	Count int `json:"count,omitempty"`
@@ -202,15 +213,14 @@ const (
 )
 
 // normalizeWeb 校验联网配置（启动期一次）：只拦「写错了」的声明——未知 kind、
-// 抓取侧写了只做搜索的 kind、deepseek 引用了不存在的 provider。
+// 抓取侧写了只做搜索的 kind、借用的条目不存在且端点也没自己填。
 // 密钥缺失不在这里报错（装配根警告并跳过该家，其余提供商继续可用）。
 func (c *fileConfig) normalizeWeb() error {
 	for i, p := range c.Web.Search.Providers {
 		switch p.Kind {
 		case webKindDeepSeek:
-			if c.Model.byName(webProviderFrom(p)) == nil {
-				return fmt.Errorf("web.search.providers[%d].from=%q 不在 model.providers 内"+
-					"（deepseek 搜索借它的 base_url 与密钥池）", i, webProviderFrom(p))
+			if err := c.checkWebEndpoint(p); err != nil {
+				return fmt.Errorf("web.search.providers[%d]: %w", i, err)
 			}
 		case webKindBrave:
 			// 只借 key（或 base_url），不引用对话 provider。
@@ -222,9 +232,8 @@ func (c *fileConfig) normalizeWeb() error {
 	for i, p := range c.Web.Fetch.Providers {
 		switch p.Kind {
 		case webKindDeepSeek:
-			if c.Model.byName(webProviderFrom(p)) == nil {
-				return fmt.Errorf("web.fetch.providers[%d].from=%q 不在 model.providers 内"+
-					"（deepseek 抓取借它的 base_url 与密钥池）", i, webProviderFrom(p))
+			if err := c.checkWebEndpoint(p); err != nil {
+				return fmt.Errorf("web.fetch.providers[%d]: %w", i, err)
 			}
 		case webKindLocal:
 		default:
@@ -237,6 +246,19 @@ func (c *fileConfig) normalizeWeb() error {
 	}
 	if n := c.Web.Fetch.MaxChars; n < 0 || n > 20000 {
 		return fmt.Errorf("web.fetch.max_chars=%d 超出范围（500-20000；0 = 缺省 16000）", n)
+	}
+	return nil
+}
+
+// checkWebEndpoint deepseek 联网条目要能定位到端点：自己填了 base_url，或借的条目在。
+func (c *fileConfig) checkWebEndpoint(p webProvider) error {
+	from := webProviderFrom(p)
+	if strings.TrimSpace(p.BaseURL) != "" {
+		return nil // 端点自己填了：借不到密钥只让这家不可用，不阻断启动
+	}
+	if c.Model.byName(from) == nil {
+		return fmt.Errorf("from=%q 不在 model.providers 内"+
+			"（填 base_url 独立配置，或引用一个已有的条目）", from)
 	}
 	return nil
 }
@@ -882,13 +904,15 @@ func (c *fileConfig) normalizeAudio() error {
 	}
 	for name, ch := range map[string]*audioChannel{"audio.asr": &c.Audio.ASR, "audio.tts": &c.Audio.TTS} {
 		ch.Provider = strings.TrimSpace(ch.Provider)
+		ch.BaseURL = strings.TrimSpace(ch.BaseURL)
+		ch.APIKey = strings.TrimSpace(ch.APIKey)
 		ch.Model = strings.TrimSpace(ch.Model)
 		ch.Kind = strings.TrimSpace(ch.Kind)
 		ch.Voice = strings.TrimSpace(ch.Voice)
 		ch.Design = strings.TrimSpace(ch.Design)
 		ch.Style = strings.TrimSpace(ch.Style)
 		ch.Tags = strings.TrimSpace(ch.Tags)
-		if ch.Provider == "" {
+		if ch.Provider == "" && ch.BaseURL == "" && ch.APIKey == "" {
 			continue // 未配置 = 该能力不可用
 		}
 		if ch.Kind == "" {
@@ -898,15 +922,15 @@ func (c *fileConfig) normalizeAudio() error {
 			return fmt.Errorf("%s.kind=%q 不认识（当前支持 %s）", name, ch.Kind, kindChatAudio)
 		}
 		if ch.Model == "" {
-			return fmt.Errorf("%s.model 不可为空（配置了 provider 就要写明音频模型名）", name)
+			return fmt.Errorf("%s.model 不可为空（配置了服务就要写明音频模型名）", name)
 		}
 	}
 	return nil
 }
 
-// audioProvider 解析一路语音能力引用的 provider（D179）。
-// 返回 (nil, 原因) = 该能力不可用；原因面向用户，可直接展示。
-func (c *fileConfig) audioProvider(which string) (*providerConfig, string) {
+// audioProvider 解析一路语音能力的端点与密钥引用（D179/D222）。
+// 返回 (零值, 原因) = 该能力不可用；原因面向用户，可直接展示。
+func (c *fileConfig) audioProvider(which string) (serviceEndpoint, string) {
 	var ch *audioChannel
 	switch which {
 	case "asr":
@@ -914,16 +938,73 @@ func (c *fileConfig) audioProvider(which string) (*providerConfig, string) {
 	case "tts":
 		ch = &c.Audio.TTS
 	default:
-		return nil, fmt.Sprintf("未知的语音能力 %q", which)
+		return serviceEndpoint{}, fmt.Sprintf("未知的语音能力 %q", which)
 	}
-	if ch.Provider == "" {
-		return nil, "未配置语音服务"
+	if !ch.configured() {
+		return serviceEndpoint{}, "未配置语音服务"
 	}
-	p := c.Model.byName(ch.Provider)
-	if p == nil {
-		return nil, fmt.Sprintf("语音服务引用的 provider %q 不在 model.providers 内", ch.Provider)
+	ep, err := c.resolveEndpoint(ch.BaseURL, ch.APIKey, ch.Provider, deriveKeyName(which))
+	if err != nil {
+		return serviceEndpoint{}, err.Error()
 	}
-	return p, ""
+	return ep, ""
+}
+
+// configured 这一路语音是否配置过（三种形态任一成立）。
+func (ch *audioChannel) configured() bool {
+	return strings.TrimSpace(ch.Provider) != "" ||
+		strings.TrimSpace(ch.BaseURL) != "" ||
+		strings.TrimSpace(ch.APIKey) != ""
+}
+
+// serviceEndpoint 一路外部服务「怎么连」：端点 + 密钥引用（D222）。
+type serviceEndpoint struct {
+	// BaseURL 端点前缀（已 TrimSpace；空 = 没配，由调用方报因）。
+	BaseURL string
+	// KeyRef `secret:名` 或明文（空 = 调用方回落缺省引用）。
+	KeyRef string
+	// Borrowed 借用的 model.providers 条目名（空 = 没借）。只用于报因与键名。
+	Borrowed string
+}
+
+// resolveEndpoint 解析一路外部服务的端点与密钥（D222）：
+//
+//	显式字段 → 借 model.providers 里的条目 → 密钥回落 secret:<fallbackSecret>
+//
+// 借来的值只补**缺的那一项**：显式写了 base_url 就只借密钥，反之亦然。`from` 指定的
+// 条目不存在时，只有「端点与密钥都靠借」才报错——用户既然自己写了端点，就没必要
+// 因为一条失效的引用把这家整个跳过。
+func (c *fileConfig) resolveEndpoint(baseURL, apiKey, from, fallbackSecret string) (serviceEndpoint, error) {
+	ep := serviceEndpoint{
+		BaseURL: strings.TrimSpace(baseURL),
+		KeyRef:  strings.TrimSpace(apiKey),
+	}
+	from = strings.TrimSpace(from)
+	needBase, needKey := ep.BaseURL == "", ep.KeyRef == ""
+	if from != "" && (needBase || needKey) {
+		pc := c.Model.byName(from)
+		if pc == nil {
+			if needBase && needKey {
+				return ep, fmt.Errorf("引用的服务 %q 不在 model.providers 内"+
+					"（先在「模型服务」页添加，或直接填端点与密钥）", from)
+			}
+		} else {
+			ep.Borrowed = from
+			if needBase {
+				ep.BaseURL = strings.TrimSpace(pc.BaseURL)
+			}
+			if needKey {
+				ep.KeyRef = pc.keyRefs()[0]
+			}
+		}
+	}
+	if ep.BaseURL == "" {
+		return ep, fmt.Errorf("端点未配置（填 base_url，或引用一个 model.providers 里的条目）")
+	}
+	if ep.KeyRef == "" && fallbackSecret != "" {
+		ep.KeyRef = "secret:" + fallbackSecret
+	}
+	return ep, nil
 }
 
 // uiConfig UI 形态：repl | tui | gui（D33/D43；模板与键缺省为 tui，repl 为测试/e2e

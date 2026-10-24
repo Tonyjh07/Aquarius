@@ -42,8 +42,8 @@ func webProviderViewsOf(ps []webProvider) []uigui.WebProviderView {
 	return out
 }
 
-// validateWebSettings 联网配置保存前校验（D200）：与 normalizeWeb 同口径——未知 kind、
-// 抓取侧写了只做搜索的 kind、deepseek 引用了不存在的对话 provider、数值越界。
+// validateWebSettings 联网配置保存前校验（D200/D222）：与 normalizeWeb 同口径——未知
+// kind、抓取侧写了只做搜索的 kind、deepseek 借的条目不存在且端点也没自己填、数值越界。
 // 密钥缺失不在这里拦（启动时警告并跳过该家，其余提供商照常可用）。
 func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 	cfg, err := loadConfig(cfgPath)
@@ -54,17 +54,27 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 	for _, pc := range cfg.Model.Providers {
 		known[pc.Name] = true
 	}
+	// checkEndpoint 端点要么自己填，要么借一个存在的条目（D222）。
+	checkEndpoint := func(side string, i int, wp uigui.WebProviderPatch) error {
+		if strings.TrimSpace(wp.BaseURL) != "" {
+			return nil // 端点自己填了：借不到密钥只让这家不可用，不阻断保存
+		}
+		from := strings.TrimSpace(wp.From)
+		if from == "" {
+			from = webKindDeepSeek
+		}
+		if !known[from] {
+			return fmt.Errorf("%s提供商第 %d 条借用的服务 %q 不在 provider 列表内"+
+				"（先在「模型服务」页添加，或填一个端点）", side, i+1, from)
+		}
+		return nil
+	}
 	for i, wp := range p.WebSearchProviders {
 		kind := strings.TrimSpace(wp.Kind)
 		switch kind {
 		case webKindDeepSeek:
-			from := strings.TrimSpace(wp.From)
-			if from == "" {
-				from = webKindDeepSeek
-			}
-			if !known[from] {
-				return fmt.Errorf("搜索提供商第 %d 条借用的服务 %q 不在 provider 列表内"+
-					"（先在「模型服务」页添加，或填一个已有的名字）", i+1, from)
+			if err := checkEndpoint("搜索", i, wp); err != nil {
+				return err
 			}
 		case webKindBrave:
 		default:
@@ -79,13 +89,8 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 		kind := strings.TrimSpace(wp.Kind)
 		switch kind {
 		case webKindDeepSeek:
-			from := strings.TrimSpace(wp.From)
-			if from == "" {
-				from = webKindDeepSeek
-			}
-			if !known[from] {
-				return fmt.Errorf("抓取提供商第 %d 条借用的服务 %q 不在 provider 列表内"+
-					"（先在「模型服务」页添加，或填一个已有的名字）", i+1, from)
+			if err := checkEndpoint("抓取", i, wp); err != nil {
+				return err
 			}
 		case webKindLocal:
 		default:
@@ -154,15 +159,17 @@ func writeWebSection(generic map[string]any, p uigui.SettingsPatch) {
 }
 
 // storeWebKeys 联网页填的明文密钥转入本机密钥库——与 provider 页**同一条口径**：
-// config 里只留 `secret:<名>`，键名沿用该条目原有的引用、否则按服务名派生
-// （brave → `AQUARIUS_BRAVE_API_KEY`，正好是「key 留空」时启动期回落的那个名字）。
+// config 里只留 `secret:<名>`，键名沿用该条目原有的引用、否则按服务派生。
 //
 // 为什么要在保存前做这一步：联网页的密钥框同样写着「填明文」，provider 页填明文会被
 // 收进密钥库、config 只留引用，这边却把明文原样写进 config 并留一句启动警告——同一个
 // 动作在两个页面后果不同，用户没有理由预期得到。
 //
-// 只对**自带凭据**的服务做（brave）；deepseek 这类借用对话 provider 的 kind 没有自己的
-// 密钥，它的 `key` 字段本就不参与鉴权，硬收进库反而会占用对话 provider 那个槽位。
+// 键名按**服务 + 侧**派生（D222）：`brave` 是 `AQUARIUS_BRAVE_API_KEY`（正好是「key
+// 留空」时启动期回落的那个名字）；deepseek 这类可以独立配的条目按侧区分
+// （`AQUARIUS_DEEPSEEK_SEARCH_API_KEY` / `_FETCH_`）——对话 provider 已经占着
+// `AQUARIUS_DEEPSEEK_API_KEY`，两侧也不能共用一格（想给搜索和抓取配不同钥匙是合理的）。
+// `local` 没有密钥，跳过。
 func (w *wiring) storeWebKeys(p *uigui.SettingsPatch) error {
 	if w.secretsBin == nil {
 		return nil // 库未接线：保持旧行为（明文照写，启动警告提示），不因存不了库而拒绝保存
@@ -172,29 +179,53 @@ func (w *wiring) storeWebKeys(p *uigui.SettingsPatch) error {
 		disk = &fileConfig{} // 读不回来：拿不到原引用名，全部按派生名处理
 	}
 	if p.WebSearchProviders != nil {
-		if err := w.storeWebKeysSide(p.WebSearchProviders, disk.Web.Search.Providers); err != nil {
+		if err := w.storeWebKeysSide(p.WebSearchProviders, disk.Web.Search.Providers, webSideSearch); err != nil {
 			return err
 		}
 	}
 	if p.WebFetchProviders != nil {
-		if err := w.storeWebKeysSide(p.WebFetchProviders, disk.Web.Fetch.Providers); err != nil {
+		if err := w.storeWebKeysSide(p.WebFetchProviders, disk.Web.Fetch.Providers, webSideFetch); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// webSide 联网的一侧（决定密钥归属的服务名与派生键名）。
+type webSide int
+
+const (
+	webSideSearch webSide = iota
+	webSideFetch
+)
+
+// label 面向用户的一侧名（报因用）。
+func (s webSide) label() string {
+	if s == webSideFetch {
+		return "抓取"
+	}
+	return "搜索"
+}
+
+// secretSuffix 派生键名里的一截（英文，与 `AQUARIUS_<…>_API_KEY` 的形态一致）。
+func (s webSide) secretSuffix() string {
+	if s == webSideFetch {
+		return "fetch"
+	}
+	return "search"
+}
+
 // storeWebKeysSide 一侧（搜索/抓取）的逐条入库；原地改写 patch 里的 Key 为引用。
-func (w *wiring) storeWebKeysSide(ps []uigui.WebProviderPatch, olds []webProvider) error {
+func (w *wiring) storeWebKeysSide(ps []uigui.WebProviderPatch, olds []webProvider, side webSide) error {
 	orig := webOrigRefs(olds, ps)
 	for i := range ps {
 		typed := strings.TrimSpace(ps[i].Key)
 		if typed == "" || strings.HasPrefix(typed, "secret:") {
 			continue // 留空 = 保持；已是引用 = 照写（都不进库）
 		}
-		service, ok := webKeyService(ps[i].Kind)
+		service, ok := webKeyService(ps[i].Kind, side)
 		if !ok {
-			continue // 借用对话 provider 的 kind：没有自己的密钥槽
+			continue // local 这类没有密钥的 kind
 		}
 		ref, err := storePlaintextKeyAt(context.Background(), w.secretsBin, service, orig[i], typed, 0)
 		if err != nil {
@@ -205,12 +236,49 @@ func (w *wiring) storeWebKeysSide(ps []uigui.WebProviderPatch, olds []webProvide
 	return nil
 }
 
-// webKeyService 该 kind 的密钥归属的服务名（决定派生键名）；false = 不自带凭据。
-func webKeyService(kind string) (string, bool) {
-	if strings.TrimSpace(kind) == webKindBrave {
-		return webKindBrave, true
+// webKeyService 该 kind 的密钥归属的服务名（决定派生键名）；false = 不带凭据。
+// 名字取「服务 + 侧」的组合，键名因此形如 `AQUARIUS_BRAVE_API_KEY`、
+// `AQUARIUS_DEEPSEEK_SEARCH_API_KEY`。
+func webKeyService(kind string, side webSide) (string, bool) {
+	switch strings.TrimSpace(kind) {
+	case webKindBrave:
+		return webKindBrave, true // brave 只做搜索，名字里不必再带侧
+	case webKindDeepSeek:
+		return webKindDeepSeek + "_" + side.secretSuffix(), true
 	}
 	return "", false
+}
+
+// storeAudioKeys 语音页填的明文密钥转入本机密钥库——与 provider 页、联网页**同一条
+// 口径**（D222）：config 里只留 `secret:<名>`，键名沿用该通道原有的引用、否则按能力
+// 派生（`AQUARIUS_ASR_API_KEY` / `AQUARIUS_TTS_API_KEY`）。
+//
+// 为什么按能力而不是按 provider：同一家 provider 的对话、识别、合成往往是三把不同的
+// 钥匙（音频模型与对话模型分开计费），共用一个槽位会让后填的覆盖先填的。
+func (w *wiring) storeAudioKeys(p *uigui.SettingsPatch) error {
+	if w.secretsBin == nil {
+		return nil // 库未接线：保持旧行为（明文照写，启动警告提示），不因存不了库而拒绝保存
+	}
+	disk, err := loadConfig(w.cfgPath)
+	if err != nil {
+		disk = &fileConfig{}
+	}
+	store := func(service, origRef string, typed *string) error {
+		v := strings.TrimSpace(*typed)
+		if v == "" || strings.HasPrefix(v, "secret:") {
+			return nil // 留空 = 保持 / 借用；已是引用 = 照写（都不进库）
+		}
+		ref, err := storePlaintextKeyAt(context.Background(), w.secretsBin, service, origRef, v, 0)
+		if err != nil {
+			return fmt.Errorf("语音密钥保存失败: %w", err)
+		}
+		*typed = ref
+		return nil
+	}
+	if err := store("asr", disk.Audio.ASR.APIKey, &p.ASRKey); err != nil {
+		return err
+	}
+	return store("tts", disk.Audio.TTS.APIKey, &p.TTSKey)
 }
 
 // webOrigRefs 按 kind 对齐地取出各条旧的密钥引用（与 webProviderEntries 同一对齐口径：

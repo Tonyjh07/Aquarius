@@ -98,6 +98,90 @@ func TestSaveIncludesAudio(t *testing.T) {
 	}
 }
 
+// TestAudioEndpointRows 语音页的端点与密钥行（D222）：端点回填、密钥框恒空（只写不回显），
+// 行计划里有这两行；填的值原样进 patch。
+func TestAudioEndpointRows(t *testing.T) {
+	s := audioSnapshot()
+	s.ASRBaseURL = "https://asr.example.com/v1"
+	s.ASRKeySaved, s.ASRKeyRef = true, "secret:AQUARIUS_ASR_API_KEY"
+	var got SettingsPatch
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return s },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
+		ProviderMgr:   &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "openai"}}},
+	})
+	f := newSettingsForm(u)
+	if f.asrBaseURL.Text() != "https://asr.example.com/v1" {
+		t.Fatalf("端点未回填: %q", f.asrBaseURL.Text())
+	}
+	if f.asrKey.Text() != "" {
+		t.Fatalf("密钥框应恒空，实为 %q", f.asrKey.Text())
+	}
+	if note := f.audioKeyNote("asr"); !strings.Contains(note, "secret:AQUARIUS_ASR_API_KEY") {
+		t.Fatalf("密钥形态说明 = %q", note)
+	}
+	// 行计划里有端点/密钥行，且识别与合成各一组。
+	count := map[rowKind]int{}
+	for _, r := range f.pageRows(pageAudio) {
+		count[r.kind]++
+	}
+	for _, k := range []rowKind{rowAudioASREndpoint, rowAudioASRKey, rowAudioTTSEndpoint, rowAudioTTSKey} {
+		if count[k] != 1 {
+			t.Errorf("行型 %v 应恰好一行", k)
+		}
+	}
+
+	f.asrBaseURL.SetText("https://mirror.example.com/v1")
+	f.asrKey.SetText("secret:MY_ASR")
+	f.ttsBaseURL.SetText("https://tts.example.com/v1")
+	f.ttsKey.SetText("sk-tts-plain")
+	u.saveSettings(f)
+	if got.ASRBaseURL != "https://mirror.example.com/v1" || got.ASRKey != "secret:MY_ASR" {
+		t.Fatalf("ASR 端点/密钥 = %q / %q", got.ASRBaseURL, got.ASRKey)
+	}
+	if got.TTSBaseURL != "https://tts.example.com/v1" || got.TTSKey != "sk-tts-plain" {
+		t.Fatalf("TTS 端点/密钥 = %q / %q", got.TTSBaseURL, got.TTSKey)
+	}
+	// 回写快照：填了明文后不再标成「明文」（config 里落的是引用）。
+	if f.snap.ASRKeySaved != true || f.snap.ASRKeyRef != "secret:MY_ASR" {
+		t.Fatalf("ASR 快照形态 = %+v", f.snap.ASRKeySaved)
+	}
+	if f.snap.TTSKeyPlain {
+		t.Fatal("填了新值后不该继续标成明文")
+	}
+}
+
+// TestFillAudioFromService 「填入」把所选服务的端点与密钥引用抄进该通道（D222）。
+func TestFillAudioFromService(t *testing.T) {
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return audioSnapshot() },
+		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{
+			Name:    "mimo",
+			BaseURL: "https://api.mimo.ai/v1",
+			Keys:    []ProviderKeySnapshot{{Saved: true, Ref: "secret:AQUARIUS_MIMO_API_KEY"}},
+			Models:  []ProviderModelSnapshot{{Name: "mimo-v2.5-asr", Enabled: true}},
+		}}},
+	})
+	f := newSettingsForm(u)
+	f.asrProv.setValue("mimo")
+	f.fillAudioFromService(&f.asrProv, &f.asrBaseURL, &f.asrKey)
+	if got := f.asrBaseURL.Text(); got != "https://api.mimo.ai/v1" {
+		t.Fatalf("端点未抄入: %q", got)
+	}
+	if got := f.asrKey.Text(); got != "secret:AQUARIUS_MIMO_API_KEY" {
+		t.Fatalf("密钥引用未抄入: %q", got)
+	}
+	// 「未配置」= 不抄任何东西。
+	f.asrBaseURL.SetText("")
+	f.asrKey.SetText("")
+	f.asrProv.setValue("")
+	f.fillAudioFromService(&f.asrProv, &f.asrBaseURL, &f.asrKey)
+	if f.asrBaseURL.Text() != "" || f.asrKey.Text() != "" {
+		t.Fatalf("未选服务时不该抄入: %q / %q", f.asrBaseURL.Text(), f.asrKey.Text())
+	}
+}
+
 // TestPreviewVoiceUsesDraft 试听按草稿的音色/描述/风格合成一句（服务与模型来自装配）；
 // 结果回灌状态行。
 func TestPreviewVoiceUsesDraft(t *testing.T) {

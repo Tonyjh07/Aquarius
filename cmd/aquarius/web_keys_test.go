@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,19 +61,49 @@ func TestStoreWebKeysBravePlaintext(t *testing.T) {
 	}
 }
 
-// TestStoreWebKeysSkipsBorrowedKinds 借用对话 provider 的 kind 没有自己的密钥槽：填了也
-// 不往库里塞（否则会占掉对话 provider 那一格）。
-func TestStoreWebKeysSkipsBorrowedKinds(t *testing.T) {
+// TestStoreWebKeysDeepSeekOwnKey 联网的 deepseek 现在也能有自己的密钥（D222）：按侧
+// 区分键名，不占对话 provider 的 `AQUARIUS_DEEPSEEK_API_KEY`，两侧也不互相覆盖。
+func TestStoreWebKeysDeepSeekOwnKey(t *testing.T) {
 	cfgPath := writeWebCfg(t)
 	w, bin := webWiring(t, cfgPath)
 	p := uigui.SettingsPatch{
-		WebSearchProviders: []uigui.WebProviderPatch{{Kind: "deepseek", Key: "sk-should-not-be-stored"}},
+		WebSearchProviders: []uigui.WebProviderPatch{{Kind: "deepseek", Key: "sk-search-1111"}},
+		WebFetchProviders:  []uigui.WebProviderPatch{{Kind: "deepseek", Key: "sk-fetch-2222"}},
 	}
 	if err := w.storeWebKeys(&p); err != nil {
 		t.Fatalf("storeWebKeys: %v", err)
 	}
-	if got := p.WebSearchProviders[0].Key; got != "sk-should-not-be-stored" {
-		t.Fatalf("借用型不该改写 key，得 %q", got)
+	if got := p.WebSearchProviders[0].Key; got != "secret:AQUARIUS_DEEPSEEK_SEARCH_API_KEY" {
+		t.Fatalf("搜索侧引用 = %q", got)
+	}
+	if got := p.WebFetchProviders[0].Key; got != "secret:AQUARIUS_DEEPSEEK_FETCH_API_KEY" {
+		t.Fatalf("抓取侧引用 = %q", got)
+	}
+	ctx := context.Background()
+	if v, err := bin.Get(ctx, "AQUARIUS_DEEPSEEK_SEARCH_API_KEY"); err != nil || v != "sk-search-1111" {
+		t.Fatalf("搜索侧库值 = (%q, %v)", v, err)
+	}
+	if v, err := bin.Get(ctx, "AQUARIUS_DEEPSEEK_FETCH_API_KEY"); err != nil || v != "sk-fetch-2222" {
+		t.Fatalf("抓取侧库值 = (%q, %v)——两侧不能互相覆盖", v, err)
+	}
+	// 对话 provider 那一格不被占用。
+	if _, err := bin.Get(ctx, "AQUARIUS_DEEPSEEK_API_KEY"); !errors.Is(err, secretbin.ErrNotFound) {
+		t.Fatalf("不该写对话 provider 的槽位: %v", err)
+	}
+}
+
+// TestStoreWebKeysSkipsLocal local 没有密钥：填了也不入库（那字段对它不参与鉴权）。
+func TestStoreWebKeysSkipsLocal(t *testing.T) {
+	cfgPath := writeWebCfg(t)
+	w, bin := webWiring(t, cfgPath)
+	p := uigui.SettingsPatch{
+		WebFetchProviders: []uigui.WebProviderPatch{{Kind: "local", Key: "sk-should-not-be-stored"}},
+	}
+	if err := w.storeWebKeys(&p); err != nil {
+		t.Fatalf("storeWebKeys: %v", err)
+	}
+	if got := p.WebFetchProviders[0].Key; got != "sk-should-not-be-stored" {
+		t.Fatalf("无凭据的 kind 不该改写 key，得 %q", got)
 	}
 	entries, err := bin.Entries(context.Background())
 	if err != nil {
@@ -121,5 +152,76 @@ func TestStoreWebKeysUnwiredKeepsPlaintext(t *testing.T) {
 	}
 	if got := p.WebSearchProviders[0].Key; got != "sk-plain-keep" {
 		t.Fatalf("库未接线应保持明文，得 %q", got)
+	}
+}
+
+// TestStoreAudioKeysPlaintext 语音页填明文 → 入密钥库 + 只留引用；键名按能力派生，
+// 两个通道各占一格、互不覆盖（D222）。
+func TestStoreAudioKeysPlaintext(t *testing.T) {
+	cfgPath := writeWebCfg(t)
+	w, bin := webWiring(t, cfgPath)
+	p := uigui.SettingsPatch{ASRKey: "sk-asr-1111", TTSKey: "sk-tts-2222"}
+	if err := w.storeAudioKeys(&p); err != nil {
+		t.Fatalf("storeAudioKeys: %v", err)
+	}
+	if p.ASRKey != "secret:AQUARIUS_ASR_API_KEY" || p.TTSKey != "secret:AQUARIUS_TTS_API_KEY" {
+		t.Fatalf("引用 = %q / %q", p.ASRKey, p.TTSKey)
+	}
+	ctx := context.Background()
+	if v, err := bin.Get(ctx, "AQUARIUS_ASR_API_KEY"); err != nil || v != "sk-asr-1111" {
+		t.Fatalf("识别库值 = (%q, %v)", v, err)
+	}
+	if v, err := bin.Get(ctx, "AQUARIUS_TTS_API_KEY"); err != nil || v != "sk-tts-2222" {
+		t.Fatalf("合成库值 = (%q, %v)", v, err)
+	}
+}
+
+// TestStoreAudioKeysKeepsRefAndSkipsEmpty 填引用照写、留空保持；都不动库。
+func TestStoreAudioKeysKeepsRefAndSkipsEmpty(t *testing.T) {
+	cfgPath := writeWebCfg(t)
+	w, bin := webWiring(t, cfgPath)
+	p := uigui.SettingsPatch{ASRKey: "secret:MY_ASR", TTSKey: ""}
+	if err := w.storeAudioKeys(&p); err != nil {
+		t.Fatalf("storeAudioKeys: %v", err)
+	}
+	if p.ASRKey != "secret:MY_ASR" || p.TTSKey != "" {
+		t.Fatalf("引用/留空被改动: %q / %q", p.ASRKey, p.TTSKey)
+	}
+	entries, _ := bin.Entries(context.Background())
+	if len(entries) != 0 {
+		t.Fatalf("引用/留空都不该写库，却有了 %d 条", len(entries))
+	}
+}
+
+// TestStoreAudioKeysUnwiredKeepsPlaintext 库未接线：不报错、明文照写。
+func TestStoreAudioKeysUnwiredKeepsPlaintext(t *testing.T) {
+	cfgPath := writeWebCfg(t)
+	w := &wiring{cfgPath: cfgPath}
+	p := uigui.SettingsPatch{ASRKey: "sk-plain-keep"}
+	if err := w.storeAudioKeys(&p); err != nil {
+		t.Fatalf("库未接线不该报错: %v", err)
+	}
+	if p.ASRKey != "sk-plain-keep" {
+		t.Fatalf("库未接线应保持明文，得 %q", p.ASRKey)
+	}
+}
+
+// TestStoreAudioKeysReusesExistingRef 该通道原本已有引用：沿用原名，不另造一格。
+func TestStoreAudioKeysReusesExistingRef(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	raw := `{"audio":{"asr":{"provider":"mimo","api_key":"secret:MY_OWN_ASR","model":"m"}}}`
+	if err := os.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, bin := webWiring(t, cfgPath)
+	p := uigui.SettingsPatch{ASRKey: "sk-asr-new"}
+	if err := w.storeAudioKeys(&p); err != nil {
+		t.Fatalf("storeAudioKeys: %v", err)
+	}
+	if p.ASRKey != "secret:MY_OWN_ASR" {
+		t.Fatalf("应沿用原引用名，得 %q", p.ASRKey)
+	}
+	if v, err := bin.Get(context.Background(), "MY_OWN_ASR"); err != nil || v != "sk-asr-new" {
+		t.Fatalf("沿用名应换值 = (%q, %v)", v, err)
 	}
 }

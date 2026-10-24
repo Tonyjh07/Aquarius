@@ -37,6 +37,10 @@ func TestWebPageFillsSnapshot(t *testing.T) {
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{
+			{Name: "deepseek", BaseURL: "https://api.deepseek.com"},
+			{Name: "mimo", BaseURL: "https://api.mimo.ai/v1"},
+		}},
 	})
 	f := newSettingsForm(u)
 	if len(f.webSearch) != 2 || len(f.webFetch) != 1 {
@@ -72,6 +76,56 @@ func TestWebPageFillsSnapshot(t *testing.T) {
 	}
 	if !f.webRobots.Value || f.webPrivate.Value {
 		t.Fatalf("开关 = robots:%v private:%v, want true/false", f.webRobots.Value, f.webPrivate.Value)
+	}
+}
+
+// TestWebProviderFormFromDefaults 老配置只写 kind（没有 from）时，「借用」下拉显示同名
+// 条目——启动确实借它，界面不能显示成「不借」。
+func TestWebProviderFormFromDefaults(t *testing.T) {
+	choices := []ProviderChoice{{Name: "deepseek"}, {Name: "mimo"}}
+	pf := newWebProviderForm(WebProviderView{Kind: "deepseek"}, true, choices)
+	if got := pf.from.value(); got != "deepseek" {
+		t.Fatalf("缺省借用 = %q, want deepseek", got)
+	}
+	// 快照里没有同名条目时保持「不借」（没有可借的东西）。
+	pf = newWebProviderForm(WebProviderView{Kind: "deepseek"}, true, []ProviderChoice{{Name: "mimo"}})
+	if got := pf.from.value(); got != "" {
+		t.Fatalf("无同名条目时借用 = %q, want 空", got)
+	}
+	// 显式写了 from 就照它来。
+	pf = newWebProviderForm(WebProviderView{Kind: "deepseek", From: "mimo"}, true, choices)
+	if got := pf.from.value(); got != "mimo" {
+		t.Fatalf("显式借用 = %q, want mimo", got)
+	}
+}
+
+// TestWebPageFillsEndpoint 端点原样回填（自己填过的那份），密钥仍只给形态。
+func TestWebPageFillsEndpoint(t *testing.T) {
+	s := webSnapshot()
+	s.WebSearchProviders[0] = WebProviderView{
+		Kind: "deepseek", BaseURL: "https://mine.example.com/v1",
+		KeySaved: true, KeyRef: "secret:AQUARIUS_DEEPSEEK_SEARCH_API_KEY",
+	}
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return s },
+		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
+	})
+	f := newSettingsForm(u)
+	pf := f.webSearch[0]
+	if got := pf.baseURL.Text(); got != "https://mine.example.com/v1" {
+		t.Fatalf("端点未回填: %q", got)
+	}
+	if pf.key.Text() != "" {
+		t.Fatalf("密钥框应恒空，实为 %q", pf.key.Text())
+	}
+	if note := pf.keyNote(); !strings.Contains(note, "secret:AQUARIUS_DEEPSEEK_SEARCH_API_KEY") {
+		t.Fatalf("密钥形态说明 = %q", note)
+	}
+	// 填的值进 patch：端点与密钥各自独立。
+	pf.key.SetText("sk-own-1234")
+	patches := f.webProviderPatches(true)
+	if patches[0].BaseURL != "https://mine.example.com/v1" || patches[0].Key != "sk-own-1234" {
+		t.Fatalf("patch = %+v", patches[0])
 	}
 }
 
@@ -239,8 +293,8 @@ func TestWebProviderViewsKeepKeyShapeByKind(t *testing.T) {
 	}
 }
 
-// TestWebProviderRowShowsOnlyRelevantFields 字段按类型显隐：deepseek 不画密钥/国家语言，
-// local 不画端点，brave 不画「借用服务」。
+// TestWebProviderRowShowsOnlyRelevantFields 字段按类型显隐：local 不画端点与「借用」，
+// brave 不画「借用」。
 func TestWebProviderRowShowsOnlyRelevantFields(t *testing.T) {
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
@@ -268,5 +322,68 @@ func TestWebProviderRowShowsOnlyRelevantFields(t *testing.T) {
 	brave.kind.setValue("deepseek")
 	if brave.country.Text() != "CN" {
 		t.Fatalf("切类型不该清空国家档: %q", brave.country.Text())
+	}
+}
+
+// TestFillWebProviderFrom 「填入」把所选服务的端点与密钥引用抄进本条目（D222）：只抄
+// 引用名不抄值；目标没有已入库的引用时密钥框保持原样。
+func TestFillWebProviderFrom(t *testing.T) {
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return webSnapshot() },
+		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{
+			Name:    "mimo",
+			BaseURL: "https://api.mimo.ai/v1",
+			Keys:    []ProviderKeySnapshot{{Saved: true, Ref: "secret:AQUARIUS_MIMO_API_KEY"}},
+			Models:  []ProviderModelSnapshot{{Name: "mimo-flash", Enabled: true}},
+		}}},
+	})
+	f := newSettingsForm(u)
+	pf := newWebProviderForm(WebProviderView{Kind: "deepseek"}, true, f.chainChoices)
+	pf.from.setValue("mimo")
+	f.fillWebProviderFrom(pf)
+	if got := pf.baseURL.Text(); got != "https://api.mimo.ai/v1" {
+		t.Fatalf("端点未抄入: %q", got)
+	}
+	if got := pf.key.Text(); got != "secret:AQUARIUS_MIMO_API_KEY" {
+		t.Fatalf("密钥引用未抄入: %q", got)
+	}
+	// 抄过来之后就是独立配置：改端点不影响来源。
+	pf.baseURL.SetText("https://mirror.example.com/v1")
+	if pf.baseURL.Text() != "https://mirror.example.com/v1" {
+		t.Fatal("抄入后应可自由编辑")
+	}
+	// 选「不借」= 什么都不抄（保留当前值）。
+	pf.baseURL.SetText("")
+	pf.key.SetText("")
+	pf.from.setValue("")
+	f.fillWebProviderFrom(pf)
+	if pf.baseURL.Text() != "" || pf.key.Text() != "" {
+		t.Fatalf("不借时不该抄入任何值: %q / %q", pf.baseURL.Text(), pf.key.Text())
+	}
+}
+
+// TestFillWebProviderFromSkipsPlainKey 来源 provider 的密钥是明文时（没入库）不抄：
+// 编辑框永远不回显值，凭空写一个引用名反而指向不存在的条目。
+func TestFillWebProviderFromSkipsPlainKey(t *testing.T) {
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return webSnapshot() },
+		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{
+			Name:    "plainprov",
+			BaseURL: "https://plain.example.com/v1",
+			Keys:    []ProviderKeySnapshot{{Plain: true}},
+			Models:  []ProviderModelSnapshot{{Name: "m", Enabled: true}},
+		}}},
+	})
+	f := newSettingsForm(u)
+	pf := newWebProviderForm(WebProviderView{Kind: "deepseek"}, true, f.chainChoices)
+	pf.from.setValue("plainprov")
+	f.fillWebProviderFrom(pf)
+	if got := pf.baseURL.Text(); got != "https://plain.example.com/v1" {
+		t.Fatalf("端点应照抄: %q", got)
+	}
+	if got := pf.key.Text(); got != "" {
+		t.Fatalf("明文密钥不该被抄成引用名: %q", got)
 	}
 }

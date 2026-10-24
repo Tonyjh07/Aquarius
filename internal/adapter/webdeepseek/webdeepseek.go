@@ -3,7 +3,8 @@
 //
 // 与模型无关：走的是 https://api.deepseek.com/v1/tools/{search,fetch}，不经过
 // Responses API 的托管 web_search（那条路只有个别模型支持，换模型就静默失效）。
-// 鉴权与对话端点同一把钥匙——装配根把 provider 的 base_url 与密钥传进来。
+// 端点与密钥由装配根按条目自己的配置解析——默认借用对话 provider 那一份，也可以
+// 独立填一份（搜索与抓取各有一格密钥槽，互不覆盖）。
 package webdeepseek
 
 import (

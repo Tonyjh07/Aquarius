@@ -442,3 +442,44 @@ func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
 		})
 	}
 }
+
+// TestPersistAudioEndpointRoundTrip 语音的独立端点与密钥（D222）：端点写读往返，
+// 密钥留空 = 保持原引用（只写不回显，patch 里的空没有「清空」语义）。
+func TestPersistAudioEndpointRoundTrip(t *testing.T) {
+	raw := strings.Replace(defaultConfig,
+		`"audio": { "asr": {}, "tts": {} }`,
+		`"audio": {"asr": {"api_key": "secret:OLD_ASR"}, "tts": {}}`, 1)
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	p := uigui.SettingsPatch{
+		Theme:      "system",
+		ASRBaseURL: "https://asr.example.com/v1", ASRModel: "m1", ASRKey: "", // 留空 = 保持
+		TTSBaseURL: "https://tts.example.com/v1", TTSModel: "m2", TTSKey: "secret:NEW_TTS",
+	}
+	if err := persistSettingsTextKeys(cfgPath, p); err != nil {
+		t.Fatalf("persistSettingsTextKeys: %v", err)
+	}
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("读配置: %v", err)
+	}
+	if cfg.Audio.ASR.BaseURL != "https://asr.example.com/v1" ||
+		cfg.Audio.TTS.BaseURL != "https://tts.example.com/v1" {
+		t.Fatalf("端点未落盘: %+v", cfg.Audio)
+	}
+	if cfg.Audio.ASR.APIKey != "secret:OLD_ASR" {
+		t.Fatalf("留空应保持原引用，得 %q", cfg.Audio.ASR.APIKey)
+	}
+	if cfg.Audio.TTS.APIKey != "secret:NEW_TTS" {
+		t.Fatalf("新引用未落盘，得 %q", cfg.Audio.TTS.APIKey)
+	}
+	// 只填端点也能通过保存前校验（不借任何 provider）。
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme:      "system",
+		ASRBaseURL: "https://asr2.example.com/v1", ASRModel: "m3",
+	}); err != nil {
+		t.Fatalf("独立端点应可保存: %v", err)
+	}
+}

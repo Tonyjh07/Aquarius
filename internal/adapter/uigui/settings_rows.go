@@ -125,11 +125,15 @@ const (
 	rowSecretValue  // 新增/覆盖的值（单行编辑档；动作后恒清空）
 	rowSecretAdd    // 「存入」按钮行
 	rowSecretStatus // 存入/删除反馈状态行
-	// D179：语音页（识别 / 合成 / 音色与风格 / 试听）。
+	// D179：语音页（识别 / 合成 / 音色与风格 / 试听）。D222 起每路另有端点与密钥。
 	rowAudioASRProvider // 识别服务（循环选 provider）
+	rowAudioASREndpoint // 识别端点（空 = 用所选服务的）
+	rowAudioASRKey      // 识别密钥（只写不回显）
 	rowAudioASRModel    // 识别模型（单行档）
 	rowAudioLang        // 录音语种提示（循环档）
 	rowAudioTTSProvider // 合成服务（循环选 provider）
+	rowAudioTTSEndpoint // 合成端点（空 = 用所选服务的）
+	rowAudioTTSKey      // 合成密钥（只写不回显）
 	rowAudioTTSModel    // 合成模型（单行档）
 	rowAudioVoice       // 音色（预置名 / 克隆样本路径）
 	rowAudioDesign      // 音色描述（音色设计模型）

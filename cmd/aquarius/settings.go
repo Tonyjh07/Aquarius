@@ -77,7 +77,8 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		WindowWidth:      raw.UI.WindowWidth,
 		WindowHeight:     raw.UI.WindowHeight,
 		RawJSON:          string(data),
-		// 语音（D179）：文件即事实源（服务/模型改动重启生效，与快照口径一致）。
+		// 语音（D179/D222）：文件即事实源（服务/模型改动重启生效，与快照口径一致）。
+		// 端点原样回填；密钥只带形态（D35）。
 		ASRProvider: raw.Audio.ASR.Provider,
 		ASRModel:    raw.Audio.ASR.Model,
 		ASRLang:     raw.Input.Language,
@@ -87,6 +88,8 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		TTSDesign:   raw.Audio.TTS.Design,
 		TTSStyle:    raw.Audio.TTS.Style,
 		TTSTags:     raw.Audio.TTS.Tags,
+		ASRBaseURL:  raw.Audio.ASR.BaseURL,
+		TTSBaseURL:  raw.Audio.TTS.BaseURL,
 		// 联网（D200）：提供商列表与本地抓取参数，文件即事实源。
 		WebSearchProviders: webProviderViewsOf(raw.Web.Search.Providers),
 		WebSearchCount:     raw.Web.Search.Count,
@@ -103,6 +106,9 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		SamplingMaxTokens:   intText(raw.Model.Sampling.MaxTokens),
 		SamplingStop:        stopsText(raw.Model.Sampling.Stop),
 	}
+	// 语音密钥只带形态（D35）：已入库的给引用名，明文的只标形态。
+	snap.ASRKeySaved, snap.ASRKeyPlain, snap.ASRKeyRef = keyShapeOf(raw.Audio.ASR.APIKey)
+	snap.TTSKeySaved, snap.TTSKeyPlain, snap.TTSKeyRef = keyShapeOf(raw.Audio.TTS.APIKey)
 	for name := range raw.MCPServers {
 		snap.MCPServers = append(snap.MCPServers, name)
 	}
@@ -112,6 +118,19 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 	sort.Strings(snap.MCPServers)
 	sort.Strings(snap.Plugins)
 	return snap
+}
+
+// keyShapeOf 一条密钥引用的界面形态（D35：值永不回显）：已入库的给引用名，明文的只标
+// 形态，空 = 没填（按借用/回落处理）。
+func keyShapeOf(ref string) (saved, plain bool, name string) {
+	ref = strings.TrimSpace(ref)
+	switch {
+	case ref == "":
+		return false, false, ""
+	case strings.HasPrefix(ref, "secret:"):
+		return true, false, ref
+	}
+	return false, true, ""
 }
 
 // persistSettingsTextKeys 无内核命令覆盖的键一次泛键改写（ui.theme/hotkey + D90 三
@@ -189,8 +208,12 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 		outSec["notify"] = p.Notify
 		outSec["tts"] = p.TTS
-		// 语音（D179，恒全量写）：audio.asr / audio.tts 各自引用 provider；kind 不在此
-		// 管理（高级页手写的值原样保留），voice/design/style/tags 清空 = 回到缺省。
+		// 语音（D179/D222，恒全量写）：audio.asr / audio.tts 各自是一份完整配置——
+		// provider 空 = 不借任何条目；base_url 空 = 用借来的（即清掉自己的覆盖）。
+		// kind 不在此管理（高级页手写的值原样保留），voice/design/style/tags 清空 = 回到缺省。
+		//
+		// api_key 例外：空 = **保持**原引用（密钥只写不回显，patch 里的空没有「清空」
+		// 语义——与 provider 页、联网页同口径）。要换端点又不碰密钥时，用户只会填端点。
 		audioSec, _ := generic["audio"].(map[string]any)
 		if audioSec == nil {
 			audioSec = map[string]any{}
@@ -203,21 +226,34 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 				audioSec[name] = sec
 			}
 			for k, v := range ch {
+				if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
+					delete(sec, k) // 空值不落键（读侧「空 = 缺省」的语义才成立）
+					continue
+				}
 				sec[k] = v
+			}
+		}
+		setKey := func(name, key string) {
+			if k := strings.TrimSpace(key); k != "" {
+				setChannel(name, map[string]any{"api_key": k})
 			}
 		}
 		setChannel("asr", map[string]any{
 			"provider": p.ASRProvider,
+			"base_url": p.ASRBaseURL,
 			"model":    p.ASRModel,
 		})
+		setKey("asr", p.ASRKey)
 		setChannel("tts", map[string]any{
 			"provider": p.TTSProvider,
+			"base_url": p.TTSBaseURL,
 			"model":    p.TTSModel,
 			"voice":    p.TTSVoice,
 			"design":   p.TTSDesign,
 			"style":    p.TTSStyle,
 			"tags":     p.TTSTags,
 		})
+		setKey("tts", p.TTSKey)
 		inSec, _ := generic["input"].(map[string]any)
 		if inSec == nil {
 			inSec = map[string]any{}
@@ -338,9 +374,10 @@ func validateFallbackChain(cfgPath string, links []uigui.FallbackLink) error {
 	return nil
 }
 
-// validateAudioSettings 语音配置保存前校验（D179）：provider 可留空（= 关闭该能力），
-// 填了就必须存在于 providers 列表；填了 provider 就必须有模型名；语种只认三档。
-// 与 normalizeAudio 同口径，只是提前到落盘前——否则写进去的是一份启动会拒的配置。
+// validateAudioSettings 语音配置保存前校验（D179/D222）：一路语音要么借一个存在的
+// provider，要么自己填端点；配了就要有模型名；语种只认三档。与 normalizeAudio 同口径，
+// 只是提前到落盘前——否则写进去的是一份启动会拒的配置。密钥能不能取到不在这里拦
+// （启动时警告并让该能力不可用，其余照常）。
 func validateAudioSettings(cfgPath string, p uigui.SettingsPatch) error {
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
@@ -350,24 +387,30 @@ func validateAudioSettings(cfgPath string, p uigui.SettingsPatch) error {
 	for _, pc := range cfg.Model.Providers {
 		known[pc.Name] = true
 	}
-	check := func(label, prov, model string) error {
+	check := func(label, prov, baseURL, key, model string) error {
 		prov = strings.TrimSpace(prov)
+		baseURL = strings.TrimSpace(baseURL)
+		key = strings.TrimSpace(key)
 		model = strings.TrimSpace(model)
-		if prov == "" {
-			return nil
+		if prov == "" && baseURL == "" && key == "" {
+			return nil // 三样都没填 = 该能力关闭（模型名留着无妨）
 		}
-		if !known[prov] {
-			return fmt.Errorf("%s引用的服务 %q 不在 provider 列表内（先在「模型服务」页添加）", label, prov)
+		if prov != "" && !known[prov] {
+			return fmt.Errorf("%s引用的服务 %q 不在 provider 列表内"+
+				"（先在「模型服务」页添加，或直接填端点）", label, prov)
+		}
+		if prov == "" && baseURL == "" {
+			return fmt.Errorf("%s要么选一个服务，要么填端点", label)
 		}
 		if model == "" {
-			return fmt.Errorf("%s选了服务就要填模型名", label)
+			return fmt.Errorf("%s配了服务就要填模型名", label)
 		}
 		return nil
 	}
-	if err := check("语音识别", p.ASRProvider, p.ASRModel); err != nil {
+	if err := check("语音识别", p.ASRProvider, p.ASRBaseURL, p.ASRKey, p.ASRModel); err != nil {
 		return err
 	}
-	if err := check("语音合成", p.TTSProvider, p.TTSModel); err != nil {
+	if err := check("语音合成", p.TTSProvider, p.TTSBaseURL, p.TTSKey, p.TTSModel); err != nil {
 		return err
 	}
 	switch strings.TrimSpace(p.ASRLang) {

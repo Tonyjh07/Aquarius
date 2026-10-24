@@ -131,18 +131,25 @@ type FallbackLink struct {
 
 // ProviderChoice 「模型」页降级链编辑用的 provider 选项：名字 + 它声明的模型名。
 // 与 ProviderManager 的编辑面分开——那边编辑 provider 本体（怎么连），这里只挑路由目标。
+//
+// BaseURL / KeyRef（D222）：「联网」与「语音」页的「填入」按钮用它把某个服务的端点与
+// 密钥引用抄进独立配置。KeyRef 只会是 `secret:<名>` 或空（明文永不出编辑区）。
 type ProviderChoice struct {
-	Name   string
-	Models []string
+	Name    string
+	Models  []string
+	BaseURL string
+	KeyRef  string
 }
 
-// WebProviderView 联网提供商一条的编辑视图（D200）：kind 决定怎么连，其余字段按 kind
-// 取用（与 cmd 侧 webProvider 同构）。密钥**永不回显**：只给形态标记（Saved = config 里
-// 是 `secret:<名>` 引用、Plain = 明文、Ref = 仅 Saved 时的引用名）。
+// WebProviderView 联网提供商一条的编辑视图（D200/D222）：kind 决定怎么连，其余字段按
+// kind 取用（与 cmd 侧 webProvider 同构）。端点与密钥可以自己填，也可以借某个
+// model.providers 条目——From 只是「借」的那条，不再决定端点与密钥的唯一来源。
+// 密钥**永不回显**：只给形态标记（Saved = config 里是 `secret:<名>` 引用、Plain = 明文、
+// Ref = 仅 Saved 时的引用名）。
 type WebProviderView struct {
 	Kind     string // 搜索侧 deepseek|brave；抓取侧 deepseek|local
-	From     string // 复用哪个 model.providers（deepseek 缺省 = "deepseek"）
-	BaseURL  string // 端点覆盖（空 = 官方端点）
+	From     string // 借哪个 model.providers（deepseek 缺省 = "deepseek"）
+	BaseURL  string // 端点（空 = 借 From 的；都没填 = 报因）
 	Country  string // 仅 brave
 	Lang     string // 仅 brave
 	Count    int    // 仅搜索：这一家的缺省条数（0 = 用 web.search.count）
@@ -151,8 +158,8 @@ type WebProviderView struct {
 	KeyRef   string
 }
 
-// WebProviderPatch 联网提供商一条的提交（D200）。Key 空 = 保持原值（只写不回显）；
-// `secret:` 前缀照写引用，否则按明文落盘（启动期会警告，与 provider 密钥同口径）。
+// WebProviderPatch 联网提供商一条的提交（D200/D222）。Key 空 = 保持原值（只写不回显）；
+// `secret:` 前缀照写引用，否则明文转进密钥库（与 provider 页同口径）。
 type WebProviderPatch struct {
 	Kind    string
 	From    string
@@ -244,6 +251,16 @@ type SettingsSnapshot struct {
 	TTSDesign   string // -voicedesign 模型的音色描述
 	TTSStyle    string // 自然语言风格指令
 	TTSTags     string // 风格标签（拼成 "(标签)" 前缀）
+	// 语音的端点与密钥（D222）：可以自己填，也可以借 ASRProvider/TTSProvider 指向的
+	// 条目。密钥永不进快照（只给形态标记，D35 同口径）。
+	ASRBaseURL  string
+	ASRKeySaved bool
+	ASRKeyPlain bool
+	ASRKeyRef   string
+	TTSBaseURL  string
+	TTSKeySaved bool
+	TTSKeyPlain bool
+	TTSKeyRef   string
 
 	// 联网（D200）：搜索与抓取各自一组**有序**提供商（顺序即优先级），加本地抓取的
 	// 网络与安全参数。提供商本体只给「怎么连」的展示值，密钥永不进快照（只给
@@ -318,6 +335,12 @@ type SettingsPatch struct {
 	TTSDesign   string
 	TTSStyle    string
 	TTSTags     string
+	// 语音的端点与密钥（D222）：BaseURL 空 = 借 ASRProvider/TTSProvider 的；Key 空 =
+	// 保持原引用（只写不回显），`secret:` 照写引用、其余明文转进密钥库。
+	ASRBaseURL string
+	ASRKey     string
+	TTSBaseURL string
+	TTSKey     string
 
 	// 联网（D200）：两组提供商列表恒全量写（nil = 这条写路径不管联网，空数组 = 清空）。
 	// 数值 0 = 不改（留空保持快照原值）；布尔恒写（robots 的「键缺失 = 遵守」在写侧
@@ -539,12 +562,19 @@ type settingsForm struct {
 	// 但那一改要重启才生效，故以开窗快照为准，不每帧重取）。
 	chainChoices []ProviderChoice
 
-	// 语音页（D179）：识别/合成各引用一个 provider（循环档，选项同 chainChoices），
-	// 音色与风格是自由文本；试听在后台合成一句，结果经 voiceRes 回灌行内状态。
+	// 语音页（D179/D222）：识别/合成各是一份完整配置——服务可借（循环档，选项同
+	// chainChoices），端点与密钥也能自己填；音色与风格是自由文本；试听在后台合成一句，
+	// 结果经 voiceRes 回灌行内状态。
 	asrProv     cycleField
+	asrBaseURL  widget.Editor
+	asrKey      widget.Editor // 只写不回显（空 = 保持 / 借所选服务的）
+	asrKeyUse   widget.Clickable
 	asrModel    widget.Editor
 	asrLang     cycleField
 	ttsProv     cycleField
+	ttsBaseURL  widget.Editor
+	ttsKey      widget.Editor
+	ttsKeyUse   widget.Clickable
 	ttsModel    widget.Editor
 	ttsVoice    widget.Editor
 	ttsDesign   widget.Editor
@@ -816,11 +846,14 @@ func newSettingsForm(u *UI) *settingsForm {
 		s.FontSize = fontSpBase
 	}
 	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo,
-		&f.asrModel, &f.ttsModel, &f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags,
+		&f.asrModel, &f.asrBaseURL, &f.asrKey, &f.ttsModel, &f.ttsBaseURL, &f.ttsKey,
+		&f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags,
 		&f.webCount, &f.webMaxChars, &f.webProxy, &f.webUA, &f.webTimeout,
 		&f.samplingTemp, &f.samplingTopP, &f.samplingMax, &f.samplingStop} {
 		ed.SingleLine = true
 	}
+	f.asrKey.Mask = '•' // 只写不回显（D35 同口径）
+	f.ttsKey.Mask = '•'
 	// f.sysPrompt / f.rawCfg 保持多行（表单仅有的多行档）。
 	f.snap = s
 	f.model.SetText(s.Model)
@@ -860,10 +893,13 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.sysPrompt.SetText(s.SystemPrompt)
 	f.rawCfg.SetText(s.RawJSON)
 	f.builtins = s.Builtins
-	// 语音页填表（D179）：provider 选项来自本窗的 provider 快照；未配置 = 首项。
+	// 语音页填表（D179/D222）：provider 选项来自本窗的 provider 快照；未配置 = 首项。
+	// 端点原样回填；密钥框恒空（只写不回显）。
 	f.setAudioProviderChoices(s.ASRProvider, &f.asrProv)
 	f.setAudioProviderChoices(s.TTSProvider, &f.ttsProv)
 	f.asrLang.setValue(s.ASRLang)
+	f.asrBaseURL.SetText(s.ASRBaseURL)
+	f.ttsBaseURL.SetText(s.TTSBaseURL)
 	f.asrModel.SetText(s.ASRModel)
 	f.ttsModel.SetText(s.TTSModel)
 	f.ttsVoice.SetText(s.TTSVoice)
@@ -1026,6 +1062,9 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 // loadChainChoices 降级链的 provider 选项（名字 + 启用的模型名）：取自 provider 编辑区
 // 快照（同一份事实），故「模型服务」页改动后重开窗即同步；本窗内改 provider 列表不
 // 影响链选项（那类改动要重启才生效，运行态本就不同步）。未启用的模型不进候选（D180）。
+//
+// 同时带上端点与**密钥引用名**（D222）：联网/语音页的「填入」按钮靠它把「借」变成
+// 「抄一份能改的」。只抄引用名，值永不出编辑区（D35）。
 func (f *settingsForm) loadChainChoices(snap []ProviderSnapshot) {
 	f.chainChoices = make([]ProviderChoice, 0, len(snap))
 	for _, p := range snap {
@@ -1036,7 +1075,11 @@ func (f *settingsForm) loadChainChoices(snap []ProviderSnapshot) {
 			}
 			names = append(names, m.Name)
 		}
-		f.chainChoices = append(f.chainChoices, ProviderChoice{Name: p.Name, Models: names})
+		choice := ProviderChoice{Name: p.Name, Models: names, BaseURL: p.BaseURL}
+		if len(p.Keys) > 0 && p.Keys[0].Saved {
+			choice.KeyRef = p.Keys[0].Ref
+		}
+		f.chainChoices = append(f.chainChoices, choice)
 	}
 }
 

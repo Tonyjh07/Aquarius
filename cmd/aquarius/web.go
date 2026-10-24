@@ -21,7 +21,7 @@ func (w *wiring) buildWeb(ctx context.Context) (port.WebSearch, port.WebFetch) {
 	for i, p := range w.cfg.Web.Search.Providers {
 		switch p.Kind {
 		case webKindDeepSeek:
-			c, err := w.deepseekWeb(ctx, p)
+			c, err := w.deepseekWeb(ctx, p, webSideSearch)
 			if err != nil {
 				w.webWarn("搜索", i, p, err)
 				continue
@@ -50,7 +50,7 @@ func (w *wiring) buildWeb(ctx context.Context) (port.WebSearch, port.WebFetch) {
 	for i, p := range w.cfg.Web.Fetch.Providers {
 		switch p.Kind {
 		case webKindDeepSeek:
-			c, err := w.deepseekWeb(ctx, p)
+			c, err := w.deepseekWeb(ctx, p, webSideFetch)
 			if err != nil {
 				w.webWarn("抓取", i, p, err)
 				continue
@@ -85,23 +85,24 @@ func (w *wiring) buildWeb(ctx context.Context) (port.WebSearch, port.WebFetch) {
 	return search, fetch
 }
 
-// deepseekWeb 造一个 DeepSeek 联网客户端：base_url 与密钥都借对话 provider（D179
-// 同口径——联网端点与对话端点是同一家、同一把钥匙，不另存一份）。
-func (w *wiring) deepseekWeb(ctx context.Context, p webProvider) (*webdeepseek.Client, error) {
-	from := webProviderFrom(p)
-	pc := w.cfg.Model.byName(from)
-	if pc == nil {
-		return nil, fmt.Errorf("provider %q 不在 model.providers 内", from)
-	}
-	key, err := pc.resolveKeyAt(ctx, 0, w.secrets, w.stderr)
+// deepseekWeb 造一个 DeepSeek 联网客户端（D222）：端点与密钥**优先用本条目自己的**，
+// 没填的才按 `from` 去 model.providers 借（缺省 = 同名 deepseek）——所以「借用」现在
+// 是省事的捷径，而不是唯一形态：用户可以给联网单独配端点与密钥，不动对话 provider。
+//
+// 两侧都留空时密钥回落按侧派生的名字（`AQUARIUS_DEEPSEEK_SEARCH_API_KEY` /
+// `_FETCH_`）：对话 provider 已占着 `AQUARIUS_DEEPSEEK_API_KEY`，共用一格会让
+// 「给搜索换个更便宜的钥匙」变成「把对话也换了」。
+func (w *wiring) deepseekWeb(ctx context.Context, p webProvider, side webSide) (*webdeepseek.Client, error) {
+	fallback := deriveKeyName(webKindDeepSeek + "_" + side.secretSuffix())
+	ep, err := w.cfg.resolveEndpoint(p.BaseURL, p.Key, webProviderFrom(p), fallback)
 	if err != nil {
 		return nil, err
 	}
-	base := strings.TrimSpace(p.BaseURL)
-	if base == "" {
-		base = pc.BaseURL
+	key, err := resolveAPIKey(ctx, "deepseek web", ep.KeyRef, w.secrets, w.stderr)
+	if err != nil {
+		return nil, err
 	}
-	c, err := webdeepseek.New(webdeepseek.Config{BaseURL: base, APIKey: key})
+	c, err := webdeepseek.New(webdeepseek.Config{BaseURL: ep.BaseURL, APIKey: key})
 	if err != nil {
 		return nil, err
 	}

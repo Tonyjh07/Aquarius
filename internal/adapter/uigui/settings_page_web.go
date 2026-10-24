@@ -11,6 +11,7 @@ package uigui
 // 恒空，留空 = 保持原值（D35）。
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -80,8 +81,9 @@ func (webPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, row
 		return fieldRow(gtx, th, "超时", editorBox(th, &f.webTimeout, "秒；缺省 30（空 = 保持）")), true
 	case rowWebNote:
 		l := material.Body2(th, "两组列表都是有序的：先试第一家，失败换下一家。"+
-			"deepseek 借「模型服务」里同一条目的端点与密钥，brave 需要自己的订阅令牌（密钥只写不回显，留空 = 保持）。"+
-			"本地抓取不需要密钥，但会拒绝内网与回环地址。提供商与安全参数的改动保存后重启生效。")
+			"端点与密钥可以自己填，也可以选「借用」再点「填入」——那会把「模型服务」里那条的端点与密钥引用抄过来，"+
+			"之后照样能改。密钥只写不回显（留空 = 保持）。本地抓取不需要密钥，但会拒绝内网与回环地址。"+
+			"提供商与安全参数的改动保存后重启生效。")
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	}
@@ -109,7 +111,7 @@ func (webPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.webCount 
 func webKindHint(kind string) string {
 	switch kind {
 	case "deepseek":
-		return "借「模型服务」条目"
+		return "端点与密钥可自填，也可借「模型服务」"
 	case "brave":
 		return "需订阅令牌"
 	case "local":
@@ -121,21 +123,23 @@ func webKindHint(kind string) string {
 
 // webProviderForm 联网提供商一条的编辑控件组（D200；本窗 goroutine 独占）。
 type webProviderForm struct {
-	orig    WebProviderView // 快照原值（保存提示与密钥形态判定的基线）
-	kind    cycleField      // 类型（搜索/抓取各一组档）
-	from    widget.Editor   // 复用哪个对话 provider（deepseek）
-	key     widget.Editor   // 自己的密钥引用（brave；只写不回显）
-	baseURL widget.Editor   // 端点覆盖
-	country widget.Editor   // brave：结果国家
-	lang    widget.Editor   // brave：结果语言
-	count   widget.Editor   // 搜索：这一家的缺省条数
+	orig    WebProviderView  // 快照原值（保存提示与密钥形态判定的基线）
+	kind    cycleField       // 类型（搜索/抓取各一组档）
+	from    cycleField       // 借哪个 model.providers 条目（D222：候选来自「模型服务」）
+	fromUse widget.Clickable // 「填入」：把 from 那条的端点与密钥引用抄进本条目
+	key     widget.Editor    // 自己的密钥引用（只写不回显）
+	baseURL widget.Editor    // 自己的端点
+	country widget.Editor    // brave：结果国家
+	lang    widget.Editor    // brave：结果语言
+	count   widget.Editor    // 搜索：这一家的缺省条数
 	up      widget.Clickable
 	down    widget.Clickable
 	del     widget.Clickable
 }
 
 // newWebProviderForm 由快照造一条编辑控件组；空快照 = 新增（kind 取该侧首档）。
-func newWebProviderForm(v WebProviderView, search bool) *webProviderForm {
+// choices 是「借」的下拉候选（model.providers 的名字，D222）。
+func newWebProviderForm(v WebProviderView, search bool, choices []ProviderChoice) *webProviderForm {
 	pf := &webProviderForm{orig: v}
 	if search {
 		pf.kind = cycleField{displays: webSearchKinds, values: webSearchKinds}
@@ -143,11 +147,32 @@ func newWebProviderForm(v WebProviderView, search bool) *webProviderForm {
 		pf.kind = cycleField{displays: webFetchKinds, values: webFetchKinds}
 	}
 	pf.kind.setValue(v.Kind) // "" 未命中 → 首档（deepseek）
-	for _, ed := range []*widget.Editor{&pf.from, &pf.key, &pf.baseURL, &pf.country, &pf.lang, &pf.count} {
+	// 「借」的下拉：首项「不借」+ 各 provider 名；当前值不在候选里时补一项，
+	// 免得开窗即把一条失联的引用悄悄改成「不借」。
+	displays := []string{"不借"}
+	values := []string{""}
+	for _, c := range choices {
+		if c.Name == "" || slices.Contains(values, c.Name) {
+			continue
+		}
+		displays = append(displays, c.Name)
+		values = append(values, c.Name)
+	}
+	if f := strings.TrimSpace(v.From); f != "" && !slices.Contains(values, f) {
+		displays = append(displays, f)
+		values = append(values, f)
+	}
+	pf.from = cycleField{displays: displays, values: values}
+	pf.from.setValue(strings.TrimSpace(v.From))
+	// 快照没写 from 的 deepseek（老配置 `{"kind":"deepseek"}`）实际是借同名条目：
+	// 下拉就显示它，而不是「不借」——否则界面说的和启动做的事不一致。
+	if strings.TrimSpace(v.From) == "" && pf.kind.value() == "deepseek" && slices.Contains(values, "deepseek") {
+		pf.from.setValue("deepseek")
+	}
+	for _, ed := range []*widget.Editor{&pf.key, &pf.baseURL, &pf.country, &pf.lang, &pf.count} {
 		ed.SingleLine = true
 	}
 	pf.key.Mask = '•'
-	pf.from.SetText(v.From)
 	pf.baseURL.SetText(v.BaseURL)
 	pf.country.SetText(v.Country)
 	pf.lang.SetText(v.Lang)
@@ -169,15 +194,18 @@ func (pf *webProviderForm) keyNote() string {
 	if pf.orig.KeyPlain {
 		return "当前是明文（启动会警告）；填新值覆盖，留空 = 保持不变"
 	}
-	return "留空 = 回落 secret:AQUARIUS_BRAVE_API_KEY"
+	return "留空 = 用「借用」那条的；都没有则按类型回落（brave 用 AQUARIUS_BRAVE_API_KEY，" +
+		"deepseek 搜索用 AQUARIUS_DEEPSEEK_SEARCH_API_KEY、抓取用 _FETCH_）"
 }
 
-// webProviderRow 联网提供商一项：类型 / 复用来源 / 密钥 / 端点 / 国家语言 / 条数 +
-// 上移 / 下移 / 删除。字段按 kind 显隐——只画当前类型真正用得上的那几个，免得表单
-// 上摆一排「填了也不生效」的框。
+// webProviderRow 联网提供商一项：类型 / 借哪个服务 / 端点 / 密钥 / 国家语言 / 条数 +
+// 上移 / 下移 / 删除。
+//
+// 端点与密钥（D222）：两者都可以自己填。填了就用自己那份；留空则按「借」抄过来的
+// 值——所以「借」现在是省事的起点，而不是唯一形态。「填入」按钮把那一条的端点与密钥
+// 引用抄进编辑框，之后照常可以改（只抄引用名，永不抄值）。
 func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf *webProviderForm, search bool) layout.Dimensions {
 	kind := pf.kind.value()
-	deepseek := kind == "deepseek"
 	brave := kind == "brave"
 	local := kind == "local"
 	line := func(top int, w layout.Widget) layout.Widget {
@@ -214,16 +242,34 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 			})
 		}),
 	}
-	if deepseek {
+	if !local {
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "借用服务", editorBox(th, &pf.from, "「模型服务」里的条目名；空 = 同名 deepseek"))
+			return fieldRow(gtx, th, "端点", editorBox(th, &pf.baseURL, "如 https://api.deepseek.com；留空 = 用「借用」那条的"))
+		})))
+		// 「借」只对需要鉴权的类型有意义（local 没有端点也没有密钥）。
+		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, "借用", func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(cycleBtn(th, &pf.from)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.fromUse, "填入", paperBtnSecondary, true))
+					}),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							l := material.Label(th, paperNoteSp(th), "把它的端点与密钥引用抄进本条目，之后可改")
+							l.Color = paperOf().text3
+							return l.Layout(gtx)
+						})
+					}),
+				)
+			})
 		})))
 	}
-	if brave {
+	if brave || kind == "deepseek" {
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return fieldRow(gtx, th, "密钥", editorBox(th, &pf.key, "secret:名 或明文；留空 = 保持"))
+					return fieldRow(gtx, th, "密钥", editorBox(th, &pf.key, "secret:名 或明文；留空 = 保持 / 借用"))
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -233,11 +279,6 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 					})
 				}),
 			)
-		})))
-	}
-	if !local {
-		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "端点", editorBox(th, &pf.baseURL, "空 = 官方端点（自建网关/镜像可覆盖）"))
 		})))
 	}
 	if brave {
@@ -260,9 +301,13 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 }
 
-// webProviderEvents 一条提供商的事件消费（循环档 + 上移/下移/删除）。
+// webProviderEvents 一条提供商的事件消费（循环档 + 「填入」+ 上移/下移/删除）。
 func (f *settingsForm) webProviderEvents(gtx layout.Context, pf *webProviderForm, search bool, i int) {
 	pf.kind.advance(gtx)
+	pf.from.advance(gtx)
+	for pf.fromUse.Clicked(gtx) {
+		f.fillWebProviderFrom(pf)
+	}
 	for pf.up.Clicked(gtx) {
 		f.moveWebProvider(search, i, -1)
 	}
@@ -271,6 +316,30 @@ func (f *settingsForm) webProviderEvents(gtx layout.Context, pf *webProviderForm
 	}
 	for pf.del.Clicked(gtx) {
 		f.removeWebProvider(search, i)
+	}
+}
+
+// fillWebProviderFrom 「填入」：把「借用」选中那条的端点与密钥引用抄进本条目（D222）。
+//
+// 只抄**引用名**，不抄值——密钥值只在密钥库里，编辑框永远不回显（D35）。抄过去之后
+// 这条就变成独立配置，用户照常可以改端点、换密钥，与「借用」那条再无关系。
+// 目标条目在「模型服务」里没有已入库的引用时，密钥框保持原样（不凭空造一个引用名）。
+func (f *settingsForm) fillWebProviderFrom(pf *webProviderForm) {
+	name := pf.from.value()
+	if name == "" {
+		return
+	}
+	for _, c := range f.chainChoices {
+		if c.Name != name {
+			continue
+		}
+		if c.BaseURL != "" {
+			pf.baseURL.SetText(c.BaseURL)
+		}
+		if c.KeyRef != "" {
+			pf.key.SetText(c.KeyRef)
+		}
+		return
 	}
 }
 
@@ -285,7 +354,7 @@ func (f *settingsForm) webList(search bool) *[]*webProviderForm {
 // addWebProvider 追加一条空白提供商（新增项缺省取该侧首档 = deepseek）。
 func (f *settingsForm) addWebProvider(search bool) {
 	list := f.webList(search)
-	*list = append(*list, newWebProviderForm(WebProviderView{}, search))
+	*list = append(*list, newWebProviderForm(WebProviderView{}, search, f.chainChoices))
 }
 
 // moveWebProvider 上移/下移一项（dir = -1 / +1；越界 no-op）。
@@ -311,11 +380,11 @@ func (f *settingsForm) removeWebProvider(search bool, i int) {
 func (f *settingsForm) loadWeb(s SettingsSnapshot) {
 	f.webSearch = make([]*webProviderForm, 0, len(s.WebSearchProviders))
 	for _, v := range s.WebSearchProviders {
-		f.webSearch = append(f.webSearch, newWebProviderForm(v, true))
+		f.webSearch = append(f.webSearch, newWebProviderForm(v, true, f.chainChoices))
 	}
 	f.webFetch = make([]*webProviderForm, 0, len(s.WebFetchProviders))
 	for _, v := range s.WebFetchProviders {
-		f.webFetch = append(f.webFetch, newWebProviderForm(v, false))
+		f.webFetch = append(f.webFetch, newWebProviderForm(v, false, f.chainChoices))
 	}
 	if s.WebSearchCount > 0 {
 		f.webCount.SetText(strconv.Itoa(s.WebSearchCount))
@@ -340,7 +409,7 @@ func (f *settingsForm) webProviderPatches(search bool) []WebProviderPatch {
 	for _, pf := range list {
 		out = append(out, WebProviderPatch{
 			Kind:    strings.TrimSpace(pf.kind.value()),
-			From:    strings.TrimSpace(pf.from.Text()),
+			From:    strings.TrimSpace(pf.from.value()),
 			Key:     strings.TrimSpace(pf.key.Text()),
 			BaseURL: strings.TrimSpace(pf.baseURL.Text()),
 			Country: strings.TrimSpace(pf.country.Text()),

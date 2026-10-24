@@ -131,11 +131,15 @@ func (u *UI) saveSettings(f *settingsForm) {
 	// S11-7①/D176：降级链恒全量写（空 = 清空）；provider 名为空的行为空行被跳过，
 	// cmd 侧再校验 provider 名存在于 providers 列表。
 	p.Fallback = f.fallbackList()
-	// 语音（D179）：恒全量写；provider 空 = 该能力关闭（模型名原样保留）。
+	// 语音（D179/D222）：恒全量写；provider 空 = 不借任何条目（端点与密钥全靠自己填）。
 	p.ASRProvider = f.asrProv.value()
+	p.ASRBaseURL = strings.TrimSpace(f.asrBaseURL.Text())
+	p.ASRKey = strings.TrimSpace(f.asrKey.Text())
 	p.ASRModel = strings.TrimSpace(f.asrModel.Text())
 	p.ASRLang = f.asrLang.value()
 	p.TTSProvider = f.ttsProv.value()
+	p.TTSBaseURL = strings.TrimSpace(f.ttsBaseURL.Text())
+	p.TTSKey = strings.TrimSpace(f.ttsKey.Text())
 	p.TTSModel = strings.TrimSpace(f.ttsModel.Text())
 	p.TTSVoice = strings.TrimSpace(f.ttsVoice.Text())
 	p.TTSDesign = strings.TrimSpace(f.ttsDesign.Text())
@@ -249,7 +253,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 		f.status = "已保存（模型名经 /model 热切换）"
 	}
 	if p.ASRProvider != f.snap.ASRProvider || p.ASRModel != f.snap.ASRModel ||
-		p.TTSProvider != f.snap.TTSProvider || p.TTSModel != f.snap.TTSModel {
+		p.ASRBaseURL != f.snap.ASRBaseURL ||
+		p.TTSProvider != f.snap.TTSProvider || p.TTSModel != f.snap.TTSModel ||
+		p.TTSBaseURL != f.snap.TTSBaseURL || p.ASRKey != "" || p.TTSKey != "" {
 		f.status = "已保存（语音服务与模型的改动重启后生效）"
 	}
 	if p.RawJSON != "" {
@@ -278,8 +284,16 @@ func (u *UI) saveSettings(f *settingsForm) {
 		Builtins: f.snap.Builtins, RawJSON: p.RawJSON,
 		Fallback: p.Fallback, FallbackNote: f.snap.FallbackNote,
 		ASRProvider: p.ASRProvider, ASRModel: p.ASRModel, ASRLang: p.ASRLang,
+		ASRBaseURL:  p.ASRBaseURL,
+		ASRKeySaved: keyShapeAfterSave(p.ASRKey, f.snap.ASRKeySaved),
+		ASRKeyPlain: keyShapePlainAfterSave(p.ASRKey, f.snap.ASRKeyPlain),
+		ASRKeyRef:   keyRefAfterSave(p.ASRKey, f.snap.ASRKeyRef),
 		TTSProvider: p.TTSProvider, TTSModel: p.TTSModel,
-		TTSVoice: p.TTSVoice, TTSDesign: p.TTSDesign,
+		TTSBaseURL:  p.TTSBaseURL,
+		TTSKeySaved: keyShapeAfterSave(p.TTSKey, f.snap.TTSKeySaved),
+		TTSKeyPlain: keyShapePlainAfterSave(p.TTSKey, f.snap.TTSKeyPlain),
+		TTSKeyRef:   keyRefAfterSave(p.TTSKey, f.snap.TTSKeyRef),
+		TTSVoice:    p.TTSVoice, TTSDesign: p.TTSDesign,
 		TTSStyle: p.TTSStyle, TTSTags: p.TTSTags,
 		WebSearchProviders: webProviderViews(p.WebSearchProviders, f.snap.WebSearchProviders),
 		WebSearchCount:     p.WebSearchCount,
@@ -307,6 +321,34 @@ func webProvidersEqual(a []WebProviderPatch, b []WebProviderView) bool {
 		}
 	}
 	return true
+}
+
+// keyShapeAfterSave 保存后密钥框的形态：填了 `secret:` 引用 = 已存引用；填了明文 = 已收进
+// 密钥库（引用名由保存路径派生，界面不重复那套规则，故不带名字）；留空 = 沿用原形态
+// （D35 只写不回显，patch 里的空没有「清空」语义）。
+func keyShapeAfterSave(typed string, wasSaved bool) bool {
+	if typed == "" {
+		return wasSaved
+	}
+	return true
+}
+
+// keyShapePlainAfterSave 同上，明文形态：只有「留空且原本就是明文」才保留明文标记
+// ——填了新值之后 config 里落的是引用，不再标成明文（否则界面会一直说「启动会警告」）。
+func keyShapePlainAfterSave(typed string, wasPlain bool) bool {
+	return typed == "" && wasPlain
+}
+
+// keyRefAfterSave 保存后回显的引用名：填了引用就用新名；留空沿用旧名；填了明文则无名
+// （名字由保存路径按规则派生，界面不重复实现，下次开窗自然显示）。
+func keyRefAfterSave(typed, old string) string {
+	switch {
+	case typed == "":
+		return old
+	case strings.HasPrefix(typed, "secret:"):
+		return typed
+	}
+	return ""
 }
 
 // webProviderViews 提交值 + 旧快照的密钥形态 → 新快照视图（密钥永不回显，只带形态）：
