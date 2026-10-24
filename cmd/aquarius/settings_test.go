@@ -443,6 +443,77 @@ func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
 	}
 }
 
+// TestPersistAudioKindAndModelPath 协议位与本地模型路径往返：whisper 只写模型路径也能
+// 落盘并通过校验；协议位写进 config 的 kind 键。
+func TestPersistAudioKindAndModelPath(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	modelPath := filepath.Join(t.TempDir(), "ggml-base-q5_1.bin")
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme:        "system",
+		ASRKind:      "whisper",
+		ASRModelPath: modelPath,
+		TTSKind:      "vits",
+		TTSBaseURL:   "http://127.0.0.1:23456",
+		TTSVoice:     "3",
+	}); err != nil {
+		t.Fatalf("persistSettingsTextKeys: %v", err)
+	}
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("读配置: %v", err)
+	}
+	if cfg.Audio.ASR.Kind != "whisper" || cfg.Audio.ASR.ModelPath != modelPath {
+		t.Fatalf("识别配置 = %+v", cfg.Audio.ASR)
+	}
+	if cfg.Audio.TTS.Kind != "vits" || cfg.Audio.TTS.BaseURL != "http://127.0.0.1:23456" {
+		t.Fatalf("合成配置 = %+v", cfg.Audio.TTS)
+	}
+	if !cfg.Audio.ASR.configured() {
+		t.Fatal("填了模型路径应算已配置")
+	}
+	// 写进去的配置必须能过启动校验（否则重启后连对话都起不来）。
+	if err := cfg.normalizeAudio(); err != nil {
+		t.Fatalf("落盘配置过不了启动校验: %v", err)
+	}
+}
+
+// TestPersistAudioRejectsBadKind 协议位写错时保存就拦住（启动期同样会拒）。
+func TestPersistAudioRejectsBadKind(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	cases := []struct {
+		name string
+		p    uigui.SettingsPatch
+		want string
+	}{
+		{"识别侧写了合成协议", uigui.SettingsPatch{
+			Theme: "system", ASRKind: "vits", ASRBaseURL: "https://x", ASRModel: "m",
+		}, "audio.asr.kind"},
+		{"合成侧写了识别协议", uigui.SettingsPatch{
+			Theme: "system", TTSKind: "funasr", TTSBaseURL: "https://x",
+		}, "audio.tts.kind"},
+		{"whisper 缺模型路径", uigui.SettingsPatch{
+			Theme: "system", ASRKind: "whisper",
+		}, "model_path"},
+		{"选了协议却没端点", uigui.SettingsPatch{
+			Theme: "system", ASRKind: "openai", ASRModel: "whisper-1",
+		}, "端点"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := persistSettingsTextKeys(cfgPath, c.p)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want 含 %q", err, c.want)
+			}
+		})
+	}
+}
+
 // TestPersistAudioEndpointRoundTrip 语音的独立端点与密钥（D222）：端点写读往返，
 // 密钥留空 = 保持原引用（只写不回显，patch 里的空没有「清空」语义）。
 func TestPersistAudioEndpointRoundTrip(t *testing.T) {

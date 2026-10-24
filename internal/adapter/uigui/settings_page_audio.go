@@ -24,13 +24,16 @@ func (audioPage) Key() string { return "语音" }
 func (audioPage) Rows(f *settingsForm) []rowDesc {
 	return []rowDesc{
 		sec("语音识别（说话转文字）"),
+		{kind: rowAudioASRKind},
 		{kind: rowAudioASRProvider},
 		{kind: rowAudioASREndpoint},
 		{kind: rowAudioASRKey},
 		{kind: rowAudioASRModel},
+		{kind: rowAudioASRPath},
 		{kind: rowAudioLang},
 		sec("语音合成（文字转语音）"),
 		{kind: rowAudioTTSProvider},
+		{kind: rowAudioTTSKind},
 		{kind: rowAudioTTSEndpoint},
 		{kind: rowAudioTTSKey},
 		{kind: rowAudioTTSModel},
@@ -45,6 +48,8 @@ func (audioPage) Rows(f *settingsForm) []rowDesc {
 
 func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
 	switch rows[i].kind {
+	case rowAudioASRKind:
+		return fieldRow(gtx, th, "识别方式", cycleBtn(th, &f.asrKind)), true
 	case rowAudioASRProvider:
 		return f.audioServiceRow(gtx, th, &f.asrProv, &f.asrKeyUse), true
 	case rowAudioASREndpoint:
@@ -52,11 +57,15 @@ func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowAudioASRKey:
 		return f.audioKeyRow(gtx, th, &f.asrKey, "asr"), true
 	case rowAudioASRModel:
-		return fieldRow(gtx, th, "识别模型", editorBox(th, &f.asrModel, "如 mimo-v2.5-asr")), true
+		return fieldRow(gtx, th, "识别模型", editorBox(th, &f.asrModel, "如 mimo-v2.5-asr / whisper-1")), true
+	case rowAudioASRPath:
+		return f.audioModelPathRow(gtx, th), true
 	case rowAudioLang:
 		return fieldRow(gtx, th, "录音语种", cycleBtn(th, &f.asrLang)), true
 	case rowAudioTTSProvider:
 		return f.audioServiceRow(gtx, th, &f.ttsProv, &f.ttsKeyUse), true
+	case rowAudioTTSKind:
+		return fieldRow(gtx, th, "合成方式", cycleBtn(th, &f.ttsKind)), true
 	case rowAudioTTSEndpoint:
 		return fieldRow(gtx, th, "端点", editorBox(th, &f.ttsBaseURL, "如 https://api.example.com/v1；留空 = 用「服务」那条的")), true
 	case rowAudioTTSKey:
@@ -74,14 +83,36 @@ func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowAudioPreview:
 		return f.audioPreviewRow(gtx, th), true
 	case rowAudioNote:
-		l := material.Body2(th, "识别与合成各自是一份完整配置：端点与密钥可以自己填，"+
-			"也可以选一个「服务」再点「填入」——那会把该条目的端点与密钥引用抄过来，之后照样能改。"+
-			"密钥只写不回显（留空 = 保持）。改服务、端点或模型需保存并重启。"+
+		l := material.Body2(th, "识别与合成各自是一份完整配置：先选方式（协议），再决定端点与密钥——"+
+			"可以自己填，也可以选一个「服务」再点「填入」，那会把该条目的端点与密钥引用抄过来，之后照样能改。"+
+			"密钥只写不回显（留空 = 保持）。改方式、服务、端点或模型需保存并重启。"+
 			"音色、音色描述与风格保存后对此后的播报生效；试听按当前填写的内容合成一句。")
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	}
 	return layout.Dimensions{}, false
+}
+
+// audioModelPathRow 本地识别模型文件路径一行 + 一句下载指引。
+//
+// 模型文件几十 MB 起，既不进仓库也不进二进制；用户自己下载后填绝对路径。
+// 报错里也会带同样的指引（模型读不到时的那句话），这里提前说一遍。
+func (f *settingsForm) audioModelPathRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, "模型文件", editorBox(th, &f.asrPath, "本地 whisper 的 ggml 模型绝对路径（如 …\\ggml-base-q5_1.bin）"))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperMicroSp(th),
+					"模型不在仓库里，需要自己下载：到 huggingface.co/ggerganov/whisper.cpp "+
+						"取 ggml-base-q5_1.bin（约 60MB，中文效果与速度的平衡点）。"+
+						"只在「本地 whisper」这一档用到。")
+				l.Color = paperOf().text3
+				return l.Layout(gtx)
+			})
+		}),
+	)
 }
 
 // audioServiceRow 「服务」一行：循环选一个 model.providers 条目 + 「填入」按钮（D222）。
@@ -165,7 +196,9 @@ func (f *settingsForm) fillAudioFromService(prov *cycleField, baseURL, key *widg
 
 func (audioPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	f.asrProv.advance(gtx)
+	f.asrKind.advance(gtx)
 	f.ttsProv.advance(gtx)
+	f.ttsKind.advance(gtx)
 	f.asrLang.advance(gtx)
 	for f.asrKeyUse.Clicked(gtx) {
 		f.fillAudioFromService(&f.asrProv, &f.asrBaseURL, &f.asrKey)

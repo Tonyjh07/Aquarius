@@ -243,14 +243,20 @@ type SettingsSnapshot struct {
 	// 语音（D179）：ASR/TTS 各自引用 model.providers 里的一个 name；空 = 该能力未配置。
 	// 只借 base_url 与密钥池，不继承 kind/能力位、不进降级链。
 	ASRProvider string
-	ASRModel    string
-	ASRLang     string // 录音语种提示：auto | zh | en
-	TTSProvider string
-	TTSModel    string
-	TTSVoice    string // 预置音色名；-voiceclone 模型填样本文件绝对路径
-	TTSDesign   string // -voicedesign 模型的音色描述
-	TTSStyle    string // 自然语言风格指令
-	TTSTags     string // 风格标签（拼成 "(标签)" 前缀）
+	// ASRKind 识别协议：chat-audio | whisper | openai | funasr（空 = chat-audio）。
+	ASRKind  string
+	ASRModel string
+	// ASRModelPath 本地识别模型文件路径（whisper 用；别的协议不看）。
+	ASRModelPath string
+	ASRLang      string // 录音语种提示：auto | zh | en
+	TTSProvider  string
+	// TTSKind 合成协议：chat-audio | vits | gptsovits（空 = chat-audio）。
+	TTSKind   string
+	TTSModel  string
+	TTSVoice  string // 预置音色名；-voiceclone 模型填样本文件绝对路径
+	TTSDesign string // -voicedesign 模型的音色描述
+	TTSStyle  string // 自然语言风格指令
+	TTSTags   string // 风格标签（拼成 "(标签)" 前缀）
 	// 语音的端点与密钥（D222）：可以自己填，也可以借 ASRProvider/TTSProvider 指向的
 	// 条目。密钥永不进快照（只给形态标记，D35 同口径）。
 	ASRBaseURL  string
@@ -327,14 +333,18 @@ type SettingsPatch struct {
 	// 语音（D179；恒全量写）：provider 空 = 该能力关闭；model 非空且 provider 空时
 	// 原样保留（不生效但不丢用户输入）；cmd 侧校验引用的 provider 存在。
 	ASRProvider string
-	ASRModel    string
-	ASRLang     string // auto | zh | en
-	TTSProvider string
-	TTSModel    string
-	TTSVoice    string
-	TTSDesign   string
-	TTSStyle    string
-	TTSTags     string
+	// ASRKind / TTSKind 协议位（空 = chat-audio）；ASRModelPath 是本地引擎的模型文件。
+	ASRKind      string
+	ASRModel     string
+	ASRModelPath string
+	ASRLang      string // auto | zh | en
+	TTSProvider  string
+	TTSKind      string
+	TTSModel     string
+	TTSVoice     string
+	TTSDesign    string
+	TTSStyle     string
+	TTSTags      string
 	// 语音的端点与密钥（D222）：BaseURL 空 = 借 ASRProvider/TTSProvider 的；Key 空 =
 	// 保持原引用（只写不回显），`secret:` 照写引用、其余明文转进密钥库。
 	ASRBaseURL string
@@ -383,6 +393,12 @@ var (
 	// langLevels 录音语种提示（D179）：只喂给识别，不改变界面语言。
 	langLevels = []string{"自动识别", "中文", "英文"}
 	langValues = []string{"auto", "zh", "en"}
+	// asrKindLevels / ttsKindLevels 协议档：展示名是人话，键值是 config 里的 kind 原文。
+	// 顺序即循环顺序，首项是缺省（chat-audio）。
+	asrKindLevels = []string{"对话接口", "本地 whisper", "OpenAI 转写", "FunASR 原生"}
+	asrKindValues = []string{"chat-audio", "whisper", "openai", "funasr"}
+	ttsKindLevels = []string{"对话接口", "VITS", "GPT-SoVITS"}
+	ttsKindValues = []string{"chat-audio", "vits", "gptsovits"}
 	// kindLevels 协议档（S11-7③/D173）：展示名短（chat/responses/anthropic），键值为
 	// config 里的 kind 原文；空 = openai-chat（读侧归一）。
 	kindLevels = []string{"chat", "responses", "anthropic"}
@@ -566,12 +582,15 @@ type settingsForm struct {
 	// chainChoices），端点与密钥也能自己填；音色与风格是自由文本；试听在后台合成一句，
 	// 结果经 voiceRes 回灌行内状态。
 	asrProv     cycleField
+	asrKind     cycleField
 	asrBaseURL  widget.Editor
 	asrKey      widget.Editor // 只写不回显（空 = 保持 / 借所选服务的）
 	asrKeyUse   widget.Clickable
 	asrModel    widget.Editor
+	asrPath     widget.Editor // 本地模型文件路径（whisper 用）
 	asrLang     cycleField
 	ttsProv     cycleField
+	ttsKind     cycleField
 	ttsBaseURL  widget.Editor
 	ttsKey      widget.Editor
 	ttsKeyUse   widget.Clickable
@@ -780,6 +799,8 @@ func newSettingsFormState() *settingsForm {
 		theme:       cycleField{displays: themeLevels, values: themeValues},
 		scale:       cycleField{displays: zoomLevels, values: zoomValues},
 		asrLang:     cycleField{displays: langLevels, values: langValues},
+		asrKind:     cycleField{displays: asrKindLevels, values: asrKindValues},
+		ttsKind:     cycleField{displays: ttsKindLevels, values: ttsKindValues},
 		testResults: make(chan testOutcome, 8),
 		toolRes:     make(chan toolActionResult, 16),
 		skillRes:    make(chan skillActionResult, 16),
@@ -846,7 +867,7 @@ func newSettingsForm(u *UI) *settingsForm {
 		s.FontSize = fontSpBase
 	}
 	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo,
-		&f.asrModel, &f.asrBaseURL, &f.asrKey, &f.ttsModel, &f.ttsBaseURL, &f.ttsKey,
+		&f.asrModel, &f.asrPath, &f.asrBaseURL, &f.asrKey, &f.ttsModel, &f.ttsBaseURL, &f.ttsKey,
 		&f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags,
 		&f.webCount, &f.webMaxChars, &f.webProxy, &f.webUA, &f.webTimeout,
 		&f.samplingTemp, &f.samplingTopP, &f.samplingMax, &f.samplingStop} {
@@ -898,9 +919,12 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.setAudioProviderChoices(s.ASRProvider, &f.asrProv)
 	f.setAudioProviderChoices(s.TTSProvider, &f.ttsProv)
 	f.asrLang.setValue(s.ASRLang)
+	f.asrKind.setValue(s.ASRKind)
+	f.ttsKind.setValue(s.TTSKind)
 	f.asrBaseURL.SetText(s.ASRBaseURL)
 	f.ttsBaseURL.SetText(s.TTSBaseURL)
 	f.asrModel.SetText(s.ASRModel)
+	f.asrPath.SetText(s.ASRModelPath)
 	f.ttsModel.SetText(s.TTSModel)
 	f.ttsVoice.SetText(s.TTSVoice)
 	f.ttsDesign.SetText(s.TTSDesign)

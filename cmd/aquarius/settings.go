@@ -79,17 +79,20 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		RawJSON:          string(data),
 		// 语音（D179/D222）：文件即事实源（服务/模型改动重启生效，与快照口径一致）。
 		// 端点原样回填；密钥只带形态（D35）。
-		ASRProvider: raw.Audio.ASR.Provider,
-		ASRModel:    raw.Audio.ASR.Model,
-		ASRLang:     raw.Input.Language,
-		TTSProvider: raw.Audio.TTS.Provider,
-		TTSModel:    raw.Audio.TTS.Model,
-		TTSVoice:    raw.Audio.TTS.Voice,
-		TTSDesign:   raw.Audio.TTS.Design,
-		TTSStyle:    raw.Audio.TTS.Style,
-		TTSTags:     raw.Audio.TTS.Tags,
-		ASRBaseURL:  raw.Audio.ASR.BaseURL,
-		TTSBaseURL:  raw.Audio.TTS.BaseURL,
+		ASRProvider:  raw.Audio.ASR.Provider,
+		ASRKind:      raw.Audio.ASR.Kind,
+		ASRModel:     raw.Audio.ASR.Model,
+		ASRModelPath: raw.Audio.ASR.ModelPath,
+		ASRLang:      raw.Input.Language,
+		TTSProvider:  raw.Audio.TTS.Provider,
+		TTSKind:      raw.Audio.TTS.Kind,
+		TTSModel:     raw.Audio.TTS.Model,
+		TTSVoice:     raw.Audio.TTS.Voice,
+		TTSDesign:    raw.Audio.TTS.Design,
+		TTSStyle:     raw.Audio.TTS.Style,
+		TTSTags:      raw.Audio.TTS.Tags,
+		ASRBaseURL:   raw.Audio.ASR.BaseURL,
+		TTSBaseURL:   raw.Audio.TTS.BaseURL,
 		// 联网（D200）：提供商列表与本地抓取参数，文件即事实源。
 		WebSearchProviders: webProviderViewsOf(raw.Web.Search.Providers),
 		WebSearchCount:     raw.Web.Search.Count,
@@ -238,21 +241,36 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 				setChannel(name, map[string]any{"api_key": k})
 			}
 		}
-		setChannel("asr", map[string]any{
-			"provider": p.ASRProvider,
-			"base_url": p.ASRBaseURL,
-			"model":    p.ASRModel,
-		})
+		setChannel("asr", func() map[string]any {
+			m := map[string]any{
+				"provider":   p.ASRProvider,
+				"base_url":   p.ASRBaseURL,
+				"model":      p.ASRModel,
+				"model_path": p.ASRModelPath,
+			}
+			// 协议位留空 = 这条写路径不管协议（高级页手写的值原样保留）。
+			// 设置窗保存时循环档恒有值，所以正常改协议不会走到这个分支。
+			if k := strings.TrimSpace(p.ASRKind); k != "" {
+				m["kind"] = k
+			}
+			return m
+		}())
 		setKey("asr", p.ASRKey)
-		setChannel("tts", map[string]any{
-			"provider": p.TTSProvider,
-			"base_url": p.TTSBaseURL,
-			"model":    p.TTSModel,
-			"voice":    p.TTSVoice,
-			"design":   p.TTSDesign,
-			"style":    p.TTSStyle,
-			"tags":     p.TTSTags,
-		})
+		setChannel("tts", func() map[string]any {
+			m := map[string]any{
+				"provider": p.TTSProvider,
+				"base_url": p.TTSBaseURL,
+				"model":    p.TTSModel,
+				"voice":    p.TTSVoice,
+				"design":   p.TTSDesign,
+				"style":    p.TTSStyle,
+				"tags":     p.TTSTags,
+			}
+			if k := strings.TrimSpace(p.TTSKind); k != "" {
+				m["kind"] = k
+			}
+			return m
+		}())
 		setKey("tts", p.TTSKey)
 		inSec, _ := generic["input"].(map[string]any)
 		if inSec == nil {
@@ -375,9 +393,9 @@ func validateFallbackChain(cfgPath string, links []uigui.FallbackLink) error {
 }
 
 // validateAudioSettings 语音配置保存前校验（D179/D222）：一路语音要么借一个存在的
-// provider，要么自己填端点；配了就要有模型名；语种只认三档。与 normalizeAudio 同口径，
-// 只是提前到落盘前——否则写进去的是一份启动会拒的配置。密钥能不能取到不在这里拦
-// （启动时警告并让该能力不可用，其余照常）。
+// provider，要么自己填端点；必填项按协议位判定（模型名 / 本地模型文件）。语种只认三档。
+// 与启动期的 normalizeAudio 共用同一套判定，只是提前到落盘前——否则写进去的是一份
+// 启动会拒的配置。密钥能不能取到不在这里拦（启动时警告并让该能力不可用，其余照常）。
 func validateAudioSettings(cfgPath string, p uigui.SettingsPatch) error {
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
@@ -387,30 +405,24 @@ func validateAudioSettings(cfgPath string, p uigui.SettingsPatch) error {
 	for _, pc := range cfg.Model.Providers {
 		known[pc.Name] = true
 	}
-	check := func(label, prov, baseURL, key, model string) error {
-		prov = strings.TrimSpace(prov)
-		baseURL = strings.TrimSpace(baseURL)
-		key = strings.TrimSpace(key)
-		model = strings.TrimSpace(model)
-		if prov == "" && baseURL == "" && key == "" {
-			return nil // 三样都没填 = 该能力关闭（模型名留着无妨）
+	// check 校验「引用的服务存在」，再把这一路交给启动期同一套归一逻辑。
+	check := func(name, label, prov, baseURL, key, kind, model, modelPath string, kinds []string) error {
+		ch := audioChannel{
+			Provider: prov, BaseURL: baseURL, APIKey: key,
+			Kind: kind, Model: model, ModelPath: modelPath,
 		}
-		if prov != "" && !known[prov] {
+		if p := strings.TrimSpace(prov); p != "" && !known[p] {
 			return fmt.Errorf("%s引用的服务 %q 不在 provider 列表内"+
-				"（先在「模型服务」页添加，或直接填端点）", label, prov)
+				"（先在「模型服务」页添加，或直接填端点）", label, p)
 		}
-		if prov == "" && baseURL == "" {
-			return fmt.Errorf("%s要么选一个服务，要么填端点", label)
-		}
-		if model == "" {
-			return fmt.Errorf("%s配了服务就要填模型名", label)
-		}
-		return nil
+		return normalizeAudioChannel(name, &ch, kinds)
 	}
-	if err := check("语音识别", p.ASRProvider, p.ASRBaseURL, p.ASRKey, p.ASRModel); err != nil {
+	if err := check("audio.asr", "语音识别", p.ASRProvider, p.ASRBaseURL, p.ASRKey,
+		p.ASRKind, p.ASRModel, p.ASRModelPath, asrKinds); err != nil {
 		return err
 	}
-	if err := check("语音合成", p.TTSProvider, p.TTSBaseURL, p.TTSKey, p.TTSModel); err != nil {
+	if err := check("audio.tts", "语音合成", p.TTSProvider, p.TTSBaseURL, p.TTSKey,
+		p.TTSKind, p.TTSModel, "", ttsKinds); err != nil {
 		return err
 	}
 	switch strings.TrimSpace(p.ASRLang) {

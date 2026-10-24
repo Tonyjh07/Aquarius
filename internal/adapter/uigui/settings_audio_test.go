@@ -182,6 +182,69 @@ func TestFillAudioFromService(t *testing.T) {
 	}
 }
 
+// TestAudioKindAndModelPathRows 协议档与本地模型路径行：开窗回填、保存原样进 patch、
+// 行计划里各有一行。
+func TestAudioKindAndModelPathRows(t *testing.T) {
+	s := audioSnapshot()
+	s.ASRKind = "whisper"
+	s.ASRModelPath = `C:\models\ggml-base-q5_1.bin`
+	s.TTSKind = "vits"
+	var got SettingsPatch
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return s },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
+		ProviderMgr:   &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "openai"}}},
+	})
+	f := newSettingsForm(u)
+	if f.asrKind.value() != "whisper" || f.ttsKind.value() != "vits" {
+		t.Fatalf("协议档 = %q / %q", f.asrKind.value(), f.ttsKind.value())
+	}
+	if f.asrPath.Text() != s.ASRModelPath {
+		t.Fatalf("模型路径未回填: %q", f.asrPath.Text())
+	}
+	count := map[rowKind]int{}
+	for _, r := range f.pageRows(pageAudio) {
+		count[r.kind]++
+	}
+	for _, k := range []rowKind{rowAudioASRKind, rowAudioASRPath, rowAudioTTSKind} {
+		if count[k] != 1 {
+			t.Errorf("行型 %v 应恰好一行", k)
+		}
+	}
+	u.saveSettings(f)
+	if got.ASRKind != "whisper" || got.TTSKind != "vits" {
+		t.Fatalf("协议位 patch = %q / %q", got.ASRKind, got.TTSKind)
+	}
+	if got.ASRModelPath != s.ASRModelPath {
+		t.Fatalf("模型路径 patch = %q", got.ASRModelPath)
+	}
+}
+
+// TestAudioKindCycleOrder 循环档的展示名与键值一一对应（顺序即循环顺序，首项是缺省）。
+func TestAudioKindCycleOrder(t *testing.T) {
+	if len(asrKindLevels) != len(asrKindValues) || len(ttsKindLevels) != len(ttsKindValues) {
+		t.Fatalf("档位展示名与键值数量不一致: %d/%d, %d/%d",
+			len(asrKindLevels), len(asrKindValues), len(ttsKindLevels), len(ttsKindValues))
+	}
+	if asrKindValues[0] != "chat-audio" || ttsKindValues[0] != "chat-audio" {
+		t.Fatalf("首项应为缺省协议: %q / %q", asrKindValues[0], ttsKindValues[0])
+	}
+	for _, v := range asrKindValues {
+		switch v {
+		case "chat-audio", "whisper", "openai", "funasr":
+		default:
+			t.Errorf("识别协议档出现未知键值 %q", v)
+		}
+	}
+	for _, v := range ttsKindValues {
+		switch v {
+		case "chat-audio", "vits", "gptsovits":
+		default:
+			t.Errorf("合成协议档出现未知键值 %q", v)
+		}
+	}
+}
+
 // TestPreviewVoiceUsesDraft 试听按草稿的音色/描述/风格合成一句（服务与模型来自装配）；
 // 结果回灌状态行。
 func TestPreviewVoiceUsesDraft(t *testing.T) {

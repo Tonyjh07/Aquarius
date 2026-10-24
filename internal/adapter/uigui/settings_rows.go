@@ -127,11 +127,14 @@ const (
 	rowSecretStatus // 存入/删除反馈状态行
 	// D179：语音页（识别 / 合成 / 音色与风格 / 试听）。D222 起每路另有端点与密钥。
 	rowAudioASRProvider // 识别服务（循环选 provider）
+	rowAudioASRKind     // 识别协议（循环档：对话接口 / 本地 whisper / OpenAI / FunASR）
 	rowAudioASREndpoint // 识别端点（空 = 用所选服务的）
 	rowAudioASRKey      // 识别密钥（只写不回显）
 	rowAudioASRModel    // 识别模型（单行档）
+	rowAudioASRPath     // 本地识别模型文件路径（whisper 用）
 	rowAudioLang        // 录音语种提示（循环档）
 	rowAudioTTSProvider // 合成服务（循环选 provider）
+	rowAudioTTSKind     // 合成协议（循环档：对话接口 / VITS / GPT-SoVITS）
 	rowAudioTTSEndpoint // 合成端点（空 = 用所选服务的）
 	rowAudioTTSKey      // 合成密钥（只写不回显）
 	rowAudioTTSModel    // 合成模型（单行档）
