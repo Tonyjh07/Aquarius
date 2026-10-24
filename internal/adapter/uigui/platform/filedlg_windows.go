@@ -53,6 +53,22 @@ type openFileNameW struct {
 	flagsEx           uint32
 }
 
+// attachFilter 附件选择框的过滤器（label、pattern 成对，末尾多一个 NUL）。
+//
+// 只列**真能转成文本**的格式：pptx/rtf/legacy 二进制 Office 没有解析支持，选中后只能
+// 拿到“二进制、未提取”的占位，进去还要模型自己去读一个 zip——选得到却读不出内容，比
+// 选不到更糟。确实要附这些格式的仍可走「所有文件」、拖拽或命令行附件参数。
+var attachFilter = []string{
+	"常见文档与图片",
+	"*.pdf;*.docx;*.xlsx;*.html;*.htm;*.txt;*.md;*.csv;*.json;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
+	"文档",
+	"*.pdf;*.docx;*.xlsx;*.html;*.htm;*.txt;*.md;*.csv;*.json",
+	"图片",
+	"*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
+	"所有文件 (*.*)",
+	"*.*",
+}
+
 // showFileDlg 文件选择框呈现（shell 线程，D104）：GetOpenFileNameW 自带模态泵，阻塞
 // 本线程与 TrackPopupMenu 同语义（D72 先例）；选中 → Host.FilesPicked 回传，
 // 取消/出错静默。
@@ -66,16 +82,7 @@ func (p *Plat) showFileDlg() {
 		ofnFileMustExist    = 0x1000
 		ofnExplorer         = 0x80000
 	)
-	filter := utf16Pairs(
-		"常见文档与图片",
-		"*.pdf;*.docx;*.xlsx;*.pptx;*.html;*.htm;*.txt;*.md;*.csv;*.json;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
-		"文档",
-		"*.pdf;*.docx;*.xlsx;*.pptx;*.html;*.htm;*.txt;*.md;*.csv;*.json",
-		"图片",
-		"*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
-		"所有文件 (*.*)",
-		"*.*",
-	)
+	filter := utf16Pairs(attachFilter...)
 	title, err := syscall.UTF16FromString("选择附件")
 	if err != nil {
 		return
