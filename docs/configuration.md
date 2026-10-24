@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-23 @ a98e6d7 -->
+<!-- docs-sync: 2026-10-24 @ 3cc6e38 -->
 
 > 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
 > 配置**以 profile 为隔离单位**：
@@ -310,9 +310,16 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 - **本机密钥库**落 `<profile>/secrets.bin`（随 profile 隔离）：Windows 走 DPAPI（绑定当前用户账户，
   无口令、无额外密钥文件），其它平台走 AES-256-GCM + 同目录 `secrets.key`（0600）。整库加密，
   键名与值都在密文内；写前留一代 `.bak`。
-- **界面填的明文会转入库**：设置窗 / 欢迎窗填明文 → 写进密钥库，config 里只落 `secret:<名>`
-  （名沿用原引用名，否则按 provider 名生成 `AQUARIUS_<PROVIDER>_API_KEY`；同 provider 的第 N 把
-  追加 `_<N>` 后缀）。密钥库不可写时直接报错，不会静默把明文留在盘上。
+- **界面填的明文会转入库**：设置窗（provider 页、联网页）与欢迎窗填明文 → 写进密钥库，
+  config 里只落 `secret:<名>`。**键名规则只有一条**：
+  - 该槽原本就有 `secret:<名>` 引用 → **沿用原名**（重填明文只换值，provider 改名也不换名）；
+  - 没有引用 → 按 provider 名生成 `AQUARIUS_<PROVIDER>_API_KEY`，第 N 把追加 `_<N>`；
+  - provider 名里含中文、全角或重音字母时，规范化会把它们吃掉（`深度求索` 与 `月之暗面`
+    都变 `AQUARIUS_PROVIDER_API_KEY`、互相覆盖），这类名字补 4 位指纹区分，
+    如 `AQUARIUS_OPENAI_03F5_API_KEY`。
+  联网页的 brave 密钥同口径入库（沿用 `AQUARIUS_BRAVE_API_KEY` 或自定义引用名）；借用对话
+  provider 的 kind（deepseek）没有自己的密钥槽，填了不入库。密钥库不可写时直接报错，
+  不会静默把明文留在盘上。
 - 明文密钥：允许直接填或手改 config，**启动打印警告**（不回显密钥值）；建议确保 config
   不被提交/同步，或到设置窗重填一次转入密钥库。
 - 值为空（或整项删除）→ 该 provider 回落默认 `secret:AQUARIUS_OPENAI_KEY`。

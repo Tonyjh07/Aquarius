@@ -79,6 +79,11 @@ func (w *wiring) settingsSnapshot() uigui.SettingsSnapshot {
 // applySettings 设置窗写回：单一 patch 回调——文本键泛键改写 + 内核命令计划
 // （设置窗经输入通道与键入同路径串行执行，壳内不旁路）。
 func (w *wiring) applySettings(p uigui.SettingsPatch) ([]port.Command, error) {
+	// 联网页填的明文密钥先转入密钥库、patch 里的 Key 换成引用（与 provider 页同一口径），
+	// 再落盘——否则同一次「填明文」在设置窗两个页面会得到两种结果。
+	if err := w.storeWebKeys(&p); err != nil {
+		return nil, err
+	}
 	if err := persistSettingsTextKeys(w.cfgPath, p); err != nil {
 		return nil, fmt.Errorf("写回 config: %w", err)
 	}

@@ -144,21 +144,71 @@ func TestSecretChainErrorHidesValue(t *testing.T) {
 	}
 }
 
-// TestKeyNameFor 键名规则（D161 落点③）：原引用名沿用、否则按 provider 名派生。
-func TestKeyNameFor(t *testing.T) {
-	cases := []struct{ provider, origRef, want string }{
-		{"openai", "", "AQUARIUS_OPENAI_API_KEY"},
-		{"My-Provider.v2", "", "AQUARIUS_MY_PROVIDER_V2_API_KEY"},
-		{"  ", "", "AQUARIUS_PROVIDER_API_KEY"},
-		{"openai", "secret:CUSTOM_NAME", "CUSTOM_NAME"},
-		{"openai", "secret:", "AQUARIUS_OPENAI_API_KEY"}, // 非法引用 → 回落派生
-		{"openai", "sk-plain-ref", "AQUARIUS_OPENAI_API_KEY"},
+// TestKeySlotName 键名规则：有引用沿用（每一把都如此）、没有就按 provider 名派生。
+func TestKeySlotName(t *testing.T) {
+	cases := []struct {
+		provider, origRef string
+		slot              int
+		want              string
+	}{
+		{"openai", "", 0, "AQUARIUS_OPENAI_API_KEY"},
+		{"My-Provider.v2", "", 0, "AQUARIUS_MY_PROVIDER_V2_API_KEY"},
+		{"  ", "", 0, "AQUARIUS_PROVIDER_API_KEY"},
+		{"openai", "secret:CUSTOM_NAME", 0, "CUSTOM_NAME"},
+		{"openai", "secret:", 0, "AQUARIUS_OPENAI_API_KEY"}, // 非法引用 → 回落派生
+		{"openai", "sk-plain-ref", 0, "AQUARIUS_OPENAI_API_KEY"},
+		// 第 N 把：无引用时按派生名加后缀。
+		{"openai", "", 1, "AQUARIUS_OPENAI_API_KEY_2"},
+		{"openai", "", 2, "AQUARIUS_OPENAI_API_KEY_3"},
+		// 第 N 把已有引用：**沿用**，不再拼后缀（曾经会变成 CUSTOM_2_2_2）。
+		{"openai", "secret:CUSTOM", 1, "CUSTOM"},
+		{"openai", "secret:AQUARIUS_OPENAI_API_KEY_2", 1, "AQUARIUS_OPENAI_API_KEY_2"},
 	}
 	for _, c := range cases {
-		if got := keyNameFor(c.provider, c.origRef); got != c.want {
-			t.Errorf("keyNameFor(%q, %q) = %q，want %q", c.provider, c.origRef, got, c.want)
+		if got := keySlotName(c.provider, c.origRef, c.slot); got != c.want {
+			t.Errorf("keySlotName(%q, %q, %d) = %q，want %q", c.provider, c.origRef, c.slot, got, c.want)
 		}
 	}
+}
+
+// TestDeriveKeyNameNonASCII provider 名里有非 ASCII 内容字符时补指纹：否则「深度求索」
+// 与「月之暗面」会折成同一个 AQUARIUS_PROVIDER_API_KEY，两家静默共用一格密钥。
+func TestDeriveKeyNameNonASCII(t *testing.T) {
+	a := deriveKeyName("深度求索")
+	b := deriveKeyName("月之暗面")
+	if a == b {
+		t.Fatalf("两个中文 provider 名派生出同一键名 %q——会互相覆盖", a)
+	}
+	for _, n := range []string{a, b} {
+		if err := validTestName(n); err != nil {
+			t.Errorf("派生键名 %q 不合法: %v", n, err)
+		}
+	}
+	// 同名恒同值（跨进程稳定，用户能手写这个引用）。
+	if deriveKeyName("深度求索") != a {
+		t.Error("同名应派生出同一键名")
+	}
+	// 纯 ASCII 与「只差分隔符」的名字保持可读形态，不加指纹。
+	for _, c := range []struct{ in, want string }{
+		{"deepseek", "AQUARIUS_DEEPSEEK_API_KEY"},
+		{"My-Provider.v2", "AQUARIUS_MY_PROVIDER_V2_API_KEY"},
+		{"OpenAI 官方", "AQUARIUS_OPENAI_03F5_API_KEY"},
+	} {
+		if got := deriveKeyName(c.in); got != c.want {
+			t.Errorf("deriveKeyName(%q) = %q，want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// validTestName 借用 secretbin 的名字约束做校验（键名最终要能写进库）。
+func validTestName(name string) error {
+	if name == "" || strings.TrimSpace(name) != name || len(name) > 128 {
+		return errors.New("长度/空白不合规")
+	}
+	if strings.ContainsAny(name, ": \t\r\n") {
+		return errors.New("含空白或冒号")
+	}
+	return nil
 }
 
 // TestStorePlaintextKey 写入口径（D161 落点①）：明文 → 入库 + `secret:<名>`；
@@ -207,6 +257,45 @@ func TestStorePlaintextKey(t *testing.T) {
 	// 库未接线：报错，不静默退回明文。
 	if _, err := storePlaintextKey(ctx, nil, "openai", "", "sk-plain-value-2"); err == nil {
 		t.Fatal("库未接线应报错")
+	}
+}
+
+// TestKeySlotNameStableAcrossRewrite 重填明文不换引用名、不攒孤儿条目（回归）。
+//
+// 复现过的问题：第 2 把钥匙重填明文时，键名取「原引用名」再拼一次 `_2`——原引用名本身
+// 已经带 `_2`，于是每重填一次就长一截（CUSTOM_2 → CUSTOM_2_2 → CUSTOM_2_2_2），库里
+// 留下一串没人引用的旧条目，而密钥库页把它们全列出来，用户看到一堆不知道是什么的东西。
+//
+// 判据：同一槽位连续重填三次，引用名恒定；库里条目数不随重填次数增长。
+func TestKeySlotNameStableAcrossRewrite(t *testing.T) {
+	ctx := context.Background()
+	bin, err := secretbin.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("secretbin.New: %v", err)
+	}
+	ref := "secret:CUSTOM"
+	for round := 1; round <= 3; round++ {
+		next, err := storePlaintextKeyAt(ctx, bin, "p", ref, "value-round", 1)
+		if err != nil {
+			t.Fatalf("第 %d 次重填: %v", round, err)
+		}
+		if next != ref {
+			t.Fatalf("第 %d 次重填后引用变成 %q，want 恒为 %q（重填只换值、不改名）", round, next, ref)
+		}
+	}
+	entries, err := bin.Entries(ctx)
+	if err != nil {
+		t.Fatalf("Entries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "CUSTOM" {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name
+		}
+		t.Fatalf("重填三次后库条目 = %v，want 只有 CUSTOM（不许攒孤儿）", names)
+	}
+	if got, _ := bin.Get(ctx, "CUSTOM"); got != "value-round" {
+		t.Fatalf("值未更新: %q", got)
 	}
 }
 

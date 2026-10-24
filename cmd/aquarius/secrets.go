@@ -6,12 +6,13 @@ package main
 //     **点名查过哪两处**（绝不回显值）；库解不开时打一行警告后**回落同名环境变量**继续
 //     用（把「profile 拷到新机」这个预期场景从硬故障变成可用启动，D161 落点②）。
 //   - 写：设置窗 provider 编辑区 / 欢迎窗填的明文 → 写进库、config 只留 `secret:<名>`
-//     （D161 落点①）；键名规则见 keyNameFor（D161 落点③）。
+//     （D161 落点①）；键名规则见 keySlotName——库里每个键名的**唯一**产生处。
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -78,51 +79,100 @@ func newSecretChain(bin *secretbin.Store, stderr io.Writer) *secretChain {
 	}
 }
 
-// keyNameFor 库里键名规则（D161 落点③）：已有 `secret:<名>` 引用则沿用该名（改填明文
-// 只在原地换值，引用不 churn）；否则按 provider 名生成 `AQUARIUS_<PROVIDER>_API_KEY`
-// ——与「同名环境变量兜底」这条语义严丝合缝，多 provider 也不会互相覆盖同一个槽位。
-func keyNameFor(providerName, origRef string) string {
-	if ref := strings.TrimSpace(origRef); strings.HasPrefix(ref, "secret:") {
-		if n, err := secretName(ref); err == nil {
-			return n
-		}
-	}
-	return deriveKeyName(providerName)
-}
-
-// keySlotName 密钥池第 i 把钥匙的库键名（D173）：第一把沿用 keyNameFor 的既有命名
-// （旧配置升级后引用不变），后续追加 `_<N>`（N = 下标+1）——同一 provider 的多账号
-// 因此各有独立槽位，不会互相覆盖。
+// keySlotName 密钥池第 i 把钥匙的库键名——**库里键名的唯一规则**（各写入路径都走它，
+// 见下「两条」）。键名只决定「值存在哪一格」，与引用无关；config 里永远只写
+// `secret:<名>`。
+//
+// 两条：
+//   - **已经有引用就沿用**：该槽原本是 `secret:<名>` 就继续用这个名，重填明文只换值、
+//     不改名。这条对**每一把**都成立——早先只有第一把这么做，第 N 把重填时会把已经带
+//     `_N` 的引用再拼一次后缀（`CUSTOM_2` → `CUSTOM_2_2` → …），库里堆出一串没人引用的
+//     旧条目。同理，provider 改名也不让引用 churn（按槽位下标读原引用）。
+//   - **没有引用就派生**：`AQUARIUS_<PROVIDER>_API_KEY`，第 N 把追 `_<N>`（N = 下标+1）
+//     ——同一 provider 的多账号各占独立槽位，且名字读得懂、能手写进 config。
 func keySlotName(providerName, origRef string, i int) string {
-	base := keyNameFor(providerName, origRef)
+	if n, ok := secretRefName(origRef); ok {
+		return n
+	}
+	base := deriveKeyName(providerName)
 	if i <= 0 {
 		return base
 	}
 	return fmt.Sprintf("%s_%d", base, i+1)
 }
 
+// secretRefName 从 `secret:<名>` 里取出名字；不是引用、或名字非法 → false（走派生）。
+func secretRefName(ref string) (string, bool) {
+	if !strings.HasPrefix(strings.TrimSpace(ref), "secret:") {
+		return "", false
+	}
+	n, err := secretName(ref)
+	if err != nil {
+		return "", false
+	}
+	return n, true
+}
+
 // deriveKeyName provider 名 → 环境变量味的键名：转大写、非 [A-Z0-9] 折成下划线、
 // 连续下划线压成一个、首尾下划线去掉。
+//
+// 纯 ASCII 名字（`deepseek`、`My-Provider.v2`）结果就是 `AQUARIUS_<名>_API_KEY`，与
+// 「同名环境变量兜底」严丝合缝。**名字里出现 ASCII 之外的内容字符**（中文、全角、重音
+// 字母）时，规范化会把它整段吃掉：`深度求索` 与 `月之暗面` 都变成
+// `AQUARIUS_PROVIDER_API_KEY`，两家 provider 静默共用一个槽位、后写的覆盖先写的，
+// 先那家从此拿错密钥（报 401 且看不出原因）。这类名字补 4 位指纹区分。
+//
+// 分隔符（空格 `-` `.` `_` `/` `\` `+` `:` `@` `,` `(` `)` `&` `'`）不算丢信息——它们
+// 本来就只是分隔，`My-Provider.v2` 不该为此多一截指纹。
 func deriveKeyName(providerName string) string {
+	name := strings.TrimSpace(providerName)
+	stem, lossy := normalizeStem(name)
+	if stem == "" {
+		stem = "PROVIDER"
+	}
+	out := "AQUARIUS_" + stem
+	if lossy {
+		out += "_" + nameFingerprint(name)
+	}
+	return out + "_API_KEY"
+}
+
+// normalizeStem 名字 → 大写下划线形态；lossy = 是否丢掉了分隔符之外的内容字符。
+func normalizeStem(name string) (string, bool) {
 	var b strings.Builder
-	prevUnderscore := false
-	for _, r := range strings.ToUpper(strings.TrimSpace(providerName)) {
+	lossy, prevUnderscore := false, false
+	for _, r := range strings.ToUpper(name) {
 		switch {
 		case r >= 'A' && r <= 'Z' || r >= '0' && r <= '9':
 			b.WriteRune(r)
 			prevUnderscore = false
+		case isNameSeparator(r):
+			if !prevUnderscore && b.Len() > 0 {
+				b.WriteByte('_')
+				prevUnderscore = true
+			}
 		default:
+			lossy = true // 中文/全角/重音字母：折成下划线就等于丢掉
 			if !prevUnderscore && b.Len() > 0 {
 				b.WriteByte('_')
 				prevUnderscore = true
 			}
 		}
 	}
-	name := strings.Trim(b.String(), "_")
-	if name == "" {
-		name = "PROVIDER"
-	}
-	return "AQUARIUS_" + name + "_API_KEY"
+	return strings.Trim(b.String(), "_"), lossy
+}
+
+// isNameSeparator 只是分隔作用的字符（去掉它们不丢信息）。
+func isNameSeparator(r rune) bool {
+	return strings.ContainsRune(" -_./\\:+@,()&'", r)
+}
+
+// nameFingerprint 名字的 4 位十六进制指纹（FNV-1a 取低 16 位）：同名恒同值，跨进程
+// 稳定，所以键名可预测、可手写；不同名撞同一指纹的概率 1/65536，够用且名字仍读得懂。
+func nameFingerprint(name string) string {
+	h := fnv.New32a()
+	_, _ = io.WriteString(h, name)
+	return fmt.Sprintf("%04X", h.Sum32()&0xFFFF)
 }
 
 // storePlaintextKey 界面填了明文密钥时的写入口径（D161 落点①）：明文写进本机密钥库，
@@ -132,8 +182,8 @@ func storePlaintextKey(ctx context.Context, bin *secretbin.Store, providerName, 
 	return storePlaintextKeyAt(ctx, bin, providerName, origRef, typed, 0)
 }
 
-// storePlaintextKeyAt 密钥池第 slot 把的明文入库（D173）：键名规则同 keySlotName——
-// 第一把沿用原引用名或派生名，后续追 `_<N>`，同一 provider 的多账号各占独立槽位。
+// storePlaintextKeyAt 密钥池第 slot 把的明文入库（D173）：键名一律由 keySlotName 定
+// （有引用沿用、没有就派生）——重填明文只换值，引用名稳定，库里不会攒出孤儿条目。
 func storePlaintextKeyAt(ctx context.Context, bin *secretbin.Store, providerName, origRef, typed string, slot int) (string, error) {
 	ref := strings.TrimSpace(typed)
 	if strings.HasPrefix(ref, "secret:") {

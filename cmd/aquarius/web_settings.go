@@ -8,6 +8,7 @@ package main
 // 快照只带形态（引用 / 明文），提交里留空 = 保持原引用。
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -150,6 +151,85 @@ func writeWebSection(generic map[string]any, p uigui.SettingsPatch) {
 			fetchSec["timeout_sec"] = p.WebFetchTimeoutSec
 		}
 	}
+}
+
+// storeWebKeys 联网页填的明文密钥转入本机密钥库——与 provider 页**同一条口径**：
+// config 里只留 `secret:<名>`，键名沿用该条目原有的引用、否则按服务名派生
+// （brave → `AQUARIUS_BRAVE_API_KEY`，正好是「key 留空」时启动期回落的那个名字）。
+//
+// 为什么要在保存前做这一步：联网页的密钥框同样写着「填明文」，provider 页填明文会被
+// 收进密钥库、config 只留引用，这边却把明文原样写进 config 并留一句启动警告——同一个
+// 动作在两个页面后果不同，用户没有理由预期得到。
+//
+// 只对**自带凭据**的服务做（brave）；deepseek 这类借用对话 provider 的 kind 没有自己的
+// 密钥，它的 `key` 字段本就不参与鉴权，硬收进库反而会占用对话 provider 那个槽位。
+func (w *wiring) storeWebKeys(p *uigui.SettingsPatch) error {
+	if w.secretsBin == nil {
+		return nil // 库未接线：保持旧行为（明文照写，启动警告提示），不因存不了库而拒绝保存
+	}
+	disk, err := loadConfig(w.cfgPath)
+	if err != nil {
+		disk = &fileConfig{} // 读不回来：拿不到原引用名，全部按派生名处理
+	}
+	if p.WebSearchProviders != nil {
+		if err := w.storeWebKeysSide(p.WebSearchProviders, disk.Web.Search.Providers); err != nil {
+			return err
+		}
+	}
+	if p.WebFetchProviders != nil {
+		if err := w.storeWebKeysSide(p.WebFetchProviders, disk.Web.Fetch.Providers); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// storeWebKeysSide 一侧（搜索/抓取）的逐条入库；原地改写 patch 里的 Key 为引用。
+func (w *wiring) storeWebKeysSide(ps []uigui.WebProviderPatch, olds []webProvider) error {
+	orig := webOrigRefs(olds, ps)
+	for i := range ps {
+		typed := strings.TrimSpace(ps[i].Key)
+		if typed == "" || strings.HasPrefix(typed, "secret:") {
+			continue // 留空 = 保持；已是引用 = 照写（都不进库）
+		}
+		service, ok := webKeyService(ps[i].Kind)
+		if !ok {
+			continue // 借用对话 provider 的 kind：没有自己的密钥槽
+		}
+		ref, err := storePlaintextKeyAt(context.Background(), w.secretsBin, service, orig[i], typed, 0)
+		if err != nil {
+			return fmt.Errorf("联网密钥保存失败: %w", err)
+		}
+		ps[i].Key = ref
+	}
+	return nil
+}
+
+// webKeyService 该 kind 的密钥归属的服务名（决定派生键名）；false = 不自带凭据。
+func webKeyService(kind string) (string, bool) {
+	if strings.TrimSpace(kind) == webKindBrave {
+		return webKindBrave, true
+	}
+	return "", false
+}
+
+// webOrigRefs 按 kind 对齐地取出各条旧的密钥引用（与 webProviderEntries 同一对齐口径：
+// 用户插一条、删一条都不会让引用贴错条目）。
+func webOrigRefs(olds []webProvider, ps []uigui.WebProviderPatch) []string {
+	used := make([]bool, len(olds))
+	out := make([]string, len(ps))
+	for i, p := range ps {
+		kind := strings.TrimSpace(p.Kind)
+		for j, o := range olds {
+			if used[j] || strings.TrimSpace(o.Kind) != kind {
+				continue
+			}
+			used[j] = true
+			out[i] = o.Key
+			break
+		}
+	}
+	return out
 }
 
 // webProviderEntries 提供商列表写回：逐条以**同类型的旧条目**为底（未知键保留），再覆盖
