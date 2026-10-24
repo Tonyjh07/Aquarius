@@ -124,8 +124,11 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	if _, why := cfg.audioProvider("tts"); why != "" && cfg.Output.TTS {
 		fmt.Fprintf(w.stderr, "警告：语音播报已开启但%s，本条不会播报。\n", why)
 	}
-	if _, why := cfg.audioProvider("asr"); why != "" && cfg.Audio.ASR.Provider != "" {
-		fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s。\n", why)
+	// 本地识别不需要端点与密钥，这里只提示「配了却连不上」的那种。
+	if cfg.Audio.ASR.Kind != kindASRWhisper {
+		if _, why := cfg.audioProvider("asr"); why != "" && cfg.Audio.ASR.configured() {
+			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s。\n", why)
+		}
 	}
 	w.cfg = cfg
 	primary := cfg.Model.primaryProvider()

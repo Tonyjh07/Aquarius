@@ -9,9 +9,13 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asrchat"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/asrfunasr"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/asropenai"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/asrwhisper"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/audioplay"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/gptsovitstts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestmic"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
@@ -26,7 +30,10 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/vitstts"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/zhconv"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -265,35 +272,24 @@ func (w *wiring) buildPresenter() {
 }
 
 // assembleAudio 装配语音端口（D179/D222）：录音/播放恒在（未配置时执行报因），识别与
-// 合成按 audio.* 的端点与密钥现建——可以独立填，也可以借 model.providers 里的条目。
-// 配错（借的条目不存在、密钥取不到）只让该能力不可用——启动时已提示，不阻断对话。
+// 合成按 audio.* 的协议位与端点现建——可以独立填，也可以借 model.providers 里的条目。
+// 配错（借的条目不存在、密钥取不到、本地模型读不到）只让该能力不可用——启动时已提示，
+// 不阻断对话。
 func (w *wiring) assembleAudio(ctx context.Context) {
 	w.recorder = micwin.New()
 	w.player = audioplay.New()
 
 	if w.cfg.Audio.ASR.configured() {
-		if ep, why := w.cfg.audioProvider("asr"); why != "" {
+		if c, why := w.buildASR(ctx); why != "" {
 			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s\n", why)
-		} else if key, err := resolveAPIKey(ctx, "语音识别", ep.KeyRef, w.secrets, w.stderr); err != nil {
-			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%v\n", err)
-		} else if c, err := asrchat.New(asrchat.Config{
-			BaseURL: ep.BaseURL, APIKey: key, Model: w.cfg.Audio.ASR.Model, Blobs: w.blobs,
-		}); err != nil {
-			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%v\n", err)
 		} else {
 			w.asr = c
 		}
 	}
 
 	if w.cfg.Audio.TTS.configured() {
-		if ep, why := w.cfg.audioProvider("tts"); why != "" {
+		if c, why := w.buildTTS(ctx); why != "" {
 			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%s\n", why)
-		} else if key, err := resolveAPIKey(ctx, "语音合成", ep.KeyRef, w.secrets, w.stderr); err != nil {
-			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%v\n", err)
-		} else if c, err := mimotts.New(mimotts.Config{
-			BaseURL: ep.BaseURL, APIKey: key, Model: w.cfg.Audio.TTS.Model, Blobs: w.blobs,
-		}); err != nil {
-			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%v\n", err)
 		} else {
 			w.ttsSynth = c
 		}
@@ -301,6 +297,133 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 
 	// 语音键与 /mic 共用同一摄取器：录 → 附件库 → 转写。
 	w.mic = ingestmic.New(w.recorder, w.blobs, w.asr, w.cfg.Input.Language)
+}
+
+// buildASR 按 audio.asr.kind 现建识别适配器。第二个返回值非空 = 不可用的原因。
+func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
+	ch := &w.cfg.Audio.ASR
+	if ch.Kind == kindASRWhisper {
+		// 本地引擎不需要端点与密钥，只读模型文件。
+		c, err := asrwhisper.New(asrwhisper.Config{ModelPath: ch.ModelPath, Blobs: w.blobs})
+		if err != nil {
+			return nil, err.Error()
+		}
+		if conv, err := zhconv.New(zhconv.ModeTW2SP); err != nil {
+			fmt.Fprintf(w.stderr, "警告：中文繁简转换不可用，识别结果将保持原样：%v\n", err)
+			return c, ""
+		} else {
+			return &zhSimplifier{inner: c, conv: conv, logf: func(err error) {
+				fmt.Fprintf(w.stderr, "[语音识别] 繁简转换失败，保留原文：%v\n", err)
+			}}, ""
+		}
+	}
+	ep, why := w.cfg.audioProvider("asr")
+	if why != "" {
+		return nil, why
+	}
+	key, err := resolveAPIKey(ctx, "语音识别", ep.KeyRef, w.secrets, w.stderr)
+	if err != nil {
+		return nil, err.Error()
+	}
+	switch ch.Kind {
+	case kindASROpenAI:
+		c, err := asropenai.New(asropenai.Config{
+			BaseURL: ep.BaseURL, APIKey: key, Model: ch.Model, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
+	case kindASRFunASR:
+		c, err := asrfunasr.New(asrfunasr.Config{
+			BaseURL: ep.BaseURL, APIKey: key, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
+	default: // kindChatAudio
+		c, err := asrchat.New(asrchat.Config{
+			BaseURL: ep.BaseURL, APIKey: key, Model: ch.Model, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
+	}
+}
+
+// buildTTS 按 audio.tts.kind 现建合成适配器。第二个返回值非空 = 不可用的原因。
+func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
+	ch := &w.cfg.Audio.TTS
+	ep, why := w.cfg.audioProvider("tts")
+	if why != "" {
+		return nil, why
+	}
+	key, err := resolveAPIKey(ctx, "语音合成", ep.KeyRef, w.secrets, w.stderr)
+	if err != nil {
+		return nil, err.Error()
+	}
+	switch ch.Kind {
+	case kindTTSVITS:
+		// 语种不取 input.language：那是「录音说什么话」的提示，合成要说的是播报
+		// 文本，由服务端自己判断更准（VITS 的 lang=auto 就是干这个的）。
+		c, err := vitstts.New(vitstts.Config{
+			BaseURL: ep.BaseURL, APIKey: key, Speaker: ch.Voice, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
+	case kindTTSGPTSovits:
+		c, err := gptsovitstts.New(gptsovitstts.Config{
+			BaseURL: ep.BaseURL, RefAudio: ch.Voice, PromptText: ch.Design, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
+	default: // kindChatAudio
+		c, err := mimotts.New(mimotts.Config{
+			BaseURL: ep.BaseURL, APIKey: key, Model: ch.Model, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
+	}
+}
+
+// zhSimplifier 在识别结果上加一道繁转简（本地引擎默认输出繁体）。
+//
+// 为什么不在适配器里做：转换是「中文的书写习惯」而不是「whisper 协议的一部分」，
+// 别的引擎换成输出简体时这道包装自然就撤掉了。转换失败只降级（保持原文），不报错。
+type zhSimplifier struct {
+	inner port.Transcriber
+	conv  converter
+	// logf 转换失败的落点（装配处接到 stderr；nil = 不记）。
+	logf func(error)
+}
+
+// converter 繁转简的能力（*zhconv.Converter 满足它；测试可注入会失败的那种）。
+type converter interface {
+	Convert(text string) (string, error)
+}
+
+// Transcribe 转写后把繁体转成简体。
+func (z *zhSimplifier) Transcribe(ctx context.Context, audio conversation.BlobRef, lang string) (string, error) {
+	text, err := z.inner.Transcribe(ctx, audio, lang)
+	if err != nil {
+		return text, err
+	}
+	out, convErr := z.conv.Convert(text)
+	if convErr != nil {
+		if z.logf != nil {
+			z.logf(convErr)
+		}
+		return text, nil
+	}
+	return out, nil
 }
 
 // closeAudio 收尾：停播放并清临时文件。

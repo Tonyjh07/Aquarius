@@ -188,3 +188,88 @@ func TestAudioEndpointBorrowMissingNeedsOwnURL(t *testing.T) {
 		t.Fatalf("自己填了端点就该可用，得到 %+v / %q", ep, why)
 	}
 }
+
+// TestNormalizeAudioKinds 两侧各认自己的协议位：识别认 whisper / openai / funasr，
+// 合成认 vits / gptsovits；写错的一律 fail-fast（永远不会生效的配置）。
+func TestNormalizeAudioKinds(t *testing.T) {
+	ok := []struct {
+		name string
+		asr  audioChannel
+		tts  audioChannel
+	}{
+		{"本地 whisper", audioChannel{Kind: kindASRWhisper, ModelPath: "/m/ggml-base.bin"}, audioChannel{}},
+		{"OpenAI 转写", audioChannel{Kind: kindASROpenAI, BaseURL: "https://x/v1", Model: "whisper-1"}, audioChannel{}},
+		{"FunASR 原生", audioChannel{Kind: kindASRFunASR, BaseURL: "http://127.0.0.1:10095"}, audioChannel{}},
+		{"VITS", audioChannel{}, audioChannel{Kind: kindTTSVITS, BaseURL: "http://127.0.0.1:23456"}},
+		{"GPT-SoVITS", audioChannel{}, audioChannel{Kind: kindTTSGPTSovits, BaseURL: "http://127.0.0.1:9880"}},
+	}
+	for _, c := range ok {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := audioTestConfig(c.asr, c.tts)
+			if err := cfg.Model.normalize(); err != nil {
+				t.Fatalf("model.normalize: %v", err)
+			}
+			if err := cfg.normalizeAudio(); err != nil {
+				t.Fatalf("normalizeAudio: %v", err)
+			}
+		})
+	}
+
+	bad := []struct {
+		name string
+		asr  audioChannel
+		tts  audioChannel
+		want string
+	}{
+		{"识别侧不认 vits", audioChannel{Kind: kindTTSVITS, BaseURL: "https://x", Model: "m"}, audioChannel{}, "audio.asr.kind"},
+		{"合成侧不认 funasr", audioChannel{}, audioChannel{Kind: kindASRFunASR, BaseURL: "https://x"}, "audio.tts.kind"},
+		{"whisper 缺模型路径", audioChannel{Kind: kindASRWhisper}, audioChannel{}, "model_path"},
+	}
+	for _, c := range bad {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := audioTestConfig(c.asr, c.tts)
+			if err := cfg.Model.normalize(); err != nil {
+				t.Fatalf("model.normalize: %v", err)
+			}
+			if err := cfg.normalizeAudio(); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want 含 %q", err, c.want)
+			}
+		})
+	}
+}
+
+// TestNormalizeAudioWhisperNeedsNoEndpoint 本地引擎没有端点也没有密钥：只填模型路径
+// 就算配置好了，不该因为「端点未配置」被拒。
+func TestNormalizeAudioWhisperNeedsNoEndpoint(t *testing.T) {
+	cfg := audioTestConfig(audioChannel{Kind: kindASRWhisper, ModelPath: " /m/ggml-base.bin "}, audioChannel{})
+	if err := cfg.Model.normalize(); err != nil {
+		t.Fatalf("model.normalize: %v", err)
+	}
+	if err := cfg.normalizeAudio(); err != nil {
+		t.Fatalf("normalizeAudio: %v", err)
+	}
+	if !cfg.Audio.ASR.configured() {
+		t.Fatal("填了模型路径应算已配置")
+	}
+	if cfg.Audio.ASR.ModelPath != "/m/ggml-base.bin" {
+		t.Fatalf("模型路径未归一: %q", cfg.Audio.ASR.ModelPath)
+	}
+	// 装配路径不走 audioProvider（本地引擎不连网），这里确认它确实无端点可用。
+	if _, why := cfg.audioProvider("asr"); why == "" {
+		t.Fatal("本地引擎不该解析出端点")
+	}
+}
+
+// TestNormalizeAudioEmptyKindDefaults 协议位留空 = chat-audio（老配置的形状，行为不变）。
+func TestNormalizeAudioEmptyKindDefaults(t *testing.T) {
+	cfg := audioTestConfig(audioChannel{Provider: "mimo", Model: "m"}, audioChannel{Provider: "mimo", Model: "m"})
+	if err := cfg.Model.normalize(); err != nil {
+		t.Fatalf("model.normalize: %v", err)
+	}
+	if err := cfg.normalizeAudio(); err != nil {
+		t.Fatalf("normalizeAudio: %v", err)
+	}
+	if cfg.Audio.ASR.Kind != kindChatAudio || cfg.Audio.TTS.Kind != kindChatAudio {
+		t.Fatalf("协议位 = %q / %q", cfg.Audio.ASR.Kind, cfg.Audio.TTS.Kind)
+	}
+}
