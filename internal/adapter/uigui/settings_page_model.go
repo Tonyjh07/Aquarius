@@ -46,7 +46,7 @@ func (modelPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowThink:
 		return paperCheckBox(th, &f.think, "原生思考（/think 总开关，关时忽略推理档位）")(gtx), true
 	case rowEffort:
-		return fieldRow(gtx, th, "推理档位", cycleBtn(th, &f.effort)), true
+		return fieldRow(gtx, th, "推理档位", selectBtn(th, &f.effort)), true
 	case rowSamplingTemp:
 		return fieldRow(gtx, th, "温度", editorBox(th, &f.samplingTemp, "0–2；越低越稳，越高越发散。留空 = 服务端默认，写 0 = 每次都取最可能的词")), true
 	case rowSamplingTopP:
@@ -72,9 +72,7 @@ func (modelPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 		f.addFallbackForm()
 	}
 	for i, ff := range f.chain {
-		for ff.prov.Clicked(gtx) {
-			f.cycleChainProvider(i) // 循环选择器：点击进一个 provider
-		}
+		f.openPicker(gtx, "降级链提供者", &ff.prov) // 选项即 chainChoices
 		for ff.up.Clicked(gtx) {
 			f.moveFallback(i, -1)
 		}
@@ -85,7 +83,7 @@ func (modelPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			f.removeFallback(i)
 		}
 	}
-	f.effort.advance(gtx)
+	f.openPicker(gtx, "推理档位", &f.effort)
 }
 
 func (modelPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.model }
@@ -107,16 +105,6 @@ func (f *settingsForm) removeFallback(i int) {
 	f.chain = append(f.chain[:i], f.chain[i+1:]...)
 }
 
-// cycleChainProvider 把第 i 项的 provider 选择前进一档（循环选择器：material v0.10 无
-// 下拉框，与推理档位同款）。选项为空时 no-op（无 provider 可切）。
-func (f *settingsForm) cycleChainProvider(i int) {
-	if i < 0 || i >= len(f.chain) || len(f.chainChoices) == 0 {
-		return
-	}
-	ff := f.chain[i]
-	ff.provIdx = (ff.provIdx + 1) % len(f.chainChoices)
-}
-
 // chainNoteRow 链窄于当前模型能力时的一行警示（cmd 侧按 caps 现算；空 = 不窄，行不出现）。
 func chainNoteRow(gtx layout.Context, th *material.Theme, text string) layout.Dimensions {
 	l := material.Label(th, paperNoteSp(th), text)
@@ -132,20 +120,15 @@ func samplingNoteRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 			"这里填的是整条链的缺省；只想改某个模型，就在配置文件里给那个模型加 sampling。")(gtx)
 }
 
-// chainItemRow 降级链一项：提供者（循环选择器）/ 模型（单行档）/ 上移 / 下移 / 删除。
-// 提供者走「循环选择器」而非下拉（material v0.10 无下拉框，与推理档位同款）；模型名
-// 允许手填未声明的名字——链是运行时路由。
+// chainItemRow 降级链一项：提供者（枚举选择器）/ 模型（单行档）/ 上移 / 下移 / 删除。
+// 模型名允许手填未声明的名字——链是运行时路由。
 func (f *settingsForm) chainItemRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
 	ff := f.chain[i]
-	provLabel := ff.chainProvider(f.chainChoices)
-	if provLabel == "" {
-		provLabel = "（无 provider）"
-	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return fieldRow(gtx, th, "提供者", paperButton(th, &ff.prov, provLabel, paperBtnSecondary, true))
+					return fieldRow(gtx, th, "提供者", selectBtn(th, &ff.prov))
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

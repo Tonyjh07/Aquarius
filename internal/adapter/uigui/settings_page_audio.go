@@ -49,7 +49,7 @@ func (audioPage) Rows(f *settingsForm) []rowDesc {
 func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
 	switch rows[i].kind {
 	case rowAudioASRKind:
-		return fieldRow(gtx, th, "识别方式", cycleBtn(th, &f.asrKind)), true
+		return fieldRow(gtx, th, "识别方式", selectBtn(th, &f.asrKind)), true
 	case rowAudioASRProvider:
 		return f.audioServiceRow(gtx, th, &f.asrProv, &f.asrKeyUse), true
 	case rowAudioASREndpoint:
@@ -61,11 +61,11 @@ func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowAudioASRPath:
 		return f.audioModelPathRow(gtx, th), true
 	case rowAudioLang:
-		return fieldRow(gtx, th, "录音语种", cycleBtn(th, &f.asrLang)), true
+		return fieldRow(gtx, th, "录音语种", selectBtn(th, &f.asrLang)), true
 	case rowAudioTTSProvider:
 		return f.audioServiceRow(gtx, th, &f.ttsProv, &f.ttsKeyUse), true
 	case rowAudioTTSKind:
-		return fieldRow(gtx, th, "合成方式", cycleBtn(th, &f.ttsKind)), true
+		return fieldRow(gtx, th, "合成方式", selectBtn(th, &f.ttsKind)), true
 	case rowAudioTTSEndpoint:
 		return fieldRow(gtx, th, "端点", editorBox(th, &f.ttsBaseURL, "如 https://api.example.com/v1；留空 = 用「服务」那条的")), true
 	case rowAudioTTSKey:
@@ -115,12 +115,12 @@ func (f *settingsForm) audioModelPathRow(gtx layout.Context, th *material.Theme)
 	)
 }
 
-// audioServiceRow 「服务」一行：循环选一个 model.providers 条目 + 「填入」按钮（D222）。
+// audioServiceRow 「服务」一行：从 model.providers 里选一个条目 + 「填入」按钮（D222）。
 // 「未配置」= 不借任何条目（端点与密钥全靠自己填）。
-func (f *settingsForm) audioServiceRow(gtx layout.Context, th *material.Theme, prov *cycleField, use *widget.Clickable) layout.Dimensions {
+func (f *settingsForm) audioServiceRow(gtx layout.Context, th *material.Theme, prov *selectField, use *widget.Clickable) layout.Dimensions {
 	return fieldRow(gtx, th, "服务", func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(cycleBtn(th, prov)),
+			layout.Rigid(selectBtn(th, prov)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, use, "填入", paperBtnSecondary, true))
 			}),
@@ -175,7 +175,7 @@ func (f *settingsForm) audioKeyNote(which string) string {
 }
 
 // fillAudioFromService 「填入」：把所选服务的端点与密钥引用抄进该通道（D222）。
-func (f *settingsForm) fillAudioFromService(prov *cycleField, baseURL, key *widget.Editor) {
+func (f *settingsForm) fillAudioFromService(prov *selectField, baseURL, key *widget.Editor) {
 	name := prov.value()
 	if name == "" {
 		return
@@ -195,11 +195,11 @@ func (f *settingsForm) fillAudioFromService(prov *cycleField, baseURL, key *widg
 }
 
 func (audioPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
-	f.asrProv.advance(gtx)
-	f.asrKind.advance(gtx)
-	f.ttsProv.advance(gtx)
-	f.ttsKind.advance(gtx)
-	f.asrLang.advance(gtx)
+	f.openPicker(gtx, "识别方式", &f.asrKind)
+	f.openPicker(gtx, "语音识别服务", &f.asrProv)
+	f.openPicker(gtx, "录音语种", &f.asrLang)
+	f.openPicker(gtx, "合成方式", &f.ttsKind)
+	f.openPicker(gtx, "语音合成服务", &f.ttsProv)
 	for f.asrKeyUse.Clicked(gtx) {
 		f.fillAudioFromService(&f.asrProv, &f.asrBaseURL, &f.asrKey)
 	}

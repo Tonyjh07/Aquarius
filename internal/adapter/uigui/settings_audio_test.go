@@ -24,7 +24,7 @@ func audioSnapshot() SettingsSnapshot {
 	return s
 }
 
-// TestAudioPageFillsSnapshot 开窗填表：provider 循环档选中快照值，模型与音色等
+// TestAudioPageFillsSnapshot 开窗填表：provider 选择器选中快照值，模型与音色等
 // 文本字段原样落位；语种档按值定位。
 func TestAudioPageFillsSnapshot(t *testing.T) {
 	u := newHeadless(t, Options{
@@ -220,7 +220,7 @@ func TestAudioKindAndModelPathRows(t *testing.T) {
 	}
 }
 
-// TestAudioKindCycleOrder 循环档的展示名与键值一一对应（顺序即循环顺序，首项是缺省）。
+// TestAudioKindCycleOrder 协议档的展示名与键值一一对应（首项是缺省）。
 func TestAudioKindCycleOrder(t *testing.T) {
 	if len(asrKindLevels) != len(asrKindValues) || len(ttsKindLevels) != len(ttsKindValues) {
 		t.Fatalf("档位展示名与键值数量不一致: %d/%d, %d/%d",

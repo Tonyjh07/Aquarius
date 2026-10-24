@@ -376,7 +376,7 @@ type SettingsPatch struct {
 	SamplingStop        string
 }
 
-// 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处仅渲染循环）。
+// 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处只负责渲染）。
 var (
 	// permLevels 权限档（§5/D22，与 domain/perm.Level 对齐）。
 	permLevels = []string{"read-only", "strict", "permissive", "full-access"}
@@ -386,7 +386,7 @@ var (
 	// themeLevels 主题档展示与键值（§15.4/D61：system|light|dark）。
 	themeLevels = []string{"跟随系统", "浅色", "深色"}
 	themeValues = []string{"system", "light", "dark"}
-	// zoomLevels 元素缩放档（D90/§15.8）：展示百分比，键值 = 倍率字符串（cycleField
+	// zoomLevels 元素缩放档（D90/§15.8）：展示百分比，键值 = 倍率字符串（selectField
 	// 键值为 string 的既有口径，表单侧 ParseFloat 换算；%g 往返一致）。
 	zoomLevels = []string{"100%", "125%", "150%", "175%", "200%"}
 	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
@@ -394,7 +394,7 @@ var (
 	langLevels = []string{"自动识别", "中文", "英文"}
 	langValues = []string{"auto", "zh", "en"}
 	// asrKindLevels / ttsKindLevels 协议档：展示名是人话，键值是 config 里的 kind 原文。
-	// 顺序即循环顺序，首项是缺省（chat-audio）。
+	// 首项是缺省（chat-audio）。
 	asrKindLevels = []string{"对话接口", "本地 whisper", "OpenAI 转写", "FunASR 原生"}
 	asrKindValues = []string{"chat-audio", "whisper", "openai", "funasr"}
 	ttsKindLevels = []string{"对话接口", "VITS", "GPT-SoVITS"}
@@ -428,42 +428,6 @@ const (
 	// pageConstCount 页常量个数（编译期锚；见上方说明）。
 	pageConstCount
 )
-
-// cycleField 点击循环枚举档（material v0.10 无下拉框）：按钮显示当前项，点击进一档。
-type cycleField struct {
-	click    widget.Clickable
-	displays []string
-	values   []string
-	idx      int
-}
-
-// setValue 按键值定位；未命中保持当前（快照异常值不致越界）。
-func (c *cycleField) setValue(v string) {
-	for i, x := range c.values {
-		if x == v {
-			c.idx = i
-			return
-		}
-	}
-}
-
-// value 当前键值（空表返回 ""）。
-func (c *cycleField) value() string {
-	if len(c.values) == 0 {
-		return ""
-	}
-	return c.values[c.idx]
-}
-
-// advance 消费点击进一档（帧渲染前调用——Clickable.Clicked 自带 Update）。
-func (c *cycleField) advance(gtx layout.Context) {
-	if len(c.values) == 0 {
-		return
-	}
-	for c.click.Clicked(gtx) {
-		c.idx = (c.idx + 1) % len(c.values)
-	}
-}
 
 // settingsForm 设置窗表单状态（次窗事件循环 goroutine 独占；控件即状态，不跨窗
 // 共享）。S4d/D142 起内容分页：page = 当前页、pages = 每页各自的 material.List
@@ -531,10 +495,10 @@ type settingsForm struct {
 	profName widget.Editor // D110③：profile 名（新建/复制/切换共用输入档）
 	think    widget.Bool
 	unattend widget.Bool // D185：无人值守开关（常规页权限区）
-	perm     cycleField
-	effort   cycleField
-	theme    cycleField
-	scale    cycleField // D90：元素缩放（cycle 百分比档）
+	perm     selectField
+	effort   selectField
+	theme    selectField
+	scale    selectField // D90：元素缩放（cycle 百分比档）
 	save     widget.Clickable
 	// D141：欢迎 / 首次运行引导入口（设置窗是唯一入口——托盘与球右键菜单都不带此项）。
 	welcomeOpen widget.Clickable
@@ -578,19 +542,22 @@ type settingsForm struct {
 	// 但那一改要重启才生效，故以开窗快照为准，不每帧重取）。
 	chainChoices []ProviderChoice
 
-	// 语音页（D179/D222）：识别/合成各是一份完整配置——服务可借（循环档，选项同
+	// 枚举选择器弹层（S4e）：全窗唯一的模态，画在 settingsFrame 最后一层。
+	pick pickerState
+
+	// 语音页（D179/D222）：识别/合成各是一份完整配置——服务可借（选择器，选项同
 	// chainChoices），端点与密钥也能自己填；音色与风格是自由文本；试听在后台合成一句，
 	// 结果经 voiceRes 回灌行内状态。
-	asrProv     cycleField
-	asrKind     cycleField
+	asrProv     selectField
+	asrKind     selectField
 	asrBaseURL  widget.Editor
 	asrKey      widget.Editor // 只写不回显（空 = 保持 / 借所选服务的）
 	asrKeyUse   widget.Clickable
 	asrModel    widget.Editor
 	asrPath     widget.Editor // 本地模型文件路径（whisper 用）
-	asrLang     cycleField
-	ttsProv     cycleField
-	ttsKind     cycleField
+	asrLang     selectField
+	ttsProv     selectField
+	ttsKind     selectField
 	ttsBaseURL  widget.Editor
 	ttsKey      widget.Editor
 	ttsKeyUse   widget.Clickable
@@ -655,7 +622,7 @@ type settingsForm struct {
 type providerForm struct {
 	orig        string // 快照原名（Apply 保留无关键；"" = 新增）
 	name        widget.Editor
-	kind        cycleField // 协议（openai-chat / openai-responses / anthropic）
+	kind        selectField // 协议（openai-chat / openai-responses / anthropic）
 	baseURL     widget.Editor
 	tokenizer   widget.Editor
 	unsupported widget.Editor // 逗号分隔
@@ -749,25 +716,34 @@ func (pf *providerForm) providerSummary(primary bool) string {
 }
 
 // fallbackForm 降级链一项的编辑控件组（D176 口径三；本窗 goroutine 独占）。
-// 提供者与模型都得能改：provider 走「循环选择器」（material v0.10 无下拉框，与档位同款），
-// 模型是单行编辑档（可填未声明的名字——链是运行时路由）。
+// 提供者与模型都得能改：provider 走枚举选择器（选项即 f.chainChoices），模型是单行
+// 编辑档（可填未声明的名字——链是运行时路由）。
 type fallbackForm struct {
-	provIdx  int           // 在 f.chainChoices 里的下标（-1 = 未命中，保留旧名）
-	provName string        // 当前 provider 名（provIdx 未命中时的兜底）
+	provName string        // 当前 provider 名（选项表里没有它时的兜底）
+	prov     selectField   // 提供者（选项来自 chainChoices）
 	model    widget.Editor // 模型名；空 = 取该 provider 的缺省模型
-	prov     widget.Clickable
 	up       widget.Clickable
 	down     widget.Clickable
 	del      widget.Clickable
 }
 
-// chainProvider 该项当前 provider 名（下拉命中名字，否则用保留的原始名）。
-func (ff *fallbackForm) chainProvider(choices []ProviderChoice) string {
-	if ff.provIdx >= 0 && ff.provIdx < len(choices) {
-		return choices[ff.provIdx].Name
+// chainProvider 该项当前 provider 名（选择「不指定」= 空名；选项表为空 = 用保留的原始名）。
+func (ff *fallbackForm) chainProvider() string {
+	switch v := ff.prov.value(); {
+	case v == chainPickNone:
+		return ""
+	case v != "":
+		return v
+	default:
+		return ff.provName
 	}
-	return ff.provName
 }
+
+// chainPickNone 选择器里「不指定提供者」那一项的键值。
+//
+// 它不能与「空 provider 名」共用一个值：空串在 chainChoices 里是「没这项」，而这一项
+// 是用户明确选的「不指定」。用一个不会与真名撞车的哨兵值区分两者。
+const chainPickNone = "\x00none"
 
 // testOutcome 异步探针结果（testResults 单消费者 = 帧循环）：连通测试 / 「获取模型」/
 // 「探测能力」共用一条通道，靠 kind 区分（同一 provider 的多次动作不该交错成一条状态行）。
@@ -794,13 +770,13 @@ const (
 func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
 		provOpen:    -1, // S11-7②：开窗全收起（第一张也不自动展开——展开是用户的动作）
-		perm:        cycleField{displays: permLevels, values: permLevels},
-		effort:      cycleField{displays: effortLevels, values: effortValues},
-		theme:       cycleField{displays: themeLevels, values: themeValues},
-		scale:       cycleField{displays: zoomLevels, values: zoomValues},
-		asrLang:     cycleField{displays: langLevels, values: langValues},
-		asrKind:     cycleField{displays: asrKindLevels, values: asrKindValues},
-		ttsKind:     cycleField{displays: ttsKindLevels, values: ttsKindValues},
+		perm:        selectField{displays: permLevels, values: permLevels},
+		effort:      selectField{displays: effortLevels, values: effortValues},
+		theme:       selectField{displays: themeLevels, values: themeValues},
+		scale:       selectField{displays: zoomLevels, values: zoomValues},
+		asrLang:     selectField{displays: langLevels, values: langValues},
+		asrKind:     selectField{displays: asrKindLevels, values: asrKindValues},
+		ttsKind:     selectField{displays: ttsKindLevels, values: ttsKindValues},
 		testResults: make(chan testOutcome, 8),
 		toolRes:     make(chan toolActionResult, 16),
 		skillRes:    make(chan skillActionResult, 16),
@@ -972,7 +948,7 @@ func (f *settingsForm) addProviderForm() {
 // newProviderForm 空白 provider 编辑组（字段单行档 + 默认一个模型行与一把钥匙）。
 func newProviderForm() *providerForm {
 	pf := &providerForm{
-		kind: cycleField{displays: kindLevels, values: kindValues},
+		kind: selectField{displays: kindLevels, values: kindValues},
 	}
 	for _, ed := range []*widget.Editor{&pf.name, &pf.baseURL, &pf.tokenizer, &pf.unsupported} {
 		ed.SingleLine = true
@@ -1116,9 +1092,9 @@ func (f *settingsForm) loadFallback(chain []FallbackLink, choices []ProviderChoi
 	}
 }
 
-// setAudioProviderChoices 语音页 provider 循环档选项：首项「未配置」，其后为 provider
+// setAudioProviderChoices 语音页 provider 选择器选项：首项「未配置」，其后为 provider
 // 快照里的名字；当前值不在快照内时补一项，避免开窗即把它悄悄改成「未配置」。
-func (f *settingsForm) setAudioProviderChoices(cur string, c *cycleField) {
+func (f *settingsForm) setAudioProviderChoices(cur string, c *selectField) {
 	displays := []string{"未配置"}
 	values := []string{""}
 	for _, p := range f.chainChoices {
@@ -1141,19 +1117,35 @@ func (f *settingsForm) addFallbackForm() {
 	f.chain = append(f.chain, newFallbackForm(FallbackLink{}, f.chainChoices))
 }
 
-// newFallbackForm 由一项链配置造编辑控件组；provIdx 按名命中选项（未命中 = -1，保留名）。
+// newFallbackForm 由一项链配置造编辑控件组：选项 = 各 provider 名，末尾补一项「不指定」。
+//
+// 当前名不在选项里时（provider 被删、或手写的失联引用）也补进选项表——开窗直接保存
+// 不会把它悄悄改成别的 provider。空名且已声明过（新增项）时缺省指向首个 provider。
 func newFallbackForm(l FallbackLink, choices []ProviderChoice) *fallbackForm {
-	provIdx := -1
-	for i, c := range choices {
-		if c.Name == l.Provider {
-			provIdx = i
-			break
+	displays := make([]string, 0, len(choices)+1)
+	values := make([]string, 0, len(choices)+1)
+	for _, c := range choices {
+		if c.Name == "" || slices.Contains(values, c.Name) {
+			continue
 		}
+		displays = append(displays, c.Name)
+		values = append(values, c.Name)
 	}
-	if provIdx < 0 && len(choices) > 0 && strings.TrimSpace(l.Provider) == "" {
-		provIdx = 0 // 新增项缺省指向首个 provider
+	cur := strings.TrimSpace(l.Provider)
+	if cur != "" && !slices.Contains(values, cur) {
+		displays = append(displays, cur)
+		values = append(values, cur)
 	}
-	ff := &fallbackForm{provIdx: provIdx, provName: strings.TrimSpace(l.Provider)}
+	displays = append(displays, "（不指定）")
+	values = append(values, chainPickNone)
+
+	ff := &fallbackForm{provName: cur}
+	ff.prov = selectField{displays: displays, values: values}
+	if cur == "" && len(values) > 1 {
+		ff.prov.idx = 0 // 新增项缺省指向首个 provider
+	} else {
+		ff.prov.setValue(cur) // 未命中 = 停在上次位置（不指定在末项）
+	}
 	ff.model.SingleLine = true
 	if s := strings.TrimSpace(l.Model); s != "" {
 		ff.model.SetText(s)

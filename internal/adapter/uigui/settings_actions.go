@@ -394,7 +394,7 @@ func webProviderViews(ps []WebProviderPatch, old []WebProviderView) []WebProvide
 func (f *settingsForm) fallbackList() []FallbackLink {
 	out := make([]FallbackLink, 0, len(f.chain))
 	for _, ff := range f.chain {
-		prov := strings.TrimSpace(ff.chainProvider(f.chainChoices))
+		prov := strings.TrimSpace(ff.chainProvider())
 		model := strings.TrimSpace(ff.model.Text())
 		if prov == "" && model == "" {
 			continue

@@ -93,7 +93,7 @@ func (providersPage) Body(gtx layout.Context, th *material.Theme, f *settingsFor
 		pf := f.provs[r.prov]
 		return fieldRow(gtx, th, "协议", func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(cycleBtn(th, &pf.kind)),
+				layout.Rigid(selectBtn(th, &pf.kind)),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						l := material.Label(th, paperNoteSp(th), kindHint(pf.kind.value()))
@@ -153,7 +153,7 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 				f.provOpen = i // 展开本张即收起其它（只展开一张）
 			}
 		}
-		pf.kind.advance(gtx)
+		f.openPicker(gtx, "协议", &pf.kind)
 		for pf.test.Clicked(gtx) {
 			u.runProviderTest(f, pf)
 		}

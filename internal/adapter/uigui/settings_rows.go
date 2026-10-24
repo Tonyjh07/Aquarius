@@ -71,7 +71,7 @@ const (
 	// S11-7③/D176 口径二：「模型服务」页 provider 卡片。
 	rowProvSummary // 折叠卡片收起态摘要行（点击展开/收起）
 	rowProvName    // 名称（单行档）
-	rowProvKind    // 协议（循环选择：chat/responses/anthropic）
+	rowProvKind    // 协议（选择器：chat/responses/anthropic）
 	rowProvBase    // 接口地址
 	rowProvModels  // 「模型列表」块头（标题 + 「获取模型」按钮 + 拉取反馈；D181）
 	rowProvTok
@@ -126,15 +126,15 @@ const (
 	rowSecretAdd    // 「存入」按钮行
 	rowSecretStatus // 存入/删除反馈状态行
 	// D179：语音页（识别 / 合成 / 音色与风格 / 试听）。D222 起每路另有端点与密钥。
-	rowAudioASRProvider // 识别服务（循环选 provider）
-	rowAudioASRKind     // 识别协议（循环档：对话接口 / 本地 whisper / OpenAI / FunASR）
+	rowAudioASRProvider // 识别服务（选择器选 provider）
+	rowAudioASRKind     // 识别方式（选择器：对话接口 / 本地 whisper / OpenAI / FunASR）
 	rowAudioASREndpoint // 识别端点（空 = 用所选服务的）
 	rowAudioASRKey      // 识别密钥（只写不回显）
 	rowAudioASRModel    // 识别模型（单行档）
 	rowAudioASRPath     // 本地识别模型文件路径（whisper 用）
-	rowAudioLang        // 录音语种提示（循环档）
-	rowAudioTTSProvider // 合成服务（循环选 provider）
-	rowAudioTTSKind     // 合成协议（循环档：对话接口 / VITS / GPT-SoVITS）
+	rowAudioLang        // 录音语种提示（选择器）
+	rowAudioTTSProvider // 合成服务（选择器选 provider）
+	rowAudioTTSKind     // 合成方式（选择器：对话接口 / VITS / GPT-SoVITS）
 	rowAudioTTSEndpoint // 合成端点（空 = 用所选服务的）
 	rowAudioTTSKey      // 合成密钥（只写不回显）
 	rowAudioTTSModel    // 合成模型（单行档）
@@ -214,6 +214,11 @@ const (
 func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsForm) layout.Dimensions {
 	for p := 0; p < settingsPageCount; p++ {
 		for f.navBtns[p].Clicked(gtx) {
+			if f.page != p {
+				// 选择器弹层属于某一页的控件：换页即收起（不跟着跨页留着，
+				// 否则新页上会悬着一个指向旧页控件的弹层）。
+				f.closePicker()
+			}
 			f.page = p
 		}
 	}
@@ -286,6 +291,12 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 		// 「保存并应用」在弹窗背后仍是亮的，读起来像是可以直接点。D148。
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			dims, _ := f.moduleEditorFrame(gtx, th)
+			return dims
+		}),
+		// 枚举选择器弹层与编辑弹窗同层（也是模态，也是整窗遮罩）。两者互斥：编辑弹窗
+		// 开着时选择器按钮在背景里，点不到，故不会同时出现。
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			dims, _ := f.pickerFrame(gtx, th)
 			return dims
 		}),
 	)
@@ -632,13 +643,12 @@ func fieldRow(gtx layout.Context, th *material.Theme, label string, control layo
 	)
 }
 
-// cycleBtn 循环档按钮（当前展示值；点击进一档——material v0.10 无下拉框）。
-func cycleBtn(th *material.Theme, c *cycleField) layout.Widget {
+// selectBtn 枚举选择器按钮：显示当前项，点击弹出全部选项的居中模态（见
+// settings_select.go）。带一个 ▾ 指示「点开有得选」——不带指示的纯文字按钮读起来像
+// 另一个动作按钮，而不是一个可选值。
+func selectBtn(th *material.Theme, c *selectField) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		label := ""
-		if len(c.displays) > 0 {
-			label = c.displays[c.idx%len(c.displays)]
-		}
+		label := c.display() + " ▾"
 		return paperButton(th, &c.click, label, paperBtnSecondary, true)(gtx)
 	}
 }

@@ -124,8 +124,8 @@ func webKindHint(kind string) string {
 // webProviderForm 联网提供商一条的编辑控件组（D200；本窗 goroutine 独占）。
 type webProviderForm struct {
 	orig    WebProviderView  // 快照原值（保存提示与密钥形态判定的基线）
-	kind    cycleField       // 类型（搜索/抓取各一组档）
-	from    cycleField       // 借哪个 model.providers 条目（D222：候选来自「模型服务」）
+	kind    selectField      // 类型（搜索/抓取各一组档）
+	from    selectField      // 借哪个 model.providers 条目（D222：候选来自「模型服务」）
 	fromUse widget.Clickable // 「填入」：把 from 那条的端点与密钥引用抄进本条目
 	key     widget.Editor    // 自己的密钥引用（只写不回显）
 	baseURL widget.Editor    // 自己的端点
@@ -142,9 +142,9 @@ type webProviderForm struct {
 func newWebProviderForm(v WebProviderView, search bool, choices []ProviderChoice) *webProviderForm {
 	pf := &webProviderForm{orig: v}
 	if search {
-		pf.kind = cycleField{displays: webSearchKinds, values: webSearchKinds}
+		pf.kind = selectField{displays: webSearchKinds, values: webSearchKinds}
 	} else {
-		pf.kind = cycleField{displays: webFetchKinds, values: webFetchKinds}
+		pf.kind = selectField{displays: webFetchKinds, values: webFetchKinds}
 	}
 	pf.kind.setValue(v.Kind) // "" 未命中 → 首档（deepseek）
 	// 「借」的下拉：首项「不借」+ 各 provider 名；当前值不在候选里时补一项，
@@ -162,7 +162,7 @@ func newWebProviderForm(v WebProviderView, search bool, choices []ProviderChoice
 		displays = append(displays, f)
 		values = append(values, f)
 	}
-	pf.from = cycleField{displays: displays, values: values}
+	pf.from = selectField{displays: displays, values: values}
 	pf.from.setValue(strings.TrimSpace(v.From))
 	// 快照没写 from 的 deepseek（老配置 `{"kind":"deepseek"}`）实际是借同名条目：
 	// 下拉就显示它，而不是「不借」——否则界面说的和启动做的事不一致。
@@ -217,7 +217,7 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return fieldRow(gtx, th, "类型", func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(cycleBtn(th, &pf.kind)),
+					layout.Rigid(selectBtn(th, &pf.kind)),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							l := material.Label(th, paperNoteSp(th), webKindHint(kind))
@@ -250,7 +250,7 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
 			return fieldRow(gtx, th, "借用", func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(cycleBtn(th, &pf.from)),
+					layout.Rigid(selectBtn(th, &pf.from)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.fromUse, "填入", paperBtnSecondary, true))
 					}),
@@ -301,10 +301,14 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 }
 
-// webProviderEvents 一条提供商的事件消费（循环档 + 「填入」+ 上移/下移/删除）。
+// webProviderEvents 一条提供商的事件消费（类型/借用选择器 + 「填入」+ 上移/下移/删除）。
 func (f *settingsForm) webProviderEvents(gtx layout.Context, pf *webProviderForm, search bool, i int) {
-	pf.kind.advance(gtx)
-	pf.from.advance(gtx)
+	kindLabel := "抓取类型"
+	if search {
+		kindLabel = "搜索类型"
+	}
+	f.openPicker(gtx, kindLabel, &pf.kind)
+	f.openPicker(gtx, "借用服务", &pf.from)
 	for pf.fromUse.Clicked(gtx) {
 		f.fillWebProviderFrom(pf)
 	}

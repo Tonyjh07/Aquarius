@@ -100,24 +100,24 @@ func TestFallbackChainEditorHeadless(t *testing.T) {
 	if len(f.chain) != 1 || len(f.chainChoices) != 2 {
 		t.Fatalf("链加载 = %d 项, 选项 = %d", len(f.chain), len(f.chainChoices))
 	}
-	if f.chain[0].chainProvider(f.chainChoices) != "b" || f.chain[0].model.Text() != "bm1" {
-		t.Fatalf("首项 = %q/%q", f.chain[0].chainProvider(f.chainChoices), f.chain[0].model.Text())
+	if f.chain[0].chainProvider() != "b" || f.chain[0].model.Text() != "bm1" {
+		t.Fatalf("首项 = %q/%q", f.chain[0].chainProvider(), f.chain[0].model.Text())
 	}
 
 	// 添加一项（缺省指向首个选项）→ 上移交换 → 删除。
 	f.addFallbackForm()
-	if len(f.chain) != 2 || f.chain[1].chainProvider(f.chainChoices) != "a" {
-		t.Fatalf("添加后 = %d 项, 末项 = %q", len(f.chain), f.chain[1].chainProvider(f.chainChoices))
+	if len(f.chain) != 2 || f.chain[1].chainProvider() != "a" {
+		t.Fatalf("添加后 = %d 项, 末项 = %q", len(f.chain), f.chain[1].chainProvider())
 	}
 	f.chain[1].model.SetText("am2")
 	f.moveFallback(1, -1) // 上移：与首项交换
-	if f.chain[0].chainProvider(f.chainChoices) != "a" || f.chain[0].model.Text() != "am2" {
-		t.Fatalf("上移后首项 = %q/%q", f.chain[0].chainProvider(f.chainChoices), f.chain[0].model.Text())
+	if f.chain[0].chainProvider() != "a" || f.chain[0].model.Text() != "am2" {
+		t.Fatalf("上移后首项 = %q/%q", f.chain[0].chainProvider(), f.chain[0].model.Text())
 	}
-	f.moveFallback(0, -1) // 越界 no-op
-	f.cycleChainProvider(0)
-	if f.chain[0].chainProvider(f.chainChoices) != "b" {
-		t.Fatalf("循环选择后 = %q, want b", f.chain[0].chainProvider(f.chainChoices))
+	f.moveFallback(0, -1)     // 越界 no-op
+	f.chain[0].prov.choose(1) // 选择器选中第二个 provider（等价于点弹层里的那一项）
+	if f.chain[0].chainProvider() != "b" {
+		t.Fatalf("选中第二个后 = %q, want b", f.chain[0].chainProvider())
 	}
 
 	u.saveSettings(f)
@@ -149,11 +149,9 @@ func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
 		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
 	})
 	f := newSettingsForm(u)
-	// 空链快照 → 添加一个控件但名字/模型都空；选项只有一个 provider，故 provIdx=0。
-	// 先把该项 provider 名清空（模拟「没选任何东西」）再保存。
+	// 空链快照 → 添加一个控件但名字/模型都空；先选「不指定」模拟「没选任何东西」再保存。
 	f.addFallbackForm()
-	f.chain[0].provIdx = -1
-	f.chain[0].provName = ""
+	f.chain[0].prov.setValue(chainPickNone)
 	u.saveSettings(f)
 	if got.Fallback == nil || len(got.Fallback) != 0 {
 		t.Fatalf("空行应被跳过：patch.Fallback = %+v", got.Fallback)

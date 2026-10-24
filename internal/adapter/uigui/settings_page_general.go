@@ -50,7 +50,7 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 	case rowWelcome:
 		return f.welcomeRow(gtx, th), true
 	case rowPerm:
-		return fieldRow(gtx, th, "权限等级", cycleBtn(th, &f.perm)), true
+		return fieldRow(gtx, th, "权限等级", selectBtn(th, &f.perm)), true
 	case rowUnattended:
 		// D185：越界即拒——说明必须写在开关旁，否则「无人值守」会被读成「免确认」。
 		return fieldRow(gtx, th, "无人值守", func(gtx layout.Context) layout.Dimensions {
@@ -68,9 +68,9 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 	case rowHotkey:
 		return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）")), true
 	case rowTheme:
-		return fieldRow(gtx, th, "主题", cycleBtn(th, &f.theme)), true
+		return fieldRow(gtx, th, "主题", selectBtn(th, &f.theme)), true
 	case rowScale:
-		return fieldRow(gtx, th, "元素缩放", cycleBtn(th, &f.scale)), true
+		return fieldRow(gtx, th, "元素缩放", selectBtn(th, &f.scale)), true
 	case rowFontSize:
 		return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）")), true
 	case rowWinSize:
@@ -96,9 +96,9 @@ func (generalPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	for f.welcomeOpen.Clicked(gtx) {
 		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
 	}
-	f.perm.advance(gtx)
-	f.theme.advance(gtx)
-	f.scale.advance(gtx)
+	f.openPicker(gtx, "权限等级", &f.perm)
+	f.openPicker(gtx, "主题", &f.theme)
+	f.openPicker(gtx, "元素缩放", &f.scale)
 }
 
 func (generalPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.profName }
