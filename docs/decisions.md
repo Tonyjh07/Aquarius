@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-24 @ e3b00c7 -->
+<!-- docs-sync: 2026-10-24 @ af88f24 -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -240,6 +240,7 @@
 | D222 | 联网与语音的提供商改成可独立配置：`base_url` / `api_key` 显式字段优先，缺的才借 `model.providers`（`from` / `provider` 保留为兼容简写）；密钥槽按侧/按能力分（`_SEARCH_`/`_FETCH_`、`_ASR`/`_TTS`）；设置窗加「借用 + 填入」把端点与引用名抄过来（§5.14/§8） | 生效 |
 | D223 | 语音按**协议位**分派而非按模型名：`audio.asr.kind` 四档（`chat-audio`/`whisper`/`openai`/`funasr`）、`audio.tts.kind` 三档（`chat-audio`/`vits`/`gptsovits`），白名单外 fail-fast；本地识别走进程内 whisper.cpp（WASM 翻 Go，无 cgo）、只读 `model_path`；繁转简自写最长前缀匹配 + 内嵌 OpenCC 词典（Apache-2.0），不用传递依赖 GPL-2.0 的 `gocc`（§5.6） | 生效 |
 | D224 | 设置窗枚举档改成**居中模态选择器**（不再「点一下进一档」）：全部选项一次摊开、当前项打勾；不手搓锚定下拉（Gio 拿不到绝对坐标、会被虚拟化列表裁剪）（§15.7） | 生效 |
+| D225 | 语音设置页的行表按**协议位**现算：每档只列适配器真正会读的字段（本地 whisper 只剩模型文件与语种、FunASR 去掉识别模型与语种、VITS 去掉模型/描述/风格指令、GPT-SoVITS 再去掉密钥）；隐藏行的草稿值仍全量进 patch（§5.6/§15.7） | 生效 |
 
 ## 记录
 
@@ -4971,3 +4972,28 @@
 - **验证**：`TestSelectFieldChoose`（按键值定位 / 越界夹取 / 选中即改值）、
   `TestPickerOpenAndCancel`、`TestPickerChooseWritesValue`、`TestPickerOnlyOneField`、
   `TestSelectBtnShowsCurrent`。
+
+### D225 — 语音设置页按协议位收字段（v0.2.0，§5.6/§15.7）
+
+- **动机**：语音页原先摆着 19 行固定字段。选了本地 whisper 之后，服务、端点、密钥、识别模型
+  全都不读——用户填了也不生效，只会怀疑「是不是还差点什么」。用户拿联网页做对照：「网页抓取
+  那里做的就不错，切换到 local 啥都不用填」。
+- **决策**：
+  - **行表按 `kind` 现算**（每帧重算，切档立刻变，不必保存或重开）：`whisper` 只留模型文件与
+    语种；`funasr` 去掉识别模型与语种（该协议没有可传的 language，模型名由服务端启动参数
+    决定）；`vits` 去掉模型名、音色描述与风格指令（音色 = 说话人 ID）；`gptsovits` 再去掉
+    密钥（`api_v2.py` 的鉴权由服务端自己管，适配器不发鉴权头）。
+  - **字段归属按适配器源码判**，不按 config 结构判——结构体里字段恒有，用不用由适配器决定。
+    按结构体摆字段必然留下「填了不生效」的行。
+  - **隐藏不等于丢弃**：保存仍对语音字段恒全量写，被隐藏行的草稿值照旧进 patch，切回原档
+    原样复现；否则来回切一次档就把之前配好的参数弄没了。
+  - **保存前校验按 `kind` 分家**：`whisper` 要模型文件；`funasr` / `vits` / `gptsovits` 不要求
+    模型名；其余要模型名。非缺省方式还要有端点（本地 whisper 除外）。
+- **否决**：① **全部字段照旧摊开、交给校验去报错**（用户要先填一遍再被告诉「这个不用填」）；
+  ② **按 config 结构体决定显示哪些字段**（见上）；③ **按 kind 清空无关字段**（切一次档就
+  毁掉之前配好的参数）。
+- **后果/限制**：同一份 config 在不同协议位下看到的行数不同，文档与截图需注明「按方式分家」。
+  `kind` 本身仍不归本页管理（高级页手写值原样保留），行表只跟着当前值变。
+- **验证**：`TestAudioRowsFollowKind`（六档 × 该出现/不该出现的行型）、
+  `TestAudioKindSwitchRevealsRows`（切档后行回来）、`TestAudioHiddenFieldsStayInPatch`
+  （隐藏字段仍落盘），以及既有 `TestSettingsNativeRowsCoveredEveryPage`（覆盖新行型）。

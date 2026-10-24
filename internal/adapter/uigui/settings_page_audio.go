@@ -19,31 +19,53 @@ import (
 // audioPage 语音页模块。
 type audioPage struct{}
 
+// 语音协议位键值（与 config 里 audio.*.kind 的原文一致）。界面里只有本页按 kind 分支：
+// **哪一档真正读哪些字段**由适配器决定，界面只照着摆，不问用户要已经不看的值。
+const (
+	asrKindWhisper = "whisper"
+	asrKindFunASR  = "funasr"
+	ttsKindVITS    = "vits"
+	ttsKindGPTSo   = "gptsovits"
+)
+
 func (audioPage) Key() string { return "语音" }
 
 func (audioPage) Rows(f *settingsForm) []rowDesc {
-	return []rowDesc{
-		sec("语音识别（说话转文字）"),
-		{kind: rowAudioASRKind},
-		{kind: rowAudioASRProvider},
-		{kind: rowAudioASREndpoint},
-		{kind: rowAudioASRKey},
-		{kind: rowAudioASRModel},
-		{kind: rowAudioASRPath},
-		{kind: rowAudioLang},
-		sec("语音合成（文字转语音）"),
-		{kind: rowAudioTTSProvider},
-		{kind: rowAudioTTSKind},
-		{kind: rowAudioTTSEndpoint},
-		{kind: rowAudioTTSKey},
-		{kind: rowAudioTTSModel},
-		{kind: rowAudioVoice},
-		{kind: rowAudioDesign},
-		{kind: rowAudioStyle},
-		{kind: rowAudioTags},
-		{kind: rowAudioPreview},
-		{kind: rowAudioNote},
+	asrKind := f.asrKind.value()
+	ttsKind := f.ttsKind.value()
+	rows := []rowDesc{sec("语音识别（说话转文字）"), {kind: rowAudioASRKind}}
+	// 每档只列它真正会读的字段：适配器不看的东西摆在这里，用户填了也不会生效，
+	// 只会让人怀疑「是不是还要填点什么」。
+	switch asrKind {
+	case asrKindWhisper:
+		// 本地引擎：只读模型文件；端点、密钥、服务、模型名一概不看。
+		rows = append(rows, rowDesc{kind: rowAudioASRPath}, rowDesc{kind: rowAudioLang})
+	case asrKindFunASR:
+		// 模型由服务端启动参数决定；语种也没有可传的参数（见 asrfunasr）。
+		rows = append(rows, rowDesc{kind: rowAudioASRProvider}, rowDesc{kind: rowAudioASREndpoint},
+			rowDesc{kind: rowAudioASRKey})
+	default:
+		// 对话接口与 OpenAI 转写都用全套：服务、端点、密钥、模型名、语种。
+		rows = append(rows, rowDesc{kind: rowAudioASRProvider}, rowDesc{kind: rowAudioASREndpoint},
+			rowDesc{kind: rowAudioASRKey}, rowDesc{kind: rowAudioASRModel}, rowDesc{kind: rowAudioLang})
 	}
+	rows = append(rows, sec("语音合成（文字转语音）"), rowDesc{kind: rowAudioTTSKind})
+	switch ttsKind {
+	case ttsKindVITS:
+		// vits-simple-api：说话人 ID（音色）+ 风格标签，没有模型名、描述与风格指令。
+		rows = append(rows, rowDesc{kind: rowAudioTTSProvider}, rowDesc{kind: rowAudioTTSEndpoint},
+			rowDesc{kind: rowAudioTTSKey}, rowDesc{kind: rowAudioVoice}, rowDesc{kind: rowAudioTags})
+	case ttsKindGPTSo:
+		// GPT-SoVITS：音色 = 参考音频路径，描述 = 参考音频的文字；密钥由服务端
+		// api_v2.py 决定（适配器不发鉴权头），风格指令没有对应参数。
+		rows = append(rows, rowDesc{kind: rowAudioTTSProvider}, rowDesc{kind: rowAudioTTSEndpoint},
+			rowDesc{kind: rowAudioVoice}, rowDesc{kind: rowAudioDesign}, rowDesc{kind: rowAudioTags})
+	default:
+		rows = append(rows, rowDesc{kind: rowAudioTTSProvider}, rowDesc{kind: rowAudioTTSEndpoint},
+			rowDesc{kind: rowAudioTTSKey}, rowDesc{kind: rowAudioTTSModel}, rowDesc{kind: rowAudioVoice},
+			rowDesc{kind: rowAudioDesign}, rowDesc{kind: rowAudioStyle}, rowDesc{kind: rowAudioTags})
+	}
+	return append(rows, rowDesc{kind: rowAudioPreview}, rowDesc{kind: rowAudioNote})
 }
 
 func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
@@ -83,8 +105,10 @@ func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowAudioPreview:
 		return f.audioPreviewRow(gtx, th), true
 	case rowAudioNote:
-		l := material.Body2(th, "识别与合成各自是一份完整配置：先选方式（协议），再决定端点与密钥——"+
-			"可以自己填，也可以选一个「服务」再点「填入」，那会把该条目的端点与密钥引用抄过来，之后照样能改。"+
+		l := material.Body2(th, "识别与合成各自是一份完整配置：先选方式（协议），再填本页给出的字段——"+
+			"本地 whisper 只有模型文件，其余方式才有服务与端点。"+
+			"需要端点或密钥的那几档，可以自己填，也可以选一个「服务」再点「填入」，"+
+			"那会把该条目的端点与密钥引用抄过来，之后照样能改。"+
 			"密钥只写不回显（留空 = 保持）。改方式、服务、端点或模型需保存并重启。"+
 			"音色、音色描述与风格保存后对此后的播报生效；试听按当前填写的内容合成一句。")
 		l.Color = paperOf().text3
