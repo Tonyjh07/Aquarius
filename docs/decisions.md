@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-24 @ 3cc6e38 -->
+<!-- docs-sync: 2026-10-24 @ f0710ef -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -237,6 +237,7 @@
 | D219 | 整块内容没有自然高度的设置页（「高级」的整文件编辑区）改为按 Flex 排、该块吸走内容区剩余高度（`fillPage`）；其余页仍走滚动列表（§15.7） | 生效 |
 | D220 | 附件格式清单与事实对齐：README 撤下「pptx 自动转文本」，选择框过滤器只列能抽文字的格式（pptx/rtf/legacy Office 仍可经「所有文件」/拖拽/命令行附上，回落二进制占位）（§4.2） | 生效 |
 | D221 | 密钥库键名统一成一条规则：有 `secret:` 引用就沿用（**每一把**都如此，不再给第 N 把重复拼后缀）、没有才派生；非 ASCII provider 名补 4 位指纹防撞名；联网页明文密钥同口径入库（§8/§9） | 生效 |
+| D222 | 联网与语音的提供商改成可独立配置：`base_url` / `api_key` 显式字段优先，缺的才借 `model.providers`（`from` / `provider` 保留为兼容简写）；密钥槽按侧/按能力分（`_SEARCH_`/`_FETCH_`、`_ASR`/`_TTS`）；设置窗加「借用 + 填入」把端点与引用名抄过来（§5.14/§8） | 生效 |
 
 ## 记录
 
@@ -4831,3 +4832,35 @@
   （两个中文名不再撞名、ASCII 名形态不变）、`TestKeySlotNameStableAcrossRewrite`
   （连续重填三次，引用名恒定、库条目数不增）、`TestStoreWebKeys*` 四条（入库/借用型跳过/
   引用留空不动库/库未接线保持旧行为）。
+
+### D222 — 联网与语音的提供商可独立配置（v0.2.0，§5.14/§8）
+
+- **动机**：`web.search/fetch.providers[]` 的 `deepseek` 与 `audio.asr/tts` 原本只有一条路——
+  借 `model.providers` 里某个条目的 `base_url` 与密钥。用户提出「deepseek 能不能自己配」：
+  联网与语音往往是**另一家、另一把钥匙**（检索按次计费、音频模型单独开额度），借不到就只能
+  改对话 provider，而那一改会连带换掉主模型。设置窗里也没有任何入口能把这层关系讲清楚。
+- **决策**：三处一起改。
+  - **字段**：`webProvider` 与 `audioChannel` 各加 `base_url` / `key`（语音侧叫 `api_key`）。
+    解析收敛到一个函数（`resolveEndpoint`），顺序 = **显式字段 → 借 `from`/`provider` 指的条目
+    → 密钥回落按侧/按能力派生的名字**。借只补**缺的那一项**。
+  - **兼容**：`from` / `provider` 保留为简写，老配置 `{"kind":"deepseek"}` 一字不改照常启动；
+    界面只写显式字段，不再写 `from`。「引用的条目不存在」只有「端点也没自己填」才算启动错误
+    ——用户既然自己写了端点，就不该因一条失效的引用把这家整个跳过。
+  - **密钥槽**：联网按侧 `AQUARIUS_DEEPSEEK_SEARCH_API_KEY` / `_FETCH_`，语音按能力
+    `AQUARIUS_ASR_API_KEY` / `_TTS_`。`AQUARIUS_DEEPSEEK_API_KEY` 已归对话 provider，不能复用。
+  - **界面**：联网页与语音页各给一条「借用」循环档 + 「填入」按钮，把选中条目的端点与
+    **密钥引用名**抄进本条目（永不抄值），抄完即独立配置、可继续改。
+- **否决**：① 彻底废掉 `from` / `provider`（会打断现有语音与联网配置，收益只是少一个字段）；
+  ② 两侧共用 `AQUARIUS_DEEPSEEK_API_KEY`（「给搜索换把便宜钥匙」会变成「把对话也换了」）；
+  ③ 语音按 provider 名派生键名（同一家的对话/识别/合成常是三把钥匙，共用一格会互相覆盖）；
+  ④ 「填入」时连密钥**值**一起抄（值只在密钥库里，编辑框永不回显，见 §9）。
+- **后果/限制**：同一把钥匙若既用于对话又用于联网，用户需要填两次（两份库条目）——换来的是
+  三者可以各自更换而不互相牵连。语音的 `api_key` 留空 = **保持**原引用（与其它密钥框同口径），
+  想清掉自己的覆盖得去「高级」页改原文。
+- **验证**：`TestWebResolveEndpointPrecedence`（四种取值组合 + 回落）、
+  `TestWebResolveEndpointStaleFrom`、`TestDeepSeekWebUsesOwnEndpointAndKey`、
+  `TestDeepSeekWebFallsBackPerSide`（两侧各取自己的槽，不碰对话那把）、
+  `TestNormalizeWebAcceptsExplicitEndpoint`、`TestStoreWebKeysDeepSeekOwnKey`、
+  `TestAudioEndpointIndependent` / `TestAudioEndpointOverridesBorrow` /
+  `TestAudioEndpointBorrowMissingNeedsOwnURL`、`TestStoreAudioKeys*` 四条、
+  `TestPersistAudioEndpointRoundTrip`、`TestFillWebProviderFrom` / `TestFillAudioFromService`。

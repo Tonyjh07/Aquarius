@@ -933,7 +933,7 @@ type WebFetch interface {
 
 | kind | 搜索 | 抓取 | 端点 / 依赖 | 密钥 |
 |---|---|---|---|---|
-| `deepseek` | √ | √ | `POST {base_url}/v1/tools/{search,fetch}`（与对话同家同钥；base_url 带不带 `/v1` 都认） | 借 `model.providers` 的密钥池 |
+| `deepseek` | √ | √ | `POST {base_url}/v1/tools/{search,fetch}`（base_url 带不带 `/v1` 都认） | 自己填的，或借 `model.providers` 的密钥池；都不填则按侧回落 `_SEARCH_` / `_FETCH_` |
 | `brave` | √ | — | `GET https://api.search.brave.com/res/v1/web/search`（`X-Subscription-Token`） | `key`（`secret:` 引用） |
 | `local` | — | √ | 进程内 HTTP：`readeck/go-readability` 提正文 + `html-to-markdown` 转 Markdown | 无 |
 
@@ -961,11 +961,19 @@ type WebFetch interface {
 - 代理：显式 `web.fetch.proxy` 优先，其次 `HTTP(S)_PROXY` 环境变量（Go 缺省 Transport 的口径）。
 - `allow_private_ips` 只为调试本机服务而存在，缺省关闭。
 
-**配置入口（D200）**：`web.search.providers` / `web.fetch.providers` 与本地抓取参数可直接改
+**配置入口（D200/D222）**：`web.search.providers` / `web.fetch.providers` 与本地抓取参数可直接改
 `config.json`，也可在设置窗「联网」页编辑——两组提供商各是一个**有序列表**（顺序即优先级），
 每条可换类型、上下移动、删除；界面只给出「该侧能用的档」（搜索侧 deepseek/brave，抓取侧
 deepseek/local），选不出启动会拒的组合。密钥只写不回显（框恒空 = 保持原引用）；列表留空 =
 清空 = 该能力不可用。保存前按与 `normalizeWeb` 同一口径校验，写坏的配置进不了盘。
+
+**端点与密钥的来源（D222）**：每条 `deepseek` 的 `base_url` 与 `key` 都是**可选**的独立字段，
+取值顺序为「显式字段 → 借 `from` 指的 `model.providers` 条目 → 密钥回落按侧派生的名字」。
+借只补**缺的那一项**：填了端点仍可借密钥，反之亦然；`from` 指不到条目时只有「端点也没自己填」
+才算配置错误（启动拒），否则只是这家取不到密钥、装配根警告并跳过。老配置 `{"kind":"deepseek"}`
+一字不改照常工作——「借用」是省事的捷径，不是唯一形态。密钥槽按侧区分（搜索
+`AQUARIUS_DEEPSEEK_SEARCH_API_KEY`、抓取 `AQUARIUS_DEEPSEEK_FETCH_API_KEY`），因为
+`AQUARIUS_DEEPSEEK_API_KEY` 已归对话 provider，共用一格会让「给搜索换把钥匙」变成「把对话也换了」。
 
 ### 5.15 `skill.go` —— 技能目录端口（D201）
 
@@ -1551,14 +1559,18 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   "skills": {                     // 技能（D201）：技能根有序列表（绝对路径），先命中者胜；
     "dirs": []                    // 空 = 只用 <profile>/skills。改动重启生效（不做文件监听）
   },
-  "audio": {                      // 语音（D179）：识别与合成各引用一个 provider，密钥不另存
+  "audio": {                      // 语音（D179/D222）：识别与合成各是一份完整配置
     "asr": {
-      "provider": "mimo",          // 引用 model.providers 里的 name：借它的 base_url 与密钥池
-      "model": "mimo-v2.5-asr",    // 转写模型
+      "provider": "mimo",          // 可选：借 model.providers 里这条的端点与第一把密钥
+      "base_url": "",              // 可选：自己的端点；空 = 用借来的
+      "api_key": "",               // 可选：自己的密钥（secret: 引用或明文）；空 = 借来的，都不借则回落 AQUARIUS_ASR_API_KEY
+      "model": "mimo-v2.5-asr",    // 转写模型（配了服务就必填）
       "kind": "chat-audio"         // 协议：chat-audio（chat/completions 携带音频，缺省）——未来本地引擎加新值
     },
     "tts": {
       "provider": "mimo",
+      "base_url": "",              // 同上；密钥回落 AQUARIUS_TTS_API_KEY
+      "api_key": "",
       "model": "mimo-v2.5-tts",    // mimo-v2.5-tts（预置音色）| -voicedesign（文本设计）| -voiceclone（样本复刻）
       "kind": "chat-audio",
       "voice": "冰糖",              // 预置音色名；voiceclone 模式填样本文件的绝对路径
@@ -1571,7 +1583,7 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   "web": {                        // 联网搜索与抓取（D197）：两组列表都是**有序 = 优先级**
     "search": {
       "providers": [
-        { "kind": "deepseek" },                        // 借 model.providers 里同名 provider 的 base_url 与密钥池
+        { "kind": "deepseek" },                        // 端点与密钥都借 model.providers 里的同名条目（也可自己填）
         { "kind": "brave", "key": "secret:AQUARIUS_BRAVE_API_KEY", "country": "CN", "lang": "zh-hans" }
       ],
       "count": 8                  // 缺省条数（工具参数可逐次覆盖，1-20）
@@ -1657,12 +1669,17 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 - 用途是「把服务端列出来的几百个模型登记在册、只勾我现在要用的那几个」：登记与选用分开，
   不必在「删掉再手敲」和「留着被误选」之间二选一。
 
-**语音配置（D179）**：`audio.asr` / `audio.tts` 各引用一个 provider 名——**只借它的 `base_url` 与密钥池**，
-不继承 `kind`、不继承模型能力位、不进降级链。理由：音频模型与对话模型常常不是同一类端点，也不该被
-「主模型挂了换备用」那套语义牵连（播报失败降级成另一个音色，比不播更怪）。
+**语音配置（D179/D222）**：`audio.asr` / `audio.tts` 各是一份**完整**的服务配置——端点与密钥
+可以自己填，也可以只写 `provider` 借 `model.providers` 里那条的 `base_url` 与第一把密钥。
+借不继承 `kind`、不继承模型能力位、不进降级链。理由：音频模型与对话模型常常不是同一类端点，
+也不该被「主模型挂了换备用」那套语义牵连（播报失败降级成另一个音色，比不播更怪）。
 
-- `audio.*.provider` 必须指向 `model.providers` 里的名字；未配置或名字不存在 = 该能力不可用，
-  启动打一行提示，按钮与命令明确报因。
+- 取值顺序：显式 `base_url` / `api_key` → 借 `provider` 指的那条 → 密钥回落按能力派生的名字
+  （`AQUARIUS_ASR_API_KEY` / `AQUARIUS_TTS_API_KEY`）。借只补**缺的那一项**。
+- `audio.*.provider` 指不到条目时只有「端点也没自己填」才算配置错误；否则只是这家取不到密钥，
+  启动打一行提示，按钮与命令明确报因。整路三样都不填 = 该能力不可用，不算错误。
+- 密钥槽按**能力**分而不是按 provider：同一家的对话、识别、合成往往是三把不同的钥匙，
+  共用一个槽位会让后填的覆盖先填的。
 - `audio.*.kind` = 协议位：`chat-audio`（缺省）= chat/completions 携带音频。未来本地引擎
   （whisper.cpp 等）或别家协议在此加新值，上层不动。
 - `audio.tts.model` 决定形态：`-voicedesign` 用 `design` 文本，`-voiceclone` 用 `voice` 里的
@@ -1672,11 +1689,15 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 - **录音时长上限**：线上限由厂商的 Base64 体积上限反推（16kHz 单声道 16bit ≈ 32KB/s，Base64 膨胀 4/3）
   ——MiMo 当前 10MB ⇒ 约 4 分钟；产品侧默认 60s，命令可带秒数覆盖但不得超过硬顶。
 
-**联网配置（D197）**：`web.search.providers` / `web.fetch.providers` 都是**有序**列表，顺序即优先级；
+**联网配置（D197/D222）**：`web.search.providers` / `web.fetch.providers` 都是**有序**列表，顺序即优先级；
 某一家的失败（网络/超时/401/402/403/429/5xx）会换下一家，`400` 不换（输入本身有问题）。
 
-- `kind=deepseek` 的 `from` 指向 `model.providers` 里的名字（省略 = 找同名的 `deepseek`），
-  **只借它的 `base_url` 与密钥池**（与语音同口径）：联网端点与对话端点是同一家、同一把钥匙。
+- `kind=deepseek` 的 `base_url` / `key` 都是可选独立字段，取值顺序与语音同口径：显式字段 →
+  借 `from` 指的 `model.providers` 条目（省略 = 同名的 `deepseek`）→ 密钥回落按侧派生的名字。
+  借只补缺的那一项；`from` 指不到条目时只有「端点也没自己填」才算配置错误。老写法
+  `{"kind":"deepseek"}` 照常工作——「借用」是捷径，不是唯一形态。
+- 密钥槽按侧区分：搜索 `AQUARIUS_DEEPSEEK_SEARCH_API_KEY`、抓取 `AQUARIUS_DEEPSEEK_FETCH_API_KEY`
+  （`AQUARIUS_DEEPSEEK_API_KEY` 归对话 provider），两侧互不覆盖。
 - `kind=brave` 用 `key`（`secret:` 引用或明文）——Brave 只有搜索端点，`country`/`lang` 控制结果
   国家与语言（空 = 服务端缺省）。
 - `kind=local` 无密钥，参数在 `web.fetch` 这一层（代理、UA、robots、私网、超时）。

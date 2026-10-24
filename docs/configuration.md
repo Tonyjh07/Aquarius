@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-24 @ 3cc6e38 -->
+<!-- docs-sync: 2026-10-24 @ f0710ef -->
 
 > 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
 > 配置**以 profile 为隔离单位**：
@@ -206,21 +206,36 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 
 ### input / audio（语音）
 
-语音识别与合成各引用一个 provider 名——**只借它的 `base_url` 与密钥池**，不继承协议与能力位，
-也不进降级链（音频模型不是对话模型的替补）。
+语音识别与合成各是一份**完整**的服务配置：端点与密钥可以自己填，也可以只写 `provider`
+借 `model.providers` 里那一条的端点与第一把密钥。借来的东西只有 `base_url` 与密钥，
+不继承协议与能力位，也不进降级链（音频模型不是对话模型的替补）。
+
+三种形态：
+
+- 什么都不填 = 该能力不可用（界面隐藏入口，执行时报告原因，不影响对话）；
+- 只写 `provider` = 借那一条的端点与密钥（老配置的形状，行为不变）；
+- 写了 `base_url` / `api_key` = 独立配置，写了的那项覆盖借来的（只补缺的一项）。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `input.language` | string | `auto` | 录音语种提示：`auto` / `zh` / `en`，只喂给识别 |
-| `audio.asr.provider` | string | — | 引用 `model.providers` 里的 name；缺省 = 语音输入不可用 |
-| `audio.asr.model` | string | — | 转写模型，如 `mimo-v2.5-asr` |
+| `audio.asr.provider` | string | — | 借 `model.providers` 里的 name（可省略，见上） |
+| `audio.asr.base_url` | string | — | 自己的端点（如 `https://api.example.com/v1`）；空 = 借 `provider` 的 |
+| `audio.asr.api_key` | string | `secret:AQUARIUS_ASR_API_KEY` | 自己的密钥（`secret:` 引用或明文）；空 = 借 `provider` 的，都不借则回落此名 |
+| `audio.asr.model` | string | — | 转写模型，如 `mimo-v2.5-asr`；配了服务就必填 |
 | `audio.asr.kind` | string | `chat-audio` | 协议位：`chat/completions` 携带音频（未来本地引擎加新值） |
 | `audio.tts.provider` | string | — | 同上；缺省 = 不能播报 |
+| `audio.tts.base_url` | string | — | 同上（合成侧） |
+| `audio.tts.api_key` | string | `secret:AQUARIUS_TTS_API_KEY` | 同上（合成侧） |
 | `audio.tts.model` | string | — | `mimo-v2.5-tts`（预置音色）/ `-voicedesign`（文本设计）/ `-voiceclone`（样本复刻） |
 | `audio.tts.voice` | string | — | 预置音色名（如 `冰糖`）；voiceclone 模式填**样本文件绝对路径** |
 | `audio.tts.design` | string | — | voicedesign 模式的音色描述，该模型必填 |
 | `audio.tts.style` | string | — | 自然语言风格指令（如 `语速稍快，语气轻松`） |
 | `audio.tts.tags` | string | — | 风格标签，非空时拼成 `(标签)` 前缀置于正文开头 |
+
+密钥槽按**能力**分（`_ASR` / `_TTS`），不按 provider：同一家的对话、识别、合成通常是三把
+不同的钥匙，共用一个槽位会让后填的覆盖先填的。界面里填明文会先收进本机密钥库，config 只留
+`secret:<名>`。
 
 ### skills（技能）
 
@@ -255,9 +270,9 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 |---|---|---|---|
 | `web.search.providers` | []object | `[]` | 搜索提供商（有序）；空 = 搜索不可用 |
 | `web.search.providers[].kind` | string | — | `deepseek` / `brave` |
-| `web.search.providers[].from` | string | 同 `kind` | `deepseek` 借哪个 `model.providers` 的 `base_url` 与密钥池 |
-| `web.search.providers[].key` | string | `secret:AQUARIUS_BRAVE_API_KEY` | `brave` 的订阅令牌（`secret:` 引用或明文） |
-| `web.search.providers[].base_url` | string | 官方端点 | 覆盖端点（自建网关/镜像） |
+| `web.search.providers[].from` | string | 同 `kind` | `deepseek` 借哪个 `model.providers` 的 `base_url` 与密钥（只补没填的那项） |
+| `web.search.providers[].key` | string | 见下 | 自己的密钥（`secret:` 引用或明文）；空 = 借 `from` 的，都不借则按侧回落 |
+| `web.search.providers[].base_url` | string | 见下 | 自己的端点（自建网关/镜像）；空 = 借 `from` 的 |
 | `web.search.providers[].country` / `lang` | string | 服务端缺省 | 仅 `brave`：结果国家（`CN`）与语言（`zh-hans`） |
 | `web.search.count` | int | `8` | 缺省条数（1–20，工具参数可逐次覆盖） |
 | `web.fetch.providers` | []object | 模板带 `[{"kind":"local"}]` | 抓取提供商（有序）：`deepseek` / `local` |
@@ -272,8 +287,16 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 `local` 是纯 Go 抓取（正文提取 + Markdown 转换），不需要密钥，缺省就开。某一家装不起来
 （缺密钥、`base_url` 为空）只打一行警告并跳过，其余提供商继续可用。
 
+`deepseek` 的端点与密钥**优先用本条目自己填的**，没填的才按 `from` 去 `model.providers`
+借（`from` 缺省 = 同名的 `deepseek`）。所以 `{"kind":"deepseek"}` 这种老写法照常工作，
+而想给联网单配一把钥匙时只写 `key` / `base_url` 即可，不必动对话 provider。密钥槽按**侧**
+区分——搜索 `AQUARIUS_DEEPSEEK_SEARCH_API_KEY`、抓取 `AQUARIUS_DEEPSEEK_FETCH_API_KEY`
+（`AQUARIUS_DEEPSEEK_API_KEY` 归对话 provider），两侧互不覆盖。
+
 以上键都可以在 GUI 设置窗的「联网」页编辑（两组提供商是有序列表，可增删与调序；密钥框
-只写不回显，留空 = 保持原引用）。设置窗保存前按与启动同一口径校验，写坏的组合进不了盘。
+只写不回显，留空 = 保持原引用）。「借用」下拉选中一条后点「填入」，会把那条的端点与
+**密钥引用名**抄进本条目（永不抄值），之后照常可以改。设置窗保存前按与启动同一口径校验，
+写坏的组合进不了盘。
 
 ### mcpServers / plugins
 
@@ -317,9 +340,11 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
   - provider 名里含中文、全角或重音字母时，规范化会把它们吃掉（`深度求索` 与 `月之暗面`
     都变 `AQUARIUS_PROVIDER_API_KEY`、互相覆盖），这类名字补 4 位指纹区分，
     如 `AQUARIUS_OPENAI_03F5_API_KEY`。
-  联网页的 brave 密钥同口径入库（沿用 `AQUARIUS_BRAVE_API_KEY` 或自定义引用名）；借用对话
-  provider 的 kind（deepseek）没有自己的密钥槽，填了不入库。密钥库不可写时直接报错，
-  不会静默把明文留在盘上。
+  联网页的 brave 密钥同口径入库（沿用 `AQUARIUS_BRAVE_API_KEY` 或自定义引用名）；deepseek
+  这类可独立配置的条目按**侧**分槽（`AQUARIUS_DEEPSEEK_SEARCH_API_KEY` /
+  `AQUARIUS_DEEPSEEK_FETCH_API_KEY`，不占对话 provider 的 `AQUARIUS_DEEPSEEK_API_KEY`）；
+  语音页按**能力**分槽（`AQUARIUS_ASR_API_KEY` / `AQUARIUS_TTS_API_KEY`）。密钥库不可写时
+  直接报错，不会静默把明文留在盘上。
 - 明文密钥：允许直接填或手改 config，**启动打印警告**（不回显密钥值）；建议确保 config
   不被提交/同步，或到设置窗重填一次转入密钥库。
 - 值为空（或整项删除）→ 该 provider 回落默认 `secret:AQUARIUS_OPENAI_KEY`。
@@ -376,9 +401,13 @@ profile 配置 `<data>/profiles/default/config.json`：
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "prompts": { "modules": {}, "persona": [] },
-  "input": { "asr": "whisper-api", "mic": true },
+  "input": { "language": "auto" },
   "skills": { "dirs": [] },
   "output": { "tts": false, "notify": true },
+  "audio": {
+    "asr": { "provider": "openai", "model": "mimo-v2.5-asr" },
+    "tts": { "provider": "openai", "model": "mimo-v2.5-tts", "voice": "冰糖" }
+  },
   "web": {
     "search": {
       "providers": [
@@ -414,7 +443,8 @@ profile 配置 `<data>/profiles/default/config.json`：
 - 「模型服务」页：provider 管理（**折叠卡片**，同时只展开一张）——名称/协议/接口地址/密钥池/**模型列表**/tokenizer/不认参数，+ 设为主 + 删除 + 连通性「测试」（真实最小请求，8s 超时）。模型列表每行 = **启用**勾选 + 名字 + 上下文窗口 + 三能力勾选 +「探测能力」；表头有「共 N 个 · 已启用 M 个」与「获取模型」，下面一行是本卡片的拉取反馈，尾部「＋ 添加模型」。切进本页时会**自动拉一轮**各家的 `/models`（每窗一次），结果全部并进列表、新增行默认未启用；行数不设上限，超过 8 行分页。密钥值**只写不回显**（留空 = 保持原值）；能力勾选**动过才固化成显式声明**（未动 = 保持原形态），「探测能力」以**编辑区现值**探（模型还没应用也能探，结论先回填勾选）。「应用 provider 变更」整体写回，重启生效。
 - 「权限与思考」「外观与呼出」：热生效项照旧；模型名经 `/model` 热切换。
 - 「输出」「限额」「人格模块树」：保存即写回；人格组合**只影响之后新建的会话**，且**重启后生效**（与 `system_prompt` 同口径）。
-- 「MCP 与插件」：只读清单；「联网」页 = 搜索与抓取两组提供商（有序列表，可增删与上下移）+ 本地抓取参数（条数、正文上限、代理、UA、robots、超时）。密钥框只写不回显（留空 = 保持原引用）；保存前按启动同一口径校验，写坏的组合进不了盘，原文件不动。
+- 「MCP 与插件」：只读清单；「联网」页 = 搜索与抓取两组提供商（有序列表，可增删与上下移）+ 本地抓取参数（条数、正文上限、代理、UA、robots、超时）。每条可自己填端点与密钥，也可以选「借用」再点「填入」把某个 `model.providers` 条目的端点与密钥引用抄过来（永不抄值）。密钥框只写不回显（留空 = 保持原引用）；保存前按启动同一口径校验，写坏的组合进不了盘，原文件不动。
+- 「语音」页 = 识别与合成两份独立配置（服务、端点、密钥、模型）+ 音色/音色描述/风格/标签 + 试听。同样支持「借用」+「填入」；密钥框只写不回显，填明文会先收进本机密钥库（识别存 `AQUARIUS_ASR_API_KEY`、合成存 `AQUARIUS_TTS_API_KEY`）。服务与模型的改动重启生效，音色与风格对此后的播报立即生效。
 - 「高级」页 = config.json **原文整文件编辑**（保存前 JSON 校验，解析失败原文件不动；未知键天然保留，Q10）。编辑区随窗口高度撑满，不设固定高度。
 
 ## 从旧形状迁移
