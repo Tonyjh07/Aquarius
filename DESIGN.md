@@ -653,10 +653,33 @@ type Synthesizer interface { // TTS：云 TTS（厂商适配器）/ 系统朗读
 - **厂商形状差异只在适配器里**：首发适配器按 MiMo 的 chat-completions 音频形状实现（ASR = `input_audio`
   内容块 + `asr_options.language`，TTS = `messages[user 风格, assistant 正文]` + `audio{format,voice}`）；
   换厂商 = 换适配器，端口与上层不动。
+- **协议位决定适配器，模型名不决定协议**（D223）：`audio.asr.kind` / `audio.tts.kind` 是唯一的分派依据，
+  同一个模型名可以挂在不同的服务端后面。识别侧四档、合成侧三档：
+
+  | 侧 | kind | 适配器 | 打哪 / 说明 |
+  |---|---|---|---|
+  | ASR | `chat-audio`（缺省） | `asrchat` | `POST {base}/chat/completions`，音频进 `input_audio` |
+  | ASR | `whisper` | `asrwhisper` | 进程内 whisper.cpp（WASM 翻成 Go，无 cgo）；读 `model_path` |
+  | ASR | `openai` | `asropenai` | `POST {base}/audio/transcriptions`，multipart `file`/`model`/`language` |
+  | ASR | `funasr` | `asrfunasr` | `POST {base}/recognition`，multipart `audio`，响应带 `code` |
+  | TTS | `chat-audio`（缺省） | `mimotts` | `POST {base}/chat/completions`，Base64 音频在 `choices[0]` |
+  | TTS | `vits` | `vitstts` | `GET {base}/voice/vits?text&id&format=wav`，返回 WAV |
+  | TTS | `gptsovits` | `gptsovitstts` | `POST {base}/tts`，音色 = 参考音频路径 + 其文字 |
+
+  `openai` 这一档覆盖一大片：OpenAI 官方、FunASR 的 `examples/openai_api`、whisper.cpp 的
+  `whisper-server`、各类自建网关——它们的差别只有端点与模型名。
+- **本地引擎的输出要过繁转简**：whisper 系列对中文默认吐繁体（「今天天氣不錯」），这是训练数据决定的，
+  不是识别错误。`asrwhisper` 外面包一层 `zhconv`（OpenCC 的 `tw2sp` 词典），转失败就保留原文并记一笔——
+  用户宁可看见繁体，也不想因为转换出错丢掉识别结果。这层包装在装配处叠，不进适配器：换一个输出简体的
+  引擎时它自然就该撤掉。词典（Apache-2.0，5 个文件 50KB）内嵌进二进制，转换算法自己写（最长前缀匹配，
+  三趟链）：现成的 Go 移植 `liuzl/gocc` 传递依赖 GPL-2.0 的 `cedar-go`，静态链接会污染整份交付物。
+- **模型文件不进仓库也不进二进制**：ggml 模型几十 MB 起，用户自己下载后填 `audio.asr.model_path`；
+  路径读不到时的报因里带下载地址与推荐档位（`ggml-base-q5_1.bin`，约 60MB，中文效果与速度的平衡点）。
+  不写下载器、不做模型嵌入——前者要处理断点/代理/校验，后者违反单文件极简交付。
 - **不复用 LLM 装饰器链**（D179）：重试/降级/密钥池那套围绕流式生成写，音频调用是「一次请求一次响应」，
   只做单次请求 + 明确报错；密钥仍经同一把 `resolveAPIKey` 解析，不另存一份。
 - **音频只在内存与附件库之间流动**：合成结果落 `AttachmentStore`（可重播、可 GC），播放器从库里取；
-  录音的 Base64 上限由采集侧按秒数封顶（见 §7.2）。
+  录音的 Base64 上限由采集侧按秒数封顶（见 §7.2）。三个合成适配器都返回 WAV，播放器不必认多种容器。
 
 ### 5.7 `ingest.go` —— 输入/输出方式端口
 
@@ -805,7 +828,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `AttachmentStore` | blobfs（内容寻址） | — | in-memory |
 | `Capture` | screencap（Windows `PrintWindow`/`BitBlt`；非 Windows 报不支持） | — | 假抓屏（固定 PNG） |
 | `WebSearch` / `WebFetch` | webdeepseek（Search + Fetch，D197）/ webbrave（Search）/ webfetchlocal（HTTP + readability + html-to-markdown）；webchain 串成有序降级链 | — | 脚本化提供商 |
-| `Transcriber` / `Synthesizer` | asrchat（chat-completions 音频形状，D179）/ mimotts（MiMo TTS 三种模型）/ micwin（`waveIn` 采集）/ audioplay（`PlaySound` 播放） | Tier-1 Go 插件 | 假转写 / 假合成 |
+| `Transcriber` / `Synthesizer` | asrchat（chat-completions 音频形状，D179）/ asrwhisper（进程内 whisper.cpp，无 cgo）/ asropenai（`/audio/transcriptions`）/ asrfunasr（`/recognition`）/ mimotts（MiMo TTS 三种模型）/ vitstts（`/voice/vits`）/ gptsovitstts（`/tts`）/ micwin（`waveIn` 采集）/ audioplay（`PlaySound` 播放）；按 `audio.*.kind` 分派 | Tier-1 Go 插件 | 假转写 / 假合成 |
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/导出 | Tier-1 Go 插件 | 脚本 |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
 | `WatchProber` / `WatchManager` | probe（command/file/http 取样，D190）/ app.watcher | — | 脚本化探针 |

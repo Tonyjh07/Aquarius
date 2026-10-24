@@ -77,8 +77,9 @@ Root(实节点, ID=会话ID, role=root)
 `internal/plugin` 宿主（发现/grant/崩溃限次重启）；
 （M5 主体已落位）：`uigui`（Gio 悬浮球 GUI，D43/§15——悬浮球/托盘/快捷键/主题/设置核心档与
 S1/S1b/S1c/S2/S2b 增强均已落地，已落地步骤见 [roadmap.md](roadmap.md)，后续计划见 [plan.md](plan.md)）；
-待落位：`plugingo` + `pluginapi/v1`（D29 后移）；语音侧适配器（`asrchat`/`mimotts`/`micwin`/
-`audioplay`/`outputtts`）与屏幕捕获（`screencap`）已随 M11 落位。
+待落位：`plugingo` + `pluginapi/v1`（D29 后移）；语音侧适配器（`asrchat`/`asrwhisper`/`asropenai`/
+`asrfunasr`/`mimotts`/`vitstts`/`gptsovitstts`/`zhconv`/`micwin`/`audioplay`/`outputtts`）与屏幕
+捕获（`screencap`）已随 M11 落位。
 
 ## 端口 × 内置适配器（落地里程碑）
 

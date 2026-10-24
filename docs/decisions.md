@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-24 @ f0710ef -->
+<!-- docs-sync: 2026-10-24 @ 4ab55ce -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -238,6 +238,7 @@
 | D220 | 附件格式清单与事实对齐：README 撤下「pptx 自动转文本」，选择框过滤器只列能抽文字的格式（pptx/rtf/legacy Office 仍可经「所有文件」/拖拽/命令行附上，回落二进制占位）（§4.2） | 生效 |
 | D221 | 密钥库键名统一成一条规则：有 `secret:` 引用就沿用（**每一把**都如此，不再给第 N 把重复拼后缀）、没有才派生；非 ASCII provider 名补 4 位指纹防撞名；联网页明文密钥同口径入库（§8/§9） | 生效 |
 | D222 | 联网与语音的提供商改成可独立配置：`base_url` / `api_key` 显式字段优先，缺的才借 `model.providers`（`from` / `provider` 保留为兼容简写）；密钥槽按侧/按能力分（`_SEARCH_`/`_FETCH_`、`_ASR`/`_TTS`）；设置窗加「借用 + 填入」把端点与引用名抄过来（§5.14/§8） | 生效 |
+| D223 | 语音按**协议位**分派而非按模型名：`audio.asr.kind` 四档（`chat-audio`/`whisper`/`openai`/`funasr`）、`audio.tts.kind` 三档（`chat-audio`/`vits`/`gptsovits`），白名单外 fail-fast；本地识别走进程内 whisper.cpp（WASM 翻 Go，无 cgo）、只读 `model_path`；繁转简自写最长前缀匹配 + 内嵌 OpenCC 词典（Apache-2.0），不用传递依赖 GPL-2.0 的 `gocc`（§5.6） | 生效 |
 
 ## 记录
 
@@ -4864,3 +4865,80 @@
   `TestAudioEndpointIndependent` / `TestAudioEndpointOverridesBorrow` /
   `TestAudioEndpointBorrowMissingNeedsOwnURL`、`TestStoreAudioKeys*` 四条、
   `TestPersistAudioEndpointRoundTrip`、`TestFillWebProviderFrom` / `TestFillAudioFromService`。
+
+### D223 — 语音协议位与多提供商（v0.2.0，§5.6）
+
+- **动机**：`audio.asr` / `audio.tts` 原本只有一条协议（chat/completions 携带音频），`kind` 只认
+  `chat-audio` 一个值。用户提了三件事：① 录音能不能**不发给云端**，在本地认；② 自己跑的 FunASR
+  能不能接；③ 合成想用 VITS / GPT-SoVITS。三件事的共同点不是「再来一个模型」，而是**换一种
+  线上协议**——端点、请求形状、响应形状全都不一样。
+- **调研与实测**（都跑过，不是看文档得出的）：
+  - `mpyw/whisper.go` v0.1.1：把 whisper.cpp 编成 WASM 再用纯 Go 宿主跑，**无 cgo**，单二进制仍成立。
+    冷编译 15.5s、增量 1–3s，二进制 +17MB；模型加载 50–105ms；linux/amd64 与 linux/arm64
+    交叉编译（`CGO_ENABLED=0`）均通过。
+  - 7.5s 普通话（base-q5_1）识别结果正确；`GOEXPERIMENT=simd` 下 1.53s，不开 6.43s——**差 4.2 倍**；
+    `language=auto` 正常判为 `zh`。
+  - whisper 系对中文**默认吐繁体**（「今天天氣不錯」），这是训练数据决定的，不是识别错误。
+    `TranscribeOptions` 没有 prompt 字段，掰不成简体，只能事后转换。
+  - OpenCC 的 `tw2sp` 档实测「軟體開發」→「软件开发」、「發布計畫」→「发布计划」；
+    逐字的 `ftz` 会错成「软体开发」。**只取它的词典**（Apache-2.0，5 个文件共 50KB），
+    转换算法自己写：现成的 Go 移植 `liuzl/gocc` 走 `liuzl/da` → `liuzl/cedar-go`，
+    而 `cedar-go` 的 `LICENSE.md` 是 **GPL-2.0**，静态链进单二进制会把整份交付物拖进 GPL。
+    自写的 20 行最长前缀匹配与 gocc 在 3818 条输入（全部词条 + 随机拼接）上**逐条一致**。
+  - FunASR 自带两套服务端：`runtime/python/http/server.py` 是 `POST /recognition` + 表单字段
+    `audio`（响应带 `code`）；`examples/openai_api/server.py` 是 `POST /v1/audio/transcriptions`
+    + 表单字段 `file`。两者不是同一个东西，不能用一个适配器糊过去。
+- **决策**：
+  - **协议位是唯一分派依据，模型名不决定协议**（同一个模型名可以挂在不同的服务端后面）。
+    `audio.asr.kind` 四档 `chat-audio`（缺省）| `whisper` | `openai` | `funasr`；
+    `audio.tts.kind` 三档 `chat-audio`（缺省）| `vits` | `gptsovits`。白名单外的值 fail-fast
+    ——那是永远不会生效的配置。
+  - **适配器自己写，不引第三方 ASR 客户端**：`openai` 这一档覆盖一大片（OpenAI 官方、FunASR 的
+    openai_api、whisper.cpp 的 whisper-server、各类自建网关），差别只有端点与模型名；
+    `funasr` 那一档是原生形状，第三方客户端普遍不支持。
+  - **本地识别只读模型文件路径**（`audio.asr.model_path`），不写下载器、不把模型嵌进二进制：
+    前者要处理断点/代理/校验，后者违反单文件极简交付。模型读不到时的报因里带下载地址与推荐档位。
+  - **推荐 `ggml-base-q5_1.bin`**（59.7MB）：small 准确率更好但 2.2x 实时，日常语音输入太慢；
+    base 开 simd 是 0.2x 实时，够用。
+  - **繁转简在装配处叠一层**（`zhSimplifier` 包住 `asrwhisper`），不进适配器：转换是「中文的书写
+    习惯」而不是「whisper 协议的一部分」，换个输出简体的引擎时这层自然就撤掉。转换失败保留原文
+    并记一笔——用户宁可看见繁体，也不想因为转换出错丢掉识别结果。
+  - **必填项按 kind 判定**：`whisper` 要 `model_path`；`funasr` / `vits` / `gptsovits` 不要模型名
+    （模型在服务端，音色是说话人 ID / 参考音频）；`chat-audio` / `openai` 要模型名。
+  - **`kind` 留空 = `chat-audio` 且视为「未配置」**：设置窗保存时循环档恒有值，不能因为写了
+    `kind` 就把没配语音的机器拦在保存上。**写成非缺省值 = 明确意图**，此时要求填端点
+    （`whisper` 除外，它不连网）。
+  - **合成侧的语种不取 `input.language`**：那是「录音说什么话」的提示，播报文本的语种由服务端
+    自己判断更准（VITS 的 `lang=auto`、GPT-SoVITS 的 `text_lang=auto` 就是干这个的）。
+- **否决**：① **用模型名猜协议**（`whisper-1` 既可能是 OpenAI 官方也可能是本地 whisper-server，
+  猜错就是连不上）；② **引 `asrclient` 这类第三方客户端**（只覆盖 OpenAI 形状、输入锁死 16kHz
+  裸 PCM 与 `BlobRef` 端口不对齐、v0.x 且几乎无人使用）；③ **把 whisper 做成插件**（插件宿主
+  面向的是工具与外部进程，一个需要 4GiB 地址空间与模型文件的推理引擎塞进去，生命周期与崩溃
+  隔离都会变复杂）；④ **做模型下载器 / 把模型嵌进二进制**；⑤ **在适配器里做繁转简**（会把
+  「中文书写习惯」焊进一个本该只管协议的层）；⑥ **直接引 `liuzl/gocc`**（见上：GPL-2.0 传染）；
+  ⑦ **本次硬上 Edge TTS**（见下）。
+- **后果/限制**：
+  - 二进制约 +18MB（whisper.go 17MB + 繁简词典与算法约 1MB）。这是「本地识别」这个能力的固有
+    代价，不接受就不该开这一档。
+  - `whisper.go` 每个模型实例预留 4GiB **虚拟**地址空间，`Transcribe` 内部串行（信号量容量 1）。
+    因此**不能每个设置页预览都加载一份**——装配期只建一个实例。
+  - `GOEXPERIMENT=simd` 是**构建期**开关（Go 1.27 实验特性），不开差 4.2 倍。发版构建命令要写死它。
+  - `whisper.go-wasm` 的 zip 在部分国内代理（`goproxy.cn`）上拉不下来，换 `goproxy.io` 或直连。
+  - **VITS 的参考服务端（`Artrajz/vits-simple-api`）是 AGPL-3.0**：只能 HTTP 调用，不能链接其代码。
+    本仓只写了客户端，不复制其实现。
+  - **Edge TTS 本次不做**：微软 2026-10-10 起只认 v2 的 `Sec-MS-GEC` token，Go 生态里
+    `raffleberry/edge-tts-go` v1.0.2 仍是 v1 token（必 403），`lew2sss/edge-tts-go-gec-v2` 虽修了
+    但 LGPL-3.0 且几乎无人使用；且它回 MP3，还得再引一个纯 Go MP3 解码。等生态稳定再说。
+  - `kind` 只在设置窗与高级页两处写；设置窗保存时 `kind` 恒有值，`persistSettingsTextKeys` 里
+    `kind` 为空只可能是别的窄写回路径（如高级页），那时保留原键不动。
+- **验证**：适配器契约测试（假 server / 假模型）`asrwhisper`（WAV 解码、样本归一、分段拼接、
+  短音频提前判掉、流式长度容忍、关闭后报错）、`asropenai`（multipart 三字段、`auto` 不发
+  `language`、MIME 定扩展名）、`asrfunasr`（`/recognition` + `audio`、`code != 0` 报因、
+  不发普通字段）、`vitstts`（查询串、缺省说话人、非 WAV 拒收）、`gptsovitstts`（JSON 字段、
+  `PromptLang` 跟随 `TextLang`、缺参考音频报因）、`zhconv`（tw2sp 词对、t2s 不换地区用词、
+  简体幂等、并发、最长前缀优先、词条数下限）；
+  配置层 `TestNormalizeAudioKinds` / `TestNormalizeAudioWhisperNeedsNoEndpoint` /
+  `TestNormalizeAudioEmptyKindDefaults`；装配层 `TestZhSimplifierConverts` /
+  `TestZhSimplifierKeepsError` / `TestZhSimplifierDegradesOnConvertFailure`；写回
+  `TestPersistAudioKindAndModelPath` / `TestPersistAudioRejectsBadKind`；界面
+  `TestAudioKindAndModelPathRows` / `TestAudioKindCycleOrder`。

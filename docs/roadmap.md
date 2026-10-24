@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-23 @ 7912324 -->
+<!-- docs-sync: 2026-10-24 @ 4ab55ce -->
 
 > **定位（2026-10-23 起）**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，
 > 以及里程碑基线。**未来要做什么、按什么顺序、什么节奏**，一律看 [plan.md](plan.md)。
@@ -25,7 +25,7 @@
 | M4 MCP 与 TUI | mcpgate（stdio + streamable HTTP）、grant、`/plugin`、`/model`、TUI MVP、装饰器链 | 已落地 |
 | M5 GUI 前端 | Gio 悬浮球 GUI、托盘/热键、三窗宿主、主题、设置窗 | 已落地（S1–S2b、S4–S5、S4a–S4d、S6、S7、S7c 均在其后陆续落地） |
 | M6 底座与跨平台 | 配置底座（profile 目录化 + provider 列表化）、大文件拆分、设置窗渲染修复、GUI 跨平台抽象层、relation-map 对话树 UI | 已落地 |
-| M11 屏幕捕获与语音 | `window_list`/`screen_capture`、转写与播报、`/mic`、语音设置页 | 已落地（S12/S8） |
+| M11 屏幕捕获与语音 | `window_list`/`screen_capture`、转写与播报、`/mic`、语音设置页 | 已落地（S12/S8/S8b） |
 
 **版本基线**：`v0.1.0` 已于 2026-10-23 发布（tag `v0.1.0` → `3c2767b`）。
 当前开发分支 `feat/v0.2.0`：前半程（P0 守规 + P1 聚合根归位）已落地，后半程（P2 收口与拆包）
@@ -79,6 +79,7 @@
 | S7 | 系统提示词管理：人格模块树 + 独立页 | 已落地（S7a 内核 D144 / S7b 设置窗 D145） |
 | S7c | 次窗换 Paper 主题 | 已落地（D148/D149） |
 | S8 | ASR/TTS 接入 | 已落地（D179） |
+| S8b | 语音协议位与多提供商：本地 whisper、OpenAI 转写、FunASR 原生、VITS、GPT-SoVITS | 已落地（D223） |
 | S9 | 会话与注入内核改版 | 已落地（D150–D167） |
 | S10 | 模型面与文件工具整治 | 已落地（D169–D172） |
 | S11 | 模型与提供商重构 | 已落地（D173–D177） |
@@ -163,7 +164,7 @@ Revise/Carry 语义；流式不进领域；依赖方向 `adapter → port ← ap
 | Q4 | 人格模块化物化时机 | **保持首节点快照**（D20 不变：树内可 `/edit`、压缩水位恒回传）；设置窗明示「对新会话生效」 |
 | Q5 | fallback 触发与提示 | **仅网络类降级**（429/5xx/网络/超时 → 下一 provider）；401/400 不降级（配置错误直接暴露）；降级时状态行一次性提示 |
 | Q6 | tooltip 上下文使用率数据源 | **精确优先、est 兜底**（适配器有精确 tokenizer 用精确，否则 est 估算链）；分母 = `limits.max_context_tokens` |
-| Q7 | ASR/TTS 选型 | **已定（D179 落地时选型）**——MiMo chat-completions 音频 |
+| Q7 | ASR/TTS 选型 | **已定（D179 落地时选型，D223 扩展）**——缺省 MiMo chat-completions 音频；语音协议位另开本地 whisper / OpenAI 转写 / FunASR / VITS / GPT-SoVITS 五档 |
 | Q8 | 「形裁成功前隐藏窗口」现象 | **启动时闪现未定制窗口** → 首帧内容/ULW 提交前保持隐藏，首帧就绪后再显示 |
 | Q9 | 内置工具是否可禁用 | **可禁用**——工具管理页统一「内置 + 插件/MCP」两组开关（config 新增禁用清单） |
 | Q10 | 设置窗 raw JSON 入口 | **保留**高级页直接编辑 config.json 原文（解析失败不阻断开窗、泛键保留已有） |

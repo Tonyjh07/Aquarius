@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-24 @ f0710ef -->
+<!-- docs-sync: 2026-10-24 @ 4ab55ce -->
 
 > 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
 > 配置**以 profile 为隔离单位**：
@@ -222,16 +222,41 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 | `audio.asr.provider` | string | — | 借 `model.providers` 里的 name（可省略，见上） |
 | `audio.asr.base_url` | string | — | 自己的端点（如 `https://api.example.com/v1`）；空 = 借 `provider` 的 |
 | `audio.asr.api_key` | string | `secret:AQUARIUS_ASR_API_KEY` | 自己的密钥（`secret:` 引用或明文）；空 = 借 `provider` 的，都不借则回落此名 |
-| `audio.asr.model` | string | — | 转写模型，如 `mimo-v2.5-asr`；配了服务就必填 |
-| `audio.asr.kind` | string | `chat-audio` | 协议位：`chat/completions` 携带音频（未来本地引擎加新值） |
+| `audio.asr.model` | string | — | 转写模型名（`chat-audio` / `openai` 必填），如 `mimo-v2.5-asr` / `whisper-1` |
+| `audio.asr.kind` | string | `chat-audio` | 识别协议：`chat-audio` / `whisper` / `openai` / `funasr`，见下 |
+| `audio.asr.model_path` | string | — | 本地识别模型文件绝对路径，`kind=whisper` 必填 |
 | `audio.tts.provider` | string | — | 同上；缺省 = 不能播报 |
 | `audio.tts.base_url` | string | — | 同上（合成侧） |
 | `audio.tts.api_key` | string | `secret:AQUARIUS_TTS_API_KEY` | 同上（合成侧） |
-| `audio.tts.model` | string | — | `mimo-v2.5-tts`（预置音色）/ `-voicedesign`（文本设计）/ `-voiceclone`（样本复刻） |
-| `audio.tts.voice` | string | — | 预置音色名（如 `冰糖`）；voiceclone 模式填**样本文件绝对路径** |
-| `audio.tts.design` | string | — | voicedesign 模式的音色描述，该模型必填 |
+| `audio.tts.kind` | string | `chat-audio` | 合成协议：`chat-audio` / `vits` / `gptsovits` |
+| `audio.tts.model` | string | — | `mimo-v2.5-tts`（预置音色）/ `-voicedesign`（文本设计）/ `-voiceclone`（样本复刻）；仅 `chat-audio` 用 |
+| `audio.tts.voice` | string | — | 预置音色名（如 `冰糖`）/ VITS 的说话人 ID / GPT-SoVITS 的参考音频路径 |
+| `audio.tts.design` | string | — | voicedesign 模式的音色描述；`kind=gptsovits` 时是参考音频对应的文字 |
 | `audio.tts.style` | string | — | 自然语言风格指令（如 `语速稍快，语气轻松`） |
 | `audio.tts.tags` | string | — | 风格标签，非空时拼成 `(标签)` 前缀置于正文开头 |
+
+`kind` 决定打哪个端点、字段怎么摆——**不是靠模型名猜的**，同一个模型名可以挂在不同的服务端后面。
+
+| 侧 | `kind` | 打哪 | 必填 |
+|---|---|---|---|
+| 识别 | `chat-audio`（缺省） | `POST {base}/chat/completions`，音频进 `input_audio` 内容块 | `model` |
+| 识别 | `whisper` | 进程内本地引擎，不连网 | `model_path` |
+| 识别 | `openai` | `POST {base}/audio/transcriptions`，multipart `file` + `model` + `language` | `model` |
+| 识别 | `funasr` | `POST {base}/recognition`，multipart `audio`（响应带 `code`） | 端点 |
+| 合成 | `chat-audio`（缺省） | `POST {base}/chat/completions`，Base64 音频在 `choices[0]` | `model` |
+| 合成 | `vits` | `GET {base}/voice/vits?text&id&format=wav` | 端点 |
+| 合成 | `gptsovits` | `POST {base}/tts`，音色 = 参考音频路径 + 其文字 | 端点、`voice` |
+
+`openai` 这一档覆盖一大片：OpenAI 官方、FunASR 的 `examples/openai_api` 服务端、whisper.cpp 的
+`whisper-server`、各类自建网关——它们的差别只有端点与模型名。
+
+**本地识别**（`kind=whisper`）不下载模型：自己取 `ggml-base-q5_1.bin`（约 60MB，
+`huggingface.co/ggerganov/whisper.cpp`）后把绝对路径填进 `model_path`。模型文件读不到时启动会
+警告并让识别不可用，不影响对话。这一档要求构建时带 `GOEXPERIMENT=simd`，否则慢 4 倍左右。
+本地引擎对中文默认输出繁体，装配处会过一道繁转简（OpenCC 的 `tw2sp` 词典）；转换失败保留原文。
+
+`kind` 留空等同 `chat-audio` 且视为「未配置」；写成非缺省值即表示明确要用该协议，此时必须填
+端点（`whisper` 除外）。白名单外的值在启动时直接报错。
 
 密钥槽按**能力**分（`_ASR` / `_TTS`），不按 provider：同一家的对话、识别、合成通常是三把
 不同的钥匙，共用一个槽位会让后填的覆盖先填的。界面里填明文会先收进本机密钥库，config 只留
