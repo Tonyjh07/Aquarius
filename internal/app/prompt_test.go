@@ -516,6 +516,44 @@ func TestAssemblePathChainedSummariesKeepLatest(t *testing.T) {
 	}
 }
 
+// TestAssemblePathInjectPadKeepsHistory 注入衬垫不进水位（D150/D152）：inject 节点插在
+// 路径中间照样随上下文回传，其上历史一条不少——水位只由 system 认。
+func TestAssemblePathInjectPadKeepsHistory(t *testing.T) {
+	c := conversation.New(conversation.ID("w4"), "w")
+	root := conversation.MessageID(c.ID)
+	persona := commitNode(t, c, root, conversation.RoleSystem, "人格")
+	commitNode(t, c, persona.ID, conversation.RoleUser, "旧问题")
+	a1 := commitNode(t, c, c.Head, conversation.RoleAssistant, "旧回答")
+	_, err := c.InsertCommitted(a1.ID, conversation.Message{
+		Role:    conversation.RoleInject,
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "注入上下文"}},
+		Source:  "tool:think",
+	})
+	if err != nil {
+		t.Fatalf("insert inject pad: %v", err)
+	}
+	commitNode(t, c, a1.ID, conversation.RoleUser, "新问题")
+	commitNode(t, c, c.Head, conversation.RoleAssistant, "新回答")
+
+	msgs, err := assemblePath(context.Background(), c.Path(), assembleOpts{echoThinking: false})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	// persona + 旧问题 + 注入 + 旧回答 + 新问题 + 新回答：一条都没被水位切掉。
+	if len(msgs) != 6 {
+		t.Fatalf("msgs len = %d, want 6（注入衬垫不成为水位）: %+v", len(msgs), msgs)
+	}
+	if msgs[0].Role != "system" || msgs[0].Content[0].Text != "人格" {
+		t.Fatalf("msgs[0] = %+v, want persona", msgs[0])
+	}
+	if !strings.Contains(msgText(msgs[2]), "注入上下文") {
+		t.Fatalf("msgs[2] = %+v, want 注入衬垫随上下文回传", msgs[2])
+	}
+	if msgs[3].Content[0].Text != "旧回答" || msgs[4].Content[0].Text != "新问题" {
+		t.Fatalf("msgs[3:5] = %+v, want 水位之上历史仍在", msgs[3:5])
+	}
+}
+
 // TestAssemblePathWatermarkWithoutPersona 无 persona 的会话：摘要即起点，其上全丢。
 func TestAssemblePathWatermarkWithoutPersona(t *testing.T) {
 	c := conversation.New(conversation.ID("w3"), "w")
