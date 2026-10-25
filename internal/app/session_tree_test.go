@@ -171,6 +171,34 @@ func TestSessionRmCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("提示溯源一并清除", func(t *testing.T) {
+		store := newMemStore()
+		s, conf := newConfirmedSession(t, store, []bool{true})
+		c := buildTree(t, s)
+		// 修订 a1 → 新版本记一条「修订自 a1」。旧版本此时是叶子，删它不牵连任何内容，
+		// 但新版本的溯源记录会因悬空而一并清掉——确认句必须提前说明。
+		if _, err := handleCmd(s, "edit", "a1", "改答"); err != nil {
+			t.Fatalf("edit: %v", err)
+		}
+		newID := revisedID(c, "a1")
+		if newID == "" {
+			t.Fatal("edit 未产生新版本")
+		}
+		out, err := handleCmd(s, "rm", "a1")
+		if err != nil {
+			t.Fatalf("rm: %v", err)
+		}
+		if len(conf.asked) != 1 || !strings.Contains(conf.asked[0].prompt, "溯源记录") {
+			t.Fatalf("确认句应说明溯源会一并清除, got %+v", conf.asked)
+		}
+		if !strings.Contains(out, "失去溯源记录") {
+			t.Fatalf("回执应提示已失去溯源, got %q", out)
+		}
+		if _, ok := c.Edition(newID); ok {
+			t.Fatal("旧版本已删，新版本的溯源记录应已清除")
+		}
+	})
+
 	t.Run("错误路径", func(t *testing.T) {
 		store := newMemStore()
 		s, _ := newConfirmedSession(t, store, nil)

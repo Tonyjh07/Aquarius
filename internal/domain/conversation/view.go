@@ -55,6 +55,25 @@ func (c *Conversation) SubtreeSize(id MessageID) int {
 	return len(seen)
 }
 
+// DroppedEditions 统计删掉 id 这棵子树会顺带清掉多少条溯源记录：版本链指向子树内旧节点、
+// 而新版本在子树外——剪除后那条边成了悬空边，Prune 会把它一并删除。于是**新版本会失去
+// 「修订自谁」的记忆**（图上版本虚线退回顺接实线，`/branch` 也不再标修订来源）。
+// 调用方（/rm 的确认句）据此提前说明，不让人删完才发现。
+func (c *Conversation) DroppedEditions(id MessageID) int {
+	if _, ok := c.nodes[id]; !ok {
+		return 0
+	}
+	sub := map[MessageID]bool{}
+	c.collectSubtree(id, sub)
+	n := 0
+	for newID, oldID := range c.revisedFrom {
+		if sub[oldID] && !sub[newID] {
+			n++
+		}
+	}
+	return n
+}
+
 // Edition 返回 id 的版本链上游（被它修订掉的那个节点）；非修订节点返回 ("", false)。
 // 这是 RevisedFrom 的唯一正向查询口（"这个节点是谁的新版本"）。
 func (c *Conversation) Edition(id MessageID) (MessageID, bool) {

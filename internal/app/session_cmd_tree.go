@@ -297,6 +297,12 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	}
 	size := s.cur.SubtreeSize(id)
 	prompt := fmt.Sprintf("确认删除 %s 及其子树（至少 %d 条节点）？此操作不可恢复", id, size)
+	// 剪除会连带清掉指向子树内旧节点的溯源边：新版本在子树外时，它会失去「修订自谁」的
+	// 记录（图上版本虚线退回顺接实线）。删之前说明，不让人删完才发现。
+	droppedEditions := s.cur.DroppedEditions(id)
+	if droppedEditions > 0 {
+		prompt += fmt.Sprintf("；另有 %d 个新版本会一并失去溯源记录（图上不再标出修订来源）", droppedEditions)
+	}
 	ans, err := s.confirmer.Confirm(ctx, prompt)
 	if err != nil {
 		return "", fmt.Errorf("session: 确认删除: %w", err)
@@ -317,7 +323,11 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 		}
 		return "", fmt.Errorf("session: 落盘失败且无法回滚，删除仅存在于内存（下次成功保存会写盘，请谨慎继续）: %w", err)
 	}
-	return fmt.Sprintf("已删除 %s 子树（%d 条节点；Head → %s）", id, removed, s.cur.Head), nil
+	line := fmt.Sprintf("已删除 %s 子树（%d 条节点；Head → %s）", id, removed, s.cur.Head)
+	if droppedEditions > 0 {
+		line += fmt.Sprintf("；%d 个新版本已失去溯源记录", droppedEditions)
+	}
+	return line, nil
 }
 
 // branchLine 渲染一行分支摘要：<id> [角色] 内容预览 [← Head] [（修订自 <id>）]。
