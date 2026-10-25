@@ -241,6 +241,53 @@ func TestSessionSummaryWaterlineApplies(t *testing.T) {
 	}
 }
 
+// TestSessionSummaryRejectsCoveredTarget 目标之下已有摘要：新摘要会落在旧摘要之上，
+// 装配水位仍停在旧摘要——插了等于没插（模型档还白花一次生成），必须拦在动手之前。
+func TestSessionSummaryRejectsCoveredTarget(t *testing.T) {
+	store := newMemStore()
+	s, llm, _, user, assistant := summaryFixture(t, store, textStream("模型回复"))
+	if _, err := handleCmd(s, "summary", string(assistant.ID), "旧摘要"); err != nil {
+		t.Fatalf("first summary: %v", err)
+	}
+	pad := s.Current().Path()[3]
+	before := s.Current().NodeCount()
+	reqs := len(llm.requests)
+
+	for _, tc := range []struct {
+		name string
+		id   conversation.MessageID
+	}{
+		{"目标在旧摘要之上", user.ID},
+		{"目标就是旧摘要", pad.ID},
+	} {
+		for _, model := range []bool{false, true} {
+			args := []string{string(tc.id)}
+			if !model {
+				args = append(args, "新摘要")
+			}
+			_, err := handleCmd(s, "summary", args...)
+			if err == nil || !strings.Contains(err.Error(), "已被摘要覆盖") {
+				t.Fatalf("%s（模型档=%v）: err = %v, want 已被摘要覆盖", tc.name, model, err)
+			}
+			if s.Current().NodeCount() != before {
+				t.Fatalf("%s: 拒绝不得改动会话树", tc.name)
+			}
+		}
+	}
+	if len(llm.requests) != reqs {
+		t.Fatalf("llm requests = %d, want %d（拦在生成之前，不白花钱）", len(llm.requests), reqs)
+	}
+
+	// 旧摘要之后的节点仍可插：新摘要才是路径上最后一个 system。
+	if _, err := handleCmd(s, "summary", string(assistant.ID), "新摘要"); err != nil {
+		t.Fatalf("summary below old watermark: %v", err)
+	}
+	path := s.Current().Path()
+	if got := path[len(path)-2]; got.Role != conversation.RoleSystem || got.Content[0].Text != "新摘要" {
+		t.Fatalf("新摘要应紧贴在 assistant 之前: %v", roles(path))
+	}
+}
+
 // contains 查字符串切片是否含目标（断言用）。
 func contains(list []string, want string) bool {
 	for _, s := range list {
