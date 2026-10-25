@@ -1279,6 +1279,10 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   `Wake` 通道投递一次唤醒输入（`port.UserInput.Wake`，不是用户输入）触发。①②只**落地**、
   `Trigger` 记 `false`（记的是**实际发生**：本轮确未随附起响应）；③与 `/inject` 是**驱动式**
   排空——触发型注入落地后自己跑一轮，`Trigger` 记 `true`。
+  三个时机在代码里是四个**具名排空点**（`drainBeforeInput`、`drainAfterTurn`、`drainOnWake`、
+  `drainBeforeReplay`，最后一个是 `/inject`、`/skill` 这类自己移 Head 后要清屏回放的命令），
+  每个点「是否驱动一轮」「是否逐条呈现」由**一张口径表**给出，调用点只说在哪里排空——不再由
+  调用方组合两个布尔。
 - **装配投影**（§7.1 装配规则）：inject 节点按**显式信任位**（`Injection.Trust`，落树后是
   `Message.Trust`）决定投影角色——**可信**（宿主事实：`user` 的动作、`job` 的任务汇报、
   `poller` 的命中断言/命中次数/间隔）投影为 **system 或 user、不套围栏**；**不可信**
