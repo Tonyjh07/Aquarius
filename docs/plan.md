@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-10-25 @ a0aaf86 -->
+<!-- docs-sync: 2026-10-25 @ d441b7c -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。
 > 已经落成的看 [roadmap.md](roadmap.md)（进度档案）；逐条决策看 [decisions.md](decisions.md)；
@@ -92,11 +92,15 @@
 `relmap-d127` 对照 tag 留档（要回去看实现，检出那个 tag 即可，不必让它在主干上常年占位）。
 **次序**：先删、再数据化 theme、最后拆包——反过来就得先把这段死代码搬进子包。
 
-**② P2-5 的 DTO 口径取 A：`uigui` 保留自己的 `SettingsPatch`，`cmd` 在装配边界转换。**
-依据是分层守卫 `adapter → app` 明文禁止（`internal/arch/arch_test.go`），所以规则只能落在
-`cmd.applySettings` 里经 `app` 侧函数执行，`uigui` 永远不能直接调 `app`。B 方案（把 53 字段
-DTO 搬进 `port`/`app`）会让 `uigui` 八个测试文件里约 90 处 `uigui.SettingsPatch{...}` 全部改
-限定名——那是纯改名，一行逻辑都不搬，与「只换职责主人」的目标无关。
+**② P2-5 取「DTO 搬进 `port` + `uigui` 留类型别名」。** 原结论是「`uigui` 保留自己的
+`SettingsPatch`，`cmd` 在装配边界转换」，实测发现它落地会**净增代码**：分层守卫是双向的，
+不只 `adapter → app` 禁止（`internal/arch/arch_test.go` 第 144 行），`app → adapter` 同样禁止
+（第 134 行），所以 `app` 收不了 `uigui.SettingsPatch`；所谓「边界转换」实际是 53 个字段转
+两遍（`uigui` → `app` 中性入参、`app` 输出 → config 键），与「公开面只减不增」冲突。
+改用 B 方案并消掉它唯一的成本：DTO 搬进 `port`（唯一被两侧共同依赖的层），`uigui` 留一行
+`type SettingsPatch = port.SettingsPatch` 别名，原先担心的约 90 处字面量**一个字都不用改**。
+`port` 只允许 import `domain`，与 D227 把 `PromptKind` 放 `port` 是同一先例（`port` 是装配层
+与全部适配器共用的词汇）。
 
 **③ 拆包粒度取三个子包：`uigui/uikit`、`uigui/settings`、`uigui/relmap`。** 依据是现在的体量：
 `uigui` 183 个文件、51,692 行，最大三个单文件 `welcome.go` 925 / `settings.go` 862 /

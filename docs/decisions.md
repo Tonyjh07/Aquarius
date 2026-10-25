@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-25 @ 9c5f3aa -->
+<!-- docs-sync: 2026-10-25 @ d441b7c -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -5092,3 +5092,31 @@
   `go test ./...`（带 `AQUARIUS_OPENAI_KEY`）/ `go test -race ./internal/app/ ./cmd/aquarius/`；
   现有命令面测试**不改期望文案**即绿——那是「只换接线、不改行为」的证据。字段与回调计数
   用正则扫 `SessionDeps` 结构体实测（22 / 0）。
+
+### D229 — 设置 DTO 落在 port，界面留类型别名（v0.2.0，§11/§15.7）
+
+- **动机**：设置窗的语义规则（字段落到 config 哪个键、取值范围、留空什么意思）属于内核，
+  但实现写在 `uigui/settings_actions.go` 的 `saveSettings` 里——一个 292 行的函数同时做
+  五件事：采集表单、解析校验（18 处非法即返回、15 次 `strconv`、一次快捷键校验）、调写回
+  回调、GUI 侧热生效、拼反馈文案。规则要挪去 `app`，第一道坎却是类型：`SettingsPatch` 及
+  `FallbackLink` / `WebProviderPatch` / `PromptModuleView` 都定义在 `uigui`。
+- **决策**：四个 DTO 搬进 `port`，`uigui` 留一行 `type X = port.X` 别名。
+  - **为什么必须换宿**：分层守卫是**双向**的——`app` 不得 import `adapter`、`uigui` 不得
+    import `app`（`internal/arch/arch_test.go`）。两边都要认的那份数据形状只能落在中间层，
+    而 `port` 是唯一同时被两侧依赖的包（它只允许 import `domain`）。
+  - **顺序反过来也行不通**：把规则实现留在 `uigui` 让 `app` 去调，等于让 `app` 反向依赖
+    adapter；而 `TestNoReverseDependency` 单独守着「界面适配器不能成为公共依赖」——
+    DTO 留在那里，拆包时整条设置逻辑都被钉死在 `uigui` 上。
+  - **别名消掉了原方案唯一的成本**：先前否决「搬进 `port`」的理由是 `uigui` 八个测试文件
+    约 90 处 `uigui.SettingsPatch{...}` 要改限定名。别名让这些字面量一字不动——改名成本
+    归零之后，剩下的就只是搬类型本身。
+  - **先例**：D227 把 `PromptKind` / `PromptRole` 放进 `port`，理由同构——它是装配层与
+    全部适配器共用的词汇，放 `app` 会让 adapter 反向依赖。
+- **否决**：① **`uigui` 保留 DTO、`cmd` 在边界做 53 字段双向转换**——净增代码，且与
+  「公开面只减不增」冲突；② **只拆函数不换宿主**（把 `saveSettings` 拆成两个纯函数仍留在
+  `uigui`）——可读性有改善，但规则主人没换，拆包时还得再搬一遍；③ **`port` 里只放
+  接口不放值类型**——`SettingsPatch` 恰恰是「跨层传递的值」，不是行为，放接口层无意义。
+- **后果/限制**：`port` 多出 4 个纯数据型 DTO（零方法、零依赖），是它第一次承载 UI 视图
+  形状。往后再有同类跨层 DTO，判据是「两侧是否都需要认它」，而不是「它看起来像 UI」。
+- **验证**：`go build ./...` / `go vet ./...` / `gofmt -l .` 全绿；`uigui`、`cmd/aquarius`、
+  `internal/arch` 三包测试全绿，且**既有测试一行未改**——那是「只换宿主、不改行为」的证据。
