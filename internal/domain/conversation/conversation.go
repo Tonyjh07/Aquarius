@@ -389,19 +389,31 @@ func (c *Conversation) Path() []Message {
 	return out
 }
 
-// Branches 返回 id 的同级分叉（同一父节点下的其他孩子，不含 id 自身），按创建时间升序；
-// 供 UI 做新旧版本对比。Root 的分叉 = 其孩子（顶层消息）；id 不在树中返回 nil。
+// Branches 返回 id 所在版本组的其他成员（不含 id 自身），按创建时间升序；供 UI 做新旧
+// 版本对比、命令行 `/branch` 列同级分叉。Root 的分叉 = 其孩子（顶层消息）；id 不在树中、
+// 或 id 本身是衬垫（它不属于任何版本组）返回 nil。
+//
+// 版本组跨过衬垫（padNode）：在 a1 之前插了摘要之后，a1 的结构父变成了衬垫，但它与 a2
+// 仍然是同一个问题的两个版本——都还在这一组里。
 func (c *Conversation) Branches(id MessageID) []Message {
 	m, ok := c.nodes[id]
 	if !ok {
 		return nil
 	}
-	parent := m.Parent
 	if m.Role == RoleRoot {
-		parent = id // Root 的"同级"取其孩子：顶层消息（D15 语义）
+		out := make([]Message, 0, len(c.children[id]))
+		for _, nid := range c.versionGroup(id) {
+			if m, ok := c.nodes[nid]; ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	if c.padNode(id) {
+		return nil
 	}
 	var out []Message
-	for _, nid := range c.children[parent] {
+	for _, nid := range c.versionGroup(c.versionOwner(id)) {
 		if nid == id {
 			continue
 		}
@@ -409,12 +421,7 @@ func (c *Conversation) Branches(id MessageID) []Message {
 			out = append(out, m)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
-			return out[i].CreatedAt.Before(out[j].CreatedAt)
-		}
-		return out[i].ID < out[j].ID
-	})
+	sort.Slice(out, func(i, j int) bool { return nodeLess(out[i], out[j]) })
 	return out
 }
 

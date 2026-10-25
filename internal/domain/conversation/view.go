@@ -62,6 +62,77 @@ func (c *Conversation) Edition(id MessageID) (MessageID, bool) {
 	return old, ok
 }
 
+// padNode 报告 id 是否为「衬垫」（D152）：为把摘要或注入上下文顶进路径中间而造的节点，
+// 本身不是任何发言的版本分支。判据不落库、全从结构读：
+//   - 角色 system|inject——衬垫承载的是上下文与水位，不是伪造的发言；
+//   - 恰好一个孩子——衬垫占据目标原来的位置，目标改挂到它下面；
+//   - 孩子比它自己更早——InsertBefore 顶开的是一个**已在树中**的节点，故目标先于衬垫
+//     存在；顺着链路追加的水位（压缩摘要）孩子恒晚于它，两者靠这一点区分；
+//   - 父不是结构根——会话首节点（人格快照）是真正的一层，不能被跨过。
+//
+// 展示面（版本组）据它把衬垫当透明：版本组跨过衬垫，它的孩子提升到祖父那一层。
+func (c *Conversation) padNode(id MessageID) bool {
+	m, ok := c.nodes[id]
+	if !ok {
+		return false
+	}
+	if m.Role != RoleSystem && m.Role != RoleInject {
+		return false
+	}
+	if m.Parent == "" || m.Parent == MessageID(c.ID) {
+		return false
+	}
+	kids := c.children[id]
+	if len(kids) != 1 {
+		return false
+	}
+	kid, ok := c.nodes[kids[0]]
+	if !ok {
+		return false
+	}
+	return kid.CreatedAt.Before(m.CreatedAt)
+}
+
+// versionOwner 返回 id 所在版本组的分组键：沿父链上溯跳过衬垫，第一个不是衬垫的祖先
+// 即键（"" = 根挂点，即顶层消息组）。衬垫自己不属于任何版本组，调用方应先判 padNode。
+func (c *Conversation) versionOwner(id MessageID) MessageID {
+	m, ok := c.nodes[id]
+	if !ok {
+		return ""
+	}
+	p := m.Parent
+	for p != "" && c.padNode(p) {
+		p = c.nodes[p].Parent
+	}
+	return p
+}
+
+// versionGroup 返回分组键 owner 名下的版本组成员（衬垫的孩子提升到这一层），
+// 按 (CreatedAt, ID) 升序。
+func (c *Conversation) versionGroup(owner MessageID) []MessageID {
+	var out []MessageID
+	var walk func(MessageID)
+	walk = func(p MessageID) {
+		for _, kid := range c.children[p] {
+			if c.padNode(kid) {
+				walk(kid) // 衬垫透明：它的孩子算这一层的版本
+				continue
+			}
+			out = append(out, kid)
+		}
+	}
+	walk(owner)
+	sort.Slice(out, func(i, j int) bool {
+		a, okA := c.nodes[out[i]]
+		b, okB := c.nodes[out[j]]
+		if !okA || !okB {
+			return out[i] < out[j]
+		}
+		return nodeLess(a, b)
+	})
+	return out
+}
+
 // View 整树只读视图：一次构建、发布后不再改写（调用方只读，不得改写其中切片）。
 //
 // 为什么由领域提供：同级排序口径（(CreatedAt, ID) 升序——Revise 出来的兄弟节点
@@ -72,13 +143,17 @@ type View struct {
 	Head MessageID
 	// Nodes 全部节点，按 (CreatedAt, ID) 升序——布局可复现，不依赖 map 遍历顺序。
 	Nodes []Message
-	// Groups 每个有孩子的父节点一组（父 "" 那组挂的是 Root，D19），按父 ID 升序。
-	Groups []SiblingGroup
+	// VersionGroups 每个版本组一组（键 "" 那组挂的是 Root，D19），按分组键升序。
+	// 版本组不是「同一个父的孩子」：衬垫（padNode）被跨过，它的孩子提升到祖父那一层
+	// ——否则插一条摘要就会把原来同父的两个回答拆到两个组里，分叉编号与切换按钮一起消失。
+	VersionGroups []SiblingGroup
 	// Tails 每个节点 → 其版本子树的对话末端（D94），口径与 Tail 相同。
 	Tails map[MessageID]MessageID
 }
 
-// SiblingGroup 一个父节点下的孩子集合：IDs 按 (CreatedAt, ID) 升序，下标即分叉序号。
+// SiblingGroup 一个版本组的成员：IDs 按 (CreatedAt, ID) 升序，下标即版本序号。
+// Parent = 分组键（最近的非衬垫祖先），不是「结构上的父」——衬垫之后的原节点与它的
+// 兄弟仍在同一组，尽管它们的 Parent 已经不是同一个节点。
 type SiblingGroup struct {
 	Parent MessageID
 	IDs    []MessageID
@@ -87,10 +162,10 @@ type SiblingGroup struct {
 // View 构建整树只读视图。排序与末端聚合各做一次，展示面直接用结果。
 func (c *Conversation) View() View {
 	v := View{
-		Head:   c.Head,
-		Nodes:  make([]Message, 0, len(c.nodes)),
-		Groups: make([]SiblingGroup, 0, len(c.children)),
-		Tails:  make(map[MessageID]MessageID, len(c.nodes)),
+		Head:          c.Head,
+		Nodes:         make([]Message, 0, len(c.nodes)),
+		VersionGroups: make([]SiblingGroup, 0, len(c.nodes)),
+		Tails:         make(map[MessageID]MessageID, len(c.nodes)),
 	}
 	for _, m := range c.nodes {
 		v.Nodes = append(v.Nodes, m)
@@ -99,24 +174,31 @@ func (c *Conversation) View() View {
 		return nodeLess(v.Nodes[i], v.Nodes[j])
 	})
 
-	for parent, kids := range c.children {
-		ids := make([]MessageID, 0, len(kids))
-		for _, kid := range kids {
-			if _, ok := c.nodes[kid]; ok { // 悬空边不该存在（Validate 会报），视图只保证自洽
-				ids = append(ids, kid)
-			}
+	// 版本组：按分组键（最近的、本身不是衬垫的祖先）聚合。衬垫不进任何组——它只是把
+	// 上下文顶进路径中间，不是发言的版本；它的孩子由 versionGroup 提升到祖父那一层。
+	grouped := make(map[MessageID][]MessageID, len(c.nodes))
+	for id := range c.nodes {
+		if id == MessageID(c.ID) || c.padNode(id) {
+			continue
 		}
-		sort.Slice(ids, func(i, j int) bool {
-			a, okA := c.nodes[ids[i]]
-			b, okB := c.nodes[ids[j]]
-			if !okA || !okB {
-				return ids[i] < ids[j]
-			}
-			return nodeLess(a, b)
-		})
-		v.Groups = append(v.Groups, SiblingGroup{Parent: parent, IDs: ids})
+		owner := c.versionOwner(id)
+		grouped[owner] = append(grouped[owner], id)
 	}
-	sort.Slice(v.Groups, func(i, j int) bool { return v.Groups[i].Parent < v.Groups[j].Parent })
+	owners := make([]MessageID, 0, len(grouped))
+	for owner := range grouped {
+		owners = append(owners, owner)
+	}
+	sort.Slice(owners, func(i, j int) bool { return owners[i] < owners[j] })
+	for _, owner := range owners {
+		ids := c.versionGroup(owner)
+		if len(ids) == 0 {
+			continue
+		}
+		v.VersionGroups = append(v.VersionGroups, SiblingGroup{Parent: owner, IDs: ids})
+	}
+	// 结构根自成一组挂在 "" 下（D19 唯一实根），与顶层消息组（键 = Root ID）分开。
+	v.VersionGroups = append(v.VersionGroups, SiblingGroup{Parent: "", IDs: []MessageID{MessageID(c.ID)}})
+	sort.SliceStable(v.VersionGroups, func(i, j int) bool { return v.VersionGroups[i].Parent < v.VersionGroups[j].Parent })
 
 	// 末端：后序遍历，叶子取自身，父取孩子中最新的末端；平局取 ID 序最大（与 Tail 一致）。
 	var walk func(MessageID) MessageID

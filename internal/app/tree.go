@@ -45,7 +45,9 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 	}
 	sibIdx := make(map[conversation.MessageID]int, total)
 	sibN := make(map[conversation.MessageID]int, total)
-	for _, group := range view.Groups {
+	// 版本组（D80/D152）：衬垫透明，故分组键是「最近的非衬垫祖先」而不是结构父。
+	// 衬垫自身不属于任何组——图上不给它版本编号（SiblingCount 0），它也不是可切换的版本。
+	for _, group := range view.VersionGroups {
 		for i, kid := range group.IDs {
 			snap.branches[kid] = port.BranchInfo{IDs: group.IDs, Index: i}
 			sibIdx[kid], sibN[kid] = i, len(group.IDs)

@@ -293,6 +293,9 @@ func (c *Conversation) Validate() error                        // 两条不变�
   Root 不可作为目标（无法在根前插入）；`Head` 不变（`id` 及其子树仍可达，路径长度 +1）。
   另设 `InsertCommitted(id, pad)`：语义同上，但衬垫节点由装配层**组装好**（模型生成的摘要要
   记 `Model`/`Usage`，与 `AppendCommitted` 同口径）；手写摘要走 `InsertBefore`（只给内容）。
+  **衬垫在展示面是透明的**：它把上下文顶进路径中间，本身不是任何发言的版本——版本组（§7.5）
+  跨过它，它的孩子算祖父那一层的版本；判据不落库，从结构读（system|inject、恰一个孩子、
+  孩子创建早于它、父不是结构根），顺链路追加的压缩水位孩子恒晚于它，故不会被误认。
 - **思考过程入树 + 回传开关**（D42）：assistant 节点的思维链以 `PartThinking` 分片承载（每轮
   生成的流内分片合并为至多一段、置于该段正文之前；D95 Turn 粒度下一节点可含多段——每段
   属于其生成轮；取消/出错终态的已生成思考随节点一同入树）；节点形态校验限定
@@ -1423,8 +1426,12 @@ UI 要画分叉按钮（[gui-design.md](docs/gui-design.md) §15.3）与会话�
 - **端口**：`port.TreeView` —— `Branches(id) (BranchInfo, bool)` 与 `Tail(id)
   (MessageID, bool)`（D94：版本末端 = 该节点版本子树中 CreatedAt 最新的叶子，分支切换
   的落点——切版本应恢复该版本的对话全程，而非停在消息节点上）；
-  `BranchInfo{IDs []conversation.MessageID; Index int}`：同父全部孩子**按创建序**（含自身）、
-  `Index` 为自身下标；`id` 不在树中 → `ok=false`。- **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
+  `BranchInfo{IDs []conversation.MessageID; Index int}`：同一**版本组**的全部成员**按创建序**
+  （含自身）、`Index` 为自身下标；`id` 不在树中、或 `id` 本身是衬垫（插入摘要造出的
+  上下文节点，见 §4.1）→ `ok=false`。**版本组跨过衬垫**：插在某个节点之前的摘要会占掉它的
+  结构父位，若按「同父孩子」计数，原来同父的两个回答会被拆到两个组里、各自 1/1，图上的
+  分叉编号与左右切换随之消失；衬垫透明、它的孩子提升到祖父那一层后，a1/a2 仍是 1/2、2/2，
+  衬垫自己不占槽位（`SiblingCount` 为 0）。一句话：**分组键是最近的非衬垫祖先，不是结构父**。- **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
   `{Anchor, Nodes[], Total}`，`GraphNode{ID, Parent, Role, Snippet, CreatedAt, EdgeKind,
   SiblingIdx, SiblingCount}`（`Anchor` = 当前 Head 锚点；`EdgeKind` = 与父边的种类
   `顺接|版本链`；`Total` 供「共 N · 呈现 M」的 A7 口径）；与 `Branches`/`Tail` 同源、

@@ -197,18 +197,23 @@ func TestViewMatchesTailAndBranches(t *testing.T) {
 			t.Fatalf("View.Tails[%s] = %s, want %s（与 Tail 同口径）", m.ID, got, want)
 		}
 	}
-	// 分组表 = 每个父节点的全部孩子，顺序按 (CreatedAt, ID) 升序；Root 挂在 "" 组下。
-	if len(view.Groups) == 0 || view.Groups[0].Parent != "" {
-		t.Fatalf("分组表首项应为结构根挂点，got %+v", view.Groups)
+	// 版本组 = 每个节点归到「最近的非衬垫祖先」名下，组内按 (CreatedAt, ID) 升序；
+	// 结构根挂在 "" 组下（D19）。这棵树没有衬垫，故版本组与「同父孩子」一致。
+	if len(view.VersionGroups) == 0 || view.VersionGroups[0].Parent != "" {
+		t.Fatalf("版本组首项应为结构根挂点，got %+v", view.VersionGroups)
 	}
-	if ids := view.Groups[0].IDs; len(ids) != 1 || ids[0] != MessageID(c.ID) {
-		t.Fatalf(`分组 "" = %v, want 只有 Root %q（D19 唯一实根）`, ids, c.ID)
+	if ids := view.VersionGroups[0].IDs; len(ids) != 1 || ids[0] != MessageID(c.ID) {
+		t.Fatalf(`版本组 "" = %v, want 只有 Root %q（D19 唯一实根）`, ids, c.ID)
 	}
 	total := 0
-	for _, group := range view.Groups {
+	for _, group := range view.VersionGroups {
+		if group.Parent == "" {
+			total += len(group.IDs)
+			continue
+		}
 		want := c.ChildIDs(group.Parent)
 		if len(want) != len(group.IDs) {
-			t.Fatalf("父 %q 的分组 %d 个孩子, 访问器给出 %d 个", group.Parent, len(group.IDs), len(want))
+			t.Fatalf("父 %q 的版本组 %d 个成员, 孩子给出 %d 个", group.Parent, len(group.IDs), len(want))
 		}
 		sorted := make([]Message, 0, len(want))
 		for _, id := range want {
@@ -221,14 +226,96 @@ func TestViewMatchesTailAndBranches(t *testing.T) {
 		sort.Slice(sorted, func(i, j int) bool { return nodeLess(sorted[i], sorted[j]) })
 		for i, m := range sorted {
 			if group.IDs[i] != m.ID {
-				t.Fatalf("父 %q 的分叉序第 %d 位 = %s, want %s（(CreatedAt, ID) 升序）",
+				t.Fatalf("父 %q 的版本序第 %d 位 = %s, want %s（(CreatedAt, ID) 升序）",
 					group.Parent, i, group.IDs[i], m.ID)
 			}
 		}
 		total += len(group.IDs)
 	}
-	// 每个节点恰好出现在一个分组里（孩子数之和 = 节点数：Root 算在 "" 组）。
+	// 每个节点恰好出现在一个版本组里（成员数之和 = 节点数：Root 算在 "" 组）。
 	if total != c.NodeCount() {
-		t.Fatalf("分组内孩子总数 = %d, want 节点数 %d", total, c.NodeCount())
+		t.Fatalf("版本组成员总数 = %d, want 节点数 %d", total, c.NodeCount())
+	}
+}
+
+// TestViewVersionGroupsCrossPads 衬垫透明（D152）：在 a1 之前插一条摘要之后，a1 的结构父
+// 变成衬垫，但它与 a2 仍是同一个问题的两个版本——版本组必须跨过衬垫把它们放在一起，
+// 否则一次「插入摘要」就会让两个版本各自 1/1，图上分叉编号与左右切换一起消失。
+func TestViewVersionGroupsCrossPads(t *testing.T) {
+	useFixedClock(t)
+	c := buildTree(t) // u1 → a1 → u2；u1 → a2
+	u1 := c.ChildIDs(MessageID(c.ID))[0]
+	a1 := c.ChildIDs(u1)[0]
+
+	pad, err := c.InsertBefore(a1, RoleSystem, textParts("摘要"))
+	if err != nil {
+		t.Fatalf("insert pad: %v", err)
+	}
+	if !c.padNode(pad.ID) {
+		t.Fatal("插入的摘要节点应被认作衬垫")
+	}
+	if c.padNode(a1) || c.padNode(u1) {
+		t.Fatal("普通节点不该被认作衬垫")
+	}
+
+	// 版本组：a1 与 a2 同组（跨过衬垫），衬垫自己不占槽位。
+	group := c.versionGroup(u1)
+	if len(group) != 2 || group[0] != a1 || group[1] != c.ChildIDs(u1)[1] {
+		t.Fatalf("版本组(u1) = %v, want [a1 a2]（衬垫透明）", group)
+	}
+	if br := c.Branches(a1); len(br) != 1 {
+		t.Fatalf("Branches(a1) = %v, want 一个版本（a2）", ids(br))
+	}
+	if br := c.Branches(pad.ID); br != nil {
+		t.Fatalf("衬垫不属于任何版本组，Branches 应为 nil, got %v", ids(br))
+	}
+
+	// View 的分组表同样：u1 组两名成员，衬垫不出现在任何组里。
+	v := c.View()
+	seenPad := false
+	for _, g := range v.VersionGroups {
+		for _, id := range g.IDs {
+			if id == pad.ID {
+				seenPad = true
+			}
+		}
+		if g.Parent != u1 {
+			continue
+		}
+		if len(g.IDs) != 2 || g.IDs[0] != a1 {
+			t.Fatalf("View 版本组(u1) = %v, want [a1 a2]", g.IDs)
+		}
+	}
+	if seenPad {
+		t.Fatal("衬垫不该出现在任何版本组里")
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestViewVersionGroupsKeepAppendedWatermark 顺着链路追加的压缩摘要不是衬垫：它的孩子晚于
+// 它，不能把后续内容提升到祖父那一层（那会把「继续对话」错当成「另一个版本」）。
+func TestViewVersionGroupsKeepAppendedWatermark(t *testing.T) {
+	useFixedClock(t)
+	c := New("conv-wm", "水位")
+	u1, _ := c.Append(RoleUser, textParts("问"))
+	a1, _ := c.Append(RoleAssistant, textParts("答"))
+	if err := c.AppendCommitted(Message{
+		ID: NewMessageID(), Parent: a1.ID, Role: RoleSystem,
+		Content: textParts("摘要"), CreatedAt: nowFunc(),
+	}); err != nil {
+		t.Fatalf("append summary: %v", err)
+	}
+	if c.padNode(c.Head) {
+		t.Fatal("顺着链路追加的水位不是衬垫")
+	}
+	// 同一个问句下的另一个回答：版本组仍是 a1 与它，摘要不算版本。
+	if err := c.Checkout(u1.ID); err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	a2, _ := c.Append(RoleAssistant, textParts("另一个答"))
+	if br := c.Branches(a1.ID); len(br) != 1 || br[0].ID != a2.ID {
+		t.Fatalf("Branches(a1) = %v, want 只有另一个回答（摘要不入组）", ids(br))
 	}
 }

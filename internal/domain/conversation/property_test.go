@@ -390,7 +390,7 @@ func TestPropertyPathChain(t *testing.T) {
 			}
 
 			for _, nid := range nodeIDs(c) {
-				self, ok := c.Find(nid)
+				_, ok := c.Find(nid)
 				if !ok {
 					continue
 				}
@@ -401,12 +401,21 @@ func TestPropertyPathChain(t *testing.T) {
 				if got[nid] {
 					t.Fatalf("seed %d: branches(%s) contains self", seed, nid)
 				}
-				sibParent := self.Parent
-				if self.Role == RoleRoot {
-					sibParent = nid // Root 的分叉 = 顶层消息
+				for _, m := range c.Branches(nid) {
+					if c.padNode(m.ID) {
+						t.Fatalf("seed %d: branches(%s) 含衬垫 %s（衬垫不属于任何版本组）", seed, nid, m.ID)
+					}
 				}
+				if c.padNode(nid) {
+					// 衬垫透明：它不进任何版本组，自然也没有"同级"。
+					if br := c.Branches(nid); len(br) != 0 {
+						t.Fatalf("seed %d: branches(衬垫 %s) = %v, want 空", seed, nid, ids(br))
+					}
+					continue
+				}
+				sibParent := c.versionOwner(nid)
 				for _, sib := range c.children[sibParent] {
-					if sib == nid {
+					if sib == nid || c.padNode(sib) {
 						continue
 					}
 					if !got[sib] {

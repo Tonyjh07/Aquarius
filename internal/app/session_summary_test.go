@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -285,6 +286,106 @@ func TestSessionSummaryRejectsCoveredTarget(t *testing.T) {
 	path := s.Current().Path()
 	if got := path[len(path)-2]; got.Role != conversation.RoleSystem || got.Content[0].Text != "新摘要" {
 		t.Fatalf("新摘要应紧贴在 assistant 之前: %v", roles(path))
+	}
+}
+
+// TestSummaryPadKeepsBranchSlots 插摘要不把原来同级的分叉拆散：a1/a2 仍是同一问题的两个
+// 版本（1/2、2/2），摘要自己不占槽位——它是衬垫，不是可切换的版本。
+func TestSummaryPadKeepsBranchSlots(t *testing.T) {
+	c := conversation.New(conversation.ID("convPad"), "衬垫")
+	root := conversation.MessageID(c.ID)
+	txt := func(s string) []conversation.Part {
+		return []conversation.Part{{Kind: conversation.PartText, Text: s}}
+	}
+	commit := func(id string, parent conversation.MessageID, role conversation.Role, at time.Time) {
+		t.Helper()
+		if err := c.AppendCommitted(conversation.Message{
+			ID: conversation.MessageID(id), Parent: parent, Role: role,
+			Content: txt(id), CreatedAt: at,
+		}); err != nil {
+			t.Fatalf("commit %s: %v", id, err)
+		}
+	}
+	commit("p", root, conversation.RoleSystem, testTime)
+	commit("u1", "p", conversation.RoleUser, testTime.Add(time.Second))
+	commit("a1", "u1", conversation.RoleAssistant, testTime.Add(2*time.Second))
+	commit("a2", "u1", conversation.RoleAssistant, testTime.Add(3*time.Second))
+	pad, err := c.InsertBefore("a1", conversation.RoleSystem, txt("摘要"))
+	if err != nil {
+		t.Fatalf("insert summary: %v", err)
+	}
+
+	snap := makeTreeSnapshot(c)
+	if bi := snap.branches["a1"]; len(bi.IDs) != 2 || bi.IDs[0] != "a1" || bi.IDs[1] != "a2" || bi.Index != 0 {
+		t.Fatalf("Branches(a1) = %+v, want [a1 a2] 且 a1 在下标 0（摘要不拆散版本组）", bi)
+	}
+	if bi := snap.branches["a2"]; bi.Index != 1 || len(bi.IDs) != 2 {
+		t.Fatalf("Branches(a2) = %+v, want 下标 1、共 2 个版本", bi)
+	}
+	if bi, ok := snap.branches[pad.ID]; ok {
+		t.Fatalf("摘要衬垫不该有版本视图，got %+v", bi)
+	}
+	// 图上同理：版本编号只给真正的版本，衬垫不给。
+	for _, n := range snap.graph.Nodes {
+		switch n.ID {
+		case "a1":
+			if n.SiblingIdx != 0 || n.SiblingCount != 2 {
+				t.Fatalf("a1 版本 = %d/%d, want 0/2", n.SiblingIdx, n.SiblingCount)
+			}
+		case "a2":
+			if n.SiblingIdx != 1 || n.SiblingCount != 2 {
+				t.Fatalf("a2 版本 = %d/%d, want 1/2", n.SiblingIdx, n.SiblingCount)
+			}
+		case pad.ID:
+			if n.SiblingCount != 0 {
+				t.Fatalf("摘要衬垫的版本数 = %d, want 0（不属于任何版本组）", n.SiblingCount)
+			}
+		}
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestSessionSummaryKeepsBranchStrip /summary 之后命令行与图上口径一致：/branch a2 把 a1
+// 列为同级分叉，不把摘要衬垫当成分叉。
+func TestSessionSummaryKeepsBranchStrip(t *testing.T) {
+	store := newMemStore()
+	s, _ := newConfirmedSession(t, store, nil)
+	c := buildTree(t, s) // p → u1 → a1 → u2
+	if err := c.Checkout("u1"); err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{{Kind: conversation.PartText, Text: "并列回答"}}); err != nil {
+		t.Fatalf("append a2: %v", err)
+	}
+	s.publishTree()
+	a2 := c.Head
+
+	out, err := handleCmd(s, "summary", "a1", "摘要")
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	// Head 在 a2 那条分支上，故摘要不在当前路径里：它挂在 u1 下（衬垫占 a1 的原位）。
+	var pad conversation.Message
+	for _, kid := range c.ChildIDs("u1") {
+		if m, ok := c.Find(kid); ok && m.Role == conversation.RoleSystem {
+			pad = m
+		}
+	}
+	if pad.ID == "" {
+		t.Fatal("摘要节点未插到 u1 下")
+	}
+
+	out, err = handleCmd(s, "branch", string(a2))
+	if err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if !strings.Contains(out, "同级分叉（1 条") || !strings.Contains(out, "a1 [assistant] 回复") {
+		t.Fatalf("/branch 应把 a1 列为同级分叉:\n%s", out)
+	}
+	if strings.Contains(out, string(pad.ID)) {
+		t.Fatalf("/branch 不该把摘要衬垫列为分叉:\n%s", out)
 	}
 }
 
