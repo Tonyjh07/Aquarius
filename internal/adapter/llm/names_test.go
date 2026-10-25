@@ -95,10 +95,10 @@ func strictRequest() port.GenerateRequest {
 	return port.GenerateRequest{
 		Model: "probe",
 		Messages: []port.PromptMessage{
-			{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: "sys"}}},
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-			{Role: "assistant", ToolCalls: []tool.Call{{ID: "c1", Name: name, Args: json.RawMessage(`{"mode":"local"}`)}}},
-			{Role: "tool", CallID: "c1", Content: []port.PromptPart{{Kind: "text", Text: "ok"}}},
+			{Role: port.PromptSystem, Content: []port.PromptPart{{Kind: port.PromptText, Text: "sys"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+			{Role: port.PromptAssistant, ToolCalls: []tool.Call{{ID: "c1", Name: name, Args: json.RawMessage(`{"mode":"local"}`)}}},
+			{Role: port.PromptTool, CallID: "c1", Content: []port.PromptPart{{Kind: port.PromptText, Text: "ok"}}},
 		},
 		Tools: []tool.Spec{{Name: name, Description: "open a terminal", Schema: json.RawMessage(`{"type":"object"}`)}},
 	}

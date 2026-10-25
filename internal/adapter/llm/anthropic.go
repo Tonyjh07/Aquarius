@@ -204,7 +204,7 @@ func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInb
 	}
 	for _, m := range msgs {
 		switch m.Role {
-		case "system":
+		case port.PromptSystem:
 			blocks, err := anthropicBlocks(m.Content, false)
 			if err != nil {
 				return nil, nil, err
@@ -216,17 +216,18 @@ func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInb
 				}
 				system = append(system, tb)
 			}
-		case "user":
+		case port.PromptUser:
 			blocks, err := anthropicBlocks(m.Content, true)
 			if err != nil {
 				return nil, nil, err
 			}
 			push("user", blocks...)
-		case "tool":
+		case port.PromptTool:
+			// tool 结果没有独立角色，只能作为 user 消息里的 tool_result 块。
 			push("user", anthropicToolResult{
 				Type: "tool_result", ToolUseID: m.CallID, Content: flattenText(m.Content),
 			})
-		case "assistant":
+		case port.PromptAssistant:
 			blocks, err := anthropicAssistantBlocks(m, wn)
 			if err != nil {
 				return nil, nil, err
@@ -244,7 +245,7 @@ func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInb
 func anthropicBlocks(parts []port.PromptPart, allowImage bool) ([]any, error) {
 	out := make([]any, 0, len(parts))
 	for _, p := range parts {
-		if p.Kind == "image" {
+		if p.Kind == port.PromptImage {
 			if !allowImage {
 				return nil, errors.New("llm: 该角色的消息不接受图片分片")
 			}

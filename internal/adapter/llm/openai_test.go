@@ -79,10 +79,10 @@ func TestGenerateStreamsTextAndToolCalls(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "gpt-4o-mini",
 		Messages: []port.PromptMessage{
-			{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: "sys"}}},
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-			{Role: "assistant", ToolCalls: []tool.Call{{ID: "call_1", Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}}},
-			{Role: "tool", CallID: "call_1", Content: []port.PromptPart{{Kind: "text", Text: "pong"}}},
+			{Role: port.PromptSystem, Content: []port.PromptPart{{Kind: port.PromptText, Text: "sys"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+			{Role: port.PromptAssistant, ToolCalls: []tool.Call{{ID: "call_1", Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}}},
+			{Role: port.PromptTool, CallID: "call_1", Content: []port.PromptPart{{Kind: port.PromptText, Text: "pong"}}},
 		},
 		Tools:  []tool.Spec{{Name: "echo", Description: "回声", Schema: json.RawMessage(`{"type":"object","properties":{}}`)}},
 		Params: port.Sampling{Temperature: fptr(0.7), TopP: fptr(0.9), Stop: []string{"\n"}},
@@ -206,7 +206,7 @@ func TestGenerateFallsBackWithoutStreamOptions(t *testing.T) {
 	}
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate should succeed via fallback: %v", err)
@@ -243,7 +243,7 @@ func TestGenerateFallbackTransportErrorIsTransient(t *testing.T) {
 	c, _ := New(Config{BaseURL: srv.URL})
 	_, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 	})
 	if err == nil {
 		t.Fatal("want error")
@@ -278,7 +278,7 @@ func TestGenerateSendsReasoningParams(t *testing.T) {
 	on := true
 	s1, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{ReasoningEffort: "high", Thinking: &on},
 	})
 	if err != nil {
@@ -287,7 +287,7 @@ func TestGenerateSendsReasoningParams(t *testing.T) {
 	_ = s1.Close()
 	s2, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate2: %v", err)
@@ -347,7 +347,7 @@ func TestGenerateStripsUnsupportedReasoning(t *testing.T) {
 	gen := func() error {
 		s, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model:    "m",
-			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+			Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 			Params:   port.Sampling{ReasoningEffort: "high", Thinking: &on},
 		})
 		if err != nil {
@@ -407,8 +407,8 @@ func TestGenerateEchoesReasoningContent(t *testing.T) {
 		s, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model: "m",
 			Messages: []port.PromptMessage{
-				{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-				{Role: "assistant", Reasoning: reasoning, Content: []port.PromptPart{{Kind: "text", Text: "答案"}}},
+				{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+				{Role: port.PromptAssistant, Reasoning: reasoning, Content: []port.PromptPart{{Kind: port.PromptText, Text: "答案"}}},
 			},
 		})
 		if err != nil {
@@ -456,9 +456,9 @@ func TestGenerateReasoningWithToolCalls(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "m",
 		Messages: []port.PromptMessage{
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-			{Role: "assistant", Reasoning: "先想", ToolCalls: []tool.Call{{ID: "c1", Name: "echo", Args: []byte(`{}`)}}},
-			{Role: "assistant", Reasoning: "独白"},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+			{Role: port.PromptAssistant, Reasoning: "先想", ToolCalls: []tool.Call{{ID: "c1", Name: "echo", Args: []byte(`{}`)}}},
+			{Role: port.PromptAssistant, Reasoning: "独白"},
 		},
 	})
 	if err != nil {
@@ -530,8 +530,8 @@ func TestGenerateStripsUnsupportedReasoningContent(t *testing.T) {
 		s, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model: "m",
 			Messages: []port.PromptMessage{
-				{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-				{Role: "assistant", Reasoning: "先想", Content: []port.PromptPart{{Kind: "text", Text: "答案"}}},
+				{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+				{Role: port.PromptAssistant, Reasoning: "先想", Content: []port.PromptPart{{Kind: port.PromptText, Text: "答案"}}},
 			},
 		})
 		if err != nil {
@@ -589,7 +589,7 @@ func TestGenerateEnumErrorNotStripped(t *testing.T) {
 	}
 	_, err = c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{ReasoningEffort: "minimal"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "状态码 400") {
@@ -625,8 +625,8 @@ func TestGenerateReasoningContentValueErrorNotStripped(t *testing.T) {
 	_, err = c.Generate(context.Background(), port.GenerateRequest{
 		Model: "m",
 		Messages: []port.PromptMessage{
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-			{Role: "assistant", Reasoning: "先想", Content: []port.PromptPart{{Kind: "text", Text: "答案"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+			{Role: port.PromptAssistant, Reasoning: "先想", Content: []port.PromptPart{{Kind: port.PromptText, Text: "答案"}}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "状态码 400") {
@@ -661,7 +661,7 @@ func TestStreamParsesReasoningDeltas(t *testing.T) {
 	}
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -708,7 +708,7 @@ func TestGenerateHTTPError(t *testing.T) {
 	c, _ := New(Config{BaseURL: srv.URL, APIKey: "bad"})
 	_, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 	})
 	if err == nil {
 		t.Fatal("want error")
@@ -740,7 +740,7 @@ func TestGenerateTransientStatusTagging(t *testing.T) {
 		c, _ := New(Config{BaseURL: srv.URL})
 		_, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model:    "m",
-			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+			Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 		})
 		srv.Close()
 		if err == nil {
@@ -761,7 +761,7 @@ func TestGenerateTransportErrorTagging(t *testing.T) {
 	c, _ := New(Config{BaseURL: url})
 	req := port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 	}
 	if _, err := c.Generate(context.Background(), req); err == nil || !errors.Is(err, port.ErrTransient) {
 		t.Fatalf("err = %v, want 瞬时标注", err)
@@ -788,7 +788,7 @@ func TestGenerateQuotaTagging(t *testing.T) {
 	c, _ := New(Config{BaseURL: srv.URL})
 	_, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 	})
 	if err == nil || !errors.Is(err, port.ErrQuota) {
 		t.Fatalf("err = %v, want 标 ErrQuota", err)
@@ -811,7 +811,7 @@ func TestGenerateNonQuotaTransientNotTagged(t *testing.T) {
 		c, _ := New(Config{BaseURL: srv.URL})
 		_, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model:    "m",
-			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+			Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 		})
 		srv.Close()
 		if err == nil || !errors.Is(err, port.ErrTransient) || errors.Is(err, port.ErrQuota) {
@@ -848,7 +848,7 @@ func TestGenerateQuotaRetryAfterVariants(t *testing.T) {
 		c, _ := New(Config{BaseURL: srv.URL})
 		_, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model:    "m",
-			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+			Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 		})
 		got := port.QuotaAfter(err)
 		srv.Close()
@@ -878,7 +878,7 @@ func TestGenerateMidStreamErrorPayload(t *testing.T) {
 	c, _ := New(Config{BaseURL: srv.URL})
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -927,7 +927,7 @@ func TestStreamCloseIsIdempotentEOF(t *testing.T) {
 	c, _ := New(Config{BaseURL: srv.URL})
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -974,7 +974,7 @@ func TestEncodeOmitsDefaultParams(t *testing.T) {
 	c, _ := New(Config{BaseURL: srv.URL})
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "x"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "x"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)

@@ -123,13 +123,13 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 // toChatMessage 转换单条消息。omit 命中的 reasoning_content 不回传（D42 剥离兜底）。
 // 历史里的工具调用名同样换算成端点别名（D195）：端点看到的名字必须与声明一致。
 func toChatMessage(m port.PromptMessage, omit map[string]bool, wn *wireNames) (chatMessage, error) {
-	cm := chatMessage{Role: m.Role}
+	cm := chatMessage{Role: string(m.Role)}
 	switch m.Role {
-	case "tool":
+	case port.PromptTool:
 		cm.ToolCallID = m.CallID
 		cm.Content = flattenText(m.Content)
 		return cm, nil
-	case "assistant":
+	case port.PromptAssistant:
 		if m.Reasoning != "" && !omit["reasoning_content"] {
 			cm.ReasoningContent = m.Reasoning // D42：思维链以消息级字段回传
 		}
@@ -155,7 +155,7 @@ func toChatMessage(m port.PromptMessage, omit map[string]bool, wn *wireNames) (c
 	if err != nil {
 		return chatMessage{}, err
 	}
-	if s, ok := content.(string); ok && s == "" && m.Role != "tool" {
+	if s, ok := content.(string); ok && s == "" && m.Role != port.PromptTool {
 		// 真·空消息（无正文、无思考、无调用）：不发（encodeChatRequest 据 Role 空跳过）。
 		// 只带思考的 assistant 保留（D42：纯思考节点的回传），content 字段省略。
 		if cm.ReasoningContent == "" {
@@ -171,7 +171,7 @@ func toChatMessage(m port.PromptMessage, omit map[string]bool, wn *wireNames) (c
 func buildContent(parts []port.PromptPart) (any, error) {
 	hasImage := false
 	for _, p := range parts {
-		if p.Kind == "image" {
+		if p.Kind == port.PromptImage {
 			hasImage = true
 			break
 		}
@@ -181,7 +181,7 @@ func buildContent(parts []port.PromptPart) (any, error) {
 	}
 	out := make([]chatContentPart, 0, len(parts))
 	for _, p := range parts {
-		if p.Kind == "image" {
+		if p.Kind == port.PromptImage {
 			if len(p.Data) == 0 {
 				return nil, errors.New("llm: 图片片段缺少数据（AttachmentStore 未提供字节）")
 			}
@@ -204,7 +204,7 @@ func buildContent(parts []port.PromptPart) (any, error) {
 func flattenText(parts []port.PromptPart) string {
 	var b strings.Builder
 	for _, p := range parts {
-		if p.Kind == "image" || p.Text == "" {
+		if p.Kind == port.PromptImage || p.Text == "" {
 			continue
 		}
 		if b.Len() > 0 {

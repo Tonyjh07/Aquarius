@@ -260,7 +260,7 @@ func mergeProbeOutcomes(outs []probeOutcome) probeOutcome {
 // probeAttempts 构造某项能力的全部问法。
 func probeAttempts(model, capability string) ([]probeAttempt, error) {
 	text := func(s string) []port.PromptPart {
-		return []port.PromptPart{{Kind: "text", Text: s}}
+		return []port.PromptPart{{Kind: port.PromptText, Text: s}}
 	}
 	base := func() port.GenerateRequest {
 		return port.GenerateRequest{Model: model, Budget: port.TokenBudget{MaxOutputTokens: probeMaxTokens}}
@@ -268,7 +268,7 @@ func probeAttempts(model, capability string) ([]probeAttempt, error) {
 	switch capability {
 	case port.CapTools:
 		req := base()
-		req.Messages = []port.PromptMessage{{Role: "user", Content: text(probeToolsPrompt)}}
+		req.Messages = []port.PromptMessage{{Role: port.PromptUser, Content: text(probeToolsPrompt)}}
 		req.Tools = []tool.Spec{{
 			Name:        probeToolName,
 			Description: "Probe tool: takes no arguments, returns nothing. Call it to acknowledge.",
@@ -281,20 +281,20 @@ func probeAttempts(model, capability string) ([]probeAttempt, error) {
 			return nil, err
 		}
 		req := base()
-		req.Messages = []port.PromptMessage{{Role: "user", Content: []port.PromptPart{
-			{Kind: "text", Text: probeVisionPrompt},
-			{Kind: "image", MIME: "image/png", Data: img},
+		req.Messages = []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{
+			{Kind: port.PromptText, Text: probeVisionPrompt},
+			{Kind: port.PromptImage, MIME: "image/png", Data: img},
 		}}}
 		return []probeAttempt{{label: "带图请求", req: req}}, nil
 	case port.CapReasoning:
 		// 两套参数分别试：生态里各认一套（reasoning_effort 一派、enable_thinking 一派），
 		// 一起发的话，写死的那一方被拒就会把能用的那方一起否掉。
 		effort := base()
-		effort.Messages = []port.PromptMessage{{Role: "user", Content: text(probeReasoningPrompt)}}
+		effort.Messages = []port.PromptMessage{{Role: port.PromptUser, Content: text(probeReasoningPrompt)}}
 		effort.Params.ReasoningEffort = "low"
 		on := true
 		thinking := base()
-		thinking.Messages = []port.PromptMessage{{Role: "user", Content: text(probeReasoningPrompt)}}
+		thinking.Messages = []port.PromptMessage{{Role: port.PromptUser, Content: text(probeReasoningPrompt)}}
 		thinking.Params.Thinking = &on
 		return []probeAttempt{
 			{label: "reasoning_effort", req: effort},

@@ -188,7 +188,7 @@ func TestSessionTextRoundPersists(t *testing.T) {
 	// 恢复后的上下文携带历史两条用户消息。
 	var userN int
 	for _, m := range llm2.requests[0].Messages {
-		if m.Role == "user" {
+		if m.Role == port.PromptUser {
 			userN++
 		}
 	}

@@ -112,7 +112,7 @@ func TestAnthropicGenerateStreams(t *testing.T) {
 
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "claude-sonnet-4-6",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -167,15 +167,15 @@ func TestAnthropicRequestShape(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "claude-sonnet-4-6",
 		Messages: []port.PromptMessage{
-			{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: "sys"}}},
-			{Role: "user", Content: []port.PromptPart{
-				{Kind: "text", Text: "看图"},
-				{Kind: "image", MIME: "image/jpeg", Data: []byte{0x01, 0x02}},
+			{Role: port.PromptSystem, Content: []port.PromptPart{{Kind: port.PromptText, Text: "sys"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{
+				{Kind: port.PromptText, Text: "看图"},
+				{Kind: port.PromptImage, MIME: "image/jpeg", Data: []byte{0x01, 0x02}},
 			}},
-			{Role: "assistant", Reasoning: "想过", ReasoningSignature: anthropicSigPrefix + "SIG9",
-				Content:   []port.PromptPart{{Kind: "text", Text: "答"}},
+			{Role: port.PromptAssistant, Reasoning: "想过", ReasoningSignature: anthropicSigPrefix + "SIG9",
+				Content:   []port.PromptPart{{Kind: port.PromptText, Text: "答"}},
 				ToolCalls: []tool.Call{{ID: "toolu_1", Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}}},
-			{Role: "tool", CallID: "toolu_1", Content: []port.PromptPart{{Kind: "text", Text: "pong"}}},
+			{Role: port.PromptTool, CallID: "toolu_1", Content: []port.PromptPart{{Kind: port.PromptText, Text: "pong"}}},
 		},
 		Tools:  []tool.Spec{{Name: "echo", Description: "回声", Schema: json.RawMessage(`{"type":"object","properties":{}}`)}},
 		Params: port.Sampling{Thinking: &on, ReasoningEffort: "low", Temperature: fptr(0.5), Stop: []string{"\n"}},
@@ -300,7 +300,7 @@ func TestAnthropicThinkingDisabled(t *testing.T) {
 	// 键缺失：零字段变化。
 	s1, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{Temperature: fptr(0.3)},
 	})
 	if err != nil {
@@ -313,7 +313,7 @@ func TestAnthropicThinkingDisabled(t *testing.T) {
 
 	s2, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{Thinking: &off},
 	})
 	if err != nil {
@@ -327,7 +327,7 @@ func TestAnthropicThinkingDisabled(t *testing.T) {
 	// 档位必须能自己把思考打开（不能对档位装没看见）。
 	s3, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{ReasoningEffort: "high"},
 	})
 	if err != nil {
@@ -353,10 +353,10 @@ func TestAnthropicRoleMerging(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "m",
 		Messages: []port.PromptMessage{
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "A"}}},
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "B"}}},
-			{Role: "tool", CallID: "toolu_1", Content: []port.PromptPart{{Kind: "text", Text: "r1"}}},
-			{Role: "tool", CallID: "toolu_2", Content: []port.PromptPart{{Kind: "text", Text: "r2"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "A"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "B"}}},
+			{Role: port.PromptTool, CallID: "toolu_1", Content: []port.PromptPart{{Kind: port.PromptText, Text: "r1"}}},
+			{Role: port.PromptTool, CallID: "toolu_2", Content: []port.PromptPart{{Kind: port.PromptText, Text: "r2"}}},
 		},
 	})
 	if err != nil {
@@ -392,9 +392,9 @@ func TestAnthropicForeignSignatureIgnored(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "m",
 		Messages: []port.PromptMessage{
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-			{Role: "assistant", Reasoning: "想过", ReasoningSignature: "responses:whatever",
-				Content: []port.PromptPart{{Kind: "text", Text: "答"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+			{Role: port.PromptAssistant, Reasoning: "想过", ReasoningSignature: "responses:whatever",
+				Content: []port.PromptPart{{Kind: port.PromptText, Text: "答"}}},
 		},
 	})
 	if err != nil {
@@ -415,7 +415,7 @@ func TestAnthropicLeadingAssistantRejected(t *testing.T) {
 	_, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "m",
 		Messages: []port.PromptMessage{
-			{Role: "assistant", Content: []port.PromptPart{{Kind: "text", Text: "我先说"}}},
+			{Role: port.PromptAssistant, Content: []port.PromptPart{{Kind: port.PromptText, Text: "我先说"}}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "user") {
@@ -429,7 +429,7 @@ func TestAnthropicErrorEvents(t *testing.T) {
 	c := anthropicClient(t, srv.URL, "")
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -472,7 +472,7 @@ func TestAnthropicStatusErrors(t *testing.T) {
 		c := anthropicClient(t, srv.URL, "k")
 		_, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model:    "m",
-			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+			Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 			Params:   port.Sampling{ReasoningEffort: "high"},
 		})
 		srv.Close()

@@ -27,7 +27,7 @@ func TestAssemblePathBasicRoles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 2 || msgs[0].Role != "user" || msgs[1].Role != "assistant" {
+	if len(msgs) != 2 || msgs[0].Role != port.PromptUser || msgs[1].Role != port.PromptAssistant {
 		t.Fatalf("roles = %+v", msgs)
 	}
 	if msgs[0].Content[0].Text != "hi" || msgs[1].Content[0].Text != "你好" {
@@ -61,7 +61,7 @@ func TestAssemblePathEchoThinking(t *testing.T) {
 	if msgs[1].Reasoning != "推理过程" || msgs[2].Reasoning != "只有思考" {
 		t.Fatalf("echo on: reasoning = %q / %q", msgs[1].Reasoning, msgs[2].Reasoning)
 	}
-	if len(msgs[1].Content) != 1 || msgs[1].Content[0].Kind != "text" || msgs[1].Content[0].Text != "答案" {
+	if len(msgs[1].Content) != 1 || msgs[1].Content[0].Kind != port.PromptText || msgs[1].Content[0].Text != "答案" {
 		t.Fatalf("echo on: 正文分片 = %+v, want 仅 text 答案", msgs[1].Content)
 	}
 
@@ -97,7 +97,7 @@ func TestAssemblePathMediaParts(t *testing.T) {
 	if got[1].Text != "语音转写" || got[2].Text != "文档提取文本" {
 		t.Fatalf("media texts = %+v", got)
 	}
-	if got[3].Kind != "text" || !strings.Contains(got[3].Text, "does not accept image input") {
+	if got[3].Kind != port.PromptText || !strings.Contains(got[3].Text, "does not accept image input") {
 		t.Fatalf("image 占位 = %+v, want 视觉不支持时的说明", got[3])
 	}
 }
@@ -111,7 +111,7 @@ func TestAssemblePathImageInlinesBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assembleParts: %v", err)
 	}
-	if len(got) != 1 || got[0].Kind != "image" || string(got[0].Data) != "\x89PNG" || got[0].MIME != "image/png" {
+	if len(got) != 1 || got[0].Kind != port.PromptImage || string(got[0].Data) != "\x89PNG" || got[0].MIME != "image/png" {
 		t.Fatalf("image part = %+v", got)
 	}
 }
@@ -140,7 +140,7 @@ func TestAssemblePathToolPartProjectsCallAndResult(t *testing.T) {
 	if len(msgs) != 3 { // user + assistant(tool_calls) + tool
 		t.Fatalf("msgs = %d, want 3: %+v", len(msgs), msgs)
 	}
-	if msgs[1].Role != "assistant" || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "call_1" {
+	if msgs[1].Role != port.PromptAssistant || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "call_1" {
 		t.Fatalf("assistant msg = %+v", msgs[1])
 	}
 	// 分片不应混进正文。
@@ -148,7 +148,7 @@ func TestAssemblePathToolPartProjectsCallAndResult(t *testing.T) {
 		t.Fatalf("assistant content = %+v, want 空", msgs[1].Content)
 	}
 	// 拆出的 tool 应答紧随其后。
-	if msgs[2].Role != "tool" || msgs[2].CallID != "call_1" || msgs[2].Content[0].Text != "pong" {
+	if msgs[2].Role != port.PromptTool || msgs[2].CallID != "call_1" || msgs[2].Content[0].Text != "pong" {
 		t.Fatalf("tool msg = %+v", msgs[2])
 	}
 }
@@ -185,14 +185,14 @@ func TestAssemblePathSegmentedTurnNode(t *testing.T) {
 		t.Fatalf("msgs = %d, want 4: %+v", len(msgs), msgs)
 	}
 	seg1, reply, seg2 := msgs[1], msgs[2], msgs[3]
-	if seg1.Role != "assistant" || seg1.Reasoning != "想一" || len(seg1.Content) != 1 ||
+	if seg1.Role != port.PromptAssistant || seg1.Reasoning != "想一" || len(seg1.Content) != 1 ||
 		seg1.Content[0].Text != "先看" || len(seg1.ToolCalls) != 1 || seg1.ToolCalls[0].ID != "c1" {
 		t.Fatalf("段1 = %+v", seg1)
 	}
-	if reply.Role != "tool" || reply.CallID != "c1" || reply.Content[0].Text != "pong" {
+	if reply.Role != port.PromptTool || reply.CallID != "c1" || reply.Content[0].Text != "pong" {
 		t.Fatalf("tool 应答 = %+v", reply)
 	}
-	if seg2.Role != "assistant" || seg2.Reasoning != "想二" || len(seg2.Content) != 1 ||
+	if seg2.Role != port.PromptAssistant || seg2.Reasoning != "想二" || len(seg2.Content) != 1 ||
 		seg2.Content[0].Text != "答案" || len(seg2.ToolCalls) != 0 {
 		t.Fatalf("段2 = %+v", seg2)
 	}
@@ -285,12 +285,12 @@ func TestAssemblePathToolImageProjectsUserMessage(t *testing.T) {
 	if len(msgs) != 4 {
 		t.Fatalf("msgs = %d, want 4: %+v", len(msgs), msgs)
 	}
-	if msgs[2].Role != "tool" || msgs[3].Role != "user" {
+	if msgs[2].Role != port.PromptTool || msgs[3].Role != port.PromptUser {
 		t.Fatalf("roles = %s,%s; want tool,user", msgs[2].Role, msgs[3].Role)
 	}
 	var img *port.PromptPart
 	for i := range msgs[3].Content {
-		if msgs[3].Content[i].Kind == "image" {
+		if msgs[3].Content[i].Kind == port.PromptImage {
 			img = &msgs[3].Content[i]
 		}
 	}
@@ -306,11 +306,11 @@ func TestAssemblePathToolImageProjectsUserMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble(no vision): %v", err)
 	}
-	if len(msgs) != 4 || msgs[3].Role != "user" {
+	if len(msgs) != 4 || msgs[3].Role != port.PromptUser {
 		t.Fatalf("no-vision msgs = %+v", msgs)
 	}
 	for _, p := range msgs[3].Content {
-		if p.Kind == "image" {
+		if p.Kind == port.PromptImage {
 			t.Fatalf("不支持视觉时不应有图片块: %+v", p)
 		}
 	}
@@ -356,16 +356,16 @@ func TestAssembleAssistantNodeAllToolRepliesBeforeImages(t *testing.T) {
 	if len(msgs[1].ToolCalls) != 2 {
 		t.Fatalf("assistant calls = %d, want 2", len(msgs[1].ToolCalls))
 	}
-	if msgs[2].Role != "tool" || msgs[2].CallID != "c1" ||
-		msgs[3].Role != "tool" || msgs[3].CallID != "c2" {
+	if msgs[2].Role != port.PromptTool || msgs[2].CallID != "c1" ||
+		msgs[3].Role != port.PromptTool || msgs[3].CallID != "c2" {
 		t.Fatalf("tool 应答不连续: %+v", promptRoles(msgs))
 	}
-	if msgs[4].Role != "user" {
+	if msgs[4].Role != port.PromptUser {
 		t.Fatalf("图片消息应在全部应答之后: %+v", promptRoles(msgs))
 	}
 	images := 0
 	for _, p := range msgs[4].Content {
-		if p.Kind == "image" {
+		if p.Kind == port.PromptImage {
 			images++
 		}
 	}
@@ -374,7 +374,7 @@ func TestAssembleAssistantNodeAllToolRepliesBeforeImages(t *testing.T) {
 	}
 	// 调用与响应用「连续 tool 段覆盖全部调用」这一协议不变量收口。
 	nTools := 0
-	for i := 2; i < len(msgs) && msgs[i].Role == "tool"; i++ {
+	for i := 2; i < len(msgs) && msgs[i].Role == port.PromptTool; i++ {
 		nTools++
 	}
 	if nTools != len(msgs[1].ToolCalls) {
@@ -386,7 +386,7 @@ func TestAssembleAssistantNodeAllToolRepliesBeforeImages(t *testing.T) {
 func promptRoles(msgs []port.PromptMessage) []string {
 	out := make([]string, 0, len(msgs))
 	for _, m := range msgs {
-		s := m.Role
+		s := string(m.Role)
 		if m.CallID != "" {
 			s += ":" + m.CallID
 		}
@@ -417,10 +417,10 @@ func TestAssemblePathNilResultPartSkipped(t *testing.T) {
 		t.Fatalf("msgs = %d, want 1: %+v", len(msgs), msgs)
 	}
 	for _, m := range msgs {
-		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+		if m.Role == port.PromptAssistant && len(m.ToolCalls) > 0 {
 			t.Fatalf("nil 分片不应声明调用: %+v", m)
 		}
-		if m.Role == "tool" {
+		if m.Role == port.PromptTool {
 			t.Fatalf("nil 分片不应产出 tool 应答: %+v", m)
 		}
 	}
@@ -482,10 +482,10 @@ func TestAssemblePathWatermarkDropsAboveSummary(t *testing.T) {
 	if len(msgs) != 4 {
 		t.Fatalf("msgs len = %d, want 4 (persona,摘要,新问题,新回答): %+v", len(msgs), msgs)
 	}
-	if msgs[0].Role != "system" || msgs[0].Content[0].Text != "人格" {
+	if msgs[0].Role != port.PromptSystem || msgs[0].Content[0].Text != "人格" {
 		t.Fatalf("msgs[0] = %+v, want persona 恒回传", msgs[0])
 	}
-	if msgs[1].Role != "system" || msgText(msgs[1]) != summaryPrefix+"摘要内容" {
+	if msgs[1].Role != port.PromptSystem || msgText(msgs[1]) != summaryPrefix+"摘要内容" {
 		t.Fatalf("msgs[1] = %+v, want 摘要（带 context-only 包装）", msgs[1])
 	}
 	if msgs[2].Content[0].Text != "新问题" || msgs[3].Content[0].Text != "新回答" {
@@ -543,7 +543,7 @@ func TestAssemblePathInjectPadKeepsHistory(t *testing.T) {
 	if len(msgs) != 6 {
 		t.Fatalf("msgs len = %d, want 6（注入衬垫不成为水位）: %+v", len(msgs), msgs)
 	}
-	if msgs[0].Role != "system" || msgs[0].Content[0].Text != "人格" {
+	if msgs[0].Role != port.PromptSystem || msgs[0].Content[0].Text != "人格" {
 		t.Fatalf("msgs[0] = %+v, want persona", msgs[0])
 	}
 	if !strings.Contains(msgText(msgs[2]), "注入上下文") {
@@ -567,7 +567,7 @@ func TestAssemblePathWatermarkWithoutPersona(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 2 || msgs[0].Role != "system" || msgText(msgs[0]) != summaryPrefix+"摘要" ||
+	if len(msgs) != 2 || msgs[0].Role != port.PromptSystem || msgText(msgs[0]) != summaryPrefix+"摘要" ||
 		msgs[1].Content[0].Text != "新问题" {
 		t.Fatalf("msgs = %+v, want [摘要, 新问题]", msgs)
 	}
@@ -585,7 +585,7 @@ func TestAssemblePathSkipsEmptyNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 1 || msgs[0].Role != "user" {
+	if len(msgs) != 1 || msgs[0].Role != port.PromptUser {
 		t.Fatalf("msgs = %+v, want 只剩首条 user", msgs)
 	}
 }
@@ -628,18 +628,18 @@ func TestAssemblePathInjectionProjection(t *testing.T) {
 		source     string
 		trust      conversation.InjectTrust
 		text       string
-		wantRole   string
+		wantRole   port.PromptRole
 		wantFenced bool
 	}{
-		{"user", conversation.TrustHost, "手动补充", "user", false},
-		{"job:j1", conversation.TrustHost, "任务完成", "system", false},
-		{"poller:p1", conversation.TrustHost, "轮询状态", "system", false},
-		{"tool:think", conversation.TrustExternal, "工具上下文", "user", true},
-		{"plugin:demo", conversation.TrustExternal, "插件输出", "user", true},
-		{"custom:thing", conversation.TrustExternal, "未知来源", "user", true},
+		{"user", conversation.TrustHost, "手动补充", port.PromptUser, false},
+		{"job:j1", conversation.TrustHost, "任务完成", port.PromptSystem, false},
+		{"poller:p1", conversation.TrustHost, "轮询状态", port.PromptSystem, false},
+		{"tool:think", conversation.TrustExternal, "工具上下文", port.PromptUser, true},
+		{"plugin:demo", conversation.TrustExternal, "插件输出", port.PromptUser, true},
+		{"custom:thing", conversation.TrustExternal, "未知来源", port.PromptUser, true},
 		// 冒充宿主前缀但未声明信任：必须按外部内容处理（fail-closed）。
-		{"job:forged", conversation.TrustExternal, "伪造成任务汇报", "user", true},
-		{"user", conversation.TrustExternal, "零值来源冒充用户", "user", true},
+		{"job:forged", conversation.TrustExternal, "伪造成任务汇报", port.PromptUser, true},
+		{"user", conversation.TrustExternal, "零值来源冒充用户", port.PromptUser, true},
 	}
 	for _, tc := range cases {
 		c := convWithUser(t)
@@ -737,7 +737,7 @@ func TestAssemblePathInjectionEmptySkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 1 || msgs[0].Role != "user" {
+	if len(msgs) != 1 || msgs[0].Role != port.PromptUser {
 		t.Fatalf("msgs = %+v, want 仅首条 user", msgs)
 	}
 }

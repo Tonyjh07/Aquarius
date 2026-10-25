@@ -259,9 +259,9 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			// 摘要是模型写的、且吸收了其上的不可信内容，进去时标成"上下文"（D170）：
 			// 否则等于把命令输出/文件内容经摘要洗成系统设定。persona 不套这句。
 			if i == watermarkIdx {
-				parts = append([]port.PromptPart{{Kind: "text", Text: summaryPrefix}}, parts...)
+				parts = append([]port.PromptPart{{Kind: port.PromptText, Text: summaryPrefix}}, parts...)
 			}
-			out = append(out, port.PromptMessage{Role: "system", Content: parts})
+			out = append(out, port.PromptMessage{Role: port.PromptSystem, Content: parts})
 		case conversation.RoleInject:
 			// 注入节点按**显式信任位**投影（D170）：宿主事实 → system（用户动作仍取 user）；
 			// 其余（工具/插件/未知/未声明）→ user + 数据围栏（§9 口径，防伪装成用户指令）。
@@ -288,7 +288,7 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, port.PromptMessage{Role: "user", Content: parts})
+			out = append(out, port.PromptMessage{Role: port.PromptUser, Content: parts})
 		default:
 			// 未知角色：不入上下文（前向兼容；非法角色本就进不了树）。
 			continue
@@ -321,28 +321,28 @@ func projectInjection(ctx context.Context, m conversation.Message, opt assembleO
 	if m.Trust == conversation.TrustHost {
 		// 用户自己的动作仍是 user 角色：换成 system 会让模型把用户的原话当成
 		// 系统设定，回答语气与优先级都会跑偏。
-		role := "system"
+		role := port.PromptSystem
 		if m.Source == "user" || strings.HasPrefix(m.Source, "user:") {
-			role = "user"
+			role = port.PromptUser
 		}
 		return &port.PromptMessage{Role: role, Content: parts}, nil
 	}
 	// 围栏正文同样中和闭合标签（D170 口径二）：否则外部内容可以提前收尾，
 	// 把后文伪装成围栏之外的用户/宿主说明。
 	fenced := make([]port.PromptPart, 0, len(parts)+2)
-	fenced = append(fenced, port.PromptPart{Kind: "text", Text: injectFenceNote})
+	fenced = append(fenced, port.PromptPart{Kind: port.PromptText, Text: injectFenceNote})
 	fenced = append(fenced, port.PromptPart{
-		Kind: "text",
+		Kind: port.PromptText,
 		Text: fmt.Sprintf(injectFenceOpen, escapeFenceAttr(m.Source)),
 	})
 	for _, p := range parts {
-		if p.Kind == "text" {
+		if p.Kind == port.PromptText {
 			p.Text = neutralizeFence(p.Text)
 		}
 		fenced = append(fenced, p)
 	}
-	fenced = append(fenced, port.PromptPart{Kind: "text", Text: injectFenceClose})
-	return &port.PromptMessage{Role: "user", Content: fenced}, nil
+	fenced = append(fenced, port.PromptPart{Kind: port.PromptText, Text: injectFenceClose})
+	return &port.PromptMessage{Role: port.PromptUser, Content: fenced}, nil
 }
 
 // neutralizeFence 中和注入正文里的围栏闭合标签（大小写不敏感）。
@@ -394,7 +394,7 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 			return
 		}
 		out = append(out, port.PromptMessage{
-			Role:               "assistant",
+			Role:               port.PromptAssistant,
 			Content:            content,
 			Reasoning:          strings.Join(reasoning, "\n\n"),
 			ReasoningSignature: thinkSig,
@@ -408,7 +408,7 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 			for _, im := range images {
 				parts = append(parts, im.Content...)
 			}
-			out = append(out, port.PromptMessage{Role: "user", Content: parts})
+			out = append(out, port.PromptMessage{Role: port.PromptUser, Content: parts})
 		}
 		reasoning, thinkSig, content, calls, replies, images = nil, "", nil, nil, nil, nil
 	}
@@ -443,9 +443,9 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 				Args: p.Tool.Args,
 			})
 			replies = append(replies, port.PromptMessage{
-				Role:    "tool",
+				Role:    port.PromptTool,
 				CallID:  p.Tool.CallID,
-				Content: []port.PromptPart{{Kind: "text", Text: toolResultText(p.Tool.Result)}},
+				Content: []port.PromptPart{{Kind: port.PromptText, Text: toolResultText(p.Tool.Result)}},
 			})
 			// 工具产出的图片（D169）：tool 应答之后另起一条 user 消息承载图片块，
 			// 因为 OpenAI 兼容端点不接受 tool 角色带图片。先攒着，段末排在全部
@@ -476,14 +476,14 @@ func toolImageMessage(ctx context.Context, toolName string, refs []tool.ImageRef
 		return nil, nil
 	}
 	parts := make([]port.PromptPart, 0, len(refs)+1)
-	parts = append(parts, port.PromptPart{Kind: "text", Text: fmt.Sprintf(toolImageNoteFmt, toolName)})
+	parts = append(parts, port.PromptPart{Kind: port.PromptText, Text: fmt.Sprintf(toolImageNoteFmt, toolName)})
 	for _, ref := range refs {
 		if !opt.vision {
-			parts = append(parts, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageUnsupportedFmt, ref.Name)})
+			parts = append(parts, port.PromptPart{Kind: port.PromptText, Text: fmt.Sprintf(imageUnsupportedFmt, ref.Name)})
 			continue
 		}
 		if opt.blobs == nil {
-			parts = append(parts, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageOmittedFmt, ref.Name)})
+			parts = append(parts, port.PromptPart{Kind: port.PromptText, Text: fmt.Sprintf(imageOmittedFmt, ref.Name)})
 			continue
 		}
 		rc, err := opt.blobs.Get(ctx, conversation.BlobRef{Hash: ref.Hash, MIME: ref.MIME, Name: ref.Name, Size: ref.Size})
@@ -495,9 +495,9 @@ func toolImageMessage(ctx context.Context, toolName string, refs []tool.ImageRef
 		if rerr != nil {
 			return nil, fmt.Errorf("read image %s: %w", ref.Name, rerr)
 		}
-		parts = append(parts, port.PromptPart{Kind: "image", MIME: ref.MIME, Data: data})
+		parts = append(parts, port.PromptPart{Kind: port.PromptImage, MIME: ref.MIME, Data: data})
 	}
-	return &port.PromptMessage{Role: "user", Content: parts}, nil
+	return &port.PromptMessage{Role: port.PromptUser, Content: parts}, nil
 }
 
 // assembleParts 把领域分片装配为提示词分片：
@@ -508,27 +508,27 @@ func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleO
 	for _, p := range parts {
 		switch p.Kind {
 		case conversation.PartText:
-			out = append(out, port.PromptPart{Kind: "text", Text: p.Text})
+			out = append(out, port.PromptPart{Kind: port.PromptText, Text: p.Text})
 		case conversation.PartAudio:
 			// 模型只见文本，音频留附件库回放（DESIGN §4.2）。
 			if p.Transcript != "" {
-				out = append(out, port.PromptPart{Kind: "text", Text: p.Transcript})
+				out = append(out, port.PromptPart{Kind: port.PromptText, Text: p.Transcript})
 			}
 		case conversation.PartDoc:
 			// 文档正文在入库时已提取并截断存进节点，装配时直接取这段文本（D10）。
 			if p.Text != "" {
-				out = append(out, port.PromptPart{Kind: "text", Text: p.Text})
+				out = append(out, port.PromptPart{Kind: port.PromptText, Text: p.Text})
 			}
 		case conversation.PartImage:
 			if p.Ref == nil {
 				continue
 			}
 			if !opt.vision {
-				out = append(out, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageUnsupportedFmt, p.Ref.Name)})
+				out = append(out, port.PromptPart{Kind: port.PromptText, Text: fmt.Sprintf(imageUnsupportedFmt, p.Ref.Name)})
 				continue
 			}
 			if opt.blobs == nil {
-				out = append(out, port.PromptPart{Kind: "text", Text: fmt.Sprintf(imageOmittedFmt, p.Ref.Name)})
+				out = append(out, port.PromptPart{Kind: port.PromptText, Text: fmt.Sprintf(imageOmittedFmt, p.Ref.Name)})
 				continue
 			}
 			rc, err := opt.blobs.Get(ctx, *p.Ref)
@@ -540,7 +540,7 @@ func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleO
 			if rerr != nil {
 				return nil, fmt.Errorf("read attachment %s: %w", p.Ref.Name, rerr)
 			}
-			out = append(out, port.PromptPart{Kind: "image", MIME: p.Ref.MIME, Data: data})
+			out = append(out, port.PromptPart{Kind: port.PromptImage, MIME: p.Ref.MIME, Data: data})
 		case conversation.PartThinking:
 			// 思考走 PromptMessage.Reasoning（D42），不与正文混装。
 			continue

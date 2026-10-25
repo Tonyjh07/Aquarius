@@ -32,13 +32,13 @@ var ErrNoHistoryAbove = errors.New("agent: no history above target")
 func (a *Agent) generateSummary(ctx context.Context, id conversation.MessageID, history []port.PromptMessage, existing bool) (string, conversation.Usage, error) {
 	base := make([]port.PromptMessage, 0, len(history)+2)
 	base = append(base, port.PromptMessage{
-		Role:    "system",
-		Content: []port.PromptPart{{Kind: "text", Text: compactPrompt(existing)}},
+		Role:    port.PromptSystem,
+		Content: []port.PromptPart{{Kind: port.PromptText, Text: compactPrompt(existing)}},
 	})
 	base = append(base, history...)
 	base = append(base, port.PromptMessage{
-		Role:    "user",
-		Content: []port.PromptPart{{Kind: "text", Text: compactNudge}},
+		Role:    port.PromptUser,
+		Content: []port.PromptPart{{Kind: port.PromptText, Text: compactNudge}},
 	})
 
 	var (
@@ -51,8 +51,8 @@ func (a *Agent) generateSummary(ctx context.Context, id conversation.MessageID, 
 		if attempt > 0 {
 			_ = a.ui.Emit(ctx, port.NoticeEvent{Text: "摘要输出未匹配模板，正在带提醒重试"})
 			msgs = append(msgs, port.PromptMessage{
-				Role:    "user",
-				Content: []port.PromptPart{{Kind: "text", Text: compactRetryReminder}},
+				Role:    port.PromptUser,
+				Content: []port.PromptPart{{Kind: port.PromptText, Text: compactRetryReminder}},
 			})
 		}
 		buf := newTurnBuffer(id)

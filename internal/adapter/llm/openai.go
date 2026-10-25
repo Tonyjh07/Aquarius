@@ -298,7 +298,7 @@ func unsupportedFields(sn string, req port.GenerateRequest, includeUsage bool) [
 // hasPromptReasoning 请求是否携带思维链回传（D42）。
 func hasPromptReasoning(req port.GenerateRequest) bool {
 	for _, m := range req.Messages {
-		if m.Role == "assistant" && m.Reasoning != "" {
+		if m.Role == port.PromptAssistant && m.Reasoning != "" {
 			return true
 		}
 	}

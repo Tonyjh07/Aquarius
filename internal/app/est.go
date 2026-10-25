@@ -156,7 +156,7 @@ func TrimOldest(ctx context.Context, counter port.TokenCounter, msgs []port.Prom
 // 返回 (保留序列, 省略条数)。
 func (e *estimator) trimOldest(ctx context.Context, msgs []port.PromptMessage, target int, tools ...tool.Spec) ([]port.PromptMessage, int) {
 	lead := 0
-	for lead < len(msgs) && msgs[lead].Role == "system" {
+	for lead < len(msgs) && msgs[lead].Role == port.PromptSystem {
 		lead++
 	}
 	if lead >= len(msgs) { // 全是 system：无可裁
@@ -167,13 +167,13 @@ func (e *estimator) trimOldest(ctx context.Context, msgs []port.PromptMessage, t
 	nonSystem := func(ks []port.PromptMessage) int {
 		n := 0
 		for _, m := range ks[lead:] {
-			if m.Role != "system" {
+			if m.Role != port.PromptSystem {
 				n++
 			}
 		}
 		return n
 	}
-	isOrphanLead := func() bool { return lead < len(kept) && kept[lead].Role == "tool" }
+	isOrphanLead := func() bool { return lead < len(kept) && kept[lead].Role == port.PromptTool }
 	for {
 		est, _ := e.Estimate(ctx, port.GenerateRequest{Messages: kept, Tools: tools})
 		if est < target {

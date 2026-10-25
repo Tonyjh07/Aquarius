@@ -43,12 +43,12 @@ func newRawSession(t *testing.T, streams ...*scriptStream) (*Session, *scriptLLM
 // findUserParts 返回首个带指定种类分片的 user 消息内容。
 func findUserParts(req port.GenerateRequest, kind conversation.PartKind) []port.PromptPart {
 	for _, m := range req.Messages {
-		if m.Role != "user" {
+		if m.Role != port.PromptUser {
 			continue
 		}
 		for _, p := range m.Content {
-			if (kind == conversation.PartImage && p.Kind == "image") ||
-				(kind != conversation.PartImage && p.Kind == "text" && strings.TrimSpace(p.Text) != "") {
+			if (kind == conversation.PartImage && p.Kind == port.PromptImage) ||
+				(kind != conversation.PartImage && p.Kind == port.PromptText && strings.TrimSpace(p.Text) != "") {
 				return m.Content
 			}
 		}
@@ -88,7 +88,7 @@ func TestSessionRawFilePipeline(t *testing.T) {
 	}
 	found := false
 	for _, p := range parts {
-		if p.Kind == "image" && len(p.Data) > 0 && p.MIME == "image/png" {
+		if p.Kind == port.PromptImage && len(p.Data) > 0 && p.MIME == "image/png" {
 			found = true
 		}
 	}
@@ -237,7 +237,7 @@ func TestSessionRawClipboardPipeline(t *testing.T) {
 	}
 	found := false
 	for _, p := range parts {
-		if p.Kind == "image" && len(p.Data) > 0 && p.MIME == "image/png" {
+		if p.Kind == port.PromptImage && len(p.Data) > 0 && p.MIME == "image/png" {
 			found = true
 		}
 	}

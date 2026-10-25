@@ -220,7 +220,7 @@ func TestRetryModelsAndCounterForward(t *testing.T) {
 
 // TestTruncateFitsAndNotices 裁剪发生：内层收到裁后请求、notice 收到省略条数。
 func TestTruncateFitsAndNotices(t *testing.T) {
-	trimmed := []port.PromptMessage{{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: "kept"}}}}
+	trimmed := []port.PromptMessage{{Role: port.PromptSystem, Content: []port.PromptPart{{Kind: port.PromptText, Text: "kept"}}}}
 	var noticed []int
 	var got []port.PromptMessage
 	inner := &captureLLM{
@@ -248,7 +248,7 @@ func TestTruncateNoNoticeWhenUnderBudget(t *testing.T) {
 	inner := &captureLLM{
 		onGenerate: func(req port.GenerateRequest) { got = req.Messages },
 	}
-	orig := []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}}
+	orig := []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}}
 	tr := NewTruncate(inner, func(_ context.Context, req port.GenerateRequest) (port.GenerateRequest, int) {
 		return req, 0
 	}, func(int) { t.Fatal("未超预算不应通知") })
@@ -314,7 +314,7 @@ func TestAuditLLMStreamLine(t *testing.T) {
 	l := AuditLLM(inner, a)
 	s, err := l.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user"}, {Role: "assistant"}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser}, {Role: port.PromptAssistant}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)

@@ -10,9 +10,31 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
+// PromptKind 装配后内容分片的种类（D227）。与树上的 conversation.PartKind 不是同一套取值：
+// 领域侧含 doc / thinking 这类「树上怎么存」的区分，投影到模型请求只剩 text 与 image
+// （thinking 走消息级 Reasoning，doc 已在前置摄取阶段拍平成 text）。
+type PromptKind string
+
+const (
+	PromptText  PromptKind = "text"
+	PromptImage PromptKind = "image"
+)
+
+// PromptRole 装配后一条消息的角色（D227）。tool 仅为 **API 投影概念**（OpenAI 协议要求
+// assistant(tool_calls)→tool 应答交错）；树上无 tool 节点，装配期由 assistant 节点的
+// Tool 分片拆出（D95）。
+type PromptRole string
+
+const (
+	PromptSystem    PromptRole = "system"
+	PromptUser      PromptRole = "user"
+	PromptAssistant PromptRole = "assistant"
+	PromptTool      PromptRole = "tool"
+)
+
 // PromptPart 装配后发给模型的内容片段。
 type PromptPart struct {
-	Kind string // "text" | "image"
+	Kind PromptKind
 	Text string
 	MIME string
 	Data []byte // 图片字节，由应用层经 AttachmentStore 解析后内联
@@ -20,7 +42,7 @@ type PromptPart struct {
 
 // PromptMessage 装配后的一条模型消息。
 type PromptMessage struct {
-	Role    string // "system" | "user" | "assistant" | "tool"
+	Role    PromptRole
 	Content []PromptPart
 	// Reasoning role=assistant 的思维链回传承载（D42）：适配器映射为 reasoning_content 等
 	// 消息级字段；空 = 无思考或 config `model.echo_thinking` 关闭（装配层过滤）。

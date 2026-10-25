@@ -60,7 +60,7 @@ func TestRunTextRound(t *testing.T) {
 
 	// 请求装配：system 在首位 + 用户消息；关联 ID 即提交节点 ID。
 	req := llm.requests[0]
-	if len(req.Messages) != 2 || req.Messages[0].Role != "system" || req.Messages[1].Role != "user" {
+	if len(req.Messages) != 2 || req.Messages[0].Role != port.PromptSystem || req.Messages[1].Role != port.PromptUser {
 		t.Fatalf("messages = %+v", req.Messages)
 	}
 	if req.Messages[1].Content[0].Text != "hi" || req.Model != "test-model" {
@@ -144,7 +144,7 @@ func TestRunToolRound(t *testing.T) {
 		t.Fatalf("second request msgs = %d, want 4", len(msgs))
 	}
 	last := msgs[3]
-	if last.Role != "tool" || last.CallID != "call_1" || last.Content[0].Text != "pong" {
+	if last.Role != port.PromptTool || last.CallID != "call_1" || last.Content[0].Text != "pong" {
 		t.Fatalf("tool msg = %+v", last)
 	}
 	if len(msgs[2].ToolCalls) != 1 || msgs[2].ToolCalls[0].ID != "call_1" {
@@ -520,7 +520,7 @@ func TestRunMultiRoundSingleNode(t *testing.T) {
 	}
 	// 第 2 轮请求：in-flight 投影含第 1 轮调用声明与 tool 应答。
 	msgs2 := llm.requests[1].Messages
-	if len(msgs2) != 4 || msgs2[2].ToolCalls[0].ID != "c1" || msgs2[3].Role != "tool" || msgs2[3].Content[0].Text != "一" {
+	if len(msgs2) != 4 || msgs2[2].ToolCalls[0].ID != "c1" || msgs2[3].Role != port.PromptTool || msgs2[3].Content[0].Text != "一" {
 		t.Fatalf("round2 request = %+v", msgs2)
 	}
 	// 第 3 轮请求：两轮分片同段投影（assistant 双调用 + 双应答）。
@@ -665,14 +665,14 @@ func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
 
 	// 请求：结构化压缩指令在首位，历史紧随，尾部输出提示。
 	req := llm.requests[0]
-	if req.Messages[0].Role != "system" || !strings.Contains(req.Messages[0].Content[0].Text, "## Objective") {
+	if req.Messages[0].Role != port.PromptSystem || !strings.Contains(req.Messages[0].Content[0].Text, "## Objective") {
 		t.Fatalf("messages[0] = %+v, want 结构化压缩指令", req.Messages[0])
 	}
-	if len(req.Messages) != 3 || req.Messages[1].Role != "user" || req.Messages[1].Content[0].Text != "hi" {
+	if len(req.Messages) != 3 || req.Messages[1].Role != port.PromptUser || req.Messages[1].Content[0].Text != "hi" {
 		t.Fatalf("messages = %+v, want [指令, hi, 提示]", req.Messages)
 	}
 	last := req.Messages[2]
-	if last.Role != "user" || !strings.Contains(last.Content[0].Text, "summary") {
+	if last.Role != port.PromptUser || !strings.Contains(last.Content[0].Text, "summary") {
 		t.Fatalf("last = %+v, want 输出提示", last)
 	}
 
@@ -681,7 +681,7 @@ func TestAgentCompactSummarizesAndSetsWatermark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	if len(msgs) != 1 || msgs[0].Role != "system" || msgText(msgs[0]) != summaryPrefix+summaryText {
+	if len(msgs) != 1 || msgs[0].Role != port.PromptSystem || msgText(msgs[0]) != summaryPrefix+summaryText {
 		t.Fatalf("msgs = %+v, want 水位裁剪后仅 [摘要]", msgs)
 	}
 	if err := c.Validate(); err != nil {
@@ -776,13 +776,13 @@ func TestBuildRequestConfigFallbackWithoutPersona(t *testing.T) {
 	if len(req.Messages) != 3 {
 		t.Fatalf("messages = %d, want 3 (config system, 摘要, 新问题): %+v", len(req.Messages), req.Messages)
 	}
-	if req.Messages[0].Role != "system" || !strings.HasPrefix(req.Messages[0].Content[0].Text, defaultSystem) {
+	if req.Messages[0].Role != port.PromptSystem || !strings.HasPrefix(req.Messages[0].Content[0].Text, defaultSystem) {
 		t.Fatalf("messages[0] = %+v, want 内置 system 兜底", req.Messages[0])
 	}
-	if req.Messages[1].Role != "system" || msgText(req.Messages[1]) != summaryPrefix+"摘要" {
+	if req.Messages[1].Role != port.PromptSystem || msgText(req.Messages[1]) != summaryPrefix+"摘要" {
 		t.Fatalf("messages[1] = %+v, want 摘要水位", req.Messages[1])
 	}
-	if req.Messages[2].Role != "user" || req.Messages[2].Content[0].Text != "新问题" {
+	if req.Messages[2].Role != port.PromptUser || req.Messages[2].Content[0].Text != "新问题" {
 		t.Fatalf("messages[2] = %+v", req.Messages[2])
 	}
 }
@@ -832,7 +832,7 @@ func TestBuildRequestTreePersonaReplacesConfig(t *testing.T) {
 	if len(req.Messages) != 2 {
 		t.Fatalf("messages = %d, want 2 (persona system + user)", len(req.Messages))
 	}
-	if req.Messages[0].Role != "system" || req.Messages[0].Content[0].Text != "树内人格" {
+	if req.Messages[0].Role != port.PromptSystem || req.Messages[0].Content[0].Text != "树内人格" {
 		t.Fatalf("messages[0] = %+v, want 树内 persona", req.Messages[0])
 	}
 }

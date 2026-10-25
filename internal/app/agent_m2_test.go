@@ -68,7 +68,7 @@ func TestRunMemoryInjection(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	sys := llm.requests[0].Messages[0]
-	if sys.Role != "system" {
+	if sys.Role != port.PromptSystem {
 		t.Fatalf("首条 = %+v", sys)
 	}
 	var text strings.Builder
@@ -306,7 +306,7 @@ func TestContextCompactToolRound(t *testing.T) {
 	}
 	sawTool := false
 	for _, m := range last.Messages {
-		if m.Role == "tool" && m.CallID == "cc1" {
+		if m.Role == port.PromptTool && m.CallID == "cc1" {
 			sawTool = true
 		}
 	}

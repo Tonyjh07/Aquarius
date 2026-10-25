@@ -131,7 +131,7 @@ func TestResponsesGenerateStreams(t *testing.T) {
 
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "gpt-5",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -189,15 +189,15 @@ func TestResponsesRequestShape(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "gpt-5",
 		Messages: []port.PromptMessage{
-			{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: "sys"}}},
-			{Role: "user", Content: []port.PromptPart{
-				{Kind: "text", Text: "看图"},
-				{Kind: "image", MIME: "image/jpeg", Data: []byte{0x01, 0x02}},
+			{Role: port.PromptSystem, Content: []port.PromptPart{{Kind: port.PromptText, Text: "sys"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{
+				{Kind: port.PromptText, Text: "看图"},
+				{Kind: port.PromptImage, MIME: "image/jpeg", Data: []byte{0x01, 0x02}},
 			}},
-			{Role: "assistant", Reasoning: "想过", ReasoningSignature: sig,
-				Content:   []port.PromptPart{{Kind: "text", Text: "答"}},
+			{Role: port.PromptAssistant, Reasoning: "想过", ReasoningSignature: sig,
+				Content:   []port.PromptPart{{Kind: port.PromptText, Text: "答"}},
 				ToolCalls: []tool.Call{{ID: "call_1", Name: "echo", Args: json.RawMessage(`{"m":"x"}`)}}},
-			{Role: "tool", CallID: "call_1", Content: []port.PromptPart{{Kind: "text", Text: "pong"}}},
+			{Role: port.PromptTool, CallID: "call_1", Content: []port.PromptPart{{Kind: port.PromptText, Text: "pong"}}},
 		},
 		Tools:  []tool.Spec{{Name: "echo", Description: "回声", Schema: json.RawMessage(`{"type":"object","properties":{}}`)}},
 		Params: port.Sampling{ReasoningEffort: "high", Thinking: &on, Temperature: fptr(0.5)},
@@ -300,7 +300,7 @@ func TestResponsesNoReasoningParams(t *testing.T) {
 
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "gpt-4.1",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -317,7 +317,7 @@ func TestResponsesNoReasoningParams(t *testing.T) {
 	off := false
 	s2, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "gpt-5",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{Thinking: &off, ReasoningEffort: "high"},
 	})
 	if err != nil {
@@ -338,9 +338,9 @@ func TestResponsesForeignSignatureIgnored(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "gpt-5",
 		Messages: []port.PromptMessage{
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-			{Role: "assistant", Reasoning: "想过", ReasoningSignature: "anthropic:whatever",
-				Content: []port.PromptPart{{Kind: "text", Text: "答"}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+			{Role: port.PromptAssistant, Reasoning: "想过", ReasoningSignature: "anthropic:whatever",
+				Content: []port.PromptPart{{Kind: port.PromptText, Text: "答"}}},
 		},
 	})
 	if err != nil {
@@ -363,8 +363,8 @@ func TestResponsesReasoningWithoutSuccessor(t *testing.T) {
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "gpt-5",
 		Messages: []port.PromptMessage{
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}},
-			{Role: "assistant", Reasoning: "只想过没说话", ReasoningSignature: encodeResponsesSignature("rs_1", "E")},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}},
+			{Role: port.PromptAssistant, Reasoning: "只想过没说话", ReasoningSignature: encodeResponsesSignature("rs_1", "E")},
 		},
 	})
 	if err != nil {
@@ -390,7 +390,7 @@ func TestResponsesFallbackFromCompleted(t *testing.T) {
 
 	s, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "gpt-5",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 	})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -423,7 +423,7 @@ func TestResponsesErrorEvents(t *testing.T) {
 		c := responsesClient(t, srv.URL)
 		s, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model:    "m",
-			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+			Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		})
 		if err != nil {
 			t.Fatalf("generate: %v", err)
@@ -459,7 +459,7 @@ func TestResponsesStatusErrors(t *testing.T) {
 		c := responsesClient(t, srv.URL)
 		_, err := c.Generate(context.Background(), port.GenerateRequest{
 			Model:    "m",
-			Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+			Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 			Params:   port.Sampling{ReasoningEffort: "high"},
 		})
 		srv.Close()
@@ -514,7 +514,7 @@ func TestResponsesNoStripRetry(t *testing.T) {
 	on := true
 	_, err = c.Generate(context.Background(), port.GenerateRequest{
 		Model:    "m",
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: "hi"}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{ReasoningEffort: "high", Thinking: &on},
 	})
 	if err == nil {
@@ -595,7 +595,7 @@ func TestResponsesAssistantImageRejected(t *testing.T) {
 	_, err := c.Generate(context.Background(), port.GenerateRequest{
 		Model: "m",
 		Messages: []port.PromptMessage{
-			{Role: "assistant", Content: []port.PromptPart{{Kind: "image", MIME: "image/png", Data: []byte{1}}}},
+			{Role: port.PromptAssistant, Content: []port.PromptPart{{Kind: port.PromptImage, MIME: "image/png", Data: []byte{1}}}},
 		},
 	})
 	if err == nil {

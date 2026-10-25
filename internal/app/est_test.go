@@ -37,8 +37,8 @@ func TestEstimateTokensCharsPerToken(t *testing.T) {
 func TestEstimateRequestPayload(t *testing.T) {
 	req := port.GenerateRequest{
 		Messages: []port.PromptMessage{
-			{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("s", 8)}}},
-			{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("u", 16)}}},
+			{Role: port.PromptSystem, Content: []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("s", 8)}}},
+			{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("u", 16)}}},
 		},
 	}
 	payload, overhead := payloadOf(req)
@@ -61,12 +61,12 @@ func TestEstimateRequestPayload(t *testing.T) {
 // TestPayloadIncludesReasoning D42：回传思考计入请求 payload——估算口径 = 发送口径
 // （/usage、自动压缩阈值按实际发出的文本计）。
 func TestPayloadIncludesReasoning(t *testing.T) {
-	text := []port.PromptPart{{Kind: "text", Text: "答案"}}
+	text := []port.PromptPart{{Kind: port.PromptText, Text: "答案"}}
 	base := port.GenerateRequest{
-		Messages: []port.PromptMessage{{Role: "assistant", Content: text}},
+		Messages: []port.PromptMessage{{Role: port.PromptAssistant, Content: text}},
 	}
 	withThink := port.GenerateRequest{
-		Messages: []port.PromptMessage{{Role: "assistant", Reasoning: strings.Repeat("思", 60), Content: text}},
+		Messages: []port.PromptMessage{{Role: port.PromptAssistant, Reasoning: strings.Repeat("思", 60), Content: text}},
 	}
 	p0, _ := payloadOf(base)
 	p1, _ := payloadOf(withThink)
@@ -83,7 +83,7 @@ func TestPayloadIncludesReasoning(t *testing.T) {
 func TestPayloadIncludesReasoningSignature(t *testing.T) {
 	sig := strings.Repeat("s", 200)
 	req := port.GenerateRequest{
-		Messages: []port.PromptMessage{{Role: "assistant", ReasoningSignature: sig}},
+		Messages: []port.PromptMessage{{Role: port.PromptAssistant, ReasoningSignature: sig}},
 	}
 	p, _ := payloadOf(req)
 	if got := strings.Count(p, "s"); got != 200 {
@@ -102,7 +102,7 @@ func (f *fakeCounter) CountTokens(context.Context, string) (int, error) { return
 // TestEstimateCounterOverrides 精确计数实现即覆盖估算；报错回落估算。
 func TestEstimateCounterOverrides(t *testing.T) {
 	req := port.GenerateRequest{
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("a", 400)}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("a", 400)}}}},
 	}
 	payload, overhead := payloadOf(req)
 
@@ -117,7 +117,7 @@ func TestEstimateCounterOverrides(t *testing.T) {
 // TestEstimateFallbackOnCounterError 计数器报错静默回落通用估算。
 func TestEstimateFallbackOnCounterError(t *testing.T) {
 	req := port.GenerateRequest{
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("a", 40)}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("a", 40)}}}},
 	}
 	payload, overhead := payloadOf(req)
 	e := newEstimator(&errCounter{})
@@ -163,7 +163,7 @@ func TestCalibrate(t *testing.T) {
 	e2 := newEstimator(nil)
 	e2.Calibrate(10, 20) // ×2
 	req := port.GenerateRequest{
-		Messages: []port.PromptMessage{{Role: "user", Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("a", 40)}}}},
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("a", 40)}}}},
 	}
 	raw, _ := newEstimator(nil).Estimate(context.Background(), req)
 	got, _ := e2.Estimate(context.Background(), req)
@@ -175,11 +175,11 @@ func TestCalibrate(t *testing.T) {
 // TestTrimOldestOrphanTools P0-2 回归：任何形态下都不得留下"声明 assistant 已被裁掉"
 // 的前导孤儿 tool——否则压缩失败兜底会把 Turn 打成服务端 400。
 func TestTrimOldestOrphanTools(t *testing.T) {
-	sys := port.PromptMessage{Role: "system", Content: []port.PromptPart{{Kind: "text", Text: "人格"}}}
+	sys := port.PromptMessage{Role: port.PromptSystem, Content: []port.PromptPart{{Kind: port.PromptText, Text: "人格"}}}
 	asstOf := func(n int) port.PromptMessage {
 		return port.PromptMessage{
-			Role:      "assistant",
-			Content:   []port.PromptPart{{Kind: "text", Text: strings.Repeat("a", n)}},
+			Role:      port.PromptAssistant,
+			Content:   []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("a", n)}},
 			ToolCalls: []tool.Call{{ID: "c1", Name: "echo"}},
 		}
 	}
@@ -187,17 +187,17 @@ func TestTrimOldestOrphanTools(t *testing.T) {
 		return port.PromptMessage{
 			Role:    "tool",
 			CallID:  id,
-			Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("t", n)}},
+			Content: []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("t", n)}},
 		}
 	}
 	noOrphan := func(t *testing.T, kept []port.PromptMessage) {
 		t.Helper()
 		// 首条非 system 不得是 tool（其声明者必在窗口内且位于其前）。
 		for _, m := range kept {
-			if m.Role == "system" {
+			if m.Role == port.PromptSystem {
 				continue
 			}
-			if m.Role == "tool" {
+			if m.Role == port.PromptTool {
 				t.Fatalf("留下前导孤儿 tool: %+v", kept)
 			}
 			break
@@ -234,30 +234,30 @@ func TestTrimOldestOrphanTools(t *testing.T) {
 	// D：assistant 与其 tool 结构成对保留时（未被裁）不得误伤。
 	kept, _ = e.trimOldest(context.Background(),
 		[]port.PromptMessage{sys, asstOf(10), toolOf("c1", 10)}, 100000)
-	if len(kept) != 3 || kept[1].Role != "assistant" || kept[2].Role != "tool" {
+	if len(kept) != 3 || kept[1].Role != port.PromptAssistant || kept[2].Role != port.PromptTool {
 		t.Fatalf("D: 不应改动: %+v", kept)
 	}
 }
 
 // TestTrimOldest 保 leading system 与最近、丢中间；孤儿 tool 结果一并裁掉；至少留 1 条。
 func TestTrimOldest(t *testing.T) {
-	msg := func(role, text string) port.PromptMessage {
-		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: "text", Text: text}}}
+	msg := func(role port.PromptRole, text string) port.PromptMessage {
+		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: port.PromptText, Text: text}}}
 	}
 	e := newEstimator(nil)
 
-	sys := msg("system", "人格")
+	sys := msg(port.PromptSystem, "人格")
 	// 每条 ~25 tokens（100 ASCII），target 60 → 只留得下 system + 最近 1 条。
 	var msgs []port.PromptMessage
 	msgs = append(msgs, sys)
 	for i := 0; i < 6; i++ {
-		msgs = append(msgs, msg("user", strings.Repeat("x", 100)))
+		msgs = append(msgs, msg(port.PromptUser, strings.Repeat("x", 100)))
 	}
 	kept, omitted := e.trimOldest(context.Background(), msgs, 60)
 	if omitted == 0 {
 		t.Fatal("应有裁剪")
 	}
-	if kept[0].Role != "system" {
+	if kept[0].Role != port.PromptSystem {
 		t.Fatalf("leading system 被裁: %+v", kept[0])
 	}
 	if len(kept) != 2 { // system + 1 条非 system
@@ -268,20 +268,20 @@ func TestTrimOldest(t *testing.T) {
 	}
 
 	// 孤儿 tool：system, assistant(calls), tool, user —— 裁掉 assistant 后 tool 必须连带裁掉。
-	toolMsg := port.PromptMessage{Role: "tool", CallID: "c1", Content: []port.PromptPart{{Kind: "text", Text: strings.Repeat("t", 100)}}}
+	toolMsg := port.PromptMessage{Role: port.PromptTool, CallID: "c1", Content: []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("t", 100)}}}
 	asst := port.PromptMessage{
-		Role:      "assistant",
-		Content:   []port.PromptPart{{Kind: "text", Text: strings.Repeat("a", 100)}},
+		Role:      port.PromptAssistant,
+		Content:   []port.PromptPart{{Kind: port.PromptText, Text: strings.Repeat("a", 100)}},
 		ToolCalls: []tool.Call{{ID: "c1", Name: "echo"}},
 	}
-	msgs2 := []port.PromptMessage{sys, asst, toolMsg, msg("user", strings.Repeat("u", 100))}
+	msgs2 := []port.PromptMessage{sys, asst, toolMsg, msg(port.PromptUser, strings.Repeat("u", 100))}
 	kept2, _ := e.trimOldest(context.Background(), msgs2, 60)
 	for _, m := range kept2 {
-		if m.Role == "tool" {
+		if m.Role == port.PromptTool {
 			t.Fatalf("孤儿 tool 未裁掉: %+v", kept2)
 		}
 	}
-	if kept2[len(kept2)-1].Role != "user" {
+	if kept2[len(kept2)-1].Role != port.PromptUser {
 		t.Fatalf("结尾应是 user: %+v", kept2)
 	}
 
@@ -290,7 +290,7 @@ func TestTrimOldest(t *testing.T) {
 	if k, o := e.trimOldest(context.Background(), only, 1); len(k) != 1 || o != 0 {
 		t.Fatalf("全 system: %d/%d", len(k), o)
 	}
-	one := []port.PromptMessage{sys, msg("user", strings.Repeat("y", 1000))}
+	one := []port.PromptMessage{sys, msg(port.PromptUser, strings.Repeat("y", 1000))}
 	if k, o := e.trimOldest(context.Background(), one, 1); len(k) != 2 || o != 0 {
 		t.Fatalf("至少留 1 条非 system: %d/%d", len(k), o)
 	}
@@ -299,20 +299,20 @@ func TestTrimOldest(t *testing.T) {
 // TestTrimOldestExported D14 装配根注入入口：与 trimOldest 同约束
 // （保 leading system 与最近一条、超 target 才动刀）。
 func TestTrimOldestExported(t *testing.T) {
-	text := func(role, s string) port.PromptMessage {
-		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: "text", Text: s}}}
+	text := func(role port.PromptRole, s string) port.PromptMessage {
+		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: port.PromptText, Text: s}}}
 	}
 	msgs := []port.PromptMessage{
-		text("system", "persona"),
-		text("user", strings.Repeat("长", 1000)),
-		text("assistant", strings.Repeat("a", 1000)),
-		text("user", "latest"),
+		text(port.PromptSystem, "persona"),
+		text(port.PromptUser, strings.Repeat("长", 1000)),
+		text(port.PromptAssistant, strings.Repeat("a", 1000)),
+		text(port.PromptUser, "latest"),
 	}
 	kept, omitted := TrimOldest(context.Background(), nil, msgs, 10)
 	if omitted == 0 {
 		t.Fatal("应有裁剪")
 	}
-	if len(kept) != 2 || kept[0].Role != "system" || kept[1].Content[0].Text != "latest" {
+	if len(kept) != 2 || kept[0].Role != port.PromptSystem || kept[1].Content[0].Text != "latest" {
 		t.Fatalf("kept = %+v, want [system latest]", kept)
 	}
 	// 未超预算（target 很大）：原样返回。
@@ -325,13 +325,13 @@ func TestTrimOldestExported(t *testing.T) {
 // TestTrimOldestCountsToolSpecs §14 遗留：工具声明随估算计入——
 // 只按消息文本估会在带工具的请求上裁不足（工具声明可达 1–2k tokens）。
 func TestTrimOldestCountsToolSpecs(t *testing.T) {
-	text := func(role, s string) port.PromptMessage {
-		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: "text", Text: s}}}
+	text := func(role port.PromptRole, s string) port.PromptMessage {
+		return port.PromptMessage{Role: role, Content: []port.PromptPart{{Kind: port.PromptText, Text: s}}}
 	}
 	msgs := []port.PromptMessage{
-		text("system", "persona"),
-		text("user", strings.Repeat("a", 2000)), // ≈500 tokens
-		text("user", "latest"),                  // ≈2 tokens + 结构
+		text(port.PromptSystem, "persona"),
+		text(port.PromptUser, strings.Repeat("a", 2000)), // ≈500 tokens
+		text(port.PromptUser, "latest"),                  // ≈2 tokens + 结构
 	}
 	tools := []tool.Spec{{Name: "t1", Description: strings.Repeat("x", 4000)}} // ≈1000 tokens
 	e := newEstimator(nil)

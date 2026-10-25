@@ -393,22 +393,22 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	if !(len(treePath) > 1 && treePath[1].Role == conversation.RoleSystem) {
 		sysText, _ := a.persona.Compose()
 		msgs = append(msgs, port.PromptMessage{
-			Role:    "system",
-			Content: []port.PromptPart{{Kind: "text", Text: sysText}},
+			Role:    port.PromptSystem,
+			Content: []port.PromptPart{{Kind: port.PromptText, Text: sysText}},
 		})
 	}
 	msgs = append(msgs, path...)
 	// 记忆注入（DESIGN §7.1 承载 / D23）：索引（全局+当前会话）与会话记忆全文追加进
 	// 首条 system；msgs[0] 恒为 system（persona 或兜底）。读取失败静默跳过，不阻断对话。
-	if block := a.memoryBlock(ctx, c.ID); block != "" && len(msgs) > 0 && msgs[0].Role == "system" {
-		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: "text", Text: block})
+	if block := a.memoryBlock(ctx, c.ID); block != "" && len(msgs) > 0 && msgs[0].Role == port.PromptSystem {
+		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: block})
 	}
 	// 常驻声明（D170 口径三）：工具输出、文件内容、命令输出是**数据**而不是指令。
 	// 每次装配追加进首条 system——它在树外，`/system` 改人格不会把它改掉；也不逐条给
 	// 工具结果套围栏（那会把上下文撑爆，还让正常代码读起来像可疑数据）。
 	// 单列一条 system 会让"首条 system 是人格"的既有口径分叉，故并进同一条正文。
-	if len(msgs) > 0 && msgs[0].Role == "system" {
-		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: "text", Text: "\n\n" + untrustedDataNote})
+	if len(msgs) > 0 && msgs[0].Role == port.PromptSystem {
+		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: "\n\n" + untrustedDataNote})
 	}
 
 	req := port.GenerateRequest{

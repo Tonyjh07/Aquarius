@@ -147,16 +147,16 @@ func encodeResponsesRequest(req port.GenerateRequest) ([]byte, error) {
 // content，而是按 Responses 的模型各占一个 item（这是它与 chat 最大的形状差异）。
 func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 	switch m.Role {
-	case "system", "user":
-		content, err := responsesContents(m.Content, "input_text", m.Role == "user")
+	case port.PromptSystem, port.PromptUser:
+		content, err := responsesContents(m.Content, "input_text", m.Role == port.PromptUser)
 		if err != nil {
 			return nil, err
 		}
 		if len(content) == 0 {
 			return nil, nil
 		}
-		return []any{responsesMessage{Type: "message", Role: m.Role, Content: content}}, nil
-	case "assistant":
+		return []any{responsesMessage{Type: "message", Role: string(m.Role), Content: content}}, nil
+	case port.PromptAssistant:
 		var (
 			reasoning any
 			items     []any
@@ -192,7 +192,7 @@ func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 			return append([]any{reasoning}, items...), nil
 		}
 		return items, nil
-	case "tool":
+	case port.PromptTool:
 		return []any{responsesFunctionOutput{
 			Type: "function_call_output", CallID: m.CallID, Output: flattenText(m.Content),
 		}}, nil
@@ -206,7 +206,7 @@ func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 func responsesContents(parts []port.PromptPart, textType string, allowImage bool) ([]any, error) {
 	out := make([]any, 0, len(parts))
 	for _, p := range parts {
-		if p.Kind == "image" {
+		if p.Kind == port.PromptImage {
 			if !allowImage {
 				return nil, errors.New("llm: 该角色的消息不接受图片分片")
 			}
