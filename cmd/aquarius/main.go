@@ -332,27 +332,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	w.newPluginHost(ctx, tc.confirmer)
 
 	w.sess, err = app.NewSession(ctx, app.SessionDeps{
-		Store:        w.store,
-		Agent:        agent,
-		IDs:          ids,
-		Clock:        systemClock{},
-		Persona:      sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
-		Level:        w.level,
-		SandboxPath:  w.sandboxDir,
-		Perms:        permSettings{w: w},
-		Confirmer:    tc.confirmer,
-		Jobs:         w.jobs,
-		Watches:      w.watcher,
-		Skills:       w.skills,             // D201：/skill 与 skill 工具同一份清单
-		SkillAdmin:   skillsAdminApp{w: w}, // D202：/skill install|remove|update
-		WatchCancel:  watchCancel{w: w},    // D167：切走/新建/删当前会话即撤两个轮询器
-		Ingestors:    []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
-		UI:           w.presenter,
-		Memories:     memoryOpener{w: w},
-		Plugins:      hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
-		Models:       modelCatalog{w: w},                                                        // D32/D173/D174：/model 读侧 + 探测
-		PersistModel: w.persist.persistModel,
-		Thinking:     thinkSettings{w: w}, // D34：/think 与 /effort 写回
+		Store:       w.store,
+		Agent:       agent,
+		IDs:         ids,
+		Clock:       systemClock{},
+		Persona:     sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
+		Level:       w.level,
+		SandboxPath: w.sandboxDir,
+		Perms:       permSettings{w: w},
+		Confirmer:   tc.confirmer,
+		Jobs:        w.jobs,
+		Watches:     w.watcher,
+		Skills:      w.skills,             // D201：/skill 与 skill 工具同一份清单
+		SkillAdmin:  skillsAdminApp{w: w}, // D202：/skill install|remove|update
+		WatchCancel: watchCancel{w: w},    // D167：切走/新建/删当前会话即撤两个轮询器
+		Ingestors:   []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
+		UI:          w.presenter,
+		Memories:    memoryOpener{w: w},
+		Plugins:     hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
+		Models:      modelCatalog{w: w},                                                        // D32/D173/D174：/model 读侧 + 切换 + 探测
+		ModelSwitch: modelCatalog{w: w},                                                        // D32：/model 切换写回
+		Thinking:    thinkSettings{w: w},                                                       // D34：/think 与 /effort 写回
 	})
 	if err != nil {
 		if ctx.Err() != nil {

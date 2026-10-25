@@ -110,6 +110,22 @@ var (
 	_ ModelProbe   = (*fakeModels)(nil)
 )
 
+// fakeModelSwitch app.ModelSwitcher 替身：记录写回的模型名，可令其失败。
+type fakeModelSwitch struct {
+	persisted []string
+	err       error
+}
+
+var _ ModelSwitcher = (*fakeModelSwitch)(nil)
+
+func (f *fakeModelSwitch) PersistModel(name string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.persisted = append(f.persisted, name)
+	return nil
+}
+
 // capsPtr 取能力位的指针形式（`ModelStatus.Caps` 用 nil 表示「未声明」，
 // 测试里要写「声明了三项中某几项」就得取地址）。
 func capsPtr(c port.ModelCaps) *port.ModelCaps { return &c }

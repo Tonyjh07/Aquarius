@@ -570,14 +570,15 @@ func (w *wiring) maxContextBudget() int {
 	return w.cfg.Model.effectiveMaxContext(global)
 }
 
-// modelCatalog 实现 app.ModelCatalog 与 app.ModelProbe（`/model` 的装配根一半）。
-// 两者合在一个类型里，是因为它们都只读 `wiring` 的同一份启动期快照与同一个探测入口，
-// 但**在 app 侧仍是两个接口**——读侧是纯查询，探测是带副作用的用户动作。
+// modelCatalog 实现 app.ModelCatalog、app.ModelProbe 与 app.ModelSwitcher（`/model` 的
+// 装配根一半）。三者合在一个类型里，因为都只触 `wiring` 的同一份启动期快照、同一个
+// cfgWriter；但**在 app 侧仍是三个接口**——读侧是纯查询，切换与探测都是带副作用的动作。
 type modelCatalog struct{ w *wiring }
 
 var (
-	_ app.ModelCatalog = modelCatalog{}
-	_ app.ModelProbe   = modelCatalog{}
+	_ app.ModelCatalog  = modelCatalog{}
+	_ app.ModelProbe    = modelCatalog{}
+	_ app.ModelSwitcher = modelCatalog{}
 )
 
 // Models /model 无参的可用清单：服务端名字表 + 配置里的能力位/窗口（D177）。
@@ -602,6 +603,11 @@ func (c modelCatalog) Current() app.ModelStatus {
 // Probe 能力探测（D174）：造一次性客户端 → 真请求 → 写回 config → 返回逐项结论。
 func (c modelCatalog) Probe(ctx context.Context, model string) (app.ProbeReport, error) {
 	return c.w.probeModel(ctx, model)
+}
+
+// PersistModel 切换后的模型名写回 config（D32）。
+func (c modelCatalog) PersistModel(name string) error {
+	return c.w.persist.persistModel(name)
 }
 
 // permSettings 实现 app.PermissionSettings（`/permission` 与 `/unattended` 的写回）。

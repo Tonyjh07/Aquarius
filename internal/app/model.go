@@ -48,6 +48,14 @@ type ModelProbe interface {
 	Probe(ctx context.Context, model string) (ProbeReport, error)
 }
 
+// ModelSwitcher 模型切换写回（`/model <name>`，D32）：把新模型名写进 config，成功后
+// 由命令面热切换 Agent。与 ModelCatalog 分开的理由同上——写回是副作用，读侧是查询；
+// 与 ModelProbe 分开是因为两者出错时用户看到的命令不同。
+type ModelSwitcher interface {
+	// PersistModel 把切换后的模型名写回 config；失败时命令面不动运行态。
+	PersistModel(name string) error
+}
+
 // ContextBudget 上下文预算的可读口径（D177：`/model` 展示用）。三处消费者（压缩阈值、
 // /usage 占用、硬保底截断）用的是同一个 Effective，这里只解释它从哪儿来。
 type ContextBudget struct {
@@ -101,11 +109,11 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 		return "", errors.New("用法: /model [name] 或 /model probe [name]")
 	}
 	name := strings.TrimSpace(args[0])
-	if s.persistModel == nil {
-		return "", errors.New("session: 未配置模型写回（SessionDeps.PersistModel），/model 切换不可用")
+	if s.modelSwitch == nil {
+		return "", errors.New("session: 未配置模型写回（SessionDeps.ModelSwitch），/model 切换不可用")
 	}
-	// 先持久化再热切换（同 persistLevel 口径：写回失败不动运行态）。
-	if err := s.persistModel(name); err != nil {
+	// 先持久化再热切换（同 /permission 口径：写回失败不动运行态）。
+	if err := s.modelSwitch.PersistModel(name); err != nil {
 		return "", fmt.Errorf("session: 写回 config: %w", err)
 	}
 	s.agent.setModel(name)

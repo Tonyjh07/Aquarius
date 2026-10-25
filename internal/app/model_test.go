@@ -63,18 +63,18 @@ func TestSessionModelCommand(t *testing.T) {
 	}
 
 	// 切换：先写回、后热切换。
-	var persisted string
-	s.persistModel = func(name string) error { persisted = name; return nil }
+	persist := &fakeModelSwitch{}
+	s.modelSwitch = persist
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"gpt-x"}}})
 	if err != nil || !strings.Contains(out, "已切换模型 → gpt-x") {
 		t.Fatalf("switch = %q, %v", out, err)
 	}
-	if persisted != "gpt-x" || s.agent.modelName() != "gpt-x" {
-		t.Fatalf("persisted = %q, agent = %q", persisted, s.agent.modelName())
+	if len(persist.persisted) != 1 || persist.persisted[0] != "gpt-x" || s.agent.modelName() != "gpt-x" {
+		t.Fatalf("persisted = %v, agent = %q", persist.persisted, s.agent.modelName())
 	}
 
-	// 写回失败不动运行态（同 persistLevel 口径）。
-	s.persistModel = func(string) error { return errors.New("disk full") }
+	// 写回失败不动运行态（同 /permission 口径）。
+	persist.err = errors.New("disk full")
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"m3"}}}); err == nil ||
 		!strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("err = %v, want disk full", err)

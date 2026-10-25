@@ -65,7 +65,7 @@ type SessionDeps struct {
 	Models ModelCatalog
 	// PersistModel 把切换后的模型写回 config（D32，同 /permission 模式）；
 	// nil 时 /model 有参报"未配置持久化"。
-	PersistModel func(name string) error
+	ModelSwitch ModelSwitcher
 	// Prober 能力探测（D174：/model probe）。model 空 = 当前模型；装配根实现
 	// （造一次性客户端 → 真请求 → 写回 config → 返回逐项结论）。nil 时该子命令报错。
 	Prober ModelProbe
@@ -82,29 +82,29 @@ type CommandHandler func(ctx context.Context, args []string) (string, error)
 // M4 启用 /plugin 与动态 /mcp: 命令、/model，思考控制 /think /effort 随 D34 启用）。
 // 命令的文本输出经返回值交给装配根渲染，轮次过程输出走 Presenter——app 不直接接触 IO。
 type Session struct {
-	store        port.ConversationStore
-	agent        *Agent
-	ids          port.IDGen
-	clock        port.Clock
-	persona      *PersonaComposer
-	level        perm.Level
-	sandboxPath  string
-	perms        PermissionSettings
-	confirmer    port.Confirmer
-	jobs         jobAdmin
-	watches      port.WatchManager
-	skills       port.SkillCatalog
-	skillAdmin   SkillAdmin
-	watchCancel  WatcherCanceller
-	ingestors    []port.Ingestor
-	ui           port.Presenter
-	memories     MemoryOpener
-	plugins      PluginAdmin
-	models       ModelCatalog
-	persistModel func(name string) error
-	prober       ModelProbe
-	thinking     ThinkingSettings
-	cur          *conversation.Conversation
+	store       port.ConversationStore
+	agent       *Agent
+	ids         port.IDGen
+	clock       port.Clock
+	persona     *PersonaComposer
+	level       perm.Level
+	sandboxPath string
+	perms       PermissionSettings
+	confirmer   port.Confirmer
+	jobs        jobAdmin
+	watches     port.WatchManager
+	skills      port.SkillCatalog
+	skillAdmin  SkillAdmin
+	watchCancel WatcherCanceller
+	ingestors   []port.Ingestor
+	ui          port.Presenter
+	memories    MemoryOpener
+	plugins     PluginAdmin
+	models      ModelCatalog
+	modelSwitch ModelSwitcher
+	prober      ModelProbe
+	thinking    ThinkingSettings
+	cur         *conversation.Conversation
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
 	// 发布，UI 事件循环 goroutine 经 Branches 无锁读（见 tree.go）。
 	tree atomic.Pointer[treeSnapshot]
@@ -166,30 +166,30 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)
 	}
 	s := &Session{
-		store:        d.Store,
-		agent:        d.Agent,
-		ids:          d.IDs,
-		clock:        d.Clock,
-		persona:      persona,
-		level:        level,
-		sandboxPath:  d.SandboxPath,
-		perms:        d.Perms,
-		confirmer:    d.Confirmer,
-		jobs:         d.Jobs,
-		watches:      d.Watches,
-		skills:       d.Skills,
-		skillAdmin:   d.SkillAdmin,
-		watchCancel:  d.WatchCancel,
-		ingestors:    d.Ingestors,
-		ui:           d.UI,
-		memories:     d.Memories,
-		plugins:      d.Plugins,
-		models:       d.Models,
-		persistModel: d.PersistModel,
-		prober:       d.Prober,
-		thinking:     d.Thinking,
-		dynamic:      map[string]CommandHandler{},
-		injectCh:     make(chan pendingInjection, injectQueueCap),
+		store:       d.Store,
+		agent:       d.Agent,
+		ids:         d.IDs,
+		clock:       d.Clock,
+		persona:     persona,
+		level:       level,
+		sandboxPath: d.SandboxPath,
+		perms:       d.Perms,
+		confirmer:   d.Confirmer,
+		jobs:        d.Jobs,
+		watches:     d.Watches,
+		skills:      d.Skills,
+		skillAdmin:  d.SkillAdmin,
+		watchCancel: d.WatchCancel,
+		ingestors:   d.Ingestors,
+		ui:          d.UI,
+		memories:    d.Memories,
+		plugins:     d.Plugins,
+		models:      d.Models,
+		modelSwitch: d.ModelSwitch,
+		prober:      d.Prober,
+		thinking:    d.Thinking,
+		dynamic:     map[string]CommandHandler{},
+		injectCh:    make(chan pendingInjection, injectQueueCap),
 	}
 
 	list, err := d.Store.List(ctx)
