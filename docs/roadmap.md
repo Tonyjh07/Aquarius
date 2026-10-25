@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-25 @ 9c5f3aa -->
+<!-- docs-sync: 2026-10-25 @ 07fef4b -->
 
 > **定位（2026-10-23 起）**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，
 > 以及里程碑基线。**未来要做什么、按什么顺序、什么节奏**，一律看 [plan.md](plan.md)。
@@ -100,6 +100,8 @@
 | P2-2 | `7912324 refactor: split the job port by consumer` | `JobManager` 拆成 `JobStarter`/`JobRunner`/`JobReader`/`JobKiller`，组合体保留；各工具与 `/jobs` 只声明实际用到的方法；`requireJobs` 改泛型以保住入参的窄类型（7 files, +66/−18） |
 | P2-3 | `27c39ad refactor: give prompt parts and messages named kinds and roles` | 文档笔 `d4b5aa2`（`DESIGN.md` §5.1 + D227）。`PromptPart.Kind` / `PromptMessage.Role` 由裸 `string` 换成 `port.PromptKind`/`PromptRole` 与 6 个常量；四家适配器的 `switch` 从字符串字面量改常量，协议字符串只在写请求体、读响应体处转；生产侧转换点收敛到 `wire.go`/`responses.go` 两处（21 files, +263/−240） |
 | P2-4 | `9c5f3aa refactor: drop the last anonymous callback from the session deps` | 三笔：`159a005` 模型读侧收成 `ModelCatalog` + `ModelProbe`，四个启动期静态值合成 `ModelStatus` 一次取回；`b8555c2` 权限/思考/撤观察者/记忆编辑器收成 `PermissionSettings`/`ThinkingSettings`/`WatcherCanceller`/`MemoryOpener`；`9c5f3aa` 模型切换收成 `ModelSwitcher`（D228）。`SessionDeps` 字段 29→22，匿名回调 14→0，装配根行为不变（三笔合计 13 files, +563/−300） |
+| P2-7a | `40e0197 refactor: delete the unused relation-map variant` | 删掉 d127 对照档：全仓无测试覆盖它（`REL_PHYS` 在 `_test.go` 零命中，`step()` 首行就分派到源档），190 行在全部测试路径上不执行。删 `accumulate`、常量块、`step()` 分派、`colGap` 两档分支与只服务它的四个字段；两档差异写进 `relation-map-design.md`，原实现留 `relmap-d127` tag（5 files, +72/−335，`relmap_layout.go` 803→567、`relmap_layout_source.go` 441→357） |
+| P2-5 | `07fef4b refactor: split the settings save flow into collect and commit` | 四笔：`d441b7c` 四个设置 DTO 搬进 `port`、`uigui` 留类型别名（D229，2 files, +140/−104，零字面量改动）；`b462ee0` 取值范围收成 20 个 `port.Settings*` 常量，提示文案由常量拼（D230，11 files, +146/−52，数值一处未变）；`6ff9242` 采样四段文本的解析收进 `port.ParseSamplingText`，界面前置校验与写回解析同一份实现（D231，6 files, +228/−110，删 `cmd` 侧重复解析 49 行）；`07fef4b` `saveSettings` 271 行拆成 `patch()` 采集校验 + `commitSettings()` 提交编排，报错返回零值 patch（D232，2 files, +190/−124） |
 
 **`v0.2.0-P1` 的落笔顺序**（每笔独立过全门禁、可单独回退）：
 
