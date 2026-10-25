@@ -48,6 +48,13 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 			return "", errors.New("session: 附件增删只适用于用户消息")
 		}
 	}
+	// 人格（会话首 system 节点）只能转移历史：另起新分支会把整棵对话留在旧分支、Head 落到
+	// 新人格上，转写区随之清空——界面上看起来像「改一句人格，对话没了」。图形界面把这一档
+	// 锁成转移历史，命令行也必须给出同一道拦截，否则同一个破坏性操作在两个前端一个有锁、
+	// 一个没有。
+	if old, ok := s.cur.Find(id); ok && s.isPersona(old) && opt.mode != conversation.Carry {
+		return "", errors.New("session: 编辑人格要用 --keep（转移历史）：另起新分支或复制历史会把现有对话留在旧分支，看起来像被清空")
+	}
 	parts, note, err := s.editPartsWithAttachments(ctx, id, opt)
 	if err != nil {
 		return "", err
@@ -139,6 +146,12 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 		return fmt.Sprintf("已重新生成（旧回答保留为分支；Head → %s）", s.cur.Head), nil
 	}
 	return fmt.Sprintf("已重新生成（Head → %s）", s.cur.Head), nil
+}
+
+// isPersona 报告节点是否为人格快照（会话首节点）：system 角色且父节点是结构根。
+// 人格可以改（D154），但只允许转移历史——见 execEdit 的拦截。
+func (s *Session) isPersona(m conversation.Message) bool {
+	return m.Role == conversation.RoleSystem && m.Parent == conversation.MessageID(s.cur.ID)
 }
 
 // resolveNode 把用户给出的节点标识解析为树中节点：先精确匹配，再按唯一前缀匹配

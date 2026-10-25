@@ -712,6 +712,31 @@ func TestSessionEditPersonaKeep(t *testing.T) {
 	}
 }
 
+// TestSessionEditPersonaRejectsBranchModes 人格只能转移历史：另起新分支或复制历史会把
+// 整棵对话留在旧分支、Head 落到新人格上，转写区随之清空（图形界面同样锁死这一档）。
+func TestSessionEditPersonaRejectsBranchModes(t *testing.T) {
+	store := newMemStore()
+	s, _ := newConfirmedSession(t, store, nil)
+	c := buildTree(t, s) // Head 在 u2
+	before, head := c.NodeCount(), c.Head
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"缺省另起新分支", []string{"p", "新的人格"}},
+		{"复制历史", []string{"p", "--copy", "新的人格"}},
+	} {
+		_, err := handleCmd(s, "edit", tc.args...)
+		if err == nil || !strings.Contains(err.Error(), "--keep") {
+			t.Fatalf("%s: err = %v, want 提示用 --keep", tc.name, err)
+		}
+		if c.NodeCount() != before || c.Head != head {
+			t.Fatalf("%s: 拒绝不得改动会话树（head=%s）", tc.name, c.Head)
+		}
+	}
+}
+
 // TestSessionEditRejects 用法/空文本/未知 id/root/tool 的拒绝路径（D18/D19）。
 func TestSessionEditRejects(t *testing.T) {
 	cases := []struct {
