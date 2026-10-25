@@ -125,9 +125,9 @@ func (u *UI) branchClick(slot int, next bool) *widget.Clickable {
 // branchArrow 分叉条上的方向键；enabled=false（已在边界）时暗色——真正的不响应在
 // updateClicks 的边界夹取里，这里只表达"不可用"。
 func (u *UI) branchArrow(gtx layout.Context, glyph string, enabled bool) layout.Dimensions {
-	c := textMuted
+	c := tok().textMuted
 	if !enabled {
-		c = textDim
+		c = tok().textDim
 	}
 	l := material.Caption(u.th, glyph)
 	l.Color = c
@@ -150,7 +150,7 @@ func (u *UI) branchRow(s *branchStrip, cardR int) (layout.Widget, color.NRGBA, i
 			layout.Rigid(layout.Spacer{Width: branchGapDp}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				l := material.Caption(u.th, fmt.Sprintf("%d/%d", s.index+1, n))
-				l.Color = textMuted
+				l.Color = tok().textMuted
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: branchGapDp}.Layout),
@@ -160,7 +160,7 @@ func (u *UI) branchRow(s *branchStrip, cardR int) (layout.Widget, color.NRGBA, i
 				})
 			}),
 		)
-	}, cardTool, cardR, s.right, false
+	}, tok().cardTool, cardR, s.right, false
 }
 
 // branchGapDp 分叉条内 `◀`/计数/`▶` 的横向间距。

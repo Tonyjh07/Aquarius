@@ -124,7 +124,7 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 		vs.add(func(gtx layout.Context) layout.Dimensions {
 			return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Caption(u.th, header)
-				l.Color = textMuted
+				l.Color = tok().textMuted
 				return l.Layout(gtx)
 			})
 		})
@@ -153,7 +153,7 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 				vs.gap(mdBlockGapDp)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
 					l := material.Caption(u.th, qa)
-					l.Color = textDim
+					l.Color = tok().textDim
 					return l.Layout(gtx)
 				})
 			}
@@ -166,12 +166,12 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 				vs.gap(mdBlockGapDp)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
 					l := material.Caption(u.th, mark)
-					l.Color = textDim
+					l.Color = tok().textDim
 					return l.Layout(gtx)
 				})
 				add(1, func(gtx layout.Context) layout.Dimensions {
 					s := material.Body2(u.th, c.result)
-					s.Color = textMuted
+					s.Color = tok().textMuted
 					s.State = rs.sel(1)
 					return s.Layout(gtx)
 				})
@@ -179,7 +179,7 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 				vs.gap(mdBlockGapDp)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
 					l := material.Caption(u.th, "运行中…")
-					l.Color = textDim
+					l.Color = tok().textDim
 					return l.Layout(gtx)
 				})
 			}
@@ -190,7 +190,7 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 			}
 		}
 		return vs.dims()
-	}, cardTool, cardR, false, false
+	}, tok().cardTool, cardR, false, false
 }
 
 // statusChip 状态行 chip（§15.1：仅生成时显示"思考中/生成中 · 模型 · 权限档"），
@@ -202,7 +202,7 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 	}
 	label := func(gtx layout.Context) layout.Dimensions {
 		s := material.Caption(u.th, txt)
-		s.Color = textMuted
+		s.Color = tok().textMuted
 		return s.Layout(gtx)
 	}
 	m := op.Record(gtx.Ops)
@@ -214,10 +214,10 @@ func (u *UI) statusChip(gtx layout.Context, w, h, absY int) {
 	y := (h - chipH) / 2
 	bgRect := image.Rectangle{Min: image.Pt(x, y), Max: image.Pt(x+dims.Size.X+2*padX, y+chipH)}
 	st := clip.UniformRRect(bgRect, chipH/2).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, pillBg)
+	paint.Fill(gtx.Ops, tok().pillBg)
 	inner := op.Offset(image.Pt(bgRect.Min.X+padX, bgRect.Min.Y+(chipH-dims.Size.Y)/2)).Push(gtx.Ops)
 	txtOp.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
-	u.record(bgRect.Add(image.Pt(0, absY)), chipH/2, pillBg, image.Rectangle{Max: u.frameSize})
+	u.record(bgRect.Add(image.Pt(0, absY)), chipH/2, tok().pillBg, image.Rectangle{Max: u.frameSize})
 }

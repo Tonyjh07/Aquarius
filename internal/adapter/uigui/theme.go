@@ -1,16 +1,23 @@
 package uigui
 
 // 主题令牌系统（§15.4/D61）：颜色令牌深浅两版**纯数据预设**——加色不改代码。
-// 活动令牌槽仍是 window.go 的包级 var（自绘路径既有引用不动），palette 结构 =
-// 预设与快照的集中形态；material 主题（th.Palette）经同一快照取默认文字/底色。
+//
+// 只有**一份**活动值：下面那个原子快照。绘制点经 tok() 取结构体副本，不碰包级可变量
+// ——原先 22 个包级颜色 var 与 palette 预设是两套事实源，靠 applyPalette/currentPalette
+// 双向抄写同步，加一个令牌要记得改三处（结构字段、写、读），漏一处就是「某个元素还用
+// 着上一个主题的颜色」。现在加令牌只改结构字段与两版预设。
 //
 // 应用所有权（§15.7 并发模型——不共享裸字段）：
 //   - 初始：newUI 在 goroutine 启动前调 applyTheme（无并发）；
 //   - 运行时：仅事件循环 goroutine 经 themeMsg/sysThemeMsg 调用；
 //   - 次窗：u.pal 原子快照供 spawn 读取，applyTheme 经 propagatePalette 广播，
-//     各次窗帧内校正自身 material 主题并重绘（跨窗只经原子快照，无裸共享）。
+//     各次窗帧内校正自身 material 主题并重绘（跨窗只经原子快照，无裸共享）；
+//   - 主窗自绘：渲染 goroutine 读同一原子快照（tok 的返回值是副本，不当场再读第二次）。
 
-import "image/color"
+import (
+	"image/color"
+	"sync/atomic"
+)
 
 // palette 颜色令牌全集（§15.4：背景/文字/气泡双色/思考暗块/状态行/错误色/禁用态；
 // fg/bg = material 默认文字/底——编辑器与助手/纯文本默认取色、次窗铺底）。
@@ -153,71 +160,33 @@ func resolvePalette(mode string, dark bool) palette {
 	return p
 }
 
-// applyPalette 把预设写入活动令牌槽（包级 var；仅事件循环 goroutine 或
-// goroutine 启动前调用——与帧读取不并发）。
-func applyPalette(p palette) {
-	brandColor = p.brandColor
-	pillBg = p.pillBg
-	windowBg = p.windowBg
-	textDim = p.textDim
-	textMuted = p.textMuted
-	textError = p.textError
-	textNotice = p.textNotice
-	textSystem = p.textSystem
-	cardThinking = p.cardThinking
-	cardTool = p.cardTool
-	cardNotice = p.cardNotice
-	cardError = p.cardError
-	cardSystem = p.cardSystem
-	cardInject = p.cardInject
-	textInject = p.textInject
-	whiteText = p.whiteText
-	iconDim = p.iconDim
-	actionDeny = p.actionDeny
-	actionAllow = p.actionAllow
-	actionElevate = p.actionElevate
-	tipBg = p.tipBg
-	depthMap = p.depthMap
+// activeTokens 主窗自绘的活动令牌快照。写入点只有两处，都在窗口事件循环启动之前或
+// 由主窗事件循环独占（与 activePaper 同口径）：newUI/RunSetupWindow 装配期、applyTheme。
+// 读侧是渲染 goroutine，故用原子指针：只读快照，不共享可变态。
+var activeTokens atomic.Pointer[palette]
+
+// tok 帧内取活动令牌。未初始化时回落浅色预设——宁可浅色，也不要零值全黑。
+//
+// 返回的是**副本**：绘制点各自取值即可，不必缓存成包级变量（那正是这次要去掉的东西）。
+func tok() palette {
+	if p := activeTokens.Load(); p != nil {
+		return *p
+	}
+	return lightPalette()
 }
 
-// currentPalette 从活动令牌槽回读（与 applyPalette 成对；供测试断言同步完整性）。
-// material 的 fg/bg 不落包级槽——回读为零值，校正走 u.th/次窗快照。
-func currentPalette() palette {
-	return palette{
-		brandColor:    brandColor,
-		pillBg:        pillBg,
-		windowBg:      windowBg,
-		textDim:       textDim,
-		textMuted:     textMuted,
-		textError:     textError,
-		textNotice:    textNotice,
-		textSystem:    textSystem,
-		cardThinking:  cardThinking,
-		cardTool:      cardTool,
-		cardNotice:    cardNotice,
-		cardError:     cardError,
-		cardSystem:    cardSystem,
-		cardInject:    cardInject,
-		textInject:    textInject,
-		whiteText:     whiteText,
-		iconDim:       iconDim,
-		actionDeny:    actionDeny,
-		actionAllow:   actionAllow,
-		actionElevate: actionElevate,
-		tipBg:         tipBg,
-		depthMap:      depthMap,
-	}
-}
+// currentPalette 活动快照原样回读（测试断言与次窗取色共用；含 fg/bg 与来源标注）。
+func currentPalette() palette { return tok() }
 
 // applyTheme 应用主题档（初始：newUI goroutine 启动前；运行时：仅事件循环
-// goroutine——themeMsg/sysThemeMsg）。解析预设 → 写活动槽与 material 默认色 →
-// 原子快照传播次窗（propagatePalette 广播 + Invalidate）。
+// goroutine——themeMsg/sysThemeMsg）。解析预设 → 写活动快照与 material 默认色 →
+// 传播次窗（propagatePalette 广播 + Invalidate）。
 func (u *UI) applyTheme(mode string) {
 	if mode == "" {
 		mode = "system"
 	}
 	p := resolvePalette(mode, u.plat.DarkMode())
-	applyPalette(p)
+	activeTokens.Store(&p)
 	applyPaper(resolvePaper(mode, p.isDark()))
 	u.themeMode = mode
 	u.pal.Store(&p)

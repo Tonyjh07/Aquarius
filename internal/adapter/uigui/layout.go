@@ -98,7 +98,7 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 			// 即 pointer.Grab 且先到先得——拖层若覆盖气泡，会在行选手势前抢走
 			// Drag/Release 事件，选区永远无法延伸）。
 			if !u.inFadePass {
-				paint.Fill(gtx.Ops, windowBg)
+				paint.Fill(gtx.Ops, tok().windowBg)
 			}
 			st := clip.Rect{Min: image.Pt(0, transH), Max: size}.Push(gtx.Ops)
 			u.drag.Add(gtx.Ops)
@@ -147,7 +147,7 @@ func (u *UI) bandHeightsClamped(gtx layout.Context, transH int) (top, low int) {
 // （位移小于 dragClickSlackPx）再展开、移动则拖窗。
 func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 	if !u.inFadePass {
-		paint.Fill(gtx.Ops, windowBg)
+		paint.Fill(gtx.Ops, tok().windowBg)
 	}
 	dst := clip.Rect{Max: size}.Push(gtx.Ops)
 	u.drag.Add(gtx.Ops)
@@ -160,7 +160,7 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 	// → 换形不跳动；窗口尺寸不变，球外区域位图 alpha=0 透明。D50：ballRect 与停靠锚点同源。
 	r := ballRect(size, gtx.Dp)
 	drawLogo(gtx, r) // §15.2 logo 实装（品牌色圆钮 + 内嵌图标）
-	u.record(r, r.Dx()/2, brandColor, image.Rectangle{Max: u.frameSize})
+	u.record(r, r.Dx()/2, tok().brandColor, image.Rectangle{Max: u.frameSize})
 }
 
 // updateScroll 滚动手势 + 当帧边界钳制 + 尾随（§15.3 流式内容贴底）。

@@ -267,7 +267,7 @@ func (u *UI) imgFlow(bi int, imgs []imgRef, cellDp unit.Dp) layout.Widget {
 func (u *UI) imgCell(gtx layout.Context, r imgRef, cell, radius int) {
 	box := image.Rect(0, 0, cell, cell)
 	st := clip.UniformRRect(box, radius).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, cardTool)
+	paint.Fill(gtx.Ops, tok().cardTool)
 	thumb := u.ensureImg(r)
 	if op, ok := thumb.imageOp(); ok {
 		drawFitted(gtx, box, op)
@@ -278,7 +278,7 @@ func (u *UI) imgCell(gtx layout.Context, r imgRef, cell, radius int) {
 	}
 	// 占位：名字一行（截断），居中——画不出来也要让人认出是哪张图。
 	l := material.Caption(u.th, imgPlaceholder(r.name))
-	l.Color = textDim
+	l.Color = tok().textDim
 	l.MaxLines, l.Truncator = 1, "…"
 	cs := gtx
 	cs.Constraints = layout.Exact(box.Size())

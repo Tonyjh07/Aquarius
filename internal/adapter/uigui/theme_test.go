@@ -8,22 +8,24 @@ import (
 	"testing"
 )
 
-// slots 预设中活动令牌槽覆盖的部分：material 的 fg/bg 不落包级槽（经 u.th 快照
-// 校正），currentPalette 回读恒零值——对比时统一剥离。themeMode/dark 是快照的来源
-// 标注（resolvePalette 写入），同样不落活动槽。
+// slots 只剥离来源标注（themeMode/dark）：resolvePalette 写入它们而预设本身不带，
+// 其余字段一律逐一比对——这就是「预设 ↔ 活动快照同步完整」的判据。
 func slots(p palette) palette {
-	p.fg, p.bg = color.NRGBA{}, color.NRGBA{}
 	p.themeMode, p.dark = "", false
 	return p
 }
 
-// restoreLight 测试后把活动令牌槽复位浅色（包级活动槽跨测试共享，保持确定性）。
-// Paper 令牌同样是包级活动槽（次窗），一并复位——否则前一个用例切到深色会让
-// 后面按浅色断言的像素测试读错档。
+// storeTokens 测试写入活动快照（与 applyTheme 同一个原子写；store 的值是副本，
+// 调用方之后改自己的变量不会污染活动值）。
+func storeTokens(p palette) { activeTokens.Store(&p) }
+
+// restoreLight 测试后把活动快照复位浅色（快照跨测试共享，保持确定性）。Paper 令牌
+// 是另一份快照（次窗），一并复位——否则前一个用例切到深色会让后面按浅色断言的
+// 像素测试读错档。
 func restoreLight(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
-		applyPalette(lightPalette())
+		storeTokens(lightPalette())
 		applyPaper(paperLight())
 	})
 }
@@ -55,15 +57,37 @@ func isLighter(a, b color.NRGBA) bool {
 	return int(a.R)+int(a.G)+int(a.B) > int(b.R)+int(b.G)+int(b.B)
 }
 
-// TestApplyPaletteSyncsAllTokens 活动槽 ↔ 预设同步完整性：applyPalette 后
-// currentPalette 回读必须等于预设（新增令牌漏配 apply/current 任一侧即失败）。
-func TestApplyPaletteSyncsAllTokens(t *testing.T) {
+// TestTokensHaveOneSource 令牌只有一份活动值：写进快照的预设，读侧必须原样取回
+// （含 fg/bg 与来源标注）。这条替代了原先「applyPalette 写包级槽、currentPalette
+// 反向抄回」的双向同步检查——不再有两套事实源，也就没有「漏配另一半」这种失败模式。
+func TestTokensHaveOneSource(t *testing.T) {
 	restoreLight(t)
 	for _, p := range []palette{lightPalette(), darkPalette()} {
-		applyPalette(p)
-		if got := currentPalette(); got != slots(p) {
-			t.Errorf("活动槽与预设不同步:\n got %#v\nwant %#v", got, slots(p))
+		storeTokens(p)
+		if got := currentPalette(); got != p {
+			t.Errorf("快照与预设不一致:\n got %#v\nwant %#v", got, p)
 		}
+	}
+}
+
+// TestTokensAreSnapshots 快照是值不是引用：写入后改调用方那份变量，活动值不受影响
+// （把「跨 goroutine 只读快照」落成可断言的性质）。
+func TestTokensAreSnapshots(t *testing.T) {
+	restoreLight(t)
+	p := lightPalette()
+	storeTokens(p)
+	p.pillBg = color.NRGBA{R: 0xFF, G: 0x00, B: 0xFF, A: 0xFF}
+	if got := currentPalette(); got.pillBg != lightPalette().pillBg {
+		t.Errorf("改调用方变量污染了活动快照: %v", got.pillBg)
+	}
+}
+
+// TestTokensFallBackToLight 未初始化时取令牌回落浅色预设（宁可浅色，不要零值全黑）。
+func TestTokensFallBackToLight(t *testing.T) {
+	activeTokens.Store(nil)
+	t.Cleanup(func() { storeTokens(lightPalette()) })
+	if got := tok(); got != lightPalette() {
+		t.Errorf("空快照应回落浅色: %#v", got)
 	}
 }
 
@@ -95,7 +119,7 @@ func TestThemeMessagesHeadless(t *testing.T) {
 	restoreLight(t)
 	u := newHeadless(t, Options{Theme: "dark"})
 
-	if currentPalette() != slots(darkPalette()) {
+	if slots(currentPalette()) != slots(darkPalette()) {
 		t.Error("初始 Theme=dark 未生效")
 	}
 	if u.themeMode != "dark" {
@@ -106,7 +130,7 @@ func TestThemeMessagesHeadless(t *testing.T) {
 		t.Fatal("事件循环已退出")
 	}
 	drainSync(t, u)
-	if currentPalette() != slots(lightPalette()) || u.themeMode != "light" {
+	if slots(currentPalette()) != slots(lightPalette()) || u.themeMode != "light" {
 		t.Errorf("themeMsg light 未生效 (mode=%q)", u.themeMode)
 	}
 
@@ -115,7 +139,7 @@ func TestThemeMessagesHeadless(t *testing.T) {
 		t.Fatal("事件循环已退出")
 	}
 	drainSync(t, u)
-	if u.themeMode != "light" || currentPalette() != slots(lightPalette()) {
+	if u.themeMode != "light" || slots(currentPalette()) != slots(lightPalette()) {
 		t.Errorf("固定 light 档不应被系统广播改动 (mode=%q)", u.themeMode)
 	}
 
@@ -131,7 +155,7 @@ func TestThemeMessagesHeadless(t *testing.T) {
 		t.Fatal("事件循环已退出")
 	}
 	drainSync(t, u)
-	if currentPalette() != slots(resolvePalette("system", u.plat.DarkMode())) {
+	if slots(currentPalette()) != slots(resolvePalette("system", u.plat.DarkMode())) {
 		t.Error("system 档系统广播后未按系统解析")
 	}
 }

@@ -60,7 +60,7 @@ func animBenchGraph(n int) port.TreeGraph {
 // animBench 基准夹具：200 节点、预算全开、离屏窗 900×700。
 func animBench(b *testing.B) (*UI, *historyState, *input.Router, *headless.Window) {
 	b.Helper()
-	applyPalette(lightPalette())
+	storeTokens(lightPalette())
 	u := newHistUI(fakeRelTree{g: animBenchGraph(animBenchN)}, fakeLister(nil))
 	st := newHistoryState(u)
 	// 预算全开（200 ≤ relHardCap 240）：基准要测的是 200 节点全程物理，不是默认 120 的切片

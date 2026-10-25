@@ -91,40 +91,9 @@ const (
 	dragClickSlackPx = 4
 )
 
-// 主题令牌活动槽（§15.4/D61：深浅两版预设与 applyPalette 见 theme.go——
-// 预设纯数据，自绘路径读活动槽、material 主题经同一快照取默认色）。
-var (
-	brandColor = color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF}
-	pillBg     = color.NRGBA{R: 0xFA, G: 0xFA, B: 0xFC, A: 0xFF} // 输入栏浅白
-	windowBg   = color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF} // 兜底背景（非 Windows 降级形态）
-	textDim    = color.NRGBA{R: 0x8A, G: 0x8F, B: 0x98, A: 0xFF}
-	textMuted  = color.NRGBA{R: 0x6B, G: 0x70, B: 0x78, A: 0xFF}
-	textError  = color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF}
-	textNotice = color.NRGBA{R: 0xC0, G: 0x77, B: 0x00, A: 0xFF}
-	textSystem = color.NRGBA{R: 0x8E, G: 0x6B, B: 0xC4, A: 0xFF}
-
-	// 行卡底色（除注入卡外全部实色——位图合成下元素外无底板，半透明只能整窗
-	// SourceConstantAlpha 叠加；注入卡带 alpha 是有意的：它是浮在桌面上的旁注）。
-	cardThinking = color.NRGBA{R: 0xE9, G: 0xEB, B: 0xF0, A: 0xFF}
-	cardTool     = color.NRGBA{R: 0xE7, G: 0xEA, B: 0xEF, A: 0xFF}
-	cardNotice   = color.NRGBA{R: 0xFD, G: 0xF2, B: 0xDC, A: 0xFF}
-	cardError    = color.NRGBA{R: 0xFB, G: 0xE4, B: 0xE4, A: 0xFF}
-	cardSystem   = color.NRGBA{R: 0xF1, G: 0xEB, B: 0xFA, A: 0xFF}
-	// 注入卡片（D166）：两版暗底 + 亮字，与用户/助手气泡分档；底色带 alpha（浅色版
-	// 更透），读作浮在桌面上的旁注而非又一条消息。
-	cardInject = color.NRGBA{R: 0x2E, G: 0x34, B: 0x3C, A: 0x80}
-	textInject = color.NRGBA{R: 0xEE, G: 0xF1, B: 0xF5, A: 0xFF}
-	whiteText  = color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
-
-	// 图标槽占位灰（canvas 稿 #94A3B8；配色为占位，D49）。
-	iconDim = color.NRGBA{R: 0x94, G: 0xA3, B: 0xB8, A: 0xFF}
-	// 确认态三钮（D86；令牌槽由主题预设回填，两版同值——实色圆白字两主题对比度均足）。
-	actionDeny    = color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF}
-	actionAllow   = color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF}
-	actionElevate = color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF}
-	// depthMap 深度色带活动槽（D120§3.2）：applyPalette 回填、关系图帧读取。
-	depthMap [4]color.NRGBA
-)
+// 主题令牌的取值一律经 theme.go 的 tok()：原先这里是 22 个包级颜色 var，与 palette
+// 预设构成两套事实源，靠 applyPalette/currentPalette 双向同步。现在只有一份值（活动
+// 快照），加令牌只需加结构字段，不会再漏配同步的另一半。
 
 // point/rect 屏幕几何（中性定义：小写字段，自绘几何用；与平台 DTO 在门面处转换）。
 type point struct{ x, y int32 }

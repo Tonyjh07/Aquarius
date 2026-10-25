@@ -652,18 +652,18 @@ func TestRecordDynamicBand(t *testing.T) {
 	u := newShapeUI(1)
 	viewport := image.Rect(0, 0, 100, 300)
 	u.bandBottom = 200 // 动画中：带底已下移到 200
-	u.record(image.Rect(10, 0, 90, 199), 12, brandColor, viewport)
+	u.record(image.Rect(10, 0, 90, 199), 12, tok().brandColor, viewport)
 	if len(u.shapes) != 1 {
 		t.Fatalf("带内矩形应登记（D62：带渐变按像素作用）: %+v", u.shapes)
 	}
-	u.record(image.Rect(10, 0, 90, 201), 12, brandColor, viewport)
+	u.record(image.Rect(10, 0, 90, 201), 12, tok().brandColor, viewport)
 	if len(u.shapes) != 2 {
 		t.Fatalf("跨带底矩形应登记: %+v", u.shapes)
 	}
 	// 带底 0 = 静息顶带口径，登记行为一致。
 	u.shapes = u.shapes[:0]
 	u.bandBottom = 0
-	u.record(image.Rect(10, 0, 90, 50), 12, brandColor, viewport)
+	u.record(image.Rect(10, 0, 90, 50), 12, tok().brandColor, viewport)
 	if len(u.shapes) != 1 {
 		t.Fatalf("静息带内元素应登记: %+v", u.shapes)
 	}

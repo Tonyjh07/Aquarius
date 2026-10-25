@@ -37,7 +37,7 @@ func drawMaximize(gtx layout.Context, box image.Rectangle) {
 		image.Rect(x1-in-arm, y1-in-th, x1-in, y1-in), // 右下·横
 		image.Rect(x1-in-th, y1-in-arm, x1-in, y1-in), // 右下·竖
 	} {
-		paint.FillShape(gtx.Ops, iconDim, clip.Rect(r).Op())
+		paint.FillShape(gtx.Ops, tok().iconDim, clip.Rect(r).Op())
 	}
 }
 
@@ -56,7 +56,7 @@ func drawMinimize(gtx layout.Context, box image.Rectangle) {
 		image.Rect(x0+in, cy-th/2, x0+in+arm, cy+th/2), // 左·横（向右指）
 		image.Rect(x1-in-arm, cy-th/2, x1-in, cy+th/2), // 右·横（向左指）
 	} {
-		paint.FillShape(gtx.Ops, iconDim, clip.Rect(r).Op())
+		paint.FillShape(gtx.Ops, tok().iconDim, clip.Rect(r).Op())
 	}
 }
 
@@ -197,7 +197,7 @@ func actionCircle(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, ic
 				Min: image.Pt((d-s)/2, (d-s)/2),
 				Max: image.Pt((d+s)/2, (d+s)/2),
 			}
-			paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(r, gtx.Dp(2)).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, tok().whiteText, clip.UniformRRect(r, gtx.Dp(2)).Op(gtx.Ops))
 		case iconMic:
 			drawMic(gtx, d)
 		default:
@@ -211,7 +211,7 @@ func actionCircle(gtx layout.Context, cl *widget.Clickable, fill color.NRGBA, ic
 			p.MoveTo(f32.Pt(cx-a, cy)) // 人字头
 			p.LineTo(f32.Pt(cx, cy-a))
 			p.LineTo(f32.Pt(cx+a, cy))
-			paint.FillShape(gtx.Ops, whiteText,
+			paint.FillShape(gtx.Ops, tok().whiteText,
 				clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
 		}
 		return layout.Dimensions{Size: image.Pt(d, d)}
@@ -284,7 +284,7 @@ func drawMic(gtx layout.Context, d int) {
 	g := micGeomOf(d, stroke)
 
 	head := image.Rect(int(g.cx-g.w/2+0.5), int(g.headTop+0.5), int(g.cx+g.w/2+0.5), int(g.headBottom+0.5))
-	paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(head, int(g.w/2)).Op(gtx.Ops))
+	paint.FillShape(gtx.Ops, tok().whiteText, clip.UniformRRect(head, int(g.w/2)).Op(gtx.Ops))
 
 	var p clip.Path
 	p.Begin(gtx.Ops)
@@ -303,5 +303,5 @@ func drawMic(gtx layout.Context, d int) {
 	p.LineTo(f32.Pt(g.cx, g.baseY))
 	p.MoveTo(f32.Pt(g.cx-g.baseHalf, g.baseY)) // 底座
 	p.LineTo(f32.Pt(g.cx+g.baseHalf, g.baseY))
-	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: g.stroke}.Op())
+	paint.FillShape(gtx.Ops, tok().whiteText, clip.Stroke{Path: p.End(), Width: g.stroke}.Op())
 }

@@ -111,7 +111,7 @@ func drawLogo(gtx layout.Context, box image.Rectangle) {
 		return
 	}
 	st := clip.UniformRRect(box, box.Dx()/2).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, brandColor) // 图标透明处露出品牌蓝底
+	paint.Fill(gtx.Ops, tok().brandColor) // 图标透明处露出品牌蓝底
 	// 球为正方形时图标按边长取；非方（理论上不会有）取短边，避免越界。
 	side := box.Dx()
 	if box.Dy() < side {

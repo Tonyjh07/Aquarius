@@ -32,28 +32,28 @@ func TestRecordStoresOutlineAndClip(t *testing.T) {
 	viewport := image.Rect(0, 0, 100, 300)
 
 	// ① 完全在淡出带内 → 登记（揭示带内元素按 g(y) 呈现，D62）。
-	u.record(image.Rect(10, 0, 90, 50), 12, brandColor, viewport)
+	u.record(image.Rect(10, 0, 90, 50), 12, tok().brandColor, viewport)
 	if len(u.shapes) != 1 {
 		t.Fatalf("带内矩形应登记: %+v", u.shapes)
 	}
 	// ② 跨带 → 存**真轮廓**（不裁到带）+ 裁剪区 + 底色（区外由 vis 自行裁剪）。
-	u.record(image.Rect(10, 20, 90, 120), 12, brandColor, viewport)
+	u.record(image.Rect(10, 20, 90, 120), 12, tok().brandColor, viewport)
 	if len(u.shapes) != 2 || u.shapes[1].outline != image.Rect(10, 20, 90, 120) ||
-		u.shapes[1].clip != viewport || u.shapes[1].radius != 12 || u.shapes[1].fill != brandColor {
+		u.shapes[1].clip != viewport || u.shapes[1].radius != 12 || u.shapes[1].fill != tok().brandColor {
 		t.Fatalf("跨带矩形应存真轮廓 + 裁剪区 + 底色: %+v", u.shapes)
 	}
 	// ③ 带下、视口内 → 原样登记。
-	u.record(image.Rect(8, 150, 92, 200), 12, brandColor, viewport)
+	u.record(image.Rect(8, 150, 92, 200), 12, tok().brandColor, viewport)
 	if len(u.shapes) != 3 || u.shapes[2].outline != image.Rect(8, 150, 92, 200) {
 		t.Fatalf("视口内矩形应原样登记: %+v", u.shapes)
 	}
 	// ④ 视口外（滚动到上方）→ 裁空剔除。
-	u.record(image.Rect(8, -60, 92, -10), 12, brandColor, viewport)
+	u.record(image.Rect(8, -60, 92, -10), 12, tok().brandColor, viewport)
 	if len(u.shapes) != 3 {
 		t.Fatalf("视口外不应登记: %+v", u.shapes)
 	}
 	// ⑤ 零圆角（如被裁成细条的异常态）→ 剔除。
-	u.record(image.Rect(8, 150, 92, 200), 0, brandColor, viewport)
+	u.record(image.Rect(8, 150, 92, 200), 0, tok().brandColor, viewport)
 	if len(u.shapes) != 3 {
 		t.Fatalf("零圆角不应登记: %+v", u.shapes)
 	}

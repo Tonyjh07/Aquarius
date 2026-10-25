@@ -59,7 +59,7 @@ func (u *UI) askHead(gtx layout.Context) layout.Dimensions {
 	kids := []layout.FlexChild{
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			l := material.Caption(u.th, strconv.Itoa(a.cur+1)+"/"+strconv.Itoa(len(a.req.Questions))+" 个问题")
-			l.Color = textMuted
+			l.Color = tok().textMuted
 			return l.Layout(gtx)
 		}),
 		layout.Flexed(1, layout.Spacer{}.Layout),
@@ -84,12 +84,12 @@ func (u *UI) askTabSegments(gtx layout.Context) []layout.FlexChild {
 					w = gtx.Dp(26)
 				}
 				box := image.Rectangle{Max: image.Pt(w, h)}
-				fill := textDim
+				fill := tok().textDim
 				switch {
 				case i == a.cur:
-					fill = brandColor
+					fill = tok().brandColor
 				case len(a.sel[i]) > 0 || a.free[i] != "":
-					fill = brandColor
+					fill = tok().brandColor
 					fill.A = 0x99
 				}
 				paint.FillShape(gtx.Ops, fill, clip.UniformRRect(box, h/2).Op(gtx.Ops))
@@ -151,7 +151,7 @@ func (u *UI) askOptionRow(gtx layout.Context, i int, o port.AskOption) layout.Di
 							l := material.Body2(u.th, sanitizeControl(o.Label))
 							l.TextSize = unit.Sp(14)
 							if on {
-								l.Color = brandColor
+								l.Color = tok().brandColor
 							} else {
 								l.Color = u.th.Palette.Fg
 							}
@@ -163,7 +163,7 @@ func (u *UI) askOptionRow(gtx layout.Context, i int, o port.AskOption) layout.Di
 								return layout.Dimensions{}
 							}
 							l := material.Caption(u.th, sanitizeControl(o.Description))
-							l.Color = textMuted
+							l.Color = tok().textMuted
 							l.MaxLines = 1
 							return l.Layout(gtx)
 						}),
@@ -184,7 +184,7 @@ func (u *UI) askOptionRow(gtx layout.Context, i int, o port.AskOption) layout.Di
 
 // askRowBg 游标行淡底：品牌色压到 10% 不透明度（深浅两版都读得出来，不必另设令牌）。
 func askRowBg() color.NRGBA {
-	c := brandColor
+	c := tok().brandColor
 	c.A = 0x1A
 	return c
 }
@@ -222,9 +222,9 @@ func (u *UI) askFreeRow(gtx layout.Context) layout.Dimensions {
 				}
 				l := material.Body2(u.th, sanitizeControl(label))
 				l.TextSize = unit.Sp(14)
-				l.Color = textMuted
+				l.Color = tok().textMuted
 				if on {
-					l.Color = brandColor
+					l.Color = tok().brandColor
 				}
 				l.MaxLines = 1
 				return l.Layout(gtx)
@@ -267,9 +267,9 @@ func (u *UI) askTextBtn(gtx layout.Context, cl *widget.Clickable, label string, 
 			l := material.Body2(u.th, label)
 			l.TextSize = unit.Sp(13)
 			if primary {
-				l.Color = whiteText
+				l.Color = tok().whiteText
 			} else {
-				l.Color = textMuted
+				l.Color = tok().textMuted
 			}
 			rec := op.Record(gtx.Ops)
 			dims := l.Layout(gtx)
@@ -277,7 +277,7 @@ func (u *UI) askTextBtn(gtx layout.Context, cl *widget.Clickable, label string, 
 			w, h := dims.Size.X+2*padX, dims.Size.Y+2*padY
 			box := image.Rectangle{Max: image.Pt(w, h)}
 			if primary {
-				paint.FillShape(gtx.Ops, brandColor, clip.UniformRRect(box, h/2).Op(gtx.Ops))
+				paint.FillShape(gtx.Ops, tok().brandColor, clip.UniformRRect(box, h/2).Op(gtx.Ops))
 			}
 			off := op.Offset(image.Pt(padX, padY)).Push(gtx.Ops)
 			call.Add(gtx.Ops)
@@ -295,19 +295,19 @@ func drawAskCheck(gtx layout.Context, box image.Rectangle, multiple, on bool) {
 		r = box.Dx() / 4
 	}
 	if !on {
-		paint.FillShape(gtx.Ops, textDim, clip.UniformRRect(box, r).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, tok().textDim, clip.UniformRRect(box, r).Op(gtx.Ops))
 		inner := box.Inset(gtx.Dp(1))
 		if inner.Empty() {
 			return
 		}
-		paint.FillShape(gtx.Ops, pillBg, clip.UniformRRect(inner, max(0, r-gtx.Dp(1))).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, tok().pillBg, clip.UniformRRect(inner, max(0, r-gtx.Dp(1))).Op(gtx.Ops))
 		return
 	}
-	paint.FillShape(gtx.Ops, brandColor, clip.UniformRRect(box, r).Op(gtx.Ops))
+	paint.FillShape(gtx.Ops, tok().brandColor, clip.UniformRRect(box, r).Op(gtx.Ops))
 	if !multiple {
 		d := box.Dx() / 4
 		dot := image.Rect(box.Min.X+d, box.Min.Y+d, box.Max.X-d, box.Max.Y-d)
-		paint.FillShape(gtx.Ops, whiteText, clip.UniformRRect(dot, d).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, tok().whiteText, clip.UniformRRect(dot, d).Op(gtx.Ops))
 		return
 	}
 	cx := float32(box.Min.X) + float32(box.Dx())/2
@@ -318,7 +318,7 @@ func drawAskCheck(gtx layout.Context, box image.Rectangle, multiple, on bool) {
 	p.MoveTo(f32.Pt(cx-a, cy))
 	p.LineTo(f32.Pt(cx-a/3, cy+a*0.7))
 	p.LineTo(f32.Pt(cx+a, cy-a*0.7))
-	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
+	paint.FillShape(gtx.Ops, tok().whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
 }
 
 // askPanelPx 面板高（px）：内容自然高，夹在 [最小, 窗高 × 70%]。

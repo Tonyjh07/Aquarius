@@ -58,7 +58,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	if pillH != rowH {
 		contentBox, contentOrigin = pill.Size(), pill.Min
 	}
-	paint.FillShape(gtx.Ops, pillBg, clip.UniformRRect(pill, rowH/2).Op(gtx.Ops))
+	paint.FillShape(gtx.Ops, tok().pillBg, clip.UniformRRect(pill, rowH/2).Op(gtx.Ops))
 	pst := clip.UniformRRect(pill, rowH/2).Push(gtx.Ops)
 	inner := op.Offset(contentOrigin).Push(gtx.Ops)
 	gtxC := gtx
@@ -72,20 +72,20 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	}
 	inner.Pop()
 	pst.Pop()
-	u.record(pill.Add(image.Pt(0, absY)), rowH/2, pillBg, clipRect)
+	u.record(pill.Add(image.Pt(0, absY)), rowH/2, tok().pillBg, clipRect)
 
 	// 右圆钮（恒在，几何不随状态变、动画期只平移，D49）：有输入 = 发送、空输入 =
 	// 语音输入（D179）、生成中 = 停止——确认态不特判（D86：工具确认发生在 Turn 内，
 	// 停止键照常可点，取消整轮语义不变、迟到应答缓冲兜底；/rm 等非生成中确认遇
 	// 空输入为语音键，toggleVoice 在确认态不触发）。
-	fill, icon, cl := brandColor, iconSend, &u.sendBtn
+	fill, icon, cl := tok().brandColor, iconSend, &u.sendBtn
 	switch {
 	case u.generating.Load():
-		fill, icon, cl = textError, iconStop, &u.stopBtn
+		fill, icon, cl = tok().textError, iconStop, &u.stopBtn
 	case u.micButton():
 		icon = iconMic
 		if u.recording.Load() {
-			fill, icon = textError, iconStop
+			fill, icon = tok().textError, iconStop
 		}
 	}
 	off := op.Offset(send.Min).Push(gtx.Ops)
@@ -102,7 +102,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	u.logoDrag.Add(gtx.Ops)
 	u.logoRight.add(gtx.Ops, logo) // D72：右键热区 = logo 钮矩形
 	gst.Pop()
-	u.record(logo.Add(image.Pt(0, absY)), rowH/2, brandColor, clipRect)
+	u.record(logo.Add(image.Pt(0, absY)), rowH/2, tok().brandColor, clipRect)
 
 	// 悬浮 tips（§15.1 启动提示 / §15.2 发送·停止键）：独立底板元素随位图。
 	// 显隐 = 事件态 × 光标直采（D53）：分层窗按像素 alpha 命中，光标移到透明像素/
@@ -233,7 +233,7 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 	for _, text := range texts {
 		m := op.Record(gtx.Ops)
 		cap := material.Caption(u.th, text)
-		cap.Color = whiteText
+		cap.Color = tok().whiteText
 		dims := cap.Layout(gtx)
 		lines = append(lines, line{op: m.Stop(), w: dims.Size.X, h: dims.Size.Y})
 		w = max(w, dims.Size.X)
@@ -254,7 +254,7 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 		Max: image.Pt(x+w+2*padX, y+h+2*padY),
 	}
 	st := clip.UniformRRect(bgRect, radius).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, tipBg)
+	paint.Fill(gtx.Ops, tok().tipBg)
 	ly := bgRect.Min.Y + padY
 	for _, ln := range lines {
 		inner := op.Offset(image.Pt(bgRect.Min.X+padX, ly)).Push(gtx.Ops)
@@ -263,7 +263,7 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 		ly += ln.h
 	}
 	st.Pop()
-	u.record(bgRect.Add(image.Pt(0, absY)), radius, tipBg, image.Rectangle{Max: u.frameSize})
+	u.record(bgRect.Add(image.Pt(0, absY)), radius, tok().tipBg, image.Rectangle{Max: u.frameSize})
 }
 
 // updateEditor 消费编辑器事件（Enter → SubmitEvent → 提交）。material.Editor.Layout

@@ -166,7 +166,7 @@ func (u *UI) attachChip(gtx layout.Context, label string, thumb *thumbSrc, cl *w
 // 右侧 × 变 +（点击即恢复）——不能让它看起来像普通 chip。
 func (u *UI) attachChipState(gtx layout.Context, label string, thumb *thumbSrc, cl *widget.Clickable, dropped bool) layout.Dimensions {
 	// 压暗色 = tips 白字降不透明度（两主题同口径，不新增主题令牌）。
-	dimFg := whiteText
+	dimFg := tok().whiteText
 	dimFg.A = 0x70
 	return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		h := gtx.Dp(attachChipDp)
@@ -182,7 +182,7 @@ func (u *UI) attachChipState(gtx layout.Context, label string, thumb *thumbSrc, 
 			return s.Layout(gtx)
 		})
 		box := image.Rectangle{Max: image.Pt(w, h)}
-		paint.FillShape(gtx.Ops, tipBg, clip.UniformRRect(box, h/2).Op(gtx.Ops))
+		paint.FillShape(gtx.Ops, tok().tipBg, clip.UniformRRect(box, h/2).Op(gtx.Ops))
 		// 图标：图片附件画缩略图（圆角小图），其余画回形针（品牌色小图）。
 		off := op.Offset(image.Pt(padX, (h-iconD)/2)).Push(gtx.Ops)
 		if img, ok := thumb.imageOp(); ok {
@@ -221,7 +221,7 @@ func (u *UI) attachChipState(gtx layout.Context, label string, thumb *thumbSrc, 
 			p.MoveTo(f32.Pt(cx+a, cy-a))
 			p.LineTo(f32.Pt(cx-a, cy+a))
 		}
-		stroke := whiteText
+		stroke := tok().whiteText
 		if dropped {
 			stroke = dimFg
 		}
@@ -395,7 +395,7 @@ func drawPaperclip(gtx layout.Context, box image.Rectangle) {
 	cubicArc(&p, c3, at(9.41, 17.41), m3)
 	cubicArc(&p, c3, m3, at(6.58, 14.58))
 	p.LineTo(at(15.07, 6.1)) // 内端（收尾）
-	paint.FillShape(gtx.Ops, iconDim, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
+	paint.FillShape(gtx.Ops, tok().iconDim, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
 }
 
 // record 登记可见元素（D44–D48、D62）：保存真实轮廓 + 可见裁剪区 + 底色，全帧合成的

@@ -156,7 +156,7 @@ func TestRelCardHalfCoversDrawnCard(t *testing.T) {
 // 定位，Min 为 0 等于不平移，数字贴在形状左上角（用户报障「数字居中问题」）。
 // 这里渲染离屏帧后逐像素验证：白字包围盒中心 ≈ 徽标中心。
 func TestRelGlyphCenteredInBadge(t *testing.T) {
-	applyPalette(lightPalette())
+	storeTokens(lightPalette())
 	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	g := st.graph

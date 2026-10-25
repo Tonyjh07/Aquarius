@@ -333,7 +333,7 @@ func TestBranchClickDispatches(t *testing.T) {
 	var strip image.Rectangle
 	found := false
 	for _, s := range u.shapes {
-		if s.fill == cardTool {
+		if s.fill == tok().cardTool {
 			strip, found = s.outline, true
 		}
 	}

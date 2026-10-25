@@ -152,16 +152,16 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				// 右内边距 12 = 胶囊 padding 16 − 4 圆形光学校正）。
 				return layout.Inset{Left: unit.Dp(inputGapDp), Right: unit.Dp(-confirmBtnOptDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					kids := []layout.FlexChild{
-						layout.Rigid(confirmBtn(gtx, &u.denyBtn, actionDeny, glyphDeny)),
+						layout.Rigid(confirmBtn(gtx, &u.denyBtn, tok().actionDeny, glyphDeny)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: unit.Dp(confirmBtnGapDp)}.Layout(gtx,
-								confirmBtn(gtx, &u.allowBtn, actionAllow, glyphAllow))
+								confirmBtn(gtx, &u.allowBtn, tok().actionAllow, glyphAllow))
 						}),
 					}
 					if u.confirmElevatable() {
 						kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: unit.Dp(confirmBtnGapDp)}.Layout(gtx,
-								confirmBtn(gtx, &u.elevateBtn, actionElevate, glyphKey))
+								confirmBtn(gtx, &u.elevateBtn, tok().actionElevate, glyphKey))
 						}))
 					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)
@@ -250,7 +250,7 @@ func glyphDeny(gtx layout.Context, d int, _ color.NRGBA) {
 	p.LineTo(f32.Pt(cx+a, cy+a))
 	p.MoveTo(f32.Pt(cx+a, cy-a))
 	p.LineTo(f32.Pt(cx-a, cy+a))
-	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
+	paint.FillShape(gtx.Ops, tok().whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
 }
 
 // glyphAllow ✓（短杆下探 + 长臂上挑）。
@@ -262,7 +262,7 @@ func glyphAllow(gtx layout.Context, d int, _ color.NRGBA) {
 	p.MoveTo(f32.Pt(cx-a, cy))
 	p.LineTo(f32.Pt(cx-a/3, cy+a*0.7))
 	p.LineTo(f32.Pt(cx+a, cy-a*0.7))
-	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
+	paint.FillShape(gtx.Ops, tok().whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
 }
 
 // glyphKey 🔑（环头 + 杆 + 两齿；环 = 白实心圆挖钮底色孔——实色钮上与描边等效，
@@ -273,7 +273,7 @@ func glyphKey(gtx layout.Context, d int, fill color.NRGBA) {
 	hx := cx - a*0.9
 	headR := a * 0.62
 	headBox := image.Rect(int(hx-headR), int(cy-headR), int(hx+headR), int(cy+headR))
-	paint.FillShape(gtx.Ops, whiteText,
+	paint.FillShape(gtx.Ops, tok().whiteText,
 		clip.UniformRRect(headBox, headBox.Dx()/2).Op(gtx.Ops))
 	if inner := headBox.Inset(2); !inner.Empty() {
 		paint.FillShape(gtx.Ops, fill,
@@ -287,7 +287,7 @@ func glyphKey(gtx layout.Context, d int, fill color.NRGBA) {
 	p.LineTo(f32.Pt(cx+a*0.45, cy+a*0.55))
 	p.MoveTo(f32.Pt(cx+a, cy)) // 齿 2
 	p.LineTo(f32.Pt(cx+a, cy+a*0.75))
-	paint.FillShape(gtx.Ops, whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
+	paint.FillShape(gtx.Ops, tok().whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
 }
 
 // iconSlot 胶囊内 20dp 图标槽（D49/§15.2：canvas 20×20 灰占位、不可点——附件/展开实现时启用）。

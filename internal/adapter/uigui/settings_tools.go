@@ -235,7 +235,7 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								l := material.Body2(th, b.Name)
-								l.Color = textDim
+								l.Color = tok().textDim
 								return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return l.Layout(gtx)
 								})
@@ -247,7 +247,7 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 							return layout.Dimensions{}
 						}
 						l := material.Body2(th, hint)
-						l.Color = textMuted
+						l.Color = tok().textMuted
 						return l.Layout(gtx)
 					}),
 				)
@@ -303,7 +303,7 @@ func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p P
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					l := material.Body2(th, "["+status+"]")
-					l.Color = textDim
+					l.Color = tok().textDim
 					return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return l.Layout(gtx)
 					})
@@ -312,7 +312,7 @@ func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p P
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			l := material.Body2(th, meta)
-			l.Color = textMuted
+			l.Color = tok().textMuted
 			return l.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -330,7 +330,7 @@ func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p P
 				caps = append(caps, c+"("+mark+")")
 			}
 			l := material.Body2(th, "能力: "+strings.Join(caps, ", "))
-			l.Color = textMuted
+			l.Color = tok().textMuted
 			return l.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -383,7 +383,7 @@ func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p P
 				return layout.Dimensions{}
 			}
 			l := material.Body2(th, p.LastErr)
-			l.Color = textError
+			l.Color = tok().textError
 			return l.Layout(gtx)
 		}),
 	)

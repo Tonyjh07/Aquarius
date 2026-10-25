@@ -68,7 +68,7 @@ func toastFrame(gtx layout.Context, th *material.Theme, ts *toastState, bg color
 	gtx.Execute(op.InvalidateCmd{At: ts.until})
 
 	l := material.Label(th, paperNoteSp(th), ts.text)
-	l.Color = whiteText
+	l.Color = tok().whiteText
 	maxW := int(float64(gtx.Constraints.Max.X) * toastWidthFac)
 	if maxW < gtx.Dp(toastPadXdp)*2 {
 		maxW = gtx.Constraints.Max.X

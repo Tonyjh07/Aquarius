@@ -196,7 +196,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				vs.add(func(gtx layout.Context) layout.Dimensions {
 					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						s := material.Body2(u.th, it.text)
-						s.Color = whiteText
+						s.Color = tok().whiteText
 						s.State = rs.sel(0)
 						return s.Layout(gtx)
 					}, 0, image.Point{}, image.Point{})
@@ -209,7 +209,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				vs.add(u.imgFlow(it.bi, imgs, imgCellDp))
 			}
 			return vs.dims()
-		}, brandColor, radiusDp, true, true
+		}, tok().brandColor, radiusDp, true, true
 	case blockAssistant: // 助手气泡：浅白底、左对齐；markdown 复合行 = 垂直多块共底板（D66）
 		blocks := it.md
 		if len(blocks) == 0 && strings.TrimSpace(it.text) != "" {
@@ -235,7 +235,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				vs.add(u.imgFlow(it.bi, imgs, imgCellDp))
 			}
 			return vs.dims()
-		}, pillBg, radiusDp, false, true
+		}, tok().pillBg, radiusDp, false, true
 	case blockThinking: // 思考行（D182）：折叠行（元信息，可点开）+ 正文（仅展开时铺）
 		open := it.live || u.thinkIsOpen(it.bi)
 		header := thinkHeaderText(it, open)
@@ -243,7 +243,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 		// 只让头部可点，正文要能拖选（点击件会抢走按下事件）。
 		head := func(gtx layout.Context) layout.Dimensions {
 			s := material.Caption(u.th, header)
-			s.Color = textDim
+			s.Color = tok().textDim
 			return s.Layout(gtx)
 		}
 		if !it.live {
@@ -261,80 +261,80 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				vs.add(func(gtx layout.Context) layout.Dimensions {
 					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						s := material.Body2(u.th, it.text)
-						s.Color = textDim
+						s.Color = tok().textDim
 						s.State = rs.sel(0)
 						return s.Layout(gtx)
 					}, 0, off, image.Point{})
 				})
 			}
 			return vs.dims()
-		}, cardThinking, cardR, false, false
+		}, tok().cardThinking, cardR, false, false
 	case blockInject: // 注入节点（D166）：暗卡片——头部来源/触发（元信息，不选）+ 正文可选
 		header := injectHeadline(it.source, it.trigger)
 		return func(gtx layout.Context) layout.Dimensions {
 			vs := beginVStack(gtx)
 			vs.add(func(gtx layout.Context) layout.Dimensions {
 				s := material.Caption(u.th, header)
-				s.Color = textInject
+				s.Color = tok().textInject
 				return s.Layout(gtx)
 			})
 			off := image.Pt(0, vs.y)
 			vs.add(func(gtx layout.Context) layout.Dimensions {
 				return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					s := material.Body2(u.th, it.text)
-					s.Color = textInject
+					s.Color = tok().textInject
 					s.State = rs.sel(0)
 					return s.Layout(gtx)
 				}, 0, off, image.Point{})
 			})
 			return vs.dims()
-		}, cardInject, cardR, false, false
+		}, tok().cardInject, cardR, false, false
 	case blockTool:
 		if it.chip == nil { // 兜底：无 chip 的工具行（防御，正常路径都有 chip）
 			return func(gtx layout.Context) layout.Dimensions {
 				return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					l := material.Caption(u.th, it.text)
-					l.Color = textMuted
+					l.Color = tok().textMuted
 					l.State = rs.sel(0)
 					return l.Layout(gtx)
 				}, 0, image.Point{}, image.Point{})
-			}, cardTool, cardR, false, false
+			}, tok().cardTool, cardR, false, false
 		}
 		return u.toolChipRow(it, rs, cardR)
 	case blockBranch: // 分叉条（D81）：气泡下方 `◀ i/n ▶`，与气泡同向对齐
 		if it.branch == nil { // 防御：无数据的空行不渲染也不登记形状
 			return func(gtx layout.Context) layout.Dimensions {
 				return layout.Dimensions{}
-			}, cardTool, 0, false, false
+			}, tok().cardTool, 0, false, false
 		}
 		return u.branchRow(it.branch, cardR)
 	case blockNotice:
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Caption(u.th, it.text)
-				l.Color = textNotice
+				l.Color = tok().textNotice
 				l.State = rs.sel(0)
 				return l.Layout(gtx)
 			}, 0, image.Point{}, image.Point{})
-		}, cardNotice, cardR, false, false
+		}, tok().cardNotice, cardR, false, false
 	case blockError:
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Body2(u.th, it.text)
-				l.Color = textError
+				l.Color = tok().textError
 				l.State = rs.sel(0)
 				return l.Layout(gtx)
 			}, 0, image.Point{}, image.Point{})
-		}, cardError, cardR, false, false
+		}, tok().cardError, cardR, false, false
 	case blockSystem:
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Body2(u.th, it.text)
-				l.Color = textSystem
+				l.Color = tok().textSystem
 				l.State = rs.sel(0)
 				return l.Layout(gtx)
 			}, 0, image.Point{}, image.Point{})
-		}, cardSystem, cardR, false, false
+		}, tok().cardSystem, cardR, false, false
 	default: // blockPlain（Say/命令输出/提示）：底板浅白、正文默认色
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -342,7 +342,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				s.State = rs.sel(0)
 				return s.Layout(gtx)
 			}, 0, image.Point{}, image.Point{})
-		}, pillBg, cardR, false, false
+		}, tok().pillBg, cardR, false, false
 	}
 }
 
@@ -399,7 +399,7 @@ func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image
 			dims := layout.UniformInset(mdCodeInsetDp).Layout(gtx, s.Layout)
 			txt := m.Stop()
 			st := clip.UniformRRect(image.Rectangle{Max: dims.Size}, gtx.Dp(radiusDp)).Push(gtx.Ops)
-			paint.Fill(gtx.Ops, cardTool)
+			paint.Fill(gtx.Ops, tok().cardTool)
 			st.Pop()
 			inset := gtx.Dp(mdCodeInsetDp)
 			if rs != nil {
@@ -413,7 +413,7 @@ func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				s := material.Body2(th, b.text)
-				s.Color = textDim
+				s.Color = tok().textDim
 				s.State = rs.sel(k)
 				return s.Layout(gtx)
 			}, k, off, image.Point{})
@@ -422,7 +422,7 @@ func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Caption(th, "· · · · · ·")
-				l.Color = textDim
+				l.Color = tok().textDim
 				l.State = rs.sel(k)
 				return l.Layout(gtx)
 			}, k, off, image.Point{})

@@ -999,7 +999,7 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	}
 	plat := newPlatform(Options{Theme: req.Theme}, true)
 	p := resolvePalette(req.Theme, plat.DarkMode())
-	applyPalette(p) // 装配前：主窗 goroutine 尚未启动，写活动槽无并发（同 newUI 口径）
+	activeTokens.Store(&p) // 装配前：主窗 goroutine 尚未启动，写活动快照无并发（同 newUI 口径）
 	applyPaper(resolvePaper(req.Theme, p.isDark()))
 	th := newTheme(plat.SystemFontCandidates())
 	th.Palette.Fg, th.Palette.Bg = p.fg, p.bg

@@ -206,7 +206,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	// 热区注册在同一变换内 → pointer.Position 即窗口系，与 complRows 一致。
 	wt := op.Offset(image.Pt(0, -absY)).Push(gtx.Ops)
 	st := clip.UniformRRect(card, gtx.Dp(10)).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, tipBg)
+	paint.Fill(gtx.Ops, tok().tipBg)
 	st.Pop()
 	cur := u.cursorPos()
 	y := card.Min.Y + padY
@@ -221,7 +221,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 		}
 		nameOp, nameDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, "/"+it.name)
-			s.Color = brandColor
+			s.Color = tok().brandColor
 			s.TextSize = unit.Sp(13)
 			return s.Layout(gtx)
 		})
@@ -235,7 +235,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 		tail = u.complFitText(gtx, tail, r.Dx()-nameDims.Size.X-gtx.Dp(complTailGapDp))
 		tailOp, tailDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, tail)
-			s.Color = textMuted
+			s.Color = tok().textMuted
 			s.TextSize = unit.Sp(13)
 			return s.Layout(gtx)
 		})
@@ -253,7 +253,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 		hint := u.complFitText(gtx, "还有 "+strconv.Itoa(over)+" 条，继续输入过滤", hr.Dx())
 		hintOp, hintDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, hint)
-			s.Color = textDim
+			s.Color = tok().textDim
 			s.TextSize = unit.Sp(12)
 			return s.Layout(gtx)
 		})
@@ -266,7 +266,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	cl.Pop()
 	wt.Pop()
 	// chrome 形状登记（u.record 用窗口系矩形；整窗 clip → 不受 D79 淡化带作用）。
-	u.record(card, gtx.Dp(10), tipBg, image.Rectangle{Max: u.frameSize})
+	u.record(card, gtx.Dp(10), tok().tipBg, image.Rectangle{Max: u.frameSize})
 }
 
 // complFitText 尾段按剩余宽截断（D103）：二分最大 rune 前缀，超宽以 … 收尾。
