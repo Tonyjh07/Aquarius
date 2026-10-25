@@ -4,13 +4,13 @@ package uigui
 // 接触推力 + 松手采纳槽位）：200 节点下一帧全链路耗时（物理步进 + 全量绘制），对照 60fps
 // 预算（16.67ms）。**实测（Ryzen 7 8700F, 900×700, PxPerDp=1.25，benchtime ≥1s）**：
 //
-//	物理仿真帧（12 子步 + 全量绘制，每轮注入扰动保持运动） ≈ 0.77 ms/帧（预算 ~5%）
+//	物理仿真帧（源档步进 + 全量绘制，每轮注入扰动保持运动） ≈ 0.77 ms/帧（预算 ~5%）
 //	拖拽帧（带 pin 同上）                              ≈ 0.94 ms/帧
 //	纯物理步进（200 节点链条）                          ≈ 0.23 ms/帧（0 allocs）
 //
 // ⇒ 200 节点（≤ hardCap 240）**全程物理 + 用户拖拽**稳定 60fps。注意：`-benchtime 3x`
-// 这类小采样会被冷启动污染，请用 ≥1s；帧基准每轮注入扰动（vx=vy=3），测的是**运动中**的
-// 帧（含物理步进），静止帧（tickLayout 早退）会便宜 ~0.5ms，以 PhysStep 为准更稳。
+// 这类小采样会被冷启动污染，请用 ≥1s；帧基准每轮注入扰动（挪坐标 + 重上时钟），测的是
+// **运动中**的帧（含物理步进），静止帧（tickLayout 早退）会便宜 ~0.5ms，以 PhysStep 为准更稳。
 // 运行：go test ./internal/adapter/uigui/ -run '^$' -bench 'PhysFrame|DragFrame|PhysStep' -benchtime 1s
 
 import (
@@ -94,7 +94,7 @@ func renderFrame(b *testing.B, q *input.Router, u *UI, st *historyState, w *head
 }
 
 // BenchmarkRelmapPhysFrame200 物理仿真帧（200 节点：物理步进 + 全量绘制）。每轮注入
-// 一点速度使仿真保持运动（模拟持续扰动/展开），测一帧全链路成本。
+// 一点位移使仿真保持运动（模拟持续扰动/展开），测一帧全链路成本。
 func BenchmarkRelmapPhysFrame200(b *testing.B) {
 	u, st, q, w := animBench(b)
 	g := st.graph
@@ -107,11 +107,12 @@ func BenchmarkRelmapPhysFrame200(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if g.lay != nil { // 注入扰动，保持物理在跑
-			for k := range g.lay.vx {
-				g.lay.vx[k], g.lay.vy[k] = 3, 1
+		if g.lay != nil { // 扰动：动一点坐标并重上时钟，保持仿真在跑
+			for k := range g.lay.x {
+				g.lay.x[k] += 3
+				g.lay.y[k] += 1
 			}
-			g.lay.settled = false
+			g.lay.wake()
 			g.relaxLeft = relSettleFrames
 		}
 		renderFrame(b, q, u, st, w)

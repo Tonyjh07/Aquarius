@@ -281,7 +281,7 @@ func TestRelPhysSettlesBoundedReproducible(t *testing.T) {
 				t.Fatal("settled 未置位")
 			}
 			for i := range la.x {
-				for _, v := range []float64{la.x[i], la.y[i], la.vx[i], la.vy[i]} {
+				for _, v := range []float64{la.x[i], la.y[i]} {
 					if math.IsNaN(v) || math.IsInf(v, 0) {
 						t.Fatalf("节点 %d 出现非有限值", i)
 					}
