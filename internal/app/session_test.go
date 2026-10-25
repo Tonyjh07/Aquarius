@@ -529,14 +529,11 @@ func TestSessionCommands(t *testing.T) {
 
 // TestSessionMemoryCommand /memory：缺省开全局、带参会话 id 前缀解析、未配置编辑器报因。
 func TestSessionMemoryCommand(t *testing.T) {
-	var opened []string
 	store := newMemStore()
+	mem := &fakeMemories{}
 	s, err := NewSession(context.Background(), SessionDeps{
 		Store: store, Agent: newTestAgent(t), IDs: &seqIDs{}, Clock: fixedClock{testTime},
-		OpenMemory: func(name string) (string, error) {
-			opened = append(opened, name)
-			return "/data/" + name, nil
-		},
+		Memories: mem,
 	})
 	if err != nil {
 		t.Fatalf("new session: %v", err)
@@ -550,18 +547,18 @@ func TestSessionMemoryCommand(t *testing.T) {
 	cur := string(s.Current().ID)
 
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "memory"}})
-	if err != nil || len(opened) != 1 || opened[0] != port.GlobalMemoryDoc {
-		t.Fatalf("全局: out=%q err=%v opened=%v", out, err, opened)
+	if err != nil || len(mem.opened) != 1 || mem.opened[0] != port.GlobalMemoryDoc {
+		t.Fatalf("全局: out=%q err=%v opened=%v", out, err, mem.opened)
 	}
-	if !strings.Contains(out, "/data/"+port.GlobalMemoryDoc) {
+	if !strings.Contains(out, "/tmp/"+port.GlobalMemoryDoc) {
 		t.Fatalf("out = %q", out)
 	}
 
 	// 精确会话 id。
 	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{
 		Name: "memory", Args: []string{cur},
-	}}); err != nil || opened[1] != port.SessionMemoryDoc(s.Current().ID) {
-		t.Fatalf("会话: err=%v opened=%v", err, opened)
+	}}); err != nil || mem.opened[1] != port.SessionMemoryDoc(s.Current().ID) {
+		t.Fatalf("会话: err=%v opened=%v", err, mem.opened)
 	}
 
 	// 未知会话 / 参数过多。

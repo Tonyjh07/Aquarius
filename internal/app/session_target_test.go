@@ -38,30 +38,30 @@ func TestSessionDropsForeignInjection(t *testing.T) {
 // TestSessionSwitchCancelsWatchers /new、/switch、删除当前会话都撤销旧会话的 watcher。
 func TestSessionSwitchCancelsWatchers(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	var cancelled []conversation.ID
-	s.cancelWatchers = func(id conversation.ID) { cancelled = append(cancelled, id) }
+	cancel := &fakeWatchCancel{}
+	s.watchCancel = cancel
 
 	oldID := s.Current().ID
 	if _, err := handleCmd(s, "new", "乙"); err != nil {
 		t.Fatalf("/new: %v", err)
 	}
-	if len(cancelled) != 1 || cancelled[0] != oldID {
-		t.Fatalf("cancelled = %v, want [%s]", cancelled, oldID)
+	if len(cancel.cancelled) != 1 || cancel.cancelled[0] != oldID {
+		t.Fatalf("cancelled = %v, want [%s]", cancel.cancelled, oldID)
 	}
 
 	newID := s.Current().ID
 	if _, err := handleCmd(s, "switch", string(oldID)); err != nil {
 		t.Fatalf("/switch: %v", err)
 	}
-	if len(cancelled) != 2 || cancelled[1] != newID {
-		t.Fatalf("cancelled = %v, want 第二项 %s", cancelled, newID)
+	if len(cancel.cancelled) != 2 || cancel.cancelled[1] != newID {
+		t.Fatalf("cancelled = %v, want 第二项 %s", cancel.cancelled, newID)
 	}
 
 	s.confirmer = &scriptConfirmer{t: t, answers: []bool{true}}
 	if _, err := handleCmd(s, "rmconv", string(oldID)); err != nil {
 		t.Fatalf("/rmconv: %v", err)
 	}
-	if len(cancelled) != 3 || cancelled[2] != oldID {
-		t.Fatalf("cancelled = %v, want 第三项 %s", cancelled, oldID)
+	if len(cancel.cancelled) != 3 || cancel.cancelled[2] != oldID {
+		t.Fatalf("cancelled = %v, want 第三项 %s", cancel.cancelled, oldID)
 	}
 }

@@ -11,41 +11,6 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// fakeModelCatalog 模型服务替身（命令面测试用）：一次性给全读侧快照与探测结论，
-// 并按需记录探测目标。
-type fakeModelCatalog struct {
-	models   []port.ModelInfo
-	listErr  error
-	status   ModelStatus
-	probe    ProbeReport
-	probeErr error
-	probed   []string
-}
-
-func (f *fakeModelCatalog) Models(context.Context) ([]port.ModelInfo, error) {
-	if f.listErr != nil {
-		return nil, f.listErr
-	}
-	return f.models, nil
-}
-
-func (f *fakeModelCatalog) Current() ModelStatus { return f.status }
-
-// capsPtr 取能力位的指针形式（`ModelStatus.Caps` 用 nil 表示「未声明」，
-// 测试里要写「声明了三项中某几项」就得取地址）。
-func capsPtr(c port.ModelCaps) *port.ModelCaps { return &c }
-
-func (f *fakeModelCatalog) Probe(_ context.Context, model string) (ProbeReport, error) {
-	f.probed = append(f.probed, model)
-	return f.probe, f.probeErr
-}
-
-// capsOf 取当前快照的能力位（nil = 未声明）。
-func (f *fakeModelCatalog) capsOf() *port.ModelCaps { return f.status.Caps }
-
-// setCaps 换能力位声明；want 为 nil 表示「未声明」。
-func (f *fakeModelCatalog) setCaps(c *port.ModelCaps) { f.status.Caps = c }
-
 // TestSessionModelCommand /model（D32）：无参列当前+可用清单（能力/单价标注），
 // 有参先写回 config 再热切换；用法与未配置依赖报因。
 func TestSessionModelCommand(t *testing.T) {
@@ -59,7 +24,7 @@ func TestSessionModelCommand(t *testing.T) {
 		t.Fatalf("err = %v, want 未配置模型服务", err)
 	}
 
-	cat := &fakeModelCatalog{models: []port.ModelInfo{
+	cat := &fakeModels{models: []port.ModelInfo{
 		{Name: "gpt-a", Caps: port.ModelCaps{Tools: true, Vision: true}, CostIn: 0.001, CostOutUSD: 0.002},
 		{Name: "mini"},
 	}}
@@ -131,14 +96,15 @@ func TestSessionModelCommand(t *testing.T) {
 // 失去的——否则用户只看到「工具关了」，得一个个去猜配置。
 func TestModelCommandChainAnnotation(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	s.models = &fakeModelCatalog{
+	cat := &fakeModels{
 		status: ModelStatus{Provider: "a"},
 		models: []port.ModelInfo{{Name: "m1"}},
 	}
+	s.models = cat
 	primary := port.ModelCaps{Tools: true, Reasoning: true, Vision: true}
 	weak := port.ModelCaps{Tools: true}
-	s.models.(*fakeModelCatalog).setCaps(&weak)
-	s.models.(*fakeModelCatalog).status.Chain = []ModelLink{
+	cat.setCaps(&weak)
+	cat.status.Chain = []ModelLink{
 		{Provider: "a", Model: "m1", Caps: primary, Primary: true},
 		{Provider: "b", Model: "mb", Caps: weak},
 	}
@@ -164,7 +130,7 @@ func TestModelCommandChainAnnotation(t *testing.T) {
 // 还是全局上限压住的——压缩提前触发时用户得能看出原因。
 func TestModelCommandBudget(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	cat := &fakeModelCatalog{models: []port.ModelInfo{{Name: "m1"}}}
+	cat := &fakeModels{models: []port.ModelInfo{{Name: "m1"}}}
 	s.models = cat
 	one := port.ModelCaps{Tools: true}
 	cat.setCaps(&one)
@@ -209,7 +175,7 @@ func TestModelProbeCommand(t *testing.T) {
 	}
 
 	var asked string
-	cat := &fakeModelCatalog{probe: ProbeReport{
+	cat := &fakeModels{report: ProbeReport{
 		Provider: "p1", Model: "m1", Written: true,
 		Results: []port.ProbeResult{
 			{Capability: port.CapTools, Verdict: port.ProbeSupported, Reason: "模型发起了工具调用（probe_ping）",
@@ -242,7 +208,7 @@ func TestModelProbeCommand(t *testing.T) {
 	}
 
 	// 无明确结论 = 明确告诉用户「没改」，别让人以为探过就生效了。
-	cat.probe = ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
+	cat.report = ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
 		{Capability: port.CapTools, Verdict: port.ProbeInconclusive, Reason: "5xx"},
 	}}
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}})
@@ -254,7 +220,7 @@ func TestModelProbeCommand(t *testing.T) {
 	}
 
 	// 探测失败：已得结论照常呈现，错误一并上抛。
-	cat.probe = ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
+	cat.report = ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
 		{Capability: port.CapTools, Verdict: port.ProbeSupported},
 	}}
 	cat.probeErr = errors.New("boom")

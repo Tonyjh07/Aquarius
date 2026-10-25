@@ -63,10 +63,10 @@ func (s *Session) execThink(_ context.Context, args []string) (string, error) {
 	if cur := s.agent.thinkState(); cur != nil && *cur == want {
 		return fmt.Sprintf("原生思考已是 %s", map[bool]string{true: "on", false: "off"}[want]), nil
 	}
-	if s.persistThink == nil {
-		return "", fmt.Errorf("session: 未配置思考持久化（SessionDeps.PersistThink），/think 切换不可用")
+	if s.thinking == nil {
+		return "", fmt.Errorf("session: 未配置思考持久化（SessionDeps.Thinking），/think 切换不可用")
 	}
-	if err := s.persistThink(want); err != nil {
+	if err := s.thinking.PersistThink(want); err != nil {
 		return "", fmt.Errorf("session: 写回 config: %w", err)
 	}
 	s.agent.setThink(&want)
@@ -99,10 +99,10 @@ func (s *Session) execEffort(_ context.Context, args []string) (string, error) {
 		}
 		return fmt.Sprintf("推理档位已是 %s", v), nil
 	}
-	if s.persistEffort == nil {
-		return "", fmt.Errorf("session: 未配置档位持久化（SessionDeps.PersistEffort），/effort 切换不可用")
+	if s.thinking == nil {
+		return "", fmt.Errorf("session: 未配置档位持久化（SessionDeps.Thinking），/effort 切换不可用")
 	}
-	if err := s.persistEffort(v); err != nil {
+	if err := s.thinking.PersistEffort(v); err != nil {
 		return "", fmt.Errorf("session: 写回 config: %w", err)
 	}
 	s.agent.setEffort(v)

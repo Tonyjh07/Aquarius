@@ -53,10 +53,10 @@ func (s *Session) execUnattended(_ context.Context, args []string) (string, erro
 	if want == cur && len(args) == 1 {
 		return fmt.Sprintf("无人值守已是 %s", onOff(cur)), nil
 	}
-	if s.persistUnatt == nil {
+	if s.perms == nil {
 		return "", errors.New("session: 未配置无人值守持久化，无法切换（需能写回 config）")
 	}
-	if err := s.persistUnatt(want); err != nil {
+	if err := s.perms.PersistUnattended(want); err != nil {
 		return "", fmt.Errorf("session: 写回 config 失败: %w", err)
 	}
 	if !want {
@@ -68,7 +68,7 @@ func (s *Session) execUnattended(_ context.Context, args []string) (string, erro
 }
 
 // unattendedOn 无人值守当前是否开着；未接线 = 关（与装饰器同口径）。
-func (s *Session) unattendedOn() bool { return s.unattended != nil && s.unattended() }
+func (s *Session) unattendedOn() bool { return s.perms != nil && s.perms.Unattended() }
 
 // onOff 布尔的中文短写（命令回执用）。
 func onOff(on bool) string {
@@ -93,10 +93,10 @@ func (s *Session) execPermission(ctx context.Context, cmd port.Command) (string,
 	if level == s.level {
 		return fmt.Sprintf("权限等级已是 %s", level), nil
 	}
-	if s.persistLevel == nil {
+	if s.perms == nil {
 		return "", errors.New("session: 未配置权限持久化，无法切换（需能写回 config）")
 	}
-	if err := s.persistLevel(level); err != nil {
+	if err := s.perms.PersistLevel(level); err != nil {
 		return "", fmt.Errorf("session: 写回 config 失败: %w", err)
 	}
 	s.level = level
@@ -105,8 +105,8 @@ func (s *Session) execPermission(ctx context.Context, cmd port.Command) (string,
 
 // execMemory 实现 /memory：打开记忆文件。
 func (s *Session) execMemory(ctx context.Context, cmd port.Command) (string, error) {
-	if s.openMemory == nil {
-		return "", errors.New("session: 未配置记忆编辑器（SessionDeps.OpenMemory）")
+	if s.memories == nil {
+		return "", errors.New("session: 未配置记忆编辑器（SessionDeps.Memories）")
 	}
 	if len(cmd.Args) > 1 {
 		return "", errors.New("用法: /memory [会话id前缀]（缺省打开全局记忆文件）")
@@ -119,7 +119,7 @@ func (s *Session) execMemory(ctx context.Context, cmd port.Command) (string, err
 		}
 		name = port.SessionMemoryDoc(id)
 	}
-	path, err := s.openMemory(name)
+	path, err := s.memories.Open(name)
 	if err != nil {
 		return "", fmt.Errorf("session: 打开记忆文件: %w", err)
 	}

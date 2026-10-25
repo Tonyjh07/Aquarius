@@ -34,6 +34,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/zhconv"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -603,6 +604,49 @@ func (c modelCatalog) Probe(ctx context.Context, model string) (app.ProbeReport,
 	return c.w.probeModel(ctx, model)
 }
 
+// permSettings 实现 app.PermissionSettings（`/permission` 与 `/unattended` 的写回）。
+// 与 modelCatalog 同理：两项写的是同一段 config、改的是同一条执行链。
+type permSettings struct{ w *wiring }
+
+var _ app.PermissionSettings = permSettings{}
+
+func (p permSettings) Unattended() bool { return p.w.unattended != nil && p.w.unattended.Get() }
+
+func (p permSettings) PersistUnattended(on bool) error { return p.w.persist.persistUnattended(on) }
+
+func (p permSettings) PersistLevel(level perm.Level) error { return p.w.persist.persistLevel(level) }
+
+// thinkSettings 实现 app.ThinkingSettings（`/think` 与 `/effort` 的写回）。
+type thinkSettings struct{ w *wiring }
+
+var _ app.ThinkingSettings = thinkSettings{}
+
+func (t thinkSettings) PersistThink(on bool) error { return t.w.persist.persistThink(on) }
+
+func (t thinkSettings) PersistEffort(level string) error { return t.w.persist.persistEffort(level) }
+
+// watchCancel 实现 app.WatcherCanceller（D167）：两个轮询器都要撤——任务观察器与
+// 观察器各管一类后台任务，漏一个就会把别的会话的完成报告送进当前上下文。
+type watchCancel struct{ w *wiring }
+
+var _ app.WatcherCanceller = watchCancel{}
+
+func (c watchCancel) CancelSession(id conversation.ID) {
+	c.w.jobWatch.CancelSession(id)
+	c.w.watcher.CancelSession(id)
+}
+
+// memoryOpener 实现 app.MemoryOpener（D24）：路径解析与外部编辑器拉起都由装配根管
+// （app 不碰文件系统与进程）。
+type memoryOpener struct{ w *wiring }
+
+var _ app.MemoryOpener = memoryOpener{}
+
+func (m memoryOpener) Open(name string) (string, error) {
+	return openMemoryEditor(m.w.mem, m.w.ui, m.w.stdin, m.w.stdout, m.w.stderr)(name)
+}
+
+// contextBudget /model 展示用的预算口径（D177）：生效值 + 这个值是谁决定的。
 func (w *wiring) contextBudget() app.ContextBudget {
 	global := w.cfg.Limits.MaxContextTokens
 	if global <= 0 {

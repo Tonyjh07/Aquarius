@@ -35,13 +35,8 @@ type SessionDeps struct {
 	Level perm.Level
 	// SandboxPath 特权目录（<dataDir>/sandbox），仅用于 /permission 展示。
 	SandboxPath string
-	// PersistLevel 把等级切换写回 config（D22）；nil 时 /permission 切换报错。
-	PersistLevel func(perm.Level) error
-	// Unattended 无人值守开关现取（D185）；nil = 恒关（测试/未接线装配）。
-	Unattended func() bool
-	// PersistUnattended 把无人值守开关写回 config（D185 口径四）；nil 时 /unattended
-	// 有参报错（无参仍可报告当前状态）。
-	PersistUnattended func(on bool) error
+	// Perms 权限面写回（/permission 与 /unattended，D22/D185）；nil 时有参切换报错。
+	Perms PermissionSettings
 	// Confirmer 逐次确认（/rm 二次确认等）；nil 时破坏性命令报"未配置确认器"。
 	Confirmer port.Confirmer
 	// Jobs 后台任务管理（/jobs，DESIGN §7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
@@ -53,17 +48,17 @@ type SessionDeps struct {
 	// SkillAdmin 技能安装面（/skill install|remove|update，D202）；nil 时子命令报未接入。
 	// 与 Skills 分开：读侧是只读端口，安装面是用户面动作（不进 port）。
 	SkillAdmin SkillAdmin
-	// CancelWatchers 撤销某会话的后台任务观察者（D167）：切换 / 新建 / 删除当前会话时调用，
+	// WatchCancel 撤销某会话的后台任务观察者（D167）：切换 / 新建 / 删除当前会话时调用，
 	// 保证任务完成报告不跨会话；nil 时跳过（测试或未接轮询器的装配）。
-	CancelWatchers func(conversation.ID)
+	WatchCancel WatcherCanceller
 	// Ingestors 多模态输入摄取器（M3 管线；/attach 等触发命令面留 §14，D27/D33）；
 	// nil 时 Raw 输入报"没有可用的摄取器"。
 	Ingestors []port.Ingestor
 	// UI 轮次外的过程事件（摄取 Note 等 NoticeEvent）；nil 时跳过呈现。
 	UI port.Presenter
-	// OpenMemory 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
+	// Memories 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
 	// nil 时 /memory 报"未配置编辑器"。
-	OpenMemory func(name string) (string, error)
+	Memories MemoryOpener
 	// Plugins 插件管理面（/plugin，DESIGN §7.3 / M4）；nil 时 /plugin 报"未配置"。
 	Plugins PluginAdmin
 	// Models 模型服务读侧（/model 无参展示，D32）；nil 时报"未配置模型服务"。
@@ -74,11 +69,8 @@ type SessionDeps struct {
 	// Prober 能力探测（D174：/model probe）。model 空 = 当前模型；装配根实现
 	// （造一次性客户端 → 真请求 → 写回 config → 返回逐项结论）。nil 时该子命令报错。
 	Prober ModelProbe
-	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
-	// nil 时 /think 有参报"未配置持久化"。
-	PersistThink func(on bool) error
-	// PersistEffort 把推理档位写回 config（D34；"" = 清除）；nil 时 /effort 有参报错。
-	PersistEffort func(level string) error
+	// Thinking 思考面写回（/think 与 /effort，D34）；nil 时两条命令的有参形态报错。
+	Thinking ThinkingSettings
 }
 
 // CommandHandler 动态命令处理器（DESIGN §6.1 扩展点 #4 / §7.3 MCP prompts）：
@@ -90,32 +82,29 @@ type CommandHandler func(ctx context.Context, args []string) (string, error)
 // M4 启用 /plugin 与动态 /mcp: 命令、/model，思考控制 /think /effort 随 D34 启用）。
 // 命令的文本输出经返回值交给装配根渲染，轮次过程输出走 Presenter——app 不直接接触 IO。
 type Session struct {
-	store          port.ConversationStore
-	agent          *Agent
-	ids            port.IDGen
-	clock          port.Clock
-	persona        *PersonaComposer
-	level          perm.Level
-	sandboxPath    string
-	persistLevel   func(perm.Level) error
-	unattended     func() bool
-	persistUnatt   func(on bool) error
-	confirmer      port.Confirmer
-	jobs           jobAdmin
-	watches        port.WatchManager
-	skills         port.SkillCatalog
-	skillAdmin     SkillAdmin
-	cancelWatchers func(conversation.ID)
-	ingestors      []port.Ingestor
-	ui             port.Presenter
-	openMemory     func(name string) (string, error)
-	plugins        PluginAdmin
-	models         ModelCatalog
-	persistModel   func(name string) error
-	prober         ModelProbe
-	persistThink   func(on bool) error
-	persistEffort  func(level string) error
-	cur            *conversation.Conversation
+	store        port.ConversationStore
+	agent        *Agent
+	ids          port.IDGen
+	clock        port.Clock
+	persona      *PersonaComposer
+	level        perm.Level
+	sandboxPath  string
+	perms        PermissionSettings
+	confirmer    port.Confirmer
+	jobs         jobAdmin
+	watches      port.WatchManager
+	skills       port.SkillCatalog
+	skillAdmin   SkillAdmin
+	watchCancel  WatcherCanceller
+	ingestors    []port.Ingestor
+	ui           port.Presenter
+	memories     MemoryOpener
+	plugins      PluginAdmin
+	models       ModelCatalog
+	persistModel func(name string) error
+	prober       ModelProbe
+	thinking     ThinkingSettings
+	cur          *conversation.Conversation
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
 	// 发布，UI 事件循环 goroutine 经 Branches 无锁读（见 tree.go）。
 	tree atomic.Pointer[treeSnapshot]
@@ -177,33 +166,30 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)
 	}
 	s := &Session{
-		store:          d.Store,
-		agent:          d.Agent,
-		ids:            d.IDs,
-		clock:          d.Clock,
-		persona:        persona,
-		level:          level,
-		sandboxPath:    d.SandboxPath,
-		persistLevel:   d.PersistLevel,
-		unattended:     d.Unattended,
-		persistUnatt:   d.PersistUnattended,
-		confirmer:      d.Confirmer,
-		jobs:           d.Jobs,
-		watches:        d.Watches,
-		skills:         d.Skills,
-		skillAdmin:     d.SkillAdmin,
-		cancelWatchers: d.CancelWatchers,
-		ingestors:      d.Ingestors,
-		ui:             d.UI,
-		openMemory:     d.OpenMemory,
-		plugins:        d.Plugins,
-		models:         d.Models,
-		persistModel:   d.PersistModel,
-		prober:         d.Prober,
-		persistThink:   d.PersistThink,
-		persistEffort:  d.PersistEffort,
-		dynamic:        map[string]CommandHandler{},
-		injectCh:       make(chan pendingInjection, injectQueueCap),
+		store:        d.Store,
+		agent:        d.Agent,
+		ids:          d.IDs,
+		clock:        d.Clock,
+		persona:      persona,
+		level:        level,
+		sandboxPath:  d.SandboxPath,
+		perms:        d.Perms,
+		confirmer:    d.Confirmer,
+		jobs:         d.Jobs,
+		watches:      d.Watches,
+		skills:       d.Skills,
+		skillAdmin:   d.SkillAdmin,
+		watchCancel:  d.WatchCancel,
+		ingestors:    d.Ingestors,
+		ui:           d.UI,
+		memories:     d.Memories,
+		plugins:      d.Plugins,
+		models:       d.Models,
+		persistModel: d.PersistModel,
+		prober:       d.Prober,
+		thinking:     d.Thinking,
+		dynamic:      map[string]CommandHandler{},
+		injectCh:     make(chan pendingInjection, injectQueueCap),
 	}
 
 	list, err := d.Store.List(ctx)
@@ -454,8 +440,8 @@ func (s *Session) maybeSetTitle(text string) {
 // cancelWatchersFor 撤销某会话的后台任务观察者（D167）：切走/删掉会话后，
 // 任务仍在后台跑，但完成报告不再属于当前上下文。
 func (s *Session) cancelWatchersFor(id conversation.ID) {
-	if s.cancelWatchers != nil {
-		s.cancelWatchers(id)
+	if s.watchCancel != nil {
+		s.watchCancel.CancelSession(id)
 	}
 }
 

@@ -20,11 +20,10 @@ func thinkCmd(t *testing.T, s *Session, name string, args ...string) (string, er
 // 重复短路、写回失败不动运行态、未配置持久化报错、effort 枚举校验、/help 收录。
 func TestSessionThinkEffortCommands(t *testing.T) {
 	store := newMemStore()
-	var thinks []bool
-	var efforts []string
 	s, _, _ := newTestSession(t, store)
-	s.persistThink = func(on bool) error { thinks = append(thinks, on); return nil }
-	s.persistEffort = func(l string) error { efforts = append(efforts, l); return nil }
+	think := &fakeThinking{}
+	s.thinking = think
+	thinks, efforts := &think.thinks, &think.efforts
 
 	// 无参：缺省开、档位未设。
 	out, err := thinkCmd(t, s, "think")
@@ -43,8 +42,8 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	if _, err := thinkCmd(t, s, "effort", "ultra"); err == nil {
 		t.Fatal("非法 effort 档位应报错")
 	}
-	if len(thinks) != 0 || len(efforts) != 0 {
-		t.Fatalf("非法参数不应写回: %v %v", thinks, efforts)
+	if len(*thinks) != 0 || len(*efforts) != 0 {
+		t.Fatalf("非法参数不应写回: %v %v", *thinks, *efforts)
 	}
 
 	// /effort 切换 + 短路。
@@ -52,14 +51,14 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	if err != nil || !strings.Contains(out, "high") {
 		t.Fatalf("effort switch = %q, %v", out, err)
 	}
-	if len(efforts) != 1 || efforts[0] != "high" || s.agent.Effort() != "high" {
-		t.Fatalf("efforts = %v, agent = %q", efforts, s.agent.Effort())
+	if len(*efforts) != 1 || (*efforts)[0] != "high" || s.agent.Effort() != "high" {
+		t.Fatalf("efforts = %v, agent = %q", *efforts, s.agent.Effort())
 	}
 	if out, err = thinkCmd(t, s, "effort", "high"); err != nil || !strings.Contains(out, "已是") {
 		t.Fatalf("重复档位应短路: %q, %v", out, err)
 	}
-	if len(efforts) != 1 {
-		t.Fatalf("efforts = %v, want 不重复写回", efforts)
+	if len(*efforts) != 1 {
+		t.Fatalf("efforts = %v, want 不重复写回", *efforts)
 	}
 
 	// /think off：写回 + 热切；报告反映关态且不再列档位行。
@@ -67,8 +66,8 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	if err != nil || !strings.Contains(out, "off") {
 		t.Fatalf("think off = %q, %v", out, err)
 	}
-	if len(thinks) != 1 || thinks[0] || s.agent.ThinkOn() {
-		t.Fatalf("thinks = %v, agent on = %v", thinks, s.agent.ThinkOn())
+	if len(*thinks) != 1 || (*thinks)[0] || s.agent.ThinkOn() {
+		t.Fatalf("thinks = %v, agent on = %v", *thinks, s.agent.ThinkOn())
 	}
 	out, _ = thinkCmd(t, s, "think")
 	if !strings.Contains(out, "关") || strings.Contains(out, "推理档位") {
@@ -77,21 +76,21 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	if out, err = thinkCmd(t, s, "think", "off"); err != nil || !strings.Contains(out, "已是") {
 		t.Fatalf("重复开关应短路: %q, %v", out, err)
 	}
-	if len(thinks) != 1 {
-		t.Fatalf("thinks = %v, want 不重复写回", thinks)
+	if len(*thinks) != 1 {
+		t.Fatalf("thinks = %v, want 不重复写回", *thinks)
 	}
 
 	// /think on 恢复。
 	if _, err = thinkCmd(t, s, "think", "on"); err != nil {
 		t.Fatalf("think on: %v", err)
 	}
-	if len(thinks) != 2 || !thinks[1] || !s.agent.ThinkOn() {
-		t.Fatalf("thinks = %v", thinks)
+	if len(*thinks) != 2 || !(*thinks)[1] || !s.agent.ThinkOn() {
+		t.Fatalf("thinks = %v", *thinks)
 	}
 
 	// 写回失败：报错且运行态不动（同 /permission 口径）。
 	s2, _, _ := newTestSession(t, newMemStore())
-	s2.persistThink = func(bool) error { return errors.New("disk full") }
+	s2.thinking = &fakeThinking{err: errors.New("disk full")}
 	if _, err := thinkCmd(t, s2, "think", "off"); err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("err = %v, want 写回失败上抛", err)
 	}
@@ -119,9 +118,10 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 // 命令面必须说清「为什么不发」——否则用户会以为设了档位却没生效是 bug。
 func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	s.models = &fakeModelCatalog{status: ModelStatus{Caps: capsPtr(port.ModelCaps{Tools: true, Vision: true})}}
-	var thinks []bool
-	s.persistThink = func(on bool) error { thinks = append(thinks, on); return nil }
+	s.models = &fakeModels{status: ModelStatus{Caps: capsPtr(port.ModelCaps{Tools: true, Vision: true})}}
+	think := &fakeThinking{}
+	s.thinking = think
+	thinks := &think.thinks
 
 	// 无参显示：状态照常，但明确写出未声明思考能力。
 	out, err := thinkCmd(t, s, "think")
@@ -143,8 +143,8 @@ func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("think on: %v", err)
 	}
-	if len(thinks) != 2 || !thinks[1] {
-		t.Fatalf("thinks = %v, want 照常写回", thinks)
+	if len(*thinks) != 2 || !(*thinks)[1] {
+		t.Fatalf("thinks = %v, want 照常写回", *thinks)
 	}
 	if !strings.Contains(out, "仍不会发送") {
 		t.Fatalf("切到 on 应提示不会发送: %q", out)
@@ -154,8 +154,8 @@ func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
 // TestEffortWithoutReasoningCaps D173：档位照存，但提示不会发送。
 func TestEffortWithoutReasoningCaps(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	s.models = &fakeModelCatalog{status: ModelStatus{Caps: capsPtr(port.ModelCaps{Tools: true})}}
-	s.persistEffort = func(string) error { return nil }
+	s.models = &fakeModels{status: ModelStatus{Caps: capsPtr(port.ModelCaps{Tools: true})}}
+	s.thinking = &fakeThinking{}
 	out, err := thinkCmd(t, s, "effort", "high")
 	if err != nil {
 		t.Fatalf("effort: %v", err)
