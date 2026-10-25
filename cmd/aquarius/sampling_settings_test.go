@@ -38,11 +38,11 @@ func samplingCfgPath(t *testing.T, extra string) string {
 }
 
 // TestSamplingFormTextRoundTrip 表单文本化与解析对上（D204）：留空 = 不发送、0 = 真的发 0、
-// 停止串走 JSON 数组。
+// 停止串走 JSON 数组。解析规则与设置窗的前置校验是同一份实现（port.ParseSamplingText）。
 func TestSamplingFormTextRoundTrip(t *testing.T) {
 	zero := 0.0
 	s := samplingConfig{Temperature: &zero, TopP: fp(0.9), MaxTokens: 256, Stop: []string{"\n", "END"}}
-	got, err := parseSamplingForm(numText(s.Temperature), numText(s.TopP), intText(s.MaxTokens), stopsText(s.Stop))
+	got, err := port.ParseSamplingText(numText(s.Temperature), numText(s.TopP), intText(s.MaxTokens), stopsText(s.Stop))
 	if err != nil {
 		t.Fatalf("解析: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestSamplingFormTextRoundTrip(t *testing.T) {
 	}
 
 	// 全留空 = 全不发送（不是「发 0」）。
-	empty, err := parseSamplingForm("", "", "", "")
+	empty, err := port.ParseSamplingText("", "", "", "")
 	if err != nil {
 		t.Fatalf("空表单: %v", err)
 	}
@@ -66,17 +66,17 @@ func TestSamplingFormTextRoundTrip(t *testing.T) {
 	}
 
 	// 停止串必须写成 JSON 数组：逗号分隔会被当成一个整串（含逗号）——正是要避免的歧义。
-	if _, err := parseSamplingForm("", "", "", "a,b"); err == nil {
+	if _, err := port.ParseSamplingText("", "", "", "a,b"); err == nil {
 		t.Fatal("非 JSON 停止串应报错")
 	}
-	if _, err := parseSamplingForm("", "", "", `[""]`); err == nil ||
+	if _, err := port.ParseSamplingText("", "", "", `[""]`); err == nil ||
 		!strings.Contains(err.Error(), "空串") {
 		t.Fatalf("空停止串 = %v", err)
 	}
-	if _, err := parseSamplingForm("abc", "", "", ""); err == nil {
+	if _, err := port.ParseSamplingText("abc", "", "", ""); err == nil {
 		t.Fatal("温度非数字应报错")
 	}
-	if _, err := parseSamplingForm("", "", "0", ""); err == nil {
+	if _, err := port.ParseSamplingText("", "", "0", ""); err == nil {
 		t.Fatal("输出上限 0 应报错（留空才是不发送）")
 	}
 }
@@ -96,11 +96,7 @@ func TestSamplingFormRange(t *testing.T) {
 		{"温度负", "-0.1", "", false},
 		{"top_p 超界", "", "1.1", false},
 	} {
-		s, err := parseSamplingForm(tc.temp, tc.topP, "", "")
-		if err != nil {
-			t.Fatalf("%s: 解析: %v", tc.name, err)
-		}
-		err = validateSamplingForm(s)
+		_, err := port.ParseSamplingText(tc.temp, tc.topP, "", "")
 		if tc.ok && err != nil {
 			t.Errorf("%s: 应通过，报 %v", tc.name, err)
 		}

@@ -3,7 +3,6 @@ package uigui
 import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -188,44 +187,17 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.WebFetchPrivate = f.webPrivate.Value
 	// 采样参数（D204）：空串 = 该项不发送；有值必须是合法数字（0 是有效取值）。
 	// SamplingSet = 本次保存整段管采样（窄写回不设这个位，别把用户配好的参数抹平）。
+	// 解析与范围走 port.ParseSamplingText——写回侧 formSampling 调的是同一个函数。
 	p.SamplingSet = true
 	p.SamplingTemperature = strings.TrimSpace(f.samplingTemp.Text())
-	if p.SamplingTemperature != "" {
-		n, perr := strconv.ParseFloat(p.SamplingTemperature, 64)
-		if perr != nil || n < port.SettingsTemperatureMin || n > port.SettingsTemperatureMax {
-			f.err = true
-			f.status = fmt.Sprintf("采样温度须为 %g–%g 的数值（留空 = 交服务端默认）",
-				port.SettingsTemperatureMin, port.SettingsTemperatureMax)
-			return
-		}
-	}
 	p.SamplingTopP = strings.TrimSpace(f.samplingTopP.Text())
-	if p.SamplingTopP != "" {
-		n, perr := strconv.ParseFloat(p.SamplingTopP, 64)
-		if perr != nil || n < port.SettingsTopPMin || n > port.SettingsTopPMax {
-			f.err = true
-			f.status = fmt.Sprintf("top_p 须为 %g–%g 的数值（留空 = 交服务端默认）",
-				port.SettingsTopPMin, port.SettingsTopPMax)
-			return
-		}
-	}
 	p.SamplingMaxTokens = strings.TrimSpace(f.samplingMax.Text())
-	if p.SamplingMaxTokens != "" {
-		n, perr := strconv.Atoi(p.SamplingMaxTokens)
-		if perr != nil || n < 1 {
-			f.err = true
-			f.status = "输出上限须为正整数（留空 = 不发送）"
-			return
-		}
-	}
 	p.SamplingStop = strings.TrimSpace(f.samplingStop.Text())
-	if p.SamplingStop != "" {
-		var stops []string
-		if err := json.Unmarshal([]byte(p.SamplingStop), &stops); err != nil {
-			f.err = true
-			f.status = "停止串须写成 JSON 数组，如 [\"\\n\", \"END\"]（留空 = 不发送）"
-			return
-		}
+	if _, err := port.ParseSamplingText(p.SamplingTemperature, p.SamplingTopP,
+		p.SamplingMaxTokens, p.SamplingStop); err != nil {
+		f.err = true
+		f.status = err.Error()
+		return
 	}
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v

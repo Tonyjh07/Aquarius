@@ -9,9 +9,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -45,59 +43,6 @@ func intText(v int) string {
 		return ""
 	}
 	return strconv.Itoa(v)
-}
-
-// parseSamplingForm 表单四段 → samplingConfig（保存前调用）。空串 = 该项不写。
-// 只做语法校验；取值范围留给 config 侧同一条口径（写入后由启动校验按住）。
-func parseSamplingForm(temp, topP, maxTokens, stop string) (samplingConfig, error) {
-	var out samplingConfig
-	if v := strings.TrimSpace(temp); v != "" {
-		n, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return out, fmt.Errorf("采样温度 %q 不是数字", v)
-		}
-		out.Temperature = &n
-	}
-	if v := strings.TrimSpace(topP); v != "" {
-		n, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return out, fmt.Errorf("top_p %q 不是数字", v)
-		}
-		out.TopP = &n
-	}
-	if v := strings.TrimSpace(maxTokens); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 {
-			return out, fmt.Errorf("输出上限 %q 须为正整数", v)
-		}
-		out.MaxTokens = n
-	}
-	if v := strings.TrimSpace(stop); v != "" {
-		var stops []string
-		if err := json.Unmarshal([]byte(v), &stops); err != nil {
-			return out, fmt.Errorf("停止串须写成 JSON 数组（如 [\"\\n\", \"END\"]）: %w", err)
-		}
-		for _, s := range stops {
-			if s == "" {
-				return out, fmt.Errorf("停止串里不能有空串（那不是停止条件）")
-			}
-		}
-		out.Stop = stops
-	}
-	return out, nil
-}
-
-// validateSamplingForm 保存前的语法占位（范围校验见 validateSamplingSettings——那一步
-// 要知道协议才判得准：Anthropic 只接 0..1，其余接 0..2）。
-func validateSamplingForm(s samplingConfig) error {
-	if s.Temperature != nil && (*s.Temperature < port.SettingsTemperatureMin || *s.Temperature > port.SettingsTemperatureMax) {
-		return fmt.Errorf("采样温度须在 %g–%g 之间（留空 = 交服务端默认）",
-			port.SettingsTemperatureMin, port.SettingsTemperatureMax)
-	}
-	if s.TopP != nil && (*s.TopP < port.SettingsTopPMin || *s.TopP > port.SettingsTopPMax) {
-		return fmt.Errorf("top_p 须在 %g–%g 之间", port.SettingsTopPMin, port.SettingsTopPMax)
-	}
-	return nil
 }
 
 // validateSamplingSettings 保存前的完整校验（D204）：把这次改动叠进**磁盘上那份配置的
@@ -141,14 +86,18 @@ func writeSamplingSection(generic map[string]any, s samplingConfig) {
 	model["sampling"] = sec
 }
 
-// formSampling 从 patch 解析出采样声明（设置窗侧唯一入口）。
+// formSampling 从 patch 解析出采样声明（设置窗侧唯一入口）。解析规则（含范围与停止串
+// 的 JSON 形态）在 port.ParseSamplingText——设置窗的前置校验与这里的写回解析是同一份
+// 实现，不会出现「界面放行、写回拒收」。
 func formSampling(p uigui.SettingsPatch) (samplingConfig, error) {
-	s, err := parseSamplingForm(p.SamplingTemperature, p.SamplingTopP, p.SamplingMaxTokens, p.SamplingStop)
+	s, err := port.ParseSamplingText(p.SamplingTemperature, p.SamplingTopP, p.SamplingMaxTokens, p.SamplingStop)
 	if err != nil {
-		return s, err
+		return samplingConfig{}, err
 	}
-	if err := validateSamplingForm(s); err != nil {
-		return s, err
-	}
-	return s, nil
+	return samplingConfig{
+		Temperature: s.Temperature,
+		TopP:        s.TopP,
+		MaxTokens:   s.MaxTokens,
+		Stop:        s.Stop,
+	}, nil
 }
