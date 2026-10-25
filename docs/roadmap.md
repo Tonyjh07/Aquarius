@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-25 @ f7c9dba -->
+<!-- docs-sync: 2026-10-25 @ dafa77f -->
 
 > **定位（2026-10-23 起）**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，
 > 以及里程碑基线。**未来要做什么、按什么顺序、什么节奏**，一律看 [plan.md](plan.md)。
@@ -104,7 +104,7 @@
 | P2-5 | `07fef4b refactor: split the settings save flow into collect and commit` | 四笔：`d441b7c` 四个设置 DTO 搬进 `port`、`uigui` 留类型别名（D229，2 files, +140/−104，零字面量改动）；`b462ee0` 取值范围收成 20 个 `port.Settings*` 常量，提示文案由常量拼（D230，11 files, +146/−52，数值一处未变）；`6ff9242` 采样四段文本的解析收进 `port.ParseSamplingText`，界面前置校验与写回解析同一份实现（D231，6 files, +228/−110，删 `cmd` 侧重复解析 49 行）；`07fef4b` `saveSettings` 271 行拆成 `patch()` 采集校验 + `commitSettings()` 提交编排，报错返回零值 patch（D232，2 files, +190/−124） |
 | P2-7b | `a3502d6 refactor: keep the theme tokens in one snapshot` | 文档笔 `c0e3023`（D233）。删掉 22 个包级颜色 `var` 与 `applyPalette`/`currentPalette` 的逐字段双向抄写，活动值只留一份 `atomic.Pointer[palette]` 快照，绘制点经 `tok()` 取结构体副本（形态照 `theme_paper.go` 的 `paperOf()`）。110 处绘制点改形态、配色值一处未变；原「同步完整性」测试换成单一来源 / 快照隔离 / 空快照回落三条（23 files, +182/−220） |
 | P2-6 | 取消（2026-10-25） | 拆包移到 backlog，依据是本轮实测：三包合计只占 `uigui` 的 24%，搬完父包仍 1.5 万行、最大单文件不变；代价是 391 处按类型的字段改名、75 个白盒测试的夹具重写、装配根 261 处换限定名（D234）。已落的两笔前置（设置逻辑归位、`theme` 令牌数据化）保留——它们各自是净删，不因拆包取消而失去意义 |
-| P2-7c | （代码笔紧随本笔，哈希在收口笔补） | 文档笔 D235。注入排空的三个时机收成四个具名排空点（`drainBeforeInput`/`drainAfterTurn`/`drainOnWake`/`drainBeforeReplay`），「是否驱动一轮 / 是否逐条呈现」由一张口径表给出，调用点不再组合 `(driven, announce)` 两个布尔（那个从未被用过的组合随之消失）；三条命令的 flag 解析收成一份 `flagScan`，「位置」与「个数上限」两处真实差异显式声明，其余口径只写一遍（值型吃值、缺参报因、正文拼接）；顺带写明并测住 `/skill` 排空点的前提（队列里只会有本条技能正文，因为外部注入已在入口落地）。新增 `cmdflags_test.go`、`session_drain_test.go`，既有命令测试原样通过（16 files, +559/−90，其中生产代码 +225/−81、新增测试 282 行） |
+| P2-7c | `dafa77f refactor: name the drain points and scan command flags once` | 文档笔 `0e98e5d`（D235）。注入排空的三个时机收成四个具名排空点（`drainBeforeInput`/`drainAfterTurn`/`drainOnWake`/`drainBeforeReplay`），「是否驱动一轮 / 是否逐条呈现」由一张口径表给出，调用点不再组合 `(driven, announce)` 两个布尔（那个从未被用过的组合随之消失）；三条命令的 flag 解析收成一份 `flagScan`，「位置」与「个数上限」两处真实差异显式声明，其余口径只写一遍（值型吃值、缺参报因、正文拼接）；顺带写明并测住 `/skill` 排空点的前提（队列里只会有本条技能正文，因为外部注入已在入口落地）。新增 `cmdflags_test.go`、`session_drain_test.go`，既有命令测试原样通过（12 files, +507/−81；新增测试 282 行，删三套手写解析循环与五处布尔传参） |
 
 **`v0.2.0-P1` 的落笔顺序**（每笔独立过全门禁、可单独回退）：
 
