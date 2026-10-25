@@ -11,6 +11,7 @@ package uigui
 // 恒空，留空 = 保持原值（D35）。
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // webPage 联网页模块。
@@ -62,13 +65,15 @@ func (webPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, row
 	case rowWebSearchAdd:
 		return paperButton(th, &f.webSearchAdd, "＋ 添加搜索提供商", paperBtnSecondary, true)(gtx), true
 	case rowWebSearchCount:
-		return fieldRow(gtx, th, "结果条数", editorBox(th, &f.webCount, "缺省 8（1–20）；工具参数可逐次覆盖（空 = 保持）")), true
+		return fieldRow(gtx, th, "结果条数", editorBox(th, &f.webCount, fmt.Sprintf("缺省 8（%d–%d）；工具参数可逐次覆盖（空 = 保持）",
+			port.SettingsSearchCountMin, port.SettingsSearchCountMax))), true
 	case rowWebFetchItem:
 		return f.webProviderRow(gtx, th, f.webFetch[rows[i].field], false), true
 	case rowWebFetchAdd:
 		return paperButton(th, &f.webFetchAdd, "＋ 添加抓取提供商", paperBtnSecondary, true)(gtx), true
 	case rowWebFetchChars:
-		return fieldRow(gtx, th, "正文上限", editorBox(th, &f.webMaxChars, "字符；缺省 16000（500–20000）（空 = 保持）")), true
+		return fieldRow(gtx, th, "正文上限", editorBox(th, &f.webMaxChars, fmt.Sprintf("字符；缺省 16000（%d–%d）（空 = 保持）",
+			port.SettingsFetchCharsMin, port.SettingsFetchCharsMax))), true
 	case rowWebProxy:
 		return fieldRow(gtx, th, "代理", editorBox(th, &f.webProxy, "如 http://127.0.0.1:7897；空 = 读环境变量")), true
 	case rowWebUA:

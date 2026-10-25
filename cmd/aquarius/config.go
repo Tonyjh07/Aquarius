@@ -267,11 +267,13 @@ func (c *fileConfig) normalizeWeb() error {
 				i, p.Kind, webKindDeepSeek, webKindLocal)
 		}
 	}
-	if n := c.Web.Search.Count; n < 0 || n > 20 {
-		return fmt.Errorf("web.search.count=%d 超出范围（1-20；0 = 缺省 8）", n)
+	if n := c.Web.Search.Count; n < 0 || n > port.SettingsSearchCountMax {
+		return fmt.Errorf("web.search.count=%d 超出范围（%d-%d；0 = 缺省 8）",
+			n, port.SettingsSearchCountMin, port.SettingsSearchCountMax)
 	}
-	if n := c.Web.Fetch.MaxChars; n < 0 || n > 20000 {
-		return fmt.Errorf("web.fetch.max_chars=%d 超出范围（500-20000；0 = 缺省 16000）", n)
+	if n := c.Web.Fetch.MaxChars; n < 0 || n > port.SettingsFetchCharsMax {
+		return fmt.Errorf("web.fetch.max_chars=%d 超出范围（%d-%d；0 = 缺省 16000）",
+			n, port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
 	}
 	return nil
 }
@@ -465,6 +467,11 @@ const (
 	kindOpenAIResponses = "openai-responses"
 	kindAnthropic       = "anthropic"
 )
+
+// temperatureMaxAnthropic Anthropic Messages API 只接 temperature 0..1（OpenAI 两协议接 0..2，
+// 见 port.SettingsTemperatureMax）。这是协议差异，不是「允许用户填到哪」——上限更宽的那档
+// 由设置窗与启动校验共用同一张表，协议细分只在这里再收紧。
+const temperatureMaxAnthropic = 1.0
 
 // protocolKind 归一后的协议标识（空 = openai-chat）。
 func (p *providerConfig) protocolKind() string {
@@ -791,16 +798,16 @@ func (m *modelConfig) narrowNote() string {
 // 只接受 0..1。top_p 三协议都是 0..1。
 func validateSampling(s port.Sampling, kind, where string) error {
 	if t := s.Temperature; t != nil {
-		hi := 2.0
+		hi := port.SettingsTemperatureMax
 		if kind == kindAnthropic {
-			hi = 1.0
+			hi = temperatureMaxAnthropic
 		}
-		if *t < 0 || *t > hi {
+		if *t < port.SettingsTemperatureMin || *t > hi {
 			return fmt.Errorf("%s 的 sampling.temperature = %v 超出范围（该协议接受 0..%g）", where, *t, hi)
 		}
 	}
-	if p := s.TopP; p != nil && (*p < 0 || *p > 1) {
-		return fmt.Errorf("%s 的 sampling.top_p = %v 超出范围（接受 0..1）", where, *p)
+	if p := s.TopP; p != nil && (*p < port.SettingsTopPMin || *p > port.SettingsTopPMax) {
+		return fmt.Errorf("%s 的 sampling.top_p = %v 超出范围（接受 0..%g）", where, *p, port.SettingsTopPMax)
 	}
 	if s.MaxTokens < 0 {
 		return fmt.Errorf("%s 的 sampling.max_tokens 不可为负数（%d）；不限制就留空", where, s.MaxTokens)
@@ -1083,12 +1090,14 @@ type uiConfig struct {
 	// Theme GUI 深浅主题（§15.4/D61）：system | light | dark；空 = system（跟随系统，
 	// 其余未识别值亦按 system 处理）。仅 ui.kind=gui 用。
 	Theme string `json:"theme,omitempty"`
-	// Scale 元素缩放倍率（D90/§15.8）：默认 1.0；UI 侧夹 [0.75,2.5]，越界回落 1.0。
+	// Scale 元素缩放倍率（D90/§15.8）：默认 1.0；界面按 port.SettingsScale* 夹取，越界回落
+	// 1.0（这是显示口径的兜底，不是拒绝启动——手改过配置的旧值仍照旧被夹到可用档位）。
 	Scale float64 `json:"scale,omitempty"`
-	// FontSize 正文字号 sp（D90/§15.8）：默认 15；UI 侧夹 [10,28]，最终字号 = FontSize × Scale。
+	// FontSize 正文字号 sp（D90/§15.8）：默认 15；界面按 port.SettingsFontSize* 夹取，
+	// 最终字号 = FontSize × Scale。
 	FontSize float64 `json:"font_size,omitempty"`
 	// WindowWidth/WindowHeight 主窗像素尺寸（D90/§15.8）：0 = 缺省 608×460dp 现行为；
-	// 配置后按字面 px 建窗，UI 侧按布局地板与粗界夹取。
+	// 配置后按字面 px 建窗，界面按 port.SettingsWindow* 粗界与布局地板夹取。
 	WindowWidth  int `json:"window_width,omitempty"`
 	WindowHeight int `json:"window_height,omitempty"`
 	// Welcomed 欢迎 / 首次运行引导是否已看（D141/§15.7）：键缺失 = 未看——启动后自动

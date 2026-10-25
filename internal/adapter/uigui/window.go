@@ -12,6 +12,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // 窗口与布局常量（物理 px 经 gtx.Dp 换算——layout 坐标即物理 px，Dp 只换算尺寸）。
@@ -63,10 +65,11 @@ const (
 	// 主窗像素尺寸夹取界（D90）：粗界给 config/settings 校验兜底；布局地板按
 	// 240dp × DPI × scale 抬下限（宽 = 三段行最小构成、高 = 输入行带 + 状态行 +
 	// 顶底带 + 少量内容余量——再小布局退化，不承诺可用）。
-	winPxMinW     = 200
-	winPxMinH     = 200
-	winPxMaxW     = 3840
-	winPxMaxH     = 2160
+	// 粗界取 port.SettingsWindow*——设置窗表单校验与启动期配置校验引用同一组数（D229）。
+	winPxMinW     = port.SettingsWindowWidthMin
+	winPxMinH     = port.SettingsWindowHeightMin
+	winPxMaxW     = port.SettingsWindowWidthMax
+	winPxMaxH     = port.SettingsWindowHeightMax
 	layoutFloorDp = 240
 
 	// 边缘羽化（D45–D48/§15.1、D62）：把「内容自身由内向外渐隐」作为每像素 vis 因子

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // stopsText 停止串列表 → 表单文本（JSON 数组，如 `["\n"]`）。空列表 = 空串（不发送）。
@@ -89,11 +90,12 @@ func parseSamplingForm(temp, topP, maxTokens, stop string) (samplingConfig, erro
 // validateSamplingForm 保存前的语法占位（范围校验见 validateSamplingSettings——那一步
 // 要知道协议才判得准：Anthropic 只接 0..1，其余接 0..2）。
 func validateSamplingForm(s samplingConfig) error {
-	if s.Temperature != nil && (*s.Temperature < 0 || *s.Temperature > 2) {
-		return fmt.Errorf("采样温度须在 0–2 之间（留空 = 交服务端默认）")
+	if s.Temperature != nil && (*s.Temperature < port.SettingsTemperatureMin || *s.Temperature > port.SettingsTemperatureMax) {
+		return fmt.Errorf("采样温度须在 %g–%g 之间（留空 = 交服务端默认）",
+			port.SettingsTemperatureMin, port.SettingsTemperatureMax)
 	}
-	if s.TopP != nil && (*s.TopP < 0 || *s.TopP > 1) {
-		return fmt.Errorf("top_p 须在 0–1 之间")
+	if s.TopP != nil && (*s.TopP < port.SettingsTopPMin || *s.TopP > port.SettingsTopPMax) {
+		return fmt.Errorf("top_p 须在 %g–%g 之间", port.SettingsTopPMin, port.SettingsTopPMax)
 	}
 	return nil
 }

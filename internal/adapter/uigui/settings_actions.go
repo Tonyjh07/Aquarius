@@ -43,9 +43,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	}
 	if v := strings.TrimSpace(f.fontSize.Text()); v != "" {
 		n, err := strconv.ParseFloat(v, 64)
-		if err != nil || n < fontSpMin || n > fontSpMax {
+		if err != nil || n < port.SettingsFontSizeMin || n > port.SettingsFontSizeMax {
 			f.err = true
-			f.status = fmt.Sprintf("字号须为 %g–%g 的数值", fontSpMin, fontSpMax)
+			f.status = fmt.Sprintf("字号须为 %g–%g 的数值", port.SettingsFontSizeMin, port.SettingsFontSizeMax)
 			return
 		}
 		p.FontSize = n
@@ -99,9 +99,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	}
 	if v := strings.TrimSpace(f.compact.Text()); v != "" {
 		n, perr := strconv.ParseFloat(v, 64)
-		if perr != nil || n < 0 || n > 1 {
+		if perr != nil || n < port.SettingsCompactMin || n > port.SettingsCompactMax {
 			f.err = true
-			f.status = "压缩阈值须为 0–1 的小数"
+			f.status = fmt.Sprintf("压缩阈值须为 %g–%g 的小数", port.SettingsCompactMin, port.SettingsCompactMax)
 			return
 		}
 		p.CompactThreshold = n
@@ -155,9 +155,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.WebSearchCount = f.snap.WebSearchCount
 	if v := strings.TrimSpace(f.webCount.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
-		if perr != nil || n < 1 || n > 20 {
+		if perr != nil || n < port.SettingsSearchCountMin || n > port.SettingsSearchCountMax {
 			f.err = true
-			f.status = "搜索条数须为 1–20 的整数"
+			f.status = fmt.Sprintf("搜索条数须为 %d–%d 的整数", port.SettingsSearchCountMin, port.SettingsSearchCountMax)
 			return
 		}
 		p.WebSearchCount = n
@@ -165,9 +165,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.WebFetchMaxChars = f.snap.WebFetchMaxChars
 	if v := strings.TrimSpace(f.webMaxChars.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
-		if perr != nil || n < 500 || n > 20000 {
+		if perr != nil || n < port.SettingsFetchCharsMin || n > port.SettingsFetchCharsMax {
 			f.err = true
-			f.status = "抓取正文上限须为 500–20000 的整数"
+			f.status = fmt.Sprintf("抓取正文上限须为 %d–%d 的整数", port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
 			return
 		}
 		p.WebFetchMaxChars = n
@@ -175,9 +175,9 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.WebFetchTimeoutSec = f.snap.WebFetchTimeoutSec
 	if v := strings.TrimSpace(f.webTimeout.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
-		if perr != nil || n < 1 || n > 600 {
+		if perr != nil || n < port.SettingsFetchTimeoutMin || n > port.SettingsFetchTimeoutMax {
 			f.err = true
-			f.status = "抓取超时须为 1–600 秒的整数"
+			f.status = fmt.Sprintf("抓取超时须为 %d–%d 秒的整数", port.SettingsFetchTimeoutMin, port.SettingsFetchTimeoutMax)
 			return
 		}
 		p.WebFetchTimeoutSec = n
@@ -192,18 +192,20 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.SamplingTemperature = strings.TrimSpace(f.samplingTemp.Text())
 	if p.SamplingTemperature != "" {
 		n, perr := strconv.ParseFloat(p.SamplingTemperature, 64)
-		if perr != nil || n < 0 || n > 2 {
+		if perr != nil || n < port.SettingsTemperatureMin || n > port.SettingsTemperatureMax {
 			f.err = true
-			f.status = "采样温度须为 0–2 的数值（留空 = 交服务端默认）"
+			f.status = fmt.Sprintf("采样温度须为 %g–%g 的数值（留空 = 交服务端默认）",
+				port.SettingsTemperatureMin, port.SettingsTemperatureMax)
 			return
 		}
 	}
 	p.SamplingTopP = strings.TrimSpace(f.samplingTopP.Text())
 	if p.SamplingTopP != "" {
 		n, perr := strconv.ParseFloat(p.SamplingTopP, 64)
-		if perr != nil || n < 0 || n > 1 {
+		if perr != nil || n < port.SettingsTopPMin || n > port.SettingsTopPMax {
 			f.err = true
-			f.status = "top_p 须为 0–1 的数值（留空 = 交服务端默认）"
+			f.status = fmt.Sprintf("top_p 须为 %g–%g 的数值（留空 = 交服务端默认）",
+				port.SettingsTopPMin, port.SettingsTopPMax)
 			return
 		}
 	}

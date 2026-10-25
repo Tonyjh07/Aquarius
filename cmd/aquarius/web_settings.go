@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // webProviderViewsOf config 里的提供商列表 → 设置窗视图（密钥只带形态，D35）。
@@ -81,8 +82,9 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 			return fmt.Errorf("搜索提供商第 %d 条的类型 %q 不认识（支持 %s / %s）",
 				i+1, kind, webKindDeepSeek, webKindBrave)
 		}
-		if n := wp.Count; n < 0 || n > 20 {
-			return fmt.Errorf("搜索提供商第 %d 条的条数 %d 超出范围（1–20；0 = 用缺省）", i+1, n)
+		if n := wp.Count; n < 0 || n > port.SettingsSearchCountMax {
+			return fmt.Errorf("搜索提供商第 %d 条的条数 %d 超出范围（%d–%d；0 = 用缺省）",
+				i+1, n, port.SettingsSearchCountMin, port.SettingsSearchCountMax)
 		}
 	}
 	for i, wp := range p.WebFetchProviders {
@@ -98,14 +100,17 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 				i+1, kind, webKindDeepSeek, webKindLocal)
 		}
 	}
-	if n := p.WebSearchCount; n < 0 || n > 20 {
-		return fmt.Errorf("搜索条数 %d 超出范围（1–20；0 = 缺省 8）", n)
+	if n := p.WebSearchCount; n < 0 || n > port.SettingsSearchCountMax {
+		return fmt.Errorf("搜索条数 %d 超出范围（%d–%d；0 = 缺省 8）",
+			n, port.SettingsSearchCountMin, port.SettingsSearchCountMax)
 	}
-	if n := p.WebFetchMaxChars; n != 0 && (n < 500 || n > 20000) {
-		return fmt.Errorf("抓取正文上限 %d 超出范围（500–20000；0 = 缺省 16000）", n)
+	if n := p.WebFetchMaxChars; n != 0 && (n < port.SettingsFetchCharsMin || n > port.SettingsFetchCharsMax) {
+		return fmt.Errorf("抓取正文上限 %d 超出范围（%d–%d；0 = 缺省 16000）",
+			n, port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
 	}
-	if n := p.WebFetchTimeoutSec; n < 0 || n > 600 {
-		return fmt.Errorf("抓取超时 %d 超出范围（1–600 秒；0 = 缺省 30）", n)
+	if n := p.WebFetchTimeoutSec; n < 0 || n > port.SettingsFetchTimeoutMax {
+		return fmt.Errorf("抓取超时 %d 超出范围（%d–%d 秒；0 = 缺省 30）",
+			n, port.SettingsFetchTimeoutMin, port.SettingsFetchTimeoutMax)
 	}
 	return nil
 }

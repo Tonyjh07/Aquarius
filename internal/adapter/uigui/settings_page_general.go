@@ -5,12 +5,15 @@ package uigui
 // 消费（保存走全局底栏，D142 口径不变）。
 
 import (
+	"fmt"
 	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // generalPage 常规页模块。
@@ -72,7 +75,8 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 	case rowScale:
 		return fieldRow(gtx, th, "元素缩放", selectBtn(th, &f.scale)), true
 	case rowFontSize:
-		return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, "正文字号 10–28（最终 = 字号 × 缩放）")), true
+		return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, fmt.Sprintf("正文字号 %g–%g（最终 = 字号 × 缩放）",
+			port.SettingsFontSizeMin, port.SettingsFontSizeMax))), true
 	case rowWinSize:
 		return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH)), true
 	case rowNotify:

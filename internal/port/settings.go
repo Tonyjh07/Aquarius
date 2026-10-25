@@ -122,3 +122,54 @@ type PromptModuleView struct {
 	Text     string
 	Children []string
 }
+
+// 设置项的取值范围（D229）。
+//
+// 这些数是**内核语义**，不是界面偏好：字号决定正文排版的可读区间，窗口尺寸决定浮窗能
+// 贴在哪，搜索条数与抓取上限决定一次请求花多少钱，采样温度决定一次生成有多随机。
+//
+// 为什么收成一张表：同一个数原先写了两到三份——界面表单填一次、启动期配置校验一次、
+// 抓取实现再兜一次——改一处忘一处就是「设置窗能存进去、重启却被拒」这类故障。现在
+// 界面只负责照表提示（用户一点保存就看到错误，不必等落盘），装配根与启动校验照表权威
+// 判定，两侧引用同一组常量。放在 port 而不是界面包里，是因为内核侧也要用，而反向依赖
+// 界面既过不了分层守卫，也会把这张表钉死在界面包里。
+const (
+	// SettingsFontSizeMin/Max 正文字号（sp）。低于下限正文在 125% 缩放下挤成一团，
+	// 高于上限一行放不下几个字。界面侧另据它做越界夹取（回落正文基准 15sp）。
+	SettingsFontSizeMin = 10.0
+	SettingsFontSizeMax = 28.0
+
+	// SettingsScaleMin/Max 元素缩放倍率的硬区间。设置窗只提供 100%–200% 五个档，但
+	// 手改过 config 的旧值可以落在更宽的范围里，夹取按这一对算（越界回落 1.0）。
+	SettingsScaleMin = 0.75
+	SettingsScaleMax = 2.5
+
+	// SettingsWindowWidthMin/Max 与 SettingsWindowHeightMin/Max 主窗像素粗界：界面照它
+	// 夹取用户填的尺寸，再叠加布局地板（240dp × DPI × 缩放）抬下限。
+	SettingsWindowWidthMin  = 200
+	SettingsWindowWidthMax  = 3840
+	SettingsWindowHeightMin = 200
+	SettingsWindowHeightMax = 2160
+
+	// SettingsCompactMin/Max 自动压缩阈值（占上下文窗口的比例）。
+	SettingsCompactMin = 0.0
+	SettingsCompactMax = 1.0
+
+	// SettingsSearchCountMin/Max 一次联网搜索取几条结果。
+	SettingsSearchCountMin = 1
+	SettingsSearchCountMax = 20
+	// SettingsFetchCharsMin/Max 抓取正文上限（字符）。
+	SettingsFetchCharsMin = 500
+	SettingsFetchCharsMax = 20000
+	// SettingsFetchTimeoutMin/Max 抓取超时（秒）。
+	SettingsFetchTimeoutMin = 1
+	SettingsFetchTimeoutMax = 600
+
+	// SettingsTemperatureMin/Max 采样温度。上限 2 是「还能读」的边界；协议更严的限制
+	// （Anthropic 只接 0–1）由启动校验按协议细判，不在这里一刀切。
+	SettingsTemperatureMin = 0.0
+	SettingsTemperatureMax = 2.0
+	// SettingsTopPMin/Max 核采样。三协议口径一致。
+	SettingsTopPMin = 0.0
+	SettingsTopPMax = 1.0
+)

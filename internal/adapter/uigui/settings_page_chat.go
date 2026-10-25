@@ -4,9 +4,13 @@ package uigui
 // 已拆到「系统提示词」页，本页只留限额。
 
 import (
+	"fmt"
+
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // chatPage 对话页模块。
@@ -29,7 +33,8 @@ func (chatPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, ro
 	case rowMaxCtx:
 		return fieldRow(gtx, th, "上下文上限", editorBox(th, &f.maxCtx, "tokens；自动压缩与截断的预算分母（空 = 保持）")), true
 	case rowCompact:
-		return fieldRow(gtx, th, "压缩阈值", editorBox(th, &f.compact, "0–1；占用超阈值触发自动压缩（空 = 保持）")), true
+		return fieldRow(gtx, th, "压缩阈值", editorBox(th, &f.compact, fmt.Sprintf("%g–%g；占用超阈值触发自动压缩（空 = 保持）",
+			port.SettingsCompactMin, port.SettingsCompactMax))), true
 	case rowToolChars:
 		return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）")), true
 	case rowToolTo:

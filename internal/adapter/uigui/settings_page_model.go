@@ -8,10 +8,14 @@ package uigui
 // 尾部「＋ 添加」。链改动随「保存并应用」全量写回 config（重启生效，与 provider 变更同口径）。
 
 import (
+	"fmt"
+
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // modelPage 模型页模块。
@@ -48,9 +52,11 @@ func (modelPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowEffort:
 		return fieldRow(gtx, th, "推理档位", selectBtn(th, &f.effort)), true
 	case rowSamplingTemp:
-		return fieldRow(gtx, th, "温度", editorBox(th, &f.samplingTemp, "0–2；越低越稳，越高越发散。留空 = 服务端默认，写 0 = 每次都取最可能的词")), true
+		return fieldRow(gtx, th, "温度", editorBox(th, &f.samplingTemp, fmt.Sprintf("%g–%g；越低越稳，越高越发散。留空 = 服务端默认，写 0 = 每次都取最可能的词",
+			port.SettingsTemperatureMin, port.SettingsTemperatureMax))), true
 	case rowSamplingTopP:
-		return fieldRow(gtx, th, "top_p", editorBox(th, &f.samplingTopP, "0–1；只从概率累计到该比例的候选里挑。留空 = 服务端默认")), true
+		return fieldRow(gtx, th, "top_p", editorBox(th, &f.samplingTopP, fmt.Sprintf("%g–%g；只从概率累计到该比例的候选里挑。留空 = 服务端默认",
+			port.SettingsTopPMin, port.SettingsTopPMax))), true
 	case rowSamplingMax:
 		return fieldRow(gtx, th, "输出上限", editorBox(th, &f.samplingMax, "tokens；单轮最多生成多少。留空 = 不发送（仍受本轮预算约束）")), true
 	case rowSamplingStop:

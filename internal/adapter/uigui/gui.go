@@ -161,11 +161,13 @@ type zoomKnobs struct {
 }
 
 // 旋钮边界与缺省（D90）：字号阶梯以正文 15sp 为设计基准（§15.2 的 Sp 字面量按此解释）。
+// 字号的上下界取 port.SettingsFontSizeMin/Max——设置窗表单校验用的是同一对数（见 D229），
+// 两处各写一份就会漂移成「填得进去、显示不出来」。
 const (
-	zoomScaleMin = 0.75
-	zoomScaleMax = 2.5
-	fontSpMin    = 10.0
-	fontSpMax    = 28.0
+	zoomScaleMin = port.SettingsScaleMin
+	zoomScaleMax = port.SettingsScaleMax
+	fontSpMin    = port.SettingsFontSizeMin
+	fontSpMax    = port.SettingsFontSizeMax
 	fontSpBase   = 15.0
 )
 
