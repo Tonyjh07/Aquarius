@@ -119,7 +119,7 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 // 命令面必须说清「为什么不发」——否则用户会以为设了档位却没生效是 bug。
 func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true, Vision: true} }
+	s.models = &fakeModelCatalog{status: ModelStatus{Caps: capsPtr(port.ModelCaps{Tools: true, Vision: true})}}
 	var thinks []bool
 	s.persistThink = func(on bool) error { thinks = append(thinks, on); return nil }
 
@@ -154,7 +154,7 @@ func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
 // TestEffortWithoutReasoningCaps D173：档位照存，但提示不会发送。
 func TestEffortWithoutReasoningCaps(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true} }
+	s.models = &fakeModelCatalog{status: ModelStatus{Caps: capsPtr(port.ModelCaps{Tools: true})}}
 	s.persistEffort = func(string) error { return nil }
 	out, err := thinkCmd(t, s, "effort", "high")
 	if err != nil {

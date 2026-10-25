@@ -11,6 +11,41 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// fakeModelCatalog 模型服务替身（命令面测试用）：一次性给全读侧快照与探测结论，
+// 并按需记录探测目标。
+type fakeModelCatalog struct {
+	models   []port.ModelInfo
+	listErr  error
+	status   ModelStatus
+	probe    ProbeReport
+	probeErr error
+	probed   []string
+}
+
+func (f *fakeModelCatalog) Models(context.Context) ([]port.ModelInfo, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.models, nil
+}
+
+func (f *fakeModelCatalog) Current() ModelStatus { return f.status }
+
+// capsPtr 取能力位的指针形式（`ModelStatus.Caps` 用 nil 表示「未声明」，
+// 测试里要写「声明了三项中某几项」就得取地址）。
+func capsPtr(c port.ModelCaps) *port.ModelCaps { return &c }
+
+func (f *fakeModelCatalog) Probe(_ context.Context, model string) (ProbeReport, error) {
+	f.probed = append(f.probed, model)
+	return f.probe, f.probeErr
+}
+
+// capsOf 取当前快照的能力位（nil = 未声明）。
+func (f *fakeModelCatalog) capsOf() *port.ModelCaps { return f.status.Caps }
+
+// setCaps 换能力位声明；want 为 nil 表示「未声明」。
+func (f *fakeModelCatalog) setCaps(c *port.ModelCaps) { f.status.Caps = c }
+
 // TestSessionModelCommand /model（D32）：无参列当前+可用清单（能力/单价标注），
 // 有参先写回 config 再热切换；用法与未配置依赖报因。
 func TestSessionModelCommand(t *testing.T) {
@@ -18,19 +53,19 @@ func TestSessionModelCommand(t *testing.T) {
 	s, _, _ := newTestSession(t, store)
 	ctx := context.Background()
 
-	// 未配置 ListModels。
+	// 未配置模型服务（Models 未接线）。
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}}); err == nil ||
 		!strings.Contains(err.Error(), "未配置模型服务") {
 		t.Fatalf("err = %v, want 未配置模型服务", err)
 	}
 
-	s.listModels = func(context.Context) ([]port.ModelInfo, error) {
-		return []port.ModelInfo{
-			{Name: "gpt-a", Caps: port.ModelCaps{Tools: true, Vision: true}, CostIn: 0.001, CostOutUSD: 0.002},
-			{Name: "mini"},
-		}, nil
-	}
-	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true, Reasoning: true, Vision: true} }
+	cat := &fakeModelCatalog{models: []port.ModelInfo{
+		{Name: "gpt-a", Caps: port.ModelCaps{Tools: true, Vision: true}, CostIn: 0.001, CostOutUSD: 0.002},
+		{Name: "mini"},
+	}}
+	s.models = cat
+	caps := port.ModelCaps{Tools: true, Reasoning: true, Vision: true}
+	cat.setCaps(&caps)
 	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -41,7 +76,8 @@ func TestSessionModelCommand(t *testing.T) {
 		}
 	}
 	// 未声明能力：逐项说明缺什么、去哪儿声明（服务端不报模态，用户没有别的途径知道）。
-	s.caps = func() port.ModelCaps { return port.ModelCaps{} }
+	none := port.ModelCaps{}
+	cat.setCaps(&none)
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
 		t.Fatalf("list(no caps): %v", err)
@@ -49,7 +85,7 @@ func TestSessionModelCommand(t *testing.T) {
 	if !strings.Contains(out, "生效能力: （三项均未声明）") || !strings.Contains(out, "未启用: 工具调用、思考、图片输入") {
 		t.Fatalf("/model 未说明能力缺失: %s", out)
 	} // 列表服务故障上抛。
-	s.listModels = func(context.Context) ([]port.ModelInfo, error) { return nil, errors.New("404") }
+	cat.listErr = errors.New("404")
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}}); err == nil ||
 		!strings.Contains(err.Error(), "404") {
 		t.Fatalf("err = %v, want 404 上抛", err)
@@ -95,18 +131,16 @@ func TestSessionModelCommand(t *testing.T) {
 // 失去的——否则用户只看到「工具关了」，得一个个去猜配置。
 func TestModelCommandChainAnnotation(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	s.providerName = func() string { return "a" }
-	s.listModels = func(context.Context) ([]port.ModelInfo, error) {
-		return []port.ModelInfo{{Name: "m1"}}, nil
+	s.models = &fakeModelCatalog{
+		status: ModelStatus{Provider: "a"},
+		models: []port.ModelInfo{{Name: "m1"}},
 	}
 	primary := port.ModelCaps{Tools: true, Reasoning: true, Vision: true}
 	weak := port.ModelCaps{Tools: true}
-	s.caps = func() port.ModelCaps { return weak }
-	s.chain = func() []ModelLink {
-		return []ModelLink{
-			{Provider: "a", Model: "m1", Caps: primary, Primary: true},
-			{Provider: "b", Model: "mb", Caps: weak},
-		}
+	s.models.(*fakeModelCatalog).setCaps(&weak)
+	s.models.(*fakeModelCatalog).status.Chain = []ModelLink{
+		{Provider: "a", Model: "m1", Caps: primary, Primary: true},
+		{Provider: "b", Model: "mb", Caps: weak},
 	}
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
@@ -130,12 +164,12 @@ func TestModelCommandChainAnnotation(t *testing.T) {
 // 还是全局上限压住的——压缩提前触发时用户得能看出原因。
 func TestModelCommandBudget(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	s.listModels = func(context.Context) ([]port.ModelInfo, error) {
-		return []port.ModelInfo{{Name: "m1"}}, nil
-	}
-	s.caps = func() port.ModelCaps { return port.ModelCaps{Tools: true} }
+	cat := &fakeModelCatalog{models: []port.ModelInfo{{Name: "m1"}}}
+	s.models = cat
+	one := port.ModelCaps{Tools: true}
+	cat.setCaps(&one)
 
-	s.budget = func() ContextBudget { return ContextBudget{Effective: 64000, GlobalLimit: 64000} }
+	cat.status.Budget = ContextBudget{Effective: 64000, GlobalLimit: 64000}
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
 		t.Fatalf("model: %v", err)
@@ -144,9 +178,7 @@ func TestModelCommandBudget(t *testing.T) {
 		t.Fatalf("/model 未说明预算来源:\n%s", out)
 	}
 
-	s.budget = func() ContextBudget {
-		return ContextBudget{Effective: 32000, ModelWindow: 32000, GlobalLimit: 200000}
-	}
+	cat.status.Budget = ContextBudget{Effective: 32000, ModelWindow: 32000, GlobalLimit: 200000}
 	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
 		t.Fatalf("model: %v", err)
@@ -155,9 +187,7 @@ func TestModelCommandBudget(t *testing.T) {
 		t.Fatalf("/model 未指出是模型窗口在压:\n%s", out)
 	}
 
-	s.budget = func() ContextBudget {
-		return ContextBudget{Effective: 64000, ModelWindow: 128000, GlobalLimit: 64000}
-	}
+	cat.status.Budget = ContextBudget{Effective: 64000, ModelWindow: 128000, GlobalLimit: 64000}
 	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
 	if err != nil {
 		t.Fatalf("model: %v", err)
@@ -179,22 +209,21 @@ func TestModelProbeCommand(t *testing.T) {
 	}
 
 	var asked string
-	s.probe = func(_ context.Context, model string) (ProbeReport, error) {
-		asked = model
-		return ProbeReport{
-			Provider: "p1", Model: "m1", Written: true,
-			Results: []port.ProbeResult{
-				{Capability: port.CapTools, Verdict: port.ProbeSupported, Reason: "模型发起了工具调用（probe_ping）",
-					Elapsed: 800 * time.Millisecond, Usage: conversation.Usage{InputTokens: 12, OutputTokens: 5}},
-				{Capability: port.CapReasoning, Verdict: port.ProbeInconclusive, Reason: "参数被接受，但回复里没有思考内容"},
-				{Capability: port.CapVision, Verdict: port.ProbeUnsupported, Reason: "服务端拒绝（400）：image input is not supported"},
-			},
-		}, nil
-	}
+	cat := &fakeModelCatalog{probe: ProbeReport{
+		Provider: "p1", Model: "m1", Written: true,
+		Results: []port.ProbeResult{
+			{Capability: port.CapTools, Verdict: port.ProbeSupported, Reason: "模型发起了工具调用（probe_ping）",
+				Elapsed: 800 * time.Millisecond, Usage: conversation.Usage{InputTokens: 12, OutputTokens: 5}},
+			{Capability: port.CapReasoning, Verdict: port.ProbeInconclusive, Reason: "参数被接受，但回复里没有思考内容"},
+			{Capability: port.CapVision, Verdict: port.ProbeUnsupported, Reason: "服务端拒绝（400）：image input is not supported"},
+		},
+	}}
+	s.prober = cat
 	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe", "m2"}}})
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
+	asked = strings.Join(cat.probed, ",")
 	if asked != "m2" {
 		t.Fatalf("探测目标 = %q, want m2", asked)
 	}
@@ -213,11 +242,9 @@ func TestModelProbeCommand(t *testing.T) {
 	}
 
 	// 无明确结论 = 明确告诉用户「没改」，别让人以为探过就生效了。
-	s.probe = func(context.Context, string) (ProbeReport, error) {
-		return ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
-			{Capability: port.CapTools, Verdict: port.ProbeInconclusive, Reason: "5xx"},
-		}}, nil
-	}
+	cat.probe = ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
+		{Capability: port.CapTools, Verdict: port.ProbeInconclusive, Reason: "5xx"},
+	}}
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}})
 	if err != nil {
 		t.Fatalf("probe: %v", err)
@@ -227,11 +254,10 @@ func TestModelProbeCommand(t *testing.T) {
 	}
 
 	// 探测失败：已得结论照常呈现，错误一并上抛。
-	s.probe = func(context.Context, string) (ProbeReport, error) {
-		return ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
-			{Capability: port.CapTools, Verdict: port.ProbeSupported},
-		}}, errors.New("boom")
-	}
+	cat.probe = ProbeReport{Provider: "p1", Model: "m1", Results: []port.ProbeResult{
+		{Capability: port.CapTools, Verdict: port.ProbeSupported},
+	}}
+	cat.probeErr = errors.New("boom")
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}})
 	if err == nil || !strings.Contains(err.Error(), "boom") || !strings.Contains(out, "工具调用: 支持") {
 		t.Fatalf("out=%q err=%v", out, err)

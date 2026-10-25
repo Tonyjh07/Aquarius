@@ -66,25 +66,14 @@ type SessionDeps struct {
 	OpenMemory func(name string) (string, error)
 	// Plugins 插件管理面（/plugin，DESIGN §7.3 / M4）；nil 时 /plugin 报"未配置"。
 	Plugins PluginAdmin
-	// ListModels 可用模型列表（LLM.Models，/model 无参展示，D32）；nil 时报"未配置模型服务"。
-	ListModels func(ctx context.Context) ([]port.ModelInfo, error)
+	// Models 模型服务读侧（/model 无参展示，D32）；nil 时报"未配置模型服务"。
+	Models ModelCatalog
 	// PersistModel 把切换后的模型写回 config（D32，同 /permission 模式）；
 	// nil 时 /model 有参报"未配置持久化"。
 	PersistModel func(name string) error
-	// ProviderName 当前生效 provider 名（D173：/model 无参展示；装配根注入
-	// 静态值——provider 运行态不热切，切换 = 重启生效）；nil 时省略该行。
-	ProviderName func() string
-	// Caps 当前降级链的生效能力（D173：整链取与）。服务端 /models 不返回模态，
-	// 能力只能来自配置，所以由装配根声明；nil 时省略能力行。
-	Caps func() port.ModelCaps
-	// Chain 降级链逐环快照（D173：/model 标注是哪一环拉低了整链；nil 时省略）。
-	// provider 运行态不热切，故装配根注入的是启动期静态值。
-	Chain func() []ModelLink
-	// Budget 上下文预算口径（D177：min(当前模型窗口, 全局上限)；nil 时省略该行）。
-	Budget func() ContextBudget
-	// Probe 能力探测（D174：/model probe）。model 空 = 当前模型；装配根实现
+	// Prober 能力探测（D174：/model probe）。model 空 = 当前模型；装配根实现
 	// （造一次性客户端 → 真请求 → 写回 config → 返回逐项结论）。nil 时该子命令报错。
-	Probe func(ctx context.Context, model string) (ProbeReport, error)
+	Prober ModelProbe
 	// PersistThink 把原生思考开关写回 config（D34，同 /permission 模式）；
 	// nil 时 /think 有参报"未配置持久化"。
 	PersistThink func(on bool) error
@@ -121,13 +110,9 @@ type Session struct {
 	ui             port.Presenter
 	openMemory     func(name string) (string, error)
 	plugins        PluginAdmin
-	listModels     func(ctx context.Context) ([]port.ModelInfo, error)
+	models         ModelCatalog
 	persistModel   func(name string) error
-	providerName   func() string
-	caps           func() port.ModelCaps
-	chain          func() []ModelLink
-	budget         func() ContextBudget
-	probe          func(ctx context.Context, model string) (ProbeReport, error)
+	prober         ModelProbe
 	persistThink   func(on bool) error
 	persistEffort  func(level string) error
 	cur            *conversation.Conversation
@@ -212,13 +197,9 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		ui:             d.UI,
 		openMemory:     d.OpenMemory,
 		plugins:        d.Plugins,
-		listModels:     d.ListModels,
+		models:         d.Models,
 		persistModel:   d.PersistModel,
-		providerName:   d.ProviderName,
-		caps:           d.Caps,
-		chain:          d.Chain,
-		budget:         d.Budget,
-		probe:          d.Probe,
+		prober:         d.Prober,
 		persistThink:   d.PersistThink,
 		persistEffort:  d.PersistEffort,
 		dynamic:        map[string]CommandHandler{},

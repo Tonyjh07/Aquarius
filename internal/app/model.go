@@ -17,6 +17,37 @@ type ModelLink struct {
 	Primary         bool
 }
 
+// ModelStatus 当前模型服务的静态口径快照（D173/D177：`/model` 与 `/think` 的展示依据）。
+// 四项都是**启动期确定、运行态不热切**的事实（切换模型 = 重启生效），所以一次取回，
+// 而不是拆成四个回调各问一次。
+type ModelStatus struct {
+	// Provider 当前生效的 provider 名；空 = 未声明（省略该行）。
+	Provider string
+	// Caps 整条降级链的生效能力（整链取与）。nil = 装配根未声明能力——
+	// 这时展示面改从 Chain 推导，与「服务端不报模态、能力只来自配置」同一口径。
+	Caps *port.ModelCaps
+	// Chain 降级链逐环快照；空 = 未声明（省略链路与「谁拉低了整链」两段）。
+	Chain []ModelLink
+	// Budget 上下文预算口径；零值 = 未声明（Effective 为 0 时该行不显示）。
+	Budget ContextBudget
+}
+
+// ModelCatalog 模型服务面（`/model` 的读侧）：可用清单 + 静态口径快照。
+// 装配根把配置与 LLM 适配器适配到此接口；nil 时 `/model` 报「未配置模型服务」。
+type ModelCatalog interface {
+	// Models 服务端可用模型列表（经配置补能力位与单价）。
+	Models(ctx context.Context) ([]port.ModelInfo, error)
+	// Current 当前生效 provider/能力/降级链/预算的静态快照。
+	Current() ModelStatus
+}
+
+// ModelProbe 能力探测面（`/model probe`，D174）：真请求、真花钱，故只由显式命令触发。
+// 与 ModelCatalog 分开：读侧是纯查询，探测是带副作用的用户动作（同 Skills / SkillAdmin 的分法）。
+type ModelProbe interface {
+	// Probe 探测指定模型的能力（model 空 = 当前模型），判定明确的位写回配置。
+	Probe(ctx context.Context, model string) (ProbeReport, error)
+}
+
 // ContextBudget 上下文预算的可读口径（D177：`/model` 展示用）。三处消费者（压缩阈值、
 // /usage 占用、硬保底截断）用的是同一个 Effective，这里只解释它从哪儿来。
 type ContextBudget struct {
@@ -38,6 +69,15 @@ type ProbeReport struct {
 	Written bool
 }
 
+// status 当前模型服务的静态口径快照；模型服务未接线时返回零值（各项都不显示，
+// 与「未声明就省略该行」同一口径）。
+func (s *Session) status() ModelStatus {
+	if s.models == nil {
+		return ModelStatus{}
+	}
+	return s.models.Current()
+}
+
 // execModel /model [name] | /model probe [name]（DESIGN §7.3，D32/D174）：
 // 无参 = 当前 provider（D173）+ 当前模型 + 生效能力 + 上下文窗口（D177）+
 // LLM.Models() 可用列表（能力/单价标注）；
@@ -48,14 +88,14 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 		return s.execProbe(ctx, args[1:])
 	}
 	if len(args) == 0 {
-		if s.listModels == nil {
-			return "", errors.New("session: 未配置模型服务（SessionDeps.ListModels），/model 不可用")
+		if s.models == nil {
+			return "", errors.New("session: 未配置模型服务（SessionDeps.Models），/model 不可用")
 		}
-		models, err := s.listModels(ctx)
+		models, err := s.models.Models(ctx)
 		if err != nil {
 			return "", fmt.Errorf("session: 列出可用模型: %w", err)
 		}
-		return formatModels(s.providerName, s.agent.modelName(), models, s.caps, s.chain, s.budget), nil
+		return formatModels(s.agent.modelName(), s.models.Current(), models), nil
 	}
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return "", errors.New("用法: /model [name] 或 /model probe [name]")
@@ -72,35 +112,29 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 	return fmt.Sprintf("已切换模型 → %s（已写回 config，重启沿用）", name), nil
 }
 
-// formatModels /model 无参输出：provider 行（D173，未注入时省略）+ 当前模型行 +
-// 生效能力行（D173 整链取与）+ 降级链逐环标注（哪一环拉低了能力）+ 可用清单
-// （能力/单价标注）。
-func formatModels(provider func() string, current string, models []port.ModelInfo,
-	caps func() port.ModelCaps, chain func() []ModelLink, budget func() ContextBudget) string {
+// formatModels /model 无参输出：provider 行（D173，未声明时省略）+ 当前模型行 +
+// 上下文预算行（D177）+ 生效能力行（D173 整链取与）+ 降级链逐环标注（哪一环拉低了
+// 能力）+ 可用清单（能力/单价标注）。
+func formatModels(current string, st ModelStatus, models []port.ModelInfo) string {
 	var b strings.Builder
-	if provider != nil && provider() != "" {
-		fmt.Fprintf(&b, "当前 provider: %s\n", provider())
+	if st.Provider != "" {
+		fmt.Fprintf(&b, "当前 provider: %s\n", st.Provider)
 	}
 	fmt.Fprintf(&b, "当前模型: %s\n", current)
 	// 上下文窗口（D177）：预算 = min(模型窗口, 全局上限)。不显示的话，用户看到压缩
 	// 提前触发只会以为是 bug——窗口比全局小时必须说明是模型侧在压。
-	if budget != nil {
-		if line := formatBudget(budget()); line != "" {
-			b.WriteString(line + "\n")
-		}
+	if line := formatBudget(st.Budget); line != "" {
+		b.WriteString(line + "\n")
 	}
 	// 服务端不报模态，能力只来自配置；不显示的话，用户只能靠"发张图试试"来发现它关着。
 	var effective port.ModelCaps
 	haveCaps := false
-	if caps != nil {
-		effective = caps()
+	if st.Caps != nil {
+		effective = *st.Caps
 		haveCaps = true
 		b.WriteString("生效能力: " + formatCaps(effective) + "\n")
 	}
-	links := []ModelLink(nil)
-	if chain != nil {
-		links = chain()
-	}
+	links := st.Chain
 	// 逐环标注（D173）：链上任一模型缺某项，整链就按缺该项处理；不指出是哪一环，
 	// 用户只能一个个去猜（「加一条弱模型」的代价必须是可见的）。
 	if !haveCaps && len(links) > 0 {
@@ -158,8 +192,8 @@ func formatModels(provider func() string, current string, models []port.ModelInf
 // execProbe /model probe [name]（D174 口径三）：手动发起的能力探测。
 // 探测是真请求、真花钱，所以绝不自动跑；结果只写回「判定明确」的位。
 func (s *Session) execProbe(ctx context.Context, args []string) (string, error) {
-	if s.probe == nil {
-		return "", errors.New("session: 未配置能力探测（SessionDeps.Probe），/model probe 不可用")
+	if s.prober == nil {
+		return "", errors.New("session: 未配置能力探测（SessionDeps.Prober），/model probe 不可用")
 	}
 	if len(args) > 1 {
 		return "", errors.New("用法: /model probe [模型名]（省略 = 当前模型）")
@@ -168,7 +202,7 @@ func (s *Session) execProbe(ctx context.Context, args []string) (string, error) 
 	if len(args) == 1 {
 		name = strings.TrimSpace(args[0])
 	}
-	report, err := s.probe(ctx, name)
+	report, err := s.prober.Probe(ctx, name)
 	out := formatProbe(report)
 	if err != nil {
 		if out != "" {

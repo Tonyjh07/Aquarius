@@ -569,7 +569,40 @@ func (w *wiring) maxContextBudget() int {
 	return w.cfg.Model.effectiveMaxContext(global)
 }
 
-// contextBudget /model 展示用的预算口径（D177）：生效值 + 这个值是谁决定的。
+// modelCatalog 实现 app.ModelCatalog 与 app.ModelProbe（`/model` 的装配根一半）。
+// 两者合在一个类型里，是因为它们都只读 `wiring` 的同一份启动期快照与同一个探测入口，
+// 但**在 app 侧仍是两个接口**——读侧是纯查询，探测是带副作用的用户动作。
+type modelCatalog struct{ w *wiring }
+
+var (
+	_ app.ModelCatalog = modelCatalog{}
+	_ app.ModelProbe   = modelCatalog{}
+)
+
+// Models /model 无参的可用清单：服务端名字表 + 配置里的能力位/窗口（D177）。
+func (c modelCatalog) Models(ctx context.Context) ([]port.ModelInfo, error) {
+	return c.w.listModels(ctx)
+}
+
+// Current 当前 provider / 能力 / 降级链 / 预算的静态快照（启动期确定，切换 = 重启生效）。
+func (c modelCatalog) Current() app.ModelStatus {
+	st := app.ModelStatus{
+		Provider: c.w.primary.Name,
+		Budget:   c.w.contextBudget(),
+	}
+	// 能力位按「整链取与」给出。nil 与「三项都关」是两件事：前者表示装配根根本没接
+	// 模型服务（测试或未接线），展示面改从 Chain 推导；后者是明确的「声明了但全关」。
+	caps := c.w.cfg.Model.chainCaps()
+	st.Caps = &caps
+	st.Chain = c.w.cfg.Model.modelChain()
+	return st
+}
+
+// Probe 能力探测（D174）：造一次性客户端 → 真请求 → 写回 config → 返回逐项结论。
+func (c modelCatalog) Probe(ctx context.Context, model string) (app.ProbeReport, error) {
+	return c.w.probeModel(ctx, model)
+}
+
 func (w *wiring) contextBudget() app.ContextBudget {
 	global := w.cfg.Limits.MaxContextTokens
 	if global <= 0 {

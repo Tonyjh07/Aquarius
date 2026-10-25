@@ -507,7 +507,7 @@ func TestSessionCommands(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "未配置记忆编辑器") {
 		t.Fatalf("memory err = %v", err)
 	}
-	// /jobs 已启用（M3）：未配置任务管理器时报配置错；/model 无 ListModels 报配置错（D32）。
+	// /jobs 已启用（M3）：未配置任务管理器时报配置错；/model 未接模型服务报配置错（D32）。
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "jobs"}})
 	if err == nil || !strings.Contains(err.Error(), "未配置任务管理器") {
 		t.Fatalf("jobs err = %v", err)

@@ -30,7 +30,10 @@ func ParseEffort(raw string) (string, error) {
 // 以为「设了档位却没生效」是 bug。
 func (s *Session) execThink(_ context.Context, args []string) (string, error) {
 	// reasoningOn 当前链是否声明了思考能力（未注入 = 不判断，按老口径走）。
-	reasoningOn := func() bool { return s.caps == nil || s.caps().Reasoning }
+	reasoningOn := func() bool {
+		st := s.status()
+		return st.Caps == nil || st.Caps.Reasoning
+	}
 	if len(args) == 0 {
 		state := "开"
 		if v := s.agent.thinkState(); v != nil && !*v {
@@ -104,7 +107,7 @@ func (s *Session) execEffort(_ context.Context, args []string) (string, error) {
 	}
 	s.agent.setEffort(v)
 	note := ""
-	if s.caps != nil && !s.caps().Reasoning {
+	if st := s.status(); st.Caps != nil && !st.Caps.Reasoning {
 		note = "\n注意：当前模型未声明思考能力，档位不会发送（到设置窗「模型服务」里给模型加上 reasoning）"
 	}
 	if v == "" {
