@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-25 @ 6433510 -->
+<!-- docs-sync: 2026-10-25 @ 9c5f3aa -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -5058,3 +5058,37 @@
   `go test -race ./internal/app/ ./internal/adapter/llm/`；既有 `prompt_test.go`、
   `agent_test.go`、`wire`/`anthropic`/`responses`/`openai` 请求体断言**不改期望值**
   即绿——那是「只换类型、不改行为」的硬证据。
+
+### D228 — 会话依赖按消费方拆成具名端口（v0.2.0，§11）
+
+- **动机**：`app.SessionDeps` 是 29 个字段的装配大表，其中 14 个是匿名回调。调用点用
+  `if s.persistThink == nil` / `if s.probe == nil` 这类散落的判空表达「这条命令有没有接」，
+  nil 的语义（恒关？报错？省略该行？）只能靠读每个命令的实现才知道。模型相关的五个回调
+  （`ListModels`/`ProviderName`/`Caps`/`Chain`/`Budget`）每次各问一遍，但它们描述的是同一个
+  启动期快照。
+- **决策**：按**消费方**拆成 7 个具名接口，字段 29→22、匿名回调 14→0。
+  - **`ModelCatalog`（读侧）+ `ModelProbe`（探测）+ `ModelSwitcher`（切换）三只分开**：
+    读是纯查询，探测真花钱，切换改配置——三类动作的失败文案与用户预期各不相同。
+  - **四个启动期静态值合成 `ModelStatus` 值对象**，由 `Current()` 一次取回。理由：provider
+    运行态不热切（切换 = 重启生效），分四个回调只是把同一次快照拆成四次问。
+  - **`ModelStatus.Caps` 用 `*port.ModelCaps`**：nil = 未声明（展示面改从 `Chain` 推导），
+    非 nil = 明确声明（含三项全关）。这两件事必须区分，否则「没配」会被显示成「都关了」。
+  - **`PermissionSettings`（等级 + 无人值守）与 `ThinkingSettings`（开关 + 档位）各含两方法**：
+    前者两项写同一段 config、改同一条执行链；后者消费方不同（`/think` 不碰档位、
+    `/effort` 不碰总开关）。
+  - **`WatcherCanceller` / `MemoryOpener` 单方法**：各只有一个调用点，但 nil 语义各不相同
+    （跳过 vs 报错），具名接口让这两条契约写在一处。
+  - **装配根一个类型实现多接口**（`modelCatalog` 同时实现三只）：它们共用同一份 `wiring`
+    快照与同一个 `cfgWriter`，拆成三个类型只是多写三份 `w:` 字段。
+- **否决**：① **合成一个 `SessionServices` 大接口**（等于把大表换个名字，消费方仍看不出
+  自己能调什么）；② **拆成 14 个单方法接口**（`PermissionSettings` 的两项写同一段 config，
+  拆开会让装配根把同一个 `cfgWriter` 适配两遍）；③ **`ModelStatus` 用值而非指针表达 Caps**
+  （三项全关与未声明就分不出来了）。
+- **后果/限制**：`app` 公开面**净增** 7 个接口与 1 个值对象——这是 P2-4 的特例，它换的是
+  「隐式契约」为「显式契约」，与 P2-3 同属「换类型不换行为」。测试侧新增
+  `ports_fake_test.go` 集中放替身；往后再加命令依赖时，应先问「属于哪只接口」，而不是
+  再往 `SessionDeps` 添字段。
+- **验证**：三笔各自过 `go build ./...` / `go vet ./...` / `gofmt -l .` /
+  `go test ./...`（带 `AQUARIUS_OPENAI_KEY`）/ `go test -race ./internal/app/ ./cmd/aquarius/`；
+  现有命令面测试**不改期望文案**即绿——那是「只换接线、不改行为」的证据。字段与回调计数
+  用正则扫 `SessionDeps` 结构体实测（22 / 0）。
