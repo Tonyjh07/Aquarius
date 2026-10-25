@@ -3,6 +3,7 @@ package uigui
 import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -12,16 +13,136 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// saveSettings 保存流（渲染外的可 headless 测段）：组装 patch → 写回调（装配根持久化
-// 文本键并返回内核命令计划）→ 命令经 inCh 排队（与键入同路径串行执行、回执进转写区；
-// 队列 256 深、主循环持续排空，阻塞投递不致死锁）→ 主题/快捷键 GUI 侧热生效 →
-// 反馈文案写回表单。
+// saveSettings 保存流（渲染外的可 headless 测段）：采集表单成 patch（采集时校验，非法
+// 就地拦下、不触达写回调）→ 提交编排（写回调、命令排队、GUI 侧热生效、反馈文案）。
+//
+// 两段分开是因为它们改的东西不同：`patch` 只读表单与快照、不产生副作用，可以单独测；
+// 提交那一段才碰通道与原子槽。原先混在一个 271 行的函数里，校验与热生效交替出现，
+// 想确认「非法输入到底有没有落盘」得把整段读完。
 func (u *UI) saveSettings(f *settingsForm) {
 	if f.readOnly || u.opts.ApplySettings == nil {
 		f.err = true
 		f.status = "设置窗未接线（只读占位）"
 		return
 	}
+	p, err := f.patch()
+	if err != nil {
+		f.err = true
+		f.status = err.Error()
+		return
+	}
+	u.commitSettings(f, p)
+}
+
+// commitSettings 提交已校验的 patch：写回调（装配根持久化文本键并返回内核命令计划）→
+// 命令经 inCh 排队（与键入同路径串行执行、回执进转写区；队列 256 深、主循环持续排空，
+// 阻塞投递不致死锁）→ 主题/快捷键/缩放/窗口 GUI 侧热生效 → 反馈文案写回表单 → 快照
+// 基准跟着走（再存一次不会因为「以为没改」把用户刚填的值丢掉）。
+func (u *UI) commitSettings(f *settingsForm, p SettingsPatch) {
+	cmds, err := u.opts.ApplySettings(p)
+	if err != nil {
+		f.err = true
+		f.status = "保存失败：" + err.Error()
+		return
+	}
+	for i := range cmds {
+		c := cmds[i]
+		u.inCh <- port.UserInput{Command: &c}
+	}
+	if p.Theme != f.snap.Theme {
+		_ = u.post(themeMsg{mode: p.Theme}) // 主窗主题热生效（事件循环串行，§15.4）
+	}
+	if p.Hotkey != f.snap.Hotkey {
+		u.setHotkey(p.Hotkey) // 原子槽 + 托盘线程重注册（失败回退 Ctrl+Alt+A，§15.1）
+	}
+	if p.Scale != f.snap.Scale || p.FontSize != f.snap.FontSize {
+		u.SetZoom(p.Scale, p.FontSize) // D90：下帧 Metric 咽喉点生效（原子换存）
+	}
+	if p.WindowWidth != f.snap.WindowWidth || p.WindowHeight != f.snap.WindowHeight {
+		u.SetWindowSize(p.WindowWidth, p.WindowHeight) // D90：窗口线程 SetWindowPos（headless no-op）
+	}
+	f.err = false
+	f.status = savedStatus(p, f.snap, f.snapChain)
+	f.snap = nextSnapshot(p, f.snap)
+	f.snapChain = append([]FallbackLink(nil), p.Fallback...)
+}
+
+// savedStatus 保存成功的反馈文案：基础句 + 按「哪些改动要重启才生效」追加后缀。
+// 多条都命中时后者覆盖前者——那正是重排后的语义（越靠后越晚生效），用户不必读四句。
+func savedStatus(p SettingsPatch, snap SettingsSnapshot, snapChain []FallbackLink) string {
+	status := "已保存"
+	if p.Model != snap.Model {
+		status = "已保存（模型名经 /model 热切换）"
+	}
+	if p.ASRProvider != snap.ASRProvider || p.ASRModel != snap.ASRModel ||
+		p.ASRBaseURL != snap.ASRBaseURL ||
+		p.TTSProvider != snap.TTSProvider || p.TTSModel != snap.TTSModel ||
+		p.TTSBaseURL != snap.TTSBaseURL || p.ASRKey != "" || p.TTSKey != "" {
+		status = "已保存（语音服务与模型的改动重启后生效）"
+	}
+	if p.RawJSON != "" {
+		status = "已保存（config.json 原文已替换；provider/密钥类改动重启生效）"
+	}
+	if !promptModulesEqual(snap.PromptModules, p.PromptModules) || !slices.Equal(snap.PromptPersona, p.PromptPersona) {
+		status = "已保存（人格组合只对新会话生效，重启后应用）"
+	}
+	if !slices.Equal(p.Fallback, snapChain) {
+		status = "已保存（降级链改动重启后生效）"
+	}
+	if !webProvidersEqual(p.WebSearchProviders, snap.WebSearchProviders) ||
+		!webProvidersEqual(p.WebFetchProviders, snap.WebFetchProviders) {
+		status = "已保存（联网提供商改动重启后生效）"
+	}
+	return status
+}
+
+// nextSnapshot 保存后的快照基准：文本键直接取 patch，密钥形态按 patch 的新值与旧形态
+// 推出（值不回显，界面只记「已存 / 明文 / 引用名」），联网提供商按 kind 对齐地重算。
+func nextSnapshot(p SettingsPatch, snap SettingsSnapshot) SettingsSnapshot {
+	return SettingsSnapshot{
+		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
+		Hotkey: p.Hotkey, Theme: p.Theme,
+		Scale: p.Scale, FontSize: p.FontSize,
+		WindowWidth: p.WindowWidth, WindowHeight: p.WindowHeight,
+		Notify: p.Notify, TTS: p.TTS,
+		MaxTurns: p.MaxTurns, MaxContextTokens: p.MaxContextTokens,
+		CompactThreshold: p.CompactThreshold, ToolOutputChars: p.ToolOutputChars,
+		ToolTimeoutSec: p.ToolTimeoutSec, SystemPrompt: p.SystemPrompt,
+		PromptModules: p.PromptModules, PromptPersona: p.PromptPersona,
+		Builtins: snap.Builtins, RawJSON: p.RawJSON,
+		Fallback: p.Fallback, FallbackNote: snap.FallbackNote,
+		ASRProvider: p.ASRProvider, ASRModel: p.ASRModel, ASRLang: p.ASRLang,
+		ASRBaseURL:  p.ASRBaseURL,
+		ASRKeySaved: keyShapeAfterSave(p.ASRKey, snap.ASRKeySaved),
+		ASRKeyPlain: keyShapePlainAfterSave(p.ASRKey, snap.ASRKeyPlain),
+		ASRKeyRef:   keyRefAfterSave(p.ASRKey, snap.ASRKeyRef),
+		TTSProvider: p.TTSProvider, TTSModel: p.TTSModel,
+		TTSBaseURL:  p.TTSBaseURL,
+		TTSKeySaved: keyShapeAfterSave(p.TTSKey, snap.TTSKeySaved),
+		TTSKeyPlain: keyShapePlainAfterSave(p.TTSKey, snap.TTSKeyPlain),
+		TTSKeyRef:   keyRefAfterSave(p.TTSKey, snap.TTSKeyRef),
+		TTSVoice:    p.TTSVoice, TTSDesign: p.TTSDesign,
+		TTSStyle: p.TTSStyle, TTSTags: p.TTSTags,
+		WebSearchProviders: webProviderViews(p.WebSearchProviders, snap.WebSearchProviders),
+		WebSearchCount:     p.WebSearchCount,
+		WebFetchProviders:  webProviderViews(p.WebFetchProviders, snap.WebFetchProviders),
+		WebFetchMaxChars:   p.WebFetchMaxChars,
+		WebFetchProxy:      p.WebFetchProxy,
+		WebFetchUserAgent:  p.WebFetchUserAgent,
+		WebFetchRobots:     p.WebFetchRobots,
+		WebFetchPrivate:    p.WebFetchPrivate,
+		WebFetchTimeoutSec: p.WebFetchTimeoutSec,
+	}
+}
+
+// patch 采集表单成提交 patch（纯读：只碰表单与快照，无副作用，可单独测）。
+//
+// 校验口径三条：空 = 保持快照原值（数值项）、非法即拒（不落盘、不热更）、布尔恒写。
+// 所有取值范围读 port.Settings*——写回侧的权威校验用的是同一张表，见 D230。
+//
+// 报错时返回零值 patch 而不是「填到一半的那份」：拿着半成品去提交，等于把没校验过的
+// 字段按零值写进配置——那比整份不动危险得多。
+func (f *settingsForm) patch() (SettingsPatch, error) {
 	p := SettingsPatch{
 		Permission: f.perm.value(),
 		Unattended: f.unattend.Value,
@@ -43,35 +164,27 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if v := strings.TrimSpace(f.fontSize.Text()); v != "" {
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil || n < port.SettingsFontSizeMin || n > port.SettingsFontSizeMax {
-			f.err = true
-			f.status = fmt.Sprintf("字号须为 %g–%g 的数值", port.SettingsFontSizeMin, port.SettingsFontSizeMax)
-			return
+			return SettingsPatch{}, fmt.Errorf("字号须为 %g–%g 的数值", port.SettingsFontSizeMin, port.SettingsFontSizeMax)
 		}
 		p.FontSize = n
 	}
 	if v := strings.TrimSpace(f.winW.Text()); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			f.err = true
-			f.status = "窗口宽须为非负像素数值"
-			return
+			return SettingsPatch{}, errors.New("窗口宽须为非负像素数值")
 		}
 		p.WindowWidth = n
 	}
 	if v := strings.TrimSpace(f.winH.Text()); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			f.err = true
-			f.status = "窗口高须为非负像素数值"
-			return
+			return SettingsPatch{}, errors.New("窗口高须为非负像素数值")
 		}
 		p.WindowHeight = n
 	}
 	if p.Hotkey != "" {
 		if err := platform.ValidateHotkey(p.Hotkey); err != nil {
-			f.err = true
-			f.status = "快捷键非法：" + err.Error()
-			return
+			return SettingsPatch{}, fmt.Errorf("快捷键非法：%w", err)
 		}
 	}
 	// S4/D110③ 全量分组页：输出布尔恒写；限制数值空 = 保持；提示词恒写；
@@ -81,45 +194,35 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if v := strings.TrimSpace(f.maxTurns.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			f.err = true
-			f.status = "最大轮数须为非负整数"
-			return
+			return SettingsPatch{}, errors.New("最大轮数须为非负整数")
 		}
 		p.MaxTurns = n
 	}
 	if v := strings.TrimSpace(f.maxCtx.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			f.err = true
-			f.status = "上下文上限须为非负整数"
-			return
+			return SettingsPatch{}, errors.New("上下文上限须为非负整数")
 		}
 		p.MaxContextTokens = n
 	}
 	if v := strings.TrimSpace(f.compact.Text()); v != "" {
 		n, perr := strconv.ParseFloat(v, 64)
 		if perr != nil || n < port.SettingsCompactMin || n > port.SettingsCompactMax {
-			f.err = true
-			f.status = fmt.Sprintf("压缩阈值须为 %g–%g 的小数", port.SettingsCompactMin, port.SettingsCompactMax)
-			return
+			return SettingsPatch{}, fmt.Errorf("压缩阈值须为 %g–%g 的小数", port.SettingsCompactMin, port.SettingsCompactMax)
 		}
 		p.CompactThreshold = n
 	}
 	if v := strings.TrimSpace(f.toolChars.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			f.err = true
-			f.status = "工具输出上限须为非负整数"
-			return
+			return SettingsPatch{}, errors.New("工具输出上限须为非负整数")
 		}
 		p.ToolOutputChars = n
 	}
 	if v := strings.TrimSpace(f.toolTo.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			f.err = true
-			f.status = "工具超时须为非负整数"
-			return
+			return SettingsPatch{}, errors.New("工具超时须为非负整数")
 		}
 		p.ToolTimeoutSec = n
 	}
@@ -155,9 +258,7 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if v := strings.TrimSpace(f.webCount.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsSearchCountMin || n > port.SettingsSearchCountMax {
-			f.err = true
-			f.status = fmt.Sprintf("搜索条数须为 %d–%d 的整数", port.SettingsSearchCountMin, port.SettingsSearchCountMax)
-			return
+			return SettingsPatch{}, fmt.Errorf("搜索条数须为 %d–%d 的整数", port.SettingsSearchCountMin, port.SettingsSearchCountMax)
 		}
 		p.WebSearchCount = n
 	}
@@ -165,9 +266,7 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if v := strings.TrimSpace(f.webMaxChars.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsFetchCharsMin || n > port.SettingsFetchCharsMax {
-			f.err = true
-			f.status = fmt.Sprintf("抓取正文上限须为 %d–%d 的整数", port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
-			return
+			return SettingsPatch{}, fmt.Errorf("抓取正文上限须为 %d–%d 的整数", port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
 		}
 		p.WebFetchMaxChars = n
 	}
@@ -175,9 +274,7 @@ func (u *UI) saveSettings(f *settingsForm) {
 	if v := strings.TrimSpace(f.webTimeout.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsFetchTimeoutMin || n > port.SettingsFetchTimeoutMax {
-			f.err = true
-			f.status = fmt.Sprintf("抓取超时须为 %d–%d 秒的整数", port.SettingsFetchTimeoutMin, port.SettingsFetchTimeoutMax)
-			return
+			return SettingsPatch{}, fmt.Errorf("抓取超时须为 %d–%d 秒的整数", port.SettingsFetchTimeoutMin, port.SettingsFetchTimeoutMax)
 		}
 		p.WebFetchTimeoutSec = n
 	}
@@ -195,94 +292,12 @@ func (u *UI) saveSettings(f *settingsForm) {
 	p.SamplingStop = strings.TrimSpace(f.samplingStop.Text())
 	if _, err := port.ParseSamplingText(p.SamplingTemperature, p.SamplingTopP,
 		p.SamplingMaxTokens, p.SamplingStop); err != nil {
-		f.err = true
-		f.status = err.Error()
-		return
+		return SettingsPatch{}, err
 	}
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v
 	}
-	cmds, err := u.opts.ApplySettings(p)
-	if err != nil {
-		f.err = true
-		f.status = "保存失败：" + err.Error()
-		return
-	}
-	for i := range cmds {
-		c := cmds[i]
-		u.inCh <- port.UserInput{Command: &c}
-	}
-	if p.Theme != f.snap.Theme {
-		_ = u.post(themeMsg{mode: p.Theme}) // 主窗主题热生效（事件循环串行，§15.4）
-	}
-	if p.Hotkey != f.snap.Hotkey {
-		u.setHotkey(p.Hotkey) // 原子槽 + 托盘线程重注册（失败回退 Ctrl+Alt+A，§15.1）
-	}
-	if p.Scale != f.snap.Scale || p.FontSize != f.snap.FontSize {
-		u.SetZoom(p.Scale, p.FontSize) // D90：下帧 Metric 咽喉点生效（原子换存）
-	}
-	if p.WindowWidth != f.snap.WindowWidth || p.WindowHeight != f.snap.WindowHeight {
-		u.SetWindowSize(p.WindowWidth, p.WindowHeight) // D90：窗口线程 SetWindowPos（headless no-op）
-	}
-	f.err = false
-	f.status = "已保存"
-	if p.Model != f.snap.Model {
-		f.status = "已保存（模型名经 /model 热切换）"
-	}
-	if p.ASRProvider != f.snap.ASRProvider || p.ASRModel != f.snap.ASRModel ||
-		p.ASRBaseURL != f.snap.ASRBaseURL ||
-		p.TTSProvider != f.snap.TTSProvider || p.TTSModel != f.snap.TTSModel ||
-		p.TTSBaseURL != f.snap.TTSBaseURL || p.ASRKey != "" || p.TTSKey != "" {
-		f.status = "已保存（语音服务与模型的改动重启后生效）"
-	}
-	if p.RawJSON != "" {
-		f.status = "已保存（config.json 原文已替换；provider/密钥类改动重启生效）"
-	}
-	if !promptModulesEqual(f.snap.PromptModules, p.PromptModules) || !slices.Equal(f.snap.PromptPersona, p.PromptPersona) {
-		f.status = "已保存（人格组合只对新会话生效，重启后应用）"
-	}
-	if !slices.Equal(p.Fallback, f.snapChain) {
-		f.status = "已保存（降级链改动重启后生效）"
-	}
-	if !webProvidersEqual(p.WebSearchProviders, f.snap.WebSearchProviders) ||
-		!webProvidersEqual(p.WebFetchProviders, f.snap.WebFetchProviders) {
-		f.status = "已保存（联网提供商改动重启后生效）"
-	}
-	f.snap = SettingsSnapshot{
-		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
-		Hotkey: p.Hotkey, Theme: p.Theme,
-		Scale: p.Scale, FontSize: p.FontSize,
-		WindowWidth: p.WindowWidth, WindowHeight: p.WindowHeight,
-		Notify: p.Notify, TTS: p.TTS,
-		MaxTurns: p.MaxTurns, MaxContextTokens: p.MaxContextTokens,
-		CompactThreshold: p.CompactThreshold, ToolOutputChars: p.ToolOutputChars,
-		ToolTimeoutSec: p.ToolTimeoutSec, SystemPrompt: p.SystemPrompt,
-		PromptModules: p.PromptModules, PromptPersona: p.PromptPersona,
-		Builtins: f.snap.Builtins, RawJSON: p.RawJSON,
-		Fallback: p.Fallback, FallbackNote: f.snap.FallbackNote,
-		ASRProvider: p.ASRProvider, ASRModel: p.ASRModel, ASRLang: p.ASRLang,
-		ASRBaseURL:  p.ASRBaseURL,
-		ASRKeySaved: keyShapeAfterSave(p.ASRKey, f.snap.ASRKeySaved),
-		ASRKeyPlain: keyShapePlainAfterSave(p.ASRKey, f.snap.ASRKeyPlain),
-		ASRKeyRef:   keyRefAfterSave(p.ASRKey, f.snap.ASRKeyRef),
-		TTSProvider: p.TTSProvider, TTSModel: p.TTSModel,
-		TTSBaseURL:  p.TTSBaseURL,
-		TTSKeySaved: keyShapeAfterSave(p.TTSKey, f.snap.TTSKeySaved),
-		TTSKeyPlain: keyShapePlainAfterSave(p.TTSKey, f.snap.TTSKeyPlain),
-		TTSKeyRef:   keyRefAfterSave(p.TTSKey, f.snap.TTSKeyRef),
-		TTSVoice:    p.TTSVoice, TTSDesign: p.TTSDesign,
-		TTSStyle: p.TTSStyle, TTSTags: p.TTSTags,
-		WebSearchProviders: webProviderViews(p.WebSearchProviders, f.snap.WebSearchProviders),
-		WebSearchCount:     p.WebSearchCount,
-		WebFetchProviders:  webProviderViews(p.WebFetchProviders, f.snap.WebFetchProviders),
-		WebFetchMaxChars:   p.WebFetchMaxChars,
-		WebFetchProxy:      p.WebFetchProxy,
-		WebFetchUserAgent:  p.WebFetchUserAgent,
-		WebFetchRobots:     p.WebFetchRobots,
-		WebFetchPrivate:    p.WebFetchPrivate,
-		WebFetchTimeoutSec: p.WebFetchTimeoutSec,
-	}
-	f.snapChain = append([]FallbackLink(nil), p.Fallback...)
+	return p, nil
 }
 
 // webProvidersEqual 联网提供商列表等价（kind/来源/端点/国家语言/条数；密钥**不参与**

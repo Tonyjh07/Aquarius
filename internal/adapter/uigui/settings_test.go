@@ -320,6 +320,57 @@ func TestSaveSettingsZoomDefaults(t *testing.T) {
 	}
 }
 
+// TestPatchHasNoSideEffects 采集与提交分成两段后，`patch` 必须是纯读：非法输入只返回错误，
+// 不碰写回调、不投递事件、不动快照基准；合法输入也只产出 patch。保存流之所以能先拦后提交，
+// 靠的就是这一条——校验失败时磁盘与界面状态都不该发生任何变化。
+func TestPatchHasNoSideEffects(t *testing.T) {
+	restoreLight(t)
+	called := 0
+	u := newHeadless(t, Options{
+		Settings: func() SettingsSnapshot {
+			s := fillSnapshot()
+			s.Scale, s.FontSize = 1, 15
+			return s
+		},
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { called++; return nil, nil },
+	})
+	f := newSettingsForm(u)
+	before := f.snap
+	beforeChain := len(f.snapChain)
+
+	// 非法：返回错误，表单只记错误反馈。
+	f.fontSize.SetText("abc")
+	if _, err := f.patch(); err == nil {
+		t.Fatal("非法字号应返回错误")
+	}
+	if called != 0 {
+		t.Error("patch 不应触达写回调")
+	}
+	if f.snap.FontSize != before.FontSize || f.snap.Model != before.Model ||
+		len(f.snap.PromptModules) != len(before.PromptModules) || f.snap.RawJSON != before.RawJSON {
+		t.Error("patch 不应改动快照基准")
+	}
+	if f.status != "" || f.err {
+		t.Errorf("patch 不应自己写反馈: (%v, %q)", f.err, f.status)
+	}
+
+	// 合法：产出 patch，依然无副作用。
+	f.fontSize.SetText("18")
+	p, err := f.patch()
+	if err != nil {
+		t.Fatalf("合法字号应通过: %v", err)
+	}
+	if p.FontSize != 18 {
+		t.Errorf("patch 字号 = %g", p.FontSize)
+	}
+	if called != 0 || f.snap.FontSize != before.FontSize || f.err {
+		t.Errorf("patch 引入了副作用: called=%d err=%v", called, f.err)
+	}
+	if len(f.snapChain) != beforeChain {
+		t.Error("patch 不应改动降级链基准")
+	}
+}
+
 // TestSaveSettingsZoomErrors 旋钮非法输入在写回调之前拦截（不落盘、不热更）。
 func TestSaveSettingsZoomErrors(t *testing.T) {
 	cases := []struct {
