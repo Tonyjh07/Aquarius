@@ -121,13 +121,9 @@ type ProbeOutcome struct {
 	Pending bool
 }
 
-// FallbackLink 降级链一项（D173/D176 口径三）：provider + 模型名。模型可为空
-// （= 取该 provider 的缺省模型），也可手填未声明的名字——链是运行时路由，不要求
-// 目标模型已写进 provider 的 models 声明（声明只影响能力位与窗口）。
-type FallbackLink struct {
-	Provider string
-	Model    string
-}
+// FallbackLink 降级链一项（D173/D176 口径三）。定义在 port：写回规则要挪进 app 与
+// 装配根，两边都得认这份形状，而 uigui 不能成为公共依赖。
+type FallbackLink = port.FallbackLink
 
 // ProviderChoice 「模型」页降级链编辑用的 provider 选项：名字 + 它声明的模型名。
 // 与 ProviderManager 的编辑面分开——那边编辑 provider 本体（怎么连），这里只挑路由目标。
@@ -159,16 +155,9 @@ type WebProviderView struct {
 }
 
 // WebProviderPatch 联网提供商一条的提交（D200/D222）。Key 空 = 保持原值（只写不回显）；
-// `secret:` 前缀照写引用，否则明文转进密钥库（与 provider 页同口径）。
-type WebProviderPatch struct {
-	Kind    string
-	From    string
-	Key     string
-	BaseURL string
-	Country string
-	Lang    string
-	Count   int
-}
+// `secret:` 前缀照写引用，否则明文转进密钥库（与 provider 页同口径）。定义在 port，
+// 理由同 FallbackLink。
+type WebProviderPatch = port.WebProviderPatch
 
 // ProviderManager provider 列表管理面（D110②/③，装配根实现）：设置窗 provider
 // 编辑区数据面 + 全量应用 + 连通性测试。provider 变更重启生效（base_url/api_key/
@@ -189,14 +178,9 @@ type ProviderManager interface {
 	Probe(model string, p ProviderPatch) (ProbeOutcome, error)
 }
 
-// PromptModuleView 人格模块树单个节点的编辑视图（S7/D144）：Name 唯一（用户模块名不以
-// `@` 开头，该前缀保留给内置模块）；Text = 叶正文（组亦可带，作组头）；Children = 子模块
-// 引用名（有序，可再嵌套 → 多级细分）。数据面真源 = config `prompts.modules`。
-type PromptModuleView struct {
-	Name     string
-	Text     string
-	Children []string
-}
+// PromptModuleView 人格模块树单个节点的编辑视图（S7/D144）。定义在 port，理由同
+// FallbackLink（数据面真源 = config `prompts.modules`）。
+type PromptModuleView = port.PromptModuleView
 
 // BuiltinModuleView 内置只读模块展示项（S7/D144，`@default`/`@env` 及其子模块）：
 // 设置窗列出并可一键加入人格引用；不可改名/删除。
@@ -296,85 +280,13 @@ type SettingsSnapshot struct {
 	SamplingStop        string // JSON 数组文本，如 ["\n"]（空 = 不发送）
 }
 
-// SettingsPatch 保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
-// 数值键 0 = 不改（表单留空 = 保持快照原值的既有口径）；Notify/TTS 恒写（布尔无
-// 留空语义）；SystemPrompt 恒写（清空 = 合法语义「内置默认」）；RawJSON 非空 =
-// 高级页整文件替换（保存前 cmd 侧 JSON 校验）。
-type SettingsPatch struct {
-	Permission string
-	// Unattended 无人值守（D185）：恒写（布尔无留空语义）；与 Permission 一起走内核命令。
-	Unattended   bool
-	Model        string
-	Think        bool
-	Effort       string
-	Hotkey       string
-	Theme        string
-	Scale        float64 // D90：元素缩放倍率（cycle 档，恒非零）
-	FontSize     float64 // D90：正文字号 sp；0 = 不改
-	WindowWidth  int     // D90：主窗像素宽；0 = 不改（缺省）
-	WindowHeight int
-
-	Notify           bool
-	TTS              bool
-	MaxTurns         int
-	MaxContextTokens int
-	CompactThreshold float64
-	ToolOutputChars  int
-	ToolTimeoutSec   int
-	SystemPrompt     string
-	// PromptModules/PromptPersona 人格模块树与有序引用（S7/D144，恒全量写：空 = 清空）。
-	// 空名模块行被跳过；模块名校验（非空/不以 @ 开头/不重复）在 cmd 侧拦截。
-	PromptModules []PromptModuleView
-	PromptPersona []string
-	RawJSON       string // "" = 不改
-	// Fallback 降级链（D176 口径三；恒全量写：空 = 清空）。链条目 {provider, model}，
-	// 模型可为空（取该 provider 的缺省模型）；cmd 侧校验 provider 名存在。
-	Fallback []FallbackLink
-	// 语音（D179；恒全量写）：provider 空 = 该能力关闭；model 非空且 provider 空时
-	// 原样保留（不生效但不丢用户输入）；cmd 侧校验引用的 provider 存在。
-	ASRProvider string
-	// ASRKind / TTSKind 协议位（空 = chat-audio）；ASRModelPath 是本地引擎的模型文件。
-	ASRKind      string
-	ASRModel     string
-	ASRModelPath string
-	ASRLang      string // auto | zh | en
-	TTSProvider  string
-	TTSKind      string
-	TTSModel     string
-	TTSVoice     string
-	TTSDesign    string
-	TTSStyle     string
-	TTSTags      string
-	// 语音的端点与密钥（D222）：BaseURL 空 = 借 ASRProvider/TTSProvider 的；Key 空 =
-	// 保持原引用（只写不回显），`secret:` 照写引用、其余明文转进密钥库。
-	ASRBaseURL string
-	ASRKey     string
-	TTSBaseURL string
-	TTSKey     string
-
-	// 联网（D200）：两组提供商列表恒全量写（nil = 这条写路径不管联网，空数组 = 清空）。
-	// 数值 0 = 不改（留空保持快照原值）；布尔恒写（robots 的「键缺失 = 遵守」在写侧
-	// 归一为显式 true/false）。
-	WebSearchProviders []WebProviderPatch
-	WebSearchCount     int
-	WebFetchProviders  []WebProviderPatch
-	WebFetchMaxChars   int
-	WebFetchProxy      string
-	WebFetchUserAgent  string
-	WebFetchRobots     bool
-	WebFetchPrivate    bool
-	WebFetchTimeoutSec int
-
-	// 采样参数（D204；恒全量写）：空串 = 该项不发送（删键），有值 = 照写（含 0）。
-	// 与「数值 0 = 不改」的限额口径不同——这里 0 是有效取值，不能被当成「没填」。
-	// SamplingSet 区分「设置窗保存（整段替换）」与「窄写回（别动采样）」——窄写回
-	// （人格模板、provider 应用等）给的是零值，不该顺手把用户的采样参数抹平。
-	SamplingSet         bool
-	SamplingTemperature string
-	SamplingTopP        string
-	SamplingMaxTokens   string
-	SamplingStop        string
-}
+// SettingsPatch 设置窗保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
+//
+// 定义在 port 而不是本包（D229）：本包只负责**采集表单并渲染**，字段落到 config 的
+// 哪个键、取值范围、留空什么意思属于内核规则，要由 app 与装配根实现；而分层守卫禁止
+// app import adapter、也禁止 uigui import app，两边共用的数据形状只能落在 port。留成
+// 别名是为了既有调用点（约 90 处字面量）不用改。
+type SettingsPatch = port.SettingsPatch
 
 // 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处只负责渲染）。
 var (
