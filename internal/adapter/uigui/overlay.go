@@ -80,7 +80,10 @@ type overlayState struct {
 	role     conversation.Role // 快照内角色（标题措辞；未知 = ""）
 	editable bool              // root 与无正文节点只读；system 里只有 persona 可编辑
 	persona  bool              // 会话首节点（parent == Root 的 system，D154）
-	name     string            // 节点名（persona = "人格节点" 之类，标题行用）
+	// hasChildren 该节点是否已有后续内容（开卡时取一次）：三档应用方式在「无后续」时
+	// 结果完全相同，说明行据此换一种说法，免得用户以为三档有区别。
+	hasChildren bool
+	name        string // 节点名（persona = "人格节点" 之类，标题行用）
 	// source/trigger 注入节点的来源与触发记录（D166；仅 role == inject 有意义）：
 	// 来源行与转写头部共用 port.InjectSourceLabel 一张表。
 	source  string
@@ -138,17 +141,18 @@ func (st *historyState) openOverlay(u *UI, id conversation.MessageID, mode conve
 		page = overlayPageRendered // 模板页签只属于 persona（防调用方误传）
 	}
 	ov := &overlayState{
-		id:       id,
-		kind:     kind,
-		role:     role,
-		persona:  persona,
-		editable: editable,
-		mode:     mode,
-		page:     page,
-		src:      src,
-		source:   source,
-		trigger:  trigger,
-		cache:    map[string][]mdBlock{},
+		id:          id,
+		kind:        kind,
+		role:        role,
+		persona:     persona,
+		editable:    editable,
+		hasChildren: st.hasChildren(id),
+		mode:        mode,
+		page:        page,
+		src:         src,
+		source:      source,
+		trigger:     trigger,
+		cache:       map[string][]mdBlock{},
 	}
 	if persona && ov.page == overlayPageTemplate {
 		ov.ensureTemplate(u)
@@ -189,6 +193,30 @@ func (st *historyState) isPersona(id conversation.MessageID) bool {
 			return false
 		}
 		return st.model.nodes[n.parent].role == conversation.RoleRoot
+	}
+	return false
+}
+
+// hasChildren 节点是否已有后续内容（版本图上是否有以它为父的节点）。修订出来的新版本
+// 挂在原节点的父下，不算它的孩子——故这个判断就是「改这一条时会不会动到后面的历史」。
+func (st *historyState) hasChildren(id conversation.MessageID) bool {
+	if st.model == nil {
+		return false
+	}
+	self := -1
+	for i, n := range st.model.nodes {
+		if n.id == id {
+			self = i
+			break
+		}
+	}
+	if self < 0 {
+		return false
+	}
+	for _, n := range st.model.nodes {
+		if n.parent == self {
+			return true
+		}
 	}
 	return false
 }
@@ -654,8 +682,55 @@ func overlayBody(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 }
 
 // overlayFooter 底行：应用方式三选一（只读节点无）+ 关闭 / 保存。方式钮 = 与页签同款胶囊。
+// 方式钮上方一行说明**当前这一档的实际后果**：三档各不相同（旧分支留不留、后续挂到谁
+// 下面），说明随选中的方式即时切换，用户不必凭「转移/复制」两个词去猜。
 // 人格节点（D154）：方式锁 Carry（另两档禁用 + 一行说明），模板页签换成两枚模板钮。
 func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
+	row := func(gtx layout.Context) layout.Dimensions { return overlayFooterRow(gtx, th, ov) }
+	hint := ov.modeHint()
+	if hint == "" {
+		return row(gtx)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			l := material.Caption(th, hint)
+			l.Color = paperOf().text3
+			l.MaxLines = 2
+			return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, l.Layout)
+		}),
+		layout.Rigid(row),
+	)
+}
+
+// modeHint 当前应用方式的后果说明（增删改遮罩的「会发生什么」）：只读节点没有方式可选、
+// 模板页签谈的是人格模板而非这一段消息，都返回空串。
+func (ov *overlayState) modeHint() string {
+	switch {
+	case ov.persona && ov.page == overlayPageTemplate:
+		return ""
+	case ov.persona:
+		return "人格固定「转移历史」：旧人格留成无子叶，现有对话整体转到新人格下。"
+	case !ov.editable:
+		return ""
+	case !ov.hasChildren:
+		// 没有后续内容时三档等价：都是造一个同级新版本、旧节点留在原分支。
+		return "该节点之后还没有内容：三种方式结果相同，都是留下旧节点、把视图移到新版本。"
+	}
+	switch ov.mode {
+	case conversation.Carry:
+		return "转移历史：旧节点留成无子叶，后续内容改挂到新版本下。"
+	case conversation.Clone:
+		return "复制历史：旧分支原样保留，新版本下另挂一份后续副本。"
+	default:
+		if ov.role == conversation.RoleUser {
+			return "另起新分支：旧分支原样保留，在新版本下重新生成回答。"
+		}
+		return "另起新分支：旧节点与其后续留在原分支，视图移到新版本。"
+	}
+}
+
+// overlayFooterRow 底行按钮本身（说明行由 overlayFooter 叠在它上面）。
+func overlayFooterRow(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	children := []layout.FlexChild{}
 	switch {
 	case ov.persona && ov.page == overlayPageTemplate:
@@ -687,9 +762,7 @@ func overlayFooter(gtx layout.Context, th *material.Theme, ov *overlayState) lay
 		}
 		children = append(children,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				l := material.Caption(th, "人格固定「转移历史」：旧人格留成无子叶。")
-				l.Color = paperOf().text3
-				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, l.Layout)
+				return layout.Spacer{}.Layout(gtx)
 			}),
 			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true, ov.canSave())),
 		)
