@@ -6,10 +6,13 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
-// BranchInfo 一个节点的同级视图（D80/§7.5）：同父全部孩子按**创建序**（含自身）与自身下标。
-// 值语义、只读——UI 渲染分叉编号与左右切换只需这两个事实，拿不到树结构本体。
+// BranchInfo 一个节点的版本视图（D80/§7.5）：同一版本组的全部成员按**创建序**（含自身）
+// 与自身下标。值语义、只读——UI 渲染分叉编号与左右切换只需这两个事实，拿不到树结构本体。
+//
+// 「版本组」不是「同父孩子」：插在某个节点之前的摘要会占掉它的结构父位，版本组按最近的非
+// 衬垫祖先分组，衬垫本身不属于任何组（Branches 对衬垫返回 ok=false）。
 type BranchInfo struct {
-	// IDs 同父全部孩子，按创建时间升序（含 id 自身）；至少含自身一条。
+	// IDs 版本组全部成员，按创建时间升序（含 id 自身）；至少含自身一条。
 	IDs []conversation.MessageID
 	// Index 自身在 IDs 中的下标（0 起）。
 	Index int
@@ -41,7 +44,8 @@ type GraphNode struct {
 	CreatedAt time.Time
 	// EdgeKind 与父边的种类；结构根无父边，为零值（""）。
 	EdgeKind EdgeKind
-	// SiblingIdx/SiblingCount 同父孩子中的序号与总数（版本 i/n 口径，与 BranchInfo 同源）。
+	// SiblingIdx/SiblingCount 版本组中的序号与总数（版本 i/n 口径，与 BranchInfo 同源）；
+	// 衬垫不属于任何版本组，两值都恒为 0。
 	SiblingIdx   int
 	SiblingCount int
 }
@@ -63,7 +67,7 @@ type TreeGraph struct {
 // 并发（§15.5）：实现在 app 侧以不可变快照 + 原子发布承载，UI 事件循环 goroutine
 // 可无锁调用；实现方负责保证同一时刻的返回值是一个自洽快照。
 type TreeView interface {
-	// Branches 返回 id 的同级视图；id 不在树中时 ok=false（返回零值 BranchInfo）。
+	// Branches 返回 id 的版本组视图；id 不在树中、或 id 本身是衬垫时 ok=false（返回零值）。
 	Branches(id conversation.MessageID) (BranchInfo, bool)
 	// Tail 返回 id 版本子树的对话末端（D94）：id 自身是叶子时即自身，否则取子树中
 	// CreatedAt 最新的叶子——分支切换的落点（切版本应恢复该版本的对话全程，而非停在
