@@ -129,6 +129,37 @@ func TestSkillCommandLoadInjectsText(t *testing.T) {
 	}
 }
 
+// TestSkillCommandIgnoresQueueAtDrain /skill 的排空点拿到的一定只有本条技能正文：外部生产者
+// 攒下的注入已在 `Handle` 入口的排空点①落地（用户输入优先）。所以命令面在这里不必再判
+// 「该不该起一轮」——这条测试钉住的是那个前提，前提变了就会红。
+func TestSkillCommandIgnoresQueueAtDrain(t *testing.T) {
+	s, llm, _ := skillSession(t, pdfSkills(), textStream("本轮回复"))
+	if err := s.Inject(context.Background(), port.Injection{
+		Source: "job:j1",
+		Parts:  injectPart("任务 j1 完成"),
+	}); err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	baseReqs := len(llm.requests)
+	// 走命令入口（不是直接调 execSkill）：排空点①要先把这个任务报告落地成未触发。
+	if _, err := handleCmd(s, "skill", "pdf"); err != nil {
+		t.Fatalf("skill: %v", err)
+	}
+	if len(llm.requests) != baseReqs {
+		t.Fatalf("载入技能不应替队列里的报告起一轮：requests = %d, want %d", len(llm.requests), baseReqs)
+	}
+	path := s.Current().Path()
+	var report conversation.Message
+	for _, m := range path {
+		if m.Source == "job:j1" {
+			report = m
+		}
+	}
+	if report.Role != conversation.RoleInject || report.Trigger {
+		t.Fatalf("排队注入 = %+v（应已由排空点①落地、Trigger=false）", report)
+	}
+}
+
 // TestSkillCommandUnknownName 名字打错报中文原因（不泄露内部编号）。
 func TestSkillCommandUnknownName(t *testing.T) {
 	s, _, _ := skillSession(t, pdfSkills())

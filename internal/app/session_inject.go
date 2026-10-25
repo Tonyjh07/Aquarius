@@ -78,18 +78,52 @@ func resolveInjectTrigger(source string, override *bool) bool {
 	}
 }
 
-// drainInjections 排空注入队列并逐条落地（D150，两个排空点共用）：每条落成 `Role=inject`
-// 节点（挂当前 Head，Head 随之前移）。
-//
-// driven 决定 Trigger 的口径：触发型注入在**驱动式**排空（`/inject`、空闲唤醒）下记为
-// `true` 并把「是否该起一轮」回给调用方（由调用方在清屏回放之后决定何时跑轮，见
-// session_cmd_inject）；非驱动式排空（`Handle` 入口、轮末）只**落地**、Trigger 记 `false`
-// ——轮内注入不打断当前轮，用户输入优先。故记的是「本条落地时**实际**起没起响应」。
-//
-// announce=true 时逐条发 HistoryEvent（不清屏、非 CommittedEvent——输出装饰器不响应），
-// 供转写区把注入当一条记录铺开；`/inject` 走清屏回放，故它传 announce=false。
+// drainPoint 注入排空的执行时机（D150）：调用方只说「在哪排空」，触发口径与呈现方式
+// 由 drainPlan 一处决定——不再由调用点自己传两个布尔，四个取值里那个从没被用过的组合
+// 也随之消失。
+type drainPoint int
+
+const (
+	// drainBeforeInput ① `Handle` 入口：用户输入优先，注入只落地、不抢手输入。
+	drainBeforeInput drainPoint = iota
+	// drainAfterTurn ② 轮末：轮内注入只落地，不打断当前轮。
+	drainAfterTurn
+	// drainOnWake ③ 空闲唤醒：触发型注入落地后自己跑一轮，逐条呈现。
+	drainOnWake
+	// drainBeforeReplay ③' 命令自己移 Head（`/inject`、`/skill`）：触发型注入照样起一轮，
+	// 但不逐条呈现——调用方紧接着清屏回放，让新路径连注入一起铺开。
+	drainBeforeReplay
+)
+
+// drainPlan 一个排空点的口径：这里只回答两件事，其余（落地、落盘、丢弃错投）各点相同。
+type drainPlan struct {
+	// driven 触发型注入是否真起一轮；false 时 Trigger 记 false（记的是**实际发生**）。
+	driven bool
+	// announce 是否逐条发 HistoryEvent（不清屏、非 CommittedEvent——输出装饰器不响应）；
+	// false 表示调用方随后清屏回放，注入随新路径一起呈现。
+	announce bool
+}
+
+// plan 排空点的口径表（单一事实源）。未列出的取值按「只落地、逐条呈现」处理：宁可多一次
+// 呈现，也不凭空多起一轮生成。
+func (p drainPoint) plan() drainPlan {
+	switch p {
+	case drainOnWake:
+		return drainPlan{driven: true, announce: true}
+	case drainBeforeReplay:
+		return drainPlan{driven: true}
+	default: // ① Handle 入口、② 轮末，以及任何未列出的取值
+		return drainPlan{announce: true}
+	}
+}
+
+// drainInjections 排空注入队列并逐条落地（D150，各排空点共用）：每条落成 `Role=inject`
+// 节点（挂当前 Head，Head 随之前移）。Trigger 记「本条落地时**实际**起没起响应」——是否
+// 真起一轮由排空点的 driven 决定，是否该跑轮经 wantTurn 回给调用方（跑轮的时机因点而异：
+// 唤醒点立即跑，命令点先清屏回放再跑）。
 // 落过节点即落盘（失败上抛）。
-func (s *Session) drainInjections(ctx context.Context, driven, announce bool) (landed []conversation.Message, wantTurn bool, err error) {
+func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []conversation.Message, wantTurn bool, err error) {
+	plan := at.plan()
 	for {
 		select {
 		case item := <-s.injectCh:
@@ -98,7 +132,7 @@ func (s *Session) drainInjections(ctx context.Context, driven, announce bool) (l
 			if item.session != "" && item.session != s.cur.ID {
 				continue
 			}
-			trigger := item.trigger && driven
+			trigger := item.trigger && plan.driven
 			node, err := s.landInjection(item, trigger)
 			if err != nil {
 				return landed, false, err
@@ -107,7 +141,7 @@ func (s *Session) drainInjections(ctx context.Context, driven, announce bool) (l
 			if trigger {
 				wantTurn = true
 			}
-			if announce && s.ui != nil {
+			if plan.announce && s.ui != nil {
 				if err := s.ui.Emit(ctx, port.HistoryEvent{Message: node}); err != nil {
 					return landed, wantTurn, fmt.Errorf("注入落地呈现: %w", err)
 				}

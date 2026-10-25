@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -31,7 +30,7 @@ func (s *Session) execSummary(ctx context.Context, cmd port.Command) (string, er
 		return "", err
 	}
 
-	if text := strings.TrimSpace(strings.Join(cmd.Args[1:], " ")); text != "" {
+	if text := joinArgs(cmd.Args[1:]); text != "" {
 		// 手写档：内容由用户给，不调模型、不记用量。
 		if _, err := s.cur.InsertBefore(id, conversation.RoleSystem,
 			[]conversation.Part{{Kind: conversation.PartText, Text: text}}); err != nil {

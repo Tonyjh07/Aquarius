@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -406,14 +405,24 @@ func (s *Session) resolveConversation(ctx context.Context, arg string) (conversa
 // editUsage /edit 的用法文案（命令面与解析错误共用一份，避免两处漂移）。
 const editUsage = "用法: /edit <id> [--keep|--copy] [--part N] [--attach <路径>]... [--drop N]... [--drop-all] [<文本>]（缺省 Fresh 开新分支；--keep 转移后续历史；--copy 复制后续历史；--part N 只改第 N 个正文分片，0 起；--attach 追加附件；--drop N 删除第 N 个附件，0 起；带附件操作时文本可省 = 只改附件）"
 
-// parseEditArgs 解析 /edit：flag 只在紧跟 id 的位置识别（已知 flag 逐个消费，未知 "--x"
-// 视为文本起点——字面 "--keep" 原样保留的旧口径不变）。--part N = 只替换第 N 个正文分片
-// （0 起，D107②）；缺省 -1 = 全部正文并为一条（D107③）。D188 增附件增删 flag：
-// --attach <路径>（可重复）/ --drop N（可重复，附件分片出现序）/ --drop-all。
+// parseEditArgs 解析 /edit：flag 只在紧跟 id 的位置识别（用 flagsLeading：遇到未声明的
+// token（含未知 "--x"）即为文本起点——字面 "--keep" 原样保留的旧口径不变）。--part N =
+// 只替换第 N 个正文分片（0 起，D107②）；缺省 -1 = 全部正文并为一条（D107③）。D188 增
+// 附件增删 flag：--attach <路径>（可重复）/ --drop N（可重复，附件分片出现序）/ --drop-all。
 // GUI 结构化提交复用同一 token 序列（D97①/D107②/D188）：
 // Args=[id, flag?, ("--part", N)?, ("--attach", 路径)…, ("--drop", N)…, "--drop-all"?, 文本?]。
 func parseEditArgs(args []string) (editOptions, error) {
 	return parseEditArgsWith(args, nil)
+}
+
+// editFlags /edit 认识的 flag（附件增删与分支模式都在这一段）。
+var editFlags = []flagDecl{
+	{name: "--keep"},
+	{name: "--copy"},
+	{name: "--part", value: true},
+	{name: "--attach", value: true},
+	{name: "--drop", value: true},
+	{name: "--drop-all"},
 }
 
 // parseEditArgsWith 同上，另带结构化附件（D188 GUI 编辑态无路径的新增项）。
@@ -426,50 +435,37 @@ func parseEditArgsWith(args []string, extra []port.Attachment) (editOptions, err
 		return bad() // flag 在 id 前：按用法拒绝
 	}
 	opt := editOptions{target: args[0], mode: conversation.Fresh, part: -1, attach: extra}
-	rest := args[1:]
-	for len(rest) > 0 && strings.HasPrefix(rest[0], "--") {
-		switch rest[0] {
+	flags, rest, err := scanFlags(args[1:], flagScan{pos: flagsLeading}, editFlags)
+	if err != nil {
+		return bad() // 值型 flag 缺参数
+	}
+	for _, f := range flags {
+		switch f.name {
 		case "--keep":
 			opt.mode = conversation.Carry
-			rest = rest[1:]
 		case "--copy":
 			opt.mode = conversation.Clone
-			rest = rest[1:]
 		case "--part":
-			if len(rest) < 2 {
-				return bad() // --part 缺序号
-			}
-			n, err := strconv.Atoi(rest[1])
-			if err != nil || n < 0 {
+			n, ok := parseIndex(f.value)
+			if !ok {
 				return bad() // --part 序号非法
 			}
 			opt.part = n
-			rest = rest[2:]
 		case "--attach":
-			if len(rest) < 2 || strings.TrimSpace(rest[1]) == "" {
+			if strings.TrimSpace(f.value) == "" {
 				return bad() // --attach 缺路径
 			}
-			opt.attach = append(opt.attach, port.Attachment{Path: rest[1]})
-			rest = rest[2:]
+			opt.attach = append(opt.attach, port.Attachment{Path: f.value})
 		case "--drop":
-			if len(rest) < 2 {
-				return bad() // --drop 缺序号
-			}
-			n, err := strconv.Atoi(rest[1])
-			if err != nil || n < 0 {
+			n, ok := parseIndex(f.value)
+			if !ok {
 				return bad() // --drop 序号非法
 			}
 			opt.drop = append(opt.drop, n)
-			rest = rest[2:]
 		case "--drop-all":
 			opt.dropAll = true
-			rest = rest[1:]
-		default:
-			// 未知 "--x" = 文本以它开头（旧口径：只有已知 flag 被消费）。
-			goto text
 		}
 	}
-text:
 	if len(rest) < 1 {
 		// 没有文本：有附件操作时合法（只改附件），否则按用法拒绝。
 		if opt.hasAttachOp() {
@@ -477,7 +473,7 @@ text:
 		}
 		return bad()
 	}
-	opt.text = strings.TrimSpace(strings.Join(rest, " "))
+	opt.text = joinArgs(rest)
 	if opt.text == "" {
 		if opt.hasAttachOp() {
 			return opt, nil // 只改附件：正文原样保留

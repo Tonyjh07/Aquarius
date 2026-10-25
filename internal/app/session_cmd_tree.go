@@ -12,7 +12,7 @@ import (
 
 // execNew 实现 /new：新建会话。
 func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error) {
-	title := strings.TrimSpace(strings.Join(cmd.Args, " "))
+	title := joinArgs(cmd.Args)
 	if title == "" {
 		title = defaultTitle
 	}
@@ -82,21 +82,26 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	return fmt.Sprintf("已切换到会话 %s", s.cur.ID), nil
 }
 
+// titleFlags /title 认识的 flag；只认一个（第二次出现归标题文本，旧口径）。
+var titleFlags = []flagDecl{{name: "--id", value: true}}
+
+// titleUsage /title 的用法文案（缺 id、缺参共用一份）。
+const titleUsage = "用法: /title [--id <id前缀>] [<标题>]（--id 改非当前会话标题，/list 查看）"
+
 // execTitle 实现 /title：查看或修改会话标题——`--id <前缀>` 改**非当前**会话（D120⑥）。
 // 形态：/title [--id <id前缀>] [<标题>]；--id 仅在**首参位**识别（未知 "--x" 视为标题文本，
 // 同 /edit 的 flag 口径）；缺省作用于当前会话。
 func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, error) {
-	args := cmd.Args
 	target := s.cur
-	if len(args) > 0 && args[0] == "--id" {
-		if len(args) < 2 {
-			return "", errors.New("用法: /title [--id <id前缀>] [<标题>]（--id 改非当前会话标题，/list 查看）")
-		}
-		id, err := s.resolveConversation(ctx, args[1])
+	flags, rest, err := scanFlags(cmd.Args, flagScan{pos: flagsLeading, limit: 1}, titleFlags)
+	if err != nil {
+		return "", errors.New(titleUsage)
+	}
+	if len(flags) > 0 {
+		id, err := s.resolveConversation(ctx, flags[0].value)
 		if err != nil {
 			return "", err
 		}
-		args = args[2:]
 		if id != s.cur.ID { // 目标非当前：载入副本改标题落盘，**不动 Head、不动 s.cur**
 			c, err := s.store.Load(ctx, id)
 			if err != nil {
@@ -105,10 +110,10 @@ func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, erro
 			target = c
 		}
 	}
-	if len(args) == 0 {
+	if len(rest) == 0 {
 		return fmt.Sprintf("%s 标题: %s", target.ID, target.Title), nil
 	}
-	title := strings.TrimSpace(strings.Join(args, " "))
+	title := joinArgs(rest)
 	target.Title = title
 	if err := s.store.Save(ctx, target); err != nil {
 		return "", fmt.Errorf("session: 保存标题: %w", err)

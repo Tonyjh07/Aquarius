@@ -56,7 +56,7 @@ func (s *Session) execSkillAdmin(ctx context.Context, args []string) (string, bo
 
 // skillInstall /skill install <来源>。
 func (s *Session) skillInstall(ctx context.Context, rest []string) (string, bool, error) {
-	source := strings.TrimSpace(strings.Join(rest, " "))
+	source := joinArgs(rest)
 	if source == "" {
 		return "", true, fmt.Errorf("%s", skillAdminUsage)
 	}
@@ -72,7 +72,7 @@ func (s *Session) skillInstall(ctx context.Context, rest []string) (string, bool
 
 // skillRemove /skill remove <名字>（删除前二次确认；确认器缺席时直接执行——测试/无交互装配）。
 func (s *Session) skillRemove(ctx context.Context, rest []string) (string, bool, error) {
-	name := strings.TrimSpace(strings.Join(rest, " "))
+	name := joinArgs(rest)
 	if name == "" {
 		return "", true, fmt.Errorf("%s", skillAdminUsage)
 	}
@@ -97,7 +97,7 @@ func (s *Session) skillRemove(ctx context.Context, rest []string) (string, bool,
 
 // skillUpdate /skill update [名字|all]。
 func (s *Session) skillUpdate(ctx context.Context, rest []string) (string, bool, error) {
-	name := strings.TrimSpace(strings.Join(rest, " "))
+	name := joinArgs(rest)
 	if name == "all" {
 		name = ""
 	}

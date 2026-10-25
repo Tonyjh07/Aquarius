@@ -312,7 +312,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	// D167 排空点③：空闲唤醒不是用户输入——先做驱动式排空（触发型注入自己跑一轮），
 	// 不追加 user 节点。必须排在下面的普通排空之前，否则报告会先被落地成未触发。
 	if in.Wake {
-		_, wantTurn, err := s.drainInjections(ctx, true, true)
+		_, wantTurn, err := s.drainInjections(ctx, drainOnWake)
 		if err != nil {
 			return "", err
 		}
@@ -323,7 +323,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	}
 	// D150 排空点①：用户输入优先，先把外部生产者攒下的注入落地（只落地、不起轮，
 	// 触发留给本轮——用户马上就发话，不必为注入单起一轮）。
-	if _, _, err := s.drainInjections(ctx, false, true); err != nil {
+	if _, _, err := s.drainInjections(ctx, drainBeforeInput); err != nil {
 		return "", err
 	}
 	if in.Command != nil {
@@ -361,7 +361,7 @@ func (s *Session) runTurn(ctx context.Context) error {
 	}
 	// 轮内注入的落地：只落地、Trigger 记 false；发 HistoryEvent 让转写区补上这条记录
 	// （轮末不清屏，与 /goto 的回放口径区分）。
-	_, _, err := s.drainInjections(ctx, false, true)
+	_, _, err := s.drainInjections(ctx, drainAfterTurn)
 	return err
 }
 

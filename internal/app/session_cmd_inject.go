@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -41,8 +40,8 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 		return "", err
 	}
 	// 驱动式排空：本条触发的注入落地后起一轮（Trigger 记 true），不触发的只落地。
-	// 排空时 Announce=false——本条命令移动了 Head，走下面的清屏回放统一铺开。
-	landed, wantTurn, err := s.drainInjections(ctx, true, false)
+	// 本条命令移动了 Head，注入随下面的清屏回放一起呈现，故按「命令点」排空。
+	landed, wantTurn, err := s.drainInjections(ctx, drainBeforeReplay)
 	if err != nil {
 		return "", err
 	}
@@ -70,28 +69,33 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 	return fmt.Sprintf("已注入一条 %s 上下文（%s；Head → %s）", port.InjectSourceLabel(node.Source), state, s.cur.Head), nil
 }
 
+// injectUsage /inject 的用法文案（缺参、缺文本共用一份）。
+const injectUsage = "用法: /inject [--source <名>] [--no-trigger] <文本>"
+
+// injectFlags /inject 认识的 flag：选项可写在文本前后任意位置（flagsAnywhere）。
+var injectFlags = []flagDecl{
+	{name: "--source", value: true},
+	{name: "--no-trigger"},
+}
+
 // parseInjectArgs 解析 /inject 参数：`[--source <名>] [--no-trigger] <文本>`（顺序自由、
-// 选项可在文本前任意位置）。文本为剩余参数空格拼接（与 /summary 同口径）。
+// 选项可在文本任意位置）。文本为剩余参数空格拼接。
 func parseInjectArgs(args []string) (source string, noTrigger bool, text string, err error) {
 	source = "user" // 缺省来源：手动注入（默认触发）
-	var rest []string
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
+	flags, rest, err := scanFlags(args, flagScan{pos: flagsAnywhere}, injectFlags)
+	if err != nil {
+		return "", false, "", fmt.Errorf("%s（%v）", injectUsage, err)
+	}
+	for _, f := range flags {
+		switch f.name {
 		case "--no-trigger":
 			noTrigger = true
 		case "--source":
-			if i+1 >= len(args) {
-				return "", false, "", errors.New("用法: /inject [--source <名>] [--no-trigger] <文本>（--source 缺参数）")
-			}
-			source = args[i+1]
-			i++
-		default:
-			rest = append(rest, args[i])
+			source = f.value
 		}
 	}
-	text = strings.TrimSpace(strings.Join(rest, " "))
-	if text == "" {
-		return "", false, "", errors.New("用法: /inject [--source <名>] [--no-trigger] <文本>")
+	if text = joinArgs(rest); text == "" {
+		return "", false, "", errors.New(injectUsage)
 	}
 	return source, noTrigger, text, nil
 }

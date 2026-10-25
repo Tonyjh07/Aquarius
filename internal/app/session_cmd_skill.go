@@ -24,7 +24,7 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 	if s.skills == nil {
 		return "", errors.New("session: 未配置技能目录，/skill 不可用")
 	}
-	name := strings.TrimSpace(strings.Join(args, " "))
+	name := joinArgs(args)
 	if name == "" || name == "list" {
 		if name == "list" && len(args) > 1 {
 			return "", fmt.Errorf("%s", skillAdminUsage)
@@ -60,7 +60,10 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 	if err := s.Inject(ctx, in); err != nil {
 		return "", err
 	}
-	landed, _, err := s.drainInjections(ctx, true, false)
+	// 队列里此刻只可能有本条刚入队的技能正文（Trigger 显式 false）。外部生产者攒下的注入
+	// 已在 Handle 入口的排空点①落地——用户输入优先，注入不抢手输入。故这里不会有该起一轮
+	// 的注入，wantTurn 恒为 false。
+	landed, _, err := s.drainInjections(ctx, drainBeforeReplay)
 	if err != nil {
 		return "", err
 	}
