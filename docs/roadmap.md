@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-24 @ abcfc0f -->
+<!-- docs-sync: 2026-10-25 @ 27c39ad -->
 
 > **定位（2026-10-23 起）**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，
 > 以及里程碑基线。**未来要做什么、按什么顺序、什么节奏**，一律看 [plan.md](plan.md)。
@@ -98,6 +98,7 @@
 |---|---|---|
 | P2-1 | `3a00d69 refactor: resolve identifiers through one prefix matcher` | 四处前缀解析（`ResolveJobID`/`ResolveWatchID`/`resolveNode`/`resolveConversation`）共用 `port.MatchPrefix`，措辞仍分层（工具面英文、命令面中文）；补匹配优先级与命中序单测（5 files, +109/−70，净减 34 行） |
 | P2-2 | `7912324 refactor: split the job port by consumer` | `JobManager` 拆成 `JobStarter`/`JobRunner`/`JobReader`/`JobKiller`，组合体保留；各工具与 `/jobs` 只声明实际用到的方法；`requireJobs` 改泛型以保住入参的窄类型（7 files, +66/−18） |
+| P2-3 | `27c39ad refactor: give prompt parts and messages named kinds and roles` | 文档笔 `d4b5aa2`（`DESIGN.md` §5.1 + D227）。`PromptPart.Kind` / `PromptMessage.Role` 由裸 `string` 换成 `port.PromptKind`/`PromptRole` 与 6 个常量；四家适配器的 `switch` 从字符串字面量改常量，协议字符串只在写请求体、读响应体处转；生产侧转换点收敛到 `wire.go`/`responses.go` 两处（21 files, +263/−240） |
 
 **`v0.2.0-P1` 的落笔顺序**（每笔独立过全门禁、可单独回退）：
 
