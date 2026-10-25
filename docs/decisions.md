@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-25 @ e0edf32 -->
+<!-- docs-sync: 2026-10-25 @ 6433510 -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -5026,3 +5026,35 @@
   `TestSummaryPadKeepsBranchSlots`（app 层版本编号仍 1/2、2/2，衬垫编号为 0）、
   `TestSessionSummaryKeepsBranchStrip`（命令行与图上口径一致）、`TestView`（版本组成员数之和
   = 节点数），以及性质测试新增「衬垫不出现在任何版本组里」。
+
+### D227 — 装配面分片与角色用具名类型（v0.2.0，§5.1）
+
+- **动机**：`PromptPart.Kind` 与 `PromptMessage.Role` 是裸 `string`，取值只在注释里写着
+  `"text" | "image"`、`"system" | "user" | "assistant" | "tool"`。装配层有 23 处构造分片、
+  16 处构造消息，适配器侧有 `Role` 的 25 处比较与 `Kind` 的 31 处比较，全按字面量写。
+  写错一个字母编译器不管，测试也常常只覆盖了常用的那几档；新增一档协议投影时，四家适配器
+  （Chat Completions / Anthropic / Responses / 探测）各自的 `switch` 靠人记得同步。
+- **决策**：
+  - **新增 `PromptKind` / `PromptRole` 两个具名类型与 6 个常量**
+    （`PromptText`/`PromptImage`；`PromptSystem`/`PromptUser`/`PromptAssistant`/`PromptTool`），
+    一律**在 `port` 定义**——它是装配层与全部适配器共用的词汇，放 app 会让 adapter 反向依赖。
+  - **具名类型止于 JSON 边界**：内部一律具名值，只有把请求写进协议结构体、从响应里读出来
+    的那一处才转 `string`。转换集中在一个文件（Chat Completions 的 `wire.go`），
+    Anthropic / Responses 各自在自己的投影函数里转，不散到业务代码。
+  - **不复用领域的 `conversation.PartKind` / `Role`**：两套取值不同——领域侧有 `doc` /
+    `thinking`（「树上怎么存」），投影到模型请求只剩 `text` / `image`（`thinking` 走消息级
+    `Reasoning`，`doc` 在摄取阶段已拍平成文本）。借用会让 `PromptPart` 继承一堆构造时
+    不该出现的取值。
+  - **`OKind` 之类的短名否决**：`Prompt` 前缀让调用点读起来是「提示词的一条消息」，
+    与领域 `Part` 区分得开；缩写省下的几个字符换来满屏 grep 命中，不划算。
+- **否决**：① **保留裸 `string` 只补常量**（常量存在但字段仍是 `string`，赋值处不检查，
+  等于没约束）；② **给 `port` 加构造器 `NewPromptPart`**（只是换个地方写字面量，还多一层
+  调用，且 `Kind`/`Role` 之外的字段照样要传）；③ **放到 `internal/app`**（适配器要 import app，
+  违反依赖方向；`port` 本来就是两侧共用的词汇表）。
+- **后果/限制**：`port` 的公开面**净增** 2 个类型与 6 个常量——这是「公开面只减不增」的唯一
+  例外，因为它换的是类型不是方法，且换掉的是 56 处字符串字面量。测试里约 150 处字面量要
+  跟着改写（机械替换 + `gofmt`），测试文件不跟着私有化，改动面看着比生产大属于正常。
+- **验证**：`go build ./...` / `go vet ./...` / `gofmt -l .` 全绿；
+  `go test -race ./internal/app/ ./internal/adapter/llm/`；既有 `prompt_test.go`、
+  `agent_test.go`、`wire`/`anthropic`/`responses`/`openai` 请求体断言**不改期望值**
+  即绿——那是「只换类型、不改行为」的硬证据。

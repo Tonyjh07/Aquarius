@@ -453,17 +453,37 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 ### 5.1 `llm.go` —— 生成端口
 
 ```go
+// PromptKind 装配后内容分片的种类（D227）。与树上的 conversation.PartKind 不是同一套取值：
+// 领域侧含 doc / thinking 这类「树上怎么存」的区分，投影到模型请求时只剩 text 与 image
+// （thinking 走消息级 Reasoning，doc 已在前置摄取阶段拍平成 text）。
+type PromptKind string
+
+const (
+    PromptText  PromptKind = "text"
+    PromptImage PromptKind = "image"
+)
+
+// PromptRole 装配后一条消息的角色（D227）。tool 仅为 **API 投影概念**（OpenAI 协议要求
+// assistant(tool_calls)→tool 应答交错）；树上无 tool 节点，装配期由 assistant 节点的
+// Tool 分片拆出（D95）。
+type PromptRole string
+
+const (
+    PromptSystem    PromptRole = "system"
+    PromptUser      PromptRole = "user"
+    PromptAssistant PromptRole = "assistant"
+    PromptTool      PromptRole = "tool"
+)
+
 type PromptPart struct {
-    Kind string // "text" | "image"
+    Kind PromptKind
     Text string
     MIME string
     Data []byte // 图片字节，由应用层经 AttachmentStore 解析后内联
 }
 
 type PromptMessage struct {
-    Role      string // "system" | "user" | "assistant" | "tool"——tool 仅为 **API 投影概念**（OpenAI 协议要求
-                    // assistant(tool_calls)→tool 应答交错）；树上无 tool 节点，装配期由 assistant 节点的
-                    // Tool 分片拆出（D95）
+    Role      PromptRole
     Content   []PromptPart
     Reasoning string // role=assistant：思维链回传承载（D42），适配器映射为 reasoning_content 等字段
     // ReasoningSignature 思考块签名回传（D175）：树内 PartThinking.Signature 原样带上，适配器按协议
@@ -546,6 +566,8 @@ type TokenCounter interface {
     CountTokens(ctx context.Context, text string) (int, error)
 }
 ```
+
+**具名类型止于 JSON 边界**（D227）：`PromptKind` / `PromptRole` 在 `port`、`app` 与各适配器内部一律用具名值，只有真正写进请求体与解析响应体的那一处才转成协议字符串。这样做不是为了类型安全本身——裸 `string` 写错一个字母编译器不管、测试也常常漏——而是让「哪些取值合法」成为可被 `switch` 穷举的事实：`Role` 的 25 处比较、`Kind` 的 31 处比较都从字符串字面量变成常量，跨协议的四处 `case`（Chat Completions / Anthropic / Responses）攒在同一组常量上，将来协议再加一档时不会只改到其中两家。
 
 ### 5.2 `tool.go` —— 工具端口
 
