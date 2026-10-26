@@ -37,8 +37,8 @@ import (
 var version = "dev"
 
 func main() {
-	// 常驻内存策略：给堆装软上限（GOMEMLIMIT 显式设置时尊重用户口径）。
-	applyHeapLimit()
+	// 常驻内存策略：压低 GC 摆动倍数 + 装泄漏保险上限（GOMEMLIMIT / GOGC 显式设置时尊重用户口径）。
+	applyMemoryPolicy()
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
