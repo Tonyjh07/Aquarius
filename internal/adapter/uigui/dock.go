@@ -384,9 +384,16 @@ func (u *UI) evalDockFrame() {
 // 让贴着输入行徘徊的直采门控提前进入帧驱动。
 const tipBandSlackDp = 12
 
+// heartbeatInterval 停靠/收起态心跳的唤帧节拍（D50 底座；判据不变，节拍见 D237）。
+// 悬停召回、布防、移开停靠、tips 显隐全靠「帧 + 光标直采」，节拍直接决定识别延迟上限：
+// 100ms 对鼠标操作已是即时感；而停靠与输入是长期停留状态，每拍都是一次整窗合成与提交，
+// 减半即省一半。不要再往回调密——50ms 是当年发现「窄条悬停零帧」时的临时节拍，不是精度
+// 要求；真需要更快判定应该加事件源，而不是把常驻轮询调密。
+const heartbeatInterval = 100 * time.Millisecond
+
 // heartbeatNeed 心跳判据（状态读取；光标项现取 cursorPos）：停靠中 / 布防中 / 收起态
 // 球停在可停靠边（edgeNow 由当帧 evalDockFrame 写入）/ tips 在显（D53：光标直采判定
-// 需帧驱动，事件静默时 50ms 复评）/ 光标在输入行带内（D84）→ 需要主动唤帧；否则静默
+// 需帧驱动，事件静默时按心跳节拍复评）/ 光标在输入行带内（D84）→ 需要主动唤帧；否则静默
 // 零帧。
 func (u *UI) heartbeatNeed() bool {
 	return u.heartbeatNeedAt(u.cursorPos())
@@ -414,7 +421,7 @@ func (u *UI) cursorInInputBand(cur point) bool {
 
 // armHeartbeat 收起/停靠态心跳（D50 实测修订）：悬停/移开判定 = 帧 + 光标直采，而
 // 位图窄条上的指针悬停可能零帧（窄条悬停 2s 无一帧 → 召回永不触发、点击必有帧才唤出）。
-// 故按 heartbeatNeed 以 50ms 主动 Invalidate 唤帧，让悬停召回 / 布防 / 移开停靠按帧
+// 故按 heartbeatNeed 以心跳节拍主动 Invalidate 唤帧，让悬停召回 / 布防 / 移开停靠按帧
 // 直采跑起来。停靠/召回动画期间另有动画 ticker 唤帧；need 不看动画态：召回收尾帧后
 // 动画 ticker 已停，心跳须能接续。展开态 layout 先清 dockArm 再来本函数 → 天然收敛
 // 关停，无泄漏。
@@ -426,7 +433,7 @@ func (u *UI) armHeartbeat() {
 		ch := make(chan struct{})
 		u.armTick = ch
 		go func() {
-			t := time.NewTicker(50 * time.Millisecond)
+			t := time.NewTicker(heartbeatInterval)
 			defer t.Stop()
 			for {
 				select {
