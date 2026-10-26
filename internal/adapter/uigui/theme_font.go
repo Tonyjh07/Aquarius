@@ -3,6 +3,7 @@ package uigui
 import (
 	"os"
 	"strings"
+	"sync"
 
 	"gioui.org/font"
 	"gioui.org/font/gofont"
@@ -16,18 +17,54 @@ import (
 // 与 brandColor 等同槽风格：主题组装期写定，帧循环只读。
 var monoFace font.Font
 
+// faceCache 进程内共享的字体集合（D240）：候选表内容 → 解析结果。
+//
+// 为什么要缓存：解析一份中文字体（msyh.ttc）约 75～80MB，而这份数据——字体表与字形轮廓
+// ——在 opentype.ParseCollection 返回之后就完全只读。每个窗口各解析一遍是纯重复。
+//
+// 键取候选表的**内容**而不是「只解析一次」的开关：生产所有窗口走同一个平台实例、候选恒
+// 定，正常路径因此只有一份；测试里不同平台给不同候选时不会串味。
+var faceCache struct {
+	mu    sync.Mutex
+	byKey map[string][]text.FontFace
+}
+
+// sharedFaces 取（必要时解析并缓存）候选表对应的字体集合。返回值**封住了容量**，调用方
+// 不能用 append 改写共享底层数组（与 gofont.Collection 同一条防护）。
+//
+// 并发安全：解析在锁内完成，同一候选表只会解析一次；解析结果只读，可被多个 Shaper 同时
+// 使用——每个 Shaper 仍各自建 Face 与字形尺寸缓存，共享的只有字体表与字形轮廓。
+func sharedFaces(candidates []string) []text.FontFace {
+	key := strings.Join(candidates, "\x00")
+	faceCache.mu.Lock()
+	defer faceCache.mu.Unlock()
+	if faceCache.byKey == nil {
+		faceCache.byKey = make(map[string][]text.FontFace)
+	}
+	if faces, ok := faceCache.byKey[key]; ok {
+		return faces
+	}
+	faces := loadCJKFaces(candidates)
+	if len(faces) == 0 {
+		faces = gofont.Collection() // 自带 Go Mono；本身即共享返回
+	} else {
+		faces = append(faces, monoFontFaces()...)
+	}
+	faces = faces[:len(faces):len(faces)] // 封容量：防调用方 append 改写共享底层数组
+	faceCache.byKey[key] = faces
+	return faces
+}
+
 // newTheme 主题组装（§15.4 骨架：系统中文字体优先——gofont 无 CJK，spike 实证路径；
 // 失败回落 gofont）。字体集合恒补 Go Mono 系面（markdown 代码块等宽，D65；CJK 缺字
 // 由 typesetting FontMap 自动回落中文字面）。字体**路径**由平台层给（各平台常见 CJK
 // 字体位置不同），解析与回落是中性逻辑。
+//
+// 字体集合进程内共享一份（D240）：解析结果只读，多窗复用省下每窗 75～80MB；但 Shaper
+// 仍每窗各建一份（首次排版要为该 Shaper 解析字形轮廓，那份数据按 Shaper 存）。
 func newTheme(candidates []string) *material.Theme {
 	th := material.NewTheme()
-	faces := loadCJKFaces(candidates)
-	if len(faces) == 0 {
-		faces = gofont.Collection() // 自带 Go Mono
-	} else {
-		faces = append(faces, monoFontFaces()...)
-	}
+	faces := sharedFaces(candidates)
 	monoFace = pickMonoFace(faces)
 	th.Shaper = text.NewShaper(text.WithCollection(faces))
 	return th
