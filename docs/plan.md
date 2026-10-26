@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-10-26 @ 15fa9a9 -->
+<!-- docs-sync: 2026-10-26 @ 20cd9f6 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -71,6 +71,14 @@
   一条记录同时带元数据与处理函数、`switch` 消失——收益是新增命令只改一处，成本是把 29 个分支
   改成函数值表，其中 `cmd.Args`、`ErrQuit` 等特例要单独安置。`uigui` 侧同类。（前因见 D212 的
   否决项：本版先用测试锁住一致性。）
+
+- **持续集成**（M，未排期）：仓库没有 `.github`，所有门禁只在开发者本机跑，合入前
+  「测试绿」靠自觉。最低成本的补法是只上一条 **Windows runner 的 `go test ./...` + `go vet`**
+  ——它挡的正是「某个测试偷偷依赖本机环境变量/本机能装的东西」这类问题（`probe_test.go`
+  就踩过：配置里漏写 `keys` 时启动回落 `secret:AQUARIUS_OPENAI_KEY`，没设环境变量的机器必挂）。
+  `-race` 与 GUI 真窗冒烟**不要**进 CI（前者要 MinGW、后者要显示环境），理由与代价见
+  `docs/development.md` 的门禁章节。**拍板前先确认**：这台机器的网络能否稳定访问 runner
+  拉依赖，以及 `linuxgate` 依赖的 WSL 是否要在 CI 里换成真 Linux runner。
 
 ---
 

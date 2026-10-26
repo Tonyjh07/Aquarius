@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-26 @ 15fa9a9 -->
+<!-- docs-sync: 2026-10-26 @ 20cd9f6 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -108,6 +108,13 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 | e2e | **进程内装配回放**：`run(args, stdin, stdout, stderr)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵、M3 的 term_exec/job 链路） | `cmd/aquarius/main_test.go` |
 
 修 bug 先写复现测试；新行为补测试。测试替身放测试文件内或 `internal/adapter/fake/`。
+
+**测试必须能在干净环境里跑**：不设任何环境变量、不依赖本机特有的路径/密钥/服务，`go test ./...`
+就该全绿。要某个环境变量，用例自己 `t.Setenv` 显式给（含显式置空断言「缺失路径」）。反例：
+配置里漏写 `keys` 会让启动回落到 `secret:AQUARIUS_OPENAI_KEY`，在没设该变量的机器上直接
+FAIL——这不是被测代码坏了，是测试自己没自足。同理，**测试替身里任何会让 handler panic、
+连接中断的写法都要当失败处理**：探测把网络错误判成「无结论」，于是期望「无结论」的用例会
+假绿（`probe_test.go` 的假服务曾用 `WriteHeader(0)`，视觉分支从没真正走到）。
 
 ## 工程准则与边界
 
