@@ -4,15 +4,19 @@ package main
 // 全部用假 server，禁真实网络。
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
@@ -52,9 +56,15 @@ type probeReply struct {
 	Reasoning    string
 }
 
+// probeSrv 假服务：嵌入 httptest.Server，另带请求计数，供用例断言某条分支确实被走到。
+type probeSrv struct {
+	*httptest.Server
+	vision atomic.Int32
+}
+
 // probeServer 按请求体里的能力标记分流（工具清单 / 思考参数 / 否则算视觉）。
 // 思考探测会发两发（reasoning_effort 与 enable_thinking 各一次），两者都答同一份。
-func probeServer(t *testing.T, r probeReply) *httptest.Server {
+func probeServer(t *testing.T, r probeReply) *probeSrv {
 	t.Helper()
 	toolBody := r.Tools
 	if toolBody == "" {
@@ -63,11 +73,24 @@ func probeServer(t *testing.T, r probeReply) *httptest.Server {
 	if r.ToolsStatus == 0 {
 		r.ToolsStatus = http.StatusOK
 	}
+	// 视觉与工具同口径：0 不是合法状态码，写进 WriteHeader 会让 handler panic、连接被
+	// 中断——客户端只看到网络错误，照样判「无结论」，测试于是假绿。缺省补成 200。
+	// 视觉与工具同口径：0 不是合法状态码，写进 WriteHeader 会让 handler panic、连接被
+	// 中断——客户端只看到网络错误，照样判「无结论」，测试于是假绿。缺省补成 200。
+	if r.VisionStatus == 0 {
+		r.VisionStatus = http.StatusOK
+	}
 	reasonBody := r.Reasoning
 	if reasonBody == "" {
 		reasonBody = `{"choices":[{"message":{"content":"ok","reasoning_content":"hm"}}]}`
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	out := &probeSrv{}
+	// handler 里的 panic 会被 net/http 吞进日志、只表现为「连接中断」。探测把网络错误
+	// 一律判成「无结论」，于是期望「无结论」的用例会**假绿**——它验的分支其实没走到。
+	// 把服务端日志接管下来，panic 出现即让测试失败。
+	var logMu sync.Mutex
+	var logBuf bytes.Buffer
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var body map[string]any
 		_ = json.NewDecoder(req.Body).Decode(&body)
 		w.Header().Set("Content-Type", "application/json")
@@ -82,11 +105,35 @@ func probeServer(t *testing.T, r probeReply) *httptest.Server {
 			fmt.Fprint(w, reasonBody)
 			return
 		}
+		out.vision.Add(1)
 		w.WriteHeader(r.VisionStatus)
 		fmt.Fprint(w, r.Vision)
 	}))
-	t.Cleanup(srv.Close)
-	return srv
+	srv.Config.ErrorLog = log.New(&lockedWriter{mu: &logMu, w: &logBuf}, "", 0)
+	srv.Start()
+	out.Server = srv
+	t.Cleanup(func() {
+		srv.Close()
+		logMu.Lock()
+		defer logMu.Unlock()
+		if strings.Contains(logBuf.String(), "panic serving") {
+			t.Fatalf("假服务在 handler 里 panic 了（探测会把连接中断误判成「无结论」，"+
+				"这个用例会假绿）：\n%s", logBuf.String())
+		}
+	})
+	return out
+}
+
+// lockedWriter 让多个 handler goroutine 共写一份日志不打架。
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  *bytes.Buffer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
 
 // TestProbeWritesOnlyDefiniteVerdicts D174：支持→加上、明确不支持→去掉、无结论→不动；
@@ -154,6 +201,11 @@ func TestProbeInconclusiveLeavesCapsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
+	// 视觉那条必须是「服务端接受了请求、回了空正文」，不是「连接断了」。后者也会判成
+	// 无结论，断言照样过——这条计数就是用来排除那个假象的。
+	if got := srv.vision.Load(); got != 1 {
+		t.Fatalf("视觉探测请求 %d 次，want 1（0 或多次说明这条分支没被真正走到）", got)
+	}
 	if report.Written {
 		t.Fatal("无结论不该写回")
 	}
@@ -178,8 +230,10 @@ func TestProbeTargetResolution(t *testing.T) {
 	raw := fmt.Sprintf(`{
   "model": {
     "providers": [
-      {"name": "a", "base_url": %q, "models": [{"name": "m1"}]},
-      {"name": "b", "base_url": %q, "models": [{"name": "mb"}]}
+      {"name": "a", "base_url": %q, "keys": [{"api_key": "plain-key"}],
+       "models": [{"name": "m1"}]},
+      {"name": "b", "base_url": %q, "keys": [{"api_key": "plain-key"}],
+       "models": [{"name": "mb"}]}
     ],
     "primary": "a",
     "fallback": [{"provider": "b"}],
