@@ -15,6 +15,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/audioplay"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/exchange"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/gptsovitstts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestmic"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
@@ -54,6 +55,8 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 	}
 	w.blobs = blobs
 	runAttachmentGC(ctx, w.store, blobs, w.stderr)
+	// 会话进出（/export 与 /import）：导入侧要往附件库回填归档里的字节，故与附件库同期。
+	w.exchange = exchange.New(exchange.Options{Blobs: blobs})
 	// 记忆（D23 布局）：全局 memories.md + 会话 <id>.memory.md（与会话树同目录）。
 	mem, err := memoryfs.New(filepath.Join(w.profileDir, port.GlobalMemoryDoc), filepath.Join(w.profileDir, "conversations"))
 	if err != nil {

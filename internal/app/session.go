@@ -71,6 +71,13 @@ type SessionDeps struct {
 	Prober ModelProbe
 	// Thinking 思考面写回（/think 与 /effort，D34）；nil 时两条命令的有参形态报错。
 	Thinking ThinkingSettings
+	// Exporter 会话导出面（/export，DESIGN §5.16）；nil 时 /export 报「本构建未接入导出面」。
+	Exporter port.SessionExporter
+	// Importer 会话导入面（/import，DESIGN §5.16）；nil 时 /import 报未接入。
+	Importer port.SessionImporter
+	// ExportsDir 导出缺省落点（`--path` 不给时用；装配根给 `<profile>/exports`）。
+	// 空 = 必须显式 --path，否则报未配置。
+	ExportsDir string
 }
 
 // CommandHandler 动态命令处理器（DESIGN §6.1 扩展点 #4 / §7.3 MCP prompts）：
@@ -104,6 +111,9 @@ type Session struct {
 	modelSwitch ModelSwitcher
 	prober      ModelProbe
 	thinking    ThinkingSettings
+	exporter    port.SessionExporter
+	importer    port.SessionImporter
+	exportsDir  string
 	cur         *conversation.Conversation
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
 	// 发布，UI 事件循环 goroutine 经 Branches 无锁读（见 tree.go）。
@@ -188,6 +198,9 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		modelSwitch: d.ModelSwitch,
 		prober:      d.Prober,
 		thinking:    d.Thinking,
+		exporter:    d.Exporter,
+		importer:    d.Importer,
+		exportsDir:  d.ExportsDir,
 		dynamic:     map[string]CommandHandler{},
 		injectCh:    make(chan pendingInjection, injectQueueCap),
 	}

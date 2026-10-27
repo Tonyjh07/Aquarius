@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/exchange"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestmic"
@@ -169,11 +170,14 @@ type wiring struct {
 	skills   *skillfs.Catalog
 	// skillInstall 技能安装面内核（D202；装配根在 skillsadmin.go 适配两套消费方接口）。
 	skillInstall *skillfs.Installer
-	runner       *toolrun.Runner
-	audit        *decorate.Audit
-	client       port.LLM
-	ui           uiFrontend
-	presenter    *outputsPresenter
+	// exchange 会话进出适配器（/export 与 /import，DESIGN §5.16）：导入侧要往附件库
+	// 回填归档里的字节，故与 blobs 同期装配。
+	exchange  *exchange.Exchange
+	runner    *toolrun.Runner
+	audit     *decorate.Audit
+	client    port.LLM
+	ui        uiFrontend
+	presenter *outputsPresenter
 
 	// assembleAudio 填充（D179）：录音/播放恒在，识别与合成按配置现建；mic 是
 	// /mic 与界面语音键共用的摄取器。
@@ -355,6 +359,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Models:      modelCatalog{w: w},                                                        // D32/D173/D174：/model 读侧 + 切换 + 探测
 		ModelSwitch: modelCatalog{w: w},                                                        // D32：/model 切换写回
 		Thinking:    thinkSettings{w: w},                                                       // D34：/think 与 /effort 写回
+		Exporter:    w.exchange,                                                                // 会话进出：/export
+		Importer:    w.exchange,                                                                // 会话进出：/import
+		ExportsDir:  filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
 	})
 	if err != nil {
 		if ctx.Err() != nil {
