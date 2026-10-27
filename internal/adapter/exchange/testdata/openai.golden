@@ -1,0 +1,12 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "人格"
+    },
+    {
+      "role": "user",
+      "content": "你好（改）"
+    }
+  ]
+}

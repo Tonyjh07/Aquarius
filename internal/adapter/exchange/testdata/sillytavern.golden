@@ -1,0 +1,3 @@
+{"create_date":"2026-01-02 03:04:05"}
+{"name":"System","is_user":false,"is_system":true,"mes":"人格","send_date":"2026-01-02 03:10:05"}
+{"name":"User","is_user":true,"mes":"你好（改）","send_date":"2026-01-02 03:08:05"}

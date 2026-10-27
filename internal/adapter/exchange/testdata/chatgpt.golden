@@ -1,0 +1,152 @@
+[
+  {
+    "title": "往返测试",
+    "create_time": 1767323045,
+    "update_time": 1767323045,
+    "mapping": {
+      "N1": {
+        "id": "N1",
+        "message": {
+          "id": "N1",
+          "author": {
+            "role": "user"
+          },
+          "create_time": 1767323045,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "你好"
+            ]
+          }
+        },
+        "parent": "N7",
+        "children": [
+          "N2"
+        ]
+      },
+      "N2": {
+        "id": "N2",
+        "message": {
+          "id": "N2",
+          "author": {
+            "role": "assistant"
+          },
+          "create_time": 1767323105,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "在"
+            ]
+          }
+        },
+        "parent": "N1",
+        "children": [
+          "N3"
+        ]
+      },
+      "N3": {
+        "id": "N3",
+        "message": {
+          "id": "N3",
+          "author": {
+            "role": "user"
+          },
+          "create_time": 1767323165,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              ""
+            ]
+          }
+        },
+        "parent": "N2",
+        "children": [
+          "N6"
+        ]
+      },
+      "N4": {
+        "id": "N4",
+        "message": {
+          "id": "N4",
+          "author": {
+            "role": "assistant"
+          },
+          "create_time": 1767323225,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "旁支"
+            ]
+          }
+        },
+        "parent": "N6"
+      },
+      "N5": {
+        "id": "N5",
+        "message": {
+          "id": "N5",
+          "author": {
+            "role": "user"
+          },
+          "create_time": 1767323285,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "你好（改）"
+            ]
+          }
+        },
+        "parent": "N7"
+      },
+      "N6": {
+        "id": "N6",
+        "message": {
+          "id": "N6",
+          "author": {
+            "role": "system"
+          },
+          "create_time": 1767323345,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "任务完成"
+            ]
+          }
+        },
+        "parent": "N3",
+        "children": [
+          "N4"
+        ]
+      },
+      "N7": {
+        "id": "N7",
+        "message": {
+          "id": "N7",
+          "author": {
+            "role": "system"
+          },
+          "create_time": 1767323405,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "人格"
+            ]
+          }
+        },
+        "parent": "conv-ex",
+        "children": [
+          "N1",
+          "N5"
+        ]
+      },
+      "conv-ex": {
+        "id": "conv-ex",
+        "message": null,
+        "children": [
+          "N7"
+        ]
+      }
+    },
+    "current_node": "N5"
+  }
+]
