@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-10-27 @ 0dd422a -->
+<!-- docs-sync: 2026-10-27 @ 7e982b4 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -69,17 +69,38 @@ v0.3.0 挑的三组不是拼盘：A 的线性导出要宏替换（`{{char}}`）�
 
 ### B 角色卡只读导入（L，约 25 提交）
 
-**动手前先补 `DESIGN.md` 对应节与决策记录**（本节只是范围，不是设计）。
+设计与决策已落 [DESIGN.md](../DESIGN.md) §5.17 与 D243；容器、字段、投影口径、上限都在那里，
+本节只排执行顺序。
 
-- **来源三种**：TavernCard PNG（tEXt 块 `chara` / `ccv3`）、纯 JSON、`.charx`（ZIP）。
-  与 A 的第 5 项共用「外部文件 → 解析 → 校验 → 落盘」路径与 zip 门禁。
-- **落位**：`<profile>/characters/<slug>.json` + 卡内嵌头像。
-- **投影**：`description` / `personality` / `scenario` / `system_prompt` → 人格模块；
-  `first_mes` → 首节点；`mes_example` → 示例对；备用问候存起来等 `/greet N`。
-- **入口 `/character import`**，**不提供模型可调用的安装工具**（与技能安装面同口径：安装是
-  用户面动作，接口由消费方定义）。
-- **头像**：卡里那张 PNG 就是头像来源。本版只做角色卡侧的头像读入与展示；**会话背景与主题化
-  仍是 backlog**（见「生态兼容」第 8 条），不做整套主题包。
+1. **`port.CharacterCatalog` + 类型**（S）：`CharacterInfo` / `CharacterProfile` / `CharacterCard`
+   落地；装配根留空实现，命令先报「未接入」。
+2. **`adapter/characterfs` 解析层 · 纯 JSON 与 PNG**（M）：V1/V2/V3 三代的宽松识别与字段归一；
+   PNG 走 `tEXt` 块、关键字大小写不敏感、`ccv3` 优先于 `chara`；`creator_notes` 等只展示字段
+   与投影字段在同一处切分，避免后面各调用点各判一次。
+3. **`.charx`（ZIP）**（M）：根 `card.json`、`embeded://` 资产前缀与 `ccdefault:`、图标优选
+   `name=main`；复用技能安装那套 zip-slip 与条目/展开总量门禁；原压缩包整份留档。
+4. **落位与目录事实源**（M）：`<profile>/characters/<slug>/` 的 `card.json`（原卡逐字节）+
+   `meta.json`（原子写）+ `avatar.<ext>` + 可选 `source.charx`；slug 归一（中文保留、设备名拒绝、
+   大小写不敏感查重、重名 `-2`）；`List` 对坏条目带警告跳过、`meta.json` 缺失时从卡重建。
+5. **投影**（M）：人格段拼法（`You are <display>.` + 三个英文标签）、宏替换
+   （`{{char}}`/`{{user}}`/`{{date}}`，大小写不敏感）、`system_prompt` 两种模式与
+   `{{original}}` 展开、示例注入节点、开场白与备用问候、`Tail` 写入。
+6. **领域与会话侧**（M）：`Conversation.Character` / `Conversation.Tail` 进 `Snapshot`/`Restore`
+   与落盘 wire（旧文件缺键 = 空）；`assemblePath` 之后追加 `Tail`，config 开关控制；
+   `/character start` 走「新建 + 清屏 + 回放」。
+7. **导入/删除管理面**（S）：`app.CharacterAdmin` + 装配根实现（范式同 `app.SkillAdmin`）；
+   同名不覆盖、删除二次确认、回执逐项列出「保留未启用」的世界书与资产。
+8. **命令面**（S）：`/character list|show|import|start|remove` 接入 `commandCatalog`
+   与 `execCommand`；与 C 的命令注册表同批或在其后。
+9. **GUI**（M）：设置窗「角色」页（列表 / 头像 / 导入 / 删除 / 开始对话）；会话列表行按
+   `Character` 画头像，卡缺失时回落默认。
+10. **端到端验收**（S）：三类容器各导一张真卡（V1 PNG、V2 JSON、V3 `.charx`）→ 开新会话 →
+    首轮请求的装配文本逐段核对（人格段在前、示例节点在 persona 之后、`Tail` 在历史之后）；
+    压缩一次后确认示例被吸收而人格仍在；删卡后会话照常可装配。
+
+**验收**：三代规范各一张真卡导入后开场白与人格投影正确；`creator_notes`/`tags` 一个字节都
+不进上下文；`ccv3` 优先于 `chara`；`prefer_system_prompt` 两态行为与 `{{original}}` 展开符合
+D243；坏卡/超限/zipslip 报因不吞错；全门禁通过。
 
 ### C 命令注册表（M，约 8 提交）
 
