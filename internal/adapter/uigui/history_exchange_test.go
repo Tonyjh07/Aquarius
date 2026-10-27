@@ -82,8 +82,8 @@ func TestHistExportButtonRequestsSaveSendsCommand(t *testing.T) {
 		if req.Name != "甲会话.aqx" {
 			t.Errorf("预填名 = %q, want 甲会话.aqx（按标题派生）", req.Name)
 		}
-		if req.DefExt != ".aqx" {
-			t.Errorf("缺省扩展名 = %q, want .aqx", req.DefExt)
+		if req.DefExt != "aqx" {
+			t.Errorf("缺省扩展名 = %q, want aqx（不带点：Win32 的 lpstrDefExt 只取前三个字符）", req.DefExt)
 		}
 		return picked, true
 	}

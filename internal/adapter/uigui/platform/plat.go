@@ -28,6 +28,10 @@ type Plat struct {
 	// dlgReq 通用文件框（单选打开 / 保存）的请求体：请求线程写入、shell 线程取走呈现。
 	// 走原子槽而不是消息参数——过滤器、标题、预填名塞不进 wParam/lParam。
 	dlgReq atomic.Pointer[dlgRequest]
+	// dlgBusy 已有一个文件框在等：对话框挂在 HWND_MESSAGE 上，模态期间主窗并不会被禁用，
+	// 用户仍能再点一次「导入」/「导出」。没有这个标记时，第二次点击会覆盖请求体并再投一条
+	// 消息，于是要么叠出第二个框，要么第二个框拿到被改写的请求（用途都可能变了）。
+	dlgBusy atomic.Bool
 	// dlgNotice 非 Windows 的「无文件框命令」提示已发标记（一次性，见 filedlg_other.go）。
 	dlgNotice atomic.Bool
 }

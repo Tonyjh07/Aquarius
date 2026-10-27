@@ -5,6 +5,7 @@
 package platform
 
 import (
+	"fmt"
 	"syscall"
 	"unsafe"
 )
@@ -12,9 +13,16 @@ import (
 var comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 
 var (
-	procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW") // D104 附件文件选择框
-	procGetSaveFileNameW = comdlg32.NewProc("GetSaveFileNameW") // 保存对话框（会话导出）
+	procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")     // D104 附件文件选择框
+	procGetSaveFileNameW = comdlg32.NewProc("GetSaveFileNameW")     // 保存对话框（会话导出）
+	procCommDlgExtErr    = comdlg32.NewProc("CommDlgExtendedError") // 0 = 用户取消，非 0 = 出错
 )
+
+// commDlgExtendedError 取上一次通用对话框的错误码（0 = 用户取消）。
+func commDlgExtendedError() uint32 {
+	r, _, _ := procCommDlgExtErr.Call()
+	return uint32(r)
+}
 
 // 文件框常量。
 const (
@@ -33,10 +41,16 @@ func (p *Plat) RequestFileDialog() {
 
 // RequestOpenFile 请求通用单选文件框（会话导入）：请求体先入原子槽，再投消息让 shell
 // 线程取走呈现——模态泵不能嵌 Gio 泵，与附件框同一口径。
+//
+// 已有一个框在等时直接放弃本次请求：对话框挂在消息窗上，模态期间主窗仍可点，连点两次会
+// 覆盖同一份请求体（用途可能都变了），比「这次没反应」更坏。
 func (p *Plat) RequestOpenFile(req OpenRequest) {
 	h := shellHWND.Load()
 	if h == 0 {
 		return // 启动微窗/headless：无处呈现，静默放弃
+	}
+	if !p.dlgBusy.CompareAndSwap(false, true) {
+		return
 	}
 	p.dlgReq.Store(&dlgRequest{purpose: req.Purpose, title: req.Title, filters: req.Filters})
 	procPostMessageW.Call(h, openFileMsg, 0, 0)
@@ -48,6 +62,9 @@ func (p *Plat) RequestSaveFile(req SaveRequest) {
 	if h == 0 {
 		return
 	}
+	if !p.dlgBusy.CompareAndSwap(false, true) {
+		return
+	}
 	p.dlgReq.Store(&dlgRequest{
 		save: true, purpose: req.Purpose, title: req.Title,
 		name: req.Name, defExt: req.DefExt, filters: req.Filters,
@@ -57,11 +74,12 @@ func (p *Plat) RequestSaveFile(req SaveRequest) {
 
 // showOpenFile 呈现单选文件框（shell 线程）：选中 → Host.FilePicked；取消/出错静默。
 func (p *Plat) showOpenFile() {
+	defer p.dlgBusy.Store(false) // 无论取消还是选中，框已关，下一次点击可以再问
 	req := p.dlgReq.Swap(nil)
 	if req == nil {
 		return
 	}
-	path := openOneFile(req.title, req.filters)
+	path := p.openOneFile(req.title, req.filters)
 	if path == "" || p.host == nil {
 		return
 	}
@@ -73,11 +91,12 @@ func (p *Plat) showOpenFile() {
 // 不设 OFN_OVERWRITEPROMPT：导出是「再存一份」，同名时命令面会加 -2 后缀并在回执里
 // 写清真落到哪个文件——让用户在对话框里确认覆盖、转头又存成 -2，反而对不上。
 func (p *Plat) showSaveFile() {
+	defer p.dlgBusy.Store(false)
 	req := p.dlgReq.Swap(nil)
 	if req == nil {
 		return
 	}
-	path := saveOneFile(req.title, req.name, req.defExt, req.filters)
+	path := p.saveOneFile(req.title, req.name, req.defExt, req.filters)
 	if path == "" || p.host == nil {
 		return
 	}
@@ -85,7 +104,7 @@ func (p *Plat) showSaveFile() {
 }
 
 // openOneFile 单选文件（OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST，不带多选）。
-func openOneFile(title string, filters []FileFilter) string {
+func (p *Plat) openOneFile(title string, filters []FileFilter) string {
 	const (
 		ofnHideReadOnly  = 0x4
 		ofnNoChangeDir   = 0x8
@@ -93,25 +112,25 @@ func openOneFile(title string, filters []FileFilter) string {
 		ofnFileMustExist = 0x1000
 		ofnExplorer      = 0x80000
 	)
-	return runFileDlg(procGetOpenFileNameW, title, "", "", filters,
+	return p.runFileDlg(procGetOpenFileNameW, title, "", "", filters,
 		ofnHideReadOnly|ofnNoChangeDir|ofnExplorer|ofnPathMustExist|ofnFileMustExist)
 }
 
 // saveOneFile 保存框（OFN_PATHMUSTEXIST，不要求目标已存在）。
-func saveOneFile(title, name, defExt string, filters []FileFilter) string {
+func (p *Plat) saveOneFile(title, name, defExt string, filters []FileFilter) string {
 	const (
 		ofnHideReadOnly  = 0x4
 		ofnNoChangeDir   = 0x8
 		ofnPathMustExist = 0x800
 		ofnExplorer      = 0x80000
 	)
-	return runFileDlg(procGetSaveFileNameW, title, name, defExt, filters,
+	return p.runFileDlg(procGetSaveFileNameW, title, name, defExt, filters,
 		ofnHideReadOnly|ofnNoChangeDir|ofnExplorer|ofnPathMustExist)
 }
 
 // runFileDlg 打开/保存框共用一次呈现：proc 决定是哪一个 proc，其余参数照 OPENFILENAMEW
 // 填。返回空 = 取消或出错。
-func runFileDlg(proc *syscall.LazyProc, title, name, defExt string, filters []FileFilter, flags uint32) string {
+func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, filters []FileFilter, flags uint32) string {
 	filter := utf16Filters(filters)
 	t, err := syscall.UTF16FromString(title)
 	if err != nil {
@@ -142,6 +161,11 @@ func runFileDlg(proc *syscall.LazyProc, title, name, defExt string, filters []Fi
 	}
 	r, _, _ := proc.Call(uintptr(unsafe.Pointer(&ofn)))
 	if r == 0 {
+		// r == 0 既可能是「用户取消」，也可能是「出错」：后者要再查一次
+		// CommDlgExtendedError 才分得清（Call 的第三个返回值不是可靠的 GetLastError 通道）。
+		if code := commDlgExtendedError(); code != 0 {
+			p.noticeOnce(&p.dlgNotice, fmt.Sprintf("文件对话框没能打开（错误码 %d），请重试或换个路径", code))
+		}
 		return ""
 	}
 	paths := parseMultiSelect(buf) // 单选也是这条解析（一个 token = 完整路径）

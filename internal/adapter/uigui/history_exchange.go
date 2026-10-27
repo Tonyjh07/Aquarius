@@ -58,7 +58,7 @@ func (st *historyState) requestExport(u *UI) {
 		Purpose: platform.PurposeExchangeExport,
 		Title:   "导出会话",
 		Name:    name + ".aqx",
-		DefExt:  ".aqx",
+		DefExt:  "aqx",
 		Filters: exchangeSaveFilters(),
 	})
 }

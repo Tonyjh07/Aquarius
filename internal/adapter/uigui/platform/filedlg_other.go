@@ -49,12 +49,11 @@ func (p *Plat) showSaveFile(req SaveRequest) {
 // openFileCommand 按平台挑一条可用命令选单个文件；ok=false = 无命令可用。
 func openFileCommand(req OpenRequest) (string, bool) {
 	title := req.Title
-	filter := firstFilter(req.Filters)
 	switch runtime.GOOS {
 	case "darwin":
 		script := `POSIX path of (choose file`
 		if title != "" {
-			script += ` with prompt "` + title + `"`
+			script += ` with prompt ` + appleScriptString(title)
 		}
 		out, err := exec.Command("osascript", "-e", script+")").Output()
 		if err != nil {
@@ -62,29 +61,28 @@ func openFileCommand(req OpenRequest) (string, bool) {
 		}
 		return strings.TrimSpace(string(out)), true
 	default:
-		var cmds [][]string
-		if zf := zenityFilter(req.Filters); zf != "" {
-			cmds = append(cmds, []string{"zenity", "--file-selection", zf, "--title=" + orDefault(title, "选择文件")})
-		} else {
-			cmds = append(cmds, []string{"zenity", "--file-selection", "--title=" + orDefault(title, "选择文件")})
+		args := []string{"--file-selection", "--title=" + orDefault(title, "选择文件")}
+		args = append(args, zenityFilters(req.Filters)...)
+		cmds := [][]string{
+			append([]string{"zenity"}, args...),
+			{"kdialog", "--getopenfilename", ".", kdialogFilters(req.Filters)},
 		}
-		cmds = append(cmds, []string{"kdialog", "--getopenfilename", ".", kdialogFilter(filter)})
 		return runPickCommand(cmds)
 	}
 }
 
 // saveFileCommand 按平台挑一条可用命令取保存落点；ok=false = 无命令可用。
+//
+// 保存框**不设覆盖确认**（D246）：导出是「再存一份」，同名时命令面会加 -2 后缀并在回执里
+// 写清真落到哪个文件。对话框里先问一句「要覆盖吗」，答「是」之后文件仍然存成 -2，是个
+// 无效选择题；zenity 的 --confirm-overwrite 也已被标为 DEPRECATED。
 func saveFileCommand(req SaveRequest) (string, bool) {
 	title := req.Title
 	switch runtime.GOOS {
 	case "darwin":
-		name := req.Name
-		if name == "" {
-			name = "未命名" + req.DefExt
-		}
-		script := `POSIX path of (choose file name with name "` + name + `"`
+		script := `POSIX path of (choose file name with name ` + appleScriptString(saveDefaultName(req))
 		if title != "" {
-			script += ` with prompt "` + title + `"`
+			script += ` with prompt ` + appleScriptString(title)
 		}
 		out, err := exec.Command("osascript", "-e", script+")").Output()
 		if err != nil {
@@ -92,17 +90,27 @@ func saveFileCommand(req SaveRequest) (string, bool) {
 		}
 		return strings.TrimSpace(string(out)), true
 	default:
-		name := req.Name
-		if name == "" {
-			name = "未命名" + req.DefExt
-		}
 		cmds := [][]string{
-			{"zenity", "--file-selection", "--save", "--confirm-overwrite",
-				"--filename=" + name, "--title=" + orDefault(title, "导出会话")},
-			{"kdialog", "--getsavefilename", name, kdialogFilter(firstFilter(req.Filters))},
+			zenitySaveArgs(req),
+			{"kdialog", "--getsavefilename", saveDefaultName(req), kdialogFilters(req.Filters)},
 		}
 		return runPickCommand(cmds)
 	}
+}
+
+// saveDefaultName 保存框预填的文件名：调用方给了就用，否则按缺省扩展名造一个。
+func saveDefaultName(req SaveRequest) string {
+	if req.Name != "" {
+		return req.Name
+	}
+	return "未命名" + extWithDot(req.DefExt)
+}
+
+// zenitySaveArgs zenity 保存框的参数表（单列出来，测试与实现读同一份）。
+func zenitySaveArgs(req SaveRequest) []string {
+	return []string{"zenity", "--file-selection", "--save",
+		"--filename=" + saveDefaultName(req),
+		"--title=" + orDefault(req.Title, "导出会话")}
 }
 
 // runPickCommand 依次试给定的命令（zenity → kdialog）：第一条存在的那个负责呈现；
@@ -129,24 +137,75 @@ func firstFilter(filters []FileFilter) FileFilter {
 	return filters[0]
 }
 
-// zenityFilter zenity 的 --file-filter 参数（`显示名 | 通配符`）；空 = 不加。
-func zenityFilter(filters []FileFilter) string {
-	if len(filters) == 0 {
-		return ""
+// zenityFilters zenity 的 --file-filter 参数：**每一档一条 flag**，档内多个模式用空格分隔
+// （zenity 的写法是 `显示名 | 模式1 模式2`，不是 Windows 的分号）。
+//
+// 只传第一档、或把 `*.aqx;*.json` 原样交给 zenity，都会得到一个筛不出任何文件的伪模式——
+// 用户界面不筛文件，而对话框自己不报错。空表不传，zenity 的缺省就是全部文件。
+func zenityFilters(filters []FileFilter) []string {
+	out := make([]string, 0, len(filters))
+	for _, f := range filters {
+		pat := zenityPattern(f.Pattern)
+		if pat == "" {
+			continue
+		}
+		if f.Label == "" {
+			out = append(out, "--file-filter="+pat)
+			continue
+		}
+		out = append(out, "--file-filter="+f.Label+" | "+pat)
 	}
-	f := filters[0]
-	if f.Label == "" {
-		return "--file-filter=" + f.Pattern
-	}
-	return "--file-filter=" + f.Label + " | " + f.Pattern
+	return out
 }
 
-// kdialogFilter kdialog 的过滤器参数（`通配符 | 显示名`）。
-func kdialogFilter(f FileFilter) string {
-	if f.Label == "" {
-		return f.Pattern
+// zenityPattern 分号分隔的通配符 → 空格分隔（zenity 认多个模式的口径）。
+func zenityPattern(pattern string) string {
+	var parts []string
+	for _, seg := range strings.Split(pattern, ";") {
+		if seg = strings.TrimSpace(seg); seg != "" {
+			parts = append(parts, seg)
+		}
 	}
-	return f.Pattern + " | " + f.Label
+	return strings.Join(parts, " ")
+}
+
+// kdialogFilters kdialog 的过滤器参数（`模式1 模式2 | 显示名`）；空表给「所有文件」。
+//
+// kdialog 只收一个过滤器串：多档之间用换行分隔（`A | *.a\nB | *.b`），档内模式同样用空格。
+func kdialogFilters(filters []FileFilter) string {
+	if len(filters) == 0 {
+		filters = []FileFilter{{Label: "所有文件", Pattern: "*.*"}}
+	}
+	var segs []string
+	for _, f := range filters {
+		pat := zenityPattern(f.Pattern)
+		if pat == "" {
+			continue
+		}
+		if f.Label == "" {
+			segs = append(segs, pat)
+			continue
+		}
+		segs = append(segs, pat+" | "+f.Label)
+	}
+	return strings.Join(segs, "\n")
+}
+
+// appleScriptString 把字符串写成 AppleScript 字面量（转义反斜杠与引号）。
+//
+// 直接拼进双引号的 `with prompt "…"`：标题里有一个引号，整段脚本就语法错误（命令存在、
+// 执行失败，被当成「用户取消」静默吞掉）。
+func appleScriptString(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	return `"` + r.Replace(s) + `"`
+}
+
+// extWithDot 扩展名补点（SaveRequest.DefExt 不带点，与 Win32 的 lpstrDefExt 同口径）。
+func extWithDot(ext string) string {
+	if ext == "" || strings.HasPrefix(ext, ".") {
+		return ext
+	}
+	return "." + ext
 }
 
 // orDefault 空串取缺省值（对话框标题不能为空）。

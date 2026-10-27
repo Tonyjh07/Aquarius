@@ -86,9 +86,11 @@ type OpenRequest struct {
 type SaveRequest struct {
 	Purpose FilePurpose
 	Title   string
-	// Name 预填的文件名（含扩展名）；空 = 不预填。
+	// Name 预填的文件名（含扩展名）；空 = 按 DefExt 造一个「未命名」。
 	Name string
-	// DefExt 用户没写扩展名时补上的那个（含点）。
+	// DefExt 用户没写扩展名时补上的那个，**不带点**（`aqx`）：Win32 的 lpstrDefExt 只取
+	// 前三个字符，带点会被当成扩展名的一部分（MSDN：should not contain a period）。
+	// 非 Windows 侧拼预填名时自己加点（zenity/kdialog/osascript 要的是完整文件名）。
 	DefExt  string
 	Filters []FileFilter
 }
