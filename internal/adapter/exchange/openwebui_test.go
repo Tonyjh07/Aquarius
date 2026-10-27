@@ -153,6 +153,14 @@ func TestDetectOpenWebUI(t *testing.T) {
 	if f, ok := ex.Detect("chat.json", []byte(`{"chat":{"messages":[`)); !ok || f.Name != "openwebui" {
 		t.Fatalf("截断但带 chat 的头部也应认成 openwebui: %+v %v", f, ok)
 	}
+	// chat 是**值**里的词、不是键：不能被认成 openwebui（正文里提到 chat 的对话很常见）。
+	if f, ok := ex.Detect("x.json", []byte(`{"title":"关于 chat 的一场对话","messages":[]}`)); !ok || f.Name != "openai" {
+		t.Fatalf("chat 只出现在正文里时认成了 %+v, ok=%v；want openai", f, ok)
+	}
+	// chat 是键但值不是对象（旧版导出里也有 `"chat": {...}`，标量值就不是这份格式）。
+	if f, ok := ex.Detect("x.json", []byte(`{"chat":"none","messages":[]}`)); !ok || f.Name != "openai" {
+		t.Fatalf("chat 是标量时应认成 openai: %+v %v", f, ok)
+	}
 	if f, ok := ex.Detect("x.json", []byte(`{"messages":[]}`)); !ok || f.Name != "openai" {
 		t.Fatalf("裸 messages 数组应认成 openai: %+v %v", f, ok)
 	}

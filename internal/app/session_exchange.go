@@ -230,15 +230,22 @@ func remapConversationID(c *conversation.Conversation, id conversation.ID) (*con
 	return out, nil
 }
 
-// readHead 读文件头（Detect 只看形状）：不足 512 字节不算错，短文件照样能认。
+// readHead 读文件头（Detect 只看形状）：不足 headBytes 不算错，短文件照样能认。
+//
+// 64 KB 而不是几百字节：外层数组/对象的前几百字节里常常连一个键都还没出现（ChatGPT 导出
+// 先写长标题与时间戳），头部太短会把合法文件判成「认不出」。读 64 KB 的成本相对整份文件
+// 可以忽略（Import 本来就要整份读进内存做上限检查）。
 func readHead(r io.Reader) ([]byte, error) {
-	head := make([]byte, 512)
+	head := make([]byte, headBytes)
 	n, err := io.ReadFull(r, head)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("读取文件头: %w", err)
 	}
 	return head[:n], nil
 }
+
+// headBytes 判定格式时读的文件头上限。
+const headBytes = 64 << 10
 
 // exportReceipt 导出回执：落在哪、什么格式、多少条、以及这次没带出去什么。
 func exportReceipt(f port.ExchangeFormat, path string, rep port.ExchangeReport) string {

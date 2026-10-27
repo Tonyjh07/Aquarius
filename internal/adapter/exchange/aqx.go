@@ -209,7 +209,7 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader) (*conversation.Co
 	}
 	rep.Nodes = nodeCount(c)
 	// 附件回填：按内容寻址放回附件库；哈希对不上的归档拒绝（内容与名字不符意味着损坏）。
-	kept, dropped, err := e.restoreBlobs(ctx, blobs)
+	dropped, err := e.restoreBlobs(ctx, blobs)
 	if err != nil {
 		return nil, rep, err
 	}
@@ -218,9 +218,6 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader) (*conversation.Co
 	// 静默留下一个指向空处的引用，用户要到装配时才发现图没了。
 	if missing := missingBlobs(c, blobs); len(missing) > 0 {
 		rep.Dropped = append(rep.Dropped, fmt.Sprintf("附件 %d 个（归档里没有它们的字节）", len(missing)))
-	}
-	if len(kept) == 0 && len(blobs) > 0 && e.blobs == nil {
-		rep.Dropped = append(rep.Dropped, "归档里的附件字节未入库（未配置附件库）")
 	}
 	return c, rep, nil
 }
@@ -242,43 +239,45 @@ func missingBlobs(c *conversation.Conversation, files []*zip.File) []string {
 	return out
 }
 
-// restoreBlobs 把归档里的附件字节放回附件库；返回放回去的哈希与要进回执的说明行。
-func (e *Exchange) restoreBlobs(ctx context.Context, files []*zip.File) ([]string, []string, error) {
+// restoreBlobs 把归档里的附件字节放回附件库；返回要进回执的说明行。
+//
+// 边校验边写：先把全部附件读进内存再逐个入库，峰值 = 归档字节 + 解压总量（可达几百 MB）。
+// 逐份读、校验、入库的峰值只有一份附件（单份上限 32 MB）。
+func (e *Exchange) restoreBlobs(ctx context.Context, files []*zip.File) ([]string, error) {
 	if len(files) == 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 	if e.blobs == nil {
-		return nil, []string{fmt.Sprintf("附件 %d 个（本构建未配置附件库）", len(files))}, nil
+		return []string{fmt.Sprintf("附件 %d 个（本构建未配置附件库）", len(files))}, nil
 	}
-	var (
-		kept   []string
-		bodies [][]byte
-		hashes []string
-	)
+	var total int64
 	for _, f := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		name, _ := safeArchivePath(f.Name)
 		want := strings.TrimPrefix(name, "blobs/")
 		body, err := readZipLimited(f, maxBlobBytes, f.Name)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
+		}
+		// 按实际解压字节累计，不信条目声明的大小：压缩包可以谎报 UncompressedSize。
+		total += int64(len(body))
+		if total > maxBlobTotalBytes {
+			return nil, fmt.Errorf("归档内附件总量超过 %d MB 上限", maxBlobTotalBytes>>20)
 		}
 		sum := sha256.Sum256(body)
 		got := hex.EncodeToString(sum[:])
 		if got != want {
-			return nil, nil, fmt.Errorf("归档内附件 %q 的内容哈希不符（声明 %s，实为 %s）：拒绝导入",
+			return nil, fmt.Errorf("归档内附件 %q 的内容哈希不符（声明 %s，实为 %s）：拒绝导入",
 				f.Name, shortHash(want), shortHash(got))
 		}
-		bodies = append(bodies, body)
-		hashes = append(hashes, got)
-	}
-	for i, body := range bodies {
 		// 名字与 MIME 不在附件库里（它们随 Part.Ref 存在树里，D17），这里只放字节。
 		if _, err := e.blobs.Put(ctx, bytes.NewReader(body), "", ""); err != nil {
-			return nil, nil, fmt.Errorf("存回附件 %s: %w", shortHash(hashes[i]), err)
+			return nil, fmt.Errorf("存回附件 %s: %w", shortHash(got), err)
 		}
-		kept = append(kept, hashes[i])
 	}
-	return kept, nil, nil
+	return nil, nil
 }
 
 // readBlob 从附件库取一份字节。
@@ -362,10 +361,16 @@ const fsSymlink = os.ModeSymlink
 // safeArchivePath 校验并归一归档条目路径（绝对路径、盘符、`..`、空名一律按口径处理）。
 //
 // 与技能安装的 zip-slip 口径同源：归档同样是不可信输入。返回空串 = 无意义的条目（跳过）。
+//
+// 独立的目录条目（名字以 `/` 结尾，或模式位带目录）也返回空串：第三方重新打包时常带上
+// `blobs/` 这样的一条纯目录记录，它不是「不认识的条目」，拒绝整份归档太严。
 func safeArchivePath(name string) (string, error) {
 	n := strings.ReplaceAll(name, `\`, "/")
 	if strings.TrimSpace(n) == "" {
 		return "", nil
+	}
+	if strings.HasSuffix(n, "/") {
+		return "", nil // 目录条目：归档里不需要建目录，逐条解到库里
 	}
 	if strings.HasPrefix(n, "/") {
 		return "", fmt.Errorf("归档条目 %q 是绝对路径：拒绝解包", name)

@@ -105,6 +105,7 @@ func (e *Exchange) importOpenAI(ctx context.Context, r io.Reader) (*conversation
 		}
 		parts := parseLinearContent(m.Content, counts)
 		if len(parts) == 0 {
+			counts["没有正文的消息"]++
 			continue
 		}
 		id := fmt.Sprintf("m%d", i)
@@ -118,7 +119,7 @@ func (e *Exchange) importOpenAI(ctx context.Context, r io.Reader) (*conversation
 	}
 	in.Head = prev // 线性文件没有「当前节点」：最后一条就是
 	in.Dropped = droppedLines(counts)
-	c, err := materialize(in)
+	c, err := materialize(&in)
 	if err != nil {
 		return nil, rep, err
 	}
@@ -240,6 +241,7 @@ func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*convers
 			role = conversation.RoleUser
 		}
 		if strings.TrimSpace(m.Mes) == "" {
+			counts["没有正文的消息"]++
 			continue
 		}
 		id := fmt.Sprintf("m%d", i)
@@ -253,9 +255,8 @@ func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*convers
 		prev = id
 	}
 	in.Head = prev
-	in.Dropped = append(droppedLines(counts),
-		"对方的世界书、正则与作者注（不是这份对话的一部分）")
-	c, err := materialize(in)
+	in.Dropped = droppedLines(counts)
+	c, err := materialize(&in)
 	if err != nil {
 		return nil, rep, err
 	}
@@ -394,12 +395,14 @@ func stName(r conversation.Role) string {
 
 // formatSTTime / parseSTTime SillyTavern 的时间串（`2006-01-02 15:04:05`，本地时间）。
 //
-// 对方按本地时间读写：导出成 UTC、导入时按 UTC 解，时间轴会整体漂一个时区。
+// 对方按本地时间读写，两侧必须对称：导出先换到本地时区再打字符串，导入按本地时区解。
+// 只做一半（导出打 UTC、导入按本地解）会让时间轴整体漂一个时区，而且「导入 → 再导出」
+// 每往返一次就再漂一次。
 func formatSTTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.Format("2006-01-02 15:04:05")
+	return t.In(time.Local).Format("2006-01-02 15:04:05")
 }
 
 func parseSTTime(s string) time.Time {
@@ -450,6 +453,8 @@ func isSTMessageLine(line []byte) bool {
 //
 // 只按扩展名认太宽：用户随手存一个 `.jsonl` 就会被当成对话读进来。这里多看一眼首行的键——
 // 认错时 Import 仍会报因，但「认不出」比「认成别的格式」更接近事实。
+//
+// 不看扩展名：SillyTavern 允许省掉首行头、直接从消息起，`{"mes":…}` 开头就够判。
 func looksLikeSillyTavern(head []byte) bool {
 	lines := splitLines(head)
 	if len(lines) == 0 {
@@ -465,16 +470,4 @@ func looksLikeSillyTavern(head []byte) bool {
 		}
 	}
 	return false
-}
-
-// looksLikeOpenAI 消息数组判定：顶层对象带 `messages` 数组。
-//
-// 放在最后判：`messages` 这个键太常见，前面几种更特异的形状都排除了才轮到它。
-func looksLikeOpenAI(head []byte) bool {
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(head, &probe); err != nil {
-		return strings.Contains(string(head), `"messages"`)
-	}
-	raw, ok := probe["messages"]
-	return ok && len(raw) > 0 && raw[0] == '['
 }

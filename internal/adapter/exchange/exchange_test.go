@@ -256,13 +256,13 @@ func TestImportRejectsBlobHashMismatch(t *testing.T) {
 	}
 }
 
-// TestSafeArchivePath 归档条目口径：绝对路径、盘符、`..` 拒绝；`.` 与空名跳过。
+// TestSafeArchivePath 归档条目口径：绝对路径、盘符、`..` 拒绝；`.`、空名与目录条目跳过。
 func TestSafeArchivePath(t *testing.T) {
 	ok := map[string]string{
 		"tree.json":    "tree.json",
 		`blobs\abc`:    "blobs/abc",
 		"./tree.json":  "tree.json",
-		"blobs/":       "blobs",
+		"blobs/":       "", // 纯目录条目：跳过，不是「不认识的条目」
 		".":            "",
 		"":             "",
 		"a/./b/c.json": "a/b/c.json",
@@ -277,6 +277,55 @@ func TestSafeArchivePath(t *testing.T) {
 		if _, err := safeArchivePath(in); err == nil {
 			t.Errorf("safeArchivePath(%q) 应拒绝", in)
 		}
+	}
+}
+
+// TestImportToleratesDirectoryEntries 第三方重新打包常带纯目录条目（`blobs/`）：
+// 那一条跳过，不该把整份归档判成「有不认识的条目」。
+func TestImportToleratesDirectoryEntries(t *testing.T) {
+	blobs, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("blobfs: %v", err)
+	}
+	src := fixture(t, blobs)
+	var buf bytes.Buffer
+	if _, err := New(Options{Blobs: blobs}).Export(context.Background(), src, "aqx", &buf); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	// 用导出产物重建一份带目录条目的归档。
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("zip: %v", err)
+	}
+	var out bytes.Buffer
+	zw := zip.NewWriter(&out)
+	if _, err := zw.CreateHeader(&zip.FileHeader{Name: "blobs/", Method: zip.Store}); err != nil {
+		t.Fatalf("目录条目: %v", err)
+	}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open %s: %v", f.Name, err)
+		}
+		body, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatalf("read %s: %v", f.Name, err)
+		}
+		w, err := zw.Create(f.Name)
+		if err != nil {
+			t.Fatalf("create %s: %v", f.Name, err)
+		}
+		if _, err := w.Write(body); err != nil {
+			t.Fatalf("write %s: %v", f.Name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, _, err := New(Options{Blobs: mustBlobs(t)}).Import(context.Background(),
+		bytes.NewReader(out.Bytes()), port.ExchangeFormat{Name: "aqx"}); err != nil {
+		t.Fatalf("带目录条目的归档应能导入: %v", err)
 	}
 }
 

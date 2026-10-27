@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -136,6 +137,41 @@ func TestParseLinearContent(t *testing.T) {
 	}
 	if got := parseLinearContent(json.RawMessage(`[]`), counts); got != nil {
 		t.Fatalf("空数组应无分片: %+v", got)
+	}
+}
+
+// TestImportSkipsEmptyButCounts 导入时正文为空的消息被跳过，但必须计入回执。
+//
+// 「没丢就不出现丢项」的镜像要求：丢了却不出现同样是错的——少了一条消息而回执说一切安好，
+// 用户没有任何线索知道少了什么。
+func TestImportSkipsEmptyButCounts(t *testing.T) {
+	cases := map[string]string{
+		"openai": `{"messages":[
+			{"role":"user","content":"第一句"},
+			{"role":"assistant","content":""},
+			{"role":"user","content":"第三句"}]}`,
+		"sillytavern": `{"user_name":"u"}
+{"is_user":true,"mes":"第一句"}
+{"is_user":false,"mes":"   "}
+{"is_user":true,"mes":"第三句"}`,
+	}
+	for name, doc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+				port.ExchangeFormat{Name: name})
+			if err != nil {
+				t.Fatalf("import: %v", err)
+			}
+			if rep.Nodes != 2 {
+				t.Fatalf("读入节点数 = %d, want 2（空消息不建节点）", rep.Nodes)
+			}
+			if !strings.Contains(strings.Join(rep.Dropped, " "), "没有正文") {
+				t.Fatalf("跳过空消息必须进回执: %v", rep.Dropped)
+			}
+			if c.NodeCount() != 3 { // Root + 两条有正文的
+				t.Fatalf("树节点数 = %d, want 3", c.NodeCount())
+			}
+		})
 	}
 }
 
@@ -299,9 +335,74 @@ func TestSillyTavernRoundtrip(t *testing.T) {
 	if d := path[1].CreatedAt.Sub(src.Path()[2].CreatedAt); d > 1e9 || d < -1e9 {
 		t.Fatalf("时间差 %v，want 1 秒内（格式只到秒）", d)
 	}
-	// 对方的配置不进会话：回执里说清楚。
-	if !strings.Contains(strings.Join(rep.Dropped, " "), "世界书") {
-		t.Fatalf("回执应说明对方的配置没带进来: %v", rep.Dropped)
+	// 对方的世界书/正则/作者注不装：这是格式事实，写在格式表的 LossNote 里，不进逐次回执
+	// ——文件里没有这些配置时回执也报一句「丢了」就是在说并不存在的东西。
+	if len(rep.Dropped) != 0 {
+		t.Fatalf("这份文件没有可丢的内容，回执不该有丢项: %v", rep.Dropped)
+	}
+}
+
+// TestSillyTavernTimeSymmetric 时间串按本地时区写、按本地时区读，两侧必须对称。
+//
+// 只做一半（导出打 UTC、导入按本地解）会让时间轴整体漂一个时区，而且「导入 → 再导出」
+// 每往返一次就再漂一次。这里把本地时区钉成 UTC+8，再要求往返不漂。
+func TestSillyTavernTimeSymmetric(t *testing.T) {
+	t.Setenv("TZ", "Asia/Shanghai")
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Skipf("本机没有时区数据库: %v", err)
+	}
+	saved := time.Local
+	time.Local = loc
+	t.Cleanup(func() { time.Local = saved })
+
+	// 源时间在 UTC：导出必须换成 +08:00 的本地字面串。
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if got := formatSTTime(at); got != "2026-01-02 11:04:05" {
+		t.Fatalf("formatSTTime(UTC 03:04:05) = %q, want 本地 11:04:05", got)
+	}
+	// 读回来要还原成同一时刻（不是同一个字面串）。
+	if got := parseSTTime(formatSTTime(at)); !got.Equal(at) {
+		t.Fatalf("往返后 = %v, want %v（差 %v）", got, at, got.Sub(at))
+	}
+
+	// 端到端：导出 → 导入 → 再导出，字面串不许变（漂时区会在这里露出来）。
+	src := conversation.New(conversation.ID("conv-tz"), "跨时区")
+	if err := src.AppendCommitted(conversation.Message{
+		ID: "S1", Parent: conversation.MessageID(src.ID), Role: conversation.RoleUser,
+		Content:   []conversation.Part{{Kind: conversation.PartText, Text: "几点了"}},
+		CreatedAt: at,
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	var first bytes.Buffer
+	if _, err := New(Options{}).Export(context.Background(), src, "sillytavern", &first); err != nil {
+		t.Fatalf("export#1: %v", err)
+	}
+	c, _, err := New(Options{}).Import(context.Background(), bytes.NewReader(first.Bytes()),
+		port.ExchangeFormat{Name: "sillytavern"})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	var second bytes.Buffer
+	if _, err := New(Options{}).Export(context.Background(), c, "sillytavern", &second); err != nil {
+		t.Fatalf("export#2: %v", err)
+	}
+	// 首行是 header（create_date 来自会话创建时间），比它更稳的是比消息行的时间。
+	line1 := strings.Split(strings.TrimSpace(first.String()), "\n")
+	line2 := strings.Split(strings.TrimSpace(second.String()), "\n")
+	if len(line1) != 2 || len(line2) != 2 {
+		t.Fatalf("行数 = %d / %d, want 各 2 行", len(line1), len(line2))
+	}
+	var m1, m2 stMessage
+	if err := json.Unmarshal([]byte(line1[1]), &m1); err != nil {
+		t.Fatalf("解析第一次产物: %v", err)
+	}
+	if err := json.Unmarshal([]byte(line2[1]), &m2); err != nil {
+		t.Fatalf("解析第二次产物: %v", err)
+	}
+	if m1.SendDate != m2.SendDate {
+		t.Fatalf("往返后时间漂了: %q → %q", m1.SendDate, m2.SendDate)
 	}
 }
 

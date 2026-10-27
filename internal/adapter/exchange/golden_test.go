@@ -94,8 +94,18 @@ func fixTreeIDs(s *conversation.Snapshot) {
 	}
 }
 
+// pinLocalUTC 把「本地时区」钉成 UTC：golden 产物里有按本地时间打的时间串，若跟着
+// 运行机器的时区走，同一份代码在不同机器上就会产出不同字节。
+func pinLocalUTC(t *testing.T) {
+	t.Helper()
+	loc := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = loc })
+}
+
 // TestInteropFormatsGolden 三份互通产物逐字节锁定，且同一棵树导两次字节相同。
 func TestInteropFormatsGolden(t *testing.T) {
+	pinLocalUTC(t) // sillytavern 的时间串按本地时区打，golden 必须与运行机器的时区无关
 	blobs := mustBlobs(t)
 	ex := New(Options{Blobs: blobs})
 	src := goldenTree(t, blobs)

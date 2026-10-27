@@ -21,11 +21,11 @@ func TestMaterializeReassignsIDs(t *testing.T) {
 				Parts: []conversation.Part{{Kind: conversation.PartText, Text: "在"}}},
 		},
 	}
-	a, err := materialize(in)
+	a, err := materialize(&in)
 	if err != nil {
 		t.Fatalf("materialize#1: %v", err)
 	}
-	b, err := materialize(in)
+	b, err := materialize(&in)
 	if err != nil {
 		t.Fatalf("materialize#2: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestMaterializeHeadFallback(t *testing.T) {
 		{SrcID: "c", Role: conversation.RoleUser, Parent: "b",
 			Parts: []conversation.Part{{Kind: conversation.PartText, Text: "三"}}},
 	}}
-	c, err := materialize(in)
+	c, err := materialize(&in)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestMaterializeRejectsBadInput(t *testing.T) {
 		"没有消息":  {nil, "没有消息"},
 	}
 	for name, tc := range cases {
-		_, err := materialize(importedTree{Nodes: tc.nodes})
+		_, err := materialize(&importedTree{Nodes: tc.nodes})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: err = %v, want 含 %q", name, err, tc.want)
 		}
@@ -101,7 +101,7 @@ func TestMaterializeRejectsTooManyNodes(t *testing.T) {
 		})
 		prev = id
 	}
-	_, err := materialize(importedTree{Nodes: nodes})
+	_, err := materialize(&importedTree{Nodes: nodes})
 	if err == nil || !strings.Contains(err.Error(), "上限") {
 		t.Fatalf("err = %v, want 节点数上限", err)
 	}
@@ -111,7 +111,7 @@ func TestMaterializeRejectsTooManyNodes(t *testing.T) {
 func TestMaterializeRejectsTooMuchText(t *testing.T) {
 	// 一条就超：正文上限是 64 MB，这里给 64 MB + 1 字节的一次分配（不逐条堆，免得测试变慢）。
 	big := strings.Repeat("a", maxImportTextBytes+1)
-	_, err := materialize(importedTree{Nodes: []importedNode{
+	_, err := materialize(&importedTree{Nodes: []importedNode{
 		{SrcID: "a", Role: conversation.RoleUser,
 			Parts: []conversation.Part{{Kind: conversation.PartText, Text: big}}},
 	}})
@@ -122,7 +122,7 @@ func TestMaterializeRejectsTooMuchText(t *testing.T) {
 
 // TestMaterializeRejectsDanglingParent 悬空父交给 Restore 自检报因，不「尽力修复」。
 func TestMaterializeRejectsDanglingParent(t *testing.T) {
-	_, err := materialize(importedTree{Nodes: []importedNode{
+	_, err := materialize(&importedTree{Nodes: []importedNode{
 		{SrcID: "a", Role: conversation.RoleUser, Parent: "nope",
 			Parts: []conversation.Part{{Kind: conversation.PartText, Text: "x"}}},
 	}})

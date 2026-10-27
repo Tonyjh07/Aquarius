@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -117,10 +116,11 @@ func toChatConversation(c *conversation.Conversation) (chatConversation, port.Ex
 	return out, rep
 }
 
-// toChatMessage 一个节点 → ChatGPT 消息；装不下的分片就地计入 counts。
+// toChatMessage 一个节点 → ChatGPT 消息；装不下的分片与元数据就地计入 counts。
 //
-// ChatGPT 只装得下文本（图片靠地址、工具调用与思考有各自的字段，但我们不该假装会写）。所以
-// 这里只搬正文，其余逐类计数——回执告诉用户「带出去了什么」而不是「大概能读」。
+// ChatGPT 的消息装得下文本、装不下附件字节、思考、工具调用（那些有各自的字段，但我们没有
+// 对得上号的东西可写）。所以这里只搬正文，其余逐类计数——回执告诉用户「带出去了什么」，
+// 而不是「大概能读」。
 func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
 	msg := chatMsg{
 		ID:         string(m.ID),
@@ -140,7 +140,9 @@ func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
 			}
 			counts["文档原文件（只带提取的文本）"]++
 		case conversation.PartImage, conversation.PartAudio:
-			counts["附件（只留文件信息，不带字节）"]++
+			// 一个字段都不写：ChatGPT 的图片是它的文件服务句柄，我们这边没有可用的地址，
+			// 硬塞一个对方取不到的伪指针只是把「没带」包装成「带了但取不到」。
+			counts["附件（不带字节）"]++
 		case conversation.PartThinking:
 			counts["思考过程"]++
 		case conversation.PartTool:
@@ -157,7 +159,33 @@ func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
 		parts[i], _ = json.Marshal(t)
 	}
 	msg.Content.Parts = parts
+	countChatMeta(m, counts)
 	return msg
+}
+
+// countChatMeta 逐类记下节点级元数据里带不出去的东西。
+//
+// ChatGPT 的消息没有地方放我们的终态/模型/用量，硬塞自定义键会被对方当成噪声；但「没带」
+// 是事实，回执要说出来。逐条计数而不逐条列名字：这些字段几乎每条 assistant 消息都有，
+// 按条列会把回执刷成一页。
+func countChatMeta(m conversation.Message, counts map[string]int) {
+	if m.Outcome != "" {
+		counts["消息终态"]++
+	}
+	if m.Model != "" {
+		counts["模型标注"]++
+	}
+	if m.Usage != (conversation.Usage{}) {
+		counts["token 用量"]++
+	}
+	if m.Source != "" || m.Trust != conversation.TrustExternal || m.Trigger {
+		counts["注入来源与信任级"]++
+	}
+	for _, p := range m.Content {
+		if p.Kind == conversation.PartThinking && p.Signature != "" {
+			counts["思考签名"]++
+		}
+	}
 }
 
 // chatRole 我们的角色 → ChatGPT 的角色。
@@ -201,7 +229,7 @@ func (e *Exchange) importChatGPT(ctx context.Context, r io.Reader) (*conversatio
 		in.Dropped = append(in.Dropped,
 			fmt.Sprintf("另外 %d 个会话（一个文件里只导入第 1 个）", len(env)-1))
 	}
-	c, err := materialize(in)
+	c, err := materialize(&in)
 	if err != nil {
 		return nil, rep, err
 	}
@@ -217,6 +245,11 @@ func parseChatTree(conv chatConversation) importedTree {
 		Head:      conv.CurrentNode,
 		CreatedAt: fromUnixSeconds(conv.CreateTime),
 		UpdatedAt: fromUnixSeconds(conv.UpdateTime),
+		// 当前节点可能落在被跳过的消息上（纯图片、纯思考）：materialize 靠它上溯。
+		ParentOf: func(id string) (string, bool) {
+			n, ok := conv.Mapping[id]
+			return n.Parent, ok
+		},
 	}
 	counts := map[string]int{}
 	ids := make([]string, 0, len(conv.Mapping))
@@ -236,7 +269,7 @@ func parseChatTree(conv chatConversation) importedTree {
 		}
 		parts := parseChatContent(n.Message.Content, counts)
 		if len(parts) == 0 {
-			continue // 整条都装不下（比如纯图片消息）：不建空节点
+			continue // 整条都装不下（比如纯图片消息）：不建空节点；原因已由 parseChatContent 计数
 		}
 		in.Nodes = append(in.Nodes, importedNode{
 			SrcID:    id,
@@ -343,7 +376,8 @@ func parseChatContent(content chatContent, counts map[string]int) []conversation
 	if len(parts) == 0 {
 		switch content.ContentType {
 		case "", "text", "multimodal_text", "code":
-			// 这几种只是「装不下」的纯附件消息，已在分片层计数，不再额外记一条。
+			// 这几种只是「装不下」的纯附件消息：分片层的丢项已逐类记过，这里不再重复。
+			// 「整条消息因此消失」由调用方统一记一条，两条事实分开说。
 		default:
 			counts["正文类型 "+content.ContentType+" 的消息"]++
 		}
@@ -378,16 +412,4 @@ func fromUnixSeconds(f float64) time.Time {
 	sec := int64(f)
 	nsec := int64((f - float64(sec)) * 1e9)
 	return time.Unix(sec, nsec).UTC()
-}
-
-// looksLikeChatGPT 文件头判断：顶层数组首项带 mapping（DESIGN §5.16 的 Detect 口径）。
-func looksLikeChatGPT(head []byte) bool {
-	var probe []struct {
-		Mapping json.RawMessage `json:"mapping"`
-	}
-	if err := json.Unmarshal(head, &probe); err != nil {
-		// 头部通常被截断（Detect 只读前几百字节）：退到弱判断，交给 Import 正式解析报因。
-		return strings.Contains(string(head), `"mapping"`)
-	}
-	return len(probe) > 0 && len(probe[0].Mapping) > 0
 }

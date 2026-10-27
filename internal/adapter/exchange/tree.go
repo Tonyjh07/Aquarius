@@ -44,7 +44,15 @@ type importedTree struct {
 	UpdatedAt time.Time
 	Nodes     []importedNode
 	// Dropped 源里我们不认、或装不下而丢掉的东西（逐项可读，进回执）。
+	//
+	// materialize 也会往里补：它自己发现的事实（比如当前节点被跳过了）同样要进回执，
+	// 所以它改的是这份树的 Dropped，调用方在 materialize 之后才读。
 	Dropped []string
+	// ParentOf 源里的父指针查询（second = 该 ID 在源里确实存在）。
+	//
+	// 只在「当前节点被跳过」时需要：那时要顺着父指针上溯到最近收下的一条。源里没有父指针
+	// 概念的格式（线性）留空，Head 一定落在收下的节点上，用不到它。
+	ParentOf func(id string) (parent string, ok bool)
 }
 
 // materialize 把 importedTree 搬成我们这棵树：新会话 ID、节点 ID 全部重分配、Root 补在最前，
@@ -52,8 +60,11 @@ type importedTree struct {
 //
 // 源 ID 只用来建边，绝不带进新树：导两次同一份文件得到两棵互相独立的树，也不会与既有会话
 // 撞 ID（DESIGN §5.16「落成新会话」）。
-func materialize(in importedTree) (*conversation.Conversation, error) {
-	nodes, err := checkImported(in)
+//
+// 收 *importedTree 而不是值：它自己发现的事实（当前节点被跳过时回退了）也要进回执，而回执
+// 的丢项清单是调用方在返回后读的那一份。
+func materialize(in *importedTree) (*conversation.Conversation, error) {
+	nodes, err := checkImported(*in)
 	if err != nil {
 		return nil, err
 	}
@@ -112,15 +123,9 @@ func materialize(in importedTree) (*conversation.Conversation, error) {
 	}
 	// 树外挂点单独一条边（"" → Root）：不变量 1 要求它恒存在且只有一个孩子（D19）。
 	edges = append([]conversation.SnapshotEdge{{Parent: "", Childs: []conversation.MessageID{rootID}}}, edges...)
-	head := rootID
-	if in.Head != "" {
-		h, ok := newIDs[in.Head]
-		if !ok {
-			return nil, fmt.Errorf("文件声明的当前节点 %q 不在文件里", in.Head)
-		}
-		head = h
-	} else if deepest := deepestNode(nodes); deepest != "" {
-		head = newIDs[deepest]
+	head, headNote := resolveHead(*in, nodes, newIDs, rootID)
+	if headNote != "" {
+		in.Dropped = append(in.Dropped, headNote)
 	}
 	c, err := conversation.Restore(conversation.Snapshot{
 		ID:        id,
@@ -135,6 +140,41 @@ func materialize(in importedTree) (*conversation.Conversation, error) {
 		return nil, fmt.Errorf("导入的会话结构不合法: %w", err)
 	}
 	return c, nil
+}
+
+// resolveHead 定 Head：源里声明了就按它，没声明就取最深的一条链。
+//
+// 源里声明的那个节点可能被解析阶段跳过了（纯附件、纯思考、空壳——它们建不出消息），此时
+// 顺着源父指针上溯到最近一个收下的节点，并返回一行说明进回执。整份拒收是不对的：
+// Head 落在附件消息上是常态（用户发了张图、助手还没答），我们自己导出的 chatgpt 文件里
+// current_node 就可能正是这种节点，拒收等于「自己写的文件自己读不回来」。
+func resolveHead(in importedTree, nodes []importedNode, newIDs map[string]conversation.MessageID, rootID conversation.MessageID) (conversation.MessageID, string) {
+	if in.Head == "" {
+		if deepest := deepestNode(nodes); deepest != "" {
+			return newIDs[deepest], ""
+		}
+		return rootID, ""
+	}
+	if id, ok := newIDs[in.Head]; ok {
+		return id, ""
+	}
+	if in.ParentOf == nil {
+		// 没有父指针可走（线性格式）：Head 只可能是解析器自己写的那条，走不到这里。
+		return rootID, ""
+	}
+	cur := in.Head
+	for hops := 0; hops <= len(nodes); hops++ {
+		parent, ok := in.ParentOf(cur)
+		if !ok {
+			// 源里根本没有这个 ID：不是「被跳过」而是文件对不上，仍按缺失处理但说明白。
+			return rootID, "当前节点不在文件里（已退回到会话开头）"
+		}
+		if id, kept := newIDs[parent]; kept {
+			return id, "当前节点没有可显示的内容（不是消息），已退回到上一条"
+		}
+		cur = parent
+	}
+	return rootID, "当前节点没有可显示的内容（不是消息），已退回到会话开头"
 }
 
 // nodeTime 节点时间：源里给了就用，没给退回 fallback——字段缺失不等于「1970 年」。

@@ -7,6 +7,7 @@
 package exchange
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -98,24 +99,42 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 
 // Detect 按文件名与文件头认格式（DESIGN §5.16）。
 //
-// 只做形状判断，不解析内容：认错时 Import 会报因，而在这里做完整解析等于把文件读两遍。
-// 顺序按「形状的特异度」排：ZIP 最特异，其次是带 `mapping` 的树，再是 `.jsonl`
-// （它连 JSON 整体都不是），最后才是宽泛的 `messages` 数组。
+// 只看形状，不解析整份文件：认错时 Import 会报因，在这里做完整解析等于把文件读两遍。
+//
+// 判定顺序按「形状的特异度」排，且**先看容器前缀再看键**：
+//   - ZIP 魔数最特异，扩展名 `.aqx` 兜底；
+//   - 顶层是 `[` 的才可能是 chatgpt（它的导出就是数组），再看里面有没有 `"mapping"`；
+//   - 顶层是 `{` 时才可能是 openwebui / openai，看 `"chat"` 是否紧跟对象、`"messages"` 是否
+//     紧跟数组；
+//   - `.jsonl` 连整份 JSON 都不是，单独按首行判。
+//
+// 不能拿 `strings.Contains(head, "\"chat\"")` 这种子串兜底：正文里出现 chat 一词的普通
+// openai 文件就会先被认成 openwebui（错误文案还会说「文件里没有消息」）；反过来，标题较长
+// 的 chatgpt 导出在前几百字节里既没有完整 JSON 也没有 `"mapping"`，子串判断又漏掉它。
 func (e *Exchange) Detect(name string, head []byte) (port.ExchangeFormat, bool) {
 	if isZip(head) || strings.EqualFold(fileExt(name), ".aqx") {
 		return formatNamed("aqx")
 	}
-	if looksLikeChatGPT(head) {
-		return formatNamed("chatgpt")
-	}
-	if looksLikeOpenWebUI(head) {
-		return formatNamed("openwebui")
-	}
 	if looksLikeSillyTavern(head) {
 		return formatNamed("sillytavern")
 	}
-	if looksLikeOpenAI(head) {
-		return formatNamed("openai")
+	trimmed := bytes.TrimLeft(head, " \t\r\n")
+	if len(trimmed) == 0 {
+		return port.ExchangeFormat{}, false
+	}
+	switch trimmed[0] {
+	case '[':
+		// 顶层数组：chatgpt 的导出是 `[{…}]`，里面才有 mapping。
+		if topKeyStarts(trimmed, "mapping", '{') {
+			return formatNamed("chatgpt")
+		}
+	case '{':
+		if topKeyStarts(trimmed, "chat", '{') {
+			return formatNamed("openwebui")
+		}
+		if topKeyStarts(trimmed, "messages", '[') {
+			return formatNamed("openai")
+		}
 	}
 	return port.ExchangeFormat{}, false
 }
@@ -128,6 +147,99 @@ func formatNamed(name string) (port.ExchangeFormat, bool) {
 		}
 	}
 	return port.ExchangeFormat{}, false
+}
+
+// topKeyStarts 文件头的顶层对象里，键 name 的值是否以 opener（`{` 或 `[`）开头。
+//
+// 「顶层」= 文档最外层对象自己的成员，或顶层数组第一个元素对象的成员（chatgpt 的导出是
+// 后者：数组里一项一个会话）。只扫结构、跳过字符串内容——文件头是截断的，完整 JSON 解析
+// 必然失败，而退化成子串匹配会把正文里的词当成键（正文里出现一句 `"chat"` 的 openai
+// 文件就会被认成 openwebui）。
+//
+// 截断、坏 JSON、未闭合的串都只是提前结束：扫不到就返回 false，由调用方报「认不出」。
+func topKeyStarts(head []byte, name string, opener byte) bool {
+	var (
+		stack     []byte // 未闭合的容器：'o' 对象 / 'a' 数组
+		inStr     bool
+		escaped   bool
+		expectKey bool   // 对象里等一个键
+		pendingKe bool   // 刚读到键，等它的值
+		pending   string // 待配对的键名
+	)
+	top := func() bool {
+		// 顶层对象，或顶层数组里的第一个元素对象。
+		if len(stack) == 1 {
+			return stack[0] == 'o'
+		}
+		return len(stack) == 2 && stack[0] == 'a' && stack[1] == 'o'
+	}
+	for i := 0; i < len(head); i++ {
+		c := head[i]
+		if inStr {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c != '"' {
+				continue
+			}
+			inStr = false
+			continue
+		}
+		switch c {
+		case ' ', '\t', '\r', '\n':
+		case '"':
+			start := i + 1
+			j := start
+			for ; j < len(head); j++ {
+				if head[j] == '\\' {
+					j++
+					continue
+				}
+				if head[j] == '"' {
+					break
+				}
+			}
+			if expectKey && len(stack) > 0 && stack[len(stack)-1] == 'o' {
+				expectKey = false
+				pending = string(head[start:j])
+				pendingKe = true
+			}
+			i = j
+		case ',':
+			pendingKe = false
+			expectKey = len(stack) > 0 && stack[len(stack)-1] == 'o'
+		case ':':
+			// 键值分隔：待配对的键保留，等值开头的容器来认领。
+		case '{', '[':
+			if pendingKe && pending == name && c == opener && top() {
+				return true
+			}
+			pendingKe = false
+			if c == '{' {
+				stack = append(stack, 'o')
+				expectKey = true
+			} else {
+				stack = append(stack, 'a')
+				expectKey = false
+			}
+		case '}', ']':
+			pendingKe = false
+			expectKey = false
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+		default:
+			// 数字、true/false/null：值到了，待配对的键作废。
+			pendingKe = false
+			expectKey = false
+		}
+	}
+	return false
 }
 
 // isZip ZIP 魔数（`PK\x03\x04` 等四种块类型）：aqx 是唯一装在 ZIP 里的格式。

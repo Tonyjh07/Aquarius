@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -82,7 +81,7 @@ func (e *Exchange) importOpenWebUI(ctx context.Context, r io.Reader) (*conversat
 		return nil, rep, errors.New("文件里没有消息（这份会话是空的）")
 	}
 	in := parseOpenWebUI(doc, msgs)
-	c, err := materialize(in)
+	c, err := materialize(&in)
 	if err != nil {
 		return nil, rep, err
 	}
@@ -96,7 +95,19 @@ func parseOpenWebUI(doc owDoc, msgs []owMessage) importedTree {
 	if title == "" {
 		title = doc.Title
 	}
-	in := importedTree{Title: title, Head: doc.Chat.History.CurrentID}
+	byID := make(map[string]owMessage, len(msgs))
+	for _, m := range msgs {
+		byID[m.ID] = m
+	}
+	in := importedTree{
+		Title: title,
+		Head:  doc.Chat.History.CurrentID,
+		// 当前节点可能落在被跳过的消息上（纯图片、无 id）：materialize 靠它上溯。
+		ParentOf: func(id string) (string, bool) {
+			m, ok := byID[id]
+			return m.ParentID, ok
+		},
+	}
 	counts := map[string]int{}
 	for _, m := range msgs {
 		if m.ID == "" {
@@ -125,7 +136,7 @@ func parseOpenWebUI(doc owDoc, msgs []owMessage) importedTree {
 		in.Nodes = append(in.Nodes, node)
 	}
 	// 与 chatgpt 侧同一套跳过口径：空节点与装不下的消息不留空壳，子节点顺父指针往上接。
-	reparentOpenWebUI(msgs, in.Nodes)
+	reparentOpenWebUI(byID, in.Nodes)
 	in.Dropped = droppedLines(counts)
 	return in
 }
@@ -134,18 +145,15 @@ func parseOpenWebUI(doc owDoc, msgs []owMessage) importedTree {
 //
 // 与 chatgpt 的 reparent 同口径（那份读的是 mapping，这份读的是扁平消息表），所以各写一遍而
 // 不是硬凑一个泛型：两边的源结构不同，硬抽出来只会多一层参数化的绕。
-func reparentOpenWebUI(msgs []owMessage, nodes []importedNode) {
-	byID := make(map[string]owMessage, len(msgs))
-	for _, m := range msgs {
-		byID[m.ID] = m
-	}
+
+func reparentOpenWebUI(byID map[string]owMessage, nodes []importedNode) {
 	kept := make(map[string]bool, len(nodes))
 	for _, n := range nodes {
 		kept[n.SrcID] = true
 	}
 	for i := range nodes {
 		p := nodes[i].Parent
-		for hops := 0; p != "" && !kept[p] && hops < len(msgs); hops++ {
+		for hops := 0; p != "" && !kept[p] && hops < len(byID); hops++ {
 			next, ok := byID[p]
 			if !ok {
 				break
@@ -169,24 +177,4 @@ func reparentOpenWebUI(msgs []owMessage, nodes []importedNode) {
 			nodes[i].Children = keptKids
 		}
 	}
-}
-
-// looksLikeOpenWebUI 文件头判断：顶层带 `chat`，且 `chat` 里有 `history` 或 `messages`。
-//
-// 不据 `messages` 单独认（那是 openai 的形状）：Open WebUI 的会话一定包在 `chat` 里。
-func looksLikeOpenWebUI(head []byte) bool {
-	var probe struct {
-		Chat *struct {
-			History  json.RawMessage `json:"history"`
-			Messages json.RawMessage `json:"messages"`
-		} `json:"chat"`
-	}
-	if err := json.Unmarshal(head, &probe); err != nil {
-		// 头部被截断：弱判断只看有没有 `"chat"` 这个键，正式解析交给 Import 报因。
-		return strings.Contains(string(head), `"chat"`)
-	}
-	if probe.Chat == nil {
-		return false
-	}
-	return len(probe.Chat.History) > 0 || len(probe.Chat.Messages) > 0
 }
