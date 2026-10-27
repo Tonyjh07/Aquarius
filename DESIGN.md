@@ -59,7 +59,9 @@
 | 转写 / 合成 | Transcriber / Synthesizer | 语音模态端口：ASR（音频→文本）/ TTS（文本→音频） |
 | 记忆文档 | MemoryDoc | 一篇 markdown 记忆（name + 文本） |
 | 技能 | Skill | 一个目录 + `SKILL.md`：按需载入的指令包（发现只读 name/description，命中才载入正文，D201） |
+| 外部代理 | Delegate Agent | 经 ACP 接进来的外部程序：我们把一件复杂任务整个交给它跑，只收回报告（D244） |
 | MCP 网关 | mcpgate | 把 MCP server 适配为内核端口实现的适配器（Tier-2 插件面） |
+| ACP 网关 | acpgate | 把外部 ACP 代理适配为 `delegate` 工具实现的适配器（与 MCP 网关对称） |
 | 增量 | Delta | 流式返回的文本/工具调用片段 |
 
 ---
@@ -382,6 +384,7 @@ func (c *Conversation) Validate() error                        // 两条不变�
 | `web_search` | 联网搜索（D197）：`query`（1–128 字符，支持 `site:` / `"短语"` / `-词` / `lang:` / `after:` 等算符）、`count`（1–20）、`freshness`（day/week/month/year）；按配置顺序换家，回填里注明实际应答者与降级痕迹 | Safe |
 | `web_fetch` | 抓取单个网页并转 Markdown（D197）：`url`、`max_chars`（500–20000）；本地实现遵守 robots.txt 并拒绝内网目标 | Safe |
 | `skill` | 载入一个已安装技能（D201）：`name` = 技能目录名。回填该技能 `SKILL.md` 的正文 + 技能目录绝对路径（深入 `references/`、跑 `scripts/` 用 `file_read` / `term_exec`）。技能清单（name + description）直接写在工具描述里，**零技能时也照常注册**，执行时明确报 `no skills are installed` | Safe |
+| `delegate` | 把一件复杂任务**整个交给**一个外部 ACP 代理（D244，§5.18）：`task` = 任务描述（进它那侧的第一条消息）、`agent` = 已探测到的代理名（省略用缺省）、`workdir` = 子进程目录（省略家目录）。它自己起进程、自己用工具，我们只收回**报告 + 一行摘要**（工具调用数、改动文件、耗时、停止原因）。**不吃默认工具超时**（`Interactive`），ESC 取消 → 发 `session/cancel`；一个会话同时只允许一个转交 | Confirm |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -862,6 +865,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/逐条镜像到文件 | Tier-1 Go 插件 | 脚本 |
 | `SessionExporter` / `SessionImporter` | exchange（`aqx` 无损 / `chatgpt` 树 / `openai`·`sillytavern` 线性；D242） | — | 内存往返 |
 | `CharacterCatalog` | characterfs（PNG tEXt / JSON / `.charx` 解析 + `<profile>/characters` 目录；D243） | — | 临时目录假卡 |
+| `Delegate` | acpgate（ACP v1 客户端 → `delegate` 工具；六方法面、不申报 `fs`/`terminal`，D244） | 外部 ACP 代理（配置 `delegate.agents`，命令经 PATH 探测） | 假 ACP 代理（stdio 脚本化 JSON-RPC） |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
 | `WatchProber` / `WatchManager` | probe（command/file/http 取样，D190）/ app.watcher | — | 脚本化探针 |
 | `Presenter` / `Prompter` | uitui（TUI）、repl、uigui（GUI 悬浮球，D43/M5） | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
@@ -1343,6 +1347,135 @@ characters/<slug>/
 **不做**：写回 PNG/JSON/`.charx`、编辑卡、导出卡、世界书激活与检索、`group_only_greetings`、
 表情/背景/语音资产、PNG 的 `chara-ext-asset_`、从网络取资产、导入时自动开一轮对话。
 
+### 5.18 `delegate.go` —— 外部代理转交端口（ACP 客户端，D244）
+
+把一件复杂任务**整个**交给另一个代理程序去跑，我们只收回它的报告。定位上的分界：我们能做的
+（读写文件、跑命令、查网、记文档）已经都在工具面里，剩下的复杂活在**别的程序**里做得更好——
+那边的长处是它的工具循环、它对代码库的品味、它自带的生态。所以这一节不是「再写一个 agent」，
+而是**当客户端**：拉起一个 ACP（Agent Client Protocol）代理，把任务递过去，等它交付。
+
+```go
+// port/delegate.go
+type DelegateInfo struct {
+    Name      string   // 配置里的名字（delegate 工具 agent 参数的取值）
+    Command   string   // 实际要执行的命令行（配置原样）
+    Title     string   // initialize 报的 agentInfo.title（没探过为空）
+    Version   string   // agentInfo.version
+    Available bool     // 可执行文件在 PATH 上 + 上次探测通过
+    Note      string   // 不可用原因（用户面一句话）
+}
+
+type DelegateSpec struct {
+    Agent   string // 空 = 缺省代理（见下）
+    Task    string // 任务描述：作为子代理那侧的第一条用户消息，原样发
+    WorkDir string // 子进程 cwd（默认家目录），不是"工作区"
+    Session string // 复用位：空 = 每次新建会话；本版只接受空值
+}
+
+type DelegateRun struct {
+    Agent      string
+    Session    string        // 本次子代理会话句柄（ACP sessionId）：只进回执与日志，本版不重用
+    StopReason string        // end_turn | max_tokens | max_turn_requests | refusal | cancelled
+    ToolCalls  int           // 子代理自己发起的工具调用次数（不是我们的）
+    Changed    []string      // 它报过改动的文件（去重；可能不全，见下）
+    Duration   time.Duration
+    Report     string        // 最终正文（它交付的那段）
+    Notes      []string      // 能力协商、被拒的权限请求、跳过的东西（用户面）
+}
+
+// DelegateLister 清单（/delegate list 与 delegate 工具描述共用一份事实）。
+type DelegateLister interface {
+    List(ctx context.Context) ([]DelegateInfo, error)
+}
+
+// DelegateRunner 一次转交：起进程 → initialize → session/new → session/prompt → 收报告 → 关进程。
+type DelegateRunner interface {
+    Run(ctx context.Context, spec DelegateSpec) (DelegateRun, error)
+}
+
+// Delegate 组合体（装配根与实现方共用；消费方各自只声明上面那一个）。
+type Delegate interface {
+    DelegateLister
+    DelegateRunner
+}
+```
+
+**我们是客户端，不是代理**：Aquarius 不到 Zed / JetBrains 里当那个「被选中的代理」（那是另一条
+产品线，要维护编辑器侧的全部交互）；它只往外派活。所以实现面是协议的**客户端一半**，且只要 v1
+（v2 还是 draft，`initialize` 报 `protocolVersion: 1`，对方只认 2 就明确报「协议版本不兼容」，
+不猜也不降级）。
+
+**只做六个方法**（其余一律不申报）：
+
+| 方法 | 方向 | 我们做什么 |
+|---|---|---|
+| `initialize` | 我们 → 它 | 报 `protocolVersion: 1` + **空的 `clientCapabilities`**；读回它的 `agentCapabilities` |
+| `session/new` | 我们 → 它 | 传绝对路径 `cwd` 与**空 `mcpServers`**，拿 `sessionId` |
+| `session/prompt` | 我们 → 它 | 发一条 `text` 块（任务描述），等它返回 `stopReason` |
+| `session/update` | 它 → 我们 | 收过程通知：数工具调用、记它报过的改动文件、攒最终正文 |
+| `session/cancel` | 我们 → 它 | 取消是**通知**不是请求；被取消后 `session/prompt` 返回 `cancelled`，那是正常终止 |
+| `session/request_permission` | 它 → 我们 | 它动手前反问；回落到 `port.Confirmer`（§9） |
+
+`fs/read_text_file`、`fs/write_text_file`、`terminal/*`、`elicitation` **一个都不申报**：申报等于
+承诺替它读写文件、替它管终端，那是一整条新的能力面（也是它把权限交回我们手里的唯一理由）。
+v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP server 提供工具），不申报正好顺着
+演进方向走。**同理不把我们自己的 MCP server 转发给它**：它的工具面归它自己，转发等于把两套
+授权链搅在一起，出了事也说不清是谁批的。
+
+**配置与发现**：配置形状照 `mcpServers` 抄——`command` / `args` / `env`（值支持 `secret:`），
+另加 `enabled` 与 `default`。**不内置各家预设**：registry 里四十多家代理的命令名、启动参数、
+登录方式都由它们自己决定，变得比我们发版快；内置一份等于每次发版都替别人追版本。
+启动时按 `PATH` 探一遍 `command` 是否可执行，探到的才标 `Available`（不可执行的留在清单里并
+写明原因——「装了但 PATH 上找不到」比「清单里没有」好排查）。
+
+**转交的投影**：回填 = **报告 + 一行摘要**。摘要含工具调用数、改动文件数、耗时、停止原因，
+正文是它交付的那段。子代理那几十次工具调用、思考片段、计划表**都不进会话树**：那是它的过程，
+不是我们的对话；进树会污染上下文与水位，压缩摘要也无从判断哪段是谁的历史。要看过程就去看它
+自己的日志（不在本版范围内，§14）。
+
+**会话生命周期：每次全新，但契约留好复用位**。进程跑完即关、`sessionId` 不跨次使用——同一件
+任务反复追问时，攒两份互相矛盾的历史比丢上下文更糟。`DelegateSpec.Session` 与
+`DelegateRun.Session` 是为将来「会话内复用」留的位置：本版前者**只接受空值**（非空直接报
+`session reuse is not supported in this build`），后者照实回传。将来接复用时，加一条
+`session/resume` 调用与 `<profile>/delegate/` 下的句柄落盘即可，端口形状不用改。
+**本版不落盘**：转交是一次性动作，没有目录、没有台账。
+
+**权限边界要说实话**：`session/request_permission` 只覆盖它**愿意问**的那部分。子代理是独立
+进程，它有它自己的文件与命令访问——`cwd` 给的是它的起点，不是围栏；它读写哪些路径、跑什么
+命令，由它自己的策略决定，我们的权限矩阵管不到。所以 `delegate` 工具本身是 `Risk=Confirm`：
+**批准一次转交 = 批准那个程序在它自己判断下动手**。这一条在用户文档里要原样讲清（§9 同口径）。
+
+- 权限应答映射：`Confirmer` 的「允许」→ 优先选 `allow_once` 类选项（没有就选第一个允许项），
+  「拒绝」→ 优先 `reject_once`。ACP 的应答**没有理由字段**，用户填的拒绝理由只进我们的提示
+  与审计，不回传给子代理（它只知道被拒）。
+- 无人值守（D185）下 `Confirmer` 被装饰成一律拒绝，于是转交本身被拒——它会在会话外动手，
+  与 `watch_start` 同一口径。
+
+**超时与取消**：工具声明 `Interactive()`——转交的时长由对方决定，不该被
+`limits.tool_timeout_sec`（缺省 60s）当成「卡住」。另设一道总闸 `delegate.timeout_sec`
+（缺省 1800，`0` = 不限），防的是进程挂住把轮次钉死。取消（ESC / 停止键 / Ctrl+C）=
+先发 `session/cancel` 通知，等它把 `session/prompt` 收成 `cancelled`，宽限 2 秒后仍不返回
+就杀进程组；杀进程后回填「已取消」而不是报错。**一个会话同时只允许一个转交**：第二个调用
+直接回填「已有转交在进行」，不排队——两路外部代理同时改同一棵树只会互相踩。
+
+**进程卫生**：Windows 下 `CREATE_NO_WINDOW`（同 `mcpgate`）；环境 = 父环境剔除 `AQUARIUS_*`
++ 配置 `env`；`stderr` 收进有界缓冲，只用于「它为什么起不来/为什么退出」这类报因，不进上下文；
+进程组整组回收（它自己会再拉起子进程）。
+
+**上限**：
+
+| 项 | 上限 |
+|---|---|
+| 任务描述（`task`） | 20000 字符 |
+| 单次转交时长（`delegate.timeout_sec`） | 缺省 1800s，最大 86400s，`0` = 不限 |
+| 收下的正文 | 200000 字符（保头尾，中间省略并注明） |
+| 记的改动文件 | 200 条（超出只报总数） |
+| 同时进行的转交 | 每会话 1 |
+
+**不做**：内置代理预设与自动安装（registry 是别人的目录，装与不装是用户的事）、按 registry
+自动升级、ACP v2、客户端 `fs`/`terminal`/`elicitation`、把子代理的转录塞进树、转发我们的
+MCP server、跨会话复用子代理、`session/load` 回放它的历史、多路并行转交。
+
 ---
 
 ## 6. 插件架构
@@ -1700,6 +1833,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/character import <路径>` | 导入角色卡（PNG / JSON / `.charx`）：解析后原卡逐字节留档；同名不覆盖，先 remove 再导入；回执明说丢了/没启用什么 |
 | `/character start <slug> [序号]` | 用角色卡开**新会话**：卡的人格段与用户人格合成 persona，示例进注入节点，开场白（或第 N 条备用问候）作首条 assistant 消息；清屏并回放开场 |
 | `/character remove <slug>` | 删除角色卡目录（二次确认）；已引用它的会话照常可用，只是头像回落默认 |
+| `/delegate list` | 外部代理清单（D244，§5.18）：名字 / 命令行 / 版本 / 可用性（PATH 上探没探到）/ 不可用原因 / 哪个是缺省。**不带参数直接转交**：那由模型经 `delegate` 工具发起（转交是模型的活，不该让用户替它写任务描述） |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
@@ -1905,6 +2039,19 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     "prefer_system_prompt": false, // true = 卡里的 system_prompt 替换用户人格（{{original}} 展开成用户人格）；
                                    // 默认 false = 用户人格在前、卡的 system_prompt 作附加段
     "apply_post_history": true     // 每轮把卡的 post_history_instructions 追加在历史之后（内容随会话落盘，开关热生效）
+  },
+  "delegate": {                   // 外部代理转交（D244）：ACP v1 客户端，字段形状照 mcpServers
+    "agents": {
+      "opencode": {                      // 名字 = delegate 工具的 agent 参数与 /delegate list 的取值
+        "command": "opencode",           // PATH 上探测；探不到则列在清单里并写明原因，不自动下载安装
+        "args": ["acp"],
+        "env": { "PROVIDER_KEY": "secret:DELEGATE_PROVIDER_KEY" },
+        "workdir": "",                   // 子进程 cwd；空 = 家目录。它是起点，不是围栏（§5.18）
+        "enabled": true,                 // 缺省 true；false = 留在配置里但不注册工具、不探测
+        "default": true                  // 多个代理商 true 时取配置序第一个；都不写则取第一个可用的
+      }
+    },
+    "timeout_sec": 1800              // 单次转交总闸（防进程挂住）；0 = 不限，最大 86400
   },
   "audio": {                      // 语音（D179/D222）：识别与合成各是一份完整配置
     "asr": {
@@ -2131,6 +2278,11 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
     且**活开关压到关**（状态行与菜单勾选必须反映真实判定，config 文件不动）。
   - `Asker` 同款（`decorate.UnattendedAsker`）：立即回填「用户不在」（`AskAnswer.Away`），提问不阻塞轮次。
   - 开启期间状态行常驻「无人值守」标记，否则用户回来只看到一串「已拒绝」会当成 bug。
+- **转交出去的边界**（D244，§5.18）：`delegate` 工具是 `Risk=Confirm`——批准一次转交 = 批准那个
+  外部代理在**它自己**的判断下动手。它只经 `session/request_permission` 把**它愿意问**的那部分
+  反问回来（回落到 `Confirmer`），其余动作我们的矩阵管不到：`workdir` 是子进程起点，不是围栏。
+  这一条必须让用户在批准前就知道，所以确认句里要写明「该代理有它自己的文件与命令访问」。
+  无人值守下同 `watch_start`：当场拒绝。
 - 输出安全：终端/任务输出视为**不可信数据**，只渲染不执行；工具结果统一截断（`tool_output_chars`）。
 - **信任级显式化**（D170）：注入内容的信任级由调用方在 `Injection.Trust` 显式声明
   （`TrustHost` = 宿主事实、`TrustExternal` = 外部内容），缺省 = 外部；**不再按 `Source` 前缀
@@ -2248,6 +2400,11 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   v0.3.0，见 §5.17/§5.16；剩余先做世界书精简激活）。
   对照面里**按定位明确不做**的部分（JS 前端扩展生态、提示词四层模板、群聊/立绘、生图/翻译、
   RAG/向量库、Web UI/多用户）一并列在该节，避免以后反复讨论。
+- **外部代理转交（ACP）的后续**（2026-10-27 调研记录，主线见 §5.18/D244）：v1 只做
+  全新会话、不落盘、不转发我们的 MCP server。登记但**未排期**的三件：① 会话内复用子代理
+  （`session/resume` + `<profile>/delegate/` 句柄落盘，端口复用位已留）；② 子代理转录按需落盘
+  供事后翻（不进上下文）；③ 客户端 `fs`/`terminal` 申报与「客户端自己起 MCP server 提供工具」
+  （v2 方向）。**明确不做**：内置代理预设、按 registry 自动安装与升级、ACP v2、多路并行转交。
 
 ---
 
