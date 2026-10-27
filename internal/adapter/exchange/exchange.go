@@ -59,8 +59,10 @@ func (e *Exchange) Export(ctx context.Context, c *conversation.Conversation, for
 		return e.exportAQX(ctx, c, w)
 	case "chatgpt":
 		return e.exportChatGPT(ctx, c, w)
-	case "openai", "sillytavern":
-		return rep, fmt.Errorf("导出格式 %q 本版未接入（现有的可写格式：%s）", format, writableNames())
+	case "openai":
+		return e.exportOpenAI(ctx, c, w)
+	case "sillytavern":
+		return e.exportSillyTavern(ctx, c, w)
 	case "openwebui":
 		return rep, errors.New("openwebui 只认不写：要喂 Open WebUI 用 chatgpt 那份")
 	default:
@@ -83,7 +85,11 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 		return c, rep, nil
 	case "chatgpt":
 		return e.importChatGPT(ctx, r)
-	case "openwebui", "openai", "sillytavern":
+	case "openai":
+		return e.importOpenAI(ctx, r)
+	case "sillytavern":
+		return e.importSillyTavern(ctx, r)
+	case "openwebui":
 		return nil, rep, fmt.Errorf("导入格式 %q 本版未接入", f.Name)
 	default:
 		return nil, rep, fmt.Errorf("不认识的导入格式 %q", f.Name)
@@ -93,13 +99,20 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 // Detect 按文件名与文件头认格式（DESIGN §5.16）。
 //
 // 只做形状判断，不解析内容：认错时 Import 会报因，而在这里做完整解析等于把文件读两遍。
-// 本版认 aqx 与 chatgpt 两种树形来源；线性格式的识别随各自的导入一起接（见 docs/plan.md）。
+// 顺序按「形状的特异度」排：ZIP 最特异，其次是带 `mapping` 的树，再是 `.jsonl`
+// （它连 JSON 整体都不是），最后才是宽泛的 `messages` 数组。
 func (e *Exchange) Detect(name string, head []byte) (port.ExchangeFormat, bool) {
 	if isZip(head) || strings.EqualFold(fileExt(name), ".aqx") {
 		return formatNamed("aqx")
 	}
 	if looksLikeChatGPT(head) {
 		return formatNamed("chatgpt")
+	}
+	if looksLikeSillyTavern(head) {
+		return formatNamed("sillytavern")
+	}
+	if looksLikeOpenAI(head) {
+		return formatNamed("openai")
 	}
 	return port.ExchangeFormat{}, false
 }

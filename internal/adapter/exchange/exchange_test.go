@@ -166,8 +166,8 @@ func TestAQXDeterministic(t *testing.T) {
 	}
 }
 
-// TestDetect 认 aqx：ZIP 魔数优先，扩展名兜底；其他格式交回 false（本版只接 aqx）。
-func TestDetect(t *testing.T) {
+// TestDetectAQX 认 aqx：ZIP 魔数优先，扩展名兜底；既不是 ZIP 也不是归档名字的一律不认。
+func TestDetectAQX(t *testing.T) {
 	ex := New(Options{})
 	if f, ok := ex.Detect("x.aqx", []byte("PK\x03\x04rest")); !ok || f.Name != "aqx" {
 		t.Fatalf("ZIP 魔数应认成 aqx: %+v %v", f, ok)
@@ -175,7 +175,7 @@ func TestDetect(t *testing.T) {
 	if f, ok := ex.Detect("X.AQX", []byte("not a zip")); !ok || f.Name != "aqx" {
 		t.Fatalf("扩展名应认成 aqx: %+v %v", f, ok)
 	}
-	for _, name := range []string{"chat.json", "conv.jsonl", "note.txt", ""} {
+	for _, name := range []string{"chat.json", "note.txt", ""} {
 		if f, ok := ex.Detect(name, []byte("{}")); ok {
 			t.Fatalf("%q 不该被认成 %s", name, f.Name)
 		}
@@ -310,8 +310,9 @@ func TestExportWithoutBlobStore(t *testing.T) {
 	}
 }
 
-// TestExportFormatsNotWired 本版 aqx 与 chatgpt 已接入；线性格式与只读那档都要给明确的错因，
-// 不能落到「未知格式」那种含糊说法。
+// TestExportFormatsNotWired 只读那档与未知格式要给出明确错因，不能落到含糊说法。
+//
+// 可写格式全部接入之后这个测试只剩两条：openwebui 的「只认不写」与未知名字的可选清单。
 func TestExportFormatsNotWired(t *testing.T) {
 	ex := New(Options{})
 	c := conversation.New("c1", "t")
@@ -319,10 +320,6 @@ func TestExportFormatsNotWired(t *testing.T) {
 	if _, err := ex.Export(context.Background(), c, "openwebui", &buf); err == nil ||
 		!strings.Contains(err.Error(), "只认不写") {
 		t.Fatalf("openwebui: err = %v", err)
-	}
-	if _, err := ex.Export(context.Background(), c, "openai", &buf); err == nil ||
-		!strings.Contains(err.Error(), "未接入") {
-		t.Fatalf("openai: err = %v", err)
 	}
 	if _, err := ex.Export(context.Background(), c, "不存在", &buf); err == nil ||
 		!strings.Contains(err.Error(), "可写") {

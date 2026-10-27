@@ -219,7 +219,13 @@ func parseChatTree(conv chatConversation) importedTree {
 		UpdatedAt: fromUnixSeconds(conv.UpdateTime),
 	}
 	counts := map[string]int{}
-	for id, n := range conv.Mapping {
+	ids := make([]string, 0, len(conv.Mapping))
+	for id := range conv.Mapping {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // 源是 map：排序后再建，节点顺序才是确定的（同一份文件导两次结构相同）
+	for _, id := range ids {
+		n := conv.Mapping[id]
 		if n.Message == nil {
 			continue // 空根与挂在它下面的空节点：不是一个消息
 		}

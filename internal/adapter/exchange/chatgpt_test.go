@@ -222,7 +222,7 @@ func TestDetectChatGPT(t *testing.T) {
 	if f, ok := ex.Detect("conv.json", []byte(`[{"title":"t","mapping":{"a":`)); !ok || f.Name != "chatgpt" {
 		t.Fatalf("截断的头部也应认成 chatgpt: %+v %v", f, ok)
 	}
-	for _, head := range []string{`{"messages":[]}`, `[1,2,3]`, `not json`, ``} {
+	for _, head := range []string{`[1,2,3]`, `not json`, ``} {
 		if f, ok := ex.Detect("x.json", []byte(head)); ok {
 			t.Fatalf("%q 不该被认成 %s", head, f.Name)
 		}

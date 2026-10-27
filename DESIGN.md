@@ -1180,9 +1180,27 @@ type SessionImporter interface {
 `system`+`inject`→system（注入不是用户发言，降级成 system 比伪装成用户更诚实；
 SillyTavern 侧对应 `is_system`）。
 
-**导入**：`Detect` 看扩展名与文件头，认 `chatgpt`（顶层数组首项带 `mapping`）、
-Open WebUI 标准格式（`chat.history.messages` + `parentId` / `childrenIds`）、`sillytavern`、
-`aqx`。Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取。
+几条按代码写死的口径：
+- **旁支要报数**：只有真的太树上才有旁支，此时回执里加一句「旁支上的 N 条消息（只导出当前
+  那条链）」，没有旁支就不啰嗦。
+- **`openai` 侧 `content` 写字符串**，不写分片数组：兼容端里读字符串那一档最多。导入侧两种都
+  收——字符串，或 `{"type":"text","text":"…"}` 的数组（`input_text` / `output_text` 同义）；
+  图片分片只留地址，计入回执。
+- **纯工具调用的回答不写空行**：正文为空即跳过，但计一条「没有正文的消息」——写个空 `mes`
+  给对方，等于在别人的对话里塞一句空白发言。
+- **`sillytavern` 首行是 header**（`create_date` / `user_name` / `character_name`），其后每行
+  一条 `mes`。有些导出省掉 header 直接从消息起：首行带 `mes` 就整份按消息读。时间串按
+  **本地时间**写与读（对方就是按本地时间看的），精度只到秒。世界书、正则、作者注属于对方的
+  工作区配置，不导入，回执里说明。
+- **导入侧 `tool` / `function` 角色读成注入节点**，与 `chatgpt` 侧同口径；`developer` 读成
+  system；其余不认的角色计入回执。
+
+**导入**：`Detect` 看扩展名与文件头，认 `aqx`（ZIP 魔数或扩展名）、`chatgpt`（顶层数组首项带
+`mapping`）、Open WebUI 标准格式（`chat.history.messages` + `parentId` / `childrenIds`）、
+`sillytavern`（首行带 `mes` 或 `user_name` 一类字段的 `.jsonl`）、`openai`（顶层带 `messages`
+数组）。顺序按形状的特异度排，`messages` 最后——这个键太常见。认错时 `Import` 报因，不在
+`Detect` 里做完整解析（那等于把文件读两遍）。Open WebUI 与 ChatGPT 同为树形，共用一套节点/
+边读取。
 - **外部文件是不可信输入**：先解析成 DTO，再走 `conversation.Restore()` 的统一自检——
   重复 ID、悬空父、Head 不在树一律拒绝，不「尽力修复」。
 - **上限**：节点数、正文总字节、容器条目数与展开总量；`.aqx` 沿用技能安装的 zip-slip 口径
