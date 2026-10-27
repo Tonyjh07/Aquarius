@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-27 @ 0dd422a -->
+<!-- docs-sync: 2026-10-27 @ 5c1ac19 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
 > §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
@@ -182,12 +182,11 @@ Review 里提出但**经核实不成立**的：
 ### 新增一个斜杠命令
 
 1. DESIGN §7.3 命令表加行；
-2. `internal/app/session.go` 的 `execCommand` 加 case（含 `/help` 文案）；
-   MCP prompts 类动态命令不进 switch——经 `SetDynamicCommands` 注册、default 分支查询
+2. `internal/app/commands.go` 的 `commandTable` **加一条记录**——元数据（名字们 / 参数用例 /
+   描述）与处理函数同一行，`/help`、补全浮层与执行分派都读这张表，因此**没有第二处要改**
+   （D245）。只吃参数的处理函数用表里的适配器接上，命令输出仍走返回字符串；
+   MCP prompts 类动态命令不进这张表——经 `SetDynamicCommands` 注册，静态表未命中时才查
    （静态命令优先，§6.1 扩展点 #4）；
-   **两条命令清单必须同时改**：`commandCatalog`（`internal/app/commands.go`，`/help` 与补全浮层
-   共用）和这个 `switch`，一致性由 `TestCommandCatalogCoversExecCommand` 双向断言兜住——它从
-   `switch` 反推分支名、与表对账，漏改一侧必红；
 3. 命令输出走返回字符串（装配根交给 UI），轮次输出走 Presenter——app 不碰 IO；
 4. `session_test.go` / `plugins_test.go` 补命令测试（注入替身直接构造 Session）。
 

@@ -1843,6 +1843,17 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
+**命令注册表**（D245）：上表每一行在代码里就是**一条记录**——元数据（主名与别名、参数用例、
+一句话描述）与处理函数同一行，`/help`、补全浮层与执行分派读同一张表，别名并进同一张索引。
+查表未命中才落到动态命令（`/mcp:<server>:<prompt>`，随插件启停注册），再未命中才报未知命令。
+**加一条命令 = 表里加一行**，不再有「表与 switch 两处同时改」的第二处。
+
+- 特例不设特殊机制：`/quit` 与 `/exit` 是同一条记录的两个名字（处理函数返回退出请求），
+  `/help` 的处理函数就是渲染这张表本身。只吃参数的处理函数用一个适配器接上，不为它们
+  长出第二套注册形状。
+- 表序即 `/help` 的行序，也是补全浮层的静态段顺序；动态命令仍按名排序缀尾。
+- `uigui` 侧自己的命令分派不在本版范围（见 `docs/plan.md` 的 backlog）。
+
 ### 7.4 启动历史回放（D40）
 
 启动 `NewSession` 恢复最近会话后（`Store.List` 首条），装配根调用 `Session.ReplayHistory(ctx)`
