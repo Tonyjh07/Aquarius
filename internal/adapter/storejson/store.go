@@ -192,6 +192,36 @@ func (s *Store) path(id conversation.ID) string {
 	return filepath.Join(s.dir, string(id)+".json")
 }
 
+// EncodeTree 把整棵树编码成落盘用的 JSON 字节（缩进形式，与磁盘上的会话文件同形）。
+//
+// 导出复用这一份形状而不是另造一套「归档专用」的树：同一棵树在磁盘上和在归档里长一样，
+// 出问题时用编辑器打开任意一边都能读，也免得两份 wire 各自漂移（D242）。
+func EncodeTree(c *conversation.Conversation) ([]byte, error) {
+	if c == nil {
+		return nil, errors.New("storejson: nil conversation")
+	}
+	if err := c.Validate(); err != nil {
+		return nil, fmt.Errorf("storejson: 编码 %s 被拒（不变量校验失败）: %w", c.ID, err)
+	}
+	data, err := json.MarshalIndent(encode(c), "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("storejson: 序列化 %s: %w", c.ID, err)
+	}
+	return data, nil
+}
+
+// DecodeTree 解析整棵树（会话 ID 取自文件内容）并做完备的不变量自检。
+//
+// 与 Load 同一条路径：旧格式显式拒绝、残缺结构一律报因，不「尽力修复」。文件来自别处时
+// 更是如此——外部文件是不可信输入（D242）。
+func DecodeTree(data []byte) (*conversation.Conversation, error) {
+	var w wireTree
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, fmt.Errorf("解析 JSON: %w", err)
+	}
+	return decodeTree(w)
+}
+
 // wireTree 磁盘格式（本适配器自己的 DTO）。领域的三张结构表私有之后，这里必须自己定义
 // 「磁盘上长什么样」：字段名、嵌套形状、兼容策略都归适配器。领域只提供
 // Conversation.Snapshot / conversation.Restore 这一对搬运契约。
@@ -253,6 +283,12 @@ func decode(data []byte, id conversation.ID) (*conversation.Conversation, error)
 	if w.ID != id {
 		return nil, fmt.Errorf("文件内容属于会话 %q 而非 %q", w.ID, id)
 	}
+	return decodeTree(w)
+}
+
+// decodeTree wire 结构 → 领域树：旧格式显式识别（D19/D95）+ 不变量自检。
+// Load 与 DecodeTree 共用这一份，识别与校验口径不会分叉。
+func decodeTree(w wireTree) (*conversation.Conversation, error) {
 	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
 	root, ok := w.Nodes[conversation.MessageID(w.ID)]
 	if !ok || root.Role != conversation.RoleRoot || w.Head == "" {
