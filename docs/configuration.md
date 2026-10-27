@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-24 @ 4ab55ce -->
+<!-- docs-sync: 2026-10-27 @ e378a9a -->
 
 > 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
 > 配置**以 profile 为隔离单位**：
@@ -141,6 +141,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 |---|---|---|---|
 | `prompts.modules` | object | `{}` | **模块树**：`name → { text?, children?[] }`。叶 = 仅 `text`（命名片段）；组 = `children`（子模块名有序列表，可多级嵌套），亦可带 `text` 作组头 |
 | `prompts.persona` | string[] | `[]` | **人格** = 有序顶层引用列表；空 = 默认 `["@default","@env"]` |
+| `prompts.user_name` | string | `User` | `{{user}}` / `<USER>` 的取值（角色卡投影用）：你希望在角色卡里被怎么称呼。空 = 回落 `User`；改动只影响之后新建的角色会话，已在树里的人格不会被改写 |
 
 **展开（组装最终 system 人格）**：深度优先——组自身 `text` 在前、子模块文本换行接续（子模块间以空行
 连接），顶层引用间以空行连接；**空组不出**（有子模块但全部无文本 ⇒ 整组不输出）；缺名跳过、不阻断。
@@ -278,6 +279,23 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
   需要时用 `file_read` / `term_exec` 自己深入（脚本执行照常走权限矩阵与逐次确认）。
 - 装坏的技能（缺字段、名字不合规、YAML 解析失败）不会让助手起不来：跳过它并记警告。
 - 改动 `skills.dirs` 或增删技能目录后**重启生效**（不做文件监听）；GUI 侧将来有「重新扫描」。
+
+### characters（角色卡）
+
+角色卡只读导入（PNG / JSON / `.charx`），投影成一次会话的开头；卡的落位与解析口径属于设计，
+见 [DESIGN.md](../DESIGN.md)（端口与存储一节）。这里只列会影响行为的两个开关与用户名的取值。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `characters.prefer_system_prompt` | bool | `false` | `false` = **你的人设在前，卡的系统提示作为附加段**（推荐：卡不该悄悄替换你的规则与安全约束）；`true` = 卡里的 `system_prompt` 替换主提示，其中的 `{{original}}` 展开成你的人格，卡的角色设定段始终保留 |
+| `characters.apply_post_history` | bool | `true` | 每轮把卡的 `post_history_instructions` 追加在**历史之后**（语义就是「最后再说一句」）；内容随会话落盘，关掉只是不再发送，不会删掉 |
+
+- 你希望在卡里被怎么称呼，用 `prompts.user_name`（默认 `User`）指定，见上文 prompts 段。
+- 两个开关**只影响之后新建的角色会话**，已开始的会话保持建会话时的口径（人格与尾部指令
+  都已快照/落盘）；关掉 `apply_post_history` 对已有会话是**立即**生效的（它决定发不发，不改内容）。
+- 卡的 `creator_notes`（作者留言）、`tags`、`creator`、`character_version` 只展示，**不进上下文**；
+  世界书（Lorebook）与表情/背景/语音资产本版保留但不激活。
+- 卡目录是唯一事实来源：坏掉的卡在 `/character list` 里带警告跳过，不阻断其余角色。
 
 ### output
 
@@ -425,9 +443,10 @@ profile 配置 `<data>/profiles/default/config.json`：
   "tools": { "disabled": ["think"] },
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
-  "prompts": { "modules": {}, "persona": [] },
+  "prompts": { "modules": {}, "persona": [], "user_name": "User" },
   "input": { "language": "auto" },
   "skills": { "dirs": [] },
+  "characters": { "prefer_system_prompt": false, "apply_post_history": true },
   "output": { "tts": false, "notify": true },
   "audio": {
     "asr": { "provider": "openai", "model": "mimo-v2.5-asr" },

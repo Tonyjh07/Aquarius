@@ -1,5 +1,5 @@
 # 数据布局与备份
-<!-- docs-sync: 2026-10-23 @ 4869540 -->
+<!-- docs-sync: 2026-10-27 @ e378a9a -->
 
 > 本文与 `storejson` 的落盘实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
 > 原则：**本地优先、用户数据主权**——全部明文，卸载 = 删二进制 + 删目录，
@@ -30,6 +30,12 @@
     ├── skills/                  # 技能目录（放这儿即被认出，启动自动创建）
     ├── skill-cache/             # 技能安装的下载缓存
     ├── skill-installs.json      # 技能安装台账（装了哪些、从哪儿装的）
+    ├── characters/              # 角色卡（只读导入；一个角色一个目录）
+    │   └── <slug>/
+    │       ├── card.json        # 原卡 JSON 逐字节（导入后不再改写）
+    │       ├── meta.json        # 显示名 / slug / 来源 / spec / 导入时间 / 警告 / 头像文件名
+    │       ├── avatar.png       # 卡内嵌头像（没有则无此文件）
+    │       └── source.charx     # 仅 .charx 来源：原压缩包整份留档
     └── plugins/<name>/plugin.json  # MCP server 声明
 ```
 
@@ -74,6 +80,8 @@
   },
   "children": { "": ["01JX...AAA"], "01JX...AAA": ["01JX...BBB"], "…": ["…"] },
   "head": "01JX...DDD",
+  "character": "yuki",          // 角色卡 slug（键缺失/空 = 普通会话）
+  "tail": "Stay in character.", // 历史之后追加的 system 文本（键缺失/空 = 无）
   "revised_from": { "01JX...DDD": "01JX...CC1" },
   "created_at": "…", "updated_at": "…"
 }
@@ -95,6 +103,9 @@
   `audio` 另带 `transcript` 转写文本）。
 - **`outcome`**：`done` / `cancelled` / `error`（提交时一次定死）。
 - **`head`**：游标（初始 = Root）；**`revised_from`**：修订版本链（新 → 旧）。
+- **`character` / `tail`**：会话级元数据，**不是节点**——`character` 是这张会话用了哪张角色卡
+  （删卡后只是查不到，键仍保留），`tail` 是每轮追加在历史之后的 system 文本。两者都不进水位、
+  不受压缩与分支影响；键缺失即空。
 - 节点创建后内容只读；一切变化 = 新增节点 / 增删边 / 移动 head。改「用户消息」永远产生
   新节点，旧节点留在文件里（这就是分叉能切回去的原因）。
 - 写入是**整树重写**：`<id>.json.tmp` 写满 → 现有文件挪成 `.bak` → 临时文件原子换入。
@@ -149,3 +160,6 @@ Remove-Item ~/.aquarius/profiles/<name>/conversations/<id>.json,
   图片/文档会变成"缺失引用"。整目录备份最省事。
 - **会话树自检**：加载即校验（唯一实根、引用合法、无环、Head 在树），
   被手工改坏的文件会拒绝加载并报具体不变量。
+- **角色卡**：`characters/` 整个目录拷走即带走全部角色；会话只记 `character` 这个 slug，
+  所以只拷 `conversations/` 的话会话照常能打开（头像回默认、`tail` 仍在文件里）。
+  卡目录里的 `card.json` 是导入时的原样字节，改它等于自己造一张卡——没有校验，也不推荐。
