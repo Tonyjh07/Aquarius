@@ -116,7 +116,7 @@ func TestExportDefaultsToAQXInExportsDir(t *testing.T) {
 	if len(ex.exported) != 1 || ex.exported[0] != "aqx" {
 		t.Fatalf("导出格式 = %v, want [aqx]", ex.exported)
 	}
-	want := filepath.Join(dir, safeFileName(s.cur.Title)+".aqx")
+	want := filepath.Join(dir, port.FileStem(s.cur.Title)+".aqx")
 	if data, err := os.ReadFile(want); err != nil || string(data) != "aqx-bytes" {
 		t.Fatalf("导出文件 %s 内容 = %q, err = %v", want, data, err)
 	}
@@ -164,7 +164,7 @@ func TestExportDoesNotOverwrite(t *testing.T) {
 	if _, err := s.execExport(context.Background(), port.Command{}); err != nil {
 		t.Fatalf("export#2: %v", err)
 	}
-	stem := safeFileName(s.cur.Title)
+	stem := port.FileStem(s.cur.Title)
 	base := filepath.Join(dir, stem+".aqx")
 	if data, err := os.ReadFile(base); err != nil || string(data) != "first" {
 		t.Fatalf("第一份被覆盖了: %q, err = %v", data, err)
@@ -322,7 +322,8 @@ func TestExportWithoutDirRequiresPath(t *testing.T) {
 	}
 }
 
-// TestSafeFileName 标题变成文件名：保留字符换掉、长度截断、空标题回退。
+// TestSafeFileName 标题变成文件名：保留字符换掉、长度截断、空标题回退（规则在端口层，
+// 命令面与 GUI 保存框共用同一份）。
 func TestSafeFileName(t *testing.T) {
 	cases := map[string]string{
 		"正常标题":                   "正常标题",
@@ -333,7 +334,7 @@ func TestSafeFileName(t *testing.T) {
 		strings.Repeat("长", 100): strings.Repeat("长", 60),
 	}
 	for in, want := range cases {
-		if got := safeFileName(in); got != want {
+		if got := port.FileStem(in); got != want {
 			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)
 		}
 	}

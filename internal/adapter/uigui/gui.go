@@ -457,6 +457,9 @@ type UI struct {
 	// skillPicks 技能导入选择框结果通道（平台线程 → 设置窗 goroutine，D203）：容量小，
 	// 满即丢（结果只是「填进来源框」，丢了重选一次即可）；读出后 invalidate 设置窗重绘。
 	skillPicks chan skillPathPick
+	// filePicks 会话进出的文件框结果通道（平台线程 → 历史窗 goroutine）：满即丢；
+	// 读出后由帧首投一条内核命令（壳内不做搬运）。
+	filePicks chan filePick
 
 	// pal 主题原子快照（spawn 次窗时读取——applyTheme 在 goroutine 启动前写初始值，
 	// 运行时仅事件循环 goroutine 写；§15.7 跨窗只经原子快照）。
@@ -492,6 +495,7 @@ func newUI(opts Options, window bool) *UI {
 	u.focusPending = true // 初始焦点入输入栏（D63：编辑器不再每帧回投常驻焦点）
 	u.wins = newWinHost(nil)
 	u.skillPicks = make(chan skillPathPick, 4)
+	u.filePicks = make(chan filePick, 4)
 	u.applyTheme(opts.Theme)                            // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
 	u.hotkeyCfg.Store(opts.Hotkey)                      // 快捷键槽预存（托盘线程 hotkeySetting 读）
 	u.zoom.Store(clampKnobs(opts.Scale, opts.FontSize)) // 缩放槽预存（D90，夹取回落）

@@ -24,6 +24,22 @@ type Plat struct {
 
 	// menuNotice 非 Windows 的「无原生菜单」提示已发标记（一次性，见 shell_other.go）。
 	menuNotice atomic.Bool
+
+	// dlgReq 通用文件框（单选打开 / 保存）的请求体：请求线程写入、shell 线程取走呈现。
+	// 走原子槽而不是消息参数——过滤器、标题、预填名塞不进 wParam/lParam。
+	dlgReq atomic.Pointer[dlgRequest]
+	// dlgNotice 非 Windows 的「无文件框命令」提示已发标记（一次性，见 filedlg_other.go）。
+	dlgNotice atomic.Bool
+}
+
+// dlgRequest 通用文件框请求（打开与保存共用一个槽：同一时刻只可能有一个框在等）。
+type dlgRequest struct {
+	save    bool
+	purpose FilePurpose
+	title   string
+	name    string // 保存框预填文件名
+	defExt  string
+	filters []FileFilter
 }
 
 // New 构造平台实现（各平台方法见同目录 *_windows.go / *_other.go）。

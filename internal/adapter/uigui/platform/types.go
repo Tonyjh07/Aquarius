@@ -55,6 +55,44 @@ const (
 	PickSkillDir
 )
 
+// FilePurpose 通用文件对话框的用途（请求时带上、回传时原样带回）：平台层只当它是一个
+// 不透明标签，由 `uigui` 决定选中之后做什么。
+type FilePurpose int
+
+const (
+	// PurposeExchangeImport 会话进出的导入侧：选中文件 → 导入成新会话。
+	PurposeExchangeImport FilePurpose = iota
+	// PurposeExchangeExport 会话进出的导出侧：选一个落点 → 把当前会话写过去。
+	PurposeExchangeExport
+)
+
+// FileFilter 文件对话框的一项过滤器：显示名 + 分号分隔的通配符（如 `*.aqx;*.zip`）。
+type FileFilter struct {
+	Label   string
+	Pattern string
+}
+
+// OpenRequest 打开（单选）对话框请求。
+//
+// 与 RequestFileDialog 分开：那个是附件槽的固定语义（多选 + 直投附件），这里的过滤器、
+// 标题与后续动作都由调用方给。两者共用底层 GetOpenFileNameW，但语义不共用。
+type OpenRequest struct {
+	Purpose FilePurpose
+	Title   string
+	Filters []FileFilter
+}
+
+// SaveRequest 保存对话框请求。
+type SaveRequest struct {
+	Purpose FilePurpose
+	Title   string
+	// Name 预填的文件名（含扩展名）；空 = 不预填。
+	Name string
+	// DefExt 用户没写扩展名时补上的那个（含点）。
+	DefExt  string
+	Filters []FileFilter
+}
+
 // Config 构造选项（装配根/uigui 注入）。
 type Config struct {
 	// TrayIcon 托盘图标图像字节（.ico 里的某一个条目；档位由 uigui 定，默认 32px——
@@ -90,4 +128,8 @@ type Host interface {
 	// SkillPathPicked 技能导入的专用选择框结果（kind 区分文件/文件夹；空路径 = 取消）。
 	// 与 FilesPicked 分开：附件槽是「多选 + 直投附件」，用途与语义都不同（D203 口径四）。
 	SkillPathPicked(kind PickKind, path string)
+	// FilePicked 通用（单选）文件框结果（空路径 = 取消）：purpose 原样带回请求时的标签，
+	// 由宿主决定「导入这个文件」还是「写到这个落点」。与 FilesPicked / SkillPathPicked
+	// 分开：前两者各自绑死了「多选附件」与「技能目录」的语义。
+	FilePicked(purpose FilePurpose, path string)
 }

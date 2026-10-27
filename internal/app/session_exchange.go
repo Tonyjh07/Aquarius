@@ -98,7 +98,7 @@ func (s *Session) pickExportFormat(name string) (port.ExchangeFormat, error) {
 
 // exportPath 目标路径：显式 --path 优先（给了目录就放缺省文件名）；否则落在导出目录。
 func (s *Session) exportPath(want string, f port.ExchangeFormat) (string, error) {
-	base := safeFileName(s.cur.Title)
+	base := port.FileStem(s.cur.Title)
 	if base == "" {
 		base = "aquarius-" + string(s.cur.ID)
 	}
@@ -318,24 +318,6 @@ func uniquePath(path string) (string, error) {
 		}
 	}
 	return "", errors.New("导出目录里同名文件太多，请用 --path 指定文件名")
-}
-
-// safeFileName 把会话标题变成文件名：去掉路径分隔符与 Windows 保留字符，压掉首尾空白与点。
-func safeFileName(title string) string {
-	const maxRunes = 60
-	repl := func(r rune) rune {
-		switch r {
-		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', '\n', '\r', '\t', 0:
-			return '-'
-		}
-		return r
-	}
-	s := strings.Map(repl, strings.TrimSpace(title))
-	s = strings.Trim(s, " .-")
-	if r := []rune(s); len(r) > maxRunes {
-		s = strings.Trim(string(r[:maxRunes]), " .-")
-	}
-	return s
 }
 
 // humanBytes 字节数的可读写法（导出回执里给用户看）。

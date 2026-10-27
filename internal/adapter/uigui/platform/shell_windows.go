@@ -179,6 +179,12 @@ func (p *Plat) shellWndProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	case fileDlgMsg: // D104：Gio 侧附件槽点击 → 本线程呈现文件选择框（模态泵不嵌 Gio 泵）
 		p.showFileDlg()
 		return 0
+	case openFileMsg: // 通用单选文件框（会话导入）
+		p.showOpenFile()
+		return 0
+	case saveFileMsg: // 保存框（会话导出）
+		p.showSaveFile()
+		return 0
 	case skillPickMsg: // D203：设置窗「技能」页的导入选择框（wParam = 文件/文件夹用途）
 		p.showSkillPick(PickKind(wParam))
 		return 0

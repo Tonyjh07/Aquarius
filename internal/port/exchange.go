@@ -3,6 +3,7 @@ package port
 import (
 	"context"
 	"io"
+	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
@@ -63,6 +64,28 @@ type SessionImporter interface {
 	// Import 读入并自检。读侧的上限（节点数、正文总字节、容器条目数与展开总量）由实现自己守，
 	// 超限报错而不是静默截断。
 	Import(ctx context.Context, r io.Reader, f ExchangeFormat) (*conversation.Conversation, ExchangeReport, error)
+}
+
+// FileStem 会话标题 → 可用作文件名的词干：路径分隔符与 Windows 保留字符换成 '-'、压掉首尾
+// 空白与点、截到 60 字（超长标题在文件管理器里只剩一截，也躲开路径长度限制）。
+//
+// 放在端口而不是命令面：命令面的缺省落点与 GUI 保存框的建议文件名是同一个名字，两处各写一遍
+// 迟早会分叉（一处换了保留字符表，另一处照旧）。
+func FileStem(title string) string {
+	const maxRunes = 60
+	repl := func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', '\n', '\r', '\t', 0:
+			return '-'
+		}
+		return r
+	}
+	s := strings.Map(repl, strings.TrimSpace(title))
+	s = strings.Trim(s, " .-")
+	if r := []rune(s); len(r) > maxRunes {
+		s = strings.Trim(string(r[:maxRunes]), " .-")
+	}
+	return s
 }
 
 // ExchangeFormats 四种格式的静态事实（DESIGN §5.16 的格式表，D242）。

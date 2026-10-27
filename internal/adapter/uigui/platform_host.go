@@ -48,6 +48,15 @@ func (h *platHost) SkillPathPicked(kind platform.PickKind, path string) {
 	h.u.pushSkillPick(skillPathPick{kind: kind, path: path})
 }
 
+// FilePicked 通用文件框结果（空 = 取消，平台侧已滤掉）：投会话进出专用通道，由历史窗
+// 帧首取走并投内核命令。
+func (h *platHost) FilePicked(purpose platform.FilePurpose, path string) {
+	if path == "" {
+		return
+	}
+	h.u.pushFilePick(filePick{purpose: purpose, path: path})
+}
+
 // SystemThemeChanged 系统深浅变化（仅 system 档重解析）。
 func (h *platHost) SystemThemeChanged() { h.u.post(sysThemeMsg{}) }
 

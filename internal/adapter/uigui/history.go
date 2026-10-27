@@ -62,6 +62,12 @@ type historyState struct {
 	// btnNew 左栏标题行的「＋」新建对话（D160）：与键入 /new 同路径投命令，壳内不做任何
 	// 建会话逻辑（铁律 5）——内核对完自会发布新快照，左栏与右图随签名单帧刷新。
 	btnNew widget.Clickable
+	// btnImport / btnExport 会话进出的两个入口：导入走单选文件框、导出走保存框，选完都
+	// 只投一条内核命令（`/import <路径>`、`/export --path <路径>`），壳内不做搬运。
+	// 导出作用对象是**当前会话**——历史窗左栏能点开别的会话来导出这件事内核不支持，
+	// 摆一个会「先切会话再导出」的按钮等于替用户做主。
+	btnImport widget.Clickable
+	btnExport widget.Clickable
 	// cfm 跨窗同步的二次确认弹窗（D157）：帧态无常驻开关——弹窗在屏与否由主窗发布的
 	// 确认投影（u.confirmShare）决定，这里只存控件与滚动位。
 	cfm confirmDialog
@@ -83,6 +89,17 @@ func newHistoryState(u *UI) *historyState {
 	st.cfm.promptList.List.Axis = layout.Vertical
 	st.sync(u)
 	return st
+}
+
+// currentTitle 当前会话的标题（空串 = 没有当前会话行，或标题为空）。与 title() 分开：
+// 那个是给人看的（空标题写「新会话」、无行写「（未就绪）」），这里是拿去派生文件名的。
+func (st *historyState) currentTitle() string {
+	for _, s := range st.sessions {
+		if s.Current {
+			return s.Title
+		}
+	}
+	return ""
 }
 
 // title 当前会话标题（状态栏「会话：」与根节点陈述用）。
@@ -218,6 +235,15 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 		st.sendNew(u)
 		return
 	}
+	// 会话进出（DESIGN §5.16）：先要路径，结果回来后才投命令（那是下一帧的事）。
+	if st.btnImport.Clicked(gtx) {
+		st.requestImport(u)
+		return
+	}
+	if st.btnExport.Clicked(gtx) {
+		st.requestExport(u)
+		return
+	}
 	// D157：行尾「✕」**先收**。实测点 ✕ 时只投 /rmconv（✕ 的命中区把同位置的行遮掉），
 	// 但顺序照旧钉死在前：不依赖「谁遮了谁」这种命中链细节——将来排版挪动、或 Gio 的
 	// 遮挡口径变化，也不会一次点击既删会话又切会话。
@@ -300,6 +326,7 @@ func (st *historyState) sendGoto(u *UI, id conversation.MessageID) {
 func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	st.sync(u)
 	st.drainNodeAction(u, gtx)
+	st.drainFilePicks(u)
 	st.dispatch(u, gtx)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -387,6 +414,13 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 						return l.Layout(gtx)
 					}),
 					layout.Flexed(1, layout.Spacer{}.Layout),
+					// 会话进出的两个入口（DESIGN §5.16 的 GUI 出口）：「导入」读外部文件成一个
+					// 新会话、「导出」把**当前**会话写成一份归档。两者都只负责拿路径，选完投一条
+					// 内核命令——搬运、防覆盖、回执全在命令面（铁律 5：壳内不复制内核逻辑）。
+					layout.Rigid(histTextBtn(th, &st.btnImport, "导入")),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+					layout.Rigid(histTextBtn(th, &st.btnExport, "导出")),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 					// D160：标题行右端两颗钮——「＋」新建对话（左） + 「◀」收起左栏（右）。
 					// 新建排在收起**左侧**：收起钮语义是「把这条栏收掉」，贴边最右更顺；
 					// 且两颗钮都在这条标题行里，它们的位置语义与其它行操作一致。
@@ -472,6 +506,18 @@ func histChromeBtn(c *widget.Clickable, content layout.Widget) layout.Widget {
 			return layout.Inset{Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, content)
 		})
 	}
+}
+
+// histTextBtn 文字小钮（「导入」「导出」）：与字形象钮同款外壳，只是内容是一段字。
+//
+// 用文字不用图标：这两个动作在别处（命令行、文档）都以这两个词出现，图形符号得靠猜；
+// 左栏标题行只有这一处能放它们，字号与旁边的「会话」标签同档。
+func histTextBtn(th *material.Theme, c *widget.Clickable, label string) layout.Widget {
+	return histChromeBtn(c, func(gtx layout.Context) layout.Dimensions {
+		l := material.Caption(th, label)
+		l.Color = paperOf().text2
+		return l.Layout(gtx)
+	})
 }
 
 // histGlyphBtn 文字字形小钮（◀ 收起 / ▶ 展开）。

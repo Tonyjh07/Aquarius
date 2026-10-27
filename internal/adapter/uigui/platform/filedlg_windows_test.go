@@ -17,6 +17,35 @@ import (
 // legacy 二进制 Office（.doc/.xls/.ppt）同样不在档。
 var unsupportedDocExts = []string{"*.pptx", "*.ppt", "*.rtf", "*.doc", "*.xls"}
 
+// TestUTF16Filters 过滤器串：label/pattern 交替、末段收双 NUL；空表给「所有文件」。
+//
+// 串格式错一个 NUL，对话框就会把显示名当成通配符（或干脆一片空白），排查时看不出是
+// 编码问题——所以这里把形状钉住。
+func TestUTF16Filters(t *testing.T) {
+	got := utf16Filters([]FileFilter{
+		{Label: "归档 (*.aqx)", Pattern: "*.aqx"},
+		{Label: "所有文件 (*.*)", Pattern: "*.*"},
+	})
+	want := utf16Pairs("归档 (*.aqx)", "*.aqx", "所有文件 (*.*)", "*.*")
+	if len(got) != len(want) {
+		t.Fatalf("长度 = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("第 %d 个码元 = %d, want %d", i, got[i], want[i])
+		}
+	}
+	// 末尾必须双 NUL，否则对话框会把整个串读到底。
+	if got[len(got)-1] != 0 || got[len(got)-2] != 0 {
+		t.Fatalf("末段未收双 NUL: 末尾两码元 = %v", got[len(got)-2:])
+	}
+	// 空表回落「所有文件」：没有过滤器的对话框等于什么都不筛，不如明说。
+	fallback := utf16Filters(nil)
+	if last := fallback[len(fallback)-1]; last != 0 || len(fallback) < 4 {
+		t.Fatalf("空表回落串 = %v", fallback)
+	}
+}
+
 // TestAttachFilterOnlyOffersParsableDocs 过滤器只列能抽出文字的格式。
 func TestAttachFilterOnlyOffersParsableDocs(t *testing.T) {
 	if len(attachFilter)%2 != 0 {

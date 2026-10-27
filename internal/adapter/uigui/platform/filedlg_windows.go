@@ -11,10 +11,17 @@ import (
 
 var comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 
-var procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW") // D104 附件文件选择框
+var (
+	procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW") // D104 附件文件选择框
+	procGetSaveFileNameW = comdlg32.NewProc("GetSaveFileNameW") // 保存对话框（会话导出）
+)
 
 // 文件框常量。
-const fileDlgMsg = wmApp + 5 // 托盘线程呈现文件选择框（D104：模态泵不嵌 Gio 泵）
+const (
+	fileDlgMsg  = wmApp + 5 // 托盘线程呈现文件选择框（D104：模态泵不嵌 Gio 泵）
+	openFileMsg = wmApp + 7 // 托盘线程呈现通用单选文件框（会话导入）
+	saveFileMsg = wmApp + 8 // 托盘线程呈现保存框（会话导出）
+)
 
 // RequestFileDialog 请求 shell 线程打开文件选择框（D104：对话框自带模态泵、不能嵌 Gio
 // 泵，D72 菜单同理）。shell 未就绪（启动微窗/headless）= 静默放弃。
@@ -22,7 +29,141 @@ func (p *Plat) RequestFileDialog() {
 	if h := shellHWND.Load(); h != 0 {
 		procPostMessageW.Call(h, fileDlgMsg, 0, 0)
 	}
-} // openFileNameW OPENFILENAMEW（Win64 布局，GetOpenFileNameW 参数，D104）：
+}
+
+// RequestOpenFile 请求通用单选文件框（会话导入）：请求体先入原子槽，再投消息让 shell
+// 线程取走呈现——模态泵不能嵌 Gio 泵，与附件框同一口径。
+func (p *Plat) RequestOpenFile(req OpenRequest) {
+	h := shellHWND.Load()
+	if h == 0 {
+		return // 启动微窗/headless：无处呈现，静默放弃
+	}
+	p.dlgReq.Store(&dlgRequest{purpose: req.Purpose, title: req.Title, filters: req.Filters})
+	procPostMessageW.Call(h, openFileMsg, 0, 0)
+}
+
+// RequestSaveFile 请求保存框（会话导出）：同 RequestOpenFile。
+func (p *Plat) RequestSaveFile(req SaveRequest) {
+	h := shellHWND.Load()
+	if h == 0 {
+		return
+	}
+	p.dlgReq.Store(&dlgRequest{
+		save: true, purpose: req.Purpose, title: req.Title,
+		name: req.Name, defExt: req.DefExt, filters: req.Filters,
+	})
+	procPostMessageW.Call(h, saveFileMsg, 0, 0)
+}
+
+// showOpenFile 呈现单选文件框（shell 线程）：选中 → Host.FilePicked；取消/出错静默。
+func (p *Plat) showOpenFile() {
+	req := p.dlgReq.Swap(nil)
+	if req == nil {
+		return
+	}
+	path := openOneFile(req.title, req.filters)
+	if path == "" || p.host == nil {
+		return
+	}
+	p.host.FilePicked(req.purpose, path)
+}
+
+// showSaveFile 呈现保存框（shell 线程）：选定落点 → Host.FilePicked。
+//
+// 不设 OFN_OVERWRITEPROMPT：导出是「再存一份」，同名时命令面会加 -2 后缀并在回执里
+// 写清真落到哪个文件——让用户在对话框里确认覆盖、转头又存成 -2，反而对不上。
+func (p *Plat) showSaveFile() {
+	req := p.dlgReq.Swap(nil)
+	if req == nil {
+		return
+	}
+	path := saveOneFile(req.title, req.name, req.defExt, req.filters)
+	if path == "" || p.host == nil {
+		return
+	}
+	p.host.FilePicked(req.purpose, path)
+}
+
+// openOneFile 单选文件（OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST，不带多选）。
+func openOneFile(title string, filters []FileFilter) string {
+	const (
+		ofnHideReadOnly  = 0x4
+		ofnNoChangeDir   = 0x8
+		ofnPathMustExist = 0x800
+		ofnFileMustExist = 0x1000
+		ofnExplorer      = 0x80000
+	)
+	return runFileDlg(procGetOpenFileNameW, title, "", "", filters,
+		ofnHideReadOnly|ofnNoChangeDir|ofnExplorer|ofnPathMustExist|ofnFileMustExist)
+}
+
+// saveOneFile 保存框（OFN_PATHMUSTEXIST，不要求目标已存在）。
+func saveOneFile(title, name, defExt string, filters []FileFilter) string {
+	const (
+		ofnHideReadOnly  = 0x4
+		ofnNoChangeDir   = 0x8
+		ofnPathMustExist = 0x800
+		ofnExplorer      = 0x80000
+	)
+	return runFileDlg(procGetSaveFileNameW, title, name, defExt, filters,
+		ofnHideReadOnly|ofnNoChangeDir|ofnExplorer|ofnPathMustExist)
+}
+
+// runFileDlg 打开/保存框共用一次呈现：proc 决定是哪一个 proc，其余参数照 OPENFILENAMEW
+// 填。返回空 = 取消或出错。
+func runFileDlg(proc *syscall.LazyProc, title, name, defExt string, filters []FileFilter, flags uint32) string {
+	filter := utf16Filters(filters)
+	t, err := syscall.UTF16FromString(title)
+	if err != nil {
+		return ""
+	}
+	buf := make([]uint16, 32768)
+	if name != "" {
+		// 预填文件名：调用方给的词干可能含中文，UTF16FromString 的终止 NUL 正好补齐。
+		if w, err := syscall.UTF16FromString(name); err == nil && len(w) <= len(buf) {
+			copy(buf, w)
+		}
+	}
+	ofn := openFileNameW{
+		lStructSize: uint32(unsafe.Sizeof(openFileNameW{})),
+		lpstrFilter: &filter[0],
+		lpstrFile:   &buf[0],
+		nMaxFile:    uint32(len(buf)),
+		lpstrTitle:  &t[0],
+		flags:       flags,
+	}
+	if defExt != "" {
+		if w, err := syscall.UTF16FromString(defExt); err == nil {
+			ofn.lpstrDefExt = &w[0]
+		}
+	}
+	if h := shellHWND.Load(); h != 0 {
+		ofn.hwndOwner = h
+	}
+	r, _, _ := proc.Call(uintptr(unsafe.Pointer(&ofn)))
+	if r == 0 {
+		return ""
+	}
+	paths := parseMultiSelect(buf) // 单选也是这条解析（一个 token = 完整路径）
+	if len(paths) == 0 {
+		return ""
+	}
+	return paths[0]
+}
+
+// utf16Filters 过滤器列表 → 对话框串（label/pattern 成对，末尾双 NUL）；空表给「所有文件」。
+func utf16Filters(filters []FileFilter) []uint16 {
+	if len(filters) == 0 {
+		filters = []FileFilter{{Label: "所有文件 (*.*)", Pattern: "*.*"}}
+	}
+	segs := make([]string, 0, len(filters)*2)
+	for _, f := range filters {
+		segs = append(segs, f.Label, f.Pattern)
+	}
+	return utf16Pairs(segs...)
+}
+
+// openFileNameW OPENFILENAMEW（Win64 布局，GetOpenFileNameW 参数，D104）：
 // 下划线字段 = x64 对齐填充（指针 8 对齐），lStructSize 传 unsafe.Sizeof。
 type openFileNameW struct {
 	lStructSize       uint32

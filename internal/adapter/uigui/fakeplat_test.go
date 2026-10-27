@@ -16,6 +16,9 @@ import (
 type fakePlat struct {
 	mu sync.Mutex
 
+	// host 宿主回调（SetHost 装；文件框回放据此回传结果）。
+	host platform.Host
+
 	// —— 可配置状态 ——
 	Native     bool            // NativeWindowControl
 	Main       platform.Handle // MainHandle
@@ -44,6 +47,10 @@ type fakePlat struct {
 	OnTopMost  func(on bool)
 	OnNotice   func(msg string)
 	OnMenuPost func(kind platform.MenuKind)
+	// OnOpenRequest / OnSaveRequest 文件框请求钩子：返回 (路径, true) = 假装用户选了它
+	// （平台线程会把结果回传给宿主）；返回 "", false = 用户取消。
+	OnOpenRequest func(req platform.OpenRequest) (string, bool)
+	OnSaveRequest func(req platform.SaveRequest) (string, bool)
 
 	// —— 记账 ——
 	Presents     int
@@ -60,10 +67,13 @@ type fakePlat struct {
 	FileRequests int
 	// SkillPicks 技能导入选择框请求（D203：记录用途，不真弹框）。
 	SkillPicks []platform.PickKind
-	MenuPosts  []platform.MenuKind
-	Notices    []string
-	Closes     []platform.Handle
-	Focuses    []platform.Handle
+	// OpenRequests / SaveRequests 会话进出的文件框请求（记录请求内容，不真弹框）。
+	OpenRequests []platform.OpenRequest
+	SaveRequests []platform.SaveRequest
+	MenuPosts    []platform.MenuKind
+	Notices      []string
+	Closes       []platform.Handle
+	Focuses      []platform.Handle
 	// OpenURLs 请求用默认浏览器打开的链接；OpenURLErr 非 nil = 该请求失败（界面反馈）。
 	OpenURLs   []string
 	OpenURLErr error
@@ -124,8 +134,13 @@ func (f *fakePlat) HideWindow(platform.Handle)                    { f.Hides++ }
 func (f *fakePlat) HideMain(platform.Handle)                      { f.Hides++ }
 func (f *fakePlat) DarkMode() bool                                { return f.Dark }
 func (f *fakePlat) SystemFontCandidates() []string                { return f.Fonts }
-func (f *fakePlat) SetHost(platform.Host)                         {}
-func (f *fakePlat) DropTray()                                     {}
+func (f *fakePlat) SetHost(h platform.Host) {
+	f.mu.Lock()
+	f.host = h
+	f.mu.Unlock()
+}
+
+func (f *fakePlat) DropTray() {}
 
 func (f *fakePlat) MoveWindow(x, y int32) {
 	f.mu.Lock()
@@ -191,6 +206,38 @@ func (f *fakePlat) RequestPathPick(kind platform.PickKind) {
 	f.mu.Lock()
 	f.SkillPicks = append(f.SkillPicks, kind)
 	f.mu.Unlock()
+}
+
+// RequestOpenFile 记下请求（钩子非 nil 时按请求回放一次选择结果，模拟用户选完）。
+func (f *fakePlat) RequestOpenFile(req platform.OpenRequest) {
+	f.mu.Lock()
+	f.OpenRequests = append(f.OpenRequests, req)
+	f.mu.Unlock()
+	if f.OnOpenRequest != nil {
+		if path, ok := f.OnOpenRequest(req); ok {
+			f.replayPick(req.Purpose, path)
+		}
+	}
+}
+
+// RequestSaveFile 同 RequestOpenFile（保存框）。
+func (f *fakePlat) RequestSaveFile(req platform.SaveRequest) {
+	f.mu.Lock()
+	f.SaveRequests = append(f.SaveRequests, req)
+	f.mu.Unlock()
+	if f.OnSaveRequest != nil {
+		if path, ok := f.OnSaveRequest(req); ok {
+			f.replayPick(req.Purpose, path)
+		}
+	}
+}
+
+// replayPick 模拟平台线程回传（与真实现一样只发一笔、空路径 = 取消）。
+func (f *fakePlat) replayPick(purpose platform.FilePurpose, path string) {
+	if path == "" || f.host == nil {
+		return
+	}
+	f.host.FilePicked(purpose, path)
 }
 
 func (f *fakePlat) SubclassCloseToHide(platform.Handle) {

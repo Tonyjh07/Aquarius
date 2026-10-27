@@ -138,6 +138,25 @@ func (u *UI) pushSkillPick(p skillPathPick) {
 	}
 }
 
+// filePick 通用文件框（会话进出）结果的一笔：purpose 决定「导入这个文件」还是「写到这个
+// 落点」，path 是用户选中的路径。
+type filePick struct {
+	purpose platform.FilePurpose
+	path    string
+}
+
+// pushFilePick 投递文件框结果（平台线程调用）：通道满即丢（重选一次即可），随后催历史窗
+// 重绘让帧首取走——与技能选择框同一口径，只是取走的是历史窗。
+func (u *UI) pushFilePick(p filePick) {
+	select {
+	case u.filePicks <- p:
+	default:
+	}
+	if u.wins != nil {
+		u.wins.invalidateKind(winHistory)
+	}
+}
+
 // drainSkillPicks 帧首取走选择框结果：**只填来源框**，由用户再点「安装」才落盘
 // （D203 口径四：选择动作 ≠ 安装动作，避免误点即复制一整棵树）。
 func (f *settingsForm) drainSkillPicks(u *UI) {
