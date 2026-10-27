@@ -2,110 +2,107 @@ package app
 
 import (
 	"context"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestCommandCatalogCoversExecCommand 静态清单与 execCommand 分支必须一一对应（D103②
-// 单一事实源：help/补全数据与可执行命令不漂移）。
-//
-// 断言集**从 session.go 的 switch 解析得来**，不手抄：手工维护的 want 表正是当初漏掉
-// /help 的原因（清单说自己是单一事实源，实际有两处手工维护）。新增命令只改一处就会
-// 在这里红或自然通过；改错地方（只在 switch 加分支、或只在表里加条目）则必红。
-func TestCommandCatalogCoversExecCommand(t *testing.T) {
-	got := map[string]bool{}
-	for _, ci := range commandCatalog {
-		for _, n := range ci.Names {
-			if got[n] {
-				t.Fatalf("命令 %s 重复入表", n)
+// TestCommandTableSelfCheck 注册表自检（D245）：名字不重复、每条记录有描述与处理函数、
+// 别名与主名指向同一条记录。此前这里从 execCommand 的 switch 反推分支名做双向断言——
+// switch 已随注册表退役，断言对象改成表自己。
+func TestCommandTableSelfCheck(t *testing.T) {
+	if len(commandTable) == 0 {
+		t.Fatal("命令注册表为空，自检无意义")
+	}
+	seen := map[string]int{}
+	for i, e := range commandTable {
+		if len(e.Names) == 0 {
+			t.Fatalf("第 %d 条记录没有名字", i)
+		}
+		if e.Desc == "" {
+			t.Fatalf("命令 %v 缺描述（help 行与补全浮层都要用）", e.Names)
+		}
+		if e.Run == nil {
+			t.Fatalf("命令 %v 没有处理函数（不可执行的幽灵命令）", e.Names)
+		}
+		for _, n := range e.Names {
+			if strings.ContainsAny(n, " \t/") {
+				t.Fatalf("命令名 %q 含空白或斜杠（命令名不含斜杠，见 port.CommandInfo）", n)
 			}
-			got[n] = true
-			if ci.Desc == "" {
-				t.Fatalf("命令 %s 缺描述", n)
+			if j, dup := seen[n]; dup {
+				t.Fatalf("命令名 %q 在第 %d 与第 %d 条记录里重复", n, j, i)
 			}
+			seen[n] = i
 		}
 	}
 
-	want := execCommandCases(t)
-	for n := range want {
-		if !got[n] {
-			t.Errorf("execCommand 有分支 %q 但清单里没有（补全浮层将看不到它）", n)
+	// 索引与表一致：每个名字都能查回它自己的那条记录（别名与主名同记录）。
+	for i, e := range commandTable {
+		for _, n := range e.Names {
+			got, ok := commandIndex[n]
+			if !ok {
+				t.Fatalf("索引里的名字 %q 查不到", n)
+			}
+			if got != &commandTable[i] {
+				t.Fatalf("名字 %q 指向了别的记录", n)
+			}
 		}
 	}
-	for n := range got {
-		if !want[n] {
-			t.Errorf("清单里有 %q 但 execCommand 没有对应分支（不可执行的幽灵命令）", n)
-		}
+	if len(commandIndex) != len(seen) {
+		t.Fatalf("索引 %d 个名字, want %d", len(commandIndex), len(seen))
 	}
 }
 
-// execCommandCases 用 AST 读 session.go 里 execCommand 的 switch 分支名。
-func execCommandCases(t *testing.T) map[string]bool {
-	t.Helper()
-	f, err := parser.ParseFile(token.NewFileSet(), "session.go", nil, 0)
+// TestCommandNamesAreDispatched 表里每条命令（含每个别名）都能经 Handle 分派到——
+// 不认识的名字会落到「未知命令」分支，那说明记录与索引脱节。
+func TestCommandNamesAreDispatched(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	for _, e := range commandTable {
+		for _, n := range e.Names {
+			if _, ok := commandIndex[n]; !ok {
+				t.Fatalf("命令 %q 不在索引里", n)
+			}
+		}
+	}
+	// /help 是最安全的探针：它只读表、不碰会话状态，且必须能命中。
+	out, err := s.execCommand(context.Background(), port.Command{Name: "help"})
 	if err != nil {
-		t.Fatalf("解析 session.go 失败: %v", err)
+		t.Fatalf("execCommand(help) = %v", err)
 	}
-	var fn *ast.FuncDecl
-	for _, d := range f.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == "execCommand" {
-			fn = fd
-			break
+	if !strings.Contains(out, "/help") {
+		t.Fatalf("help 输出里没有 /help 自己:\n%s", out)
+	}
+	if _, err := s.execCommand(context.Background(), port.Command{Name: "不存在的命令"}); err == nil ||
+		!strings.Contains(err.Error(), "未知命令") {
+		t.Fatalf("未知命令 err = %v, want 未知命令", err)
+	}
+}
+
+// TestCommandAliasesAreEquivalent 别名与主名走同一条记录：/exit 与 /quit 都返回退出请求，
+// 参数与行为不分叉（D245：别名是同一记录的多名字，不是第二条记录）。
+func TestCommandAliasesAreEquivalent(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	quit, exit := commandIndex["quit"], commandIndex["exit"]
+	if quit == nil || exit == nil {
+		t.Fatal("quit/exit 未同时入索引")
+	}
+	if quit != exit {
+		t.Fatal("quit 与 exit 应是同一条记录（别名不是第二条命令）")
+	}
+	for _, name := range []string{"quit", "exit"} {
+		if _, err := s.execCommand(context.Background(), port.Command{Name: name}); err != ErrQuit {
+			t.Fatalf("/%s err = %v, want ErrQuit", name, err)
 		}
 	}
-	if fn == nil {
-		t.Fatal("session.go 里找不到 execCommand")
-	}
-	var sw *ast.SwitchStmt
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		if sw != nil {
-			return false // 只取最外层的命令分派 switch
-		}
-		if s, ok := n.(*ast.SwitchStmt); ok {
-			sw = s
-			return false
-		}
-		return true
-	})
-	if sw == nil {
-		t.Fatal("execCommand 里找不到 switch")
-	}
-	out := map[string]bool{}
-	for _, stmt := range sw.Body.List {
-		cc, ok := stmt.(*ast.CaseClause)
-		if !ok {
-			continue
-		}
-		for _, expr := range cc.List {
-			lit, ok := expr.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				continue
-			}
-			name, unquoteErr := strconv.Unquote(lit.Value)
-			if unquoteErr != nil {
-				t.Fatalf("无法解析分支名 %s: %v", lit.Value, unquoteErr)
-			}
-			out[name] = true
-		}
-	}
-	if len(out) == 0 {
-		t.Fatal("execCommand 的分支为空，对照无意义")
-	}
-	return out
 }
 
 // TestSessionCommandsPort Commands() 快照（D103②）：静态在前；动态缀尾按名排序；
 // 未带 meta 的动态命令按名生成无描述条目。
 func TestSessionCommandsPort(t *testing.T) {
 	s := &Session{}
-	if got := s.Commands(); len(got) != len(commandCatalog) {
-		t.Fatalf("静态清单 %d 条, want %d", len(got), len(commandCatalog))
+	if got := s.Commands(); len(got) != len(commandTable) {
+		t.Fatalf("静态清单 %d 条, want %d", len(got), len(commandTable))
 	}
 	s.SetDynamicCommands(map[string]CommandHandler{
 		"mcp:beta:probe": func(context.Context, []string) (string, error) { return "", nil },
@@ -114,10 +111,10 @@ func TestSessionCommandsPort(t *testing.T) {
 		"mcp:beta:probe": {Names: []string{"mcp:beta:probe"}, Desc: "探测"},
 	})
 	got := s.Commands()
-	if len(got) != len(commandCatalog)+2 {
-		t.Fatalf("清单 %d 条, want %d（静态+2 动态）", len(got), len(commandCatalog)+2)
+	if len(got) != len(commandTable)+2 {
+		t.Fatalf("清单 %d 条, want %d（静态+2 动态）", len(got), len(commandTable)+2)
 	}
-	dyn := got[len(commandCatalog):]
+	dyn := got[len(commandTable):]
 	if dyn[0].Names[0] != "mcp:alpha:ask" || dyn[1].Names[0] != "mcp:beta:probe" {
 		t.Fatalf("动态序 = %s, %s", dyn[0].Names[0], dyn[1].Names[0])
 	}

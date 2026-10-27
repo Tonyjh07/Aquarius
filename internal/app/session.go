@@ -445,76 +445,17 @@ func (s *Session) cancelWatchersFor(id conversation.ID) {
 	}
 }
 
-// execCommand 命令分发（DESIGN §7.3；树交互命令随 M1 启用）。
+// execCommand 命令分发（DESIGN §7.3）：静态注册表 → 动态命令 → 未知。
 func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, error) {
-	switch cmd.Name {
-	case "new":
-		return s.execNew(ctx, cmd)
-	case "list":
-		return s.execList(ctx, cmd)
-	case "switch":
-		return s.execSwitch(ctx, cmd)
-	case "title":
-		return s.execTitle(ctx, cmd)
-	case "goto":
-		return s.execGoto(ctx, cmd)
-	case "edit":
-		return s.execEdit(ctx, cmd)
-	case "regen":
-		return s.execRegen(ctx, cmd)
-	case "respond":
-		return s.execRespond(ctx, cmd)
-	case "inject":
-		return s.execInject(ctx, cmd)
-	case "branch":
-		return s.execBranch(ctx, cmd)
-	case "rm":
-		return s.execRm(ctx, cmd)
-	case "rmconv":
-		return s.execRmconv(ctx, cmd)
-	case "exit":
-		return "", ErrQuit
-	case "compact":
-		return s.execCompact(ctx, cmd)
-	case "summary":
-		return s.execSummary(ctx, cmd)
-	case "mic":
-		return s.execMic(ctx, cmd)
-	case "permission":
-		return s.execPermission(ctx, cmd)
-	case "unattended":
-		return s.execUnattended(ctx, cmd.Args)
-	case "memory":
-		return s.execMemory(ctx, cmd)
-	case "usage":
-		return s.execUsage(ctx, cmd)
-	case "jobs":
-		return s.jobsReport(ctx, cmd.Args)
-	case "watch":
-		return s.watchReport(ctx, cmd.Args)
-	case "skill":
-		return s.execSkill(ctx, cmd.Args)
-	case "quit":
-		return "", ErrQuit
-	case "help":
-		static, dyn := s.commandsSplit() // D103：help 与补全浮层同源（命令清单表渲染）
-		return renderHelp(static, dyn), nil
-	case "plugin":
-		return s.execPlugin(ctx, cmd.Args)
-	case "model":
-		return s.execModel(ctx, cmd.Args)
-	case "think":
-		return s.execThink(ctx, cmd.Args)
-	case "effort":
-		return s.execEffort(ctx, cmd.Args)
-	default:
-		// 动态命令（§6.1 扩展点 #4）：静态命令未命中时查询
-		//（装配根随插件启停注册 /mcp:<server>:<prompt> 等）。
-		if h := s.dynamicCommand(cmd.Name); h != nil {
-			return h(ctx, cmd.Args)
-		}
-		return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
+	if e, ok := commandIndex[cmd.Name]; ok {
+		return e.Run(s, ctx, cmd)
 	}
+	// 动态命令（§6.1 扩展点 #4）：静态命令未命中时查询
+	//（装配根随插件启停注册 /mcp:<server>:<prompt> 等）。
+	if h := s.dynamicCommand(cmd.Name); h != nil {
+		return h(ctx, cmd.Args)
+	}
+	return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
 }
 
 // persist 落盘当前会话。
