@@ -854,7 +854,8 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `Capture` | screencap（Windows `PrintWindow`/`BitBlt`；非 Windows 报不支持） | — | 假抓屏（固定 PNG） |
 | `WebSearch` / `WebFetch` | webdeepseek（Search + Fetch，D197）/ webbrave（Search）/ webfetchlocal（HTTP + readability + html-to-markdown）；webchain 串成有序降级链 | — | 脚本化提供商 |
 | `Transcriber` / `Synthesizer` | asrchat（chat-completions 音频形状，D179）/ asrwhisper（进程内 whisper.cpp，无 cgo）/ asropenai（`/audio/transcriptions`）/ asrfunasr（`/recognition`）/ mimotts（MiMo TTS 三种模型）/ vitstts（`/voice/vits`）/ gptsovitstts（`/tts`）/ micwin（`waveIn` 采集）/ audioplay（`PlaySound` 播放）；按 `audio.*.kind` 分派 | Tier-1 Go 插件 | 假转写 / 假合成 |
-| `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/导出 | Tier-1 Go 插件 | 脚本 |
+| `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/逐条镜像到文件 | Tier-1 Go 插件 | 脚本 |
+| `SessionExporter` / `SessionImporter` | exchange（`aqx` 无损 / `chatgpt` 树 / `openai`·`sillytavern` 线性；D242） | — | 内存往返 |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
 | `WatchProber` / `WatchManager` | probe（command/file/http 取样，D190）/ app.watcher | — | 脚本化探针 |
 | `Presenter` / `Prompter` | uitui（TUI）、repl、uigui（GUI 悬浮球，D43/M5） | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
@@ -1074,6 +1075,95 @@ type SkillCatalog interface {
   避免出现「一半新一半旧」的目录。
 - **不做「安装即授权」**：`scripts/` 一律经 `term_exec` 走 Confirm 与权限矩阵；安装动作本身
   不授予任何执行能力。
+
+### 5.16 `exchange.go` —— 会话进出端口（导出 / 导入，D242）
+
+把会话搬出去、把别人的会话搬进来。**无损与互通是两种东西**：无损格式必须能原样往返，
+互通格式按别人的规范如实有损，两者共用一层解析但绝不互相冒充。
+
+```go
+// ExchangeFormat 一种可导出/导入的格式（命令面、文件名后缀与帮助文本同源）。
+type ExchangeFormat struct {
+    Name     string // 命令面标识：aqx | chatgpt | openai | sillytavern | openwebui
+    Ext      string // 建议扩展名（含点）
+    Label    string // 用户面名称
+    Lossy    bool   // 是否丢弃树事实
+    LossNote string // 丢什么（一句话；帮助与回执共用）
+    // NoExport 只认不写（openwebui：它的标准格式与 chatgpt 树同族，读进来不难，但
+    // 我们只给一份树形出口，不维护第二套同义产物）。
+    NoExport bool
+}
+
+// ExchangeReport 一次进出的回执：数量、字节、丢了什么。
+type ExchangeReport struct {
+    Format  string
+    Nodes   int      // 写出的节点数 / 读入的节点数
+    Bytes   int64
+    Dropped []string // 「附件 3 个（源文件不含字节）」这类事实行，逐项可读
+}
+
+// SessionExporter /export：把一棵树按指定格式写进 w。消费方 = app.Session。
+type SessionExporter interface {
+    Formats() []ExchangeFormat
+    Export(ctx context.Context, c *conversation.Conversation, format string, w io.Writer) (ExchangeReport, error)
+}
+
+// SessionImporter /import：读一个外部文件，变成一棵**待入库**的树。
+type SessionImporter interface {
+    Detect(name string, head []byte) (ExchangeFormat, bool)
+    Import(ctx context.Context, r io.Reader, f ExchangeFormat) (*conversation.Conversation, ExchangeReport, error)
+}
+```
+
+**为什么不复用 `port.OutputAdapter`**：那个端口的语义是「每提交一条回答就 `Deliver` 一次」
+（§7.2 的扇出），而导出是用户点一次、作用于**整棵树**的动作。硬塞进同一个接口，要么让
+`OutputAdapter` 长出「什么时候不自动触发」的分支，要么让导出在每次回答后偷偷跑一遍。
+§14 里的「导出文件输出器」指的是前者（把回答镜像到文件），与 `/export` 是两件事，各自保留。
+
+**四种格式**
+
+| Name | 形状 | 保真 | 用途 |
+|---|---|---|---|
+| `aqx` | ZIP 容器：`tree.json` + `blobs/<sha256>` | **无损** | 备份、换机、交给另一个 Aquarius |
+| `chatgpt` | ChatGPT `conversations.json` 的 `mapping` 树 | 有损 | 给出得这套的工具（Open WebUI 能直接吃） |
+| `openai` | `{"messages":[{role,content}]}` | 有损 | 调试工具、微调、喂给任意 OpenAI 兼容端 |
+| `sillytavern` | `.jsonl`：首行 header + 每行一条 `mes` | 有损 | RP 生态（SillyTavern / RisuAI 一类）中 |
+
+**只读的一档**：`openwebui`（`chat.history.messages` + `parentId` / `childrenIds` +
+`currentId`）**只认不写**——它与 `chatgpt` 同为树形，多维护一套同义产物只会让两条路各自
+漂移。要喂 Open WebUI，给它 `chatgpt` 那份即可（它见到 `mapping` 会自动转换）。
+
+**`aqx`（无损）**：容器里 `tree.json` 就是落盘 wire 形状（与 `storejson` 同一份 `wireTree`），
+`blobs/` 平铺内容寻址的附件字节。往返必须**等价**——节点、边、版本链、Head、时间戳、
+每个分片的全部字段、附件字节逐项相同。顶层带 `format` / `version`；导入遇到更高版本直接拒绝
+并说明，不猜。不装：profile 配置（模型、persona 引用）、记忆文档、`.bak` 代际——那些不是
+「这个会话」的一部分。
+
+**`chatgpt`（树形互通）**：直接用它的 `mapping`——节点表 + `parent` / `children` + 顶层
+`current_node`。选它而不自定一套，是因为它已经是事实标准；而我们的树本来就是树，
+`parent` 单值、`children` 有序，映射不需要降级成 DAG。节点 ID 重新分配，源 UUID 只用于建边。
+
+**`openai` / `sillytavern`（线性互通）**：线性装不下一棵树，所以口径必须写死——**取 Head
+路径**（= 当前上下文那条链），不做「自动挑一个分支」的猜测。两者都只含正文分片：思考、工具、
+附件分片丢弃并计入 `Dropped`。角色映射：`user`→user、`assistant`→assistant、
+`system`+`inject`→system（注入不是用户发言，降级成 system 比伪装成用户更诚实；
+SillyTavern 侧对应 `is_system`）。
+
+**导入**：`Detect` 看扩展名与文件头，认 `chatgpt`（顶层数组首项带 `mapping`）、
+Open WebUI 标准格式（`chat.history.messages` + `parentId` / `childrenIds`）、`sillytavern`、
+`aqx`。Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取。
+- **外部文件是不可信输入**：先解析成 DTO，再走 `conversation.Restore()` 的统一自检——
+  重复 ID、悬空父、Head 不在树一律拒绝，不「尽力修复」。
+- **上限**：节点数、正文总字节、容器条目数与展开总量；`.aqx` 沿用技能安装的 zip-slip 口径
+  （绝对路径、`..`、符号链接一律拒绝）。超限报错，不静默截断。
+- **落成新会话**：新会话 ID 由装配根分配（与 `/new` 同源），节点 ID 全部重新分配；源 ID 只进
+  回执。**不覆盖任何既有会话**——同名标题加后缀。
+- **丢了什么要说**：ChatGPT 的图片引用是 URL、`tool` 角色与 `content_type` 变体我们不认，
+  一律计入 `Dropped` 并在回执里逐项列出；不把残缺装成完整。
+
+**命令面与界面**：`/export [--format <name>] [--path <文件>]`（缺省 `aqx`）、`/import <文件>`。
+GUI 出口在会话历史窗（左栏「导入」、会话右键「导出」），文件选择走 `platform` 的对话框
+（保存侧需新增 `GetSaveFileNameW` 一条，打开侧已有）。
 
 ---
 
@@ -1418,6 +1508,8 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/skill install <路径\|链接>` | 安装技能（D202/D203，§5.15）：单文件 `SKILL.md` / 文件夹 / `.zip` / GitHub 链接（`url#分支`）；同名不覆盖 |
 | `/skill remove <名字>` | 卸载安装副本（仅 `<profile>/skills/<名字>`；来自 `skills.dirs` 的技能请在文件系统里处理） |
 | `/skill update <名字\|all>` | 更新：git 来源拉取、压缩包来源重新下载后覆盖副本；不带名字 = 更新全部可更新项 |
+| `/export [--format <name>] [--path <文件>]` | 导出当前会话（D242，§5.16）：缺省 `aqx`（无损，可原样回来）；`chatgpt`（树形互通，给 Open WebUI 一类吃）、`openai` / `sillytavern`（线性，取 Head 路径）。回执明说丢了什么 |
+| `/import <文件>` | 导入外部会话（D242）：按扩展名与文件头认 `aqx` / ChatGPT / Open WebUI / SillyTavern；落成**新**会话，不覆盖既有会话 |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
@@ -1919,7 +2011,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   `EmbeddedResource` 的文本展开、`ResourceLink` 可读一次——当前一律降级为 `[image content omitted]` 之类的占位
   （本轮冲刺内做，口径落定后再编号）
 - **语音后续**：本地 ASR 引擎（whisper.cpp 类，需 cgo 或外挂二进制，与单二进制口径冲突）、
-  TTS 流式合成（边合成边播）、导出文件输出器
+  TTS 流式合成（边合成边播）；**导出文件输出器**（把每条回答镜像到文件，§7.2 的
+  `OutputAdapter` 形态）——与 `/export` 的按次整树导出是两件事，后者见 §5.16
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
 - **GUI 后续（M5/D43 之外，[gui-design.md](docs/gui-design.md) 预留）**：悬浮球本体转常规窗口形态（D43 只预留设计
