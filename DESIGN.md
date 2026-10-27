@@ -1359,9 +1359,9 @@ characters/<slug>/
 type DelegateInfo struct {
     Name      string   // 配置里的名字（delegate 工具 agent 参数的取值）
     Command   string   // 实际要执行的命令行（配置原样）
-    Title     string   // initialize 报的 agentInfo.title（没探过为空）
-    Version   string   // agentInfo.version
-    Available bool     // 可执行文件在 PATH 上 + 上次探测通过
+    Title     string   // initialize 报的 agentInfo.title；没转过为空（启动不做握手）
+    Version   string   // agentInfo.version；同上
+    Available bool     // 可执行文件在 PATH 上
     Note      string   // 不可用原因（用户面一句话）
 }
 
@@ -1423,10 +1423,16 @@ v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP s
 授权链搅在一起，出了事也说不清是谁批的。
 
 **配置与发现**：配置形状照 `mcpServers` 抄——`command` / `args` / `env`（值支持 `secret:`），
-另加 `enabled` 与 `default`。**不内置各家预设**：registry 里四十多家代理的命令名、启动参数、
-登录方式都由它们自己决定，变得比我们发版快；内置一份等于每次发版都替别人追版本。
+另加 `workdir` / `enabled` / `default`。**不内置各家预设**：registry 里四十多家代理的命令名、
+启动参数、登录方式都由它们自己决定，变得比我们发版快；内置一份等于每次发版都替别人追版本。
 启动时按 `PATH` 探一遍 `command` 是否可执行，探到的才标 `Available`（不可执行的留在清单里并
-写明原因——「装了但 PATH 上找不到」比「清单里没有」好排查）。
+写明原因——「装了但 PATH 上找不到」比「清单里没有」好排查）。**启动只探「能不能执行」，不做
+握手**：握手要真把对方拉起来（有的代理第一次启动会要登录、会打印横幅、会建目录），启动时
+挨个跑一遍是拿用户的时间换一张清单。所以 `Title` / `Version` 在第一次转交后才填上，没转过就
+是空——清单里该有的「名字 / 命令行 / 能不能用」不需要握手也都有。
+
+`workdir` 的取值：工具参数优先，其次配置里那条 `workdir`，都没有 = 家目录（与 `JobSpec.WorkDir`
+同一口径）。两者都不是围栏，只是子进程的起点。
 
 **转交的投影**：回填 = **报告 + 一行摘要**。摘要含工具调用数、改动文件数、耗时、停止原因，
 正文是它交付的那段。子代理那几十次工具调用、思考片段、计划表**都不进会话树**：那是它的过程，
@@ -1833,7 +1839,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/character import <路径>` | 导入角色卡（PNG / JSON / `.charx`）：解析后原卡逐字节留档；同名不覆盖，先 remove 再导入；回执明说丢了/没启用什么 |
 | `/character start <slug> [序号]` | 用角色卡开**新会话**：卡的人格段与用户人格合成 persona，示例进注入节点，开场白（或第 N 条备用问候）作首条 assistant 消息；清屏并回放开场 |
 | `/character remove <slug>` | 删除角色卡目录（二次确认）；已引用它的会话照常可用，只是头像回落默认 |
-| `/delegate list` | 外部代理清单（D244，§5.18）：名字 / 命令行 / 版本 / 可用性（PATH 上探没探到）/ 不可用原因 / 哪个是缺省。**不带参数直接转交**：那由模型经 `delegate` 工具发起（转交是模型的活，不该让用户替它写任务描述） |
+| `/delegate [list]` | 外部代理清单（D244，§5.18）：名字 / 命令行 / 版本 / 可用性（PATH 上探没探到）/ 不可用原因 / 哪个是缺省；无参同 `list`。**只有 list**：转交是模型经 `delegate` 工具发起的，用户不在这里替它写任务描述 |
 | `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
 | `/help` | 帮助 |
 
