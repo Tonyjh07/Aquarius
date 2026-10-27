@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-27 @ e378a9a -->
+<!-- docs-sync: 2026-10-27 @ 52cce2b -->
 
 > 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
 > 配置**以 profile 为隔离单位**：
@@ -297,6 +297,30 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
   世界书（Lorebook）与表情/背景/语音资产本版保留但不激活。
 - 卡目录是唯一事实来源：坏掉的卡在 `/character list` 里带警告跳过，不阻断其余角色。
 
+### delegate（外部代理转交）
+
+把复杂任务整个交给一个外部代理程序（ACP 协议）。适配器与协议面属于设计，见
+[DESIGN.md](../DESIGN.md)（端口一节）；这里只列会改变行为的配置。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `delegate.agents.<名字>.command` | string | — | 启动命令（按 `PATH` 探测）；名字就是 `delegate` 工具的 `agent` 取值与 `/delegate list` 里看到的那个 |
+| `delegate.agents.<名字>.args` | []string | `[]` | 启动参数（各家代理自己定；registry 里能查到） |
+| `delegate.agents.<名字>.env` | object | `{}` | 子进程环境变量，值可用 `secret:<名>` 引用密钥库/环境变量 |
+| `delegate.agents.<名字>.workdir` | string | 空 | 子进程起点目录；空 = 家目录。**它是起点不是围栏**，那个程序按它自己的策略访问文件 |
+| `delegate.agents.<名字>.enabled` | bool | `true` | `false` = 留着配置但不探测、不注册 |
+| `delegate.agents.<名字>.default` | bool | 见下 | `delegate` 不指定 `agent` 时用哪个；多个都标时取配置里第一个，都不标时取第一个可用的 |
+| `delegate.timeout_sec` | int | `1800` | 单次转交总闸（防进程挂住）；`0` = 不限，最大 86400 |
+
+- **键缺失不等于没配**：`agents` 为空或全不可用时，`delegate` 工具不注册（模型压根看不到它），
+  `/delegate list` 会给出「还没配任何代理」与一段配置指引。
+- **不发预设、不自动安装**：各家代理的命令名与启动参数由它们自己决定，我们抄一份只会过时；
+  装什么、装哪版由你决定。想要「一键装了就能用」，去它们各自的官方安装说明。
+- **每次转交都是全新会话**：进程跑完即关，`sessionId` 不跨次使用；追问要重述背景。
+- **权限真话**：批准一次转交 = 批准那个程序在它自己判断下动手。我们的权限等级矩阵只管我们
+  自己的工具链，管不到它；它愿意反问的权限请求会回落到你的确认框，不愿意问的我们知道不了。
+- 转交的转录**不进会话树**，也不落盘——只看最终报告与一行摘要。
+
 ### output
 
 | 字段 | 类型 | 默认 | 说明 |
@@ -362,6 +386,7 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 
 未知键解析时忽略，**写回时原样保留**（provider 条目内的无关键同样保留——编辑器按
 原名合并，Q10 口径）。GUI 语音键与 `/mic` 已可用；TUI 尚无语音入口（用 `/mic`）。
+`delegate.agents` 为空时照常启动（工具不注册），填了才探测；设置窗「外部代理」页尚未落地。
 
 ## 密钥规则（逐 provider、逐把钥匙）
 
@@ -447,6 +472,7 @@ profile 配置 `<data>/profiles/default/config.json`：
   "input": { "language": "auto" },
   "skills": { "dirs": [] },
   "characters": { "prefer_system_prompt": false, "apply_post_history": true },
+  "delegate": { "agents": {}, "timeout_sec": 1800 },
   "output": { "tts": false, "notify": true },
   "audio": {
     "asr": { "provider": "openai", "model": "mimo-v2.5-asr" },
