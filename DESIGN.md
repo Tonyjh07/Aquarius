@@ -1196,19 +1196,27 @@ SillyTavern 侧对应 `is_system`）。
   system；其余不认的角色计入回执。
 
 **导入**：`Detect` 看扩展名与文件头，认 `aqx`（ZIP 魔数或扩展名）、`chatgpt`（顶层数组首项带
-`mapping`）、Open WebUI 标准格式（`chat.history.messages` + `parentId` / `childrenIds`）、
+`mapping`）、`openwebui`（顶层带 `chat`，且 `chat` 里有 `history` 或 `messages`）、
 `sillytavern`（首行带 `mes` 或 `user_name` 一类字段的 `.jsonl`）、`openai`（顶层带 `messages`
-数组）。顺序按形状的特异度排，`messages` 最后——这个键太常见。认错时 `Import` 报因，不在
-`Detect` 里做完整解析（那等于把文件读两遍）。Open WebUI 与 ChatGPT 同为树形，共用一套节点/
-边读取。
+数组）。顺序按形状的特异度排，`messages` 最后——这个键太常见，连 Open WebUI 的会话都得先按
+`chat` 这层外壳认出来，才轮得到它。认错时 `Import` 报因，不在 `Detect` 里做完整解析（那等于
+把文件读两遍）。
+
+Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份「跳过空壳、子节点往上接」的规则，
+但各自的源结构不同（一份是 `mapping`，一份是扁平消息表或对象表），所以解析各写一遍，不硬抽
+一个泛型。它的两种导出形状都收：`chat.history.messages`（以 id 为键的对象 +
+`chat.history.currentId`）与 `chat.messages`（数组，每项自带 `parentId`）；后者没有「当前节点」，
+按最深链定 Head。时间戳是 Unix 秒。
 - **外部文件是不可信输入**：先解析成 DTO，再走 `conversation.Restore()` 的统一自检——
   重复 ID、悬空父、Head 不在树一律拒绝，不「尽力修复」。
-- **上限**：节点数、正文总字节、容器条目数与展开总量；`.aqx` 沿用技能安装的 zip-slip 口径
-  （绝对路径、`..`、符号链接一律拒绝）。超限报错，不静默截断。
+- **上限**：文件 256 MB、节点数 20000、正文合计 64 MB；`.aqx` 另加容器条目数与展开总量，
+  并沿用技能安装的 zip-slip 口径（绝对路径、`..`、符号链接一律拒绝）。超限报错，不静默截断。
 - **落成新会话**：新会话 ID 由装配根分配（与 `/new` 同源），节点 ID 全部重新分配；源 ID 只进
   回执。**不覆盖任何既有会话**——同名标题加后缀。
 - **丢了什么要说**：ChatGPT 的图片引用是 URL、`tool` 角色与 `content_type` 变体我们不认，
   一律计入 `Dropped` 并在回执里逐项列出；不把残缺装成完整。
+- **同一份文件导两次结构相同**：源里的节点表是 map 时按 ID 排序后再建，边也按父 ID 排序输出，
+  免得同一份文件每次导入得到不同的兄弟顺序。
 
 **命令面与界面**：`/export [--format <name>] [--path <文件>]`（缺省 `aqx`）、`/import <文件>`。
 GUI 出口在会话历史窗（左栏「导入」、会话右键「导出」），文件选择走 `platform` 的对话框

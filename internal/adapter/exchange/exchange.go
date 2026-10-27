@@ -90,7 +90,7 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 	case "sillytavern":
 		return e.importSillyTavern(ctx, r)
 	case "openwebui":
-		return nil, rep, fmt.Errorf("导入格式 %q 本版未接入", f.Name)
+		return e.importOpenWebUI(ctx, r)
 	default:
 		return nil, rep, fmt.Errorf("不认识的导入格式 %q", f.Name)
 	}
@@ -107,6 +107,9 @@ func (e *Exchange) Detect(name string, head []byte) (port.ExchangeFormat, bool) 
 	}
 	if looksLikeChatGPT(head) {
 		return formatNamed("chatgpt")
+	}
+	if looksLikeOpenWebUI(head) {
+		return formatNamed("openwebui")
 	}
 	if looksLikeSillyTavern(head) {
 		return formatNamed("sillytavern")

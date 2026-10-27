@@ -3,6 +3,7 @@ package exchange
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -193,7 +194,13 @@ func buildEdges(nodes []importedNode, newIDs map[string]conversation.MessageID, 
 		order[n.Parent] = append(order[n.Parent], n.SrcID)
 	}
 	out := make([]conversation.SnapshotEdge, 0, len(order))
-	for parent, kids := range order {
+	parents := make([]string, 0, len(order))
+	for parent := range order {
+		parents = append(parents, parent)
+	}
+	sort.Strings(parents) // map 没有顺序：排一遍，同一份文件导两次得到同样的边
+	for _, parent := range parents {
+		kids := order[parent]
 		pid, ok := newIDs[parent]
 		if !ok {
 			return nil, fmt.Errorf("节点 %q 的父节点不在文件里", parent)
