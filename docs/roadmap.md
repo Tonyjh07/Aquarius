@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-26 @ 15fa9a9 -->
+<!-- docs-sync: 2026-10-27 @ 5e4fb0f -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -28,9 +28,11 @@
 | M11 屏幕捕获与语音 | `window_list`/`screen_capture`、转写与播报、`/mic`、语音设置页 | 已落地（S12/S8/S8b） |
 
 **版本基线**：`v0.2.0` 已于 2026-10-26 发布（tag `v0.2.0`）。上一版 `v0.1.0` 发布于 2026-10-23
-（tag `v0.1.0` → `3c2767b`）。当前开发分支 `feat/v0.2.0`：v0.2.0 的 P0（守规）、P1（聚合根归位）与
-P2（收口与归位 + 常驻内存优化，批次 P2-1…P2-10）**全部落地**；其中的 `uigui` 拆包已按实测评移入
-backlog（D234）。下一个版本的能力扩张见 [plan.md](plan.md) 的 backlog。
+（tag `v0.1.0` → `3c2767b`）。v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 +
+常驻内存优化，批次 P2-1…P2-10）**全部落地**；其中的 `uigui` 拆包已按实测评移入 backlog（D234）。
+
+当前开发分支 `feat/v0.3.0`（能力扩张）：**命令注册表**（D245）与**会话进出**（D242）已落地，
+余额见 [plan.md](plan.md)。
 
 ---
 
@@ -92,6 +94,8 @@ backlog（D234）。下一个版本的能力扩张见 [plan.md](plan.md) 的 bac
 | v0.2.0-P0 | 架构守卫测试（D211）、`/help` 入清单（D212）、展示文本归一（D213） | 已落地 2026-10-23 |
 | v0.2.0-P1 | 会话聚合根归位：只读访问器与 `View()`、`ValidateEveryChange` 自检开关、三张 map 私有 + `Snapshot`/`Restore`、`storejson` 自带 wire DTO（D214/D215/D216） | 已落地 2026-10-23 |
 | v0.2.0-P2 | 收口与归位 + 常驻内存优化：前缀解析归一、`JobManager` 按消费方拆、提示词具名类型、`SessionDeps` 拆端口、设置逻辑归位、`theme` 令牌数据化、零碎真债（D217；批次 P2-1…P2-7；`uigui` 拆包已移入 backlog，D234）、常驻内存（P2-8…P2-10） | 已落地 2026-10-26（随 v0.2.0 发布） |
+| v0.3.0-C | 命令注册表：`/help`、补全与分派读同一张表，29 个 `switch` 分支收成 28 条记录（D245） | 已落地 2026-10-27 |
+| v0.3.0-A | 会话进出：一份无损（`aqx`）+ 三份互通（`chatgpt` / `openai` / `sillytavern`）+ 一份只读（Open WebUI）、命令面、历史窗两入口（D242） | 已落地 2026-10-27 |
 
 **`v0.2.0-P2` 已落地**（批次号固定；完工，无剩余项）：
 
@@ -118,6 +122,26 @@ backlog（D234）。下一个版本的能力扩张见 [plan.md](plan.md) 的 bac
 | P1-2 | `77b9e10 refactor: let the domain produce the tree view` | `View()`/`SiblingGroup`/`nodeLess` 归领域；`makeTreeSnapshot` 只做形状转换，`tree.go` 251→194 行（3 files, +176/−79） |
 | P1-3 | `9ff9523 test: verify the whole tree after every change, behind a build tag` | `ValidateEveryChange` 开关 + 四条变更路径接入（含 `Revise` 的 carry/clone 提前返回分支）；`-tags aqvalidate` 下全量绿（4 files, +70） |
 | P1-4 | `2f5f488 refactor: close the conversation tree behind the aggregate root` | 三张 map 私有；`Snapshot`/`Restore` 契约；`storejson` 自带 `wireTree`/`wireNode`；新增聚合根守门测试；测试直读改走访问器（33 files, +777/−393） |
+
+**`v0.3.0-C`（命令注册表）的落笔顺序**：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| C-1 | `77dedfe docs: give commands one table that carries both the metadata and the handler` | 文档笔：`DESIGN.md` §7.3 记录形状 + D245 + 开发指南「新增一个命令」收成一步（4 files, +95/−25） |
+| C-2 | `5171297 refactor: dispatch commands from one table that also carries their metadata` | 29 分支 `switch` 收成 28 条 `commandEntry`（名字们 / 参数用例 / 描述 / 处理函数）；别名 = 同记录多名字；`/quit` 与 `/help` 都走处理函数、不留特殊分支；表在 `init()` 填（`/help` 自引用成环），之后只读；只吃参数的处理器经适配器接上。表自检 + 逐条分派 + 别名等价 + 未知命令报因取代原 AST 对账，`/help` 文案字节不变（3 files, +218/−191） |
+
+**`v0.3.0-A`（会话进出）的落笔顺序**：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| A-1 | `05daf1d feat: add the session exchange port and the one format table behind it` | 端口 `SessionExporter`/`SessionImporter`、`ExchangeFormat`/`ExchangeReport`、五格式表（唯一事实源，有损必须写 `LossNote`）；装配前命令报「本构建未接入」（3 files, +142/−0） |
+| A-2 | `c577378 feat: make aqx a lossless round trip over the on-disk tree shape` | `aqx` = ZIP（`manifest.json` + 与磁盘同形的 `tree.json` + `blobs/<sha256>`）；`storejson` 加 `EncodeTree`/`DecodeTree`；节点/边/版本链/Head/时间戳/分片/附件字节逐项往返等价，条目数与字节数上限、zip-slip 防护（5 files, +1010/−3） |
+| A-3 | `6df01c2 feat: speak chatgpt's mapping tree for both export and import` | `mapping` + `current_node` 双向；源 ID 只建边、节点 ID 全重分配、根下补边、`Restore` 自检；空壳与装不下正文的消息跳过、子节点顺父接最近祖先（6 files, +922/−16） |
+| A-4 | `f616eec feat: project the head path into the two linear exchange formats` | `openai` 与 `sillytavern` 双向：只取 Head 路径、只带正文、`system`/`inject` 降级 system、思考/工具/附件计入 `Dropped`、有旁支才写「旁支上的 N 条消息」（7 files, +891/−18） |
+| A-5 | `7f1268c feat: read Open WebUI exports and guard every import the same way` | Open WebUI 两种导出形状只读接入；上限覆盖扁平格式；`Detect` 认 ZIP → `mapping` → `chat` → `.jsonl` → `messages`；map 来源按 ID 排序、边按父排序，同一文件导两次结构相同（6 files, +563/−8） |
+| A-6 | `5e73c13 feat: give /export and /import their command surface` | `/export [--format] [--path]` 与 `/import <文件>` 各一条记录；缺省落 `<profile>/exports`、标题派生文件名、同名加 `-2`、写一半失败删半截；导入落新会话（ID 与 `/new` 同源分配、Root ID 连边一起换再自检），失败不动当前会话；回执两行 + 真丢了才列丢项（8 files, +803/−8） |
+| A-7 | `f20eaee feat: put the exchange entries in the history window` | 历史窗左栏标题行「导入」「导出」两颗文字钮，只拿路径、选完各投一条命令、取消不投；`platform` 新增 `RequestOpenFile`/`RequestSaveFile`（Windows `GetSaveFileNameW`、非 Windows zenity/kdialog/osascript，保存框不设覆盖确认）；标题 → 文件名规则上移 `port.FileStem`（19 files, +913/−35） |
+| A-8 | `5e4fb0f test: accept the exchange end to end and lock the interop output` | 三份互通 golden 锁字节（验收树连节点 ID 一起固定，否则 chatgpt 产物每次不同）+ 导两次字节相同 + 产物读得回；命令面 `/export` → `/import` 逐项等价（ID 抹平后比对），有损路径核对回执与节点数缩减（5 files, +589/−0） |
 
 > 里程碑与步骤是两套编号：里程碑（M<n>）是 `DESIGN.md` §12 的验收单位，
 > 步骤（S<n>）是当时的执行批次。多个步骤可以落在同一个里程碑里。
