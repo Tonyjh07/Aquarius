@@ -310,7 +310,7 @@ func TestExportWithoutBlobStore(t *testing.T) {
 	}
 }
 
-// TestExportFormatsNotWired 本版只有 aqx 接入；其余格式与只读那档都要给明确的错因，
+// TestExportFormatsNotWired 本版 aqx 与 chatgpt 已接入；线性格式与只读那档都要给明确的错因，
 // 不能落到「未知格式」那种含糊说法。
 func TestExportFormatsNotWired(t *testing.T) {
 	ex := New(Options{})
@@ -320,9 +320,9 @@ func TestExportFormatsNotWired(t *testing.T) {
 		!strings.Contains(err.Error(), "只认不写") {
 		t.Fatalf("openwebui: err = %v", err)
 	}
-	if _, err := ex.Export(context.Background(), c, "chatgpt", &buf); err == nil ||
+	if _, err := ex.Export(context.Background(), c, "openai", &buf); err == nil ||
 		!strings.Contains(err.Error(), "未接入") {
-		t.Fatalf("chatgpt: err = %v", err)
+		t.Fatalf("openai: err = %v", err)
 	}
 	if _, err := ex.Export(context.Background(), c, "不存在", &buf); err == nil ||
 		!strings.Contains(err.Error(), "可写") {

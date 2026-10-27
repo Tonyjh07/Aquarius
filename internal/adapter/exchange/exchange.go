@@ -57,7 +57,9 @@ func (e *Exchange) Export(ctx context.Context, c *conversation.Conversation, for
 	switch format {
 	case "aqx":
 		return e.exportAQX(ctx, c, w)
-	case "chatgpt", "openai", "sillytavern":
+	case "chatgpt":
+		return e.exportChatGPT(ctx, c, w)
+	case "openai", "sillytavern":
 		return rep, fmt.Errorf("导出格式 %q 本版未接入（现有的可写格式：%s）", format, writableNames())
 	case "openwebui":
 		return rep, errors.New("openwebui 只认不写：要喂 Open WebUI 用 chatgpt 那份")
@@ -79,7 +81,9 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 			return nil, rep, err
 		}
 		return c, rep, nil
-	case "chatgpt", "openwebui", "openai", "sillytavern":
+	case "chatgpt":
+		return e.importChatGPT(ctx, r)
+	case "openwebui", "openai", "sillytavern":
 		return nil, rep, fmt.Errorf("导入格式 %q 本版未接入", f.Name)
 	default:
 		return nil, rep, fmt.Errorf("不认识的导入格式 %q", f.Name)
@@ -89,22 +93,31 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 // Detect 按文件名与文件头认格式（DESIGN §5.16）。
 //
 // 只做形状判断，不解析内容：认错时 Import 会报因，而在这里做完整解析等于把文件读两遍。
+// 本版认 aqx 与 chatgpt 两种树形来源；线性格式的识别随各自的导入一起接（见 docs/plan.md）。
 func (e *Exchange) Detect(name string, head []byte) (port.ExchangeFormat, bool) {
-	formats := port.ExchangeFormats()
-	for _, f := range formats {
-		if f.Name != "aqx" {
-			continue
-		}
-		// ZIP 魔数（`PK\x03\x04`）：aqx 是唯一装在 ZIP 里的格式，认出容器即可。
-		if len(head) >= 4 && head[0] == 'P' && head[1] == 'K' &&
-			(head[2] == 3 || head[2] == 5 || head[2] == 7) && head[3] == 4 {
-			return f, true
-		}
-		if strings.EqualFold(fileExt(name), ".aqx") {
+	if isZip(head) || strings.EqualFold(fileExt(name), ".aqx") {
+		return formatNamed("aqx")
+	}
+	if looksLikeChatGPT(head) {
+		return formatNamed("chatgpt")
+	}
+	return port.ExchangeFormat{}, false
+}
+
+// formatNamed 按名取格式事实（格式表里没有就不算认出来）。
+func formatNamed(name string) (port.ExchangeFormat, bool) {
+	for _, f := range port.ExchangeFormats() {
+		if f.Name == name {
 			return f, true
 		}
 	}
 	return port.ExchangeFormat{}, false
+}
+
+// isZip ZIP 魔数（`PK\x03\x04` 等四种块类型）：aqx 是唯一装在 ZIP 里的格式。
+func isZip(head []byte) bool {
+	return len(head) >= 4 && head[0] == 'P' && head[1] == 'K' &&
+		(head[2] == 3 || head[2] == 5 || head[2] == 7) && head[3] == 4
 }
 
 // fileExt 文件名的小写扩展名（含点；没有则空）。
