@@ -159,29 +159,27 @@ func TestDrainFilePicksIgnoresUnknownPurpose(t *testing.T) {
 	}
 }
 
-// TestExchangeFiltersCoverWritableFormats 导出过滤器只列**可写**格式，且不漏任何一种：
-// 漏了 = 用户写了扩展名却在框里找不到那一档；列了只读那档 = 许诺写不出来。
-func TestExchangeFiltersCoverWritableFormats(t *testing.T) {
-	filters := exchangeSaveFilters()
-	if len(filters) == 0 {
-		t.Fatal("导出过滤器为空")
-	}
-	joined := ""
-	for _, f := range filters {
-		joined += " " + f.Pattern
-	}
+// TestExchangeFiltersMatchWhatTheEntryWrites 两颗钮各自只承诺它会兑现的东西：
+//
+//   - 导出走界面时**固定**是无损归档（换格式是命令行的事），所以保存框只列 `.aqx`——
+//     列了 `.json` / `.jsonl` 就等于许诺「选这份扩展名就能得到那个格式」，而那不会发生；
+//   - 导入必须覆盖全部五档格式：认哪几种就得在框里给到哪几种，否则用户写了扩展名却
+//     在框里找不到那一档。
+func TestExchangeFiltersMatchWhatTheEntryWrites(t *testing.T) {
+	aqxExt := ""
 	for _, fm := range port.ExchangeFormats() {
-		if fm.NoExport {
-			if strings.Contains(joined, fm.Ext) && fm.Ext != ".json" {
-				t.Errorf("导出过滤器列了只读格式 %s 的扩展名 %s", fm.Name, fm.Ext)
-			}
-			continue
-		}
-		if !strings.Contains(joined, fm.Ext) {
-			t.Errorf("导出过滤器缺可写格式 %s 的扩展名 %s（%s）", fm.Name, fm.Ext, joined)
+		if !fm.NoExport && fm.Name == "aqx" {
+			aqxExt = fm.Ext
 		}
 	}
-	// 导入侧要覆盖全部格式：认哪几种就该在框里给到哪几种。
+	if aqxExt == "" {
+		t.Fatal("格式表里找不到 aqx 的扩展名")
+	}
+	save := exchangeSaveFilters()
+	if len(save) != 1 || save[0].Pattern != "*"+aqxExt {
+		t.Fatalf("导出过滤器 = %+v, want 只有 *%s", save, aqxExt)
+	}
+
 	open := ""
 	for _, f := range exchangeOpenFilters() {
 		open += " " + f.Pattern

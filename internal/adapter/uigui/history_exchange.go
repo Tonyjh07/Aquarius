@@ -25,13 +25,14 @@ func exchangeOpenFilters() []platform.FileFilter {
 	}
 }
 
-// exchangeSaveFilters 导出侧过滤器：只列**可写**的三档（`openwebui` 只认不写，不在这里
-// 给入口——选得到却写不出来比选不到更糟）。
+// exchangeSaveFilters 导出侧过滤器：**只列这一条路真正会写的格式**。
+//
+// 界面上的「导出」固定走缺省的无损归档（带附件字节、能原样导回）。若在这里列出
+// `*.json` / `*.jsonl`，用户选了「ChatGPT 会话」却拿到一份 aqx 字节——过滤器就成了一句
+// 不会兑现的承诺。换格式是命令行的事（`/export --format … --path …`），界面不替他挑。
 func exchangeSaveFilters() []platform.FileFilter {
 	return []platform.FileFilter{
 		{Label: "Aquarius 归档 (*.aqx)", Pattern: "*.aqx"},
-		{Label: "ChatGPT 会话 (*.json)", Pattern: "*.json"},
-		{Label: "SillyTavern 对话 (*.jsonl)", Pattern: "*.jsonl"},
 	}
 }
 
