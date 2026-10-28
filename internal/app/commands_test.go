@@ -123,6 +123,80 @@ func TestSessionCommandsPort(t *testing.T) {
 	}
 }
 
+// TestCommandsNameSlicesAreCopies 清单里的 Names 是拷贝：UI 顺手改一个名字不该污染注册表。
+//
+// 表是包级只读量，而清单每帧都会被补全浮层拿走——交底层切片等于把「只读」变成君子协定。
+func TestCommandsNameSlicesAreCopies(t *testing.T) {
+	s := &Session{}
+	got := CommandCatalog() // 静态清单（不经 Session，直接投影）
+	for _, ci := range got {
+		for i := range ci.Names {
+			ci.Names[i] = "改坏了"
+		}
+	}
+	for i, e := range commandTable {
+		for _, n := range e.Names {
+			if n == "改坏了" {
+				t.Fatalf("表里的名字被改写了（记录 %d）", i)
+			}
+		}
+	}
+	// 动态命令带 meta 的那条同样要拷贝。
+	s.SetDynamicCommands(map[string]CommandHandler{
+		"mcp:srv:ask": func(context.Context, []string) (string, error) { return "", nil },
+	}, map[string]port.CommandInfo{
+		"mcp:srv:ask": {Names: []string{"mcp:srv:ask"}, Desc: "问"},
+	})
+	s.Commands()
+	for _, ci := range s.Commands() {
+		if len(ci.Names) > 0 {
+			ci.Names[0] = "改坏了"
+		}
+	}
+	s.dynMu.Lock()
+	meta := s.dynamicMeta["mcp:srv:ask"]
+	s.dynMu.Unlock()
+	if meta.Names[0] != "mcp:srv:ask" {
+		t.Fatalf("动态命令元数据被改写了: %q", meta.Names[0])
+	}
+}
+
+// TestCommandsDedupesStaticNames 动态命令与静态同名时不出第二条：分派是静态优先，
+// 补全浮层里列两个看起来一样的东西、选哪个都只走静态那条，是纯粹的噪声。
+func TestCommandsDedupesStaticNames(t *testing.T) {
+	s := &Session{}
+	s.SetDynamicCommands(map[string]CommandHandler{
+		"help":   func(context.Context, []string) (string, error) { return "动态 help", nil },
+		"custom": func(context.Context, []string) (string, error) { return "", nil },
+	}, map[string]port.CommandInfo{
+		"help":   {Names: []string{"help"}, Desc: "动态的 help"},
+		"custom": {Names: []string{"custom"}, Desc: "自定义"},
+	})
+	got := s.Commands()
+	names := map[string]int{}
+	for _, ci := range got {
+		names[ci.Names[0]]++
+	}
+	if names["help"] != 1 {
+		t.Fatalf("/help 出现了 %d 次（静态与动态同名时只该列一次）:\n%v", names["help"], names)
+	}
+	if names["custom"] != 1 {
+		t.Fatalf("不重名的动态命令应照常列出: %v", names)
+	}
+	// 总量 = 静态 + 1 条（只多了 custom）。
+	if len(got) != len(commandTable)+1 {
+		t.Fatalf("清单 %d 条, want %d", len(got), len(commandTable)+1)
+	}
+	// 分派仍是静态优先（动态那条永远轮不到）。
+	out, err := s.execCommand(context.Background(), port.Command{Name: "help"})
+	if err != nil {
+		t.Fatalf("execCommand(help) = %v", err)
+	}
+	if strings.Contains(out, "动态 help") {
+		t.Fatal("同名动态命令抢走了分派")
+	}
+}
+
 // TestHelpFromCatalog /help 表驱动渲染（D103②）：别名一行、家族尾行、动态逐条列出。
 func TestHelpFromCatalog(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())

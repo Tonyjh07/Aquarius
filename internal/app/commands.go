@@ -145,22 +145,33 @@ func CommandCatalog() []port.CommandInfo {
 }
 
 // commandInfos 把注册表投影成端口形状（只取元数据，不暴露处理函数）。
+//
+// Names 逐条拷贝：表是包级只读量，而端口给出去的是 UI 每帧都会拿的清单——把底层切片直接
+// 交出去，任何一处（补全浮层、帮助渲染、第三方壳）顺手改动一个名字就会污染整张表，而且
+// 下一次 /help 才会露出来。拷贝的成本是几十个短字符串，比排查这类问题的成本低。
 func commandInfos(table []commandEntry) []port.CommandInfo {
 	out := make([]port.CommandInfo, len(table))
 	for i, e := range table {
-		out[i] = port.CommandInfo{Names: e.Names, Usage: e.Usage, Desc: e.Desc}
+		out[i] = port.CommandInfo{Names: append([]string(nil), e.Names...), Usage: e.Usage, Desc: e.Desc}
 	}
 	return out
 }
 
 // commandsSplit 当前清单两段：静态段（注册表投影）+ 动态表快照（dynMu 锁内、按名排序）。
+//
+// 动态命令与静态同名时**不出列**：分派是静态优先（execCommand 先查 commandIndex），
+// 出两条同名项会让补全浮层列出两个看起来一样的东西，选哪个却只走静态那条。
 func (s *Session) commandsSplit() (static, dyn []port.CommandInfo) {
 	static = commandInfos(commandTable)
 	s.dynMu.Lock()
 	defer s.dynMu.Unlock()
 	dyn = make([]port.CommandInfo, 0, len(s.dynamic))
 	for name := range s.dynamic {
+		if _, taken := commandIndex[name]; taken {
+			continue // 静态优先：同名动态命令永远分派不到
+		}
 		if ci, ok := s.dynamicMeta[name]; ok {
+			ci.Names = append([]string(nil), ci.Names...)
 			dyn = append(dyn, ci)
 			continue
 		}
