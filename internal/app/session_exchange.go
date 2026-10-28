@@ -25,8 +25,14 @@ var exportFlags = []flagDecl{{name: "--format", value: true}, {name: "--path", v
 // exportUsage /export 的用法文案。
 const exportUsage = "用法: /export [--format <名字>] [--path <文件>]（缺省 aqx 无损、落在导出目录）"
 
-// importUsage /import 的用法文案。
+// importUsage /import 的用法文案（路径含空格时用引号括起来，与其余命令同一口径）。
 const importUsage = "用法: /import <文件>（按扩展名与文件头自动认格式；落成一个新会话）"
+
+// spacedPathHint 参数被空格切成了几段时的提示：命令面认引号，用户只是忘了括。
+//
+// 只说「用法错误」等于让用户去猜哪一步不对——Windows 上导出目录带空格是常态，
+// 最常见的错法就是漏了引号。
+const spacedPathHint = "路径里有空格时用引号括起来，例如 /import \"C:\\我的文档\\会话.aqx\""
 
 // execExport 实现 /export：把当前会话写成一份文件。
 func (s *Session) execExport(ctx context.Context, cmd port.Command) (string, error) {
@@ -38,7 +44,8 @@ func (s *Session) execExport(ctx context.Context, cmd port.Command) (string, err
 		return "", errors.New(exportUsage)
 	}
 	if len(rest) > 0 {
-		return "", errors.New(exportUsage)
+		// 多出来的位置参数多半是路径被空格切开了（`--path C:\我的文档\x.aqx`）。
+		return "", fmt.Errorf("%s\n%s", exportUsage, spacedPathHint)
 	}
 	name, want := "", ""
 	for _, f := range flags {
@@ -141,6 +148,10 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 		return "", errors.New("本构建未接入导入面（SessionDeps.Importer）")
 	}
 	if len(cmd.Args) != 1 {
+		// 多于一个参数多半是路径被空格切开了：说清怎么括，而不是只说「用法错误」。
+		if len(cmd.Args) > 1 {
+			return "", fmt.Errorf("%s\n%s", importUsage, spacedPathHint)
+		}
 		return "", errors.New(importUsage)
 	}
 	path := cmd.Args[0]
@@ -175,11 +186,13 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	}
 	s.cancelWatchersFor(s.cur.ID) // 旧会话的后台任务报告不再属于这里
 	s.cur = c
+	// 会话已经落盘并切过来了：从这里往下是「界面刷新」，失败时不能把已完成的事实报成失败。
+	// 用户要知道「导入成功了，但界面没刷干净」，否则会以为白导一次。
 	if err := s.emitClear(ctx); err != nil {
-		return "", err
+		return "", fmt.Errorf("会话已导入并切换，但界面没能刷新: %w", err)
 	}
 	if _, err := s.replayHistory(ctx, "已导入"); err != nil {
-		return "", err
+		return "", fmt.Errorf("会话已导入并切换，但历史没能回放: %w", err)
 	}
 	rep.Format = format.Name
 	return importReceipt(path, format, rep), nil
