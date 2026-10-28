@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-10-27 @ 5e4fb0f -->
+<!-- docs-sync: 2026-10-28 @ 8b2372a -->
 
 > **权威设计文档之一**：原 DESIGN 的决策节于 2026-09 拆出成篇，与 DESIGN.md 同级同权威
 > （`docs/` 其余篇目为衍生导读；该节 2026-10 已从 DESIGN 删除，不再占节号）。编号**跨文件不变**
@@ -5818,16 +5818,23 @@
 - **标题 → 文件名派生上移到端口层 `port.FileStem`**：命令面的缺省落点与保存框的预填名必须是
   同一份结果（用户看到的预填名与实际落点不符，比没有预填更糟）。放在端口层而不是 `app`，
   是因为壳不该 import `app`；`app` 侧原 `safeFileName` 随之删除。
+- **缺省扩展名全层不带点**（`aqx` 而非 `.aqx`）：Win32 的 `lpstrDefExt` 只取前三个字符，
+  带点传进去会被当成扩展名的一部分（MSDN 明确「should not contain a period」）。非 Windows
+  侧拼预填名时自己补点（`extWithDot`），预填名本身仍是完整文件名。
 - **两个平台实现**：Windows 侧打开 `GetOpenFileNameW`、保存 `GetSaveFileNameW`，两者都投托盘
   线程呈现（模态对话框的泵不能嵌进 Gio 的泵），请求体走 `atomic.Pointer[dlgRequest]`，结果经
-  两条自定义消息（`openFileMsg` / `saveFileMsg`）送回窗口过程。非 Windows 走 zenity /
-  kdialog / osascript；三者都缺时发一次性提示（`dlgNotice`），**不与菜单降级的提示复用**
-  ——两个缺失原因不同，用户该看到是哪件事不可用。
+  两条自定义消息（`openFileMsg` / `saveFileMsg`）送回窗口过程。请求槽只有一个，另配一个
+  `atomic.Bool` 在途标记：对话框挂在消息窗上，模态期间主窗并不会被禁用，用户能再点一次——
+  没有标记时第二次点击会覆盖同一份请求体并再投一条消息，**这次点击直接丢弃**比叠出两个框
+  或让第二个框拿到被改写的用途更安全。非 Windows 走 zenity / kdialog / osascript；三者都缺时
+  发一次性提示（`dlgNotice`），**不与菜单降级的提示复用**——两个缺失原因不同，用户该看到是
+  哪件事不可用。
 - **否决**：① 复用附件多选那条路（见上）；② 在 `app` 侧各写一份文件名派生（两条路径必然
   漂移，且壳 import 不了 `app`）；③ 保存框带覆盖确认（见上）；④ 非 Windows 直接禁用导出
   （降级只要一次 `exec`，能给人用的功能不该因为平台就先关掉）。
-- **验证**：`filedlg_other_test.go` 锁命令行参数拼装（zenity 与 kdialog 的过滤器串、osascript
-  的 AppleScript 片段）；`filedlg_windows_test.go` 锁过滤器串的 UTF-16 编码；
+- **验证**：`filedlg_other_test.go` 锁命令行参数拼装（zenity 每档一条 `--file-filter`、分号模式
+  拆成空格分隔、kdialog 多档换行分隔、保存框参数里没有 `--confirm-overwrite`、osascript 片段的
+  引号与反斜杠转义、`DefExt` 补点）；`filedlg_windows_test.go` 锁过滤器串的 UTF-16 编码；
   `history_exchange_test.go` 四例——两颗钮各投对应请求、取消不投命令、未知用途丢弃、且
   过滤器只承诺两颗钮真会做的事（保存框只列 `.aqx`，导入框覆盖五档）；`uigui` 侧的
   `replayPick` 让整条「钮 → 请求 → 结果 → 投命令」在无窗口的环境里跑通。
