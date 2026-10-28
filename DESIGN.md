@@ -873,7 +873,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `WebSearch` / `WebFetch` | webdeepseek（Search + Fetch，D197）/ webbrave（Search）/ webfetchlocal（HTTP + readability + html-to-markdown）；webchain 串成有序降级链 | — | 脚本化提供商 |
 | `Transcriber` / `Synthesizer` | asrchat（chat-completions 音频形状，D179）/ asrwhisper（进程内 whisper.cpp，无 cgo）/ asropenai（`/audio/transcriptions`）/ asrfunasr（`/recognition`）/ mimotts（MiMo TTS 三种模型）/ vitstts（`/voice/vits`）/ gptsovitstts（`/tts`）/ micwin（`waveIn` 采集）/ audioplay（`PlaySound` 播放）；按 `audio.*.kind` 分派 | Tier-1 Go 插件 | 假转写 / 假合成 |
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/逐条镜像到文件 | Tier-1 Go 插件 | 脚本 |
-| `SessionExporter` / `SessionImporter` | exchange（`aqx` 无损 / `chatgpt` 树 / `openai`·`sillytavern` 线性；D242） | — | 内存往返 |
+| `SessionExporter` / `SessionImporter` / `ExchangeIndexer` | exchange（`aqx` 无损、可装一组会话 / `chatgpt` 树 / `openai`·`sillytavern` 线性；D242/D249） | — | 内存往返 |
 | `CharacterCatalog` | characterfs（PNG tEXt / JSON / `.charx` 解析 + `<profile>/characters` 目录；D243） | — | 临时目录假卡 |
 | `Delegate` | acpgate（ACP v1 客户端 → `delegate` 工具；六方法面、不申报 `fs`/`terminal`，D244） | 外部 ACP 代理（配置 `delegate.agents`，命令经 PATH 探测） | 假 ACP 代理（stdio 脚本化 JSON-RPC） |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
@@ -1096,7 +1096,7 @@ type SkillCatalog interface {
 - **不做「安装即授权」**：`scripts/` 一律经 `term_exec` 走 Confirm 与权限矩阵；安装动作本身
   不授予任何执行能力。
 
-### 5.16 `exchange.go` —— 会话进出端口（导出 / 导入，D242）
+### 5.16 `exchange.go` —— 会话进出端口（导出 / 导入，D242/D249）
 
 把会话搬出去、把别人的会话搬进来。**无损与互通是两种东西**：无损格式必须能原样往返，
 互通格式按别人的规范如实有损，两者共用一层解析但绝不互相冒充。
@@ -1114,24 +1114,49 @@ type ExchangeFormat struct {
     NoExport bool
 }
 
+// ExchangeEntry 归档里的一个会话（**索引条目**：只给展示与选择用）。
+type ExchangeEntry struct {
+    Index int    // 清单序号，**1 起**（--pick 用它；顺序 = manifest 里的顺序）
+    ID    string // 源会话 ID（回执溯源；导入时全部重新分配）
+    Title string // 标题（manifest 记的，只供展示；导入以 tree.json 为准）
+    Nodes int    // 节点数（同上）
+}
+
 // ExchangeReport 一次进出的回执：数量、字节、丢了什么。
 type ExchangeReport struct {
-    Format  string
-    Nodes   int      // 写出的节点数 / 读入的节点数
-    Bytes   int64
-    Dropped []string // 「附件 3 个（源文件不含字节）」这类事实行，逐项可读
+    Format string
+    // Nodes 写出的节点数 / 读入的节点数（多会话时是总和）。
+    Nodes int
+    Bytes int64
+    // Dropped 「附件 3 个（源文件不含字节）」这类事实行，逐项可读。
+    Dropped []string
+    // Entries 这次涉及的会话清单（多会话容器填；单会话与线性格式留空）。
+    Entries []ExchangeEntry
 }
 
-// SessionExporter /export：把一棵树按指定格式写进 w。消费方 = app.Session。
+// SessionExporter /export：把**一组**会话按指定格式写进 w。消费方 = app.Session。
 type SessionExporter interface {
     Formats() []ExchangeFormat
-    Export(ctx context.Context, c *conversation.Conversation, format string, w io.Writer) (ExchangeReport, error)
+    // Export 写出 cs（一组会话；单会话路径就是 len(cs) == 1）。
+    // 多会话只对 aqx 成立：chatgpt / openai / sillytavern 的容器装不下「多个会话」，
+    // 收到多于一个时由实现报错——硬塞进去只会让别人的工具读到一份半成品。
+    Export(ctx context.Context, cs []*conversation.Conversation, format string, w io.Writer) (ExchangeReport, error)
 }
 
-// SessionImporter /import：读一个外部文件，变成一棵**待入库**的树。
+// SessionImporter /import：读一个外部文件，变成一组**待入库**的树。
 type SessionImporter interface {
     Detect(name string, head []byte) (ExchangeFormat, bool)
-    Import(ctx context.Context, r io.Reader, f ExchangeFormat) (*conversation.Conversation, ExchangeReport, error)
+    // Import 读入并自检。pick 是 **1 起的清单序号**（空 = 全部）；非容器的格式只有一项，
+    // pick 只接受空或 {1}。
+    Import(ctx context.Context, r io.Reader, f ExchangeFormat, pick []int) ([]*conversation.Conversation, ExchangeReport, error)
+}
+
+// ExchangeIndexer 列出一份**容器**里的会话清单（界面勾选面板用；命令面读流时自己解析）。
+//
+// 单独一个接口而不是塞进 SessionImporter：界面要的是「按路径先看一眼有什么」，拿不到
+// 那一步就只能自己解 ZIP——壳里再写一遍容器解析，正是铁律 5 要挡的那类分叉。
+type ExchangeIndexer interface {
+    Index(ctx context.Context, path string) ([]ExchangeEntry, error)
 }
 ```
 
@@ -1144,10 +1169,10 @@ type SessionImporter interface {
 
 | Name | 形状 | 保真 | 用途 |
 |---|---|---|---|
-| `aqx` | ZIP 容器：`tree.json` + `blobs/<sha256>` | **无损** | 备份、换机、交给另一个 Aquarius |
-| `chatgpt` | ChatGPT `conversations.json` 的 `mapping` 树 | 有损 | 给出得这套的工具（Open WebUI 能直接吃） |
+| `aqx` | ZIP 容器：`manifest.json`（含会话清单）+ `conversations/<i>/tree.json` + 共用 `blobs/<sha256>` | **无损** | 备份（**一份可装整个库**）、换机、交给另一个 Aquarius |
+| `chatgpt` | ChatGPT `conversations.json` 的 `mapping` 树 | 有损 | 给认这套的工具（Open WebUI 能直接吃） |
 | `openai` | `{"messages":[{role,content}]}` | 有损 | 调试工具、微调、喂给任意 OpenAI 兼容端 |
-| `sillytavern` | `.jsonl`：首行 header + 每行一条 `mes` | 有损 | RP 生态（SillyTavern / RisuAI 一类）中 |
+| `sillytavern` | `.jsonl`：首行 header + 每行一条 `mes` | 有损 | RP 生态（SillyTavern / RisuAI 一类）的通行格式 |
 
 **只读的一档**：`openwebui`（`chat.history.messages` + `parentId` / `childrenIds` +
 `currentId`）**只认不写**——它与 `chatgpt` 同为树形，多维护一套同义产物只会让两条路各自
@@ -1158,24 +1183,56 @@ type SessionImporter interface {
 的 `Formats()` 从它派生。放在端口而不是适配器，是因为报错文案也要用，而那时可能连适配器都
 没装配。有损格式必须写明丢什么（自检守着），否则用户会以为导出的就是全部。
 
-**`aqx`（无损）**：容器里 `tree.json` 就是落盘 wire 形状（与 `storejson` 同一份 `wireTree`），
-`blobs/` 平铺内容寻址的附件字节。往返必须**等价**——节点、边、版本链、Head、时间戳、
-每个分片的全部字段、附件字节逐项相同。归档层另带 `manifest.json`（`format` / `version`）；
-导入遇到更高版本直接拒绝并说明，不猜。不装：profile 配置（模型、persona 引用）、记忆文档、
-`.bak` 代际——那些不是「这个会话」的一部分。
+**`aqx`（无损，可装多个会话）**：ZIP 容器，里面是
+
+```
+manifest.json          {"format":"aqx","version":1,"conversations":[…]}
+conversations/<i>/tree.json    第 i 个会话的落盘 wire 形状（storejson 同一份）
+blobs/<sha256>         附件字节，内容寻址、平铺（**跨会话共用一份**）
+```
+
+`conversations` 是清单：每项记 `id` / `title` / `nodes`，**顺序即清单序号**（`/import --pick 2`
+与界面勾选面板都用它）。清单只给展示与选择，导入以各自的 `tree.json` 为准——标题以树里那份
+为真，清单里的标题只用来在勾选面板上认人（改了树的标题不会回头改归档，这是备份，不是活文档）。
+
+**为什么是「一个归档装多个会话」而不是「一个会话一个文件」**：备份是整库动作。一份容器只装
+一个会话时，用户要把二十个会话备份走就得点二十次，还得自己记住哪个漏了。把容器做成
+「一组树 + 一份共用附件库」，一次写出即是一份完整备份；附件按内容寻址跨会话去重，同一个
+头像被十个会话引用时只占一份字节。**版本号仍是 1**（未发布，不需要靠升版本区分新旧）。
+
+**导出单位**：命令面 `/export` 与界面「导出」都作用于**当前会话**时只写一个会话（`len(cs) == 1`）；
+一份多会话归档靠「导出全部会话」这条路（命令面 `--all`，界面的同名入口排在
+[docs/plan.md](docs/plan.md) 的 aqx 多会话备份那一节最后一笔）。**多会话只对 aqx 成立**：
+`chatgpt` / `openai` / `sillytavern` 的容器按别人的规范只能装一条会话链，给多于一个时实现
+直接报错并说明「这种格式一次只能写一个会话」，不做「写第一个、其余静默丢掉」。
+
+往返必须**等价**——节点、边、版本链、Head、时间戳、每个分片的全部字段、附件字节逐项相同；
+会话与解包顺序也保持清单顺序（同一组会话导两次字节相同）。导入遇到更高版本直接拒绝并说明，
+不猜。不装：profile 配置（模型、persona 引用）、记忆文档、`.bak` 代际——那些不是「这些会话」
+的一部分。
 
 `manifest.json` 为什么单列一层而不并进 `tree.json`：那份形状要与磁盘上的会话文件逐字段一致，
 加了归档专用字段就不一致了（出问题时没法拿编辑器对读）。`storejson` 为此只多出
 `EncodeTree` / `DecodeTree` 两个入口，编码、旧格式识别与不变量自检仍是磁盘读写与归档共用
-那一份实现。附件按哈希排序写入，**同一棵树导两次字节相同**。
+那一份实现。附件按哈希排序写入，**同一组会话导两次字节相同**。
 
-导入侧的守卫（照代码）：条目数 4000、归档总字节 256 MB、`tree.json` 64 MB、节点数 20000、
-单附件 32 MB、附件总量 512 MB——每条超限都报因，不静默截断。附件总量按**实际解压字节**累计
-（压缩包可以谎报声明大小），单份与总量两道都卡在读的时候，不是先全读进来再比。归档里出现
-`manifest.json` / `tree.json` / `blobs/` 之外的条目直接拒绝（aqx 是我们自己的格式，不认识就
-说明不是这版写的）；纯目录条目（第三方重新打包常带 `blobs/` 这样一条）不算「不认识的条目」，
-跳过即可。附件字节与它声明的哈希对不上也拒绝（按错误哈希入库，装配时会取到别的内容）。
+**旧形状不再兼容**：本版之前导出的单树归档（根目录一个 `tree.json`、没有 `conversations/`）
+不再读——导入时明说「这是旧版归档格式，本版不认」并指出该重导，不做「猜一下也能读」的
+兼容分支。aqx 尚未正式发布，为一份没人持有的中间形状留一条长期兼容路径，代价大于收益。
+
+导入侧的守卫（照代码）：条目数 4000、归档总字节 256 MB、单份 `tree.json` 64 MB、**每个会话**
+节点数 20000（不是合计：一个会话装不下就是装不下，别让别的会话替它背）、单附件 32 MB、附件
+总量 512 MB——每条超限都报因，不静默截断。附件总量按**实际解压字节**累计（压缩包可以谎报
+声明大小），单份与总量两道都卡在读的时候，不是先全读进来再比。归档里出现
+`manifest.json` / `conversations/` / `blobs/` 之外的条目直接拒绝（aqx 是我们自己的格式，不
+认识就说明不是这版写的）；纯目录条目（第三方重新打包常带 `blobs/` 这样一条）不算「不认识的
+条目」，跳过即可。附件字节与它声明的哈希对不上也拒绝（按错误哈希入库，装配时会取到别的内容）。
 导入时的附件逐份「校验 → 入库」，峰值只占一份的大小，不是先攒满全部再写。
+
+**清单与选择**：`--pick` 收 **1 起的清单序号**，可重复（`--pick 1 --pick 3`）或逗号分隔
+（`--pick 1,3`）；不带 `--pick` = **该文件里的全部会话都导入**（备份恢复的主路径，多一步选择
+就是多一步出错）。序号越界、文件里没有这一项时报因并列出清单（标题 + 条数），不静默跳过。
+非容器格式（chatgpt / openai / sillytavern / openwebui）只有一项，`--pick` 只接受空或 `1`。
 
 **`chatgpt`（树形互通）**：直接用它的 `mapping`——节点表 + `parent` / `children` + 顶层
 `current_node`。选它而不自定一套，是因为它已经是事实标准；而我们的树本来就是树，
@@ -1237,8 +1294,9 @@ Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份�
 按最深链定 Head。时间戳是 Unix 秒。
 - **外部文件是不可信输入**：先解析成 DTO，再走 `conversation.Restore()` 的统一自检——
   重复 ID、悬空父、Head 不在树一律拒绝，不「尽力修复」。
-- **上限**：文件 256 MB、节点数 20000、正文合计 64 MB；`.aqx` 另加容器条目数与展开总量，
-  并沿用技能安装的 zip-slip 口径（绝对路径、`..`、符号链接一律拒绝）。超限报错，不静默截断。
+- **上限**：文件 256 MB、正文合计 64 MB、**每个会话**节点数 20000（不是合计，见上）；`.aqx`
+  另加容器条目数与展开总量，并沿用技能安装的 zip-slip 口径（绝对路径、`..`、符号链接一律
+  拒绝）。超限报错，不静默截断。
 - **落成新会话**：新会话 ID 由装配根分配（与 `/new` 同源），节点 ID 全部重新分配；源 ID 只进
   回执。**不覆盖任何既有会话**——同名标题加后缀。
 - **丢了什么要说**：ChatGPT 的图片引用是 URL、`tool` 角色与 `content_type` 变体我们不认，
@@ -1246,14 +1304,26 @@ Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份�
 - **同一份文件导两次结构相同**：源里的节点表是 map 时按 ID 排序后再建，边也按父 ID 排序输出，
   免得同一份文件每次导入得到不同的兄弟顺序。
 
-**命令面与界面**：`/export [--format <name>] [--path <文件>]`（缺省 `aqx`）、`/import <文件>`。
+**命令面与界面**：`/export [--format <name>] [--path <文件>]`（缺省 `aqx`）、
+`/import [--pick <序号>]… <文件>`。
 GUI 出口在会话历史窗：左栏标题行的「导入」「导出」两颗文字钮。两颗钮只负责拿路径——
 导入走单选文件框（带五档扩展名过滤器），导出走保存框；选完各投一条命令
 （`/import <路径>`、`/export --format <名字> --path <路径>`），与键入同路径，壳内不做搬运。
 取消就什么都不投。导出作用对象是**当前会话**：历史窗左栏能点开别的会话，但没有「先切过去
-再导出」这种按钮，那等于替用户做主。界面这条路**走保存框的档位**，格式列表与命令面同源——
-过滤器若列出 `.json`/`.jsonl` 而按钮仍写 aqx 字节，那就是一句不会兑现的承诺，所以档位与
-`--format` 必须一一对应（下段）。
+再导出」这种按钮，那等于替用户做主。
+
+**导入一个多会话归档时先勾**：aqx 可以装多个会话，选完文件不能直接投 `/import`——用户不知道
+自己刚挑的是哪份备份里的哪些会话。界面在拿到路径后先向内核要一份清单（`ExchangeIndexer.Index`，
+只读 ZIP 的 `manifest.json`，不解析树），弹一个**勾选面板**：每行一个会话（标题 + 条数），
+复选框**缺省全勾**（备份恢复的主路径就是全要），底部「导入 N 个 / 取消」。确认后投
+`/import --pick <序号>… <路径>`，取消什么都不投。**只有一项时（非 aqx，或只有一个会话的 aqx）
+不弹面板**，直接投——弹一个只有一行的勾选框只是多一次点击。
+
+壳内不解析容器：认条目、读清单、按序号挑树全在适配器，界面只负责呈现与回传序号（铁律 5）。
+
+**导出多会话**：命令面 `--all` 把整库写成一份 aqx 备份（`--format` 非 aqx 时报错，理由见上）；
+不带 `--all` 仍是当前会话一个。界面侧同一颗「导出」按钮还要接一份「导出全部会话」入口，
+排在同一批的最后一笔（排期在 `docs/plan.md` 的 aqx 多会话备份那一节）。
 
 **保存框的「保存类型」就是格式选择器**（D248）：`port.ExchangeFormats()` 里 `NoExport == false`
 的条目一档一种、同序同数（目前四档 `aqx` / `chatgpt` / `openai` / `sillytavern`），档位与格式
@@ -1288,19 +1358,24 @@ Windows 侧打开用 `GetOpenFileNameW`、保存用 `GetSaveFileNameW`，都投�
 - **缺省落点**是 `<profile>/exports`，文件名由会话标题派生（保留字符换成 `-`、长度截到 60 字；
   这条派生规则在端口层 `port.FileStem`，命令面与保存框的预填名共用一份，不各写一遍）；
   `--path` 给了目录就放同一个缺省文件名，给了文件就照用。没配导出目录又没有 `--path` 时报因，
-  不往当前目录乱写。
+  不往当前目录乱写。`--all` 没有单一会话标题可用，缺省名取 `aquarius-backup` + 格式扩展名
+  （落到同一目录，同样走防覆盖的 `-2` 后缀）。
 - **不覆盖已有文件**：重名自动加 `-2`、`-3` 后缀。导出是「再存一份」，不是「改那一份」。
 - **写一半失败就删掉半截文件**——留个残档比没有更坏，用户会以为备份成了。
-- **导入落成新会话**：端口只负责「文件 → 树」，会话 ID 由命令面按 `/new` 同源分配；
-  Root 节点 ID 恒等于会话 ID，换 ID 时 Root 与挂在它下面的边一起换，最后统一自检。
-  落盘成功后清屏并回放，与 `/switch` 同一口径。导入失败不动当前会话；落盘成功后界面没刷
-  干净时报「已导入并切换，但界面没刷新」，不把已完成的事实说成失败。
+- **导入落成新会话**：端口只负责「文件 → 一组树」，会话 ID 由命令面按 `/new` 同源逐个分配；
+  Root 节点 ID 恒等于会话 ID，换 ID 时 Root 与挂在它下面的边一起换，最后统一自检。**先全部
+  自检并取好 ID、再一次性落盘**：一个归档里第 3 个会话坏了，不该留下前 2 个已入库、后 17 个
+  没影的半截状态。落盘成功后切到**第一个**导入的会话并清屏回放，与 `/switch` 同一口径；
+  其余会话在左栏可见、点进去就有。导入失败不动当前会话与既有会话；落盘成功后界面没刷干净时
+  报「已导入并切换，但界面没刷新」，不把已完成的事实说成失败。
+- **导入回执列清单而不是一句话**：多于一个会话时，回执把「已导入 <路径> / 格式 / 内容」三行
+  里的内容行换成「已导入 N 个会话（M 条消息）」再逐条列「标题 · 条数」，丢了东西的那几条在
+  各自行下挂 `Dropped`；只有一个会话时维持三行老样子，不为多会话把单会话的回执拖长。真的丢了
+  东西才追加「没有带过去的内容」逐项清单，没丢就整段不出现。
 - **路径含空格靠引号**：三个纯文本前端（终端 / TUI / GUI 输入框）共用 `uicommon.ParseInput`
   切 token，双引号或单引号括起来的一段算一个参数（`/import "C:\我的文档\会话.aqx"`）。
   不做反斜杠转义——Windows 路径里那是分隔符，当转义符会把路径改坏。参数被空格切成几段时
   报「用法错误」并附一句怎么括，不只丢一句「用法错误」。
-- **回执两行固定**：落点/格式（含无损或有损与丢什么）、内容条数；真的丢了东西才追加
-  「没有带过去的内容」逐项清单，没丢就整段不出现。
 
 ### 5.17 `character.go` —— 角色卡目录端口（只读导入，D243/D247）
 
@@ -2040,8 +2115,8 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/skill install <路径\|链接>` | 安装技能（D202/D203，§5.15）：单文件 `SKILL.md` / 文件夹 / `.zip` / GitHub 链接（`url#分支`）；同名不覆盖 |
 | `/skill remove <名字>` | 卸载安装副本（仅 `<profile>/skills/<名字>`；来自 `skills.dirs` 的技能请在文件系统里处理） |
 | `/skill update <名字\|all>` | 更新：git 来源拉取、压缩包来源重新下载后覆盖副本；不带名字 = 更新全部可更新项 |
-| `/export [--format <name>] [--path <文件>]` | 导出当前会话（D242，§5.16）：缺省 `aqx`（无损，可原样回来）；`chatgpt`（树形互通，给 Open WebUI 一类吃）、`openai` / `sillytavern`（线性，取 Head 路径）。回执明说丢了什么 |
-| `/import <文件>` | 导入外部会话（D242）：按扩展名与文件头认 `aqx` / ChatGPT / Open WebUI / SillyTavern；落成**新**会话，不覆盖既有会话 |
+| `/export [--format <name>] [--path <文件>] [--all]` | 导出会话（D242/D249，§5.16）：缺省只导**当前**会话，`aqx`（无损，可原样回来）；`chatgpt`（树形互通，给 Open WebUI 一类吃）、`openai` / `sillytavern`（线性，取 Head 路径）。`--all` = 把整库写进一份 `aqx` 备份（一份可装多个会话；其它格式一次只能一个会话，给了就报错）。回执明说丢了什么 |
+| `/import [--pick <序号>] <文件>` | 导入外部会话（D242/D249）：按扩展名与文件头认 `aqx` / ChatGPT / Open WebUI / SillyTavern；落成**新**会话，不覆盖既有会话。`aqx` 可装多个会话：不带 `--pick` 全导，`--pick 1,3` 只导清单里那几项（序号 1 起，越界报因并列出清单）；其余格式只有一项，`--pick` 只认空或 `1` |
 | `/character list` | 角色卡列表（D243/D247，§5.17）：显示名 / slug / 来源 / 开场数与备用问候数 / 世界书条目数（注入了多少、保留多少）/ 导入警告 |
 | `/character show <slug>` | 角色卡详情：创作者、版本、标签、头像有无、保留但未使用的资产与世界书、原卡警告；正文含 HTML 时提示界面按纯文本显示 |
 | `/character import <路径>` | 导入角色卡（PNG / JSON / `.charx`）：解析后原卡逐字节留档；同名不覆盖，先 remove 再导入；回执按四类（世界书 / 资产 / 不执行的机制 / 只展示字段）说清读了什么、没读什么 |
@@ -2624,6 +2699,9 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 - **语音后续**：本地 ASR 引擎（whisper.cpp 类，需 cgo 或外挂二进制，与单二进制口径冲突）、
   TTS 流式合成（边合成边播）；**导出文件输出器**（把每条回答镜像到文件，§7.2 的
   `OutputAdapter` 形态）——与 `/export` 的按次整树导出是两件事，后者见 §5.16
+- **备份的后续**（D249 只落「一份装一组会话」的形状与 `/export --all`；界面侧的「导出全部会话」
+  入口排在本版内，见 [plan.md](docs/plan.md)）：增量与差量备份、归档加密（密钥库那条是另一件事）、
+  把备份做成定时任务
 - **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
   编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
 - **GUI 后续（M5/D43 之外，[gui-design.md](docs/gui-design.md) 预留）**：悬浮球本体转常规窗口形态（D43 只预留设计

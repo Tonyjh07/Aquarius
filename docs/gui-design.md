@@ -1,5 +1,5 @@
 # GUI 设计规格（`internal/adapter/uigui`）
-<!-- docs-sync: 2026-10-28 @ e3161ec -->
+<!-- docs-sync: 2026-10-28 @ 1362f5e -->
 
 > `ui.kind=gui` 那一层壳的实现规格：悬浮球形态、输入栏与转写浮层、主题令牌、多窗宿主、
 > 响应式缩放、气泡菜单。**内核设计不在这里**——领域、端口、应用层与存储见
@@ -731,14 +731,21 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   路径经输入通道；**取消则什么都不投**。导出作用对象是**当前会话**——左栏能点开别的会话，但
   没有「先切过去再导出」的钮，那等于替用户做主。
 
-  **保存框的「保存类型」下拉框 = 格式选择器**（D248）：`port.ExchangeFormats()` 里可写的条目
-  一档一种（目前四档：Aquarius 归档 / ChatGPT 会话 / OpenAI 消息列表 / SillyTavern 对话），
-  选中哪一档就投哪个 `--format`；只读的 `openwebui` 不列。档位在 Windows 由
-  `OPENFILENAME.nFilterIndex` 带回来（唯一入参兼出参的字段，进去预选、回来是用户的最终选择）；
-  非 Windows 的三个命令只回路径，平台报 `-1`，宿主按落点扩展名回落（`.jsonl`→sillytavern、
-  `.json`→chatgpt、其余→aqx）。落点扩展名随格式改正：已知格式的扩展名换成本档的，点名与无
-  扩展名只补不切——否则「选了 SillyTavern 却存成 `.aqx`」仍是空头承诺。完整口径见
-  `DESIGN.md` §5.16。
+  **导入一个多会话归档时先勾**：`aqx` 能装一组会话（D249），选完文件不能直接投 `/import`——
+  用户不知道自己刚挑的是哪份备份里的哪些会话。界面拿到路径后向内核要一份清单
+  （`ExchangeIndexer.Index`，只读归档的 `manifest.json`，不解析树），弹一个勾选面板：每行一个
+  会话（标题 + 条数），复选框**缺省全勾**，底部「导入 N 个 / 取消」；确认后投
+  `/import --pick <序号>… <路径>`，取消什么都不投。**只有一项时不弹**（非 aqx，或只有一个
+  会话的 aqx）——一行勾选框只是多一次点击。壳里不解析容器：认条目、读清单、按序号挑树全在
+  适配器（铁律 5）。
+
+  **保存框的「保存类型」下拉框 = 格式选择器**（D248）：`port.ExchangeFormats()` 里可写的条目一档一种
+  （目前四档：Aquarius 归档 / ChatGPT 会话 / OpenAI 消息列表 / SillyTavern 对话），选中哪一档就
+  投哪个 `--format`；只读的 `openwebui` 不列。档位在 Windows 由 `OPENFILENAME.nFilterIndex`
+  带回来（唯一入参兼出参的字段，进去预选、回来是用户的最终选择）；非 Windows 的三个命令只回
+  路径，平台报 `-1`，宿主按落点扩展名回落（`.jsonl`→sillytavern、`.json`→chatgpt、其余→aqx）。
+  落点扩展名随格式改正：已知格式的扩展名换成本档的，点名与无扩展名只补不切——否则「选了
+  SillyTavern 却存成 `.aqx`」仍是空头承诺。完整口径见 `DESIGN.md` §5.16。
 
   平台侧的对话框是**通用请求**（`OpenRequest` / `SaveRequest` + `FilePurpose`），与附件槽的
   多选（`RequestFileDialog`）、技能目录选择（`RequestPathPick`）分开：三者语义不同，共用一体
