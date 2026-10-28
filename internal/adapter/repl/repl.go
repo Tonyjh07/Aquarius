@@ -114,18 +114,7 @@ func (u *UI) inputFromLine(r lineResult, ok bool) (port.UserInput, error) {
 		return port.UserInput{}, fmt.Errorf("repl: 读取输入: %w", r.err)
 	}
 	u.prompted = false // 消费了一行真实输入，下一轮重新打提示符
-	line := strings.TrimSpace(r.text)
-	if line == "" {
-		return port.UserInput{}, nil
-	}
-	if strings.HasPrefix(line, "/") {
-		fields := strings.Fields(line)
-		return port.UserInput{Command: &port.Command{
-			Name: strings.TrimPrefix(fields[0], "/"),
-			Args: fields[1:],
-		}}, nil
-	}
-	return port.UserInput{Text: line}, nil
+	return uicommon.ParseInput(r.text), nil
 }
 
 // Prompt 打印输入提示符（先断开未完的流式行）；已打过且未被输出消费时不再重复。

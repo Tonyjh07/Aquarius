@@ -35,6 +35,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -948,20 +949,9 @@ func (u *UI) runHeadless() {
 	}
 }
 
-// parseInput 单行输入解析（斜杠开头 = 命令；与 repl.Next 同口径）。
+// parseInput 单行输入解析（斜杠开头 = 命令；与 repl.Next 同口径，实现见 uicommon）。
 func parseInput(line string) port.UserInput {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return port.UserInput{}
-	}
-	if strings.HasPrefix(line, "/") {
-		fields := strings.Fields(line)
-		return port.UserInput{Command: &port.Command{
-			Name: strings.TrimPrefix(fields[0], "/"),
-			Args: fields[1:],
-		}}
-	}
-	return port.UserInput{Text: line}
+	return uicommon.ParseInput(line)
 }
 
 // quoteInto 把引用文本组为单行引用前缀追加到 existing（D98）："> " + 文本，文本内
