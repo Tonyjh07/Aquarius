@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-10-27 @ 5e4fb0f -->
+<!-- docs-sync: 2026-10-28 @ d371827 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -46,52 +46,101 @@ v0.4.0 转向**边界**：复杂任务不再由我们自建一层编排，而是
 > 命令注册表与会话进出已落地（档案见 [roadmap.md](roadmap.md) §2 的 v0.3.0 两行），
 > 本节只剩还没做的两批。
 
-### B 角色卡只读导入（L，约 25 提交）
+### B 角色卡只读导入（L，约 28 提交）
 
-设计与决策已落 [DESIGN.md](../DESIGN.md) §5.17 与 D243；容器、字段、投影口径、上限都在那里，
-本节只排执行顺序。
+设计与决策见 [DESIGN.md](../DESIGN.md) §5.17 / §4.1 / §7.7 与 D243 / D247，本节只排执行顺序。
+**已按真实语料（192 张 HF 卡 + 7 个样本 + SillyTavern 源码对照）校准过口径**；下文「实测」
+指那批统计，不是估算。
 
-1. **`port.CharacterCatalog` + 类型**（S）：`CharacterInfo` / `CharacterProfile` / `CharacterCard`
-   落地；装配根留空实现，命令先报「未接入」。
-2. **`adapter/characterfs` 解析层 · 纯 JSON 与 PNG**（M）：V1/V2/V3 三代的宽松识别与字段归一；
-   PNG 走 `tEXt` 块、关键字大小写不敏感、`ccv3` 优先于 `chara`；`creator_notes` 等只展示字段
-   与投影字段在同一处切分，避免后面各调用点各判一次。
-3. **`.charx`（ZIP）**（M）：根 `card.json`、`embeded://` 资产前缀与 `ccdefault:`、图标优选
-   `name=main`；复用技能安装那套 zip-slip 与条目/展开总量门禁；原压缩包整份留档。
-4. **落位与目录事实源**（M）：`<profile>/characters/<slug>/` 的 `card.json`（原卡逐字节）+
-   `meta.json`（原子写）+ `avatar.<ext>` + 可选 `source.charx`；slug 归一（中文保留、设备名拒绝、
+#### 先落三段无依赖的骨架（不碰解析层，可先锁死「无卡时输出不变」）
+
+1. **端口类型**（S）：`CharacterInfo` / `CharacterProfile`（字段分列，不预拼人格段）/
+   `BookEntry` / `CharacterCard`；装配根留空实现，命令先报「未接入」。
+   同时给 `PromptSpec` 加 `Character` 与 `UserName` 两个字段（此时无人填，纯类型）。
+2. **`@char.*` 条件内置 + `Compose` 内算 `U`**（M）：新增 `@char` 组与
+   `@char.identity` / `@char.description` / `@char.personality` / `@char.scenario` /
+   `@char.system` / `@char.book`；无卡或字段为空 ⇒ 空模块、**不计 missing**（照 `@env.*` 的做法）。
+   `Compose` 改成「先按去掉 `@char.*` 的引用算 `U` → 展开卡文本 → 按完整引用组装」。
+   **验收点**：不带卡时输出与今天**逐字节相同**（用现有 golden 锁住），这是整批的安全绳。
+3. **宏替换器**（M）：`app` 内的纯函数，`{{char}}` / `{{user}}` / `{{date}}` / `{{original}}`
+   与 `<BOT>` / `<USER>` / `<START>`；大小写不敏感、容忍括号内空格、认不出原样留、不递归。
+   单测覆盖：`{{Char}}`、`{{ char }}`、小写 `<start>`、`{{roll:d14}}` / `{{cha}}` 原样、
+   `user_name` 里含宏不放大。
+
+#### 再落解析与落位
+
+4. **`adapter/characterfs` · 纯 JSON 与 PNG**（M）：V2/V3 宽松识别（V1 不做，实测零出现）、
+   字段归一、`data` 与顶层镜像的取舍（有 `data` 只读 `data`；实测有卡在顶层多出
+   `alternative` / `misc` / `metadata` 而 `data` 里没有）、`nickname` 优先。
+   PNG 走 `tEXt` 块、关键字大小写不敏感、`ccv3` 优先于 `chara`；**进场先去 BOM**
+   （实测 `json.Unmarshal` 与 `json.Decoder` 都拒 BOM）。
+5. **`.charx`（ZIP）**（M）：根 `card.json`、资产 URI 三形态
+   （`embeded://` / `embedded://` / `/user/images/<卡名>/x.webp` 按 basename 映射）、
+   图标优选 `name=main`；复用技能安装的 zip-slip 与条目/展开门禁；原包整份留档。
+   **根目录没有 `card.json` 时明确报「这是发行包，请导入其中的 `.charx`」**（实测有外层
+   zip 套内层 `.charx` 的发行包）。
+6. **头像重编码**（S）：PNG 卡原图把两份卡 JSON 塞在 `tEXt` 里（实测一张 52 MB 的卡，
+   像素只占 3 MB），头像落盘写**去 `tEXt` 重编码的像素 PNG**（实测 52 MB → 2.22 MiB，
+   像素无损）。需要 `_ "golang.org/x/image/webp"` 才能让 `image.DecodeConfig` 认 webp 资产
+   （实测缺它报 `unknown format`）。
+7. **落位与目录事实源**（M）：`<profile>/characters/<slug>/` 的 `card.json`（原卡逐字节）+
+   `meta.json`（原子写）+ `avatar.png` + 可选 `source.charx`；slug 归一（中文保留、设备名拒绝、
    大小写不敏感查重、重名 `-2`）；`List` 对坏条目带警告跳过、`meta.json` 缺失时从卡重建。
-5. **投影**（M）：人格段拼法（`You are <display>.` + 三个英文标签）、宏替换
-   （`{{char}}`/`{{user}}`/`{{date}}`，大小写不敏感）、`system_prompt` 两种模式与
-   `{{original}}` 展开、示例注入节点、开场白与备用问候、`Tail` 写入。
-6. **领域与会话侧**（M）：`Conversation.Character` / `Conversation.Tail` 进 `Snapshot`/`Restore`
-   与落盘 wire（旧文件缺键 = 空）；`assemblePath` 之后追加 `Tail`，config 开关控制；
-   `/character start` 走「新建 + 清屏 + 回放」。
-7. **导入/删除管理面**（S）：`app.CharacterAdmin` + 装配根实现（范式同 `app.SkillAdmin`）；
-   同名不覆盖、删除二次确认、回执逐项列出「保留未启用」的世界书与资产。
-8. **命令面**（S）：`/character list|show|import|start|remove` 在命令表里各加一条记录
-   （注册表已落地，只改一处）。
-9. **GUI**（M）：设置窗「角色」页（列表 / 头像 / 导入 / 删除 / 开始对话）；会话列表行按
-   `Character` 画头像，卡缺失时回落默认。
-10. **端到端验收**（S）：三类容器各导一张真卡（V1 PNG、V2 JSON、V3 `.charx`）→ 开新会话 →
-    首轮请求的装配文本逐段核对（人格段在前、示例节点在 persona 之后、`Tail` 在历史之后）；
-    压缩一次后确认示例被吸收而人格仍在；删卡后会话照常可装配。
 
-**验收**：三代规范各一张真卡导入后开场白与人格投影正确；`creator_notes`/`tags` 一个字节都
-不进上下文；`ccv3` 优先于 `chara`；`prefer_system_prompt` 两态行为与 `{{original}}` 展开符合
-D243；坏卡/超限/zipslip 报因不吞错；全门禁通过。
+#### 最后接会话与界面
+
+8. **投影**（M）：有效引用 = 用户配置原样 + 追加 `["@char.book","@char","@char.system"]`；
+   `prefer_system_prompt` 两态（替换态 `["@char.system","@char.book","@char","@env"]`，
+   **`@env` 保留**）；`{{original}}` 在 `@char.system` 与 `Tail` 两处都要展开（实测 20 张卡里
+   15 张写在 `post_history_instructions`、10 张写在 `system_prompt`，3 张两处都有）；
+   常驻世界书按 `inject_constant_book` 过滤 `constant && enabled`（实测有卡的条目
+   `enabled: false`，不查就会注入作者已关掉的内容）；`mes_example` 按 `inject_examples`
+   走注入节点。
+9. **领域与会话侧**（M）：`Conversation.Character` / `Conversation.Tail` 进 `Snapshot`/`Restore`
+   与落盘 wire（旧文件缺键 = 空）；`buildRequest` 在装配末尾追加 `Tail`，config 开关控制；
+   `/character start` 走「新建 + 清屏 + 回放」。**新建会话路径单独开一条**，不改
+   `newConversation`——它被 `/new`、`/switch`、`/import` 共用。
+10. **回执四类 + 两类提示**（S）：世界书 / 资产 / 我们不执行的机制（`regex_scripts`、
+    `tavern_helper`、`tavernweave`、`depth_prompt`）/ 只展示字段；**界面卡降级提示**
+    （投影字段含 HTML 块时明说「界面按纯文本显示」）；**超长开场白提示**（估算超
+    `compact_threshold` 的 1/4 时给一行 token 与提醒）。四类都要有测试锁文案，
+    否则漏报的正是用户最需要知道的那条。
+11. **导入/删除管理面**（S）：`app.CharacterAdmin` + 装配根实现（范式同 `app.SkillAdmin`）；
+    同名不覆盖、删除二次确认。
+12. **命令面**（S）：`/character list|show|import|start|remove` 各加一条命令表记录。
+13. **GUI**（M）：设置窗「角色」页（列表 / 头像 / 导入 / 删除 / 开始对话）；会话列表行按
+    `Character` 画头像，卡缺失时回落默认；内置模块清单里 `@char.*` 标注「仅角色会话生效」。
+14. **配置补齐**（S）：`prompts.user_name` 落 `promptsConfig`（**文档早已写、代码里没有**，
+    现在填了会被静默忽略）；新增 `characters.inject_constant_book` 与
+    `characters.inject_examples` 两个开关。设置窗预览在没有卡时不出 `@char` 段。
+15. **端到端验收**（S）：三类容器各导一张真卡（V2 JSON / V3 PNG / V3 `.charx`）→ 开新会话 →
+    首轮请求逐段核对（人格段在前、示例节点在 persona 之后、`Tail` 在历史之后）→ 压缩一次后
+    确认示例被吸收而人格与常驻世界书仍在 → 删卡后会话照常可装配。
+
+**验收**：
+- 两张实测「人格三件套全空、人设全在 constant 条目」的卡导入后**不是空壳**（这是默认开
+  `inject_constant_book` 的全部理由）。
+- `creator_notes` / `tags` / 正则脚本一个字节都不进上下文；`ccv3` 优先于 `chara`。
+- `prefer_system_prompt` 两态行为与 `{{original}}` 在两处的展开符合 D247；**替换态仍带 `@env`**。
+- 无卡会话输出与改动前逐字节相同（golden 锁）。
+- 坏卡 / 超限 / zipslip / 发行包报因不吞错；实测破旧限的三项（52 MB PNG、17.72 MB 卡 JSON、
+  726786 字正则）在新上限下能导入。
+- 全门禁通过。
 
 ### 零碎四项（4×S，约 8 提交）
 
 - **最小宏集**：`{{char}}` / `{{user}}` / `{{date}}`，只在装配与渲染层替换，**不进领域**
-  （角色卡需要它给角色名，线性导出也用得上）。
+  （角色卡需要它给角色名，线性导出也用得上）。**角色卡侧的部分已并入 B 第 3 步**
+  （`{{original}}` 与 `<BOT>` / `<USER>` / `<START>` 别名，见 DESIGN §7.7）；这里只剩
+  导出/渲染侧的消费点，共用同一个替换器，不另写一份。
 - **provider 自定义请求头**：`headers` map，只对 `openai-chat` 生效。
 - **备份轮转**：一代 `.bak` 扩为 N 代 + 保存前完整性标记。
 - **最后一条消息左右切换**：分叉条之外补左右箭头。
 
-**版本收口**：已落地的命令注册表与会话进出合计 10 个提交，剩 B 与零碎四项约 35 提交；
-整版仍与 v0.2.0 同量级。世界书与会话树改父若在 v0.3.0 期间拍板，另行评估是否并入或留给
-之后的版本——**不默认塞进来**。
+**版本收口**：已落地的命令注册表与会话进出合计 10 个提交，剩 B（约 28）与零碎四项（约 8）
+合计约 36 提交；整版仍与 v0.2.0 同量级。**世界书的检索式激活与会话树改父**若在 v0.3.0 期间
+拍板，另行评估是否并入或留给之后的版本——**不默认塞进来**（B 只做常驻条目注入，
+那不等于检索）。
 
 ---
 
@@ -284,6 +333,10 @@ D243；坏卡/超限/zipslip 报因不吞错；全门禁通过。
 > **已提升进 v0.3.0**：角色卡只读导入与最小宏集（见上文「v0.3.0 范围」的 B 与零碎项）。
 > 本节保留**还没排期**的条目；已提升的条目不再在此重复，以免两处排期打架。
 > 下表的编号是原本的优先序，跳过已提升项即可。
+>
+> **B 已吃掉的部分**：卡的常驻世界书条目注入（`constant` 且 `enabled`，整段进人格，
+> DESIGN §5.17 / D247）。下面第 1 条剩下的才是真需求——**按 `keys` 检索**、`order` 淘汰、
+> 扫描深度、非 constant 条目的激活。
 
 ### 优先（日常受益最大，且不碰会话模型）
 
@@ -292,6 +345,11 @@ D243；坏卡/超限/zipslip 报因不吞错；全门禁通过。
    不做递归、不做向量）；预算按上下文占比上限 + `order` 淘汰；状态行与 `/usage` 显示「已激活 N 条」。
    **动手前拍板**：纯装配投影（不落树，回溯干净）还是落成可见节点（用户看得见，但回放多出
    非用户发言）——倾向纯投影，同压缩水位处理。
+   **与 v0.3.0 的 B 不重叠**：B 只注入 `constant: true` 的常驻条目（整段进人格，见 DESIGN §5.17），
+   不做按键匹配、不用 `order` 淘汰、不看扫描深度。这条是剩下的真需求。
+   **另外两处世界的读法要在这里一并处理**（实测真卡里两套并存且会不一致）：条目 `position`
+   既有顶层字符串（`before_char` / `after_char` / 空）又有 `extensions.position`（`0` / `1` / `4`），
+   数字为准；`keys` 里会出现 `{{user}}` 一类宏，匹配前必须先展开（同一份替换器，DESIGN §7.7）。
 
 ### 随后
 
@@ -401,7 +459,9 @@ Apache-2.0），80 维 fbank 输入、192 维 embedding，ONNX 体积 fp32 27MB 
 
 - **世界书的落地形态**：纯装配投影（不落树，回溯干净）还是落成可见节点（用户看得见，
   但回放里多出非用户发言）。倾向纯投影，同压缩水位处理。→ **世界书那条动手前拍板**
-  （不在 v0.3.0 范围内，拍板后才考虑是否并入）。
+  （不在 v0.3.0 范围内，拍板后才考虑是否并入）。**注意与 B 不冲突**：B 只注入
+  `constant: true` 的常驻条目（整段进 persona，见 DESIGN §5.17），不涉及按键检索、
+  `order` 淘汰与扫描深度——本节问的是后者。
 - **唤醒词走哪条路**：两条都通不了现在这条道——开放模型的预训练权重不许随二进制分发，
   许可证干净的模型又缺纯 Go 的 INT8 运行时。要么自训模型并配套写一个极小的推理内核，
   要么做成外置服务（「开箱即用」降级为「另起一个服务」）。→ **唤醒词动手前拍板**，

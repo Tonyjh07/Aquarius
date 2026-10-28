@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-27 @ 52cce2b -->
+<!-- docs-sync: 2026-10-28 @ d371827 -->
 
 > 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
 > 配置**以 profile 为隔离单位**：
@@ -156,9 +156,19 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `@env.sandbox` | `- Privileged sandbox directory: …`（仅绝对路径时出） |
 | `@env.timeout` | `- Tool timeout: …`（仅配置了超时时出） |
 | `@env.date` | `- Current date: YYYY-MM-DD`（**会话创建当天**） |
+| `@char` | **角色卡组**（组头无文本），子模块见下；**只在角色会话里有内容** |
+| `@char.identity` | `You are <角色显示名>.` |
+| `@char.description` / `@char.personality` / `@char.scenario` | 卡的对应字段，各带一个英文标签 |
+| `@char.system` | 卡里的 `system_prompt`（`{{original}}` 在此展开） |
+| `@char.book` | 卡的**常驻**世界书条目（`constant` 且 `enabled`，按卡内顺序） |
+
+`@char.*` 是**条件内置**：非角色会话、或卡里对应字段为空时它是空模块、**不计「缺失模块」**
+警告。所以把它留在 `prompts.persona` 里不会改变任何普通会话的输出——你可以一直带着它，
+按自己的顺序摆在用户人格之前或之后。
 
 结果在**新建会话**时快照进 persona 首节点（改动只影响新建会话，存量会话的 persona 已在
-树内、可 `/edit`）。
+树内、可 `/edit`）。角色的 `@char.*` 与卡目录**脱钩**：换卡版本、删卡、改配置都不会改写
+已开始的会话，要按新卡重来就再 `/character start`。
 
 ### system_prompt（人格兜底单串）
 
@@ -283,18 +293,22 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 ### characters（角色卡）
 
 角色卡只读导入（PNG / JSON / `.charx`），投影成一次会话的开头；卡的落位与解析口径属于设计，
-见 [DESIGN.md](../DESIGN.md)（端口与存储一节）。这里只列会影响行为的两个开关与用户名的取值。
+见 [DESIGN.md](../DESIGN.md)（端口与存储一节）。这里只列会影响行为的四个开关与用户名的取值。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `characters.prefer_system_prompt` | bool | `false` | `false` = **你的人设在前，卡的系统提示作为附加段**（推荐：卡不该悄悄替换你的规则与安全约束）；`true` = 卡里的 `system_prompt` 替换主提示，其中的 `{{original}}` 展开成你的人格，卡的角色设定段始终保留 |
+| `characters.prefer_system_prompt` | bool | `false` | `false` = **你的人设在前，卡的系统提示作为附加段**（推荐：卡不该悄悄替换你的规则与安全约束）；`true` = 卡里的 `system_prompt` 替换主提示，其中的 `{{original}}` 展开成你的人格，卡的角色设定段始终保留。**两种模式下运行环境信息都保留**——那是事实，不是人设 |
 | `characters.apply_post_history` | bool | `true` | 每轮把卡的 `post_history_instructions` 追加在**历史之后**（语义就是「最后再说一句」）；内容随会话落盘，关掉只是不再发送，不会删掉 |
+| `characters.inject_constant_book` | bool | `true` | 注入卡的**常驻**世界书条目（`constant: true` 且未禁用），按卡内顺序进人格段。默认开是因为不少卡把人设整个写在常驻条目里，不注入就是个空壳。**代价**：它在人格段里，每轮都付 token、**不会被上下文压缩挤掉**；觉得占地方就关掉它再重开一次会话 |
+| `characters.inject_examples` | bool | `true` | 注入卡的示例对话（`mes_example`）。它落在人格之后的注入节点里，**会随历史增长被挤掉**；关掉只是不再发送，卡文件照留 |
 
 - 你希望在卡里被怎么称呼，用 `prompts.user_name`（默认 `User`）指定，见上文 prompts 段。
-- 两个开关**只影响之后新建的角色会话**，已开始的会话保持建会话时的口径（人格与尾部指令
-  都已快照/落盘）；关掉 `apply_post_history` 对已有会话是**立即**生效的（它决定发不发，不改内容）。
+- 四个开关**只影响之后新建的角色会话**，已开始的会话保持建会话时的口径（人格与尾部指令
+  都已快照/落盘）；只有 `apply_post_history` 对已有会话是**立即**生效的（它决定发不发，
+  不改内容）。
 - 卡的 `creator_notes`（作者留言）、`tags`、`creator`、`character_version` 只展示，**不进上下文**；
-  世界书（Lorebook）与表情/背景/语音资产本版保留但不激活。
+  卡的**非常驻**世界书条目、非图标资产，以及正则脚本、扩展脚本一类的机制**保留但不执行**——
+  导入回执会逐类说清哪样读了、哪样没读。
 - 卡目录是唯一事实来源：坏掉的卡在 `/character list` 里带警告跳过，不阻断其余角色。
 
 ### delegate（外部代理转交）
@@ -471,7 +485,8 @@ profile 配置 `<data>/profiles/default/config.json`：
   "prompts": { "modules": {}, "persona": [], "user_name": "User" },
   "input": { "language": "auto" },
   "skills": { "dirs": [] },
-  "characters": { "prefer_system_prompt": false, "apply_post_history": true },
+  "characters": { "prefer_system_prompt": false, "apply_post_history": true,
+                  "inject_constant_book": true, "inject_examples": true },
   "delegate": { "agents": {}, "timeout_sec": 1800 },
   "output": { "tts": false, "notify": true },
   "audio": {
