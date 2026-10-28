@@ -32,11 +32,15 @@ type chatConversation struct {
 }
 
 // chatNode mapping 里的一个节点。
+//
+// Children 不用 omitempty：ChatGPT 自己的导出里叶子节点写的是 `"children": []`，缺这个键的
+// 形状对读它的人是不完整节点（它靠 children 走树）。空数组只多 14 字节，别为省这点字节
+// 让产物与对方的规范有出入。
 type chatNode struct {
 	ID       string   `json:"id"`
 	Message  *chatMsg `json:"message"`
 	Parent   string   `json:"parent,omitempty"`
-	Children []string `json:"children,omitempty"`
+	Children []string `json:"children"`
 }
 
 // chatMsg 一条消息。
@@ -107,6 +111,8 @@ func toChatConversation(c *conversation.Conversation) (chatConversation, port.Ex
 			n.Message = &msg
 		}
 		n.Parent = string(m.Parent)
+		// 空数组而不是 nil：产物里叶子节点要带 `"children": []`（与对方导出同形）。
+		n.Children = make([]string, 0, len(childs[m.ID]))
 		for _, k := range childs[m.ID] {
 			n.Children = append(n.Children, string(k))
 		}

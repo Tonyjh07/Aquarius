@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -223,6 +224,26 @@ func TestImportRejectsUntrusted(t *testing.T) {
 			},
 			want: "不认识的条目",
 		},
+		{
+			// zip-slip：条目名带 `..` 不能只是「safeArchivePath 单函数测过」——要走 Import
+			// 全链路确认它在解包前就被拦住（真解出来会写到导出目录之外）。
+			name: "条目越出目录",
+			files: map[string]string{
+				"manifest.json":      `{"format":"aqx","version":1}`,
+				"tree.json":          "{}",
+				"../../../evil.json": "x",
+			},
+			want: "越出解包目录",
+		},
+		{
+			name: "绝对路径条目",
+			files: map[string]string{
+				"manifest.json": `{"format":"aqx","version":1}`,
+				"tree.json":     "{}",
+				"/etc/passwd":   "x",
+			},
+			want: "绝对路径",
+		},
 	}
 	for _, tc := range cases {
 		data := zipBytes(t, tc.files)
@@ -230,6 +251,25 @@ func TestImportRejectsUntrusted(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: err = %v, want 含 %q", tc.name, err, tc.want)
 		}
+	}
+}
+
+// TestImportRejectsOversizedArchive 条目数与解压总量都走 Import 全链路锁住：
+// 上限写在单文件常量里，只测那个常量等于没测——绕过 LazyProc 的解包路径才是真正会中招的地方。
+func TestImportRejectsOversizedArchive(t *testing.T) {
+	ex := New(Options{Blobs: mustBlobs(t)})
+	aqx := port.ExchangeFormats()[0]
+
+	// 条目数超限：多造一个条目就够（不必真造四千个文件，超一个就拒绝）。
+	many := make(map[string]string, maxArchiveEntries+2)
+	many["manifest.json"] = `{"format":"aqx","version":1}`
+	many["tree.json"] = "{}"
+	for i := 0; i <= maxArchiveEntries; i++ {
+		many[fmt.Sprintf("blobs/%064d", i)] = "x"
+	}
+	if _, _, err := ex.Import(context.Background(), bytes.NewReader(zipBytes(t, many)), aqx); err == nil ||
+		!strings.Contains(err.Error(), "条目数") {
+		t.Fatalf("条目数超限 err = %v, want 条目数", err)
 	}
 }
 

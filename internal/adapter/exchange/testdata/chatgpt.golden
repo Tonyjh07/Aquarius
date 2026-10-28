@@ -79,7 +79,8 @@
             ]
           }
         },
-        "parent": "N6"
+        "parent": "N6",
+        "children": []
       },
       "N5": {
         "id": "N5",
@@ -96,7 +97,8 @@
             ]
           }
         },
-        "parent": "N7"
+        "parent": "N7",
+        "children": []
       },
       "N6": {
         "id": "N6",

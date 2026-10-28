@@ -55,8 +55,13 @@ type manifest struct {
 	Version int    `json:"version"`
 }
 
-// errDroppedBlob 附件字节取不到时的回执行前缀（导出侧）。
+// droppedBlobFmt 附件字节取不到时的回执行前缀（导出侧：库里没有）。
 const droppedBlobFmt = "附件 %d 个（%s 不在附件库里）"
+
+// tooLargeBlobFmt 附件超过单份上限时的回执行（导出侧）。
+//
+// 与「不在库里」分开说：前者去清库也没用，后者补进库就能带上。混成一句会让用户白忙一趟。
+const tooLargeBlobFmt = "附件 %d 个（%s 超过单份 %d MB 上限，没有带上）"
 
 // exportAQX 无损导出：整树 + 附件字节。
 func (e *Exchange) exportAQX(ctx context.Context, c *conversation.Conversation, w io.Writer) (port.ExchangeReport, error) {
@@ -85,13 +90,17 @@ func (e *Exchange) exportAQX(ctx context.Context, c *conversation.Conversation, 
 	}
 	refs := collectBlobs(c)
 	sort.Slice(refs, func(i, j int) bool { return refs[i].Hash < refs[j].Hash }) // 同一棵树导两次字节相同
-	var missing []string
+	var missing, tooLarge []string
 	for _, ref := range refs {
 		if e.blobs == nil {
 			missing = append(missing, ref.Name)
 			continue
 		}
 		body, err := e.readBlob(ctx, ref)
+		if errors.Is(err, errBlobTooLarge) {
+			tooLarge = append(tooLarge, ref.Name)
+			continue
+		}
 		if err != nil {
 			missing = append(missing, ref.Name)
 			continue
@@ -113,6 +122,10 @@ func (e *Exchange) exportAQX(ctx context.Context, c *conversation.Conversation, 
 		// 回执必须说明，否则用户以为备份完整。
 		rep.Dropped = append(rep.Dropped, fmt.Sprintf(
 			droppedBlobFmt, len(missing), summarizeNames(missing)))
+	}
+	if len(tooLarge) > 0 {
+		rep.Dropped = append(rep.Dropped, fmt.Sprintf(
+			tooLargeBlobFmt, len(tooLarge), summarizeNames(tooLarge), maxBlobBytes>>20))
 	}
 	return rep, nil
 }
@@ -280,8 +293,18 @@ func (e *Exchange) restoreBlobs(ctx context.Context, files []*zip.File) ([]strin
 	return nil, nil
 }
 
+// errBlobTooLarge 附件超过单份上限（导出侧的丢项分类：与「库里没有」分开说）。
+//
+// 两者都是「这次没带上」，但原因是两回事：前者去清附件库也没用，后者补进库就能带上。
+// 混成一句「不在附件库里」会让用户白忙一趟。
+var errBlobTooLarge = errors.New("附件超过单份上限")
+
 // readBlob 从附件库取一份字节。
 func (e *Exchange) readBlob(ctx context.Context, ref conversation.BlobRef) ([]byte, error) {
+	// 先按引用里记的大小拦一道：超限时不必读进内存，也让回执能说清是「太大」而不是「没有」。
+	if ref.Size > maxBlobBytes {
+		return nil, errBlobTooLarge
+	}
 	rc, err := e.blobs.Get(ctx, ref)
 	if err != nil {
 		return nil, err
