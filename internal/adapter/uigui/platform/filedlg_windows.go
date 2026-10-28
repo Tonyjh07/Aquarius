@@ -68,6 +68,7 @@ func (p *Plat) RequestSaveFile(req SaveRequest) {
 	p.dlgReq.Store(&dlgRequest{
 		save: true, purpose: req.Purpose, title: req.Title,
 		name: req.Name, defExt: req.DefExt, filters: req.Filters,
+		filterIndex: req.FilterIndex,
 	})
 	procPostMessageW.Call(h, saveFileMsg, 0, 0)
 }
@@ -79,11 +80,12 @@ func (p *Plat) showOpenFile() {
 	if req == nil {
 		return
 	}
-	path := p.openOneFile(req.title, req.filters)
+	path, _ := p.openOneFile(req.title, req.filters)
 	if path == "" || p.host == nil {
 		return
 	}
-	p.host.FilePicked(req.purpose, path)
+	// 导入侧不看档位（认格式靠内容），-1 = 没有这回事。
+	p.host.FilePicked(req.purpose, path, -1)
 }
 
 // showSaveFile 呈现保存框（shell 线程）：选定落点 → Host.FilePicked。
@@ -96,15 +98,15 @@ func (p *Plat) showSaveFile() {
 	if req == nil {
 		return
 	}
-	path := p.saveOneFile(req.title, req.name, req.defExt, req.filters)
+	path, idx := p.saveOneFile(req.title, req.name, req.defExt, req.filters, req.filterIndex)
 	if path == "" || p.host == nil {
 		return
 	}
-	p.host.FilePicked(req.purpose, path)
+	p.host.FilePicked(req.purpose, path, idx)
 }
 
 // openOneFile 单选文件（OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST，不带多选）。
-func (p *Plat) openOneFile(title string, filters []FileFilter) string {
+func (p *Plat) openOneFile(title string, filters []FileFilter) (string, int) {
 	const (
 		ofnHideReadOnly  = 0x4
 		ofnNoChangeDir   = 0x8
@@ -112,29 +114,33 @@ func (p *Plat) openOneFile(title string, filters []FileFilter) string {
 		ofnFileMustExist = 0x1000
 		ofnExplorer      = 0x80000
 	)
-	return p.runFileDlg(procGetOpenFileNameW, title, "", "", filters,
+	return p.runFileDlg(procGetOpenFileNameW, title, "", "", filters, 0,
 		ofnHideReadOnly|ofnNoChangeDir|ofnExplorer|ofnPathMustExist|ofnFileMustExist)
 }
 
 // saveOneFile 保存框（OFN_PATHMUSTEXIST，不要求目标已存在）。
-func (p *Plat) saveOneFile(title, name, defExt string, filters []FileFilter) string {
+func (p *Plat) saveOneFile(title, name, defExt string, filters []FileFilter, filterIndex int) (string, int) {
 	const (
 		ofnHideReadOnly  = 0x4
 		ofnNoChangeDir   = 0x8
 		ofnPathMustExist = 0x800
 		ofnExplorer      = 0x80000
 	)
-	return p.runFileDlg(procGetSaveFileNameW, title, name, defExt, filters,
+	return p.runFileDlg(procGetSaveFileNameW, title, name, defExt, filters, filterIndex,
 		ofnHideReadOnly|ofnNoChangeDir|ofnExplorer|ofnPathMustExist)
 }
 
 // runFileDlg 打开/保存框共用一次呈现：proc 决定是哪一个 proc，其余参数照 OPENFILENAMEW
-// 填。返回空 = 取消或出错。
-func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, filters []FileFilter, flags uint32) string {
+// 填。返回空路径 = 取消或出错；第二个返回值是**用户选中的过滤器档位（0 起，-1 = 报不出）**。
+//
+// nFilterIndex 是 OPENFILENAME 里唯一的「入参兼出参」字段：进去指定预选哪一档，回来是
+// 用户最终停在哪一档。这两件事无法从路径反推（用户可以把文件名写成任何扩展名，也可以
+// 在「保存类型」里换了档却不改文件名），所以只能读它——`--format` 就靠这个值定。
+func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, filters []FileFilter, filterIndex int, flags uint32) (string, int) {
 	filter := utf16Filters(filters)
 	t, err := syscall.UTF16FromString(title)
 	if err != nil {
-		return ""
+		return "", -1
 	}
 	buf := make([]uint16, 32768)
 	if name != "" {
@@ -156,6 +162,11 @@ func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, fi
 			ofn.lpstrDefExt = &w[0]
 		}
 	}
+	// 预算档位：Win32 的 nFilterIndex 是 **1 起**（0 = 自定义过滤器）。越界不传，
+	// 让对话框自己落到第一档（传一个不存在的序号会被当成自定义档，反而没有类型可选）。
+	if filterIndex >= 0 && filterIndex < len(filters) {
+		ofn.nFilterIndex = uint32(filterIndex) + 1
+	}
 	if h := shellHWND.Load(); h != 0 {
 		ofn.hwndOwner = h
 	}
@@ -166,13 +177,19 @@ func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, fi
 		if code := commDlgExtendedError(); code != 0 {
 			p.noticeOnce(&p.dlgNotice, fmt.Sprintf("文件对话框没能打开（错误码 %d），请重试或换个路径", code))
 		}
-		return ""
+		return "", -1
 	}
 	paths := parseMultiSelect(buf) // 单选也是这条解析（一个 token = 完整路径）
 	if len(paths) == 0 {
-		return ""
+		return "", -1
 	}
-	return paths[0]
+	// 回读档位：1 起 → 0 起。0 或超出档数（对话框给了自定义过滤器）一律报 -1，
+	// 让调用方走「按扩展名回落」而不是错认成第一档。
+	idx := -1
+	if n := int(ofn.nFilterIndex); n >= 1 && n <= len(filters) {
+		idx = n - 1
+	}
+	return paths[0], idx
 }
 
 // utf16Filters 过滤器列表 → 对话框串（label/pattern 成对，末尾双 NUL）；空表给「所有文件」。

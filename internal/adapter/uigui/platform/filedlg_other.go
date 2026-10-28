@@ -30,10 +30,15 @@ func (p *Plat) showOpenFile(req OpenRequest) {
 	if path == "" || p.host == nil {
 		return // 取消
 	}
-	p.host.FilePicked(req.Purpose, path)
+	// 导入侧不看档位（认格式靠内容），-1 = 没有这回事。
+	p.host.FilePicked(req.Purpose, path, -1)
 }
 
 // showSaveFile 呈现保存框：选定落点 → Host.FilePicked。
+//
+// 档位恒报 -1：zenity / kdialog / osascript 只回路径，回不了用户在「文件类型」里选了哪
+// 一档（zenity 的 --file-filter 在保存框里只是筛显与补扩展名，不回报选中的那项）。宿主
+// 据此按落点扩展名回落——这是本平台能给出的最好依据，写进 DESIGN §5.16。
 func (p *Plat) showSaveFile(req SaveRequest) {
 	path, ok := saveFileCommand(req)
 	if !ok {
@@ -43,7 +48,7 @@ func (p *Plat) showSaveFile(req SaveRequest) {
 	if path == "" || p.host == nil {
 		return
 	}
-	p.host.FilePicked(req.Purpose, path)
+	p.host.FilePicked(req.Purpose, path, -1)
 }
 
 // openFileCommand 按平台挑一条可用命令选单个文件；ok=false = 无命令可用。

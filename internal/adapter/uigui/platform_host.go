@@ -49,12 +49,12 @@ func (h *platHost) SkillPathPicked(kind platform.PickKind, path string) {
 }
 
 // FilePicked 通用文件框结果（空 = 取消，平台侧已滤掉）：投会话进出专用通道，由历史窗
-// 帧首取走并投内核命令。
-func (h *platHost) FilePicked(purpose platform.FilePurpose, path string) {
+// 帧首取走并投内核命令。filterIndex 原样带过去（-1 = 平台报不出档位）。
+func (h *platHost) FilePicked(purpose platform.FilePurpose, path string, filterIndex int) {
 	if path == "" {
 		return
 	}
-	h.u.pushFilePick(filePick{purpose: purpose, path: path})
+	h.u.pushFilePick(filePick{purpose: purpose, path: path, filterIndex: filterIndex})
 }
 
 // SystemThemeChanged 系统深浅变化（仅 system 档重解析）。

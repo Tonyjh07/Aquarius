@@ -139,10 +139,12 @@ func (u *UI) pushSkillPick(p skillPathPick) {
 }
 
 // filePick 通用文件框（会话进出）结果的一笔：purpose 决定「导入这个文件」还是「写到这个
-// 落点」，path 是用户选中的路径。
+// 落点」，path 是用户选中的路径，filterIndex 是保存框里选中的格式档位（0 起；-1 = 平台
+// 报不出，见 platform.Host.FilePicked）。
 type filePick struct {
-	purpose platform.FilePurpose
-	path    string
+	purpose     platform.FilePurpose
+	path        string
+	filterIndex int
 }
 
 // pushFilePick 投递文件框结果（平台线程调用）：通道满即丢（重选一次即可），随后催历史窗

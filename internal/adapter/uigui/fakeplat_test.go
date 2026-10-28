@@ -51,6 +51,9 @@ type fakePlat struct {
 	// （平台线程会把结果回传给宿主）；返回 "", false = 用户取消。
 	OnOpenRequest func(req platform.OpenRequest) (string, bool)
 	OnSaveRequest func(req platform.SaveRequest) (string, bool)
+	// SaveFilterIndex 保存框回传的档位（0 起；缺省 -1 = 平台报不出，与真实现的非 Windows
+	// 降级档同语义）。用例按需设成某档来断言格式选择真的生效。
+	SaveFilterIndex int
 
 	// —— 记账 ——
 	Presents     int
@@ -215,29 +218,29 @@ func (f *fakePlat) RequestOpenFile(req platform.OpenRequest) {
 	f.mu.Unlock()
 	if f.OnOpenRequest != nil {
 		if path, ok := f.OnOpenRequest(req); ok {
-			f.replayPick(req.Purpose, path)
+			f.replayPick(req.Purpose, path, -1) // 导入侧不看档位
 		}
 	}
 }
 
-// RequestSaveFile 同 RequestOpenFile（保存框）。
+// RequestSaveFile 同 RequestOpenFile（保存框）；档位取 SaveFilterIndex。
 func (f *fakePlat) RequestSaveFile(req platform.SaveRequest) {
 	f.mu.Lock()
 	f.SaveRequests = append(f.SaveRequests, req)
 	f.mu.Unlock()
 	if f.OnSaveRequest != nil {
 		if path, ok := f.OnSaveRequest(req); ok {
-			f.replayPick(req.Purpose, path)
+			f.replayPick(req.Purpose, path, f.SaveFilterIndex)
 		}
 	}
 }
 
 // replayPick 模拟平台线程回传（与真实现一样只发一笔、空路径 = 取消）。
-func (f *fakePlat) replayPick(purpose platform.FilePurpose, path string) {
+func (f *fakePlat) replayPick(purpose platform.FilePurpose, path string, filterIndex int) {
 	if path == "" || f.host == nil {
 		return
 	}
-	f.host.FilePicked(purpose, path)
+	f.host.FilePicked(purpose, path, filterIndex)
 }
 
 func (f *fakePlat) SubclassCloseToHide(platform.Handle) {

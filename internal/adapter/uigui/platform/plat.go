@@ -38,12 +38,13 @@ type Plat struct {
 
 // dlgRequest 通用文件框请求（打开与保存共用一个槽：同一时刻只可能有一个框在等）。
 type dlgRequest struct {
-	save    bool
-	purpose FilePurpose
-	title   string
-	name    string // 保存框预填文件名
-	defExt  string
-	filters []FileFilter
+	save        bool
+	purpose     FilePurpose
+	title       string
+	name        string // 保存框预填文件名
+	defExt      string
+	filters     []FileFilter
+	filterIndex int // 保存框打开时预选的那一档（0 起）
 }
 
 // New 构造平台实现（各平台方法见同目录 *_windows.go / *_other.go）。

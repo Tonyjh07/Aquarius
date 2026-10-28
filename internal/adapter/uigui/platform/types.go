@@ -91,8 +91,14 @@ type SaveRequest struct {
 	// DefExt 用户没写扩展名时补上的那个，**不带点**（`aqx`）：Win32 的 lpstrDefExt 只取
 	// 前三个字符，带点会被当成扩展名的一部分（MSDN：should not contain a period）。
 	// 非 Windows 侧拼预填名时自己加点（zenity/kdialog/osascript 要的是完整文件名）。
+	//
+	// 多档格式时它只是「用户不改就落到哪一档」的缺省，**不保证与所选档一致**：Win32 的
+	// defExt 是静态的，换了「保存类型」也不会跟着变（见 FilePicked 的 filterIndex 契约）。
 	DefExt  string
 	Filters []FileFilter
+
+	// FilterIndex 打开时预选的那一档（0 起；0 = 过滤器第一项）。越界按 0 处理。
+	FilterIndex int
 }
 
 // Config 构造选项（装配根/uigui 注入）。
@@ -133,5 +139,9 @@ type Host interface {
 	// FilePicked 通用（单选）文件框结果（空路径 = 取消）：purpose 原样带回请求时的标签，
 	// 由宿主决定「导入这个文件」还是「写到这个落点」。与 FilesPicked / SkillPathPicked
 	// 分开：前两者各自绑死了「多选附件」与「技能目录」的语义。
-	FilePicked(purpose FilePurpose, path string)
+	//
+	// filterIndex = 用户在「保存类型」里选中的那一档（**0 起**，与请求的 Filters 同序）；
+	// 平台报不出来给 **-1**（非 Windows 的 zenity/kdialog/osascript 只回路径）。宿主据此
+	// 决定写哪种格式——它是权威依据，扩展名只是用户顺手写的字。
+	FilePicked(purpose FilePurpose, path string, filterIndex int)
 }
