@@ -214,6 +214,10 @@ func EncodeTree(c *conversation.Conversation) ([]byte, error) {
 //
 // 与 Load 同一条路径：旧格式显式拒绝、残缺结构一律报因，不「尽力修复」。文件来自别处时
 // 更是如此——外部文件是不可信输入（D242）。
+//
+// **不做输入上限**：整份数据已经在内存里，这个函数只负责解析与自检。限流是调用方的事——
+// 从流里读的时候先卡字节数（`aqx` 侧是归档总字节 256 MB + `tree.json` 64 MB 两道），
+// 别把未限流的外部数据直接喂进来。
 func DecodeTree(data []byte) (*conversation.Conversation, error) {
 	var w wireTree
 	if err := json.Unmarshal(data, &w); err != nil {

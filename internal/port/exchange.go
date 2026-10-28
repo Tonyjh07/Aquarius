@@ -97,15 +97,15 @@ func ExchangeFormats() []ExchangeFormat {
 		{Name: "aqx", Ext: ".aqx", Label: "Aquarius 归档"},
 		{
 			Name: "chatgpt", Ext: ".json", Label: "ChatGPT 会话", Lossy: true,
-			LossNote: "附件只留一条说明、思考与工具调用不带、消息的模型/用量等元数据不带",
+			LossNote: "附件只留一条说明、思考与工具调用不带、注入节点降级为 system、消息的模型/用量等元数据不带",
 		},
 		{
 			Name: "openai", Ext: ".json", Label: "OpenAI 消息列表", Lossy: true,
-			LossNote: "只取当前那条链，旁支、思考、工具与附件不带",
+			LossNote: "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system",
 		},
 		{
 			Name: "sillytavern", Ext: ".jsonl", Label: "SillyTavern 对话", Lossy: true,
-			LossNote: "只取当前那条链，旁支、思考、工具与附件不带；对方的世界书/正则/作者注不装",
+			LossNote: "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system；对方的世界书/正则/作者注不装",
 		},
 		{
 			Name: "openwebui", Ext: ".json", Label: "Open WebUI 会话", Lossy: true, NoExport: true,
