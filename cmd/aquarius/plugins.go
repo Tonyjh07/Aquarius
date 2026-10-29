@@ -301,7 +301,16 @@ func (p *pluginSurfaces) refresh() {
 				}
 				return sess.Handle(ctx, port.UserInput{Text: text})
 			}
-			meta[key] = port.CommandInfo{Names: []string{key}, Desc: pi.Description}
+			// 动态命令的参数相：MCP prompt 的参数由服务端声明，本地只给一句通用提示
+			//（D250：拿不到逐参数事实时退到 text，只提示不填）。
+			meta[key] = port.CommandInfo{
+				Names: []string{key},
+				Desc:  pi.Description,
+				Params: []port.CommandParam{{
+					Name: "参数", Kind: port.ParamText,
+					Desc: "这个 prompt 的参数，按服务端声明的顺序填",
+				}},
+			}
 		}
 	}
 	sess.SetDynamicCommands(dyn, meta)

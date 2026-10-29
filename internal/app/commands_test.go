@@ -52,6 +52,67 @@ func TestCommandTableSelfCheck(t *testing.T) {
 	if len(commandIndex) != len(seen) {
 		t.Fatalf("索引 %d 个名字, want %d", len(commandIndex), len(seen))
 	}
+
+	// 参数声明自检（D250）：参数相的候选来自这里，声明不全会让浮层列出点不上的空行。
+	for _, e := range commandTable {
+		for j, p := range e.Params {
+			if p.Name == "" {
+				t.Fatalf("命令 %v 第 %d 个参数没有名字（浮层靠它显示）", e.Names, j)
+			}
+			switch p.Kind {
+			case port.ParamChoice:
+				if len(p.Values) == 0 {
+					t.Fatalf("命令 %v 的参数 %q 是枚举却没给 Values（浮层将一行都列不出）", e.Names, p.Name)
+				}
+			case port.ParamText:
+				if p.Desc == "" {
+					t.Fatalf("命令 %v 的参数 %q 是自由文本，必须有一句提示（无候选可填，提示是唯一信息）", e.Names, p.Name)
+				}
+			case port.ParamFlag:
+				if !strings.HasPrefix(p.Name, "--") {
+					t.Fatalf("命令 %v 的参数 %q 标为开关，但名字不是 -- 开头（浮层按 -- 前缀取候选）", e.Names, p.Name)
+				}
+			default:
+				t.Fatalf("命令 %v 的参数 %q 有未知性质 %q", e.Names, p.Name, p.Kind)
+			}
+		}
+	}
+}
+
+// TestCommandParamsMatchUsage 参数声明与 Usage 对账（D250）：Usage 是给人一眼看全的
+// 那句速记（含 `[--keep|--copy]` 这类分组写法），Params 是逐条可填项——两份事实同一
+// 来源，任何一个参数在 Usage 里找不到代表两者已经分叉（用户看到提示却写不进命令）。
+func TestCommandParamsMatchUsage(t *testing.T) {
+	for _, e := range commandTable {
+		if len(e.Params) == 0 {
+			continue
+		}
+		if e.Usage == "" {
+			t.Fatalf("命令 %v 声明了 %d 个参数，Usage 却是空的", e.Names, len(e.Params))
+		}
+		for _, p := range e.Params {
+			// 三种性质的比对口径不同：开关按字面量；自由文本按占位名（去掉尖括号）；
+			// 枚举按「参数名或任一可选值」——`[on|off]` 这种写法里放的是值不是名。
+			var want string
+			switch p.Kind {
+			case port.ParamFlag:
+				want = p.Name
+			case port.ParamChoice:
+				want = strings.Trim(p.Name, "<>")
+				for _, v := range p.Values {
+					if strings.Contains(e.Usage, v) {
+						want = v
+						break
+					}
+				}
+			default:
+				want = strings.Trim(p.Name, "<>")
+			}
+			if !strings.Contains(e.Usage, want) {
+				t.Fatalf("命令 %v 的参数 %q 没出现在 Usage %q 里（两处事实已分叉）", e.Names, p.Name, e.Usage)
+			}
+		}
+	}
 }
 
 // TestCommandNamesAreDispatched 表里每条命令（含每个别名）都能经 Handle 分派到——
