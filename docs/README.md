@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-10-23 @ 1c7444c -->
+<!-- docs-sync: 2026-10-29 @ b0a7d3b -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找它的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -32,7 +32,7 @@
 | 文档 | 管什么 | 权威性 |
 |---|---|---|
 | [DESIGN.md](../DESIGN.md) | **当前为真**的设计：领域模型、端口、权限、存储、里程碑验收 | 与决策记录同级；设计事实的最终裁定 |
-| [decisions.md](decisions.md) | 每条决策的动机、被否决的方案、实测 | 与 DESIGN 同级；**编号的唯一索引**在这里 |
+| [decisions.md](decisions.md) | 每条决策一行结论；够格展开的写动机与用户拍掉的方案 | 与 DESIGN 同级；**编号的唯一索引**在这里 |
 | [roadmap.md](roadmap.md) | 已经落地了什么、对应哪条决策 | 进度档案，只记过去；计划不在本文 |
 | [plan.md](plan.md) | 还没做的事、顺序与节奏 | 未来工作的唯一处；**工作稿，随时重排，别的文档不按节号引用它** |
 | [overview.md](overview.md) | 架构导读：内核三件事、依赖方向、目录与端口矩阵 | 十分钟地图；与 DESIGN 冲突以 DESIGN 为准 |
@@ -87,6 +87,7 @@
 | 存档 | 原用途 | 被谁取代 |
 |---|---|---|
 | [archive/relation-map-physics-design.md](archive/relation-map-physics-design.md) | 关系图「全程物理动画」的力积分设计稿（边弹簧 + 阻尼 + 树锚的推导与实测） | 生产物理改采源算法（D128）；形态与现状见 [relation-map-design.md](relation-map-design.md) §5.4 |
+| [archive/decisions-full.md](archive/decisions-full.md) | 压缩前的决策记录全文：实现细节、当时的推演与自问自答式的否决项 | 正文压缩后 [decisions.md](decisions.md) 只留一行结论与够格展开的决策；编号与结论仍以它为准 |
 
 ## 维护
 

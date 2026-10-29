@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-28 @ 1362f5e -->
+<!-- docs-sync: 2026-10-29 @ b0a7d3b -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -144,6 +144,11 @@
 | A-6 | `5e73c13 feat: give /export and /import their command surface` | `/export [--format] [--path]` 与 `/import <文件>` 各一条记录；缺省落 `<profile>/exports`、标题派生文件名、同名加 `-2`、写一半失败删半截；导入落新会话（ID 与 `/new` 同源分配、Root ID 连边一起换再自检），失败不动当前会话；回执两行 + 真丢了才列丢项（8 files, +803/−8） |
 | A-7 | `f20eaee feat: put the exchange entries in the history window` | 历史窗左栏标题行「导入」「导出」两颗文字钮，只拿路径、选完各投一条命令、取消不投；`platform` 新增 `RequestOpenFile`/`RequestSaveFile`（Windows `GetSaveFileNameW`、非 Windows zenity/kdialog/osascript，保存框不设覆盖确认）；标题 → 文件名规则上移 `port.FileStem`（19 files, +913/−35） |
 | A-8 | `5e4fb0f test: accept the exchange end to end and lock the interop output` | 三份互通 golden 锁字节（验收树连节点 ID 一起固定，否则 chatgpt 产物每次不同）+ 导两次字节相同 + 产物读得回；命令面 `/export` → `/import` 逐项等价（ID 抹平后比对），有损路径核对回执与节点数缩减（5 files, +589/−0） |
+
+**文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
+D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。
+压缩前的全文（实现细节、当时的推演与否决项）原样进
+[archive/decisions-full.md](archive/decisions-full.md)，要回补只从那里取。
 
 > 里程碑与步骤是两套编号：里程碑（M<n>）是 `DESIGN.md` §12 的验收单位，
 > 步骤（S<n>）是当时的执行批次。多个步骤可以落在同一个里程碑里。
