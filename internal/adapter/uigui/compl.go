@@ -4,7 +4,7 @@ import (
 	"image"
 	"image/color"
 	"strconv"
-	"strings"
+	"unicode/utf8"
 
 	"gioui.org/io/event"
 	"gioui.org/io/key"
@@ -15,14 +15,12 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
-
-	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // complSelBg 补全行高亮底色（tipBg 亮一档）。
 var complSelBg = color.NRGBA{R: 0x36, G: 0x3B, B: 0x41, A: 0xFF}
 
-// complMaxRows 补全浮层最多显示的命令行数（D103：超出部分折叠为提示行）。
+// complMaxRows 补全浮层最多显示的行数（D103：超出部分折叠为提示行）。
 const complMaxRows = 8
 
 const (
@@ -32,66 +30,52 @@ const (
 	complAnchorGapDp = 4   // 卡片与胶囊上沿间距
 )
 
-// complItem 过滤后的补全行：条目 + 命中名（别名场景落笔用命中名，不回写主名——
-// 输入 "/exit" 补全不改写成 "/quit"）。
-type complItem struct {
-	info port.CommandInfo
-	name string
+// complRowRect 一行的命中矩形 + 它在 complList 里的下标（提示行不登记，下标才需要
+// 单独记：否则行序与清单序会错位）。
+type complRowRect struct {
+	idx  int
+	rect image.Rectangle
 }
 
-// complPhase 命令词法相判定（D103）：文本以 "/" 开头且尚无空格——出现空格即视为
-// 参数相，浮层关闭（参数级补全不做）。
-func complPhase(text string) bool {
-	return strings.HasPrefix(text, "/") && !strings.ContainsAny(text, " \t")
-}
-
-// complFilter 前缀过滤（D103）：对条目任一名称做大小写不敏感前缀匹配、保持清单序；
-// 命中名取第一个匹配的名称（主名优先）。
-func complFilter(prefix string, all []port.CommandInfo) []complItem {
-	p := strings.ToLower(prefix)
-	var out []complItem
-	for _, ci := range all {
-		for _, n := range ci.Names {
-			if strings.HasPrefix(strings.ToLower(n), p) {
-				out = append(out, complItem{info: ci, name: n})
-				break
-			}
-		}
-	}
-	return out
-}
-
-// complAccept 补全落笔（D103）：已输入与高亮匹配名完全一致 → 直接提交；否则补全为
-// "/名 "（尾随空格落参数相，浮层随词法相关闭）。
-func complAccept(text string, it complItem) (string, bool) {
-	full := "/" + it.name
-	if text == full {
-		return text, true
-	}
-	return full + " ", false
-}
-
-// complUpdate 补全浮层消费者（D103）：每帧依编辑框文本重算词法相与过滤清单（命令清单
-// 端口每帧拉取——动态命令可随插件启停变化）；开启期消费上一帧注册的 ↑↓/Esc 键过滤
-// 与行点击。须先于 updateEditor（Enter 接管在其 SubmitEvent 分支、Esc 在编辑态让渡）。
+// complUpdate 补全浮层消费者（D103/D250）：每帧依编辑框文本重算目标与候选（命令清单
+// 端口每帧拉取——动态命令可随插件启停变化）；开启期消费上一帧登记的 Tab/Esc 键过滤、
+// 行点击，并在轮换期沿用锁定的候选表。须先于 updateEditor（Esc 在编辑态让渡）。
 func (u *UI) updateCompl(gtx layout.Context) {
 	u.complOpenNow = false
 	u.complEsc = false
-	if u.m.confirm != nil { // 确认态主编辑器隐藏，浮层不参与
+	if u.m.confirm != nil || u.m.ask != nil { // 确认态/提问态主编辑器不自由输入，浮层不参与
 		u.complList = nil
+		u.cycle.reset()
 		return
 	}
 	text := u.editor.Text()
-	if text != u.complText {
+	if text != u.complText { // 用户改了字：搁置解除，轮换作废
 		u.complText = text
 		u.complDismissed = false
 		u.complSel = 0
+		u.cycle.reset()
 	}
 	if u.complDismissed || !complPhase(text) || u.opts.Commands == nil {
 		u.complList = nil
+		u.cycle.reset() // 已不是命令行 / 已搁置：轮换作废，下次 Tab 重新起一轮
 		return
 	}
-	u.complList = complFilter(text[1:], u.opts.Commands.Commands())
+	if u.cycle.on {
+		// 轮换期沿用锁定的候选表：每按一次 Tab 文本就变，重算会把候选缩成一项，
+		// 轮换便退化成「一直填同一项」。
+		u.complList = u.cycle.items
+	} else {
+		all := u.opts.Commands.Commands()
+		t := complTargetOf(text, all)
+		switch {
+		case t.cmdPhase:
+			u.complList = complFilter(t.prefix, all)
+		case !t.known:
+			u.complList = nil
+		default:
+			u.complList = complArgItems(t.ci, t.args, t.tok)
+		}
+	}
 	if len(u.complList) == 0 {
 		return
 	}
@@ -99,37 +83,75 @@ func (u *UI) updateCompl(gtx layout.Context) {
 	if u.complSel >= len(u.complList) {
 		u.complSel = len(u.complList) - 1
 	}
-	// 键面（Focus 限编辑器——浮层随编辑框起落；编辑器对 ↑↓/Esc 无语义，无冲突面；
-	// 过滤器由上一帧 drawCompl 登记，Gio 一帧陈旧与手势同口径）。
+	// 键面（Focus 限编辑器——浮层随编辑框起落；编辑器不认 Tab，↑↓ 归历史，故只剩这两个）。
+	// 过滤器由上一帧 drawCompl 登记，Gio 一帧陈旧与手势同口径。
 	for {
 		ev, ok := gtx.Event(
-			key.Filter{Focus: &u.editor, Name: key.NameUpArrow},
-			key.Filter{Focus: &u.editor, Name: key.NameDownArrow},
+			key.Filter{Focus: &u.editor, Name: key.NameTab},
 			key.Filter{Focus: &u.editor, Name: key.NameEscape},
 		)
 		if !ok {
 			break
 		}
-		ke, isKey := ev.(key.Event)
-		if !isKey || ke.State != key.Press {
+		e, isKey := ev.(key.Event)
+		if !isKey || e.State != key.Press {
 			continue
 		}
-		switch ke.Name {
-		case key.NameUpArrow:
-			u.complSel = (u.complSel - 1 + len(u.complList)) % len(u.complList)
-		case key.NameDownArrow:
-			u.complSel = (u.complSel + 1) % len(u.complList)
+		switch e.Name {
+		case key.NameTab:
+			u.complTab()
 		case key.NameEscape:
 			u.complDismissed = true
 			u.complEsc = true // 编辑态 Esc 让渡：本轮 updateEditor 不取消编辑
 			u.complOpenNow = false
+			u.cycle.reset()
 		}
 	}
 	u.complClicks(gtx)
 }
 
-// complClicks 行点击消费（drawCompl 登记 Press/Release 于卡片矩形）：武装-原位抬起
-// （D72 口径）→ 命中行补全落笔。坐标 = 窗口系（注册与行矩形同系）。
+// complTab Tab 轮换落笔（D250）：没在轮换就先锁定候选、填第一项；在轮换则前移到下一项
+// 并替换同一段 token。只轮可填的行（insert 为空的是提示行）。
+func (u *UI) complTab() {
+	text := u.editor.Text()
+	if !u.cycle.on {
+		start, _ := complToken(text)
+		sel, ok := u.cycle.begin(u.complList, start)
+		if !ok {
+			return
+		}
+		u.complSel = sel
+		u.complInsertAt(u.cycle.start, u.complList[sel].insert)
+		return
+	}
+	sel, ok := u.cycle.advance()
+	if !ok {
+		return
+	}
+	u.complSel = sel
+	u.complInsertAt(u.cycle.start, u.complList[sel].insert)
+}
+
+// complInsertAt 把末尾 token（从字节位置 start 到行尾）换成 ins，光标留在行尾。
+//
+// 换算到 rune 坐标是必须的：SetCaret 收的是 rune 下标，而切分按字节算（中文参数名
+// 在前面时两套下标对不上，光标会偏到半个字里）。
+func (u *UI) complInsertAt(start int, ins string) {
+	text := u.editor.Text()
+	if start < 0 || start > len(text) {
+		return
+	}
+	head := text[:start]
+	next := head + ins
+	u.editor.SetText(next)
+	u.editor.SetCaret(utf8.RuneCountInString(next), utf8.RuneCountInString(next))
+	// 与下一帧的文本比对对齐：这不是「用户改了字」，轮换要继续。
+	u.complText = next
+}
+
+// complClicks 行点击消费（drawCompl 登记 Press/Release 于各行矩形）：武装-原位抬起
+// （D72 口径）→ 命中行落笔一次，等价于按一下 Tab（D250：点击不再等于提交，Enter 才是
+// 提交）。提示行没有登记矩形，自然点不到。
 func (u *UI) complClicks(gtx layout.Context) {
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
@@ -151,10 +173,9 @@ func (u *UI) complClicks(gtx layout.Context) {
 				}
 				u.complArmed = false
 				pt := pe.Position.Round()
-				for i, r := range u.complRows {
-					if i < len(u.complList) && pt.In(r) && u.complPressPt.In(r) {
-						u.complSel = i
-						u.complEnter()
+				for _, rr := range u.complRows {
+					if pt.In(rr.rect) && u.complPressPt.In(rr.rect) {
+						u.complClick(rr.idx)
 						break
 					}
 				}
@@ -165,25 +186,35 @@ func (u *UI) complClicks(gtx layout.Context) {
 	}
 }
 
-// complEnter Enter/点击落笔（D103）：高亮项与已输入完全一致 → 直接提交（submitEditor
-// 自取编辑框文本）；否则补全为 "/名 "。
-func (u *UI) complEnter() {
-	if u.complSel < 0 || u.complSel >= len(u.complList) {
+// complClick 点某一行：插进编辑框（不是提交）。第一次点击先锁定候选表，之后点别的行
+// 仍替换同一段 token。
+func (u *UI) complClick(i int) {
+	if i < 0 || i >= len(u.complList) {
 		return
 	}
-	if _, submit := complAccept(u.editor.Text(), u.complList[u.complSel]); submit {
-		u.submitEditor()
-		return
+	it := u.complList[i]
+	if it.insert == "" {
+		return // 提示行：没有可填内容
 	}
-	full, _ := complAccept("", u.complList[u.complSel])
-	u.editor.SetText(full)
+	if !u.cycle.on {
+		start, _ := complToken(u.editor.Text())
+		if _, ok := u.cycle.begin(u.complList, start); !ok {
+			return
+		}
+	}
+	u.cycle.seek(i)
+	u.complSel = i
+	u.complInsertAt(u.cycle.start, it.insert)
 }
 
-// drawCompl 补全浮层绘制（D103）：hoverCard 同款深色卡（chrome 形状——整窗 clip 登记、
-// 不受 D79 淡化带作用），锚在胶囊上方左缘。行 = 命令名（品牌色）+ usage/描述（暗色、
-// 按剩余宽二分截断）；键盘高亮与光标悬停（D85 直采）都着底色。绘制与命中统一用窗口系
-// 坐标（绘制经 offset(-absY) 换到窗口系，热区注册同系）；动画期不画（D54 tips 同口径），
-// 行矩形每帧重登记（fade pass 重渲同几何复登，与 bubbleRects 同构）。
+// drawCompl 补全浮层绘制（D103/D250）：hoverCard 同款深色卡（chrome 形状——整窗 clip
+// 登记、不受 D79 淡化带作用），锚在胶囊上方左缘。行 = 左半（命令名带斜杠 / 参数名或
+// 可选值，品牌色）+ 右半说明（暗色、按剩余宽二分截断）；键盘高亮与光标悬停（D85 直采）
+// 都着底色。提示行（insert 为空）整行暗色、不登记命中矩形——看得见、点不动。
+//
+// 绘制与命中统一用窗口系坐标（绘制经 offset(-absY) 换到窗口系，热区注册同系）；动画期
+// 不画（D54 tips 同口径），行矩形每帧重登记（fade pass 重渲同几何复登，与 bubbleRects
+// 同构）。
 func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	u.complRows = u.complRows[:0]
 	if !u.complOpenNow || u.expandAn.active {
@@ -212,30 +243,31 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	y := card.Min.Y + padY
 	for i := 0; i < n; i++ {
 		it := u.complList[i]
+		fillable := it.insert != ""
 		r := image.Rect(card.Min.X+padX, y, card.Max.X-padX, y+rowH)
 		y += rowH + gap
-		if i == u.complSel || u.cursorHitsRect(r, cur) {
+		if fillable && (i == u.complSel || u.cursorHitsRect(r, cur)) {
 			hs := clip.Rect(r).Push(gtx.Ops)
 			paint.Fill(gtx.Ops, complSelBg)
 			hs.Pop()
 		}
+		labelColor := tok().brandColor
+		if !fillable {
+			labelColor = tok().textDim
+		}
 		nameOp, nameDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
-			s := material.Body2(u.th, "/"+it.name)
-			s.Color = tok().brandColor
+			s := material.Body2(u.th, it.label)
+			s.Color = labelColor
 			s.TextSize = unit.Sp(13)
 			return s.Layout(gtx)
 		})
-		tail := it.info.Usage
-		if it.info.Desc != "" {
-			if tail != "" {
-				tail += " — "
-			}
-			tail += it.info.Desc
-		}
-		tail = u.complFitText(gtx, tail, r.Dx()-nameDims.Size.X-gtx.Dp(complTailGapDp))
+		tail := u.complFitText(gtx, it.tail, r.Dx()-nameDims.Size.X-gtx.Dp(complTailGapDp))
 		tailOp, tailDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, tail)
 			s.Color = tok().textMuted
+			if !fillable {
+				s.Color = tok().textDim
+			}
 			s.TextSize = unit.Sp(13)
 			return s.Layout(gtx)
 		})
@@ -246,7 +278,9 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 			r.Min.Y+(rowH-tailDims.Size.Y)/2)).Push(gtx.Ops)
 		tailOp.Add(gtx.Ops)
 		tr.Pop()
-		u.complRows = append(u.complRows, r)
+		if fillable {
+			u.complRows = append(u.complRows, complRowRect{idx: i, rect: r})
+		}
 	}
 	if over > 0 {
 		hr := image.Rect(card.Min.X+padX, y, card.Max.X-padX, y+rowH)
@@ -311,4 +345,13 @@ func (u *UI) complTextWidth(gtx layout.Context, s string) int {
 		return l.Layout(gtx)
 	})
 	return dims.Size.X
+}
+
+// complRowsText 行矩形的可读快照（测试用：只为断言「提示行没有命中矩形」）。
+func (u *UI) complRowsText() []string {
+	out := make([]string, len(u.complRows))
+	for i, r := range u.complRows {
+		out[i] = u.complList[r.idx].label
+	}
+	return out
 }

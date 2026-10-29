@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"gioui.org/io/input"
-	"gioui.org/io/key"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -14,11 +13,23 @@ type fakeCatalog struct{ list []port.CommandInfo }
 
 func (f fakeCatalog) Commands() []port.CommandInfo { return f.list }
 
-// complFixture 清单样例：覆盖主名前缀、别名条目（quit/exit）。
+// complFixture 清单样例：覆盖主名前缀、别名条目（quit/exit）、枚举参数、自由文本参数、
+// 可重复开关与吃值开关。
 func complFixture() []port.CommandInfo {
 	return []port.CommandInfo{
-		{Names: []string{"edit"}, Usage: "<id> [--keep|--copy] <文本>", Desc: "Revise 修订"},
-		{Names: []string{"effort"}, Usage: "[档位]", Desc: "推理档位"},
+		{Names: []string{"edit"}, Usage: "<id> [--keep|--copy] [--attach <路径>] [<文本>]", Desc: "Revise 修订",
+			Params: []port.CommandParam{
+				{Name: "<id>", Kind: port.ParamText, Desc: "要改的消息 id"},
+				{Name: "--keep", Kind: port.ParamFlag, Desc: "转到新分支"},
+				{Name: "--copy", Kind: port.ParamFlag, Desc: "深拷贝"},
+				{Name: "--attach", Kind: port.ParamFlag, ValueName: "<路径>", Repeatable: true, Desc: "追加附件"},
+				{Name: "<文本>", Kind: port.ParamText, Desc: "新正文"},
+			}},
+		{Names: []string{"effort"}, Usage: "[档位]", Desc: "推理档位",
+			Params: []port.CommandParam{{
+				Name: "档位", Kind: port.ParamChoice, Desc: "推理档位",
+				Values: []string{"minimal", "low", "medium", "high", "off"},
+			}}},
 		{Names: []string{"quit", "exit"}, Desc: "退出"},
 	}
 }
@@ -30,11 +41,21 @@ func complFrame(q *input.Router, u *UI) {
 	q.Frame(ops)
 }
 
-// TestComplPhase 词法相判定（D103③）：`/` 开头且无空格。
+// complFixtureUI 带清单、焦点已进编辑器的帧测试 UI。
+func complFixtureUI() (*UI, *input.Router) {
+	u := newFrameUI()
+	u.opts.Commands = fakeCatalog{list: complFixture()}
+	u.focusPending = true // 首帧焦点入编辑器（Focus 过滤器路由前提，newUI 同款）
+	q := new(input.Router)
+	complFrame(q, u)
+	return u, q
+}
+
+// TestComplPhase 浮层开启判据（D250）：以 "/" 开头即开——空格不再关闭（参数相接上）。
 func TestComplPhase(t *testing.T) {
 	for text, want := range map[string]bool{
 		"": false, "/": true, "/ed": true, "/EDIT": true, "/中文": true,
-		"/edit ": false, "/edit x": false, "ed": false,
+		"/edit ": true, "/edit x": true, "ed": false, " /edit": false,
 	} {
 		if got := complPhase(text); got != want {
 			t.Fatalf("complPhase(%q) = %v, want %v", text, got, want)
@@ -42,15 +63,34 @@ func TestComplPhase(t *testing.T) {
 	}
 }
 
-// TestComplFilter 前缀过滤（D103③）：保持清单序、大小写不敏感、别名命中不回写主名。
+// TestComplToken 末尾 token 切分：Tab 替换的就是这一段。
+func TestComplToken(t *testing.T) {
+	for _, c := range []struct {
+		text  string
+		start int
+		tok   string
+	}{
+		{"/edit", 0, "/edit"},  // 命令相：整段就是那个 token（斜杠含在内）
+		{"/edit ", 6, ""},      // 刚敲完分隔符：下一个参数还没开始
+		{"/edit  u1", 7, "u1"}, // 连续空白也算分隔
+		{"  x", 2, "x"},
+		{"", 0, ""},
+	} {
+		if s, tok := complToken(c.text); s != c.start || tok != c.tok {
+			t.Fatalf("complToken(%q) = (%d, %q), want (%d, %q)", c.text, s, tok, c.start, c.tok)
+		}
+	}
+}
+
+// TestComplFilter 命令相候选（D103③）：保持清单序、大小写不敏感、别名命中不回写主名。
 func TestComplFilter(t *testing.T) {
 	all := complFixture()
 	got := complFilter("E", all)
-	if len(got) != 3 || got[0].name != "edit" || got[1].name != "effort" || got[2].name != "exit" {
+	if len(got) != 3 || got[0].insert != "/edit" || got[1].insert != "/effort" || got[2].insert != "/exit" {
 		t.Fatalf("filter(E) = %+v", got)
 	}
 	got = complFilter("exit", all)
-	if len(got) != 1 || got[0].name != "exit" || got[0].info.Names[0] != "quit" {
+	if len(got) != 1 || got[0].insert != "/exit" {
 		t.Fatalf("filter(exit) = %+v", got)
 	}
 	if len(complFilter("zz", all)) != 0 {
@@ -58,102 +98,126 @@ func TestComplFilter(t *testing.T) {
 	}
 }
 
-// TestComplAccept 落笔规则（D103③）：完全一致 → 提交；否则补全为 "/名 "。
-func TestComplAccept(t *testing.T) {
-	it := complItem{info: complFixture()[2], name: "exit"}
-	if text, submit := complAccept("/exit", it); !submit || text != "/exit" {
-		t.Fatalf("一致未提交: (%q, %v)", text, submit)
+// TestComplTargetOf 相判定：命令相（还没敲空格）与参数相（已敲）分得清，命令名认得
+// 主名与别名。
+func TestComplTargetOf(t *testing.T) {
+	all := complFixture()
+	if tgt := complTargetOf("/ed", all); !tgt.cmdPhase || tgt.prefix != "ed" {
+		t.Fatalf("/ed = %+v, want 命令相 prefix=ed", tgt)
 	}
-	if text, submit := complAccept("/ex", it); submit || text != "/exit " {
-		t.Fatalf("补全 = (%q, %v)", text, submit)
+	tgt := complTargetOf("/effort m", all)
+	if tgt.cmdPhase || !tgt.known || tgt.tok != "m" || tgt.start != 8 || len(tgt.args) != 0 {
+		t.Fatalf("/effort m = %+v", tgt)
 	}
-}
-
-// TestComplOverlayFlow 浮层帧流（headless）：词法相开启/前缀过滤/↑↓ 高亮/Esc 搁置
-// 与重开/空格参数相关闭。
-func TestComplOverlayFlow(t *testing.T) {
-	u := newFrameUI()
-	u.opts.Commands = fakeCatalog{list: complFixture()}
-	u.focusPending = true // 首帧焦点入编辑器（Focus 过滤器路由前提，newUI 同款）
-	q := new(input.Router)
-	complFrame(q, u)
-
-	u.editor.SetText("/e")
-	complFrame(q, u)
-	if !u.complOpenNow || len(u.complList) != 3 || u.complList[0].name != "edit" {
-		t.Fatalf("浮层未按 /e 开启: open=%v list=%+v", u.complOpenNow, u.complList)
+	tgt = complTargetOf("/EXIT ", all)
+	if !tgt.known || tgt.tok != "" || len(tgt.args) != 0 {
+		t.Fatalf("别名大小写不应影响认命令: %+v", tgt)
 	}
-	if u.complSel != 0 {
-		t.Fatalf("初始高亮 = %d, want 0", u.complSel)
-	}
-	if len(u.complRows) != 3 {
-		t.Fatalf("行矩形未登记: %d", len(u.complRows))
-	}
-
-	// ↑↓ 循环移动高亮。
-	q.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})
-	complFrame(q, u)
-	if u.complSel != 1 {
-		t.Fatalf("Down 后高亮 = %d, want 1", u.complSel)
-	}
-	q.Queue(key.Event{Name: key.NameUpArrow, State: key.Press})
-	complFrame(q, u)
-	if u.complSel != 0 {
-		t.Fatalf("Up 后高亮 = %d, want 0", u.complSel)
-	}
-
-	// Esc 搁置（文本不动）；文本变更即重开。
-	q.Queue(key.Event{Name: key.NameEscape, State: key.Press})
-	complFrame(q, u)
-	if u.complOpenNow || u.editor.Text() != "/e" || !u.complDismissed {
-		t.Fatalf("Esc 未搁置: open=%v text=%q dismissed=%v", u.complOpenNow, u.editor.Text(), u.complDismissed)
-	}
-	u.editor.SetText("/ed")
-	complFrame(q, u)
-	if !u.complOpenNow || u.complSel != 0 {
-		t.Fatalf("文本变更未重开浮层: open=%v sel=%d", u.complOpenNow, u.complSel)
-	}
-
-	// 空格落参数相 → 关闭。
-	u.editor.SetText("/edit ")
-	complFrame(q, u)
-	if u.complOpenNow {
-		t.Fatal("参数相不应显示浮层")
+	if tgt = complTargetOf("/nope ", all); tgt.known {
+		t.Fatalf("未注册的 /nope 被当成 known: %+v", tgt)
 	}
 }
 
-// TestComplEnter 落笔（headless）：不一致补全不提交、一致直接提交、补全后随词法相关闭。
-func TestComplEnter(t *testing.T) {
-	u := newEditUI() // inCh 可断言
-	u.opts.Commands = fakeCatalog{list: complFixture()}
-	q := new(input.Router)
-	complFrame(q, u)
+// TestComplArgItems 参数相候选：枚举给可选值、自由文本只给一句提示、开关按已用过的
+// 去重（可重复的照旧列出）、吃值开关的值位按声明的 Values 给。
+func TestComplArgItems(t *testing.T) {
+	all := complFixture()
+	effort, edit := all[1], all[0]
 
-	u.editor.SetText("/e")
-	complFrame(q, u)
-	u.complEnter()
-	if u.editor.Text() != "/edit " {
-		t.Fatalf("补全落笔 = %q, want /edit␠", u.editor.Text())
+	// 枚举：前缀过滤。
+	got := complArgItems(effort, nil, "m")
+	if len(got) != 2 || got[0].insert != "minimal" || got[1].insert != "medium" {
+		t.Fatalf("effort m = %+v", got)
 	}
-	select {
-	case <-u.inCh:
-		t.Fatal("补全不应提交")
-	default:
-	}
-	complFrame(q, u)
-	if u.complOpenNow {
-		t.Fatal("补全后浮层应随参数相关闭")
+	// 空 token：没有开关可列，只给这一位参数的选项。
+	got = complArgItems(effort, nil, "")
+	if len(got) != 5 || got[0].insert != "minimal" {
+		t.Fatalf("effort 空 = %+v", got)
 	}
 
-	u.editor.SetText("/edit")
-	complFrame(q, u)
-	u.complEnter()
-	select {
-	case in := <-u.inCh:
-		if in.Command == nil || in.Command.Name != "edit" {
-			t.Fatalf("inCh = %+v, want /edit 命令", in)
+	// 自由文本：只提示不填（insert 为空）。
+	got = complArgItems(edit, nil, "u")
+	if len(got) != 1 || got[0].label != "<id>" || got[0].insert != "" {
+		t.Fatalf("edit 首位 = %+v", got)
+	}
+
+	// 已给过 --keep：开关清单里不再出现，--attach（可重复）仍在。
+	got = complArgItems(edit, []string{"u1", "--keep"}, "")
+	var hasKeep, hasAttach bool
+	for _, it := range got {
+		if it.insert == "--keep" {
+			hasKeep = true
 		}
-	default:
-		t.Fatal("一致未提交")
+		if it.insert == "--attach" {
+			hasAttach = true
+		}
+	}
+	if hasKeep || !hasAttach {
+		t.Fatalf("开关去重不对: %+v", got)
+	}
+
+	// 正在敲 --：只列开关，位置参数的提示不出现。
+	got = complArgItems(edit, []string{"u1"}, "--a")
+	if len(got) != 1 || got[0].insert != "--attach" || got[0].label != "--attach <路径>" {
+		t.Fatalf("--a = %+v", got)
+	}
+
+	// --attach 吃值：这一位是路径，声明没有 Values → 提示行（ValueName）。
+	got = complArgItems(edit, []string{"u1", "--attach"}, "")
+	if len(got) != 1 || got[0].label != "<路径>" || got[0].insert != "" {
+		t.Fatalf("--attach 值位 = %+v", got)
+	}
+}
+
+// TestComplArgItemsValueFromValues 吃值开关带枚举值（/export --format）：值位按 Values
+// 给候选，而不是退成提示行。
+func TestComplArgItemsValueFromValues(t *testing.T) {
+	ci := port.CommandInfo{Names: []string{"export"}, Usage: "[--format <名字>]",
+		Params: []port.CommandParam{
+			{Name: "--format", Kind: port.ParamFlag, ValueName: "<名字>", Values: []string{"aqx", "chatgpt"}},
+		}}
+	got := complArgItems(ci, []string{"--format"}, "")
+	if len(got) != 2 || got[0].insert != "aqx" || got[1].insert != "chatgpt" {
+		t.Fatalf("--format 值位 = %+v", got)
+	}
+}
+
+// TestComplArgItemsNoParams 不吃参数的命令同样进参数相（D250）：给一行说明，免得浮层
+// 在用户敲完空格后无来由地消失。
+func TestComplArgItemsNoParams(t *testing.T) {
+	got := complArgItems(port.CommandInfo{Names: []string{"list"}}, nil, "")
+	if len(got) != 1 || got[0].insert != "" {
+		t.Fatalf("无参数命令 = %+v", got)
+	}
+}
+
+// TestComplCycle 轮换状态机：锁定候选只轮可填行、环回、点选不改变候选表。
+func TestComplCycle(t *testing.T) {
+	items := []complItem{
+		{label: "<id>", insert: ""}, // 提示行：不进轮换
+		{label: "--keep", insert: "--keep"},
+		{label: "--copy", insert: "--copy"},
+	}
+	var c complCycle
+	sel, ok := c.begin(items, 6)
+	if !ok || sel != 1 || !c.on || c.start != 6 {
+		t.Fatalf("begin = (%d, %v) on=%v start=%d", sel, ok, c.on, c.start)
+	}
+	if sel, ok := c.advance(); !ok || sel != 2 {
+		t.Fatalf("advance = (%d, %v), want 2", sel, ok)
+	}
+	if sel, ok := c.advance(); !ok || sel != 1 {
+		t.Fatalf("advance 环回 = (%d, %v), want 1", sel, ok)
+	}
+	if ok := c.seek(2); !ok || c.at != 1 {
+		t.Fatalf("seek = %v at=%d", ok, c.at)
+	}
+	c.reset()
+	if sel, ok := c.advance(); ok {
+		t.Fatalf("reset 后仍能 advance: %d", sel)
+	}
+	// 全是提示行时不该进入轮换。
+	if _, ok := c.begin([]complItem{{label: "x"}}, 0); ok {
+		t.Fatal("没有可填行却进入了轮换")
 	}
 }

@@ -324,11 +324,9 @@ func (u *UI) updateEditor(gtx layout.Context) {
 			break
 		}
 		if _, isSubmit := evt.(widget.SubmitEvent); isSubmit {
-			if u.complOpenNow { // D103：浮层开启期 Enter = 补全判定（一致即提交、否则补全）
-				u.complEnter()
-			} else {
-				u.submitEditor()
-			}
+			// D250：Enter 只提交，不再兼职补全判定——补全一律走 Tab（readline 的
+			// menu-complete 口径：Tab 才是「换一个候选」，Enter 是「就按现在这样发」）。
+			u.submitEditor()
 		}
 	}
 }

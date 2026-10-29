@@ -266,19 +266,21 @@ type UI struct {
 	// goroutine 读写，跨 goroutine 只经这个开关观察。
 	askOpen atomic.Bool
 	drag    gesture.Drag
-	// D103 补全浮层（仅事件循环 goroutine 读写）：词法相/过滤清单每帧重算（命令清单
-	// 端口每帧拉取——动态命令随插件启停变化）；complRows 行矩形随帧登记（窗口系）。
-	complText      string            // 上一帧编辑框文本（变更 → 重置 dismissed/高亮）
-	complSel       int               // 键盘高亮行下标（complList 内）
-	complDismissed bool              // Esc 后搁置（文本变更即重开）
-	complOpenNow   bool              // 本帧浮层开启（updateEditor Enter 接管判据）
-	complEsc       bool              // 本帧 Esc 已被浮层消费（updateEditor 编辑态让渡）
-	complArmed     bool              // 行点击武装态（D72 口径）
-	complPressPt   image.Point       // 武装按下点（窗口系）
-	complList      []complItem       // 过滤后清单（drawCompl 呈现）
-	complRows      []image.Rectangle // 行命中矩形（窗口系，随帧重登记）
-	complTag       struct{}          // 行点击手势 tag
-	hwnd           platform.Handle   // 主窗句柄（非 Windows 恒 0）
+	// D103/D250 补全浮层（仅事件循环 goroutine 读写）：命令相/参数相每帧重算（命令清单
+	// 端口每帧拉取——动态命令随插件启停变化）；Tab 轮换期沿用 cycle 锁定的清单；
+	// complRows 行矩形随帧登记（窗口系，提示行不登记）。
+	complText      string          // 上一帧编辑框文本（变更 → 重置 dismissed/高亮/轮换）
+	complSel       int             // 键盘高亮行下标（complList 内）
+	complDismissed bool            // Esc 后搁置（文本变更即重开）
+	complOpenNow   bool            // 本帧浮层开启
+	complEsc       bool            // 本帧 Esc 已被浮层消费（updateEditor 编辑态让渡）
+	complArmed     bool            // 行点击武装态（D72 口径）
+	complPressPt   image.Point     // 武装按下点（窗口系）
+	complList      []complItem     // 当前候选（drawCompl 呈现）
+	complRows      []complRowRect  // 可填行的命中矩形（窗口系，随帧重登记）
+	complTag       struct{}        // 行点击手势 tag
+	cycle          complCycle      // Tab 轮换状态（readOnly 之外的唯一可变处）
+	hwnd           platform.Handle // 主窗句柄（非 Windows 恒 0）
 	// revealPending 启动防闪（D78）：挂接即隐藏、首帧 ULW 提交成功才揭示（激活前台）。
 	// 事件循环写（onHWND/fadePresent）、托盘线程读（showMain 呼出门）→ atomic。
 	revealPending atomic.Bool
