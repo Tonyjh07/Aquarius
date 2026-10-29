@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"unicode/utf8"
 
 	"gioui.org/f32"
 	"gioui.org/io/key"
@@ -318,6 +319,9 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	// D187：剪贴板里有图就抢这一下 Ctrl+V（没图不注册过滤器，按键留给编辑器做文本
 	// 粘贴）。必须在 editor.Update 之前——Gio 的事件先取先得，编辑器会把键吞掉。
 	u.pasteImageKey(gtx)
+	// D250：收起态单行编辑时 ↑↓ 翻输入历史。同样必须先于 editor.Update（编辑器对
+	// ↑↓ 注册的是「不在开头就 MoveLines」，单行里它会把光标推到行首行尾）。
+	u.historyKeys(gtx)
 	for {
 		evt, ok := u.editor.Update(gtx)
 		if !ok {
@@ -328,6 +332,42 @@ func (u *UI) updateEditor(gtx layout.Context) {
 			// menu-complete 口径：Tab 才是「换一个候选」，Enter 是「就按现在这样发」）。
 			u.submitEditor()
 		}
+	}
+}
+
+// historyKeys ↑↓ 翻输入历史（D250）：只在收起态、主编辑器持焦、无编辑态时生效——展开态
+// （Shift+Enter 多行）方向键要留给光标，编辑既有消息时也不该被历史打断。没有历史时不抢
+// 这两个键（否则编辑器的行内跳转也一起没了）。命中即改编辑框内容并把光标放到末尾。
+func (u *UI) historyKeys(gtx layout.Context) {
+	if u.expanded || u.m.editTarget != "" || len(u.ihist.lines) == 0 || !gtx.Focused(&u.editor) {
+		return
+	}
+	for {
+		ev, ok := gtx.Event(
+			key.Filter{Focus: &u.editor, Name: key.NameUpArrow},
+			key.Filter{Focus: &u.editor, Name: key.NameDownArrow},
+		)
+		if !ok {
+			return
+		}
+		ke, isKey := ev.(key.Event)
+		if !isKey || ke.State != key.Press {
+			continue
+		}
+		var line string
+		var hit bool
+		switch ke.Name {
+		case key.NameUpArrow:
+			line, hit = u.ihist.prev(u.editor.Text())
+		case key.NameDownArrow:
+			line, hit = u.ihist.next()
+		}
+		if !hit {
+			continue
+		}
+		u.editor.SetText(line)
+		n := utf8.RuneCountInString(line)
+		u.editor.SetCaret(n, n)
 	}
 }
 
@@ -450,6 +490,11 @@ func (u *UI) submitEditor() {
 		return
 	}
 	u.editor.SetText("")
+	// D250：进输入历史。编辑既有消息走的也是这里（submitEditor），但那不是「用户打的
+	// 一句话」，翻历史时翻回来只会是一条被改过的旧正文，故只在普通输入时记。
+	if u.m.editTarget == "" {
+		u.ihist.push(text)
+	}
 	u.m.submit(text)
 	// D106 修订⑥：发送后自动收起——长文输完即走，胶囊回常态（编辑态与仅附件提交同路；
 	// 文本已清、焦点随 setExpanded 保持）。

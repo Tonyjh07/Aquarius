@@ -280,6 +280,7 @@ type UI struct {
 	complRows      []complRowRect  // 可填行的命中矩形（窗口系，随帧重登记）
 	complTag       struct{}        // 行点击手势 tag
 	cycle          complCycle      // Tab 轮换状态（readOnly 之外的唯一可变处）
+	ihist          ihist           // 输入历史（↑↓ 只在收起态单行编辑时翻）
 	hwnd           platform.Handle // 主窗句柄（非 Windows 恒 0）
 	// revealPending 启动防闪（D78）：挂接即隐藏、首帧 ULW 提交成功才揭示（激活前台）。
 	// 事件循环写（onHWND/fadePresent）、托盘线程读（showMain 呼出门）→ atomic。
