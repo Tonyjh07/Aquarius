@@ -127,6 +127,52 @@ func TestComplTabArgs(t *testing.T) {
 	}
 }
 
+// TestComplShiftTabReverse Shift+Tab 与 Tab 同一套轮换、方向相反（D250）：首按落到末项，
+// 此后后退并环回；Tab 接着按仍往前走。
+func TestComplShiftTabReverse(t *testing.T) {
+	u, q := complFixtureUI()
+	u.editor.SetText("/e")
+	complFrame(q, u)
+
+	// 真机上窗口把 Tab / Shift+Tab 包成 SystemEvent（焦点导航保留键），过滤器得能接住。
+	shiftTab := input.SystemEvent{Event: key.Event{Name: key.NameTab, State: key.Press, Modifiers: key.ModShift}}
+	q.Queue(shiftTab)
+	complFrame(q, u)
+	if got := u.editor.Text(); got != "/exit" {
+		t.Fatalf("Shift+Tab 首按 = %q, want /exit（末项）", got)
+	}
+	if u.complSel != 2 {
+		t.Fatalf("Shift+Tab 首按高亮 = %d, want 2", u.complSel)
+	}
+	q.Queue(shiftTab)
+	complFrame(q, u)
+	if got := u.editor.Text(); got != "/effort" {
+		t.Fatalf("Shift+Tab 第二次 = %q, want /effort（后退）", got)
+	}
+	q.Queue(shiftTab)
+	complFrame(q, u)
+	if got := u.editor.Text(); got != "/edit" {
+		t.Fatalf("Shift+Tab 第三次 = %q, want /edit", got)
+	}
+	if got := u.editor.Text(); !u.cycle.on || got != "/edit" {
+		t.Fatalf("Shift+Tab 后轮换状态: on=%v text=%q", u.cycle.on, got)
+	}
+	// 反向接着按 Tab：方向掉头，从 /edit 往前走到 /effort。
+	q.Queue(key.Event{Name: key.NameTab, State: key.Press})
+	complFrame(q, u)
+	if got := u.editor.Text(); got != "/effort" {
+		t.Fatalf("反向转向前进 = %q, want /effort", got)
+	}
+	// 逆向环回：从首项再退一步落到末项。
+	u.editor.SetText("/e")
+	complFrame(q, u)
+	q.Queue(shiftTab)
+	complFrame(q, u)
+	if got := u.editor.Text(); got != "/exit" {
+		t.Fatalf("新的一轮 Shift+Tab = %q, want /exit", got)
+	}
+}
+
 // TestComplEnterSubmits Enter 恒提交（D250）：浮层开着也直接发出去，不补全。
 func TestComplEnterSubmits(t *testing.T) {
 	u := newEditUI() // inCh 可断言

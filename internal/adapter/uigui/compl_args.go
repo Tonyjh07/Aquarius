@@ -309,12 +309,17 @@ func (c *complCycle) begin(items []complItem, start int) (int, bool) {
 	return c.rows[0], true
 }
 
-// advance 前移一行（环回），返回它在 complList 里的下标。
-func (c *complCycle) advance() (int, bool) {
+// step 沿 dir 移一行（环回）：back 为真时逆向（Shift+Tab）。两个方向共用同一套环回，
+// 从首项往回退落到末项、从末项往前到首项——不越界停住，否则用户得自己从头数。
+func (c *complCycle) step(back bool) (int, bool) {
 	if !c.on || len(c.rows) == 0 {
 		return 0, false
 	}
-	c.at = (c.at + 1) % len(c.rows)
+	if back {
+		c.at = (c.at - 1 + len(c.rows)) % len(c.rows)
+	} else {
+		c.at = (c.at + 1) % len(c.rows)
+	}
 	return c.rows[c.at], true
 }
 

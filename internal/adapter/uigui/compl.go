@@ -85,9 +85,12 @@ func (u *UI) updateCompl(gtx layout.Context) {
 	}
 	// 键面（Focus 限编辑器——浮层随编辑框起落；编辑器不认 Tab，↑↓ 归历史，故只剩这两个）。
 	// 过滤器由上一帧 drawCompl 登记，Gio 一帧陈旧与手势同口径。
+	//
+	// Shift+Tab 与 Tab 同键名（key.NameTab + ModShift），故过滤器得把它列进 Optional——不列
+	// 的话带修饰键的事件直接不匹配，逆向轮换根本到不了这里。
 	for {
 		ev, ok := gtx.Event(
-			key.Filter{Focus: &u.editor, Name: key.NameTab},
+			key.Filter{Focus: &u.editor, Name: key.NameTab, Optional: key.ModShift},
 			key.Filter{Focus: &u.editor, Name: key.NameEscape},
 		)
 		if !ok {
@@ -99,7 +102,7 @@ func (u *UI) updateCompl(gtx layout.Context) {
 		}
 		switch e.Name {
 		case key.NameTab:
-			u.complTab()
+			u.complTab(e.Modifiers.Contain(key.ModShift))
 		case key.NameEscape:
 			u.complDismissed = true
 			u.complEsc = true // 编辑态 Esc 让渡：本轮 updateEditor 不取消编辑
@@ -110,9 +113,10 @@ func (u *UI) updateCompl(gtx layout.Context) {
 	u.complClicks(gtx)
 }
 
-// complTab Tab 轮换落笔（D250）：没在轮换就先锁定候选、填第一项；在轮换则前移到下一项
-// 并替换同一段 token。只轮可填的行（insert 为空的是提示行）。
-func (u *UI) complTab() {
+// complTab Tab / Shift+Tab 轮换落笔（D250）：没在轮换就先锁定候选，往这一步的方向填
+// 第一项（Shift+Tab 从末项起——方向和 Tab 正好相反，首按就分开）；在轮换则移一项并替换
+// 同一段 token。只轮可填的行（insert 为空的是提示行）。
+func (u *UI) complTab(back bool) {
 	text := u.editor.Text()
 	if !u.cycle.on {
 		start, _ := complToken(text)
@@ -120,11 +124,16 @@ func (u *UI) complTab() {
 		if !ok {
 			return
 		}
+		if back { // 逆向首按落到末项：两个方向从第一步就分开，而不是先都撞第一项
+			if sel, ok = u.cycle.step(true); !ok {
+				return
+			}
+		}
 		u.complSel = sel
 		u.complInsertAt(u.cycle.start, u.complList[sel].insert)
 		return
 	}
-	sel, ok := u.cycle.advance()
+	sel, ok := u.cycle.step(back)
 	if !ok {
 		return
 	}

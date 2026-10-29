@@ -203,18 +203,25 @@ func TestComplCycle(t *testing.T) {
 	if !ok || sel != 1 || !c.on || c.start != 6 {
 		t.Fatalf("begin = (%d, %v) on=%v start=%d", sel, ok, c.on, c.start)
 	}
-	if sel, ok := c.advance(); !ok || sel != 2 {
-		t.Fatalf("advance = (%d, %v), want 2", sel, ok)
+	if sel, ok := c.step(false); !ok || sel != 2 {
+		t.Fatalf("step(false) = (%d, %v), want 2", sel, ok)
 	}
-	if sel, ok := c.advance(); !ok || sel != 1 {
-		t.Fatalf("advance 环回 = (%d, %v), want 1", sel, ok)
+	if sel, ok := c.step(false); !ok || sel != 1 {
+		t.Fatalf("step(false) 环回 = (%d, %v), want 1", sel, ok)
+	}
+	// 逆向：从首项往后一退落到末项（不越界停住），再退一步回到首项前面的那一项。
+	if sel, ok := c.step(true); !ok || sel != 2 {
+		t.Fatalf("step(true) = (%d, %v), want 2（末项）", sel, ok)
+	}
+	if sel, ok := c.step(true); !ok || sel != 1 {
+		t.Fatalf("step(true) 环回 = (%d, %v), want 1", sel, ok)
 	}
 	if ok := c.seek(2); !ok || c.at != 1 {
 		t.Fatalf("seek = %v at=%d", ok, c.at)
 	}
 	c.reset()
-	if sel, ok := c.advance(); ok {
-		t.Fatalf("reset 后仍能 advance: %d", sel)
+	if sel, ok := c.step(false); ok {
+		t.Fatalf("reset 后仍能步进: %d", sel)
 	}
 	// 全是提示行时不该进入轮换。
 	if _, ok := c.begin([]complItem{{label: "x"}}, 0); ok {
