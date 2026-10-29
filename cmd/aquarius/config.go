@@ -34,7 +34,7 @@ var legacyConfigKeys = []string{
 }
 
 // fileConfig config.json 中当前里程碑消费的部分。
-// DESIGN §8 的其余键（input 等）同样写入模板但由对应里程碑启用，
+// §8 的其余键（input 等）同样写入模板但由对应里程碑启用，
 // encoding/json 对未知键宽容。
 type fileConfig struct {
 	Model        modelConfig       `json:"model"`
@@ -102,7 +102,7 @@ type skillsConfig struct {
 	Dirs []string `json:"dirs,omitempty"`
 }
 
-// outputConfig 输出器开关（DESIGN §8；M3 启用 notify，tts 见 D179）。
+// outputConfig 输出器开关（§8；M3 启用 notify，tts 见 D179）。
 // 键缺失 = false（保守：老配置不自动弹通知，模板默认 notify=true）。
 type outputConfig struct {
 	Notify bool `json:"notify"`
@@ -386,7 +386,7 @@ type keyConfig struct {
 // modelEntry 模型条目（D173）：名字 + 能力位 + 上下文窗口，不继承 provider。
 type modelEntry struct {
 	Name string `json:"name"`
-	// Caps 能力位：nil = 键缺失（按协议缺省，DESIGN §8 的表）；非 nil = 以声明为准
+	// Caps 能力位：nil = 键缺失（按协议缺省，§8 的表）；非 nil = 以声明为准
 	// （空数组 = 三项全关——「没写」与「写了空」是两回事，所以要指针区分）。
 	Caps *[]string `json:"caps,omitempty"`
 	// ContextWindow 该模型的上下文窗口 tokens（D177）；0/省略 = 不声明，预算只看全局
@@ -481,7 +481,7 @@ func (p *providerConfig) protocolKind() string {
 	return kindOpenAIChat
 }
 
-// defaultCaps 协议缺省能力位（D173，DESIGN §8 的表）：只在模型条目省略 caps 时使用。
+// defaultCaps 协议缺省能力位（D173，§8 的表）：只在模型条目省略 caps 时使用。
 func defaultCaps(kind string) port.ModelCaps {
 	switch kind {
 	case kindOpenAIResponses:
@@ -1105,7 +1105,7 @@ type uiConfig struct {
 	Welcomed bool `json:"welcomed,omitempty"`
 }
 
-// limitsConfig 运行限额（DESIGN §8）。
+// limitsConfig 运行限额（§8）。
 type limitsConfig struct {
 	MaxContextTokens int     `json:"max_context_tokens"`
 	MaxTurns         int     `json:"max_turns"`
@@ -1114,7 +1114,7 @@ type limitsConfig struct {
 	ToolTimeoutSec   int     `json:"tool_timeout_sec"`  // 工具超时秒（ToolRunner，M2）
 }
 
-// defaultConfig 首次运行写入的模板：DESIGN §8 示例的可运行子集
+// defaultConfig 首次运行写入的模板：§8 示例的可运行子集
 // （ui.kind 取 gui——D51 模板默认 = 悬浮球前端，tui 显式指定、repl 为测试/e2e
 // 后端；mcpServers/plugins 为 M4 MCP 接入的声明与状态，缺省皆空）。
 const defaultConfig = `{

@@ -1,4 +1,4 @@
-// Package blobfs 实现 port.AttachmentStore（DESIGN §4.2）：
+// Package blobfs 实现 port.AttachmentStore（§4.2）：
 //   - sha256 内容寻址，同内容只存一份（Put 去重）；
 //   - 布局 <dir>/<hash>：磁盘只存内容字节，Name/MIME/Size 随 Part.Ref
 //     存在于会话树（D17），无需元数据侧文件；

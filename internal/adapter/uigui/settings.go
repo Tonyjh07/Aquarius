@@ -880,7 +880,7 @@ func newProviderKeyForm(k ProviderKeySnapshot) *providerKeyForm {
 	return kf
 }
 
-// defaultCapsFor 某协议的缺省能力位（与装配根按协议给的缺省同口径，DESIGN §8）：
+// defaultCapsFor 某协议的缺省能力位（与装配根按协议给的缺省同口径，§8）：
 // 只用于**新建模型行**时把勾选初值画成「缺省生效的样子」——这些行尚未写进 config，
 // 拿不到生效值。键缺失的语义（写回时 Caps 仍为 nil）不受影响。
 func defaultCapsFor(kind string) []string {

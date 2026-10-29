@@ -1,4 +1,4 @@
-// Package webfetchlocal 本地抓网页并转 Markdown（port.WebFetch，DESIGN §5.14）。
+// Package webfetchlocal 本地抓网页并转 Markdown（port.WebFetch，§5.14）。
 //
 // 管线：HTTP GET → 字符集探测 → 正文提取（readability）→ HTML 转 Markdown。
 // 不依赖任何第三方服务，因此**不需要密钥**：远端提供商不可用时由它兜底。

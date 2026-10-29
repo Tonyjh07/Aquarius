@@ -13,7 +13,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// openwebui.go Open WebUI 会话的**只读**导入（DESIGN §5.16「只读的一档」）。
+// openwebui.go Open WebUI 会话的**只读**导入（§5.16「只读的一档」）。
 //
 // 它与 chatgpt 同为树形（`parentId` / `childrenIds` / 一个「当前节点」），所以结构上不缺任何
 // 东西；缺的是「我们该不该维护第二套同义产物」。答案是不：要喂 Open WebUI，给它 `chatgpt`

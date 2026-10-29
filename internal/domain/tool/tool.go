@@ -7,10 +7,10 @@ package tool
 import "encoding/json"
 
 // CallID 工具调用标识，由模型流式分片聚合（app 层 ToolCallAssembler）后确定。
-// 在整棵树内唯一；tool 结果节点以它做"存在性引用"（DESIGN §4.1 不变量 2）。
+// 在整棵树内唯一；tool 结果节点以它做"存在性引用"（§4.1 不变量 2）。
 type CallID string
 
-// Risk 工具风险等级；与 capability 权限判定取更严者（DESIGN §9）。
+// Risk 工具风险等级；与 capability 权限判定取更严者（§9）。
 type Risk int
 
 const (
@@ -44,7 +44,7 @@ type Spec struct {
 //
 // 三处必须同形：工具自己声明、适配器对空 Schema 的兜底、能力探测的探针工具——各自
 // 手写会让「没有参数」在不同端点上长成不同样子。**刻意不加 `additionalProperties:
-// false`**：任何调用都可带保留参数 `timeout_sec`（DESIGN §4.3），声明成封闭对象会把
+// false`**：任何调用都可带保留参数 `timeout_sec`（§4.3），声明成封闭对象会把
 // 一条合法调用写成 off-schema。
 var NoArgsSchema = json.RawMessage(`{"type":"object","properties":{}}`)
 
@@ -56,8 +56,8 @@ type Call struct {
 }
 
 // Result 一次工具执行的回填结果，由 tool 角色节点承载。
-// 失败照常回填（OK=false），让模型自行决定重试或改道（DESIGN §10）；
-// Output/Err 均为不可信数据，只渲染不执行（DESIGN §9）。
+// 失败照常回填（OK=false），让模型自行决定重试或改道（§10）；
+// Output/Err 均为不可信数据，只渲染不执行（§9）。
 type Result struct {
 	CallID CallID `json:"call_id"`
 	OK     bool   `json:"ok"`

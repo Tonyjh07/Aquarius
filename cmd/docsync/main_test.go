@@ -76,14 +76,14 @@ func TestMarkerRoundTrip(t *testing.T) {
 	}
 }
 
-// TestIsDocPath 覆盖范围：docs/ 下 .md 与根 README.md；DESIGN/AGENTS 不参与。
+// TestIsDocPath 覆盖范围：docs/ 下 .md 与根 README.md；根上其它 .md（AGENTS 等）不参与。
 func TestIsDocPath(t *testing.T) {
 	cases := map[string]bool{
 		"docs/guide.md":                true,
 		"docs/releases/v0.1.0.md":      true,
 		"README.md":                    true,
-		"DESIGN.md":                    false,
 		"AGENTS.md":                    false,
+		"THIRD-PARTY-NOTICES.md":       false,
 		"internal/adapter/readme.md":   false,
 		"cmd/docsync/main.go":          false,
 		"docs/relation-map-design.md":  true,

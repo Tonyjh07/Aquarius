@@ -1,4 +1,4 @@
-// Package webbrave 接入 Brave Search API（port.WebSearch，DESIGN §5.14）。
+// Package webbrave 接入 Brave Search API（port.WebSearch，§5.14）。
 //
 // 只做搜索：Brave 没有对应的「抓网页转 Markdown」端点，抓取交给 webdeepseek 或
 // webfetchlocal。端点 https://api.search.brave.com/res/v1/web/search，鉴权走

@@ -1,4 +1,4 @@
-// Package uitui bubbletea TUI 前端（DESIGN D33，M4 MVP）：与 repl 同权实现
+// Package uitui bubbletea TUI 前端（D33，M4 MVP）：与 repl 同权实现
 // port.Presenter + Prompter + Confirmer，装配根按 ui.kind 换壳——薄壳零业务逻辑，
 // 未来 GUI 框架复用同一套 port 契约（§14）。
 //
@@ -309,7 +309,7 @@ func parseInput(line string) port.UserInput {
 	return uicommon.ParseInput(line)
 }
 
-// preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。
+// preview 截断工具参数/结果为单行预览（不可信数据只渲染，§9）。
 // 先剥控制序列（ANSI/OSC/C0/C1——与 notify.sanitizeControl 同算法、终端注入面一致，
 // 审查修复：工具参数与服务端错误片段可携带注入序列）。
 func preview(b []byte) string {
@@ -322,7 +322,7 @@ func preview(b []byte) string {
 	return s
 }
 
-// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。
+// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；§9 不可信数据只渲染）。
 // 实现在 internal/adapter/uicommon，四个消费方共用。
 func sanitizeControl(s string) string {
 	return uicommon.SanitizeControl(s, uicommon.KeepLayout)

@@ -1,4 +1,4 @@
-// Package app 应用层：Turn 循环（唯一的编排）、上下文装配、会话命令（DESIGN §7）。
+// Package app 应用层：Turn 循环（唯一的编排）、上下文装配、会话命令（§7）。
 //
 // 依赖方向：adapter → port ← app → domain。app 只依赖 port 与 domain，
 // 具体适配器（LLM/存储/UI）由装配根 cmd/aquarius 注入。
@@ -16,10 +16,10 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// ErrMaxTurns 单次 Run 的"生成 + 工具"循环次数用尽（DESIGN §7.1）。
+// ErrMaxTurns 单次 Run 的"生成 + 工具"循环次数用尽（§7.1）。
 var ErrMaxTurns = errors.New("agent: 超过最大轮次数")
 
-// defaultMaxTurns Config.MaxTurns <= 0 时的默认值（DESIGN §8 limits.max_turns；D196）。
+// defaultMaxTurns Config.MaxTurns <= 0 时的默认值（§8 limits.max_turns；D196）。
 const defaultMaxTurns = 32
 
 // Deps Agent 依赖（全部端口，测试注入替身）。
@@ -31,7 +31,7 @@ type Deps struct {
 	// Tools 为 nil = 无工具（M0）；Blobs 为 nil = 图片以内联占位代替（附件库 M3）。
 	Tools port.ToolRunner
 	Blobs port.AttachmentStore
-	// Memory 为 nil = 不注入记忆索引与会话记忆（M2，DESIGN §7.1 承载）。
+	// Memory 为 nil = 不注入记忆索引与会话记忆（M2，§7.1 承载）。
 	Memory port.MemoryStore
 }
 
@@ -49,7 +49,7 @@ type Config struct {
 	MaxTurns    int // <=0 = 32
 	// CompactThreshold 自动压缩阈值系数（×MaxContextTokens；<=0 = 0.7，D21 轨2/M2）。
 	CompactThreshold float64
-	// MaxContextTokens 上下文预算 tokens（<=0 = 64000，DESIGN §8）。
+	// MaxContextTokens 上下文预算 tokens（<=0 = 64000，§8）。
 	MaxContextTokens int
 	// Think 原生思考三态开关（D34）：nil = 键缺失（展示为"开"，但**不发**
 	// enable_thinking 布尔，保持零字段变化）；true/false = 显式开关（/think 写回后生效）。
@@ -67,7 +67,7 @@ type Config struct {
 	Caps port.ModelCaps
 }
 
-// Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（DESIGN §7.1，内核唯一的编排）。
+// Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（§7.1，内核唯一的编排）。
 type Agent struct {
 	llm       port.LLM
 	ui        port.Presenter
@@ -195,7 +195,7 @@ func (a *Agent) modelName() string {
 // CurrentModel 当前生成模型（/model 热切换后的运行值；TUI 状态行经装配根回调读取）。
 func (a *Agent) CurrentModel() string { return a.modelName() }
 
-// Run 从当前 Head 出发执行一轮 Turn（DESIGN §7.1 / §10）：
+// Run 从当前 Head 出发执行一轮 Turn（§7.1 / §10）：
 //   - 流式增量只经 Presenter 进 UI；**一次 Turn（可含多轮"生成+工具"循环）只提交一个
 //     不可变节点**（D3/D95 Turn 粒度）：多轮的思考/正文/工具分片按到达序交错累积，
 //     Turn 收场（正常/取消/失败/MaxTurns 用尽）时一次性 AppendCommitted。
@@ -326,7 +326,7 @@ func (a *Agent) finishTurn(ctx context.Context, c *conversation.Conversation, bu
 	return node, nil
 }
 
-// UsageReport /usage 的用量汇总（DESIGN §7.3，三级计数链 D26 的展示面）。
+// UsageReport /usage 的用量汇总（§7.3，三级计数链 D26 的展示面）。
 type UsageReport struct {
 	Estimate  int     // 当前上下文占用（②精确 / ③估算）
 	Exact     bool    // 是否精确计数（适配器 TokenCounter 生效）
@@ -371,12 +371,12 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 	return rep, nil
 }
 
-// assembleOpts 本轮装配口径（DESIGN §7.1）：附件库 + 思考回传（D42）+ 视觉能力（D173）。
+// assembleOpts 本轮装配口径（§7.1）：附件库 + 思考回传（D42）+ 视觉能力（D173）。
 func (a *Agent) assembleOpts() assembleOpts {
 	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Caps.Vision}
 }
 
-// buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（DESIGN §7.1）。
+// buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（§7.1）。
 // Turn 粒度（D95）：buf 非空时把未提交缓冲投影为合成 assistant 消息追加在 Path 尾部——
 // 第 2 轮起模型能看到本 Turn 前几轮的调用与结果（合成节点不进树，仅本次请求可见）。
 func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, buf *turnBuffer) (port.GenerateRequest, error) {
@@ -398,7 +398,7 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 		})
 	}
 	msgs = append(msgs, path...)
-	// 记忆注入（DESIGN §7.1 承载 / D23）：索引（全局+当前会话）与会话记忆全文追加进
+	// 记忆注入（§7.1 承载 / D23）：索引（全局+当前会话）与会话记忆全文追加进
 	// 首条 system；msgs[0] 恒为 system（persona 或兜底）。读取失败静默跳过，不阻断对话。
 	if block := a.memoryBlock(ctx, c.ID); block != "" && len(msgs) > 0 && msgs[0].Role == port.PromptSystem {
 		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: block})
@@ -444,7 +444,7 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	return req, nil
 }
 
-// memoryBlock 构造记忆注入块（DESIGN §7.1 承载）：记忆索引（只含全局 + 当前会话两份，
+// memoryBlock 构造记忆注入块（§7.1 承载）：记忆索引（只含全局 + 当前会话两份，
 // D23 名字白名单）+ 当前会话记忆全文（水位无关：压缩/回溯后仍在）。任一读取失败静默跳过。
 func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
 	if a.memory == nil {

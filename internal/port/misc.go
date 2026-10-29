@@ -20,7 +20,7 @@ type IDGen interface {
 	CallID() tool.CallID
 }
 
-// Secrets 按名取用密钥；返回值不进会话树、不进上下文、不落日志（DESIGN §9）。
+// Secrets 按名取用密钥；返回值不进会话树、不进上下文、不落日志（§9）。
 type Secrets interface {
 	Get(ctx context.Context, name string) (string, error)
 }

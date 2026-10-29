@@ -1,5 +1,5 @@
 // Package webdeepseek 把 DeepSeek 的 Search / Fetch 两个 REST 端点接到
-// port.WebSearch / port.WebFetch（DESIGN §5.14）。
+// port.WebSearch / port.WebFetch（§5.14）。
 //
 // 与模型无关：走的是 https://api.deepseek.com/v1/tools/{search,fetch}，不经过
 // Responses API 的托管 web_search（那条路只有个别模型支持，换模型就静默失效）。

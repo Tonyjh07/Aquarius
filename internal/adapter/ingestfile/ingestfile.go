@@ -1,4 +1,4 @@
-// Package ingestfile 实现文件摄取（port.Ingestor，DESIGN §7.2 输入管线）：
+// Package ingestfile 实现文件摄取（port.Ingestor，§7.2 输入管线）：
 // RawInput{Kind:"file"} → 附件先入库（AttachmentStore.Put）→ 按 MIME 分派：
 //   - image/* → PartImage：装配时经附件库把字节内联进请求（§4.2）；
 //   - 文本类 → PartDoc 带截断提取文本（D10 简单截断内联），截断处标注原文路径；
@@ -157,7 +157,7 @@ func (in *Ingestor) ingestPath(ctx context.Context, path string) (ingestItem, er
 	}
 	mime := detectMime(head, path)
 
-	// 回到文件头，同一 fd 的完整内容入附件库（DESIGN §7.2 输入管线第一步）。
+	// 回到文件头，同一 fd 的完整内容入附件库（§7.2 输入管线第一步）。
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return ingestItem{}, fmt.Errorf("回到文件头: %w", err)
 	}

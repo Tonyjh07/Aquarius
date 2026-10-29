@@ -980,7 +980,7 @@ func addUsage(a, b conversation.Usage) conversation.Usage {
 	return a
 }
 
-// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。
+// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；§9 不可信数据只渲染）。
 // 实现在 internal/adapter/uicommon，四个消费方共用。
 func sanitizeControl(s string) string {
 	return uicommon.SanitizeControl(s, uicommon.KeepLayout)

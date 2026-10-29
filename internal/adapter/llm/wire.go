@@ -108,7 +108,7 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 	if req.Params.Thinking != nil && !omit["enable_thinking"] {
 		out.EnableThinking = req.Params.Thinking
 	}
-	// 本轮生成预算优先于采样参数（DESIGN §5.1 Budget）。
+	// 本轮生成预算优先于采样参数（§5.1 Budget）。
 	out.MaxTokens = req.Budget.MaxOutputTokens
 	if out.MaxTokens == 0 {
 		out.MaxTokens = req.Params.MaxTokens

@@ -29,7 +29,7 @@ type SkillContent struct {
 	BodyLine int
 }
 
-// SkillCatalog 技能清单只读端口（DESIGN §5.15）。
+// SkillCatalog 技能清单只读端口（§5.15）。
 //
 // 安装/卸载/更新是用户面动作（D202），不进端口：模型侧只有「列」与「载」。
 type SkillCatalog interface {

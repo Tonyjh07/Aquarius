@@ -88,7 +88,7 @@ func pick(t *testing.T, tools []port.Tool, name string) port.Tool {
 	return nil
 }
 
-// TestNewRegistersAllTools 注册集合与 Risk 声明对齐 DESIGN §4.3。
+// TestNewRegistersAllTools 注册集合与 Risk 声明对齐 §4.3。
 func TestNewRegistersAllTools(t *testing.T) {
 	tools := newAllTools(newFakeMem(), nil)
 	want := map[string]tool.Risk{
@@ -155,7 +155,7 @@ func TestNamesAndDisplayNames(t *testing.T) {
 	}
 }
 
-// TestMemoryScope 记忆工具只碰全局 + 当前会话两份（DESIGN §4.4）。
+// TestMemoryScope 记忆工具只碰全局 + 当前会话两份（§4.4）。
 func TestMemoryScope(t *testing.T) {
 	mem := newFakeMem()
 	tools := newAllTools(mem, nil)

@@ -10,7 +10,7 @@ import (
 )
 
 // TestMaterializeReassignsIDs 源 ID 只用来建边：两次导入同一份数据得到两棵互不相干的树，
-// 源里的 ID 一个都不带进来（DESIGN §5.16「落成新会话」）。
+// 源里的 ID 一个都不带进来（§5.16「落成新会话」）。
 func TestMaterializeReassignsIDs(t *testing.T) {
 	in := importedTree{
 		Title: "重分配",

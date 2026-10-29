@@ -43,5 +43,6 @@ temp/
 .zcode/
 .zcodeignore
 
-# spike 运行日志（本地实测产物，结论已回写 DESIGN §15.6）
-spike/**/*.log
+# 前置 spike 工程（只用来验证平台机制，结论已落 gui-design.md §15.6）
+# 源码已从版本库移出；本地想留着复跑时这个目录仍在，只是不再入库
+spike/

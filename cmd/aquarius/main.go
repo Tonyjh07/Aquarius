@@ -1,5 +1,5 @@
 // Command aquarius 是 Aquarius 的单二进制入口：
-// 装配 config → Secrets/LLM/Store 端口 → 会话 → REPL（DESIGN §8 布局 / §12 M0 验收）。
+// 装配 config → Secrets/LLM/Store 端口 → 会话 → REPL（§8 布局 / §12 M0 验收）。
 package main
 
 import (
@@ -98,7 +98,7 @@ func resolveProfile(dir, flagName string) (string, error) {
 	return name, nil
 }
 
-// minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（DESIGN §7.1）。
+// minOutputReserve 硬保底截断为本轮输出预留的最小 token 数（§7.1）。
 const minOutputReserve = 1024
 
 // uiFrontend 装配根消费的前端面：repl 与 TUI 同权实现（D33 换壳不换核）。
@@ -170,7 +170,7 @@ type wiring struct {
 	skills   *skillfs.Catalog
 	// skillInstall 技能安装面内核（D202；装配根在 skillsadmin.go 适配两套消费方接口）。
 	skillInstall *skillfs.Installer
-	// exchange 会话进出适配器（/export 与 /import，DESIGN §5.16）：导入侧要往附件库
+	// exchange 会话进出适配器（/export 与 /import，§5.16）：导入侧要往附件库
 	// 回填归档里的字节，故与 blobs 同期装配。
 	exchange  *exchange.Exchange
 	runner    *toolrun.Runner

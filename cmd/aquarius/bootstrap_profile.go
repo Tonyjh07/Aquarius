@@ -17,7 +17,7 @@ import (
 var errFirstRun = errors.New("bootstrap: 首次运行，已生成配置模板")
 
 // resolveDataDir 解析数据根目录：flag > ~/.aquarius（三级覆盖里的 flag 先于
-// env/config，DESIGN §8）。
+// env/config，§8）。
 func resolveDataDir(dataDir string) (string, error) {
 	dir := dataDir
 	if dir == "" {

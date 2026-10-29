@@ -1,6 +1,6 @@
 // Package conversation 实现 Aquarius 的核心领域：一棵不可变消息树 + 一个 Head 游标。
 //
-// 核心语义（DESIGN §4.1）：
+// 核心语义（§4.1）：
 //   - 节点创建后内容只读；用户"修改"永远走 Revise（创建同级新节点），绝不就地改写。
 //   - Revise Carry = 边转移：子树零拷贝改挂到新节点（D2/D16）；Clone = 深拷贝子树分叉（D96）。
 //   - Root 实节点是唯一根（D19 修订 D15 载体）：ID = 会话 ID、Role = root、空内容；

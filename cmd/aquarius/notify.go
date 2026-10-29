@@ -14,7 +14,7 @@ import (
 
 // outputsPresenter 输出扇出装饰器（D28/D14）：包住实际 UI，Emit 透传后对
 // 已提交的 assistant 回答逐个调 OutputAdapter.Deliver——失败只记日志、不打断
-// 主流程（DESIGN §5.7/§7.2）。app 与 UI 适配器均不感知输出器。
+// 主流程（§5.7/§7.2）。app 与 UI 适配器均不感知输出器。
 type outputsPresenter struct {
 	inner port.Presenter
 	outs  []port.OutputAdapter

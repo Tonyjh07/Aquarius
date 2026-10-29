@@ -1,6 +1,6 @@
 package uigui
 
-// history_exchange.go 会话进出的 GUI 出口（DESIGN §5.16）：左栏标题行两颗文字钮——
+// history_exchange.go 会话进出的 GUI 出口（§5.16）：左栏标题行两颗文字钮——
 // 「导入」拿一个外部文件、「导出」拿一个落点；选完都只投一条内核命令（`/import <路径>`、
 // `/export --path <路径>`），与键入同路径。
 //

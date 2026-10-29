@@ -1,6 +1,6 @@
 package app
 
-// session_exchange.go `/export` 与 `/import` 的命令面（DESIGN §5.16）。
+// session_exchange.go `/export` 与 `/import` 的命令面（§5.16）。
 //
 // 命令面只做「文件与树之间的搬运」这一层：格式清单、保真边界、丢什么由端口与适配器给出
 // （port.ExchangeFormats），这里负责挑路径、防覆盖、落了半截就删、以及把回执写成用户能读的

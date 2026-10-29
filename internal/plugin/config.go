@@ -1,4 +1,4 @@
-// Package plugin 插件宿主（DESIGN §6.4，M4）：发现、校验、授权（grant）、
+// Package plugin 插件宿主（§6.4，M4）：发现、校验、授权（grant）、
 // 生命周期与可观测。M4 只落 Tier-2（MCP server）；Tier-1 后移见 D29。
 //
 // 依赖方向：adapter/mcpgate ← plugin（宿主编排协议适配器）；本包只依赖 domain/port/标准库。
@@ -16,7 +16,7 @@ import (
 )
 
 // 传输方式与风险档的合法取值：只认 stdio 与 streamable-http 两种传输（D30，声明口径见
-// DESIGN §6.3、§8）。
+// §6.3、§8）。
 const (
 	TransportStdio = "stdio"
 	TransportHTTP  = "streamable-http"

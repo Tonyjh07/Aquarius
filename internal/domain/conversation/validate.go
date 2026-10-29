@@ -93,7 +93,7 @@ func ValidateInjectParts(parts []Part) error {
 
 // Validate 整树自检：不变量 1（树合法：唯一实根、双向一致、无环、Head 在树）必须恒成立，
 // 另查结构元数据一致性（RevisedFrom 两端存在、Children 父节点存在）。
-// 不变量 2（节点不可变）由操作 API 保证，性质测试以快照比对守护（DESIGN §11）。
+// 不变量 2（节点不可变）由操作 API 保证，性质测试以快照比对守护（§11）。
 // 旧不变量 2"存在性引用"随 D95 Tool as Part 取消：调用与结果同片，无跨节点引用。
 func (c *Conversation) Validate() error {
 	var errs []error

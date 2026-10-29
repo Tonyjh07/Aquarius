@@ -1,4 +1,4 @@
-// Package ingestclip 实现剪贴板摄取（port.Ingestor，DESIGN §7.2）：
+// Package ingestclip 实现剪贴板摄取（port.Ingestor，§7.2）：
 // RawInput{Kind:"clipboard"}——图片/二进制已先入附件库（Blob，管线第一步由
 // 产出方完成），或纯文本（Text）。剪贴板的抓取属 UI 职责（M4 TUI 的
 // 粘贴入口走同一 UserInput.Raw），本包只做管线端：校验 + 产出 Part。

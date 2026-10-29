@@ -359,7 +359,7 @@ func (c *Client) markUnsupported(fields ...string) {
 	}
 }
 
-// Models 拉取 /models 列表；能力与单价未知，仅填 Name（DESIGN §5.1）。
+// Models 拉取 /models 列表；能力与单价未知，仅填 Name（§5.1）。
 func (c *Client) Models(ctx context.Context) ([]port.ModelInfo, error) {
 	if ctx == nil {
 		return nil, errors.New("llm: nil context")

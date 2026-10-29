@@ -23,7 +23,7 @@ import (
 
 // userFacingIDPattern 命中即视为漏进用户面的内部标记：
 //   - D + 至少两位数字（D19 / D145；要求词边界，避免 Base64、D1 这类误报）
-//   - § + 数字（DESIGN 节号）
+//   - § + 数字（设计文档节号）
 //   - 里程碑 M0–M4（同样的词边界）
 var userFacingIDPattern = regexp.MustCompile(`\bD\d{2,}\b|§\d|\bM[0-4]\b`)
 

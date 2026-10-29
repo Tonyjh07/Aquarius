@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// PluginInfo /plugin list 的一行（DESIGN §7.3）：宿主快照的 app 侧投影——
+// PluginInfo /plugin list 的一行（§7.3）：宿主快照的 app 侧投影——
 // app 只定义消费面，不 import 插件宿主内部包（同 D13 边界）。
 type PluginInfo struct {
 	Name         string

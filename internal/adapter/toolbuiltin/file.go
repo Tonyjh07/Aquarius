@@ -40,7 +40,7 @@ const (
 	maxSearchHits  = 200
 )
 
-// requireAbs 要求绝对路径（DESIGN：无 cwd 工作区概念，硬性规则 7）。
+// requireAbs 要求绝对路径（无 cwd 工作区概念，硬性规则 7）。
 // sandbox 非空时附特权沙盒目录提示——相对路径多半是"想写进当前工作区"，
 // 给调用模型一个立刻可用的绝对路径（审查/反馈：报错里缺少可行动的替代）。
 func requireAbs(sandbox, path string) (string, error) {
@@ -115,7 +115,7 @@ func (t *fileRead) Target(_ context.Context, call tool.Call) (string, perm.Op, b
 
 func (t *fileRead) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
 	if err := ctx.Err(); err != nil {
-		return tool.Result{}, err // 入口即响应取消（DESIGN §10：工具执行同受 ctx 约束）
+		return tool.Result{}, err // 入口即响应取消（§10：工具执行同受 ctx 约束）
 	}
 	var a struct {
 		Path   string `json:"path"`

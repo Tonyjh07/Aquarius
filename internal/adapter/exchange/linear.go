@@ -13,7 +13,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// linear.go 线性互通（DESIGN §5.16）：`openai` 与 `sillytavern`。
+// linear.go 线性互通（§5.16）：`openai` 与 `sillytavern`。
 //
 // 线性装不下一棵树，所以口径必须写死：**取 Head 路径**（= 当前上下文那条链），不做「自动挑
 // 一个分支」的猜测。两者都只含正文分片：思考、工具、附件分片丢弃并计入回执；角色映射
@@ -132,7 +132,7 @@ func (e *Exchange) importOpenAI(ctx context.Context, r io.Reader) (*conversation
 // stHeader SillyTavern `.jsonl` 的首行。
 //
 // 我们只声明读写需要的字段：`user_name` / `character_name` 是回执与标题的原料，其余（世界书、
-// 正则、作者注）属于对方的工作区配置，不是这份对话本身（DESIGN §5.16 不装配置）。
+// 正则、作者注）属于对方的工作区配置，不是这份对话本身（§5.16 不装配置）。
 type stHeader struct {
 	UserName      string `json:"user_name,omitempty"`
 	CharacterName string `json:"character_name,omitempty"`

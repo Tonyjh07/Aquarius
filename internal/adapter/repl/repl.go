@@ -379,7 +379,7 @@ func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageAlways)
 }
 
-// preview 截断工具参数/结果为单行预览（不可信数据只渲染，DESIGN §9）。
+// preview 截断工具参数/结果为单行预览（不可信数据只渲染，§9）。
 // 先剥控制序列与非法 UTF-8（审查修复：Windows cmd 输出常为 GBK——其中 0x9B 是
 // 8 位 C1 CSI 引导符，直通终端会被解析成 ANSI 擦除序列，把转写区前几行清掉；
 // 与 uitui.preview 同算法，两前端出口一致）。
@@ -392,7 +392,7 @@ func preview(b []byte) string {
 	return s
 }
 
-// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；DESIGN §9 不可信数据只渲染）。
+// sanitizeControl 剥除转义序列与控制字符（保留 \n\t；§9 不可信数据只渲染）。
 // 实现在 internal/adapter/uicommon，四个消费方共用。
 func sanitizeControl(s string) string {
 	return uicommon.SanitizeControl(s, uicommon.KeepLayout)

@@ -1,4 +1,4 @@
-// Package decorate 端口装饰器（DESIGN §10 / D14）：横切能力（重试、硬保底截断、审计）
+// Package decorate 端口装饰器（§10 / D14）：横切能力（重试、硬保底截断、审计）
 // 以端口包装器实现，全部在装配根（cmd/aquarius）叠加，不进插件 API、不散落业务代码。
 // 依赖 internal/port 与 domain（conversation/tool 经端口类型引用）+ 标准库；
 // 装饰器不 import app——裁剪等 app 能力经闭包注入。
@@ -12,7 +12,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 默认重试参数（§10"限次 + 退避"；DESIGN 未给配置键，取常量）。
+// 默认重试参数（§10"限次 + 退避"；契约未给配置键，取常量）。
 const (
 	defaultAttempts = 3                      // 总尝试次数（含首次）
 	defaultBaseWait = 200 * time.Millisecond // 首次退避，之后指数 ×2

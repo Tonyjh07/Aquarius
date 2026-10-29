@@ -1,4 +1,4 @@
-// Package skillfs 实现 port.SkillCatalog（DESIGN §5.15 / D201）：从有序技能根发现
+// Package skillfs 实现 port.SkillCatalog（§5.15 / D201）：从有序技能根发现
 // Agent Skills（一个目录 + SKILL.md），解析 YAML frontmatter 并按开放规范校验。
 //
 // 三条边界：

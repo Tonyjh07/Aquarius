@@ -26,7 +26,7 @@ func conversationFrom(ctx context.Context) (*conversation.Conversation, bool) {
 	return c, ok && c != nil
 }
 
-// ContextCompactTool 返回 context_compact 工具（DESIGN §4.3，D21 轨3）：
+// ContextCompactTool 返回 context_compact 工具（§4.3，D21 轨3）：
 // 模型自我管理上下文，等价 /compact——经 Run 注入的会话对象触发 Compact，
 // 摘要以 system 水位节点入树，同轮后续装配即用新水位。
 // 实现放在 app：它编排的是 app 自己的 Compact（经 port.Tool 契约接入 runner，D13 不破）。

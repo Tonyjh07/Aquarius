@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-10-29 @ b0a7d3b -->
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找它的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -31,11 +31,11 @@
 
 | 文档 | 管什么 | 权威性 |
 |---|---|---|
-| [DESIGN.md](../DESIGN.md) | **当前为真**的设计：领域模型、端口、权限、存储、里程碑验收 | 与决策记录同级；设计事实的最终裁定 |
-| [decisions.md](decisions.md) | 每条决策一行结论；够格展开的写动机与用户拍掉的方案 | 与 DESIGN 同级；**编号的唯一索引**在这里 |
+| [contracts.md](contracts.md) | **内核当前为真**的规格：领域模型、端口、插件宿主、应用层、权限与安全、取消与并发 | **内核事实的最终裁定**；与 decisions 同级 |
+| [decisions.md](decisions.md) | 每条决策一行结论；够格展开的写动机与用户拍掉的方案 | 与 contracts 同级；**编号的唯一索引**在这里 |
 | [roadmap.md](roadmap.md) | 已经落地了什么、对应哪条决策 | 进度档案，只记过去；计划不在本文 |
 | [plan.md](plan.md) | 还没做的事、顺序与节奏 | 未来工作的唯一处；**工作稿，随时重排，别的文档不按节号引用它** |
-| [overview.md](overview.md) | 架构导读：内核三件事、依赖方向、目录与端口矩阵 | 十分钟地图；与 DESIGN 冲突以 DESIGN 为准 |
+| [overview.md](overview.md) | 定位、统一语言、限界上下文、依赖方向、目录与端口矩阵 | **定位与术语的唯一处**；十分钟地图 |
 | [development.md](development.md) | 门禁、测试手段、工程准则与边界、How-to | 开发流程的唯一处 |
 | [relation-map-design.md](relation-map-design.md) | 会话树关系图的形态规格（通道分配、行为契约） | uigui 实现规格；可被测试断言的部分以本文为准 |
 | [gui-design.md](gui-design.md) | GUI 壳内实现规格：悬浮球形态、输入栏与转写、主题令牌、多窗、缩放、气泡菜单 | uigui 实现规格；`§15.x` 引用指本文 |
@@ -49,12 +49,30 @@
 
 ## 分工的边界
 
-- **设计 vs 实现规格**：内核（领域模型、端口、应用层、存储、权限）留在 DESIGN；
-  单个适配器的形态规格（GUI 窗口与输入栏、关系图通道分配）各自成篇，与 DESIGN 同级但只管那一个适配器。
-- **设计 vs 决策**：DESIGN 回答「现在什么是真的」，decisions 回答「为什么这么定、否决了什么」。
-  DESIGN 不写演化史；decisions 不重复设计结论。
+- **契约 vs 实现规格**：内核规格（领域模型、端口、应用层、权限与安全、并发）在
+  [contracts.md](contracts.md)；单个适配器的形态规格（GUI 窗口与输入栏、关系图通道分配）各自成篇，
+  与 contracts 同级但只管那一个适配器。
+- **契约 vs 决策**：contracts 回答「现在什么是真的」，decisions 回答「为什么这么定、否决了什么」。
+  contracts 不写演化史；decisions 不重复规格结论。
 - **档案 vs 规划**：做过的进 roadmap，没做的进 plan，两者不混写。
 - **手册 vs 参考**：guide 讲怎么做（场景、白话），usage / configuration 讲是什么（逐条、逐字段）。
+
+## 节号对照
+
+历史注释与文档里的裸 `§n` 按这张表解析（拆分前它们都指单一的总设计文档，2026-10-29 拆成下面各篇）。
+代码注释沿用旧号，不改写；读者按表定位。
+
+| 节号 | 现在在哪 |
+|---|---|
+| `§1`–`§3` | [overview.md](overview.md)（定位与设计原则、统一语言、限界上下文） |
+| `§4`–`§7`、`§9`、`§10` | [contracts.md](contracts.md)（领域模型、端口、插件架构、应用层、权限与安全、取消与并发） |
+| `§8` | [storage.md](storage.md)（磁盘形状）与 [configuration.md](configuration.md)（配置语义） |
+| `§11` | [development.md](development.md)（测试策略与门禁） |
+| `§12` | [roadmap.md](roadmap.md)（里程碑与验收标准） |
+| `§14` | [plan.md](plan.md)（暂缓事项） |
+| `§15` | [gui-design.md](gui-design.md)（GUI 形态规格） |
+
+`D<n>` 编号不在此表内，唯一索引见 [decisions.md](decisions.md)。
 
 ## 文风
 

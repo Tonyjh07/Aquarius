@@ -10,7 +10,7 @@ import (
 // jsonSchema 构造参数 JSON Schema（模型可见的工具声明）。
 func jsonSchema(s string) json.RawMessage { return json.RawMessage(s) }
 
-// thinkTool 显式整理思路（Safe、no-op，DESIGN §4.3）：
+// thinkTool 显式整理思路（Safe、no-op，§4.3）：
 // 内容留在调用参数里随 assistant 节点入树，本身无副作用、不额外回填。
 type thinkTool struct{}
 

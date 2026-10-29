@@ -1,6 +1,6 @@
 package app
 
-// agent_summary.go 「插入摘要」的模型档（D152，DESIGN §7.3）与 /compact 共用的摘要生成。
+// agent_summary.go 「插入摘要」的模型档（D152，§7.3）与 /compact 共用的摘要生成。
 //
 // 与 /compact（agent_compact.go）的分工：
 //   - /compact = 把**当前上下文**压成一条摘要**接在 Head 之后**（摘要成为新的水位）；

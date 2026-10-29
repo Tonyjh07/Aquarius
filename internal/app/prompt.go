@@ -210,7 +210,7 @@ func waterline(path []conversation.Message) (personaIdx, watermarkIdx int) {
 	return personaIdx, -1
 }
 
-// assembleOpts 装配口径（DESIGN §7.1）：附件库、思考回传（D42）、视觉能力（D169）。
+// assembleOpts 装配口径（§7.1）：附件库、思考回传（D42）、视觉能力（D169）。
 //
 // 三件事都只影响「怎么投影」，不影响树本身，收进一个结构体是为了让调用方
 // 显式回答它们——散成多个布尔参数时，新加一个能力位很容易在某个调用点漏掉。
@@ -222,7 +222,7 @@ type assembleOpts struct {
 	vision bool
 }
 
-// assemblePath 把 Path() 装配为模型消息序列（DESIGN §7.1，含 D21 水位裁剪）：
+// assemblePath 把 Path() 装配为模型消息序列（§7.1，含 D21 水位裁剪）：
 // persona（path[1] 的 system 节点）恒回传；最新压缩摘要之上的历史（persona 之外）一律不回传；
 // Root 空节点不进上下文。
 func assemblePath(ctx context.Context, path []conversation.Message, opt assembleOpts) ([]port.PromptMessage, error) {
@@ -501,7 +501,7 @@ func toolImageMessage(ctx context.Context, toolName string, refs []tool.ImageRef
 }
 
 // assembleParts 把领域分片装配为提示词分片：
-// audio 取转写文本、doc 取提取文本（D10）、image 经 AttachmentStore 内联字节（DESIGN §4.2）；
+// audio 取转写文本、doc 取提取文本（D10）、image 经 AttachmentStore 内联字节（§4.2）；
 // thinking 不进 Content——由 assemblePath 经 PromptMessage.Reasoning 独立回传（D42）。
 func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleOpts) ([]port.PromptPart, error) {
 	out := make([]port.PromptPart, 0, len(parts))
@@ -510,7 +510,7 @@ func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleO
 		case conversation.PartText:
 			out = append(out, port.PromptPart{Kind: port.PromptText, Text: p.Text})
 		case conversation.PartAudio:
-			// 模型只见文本，音频留附件库回放（DESIGN §4.2）。
+			// 模型只见文本，音频留附件库回放（§4.2）。
 			if p.Transcript != "" {
 				out = append(out, port.PromptPart{Kind: port.PromptText, Text: p.Transcript})
 			}
@@ -566,7 +566,7 @@ func thinkingText(parts []conversation.Part) string {
 }
 
 // toolResultText 工具结果的提示词文本。
-// Output/Err 均为不可信数据，只作文本回填给模型、不执行（DESIGN §9）。
+// Output/Err 均为不可信数据，只作文本回填给模型、不执行（§9）。
 // 正文进模型上下文，按硬规则用英文（D36）；模型是唯一读者。
 func toolResultText(res *tool.Result) string {
 	if res == nil {

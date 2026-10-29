@@ -47,7 +47,7 @@ func writeMCPConfig(t *testing.T, dir, llmURL, model, mcpURL string) {
 	t.Setenv("AQ_E2E_KEY", "test-key")
 }
 
-// TestRunPluginMCPFullChain M4 验收（DESIGN §11 e2e / §12）：装配假 MCP server →
+// TestRunPluginMCPFullChain M4 验收（§11 e2e / §12）：装配假 MCP server →
 // 启动即连接（/plugin 就绪）→ 模型经 mcp:fake:echo 工具完成发现/调用/回填全链路 →
 // /plugin 展示调用统计 → /mcp:fake:greet 动态命令渲染为用户输入走完整 Turn。
 func TestRunPluginMCPFullChain(t *testing.T) {

@@ -20,7 +20,7 @@ import (
 var updateGolden = flag.Bool("update", false, "重写 golden 回放文件")
 
 // ---------------------------------------------------------------------------
-// golden 交互回放框架（DESIGN §11 app 层：脚本流 LLM + 收集器 Presenter +
+// golden 交互回放框架（§11 app 层：脚本流 LLM + 收集器 Presenter +
 // 脚本队列 Prompter → 交互回放）。M1 验收：回放覆盖 Revise 两模式与分支导航。
 //
 // transcript 确定性：节点/会话 ID 一律替换为标签（n1、n2…，按 DFS 首次出现顺序
@@ -203,7 +203,7 @@ func (r *replay) renderEvents() {
 	flush()
 }
 
-// oneLine 压平成单行并截断（transcript 可读性；内容不可信只渲染，DESIGN §9）。
+// oneLine 压平成单行并截断（transcript 可读性；内容不可信只渲染，§9）。
 func oneLine(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if r := []rune(s); len(r) > 80 {

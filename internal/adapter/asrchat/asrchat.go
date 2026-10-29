@@ -30,7 +30,7 @@ import (
 const (
 	chatPath = "/chat/completions"
 	// maxAudioBytes 单次转写音频上限：MiMo 的 Base64 体积上限 10MB，原字节还要
-	// 再乘 3/4（DESIGN §12 的硬顶口径）。16kHz 单声道 16bit ≈ 4 分钟。
+	// 再乘 3/4（§12 的硬顶口径）。16kHz 单声道 16bit ≈ 4 分钟。
 	maxAudioBytes = 10 << 20
 	maxErrorBody  = 4 << 10
 )

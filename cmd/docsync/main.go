@@ -30,7 +30,7 @@
 // 缺标记的文档无论是否改过都补上，日期/哈希取它最后一次提交（同样是父提交）。
 //
 // 覆盖范围：`docs/` 下全部 `*.md`（含子目录，如 `docs/releases/`）与仓库根的
-// `README.md`。`DESIGN.md`、`AGENTS.md` 不参与——它们与代码同批修改，标记会立刻过时。
+// `README.md`。`AGENTS.md` 不参与——它与代码同批修改，标记会立刻过时。
 package main
 
 import (

@@ -10,7 +10,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// maxTermOut term_exec 输出的保头尾上限（DESIGN §4.3"输出截断保头尾"）：
+// maxTermOut term_exec 输出的保头尾上限（§4.3"输出截断保头尾"）：
 // 头尾各半，总量略小于常见 tool_output_chars（20000），Runner 的统一裁剪
 // 通常不再二次截断；用户调小限额时由 Runner 兜底。
 const maxTermOut = 16000
@@ -41,7 +41,7 @@ func (t *termExec) Spec() tool.Spec {
 
 func (t *termExec) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
 	if err := ctx.Err(); err != nil {
-		return tool.Result{}, err // 入口即响应取消（DESIGN §10）
+		return tool.Result{}, err // 入口即响应取消（§10）
 	}
 	jobs, err := requireJobs(t.jobs, "term_exec")
 	if err != nil {

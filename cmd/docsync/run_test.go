@@ -28,7 +28,7 @@ func gitRepo(t *testing.T) string {
 	write("go.mod", "module example.com/tmp\n\ngo 1.21\n")
 	write("README.md", "# T\n\n正文\n")
 	write("docs/a.md", "# A\n\n正文\n")
-	write("DESIGN.md", "# D\n\n正文\n")
+	write("AGENTS.md", "# A\n\n正文\n")
 	for _, args := range [][]string{
 		{"init"},
 		{"config", "user.email", "t@example.com"},
@@ -48,7 +48,7 @@ func gitRepo(t *testing.T) string {
 func TestRunCommitModeOnlyTouchesThatCommit(t *testing.T) {
 	dir := gitRepo(t)
 
-	// 第二次提交：只改 docs/a.md 与 README.md（DESIGN.md 不参与）。
+	// 第二次提交：只改 docs/a.md 与 README.md（AGENTS.md 不参与）。
 	for _, f := range []string{"docs/a.md", "README.md"} {
 		path := filepath.Join(dir, filepath.FromSlash(f))
 		raw, err := os.ReadFile(path)
@@ -79,16 +79,16 @@ func TestRunCommitModeOnlyTouchesThatCommit(t *testing.T) {
 			t.Fatalf("%s 缺标记:\n%s", f, raw)
 		}
 	}
-	// 未改动的 docs/b.md 不产生标记，DESIGN.md 也不该被动。
+	// 未改动的 docs/b.md 不产生标记，根上不在覆盖范围的 AGENTS.md 也不该被动。
 	if _, err := os.Stat(filepath.Join(dir, "docs", "b.md")); err == nil {
 		t.Fatal("测试前提：不应存在 docs/b.md")
 	}
-	design, err := os.ReadFile(filepath.Join(dir, "DESIGN.md"))
+	agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasMarker(string(design)) {
-		t.Fatalf("DESIGN.md 不该有标记:\n%s", design)
+	if hasMarker(string(agents)) {
+		t.Fatalf("AGENTS.md 不该有标记:\n%s", agents)
 	}
 	// 标记的哈希是父提交（代码基线），不是本提交自身。
 	head, err := exec.Command("git", "-C", dir, "rev-parse", "--short", "HEAD").Output()

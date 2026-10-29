@@ -38,7 +38,7 @@ func (p *Plat) showOpenFile(req OpenRequest) {
 //
 // 档位恒报 -1：zenity / kdialog / osascript 只回路径，回不了用户在「文件类型」里选了哪
 // 一档（zenity 的 --file-filter 在保存框里只是筛显与补扩展名，不回报选中的那项）。宿主
-// 据此按落点扩展名回落——这是本平台能给出的最好依据，写进 DESIGN §5.16。
+// 据此按落点扩展名回落——这是本平台能给出的最好依据，写进 §5.16。
 func (p *Plat) showSaveFile(req SaveRequest) {
 	path, ok := saveFileCommand(req)
 	if !ok {

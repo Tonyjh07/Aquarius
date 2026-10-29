@@ -1,8 +1,8 @@
 # 开发指南
-<!-- docs-sync: 2026-10-27 @ 5c1ac19 -->
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
-> 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [DESIGN.md](../DESIGN.md)
-> §11/§12；**冲突以前两者为准**。面向：后续贡献者与 AI 编码代理。
+> 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
+> 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
 
 ## 环境与门禁
 
@@ -85,7 +85,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 ```
 
 接口由消费方定义；错误 `fmt.Errorf("...: %w")` 包装；值对象具名类型；
-导出符号写注释；命名与 DESIGN §2 统一语言对齐（Revise/Carry/Fresh/Head/Part/Job）。
+导出符号写注释；命名与 [overview.md](overview.md) 的统一语言对齐（Revise/Carry/Fresh/Head/Part/Job）。
 
 `uigui/platform` 的分家口径（D111 修订）：平台能力只在 `platform` 包实现（`*_windows.go` /
 `*_other.go` 同签名），`uigui` 侧声明所需接口并断言 `*platform.Plat` 满足——**少一个平台方法
@@ -93,21 +93,23 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 选中文件 / 系统主题变化），业务语义留在 `uigui`。headless 测试装假平台（`fakeplat_test.go`），
 不触真 Win32/真外壳。
 
-## 测试手段（四种，按层选）
+## 测试手段（按层选）
 
 | 层 | 手段 | 样板位置 |
 |---|---|---|
-| arch | **架构守卫**：`go/parser` 读全仓生产文件 import，断言分层方向与反向约束；另断言聚合根不导出 map 字段 | `internal/arch/arch_test.go` |
+| arch | **架构守卫**：`go/parser` 读全仓生产文件的 import，断言分层方向（`adapter → port ← app → domain`）与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；判定函数另有正反例自检，防「永远绿」；另断言聚合根不导出 map 字段（导出即等于「只有方法能改树」失效） | `internal/arch/arch_test.go` |
 | arch | **注释守卫**：连续 `//` 注释去掉决策编号后不足 12 个可见字符即失败（编号可以当索引或溯源，不能代替说明） | `cmd/aquarius/comments_test.go` |
-| domain | **性质测试**：随机操作序列 → 两条不变量恒成立；快照比对证明不可变 | `domain/conversation/property_test.go` |
-| domain | **变更后自检**：`go test -tags aqvalidate ./...` 下每次变更末尾跑全树 `Validate`（生产构建零开销） | `domain/conversation/validate_tag_test.go` |
-| app | **交互回放**：脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter | `app/fakes_test.go`、`app/agent_test.go` |
+| domain | **性质测试**：随机 Append / Revise(Fresh\|Carry\|Clone) / Prune / Checkout 序列 → 两条不变量恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边改写）；Clone 深拷贝子树与原子树零共享、原子树字节级不变；节点形态校验含「思考分片与工具分片只有 assistant 可携带」「工具分片 CallID 节点内唯一」；`Snapshot` → `Restore` 往返得到同一棵树，坏快照被拒；快照比对证明不可变 | `domain/conversation/property_test.go` |
+| domain | **变更后自检**：`go test -tags aqvalidate ./...` 下四条变更路径（`AppendCommitted`/`Revise`/`Prune`/`InsertCommitted`，含 Revise 的 carry/clone 提前返回分支）末尾各跑一次全树 `Validate`；生产构建为常量 `false`，检查被编译掉、零开销。`validate_tag_test.go` 双向验证这条开关本身（开 tag 时弄坏树必须被拒，不开时自动跳过） | `domain/conversation/validate_tag_test.go` |
+| app | **交互回放**：脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter；摄取管线用假 Transcriber；思考入树的分片顺序与回传开关两态装配 | `app/fakes_test.go`、`app/agent_test.go` |
 | app | **golden 回放**：命令脚本 → 归一化 transcript（ID 归一为标签）与 `testdata/golden/` 基准比对；改语义后 `go test ./internal/app -run TestGoldenReplay -update` 重写基准并人工检视 | `app/golden_test.go` |
-| adapter | **契约测试**：storejson/memoryfs 临时目录；LLM 用 httptest 假 SSE 录制流回放；toolrun 全等级矩阵表 + 脚本确认器 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go`、`adapter/toolrun/runner_test.go` |
+| adapter | **契约测试**：storejson / blobfs / jobproc / memoryfs 用临时目录；LLM 用 httptest 假 SSE 录制流回放；toolrun 全等级矩阵表 + 脚本确认器 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go`、`adapter/toolrun/runner_test.go` |
 | tokenizer | **官方向量比对**：期望值由 Python `tokenizers` 一次性生成入库（`testdata/gen_*.py`）；fixture 全离线跑，真实 DeepSeek 词表向量需 `AQUARIUS_TOKENIZER_JSON=<路径>`（缺省跳过） | `adapter/llm/tokenizer/tokenizer_test.go` |
-| e2e | **进程内装配回放**：`run(args, stdin, stdout, stderr)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵、M3 的 term_exec/job 链路） | `cmd/aquarius/main_test.go` |
+| MCP | **假 server 契约**：测试内起假 MCP server（stdio）跑通发现 / 调用 / 超时 / 崩溃重启 / 授权拒绝 | `internal/adapter/mcpgate/mcpgate_test.go` |
+| e2e | **进程内装配回放**：`run(args, stdin, stdout, stderr)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵、`term_exec`/`job` 链路）；编译出二进制后由 repl 适配器喂 stdin 断言 stdout 也可，装配假 MCP server 验证 `mcp:` 工具全链路 | `cmd/aquarius/main_test.go` |
 
 修 bug 先写复现测试；新行为补测试。测试替身放测试文件内或 `internal/adapter/fake/`。
+测试文件不受分层铁律约束——借用真实适配器做链路级验收（如「摄取 → 附件入库 → 装配内联」）是允许的。
 
 **测试必须能在干净环境里跑**：不设任何环境变量、不依赖本机特有的路径/密钥/服务，`go test ./...`
 就该全绿。要某个环境变量，用例自己 `t.Setenv` 显式给（含显式置空断言「缺失路径」）。反例：
@@ -151,26 +153,26 @@ FAIL——这不是被测代码坏了，是测试自己没自足。同理，**�
 
 Review 里提出但**经核实不成立**的：
 
-- 「`port` 里放业务纯函数（`ResolveJobID` 等）违规」——DESIGN §5 明文允许无状态纯函数助手；
+- 「`port` 里放业务纯函数（`ResolveJobID` 等）违规」——[contracts.md](contracts.md) §5 明文允许无状态纯函数助手；
   真问题是同一套前缀解析策略曾有 4 份实现，两份分别在 `port/job.go`、`port/watch.go`，另一份
   在 `app` 的手写循环里——它们已经合并成 `port.MatchPrefix`（v0.2.0 的 P2-1）。
 - 「`mcpgate → plugin` 依赖方向错」——方向是对的（`plugin` 只依赖 `domain`/`port`，`mcpgate`
   是它的协议适配器）；[overview.md](overview.md) 依赖图已补上 `internal/plugin`。
-- 「`PromptPart.Kind` 用裸 `string` 违规」——设计原本就这么定（DESIGN §5.1）。要改得先改设计，
+- 「`PromptPart.Kind` 用裸 `string` 违规」——设计原本就这么定（[contracts.md](contracts.md) §5.1）。要改得先改设计，
   所以它排在 v0.2.0 的收口批次里，不是当下就能顺手换的。
 
 ## How-to
 
 ### 新增一个端口适配器
 
-1. 先在 DESIGN §5/§5.11 补契约与矩阵行（**先改文档再改代码**，[decisions.md](decisions.md) 补决策如适用）；
+1. 先在 [contracts.md](contracts.md) §5/§5.11 补契约与矩阵行（**先改文档再改代码**，[decisions.md](decisions.md) 补决策如适用）；
 2. `internal/port` 定义/复用接口（消费方定义、保持小）；
 3. `internal/adapter/<name>/` 实现 + 同目录契约测试（临时目录 / 假 server）；
 4. `cmd/aquarius` 装配注入；横切能力（重试（含退避）/硬保底截断/审计）在装配根做装饰器，不进适配器。
 
 ### 新增一个内置工具（M2 起）
 
-1. DESIGN §4.3 工具表加行（名称/说明/Risk）；
+1. [contracts.md](contracts.md) §4.3 工具表加行（名称/说明/Risk）；
 2. 实现 `port.Tool`（`Spec()` + `Execute(ctx, call)`），放 `internal/adapter/toolbuiltin/`；
    **文件类**再实现 `port.FileTarget` 自申报 `(path, op)`（D25：ToolRunner 据此查
    路径格；不申报则按执行类看工具列 Risk）；
@@ -181,7 +183,7 @@ Review 里提出但**经核实不成立**的：
 
 ### 新增一个斜杠命令
 
-1. DESIGN §7.3 命令表加行；
+1. [contracts.md](contracts.md) §7.3 命令表加行；
 2. `internal/app/commands.go` 的 `commandTable` **加一条记录**——元数据（名字们 / 参数用例 /
    描述）与处理函数同一行，`/help`、补全浮层与执行分派都读这张表，因此**没有第二处要改**
    （D245）。只吃参数的处理函数用表里的适配器接上，命令输出仍走返回字符串；
@@ -192,7 +194,7 @@ Review 里提出但**经核实不成立**的：
 
 ### 新增一档权限等级
 
-1. **先改 DESIGN §9 矩阵表 + [decisions.md](decisions.md) 决策**；
+1. **先改 [contracts.md](contracts.md) §9 矩阵表 + [decisions.md](decisions.md) 决策**；
 2. `internal/domain/perm`：`Levels` 切片 + `File`/`Tool` 判定 + `perm_test` 全表断言
    （`Matrix()` 展示由判定推导，勿硬编码第二份）；
 3. config 模板与校验无需变（`Parse` 自动接受新枚举）。
@@ -242,14 +244,13 @@ go run ./cmd/docsync -check         # 门禁：有文档缺标记即退出 1
 ```
 
 - 没改过的文档保持旧标记不动（仍然准确），所以一次文档提交只会动到那几篇。
-- 覆盖 `docs/**/*.md` 与根 `README.md`；`DESIGN.md`、`AGENTS.md` 不参与（与代码同批改，
-  标记会立刻过时）。
+- 覆盖 `docs/**/*.md` 与根 `README.md`；`AGENTS.md` 不参与（与代码同批改，标记会立刻过时）。
 
 ## 提交规范
 
 - 祈使句英文：`feat:` / `fix:` / `test:` / `docs:` / `refactor:`；一个 commit 只做一件事。
 - 写文档、写面向人的注释时照[文档地图](README.md)里的「文风」：陈述事实、结论在前，不写总结段与客套话。
-- PR/提交说明写清：改了什么、对应 DESIGN 哪节/哪条决策（如 D22）、如何验证。
-- **改 DESIGN 某节 → 同步检查 `docs/` 对应篇**（各篇头部标了来源节号）；
+- PR/提交说明写清：改了什么、对应哪一篇的哪节/哪条决策（如 D22）、如何验证。
+- **改某篇某节 → 按节号对照表检查别处的引用还指不指得对**（见[文档地图](README.md)）；
   已落地的写进 `docs/roadmap.md`，还没做的写进 `docs/plan.md`（两者不混写）。
 - 质量门禁全绿（含 `-race`）才算完成。

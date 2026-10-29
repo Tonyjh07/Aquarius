@@ -1,6 +1,6 @@
 package app
 
-// session_cmd_summary.go /summary 命令（D152，DESIGN §7.3）：
+// session_cmd_summary.go /summary 命令（D152，§7.3）：
 //
 //	/summary <id> <文本>   手写摘要，直接插到 id 之前（无模型调用）
 //	/summary <id>          让当前模型总结 id 之上的历史后插入（失败只报错、树无损）

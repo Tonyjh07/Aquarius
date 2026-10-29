@@ -10,7 +10,7 @@
 //   - post_processor/decoder/truncation/padding：不影响计数，忽略
 //
 // 计数语义 = 纯文本 encode（add_special_tokens=false），结构开销由调用方按
-// 每消息常数另计（DESIGN D26：不渲染 chat_template）。
+// 每消息常数另计（D26：不渲染 chat_template）。
 package tokenizer
 
 import (

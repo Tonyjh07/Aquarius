@@ -314,7 +314,7 @@ func (d *propDriver) step(t *testing.T, c *Conversation) int {
 	return op
 }
 
-// checkInvariants 不变量 1–2（DESIGN §4.1）：树合法由 Validate 证明；
+// checkInvariants 不变量 1–2（§4.1）：树合法由 Validate 证明；
 // 节点不可变以快照比对证明——非 Prune 步骤节点只增不减，存留节点内容字节级不变。
 func checkInvariants(t *testing.T, c *Conversation, snap map[MessageID]Message, allowRemoval bool) {
 	t.Helper()

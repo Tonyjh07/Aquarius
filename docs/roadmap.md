@@ -1,10 +1,10 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-29 @ b0a7d3b -->
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
 >
-> 权威设计 = [DESIGN.md](../DESIGN.md)；逐条决策 = [decisions.md](decisions.md)（每条的动机/取舍/
+> 内核规格 = [contracts.md](contracts.md)；逐条决策 = [decisions.md](decisions.md)（每条的动机/取舍/
 > 否决方案都在那里，本文件不重复）。冲突时以二者为准。
 >
 > 规则也不在这里：硬性规则在 [AGENTS.md](../AGENTS.md)，门禁与工程准则在
@@ -14,18 +14,19 @@
 
 ## 0. 里程碑基线
 
-> 编号与内容以 [DESIGN.md](../DESIGN.md) §12 为准，这里只标状态。
+里程碑是**验收单位**，编号从 M0 起（M7–M10 未启用，历史原因跳号）。下表同时是内容与验收标准的
+唯一处：状态列只标是否已落地。
 
-| 里程碑 | 内容 | 状态 |
-|---|---|---|
-| M0 骨架 | go.mod、`domain/conversation` + 性质测试、`port` 全量接口、storejson、repl、openai 兼容适配器 | 已落地 |
-| M1 树交互 | Revise(Fresh\|Carry)、Checkout/Branch/rm、golden 回放测试框架 | 已落地 |
-| M2 工具与记忆 | ToolRunner、memory_*、file_*、think、`context_compact`、权限矩阵、三级 token 计数链、自动压缩 | 已落地 |
-| M3 任务与多模态 | JobManager + job_* + term_exec、blobfs、Ingestor、输出器 notify | 已落地 |
-| M4 MCP 与 TUI | mcpgate（stdio + streamable HTTP）、grant、`/plugin`、`/model`、TUI MVP、装饰器链 | 已落地 |
-| M5 GUI 前端 | Gio 悬浮球 GUI、托盘/热键、三窗宿主、主题、设置窗 | 已落地（S1–S2b、S4–S5、S4a–S4d、S6、S7、S7c 均在其后陆续落地） |
-| M6 底座与跨平台 | 配置底座（profile 目录化 + provider 列表化）、大文件拆分、设置窗渲染修复、GUI 跨平台抽象层、relation-map 对话树 UI | 已落地 |
-| M11 屏幕捕获与语音 | `window_list`/`screen_capture`、转写与播报、`/mic`、语音设置页 | 已落地（S12/S8/S8b） |
+| 里程碑 | 内容 | 验收标准 | 状态 |
+|---|---|---|---|
+| M0 骨架 | go.mod、`domain/conversation` + 性质测试、`port` 全量接口、storejson、repl、openai 兼容适配器 | 二进制跑通一轮纯文本对话；会话树存取正确；性质测试全绿 | 已落地 |
+| M1 树交互 | Revise(Fresh\|Carry)、Checkout/Branch/rm、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 | 已落地 |
+| M2 工具与记忆 | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦住 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 | 已落地 |
+| M3 任务与多模态 | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发 | 已落地 |
+| M4 MCP 与 TUI | mcpgate（stdio + streamable HTTP 双传输）+ grant + `/plugin`、`/model`、TUI MVP（bubbletea + glamour 轻 markdown；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计） | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现 → 授权 → 调用 → 结果回填）；崩溃重启与授权拒绝行为符合契约；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效 | 已落地 |
+| M5 GUI 前端 | Gio 悬浮球 GUI：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠 + 工具折叠 chip + 完整 markdown；Confirm 确认态、命令补全、附件选择框、停止键 / 排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统；窗口管理：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口 | 悬浮球展开输入栏完成一轮对话（流式 + 思考折叠 + markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；托盘/右键可开三窗；设置窗改核心档写回 config 并热生效，密钥只写不回显；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 | 已落地（S1–S2b、S4–S5、S4a–S4d、S6、S7、S7c 均在其后陆续落地） |
+| M6 底座与跨平台 | **执行序**：① 配置底座破坏性改造（profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI（relation-map，形态规格见 [relation-map-design.md](relation-map-design.md)：整树快照 + 左栏会话 + 关系图自绘 + 内核删除任意会话/改名补洞） | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链（层号色带、形状=Role、主干可辨，公理集自检清单逐条过）、左栏切会话、点节点 `/goto`、任意会话删除与改名可用 | 已落地 |
+| M11 屏幕捕获与语音 | `port.Capture` + `screencap`（`PrintWindow`/`BitBlt`）；`window_list` / `screen_capture` 内置工具；`port.Transcriber`/`Synthesizer` 实现 + `micwin` 采集 + `audioplay` 播放；`/mic` 命令与 GUI 语音槽；设置窗「语音」页（含风格控制与试听） | 模型能列窗口、抓全屏、抓**被遮挡窗口**并正确描述画面；语音键说话 → 转写回填输入框 → 发送；`output.tts` 开启后回答自动播报，风格指令与标签实际改变音色表现；非 Windows 明示不支持；全门禁通过 | 已落地（S12/S8/S8b） |
 
 **版本基线**：`v0.2.0` 已于 2026-10-26 发布（tag `v0.2.0`）。上一版 `v0.1.0` 发布于 2026-10-23
 （tag `v0.1.0` → `3c2767b`）。v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 +
@@ -105,7 +106,7 @@
 |---|---|---|
 | P2-1 | `3a00d69 refactor: resolve identifiers through one prefix matcher` | 四处前缀解析（`ResolveJobID`/`ResolveWatchID`/`resolveNode`/`resolveConversation`）共用 `port.MatchPrefix`，措辞仍分层（工具面英文、命令面中文）；补匹配优先级与命中序单测（5 files, +109/−70，净减 34 行） |
 | P2-2 | `7912324 refactor: split the job port by consumer` | `JobManager` 拆成 `JobStarter`/`JobRunner`/`JobReader`/`JobKiller`，组合体保留；各工具与 `/jobs` 只声明实际用到的方法；`requireJobs` 改泛型以保住入参的窄类型（7 files, +66/−18） |
-| P2-3 | `27c39ad refactor: give prompt parts and messages named kinds and roles` | 文档笔 `d4b5aa2`（`DESIGN.md` §5.1 + D227）。`PromptPart.Kind` / `PromptMessage.Role` 由裸 `string` 换成 `port.PromptKind`/`PromptRole` 与 6 个常量；四家适配器的 `switch` 从字符串字面量改常量，协议字符串只在写请求体、读响应体处转；生产侧转换点收敛到 `wire.go`/`responses.go` 两处（21 files, +263/−240） |
+| P2-3 | `27c39ad refactor: give prompt parts and messages named kinds and roles` | 文档笔 `d4b5aa2`（[contracts.md](contracts.md) §5.1 + D227）。`PromptPart.Kind` / `PromptMessage.Role` 由裸 `string` 换成 `port.PromptKind`/`PromptRole` 与 6 个常量；四家适配器的 `switch` 从字符串字面量改常量，协议字符串只在写请求体、读响应体处转；生产侧转换点收敛到 `wire.go`/`responses.go` 两处（21 files, +263/−240） |
 | P2-4 | `9c5f3aa refactor: drop the last anonymous callback from the session deps` | 三笔：`159a005` 模型读侧收成 `ModelCatalog` + `ModelProbe`，四个启动期静态值合成 `ModelStatus` 一次取回；`b8555c2` 权限/思考/撤观察者/记忆编辑器收成 `PermissionSettings`/`ThinkingSettings`/`WatcherCanceller`/`MemoryOpener`；`9c5f3aa` 模型切换收成 `ModelSwitcher`（D228）。`SessionDeps` 字段 29→22，匿名回调 14→0，装配根行为不变（三笔合计 13 files, +563/−300） |
 | P2-7a | `40e0197 refactor: delete the unused relation-map variant` | 删掉 d127 对照档：全仓无测试覆盖它（`REL_PHYS` 在 `_test.go` 零命中，`step()` 首行就分派到源档），190 行在全部测试路径上不执行。删 `accumulate`、常量块、`step()` 分派、`colGap` 两档分支与只服务它的四个字段；两档差异写进 `relation-map-design.md`，原实现留 `relmap-d127` tag（5 files, +72/−335，`relmap_layout.go` 803→567、`relmap_layout_source.go` 441→357） |
 | P2-5 | `07fef4b refactor: split the settings save flow into collect and commit` | 四笔：`d441b7c` 四个设置 DTO 搬进 `port`、`uigui` 留类型别名（D229，2 files, +140/−104，零字面量改动）；`b462ee0` 取值范围收成 20 个 `port.Settings*` 常量，提示文案由常量拼（D230，11 files, +146/−52，数值一处未变）；`6ff9242` 采样四段文本的解析收进 `port.ParseSamplingText`，界面前置校验与写回解析同一份实现（D231，6 files, +228/−110，删 `cmd` 侧重复解析 49 行）；`07fef4b` `saveSettings` 271 行拆成 `patch()` 采集校验 + `commitSettings()` 提交编排，报错返回零值 patch（D232，2 files, +190/−124） |
@@ -129,7 +130,7 @@
 
 | # | 提交 | 主要结果 |
 |---|---|---|
-| C-1 | `77dedfe docs: give commands one table that carries both the metadata and the handler` | 文档笔：`DESIGN.md` §7.3 记录形状 + D245 + 开发指南「新增一个命令」收成一步（4 files, +95/−25） |
+| C-1 | `77dedfe docs: give commands one table that carries both the metadata and the handler` | 文档笔：[contracts.md](contracts.md) §7.3 记录形状 + D245 + 开发指南「新增一个命令」收成一步（4 files, +95/−25） |
 | C-2 | `5171297 refactor: dispatch commands from one table that also carries their metadata` | 29 分支 `switch` 收成 28 条 `commandEntry`（名字们 / 参数用例 / 描述 / 处理函数）；别名 = 同记录多名字；`/quit` 与 `/help` 都走处理函数、不留特殊分支；表在 `init()` 填（`/help` 自引用成环），之后只读；只吃参数的处理器经适配器接上。表自检 + 逐条分派 + 别名等价 + 未知命令报因取代原 AST 对账，`/help` 文案字节不变（3 files, +218/−191） |
 
 **`v0.3.0-A`（会话进出）的落笔顺序**：
@@ -150,7 +151,7 @@ D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 
 压缩前的全文（实现细节、当时的推演与否决项）原样进
 [archive/decisions-full.md](archive/decisions-full.md)，要回补只从那里取。
 
-> 里程碑与步骤是两套编号：里程碑（M<n>）是 `DESIGN.md` §12 的验收单位，
+> 里程碑与步骤是两套编号：里程碑（M<n>）是本文 §0 的验收单位，
 > 步骤（S<n>）是当时的执行批次。多个步骤可以落在同一个里程碑里。
 
 ---
@@ -196,7 +197,7 @@ Revise/Carry 语义；流式不进领域；依赖方向 `adapter → port ← ap
 
 ## 5. 设计决策记录（Q1–Q17，已全部拍板）
 
-> 这些是早期阶段性问题，**全部已定**。保留在此是因为 `DESIGN.md` 与 `decisions.md` 里有
+> 这些是早期阶段性问题，**全部已定**。保留在此是因为本文 §0 与 [decisions.md](decisions.md) 里有
 > `§5-Q1`、`Q10`、`Q17` 这类引用。
 
 | # | 问题 | 决议 |

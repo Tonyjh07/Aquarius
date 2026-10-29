@@ -8,7 +8,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
-// ExchangeFormat 一种可导出/导入的会话格式（DESIGN §5.16，D242）。
+// ExchangeFormat 一种可导出/导入的会话格式（§5.16，D242）。
 //
 // 命令面的 `--format` 取值、建议文件名后缀、回执与帮助文本都读这里，不另抄一份。
 type ExchangeFormat struct {
@@ -39,7 +39,7 @@ type ExchangeReport struct {
 	Dropped []string
 }
 
-// SessionExporter `/export`：把一棵树按指定格式写进 w（DESIGN §5.16）。
+// SessionExporter `/export`：把一棵树按指定格式写进 w（§5.16）。
 //
 // 消费方 = app.Session。为什么不复用 OutputAdapter：那个端口的语义是「每提交一条回答就投递
 // 一次」（§7.2 的扇出），而导出是用户点一次、作用于**整棵树**的动作；塞进同一个接口只会让
@@ -88,7 +88,7 @@ func FileStem(title string) string {
 	return s
 }
 
-// ExchangeFormats 四种格式的静态事实（DESIGN §5.16 的格式表，D242）。
+// ExchangeFormats 四种格式的静态事实（§5.16 的格式表，D242）。
 //
 // 放在端口而不在适配器：命令面的用法提示、导入识别失败时的「支持这几种」文案都要用它，
 // 而那时可能连适配器都没装配。适配器的 Formats() 由这张表派生，两处不会分叉。

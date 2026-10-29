@@ -161,7 +161,7 @@ type jobAdmin interface {
 	Kill(ctx context.Context, id port.JobID) error
 }
 
-// jobsReport /jobs 命令（DESIGN §7.3）：list（缺省）/ logs <id> [行数] / kill <id>。
+// jobsReport /jobs 命令（§7.3）：list（缺省）/ logs <id> [行数] / kill <id>。
 // 任务由模型经 job_* 工具启动，状态与日志同源（port.JobManager）。
 func (s *Session) jobsReport(ctx context.Context, args []string) (string, error) {
 	if s.jobs == nil {

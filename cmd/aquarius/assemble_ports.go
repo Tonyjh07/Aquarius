@@ -47,7 +47,7 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 		return err
 	}
 	w.store = store
-	// 附件库（DESIGN §4.2）：sha256 内容寻址存 <profile>/attachments（随 profile
+	// 附件库（§4.2）：sha256 内容寻址存 <profile>/attachments（随 profile
 	// 隔离，D110 修订①）；启动 GC 按全量会话引用清扫（引用收集不完整则跳过，宁可漏清不误删）。
 	blobs, err := blobfs.New(filepath.Join(w.profileDir, "attachments"))
 	if err != nil {
@@ -446,7 +446,7 @@ func (w *wiring) silence() {
 }
 
 // assembleTools 装配内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
-// 后台任务（DESIGN §5.8/D8）：日志落盘 <profile>/jobs，任务表内存态。
+// 后台任务（§5.8/D8）：日志落盘 <profile>/jobs，任务表内存态。
 func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, asker port.Asker) error {
 	jobs, err := jobproc.New(filepath.Join(w.profileDir, "jobs"))
 	if err != nil {

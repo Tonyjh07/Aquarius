@@ -12,7 +12,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 重启退避与上限（§6.4 #4"崩溃自动重启（限次 + 退避）"；DESIGN 未给配置键，取常量）。
+// 重启退避与上限（§6.4 #4"崩溃自动重启（限次 + 退避）"；契约未给配置键，取常量）。
 const (
 	maxRestarts     = 3
 	baseRestartWait = time.Second
@@ -70,7 +70,7 @@ type Deps struct {
 	OnChange func()
 }
 
-// Host 插件宿主（DESIGN §6.4）：发现 → 校验 → 授权 → 生命周期 → 可观测。
+// Host 插件宿主（§6.4）：发现 → 校验 → 授权 → 生命周期 → 可观测。
 // 只编排 plugin.Session（消费方接口），不 import 任何适配器（同 D13 边界）。
 type Host struct {
 	dial     Dialer

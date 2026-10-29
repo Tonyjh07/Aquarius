@@ -22,7 +22,7 @@ const defaultAuditCap = 4 << 20 // 4 MiB
 // errAuditClosed 审计文件已关闭/不可写的内部错误（调用方静默忽略）。
 var errAuditClosed = errors.New("audit: 文件已关闭")
 
-// Audit 审计日志（DESIGN §8 audit.log）：JSONL 追加写、超限轮转一代、并发安全。
+// Audit 审计日志（§8 audit.log）：JSONL 追加写、超限轮转一代、并发安全。
 // 任何写失败静默——审计不得打断对话。
 type Audit struct {
 	mu   sync.Mutex

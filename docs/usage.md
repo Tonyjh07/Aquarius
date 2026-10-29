@@ -1,10 +1,10 @@
 # 参考手册
-<!-- docs-sync: 2026-10-28 @ 1362f5e -->
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
 > **第一次使用请先看[用户手册](guide.md)**——那本按「怎么用起来」写，不要求懂编程；
 > 本文是逐条命令与参数的速查，写给要抠细节的人。
 >
-> 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。配置字段见 [configuration.md](configuration.md)，数据与备份见 [storage.md](storage.md)。
+> 本文与当前实现对齐。配置字段见 [configuration.md](configuration.md)，数据与备份见 [storage.md](storage.md)。
 
 ## 快速上手
 

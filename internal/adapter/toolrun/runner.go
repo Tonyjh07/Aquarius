@@ -1,4 +1,4 @@
-// Package toolrun 实现 port.ToolRunner（DESIGN §5.2 / D25）：
+// Package toolrun 实现 port.ToolRunner（§5.2 / D25）：
 // 查找 + 权限矩阵判定 + Risk 确认 + 超时 + 结果裁剪——工具执行的统一门面。
 //
 // 权限判定（D22 两列分工，纯策略在 domain/perm）：
@@ -172,7 +172,7 @@ func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
 	return out, nil
 }
 
-// Execute 查找 → 权限判定/确认 → 超时执行 → 结果裁剪（DESIGN §5.2）。
+// Execute 查找 → 权限判定/确认 → 超时执行 → 结果裁剪（§5.2）。
 // 未知工具/确认拒绝/超时/工具自身报错均以 Result{OK:false} 回填（§10：失败不中断 Turn，
 // 模型可自行纠正）；返回 error 仅限基础设施故障（确认器缺失/报错、父 ctx 取消）——
 // Agent 对这类装配级错误快速失败上抛（§14 遗留修复）。
@@ -224,7 +224,7 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		}
 	}
 
-	// 硬超时执行（DESIGN §10"工具执行同受 ctx 约束"；超时值 = Options 缺省、可被保留参数
+	// 硬超时执行（§10"工具执行同受 ctx 约束"；超时值 = Options 缺省、可被保留参数
 	// timeout_sec 逐次覆盖，D38）：部分工具（阻塞在慢盘/网络盘
 	// 上的文件 IO）不响应 ctx，故在旁路 goroutine 执行并 select 等待——超时立即回填
 	// OK=false 返回，不再等待底层调用；泄漏的 goroutine 随系统调用自行结束，其结果

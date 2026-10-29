@@ -3,7 +3,7 @@
 </p>
 
 # Aquarius
-<!-- docs-sync: 2026-10-24 @ 4ab55ce -->
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
 面向个人的 AI 助手。对话优先，支持图片、文档与语音输入，长期记忆以 markdown 文档存放，模型与工具均可替换。Go 编写，交付单个二进制。
 
@@ -58,7 +58,7 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 | [docs/storage.md](docs/storage.md) | 数据布局与备份：目录树、会话文件、`.bak` 恢复 |
 
 设计、决策、进度与开发指南等在 [docs/README.md](docs/README.md) 里按读者分列（文档地图）。
-有冲突时以 [DESIGN.md](DESIGN.md) 与[决策记录](docs/decisions.md)为准。
+有冲突时以[文档地图](docs/README.md) 指出的那一篇与[决策记录](docs/decisions.md)为准。
 
 ## 状态
 

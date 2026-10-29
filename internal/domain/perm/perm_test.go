@@ -7,7 +7,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
-// TestFileMatrix 用户矩阵（DESIGN §9 / D22）全表覆盖：四档 × {特权, 其他} × {读, 写}。
+// TestFileMatrix 用户矩阵（§9 / D22）全表覆盖：四档 × {特权, 其他} × {读, 写}。
 func TestFileMatrix(t *testing.T) {
 	cases := []struct {
 		level     Level

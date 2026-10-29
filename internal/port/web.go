@@ -55,7 +55,7 @@ type WebPage struct {
 // WebSearch 搜索提供商端口（§5.14）：DeepSeek / Brave / 自建 SearXNG 各自实现。
 //
 // 实现只做「一次搜索」，不处理重试、冷却与降级——那些是 webchain 的事
-// （横切能力不进提供商，DESIGN §9 铁律同口径）。
+// （横切能力不进提供商，§9 铁律同口径）。
 type WebSearch interface {
 	// Search 执行一次搜索。输入非法时返回包装了 ErrWebBadInput 的错误；
 	// 其余错误（网络、鉴权、限额、上游 5xx）由调用方决定是否换一家。

@@ -10,7 +10,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 三级 token 计数链（DESIGN §7.1 轨2 / D26）：
+// 三级 token 计数链（§7.1 轨2 / D26）：
 //   ① 已发生的 → 服务端实测 usage（节点已记，/usage 直接汇总，不经本估算器）
 //   ② 未发送的 → 适配器精确计数 port.TokenCounter（本地 tokenizer / count API），
 //      实现即覆盖③；失败自然回落
@@ -19,14 +19,14 @@ import (
 // 结构开销（消息角色分隔、模板定界符）按每条消息常数计入——业界通行做法
 // （OpenAI cookbook 同法）；不实现 chat_template 渲染（D26 否决项）。
 
-// 结构与估算常数（DESIGN D26）。
+// 结构与估算常数：每条消息的固定开销与校准系数取这几档。
 const (
 	perMessageOverhead = 4 // 每条消息的结构开销（角色/模板定界符，token）
 	calMin, calMax     = 0.5, 2.0
 )
 
 // defaultCompactThreshold / DefaultMaxContextTokens Config 零值时的默认
-// （DESIGN §8 limits.compact_threshold=0.7、max_context_tokens=64000）。
+// （§8 limits.compact_threshold=0.7、max_context_tokens=64000）。
 // MaxContextTokens 导出供装配根的硬保底截断装饰器对齐同一预算（D14/§7.1）。
 const (
 	defaultCompactThreshold = 0.7

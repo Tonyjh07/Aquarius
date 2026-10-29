@@ -131,7 +131,7 @@ func TestTermExecSpecEncodingNote(t *testing.T) {
 	}
 }
 
-// TestTermExecTrimsHeadTail 超长输出保头尾截断（DESIGN §4.3）。
+// TestTermExecTrimsHeadTail 超长输出保头尾截断（§4.3）。
 func TestTermExecTrimsHeadTail(t *testing.T) {
 	long := strings.Repeat("A", 10000) + strings.Repeat("B", 10000) + strings.Repeat("C", 30000)
 	te := &termExec{jobs: &fakeJobs{runRes: tool.Result{OK: true, Output: long}}}

@@ -1,5 +1,5 @@
 # 会话树关系图 · 设计语言（relation-map · 时间轴横树）
-<!-- docs-sync: 2026-10-25 @ e5df752 -->
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
 > **一句话抽象**：以**当前 Head 消息**为右端基准、按「跳数与条数」预算化展开的、
 > **时间成轴、版本分杈**的有向图——`uigui` 会话历史次窗（winHistory）的形态规格
@@ -17,11 +17,11 @@
 | 版本 | **2.0**（v1.0 星图嫁接版；v2.0 按 D127 全量重写为时间轴横树） |
 | 来源 | 通用关系图设计语言 RSM v1.2（技术栈中立原件，原型机为 ECharts 力求解器）经**对话树项目化改造** + **D127 形态激进改判** |
 | 适用范围 | `uigui` 的**会话历史次窗**（[gui-design.md](gui-design.md) §15.7 窗口清单「会话历史」）：左栏会话选择 + 右栏关系图 |
-| 上位文档 | [DESIGN.md](../DESIGN.md) §7.5 树只读数据面；[gui-design.md](gui-design.md) §15.4 主题 / §15.7 窗口管理；决策链 D112 → D120 → D121/D122 → D124 → D125 → D126 → **D127** |
+| 上位文档 | [contracts.md](contracts.md) §7.5 树只读数据面；[gui-design.md](gui-design.md) §15.4 主题 / §15.7 窗口管理；决策链 D112 → D120 → D121/D122 → D124 → D125 → D126 → **D127** |
 | 技术前提 | 纯 Gio 自绘；数据只经 `port` 只读快照（铁律 5） |
 | 落地步骤 | roadmap §2-S3；D127 落码序见 §10.3 |
 
-**本文的权威性**：本文是**形态规格**（L1–L3 语义与行为契约 + L2 通道分配），与 DESIGN/decisions
+**本文的权威性**：本文是**形态规格**（L1–L3 语义与行为契约 + L2 通道分配），与 [contracts.md](contracts.md)/[decisions.md](decisions.md)
 冲突时以后者为准。**所有通道分配与约束都是可被测试断言的**——这是它区别于「审美稿」的根本点。
 
 **当前状态**：D127 规格已生效且**已落码**（2026-10-11，`relmap_layout.go` 的静息布局与
@@ -649,5 +649,5 @@ boundsOf(visible)           → Box         // 盒优先取景的输入（A13；
 
 *文档结束。源设计语言（RSM v1.2，星图原型 + 源码级运动分析）见
 `temp/relation-map-design.md` / `temp/motion-source-analysis/`（溯源材料，不入库）；
-权威设计与决策以 DESIGN.md / docs/decisions.md 为准（本文与之冲突时以后者为准，
+权威设计与决策以 [contracts.md](contracts.md) / [decisions.md](decisions.md) 为准（本文与之冲突时以后者为准，
 冲突应先改文档再改代码）。*

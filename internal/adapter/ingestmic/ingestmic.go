@@ -1,4 +1,4 @@
-// Package ingestmic 实现麦克风摄取（port.Ingestor，DESIGN §7.2 / D179）：
+// Package ingestmic 实现麦克风摄取（port.Ingestor，§7.2 / D179）：
 // RawInput{Kind:"mic"} → 录音（WAV）→ 附件库 → 转写 → 文本分片。
 //
 // 音频本身不随消息进树：模型只见转写文本（§4.2 口径不变）。附件仍落库，

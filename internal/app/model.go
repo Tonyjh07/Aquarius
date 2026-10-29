@@ -86,7 +86,7 @@ func (s *Session) status() ModelStatus {
 	return s.models.Current()
 }
 
-// execModel /model [name] | /model probe [name]（DESIGN §7.3，D32/D174）：
+// execModel /model [name] | /model probe [name]（§7.3，D32/D174）：
 // 无参 = 当前 provider（D173）+ 当前模型 + 生效能力 + 上下文窗口（D177）+
 // LLM.Models() 可用列表（能力/单价标注）；
 // 有参 = 先写回 config（同 /permission 的原子写回模式）再 Agent 内热切换；

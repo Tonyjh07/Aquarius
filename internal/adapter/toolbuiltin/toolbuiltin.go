@@ -1,9 +1,9 @@
-// Package toolbuiltin 实现 DESIGN §4.3 的内置工具（memory_* / file_* / think），
+// Package toolbuiltin 实现 §4.3 的内置工具（memory_* / file_* / think），
 // 全部经 port.Tool 契约接入（D13 内置不享特权）：权限判定、确认、超时与结果裁剪
 // 由 ToolRunner 统一执行（D25），本包只做"参数解析 + 干活 + 申报文件目标"。
 //
 // 会话作用域：memory_* 按文档名寻址，但只允许操作全局与**当前会话**两份记忆
-// （DESIGN §4.4）——当前会话 ID 经 port.SessionIDFrom 从工具执行上下文取。
+// （§4.4）——当前会话 ID 经 port.SessionIDFrom 从工具执行上下文取。
 package toolbuiltin
 
 import (
@@ -153,7 +153,7 @@ func decodeArgs(call tool.Call, v any) error {
 	return nil
 }
 
-// requireSessionDoc 校验记忆文档名只指向全局或当前会话（DESIGN §4.4），返回规范后的名字。
+// requireSessionDoc 校验记忆文档名只指向全局或当前会话（§4.4），返回规范后的名字。
 func requireSessionDoc(ctx context.Context, name string) (string, error) {
 	if name == port.GlobalMemoryDoc {
 		return name, nil

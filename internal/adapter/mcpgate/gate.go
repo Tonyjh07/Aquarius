@@ -1,4 +1,4 @@
-// Package mcpgate MCP（Tier-2，D4）client → 端口投影（DESIGN §6.3，D30 go-sdk）：
+// Package mcpgate MCP（Tier-2，D4）client → 端口投影（§6.3，D30 go-sdk）：
 //
 //	tools/list|call     → port.Tool（命名 mcp:<server>:<tool>，失败经 runner 翻译 OK:false）
 //	resources/list|read → port.MemoryStore 只读投影（写仍走自有记忆）

@@ -1,7 +1,7 @@
 # 配置参考
-<!-- docs-sync: 2026-10-28 @ d371827 -->
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
-> 本文与当前实现对齐；**设计上有冲突以 [DESIGN.md](../DESIGN.md) 为准**。
+> 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
 >
 > - `<data>/config.json` = 当前 profile **指针**（`{"profile": "<name>"}`）；
@@ -50,7 +50,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
 | `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000, "enabled": false, "cost_in": 0.15, "cost_out": 0.6 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局）；`enabled` 省略 = 启用，**只有 `false` 才参与落键**——未启用的条目保留声明但不参与选型（不进降级链候选、不进 `/model` 清单、不作为该 provider 的缺省模型）；每家的模型**至少要有一个启用**，否则启动与设置窗应用都明确报错；`cost_in`/`cost_out` = 单价（**每百万 token**，与厂商报价同口径），省略 = 未声明（界面不显示费用，不当免费）；`sampling` = 该模型的采样覆盖，见下「采样参数」 |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
-| `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 首个**启用**的模型。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连不降级 |
+| `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 首个**启用**的模型。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发（重试在内、降级在外）；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连既不重试也不降级 |
 | `model.name` | string | primary 首个**启用**的模型 | 当前模型名；`/model` 热切换并写回本字段（provider/base_url 重启生效）。切到**没在 `models` 里声明**的名字也允许——按协议缺省给能力 |
 | `model.think` | bool | `true`（键缺失） | 原生思考**总开关**：`off` 时 `reasoning_effort` 与 `enable_thinking` 一律不发；`/think` 切换写回本字段。当前链的模型没有 `reasoning` 能力时同样不发 |
 | `model.reasoning_effort` | string | `""` | 推理档位：`minimal` / `low` / `medium` / `high`，空 = 不发送；`/effort` 切换写回（`off` 即清除）；非法值启动报错 |
@@ -227,6 +227,9 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 - 只写 `provider` = 借那一条的端点与密钥（老配置的形状，行为不变）；
 - 写了 `base_url` / `api_key` = 独立配置，写了的那项覆盖借来的（只补缺的一项）。
 
+`provider` 指不到条目时，只有「端点也没自己填」才算配置错误；否则只是这一家取不到密钥，
+启动打一行提示，按钮与命令明确报因。整路三样都不填 = 该能力不可用，不算错误。
+
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `input.language` | string | `auto` | 录音语种提示：`auto` / `zh` / `en`，只喂给识别 |
@@ -261,6 +264,9 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 `openai` 这一档覆盖一大片：OpenAI 官方、FunASR 的 `examples/openai_api` 服务端、whisper.cpp 的
 `whisper-server`、各类自建网关——它们的差别只有端点与模型名。
 
+**录音时长有硬顶**：线上限由厂商的音频体积上限反推（16kHz 单声道 16bit ≈ 32KB/s，Base64 再膨胀
+4/3）——MiMo 当前 10MB 折合约 4 分钟。产品侧默认 60 秒，命令可带秒数覆盖，但不得超过这个硬顶。
+
 **本地识别**（`kind=whisper`）不下载模型：自己取 `ggml-base-q5_1.bin`（约 60MB，
 `huggingface.co/ggerganov/whisper.cpp`）后把绝对路径填进 `model_path`。模型文件读不到时启动会
 警告并让识别不可用，不影响对话。这一档要求构建时带 `GOEXPERIMENT=simd`，否则慢 4 倍左右。
@@ -293,7 +299,7 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 ### characters（角色卡）
 
 角色卡只读导入（PNG / JSON / `.charx`），投影成一次会话的开头；卡的落位与解析口径属于设计，
-见 [DESIGN.md](../DESIGN.md)（端口与存储一节）。这里只列会影响行为的四个开关与用户名的取值。
+见 [contracts.md](contracts.md) 的领域模型与角色卡端口一节。这里只列会影响行为的四个开关与用户名的取值。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -314,7 +320,7 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 ### delegate（外部代理转交）
 
 把复杂任务整个交给一个外部代理程序（ACP 协议）。适配器与协议面属于设计，见
-[DESIGN.md](../DESIGN.md)（端口一节）；这里只列会改变行为的配置。
+[contracts.md](contracts.md) 的 delegate 端口一节；这里只列会改变行为的配置。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -366,7 +372,10 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 
 `deepseek` 用的是它自己的 Search / Fetch REST 端点（与模型无关，按成功次数计费）；
 `local` 是纯 Go 抓取（正文提取 + Markdown 转换），不需要密钥，缺省就开。某一家装不起来
-（缺密钥、`base_url` 为空）只打一行警告并跳过，其余提供商继续可用。
+（缺密钥、`base_url` 为空）只打一行警告并跳过，其余提供商继续可用；一家都没配起来时，该工具
+执行时明确报「未配置提供商」，启动不失败。
+
+计费只发生在「HTTP 200 且结果非空」时：空结果换下一家再试一次，全链都空就如实回空结果（不是错误）。
 
 `deepseek` 的端点与密钥**优先用本条目自己填的**，没填的才按 `from` 去 `model.providers`
 借（`from` 缺省 = 同名的 `deepseek`）。所以 `{"kind":"deepseek"}` 这种老写法照常工作，
@@ -439,10 +448,28 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 - **库解不开时**（profile 拷到别的机器、换了账户、文件损坏）：打一行警告后**回落同名环境变量**继续
   启动（不阻断）；原文件原地保留，不会被改写。
 - 备份 `secrets.bin` 到另一台机器**解不开**——这是绑定本机/本账户的预期行为。
+- **导入旧密钥**（能力保留，界面上已不提供入口）：把存量密钥从旧形态收进库——config 里仍是明文
+  直填的那把（收库后退化为 `secret:<名>` 引用），以及「config 只写引用、真值只在同名环境变量里」
+  的那些（值抄进库、config 不动）。只处理 **config 真正引用到的名字**，不扫全部 `AQUARIUS_*`
+  环境变量（那会把无关变量也固化下来）。库解不开时**拒绝导入**，不套用普通写路径的「从空表起步」
+  ——批量导入会因此丢掉库里已有条目。顺序是先落库、后改 config，失败留「库里有值、config 还是
+  明文」这个可用中间态。值永不回显，反馈只报条数。
 - 无论哪种形态，密钥都不进会话树、附件、日志；stdio 插件子进程环境剔除 `AQUARIUS_*` 变量。
 - 设置窗密钥输入**只写不回显**：留空 = 保持原值（按编辑前原名匹配保留，改名不丢密钥）。
 - MCP 声明的 `env`/`headers` 值同样可用 `secret:<名>` 引用；任意名字可在设置窗「密钥库」页新增/
   覆盖/删除，列表只显示名字与尾 4 位掩码。
+
+**为什么不是明文文件或环境变量**：三者真正的差别是「谁能读到」与「会不会被顺带带走」两件事。
+
+| 形态 | 同用户进程 | 同用户子进程 | 备份 / 同步 / 换机拷文件 |
+|---|---|---|---|
+| 环境变量 | 可读 | **会继承**——`term_exec`、`job_start` 起的命令直接看见 | 否（但 Windows 的用户环境变量明文存在注册表里） |
+| 明文文件 | 可读 | 不继承 | **会带走** |
+| 本机加密库 | 可读 | 不继承 | **不带走**（密文绑当前账户；非 Windows 的密钥另存同目录，只挡住离线备份） |
+
+助手的 `term_exec` 会把环境整份交给子进程，所以环境变量在这里是最差的一档；明文文件只解决了继承
+问题；本机加密库额外挡住「备份 / 同步 / 换机」这条最常见的泄露路径。三者都挡不住「以同一用户身份
+运行的恶意程序」——这一点不夸大。
 
 ## 完整模板（首次运行生成）
 

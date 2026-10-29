@@ -11,7 +11,7 @@ import (
 )
 
 // resourceStore resources 只读投影（§6.3：资源进上下文索引，写仍走自有记忆——
-// 与记忆系统的边界见 DESIGN §3）。name 寻址用资源 URI。
+// 与记忆系统的边界见 §3）。name 寻址用资源 URI。
 type resourceStore struct {
 	s *Server
 }

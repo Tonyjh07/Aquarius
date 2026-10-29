@@ -1,4 +1,4 @@
-// Package jobproc 实现 port.JobManager（DESIGN §5.8）：
+// Package jobproc 实现 port.JobManager（§5.8）：
 //   - 后台任务 = 独立进程，stdout/stderr 落盘 <logDir>/<id>.log；
 //   - 任务表 v1 内存态（D8），进程内互斥更新（watcher goroutine 写、/jobs 读，过 -race）；
 //   - 任务不随会话取消（§10：Start 不绑定调用方 ctx），job_kill 显式终止
@@ -417,7 +417,7 @@ func (m *Manager) snap(r *jobRec) port.Job {
 }
 
 // applySpec 应用 JobSpec：env 追加（键排序保证确定性）、cwd 缺省家目录
-// （DESIGN §5.8：进程 cwd，不是"工作区"）。
+// （§5.8：进程 cwd，不是"工作区"）。
 func applySpec(cmd *exec.Cmd, spec port.JobSpec) {
 	if len(spec.Env) > 0 {
 		keys := make([]string, 0, len(spec.Env))

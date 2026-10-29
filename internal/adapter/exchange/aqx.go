@@ -20,7 +20,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// `aqx` 容器（DESIGN §5.16）：一个 ZIP，里面三样东西——
+// `aqx` 容器（§5.16）：一个 ZIP，里面三样东西——
 //
 //	manifest.json    {"format":"aqx","version":1}
 //	tree.json        落盘 wire 形状（storejson 同一份），整棵树原样
@@ -33,7 +33,7 @@ import (
 // aqxVersion 当前容器版本。加需要新版才能读的东西时递增；导入遇到更高版本直接拒绝。
 const aqxVersion = 1
 
-// 导入侧上限（DESIGN §5.16：超限报错，不静默截断）。
+// 导入侧上限（§5.16：超限报错，不静默截断）。
 const (
 	// maxArchiveBytes 归档压缩后总字节上限（先整个读进内存再解，所以必须有个上限）。
 	maxArchiveBytes = 256 << 20

@@ -1,4 +1,4 @@
-// Package exchange 实现 port.SessionExporter 与 port.SessionImporter（DESIGN §5.16，D242）：
+// Package exchange 实现 port.SessionExporter 与 port.SessionImporter（§5.16，D242）：
 // 把会话搬出去、把别人的会话搬进来。
 //
 // 无损与互通是两种东西：`aqx` 必须能原样往返（落盘 wire 形状 + 附件字节），互通格式按别人的
@@ -46,7 +46,7 @@ func New(opts Options) *Exchange {
 // Formats 全部格式（表序即用法提示的顺序）。
 func (e *Exchange) Formats() []port.ExchangeFormat { return port.ExchangeFormats() }
 
-// Export 按 format 写出整棵树（DESIGN §5.16）。
+// Export 按 format 写出整棵树（§5.16）。
 func (e *Exchange) Export(ctx context.Context, c *conversation.Conversation, format string, w io.Writer) (port.ExchangeReport, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ExchangeReport{}, err
@@ -71,7 +71,7 @@ func (e *Exchange) Export(ctx context.Context, c *conversation.Conversation, for
 	}
 }
 
-// Import 读入一个外部文件并自检（DESIGN §5.16 的「外部文件是不可信输入」）。
+// Import 读入一个外部文件并自检（§5.16 的「外部文件是不可信输入」）。
 func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeFormat) (*conversation.Conversation, port.ExchangeReport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, port.ExchangeReport{}, err
@@ -97,7 +97,7 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 	}
 }
 
-// Detect 按文件名与文件头认格式（DESIGN §5.16）。
+// Detect 按文件名与文件头认格式（§5.16）。
 //
 // 只看形状，不解析整份文件：认错时 Import 会报因，在这里做完整解析等于把文件读两遍。
 //

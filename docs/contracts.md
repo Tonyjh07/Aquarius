@@ -1,91 +1,16 @@
-# Aquarius 初始设计方案（最终版）
+# 内核契约
+<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
 
-> **状态：定稿（Initial Design, Final）** ｜ 技术栈 Go（单二进制）｜ 架构六边形 + 插件化
+> 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
+> 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
+> 本文是**当前为真**的设计事实，与 [decisions.md](decisions.md) 同级；决策记录答「为什么这么定、
+> 否决了什么」，本文答「现在什么是真的」，不写演化史。
 >
-> 本文是 Aquarius 的**唯一权威设计文档**，覆盖并取代此前的 v1–v4 草案（DDD 全景 → 个人极简 →
-> 不可变树/插件化 → MCP/多模态）。所有"待决事项"已在 **[docs/decisions.md](docs/decisions.md)**
-> 落定为决策（逐条编号见该文索引表）；未尽事宜按 §14 暂缓处理。原 §13 已于 2026-09 独立成篇，
-> 之后不再占节号——全仓的 `§13` / `Dn` 引用都指那份决策记录。
-
----
-
-## 1. 项目定位与设计原则
-
-**Aquarius 是一个面向个人的、交互优先的极简 AI 助手。**
-
-- 核心是**对话体验**：流式交互、消息修订分支、回溯对比；不是编码工作流产品。
-- **极简内核**：无 subagent、无任务编排层、无消息总线。内核只有三件事：会话树、上下文装配（含压缩）、Turn 循环。
-- **多模态出入**：文本 / 图片 / 文档 / 语音皆可输入，文本 / 语音 / 通知皆可输出；输入输出**方式**可插拔。
-- **记忆 = 文档**：markdown 文件即记忆，用户可直接编辑；模型经工具读写；检索 = 关键词。
-- **不可变节点 + 用户主权**：历史节点永不修改；"改"= 创建同级新节点，是否携带后续历史由用户选择。
-- **通用能力内置**：后台任务、文件操作、终端执行。**没有工作区概念**（无项目根/索引/监听）。
-- **内核极简、边缘可插**：工具、模型、记忆后端、命令、UI、输入/输出方式全部是插件面；
-  进程外扩展统一走 **MCP**；内置实现与三方插件走同一契约（**内置不享特权**）。
-- 交付物是**单个二进制**，数据全部在 `~/.aquarius/`。
-- **面向 agent 的文本用英文**：进入模型上下文的字符串（system 提示、工具声明与参数描述、
-  工具回填结果/错误）一律英文；面向用户的界面、命令输出与日志用中文（D36）。
-
-架构原则：
-
-1. 六边形架构：`domain` 纯 Go、零依赖；外部世界全部是端口（`port`）的适配器。
-2. **两个稳定级**：`pluginapi/v1` 对外严格 semver；`internal/port` 是内核内部的缝、自由演进。二者类型独立。
-3. 横切能力（重试/退避、审计日志、截断）用**端口装饰器**叠加，不进插件 API（限流由重试退避承担，暂无独立限流装饰器）。
-4. 会话树是纯追加结构：一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head。
-5. 插件**永远不能直接操作会话树**，一切经内核中转。
-
----
-
-## 2. 统一语言
-
-| 术语 | 英文 | 定义 |
-|---|---|---|
-| 会话树 | Conversation | 一棵不可变消息树 + 一个 Head 游标 |
-| 节点 | Message | 树节点，创建后只读：角色、内容分片（工具调用/结果内嵌于 assistant 分片，D95）、终态、用量 |
-| 内容分片 | Part | 消息内容的多态片段：Text / Image / Audio / Doc / Thinking / Tool（D95） |
-| 附件 | Attachment | 被消息引用的二进制内容，sha256 内容寻址存储 |
-| 根 | Root | 实节点空消息（ID=会话 ID、Role=root），唯一 `Parent==""` 的节点，仅作树管理、不进模型上下文 |
-| 头 | Head | 当前游标（初始=Root，无空串特例），决定发给模型的线性路径 |
-| 人格 | persona | 会话首节点（system 角色，config 快照），压缩水位之上也恒回传 |
-| 压缩摘要 | Compact Summary | system 角色水位节点：其上历史（persona 除外）不再回传模型 |
-| 权限等级 | Permission Level | read-only / strict / permissive / full-access 四档矩阵预设 |
-| 路径 | Path | Root → Head 的节点序列 = 本次推理的上下文 |
-| 轮次 | Turn | 一次"模型生成 + 0..n 次工具执行"的循环 |
-| 提交 | Commit | 流式结束后把本轮产出作为不可变节点一次性挂入树 |
-| 修订 | Revise | 创建同级新节点（同父）；`Fresh`=新分支重新开始，`Carry`=后续历史边转移过来，`Clone`=深拷贝后续历史为独立副本（D96） |
-| 工具调用 | ToolCall / Result | 模型发起的调用与回填结果（内嵌为 assistant 节点的 Tool 分片，D95） |
-| 后台任务 | Job | 异步执行的进程：可查状态、拉日志、终止 |
-| 摄取器 | Ingestor | 输入方式适配器：原始输入（文本/文件/剪贴板/麦克风）→ Part 列表 |
-| 输出器 | OutputAdapter | 输出方式适配器：TTS 播报 / 系统通知 / 导出文件 |
-| 转写 / 合成 | Transcriber / Synthesizer | 语音模态端口：ASR（音频→文本）/ TTS（文本→音频） |
-| 记忆文档 | MemoryDoc | 一篇 markdown 记忆（name + 文本） |
-| 技能 | Skill | 一个目录 + `SKILL.md`：按需载入的指令包（发现只读 name/description，命中才载入正文，D201） |
-| 外部代理 | Delegate Agent | 经 ACP 接进来的外部程序：我们把一件复杂任务整个交给它跑，只收回报告（D244） |
-| MCP 网关 | mcpgate | 把 MCP server 适配为内核端口实现的适配器（Tier-2 插件面） |
-| ACP 网关 | acpgate | 把外部 ACP 代理适配为 `delegate` 工具实现的适配器（与 MCP 网关对称） |
-| 增量 | Delta | 流式返回的文本/工具调用片段 |
-
----
-
-## 3. 战略设计：限界上下文
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                    核心域：对话与交互（内核）                    │
-│   会话树（Revise Fresh|Carry）· Part 内容 · 上下文装配 · Turn 循环 │
-├──────────────┬──────────────┬──────────────┬────────────────┤
-│ 支撑：工具执行  │ 支撑：记忆文档  │ 支撑：多模态 I/O │ 支撑：插件宿主    │
-│ Job / fs / 终端│ markdown 文档  │ Ingestor/Out   │ MCP 网关 / 授权   │
-├──────────────┴──────────────┴──────────────┴────────────────┤
-│        通用域：LLM 接入 · ASR/TTS 接入（均经适配器/插件面）          │
-└────────────────────────────────────────────────────────────┘
-```
-
-**不做**（明确排除）：subagent、任务/计划聚合、事件总线、Saga、多租户、计量计费、评测平台、
-**工作区**（项目目录抽象/代码索引/文件监听）、**独立于文档的记忆系统**（记忆 = markdown 文档，一切一并写入；
-无自动入库的记忆巩固/摘要记忆管线）、embedding 检索。
-
-> **上下文压缩摘要**（§4.1 关键语义 / §7.1 三轨压缩）不是记忆系统：它管理的是**对话上下文**
-> （agent 框架必备能力），转写结果以 system 节点入会话树、随会话走，与 `memory/*.md` 记忆文档无关。
+> **节号沿用拆分前的总设计文档**（2026-10-29 拆篇，正文未改）：全仓注释里的 `§4`–`§7`、`§9`、
+> `§10` 都指本文同名小节。其余节号各有归属：`§1`–`§3` 见 [overview.md](overview.md)，
+> `§8` 见 [storage.md](storage.md) 与 [configuration.md](configuration.md)，`§11` 见
+> [development.md](development.md)，`§12` 见 [roadmap.md](roadmap.md)，`§14` 见 [plan.md](plan.md)，
+> `§15` 见 [gui-design.md](gui-design.md)。
 
 ---
 
@@ -366,7 +291,7 @@ func (c *Conversation) Validate() error                        // 两条不变�
 - **图片入口**（D187）：GUI 支持 `Ctrl+V` 收剪贴板位图（优先 `PNG` 格式，退 `CF_DIB`/`CF_DIBV5`
   自行转 PNG）、拖拽走 `WM_DROPFILES`、文件框多选；已入库的字节以 `Attachment{Blob}` 暂存，
   不再从文件系统读第二遍。暂存 chip 对图片出 20dp 缩略图（解码前按像素预算门控）；
-  提交后转写区的图片（含工具产出图）走 120dp/96dp 方图缩略图并可点开预览次窗（D207，[gui-design.md](docs/gui-design.md) §15.3）。
+  提交后转写区的图片（含工具产出图）走 120dp/96dp 方图缩略图并可点开预览次窗（D207，[gui-design.md](gui-design.md) §15.3）。
 - **编辑消息可增删附件**（D188）：`/edit` 的 `--attach` / `--drop` / `--drop-all` 走同一条
   摄取管线；删掉的附件只从新节点移除，附件库字节按引用集合 GC。
 
@@ -459,8 +384,6 @@ func (c *Conversation) Validate() error                        // 两条不变�
   （随会话文件夹就近存放，D23）。用户可直接用编辑器改，`/memory` 即用系统编辑器打开（D24），下次读取即生效。
 - `memory_*` 工具只操作**全局 + 当前会话**两份，按文档名寻址（`memories.md` / `<id>.memory.md`）。
 - 无 embedding、无自动遗忘、无冲突消解；检索 = 关键词匹配。后端是插件面（`port.MemoryStore`）。
-
----
 
 ## 5. 端口设计（`internal/port`）
 
@@ -1202,7 +1125,7 @@ blobs/<sha256>         附件字节，内容寻址、平铺（**跨会话共用�
 
 **导出单位**：命令面 `/export` 与界面「导出」都作用于**当前会话**时只写一个会话（`len(cs) == 1`）；
 一份多会话归档靠「导出全部会话」这条路（命令面 `--all`，界面的同名入口排在
-[docs/plan.md](docs/plan.md) 的 aqx 多会话备份那一节最后一笔）。**多会话只对 aqx 成立**：
+[plan.md](plan.md) 的 aqx 多会话备份那一节最后一笔）。**多会话只对 aqx 成立**：
 `chatgpt` / `openai` / `sillytavern` 的容器按别人的规范只能装一条会话链，给多于一个时实现
 直接报错并说明「这种格式一次只能写一个会话」，不做「写第一个、其余静默丢掉」。
 
@@ -1323,7 +1246,7 @@ GUI 出口在会话历史窗：左栏标题行的「导入」「导出」两颗�
 
 **导出多会话**：命令面 `--all` 把整库写成一份 aqx 备份（`--format` 非 aqx 时报错，理由见上）；
 不带 `--all` 仍是当前会话一个。界面侧同一颗「导出」按钮还要接一份「导出全部会话」入口，
-排在同一批的最后一笔（排期在 `docs/plan.md` 的 aqx 多会话备份那一节）。
+排在同一批的最后一笔（排期在 `plan.md` 的 aqx 多会话备份那一节）。
 
 **保存框的「保存类型」就是格式选择器**（D248）：`port.ExchangeFormats()` 里 `NoExport == false`
 的条目一档一种、同序同数（目前四档 `aqx` / `chatgpt` / `openai` / `sillytavern`），档位与格式
@@ -1752,8 +1675,6 @@ v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP s
 自动升级、ACP v2、客户端 `fs`/`terminal`/`elicitation`、把子代理的转录塞进树、转发我们的
 MCP server、跨会话复用子代理、`session/load` 回放它的历史、多路并行转交。
 
----
-
 ## 6. 插件架构
 
 ### 6.1 扩展点清单
@@ -1836,8 +1757,6 @@ config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
    再启用即重走确认）/ `RevokeTrust`（撤销插件目录来源的启动信任：清 D138 指纹 + 断开，仅
    `source=plugins`；config 来源 = 用户显式信任，不提供撤销）/ `Logs`（tail `audit.log` 的
    `kind=tool` + `mcp:<name>:` 行，行数上限 200）。
-
----
 
 ## 7. 应用层
 
@@ -2135,7 +2054,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   `/help` 的处理函数就是渲染这张表本身。只吃参数的处理函数用一个适配器接上，不为它们
   长出第二套注册形状。
 - 表序即 `/help` 的行序，也是补全浮层的静态段顺序；动态命令仍按名排序缀尾。
-- `uigui` 侧自己的命令分派不在本版范围（见 `docs/plan.md` 的 backlog）。
+- `uigui` 侧自己的命令分派不在本版范围（见 `plan.md` 的 backlog）。
 
 ### 7.4 启动历史回放（D40）
 
@@ -2162,7 +2081,7 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   e2e/管道输出与 TUI 信息一致。
 
 ### 7.5 会话树只读视图（D80，前置 A；**D112 扩展整树快照**）
-UI 要画分叉按钮（[gui-design.md](docs/gui-design.md) §15.3）与会话树界面（S3 relation-map）就得知道**树事实**（某节点的同级集合与
+UI 要画分叉按钮（[gui-design.md](gui-design.md) §15.3）与会话树界面（S3 relation-map）就得知道**树事实**（某节点的同级集合与
 自身下标），但 Presenter 只发渲染事件、不给树；UI 又跑在独立 goroutine，直读
 `Session.Current()` 会与装配根的树变更并发（`-race` 必红），铁律 5 亦不许 UI 直连 store。
 - **端口**：`port.TreeView` —— `Branches(id) (BranchInfo, bool)` 与 `Tail(id)
@@ -2180,7 +2099,7 @@ UI 要画分叉按钮（[gui-design.md](docs/gui-design.md) §15.3）与会话�
   同一不可变快照发布（`atomic.Pointer`，发布点 = 构造完成 + 每次 `Handle` 返回前）。仍是
   **只读、无变更入口**；`Snippet` 为展示用短摘要（非推理口径）。`Level`/`Depth`/`InPath`/
   扇区/坐标/配色**不入端口**，由 UI 侧派生。**状态规格见
-  [docs/relation-map-design.md](docs/relation-map-design.md)**（D112 的方向级描述由 D120 细化：
+  [docs/relation-map-design.md](relation-map-design.md)**（D112 的方向级描述由 D120 细化：
   结构根/锚点拆分、类别=形状、层号=深度色带、版本链走线型）。
 - **会话列表（D120⑥，S3 左栏数据面）**：另立只读端口 `port.SessionLister{List() []SessionSummary}`
   （`ID/Title/UpdatedAt/Messages/Current`；数据源 = 已有 `ConversationStore.List`；D80/D103 同款
@@ -2208,7 +2127,7 @@ UI 要画分叉按钮（[gui-design.md](docs/gui-design.md) §15.3）与会话�
 
 ### 7.6 会话展示事实快照（D82，前置 B）
 
-GUI 的 logo tooltip（[gui-design.md](docs/gui-design.md) §15.1）要读**会话事实**（标题、上下文占用、用量），与树事实
+GUI 的 logo tooltip（[gui-design.md](gui-design.md) §15.1）要读**会话事实**（标题、上下文占用、用量），与树事实
 同病：Presenter 只发渲染事件、`Agent.UsageReport` 又需全量装配后计数（只能在会话
 goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
@@ -2217,12 +2136,12 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   命令回传，故不引入具名 ID 类型耦合）。
 - **实现**：`*app.Session` 在与树快照**同一组发布点**（构造完成 + 每次 `Handle` 返回前）
   重建并经 `atomic.Pointer` 发布不可变快照，新增 `Facts()` 无锁读口（UI 事件循环
-  goroutine 直调，[gui-design.md](docs/gui-design.md) §15.5 同口径）。
+  goroutine 直调，[gui-design.md](gui-design.md) §15.5 同口径）。
 - **重算与门控**：重算复用 `Agent.UsageReport`（一次装配 + 三级计数链 D26，与 `/usage`
   同源同值）；经**签名门控**（标题/会话 ID/Head/路径长/Path 实测用量和，任一变更才重算）
   ——命令类输入（`/help` 等）零装配零计数空转。计数失败保留旧快照、下次 `Handle` 自愈
   重试（est ③「计数失败不阻断对话」同款口径）。
-- **消费面**：只经 GUI 的 `Options.Status` 回调组合取用（[gui-design.md](docs/gui-design.md) §15.1），不给变更入口；值是
+- **消费面**：只经 GUI 的 `Options.Status` 回调组合取用（[gui-design.md](gui-design.md) §15.1），不给变更入口；值是
   发布点时点值——Turn 进行中读到的是上一轮结束值（生成中的实时占用本就未定）。
 
 ### 7.7 角色卡宏替换（D247）
@@ -2254,330 +2173,13 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   的引用算出 `U` → 再展开卡文本 → 再按完整引用组装」，`Tail` 的展开在会话创建时一次做完
   并存进字段（它不在人格树里，没有第二次机会）。
 
----
-
-## 8. 存储布局与配置
-> **配置文件化 / profile 目录化（D110，破坏性改造）**：数据目录自 D110 起以 profile 为隔离单位——
-> `<data>/config.json` 为**当前 profile 指针**（`{"profile":"<name>"}`），`<data>/profiles/<name>/`
-> 为**整目录隔离**（会话/记忆/附件/任务/审计随 profile 走，§5-Q1）。CLI `--profile <name>` 进程级覆盖；
-> 切换 = 重启生效；不写迁移器（旧单文件 config 报清晰提示，用户手工处置）。下方目录树为
-> **profile 内**布局（`<data>/profiles/<name>/` 之下）。
-```
-<data>/
-├── config.json                # 当前 profile 指针（{"profile":"<name>"}；D110）
-└── profiles/<name>/           # profile 整目录隔离（D110；下为其内容）
-    ├── config.json            # 主配置（密钥默认存引用名，明文允许但启动警告 D35；permissions.level 权限等级）
-    ├── sandbox/               # Agent 特权目录（权限矩阵免确认读写，启动自动创建）
-    ├── memories.md            # 全局记忆（markdown 单文件，D23）
-    ├── skills/<name>/SKILL.md    # 技能（D201）：一个目录一个技能；<profile>/skills 是兜底技能根，
-    #                             config skills.dirs 可追加其它绝对路径（按声明序优先）
-    ├── skill-cache/<repo-key>/   # git 安装的技能检出缓存（D202）：更新 = pull + 重新同步副本
-    ├── skill-installs.json       # 技能安装台账（D202）：来源/引用/相对子目录/时间，原子写
-    ├── characters/<slug>/card.json  # 角色卡（D243）：原卡 JSON 逐字节；同目录 meta.json（显示名/slug/来源/
-    #                                  导入时间/警告，原子写）、avatar.png（头像：.charx 的 icon 或 PNG 卡去 tEXt 重编码）、
-    #                                  source.charx（仅 .charx 来源：原压缩包整份留档）
-    ├── plugins/<name>/plugin.json # MCP server 描述与可执行文件
-    ├── jobs/<jobID>.log       # 后台任务日志
-    ├── audit.log              # 审计日志（JSONL：LLM/工具调用的耗时与结果状态，M4 装饰器写入，超限轮转一代）
-    ├── secrets.bin            # 本机密钥库（D151/D161）：明文 JSON 经平台加密后落盘——Windows 走
-    #                             DPAPI（当前用户，无口令），其它平台走 AES-GCM + 同目录
-    #                             0600 的 secrets.key；键名 = api_key 里 secret:<名> 的 <名>；
-    #                             写前留一代 .bak，解不开时（换机/账户不同/损坏）警告并回落同名环境变量
-    ├── secrets.key            # 仅非 Windows：AES-GCM 档的 32 字节密钥（0600，首次写入才生成）
-    ├── attachments/<sha256>   # 内容寻址附件
-    ├── conversations/<id>.json    # 会话树（写前留一代 <id>.json.bak；JSON 与领域结构同构、无独立版本号，
-                                    #   合法性由加载期 Validate 把关；破坏性切换先例：D19 虚拟 Root、
-                                    #   D95 独立 tool 节点——旧格式 Load/List 显式报 ErrLegacyFormat 点名 ID，
-                                    #   不自动迁移，旧文件留存原地由用户手工处置）
-    ├── conversations/<id>.memory.md # 会话记忆文件（随会话就近存放，D23）
-    └── gui_pos.json               # 主窗位置记忆（随 profile 走，D110 修订①）
-```
-> 落位定案（D110 修订①，2026-10-06）：位置记忆 `gui_pos.json` 与 blob `attachments/` 均落 **profile 内**——
-> 整目录隔离原则（§5-Q1）；附件 GC 按 profile 目录清扫，全局放置会跨 profile 误清/悬挂引用。
-> **profile 选择在三级覆盖链之外**：`--profile` flag > `<data>/config.json` 指针，两者仅决定「读哪个
-> profile」；profile 内配置值仍按 CLI flags > 环境变量 > profile `config.json`（D110 修订②）。
-> **fallback 运行语义（D110 修订③，Q5 细化）**：判据 = `port.ErrTransient`（429/408/5xx/网络/超时；
-> 401/400 不降级）；同 provider 重试耗尽后才降级（重试在内、降级在外，铁律 9）；降级目标 provider 的
-> 请求模型 = 该 provider 首个**启用**的模型（`models[].enabled` 缺省为真，D180；primary 用 `model.name`）；
-> 无粘态（每次 Generate 从 primary 起试）；
-> 流中途断连不重试、不降级（既有 retry 边界）。
-
-```json
-{
-  "model": {
-    // D173：模型与提供商 v2（破坏性）。provider 承载「怎么连」，model 承载「能做什么」。
-    "providers": [                // 每个 provider 一条；primary 指向其中 name
-      { "name": "openai",
-        "kind": "openai-chat",    // 协议：openai-chat（缺省，/chat/completions）| openai-responses（/responses）| anthropic（/messages）
-        "base_url": "https://api.openai.com/v1",  // 路径前缀；适配器在其后追加各自端点
-        "keys": [                 // 密钥池（D173）：按序轮换，逐把独立冷却
-          { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" }, // secret:<名> = 先查本机密钥库、再查环境变量（D151）；
-                                                                          // 明文允许但启动警告；界面填的明文会转入库并改成引用（D161）
-          { "label": "备用",   "api_key": "secret:AQUARIUS_OPENAI_KEY_2" }
-        ],
-        "models": [               // 模型条目：名字 + 能力位 + 上下文窗口（都是这个模型自己的属性，不继承 provider）
-          { "name": "gpt-4o-mini", "context_window": 128000 },  // 省略 caps = 按协议缺省（下表）
-          { "name": "o3-mini", "caps": ["reasoning"],
-            "sampling": { "temperature": 1 } },                 // 逐模型覆盖（D204）：只写想改的项，其余继承 model.sampling
-          { "name": "gpt-4o",  "caps": ["tools", "reasoning", "vision"], "context_window": 128000,
-            "cost_in": 2.5, "cost_out": 10 },                   // 单价每百万 token（D205，抄厂商报价）；省略 = 不显示费用
-          { "name": "gpt-5-preview", "enabled": false }         // 保留声明但不参与选型（D180）；键缺失 = 启用
-        ],                                                      // context_window 省略/0 = 不声明，预算只看全局 limits
-        "tokenizer": "",          // 本地 tokenizer.json 路径（精确计数②，D26；空 = 通用估算）
-        "unsupported_params": []  // 服务端已知不认的字段名单（自动记录、启动注入省略；含消息级 reasoning_content，D34/D42）
-      }
-    ],
-    "primary": "openai",          // 当前生效 provider
-    "fallback": [                 // 有序 = 降级顺序（Q5：仅网络类 429/5xx/网络/超时 触发；401/400 不降级）
-      { "provider": "mimo", "model": "mimo-v2.6-flash" } // 逐项自带模型（省略 model = 该 provider 的 models[0]）；
-                                                         // 同一 provider 可重复出现（同家不同型号兜底）
-    ],
-    "name": "gpt-4o-mini",        // 当前模型名（在 primary 的 models 内）
-    "think": true,                // 原生思考总开关（/think 写回；键缺失 = 开，D34）；模型无 reasoning 能力时不发
-    "reasoning_effort": "",       // 推理档位（/effort 写回；空 = 不发送，D34）
-    "echo_thinking": true,       // 树内思考是否回传给提供商（*bool：键缺失 = 回传，false = 不回传，改后重启生效，D42）
-    "sampling": {                 // 采样参数（D204）：整链缺省；**键缺失 / null = 不发送**（交服务端默认），
-                                  // 写 0 就是真的发 0（temperature 0 = 要确定性输出，这点不能用零值兼作「不发送」）
-      "temperature": null,        // 0..2（Anthropic 只接 0..1，超范围启动报因）
-      "top_p": null,              // 0..1 核采样
-      "max_tokens": 0,            // 单轮输出上限；0 = 不发送（真实上限仍由本轮预算 Budget 决定）
-      "stop": []                  // 停止串；空数组 = 不发送
-    }
-  },
-  "tools": { "disabled": ["think"] }, // 内置工具禁用清单（S6/D143）：热生效（无需重启）；键缺失 = 默认
-                                      // 推导（兼容 model.think_tool=true 则空集，否则 ["think"]——D34 现行为）；
-                                      // 首次在设置窗动开关才落键。含 think 草稿工具与 context_compact
-  "ui": { "kind": "gui", "hotkey": "", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false }, // kind: gui | tui | repl（D51 默认 gui = 悬浮球前端，D43/[gui-design.md](docs/gui-design.md)；tui = D33 bubbletea，repl 为测试/e2e 后端）；hotkey: 全局呼出快捷键（空 = Alt+A）；theme: system | light | dark（GUI 深浅，键缺失 = system，D61）；scale: 元素缩放倍率（默认 1.0）；font_size: 正文字号 sp（默认 15，最终字号 = font_size × scale）；window_width/window_height: 主窗像素尺寸（0 = 缺省 608×460dp 现行为）——三旋钮口径与热生效见 [gui-design.md](docs/gui-design.md) §15.8/D90；welcomed: 欢迎 / 首次运行引导是否已看（D141；键缺失 = 未看——首跑或标记缺失时自动打开欢迎窗一次，完成或显式关闭即置位）
-  "system_prompt": "",           // 人格兜底单串（兼容）：作为内置模块 @default 的正文来源（S7/D144）
-  "prompts": {                   // 人格模块树（S7/D144）：模块树 + 有序顶层引用
-    // 内置只读模块（可在 persona 引用/排序/移除）：@default（默认人格，正文 = system_prompt 或内置默认）、
-    // @env（环境信息组：子 = @env.platform / @env.terminal / @env.sandbox / @env.timeout / @env.date）、
-    // @char（角色卡组，D247：子 = @char.identity / @char.description / @char.personality / @char.scenario；
-    //        平级 @char.system / @char.book）—— 全部是条件内置：无卡或字段为空时为空模块、不计缺失，
-    //        所以留着它对普通会话的输出没有任何影响
-    "modules": {
-      "identity": { "text": "You are Aquarius, a minimalist personal AI assistant." },
-      "style":    { "text": "Reply concisely." },
-      "house":    { "children": ["identity", "style"] } // 组模块：展开即「identity + 空行 + style」
-    },
-    "persona": ["house", "@env"], // 人格 = 有序顶层引用；空 = 默认 ["@default","@env"]
-    "user_name": "User"          // {{user}} / <USER> 的取值（D243）；改动只影响之后新建的角色会话
-  },
-  "input": { "language": "auto" }, // 录音语种提示（D179）：auto | zh | en；仅作用于语音识别，缺省 auto
-  "skills": {                     // 技能（D201）：技能根有序列表（绝对路径），先命中者胜；
-    "dirs": []                    // 空 = 只用 <profile>/skills。改动重启生效（不做文件监听）
-  },
-  "characters": {                 // 角色卡（D243/D247）：只读导入与投影，不改写卡
-    "prefer_system_prompt": false, // true = 卡里的 system_prompt 替换用户人格（{{original}} 展开成用户人格正文，不含 @env）；
-                                   // 默认 false = 用户人格在前、卡的 system_prompt 作附加段。两态都保留 @env（D247）
-    "apply_post_history": true,    // 每轮把卡的 post_history_instructions 追加在历史之后（内容随会话落盘，开关热生效）
-    "inject_constant_book": true,  // 常驻世界书（D247）：只取 constant 且 enabled 的条目，进 @char.book；默认开——
-                                   // 人设全写在常驻条目里的卡（语料 2/2）关掉就是空壳。开启后每轮都付 token、永不被压缩挤掉
-    "inject_examples": true        // mes_example 走宿主注入节点（可随历史被挤掉）；false = 不注入（卡文件照留）
-  },
-  "delegate": {                   // 外部代理转交（D244）：ACP v1 客户端，字段形状照 mcpServers
-    "agents": {
-      "opencode": {                      // 名字 = delegate 工具的 agent 参数与 /delegate list 的取值
-        "command": "opencode",           // PATH 上探测；探不到则列在清单里并写明原因，不自动下载安装
-        "args": ["acp"],
-        "env": { "PROVIDER_KEY": "secret:DELEGATE_PROVIDER_KEY" },
-        "workdir": "",                   // 子进程 cwd；空 = 家目录。它是起点，不是围栏（§5.18）
-        "enabled": true,                 // 缺省 true；false = 留在配置里但不注册工具、不探测
-        "default": true                  // 多个代理商 true 时取配置序第一个；都不写则取第一个可用的
-      }
-    },
-    "timeout_sec": 1800              // 单次转交总闸（防进程挂住）；0 = 不限，最大 86400
-  },
-  "audio": {                      // 语音（D179/D222）：识别与合成各是一份完整配置
-    "asr": {
-      "provider": "mimo",          // 可选：借 model.providers 里这条的端点与第一把密钥
-      "base_url": "",              // 可选：自己的端点；空 = 用借来的
-      "api_key": "",               // 可选：自己的密钥（secret: 引用或明文）；空 = 借来的，都不借则回落 AQUARIUS_ASR_API_KEY
-      "model": "mimo-v2.5-asr",    // 转写模型（配了服务就必填）
-      "kind": "chat-audio"         // 协议：chat-audio（chat/completions 携带音频，缺省）——未来本地引擎加新值
-    },
-    "tts": {
-      "provider": "mimo",
-      "base_url": "",              // 同上；密钥回落 AQUARIUS_TTS_API_KEY
-      "api_key": "",
-      "model": "mimo-v2.5-tts",    // mimo-v2.5-tts（预置音色）| -voicedesign（文本设计）| -voiceclone（样本复刻）
-      "kind": "chat-audio",
-      "voice": "冰糖",              // 预置音色名；voiceclone 模式填样本文件的绝对路径
-      "design": "",                // voicedesign 模式的音色描述（进 user 消息；该模型必填）
-      "style": "",                 // 自然语言风格指令（进 user 消息；空 = 不发）
-      "tags": ""                   // 风格标签，如 "温柔 语速稍快"；非空时拼成 "(标签)" 前缀
-    }
-  },
-  "output": { "tts": false, "notify": true }, // tts = 播报总开关（缺省关，D179）
-  "web": {                        // 联网搜索与抓取（D197）：两组列表都是**有序 = 优先级**
-    "search": {
-      "providers": [
-        { "kind": "deepseek" },                        // 端点与密钥都借 model.providers 里的同名条目（也可自己填）
-        { "kind": "brave", "key": "secret:AQUARIUS_BRAVE_API_KEY", "country": "CN", "lang": "zh-hans" }
-      ],
-      "count": 8                  // 缺省条数（工具参数可逐次覆盖，1-20）
-    },
-    "fetch": {
-      "providers": [
-        { "kind": "deepseek" },    // 远端抓取：站点反爬/JS 壳时兜底
-        { "kind": "local" }        // 本地纯 Go：无需密钥，遵守 robots.txt、拒绝内网目标
-      ],
-      "max_chars": 16000,         // 单次回填正文上限（500-20000）
-      "proxy": "",                // 本地抓取代理（如 http://127.0.0.1:7897）；空 = 读 HTTP(S)_PROXY
-      "user_agent": "",           // 空 = 浏览器形态缺省 UA
-      "respect_robots": true,     // 键缺失 = 遵守
-      "allow_private_ips": false, // 只为调试本机服务，缺省关闭
-      "timeout_sec": 30
-    }
-  },
-  "mcpServers": {
-    "web-search": {
-      "transport": "stdio",
-      "command": "web-search-mcp",
-      "args": ["--stdio"],
-      "env": { "SERPER_API_KEY": "secret:SERPER_API_KEY" },
-      "capabilities": ["network"],
-      "risk": "safe"
-    },
-    "docs": {                     // streamable HTTP 形态（M4，D30）
-      "transport": "streamable-http",
-      "url": "https://mcp.example.com",
-      "headers": { "Authorization": "secret:DOCS_MCP_AUTH" },
-      "capabilities": ["network"],
-      "risk": "confirm"
-    }
-  },
-  "plugins": {                    // 启停与授权状态，两种发现源共用（D31；声明仍在 mcpServers/plugin.json）
-    "web-search": { "enabled": true, "granted": ["network"] }
-  },
-  "permissions": { "level": "strict" },
-  "limits": {
-    "max_turns": 32,
-    "max_context_tokens": 64000,    // 上下文预算上限：实际预算 = min(本值, 当前模型声明的 context_window，D177)
-    "compact_threshold": 0.7,
-    "tool_output_chars": 20000,
-    "tool_timeout_sec": 60         // 缺省单次调用超时；模型可经保留参数 timeout_sec 覆盖（1–3600，D38）
-  }
-}
-```
-
-配置三级覆盖：CLI flags > 环境变量（`AQUARIUS_*`）> profile `config.json`。profile 选择在覆盖链之外：
-`--profile` flag > `<data>/config.json` 指针（D110 修订②）。`-model`/`AQUARIUS_MODEL` 覆盖 `model.name`；
-`-base-url`/`AQUARIUS_BASE_URL` 覆盖 primary provider 的 `base_url`（调试逃生口）。
-
-**能力位缺省（D173）**：模型条目省略 `caps` 时按协议给缺省，显式写了（含空数组）就以声明为准：
-
-| kind | tools | reasoning | vision | 理由 |
-|---|---|---|---|---|
-| `openai-chat` | 开 | 开 | **关** | 生态里绝大多数兼容端点支持 tools；思考参数不认时已有「剥离重试 + `unsupported_params`」兜底（D34），猜错的代价只是一次往返。图片各端点差异太大，不猜 |
-| `openai-responses` | 开 | 开 | 开 | `input_image` 是 Responses 的标准字段 |
-| `anthropic` | 开 | **关** | 开 | Messages API 全系支持图片与工具；extended thinking 要显式给 `budget_tokens`，旧模型不接受，不猜 |
-
-**生效能力 = 整条链取与**：primary 的当前模型与每个 fallback 项的模型，三项能力各自取与。链上任一模型缺
-某项，整轮就按缺该项处理（不发工具清单 / 不发思考参数 / 图片降级为文字占位）。代价是「加一条弱模型
-会静默削能力」，所以启动时若链的能力窄于 primary 就打一行警告，`/model` 列出链时逐项标注是哪一环
-拉低的——**不让人自己发现**。
-
-**上下文窗口（D177）**：模型条目可声明 `context_window`（token 数）。装配预算 =
-**min(当前 primary 模型的 `context_window`, `limits.max_context_tokens`)**——全局那项是用户给自己
-定的预算上限（想省钱就调小），模型声明是硬窗口（超了服务端直接拒），两者都生效、谁小听谁的。
-模型省略该键（或 0）= 不声明，预算完全看全局值（升级前的行为）。
-
-窗口**不参与整链取与**：装配发生在请求发出前，那时用的是 primary 的模型；降级换模型是半路发生的，
-按大窗口装好再换小窗口模型只能靠服务端报错。所以按当前模型算预算，降级到窗口更小的模型属于
-「用户自己配的降级链，接受可能超限」。`/model` 展示窗口与该值来源，窗口比全局小时提示是模型侧
-在压预算。
-
-**模型启用位（D180）**：`models[].enabled`（`*bool`）决定这一条是否参与选型。键缺失 = 启用
-（升级前的配置一条都不用改），只有 `false` 会落键——配置不会因为一次保存长满 `"enabled": true`。
-
-- **未启用 = 保留声明、不参与选型**：不进降级链的可选模型、不进 `/model` 清单（当前模型例外，
-  它正在跑）、不作为该 provider 的缺省请求模型（`models0()` 取首个启用项）。
-- **每家至少一个启用**：`normalize`（启动）与 `Apply`（设置窗应用）同口径拒绝「一家全关」的配置
-  ——那样这家 provider 就没有可请求的模型，等重启才报错不如应用时就拦住。
-- 用途是「把服务端列出来的几百个模型登记在册、只勾我现在要用的那几个」：登记与选用分开，
-  不必在「删掉再手敲」和「留着被误选」之间二选一。
-
-**语音配置（D179/D222）**：`audio.asr` / `audio.tts` 各是一份**完整**的服务配置——端点与密钥
-可以自己填，也可以只写 `provider` 借 `model.providers` 里那条的 `base_url` 与第一把密钥。
-借不继承 `kind`、不继承模型能力位、不进降级链。理由：音频模型与对话模型常常不是同一类端点，
-也不该被「主模型挂了换备用」那套语义牵连（播报失败降级成另一个音色，比不播更怪）。
-
-- 取值顺序：显式 `base_url` / `api_key` → 借 `provider` 指的那条 → 密钥回落按能力派生的名字
-  （`AQUARIUS_ASR_API_KEY` / `AQUARIUS_TTS_API_KEY`）。借只补**缺的那一项**。
-- `audio.*.provider` 指不到条目时只有「端点也没自己填」才算配置错误；否则只是这家取不到密钥，
-  启动打一行提示，按钮与命令明确报因。整路三样都不填 = 该能力不可用，不算错误。
-- 密钥槽按**能力**分而不是按 provider：同一家的对话、识别、合成往往是三把不同的钥匙，
-  共用一个槽位会让后填的覆盖先填的。
-- `audio.*.kind` = 协议位：`chat-audio`（缺省）= chat/completions 携带音频。未来本地引擎
-  （whisper.cpp 等）或别家协议在此加新值，上层不动。
-- `audio.tts.model` 决定形态：`-voicedesign` 用 `design` 文本，`-voiceclone` 用 `voice` 里的
-  **样本文件绝对路径**（适配器读文件转 **Base64**——接口只收 Base64，不是 `data:` URL；路径按读取矩阵判权限），
-  其余用 `voice` 里的预置音色名。
-- `input.language` 只喂给 ASR：`auto | zh | en`，缺省 `auto`。
-- **录音时长上限**：线上限由厂商的 Base64 体积上限反推（16kHz 单声道 16bit ≈ 32KB/s，Base64 膨胀 4/3）
-  ——MiMo 当前 10MB ⇒ 约 4 分钟；产品侧默认 60s，命令可带秒数覆盖但不得超过硬顶。
-
-**联网配置（D197/D222）**：`web.search.providers` / `web.fetch.providers` 都是**有序**列表，顺序即优先级；
-某一家的失败（网络/超时/401/402/403/429/5xx）会换下一家，`400` 不换（输入本身有问题）。
-
-- `kind=deepseek` 的 `base_url` / `key` 都是可选独立字段，取值顺序与语音同口径：显式字段 →
-  借 `from` 指的 `model.providers` 条目（省略 = 同名的 `deepseek`）→ 密钥回落按侧派生的名字。
-  借只补缺的那一项；`from` 指不到条目时只有「端点也没自己填」才算配置错误。老写法
-  `{"kind":"deepseek"}` 照常工作——「借用」是捷径，不是唯一形态。
-- 密钥槽按侧区分：搜索 `AQUARIUS_DEEPSEEK_SEARCH_API_KEY`、抓取 `AQUARIUS_DEEPSEEK_FETCH_API_KEY`
-  （`AQUARIUS_DEEPSEEK_API_KEY` 归对话 provider），两侧互不覆盖。
-- `kind=brave` 用 `key`（`secret:` 引用或明文）——Brave 只有搜索端点，`country`/`lang` 控制结果
-  国家与语言（空 = 服务端缺省）。
-- `kind=local` 无密钥，参数在 `web.fetch` 这一层（代理、UA、robots、私网、超时）。
-- 某一家装不起来（缺密钥、`base_url` 为空）只**警告并跳过**，其余提供商继续可用；全空 = 该工具
-  执行时明确报「未配置提供商」，启动不失败。
-- 计费只在「HTTP 200 且结果非空」时发生：空结果换下一家试一次，全链都空就如实回空结果（不是错误）。
-
-**密钥解析顺序（D151/D161）**：`api_key` 取值为 `secret:<名>` 时，**先查本机密钥库
-`<profile>/secrets.bin`，未命中再查同名环境变量**；两处都没有才报错（提示里说明查过哪两处，
-不回显值）。**库解不开**（profile 拷到别的机器、DPAPI 绑的是别的账户、文件损坏）时打一行
-警告后**回落同名环境变量**继续启动，不 fatal——「换机拷 profile」是这套方案自己预期的场景，
-把它变成硬故障只会让人以为程序坏了（D161）。明文仍允许但启动警告（兼容旧配置）；空值回落
-`secret:AQUARIUS_OPENAI_KEY`。
-
-**写入路径（D161）**：设置窗「模型服务」页与欢迎窗填的**明文**密钥，写进本机密钥库，config
-里只落 `secret:<名>`；**写库失败即报错**，不静默退回明文。键名 = 原引用名（改填明文只在原地
-换值，引用不 churn），否则按 provider 名派生 `AQUARIUS_<PROVIDER>_API_KEY`（同一 provider 的
-第 N 把钥匙追加 `_<N>` 后缀，D173）。设置窗另有
-「密钥库」页管理任意名字（MCP 插件 `env`/`headers` 的 `secret:` 也存这里），列表只显示名字 +
-尾 4 位掩码，值永不回显。
-
-**导入旧密钥（D164；入口自 D206 起不提供，能力保留）**：同一页曾提供一键入口，把**存量**密钥从旧形态收进库——config 里仍是
-明文直填的 provider `api_key`（收库后退化为 `secret:<名>` 引用）、以及「config 只写引用、真值
-只在同名环境变量里」的那些（值抄进库、config 不动）。只处理 **config 真正引用到的名字**，不
-扫全部 `AQUARIUS_*` 环境变量（那会把无关变量也固化下来）。库解不开时**拒绝导入**（不套用普通
-写路径的「从空表起步」——批量导入会因此丢掉库里已有条目）；顺序是先落库、后改 config，失败留
-「库里有值、config 还是明文」这个可用中间态。值永不回显，反馈只报条数（名字已在列表里）。
-
-**为什么不是单纯的环境变量或明文文件**（评估结论，D151）：三者的真实差距是「谁能读到」
-与「会不会被顺带带走」两件事——
-
-| 方案 | 同用户进程 | 同用户子进程 | 备份/同步/换机拷文件 | 实现成本 |
-|---|---|---|---|---|
-| 环境变量 | 可读 | **会继承**（`term_exec`/`job_start` 起的命令直接看见） | 否（但 Windows 用户环境变量明文存注册表） | 0 |
-| 明文文件（opencode `auth.json` 式） | 可读 | 不继承 | **会带走** | 低 |
-| 本机加密（DPAPI / AES-GCM+0600 密钥） | 可读 | 不继承 | **不带走**（DPAPI 绑定用户账户；AES 密钥另存同目录则只挡住离线备份） | 中 |
-
-结论：Aquarius 的 `term_exec` 会把环境整份交给子进程，**环境变量在本项目里是最差的**；
-明文文件只解决了继承问题；本机加密额外挡住「备份/同步/换机」这条最常见的泄露路径。
-三者都挡不住「以同一用户身份运行的恶意程序」——这一点不夸大，写进用户可见的说明里。
-
-
----
-
 ## 9. 权限与安全模型
 
 **权限等级矩阵（D22，取代 D6）**：`config.permissions.level` 四档预设，默认 `strict`。
 矩阵格 = **免确认范围**；矩阵外的操作一律逐次确认（`Confirmer`）。`~/.aquarius/sandbox`
 （`<dataDir>/sandbox`，启动自动创建）是 Agent 特权目录。读操作全等级免确认（覆盖全盘），
 写与工具执行按等级区分。**四档各自的免确认格**（哪个目录可写、哪些工具免问）是面向用户的
-操作细节，详表只在 [configuration.md](docs/configuration.md) 的 `permissions` 段——
+操作细节，详表只在 [configuration.md](configuration.md) 的 `permissions` 段——
 改矩阵时改那里，本节只定规则。
 
 - **两列分工、互不叠加**（D22）：
@@ -2628,8 +2230,6 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   `config.model.api_key` 明文是**显式例外**（D35）：仅常驻 config、启动打印警告（不回显），
   同样不进日志/会话树/附件；stdio 插件子进程环境仍剔除 `AQUARIUS_*`（§6.4 #3）。
 
----
-
 ## 10. 错误、取消与并发语义
 
 - **取消**：`ctx` 取消 ≡ `Stream.Close()`；工具执行同受 `ctx` 约束；Job 后台运行不受会话取消影响（`job_kill` 显式终止）。
@@ -2649,108 +2249,3 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   顺序固定为**先换钥匙、再换 provider**：否则多账号场景下会白跨一次 provider。
   `ErrQuota` 之外的其他瞬时错误（5xx/网络）不换钥匙——换钥匙对端点故障没用。
 - **并发**：单会话内 Turn 串行（Head 唯一）；多会话并行安全（一会话一文件）；Job 自管并发。
-
----
-
-## 11. 测试策略
-
-| 层 | 手段 |
-|---|---|
-| **架构** | `internal/arch` 解析全仓生产文件的 import，断言分层方向（`adapter → port ← app → domain`）与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；判定函数另有正反例自检，防「永远绿」。同一包内另有一条聚合根守卫：`Conversation` 不得有任何导出的 map 字段（D216——导出即等于「只有方法能改树」失效）。测试文件不受约束——借用真实适配器做链路级验收是允许的 |
-| domain | 性质测试：随机 Append/Revise(Fresh\|Carry\|Clone)/Prune/Checkout 序列 → 不变量 1–2 恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边指针改写）；Clone 深拷贝子树与原子树零共享、原子树字节级不变（D96）；节点形态校验含思考分片与工具分片仅 assistant 可携带、工具分片 CallID 节点内唯一（D42/D95）；`Snapshot`→`Restore` 往返得到同一棵树，坏快照（重复节点/悬空边/Head 不在树）被拒（D214） |
-| domain（变更后自检） | `ValidateEveryChange` 置于 `-tags aqvalidate` 之后（D215）：该构建下四条变更路径（`AppendCommitted`/`Revise`/`Prune`/`InsertCommitted`，含 Revise 的 carry/clone 提前返回分支）末尾都跑一次全树 `Validate`；生产构建为常量 `false`，检查被编译掉、零开销。`validate_tag_test.go` 双向验证这条开关本身（开 tag 时弄坏树必须被拒，不开时自动跳过） |
-| app | 脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter → 交互回放（golden）；摄取管线用假 Transcriber；思考入树（分片顺序）与回传开关两态装配（D42） |
-| adapter | LLM 录制流回放；storejson/blobfs/jobproc/memoryfs 契约测试（临时目录） |
-| MCP | 测试内起假 MCP server（stdio）跑 mcpgate 契约：发现/调用/超时/崩溃重启/授权拒绝 |
-| e2e | 编译出二进制 + repl 适配器喂 stdin 断言 stdout；装配假 MCP server 验证 `mcp:` 工具全链路 |
-
-质量门禁：`go vet` + `gofmt` + 全量 `go test`（含 `-race`）通过方可合入；
-改动领域变更路径时另跑一遍 `go test -tags aqvalidate ./...`（D215）。
-
----
-
-## 12. 里程碑与验收标准
-
-| 里程碑 | 内容 | 验收标准 |
-|---|---|---|
-| **M0 骨架** | go.mod、`domain/conversation` + 性质测试、`port` 全量接口、storejson、repl UI、openai 兼容适配器 | 二进制跑通一轮纯文本对话；会话树存取正确；性质测试全绿 |
-| **M1 树交互** | Revise(Fresh\|Carry)、Checkout/Branch/rm 命令、golden 回放测试框架 | 回放测试覆盖 Revise 两模式与分支导航；Carry 边转移后后代字节不变 |
-| **M2 工具与记忆** | ToolRunner（确认/超时/裁剪）、memory_*、file_*、think、`context_compact`、权限矩阵执行接入、三级 token 计数链 + `/usage`、自动压缩轨、`/memory` 编辑器直开 | 模型可经工具读写记忆；Confirm 能拦截 `memory_write`；等级矩阵在工具链路生效；超阈值自动压缩跑通；`/usage` 展示精确/估算占用与实测累计；`/memory` 打开记忆文件 |
-| **M3 任务与多模态** | JobManager + job_* + term_exec、blobfs、Ingestor（文本/文件/剪贴板，程序化入口，D27）、输出器 notify | `term_exec`/`job_start` 经 ToolRunner 确认链路跑通；job 后台跑 + `/jobs` 日志可查；文件/剪贴板输入 → 附件入库 → 装配内联字节端到端；notify 在提交时触发（语音链路见 D27/§14） |
-| **M11 屏幕捕获与语音**（2026-10-20 立，D178/D179） | `port.Capture` + `screencap`（`PrintWindow`/`BitBlt`）；`window_list` / `screen_capture` 内置工具；`port.Transcriber`/`Synthesizer` 实现（MiMo chat-completions 音频）+ `micwin` 采集 + `audioplay` 播放；`/mic` 命令与 GUI 语音槽；设置窗「语音」页（含风格控制与试听） | 模型能列窗口、抓全屏、抓**被遮挡窗口**并正确描述画面；语音键说话 → 转写回填输入框 → 发送；`output.tts` 开启后回答自动播报，风格指令与标签实际改变音色表现；非 Windows 明示不支持；全门禁通过 |
-| **M4 MCP 与 TUI** | mcpgate（**stdio + streamable HTTP** 双传输，D30）+ grant（D31）+ `/plugin`、`/model`（D32）、TUI MVP（bubbletea + glamour 轻 markdown，D33；repl 保留为测试/e2e 后端）、装饰器链（重试/硬保底截断/审计，D14/§10）；顺手清 §14 的 M2-P2 与 M3-P3 审查遗留。**Tier-1 不在本里程碑（D29）** | stdio 与 streamable HTTP **各接一个现成 MCP server** 全链路可用（发现→授权→调用→结果回填）；崩溃重启与授权拒绝行为符合 §6.4；TUI 完成一轮对话 + 工具 Confirm；重试/截断/审计在装配根生效；M2-P2/M3-P3 遗留清零后全门禁通过 |
-| **M5 GUI 前端** | Gio 悬浮球 GUI（D43/[gui-design.md](docs/gui-design.md)）：单组件悬浮球（logo 即球）→ 展开输入栏 → 转写浮层；流式 + 思考暗块定稿折叠（D42）+ 工具折叠 chip + 完整 markdown；Confirm 输入栏确认态、命令补全、附件文件选择框、停止键/排队输入；托盘常驻 + 右键/托盘菜单 + 全局快捷键（默认 Alt+A 可配置）+ 拖拽位置记忆；主题 = 品牌色 `#00AEEF` + 深/浅两版跟随系统（`ui.theme`，D61）；**窗口管理**（D60）：设置/会话历史/欢迎三窗 = 独立常规 OS 窗口——本轮基建 + 设置核心档（模型/权限/think/effort/hotkey/主题）+ 两空窗壳验证宿主（会话历史数据面后由 S3/D112-D120 接续、欢迎引导由 D141 接续）。**spike 已过**（2026-09：形裁 `SetWindowRgn` 悬浮胶囊） | 悬浮球展开输入栏完成一轮对话（流式 + 思考暗块折叠 + 完整 markdown + 工具 chip + 状态行）；停止键取消本轮、排队输入、Confirm 确认态拦截工具、命令补全含 `/mcp:*`；附件按钮 → 文件选择 → 入树内联展示；菜单切会话/主题/退出；**托盘/右键菜单可开三窗（当时历史/欢迎为占位壳，后由 S3/D141 补上数据面；欢迎入口 D141 起改在设置窗）；设置窗改核心档写回 config 并热生效（模型/权限/think/effort/hotkey/主题），密钥只写不回显；主题深浅两版可切、`system` 跟随系统**；Alt+A 呼出 + 位置记忆；`go build ./cmd/aquarius` 仍单二进制（无 cgo）、全门禁通过、repl/tui 回归不受影响 |
-| **M6 底座与跨平台**（D109 重排，2026-10-06） | **执行序**：① 配置底座破坏性改造（S4+S5 合批，**D110**：profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（新 S4b，**D111**：平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI：**relation-map**（S3，**D112**；形态规格 **D120**：结构根/锚点拆分 + 层号深度色带 + 投影后置布局 + 左栏会话/右图，[docs/relation-map-design.md](docs/relation-map-design.md)：`TreeView.Graph()` 整树快照 + `port.SessionLister` 左栏 + 关系图自绘 + 内核删除任意会话/改名补洞）。S6–S8（工具/MCP 管理、提示词、语音）顺延 | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链（层号色带/形状=Role/主干可辨，公理集自检清单逐条过）、左栏切会话、点节点 `/goto`、任意会话删除与改名可用 |
-
----
-
-## 14. 暂缓事项（Backlog）
-
-- MCP sampling（server 借用宿主模型）
-- **厂商私有思考块回传**：Anthropic extended thinking 工具续跑须原样回传 thinking block——**已落地**
-  （D175 的签名贯通 + `anthropic` 适配器按 `anthropic:` 前缀原样回传）；GPT-OSS/vLLM 系回传键名
-  `reasoning`（D42 现发 `reasoning_content`，vLLM 兼容两者）——接入此类提供商时由适配器做键名映射
-- 非 GBK 的遗留代码页（CP437/latin-1 等）终端输出识别（D41 内容探测只有 UTF-8/GBK 两档，会误判成乱码中文）
-- `file_read` 等文件文本入口的遗留编码解码（与 D41 同算法，终端之外的文本入口）
-- MCP 插件主动健康检查与按需懒加载（当前：启动即连接 + 被动 `Wait` 感知，§6.4 #4）
-- **MCP 富内容回传**：工具结果里的 `ImageContent` 落附件库并回填 `tool.Result.Images`、
-  `EmbeddedResource` 的文本展开、`ResourceLink` 可读一次——当前一律降级为 `[image content omitted]` 之类的占位
-  （本轮冲刺内做，口径落定后再编号）
-- **语音后续**：本地 ASR 引擎（whisper.cpp 类，需 cgo 或外挂二进制，与单二进制口径冲突）、
-  TTS 流式合成（边合成边播）；**导出文件输出器**（把每条回答镜像到文件，§7.2 的
-  `OutputAdapter` 形态）——与 `/export` 的按次整树导出是两件事，后者见 §5.16
-- **备份的后续**（D249 只落「一份装一组会话」的形状与 `/export --all`；界面侧的「导出全部会话」
-  入口排在本版内，见 [plan.md](docs/plan.md)）：增量与差量备份、归档加密（密钥库那条是另一件事）、
-  把备份做成定时任务
-- **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
-  编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
-- **GUI 后续（M5/D43 之外，[gui-design.md](docs/gui-design.md) 预留）**：悬浮球本体转常规窗口形态（D43 只预留设计
-  不实现；功能窗用独立常规窗已入正册 D60）、多颜色主题预设（M5 只做品牌色
-  `#00AEEF` + 深/浅两版）；语音按钮已在 D179 落地，**拖拽/粘贴与多附件已落地**
-  （D186/D187，入口口径见 [gui-design.md](docs/gui-design.md) §15.2），转写气泡内嵌图片缩略图仍留在此处
-- **语音输入与播报（D27 移入）**：
-  - **已落地（D179，2026-10-20）**：`Transcriber`/`Synthesizer` 适配器（首发 = MiMo 形状的 chat-completions
-    音频：ASR `mimo-v2.5-asr`、TTS `mimo-v2.5-tts` 三模型）、麦克风采集（`waveIn`，Windows）、`/mic`
-    命令与 GUI 语音槽、`output.tts` 输出器（整段合成后播放）。
-  - 剩余：TUI 侧拖拽/粘贴/语音按钮（M4 TUI 为 MVP 不含，D33）、导出文件输出器、本地 ASR 引擎与其他协议。
-- **M2 审查遗留（P3，2026-09 评审；P2 的 trim 工具 schema 估算已修）**：
-  - regexp2 `MatchTimeout` 与计数路径的 ctx 检查（模型可控输入的回溯爆炸防护）
-  - Agent/Runner 共享可变状态的并发模型显式化（多会话共享实例时加锁；含 LLM 适配器
-    `NoteUnsupported` → config 写回的并发竞争——D34 既有，非 D42 引入）
-  - `think` 参数非空校验；压缩摘要流的 UI 标注（"正在生成摘要"以区别于回答流）；
-    `/usage` "上轮实测"文案改"最近实测"
-- 跨分支"摘抄"共享子树（DAG 化）
-- Job 表持久化（SQLite）
-- PDF/Office 等 Doc 提取器插件
-- 图片 OCR/描述自动降级、音频直输模型（等模型能力普及）
-- 长期记忆巩固（记忆 = 文档，无独立记忆系统；**上下文压缩摘要已入正册** §4.1/§7.1，与记忆无关）
-- Web UI、移动端输入方式（GUI 桌面前端已入正册 [gui-design.md](docs/gui-design.md) / D43/M5）
-- 向量检索记忆后端（作为 MemoryStore 插件）
-- **`uigui` 拆包与大文件拆分**（2026-10-25 由 v0.2.0 移入，D234）：原计划建 `uikit`/`settings`/
-  `relmap` 三个子包。实测三包合计只占 `uigui` 的 24%（33 文件 11,448 行），搬完父包仍 1.5 万行、
-  最大单文件不变；代价是 391 处按类型改的字段访问、75 个白盒测试的夹具重写（Go 禁止本包测试与
-  子包成环）、装配根 261 处换限定名。**重启判据**与逐项数字见 `docs/plan.md` 的
-  「`uigui` 拆包与大文件」；同一处更便宜的替代是父包大文件只拆文件、不建包。
-- **生态兼容与轻度角色扮演**（2026-10-22 对照调查记录）：按「个人 AI 助手 = 日常工作 + 轻度编码 +
-  轻度 RP + 兼容现有生态」的定位，与成熟角色扮演前端（角色卡 / 世界书 / 预设）的差距**全在边缘**，
-  内核（会话树 / 压缩 / 记忆 / 工具 / MCP / 技能）已强于对照面。**只登记、未排期**，条目、做法要点与
-  优先级见 `docs/plan.md` 的「生态兼容与轻度角色扮演」清单（角色卡只读导入与会话导出已进
-  v0.3.0，见 §5.17/§5.16；**卡的常驻世界书条目已随 D247 进正册**）。
-  剩余先做**世界书的检索式激活**（`keys` 匹配、`order` 淘汰、扫描深度）——那是另一件事：
-  D247 只把 `constant` 条目整段放进人格，不做任何按键匹配。
-  对照面里**按定位明确不做**的部分（JS 前端扩展生态、提示词四层模板、群聊/立绘、生图/翻译、
-  RAG/向量库、Web UI/多用户）一并列在该节，避免以后反复讨论。
-- **外部代理转交（ACP）的后续**（2026-10-27 调研记录，主线见 §5.18/D244）：v1 只做
-  全新会话、不落盘、不转发我们的 MCP server。登记但**未排期**的三件：① 会话内复用子代理
-  （`session/resume` + `<profile>/delegate/` 句柄落盘，端口复用位已留）；② 子代理转录按需落盘
-  供事后翻（不进上下文）；③ 客户端 `fs`/`terminal` 申报与「客户端自己起 MCP server 提供工具」
-  （v2 方向）。**明确不做**：内置代理预设、按 registry 自动安装与升级、ACP v2、多路并行转交。
-
----
-
-## 15. GUI 前端
-
-GUI 前端的实现规格已独立成篇：**[docs/gui-design.md](docs/gui-design.md)**（节号沿用 `§15.x`，
-全仓引用照此解析）。那一篇管壳内设计（形态、输入栏、主题、多窗、缩放、菜单）；内核设计仍在本文。
-
----

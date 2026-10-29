@@ -235,7 +235,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 		st.sendNew(u)
 		return
 	}
-	// 会话进出（DESIGN §5.16）：先要路径，结果回来后才投命令（那是下一帧的事）。
+	// 会话进出（§5.16）：先要路径，结果回来后才投命令（那是下一帧的事）。
 	if st.btnImport.Clicked(gtx) {
 		st.requestImport(u)
 		return
@@ -414,7 +414,7 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 						return l.Layout(gtx)
 					}),
 					layout.Flexed(1, layout.Spacer{}.Layout),
-					// 会话进出的两个入口（DESIGN §5.16 的 GUI 出口）：「导入」读外部文件成一个
+					// 会话进出的两个入口（§5.16 的 GUI 出口）：「导入」读外部文件成一个
 					// 新会话、「导出」把**当前**会话写成一份归档。两者都只负责拿路径，选完投一条
 					// 内核命令——搬运、防覆盖、回执全在命令面（铁律 5：壳内不复制内核逻辑）。
 					layout.Rigid(histTextBtn(th, &st.btnImport, "导入")),

@@ -81,7 +81,7 @@ func fixture(t *testing.T, blobs port.AttachmentStore) *conversation.Conversatio
 }
 
 // TestAQXRoundtripEquivalent aqx 无损往返：节点、边、版本链、Head、时间戳、分片全部字段、
-// 附件字节逐项相同（DESIGN §5.16 的验收口径）。
+// 附件字节逐项相同（§5.16 的验收口径）。
 func TestAQXRoundtripEquivalent(t *testing.T) {
 	blobsDir := t.TempDir()
 	blobs, err := blobfs.New(blobsDir)
@@ -147,7 +147,7 @@ func TestAQXRoundtripEquivalent(t *testing.T) {
 	}
 }
 
-// TestAQXDeterministic 同一棵树导两次字节相同（DESIGN §5.16 验收）。
+// TestAQXDeterministic 同一棵树导两次字节相同（§5.16 验收）。
 func TestAQXDeterministic(t *testing.T) {
 	blobs, err := blobfs.New(t.TempDir())
 	if err != nil {
@@ -183,7 +183,7 @@ func TestDetectAQX(t *testing.T) {
 	}
 }
 
-// TestImportRejectsUntrusted 外部文件是不可信输入（DESIGN §5.16）：坏树、高版本、混乱条目
+// TestImportRejectsUntrusted 外部文件是不可信输入（§5.16）：坏树、高版本、混乱条目
 // 一律报因，不「尽力修复」。
 func TestImportRejectsUntrusted(t *testing.T) {
 	ex := New(Options{})

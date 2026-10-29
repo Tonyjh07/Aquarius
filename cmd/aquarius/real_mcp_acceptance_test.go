@@ -21,7 +21,7 @@ import (
 // 面（v2.0.0 实测）：tool `echo(message)`、prompt `args-prompt(city必填)`、demo:// 资源。
 const realMCPNpx = "@modelcontextprotocol/server-everything"
 
-// TestRealMCPEverythingAcceptance DESIGN §12 M4 验收线："stdio 与 streamable HTTP
+// TestRealMCPEverythingAcceptance §12 M4 验收线："stdio 与 streamable HTTP
 // 各接一个现成 MCP server 全链路可用"。依赖 npx（首拉需网络）；默认跳过，
 // AQUARIUS_E2E_REAL_MCP=1 启用。
 func TestRealMCPEverythingAcceptance(t *testing.T) {

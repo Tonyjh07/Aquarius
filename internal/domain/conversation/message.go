@@ -29,7 +29,7 @@ const (
 	ApprovalDenied   ApprovalState = "denied"
 )
 
-// BlobRef 附件引用（sha256 内容寻址），由 AttachmentStore 解析（DESIGN §4.2 / D17）。
+// BlobRef 附件引用（sha256 内容寻址），由 AttachmentStore 解析（§4.2 / D17）。
 type BlobRef struct {
 	Hash string `json:"hash"`
 	MIME string `json:"mime"`
@@ -77,7 +77,7 @@ const (
 	RoleInject Role = "inject"
 )
 
-// Outcome 节点终态，提交时确定（DESIGN §4.1）。
+// Outcome 节点终态，提交时确定（§4.1）。
 type Outcome string
 
 const (
@@ -95,7 +95,7 @@ type Usage struct {
 
 // Message 树节点：创建后内容只读，值语义。
 //
-// 结构边指针 Parent 可随 Revise Carry 边转移改写（DESIGN §4.1 / D16）；
+// 结构边指针 Parent 可随 Revise Carry 边转移改写（§4.1 / D16）；
 // 其余字段（Content/Outcome/Model/Usage/CreatedAt）一经入树永不改写。
 // 角色约束：user/system/inject 纯内容节点；assistant 可携带思考分片（D42）与工具分片（D95）。
 type Message struct {

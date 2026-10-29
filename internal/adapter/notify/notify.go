@@ -1,4 +1,4 @@
-// Package notify 实现系统通知输出器（port.OutputAdapter，DESIGN §7.2 输出管线）。
+// Package notify 实现系统通知输出器（port.OutputAdapter，§7.2 输出管线）。
 //
 // 扇出点在装配根的 Presenter 装饰器（D28/D14）：本包只负责"把一条已提交的
 // 回答文本送出去"。平台发送经注入的 send 实现（装配根提供外部命令，如

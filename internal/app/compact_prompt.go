@@ -2,7 +2,7 @@ package app
 
 import "strings"
 
-// 压缩摘要提示词（D21，DESIGN §7.1）：借鉴 OpenCode SessionCompaction 的压缩提示词——
+// 压缩摘要提示词（D21，§7.1）：借鉴 OpenCode SessionCompaction 的压缩提示词——
 // 结构化英文模板措辞对任意 agent 通用接手，正文语言由模型随对话自然决定。
 
 // compactSummaryTemplate 摘要结构化模板（<template> 标签只出现在提示里、不进摘要正文）。

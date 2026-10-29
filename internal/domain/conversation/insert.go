@@ -1,6 +1,6 @@
 package conversation
 
-// insert.go 衬垫节点插入（D152，DESIGN §4.1）：在某个节点**之前**插一个 system|inject 节点
+// insert.go 衬垫节点插入（D152，§4.1）：在某个节点**之前**插一个 system|inject 节点
 // 并保持后续历史随行——用于「插入摘要」（system 摘要成为新的压缩水位，其上历史不再回传）
 // 与其他只追加的上下文片段。
 //

@@ -13,7 +13,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// chatgpt.go ChatGPT 的 `conversations.json` 形状（DESIGN §5.16「树形互通」）。
+// chatgpt.go ChatGPT 的 `conversations.json` 形状（§5.16「树形互通」）。
 //
 // 选它而不自定一套，是因为它已经是事实标准：Open WebUI 一类见到 `mapping` 会自己转换。
 // 我们的树本来就是树（parent 单值、children 有序），映射不需要降级成 DAG，所以这一档只丢

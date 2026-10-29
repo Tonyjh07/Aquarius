@@ -112,7 +112,7 @@ type GenerateRequest struct {
 	Budget   TokenBudget
 }
 
-// ModelInfo 模型能力与单价声明；不支持的模态遇之明确报因（DESIGN §4.2）。
+// ModelInfo 模型能力与单价声明；不支持的模态遇之明确报因（§4.2）。
 type ModelInfo struct {
 	Name string
 	// Caps 能力位（D173）；服务端 /models 不报模态，零值 = 未知（调用方按自己的
@@ -126,7 +126,7 @@ type ModelInfo struct {
 	CostIn, CostOutUSD float64
 }
 
-// ModelCaps 模型能力位（D173）：三项独立声明，缺省按协议给（DESIGN §8）。
+// ModelCaps 模型能力位（D173）：三项独立声明，缺省按协议给（§8）。
 //   - Tools：能否接收 function calling 的工具清单并按 schema 发起调用
 //   - Reasoning：能否接受原生思考参数（reasoning_effort / enable_thinking）并产出思维链
 //   - Vision：能否接收图片输入（image 内容块）

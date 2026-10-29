@@ -27,7 +27,7 @@ import (
 	"unicode"
 )
 
-// commentIDPattern 注释里的内部标记：决策编号、内部步骤标记、DESIGN 节号、里程碑。
+// commentIDPattern 注释里的内部标记：决策编号、内部步骤标记、设计文档节号、里程碑。
 var commentIDPattern = regexp.MustCompile(
 	`\bD\d{2,}\b` + // D22 / D145
 		`|\bS\d{1,2}(?:-[0-9]+)?[①-⑳]?[a-z]?` + // S6 / S11-7① / S4d

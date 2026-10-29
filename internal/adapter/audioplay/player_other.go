@@ -13,7 +13,7 @@ import (
 
 var _ port.AudioPlayer = (*Player)(nil)
 
-// Play 非 Windows 一律报因（DESIGN §12：语音播报首发仅 Windows）。
+// Play 非 Windows 一律报因（§12：语音播报首发仅 Windows）。
 func (p *Player) Play(context.Context, conversation.BlobRef, io.Reader) error {
 	return errors.New("audio: 当前平台不支持语音播放（仅 Windows）")
 }

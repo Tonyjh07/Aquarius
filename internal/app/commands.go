@@ -12,7 +12,7 @@ import (
 //
 // 此前元数据在 commandCatalog、执行在 execCommand 的 switch 里，两处维护同一条事实，
 // 靠一个从 switch 反推分支名的测试兜底。现在 /help、补全浮层与分派读同一张表：
-// 加一条命令 = 这里加一行（DESIGN §7.3）。
+// 加一条命令 = 这里加一行（§7.3）。
 type commandEntry struct {
 	// Names 命令名集合（不含斜杠；首名为主名，其余为别名——quit/exit 一条两名）。
 	Names []string

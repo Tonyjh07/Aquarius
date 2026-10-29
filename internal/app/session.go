@@ -39,7 +39,7 @@ type SessionDeps struct {
 	Perms PermissionSettings
 	// Confirmer 逐次确认（/rm 二次确认等）；nil 时破坏性命令报"未配置确认器"。
 	Confirmer port.Confirmer
-	// Jobs 后台任务管理（/jobs，DESIGN §7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
+	// Jobs 后台任务管理（/jobs，§7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
 	Jobs port.JobManager
 	// Watches 观察器（/watch，D190）；nil 时 /watch 报"未配置观察器"。
 	Watches port.WatchManager
@@ -59,7 +59,7 @@ type SessionDeps struct {
 	// Memories 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
 	// nil 时 /memory 报"未配置编辑器"。
 	Memories MemoryOpener
-	// Plugins 插件管理面（/plugin，DESIGN §7.3 / M4）；nil 时 /plugin 报"未配置"。
+	// Plugins 插件管理面（/plugin，§7.3 / M4）；nil 时 /plugin 报"未配置"。
 	Plugins PluginAdmin
 	// Models 模型服务读侧（/model 无参展示，D32）；nil 时报"未配置模型服务"。
 	Models ModelCatalog
@@ -71,20 +71,20 @@ type SessionDeps struct {
 	Prober ModelProbe
 	// Thinking 思考面写回（/think 与 /effort，D34）；nil 时两条命令的有参形态报错。
 	Thinking ThinkingSettings
-	// Exporter 会话导出面（/export，DESIGN §5.16）；nil 时 /export 报「本构建未接入导出面」。
+	// Exporter 会话导出面（/export，§5.16）；nil 时 /export 报「本构建未接入导出面」。
 	Exporter port.SessionExporter
-	// Importer 会话导入面（/import，DESIGN §5.16）；nil 时 /import 报未接入。
+	// Importer 会话导入面（/import，§5.16）；nil 时 /import 报未接入。
 	Importer port.SessionImporter
 	// ExportsDir 导出缺省落点（`--path` 不给时用；装配根给 `<profile>/exports`）。
 	// 空 = 必须显式 --path，否则报未配置。
 	ExportsDir string
 }
 
-// CommandHandler 动态命令处理器（DESIGN §6.1 扩展点 #4 / §7.3 MCP prompts）：
+// CommandHandler 动态命令处理器（§6.1 扩展点 #4 / §7.3 MCP prompts）：
 // 装配根随插件启停注册 `/mcp:<server>:<prompt>` 等动态命令；静态命令优先命中。
 type CommandHandler func(ctx context.Context, args []string) (string, error)
 
-// Session 当前会话 + 命令处理（DESIGN §7.3；M0 起启用 /new /list /title /compact /
+// Session 当前会话 + 命令处理（§7.3；M0 起启用 /new /list /title /compact /
 // /permission /quit，M1 启用树交互 /goto /edit /branch /rm，M3 启用 /jobs，
 // M4 启用 /plugin 与动态 /mcp: 命令、/model，思考控制 /think /effort 随 D34 启用）。
 // 命令的文本输出经返回值交给装配根渲染，轮次过程输出走 Presenter——app 不直接接触 IO。
@@ -398,7 +398,7 @@ func (s *Session) ingestAndRun(ctx context.Context, raw port.RawInput) (string, 
 	return "", s.runTurn(ctx)
 }
 
-// ingest 分派 RawInput：Kind=text 直通（DESIGN §7.2 文本摄取），
+// ingest 分派 RawInput：Kind=text 直通（§7.2 文本摄取），
 // 其余按注册序找首个 Accepts 的 Ingestor（file/clipboard 由装配注入，mic 见 D27）。
 func (s *Session) ingest(ctx context.Context, raw port.RawInput) ([]conversation.Part, string, error) {
 	if raw.Kind == "text" {
@@ -458,7 +458,7 @@ func (s *Session) cancelWatchersFor(id conversation.ID) {
 	}
 }
 
-// execCommand 命令分发（DESIGN §7.3）：静态注册表 → 动态命令 → 未知。
+// execCommand 命令分发（§7.3）：静态注册表 → 动态命令 → 未知。
 func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, error) {
 	if e, ok := commandIndex[cmd.Name]; ok {
 		return e.Run(s, ctx, cmd)

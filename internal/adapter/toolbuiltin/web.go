@@ -10,7 +10,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 联网工具（DESIGN §4.3/§5.14，D197）：web_search 与 web_fetch。
+// 联网工具（§4.3/§5.14，D197）：web_search 与 web_fetch。
 //
 // 两件工具都只读、无副作用，所以 Risk=Safe（与 file_read 同口径：读网络不该被逐次
 // 确认打断）。真正决定「能不能联网」的是配置里有没有可用的提供商：没配就明确报因，

@@ -8,7 +8,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// collectBlobRefs 扫描全部会话树收集附件引用（启动 GC 的 keep 集，DESIGN §4.2）。
+// collectBlobRefs 扫描全部会话树收集附件引用（启动 GC 的 keep 集，§4.2）。
 // 任一会话加载失败即返回错误——调用方据此跳过 GC（引用集不完整时清扫会误删活附件）。
 func collectBlobRefs(ctx context.Context, store port.ConversationStore) (map[string]bool, error) {
 	sums, err := store.List(ctx)

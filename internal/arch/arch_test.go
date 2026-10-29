@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// layer 分层标签（DESIGN §2/§5 的依赖方向：adapter → port ← app → domain）。
+// layer 分层标签（§2/§5 的依赖方向：adapter → port ← app → domain）。
 //
 // 只按目录前缀判定，不按包名——包名可能重名，目录路径唯一。
 type layer string
