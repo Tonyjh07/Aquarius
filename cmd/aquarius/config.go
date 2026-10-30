@@ -51,6 +51,9 @@ type fileConfig struct {
 	Tools toolsConfig `json:"tools"`
 	// Skills 技能目录（D201）：额外技能根（绝对路径、按声明序，先命中者胜）。
 	Skills skillsConfig `json:"skills"`
+	// Characters 角色卡投影开关（§5.17/D247）：只影响**之后新建**的角色会话；已开始的会话
+	// 人格与尾部指令已快照/落盘（`apply_post_history` 例外，它决定发不发，立即生效）。
+	Characters charactersConfig `json:"characters"`
 	// MCPServers MCP server 声明（D30/D31，M4 启用；校验见 plugin.MCPServer.Validate）。
 	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
 	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。
@@ -64,6 +67,40 @@ type promptsConfig struct {
 	Modules map[string]promptModule `json:"modules"`
 	// Persona 人格 = 有序顶层引用列表；空 = 默认 ["@default","@env"]。
 	Persona []string `json:"persona"`
+	// UserName 用户希望在卡里被怎么称呼 = `{{user}}` / `<USER>` 的取值（§7.7）；空则
+	// 取 "User"。只在装配/投影时替换，不进领域。
+	UserName string `json:"user_name,omitempty"`
+}
+
+// charactersConfig 角色卡投影开关（§5.17/D247）。两个默认开的开关用 *bool：键缺失 = 开
+// （老配置没有这一段时不该把常驻世界书与示例一并关掉）。
+type charactersConfig struct {
+	// PreferSystemPrompt 替换态：卡的 system_prompt 顶掉用户人格引用（`@env` 保留）。
+	// 默认关——用户的人格承载着他自己的规则与安全约束，静默替换会造成真实损失。
+	PreferSystemPrompt bool `json:"prefer_system_prompt,omitempty"`
+	// ApplyPostHistory 每轮把会话 Tail（卡的 post_history_instructions）追加在历史之后；
+	// 键缺失 = 发（默认开）。
+	ApplyPostHistory *bool `json:"apply_post_history,omitempty"`
+	// InjectConstantBook 常驻世界书条目进 `@char.book`；键缺失 = 注入（默认开）。
+	InjectConstantBook *bool `json:"inject_constant_book,omitempty"`
+	// InjectExamples mes_example 落注入节点；键缺失 = 注入（默认开）。
+	InjectExamples *bool `json:"inject_examples,omitempty"`
+}
+
+// characterOptions 角色卡投影开关（§5.17/D247）：把 config 三态（键缺失/显式）解析成
+// app.CharacterOptions。三处默认开的开关键缺失即视为开。
+func (c *fileConfig) characterOptions() app.CharacterOptions {
+	on := func(p *bool) bool { return p == nil || *p }
+	return app.CharacterOptions{
+		PreferSystemPrompt: c.Characters.PreferSystemPrompt,
+		InjectConstantBook: on(c.Characters.InjectConstantBook),
+		InjectExamples:     on(c.Characters.InjectExamples),
+	}
+}
+
+// applyPostHistory 会话尾部指令开关（§5.17/D247）：键缺失 = 发。
+func (c *fileConfig) applyPostHistory() bool {
+	return c.Characters.ApplyPostHistory == nil || *c.Characters.ApplyPostHistory
 }
 
 // promptModule 模块树节点（D144）。
@@ -76,7 +113,7 @@ type promptModule struct {
 
 // promptSpec 构造人格装配规格（D144/S7）：模块树 + 有序顶层引用 + 兼容单串（system_prompt → @default 正文）。
 func (c *fileConfig) promptSpec() app.PromptSpec {
-	spec := app.PromptSpec{Persona: c.Prompts.Persona, Legacy: c.SystemPrompt}
+	spec := app.PromptSpec{Persona: c.Prompts.Persona, Legacy: c.SystemPrompt, UserName: c.Prompts.UserName}
 	if len(c.Prompts.Modules) > 0 {
 		spec.Modules = make(map[string]app.PromptModule, len(c.Prompts.Modules))
 		for name, m := range c.Prompts.Modules {
@@ -1143,7 +1180,9 @@ const defaultConfig = `{
   "skills": { "dirs": [] },
   "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
-  "prompts": { "modules": {}, "persona": [] },
+  "prompts": { "modules": {}, "persona": [], "user_name": "User" },
+  "characters": { "prefer_system_prompt": false, "apply_post_history": true,
+                  "inject_constant_book": true, "inject_examples": true },
   "input": { "language": "auto" },
   "audio": { "asr": {}, "tts": {} },
   "output": { "tts": false, "notify": true },

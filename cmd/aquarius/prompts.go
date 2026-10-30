@@ -103,7 +103,7 @@ func validatePromptModules(mods []uigui.PromptModuleView) error {
 // previewPrompts 组合预览（S7/D144）：设置窗当前（未保存）模块树 + 引用 → 最终 system 文本。
 // 与新建会话同口径（环境事实取本次装配、日期取当天），仅纯计算、不落盘。
 func (w *wiring) previewPrompts(mods []uigui.PromptModuleView, persona []string, legacy string) string {
-	spec := app.PromptSpec{Persona: cleanRefs(persona), Legacy: legacy}
+	spec := app.PromptSpec{Persona: cleanRefs(persona), Legacy: legacy, UserName: w.cfg.Prompts.UserName}
 	if len(mods) > 0 {
 		spec.Modules = make(map[string]app.PromptModule, len(mods))
 		for _, m := range mods {

@@ -327,6 +327,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Think: w.cfg.Model.Think, ReasoningEffort: w.cfg.Model.ReasoningEffort, // D34 初值
 			EchoThinking: w.cfg.Model.EchoThinking == nil || *w.cfg.Model.EchoThinking, // D42：键缺失 = 回传
 			Caps:         w.cfg.Model.chainCaps(),                                      // D173：降级链取与
+			// §5.17/D247：会话尾部指令（卡的 post_history_instructions）是否随每轮装配发出。
+			ApplyPostHistory: w.cfg.applyPostHistory(),
 			// D204：采样参数走原子快照——整链缺省 + 逐模型覆盖；设置窗保存后换掉整份即热生效。
 			Sampling:    w.cfg.Model.Sampling.toSampling(),
 			SamplingFor: w.samplingFor,
@@ -368,6 +370,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		ExportsDir:     filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
 		Characters:     w.characters,                                                              // 角色卡只读清单（/character，§5.17）
 		CharacterAdmin: w.characters,                                                              // §5.17：/character import|remove
+		CharacterOpts:  w.cfg.characterOptions(),                                                  // §5.17：三处默认开的投影开关由 config 解析
 	})
 	if err != nil {
 		if ctx.Err() != nil {
