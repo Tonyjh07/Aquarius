@@ -28,6 +28,7 @@ type textSettings struct {
 	Audio        audioConfig   `json:"audio"` // D179：识别与合成
 	Web          webConfig     `json:"web"`   // D200：联网搜索与抓取
 	Limits       limitsConfig  `json:"limits"`
+	Backup       backupConfig  `json:"backup"` // D254：会话树备份代数
 	// Model 采样参数（D204）：只读 model.sampling 这一段——provider/模型编辑走
 	// ProviderManager，不在这里。
 	Model struct {
@@ -70,6 +71,7 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		CompactThreshold: raw.Limits.CompactThreshold,
 		ToolOutputChars:  raw.Limits.ToolOutputChars,
 		ToolTimeoutSec:   raw.Limits.ToolTimeoutSec,
+		BackupKeep:       raw.Backup.Keep,
 		Hotkey:           raw.UI.Hotkey,
 		Theme:            raw.UI.Theme,
 		Scale:            raw.UI.Scale,
@@ -302,6 +304,15 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 		if p.ToolTimeoutSec > 0 {
 			limSec["tool_timeout_sec"] = p.ToolTimeoutSec
+		}
+		// 备份轮转（D254）：留空（0）= 保持 config 现值，只在填了值时才写键。
+		if p.BackupKeep > 0 {
+			bSec, _ := generic["backup"].(map[string]any)
+			if bSec == nil {
+				bSec = map[string]any{}
+				generic["backup"] = bSec
+			}
+			bSec["keep"] = p.BackupKeep
 		}
 		// 人格（恒写：清空 = 合法语义「内置默认」，D20）。
 		generic["system_prompt"] = p.SystemPrompt

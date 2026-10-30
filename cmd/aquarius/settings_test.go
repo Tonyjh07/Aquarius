@@ -96,7 +96,12 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 		Notify: true, TTS: false,
 		MaxTurns: 12, MaxContextTokens: 32000, CompactThreshold: 0.8,
 		ToolOutputChars: 15000, ToolTimeoutSec: 90,
+		BackupKeep:   7,
 		SystemPrompt: "你是个简洁的助手",
+	}
+	// 模板里 backup.keep = 3：未写前读回默认值。
+	if s := readTextSettings(cfgPath); s.BackupKeep != 3 {
+		t.Fatalf("模板 backup.keep 读回 = %d, want 3", s.BackupKeep)
 	}
 	if err := persistSettingsTextKeys(cfgPath, p); err != nil {
 		t.Fatalf("persistSettingsTextKeys: %v", err)
@@ -108,6 +113,9 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 	if !s.Notify || s.TTS || s.MaxTurns != 12 || s.MaxContextTokens != 32000 ||
 		s.CompactThreshold != 0.8 || s.ToolOutputChars != 15000 || s.ToolTimeoutSec != 90 {
 		t.Errorf("输出/限额读回 = %+v", s)
+	}
+	if s.BackupKeep != 7 {
+		t.Errorf("backup.keep 读回 = %d, want 7", s.BackupKeep)
 	}
 	if s.SystemPrompt != "你是个简洁的助手" {
 		t.Errorf("system_prompt = %q", s.SystemPrompt)

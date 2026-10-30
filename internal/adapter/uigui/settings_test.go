@@ -110,6 +110,54 @@ func TestSettingsUnattendedRow(t *testing.T) {
 	}
 }
 
+// TestSettingsBackupKeepRow D254：备份代数行在「常规」页「存储」区；快照回填后
+// 保存进 patch，越界（<1 或 >20）就地拦下不落盘。
+func TestSettingsBackupKeepRow(t *testing.T) {
+	var got SettingsPatch
+	snap := fillSnapshot()
+	snap.BackupKeep = 5
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return snap },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { got = p; return nil, nil },
+	})
+	f := newSettingsForm(u)
+	rows := f.pageRows(pageGeneral)
+	found := false
+	for _, r := range rows {
+		if r.kind == rowBackupKeep {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("「常规」页缺 rowBackupKeep")
+	}
+	if f.backupKeep.Text() != "5" {
+		t.Fatalf("快照 BackupKeep=5 应回填表单，得到 %q", f.backupKeep.Text())
+	}
+	// 改值保存 → patch 带上新值。
+	f.backupKeep.SetText("7")
+	u.saveSettings(f)
+	if got.BackupKeep != 7 {
+		t.Fatalf("保存后 patch.BackupKeep = %d, want 7", got.BackupKeep)
+	}
+	// 留空 → 不改（0）。
+	f.backupKeep.SetText("")
+	u.saveSettings(f)
+	if got.BackupKeep != 0 {
+		t.Fatalf("留空保存 patch.BackupKeep = %d, want 0（不改）", got.BackupKeep)
+	}
+	// 越界拒写。
+	for _, bad := range []string{"0", "21", "x"} {
+		f.backupKeep.SetText(bad)
+		got = SettingsPatch{}
+		u.saveSettings(f)
+		if !f.err || got.BackupKeep != 0 {
+			t.Errorf("备份代数 %q 应就地拦下，err=%v patch=%+v", bad, f.err, got)
+		}
+	}
+}
+
 // TestNewSettingsFormReadOnly 无任何回调 = 只读占位（空表 + 保存报错）。
 func TestNewSettingsFormReadOnly(t *testing.T) {
 	u := newHeadless(t, Options{})

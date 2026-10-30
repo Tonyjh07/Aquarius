@@ -39,7 +39,9 @@ type SettingsPatch struct {
 	CompactThreshold float64
 	ToolOutputChars  int
 	ToolTimeoutSec   int
-	SystemPrompt     string
+	// BackupKeep 会话树保留的备份代数（D254）：0 = 不改（表单留空 = 保持现值）。
+	BackupKeep   int
+	SystemPrompt string
 	// PromptModules/PromptPersona 人格模块树与有序引用（S7/D144，恒全量写：空 = 清空）。
 	// 空名模块行被跳过；模块名校验（非空/不以 @ 开头/不重复）在写回侧拦截。
 	PromptModules []PromptModuleView
@@ -154,6 +156,12 @@ const (
 	// SettingsCompactMin/Max 自动压缩阈值（占上下文窗口的比例）。
 	SettingsCompactMin = 0.0
 	SettingsCompactMax = 1.0
+
+	// SettingsBackupKeepMin/Max 会话树保留的备份代数（D254）。至少一代，否则等于没有
+	// 兜底；上限 20 是「够用但不至于把磁盘塞满」的粗界。配置侧只在 `< 1` 时回落默认 3，
+	// 手改 config 写更大的值仍按原值走——这里限的是界面入口。
+	SettingsBackupKeepMin = 1
+	SettingsBackupKeepMax = 20
 
 	// SettingsSearchCountMin/Max 一次联网搜索取几条结果。
 	SettingsSearchCountMin = 1

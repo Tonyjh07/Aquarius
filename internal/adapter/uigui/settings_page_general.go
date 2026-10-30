@@ -31,6 +31,7 @@ func (generalPage) Rows(f *settingsForm) []rowDesc {
 		{kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
 		{kind: rowFontSize}, {kind: rowWinSize},
 		sec("输出"), {kind: rowNotify}, {kind: rowTTS},
+		sec("存储"), {kind: rowBackupKeep},
 	}
 }
 
@@ -83,6 +84,9 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 		return paperCheckBox(th, &f.notify, "桌面通知（回答完成时）")(gtx), true
 	case rowTTS:
 		return paperCheckBox(th, &f.tts, "语音播报（回答完成后自动播放）")(gtx), true
+	case rowBackupKeep:
+		return fieldRow(gtx, th, "备份代数", editorBox(th, &f.backupKeep, fmt.Sprintf("会话树保留的备份份数 %d–%d（空 = 默认 3）",
+			port.SettingsBackupKeepMin, port.SettingsBackupKeepMax))), true
 	}
 	return layout.Dimensions{}, false
 }

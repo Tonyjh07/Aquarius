@@ -61,6 +61,7 @@ const (
 	rowWinSize
 	rowNotify
 	rowTTS
+	rowBackupKeep // D254：会话树保留的备份代数（「常规」页存储区）
 	rowMaxTurns
 	rowMaxCtx
 	rowCompact

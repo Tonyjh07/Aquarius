@@ -216,13 +216,15 @@ type SettingsSnapshot struct {
 	CompactThreshold float64
 	ToolOutputChars  int
 	ToolTimeoutSec   int
-	SystemPrompt     string              // 默认人格（= 内置模块 @default 正文；空 = 内置默认）
-	PromptModules    []PromptModuleView  // 人格模块树（config prompts.modules，按名排序）
-	PromptPersona    []string            // 人格有序引用（config prompts.persona）
-	Builtins         []BuiltinModuleView // 内置只读模块（展示 + 引用，S7/D144）
-	MCPServers       []string            // 只读：声明名清单（sorted）
-	Plugins          []string            // 只读：声明名清单（sorted）
-	RawJSON          string              // config.json 原文（高级页编辑起点）
+	// BackupKeep 会话树保留的备份代数（D254；0 = 缺省 3，与 config 键缺失同口径）。
+	BackupKeep    int
+	SystemPrompt  string              // 默认人格（= 内置模块 @default 正文；空 = 内置默认）
+	PromptModules []PromptModuleView  // 人格模块树（config prompts.modules，按名排序）
+	PromptPersona []string            // 人格有序引用（config prompts.persona）
+	Builtins      []BuiltinModuleView // 内置只读模块（展示 + 引用，S7/D144）
+	MCPServers    []string            // 只读：声明名清单（sorted）
+	Plugins       []string            // 只读：声明名清单（sorted）
+	RawJSON       string              // config.json 原文（高级页编辑起点）
 
 	// 语音（D179）：ASR/TTS 各自引用 model.providers 里的一个 name；空 = 该能力未配置。
 	// 只借 base_url 与密钥池，不继承 kind/能力位、不进降级链。
@@ -430,14 +432,15 @@ type settingsForm struct {
 	welcomeOpen widget.Clickable
 
 	// 全量分组页控件（S4/D110③）：输出 / 限制 / 提示词 / 高级 raw JSON。
-	notify    widget.Bool
-	tts       widget.Bool
-	maxTurns  widget.Editor
-	maxCtx    widget.Editor
-	compact   widget.Editor
-	toolChars widget.Editor
-	toolTo    widget.Editor
-	rawCfg    widget.Editor // 多行：config.json 原文（Q10）
+	notify     widget.Bool
+	tts        widget.Bool
+	maxTurns   widget.Editor
+	maxCtx     widget.Editor
+	compact    widget.Editor
+	toolChars  widget.Editor
+	toolTo     widget.Editor
+	backupKeep widget.Editor // D254：会话树保留的备份代数（「常规」页存储区）
+	rawCfg     widget.Editor // 多行：config.json 原文（Q10）
 
 	// 人格模块树（S7/D144，S7b/D145 独立成页）：编辑区实现收在 promptEditor 里，
 	// 与历史窗遮罩的「默认模板」页签共用（D154）——字段仍按原名提升，设置页侧
@@ -782,7 +785,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	if s.FontSize == 0 {
 		s.FontSize = fontSpBase
 	}
-	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo,
+	for _, ed := range []*widget.Editor{&f.maxTurns, &f.maxCtx, &f.compact, &f.toolChars, &f.toolTo, &f.backupKeep,
 		&f.asrModel, &f.asrPath, &f.asrBaseURL, &f.asrKey, &f.ttsModel, &f.ttsBaseURL, &f.ttsKey,
 		&f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags,
 		&f.webCount, &f.webMaxChars, &f.webProxy, &f.webUA, &f.webTimeout,
@@ -826,6 +829,9 @@ func newSettingsForm(u *UI) *settingsForm {
 	}
 	if s.ToolTimeoutSec > 0 {
 		f.toolTo.SetText(strconv.Itoa(s.ToolTimeoutSec))
+	}
+	if s.BackupKeep > 0 {
+		f.backupKeep.SetText(strconv.Itoa(s.BackupKeep))
 	}
 	f.sysPrompt.SetText(s.SystemPrompt)
 	f.rawCfg.SetText(s.RawJSON)

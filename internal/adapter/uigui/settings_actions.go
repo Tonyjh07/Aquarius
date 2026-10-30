@@ -108,6 +108,7 @@ func nextSnapshot(p SettingsPatch, snap SettingsSnapshot) SettingsSnapshot {
 		MaxTurns: p.MaxTurns, MaxContextTokens: p.MaxContextTokens,
 		CompactThreshold: p.CompactThreshold, ToolOutputChars: p.ToolOutputChars,
 		ToolTimeoutSec: p.ToolTimeoutSec, SystemPrompt: p.SystemPrompt,
+		BackupKeep:    p.BackupKeep,
 		PromptModules: p.PromptModules, PromptPersona: p.PromptPersona,
 		Builtins: snap.Builtins, RawJSON: p.RawJSON,
 		Fallback: p.Fallback, FallbackNote: snap.FallbackNote,
@@ -225,6 +226,16 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 			return SettingsPatch{}, errors.New("工具超时须为非负整数")
 		}
 		p.ToolTimeoutSec = n
+	}
+	// D254：会话树保留的备份代数。空 = 保持现值；填了必须是表内区间（写回侧按同一组
+	// 常量给出提示，界面先拦一道，用户不必等落盘才知道越界）。
+	if v := strings.TrimSpace(f.backupKeep.Text()); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < port.SettingsBackupKeepMin || n > port.SettingsBackupKeepMax {
+			return SettingsPatch{}, fmt.Errorf("备份代数须为 %d–%d 的整数",
+				port.SettingsBackupKeepMin, port.SettingsBackupKeepMax)
+		}
+		p.BackupKeep = n
 	}
 	p.SystemPrompt = f.sysPrompt.Text()
 	// S7/D144：人格模块树 + 有序引用（恒全量写；空名行在 views 里跳过、cmd 侧校验模块名）。
