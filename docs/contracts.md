@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-30 @ b053696 -->
+<!-- docs-sync: 2026-10-30 @ 5155c5c -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1479,8 +1479,9 @@ characters/<slug>/
   `Trust=host` 与 `/skill` 同口径：卡是你亲手导入并选择开始的，它写的是要遵循的指令，
   不是待围栏的外部数据。
 - **首条消息**：`first_mes` 非空时作为 assistant 节点接在示例之后，Head 落在它上面；
-  序号参数选 `alternate_greetings[n-1]`，缺省或 `1` = `first_mes`，超出条数报错并列出可选数。
-  **都不为空才落节点**，空开场不造假消息。`group_only_greetings` 只保存（本版没有群聊）。
+  序号参数按**合并列表** `[first_mes, ...alternate_greetings]` 读，**n 从 1 起**——缺省或 `1`
+  = `first_mes`，`2` 起依次是备用问候；超出条数报错并列出可选数。
+  **选中那条为空就不落节点**，空开场不造假消息。`group_only_greetings` 只保存（本版没有群聊）。
   开场白明显偏长时（估算超 `compact_threshold` 的 1/4），回执给一行 token 估算与
   「会占掉首轮可用的上下文」的提醒——不截断、不改写卡。
 - **尾部指令**：`post_history_instructions` 存进会话的 `Tail` 字段（§4.1），每轮请求在

@@ -60,6 +60,10 @@ type Config struct {
 	// 由适配器映射 reasoning_content；false = 装配时过滤。config `model.echo_thinking` 键缺失 =
 	// 回传、显式 false 才关（缺省解析在装配根完成，app 只见 bool）。
 	EchoThinking bool
+	// ApplyPostHistory 会话尾部指令开关（§5.17）：会话 Tail 非空且本开关打开时，每轮在装配
+	// 末尾追加一条 system。config `characters.apply_post_history` 键缺失 = 开、显式 false 才关
+	// （缺省解析在装配根完成，app 只见 bool）。Tail 是元数据不进树，这里只决定发不发。
+	ApplyPostHistory bool
 	// Caps 当前整条降级链的**生效能力**（D173：装配根按各模型 caps 三项取与）。
 	// 三项各自决定请求里发不发：Tools = 是否列工具清单；Reasoning = 是否发思考参数；
 	// Vision = 图片是直接给模型看，还是降级为文字占位并写明原因。
@@ -409,6 +413,15 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	// 单列一条 system 会让"首条 system 是人格"的既有口径分叉，故并进同一条正文。
 	if len(msgs) > 0 && msgs[0].Role == port.PromptSystem {
 		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: "\n\n" + untrustedDataNote})
+	}
+	// 会话尾部指令（§5.17/D243）：角色卡的 post_history_instructions 展开稿存在会话元数据
+	// `Tail` 里，开关打开且非空时在**历史之后**追加一条 system。它是元数据不是节点——不进
+	// 水位、不进树，只影响本次请求；位置放在最末是它的语义（"历史之后"）所要求的。
+	if a.cfg.ApplyPostHistory && strings.TrimSpace(c.Tail) != "" {
+		msgs = append(msgs, port.PromptMessage{
+			Role:    port.PromptSystem,
+			Content: []port.PromptPart{{Kind: port.PromptText, Text: c.Tail}},
+		})
 	}
 
 	req := port.GenerateRequest{

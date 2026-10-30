@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -21,8 +23,12 @@ type CharacterOptions struct {
 // 全是**展开后的终稿**：人格与示例、尾部指令在这里做完宏替换，之后落树 / 落盘即定型，
 // 改 `prompts.user_name` 不再影响它（快照口径）。卡被删后这些文本照常可用。
 type CharacterStart struct {
-	Slug     string   // 会话记住的角色 slug（Conversation.Character）
-	Persona  string   // 展开后的人格（含 @char.* 模块），落 persona 首节点
+	Slug    string // 会话记住的角色 slug（Conversation.Character）
+	Persona string // 展开后的人格（含 @char.* 模块），落 persona 首节点
+	// Openings 开场白合并列表（§5.17）：[0] 恒为 first_mes，其后依次是 alternate_greetings。
+	// 序号 n（**1 起**）取 Openings[n-1]——契约把它写成 `alternate_greetings[n-1]`，按字面
+	// 读会跳过第 0 条 `first_mes`，故按合并列表定序（缺省与 `1` 都是 first_mes）。
+	Openings []string
 	Examples string   // mes_example 展开稿（空 = 不注入；开关关时恒空）
 	Tail     string   // post_history_instructions 展开稿（空 = 无尾部指令）
 	Missing  []string // 人格缺失模块名（供装配根记 warning，不静默）
@@ -55,7 +61,28 @@ func (c *PersonaComposer) ProjectCharacter(card port.CharacterCard, opts Charact
 		start.Examples = composer.ExpandCardText(card.Profile.Examples)
 	}
 	start.Tail = composer.ExpandCardText(card.Profile.PostHistory)
+	start.Openings = make([]string, 0, 1+len(card.Profile.Greetings))
+	start.Openings = append(start.Openings, composer.ExpandCardText(card.Profile.FirstMes))
+	for _, g := range card.Profile.Greetings {
+		start.Openings = append(start.Openings, composer.ExpandCardText(g))
+	}
 	return start
+}
+
+// Greeting 取开场白（§5.17）：序号 **1 起**，n <= 1 视作 first_mes，n > 1 取对应备用问候；
+// 越界报错并列出可选条数（不静默回落到第一条——用户点名的那条没取到却在别处开始说话，
+// 比直接报错更难发现）。空开场返回空串，由调用方决定不落节点。
+func (cs CharacterStart) Greeting(n int) (string, error) {
+	if len(cs.Openings) == 0 {
+		return "", nil
+	}
+	if n <= 1 {
+		n = 1
+	}
+	if n > len(cs.Openings) {
+		return "", fmt.Errorf("开场白序号 %d 越界：这张卡共有 %d 条可选", n, len(cs.Openings))
+	}
+	return cs.Openings[n-1], nil
 }
 
 // ExpandCardText 展开一段卡文本里的宏（§7.7）：示例、尾部指令、开场白都走这里，

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -157,4 +158,39 @@ func mustCompose(t *testing.T, c *PersonaComposer) string {
 		t.Fatalf("missing = %v", missing)
 	}
 	return got
+}
+
+// TestProjectCharacterOpenings 开场白合并列表：先 first_mes、后备用问候（保位、含空串），
+// 宏在投影时逐个展开。
+func TestProjectCharacterOpenings(t *testing.T) {
+	card := testCard()
+	card.Profile.Greetings = []string{"Alt {{char}}", ""}
+	base := NewPersonaComposer(PromptSpec{UserName: "Sam"}, RuntimeEnv{}, fixedNow)
+	start := base.ProjectCharacter(card, CharacterOptions{})
+
+	want := []string{"Hi Sam, I am Aria.", "Alt Aria", ""}
+	if !reflect.DeepEqual(start.Openings, want) {
+		t.Fatalf("openings = %#v, want %#v", start.Openings, want)
+	}
+}
+
+// TestCharacterStartGreeting 序号 1 起：<=1 = first_mes，n>1 = 备用问候；越界报因并列出可选数；
+// 无开场白时返回空串（由调用方决定不落节点）。
+func TestCharacterStartGreeting(t *testing.T) {
+	cs := CharacterStart{Openings: []string{"first", "alt1", "alt2"}}
+	for _, tc := range []struct {
+		n    int
+		want string
+	}{{0, "first"}, {1, "first"}, {2, "alt1"}, {3, "alt2"}} {
+		got, err := cs.Greeting(tc.n)
+		if err != nil || got != tc.want {
+			t.Fatalf("Greeting(%d) = (%q, %v), want %q", tc.n, got, err, tc.want)
+		}
+	}
+	if _, err := cs.Greeting(4); err == nil || !strings.Contains(err.Error(), "3") {
+		t.Fatalf("Greeting(4) err = %v, want 越界并列出 3 条", err)
+	}
+	if got, err := (CharacterStart{}).Greeting(1); err != nil || got != "" {
+		t.Fatalf("Greeting on no openings = (%q, %v), want empty", got, err)
+	}
 }
