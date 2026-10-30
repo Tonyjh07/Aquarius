@@ -125,38 +125,65 @@ func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, erro
 }
 
 // execRmconv 实现 /rmconv：删除**整个会话**（区别于 /rm 删消息节点，D120⑥；二次确认）。
-// 删当前会话时自动继任（最近更新的其余会话；一个不剩则新建空会话）并清屏回放（D75/D81 口径）。
+//
+// 支持多个 ID（`/rmconv <id> [<id>…]`，各支持唯一前缀）：**先全部解析、再一次确认、最后才动库**
+// ——有一个解析不出就一个都不删（半截删除比不删更坏：用户不知道哪几个还在）。删到当前会话时
+// 自动继任（最近更新的其余会话、且跳过本批要删的；一个不剩则新建空会话）并清屏回放（D75/D81）。
+// 单个 ID 的用法与回执与今天逐字相同。
 func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, error) {
-	if len(cmd.Args) != 1 {
-		return "", errors.New("用法: /rmconv <id前缀>（删除整个会话，二次确认；/list 查看可用会话）")
+	if len(cmd.Args) == 0 {
+		return "", errors.New("用法: /rmconv <id前缀> [<id前缀>…]（删除整个会话，二次确认；/list 查看可用会话）")
 	}
-	id, err := s.resolveConversation(ctx, cmd.Args[0])
-	if err != nil {
-		return "", err
+	targets := make([]conversation.ID, 0, len(cmd.Args))
+	seen := make(map[conversation.ID]bool, len(cmd.Args))
+	for _, raw := range cmd.Args {
+		id, err := s.resolveConversation(ctx, raw)
+		if err != nil {
+			return "", err
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		targets = append(targets, id)
 	}
 	if s.confirmer == nil {
 		return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rmconv 需要二次确认")
 	}
-	title := s.conversationTitle(ctx, id)
-	prompt := fmt.Sprintf("确认删除会话 %s（%s）？整会话连同其消息树一并删除，此操作不可恢复", id, title)
+	titles := make([]string, len(targets))
+	for i, id := range targets {
+		titles[i] = s.conversationTitle(ctx, id)
+	}
+	prompt := rmconvPrompt(targets, titles)
 	ans, err := s.confirmer.Confirm(ctx, prompt)
 	if err != nil {
 		return "", fmt.Errorf("session: 确认删除会话: %w", err)
 	}
 	if !ans.Allow {
-		return fmt.Sprintf("已取消删除会话 %s", id), nil
+		if len(targets) == 1 {
+			return fmt.Sprintf("已取消删除会话 %s", targets[0]), nil
+		}
+		return fmt.Sprintf("已取消删除 %d 个会话", len(targets)), nil
 	}
-	deletingCurrent := id == s.cur.ID
-	if err := s.store.Remove(ctx, id); err != nil {
-		return "", fmt.Errorf("session: 删除会话: %w", err)
+	deletingCurrent := false
+	for _, id := range targets {
+		if id == s.cur.ID {
+			deletingCurrent = true
+		}
+		if err := s.store.Remove(ctx, id); err != nil {
+			return "", fmt.Errorf("session: 删除会话: %w", err)
+		}
 	}
 	if !deletingCurrent {
-		return fmt.Sprintf("已删除会话 %s（%s）", id, title), nil
+		if len(targets) == 1 {
+			return fmt.Sprintf("已删除会话 %s（%s）", targets[0], titles[0]), nil
+		}
+		return fmt.Sprintf("已删除 %d 个会话：%s", len(targets), targetTitles(titles)), nil
 	}
 	// 删的是当前会话：先撤销它的后台任务观察者（D167），再继任。
 	s.cancelWatchersFor(s.cur.ID)
 	// 删的是当前会话：继任 + 落盘 + 清屏回放（转写区恒与 Head 一致，D75/D81）。
-	next, err := s.successorConversation(ctx, id)
+	next, err := s.successorConversation(ctx, seen)
 	if err != nil {
 		return "", err
 	}
@@ -170,7 +197,38 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 	if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已删除当前会话 %s（%s），已切换到 %s", id, title, s.cur.ID), nil
+	if len(targets) == 1 {
+		return fmt.Sprintf("已删除当前会话 %s（%s），已切换到 %s", targets[0], titles[0], s.cur.ID), nil
+	}
+	return fmt.Sprintf("已删除 %d 个会话（含当前会话）：%s；已切换到 %s",
+		len(targets), targetTitles(titles), s.cur.ID), nil
+}
+
+// rmconvPrompt 删除确认句：单个与多批两种说法，多批时列标题让用户确认删的是哪几个。
+func rmconvPrompt(ids []conversation.ID, titles []string) string {
+	if len(ids) == 1 {
+		return fmt.Sprintf("确认删除会话 %s（%s）？整会话连同其消息树一并删除，此操作不可恢复", ids[0], titles[0])
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "确认删除 %d 个会话？整会话连同其消息树一并删除，此操作不可恢复：", len(ids))
+	for i, id := range ids {
+		fmt.Fprintf(&b, "\n- %s（%s）", id, titles[i])
+	}
+	return b.String()
+}
+
+// targetTitles 批量删除回执里的标题清单（最多列 3 个，其余记数）。
+func targetTitles(titles []string) string {
+	return summarizeTitles(titles)
+}
+
+// summarizeTitles 标题清单的用户面写法（最多列 3 个，其余记数）。
+func summarizeTitles(titles []string) string {
+	const show = 3
+	if len(titles) <= show {
+		return strings.Join(titles, "、")
+	}
+	return fmt.Sprintf("%s 等 %d 个", strings.Join(titles[:show], "、"), len(titles))
 }
 
 // conversationTitle 取会话标题（当前会话直读内存；否则查列表，取不到回退 ID）。
@@ -190,13 +248,16 @@ func (s *Session) conversationTitle(ctx context.Context, id conversation.ID) str
 
 // successorConversation 当前会话被删后的继任会话：最近更新的其余会话（List 按时间降序）；
 // 一个不剩则新建空会话（persona 首节点）。
-func (s *Session) successorConversation(ctx context.Context, removed conversation.ID) (*conversation.Conversation, error) {
+//
+// skip 是本批要删的其余会话：不跳过它们就会继任到一个刚被删掉的 ID（下一次保存又把它写回来，
+// 还带着旧内容），用户看到的是「删了又回来」。
+func (s *Session) successorConversation(ctx context.Context, skip map[conversation.ID]bool) (*conversation.Conversation, error) {
 	sums, err := s.store.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("session: 列出会话: %w", err)
 	}
 	for _, sm := range sums {
-		if sm.ID == removed {
+		if skip[sm.ID] {
 			continue
 		}
 		c, err := s.store.Load(ctx, sm.ID)

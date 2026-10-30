@@ -314,6 +314,48 @@ func TestExchangeMultiSessionThroughCommands(t *testing.T) {
 	}
 }
 
+// TestExchangeBatchRmconvThroughCommands 批量删除走命令面：确认一次、删掉那两个、当前会话还在。
+func TestExchangeBatchRmconvThroughCommands(t *testing.T) {
+	s, _, _ := newExchangeE2ESession(t)
+	ctx := context.Background()
+	var ids []conversation.ID
+	for _, title := range []string{"甲", "乙", "丙"} {
+		if len(ids) > 0 {
+			if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{
+				Name: "new", Args: []string{title},
+			}}); err != nil {
+				t.Fatalf("/new: %v", err)
+			}
+		} else {
+			s.Current().Title = title
+		}
+		if err := s.store.Save(ctx, s.Current()); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+		ids = append(ids, s.Current().ID)
+	}
+	cur := s.Current().ID // 「丙」
+	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{
+		Name: "rmconv", Args: []string{string(ids[0]), string(ids[1])},
+	}})
+	if err != nil {
+		t.Fatalf("rmconv: %v", err)
+	}
+	if !strings.Contains(out, "已删除 2 个会话") {
+		t.Fatalf("回执 = %q", out)
+	}
+	sums, err := s.store.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sums) != 1 || sums[0].ID != cur {
+		t.Fatalf("库 = %+v, want 仅 %s（当前会话）", sums, cur)
+	}
+	if s.Current().ID != cur {
+		t.Fatalf("当前会话 = %s, want %s", s.Current().ID, cur)
+	}
+}
+
 // canonTree 树的规范形：抹掉 ID，只留「结构和内容如何相连」。
 //
 // 为什么不能直接比快照：导入按口径重分配全部节点 ID（源 ID 只用来建边），两张快照的 ID
