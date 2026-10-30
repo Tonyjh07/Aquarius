@@ -14,22 +14,32 @@ type rawCard struct {
 
 // rawCardData 一张卡的字段（data 对象，或没有 data 时的顶层兜底）。
 type rawCardData struct {
-	Name                    string   `json:"name"`
-	Nickname                string   `json:"nickname"`
-	Description             string   `json:"description"`
-	Personality             string   `json:"personality"`
-	Scenario                string   `json:"scenario"`
-	FirstMes                string   `json:"first_mes"`
-	MesExample              string   `json:"mes_example"`
-	SystemPrompt            string   `json:"system_prompt"`
-	PostHistoryInstructions string   `json:"post_history_instructions"`
-	AlternateGreetings      []string `json:"alternate_greetings"`
-	CharacterBook           *rawBook `json:"character_book"`
-	Creator                 string   `json:"creator"`
-	CharacterVersion        string   `json:"character_version"`
-	CreatorNotes            string   `json:"creator_notes"`
-	Tags                    []string `json:"tags"`
-	GroupOnlyGreetings      []string `json:"group_only_greetings"`
+	Name                    string     `json:"name"`
+	Nickname                string     `json:"nickname"`
+	Description             string     `json:"description"`
+	Personality             string     `json:"personality"`
+	Scenario                string     `json:"scenario"`
+	FirstMes                string     `json:"first_mes"`
+	MesExample              string     `json:"mes_example"`
+	SystemPrompt            string     `json:"system_prompt"`
+	PostHistoryInstructions string     `json:"post_history_instructions"`
+	AlternateGreetings      []string   `json:"alternate_greetings"`
+	CharacterBook           *rawBook   `json:"character_book"`
+	Creator                 string     `json:"creator"`
+	CharacterVersion        string     `json:"character_version"`
+	CreatorNotes            string     `json:"creator_notes"`
+	Tags                    []string   `json:"tags"`
+	GroupOnlyGreetings      []string   `json:"group_only_greetings"`
+	Assets                  []rawAsset `json:"assets"`
+}
+
+// rawAsset V3 的资产条目（`.charx` 的图标来源）：`type=icon` 的是头像，
+// `uri` 三种写法见 §5.17。
+type rawAsset struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+	URI  string `json:"uri"`
+	Ext  string `json:"ext"`
 }
 
 // rawBook 卡的 `character_book`（只取 entries；keys / scan_depth 一类本版不用于检索）。

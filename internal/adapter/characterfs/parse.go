@@ -44,12 +44,13 @@ var (
 //
 // 只读、不猜：RawJSON 是原卡 JSON 逐字节（落 card.json 用，未知键一个不删）；
 // Avatar 是头像的**来源像素**（PNG 卡 = 卡文件本身，落盘时去 tEXt 重编码的活另做；
-// JSON 卡 = nil）。
+// JSON 卡 = nil）；Archive 是 `.charx` 的原压缩包整份（落 source.charx 用，其余卡为 nil）。
 type ParsedCard struct {
 	Info    port.CharacterInfo
 	Profile port.CharacterProfile
 	RawJSON []byte
 	Avatar  []byte
+	Archive []byte
 }
 
 // parseCard 按容器识别并解析一张卡（§5.17）：PNG tEXt / 纯 JSON / .charx。
@@ -64,7 +65,7 @@ func parseCard(sourceName string, data []byte) (ParsedCard, error) {
 		if err != nil {
 			return ParsedCard{}, err
 		}
-		out, err := parseCardJSON(raw)
+		out, _, err := parseCardJSON(raw)
 		if err != nil {
 			return ParsedCard{}, err
 		}
@@ -73,9 +74,9 @@ func parseCard(sourceName string, data []byte) (ParsedCard, error) {
 		out.Avatar = data // 原图；落盘时重编码只留像素（§5.17）
 		return out, nil
 	case bytes.HasPrefix(data, zipMagic):
-		return ParsedCard{}, errors.New("这是压缩包形式的角色卡（.charx），本版暂未接入")
+		return parseCharxCard(data)
 	case strings.EqualFold(filepath.Ext(sourceName), ".json") && looksLikeJSONObject(data):
-		out, err := parseCardJSON(data)
+		out, _, err := parseCardJSON(data)
 		if err != nil {
 			return ParsedCard{}, err
 		}
@@ -83,7 +84,7 @@ func parseCard(sourceName string, data []byte) (ParsedCard, error) {
 		out.RawJSON = data
 		return out, nil
 	default:
-		return ParsedCard{}, errors.New("认不出这是哪种角色卡（支持 PNG 与 JSON）")
+		return ParsedCard{}, errors.New("认不出这是哪种角色卡（支持 PNG、JSON 与 .charx）")
 	}
 }
 
@@ -94,14 +95,15 @@ func looksLikeJSONObject(data []byte) bool {
 
 // parseCardJSON 解析一份卡 JSON（§5.17）：有 `data` 就只读 `data`，否则按顶层尽力读
 // （纯 V1 拒绝）。字段分列读入，不预拼——拼法与取舍归 app 的人格模块树。
-func parseCardJSON(raw []byte) (ParsedCard, error) {
+// 同时返回生效的 data 对象（`.charx` 解析图标资产要用）。
+func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
 	clean := bytes.TrimPrefix(raw, bom) // 进场先去 BOM：json.Unmarshal 拒它
 	if len(clean) > maxCardJSONBytes {
-		return ParsedCard{}, fmt.Errorf("卡 JSON 解码后 %d MiB 超过 %d MiB 上限", len(clean)>>20, maxCardJSONBytes>>20)
+		return ParsedCard{}, rawCardData{}, fmt.Errorf("卡 JSON 解码后 %d MiB 超过 %d MiB 上限", len(clean)>>20, maxCardJSONBytes>>20)
 	}
 	var rc rawCard
 	if err := json.Unmarshal(clean, &rc); err != nil {
-		return ParsedCard{}, fmt.Errorf("卡 JSON 解析失败: %w", err)
+		return ParsedCard{}, rawCardData{}, fmt.Errorf("卡 JSON 解析失败: %w", err)
 	}
 
 	var (
@@ -119,10 +121,10 @@ func parseCardJSON(raw []byte) (ParsedCard, error) {
 	} else {
 		var top rawCardData
 		if err := json.Unmarshal(clean, &top); err != nil {
-			return ParsedCard{}, fmt.Errorf("卡 JSON 顶层解析失败: %w", err)
+			return ParsedCard{}, rawCardData{}, fmt.Errorf("卡 JSON 顶层解析失败: %w", err)
 		}
 		if isPureV1(top) {
-			return ParsedCard{}, errors.New("这是旧版规范（V1）的角色卡，本版不读；请导出为 V2 / V3 后再导入")
+			return ParsedCard{}, rawCardData{}, errors.New("这是旧版规范（V1）的角色卡，本版不读；请导出为 V2 / V3 后再导入")
 		}
 		if spec == "" {
 			spec = "v2"
@@ -136,7 +138,7 @@ func parseCardJSON(raw []byte) (ParsedCard, error) {
 
 	name := strings.TrimSpace(d.Name)
 	if name == "" {
-		return ParsedCard{}, errors.New("卡里没有 name（角色名必填，不从文件名猜）")
+		return ParsedCard{}, rawCardData{}, errors.New("卡里没有 name（角色名必填，不从文件名猜）")
 	}
 	display := strings.TrimSpace(d.Nickname)
 	if display == "" {
@@ -144,13 +146,13 @@ func parseCardJSON(raw []byte) (ParsedCard, error) {
 	}
 
 	if err := checkProjectedFields(d); err != nil {
-		return ParsedCard{}, err
+		return ParsedCard{}, rawCardData{}, err
 	}
 
 	entries := make([]port.BookEntry, 0, bookLen(d))
 	for _, e := range d.bookEntries() {
 		if len(e.Content) > maxFieldBytes {
-			return ParsedCard{}, fmt.Errorf("世界书条目 %q 的正文超过 %d KiB 上限", e.Comment, maxFieldBytes>>10)
+			return ParsedCard{}, rawCardData{}, fmt.Errorf("世界书条目 %q 的正文超过 %d KiB 上限", e.Comment, maxFieldBytes>>10)
 		}
 		entries = append(entries, port.BookEntry{
 			Comment:  e.Comment,
@@ -182,7 +184,7 @@ func parseCardJSON(raw []byte) (ParsedCard, error) {
 		Greetings:    d.AlternateGreetings,
 		PostHistory:  d.PostHistoryInstructions,
 	}
-	return ParsedCard{Info: info, Profile: profile}, nil
+	return ParsedCard{Info: info, Profile: profile}, d, nil
 }
 
 // checkProjectedFields 七个投影字段各自的 256 KiB 上限 + Tail 的 8000 字符上限（§5.17）。

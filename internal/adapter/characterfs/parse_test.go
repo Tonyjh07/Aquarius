@@ -242,13 +242,6 @@ func TestParseCardLimits(t *testing.T) {
 	}
 }
 
-// TestParseCardCharxNotYet 压缩包形式的卡在纯 JSON/PNG 这一步报「暂未接入」（下一步接上）。
-func TestParseCardCharxNotYet(t *testing.T) {
-	if _, err := parseCard("card.charx", append(append([]byte{}, zipMagic...), 0, 0, 0, 0)); err == nil || !strings.Contains(err.Error(), ".charx") {
-		t.Fatalf("err = %v, want a .charx note", err)
-	}
-}
-
 // TestParseCardUnrecognized 认不出的容器明确报因，不瞎猜。
 func TestParseCardUnrecognized(t *testing.T) {
 	if _, err := parseCard("card.bin", []byte("hello")); err == nil || !strings.Contains(err.Error(), "认不出") {
