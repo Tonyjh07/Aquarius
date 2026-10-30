@@ -74,12 +74,18 @@ const ReservedModulePrefix = reservedModulePrefix
 // builtinEnvRefs 内置 @env 组模块的子模块顺序（@env.date 恒出，其余按事实是否有值）。
 var builtinEnvRefs = []string{"@env.platform", "@env.terminal", "@env.sandbox", "@env.timeout", "@env.date"}
 
-// BuiltinModuleNames 内置模块引用名（含 `@` 前缀，展示序：@default → @env → 各子模块）。
-// 设置窗用它列出「可引用的内置模块」（S7/D144）；返回副本，调用方可安全改写。
+// builtinCharRefs 内置 @char 组模块的子模块（§4.1/D247）：卡的角色描述三件套 + 身份行；
+// `@char.system` / `@char.book` 是平级叶子，不在组里（可以单独作顶层引用）。
+var builtinCharRefs = []string{"@char.identity", "@char.description", "@char.personality", "@char.scenario", "@char.system", "@char.book"}
+
+// BuiltinModuleNames 内置模块引用名（含 `@` 前缀，展示序：@default → @env → 各子模块 →
+// @char → 各子模块）。设置窗用它列出「可引用的内置模块」（S7/D144）；返回副本，调用方可安全改写。
 func BuiltinModuleNames() []string {
-	out := make([]string, 0, 2+len(builtinEnvRefs))
+	out := make([]string, 0, 3+len(builtinEnvRefs)+len(builtinCharRefs))
 	out = append(out, "@default", "@env")
-	return append(out, builtinEnvRefs...)
+	out = append(out, builtinEnvRefs...)
+	out = append(out, "@char")
+	return append(out, builtinCharRefs...)
 }
 
 // PersonaComposer 人格组合器（D144/S7）：绑定模块规格 + 内置模块动态取值（环境事实 + 时钟）。
@@ -102,12 +108,166 @@ func NewPersonaComposer(spec PromptSpec, env RuntimeEnv, now func() time.Time) *
 // 展开 = 深度优先：组自身 Text 在前、子模块换行接续（子模块间以换行连接）；顶层引用间以空行
 // 连接；**空组不出**（有 children 但子模块全部无文本 ⇒ 整组含组文本一并不输出）；整段全空 ⇒
 // 回落内置默认人格。环引用按递归栈截断。
+//
+// 带卡时按「先算 U → 展开卡文本 → 按完整引用组装」的顺序（§5.17/§7.7/D247）。
+// 不带卡时走原来那条路，输出与引入角色卡之前逐字节相同。
 func (c *PersonaComposer) Compose() (string, []string) {
-	mods := c.modules()
-	refs := c.spec.Persona
-	if len(refs) == 0 {
-		refs = DefaultPersonaRefs
+	base := c.baseModules()
+	userRefs := c.spec.Persona
+	if len(userRefs) == 0 {
+		userRefs = DefaultPersonaRefs
 	}
+	mods := base
+	u := ""
+	if cp := c.spec.Character; cp != nil {
+		u = composeText(base, userOnlyRefs(userRefs))
+	}
+	mods = mergeModules(base, c.charModules(c.spec.Character, u))
+	text, missing := composeRefs(mods, c.effectiveRefs(userRefs))
+	if strings.TrimSpace(text) == "" {
+		text = defaultSystem
+	}
+	return text, missing
+}
+
+// userOnlyRefs 算 U 用的顶层引用：去掉 @env 与 @char.*（§5.17/D247）——U 只是用户写下的
+// 人格正文，运行环境与会话提示都不算在内（替换模式下它要给 `{{original}}` 填值）。
+func userOnlyRefs(refs []string) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		if isEnvRef(r) || isCharRef(r) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// isEnvRef / isCharRef 判定一个引用是否落在内置 @env / @char 名下（含其子模块）。
+func isEnvRef(r string) bool  { return r == "@env" || strings.HasPrefix(r, "@env.") }
+func isCharRef(r string) bool { return r == "@char" || strings.HasPrefix(r, "@char.") }
+
+// effectiveRefs 组装时真正展开的顶层引用（§5.17/D247）：
+//   - 不带卡：用户引用原样（空则 DefaultPersonaRefs），不追加 —— 输出与改动前逐字节相同；
+//   - 默认模式：用户引用原样保留，再追加 `["@char.book","@char","@char.system"]`（去重）；
+//   - 替换模式（prefer_system_prompt 且 S 非空）：用户人格引用整体让位，`@env` 保留。
+func (c *PersonaComposer) effectiveRefs(userRefs []string) []string {
+	cp := c.spec.Character
+	if cp == nil {
+		return userRefs
+	}
+	if replacementMode(cp) {
+		return []string{"@char.system", "@char.book", "@char", "@env"}
+	}
+	out := append([]string(nil), userRefs...)
+	for _, r := range []string{"@char.book", "@char", "@char.system"} {
+		if !containsString(out, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// replacementMode 是否走替换态：开关打开且卡里确有 system_prompt（S 为空则等同默认）。
+func replacementMode(cp *CharacterPrompt) bool {
+	return cp.PreferSystem && strings.TrimSpace(cp.System) != ""
+}
+
+// charModules 六个 `@char.*` 条件内置模块（§5.17/D247）。
+//
+// 每个字段是**独立叶子**而不是组头文本：`@char` 组只做容器，「空组不出」会连带吞掉组头，
+// 三件全空的卡连 `You are <display>.` 都出不来（语料里确有两张）。字段为空即空模块、
+// 不计缺失——与 `@env.*` 同一做法，于是 `@char.*` 可以永久留在 prompts.persona 里而不改变
+// 普通会话的输出。卡文本在此做宏替换（落树即终稿，与 persona 快照同口径）。
+func (c *PersonaComposer) charModules(cp *CharacterPrompt, u string) map[string]PromptModule {
+	mods := map[string]PromptModule{
+		"@char":             {Children: []string{"@char.identity", "@char.description", "@char.personality", "@char.scenario"}},
+		"@char.identity":    {},
+		"@char.description": {},
+		"@char.personality": {},
+		"@char.scenario":    {},
+		"@char.system":      {},
+		"@char.book":        {},
+	}
+	if cp == nil {
+		return mods // 非角色会话：六个模块全空、不计缺失
+	}
+	char := cp.Display
+	user := c.spec.UserName
+	date := c.now().Format("2006-01-02")
+	orig := ""
+	if replacementMode(cp) {
+		orig = u
+	}
+	mods["@char.identity"] = leafModule(expandMacros("You are "+char+".", char, user, date, ""))
+	mods["@char.description"] = leafModule(labelled("Description", expandMacros(cp.Description, char, user, date, "")))
+	mods["@char.personality"] = leafModule(labelled("Personality", expandMacros(cp.Personality, char, user, date, "")))
+	mods["@char.scenario"] = leafModule(labelled("Scenario", expandMacros(cp.Scenario, char, user, date, "")))
+	mods["@char.system"] = leafModule(expandMacros(cp.System, char, user, date, orig))
+	mods["@char.book"] = leafModule(constantBookText(cp, char, user, date))
+	return mods
+}
+
+// constantBookText 常驻世界书正文（§5.17/D247）：只取 constant 且 enabled 的条目，按卡内
+// 顺序拼成 `## <标题>` 小节。开关关掉即返回空——那时条目仍保留在目录里，只是不进上下文。
+func constantBookText(cp *CharacterPrompt, char, user, date string) string {
+	if !cp.InjectBook {
+		return ""
+	}
+	var sections []string
+	for _, e := range cp.BookEntries {
+		if !e.Constant || !e.Enabled {
+			continue
+		}
+		body := strings.TrimSpace(expandMacros(e.Content, char, user, date, ""))
+		if body == "" {
+			continue
+		}
+		if title := strings.TrimSpace(expandMacros(e.Comment, char, user, date, "")); title != "" {
+			sections = append(sections, "## "+title+"\n"+body)
+		} else {
+			sections = append(sections, body)
+		}
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+// labelled 给卡的一个字段加一行标签（`Description:` 这类），空正文返回空串（模块不出）。
+func labelled(label, body string) string {
+	b := strings.TrimSpace(body)
+	if b == "" {
+		return ""
+	}
+	return label + ":\n" + b
+}
+
+// leafModule 叶子模块（仅文本）。
+func leafModule(text string) PromptModule { return PromptModule{Text: text} }
+
+// mergeModules 合并两份模块表（后者覆盖前者同名——内置由调用处先放，卡模块在其后）。
+func mergeModules(a, b map[string]PromptModule) map[string]PromptModule {
+	out := make(map[string]PromptModule, len(a)+len(b))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
+
+// containsString 引用去重（追加卡模块时用）。
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// composeRefs 按顶层引用展开并连接（空引用跳过、缺失名登记）；调用方负责整段为空时的回落。
+func composeRefs(mods map[string]PromptModule, refs []string) (string, []string) {
 	var missing []string
 	parts := make([]string, 0, len(refs))
 	for _, ref := range refs {
@@ -115,15 +275,18 @@ func (c *PersonaComposer) Compose() (string, []string) {
 			parts = append(parts, t)
 		}
 	}
-	text := strings.Join(parts, "\n\n")
-	if strings.TrimSpace(text) == "" {
-		text = defaultSystem
-	}
-	return text, missing
+	return strings.Join(parts, "\n\n"), missing
 }
 
-// modules 合并内置模块与用户模块（用户模块名以 `@` 开头的被忽略——保留给内置）。
-func (c *PersonaComposer) modules() map[string]PromptModule {
+// composeText 展开并连接，丢弃缺失名单（算 U 用：缺失已由完整组装那次登记，不重复报）。
+func composeText(mods map[string]PromptModule, refs []string) string {
+	text, _ := composeRefs(mods, refs)
+	return text
+}
+
+// baseModules 合并内置模块与用户模块（用户模块名以 `@` 开头的被忽略——保留给内置）。
+// 卡模块不在这里（要等 U 算完），由 charModules 另行合并。
+func (c *PersonaComposer) baseModules() map[string]PromptModule {
 	mods := map[string]PromptModule{
 		"@default": {Text: defaultPersonaText(c.spec.Legacy)},
 		"@env":     {Text: "Runtime environment:", Children: builtinEnvRefs},

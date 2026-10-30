@@ -19,13 +19,20 @@ import (
 // builtinModuleLabels 内置模块中文说明（展示用；名集以 app.BuiltinModuleNames 为准——契约，
 // 缺 label 回退引用名）。
 var builtinModuleLabels = map[string]string{
-	"@default":      "默认人格（system_prompt 或内置默认）",
-	"@env":          "运行环境信息（组）",
-	"@env.platform": "└ 操作系统 / 架构",
-	"@env.terminal": "└ 界面形态与 TERM",
-	"@env.sandbox":  "└ 特权沙盒目录（绝对路径时）",
-	"@env.timeout":  "└ 工具缺省调用超时",
-	"@env.date":     "└ 会话创建当天日期",
+	"@default":          "默认人格（system_prompt 或内置默认）",
+	"@env":              "运行环境信息（组）",
+	"@env.platform":     "└ 操作系统 / 架构",
+	"@env.terminal":     "└ 界面形态与 TERM",
+	"@env.sandbox":      "└ 特权沙盒目录（绝对路径时）",
+	"@env.timeout":      "└ 工具缺省调用超时",
+	"@env.date":         "└ 会话创建当天日期",
+	"@char":             "角色卡信息（组；仅角色会话生效）",
+	"@char.identity":    "└ 身份行（你是 <角色名>）",
+	"@char.description": "└ 角色描述",
+	"@char.personality": "└ 性格",
+	"@char.scenario":    "└ 情境",
+	"@char.system":      "└ 卡的 system_prompt（可选替换主提示）",
+	"@char.book":        "└ 常驻世界书条目",
 }
 
 // builtinModuleViews 内置只读模块展示清单（设置窗展示 + 一键引用）。
