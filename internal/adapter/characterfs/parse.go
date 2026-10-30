@@ -171,6 +171,8 @@ func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
 		Spec:        spec,
 		Greetings:   len(d.AlternateGreetings),
 		BookEntries: len(entries),
+		Assets:      len(d.Assets),
+		Unsupported: detectUnsupported(clean),
 		Warnings:    warnings,
 	}
 	profile := port.CharacterProfile{
@@ -208,6 +210,66 @@ func checkProjectedFields(d rawCardData) error {
 		return fmt.Errorf("post_history_instructions 有 %d 字符，超过 %d 字符上限", n, maxTailRunes)
 	}
 	return nil
+}
+
+// unsupportedKeys 本版不执行的机制键（固定顺序，规范键名）。检测扫四个 scope（§5.17）：
+// 顶层、`data`、顶层 `extensions`、`data.extensions`。
+var unsupportedKeys = []string{"regex_scripts", "tavern_helper", "tavernweave", "depth_prompt"}
+
+// detectUnsupported 检测卡里带了哪些本版不执行的机制（§5.17 导入回执的第三类）。
+// 只判「键存在且非空」，不解析内容——这些机制一律不运行，内容多寡不影响结论。
+func detectUnsupported(clean []byte) []string {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(clean, &top); err != nil {
+		return nil
+	}
+	scopes := []map[string]json.RawMessage{top}
+	if ext := jsonObject(top["extensions"]); ext != nil {
+		scopes = append(scopes, ext)
+	}
+	if data := jsonObject(top["data"]); data != nil {
+		scopes = append(scopes, data)
+		if ext := jsonObject(data["extensions"]); ext != nil {
+			scopes = append(scopes, ext)
+		}
+	}
+	var out []string
+	for _, key := range unsupportedKeys {
+		for _, sc := range scopes {
+			if raw, ok := sc[key]; ok && !emptyJSON(raw) {
+				out = append(out, key)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// jsonObject 把一段 JSON 原始值当对象读；不是对象（含 null）时返回 nil。
+func jsonObject(raw json.RawMessage) map[string]json.RawMessage {
+	if emptyJSON(raw) {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+// emptyJSON 把 `null` / `{}` / `[]` / `""` / 空白视作空值（§5.17：空的机制键不算「带了机制」）。
+func emptyJSON(raw json.RawMessage) bool {
+	t := bytes.TrimSpace(raw)
+	switch {
+	case len(t) == 0:
+		return true
+	case bytes.Equal(t, []byte("null")), bytes.Equal(t, []byte("{}")), bytes.Equal(t, []byte("[]")):
+		return true
+	case t[0] == '"': // 空字符串
+		var s string
+		return json.Unmarshal(t, &s) == nil && s == ""
+	}
+	return false
 }
 
 // bookEntries 世界书条目（缺 character_book 时为空）。

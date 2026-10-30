@@ -325,7 +325,9 @@ type metaJSON struct {
 	Spec        string    `json:"spec"`
 	Greetings   int       `json:"greetings"`
 	BookEntries int       `json:"book_entries"`
+	Assets      int       `json:"assets,omitempty"`
 	Avatar      string    `json:"avatar,omitempty"`
+	Unsupported []string  `json:"unsupported,omitempty"`
 	ImportedAt  time.Time `json:"imported_at"`
 	Warnings    []string  `json:"warnings,omitempty"`
 }
@@ -335,8 +337,9 @@ func writeMeta(dir string, info port.CharacterInfo, avatar string) error {
 		Slug: info.Slug, Name: info.Name, Display: info.Display,
 		Creator: info.Creator, Version: info.Version, Tags: info.Tags,
 		Source: info.Source, Spec: info.Spec, Greetings: info.Greetings,
-		BookEntries: info.BookEntries, Avatar: avatar,
-		ImportedAt: info.ImportedAt, Warnings: info.Warnings,
+		BookEntries: info.BookEntries, Assets: info.Assets, Avatar: avatar,
+		Unsupported: info.Unsupported,
+		ImportedAt:  info.ImportedAt, Warnings: info.Warnings,
 	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -368,8 +371,9 @@ func (m metaJSON) toInfo(dirName string) port.CharacterInfo {
 	return port.CharacterInfo{
 		Slug: slug, Name: m.Name, Display: m.Display, Creator: m.Creator,
 		Version: m.Version, Tags: m.Tags, Source: m.Source, Spec: m.Spec,
-		Greetings: m.Greetings, BookEntries: m.BookEntries,
-		ImportedAt: m.ImportedAt, Warnings: m.Warnings, HasAvatar: m.Avatar != "",
+		Greetings: m.Greetings, BookEntries: m.BookEntries, Assets: m.Assets,
+		Unsupported: m.Unsupported,
+		ImportedAt:  m.ImportedAt, Warnings: m.Warnings, HasAvatar: m.Avatar != "",
 	}
 }
 

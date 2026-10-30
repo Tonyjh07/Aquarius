@@ -249,6 +249,50 @@ func TestParseCardUnrecognized(t *testing.T) {
 	}
 }
 
+// TestParseCardUnsupportedMechanisms 导入回执第三类：卡里带了哪些本版不执行的机制（§5.17）。
+// 扫顶层 / data / 顶层 extensions / data.extensions 四个 scope，四个键各报一次、按固定顺序；
+// 空值（null / {} / [] / ""）不算「带了机制」。
+func TestParseCardUnsupportedMechanisms(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{"depth_in_data", `{"spec_version":"2.0","data":{"name":"N","depth_prompt":{"depth":4,"prompt":"x"}}}`, []string{"depth_prompt"}},
+		{"regex_top", `{"spec_version":"2.0","regex_scripts":[{"find":"a"}],"data":{"name":"N"}}`, []string{"regex_scripts"}},
+		{"helper_top_ext", `{"spec_version":"2.0","extensions":{"tavern_helper":{"x":1}},"data":{"name":"N"}}`, []string{"tavern_helper"}},
+		{"weave_data_ext", `{"spec_version":"2.0","data":{"name":"N","extensions":{"tavernweave":{"y":1}}}}`, []string{"tavernweave"}},
+		{"empty_null", `{"spec_version":"2.0","regex_scripts":null,"data":{"name":"N","depth_prompt":{}}}`, nil},
+		{"empty_arr_str", `{"spec_version":"2.0","data":{"name":"N","regex_scripts":[],"depth_prompt":""}}`, nil},
+		{"all_fixed_order", `{"spec_version":"2.0","regex_scripts":[1],"extensions":{"tavern_helper":{"x":1},"tavernweave":{"y":1}},"data":{"name":"N","depth_prompt":"d"}}`, []string{"regex_scripts", "tavern_helper", "tavernweave", "depth_prompt"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := parseCard("card.json", []byte(c.raw))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if strings.Join(out.Info.Unsupported, ",") != strings.Join(c.want, ",") {
+				t.Fatalf("unsupported = %v, want %v", out.Info.Unsupported, c.want)
+			}
+		})
+	}
+}
+
+// TestParseCardAssetsCount 资产数按生效 data.assets 计（图标之外的表情 / 背景 / 语音也计入，不内联）。
+func TestParseCardAssetsCount(t *testing.T) {
+	out, err := parseCard("card.json", []byte(`{"spec":"chara_card_v3","spec_version":"3.0","data":{"name":"N","assets":[
+		{"type":"icon","name":"main","uri":"embeded://a.png"},
+		{"type":"expression","name":"smile","uri":"embeded://b.png"}
+	]}}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if out.Info.Assets != 2 {
+		t.Fatalf("assets = %d, want 2", out.Info.Assets)
+	}
+}
+
 // cardJSONWith 拼一张最小 V2 卡 JSON，data 用给定字段。
 func cardJSONWith(data map[string]any) []byte {
 	b, _ := json.Marshal(map[string]any{"spec_version": "2.0", "data": data})

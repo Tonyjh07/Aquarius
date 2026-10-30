@@ -25,9 +25,13 @@ type CharacterInfo struct {
 	Spec        string    // v2 | v3 | v3+（高于 3.x 的未知版本；V1 不读）
 	Greetings   int       // alternate_greetings 条数
 	BookEntries int       // character_book 条目数（保留；按开关决定是否注入常驻条目）
+	Assets      int       // 卡里 data.assets 条数（图标之外的表情 / 背景 / 语音等；保留未用）
 	HasAvatar   bool      // 有 avatar.png
 	ImportedAt  time.Time // 导入时间（meta.json 缺时为零值）
-	Warnings    []string  // 跳过 / 不认识的东西（用户面；不进模型上下文）
+	// Unsupported 本版不执行的机制（按固定顺序，规范键名）：regex_scripts / tavern_helper /
+	// tavernweave / depth_prompt。这些键随原卡留档、本版一律不运行；导入回执据此如实告知。
+	Unsupported []string
+	Warnings    []string // 跳过 / 不认识的东西（用户面；不进模型上下文）
 }
 
 // CharacterProfile 一张卡投影成会话所需的文本（原文，未做宏替换、未做拼装）。
