@@ -74,15 +74,15 @@
 | `github.com/yosida95/uritemplate/v3` | `v3.0.2` | BSD-3-Clause | `Copyright (C) 2016, Kohei YOSHIDA <https://yosida95.com/>. All rights reserved.` |
 | `github.com/yuin/goldmark` | `v1.8.2` | MIT | `Copyright (c) 2019 Yusuke Inuzuka` |
 | `github.com/yuin/goldmark-emoji` | `v1.0.6` | MIT | `Copyright (c) 2020 Yusuke Inuzuka` |
-| `golang.org/x/crypto` | `v0.57.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
+| `golang.org/x/crypto` | `v0.58.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/exp/shiny` | `v0.0.0-20250408133849-7e4ce0ab07d0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/image` | `v0.45.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
-| `golang.org/x/net` | `v0.60.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
+| `golang.org/x/net` | `v0.62.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/oauth2` | `v0.35.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
-| `golang.org/x/sync` | `v0.23.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
+| `golang.org/x/sync` | `v0.24.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/sys` | `v0.49.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
-| `golang.org/x/term` | `v0.46.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
-| `golang.org/x/text` | `v0.42.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
+| `golang.org/x/term` | `v0.47.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
+| `golang.org/x/text` | `v0.43.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/time` | `v0.15.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `gopkg.in/yaml.v3` | `v3.0.1` | MIT / Apache-2.0（混合，见 §3.7） | `Copyright (c) 2006-2010 Kirill Simonov` / `Copyright (c) 2011-2019 Canonical Ltd` |
 
