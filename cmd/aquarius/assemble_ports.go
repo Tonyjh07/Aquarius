@@ -43,7 +43,7 @@ import (
 // assembleStores 装配存储面：会话树 store、附件库与记忆（全部落 profile 内，
 // D110 修订①）。
 func (w *wiring) assembleStores(ctx context.Context) error {
-	store, err := storejson.New(filepath.Join(w.profileDir, "conversations"))
+	store, err := storejson.NewWithKeep(filepath.Join(w.profileDir, "conversations"), w.cfg.backupKeep())
 	if err != nil {
 		return err
 	}

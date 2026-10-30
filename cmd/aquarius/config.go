@@ -54,10 +54,26 @@ type fileConfig struct {
 	// Characters 角色卡投影开关（§5.17/D247）：只影响**之后新建**的角色会话；已开始的会话
 	// 人格与尾部指令已快照/落盘（`apply_post_history` 例外，它决定发不发，立即生效）。
 	Characters charactersConfig `json:"characters"`
+	// Backup 备份轮转（D254）：会话树写盘前保留的 .bak 代数，用户可自定义。
+	Backup backupConfig `json:"backup"`
 	// MCPServers MCP server 声明（D30/D31，M4 启用；校验见 plugin.MCPServer.Validate）。
 	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
 	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。
 	Plugins map[string]plugin.State `json:"plugins"`
+}
+
+// backupConfig 备份轮转（D254）。只有会话树用它——密钥库按自己的单代口径走。
+type backupConfig struct {
+	// Keep 保留的备份代数（>=1）；0/省略 = 默认 3。
+	Keep int `json:"keep,omitempty"`
+}
+
+// backupKeep 有效的备份代数：键缺失或 <=0 一律归默认 3（D254）。
+func (c *fileConfig) backupKeep() int {
+	if c.Backup.Keep < 1 {
+		return 3
+	}
+	return c.Backup.Keep
 }
 
 // promptsConfig 人格模块树（S7/D144）：模块树 + 有序顶层引用。
@@ -1187,6 +1203,7 @@ const defaultConfig = `{
   "prompts": { "modules": {}, "persona": [], "user_name": "User" },
   "characters": { "prefer_system_prompt": false, "apply_post_history": true,
                   "inject_constant_book": true, "inject_examples": true },
+  "backup": { "keep": 3 },
   "input": { "language": "auto" },
   "audio": { "asr": {}, "tts": {} },
   "output": { "tts": false, "notify": true },

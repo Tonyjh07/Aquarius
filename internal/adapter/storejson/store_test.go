@@ -216,6 +216,187 @@ func TestLoadFallsBackToBakWhenMainCorrupt(t *testing.T) {
 	}
 }
 
+// bakTitle 读某个备份/主文件并取标题（测试用）；读不出或解不开即失败。
+func bakTitle(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	c, err := decode(data, conversation.ID("conv-1"))
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return c.Title
+}
+
+// TestBackupRotationKeepsGenerations 备份轮转保留 N 代（D254）：keep=3 时第 1 代沿用
+// 历史名 `.bak`，更旧为 `.bak.1` / `.bak.2`，最老的出局；主文件始终是最新的一代。
+func TestBackupRotationKeepsGenerations(t *testing.T) {
+	s, err := NewWithKeep(t.TempDir(), 3)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	dst := s.path(c.ID)
+	for _, title := range []string{"t1", "t2", "t3", "t4"} {
+		c.Title = title
+		if err := s.Save(ctx, c); err != nil {
+			t.Fatalf("save %s: %v", title, err)
+		}
+	}
+	if got := bakTitle(t, dst); got != "t4" {
+		t.Fatalf("main = %q, want t4", got)
+	}
+	for suffix, want := range map[string]string{".bak": "t3", ".bak.1": "t2", ".bak.2": "t1"} {
+		if got := bakTitle(t, dst+suffix); got != want {
+			t.Errorf("%s = %q, want %q", suffix, got, want)
+		}
+	}
+	if _, err := os.Stat(dst + ".bak.3"); err == nil {
+		t.Fatal("第 4 代不该存在（keep=3）")
+	}
+}
+
+// TestBackupRotationDefaultKeepsOne 默认（New）只保留一代 `.bak`，不产生 `.bak.1`（D254）。
+func TestBackupRotationDefaultKeepsOne(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	dst := s.path(c.ID)
+	for _, title := range []string{"t1", "t2", "t3"} {
+		c.Title = title
+		if err := s.Save(ctx, c); err != nil {
+			t.Fatalf("save %s: %v", title, err)
+		}
+	}
+	if got := bakTitle(t, dst+".bak"); got != "t2" {
+		t.Fatalf(".bak = %q, want t2（上一代）", got)
+	}
+	if _, err := os.Stat(dst + ".bak.1"); err == nil {
+		t.Fatal("默认只该留一代，不该有 .bak.1")
+	}
+}
+
+// TestBackupRotationSkipsCorruptMain 保存前完整性校验（D254）：现文件坏掉时不轮转，
+// 坏文件不挤掉更旧的可用备份。
+func TestBackupRotationSkipsCorruptMain(t *testing.T) {
+	s, err := NewWithKeep(t.TempDir(), 3)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	dst := s.path(c.ID)
+	c.Title = "good-1"
+	if err := s.Save(ctx, c); err != nil {
+		t.Fatalf("save good-1: %v", err)
+	}
+	c.Title = "good-2"
+	if err := s.Save(ctx, c); err != nil {
+		t.Fatalf("save good-2: %v", err)
+	}
+	// 主文件坏掉后再保存：跳过轮转，`.bak` 仍是 good-1。
+	if err := os.WriteFile(dst, []byte("{corrupt!!"), 0o644); err != nil {
+		t.Fatalf("corrupt: %v", err)
+	}
+	c.Title = "good-3"
+	if err := s.Save(ctx, c); err != nil {
+		t.Fatalf("save good-3: %v", err)
+	}
+	if got := bakTitle(t, dst+".bak"); got != "good-1" {
+		t.Fatalf(".bak = %q, want good-1（坏文件不该被轮成备份）", got)
+	}
+	if _, err := os.Stat(dst + ".bak.1"); err == nil {
+		t.Fatal("坏文件不该推进轮转，.bak.1 不该出现")
+	}
+	if got := bakTitle(t, dst); got != "good-3" {
+		t.Fatalf("main = %q, want good-3", got)
+	}
+}
+
+// TestLoadFallsBackAcrossGenerations 主文件与第 1 代都坏时，回退到更旧的一代（D254）。
+func TestLoadFallsBackAcrossGenerations(t *testing.T) {
+	s, err := NewWithKeep(t.TempDir(), 3)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	dst := s.path(c.ID)
+	for _, title := range []string{"g1", "g2", "g3"} {
+		c.Title = title
+		if err := s.Save(ctx, c); err != nil {
+			t.Fatalf("save %s: %v", title, err)
+		}
+	}
+	// 主文件(g3)与 .bak(g2)都坏；应回退 .bak.1(g1)。
+	if err := os.WriteFile(dst, []byte("{corrupt"), 0o644); err != nil {
+		t.Fatalf("corrupt main: %v", err)
+	}
+	if err := os.WriteFile(dst+".bak", []byte("{corrupt"), 0o644); err != nil {
+		t.Fatalf("corrupt bak: %v", err)
+	}
+	got, err := s.Load(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.Title != "g1" {
+		t.Fatalf("fallback title = %q, want g1（跳过坏的两代）", got.Title)
+	}
+}
+
+// TestRemoveClearsAllBackupGenerations Remove 连各代备份与遗留高代一起清（D254）：
+// keep 调小后目录里可能还留着超出当前 keep 的更旧代。
+func TestRemoveClearsAllBackupGenerations(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewWithKeep(dir, 3)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	for _, title := range []string{"g1", "g2", "g3", "g4"} {
+		c.Title = title
+		if err := s.Save(ctx, c); err != nil {
+			t.Fatalf("save %s: %v", title, err)
+		}
+	}
+	// 模拟 keep 调小前的遗留：多写一个超出当前 keep 的更高代。
+	if err := os.WriteFile(s.path(c.ID)+".bak.9", []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write legacy bak: %v", err)
+	}
+	if err := s.Remove(ctx, c.ID); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "conv-1.json") {
+			t.Fatalf("残留文件: %s", e.Name())
+		}
+	}
+}
+
+// TestNewWithKeepNormalizesNonPositive keep < 1 归默认值，不因 0 变成不轮转（D254）。
+func TestNewWithKeepNormalizesNonPositive(t *testing.T) {
+	for _, keep := range []int{0, -5} {
+		s, err := NewWithKeep(t.TempDir(), keep)
+		if err != nil {
+			t.Fatalf("new: %v", err)
+		}
+		if s.keep != DefaultKeep {
+			t.Fatalf("keep=%d 归一为 %d, want %d", keep, s.keep, DefaultKeep)
+		}
+	}
+}
+
 func TestLoadMissingReturnsNotFound(t *testing.T) {
 	s, err := New(t.TempDir())
 	if err != nil {

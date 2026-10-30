@@ -1,8 +1,9 @@
 // Package storejson 实现 port.ConversationStore：
-// 一会话一 JSON 文件（<dir>/<id>.json），换代前把旧文件保留为一代 .bak（D7）。
+// 一会话一 JSON 文件（<dir>/<id>.json），换代前把旧文件轮成备份代（默认一代 .bak，
+// 可按 config `backup.keep` 保留 N 代，D7/D254）。
 //
 // 文件是明文 JSON（个人数据主权，可用编辑器直接查看）；
-// Load 会做不变量自检（Validate），主文件缺失或损坏时回退读取 .bak。
+// Load 会做不变量自检（Validate），主文件缺失或损坏时按新到旧回退各代备份。
 package storejson
 
 import (
@@ -31,24 +32,86 @@ var ErrLegacyFormat = errors.New("storejson: 发现旧格式会话")
 
 var _ port.ConversationStore = (*Store)(nil)
 
+// DefaultKeep 未显式配置时保留的备份代数（装配根按 config `backup.keep` 覆盖，D254）。
+const DefaultKeep = 1
+
 // Store 基于文件系统的会话存储（一会话一 JSON）。
 type Store struct {
 	dir string
+	// keep 保留的 .bak 代数（>=1）：第 1 代为历史名 `<id>.json.bak`，更旧的为
+	// `<id>.json.bak.<i-1>`。写盘时轮转，读盘时按新到旧回退（D254）。
+	keep int
 }
 
-// New 创建存储并确保目录存在。
+// New 创建存储并确保目录存在（备份保留一代，等价于历史行为）。
 func New(dir string) (*Store, error) {
+	return NewWithKeep(dir, DefaultKeep)
+}
+
+// NewWithKeep 同 New，但指定保留的备份代数（keep < 1 归一为 DefaultKeep）。
+func NewWithKeep(dir string, keep int) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, errors.New("storejson: 目录不能为空")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("storejson: 创建目录 %s: %w", dir, err)
 	}
-	return &Store{dir: dir}, nil
+	if keep < 1 {
+		keep = DefaultKeep
+	}
+	return &Store{dir: dir, keep: keep}, nil
 }
 
-// Save 整树序列化落盘：先写 .tmp，再把现有文件挪成 .bak，最后原子换入（D7）。
-// 入树前做不变量自检，坏数据不落盘。
+// backupPath 第 i 代备份路径（i 从 1 起）：第 1 代沿用历史名 `<dst>.bak`，
+// 更旧的代为 `<dst>.bak.<i-1>`。
+func backupPath(dst string, i int) string {
+	if i <= 1 {
+		return dst + ".bak"
+	}
+	return fmt.Sprintf("%s.bak.%d", dst, i-1)
+}
+
+// rotate 把现文件 dst 轮成第 1 代备份，并把既有各代整体后移一格，最老的一代出局。
+// 只在 dst 可完整解析时调用（见 Save 的保存前完整性校验）。
+func (s *Store) rotate(dst string) error {
+	keep := s.keep
+	if keep >= 2 {
+		if err := removeIfExists(backupPath(dst, keep)); err != nil {
+			return err
+		}
+	}
+	for i := keep - 1; i >= 1; i-- {
+		if err := renameIfExists(backupPath(dst, i), backupPath(dst, i+1)); err != nil {
+			return err
+		}
+	}
+	return os.Rename(dst, backupPath(dst, 1))
+}
+
+// removeIfExists / renameIfExists 备份轮转的小工具：源/目标不在不算错。
+func removeIfExists(p string) error {
+	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("storejson: 清理 %s: %w", p, err)
+	}
+	return nil
+}
+
+func renameIfExists(from, to string) error {
+	if _, err := os.Stat(from); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("storejson: 轮转 %s: %w", from, err)
+	}
+	if err := os.Rename(from, to); err != nil {
+		return fmt.Errorf("storejson: 轮转 %s → %s: %w", from, to, err)
+	}
+	return nil
+}
+
+// Save 整树序列化落盘：先写 .tmp，再把现有文件轮成备份代，最后原子换入（D7/D254）。
+// 轮转**只在现文件能完整解析时进行**（保存前完整性校验）——坏文件不许挤掉更旧的
+// 可用备份。入树前做不变量自检，坏数据不落盘。
 func (s *Store) Save(ctx context.Context, c *conversation.Conversation) error {
 	if err := checkCtx(ctx); err != nil {
 		return err
@@ -68,9 +131,8 @@ func (s *Store) Save(ctx context.Context, c *conversation.Conversation) error {
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("storejson: 写入 %s: %w", tmp, err)
 	}
-	if _, err := os.Stat(dst); err == nil {
-		// 现有文件保留一代 .bak，再换入新文件。
-		if err := os.Rename(dst, dst+".bak"); err != nil {
+	if _, err := os.Stat(dst); err == nil && s.rotatable(dst) {
+		if err := s.rotate(dst); err != nil {
 			_ = os.Remove(tmp)
 			return fmt.Errorf("storejson: 备份 %s: %w", dst, err)
 		}
@@ -81,7 +143,19 @@ func (s *Store) Save(ctx context.Context, c *conversation.Conversation) error {
 	return nil
 }
 
-// Load 读取整树并做不变量自检；主文件缺失或损坏时回退读取一代 .bak。
+// rotatable 现文件是否值得轮成备份：能读且能完整解析（不变量自检通过，D254）。
+// 读不动或解不开（含旧格式）一律视为坏，跳过轮转。
+func (s *Store) rotatable(dst string) bool {
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		return false
+	}
+	id := conversation.ID(strings.TrimSuffix(filepath.Base(dst), ".json"))
+	_, err = decode(data, id)
+	return err == nil
+}
+
+// Load 读取整树并做不变量自检；主文件缺失或损坏时按新到旧回退各代备份（D254）。
 func (s *Store) Load(ctx context.Context, id conversation.ID) (*conversation.Conversation, error) {
 	if err := checkCtx(ctx); err != nil {
 		return nil, err
@@ -96,23 +170,35 @@ func (s *Store) Load(ctx context.Context, id conversation.ID) (*conversation.Con
 		if derr == nil {
 			return c, nil
 		}
-		// 主文件损坏：尝试一代 .bak 兜底，仍失败则报主文件的错。
-		if bdata, berr := os.ReadFile(dst + ".bak"); berr == nil {
-			if c, berr := decode(bdata, id); berr == nil {
-				return c, nil
-			}
+		// 主文件损坏：按新到旧回退各代备份，仍失败则报主文件的错。
+		if c, ok := s.loadBackup(id); ok {
+			return c, nil
 		}
 		return nil, fmt.Errorf("storejson: 读取 %s: %w", id, derr)
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("storejson: 读取 %s: %w", id, err)
 	}
-	if bdata, berr := os.ReadFile(dst + ".bak"); berr == nil {
-		if c, berr := decode(bdata, id); berr == nil {
-			return c, nil
-		}
+	if c, ok := s.loadBackup(id); ok {
+		return c, nil
 	}
 	return nil, fmt.Errorf("storejson: %w: %s", ErrNotFound, id)
+}
+
+// loadBackup 按新到旧尝试各代备份：第 1 代是历史名 `<id>.json.bak`，更旧的代为
+// `<id>.json.bak.<i-1>`（D254）。命中第一个能完整解析的即返回。
+func (s *Store) loadBackup(id conversation.ID) (*conversation.Conversation, bool) {
+	dst := s.path(id)
+	for i := 1; i <= s.keep; i++ {
+		data, err := os.ReadFile(backupPath(dst, i))
+		if err != nil {
+			continue
+		}
+		if c, err := decode(data, id); err == nil {
+			return c, true
+		}
+	}
+	return nil, false
 }
 
 // List 列出全部会话摘要，按 UpdatedAt 降序（最新在前）。
@@ -166,7 +252,8 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 	return out, nil
 }
 
-// Remove 硬删除会话文件（连同 .bak/.tmp）；什么都不存在时返回 ErrNotFound。
+// Remove 硬删除会话文件（连同各代 .bak 与 .tmp，含 keep 变化后遗留的更旧代）；
+// 什么都不存在时返回 ErrNotFound。
 func (s *Store) Remove(ctx context.Context, id conversation.ID) error {
 	if err := checkCtx(ctx); err != nil {
 		return err
@@ -175,12 +262,27 @@ func (s *Store) Remove(ctx context.Context, id conversation.ID) error {
 		return errors.New("storejson: 空会话 ID")
 	}
 	dst := s.path(id)
-	_, jsonErr := os.Stat(dst)
-	_, bakErr := os.Stat(dst + ".bak")
-	if errors.Is(jsonErr, fs.ErrNotExist) && errors.Is(bakErr, fs.ErrNotExist) {
+	paths := []string{dst, dst + ".tmp"}
+	// 备份代按前缀扫目录收集：keep 调小后可能留有更高代的旧文件（D254）。
+	prefix := filepath.Base(dst) + ".bak"
+	if entries, err := os.ReadDir(s.dir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+				paths = append(paths, filepath.Join(s.dir, e.Name()))
+			}
+		}
+	}
+	found := false
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			found = true
+			break
+		}
+	}
+	if !found {
 		return fmt.Errorf("storejson: %w: %s", ErrNotFound, id)
 	}
-	for _, p := range []string{dst, dst + ".bak", dst + ".tmp"} {
+	for _, p := range paths {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("storejson: 删除 %s: %w", p, err)
 		}
