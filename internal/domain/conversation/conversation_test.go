@@ -502,9 +502,9 @@ func TestCheckoutRootRealNode(t *testing.T) {
 	}
 }
 
-// TestTail D94 版本末端：叶子即自身；版本子树末端 = CreatedAt 最新的叶子（平局取 ID 序
+// TestVersionEnd D94 版本末端：叶子即自身；版本子树末端 = CreatedAt 最新的叶子（平局取 ID 序
 // 最大）；id 不在树中 ok=false。
-func TestTail(t *testing.T) {
+func TestVersionEnd(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
 	u1 := mustAppend(t, c, RoleUser, "问题")
@@ -513,29 +513,29 @@ func TestTail(t *testing.T) {
 	a2 := mustAppend(t, c, RoleAssistant, "答二")
 
 	// 叶子即自身。
-	if got, ok := c.Tail(a2.ID); !ok || got != a2.ID {
-		t.Fatalf("Tail(叶子) = %q %v, want 自身", got, ok)
+	if got, ok := c.VersionEnd(a2.ID); !ok || got != a2.ID {
+		t.Fatalf("VersionEnd(叶子) = %q %v, want 自身", got, ok)
 	}
 	// 线性链的唯一叶子。
-	if got, ok := c.Tail(u1.ID); !ok || got != a2.ID {
-		t.Fatalf("Tail(u1) = %q %v, want a2", got, ok)
+	if got, ok := c.VersionEnd(u1.ID); !ok || got != a2.ID {
+		t.Fatalf("VersionEnd(u1) = %q %v, want a2", got, ok)
 	}
 
-	// 分叉：编辑 u2 → 新版本 + 新回答；Tail(u1) 应取 CreatedAt 最新的叶子（新分支末端）。
+	// 分叉：编辑 u2 → 新版本 + 新回答；VersionEnd(u1) 应取 CreatedAt 最新的叶子（新分支末端）。
 	if _, err := c.Revise(u2.ID, textParts("追问（改）"), Fresh); err != nil {
 		t.Fatalf("revise: %v", err)
 	}
 	a2n := mustAppend(t, c, RoleAssistant, "答二（新）")
-	if got, ok := c.Tail(u1.ID); !ok || got != a2n.ID {
-		t.Fatalf("Tail(u1) = %q %v, want 新分支末端 a2'", got, ok)
+	if got, ok := c.VersionEnd(u1.ID); !ok || got != a2n.ID {
+		t.Fatalf("VersionEnd(u1) = %q %v, want 新分支末端 a2'", got, ok)
 	}
 
 	// 旧叶子时钟推后 → 它成为末端（CreatedAt 优先于 ID 序）。
 	old := c.nodes[a2.ID]
 	old.CreatedAt = old.CreatedAt.Add(time.Hour)
 	c.nodes[a2.ID] = old
-	if got, _ := c.Tail(u1.ID); got != a2.ID {
-		t.Fatalf("Tail(u1) = %q, want 被推后的旧叶子 a2", got)
+	if got, _ := c.VersionEnd(u1.ID); got != a2.ID {
+		t.Fatalf("VersionEnd(u1) = %q, want 被推后的旧叶子 a2", got)
 	}
 
 	// 时钟全部相同 → 按 ID 序最大（确定性）。
@@ -548,13 +548,13 @@ func TestTail(t *testing.T) {
 	if a2n.ID > want {
 		want = a2n.ID
 	}
-	if got, _ := c.Tail(u1.ID); got != want {
-		t.Fatalf("Tail(u1) = %q, want 平局 ID 序最大 %q", got, want)
+	if got, _ := c.VersionEnd(u1.ID); got != want {
+		t.Fatalf("VersionEnd(u1) = %q, want 平局 ID 序最大 %q", got, want)
 	}
 
 	// 不在树中。
-	if got, ok := c.Tail("nope"); ok || got != "" {
-		t.Fatalf("Tail(缺失) = %q %v, want ok=false", got, ok)
+	if got, ok := c.VersionEnd("nope"); ok || got != "" {
+		t.Fatalf("VersionEnd(缺失) = %q %v, want ok=false", got, ok)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)

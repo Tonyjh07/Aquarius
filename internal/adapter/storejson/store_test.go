@@ -35,6 +35,8 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 	ctx := context.Background()
 	src := mustConv(t)
+	src.Character = "aria"
+	src.Tail = "After history, stay Aria."
 
 	if err := s.Save(ctx, src); err != nil {
 		t.Fatalf("save: %v", err)
@@ -48,6 +50,9 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 	if got.ID != src.ID || got.Title != src.Title || got.Head != src.Head {
 		t.Fatalf("meta mismatch: got %+v want %+v", got, src)
+	}
+	if got.Character != "aria" || got.Tail != "After history, stay Aria." {
+		t.Fatalf("metadata mismatch: character=%q tail=%q", got.Character, got.Tail)
 	}
 	if got.NodeCount() != src.NodeCount() {
 		t.Fatalf("nodes = %d, want %d", got.NodeCount(), src.NodeCount())
@@ -312,6 +317,35 @@ func TestSaveRejectsInvalidTree(t *testing.T) {
 	}
 	if _, err := os.Stat(s.path(c.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("invalid tree must not be written: %v", err)
+	}
+}
+
+// TestLoadOldFileWithoutMetadataKeys 缺键即空（D243）：没有 character/tail 键的旧文件
+// 照常加载，两个元数据字段取零值——升级不要求迁移。
+func TestLoadOldFileWithoutMetadataKeys(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	old := `{
+  "id": "conv-old",
+  "title": "旧会话",
+  "head": "conv-old",
+  "nodes": {"conv-old": {"id": "conv-old", "parent": "", "role": "root", "created_at": "2026-01-01T00:00:00Z"}},
+  "children": {"": ["conv-old"]},
+  "revised_from": {},
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z"
+}`
+	if err := os.WriteFile(filepath.Join(s.dir, "conv-old.json"), []byte(old), 0o644); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	got, err := s.Load(context.Background(), conversation.ID("conv-old"))
+	if err != nil {
+		t.Fatalf("load old file: %v", err)
+	}
+	if got.Character != "" || got.Tail != "" {
+		t.Fatalf("missing keys must read as empty: character=%q tail=%q", got.Character, got.Tail)
 	}
 }
 

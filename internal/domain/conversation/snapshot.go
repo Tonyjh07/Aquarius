@@ -23,6 +23,10 @@ type Snapshot struct {
 	ID    ID
 	Title string
 	Head  MessageID
+	// Character 绑定的角色 slug（D243）；空 = 非角色会话。
+	Character string
+	// Tail 历史之后追加的 system 文本（D243）；空 = 无。
+	Tail string
 	// Nodes 全部节点，按 ID 升序（确定性，便于 diff 与人工核对）。
 	Nodes []Message
 	// Edges 结构边，按父 ID 升序；每个父的孩子保持结构插入序（兄弟顺序即图上左→右，D152）。
@@ -51,6 +55,8 @@ func (c *Conversation) Snapshot() Snapshot {
 		ID:        c.ID,
 		Title:     c.Title,
 		Head:      c.Head,
+		Character: c.Character,
+		Tail:      c.Tail,
 		Nodes:     make([]Message, 0, len(c.nodes)),
 		Edges:     make([]SnapshotEdge, 0, len(c.children)),
 		CreatedAt: c.CreatedAt,
@@ -87,6 +93,8 @@ func Restore(s Snapshot) (*Conversation, error) {
 		ID:          s.ID,
 		Title:       s.Title,
 		Head:        s.Head,
+		Character:   s.Character,
+		Tail:        s.Tail,
 		nodes:       make(map[MessageID]Message, len(s.Nodes)),
 		children:    make(map[MessageID][]MessageID, len(s.Edges)),
 		revisedFrom: make(map[MessageID]MessageID, len(s.RevisedFrom)),

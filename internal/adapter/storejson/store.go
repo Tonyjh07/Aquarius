@@ -236,6 +236,8 @@ type wireTree struct {
 	ID          conversation.ID                                     `json:"id"`
 	Title       string                                              `json:"title"`
 	Head        conversation.MessageID                              `json:"head"`
+	Character   string                                              `json:"character,omitempty"`
+	Tail        string                                              `json:"tail,omitempty"`
 	Nodes       map[conversation.MessageID]wireNode                 `json:"nodes"`
 	Children    map[conversation.MessageID][]conversation.MessageID `json:"children"`
 	RevisedFrom map[conversation.MessageID]conversation.MessageID   `json:"revised_from"`
@@ -260,6 +262,8 @@ func encode(c *conversation.Conversation) wireTree {
 		ID:          s.ID,
 		Title:       s.Title,
 		Head:        s.Head,
+		Character:   s.Character,
+		Tail:        s.Tail,
 		Nodes:       make(map[conversation.MessageID]wireNode, len(s.Nodes)),
 		Children:    make(map[conversation.MessageID][]conversation.MessageID, len(s.Edges)),
 		RevisedFrom: make(map[conversation.MessageID]conversation.MessageID, len(s.RevisedFrom)),
@@ -308,6 +312,8 @@ func decodeTree(w wireTree) (*conversation.Conversation, error) {
 		ID:          w.ID,
 		Title:       w.Title,
 		Head:        w.Head,
+		Character:   w.Character,
+		Tail:        w.Tail,
 		Nodes:       make([]conversation.Message, 0, len(w.Nodes)),
 		Edges:       make([]conversation.SnapshotEdge, 0, len(w.Children)),
 		RevisedFrom: make([]conversation.SnapshotEdition, 0, len(w.RevisedFrom)),

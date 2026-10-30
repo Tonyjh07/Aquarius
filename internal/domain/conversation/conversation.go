@@ -92,6 +92,14 @@ type Conversation struct {
 	// 移动语义仍走 Checkout（写 Head 而不更新 UpdatedAt 才会破坏一致性，那是加载路径的事）。
 	Head MessageID
 
+	// Character 绑定的角色 slug（D243）：只作展示、头像与导出溯源，装配不读它；
+	// 空 = 不是角色会话。删卡不改写它（头像回落默认，会话照常可用）。
+	Character string
+	// Tail 历史之后追加的 system 文本（D243）：角色卡的 post_history_instructions 展开稿，
+	// 每轮请求追加在装配末尾（开关可关）。它是**元数据不是节点**——不进水位、不被压缩吸收、
+	// 不影响分支与导出树。空 = 无尾部指令。
+	Tail string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -340,11 +348,14 @@ func (c *Conversation) Checkout(id MessageID) error {
 	return nil
 }
 
-// Tail 返回 id 版本子树的对话末端（D94 分支切换落点）：id 自身是叶子（无孩子）时即
+// VersionEnd 返回 id 版本子树的对话末端（D94 分支切换落点）：id 自身是叶子（无孩子）时即
 // 自身；否则取子树全部叶子中 CreatedAt 最新者（平局取 ID 序最大，保证确定性）。
 // 切换消息版本应恢复该版本的对话全程——Head 停在消息节点上时其回答不在 Head 路径上。
 // id 不在树中 → ok=false。
-func (c *Conversation) Tail(id MessageID) (MessageID, bool) {
+//
+// 名字带 Version 是为与元数据字段 Tail（历史之后的 system 文本，D243）分开：同一个词
+// 在同一个类型上不能既作方法名又作字段名，而两者指的是完全不同的东西（树查询 vs 文本）。
+func (c *Conversation) VersionEnd(id MessageID) (MessageID, bool) {
 	if _, ok := c.nodes[id]; !ok {
 		return "", false
 	}

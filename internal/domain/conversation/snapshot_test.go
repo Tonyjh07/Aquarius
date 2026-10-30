@@ -35,6 +35,30 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSnapshotCarriesCharacterMetadata 会话元数据（角色 slug 与尾部指令）随快照往返：
+// 它们是元数据不是节点，不进树表，但必须一起搬出去、原样装回来（D243）。
+func TestSnapshotCarriesCharacterMetadata(t *testing.T) {
+	c := buildTree(t)
+	c.Character = "aria"
+	c.Tail = "stay in character"
+
+	s := c.Snapshot()
+	if s.Character != "aria" || s.Tail != "stay in character" {
+		t.Fatalf("snapshot metadata = (%q, %q)", s.Character, s.Tail)
+	}
+	back, err := Restore(s)
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if back.Character != "aria" || back.Tail != "stay in character" {
+		t.Fatalf("restored metadata = (%q, %q)", back.Character, back.Tail)
+	}
+	// 元数据不进节点表：节点数不因它变化。
+	if back.NodeCount() != c.NodeCount() {
+		t.Fatalf("metadata changed the node count: %d vs %d", back.NodeCount(), c.NodeCount())
+	}
+}
+
 // TestSnapshotNodesSortedByID 快照的节点表按 ID 升序：整棵树倒出来时顺序必须确定，
 // 否则同一棵树每次导出的字节都不同，diff 与人工核对都失去意义。
 func TestSnapshotNodesSortedByID(t *testing.T) {
