@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-30 @ bf3ce80 -->
+<!-- docs-sync: 2026-10-30 @ fe825c7 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -254,7 +254,8 @@ func (c *Conversation) Validate() error                        // 两条不变�
   各协议适配器按前缀识别归属（跨 provider 复制会话时不会把 A 家签名发给 B 家）；
   空签名 = 该协议无回传要求（Chat Completions 现状）。签名的收集随流式思考分片进行
   （`port.Delta.ReasoningSignature`），并入当前轮的 `PartThinking` 分片。
-- `Prune` 是唯一破坏性操作；`storejson` 写文件前保留一代 `.bak` 防误删（D7）。
+- `Prune` 是唯一破坏性操作；`storejson` 写文件前保留 N 代 `.bak` 防误删（默认 3，`backup.keep`
+  可配；写前先确认现文件能完整解析才轮转，坏文件不挤掉更旧的可用备份；D7/D254）。
 
 ### 4.2 附件与多模态承载
 
@@ -551,7 +552,7 @@ type ConversationSummary struct {
     ID conversation.ID; Title string; MessageN int; UpdatedAt time.Time
 }
 
-type ConversationStore interface { // 整树存取（一会话一 JSON），写前留一代 .bak
+type ConversationStore interface { // 整树存取（一会话一 JSON），写前把旧文件轮成备份代
     Save(ctx context.Context, c *conversation.Conversation) error
     Load(ctx context.Context, id conversation.ID) (*conversation.Conversation, error)
     List(ctx context.Context) ([]ConversationSummary, error)
@@ -560,7 +561,7 @@ type ConversationStore interface { // 整树存取（一会话一 JSON），写�
 ```
 
 **磁盘形状不在端口契约里**（D214）：端口只收发聚合根与摘要，落盘格式（字段名、旧格式识别、
-`.bak` 代际）是各适配器自己的事。内置实现 `storejson` 用 `conversation.Snapshot()` 导出整树、
+`.bak` 代际与代数）是各适配器自己的事。内置实现 `storejson` 用 `conversation.Snapshot()` 导出整树、
 经自己的 `wireTree`/`wireNode` 映射成 JSON，读回时 `conversation.Restore()` 重建并自检——
 换一种存储介质只需实现这 4 个方法，领域与端口都不用动。
 
@@ -789,7 +790,7 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 | `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
 | `Confirmer` | TUI 确认 / `--yes` | — | 自动应答 |
 | `Asker` | uigui 提问面板 / uitui 编号选单 / repl 编号选单 | — | 脚本答案 |
-| `ConversationStore` | storejson（一树一 JSON + .bak） | — | in-memory |
+| `ConversationStore` | storejson（一树一 JSON + N 代 `.bak`） | — | in-memory |
 | `MemoryStore` | memoryfs（markdown） | MCP resources / Tier-1 | in-memory |
 | `AttachmentStore` | blobfs（内容寻址） | — | in-memory |
 | `Capture` | screencap（Windows `PrintWindow`/`BitBlt`；非 Windows 报不支持） | — | 假抓屏（固定 PNG） |
@@ -2205,11 +2206,15 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 - **消费面**：只经 GUI 的 `Options.Status` 回调组合取用（[gui-design.md](gui-design.md) §15.1），不给变更入口；值是
   发布点时点值——Turn 进行中读到的是上一轮结束值（生成中的实时占用本就未定）。
 
-### 7.7 角色卡宏替换（D247）
+### 7.7 宏替换（D247/D252）
 
-卡文本里到处都是 `{{char}}` / `{{user}}` 这一套写法。替换**只发生在投影时**（与 persona 快照
-同口径）：卡文件里的原文一个字节都不动，落进树的是替换后的终稿。实现是 `app` 的一个纯函数，
+卡文本里到处都是 `{{char}}` / `{{user}}` 这一套写法。替换**只发生在投影/装配时**（与 persona 快照
+同口径）：卡文件与 config 里的原文一个字节都不动，落进树的是替换后的终稿。实现是 `app` 的一个纯函数，
 由人格组合、`Tail`、开场白与 `/character show` 共用一份——四处各写一遍必然漂移。
+
+**两个消费点**：角色卡文本（`@char.system`、`Tail`、开场白等），以及**非角色会话的用户提示词**——
+`@default`（`system_prompt`）与全部自定义模块在装配层也过同一份替换器，使 `{{user}}` / `{{date}}`
+两种会话通吃（D252）。
 
 **认这些写法**（实测语料 4010 次 `{{user}}`、3171 次 `{{char}}`，另有大小写与别名变体）：
 
@@ -2226,6 +2231,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   （它在上下文里就是"换一段对话"的标记）。
 - **认不出的原样保留**：`{{roll:d14}}`、`{{cha}}`、`{{Rules}}` 这类一律不动。**不做宏求值**
   （没有骰子、没有变量系统），也不因为认不出就删——原样留着，模型至少能看到作者本意。
+- **无角色绑定时 `{{char}}` / `<BOT>` 原样保留**（D252）：非角色会话没有可替换的显示名，删空
+  会静默吃掉用户写的字；保留字面量至少让人看见写错了。`{{user}}` / `{{date}}` 不受此限。
 - **不递归展开**：替换结果里的 `{{...}}` 不再扫一遍（否则 `user_name` 里写个宏就能自我放大）。
 - **`{{original}}` 只在两处生效**：`@char.system` 与 `Tail`。实测 20 张卡里有 15 张把它写在
   `post_history_instructions`、10 张写在 `system_prompt`，3 张两处都有——只处理前者会让后一类

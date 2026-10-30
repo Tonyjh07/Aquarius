@@ -285,7 +285,7 @@ func (c *Conversation) cloneSubtree(id, parent MessageID) map[MessageID]MessageI
 }
 
 // Prune 剪掉 id 及整棵子树（唯一破坏性操作，硬删；Root 不可剪——Root 即会话，D19；
-// storejson 写前留一代 .bak 兜底，D7）。
+// storejson 写前保留 N 代 .bak 兜底（默认 3、可配，D7/D254）。
 // Head 落在被移除子树内时，回退到最近存活祖先（Root 不可删，链必止于 Root）。
 // D95 后无跨节点引用，不存在失联节点——剪除范围即子树本身。
 func (c *Conversation) Prune(id MessageID) error {

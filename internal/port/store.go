@@ -17,7 +17,8 @@ type ConversationSummary struct {
 	Character string `json:"character,omitempty"`
 }
 
-// ConversationStore 会话存储端口：整树存取（一会话一 JSON），写前留一代 .bak（D7）。
+// ConversationStore 会话存储端口：整树存取（一会话一 JSON），写前把旧文件轮成备份代
+// （代数由实现定，内置 storejson 默认保留 3 代、可配，D7/D254）。
 type ConversationStore interface {
 	Save(ctx context.Context, c *conversation.Conversation) error
 	Load(ctx context.Context, id conversation.ID) (*conversation.Conversation, error)

@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-30 @ 9000baa -->
+<!-- docs-sync: 2026-10-30 @ fe825c7 -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -33,8 +33,9 @@
 常驻内存优化，批次 P2-1…P2-10）**全部落地**；其中的 `uigui` 拆包已按实测评移入 backlog（D234）。
 
 当前开发分支 `feat/v0.3.0`（能力扩张）：**命令注册表**（D245）、**会话进出**（D242）、
-**命令提示参数相**（D250）、**aqx 多会话备份**（D249）与**角色卡只读导入**（D243/D247）已落地，
-余额见 [plan.md](plan.md)。
+**命令提示参数相**（D250）、**aqx 多会话备份**（D249）、**角色卡只读导入**（D243/D247）与
+**零碎项收口**（D252/D253/D254：提示词宏展开、provider 自定义请求头、会话树备份轮转）已全部落地，
+v0.3.0 无余额。
 `aqx` 容器随之从 A-2 的单树形状换成「一份装一组会话」（`manifest.json` + `conversations/<i>/`），
 **旧单树形状不再读**——`aqx` 未随任何版本发布，故不欠兼容。
 
@@ -103,6 +104,7 @@
 | v0.3.0-B | 命令提示：参数相浮层（空格切相、逐参数声明 `Params`、`Tab` 轮换 / `Enter` 恒提交）+ GUI 输入历史（D250） | 已落地 2026-10-29 |
 | v0.3.0-E | aqx 多会话备份：一份归档装一组会话（`manifest.json` + `conversations/<i>/tree.json` + 跨会话共用 `blobs/`）、`/export --all\|--ids`、`/import --pick`、导入勾选面板、左栏批量选择（导出 / 删除）、批量 `/rmconv`（D249） | 已落地 2026-10-30 |
 | v0.3.0-D | 角色卡只读导入：PNG（`tEXt` `ccv3`/`chara`）/ JSON / `.charx`（ZIP）解析、`@char.*` 条件内置模块、`{{char}}`/`{{user}}`/`{{date}}`/`{{original}}` 宏替换、`/character` 命令面、设置窗「角色」页、会话列表行头像（D243/D247） | 已落地 2026-10-30 |
+| v0.3.0-F | 零碎项收口：非角色会话提示词也展开 `{{char}}`/`{{user}}`/`{{date}}`（无角色绑定时 `{{char}}` 保留字面量不删空）、provider 自定义请求头 `headers`（仅 `openai-chat`）、会话树备份轮转 N 代（`backup.keep` 默认 3、保存前完整性校验）（D252/D253/D254） | 已落地 2026-10-30 |
 
 **`v0.2.0-P2` 已落地**（批次号固定；完工，无剩余项）：
 
@@ -183,6 +185,15 @@
 | D-16 | `9804618` | `prompts.user_name` 与 `characters` 段四开关落 config（默认开的开关用 `*bool` 区分「键缺失 = 开」与「显式 false」）；装配根接线 `CharacterOpts`/`ApplyPostHistory` |
 | D-17 | `9000baa` | 端到端验收：三类容器各导一张真卡（V2 JSON / V3 PNG / V3 `.charx`）→ 开新会话 → 首轮请求逐段核对 → 压缩一次后示例被吸收而人格与常驻世界书仍在 → 删卡后照常装配 |
 | D-18 | `docs: close out the character card batch in the archives` | plan 删「B 角色卡只读导入」节并改各处交叉语句 + roadmap 档案条目与逐笔表 + 文档头标记刷新 |
+
+**`v0.3.0-F`（零碎项收口）的落笔顺序**：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| F-1 | `3a8918a feat: expand prompt macros in non-character sessions` | `PersonaComposer.expandPromptText` 在 `baseModules` 展开 `@default`（system_prompt）与全部自定义模块，`{{user}}`/`{{date}}`/`<USER>` 在**非角色会话**里也生效；`expandMacros` 在 `char == ""` 时 `{{char}}`/`<BOT>` **原样保留**（不删空）；补两条测试（3 files, +62/−5） |
+| F-2 | `3abdce0 feat: send provider-defined headers on chat requests` | `llm.Config.Headers` + `Client.headers`：`New` 仅 `ProtoChat` 存，`post()` 在默认头与 `authorize` 之后落（同名以声明为准）；config `model.providers[].headers` 与装配根接线；两条测试 |
+| F-3 | `fe825c7 feat: rotate conversation backups across N generations` | `storejson.NewWithKeep`/`Store.keep`/`DefaultKeep=1`、`backupPath`（第 1 代 `.bak`、更旧 `.bak.<i-1>`）、`rotate`、保存前 `rotatable` 完整性校验（坏文件不挤掉更旧的可用备份）、`Load` 按新到旧回退、`Remove` 清各代与遗留高代；config `backup.keep`（默认 3）与装配接线；六条轮转测试（4 files, +325/−25） |
+| F-4 | `docs: close out the remaining v0.3.0 items in the archives` | 决策 D252–D254 + contracts §5.3/§5.4/§7.7 + configuration（`headers`/`backup.keep`）+ plan 删「零碎四项」节并改交叉语句 + roadmap 档案条目与逐笔表 + 文档头标记刷新 |
 
 **文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
 D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。
