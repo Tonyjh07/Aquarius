@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -65,6 +67,86 @@ func TestSessionListUnknownBeforePublish(t *testing.T) {
 	var s Session
 	if s.List() != nil {
 		t.Fatal("未发布快照应返回 nil")
+	}
+}
+
+// TestSessionListCarriesCharacterAvatar §5.17：会话列表项带出角色 slug（存于会话元数据）与
+// 卡目录里的头像路径（装配时按 slug 现取）；非角色会话两者皆空。
+func TestSessionListCarriesCharacterAvatar(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	agent := newAgent(t, &scriptLLM{t: t}, &recorder{}, Deps{}, Config{})
+	cat := &fakeCharCatalog{cards: map[string]port.CharacterCard{
+		"alice": {Info: port.CharacterInfo{Slug: "alice", AvatarPath: `/cards/alice/avatar.png`}},
+	}}
+	s, err := NewSession(ctx, SessionDeps{
+		Store:      store,
+		Agent:      agent,
+		IDs:        &seqIDs{},
+		Clock:      fixedClock{testTime},
+		Characters: cat,
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	id := s.Current().ID
+
+	// 绑定角色后重发快照：slug 进列表项，头像路径由卡目录映射而来。
+	s.cur.Character = "alice"
+	if err := store.Save(ctx, s.cur); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	s.publishSessions(ctx)
+	it := findByID(s.List(), id)
+	if it == nil {
+		t.Fatalf("列表缺会话 %s", id)
+	}
+	if it.Character != "alice" {
+		t.Fatalf("Character = %q, want alice", it.Character)
+	}
+	if it.AvatarPath != `/cards/alice/avatar.png` {
+		t.Fatalf("AvatarPath = %q, want 卡目录里的路径", it.AvatarPath)
+	}
+
+	// 解绑（非角色会话）：两者皆空，列表仍可用。
+	s.cur.Character = ""
+	if err := store.Save(ctx, s.cur); err != nil {
+		t.Fatalf("save2: %v", err)
+	}
+	s.publishSessions(ctx)
+	it = findByID(s.List(), id)
+	if it.Character != "" || it.AvatarPath != "" {
+		t.Fatalf("非角色会话 = (%q, %q), want 空", it.Character, it.AvatarPath)
+	}
+}
+
+// TestSessionListAvatarSurvivesCatalogError §5.17：卡目录读失败不阻断列表——行内回落默认头像，
+// slug 照常带出（会话本身仍可用）。
+func TestSessionListAvatarSurvivesCatalogError(t *testing.T) {
+	ctx := context.Background()
+	store := newMemStore()
+	agent := newAgent(t, &scriptLLM{t: t}, &recorder{}, Deps{}, Config{})
+	s, err := NewSession(ctx, SessionDeps{
+		Store:      store,
+		Agent:      agent,
+		IDs:        &seqIDs{},
+		Clock:      fixedClock{testTime},
+		Characters: &fakeCharCatalog{err: errors.New("卡目录读失败")},
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	s.cur.Character = "alice"
+	if err := store.Save(ctx, s.cur); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	s.publishSessions(ctx)
+	it := findByID(s.List(), s.Current().ID)
+	if it == nil {
+		t.Fatal("列表应仍可用")
+	}
+	if it.Character != "alice" || it.AvatarPath != "" {
+		t.Fatalf("读失败时 = (%q, %q), want (alice, 空)", it.Character, it.AvatarPath)
 	}
 }
 

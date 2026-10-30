@@ -152,13 +152,13 @@ func TestCharAvatarAsyncLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, _ := charactersForm(t, CharactersSnapshot{})
-	if got := f.avatarFor(path); got != nil {
+	if got := f.charAvatars.get(path); got != nil {
 		t.Fatal("首帧应回落兜底（解码未就绪）")
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		f.drainCharAvatars()
-		src := f.avatarFor(path)
+		f.charAvatars.drain()
+		src := f.charAvatars.get(path)
 		if src != nil {
 			if _, ok := src.imageOp(); !ok {
 				t.Fatal("缓存项应可绘制")
@@ -176,13 +176,13 @@ func TestCharAvatarAsyncLoad(t *testing.T) {
 func TestCharAvatarFailureTombstone(t *testing.T) {
 	f, _ := charactersForm(t, CharactersSnapshot{})
 	path := filepath.Join(t.TempDir(), "nope.png")
-	if f.avatarFor(path) != nil {
+	if f.charAvatars.get(path) != nil {
 		t.Fatal("缺失文件首帧应回落兜底")
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		f.drainCharAvatars()
-		if f.charAvatarFail[path] {
+		f.charAvatars.drain()
+		if f.charAvatars.fail[path] {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -190,7 +190,7 @@ func TestCharAvatarFailureTombstone(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if f.avatarFor(path) != nil {
+	if f.charAvatars.get(path) != nil {
 		t.Fatal("墓碑后不该再解")
 	}
 }

@@ -27,12 +27,12 @@ var builtinModuleLabels = map[string]string{
 	"@env.timeout":      "└ 工具缺省调用超时",
 	"@env.date":         "└ 会话创建当天日期",
 	"@char":             "角色卡信息（组；仅角色会话生效）",
-	"@char.identity":    "└ 身份行（你是 <角色名>）",
-	"@char.description": "└ 角色描述",
-	"@char.personality": "└ 性格",
-	"@char.scenario":    "└ 情境",
-	"@char.system":      "└ 卡的 system_prompt（可选替换主提示）",
-	"@char.book":        "└ 常驻世界书条目",
+	"@char.identity":    "└ 身份行（你是 <角色名>；仅角色会话生效）",
+	"@char.description": "└ 角色描述（仅角色会话生效）",
+	"@char.personality": "└ 性格（仅角色会话生效）",
+	"@char.scenario":    "└ 情境（仅角色会话生效）",
+	"@char.system":      "└ 卡的 system_prompt（仅角色会话生效；可选替换主提示）",
+	"@char.book":        "└ 常驻世界书条目（仅角色会话生效）",
 }
 
 // builtinModuleViews 内置只读模块展示清单（设置窗展示 + 一键引用）。

@@ -234,6 +234,7 @@ func TestListSortedAndSkipsBak(t *testing.T) {
 	ctx := context.Background()
 
 	a := conversation.New(conversation.ID("conv-a"), "A")
+	a.Character = "alice" // §5.17/D243：角色 slug 随会话元数据落盘，列表带出
 	if _, err := a.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: "a"}}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
@@ -271,6 +272,9 @@ func TestListSortedAndSkipsBak(t *testing.T) {
 	}
 	if list[1].MessageN != 1 {
 		t.Fatalf("summary a messageN = %d, want 1", list[1].MessageN)
+	}
+	if list[1].Character != "alice" {
+		t.Fatalf("summary a character = %q, want alice（列表带出角色 slug）", list[1].Character)
 	}
 }
 

@@ -66,6 +66,7 @@ func (m *memStore) List(context.Context) ([]port.ConversationSummary, error) {
 	for _, c := range m.convs {
 		out = append(out, port.ConversationSummary{
 			ID: c.ID, Title: c.Title, MessageN: c.NodeCount() - 1, UpdatedAt: c.UpdatedAt, // 不含 Root，与 storejson 对齐
+			Character: c.Character, // §5.17/D243：会话列表带出角色 slug 供标注
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

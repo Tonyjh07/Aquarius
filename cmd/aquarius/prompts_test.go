@@ -173,6 +173,13 @@ func TestBuiltinModuleViews(t *testing.T) {
 			t.Errorf("内置清单缺 %s", need)
 		}
 	}
+	// 角色卡模块（§5.17/D247）：整组与各子模块都标注「仅角色会话生效」——非角色会话下
+	// 这些引用恒空，用户须一眼看出适用范围。
+	for _, v := range views {
+		if strings.HasPrefix(v.Name, "@char") && !strings.Contains(v.Label, "仅角色会话生效") {
+			t.Errorf("角色模块 %s 的说明缺「仅角色会话生效」（显示为 %q）", v.Name, v.Label)
+		}
+	}
 }
 
 // TestPreviewPromptsCompose 组合预览 = 设置窗当前（未保存）表单现状 → 最终 system 文本，

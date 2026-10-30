@@ -383,7 +383,7 @@ type settingsForm struct {
 	skillConfirm  string                       // 待卸载的技能名（"" = 无；行内二次确认）
 
 	// 角色页（§5.17）：清单经 Options.Characters 现取（装配根节流读盘），动作经
-	// `/character` 命令通道（不直连管理面）；头像异步解码（缓存 / 在途 / 墓碑 + 结果通道）。
+	// `/character` 命令通道（不直连管理面）；头像异步解码（缓存实例本窗独占，见 avatar_cache.go）。
 	charWired      bool                         // Options.Characters 已接线（未接线 = 只读占位）
 	charactersSnap CharactersSnapshot           // 本页快照（进入本页时现取）
 	charBtns       map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
@@ -393,10 +393,7 @@ type settingsForm struct {
 	charConfirm    string                       // 待删除的 slug（"" = 无；行内二次确认）
 	charStatus     string                       // 反馈文案（状态行）
 	charErr        bool                         // 反馈是否为错误
-	charAvatars    map[string]*thumbSrc         // 头像缓存（键 = 绝对路径）
-	charAvatarBusy map[string]bool              // 在途解码记账
-	charAvatarFail map[string]bool              // 解码失败墓碑（不重试）
-	charAvatarRes  chan charAvatarMsg           // 后台解码结果（帧首排空）
+	charAvatars    *avatarCache                 // 头像缓存（本窗独占；结果经通道回灌）
 
 	// 密钥库页（S9-6b/D161）：数据面见 settings_secrets.go。动作**同步**（本地小文件 IO），
 	// 故没有工具页那套结果通道；`secretBtns` 按键名分派（动作按钮 + 行内二次确认）。
@@ -720,12 +717,15 @@ func newSettingsFormState() *settingsForm {
 		// 技能页快照同理：起点 −1 让首帧必采纳（空安装面 Revision 常为 0）。
 		skillsRev: -1,
 		// 角色页头像异步解码的结果通道与记账（§5.17）。
-		charBtns:       map[string]*widget.Clickable{},
-		charAvatars:    map[string]*thumbSrc{},
-		charAvatarBusy: map[string]bool{},
-		charAvatarFail: map[string]bool{},
-		charAvatarRes:  make(chan charAvatarMsg, 32),
+		charBtns: map[string]*widget.Clickable{},
 	}
+	// 头像缓存：异步结果回灌后催本窗重绘。回调**调用时**现取 f.win（次窗在
+	// newSettingsForm 返回后才赋值 runSecondary 的 w），故闭包捕获 f 而非 win 本身。
+	f.charAvatars = newAvatarCache(charAvatarPx, func() {
+		if f.win != nil {
+			f.win.Invalidate()
+		}
+	})
 	f.promptEditor.init()
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
 	// 按视口**宽**迭代 → 只画首行、其余空白窗底）。页数按注册表长度给（D162）。

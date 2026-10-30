@@ -13,6 +13,8 @@ type ConversationSummary struct {
 	Title     string          `json:"title"`
 	MessageN  int             `json:"message_n"`
 	UpdatedAt time.Time       `json:"updated_at"`
+	// Character 绑定的角色 slug（§5.17/D243；空 = 非角色会话）。列表侧据此标注来路。
+	Character string `json:"character,omitempty"`
 }
 
 // ConversationStore 会话存储端口：整树存取（一会话一 JSON），写前留一代 .bak（D7）。

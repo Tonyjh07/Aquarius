@@ -76,6 +76,22 @@ func TestHistorySyncModelAndSessions(t *testing.T) {
 	historyFrame(gtx, u.th, u, st)
 }
 
+// TestHistorySessionRowAvatarRenders §5.17：会话行左槽三类形态（有卡带头像路径、有卡无头像、
+// 非角色会话）各画一帧不 panic。头像解码走后台 goroutine（结果入本窗缓存），本用例只验绘制
+// 路径：未就绪帧一律回落兜底，不该阻塞或崩溃。
+func TestHistorySessionRowAvatarRenders(t *testing.T) {
+	list := fakeLister{
+		{ID: "C1", Title: "甲", Messages: 2, Current: true, Character: "alice", AvatarPath: "/no/such/avatar.png"},
+		{ID: "C2", Title: "乙", Messages: 1, Character: "bob"}, // 有卡无头像 → 首字兜底
+		{ID: "C3", Title: "丙", Messages: 1},                   // 非角色会话 → 纯色方块
+	}
+	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, list)
+	st := newHistoryState(u)
+	var src input.Source
+	gtx, _ := frameGtxSize(src, 720, 560)
+	historyFrame(gtx, u.th, u, st)
+}
+
 // TestHistorySwitchDispatch 点会话行 → /switch <id> 经 inCh（与键入同路径）。
 func TestHistorySwitchDispatch(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))

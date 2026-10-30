@@ -151,6 +151,7 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 			Title:     c.Title,
 			MessageN:  c.NodeCount() - 1, // 不含 Root 节点
 			UpdatedAt: c.UpdatedAt,
+			Character: c.Character,
 		})
 	}
 	if len(legacy) > 0 {

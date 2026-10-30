@@ -31,14 +31,28 @@ func (s *Session) publishSessions(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	// 角色头像（§5.17）：按 slug 现取一次卡目录，建 slug → 头像路径映射。卡目录读失败
+	// 不阻断列表——头像留空、行内回落默认（列表本身仍可用）。
+	avatars := map[string]string{}
+	if s.characters != nil {
+		if cards, err := s.characters.List(ctx); err == nil {
+			for _, ci := range cards {
+				if ci.AvatarPath != "" {
+					avatars[ci.Slug] = ci.AvatarPath
+				}
+			}
+		}
+	}
 	items := make([]port.SessionSummary, 0, len(sums))
 	for _, sm := range sums {
 		items = append(items, port.SessionSummary{
-			ID:        sm.ID,
-			Title:     sm.Title,
-			UpdatedAt: sm.UpdatedAt,
-			Messages:  sm.MessageN,
-			Current:   sm.ID == s.cur.ID,
+			ID:         sm.ID,
+			Title:      sm.Title,
+			UpdatedAt:  sm.UpdatedAt,
+			Messages:   sm.MessageN,
+			Current:    sm.ID == s.cur.ID,
+			Character:  sm.Character,
+			AvatarPath: avatars[sm.Character],
 		})
 	}
 	s.sessions.Store(&sessionSnapshot{items: items})

@@ -11,7 +11,6 @@ package uigui
 
 import (
 	"image"
-	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -67,12 +66,6 @@ func (u *UI) sendCharacterCmd(args ...string) {
 	}
 }
 
-// charAvatarMsg 后台头像解码结果（goroutine → 设置窗帧首）。
-type charAvatarMsg struct {
-	path  string
-	thumb *thumbSrc // nil = 解码失败（记墓碑，不重试）
-}
-
 // charPathPick 角色卡选择框回传（平台线程 → 设置窗 goroutine）。
 type charPathPick struct{ path string }
 
@@ -105,73 +98,6 @@ func (f *settingsForm) drainCharPicks(u *UI) {
 	}
 }
 
-// avatarFor 取角色卡头像缩略图；未就绪则登记并在后台解码（返回 nil，本帧画兜底）。
-// 仅设置窗事件循环 goroutine 调用（缓存与在途记账本窗独占）。
-func (f *settingsForm) avatarFor(path string) *thumbSrc {
-	if path == "" {
-		return nil
-	}
-	if t, ok := f.charAvatars[path]; ok {
-		return t
-	}
-	if f.charAvatarFail[path] || f.charAvatarBusy[path] {
-		return nil
-	}
-	if f.charAvatarBusy == nil {
-		f.charAvatarBusy = map[string]bool{}
-	}
-	f.charAvatarBusy[path] = true
-	go func() {
-		thumb := decodeAvatarFile(path)
-		select {
-		case f.charAvatarRes <- charAvatarMsg{path: path, thumb: thumb}:
-		default:
-			// 通道满：结果丢弃。帧首每帧排空，容量 32 远大于同屏头像数，实际不会发生；
-			// 万一发生只是这一张不显示（在途记账保持，不重试也不竞态）。
-		}
-		if f.win != nil {
-			f.win.Invalidate()
-		}
-	}()
-	return nil
-}
-
-// decodeAvatarFile 后台读文件 + 解码（后台 goroutine；只读不可变输入，不碰 UI 状态）。
-func decodeAvatarFile(path string) *thumbSrc {
-	rc, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer rc.Close()
-	return loadThumbSide(rc, charAvatarPx, thumbMaxPixels)
-}
-
-// drainCharAvatars 帧首收下后台结果（入缓存 / 记墓碑），排空通道。
-func (f *settingsForm) drainCharAvatars() {
-	if f.charAvatarRes == nil {
-		return
-	}
-	for {
-		select {
-		case m := <-f.charAvatarRes:
-			delete(f.charAvatarBusy, m.path)
-			if m.thumb != nil {
-				if f.charAvatars == nil {
-					f.charAvatars = map[string]*thumbSrc{}
-				}
-				f.charAvatars[m.path] = m.thumb
-			} else {
-				if f.charAvatarFail == nil {
-					f.charAvatarFail = map[string]bool{}
-				}
-				f.charAvatarFail[m.path] = true
-			}
-		default:
-			return
-		}
-	}
-}
-
 // syncCharactersSnapshot 角色页快照同步（仅在本页时现取，别页不空读盘）+ 头像结果排空。
 func (f *settingsForm) syncCharactersSnapshot(u *UI) {
 	if u == nil {
@@ -180,7 +106,7 @@ func (f *settingsForm) syncCharactersSnapshot(u *UI) {
 	if f.page == pageCharacters && u.opts.Characters != nil {
 		f.charactersSnap = u.opts.Characters()
 	}
-	f.drainCharAvatars()
+	f.charAvatars.drain()
 }
 
 // charMetaLine 角色行第二行：来源 / 世界书条目 / 资产 / 导入时间（用户面短文案）。
@@ -215,7 +141,7 @@ func (st CharacterState) metaLine() string {
 // charAvatar 角色卡头像：真图（异步解码；未就绪/失败画兜底）或兜底首字方图。
 func (f *settingsForm) charAvatar(gtx layout.Context, th *material.Theme, st CharacterState) layout.Dimensions {
 	side := gtx.Dp(charAvatarDp)
-	if src := f.avatarFor(st.AvatarPath); src != nil {
+	if src := f.charAvatars.get(st.AvatarPath); src != nil {
 		if op, ok := src.imageOp(); ok {
 			drawThumb(gtx, image.Rect(0, 0, side, side), op)
 			return layout.Dimensions{Size: image.Pt(side, side)}
@@ -225,26 +151,30 @@ func (f *settingsForm) charAvatar(gtx layout.Context, th *material.Theme, st Cha
 }
 
 // charAvatarFallback 无头像 / 解码中 / 解码失败时的兜底：下沉面圆角方块 + 显示名首字。
+// name 为空（非角色会话）时只画纯色方块，不画字。
 func charAvatarFallback(gtx layout.Context, th *material.Theme, name string, side int) layout.Dimensions {
 	if side <= 0 {
 		return layout.Dimensions{}
 	}
 	pp := paperOf()
 	gtx.Constraints = layout.Exact(image.Pt(side, side))
-	return layout.Stack{}.Layout(gtx,
+	children := []layout.StackChild{
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, pp.sunken,
 				clip.UniformRRect(image.Rect(0, 0, side, side), side/4).Op(gtx.Ops))
 			return layout.Dimensions{Size: image.Pt(side, side)}
 		}),
-		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+	}
+	if strings.TrimSpace(name) != "" {
+		children = append(children, layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Label(th, unit.Sp(float32(side)*0.42), charInitial(name))
 				l.Color = pp.text2
 				return l.Layout(gtx)
 			})
-		}),
-	)
+		}))
+	}
+	return layout.Stack{}.Layout(gtx, children...)
 }
 
 // charInitial 显示名首字（去空白；空名回落「?」）。

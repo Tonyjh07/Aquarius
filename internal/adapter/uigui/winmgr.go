@@ -320,6 +320,7 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	var hist *historyState
 	if k == winHistory {
 		hist = newHistoryState(u) // D112/S3：会话历史帧状态（仅本窗 goroutine 读写）
+		hist.inval = w.Invalidate // §5.17：角色卡头像解码完成后催本窗重绘
 	}
 	var welc *welcomeForm
 	if k == winWelcome {

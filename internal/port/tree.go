@@ -107,6 +107,12 @@ type SessionSummary struct {
 	Messages int
 	// Current 是否当前会话。
 	Current bool
+	// Character 绑定的角色 slug（§5.17/D243；空 = 非角色会话）。只作展示与头像溯源，
+	// 装配不读它。
+	Character string
+	// AvatarPath 角色卡头像文件绝对路径（空 = 无卡或无头像）：界面据此画列表行左槽。
+	// 它是落位事实，不进模型上下文。
+	AvatarPath string
 }
 
 // SessionLister 会话列表只读端口（D120⑥，S3 左栏）：与 TreeView 同款**反向端口**
