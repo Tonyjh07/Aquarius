@@ -78,6 +78,8 @@ type SessionDeps struct {
 	// ExportsDir 导出缺省落点（`--path` 不给时用；装配根给 `<profile>/exports`）。
 	// 空 = 必须显式 --path，否则报未配置。
 	ExportsDir string
+	// Characters 角色卡目录（/character，§5.17）；nil 时 /character 报未接入。
+	Characters port.CharacterCatalog
 }
 
 // CommandHandler 动态命令处理器（§6.1 扩展点 #4 / §7.3 MCP prompts）：
@@ -114,6 +116,7 @@ type Session struct {
 	exporter    port.SessionExporter
 	importer    port.SessionImporter
 	exportsDir  string
+	characters  port.CharacterCatalog
 	cur         *conversation.Conversation
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
 	// 发布，UI 事件循环 goroutine 经 Branches 无锁读（见 tree.go）。
@@ -201,6 +204,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		exporter:    d.Exporter,
 		importer:    d.Importer,
 		exportsDir:  d.ExportsDir,
+		characters:  d.Characters,
 		dynamic:     map[string]CommandHandler{},
 		injectCh:    make(chan pendingInjection, injectQueueCap),
 	}

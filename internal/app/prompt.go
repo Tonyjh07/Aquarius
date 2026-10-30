@@ -40,6 +40,26 @@ type PromptSpec struct {
 	Persona []string
 	// Legacy 顶层 system_prompt（兼容）：作为内置 @default 的正文来源。
 	Legacy string
+	// Character 角色卡投影（§5.17/D247）：非 nil 时 @char.* 内置模块从它取值；
+	// nil = 非角色会话，六个 @char.* 全为空（条件内置：不出、不计缺失）。
+	Character *CharacterPrompt
+	// UserName {{user}} 的取值（config `prompts.user_name`）；空则按 "User"。
+	UserName string
+}
+
+// CharacterPrompt 一张卡在装配时需要的取值（§5.17/D247）。
+//
+// 由装配根从 port.CharacterCard 归一后填进 PromptSpec；原文照抄，宏替换与拼装
+// 都发生在组合时（落树即终稿，与 persona 快照同口径）。
+type CharacterPrompt struct {
+	Display      string           // {{char}} 取值（nickname 优先，否则 name）
+	Description  string           // 卡的角色描述（原文）
+	Personality  string           // 卡的性格（原文）
+	Scenario     string           // 卡的情境（原文）
+	System       string           // 卡的 system_prompt（原文；{{original}} 组合时才展开）
+	BookEntries  []port.BookEntry // 世界书全部条目；哪些算常驻由 InjectBook 过滤
+	PreferSystem bool             // 替换模式：用户人格引用整体让位，@env 保留
+	InjectBook   bool             // 是否把 constant 且 enabled 的条目拼进 @char.book
 }
 
 // DefaultPersonaRefs prompts.persona 为空时的默认顶层引用（D144）。
