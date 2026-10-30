@@ -25,13 +25,17 @@ func (p *Plat) showSkillPick(kind PickKind) {
 	p.host.SkillPathPicked(kind, path)
 }
 
-// pickSkillPathCommand 按平台取一条可用命令选路径（单选文件 / 选目录）；ok=false = 无命令。
+// pickSkillPathCommand 按平台取一条可用命令选路径（单选文件 / 选目录 / 角色卡）；
+// ok=false = 无命令。
 func pickSkillPathCommand(kind PickKind) (string, bool) {
 	switch runtime.GOOS {
 	case "darwin":
 		script := `POSIX path of (choose file with prompt "选择技能文件")`
-		if kind == PickSkillDir {
+		switch kind {
+		case PickSkillDir:
 			script = `POSIX path of (choose folder with prompt "选择技能文件夹")`
+		case PickCharacterCard:
+			script = `POSIX path of (choose file with prompt "选择角色卡文件")`
 		}
 		out, err := exec.Command("osascript", "-e", script).Output()
 		if err != nil {
@@ -40,12 +44,19 @@ func pickSkillPathCommand(kind PickKind) (string, bool) {
 		return strings.TrimSpace(string(out)), true
 	default:
 		var cmds [][]string
-		if kind == PickSkillDir {
+		switch kind {
+		case PickSkillDir:
 			cmds = [][]string{
 				{"zenity", "--file-selection", "--directory", "--title=选择技能文件夹"},
 				{"kdialog", "--getexistingdirectory", "."},
 			}
-		} else {
+		case PickCharacterCard:
+			cmds = [][]string{
+				{"zenity", "--file-selection", "--file-filter=角色卡 | *.png *.json *.charx",
+					"--file-filter=所有文件 | *", "--title=选择角色卡文件"},
+				{"kdialog", "--getopenfilename", ".", "*.png *.json *.charx | 角色卡"},
+			}
+		default:
 			cmds = [][]string{
 				{"zenity", "--file-selection", "--file-filter=技能文件 | SKILL.md *.zip",
 					"--file-filter=所有文件 | *", "--title=选择技能文件"},

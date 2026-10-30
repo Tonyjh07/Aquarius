@@ -35,9 +35,12 @@ func (p *Plat) RequestPathPick(kind PickKind) {
 // showSkillPick 呈现选择框（shell 线程）：选中 → Host.SkillPathPicked；取消/出错静默。
 func (p *Plat) showSkillPick(kind PickKind) {
 	var path string
-	if kind == PickSkillDir {
+	switch kind {
+	case PickSkillDir:
 		path = browseForFolder("选择技能文件夹")
-	} else {
+	case PickCharacterCard:
+		path = openCharacterCard()
+	default:
 		path = openSkillFile()
 	}
 	if path == "" || p.host == nil {
@@ -46,15 +49,8 @@ func (p *Plat) showSkillPick(kind PickKind) {
 	p.host.SkillPathPicked(kind, path)
 }
 
-// openSkillFile 单选文件（SKILL.md / .zip）：OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST。
+// openSkillFile 单选技能文件（SKILL.md / .zip）。
 func openSkillFile() string {
-	const (
-		ofnHideReadOnly  = 0x4
-		ofnNoChangeDir   = 0x8
-		ofnPathMustExist = 0x800
-		ofnFileMustExist = 0x1000
-		ofnExplorer      = 0x80000
-	)
 	filter := utf16Pairs(
 		"技能文件 (SKILL.md, *.zip)",
 		"SKILL.md;*.zip",
@@ -65,7 +61,37 @@ func openSkillFile() string {
 		"所有文件 (*.*)",
 		"*.*",
 	)
-	title, err := syscall.UTF16FromString("选择技能文件")
+	return openSingleFile(filter, "选择技能文件")
+}
+
+// openCharacterCard 单选角色卡文件（PNG / JSON / .charx）。
+func openCharacterCard() string {
+	filter := utf16Pairs(
+		"角色卡 (PNG / JSON / .charx)",
+		"*.png;*.json;*.charx",
+		"PNG 卡 (*.png)",
+		"*.png",
+		"JSON 卡 (*.json)",
+		"*.json",
+		"角色卡包 (*.charx)",
+		"*.charx",
+		"所有文件 (*.*)",
+		"*.*",
+	)
+	return openSingleFile(filter, "选择角色卡文件")
+}
+
+// openSingleFile 单选文件框（OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST）：filter 为
+// utf16Pairs 组好的过滤器，titleText 为标题。选中即返回路径，取消/出错返回空串。
+func openSingleFile(filter []uint16, titleText string) string {
+	const (
+		ofnHideReadOnly  = 0x4
+		ofnNoChangeDir   = 0x8
+		ofnPathMustExist = 0x800
+		ofnFileMustExist = 0x1000
+		ofnExplorer      = 0x80000
+	)
+	title, err := syscall.UTF16FromString(titleText)
 	if err != nil {
 		return ""
 	}

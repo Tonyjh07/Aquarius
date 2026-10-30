@@ -76,8 +76,8 @@ func TestStoreImportLoadList(t *testing.T) {
 	if loaded.Profile.Description != "desc" || loaded.Profile.PostHistory != "tail" {
 		t.Fatalf("loaded profile = %+v", loaded.Profile)
 	}
-	if loaded.AvatarPath != "" {
-		t.Fatalf("avatar path = %q, want empty", loaded.AvatarPath)
+	if loaded.Info.AvatarPath != "" {
+		t.Fatalf("avatar path = %q, want empty", loaded.Info.AvatarPath)
 	}
 
 	list, err := s.List(ctx)
@@ -213,10 +213,10 @@ func TestStoreImportPNGStripsText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if !card.Info.HasAvatar || card.AvatarPath == "" {
+	if !card.Info.HasAvatar || card.Info.AvatarPath == "" {
 		t.Fatalf("avatar must be set: %+v", card.Info)
 	}
-	avatar, err := os.ReadFile(card.AvatarPath)
+	avatar, err := os.ReadFile(card.Info.AvatarPath)
 	if err != nil {
 		t.Fatalf("read avatar: %v", err)
 	}

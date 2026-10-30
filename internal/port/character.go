@@ -15,19 +15,22 @@ var ErrCharacterNotFound = errors.New("character not found")
 // 只展示的字段（Creator / Version / Tags / ImportedAt / Warnings）不进模型上下文：
 // 它们是给用户看的来路说明，不是要遵循的指令。
 type CharacterInfo struct {
-	Slug        string    // 目录名：由显示名派生，profile 内唯一
-	Name        string    // 卡里的 name
-	Display     string    // nickname 优先，否则 name；= {{char}} 的取值
-	Creator     string    // 只展示
-	Version     string    // character_version，只展示
-	Tags        []string  // 只展示
-	Source      string    // png | json | charx
-	Spec        string    // v2 | v3 | v3+（高于 3.x 的未知版本；V1 不读）
-	Greetings   int       // alternate_greetings 条数
-	BookEntries int       // character_book 条目数（保留；按开关决定是否注入常驻条目）
-	Assets      int       // 卡里 data.assets 条数（图标之外的表情 / 背景 / 语音等；保留未用）
-	HasAvatar   bool      // 有 avatar.png
-	ImportedAt  time.Time // 导入时间（meta.json 缺时为零值）
+	Slug        string   // 目录名：由显示名派生，profile 内唯一
+	Name        string   // 卡里的 name
+	Display     string   // nickname 优先，否则 name；= {{char}} 的取值
+	Creator     string   // 只展示
+	Version     string   // character_version，只展示
+	Tags        []string // 只展示
+	Source      string   // png | json | charx
+	Spec        string   // v2 | v3 | v3+（高于 3.x 的未知版本；V1 不读）
+	Greetings   int      // alternate_greetings 条数
+	BookEntries int      // character_book 条目数（保留；按开关决定是否注入常驻条目）
+	Assets      int      // 卡里 data.assets 条数（图标之外的表情 / 背景 / 语音等；保留未用）
+	HasAvatar   bool     // 有 avatar.png
+	// AvatarPath 头像文件的绝对路径（空 = 没有头像）。只给界面呈现用（列表 / 会话行左槽）：
+	// 它是落位事实，不是卡内容，绝不进模型上下文。
+	AvatarPath string
+	ImportedAt time.Time // 导入时间（meta.json 缺时为零值）
 	// Unsupported 本版不执行的机制（按固定顺序，规范键名）：regex_scripts / tavern_helper /
 	// tavernweave / depth_prompt。这些键随原卡留档、本版一律不运行；导入回执据此如实告知。
 	Unsupported []string
@@ -59,11 +62,10 @@ type BookEntry struct {
 	Constant bool // constant；缺键 = false
 }
 
-// CharacterCard 一张卡的完整内容：事实 + 头像路径 + 投影原文。
+// CharacterCard 一张卡的完整内容：事实 + 投影原文（头像路径在 Info.AvatarPath）。
 type CharacterCard struct {
-	Info       CharacterInfo
-	AvatarPath string // 空 = 没有头像
-	Profile    CharacterProfile
+	Info    CharacterInfo
+	Profile CharacterProfile
 }
 
 // CharacterCatalog 角色卡目录只读端口（§5.17）。

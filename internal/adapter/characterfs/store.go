@@ -112,10 +112,6 @@ func (s *Store) Load(ctx context.Context, slug string) (port.CharacterCard, erro
 		return port.CharacterCard{}, fmt.Errorf("角色卡 %s 解析失败: %w", slug, err)
 	}
 	card := port.CharacterCard{Info: info, Profile: parsed.Profile}
-	if ap := existingAvatar(dir); ap != "" {
-		card.AvatarPath = ap
-		card.Info.HasAvatar = true
-	}
 	return card, nil
 }
 
@@ -153,6 +149,7 @@ func (s *Store) Import(ctx context.Context, source string) (port.CharacterCard, 
 	}
 
 	if avatar := s.writeAvatar(dir, parsed, &info); avatar != "" {
+		info.AvatarPath = filepath.Join(dir, avatar)
 		info.HasAvatar = true
 	}
 	if len(parsed.Archive) > 0 {
@@ -166,9 +163,6 @@ func (s *Store) Import(ctx context.Context, source string) (port.CharacterCard, 
 	}
 
 	card := port.CharacterCard{Info: info, Profile: parsed.Profile}
-	if ap := existingAvatar(dir); ap != "" {
-		card.AvatarPath = ap
-	}
 	return card, nil
 }
 
@@ -205,7 +199,8 @@ func (s *Store) writeAvatar(dir string, parsed ParsedCard, info *port.CharacterI
 func (s *Store) loadInfo(dir, dirName string) (port.CharacterInfo, error) {
 	if m, err := readMeta(dir); err == nil {
 		info := m.toInfo(dirName)
-		info.HasAvatar = existingAvatar(dir) != ""
+		info.AvatarPath = existingAvatar(dir)
+		info.HasAvatar = info.AvatarPath != ""
 		return info, nil
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "card.json"))
@@ -220,7 +215,8 @@ func (s *Store) loadInfo(dir, dirName string) (port.CharacterInfo, error) {
 	info.Slug = dirName
 	info.Source = sourceFromFiles(dir)
 	info.Warnings = append(info.Warnings, "meta.json 缺失或损坏，已从卡重建")
-	info.HasAvatar = existingAvatar(dir) != ""
+	info.AvatarPath = existingAvatar(dir)
+	info.HasAvatar = info.AvatarPath != ""
 	if err := writeMeta(dir, info, avatarFile(dir)); err != nil {
 		s.logf("重建 %s 的 meta.json 失败：%v", dirName, err)
 	}

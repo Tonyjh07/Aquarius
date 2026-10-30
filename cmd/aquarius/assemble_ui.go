@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/characterfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
@@ -132,6 +133,8 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 	case "gui":
 		// GUI（D43/§15）：悬浮窗事件循环自驱；位置记忆落 profile 内（§15.1）。
 		// 不进 CI 图形路径（§15.5：GUI 测试全走 headless，门禁/e2e 仍 repl）。
+		// 设置窗「角色」页只读数据面（§5.17）：角色卡目录晚于 UI 就绪，故现取。
+		charView := newCharactersView(func() *characterfs.Store { return w.characters })
 		ui := uigui.New(uigui.Options{
 			Status: func() uigui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
@@ -170,6 +173,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Tools:               &toolsAdmin{w: w},                                                                                                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）
 			Secrets:             &secretsAdmin{w: w},                                                                                                                                            // S9-6b/D161：密钥库管理面（secretsBin 由 bootstrap 填，开窗时已就绪）
 			Skills:              &skillsAdmin{w: w},                                                                                                                                             // D202/D203：技能管理面（清单来自 skillfs.Catalog，安装走 skillfs.Installer）
+			Characters:          charView.snapshot,                                                                                                                                              // §5.17：角色卡清单只读快照（动作经 /character 命令通道）
 			PreviewPrompts:      w.previewPrompts,                                                                                                                                               // S7/D144：人格组合预览（当前表单 → 最终 system 文本）
 			ApplyPromptTemplate: w.applyPromptTemplate,                                                                                                                                          // D154：人格模板窄写回（遮罩「默认模板」页签保存）
 			Voice:               w.voiceSlot(),                                                                                                                                                  // D179：空输入时右钮 = 录音键（录→转写→回填，不自动发送）；识别未配置则为 nil（右钮保持发送）

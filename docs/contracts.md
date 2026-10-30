@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-30 @ 0b6f8fb -->
+<!-- docs-sync: 2026-10-30 @ bf3ce80 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1336,6 +1336,9 @@ type CharacterInfo struct {
     BookEntries int       // character_book 条目数（保留；按 characters.inject_constant_book 决定是否注入常驻条目）
     Assets      int       // 卡里 data.assets 条数（图标之外的表情/背景/语音等；保留未用，不内联不下载）
     HasAvatar   bool
+    // AvatarPath 头像文件绝对路径（空 = 没有头像）。只给界面呈现（设置页列表 / 会话列表行左槽）；
+    // 它是落位事实，不是卡内容，绝不进模型上下文。
+    AvatarPath  string
     ImportedAt  time.Time
     // Unsupported 本版不执行的机制（固定顺序，规范键名）：regex_scripts / tavern_helper /
     // tavernweave / depth_prompt。随原卡留档、一律不运行；导入回执据此如实告知。
@@ -1369,7 +1372,6 @@ type BookEntry struct {
 
 type CharacterCard struct {
     Info       CharacterInfo
-    AvatarPath string // 空 = 没有头像
     Profile    CharacterProfile
 }
 

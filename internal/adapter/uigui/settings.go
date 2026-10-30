@@ -325,18 +325,19 @@ var (
 // 这里的常量只是**可读的页索引**——加页时必须在 settingsPages 追加一页，并在此加对应常量；
 // pageConstCount 与注册表长度的等式由测试锁住，两处漏一处就响亮失败。
 const (
-	pageGeneral   = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
-	pageModel            // 模型：当前模型名 / 原生思考与推理档位 / 降级链（D176 口径一）
-	pageProviders        // 模型服务：provider 编辑区（协议 / 端点 / 密钥池 / 模型能力表；D176）
-	pageSecrets          // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
-	pageChat             // 对话：限额
-	pagePrompt           // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
-	pageTools            // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
-	pageSkills           // 技能：已装清单 + 四种导入入口 + 更新/卸载 + 额外目录（D202/D203）
-	pageWeb              // 联网：搜索与抓取提供商、本地抓取参数（D200）
-	pageAudio            // 语音：识别 / 合成服务、音色与风格、试听（D179）
-	pageAdv              // 高级：config.json 原文
-	pageAbout            // 关于：图标 / 名字与一句话 / 构建版本 / 运行环境 / 项目主页 / 版权与许可
+	pageGeneral    = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
+	pageModel             // 模型：当前模型名 / 原生思考与推理档位 / 降级链（D176 口径一）
+	pageProviders         // 模型服务：provider 编辑区（协议 / 端点 / 密钥池 / 模型能力表；D176）
+	pageSecrets           // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
+	pageChat              // 对话：限额
+	pagePrompt            // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览（S7b/D145 独立成页）
+	pageTools             // 工具与 MCP：内置工具启停 + MCP 与插件管理（S6/D143 起升级为可交互管理面）
+	pageSkills            // 技能：已装清单 + 四种导入入口 + 更新/卸载 + 额外目录（D202/D203）
+	pageCharacters        // 角色：角色卡清单 + 头像 + 导入/删除/开始对话（§5.17）
+	pageWeb               // 联网：搜索与抓取提供商、本地抓取参数（D200）
+	pageAudio             // 语音：识别 / 合成服务、音色与风格、试听（D179）
+	pageAdv               // 高级：config.json 原文
+	pageAbout             // 关于：图标 / 名字与一句话 / 构建版本 / 运行环境 / 项目主页 / 版权与许可
 	// pageConstCount 页常量个数（编译期锚；见上方说明）。
 	pageConstCount
 )
@@ -380,6 +381,22 @@ type settingsForm struct {
 	skillsStatus  string                       // 反馈文案（状态行）
 	skillsErr     bool                         // 反馈是否为错误
 	skillConfirm  string                       // 待卸载的技能名（"" = 无；行内二次确认）
+
+	// 角色页（§5.17）：清单经 Options.Characters 现取（装配根节流读盘），动作经
+	// `/character` 命令通道（不直连管理面）；头像异步解码（缓存 / 在途 / 墓碑 + 结果通道）。
+	charWired      bool                         // Options.Characters 已接线（未接线 = 只读占位）
+	charactersSnap CharactersSnapshot           // 本页快照（进入本页时现取）
+	charBtns       map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
+	charSource     widget.Editor                // 卡文件来源（路径；选择框只填这里）
+	charImport     widget.Clickable             // 「导入」按钮
+	charPick       widget.Clickable             // 「选择文件…」
+	charConfirm    string                       // 待删除的 slug（"" = 无；行内二次确认）
+	charStatus     string                       // 反馈文案（状态行）
+	charErr        bool                         // 反馈是否为错误
+	charAvatars    map[string]*thumbSrc         // 头像缓存（键 = 绝对路径）
+	charAvatarBusy map[string]bool              // 在途解码记账
+	charAvatarFail map[string]bool              // 解码失败墓碑（不重试）
+	charAvatarRes  chan charAvatarMsg           // 后台解码结果（帧首排空）
 
 	// 密钥库页（S9-6b/D161）：数据面见 settings_secrets.go。动作**同步**（本地小文件 IO），
 	// 故没有工具页那套结果通道；`secretBtns` 按键名分派（动作按钮 + 行内二次确认）。
@@ -702,6 +719,12 @@ func newSettingsFormState() *settingsForm {
 		secretsRev: -1,
 		// 技能页快照同理：起点 −1 让首帧必采纳（空安装面 Revision 常为 0）。
 		skillsRev: -1,
+		// 角色页头像异步解码的结果通道与记账（§5.17）。
+		charBtns:       map[string]*widget.Clickable{},
+		charAvatars:    map[string]*thumbSrc{},
+		charAvatarBusy: map[string]bool{},
+		charAvatarFail: map[string]bool{},
+		charAvatarRes:  make(chan charAvatarMsg, 32),
 	}
 	f.promptEditor.init()
 	// S4c 防线按页复制：行列表轴向恒纵向（material.List 未设轴向 = Horizontal，
@@ -741,6 +764,11 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.syncSkillsSnapshot()     // 开窗即取一次（帧首同款；动作后再取）
 	f.skillSource.SingleLine = true
 	f.skillDirInput.SingleLine = true
+	if u.opts.Characters != nil { // §5.17：角色卡清单（nil = 只读占位）
+		f.charWired = true
+		f.charactersSnap = u.opts.Characters() // 开窗即取一次（进入本页时帧首同款再取）
+	}
+	f.charSource.SingleLine = true
 	if u.opts.Settings == nil {
 		return f
 	}

@@ -111,6 +111,14 @@ const (
 	rowSkillRescan // 「重新扫描」页级动作
 	rowSkillWarn   // 未加载条目一项（field = Warnings 下标）
 	rowSkillStatus // 异步动作反馈状态行
+	// 角色页（§5.17）：已导入角色卡清单 + 导入入口（动作经 /character 命令通道）。
+	rowCharItem   // 已导入角色卡一行（field = Items 下标；行内开始对话 / 删除）
+	rowCharEmpty  // 空态/未接线占位（text = 文案）
+	rowCharWarn   // 读目录失败提示（text = 文案）
+	rowCharNote   // 说明（text 忽略；文案在 Body 内）
+	rowCharSource // 卡文件来源输入档（+「导入」按钮）
+	rowCharPick   // 「选择文件…」（原生选择框只填来源框）
+	rowCharStatus // 动作反馈状态行
 	// S7/D144：人格模块树（「系统提示词」页，S7b/D145 独立成页）。
 	rowPromptNote    // 说明（text = 文案）
 	rowPromptGrid    // 模块库三列网格（D148；整块占一行，模块数不影响行数）
@@ -231,12 +239,15 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	f.drainToolResults()  // 工具页异步动作结果回灌状态行
 	f.drainSkillResults() // 技能页异步动作结果回灌状态行
 	f.drainSkillPicks(u)  // 技能导入选择框结果（只填来源框，不直接落盘）
+	f.drainCharPicks(u)   // 角色卡选择框结果（只填来源框，不直接落盘）
 	// 工具页原子快照（Revision 变了才重建行/按钮；同历史窗口径）。
 	f.syncToolsSnapshot()
 	// 密钥库页原子快照（同口径：Revision 变了才重建条目行）。
 	f.syncSecretsSnapshot()
 	// 技能页原子快照（同口径）。
 	f.syncSkillsSnapshot()
+	// 角色页快照（本页现取，装配根侧节流读盘）+ 头像异步结果排空。
+	f.syncCharactersSnapshot(u)
 	for f.save.Clicked(gtx) {
 		u.saveSettings(f)
 	}
@@ -554,6 +565,7 @@ func rowInCard(k rowKind) bool {
 		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote,
 		rowSamplingNote,
 		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus,
+		rowCharEmpty, rowCharWarn, rowCharNote, rowCharStatus,
 		rowAboutHero, rowAboutNote, rowAboutStatus:
 		return false
 	}

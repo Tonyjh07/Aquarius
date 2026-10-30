@@ -39,10 +39,15 @@ func (h *platHost) FilesPicked(paths []string) {
 	h.u.post(attachMsg{paths: paths})
 }
 
-// SkillPathPicked 技能导入选择框结果（空 = 取消）：投专用通道，由设置窗帧首取走。
-// 不走主窗 post——设置窗是独立次窗 goroutine（§15.7：跨窗只经原子快照/通道 + Invalidate）。
+// SkillPathPicked 专用选择框结果（空 = 取消）：技能导入投专用通道，角色卡导入投角色
+// 页自己的通道。不走主窗 post——设置窗是独立次窗 goroutine（§15.7：跨窗只经原子快照/
+// 通道 + Invalidate）。
 func (h *platHost) SkillPathPicked(kind platform.PickKind, path string) {
 	if path == "" {
+		return
+	}
+	if kind == platform.PickCharacterCard {
+		h.u.pushCharPick(charPathPick{path: path})
 		return
 	}
 	h.u.pushSkillPick(skillPathPick{kind: kind, path: path})

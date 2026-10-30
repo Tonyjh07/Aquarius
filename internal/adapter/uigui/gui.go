@@ -130,6 +130,10 @@ type Options struct {
 	// Skills 技能管理面（D202/D203）：设置窗「技能」页数据面 + 异步动作（安装/更新/
 	// 卸载/重扫/技能目录增删）；nil = 该页只读占位。
 	Skills SkillsAdmin
+	// Characters 角色卡清单只读快照（§5.17）：设置窗「角色」页数据面。导入 / 删除 /
+	// 开始对话不在此面——本页动作一律经 `/character` 命令通道（回执进主窗转写区）。
+	// 逐帧问：装配根实现可自行节流读盘；nil = 该页只读占位。
+	Characters func() CharactersSnapshot
 	// PreviewPrompts 人格组合预览（S7/D144，装配根实现）：按设置窗当前（未保存）模块树 +
 	// 引用展开最终 system 文本（纯计算，与新建会话同口径；不落盘、不阻断）。nil = 无预览行。
 	PreviewPrompts func(nodes []PromptModuleView, persona []string, legacy string) string
@@ -465,6 +469,8 @@ type UI struct {
 	// skillPicks 技能导入选择框结果通道（平台线程 → 设置窗 goroutine，D203）：容量小，
 	// 满即丢（结果只是「填进来源框」，丢了重选一次即可）；读出后 invalidate 设置窗重绘。
 	skillPicks chan skillPathPick
+	// charPicks 角色卡选择框结果通道（平台线程 → 设置窗 goroutine，§5.17）：口径同 skillPicks。
+	charPicks chan charPathPick
 	// filePicks 会话进出的文件框结果通道（平台线程 → 历史窗 goroutine）：满即丢；
 	// 读出后由帧首投一条内核命令（壳内不做搬运）。
 	filePicks chan filePick
@@ -503,6 +509,7 @@ func newUI(opts Options, window bool) *UI {
 	u.focusPending = true // 初始焦点入输入栏（D63：编辑器不再每帧回投常驻焦点）
 	u.wins = newWinHost(nil)
 	u.skillPicks = make(chan skillPathPick, 4)
+	u.charPicks = make(chan charPathPick, 4)
 	u.filePicks = make(chan filePick, 4)
 	u.applyTheme(opts.Theme)                            // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
 	u.hotkeyCfg.Store(opts.Hotkey)                      // 快捷键槽预存（托盘线程 hotkeySetting 读）
