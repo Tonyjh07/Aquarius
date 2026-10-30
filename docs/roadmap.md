@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-30 @ b053696 -->
+<!-- docs-sync: 2026-10-30 @ 9000baa -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -33,7 +33,8 @@
 常驻内存优化，批次 P2-1…P2-10）**全部落地**；其中的 `uigui` 拆包已按实测评移入 backlog（D234）。
 
 当前开发分支 `feat/v0.3.0`（能力扩张）：**命令注册表**（D245）、**会话进出**（D242）、
-**命令提示参数相**（D250）与 **aqx 多会话备份**（D249）已落地，余额见 [plan.md](plan.md)。
+**命令提示参数相**（D250）、**aqx 多会话备份**（D249）与**角色卡只读导入**（D243/D247）已落地，
+余额见 [plan.md](plan.md)。
 `aqx` 容器随之从 A-2 的单树形状换成「一份装一组会话」（`manifest.json` + `conversations/<i>/`），
 **旧单树形状不再读**——`aqx` 未随任何版本发布，故不欠兼容。
 
@@ -101,6 +102,7 @@
 | v0.3.0-A | 会话进出：一份无损（`aqx`）+ 三份互通（`chatgpt` / `openai` / `sillytavern`）+ 一份只读（Open WebUI）、命令面、历史窗两入口（D242） | 已落地 2026-10-27 |
 | v0.3.0-B | 命令提示：参数相浮层（空格切相、逐参数声明 `Params`、`Tab` 轮换 / `Enter` 恒提交）+ GUI 输入历史（D250） | 已落地 2026-10-29 |
 | v0.3.0-E | aqx 多会话备份：一份归档装一组会话（`manifest.json` + `conversations/<i>/tree.json` + 跨会话共用 `blobs/`）、`/export --all\|--ids`、`/import --pick`、导入勾选面板、左栏批量选择（导出 / 删除）、批量 `/rmconv`（D249） | 已落地 2026-10-30 |
+| v0.3.0-D | 角色卡只读导入：PNG（`tEXt` `ccv3`/`chara`）/ JSON / `.charx`（ZIP）解析、`@char.*` 条件内置模块、`{{char}}`/`{{user}}`/`{{date}}`/`{{original}}` 宏替换、`/character` 命令面、设置窗「角色」页、会话列表行头像（D243/D247） | 已落地 2026-10-30 |
 
 **`v0.2.0-P2` 已落地**（批次号固定；完工，无剩余项）：
 
@@ -158,6 +160,29 @@
 | E-4 | `feat: pick which conversations to import from an archive` | GUI 勾选面板（每行标题 + 条数、缺省全勾、只一项不弹）、`Options.Indexer` 注入、`modalActive` 认面板、`startImport` 分流（清单取不到也直接投，原因由命令面说） |
 | E-5 | `feat: select conversations in the history list to export or delete them` | 左栏底部「选择」钮 + 行内自绘复选框（`widget.Bool` 嵌在行点击件里收不到指针事件）+ 动作条（全选 / 已选 N 个 / 取消 / 导出 / 删除）+ Esc 退出；导出 = 保存框只一档 aqx、ID 取按下那刻的快照 → `/export --ids`；删除 = `/rmconv`。**「导出全部会话」不单列：全选即整库** |
 | E-6 | `docs: describe the multi-conversation backup and the selection mode` | 5 篇描述文档（contracts §5.16、decisions D249、gui-design、guide、plan 里这一节移走）+ roadmap 的档案条目与逐笔表 |
+
+**`v0.3.0-D`（角色卡只读导入）的落笔顺序**：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| D-1 | `1a00ee9` | 端口 `CharacterInfo`/`CharacterProfile`/`BookEntry`/`CharacterCard` 与 `PromptSpec.Character`/`UserName`；装配根留空实现，命令先报「未接入」 |
+| D-2 | `7bb9465` | `@char` 组与六个条件内置叶子（无卡 / 字段空 ⇒ 空模块、不计缺失）；`Compose` 先算 `U` 再展开卡文本；`{{char}}`/`{{user}}`/`{{date}}`/`{{original}}` 与 `<BOT>`/`<USER>`/`<START>` 宏替换器；不带卡输出逐字节不变（golden 锁） |
+| D-3 | `48e6c69` | `adapter/characterfs` 读 V2/V3 纯 JSON 与 PNG（`tEXt` 关键字大小写不敏感、`ccv3` 优先、进场去 BOM）；字段归一、`data` 与顶层镜像的取舍、`nickname` 优先 |
+| D-4 | `8e89f4b` | `.charx`（ZIP）：根 `card.json`、资产 URI 三形态、图标优选 `name=main`、zip-slip 与条目 / 展开门禁、原包留档；缺 `card.json` 报「这是发行包，请导入其中的 `.charx`」 |
+| D-5 | `4ecbdf8` | 头像落盘写去 `tEXt` 重编码的像素 PNG（52 MB → 2.22 MiB 像素无损）；引 `x/image/webp` 认 webp 资产 |
+| D-6 | `c39bf8e` | `<profile>/characters/<slug>/` 落位（`card.json` 逐字节 + `meta.json` 原子写 + `avatar.png` + 可选 `source.charx`）；slug 归一与大小写不敏感查重；`List` 坏条目带警告跳过、`meta.json` 缺失时从卡重建 |
+| D-7 | `59bf9b0` | 卡片字段投影成会话文本：有效引用追加 `["@char.book","@char","@char.system"]`、`prefer_system_prompt` 两态（替换态仍带 `@env`）、`{{original}}` 两处展开、常驻世界书按 `constant && enabled` 过滤、`mes_example` 走注入节点 |
+| D-8 | `5155c5c` | `Conversation.Character`/`Tail` 进 `Snapshot`/`Restore` 与落盘 wire（旧文件缺键 = 空）；装配末尾追加 `Tail`、config 开关控制；`Tail` 存宏替换后的终稿 |
+| D-9 | `0b6f8fb` | `/character start` 走独立新建路径（不改被 `/new`/`/switch`/`/import` 共用的 `newConversation`）：投影 → 选开场白（合并列表，n 从 1 起）→ 建会话 → 落盘 → 清屏回放 |
+| D-10 | `2cd2940` | 卡里 `data.assets` 条数与「我们不执行的机制」记账（`CharacterInfo.Assets`/`Unsupported`），回执据此分列 |
+| D-11 | `ff4da71` | 导入回执四类（世界书 / 资产 / 不执行机制 / 只展示字段）+ 界面卡降级提示 + 超长开场白提示 |
+| D-12 | `e83e461` | `app.CharacterAdmin` 与装配根实现（范式同 `app.SkillAdmin`）；同名卡不覆盖、删除二次确认 |
+| D-13 | `bf3ce80` | `/character list|show|import|start|remove` 各一条命令表记录 |
+| D-14 | `9be4b2e` | 设置窗「角色」页（列表 / 头像 / 导入 / 删除 / 开始对话，全部经 `/character` 命令通道，UI 不直连 `CharacterAdmin`） |
+| D-15 | `d75e944` | 会话列表行左槽头像（共享 `avatarCache`，每窗各持一份）、`SessionSummary.Character`/`AvatarPath` 数据面；`@char.*` 内置清单标注「仅角色会话生效」 |
+| D-16 | `9804618` | `prompts.user_name` 与 `characters` 段四开关落 config（默认开的开关用 `*bool` 区分「键缺失 = 开」与「显式 false」）；装配根接线 `CharacterOpts`/`ApplyPostHistory` |
+| D-17 | `9000baa` | 端到端验收：三类容器各导一张真卡（V2 JSON / V3 PNG / V3 `.charx`）→ 开新会话 → 首轮请求逐段核对 → 压缩一次后示例被吸收而人格与常驻世界书仍在 → 删卡后照常装配 |
+| D-18 | `docs: close out the character card batch in the archives` | plan 删「B 角色卡只读导入」节并改各处交叉语句 + roadmap 档案条目与逐笔表 + 文档头标记刷新 |
 
 **文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
 D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。
