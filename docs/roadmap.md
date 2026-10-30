@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-30 @ fe825c7 -->
+<!-- docs-sync: 2026-10-30 @ cc106aa -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -35,7 +35,7 @@
 当前开发分支 `feat/v0.3.0`（能力扩张）：**命令注册表**（D245）、**会话进出**（D242）、
 **命令提示参数相**（D250）、**aqx 多会话备份**（D249）、**角色卡只读导入**（D243/D247）与
 **零碎项收口**（D252/D253/D254：提示词宏展开、provider 自定义请求头、会话树备份轮转）已全部落地，
-v0.3.0 无余额。
+v0.3.0 无余额（收口后另补一笔：备份代数在设置窗「常规」→「存储」可视可调，F-5）。
 `aqx` 容器随之从 A-2 的单树形状换成「一份装一组会话」（`manifest.json` + `conversations/<i>/`），
 **旧单树形状不再读**——`aqx` 未随任何版本发布，故不欠兼容。
 
@@ -194,6 +194,8 @@ v0.3.0 无余额。
 | F-2 | `3abdce0 feat: send provider-defined headers on chat requests` | `llm.Config.Headers` + `Client.headers`：`New` 仅 `ProtoChat` 存，`post()` 在默认头与 `authorize` 之后落（同名以声明为准）；config `model.providers[].headers` 与装配根接线；两条测试 |
 | F-3 | `fe825c7 feat: rotate conversation backups across N generations` | `storejson.NewWithKeep`/`Store.keep`/`DefaultKeep=1`、`backupPath`（第 1 代 `.bak`、更旧 `.bak.<i-1>`）、`rotate`、保存前 `rotatable` 完整性校验（坏文件不挤掉更旧的可用备份）、`Load` 按新到旧回退、`Remove` 清各代与遗留高代；config `backup.keep`（默认 3）与装配接线；六条轮转测试（4 files, +325/−25） |
 | F-4 | `docs: close out the remaining v0.3.0 items in the archives` | 决策 D252–D254 + contracts §5.3/§5.4/§7.7 + configuration（`headers`/`backup.keep`）+ plan 删「零碎四项」节并改交叉语句 + roadmap 档案条目与逐笔表 + 文档头标记刷新 |
+| F-5 | `cc106aa feat: expose conversation backup retention in settings` | `port.SettingsPatch`/`SettingsSnapshot` 加 `BackupKeep` 与范围常量 `SettingsBackupKeepMin/Max`（1–20）；uigui「常规」页新增「存储」区（`rowBackupKeep` + 单行编辑档，空 = 默认 3、越界就地拦）；cmd 侧 `textSettings.Backup` 读写 `backup.keep`（仅 `> 0` 才写键）；两条测试（uigui 行位/回填/越界、cmd 往返）（8 files） |
+| F-6 | `docs: record the backup retention setting in the archives` | roadmap §0 补记 + F-5/F-6 逐笔表 + configuration「设置窗与 config 的关系」存储段 + gui-design 常规页行 + guide 10.1 表 + 文档头标记刷新 |
 
 **文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
 D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。
