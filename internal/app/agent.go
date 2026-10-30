@@ -150,6 +150,10 @@ func New(d Deps, cfg Config) (*Agent, error) {
 // setModel 切换生成模型（/model，D32）：只改模型名，请求参数其余部分不受影响。
 func (a *Agent) setModel(name string) { a.model.Store(name) }
 
+// CompactTokens 自动压缩阈值 tokens（= CompactThreshold × MaxContextTokens）；命令面据此
+// 判超长开场白（按它的四分之一），与自动压缩用的是同一个数，不各算各的。
+func (a *Agent) CompactTokens() int { return a.compactAt }
+
 // setThink 切换原生思考三态（/think，D34）：nil = 键缺失态。
 func (a *Agent) setThink(v *bool) { a.think.Store(v) }
 

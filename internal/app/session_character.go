@@ -44,7 +44,12 @@ func (s *Session) startCharacter(ctx context.Context, slug string, n int) (strin
 	if _, err := s.replayHistory(ctx, "已开始"); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已用角色「%s」开始新会话 %s", card.Info.Display, c.ID), nil
+	// 两种人格模式各说清一件事（§5.17）：默认态 {{original}} 按空；替换态展开为用户人格。
+	mode := "用户人格在最前，卡的角色设定接在后面（{{original}} 按空处理）"
+	if s.charOpts.PreferSystemPrompt {
+		mode = "卡的 system_prompt 顶掉用户人格（{{original}} 展开为用户人格正文，环境信息保留）"
+	}
+	return fmt.Sprintf("已用角色「%s」开始新会话 %s\n人格模式：%s", card.Info.Display, c.ID, mode), nil
 }
 
 // newCharacterConversation 建角色会话：Root + persona 快照 + 示例注入节点 + 开场白，
