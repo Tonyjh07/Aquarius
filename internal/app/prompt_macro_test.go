@@ -1,6 +1,10 @@
 package app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 // TestExpandMacros 卡文本宏替换（§7.7/D247）：认 `{{char}}` / `{{user}}` / `{{date}}` /
 // `{{original}}` 与 `<BOT>` / `<USER>` / `<START>`；大小写不敏感、容忍括号内空格、
@@ -64,5 +68,40 @@ func TestExpandMacrosNoRecursion(t *testing.T) {
 	got := expandMacros("{{user}}", "Aria", "{{char}}", "2026-10-18", "")
 	if got != "{{char}}" {
 		t.Fatalf("expansion must not recurse: got %q, want %q", got, "{{char}}")
+	}
+}
+
+// TestExpandMacrosEmptyCharNoBind 无角色绑定时 `{{char}}` / `<BOT>` 原样保留（D252）——
+// 没有可替换的显示名，删空会静默吃掉用户写的字面量。
+func TestExpandMacrosEmptyCharNoBind(t *testing.T) {
+	for _, in := range []string{"{{char}}", "<BOT>", "hi {{char}} <BOT>"} {
+		if got := expandMacros(in, "", "Sam", "2026-10-18", ""); got != in {
+			t.Errorf("expandMacros(%q) = %q, want unchanged", in, got)
+		}
+	}
+}
+
+// TestComposeExpandsMacrosInUserPrompts 非角色会话的提示词也过同一份替换器（§7.7/D252）：
+// `@default`（system_prompt）与自定义模块里的 `{{user}}` / `{{date}}` 展开；无角色绑定时
+// `{{char}}` 原样保留，绑定角色时取显示名。
+func TestComposeExpandsMacrosInUserPrompts(t *testing.T) {
+	now := func() time.Time { return time.Date(2026, time.October, 18, 9, 0, 0, 0, time.UTC) }
+	spec := PromptSpec{
+		Legacy:   "You are {{user}}.",
+		UserName: "Sam",
+		Modules:  map[string]PromptModule{"rules": {Text: "Date {{date}}; char {{char}}; user <USER>"}},
+		Persona:  []string{"@default", "rules"},
+	}
+	got, _ := NewPersonaComposer(spec, RuntimeEnv{}, now).Compose()
+	if !strings.Contains(got, "You are Sam.") {
+		t.Fatalf("system_prompt 未展开 {{user}}: %q", got)
+	}
+	if !strings.Contains(got, "Date 2026-10-18; char {{char}}; user Sam") {
+		t.Fatalf("无角色绑定时自定义模块口径不对: %q", got)
+	}
+	spec.Character = &CharacterPrompt{Display: "Aria"}
+	got, _ = NewPersonaComposer(spec, RuntimeEnv{}, now).Compose()
+	if !strings.Contains(got, "char Aria;") {
+		t.Fatalf("绑定角色后 {{char}} 应取显示名: %q", got)
 	}
 }

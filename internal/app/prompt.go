@@ -309,7 +309,7 @@ func composeText(mods map[string]PromptModule, refs []string) string {
 // 卡模块不在这里（要等 U 算完），由 charModules 另行合并。
 func (c *PersonaComposer) baseModules() map[string]PromptModule {
 	mods := map[string]PromptModule{
-		"@default": {Text: defaultPersonaText(c.spec.Legacy)},
+		"@default": {Text: c.expandPromptText(defaultPersonaText(c.spec.Legacy))},
 		"@env":     {Text: "Runtime environment:", Children: builtinEnvRefs},
 	}
 	for name, text := range envLines(c.env) {
@@ -326,9 +326,24 @@ func (c *PersonaComposer) baseModules() map[string]PromptModule {
 		if strings.HasPrefix(name, reservedModulePrefix) {
 			continue
 		}
-		mods[name] = m
+		mods[name] = PromptModule{Text: c.expandPromptText(m.Text), Children: m.Children}
 	}
 	return mods
+}
+
+// expandPromptText 对用户写下的提示词模块正文做宏替换（§7.7/D252）：`@default`（system_prompt）
+// 与自定义模块都过一遍，使 `{{user}}` / `{{date}}` 在**非角色会话**里也生效
+// （角色卡文本由 charModules 另行展开，共用同一个替换器）。`{{char}}` 只在会话
+// 绑定了角色时才有值，否则原样保留；`{{original}}` 不属于这里（只在卡的 system 与尾部展开）。
+func (c *PersonaComposer) expandPromptText(text string) string {
+	if text == "" {
+		return text
+	}
+	char := ""
+	if c.spec.Character != nil {
+		char = c.spec.Character.Display
+	}
+	return expandMacros(text, char, c.spec.UserName, c.now().Format("2006-01-02"), "")
 }
 
 // defaultPersonaText @default 正文 = system_prompt 或内置默认（D20/D37 兼容）。

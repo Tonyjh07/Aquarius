@@ -21,6 +21,7 @@ var cardMacroRe = regexp.MustCompile(`\{\{\s*([A-Za-z]+)\s*\}\}|<\s*([A-Za-z]+)\
 // （它在示例里是「换一段对话」的分块标记，切块时保留它本身）。
 //
 // user 为空时取 "User"；original 只有 `@char.system` 与 `Tail` 两处传 U，其余处传空。
+// char 为空（非角色会话）时 `{{char}}` / `<BOT>` 原样保留——没有可替换的显示名，不该删空（D252）。
 func expandMacros(text, char, user, date, original string) string {
 	if !strings.Contains(text, "{{") && !strings.Contains(text, "<") {
 		return text
@@ -33,12 +34,14 @@ func expandMacros(text, char, user, date, original string) string {
 		angle := strings.HasPrefix(strings.TrimSpace(m), "<")
 		switch name {
 		case "char":
-			if angle { // 只认 {{char}}；尖括号形式里 char 不是契约里的别名
+			// 只认 {{char}}（尖括号形式里 char 不是契约里的别名）；无角色绑定
+			// （非角色会话）时没有可替换的显示名，原样保留而不是删空。
+			if angle || char == "" {
 				return m
 			}
 			return char
 		case "bot":
-			if !angle { // 只认 <BOT>
+			if !angle || char == "" { // 只认 <BOT>
 				return m
 			}
 			return char
