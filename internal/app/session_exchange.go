@@ -13,20 +13,33 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// exportFlags /export 认识的 flag：格式名与目标文件，都只认正文之前的一段。
-var exportFlags = []flagDecl{{name: "--format", value: true}, {name: "--path", value: true}}
+// exportFlags /export 认识的 flag：格式名、目标文件、选择哪几个会话，都只认正文之前的一段。
+var exportFlags = []flagDecl{
+	{name: "--format", value: true},
+	{name: "--path", value: true},
+	{name: "--all"},
+	{name: "--ids", value: true},
+}
 
 // exportUsage /export 的用法文案。
-const exportUsage = "用法: /export [--format <名字>] [--path <文件>]（缺省 aqx 无损、落在导出目录）"
+const exportUsage = "用法: /export [--format <名字>] [--path <文件>] [--all | --ids <id>[,<id>…]]（缺省只导当前会话；aqx 无损、落在导出目录）"
 
 // importUsage /import 的用法文案（路径含空格时用引号括起来，与其余命令同一口径）。
-const importUsage = "用法: /import <文件>（按扩展名与文件头自动认格式；落成一个新会话）"
+const importUsage = "用法: /import [--pick <序号>]… <文件>（按扩展名与文件头自动认格式；落成新会话）"
+
+// importFlags /import 认识的 flag：只认路径之前的一段（`--pick 1,3 <文件>`）。
+var importFlags = []flagDecl{{name: "--pick", value: true}}
+
+// multiExportStem 多会话导出的缺省文件名（没有单一会话标题可用）；口径在端口，
+// 界面批量导出的预填名读同一份。
+const multiExportStem = port.MultiExportStem
 
 // spacedPathHint 参数被空格切成了几段时的提示：命令面认引号，用户只是忘了括。
 //
@@ -34,7 +47,7 @@ const importUsage = "用法: /import <文件>（按扩展名与文件头自动�
 // 最常见的错法就是漏了引号。
 const spacedPathHint = "路径里有空格时用引号括起来，例如 /import \"C:\\我的文档\\会话.aqx\""
 
-// execExport 实现 /export：把当前会话写成一份文件。
+// execExport 实现 /export：把当前会话（或整库 / 选中的几个）写成一份文件。
 func (s *Session) execExport(ctx context.Context, cmd port.Command) (string, error) {
 	if s.exporter == nil {
 		return "", errors.New("本构建未接入导出面（SessionDeps.Exporter）")
@@ -47,20 +60,46 @@ func (s *Session) execExport(ctx context.Context, cmd port.Command) (string, err
 		// 多出来的位置参数多半是路径被空格切开了（`--path C:\我的文档\x.aqx`）。
 		return "", fmt.Errorf("%s\n%s", exportUsage, spacedPathHint)
 	}
-	name, want := "", ""
+	var (
+		name  string
+		want  string
+		all   bool
+		idSet []string
+	)
 	for _, f := range flags {
 		switch f.name {
 		case "--format":
 			name = f.value
 		case "--path":
 			want = f.value
+		case "--all":
+			all = true
+		case "--ids":
+			idSet = append(idSet, f.value)
 		}
+	}
+	if all && len(idSet) > 0 {
+		return "", errors.New("--all 与 --ids 只能给一个：要么整库，要么列出来的那几个会话")
 	}
 	format, err := s.pickExportFormat(name)
 	if err != nil {
 		return "", err
 	}
-	path, err := s.exportPath(want, format)
+	if all && format.Name != "aqx" {
+		// 整库动作只对 aqx 成立：其余格式的容器按别人的规范只能装一条会话链。
+		return "", fmt.Errorf("%s 这种格式一次只能写一个会话：整库备份请用 aqx（去掉 --format）", format.Name)
+	}
+	cs, err := s.exportTargets(ctx, all, idSet)
+	if err != nil {
+		return "", err
+	}
+	// 一个会话（缺省形态）用它自己的标题起名；--all / --ids 与多会话没有单一标题可用，
+	// 取一个中性的缺省名（同一目录，同样走防覆盖后缀）。
+	stem := multiExportStem
+	if !all && len(idSet) == 0 && len(cs) == 1 {
+		stem = port.FileStem(cs[0].Title)
+	}
+	path, err := s.exportPath(want, format, stem)
 	if err != nil {
 		return "", err
 	}
@@ -68,11 +107,73 @@ func (s *Session) execExport(ctx context.Context, cmd port.Command) (string, err
 	if err != nil {
 		return "", err
 	}
-	rep, err := s.writeExport(ctx, path, format)
+	rep, err := s.writeExport(ctx, path, format, cs)
 	if err != nil {
 		return "", err
 	}
 	return exportReceipt(format, path, rep), nil
+}
+
+// exportTargets 这次导出写哪几个会话：缺省当前会话，--all 整库（List 序 = 左栏顺序），
+// --ids 只要列出来的（顺序照用户给的那串，写序即归档清单顺序）。
+func (s *Session) exportTargets(ctx context.Context, all bool, idSet []string) ([]*conversation.Conversation, error) {
+	if !all && len(idSet) == 0 {
+		return []*conversation.Conversation{s.cur}, nil
+	}
+	var ids []conversation.ID
+	if all {
+		sums, err := s.store.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("session: 列出会话: %w", err)
+		}
+		for _, sm := range sums {
+			ids = append(ids, sm.ID)
+		}
+		if len(ids) == 0 {
+			return nil, errors.New("库里没有会话可导出")
+		}
+	} else {
+		// 先全部解析、再去重：有一个 ID 解析不出就一个都不写（不静默跳过）。
+		seen := make(map[conversation.ID]bool, len(idSet))
+		for _, raw := range splitList(idSet) {
+			id, err := s.resolveConversation(ctx, raw)
+			if err != nil {
+				return nil, err
+			}
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	out := make([]*conversation.Conversation, 0, len(ids))
+	for _, id := range ids {
+		if id == s.cur.ID {
+			// 当前会话可能只改了内存（/edit 一类），取内存里这份才不丢改动。
+			out = append(out, s.cur)
+			continue
+		}
+		c, err := s.store.Load(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("session: 载入会话 %s: %w", id, err)
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// splitList 把可重复、可逗号分隔的取值摊平（`--ids a,b` 与 `--ids a --ids b` 等价）。
+func splitList(values []string) []string {
+	var out []string
+	for _, v := range values {
+		for _, part := range strings.Split(v, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out
 }
 
 // pickExportFormat 按 --format 取格式事实；缺省 aqx。只读那档与不认识的名字分别报因
@@ -104,14 +205,13 @@ func (s *Session) pickExportFormat(name string) (port.ExchangeFormat, error) {
 }
 
 // exportPath 目标路径：显式 --path 优先（给了目录就放缺省文件名）；否则落在导出目录。
-func (s *Session) exportPath(want string, f port.ExchangeFormat) (string, error) {
-	base := port.FileStem(s.cur.Title)
-	if base == "" {
-		base = "aquarius-" + string(s.cur.ID)
+func (s *Session) exportPath(want string, f port.ExchangeFormat, stem string) (string, error) {
+	if stem == "" {
+		stem = "aquarius-" + string(s.cur.ID)
 	}
 	if want != "" {
 		if fi, err := os.Stat(want); err == nil && fi.IsDir() {
-			return filepath.Join(want, base+f.Ext), nil
+			return filepath.Join(want, stem+f.Ext), nil
 		}
 		return want, nil
 	}
@@ -121,17 +221,17 @@ func (s *Session) exportPath(want string, f port.ExchangeFormat) (string, error)
 	if err := os.MkdirAll(s.exportsDir, 0o755); err != nil {
 		return "", fmt.Errorf("创建导出目录: %w", err)
 	}
-	return filepath.Join(s.exportsDir, base+f.Ext), nil
+	return filepath.Join(s.exportsDir, stem+f.Ext), nil
 }
 
 // writeExport 落盘：写一半失败就把半截文件删掉——留个残档比没有更坏（用户会以为备份成了）。
-func (s *Session) writeExport(ctx context.Context, path string, f port.ExchangeFormat) (port.ExchangeReport, error) {
+func (s *Session) writeExport(ctx context.Context, path string, f port.ExchangeFormat, cs []*conversation.Conversation) (port.ExchangeReport, error) {
 	var rep port.ExchangeReport
 	out, err := os.Create(path)
 	if err != nil {
 		return rep, fmt.Errorf("创建导出文件: %w", err)
 	}
-	rep, err = s.exporter.Export(ctx, []*conversation.Conversation{s.cur}, f.Name, out)
+	rep, err = s.exporter.Export(ctx, cs, f.Name, out)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
@@ -142,19 +242,27 @@ func (s *Session) writeExport(ctx context.Context, path string, f port.ExchangeF
 	return rep, nil
 }
 
-// execImport 实现 /import：认格式 → 读入 → 落成新会话 → 切过去并回放。
+// execImport 实现 /import：认格式 → 读入（可只取其中几项）→ 全部落成新会话 → 切到第一个并回放。
 func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, error) {
 	if s.importer == nil {
 		return "", errors.New("本构建未接入导入面（SessionDeps.Importer）")
 	}
-	if len(cmd.Args) != 1 {
+	flags, rest, err := scanFlags(cmd.Args, flagScan{pos: flagsLeading}, importFlags)
+	if err != nil {
+		return "", errors.New(importUsage)
+	}
+	if len(rest) != 1 {
 		// 多于一个参数多半是路径被空格切开了：说清怎么括，而不是只说「用法错误」。
-		if len(cmd.Args) > 1 {
+		if len(rest) > 1 {
 			return "", fmt.Errorf("%s\n%s", importUsage, spacedPathHint)
 		}
 		return "", errors.New(importUsage)
 	}
-	path := cmd.Args[0]
+	pick, err := parsePicks(flags)
+	if err != nil {
+		return "", err
+	}
+	path := rest[0]
 	f, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("打开文件: %w", err)
@@ -171,7 +279,7 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return "", fmt.Errorf("读取文件: %w", err)
 	}
-	trees, rep, err := s.importer.Import(ctx, f, format, nil)
+	trees, rep, err := s.importer.Import(ctx, f, format, pick)
 	if err != nil {
 		return "", fmt.Errorf("导入失败: %w", err)
 	}
@@ -212,6 +320,43 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	}
 	rep.Format = format.Name
 	return importReceipt(path, format, rep), nil
+}
+
+// parsePicks 把 `--pick` 的取值解成序号清单：可重复、可逗号分隔（`--pick 1,3`）。
+//
+// 只在这里做「是不是正整数」的格式判断；「有没有这一项」要等读到清单才知道，由适配器报因
+// 并附上清单——壳里拿不到清单，提前猜只会把越界报成格式错误。
+func parsePicks(flags []cmdFlag) ([]int, error) {
+	var raw []string
+	for _, f := range flags {
+		if f.name == "--pick" {
+			raw = append(raw, f.value)
+		}
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var out []int
+	for _, v := range splitList(raw) {
+		n, ok := parsePickIndex(v)
+		if !ok {
+			return nil, fmt.Errorf("--pick 只接受 1 起的序号（收到 %q）；多个序号写成 --pick 1,3", v)
+		}
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("--pick 后面没给序号（写成 --pick 1,3）")
+	}
+	return out, nil
+}
+
+// parsePickIndex 序号字面量：正整数（0 起是另一种口径，写错就会导错文件里的另一项）。
+func parsePickIndex(v string) (int, bool) {
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
 }
 
 // remapConversationID 换会话 ID：Root 节点 ID 恒等于会话 ID（domain 的构造口径），所以
@@ -281,19 +426,47 @@ func exportReceipt(f port.ExchangeFormat, path string, rep port.ExchangeReport) 
 	var b strings.Builder
 	fmt.Fprintf(&b, "已导出到 %s\n", path)
 	fmt.Fprintf(&b, "格式: %s（%s）— %s\n", f.Name, f.Label, fidelityLine(f))
-	fmt.Fprintf(&b, "内容: %d 条消息，%s", rep.Nodes, humanBytes(rep.Bytes))
+	if len(rep.Entries) > 1 {
+		fmt.Fprintf(&b, "内容: %d 个会话，%d 条消息，%s\n", len(rep.Entries), rep.Nodes, humanBytes(rep.Bytes))
+		for _, e := range rep.Entries {
+			fmt.Fprintf(&b, "- %s · %d 条\n", entryTitle(e), e.Nodes)
+		}
+	} else {
+		fmt.Fprintf(&b, "内容: %d 条消息，%s", rep.Nodes, humanBytes(rep.Bytes))
+	}
 	writeDropped(&b, rep.Dropped)
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // importReceipt 导入回执：落成哪个会话、什么格式、读进来多少条、这次没带进来什么。
+//
+// 多会话时内容行换成「已导入 N 个会话（M 条消息）」再逐条列「标题 · 条数」；只有一个会话
+// 时维持三行老样子——不为多会话把最常见的单会话回执拖长。
 func importReceipt(path string, f port.ExchangeFormat, rep port.ExchangeReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "已导入 %s\n", path)
 	fmt.Fprintf(&b, "格式: %s（%s）— %s\n", f.Name, f.Label, fidelityLine(f))
-	fmt.Fprintf(&b, "内容: %d 条消息（已落成新会话）", rep.Nodes)
+	if len(rep.Entries) > 1 {
+		fmt.Fprintf(&b, "内容: 已导入 %d 个会话（%d 条消息）\n", len(rep.Entries), rep.Nodes)
+		for _, e := range rep.Entries {
+			fmt.Fprintf(&b, "- %s · %d 条\n", entryTitle(e), e.Nodes)
+		}
+	} else {
+		fmt.Fprintf(&b, "内容: %d 条消息（已落成新会话）", rep.Nodes)
+	}
 	writeDropped(&b, rep.Dropped)
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// entryTitle 清单条目的显示名：标题为空时退回源 ID，免得列出一行空白。
+func entryTitle(e port.ExchangeEntry) string {
+	if e.Title != "" {
+		return e.Title
+	}
+	if e.ID != "" {
+		return e.ID
+	}
+	return fmt.Sprintf("第 %d 个会话", e.Index)
 }
 
 // fidelityLine 这一份是有损还是无损；有损时把「丢什么」写在后面（用户据此判断要不要换格式）。

@@ -20,6 +20,9 @@ import (
 type memStore struct {
 	convs map[conversation.ID]*conversation.Conversation
 	err   error // 注入的保存错误
+	// saveLimit > 0 时只允许成功保存这么多次，其后返回错误（多会话导入的回滚用例）。
+	saveLimit int
+	saves     int
 }
 
 func newMemStore() *memStore {
@@ -30,6 +33,10 @@ func (m *memStore) Save(_ context.Context, c *conversation.Conversation) error {
 	if m.err != nil {
 		return m.err
 	}
+	if m.saveLimit > 0 && m.saves >= m.saveLimit {
+		return errors.New("memStore: 磁盘满了")
+	}
+	m.saves++
 	m.convs[c.ID] = cloneConv(c) // 存副本：与真实 storejson 一样切断与活树的别名，持久化断言才可信
 	return nil
 }

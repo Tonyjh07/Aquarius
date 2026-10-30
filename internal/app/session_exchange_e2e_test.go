@@ -54,6 +54,8 @@ func newExchangeE2ESession(t *testing.T, streams ...*scriptStream) (*Session, *b
 		Exporter:   ex,
 		Importer:   ex,
 		ExportsDir: exports,
+		// 这条链路上的用例只关心「批量和单个都走同一条确认通路」，答案恒为允许。
+		Confirmer: allowConfirmer{},
 	})
 	if err != nil {
 		t.Fatalf("new session: %v", err)
@@ -199,6 +201,116 @@ func TestExchangeLossyExportThroughCommands(t *testing.T) {
 	// 线性格式只带得回那条链上的正文：节点数必然少于原树（旁支、思考与工具分片都没了）。
 	if got := s.Current().NodeCount(); got >= srcNodes {
 		t.Fatalf("线性导入的节点数 = %d，不该与原树的 %d 一样多", got, srcNodes)
+	}
+}
+
+// TestExchangeMultiSessionThroughCommands 多会话走命令面：--all 导整库 → --pick 只导其中两个，
+// 清单顺序 = 导入顺序 = 回执顺序，每个会话的树逐项等价。
+func TestExchangeMultiSessionThroughCommands(t *testing.T) {
+	s, blobs, exports := newExchangeE2ESession(t)
+	ctx := context.Background()
+	seedExchangeTree(t, s, blobs)
+	// /new 不落盘旧会话（只有 /switch 会先存一次），所以先把种子树存下来——--all 是从库里读的。
+	if err := s.store.Save(ctx, s.Current()); err != nil {
+		t.Fatalf("save seed: %v", err)
+	}
+	firstID := s.Current().ID
+	firstCanon := canonTree(t, s.Current())
+	firstTitle := s.Current().Title
+
+	// 再建两个会话，各自塞点内容（第二个故意更长，便于核对条数）。
+	for _, n := range []int{1, 3} {
+		if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{
+			Name: "new", Args: []string{fmt.Sprintf("会话%d", n)},
+		}}); err != nil {
+			t.Fatalf("/new: %v", err)
+		}
+		for i := 0; i < n; i++ {
+			if _, err := s.Current().Append(conversation.RoleUser, []conversation.Part{
+				{Kind: conversation.PartText, Text: fmt.Sprintf("第 %d 条", i)},
+			}); err != nil {
+				t.Fatalf("append: %v", err)
+			}
+		}
+		if err := s.store.Save(ctx, s.Current()); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+
+	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{
+		Name: "export", Args: []string{"--all"},
+	}})
+	if err != nil {
+		t.Fatalf("export --all: %v", err)
+	}
+	path := filepath.Join(exports, "aquarius-backup.aqx")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("备份不在 %s: %v\n%s", path, err, out)
+	}
+	if !strings.Contains(out, "3 个会话") {
+		t.Fatalf("导出回执应写会话数:\n%s", out)
+	}
+	// 清单顺序 = List 序：刚建的「会话3」（最新）在最前，最早的种子会话在最后。
+	for _, want := range []string{"- 会话3 · 4 条", "- 会话1 · 2 条", "- " + firstTitle + " · "} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("导出回执缺清单行 %q:\n%s", want, out)
+		}
+	}
+
+	// 再建一个会话当「当前的」，然后只导回清单前两项（List 序 = 左栏顺序 = 新建序的倒序）。
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "new", Args: []string{"导入前"}}}); err != nil {
+		t.Fatalf("/new: %v", err)
+	}
+	sumsBefore, err := s.store.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{
+		Name: "import", Args: []string{"--pick", "1,2", path},
+	}})
+	if err != nil {
+		t.Fatalf("import --pick: %v", err)
+	}
+	sumsAfter, err := s.store.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sumsAfter) != len(sumsBefore)+2 {
+		t.Fatalf("库 = %d 个会话, want %d（导入两个）", len(sumsAfter), len(sumsBefore)+2)
+	}
+	for _, want := range []string{"已导入 2 个会话", "会话3 · 4 条", "会话1 · 2 条"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("多会话回执缺 %q:\n%s", want, out)
+		}
+	}
+	// 导回来的两个会话内容对得上（按标题找，ID 已重分配）。
+	byTitle := map[string]*conversation.Conversation{}
+	for _, sm := range sumsAfter {
+		c, err := s.store.Load(ctx, sm.ID)
+		if err != nil {
+			t.Fatalf("load %s: %v", sm.ID, err)
+		}
+		byTitle[c.Title] = c
+	}
+	if got := byTitle["会话3"]; got == nil || got.NodeCount() != 5 {
+		// Root + persona + 3 条正文（persona 是装配时写进去的首节点，跟着树一起备份）。
+		t.Fatalf("会话3 导入后 = %+v, want 5 个节点（Root + persona + 3 条）", got)
+	}
+	// 第一个会话（带附件、分叉、版本链）在清单第三项：单独再导一次验证无损。
+	if firstCanon == "" || firstTitle == "" || firstID == "" {
+		t.Fatal("种子数据不完整")
+	}
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{
+		Name: "import", Args: []string{"--pick", "3", path},
+	}})
+	if err != nil {
+		t.Fatalf("import --pick 3: %v", err)
+	}
+	if strings.Contains(out, "没有带过去") {
+		t.Fatalf("无损归档不该列丢东西:\n%s", out)
+	}
+	if got := canonTree(t, s.Current()); got != firstCanon {
+		t.Fatalf("导回来的第一个会话不是同一棵树:\n--- want ---\n%s\n--- got ---\n%s", firstCanon, got)
 	}
 }
 

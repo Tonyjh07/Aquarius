@@ -17,22 +17,28 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// fakeExchange 会话进出替身：导出写一段预设字节，导入交回一棵预设树。
+// fakeExchange 会话进出替身：导出写一段预设字节，导入交回一组预设树。
 type fakeExchange struct {
 	formats   []port.ExchangeFormat
 	payload   string
 	writeErr  error
 	imported  *conversation.Conversation
+	importedM []*conversation.Conversation // 多会话导入时用；为空则用 imported
 	importRep port.ExchangeReport
 	importErr error
 	detected  string
-	exported  []string // 依次记下每次导出的格式名
-	exportedN []int    // 每次导出时源会话的节点数
+	exported  []string             // 依次记下每次导出的格式名
+	exportedN []int                // 每次导出时源会话的节点数
+	exportIDs []conversation.ID    // 每次导出时源会话的 ID（顺序即清单顺序）
+	picks     []int                // 最近一次导入携带的 --pick
+	index     []port.ExchangeEntry // Index 的结果
+	indexErr  error
 }
 
 var (
 	_ port.SessionExporter = (*fakeExchange)(nil)
 	_ port.SessionImporter = (*fakeExchange)(nil)
+	_ port.ExchangeIndexer = (*fakeExchange)(nil)
 )
 
 func (f *fakeExchange) Formats() []port.ExchangeFormat {
@@ -44,15 +50,27 @@ func (f *fakeExchange) Formats() []port.ExchangeFormat {
 
 func (f *fakeExchange) Export(_ context.Context, cs []*conversation.Conversation, format string, w io.Writer) (port.ExchangeReport, error) {
 	f.exported = append(f.exported, format)
-	f.exportedN = append(f.exportedN, cs[0].NodeCount())
+	rep := port.ExchangeReport{Format: format}
+	for _, c := range cs {
+		f.exportedN = append(f.exportedN, c.NodeCount())
+		f.exportIDs = append(f.exportIDs, c.ID)
+		rep.Nodes += c.NodeCount() - 1
+		rep.Entries = append(rep.Entries, port.ExchangeEntry{
+			Index: len(rep.Entries) + 1, ID: string(c.ID), Title: c.Title, Nodes: c.NodeCount() - 1,
+		})
+	}
+	if len(cs) == 1 {
+		rep.Entries = nil // 单会话不填清单（回执走老版式）
+	}
 	if f.writeErr != nil {
-		return port.ExchangeReport{Format: format}, f.writeErr
+		return rep, f.writeErr
 	}
 	n, err := io.WriteString(w, f.payload)
 	if err != nil {
-		return port.ExchangeReport{Format: format}, err
+		return rep, err
 	}
-	return port.ExchangeReport{Format: format, Nodes: cs[0].NodeCount() - 1, Bytes: int64(n)}, nil
+	rep.Bytes = int64(n)
+	return rep, nil
 }
 
 func (f *fakeExchange) Detect(name string, _ []byte) (port.ExchangeFormat, bool) {
@@ -64,11 +82,19 @@ func (f *fakeExchange) Detect(name string, _ []byte) (port.ExchangeFormat, bool)
 	return port.ExchangeFormat{}, false
 }
 
-func (f *fakeExchange) Import(context.Context, io.Reader, port.ExchangeFormat, []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
+func (f *fakeExchange) Import(_ context.Context, _ io.Reader, _ port.ExchangeFormat, pick []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
+	f.picks = pick
 	if f.importErr != nil {
 		return nil, port.ExchangeReport{}, f.importErr
 	}
+	if f.importedM != nil {
+		return f.importedM, f.importRep, nil
+	}
 	return []*conversation.Conversation{f.imported}, f.importRep, nil
+}
+
+func (f *fakeExchange) Index(context.Context, string) ([]port.ExchangeEntry, error) {
+	return f.index, f.indexErr
 }
 
 // exchangeSession 造一个带导出/导入面与临时导出目录的会话。
