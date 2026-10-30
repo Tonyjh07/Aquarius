@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-29 @ 808d582 -->
+<!-- docs-sync: 2026-10-30 @ b053696 -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -32,10 +32,10 @@
 （tag `v0.1.0` → `3c2767b`）。v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 +
 常驻内存优化，批次 P2-1…P2-10）**全部落地**；其中的 `uigui` 拆包已按实测评移入 backlog（D234）。
 
-当前开发分支 `feat/v0.3.0`（能力扩张）：**命令注册表**（D245）与**会话进出**（D242）已落地，
-余额见 [plan.md](plan.md)。其中 `aqx` 容器的「一份装一组会话」形状（D249）**尚未落码**——
-已落地的仍是 A-2 的单树形状（`aqx` 未随版本发布，故不欠兼容），新形状排在同文件的 aqx 多会话
-备份一节。
+当前开发分支 `feat/v0.3.0`（能力扩张）：**命令注册表**（D245）、**会话进出**（D242）、
+**命令提示参数相**（D250）与 **aqx 多会话备份**（D249）已落地，余额见 [plan.md](plan.md)。
+`aqx` 容器随之从 A-2 的单树形状换成「一份装一组会话」（`manifest.json` + `conversations/<i>/`），
+**旧单树形状不再读**——`aqx` 未随任何版本发布，故不欠兼容。
 
 ---
 
@@ -100,6 +100,7 @@
 | v0.3.0-C | 命令注册表：`/help`、补全与分派读同一张表，29 个 `switch` 分支收成 28 条记录（D245） | 已落地 2026-10-27 |
 | v0.3.0-A | 会话进出：一份无损（`aqx`）+ 三份互通（`chatgpt` / `openai` / `sillytavern`）+ 一份只读（Open WebUI）、命令面、历史窗两入口（D242） | 已落地 2026-10-27 |
 | v0.3.0-B | 命令提示：参数相浮层（空格切相、逐参数声明 `Params`、`Tab` 轮换 / `Enter` 恒提交）+ GUI 输入历史（D250） | 已落地 2026-10-29 |
+| v0.3.0-E | aqx 多会话备份：一份归档装一组会话（`manifest.json` + `conversations/<i>/tree.json` + 跨会话共用 `blobs/`）、`/export --all\|--ids`、`/import --pick`、导入勾选面板、左栏批量选择（导出 / 删除）、批量 `/rmconv`（D249） | 已落地 2026-10-30 |
 
 **`v0.2.0-P2` 已落地**（批次号固定；完工，无剩余项）：
 
@@ -146,6 +147,17 @@
 | A-6 | `5e73c13 feat: give /export and /import their command surface` | `/export [--format] [--path]` 与 `/import <文件>` 各一条记录；缺省落 `<profile>/exports`、标题派生文件名、同名加 `-2`、写一半失败删半截；导入落新会话（ID 与 `/new` 同源分配、Root ID 连边一起换再自检），失败不动当前会话；回执两行 + 真丢了才列丢项（8 files, +803/−8） |
 | A-7 | `f20eaee feat: put the exchange entries in the history window` | 历史窗左栏标题行「导入」「导出」两颗文字钮，只拿路径、选完各投一条命令、取消不投；`platform` 新增 `RequestOpenFile`/`RequestSaveFile`（Windows `GetSaveFileNameW`、非 Windows zenity/kdialog/osascript，保存框不设覆盖确认）；标题 → 文件名规则上移 `port.FileStem`（19 files, +913/−35） |
 | A-8 | `5e4fb0f test: accept the exchange end to end and lock the interop output` | 三份互通 golden 锁字节（验收树连节点 ID 一起固定，否则 chatgpt 产物每次不同）+ 导两次字节相同 + 产物读得回；命令面 `/export` → `/import` 逐项等价（ID 抹平后比对），有损路径核对回执与节点数缩减（5 files, +589/−0） |
+
+**`v0.3.0-E`（aqx 多会话备份）的落笔顺序**：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| E-1 | `feat: let one aqx archive carry a group of conversations` | 端口 `ExchangeEntry`/`ExchangeReport.Entries`/`ExchangeIndexer` 与两个新签名（导入收 `pick`、返回一组树）；`aqx` 容器写读换成 `manifest.json` + `conversations/<i>/tree.json` + 跨会话共用 `blobs/`（版本仍是 1）、`Index` 只读清单、`resolvePick` 越界并列清单、上限改按**每会话**卡；三份互通格式收到多于一个会话直接报错；导出仍只写当前会话、导入已落全部树并回滚 |
+| E-2 | `feat: back up and restore groups of conversations from the command line` | `/export --all`（整库）与 `--ids <id>[,<id>…]`（互斥、`--format` 非 aqx 报错）、`/import --pick <序号>`；导入「先全部自检、再一次性落盘」（第 3 个坏则库里一个都不多）、切到第一个导入的会话并清屏回放；回执多会话逐条列标题与条数；命令表两条记录 |
+| E-3 | `feat: delete several conversations behind one confirmation` | `/rmconv <id> [<id>…]`：先全部解析、再一次确认、最后才动库；删到当前会话时继任者跳过本批要删的；单个 ID 的用法与回执逐字不变 |
+| E-4 | `feat: pick which conversations to import from an archive` | GUI 勾选面板（每行标题 + 条数、缺省全勾、只一项不弹）、`Options.Indexer` 注入、`modalActive` 认面板、`startImport` 分流（清单取不到也直接投，原因由命令面说） |
+| E-5 | `feat: select conversations in the history list to export or delete them` | 左栏底部「选择」钮 + 行内自绘复选框（`widget.Bool` 嵌在行点击件里收不到指针事件）+ 动作条（全选 / 已选 N 个 / 取消 / 导出 / 删除）+ Esc 退出；导出 = 保存框只一档 aqx、ID 取按下那刻的快照 → `/export --ids`；删除 = `/rmconv`。**「导出全部会话」不单列：全选即整库** |
+| E-6 | `docs: describe the multi-conversation backup and the selection mode` | 5 篇描述文档（contracts §5.16、decisions D249、gui-design、guide、plan 里这一节移走）+ roadmap 的档案条目与逐笔表 |
 
 **文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
 D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。
