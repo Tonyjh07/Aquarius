@@ -14,7 +14,7 @@
   [docs/plan.md](docs/plan.md)**（规划的唯一维护处，工作稿：会频繁重排，**别的文档不要引用它的
   节号**）；内核契约见 [docs/contracts.md](docs/contracts.md)，暂缓事项见 plan.md 末节。工程经验与边界见
   [docs/development.md](docs/development.md) 的「工程准则与边界」。
-  当前开发分支 `feat/v0.2.0`。
+  当前开发分支 `feat/v0.4.0`。
 - **语言约定**：文档与注释用中文；标识符、commit message 用英文。**进入模型上下文的字符串**（system 提示、工具声明与参数描述、工具回填结果/错误）一律英文；仅面向用户的界面、命令输出与日志用中文。文档文风（陈述事实、结论在前、不写总结段与客套话）见 [docs/README.md](docs/README.md) 的「文风」。
 
 ## 本机环境
