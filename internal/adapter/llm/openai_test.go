@@ -1020,6 +1020,47 @@ func TestCountTokens(t *testing.T) {
 	}
 }
 
+// TestCustomHeadersOnlyOnChat 自定义请求头（D253）：openai-chat 上按声明发送，同名时以
+// 声明为准；anthropic 协议不带（那是自家规范）。
+func TestCustomHeadersOnlyOnChat(t *testing.T) {
+	var gotGateway, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotGateway, gotAuth = r.Header.Get("X-Gateway"), r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseScript)
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{BaseURL: srv.URL + "/v1", APIKey: "sk-test",
+		Headers: map[string]string{"X-Gateway": "route-a", "Authorization": "Token custom"}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if _, err := c.Generate(context.Background(), port.GenerateRequest{Model: "m"}); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if gotGateway != "route-a" {
+		t.Fatalf("自定义头未发送: %q", gotGateway)
+	}
+	if gotAuth != "Token custom" {
+		t.Fatalf("同名头应以声明为准: %q", gotAuth)
+	}
+
+	gotGateway, gotAuth = "", ""
+	ac, err := New(Config{BaseURL: srv.URL, APIKey: "k", Protocol: ProtoAnthropic,
+		Headers: map[string]string{"X-Gateway": "route-a"}})
+	if err != nil {
+		t.Fatalf("new anthropic: %v", err)
+	}
+	if _, err := ac.Generate(context.Background(), port.GenerateRequest{Model: "m",
+		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}}}); err != nil {
+		t.Fatalf("generate anthropic: %v", err)
+	}
+	if gotGateway != "" {
+		t.Fatalf("anthropic 不该带自定义头: %q", gotGateway)
+	}
+}
+
 // TestDefaultClientHandshakeBounds D137：默认客户端（调用方没注入 HTTPClient 时）必须给
 // 握手设界——原来 `&http.Client{}` 两个旋钮都不设，服务端收下连接却永不回首字节节即永久
 // 挂起（只有 Ctrl+C 能解；外部审查 2026-10-13 报障）。判据看 Transport 结构：dial 有界 +

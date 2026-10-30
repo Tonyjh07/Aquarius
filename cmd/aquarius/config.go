@@ -411,6 +411,10 @@ type providerConfig struct {
 	// UnsupportedParams 服务端已知不认的请求参数（D34 自动记录，启动注入省略）。
 	// D173：只对 openai-chat 生效（另两种协议是自家规范，参数写错就是 bug）。
 	UnsupportedParams []string `json:"unsupported_params,omitempty"`
+	// Headers 附加到每次 chat 请求的自定义头（D253）：兼容端点（自建网关/镜像）需要的
+	// 路由或计费头。**只对 openai-chat 生效**（同 UnsupportedParams 口径）。值原样发送，
+	// 同名时覆盖适配器的默认头与鉴权头。
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // keyConfig 密钥池条目（D173）。Label 只用于界面展示（「主账号」「备用」），不参与

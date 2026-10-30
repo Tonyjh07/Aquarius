@@ -57,6 +57,10 @@ const (
 type Config struct {
 	BaseURL string // 如 https://api.openai.com/v1（末尾斜杠可省）
 	APIKey  string // 空 = 不带 Authorization（本地服务）
+	// Headers 附加到每次 chat 请求的自定义头（D253）：兼容端点需要的网关/路由/计费头。
+	// **只对 openai-chat 生效**（同 UnsupportedParams 的口径——Responses/Anthropic 是自家
+	// 规范，乱加头会破坏鉴权）。在默认头与鉴权之后设置，故同名时以这里为准。
+	Headers map[string]string
 	// Protocol 协议形状（D175）；空 = openai-chat。
 	Protocol Protocol
 	// Tokenizer 本地 tokenizer.json 路径（文件或目录；空 = 不启用精确计数，
@@ -76,14 +80,15 @@ type Config struct {
 // Client OpenAI 兼容生成客户端（chat / responses 两套形状共用 HTTP、鉴权、错误分类与
 // 计数实现，D175 口径一：差异全在线上格式）。
 type Client struct {
-	base  string
-	key   string
-	hc    *http.Client
-	proto Protocol
-	tok   *tokenizer.Tokenizer // 配置了本地 tokenizer 时非 nil（D26②）
-	mu    sync.Mutex           // 保护 omit（记录回调与编码并发取快照）
-	omit  map[string]bool      // 服务端已知不认的参数（启动注入 + 本次运行记录，D34；仅 chat 用）
-	note  func(field string)
+	base    string
+	key     string
+	hc      *http.Client
+	proto   Protocol
+	tok     *tokenizer.Tokenizer // 配置了本地 tokenizer 时非 nil（D26②）
+	mu      sync.Mutex           // 保护 omit（记录回调与编码并发取快照）
+	omit    map[string]bool      // 服务端已知不认的参数（启动注入 + 本次运行记录，D34；仅 chat 用）
+	note    func(field string)
+	headers map[string]string // 自定义请求头（D253；仅 chat 用）
 }
 
 var _ port.TokenCounter = (*Client)(nil)
@@ -158,6 +163,15 @@ func New(cfg Config) (*Client, error) {
 	for _, f := range cfg.UnsupportedParams {
 		if f = strings.TrimSpace(f); f != "" {
 			c.omit[f] = true
+		}
+	}
+	// 自定义头只对 chat 生效（D253）：另两种协议是自家规范，附加头会破坏鉴权。
+	if c.proto == ProtoChat && len(cfg.Headers) > 0 {
+		c.headers = make(map[string]string, len(cfg.Headers))
+		for k, v := range cfg.Headers {
+			if k = strings.TrimSpace(k); k != "" {
+				c.headers[k] = v
+			}
 		}
 	}
 	if p := strings.TrimSpace(cfg.Tokenizer); p != "" {
@@ -404,6 +418,10 @@ func (c *Client) post(ctx context.Context, path string, body []byte) (*http.Resp
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	c.authorize(req)
+	// 自定义头最后落（D253）：同名时以用户声明的为准（兼容端点的网关头/计费头）。
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		// 传输层失败（连接拒绝/超时/DNS 抖动）视为瞬时；ctx 已取消的不算（§10）。

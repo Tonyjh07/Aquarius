@@ -179,6 +179,7 @@ func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string)) 
 		Protocol:          llmProtocol(p.protocolKind()),
 		UnsupportedParams: p.UnsupportedParams,
 		NoteUnsupported:   note,
+		Headers:           p.Headers,
 	})
 	if cerr != nil {
 		return nil, nil, cerr
