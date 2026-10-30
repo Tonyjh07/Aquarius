@@ -74,6 +74,9 @@ type historyState struct {
 	// sum 「插入摘要」小卡（D152，nil = 未开启）：图侧菜单动作开卡，卡内两钮各投一条
 	// /summary；同样在屏期间按 modalActive 遮住背景。
 	sum *summaryDialog
+	// pick 导入勾选面板（D249，nil = 未开启）：选完一个多会话归档后弹，勾哪几个导哪几个。
+	// 在屏期间同样按 modalActive 遮住背景。
+	pick *importPickDialog
 	// toast 窗内轻提示（复制 ID / 复制会话 ID 等的即时反馈）：帧尾渲染，约 2 秒后自动消失。
 	toast toastState
 }
@@ -389,6 +392,10 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 		// D152：「插入摘要」小卡置顶（模态；由节点右键菜单开，两钮各投一条 /summary）。
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return st.summaryFrame(gtx, th, u)
+		}),
+		// D249：导入多会话归档的勾选面板置顶（模态；选完文件后由 drainFilePicks 开）。
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return st.importPickFrame(gtx, th, u)
 		}),
 	)
 }

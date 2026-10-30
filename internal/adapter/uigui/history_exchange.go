@@ -9,6 +9,7 @@ package uigui
 // 与内核口径共用一个函数（port.FileStem），不会分叉。
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 
@@ -155,7 +156,7 @@ func (st *historyState) drainFilePicks(u *UI) {
 		case p := <-u.filePicks:
 			switch p.purpose {
 			case platform.PurposeExchangeImport:
-				st.sendCmd(u, "import", p.path)
+				st.startImport(u, p.path)
 			case platform.PurposeExchangeExport:
 				// 走 --path：用户在对话框里挑的就是最终落点，不该再被塞进导出目录。
 				// 格式按档位定（Windows 报得出），报不出才按扩展名回落。
@@ -171,6 +172,21 @@ func (st *historyState) drainFilePicks(u *UI) {
 			return
 		}
 	}
+}
+
+// startImport 选完导入文件后的分流：先向内核要清单，多于一个会话才弹勾选面板。
+//
+// 只有一项（非 aqx，或只装了一个会话的 aqx）直接投——弹一个只有一行的勾选框只是多一次
+// 点击。取清单失败（文件损坏 / 不是归档）也直接投：命令面会把原因说清楚，界面不替它
+// 编一个「读不出来」的说法（壳内不认格式，铁律 5）。
+func (st *historyState) startImport(u *UI, path string) {
+	if u.opts.Indexer != nil {
+		if entries, err := u.opts.Indexer.Index(context.Background(), path); err == nil && len(entries) > 1 {
+			st.openImportPick(path, entries)
+			return
+		}
+	}
+	st.sendCmd(u, "import", path)
 }
 
 // sendCmd 投一条内核命令（与键入同路径：经 u.inCh；缓冲满丢弃）。

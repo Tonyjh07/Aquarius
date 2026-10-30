@@ -107,6 +107,10 @@ type Options struct {
 	// （port.SessionLister 反向端口，实现方 app.Session）；nil = 左栏空列表。
 	// 实现方须线程安全（历史窗 goroutine 调用——快照读，无锁）。
 	Lister port.SessionLister
+	// Indexer 归档清单只读面（D249）：导入一个多会话归档时先取清单，弹勾选面板让用户
+	// 决定导哪几个。nil = 不弹面板，选完文件直接投 /import（单会话口径）。
+	// 只有适配器解容器（铁律 5）：界面拿的是「序号 + 标题 + 条数」，不碰 ZIP。
+	Indexer port.ExchangeIndexer
 	// Profiles profile 管理面（D110③/修订④）：设置窗 profile 区数据面与三动作
 	//（新建/复制/切换，重启生效）；nil = 不渲染 profile 区。
 	Profiles ProfilesManager

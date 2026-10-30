@@ -271,10 +271,10 @@ func (st *historyState) overlayActive() bool { return st.ov != nil }
 // 模态确认卡片（弹窗状态不在本窗，而在主窗的快照里——所以关窗重开也照旧呈现）。
 func (st *historyState) confirmActive(u *UI) bool { return u.confirmShare.Load() != nil }
 
-// modalActive 任一模态层在屏（遮罩 / 确认弹窗 / 插入摘要小卡）：背景（左栏 / 状态栏 /
-// 右图手势）一律不取指针事件。
+// modalActive 任一模态层在屏（遮罩 / 确认弹窗 / 插入摘要小卡 / 导入勾选面板）：背景
+// （左栏 / 状态栏 / 右图手势）一律不取指针事件。
 func (st *historyState) modalActive(u *UI) bool {
-	return st.overlayActive() || st.confirmActive(u) || st.sum != nil
+	return st.overlayActive() || st.confirmActive(u) || st.sum != nil || st.pick != nil
 }
 
 // events 遮罩键鼠事件（D139）：Esc 关闭；卡片盒外的抬起 = 点空白关闭。
