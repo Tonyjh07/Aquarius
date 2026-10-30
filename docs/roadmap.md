@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-30 @ 68d8f24 -->
+<!-- docs-sync: 2026-10-30 @ bef6ad0 -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -106,6 +106,7 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | v0.3.0-E | aqx 多会话备份：一份归档装一组会话（`manifest.json` + `conversations/<i>/tree.json` + 跨会话共用 `blobs/`）、`/export --all\|--ids`、`/import --pick`、导入勾选面板、左栏批量选择（导出 / 删除）、批量 `/rmconv`（D249） | 已落地 2026-10-30 |
 | v0.3.0-D | 角色卡只读导入：PNG（`tEXt` `ccv3`/`chara`）/ JSON / `.charx`（ZIP）解析、`@char.*` 条件内置模块、`{{char}}`/`{{user}}`/`{{date}}`/`{{original}}` 宏替换、`/character` 命令面、设置窗「角色」页、会话列表行头像（D243/D247） | 已落地 2026-10-30 |
 | v0.3.0-F | 零碎项收口：非角色会话提示词也展开 `{{char}}`/`{{user}}`/`{{date}}`（无角色绑定时 `{{char}}` 保留字面量不删空）、provider 自定义请求头 `headers`（仅 `openai-chat`）、会话树备份轮转 N 代（`backup.keep` 默认 3、保存前完整性校验）（D252/D253/D254） | 已落地 2026-10-30 |
+| v0.4.0-W | `uigui` 大文件只拆文件：9 个生产文件按职责切成 2–4 个（1,100→337 / 1,045→371 / 990→571 / 987→197 / 913→362 / 906→284 / 890→313 / 855→436 / 778→209），零 import 面改动、测试文件一字未动、每笔单独过全量测试 | 已落地 2026-10-30 |
 
 **`v0.2.0-P2` 已落地**（批次号固定；完工，无剩余项）：
 
@@ -197,6 +198,24 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | F-4 | `docs: close out the remaining v0.3.0 items in the archives` | 决策 D252–D254 + contracts §5.3/§5.4/§7.7 + configuration（`headers`/`backup.keep`）+ plan 删「零碎四项」节并改交叉语句 + roadmap 档案条目与逐笔表 + 文档头标记刷新 |
 | F-5 | `cc106aa feat: expose conversation backup retention in settings` | `port.SettingsPatch`/`SettingsSnapshot` 加 `BackupKeep` 与范围常量 `SettingsBackupKeepMin/Max`（1–20）；uigui「常规」页新增「存储」区（`rowBackupKeep` + 单行编辑档，空 = 默认 3、越界就地拦）；cmd 侧 `textSettings.Backup` 读写 `backup.keep`（仅 `> 0` 才写键）；两条测试（uigui 行位/回填/越界、cmd 往返）（8 files） |
 | F-6 | `docs: record the backup retention setting in the archives` | roadmap §0 补记 + F-5/F-6 逐笔表 + configuration「设置窗与 config 的关系」存储段 + gui-design 常规页行 + guide 10.1 表 + 文档头标记刷新 |
+
+**`v0.4.0-W`（`uigui` 大文件只拆文件）的落笔顺序**（一笔一个文件；每笔只移动代码，测试文件未改）：
+
+| # | 提交 | 主要结果 |
+|---|---|---|
+| W-1 | `767007e refactor: cut settings.go into contract types, form state and provider forms` | 1,100 → `settings.go` 337（契约类型 / 枚举档 / 页常量）+ `settings_form.go` 404（表单状态与两段构造）+ `settings_provider_form.go` 379（provider / 密钥 / 模型 / 降级链四类表单） |
+| W-2 | `6543e0d refactor: cut welcome.go into state, tutorial copy, frame shell and pages` | 1,045 → 371 + `welcome_tutorial.go` 77（只读文案与行计划，契约测试锁定）+ `welcome_view.go` 296（页头 / 步骤条 / 状态行 / 页脚 / 按钮）+ `welcome_pages.go` 337（接入 / 教程 / 完成三页） |
+| W-3 | `ec77fd5 refactor: cut gui.go into the shell, the port surface, message dispatch and headless` | 990 → 571 + `gui_port.go` 197（port 六面实现）+ `gui_msg.go` 201（uiMsg 与 apply/drainInbox）+ `gui_headless.go` 49（无窗口循环与单行输入辅助） |
+| W-4 | `5c904e5 refactor: cut model.go into state, commit/replay, submit and tool chips` | 987 → 197 + `model_commit.go` 266（定稿与回放）+ `model_submit.go` 333（发出侧与附件）+ `model_tool.go` 229（chip 与确认回路） |
+| W-5 | `d4c38d6 refactor: cut history.go into state, window frame and the left column` | 913 → 362 + `history_view.go` 233（帧骨架 / 右图区 / 状态栏）+ `history_left.go` 348（左栏两态与会话行） |
+| W-6 | `e4f304a refactor: cut overlay.go into its state and its drawing` | 855 → 436（状态、事件、动作、提交）+ `overlay_view.go` 438（卡片框 / 页签 / 正文 / 页脚按钮） |
+| W-7 | `ae94586 refactor: cut settings_actions.go into the save flow, field helpers and admin actions` | 890 → 313（保存流与 patch 采集）+ `settings_fields.go` 213（判等与换算）+ `settings_admin_actions.go` 390（profile 与 provider 管理动作、探测） |
+| W-8 | `55c1140 refactor: cut settings_rows.go into row model, frame, layout maths and row bodies` | 778 → 209（尺寸常量与行计划）+ `settings_frame.go` 204（导航与底栏）+ `settings_row_layout.go` 210（卡片分组与缩进）+ `settings_row_body.go` 189（字段行 / 选择框 / 编辑器 / 动作行） |
+| W-9 | `a2c814f refactor: cut prompt_editor.go into the editor, tile gestures, tile drawing and the modal` | 906 → 284（状态与引用编辑）+ `prompt_tiles.go` 246（磁贴手势与拖拽）+ `prompt_tiles_view.go` 181（网格与磁贴绘制）+ `prompt_module_editor.go` 239（编辑弹窗与引用行） |
+
+落地后 `uigui` 生产文件 107 个 / 29,014 行，九个被点名的文件全部 ≤ 600 行；仍超 600 的
+`select.go` 722 / `dock.go` 635 / `relmap_frame.go` 621 / `fade.go` 604 未在本次范围，登记在
+[plan.md](plan.md) 的「`uigui` 拆包」一节。
 
 **文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
 D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。
