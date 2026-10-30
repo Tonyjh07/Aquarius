@@ -117,17 +117,38 @@ func (c *PersonaComposer) Compose() (string, []string) {
 	if len(userRefs) == 0 {
 		userRefs = DefaultPersonaRefs
 	}
-	mods := base
 	u := ""
-	if cp := c.spec.Character; cp != nil {
-		u = composeText(base, userOnlyRefs(userRefs))
+	if c.spec.Character != nil {
+		u = c.userPersona(base)
 	}
-	mods = mergeModules(base, c.charModules(c.spec.Character, u))
+	mods := mergeModules(base, c.charModules(c.spec.Character, u))
 	text, missing := composeRefs(mods, c.effectiveRefs(userRefs))
 	if strings.TrimSpace(text) == "" {
 		text = defaultSystem
 	}
 	return text, missing
+}
+
+// WithCharacter 复制一个绑定了角色卡投影的组合器（§5.17：人格是快照，卡只影响这一份）。
+// 副本共享模块规格、环境与时钟，不改变原组合器——同一份用户配置可以开多个角色的会话。
+func (c *PersonaComposer) WithCharacter(cp *CharacterPrompt) *PersonaComposer {
+	clone := *c
+	clone.spec.Character = cp
+	return &clone
+}
+
+// userPersona 卡以外的用户人格正文 U（§5.17/D247）：按人格模块树组合、去掉 `@env` 与
+// `@char.*`——U 只是用户写下的规则，运行环境与卡提示都不算在内（替换模式下它给
+// `{{original}}` 填值）。非角色会话返回空串。
+func (c *PersonaComposer) userPersona(base map[string]PromptModule) string {
+	if c.spec.Character == nil {
+		return ""
+	}
+	refs := c.spec.Persona
+	if len(refs) == 0 {
+		refs = DefaultPersonaRefs
+	}
+	return composeText(base, userOnlyRefs(refs))
 }
 
 // userOnlyRefs 算 U 用的顶层引用：去掉 @env 与 @char.*（§5.17/D247）——U 只是用户写下的
