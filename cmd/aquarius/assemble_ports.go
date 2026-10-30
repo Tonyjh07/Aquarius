@@ -14,6 +14,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asrwhisper"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/audioplay"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/characterfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/exchange"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/gptsovitstts"
@@ -529,6 +530,16 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		return fmt.Errorf("技能安装面: %w", err)
 	}
 	w.skillInstall = installer
+	// 角色卡目录（§5.17）：`<profile>/characters`。卡目录是唯一事实来源，坏条目在 List 里
+	// 带警告跳过；导入 / 删除经同一份 app.CharacterAdmin（命令面与设置窗共用）。
+	charStore, err := characterfs.New(characterfs.Options{
+		Root: filepath.Join(w.profileDir, "characters"),
+		Logf: func(format string, args ...any) { fmt.Fprintf(w.stderr, "角色卡："+format+"\n", args...) },
+	})
+	if err != nil {
+		return fmt.Errorf("角色卡目录: %w", err)
+	}
+	w.characters = charStore
 	builtinTools := toolbuiltin.New(toolbuiltin.Deps{
 		Memory: w.merged,
 		PathOf: func(name string) (string, bool) {

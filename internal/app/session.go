@@ -80,6 +80,9 @@ type SessionDeps struct {
 	ExportsDir string
 	// Characters 角色卡目录（/character，§5.17）；nil 时 /character 报未接入。
 	Characters port.CharacterCatalog
+	// CharacterAdmin 角色卡管理面（/character import|remove，§5.17）；nil 时子命令报未接入。
+	// 与 Characters 分开：读侧是只读端口，导入/删除是用户面动作（不进 port）。
+	CharacterAdmin CharacterAdmin
 	// CharacterOpts 角色卡投影开关（§5.17）；由 config `characters` 段填充。零值 = 三开关全关，
 	// 装配根负责把缺省（常驻世界书默认开）解析成显式值后再传进来。
 	CharacterOpts CharacterOptions
@@ -120,6 +123,7 @@ type Session struct {
 	importer    port.SessionImporter
 	exportsDir  string
 	characters  port.CharacterCatalog
+	charAdmin   CharacterAdmin
 	charOpts    CharacterOptions
 	cur         *conversation.Conversation
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
@@ -209,6 +213,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		importer:    d.Importer,
 		exportsDir:  d.ExportsDir,
 		characters:  d.Characters,
+		charAdmin:   d.CharacterAdmin,
 		charOpts:    d.CharacterOpts,
 		dynamic:     map[string]CommandHandler{},
 		injectCh:    make(chan pendingInjection, injectQueueCap),

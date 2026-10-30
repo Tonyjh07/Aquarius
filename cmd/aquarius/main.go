@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/characterfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/exchange"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
@@ -170,6 +171,9 @@ type wiring struct {
 	skills   *skillfs.Catalog
 	// skillInstall 技能安装面内核（D202；装配根在 skillsadmin.go 适配两套消费方接口）。
 	skillInstall *skillfs.Installer
+	// characters 角色卡目录（§5.17）：`<profile>/characters`；读侧实现 port.CharacterCatalog，
+	// 导入 / 删除实现 app.CharacterAdmin（命令面与设置窗共用同一份）。
+	characters *characterfs.Store
 	// exchange 会话进出适配器（/export 与 /import，§5.16）：导入侧要往附件库
 	// 回填归档里的字节，故与 blobs 同期装配。
 	exchange  *exchange.Exchange
@@ -338,30 +342,32 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	w.newPluginHost(ctx, tc.confirmer)
 
 	w.sess, err = app.NewSession(ctx, app.SessionDeps{
-		Store:       w.store,
-		Agent:       agent,
-		IDs:         ids,
-		Clock:       systemClock{},
-		Persona:     sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
-		Level:       w.level,
-		SandboxPath: w.sandboxDir,
-		Perms:       permSettings{w: w},
-		Confirmer:   tc.confirmer,
-		Jobs:        w.jobs,
-		Watches:     w.watcher,
-		Skills:      w.skills,             // D201：/skill 与 skill 工具同一份清单
-		SkillAdmin:  skillsAdminApp{w: w}, // D202：/skill install|remove|update
-		WatchCancel: watchCancel{w: w},    // D167：切走/新建/删当前会话即撤两个轮询器
-		Ingestors:   []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
-		UI:          w.presenter,
-		Memories:    memoryOpener{w: w},
-		Plugins:     hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
-		Models:      modelCatalog{w: w},                                                        // D32/D173/D174：/model 读侧 + 切换 + 探测
-		ModelSwitch: modelCatalog{w: w},                                                        // D32：/model 切换写回
-		Thinking:    thinkSettings{w: w},                                                       // D34：/think 与 /effort 写回
-		Exporter:    w.exchange,                                                                // 会话进出：/export
-		Importer:    w.exchange,                                                                // 会话进出：/import
-		ExportsDir:  filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
+		Store:          w.store,
+		Agent:          agent,
+		IDs:            ids,
+		Clock:          systemClock{},
+		Persona:        sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
+		Level:          w.level,
+		SandboxPath:    w.sandboxDir,
+		Perms:          permSettings{w: w},
+		Confirmer:      tc.confirmer,
+		Jobs:           w.jobs,
+		Watches:        w.watcher,
+		Skills:         w.skills,             // D201：/skill 与 skill 工具同一份清单
+		SkillAdmin:     skillsAdminApp{w: w}, // D202：/skill install|remove|update
+		WatchCancel:    watchCancel{w: w},    // D167：切走/新建/删当前会话即撤两个轮询器
+		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
+		UI:             w.presenter,
+		Memories:       memoryOpener{w: w},
+		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
+		Models:         modelCatalog{w: w},                                                        // D32/D173/D174：/model 读侧 + 切换 + 探测
+		ModelSwitch:    modelCatalog{w: w},                                                        // D32：/model 切换写回
+		Thinking:       thinkSettings{w: w},                                                       // D34：/think 与 /effort 写回
+		Exporter:       w.exchange,                                                                // 会话进出：/export
+		Importer:       w.exchange,                                                                // 会话进出：/import
+		ExportsDir:     filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
+		Characters:     w.characters,                                                              // 角色卡只读清单（/character，§5.17）
+		CharacterAdmin: w.characters,                                                              // §5.17：/character import|remove
 	})
 	if err != nil {
 		if ctx.Err() != nil {
