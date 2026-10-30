@@ -27,7 +27,7 @@ func TestImportOpenWebUIHistoryShape(t *testing.T) {
 	    }
 	  }
 	}`
-	c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "openwebui"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -66,7 +66,7 @@ func TestImportOpenWebUIArrayShape(t *testing.T) {
 	    ]
 	  }
 	}`
-	c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "openwebui"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -102,7 +102,7 @@ func TestImportOpenWebUISkipsEmptyShell(t *testing.T) {
 	    }
 	  }
 	}`
-	c, _, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "openwebui"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -127,7 +127,7 @@ func TestImportOpenWebUIRejects(t *testing.T) {
 		"不是 JSON": {`not json`, "解析"},
 	}
 	for name, tc := range cases {
-		_, _, err := New(Options{}).Import(context.Background(), strings.NewReader(tc.doc),
+		_, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(tc.doc),
 			port.ExchangeFormat{Name: "openwebui"})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: err = %v, want 含 %q", name, err, tc.want)
@@ -137,7 +137,7 @@ func TestImportOpenWebUIRejects(t *testing.T) {
 
 // TestOpenWebUIIsReadOnlyOpenWebUI 只认不写：导出必须明确拒绝，并指出该用哪一份代替。
 func TestOpenWebUIIsReadOnlyOpenWebUI(t *testing.T) {
-	_, err := New(Options{}).Export(context.Background(),
+	_, err := exportOne(context.Background(), New(Options{}),
 		conversation.New(conversation.ID("c1"), "t"), "openwebui", nopWriter{})
 	if err == nil || !strings.Contains(err.Error(), "chatgpt") {
 		t.Fatalf("err = %v, want 指向 chatgpt 那份", err)

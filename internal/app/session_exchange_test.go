@@ -42,9 +42,9 @@ func (f *fakeExchange) Formats() []port.ExchangeFormat {
 	return port.ExchangeFormats()
 }
 
-func (f *fakeExchange) Export(_ context.Context, c *conversation.Conversation, format string, w io.Writer) (port.ExchangeReport, error) {
+func (f *fakeExchange) Export(_ context.Context, cs []*conversation.Conversation, format string, w io.Writer) (port.ExchangeReport, error) {
 	f.exported = append(f.exported, format)
-	f.exportedN = append(f.exportedN, c.NodeCount())
+	f.exportedN = append(f.exportedN, cs[0].NodeCount())
 	if f.writeErr != nil {
 		return port.ExchangeReport{Format: format}, f.writeErr
 	}
@@ -52,7 +52,7 @@ func (f *fakeExchange) Export(_ context.Context, c *conversation.Conversation, f
 	if err != nil {
 		return port.ExchangeReport{Format: format}, err
 	}
-	return port.ExchangeReport{Format: format, Nodes: c.NodeCount() - 1, Bytes: int64(n)}, nil
+	return port.ExchangeReport{Format: format, Nodes: cs[0].NodeCount() - 1, Bytes: int64(n)}, nil
 }
 
 func (f *fakeExchange) Detect(name string, _ []byte) (port.ExchangeFormat, bool) {
@@ -64,11 +64,11 @@ func (f *fakeExchange) Detect(name string, _ []byte) (port.ExchangeFormat, bool)
 	return port.ExchangeFormat{}, false
 }
 
-func (f *fakeExchange) Import(context.Context, io.Reader, port.ExchangeFormat) (*conversation.Conversation, port.ExchangeReport, error) {
+func (f *fakeExchange) Import(context.Context, io.Reader, port.ExchangeFormat, []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
 	if f.importErr != nil {
 		return nil, port.ExchangeReport{}, f.importErr
 	}
-	return f.imported, f.importRep, nil
+	return []*conversation.Conversation{f.imported}, f.importRep, nil
 }
 
 // exchangeSession 造一个带导出/导入面与临时导出目录的会话。

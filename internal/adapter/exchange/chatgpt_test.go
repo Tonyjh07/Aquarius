@@ -22,7 +22,7 @@ func TestExportChatGPTShape(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 	var buf bytes.Buffer
-	rep, err := New(Options{}).Export(context.Background(), c, "chatgpt", &buf)
+	rep, err := exportOne(context.Background(), New(Options{}), c, "chatgpt", &buf)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestChatGPTExportDroppedIsHonest(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 	var buf bytes.Buffer
-	rep, err := New(Options{}).Export(context.Background(), c, "chatgpt", &buf)
+	rep, err := exportOne(context.Background(), New(Options{}), c, "chatgpt", &buf)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestChatGPTImportTree(t *testing.T) {
 	    "a2": {"id": "a2", "message": {"author": {"role": "assistant"}, "content": {"content_type": "text", "parts": ["回答二"]}, "create_time": 1700000003}, "parent": "s", "children": []}
 	  }
 	}]`
-	c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "chatgpt"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -163,7 +163,7 @@ func TestChatGPTImportSkipsAndReparents(t *testing.T) {
 	    "a": {"id": "a", "message": {"author": {"role": "assistant"}, "content": {"content_type": "text", "parts": ["答"]}}, "parent": "img", "children": []}
 	  }
 	}]`
-	c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "chatgpt"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -194,7 +194,7 @@ func TestChatGPTImportRoles(t *testing.T) {
 	    "c": {"id": "c", "message": {"author": {"role": "critic"}, "content": {"content_type": "text", "parts": ["不认的角色"]}}, "parent": "t", "children": []}
 	  }
 	}]`
-	c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "chatgpt"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -227,10 +227,10 @@ func TestChatGPTExportImportRoundtrip(t *testing.T) {
 		t.Fatalf("revise: %v", err)
 	}
 	var buf bytes.Buffer
-	if _, err := New(Options{}).Export(context.Background(), c, "chatgpt", &buf); err != nil {
+	if _, err := exportOne(context.Background(), New(Options{}), c, "chatgpt", &buf); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	got, _, err := New(Options{}).Import(context.Background(), bytes.NewReader(buf.Bytes()),
+	got, _, err := importOne(context.Background(), New(Options{}), bytes.NewReader(buf.Bytes()),
 		port.ExchangeFormat{Name: "chatgpt"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -308,7 +308,7 @@ func TestChatGPTHeadOnSkippedNode(t *testing.T) {
 	    "img": {"id": "img", "message": {"author": {"role": "user"}, "content": {"content_type": "multimodal_text", "parts": [{"content_type": "image_asset_pointer", "asset_pointer": "file-service://x"}]}}, "parent": "s", "children": []}
 	  }
 	}]`
-	c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "chatgpt"})
 	if err != nil {
 		t.Fatalf("Head 落在被跳过的节点上时不该整份拒收: %v", err)
@@ -340,7 +340,7 @@ func TestChatGPTExportImportHeadOnAttachment(t *testing.T) {
 		t.Fatalf("append 附件: %v", err)
 	}
 	var buf bytes.Buffer
-	rep, err := New(Options{}).Export(context.Background(), c, "chatgpt", &buf)
+	rep, err := exportOne(context.Background(), New(Options{}), c, "chatgpt", &buf)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestChatGPTExportImportHeadOnAttachment(t *testing.T) {
 	if !ok || format.Name != "chatgpt" {
 		t.Fatalf("产物认不出自己: %+v %v", format, ok)
 	}
-	got, irep, err := New(Options{}).Import(context.Background(), bytes.NewReader(buf.Bytes()), format)
+	got, irep, err := importOne(context.Background(), New(Options{}), bytes.NewReader(buf.Bytes()), format)
 	if err != nil {
 		t.Fatalf("自己导出的产物导不回来（Head = %s）: %v", head.ID, err)
 	}
@@ -372,7 +372,7 @@ func TestChatGPTImportRejectsBadStructure(t *testing.T) {
 		"没有会话": `[]`,
 	}
 	for want, doc := range cases {
-		_, _, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+		_, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 			port.ExchangeFormat{Name: "chatgpt"})
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: err = %v", want, err)

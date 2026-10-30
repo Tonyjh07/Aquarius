@@ -92,7 +92,7 @@ func TestAQXRoundtripEquivalent(t *testing.T) {
 	src := fixture(t, blobs)
 
 	var buf bytes.Buffer
-	rep, err := ex.Export(context.Background(), src, "aqx", &buf)
+	rep, err := exportOne(context.Background(), ex, src, "aqx", &buf)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestAQXRoundtripEquivalent(t *testing.T) {
 	if !ok || format.Name != "aqx" {
 		t.Fatalf("Detect = %+v, %v", format, ok)
 	}
-	got, irep, err := importer.Import(context.Background(), bytes.NewReader(buf.Bytes()), format)
+	got, irep, err := importOne(context.Background(), importer, bytes.NewReader(buf.Bytes()), format)
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -156,10 +156,10 @@ func TestAQXDeterministic(t *testing.T) {
 	ex := New(Options{Blobs: blobs})
 	src := fixture(t, blobs)
 	var a, b bytes.Buffer
-	if _, err := ex.Export(context.Background(), src, "aqx", &a); err != nil {
+	if _, err := exportOne(context.Background(), ex, src, "aqx", &a); err != nil {
 		t.Fatalf("export#1: %v", err)
 	}
-	if _, err := ex.Export(context.Background(), src, "aqx", &b); err != nil {
+	if _, err := exportOne(context.Background(), ex, src, "aqx", &b); err != nil {
 		t.Fatalf("export#2: %v", err)
 	}
 	if !bytes.Equal(a.Bytes(), b.Bytes()) {
@@ -183,8 +183,8 @@ func TestDetectAQX(t *testing.T) {
 	}
 }
 
-// TestImportRejectsUntrusted 外部文件是不可信输入（§5.16）：坏树、高版本、混乱条目
-// 一律报因，不「尽力修复」。
+// TestImportRejectsUntrusted 外部文件是不可信输入（§5.16）：坏树、高版本、混乱条目、
+// 旧版形状一律报因，不「尽力修复」。
 func TestImportRejectsUntrusted(t *testing.T) {
 	ex := New(Options{})
 	aqx := port.ExchangeFormats()[0] // aqx
@@ -196,31 +196,40 @@ func TestImportRejectsUntrusted(t *testing.T) {
 	}{
 		{
 			name:  "缺 manifest",
-			files: map[string]string{"tree.json": "{}"},
+			files: map[string]string{"conversations/1/tree.json": "{}"},
 			want:  "manifest",
+		},
+		{
+			// 旧单树形状：认得出来就该说「这是旧版」，而不是含糊地报「缺清单」。
+			name: "旧版单树形状",
+			files: map[string]string{
+				"manifest.json": `{"format":"aqx","version":1}`,
+				"tree.json":     "{}",
+			},
+			want: "旧版归档格式",
 		},
 		{
 			name: "更高版本",
 			files: map[string]string{
-				"manifest.json": `{"format":"aqx","version":99}`,
-				"tree.json":     "{}",
+				"manifest.json":             `{"format":"aqx","version":99}`,
+				"conversations/1/tree.json": "{}",
 			},
 			want: "高于本程序支持",
 		},
 		{
 			name: "tree 不是合法树",
 			files: map[string]string{
-				"manifest.json": `{"format":"aqx","version":1}`,
-				"tree.json":     `{"id":"x","title":"t","head":"nope","nodes":{},"children":{}}`,
+				"manifest.json":             `{"format":"aqx","version":1,"conversations":[{"id":"x","title":"t","nodes":1}]}`,
+				"conversations/1/tree.json": `{"id":"x","title":"t","head":"nope","nodes":{},"children":{}}`,
 			},
 			want: "根节点",
 		},
 		{
 			name: "不认识的文件名混进归档",
 			files: map[string]string{
-				"manifest.json": `{"format":"aqx","version":1}`,
-				"tree.json":     "{}",
-				"other.txt":     "x",
+				"manifest.json":             `{"format":"aqx","version":1,"conversations":[{"id":"x","title":"t","nodes":1}]}`,
+				"conversations/1/tree.json": "{}",
+				"other.txt":                 "x",
 			},
 			want: "不认识的条目",
 		},
@@ -229,25 +238,25 @@ func TestImportRejectsUntrusted(t *testing.T) {
 			// 全链路确认它在解包前就被拦住（真解出来会写到导出目录之外）。
 			name: "条目越出目录",
 			files: map[string]string{
-				"manifest.json":      `{"format":"aqx","version":1}`,
-				"tree.json":          "{}",
-				"../../../evil.json": "x",
+				"manifest.json":             `{"format":"aqx","version":1,"conversations":[{"id":"x","title":"t","nodes":1}]}`,
+				"conversations/1/tree.json": "{}",
+				"../../../evil.json":        "x",
 			},
 			want: "越出解包目录",
 		},
 		{
 			name: "绝对路径条目",
 			files: map[string]string{
-				"manifest.json": `{"format":"aqx","version":1}`,
-				"tree.json":     "{}",
-				"/etc/passwd":   "x",
+				"manifest.json":             `{"format":"aqx","version":1,"conversations":[{"id":"x","title":"t","nodes":1}]}`,
+				"conversations/1/tree.json": "{}",
+				"/etc/passwd":               "x",
 			},
 			want: "绝对路径",
 		},
 	}
 	for _, tc := range cases {
 		data := zipBytes(t, tc.files)
-		_, _, err := ex.Import(context.Background(), bytes.NewReader(data), aqx)
+		_, _, err := importOne(context.Background(), ex, bytes.NewReader(data), aqx)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: err = %v, want 含 %q", tc.name, err, tc.want)
 		}
@@ -255,19 +264,19 @@ func TestImportRejectsUntrusted(t *testing.T) {
 }
 
 // TestImportRejectsOversizedArchive 条目数与解压总量都走 Import 全链路锁住：
-// 上限写在单文件常量里，只测那个常量等于没测——绕过 LazyProc 的解包路径才是真正会中招的地方。
+// 上限写在单文件常量里，只测那个常量等于没测——绕过上限的解包路径才是真正会中招的地方。
 func TestImportRejectsOversizedArchive(t *testing.T) {
 	ex := New(Options{Blobs: mustBlobs(t)})
 	aqx := port.ExchangeFormats()[0]
 
 	// 条目数超限：多造一个条目就够（不必真造四千个文件，超一个就拒绝）。
 	many := make(map[string]string, maxArchiveEntries+2)
-	many["manifest.json"] = `{"format":"aqx","version":1}`
-	many["tree.json"] = "{}"
+	many["manifest.json"] = `{"format":"aqx","version":1,"conversations":[{"id":"x","title":"t","nodes":1}]}`
+	many["conversations/1/tree.json"] = "{}"
 	for i := 0; i <= maxArchiveEntries; i++ {
 		many[fmt.Sprintf("blobs/%064d", i)] = "x"
 	}
-	if _, _, err := ex.Import(context.Background(), bytes.NewReader(zipBytes(t, many)), aqx); err == nil ||
+	if _, _, err := importOne(context.Background(), ex, bytes.NewReader(zipBytes(t, many)), aqx); err == nil ||
 		!strings.Contains(err.Error(), "条目数") {
 		t.Fatalf("条目数超限 err = %v, want 条目数", err)
 	}
@@ -276,8 +285,16 @@ func TestImportRejectsOversizedArchive(t *testing.T) {
 // TestImportRejectsBlobHashMismatch 归档里的附件字节与它声明的哈希对不上 = 归档损坏，
 // 拒绝导入（按错误哈希入库会在装配时取到别的内容）。
 func TestImportRejectsBlobHashMismatch(t *testing.T) {
+	blobs := mustBlobs(t)
+	ref, err := blobs.Put(context.Background(), strings.NewReader("真正的图片字节"), "image/png", "pic.png")
+	if err != nil {
+		t.Fatalf("put blob: %v", err)
+	}
 	c := conversation.New(conversation.ID("c-hash"), "哈希测试")
-	if _, err := c.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: "hi"}}); err != nil {
+	if _, err := c.Append(conversation.RoleUser, []conversation.Part{
+		{Kind: conversation.PartText, Text: "hi"},
+		{Kind: conversation.PartImage, Ref: &ref},
+	}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	tree, err := storejson.EncodeTree(c)
@@ -285,11 +302,12 @@ func TestImportRejectsBlobHashMismatch(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 	data := zipBytes(t, map[string]string{
-		"manifest.json":                    `{"format":"aqx","version":1}`,
-		"tree.json":                        string(tree),
-		"blobs/" + strings.Repeat("0", 64): "内容与名字对不上",
+		"manifest.json":             `{"format":"aqx","version":1,"conversations":[{"id":"c-hash","title":"哈希测试","nodes":2}]}`,
+		"conversations/1/tree.json": string(tree),
+		// 名字是对的哈希、内容却不是那份字节：入库后再装配会取到别的东西。
+		"blobs/" + ref.Hash: "内容与名字对不上",
 	})
-	_, _, err = New(Options{Blobs: mustBlobs(t)}).Import(context.Background(),
+	_, _, err = importOne(context.Background(), New(Options{Blobs: blobs}),
 		bytes.NewReader(data), port.ExchangeFormat{Name: "aqx"})
 	if err == nil || !strings.Contains(err.Error(), "哈希不符") {
 		t.Fatalf("err = %v, want 哈希不符", err)
@@ -329,7 +347,7 @@ func TestImportToleratesDirectoryEntries(t *testing.T) {
 	}
 	src := fixture(t, blobs)
 	var buf bytes.Buffer
-	if _, err := New(Options{Blobs: blobs}).Export(context.Background(), src, "aqx", &buf); err != nil {
+	if _, err := exportOne(context.Background(), New(Options{Blobs: blobs}), src, "aqx", &buf); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	// 用导出产物重建一份带目录条目的归档。
@@ -363,7 +381,7 @@ func TestImportToleratesDirectoryEntries(t *testing.T) {
 	if err := zw.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if _, _, err := New(Options{Blobs: mustBlobs(t)}).Import(context.Background(),
+	if _, _, err := importOne(context.Background(), New(Options{Blobs: mustBlobs(t)}),
 		bytes.NewReader(out.Bytes()), port.ExchangeFormat{Name: "aqx"}); err != nil {
 		t.Fatalf("带目录条目的归档应能导入: %v", err)
 	}
@@ -379,7 +397,7 @@ func TestExportWithoutBlobStore(t *testing.T) {
 	src := fixture(t, blobs) // 树里有附件引用，但导出侧没有附件库
 	ex := New(Options{})
 	var buf bytes.Buffer
-	rep, err := ex.Export(context.Background(), src, "aqx", &buf)
+	rep, err := exportOne(context.Background(), ex, src, "aqx", &buf)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -387,7 +405,7 @@ func TestExportWithoutBlobStore(t *testing.T) {
 		t.Fatalf("回执应说明附件字节没带上，实际 %v", rep.Dropped)
 	}
 	// 树本身仍然无损：导入后节点与边齐全，只是取不到附件字节。
-	got, irep, err := New(Options{}).Import(context.Background(), bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"})
+	got, irep, err := importOne(context.Background(), New(Options{}), bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -406,11 +424,11 @@ func TestExportFormatsNotWired(t *testing.T) {
 	ex := New(Options{})
 	c := conversation.New("c1", "t")
 	var buf bytes.Buffer
-	if _, err := ex.Export(context.Background(), c, "openwebui", &buf); err == nil ||
+	if _, err := exportOne(context.Background(), ex, c, "openwebui", &buf); err == nil ||
 		!strings.Contains(err.Error(), "只认不写") {
 		t.Fatalf("openwebui: err = %v", err)
 	}
-	if _, err := ex.Export(context.Background(), c, "不存在", &buf); err == nil ||
+	if _, err := exportOne(context.Background(), ex, c, "不存在", &buf); err == nil ||
 		!strings.Contains(err.Error(), "可写") {
 		t.Fatalf("未知格式应列出可写格式: %v", err)
 	}

@@ -131,7 +131,7 @@ func (s *Session) writeExport(ctx context.Context, path string, f port.ExchangeF
 	if err != nil {
 		return rep, fmt.Errorf("创建导出文件: %w", err)
 	}
-	rep, err = s.exporter.Export(ctx, s.cur, f.Name, out)
+	rep, err = s.exporter.Export(ctx, []*conversation.Conversation{s.cur}, f.Name, out)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
@@ -171,21 +171,37 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return "", fmt.Errorf("读取文件: %w", err)
 	}
-	c, rep, err := s.importer.Import(ctx, f, format)
+	trees, rep, err := s.importer.Import(ctx, f, format, nil)
 	if err != nil {
 		return "", fmt.Errorf("导入失败: %w", err)
 	}
+	if len(trees) == 0 {
+		return "", errors.New("导入失败: 文件里没有可导入的会话")
+	}
+	// 先全部自检并取好身份、再一次性落盘：第 3 个会话坏了，不该留下前 2 个已入库的半截状态。
 	// 新会话 ID 与 /new 同源（端口只管「文件 → 树」，会话身份由这里分配）。Root 节点 ID
 	// 恒等于会话 ID（domain 的构造口径），所以换 ID 要连 Root 和挂在它下面的边一起换。
-	c, err = remapConversationID(c, s.ids.ConversationID())
-	if err != nil {
-		return "", fmt.Errorf("分配导入会话的身份: %w", err)
+	imported := make([]*conversation.Conversation, 0, len(trees))
+	for _, c := range trees {
+		c, err := remapConversationID(c, s.ids.ConversationID())
+		if err != nil {
+			return "", fmt.Errorf("分配导入会话的身份: %w", err)
+		}
+		imported = append(imported, c)
 	}
-	if err := s.store.Save(ctx, c); err != nil {
-		return "", fmt.Errorf("保存导入的会话: %w", err)
+	saved := make([]conversation.ID, 0, len(imported))
+	for _, c := range imported {
+		if err := s.store.Save(ctx, c); err != nil {
+			// 回滚本批已落盘的：半截导入比没导入更糟——用户不知道哪几个进来了。
+			for _, id := range saved {
+				_ = s.store.Remove(ctx, id)
+			}
+			return "", fmt.Errorf("保存导入的会话: %w", err)
+		}
+		saved = append(saved, c.ID)
 	}
 	s.cancelWatchersFor(s.cur.ID) // 旧会话的后台任务报告不再属于这里
-	s.cur = c
+	s.cur = imported[0]
 	// 会话已经落盘并切过来了：从这里往下是「界面刷新」，失败时不能把已完成的事实报成失败。
 	// 用户要知道「导入成功了，但界面没刷干净」，否则会以为白导一次。
 	if err := s.emitClear(ctx); err != nil {

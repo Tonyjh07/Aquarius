@@ -41,7 +41,7 @@ func linearConv(t *testing.T) *conversation.Conversation {
 // content 是字符串而不是分片数组（兼容端读字符串的那一档最多）。
 func TestExportOpenAIShape(t *testing.T) {
 	var buf bytes.Buffer
-	rep, err := New(Options{}).Export(context.Background(), linearConv(t), "openai", &buf)
+	rep, err := exportOne(context.Background(), New(Options{}), linearConv(t), "openai", &buf)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -86,10 +86,10 @@ func TestExportOpenAIShape(t *testing.T) {
 func TestOpenAIRoundtrip(t *testing.T) {
 	src := linearConv(t)
 	var buf bytes.Buffer
-	if _, err := New(Options{}).Export(context.Background(), src, "openai", &buf); err != nil {
+	if _, err := exportOne(context.Background(), New(Options{}), src, "openai", &buf); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	got, rep, err := New(Options{}).Import(context.Background(), bytes.NewReader(buf.Bytes()),
+	got, rep, err := importOne(context.Background(), New(Options{}), bytes.NewReader(buf.Bytes()),
 		port.ExchangeFormat{Name: "openai"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -157,7 +157,7 @@ func TestImportSkipsEmptyButCounts(t *testing.T) {
 	}
 	for name, doc := range cases {
 		t.Run(name, func(t *testing.T) {
-			c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+			c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 				port.ExchangeFormat{Name: name})
 			if err != nil {
 				t.Fatalf("import: %v", err)
@@ -217,7 +217,7 @@ func TestOpenAIImportInjects(t *testing.T) {
 		{"role":"critic","content":"不认的角色"},
 		{"role":"assistant","content":"答"}
 	]}`
-	c, rep, err := New(Options{}).Import(context.Background(), strings.NewReader(doc),
+	c, rep, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
 		port.ExchangeFormat{Name: "openai"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -253,7 +253,7 @@ func TestExportLinearDropsBranch(t *testing.T) {
 	}
 	for _, format := range []string{"openai", "sillytavern"} {
 		var buf bytes.Buffer
-		rep, err := New(Options{}).Export(context.Background(), src, format, &buf)
+		rep, err := exportOne(context.Background(), New(Options{}), src, format, &buf)
 		if err != nil {
 			t.Fatalf("%s export: %v", format, err)
 		}
@@ -271,7 +271,7 @@ func TestExportLinearDropsBranch(t *testing.T) {
 // 角色靠 is_user / is_system 表达（对方就是这么判的）。
 func TestExportSillyTavernShape(t *testing.T) {
 	var buf bytes.Buffer
-	rep, err := New(Options{}).Export(context.Background(), linearConv(t), "sillytavern", &buf)
+	rep, err := exportOne(context.Background(), New(Options{}), linearConv(t), "sillytavern", &buf)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -309,10 +309,10 @@ func TestExportSillyTavernShape(t *testing.T) {
 func TestSillyTavernRoundtrip(t *testing.T) {
 	src := linearConv(t)
 	var buf bytes.Buffer
-	if _, err := New(Options{}).Export(context.Background(), src, "sillytavern", &buf); err != nil {
+	if _, err := exportOne(context.Background(), New(Options{}), src, "sillytavern", &buf); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	got, rep, err := New(Options{}).Import(context.Background(), bytes.NewReader(buf.Bytes()),
+	got, rep, err := importOne(context.Background(), New(Options{}), bytes.NewReader(buf.Bytes()),
 		port.ExchangeFormat{Name: "sillytavern"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
@@ -376,16 +376,16 @@ func TestSillyTavernTimeSymmetric(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 	var first bytes.Buffer
-	if _, err := New(Options{}).Export(context.Background(), src, "sillytavern", &first); err != nil {
+	if _, err := exportOne(context.Background(), New(Options{}), src, "sillytavern", &first); err != nil {
 		t.Fatalf("export#1: %v", err)
 	}
-	c, _, err := New(Options{}).Import(context.Background(), bytes.NewReader(first.Bytes()),
+	c, _, err := importOne(context.Background(), New(Options{}), bytes.NewReader(first.Bytes()),
 		port.ExchangeFormat{Name: "sillytavern"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	var second bytes.Buffer
-	if _, err := New(Options{}).Export(context.Background(), c, "sillytavern", &second); err != nil {
+	if _, err := exportOne(context.Background(), New(Options{}), c, "sillytavern", &second); err != nil {
 		t.Fatalf("export#2: %v", err)
 	}
 	// 首行是 header（create_date 来自会话创建时间），比它更稳的是比消息行的时间。
@@ -417,7 +417,7 @@ func TestImportSillyTavernBadFiles(t *testing.T) {
 		"中间行不是 JSON": {"{\"user_name\":\"u\"}\n{\"mes\":\"好\"}\n不是 JSON\n", "第 3 行"},
 	}
 	for name, tc := range cases {
-		_, _, err := New(Options{}).Import(context.Background(), strings.NewReader(tc.doc),
+		_, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(tc.doc),
 			port.ExchangeFormat{Name: "sillytavern"})
 		if tc.want == "" {
 			// 首行带 mes 也能读（有些导出把 header 省了）：不当作错误，但要能解析。

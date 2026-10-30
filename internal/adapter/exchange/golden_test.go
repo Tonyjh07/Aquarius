@@ -113,7 +113,7 @@ func TestInteropFormatsGolden(t *testing.T) {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			var first bytes.Buffer
-			rep, err := ex.Export(context.Background(), src, name, &first)
+			rep, err := exportOne(context.Background(), ex, src, name, &first)
 			if err != nil {
 				t.Fatalf("export: %v", err)
 			}
@@ -122,7 +122,7 @@ func TestInteropFormatsGolden(t *testing.T) {
 			}
 			// 同一棵树导两次字节相同：产物里不该有 map 遍历序、当前时间之类的东西。
 			var second bytes.Buffer
-			if _, err := ex.Export(context.Background(), src, name, &second); err != nil {
+			if _, err := exportOne(context.Background(), ex, src, name, &second); err != nil {
 				t.Fatalf("export#2: %v", err)
 			}
 			if !bytes.Equal(first.Bytes(), second.Bytes()) {
@@ -135,7 +135,7 @@ func TestInteropFormatsGolden(t *testing.T) {
 			if !ok || format.Name != name {
 				t.Fatalf("产物认不出自己: %+v, %v", format, ok)
 			}
-			got, _, err := ex.Import(context.Background(), bytes.NewReader(first.Bytes()), format)
+			got, _, err := importOne(context.Background(), ex, bytes.NewReader(first.Bytes()), format)
 			if err != nil {
 				t.Fatalf("读回自己的产物: %v", err)
 			}

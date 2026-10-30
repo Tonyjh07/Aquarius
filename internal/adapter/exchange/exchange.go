@@ -22,6 +22,7 @@ import (
 var (
 	_ port.SessionExporter = (*Exchange)(nil)
 	_ port.SessionImporter = (*Exchange)(nil)
+	_ port.ExchangeIndexer = (*Exchange)(nil)
 )
 
 // Options 装配参数。
@@ -46,24 +47,33 @@ func New(opts Options) *Exchange {
 // Formats 全部格式（表序即用法提示的顺序）。
 func (e *Exchange) Formats() []port.ExchangeFormat { return port.ExchangeFormats() }
 
-// Export 按 format 写出整棵树（§5.16）。
-func (e *Exchange) Export(ctx context.Context, c *conversation.Conversation, format string, w io.Writer) (port.ExchangeReport, error) {
+// Export 按 format 写出一组会话（§5.16）。
+func (e *Exchange) Export(ctx context.Context, cs []*conversation.Conversation, format string, w io.Writer) (port.ExchangeReport, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ExchangeReport{}, err
 	}
-	if c == nil {
-		return port.ExchangeReport{}, errors.New("exchange: 会话为空")
+	if len(cs) == 0 {
+		return port.ExchangeReport{}, errors.New("exchange: 没有要导出的会话")
+	}
+	for _, c := range cs {
+		if c == nil {
+			return port.ExchangeReport{}, errors.New("exchange: 会话为空")
+		}
 	}
 	rep := port.ExchangeReport{Format: format}
+	if format != "aqx" && len(cs) > 1 {
+		// 不写第一个、也不静默丢其余的：别人按那份规范读，一份半成品比没有更糟。
+		return rep, fmt.Errorf("%s 这种格式一次只能写一个会话（现在给了 %d 个）：要备份多个会话请用 aqx", format, len(cs))
+	}
 	switch format {
 	case "aqx":
-		return e.exportAQX(ctx, c, w)
+		return e.exportAQX(ctx, cs, w)
 	case "chatgpt":
-		return e.exportChatGPT(ctx, c, w)
+		return e.exportChatGPT(ctx, cs[0], w)
 	case "openai":
-		return e.exportOpenAI(ctx, c, w)
+		return e.exportOpenAI(ctx, cs[0], w)
 	case "sillytavern":
-		return e.exportSillyTavern(ctx, c, w)
+		return e.exportSillyTavern(ctx, cs[0], w)
 	case "openwebui":
 		return rep, errors.New("openwebui 只认不写：要喂 Open WebUI 用 chatgpt 那份")
 	default:
@@ -72,26 +82,44 @@ func (e *Exchange) Export(ctx context.Context, c *conversation.Conversation, for
 }
 
 // Import 读入一个外部文件并自检（§5.16 的「外部文件是不可信输入」）。
-func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeFormat) (*conversation.Conversation, port.ExchangeReport, error) {
+func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeFormat, pick []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, port.ExchangeReport{}, err
 	}
 	rep := port.ExchangeReport{Format: f.Name}
+	if f.Name != "aqx" {
+		// 非容器只有一项：只认空或 {1}，其余报因（不静默当成「全导」）。
+		if len(pick) > 1 || (len(pick) == 1 && pick[0] != 1) {
+			return nil, rep, errors.New("这种格式只有一项，--pick 只接受 1")
+		}
+	}
 	switch f.Name {
 	case "aqx":
-		c, rep, err := e.importAQX(ctx, r)
+		return e.importAQX(ctx, r, pick)
+	case "chatgpt":
+		c, rep, err := e.importChatGPT(ctx, r)
 		if err != nil {
 			return nil, rep, err
 		}
-		return c, rep, nil
-	case "chatgpt":
-		return e.importChatGPT(ctx, r)
+		return []*conversation.Conversation{c}, rep, nil
 	case "openai":
-		return e.importOpenAI(ctx, r)
+		c, rep, err := e.importOpenAI(ctx, r)
+		if err != nil {
+			return nil, rep, err
+		}
+		return []*conversation.Conversation{c}, rep, nil
 	case "sillytavern":
-		return e.importSillyTavern(ctx, r)
+		c, rep, err := e.importSillyTavern(ctx, r)
+		if err != nil {
+			return nil, rep, err
+		}
+		return []*conversation.Conversation{c}, rep, nil
 	case "openwebui":
-		return e.importOpenWebUI(ctx, r)
+		c, rep, err := e.importOpenWebUI(ctx, r)
+		if err != nil {
+			return nil, rep, err
+		}
+		return []*conversation.Conversation{c}, rep, nil
 	default:
 		return nil, rep, fmt.Errorf("不认识的导入格式 %q", f.Name)
 	}
