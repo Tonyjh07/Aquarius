@@ -64,6 +64,9 @@ const (
 	PurposeExchangeImport FilePurpose = iota
 	// PurposeExchangeExport 会话进出的导出侧：选一个落点 → 把当前会话写过去。
 	PurposeExchangeExport
+	// PurposeExchangeBatchExport 批量导出（左栏选择态）：落点固定写一份 aqx 备份，只回传
+	// 路径（不参与格式档位——备份只能是无损归档，其余格式的容器装不下多会话）。
+	PurposeExchangeBatchExport
 )
 
 // FileFilter 文件对话框的一项过滤器：显示名 + 分号分隔的通配符（如 `*.aqx;*.zip`）。

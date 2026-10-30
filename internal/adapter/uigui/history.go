@@ -77,6 +77,16 @@ type historyState struct {
 	// pick 导入勾选面板（D249，nil = 未开启）：选完一个多会话归档后弹，勾哪几个导哪几个。
 	// 在屏期间同样按 modalActive 遮住背景。
 	pick *importPickDialog
+	// selMode/sel 左栏批量选择态（D249）：selMode = 每行出复选框、底部换动作条；
+	// sel 按**会话 ID**记勾选（不按行序——列表随内核快照重排后勾选不会错位）。
+	selMode bool
+	sel     map[conversation.ID]bool
+	// selPending 批量导出按下「导出」时勾中的 ID（**按左栏顺序**的字符串）：保存框是异步的，
+	// 落点回来时用户可能已经退出选择态（sel 已清空），不能那时再去读 sel。
+	selPending []string
+	// btnSel* 选择态的动作条控件（进入 / 全选 / 取消 / 导出 / 删除）。
+	btnSelect, btnSelAll, btnSelCancel widget.Clickable
+	btnSelExport, btnSelDel            widget.Clickable
 	// toast 窗内轻提示（复制 ID / 复制会话 ID 等的即时反馈）：帧尾渲染，约 2 秒后自动消失。
 	toast toastState
 }
@@ -247,6 +257,20 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 		st.requestExport(u)
 		return
 	}
+	// 左栏底部「选择」钮：进批量选择态（D249）。
+	if st.btnSelect.Clicked(gtx) {
+		st.enterSelMode()
+		return
+	}
+	// 批量选择态（D249）：行点击在这里表达「挑这一行」，**不**是切会话——继续往下走会
+	// 顺带把当前会话切走，用户以为只是选了一个备份对象。标题行四颗钮仍然照常工作
+	// （新建 / 导入 / 导出当前会话 / 收起都与「选了哪几个」无关，且它们都画在屏上，
+	// 画出来却点不动比多一次确认更糟）。
+	if st.selMode {
+		st.dispatchSel(u, gtx)
+		st.dispatchView(gtx)
+		return
+	}
 	// D157：行尾「✕」**先收**。实测点 ✕ 时只投 /rmconv（✕ 的命中区把同位置的行遮掉），
 	// 但顺序照旧钉死在前：不依赖「谁遮了谁」这种命中链细节——将来排版挪动、或 Gio 的
 	// 遮挡口径变化，也不会一次点击既删会话又切会话。
@@ -265,6 +289,13 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 			return
 		}
 	}
+	st.dispatchView(gtx)
+}
+
+// dispatchView 状态栏取景控件（预算 −/＋、装下整树、回到初始态、两个聚焦域）。
+//
+// 与列表动作分开：选择态只改列表的语义，取景控件照常可用（画在屏上的钮没有理由失效）。
+func (st *historyState) dispatchView(gtx layout.Context) {
 	switch {
 	case st.btnMinus.Clicked(gtx):
 		st.applyBudget(-10)
@@ -330,6 +361,11 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 	st.sync(u)
 	st.drainNodeAction(u, gtx)
 	st.drainFilePicks(u)
+	// Esc 退出选择态：选择态不是模态层（不铺 scrim），所以不夺焦点，只挂一条不限焦点的
+	// 过滤器；模态层在屏时 dispatch 见门即返回，Esc 归那一层自己。
+	if !st.modalActive(u) {
+		st.drainSelKeys(gtx)
+	}
 	st.dispatch(u, gtx)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -408,6 +444,9 @@ const histLeftColumnDp unit.Dp = 200
 const histLeftRailDp unit.Dp = 30
 
 // histLeftColumn 左栏：会话列表（标题 / 时间 / 消息数；当前会话高亮）+ 标题行右端的收起钮。
+//
+// D249 批量选择态（st.selMode）下同一列换三处：每行**左侧**出复选框、行尾「✕」收起
+// （删除这时走底部动作条，两个删除入口同时在场只会点错）、列表底部换成动作条。
 func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	rowH := gtx.Dp(44)
 	return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -460,10 +499,19 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 						// 文字按内衬排布、右侧让出 ✕ 槽。
 						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 							return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								// 选择态行尾没有「✕」（见下），就不必让出那个槽——否则列宽
+								// 会平白少一截，标题更早被截断。
+								right := unit.Dp(6)
+								if !st.selMode {
+									right += histRowDelSlotDp
+								}
 								layout.Inset{
 									Top: unit.Dp(6), Bottom: unit.Dp(6),
-									Left: unit.Dp(6), Right: unit.Dp(6) + histRowDelSlotDp,
+									Left: unit.Dp(6), Right: right,
 								}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									if st.selMode {
+										return selRowByIndex(gtx, th, st, i)
+									}
 									return histSessionRow(gtx, th, st.sessions[i])
 								})
 								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
@@ -475,11 +523,37 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 						// 进去的控件收不到任何指针事件——✕ 永远不悬浮、点了也没反应（逐点
 						// 扫描：整行 hover 正常、✕ 恒 false）。同级后 ✕ 正常命中，且它会把
 						// 同一位置的行的命中遮掉（点 ✕ 只投 /rmconv，不会顺带切会话）。
+						//
+						// 选择态**不画**它（D249）：删除走底部动作条，两个删除入口同时在场
+						// 只会点错。
 						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+							if st.selMode {
+								return layout.Dimensions{}
+							}
 							return st.rowDelSlot(gtx, th, c, i, rowH)
 						}),
 					)
 				})
+			}),
+			// 底部：常态一颗「选择」（进批量选择态），选择态换成动作条（D249）。
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if !st.selMode {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(histTextBtn(th, &st.btnSelect, "选择")),
+						layout.Flexed(1, layout.Spacer{}.Layout),
+					)
+				}
+				return layout.Stack{}.Layout(gtx,
+					layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+						return selBarPaint(gtx)
+					}),
+					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(2), Right: unit.Dp(2)}.
+							Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return st.selActionBar(gtx, th)
+							})
+					}),
+				)
 			}),
 		)
 	})

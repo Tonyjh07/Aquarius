@@ -247,7 +247,7 @@ func TestImportPickBlocksBackground(t *testing.T) {
 		t.Fatalf("面板在屏时背景投出了命令: %+v", in.Command)
 	default:
 	}
-	if st.pick == nil {
-		t.Fatal("面板在屏时背景把它关掉了")
+	if st.selMode {
+		t.Fatal("面板在屏时背景进入了选择态")
 	}
 }

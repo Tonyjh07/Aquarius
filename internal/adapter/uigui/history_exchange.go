@@ -167,6 +167,16 @@ func (st *historyState) drainFilePicks(u *UI) {
 				st.sendCmd(u, "export",
 					"--format", f.Name,
 					"--path", withFormatExt(p.path, f))
+			case platform.PurposeExchangeBatchExport:
+				// 落点恒定写 aqx（对话框只一档），ID 取按下「导出」那刻的快照：对话框是异步
+				// 的，这期间用户可能已经退出选择态，sel 那时已经清空。
+				if ids := st.selPending; len(ids) > 0 {
+					st.sendCmd(u, "export",
+						"--ids", strings.Join(ids, ","),
+						"--path", p.path)
+				}
+				st.selPending = nil
+				st.exitSelMode()
 			}
 		default:
 			return
