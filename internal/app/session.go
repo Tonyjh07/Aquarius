@@ -132,6 +132,9 @@ type Session struct {
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
 	// 发布，UI 事件循环 goroutine 经 Branches 无锁读（见 tree.go）。
 	tree atomic.Pointer[treeSnapshot]
+	// treeRev 快照的内容发布号：内容真变了才递增（发布不等于变更，见 publishTree）。
+	// 只在会话 goroutine 读写，UI 读到的是快照里那份随快照发布的副本。
+	treeRev uint64
 	// facts 会话展示事实快照（D82/§7.6，前置 B）：与 tree 同组发布点原子发布，UI 经
 	// Facts 无锁读（见 facts.go）；重算经签名门控，命令类输入不空转。
 	facts atomic.Pointer[factsSnapshot]

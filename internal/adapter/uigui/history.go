@@ -16,7 +16,6 @@ package uigui
 // 左栏见 history_left.go，帧骨架与右栏见 history_view.go，关系图本体见 relmap_*.go。
 
 import (
-	"fmt"
 	"io"
 	"strings"
 
@@ -36,9 +35,11 @@ type historyState struct {
 	dels     []*widget.Clickable   // 行尾「✕」删除钮（D157；同上按行序缓存）
 	delShown []bool                // 上帧「✕」显隐（悬浮态翻转时补一帧，见 rowDelSlot）
 	sessions []port.SessionSummary // 上帧读到的左栏快照（行数对齐）
-	// sig/model/vis 右图数据面：sig = 快照签名（变化才重建模型与预算，R3 懒重排）；
+	// rev/model/vis 右图数据面：rev = 快照的内容发布号（换了才重建模型与预算，R3 懒重排）；
+	// have = 已读过至少一份快照（发布号从零起，不能拿零值当「还没读过」）；
 	// model = 派生模型（§6.2），vis = 当前预算切片（A7 的「呈现 M」）。
-	sig    string
+	rev    uint64
+	have   bool
 	model  *relModel
 	vis    relVisible
 	budget int // 预算（rebudget：−/＋，A5/A7）
@@ -163,24 +164,15 @@ func (st *historyState) applyBudget(delta int) {
 	}
 }
 
-// relSig 快照签名：Total + Anchor + 末节点（Nodes 按 (CreatedAt, ID) 升序，任何树变更
-// 都会反映到节点集或末节点——签名相同 = 数据未变 = 不重排）。
-func relSig(g port.TreeGraph) string {
-	var last conversation.MessageID
-	if len(g.Nodes) > 0 {
-		last = g.Nodes[len(g.Nodes)-1].ID
-	}
-	return fmt.Sprintf("%d|%s|%s", g.Total, g.Anchor, last)
-}
-
-// sync 帧首同步数据面：左栏快照直接取（行数对齐）；右图签名变化才重建模型与预算；
-// 树编辑状态每帧取（它是模式开关，没有签名可用——一帧的延迟就会让开关与内核不一致）。
+// sync 帧首同步数据面：左栏快照直接取（行数对齐）；右图按**内容发布号**判定要不要重建
+// 模型与预算（`TreeGraph.Revision`，同号 = 同一份内容）；树编辑状态每帧取（它是模式开关，
+// 没有发布号可用——一帧的延迟就会让开关与内核不一致）。
 func (st *historyState) sync(u *UI) {
 	st.syncTreeEdit(u)
 	if u.opts.Tree != nil {
 		if g, ok := u.opts.Tree.Graph(); ok {
-			if sig := relSig(g); sig != st.sig {
-				st.sig = sig
+			if !st.have || g.Revision != st.rev {
+				st.have, st.rev = true, g.Revision
 				if m, ok := relNewModel(g); ok {
 					st.model = m
 					st.vis = relBudget(m, st.budget)

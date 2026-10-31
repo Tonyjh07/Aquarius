@@ -380,3 +380,39 @@ func TestNodeText(t *testing.T) {
 		t.Fatal("未发布快照应 ok=false")
 	}
 }
+
+// TestTreeRevisionFollowsContent 发布号只跟**内容**走：同样的树重复发布不换号，
+// 改父（数量/锚点/末节点全不动）必须换号——UI 靠它判定要不要重排。
+func TestTreeRevisionFollowsContent(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	persona, _, a1 := reparentFixture(t, s)
+	s.publishTree()
+	base, ok := s.Graph()
+	if !ok || base.Revision == 0 {
+		t.Fatalf("首次发布应有非零发布号：ok=%v rev=%d", ok, base.Revision)
+	}
+
+	s.publishTree() // 内容没变 → 沿用旧号（发布≠变更）
+	if g, _ := s.Graph(); g.Revision != base.Revision {
+		t.Fatalf("内容未变却换号：%d → %d", base.Revision, g.Revision)
+	}
+
+	if _, err := s.execCommand(context.Background(), port.Command{
+		Name: "reparent", Args: []string{string(a1.ID), string(persona.ID)},
+	}); err != nil {
+		t.Fatalf("reparent: %v", err)
+	}
+	s.publishTree()
+	after, _ := s.Graph()
+	if after.Revision <= base.Revision {
+		t.Fatalf("改父后发布号 = %d, want > %d", after.Revision, base.Revision)
+	}
+	if after.Total != base.Total || after.Anchor != base.Anchor {
+		t.Fatal("改父不该改数量与锚点（这条测试的前提）")
+	}
+	for _, n := range after.Nodes {
+		if n.ID == a1.ID && n.Parent != persona.ID {
+			t.Fatalf("快照里 a1.parent = %q, want %s", n.Parent, persona.ID)
+		}
+	}
+}

@@ -114,18 +114,26 @@ func TestHistorySwitchDispatch(t *testing.T) {
 	}
 }
 
-// TestHistorySigRebuild 快照签名变化才重建（R3 懒重排）：末节点变化 → 模型重算。
-func TestHistorySigRebuild(t *testing.T) {
+// TestHistoryRevisionRebuild 发布号变了才重建（R3 懒重排）：同号不重建、换号才重算。
+func TestHistoryRevisionRebuild(t *testing.T) {
 	g := relFixtureGraph()
+	g.Revision = 1
 	u := newHistUI(fakeRelTree{g: g}, fakeLister(nil))
 	st := newHistoryState(u)
 	if st.model.total != 7 {
 		t.Fatalf("初始 total = %d, want 7", st.model.total)
 	}
-	old := st.sig
+	model := st.model
 
-	// 追加一节点（Total 8）→ 签名变化 → 重建。
+	// 同号（内容据称未变）→ 模型原样保留，连指针都不换。
+	st.sync(u)
+	if st.model != model {
+		t.Fatal("发布号未变却重建了模型")
+	}
+
+	// 追加一节点 → 发布号换新 → 重建。
 	g2 := relFixtureGraph()
+	g2.Revision = 2
 	g2.Nodes = append(g2.Nodes, port.GraphNode{
 		ID: "u3", Parent: "u2", Role: conversation.RoleUser, Snippet: "x",
 		CreatedAt: g2.Nodes[len(g2.Nodes)-1].CreatedAt.Add(1), EdgeKind: port.EdgeSeq,
@@ -133,11 +141,38 @@ func TestHistorySigRebuild(t *testing.T) {
 	g2.Total = len(g2.Nodes)
 	u.opts.Tree = fakeRelTree{g: g2}
 	st.sync(u)
-	if st.sig == old {
-		t.Fatal("签名未变化")
+	if st.rev != 2 {
+		t.Fatalf("rev = %d, want 2", st.rev)
 	}
 	if st.model.total != 8 {
 		t.Fatalf("重建后 total = %d, want 8", st.model.total)
+	}
+}
+
+// TestHistoryReparentRebuildsModel 改父必须重排（2026-10-31 实测报障）：把 a2 从 u1 挪到
+// a1 下——节点数、锚点、末节点全没动，只有一条边换了父。若变更判定只看这三样，这一改就
+// 落进缝里：模型不重建，松手后线仍连原父。
+func TestHistoryReparentRebuildsModel(t *testing.T) {
+	g := relFixtureGraph()
+	g.Revision = 1
+	u := newHistUI(fakeRelTree{g: g}, fakeLister(nil))
+	st := newHistoryState(u)
+	if p, want := st.model.nodes[relIdx(t, st.model, "a2")].parent, relIdx(t, st.model, "u1"); p != want {
+		t.Fatalf("初始 a2 的父 = %d, want %d", p, want)
+	}
+
+	moved := relFixtureGraph()
+	moved.Revision = 2 // 内容变了 → 发布号换新（app 侧按内容判等决定）
+	for i := range moved.Nodes {
+		if moved.Nodes[i].ID == "a2" {
+			moved.Nodes[i].Parent = "a1"
+		}
+	}
+	u.opts.Tree = fakeRelTree{g: moved}
+	st.sync(u)
+
+	if p, want := st.model.nodes[relIdx(t, st.model, "a2")].parent, relIdx(t, st.model, "a1"); p != want {
+		t.Fatalf("改父后 a2 的父 = %d, want %d（模型没重建，线仍连原父）", p, want)
 	}
 }
 

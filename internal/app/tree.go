@@ -82,11 +82,39 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 
 // publishTree 重建并原子发布树只读快照（D80/§7.5）：树变更后调用。发布点只有两个——
 // 构造完成（NewSession）与每次 Handle 返回前；树变更只发生在 Handle 内（命令面与 Turn）。
+//
+// **发布 ≠ 变更**：Handle 里大量命令不动树（`/help`、`/model`…），照样走到这里。内容与
+// 上一份相同就沿用旧发布号，UI 据此跳过重排（R3：只有数据变更才重排）；判等按整份节点表
+// 逐字段比，不能只比数量与末节点——改父这两样一个都不动，只换了边。
 func (s *Session) publishTree() {
 	if s.cur == nil {
 		return
 	}
-	s.tree.Store(makeTreeSnapshot(s.cur))
+	snap := makeTreeSnapshot(s.cur)
+	if old := s.tree.Load(); old != nil && sameGraph(old.graph, snap.graph) {
+		snap.graph.Revision = old.graph.Revision
+	} else {
+		s.treeRev++
+		snap.graph.Revision = s.treeRev
+	}
+	s.tree.Store(snap)
+}
+
+// sameGraph 两份整树快照内容是否一致（发布号不参与比较——它就是本函数的结果）。
+//
+// 逐节点整结构比较（`GraphNode` 全字段可比值）。`CreatedAt` 是 `time.Time`，`==` 连
+// 时区指针一起比——理论上同一时刻的两种 loc 会判成不等，代价只是多重建一次（错在「多算」
+// 这一侧，不会漏掉真变更）。
+func sameGraph(a, b port.TreeGraph) bool {
+	if a.Total != b.Total || a.Anchor != b.Anchor || len(a.Nodes) != len(b.Nodes) {
+		return false
+	}
+	for i := range a.Nodes {
+		if a.Nodes[i] != b.Nodes[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Branches 实现 port.TreeView（D80/§7.5）：读已发布的不可变快照，无锁——可从 UI 事件

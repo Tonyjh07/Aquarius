@@ -59,6 +59,10 @@ type TreeGraph struct {
 	Nodes []GraphNode
 	// Total 节点总数 = len(Nodes)（A7「共 N」；与「呈现 M」不同源，不得互相推算）。
 	Total int
+	// Revision 内容发布号：**内容有变才换号**，同一份内容重复发布不递增（≠ 发布次数）。
+	// 消费方据此判定「读到的还是不是上次那份」，无需比对节点表——`Total`/`Anchor`/末节点
+	// 这类廉价摘要不足以代表整颗树：改父不改数量也不改 Head，却把边换了。
+	Revision uint64
 }
 
 // TreeView 会话树只读视图端口（D80/§7.5，前置 A）：UI 只读树事实用，**不给变更入口**
