@@ -1,10 +1,15 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ 5239e5c -->
+<!-- docs-sync: 2026-10-31 @ 38a470c -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
 > 本文是**当前为真**的设计事实，与 [decisions.md](decisions.md) 同级；决策记录答「为什么这么定、
 > 否决了什么」，本文答「现在什么是真的」，不写演化史。
+>
+> **只收代码里读不出来的那部分**：不变量、跨层口径、为什么这样定（与被否决的理由）、能据以行动的
+> 数字。不进本文的四类——签名与字段（`go doc` 与包注释同源）、参数边界（`Spec()` 与 schema）、
+> 配置项（[configuration.md](configuration.md)）、界面与命令的用法（[gui-design.md](gui-design.md)、
+> [usage.md](usage.md)）。各写一遍的两份事实只会漂移，而漂移的表现是「文档说能、代码说不能」。
 >
 > **节号沿用拆分前的总设计文档**（2026-10-29 拆篇，正文未改）：全仓注释里的 `§4`–`§7`、`§9`、
 > `§10` 都指本文同名小节。其余节号各有归属：`§1`–`§3` 见 [overview.md](overview.md)，
@@ -30,143 +35,30 @@
 ```
 
 ```go
-package conversation
-
-type PartKind string
-
-const (
-    PartText     PartKind = "text"
-    PartImage    PartKind = "image"
-    PartAudio    PartKind = "audio"
-    PartDoc      PartKind = "doc"
-    PartThinking PartKind = "thinking" // 思考过程（D42）：仅 assistant 节点可携带
-    PartTool     PartKind = "tool"     // 工具调用+结果同片（D95）：仅 assistant 节点可携带
-)
-
-type ApprovalState string // 工具确认态（M5 预留）：""=未进入 / pending / approved / denied
-
-type ToolPart struct { // Kind=PartTool 分片载荷：调用与结果同片（D95）
-    CallID   string        // 节点内唯一（不再全树唯一，D95）
-    Name     string
-    Args     json.RawMessage
-    Result   *tool.Result  // nil = 未执行/被取消（正常路径由提交时点保证不出现）
-    Approval ApprovalState // 预留：M5 工具确认
-}
-
-type Part struct {
-    Kind       PartKind
-    Text       string    // Kind=text；Kind=doc 时为提取文本（截断）；Kind=thinking 时为思考文本（D42）
-    Ref        *BlobRef  // Kind=image|audio|doc：附件引用
-    Transcript string    // Kind=audio：ASR 转写文本（模型只见文本，音频留附件库回放）
-    Tool       *ToolPart // Kind=tool：调用与结果同片（D95）
-    // Signature Kind=thinking 的思考块签名（D175）：适配器写入的不透明串（带协议前缀，如
-    // `anthropic:<sig>`），装配时原样回传；空 = 该协议无回传要求（Chat Completions 现状）。
-    Signature  string
-}
-
-type Role string
-
-const (
-    RoleRoot      Role = "root"
-    RoleUser      Role = "user"
-    RoleAssistant Role = "assistant"
-    RoleSystem    Role = "system" // 人格快照（D20）与压缩摘要（D21）
-    RoleInject    Role = "inject" // 注入节点（D150）：工具/轮询器写入的上下文，非用户发言
-)
-
-type Message struct { // 创建后只读，值语义
-    ID         MessageID
-    Parent     MessageID // "" = Root 自身（仅 Root 为空；其余节点 Parent 恒非空）
-    Role       Role      // root | user | assistant | system | inject
-    Content    []Part
-    Outcome    Outcome // done | cancelled | error（提交时确定）
-    Model      string
-    Usage      Usage
-    CreatedAt  time.Time
-    // Source 注入来源（D150；仅 Role=inject 非空）：`job:<id>` / `tool:<name>` /
-    // `plugin:<name>` / `poller:<id>` / `user`。只作展示与审计，不进模型上下文。
-    Source     string
-    // Trust 注入内容的信任级（D170；仅 Role=inject）：决定装配投影角色。
-    // 零值 = 外部内容（fail-closed），装配时套数据围栏。随树落盘，重载后口径不变。
-    Trust      InjectTrust // "" (external) | "host"
-    // Trigger 注入是否自动起一轮响应（D150；仅 Role=inject）。记录当时的决定以便回放/审计；
-    // 行为在提交时已经发生，重放不再触发。
-    Trigger    bool
-}
-
-// Conversation 是**聚合根**：树只能经方法改动（D214）。
-// 三张结构表一律私有——导出 map 等于把「只有方法能改」作废
-// （任何一处 c.Nodes[id] = ... 都能绕过不变量检查）。
+// 聚合根（D214）：树只能经方法改动，三张结构表一律私有——导出 map 等于把
+// 「只有方法能改」作废（任何一处 c.Nodes[id] = ... 都能绕过不变量检查）。
 type Conversation struct {
-    ID    ID
-    Title string
-    // Head 当前游标（初始 = Root）。单个标量，留作导出字段；
-    // 移动语义仍走 Checkout（写 Head 而不更新 UpdatedAt 会破坏一致性）。
-    Head                 MessageID
-    CreatedAt, UpdatedAt time.Time
+	ID    ID
+	Title string
+	Head  MessageID // 当前游标（初始 = Root；移动语义走 Checkout）
 
-    nodes       map[MessageID]Message     // 只增（Prune 硬删除外）
-    children    map[MessageID][]MessageID // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root 自身）
-    revisedFrom map[MessageID]MessageID   // 新→旧：版本链（纯结构元数据）
+	nodes       map[MessageID]Message     // 只增（Prune 硬删除外）
+	children    map[MessageID][]MessageID // 结构边（Root 的孩子 = 顶层消息）
+	revisedFrom map[MessageID]MessageID   // 新→旧：版本链（纯结构元数据）
 }
-
-type KeepMode int
-
-const (
-    Fresh KeepMode = iota // 新节点空白开始；旧节点的子树原样留作历史分支
-    Carry                 // 旧节点的子树边转移到新节点；旧节点成为"旧版本"叶子
-    Clone                 // 深拷贝旧节点的子树为新分支（全新 ID、原子树不动，D96）
-)
-
-// DetachmentKind 溯源路牌的来源种类（D256）。
-type DetachmentKind string
-
-const (
-    DetachTransfer DetachmentKind = "transfer" // Revise Carry：旧节点的孩子边整批转给新版本
-    DetachReparent DetachmentKind = "reparent" // Reparent：子树整棵挪到另一个父下
-)
-
-// Detachment 一条溯源路牌（D256）：某处曾挂过的内容去了哪里。**不参与**路径、版本组、
-// 装配、删除统计——只服务审计与 /reparent --undo。
-type Detachment struct {
-    Anchor  MessageID      // 锚点：改父 = 原父；转移 = 被取代的旧版本节点
-    Roots   []MessageID    // 被搬走的子树根（转移是整批孩子，改父只有一项）
-    NewHome MessageID      // 新位置：改父 = 新父；转移 = 新版本节点
-    Kind    DetachmentKind
-    At      time.Time
-    // Stale 记录已失效（被搬的子树根现在不挂在 NewHome 下）：检出但不删，撤销据此拒绝执行。
-    Stale bool
-}
-
-// ReparentResult 改父的回执（D255）：搬动了多少节点。水位前后对比在应用层做——
-// 「哪些节点进上下文」是装配口径（waterline），领域不认。
-type ReparentResult struct { Moved int }
-
-func New(id ID, title string) *Conversation // 建 Root 空节点（ID=id、Role=root）并把 Head 置于 Root；persona 由应用层写为首孩子
-func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅 user|assistant；root/system|inject 一律走 AppendCommitted
-func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system/inject 等），入树前校验不变量
-func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root 不可 Revise；system/inject 可
-func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Message, error) // 在 id 之前插入衬垫节点（仅 system|inject，D152）
-func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, error) // 同上，但接受已组装的衬垫节点（模型生成的摘要带 Model/Usage，与 AppendCommitted 同口径）
-func (c *Conversation) Reparent(id, newParent MessageID) (ReparentResult, error) // 改父：整棵子树从一个父挪到另一个父（D255）
-func (c *Conversation) Detachments() []Detachment             // 溯源路牌只读视图，按发生时刻升序（D256）
-func (c *Conversation) Prune(id MessageID) error              // 剪掉 id 及整棵子树（Root 不可剪）
-func (c *Conversation) Checkout(id MessageID) error           // Head 移到任意节点（含 Root=回根；无空串特例）
-func (c *Conversation) Path() []Message                        // Root→Head 线性序列（首元素为 Root，装配时滤掉）
-func (c *Conversation) Branches(id MessageID) []Message        // 同级分叉（UI 对比新旧版本；id=Root 时为顶层消息）
-func (c *Conversation) Find(id MessageID) (Message, bool)
-func (c *Conversation) NodeCount() int                         // 节点总数
-func (c *Conversation) ChildIDs(id MessageID) []MessageID      // 直接孩子，按结构插入序（副本）；"" 查 Root 挂点
-func (c *Conversation) IDs() []MessageID                       // 全部节点 ID，按 ID 升序
-func (c *Conversation) SubtreeSize(id MessageID) int           // id 及整棵子树的节点数（/rm 确认提示）
-func (c *Conversation) Edition(id MessageID) (MessageID, bool) // 版本链上游（被它修订掉的节点）
-func (c *Conversation) View() View                             // 整树只读视图：节点序 + 分叉组 + 末端表
-func (c *Conversation) Snapshot() Snapshot                     // 整树只读导出（持久化/迁移用，D214）
-func Restore(s Snapshot) (*Conversation, error)                // 唯一重建入口，进来先跑 Validate
-func (c *Conversation) Validate() error                        // 两条不变量整体自检（加载后/测试用）
 ```
 
-**读出口与持久化出口（D214）**：外部只能经上面这些方法读树——`View` 负责展示口径
+**词汇**（取值就是协议字符串，落盘与外层映射都按它）：分片 `text|image|audio|doc|thinking|tool`
+（thinking/tool 仅 assistant 可携带）；角色 `root|user|assistant|system|inject`；修订模式
+`Fresh|Carry|Clone`；路牌种类 `transfer|reparent`。
+
+**方法面**：签名与字段级注释看代码——`go doc ./internal/domain/conversation` 与包内注释同源，
+不在这里抄第二份。进文档的只有**签名看不出的硬约束**：`Append` 仅 user|assistant
+（system/inject 走 `AppendCommitted`）；`Revise` 拒 Root、可改 system|inject；
+`InsertBefore`/`InsertCommitted` 只接受 system|inject 衬垫、Root 不可作目标；`Prune` 拒 Root；
+`Checkout` 无空串特例（回根写 Root 的 ID）。
+
+**读出口与持久化出口（D214）**：外部只能经方法读树（`Path` / `Branches` / `View` / `Snapshot`…）——`View` 负责展示口径
 （节点按 (CreatedAt, ID) 升序、分叉组、每个节点的版本子树末端，口径与 `Tail` 一致），
 `Snapshot` 负责搬运口径（节点按 ID 升序、边按父 ID 升序、版本链按新 ID 升序，均为确定性顺序，
 返回的切片不与内部表共享）。`Restore` 是**唯一**的重建入口，且进来就跑 `Validate`——
@@ -212,27 +104,12 @@ func (c *Conversation) Validate() error                        // 两条不变�
 - **Root 即会话**（D19）：Root 实节点 ID 复用会话 ID（不另造第二个 ID），Role=root、空内容，仅作树管理；
   `Prune`/`Revise` 均拒 Root（删/改 Root 即破坏唯一根）。M0 的虚拟 Root 落盘格式**破坏性切换**——
   旧会话文件加载即报错，删除重建。
-- **persona 进树**（D20）：会话首节点 = system 角色（值为**人格模块树**展开结果快照）。**人格模块树
-  （D144/S7）**：config `prompts.modules` = **模块树**（`name → {text?, children?[]}`——组模块挂子模块、
-  可多级嵌套）、`prompts.persona` = **有序顶层引用列表**。展开 = 深度优先：组自身文本在前、子模块换行
-  接续（子模块文本以空行连接）；**空组不出**（有 children 但子模块全部无文本 ⇒ 整组含组文本一并不输出，
-  保住 D37「环境全空则不附加」语义）。**内置模块**（只读、`@` 保留前缀，可在库中引用/排序/移除）：
-  `@default`（默认人格；顶层 `system_prompt` 非空即为其正文）、`@env`（**环境信息组**，子模块
-  `@env.platform` / `@env.terminal` / `@env.sandbox` / `@env.timeout` / `@env.date`——事实取自
-  `RuntimeEnv`，`@env.date` = **会话创建当天**日期）、`@char`（**角色卡组**，D247；子模块
-  `@char.identity` / `@char.description` / `@char.personality` / `@char.scenario`，另有平级的
-  `@char.system` / `@char.book`）。`prompts.persona` 为空 ⇒ 默认引用
-  `["@default","@env"]`；`system_prompt` 退居 `@default` 的正文来源（兼容旧配置单串）。
-  **`@char.*` 是条件内置**：非角色会话、或字段为空 ⇒ 模块为空、**不计缺失**（与 `@env.*`
-  同一做法），因此它可以永久留在 `prompts.persona` 里而不改变任何普通会话的输出。
-  **每个卡字段是叶子而不是组头文本**：`@char` 组只做容器——「空组不出」会连带吞掉组头，
-  三件全空的卡（语料里确有两张）连 `You are <display>.` 都出不来。**六个 `@char.*` 都能单独
-  作顶层引用**（与 `@env.platform` 一样）：想只要描述不要场景，就把 `"@char.description"`
-  直接写进 `prompts.persona`，不必经过 `@char` 组。
-  **解析时机**：Agent 兜底系统提示在装配/请求时组合、会话 persona 在**新建会话**时组合（故日期 = 创建当天；
-  更远期「日期变更后新建节点注入上下文」见 §14）。展开结果整体作为**纯字符串**下传内核——装配/水位
-  路径零改动。压缩水位之上也**恒回传**；可 Revise（/edit 重写人格）、可 Prune（= 清空对话，走 /rm
-  二次确认；清空后装配回退兜底注入）。
+- **persona 进树**（D20）：会话首节点 = system 角色，值为**人格模块树**展开结果快照。模块树形状、
+  内置模块（`@default` / `@env.*` / `@char.*`）、展开规则与「空组不出」见
+  [configuration.md](configuration.md) 的 `prompts` 段——那是配置口径。内核只认一件事：
+  **展开结果是纯字符串**，按 persona 快照进树，装配与水位路径零改动。解析时机 = **新建会话**
+  （故 `@env.date` 为创建当天）；水位之上恒回传；可 Revise（`/edit` 重写人格）、可 Prune
+  （= 清空对话，走 `/rm` 二次确认，清空后装配回退兜底注入）。
 - **上下文压缩水位**（D21）：压缩摘要以 system 节点入树；装配 = [persona] + [最新摘要] + [摘要之后]，
   摘要之上（persona 除外）历史一律不回传；多次压缩链式吸收（只回传最新摘要）。
   `/compact` 手动触发、失败只报错树无损；压缩失败回退最旧裁剪、超预算硬保底由
@@ -346,10 +223,9 @@ func (c *Conversation) Validate() error                        // 两条不变�
 - **一条消息可带多个附件**（D186）：`RawInput.Attachments` 是列表，`File` / `Blob` 保留为
   单附件简写；摄取逐个进行，**允许部分成功**（失败项进 `Note`，全失败才报错）。
   单条消息 ≤ 8 个附件；图片单文件 ≤ 20MB（与 `file_read` 同口径）。
-- **图片入口**（D187）：GUI 支持 `Ctrl+V` 收剪贴板位图（优先 `PNG` 格式，退 `CF_DIB`/`CF_DIBV5`
-  自行转 PNG）、拖拽走 `WM_DROPFILES`、文件框多选；已入库的字节以 `Attachment{Blob}` 暂存，
-  不再从文件系统读第二遍。暂存 chip 对图片出 20dp 缩略图（解码前按像素预算门控）；
-  提交后转写区的图片（含工具产出图）走 120dp/96dp 方图缩略图并可点开预览次窗（D207，[gui-design.md](gui-design.md) §15.3）。
+- **图片入口**（D187）：GUI 的三种进法（`Ctrl+V` 收剪贴板位图、拖拽、文件框多选）都归
+  [gui-design.md](gui-design.md)；内核这一侧的契约只有一条——已入库的字节以 `Attachment{Blob}` 暂存，
+  **不再从文件系统读第二遍**。
 - **编辑消息可增删附件**（D188）：`/edit` 的 `--attach` / `--drop` / `--drop-all` 走同一条
   摄取管线；删掉的附件只从新节点移除，附件库字节按引用集合 GC。
 
@@ -357,27 +233,27 @@ func (c *Conversation) Validate() error                        // 两条不变�
 
 | 工具 | 说明 | Risk |
 |---|---|---|
-| `memory_list` / `memory_read` / `memory_search` | 记忆读取与检索（只见全局 + 当前会话两份，按文档名寻址） | Safe |
-| `memory_write` | 写入记忆文档（`name`=全局/当前会话；`mode`=append 缺省 / overwrite） | Confirm |
-| `think` | 显式整理思路（no-op）；可见性走 config `tools.disabled`（**默认隐藏**，D143：含 `think`；`model.think_tool` 退役为兼容读取，D34 原生思考为主，需要草稿工具时在设置窗「工具与 MCP」页启用） | Safe |
-| `sleep` | 等待 N 秒（只用于控制节奏；等后台任务结束用 `job_wait`，D189；取消可中断；1–3600s，超缺省超时需在调用上配 `timeout_sec`，D38/D39） | Safe |
-| `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 等级矩阵，读全盘免确认）；`file_read` 支持分页与图片，见 §4.2 | Safe |
-| `file_edit` | 按精确子串替换改文件（`old_string` 必须唯一，`replace_all` 放开；保留原换行与 BOM） | Confirm |
-| `file_write` / `file_delete` | 文件覆盖写入 / 删除 | Confirm |
-| `term_exec` | 终端命令同步执行（超时返回，输出截断保头尾） | Confirm |
-| `job_start` | 后台任务启动；结束自动通知（完成事件，不轮询），要在本轮拿结果用 `job_wait` | Confirm |
-| `job_wait` | 等后台任务到终态并回填状态/退出码/耗时/日志尾部（D189）；不传 `timeout_sec` 一直等（用户可中断），等超时只回填「仍在跑」、任务不受影响 | Safe |
+| `memory_list` / `memory_read` / `memory_search` | 记忆读取与检索（只见全局 + 当前会话两份） | Safe |
+| `memory_write` | 写记忆文档（`name`=全局/当前会话；`mode`=append 缺省 / overwrite） | Confirm |
+| `think` | 显式整理思路（no-op）；**默认隐藏**（D143），要草稿工具时在设置窗「工具与 MCP」页启用 | Safe |
+| `sleep` | 等 N 秒（1–3600）；只在需要控节奏时用——等后台任务用 `job_wait`（D189） | Safe |
+| `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 矩阵，读全盘免确认）；分页与图片内联见 §4.2 | Safe |
+| `file_edit` | 按精确子串替换（`old_string` 须唯一）；保留原换行与 BOM | Confirm |
+| `file_write` / `file_delete` | 覆盖写入 / 删除 | Confirm |
+| `term_exec` | 终端命令同步执行（超时返回，输出保头尾） | Confirm |
+| `job_start` | 后台任务；结束自动通知（完成事件，不轮询），本轮要结果用 `job_wait` | Confirm |
+| `job_wait` | 等后台任务到终态并回填状态/退出码/耗时/日志尾部（D189） | Safe |
 | `job_list` / `job_status` / `job_logs` / `job_kill` | 后台任务管理 | Safe |
-| `watch_start` | 声明一条观察器（D190）：`kind`=command/file/http，`target`，`match`（正则，省略 = 输出有变化），`notify`=match（缺省，报一次即结束）/ change（每次重新命中都报），`interval_sec`（5–3600，缺省 30，固定间隔不退避）、`max_checks`（缺省 120）、`deadline_sec`（缺省 3600）；**命中才注入**，未命中不打扰。确定会结束的任务不用它（用 `job_wait`） | Confirm |
-| `watch_list` / `watch_stop` | 观察器列表 / 停止（ID 支持唯一前缀） | Safe |
+| `watch_start` | 声明观察器（D190）：`kind`=command/file/http；`match` 省略 = 按输出变化判定。**命中才注入**，未命中不打扰；会结束的任务不用它（用 `job_wait`） | Confirm |
+| `watch_list` / `watch_stop` | 观察器列表 / 停止 | Safe |
 | `context_compact` | 触发上下文压缩（等价 `/compact`，模型自我管理上下文） | Safe |
-| `window_list` | 列出当前可抓取的顶层窗口（标题、程序名、屏幕矩形、是否前台，按 z 序自顶向下）；句柄作为 `screen_capture` 的入参 | Safe |
-| `screen_capture` | 截屏给模型看（D178）：`target` = `screen`（整个虚拟桌面，多显示器合成）或 `window_list` 给出的句柄（抓客户区，**含被遮挡、非顶层窗口**；活动菜单/下拉会合进主图；最小化窗口经桌面合成器的预览取整窗，不还原窗口、不抢焦点）；图片进附件库并随结果内联。链上无 `vision` 时执行报因 | Confirm |
-| `ask_user` | 向用户提问（D184）：1–4 题、每题 0–9 个选项（可多选），UI 自动追加「自己输入」项；答案随工具结果回填。**不吃默认工具超时**（用户思考不该超时），无人值守时立即回填「用户不在」 | Safe |
-| `web_search` | 联网搜索（D197）：`query`（1–128 字符，支持 `site:` / `"短语"` / `-词` / `lang:` / `after:` 等算符）、`count`（1–20）、`freshness`（day/week/month/year）；按配置顺序换家，回填里注明实际应答者与降级痕迹 | Safe |
-| `web_fetch` | 抓取单个网页并转 Markdown（D197）：`url`、`max_chars`（500–20000）；本地实现遵守 robots.txt 并拒绝内网目标 | Safe |
-| `skill` | 载入一个已安装技能（D201）：`name` = 技能目录名。回填该技能 `SKILL.md` 的正文 + 技能目录绝对路径（深入 `references/`、跑 `scripts/` 用 `file_read` / `term_exec`）。技能清单（name + description）直接写在工具描述里，**零技能时也照常注册**，执行时明确报 `no skills are installed` | Safe |
-| `delegate` | 把一件复杂任务**整个交给**一个外部 ACP 代理（D244，§5.18）：`task` = 任务描述（进它那侧的第一条消息）、`agent` = 已探测到的代理名（省略用缺省）、`workdir` = 子进程目录（省略家目录）。它自己起进程、自己用工具，我们只收回**报告 + 一行摘要**（工具调用数、改动文件、耗时、停止原因）。**不吃默认工具超时**（`Interactive`），ESC 取消 → 发 `session/cancel`；一个会话同时只允许一个转交 | Confirm |
+| `window_list` | 列出可抓取的顶层窗口（标题、程序名、矩形、是否前台）；句柄作 `screen_capture` 入参 | Safe |
+| `screen_capture` | 截屏给模型看（D178）：整个虚拟桌面或 `window_list` 给的句柄（含被遮挡、最小化）。链上无 `vision` 时执行报因 | Confirm |
+| `ask_user` | 向用户提问（D184）：1–4 题、每题 0–9 选项；答案随工具结果回填。**不吃默认工具超时**；无人值守立即回填「用户不在」 | Safe |
+| `web_search` | 联网搜索（D197）：按配置顺序换家，回填里注明实际应答者与降级痕迹 | Safe |
+| `web_fetch` | 抓取网页转 Markdown（D197）：本地实现遵守 `robots.txt` 并拒绝内网目标 | Safe |
+| `skill` | 载入已安装技能（D201）：回填 `SKILL.md` 正文 + 技能目录绝对路径；**零技能时也照常注册**，执行时报 `no skills are installed` | Safe |
+| `delegate` | 把一件复杂任务**整个**交给外部 ACP 代理（D244，§5.18）：只收回**报告 + 一行摘要**。**不吃默认工具超时**，ESC → `session/cancel`；一个会话同时只允许一个转交 | Confirm |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -396,45 +272,20 @@ func (c *Conversation) Validate() error                        // 两条不变�
   （含显式 `chcp 65001` 的输出），否则按 GBK/CP936 解码；模型无需再手工 `chcp` 切换代码页。
 - 三方工具经 MCP 网关加入，命名隔离：`mcp:<server>:<tool>`（内部形态；出站到模型时换算为
   端点安全别名，见 §6.3）。
-- **屏幕捕获（D178）**：拆成 `window_list`（纯元数据，Safe）与 `screen_capture`（产图，Confirm）两件——
-  截屏是隐私敏感动作，逐次确认在 strict 下是默认；`window_list` 没有副作用，列清单不该被确认打断。
-  - 抓取实现在 `internal/adapter/screencap`（Windows = `PrintWindow(PW_CLIENTONLY|PW_RENDERFULLCONTENT)` 抓客户区，
-    活动弹窗（菜单/下拉/owned 对话框）按屏幕偏移合成；失败时回退到客户区屏幕 `BitBlt`；
-    两者都拿不到就明确报因，**不静默回黑图**）。全屏 = 整个虚拟桌面（`SM_XVIRTUALSCREEN`
-    一族），物理像素，不做 DPI 缩放；DPI 不感知的宿主进程里会先补上 per-monitor v2，避免逻辑像素错位。
-  - **最小化窗口走桌面合成器的预览（`DwmRegisterThumbnail`）**：最小化窗口不接收 `WM_PAINT`，
-    `PrintWindow` 只能拿到被压成占位矩形的客户区（几张标题栏残留像素）而且**照样返回成功**——
-    这正是「看起来成功」的来源。系统里现成的那帧画面由 DWM 持有（任务栏悬停预览就是这么来的），
-    故把源的缩略图合成到本进程一个**离屏**窗口（虚拟桌面最右侧之外、无边框、无标题、工具窗口、
-    不激活）上，再 `PrintWindow(PW_RENDERFULLCONTENT)` 读那个窗口。源窗口不动、不还原、不抢焦点；
-    代价是整窗入图（含标题栏）——最小化时客户区尺寸无从可靠取得（`GetClientRect` 塌成占位框、
-    按窗口样式反推对自绘边框的窗口不准），不做会猜错的裁剪。合成器不给预览时明确报因。
-  - **本进程自己的窗口不出现在 `window_list` 里**（模型不该抓自己），但仍会出现在全屏截图里。
-  - 图片上限与降采样口径同 `file_read`：长边超过 `maxCaptureEdge` 时按比例缩小再编码 PNG，避免截图把上下文撑爆。
-  - 非 Windows 平台：适配器返回「本平台不支持」的明确错误（随 linuxgate 编译，不新增构建标签外的桩）。
-- 截图工具需要 `Deps.Vision`：链上没有视觉能力时**照常注册**（工具清单与设置窗「工具与 MCP」页保持稳定，
-  也与 `file_read` 同口径），但执行时明确报因——不静默截一张没人能看的图。
+- **屏幕捕获（D178）**：拆成 `window_list`（纯元数据，Safe）与 `screen_capture`（产图，Confirm）——
+  截屏是隐私敏感动作，逐次确认在 strict 下是默认；列清单没有副作用，不该被确认打断。
+  - 抓不到时**明确报因、不静默回黑图**；最小化窗口经桌面合成器的预览取整窗（源窗口不动、不还原、
+    不抢焦点）；本进程自己的窗口不出现在 `window_list` 里，但仍会出现在全屏截图里。
+  - 图片降采样口径同 `file_read`（长边超 `maxCaptureEdge` 按比例缩小再编 PNG），避免截图撑爆上下文。
+  - 需要 `Deps.Vision`：链上没有视觉能力时**照常注册**（工具清单稳定），执行时明确报因。
+  - 非 Windows 适配器返回「本平台不支持」的明确错误。实现细节在 `internal/adapter/screencap`。
 - **提问工具（D184）**：`ask_user` 走 `port.Asker`，与 `Confirmer` 并列——两者都是「内核反向问人」，
   但确认面答的是「准不准做」（布尔 + 原因），提问面答的是「选哪个」（多题 × 多选 × 自由文本），
-  语义不重叠，故不合并成一个端口。
-  - **两个退出面**：`Esc` = 中断本轮（与点停止生成同路径取消 ctx），「忽略」= 放弃全部
-    （`OK=false` + 明确文案，模型继续但不得把猜的当用户说的）。
-  - **无人值守**（D185）下立即回填「用户不在」，不阻塞轮次；`Interactive()` 能力让
-    `toolrun` 不套默认超时。
-  - 问答落**工具分片**（调用与结果同片，D95），不新开节点、不新增领域概念。
-- **联网工具（D197）**：`web_search` 与 `web_fetch` 都是 `Safe`（读网络没有副作用，与 `file_read` 同口径：
-  读操作不该被逐次确认打断），能力边界由配置决定——`web.search.providers` / `web.fetch.providers`
-  **有序**列出提供商，顺序即优先级，失败由 `webchain` 换下一家（§5.14）。
-  - **未配置也照常注册**：工具清单与设置窗「工具与 MCP」页保持稳定（与 `screen_capture` 同口径），
-    执行时明确报「未配置提供商」，而不是给模型一个静默的空结果。
-  - **搜索不是托管工具**：走提供商自己的 REST 端点，不用 Responses API 的 `web_search` 托管工具——
-    那条路只有个别模型支持，换个模型就静默失效，且来源不可审计。
-  - **抓取优先本地**：本地实现无需密钥、结果可复现、隐私面最小；远端抓取（DeepSeek）在站点对本地
-    出口不友好（反爬、JS 壳）时兜底。反过来配也可以，顺序由用户决定。
-  - **回填如实标注来源**：实际应答的提供商与之前失败的提供商都写进回填文本，模型才能说明
-    「这次是换了一家搜到的」，审计里也留痕。
-  - **正文按预算截断**：`web.fetch.max_chars`（缺省 16000，硬顶 20000）之外还有
-    `limits.tool_output_chars`；截断时回填明确的续读提示，不静默丢尾部。
+  语义不重叠，故不合并成一个端口。问答落**工具分片**（调用与结果同片，D95），不新开节点。
+  端口形状、两个退出面与无人值守口径见 §5.13。
+- **联网工具（D197）**：`web_search` 与 `web_fetch` 都是 `Safe`（读网络没有副作用，与 `file_read`
+  同口径：读操作不该被逐次确认打断）；能力边界由配置的有序提供商列表决定，端口、降级链与安全门禁
+  见 §5.14。**未配置也照常注册**（工具清单稳定），执行时明确报「未配置提供商」，不给静默空结果。
 
 ### 4.4 记忆文档
 
@@ -452,121 +303,79 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 ### 5.1 `llm.go` —— 生成端口
 
 ```go
-// PromptKind 装配后内容分片的种类（D227）。与树上的 conversation.PartKind 不是同一套取值：
-// 领域侧含 doc / thinking 这类「树上怎么存」的区分，投影到模型请求时只剩 text 与 image
-// （thinking 走消息级 Reasoning，doc 已在前置摄取阶段拍平成 text）。
-type PromptKind string
-
-const (
-    PromptText  PromptKind = "text"
-    PromptImage PromptKind = "image"
-)
-
-// PromptRole 装配后一条消息的角色（D227）。tool 仅为 **API 投影概念**（OpenAI 协议要求
-// assistant(tool_calls)→tool 应答交错）；树上无 tool 节点，装配期由 assistant 节点的
-// Tool 分片拆出（D95）。
-type PromptRole string
-
-const (
-    PromptSystem    PromptRole = "system"
-    PromptUser      PromptRole = "user"
-    PromptAssistant PromptRole = "assistant"
-    PromptTool      PromptRole = "tool"
-)
-
-type PromptPart struct {
-    Kind PromptKind
-    Text string
-    MIME string
-    Data []byte // 图片字节，由应用层经 AttachmentStore 解析后内联
-}
+// PromptKind / PromptRole 是**装配之后**的两套取值（D227），与树上的 conversation.PartKind /
+// Role 不同：树上含 doc / thinking 这类「怎么存」的区分，投影到请求只剩 text|image（thinking 走
+// 消息级 Reasoning、doc 已在前置摄取拍平成 text）；tool 角色仅是 **API 投影概念**（OpenAI 要求
+// assistant(tool_calls)→tool 应答交错），树上无 tool 节点。
+type PromptKind string // text | image
+type PromptRole string // system | user | assistant | tool
 
 type PromptMessage struct {
-    Role      PromptRole
-    Content   []PromptPart
-    Reasoning string // role=assistant：思维链回传承载（D42），适配器映射为 reasoning_content 等字段
-    // ReasoningSignature 思考块签名回传（D175）：树内 PartThinking.Signature 原样带上，适配器按协议
-    // 前缀识别归属（`anthropic:` / `responses:`）；空 = 无签名（Chat Completions 现状）。
-    ReasoningSignature string
-    ToolCalls []tool.Call
-    CallID    string // role=tool
+	Role      PromptRole
+	Content   []PromptPart // {Kind, Text, MIME, Data}；Data 由应用层经 AttachmentStore 内联
+	Reasoning string       // assistant：思维链回传承载（D42），适配器映射为 reasoning_content 等字段
+	ReasoningSignature string // 思考块签名原样回传，适配器按协议前缀认归属（D175）；空 = 无签名
+	ToolCalls []tool.Call
+	CallID    string // role=tool
 }
 
 type GenerateRequest struct {
-    Model    string
-    Messages []PromptMessage
-    Tools    []tool.Spec
-    Params   Sampling        // 采样参数（D204）：Temperature、TopP、MaxTokens、Stop、ReasoningEffort、Thinking
-    Budget   TokenBudget     // MaxOutputTokens、MaxCostUSD
+	Model    string
+	Messages []PromptMessage
+	Tools    []tool.Spec
+	Params   Sampling    // 采样参数（D204）
+	Budget   TokenBudget // MaxOutputTokens、MaxCostUSD
 }
 
-// Sampling 采样参数（D204）。**浮点参数用指针**：nil = 不发送（交服务端默认），
-// 非 nil = 照发——temperature 0 是「要确定性输出」这个有意义的取值，用零值兼作
-// 「不发送」就永远表达不出来。整数（MaxTokens）仍以 0 表示不发送。
+// Sampling（D204）：**浮点参数用指针**——nil = 不发送（交服务端默认），非 nil = 照发。
+// temperature 0 是「要确定性输出」这个有意义的取值，用零值兼作「不发送」就永远表达不出来。
+// 整数（MaxTokens）仍以 0 表示不发送。Overlay 用非 nil / 非零字段覆盖（逐模型覆盖全局缺省），
+// Stop 非空即整体替换——采样停止串没有「部分覆盖」的语义。
 type Sampling struct {
-    Temperature *float64
-    TopP        *float64
-    MaxTokens   int      // 0 = 不发送；本轮预算 Budget.MaxOutputTokens 非零时以预算为准
-    Stop        []string
-    ReasoningEffort string // 空 = 不发送（D34）
-    Thinking    *bool      // nil = 不发送（D34）
+	Temperature *float64
+	TopP        *float64
+	MaxTokens   int      // 0 = 不发送；本轮预算非零时以预算为准
+	Stop        []string
+	ReasoningEffort string // 空 = 不发送（D34）
+	Thinking    *bool      // nil = 不发送（D34）
 }
 
-// Overlay 用 o 里**非 nil / 非零**的字段覆盖 s（D204 逐模型覆盖用）：调用方给全局
-// 缺省，模型条目自带的那份只写「想改的那几项」，其余继承缺省。Stop 非空即整体替换
-// （采样停止串没有「部分覆盖」的语义）。
-func (s Sampling) Overlay(o Sampling) Sampling
-
+// ModelInfo 的能力位（D173）只描述**模型能做什么**，不描述「协议怎么写」——后者是适配器的事。
+//   Tools / Reasoning / Vision 三项独立声明，缺省按协议给（§8）；空集 = 什么都不假设。
+// 单价按**每百万 token**（D205，与厂商报价同口径），0 = 未声明。
 type ModelInfo struct {
-    Name           string
-    Caps           ModelCaps   // 能力位（D173）；空集 = 什么都不做假设
-    ContextWindow  int         // 上下文窗口 tokens（D177）；0 = 未声明/未知
-    // CostIn, CostOutUSD 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明。
-    // 换算到一次调用的金额时除以 1e6。
-    CostIn, CostOutUSD float64
+	Name           string
+	Caps           ModelCaps
+	ContextWindow  int // 0 = 未声明/未知
+	CostIn, CostOutUSD float64
 }
-
-// ModelCaps 模型能力位（D173）：三项独立声明，缺省按协议给（见 §8）。
-//   Tools     能否接收 function calling 的工具清单并按 schema 发起调用
-//   Reasoning 能否接受原生思考参数（reasoning_effort / enable_thinking）并产出思维链
-//   Vision    能否接收图片输入（image 内容块）
-// 能力位只描述**模型能做什么**，不描述「协议怎么写」——后者是适配器的事。
-type ModelCaps struct {
-    Tools, Reasoning, Vision bool
-}
-
-// Usage 见 domain/conversation.Usage（与 Message.Usage 同型，port 直接引用，不另造 DTO）
-type Usage = conversation.Usage
 
 type Delta struct {
-    Text      string
-    Reasoning bool            // 思维链分片（D34 展示 / D42 入树）：随节点提交为 PartThinking，回传走 PromptMessage.Reasoning
-    // ReasoningSignature 思考块签名分片（D175）：协议适配器在思考结束后一次性给出（如 Anthropic 的
-    // thinking block signature、Responses 的 encrypted_content）；随当前轮思考缓冲并入 PartThinking.Signature。
-    ReasoningSignature string
-    ToolCalls []ToolCallDelta // Index 分片聚合（app 层 ToolCallAssembler）
-    Usage     *Usage          // 流末尾
+	Text               string
+	Reasoning          bool   // 思维链分片（D34 展示 / D42 入树）
+	ReasoningSignature string // 思考结束时的签名分片（D175），并入当前轮的 PartThinking
+	ToolCalls          []ToolCallDelta // 按 Index 聚合（app 层 ToolCallAssembler）
+	Usage              *Usage          // 流末尾
 }
 
 type Stream interface {
-    Recv() (Delta, error) // io.EOF = 正常结束
-    Close() error         // 中断生成（等价 ctx 取消）
+	Recv() (Delta, error) // io.EOF = 正常结束
+	Close() error         // 中断生成（等价 ctx 取消）
 }
 
 type LLM interface {
-    Generate(ctx context.Context, req GenerateRequest) (Stream, error)
-    Models(ctx context.Context) ([]ModelInfo, error)
+	Generate(ctx context.Context, req GenerateRequest) (Stream, error)
+	Models(ctx context.Context) ([]ModelInfo, error)
 }
 
-// TokenCounter 可选精确计数（三级计数链②，D26）：适配器按需实现——
-// 本地 tokenizer（如 config `model.tokenizer` 指向的 tokenizer.json）或 count_tokens API。
+// TokenCounter 可选精确计数（三级计数链②，D26）：本地 tokenizer 或 count_tokens API。
 // 未实现/报错时 app 回落通用估算（③），并以服务端实测 usage（①）自校准。
 type TokenCounter interface {
-    CountTokens(ctx context.Context, text string) (int, error)
+	CountTokens(ctx context.Context, text string) (int, error)
 }
 ```
 
-**具名类型止于 JSON 边界**（D227）：`PromptKind` / `PromptRole` 在 `port`、`app` 与各适配器内部一律用具名值，只有真正写进请求体与解析响应体的那一处才转成协议字符串。这样做不是为了类型安全本身——裸 `string` 写错一个字母编译器不管、测试也常常漏——而是让「哪些取值合法」成为可被 `switch` 穷举的事实：`Role` 的 25 处比较、`Kind` 的 31 处比较都从字符串字面量变成常量，跨协议的四处 `case`（Chat Completions / Anthropic / Responses）攒在同一组常量上，将来协议再加一档时不会只改到其中两家。
+**具名类型止于 JSON 边界**（D227）：`PromptKind` / `PromptRole` 在 `port`、`app` 与各适配器内部一律用具名值，只有真正写进请求体与解析响应体的那一处才转成协议字符串。这样做不是为了类型安全本身——裸 `string` 写错一个字母编译器不管、测试也常常漏——而是让「哪些取值合法」成为可被 `switch` 穷举的事实：跨协议的那几处 `case`（Chat Completions / Anthropic / Responses）攒在同一组常量上，将来协议再加一档时不会只改到其中两家。
 
 ### 5.2 `tool.go` —— 工具端口
 
@@ -1011,19 +820,10 @@ type WebFetch interface {
 - 代理：显式 `web.fetch.proxy` 优先，其次 `HTTP(S)_PROXY` 环境变量（Go 缺省 Transport 的口径）。
 - `allow_private_ips` 只为调试本机服务而存在，缺省关闭。
 
-**配置入口（D200/D222）**：`web.search.providers` / `web.fetch.providers` 与本地抓取参数可直接改
-`config.json`，也可在设置窗「联网」页编辑——两组提供商各是一个**有序列表**（顺序即优先级），
-每条可换类型、上下移动、删除；界面只给出「该侧能用的档」（搜索侧 deepseek/brave，抓取侧
-deepseek/local），选不出启动会拒的组合。密钥只写不回显（框恒空 = 保持原引用）；列表留空 =
-清空 = 该能力不可用。保存前按与 `normalizeWeb` 同一口径校验，写坏的配置进不了盘。
-
-**端点与密钥的来源（D222）**：每条 `deepseek` 的 `base_url` 与 `key` 都是**可选**的独立字段，
-取值顺序为「显式字段 → 借 `from` 指的 `model.providers` 条目 → 密钥回落按侧派生的名字」。
-借只补**缺的那一项**：填了端点仍可借密钥，反之亦然；`from` 指不到条目时只有「端点也没自己填」
-才算配置错误（启动拒），否则只是这家取不到密钥、装配根警告并跳过。老配置 `{"kind":"deepseek"}`
-一字不改照常工作——「借用」是省事的捷径，不是唯一形态。密钥槽按侧区分（搜索
-`AQUARIUS_DEEPSEEK_SEARCH_API_KEY`、抓取 `AQUARIUS_DEEPSEEK_FETCH_API_KEY`），因为
-`AQUARIUS_DEEPSEEK_API_KEY` 已归对话 provider，共用一格会让「给搜索换把钥匙」变成「把对话也换了」。
+**配置形状与取值顺序**（D200/D222）：`web.*` 的字段、有序列表语义、「显式字段 → 借 `from` 指的
+`model.providers` → 按侧回落」的端点与密钥来源、密钥槽按侧区分（`AQUARIUS_DEEPSEEK_SEARCH_API_KEY` /
+`..._FETCH_API_KEY`，与对话的 `..._API_KEY` 分开）都在 [configuration.md](configuration.md) 的 `web` 段，
+那里还有设置窗的编辑口径。这一节只记内核怎么用它：**有序即优先级**、失败换下一家（上表）、回填注明来源。
 
 ### 5.15 `skill.go` —— 技能目录端口（D201）
 
@@ -1055,25 +855,16 @@ type SkillCatalog interface {
 - **`BodyLine` 为什么在端口里**：正文超页后要提示「用 `file_read` 从第 N 行续读」，而 `SKILL.md`
   开头还有 frontmatter——行号不能假设正文从第 1 行开始（差几行模型就会读到 half 一条指令）。
 - **实现 `skillfs`**：扫描有序技能根、解析 YAML frontmatter、校验名称/长度/目录同名；非法条目
-  跳过并累积 `Warnings()`（启动日志 + `/skill list` + 技能页展示）。目录内容变化不热监听，
-  由 `Rescan()` 显式重扫（硬性规则 7：不做文件监听）；`Load` 每次现读，改正文不必重扫。
-- **零配置可用**：`<profile>/skills` 不存在 = 没有技能（不是错误）；`skills.dirs` 里的路径不存在
-  同样只记警告。
-- **安装面（D202/D203）不在端口里**：`port.SkillCatalog` 保持只读三方法；安装/卸载/更新是
-  **用户面动作**，接口由消费方定义——`app.SkillAdmin`（`/skill install|remove|update`）与
-  `uigui.SkillsAdmin`（设置窗「技能」页），实现都在装配根，落在 `adapter/skillfs` 的
-  `Installer` 上（范式同 `app.PluginAdmin`、`uigui.ToolsAdmin`）。
-- **四种安装源 + 统一副本落位**：单文件 `SKILL.md` / 文件夹 / `.zip` / GitHub 链接（`url#分支`）；
-  一律复制进 `<profile>/skills/<name>/`（`<name>` = frontmatter 的 `name`），git 检出留在
-  `<profile>/skill-cache/<repo-key>/`，来源与时间记在 `<profile>/skill-installs.json`（原子写）。
-  副本的好处是「一个技能 = 一个目录」：卸载就是删目录，不会连带同仓库的兄弟技能。
-- **更新 = 覆盖**：git 来源 `pull --ff-only`（或按 `#分支` 重新取）后重新同步副本；压缩包来源
-  重新下载；**会覆盖本地改动**（技能是别人维护的包，不是工作区，故不提供三路合并）。
-  复制来源（单文件/文件夹）没有更新动作，重新导入即可。
-- **校验前置 + 解压门禁**：先在临时目录落地并通过 frontmatter 校验才换入正式目录，失败不留残渣；
-  zip 解压拒绝绝对路径 / `..` / 盘符 / 符号链接（zip-slip），条目数与展开总量设上限。
-- **同名不覆盖**：安装遇同名（含 `skills.dirs` 里已生效的同名技能）直接报错并要求先卸载，
-  避免出现「一半新一半旧」的目录。
+  跳过并累积 `Warnings()`（启动日志 + `/skill list` + 技能页）。**不做文件监听**（硬性规则 7），
+  由 `Rescan()` 显式重扫；`Load` 每次现读，改正文不必重扫。零配置可用：`<profile>/skills` 不存在
+  = 没有技能（不是错误），`skills.dirs` 里路径不存在只记警告。
+- **安装面（D202/D203）不在端口里**：安装/卸载/更新是**用户面动作**，接口由消费方定义——
+  `app.SkillAdmin`（`/skill install|remove|update`）与 `uigui.SkillsAdmin`（设置窗「技能」页），
+  实现都在装配根、落在 `adapter/skillfs` 的 `Installer` 上（范式同 `app.PluginAdmin`、`uigui.ToolsAdmin`）。
+  一句话概括这套动作：四种源（单文件 / 文件夹 / `.zip` / GitHub 链接）一律**复制**进
+  `<profile>/skills/<name>/`（卸载 = 删目录，不连带同仓库的兄弟技能）、更新即**覆盖**（技能是别人的包，
+  不提供三路合并）、**同名不覆盖**（先卸载再装，避免半新半旧）、先在临时目录通过校验才换入正式目录，
+  ZIP 解压沿用 zip-slip 门禁（绝对路径 / `..` / 盘符 / 符号链接一律拒）。
 - **不做「安装即授权」**：`scripts/` 一律经 `term_exec` 走 Confirm 与权限矩阵；安装动作本身
   不授予任何执行能力。
 
@@ -1083,61 +874,50 @@ type SkillCatalog interface {
 互通格式按别人的规范如实有损，两者共用一层解析但绝不互相冒充。
 
 ```go
-// ExchangeFormat 一种可导出/导入的格式（命令面、文件名后缀与帮助文本同源）。
 type ExchangeFormat struct {
-    Name     string // 命令面标识：aqx | chatgpt | openai | sillytavern | openwebui
-    Ext      string // 建议扩展名（含点）
-    Label    string // 用户面名称
-    Lossy    bool   // 是否丢弃树事实
-    LossNote string // 丢什么（一句话；帮助与回执共用）
-    // NoExport 只认不写（openwebui：它的标准格式与 chatgpt 树同族，读进来不难，但
-    // 我们只给一份树形出口，不维护第二套同义产物）。
-    NoExport bool
+	Name     string // 命令面标识：aqx | chatgpt | openai | sillytavern | openwebui
+	Ext      string // 建议扩展名（含点）
+	Label    string // 用户面名称
+	Lossy    bool   // 是否丢弃树事实
+	LossNote string // 丢什么（一句话；帮助与回执共用）
+	NoExport bool   // 只认不写（openwebui：与 chatgpt 树同族，不维护第二套同义产物）
 }
 
-// ExchangeEntry 归档里的一个会话（**索引条目**：只给展示与选择用）。
+// ExchangeEntry 归档里的一个会话（**索引条目**：只给展示与选择）。
 type ExchangeEntry struct {
-    Index int    // 清单序号，**1 起**（--pick 用它；顺序 = manifest 里的顺序）
-    ID    string // 源会话 ID（回执溯源；导入时全部重新分配）
-    Title string // 标题（manifest 记的，只供展示；导入以 tree.json 为准）
-    Nodes int    // 节点数（同上）
+	Index int    // 清单序号，**1 起**（--pick 用它）
+	ID    string // 源会话 ID（回执溯源；导入时全部重新分配）
+	Title string // manifest 记的标题（只供展示；导入以 tree.json 为准）
+	Nodes int
 }
 
 // ExchangeReport 一次进出的回执：数量、字节、丢了什么。
 type ExchangeReport struct {
-    Format string
-    // Nodes 写出的节点数 / 读入的节点数（多会话时是总和）。
-    Nodes int
-    Bytes int64
-    // Dropped 「附件 3 个（源文件不含字节）」这类事实行，逐项可读。
-    Dropped []string
-    // Entries 这次涉及的会话清单（多会话容器填；单会话与线性格式留空）。
-    Entries []ExchangeEntry
+	Format  string
+	Nodes   int      // 写出的 / 读入的节点数（多会话是总和）
+	Bytes   int64
+	Dropped []string        // 「附件 3 个（源文件不含字节）」这类事实行
+	Entries []ExchangeEntry // 多会话容器填；单会话与线性格式留空
 }
 
-// SessionExporter /export：把**一组**会话按指定格式写进 w。消费方 = app.Session。
+// SessionExporter /export：把**一组**会话写进 w（单会话路径就是 len(cs) == 1）。消费方 = app.Session。
 type SessionExporter interface {
-    Formats() []ExchangeFormat
-    // Export 写出 cs（一组会话；单会话路径就是 len(cs) == 1）。
-    // 多会话只对 aqx 成立：chatgpt / openai / sillytavern 的容器装不下「多个会话」，
-    // 收到多于一个时由实现报错——硬塞进去只会让别人的工具读到一份半成品。
-    Export(ctx context.Context, cs []*conversation.Conversation, format string, w io.Writer) (ExchangeReport, error)
+	Formats() []ExchangeFormat
+	Export(ctx context.Context, cs []*conversation.Conversation, format string, w io.Writer) (ExchangeReport, error)
 }
 
-// SessionImporter /import：读一个外部文件，变成一组**待入库**的树。
+// SessionImporter /import：读一个外部文件，变成一组**待入库**的树。pick 是 1 起的清单序号
+// （空 = 全部）；非容器格式只有一项，pick 只接受空或 {1}。
 type SessionImporter interface {
-    Detect(name string, head []byte) (ExchangeFormat, bool)
-    // Import 读入并自检。pick 是 **1 起的清单序号**（空 = 全部）；非容器的格式只有一项，
-    // pick 只接受空或 {1}。
-    Import(ctx context.Context, r io.Reader, f ExchangeFormat, pick []int) ([]*conversation.Conversation, ExchangeReport, error)
+	Detect(name string, head []byte) (ExchangeFormat, bool)
+	Import(ctx context.Context, r io.Reader, f ExchangeFormat, pick []int) ([]*conversation.Conversation, ExchangeReport, error)
 }
 
 // ExchangeIndexer 列出一份**容器**里的会话清单（界面勾选面板用；命令面读流时自己解析）。
-//
-// 单独一个接口而不是塞进 SessionImporter：界面要的是「按路径先看一眼有什么」，拿不到
-// 那一步就只能自己解 ZIP——壳里再写一遍容器解析，正是铁律 5 要挡的那类分叉。
+// 单独一个接口而不塞进 SessionImporter：界面要的是「按路径先看一眼有什么」，拿不到那一步
+// 就只能自己解 ZIP——壳里再写一遍容器解析，正是铁律 5 要挡的那类分叉。
 type ExchangeIndexer interface {
-    Index(ctx context.Context, path string) ([]ExchangeEntry, error)
+	Index(ctx context.Context, path string) ([]ExchangeEntry, error)
 }
 ```
 
@@ -1164,215 +944,123 @@ type ExchangeIndexer interface {
 的 `Formats()` 从它派生。放在端口而不是适配器，是因为报错文案也要用，而那时可能连适配器都
 没装配。有损格式必须写明丢什么（自检守着），否则用户会以为导出的就是全部。
 
-**`aqx`（无损，可装多个会话）**：ZIP 容器，里面是
+**`aqx`（无损，可装多个会话）**：ZIP 容器。
 
 ```
-manifest.json          {"format":"aqx","version":1,"conversations":[…]}
-conversations/<i>/tree.json    第 i 个会话的落盘 wire 形状（storejson 同一份）
-blobs/<sha256>         附件字节，内容寻址、平铺（**跨会话共用一份**）
+manifest.json                {"format":"aqx","version":1,"conversations":[…]}
+conversations/<i>/tree.json  第 i 个会话的落盘 wire 形状（与 storejson 同一份）
+blobs/<sha256>               附件字节，内容寻址、平铺（跨会话共用一份）
 ```
 
-`conversations` 是清单：每项记 `id` / `title` / `nodes`，**顺序即清单序号**（`/import --pick 2`
-与界面勾选面板都用它）。清单只给展示与选择，导入以各自的 `tree.json` 为准——标题以树里那份
-为真，清单里的标题只用来在勾选面板上认人（改了树的标题不会回头改归档，这是备份，不是活文档）。
+`conversations` 是清单：每项记 `id` / `title` / `nodes`，**顺序即清单序号**（`--pick` 与勾选面板都用
+它）。清单只给展示与选择，导入以各自的 `tree.json` 为准——标题以树里那份为真。
 
-**为什么是「一个归档装多个会话」而不是「一个会话一个文件」**：备份是整库动作。一份容器只装
-一个会话时，用户要把二十个会话备份走就得点二十次，还得自己记住哪个漏了。把容器做成
-「一组树 + 一份共用附件库」，一次写出即是一份完整备份；附件按内容寻址跨会话去重，同一个
-头像被十个会话引用时只占一份字节。**版本号仍是 1**（未发布，不需要靠升版本区分新旧）。
+**为什么一个归档装多个会话**：备份是整库动作，一个会话一个文件就得点二十次、还得记住漏了哪个。
+容器做成「一组树 + 一份共用附件库」，一次写出即完整备份；附件按内容寻址跨会话去重。**版本号仍是 1**。
 
-**导出单位**：命令面 `/export` 与界面「导出」都作用于**当前会话**时只写一个会话（`len(cs) == 1`）；
-一份多会话归档靠两条路：命令面 `--all`（整库）与 `--ids <id>[,<id>…]`（只写选中的几个，
-界面批量导出用；两者互斥，同时给就报错）。界面上不再单列「导出全部会话」——左栏「选择」钮
-进批量模式，全选即整库。**多会话只对 aqx 成立**：
-`chatgpt` / `openai` / `sillytavern` 的容器按别人的规范只能装一条会话链，给多于一个时实现
-直接报错并说明「这种格式一次只能写一个会话」，不做「写第一个、其余静默丢掉」。
+**导出单位**：不带 `--all`/`--ids` 时只写**当前会话**；`--all` = 整库、`--ids` = 只写列出的那几个
+（两者互斥）。**多会话只对 aqx 成立**：另外三种格式的容器按别人的规范只能装一条会话链，给多于一个
+直接报错，不做「写第一个、其余静默丢掉」。
 
-往返必须**等价**——节点、边、版本链、Head、时间戳、每个分片的全部字段、附件字节逐项相同；
-会话与解包顺序也保持清单顺序（同一组会话导两次字节相同）。导入遇到更高版本直接拒绝并说明，
-不猜。不装：profile 配置（模型、persona 引用）、记忆文档、`.bak` 代际——那些不是「这些会话」
-的一部分。
+往返必须**等价**——节点、边、版本链、Head、时间戳、每个分片的全部字段、附件字节逐项相同，解包顺序
+保持清单顺序（同一组会话导两次字节相同）。导入遇到更高版本直接拒绝，不猜。不装：profile 配置、
+记忆文档、`.bak` 代际。
 
-`manifest.json` 为什么单列一层而不并进 `tree.json`：那份形状要与磁盘上的会话文件逐字段一致，
-加了归档专用字段就不一致了（出问题时没法拿编辑器对读）。`storejson` 为此只多出
-`EncodeTree` / `DecodeTree` 两个入口，编码、旧格式识别与不变量自检仍是磁盘读写与归档共用
-那一份实现。附件按哈希排序写入，**同一组会话导两次字节相同**。
+`manifest.json` 单列一层而不并进 `tree.json`：那份形状要与磁盘上的会话文件逐字段一致，加了归档专用
+字段就没法拿编辑器对读。`storejson` 为此只多 `EncodeTree` / `DecodeTree` 两个入口。
 
-**旧形状不再兼容**：本版之前导出的单树归档（根目录一个 `tree.json`、没有 `conversations/`）
-不再读——导入时明说「这是旧版归档格式，本版不认」并指出该重导，不做「猜一下也能读」的
-兼容分支。aqx 尚未正式发布，为一份没人持有的中间形状留一条长期兼容路径，代价大于收益。
+**旧形状不再兼容**：本版之前的单树归档（根目录一个 `tree.json`）导入时明说是什么、该重导，不做
+「猜一下也能读」的分支——aqx 未发布，为一份没人持有的中间形状留兼容路径不划算。
 
-导入侧的守卫（照代码）：条目数 4000、归档总字节 256 MB、单份 `tree.json` 64 MB、**每个会话**
-节点数 20000（不是合计：一个会话装不下就是装不下，别让别的会话替它背）、单附件 32 MB、附件
-总量 512 MB——每条超限都报因，不静默截断。附件总量按**实际解压字节**累计（压缩包可以谎报
-声明大小），单份与总量两道都卡在读的时候，不是先全读进来再比。归档里出现
-`manifest.json` / `conversations/` / `blobs/` 之外的条目直接拒绝（aqx 是我们自己的格式，不
-认识就说明不是这版写的）；纯目录条目（第三方重新打包常带 `blobs/` 这样一条）不算「不认识的
-条目」，跳过即可。附件字节与它声明的哈希对不上也拒绝（按错误哈希入库，装配时会取到别的内容）。
-导入时的附件逐份「校验 → 入库」，峰值只占一份的大小，不是先攒满全部再写。
+**导入守卫**（照代码）：条目数 4000、归档总字节 256 MB、单份 `tree.json` 64 MB、正文合计 64 MB、
+**每个会话**节点数 20000（不是合计：一个会话装不下就是装不下）、单附件 32 MB、附件总量 512 MB。
+每条超限都报因，不静默截断；附件总量按**实际解压字节**累计（压缩包可以谎报声明大小），单份与总量
+都卡在读的时候，不是先全读进来再比。归档里出现 `manifest.json` / `conversations/` / `blobs/` 之外的
+条目直接拒绝（纯目录条目跳过——第三方重新打包常带一条），附件字节与声明的哈希对不上也拒绝。
+附件逐份「校验 → 入库」，峰值只占一份；ZIP 沿用技能安装的 zip-slip 口径（绝对路径、`..`、符号链接）。
 
-**清单与选择**：`--pick` 收 **1 起的清单序号**，可重复（`--pick 1 --pick 3`）或逗号分隔
-（`--pick 1,3`）；不带 `--pick` = **该文件里的全部会话都导入**（备份恢复的主路径，多一步选择
-就是多一步出错）。序号越界、文件里没有这一项时报因并列出清单（标题 + 条数），不静默跳过。
-非容器格式（chatgpt / openai / sillytavern / openwebui）只有一项，`--pick` 只接受空或 `1`。
+**清单与选择**：`--pick` 收 **1 起**的序号，可重复或逗号分隔；不带 = 该文件里的全部会话都导入
+（备份恢复的主路径，多一步选择就是多一步出错）。序号越界报因并列出清单，不静默跳过。非容器格式
+只有一项，`--pick` 只接受空或 `1`。
 
-**`chatgpt`（树形互通）**：直接用它的 `mapping`——节点表 + `parent` / `children` + 顶层
-`current_node`。选它而不自定一套，是因为它已经是事实标准；而我们的树本来就是树，
-`parent` 单值、`children` 有序，映射不需要降级成 DAG。节点 ID 重新分配，源 UUID 只用于建边。
+**`chatgpt`（树形互通）**：直接用它的 `mapping`——节点表 + `parent` / `children` + 顶层 `current_node`。
+选它而不自定一套，是因为它已是事实标准；我们的树本来也是树（`parent` 单值、`children` 有序），
+映射不需要降级成 DAG。节点 ID 重新分配，源 UUID 只用于建边。
 
-两边对读时的三处细节（照代码）：① 导出写一个空 `message` 的根节点，与它的导出同形——
-少了它，读回来时顶层消息无处可挂；叶子节点照样写 `"children": []`（对方靠这个键走树，
-缺键是不完整的节点）。② 读到空节点（`message` 为 null）与整条都装不下的消息
-（比如纯图片）不建空节点，但**它们的子节点顺父指针接到最近一个收下的祖先上**，结构与源里
-一致，只是中间那几层空壳不在。③ `tool` 角色读成注入节点（工具正文不是用户发言，也不该丢），
-`critic` 一类不认的角色计入回执。
+两边对读时的三处细节（照代码）：① 导出写一个空 `message` 的根节点，与它的导出同形——少了它，
+读回来时顶层消息无处可挂；叶子照样写 `"children": []`（对方靠这个键走树）。② 读到空节点与整条
+都装不下的消息（比如纯图片）不建空壳，但**它们的子节点顺父指针接到最近一个收下的祖先上**。
+③ `tool` 角色读成注入节点（工具正文不是用户发言，也不该丢），`critic` 一类不认的角色计入回执。
 
-导出侧装不下的东西逐类计入回执，**不假装带了**：附件一个字段都不写（对方的图片是它自己文件
-服务的句柄，塞一个我们这边的哈希，对方取不到，比不写更糟）、思考与工具调用不带、文档只带
-提取文本、消息的终态/模型/用量/思考签名不带。
+导出侧装不下的逐类计入回执，**不假装带了**：附件一个字段都不写（对方的图片是它自己文件服务的句柄，
+塞一个我们这边的哈希只会更糟）、思考与工具调用不带、文档只带提取文本、终态/模型/用量/签名不带。
 
-**Head 落在被跳过的消息上不算文件损坏**：源里的「当前节点」可能正是一条没有正文的消息
-（用户发了张图、助手还没答），解析阶段会跳过它。此时顺着源的父指针上溯到最近一个收下的节点，
-并在回执里写一行「已退回到上一条」——整份拒收等于「我们自己导出的文件自己读不回来」。
+**Head 落在被跳过的消息上不算文件损坏**：「当前节点」可能正是一条没有正文的消息（用户发了张图、
+助手还没答），解析会跳过它——此时顺源父指针上溯到最近一个收下的节点，回执写一行「已退回到上一条」。
+整份拒收等于「我们自己导出的文件自己读不回来」。
 
-**`openai` / `sillytavern`（线性互通）**：线性装不下一棵树，所以口径必须写死——**取 Head
-路径**（= 当前上下文那条链），不做「自动挑一个分支」的猜测。两者都只含正文分片：思考、工具、
-附件分片丢弃并计入 `Dropped`。角色映射：`user`→user、`assistant`→assistant、
-`system`+`inject`→system（注入不是用户发言，降级成 system 比伪装成用户更诚实；
-SillyTavern 侧对应 `is_system`）。
+**`openai` / `sillytavern`（线性互通）**：线性装不下一棵树，口径必须写死——**取 Head 路径**（当前
+上下文那条链），不做「自动挑一个分支」的猜测。只含正文分片：思考、工具、附件丢弃并计入 `Dropped`。
+角色映射 `user`→user、`assistant`→assistant、`system`+`inject`→system（注入不是用户发言，降级成
+system 比伪装成用户更诚实；SillyTavern 侧对应 `is_system`）。
 
 几条按代码写死的口径：
-- **旁支要报数**：只有真的太树上才有旁支，此时回执里加一句「旁支上的 N 条消息（只导出当前
-  那条链）」，没有旁支就不啰嗦。
-- **`openai` 侧 `content` 写字符串**，不写分片数组：兼容端里读字符串那一档最多。导入侧两种都
-  收——字符串，或 `{"type":"text","text":"…"}` 的数组（`input_text` / `output_text` 同义）；
-  图片分片只留地址，计入回执。
-- **纯工具调用的回答不写空行**：正文为空即跳过，但计一条「没有正文的消息」——写个空 `mes`
-  给对方，等于在别人的对话里塞一句空白发言。
-- **`sillytavern` 首行是 header**（`create_date` / `user_name` / `character_name`），其后每行
-  一条 `mes`。有些导出省掉 header 直接从消息起：首行带 `mes` 就整份按消息读。时间串按
-  **本地时间**写与读（对方就是按本地时间看的），精度只到秒；两侧必须对称，只做一半会让
-  时间轴整体漂一个时区、每往返一次再漂一次。世界书、正则、作者注属于对方的
-  工作区配置，不导入——这是格式事实，写在格式表的 `LossNote` 里而不是逐次回执。
-- **导入侧 `tool` / `function` 角色读成注入节点**，与 `chatgpt` 侧同口径；`developer` 读成
-  system；其余不认的角色计入回执。
+- **旁支要报数**：回执加一句「旁支上的 N 条消息（只导出当前那条链）」，没有旁支就不啰嗦。
+- **`openai` 侧 `content` 写字符串**，不写分片数组：兼容端里读字符串的那档最多。导入侧两种都收——
+  字符串，或 `{"type":"text","text":"…"}` 数组（`input_text` / `output_text` 同义）；图片只留地址。
+- **纯工具调用的回答不写空行**：正文为空即跳过，但计一条「没有正文的消息」——空 `mes` 等于在别人
+  的对话里塞一句空白发言。
+- **`sillytavern` 首行是 header**（`create_date` / `user_name` / `character_name`），其后每行一条
+  `mes`；有些导出省掉 header，首行带 `mes` 就整份按消息读。时间按**本地时间**写与读、精度到秒，
+  两侧必须对称——只做一半会让时间轴整体漂一个时区、每往返一次再漂一次。世界书、正则、作者注属于
+  对方的工作区配置，不导入（写在格式表的 `LossNote` 里，不进逐次回执）。
+- **导入侧 `tool` / `function` 角色读成注入节点**（与 `chatgpt` 同口径）；`developer` 读成 system；
+  其余不认的角色计入回执。
 
 **导入**：`Detect` 看扩展名与文件头，认 `aqx`（ZIP 魔数或扩展名）、`chatgpt`（顶层数组首项带
-`mapping` 键）、`openwebui`（顶层 `chat` 键的值是对象）、`sillytavern`（首行带 `mes` 或
-`user_name` 一类字段的 `.jsonl`）、`openai`（顶层 `messages` 键的值是数组）。顺序按形状的
-特异度排，`messages` 最后——这个键太常见，连 Open WebUI 的会话都得先按 `chat` 这层外壳认出来，
-才轮得到它。
+`mapping` 键）、`openwebui`（顶层 `chat` 键的值是对象）、`sillytavern`（首行带 `mes` 或 `user_name`
+一类字段的 `.jsonl`）、`openai`（顶层 `messages` 键的值是数组）。顺序按形状特异度排，`messages`
+最后——这个键太常见，连 Open WebUI 的会话都得先按 `chat` 这层外壳认出来才轮得到它。
 
-判的是**容器形状，不是子串**：文件头读 64 KB，扫结构时跳过字符串内容。此前拿
-`strings.Contains(head, "\"chat\"")` 兜底，结果是正文里提到 chat 一词的普通消息数组先被认成
-Open WebUI、导入再报「这份会话是空的」（把认错格式包装成「你的文件是空的」）；反过来，标题
-较长的 ChatGPT 导出在前几百字节里既没有完整 JSON 也没有 `"mapping"`，子串判断又漏掉它。
+判的是**容器形状，不是子串**：文件头读 64 KB，扫结构时跳过字符串内容。子串判断两头都会错——正文
+提到 chat 一词的普通消息数组会被认成 Open WebUI（再报「这份会话是空的」，把认错格式包装成「文件
+是空的」），标题较长的 ChatGPT 导出在前几百字节里既没有完整 JSON 也没有 `"mapping"` 又会漏掉。
 认错时 `Import` 报因，不在 `Detect` 里做完整解析（那等于把文件读两遍）。
 
-Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份「跳过空壳、子节点往上接」的规则，
-但各自的源结构不同（一份是 `mapping`，一份是扁平消息表或对象表），所以解析各写一遍，不硬抽
-一个泛型。它的两种导出形状都收：`chat.history.messages`（以 id 为键的对象 +
-`chat.history.currentId`）与 `chat.messages`（数组，每项自带 `parentId`）；后者没有「当前节点」，
-按最深链定 Head。时间戳是 Unix 秒。
-- **外部文件是不可信输入**：先解析成 DTO，再走 `conversation.Restore()` 的统一自检——
-  重复 ID、悬空父、Head 不在树一律拒绝，不「尽力修复」。
-- **上限**：文件 256 MB、正文合计 64 MB、**每个会话**节点数 20000（不是合计，见上）；`.aqx`
-  另加容器条目数与展开总量，并沿用技能安装的 zip-slip 口径（绝对路径、`..`、符号链接一律
-  拒绝）。超限报错，不静默截断。
-- **落成新会话**：新会话 ID 由装配根分配（与 `/new` 同源），节点 ID 全部重新分配；源 ID 只进
-  回执。**不覆盖任何既有会话**——同名标题加后缀。
-- **丢了什么要说**：ChatGPT 的图片引用是 URL、`tool` 角色与 `content_type` 变体我们不认，
-  一律计入 `Dropped` 并在回执里逐项列出；不把残缺装成完整。
-- **同一份文件导两次结构相同**：源里的节点表是 map 时按 ID 排序后再建，边也按父 ID 排序输出，
-  免得同一份文件每次导入得到不同的兄弟顺序。
+Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份「跳过空壳、子节点往上接」的规则，但源
+结构不同（一份 `mapping`，一份扁平消息表或对象表），所以解析各写一遍、不硬抽泛型。它的两种导出形状
+都收：`chat.history.messages`（以 id 为键的对象 + `chat.history.currentId`）与 `chat.messages`
+（数组，每项自带 `parentId`；没有「当前节点」，按最深链定 Head）。时间戳是 Unix 秒。
 
-**命令面与界面**：`/export [--format <name>] [--path <文件>] [--all | --ids <id>[,<id>…]]`（缺省 `aqx`）、
-`/import [--pick <序号>]… <文件>`。
-GUI 出口在会话历史窗：左栏标题行的「导入」「导出」两颗文字钮。两颗钮只负责拿路径——
-导入走单选文件框（带五档扩展名过滤器），导出走保存框；选完各投一条命令
-（`/import <路径>`、`/export --format <名字> --path <路径>`），与键入同路径，壳内不做搬运。
-取消就什么都不投。导出作用对象是**当前会话**：历史窗左栏能点开别的会话，但没有「先切过去
-再导出」这种按钮，那等于替用户做主。
+- **外部文件是不可信输入**：先解析成 DTO，再走 `conversation.Restore()` 的统一自检——重复 ID、
+  悬空父、Head 不在树一律拒绝，不「尽力修复」。
+- **落成新会话**：新会话 ID 由装配根分配（与 `/new` 同源），节点 ID 全部重新分配，源 ID 只进回执。
+  **不覆盖任何既有会话**——同名标题加后缀。
+- **丢了什么要说**：ChatGPT 的图片引用是 URL、`content_type` 变体我们不认，一律计入 `Dropped`
+  并逐项列出；不把残缺装成完整。
+- **同一份文件导两次结构相同**：源里的节点表是 map 时按 ID 排序后再建，边也按父 ID 排序输出。
 
-**导入一个多会话归档时先勾**：aqx 可以装多个会话，选完文件不能直接投 `/import`——用户不知道
-自己刚挑的是哪份备份里的哪些会话。界面在拿到路径后先向内核要一份清单（`ExchangeIndexer.Index`，
-只读 ZIP 的 `manifest.json`，不解析树），弹一个**勾选面板**：每行一个会话（标题 + 条数），
-复选框**缺省全勾**（备份恢复的主路径就是全要），底部「导入 N 个 / 取消」。确认后投
-`/import --pick <序号>… <路径>`，取消什么都不投。**只有一项时（非 aqx，或只有一个会话的 aqx）
-不弹面板**，直接投——弹一个只有一行的勾选框只是多一次点击。
-
-壳内不解析容器：认条目、读清单、按序号挑树全在适配器，界面只负责呈现与回传序号（铁律 5）。
-
-**导出多会话**：命令面 `--all` 把整库写成一份 aqx 备份、`--ids` 只写列出的那几个
-（`--format` 非 aqx 时报错，理由见上）；不带这两个就仍是当前会话一个。**界面上不单列
-「导出全部会话」**：左栏列表底一颗「选择」钮进批量模式（见下），全选即整库——两个入口做同一件
-事，只会让「到底该点哪个」变成一次猜测。
-
-**批量选择（导出 / 删除）**：左栏列表底「选择」钮进入选择态，每行**左侧**出现复选框（原来行尾
-悬浮的「✕」收起——删除这时走底部动作条，两个删除入口同时在场只会点错）。底部动作条 =
-「全选」/「已选 N 个」+「导出」「删除」「取消」；一个都没勾时两颗动作钮呈禁用态。Esc 退出
-选择态（与遮罩同口径的「先撤退」直觉）。
-- **导出** = 保存框（只一档 aqx，预填 `aquarius-backup.aqx`）→ 投 `/export --ids <id>… --path <落点>`；
-- **删除** = 投 `/rmconv <id>…`，一次确认（文案写清「删除 N 个会话…不可恢复」）、回执一行；
-- 勾选顺序不参与语义：命令里的 ID 按**左栏顺序**给，`--ids` 的写序即归档清单顺序。
-取消（或完成）后退出选择态。壳内依旧只拿路径与 ID，不读会话、不删文件（铁律 5）。
-
-**批量删除（`/rmconv` 收多个 ID）**：`/rmconv <id> [<id>…]`（各支持唯一前缀）。
-口径三条：① **先全部解析、再一次确认、最后才动库**——有一个 ID 解析不出就一个都不删并报因
-（半截删除比不删更坏）；② 删到当前会话时，继任者从**不在本批要删的**那些里挑（否则会继任到
-一个刚删掉的 ID）；③ 单个 ID 的用法与回执与今天**逐字相同**（既有脚本与肌肉记忆不受影响）。
-
-**保存框的「保存类型」就是格式选择器**（D248）：`port.ExchangeFormats()` 里 `NoExport == false`
-的条目一档一种、同序同数（目前四档 `aqx` / `chatgpt` / `openai` / `sillytavern`），档位与格式
-一一对应——选中哪一档就投哪个 `--format`。第一档恒为 `aqx`，预填名与缺省扩展名照它算；只读
-格式（`openwebui`）不列，理由同上：没有第二套同义出口，列出来就是空头承诺。
-
-档位怎么取回，两个平台不同：
-- **Windows 读 `OPENFILENAME.nFilterIndex`**：它是这个结构里唯一「入参兼出参」的字段，进去
-  指定预选哪一档、回来是用户最终停的那一档。这是权威依据——用户可以把文件名写成任何扩展名，
-  也可以在「保存类型」里换了档却不改文件名，两条都无法从路径反推。
-- **非 Windows（zenity / kdialog / osascript）只回路径、回不了档位**，平台报 `-1`，宿主按落点
-  扩展名回落：`.jsonl`→`sillytavern`、`.json`→`chatgpt`（同扩展名的多档取格式表里第一个）、
-  认不出→`aqx`（缺省且唯一无损，猜错的代价最小）。这条降级路径上选不到 `openai`，要它走命令行。
-
-**落点扩展名跟随所选格式**：`lpstrDefExt` 是静态的，换了档它不会跟着变，所以拿到档位之后要按
-格式改正落点——原扩展名是某个已知格式的（`.aqx`/`.json`/`.jsonl`）换成本档的，不是（`2026.10.28`
-这类点名、或无扩展名）就只补不切。少了这一步，「选了 SillyTavern 对话却存成 `.aqx` 字节」仍然
-是一句空头承诺。
-
-平台侧的对话框是两个通用请求（`RequestOpenFile` / `RequestSaveFile`），与附件槽的多选
-（`RequestFileDialog`）和技能目录选择（`RequestPathPick`）分开：三者语义不同，共用一个
-只会让每处都长出「这次不该多选」的分支。`SaveRequest` 多带一个 `FilterIndex`（预选第几档，
-0 起），`Host.FilePicked` 把用户最终停的档位带回（非 Windows 回 `-1`，由宿主按扩展名回落）。
-Windows 侧打开用 `GetOpenFileNameW`、保存用 `GetSaveFileNameW`，都投托盘线程呈现（模态泵不能
-嵌 Gio 泵）；保存框**不设**覆盖确认——同名时命令面加 `-2` 后缀并在回执里写清真落到哪，若在
-这里确认覆盖、转头又存成另一份，用户会对不上。请求槽只有一个，另配在途标记：对话框挂在消息
-窗上、模态期间主窗没被禁用，连点两次时后一次直接丢弃（否则会覆盖请求体，或叠出两个框）。
-非 Windows 走 zenity / kdialog / osascript 降级，过滤器按各自的语法转换（zenity 每档一条 flag、
-档内空格分隔；kdialog 多档换行分隔），无命令时发一次性提示。
+**命令面**：`/export [--format <name>] [--path <文件>] [--all | --ids <id>[,<id>…]]`（缺省 `aqx`）、
+`/import [--pick <序号>]… <文件>`。**界面出口、保存框的档位选择与批量勾选见**
+[gui-design.md](gui-design.md)（左栏两颗钮、`nFilterIndex` 取档、勾选面板）——那一面只拿路径与序号，
+壳内不解析容器（铁律 5），投的是同一条命令。
 
 几处按代码写死的口径：
-- **缺省落点**是 `<profile>/exports`，文件名由会话标题派生（保留字符换成 `-`、长度截到 60 字；
-  这条派生规则在端口层 `port.FileStem`，命令面与保存框的预填名共用一份，不各写一遍）；
-  `--path` 给了目录就放同一个缺省文件名，给了文件就照用。没配导出目录又没有 `--path` 时报因，
-  不往当前目录乱写。`--all` 没有单一会话标题可用，缺省名取 `aquarius-backup` + 格式扩展名
-  （落到同一目录，同样走防覆盖的 `-2` 后缀）。
-- **不覆盖已有文件**：重名自动加 `-2`、`-3` 后缀。导出是「再存一份」，不是「改那一份」。
-- **写一半失败就删掉半截文件**——留个残档比没有更坏，用户会以为备份成了。
-- **导入落成新会话**：端口只负责「文件 → 一组树」，会话 ID 由命令面按 `/new` 同源逐个分配；
-  Root 节点 ID 恒等于会话 ID，换 ID 时 Root 与挂在它下面的边一起换，最后统一自检。**先全部
-  自检并取好 ID、再一次性落盘**：一个归档里第 3 个会话坏了，不该留下前 2 个已入库、后 17 个
-  没影的半截状态。落盘成功后切到**第一个**导入的会话并清屏回放，与 `/switch` 同一口径；
-  其余会话在左栏可见、点进去就有。导入失败不动当前会话与既有会话；落盘成功后界面没刷干净时
-  报「已导入并切换，但界面没刷新」，不把已完成的事实说成失败。
-- **导入回执列清单而不是一句话**：多于一个会话时，回执把「已导入 <路径> / 格式 / 内容」三行
-  里的内容行换成「已导入 N 个会话（M 条消息）」再逐条列「标题 · 条数」，丢了东西的那几条在
-  各自行下挂 `Dropped`；只有一个会话时维持三行老样子，不为多会话把单会话的回执拖长。真的丢了
-  东西才追加「没有带过去的内容」逐项清单，没丢就整段不出现。
-- **路径含空格靠引号**：三个纯文本前端（终端 / TUI / GUI 输入框）共用 `uicommon.ParseInput`
-  切 token，双引号或单引号括起来的一段算一个参数（`/import "C:\我的文档\会话.aqx"`）。
-  不做反斜杠转义——Windows 路径里那是分隔符，当转义符会把路径改坏。参数被空格切成几段时
-  报「用法错误」并附一句怎么括，不只丢一句「用法错误」。
+- **缺省落点**是 `<profile>/exports`，文件名由会话标题派生（`port.FileStem`，命令面与保存框预填名共用
+  一份）；`--all` 取 `aquarius-backup` + 格式扩展名。没配导出目录又没有 `--path` 时报因，不往当前
+  目录乱写。
+- **不覆盖已有文件**：重名自动加 `-2`、`-3` 后缀——导出是「再存一份」，不是「改那一份」。
+- **写一半失败就删掉半截文件**：留个残档比没有更坏，用户会以为备份成了。
+- **导入落成新会话**：**先全部自检并取好 ID、再一次性落盘**（第 3 个会话坏了，不该留下前 2 个已入库
+  的半截状态）。成功后切到**第一个**导入的会话并清屏回放，与 `/switch` 同口径；落盘成功后界面没刷
+  干净时报「已导入并切换，但界面没刷新」，不把已完成的事实说成失败。
+- **导入回执列清单而不是一句话**：多于一个会话时列「标题 · 条数」，丢了东西的那几条各挂 `Dropped`；
+  只有一个会话时维持三行老样子。
+- **路径含空格靠引号**：三个纯文本前端共用 `uicommon.ParseInput`，双/单引号括起来的一段算一个参数。
+  不做反斜杠转义——Windows 路径里那是分隔符。参数被切成几段时报「用法错误」并附一句怎么括。
+- **批量删除（`/rmconv` 收多个 ID）**：① **先全部解析、再一次确认、最后才动库**——有一个解析不出就
+  一个都不删（半截删除比不删更坏）；② 删到当前会话时，继任者从**不在本批要删的**那些里挑；③ 单个
+  ID 的用法与回执逐字不变。
 
 ### 5.17 `character.go` —— 角色卡目录端口（只读导入，D243/D247）
 
@@ -1381,61 +1069,34 @@ Windows 侧打开用 `GetOpenFileNameW`、保存用 `GetSaveFileNameW`，都投�
 
 ```go
 // port/character.go
-type CharacterInfo struct {
-    Slug        string    // 目录名：由显示名派生，profile 内唯一
-    Name        string    // 卡里的 name
-    Display     string    // nickname 优先，否则 name；= {{char}} 的取值
-    Creator     string    // 只展示
-    Version     string    // character_version，只展示
-    Tags        []string  // 只展示
-    Source      string    // png | json | charx
-    Spec        string    // v2 | v3 | v3+（高于 3.x 的未知版本；V1 不读）
-    Greetings   int       // alternate_greetings 条数
-    BookEntries int       // character_book 条目数（保留；按 characters.inject_constant_book 决定是否注入常驻条目）
-    Assets      int       // 卡里 data.assets 条数（图标之外的表情/背景/语音等；保留未用，不内联不下载）
-    HasAvatar   bool
-    // AvatarPath 头像文件绝对路径（空 = 没有头像）。只给界面呈现（设置页列表 / 会话列表行左槽）；
-    // 它是落位事实，不是卡内容，绝不进模型上下文。
-    AvatarPath  string
-    ImportedAt  time.Time
-    // Unsupported 本版不执行的机制（固定顺序，规范键名）：regex_scripts / tavern_helper /
-    // tavernweave / depth_prompt。随原卡留档、一律不运行；导入回执据此如实告知。
-    Unsupported []string
-    Warnings    []string  // 跳过/不认识的东西（用户面；不进模型上下文）
-}
-
-// CharacterProfile 一张卡投影成会话所需的文本（原文，未做宏替换、未做拼装）。
-// 字段分列而不预拼成一段：哪几段进人格、按什么顺序、要不要留，是投影决策（D247），
-// 归 app 的人格模块树；适配器只负责如实读出原文。
+// CharacterInfo（slug / 显示名 / 来源 / spec / 两条计数 / 头像 / 警告…）与 CharacterCard 的字段见
+// 包注释。与投影有关的三条留在这里：
+//   Info.Unsupported  本版不执行的机制（固定顺序）：regex_scripts / tavern_helper / tavernweave / depth_prompt
+//   Info.AvatarPath   头像绝对路径（空 = 无）——只给界面，是落位事实，绝不进模型上下文
+//   Profile.*         一律**原文**：未做宏替换、未做拼装
 type CharacterProfile struct {
-    Description   string      // 卡的角色描述
-    Personality   string      // 卡的性格
-    Scenario      string      // 卡的情境
-    SystemPrompt  string      // 卡里的 system_prompt（{{original}} 留到组合时——要等用户人格算完才知道展开成什么）
-    BookEntries   []BookEntry // 世界书全部条目（启用与常量标志原样带出，过滤在 app）
-    Examples      string      // mes_example（<START> 保留为分块符）
-    FirstMes      string
-    Greetings     []string
-    PostHistory   string
+	Description  string
+	Personality  string
+	Scenario     string
+	SystemPrompt string      // {{original}} 留到组合时——要等用户人格算完才知道展开成什么
+	BookEntries  []BookEntry // 世界书**全部**条目（启用与常量标志原样带出，过滤在 app）
+	Examples     string      // mes_example（<START> 保留为分块符）
+	FirstMes     string
+	Greetings    []string
+	PostHistory  string
 }
 
-// BookEntry 世界书条目（D247）：只投影 constant 条目，但标志位要带出来——
-// 「哪些算常驻」是投影口径，不该由解析层替它决定。
+// BookEntry 世界书条目：只投影 constant 条目，但标志位要带出来——「哪些算常驻」是投影口径，
+// 不该由解析层替它决定。
 type BookEntry struct {
-    Comment  string // 条目标题（作常驻段的小节标题）
-    Content  string
-    Enabled  bool // extensions.enabled / enabled；缺键 = true
-    Constant bool // constant；缺键 = false
-}
-
-type CharacterCard struct {
-    Info       CharacterInfo
-    Profile    CharacterProfile
+	Comment, Content string
+	Enabled          bool // extensions.enabled / enabled；缺键 = true
+	Constant         bool // 缺键 = false
 }
 
 type CharacterCatalog interface {
-    List(ctx context.Context) ([]CharacterInfo, error)                 // 按显示名排序
-    Load(ctx context.Context, slug string) (CharacterCard, error)      // 未知名返回 ErrCharacterNotFound
+	List(ctx context.Context) ([]CharacterInfo, error)            // 按显示名排序
+	Load(ctx context.Context, slug string) (CharacterCard, error) // 未知名返回 ErrCharacterNotFound
 }
 ```
 
@@ -1443,126 +1104,108 @@ type CharacterCatalog interface {
 
 | 代 | 形状 | 我们读什么 |
 |---|---|---|
-| V1 | 顶层六个字段：`name` / `description` / `personality` / `scenario` / `first_mes` / `mes_example` | **不读**（D247）：语料 192 张里零出现，为它留一条分支等于留一条永不被验证的路径。缺 `spec` 且有 `data` 对象时按 V2 形状读；顶层六字段齐、没有 `data` 的纯 V1 卡报「这是旧版规范，本版不读」并说明原因 |
+| V1 | 顶层六个字段：`name` / `description` / `personality` / `scenario` / `first_mes` / `mes_example` | **不读**（D247）：语料 192 张里零出现，为它留一条分支等于留一条永不被验证的路径。缺 `spec` 且有 `data` 对象时按 V2 形状读；顶层六字段齐、没有 `data` 的纯 V1 卡报「这是旧版规范，本版不读」 |
 | V2 | `spec` / `spec_version` / `data`，V1 六字段进 `data`，另加 `system_prompt` / `post_history_instructions` / `alternate_greetings` / `character_book` / `creator_notes` / `tags` / `creator` / `character_version` / `extensions` | 投影 + 元数据；`character_book` 只注入 constant 条目（开关控制），其余保留 |
 | V3 | V2 超集：`nickname` / `assets` / `group_only_greetings` / `creator_notes_multilingual` / `source` / 日期 / Lorebook 扩展 | `nickname` 优先作 `{{char}}`；`assets` 的图标作头像；群聊专用字段只保存 |
 
-- **`creator_notes` 绝不进上下文**：它是作者写给导入者的说明，不是给模型的指令。`tags` /
-  `creator` / `character_version` / 日期同样只展示。
-- **`extensions` 与未知字段原样保留**：只存投影会丢数据，所以原卡 JSON **逐字节**落在
-  `card.json`（见下），本版不认识的键一个不删。
-- **版本判定宽松、写入严格**：`spec_version` 按**字符串**比较（实测所有卡都是
-  `"2.0"` / `"3.0"`，没有数值型；按 JSON 数字解析会漏掉整批卡）。高于 3.x 的版本（如 4.0）
-  **仍导入并记 `v3+` 警告**，已知字段照常读——这是只读导入，拒绝反而让用户没法看新卡；
-  反过来，本版不写任何卡，不存在「用旧规范覆盖新卡」的风险。
-  **有 `data` 对象就只读 `data`**：实测 30 张卡的顶层多出 `alternative` / `misc` / `metadata`
-  而 `data` 里没有，也有 5 个键顶层有值、`data` 里是空串——两边合并会把「镜像字段」当成
-  「第二份数据」。没有 `data` 又没有可识别 `spec` 时按 V2 形状尽力读并警告；纯 V1 一律拒绝。
-- **`name` 必填**：去掉首尾空白后为空即拒绝（目录名与 `{{char}}` 都没有着落），
-  不从文件名瞎猜。`nickname` 非空则优先作 `{{char}}`（实测只有极少数卡有，多数走 `name`）。
+- **`creator_notes` 绝不进上下文**：它是作者写给导入者的说明，不是给模型的指令。`tags` / `creator` /
+  `character_version` / 日期同样只展示。
+- **`extensions` 与未知字段原样保留**：只存投影会丢数据，所以原卡 JSON **逐字节**落在 `card.json`，
+  本版不认识的键一个不删。
+- **版本判定宽松、写入严格**：`spec_version` 按**字符串**比较（实测都是 `"2.0"` / `"3.0"`，按 JSON
+  数字解析会漏掉整批卡）。高于 3.x 的（如 4.0）**仍导入并记 `v3+` 警告**、已知字段照常读——这是
+  只读导入，拒绝反而让用户看不了新卡；本版不写卡，不存在「用旧规范覆盖新卡」的风险。
+  **有 `data` 对象就只读 `data`**：实测顶层常有 `alternative` / `misc` 这类镜像键，两边合并会把
+  「镜像字段」当成「第二份数据」。没有 `data` 又没有可识别 `spec` 时按 V2 尽力读并警告；纯 V1 拒绝。
+- **`name` 必填**：去首尾空白后为空即拒绝（目录名与 `{{char}}` 都没有着落），不从文件名瞎猜。
 
 **三种容器**
 
 | 容器 | 识别 | 卡的取法 |
 |---|---|---|
 | PNG / APNG | 文件头 `\x89PNG\r\n\x1a\n` | 遍历 `tEXt` 块，关键字大小写不敏感；`ccv3` 优先于 `chara`；base64 解码后按 JSON 读 |
-| 纯 JSON | 扩展名 `.json` 且首字符 `{` | 直接按 JSON 读；V2/V3 都收，V3 是标准形态（V1 不读，见上） |
-| `.charx` | 文件头 `PK\x03\x04`，扩展名 `.charx` | ZIP 根目录的 `card.json`（V3 对象）；图标取 `type=icon` 的资源，多个时优先 `name=main`，否则第一个 |
+| 纯 JSON | 扩展名 `.json` 且首字符 `{` | 直接按 JSON 读；V2/V3 都收（V1 不读，见上） |
+| `.charx` | 文件头 `PK\x03\x04`，扩展名 `.charx` | ZIP 根目录的 `card.json`（V3 对象）；图标取 `type=icon` 的资源，多个时优先 `name=main` |
 
-- **PNG 只读 `tEXt`**：规范用的就是它；`iTXt` / `zTXt` 与旧的 `chara-ext-asset_` 资产块不读。
-  `ccv3` 与 `chara` 同时存在时以 `ccv3` 为准（SillyTavern 同口径；实测有卡两块**字节相同**，
-  也有只带 `chara` 的）。**进场先去 BOM**：实测 `json.Unmarshal` 与 `json.Decoder` 都拒 BOM，
-  个别卡带 BOM，去掉再解析。**不照抄它的写回**：
-  ST 会把 V2 数据改个 `spec` 伪装成 `ccv3` 写回去，我们本版不写卡。
-- **`.charx` 的资产后缀是 `embeded://`**（规范里就少一个 d）。图标 uri 只接受
-  `embeded://` / `embedded://` / `__asset:` 与 ZIP 内相对路径；`ccdefault:` 表示「用默认图标」
-  （PNG 卡即卡本身，`.charx` 即无头像）。**HTTP(S) 资产不下载**，记警告。
-  **实测多出第四形态**：`/user/images/<卡名>/x.webp` 这类 SillyTavern 私有路径（一张卡里
-  出现 15 次）——按 basename 映射到包内同名资产，映射不到才记警告。
-- **`.charx` 根目录没有 `card.json`** 时报「这是发行包，请导入其中的 `.charx`」——实测有把
-  `.charx` 套在 `.zip` 发行包里的情况，报「不是合法卡」而不是「文件损坏」。
-- **`.charx` 整包留档**：除 `card.json` 与图标外，原压缩包按字节存为 `source.charx`——
-  表情、背景、语音这些本版不用的资产不能悄悄丢，将来导出也有原料。PNG / JSON 则只留
-  `card.json` + `avatar.png`（PNG 卡的头像按上节重编码，不留带卡数据的原图）。
-- **ZIP 门禁沿用技能安装**（§5.15）：拒绝绝对路径、`..`、盘符、符号链接与加密条目；
-  条目数与展开总量设上限，超限报错不截断。
+- **PNG 只读 `tEXt`**：规范用的就是它；`iTXt` / `zTXt` 与旧的 `chara-ext-asset_` 资产块不读。两块
+  同在时以 `ccv3` 为准（SillyTavern 同口径）。**进场先去 BOM**：个别卡带 BOM，`json.Unmarshal` 与
+  `json.Decoder` 都拒它。
+- **`.charx` 的资产后缀是 `embeded://`**（规范里就少一个 d）。图标 uri 只接受 `embeded://` /
+  `embedded://` / `__asset:` 与 ZIP 内相对路径；`ccdefault:` = 用默认图标（PNG 卡即卡本身，`.charx`
+  即无头像）。**HTTP(S) 资产不下载**，记警告；`/user/images/<卡名>/x.webp` 这类 SillyTavern 私有
+  路径按 basename 映射到包内同名资产，映射不到才警告。
+- **`.charx` 根目录没有 `card.json`** 时报「这是发行包，请导入其中的 `.charx`」——把 `.charx` 套在
+  `.zip` 里是常见包装，报「不是合法卡」而不是「文件损坏」。
+- **`.charx` 整包留档**：除 `card.json` 与图标外，原压缩包按字节存为 `source.charx`——表情、背景、
+  语音这些本版不用的资产不能悄悄丢。PNG / JSON 只留 `card.json` + `avatar.png`。
+- **ZIP 门禁沿用技能安装**（§5.15）：拒绝绝对路径、`..`、盘符、符号链接与加密条目；条目数与展开
+  总量设上限，超限报错不截断。
 
 **落位**（`<profile>/characters/<slug>/`）：
 
 ```
-characters/<slug>/
-  card.json      # 原卡 JSON 逐字节（导入后不再改写）
-  meta.json      # slug / 显示名 / 来源格式 / spec / 资产数 / 不执行机制 / 导入时间 / 警告 / 头像文件名（原子写）
-  avatar.png     # 头像：.charx 的 icon，或 PNG 卡去 tEXt 重编码的像素；没有则无此文件
-  source.charx   # 仅 .charx 来源：原压缩包整份留档
+card.json      原卡 JSON 逐字节（导入后不再改写）
+meta.json      slug / 显示名 / 来源格式 / spec / 资产数 / 不执行机制 / 导入时间 / 警告 / 头像文件名（原子写）
+avatar.png     头像：.charx 的 icon，或 PNG 卡去 tEXt 重编码的像素；没有则无此文件
+source.charx   仅 .charx 来源：原压缩包整份留档
 ```
 
-- **slug**：显示名归一（去控制字符与路径分隔符、空白折叠为 `-`、去首尾点、截 40 字符），
-  保留中文；与已有目录**大小写不敏感**比较，重名追加 `-2`、`-3`。归一后为空、
-  `.`/`..`、Windows 设备名（`CON`/`PRN`/`AUX`/`NUL`/`COM1`…）一律拒绝。
-- **同名卡不覆盖**：再导入同一张卡是新 slug，不静默替换旧卡（卡可能在对话里正被引用）；
-  要换版本先 `/character remove`。这条与技能安装同口径。
+- **slug**：显示名归一（去控制字符与路径分隔符、空白折叠为 `-`、去首尾点、截 40 字符），保留中文；
+  与已有目录**大小写不敏感**比较，重名追加 `-2`、`-3`。归一后为空、`.`/`..`、Windows 设备名
+  （`CON`/`PRN`/`AUX`/`NUL`/`COM1`…）一律拒绝。
+- **同名卡不覆盖**：再导入同一张是新 slug，不静默替换旧卡（卡可能在对话里正被引用）；换版本先
+  `/character remove`（与技能安装同口径）。
 - **目录是唯一事实来源**：`card.json` 坏掉的条目在 `List` 里带警告跳过，不阻断其余角色；
   `meta.json` 缺失/损坏时从 `card.json` 重建并记警告。
 
 **投影成会话**（`/character start <slug> [序号]`）
 
-记 `U` = **卡以外的用户人格正文**（按人格模块树组合，`@env` 不算在内，D247），
-`S` = 卡里的 `system_prompt`。卡文本在**投影时**才做宏替换（§7.7），落树即终稿——
-与 persona 快照同口径（`port.CharacterCatalog.Load` 返回原文，替换发生在装配层）。
-因此之后改 `prompts.user_name` 只影响新建的会话。
+记 `U` = **卡以外的用户人格正文**（按人格模块树组合，`@env` 不算在内，D247），`S` = 卡里的
+`system_prompt`。卡文本在**投影时**才做宏替换（§7.7），落树即终稿——与 persona 快照同口径
+（`Load` 返回原文，替换发生在装配层），因此之后改 `prompts.user_name` 只影响新建的会话。
 
-- **卡按字段进模块树**（D247）：卡不是拼成一段塞进人格，而是作为**条件内置模块**参与组合
-  （模块树定义见 §4.1）——`@char.identity`（`You are <display>.`）、`@char.description`
-  （`Description:` + 正文）、`@char.personality`（`Personality:`）、`@char.scenario`
-  （`Scenario:`）、`@char.system`（卡里的 `S`，`{{original}}` 在此展开）、`@char.book`
-  （常驻世界书条目）。**每个字段是独立叶子**，用户可以按自己的说法重排、删掉不想要的段，
-  也可以用 `prompts.modules` 把某个 `@char.*` 包进自己的组。
+- **卡按字段进模块树**（D247）：不是拼成一段塞进人格，而是作为**条件内置模块**参与组合——
+  `@char.identity` / `@char.description` / `@char.personality` / `@char.scenario` /
+  `@char.system`（`S`，`{{original}}` 在此展开）/ `@char.book`（常驻世界书）。**每个字段是独立
+  叶子**，用户可按自己的说法重排、删掉不要的段，也可用 `prompts.modules` 把某个 `@char.*` 包进
+  自己的组。
 - **默认引用追加卡模块**：角色会话的有效引用 = 用户配置的 `prompts.persona`（空则
-  `["@default","@env"]`）**原样保留**，再追加 `["@char.book","@char","@char.system"]`。
-  非角色会话不追加，`@char.*` 全部为空 ⇒ 输出与不带这套模块时**逐字节相同**。
-- **用户人格不被默认覆盖**（D243）：默认模式下 `U` 在最前，卡的人格段与会话提示依次接上。
-  规范把 `system_prompt` 定义为「替换主提示」，但用户的人格承载着他自己的规则与安全约束，
-  静默替换是会造成真实损失的默认值。
-- **`characters.prefer_system_prompt = true`** 时才替换：有效引用 = `["@char.system",
-  "@char.book","@char","@env"]`——**用户人格引用整体让位，`@env` 保留**（D247）。
+  `["@default","@env"]`）**原样保留**，再追加 `["@char.book","@char","@char.system"]`。非角色会话
+  不追加，`@char.*` 全空 ⇒ 输出与不带这套模块时**逐字节相同**。
+- **用户人格不被默认覆盖**（D243）：默认模式下 `U` 在最前，卡的人格段与会话提示依次接上。规范把
+  `system_prompt` 定义为「替换主提示」，但用户人格承载着他自己的规则与安全约束，静默替换是会
+  造成真实损失的默认值。
+- **`characters.prefer_system_prompt = true`** 时才替换：有效引用 =
+  `["@char.system","@char.book","@char","@env"]`——**用户人格引用整体让位，`@env` 保留**（D247）。
   `@env` 是运行事实（平台、沙盒路径、超时），不是人格；跟着一起丢会让模型去猜平台与路径。
-  `S` 为空则等同默认。**卡的人格段始终在**——ST 的覆盖也只动主提示，不动角色描述三件套。
-- **两种模式各要说清一件事**（`/character start` 的回执里）：默认模式下 `{{original}}` 按空
-  处理（用户人格已原样在场，再展开一次就是重复）；替换模式下 `{{original}}` 展开为 `U`
-  （**不含 `@env`**），卡里没写 `{{original}}` 就把用户人格丢掉而环境信息仍在。
-- **常驻世界书**（D247）：`characters.inject_constant_book` 默认**开**——只取 `constant: true`
-  且 `enabled` 不为 false 的条目，按卡内顺序拼成 `@char.book`，条目标题作小节标题。
-  **为什么默认开**：语料里有这样一类卡（2/2 实测），人格三件套全空、人设整个写在
-  constant 条目里；不注入就是一个只有开场白的空壳。**代价要写进回执**：它在 persona 快照里，
-  永不被压缩挤掉、每轮都付 token。关掉即回到「保留未启用」，回执报条数与总量。
-- **示例走注入节点**：`mes_example` 非空且 `characters.inject_examples` 为 true 时，在 persona
-  之后追加一条 `Role=inject`、`Trust=host`、`Source=character:<slug>`、`Trigger=false` 的节点。
-  选它而不拼进人格，是因为规范要求示例随历史增长**被挤掉**；选它而不新建 system 节点，
-  是因为 §4.1 的水位把「persona 之后最后一个 system」当压缩摘要——第二个 system 会冒充水位。
-  `Trust=host` 与 `/skill` 同口径：卡是你亲手导入并选择开始的，它写的是要遵循的指令，
-  不是待围栏的外部数据。
-- **首条消息**：`first_mes` 非空时作为 assistant 节点接在示例之后，Head 落在它上面；
-  序号参数按**合并列表** `[first_mes, ...alternate_greetings]` 读，**n 从 1 起**——缺省或 `1`
-  = `first_mes`，`2` 起依次是备用问候；超出条数报错并列出可选数。
-  **选中那条为空就不落节点**，空开场不造假消息。`group_only_greetings` 只保存（本版没有群聊）。
-  开场白明显偏长时（估算超 `compact_threshold` 的 1/4），回执给一行 token 估算与
-  「会占掉首轮可用的上下文」的提醒——不截断、不改写卡。
-- **尾部指令**：`post_history_instructions` 存进会话的 `Tail` 字段（§4.1），每轮请求在
-  历史之后追加一条 system；`characters.apply_post_history = false` 时只存不发。
-  不拼进人格，是因为它的语义就是「历史之后」；拼接会把位置从尾部挪到最前，模型更容易
-  把它当成开场的角色设定。provider 限制：Anthropic 把所有 system 并进顶层字段，尾部位置
-  会丢失（与 §5.16 记录的限制同源，不为此改投影）。
-- **会话记住角色**：`Conversation.Character = slug`。用途：会话列表与标题栏画头像、
-  以后接世界书、导出时知道这张卡是谁。卡被删后会话照常可用（头像回落默认，`Tail` 是
-  已落盘的文本），不把会话绑死在目录上。
-- **人格节点是快照，不是活引用**（D247）：`@char.*` 在新建会话时展开进 persona 首节点，
-  之后**与目录脱钩**——改 config、换卡版本、删卡都不改写已有会话，`/edit --keep` 改人格
-  也是新建一份快照。要按新卡重来就再 `/character start`。卡模块在非角色会话与卡被删后
-  不可恢复（`agent.buildRequest` 的兜底只用当前配置的 composer），这是快照口径的必然结果。
+  `S` 为空则等同默认。**卡的人格段始终在**——ST 的覆盖也只动主提示。
+- **两种模式各要说清一件事**（`/character start` 的回执里）：默认模式下 `{{original}}` 按空处理
+  （用户人格已原样在场，再展开一次就是重复）；替换模式下展开为 `U`（**不含 `@env`**），卡里没写
+  `{{original}}` 就把用户人格丢掉而环境信息仍在。
+- **常驻世界书**（D247）：`characters.inject_constant_book` 默认**开**——只取 `constant: true` 且
+  `enabled` 不为 false 的条目，按卡内顺序拼成 `@char.book`，条目标题作小节标题。默认开的理由是
+  语料里有一类卡（实测 2/2）人格三件套全空、人设整个写在 constant 条目里，不注入就是只有开场白
+  的空壳。**代价要写进回执**：它在 persona 快照里，永不被压缩挤掉、每轮都付 token。
+- **示例走注入节点**：`mes_example` 非空且 `characters.inject_examples` 为 true 时，在 persona 之后
+  追加一条 `Role=inject`、`Trust=host`、`Source=character:<slug>`、`Trigger=false` 的节点。选它而
+  不拼进人格，是因为规范要求示例随历史增长**被挤掉**；不新建 system 节点，是因为 §4.1 的水位把
+  「persona 之后最后一个 system」当压缩摘要——第二个 system 会冒充水位。
+- **首条消息**：`first_mes` 非空时作为 assistant 节点接在示例之后，Head 落在它上面；序号按**合并
+  列表** `[first_mes, ...alternate_greetings]` 读、**n 从 1 起**，超出条数报错并列出可选数。
+  **选中那条为空就不落节点**——空开场不造假消息。`group_only_greetings` 只保存（本版没有群聊）。
+  开场白估算超 `compact_threshold` 的 1/4 时，回执给一行 token 估算与「会占掉首轮可用上下文」的
+  提醒，不截断、不改写卡。
+- **尾部指令**：`post_history_instructions` 存进会话的 `Tail`（§4.1），每轮在历史之后追加一条
+  system；`characters.apply_post_history = false` 时只存不发。不拼进人格，是因为它的语义就是
+  「历史之后」——拼接会把位置从尾部挪到最前。provider 限制：Anthropic 把所有 system 并进顶层
+  字段，尾部位置在那里会丢（不为此改投影）。
+- **会话记住角色**：`Conversation.Character = slug`，只作展示、头像与导出溯源。卡被删后会话照常
+  可用（头像回落默认，`Tail` 已是落盘文本），不把会话绑死在目录上。
+- **人格节点是快照，不是活引用**（D247）：`@char.*` 在新建会话时展开进 persona 首节点，之后**与
+  目录脱钩**——改 config、换卡版本、删卡都不改写已有会话。要按新卡重来就再 `/character start`。
 
-**不投影的字段**：`creator_notes` / `tags` / `creator` / `character_version` / 日期 /
-`source` 只作展示。**导入回执按四类分列「读了什么、没读什么」**（D247）：
+**不投影的字段**：`creator_notes` / `tags` / `creator` / `character_version` / 日期 / `source` 只作
+展示。**导入回执按四类分列「读了什么、没读什么」**（D247）：
 
 | 类 | 内容 |
 |---|---|
@@ -1573,20 +1216,15 @@ characters/<slug>/
 
 装成「完整支持」比少说更糟：用户拿一张依赖正则脚本的卡来会以为脚本在跑。
 
-**界面卡降级提示**（D247）：卡的投影字段含 HTML 块（`<style>`、`<div>`、`<img>` 一类）时，
-导入回执与 `/character show` 各加一行——「这张卡带 HTML，界面会按纯文本显示，标签会原样出现」。
-实测依据：卡正文里成规模用 HTML 的是少数（语料 2/192），但其中一张的开场白有两万字、
-标签占四分之一，直接显示是一屏 CSS。**不净化、不改写卡文本**：净化会让「落树即终稿」
-变成「落树是净化后终稿」，模型看到的与用户看到的就不再是同一份。
+**界面卡降级提示**（D247）：卡的投影字段含 HTML 块（`<style>` / `<div>` / `<img>` 一类）时，导入
+回执与 `/character show` 各加一行「界面会按纯文本显示，标签会原样出现」。**不净化、不改写卡文本**：
+净化会让「落树即终稿」变成「落树是净化后终稿」，模型看到的与用户看到的就不再是同一份。
 
 **命令面**：`/character list`（无参同名）、`/character show <slug>`、`/character import <路径>`、
-`/character start <slug> [序号]`、`/character remove <slug>`（二次确认）。导入/删除是**用户面
-动作**：`port.CharacterCatalog` 保持只读两方法，`app.CharacterAdmin` 由消费方定义、
-装配根实现到 `characterfs`（范式同 `app.SkillAdmin`）。**不提供模型可调用的角色卡工具**。
-
-**GUI**：设置窗新增「角色」页（列表 + 头像 + 导入/删除 + 「开始对话」），会话列表行在
-`Character` 非空时显示对应头像；没有卡或卡已删除时用默认头像。文件选择走 `platform` 的
-打开对话框（已有）。本版不做卡编辑器、不做头像裁剪、不做主题包。
+`/character start <slug> [序号]`、`/character remove <slug>`（二次确认）。导入/删除是**用户面动作**：
+`port.CharacterCatalog` 保持只读两方法，`app.CharacterAdmin` 由消费方定义、装配根实现到 `characterfs`
+（范式同 `app.SkillAdmin`）。**不提供模型可调用的角色卡工具**。设置窗「角色」页与会话列表头像见
+[gui-design.md](gui-design.md)；本版不做卡编辑器、不做头像裁剪、不做主题包。
 
 **上限与安全**（外部文件一律不可信）：
 
@@ -1599,34 +1237,31 @@ characters/<slug>/
 | ZIP 条目数 / 展开总量 | 2048 / 128 MiB |
 | `Tail` 长度 | 8000 字符（导入超限报错，不静默截断） |
 
-口径与依据（D247）：
+口径（D247）：
 
-- **单字段上限只管七个投影字段**（`description` / `personality` / `scenario` /
-  `first_mes` / `mes_example` / `system_prompt` / `post_history_instructions`）与常驻世界书
-  单条正文。扩展、正则脚本一类**不投影**的字段不设单字段上限——它们只落盘、不进上下文，
-  卡的真实体积几乎全在这里（实测最大一张卡的卡 JSON 17.72 MiB、单条正则 726 KB）。
+- **单字段上限只管七个投影字段**（`description` / `personality` / `scenario` / `first_mes` /
+  `mes_example` / `system_prompt` / `post_history_instructions`）与常驻世界书单条正文。不投影的字段
+  （扩展、正则脚本一类）不设单字段上限——它们只落盘、不进上下文，卡的真实体积几乎全在这里。
   超限仍**报错不截断**：静默截断会把卡变成「看起来导进来了」。
-- **单卡 64 MiB / 卡 JSON 32 MiB** 是按真卡测出来的：52 MB 的 PNG 卡、17.72 MB 的卡 JSON
-  都在语料里出现过，按旧的 16 / 4 MiB 会直接拒收。总量仍有上限，不放开。
-- **头像落盘写重编码的像素 PNG**：PNG 卡原图把两份卡 JSON 塞在 `tEXt` 里（那块可 20 MB 以上），
-  直接把原图当头像等于把卡数据再存一份。重编码只留像素（实测 52 MB → 2.22 MiB，像素无损），
-  `card.json` 才是卡的事实来源。
-- **常驻世界书不设聚合上限**：单条受上面 256 KiB 约束，总量在导入回执里报出来（字符数 + 估算
-  token）。设死上限会让「人设全写在常驻条目里」的卡整张不可用，而那正是这类卡的正常写法。
+- **64 / 32 MiB 是按真卡定的**：语料里出现过 52 MB 的 PNG 卡与 17.7 MB 的卡 JSON，按旧的 16 / 4 MiB
+  会直接拒收。
+- **头像写重编码的像素 PNG**：PNG 卡原图把两份卡 JSON 塞在 `tEXt` 里（那块可 20 MB 以上），直接拿
+  原图当头像等于把卡数据再存一份（实测 52 MB → 2.2 MiB，像素无损），`card.json` 才是事实来源。
+- **常驻世界书不设聚合上限**：单条受 256 KiB 约束，总量在导入回执里报出来（字符数 + 估算 token）。
+  设死上限会让「人设全写在常驻条目里」的卡整张不可用，而那正是这类卡的正常写法。
 
-不合规即报错并指出是哪一项；**不做「尽力修复」**。卡文本可以包含任意指令，这是角色卡的
-用途本身；防线在别处——导入不授予工具权限、不执行脚本、不读卡里引用的本地路径与 URL。
+不合规即报错并指出是哪一项；**不做「尽力修复」**。卡文本可以包含任意指令，这是角色卡的用途本身；
+防线在别处——导入不授予工具权限、不执行脚本、不读卡里引用的本地路径与 URL。
 
-**不做**：写回 PNG/JSON/`.charx`、编辑卡、导出卡、**世界书的关键词检索与非 constant 条目的
-任何激活**（常驻条目注入见上文，那不是检索）、`group_only_greetings`、
-表情/背景/语音资产、PNG 的 `chara-ext-asset_`、从网络取资产、导入时自动开一轮对话。
+**不做**：写回 PNG/JSON/`.charx`、编辑卡、导出卡、**世界书的关键词检索与非 constant 条目的任何
+激活**（常驻条目注入见上文，那不是检索）、`group_only_greetings`、表情/背景/语音资产、PNG 的
+`chara-ext-asset_`、从网络取资产、导入时自动开一轮对话。
 
 ### 5.18 `delegate.go` —— 外部代理转交端口（ACP 客户端，D244）
 
-把一件复杂任务**整个**交给另一个代理程序去跑，我们只收回它的报告。定位上的分界：我们能做的
-（读写文件、跑命令、查网、记文档）已经都在工具面里，剩下的复杂活在**别的程序**里做得更好——
-那边的长处是它的工具循环、它对代码库的品味、它自带的生态。所以这一节不是「再写一个 agent」，
-而是**当客户端**：拉起一个 ACP（Agent Client Protocol）代理，把任务递过去，等它交付。
+把一件复杂任务**整个**交给另一个代理程序去跑，我们只收回它的报告。我们能做的（读写文件、跑命令、
+查网、记文档）都在工具面里；剩下的复杂活在**别的程序**里做得更好——它的工具循环、它对代码库的品味、
+它自带的生态。所以这一节不是「再写一个 agent」，而是**当客户端**：拉起一个 ACP 代理，把任务递过去。
 
 ```go
 // port/delegate.go
@@ -1640,7 +1275,7 @@ type DelegateInfo struct {
 }
 
 type DelegateSpec struct {
-    Agent   string // 空 = 缺省代理（见下）
+    Agent   string // 空 = 缺省代理
     Task    string // 任务描述：作为子代理那侧的第一条用户消息，原样发
     WorkDir string // 子进程 cwd（默认家目录），不是"工作区"
     Session string // 复用位：空 = 每次新建会话；本版只接受空值
@@ -1698,26 +1333,22 @@ v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP s
 
 **配置与发现**：配置形状照 `mcpServers` 抄——`command` / `args` / `env`（值支持 `secret:`），
 另加 `workdir` / `enabled` / `default`。**不内置各家预设**：registry 里四十多家代理的命令名、
-启动参数、登录方式都由它们自己决定，变得比我们发版快；内置一份等于每次发版都替别人追版本。
-启动时按 `PATH` 探一遍 `command` 是否可执行，探到的才标 `Available`（不可执行的留在清单里并
-写明原因——「装了但 PATH 上找不到」比「清单里没有」好排查）。**启动只探「能不能执行」，不做
-握手**：握手要真把对方拉起来（有的代理第一次启动会要登录、会打印横幅、会建目录），启动时
-挨个跑一遍是拿用户的时间换一张清单。所以 `Title` / `Version` 在第一次转交后才填上，没转过就
-是空——清单里该有的「名字 / 命令行 / 能不能用」不需要握手也都有。
+启动参数、登录方式都由它们自己决定，变得比我们发版快。启动时按 `PATH` 探 `command` 是否可执行，
+探到的才标 `Available`（不可执行的留在清单里并写明原因——「装了但 PATH 上找不到」比「清单里没有」
+好排查）。**启动只探「能不能执行」，不做握手**：握手要真把对方拉起来（有的第一次启动会要登录、
+会建目录），挨个跑一遍是拿用户的时间换一张清单；`Title` / `Version` 在第一次转交后才填上。
 
 `workdir` 的取值：工具参数优先，其次配置里那条 `workdir`，都没有 = 家目录（与 `JobSpec.WorkDir`
 同一口径）。两者都不是围栏，只是子进程的起点。
 
-**转交的投影**：回填 = **报告 + 一行摘要**。摘要含工具调用数、改动文件数、耗时、停止原因，
-正文是它交付的那段。子代理那几十次工具调用、思考片段、计划表**都不进会话树**：那是它的过程，
-不是我们的对话；进树会污染上下文与水位，压缩摘要也无从判断哪段是谁的历史。要看过程就去看它
-自己的日志（不在本版范围内，§14）。
+**转交的投影**：回填 = **报告 + 一行摘要**（工具调用数、改动文件数、耗时、停止原因）。子代理那
+几十次工具调用、思考片段、计划表**都不进会话树**：那是它的过程，不是我们的对话；进树会污染上下文
+与水位，压缩摘要也无从判断哪段是谁的历史。
 
-**会话生命周期：每次全新，但契约留好复用位**。进程跑完即关、`sessionId` 不跨次使用——同一件
-任务反复追问时，攒两份互相矛盾的历史比丢上下文更糟。`DelegateSpec.Session` 与
-`DelegateRun.Session` 是为将来「会话内复用」留的位置：本版前者**只接受空值**（非空直接报
-`session reuse is not supported in this build`），后者照实回传。将来接复用时，加一条
-`session/resume` 调用与 `<profile>/delegate/` 下的句柄落盘即可，端口形状不用改。
+**会话生命周期：每次全新，但契约留好复用位**。进程跑完即关、`sessionId` 不跨次使用——同一件任务
+反复追问时，攒两份互相矛盾的历史比丢上下文更糟。`DelegateSpec.Session` / `DelegateRun.Session` 是
+为将来「会话内复用」留的位置：本版前者**只接受空值**（非空报 `session reuse is not supported in
+this build`），后者照实回传。将来加一条 `session/resume` 与句柄落盘即可，端口形状不用改。
 **本版不落盘**：转交是一次性动作，没有目录、没有台账。
 
 **权限边界要说实话**：`session/request_permission` 只覆盖它**愿意问**的那部分。子代理是独立
@@ -1944,9 +1575,8 @@ system（`characters.apply_post_history = false` 时不发）。因为它不在�
 
 #### 7.1.1 注入节点、任务收尾与观察器（D150/D189/D190）
 
-**问题**：模型要看后台任务进度只能反复调 `job_status`/`job_logs`——每次调用都烧 token、
-把上下文塞满日志，且轮询节奏由模型瞎猜；外部工具（插件、MCP、定时器）也没有把信息塞回
-会话的通道。
+**问题**：模型想看后台任务进度只能反复调 `job_status`/`job_logs`，每次都烧 token、把上下文塞满
+日志；外部工具（插件、MCP、定时器）也没有把信息塞回会话的通道。
 
 **两类事分开**：会结束的任务（编译、测试）用**完成事件**——`JobManager.Wait` 直接通知，
 模型想在本轮拿到结果就调 `job_wait`；**没有终态**的外部状态（CI 变绿、日志出现某行、
@@ -1989,9 +1619,8 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   **信任不靠 `Source` 前缀推断**：前缀字符串对外部可写（MCP 工具名、插件名），拿它当信任依据
   是 fail-open；缺省（未声明信任位）= 不可信。任务报告整体可信，但**日志尾部**是外部
   进程写的不可信数据——日志段在正文里再用一层围栏单独包住并前置英文警告，不让它直接读成
-  宿主指令。围栏**正文**同样中和闭合标签（`</injected-context>` 在注入内容里一律转义），否则
-  外部内容可以提前收尾、把后文伪装成宿主说明。投影角色**不进领域**：树里只有 `inject` 一种
-  角色，映射表在装配层。
+  宿主指令。围栏**正文**同样中和闭合标签，否则外部内容可以提前收尾、把后文伪装成宿主说明。
+  投影角色**不进领域**：树里只有 `inject` 一种角色，映射表在装配层。
 - **触发口径（用户拍板）**：按来源定默认、调用方可覆盖——`job:`/`poller:` 默认 **true**
   （任务完成应当主动汇报）；`tool:`/`plugin:` 默认 **false**（Turn 内注入只补上下文，避免
   打断流程与重复计费）；`user:`（含 `/inject` 缺省）默认 true。`Injection.Trigger` 非 nil
@@ -2027,11 +1656,9 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 - **为什么分开**：任务有终态，等完成即可（上一节）；CI 变绿、日志里出现某行、某个文件
   出现这类事情**没有终态**，只能按节奏去看。节奏由**模型**给（它知道对方多久会变），
   不是内核拍一个退避表。
-- **声明**：`watch_start {kind: command|file|http, target, match?, notify?, interval_sec?,
-  max_checks?, deadline_sec?, workdir?}`。`match` 省略 = 用**取样输出的哈希变化**当判据
-  （适合「变了就告诉我」）；`notify=match`（缺省）命中报一次即结束，`notify=change`
-  每次**重新**命中都报（一直命中着不重复）、继续看。间隔 5–3600s（缺省 30，**固定间隔、不做退避**）、次数缺省 120、
-  期限缺省 3600s——上限保证模型声明的等待不会变成永不退场的 goroutine。
+- **声明**：参数形状见 `watch_start` 的 schema，口径三条——`match` 省略 = 用**取样输出的哈希
+  变化**当判据（适合「变了就告诉我」）；`notify=change` 每次**重新**命中都报（一直命中着不重复）；
+  间隔**固定、不做退避**，次数与期限有缺省与上限，保证模型声明的等待不会变成永不退场的 goroutine。
 - **权限**：一律 `Risk=Confirm`。观察器会在会话外反复执行命令/访问网络，等于给模型一条
   持续通道；无人值守下被拒（与 D185 同一口径：越界操作当场说明，不阻塞轮次）。
 - **探针**（`port.WatchProber`）：三种取样都只负责**取到内容**——非零退出码、非 2xx 都是
@@ -2071,8 +1698,9 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 的 BlobRef 来源）→ `Transcriber.Transcribe` 拿文本 → 文本作为**唯一的 Part** 入树（音频本身不随消息发给模型：
 模型只见转写文本，§4.2）。转写失败时整条输入失败并报因，不静默发一条空消息。
 
-- **转写结果先回填输入框、不直接发送**（GUI）：语音识别有误差，直接发送等于替用户按了回车。
-  `/mic` 命令（repl/tui）无输入框可回填，走「录 → 转写 → 作为一条用户输入提交」，并在转写区标注来源。
+- **转写结果不直接发送**：GUI 回填输入框（点发送才算数——识别有误差，直接发送等于替用户按回车），
+  见 [gui-design.md](gui-design.md)；`/mic`（repl/tui）无输入框可回填，走「录 → 转写 → 作为一条
+  用户输入提交」，并在转写区标注来源。
 - **采集串行**：同一时刻只允许一个录音，重复触发提示「正在录音」而不是开第二路。
 - **非 Windows**：采集器报不支持（`ErrCaptureUnsupported` 同族），命令与按钮照常存在但明确告知。
 
@@ -2087,49 +1715,10 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 
 ### 7.3 命令体系
 
-| 命令 | 作用 |
-|---|---|
-| `/new` `/list` `/switch <id前缀>` `/quit` `/exit` | 新会话（清屏，D75）/ 列会话 / **切到既有会话**（唯一前缀解析，清屏并回放目标会话可见历史，D75）/ 退出（`/exit` = `/quit` 别名） |
-| `/title [文本]` | 查看 / 改写会话标题（会话元数据，即时落盘） |
-| `/compact` | 触发上下文压缩：生成 system 摘要节点，水位上历史不再回传（§7.1 三轨之一） |
-| `/permission [等级]` | 查看 / 切换权限等级（read-only/strict/permissive/full-access，写回 config） |
-| `/unattended [on\|off]` | 查看 / 切换**无人值守**（D185）：开关写回 config；开启期间模型发起的越界确认一律当场拒绝并说明，轮次不阻塞。用户亲手输入的命令确认（`/rm` 等）照常询问 |
-| `/edit <id> [--keep\|--copy] [--part N] [--attach <路径>] [--drop <序号>] [--drop-all] <文本>` | Revise：默认 **Fresh**（新分支重新开始）；`--keep` = Carry（后续历史边转移）；`--copy` = Clone（后续历史深拷贝为独立副本，D96/D97）；`--part N` 只替换第 N 个正文分片；**附件增删**（D188）：`--attach` 可重复（走摄取管线追加到末尾）、`--drop` 按附件分片 0 基序移除、`--drop-all` 全删，有附件操作时文本可空（只改附件）；修订后**清屏回放**（D92：Head 移动类命令统一口径）；修订**用户消息**（Fresh）即重新生成回答（D93：编辑即重发）；Carry/Clone 与 assistant/system 修订一律不触发生成（D97） |
-| `/goto <id>` | Head 移到任意节点（分支导航）；**清屏 + 回放**新路径（D81，与 `/switch` 同口径） |
-| `/regen <id>` | 重新生成（D92）：id 可为用户或助手消息——取上游最近用户消息 Revise Fresh 开同父兄弟重发（旧回答保留为历史分支），清屏回放后跑 Turn；上游用户消息**尚无回答**时直接生成、不重复分叉（D93） |
-| `/respond <id>` | 生成响应（D165）：把 Head 移到所选节点后跑 Turn——发往 API 的即「水位 → 所选节点（含）」；产物为该节点的 assistant 子节点，已有子节点则**开新分支**（旧分支保留）。id 可为任意**非根**节点（含人格 / 系统 / 工具节点），根拒绝 |
-| `/branch [id]` | 展示同级分叉（新旧版本对比） |
-| `/tree-edit [--exit\|--done\|--cancel]` | 进入 / 退出**树编辑会话**（D258）：进入后 `/reparent` 只在内存生效、关系图实时变化，退出时一次落盘；`--exit` = 状态栏开关关掉时走的那条（有改动按下面的三选一，不在模式里不算错），`--done` = 保存退出，`--cancel` = 回滚不保存；无参进入，已在会话中则回显状态 |
-| `/reparent <id> <新父>` / `/reparent --undo` | 改父（D255）：整棵子树挪到新父下、成为**末子**；新父不能是 Root、不能是自己或严格后代。`--undo` 反做最近一条溯源路牌。会话中只改内存，会话外立即落盘 |
-| `/summary <id> [文本]` | 在节点 **之前**插入摘要（D152）：新建 system 摘要节点并把该节点及其子树整体挪到其后（单条边转移），摘要成为水位；**不带文本 = 让当前模型总结其上历史后插入**，带文本 = 直接用手写摘要 |
-| `/inject [--source <名>] [--no-trigger] <文本>` | 手动注入一条上下文（D150）：入树为 inject 节点；`--no-trigger` 只入上下文不起响应。工具/MCP/观察器走同一内核入口，不经此命令 |
-| `/rm <id>` | Prune 剪子树（二次确认） |
-| `/rmconv <id前缀> [<id前缀>…]` | 删除整个会话（D157，二次确认；单个 ID 的用法与回执不变）。**多个 ID**：先全部解析、再一次确认、最后才动库——有一个解析不出就一个都不删；删到当前会话时继任者跳过本批要删的（批量删除见 §5.16） |
+**逐条命令的用法与语义见 [usage.md](usage.md) 的命令表**——那份是用户面的一手说明（参数形状、边界、
+二次确认、清屏回放口径都写在那儿）。本节只记**机制**，不再抄第二份表格：两处各写一遍，漂移只是时间问题。
 
-| `/memory [会话id前缀]` | 用系统编辑器打开记忆文件（缺省全局 `memories.md`；带参开会话记忆，D24） |
-| `/usage` | 用量查看：当前上下文占用（精确/≈估算）、上轮实测 prompt/completion、会话累计 |
-| `/model [name]` | 无参：列 `LLM.Models()` 可用模型 + 当前模型/能力/单价；有参：Agent 内热切换并写回 config（D32，同 `/permission` 模式）。`/model probe [名字]` = 实测能力并只写回判定明确的位（D174） |
-| `/think [on\|off]` | 无参：显示原生思考开关（缺省开）；有参：切换并写回 config `model.think`（D34）。**总开关**：off 时 `reasoning_effort` 与 `enable_thinking` 一律不发。当前链的模型不支持思考（D173 `caps` 无 `reasoning`）时同样不发，无参显示里注明「当前模型未声明思考能力」 |
-| `/effort [级别]` | 无参：显示当前 `reasoning_effort` 档位；有参：`minimal\|low\|medium\|high\|off`（off = 清除）写回 config `model.reasoning_effort`；**是否真发由 `/think` 决定**，on 且未设档则不发（交服务端默认，D34） |
-| `/jobs [list\|logs\|kill]` | 后台任务管理 |
-| `/watch [list\|stop <id>]` | 观察器（D190）：看模型声明在盯什么、已查几次、何时结束；`stop` 叫停（声明由模型经 `watch_start` 发起） |
-| `/plugin [list\|enable\|disable\|logs]` | MCP 插件管理（D31/D143）：list 显示状态/能力/重启与调用统计；enable/disable 写回 config `plugins.<name>.enabled`，即时生效；`logs [name]` = tail `audit.log` 的插件调用行（无参给各插件最近调用摘要，S6） |
-| `/skill [list\|<名字>]` | 技能（D201，§5.15）：无参或 `list` 列出已安装技能（名字 / 说明 / 来源目录 / 加载失败的条目与原因）；带名字 = 把该技能 `SKILL.md` 正文**注入成一条宿主上下文节点**（不触发新一轮，模型下次装配即可见），并显示目录绝对路径 |
-| `/skill install <路径\|链接>` | 安装技能（D202/D203，§5.15）：单文件 `SKILL.md` / 文件夹 / `.zip` / GitHub 链接（`url#分支`）；同名不覆盖 |
-| `/skill remove <名字>` | 卸载安装副本（仅 `<profile>/skills/<名字>`；来自 `skills.dirs` 的技能请在文件系统里处理） |
-| `/skill update <名字\|all>` | 更新：git 来源拉取、压缩包来源重新下载后覆盖副本；不带名字 = 更新全部可更新项 |
-| `/export [--format <name>] [--path <文件>] [--all \| --ids <id>[,<id>…]]` | 导出会话（D242/D249，§5.16）：缺省只导**当前**会话，`aqx`（无损，可原样回来）；`chatgpt`（树形互通，给 Open WebUI 一类吃）、`openai` / `sillytavern`（线性，取 Head 路径）。`--all` = 把整库写进一份 `aqx` 备份、`--ids` = 只写列出的那几个会话（两者互斥；一份可装多个会话；其它格式一次只能一个会话，给了就报错）。回执明说丢了什么 |
-| `/import [--pick <序号>] <文件>` | 导入外部会话（D242/D249）：按扩展名与文件头认 `aqx` / ChatGPT / Open WebUI / SillyTavern；落成**新**会话，不覆盖既有会话。`aqx` 可装多个会话：不带 `--pick` 全导，`--pick 1,3` 只导清单里那几项（序号 1 起，越界报因并列出清单）；其余格式只有一项，`--pick` 只认空或 `1` |
-| `/character list` | 角色卡列表（D243/D247，§5.17）：显示名 / slug / 来源 / 开场数与备用问候数 / 世界书条目数（注入了多少、保留多少）/ 导入警告 |
-| `/character show <slug>` | 角色卡详情：创作者、版本、标签、头像有无、保留但未使用的资产与世界书、原卡警告；正文含 HTML 时提示界面按纯文本显示 |
-| `/character import <路径>` | 导入角色卡（PNG / JSON / `.charx`）：解析后原卡逐字节留档；同名不覆盖，先 remove 再导入；回执按四类（世界书 / 资产 / 不执行的机制 / 只展示字段）说清读了什么、没读什么 |
-| `/character start <slug> [序号]` | 用角色卡开**新会话**：卡的字段按 `@char.*` 模块进人格，示例进注入节点，开场白（或第 N 条备用问候）作首条 assistant 消息；清屏并回放开场 |
-| `/character remove <slug>` | 删除角色卡目录（二次确认）；已引用它的会话照常可用，只是头像回落默认 |
-| `/delegate [list]` | 外部代理清单（D244，§5.18）：名字 / 命令行 / 版本 / 可用性（PATH 上探没探到）/ 不可用原因 / 哪个是缺省；无参同 `list`。**只有 list**：转交是模型经 `delegate` 工具发起的，用户不在这里替它写任务描述 |
-| `/mcp:<server>:<prompt>` | MCP prompts 暴露的动态命令（随插件 enable/disable 注册/注销，§6.3；经 CommandHandler 扩展点） |
-| `/help` | 帮助 |
-
-**命令注册表**（D245）：上表每一行在代码里就是**一条记录**——元数据（主名与别名、参数用例、
+**命令注册表**（D245）：每条命令在代码里就是**一条记录**——元数据（主名与别名、参数用例、
 一句话描述）与处理函数同一行，`/help`、补全浮层与执行分派读同一张表，别名并进同一张索引。
 查表未命中才落到动态命令（`/mcp:<server>:<prompt>`，随插件启停注册），再未命中才报未知命令。
 **加一条命令 = 表里加一行**，不再有「表与 switch 两处同时改」的第二处。
@@ -2213,7 +1802,8 @@ UI 要画分叉按钮（[gui-design.md](gui-design.md) §15.3）与会话树界�
   上下文节点，见 §4.1）→ `ok=false`。**版本组跨过衬垫**：插在某个节点之前的摘要会占掉它的
   结构父位，若按「同父孩子」计数，原来同父的两个回答会被拆到两个组里、各自 1/1，图上的
   分叉编号与左右切换随之消失；衬垫透明、它的孩子提升到祖父那一层后，a1/a2 仍是 1/2、2/2，
-  衬垫自己不占槽位（`SiblingCount` 为 0）。一句话：**分组键是最近的非衬垫祖先，不是结构父**。- **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
+  衬垫自己不占槽位（`SiblingCount` 为 0）。一句话：**分组键是最近的非衬垫祖先，不是结构父**。
+- **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
   `{Anchor, Nodes[], Total}`，`GraphNode{ID, Parent, Role, Snippet, CreatedAt, EdgeKind,
   SiblingIdx, SiblingCount}`（`Anchor` = 当前 Head 锚点；`EdgeKind` = 与父边的种类
   `顺接|版本链`；`Total` 供「共 N · 呈现 M」的 A7 口径）；与 `Branches`/`Tail` 同源、

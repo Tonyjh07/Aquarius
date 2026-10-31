@@ -1,5 +1,5 @@
 # GUI 设计规格（`internal/adapter/uigui`）
-<!-- docs-sync: 2026-10-31 @ 1289048 -->
+<!-- docs-sync: 2026-10-31 @ 38a470c -->
 
 > `ui.kind=gui` 那一层壳的实现规格：悬浮球形态、输入栏与转写浮层、主题令牌、多窗宿主、
 > 响应式缩放、气泡菜单。**内核设计不在这里**——领域、端口、应用层与存储见
@@ -753,7 +753,7 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   带回来（唯一入参兼出参的字段，进去预选、回来是用户的最终选择）；非 Windows 的三个命令只回
   路径，平台报 `-1`，宿主按落点扩展名回落（`.jsonl`→sillytavern、`.json`→chatgpt、其余→aqx）。
   落点扩展名随格式改正：已知格式的扩展名换成本档的，点名与无扩展名只补不切——否则「选了
-  SillyTavern 却存成 `.aqx`」仍是空头承诺。完整口径见 [contracts.md](contracts.md) §5.16。
+  SillyTavern 却存成 `.aqx`」仍是空头承诺。
 
   平台侧的对话框是**通用请求**（`OpenRequest` / `SaveRequest` + `FilePurpose`），与附件槽的
   多选（`RequestFileDialog`）、技能目录选择（`RequestPathPick`）分开：三者语义不同，共用一体
