@@ -110,6 +110,7 @@ func (g *relGraph) nodeMenuCtx(u *UI, li int) *bubbleMenuCtx {
 		return nil
 	}
 	ctx := &bubbleMenuCtx{id: n.id, kind: relNodeKind(n.role), part: -1, graph: true}
+	ctx.frozen = g.editOn // D258：编辑期菜单只留只读项（见 menu.go 的 nodeMenuItems）
 	// D152：会话根与会话首节点人格之外都可以插摘要（父是结构根的 system = persona）。
 	ctx.canSummary = n.role != conversation.RoleRoot &&
 		!(n.parent >= 0 && n.parent < len(g.model.nodes) &&

@@ -79,7 +79,7 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 	}
 	// 编辑态的拖动叠层（§5.6.3：提环 / 目标环 / 虚线预览）：压在卡片之上、光带之下。
 	if g.editOn {
-		g.drawEditOverlay(gtx)
+		g.drawEditOverlay(gtx, th)
 	}
 	// 树编辑光带（§5.6.2）压在最上层：它标的是「这块面板现在处于编辑态」，被卡片盖住就
 	// 读成卡片装饰了。亮度为 0 时整个函数空转（非编辑态一个 op 都不多）。

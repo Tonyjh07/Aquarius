@@ -41,7 +41,10 @@ type MenuItem struct {
 	ID      uintptr
 	Label   string
 	Checked bool
-	Sub     []MenuItem
+	// Disabled 置灰不可点（D258 树编辑模式：会改结构的项在编辑期一律灰掉）。
+	// 置灰而不是隐藏：项**消失**会让用户以为版本不支持，灰掉才读成「现在不行」。
+	Disabled bool
+	Sub      []MenuItem
 }
 
 // PickKind 专用选择框的用途（技能导入 D203 口径四 / 角色卡导入 §5.17）：决定过滤器与

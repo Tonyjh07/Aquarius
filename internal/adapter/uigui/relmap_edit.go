@@ -11,20 +11,24 @@ package uigui
 // 节点」之后叠加编辑语义——没开编辑模式时一切照旧（拖节点 = 摆位置）。
 
 import (
+	"fmt"
 	"image"
 	"math"
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
+	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 拖动改挂的档位（§5.6.3）。
+// 拖动改挂的档位：落点半径、淡出与呼吸时长、环宽、虚线步长（都是可调的呈现常数，
+// 不影响任何语义——把它们当成「手感旋钮」，改这些不需要改契约）。
 const (
 	relDropReachDp  = 48.0 // 落点判定半径（dp，屏幕口径——手势容差跟手不跟 zoom）
 	relDropFadeMs   = 120  // 旧父边淡出时长（拖起）
@@ -204,10 +208,11 @@ func (g *relGraph) endNodeDrag(u *UI, st *historyState, now time.Time) bool {
 	return true
 }
 
-// drawEditOverlay 编辑态的拖动叠层（§5.6.3）：被拖卡片的提环 + 目标环（呼吸）+ 一条虚线
-// 预览 + 改挂成功后的 400ms 目标环。非拖动期只剩最后一层。
-func (g *relGraph) drawEditOverlay(gtx layout.Context) {
+// drawEditOverlay 编辑态的叠层：图区胶囊（§5.6.1）+ 拖动叠层（§5.6.3：被拖卡片的提环 +
+// 目标环（呼吸）+ 一条虚线预览）+ 改挂成功后的 400ms 目标环。
+func (g *relGraph) drawEditOverlay(gtx layout.Context, th *material.Theme) {
 	now := gtx.Now
+	g.drawEditCapsule(gtx, th)
 	if g.dropFlashActive(now) {
 		if li := g.localOf(g.flash.id); li >= 0 {
 			p := g.flashProgress(now)
@@ -229,6 +234,43 @@ func (g *relGraph) drawEditOverlay(gtx layout.Context) {
 	pulse := relDropPulseMin + (1-relDropPulseMin)*(0.5+0.5*math.Sin(2*math.Pi*phase))
 	g.dropRing(gtx, g.dropTarget, pulse)
 	g.dropDash(gtx)
+}
+
+// drawEditCapsule 图区左上角的模式胶囊（§5.6.1）：「编辑树 · 拖动节点改挂 · 已改 N 处」。
+//
+// 光晕只说明「模式开了」，胶囊说明「拖了会发生什么」——两者不可互相替代，所以这条不随
+// 拖动状态出现或消失（那会让说明在最需要的时候缺席）。
+func (g *relGraph) drawEditCapsule(gtx layout.Context, th *material.Theme) {
+	text := relEditCapsuleText(g.editCount)
+	sp := float64(paperMicroSp(th))
+	padX, h := gtx.Dp(unit.Dp(10)), gtx.Dp(unit.Dp(22))
+	w := int(relEstTextW(text, sp)) + 2*padX
+	// 标签的实际排版宽由字体决定，估宽偏小会让文字贴边——两端各留 2dp 余量。
+	w += gtx.Dp(unit.Dp(4))
+	off := op.Offset(image.Pt(gtx.Dp(unit.Dp(12)), gtx.Dp(unit.Dp(12)))).Push(gtx.Ops)
+	defer off.Pop()
+	box := image.Rect(0, 0, w, h)
+	pp := paperOf()
+	paint.FillShape(gtx.Ops, pp.card, clip.UniformRRect(box, h/2).Op(gtx.Ops))
+	edge := pp.accent
+	edge.A = 0x80
+	paint.FillShape(gtx.Ops, edge,
+		clip.Stroke{Path: clip.UniformRRect(box, h/2).Path(gtx.Ops), Width: float32(gtx.Dp(unit.Dp(1)))}.Op())
+	st := op.Offset(image.Pt(padX, h/2-int(sp*float64(gtx.Metric.PxPerSp))/2)).Push(gtx.Ops)
+	gtx.Constraints = layout.Exact(image.Pt(w, h))
+	l := material.Label(th, unit.Sp(float32(sp)), text)
+	l.Color = pp.accent
+	l.MaxLines = 1
+	l.Layout(gtx)
+	st.Pop()
+}
+
+// relEditCapsuleText 胶囊文案（纯函数，可测）：没改过时不提处数——「已改 0 处」是噪音。
+func relEditCapsuleText(edits int) string {
+	if edits <= 0 {
+		return "编辑树 · 拖动节点改挂"
+	}
+	return fmt.Sprintf("编辑树 · 拖动节点改挂 · 已改 %d 处", edits)
 }
 
 // dropRing 围绕某节点的卡片盒画一圈 2dp 环（alpha 由调用方给）。

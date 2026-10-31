@@ -71,6 +71,8 @@ type menuIt struct {
 	label   string
 	checked bool
 	sub     []menuIt // 非空 = 二级菜单（D73：权限四档）
+	// disabled 置灰不可点（D258 树编辑期）：项消失会读成「不支持」，灰掉才读成「现在不行」。
+	disabled bool
 }
 
 // logoMenuItems logo 右键菜单（D72/D73/D185，项序/文案为契约、测试锁定）：置顶勾选随
@@ -154,7 +156,12 @@ func bubbleMenuItems(kind blockKind, canRespond bool) []menuIt {
 // canSummary=false（会话根与会话首节点人格）时不给「插入摘要」：根前无处可插；人格之前
 // 也不该出现摘要——摘要会顶到路径第二位、被装配当成 persona（水位语义随之失效）。
 // 注：会话根整份菜单在 openNodeMenu 处已被拦（2026-10-25 用户批注），本函数不再对根设门。
-func nodeMenuItems(kind blockKind, hasText, canSummary bool) []menuIt {
+// frozen=true（树编辑模式期，D258/§5.6.5）时**只留只读项**：编辑三项、重新生成、生成响应、
+// 插入摘要、删除全部置灰。设计稿原写「删除/切版本/插入摘要/生成响应四项」，落码扩到编辑类，
+// 依据是同一节的纲：「编辑期结构只经拖拽一条路径变化」——编辑（Fresh/Carry/Clone）与重新生成
+// 都会造成结构改动，留着它们等于开第二条路径。只读项（复制 / 复制 ID / 查看原文）与引用
+// （只往输入框追加文字，不动树）照常。
+func nodeMenuItems(kind blockKind, hasText, canSummary, frozen bool) []menuIt {
 	var head []menuIt
 	switch {
 	case !hasText:
@@ -173,10 +180,26 @@ func nodeMenuItems(kind blockKind, hasText, canSummary bool) []menuIt {
 	if canSummary {
 		items = append(items, menuIt{id: cmdNodeSummary, label: "插入摘要"})
 	}
-	return append(items,
+	items = append(items,
 		menuIt{id: cmdNodeRm, label: "删除该节点及子树"},
 		menuIt{id: cmdNodeGoto, label: "转到"},
 	)
+	if frozen {
+		for i := range items {
+			items[i].disabled = frozenCmd(items[i].id)
+		}
+	}
+	return items
+}
+
+// frozenCmd 树编辑期要置灰的命令（会改结构的那些）。
+func frozenCmd(id uintptr) bool {
+	switch id {
+	case cmdBubbleEdit, cmdBubbleEditKeep, cmdBubbleEditCopy, cmdBubbleRegen,
+		cmdNodeRespond, cmdNodeSummary, cmdNodeRm:
+		return true
+	}
+	return false
 }
 
 // permLevelOf 当前权限档（D73 子菜单勾选源）：Status 现取（可跨 goroutine 读——
@@ -210,7 +233,7 @@ func (u *UI) menuItems(kind platform.MenuKind) []platform.MenuItem {
 			return nil
 		}
 		if ctx.graph { // D132：图侧节点菜单 = 气泡项集 + 图侧四项
-			return toMenuItems(nodeMenuItems(ctx.kind, ctx.copy != "", ctx.canSummary))
+			return toMenuItems(nodeMenuItems(ctx.kind, ctx.copy != "", ctx.canSummary, ctx.frozen))
 		}
 		return toMenuItems(bubbleMenuItems(ctx.kind, ctx.id != ""))
 	}
@@ -222,10 +245,11 @@ func toMenuItems(items []menuIt) []platform.MenuItem {
 	out := make([]platform.MenuItem, 0, len(items))
 	for _, it := range items {
 		out = append(out, platform.MenuItem{
-			ID:      it.id,
-			Label:   it.label,
-			Checked: it.checked,
-			Sub:     toMenuItems(it.sub),
+			ID:       it.id,
+			Label:    it.label,
+			Checked:  it.checked,
+			Disabled: it.disabled,
+			Sub:      toMenuItems(it.sub),
 		})
 	}
 	return out
@@ -249,6 +273,11 @@ func (u *UI) menuChosen(kind platform.MenuKind, id uintptr) {
 // 下一帧 gtx.Execute(clipboard.WriteCmd)（剪贴板写入必须在 Gio 帧）；引用 = quoteMsg →
 // 输入框追加引用块（Gio 侧 apply）。
 func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
+	// D258 纵深防御：编辑期开出的图侧菜单里那些项**画出来就是灰的**，正常点不到；这里再
+	// 拦一道，防「菜单开着时进了编辑模式」这类时序（置灰只是呈现层的约定，不是权限）。
+	if ctx.graph && ctx.frozen && frozenCmd(r) {
+		return
+	}
 	// D132/D139：图侧触发（消息管理面在次窗）时，动作一律落到**本窗**遮罩，不再投主窗
 	// 输入栏/另开次窗——编辑三项 = 开遮罩并预选方式、「查看原文」= 开遮罩并定位源码页签。
 	// 气泡侧右键时主窗必在前景，编辑进输入栏、查看原文进 winRaw 的老口径**不变**。

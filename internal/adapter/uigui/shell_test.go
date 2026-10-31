@@ -447,7 +447,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 	full = append(full, graph...)
 
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
-		got := nodeMenuItems(kind, true, true)
+		got := nodeMenuItems(kind, true, true, false)
 		if len(got) != len(full) {
 			t.Fatalf("%v 图菜单项数 = %d, want %d", kind, len(got), len(full))
 		}
@@ -460,7 +460,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 	}
 	// root/system（blockPlain）：不给编辑三方式与重新生成，但仍给「生成响应」（从系统
 	// 节点续写也合法；根节点整份菜单在图侧另拦，不在此处）。
-	got := nodeMenuItems(blockPlain, true, true)
+	got := nodeMenuItems(blockPlain, true, true, false)
 	want := append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, respond, {}}, graph...)
 	if len(got) != len(want) {
 		t.Fatalf("root/system 项数 = %d, want %d", len(got), len(want))
@@ -471,7 +471,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 		}
 	}
 	// 无正文节点：只剩「生成响应」 + 图侧项（不拿空文本预填编辑框）。
-	got = nodeMenuItems(blockUser, false, true)
+	got = nodeMenuItems(blockUser, false, true, false)
 	want = append([]menuIt{respond, {}}, graph...)
 	if len(got) != len(want) {
 		t.Fatalf("无正文项数 = %d, want %d", len(got), len(want))
@@ -482,7 +482,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 		}
 	}
 	// 不可插目标（会话根 / 会话首节点人格）：少「插入摘要」，其余不变。
-	got = nodeMenuItems(blockPlain, true, false)
+	got = nodeMenuItems(blockPlain, true, false, false)
 	want = append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, respond, {}}, graphNoSummary...)
 	if len(got) != len(want) {
 		t.Fatalf("不可插目标项数 = %d, want %d", len(got), len(want))

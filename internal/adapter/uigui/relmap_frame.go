@@ -208,6 +208,7 @@ type relGraph struct {
 	// 据此决定要不要画叠层）；dropTarget = 落点预演的最近合法目标（-1 无）；
 	// dragFade = 旧父边的淡出补间；flash = 改挂成功后目标环的 400ms 高亮。
 	editOn     bool
+	editCount  int // 已改处数（胶囊里的「已改 N 处」；来自 st.teEdits）
 	dropTarget int
 	dragFade   relTween
 	flash      dropFlash
@@ -390,6 +391,16 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	if !st.modalActive(u) {
 		g.update(gtx, u, st)
 	}
+	// 编辑态光标（§5.6.1）：节点上 = grab、拖动中 = grabbing、空白处也是 grab（平移）。
+	// 只在编辑态设——平时的指针形状交给系统，不抢。光标 op 必须落在本栏 clip 内：
+	// 否则它会连左栏会话列表一起改掉。
+	if g.editOn {
+		cur := pointer.CursorGrab
+		if g.dragNode >= 0 {
+			cur = pointer.CursorGrabbing
+		}
+		cur.Add(gtx.Ops)
+	}
 	stack.Pop()
 	// 拖拽/收敛中的交互态：本帧松弛后若还要继续，追加一次重绘请求（Gio 的动画口径，
 	// 比 Window.Invalidate 轻；收敛即停 → R3 随即恢复）。
@@ -401,7 +412,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	// 树编辑光带（§5.6.2）：进出动画只在过渡期续帧，静止即停（与物理收敛同一纪律）。
-	g.editOn = st.teOn
+	g.editOn, g.editCount = st.teOn, st.teEdits
 	if g.stepGlow(gtx.Now, st.teOn) {
 		gtx.Execute(op.InvalidateCmd{})
 	}

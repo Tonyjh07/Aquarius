@@ -24,6 +24,7 @@ const (
 	mfString    = 0x00000000
 	mfSeparator = 0x00000800
 	mfChecked   = 0x00000008 // 勾选（置顶开关当前态）
+	mfGrayed    = 0x00000001 // 置灰不可点（D258：编辑期禁改结构的项）
 	mfPopup     = 0x00000010 // 二级菜单：父项 uIDNewItem = 子菜单句柄（D73 权限档）
 	tpmRightBtn = 0x0002
 	tpmRetCmd   = 0x0100 // 返回命令 ID（不再发 WM_COMMAND）
@@ -75,6 +76,9 @@ func (p *Plat) buildMenu(items []MenuItem) uintptr {
 		f := uintptr(mfString)
 		if it.Checked {
 			f |= mfChecked // 勾选 = 当前置顶态 / 当前权限档
+		}
+		if it.Disabled {
+			f |= mfGrayed // 置灰：MF_GRAYED 同时吃掉点击与加速键（不必再 EnableMenuItem）
 		}
 		procAppendMenuW.Call(menu, f, it.ID, uintptr(unsafe.Pointer(lab)))
 	}
