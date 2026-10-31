@@ -203,6 +203,14 @@ type relGraph struct {
 
 	// glow 树编辑模式的内缘光带帧态（§5.6.2：扫亮 / 呼吸 / 淡出，见 relmap_glow.go）。
 	glow glowState
+
+	// 树编辑的拖动改挂帧态（§5.6.3，见 relmap_edit.go）：editOn = 本帧的模式状态（绘制侧
+	// 据此决定要不要画叠层）；dropTarget = 落点预演的最近合法目标（-1 无）；
+	// dragFade = 旧父边的淡出补间；flash = 改挂成功后目标环的 400ms 高亮。
+	editOn     bool
+	dropTarget int
+	dragFade   relTween
+	flash      dropFlash
 }
 
 // relSlot 手动槽位（帧层按消息 ID 记，与 relmap_layout 的 setSlot 对接；D127 横树）。
@@ -217,8 +225,11 @@ type relSlot struct {
 
 // newRelGraph 构造右图帧态（默认 zoom = 1.0；首帧数据适配整树，见 frame 的 everFit）。
 func newRelGraph() *relGraph {
-	return &relGraph{zoom: 1.0, z: 1, dpx: 1, spx: 1, hover: -1, pressNode: -1,
-		grabNode: -1, dragNode: -1, tag: 1, relaxLeft: relSettleFrames}
+	g := &relGraph{zoom: 1.0, z: 1, dpx: 1, spx: 1, hover: -1, pressNode: -1,
+		grabNode: -1, dragNode: -1, dropTarget: -1, tag: 1, relaxLeft: relSettleFrames}
+	g.dragFade.v = 1 // 未拖时旧父边是实线
+	g.dragFade.from, g.dragFade.to = 1, 1
+	return g
 }
 
 // rebuild 数据变更 / rebudget 时重排（R3）：派生几何 → 新物理布局 → 播种 → 重置交互态。
@@ -264,6 +275,7 @@ func (g *relGraph) rebuild(m *relModel, vis relVisible) {
 	g.dragNode = -1
 	g.menuArm = false
 	g.menuNode = -1
+	g.resetDrop()
 }
 
 // restoreSlots 把手动槽位按消息 ID 套回新布局（D126）：新图里还在的节点保持用户摆过的
@@ -384,7 +396,12 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	if g.tickLayout() {
 		gtx.Execute(op.InvalidateCmd{})
 	}
+	// 改挂成功后的目标环高亮（400ms）也要帧：它是一段短动画，跑完即停。
+	if g.dropFlashActive(gtx.Now) {
+		gtx.Execute(op.InvalidateCmd{})
+	}
 	// 树编辑光带（§5.6.2）：进出动画只在过渡期续帧，静止即停（与物理收敛同一纪律）。
+	g.editOn = st.teOn
 	if g.stepGlow(gtx.Now, st.teOn) {
 		gtx.Execute(op.InvalidateCmd{})
 	}
@@ -549,10 +566,17 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 					if g.grabNode >= 0 { // 按在节点上 = 拖节点（不进平移）
 						g.dragNode = g.grabNode
 						g.relaxLeft = relSettleFrames
+						if st.teOn { // 编辑态：旧父边淡出（§5.6.3「这条边走不通了」）
+							g.beginDropFade(gtx.Now)
+						}
 					}
 				}
 				if g.dragNode >= 0 {
 					g.dragPX, g.dragPY = e.Position.X, e.Position.Y
+					if st.teOn {
+						// 落点预演每帧一次（§5.6.6：可见节点 ≤ 240，矩形最近边距离，O(n)）。
+						g.dropTarget, _ = g.dropCandidate()
+					}
 				} else if g.dragging {
 					g.fitFollow = false
 					g.offX = g.panStartOffX + dx
@@ -572,7 +596,10 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 			if g.pressed {
 				g.pressed = false
 				if g.dragNode >= 0 {
-					g.releaseDrag() // 拖过 = 移动节点，不开遮罩
+					// 编辑态且落在合法目标上 = 改挂（投 /reparent）；其余照旧 = 移动节点。
+					if !g.endNodeDrag(u, st, gtx.Now) {
+						g.releaseDrag()
+					}
 				} else if !g.dragging && g.pressNode >= 0 &&
 					g.pressNode == g.hitTest(e.Position.X, e.Position.Y) {
 					// 原位抬起（未拖拽）：会话根 = 复制会话 ID（2026-10-25 用户批注）；

@@ -32,6 +32,12 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 	for li, gi := range g.vis.nodes {
 		local[gi] = li
 	}
+	// 编辑态拖节点时，它那条**旧父边**要淡出（§5.6.3）：边的存在表达「它挂在那儿」，
+	// 而这一刻它正在被搬走——留着实线读起来像「拖不动」。
+	dragGlobal, fade := -1, 1.0
+	if g.editOn && g.dragNode >= 0 && g.dragNode < len(g.vis.nodes) {
+		dragGlobal, fade = g.vis.nodes[g.dragNode], g.fadeEdgeAlpha(gtx.Now)
+	}
 	for _, e := range g.vis.edges {
 		from, to := e[0], e[1] // 全局索引
 		fli, lok1 := local[from]
@@ -39,12 +45,22 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 		if !lok1 || !lok2 {
 			continue // 端点不在可见集（预算裁剪），跳过
 		}
+		edgeFade := 1.0
+		if to == dragGlobal {
+			if fade <= 0.02 {
+				continue
+			}
+			edgeFade = fade
+		}
 		fx, fy := g.toScreen(g.sol.Pos[fli])
 		tx, ty := g.toScreen(g.sol.Pos[tli])
 		if !relInBox(vp, fx, fy) && !relInBox(vp, tx, ty) {
 			continue
 		}
 		fill := paperOf().depth[relPaletteIndex(g.model.nodes[from].level)] // 边色 = source 填充色
+		if edgeFade < 1 {
+			fill.A = uint8(float64(fill.A) * edgeFade)
+		}
 		// 主干（A11）改由**边描边 + 本色加粗**表达：先铺一条窗底色的粗线当描边（把主干
 		// 从背景与相邻卡片里抬出来），再画本色细线。节点上不再套白圈。
 		path := g.model.nodes[from].inPath && g.model.nodes[to].inPath
@@ -60,6 +76,10 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 			continue
 		}
 		g.drawNodeCard(gtx, th, gi, xs, ys)
+	}
+	// 编辑态的拖动叠层（§5.6.3：提环 / 目标环 / 虚线预览）：压在卡片之上、光带之下。
+	if g.editOn {
+		g.drawEditOverlay(gtx)
 	}
 	// 树编辑光带（§5.6.2）压在最上层：它标的是「这块面板现在处于编辑态」，被卡片盖住就
 	// 读成卡片装饰了。亮度为 0 时整个函数空转（非编辑态一个 op 都不多）。
