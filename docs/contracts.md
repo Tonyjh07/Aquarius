@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ b4d39cb -->
+<!-- docs-sync: 2026-10-31 @ fbc3689 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1329,7 +1329,21 @@ type Delegate interface {
 承诺替它读写文件、替它管终端，那是一整条新的能力面（也是它把权限交回我们手里的唯一理由）。
 v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP server 提供工具），不申报正好顺着
 演进方向走。**同理不把我们自己的 MCP server 转发给它**：它的工具面归它自己，转发等于把两套
-授权链搅在一起，出了事也说不清是谁批的。
+授权链搅在一起，出了事也说不清是谁批的。申报已排进后续（`plan.md` 的「外部代理能力扩张」）——
+到那时要连带落根集判定与进程监管，不是开关一开；而且它不是「更安全」的开关：申报 `terminal`
+意味着命令改由**我们**执行，能拦是收益，代价是我们按当前用户身份替它跑任意命令，本仓没有沙箱。
+
+**传输层**：`coder/acp-go-sdk`（v0.13.5），不自写连接层（D260）。两处机制是选它的实质理由——
+入站请求走独立 goroutine（否则一个等人确认的 `session/request_permission` 会顶住整个读循环，
+多路并行时连带卡死别的会话）、通知走串行队列并给响应打水位屏障（响应不得早于它前面的通知被
+处理；自写时漏这条，报告里就会丢最后几条更新）。代价照旧：SDK 的 `Client` 是九个方法，
+`fs` 两个与 `terminal` 五个本版只能写成返回 `-32601` 的桩；且它按字段形状猜未知变体
+（`compaction_summary_chunk` 会落进 `UserMessageChunk`），我们拿不到原始 `sessionUpdate` 值。
+
+**登录**：`initialize` 的 `authMethods` 非空即表示对方要求的认证尚未完成，此时 `session/new`
+回 `-32000 Authentication required`。本版**不实现 `authenticate`**（要在应用内完成登录，就得
+再加一条方法与一个交互面）：把 `authMethods` 的名字与描述拼成可执行指引（「先在该代理自己的
+终端里跑一遍、完成登录」）写进失败原因，不把错误码原样抛给用户。
 
 **配置与发现**：配置形状照 `mcpServers` 抄——`command` / `args` / `env`（值支持 `secret:`），
 另加 `workdir` / `enabled` / `default`。**不内置各家预设**：registry 里四十多家代理的命令名、
@@ -1366,8 +1380,14 @@ this build`），后者照实回传。将来加一条 `session/resume` 与句柄
 `limits.tool_timeout_sec`（缺省 60s）当成「卡住」。另设一道总闸 `delegate.timeout_sec`
 （缺省 1800，`0` = 不限），防的是进程挂住把轮次钉死。取消（ESC / 停止键 / Ctrl+C）=
 先发 `session/cancel` 通知，等它把 `session/prompt` 收成 `cancelled`，宽限 2 秒后仍不返回
-就杀进程组；杀进程后回填「已取消」而不是报错。**一个会话同时只允许一个转交**：第二个调用
-直接回填「已有转交在进行」，不排队——两路外部代理同时改同一棵树只会互相踩。
+就杀进程组；杀进程后回填「已取消」而不是报错。两条配套的硬要求：**① 取消不能走 ctx 取消**
+（SDK 的 `Prompt` 见 ctx 被取消会自己补发一条 `session/cancel` 然后立刻返回错误，`stopReason`
+与已交付正文一起丢）——要显式发通知、用独立计时器等响应；**② 待应答的
+`session/request_permission` 必须一并回 `cancelled`**（协议明文），漏了它子代理会挂在等权限上，
+2 秒宽限就退化成每次取消都杀进程。**一个会话同时只允许一个转交**：第二个调用
+直接回填「已有转交在进行」，不排队——两路外部代理同时改同一棵树只会互相踩。这条限制是
+**每会话**的：会话之间的并行是后续能力（`plan.md` 的「外部代理能力扩张」），届时
+`DelegateRunner.Run` 要能并发调用。
 
 **进程卫生**：Windows 下 `CREATE_NO_WINDOW`（同 `mcpgate`）；环境 = 父环境剔除 `AQUARIUS_*`
 + 配置 `env`；`stderr` 收进有界缓冲，只用于「它为什么起不来/为什么退出」这类报因，不进上下文；
