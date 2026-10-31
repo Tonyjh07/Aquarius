@@ -252,3 +252,40 @@ func TestRelDragOutsideEditModeJustMoves(t *testing.T) {
 		t.Fatalf("非编辑态不该有旧父边淡出，alpha = %v", g.dragFade.v)
 	}
 }
+
+// TestPinDetachedCutsParentSpring 编辑态拖起 = 与结构父断开（§5.6.3）：同样的拖起动作，
+// 连着时父被弹簧拽向被拖者，断开后只剩斥力（父几乎不动）；撤锚（松手）后连接自动恢复。
+//
+// 2026-10-31 实测报障：边已淡出，物理还拉着——手上是一根看不见的皮筋。
+func TestPinDetachedCutsParentSpring(t *testing.T) {
+	geo := []relGeoNode{
+		{Parent: -1, Level: 0, Weight: 1},
+		{Parent: 0, Level: 1, Weight: 1},
+	}
+	const dragged = 400.0 // 被拖者被拽到父右侧 400dp（远超 edgeLength = 100dp）
+	run := func(pin relPin, steps int) float64 {
+		l, ok := newRelLayout(geo)
+		if !ok {
+			t.Fatal("newRelLayout 拒绝两节点链")
+		}
+		l.setPositions([]relPoint{{X: 0, Y: 0}, {X: dragged, Y: 0}})
+		l.wake()
+		for i := 0; i < steps; i++ {
+			l.step(pin)
+		}
+		return l.x[1] - l.x[0]
+	}
+
+	attached := relPin{Valid: true, Index: 1, Pos: relPoint{X: dragged, Y: 0}}
+	if d := run(attached, 120); d > 200 {
+		t.Fatalf("连着时父子距离 = %.1f, want ≈ edgeLength（弹簧该把父拽过去）", d)
+	}
+	cut := attached
+	cut.Detached = true
+	if d := run(cut, 120); d < dragged*0.95 {
+		t.Fatalf("断开后父子距离 = %.1f, want ≈ %.1f（父不该再被拽向被拖者）", d, dragged)
+	}
+	if d := run(relPin{}, 400); d > 200 {
+		t.Fatalf("撤锚后父子距离 = %.1f, want ≈ edgeLength（松手后连接应恢复）", d)
+	}
+}

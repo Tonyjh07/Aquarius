@@ -86,10 +86,21 @@ type relSolution struct {
 // relPin 临时固定锚（D124，§5）：把某节点硬钉在世界坐标 (X, Y)——被钉者不参与积分，
 // 但继续对邻居施斥力、被边弹簧拉扯。零值 = 无固定（Valid 显式声明，避免把结构根
 // 悄悄钉死）。这是 R3 的交互态例外：拖拽中每帧带锚，松手锚消失、物理自然收敛。
+//
+// Detached = 被钉者此刻**不与结构父相连**（编辑态拖起，§5.6.3）：那条边的弹簧与结构锥形
+// 约束当帧撤掉，剩下的斥力/接触照旧。拖起时边已经淡出，若物理还拉着父子距离，手上是一根
+// 「看不见的皮筋」——用户看到的是「线断了但节点还是被拽着」，与直觉相反。松手未改挂时
+// 连接自然恢复（帧层撤锚，弹簧重接）。
 type relPin struct {
-	Valid bool
-	Index int
-	Pos   relPoint
+	Valid    bool
+	Detached bool
+	Index    int
+	Pos      relPoint
+}
+
+// linked 报告被钉者与 i 之间的父子连接当帧是否还在（Detached 时断）。
+func (p relPin) linked(i, parent int) bool {
+	return !(p.Valid && p.Detached && (i == p.Index || parent == p.Index))
 }
 
 // relLayout 常驻布局态：派生量（孩子表 / BFS 序 / 静息布局）只算一次，

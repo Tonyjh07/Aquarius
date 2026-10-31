@@ -353,6 +353,8 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		g.spx = 1
 	}
 	g.z = g.zoom * g.dpx
+	// 模式状态先同步：手势与物理本帧就要用它（编辑态拖动要断开父子连接，见 relPin.Detached）。
+	g.editOn, g.editCount = st.teOn, st.teEdits
 	// 视场调整只在这三处：拖后松手把树拉回视野（fitPending，不重置 zoom）；开窗首帧整树
 	// 适配（everFit，A13）；显式取景动作（viewPending：装下整树 / 两个聚焦域，D140）。
 	// **数据变更不碰视场**——用户的 zoom/平移是私有的，一条新消息进来不抢
@@ -412,7 +414,6 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	// 树编辑光带（§5.6.2）：进出动画只在过渡期续帧，静止即停（与物理收敛同一纪律）。
-	g.editOn, g.editCount = st.teOn, st.teEdits
 	if g.stepGlow(gtx.Now, st.teOn) {
 		gtx.Execute(op.InvalidateCmd{})
 	}
@@ -467,7 +468,8 @@ func (g *relGraph) tickLayout() bool {
 	}
 	pin := relPin{}
 	if g.dragNode >= 0 {
-		pin = relPin{Valid: true, Index: g.dragNode, Pos: g.dragPinWorld()}
+		// 编辑态拖起 = 与结构父断开（§5.6.3）：旧父边已淡出，物理不能还拽着父子距离。
+		pin = relPin{Valid: true, Detached: g.editOn, Index: g.dragNode, Pos: g.dragPinWorld()}
 	}
 	g.lay.step(pin)
 	g.sol = g.lay.solution()

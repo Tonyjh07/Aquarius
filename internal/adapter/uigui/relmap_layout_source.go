@@ -210,6 +210,9 @@ func (l *relLayout) stepSource(pin relPin) {
 		if p < 0 {
 			continue
 		}
+		if !pin.linked(i, p) {
+			continue // 编辑态拖起：与旧父的连接当帧撤掉（边已淡出，物理不该再拽）
+		}
 		dx, dy := l.x[i]-l.x[p], l.y[i]-l.y[p]
 		d := math.Hypot(dx, dy)
 		if d < 1e-9 { // 重合：给确定性微偏（源实现此处是随机方向——本仓要求可复现）
@@ -310,6 +313,9 @@ func (l *relLayout) stepSource(pin relPin) {
 		p := l.nodes[i].Parent
 		if p < 0 {
 			continue
+		}
+		if !pin.linked(i, p) {
+			continue // 同 ①：连接断了，锥形约束也不再把这个节点按在父的右边
 		}
 		minGap := relSrcConeFrac * relSrcEdgeLength
 		if gap := l.x[i] - l.x[p]; gap < minGap {
