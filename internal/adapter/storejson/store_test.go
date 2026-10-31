@@ -505,8 +505,82 @@ func TestSaveRejectsInvalidTree(t *testing.T) {
 	}
 }
 
+// TestRoundtripDetachments 溯源路牌落盘回环（D256）：写出的文件里有 detached 键，
+// 读回来锚点/子树根/新位置/种类/时刻一项不差。没有路牌时该键不出现（omitempty），
+// 旧文件缺这个键照常加载——TestLoadOldFileWithoutMetadataKeys 已覆盖缺键路径。
+func TestRoundtripDetachments(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	// 拿第一条 user 做 Carry：它的孩子（那条 assistant）整批转到新版本下。
+	first := c.Path()[1]
+	m, err := c.Revise(first.ID, []conversation.Part{{Kind: conversation.PartText, Text: "改问"}}, conversation.Carry)
+	if err != nil {
+		t.Fatalf("revise carry: %v", err)
+	}
+	want := c.Detachments()
+	if len(want) != 1 || want[0].NewHome != m.ID {
+		t.Fatalf("fixture detachments = %+v, want one pointing at %s", want, m.ID)
+	}
+
+	if err := s.Save(ctx, c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(s.dir, string(c.ID)+".json"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if !strings.Contains(string(body), `"detached"`) {
+		t.Fatalf("saved file lacks detached key:\n%s", body)
+	}
+	got, err := s.Load(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	gotDet := got.Detachments()
+	if len(gotDet) != len(want) {
+		t.Fatalf("detachments after roundtrip = %+v, want %+v", gotDet, want)
+	}
+	for i := range want {
+		g, w := gotDet[i], want[i]
+		// 时刻用 Equal 比：JSON 往返会丢掉单调时钟读数，不影响先后语义。
+		if g.Anchor != w.Anchor || g.NewHome != w.NewHome || g.Kind != w.Kind || !g.At.Equal(w.At) ||
+			len(g.Roots) != len(w.Roots) {
+			t.Fatalf("detachment %d = %+v, want %+v", i, g, w)
+		}
+		for j := range w.Roots {
+			if g.Roots[j] != w.Roots[j] {
+				t.Fatalf("detachment %d roots = %v, want %v", i, g.Roots, w.Roots)
+			}
+		}
+	}
+}
+
+// TestSavedTreeWithoutDetachmentsOmitsKey 没有搬过就不写这个键：文件保持干净，
+// 也让「有没有 detached 键」本身成为一条可读的事实。
+func TestSavedTreeWithoutDetachmentsOmitsKey(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	c := mustConv(t)
+	if err := s.Save(context.Background(), c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(s.dir, string(c.ID)+".json"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if strings.Contains(string(body), `"detached"`) {
+		t.Fatalf("saved file has detached key with no detachments:\n%s", body)
+	}
+}
+
 // TestLoadOldFileWithoutMetadataKeys 缺键即空（D243）：没有 character/tail 键的旧文件
-// 照常加载，两个元数据字段取零值——升级不要求迁移。
+// 照常加载，两个元数据字段取零值——升级不要求迁移。detached 同理（D256）。
 func TestLoadOldFileWithoutMetadataKeys(t *testing.T) {
 	s, err := New(t.TempDir())
 	if err != nil {

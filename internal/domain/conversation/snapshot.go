@@ -33,6 +33,8 @@ type Snapshot struct {
 	Edges []SnapshotEdge
 	// RevisedFrom 版本链，按新节点 ID 升序。
 	RevisedFrom []SnapshotEdition
+	// Detachments 溯源路牌（D256），按发生时刻升序；空 = 没有搬过。
+	Detachments []SnapshotDetachment
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -47,6 +49,15 @@ type SnapshotEdge struct {
 type SnapshotEdition struct {
 	New MessageID
 	Old MessageID
+}
+
+// SnapshotDetachment 一条溯源路牌（D256）。不带 Stale——那是现算的派生状态。
+type SnapshotDetachment struct {
+	Anchor  MessageID
+	Roots   []MessageID
+	NewHome MessageID
+	Kind    DetachmentKind
+	At      time.Time
 }
 
 // Snapshot 导出整棵树。返回的切片与新分配的结构不与内部表共享，调用方可随意改写。
@@ -80,6 +91,17 @@ func (c *Conversation) Snapshot() Snapshot {
 		s.RevisedFrom = append(s.RevisedFrom, SnapshotEdition{New: newID, Old: oldID})
 	}
 	sort.Slice(s.RevisedFrom, func(i, j int) bool { return s.RevisedFrom[i].New < s.RevisedFrom[j].New })
+
+	s.Detachments = make([]SnapshotDetachment, 0, len(c.detached))
+	for _, d := range c.detached {
+		s.Detachments = append(s.Detachments, SnapshotDetachment{
+			Anchor:  d.Anchor,
+			Roots:   append([]MessageID(nil), d.Roots...),
+			NewHome: d.NewHome,
+			Kind:    d.Kind,
+			At:      d.At,
+		})
+	}
 	return s
 }
 
@@ -113,6 +135,16 @@ func Restore(s Snapshot) (*Conversation, error) {
 	}
 	for _, ed := range s.RevisedFrom {
 		c.revisedFrom[ed.New] = ed.Old
+	}
+	c.detached = make([]Detachment, 0, len(s.Detachments))
+	for _, d := range s.Detachments {
+		c.detached = append(c.detached, Detachment{
+			Anchor:  d.Anchor,
+			Roots:   append([]MessageID(nil), d.Roots...),
+			NewHome: d.NewHome,
+			Kind:    d.Kind,
+			At:      d.At,
+		})
 	}
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("restore: %w", err)

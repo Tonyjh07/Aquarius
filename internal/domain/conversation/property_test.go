@@ -468,6 +468,25 @@ func TestPropertyCarryEdgeTransfer(t *testing.T) {
 			t.Fatalf("seed %d: revise carry: %v", seed, err)
 		}
 
+		// 路牌（D256）：搬了整批孩子就必有且只有一条，指向正确；没有孩子就一条也不该多。
+		det := c.Detachments()
+		if len(direct) == 0 {
+			if len(det) != 0 {
+				t.Fatalf("seed %d: carry without children recorded %d detachments", seed, len(det))
+			}
+		} else {
+			if len(det) != 1 {
+				t.Fatalf("seed %d: carry recorded %d detachments, want 1", seed, len(det))
+			}
+			d := det[0]
+			if d.Anchor != target || d.NewHome != m.ID || d.Kind != DetachTransfer || d.Stale {
+				t.Fatalf("seed %d: detachment = %+v, want %s -> %s (transfer, live)", seed, d, target, m.ID)
+			}
+			if !reflect.DeepEqual(d.Roots, direct) {
+				t.Fatalf("seed %d: detachment roots = %v, want %v", seed, d.Roots, direct)
+			}
+		}
+
 		// 零拷贝、身份不变：节点只多出新版本这一个。
 		if len(c.nodes) != len(before)+1 {
 			t.Fatalf("seed %d: nodes = %d, want %d (subtree copied or lost)", seed, len(c.nodes), len(before)+1)

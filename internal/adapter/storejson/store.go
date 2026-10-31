@@ -344,8 +344,21 @@ type wireTree struct {
 	Nodes       map[conversation.MessageID]wireNode                 `json:"nodes"`
 	Children    map[conversation.MessageID][]conversation.MessageID `json:"children"`
 	RevisedFrom map[conversation.MessageID]conversation.MessageID   `json:"revised_from"`
-	CreatedAt   time.Time                                           `json:"created_at"`
-	UpdatedAt   time.Time                                           `json:"updated_at"`
+	// Detached 溯源路牌（D256）。缺键即空：旧文件天然兼容，不升 wire 版本；
+	// 新文件被旧版读到也只是忽略这一个键（旧版不做改父，路牌没有消费方）。
+	Detached  []wireDetachment `json:"detached,omitempty"`
+	CreatedAt time.Time        `json:"created_at"`
+	UpdatedAt time.Time        `json:"updated_at"`
+}
+
+// wireDetachment 一条溯源路牌。Kind 用字符串：磁盘上要能读懂，
+// 也让「将来多一种来源」不必动编码层（未知值在领域侧照旧不参与任何结构查询）。
+type wireDetachment struct {
+	Anchor  conversation.MessageID   `json:"anchor"`
+	Roots   []conversation.MessageID `json:"roots"`
+	NewHome conversation.MessageID   `json:"new_home"`
+	Kind    string                   `json:"kind"`
+	At      time.Time                `json:"at"`
 }
 
 // wireNode 磁盘上的节点：D95 之前的遗留字段在此显式承接（见 legacyTree 的说明）。
@@ -381,6 +394,18 @@ func encode(c *conversation.Conversation) wireTree {
 	}
 	for _, ed := range s.RevisedFrom {
 		w.RevisedFrom[ed.New] = ed.Old
+	}
+	if len(s.Detachments) > 0 {
+		w.Detached = make([]wireDetachment, 0, len(s.Detachments))
+		for _, d := range s.Detachments {
+			w.Detached = append(w.Detached, wireDetachment{
+				Anchor:  d.Anchor,
+				Roots:   d.Roots,
+				NewHome: d.NewHome,
+				Kind:    string(d.Kind),
+				At:      d.At,
+			})
+		}
 	}
 	return w
 }
@@ -431,6 +456,18 @@ func decodeTree(w wireTree) (*conversation.Conversation, error) {
 	}
 	for newID, oldID := range w.RevisedFrom {
 		s.RevisedFrom = append(s.RevisedFrom, conversation.SnapshotEdition{New: newID, Old: oldID})
+	}
+	if len(w.Detached) > 0 {
+		s.Detachments = make([]conversation.SnapshotDetachment, 0, len(w.Detached))
+		for _, d := range w.Detached {
+			s.Detachments = append(s.Detachments, conversation.SnapshotDetachment{
+				Anchor:  d.Anchor,
+				Roots:   d.Roots,
+				NewHome: d.NewHome,
+				Kind:    conversation.DetachmentKind(d.Kind),
+				At:      d.At,
+			})
+		}
 	}
 	c, err := conversation.Restore(s)
 	if err != nil {

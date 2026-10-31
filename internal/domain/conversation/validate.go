@@ -93,7 +93,7 @@ func ValidateInjectParts(parts []Part) error {
 }
 
 // Validate 整树自检：不变量 1（树合法：唯一实根、双向一致、无环、Head 在树）必须恒成立，
-// 另查结构元数据一致性（RevisedFrom 两端存在、Children 父节点存在）。
+// 另查结构元数据一致性（RevisedFrom 两端存在且无环、Detachments 三端存在、Children 父节点存在）。
 // 不变量 2（节点不可变）由操作 API 保证，性质测试以快照比对守护（§11）。
 // 旧不变量 2"存在性引用"随 D95 Tool as Part 取消：调用与结果同片，无跨节点引用。
 func (c *Conversation) Validate() error {
@@ -193,6 +193,22 @@ func (c *Conversation) Validate() error {
 		}
 	}
 	errs = append(errs, c.editionCycleErrors()...)
+
+	// 溯源路牌元数据：锚点、新位置、每个被搬的子树根都必须在树中。陈旧（根已不在新位置下）
+	// 不在这里报——那是记录过时，不是树坏，Detachments() 现算 Stale。
+	for i, d := range c.detached {
+		if _, ok := c.nodes[d.Anchor]; !ok {
+			errs = append(errs, fmt.Errorf("metadata: detachment %d anchor %q not in tree", i, d.Anchor))
+		}
+		if _, ok := c.nodes[d.NewHome]; !ok {
+			errs = append(errs, fmt.Errorf("metadata: detachment %d new home %q not in tree", i, d.NewHome))
+		}
+		for _, r := range d.Roots {
+			if _, ok := c.nodes[r]; !ok {
+				errs = append(errs, fmt.Errorf("metadata: detachment %d root %q not in tree", i, r))
+			}
+		}
+	}
 
 	return errors.Join(errs...)
 }

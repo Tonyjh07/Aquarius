@@ -69,9 +69,9 @@ func (k KeepMode) String() string {
 //
 // 一切变化 = 新增节点 / 增删边 / 边转移 / 移动 Head；单会话内操作串行（Head 唯一）。
 //
-// 树的三份结构（节点表、边表、版本链）一律**私有**：外部只能经方法读（View/Find/
-// ChildIDs/Branches/Tail/NodeCount/SubtreeSize/Edition...）、经方法改（Append/Revise/
-// Prune/Checkout/InsertBefore）。这是聚合根成立的底线——导出 map 等于把「只有方法能改」
+// 树的三份结构（节点表、边表、版本链）与一张路牌表一律**私有**：外部只能经方法读（View/Find/
+// ChildIDs/Branches/Tail/NodeCount/SubtreeSize/Edition/Detachments...）、经方法改（Append/Revise/
+// Prune/Checkout/InsertBefore/Reparent）。这是聚合根成立的底线——导出 map 等于把「只有方法能改」
 // 的约束作废，任何一处 `c.Nodes[id] = {...}` 都能绕过不变量检查。
 //
 // 持久化走 Snapshot/Restore（snapshot.go）：适配器拿一份只读的整树导出，映射成自己的
@@ -87,6 +87,7 @@ type Conversation struct {
 	nodes       map[MessageID]Message     // 只增不改（Prune 硬删除外）
 	children    map[MessageID][]MessageID // 结构边（Root 的孩子 = 顶层消息；树外键 "" 仅挂 Root）
 	revisedFrom map[MessageID]MessageID   // 新→旧：版本链（纯结构元数据）
+	detached    []Detachment              // 溯源路牌（D256）：只记「搬过」，不参与任何结构查询
 
 	// Head 初始 = Root ID；无空串特例（D19）。留作导出字段：它是单个游标而非结构表，
 	// 移动语义仍走 Checkout（写 Head 而不更新 UpdatedAt 才会破坏一致性，那是加载路径的事）。
@@ -231,6 +232,9 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 				cm.Parent = m.ID
 				c.nodes[ch] = cm
 			}
+			// 路牌（D256）：旧版本从此无子，孩子们整批挂到了新版本下。一条记录记整批，
+			// 不为每个孩子各写一条——撤销要挪回的是「这一批」，拆开就还原不了原样。
+			c.recordDetachment(id, moved, m.ID, DetachTransfer)
 		}
 		if headInSubtree {
 			c.Head = prevHead // 历史随行，Head 保持在被转移子树内
@@ -312,6 +316,7 @@ func (c *Conversation) Prune(id MessageID) error {
 		delete(c.children, nid)
 		delete(c.revisedFrom, nid)
 	}
+	c.pruneDetachments(sub)
 	for newID, oldID := range c.revisedFrom {
 		if sub[oldID] {
 			delete(c.revisedFrom, newID)
