@@ -270,13 +270,35 @@ func (c *Conversation) transferChildren(from, to MessageID) []MessageID {
 		return nil
 	}
 	delete(c.children, from)
-	c.children[to] = append(c.children[to], kids...)
 	for _, ch := range kids {
-		cm := c.nodes[ch]
-		cm.Parent = to
-		c.nodes[ch] = cm
+		c.attachChild(to, ch)
 	}
 	return kids
+}
+
+// attachChild 把 child 挂到 parent 的末尾并改写它的 Parent 指针（调用方保证 child 尚未挂在这里）。
+// 挂边与摘边是改父和 Carry 共用的两小块：整批转移只是「摘一次、挂多次」。
+func (c *Conversation) attachChild(parent, child MessageID) {
+	c.children[parent] = append(c.children[parent], child)
+	m := c.nodes[child]
+	m.Parent = parent
+	c.nodes[child] = m
+}
+
+// detachChild 从 parent 的孩子表里摘掉 child，其余兄弟保持原顺序。
+func (c *Conversation) detachChild(parent, child MessageID) {
+	kids := c.children[parent]
+	kept := kids[:0]
+	for _, k := range kids {
+		if k != child {
+			kept = append(kept, k)
+		}
+	}
+	if len(kept) == 0 {
+		delete(c.children, parent)
+		return
+	}
+	c.children[parent] = kept
 }
 
 // cloneSubtree 把 id 的整棵子树深拷贝到 parent 之下（不含 id 自身——新节点即其"新版本"）：

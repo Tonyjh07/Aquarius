@@ -436,6 +436,88 @@ func nodeIDs(c *Conversation) []MessageID {
 	return out
 }
 
+// TestPropertyReparent 随机树上的改父：只要目标合法就成功，且「全树仍合法、被搬子树内容
+// 字节级不变、Head 一动不动（在子树内随行、在外不受影响）」恒成立；不合法的一律拒绝且不动树。
+func TestPropertyReparent(t *testing.T) {
+	useFixedClock(t)
+	for seed := int64(1); seed <= 30; seed++ {
+		d := &propDriver{rng: rand.New(rand.NewSource(seed))}
+		c := New(NewID(), "reparent")
+		for i := d.rng.Intn(6) + 4; i > 0; i-- {
+			d.step(t, c)
+		}
+		for round := 0; round < 3; round++ {
+			id := d.pickNode(c, false)
+			if id == "" {
+				continue
+			}
+			var targets []MessageID
+			for _, cand := range nodeIDs(c) {
+				if c.nodes[cand].Role == RoleRoot || cand == id {
+					continue
+				}
+				if c.isStrictDescendant(id, cand) || c.nodes[id].Parent == cand {
+					continue
+				}
+				targets = append(targets, cand)
+			}
+			if len(targets) == 0 {
+				continue
+			}
+			into := targets[d.rng.Intn(len(targets))]
+
+			sub := map[MessageID]bool{}
+			c.collectSubtree(id, sub)
+			before := map[MessageID]Message{}
+			for nid := range sub {
+				before[nid] = c.nodes[nid].Clone()
+			}
+			headBefore := c.Head
+
+			res, err := c.Reparent(id, into)
+			if err != nil {
+				t.Fatalf("seed %d: reparent %s -> %s: %v", seed, id, into, err)
+			}
+			if res.Moved != len(sub) {
+				t.Fatalf("seed %d: moved = %d, want %d", seed, res.Moved, len(sub))
+			}
+			if c.nodes[id].Parent != into {
+				t.Fatalf("seed %d: %s parent = %s, want %s", seed, id, c.nodes[id].Parent, into)
+			}
+			if c.Head != headBefore {
+				t.Fatalf("seed %d: head moved %s -> %s", seed, headBefore, c.Head)
+			}
+			for nid, want := range before {
+				if !sameContent(want, c.nodes[nid]) {
+					t.Fatalf("seed %d: moved node %s content changed", seed, nid)
+				}
+			}
+			if err := c.Validate(); err != nil {
+				t.Fatalf("seed %d: validate after reparent: %v", seed, err)
+			}
+
+			// 非法目标：Root 与自己/后代/当前父一律拒绝，且一条路牌都不多。
+			countBefore := len(c.Detachments())
+			bad := []MessageID{MessageID(c.ID), id}
+			if kids := c.ChildIDs(id); len(kids) > 0 {
+				bad = append(bad, kids[0])
+			}
+			bad = append(bad, c.nodes[id].Parent)
+			for _, target := range bad {
+				if _, err := c.Reparent(id, target); err == nil {
+					t.Fatalf("seed %d: reparent %s -> illegal %s accepted", seed, id, target)
+				}
+			}
+			if got := len(c.Detachments()); got != countBefore {
+				t.Fatalf("seed %d: rejected reparents left %d extra detachments", seed, got-countBefore)
+			}
+			if err := c.Validate(); err != nil {
+				t.Fatalf("seed %d: rejected path broke tree: %v", seed, err)
+			}
+		}
+	}
+}
+
 // TestPropertyCarryEdgeTransfer Carry 边转移：被转移子树零拷贝、身份与内容不变，
 // 仅直接孩子的 Parent 边指针改写；孙代及更深字节级不动（D2/D16）。
 func TestPropertyCarryEdgeTransfer(t *testing.T) {
