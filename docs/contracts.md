@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ fbc3689 -->
+<!-- docs-sync: 2026-10-31 @ 6e4ca78 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -253,7 +253,9 @@ type Conversation struct {
 | `web_search` | 联网搜索（D197）：按配置顺序换家，回填里注明实际应答者与降级痕迹 | Safe |
 | `web_fetch` | 抓取网页转 Markdown（D197）：本地实现遵守 `robots.txt` 并拒绝内网目标 | Safe |
 | `skill` | 载入已安装技能（D201）：回填 `SKILL.md` 正文 + 技能目录绝对路径；**零技能时也照常注册**，执行时报 `no skills are installed` | Safe |
-| `delegate` | 把一件复杂任务**整个**交给外部 ACP 代理（D244，§5.18）：只收回**报告 + 一行摘要**。**不吃默认工具超时**，ESC → `session/cancel`；一个会话同时只允许一个转交 | Confirm |
+| `delegate` | 把一件复杂任务**整个**交给外部 ACP 代理（D244/D261，§5.18）：派活即返句柄，报告晚些经注入到达，只收回**报告 + 一行摘要**。ESC → `session/cancel`；每会话 2 路、全局 4 | Confirm |
+| `delegate_wait` | 等一次转交到终态并回填报告（本轮就要结果时用）。**不吃默认工具超时**（时长由对方决定） | Safe |
+| `delegate_kill` | 停止一次转交（`session/cancel` → 等 `cancelled` → 宽限后杀进程组），按任务分路 | Safe |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -584,6 +586,12 @@ type JobManager interface {
 
 输出语义：`Run` 的 `tool.Result.Output` 与 `Logs` 返回值都是 **UTF-8 文本**——进程原始字节由
 jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码。
+
+**跨切换（D261）**：任务不随会话切换而停，报告也不随切换而丢。`JobWatcher` 登记时记下启动
+会话，终态报告按**该会话**落地；watcher 只在删除该会话或关停时撤销（切换、新建都不撤销）。
+报告的目标不是当前会话时，由注入排空走「异地落地」——`store.Load(目标)` → 追加 `Role=inject`
+节点（父 = 它自己的 Head）→ `store.Save`，切回来 `replayHistory` 自然铺出来。目标会话已删除
+则丢弃并记一条运行日志。
 
 ### 5.9 `watch.go` —— 观察器端口
 
@@ -1265,6 +1273,8 @@ source.charx   仅 .charx 来源：原压缩包整份留档
 
 ```go
 // port/delegate.go
+type DelegateID string // 一次转交的标识（回执、Wait、Kill、日志都用它）
+
 type DelegateInfo struct {
     Name      string   // 配置里的名字（delegate 工具 agent 参数的取值）
     Command   string   // 实际要执行的命令行（配置原样）
@@ -1297,9 +1307,21 @@ type DelegateLister interface {
     List(ctx context.Context) ([]DelegateInfo, error)
 }
 
-// DelegateRunner 一次转交：起进程 → initialize → session/new → session/prompt → 收报告 → 关进程。
+// DelegateTask 派活回执（D261）：Start 立刻返回它，报告晚些经注入到达。
+type DelegateTask struct {
+    ID      DelegateID
+    Agent   string
+    Session string // ACP sessionId：只进回执与日志，本版不重用
+}
+
+// DelegateRunner 一次转交的后台生命周期（D261）：起进程 → initialize → session/new →
+// session/prompt → 收报告 → 关进程。形状照 JobStarter / JobReader / JobKiller 抄——
+// 派活即返句柄，终态由收尾观察者取。**不做同步调用**：转交跑十几到几十分钟，同步形态
+// 等于把 Turn 钉在子代理上，会话切不走、别的活一件干不了。
 type DelegateRunner interface {
-    Run(ctx context.Context, spec DelegateSpec) (DelegateRun, error)
+    Start(ctx context.Context, spec DelegateSpec) (DelegateTask, error)
+    Wait(ctx context.Context, id DelegateID) (DelegateRun, error) // 阻塞到终态
+    Kill(ctx context.Context, id DelegateID) error
 }
 
 // Delegate 组合体（装配根与实现方共用；消费方各自只声明上面那一个）。
@@ -1334,11 +1356,13 @@ v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP s
 意味着命令改由**我们**执行，能拦是收益，代价是我们按当前用户身份替它跑任意命令，本仓没有沙箱。
 
 **传输层**：`coder/acp-go-sdk`（v0.13.5），不自写连接层（D260）。两处机制是选它的实质理由——
-入站请求走独立 goroutine（否则一个等人确认的 `session/request_permission` 会顶住整个读循环，
-多路并行时连带卡死别的会话）、通知走串行队列并给响应打水位屏障（响应不得早于它前面的通知被
-处理；自写时漏这条，报告里就会丢最后几条更新）。代价照旧：SDK 的 `Client` 是九个方法，
-`fs` 两个与 `terminal` 五个本版只能写成返回 `-32601` 的桩；且它按字段形状猜未知变体
-（`compaction_summary_chunk` 会落进 `UserMessageChunk`），我们拿不到原始 `sessionUpdate` 值。
+入站请求走独立 goroutine（否则一个等人确认的 `session/request_permission` 会顶住整条连接：
+取消回执、后续通知全停，取消路径当场失效）、通知走串行队列并给响应打水位屏障（响应不得早于
+它前面的通知被处理；自写时漏这条，报告里就会丢最后几条更新）。**这两条与「几路并行」无关，
+单路就需要**——多任务只是让违背它们的代价从「一路卡住」变成「几路一起卡住」。代价照旧：
+SDK 的 `Client` 是九个方法，`fs` 两个与 `terminal` 五个本版只能写成返回 `-32601` 的桩；
+且它按字段形状猜未知变体（`compaction_summary_chunk` 会落进 `UserMessageChunk`），我们拿不到
+原始 `sessionUpdate` 值。
 
 **登录**：`initialize` 的 `authMethods` 非空即表示对方要求的认证尚未完成，此时 `session/new`
 回 `-32000 Authentication required`。本版**不实现 `authenticate`**（要在应用内完成登录，就得
@@ -1355,7 +1379,9 @@ v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP s
 `workdir` 的取值：工具参数优先，其次配置里那条 `workdir`，都没有 = 家目录（与 `JobSpec.WorkDir`
 同一口径）。两者都不是围栏，只是子进程的起点。
 
-**转交的投影**：回填 = **报告 + 一行摘要**（工具调用数、改动文件数、耗时、停止原因）。子代理那
+**转交的投影**：回填 = **报告 + 一行摘要**（工具调用数、改动文件数、耗时、停止原因）。它经
+`Injector.Inject` 落到**发起会话**（`Injection.Session`，D261），`Source = delegate:<name>`、
+`Trust = External`——正文是外部代理写的，不是退出码那种宿主事实，投影时要套数据围栏。子代理那
 几十次工具调用、思考片段、计划表**都不进会话树**：那是它的过程，不是我们的对话；进树会污染上下文
 与水位，压缩摘要也无从判断哪段是谁的历史。
 
@@ -1376,18 +1402,23 @@ this build`），后者照实回传。将来加一条 `session/resume` 与句柄
 - 无人值守（D185）下 `Confirmer` 被装饰成一律拒绝，于是转交本身被拒——它会在会话外动手，
   与 `watch_start` 同一口径。
 
-**超时与取消**：工具声明 `Interactive()`——转交的时长由对方决定，不该被
-`limits.tool_timeout_sec`（缺省 60s）当成「卡住」。另设一道总闸 `delegate.timeout_sec`
-（缺省 1800，`0` = 不限），防的是进程挂住把轮次钉死。取消（ESC / 停止键 / Ctrl+C）=
-先发 `session/cancel` 通知，等它把 `session/prompt` 收成 `cancelled`，宽限 2 秒后仍不返回
+**超时与取消**：`delegate` 本身**不声明** `Interactive()`——它派完活立刻返回（D261），不在 Turn
+里等。要本轮就拿到结果的是另一个工具（`delegate_wait`），它才声明 `Interactive()`：等多久由
+对方决定，不该被 `limits.tool_timeout_sec`（缺省 60s）当成「卡住」。另设一道总闸
+`delegate.timeout_sec`（缺省 1800，`0` = 不限），防的是进程挂住一直占着并发名额。取消一次
+转交（停止键 / `delegate_kill`，按任务分路）= 先发 `session/cancel` 通知，等它把
+`session/prompt` 收成 `cancelled`，宽限 2 秒后仍不返回
 就杀进程组；杀进程后回填「已取消」而不是报错。两条配套的硬要求：**① 取消不能走 ctx 取消**
 （SDK 的 `Prompt` 见 ctx 被取消会自己补发一条 `session/cancel` 然后立刻返回错误，`stopReason`
 与已交付正文一起丢）——要显式发通知、用独立计时器等响应；**② 待应答的
 `session/request_permission` 必须一并回 `cancelled`**（协议明文），漏了它子代理会挂在等权限上，
-2 秒宽限就退化成每次取消都杀进程。**一个会话同时只允许一个转交**：第二个调用
-直接回填「已有转交在进行」，不排队——两路外部代理同时改同一棵树只会互相踩。这条限制是
-**每会话**的：会话之间的并行是后续能力（`plan.md` 的「外部代理能力扩张」），届时
-`DelegateRunner.Run` 要能并发调用。
+2 秒宽限就退化成每次取消都杀进程。
+
+**并发（D261）**：转交是后台任务，几路同时跑是后台模型的自然结果，不需要另做并行开关。树层面
+不会互相踩——报告经注入串行落地、各挂各的 Head；文件层面会：两个代理同时改同一个目录就是互相
+踩，那是派活的人自己选的，摘要行如实列改动清单即可。上限每会话 2、全局 4
+（`delegate.max_concurrent` / `delegate.max_total`，实测后调），超限时 `Start` 直接回
+「正在进行的转交已满」，不排队。
 
 **进程卫生**：Windows 下 `CREATE_NO_WINDOW`（同 `mcpgate`）；环境 = 父环境剔除 `AQUARIUS_*`
 + 配置 `env`；`stderr` 收进有界缓冲，只用于「它为什么起不来/为什么退出」这类报因，不进上下文；
@@ -1401,11 +1432,11 @@ this build`），后者照实回传。将来加一条 `session/resume` 与句柄
 | 单次转交时长（`delegate.timeout_sec`） | 缺省 1800s，最大 86400s，`0` = 不限 |
 | 收下的正文 | 200000 字符（保头尾，中间省略并注明） |
 | 记的改动文件 | 200 条（超出只报总数） |
-| 同时进行的转交 | 每会话 1 |
+| 同时进行的转交 | 每会话 2、全局 4（`delegate.max_concurrent` / `delegate.max_total`） |
 
 **不做**：内置代理预设与自动安装（registry 是别人的目录，装与不装是用户的事）、按 registry
 自动升级、ACP v2、客户端 `fs`/`terminal`/`elicitation`、把子代理的转录塞进树、转发我们的
-MCP server、跨会话复用子代理、`session/load` 回放它的历史、多路并行转交。
+MCP server、跨会话复用子代理、`session/load` 回放它的历史。
 
 ## 6. 插件架构
 
@@ -1991,4 +2022,6 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
   `Retry-After`，缺省 60s），冷却期内跳过它。钥匙全在冷却 = 该 provider 失败，交外层降级。
   顺序固定为**先换钥匙、再换 provider**：否则多账号场景下会白跨一次 provider。
   `ErrQuota` 之外的其他瞬时错误（5xx/网络）不换钥匙——换钥匙对端点故障没用。
-- **并发**：单会话内 Turn 串行（Head 唯一）；多会话并行安全（一会话一文件）；Job 自管并发。
+- **并发**：单会话内 Turn 串行（Head 唯一）；**同一时刻只有一个内存会话**（`cur`），其余会话
+  只在盘上——跨会话写入只有注入排空的「异地落地」一处，仍在会话 goroutine 里（D261）。后台
+  任务与转交自管并发，报告按目标会话落。
