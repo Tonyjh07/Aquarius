@@ -92,11 +92,6 @@ type historyState struct {
 	btnSelExport, btnSelDel            widget.Clickable
 	// toast 窗内轻提示（复制 ID / 复制会话 ID 等的即时反馈）：帧尾渲染，约 2 秒后自动消失。
 	toast toastState
-	// avatars 会话行左槽的角色卡头像缓存（§5.17）：本窗独占一份（见 avatar_cache.go——
-	// 两窗分属不同 goroutine，不共享缓存实例）。inval 由 runSecondary 填（解码完成后催
-	// 本窗重绘）；测试直建 st 时留空即可。
-	avatars *avatarCache
-	inval   func()
 }
 
 // newHistoryState 构造 winHistory 帧状态并做首帧数据同步。
@@ -106,12 +101,6 @@ func newHistoryState(u *UI) *historyState {
 		budget: relDefaultBudget,
 		graph:  newRelGraph(),
 	}
-	// 头像缓存：回调**调用时**现取 st.inval（runSecondary 在构造后才填 w.Invalidate）。
-	st.avatars = newAvatarCache(histAvatarPx, func() {
-		if st.inval != nil {
-			st.inval()
-		}
-	})
 	// 问句区竖向可滚（layout.List 的零值轴是**横向**，不显式设会变成横滚 + 横向滚动条）。
 	st.cfm.promptList.List.Axis = layout.Vertical
 	st.sync(u)

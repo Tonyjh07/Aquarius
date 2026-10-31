@@ -27,7 +27,7 @@ type CharacterInfo struct {
 	BookEntries int      // character_book 条目数（保留；按开关决定是否注入常驻条目）
 	Assets      int      // 卡里 data.assets 条数（图标之外的表情 / 背景 / 语音等；保留未用）
 	HasAvatar   bool     // 有 avatar.png
-	// AvatarPath 头像文件的绝对路径（空 = 没有头像）。只给界面呈现用（列表 / 会话行左槽）：
+	// AvatarPath 头像文件的绝对路径（空 = 没有头像）。只给界面呈现用（设置窗「角色」页）：
 	// 它是落位事实，不是卡内容，绝不进模型上下文。
 	AvatarPath string
 	ImportedAt time.Time // 导入时间（meta.json 缺时为零值）

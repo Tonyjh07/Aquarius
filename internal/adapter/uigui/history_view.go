@@ -18,7 +18,6 @@ import (
 // historyFrame winHistory 单帧：左栏 + 右图 + 状态栏（§15.7 常规窗，主题 Bg 铺底）。
 func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	st.sync(u)
-	st.avatars.drain() // 角色卡头像后台解码结果入缓存（§5.17）
 	st.drainNodeAction(u, gtx)
 	st.drainFilePicks(u)
 	// Esc 退出选择态：选择态不是模态层（不铺 scrim），所以不夺焦点，只挂一条不限焦点的

@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ 3fc8588 -->
+<!-- docs-sync: 2026-10-31 @ b4d39cb -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1223,7 +1223,7 @@ source.charx   仅 .charx 来源：原压缩包整份留档
 **命令面**：`/character list`（无参同名）、`/character show <slug>`、`/character import <路径>`、
 `/character start <slug> [序号]`、`/character remove <slug>`（二次确认）。导入/删除是**用户面动作**：
 `port.CharacterCatalog` 保持只读两方法，`app.CharacterAdmin` 由消费方定义、装配根实现到 `characterfs`
-（范式同 `app.SkillAdmin`）。**不提供模型可调用的角色卡工具**。设置窗「角色」页与会话列表头像见
+（范式同 `app.SkillAdmin`）。**不提供模型可调用的角色卡工具**。设置窗「角色」页见
 [gui-design.md](gui-design.md)；本版不做卡编辑器、不做头像裁剪、不做主题包。
 
 **上限与安全**（外部文件一律不可信）：

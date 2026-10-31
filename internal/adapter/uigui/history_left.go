@@ -1,6 +1,6 @@
 package uigui
 
-// 历史窗左栏：展开/收起两态、标题行动作钮、会话行（含头像）与行内删除槽。
+// 历史窗左栏：展开/收起两态、标题行动作钮、会话行与行内删除槽。
 
 import (
 	"fmt"
@@ -95,7 +95,7 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 									if st.selMode {
 										return selRowByIndex(gtx, th, st, i)
 									}
-									return st.histSessionRow(gtx, th, st.sessions[i])
+									return histSessionRow(gtx, th, st.sessions[i])
 								})
 								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
 							})
@@ -215,15 +215,8 @@ func histPlusGlyph(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: image.Pt(d, d)}
 }
 
-// histAvatarDp / histAvatarPx 会话行左槽头像口径：边长 30dp（行高 44dp 内衬后约 32dp），
-// 解码 60px（2x 下采样）。
-const (
-	histAvatarDp unit.Dp = 30
-	histAvatarPx         = 60
-)
-
-// histSessionRow 单行内容：左槽角色头像 + 标题 + （时间 · N 条）；当前会话带「●」。
-func (st *historyState) histSessionRow(gtx layout.Context, th *material.Theme, s port.SessionSummary) layout.Dimensions {
+// histSessionRow 单行内容：标题 + （时间 · N 条）；当前会话带「●」。
+func histSessionRow(gtx layout.Context, th *material.Theme, s port.SessionSummary) layout.Dimensions {
 	title := s.Title
 	if title == "" {
 		title = "新会话"
@@ -234,46 +227,23 @@ func (st *historyState) histSessionRow(gtx layout.Context, th *material.Theme, s
 		mark = "●"
 	}
 	meta := fmt.Sprintf("%s · %d 条", s.UpdatedAt.Format("01-02 15:04"), s.Messages)
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return st.sessionAvatar(gtx, th, s)
-			})
+			l := material.Label(th, paperNoteSp(th), mark+" "+title)
+			l.Color = paperOf().text
+			l.Font.Weight = font.Bold
+			// D157：行尾让出「✕」槽后可用宽度变窄。标题已按 rune 截断，这里再钉一行
+			// ——否则超长标题会折成两行把行高撑开，左栏行高参差。
+			l.MaxLines = 1
+			return l.Layout(gtx)
 		}),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperNoteSp(th), mark+" "+title)
-					l.Color = paperOf().text
-					l.Font.Weight = font.Bold
-					// D157：行尾让出「✕」槽后可用宽度变窄。标题已按 rune 截断，这里再钉一行
-					// ——否则超长标题会折成两行把行高撑开，左栏行高参差。
-					l.MaxLines = 1
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperMicroSp(th), meta)
-					l.Color = paperOf().text3
-					l.MaxLines = 1
-					return l.Layout(gtx)
-				}),
-			)
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			l := material.Label(th, paperMicroSp(th), meta)
+			l.Color = paperOf().text3
+			l.MaxLines = 1
+			return l.Layout(gtx)
 		}),
 	)
-}
-
-// sessionAvatar 会话行左槽头像（§5.17）：角色卡真图（异步解码；未就绪/失败画兜底）；
-// 非角色会话（无卡）画中性兜底方块。
-func (st *historyState) sessionAvatar(gtx layout.Context, th *material.Theme, s port.SessionSummary) layout.Dimensions {
-	side := gtx.Dp(histAvatarDp)
-	if src := st.avatars.get(s.AvatarPath); src != nil {
-		if op, ok := src.imageOp(); ok {
-			drawThumb(gtx, image.Rect(0, 0, side, side), op)
-			return layout.Dimensions{Size: image.Pt(side, side)}
-		}
-	}
-	// 有卡无头像：显示角色首字；无卡：空名 → 纯色方块（charAvatarFallback 空名不画字）。
-	return charAvatarFallback(gtx, th, s.Character, side)
 }
 
 // truncRunes 截断到最多 n 个 rune（超长标题防溢出）。
