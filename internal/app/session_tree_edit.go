@@ -21,11 +21,11 @@ type treeEditSession struct {
 }
 
 // treeEditUsage /tree-edit 的用法句。
-const treeEditUsage = "用法: /tree-edit（进入）｜/tree-edit --done（保存退出）｜/tree-edit --cancel（放弃并退出）"
+const treeEditUsage = "用法: /tree-edit（进入）｜--exit（界面上关开关：有改动先问保存/放弃）｜--done（保存退出）｜--cancel（放弃并退出）"
 
-// TreeEditActive 报告当前是否在树编辑模式，以及已改处数（D258）。
-// 关系图的状态栏开关将来按它渲染——UI 不自己记状态，状态只有一份。
-func (s *Session) TreeEditActive() (active bool, edits int) {
+// TreeEditState 报告当前是否在树编辑模式，以及已改处数（D258），实现 port.TreeView。
+// 关系图的状态栏开关按它渲染——UI 不自己记状态，状态只有一份。
+func (s *Session) TreeEditState() (active bool, edits int) {
 	if s.treeEdit == nil {
 		return false, 0
 	}
@@ -44,6 +44,19 @@ func (s *Session) execTreeEdit(ctx context.Context, cmd port.Command) (string, e
 		return s.beginTreeEdit()
 	}
 	switch cmd.Args[0] {
+	case "--exit":
+		// 关开关 / 按 Esc 的出口：与切会话走**同一个**三选一（保存 → 放弃 → 取消）。
+		// UI 侧不复刻这套判断，否则「开关怎么关」会有第二种说法。取消时 line 是那句
+		// 「仍在树编辑模式」（不是错误）——开关读状态即知自己还是开着的。
+		//
+		// 不在模式里**不算错**：--done/--cancel 的语义是「改点什么」，不在模式里就无事可
+		// 做；--exit 的语义是「确保出来」，已经出来了就是成功（开关连点两下的第二下不该
+		// 在主窗转写区留下一行红字）。
+		if s.treeEdit == nil {
+			return "当前不在树编辑模式（无需退出）", nil
+		}
+		line, _, err := s.exitTreeEditForSwitch(ctx)
+		return line, err
 	case "--done":
 		return s.commitTreeEdit(ctx)
 	case "--cancel":

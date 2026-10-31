@@ -14,9 +14,12 @@ import (
 
 // fakeRelTree 固定整树快照的 TreeView 替身（Graph 有值；Branches/Tail 用不上）。
 // texts = D132 的 NodeText 数据源（按 id 给正文全文；未列出的 id = 无正文）。
+// editOn/editEdits = D258 树编辑模式的只读状态（状态栏开关的数据源）。
 type fakeRelTree struct {
-	g     port.TreeGraph
-	texts map[conversation.MessageID]string
+	g         port.TreeGraph
+	texts     map[conversation.MessageID]string
+	editOn    bool
+	editEdits int
 }
 
 func (f fakeRelTree) Branches(conversation.MessageID) (port.BranchInfo, bool) {
@@ -35,6 +38,9 @@ func (f fakeRelTree) NodeText(id conversation.MessageID) (string, bool) {
 func (f fakeRelTree) NodeAttachments(conversation.MessageID) []port.AttachmentView {
 	return nil
 }
+
+// TreeEditState D258：替身按字段回放树编辑状态（默认不在模式里）。
+func (f fakeRelTree) TreeEditState() (bool, int) { return f.editOn, f.editEdits }
 
 // fakeLister 固定会话列表的 SessionLister 替身。
 type fakeLister []port.SessionSummary

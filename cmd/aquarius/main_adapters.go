@@ -70,6 +70,15 @@ func (t sessionTree) NodeAttachments(id conversation.MessageID) []port.Attachmen
 	return s.NodeAttachments(id)
 }
 
+// TreeEditState 转发 app.Session.TreeEditState（D258：状态栏开关的数据源）。
+func (t sessionTree) TreeEditState() (bool, int) {
+	s := t.p.Load()
+	if s == nil {
+		return false, 0
+	}
+	return s.TreeEditState()
+}
+
 // sessionList 会话列表只读视图的装配侧代理（D120⑥，S3 左栏）：Session 构造晚于 UI，
 // 故经原子槽间接取用；未就绪返回 nil（左栏空列表）。
 type sessionList struct{ p *atomic.Pointer[app.Session] }

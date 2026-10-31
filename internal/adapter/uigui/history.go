@@ -53,6 +53,14 @@ type historyState struct {
 	// leftCollapsed 是它的帧态（本窗自持，不落盘——收起是临时视图选择，不是配置）。
 	btnLeft       widget.Clickable
 	leftCollapsed bool
+	// teOn/teEdits 树编辑模式的**只读**状态（D258，每帧从端口取，见 syncTreeEdit）：
+	// teOn = 状态栏开关是否打开、teEdits = 未保存的改挂处数（0 = 不脏）。
+	// btnTree = 开关本体，btnTreeDiscard = 脏时那枚「放弃」；teKnob = 开关钮的位移补间。
+	teOn           bool
+	teEdits        int
+	btnTree        widget.Clickable
+	btnTreeDiscard widget.Clickable
+	teKnob         relTween
 	// btnNew 左栏标题行的「＋」新建对话（D160）：与键入 /new 同路径投命令，壳内不做任何
 	// 建会话逻辑（铁律 5）——内核对完自会发布新快照，左栏与右图随签名单帧刷新。
 	btnNew widget.Clickable
@@ -165,8 +173,10 @@ func relSig(g port.TreeGraph) string {
 	return fmt.Sprintf("%d|%s|%s", g.Total, g.Anchor, last)
 }
 
-// sync 帧首同步数据面：左栏快照直接取（行数对齐）；右图签名变化才重建模型与预算。
+// sync 帧首同步数据面：左栏快照直接取（行数对齐）；右图签名变化才重建模型与预算；
+// 树编辑状态每帧取（它是模式开关，没有签名可用——一帧的延迟就会让开关与内核不一致）。
 func (st *historyState) sync(u *UI) {
+	st.syncTreeEdit(u)
 	if u.opts.Tree != nil {
 		if g, ok := u.opts.Tree.Graph(); ok {
 			if sig := relSig(g); sig != st.sig {
@@ -273,7 +283,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	// 画出来却点不动比多一次确认更糟）。
 	if st.selMode {
 		st.dispatchSel(u, gtx)
-		st.dispatchView(gtx)
+		st.dispatchView(u, gtx)
 		return
 	}
 	// D157：行尾「✕」**先收**。实测点 ✕ 时只投 /rmconv（✕ 的命中区把同位置的行遮掉），
@@ -294,34 +304,61 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 			return
 		}
 	}
-	st.dispatchView(gtx)
+	st.dispatchView(u, gtx)
 }
 
-// dispatchView 状态栏取景控件（预算 −/＋、装下整树、回到初始态、两个聚焦域）。
+// dispatchView 状态栏取景控件（预算 −/＋、装下整树、回到初始态、两个聚焦域）与树编辑
+// 开关（D258）。
 //
 // 与列表动作分开：选择态只改列表的语义，取景控件照常可用（画在屏上的钮没有理由失效）。
-func (st *historyState) dispatchView(gtx layout.Context) {
+func (st *historyState) dispatchView(u *UI, gtx layout.Context) {
 	switch {
 	case st.btnMinus.Clicked(gtx):
 		st.applyBudget(-10)
+		return
 	case st.btnPlus.Clicked(gtx):
 		st.applyBudget(+10)
+		return
 	case st.btnHome.Clicked(gtx): // 装下整树（D140：原「回到当前」——只对右基准位，树装不下时什么都改不了）
 		if st.graph != nil {
 			st.graph.viewPending = vaFitAll
 		}
+		return
 	case st.btnSeed.Clicked(gtx): // 回到初始态：重排 + 视口容纳整树
 		if st.graph != nil {
 			st.graph.relayoutFromSeed()
 		}
+		return
 	case st.btnLine.Clicked(gtx): // 聚焦当前历史：视口容纳 root → Head 的历史线
 		if st.graph != nil {
 			st.graph.viewPending = vaFocusLine
 		}
+		return
 	case st.btnNode.Clicked(gtx): // 聚焦当前节点：视口容纳 Head 及其父子一跳
 		if st.graph != nil {
 			st.graph.viewPending = vaFocusNode
 		}
+		return
+	}
+	st.dispatchTreeEdit(u, gtx)
+}
+
+// dispatchTreeEdit 树编辑开关与「放弃」（D258）。
+//
+// 两者都只投命令：开关打开 = `/tree-edit`，关掉 = `--exit`（有未保存改动时内核按 §5.6.4
+// 问「保存 / 放弃 / 取消」，答完才真的退出——拒绝取消时开关下一帧仍是开的，因为它读的
+// 是内核状态）；「放弃」= `--cancel`（放弃全部改动并退出，按钮本身就是那次确认）。
+func (st *historyState) dispatchTreeEdit(u *UI, gtx layout.Context) {
+	if st.btnTree.Clicked(gtx) {
+		if st.teOn {
+			st.sendTreeEdit(u, "--exit")
+		} else {
+			st.sendTreeEdit(u)
+		}
+		return
+	}
+	if st.teOn && st.teEdits > 0 && st.btnTreeDiscard.Clicked(gtx) {
+		st.sendTreeEdit(u, "--cancel")
 	}
 }
 

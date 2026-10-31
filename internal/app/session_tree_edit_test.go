@@ -31,7 +31,7 @@ func TestTreeEditDefersWritesUntilDone(t *testing.T) {
 	baselineSaves := store.saves
 
 	runCmd(t, s, "tree-edit")
-	if active, _ := s.TreeEditActive(); !active {
+	if active, _ := s.TreeEditState(); !active {
 		t.Fatal("tree-edit did not activate")
 	}
 	// 改三次（末尾回到「挂在 persona 下」）。
@@ -45,7 +45,7 @@ func TestTreeEditDefersWritesUntilDone(t *testing.T) {
 	if m, _ := store.convs[s.Current().ID].Find(a1.ID); m.Parent != q1.ID {
 		t.Fatalf("saved parent during edit = %q, want untouched %q", m.Parent, q1.ID)
 	}
-	if active, edits := s.TreeEditActive(); !active || edits != 3 {
+	if active, edits := s.TreeEditState(); !active || edits != 3 {
 		t.Fatalf("edit state = %v/%d, want active with 3 edits", active, edits)
 	}
 
@@ -59,7 +59,7 @@ func TestTreeEditDefersWritesUntilDone(t *testing.T) {
 	if m, _ := store.convs[s.Current().ID].Find(a1.ID); m.Parent != persona.ID {
 		t.Fatalf("saved parent after done = %q, want %q", m.Parent, persona.ID)
 	}
-	if active, _ := s.TreeEditActive(); active {
+	if active, _ := s.TreeEditState(); active {
 		t.Fatal("still in tree edit after --done")
 	}
 }
@@ -88,7 +88,7 @@ func TestTreeEditCancelRestoresTree(t *testing.T) {
 	if store.saves != baselineSaves {
 		t.Fatalf("saves after cancel = %d, want unchanged %d", store.saves, baselineSaves)
 	}
-	if active, _ := s.TreeEditActive(); active {
+	if active, _ := s.TreeEditState(); active {
 		t.Fatal("still in tree edit after --cancel")
 	}
 }
@@ -175,7 +175,7 @@ func TestTreeEditShrinkAsksBeforeSaving(t *testing.T) {
 	if !strings.Contains(out, "已取消保存") {
 		t.Fatalf("declined output = %q, want 已取消保存", out)
 	}
-	if active, _ := s.TreeEditActive(); !active {
+	if active, _ := s.TreeEditState(); !active {
 		t.Fatal("declining save should keep the edit session open")
 	}
 	if store.saves != baselineSaves {
@@ -207,7 +207,7 @@ func TestTreeEditSwitchAsksSaveDiscardCancel(t *testing.T) {
 	if !strings.Contains(out, "已取消") {
 		t.Fatalf("new output = %q, want 已取消（两次都拒绝）", out)
 	}
-	if active, _ := s.TreeEditActive(); !active {
+	if active, _ := s.TreeEditState(); !active {
 		t.Fatal("cancelled switch should keep the edit session")
 	}
 
@@ -217,12 +217,72 @@ func TestTreeEditSwitchAsksSaveDiscardCancel(t *testing.T) {
 	if !strings.Contains(out, "已新建会话") {
 		t.Fatalf("new output = %q, want 已新建会话", out)
 	}
-	if active, _ := s.TreeEditActive(); active {
+	if active, _ := s.TreeEditState(); active {
 		t.Fatal("switching should leave the edit session")
 	}
 }
 
-// TestTreeEditUsage 无参与重复进入、未在模式里退出、未知 flag 各给明确说法。
+// TestTreeEditExitAsksLikeSwitch 关开关（--exit）与切会话走同一个三选一：先问保存、
+// 拒绝再问放弃、再拒绝就是取消（开关仍是开的）。没改过就直接退，不弹问。
+func TestTreeEditExitAsksLikeSwitch(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+	persona, q1, a1 := reparentFixture(t, s)
+
+	// 没改过：不问，直接退。
+	conf := &scriptConfirmer{t: t, answers: []bool{}}
+	s.confirmer = conf
+	runCmd(t, s, "tree-edit")
+	out := runCmd(t, s, "tree-edit", "--exit")
+	if !strings.Contains(out, "已退出树编辑") {
+		t.Fatalf("exit without edits = %q, want 已退出树编辑", out)
+	}
+	if active, _ := s.TreeEditState(); active {
+		t.Fatal("exit without edits should leave the mode")
+	}
+	if len(conf.asked) != 0 {
+		t.Fatalf("exit without edits asked %d times, want 0", len(conf.asked))
+	}
+
+	// 改过：两问都拒绝 = 取消，仍留在模式里。
+	conf = &scriptConfirmer{t: t, answers: []bool{false, false}}
+	s.confirmer = conf
+	runCmd(t, s, "tree-edit")
+	runCmd(t, s, "reparent", string(a1.ID), string(persona.ID))
+	out = runCmd(t, s, "tree-edit", "--exit")
+	if !strings.Contains(out, "已取消") {
+		t.Fatalf("cancel exit = %q, want 已取消", out)
+	}
+	if active, edits := s.TreeEditState(); !active || edits != 1 {
+		t.Fatalf("state after cancelled exit = %v/%d, want active with 1 edit", active, edits)
+	}
+
+	// 拒绝保存、同意放弃：退出且改动不落盘。
+	conf = &scriptConfirmer{t: t, answers: []bool{false, true}}
+	s.confirmer = conf
+	out = runCmd(t, s, "tree-edit", "--exit")
+	if !strings.Contains(out, "已放弃") {
+		t.Fatalf("discard exit = %q, want 已放弃", out)
+	}
+	if active, _ := s.TreeEditState(); active {
+		t.Fatal("discarding should leave the mode")
+	}
+	if m, _ := s.Current().Find(a1.ID); m.Parent != q1.ID {
+		t.Fatalf("parent after discard = %q, want %q", m.Parent, q1.ID)
+	}
+}
+
+// TestTreeEditExitOutsideMode 不在模式里 --exit 不是错误：它要的是「确保在模式外」，
+// 已经在外面就是成功（返回一句说明，不抛错）。
+func TestTreeEditExitOutsideMode(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := newTestSession(t, store)
+	out := runCmd(t, s, "tree-edit", "--exit")
+	if !strings.Contains(out, "不在树编辑模式") {
+		t.Fatalf("--exit outside the mode = %q, want 不在树编辑模式", out)
+	}
+}
+
 func TestTreeEditUsage(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)

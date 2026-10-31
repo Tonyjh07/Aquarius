@@ -85,6 +85,10 @@ type TreeView interface {
 	// 附件分片（image/doc/audio）的出现序编号——序号即 `/edit --drop N` 的 N。仍只读、
 	// 无变更入口：增删一律经 `/edit --attach/--drop`。
 	NodeAttachments(id conversation.MessageID) []AttachmentView
+	// TreeEditState 返回树编辑模式的状态（D258）：是否在模式内、已改几处（未保存）。
+	// 只读——**进出的唯一入口是 `/tree-edit` 命令**（UI 不自己记状态，否则开关与内核
+	// 「谁在模式里」会有两份说法）。每次打开会话窗都是关闭态：模式不落盘。
+	TreeEditState() (active bool, edits int)
 }
 
 // AttachmentView 一个附件分片的只读投影（D188）：序号 + 展示名 + 媒体类型 + 字节数。

@@ -119,12 +119,15 @@ type histCtlItem struct {
 // histStatusCtlItems 状态栏控件项集（自左向右）。2026-10-19 删掉「展开全部」：会话在默认
 // 预算内就已是全量，点了没有任何变化（用户批注「没什么效果，删了」）；预算仍由 −/＋ 调
 // （上限 relHardCap）。
+//
+// 树编辑脏时在末尾追加两项（§5.6.1：脏时开关左侧多一枚「放弃」+「已改 N 处」只读文字）：
+// 它们与视图控件同属文字档，故走同一份项集；开关本身是自绘控件，不在项集里。
 func (st *historyState) histStatusCtlItems() []histCtlItem {
 	zoomPct := "100%"
 	if st.graph != nil {
 		zoomPct = fmt.Sprintf("%d%%", int(st.graph.zoom*100+0.5))
 	}
-	return []histCtlItem{
+	items := []histCtlItem{
 		{label: "−", click: &st.btnMinus},
 		{label: "＋", click: &st.btnPlus},
 		{label: "缩放 " + zoomPct}, // 只读文字
@@ -133,6 +136,13 @@ func (st *historyState) histStatusCtlItems() []histCtlItem {
 		{label: "聚焦当前历史", click: &st.btnLine},
 		{label: "聚焦当前节点", click: &st.btnNode},
 	}
+	if st.teOn && st.teEdits > 0 {
+		items = append(items,
+			histCtlItem{label: fmt.Sprintf("已改 %d 处", st.teEdits)}, // 只读文字
+			histCtlItem{label: "放弃", click: &st.btnTreeDiscard},
+		)
+	}
+	return items
 }
 
 // histStatusBar 状态栏（A7 落点）：会话标题 · 共 N · 呈现 M + 控件项集 + 图例。
@@ -167,6 +177,22 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 								return histCtl(gtx, th, it)
 							}))
 						}
+						// 树编辑模式（D257/D258）：分组竖线 + 常显标签 + 开关。
+						// 开关是**帧态**（不落盘）：每次开窗都是关闭态，状态只有内核一份。
+						kids = append(kids,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return histVDivider(gtx, 10, 14)
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return histTreeEditLabel(gtx, th, st.teOn)
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
+									func(gtx layout.Context) layout.Dimensions {
+										return histTreeSwitch(gtx, th, st)
+									})
+							}),
+						)
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {

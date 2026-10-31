@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-31 @ 9006649 -->
+<!-- docs-sync: 2026-10-31 @ 5239e5c -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -221,9 +221,10 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | R-1 | `ff4c702 fix: reject cycles in the edition chain during validation` | `Validate` 沿 `revisedFrom` 上溯查环（自指也算、同一个环只报一次），坏链不再让「找最旧版本」转圈；跨父的链照常合法 |
 | R-2 | `2097663 feat: record provenance when a carry moves a subtree` | 领域新增 `Detachment` 与私有表：Carry 搬孩子时记一条（锚点 = 旧版本、根 = 整批孩子、新位置 = 新版本）；`Detachments()` 现算 `Stale`；`Prune` 删任一端连带清；`Snapshot`/`Restore` 与 `storejson` 的 `detached` 键（缺键即空、不升 wire 版本）；`Validate` 查三端在树；三条单元测试 + 转移属性断言 |
 | R-3 | `6d2289b refactor: share the child transfer between carry and reparent` | Carry 里那段整批边转移收成 `transferChildren(from, to)`：孩子整批搬到 `to` 的末尾、只改这些孩子的 `Parent`，返回被搬的列表；Carry 用它并照旧记路牌，改父那笔直接用，只看新判断 |
-| R-4 | `feat: let a subtree change parents` | `Reparent(id, newParent)`：存在性 → 拦 Root（被搬方与新父）、环（自己/严格后代）、同父 → `detachChild`/`attachChild` → 记路牌（锚点 = 原父、根 = [id]）→ 自检；不动 Head、不改版本链；返回 `ReparentResult{Moved}`。`Validate` 与 `aqvalidate` 下均通过；四条单元测试 + 随机性质测试（合法就成功、非法一律拒且不多记路牌） |
-| R-5 | `feat: expose reparenting as a command` | `/reparent <id> <新父>` 与 `--undo`（命令注册表加一条：`execReparent` + `execReparent --undo`）：唯一前缀解析两边、会话外立即落盘（失败回滚到上次保存）、被搬子树含 Head 时清屏回放；撤销走 `UndoLastDetachment`（消费记录、不写新记录）；领域补 `UndoLastDetachment` 与 `IsPad`（衬垫落点提示）；三条命令测试 + 两条撤销单元测试；usage 命令表补行 |
-| R-6 | `feat: defer tree edits until the session ends` | `/tree-edit [--done|--cancel]`：进入时存整树快照与上下文条数，改父/撤销只改内存（`treeEdit.edits` 计数），退出一次落盘；放弃用快照重建（会话期间落过盘就把回滚结果再写一次）；上下文变少先确认（带 N→M）、变多只提示；`/switch`、`/new` 走同一个出口（保存/放弃/取消两问）；`TreeEditActive()` 供 UI；六条会话测试 |
+| R-4 | `18ccf44 feat: let a subtree change parents` | `Reparent(id, newParent)`：存在性 → 拦 Root（被搬方与新父）、环（自己/严格后代）、同父 → `detachChild`/`attachChild` → 记路牌（锚点 = 原父、根 = [id]）→ 自检；不动 Head、不改版本链；返回 `ReparentResult{Moved}`。`Validate` 与 `aqvalidate` 下均通过；四条单元测试 + 随机性质测试（合法就成功、非法一律拒且不多记路牌） |
+| R-5 | `9006649 feat: expose reparenting as a command` | `/reparent <id> <新父>` 与 `--undo`（命令注册表加一条：`execReparent` + `execReparent --undo`）：唯一前缀解析两边、会话外立即落盘（失败回滚到上次保存）、被搬子树含 Head 时清屏回放；撤销走 `UndoLastDetachment`（消费记录、不写新记录）；领域补 `UndoLastDetachment` 与 `IsPad`（衬垫落点提示）；三条命令测试 + 两条撤销单元测试；usage 命令表补行 |
+| R-6 | `5239e5c feat: defer tree edits until the session ends` | `/tree-edit [--done|--cancel]`：进入时存整树快照与上下文条数，改父/撤销只改内存（`treeEdit.edits` 计数），退出一次落盘；放弃用快照重建（会话期间落过盘就把回滚结果再写一次）；上下文变少先确认（带 N→M）、变多只提示；`/switch`、`/new` 走同一个出口（保存/放弃/取消两问）；`TreeEditState()` 供 UI；六条会话测试 |
+| R-7 | `feat: put the tree edit switch in the status bar` | `port.TreeView` 加 `TreeEditState()`（app 侧 `TreeEditActive` 更名，`sessionTree` 转发）；`/tree-edit --exit`（关开关走与切会话同一套三选一，不在模式里不算错）；状态栏右端加分隔线 + 常显标签 + 44×24dp 开关（160ms `easeOutCubic` 位移，`relTween` 通用补间，脏时出「已改 N 处」+「放弃」）；开关只投影内核状态、点击只投命令；四条界面测试 + 两条会话测试 |
 
 落地后 `uigui` 生产文件 107 个 / 29,014 行，九个被点名的文件全部 ≤ 600 行；仍超 600 的
 `select.go` 722 / `dock.go` 635 / `relmap_frame.go` 621 / `fade.go` 604 未在本次范围，登记在

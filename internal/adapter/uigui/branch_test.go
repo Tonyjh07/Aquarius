@@ -37,6 +37,9 @@ func (f fakeTree) NodeText(conversation.MessageID) (string, bool) { return "", f
 // NodeAttachments 节点附件清单（D188）：固定视图不配置附件 → 空。
 func (f fakeTree) NodeAttachments(conversation.MessageID) []port.AttachmentView { return nil }
 
+// TreeEditState 树编辑模式状态（D258）：固定视图不在模式里。
+func (f fakeTree) TreeEditState() (bool, int) { return false, 0 }
+
 // fakeTreeTail 带末端表的树视图（D94 分派测试用）：tails 未命中的 id 回退自身。
 type fakeTreeTail struct {
 	fakeTree
