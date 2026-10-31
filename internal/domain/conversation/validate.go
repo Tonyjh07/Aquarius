@@ -3,6 +3,7 @@ package conversation
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
@@ -191,6 +192,56 @@ func (c *Conversation) Validate() error {
 			errs = append(errs, fmt.Errorf("metadata: revised_from %q -> %q: old node not in tree", newID, oldID))
 		}
 	}
+	errs = append(errs, c.editionCycleErrors()...)
 
 	return errors.Join(errs...)
+}
+
+// editionCycleErrors 校验版本链无环（D255）：`revisedFrom` 是「新 → 旧」的单出边函数图，
+// 沿链上溯要么落到一个非修订节点（链尾）、要么停在树外（已由端点检查报过），要么绕回自己。
+// 绕回就是环——「A 是 B 的新版本、B 又是 A 的新版本」，两端都在树里、结构边也完全合法，
+// 只有链本身是坏的。
+//
+// `Revise` 自己造不出环（新节点 ID 全新、旧节点必然更早存在），但两条路径能把它带进来：
+// 读盘时文件被手工改过，以及改父之后跨父版本链与结构边不再同父（D255 允许并存）。成环的链
+// 会让「沿版本链找上游」永远走不到头，所以在此兜住。
+//
+// 同一个环只报一次：从环上最小 ID 起步排序遍历，报过就把整条路径标记为已检查。
+func (c *Conversation) editionCycleErrors() []error {
+	if len(c.revisedFrom) == 0 {
+		return nil
+	}
+	starts := make([]MessageID, 0, len(c.revisedFrom))
+	for id := range c.revisedFrom {
+		starts = append(starts, id)
+	}
+	sort.Slice(starts, func(i, j int) bool { return starts[i] < starts[j] })
+
+	done := make(map[MessageID]bool, len(starts))
+	var errs []error
+	for _, start := range starts {
+		if done[start] {
+			continue
+		}
+		onPath := map[MessageID]bool{}
+		cur := start
+		for {
+			old, ok := c.revisedFrom[cur]
+			if !ok {
+				break
+			}
+			if old == cur || onPath[old] {
+				errs = append(errs, fmt.Errorf("metadata: revised_from cycle through %q -> %q", cur, old))
+				break
+			}
+			onPath[cur] = true
+			cur = old
+		}
+		done[start] = true
+		done[cur] = true // 断在环上时 cur 是环的入口，下一轮从它起步会重复报同一个环
+		for id := range onPath {
+			done[id] = true
+		}
+	}
+	return errs
 }
