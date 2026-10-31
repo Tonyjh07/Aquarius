@@ -176,8 +176,8 @@ func (p *JobWatcher) Claim(id port.JobID) (release func()) {
 	return e.release
 }
 
-// CancelSession 撤销某会话的全部 watcher（D167）：切走/新建/删除当前会话时调用。
-// 空 id 不动作（避免误伤全部）。
+// CancelSession 撤销某会话的全部 watcher（D262）：删除会话与关停时调用。切换不撤——
+// 报告按归属异地落地，watcher 的生命周期跟任务走（D261）。空 id 不动作。
 func (p *JobWatcher) CancelSession(id conversation.ID) {
 	if p == nil || id == "" {
 		return
@@ -276,7 +276,7 @@ func (p *JobWatcher) report(ctx context.Context, id port.JobID, j port.Job, sess
 		b.WriteString("\n</injected-context>")
 	}
 	if ctx.Err() != nil {
-		return // 关停/切换已撤销 watcher：报告不再落地
+		return // 关停已撤销 watcher：报告不再落地
 	}
 	in := port.Injection{
 		Source:  source,

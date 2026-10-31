@@ -29,7 +29,6 @@ func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error)
 	if err := s.store.Save(ctx, c); err != nil {
 		return "", fmt.Errorf("session: 新建会话: %w", err)
 	}
-	s.cancelWatchersFor(s.cur.ID) // D167：旧会话的后台任务报告不再属于这里
 	s.cur = c
 	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75，修订 D72 后果④）
 		return "", err
@@ -78,7 +77,6 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 		return "", fmt.Errorf("session: 保存当前会话: %w", err)
 	}
 	if id != s.cur.ID {
-		s.cancelWatchersFor(s.cur.ID) // D167：切走后不再接收该会话的任务报告
 		next, err := s.store.Load(ctx, id)
 		if err != nil {
 			return "", fmt.Errorf("session: 载入会话 %s: %w", id, err)
@@ -183,6 +181,8 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 		if id == s.cur.ID {
 			deletingCurrent = true
 		}
+		// 删会话是 watcher 唯一该撤销的时刻（另一处是关停）：会话没了，报告无处可落。
+		s.cancelWatchersFor(id)
 		if err := s.store.Remove(ctx, id); err != nil {
 			return "", fmt.Errorf("session: 删除会话: %w", err)
 		}
@@ -193,8 +193,6 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 		}
 		return fmt.Sprintf("已删除 %d 个会话：%s", len(targets), targetTitles(titles)), nil
 	}
-	// 删的是当前会话：先撤销它的后台任务观察者（D167），再继任。
-	s.cancelWatchersFor(s.cur.ID)
 	// 删的是当前会话：继任 + 落盘 + 清屏回放（转写区恒与 Head 一致，D75/D81）。
 	next, err := s.successorConversation(ctx, seen)
 	if err != nil {

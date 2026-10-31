@@ -23,8 +23,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// ErrNotFound 会话文件不存在。
-var ErrNotFound = errors.New("storejson: conversation not found")
+// ErrNotFound 会话文件不存在。它就是端口哨兵本身（别名而非新值），调用方按
+// errors.Is(err, port.ErrConversationNotFound) 判「已删除」时不必认识这个适配器。
+var ErrNotFound = port.ErrConversationNotFound
 
 // ErrLegacyFormat 旧格式会话（不兼容的历史格式）：Load 显式报因、List 聚合上报，
 // 绝不静默跳过、不做自动迁移。已有两种：M0 虚拟 Root（D19）、独立 tool 节点（D95 前半部分）。

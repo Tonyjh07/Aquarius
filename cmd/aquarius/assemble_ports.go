@@ -646,8 +646,8 @@ func (t thinkSettings) PersistThink(on bool) error { return t.w.persist.persistT
 
 func (t thinkSettings) PersistEffort(level string) error { return t.w.persist.persistEffort(level) }
 
-// watchCancel 实现 app.WatcherCanceller（D167）：两个轮询器都要撤——任务观察器与
-// 观察器各管一类后台任务，漏一个就会把别的会话的完成报告送进当前上下文。
+// watchCancel 实现 app.WatcherCanceller（D262）：两个轮询器都要撤——任务观察器与
+// 观察器各管一类后台任务，会话删掉之后两边的报告都无处可落。
 type watchCancel struct{ w *wiring }
 
 var _ app.WatcherCanceller = watchCancel{}

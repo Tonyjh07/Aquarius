@@ -2,10 +2,15 @@ package port
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
+
+// ErrConversationNotFound 目标会话不存在（Load/Remove 找不到时由实现方包装返回）。
+// 内核据此区分「会话已被删除」与「读取故障」：前者丢弃注入，后者上抛。
+var ErrConversationNotFound = errors.New("store: conversation not found")
 
 // ConversationSummary 会话列表项。
 type ConversationSummary struct {

@@ -357,7 +357,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Watches:        w.watcher,
 		Skills:         w.skills,             // D201：/skill 与 skill 工具同一份清单
 		SkillAdmin:     skillsAdminApp{w: w}, // D202：/skill install|remove|update
-		WatchCancel:    watchCancel{w: w},    // D167：切走/新建/删当前会话即撤两个轮询器
+		WatchCancel:    watchCancel{w: w},    // D262：删除会话与关停时撤两个轮询器；切换不撤
+		Logf:           func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
 		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
 		UI:             w.presenter,
 		Memories:       memoryOpener{w: w},

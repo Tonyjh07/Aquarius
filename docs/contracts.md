@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ 33ace4e -->
+<!-- docs-sync: 2026-10-31 @ 3d69eab -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -427,6 +427,9 @@ type ConversationStore interface { // 整树存取（一会话一 JSON），写�
     Remove(ctx context.Context, id conversation.ID) error
 }
 ```
+
+**找不到会话**返回 `port.ErrConversationNotFound`（`storejson.ErrNotFound` 是它的别名）：
+内核据此区分「会话已被删除」（丢弃注入）与「读取故障」（上抛），不必认识具体适配器。
 
 **磁盘形状不在端口契约里**（D214）：端口只收发聚合根与摘要，落盘格式（字段名、旧格式识别、
 `.bak` 代际与代数）是各适配器自己的事。内置实现 `storejson` 用 `conversation.Snapshot()` 导出整树、
@@ -1658,7 +1661,7 @@ type Injection struct {
     Trust   TrustLevel    // TrustHost = 宿主事实；零值/TrustExternal = 外部内容（D170）
     Parts   []conversation.Part
     Trigger *bool         // nil = 按来源取默认；非 nil = 显式覆盖（D166）
-    Session conversation.ID // 可选目标会话（D167）；空 = 落地时取当前会话
+    Session conversation.ID // 可选目标会话（D261）；空 = 落地时取当前会话
 }
 type Injector interface { Inject(ctx context.Context, in Injection) error }
 ```
@@ -1667,7 +1670,8 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
   报错）——坏包（思考/工具分片、空内容）当场拒给调用方，不让它无声落进树；排空由会话
   goroutine 在 `Handle` 入口、每轮 Turn 结束、以及显式的驱动式排空点执行——**不在别的
   goroutine 里改树**（树变更只发生在 `Handle` 内，§7.5 并发口径不变）。注入可带**目标会话**：
-  排空时若当前会话已不是它，整条丢弃，避免切换瞬间的竞态把报告投进别的会话。
+  排空时若当前会话已不是它，走**异地落地**（`store.Load` → 追加 `RoleInject` → `store.Save`），
+  报告落在目标会话自己的树上而不是丢给当前会话；目标已删除则丢弃并记一条运行日志。
 - **排空时机**：① `Handle` 开始时（用户输入优先，注入不抢手输入）；② 一轮 Turn 提交后
   （工具在轮内注入的内容在同一轮结束后落地，不打断当前轮）；③ 空闲等待期间由装配根的
   `Wake` 通道投递一次唤醒输入（`port.UserInput.Wake`，不是用户输入）触发。①②只**落地**、

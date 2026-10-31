@@ -48,9 +48,12 @@ type SessionDeps struct {
 	// SkillAdmin 技能安装面（/skill install|remove|update，D202）；nil 时子命令报未接入。
 	// 与 Skills 分开：读侧是只读端口，安装面是用户面动作（不进 port）。
 	SkillAdmin SkillAdmin
-	// WatchCancel 撤销某会话的后台任务观察者（D167）：切换 / 新建 / 删除当前会话时调用，
-	// 保证任务完成报告不跨会话；nil 时跳过（测试或未接轮询器的装配）。
+	// WatchCancel 撤销某会话的后台任务观察者（D167/D262）：**删除会话与关停**时调用；
+	// 切换与新建不调用——任务的生命周期跟任务走，不跟焦点走（D261）。nil 时跳过。
 	WatchCancel WatcherCanceller
+	// Logf 运行日志（用户面中文，装配根接到 stderr）：异地落地遇到已删除的会话时说明丢弃。
+	// nil = 丢弃。
+	Logf func(format string, args ...any)
 	// Ingestors 多模态输入摄取器（M3 管线；/attach 等触发命令面留 §14，D27/D33）；
 	// nil 时 Raw 输入报"没有可用的摄取器"。
 	Ingestors []port.Ingestor
@@ -111,6 +114,7 @@ type Session struct {
 	skills      port.SkillCatalog
 	skillAdmin  SkillAdmin
 	watchCancel WatcherCanceller
+	log         func(format string, args ...any)
 	ingestors   []port.Ingestor
 	ui          port.Presenter
 	memories    MemoryOpener
@@ -207,6 +211,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		skills:      d.Skills,
 		skillAdmin:  d.SkillAdmin,
 		watchCancel: d.WatchCancel,
+		log:         d.Logf,
 		ingestors:   d.Ingestors,
 		ui:          d.UI,
 		memories:    d.Memories,
@@ -470,8 +475,8 @@ func (s *Session) maybeSetTitle(text string) {
 	s.cur.Title = string(r)
 }
 
-// cancelWatchersFor 撤销某会话的后台任务观察者（D167）：切走/删掉会话后，
-// 任务仍在后台跑，但完成报告不再属于当前上下文。
+// cancelWatchersFor 撤销某会话的后台任务观察者（D262）：只在**删除会话**与关停时调用。
+// 切换不撤销——任务的生命周期跟任务走，报告按归属异地落地，不随焦点丢弃（D261）。
 func (s *Session) cancelWatchersFor(id conversation.ID) {
 	if s.watchCancel != nil {
 		s.watchCancel.CancelSession(id)

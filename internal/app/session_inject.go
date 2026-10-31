@@ -20,7 +20,7 @@ type pendingInjection struct {
 	trust   conversation.InjectTrust
 	parts   []conversation.Part
 	trigger bool
-	session conversation.ID // 目标会话（D167）；空 = 落地时取当前会话
+	session conversation.ID // 目标会话（D261）：空 = 落地时取当前会话；非当前则异地落地
 }
 
 // Session 实现注入端口（D150）：外部生产者只经此入队，树变更仍由会话 goroutine 独占。
@@ -127,9 +127,12 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 	for {
 		select {
 		case item := <-s.injectCh:
-			// 目标会话已不是当前会话（D167）：切换瞬间入队的报告整条丢弃，
-			// 不把别的会话的后台任务塞进这里。
+			// 目标会话不是当前会话（D261）：落到它自己的树上，不等用户切回去。
+			// 转交与后台任务都注定跨切换，报告按归属落地而不是按焦点落地。
 			if item.session != "" && item.session != s.cur.ID {
+				if err := s.landElsewhere(ctx, item); err != nil {
+					return landed, wantTurn, err
+				}
 				continue
 			}
 			trigger := item.trigger && plan.driven
@@ -174,4 +177,49 @@ func (s *Session) landInjection(item pendingInjection, trigger bool) (conversati
 		return conversation.Message{}, fmt.Errorf("session: 注入落地: %w", err)
 	}
 	return node, nil
+}
+
+// landElsewhere 异地落地（D261）：目标会话不是当前会话时，读它的树、追加注入、写回。
+//
+// 为什么可以这样做：树变更仍只在会话 goroutine 里发生（§7.5）——这里读改写的是**不在
+// 内存里**的会话，它唯一的另一份活体是磁盘，而磁盘只有这个 goroutine 在碰。切回来时
+// replayHistory 自然把它铺出来。
+//
+// Trigger 一律记 false：轮次是当前会话的事，异地那条没有起过一轮。目标已被删除则丢弃
+// 并记一条运行日志——不重建，重建出来的会话没有归属。
+func (s *Session) landElsewhere(ctx context.Context, item pendingInjection) error {
+	target := item.session
+	c, err := s.store.Load(ctx, target)
+	if err != nil {
+		if errors.Is(err, port.ErrConversationNotFound) {
+			s.logf("注入 %s 的目标会话 %s 已删除，内容丢弃", item.source, target)
+			return nil
+		}
+		return fmt.Errorf("session: 异地落地读取会话 %s: %w", target, err)
+	}
+	node := conversation.Message{
+		ID:        s.ids.MessageID(),
+		Parent:    c.Head,
+		Role:      conversation.RoleInject,
+		Content:   item.parts,
+		Source:    item.source,
+		Trigger:   false,
+		Trust:     item.trust,
+		CreatedAt: s.clock.Now(),
+	}
+	if err := c.AppendCommitted(node); err != nil {
+		return fmt.Errorf("session: 异地落地会话 %s: %w", target, err)
+	}
+	if err := s.store.Save(ctx, c); err != nil {
+		return fmt.Errorf("session: 异地落地保存会话 %s: %w", target, err)
+	}
+	return nil
+}
+
+// logf 运行日志（用户面中文）；未接线时丢弃。
+func (s *Session) logf(format string, args ...any) {
+	if s.log == nil {
+		return
+	}
+	s.log(format, args...)
 }

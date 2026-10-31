@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -104,22 +105,79 @@ func TestDrainOnWakeTriggersAndAnnounces(t *testing.T) {
 	}
 }
 
-// TestDrainMisroutedSessionDropped 目标会话不是当前会话的注入整条丢弃（D167）：切换瞬间的
-// 竞态不能把别的会话的报告塞进这里；丢弃不算「落地过」，故不落盘、也不要求跑轮。
-func TestDrainMisroutedSessionDropped(t *testing.T) {
-	s, _, _ := injectableSession(t, newMemStore())
-	if err := s.Inject(context.Background(), port.Injection{
+// TestDrainLandsInOtherSession 目标会话不是当前会话的注入**异地落地**（D261）：读目标树、
+// 追加注入、写回；当前会话的树一动不动，也不要求当前会话跑轮。
+func TestDrainLandsInOtherSession(t *testing.T) {
+	store := newMemStore()
+	s, _, _ := injectableSession(t, store)
+	ctx := context.Background()
+
+	other := conversation.New("convOther", "别的会话")
+	if err := store.Save(ctx, other); err != nil {
+		t.Fatalf("save other: %v", err)
+	}
+	head := other.Head
+	before := len(s.Current().Path())
+
+	if err := s.Inject(ctx, port.Injection{
 		Source:  "job:other",
-		Parts:   injectPart("别的会话"),
+		Parts:   injectPart("别的会话的报告"),
 		Session: conversation.ID("convOther"),
 	}); err != nil {
 		t.Fatalf("inject: %v", err)
 	}
-	landed, wantTurn, err := s.drainInjections(context.Background(), drainOnWake)
+	landed, wantTurn, err := s.drainInjections(ctx, drainOnWake)
 	if err != nil {
 		t.Fatalf("drain: %v", err)
 	}
 	if len(landed) != 0 || wantTurn {
-		t.Fatalf("landed = %+v, wantTurn = %v（错投的注入应整条丢弃）", landed, wantTurn)
+		t.Fatalf("landed = %+v, wantTurn = %v（异地落地不属于当前会话，不起轮）", landed, wantTurn)
+	}
+	if got := len(s.Current().Path()); got != before {
+		t.Fatalf("当前会话 path 长度 = %d, want %d（异地的落不到这里）", got, before)
+	}
+
+	got, err := store.Load(ctx, "convOther")
+	if err != nil {
+		t.Fatalf("reload other: %v", err)
+	}
+	if got.Head == head {
+		t.Fatal("目标会话 Head 未前移——报告没有落地")
+	}
+	path := got.Path()
+	last := path[len(path)-1] // Path 按 root→Head 排列，末项即最新节点
+	if last.Role != conversation.RoleInject || last.Source != "job:other" {
+		t.Fatalf("末节点 = %+v, want inject / job:other", last)
+	}
+	if last.Parent != head {
+		t.Fatalf("父 = %s, want %s（挂目标会话当时的 Head）", last.Parent, head)
+	}
+}
+
+// TestDrainDropsInjectionForDeletedSession 目标会话已删除：丢弃、不报错、不重建。
+func TestDrainDropsInjectionForDeletedSession(t *testing.T) {
+	s, _, _ := injectableSession(t, newMemStore())
+	ctx := context.Background()
+	before := len(s.Current().Path())
+
+	if err := s.Inject(ctx, port.Injection{
+		Source:  "job:gone",
+		Parts:   injectPart("无处可落"),
+		Session: conversation.ID("convGone"),
+	}); err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	landed, wantTurn, err := s.drainInjections(ctx, drainOnWake)
+	if err != nil {
+		t.Fatalf("drain: %v（已删除的目标只该丢弃）", err)
+	}
+	if len(landed) != 0 || wantTurn {
+		t.Fatalf("landed = %+v, wantTurn = %v", landed, wantTurn)
+	}
+	if got := len(s.Current().Path()); got != before {
+		t.Fatalf("当前会话 path 长度 = %d, want %d", got, before)
+	}
+	if _, err := s.store.Load(ctx, "convGone"); !errors.Is(err, port.ErrConversationNotFound) {
+		t.Fatalf("load 已删会话 err = %v, want not found（不得重建）", err)
 	}
 }

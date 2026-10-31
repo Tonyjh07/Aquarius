@@ -308,7 +308,6 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 		}
 		saved = append(saved, c.ID)
 	}
-	s.cancelWatchersFor(s.cur.ID) // 旧会话的后台任务报告不再属于这里
 	s.cur = imported[0]
 	// 会话已经落盘并切过来了：从这里往下是「界面刷新」，失败时不能把已完成的事实报成失败。
 	// 用户要知道「导入成功了，但界面没刷干净」，否则会以为白导一次。

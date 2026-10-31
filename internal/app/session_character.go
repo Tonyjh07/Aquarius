@@ -36,7 +36,6 @@ func (s *Session) startCharacter(ctx context.Context, slug string, n int) (strin
 	if err := s.store.Save(ctx, c); err != nil {
 		return "", fmt.Errorf("session: 新建角色会话: %w", err)
 	}
-	s.cancelWatchersFor(s.cur.ID) // D167：旧会话的后台任务报告不再属于这里
 	s.cur = c
 	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75）
 		return "", err

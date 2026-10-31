@@ -219,7 +219,8 @@ func (w *Watcher) Stop(_ context.Context, id port.WatchID) error {
 	return nil
 }
 
-// CancelSession 撤销某会话的全部观察器（D167 同一口径：切走/新建/删除当前会话时）。
+// CancelSession 撤销某会话的全部观察器（D262 同一口径：删除会话与关停时；切换不撤，
+// 命中报告按归属异地落地）。
 func (w *Watcher) CancelSession(id conversation.ID) {
 	if w == nil || id == "" {
 		return

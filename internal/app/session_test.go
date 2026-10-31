@@ -56,7 +56,7 @@ func cloneConv(c *conversation.Conversation) *conversation.Conversation {
 func (m *memStore) Load(_ context.Context, id conversation.ID) (*conversation.Conversation, error) {
 	c, ok := m.convs[id]
 	if !ok {
-		return nil, errors.New("memStore: not found")
+		return nil, fmt.Errorf("memStore: %w", port.ErrConversationNotFound)
 	}
 	return c, nil
 }
@@ -80,7 +80,7 @@ func (m *memStore) List(context.Context) ([]port.ConversationSummary, error) {
 
 func (m *memStore) Remove(_ context.Context, id conversation.ID) error {
 	if _, ok := m.convs[id]; !ok {
-		return errors.New("memStore: not found")
+		return fmt.Errorf("memStore: %w", port.ErrConversationNotFound)
 	}
 	delete(m.convs, id)
 	return nil

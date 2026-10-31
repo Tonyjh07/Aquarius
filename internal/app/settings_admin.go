@@ -32,8 +32,9 @@ type ThinkingSettings interface {
 	PersistEffort(level string) error
 }
 
-// WatcherCanceller 撤销某会话的后台任务观察者（D167）：切走 / 新建 / 删除当前会话时
-// 调用，保证任务完成报告不跨会话。未接线时跳过（测试或未接轮询器的装配）。
+// WatcherCanceller 撤销某会话的后台任务观察者（D262）：**删除会话与关停**时调用。
+// 切换会话不再撤销——报告按归属异地落地，不随焦点丢弃（D261）。未接线时跳过
+// （测试或未接轮询器的装配）。
 type WatcherCanceller interface {
 	CancelSession(id conversation.ID)
 }
