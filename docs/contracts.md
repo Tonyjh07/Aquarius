@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-30 @ fe825c7 -->
+<!-- docs-sync: 2026-10-31 @ 1289048 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -118,12 +118,38 @@ const (
     Clone                 // 深拷贝旧节点的子树为新分支（全新 ID、原子树不动，D96）
 )
 
+// DetachmentKind 溯源路牌的来源种类（D256）。
+type DetachmentKind string
+
+const (
+    DetachTransfer DetachmentKind = "transfer" // Revise Carry：旧节点的孩子边整批转给新版本
+    DetachReparent DetachmentKind = "reparent" // Reparent：子树整棵挪到另一个父下
+)
+
+// Detachment 一条溯源路牌（D256）：某处曾挂过的内容去了哪里。**不参与**路径、版本组、
+// 装配、删除统计——只服务审计与 /reparent --undo。
+type Detachment struct {
+    Anchor  MessageID      // 锚点：改父 = 原父；转移 = 被取代的旧版本节点
+    Roots   []MessageID    // 被搬走的子树根（转移是整批孩子，改父只有一项）
+    NewHome MessageID      // 新位置：改父 = 新父；转移 = 新版本节点
+    Kind    DetachmentKind
+    At      time.Time
+    // Stale 记录已失效（被搬的子树根现在不挂在 NewHome 下）：检出但不删，撤销据此拒绝执行。
+    Stale bool
+}
+
+// ReparentResult 改父的回执（D255）：搬动了多少节点。水位前后对比在应用层做——
+// 「哪些节点进上下文」是装配口径（waterline），领域不认。
+type ReparentResult struct { Moved int }
+
 func New(id ID, title string) *Conversation // 建 Root 空节点（ID=id、Role=root）并把 Head 置于 Root；persona 由应用层写为首孩子
 func (c *Conversation) Append(role Role, content []Part) (Message, error) // 仅 user|assistant；root/system|inject 一律走 AppendCommitted
 func (c *Conversation) AppendCommitted(m Message) error                   // 提交已组装好的不可变节点（system/inject 等），入树前校验不变量
 func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Message, error) // root 不可 Revise；system/inject 可
 func (c *Conversation) InsertBefore(id MessageID, role Role, parts []Part) (Message, error) // 在 id 之前插入衬垫节点（仅 system|inject，D152）
 func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, error) // 同上，但接受已组装的衬垫节点（模型生成的摘要带 Model/Usage，与 AppendCommitted 同口径）
+func (c *Conversation) Reparent(id, newParent MessageID) (ReparentResult, error) // 改父：整棵子树从一个父挪到另一个父（D255）
+func (c *Conversation) Detachments() []Detachment             // 溯源路牌只读视图，按发生时刻升序（D256）
 func (c *Conversation) Prune(id MessageID) error              // 剪掉 id 及整棵子树（Root 不可剪）
 func (c *Conversation) Checkout(id MessageID) error           // Head 移到任意节点（含 Root=回根；无空串特例）
 func (c *Conversation) Path() []Message                        // Root→Head 线性序列（首元素为 Root，装配时滤掉）
@@ -238,6 +264,36 @@ func (c *Conversation) Validate() error                        // 两条不变�
   **衬垫在展示面是透明的**：它把上下文顶进路径中间，本身不是任何发言的版本——版本组（§7.5）
   跨过它，它的孩子算祖父那一层的版本；判据不落库，从结构读（system|inject、恰一个孩子、
   孩子创建早于它、父不是结构根），顺链路追加的压缩水位孩子恒晚于它，故不会被误认。
+- **改父（Reparent）**（D255）：`Reparent(id, newParent)` 把 `id` 及其整棵子树从一个父挪到另一个父。
+  硬拦截只有三条——`id` 不是 Root、`newParent` 不是 Root、`newParent` 不是 `id` 自己或它的严格后代（环）；
+  `newParent` 等于当前父则报错（无事可做）。**Root 不能作父的理由是装配不是结构**：Head 路径会变成
+  `Root → 该支`，`path[1]` 不再是 system，人格静默退出装配（`waterline` 只认位置）——这条不经环拦截，
+  必须单独关掉；编辑模式下拖到没有合法落点处 = 父不变、只改位置，结构上不存在挂到 Root 的路径。
+  摘边/挂边/改 `Parent` 与 Carry 的整批边转移同构（共用 `transferChildren`）；`Head` 在被搬子树内
+  随行、在外不动（与 Carry 同口径）。**衬垫可作新父**，
+  但它因此失去「恰一个孩子」而降级为普通节点、版本组随之变化——调用方须在改父前提示这一句。
+  除环以外不设角色白名单：人格是 Root 的首孩子、树上其余节点都在它下面，搬它必命中环，
+  等于被结构钉死，不需要额外规则。
+- **版本链与结构边并存**（D255）：`revisedFrom` 照旧记「A′ 修订自 A」，即使 A′ 被挪到别的父下；
+  版本组（`Branches`/`VersionGroups`）**仍按结构算**——它表达的是「同一父下的替代品」，分叉编号不动。
+  跨父版本关系只能从版本链本身查（`Edition`）；图上本版**不画**第二档线：语义有两种，视觉兑现推迟。
+- **版本链校验补成环**（D255）：`Revise` 的新节点 ID 全新，当前原语造不出环——改父落地后才有洞。
+  `Validate` 给版本链加成环检查（沿 `revisedFrom` 上溯，与结构边同一口径）。
+- **溯源路牌**（D256）：一张私有表记「某处曾挂过的内容去哪了」。一条记录 = 锚点（原父 / 被取代的旧版本）
+  + 被搬子树根（**列表**：转移是整批孩子、改父只有一项）+ 新位置 + 时刻 + 种类。同一操作只记一条，
+  不按孩子拆。它天然违反「父子双向一致」，故**不进结构边检查**：照版本链先例查两端在树，另加一条
+  **陈旧性检查**——被记的子树根现在必须确实挂在 `NewHome` 下，否则标 `Stale`（检出但不删）。
+  寿命：长存，`/reparent --undo` 消费即删，`Prune` 删掉任一端时一并清。落盘走 `Snapshot`/`Restore`
+  （`storejson` wire 加 `detached` 键、缺键即空，不升 wire 版本）。**它不构成第二父**：
+  要「从断点挂回来」是两次改父，多父图仍否决。
+- **树编辑会话**（D258）：改父的用户入口是**显式开关**（不是修饰键）。会话期间 `/reparent`
+  立即在内存生效并发布快照（关系图与装配都按新结构走），但**不落盘**；退出时一次保存。
+  退出前若有未保存改动，先问「保存 / 放弃 / 取消」——放弃按逆操作回滚、不写盘；没有改动
+  就直接退出、不弹。切换会话与关闭窗口是同一个出口。会话内的其他变更（新消息、压缩）照常
+  即时落盘，那一刻会把已改的一并写入，其后「放弃」再写一次回滚结果——正确性不变，只是保存
+  提前发生。`/reparent --undo` 在会话内同样只改内存。装配条数在**退出时**统一比对一次
+  （变少确认、变多只提示），拖动过程不弹窗。会话开关、光晕与拖动中的虚线只属于 UI 呈现
+  （[relation-map-design.md](relation-map-design.md) §5.6），内核只认「会话中 / 不在会话中」。
 - **思考过程入树 + 回传开关**（D42）：assistant 节点的思维链以 `PartThinking` 分片承载（每轮
   生成的流内分片合并为至多一段、置于该段正文之前；D95 Turn 粒度下一节点可含多段——每段
   属于其生成轮；取消/出错终态的已生成思考随节点一同入树）；节点形态校验限定
@@ -2042,6 +2098,8 @@ type Injector interface { Inject(ctx context.Context, in Injection) error }
 | `/regen <id>` | 重新生成（D92）：id 可为用户或助手消息——取上游最近用户消息 Revise Fresh 开同父兄弟重发（旧回答保留为历史分支），清屏回放后跑 Turn；上游用户消息**尚无回答**时直接生成、不重复分叉（D93） |
 | `/respond <id>` | 生成响应（D165）：把 Head 移到所选节点后跑 Turn——发往 API 的即「水位 → 所选节点（含）」；产物为该节点的 assistant 子节点，已有子节点则**开新分支**（旧分支保留）。id 可为任意**非根**节点（含人格 / 系统 / 工具节点），根拒绝 |
 | `/branch [id]` | 展示同级分叉（新旧版本对比） |
+| `/tree-edit [--done\|--cancel]` | 进入 / 退出**树编辑会话**（D258）：进入后 `/reparent` 只在内存生效、关系图实时变化，退出时一次落盘；`--done` = 保存退出，`--cancel` = 回滚不保存；无参进入，已在会话中则回显状态 |
+| `/reparent <id> <新父>` / `/reparent --undo` | 改父（D255）：整棵子树挪到新父下、成为**末子**；新父不能是 Root、不能是自己或严格后代。`--undo` 反做最近一条溯源路牌。会话中只改内存，会话外立即落盘 |
 | `/summary <id> [文本]` | 在节点 **之前**插入摘要（D152）：新建 system 摘要节点并把该节点及其子树整体挪到其后（单条边转移），摘要成为水位；**不带文本 = 让当前模型总结其上历史后插入**，带文本 = 直接用手写摘要 |
 | `/inject [--source <名>] [--no-trigger] <文本>` | 手动注入一条上下文（D150）：入树为 inject 节点；`--no-trigger` 只入上下文不起响应。工具/MCP/观察器走同一内核入口，不经此命令 |
 | `/rm <id>` | Prune 剪子树（二次确认） |
