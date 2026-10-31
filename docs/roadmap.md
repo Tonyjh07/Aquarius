@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-31 @ ff4c702 -->
+<!-- docs-sync: 2026-10-31 @ 2097663 -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -107,7 +107,7 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | v0.3.0-D | 角色卡只读导入：PNG（`tEXt` `ccv3`/`chara`）/ JSON / `.charx`（ZIP）解析、`@char.*` 条件内置模块、`{{char}}`/`{{user}}`/`{{date}}`/`{{original}}` 宏替换、`/character` 命令面、设置窗「角色」页、会话列表行头像（D243/D247） | 已落地 2026-10-30 |
 | v0.3.0-F | 零碎项收口：非角色会话提示词也展开 `{{char}}`/`{{user}}`/`{{date}}`（无角色绑定时 `{{char}}` 保留字面量不删空）、provider 自定义请求头 `headers`（仅 `openai-chat`）、会话树备份轮转 N 代（`backup.keep` 默认 3、保存前完整性校验）（D252/D253/D254） | 已落地 2026-10-30 |
 | v0.4.0-W | `uigui` 大文件只拆文件：9 个生产文件按职责切成 2–4 个（1,100→337 / 1,045→371 / 990→571 / 987→197 / 913→362 / 906→284 / 890→313 / 855→436 / 778→209），零 import 面改动、测试文件一字未动、每笔单独过全量测试 | 已落地 2026-10-30 |
-| v0.4.0-R | 会话树改父与溯源：版本链成环校验、溯源路牌（一条记录 = 锚点 + 子树根列表 + 新位置 + 时刻 + 种类）、`transferChildren` 抽取、`Reparent` 原语、`/reparent` 命令面、树编辑会话、关系图接线（D255–D259） | 进行中（R-1、R-2 已落地） |
+| v0.4.0-R | 会话树改父与溯源：版本链成环校验、溯源路牌（一条记录 = 锚点 + 子树根列表 + 新位置 + 时刻 + 种类）、`transferChildren` 抽取、`Reparent` 原语、`/reparent` 命令面、树编辑会话、关系图接线（D255–D259） | 进行中（R-1…R-3 已落地） |
 
 **`v0.2.0-P2` 已落地**（批次号固定；完工，无剩余项）：
 
@@ -219,7 +219,8 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | # | 提交 | 主要结果 |
 |---|---|---|
 | R-1 | `ff4c702 fix: reject cycles in the edition chain during validation` | `Validate` 沿 `revisedFrom` 上溯查环（自指也算、同一个环只报一次），坏链不再让「找最旧版本」转圈；跨父的链照常合法 |
-| R-2 | `feat: record provenance when a carry moves a subtree` | 领域新增 `Detachment` 与私有表：Carry 搬孩子时记一条（锚点 = 旧版本、根 = 整批孩子、新位置 = 新版本）；`Detachments()` 现算 `Stale`；`Prune` 删任一端连带清；`Snapshot`/`Restore` 与 `storejson` 的 `detached` 键（缺键即空、不升 wire 版本）；`Validate` 查三端在树；三条单元测试 + 转移属性断言 |
+| R-2 | `2097663 feat: record provenance when a carry moves a subtree` | 领域新增 `Detachment` 与私有表：Carry 搬孩子时记一条（锚点 = 旧版本、根 = 整批孩子、新位置 = 新版本）；`Detachments()` 现算 `Stale`；`Prune` 删任一端连带清；`Snapshot`/`Restore` 与 `storejson` 的 `detached` 键（缺键即空、不升 wire 版本）；`Validate` 查三端在树；三条单元测试 + 转移属性断言 |
+| R-3 | `refactor: share the child transfer between carry and reparent` | Carry 里那段整批边转移收成 `transferChildren(from, to)`：孩子整批搬到 `to` 的末尾、只改这些孩子的 `Parent`，返回被搬的列表；Carry 用它并照旧记路牌，改父那笔直接用，只看新判断 |
 
 落地后 `uigui` 生产文件 107 个 / 29,014 行，九个被点名的文件全部 ≤ 600 行；仍超 600 的
 `select.go` 722 / `dock.go` 635 / `relmap_frame.go` 621 / `fade.go` 604 未在本次范围，登记在

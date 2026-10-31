@@ -224,16 +224,9 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	headInSubtree := c.isStrictDescendant(id, prevHead)
 	switch mode {
 	case Carry:
-		if moved := c.children[id]; len(moved) > 0 {
-			c.children[m.ID] = moved // 边转移：整批边零拷贝改挂
-			delete(c.children, id)
-			for _, ch := range moved { // 仅直接孩子的 Parent 边指针改写（D16）
-				cm := c.nodes[ch]
-				cm.Parent = m.ID
-				c.nodes[ch] = cm
-			}
-			// 路牌（D256）：旧版本从此无子，孩子们整批挂到了新版本下。一条记录记整批，
-			// 不为每个孩子各写一条——撤销要挪回的是「这一批」，拆开就还原不了原样。
+		// 边转移：整批孩子零拷贝改挂到新版本。路牌记整批（D256）——撤销要挪回的是「这一批」，
+		// 拆开就还原不了原样。
+		if moved := c.transferChildren(id, m.ID); len(moved) > 0 {
 			c.recordDetachment(id, moved, m.ID, DetachTransfer)
 		}
 		if headInSubtree {
@@ -263,6 +256,27 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 		return Message{}, err
 	}
 	return c.nodes[m.ID], nil
+}
+
+// transferChildren 把 from 的整批直接孩子改挂到 to 的孩子列表末尾（边转移，零拷贝）：
+// 孩子切片整体搬家，仅改写这些孩子的 Parent 指针，孙代及更深不动（D16）。
+//
+// Carry 与 Reparent 共用这一份——两者的差别只在「to 是谁」，不在「怎么搬」。搬向已有孩子的
+// 父（改父）时追加在末尾，搬向新节点（Carry）时 to 还没有孩子，追加即等于整体赋值。
+// 返回被搬走的孩子（搬运前的兄弟顺序）；from 没有孩子时返回 nil，不动任何表。
+func (c *Conversation) transferChildren(from, to MessageID) []MessageID {
+	kids := c.children[from]
+	if len(kids) == 0 {
+		return nil
+	}
+	delete(c.children, from)
+	c.children[to] = append(c.children[to], kids...)
+	for _, ch := range kids {
+		cm := c.nodes[ch]
+		cm.Parent = to
+		c.nodes[ch] = cm
+	}
+	return kids
 }
 
 // cloneSubtree 把 id 的整棵子树深拷贝到 parent 之下（不含 id 自身——新节点即其"新版本"）：
