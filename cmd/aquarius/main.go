@@ -394,6 +394,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if w.cfg.UI.Kind != "gui" {
 		w.ui.Say("Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成")
 	}
+	// 启动对账（D262）：上次退出时没来得及收尾的任务，补一条「它当时在跑/已结束」的
+	// 事实注入；紧接着的历史回放会把它铺出来。台账读即清，补过就不会再报一次。
+	if items, jerr := w.jobs.Unfinished(ctx); jerr != nil {
+		fmt.Fprintf(stderr, "读取未收尾任务台账: %v\n", jerr)
+	} else if rerr := w.sess.ReportUnfinished(ctx, items); rerr != nil {
+		fmt.Fprintf(stderr, "补记未收尾任务: %v\n", rerr)
+	}
 	// 启动历史回放（D40/§7.4）：恢复的会话把水位→Head 的可见历史重放进转写区，
 	// 让用户知道当前是哪个会话、此前聊了什么（新建会话无历史，no-op）。
 	if _, rerr := w.sess.ReplayHistory(ctx); rerr != nil {

@@ -109,6 +109,11 @@ func (m *waitJobs) Logs(_ context.Context, id port.JobID, tail int) (string, err
 
 func (m *waitJobs) Kill(context.Context, port.JobID) error { return m.killErr }
 
+// Unfinished 对账替身：watcher 测试不涉及启动对账，恒空。
+func (m *waitJobs) Unfinished(context.Context) ([]port.UnfinishedJob, error) {
+	return nil, nil
+}
+
 // Wait 阻塞到 finish 关掉那条 channel（D189：完成是事件，不是待猜的状态）。
 func (m *waitJobs) Wait(ctx context.Context, id port.JobID) (port.Job, error) {
 	if err := ctx.Err(); err != nil {

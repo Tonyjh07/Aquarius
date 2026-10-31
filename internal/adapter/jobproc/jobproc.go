@@ -48,6 +48,10 @@ type Manager struct {
 	mu     sync.Mutex
 	byID   map[port.JobID]*jobRec
 	seq    int // 任务号序列（日志文件 O_EXCL 占位保证跨进程不撞号）
+
+	// ledgerPath / ledgerMu 未收尾台账（D262）：与日志同目录，进程内串行读写。
+	ledgerPath string
+	ledgerMu   sync.Mutex
 }
 
 // jobRec 单个任务的运行时记录（除日志句柄外，字段均在 Manager.mu 下更新）。
@@ -71,7 +75,7 @@ func New(logDir string) (*Manager, error) {
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create log directory %s: %w", logDir, err)
 	}
-	return &Manager{logDir: logDir, byID: map[port.JobID]*jobRec{}}, nil
+	return &Manager{logDir: logDir, byID: map[port.JobID]*jobRec{}, ledgerPath: ledgerPathFor(logDir)}, nil
 }
 
 // Start 后台启动任务：独立进程 + 日志落盘，返回即刻快照（Status=running）。
@@ -108,9 +112,23 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	m.mu.Lock()
 	m.byID[id] = rec
 	m.mu.Unlock()
+	sid, _ := port.SessionIDFrom(ctx)
+	entry := ledgerEntry{
+		ID:        id,
+		Session:   sid,
+		Command:   spec.Command,
+		Args:      spec.Args,
+		WorkDir:   spec.WorkDir,
+		StartedAt: rec.job.StartedAt,
+		PID:       cmd.Process.Pid,
+		LogPath:   logPath,
+	}
 	if spec.Timeout > 0 {
+		entry.Deadline = rec.job.StartedAt.Add(spec.Timeout)
 		time.AfterFunc(spec.Timeout, func() { m.expire(rec) })
 	}
+	// 台账先于收割写：极短任务可能立刻进终态，晚写会留下一条永远抹不掉的假条目。
+	m.addLedger(entry)
 	go m.wait(rec)
 	return m.snap(rec), nil
 }
@@ -244,21 +262,37 @@ func (m *Manager) Logs(ctx context.Context, id port.JobID, tail int) (string, er
 	if !ok {
 		return "", fmt.Errorf("no task %s", id)
 	}
-	f, err := os.Open(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", nil
-	}
+	text, truncated, err := readLogWindow(path)
 	if err != nil {
 		return "", fmt.Errorf("read log %s: %w", id, err)
+	}
+	if tail > 0 {
+		text = tailLines(text, tail, truncated)
+	}
+	if truncated {
+		text = "...[log exceeds the read window, tail only]\n" + text
+	}
+	return text, nil
+}
+
+// readLogWindow 读日志末尾窗口（超过 logWindow 只读尾部），返回按 D41 解码的文本与
+// 是否被窗口截断；文件不存在返回空串。
+func readLogWindow(path string) (text string, truncated bool, err error) {
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		return "", fmt.Errorf("read log %s: %w", id, err)
+		return "", false, err
 	}
 	size := fi.Size()
 	if size == 0 {
-		return "", nil
+		return "", false, nil
 	}
 	var start int64
 	if size > logWindow {
@@ -266,24 +300,22 @@ func (m *Manager) Logs(ctx context.Context, id port.JobID, tail int) (string, er
 	}
 	buf := make([]byte, size-start)
 	if _, err := f.ReadAt(buf, start); err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("read log %s: %w", id, err)
+		return "", false, err
 	}
-	text := decodeOutput(string(buf)) // 日志字节按 D41 解码为 UTF-8（与 Run 同口径）
-	if tail > 0 {
-		// 先去掉行尾换行，避免 split 出空尾行挤占 tail 名额。
-		lines := strings.Split(strings.TrimRight(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n")
-		if start > 0 && len(lines) > 0 {
-			lines = lines[1:] // 窗口起点截断的半行
-		}
-		if len(lines) > tail {
-			lines = lines[len(lines)-tail:]
-		}
-		text = strings.Join(lines, "\n")
+	return decodeOutput(string(buf)), start > 0, nil
+}
+
+// tailLines 取文本末尾 n 行。truncated 表示窗口起点截断了一行，先丢掉它再数。
+func tailLines(text string, n int, truncated bool) string {
+	// 先去掉行尾换行，避免 split 出空尾行挤占名额。
+	lines := strings.Split(strings.TrimRight(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n")
+	if truncated && len(lines) > 0 {
+		lines = lines[1:]
 	}
-	if start > 0 {
-		text = "...[log exceeds the read window, tail only]\n" + text
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
 	}
-	return text, nil
+	return strings.Join(lines, "\n")
 }
 
 // Kill 显式终止任务（杀进程树/组）；未知任务或已结束报错。
@@ -384,6 +416,7 @@ func (m *Manager) wait(r *jobRec) {
 	m.mu.Unlock()
 	_, _ = fmt.Fprintf(r.logFile, "[exit code=%d status=%s]\n", code, status)
 	_ = r.logFile.Close()
+	m.dropLedger(r.job.ID)
 	// 终态已写进 job 并释放锁：此处关闭 = 唤醒所有 Wait（close 是同步点，
 	// 醒来后取快照必然看得到终态）。
 	close(done)

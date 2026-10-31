@@ -23,3 +23,12 @@ func killTree(cmd *exec.Cmd) error {
 	}
 	return cmd.Process.Kill()
 }
+
+// alive 探活（D262）：按 pid 发信号 0。EPERM 说明进程在、只是不归我们管，仍算活着。
+func alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}

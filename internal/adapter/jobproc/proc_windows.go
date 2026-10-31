@@ -64,3 +64,21 @@ func killTree(cmd *exec.Cmd) error {
 	}
 	return cmd.Process.Kill()
 }
+
+// processQueryLimitedInformation PROCESS_QUERY_LIMITED_INFORMATION（0x1000）：
+// 探活只要这个权限位，不必拿到完整查询权。
+const processQueryLimitedInformation = 0x1000
+
+// alive 探活（D262）：能打开进程即视为仍在。pid 复用让这个判断只能算「可能仍在」，
+// 对账的措辞也按这个强度写。
+func alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	h, err := syscall.OpenProcess(processQueryLimitedInformation, false, uint32(pid))
+	if err != nil {
+		return false
+	}
+	_ = syscall.CloseHandle(h)
+	return true
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
@@ -46,7 +47,7 @@ type Job struct {
 // JobManager 后台任务端口：独立进程 + 日志落盘 ~/.aquarius/jobs/<id>.log；
 // 任务表 v1 内存态（D8），任务不受会话取消影响，job_kill 显式终止（§10）。
 //
-// 七个方法按消费方拆成下面四个小接口（§2.2）：各调用方只声明它真正用到的那几个，
+// 方法按消费方拆成下面几个小接口（§2.2）：各调用方只声明它真正用到的那几个，
 // 组合体 JobManager 仍是实现方与装配根的唯一契约。拆之前每个工具都拿着整张方法表，
 // 于是「这个工具会不会偷偷改任务」只能靠读实现来确认。
 type JobManager interface {
@@ -54,6 +55,29 @@ type JobManager interface {
 	JobRunner
 	JobReader
 	JobKiller
+	JobReconciler
+}
+
+// UnfinishedJob 上次退出时没有收尾的一条任务（D262）：启动对账的输入。
+//
+// 它不是一份报告，只是一组事实——任务当时在跑还是已经结束、日志在哪、末几行长什么样。
+// 报告由内核组装（正文进模型上下文，用英文），适配器只管把事实读出来。
+type UnfinishedJob struct {
+	Job     Job             `json:"job"`
+	Session conversation.ID `json:"session,omitempty"` // 发起会话；空 = 未绑定
+	LogPath string          `json:"log_path,omitempty"`
+	LogTail string          `json:"log_tail,omitempty"` // 日志末几行（已按 D41 解码为 UTF-8）
+	Alive   bool            `json:"alive"`              // 进程是否仍在（按 pid 探活，不接管）
+	// Deadline 本该结束的时刻（spec.Timeout>0 才有）：定时器随进程退出失效，这里只用于
+	// 在对账里说明「本该在何时结束」。
+	Deadline time.Time `json:"deadline,omitempty"`
+}
+
+// JobReconciler 未收尾台账（D262）：只给装配根的启动对账用。
+type JobReconciler interface {
+	// Unfinished 取走台账里全部未收尾条目（**读即清**）：取走后不再重报，
+	// 所以调用方拿到什么就得处理完什么。台账不存在返回空。
+	Unfinished(ctx context.Context) ([]UnfinishedJob, error)
 }
 
 // JobStarter 后台启动（job_start；watcher 装饰器也要）。

@@ -46,6 +46,8 @@ func (f *fakeJobs) Run(_ context.Context, spec port.JobSpec) (tool.Result, error
 
 func (f *fakeJobs) List(context.Context) ([]port.Job, error) { return f.jobs, nil }
 
+func (f *fakeJobs) Unfinished(context.Context) ([]port.UnfinishedJob, error) { return nil, nil }
+
 func (f *fakeJobs) Status(_ context.Context, id port.JobID) (port.Job, error) {
 	for _, j := range f.jobs {
 		if j.ID == id {

@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ 3d69eab -->
+<!-- docs-sync: 2026-10-31 @ 09eb5fb -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -584,10 +584,23 @@ type JobManager interface {
     Logs(ctx context.Context, id JobID, tail int) (string, error)
     Kill(ctx context.Context, id JobID) error
     Wait(ctx context.Context, id JobID) (Job, error) // 阻塞到终态（D189：完成是事件）
-    // Unfinished 台账里未收尾的条目（D262）：只在本进程刚装配时调用，供启动对账。
-    Unfinished(ctx context.Context) ([]Job, error)
+    // Unfinished 取走台账里未收尾的条目（D262，读即清）：只在本进程刚装配时调用。
+    Unfinished(ctx context.Context) ([]UnfinishedJob, error)
+}
+
+type UnfinishedJob struct {
+    Job      Job
+    Session  conversation.ID // 发起会话；空 = 未绑定
+    LogPath  string
+    LogTail  string          // 日志末几行（适配器已按 D41 解码）
+    Alive    bool            // 按 pid 探活：只能算「可能仍在」（pid 会复用）
+    Deadline time.Time       // 本该结束的时刻；定时器随进程退出失效，只用于说明
 }
 ```
+
+**为什么 `Unfinished` 返回的不是 `[]Job`**：对账要的是「事实 + 去哪儿 + 拿什么佐证」三件东西，
+`Job` 只装得下第一件。`Job` 里塞会话与日志尾会让这个运行时快照在 `job_list` 等只读面上带出
+无关字段，所以单开一个结构体，只在启动对账这一条路径上出现。
 
 输出语义：`Run` 的 `tool.Result.Output` 与 `Logs` 返回值都是 **UTF-8 文本**——进程原始字节由
 jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码。
@@ -601,8 +614,10 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 **重启对账（D262）**：任务表与 watcher 都是内存态，退出即归零；而 `Start` 起的进程不随父进程
 退出（Windows 不挂 job object、unix `Setpgid` 另起进程组），报告却再也不会产生。所以 `Start`
 在日志同目录写一条台账（id、发起会话、命令、起始时间、pid、日志路径、deadline），进终态时删除，
-`Unfinished` 供装配根在启动时读出残留。对账补的是**事实**不是报告——仍在跑，或已退出而退出码
-未知，附日志路径与末几行——经注入落到发起会话（目标不是当前会话时同上走异地落地）。不认领
+`Unfinished` 供装配根在启动时读出残留（**读即清**：取走即抹掉，否则每次启动都重报）。对账补的
+是**事实**不是报告——仍在跑，或已退出而退出码未知，附日志路径与末几行——经注入落到发起会话
+（目标不是当前会话时同上走异地落地）。台账写失败只记进任务日志、不阻断启动；台账文件坏掉
+按「没有残留」处理——对账不该被一份读不动的文件挡住启动。不认领
 活进程：`Wait` 依赖 `done` 通道与 `cmd.Process`，重启后都没有，按 pid 附着还会撞上 pid 复用。
 `spec.Timeout` 是进程内的定时器，随退出失效，台账里的 deadline 只用于在对账里说明「本该在何时
 结束」。对账注入落地后该条目即删除，否则每次启动都会重报一次。
