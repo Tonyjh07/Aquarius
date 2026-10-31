@@ -118,8 +118,8 @@ func newHistoryState(u *UI) *historyState {
 	return st
 }
 
-// currentTitle 当前会话的标题（空串 = 没有当前会话行，或标题为空）。与 title() 分开：
-// 那个是给人看的（空标题写「新会话」、无行写「（未就绪）」），这里是拿去派生文件名的。
+// currentTitle 当前会话的标题（空串 = 没有当前会话行，或标题为空）：拿去派生文件名。
+// 不加任何给人看的兜底——文件名要的是真标题，不是「新会话」。
 func (st *historyState) currentTitle() string {
 	for _, s := range st.sessions {
 		if s.Current {
@@ -127,19 +127,6 @@ func (st *historyState) currentTitle() string {
 		}
 	}
 	return ""
-}
-
-// title 当前会话标题（状态栏「会话：」与根节点陈述用）。
-func (st *historyState) title() string {
-	for _, s := range st.sessions {
-		if s.Current {
-			if s.Title == "" {
-				return "新会话"
-			}
-			return s.Title
-		}
-	}
-	return "（未就绪）"
 }
 
 // applyBudget rebudget：调整预算并重排（R3：数据/预算变更才重排；重排后仍收敛静止）。

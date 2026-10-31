@@ -145,14 +145,17 @@ func (st *historyState) histStatusCtlItems() []histCtlItem {
 	return items
 }
 
-// histStatusBar 状态栏（A7 落点）：会话标题 · 共 N · 呈现 M + 控件项集 + 图例。
+// histStatusBar 状态栏（A7 落点）：共 N · 呈现 M + 控件项集 + 图例。
+//
+// 这里**不写会话标题**（2026-10-31 用户批注）：左栏已经点着当前会话，标题在这里只是重复；
+// 而它长度不受控，一长就把右边的控件与树编辑开关挤出可视区（开关直接消失）。
 func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	N, M := 0, 0
 	if st.model != nil {
 		N = st.model.total
 		M = len(st.vis.nodes)
 	}
-	text := fmt.Sprintf("会话：%s · 共 %d 条 · 呈现 %d", st.title(), N, M)
+	text := fmt.Sprintf("共 %d 条 · 呈现 %d", N, M)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, paperOf().sunken,
