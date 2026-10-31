@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ 6e4ca78 -->
+<!-- docs-sync: 2026-10-31 @ 33ace4e -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -581,6 +581,8 @@ type JobManager interface {
     Logs(ctx context.Context, id JobID, tail int) (string, error)
     Kill(ctx context.Context, id JobID) error
     Wait(ctx context.Context, id JobID) (Job, error) // 阻塞到终态（D189：完成是事件）
+    // Unfinished 台账里未收尾的条目（D262）：只在本进程刚装配时调用，供启动对账。
+    Unfinished(ctx context.Context) ([]Job, error)
 }
 ```
 
@@ -592,6 +594,15 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 报告的目标不是当前会话时，由注入排空走「异地落地」——`store.Load(目标)` → 追加 `Role=inject`
 节点（父 = 它自己的 Head）→ `store.Save`，切回来 `replayHistory` 自然铺出来。目标会话已删除
 则丢弃并记一条运行日志。
+
+**重启对账（D262）**：任务表与 watcher 都是内存态，退出即归零；而 `Start` 起的进程不随父进程
+退出（Windows 不挂 job object、unix `Setpgid` 另起进程组），报告却再也不会产生。所以 `Start`
+在日志同目录写一条台账（id、发起会话、命令、起始时间、pid、日志路径、deadline），进终态时删除，
+`Unfinished` 供装配根在启动时读出残留。对账补的是**事实**不是报告——仍在跑，或已退出而退出码
+未知，附日志路径与末几行——经注入落到发起会话（目标不是当前会话时同上走异地落地）。不认领
+活进程：`Wait` 依赖 `done` 通道与 `cmd.Process`，重启后都没有，按 pid 附着还会撞上 pid 复用。
+`spec.Timeout` 是进程内的定时器，随退出失效，台账里的 deadline 只用于在对账里说明「本该在何时
+结束」。对账注入落地后该条目即删除，否则每次启动都会重报一次。
 
 ### 5.9 `watch.go` —— 观察器端口
 
@@ -1423,6 +1434,11 @@ this build`），后者照实回传。将来加一条 `session/resume` 与句柄
 **进程卫生**：Windows 下 `CREATE_NO_WINDOW`（同 `mcpgate`）；环境 = 父环境剔除 `AQUARIUS_*`
 + 配置 `env`；`stderr` 收进有界缓冲，只用于「它为什么起不来/为什么退出」这类报因，不进上下文；
 进程组整组回收（它自己会再拉起子进程）。
+
+**关停（D262）**：退出时转交主动 kill 进程组，台账留到下次启动对账，那条注入写的是「上次退出
+时中断了 N 笔转交」而不是报告。理由是 ACP 会话不能恢复——本版不做 `session/load`，留着只有一个
+后果：一路失去监督的子代理继续按自己的判断改文件。普通后台任务不随退出终止（它可能是服务或长
+构建），由对账说清它当时在跑还是已结束。
 
 **上限**：
 
