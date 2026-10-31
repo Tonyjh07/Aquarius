@@ -126,6 +126,9 @@ type Session struct {
 	charAdmin   CharacterAdmin
 	charOpts    CharacterOptions
 	cur         *conversation.Conversation
+	// treeEdit 树编辑会话（D258）：非 nil 时改父只改内存、退出时统一落盘；
+	// nil = 不在模式里。状态只在这里存一份，UI 经 TreeEditActive 读。
+	treeEdit *treeEditSession
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
 	// 发布，UI 事件循环 goroutine 经 Branches 无锁读（见 tree.go）。
 	tree atomic.Pointer[treeSnapshot]
@@ -489,6 +492,11 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 func (s *Session) persist(ctx context.Context) error {
 	if err := s.store.Save(ctx, s.cur); err != nil {
 		return fmt.Errorf("session: 保存会话: %w", err)
+	}
+	// 树编辑会话期间照常落盘（新消息、轮次不能只活在内存里），但要记下来：
+	// 放弃编辑时得把这次写盘也撤回，否则盘上会留着一份「被放弃的中间态」。
+	if s.treeEdit != nil {
+		s.treeEdit.saved = true
 	}
 	return nil
 }

@@ -43,6 +43,16 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 	if err != nil {
 		return "", fmt.Errorf("session: 改父: %w", err)
 	}
+	line := fmt.Sprintf("已改父：%d 个节点挂到 %s 下（/reparent --undo 可撤销）", res.Moved, parent)
+	if s.cur.IsPad(parent) {
+		line += "；目标是衬垫，它会降级为普通节点、版本组随之变化"
+	}
+	// 树编辑会话内：只改内存，退出时统一落盘（D258）；转写区也不重画——
+	// 编辑期间连着拖几下手会不停清屏，而这次改动的最终形状在退出时才需要确认。
+	if s.treeEdit != nil {
+		s.treeEdit.edits++
+		return line + "（树编辑中，退出时统一保存）", nil
+	}
 	if err := s.persist(ctx); err != nil {
 		// 与 /rm 同口径：落盘失败不留在内存里半生效——回到最近一次成功保存的状态。
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
@@ -62,11 +72,6 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 			return "", err
 		}
 	}
-
-	line := fmt.Sprintf("已改父：%d 个节点挂到 %s 下（/reparent --undo 可撤销）", res.Moved, parent)
-	if s.cur.IsPad(parent) {
-		line += "；目标是衬垫，它会降级为普通节点、版本组随之变化"
-	}
 	return line, nil
 }
 
@@ -76,6 +81,17 @@ func (s *Session) undoReparent(ctx context.Context) (string, error) {
 	d, err := s.cur.UndoLastDetachment()
 	if err != nil {
 		return "", fmt.Errorf("session: 撤销改父: %w", err)
+	}
+	what := "改父"
+	if d.Kind == conversation.DetachTransfer {
+		what = "转移"
+	}
+	line := fmt.Sprintf("已撤销最近一次%s：%d 个节点挂回 %s 下", what, len(d.Roots), d.Anchor)
+	if s.treeEdit != nil {
+		if s.treeEdit.edits > 0 {
+			s.treeEdit.edits--
+		}
+		return line + "（树编辑中，退出时统一保存）", nil
 	}
 	if err := s.persist(ctx); err != nil {
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
@@ -92,11 +108,7 @@ func (s *Session) undoReparent(ctx context.Context) (string, error) {
 			return "", err
 		}
 	}
-	what := "改父"
-	if d.Kind == conversation.DetachTransfer {
-		what = "转移"
-	}
-	return fmt.Sprintf("已撤销最近一次%s：%d 个节点挂回 %s 下", what, len(d.Roots), d.Anchor), nil
+	return line, nil
 }
 
 // pathContains 报告 id 是否在 Head 的路径上（含 Head 自身）。

@@ -126,6 +126,13 @@ func init() {
 		{Names: []string{"branch"}, Usage: "[id]", Desc: "展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）",
 			Params: []port.CommandParam{{Name: "id", Kind: port.ParamText, Desc: "看哪一处的分叉；省略 = 当前 Head"}},
 			Run:    (*Session).execBranch},
+		{Names: []string{"tree-edit"}, Usage: "[--done|--cancel]",
+			Desc: "树编辑模式：改挂只改内存、退出时统一保存；--done 保存退出，--cancel 放弃全部改动",
+			Params: []port.CommandParam{
+				{Name: "--done", Kind: port.ParamFlag, Desc: "保存并退出（有改动才比对上下文条数）"},
+				{Name: "--cancel", Kind: port.ParamFlag, Desc: "放弃改动并退出（树回到进入时的样子）"},
+			},
+			Run: (*Session).execTreeEdit},
 		{Names: []string{"reparent"}, Usage: "<id> <新父> | --undo",
 			Desc: "改父：整棵子树挂到新父下、成为末子；--undo 反做最近一次搬运（新父不能是 Root、不能是自己或后代）",
 			Params: []port.CommandParam{

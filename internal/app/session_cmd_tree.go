@@ -12,6 +12,12 @@ import (
 
 // execNew 实现 /new：新建会话。
 func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error) {
+	// 新建会话会切走当前会话：树编辑未退出时走同一个出口（D258）。
+	if note, ok, err := s.exitTreeEditForSwitch(ctx); err != nil {
+		return "", err
+	} else if !ok {
+		return note, nil
+	}
 	title := joinArgs(cmd.Args)
 	if title == "" {
 		title = defaultTitle
@@ -59,6 +65,13 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	id, err := s.resolveConversation(ctx, cmd.Args[0])
 	if err != nil {
 		return "", err
+	}
+	// 树编辑会话未退出：切走等于离开编辑——同一个出口（D258）。有改动就问保存/放弃/取消，
+	// 取消就不切（否则「切一下看看」会把没保存的改动悬在半空）。
+	if note, ok, err := s.exitTreeEditForSwitch(ctx); err != nil {
+		return "", err
+	} else if !ok {
+		return note, nil
 	}
 	// 切前落盘当前会话：/edit 等只改内存的命令必须带上，否则切走即丢（D75）。
 	if err := s.store.Save(ctx, s.cur); err != nil {
