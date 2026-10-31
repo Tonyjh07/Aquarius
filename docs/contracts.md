@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ 38a470c -->
+<!-- docs-sync: 2026-10-31 @ 3fc8588 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1804,12 +1804,14 @@ UI 要画分叉按钮（[gui-design.md](gui-design.md) §15.3）与会话树界�
   分叉编号与左右切换随之消失；衬垫透明、它的孩子提升到祖父那一层后，a1/a2 仍是 1/2、2/2，
   衬垫自己不占槽位（`SiblingCount` 为 0）。一句话：**分组键是最近的非衬垫祖先，不是结构父**。
 - **整树快照（D112②/D120⑦，S3 relation-map 数据面）**：增 `Graph()` —— 返回 `TreeGraph`
-  `{Anchor, Nodes[], Total}`，`GraphNode{ID, Parent, Role, Snippet, CreatedAt, EdgeKind,
-  SiblingIdx, SiblingCount}`（`Anchor` = 当前 Head 锚点；`EdgeKind` = 与父边的种类
+  `{Anchor, Nodes[], Total, Revision}`，`GraphNode{ID, Parent, Role, Snippet, CreatedAt,
+  EdgeKind, SiblingIdx, SiblingCount}`（`Anchor` = 当前 Head 锚点；`EdgeKind` = 与父边的种类
   `顺接|版本链`；`Total` 供「共 N · 呈现 M」的 A7 口径）；与 `Branches`/`Tail` 同源、
   同一不可变快照发布（`atomic.Pointer`，发布点 = 构造完成 + 每次 `Handle` 返回前）。仍是
-  **只读、无变更入口**；`Snippet` 为展示用短摘要（非推理口径）。`Level`/`Depth`/`InPath`/
-  扇区/坐标/配色**不入端口**，由 UI 侧派生。**状态规格见
+  **只读、无变更入口**；`Snippet` 为展示用短摘要（非推理口径）。**`Revision` 是内容发布号，
+  不是发布次数**：内容没变就沿用旧号（发布 ≠ 变更），消费方据此判断「要不要重排」——任何
+  「挑几个便宜字段当签名」的做法都会漏（改父不动数量、不动 Head、不动末节点）。`Level`/
+  `Depth`/`InPath`/扇区/坐标/配色**不入端口**，由 UI 侧派生。**状态规格见
   [docs/relation-map-design.md](relation-map-design.md)**（D112 的方向级描述由 D120 细化：
   结构根/锚点拆分、类别=形状、层号=深度色带、版本链走线型）。
 - **会话列表（D120⑥，S3 左栏数据面）**：另立只读端口 `port.SessionLister{List() []SessionSummary}`
