@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -81,6 +82,69 @@ func TestDetachmentsStaleIsComputed(t *testing.T) {
 	got = c.Detachments()
 	if len(got) != 1 || got[0].Stale {
 		t.Fatalf("detachments = %+v, want one live record", got)
+	}
+}
+
+// TestUndoLastDetachmentReversesCarry 撤销不分种类（D256）：转移留下的路牌也能反做——
+// 整批孩子挂回旧版本，记录被消费，且撤销本身不再写新记录。
+func TestUndoLastDetachmentReversesCarry(t *testing.T) {
+	useFixedClock(t)
+	c := New(NewID(), "t")
+	u1 := mustAppend(t, c, RoleUser, "q1")
+	a1 := mustAppend(t, c, RoleAssistant, "a1")
+	m, err := c.Revise(u1.ID, textParts("q1'"), Carry)
+	if err != nil {
+		t.Fatalf("revise carry: %v", err)
+	}
+	if c.nodes[a1.ID].Parent != m.ID {
+		t.Fatalf("fixture: a1 should hang under %s", m.ID)
+	}
+
+	d, err := c.UndoLastDetachment()
+	if err != nil {
+		t.Fatalf("undo: %v", err)
+	}
+	if d.Kind != DetachTransfer || len(d.Roots) != 1 || d.Roots[0] != a1.ID {
+		t.Fatalf("undone record = %+v, want transfer with root %s", d, a1.ID)
+	}
+	if c.nodes[a1.ID].Parent != u1.ID {
+		t.Fatalf("a1.parent after undo = %q, want %q", c.nodes[a1.ID].Parent, u1.ID)
+	}
+	if n := len(c.Detachments()); n != 0 {
+		t.Fatalf("detachments after undo = %d, want 0", n)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+// TestUndoRefusesStaleRecord 记录陈旧时拒绝撤销：之后还有别的搬运，盲目往回挪会把树
+// 搬到意料之外；明确报错比猜一个位置好。
+func TestUndoRefusesStaleRecord(t *testing.T) {
+	useFixedClock(t)
+	c := New(NewID(), "t")
+	u1 := mustAppend(t, c, RoleUser, "q1")
+	a1 := mustAppend(t, c, RoleAssistant, "a1")
+	m, err := c.Revise(u1.ID, textParts("q1'"), Carry)
+	if err != nil {
+		t.Fatalf("revise carry: %v", err)
+	}
+	// 模拟「之后又被搬走」：a1 离开新版本，记录随之陈旧。
+	c.children[m.ID] = nil
+	c.children[MessageID(c.ID)] = append(c.children[MessageID(c.ID)], a1.ID)
+	am := c.nodes[a1.ID]
+	am.Parent = MessageID(c.ID)
+	c.nodes[a1.ID] = am
+
+	if _, err := c.UndoLastDetachment(); !errors.Is(err, ErrInvalidNode) {
+		t.Fatalf("undo stale = %v, want ErrInvalidNode", err)
+	}
+	if n := len(c.Detachments()); n != 1 {
+		t.Fatalf("stale record was dropped: %d", n)
+	}
+	// 树没被动过。
+	if c.nodes[a1.ID].Parent != MessageID(c.ID) {
+		t.Fatalf("stale undo moved the node to %q", c.nodes[a1.ID].Parent)
 	}
 }
 

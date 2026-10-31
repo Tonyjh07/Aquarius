@@ -1,6 +1,9 @@
 package conversation
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // detachment.go 溯源路牌（D256）：某处曾挂过的内容去了哪里。
 //
@@ -88,6 +91,40 @@ func (c *Conversation) recordDetachment(anchor MessageID, roots []MessageID, new
 		At:      nowFunc(),
 	})
 }
+
+// UndoLastDetachment 反做最近一条路牌：把它记的子树根从 NewHome 挪回 Anchor，然后**消费掉**
+// 这条记录。按发生顺序倒着走（栈语义），端点在记录里，不需要调用方再给参数。
+//
+// 不记新路牌——撤销本身产生的「搬运」若也入库，下一次 --undo 就会去撤自己的撤销。
+// 记录已陈旧（根已不在 NewHome 下）时拒绝执行：那说明之后还有别的搬运，盲目往回挪会把
+// 树搬到意料之外的位置；让人先处理更近的那一条。
+func (c *Conversation) UndoLastDetachment() (Detachment, error) {
+	if len(c.detached) == 0 {
+		return Detachment{}, fmt.Errorf("undo: %w: 没有可撤销的搬运记录", ErrNotFound)
+	}
+	d := c.detached[len(c.detached)-1]
+	if !c.detachmentHolds(d) {
+		return Detachment{}, fmt.Errorf("undo: %w: 最近一条记录已陈旧（%q 下已找不到被搬的节点），请照现状处理", ErrInvalidNode, d.NewHome)
+	}
+	for _, r := range d.Roots {
+		c.detachChild(d.NewHome, r)
+		c.attachChild(d.Anchor, r)
+	}
+	c.detached[len(c.detached)-1] = Detachment{} // 放开引用，别让被消费的记录挂在底层数组上
+	c.detached = c.detached[:len(c.detached)-1]
+	c.UpdatedAt = nowFunc()
+	if err := c.checkInvariants("undo detachment"); err != nil {
+		return Detachment{}, err
+	}
+	out := d
+	out.Roots = append([]MessageID(nil), d.Roots...)
+	out.Stale = false
+	return out, nil
+}
+
+// IsPad 报告 id 是否为衬垫（D152）。判据仍只有 padNode 一处；命令面与展示面要提示
+// 「这条节点会被降级」时不必各写一遍结构判断。
+func (c *Conversation) IsPad(id MessageID) bool { return c.padNode(id) }
 
 // pruneDetachments 清掉端点落在被剪子树里的路牌：锚点、新位置、任一子树根被删，记录就不再
 // 指向树内的真实位置。留存一半的路牌比没有更糟——它会让撤销去挪一个不存在的节点。
