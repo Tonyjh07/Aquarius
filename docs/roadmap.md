@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-10-31 @ 30880b7 -->
+<!-- docs-sync: 2026-10-31 @ ec94fb4 -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -226,6 +226,7 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | R-6 | `5239e5c feat: defer tree edits until the session ends` | `/tree-edit [--done|--cancel]`：进入时存整树快照与上下文条数，改父/撤销只改内存（`treeEdit.edits` 计数），退出一次落盘；放弃用快照重建（会话期间落过盘就把回滚结果再写一次）；上下文变少先确认（带 N→M）、变多只提示；`/switch`、`/new` 走同一个出口（保存/放弃/取消两问）；`TreeEditState()` 供 UI；六条会话测试 |
 | R-7 | `feat: put the tree edit switch in the status bar` | `port.TreeView` 加 `TreeEditState()`（app 侧 `TreeEditActive` 更名，`sessionTree` 转发）；`/tree-edit --exit`（关开关走与切会话同一套三选一，不在模式里不算错）；状态栏右端加分隔线 + 常显标签 + 44×24dp 开关（160ms `easeOutCubic` 位移，`relTween` 通用补间，脏时出「已改 N 处」+「放弃」）；开关只投影内核状态、点击只投命令；四条界面测试 + 两条会话测试 |
 | R-8 | `feat: ring the relation map with the edit glow` | `relmap_glow.go`：右图内缘 12dp 四色（顶紫/右蓝/底青/左金）四层光带（12/8/3/1dp，alpha 0.10/0.14/0.32/0.55），八段带子各画一道两色渐变（Gio 只有两色色标）——45° 斜面拼接正好铺满环带（面积断言），外缘 10dp 圆角裁剪；进入 260ms `easeOutCubic` 从顶边中点顺时针扫亮（0.85 扫、扫完 600ms 呼吸到 0.7）、退出 160ms `inSine` 淡出且扫亮就地停住；浅色主题 +25% alpha、降饱和一档；过渡期才续帧。四条测试（扫亮覆盖、铺满、时间线、编辑态整帧）|
+| R-9 | `ec94fb4 feat: reparent by dragging a node onto another` | `relmap_edit.go`：编辑态拖节点即改挂——落点预演按**卡片到卡片**最近边 ≤48dp（屏幕口径）取唯一合法目标（非自身/非自身严格后代/非根），拖起 120ms 淡出旧父边、被拖卡片 2dp 提环、目标 2dp 呼吸环（0.6↔1.0，600ms）、一条 4/4dp 虚线预览；松手有目标 → 投 `/reparent <id> <目标>` 并给目标 400ms 高亮回执，无目标 → 只改位置（槽位固化，不投命令）；压在自己后代上给一句「不能挂到自己的后代下」；通道满不假装成功。五条测试（预演规则、改挂投递、无目标只改位置、后代解释、非编辑态不投命令）|
 
 落地后 `uigui` 生产文件 107 个 / 29,014 行，九个被点名的文件全部 ≤ 600 行；仍超 600 的
 `select.go` 722 / `dock.go` 635 / `relmap_frame.go` 621 / `fade.go` 604 未在本次范围，登记在
