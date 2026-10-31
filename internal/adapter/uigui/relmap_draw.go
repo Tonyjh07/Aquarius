@@ -61,6 +61,9 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 		}
 		g.drawNodeCard(gtx, th, gi, xs, ys)
 	}
+	// 树编辑光带（§5.6.2）压在最上层：它标的是「这块面板现在处于编辑态」，被卡片盖住就
+	// 读成卡片装饰了。亮度为 0 时整个函数空转（非编辑态一个 op 都不多）。
+	g.drawGlow(gtx)
 }
 
 // relCardTint 节点卡底色 = 节点层色向**窗底色**靠拢（纯函数）。卡片因此「跟着节点走」：

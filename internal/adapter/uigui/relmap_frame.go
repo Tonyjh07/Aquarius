@@ -200,6 +200,9 @@ type relGraph struct {
 	// 位置**写回**静息布局（lay.adoptSlot），树按新形状收敛、不再弹回旧形状。按消息 ID
 	// 记 ⇒ rebuild（新消息到来 / rebudget）后按 ID 恢复，用户的排列不被自动布局冲掉。
 	slots map[conversation.MessageID]relSlot
+
+	// glow 树编辑模式的内缘光带帧态（§5.6.2：扫亮 / 呼吸 / 淡出，见 relmap_glow.go）。
+	glow glowState
 }
 
 // relSlot 手动槽位（帧层按消息 ID 记，与 relmap_layout 的 setSlot 对接；D127 横树）。
@@ -379,6 +382,10 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	// 拖拽/收敛中的交互态：本帧松弛后若还要继续，追加一次重绘请求（Gio 的动画口径，
 	// 比 Window.Invalidate 轻；收敛即停 → R3 随即恢复）。
 	if g.tickLayout() {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	// 树编辑光带（§5.6.2）：进出动画只在过渡期续帧，静止即停（与物理收敛同一纪律）。
+	if g.stepGlow(gtx.Now, st.teOn) {
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	// 视图跟随（D140）：运动期间相机**缓慢逼近**目标视场（盒在视口内 + Head 落右基准位 +

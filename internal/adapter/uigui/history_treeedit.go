@@ -100,6 +100,9 @@ func (a *relTween) at(now time.Time) float64 {
 // active 本帧是否还要续帧（过渡期才请求重绘，静止即停——与物理收敛同一纪律 R3）。
 func (a *relTween) active() bool { return a.running }
 
+// cancel 停表并保持现值：反向重进时从当前值接着走，不回算、不跳变。
+func (a *relTween) cancel() { a.running = false }
+
 // syncTreeEdit 帧首取树编辑状态（端口是唯一来源；端口缺失 = 不在模式里）。
 func (st *historyState) syncTreeEdit(u *UI) {
 	if u.opts.Tree == nil {
