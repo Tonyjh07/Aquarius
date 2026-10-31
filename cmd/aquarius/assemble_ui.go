@@ -182,8 +182,9 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Version:             version,                                                                                                                                                        // 设置窗「关于」页的构建版本（-ldflags 注入；dev = 开发构建）
 		})
 		w.ui = ui
-		// D141：首跑或 `ui.welcomed` 缺失（升级用户）→ 启动后自动开一次欢迎窗；完成或显式
-		// 关闭即置位。刚做完装配前向导的情形标记已置位，不会二次打扰。
+		// D141：`ui.welcomed` 缺失 → 启动后自动开一次欢迎窗；完成或显式关闭即置位。
+		// D263 起 welcomed 缺位的 gui 启动已由装配前向导接管（跳过也置位），这里只剩
+		// 置位失败等兜底情形——宁可多弹一次，不让用户无引导地面对空配置。
 		if !w.cfg.UI.Welcomed {
 			ui.OpenWelcome()
 		}

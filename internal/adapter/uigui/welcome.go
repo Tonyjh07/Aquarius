@@ -4,7 +4,8 @@ package uigui
 //  1. 装配前的独立向导窗（`RunSetupWindow`）：配置不完整（某条 provider 的 `secret:` 取不到）
 //     时，`cmd/aquarius` 在**内核装配之前**先开它；保存即写 config，随后同进程继续启动；
 //     取消 = 交回 SetupCancelled（调用方退出 + 指引）。宿主可注入（包级 var），测试不真开窗。
-//  2. 主窗宿主的 `winWelcome` 次窗：设置窗「打开」入口 + 「首跑 / `ui.welcomed` 缺失」时自动开一次。
+//  2. 主窗宿主的 `winWelcome` 次窗：设置窗「打开」入口 + 「`ui.welcomed` 缺失」的兜底
+//     自动开一次（D263 起 welcomed 缺位的启动已由装配前向导接管，正常到不了这里）。
 //
 // 数据面经 `WelcomeManager`（消费方定义的小接口，装配根实现——同 SettingsSnapshot /
 // ProviderManager 口径）；表单状态仅本宿主 goroutine 读写，不跨窗共享（§15.7 并发模型）。

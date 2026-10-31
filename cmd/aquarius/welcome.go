@@ -326,16 +326,18 @@ func missingKeys(ctx context.Context, m *modelConfig, sec port.Secrets) []string
 	return out
 }
 
-// setupWizard 装配前向导窗（D141）：gui 且「需要引导」时，**先于内核装配**开独立向导窗
-// ——保存 → 重新读配置（重跑 bootstrap 的读配置段）→ 同进程继续启动；取消 → 退出 0。
-// 只尝试一次：向导后仍不完整即 fatal 报因，不循环弹窗。
+// setupWizard 装配前向导窗（D141/§15.7）：gui 且「需要引导」时，**先于内核装配**开独立向导窗
+// ——保存 → 重新读配置（重跑 bootstrap 的读配置段）→ 同进程继续启动。只尝试一次：向导后仍
+// 不完整即 fatal 报因，不循环弹窗。
 // tui/repl 不走窗（首跑已在 bootstrap 打指引退出；密钥缺失仍走 buildLLMs 的 fatal 报因）。
 //
-// 「需要引导」= **缺密钥 或 本次是这个 profile 的首跑**（D210）。改前只看缺密钥：模板里的
-// 引用常常正好由环境变量顶上（`secret:AQUARIUS_OPENAI_KEY` 一旦设了就别处也能取到），于是
-// 「配置够用」被当成「用户已经确认过」，装配前向导被跳过；可模板里 `ui.welcomed` 是 false，
-// 主窗起来后又自动弹了应用内欢迎窗——两个窗口同屏，用户不知道该跟哪个走。首跑一律先引导：
-// 保存即置位 `welcomed`，主窗不再二次打扰，用户填的 key 也一定走在「入库 + 引用」这条路上。
+// 「需要引导」= **缺密钥 或 `ui.welcomed` 未置位**（D263，扩自 D210 的「首跑」）。welcomed 是
+// 「引导完成」的持久标记，firstRun 只说明「配置文件刚生成」：跳过过的后续启动（标记仍缺位）
+// 若不接管，主窗起来又会自动弹应用内欢迎窗，两窗同屏。
+//
+// 跳过（取消）按密钥两分（D263）：密钥可用 = 置位标记（用户显式关闭 = 已看，与应用内跳过
+// 同口径）后照常启动；密钥取不到 = 程序起不来，可见报因（双击启动时 stderr 不可达，D114，
+// 经系统消息框呈现）后退出 0——不再静默消失。
 //
 // 返回 (退出码, 是否结束 run)。
 func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelName, baseURL string) (int, bool) {
@@ -343,24 +345,35 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		return 0, false
 	}
 	issues := missingKeys(ctx, &w.cfg.Model, w.secrets)
-	if len(issues) == 0 && !w.firstRun {
+	if len(issues) == 0 && w.cfg.UI.Welcomed {
 		return 0, false
 	}
 	w.setupTried = true
+	mgr := &welcomeManager{
+		cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin,
+		stderr: w.stderr, hotkey: w.cfg.UI.Hotkey,
+		onStore: func() { w.secretsRev.Add(1) }, // S9-6b/D163：明文落库递增快照 Revision
+	}
 	outcome, err := setupWindowRunner(uigui.SetupRequest{
-		Theme: w.cfg.UI.Theme,
-		Mgr: &welcomeManager{
-			cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin,
-			stderr: w.stderr, hotkey: w.cfg.UI.Hotkey,
-			onStore: func() { w.secretsRev.Add(1) }, // S9-6b/D163：明文落库递增快照 Revision
-		},
+		Theme:  w.cfg.UI.Theme,
+		Mgr:    mgr,
 		Issues: issues,
 	})
 	if err != nil {
 		return fatal(w.stderr, "欢迎向导窗: %v", err), true
 	}
 	if outcome != uigui.SetupDone {
-		fmt.Fprintf(w.stderr, "已取消配置引导，配置仍不完整：%s\n", strings.Join(issues, "；"))
+		if len(issues) == 0 {
+			// 密钥可用：跳过 = 已看。置位失败不阻断启动——下次启动再引导一次。
+			if err := mgr.MarkWelcomed(); err == nil {
+				w.cfg.UI.Welcomed = true
+			}
+			return 0, false
+		}
+		msg := fmt.Sprintf("已取消配置引导，配置仍不完整，Aquarius 无法启动：\n%s\n\n重新运行 Aquarius 并完成引导即可。",
+			strings.Join(issues, "；"))
+		fmt.Fprintf(w.stderr, "%s\n", msg)
+		notifyFatal(msg) // 双击启动时 stderr 不可达（D114），经系统消息框呈现
 		return 0, true
 	}
 	if err := w.bootstrap(dataDir, profileFlag, modelName, baseURL); err != nil {
@@ -368,6 +381,13 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 			return 0, true
 		}
 		return fatal(w.stderr, "%v", err), true
+	}
+	// Done 的不变量是「已引导」（D263）：真实宿主由 Apply / 跳过置位，这里收口兜底——
+	// 标记缺位就补上，不让双窗问题从「交回 Done 却没置位」这个口子回来。
+	if !w.cfg.UI.Welcomed {
+		if err := mgr.MarkWelcomed(); err == nil {
+			w.cfg.UI.Welcomed = true
+		}
 	}
 	if issues := missingKeys(ctx, &w.cfg.Model, w.secrets); len(issues) > 0 {
 		return fatal(w.stderr, "配置仍不完整：%s", strings.Join(issues, "；")), true
