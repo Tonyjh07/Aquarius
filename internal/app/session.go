@@ -160,6 +160,11 @@ type Session struct {
 	// 落地由会话 goroutine 在排空点（Handle 入口 / 轮末 / 驱动式命令）独占执行——
 	// 树变更始终单线程（§7.5），外部 goroutine 只碰这个 channel。
 	injectCh chan pendingInjection
+	// pendingQ 待发清单（D272）：会话级、内存态、有序、有上限。前端在**自己的事件循环
+	// 里**直接读写它——主循环此刻卡在 Handle 里，走输入通道等于「等本轮结束才看得到」，
+	// 那正是这条端口要修的毛病。切会话即丢（见 dropPending）。字段名不叫 pending：
+	// 注入队列的入口方法已经叫 pending（session_inject.go）。
+	pendingQ *pendingList
 
 	// dynMu 保护 dynamic/dynamicMeta：REPL 主循环读、插件启停回调（可能来自崩溃重启的
 	// watch goroutine）写，须加锁（§10 并发语义）。
@@ -238,7 +243,10 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		charOpts:    d.CharacterOpts,
 		dynamic:     map[string]CommandHandler{},
 		injectCh:    make(chan pendingInjection, injectQueueCap),
+		pendingQ:    newPendingList(),
 	}
+	// 待发清单归会话持有，Agent 只借用它做两个取用边界（§7.1.2 轮内 / 轮末）。
+	d.Agent.setPending(s.pendingQ)
 
 	list, err := d.Store.List(ctx)
 	if err != nil {
@@ -384,6 +392,8 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	if text == "" {
 		return "", nil
 	}
+	// 真实用户输入到来 = 停手结束（D272）：停止键只停当前轮与自动续跑，用户再开口就恢复。
+	s.pendingQ.setPaused(false)
 	s.maybeSetTitle(text)
 	if _, err := s.cur.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: text}}); err != nil {
 		return "", fmt.Errorf("session: 追加消息: %w", err)
@@ -395,22 +405,42 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 //
 // D150 排空点②：本 Turn 提交后，把轮内（工具等）攒下的注入落地——**只落地、不打断当前轮**
 // （Trigger 记 false）；轮内注入是补上下文，何时起响应交给用户的下一条输入或空闲唤醒。
+//
+// 轮末取一条（D272 边界②）：本段提交之后按 FIFO 取一条待发（不分档位——引导错过窗口就只是
+// 「一句话」，按下一轮发出去是对的），接着起下一轮，**不回到输入循环**。这让「刚按发送、
+// 正好这轮结束了」不会卡在清单里发霉，也让排队消息真的连跑。
 func (s *Session) runTurn(ctx context.Context) error {
-	runErr := s.agent.Run(ctx, s.cur)
-	if err := s.store.Save(ctx, s.cur); err != nil {
-		if runErr != nil {
-			// 两个错误都保留：Turn 错误为主，保存失败附注。
-			return fmt.Errorf("session: %w（且保存失败: %v）", runErr, err)
+	for {
+		runErr := s.agent.Run(ctx, s.cur)
+		if err := s.store.Save(ctx, s.cur); err != nil {
+			if runErr != nil {
+				// 两个错误都保留：Turn 错误为主，保存失败附注。
+				return fmt.Errorf("session: %w（且保存失败: %v）", runErr, err)
+			}
+			return fmt.Errorf("session: 保存会话: %w", err)
 		}
-		return fmt.Errorf("session: 保存会话: %w", err)
+		// 停止键：本轮 ctx 被取消 → 清单原样保留但置 paused（轮末不再自动续跑）。停止是
+		// 「停手」，不是「这些都不要了」；一停就接着跑队列里那条，会让人以为停了其实还在跑。
+		if ctx.Err() != nil {
+			s.pendingQ.setPaused(true)
+			return runErr
+		}
+		if runErr != nil {
+			return runErr
+		}
+		// 轮内注入的落地：只落地、Trigger 记 false；发 HistoryEvent 让转写区补上这条记录
+		// （轮末不清屏，与 /goto 的回放口径区分）。
+		if _, _, err := s.drainInjections(ctx, drainAfterTurn); err != nil {
+			return err
+		}
+		next, ok := s.pendingQ.takeFirst()
+		if !ok {
+			return nil
+		}
+		if _, err := s.agent.appendUserNode(ctx, s.cur, next.Text); err != nil {
+			return err
+		}
 	}
-	if runErr != nil {
-		return runErr
-	}
-	// 轮内注入的落地：只落地、Trigger 记 false；发 HistoryEvent 让转写区补上这条记录
-	// （轮末不清屏，与 /goto 的回放口径区分）。
-	_, _, err := s.drainInjections(ctx, drainAfterTurn)
-	return err
 }
 
 // ingestAndRun 多模态输入管线（M3，D27：/attach 等触发命令面留 §14，D27/D33）：

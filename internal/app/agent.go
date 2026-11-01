@@ -89,7 +89,13 @@ type Agent struct {
 	est       *estimator // 三级 token 计数链②③（D26）
 	compactAt int        // 自动压缩阈值 tokens（= CompactThreshold × MaxContextTokens）
 	maxCtx    int        // 上下文预算 tokens
+	// pending 待发清单（D272/D273）：会话级一份，由 Session 在构造时注入；
+	// nil = 没有清单（直接构造 Agent 的测试），此时切段与队列续跑都退化成空操作。
+	pending *pendingList
 }
+
+// setPending 注入待发清单（Session 构造时调用；一个进程只有一个在跑的 Session）。
+func (a *Agent) setPending(p *pendingList) { a.pending = p }
 
 // New 创建 Agent 并校验必需依赖。
 func New(d Deps, cfg Config) (*Agent, error) {
@@ -226,10 +232,20 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	ctx = withConversation(ctx, c)
 	autoTried := false // 自动压缩轨每次 Run 至多尝试一次（D21 轨2）
 
-	mid := a.ids.MessageID() // Turn 预分配关联 ID（一 Turn 一节点，D95）
+	mid := a.ids.MessageID() // 段预分配关联 ID（一段一节点，D95 由 D273 修订）
 	buf := newTurnBuffer(mid)
 
 	for turn := 0; turn < a.maxTurns; turn++ {
+		// 工具批之后、下一次请求之前：这里取引导（D273）。有引导才真的切——切了就是
+		// 「当前段提交成 assistant 节点 + 引导按到达序落成 user 节点 + 新缓冲」。
+		if turn > 0 {
+			var cut bool
+			var cerr error
+			if mid, buf, cut, cerr = a.cutSegment(ctx, c, mid, buf); cerr != nil {
+				return fmt.Errorf("切段: %w", cerr)
+			}
+			_ = cut
+		}
 		req, err := a.buildRequest(ctx, c, buf)
 		if err != nil {
 			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
@@ -308,6 +324,15 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			}
 			return toolErr
 		case len(calls) == 0:
+			// 本可收场——但收尾之前再看一眼引导（D273）：有人插话就不收场，接着跑。
+			var cut bool
+			var cerr error
+			if mid, buf, cut, cerr = a.cutSegment(ctx, c, mid, buf); cerr != nil {
+				return fmt.Errorf("切段: %w", cerr)
+			}
+			if cut {
+				continue
+			}
 			// Turn 正常收场：一次性提交（D95）。
 			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeDone); cerr != nil {
 				return fmt.Errorf("提交节点: %w", cerr)

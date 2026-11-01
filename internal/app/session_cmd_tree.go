@@ -33,6 +33,10 @@ func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error)
 	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75，修订 D72 后果④）
 		return "", err
 	}
+	// 待发清单不随会话带走（D272）：明确丢弃 + 一行提示，与「不静默丢东西」的既有口径一致。
+	if note := s.dropPendingNote(); note != "" {
+		return fmt.Sprintf("已新建会话 %s%s", c.ID, note), nil
+	}
 	return fmt.Sprintf("已新建会话 %s", c.ID), nil
 }
 
@@ -89,6 +93,9 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	}
 	if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
 		return "", err
+	}
+	if note := s.dropPendingNote(); note != "" { // D272：切走即丢，留一行提示
+		return fmt.Sprintf("已切换到会话 %s%s", s.cur.ID, note), nil
 	}
 	return fmt.Sprintf("已切换到会话 %s", s.cur.ID), nil
 }
@@ -208,11 +215,12 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 	if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
 		return "", err
 	}
+	suffix := s.dropPendingNote() // D272：删掉当前会话 = 切走，待发随之丢弃
 	if len(targets) == 1 {
-		return fmt.Sprintf("已删除当前会话 %s（%s），已切换到 %s", targets[0], titles[0], s.cur.ID), nil
+		return fmt.Sprintf("已删除当前会话 %s（%s），已切换到 %s%s", targets[0], titles[0], s.cur.ID, suffix), nil
 	}
-	return fmt.Sprintf("已删除 %d 个会话（含当前会话）：%s；已切换到 %s",
-		len(targets), targetTitles(titles), s.cur.ID), nil
+	return fmt.Sprintf("已删除 %d 个会话（含当前会话）：%s；已切换到 %s%s",
+		len(targets), targetTitles(titles), s.cur.ID, suffix), nil
 }
 
 // rmconvPrompt 删除确认句：单个与多批两种说法，多批时列标题让用户确认删的是哪几个。
