@@ -7,10 +7,17 @@ package uigui
 //
 // 判据仍是 D75/D81 的镜面口径：转写区里的**内容**必须能在树上找到；命令不是内容，
 // 所以既不占一条消息的位置，也不冒充用户气泡。
+//
+// 形态（D266）：底色是**带 alpha 的深色薄层**（`cardCmd`），不是实色卡——命令回显是
+// 运行痕迹，该读作「沉在背景里的一层雾」。深色相位给出槽的层次，alpha 让它吃掉背后
+// 的桌面、边界不硬；实色灰只能在「够深」与「够淡」之间二选一。宽度随开合变：收起态
+// 贴合文案、水平居中成一枚窄条（满宽条即使再淡也还在和消息抢行），展开态才铺满转写区
+// ——那时要读整行输出（`centerStrip`）。
 
 import (
 	"fmt"
 	"image"
+	"image/color"
 
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -37,8 +44,8 @@ func (u *UI) cmdClick(i int) *widget.Clickable {
 // 清屏复位（与 chipOpen/thinkOpen 同口径）。
 func (u *UI) cmdIsOpen(i int) bool { return u.cmdOpen[i] }
 
-// cmdHeaderText 折叠行文案：条数 + 动作提示。整条是一条淡灰圆角横条、文字居中，
-// 所以不带 ▸/▾ 箭头——箭头一居中就歪，点击语义由「点击展开/收起」这半句说清。
+// cmdHeaderText 折叠行文案：条数 + 动作提示。整条文字居中，所以不带 ▸/▾ 箭头——
+// 箭头一居中就歪，点击语义由「点击展开/收起」这半句说清。
 func cmdHeaderText(n int, open bool) string {
 	act := "点击展开"
 	if open {
@@ -47,9 +54,20 @@ func cmdHeaderText(n int, open bool) string {
 	return fmt.Sprintf("折叠 %d 条命令 · %s", n, act)
 }
 
-// centerStrip 把一行文案铺在**整条可用宽度**上并居中（D265）：折叠条是横贯转写区的
-// 一条淡灰底，宽度跟容器走、不跟文字走——所以先量文字，再按剩余宽度摆。返回尺寸的
+// cmdHeadColor 折叠行文字色（D266）：工具灰再退一档（半透明）——条本身已经退成一层
+// 薄雾，文字跟着退，整块才读作运行痕迹而不是一条消息。
+func cmdHeadColor() color.NRGBA {
+	c := tok().textMuted
+	c.A = 0xB4
+	return c
+}
+
+// centerStrip 把一行文案铺在**整条可用宽度**上并居中（D265）：展开态的命令条是横贯
+// 转写区的底板，宽度跟容器走、不跟文字走——所以先量文字，再按剩余宽度摆。返回尺寸的
 // X 恒等于可用宽，measureRow 据此把底板拉满；左右留白由行内衬（cardPadX）提供。
+//
+// 折叠态**不走这里**（D266）：那时条宽贴合文案（由 paintRow 居中摆），中心是条自己的
+// 中心，再在条内二次居中反而把宽度又拉满。
 func centerStrip(gtx layout.Context, w layout.Widget) layout.Dimensions {
 	m := op.Record(gtx.Ops)
 	d := w(gtx)

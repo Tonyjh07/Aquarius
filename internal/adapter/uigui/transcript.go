@@ -121,6 +121,7 @@ type measuredRow struct {
 	bg                 color.NRGBA
 	radius, padX, padY int
 	right              bool
+	center             bool // 水平居中（D266：命令条——盒比容器窄时两侧均分）
 	sel                *rowSel
 }
 
@@ -135,6 +136,12 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, rs *rowSel) mea
 	if bubble {
 		padX, padY = gtx.Dp(bubblePadXDp), gtx.Dp(bubblePadYDp)
 	}
+	// 折叠态命令条（D266）：贴合文案的窄条，左右内衬更松一档；展开态铺满容器，
+	// 内衬回到常规——「收起来是一枚薄条，摊开是一块面板」。
+	center := it.kind == blockCommand
+	if center && !u.cmdIsOpen(it.bi) {
+		padX = gtx.Dp(cmdPadXDp)
+	}
 	maxW := w - 2*gtx.Dp(sideMarginDp)
 	if maxW < gtx.Dp(bubbleMinWDp) {
 		maxW = gtx.Dp(bubbleMinWDp)
@@ -145,7 +152,7 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, rs *rowSel) mea
 	dims := label(cs)
 	return measuredRow{
 		txt: m.Stop(), dims: dims.Size, bg: bg, radius: radius,
-		padX: padX, padY: padY, right: rightAlign, sel: rs,
+		padX: padX, padY: padY, right: rightAlign, center: center, sel: rs,
 	}
 }
 
@@ -154,8 +161,14 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, rs *rowSel) mea
 // 气泡底板矩形（D92 右键命中）。返回行总高（px）。
 func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int, viewport image.Rectangle, fph hash.Hash64) int {
 	x := gtx.Dp(sideMarginDp)
-	if mr.right {
+	switch {
+	case mr.right:
 		x = w - gtx.Dp(sideMarginDp) - mr.dims.X - 2*mr.padX
+	case mr.center: // D266：盒宽随文案，两侧均分（极窄窗夹到 0，不让条跑出视口）
+		x = (w - mr.dims.X - 2*mr.padX) / 2
+		if x < 0 {
+			x = 0
+		}
 	}
 	bgRect := image.Rectangle{
 		Min: image.Pt(x, y),
@@ -289,14 +302,19 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			})
 			return vs.dims()
 		}, tok().cardInject, cardR, false, false
-	case blockCommand: // 命令折叠条（D265）：横贯一条淡灰圆角底、文字居中；点开才铺命令行与输出
+	case blockCommand: // 命令折叠条（D265/D266）：带 alpha 的深色薄条、文字居中；点开才铺命令行与输出
 		open := u.cmdIsOpen(it.bi)
 		plain := func(gtx layout.Context) layout.Dimensions {
-			return centerStrip(gtx, func(gtx layout.Context) layout.Dimensions {
+			head := func(gtx layout.Context) layout.Dimensions {
 				s := material.Caption(u.th, cmdHeaderText(len(it.cmds), open))
-				s.Color = tok().textMuted
+				s.Color = cmdHeadColor()
 				return s.Layout(gtx)
-			})
+			}
+			// 折叠：条宽贴合文案（居中由 paintRow 摆整条）；展开：铺满容器、标题居中。
+			if !open {
+				return head(gtx)
+			}
+			return centerStrip(gtx, head)
 		}
 		// 折叠行 = 一个点击件（整条都是热区，与工具 chip 头部同法）；展开后的正文
 		// 不挂点击件——那里要能拖选（与思考块同口径）。
@@ -338,7 +356,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				}
 			}
 			return vs.dims()
-		}, tok().cardTool, cardR, false, false
+		}, tok().cardCmd, cardR, false, false
 	case blockTool:
 		if it.chip == nil { // 兜底：无 chip 的工具行（防御，正常路径都有 chip）
 			return func(gtx layout.Context) layout.Dimensions {

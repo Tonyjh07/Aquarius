@@ -32,6 +32,7 @@ type palette struct {
 	textSystem   color.NRGBA // 系统行文字
 	cardThinking color.NRGBA
 	cardTool     color.NRGBA
+	cardCmd      color.NRGBA // 命令折叠条底（D266）：带 alpha 的深色薄层，构成见 cmd.go
 	cardNotice   color.NRGBA
 	cardError    color.NRGBA
 	cardSystem   color.NRGBA
@@ -78,6 +79,7 @@ func lightPalette() palette {
 		textSystem:    color.NRGBA{R: 0x8E, G: 0x6B, B: 0xC4, A: 0xFF},
 		cardThinking:  color.NRGBA{R: 0xE9, G: 0xEB, B: 0xF0, A: 0xFF},
 		cardTool:      color.NRGBA{R: 0xE7, G: 0xEA, B: 0xEF, A: 0xFF},
+		cardCmd:       color.NRGBA{R: 0x22, G: 0x28, B: 0x32, A: 0x24}, // 深墨 14%：比同档 cardTool 更沉，仍透出桌面
 		cardNotice:    color.NRGBA{R: 0xFD, G: 0xF2, B: 0xDC, A: 0xFF},
 		cardError:     color.NRGBA{R: 0xFB, G: 0xE4, B: 0xE4, A: 0xFF},
 		cardSystem:    color.NRGBA{R: 0xF1, G: 0xEB, B: 0xFA, A: 0xFF},
@@ -115,6 +117,7 @@ func darkPalette() palette {
 		textSystem:    color.NRGBA{R: 0xB4, G: 0x9B, B: 0xE8, A: 0xFF},
 		cardThinking:  color.NRGBA{R: 0x23, G: 0x26, B: 0x2B, A: 0xFF},
 		cardTool:      color.NRGBA{R: 0x21, G: 0x24, B: 0x2A, A: 0xFF},
+		cardCmd:       color.NRGBA{R: 0x00, G: 0x00, B: 0x00, A: 0x59}, // 纯黑 35%：深底上再压暗一档，与深底糊成一片
 		cardNotice:    color.NRGBA{R: 0x34, G: 0x2D, B: 0x1E, A: 0xFF},
 		cardError:     color.NRGBA{R: 0x35, G: 0x24, B: 0x24, A: 0xFF},
 		cardSystem:    color.NRGBA{R: 0x2B, G: 0x27, B: 0x35, A: 0xFF},

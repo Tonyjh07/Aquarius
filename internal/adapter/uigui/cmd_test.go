@@ -97,8 +97,8 @@ func TestCommandOutAfterClear(t *testing.T) {
 	}
 }
 
-// TestCommandStripCollapse 折叠条默认只渲染一行（横贯转写区的一条淡灰底），点开才铺
-// 命令行与输出；再点收起。开合是视图态，不改变块。
+// TestCommandStripCollapse 折叠条默认只渲染一行（一条窄的深色薄条），点开才铺命令行与
+// 输出；再点收起。开合是视图态，不改变块。
 func TestCommandStripCollapse(t *testing.T) {
 	u := newFrameUI()
 	u.m.addCommand("/help")
@@ -148,9 +148,9 @@ func TestCommandStripCollapse(t *testing.T) {
 	}
 }
 
-// TestCommandStripFullWidth 折叠条横贯转写区：宽度跟容器走、文字居中，不随文案长短
-// 缩成小标签（否则每条命令的条宽都不一样，看着像散落的碎片）。
-func TestCommandStripFullWidth(t *testing.T) {
+// TestCommandStripWidthFollowsState 折叠条宽度随开合变（D266）：收起时是贴合文案的
+// 窄条、水平居中；展开时铺满转写区（输出正文要能读整行）。
+func TestCommandStripWidthFollowsState(t *testing.T) {
 	u := newFrameUI()
 	u.m.addCommand("/help")
 
@@ -160,8 +160,31 @@ func TestCommandStripFullWidth(t *testing.T) {
 	if len(u.shapes) != 1 {
 		t.Fatalf("shapes = %d, want 1", len(u.shapes))
 	}
-	want := 600 - 2*gtx.Dp(sideMarginDp)
-	if got := u.shapes[0].outline.Dx(); got != want {
-		t.Fatalf("条宽 = %d, want %d（= 转写区宽 − 两侧边距）", got, want)
+	full := 600 - 2*gtx.Dp(sideMarginDp)
+	pill := u.shapes[0].outline
+	if pill.Dx() >= full/2 {
+		t.Fatalf("折叠条宽 = %d, want < %d（贴合文案，不横贯转写区）", pill.Dx(), full/2)
+	}
+	if c := pill.Min.X + pill.Dx()/2; c < 300-1 || c > 300+1 {
+		t.Fatalf("折叠条中心 = %d, want ≈300（水平居中）", c)
+	}
+
+	// 容器变宽：窄条不跟着变宽（跟文案走）。
+	u.shapes = u.shapes[:0] // 同帧形状缓冲，测试里手工复位（正常由整帧 layout 复位）
+	u.transcript(gtx, 900, 400)
+	if got := u.shapes[0].outline.Dx(); got != pill.Dx() {
+		t.Fatalf("容器变宽后条宽 = %d, want %d（宽度跟文案，不跟容器）", got, pill.Dx())
+	}
+
+	// 展开：铺满转写区。
+	u.cmdClicks[0].Click()
+	u.updateClicks(gtx)
+	u.shapes = u.shapes[:0]
+	u.transcript(gtx, 600, 400)
+	if got := u.shapes[0].outline.Dx(); got != full {
+		t.Fatalf("展开后条宽 = %d, want %d（铺满转写区）", got, full)
+	}
+	if u.shapes[0].fill != tok().cardCmd {
+		t.Fatalf("折叠条底板 = %v, want cardCmd（半透明深色薄层）", u.shapes[0].fill)
 	}
 }

@@ -51,6 +51,7 @@ const (
 	bubblePadYDp     = 7
 	cardPadXDp       = 10 // 文本行卡内边距
 	cardPadYDp       = 5
+	cmdPadXDp        = 14 // 折叠态命令条的左右内衬（D266）：比 cardPadXDp 松一档，短文案才不成一枚标签
 	radiusDp         = 12 // 气泡圆角
 	cardRadiusDp     = 8  // 文本行卡圆角
 	statusChipDp     = 20 // 状态行 chip 高
