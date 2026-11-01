@@ -36,7 +36,7 @@ const (
 
 // pendingBandPx 待发条占高（px）；没有待发 = 0（布局不变，与今天完全一致）。
 func (u *UI) pendingBandPx(gtx layout.Context) int {
-	n := len(u.pendingItems())
+	n := len(u.pendingQueued())
 	if n == 0 {
 		return 0
 	}
@@ -50,12 +50,25 @@ func (u *UI) pendingBandPx(gtx layout.Context) int {
 }
 
 // pendingBand 画待发条（y 原点 = 本带左上）。
+//
+// 透明度跟转写区的揭示进度（msgP）走：转写区**展开时**待发条随之上浮出现、**收起收完**
+// 才彻底隐去（D54 两阶段动画：展开 = barP→1 再 msgP→1，收起 = msgP→0 再 barP→0）。
+// 待发条在转写区下沿，跟着 msgP 才是「从下至上展开、从上至下收起」的自然时机；高度不
+// 乘 msgP——留出位置只做淡入淡出，免得半行被裁、也免得转写区在动画里被顶来顶去。
 func (u *UI) pendingBand(gtx layout.Context, w, absY int) {
-	items := u.pendingItems()
+	items := u.pendingQueued()
 	if len(items) == 0 {
 		return
 	}
+	_, msgP := u.expandProgress()
+	if msgP < 0.01 {
+		return // 收起动画收尾：已经看不见了，下一帧走 layoutCollapsed
+	}
+	if msgP < 1 {
+		defer paint.PushOpacity(gtx.Ops, float32(msgP)).Pop()
+	}
 	u.prunePendingCtl(items)
+	u.pendHot = u.pendHot[:0] // 热区随帧复位（消费者读本帧登记）
 	rowH := gtx.Dp(pendingRowDp)
 	margin := gtx.Dp(sideMarginDp)
 	inner := w - 2*margin
@@ -83,8 +96,9 @@ func (u *UI) pendingBand(gtx layout.Context, w, absY int) {
 
 // pendingRow 一行待发：徽标 + 正文（超宽截断）+ 三个动作。
 //
-// 命中顺序与绘制顺序相反（后注册的事件先到）：三个动作在正文之上，所以点动作不会
-// 被「整行拉回」抢走。
+// 三个动作从左到右 = 转档（排队 ↔ 引导）、拉回输入框、撤销。改档单列一个按钮而不是
+// 藏在徽标上：徽标看着是标签，没人会去点它（实测如此），而「这句话什么时候到模型眼前」
+// 恰恰是待发条上最该一眼找到的开关。
 func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingInput, absY int) {
 	ctl := u.ctlFor(it.ID)
 	rowRect := image.Rect(x, y, x+w, y+rowH-2)
@@ -93,8 +107,10 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 
 	// 档位徽标：引导用品牌色（它会更早到模型眼前），排队用静息灰。
 	badge, bg := "排队", tok().textMuted
+	toggle := "转引导"
 	if it.Delivery == port.DeliverySteer {
 		badge, bg = "引导", tok().brandColor
+		toggle = "转排队"
 	}
 	bl := material.Caption(u.th, badge)
 	bl.Color = tok().whiteText
@@ -108,14 +124,14 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 	off.Pop()
 	st.Pop()
 
-	// 右侧两个动作先量宽，正文吃剩下的（档位切换挂在徽标上：点徽标即换档）。
-	actions := []string{"拉回", "×"}
+	// 右侧三个动作先量宽，正文吃剩下的。
+	actions := []string{toggle, "拉回", "×"}
 	widths := make([]int, len(actions))
 	total := 0
 	for i, t := range actions {
 		l := material.Caption(u.th, t)
 		lw, _ := measure(gtx, l)
-		widths[i] = lw + 8
+		widths[i] = lw + 12 // 多留点缝，三个动作挨着也能点准
 		total += widths[i]
 	}
 	textX := badgeRect.Max.X + 8
@@ -129,53 +145,60 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 	to := op.Offset(image.Pt(textX, y+(rowH-2-lh)/2)).Push(gtx.Ops)
 	lbl.Layout(gtx)
 	to.Pop()
+
+	// 动作区：先算出每个热区，再统一画字——绘制顺序与命中顺序解耦。
+	rects := make([]image.Rectangle, len(actions))
 	ax := x + w - 6
 	for i := len(actions) - 1; i >= 0; i-- {
 		ax -= widths[i]
+		rects[i] = image.Rect(ax, y, ax+widths[i], y+rowH-2)
 		l := material.Caption(u.th, actions[i])
 		l.Color = tok().textMuted
+		if i == 0 {
+			l.Color = tok().brandColor // 转档是这一行的主按钮
+		}
 		lh := measureHeight(gtx, l)
-		o := op.Offset(image.Pt(ax+4, y+(rowH-2-lh)/2)).Push(gtx.Ops)
+		o := op.Offset(image.Pt(ax+(widths[i]-measureWidth(gtx, l))/2, y+(rowH-2-lh)/2)).Push(gtx.Ops)
 		l.Layout(gtx)
 		o.Pop()
 	}
-	// 徽标点击 = 改档（排队 ↔ 引导）：这是「这句话该什么时候到模型眼前」的开关，
-	// 挂在标着档位的那块上是唯一不用解释的位置。
-	if clickRect(gtx, &ctl.toggle, badgeRect) {
+	// 三个热区都注册（不能命中一个就 return——否则下一帧另外两个的热区会缺一块）。
+	hitToggle := clickRect(gtx, &ctl.toggle, rects[0])
+	hitRecall := clickRect(gtx, &ctl.recall, rects[1])
+	hitDrop := clickRect(gtx, &ctl.drop, rects[2])
+	u.pendHot = append(u.pendHot, pendHot{
+		id:     it.ID,
+		toggle: rects[0].Add(image.Pt(0, absY)),
+		recall: rects[1].Add(image.Pt(0, absY)),
+		drop:   rects[2].Add(image.Pt(0, absY)),
+	})
+	switch {
+	case hitToggle:
 		u.togglePendingDelivery(it.ID)
-		return
-	}
-	ax = x + w - 6
-	for i := len(actions) - 1; i >= 0; i-- {
-		ax -= widths[i]
-		hit := image.Rect(ax, y, ax+widths[i], y+rowH-2)
-		switch i {
-		case 0:
-			if clickRect(gtx, &ctl.drag, hit) {
-				u.recallPending(it.ID)
-				return
-			}
-		case 1:
-			if clickRect(gtx, &ctl.drop, hit) {
-				u.dropPending(it.ID)
-				return
-			}
-		}
+	case hitRecall:
+		u.recallPending(it.ID)
+	case hitDrop:
+		u.dropPending(it.ID)
 	}
 }
 
 // clickRect 在指定矩形上铺一个 Clickable（热区随几何走；返回本帧是否被点中）。
 // Gio 的 Clickable 按当前变换原点注册指针区，所以先位移到矩形左上、再按尺寸布局。
+//
+// 顺序有讲究：**先取点击、再 Layout**。Gio v0.10 的 Clickable.Layout 自己会 update
+// 一遍并把点击结果丢掉（它只给「渲染一个按钮」用），Layout 完再 Clicked 永远是 false
+// ——这条曾让整条待发条点不动。
 func clickRect(gtx layout.Context, c *widget.Clickable, hit image.Rectangle) bool {
 	if hit.Empty() {
 		return false
 	}
+	clicked := c.Clicked(gtx)
 	off := op.Offset(hit.Min).Push(gtx.Ops)
 	st := clip.Rect(image.Rectangle{Max: hit.Size()}).Push(gtx.Ops)
 	c.Layout(gtx, func(layout.Context) layout.Dimensions { return layout.Dimensions{Size: hit.Size()} })
 	st.Pop()
 	off.Pop()
-	return c.Clicked(gtx)
+	return clicked
 }
 
 // measure 量一个 label 的尺寸（不改动 gtx 的可见输出——记一笔就停）。
@@ -184,6 +207,12 @@ func measure(gtx layout.Context, l material.LabelStyle) (int, int) {
 	d := l.Layout(gtx)
 	m.Stop()
 	return d.Size.X, d.Size.Y
+}
+
+// measureWidth 只量宽（动作按钮在热区里居中用）。
+func measureWidth(gtx layout.Context, l material.LabelStyle) int {
+	w, _ := measure(gtx, l)
+	return w
 }
 
 // measureHeight 只量高（行内垂直居中用）。
@@ -203,10 +232,17 @@ func clampToWidth(gtx layout.Context, th *material.Theme, s string, maxW int) st
 	}
 	r := []rune(s)
 	for len(r) > 1 {
-		r = r[:len(r)*maxW/w-1]
-		if len(r) <= 0 {
-			break
+		// 按比例估一个「大约能放下」的长度，再逐轮收缩；夹住上界（估算可能给出
+		// ≥ 当前长度）与下界 1（估算可能在极小宽度/超大字号下给出 0 甚至负数——
+		// 那会让切片倒着走，直接崩）。
+		n := len(r) * maxW / w
+		if n >= len(r) {
+			n = len(r) - 1
 		}
+		if n < 1 {
+			n = 1
+		}
+		r = r[:n]
 		l = material.Caption(th, string(r)+"…")
 		w, _ = measure(gtx, l)
 		if w <= maxW {

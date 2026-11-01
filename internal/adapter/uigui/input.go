@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"gioui.org/f32"
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -346,6 +347,10 @@ func (u *UI) updateEditor(gtx layout.Context) {
 // 为什么必须在 editor.Update 之前：编辑器自己注册了 Enter = 提交、Shift+Enter = 换行。
 // 我们要把 Shift+Enter 抽走当「引导」、把 Ctrl+Enter 抽走当「换行」，就只能先到先得。
 // 纯 Enter 不在这里处理——补全浮层（D103）认领它的路径不能动，它照旧产出 SubmitEvent。
+//
+// **两个键名都要认**：Gio 把主回车报成 `key.NameReturn`（"⏎"），小键盘的才是
+// `key.NameEnter`（"⌤"）。只认后者的话，真实键盘上的 Shift+Enter 会从我们手里漏过去，
+// 被编辑器当换行吃掉（单行胶囊里看不见，用户看到的就是「按了没反应」）。
 func (u *UI) sendKeys(gtx layout.Context) {
 	if u.m.confirm != nil || u.m.ask != nil || u.inFadePass {
 		return // 确认态/提问态：键入是应答，不是消息（§15.2）；淡出源不消费事件
@@ -363,12 +368,12 @@ func (u *UI) sendKeys(gtx layout.Context) {
 			continue // 只认领带修饰的 Enter（纯 Enter 归编辑器的 SubmitEvent）
 		}
 		want := gioMods(x.b.Mods)
+		filters := []event.Filter{
+			key.Filter{Focus: &u.editor, Name: key.NameReturn, Required: want},
+			key.Filter{Focus: &u.editor, Name: key.NameEnter, Required: want},
+		}
 		for {
-			ev, ok := gtx.Event(key.Filter{
-				Focus:    &u.editor,
-				Name:     key.NameEnter,
-				Required: want,
-			})
+			ev, ok := gtx.Event(filters...)
 			if !ok {
 				break
 			}

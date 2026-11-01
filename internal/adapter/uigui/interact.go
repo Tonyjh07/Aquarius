@@ -64,6 +64,11 @@ func (u *UI) frameItems() []blockView {
 			live: true,
 		})
 	}
+	// D272 引导消息：已经说出口、等下一次请求取走的话。它比排队更靠近当下，所以直接
+	// 铺在转写区末尾（用户气泡原样），而不是挤在输入栏上方的待发条里——那里只留排队。
+	for _, it := range u.pendingSteers() {
+		items = append(items, blockView{kind: blockUser, text: it.Text, live: true, pendID: it.ID})
+	}
 	return items
 }
 

@@ -92,6 +92,8 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	// updateSel）读到的即上一帧整帧几何——一帧陈旧是既定口径。
 	u.keyRects = u.keyRects[:0]
 	u.bubbleRects = u.bubbleRects[:0] // D92：气泡矩形随帧复位（paint 期重登记）
+	u.steerHot = u.steerHot[:0]       // D272：引导气泡的控件热区同口径随帧复位
+	u.pruneSteerCtl(u.pendingSteers())
 	fph := fnv.New64a()
 	y := base - u.scrollPx + pad
 	for i := range rows {
@@ -190,6 +192,9 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 	inner.Pop()
 	st.Pop()
 	u.record(bgRect, mr.radius, mr.bg, viewport)
+	if it.pendID != "" {
+		u.steerActions(gtx, it.pendID, bgRect) // D272：引导气泡旁的两枚控件
+	}
 	return bgRect.Dy()
 }
 

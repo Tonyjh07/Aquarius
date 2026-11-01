@@ -243,6 +243,12 @@ type UI struct {
 	keys uicommon.KeyBindings
 	// pendCtl 待发条每条的点击态（按条目 ID 缓存；仅事件循环 goroutine 读写）。
 	pendCtl map[string]*pendingCtl
+	// pendHot 本帧待发条各动作的热区（窗口坐标，随帧复位）。
+	pendHot []pendHot
+	// steerCtl 引导气泡上「↓ 回队列 / × 丢弃」的点击态（按条目 ID 缓存）。
+	steerCtl map[string]*steerCtl
+	// steerHot 本帧引导气泡的控件热区（窗口坐标，随帧复位）。
+	steerHot []steerHot
 	// pasting 粘贴图片进行中（D187）：一次只跑一张（连按不排队），也用于阻止重入。
 	pasting atomic.Bool
 

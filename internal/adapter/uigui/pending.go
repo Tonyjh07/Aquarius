@@ -9,6 +9,7 @@ package uigui
 
 import (
 	"errors"
+	"image"
 	"strings"
 
 	"gioui.org/widget"
@@ -19,9 +20,18 @@ import (
 // pendingCtl 待发条一条目的点击态（按条目 ID 缓存，帧间复用——Clickable 靠它认「同一个
 // 按钮」；条目消失时一并丢弃）。
 type pendingCtl struct {
-	drag   widget.Clickable // 拉回输入框
+	recall widget.Clickable // 拉回输入框
 	drop   widget.Clickable // 撤销
 	toggle widget.Clickable // 改档（排队 ↔ 引导）
+}
+
+// pendHot 一条待发在本帧占的热区（窗口坐标）。绘制时登记，供命中诊断与测试用——
+// 待发条是手绘的，热区与字形是两套坐标，只有把它记下来才能断言「点得着」。
+type pendHot struct {
+	id     string
+	toggle image.Rectangle
+	recall image.Rectangle
+	drop   image.Rectangle
 }
 
 // pending 取当前清单（nil = 本构建没接清单）。
@@ -40,6 +50,78 @@ func (u *UI) pendingItems() []port.PendingInput {
 		return nil
 	}
 	return p.List()
+}
+
+// pendingQueued 待发条上的条目（只要排队档）：引导走转写区的气泡，两处不重复。
+func (u *UI) pendingQueued() []port.PendingInput {
+	all := u.pendingItems()
+	if len(all) == 0 {
+		return nil
+	}
+	out := make([]port.PendingInput, 0, len(all))
+	for _, it := range all {
+		if it.Delivery != port.DeliverySteer {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// pendingSteers 转写区里以气泡呈现的引导消息（插入序）。
+func (u *UI) pendingSteers() []port.PendingInput {
+	all := u.pendingItems()
+	if len(all) == 0 {
+		return nil
+	}
+	out := make([]port.PendingInput, 0, len(all))
+	for _, it := range all {
+		if it.Delivery == port.DeliverySteer {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// steerCtl 引导气泡上两枚控件的点击态（按条目 ID 缓存，帧间复用）。
+type steerCtl struct {
+	down widget.Clickable // ↓ 回队列
+	drop widget.Clickable // × 丢弃
+}
+
+// steerCtlFor 取（必要时新建）某条引导的控件态。
+func (u *UI) steerCtlFor(id string) *steerCtl {
+	if u.steerCtl == nil {
+		u.steerCtl = map[string]*steerCtl{}
+	}
+	c, ok := u.steerCtl[id]
+	if !ok {
+		c = &steerCtl{}
+		u.steerCtl[id] = c
+	}
+	return c
+}
+
+// pruneSteerCtl 丢掉已不在清单里的引导控件态。
+func (u *UI) pruneSteerCtl(items []port.PendingInput) {
+	if len(u.steerCtl) == 0 {
+		return
+	}
+	live := make(map[string]bool, len(items))
+	for _, it := range items {
+		live[it.ID] = true
+	}
+	for id := range u.steerCtl {
+		if !live[id] {
+			delete(u.steerCtl, id)
+		}
+	}
+}
+
+// setPendingDelivery 直接设档（气泡上的「↓ 回队列」用）。
+func (u *UI) setPendingDelivery(id string, d port.Delivery) {
+	if p := u.pending(); p != nil {
+		p.SetDelivery(id, d)
+	}
 }
 
 // ctlFor 取（必要时新建）某条目的点击态；顺手把已消失条目的点击态清掉。

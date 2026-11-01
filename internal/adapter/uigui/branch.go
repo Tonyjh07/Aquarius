@@ -38,6 +38,10 @@ type blockView struct {
 	trigger bool
 	// cmds 命令折叠条的条目（D265）：命令行与它自己的返回文本。
 	cmds []cmdEntry
+	// pendID 待发清单里那条「引导」的 ID（D272）：非空 = 这块不是会话节点，而是用户
+	// 已经说出口、还没被下一次请求取走的话。渲染成普通用户气泡，右侧带「↓ 回队列 /
+	// × 丢弃」两枚控件；不登记右键菜单（没有节点可编辑），也不随会话落盘。
+	pendID string
 }
 
 // menuable 该条目是否响应气泡右键（D92/D100）：user/assistant 需带节点 ID（编辑/
