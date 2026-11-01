@@ -337,35 +337,36 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 
 ### delegate（外部代理转交）
 
-把复杂任务整个交给一个外部代理程序（ACP 协议）。适配器与协议面属于设计，见
-[contracts.md](contracts.md) 的 delegate 端口一节；这里只列会改变行为的配置。
+把一件复杂任务**整个**交给一个 ACP 代理程序，我们只收回它的报告。
+**配置是唯一事实源**：不内置各家预设——它们的命令名与启动参数变得比我们发版快。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `delegate.agents.<名字>.command` | string | — | 启动命令（按 `PATH` 探测）；名字就是 `delegate` 工具的 `agent` 取值与 `/delegate list` 里看到的那个 |
-| `delegate.agents.<名字>.args` | []string | `[]` | 启动参数（各家代理自己定；registry 里能查到） |
-| `delegate.agents.<名字>.env` | object | `{}` | 子进程环境变量，值可用 `secret:<名>` 引用密钥库/环境变量 |
-| `delegate.agents.<名字>.workdir` | string | 空 | 子进程起点目录；空 = 家目录。**它是起点不是围栏**，那个程序按它自己的策略访问文件 |
-| `delegate.agents.<名字>.enabled` | bool | `true` | `false` = 留着配置但不探测、不注册 |
-| `delegate.agents.<名字>.default` | bool | 见下 | `delegate` 不指定 `agent` 时用哪个；多个都标时取配置里第一个，都不标时取第一个可用的 |
-| `delegate.timeout_sec` | int | `1800` | 单次转交总闸（防进程挂住）；`0` = 不限，最大 86400 |
+| `delegate.agents[].name` | string | — | 名字（`delegate` 工具的 `agent` 参数取值；重复报错） |
+| `delegate.agents[].command` | string | — | 启动命令；启动时按 `PATH` 探测，探不到只标不可用、不挡启动 |
+| `delegate.agents[].args` / `env` | []string / object | `[]` | 参数与环境（值可用 `secret:<名>`，起进程时解析） |
+| `delegate.agents[].workdir` | string | 家目录 | 子进程起点（绝对路径；**不是围栏**） |
+| `delegate.agents[].enabled` | bool | `true` | 键缺失 = 启用 |
+| `delegate.agents[].default` | bool | `false` | 只配一条时可不写；多条目时最多一条 |
+| `delegate.timeout_sec` | int | `1800` | 单次转交总闸；显式 `0` = 不限，上限 `86400` |
+| `delegate.max_concurrent` / `max_total` | int | `2` / `4` | 每会话 / 全局同时进行的转交上限；超限时 `delegate` 直接回绝，不排队 |
 
-- **键缺失不等于没配**：`agents` 为空或全不可用时，`delegate` 工具不注册（模型压根看不到它），
-  `/delegate list` 会给出「还没配任何代理」与一段配置指引。
-- **也可以在设置窗里改**：设置窗「外部代理」页列出每个代理的名字、可用性（现探 `PATH`）、
-  缺省标记，并可就地改命令行、启停、设缺省。那里写的就是这几行配置，**重启生效**——转交管理器
-  按启动时的配置装配。删代理仍要改文件（页面只改不删）。同一个工具在「工具与 MCP」页也能停用：
-  `delegate` / `delegate_wait` / `delegate_kill` 恒在工具清单里（即使当前没有可用代理），
-  停用后即便配了代理，模型也看不到它。
-- **不发预设、不自动安装**：各家代理的命令名与启动参数由它们自己决定，我们抄一份只会过时；
-  装什么、装哪版由你决定。想要「一键装了就能用」，去它们各自的官方安装说明。
-- **每次转交都是全新会话**：进程跑完即关，`sessionId` 不跨次使用；追问要重述背景。
-- **权限真话**：批准一次转交 = 批准那个程序在它自己判断下动手。我们的权限等级矩阵只管我们
-  自己的工具链，管不到它；它愿意反问的权限请求会回落到你的确认框，不愿意问的我们知道不了。
-- 转交的转录**不进会话树**，也不落盘——只看最终报告与一行摘要。
-- **中断的转交会在下次启动被说出来**：转交在跑期间在 `<profile>/jobs/delegates.json` 记一条，
-  报告落到会话才删。若在它跑着的时候退出，下次启动会多一行「上次退出时中断了 N 笔转交」，
-  并往发起会话补一条事实（哪件活、谁去做的、停在什么时候）。
+清单为空时照常启动：`delegate` / `delegate_wait` / `delegate_kill` 三个工具**不注册**，
+`/delegate list` 给出配置指引。填了之后 `/delegate list` 显示可用性（命令在不在 `PATH` 上）
+与不可用原因；`Title` / `Version` 在第一次转交后才填上（启动不做握手——那要把代理真拉起来）。
+
+**设置窗「外部代理」页改的就是这一段**：清单、可用性（现探 `PATH`）、缺省标记，可就地改命令行、
+启停、设缺省，另有「重新检测」。写回 config、**重启生效**（转交管理器按启动时的配置装配）；
+页面只改不删，要删一条改文件。同一个工具在「工具与 MCP」页也能停用——`delegate` 三个工具
+恒在工具清单里（即使当前没有可用代理），停用后即便配了代理，模型也看不到它。
+
+**边界要说清**：批准一次转交 = 批准那个程序在**它自己的判断下**动手。它有它自己的文件与
+命令访问，`workdir` 只是起点不是围栏；`session/request_permission` 只覆盖它愿意问的那部分。
+
+### 暂未消费的键（模板自带，随里程碑启用）
+
+未知键解析时忽略，**写回时原样保留**（provider 条目内的无关键同样保留——编辑器按
+原名合并，Q10 口径）。GUI 语音键与 `/mic` 已可用；TUI 尚无语音入口（用 `/mic`）。
 
 ### output
 
@@ -430,35 +431,6 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 | `plugins.<name>.granted` | []string | `[]` | capability allowlist |
 
 设置窗「MCP 与插件」为只读清单；结构化字段的编辑走「高级」页 raw JSON（Q10）。
-
-### delegate（外部代理转交）
-
-把一件复杂任务**整个**交给一个 ACP 代理程序，我们只收回它的报告。
-**配置是唯一事实源**：不内置各家预设——它们的命令名与启动参数变得比我们发版快。
-
-| 字段 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `delegate.agents[].name` | string | — | 名字（`delegate` 工具的 `agent` 参数取值；重复报错） |
-| `delegate.agents[].command` | string | — | 启动命令；启动时按 `PATH` 探测，探不到只标不可用、不挡启动 |
-| `delegate.agents[].args` / `env` | []string / object | `[]` | 参数与环境（值可用 `secret:<名>`，起进程时解析） |
-| `delegate.agents[].workdir` | string | 家目录 | 子进程起点（绝对路径；**不是围栏**） |
-| `delegate.agents[].enabled` | bool | `true` | 键缺失 = 启用 |
-| `delegate.agents[].default` | bool | `false` | 只配一条时可不写；多条目时最多一条 |
-| `delegate.timeout_sec` | int | `1800` | 单次转交总闸；显式 `0` = 不限，上限 `86400` |
-| `delegate.max_concurrent` / `max_total` | int | `2` / `4` | 每会话 / 全局同时进行的转交上限；超限时 `delegate` 直接回绝，不排队 |
-
-清单为空时照常启动：`delegate` / `delegate_wait` / `delegate_kill` 三个工具**不注册**，
-`/delegate list` 给出配置指引。填了之后 `/delegate list` 显示可用性（命令在不在 `PATH` 上）
-与不可用原因；`Title` / `Version` 在第一次转交后才填上（启动不做握手——那要把代理真拉起来）。
-
-**边界要说清**：批准一次转交 = 批准那个程序在**它自己的判断下**动手。它有它自己的文件与
-命令访问，`workdir` 只是起点不是围栏；`session/request_permission` 只覆盖它愿意问的那部分。
-
-### 暂未消费的键（模板自带，随里程碑启用）
-
-未知键解析时忽略，**写回时原样保留**（provider 条目内的无关键同样保留——编辑器按
-原名合并，Q10 口径）。GUI 语音键与 `/mic` 已可用；TUI 尚无语音入口（用 `/mic`）。
-设置窗「外部代理」页尚未落地（清单与可用性走 `/delegate list`）。
 
 ## 密钥规则（逐 provider、逐把钥匙）
 

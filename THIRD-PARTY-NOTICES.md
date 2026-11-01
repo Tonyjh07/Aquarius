@@ -4,7 +4,7 @@
 
 ## 一、范围与维护
 
-- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 64 个模块。
+- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 65 个模块。
   - `spike/` 下各目录是独立 `go.mod` 的试验工程，不属于交付物，不在本清单内。
   - `assets/` 下图标为本项目自制素材，不含第三方组件。
   - 随源码内嵌、但不是 Go 模块的数据（繁简转换词典）单列在 §二末尾。
@@ -38,6 +38,7 @@
 | `github.com/charmbracelet/x/cellbuf` | `v0.0.13` | MIT | `Copyright (c) 2023 Charmbracelet, Inc.` |
 | `github.com/charmbracelet/x/exp/slice` | `v0.0.0-20250327172914-2fdc97757edf` | MIT | `Copyright (c) 2023 Charmbracelet, Inc.` |
 | `github.com/charmbracelet/x/term` | `v0.2.1` | MIT | `Copyright (c) 2023 Charmbracelet, Inc.` |
+| `github.com/coder/acp-go-sdk` | `v0.13.5` | Apache-2.0（见 §3.5） | `Copyright 2025 Coder Technologies, Inc.` |
 | `github.com/dlclark/regexp2` | `v1.12.0` | MIT | `Copyright (c) Doug Clark` |
 | `github.com/erikgeiser/coninput` | `v0.0.0-20211004153227-1c3628e74d0f` | MIT | `Copyright (c) 2021 Erik G.` |
 | `github.com/go-shiori/dom` | `v0.0.0-20230515143342-73569d674e1c` | MIT | `Copyright (c) 2019-present Radhi Fadlillah` |
@@ -86,7 +87,7 @@
 | `golang.org/x/time` | `v0.15.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `gopkg.in/yaml.v3` | `v3.0.1` | MIT / Apache-2.0（混合，见 §3.7） | `Copyright (c) 2006-2010 Kirill Simonov` / `Copyright (c) 2011-2019 Canonical Ltd` |
 
-许可证分布：MIT 39 个、BSD-3-Clause 18 个、Unlicense OR MIT 2 个、Unlicense OR BSD-3-Clause 1 个、Apache-2.0 2 个、Apache-2.0 / MIT 过渡 1 个、MIT / Apache-2.0 混合 1 个，合计 64 个。
+许可证分布：MIT 39 个、BSD-3-Clause 18 个、Unlicense OR MIT 2 个、Unlicense OR BSD-3-Clause 1 个、Apache-2.0 3 个、Apache-2.0 / MIT 过渡 1 个、MIT / Apache-2.0 混合 1 个，合计 65 个。
 
 ### 附：随源码内嵌、但不是 Go 模块的第三方数据
 
@@ -292,12 +293,13 @@ For more information, please refer to <https://unlicense.org/>
 ---
 ```
 
-### 3.5 Apache-2.0（2 个组件 + 内嵌词典）
+### 3.5 Apache-2.0（3 个组件 + 内嵌词典）
 
 适用对象：
 
 - `github.com/richardlehane/mscfb@v1.0.8`——`Copyright 2013 Richard Lehane. All rights reserved.`（版权行在源码头，其 `LICENSE.txt` 是未填写的 Apache-2.0 模板）
 - `github.com/richardlehane/msoleps@v1.0.6`——`Copyright 2014 Richard Lehane. All rights reserved.`（同上）
+- `github.com/coder/acp-go-sdk@v0.13.5`——`Copyright 2025 Coder Technologies, Inc.`（`LICENSE` 末尾的版权行，正文为标准 Apache-2.0）
 - **OpenCC 繁简转换词典**（`internal/adapter/zhconv/dict/` 下 5 个 `.txt`，内容未改，仅规范化为 LF、无 BOM）——上游 [BYVoid/OpenCC](https://github.com/BYVoid/OpenCC) 以 Apache-2.0 发布，`Copyright (c) 2010-2024 BYVoid and contributors`。
 - **`gopkg.in/yaml.v3` 的 Apache 部分**另见 §3.7；**`github.com/modelcontextprotocol/go-sdk`** 另见 §3.6。
 
