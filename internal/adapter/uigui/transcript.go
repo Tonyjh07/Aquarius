@@ -185,6 +185,12 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 			keyBase: it.keyBase, keyN: it.selCount(),
 		})
 	}
+	// 待响应引导（D272）整体淡一档：它还不是会话节点，同在转写区的两种「我说的话」
+	// 得靠观感分开。控件在下面单独画，不跟着淡——那是唯一能操作它的地方。
+	var fade paint.OpacityStack
+	if it.pendID != "" {
+		fade = paint.PushOpacity(gtx.Ops, steerBubbleAlpha)
+	}
 	st := clip.UniformRRect(bgRect, mr.radius).Push(gtx.Ops)
 	paint.Fill(gtx.Ops, mr.bg)
 	inner := op.Offset(image.Pt(bgRect.Min.X+mr.padX, bgRect.Min.Y+mr.padY)).Push(gtx.Ops)
@@ -193,6 +199,7 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 	st.Pop()
 	u.record(bgRect, mr.radius, mr.bg, viewport)
 	if it.pendID != "" {
+		fade.Pop()
 		u.steerActions(gtx, it.pendID, bgRect) // D272：引导气泡旁的两枚控件
 	}
 	return bgRect.Dy()
