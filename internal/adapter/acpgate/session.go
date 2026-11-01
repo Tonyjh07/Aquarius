@@ -52,9 +52,13 @@ type run struct {
 	cancelCtx context.Context
 	cancelFn  context.CancelFunc
 
-	// 收集面（run goroutine 独占）
+	// 收集面。**不是 run goroutine 独占**：session/update 跑在 SDK 的通知 goroutine 上，
+	// request_permission 每个请求各开一条 goroutine（三者可以同时写）——所以全部经 cmu。
+	// 曾经按「独占」写，属于靠顺序侥幸不炸的类型。
+	cmu         sync.Mutex
 	report      strings.Builder
-	reportTail  string
+	headLen     int    // report 里已有的字符数（增量累加，别每次 String() 再数一遍）
+	tailRunes   []rune // 头段满了之后的尾部窗口
 	dropped     int
 	toolCalls   int
 	changed     []string
@@ -143,12 +147,37 @@ func (r *run) process() *process {
 // note 记一条用户面事实（能力协商、跳过的东西、被拒的权限请求）。
 func (r *run) note(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
 	for _, n := range r.notes {
 		if n == msg {
 			return
 		}
 	}
 	r.notes = append(r.notes, msg)
+}
+
+// addDenied 记一次被拒的权限请求（计数与备注一起，免得两处各写一次锁）。
+func (r *run) addDenied(reason string) {
+	r.cmu.Lock()
+	r.denied++
+	r.cmu.Unlock()
+	r.note("permission denied: %s", reason)
+}
+
+// peerGoneNow 对端是否已经断开（写方是 peer 监听 goroutine，读要走锁）。
+func (r *run) peerGoneNow() bool {
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
+	return r.peerGone
+}
+
+// snapshot 收尾时一次性取走收集结果（拷贝，不与活切片共享底层数组）。
+func (r *run) snapshot() (toolCalls int, changed, notes []string, denied, changedOver int) {
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
+	return r.toolCalls, append([]string(nil), r.changed...), append([]string(nil), r.notes...),
+		r.denied, r.changedOver
 }
 
 // complete 写终态并放行 Wait（只调一次）。
@@ -172,14 +201,12 @@ func (m *Manager) run(r *run) {
 	if res.Duration < 0 {
 		res.Duration = 0
 	}
-	if err == nil {
-		res.Agent = r.agent.Name
-		res.ToolCalls = r.toolCalls
-		res.Changed = r.changed
-		res.Report = r.reportText()
-		res.Notes = r.notes
-		res.Session = r.sessionID()
-	}
+	// 不管成功还是失败，已经收到的正文都要带出去：跑了二十分钟、最后一步报错时，
+	// 丢掉全部输出是「转交」最不能接受的结果（失败报告里会标明「可能不完整」）。
+	res.Agent = r.agent.Name
+	res.Session = r.sessionID()
+	res.ToolCalls, res.Changed, res.Notes, res.Denied, res.ChangedOver = r.snapshot()
+	res.Report = r.reportText()
 	r.complete(res, err)
 	// 终态记录留着给 Wait 取（Kill 之后再来 Wait、或先 Kill 再 Wait 都要能拿到报告）；
 	// 由下一次 Start 按序裁掉旧记录，不让表无限长。
@@ -225,9 +252,9 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	if init.AgentInfo != nil {
 		m.noteLearned(r.agent.Name, deref(init.AgentInfo.Title), init.AgentInfo.Version)
 	}
-	if len(init.AuthMethods) > 0 {
-		return m.abort(r, proc, m.authError(r.agent, init.AuthMethods))
-	}
+	// authMethods 是「这个代理支持哪些登录方式」，不是「你现在没登录」——已登录的代理
+	// 也照报（gemini-cli 这类）。所以这里只记下清单，真需要登录时 session/new 会回
+	// -32000（auth required），那时再给出可执行的指引。
 
 	nctx, cancelNew := context.WithTimeout(r.cancelCtx, m.opts.Handshake)
 	ns, err := conn.NewSession(nctx, acp.NewSessionRequest{
@@ -330,16 +357,27 @@ func (m *Manager) abort(r *run, proc *process, err error) (port.DelegateRun, err
 			StopReason: string(acp.StopReasonCancelled),
 			Killed:     kind != stopNone,
 		}
+		// 「会话还没建起来」只在真是那个阶段时这么说：建好之后被停也照原样念，
+		// 用户会以为它一步都没跑。
+		early := ""
+		if r.sessionID() == "" {
+			early = " before the session was established"
+		}
 		switch kind {
 		case stopTimeout:
-			r.note("the delegation exceeded delegate.timeout_sec (%s) before the session was established", m.opts.Timeout)
+			r.note("the delegation exceeded delegate.timeout_sec (%s) and was stopped%s", m.opts.Timeout, early)
 		default:
-			r.note("the delegation was stopped on request before the session was established")
+			r.note("the delegation was stopped on request%s", early)
 		}
-		out.Notes = r.notes
+		_, _, notes, denied, _ := r.snapshot()
+		if denied > 0 {
+			r.note("%d permission request(s) were rejected", denied)
+			_, _, notes, _, _ = r.snapshot()
+		}
+		out.Notes = notes
 		return out, nil
 	}
-	if r.peerGone {
+	if r.peerGoneNow() {
 		if tail := proc.stderrTail(); tail != "" {
 			return port.DelegateRun{}, fmt.Errorf("%w; the agent exited (stderr: %s)", err, tail)
 		}
@@ -377,8 +415,11 @@ func (m *Manager) authError(a Agent, methods []acp.AuthMethod) error {
 func (m *Manager) sessionError(err error, init acp.InitializeResponse) error {
 	var re *acp.RequestError
 	if errors.As(err, &re) {
-		return fmt.Errorf("session/new was rejected (code %d: %s); "+
-			"if the agent asks for authentication, run it once in its own terminal first", re.Code, re.Message)
+		// -32000 = auth required：这才是「真没登录」，此时 authMethods 那份清单才有用。
+		if re.Code == -32000 {
+			return m.authError(Agent{Command: ""}, init.AuthMethods)
+		}
+		return fmt.Errorf("session/new was rejected (code %d: %s)", re.Code, re.Message)
 	}
 	return fmt.Errorf("session/new: %w", err)
 }

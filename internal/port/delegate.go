@@ -64,6 +64,10 @@ type DelegateRun struct {
 	Duration   time.Duration `json:"duration"`
 	Report     string        `json:"report"`          // 最终正文（它交付的那段）
 	Notes      []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
+	// Denied 它提出而没人应答的权限请求数（无人值守、或用户不在发起会话）；ChangedOver
+	// 是超出清单上限、没逐个列出的改动文件数——两者都要说，否则读报告的人以为清单是完整的。
+	Denied      int `json:"denied,omitempty"`
+	ChangedOver int `json:"changed_over,omitempty"`
 	// Killed 是被我们终止的（停止键 / delegate_kill）：报告可能是半截的，摘要行要说清。
 	Killed bool `json:"killed,omitempty"`
 }
@@ -109,10 +113,19 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 	fmt.Fprintf(&b, "Delegation %s to %s finished in %s (stop=%s, tool calls=%d, files changed=%d).\n",
 		id, run.Agent, run.Duration.Round(time.Second), stopReasonText(run), run.ToolCalls, len(run.Changed))
 	if len(run.Changed) > 0 {
-		b.WriteString("Files it reported changing: " + strings.Join(run.Changed, ", ") + "\n")
+		b.WriteString("Files it reported changing: " + strings.Join(run.Changed, ", "))
+		if run.ChangedOver > 0 {
+			fmt.Fprintf(&b, " (and %d more not listed)", run.ChangedOver)
+		}
+		b.WriteString("\n")
+	} else if run.ChangedOver > 0 {
+		fmt.Fprintf(&b, "Files it reported changing: at least %d (none listed)\n", run.ChangedOver)
+	}
+	if run.Denied > 0 {
+		fmt.Fprintf(&b, "Permission requests it made went unanswered: %d (denied on the spot)\n", run.Denied)
 	}
 	if len(run.Notes) > 0 {
-		b.WriteString("Notes:/n")
+		b.WriteString("Notes:\n")
 		for _, n := range run.Notes {
 			b.WriteString("- " + n + "\n")
 		}

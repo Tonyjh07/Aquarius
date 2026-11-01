@@ -75,8 +75,7 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 		}
 	}
 	if !allow {
-		r.denied++
-		r.note("permission denied: %s", denyReason)
+		r.addDenied(denyReason)
 		if opt, ok := pickOption(p.Options, false); ok {
 			return acp.RequestPermissionResponse{Outcome: acp.NewRequestPermissionOutcomeSelected(opt)}, nil
 		}
@@ -85,8 +84,7 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 	opt, ok := pickOption(p.Options, true)
 	if !ok {
 		// 没有「允许」类选项：只能拒绝，并说明是对方没给允许项（不是用户拒的）。
-		r.denied++
-		r.note("permission denied: the agent offered no allow option")
+		r.addDenied("the agent offered no allow option")
 		if rej, ok := pickOption(p.Options, false); ok {
 			return acp.RequestPermissionResponse{Outcome: acp.NewRequestPermissionOutcomeSelected(rej)}, nil
 		}

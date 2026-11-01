@@ -69,9 +69,10 @@ type Options struct {
 type Manager struct {
 	opts Options
 
-	mu   sync.Mutex
-	runs map[port.DelegateID]*run
-	seq  int
+	mu     sync.Mutex
+	runs   map[port.DelegateID]*run
+	seq    int
+	closed bool // Close 之后不再接受新转交（否则关停期间会起一个没人管的进程）
 	// learned initialize 读回的 agentInfo（Title/Version）：只在第一次转交后才有，
 	// 启动时只探「能不能执行」（不拿用户时间换一张清单）。
 	learned map[string]learnedInfo
@@ -181,6 +182,10 @@ func (m *Manager) Start(ctx context.Context, spec port.DelegateSpec) (port.Deleg
 	sid, _ := port.SessionIDFrom(ctx)
 
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return port.DelegateTask{}, fmt.Errorf("the application is shutting down; no new delegation can start")
+	}
 	var total, mine int
 	for _, r := range m.runs {
 		if r.finished() {
@@ -232,7 +237,8 @@ func (m *Manager) Kill(ctx context.Context, id port.DelegateID) error {
 		return err
 	}
 	if r.finished() {
-		return fmt.Errorf("delegation %s already finished", id)
+		// 停止键恰好落在「刚好跑完」那一瞬是正常事：按幂等成功回，不要报错让人以为没停掉。
+		return nil
 	}
 	r.requestStop(stopKilled)
 	select {
@@ -247,6 +253,7 @@ func (m *Manager) Kill(ctx context.Context, id port.DelegateID) error {
 // 一路失去监督的子代理继续按自己的判断改文件）。
 func (m *Manager) Close() {
 	m.mu.Lock()
+	m.closed = true
 	list := make([]*run, 0, len(m.runs))
 	for _, r := range m.runs {
 		list = append(list, r)
@@ -279,7 +286,7 @@ func (m *Manager) trimFinishedLocked() {
 	if len(done) <= keepFinished {
 		return
 	}
-	sort.Slice(done, func(i, j int) bool { return done[i] < done[j] })
+	sort.Slice(done, func(i, j int) bool { return m.runs[done[i]].started.Before(m.runs[done[j]].started) })
 	for _, id := range done[:len(done)-keepFinished] {
 		delete(m.runs, id)
 	}

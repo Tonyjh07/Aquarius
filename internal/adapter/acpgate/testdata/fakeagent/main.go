@@ -5,12 +5,14 @@
 // 模式：
 //
 //	ok         握手 → 建会话 → 提示：发正文/工具调用/改动文件 → end_turn
-//	auth       initialize 回 authMethods（对方没登录）
+//	auth       initialize 回 authMethods，session/new 回 -32000（真没登录）
+//	ok         的 initialize 也带一条 authMethods（已登录的代理照样会报，不代表没登录）
 //	v2         initialize 报协议版本 2
 //	crash      initialize 之后直接退出（stderr 留一行）
 //	slow       提示一直不回，收到 session/cancel 才回 cancelled
 //	ignore     提示一直不回，连 cancel 也不理（测试宽限杀进程）
 //	permission 提示里先反问权限，按应答回一段正文
+//	partial    先发两段正文，然后直接退出（测试「中途失败也要把已收到的带出去」）
 //	badcwd     要求 cwd 是绝对路径、mcpServers 为空，否则回 -32602
 package main
 
@@ -143,13 +145,22 @@ func handleRequest(mode string, m rpcMsg) {
 		reply(m.ID, map[string]any{
 			"protocolVersion": 1,
 			"agentInfo":       map[string]any{"name": "fake", "title": "Fake Agent", "version": "9.9"},
-			"authMethods":     []any{},
+			// 真的代理（gemini-cli 这类）已登录也会照报自己支持哪些登录方式；这一条
+			// 留在默认路径上是回归护栏：谁再拿「authMethods 非空」判「没登录」，ok
+			// 系列用例会一起红。
+			"authMethods": []any{map[string]any{"type": "agent", "id": "login", "name": "Log in first"}},
 			"agentCapabilities": map[string]any{
 				"promptCapabilities": map[string]any{"image": false, "audio": false, "embeddedContext": false},
 			},
 		})
 
 	case "session/new":
+		if mode == "auth" {
+			// 真没登录的代理在这里拒绝（JSON-RPC -32000 auth required），而不是在
+			// initialize 里用 authMethods 表达。
+			fail(m.ID, -32000, "authentication required")
+			return
+		}
 		var p struct {
 			Cwd        string `json:"cwd"`
 			McpServers []any  `json:"mcpServers"`
@@ -203,6 +214,12 @@ func handleRequest(mode string, m rpcMsg) {
 			txt := "permission: " + string(raw)
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": txt}})
 			reply(m.ID, map[string]any{"stopReason": "end_turn"})
+
+		case "partial":
+			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "第一段结论：缓存层没问题。"}})
+			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "第二段：开始改 src/cache.go"}})
+			fmt.Fprintln(os.Stderr, "fake agent: died mid-turn")
+			os.Exit(4)
 
 		default:
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "Hello "}})

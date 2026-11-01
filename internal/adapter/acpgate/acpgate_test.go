@@ -376,3 +376,23 @@ func hasNote(notes []string, sub string) bool {
 	}
 	return false
 }
+
+// TestDelegateErrorKeepsPartialReport 中途失败也要把已经收到的正文带出去：跑了半天的
+// 输出不该因为最后一步报错就整段消失（D268）。
+func TestDelegateErrorKeepsPartialReport(t *testing.T) {
+	m := newManager(t, "partial", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "review"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err == nil {
+		t.Fatal("want an error（代理中途退出）")
+	}
+	if !strings.Contains(run.Report, "第一段结论") || !strings.Contains(run.Report, "第二段") {
+		t.Fatalf("run.Report = %q, want 两次正文都在", run.Report)
+	}
+	if run.Agent != "fake" {
+		t.Fatalf("run.Agent = %q", run.Agent)
+	}
+}

@@ -153,10 +153,11 @@ func TestDelegateWaitClaimsReport(t *testing.T) {
 	t.Cleanup(w.Close)
 
 	w.Watch(port.DelegateTask{ID: "d1", Agent: "claude"}, "c1")
-	_, claimed := w.Claim("d1")
+	release, claimed := w.Claim("d1")
 	if !claimed {
 		t.Fatal("watcher 在场时应能预领")
 	}
+	release(true) // 结果交给模型了
 	d.finish("d1", port.DelegateRun{Agent: "claude", Report: "r"}, nil)
 	select {
 	case in := <-ci.ch:
@@ -206,5 +207,27 @@ func TestDelegateCancelSessionDropsReport(t *testing.T) {
 	case in := <-ci.ch:
 		t.Fatalf("会话已删，不该注入: %+v", in)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// TestDelegateWaitTimeoutHandsReportBack delegate_wait 自己超时（预领了但没拿到结果）
+// 时，报告要还给 watcher 照常注入：否则一次超时就让这份报告两边都不投（D268）。
+func TestDelegateWaitTimeoutHandsReportBack(t *testing.T) {
+	d := newScriptedDelegate()
+	ci := newCaptureInjector()
+	w := NewDelegateWatcher(DelegateWatcherOptions{Delegates: d, Injector: func() port.Injector { return ci }})
+	t.Cleanup(w.Close)
+
+	w.Watch(port.DelegateTask{ID: "d1", Agent: "claude"}, "c1")
+	release, claimed := w.Claim("d1")
+	if !claimed {
+		t.Fatal("watcher 在场时应能预领")
+	}
+	release(false) // 前台 Wait 超时：没交出去，还回来
+
+	d.finish("d1", port.DelegateRun{Agent: "claude", Report: "报告正文"}, nil)
+	in := waitInjection(t, ci.ch)
+	if !strings.Contains(in.Parts[0].Text, "报告正文") {
+		t.Fatalf("text = %q, want 含报告正文", in.Parts[0].Text)
 	}
 }

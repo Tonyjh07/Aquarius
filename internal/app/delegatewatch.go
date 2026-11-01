@@ -39,6 +39,9 @@ type DelegateWatcher struct {
 	wg      sync.WaitGroup
 }
 
+// claimSettleLimit 等前台 delegate_wait 交回归属的上限（漏掉 release 时的兜底）。
+const claimSettleLimit = 2 * time.Second
+
 // delegateEntry 一条转交 watcher 的运行时状态。
 type delegateEntry struct {
 	session conversation.ID
@@ -48,35 +51,69 @@ type delegateEntry struct {
 	mu      sync.Mutex
 	claimed bool // 前台 delegate_wait 已预领这次终态报告
 	taken   bool // 终态归属已定
+	// settled 前台把归属交回时关闭。预领之后 watcher 不能直接判「我不报了」：
+	// 前台那次 Wait 可能刚好超时失败（比如 delegate_wait 自带 timeout），那一刻
+	// 报告两边都不投就彻底没了。所以 watcher 在这里等前台的结论。
+	settled     chan struct{}
+	settledOnce sync.Once
 }
 
 func (e *delegateEntry) claim() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.taken {
+	if e.taken || e.claimed {
 		return false
 	}
 	e.claimed = true
 	return true
 }
 
-func (e *delegateEntry) release() {
+// release 交回归属：delivered=true 表示结果已经交给调用方（watcher 不必再报）；
+// false 表示调用方没拿到（超时/报错），报告还给 watcher 照常注入。
+func (e *delegateEntry) release(delivered bool) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if !e.taken {
-		e.claimed = false
+	if delivered {
+		e.taken = true
 	}
+	e.claimed = false
+	e.mu.Unlock()
+	e.settledOnce.Do(func() { close(e.settled) })
 }
 
 func (e *delegateEntry) takeByWatcher() bool {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.taken || e.claimed {
+	if e.taken {
+		e.mu.Unlock()
+		return false
+	}
+	if !e.claimed {
 		e.taken = true
+		e.mu.Unlock()
+		return true
+	}
+	// 前台正拿着它：等结论。前台的 Wait 一返回就会 release，所以这里实际上几乎不等；
+	// 上限只是兜底——调用方漏掉 release 不该把收尾观察者永久卡住（关停会一起挂在 wg.Wait）。
+	settled := e.settled
+	e.mu.Unlock()
+	select {
+	case <-settled:
+	case <-time.After(claimSettleLimit):
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.taken {
 		return false
 	}
 	e.taken = true
 	return true
+}
+
+// discard 无条件判定「不必再报」（Kill 之后由调用方拿到结果、撤销时）。不等前台。
+func (e *delegateEntry) discard() {
+	e.mu.Lock()
+	e.taken = true
+	e.mu.Unlock()
+	e.settledOnce.Do(func() { close(e.settled) })
 }
 
 // DelegateWatcherOptions 依赖（全部由装配根注入）。
@@ -121,7 +158,7 @@ func (w *DelegateWatcher) Watch(task port.DelegateTask, session conversation.ID)
 		return
 	}
 	ctx, cancel := context.WithCancel(w.root)
-	e := &delegateEntry{session: session, agent: task.Agent, cancel: cancel}
+	e := &delegateEntry{session: session, agent: task.Agent, cancel: cancel, settled: make(chan struct{})}
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
@@ -138,18 +175,19 @@ func (w *DelegateWatcher) Watch(task port.DelegateTask, session conversation.ID)
 }
 
 // Claim 预领终态报告（前台 delegate_wait 用）：返回 false = 归属已定（watcher 报过了）。
-func (w *DelegateWatcher) Claim(id port.DelegateID) (func(), bool) {
+// 返回的 release 必须调用，并告诉它结果有没有交出去——交不出去就要还回来。
+func (w *DelegateWatcher) Claim(id port.DelegateID) (func(delivered bool), bool) {
 	if w == nil {
-		return func() {}, true
+		return func(bool) {}, true
 	}
 	w.mu.Lock()
 	e, ok := w.watches[id]
 	w.mu.Unlock()
 	if !ok {
-		return func() {}, false // 没有 watcher：前台拿到结果就是全部，不必再报
+		return func(bool) {}, false // 没有 watcher：前台拿到结果就是全部，不必再报
 	}
 	if !e.claim() {
-		return func() {}, false
+		return func(bool) {}, false
 	}
 	return e.release, true
 }
@@ -166,7 +204,7 @@ func (w *DelegateWatcher) Unwatch(id port.DelegateID) {
 	}
 	w.mu.Unlock()
 	if ok {
-		e.takeByWatcher() // 定归属：watcher 若已取到终态也不再注入
+		e.discard() // 定归属：watcher 若已取到终态也不再注入
 		e.cancel()
 	}
 }
@@ -220,7 +258,7 @@ func (w *DelegateWatcher) run(ctx context.Context, id port.DelegateID, e *delega
 	}
 	var text string
 	if err != nil {
-		text = delegateFailureText(id, e.agent, err)
+		text = delegateFailureText(id, e.agent, run, err)
 	} else {
 		text = port.DelegateReportText(id, run)
 	}
@@ -273,9 +311,22 @@ func (w *DelegateWatcher) deliver(ctx context.Context, id port.DelegateID, in po
 }
 
 // delegateFailureText 转交失败的报告正文（英文：进模型上下文）。它必须落地——否则
-// 一次失败就是一条静默丢失的活。
-func delegateFailureText(id port.DelegateID, agent string, err error) string {
-	return fmt.Sprintf("Delegation %s to %s failed: %s", id, agent, strings.TrimSpace(err.Error()))
+// 一次失败就是一条静默丢失的活。已经收到的正文一并带上：中途失败不该把十几分钟的
+// 输出一起丢掉。
+func delegateFailureText(id port.DelegateID, agent string, run port.DelegateRun, err error) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Delegation %s to %s failed: %s", id, agent, strings.TrimSpace(err.Error()))
+	if body := strings.TrimSpace(run.Report); body != "" {
+		fmt.Fprintf(&b, "\n\nIt had produced this much before failing (partial, tool calls=%d):\n\n%s",
+			run.ToolCalls, body)
+	}
+	if len(run.Notes) > 0 {
+		b.WriteString("\n\nNotes:\n")
+		for _, n := range run.Notes {
+			b.WriteString("- " + n + "\n")
+		}
+	}
+	return b.String()
 }
 
 // watchingDelegates port.Delegate 的 watcher 装饰器（与 watchingJobs 同一形状）：
@@ -318,10 +369,10 @@ func (w *watchingDelegates) Kill(ctx context.Context, id port.DelegateID) error 
 func (w *watchingDelegates) Wait(ctx context.Context, id port.DelegateID) (port.DelegateRun, error) {
 	release, claimed := w.watcher.Claim(id)
 	run, err := w.Delegate.Wait(ctx, id)
-	if err != nil {
-		release()
-		return run, err
+	if claimed {
+		// 拿到结果 = 归属定了（watcher 不再注入）；没拿到（超时/报错）= 还回去，
+		// 由 watcher 在终态到达时照常注入，报告不会因为一次超时就凭空消失。
+		release(err == nil)
 	}
-	_ = claimed
-	return run, nil
+	return run, err
 }

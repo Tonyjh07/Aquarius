@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -272,10 +273,33 @@ func (s *Session) landElsewhere(ctx context.Context, item pendingInjection) erro
 	if err := c.AppendCommitted(node); err != nil {
 		return fmt.Errorf("session: 异地落地会话 %s: %w", target, err)
 	}
-	if err := s.store.Save(ctx, c); err != nil {
+	if err := s.saveElsewhere(ctx, c); err != nil {
 		return fmt.Errorf("session: 异地落地保存会话 %s: %w", target, err)
 	}
 	return nil
+}
+
+// saveElsewhere 写回异地会话，遇瞬时占用退避重试。
+//
+// Windows 上这是最容易撞的一步：GUI 会话列表、/tree、启动 GC 都可能正开着同一个
+// `<id>.json` 读，而轮转 + os.Rename 在目标被打开时会报 sharing violation。那些读
+// 句柄活得很短（毫秒级），退避重试几次就过去了；不重试的话这份报告会直接消失，
+// 而投递方早已认为「已落地」。
+func (s *Session) saveElsewhere(ctx context.Context, c *conversation.Conversation) error {
+	var err error
+	for _, wait := range []time.Duration{0, 20 * time.Millisecond, 60 * time.Millisecond, 200 * time.Millisecond} {
+		if wait > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+		if err = s.store.Save(ctx, c); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // logf 运行日志（用户面中文）；未接线时丢弃。
