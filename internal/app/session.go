@@ -41,6 +41,9 @@ type SessionDeps struct {
 	Confirmer port.Confirmer
 	// Jobs 后台任务管理（/jobs，§7.3，M3）；nil 时 /jobs 报"未配置任务管理器"。
 	Jobs port.JobManager
+	// Delegate 外部代理转交（/delegate，§5.18/D244）；nil 时 /delegate 报"未配置外部代理"。
+	// 命令面只列清单与叫停——派活是模型经 delegate 工具做的事（与 job_* 同一分工）。
+	Delegate port.Delegate
 	// Watches 观察器（/watch，D190）；nil 时 /watch 报"未配置观察器"。
 	Watches port.WatchManager
 	// Skills 技能清单（/skill，D201）；nil 时 /skill 报"未配置技能目录"。
@@ -113,6 +116,7 @@ type Session struct {
 	perms       PermissionSettings
 	confirmer   port.Confirmer
 	jobs        jobAdmin
+	delegates   delegateAdmin
 	watches     port.WatchManager
 	skills      port.SkillCatalog
 	skillAdmin  SkillAdmin
@@ -211,6 +215,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		perms:       d.Perms,
 		confirmer:   d.Confirmer,
 		jobs:        d.Jobs,
+		delegates:   d.Delegate,
 		watches:     d.Watches,
 		skills:      d.Skills,
 		skillAdmin:  d.SkillAdmin,

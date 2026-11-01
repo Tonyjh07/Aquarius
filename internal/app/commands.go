@@ -184,6 +184,12 @@ func init() {
 				{Name: "行数", Kind: port.ParamText, Desc: "logs 时取末尾几行"},
 			},
 			Run: argsOnly((*Session).jobsReport)},
+		{Names: []string{"delegate"}, Usage: "[list|kill <id>]", Desc: "外部代理转交：查看配置里的代理与可用性、叫停一次正在进行的转交（派活由模型经 delegate 工具发起）",
+			Params: []port.CommandParam{
+				{Name: "子命令", Kind: port.ParamChoice, Values: []string{"list", "kill"}, Desc: "省略 = list"},
+				{Name: "<id>", Kind: port.ParamText, Desc: "kill 时的转交 id"},
+			},
+			Run: argsOnly((*Session).delegateReport)},
 		{Names: []string{"skill"}, Usage: "[list|<名字>|install <路径或链接>|remove <名字>|update [名字|all]]",
 			Desc: "技能：列出已安装技能 / 把某个技能的指令载入上下文（不触发回答）/ 安装、卸载或更新",
 			Params: []port.CommandParam{
