@@ -16,6 +16,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -319,6 +320,11 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	// D187：剪贴板里有图就抢这一下 Ctrl+V（没图不注册过滤器，按键留给编辑器做文本
 	// 粘贴）。必须在 editor.Update 之前——Gio 的事件先取先得，编辑器会把键吞掉。
 	u.pasteImageKey(gtx)
+	// D272：输入栏三键（ui.keys）。带修饰的那两个必须先于 editor.Update——编辑器对
+	// Enter 注册的是「提交」，对 Shift+Enter 注册的是「换行」，两者都要先被我们认领，
+	// 否则「Shift+Enter = 引导」这条就成了空话。纯 Enter 仍走编辑器 SubmitEvent
+	//（补全浮层 D103 认领 Enter 的既有路径不变）。
+	u.sendKeys(gtx)
 	// D250：收起态单行编辑时 ↑↓ 翻输入历史。同样必须先于 editor.Update（编辑器对
 	// ↑↓ 注册的是「不在开头就 MoveLines」，单行里它会把光标推到行首行尾）。
 	u.historyKeys(gtx)
@@ -333,6 +339,92 @@ func (u *UI) updateEditor(gtx layout.Context) {
 			u.submitEditor()
 		}
 	}
+}
+
+// sendKeys 输入栏三键（D272 / ui.keys）：认领「带修饰的 Enter」这一类组合。
+//
+// 为什么必须在 editor.Update 之前：编辑器自己注册了 Enter = 提交、Shift+Enter = 换行。
+// 我们要把 Shift+Enter 抽走当「引导」、把 Ctrl+Enter 抽走当「换行」，就只能先到先得。
+// 纯 Enter 不在这里处理——补全浮层（D103）认领它的路径不能动，它照旧产出 SubmitEvent。
+func (u *UI) sendKeys(gtx layout.Context) {
+	if u.m.confirm != nil || u.m.ask != nil || u.inFadePass {
+		return // 确认态/提问态：键入是应答，不是消息（§15.2）；淡出源不消费事件
+	}
+	if u.collapsed || !gtx.Focused(&u.editor) {
+		return
+	}
+	type bound struct {
+		b    uicommon.Binding
+		what int // 0 = send、1 = steer、2 = newline
+	}
+	list := []bound{{u.keys.Send, 0}, {u.keys.Steer, 1}, {u.keys.Newline, 2}}
+	for _, x := range list {
+		if x.b.Key != "Enter" || x.b.Mods == 0 {
+			continue // 只认领带修饰的 Enter（纯 Enter 归编辑器的 SubmitEvent）
+		}
+		want := gioMods(x.b.Mods)
+		for {
+			ev, ok := gtx.Event(key.Filter{
+				Focus:    &u.editor,
+				Name:     key.NameEnter,
+				Required: want,
+			})
+			if !ok {
+				break
+			}
+			ke, isKey := ev.(key.Event)
+			if !isKey || ke.State != key.Press {
+				continue
+			}
+			if gioMods(gioEventMods(ke.Modifiers)) != want {
+				continue // Ctrl+Shift+Enter 之类：不认领，留给编辑器（换行）
+			}
+			switch x.what {
+			case 1:
+				u.submitLine(port.DeliverySteer) // 空闲时与发送等价（§5.19）
+			case 2:
+				u.editor.Insert("\n")
+			default:
+				u.submitEditor()
+			}
+		}
+	}
+}
+
+// gioMods 端口口径的修饰键位集 → Gio 的 key.Modifiers。
+func gioMods(m uicommon.Mods) key.Modifiers {
+	var out key.Modifiers
+	if m&uicommon.ModCtrl != 0 {
+		out |= key.ModCtrl
+	}
+	if m&uicommon.ModShift != 0 {
+		out |= key.ModShift
+	}
+	if m&uicommon.ModAlt != 0 {
+		out |= key.ModAlt
+	}
+	if m&uicommon.ModSuper != 0 {
+		out |= key.ModSuper
+	}
+	return out
+}
+
+// gioEventMods 事件里的修饰键折回端口口径（只保留我们认识的四位）。
+func gioEventMods(m key.Modifiers) uicommon.Mods {
+	var out uicommon.Mods
+	if m&key.ModCtrl != 0 {
+		out |= uicommon.ModCtrl
+	}
+	if m&key.ModShift != 0 {
+		out |= uicommon.ModShift
+	}
+	if m&key.ModAlt != 0 {
+		out |= uicommon.ModAlt
+	}
+	if m&key.ModSuper != 0 {
+		out |= uicommon.ModSuper
+	}
+	return out
 }
 
 // historyKeys ↑↓ 翻输入历史（D250）：只在收起态、主编辑器持焦、无编辑态时生效——展开态
@@ -477,7 +569,14 @@ func (u *UI) confirmReason() string {
 
 // submitEditor 提交编辑器内容（发送键与 Enter 同路）；确认态无动作——D86：应答经
 // 三钮/原因框 Enter，拦截以防主编辑器旧草稿被 submit 误当 y/N 应答。
-func (u *UI) submitEditor() {
+func (u *UI) submitEditor() { u.submitLine(port.DeliveryQueue) }
+
+// submitLine 提交编辑器内容，按档位决定「现在发」还是「进待发清单」（D272）。
+//
+// 生成中 + 纯文本新消息 → 进清单（排队或引导），编辑器清空、界面上多一行待发条；
+// 其余情形（空闲、编辑既有消息、带附件、命令）照旧走输入通道——那不是「插话」，
+// 是一条要按原路走的消息（附件与命令都不进清单，见 §5.19 边界）。
+func (u *UI) submitLine(d port.Delivery) {
 	if u.m.confirm != nil || u.m.ask != nil {
 		return // D86/D184：确认态与提问态都不走主编辑器提交
 	}
@@ -488,6 +587,28 @@ func (u *UI) submitEditor() {
 			u.cancelEdit()
 		}
 		return
+	}
+	// D272：生成中的纯文本新消息进待发清单——本轮还卡在 Handle 里，走输入通道等于
+	// 「等本轮结束才有人取」。清单由会话持有、界面直接写，内核在下一个请求边界取用。
+	if u.generating.Load() { // 只在生成中：空闲时插话键与发送等价（§5.19）
+		// 命令不进清单：斜杠命令是「对会话做的事」（切会话、改设置、取消任务），把它
+		// 塞进待发条再等一轮结束才执行，只会让用户以为没生效。照旧走输入通道排队。
+		isCmd := strings.HasPrefix(text, "/")
+		if !isCmd && u.m.editTarget == "" && len(u.m.stagedFiles) == 0 && u.pending() != nil {
+			if u.addPending(text, d) {
+				u.editor.SetText("")
+				if u.m.editTarget == "" {
+					u.ihist.push(text)
+				}
+				if u.expanded {
+					u.setExpanded(false)
+				}
+				return
+			}
+			// 收不下（满/超长）：提示已由 addPending 给出，别把这行再塞进输入通道——
+			// 那会变成「既在待发条上又在队列里」的两份。
+			return
+		}
 	}
 	u.editor.SetText("")
 	// D250：进输入历史。编辑既有消息走的也是这里（submitEditor），但那不是「用户打的

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 )
@@ -165,6 +166,13 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
 		return fmt.Errorf("ui.kind=%q 仅支持 repl | tui | gui", cfg.UI.Kind)
 	}
+	// 输入栏三键（§5.19/D272）：非法键名与撞键在启动时报因——等用户按下那个键才发现没
+	// 反应，比启动失败难查得多。
+	keys, err := uicommon.ParseKeyBindings(cfg.UI.Keys.Send, cfg.UI.Keys.Steer, cfg.UI.Keys.Newline)
+	if err != nil {
+		return err
+	}
+	w.keys = keys
 	if cfg.UI.Kind != "gui" {
 		if restoreConsole() { // repl/tui 以终端为界面，双击启动也必须可用（D108/D114）
 			// D114：脱离后原句柄失效，重挂后的控制台流经 wiring 下发（前端与编辑器子进程）。

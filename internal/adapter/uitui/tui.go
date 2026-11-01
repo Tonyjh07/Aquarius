@@ -61,6 +61,13 @@ type Options struct {
 	Interrupt func()
 	// History 输入历史上限（<=0 = 50）。
 	History int
+	// Pending 待发清单（D272）：生成中键入的消息停在这里，由内核在两个取用边界拿走；
+	// nil = 没有清单（全部经输入通道，等本轮结束）。
+	Pending func() port.Pending
+	// Keys 输入栏三键（§5.19）：发送 / 引导 / 换行。零值 = 缺省 Enter / Alt+Enter /
+	// Ctrl+J（终端里 Shift+Enter 与 Enter 不可分，故 TUI 的引导键放宽到 Alt+Enter——
+	// 配置里写了 Shift+Enter 也照 Alt+Enter 认，见 model.key）。
+	Keys uicommon.KeyBindings
 }
 
 // UI TUI 前端句柄（装配根按 uiFrontend 使用）。
@@ -73,7 +80,10 @@ type UI struct {
 	eofErr    error // 写于 close 之前；close 提供 happens-before，读者安全
 	done      chan struct{}
 	interrupt atomic.Pointer[func()]
-	opts      Options
+	// generating 生成中（SetInterrupt 非空 = 一轮 Turn 进行中）：决定键入的 Enter 是
+	// 「发一条」还是「排一条」（D272）。
+	generating atomic.Bool
+	opts       Options
 }
 
 // New 启动 TUI（事件循环即刻在后台运行，退出经 Close 收尾）。
@@ -92,6 +102,9 @@ func New(opts Options) *UI {
 		eofCh:  make(chan struct{}),
 		done:   make(chan struct{}),
 		opts:   opts,
+	}
+	if opts.Keys.Send.Key == "" {
+		opts.Keys = defaultTUIKeys()
 	}
 	if opts.Interrupt != nil {
 		u.SetInterrupt(opts.Interrupt)
@@ -166,6 +179,7 @@ func (u *UI) Resume() error { return u.prog.RestoreTerminal() }
 
 // SetInterrupt 注入 Ctrl+C 行为（装配根在每轮 Turn 前设为取消该轮；原子换，事件循环读）。
 func (u *UI) SetInterrupt(fn func()) {
+	u.generating.Store(fn != nil)
 	if fn == nil {
 		fn = func() {}
 	}

@@ -58,7 +58,8 @@ type model struct {
 
 	input     []rune
 	history   []string
-	histIdx   int // -1 = 未浏览历史
+	histIdx   int      // -1 = 未浏览历史
+	echoed    []string // 已本地回显、还没等到 CommittedEvent 的用户行（D272 核销用）
 	confirm   *pendingConfirm
 	usage     conversation.Usage
 	width     int
@@ -146,6 +147,22 @@ func (m *model) key(msg tea.KeyMsg) *model {
 			m.input = m.input[:0]
 			m.histIdx = -1
 		}
+		// D272：生成中键入的一行进待发清单（Alt+Enter = 引导，其余 = 排队）——
+		// 走输入通道要等这一轮结束才有人取，那正是待发清单要修的毛病。
+		if m.confirm == nil && m.u.generating.Load() && strings.TrimSpace(text) != "" &&
+			!strings.HasPrefix(strings.TrimSpace(text), "/") { // 命令不进清单（§5.19 边界）
+			d := port.DeliveryQueue
+			if msg.Alt && msg.Type == tea.KeyEnter {
+				d = port.DeliverySteer
+			}
+			if ok, note := m.u.addPending(strings.TrimSpace(text), d); ok {
+				m.pushHistory(strings.TrimSpace(text))
+				return m
+			} else if note != "" {
+				m.add(blockNotice, note)
+				return m
+			}
+		}
 		m.submit(text)
 		return m
 	}
@@ -168,6 +185,12 @@ func (m *model) key(msg tea.KeyMsg) *model {
 	case tea.KeyCtrlU:
 		if m.confirm != nil {
 			m.confirm.answer = m.confirm.answer[:0]
+			return m
+		}
+		if len(m.input) == 0 { // 输入为空时 = 撤销最后一条待发（D272，TUI 没有待发条可点）
+			if text, ok := m.u.undoPending(); ok {
+				m.add(blockNotice, "[notice] 已撤销待发: "+preview([]byte(text)))
+			}
 			return m
 		}
 		m.input = m.input[:0]
@@ -234,6 +257,7 @@ func (m *model) submit(text string) {
 	select {
 	case m.u.inCh <- parseInput(line):
 		m.add(blockUser, line)
+		m.echoed = append(m.echoed, line)
 	default:
 		m.add(blockUser, line)
 		m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
@@ -424,6 +448,15 @@ func (m *model) commit(msg conversation.Message) {
 		}
 	default:
 		// user 节点无事件面（输入已单独入块）；工具结果随 assistant 节点分片呈现（D95）。
+		// D272：轮内落成的 user 节点（引导/排队）没有本地回显——按「最早一条已回显且
+		// 文本一致」核销，核销不到就补一块，否则那句话在转写区里消失。
+		if msg.Role == conversation.RoleUser && strings.TrimSpace(text) != "" {
+			if len(m.echoed) > 0 && m.echoed[0] == strings.TrimSpace(text) {
+				m.echoed = m.echoed[1:]
+			} else {
+				m.add(blockUser, text)
+			}
+		}
 		m.resetDraft()
 	}
 	m.scroll = 0
@@ -688,6 +721,9 @@ func (m *model) statusLine() string {
 		if st.Effort != "" {
 			parts = append(parts, "effort "+st.Effort)
 		}
+	}
+	if n := m.u.pendingCount(); n > 0 {
+		parts = append(parts, fmt.Sprintf("待发 %d 条（Ctrl+U 撤销）", n))
 	}
 	if u := m.usage; u.InputTokens > 0 || u.OutputTokens > 0 {
 		parts = append(parts, fmt.Sprintf("↑%d ↓%d", u.InputTokens, u.OutputTokens))

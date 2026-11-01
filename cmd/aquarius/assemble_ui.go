@@ -124,6 +124,15 @@ func (w *wiring) samplingFor(model string) port.Sampling {
 	return w.cfg.Model.currentSampling()
 }
 
+// pendingInput 待发清单数据源（D272）：会话就绪前为 nil，界面按 nil 处理（照旧走输入
+// 通道）。会话在 UI 构造之后才建，所以这里给的是回调而不是值。
+func (w *wiring) pendingInput() port.Pending {
+	if s := w.sessPtr.Load(); s != nil {
+		return s.Pending()
+	}
+	return nil
+}
+
 // newUI 装配 UI 前端（D33/D43/D51）：Gio GUI（默认，§15）、bubbletea TUI
 // （ui.kind=tui）或 repl（行式，测试/e2e 后端）——同权实现 uiFrontend，换壳不换核
 // （D28 输出器装饰器自动继承）。TUI/GUI 状态行回调经 atomic 读 Agent（构造晚于
@@ -163,11 +172,13 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Lister:              sessionList{p: &w.sessPtr},                                                                                                                                        // D120⑥：会话历史窗左栏只读数据面
 			Indexer:             w.exchange,                                                                                                                                                        // D249：导入多会话归档时先取清单（勾选面板）
 			PosFile:             filepath.Join(w.profileDir, "gui_pos.json"),                                                                                                                       // 位置记忆随 profile 走（D110 修订①）
-			Hotkey:              w.cfg.UI.Hotkey,                                                                                                                                                   // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
-			Theme:               w.cfg.UI.Theme,                                                                                                                                                    // 主题档 system|light|dark（§15.4/D61；空 = system）
-			Scale:               w.cfg.UI.Scale,                                                                                                                                                    // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
-			FontSize:            w.cfg.UI.FontSize,                                                                                                                                                 // 正文字号 sp（D90；0 = 15）
-			WindowWidth:         w.cfg.UI.WindowWidth,                                                                                                                                              // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
+			Hotkey:              w.cfg.UI.Hotkey,
+			Pending:             w.pendingInput,       // D272：生成中键入的消息停在这里
+			Keys:                w.keys,               // §5.19：三键（启动时已校验）                                                                                                                                                   // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:               w.cfg.UI.Theme,       // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Scale:               w.cfg.UI.Scale,       // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
+			FontSize:            w.cfg.UI.FontSize,    // 正文字号 sp（D90；0 = 15）
+			WindowWidth:         w.cfg.UI.WindowWidth, // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
 			WindowHeight:        w.cfg.UI.WindowHeight,
 			Welcome:             &welcomeManager{cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey, onStore: func() { w.secretsRev.Add(1) }}, // D141：欢迎 / 首次运行引导数据面（S9-6b/D163：明文落库递增快照 Revision）
 			Tools:               &toolsAdmin{w: w},                                                                                                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）
@@ -204,6 +215,8 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 				}
 				return uitui.Status{}
 			},
+			Pending: w.pendingInput, // D272：生成中键入的行停在清单里
+			Keys:    w.keys,         // §5.19：三键（启动时已校验；TUI 引导键回落 Alt+Enter）
 		})
 	default:
 		w.ui = repl.New(stdin, stdout)

@@ -260,9 +260,19 @@ type uiConfig struct {
 	// 配置后按字面 px 建窗，界面按 port.SettingsWindow* 粗界与布局地板夹取。
 	WindowWidth  int `json:"window_width,omitempty"`
 	WindowHeight int `json:"window_height,omitempty"`
+	// Keys 输入栏三键（§5.19/D272）：发送 / 引导 / 换行。空字段取缺省
+	//（Enter / Shift+Enter / Ctrl+Enter）；三个值必须互不相同、键名合法，否则启动报错。
+	Keys uiKeysConfig `json:"keys,omitempty"`
 	// Welcomed 欢迎 / 首次运行引导是否已看（D141/§15.7）：键缺失 = 未看——启动后自动
 	// 打开欢迎窗一次（引导完成或用户显式关闭即置位）；入口另在设置窗。
 	Welcomed bool `json:"welcomed,omitempty"`
+}
+
+// uiKeysConfig 输入栏三键写法（`修饰键+键`，键名同 ui.hotkey）。
+type uiKeysConfig struct {
+	Send    string `json:"send,omitempty"`
+	Steer   string `json:"steer,omitempty"`
+	Newline string `json:"newline,omitempty"`
 }
 
 // limitsConfig 运行限额（§8）。

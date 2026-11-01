@@ -77,7 +77,9 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	if u.statusText() != "" {
 		statusH = gtx.Dp(statusChipDp + statusGapDp)
 	}
-	transH := size.Y - inputH - statusH
+	// D272 待发条：状态行与输入栏之间的一条薄带，没有待发时高度为 0（布局与今天一致）。
+	pendingH := u.pendingBandPx(gtx)
+	transH := size.Y - inputH - statusH - pendingH
 	if transH < 0 {
 		transH = 0
 	}
@@ -114,8 +116,13 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 				u.statusChip(gtx, size.X, statusH, transH)
 				off.Pop()
 			}
-			off := op.Offset(image.Pt(0, transH+statusH)).Push(gtx.Ops)
-			u.inputBar(gtx, size.X, transH+statusH)
+			if pendingH > 0 {
+				po := op.Offset(image.Pt(0, transH+statusH)).Push(gtx.Ops)
+				u.pendingBand(gtx, size.X, transH+statusH)
+				po.Pop()
+			}
+			off := op.Offset(image.Pt(0, transH+statusH+pendingH)).Push(gtx.Ops)
+			u.inputBar(gtx, size.X, transH+statusH+pendingH)
 			off.Pop()
 			return layout.Dimensions{Size: size}
 		}),

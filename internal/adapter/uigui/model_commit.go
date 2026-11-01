@@ -103,7 +103,14 @@ func (m *model) commit(msg conversation.Message) {
 		// D207：纯图提交（无正文）也要盖章——回显块的正文同样为空，按空串配对。
 		if msg.Role == conversation.RoleUser {
 			if imgs := nodeImages(msg.Content); text != "" || len(imgs) > 0 {
-				m.stampUserBlock(text, msg.ID, imgs)
+				// D272：轮内落成的 user 节点（引导/排队）没有本地回显——它进清单时界面
+				// 只在待发条上画过一行，从没进过转写区。没得盖章就补一块，否则那句话
+				// 在转写区里凭空消失。
+				if !m.stampUserBlock(text, msg.ID, imgs) {
+					m.blocks = append(m.blocks, block{
+						kind: blockUser, text: sanitizeControl(text), id: msg.ID, part: 0, imgs: imgs,
+					})
+				}
 			}
 		}
 		m.resetDraft()
@@ -249,7 +256,7 @@ func (m *model) findChipBlock(id tool.CallID) int {
 // D207：顺手把图片换成节点里的权威引用（内容屏蔽路径项——暂存时按本地路径解的缩略图，
 // 换成入库后的哈希，文件此后被移走/改名也不影响显示）。纯图消息的 want 为空串，
 // 与「只有图片没有正文」的回显块配对，同样能盖上 ID（分叉条才有挂点）。
-func (m *model) stampUserBlock(text string, id conversation.MessageID, imgs []imgRef) {
+func (m *model) stampUserBlock(text string, id conversation.MessageID, imgs []imgRef) bool {
 	want := sanitizeControl(text)
 	for i := range m.blocks {
 		b := &m.blocks[i]
@@ -261,6 +268,7 @@ func (m *model) stampUserBlock(text string, id conversation.MessageID, imgs []im
 		if len(imgs) > 0 {
 			b.imgs = imgs
 		}
-		return
+		return true
 	}
+	return false
 }

@@ -36,6 +36,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -76,6 +77,13 @@ type Options struct {
 	Interrupt func()
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。
 	Hotkey string
+	// Pending 待发清单（D272）：生成中键入的消息停在这里，由内核在两个取用边界拿走；
+	// nil = 没有清单（老行为：全部经输入通道，等本轮结束）。实现方须线程安全——
+	// 界面在自己的事件循环 goroutine 里直接读写它。
+	Pending func() port.Pending
+	// Keys 输入栏三键（§5.19）：发送 / 引导 / 换行。零值 = 缺省 Enter / Shift+Enter /
+	// Ctrl+Enter（三键互不相同由配置面保证；这里再兜一次缺省）。
+	Keys uicommon.KeyBindings
 	// Theme 主题档（§15.4/D61）：system | light | dark；空 = system（跟随系统）。
 	Theme string
 	// Scale 元素缩放倍率（D90/§15.8）：默认 1.0，夹 [0.75,2.5]，越界回落 1.0；设置窗热更。
@@ -228,6 +236,13 @@ type UI struct {
 
 	interrupt  atomic.Pointer[func()]
 	generating atomic.Bool // 生成中（SetInterrupt 非空 = 一轮 Turn 进行中；驱动停止键）
+	// pendingFn 待发清单数据源（opts.Pending 原样保存；nil = 无清单，生成中的键入
+	// 照旧经输入通道排队）。
+	pendingFn func() port.Pending
+	// keys 输入栏三键（opts.Keys，零值补缺省；构造后只读）。
+	keys uicommon.KeyBindings
+	// pendCtl 待发条每条的点击态（按条目 ID 缓存；仅事件循环 goroutine 读写）。
+	pendCtl map[string]*pendingCtl
 	// pasting 粘贴图片进行中（D187）：一次只跑一张（连按不排队），也用于阻止重入。
 	pasting atomic.Bool
 
@@ -506,6 +521,11 @@ func newUI(opts Options, window bool) *UI {
 		done:   make(chan struct{}),
 	}
 	u.m = newModel(u)
+	u.pendingFn = opts.Pending
+	u.keys = opts.Keys
+	if u.keys.Send.Key == "" {
+		u.keys = uicommon.DefaultKeyBindings()
+	}
 	u.plat = newPlatform(opts, window)         // 平台实现（profile/主题解析前就绪）
 	u.representLadder = defaultRepresentLadder // 揭示补提交梯次拍距（D115/D135）
 	u.editor.Submit = true                     // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
