@@ -285,6 +285,31 @@ func TestDelegatePermissionAway(t *testing.T) {
 	}
 }
 
+// TestDelegatePermissionUnknownSession 当前会话未知（事实快照还没发布）不等于「不在」：
+// 照常问用户，别把未知当拒绝。
+func TestDelegatePermissionUnknownSession(t *testing.T) {
+	conf := &fakeConfirmer{allow: true}
+	m := newManager(t, "permission", func(o *Options) {
+		o.Home = t.TempDir()
+		o.Confirmer = conf
+		o.CurrentSession = func() conversation.ID { return "" }
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "edit"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if conf.calls != 1 {
+		t.Fatalf("确认次数 = %d, want 1（未知会话不该当场拒绝）", conf.calls)
+	}
+	if !strings.Contains(run.Report, `"optionId":"allow"`) {
+		t.Fatalf("report = %q", run.Report)
+	}
+}
+
 // TestDelegateStartValidation 参数与并发上限在 Start 处就回绝，不占进程。
 func TestDelegateStartValidation(t *testing.T) {
 	m := newManager(t, "slow", func(o *Options) {

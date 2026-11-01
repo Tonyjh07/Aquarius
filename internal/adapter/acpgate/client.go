@@ -50,7 +50,8 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 
 	var denyReason string
 	switch {
-	case c.m.opts.CurrentSession != nil && r.session != "" && c.m.opts.CurrentSession() != r.session:
+	case c.m.opts.CurrentSession != nil && r.session != "" && c.m.opts.CurrentSession() != "" &&
+		c.m.opts.CurrentSession() != r.session:
 		denyReason = "你不在发起这次转交的会话"
 	case c.m.opts.Confirmer == nil:
 		denyReason = "本构建没有配置确认器"
