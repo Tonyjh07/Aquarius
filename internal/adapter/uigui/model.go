@@ -28,6 +28,7 @@ const (
 	blockThinking                   // 思考块（D42；流式实时 + 定稿折叠，§15.3）
 	blockBranch                     // 分叉行（D81）：气泡下方的 `◀ i/n ▶` 切换条
 	blockInject                     // 注入节点（D166）：暗卡片 + 来源/触发头部，正文可选
+	blockCommand                    // 命令折叠条（D265）：连续命令合成一条，默认只留一行
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
@@ -51,6 +52,9 @@ type block struct {
 	// imgs 该块要显示的图片（D207）：附件分片（PartImage）与工具产出的图片都收在这里，
 	// 渲染期按固定方图排（见 imgthumb.go）。空 = 纯文本块。
 	imgs []imgRef
+	// cmds 命令折叠条的条目（D265）：连续的命令与各自返回文本合成一条，默认折成一行。
+	// 只有 blockCommand 有内容；text 不参与该种类的渲染（正文全在条目里）。
+	cmds []cmdEntry
 }
 
 // toolChip 一次工具调用的合并视图（D67/§15.3）：调用 + 权限确认 + 结果同组，
@@ -120,6 +124,11 @@ type model struct {
 	// chip，第 2 轮文本重新流式），块先不带节点 ID；提交（每 Turn 一次）时就地回填
 	// 权威文本并盖章。chip 照旧直接入块，确认问答留痕不受提交调和影响。
 	flushedDrafts []int
+
+	// pendingCmd 最近一次提交的命令行（D265）：命令结果要到 Handle 返回后才到，
+	// 中间可能被清屏（/switch、/regen 会清屏回放），那时末尾已经没有它的命令条了。
+	// 记着命令行，迟到的结果才能归进一条新的折叠条，而不是以纯文本行落在一轮回答后面。
+	pendingCmd string
 }
 
 // newModel 初始状态机。
@@ -127,10 +136,68 @@ func newModel(u *UI) *model {
 	return &model{u: u}
 }
 
-// say 纯文本行（命令输出、启动提示）。
+// say 纯文本行（启动提示）。命令结果走 attachCommandOut 先进折叠条（D265）——
+// 只有找不到归属的命令结果才落成纯文本行。
 func (m *model) say(text string) {
 	m.flushThink() // 时序：思维链先于外部输出
-	m.add(blockPlain, sanitizeControl(text))
+	s := sanitizeControl(text)
+	if m.attachCommandOut(s) {
+		return
+	}
+	m.add(blockPlain, s)
+}
+
+// echoInput 提交回显（D265）：命令行进折叠条——命令不是发言，不该占一条用户气泡
+// 的位置（真按下去打字时，气泡里会有 `/regen 01KQ7X3M…` 这种没人读得懂的东西）；
+// 普通发言照旧进用户气泡。
+func (m *model) echoInput(line string) {
+	if isCommandLine(line) {
+		m.addCommand(line)
+		return
+	}
+	m.add(blockUser, line)
+}
+
+// isCommandLine 这一行是不是斜杠命令（与内核 parseInput 同一判据：剥空白后以 `/` 起）。
+func isCommandLine(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "/")
+}
+
+// addCommand 命令回显并入末尾的命令折叠条（连续命令共用一条），否则新开一条。
+func (m *model) addCommand(line string) {
+	m.flushThink() // 时序：命令回显在思维链之后
+	m.pendingCmd = line
+	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
+		b := &m.blocks[n-1]
+		b.cmds = append(b.cmds, cmdEntry{cmd: line})
+		return
+	}
+	m.blocks = append(m.blocks, block{
+		kind: blockCommand, part: -1, cmds: []cmdEntry{{cmd: line}},
+	})
+}
+
+// attachCommandOut 把一条命令结果挂进命令折叠条（D265）：优先挂末尾那条（同一命令的
+// 输出紧接着到）；末尾已被清屏/回放冲掉时，用记下的命令行另起一条。返回 false =
+// 这不是命令结果（启动提示等），交给调用方按纯文本行处理。
+func (m *model) attachCommandOut(s string) bool {
+	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
+		b := &m.blocks[n-1]
+		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" {
+			b.cmds[k].out = s
+			m.pendingCmd = ""
+			return true
+		}
+	}
+	if m.pendingCmd == "" {
+		return false
+	}
+	m.blocks = append(m.blocks, block{
+		kind: blockCommand, part: -1,
+		cmds: []cmdEntry{{cmd: m.pendingCmd, out: s}},
+	})
+	m.pendingCmd = ""
+	return true
 }
 
 // handleEvent Turn 事件 → 转写块（与 repl.Emit 同呈现语义）。
@@ -194,4 +261,7 @@ func (m *model) clear() {
 	// D182：思考块折叠态按块序缓存（块只增不减），清屏后块序从 0 重排——一并复位，
 	// 新会话的思考块回到默认折叠，不继承上一会话某个序位的开合。
 	m.u.thinkOpen = nil
+	m.u.cmdOpen = nil // D265 同口径：命令条的开合也不跨清屏继承
+	// pendingCmd **不清**（D265）：清屏正发生在 /switch、/regen 这类命令中途，
+	// 它们的返回文本还没到——抹掉就等于让那条结果无处可归。
 }

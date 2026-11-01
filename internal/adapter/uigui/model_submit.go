@@ -194,9 +194,9 @@ func (m *model) submit(text string) {
 	}
 	select {
 	case m.u.inCh <- parseInput(line):
-		m.add(blockUser, line)
+		m.echoInput(line)
 	default:
-		m.add(blockUser, line)
+		m.echoInput(line)
 		m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
 	}
 }

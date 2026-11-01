@@ -23,11 +23,19 @@ func newTestModel(t *testing.T) (*model, *UI) {
 }
 
 // allText 拼接全部可见文本（定稿块 + 流式草稿 + 实时思考），供注入面断言。
+// 命令折叠条（D265）的正文在条目里，一并纳入——它虽然默认折着，文本仍是「可见文本」
+// 的一部分（消毒与合并断言不该因为换了个容器就漏掉）。
 func allText(m *model) string {
 	var b strings.Builder
 	for _, blk := range m.blocks {
 		b.WriteString(blk.text)
 		b.WriteByte('\n')
+		for _, e := range blk.cmds {
+			b.WriteString(e.cmd)
+			b.WriteByte('\n')
+			b.WriteString(e.out)
+			b.WriteByte('\n')
+		}
 		if c := blk.chip; c != nil { // D67：chip 的参数/问答/结果一并纳入消毒与合并断言
 			b.WriteString(c.name)
 			b.WriteByte('\n')

@@ -45,7 +45,7 @@ func (u *UI) frameItems() []blockView {
 		default:
 			items = append(items, blockView{
 				kind: b.kind, text: b.text, secs: b.secs, bi: bi, id: b.id,
-				imgs: b.imgs, source: b.source, trigger: b.trigger,
+				imgs: b.imgs, source: b.source, trigger: b.trigger, cmds: b.cmds,
 			})
 		}
 		if next < len(strips) && strips[next].blockIdx == bi {
@@ -201,6 +201,15 @@ func (u *UI) updateClicks(gtx layout.Context) {
 				u.thinkOpen = map[int]bool{}
 			}
 			u.thinkOpen[i] = !u.thinkOpen[i]
+		}
+	}
+	// 命令折叠条点击 → 展开/收起（D265；整条都是热区，默认折叠只留一行文案）。
+	for i, b := range u.m.blocks {
+		if b.kind == blockCommand && u.cmdClick(i).Clicked(gtx) {
+			if u.cmdOpen == nil {
+				u.cmdOpen = map[int]bool{}
+			}
+			u.cmdOpen[i] = !u.cmdOpen[i]
 		}
 	}
 	// 分叉条左右切换（D81）：投递 `/goto <兄弟id>` 经输入通道（与键入同路径，壳内不

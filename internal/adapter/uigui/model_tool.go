@@ -15,9 +15,13 @@ import (
 // submitCommand 投递一条命令且**不入转写块**（D81 分叉按钮）：与 model.submit 同走
 // `inCh`（壳内不旁路内核，同 D72/D73 菜单口径），区别仅在不回显——按钮不是用户输入，
 // 转写里写一行 `/goto <ulid>` 是噪音。返回 false = 输入缓冲满（点击丢弃，调用方给提示）。
+//
+// 但**返回文本仍要归处**（D265）：记下命令行，结果回来时归进命令折叠条——否则它会以
+// 纯文本行的样子落在一轮回答后面，与助手气泡同底板，看着像模型说的话。
 func (m *model) submitCommand(line string) bool {
 	select {
 	case m.u.inCh <- parseInput(line):
+		m.pendingCmd = line
 		return true
 	default:
 		return false
