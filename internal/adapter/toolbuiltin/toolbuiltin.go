@@ -99,14 +99,25 @@ func delegateTools(d Deps) []port.Tool {
 	}
 }
 
+// delegateNames delegate* 工具名（清单里恒有，注册时才出现——见 delegateTools）。
+//
+// 这两件事必须分开：**能不能用**取决于是否配了外部代理，**在不在清单里**是管理面的
+// 事实。合成一份的话，零代理的机器上工具页看不到这三行，也就永远停不掉它们；而真配了
+// 代理之后，用户更没有地方把其中某一个关掉（只能改 config 的 tools.disabled 手写）。
+var delegateNames = []string{"delegate", "delegate_wait", "delegate_kill"}
+
 // Names 内置工具名清单（装配序；S6/D143 工具管理页清单的事实源）。
+//
+// 尾部三个 delegate* 恒在名单里，但不一定在工具表里（零可用代理时不注册）：管理页要能
+// 看见并停用它们，模型面则不该出现一个必然失败的入口。测试锁定「前三段 = New(Deps{})
+// 的名、末三个 = delegateNames」。
 func Names() []string {
 	all := allTools(Deps{})
-	out := make([]string, 0, len(all))
+	out := make([]string, 0, len(all)+len(delegateNames))
 	for _, t := range all {
 		out = append(out, t.Spec().Name)
 	}
-	return out
+	return append(out, delegateNames...)
 }
 
 // displayNames 内置工具中文词表（S6/D143 工具管理页展示；仅 UI 文案，非契约）。

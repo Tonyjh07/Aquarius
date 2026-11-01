@@ -65,6 +65,7 @@ var settingsPages = []settingsPage{
 	chatPage{},       // 对话：限额
 	promptPage{},     // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览
 	toolsPage{},      // 工具与 MCP：内置工具启停 + 插件管理
+	delegatePage{},   // 外部代理：清单 / 可用性 / 缺省 / 命令行编辑（D270）
 	skillsPage{},     // 技能：已装清单 + 导入 + 更新/卸载 + 额外技能目录（D202/D203）
 	charactersPage{}, // 角色：角色卡清单 + 头像 + 导入/删除/开始对话（§5.17）
 	webPage{},        // 联网：搜索与抓取提供商、本地抓取参数（D200）

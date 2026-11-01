@@ -121,6 +121,9 @@ type Options struct {
 	// Tools 工具与 MCP 管理面（S6/D143）：设置窗「工具与 MCP」页数据面 + 异步动作
 	// （内置启停热生效 / 插件启停 / 授权撤销与预授权 / 信任撤销 / 日志）；nil = 该页只读占位。
 	Tools ToolsAdmin
+	// Delegates 外部代理管理面（D270）：设置窗「外部代理」页数据面 + 三个写 config 的动作
+	// （命令行 / 启停 / 缺省，均重启生效）；nil = 该页只读占位。
+	Delegates DelegateAdmin
 	// Secrets 密钥库管理面（S9-6b/D161）：设置窗「密钥库」页数据面 + 同步动作
 	// （列出 / 新增覆盖 / 删除任意名字；本地小文件 IO，不走工具页那套异步通道）；
 	// nil = 该页只读占位。

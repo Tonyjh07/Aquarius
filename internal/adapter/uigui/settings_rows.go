@@ -96,6 +96,12 @@ const (
 	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
 	rowToolsEmpty  // 占位/空态（text = 文案）
 	rowToolsStatus // 异步动作反馈状态行
+	// 外部代理页（D270）：清单逐条（命令行编辑 + 启用/设缺省）+ 页级「重新检测」。
+	rowDlgItem    // 一个代理（field = Agents 下标）
+	rowDlgEmpty   // 空态/未接线占位（text = 文案）
+	rowDlgNote    // 说明（text 忽略；文案在 Body 内）
+	rowDlgRefresh // 「重新检测」页级动作
+	rowDlgStatus  // 动作反馈状态行
 	// 技能页：技能根目录、已装技能（行内更新/卸载）、安装来源输入档（D202/D203）。
 	rowSkillItem   // 已安装技能一行（field = Skills 下标；行内更新/卸载）
 	rowSkillEmpty  // 空态/未接线占位（text = 文案）

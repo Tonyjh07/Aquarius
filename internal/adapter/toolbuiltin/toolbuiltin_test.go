@@ -130,17 +130,24 @@ func TestNewRegistersAllTools(t *testing.T) {
 	}
 }
 
-// TestNamesAndDisplayNames S6/D143：Names() 与 New() 的 Spec 名一一对应（词表对照的
-// 单一事实源不漂移），且中文词表覆盖全部内置工具。
+// TestNamesAndDisplayNames S6/D143：Names() 的前段与 New() 的 Spec 名一一对应（词表对照
+// 的单一事实源不漂移），尾部是恒在名单里的 delegate*（零代理时不注册，但管理页要看见），
+// 且中文词表覆盖全部内置工具。
 func TestNamesAndDisplayNames(t *testing.T) {
 	names := Names()
 	tools := New(Deps{})
-	if len(names) != len(tools) {
-		t.Fatalf("Names() = %d, New() = %d, want 一致", len(names), len(tools))
+	if len(names) != len(tools)+len(delegateNames) {
+		t.Fatalf("Names() = %d, New() = %d（+%d 个 delegate*）, want 对得上",
+			len(names), len(tools), len(delegateNames))
 	}
 	for i, tl := range tools {
 		if want := tl.Spec().Name; names[i] != want {
 			t.Fatalf("Names()[%d] = %q, want %q（须与 Spec 名一致）", i, names[i], want)
+		}
+	}
+	for i, want := range delegateNames {
+		if got := names[len(tools)+i]; got != want {
+			t.Fatalf("Names() 尾部第 %d 个 = %q, want %q（delegate* 恒在清单里）", i, got, want)
 		}
 	}
 	seen := map[string]bool{}
@@ -151,6 +158,20 @@ func TestNamesAndDisplayNames(t *testing.T) {
 		seen[n] = true
 		if DisplayName(n) == "" || DisplayName(n) == n {
 			t.Fatalf("%s 缺中文词表（DisplayName 回退原名字面）", n)
+		}
+	}
+}
+
+// TestDelegateNamesNotRegisteredWithoutAgents delegate* 在清单里但**不注册**：零可用代理时
+// 模型面不该出现一个必然失败的入口（清单/注册两件事分开的理由）。
+func TestDelegateNamesNotRegisteredWithoutAgents(t *testing.T) {
+	registered := map[string]bool{}
+	for _, tl := range New(Deps{}) {
+		registered[tl.Spec().Name] = true
+	}
+	for _, n := range delegateNames {
+		if registered[n] {
+			t.Fatalf("%s 不该在零可用代理时注册", n)
 		}
 	}
 }

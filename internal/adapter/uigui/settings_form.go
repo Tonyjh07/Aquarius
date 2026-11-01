@@ -34,6 +34,15 @@ type settingsForm struct {
 	toolsStatus string                       // 反馈文案（状态行）
 	toolsErr    bool                         // 反馈是否为错误
 
+	// 外部代理页（D270）：清单 / 可用性 / 缺省 / 命令行编辑。动作同步（改一段本地 config +
+	// 探一次 PATH），没有网络也没有握手，不进异步通道。
+	delegates       DelegateAdmin                // nil = 只读占位（未接线）
+	delegateSnap    DelegateSnapshot             // 每次动作后重取（可用性按 PATH 现算）
+	delegateEditors map[string]*widget.Editor    // 命令行编辑档（按代理名 get-or-create）
+	delegateBtns    map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
+	delegateStatus  string                       // 反馈文案（状态行）
+	delegateErr     bool                         // 反馈是否为错误
+
 	// 技能页（D202/D203）：数据面见 settings_skills.go。安装/更新会联网与拉起 git，
 	// 故与工具页同款异步（旁路 goroutine + 结果通道 + Invalidate）；卸载走行内二次确认。
 	skills        SkillsAdmin                  // nil = 只读占位（未接线）
@@ -217,21 +226,22 @@ type settingsForm struct {
 // 列表轴向属构造不变量——轴向错配会让 material.List 按视口**宽**迭代，只画首行）。
 func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
-		provOpen:    -1, // S11-7②：开窗全收起（第一张也不自动展开——展开是用户的动作）
-		perm:        selectField{displays: permLevels, values: permLevels},
-		effort:      selectField{displays: effortLevels, values: effortValues},
-		theme:       selectField{displays: themeLevels, values: themeValues},
-		scale:       selectField{displays: zoomLevels, values: zoomValues},
-		asrLang:     selectField{displays: langLevels, values: langValues},
-		asrKind:     selectField{displays: asrKindLevels, values: asrKindValues},
-		ttsKind:     selectField{displays: ttsKindLevels, values: ttsKindValues},
-		testResults: make(chan testOutcome, 8),
-		toolRes:     make(chan toolActionResult, 16),
-		skillRes:    make(chan skillActionResult, 16),
-		voiceRes:    make(chan error, 2),
-		toolBtns:    map[string]*widget.Clickable{},
-		skillBtns:   map[string]*widget.Clickable{},
-		secretBtns:  map[string]*widget.Clickable{},
+		provOpen:     -1, // S11-7②：开窗全收起（第一张也不自动展开——展开是用户的动作）
+		perm:         selectField{displays: permLevels, values: permLevels},
+		effort:       selectField{displays: effortLevels, values: effortValues},
+		theme:        selectField{displays: themeLevels, values: themeValues},
+		scale:        selectField{displays: zoomLevels, values: zoomValues},
+		asrLang:      selectField{displays: langLevels, values: langValues},
+		asrKind:      selectField{displays: asrKindLevels, values: asrKindValues},
+		ttsKind:      selectField{displays: ttsKindLevels, values: ttsKindValues},
+		testResults:  make(chan testOutcome, 8),
+		toolRes:      make(chan toolActionResult, 16),
+		skillRes:     make(chan skillActionResult, 16),
+		voiceRes:     make(chan error, 2),
+		toolBtns:     map[string]*widget.Clickable{},
+		delegateBtns: map[string]*widget.Clickable{},
+		skillBtns:    map[string]*widget.Clickable{},
+		secretBtns:   map[string]*widget.Clickable{},
 		// 密钥库快照「上次 Revision」起点 −1：**首帧必采纳**。若起点取 0，库
 		// Revision 恰为 0（空库、或本进程 provider 写路径直接落库未经过本管理面）
 		// 时会被当「没变」而跳过，窗口打开即显示空列表。
@@ -279,7 +289,12 @@ func newSettingsForm(u *UI) *settingsForm {
 		f.loadProviders(snap)    // D110②：provider 编辑区
 		f.loadChainChoices(snap) // D176 口径三：降级链的 provider 选项
 	}
-	f.tools = u.opts.Tools     // S6/D143：工具与 MCP 管理面（nil = 只读占位）
+	f.tools = u.opts.Tools         // S6/D143：工具与 MCP 管理面（nil = 只读占位）
+	f.delegates = u.opts.Delegates // D270：外部代理管理面（nil = 只读占位）
+	f.syncDelegateSnapshot()       // 开窗即取一次（含一次 PATH 探测）
+	for _, a := range f.delegateSnap.Agents {
+		f.resetDelegateEditor(a.Name, a.CommandLine)
+	}
 	f.secrets = u.opts.Secrets // S9-6b：密钥库管理面（nil = 只读占位）
 	f.syncSecretsSnapshot()    // 开窗即取一次（帧首同款；动作后再取）
 	f.skills = u.opts.Skills   // D202/D203：技能管理面（nil = 只读占位）
