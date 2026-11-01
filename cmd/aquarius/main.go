@@ -441,15 +441,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if _, rerr := w.sess.ReplayHistory(ctx); rerr != nil {
 		fmt.Fprintf(stderr, "回放历史: %v\n", rerr)
 	}
+	// replay 停止键中断后立刻要发的那句引导（D274）：有它就不等用户再敲一遍。
+	var replay string
 	for {
-		w.ui.Prompt()
-		in, err := w.ui.Next(ctx)
-		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-				return 0 // 收尾换行由 ui.Close 后的 defer 统一处理
+		var in port.UserInput
+		if replay != "" {
+			in = port.UserInput{Text: replay}
+			replay = ""
+		} else {
+			w.ui.Prompt()
+			var err error
+			in, err = w.ui.Next(ctx)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+					return 0 // 收尾换行由 ui.Close 后的 defer 统一处理
+				}
+				fmt.Fprintf(stderr, "读取输入失败: %v\n", err)
+				return 1
 			}
-			fmt.Fprintf(stderr, "读取输入失败: %v\n", err)
-			return 1
 		}
 		out, herr := func() (string, error) {
 			// 每轮独立 ctx（§10 取消语义）：TUI 的 Ctrl+C 经 SetInterrupt 取消本轮；
@@ -471,6 +480,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		if errors.Is(herr, app.ErrQuit) {
 			return 0
+		}
+		// 停止键中断，而嘴边还有一句引导（D274）：不把它当成「本轮出错」，直接拿这句
+		// 重新起一轮——用户按停止的意思是「先别跑这个，听我说这句话」，不是「我要走」。
+		if ctx.Err() == nil && w.sess.Stopped() {
+			if text, ok := w.sess.TakeSteer(); ok {
+				w.ui.Say("已中断这一步，用引导消息重新请求")
+				replay = text
+				continue
+			}
 		}
 		if herr != nil {
 			_ = w.ui.Emit(ctx, port.ErrorEvent{Err: herr})

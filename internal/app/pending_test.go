@@ -342,3 +342,47 @@ func requestHas(req port.GenerateRequest, want string) bool {
 	}
 	return false
 }
+
+// TestStopWithSteerResumes 停止键中断后，嘴边那句引导能立刻拿来重新请求（D274）。
+//
+// 「停止」在这里的意思是「先别跑这个，听我说这句」——不是「我要走了」。所以装配根
+// 拿到 Stopped 标记后，取一条引导直接起下一轮，不让用户重打一遍。
+func TestStopWithSteerResumes(t *testing.T) {
+	// 三次脚本：被打断的那次、引导重请求那次、以及轮末把「这条还排着」接着跑掉那次。
+	s, inner, _ := newSteerSession(t, nil, textStream("被打断的半截"), textStream("按引导重来"), textStream("排队那条"))
+	inner.genErr = context.Canceled
+	if _, err := s.Pending().Add("先停一下，按这个来", port.DeliverySteer); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, err := s.Pending().Add("这条还排着", port.DeliveryQueue); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.Handle(ctx, port.UserInput{Text: "开始"}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if !s.Stopped() {
+		t.Fatal("停止键中断的轮应记下 Stopped（装配据此续跑）")
+	}
+	text, ok := s.TakeSteer()
+	if !ok || text != "先停一下，按这个来" {
+		t.Fatalf("TakeSteer = %q/%v, want 那句引导", text, ok)
+	}
+	if n := s.pendingQ.count(); n != 1 {
+		t.Fatalf("清单剩余 %d 条, want 1（只取引导那条）", n)
+	}
+
+	// 拿这句重新请求：新的一轮应当正常跑完，并且请求里带着它。
+	inner.genErr = nil
+	if _, err := s.Handle(context.Background(), port.UserInput{Text: text}); err != nil {
+		t.Fatalf("重请求: %v", err)
+	}
+	last := inner.requests[len(inner.requests)-1]
+	if !requestHas(last, "先停一下，按这个来") {
+		t.Fatal("重新请求的请求体里没有那条引导")
+	}
+	if s.Stopped() {
+		t.Fatal("新的一轮不该还带 Stopped 标记")
+	}
+}

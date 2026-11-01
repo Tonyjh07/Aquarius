@@ -22,6 +22,21 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// drawActIcon 画一枚圆形图标按钮（字居中）。待发条与引导气泡共用同一个形状——
+// 同一种动作在两处出现时长得一样，用户不用重新认。
+func (u *UI) drawActIcon(gtx layout.Context, r image.Rectangle, glyph string, fg, bgc color.NRGBA) {
+	if r.Empty() {
+		return
+	}
+	paint.FillShape(gtx.Ops, bgc, clip.UniformRRect(r, r.Dx()/2).Op(gtx.Ops))
+	l := material.Caption(u.th, glyph)
+	l.Color = fg
+	lw, lh := measure(gtx, l)
+	o := op.Offset(image.Pt(r.Min.X+(r.Dx()-lw)/2, r.Min.Y+(r.Dy()-lh)/2)).Push(gtx.Ops)
+	l.Layout(gtx)
+	o.Pop()
+}
+
 const (
 	// steerActDp 引导气泡控件直径（dp）。
 	steerActDp = 20
@@ -67,23 +82,14 @@ func (u *UI) steerActions(gtx layout.Context, id string, bg image.Rectangle) {
 	hitDown := clickRect(gtx, &ctl.down, downRect)
 	hitDrop := clickRect(gtx, &ctl.drop, dropRect)
 
-	drawAct := func(r image.Rectangle, glyph string, fg, bgc color.NRGBA) {
-		paint.FillShape(gtx.Ops, bgc, clip.UniformRRect(r, r.Dx()/2).Op(gtx.Ops))
-		l := material.Caption(u.th, glyph)
-		l.Color = fg
-		lw, lh := measure(gtx, l)
-		o := op.Offset(image.Pt(r.Min.X+(r.Dx()-lw)/2, r.Min.Y+(r.Dy()-lh)/2)).Push(gtx.Ops)
-		l.Layout(gtx)
-		o.Pop()
-	}
 	// 气泡外：静息底 + 主色字；气泡内：半透明白底 + 白字（压得住品牌色气泡）。
 	fg, bgc := tok().textMuted, tok().pillBg
 	if inside {
 		// 压在品牌色气泡上：白字 + 比气泡更深的同色底（只靠白字会糊成一片）。
 		fg, bgc = tok().whiteText, tok().brandColor
 	}
-	drawAct(downRect, "↓", fg, bgc)
-	drawAct(dropRect, "×", fg, bgc)
+	u.drawActIcon(gtx, downRect, "↓", fg, bgc)
+	u.drawActIcon(gtx, dropRect, "×", fg, bgc)
 
 	u.steerHot = append(u.steerHot, steerHot{id: id, down: downRect, drop: dropRect})
 	switch {

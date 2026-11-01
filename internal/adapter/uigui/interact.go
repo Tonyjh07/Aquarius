@@ -11,6 +11,7 @@ import (
 	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/input"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -146,10 +147,19 @@ func (u *UI) updateClicks(gtx layout.Context) {
 	if u.expandAn.active {
 		return
 	}
-	if u.sendBtn.Clicked(gtx) {
-		if u.micButton() {
+	// 发送键（D272）：生成中不再是「发出去」而是「排一条」；按住 Shift 点击 = 引导。
+	// 取 Click 而不是 bool——修饰键只有 Click 里带。
+	if c, ok := u.sendBtn.Update(gtx); ok {
+		switch {
+		case u.micButton():
 			u.toggleVoice() // 空输入：右钮是语音键（D179）
-		} else {
+		case u.generating.Load():
+			d := port.DeliveryQueue
+			if c.Modifiers.Contain(key.ModShift) {
+				d = port.DeliverySteer
+			}
+			u.submitLine(d)
+		default:
 			u.submitEditor()
 		}
 	}

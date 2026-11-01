@@ -107,10 +107,8 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 
 	// 档位徽标：引导用品牌色（它会更早到模型眼前），排队用静息灰。
 	badge, bg := "排队", tok().textMuted
-	toggle := "转引导"
 	if it.Delivery == port.DeliverySteer {
 		badge, bg = "引导", tok().brandColor
-		toggle = "转排队"
 	}
 	bl := material.Caption(u.th, badge)
 	bl.Color = tok().whiteText
@@ -124,16 +122,12 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 	off.Pop()
 	st.Pop()
 
-	// 右侧三个动作先量宽，正文吃剩下的。
-	actions := []string{toggle, "拉回", "×"}
-	widths := make([]int, len(actions))
-	total := 0
-	for i, t := range actions {
-		l := material.Caption(u.th, t)
-		lw, _ := measure(gtx, l)
-		widths[i] = lw + 12 // 多留点缝，三个动作挨着也能点准
-		total += widths[i]
-	}
+	// 右侧三枚图标动作（与引导气泡同款圆钮）：↑ 转引导、↩ 拉回输入框、× 撤销。
+	// 图标比文字窄得多，窄窗里也不会被挤成半截；两处形状一致，用户不用重新认。
+	glyphs := []string{"↑", "↩", "×"}
+	sz := gtx.Dp(steerActDp)
+	gap := gtx.Dp(steerActGapDp)
+	total := len(glyphs)*sz + (len(glyphs)-1)*gap
 	textX := badgeRect.Max.X + 8
 	avail := (x + w) - 6 - total - textX
 	if avail < 24 {
@@ -146,21 +140,20 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 	lbl.Layout(gtx)
 	to.Pop()
 
-	// 动作区：先算出每个热区，再统一画字——绘制顺序与命中顺序解耦。
-	rects := make([]image.Rectangle, len(actions))
-	ax := x + w - 6
-	for i := len(actions) - 1; i >= 0; i-- {
-		ax -= widths[i]
-		rects[i] = image.Rect(ax, y, ax+widths[i], y+rowH-2)
-		l := material.Caption(u.th, actions[i])
-		l.Color = tok().textMuted
+	// 动作区：热区与绘制同源（同一条循环算出来），点哪儿就是哪儿。
+	rects := make([]image.Rectangle, len(glyphs))
+	cy := y + (rowH-2-sz)/2
+	ax := x + w - 6 - total
+	actBg := tok().textMuted
+	actBg.A = 0x22 // 行底就是 pillBg，圆钮靠一层淡灰透出来
+	for i := range glyphs {
+		rects[i] = image.Rect(ax, cy, ax+sz, cy+sz)
+		fg := tok().textMuted
 		if i == 0 {
-			l.Color = tok().brandColor // 转档是这一行的主按钮
+			fg = tok().brandColor // 转引导是这一行的主按钮
 		}
-		lh := measureHeight(gtx, l)
-		o := op.Offset(image.Pt(ax+(widths[i]-measureWidth(gtx, l))/2, y+(rowH-2-lh)/2)).Push(gtx.Ops)
-		l.Layout(gtx)
-		o.Pop()
+		u.drawActIcon(gtx, rects[i], glyphs[i], fg, actBg)
+		ax += sz + gap
 	}
 	// 三个热区都注册（不能命中一个就 return——否则下一帧另外两个的热区会缺一块）。
 	hitToggle := clickRect(gtx, &ctl.toggle, rects[0])

@@ -165,6 +165,9 @@ type Session struct {
 	// 那正是这条端口要修的毛病。切会话即丢（见 dropPending）。字段名不叫 pending：
 	// 注入队列的入口方法已经叫 pending（session_inject.go）。
 	pendingQ *pendingList
+	// lastStop 最近一轮是否被停止键中断（装配根据此决定「拿引导重新请求」，D274）。
+	// 不用 paused 位：那个位在真实输入前一直挂着，分不清「刚才停的」与「历史遗留」。
+	lastStop atomic.Bool
 
 	// dynMu 保护 dynamic/dynamicMeta：REPL 主循环读、插件启停回调（可能来自崩溃重启的
 	// watch goroutine）写，须加锁（§10 并发语义）。
@@ -359,6 +362,7 @@ func (s *Session) emitClear(ctx context.Context) error {
 // Handle 处理一次用户输入：命令走 execCommand；Raw 走多模态摄取管线（M3）；
 // 普通文本入树 → Turn → 落盘。返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。
 func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error) {
+	s.lastStop.Store(false)
 	// D80/§7.5：树变更只发生在 Handle 内（命令面与 Turn），返回前重发一次只读快照——
 	// UI 侧每帧无锁读，本 defer 是唯一的变更后发布点。D82/§7.6：事实快照同点重发
 	// （签名门控：无变更的命令输入不重算）。
@@ -423,6 +427,7 @@ func (s *Session) runTurn(ctx context.Context) error {
 		// 「停手」，不是「这些都不要了」；一停就接着跑队列里那条，会让人以为停了其实还在跑。
 		if ctx.Err() != nil {
 			s.pendingQ.setPaused(true)
+			s.lastStop.Store(true)
 			return runErr
 		}
 		if runErr != nil {
@@ -547,4 +552,19 @@ func (s *Session) persist(ctx context.Context) error {
 		s.treeEdit.saved = true
 	}
 	return nil
+}
+
+// TakeSteer 取走第一条引导（按插入序）。停止键中断一次请求之后，装配根用它立刻重新
+// 请求——「停下来听我说这句」里，这句本来就已经在嘴边了，不该再让用户重打一遍。
+func (s *Session) Stopped() bool { return s.lastStop.Load() }
+
+func (s *Session) TakeSteer() (string, bool) {
+	if s.pendingQ == nil {
+		return "", false
+	}
+	it, ok := s.pendingQ.takeOneSteer()
+	if !ok {
+		return "", false
+	}
+	return it.Text, true
 }

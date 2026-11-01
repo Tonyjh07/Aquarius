@@ -162,6 +162,20 @@ func (p *pendingList) takeFirst() (port.PendingInput, bool) {
 	return it, true
 }
 
+// takeOneSteer 取走**第一条引导**（停止键中断后立即重新请求用）。paused 不拦：这不是
+// 「自动续跑」，是用户刚按停止时明确要求「把这句话插进去重来」。
+func (p *pendingList) takeOneSteer() (port.PendingInput, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i, it := range p.items {
+		if it.Delivery == port.DeliverySteer {
+			p.items = append(p.items[:i], p.items[i+1:]...)
+			return it, true
+		}
+	}
+	return port.PendingInput{}, false
+}
+
 // setPaused 置/清「停止之后不再自动续跑」。
 func (p *pendingList) setPaused(on bool) {
 	p.mu.Lock()
