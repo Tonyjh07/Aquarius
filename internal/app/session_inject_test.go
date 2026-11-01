@@ -230,6 +230,20 @@ func TestInjectCommandSourceDefaults(t *testing.T) {
 	if last3.Trigger || len(llm3.requests) != before3 {
 		t.Fatalf("--no-trigger 应覆盖默认: %+v requests %d", last3, len(llm3.requests))
 	}
+
+	// delegate: 默认触发（§5.18）：转交完成要主动汇报，与任务终态同一口径。
+	s4, llm4, _ := injectableSession(t, newMemStore(), textStream("a"), textStream("b"))
+	s4.Handle(context.Background(), port.UserInput{Text: "hi"})
+	if _, err := handleCmd(s4, "inject", "--source", "delegate:claude", "转交完成"); err != nil {
+		t.Fatalf("inject delegate: %v", err)
+	}
+	p4 := s4.Current().Path()
+	if p4[len(p4)-2].Source != "delegate:claude" || !p4[len(p4)-2].Trigger {
+		t.Fatalf("delegate 注入 = %+v, want 触发", p4[len(p4)-2])
+	}
+	if len(llm4.requests) != 2 {
+		t.Fatalf("requests = %d, want 2（delegate 触发轮）", len(llm4.requests))
+	}
 }
 
 // TestInjectCommandUsageAndParse /inject 用法错误与参数解析（--source 缺参、空文本 →

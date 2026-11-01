@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/acpgate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asrchat"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asrfunasr"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asropenai"
@@ -450,6 +451,9 @@ func (w *wiring) silence() {
 // assembleTools 装配内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
 // 后台任务（§5.8/D8）：日志落盘 <profile>/jobs，任务表内存态。
 func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, asker port.Asker) error {
+	if err := w.assembleDelegates(ctx, confirmer); err != nil {
+		return err
+	}
 	jobs, err := jobproc.New(filepath.Join(w.profileDir, "jobs"))
 	if err != nil {
 		return err
@@ -546,18 +550,20 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 			p, err := w.mem.Path(name)
 			return p, err == nil
 		},
-		Jobs:        w.jobs,
-		Sandbox:     w.sandboxDir,
-		Blobs:       w.blobs,
-		Vision:      w.cfg.Model.chainCaps().Vision,
-		Capture:     screencap.New(),
-		Asker:       asker,
-		Watches:     w.watcher,
-		WebSearch:   webSearch,
-		WebFetch:    webFetch,
-		WebCount:    w.cfg.Web.Search.Count,
-		WebMaxChars: w.cfg.Web.Fetch.MaxChars,
-		Skills:      skills, // D201：skill 工具（nil 时工具明确报「本构建未提供」）
+		Jobs:           w.jobs,
+		Sandbox:        w.sandboxDir,
+		Blobs:          w.blobs,
+		Vision:         w.cfg.Model.chainCaps().Vision,
+		Capture:        screencap.New(),
+		Asker:          asker,
+		Watches:        w.watcher,
+		WebSearch:      webSearch,
+		WebFetch:       webFetch,
+		WebCount:       w.cfg.Web.Search.Count,
+		WebMaxChars:    w.cfg.Web.Fetch.MaxChars,
+		Skills:         skills,      // D201：skill 工具（nil 时工具明确报「本构建未提供」）
+		Delegates:      w.delegates, // §5.18：零可用代理时这三个工具不注册
+		DelegateAgents: w.delegateAgents,
 	}) // S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
 	w.disabledTools = newDisabledHolder(w.builtinDisabled())
@@ -570,6 +576,46 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		Timeout:     toolTimeout,
 		MaxOutput:   maxOutput,
 	})
+	return nil
+}
+
+// assembleDelegates 外部代理转交（§5.18/D244）：配置 → acpgate → 收尾观察者 → 装饰器。
+//
+// 零可用代理不是错误：工具面里不出现 delegate*，/delegate 给配置指引——比「注册一个必然
+// 失败的工具」诚实。可用性是装配期快照（PATH 不随运行变）。
+func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer) error {
+	logf := func(format string, args ...any) {
+		if w.stderr != nil {
+			fmt.Fprintf(w.stderr, format+"\n", args...)
+		}
+	}
+	// 当前会话（D261 无人应答判定）：走已发布的事实快照无锁读，跨 goroutine 安全
+	// （转交观察者与确认回落都不在会话 goroutine 里）。
+	current := func() conversation.ID {
+		if s := w.sessPtr.Load(); s != nil {
+			return conversation.ID(s.Facts().ConvID)
+		}
+		return ""
+	}
+	opts, err := w.cfg.delegateOptions(w.secrets, confirmer, current, logf)
+	if err != nil {
+		return err
+	}
+	mgr := acpgate.New(opts)
+	w.delegateMgr = mgr
+	w.delegateWatch = app.NewDelegateWatcher(app.DelegateWatcherOptions{
+		Delegates: mgr,
+		Injector: func() port.Injector {
+			if s := w.sessPtr.Load(); s != nil {
+				return s
+			}
+			return nil
+		},
+		Wake: w.uiWake,
+		Logf: logf,
+	})
+	w.delegates = app.NewWatchingDelegates(mgr, w.delegateWatch)
+	w.delegateAgents = mgr.Available(ctx)
 	return nil
 }
 
@@ -662,6 +708,7 @@ var _ app.WatcherCanceller = watchCancel{}
 func (c watchCancel) CancelSession(id conversation.ID) {
 	c.w.jobWatch.CancelSession(id)
 	c.w.watcher.CancelSession(id)
+	c.w.delegateWatch.CancelSession(id)
 }
 
 // memoryOpener 实现 app.MemoryOpener（D24）：路径解析与外部编辑器拉起都由装配根管

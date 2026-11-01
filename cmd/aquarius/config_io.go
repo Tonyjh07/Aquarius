@@ -95,6 +95,7 @@ const defaultConfig = `{
     "search": { "providers": [], "count": 8 },
     "fetch": { "providers": [ { "kind": "local" } ], "max_chars": 16000 }
   },
+  "delegate": { "agents": [], "timeout_sec": 1800, "max_concurrent": 2, "max_total": 4 },
   "mcpServers": {},
   "plugins": {},
   "permissions": { "level": "strict", "unattended": false },

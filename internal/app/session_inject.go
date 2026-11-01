@@ -115,8 +115,9 @@ func resolveInjectTrigger(source string, override *bool) bool {
 		return *override
 	}
 	switch {
-	case strings.HasPrefix(source, "job:"), strings.HasPrefix(source, "poller:"):
-		return true
+	case strings.HasPrefix(source, "job:"), strings.HasPrefix(source, "poller:"),
+		strings.HasPrefix(source, "delegate:"):
+		return true // 转交完成要主动汇报（与任务终态同一口径，§5.18）
 	case source == "user":
 		return true
 	default: // tool:<name> / plugin:<name> / 未知

@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/acpgate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/characterfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/exchange"
@@ -168,7 +169,13 @@ type wiring struct {
 	jobs     port.JobManager
 	jobWatch *app.JobWatcher
 	watcher  *app.Watcher
-	skills   *skillfs.Catalog
+	// 外部代理转交（§5.18/D244）：delegates 是套了收尾观察者装饰器的面（工具与命令共用），
+	// delegateMgr 保留具体实现只为关停时终止进程组；delegateAgents 是可用清单快照。
+	delegates      port.Delegate
+	delegateMgr    *acpgate.Manager
+	delegateWatch  *app.DelegateWatcher
+	delegateAgents []port.DelegateInfo
+	skills         *skillfs.Catalog
 	// skillInstall 技能安装面内核（D202；装配根在 skillsadmin.go 适配两套消费方接口）。
 	skillInstall *skillfs.Installer
 	// characters 角色卡目录（§5.17）：`<profile>/characters`；读侧实现 port.CharacterCatalog，
@@ -298,6 +305,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer w.jobWatch.Close()
 	// D190：观察器同样在 UI 之前停掉（它的报告会唤醒前端）。
 	defer w.watcher.Close()
+	// §5.18/D262：转交先停收尾观察者（不再注入），退出时再主动终止进程组——ACP 会话
+	// 不能恢复（本版不做 session/load），留着只有一个后果：一路失去监督的子代理继续
+	// 按自己的判断改文件。
+	defer w.delegateMgr.Close()
+	defer w.delegateWatch.Close()
 	gen, err := w.stackDecorators(ctx)
 	if err != nil {
 		return fatal(stderr, "%v", err)
@@ -354,6 +366,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Perms:          permSettings{w: w},
 		Confirmer:      tc.confirmer,
 		Jobs:           w.jobs,
+		Delegate:       w.delegates, // §5.18：/delegate list|kill（派活是模型经工具做的）
 		Watches:        w.watcher,
 		Skills:         w.skills,             // D201：/skill 与 skill 工具同一份清单
 		SkillAdmin:     skillsAdminApp{w: w}, // D202：/skill install|remove|update

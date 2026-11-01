@@ -1,0 +1,353 @@
+package acpgate
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/port"
+)
+
+// fakeAgent 测试期现编的脚本化 ACP 代理（testdata/fakeagent）。
+var fakeAgent string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "acpgate-test")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "temp dir: %v\n", err)
+		os.Exit(1)
+	}
+	bin := filepath.Join(dir, "fakeagent")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	out, err := exec.Command("go", "build", "-o", bin, "./testdata/fakeagent").CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build fake agent: %v\n%s", err, out)
+		os.Exit(1)
+	}
+	fakeAgent = bin
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// fakeConfirmer 脚本化确认器。
+type fakeConfirmer struct {
+	allow  bool
+	reason string
+	calls  int
+	prompt string
+}
+
+func (f *fakeConfirmer) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
+	f.calls++
+	f.prompt = prompt
+	return port.ConfirmAnswer{Allow: f.allow, Reason: f.reason}, nil
+}
+
+// newManager 造一个只配了假代理的管理器（模式经 env 传）。
+func newManager(t *testing.T, mode string, tune func(*Options)) *Manager {
+	t.Helper()
+	opts := Options{
+		Agents: []Agent{{
+			Name: "fake", Command: fakeAgent, Enabled: true,
+			Env: map[string]string{"FAKE_AGENT_MODE": mode},
+		}},
+		Grace:     300 * time.Millisecond,
+		Handshake: 10 * time.Second,
+		Now:       time.Now,
+	}
+	if tune != nil {
+		tune(&opts)
+	}
+	m := New(opts)
+	t.Cleanup(m.Close)
+	return m
+}
+
+func ctxWithSession(id conversation.ID) context.Context {
+	return port.WithSessionID(context.Background(), id)
+}
+
+// TestDelegateHappyPath 一次正常转交：报告、工具调用数、改动文件（去重）、stopReason、
+// agentInfo 回填——全部来自协议事实，不猜。
+func TestDelegateHappyPath(t *testing.T) {
+	m := newManager(t, "ok", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "do the thing"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if task.ID == "" || task.Agent != "fake" {
+		t.Fatalf("task = %+v", task)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if run.Report != "Hello world" {
+		t.Fatalf("report = %q, want %q", run.Report, "Hello world")
+	}
+	if run.StopReason != "end_turn" {
+		t.Fatalf("stop = %q", run.StopReason)
+	}
+	if run.ToolCalls != 2 {
+		t.Fatalf("tool calls = %d, want 2", run.ToolCalls)
+	}
+	if got := strings.Join(run.Changed, ","); got != "/tmp/a.go,/tmp/b.go" {
+		t.Fatalf("changed = %q（去重后按报过序）", got)
+	}
+	if run.Session != "sess-1" {
+		t.Fatalf("session = %q", run.Session)
+	}
+	if run.Duration <= 0 {
+		t.Fatalf("duration = %v", run.Duration)
+	}
+
+	// 第一次转交后清单里才有 title/version（启动不做握手）。
+	list, err := m.List(context.Background())
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list = %+v, err = %v", list, err)
+	}
+	if list[0].Title != "Fake Agent" || list[0].Version != "9.9" || !list[0].Available {
+		t.Fatalf("info = %+v", list[0])
+	}
+}
+
+// TestDelegateAuthFailure 对方没登录：报因要写成「先在那边的终端里登录」，不把
+// -32000 原样抛给用户（§5.18「登录」）。
+func TestDelegateAuthFailure(t *testing.T) {
+	m := newManager(t, "auth", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "x"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	_, err = m.Wait(context.Background(), task.ID)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, want := range []string{"not signed in", "Log in first", "terminal"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %q, want 含 %q", err, want)
+		}
+	}
+}
+
+// TestDelegateProtocolMismatch 对方只认 v2：明确报版本不兼容，不猜也不降级。
+func TestDelegateProtocolMismatch(t *testing.T) {
+	m := newManager(t, "v2", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "x"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	_, err = m.Wait(context.Background(), task.ID)
+	if err == nil || !strings.Contains(err.Error(), "only supports v1") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestDelegateCrash 进程起来就崩：报因带 stderr 尾巴（它是「为什么起不来」的唯一线索）。
+func TestDelegateCrash(t *testing.T) {
+	m := newManager(t, "crash", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "x"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	_, err = m.Wait(context.Background(), task.ID)
+	if err == nil || !strings.Contains(err.Error(), "boom on purpose") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestDelegateCancel 停止键：先发 session/cancel，对方收成 cancelled 就结束——不杀进程。
+func TestDelegateCancel(t *testing.T) {
+	m := newManager(t, "slow", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "long"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond) // 让它进入 prompt
+	if err := m.Kill(context.Background(), task.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if run.StopReason != "cancelled" || !run.Killed {
+		t.Fatalf("run = %+v", run)
+	}
+}
+
+// TestDelegateTimeout 总闸到点：走同一条取消路径；对方不理，则宽限后杀进程组，
+// 报告按「已取消」回填而不是报错。
+func TestDelegateTimeout(t *testing.T) {
+	m := newManager(t, "ignore", func(o *Options) {
+		o.Home = t.TempDir()
+		o.Timeout = 300 * time.Millisecond
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "hang"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if run.StopReason != "cancelled" || !run.Killed {
+		t.Fatalf("run = %+v", run)
+	}
+	if !hasNote(run.Notes, "delegate.timeout_sec") {
+		t.Fatalf("notes = %v", run.Notes)
+	}
+}
+
+// TestDelegatePermissionAllow 权限回落：允许 → 选 allow_once；确认句要说清边界。
+func TestDelegatePermissionAllow(t *testing.T) {
+	conf := &fakeConfirmer{allow: true}
+	m := newManager(t, "permission", func(o *Options) {
+		o.Home = t.TempDir()
+		o.Confirmer = conf
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "edit"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if conf.calls != 1 {
+		t.Fatalf("confirm calls = %d", conf.calls)
+	}
+	if !strings.Contains(conf.prompt, "Write src/main.go") || !strings.Contains(conf.prompt, "它自己的文件与命令访问") {
+		t.Fatalf("prompt = %q", conf.prompt)
+	}
+	if !strings.Contains(run.Report, `"optionId":"allow"`) {
+		t.Fatalf("report = %q（应回 allow_once）", run.Report)
+	}
+}
+
+// TestDelegatePermissionDenied 拒绝 → reject_once；理由只进我们的提示与报告，不回传。
+func TestDelegatePermissionDenied(t *testing.T) {
+	conf := &fakeConfirmer{allow: false, reason: "不要动这个文件"}
+	m := newManager(t, "permission", func(o *Options) {
+		o.Home = t.TempDir()
+		o.Confirmer = conf
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "edit"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if !strings.Contains(run.Report, `"optionId":"deny"`) {
+		t.Fatalf("report = %q（应回 reject_once）", run.Report)
+	}
+	if !hasNote(run.Notes, "不要动这个文件") {
+		t.Fatalf("notes = %v", run.Notes)
+	}
+}
+
+// TestDelegatePermissionAway 用户不在发起会话：当场拒绝并计数，不让转交卡在等确认上。
+func TestDelegatePermissionAway(t *testing.T) {
+	conf := &fakeConfirmer{allow: true}
+	m := newManager(t, "permission", func(o *Options) {
+		o.Home = t.TempDir()
+		o.Confirmer = conf
+		o.CurrentSession = func() conversation.ID { return "other" }
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "edit"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if conf.calls != 0 {
+		t.Fatalf("不该问用户：calls = %d", conf.calls)
+	}
+	if !strings.Contains(run.Report, `"optionId":"deny"`) {
+		t.Fatalf("report = %q", run.Report)
+	}
+	if !hasNote(run.Notes, "permission denied") {
+		t.Fatalf("notes = %v", run.Notes)
+	}
+}
+
+// TestDelegateStartValidation 参数与并发上限在 Start 处就回绝，不占进程。
+func TestDelegateStartValidation(t *testing.T) {
+	m := newManager(t, "slow", func(o *Options) {
+		o.Home = t.TempDir()
+		o.MaxTotal = 1
+	})
+	ctx := ctxWithSession("c1")
+	if _, err := m.Start(ctx, port.DelegateSpec{Task: "  "}); err == nil {
+		t.Fatal("空任务应报错")
+	}
+	if _, err := m.Start(ctx, port.DelegateSpec{Task: "x", Session: "sess-1"}); err == nil ||
+		!strings.Contains(err.Error(), "reuse") {
+		t.Fatalf("复用会话应报不支持: %v", err)
+	}
+	if _, err := m.Start(ctx, port.DelegateSpec{Task: "x", WorkDir: "relative/dir"}); err == nil {
+		t.Fatal("相对 workdir 应报错")
+	}
+	if _, err := m.Start(ctx, port.DelegateSpec{Task: strings.Repeat("x", port.MaxDelegateTaskChars+1)}); err == nil {
+		t.Fatal("超长任务应报错")
+	}
+	first, err := m.Start(ctx, port.DelegateSpec{Task: "one"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if _, err := m.Start(ctx, port.DelegateSpec{Task: "two"}); err == nil ||
+		!strings.Contains(err.Error(), "too many delegations") {
+		t.Fatalf("超全局上限应报错: %v", err)
+	}
+	_ = m.Kill(context.Background(), first.ID)
+}
+
+// TestDelegateUnknownAgent 名字不认识时把已配置的列出来（可行动）。
+func TestDelegateUnknownAgent(t *testing.T) {
+	m := newManager(t, "ok", nil)
+	_, err := m.Start(context.Background(), port.DelegateSpec{Agent: "nope", Task: "x"})
+	if err == nil || !strings.Contains(err.Error(), "fake") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestListReportsMissingCommand 装了但不在 PATH 上：留在清单里并写明原因。
+func TestListReportsMissingCommand(t *testing.T) {
+	m := New(Options{Agents: []Agent{
+		{Name: "gone", Command: "definitely-not-on-path-9f3a", Enabled: true},
+		{Name: "off", Command: "whatever", Enabled: false},
+	}})
+	list, err := m.List(context.Background())
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list = %+v, err = %v", list, err)
+	}
+	if list[0].Available || !strings.Contains(list[0].Note, "PATH") {
+		t.Fatalf("gone = %+v", list[0])
+	}
+	if list[1].Available || !strings.Contains(list[1].Note, "已停用") {
+		t.Fatalf("off = %+v", list[1])
+	}
+}
+
+func hasNote(notes []string, sub string) bool {
+	for _, n := range notes {
+		if strings.Contains(n, sub) {
+			return true
+		}
+	}
+	return false
+}

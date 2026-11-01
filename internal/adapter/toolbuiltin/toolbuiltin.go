@@ -38,6 +38,11 @@ type Deps struct {
 	WebMaxChars int
 	// Skills 技能目录（D201）：nil = skill 工具明确报「本构建未提供」。
 	Skills port.SkillCatalog
+	// Delegates 外部代理转交（§5.18/D244）。nil 或清单为空时 delegate* 三个工具**不注册**：
+	// 零可用代理时工具面里不该出现一个必然失败的入口（§5.18 第 8 步）。
+	Delegates port.Delegate
+	// DelegateAgents 可用代理的装配期快照（工具描述里列出；PATH 不随运行变）。
+	DelegateAgents []port.DelegateInfo
 }
 
 // New 返回全部内置工具实例（main 装配进 ToolRunner；实例无状态）。
@@ -49,7 +54,7 @@ func New(d Deps) []port.Tool {
 // allTools 内置工具清单（装配序 = Spec 注册序 = Names 序；S6/D143 词表对照的
 // 单一事实源——New 与 Names/DisplayName 不得各自维护一份）。
 func allTools(d Deps) []port.Tool {
-	return []port.Tool{
+	base := []port.Tool{
 		&memoryList{mem: d.Memory},
 		&memoryRead{mem: d.Memory},
 		&memorySearch{mem: d.Memory},
@@ -78,6 +83,19 @@ func allTools(d Deps) []port.Tool {
 		&webSearchTool{search: d.WebSearch, count: d.WebCount},
 		&webFetchTool{fetch: d.WebFetch, maxChars: d.WebMaxChars},
 		&skillTool{skills: d.Skills},
+	}
+	return append(base, delegateTools(d)...)
+}
+
+// delegateTools delegate* 工具集（零可用代理时为空：连入口都不出现）。
+func delegateTools(d Deps) []port.Tool {
+	if d.Delegates == nil || len(d.DelegateAgents) == 0 {
+		return nil
+	}
+	return []port.Tool{
+		&delegateTool{jobs: d.Delegates, list: d.DelegateAgents},
+		&delegateWait{jobs: d.Delegates},
+		&delegateKill{jobs: d.Delegates},
 	}
 }
 
@@ -121,6 +139,9 @@ var displayNames = map[string]string{
 	"web_search":     "联网搜索",
 	"web_fetch":      "读取网页",
 	"skill":          "载入技能",
+	"delegate":       "转交外部代理",
+	"delegate_wait":  "等待转交",
+	"delegate_kill":  "叫停转交",
 }
 
 // DisplayName 内置工具中文词表查询（未收录 = 原名字面）。
