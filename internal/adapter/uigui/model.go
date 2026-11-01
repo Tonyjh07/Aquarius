@@ -144,6 +144,12 @@ func (m *model) say(text string) {
 	if m.attachCommandOut(s) {
 		return
 	}
+	// 没有命令可归、但紧跟在一条操作回执后面 = 这次操作的输出（左栏点会话、设置窗
+	// 动作这类直投命令，没有输入行可回显也就没有 pendingCmd）——并进同一条，别以
+	// 纯文本行（助手气泡底板）冒充发言（D267）。
+	if m.attachNoteOut(s) {
+		return
+	}
 	m.add(blockPlain, s)
 }
 
@@ -163,6 +169,26 @@ func isCommandLine(line string) bool {
 	return strings.HasPrefix(strings.TrimSpace(line), "/")
 }
 
+// addNote 操作回执（D267）：不是命令输出、也没有命令可归（「已切换到会话 X」「正在
+// 录音」「密钥在冷却」）——归进末尾的折叠条（同一次操作的一串，或前一条提示），
+// 没有就自成一条「提示条」。它本来会以纯文本行（助手气泡底板）落在转写里，既占位置
+// 又冒充发言；收进折叠条后收起只是一枚窄条。
+func (m *model) addNote(text string) {
+	m.flushThink() // 时序：提示在思维链之后
+	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
+		b := &m.blocks[n-1]
+		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" && b.cmds[k].note == "" {
+			b.cmds[k].note = text // 紧跟在命令回显后 = 这次操作的附注
+			return
+		}
+		b.cmds = append(b.cmds, cmdEntry{note: text})
+		return
+	}
+	m.blocks = append(m.blocks, block{
+		kind: blockCommand, part: -1, cmds: []cmdEntry{{note: text}},
+	})
+}
+
 // addCommand 命令回显并入末尾的命令折叠条（连续命令共用一条），否则新开一条。
 func (m *model) addCommand(line string) {
 	m.flushThink() // 时序：命令回显在思维链之后
@@ -177,13 +203,29 @@ func (m *model) addCommand(line string) {
 	})
 }
 
+// attachNoteOut 把「无命令出处的输出」并进紧邻的操作回执条（D267）：只在末尾那条的
+// 最后一项是 note（= 这条是回执条）时才收——普通纯文本行（启动提示）仍落 blockPlain。
+func (m *model) attachNoteOut(s string) bool {
+	n := len(m.blocks)
+	if n == 0 || m.blocks[n-1].kind != blockCommand {
+		return false
+	}
+	b := &m.blocks[n-1]
+	k := len(b.cmds) - 1
+	if k < 0 || b.cmds[k].note == "" || b.cmds[k].out != "" {
+		return false
+	}
+	b.cmds = append(b.cmds, cmdEntry{out: s})
+	return true
+}
+
 // attachCommandOut 把一条命令结果挂进命令折叠条（D265）：优先挂末尾那条（同一命令的
 // 输出紧接着到）；末尾已被清屏/回放冲掉时，用记下的命令行另起一条。返回 false =
 // 这不是命令结果（启动提示等），交给调用方按纯文本行处理。
 func (m *model) attachCommandOut(s string) bool {
 	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
 		b := &m.blocks[n-1]
-		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" {
+		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" && b.cmds[k].note == "" {
 			b.cmds[k].out = s
 			m.pendingCmd = ""
 			return true
@@ -191,6 +233,14 @@ func (m *model) attachCommandOut(s string) bool {
 	}
 	if m.pendingCmd == "" {
 		return false
+	}
+	// 末尾已是命令条但末项被回执占了位（note 与 out 共用第二格）：输出另起一项，
+	// 别再开一条新条——同一次操作该落在同一条里（D267）。
+	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
+		b := &m.blocks[n-1]
+		b.cmds = append(b.cmds, cmdEntry{out: s})
+		m.pendingCmd = ""
+		return true
 	}
 	m.blocks = append(m.blocks, block{
 		kind: blockCommand, part: -1,
@@ -231,7 +281,12 @@ func (m *model) handleEvent(ev port.Event) {
 	case port.ErrorEvent:
 		m.add(blockError, "error: "+sanitizeControl(e.Err.Error())) // 服务端错误片段可携带注入序列
 	case port.NoticeEvent:
-		m.add(blockNotice, "[notice] "+sanitizeControl(e.Text))
+		// D267：回执收进折叠条；改变了本轮上下文预期的才留在转写里当一行提示。
+		if e.Attention {
+			m.add(blockNotice, sanitizeControl(e.Text))
+		} else {
+			m.addNote(sanitizeControl(e.Text))
+		}
 	case port.ClearEvent:
 		m.clear() // 转写重开（D75：/switch、/new）
 	default:

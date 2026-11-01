@@ -50,8 +50,14 @@ type ErrorEvent struct {
 }
 
 // NoticeEvent 非错误提示（裁剪"已省略 k 条"、自动压缩触发等，D21/§7.1）。
+//
+// Attention 分两条路（D267）：false = **操作回执/状态**（已恢复、已切换、正在录音、
+// 密钥冷却、降级到某家），呈现层把它收进折叠条——一次操作一条，收起来只是一枚窄条；
+// true = **改变了本轮上下文的预期**（压缩失败回退裁剪、硬保底截断），必须立刻看得见、
+// 且留在转写里。判据是「事后回看有没有用」，不是「重不重要」。
 type NoticeEvent struct {
-	Text string
+	Text      string
+	Attention bool
 }
 
 // Presenter 事件呈现端口。

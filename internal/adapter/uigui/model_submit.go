@@ -188,7 +188,7 @@ func (m *model) submit(text string) {
 			// 缓冲满：暂存的附件还回去（挑文件比打字贵），编辑态照常收尾——同 submitRaw
 			// 「失败不吞附件」的口径。
 			m.stagedFiles = staged
-			m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
+			m.add(blockNotice, "输入缓冲已满，此行未执行")
 		}
 		return
 	}
@@ -197,7 +197,7 @@ func (m *model) submit(text string) {
 		m.echoInput(line)
 	default:
 		m.echoInput(line)
-		m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
+		m.add(blockNotice, "输入缓冲已满，此行未执行")
 	}
 }
 
@@ -217,7 +217,7 @@ func (m *model) submitRaw(atts []stagedAtt, text string) {
 	case m.u.inCh <- port.UserInput{Raw: &raw}:
 		m.stagedFiles = nil // 提交即清暂存（D186）
 	default:
-		m.add(blockNotice, "[notice] 输入缓冲已满，附件未发送")
+		m.add(blockNotice, "输入缓冲已满，附件未发送")
 		return
 	}
 	echo := text
@@ -266,7 +266,7 @@ func (m *model) stageAtt(att stagedAtt) {
 		}
 	}
 	if len(m.stagedFiles) >= port.MaxAttachments {
-		m.add(blockNotice, fmt.Sprintf("[notice] 一条消息最多 %d 个附件，已忽略 %s",
+		m.add(blockNotice, fmt.Sprintf("一条消息最多 %d 个附件，已忽略 %s",
 			port.MaxAttachments, att.displayName()))
 		return
 	}

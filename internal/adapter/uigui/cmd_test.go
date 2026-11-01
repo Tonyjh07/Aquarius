@@ -8,22 +8,29 @@ import (
 	"testing"
 
 	"gioui.org/io/input"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestCmdHeaderText 折叠行文案：条数 + 动作提示，展开态换动作词。
+// TestCmdHeaderText 折叠行文案：条数 + 动作提示，展开态换动作词；全是回执时说「提示」
+// 不说「命令」（D267）。
 func TestCmdHeaderText(t *testing.T) {
 	cases := []struct {
-		n    int
-		open bool
-		want string
+		cmd, note int
+		open      bool
+		want      string
 	}{
-		{1, false, "折叠 1 条命令 · 点击展开"},
-		{3, false, "折叠 3 条命令 · 点击展开"},
-		{3, true, "折叠 3 条命令 · 点击收起"},
+		{cmd: 1, open: false, want: "折叠 1 条命令 · 点击展开"},
+		{cmd: 3, open: false, want: "折叠 3 条命令 · 点击展开"},
+		{cmd: 3, open: true, want: "折叠 3 条命令 · 点击收起"},
+		// 一条命令带一项回执：仍报 1 条（按命令行数，不按条目数）。
+		{cmd: 1, note: 2, open: false, want: "折叠 1 条命令 · 点击展开"},
+		{note: 1, open: false, want: "1 条提示 · 点击展开"},
+		{note: 2, open: true, want: "2 条提示 · 点击收起"},
 	}
 	for _, c := range cases {
-		if got := cmdHeaderText(c.n, c.open); got != c.want {
-			t.Fatalf("cmdHeaderText(%d, %v) = %q, want %q", c.n, c.open, got, c.want)
+		if got := cmdHeaderText(c.cmd, c.note, c.open); got != c.want {
+			t.Fatalf("cmdHeaderText(%d, %d, %v) = %q, want %q", c.cmd, c.note, c.open, got, c.want)
 		}
 	}
 }
@@ -186,5 +193,75 @@ func TestCommandStripWidthFollowsState(t *testing.T) {
 	}
 	if u.shapes[0].fill != tok().cardCmd {
 		t.Fatalf("折叠条底板 = %v, want cardCmd（半透明深色薄层）", u.shapes[0].fill)
+	}
+}
+
+// TestNoticeFoldsIntoStrip 操作回执收进折叠条（D267）：没有命令可归的回执自成一条
+// 「提示条」，紧跟在命令回显后的回执挂到那条命令上——都不再以纯文本行占转写。
+func TestNoticeFoldsIntoStrip(t *testing.T) {
+	m, _ := newTestModel(t)
+
+	m.handleEvent(port.NoticeEvent{Text: "已恢复会话 甲 (01K)，回放 3 条历史"})
+	if len(m.blocks) != 1 || m.blocks[0].kind != blockCommand {
+		t.Fatalf("blocks = %+v, want 一条提示条", m.blocks)
+	}
+	if got := m.blocks[0].cmds; len(got) != 1 || got[0].note == "" || got[0].cmd != "" {
+		t.Fatalf("cmds = %+v, want 一条只有 note 的条目", got)
+	}
+	if nCmd, nNote := cmdCounts(m.blocks[0].cmds); nCmd != 0 || nNote != 1 {
+		t.Fatalf("cmdCounts = (%d, %d), want (0, 1)", nCmd, nNote)
+	}
+
+	// 再来一条回执照旧并入同一条（连续提示共用一枚窄条）。
+	m.handleEvent(port.NoticeEvent{Text: "正在录音，最长 30 秒…"})
+	if len(m.blocks) != 1 || len(m.blocks[0].cmds) != 2 {
+		t.Fatalf("blocks = %+v, want 同一条里两条提示", m.blocks)
+	}
+
+	// 命令回显之后的回执 = 这次操作的附注，挂在同一条目上。
+	m.submit("/model x")
+	m.handleEvent(port.NoticeEvent{Text: "已切换模型 → x"})
+	last := m.blocks[len(m.blocks)-1]
+	tail := last.cmds[len(last.cmds)-1]
+	if tail.cmd != "/model x" || tail.note == "" {
+		t.Fatalf("cmds = %+v（命令回显后的回执应挂在该命令上）", last.cmds)
+	}
+}
+
+// TestNoticeAttentionStaysInline 改变了本轮上下文的提示（截断/压缩失败）留在转写里当
+// 一行提示（D267）：它必须立刻看得见，也值得事后回看。
+func TestNoticeAttentionStaysInline(t *testing.T) {
+	m, _ := newTestModel(t)
+
+	m.handleEvent(port.NoticeEvent{Text: "硬保底截断：已省略 12 条最旧消息", Attention: true})
+	if len(m.blocks) != 1 || m.blocks[0].kind != blockNotice {
+		t.Fatalf("blocks = %+v, want 一行提示", m.blocks)
+	}
+	if strings.Contains(m.blocks[0].text, "[notice]") {
+		t.Fatalf("提示文本不该带调试前缀: %q", m.blocks[0].text)
+	}
+}
+
+// TestNoteAbsorbsDirectCommandOut 左栏点会话这类「直投命令」没有输入行可回显，也就没有
+// pendingCmd：结果紧跟在回执后面时并进同一条，而不是以纯文本行（助手气泡底板）落下来
+// （D267）。启动提示没有回执在前，仍落纯文本行。
+func TestNoteAbsorbsDirectCommandOut(t *testing.T) {
+	m, _ := newTestModel(t)
+
+	m.handleEvent(port.NoticeEvent{Text: "已切换到会话 甲 (01K)，回放 3 条历史"})
+	m.say("已切换到会话 01K")
+	st := m.blocks[len(m.blocks)-1]
+	if st.kind != blockCommand || len(st.cmds) != 2 {
+		t.Fatalf("blocks = %+v, want 一条里 note + 结果", m.blocks)
+	}
+	if st.cmds[0].note == "" || st.cmds[1].out != "已切换到会话 01K" {
+		t.Fatalf("cmds = %+v", st.cmds)
+	}
+
+	// 启动提示：前面没有回执条 → 仍是纯文本行。
+	m.clear()
+	m.say("Aquarius — 输入 /help 查看命令")
+	if last := m.blocks[len(m.blocks)-1]; last.kind != blockPlain {
+		t.Fatalf("启动提示应落纯文本行，实际 %v", last.kind)
 	}
 }

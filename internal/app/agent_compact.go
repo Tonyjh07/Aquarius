@@ -104,7 +104,8 @@ func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, r
 		if omitted > 0 {
 			text += fmt.Sprintf("，已省略 %d 条较早消息", omitted)
 		}
-		_ = a.ui.Emit(ctx, port.NoticeEvent{Text: text})
+		// 回退裁剪改变了本轮模型看到的内容 → 必须立刻可见（D267）。
+		_ = a.ui.Emit(ctx, port.NoticeEvent{Text: text, Attention: true})
 		ne, _ := a.est.Estimate(ctx, req)
 		return req, ne
 	}

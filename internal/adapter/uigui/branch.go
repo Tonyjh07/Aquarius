@@ -187,6 +187,6 @@ func (u *UI) gotoBranch(s branchStrip, delta int) {
 		}
 	}
 	if !u.m.submitCommand("/goto " + string(id)) {
-		u.m.add(blockNotice, "[notice] 输入缓冲已满，分叉切换未执行")
+		u.m.add(blockNotice, "输入缓冲已满，分叉切换未执行")
 	}
 }

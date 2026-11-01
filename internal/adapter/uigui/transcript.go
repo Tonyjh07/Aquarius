@@ -306,7 +306,8 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 		open := u.cmdIsOpen(it.bi)
 		plain := func(gtx layout.Context) layout.Dimensions {
 			head := func(gtx layout.Context) layout.Dimensions {
-				s := material.Caption(u.th, cmdHeaderText(len(it.cmds), open))
+				nCmd, nNote := cmdCounts(it.cmds)
+				s := material.Caption(u.th, cmdHeaderText(nCmd, nNote, open))
 				s.Color = cmdHeadColor()
 				return s.Layout(gtx)
 			}
@@ -349,6 +350,17 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 							// 输出用正文色（不给 Color）：它是给人读的内容，
 							// 只有命令行那行退到暗色——层次靠「谁更淡」表达。
 							s := material.Body2(u.th, e.out)
+							s.State = rs.sel(2*k + 1)
+							return s.Layout(gtx)
+						}, 2*k+1, off, image.Point{})
+					})
+				}
+				if e.note != "" { // 操作回执（D267）：小字、更淡——它是附注，不是内容
+					off := image.Pt(0, vs.y)
+					vs.add(func(gtx layout.Context) layout.Dimensions {
+						return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							s := material.Caption(u.th, e.note)
+							s.Color = tok().textDim
 							s.State = rs.sel(2*k + 1)
 							return s.Layout(gtx)
 						}, 2*k+1, off, image.Point{})

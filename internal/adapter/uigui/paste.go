@@ -105,12 +105,12 @@ func (u *UI) finishPaste(m pasteMsg) {
 		if platform.NoClipboardImage(m.err) {
 			return // 探测与读取之间剪贴板变了：静默，不算错误
 		}
-		u.m.add(blockNotice, "[notice] 读取剪贴板图片失败："+m.err.Error())
+		u.m.add(blockNotice, "读取剪贴板图片失败："+m.err.Error())
 	case m.tooLarge > 0:
-		u.m.add(blockNotice, fmt.Sprintf("[notice] 图片过大（%.1f MB，上限 %s），未添加",
+		u.m.add(blockNotice, fmt.Sprintf("图片过大（%.1f MB，上限 %s），未添加",
 			float64(m.tooLarge)/(1<<20), mbLabel(port.MaxImageBytes)))
 	case m.full:
-		u.m.add(blockNotice, fmt.Sprintf("[notice] 一条消息最多 %d 个附件，这张图未添加",
+		u.m.add(blockNotice, fmt.Sprintf("一条消息最多 %d 个附件，这张图未添加",
 			port.MaxAttachments))
 	case m.ref != nil:
 		u.m.stageAtt(stagedAtt{blob: m.ref, thumb: m.thumb})
@@ -132,13 +132,13 @@ func (u *UI) stagePath(path string) {
 	isImage := imageExt[strings.ToLower(filepath.Ext(path))]
 	if fi, err := os.Stat(path); err == nil {
 		if fi.IsDir() {
-			u.m.add(blockNotice, fmt.Sprintf("[notice] %s 是文件夹，请拖入或选择具体文件",
+			u.m.add(blockNotice, fmt.Sprintf("%s 是文件夹，请拖入或选择具体文件",
 				filepath.Base(path)))
 			return
 		}
 		// 图片上限与贴图同口径（D187 口径六）：这里先拦，免得摄取阶段才报错。
 		if isImage && fi.Size() > port.MaxImageBytes {
-			u.m.add(blockNotice, fmt.Sprintf("[notice] 图片过大（%.1f MB，上限 %s），未添加：%s",
+			u.m.add(blockNotice, fmt.Sprintf("图片过大（%.1f MB，上限 %s），未添加：%s",
 				float64(fi.Size())/(1<<20), mbLabel(port.MaxImageBytes), filepath.Base(path)))
 			return
 		}

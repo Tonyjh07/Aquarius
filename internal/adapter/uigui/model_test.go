@@ -401,7 +401,7 @@ func TestEventsAndCommit(t *testing.T) {
 
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "file_read", Args: []byte(`{"path":"a.txt"}`)}})
 	m.handleEvent(port.ToolResultEvent{Result: tool.Result{CallID: "c1", OK: true, Output: "内容"}})
-	m.handleEvent(port.NoticeEvent{Text: "提示行"})
+	m.handleEvent(port.NoticeEvent{Text: "提示行", Attention: true}) // D267：留在转写里的那种提示
 	m.handleEvent(port.ErrorEvent{Err: errors.New("boom")})
 	m.commit(conversation.Message{
 		Role:    conversation.RoleSystem,
@@ -417,7 +417,7 @@ func TestEventsAndCommit(t *testing.T) {
 		t.Fatalf("chip = %+v", c)
 	}
 	got := allText(m)
-	for _, want := range []string{"file_read", "内容", "[notice] 提示行", "error: boom", "压缩摘要"} {
+	for _, want := range []string{"file_read", "内容", "提示行", "error: boom", "压缩摘要"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("缺 %q: %q", want, got)
 		}
@@ -642,7 +642,7 @@ func TestSanitizeControlStripsSequences(t *testing.T) {
 // notice/错误行、流式草稿、工具预览、committed 内容都不得带注入序列进渲染。
 func TestTranscriptStripsControlSequences(t *testing.T) {
 	m, _ := newTestModel(t)
-	m.handleEvent(port.NoticeEvent{Text: "注意\x1b[2J清屏"})
+	m.handleEvent(port.NoticeEvent{Text: "注意\x1b[2J清屏", Attention: true})
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "流式\x07"}})
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{Name: "t", Args: []byte(`{"a":"b\x1b]52;c;?\x07"}`)}})
 	got := allText(m)

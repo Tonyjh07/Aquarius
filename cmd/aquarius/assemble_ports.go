@@ -721,8 +721,10 @@ func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 		}
 	}
 	truncateNotice := func(omitted int) {
+		// 截断改变了本轮模型看到的内容 → 必须立刻可见（D267）。
 		_ = w.presenter.Emit(ctx, port.NoticeEvent{
-			Text: fmt.Sprintf("硬保底截断：上下文超预算，已省略 %d 条最旧消息", omitted),
+			Text:      fmt.Sprintf("硬保底截断：上下文超预算，已省略 %d 条最旧消息", omitted),
+			Attention: true,
 		})
 	}
 	// 每 provider 一条内链：硬保底截断最内（发给服务端前裁到预算内）→ 审计（记每次
