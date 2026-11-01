@@ -5,6 +5,7 @@ package uigui
 
 import (
 	"fmt"
+	"image"
 	"strings"
 	"testing"
 
@@ -290,6 +291,22 @@ func TestAttachDuringGenerationQueues(t *testing.T) {
 		}
 	default:
 		t.Fatal("带附件应走输入通道")
+	}
+}
+
+// TestPendingBandRenders 待发条能真的画出来（一行、两行、超 3 行折计数），不 panic。
+func TestPendingBandRenders(t *testing.T) {
+	p := &fakePending{}
+	u := newPendingUI(p, true)
+	u.th = testTheme()
+	u.frameSize = image.Pt(600, 460)
+	for n := 1; n <= 5; n++ {
+		_, _ = p.Add(fmt.Sprintf("第 %d 条待发的话", n), port.DeliveryQueue)
+		if n == 2 {
+			_ = p.SetDelivery("p2", port.DeliverySteer) // 引导徽标与排队徽标两档都要走一遍
+		}
+		gtx := testGtx()
+		u.pendingBand(gtx, 600, 0)
 	}
 }
 
