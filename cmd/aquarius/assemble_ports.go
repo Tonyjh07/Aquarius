@@ -458,6 +458,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	if err != nil {
 		return err
 	}
+	w.jobMgr = jobs
 	// D189：任务收尾观察者阻塞在 JobManager.Wait 上（完成事件，不轮询），终态注入 + 唤醒；
 	// 注入端口延迟取（会话在工具装配之后才建好），Wake 走 UI 的空闲唤醒通道。
 	w.jobWatch = app.NewJobWatcher(app.JobWatcherOptions{

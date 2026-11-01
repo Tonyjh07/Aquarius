@@ -103,6 +103,17 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("等待 %s 超时", what)
 }
 
+// awaitReaper 等收割者真的收尾（写完退出行、关日志句柄、标台账终态）。
+//
+// 只看 Status 变了还不够：那一瞬它手上还有活（§5.8 的关停不变量），TempDir 清理会撞上
+// 仍在写盘的子进程/未关闭的句柄。Wait 等的是 done——收割者把这一切做完才关它。
+func awaitReaper(t *testing.T, m *Manager, id port.JobID) {
+	t.Helper()
+	if _, err := m.Wait(context.Background(), id); err != nil {
+		t.Fatalf("wait %s: %v", id, err)
+	}
+}
+
 // TestRunEcho 同步执行：合并输出、正常退出 OK=true。
 func TestRunEcho(t *testing.T) {
 	m, err := New(t.TempDir())
@@ -266,6 +277,7 @@ func TestStartKill(t *testing.T) {
 		j, serr := m.Status(context.Background(), job.ID)
 		return serr == nil && j.Status == port.JobKilled
 	})
+	awaitReaper(t, m, job.ID)
 	if err := m.Kill(context.Background(), job.ID); err == nil || !strings.Contains(err.Error(), "already finished") {
 		t.Fatalf("重复 kill err = %v, want already finished", err)
 	}
@@ -323,7 +335,10 @@ func TestWaitCancelDoesNotKill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer func() { _ = m.Kill(context.Background(), job.ID) }()
+	defer func() {
+		_ = m.Kill(context.Background(), job.ID)
+		_, _ = m.Wait(context.Background(), job.ID) // 等收割收尾：否则日志句柄还开着
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	if _, err := m.Wait(ctx, job.ID); !errors.Is(err, context.DeadlineExceeded) {
@@ -400,7 +415,10 @@ func TestKillTerminatesProcessTree(t *testing.T) {
 		t.Fatalf("kill: %v", err)
 	}
 	// 失败路径兜底：断言失败也回收任务（含其进程树），避免测试间残留。
-	t.Cleanup(func() { _ = m.Kill(context.Background(), job.ID) })
+	t.Cleanup(func() {
+		_ = m.Kill(context.Background(), job.ID)
+		_, _ = m.Wait(context.Background(), job.ID)
+	})
 	waitFor(t, "任务被终止", func() bool {
 		j, serr := m.Status(context.Background(), job.ID)
 		return serr == nil && j.Status == port.JobKilled

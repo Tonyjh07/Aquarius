@@ -52,6 +52,8 @@ type Manager struct {
 	// ledgerPath / ledgerMu 未收尾台账（D262）：与日志同目录，进程内串行读写。
 	ledgerPath string
 	ledgerMu   sync.Mutex
+
+	closed bool // Close 之后不再接收新任务（台账写入不受影响：收尾要靠它）
 }
 
 // jobRec 单个任务的运行时记录（除日志句柄外，字段均在 Manager.mu 下更新）。
@@ -87,6 +89,13 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	if strings.TrimSpace(spec.Command) == "" {
 		return port.Job{}, errors.New("missing command")
 	}
+	// 关停闸门：Close 之后不再起新进程（工具调用都发生在主循环里，关停后不该再有）。
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return port.Job{}, errors.New("job manager is closed")
+	}
+	m.mu.Unlock()
 	id, logPath, logFile, err := m.allocLog()
 	if err != nil {
 		return port.Job{}, err
@@ -348,6 +357,50 @@ func (m *Manager) Kill(ctx context.Context, id port.JobID) error {
 		return fmt.Errorf("kill %s: %w", id, err)
 	}
 	return nil
+}
+
+// closeGrace Close 等收割者收尾的总上限：收割剩下的只是「写一行日志 + 写一次台账」，
+// 正常是毫秒级；给到秒级只为兜住磁盘卡顿，超时就不再等（下次启动对账兜底）。
+const closeGrace = 3 * time.Second
+
+// Close 关停任务管理器（幂等）：**不杀仍在跑的任务**（§10：任务不随会话/程序退出而终止，
+// 下次启动按台账对账），只等已经进入终态的收割者把手上的事做完再返回。
+//
+// 不等仍在跑的任务：它的收割者还挂在 cmd.Wait 上，等它等于把「退出」拖成「任务时长」。
+// 台账里那条 running 正是下次启动要说的事实，不需要在这里补。
+//
+// 等这一步的理由是**退出后不能再写 jobs 目录**：收割者在 cmd.Wait 返回之后才写退出行、
+// 关日志句柄、标台账终态（D264），而关停往往就在这一刻发生——不等，写盘会落在 Close
+// 返回之后（测试里表现为 TempDir 清理报「目录非空」，真机上则是把台账写进一个已经在
+// 收尾的目录）。
+func (m *Manager) Close() {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
+	m.closed = true
+	// 只收已进终态的记录：它们的收割者正在收尾，done 马上就会关（wait 里 close 在
+	// markFinished 之后，所以等到它就等于台账已写盘）。
+	pending := make([]chan struct{}, 0, len(m.byID))
+	for _, r := range m.byID {
+		if r.job.Status != port.JobRunning {
+			pending = append(pending, r.done)
+		}
+	}
+	m.mu.Unlock()
+	if len(pending) == 0 {
+		return
+	}
+
+	deadline := time.After(closeGrace)
+	for _, ch := range pending {
+		select {
+		case <-ch:
+		case <-deadline:
+			return
+		}
+	}
 }
 
 // allocLog 分配任务号并以 O_EXCL 原子占位日志文件：

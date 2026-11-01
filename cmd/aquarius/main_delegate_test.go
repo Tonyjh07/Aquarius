@@ -198,6 +198,15 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 		t.Fatalf("写 stdin: %v", err)
 	}
 	_ = pw.Close()
+	// 先等程序退出再读 stdout：run 还在写那个 buffer，边写边读是数据竞争。
+	select {
+	case c := <-code:
+		if c != 0 {
+			t.Fatalf("exit code = %d", c)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("程序未退出")
+	}
 	if text == "" {
 		t.Fatalf("没等到转交对账落地；stdout = %q", out.String())
 	}
@@ -208,14 +217,6 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "上次退出时中断了 1 笔转交") {
 		t.Fatalf("stdout 应有中断提示：%q", out.String())
-	}
-	select {
-	case c := <-code:
-		if c != 0 {
-			t.Fatalf("exit code = %d", c)
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("程序未退出")
 	}
 	// 读即清：台账被取走，下一次启动不该重报（会话里那条注入是**这次**落的历史，
 	// 它会一直在，所以证据在台账文件上）。

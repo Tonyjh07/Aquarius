@@ -104,7 +104,10 @@ func TestUnfinishedTakesAndClears(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer func() { _ = m.Kill(context.Background(), job.ID) }()
+	defer func() {
+		_ = m.Kill(context.Background(), job.ID)
+		_, _ = m.Wait(context.Background(), job.ID)
+	}()
 
 	items, err := m.Unfinished(context.Background())
 	if err != nil {

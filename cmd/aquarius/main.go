@@ -24,6 +24,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestmic"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
@@ -167,6 +168,7 @@ type wiring struct {
 	mem      *memoryfs.Store
 	merged   *mergedMemory
 	jobs     port.JobManager
+	jobMgr   *jobproc.Manager // 具体实现：关停时等已结束任务的收尾写完
 	jobWatch *app.JobWatcher
 	watcher  *app.Watcher
 	// 外部代理转交（§5.18/D244）：delegates 是套了收尾观察者装饰器的面（工具与命令共用），
@@ -301,6 +303,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := w.assembleTools(ctx, tc.toolConfirmer, tc.toolAsker); err != nil {
 		return fatal(stderr, "%v", err)
 	}
+	// 任务管理器在观察者之后关（defer 后进先出）：先停报告，再等已结束任务的收尾写完
+	// （退出行、日志句柄、台账终态），退出后不再动 jobs 目录（§5.8）。
+	defer w.jobMgr.Close()
 	// D189：先停任务收尾观察者再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
 	defer w.jobWatch.Close()
 	// D190：观察器同样在 UI 之前停掉（它的报告会唤醒前端）。
