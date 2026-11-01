@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-01 @ f9dbf98 -->
+<!-- docs-sync: 2026-11-01 @ 5b4f4d5 -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
