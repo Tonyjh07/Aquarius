@@ -200,7 +200,7 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 	u.record(bgRect, mr.radius, mr.bg, viewport)
 	if it.pendID != "" {
 		fade.Pop()
-		u.steerActions(gtx, it.pendID, bgRect) // D272：引导气泡旁的两枚控件
+		u.steerActions(gtx, it.pendID, bgRect, viewport) // D272：引导气泡旁的两枚控件
 	}
 	return bgRect.Dy()
 }

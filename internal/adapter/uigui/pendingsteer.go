@@ -63,7 +63,11 @@ type steerHot struct {
 //
 // 位置优先放气泡左侧（用户气泡右对齐，左边通常空着）；窄窗里气泡占满整行时退到气泡
 // 内部左上角——控件不能因为窗口窄就消失，那正是用户够不到的时候。
-func (u *UI) steerActions(gtx layout.Context, id string, bg image.Rectangle) {
+//
+// 两枚圆钮**必须各自 record**（viewport = 转写视口）：Windows 上真正上屏的是全帧合成
+// （fadeFrame），它只写已登记形状覆盖的像素——画出来不等于留得下，漏了这一步控件会
+// 在合成阶段整颗被丢掉（气泡本体没这毛病，是因为 paintRow 登过记）。
+func (u *UI) steerActions(gtx layout.Context, id string, bg, viewport image.Rectangle) {
 	sz := gtx.Dp(steerActDp)
 	gap := gtx.Dp(steerActGapDp)
 	inset := gtx.Dp(steerActInsetDp)
@@ -94,8 +98,12 @@ func (u *UI) steerActions(gtx layout.Context, id string, bg image.Rectangle) {
 		// 压在品牌色气泡上：白字 + 比气泡更深的同色底（只靠白字会糊成一片）。
 		fg, bgc = tok().whiteText, tok().brandColor
 	}
+	radius := sz / 2
 	u.drawActIcon(gtx, downRect, "↓", fg, bgc)
 	u.drawActIcon(gtx, dropRect, "×", fg, bgc)
+	// 合成阶段只认登记过的形状（D62）：不登记 = 上屏时看不见，热区却还在——更难查。
+	u.record(downRect, radius, bgc, viewport)
+	u.record(dropRect, radius, bgc, viewport)
 
 	u.steerHot = append(u.steerHot, steerHot{id: id, down: downRect, drop: dropRect})
 	switch {
