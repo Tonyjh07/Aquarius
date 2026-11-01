@@ -415,6 +415,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else if rerr := w.sess.ReportUnfinished(ctx, items); rerr != nil {
 		fmt.Fprintf(stderr, "补记未收尾任务: %v\n", rerr)
 	}
+	// 转交对账（D269）：上次退出时还在跑的转交，进程早被终止，报告也不会自己回来——
+	// 补一条事实注入（同时给用户一行提示，否则模型忽然知道某件活的存在、用户却不知道）。
+	if w.delegateMgr != nil {
+		if items, derr := w.delegateMgr.Unfinished(ctx); derr != nil {
+			fmt.Fprintf(stderr, "读取未收尾转交台账: %v\n", derr)
+		} else if len(items) > 0 {
+			if rerr := w.sess.ReportUnfinishedDelegates(ctx, items); rerr != nil {
+				fmt.Fprintf(stderr, "补记未收尾转交: %v\n", rerr)
+			}
+			w.ui.Say(fmt.Sprintf("上次退出时中断了 %d 笔转交（已补记到发起会话）", len(items)))
+		}
+	}
 	// 启动历史回放（D40/§7.4）：恢复的会话把水位→Head 的可见历史重放进转写区，
 	// 让用户知道当前是哪个会话、此前聊了什么（新建会话无历史，no-op）。
 	if _, rerr := w.sess.ReplayHistory(ctx); rerr != nil {

@@ -601,6 +601,8 @@ func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer
 	if err != nil {
 		return err
 	}
+	// D269：台账与任务台账同目录——它们回答的是同一类问题「上次退出时还有什么没收尾」。
+	opts.LedgerPath = filepath.Join(w.profileDir, "jobs", "delegates.json")
 	mgr := acpgate.New(opts)
 	w.delegateMgr = mgr
 	w.delegateWatch = app.NewDelegateWatcher(app.DelegateWatcherOptions{
@@ -611,8 +613,9 @@ func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer
 			}
 			return nil
 		},
-		Wake: w.uiWake,
-		Logf: logf,
+		Wake:   w.uiWake,
+		Settle: mgr.Settle,
+		Logf:   logf,
 	})
 	w.delegates = app.NewWatchingDelegates(mgr, w.delegateWatch)
 	w.delegateAgents = mgr.Available(ctx)

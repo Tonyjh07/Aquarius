@@ -106,3 +106,79 @@ func jobCommandLine(spec port.JobSpec) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// ReportUnfinishedDelegates 转交的启动对账（D269）：上次退出时没有收尾的转交，补一条事实。
+//
+// 与任务对账同一路：目标会话是当前会话就挂当前 Head，否则异地落地；目标已删除则丢弃并
+// 记日志。正文按「外部」信任级注入——任务描述来自用户，但报错段是子代理自己写的，
+// 混在一段里只能按最低的那一档处理。
+func (s *Session) ReportUnfinishedDelegates(ctx context.Context, items []port.UnfinishedDelegate) error {
+	if len(items) == 0 {
+		return nil
+	}
+	landed := false
+	for _, it := range items {
+		item := pendingInjection{
+			source:  "delegate:" + it.Agent,
+			trust:   conversation.TrustExternal,
+			parts:   []conversation.Part{{Kind: conversation.PartText, Text: unfinishedDelegateReport(it)}},
+			session: it.Session,
+		}
+		if item.session != "" && item.session != s.cur.ID {
+			if err := s.landElsewhere(ctx, item); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := s.landInjection(item, false); err != nil {
+			return err
+		}
+		landed = true
+	}
+	if landed {
+		return s.persist(ctx)
+	}
+	return nil
+}
+
+// unfinishedDelegateReport 组装转交对账正文（进模型上下文，英文）。
+func unfinishedDelegateReport(it port.UnfinishedDelegate) string {
+	var b strings.Builder
+	b.WriteString("A delegation had not finished when Aquarius last exited.\n")
+	fmt.Fprintf(&b, "Delegation: %s (agent %s)\n", it.ID, it.Agent)
+	if it.WorkDir != "" {
+		fmt.Fprintf(&b, "Work dir: %s\n", it.WorkDir)
+	}
+	if !it.StartedAt.IsZero() {
+		fmt.Fprintf(&b, "Started: %s", it.StartedAt.Format(time.RFC3339))
+		if ran := time.Since(it.StartedAt); ran > 0 {
+			fmt.Fprintf(&b, " (%.0fs before this startup)", ran.Seconds())
+		}
+		b.WriteString("\n")
+	}
+	switch {
+	case it.EndedAt.IsZero():
+		b.WriteString("State: it was still running when the app exited; the agent process was terminated, " +
+			"so its report never arrived and no work after that point can be trusted as finished.\n")
+	case it.Stop == "killed":
+		b.WriteString("State: it was stopped on request, but that happened while the app was closing " +
+			"and the report never reached this session.\n")
+	default:
+		stop := it.Stop
+		if stop == "" {
+			stop = "unknown"
+		}
+		fmt.Fprintf(&b, "State: it finished (stop=%s) but the report never reached this session.\n", stop)
+	}
+	if errText := strings.TrimSpace(it.Error); errText != "" {
+		fmt.Fprintf(&b, "It reported: %s\n", errText)
+	}
+	if task := strings.TrimSpace(it.Task); task != "" {
+		b.WriteString("The task it was given:\n")
+		fmt.Fprintf(&b, "<injected-context source=\"%s\">\n", escapeFenceAttr("delegate:"+it.Agent))
+		b.WriteString(neutralizeFence(task))
+		b.WriteString("\n</injected-context>")
+	}
+	b.WriteString("\nNothing supervises it any more: if this work still matters, hand it over again.")
+	return b.String()
+}

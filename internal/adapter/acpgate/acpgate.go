@@ -63,6 +63,9 @@ type Options struct {
 	Now func() time.Time
 	// Home 缺省工作目录（缺省 os.UserHomeDir）。
 	Home string
+	// LedgerPath 转交台账文件路径（空 = 不记；D269）。由装配根给到 `<profile>/jobs/delegates.json`
+	// ——与任务台账同目录：它们回答的是同一类问题「上次退出时还有什么没收尾」。
+	LedgerPath string
 }
 
 // Manager port.Delegate 实现。
@@ -76,6 +79,8 @@ type Manager struct {
 	// learned initialize 读回的 agentInfo（Title/Version）：只在第一次转交后才有，
 	// 启动时只探「能不能执行」（不拿用户时间换一张清单）。
 	learned map[string]learnedInfo
+	// ledgerMu 台账读写串行（见 ledger.go；与 runs 无关，不必同锁）。
+	ledgerMu sync.Mutex
 }
 
 type learnedInfo struct{ title, version string }
@@ -211,6 +216,7 @@ func (m *Manager) Start(ctx context.Context, spec port.DelegateSpec) (port.Deleg
 	m.trimFinishedLocked()
 	m.mu.Unlock()
 
+	m.ledgerAdd(r) // 先落台账再起进程：进程一起来就可能失控，记不下就无从对账
 	go m.run(r)
 	return port.DelegateTask{ID: id, Agent: agent.Name}, nil
 }

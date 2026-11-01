@@ -207,6 +207,7 @@ func (m *Manager) run(r *run) {
 	res.Session = r.sessionID()
 	res.ToolCalls, res.Changed, res.Notes, res.Denied, res.ChangedOver = r.snapshot()
 	res.Report = r.reportText()
+	m.ledgerFinish(r, err) // 先标终态再放行 Wait：关停时 Close 等到 done 就返回，慢一步就丢
 	r.complete(res, err)
 	// 终态记录留着给 Wait 取（Kill 之后再来 Wait、或先 Kill 再 Wait 都要能拿到报告）；
 	// 由下一次 Start 按序裁掉旧记录，不让表无限长。
@@ -435,6 +436,7 @@ func (m *Manager) spawn(r *run, wd string) (*process, error) {
 		return nil, fmt.Errorf("start %s: %w", r.agent.Command, err)
 	}
 	r.setProc(p)
+	m.ledgerPID(r.id, p.cmd.Process.Pid)
 	return p, nil
 }
 

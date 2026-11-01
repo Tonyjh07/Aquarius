@@ -27,6 +27,7 @@ type DelegateWatcher struct {
 	delegates port.DelegateRunner
 	inject    func() port.Injector
 	wake      func()
+	settleFn  func(ctx context.Context, id port.DelegateID) error
 	logf      func(format string, args ...any)
 	sleep     func(ctx context.Context, d time.Duration) bool
 
@@ -123,6 +124,8 @@ type DelegateWatcherOptions struct {
 	Injector func() port.Injector
 	// Wake 报告落地后的空闲唤醒；nil = 只注入不唤醒。
 	Wake func()
+	// Settle 报告已送到会话：抹掉台账条目（nil = 不记台账，测试与嵌入式装配）。
+	Settle func(ctx context.Context, id port.DelegateID) error
 	// Logf 运行日志（用户面中文）；nil = 丢弃。
 	Logf func(format string, args ...any)
 	// Sleep 覆盖注入重试的等待（测试用）。
@@ -144,11 +147,22 @@ func NewDelegateWatcher(opts DelegateWatcherOptions) *DelegateWatcher {
 		delegates: opts.Delegates,
 		inject:    opts.Injector,
 		wake:      opts.Wake,
+		settleFn:  opts.Settle,
 		logf:      logf,
 		sleep:     sleep,
 		root:      root,
 		cancel:    cancel,
 		watches:   map[port.DelegateID]*delegateEntry{},
+	}
+}
+
+// settle 销账（报告已确实送到会话）；没接线就什么都不做。
+func (w *DelegateWatcher) settle(id port.DelegateID) {
+	if w == nil || w.settleFn == nil {
+		return
+	}
+	if err := w.settleFn(context.Background(), id); err != nil {
+		w.logf("转交 %s 销账失败: %v", id, err)
 	}
 }
 
@@ -271,6 +285,7 @@ func (w *DelegateWatcher) run(ctx context.Context, id port.DelegateID, e *delega
 	if !w.deliver(ctx, id, in) {
 		return
 	}
+	w.settle(id) // 报告确实落到会话了，台账这一条才算完
 	if w.wake != nil {
 		w.wake()
 	}
@@ -360,6 +375,7 @@ func (w *watchingDelegates) Kill(ctx context.Context, id port.DelegateID) error 
 	err := w.Delegate.Kill(ctx, id)
 	if err == nil {
 		w.watcher.Unwatch(id)
+		w.watcher.settle(id) // 叫停的结果由这条命令本身交回，台账不必留到下次启动
 	}
 	return err
 }
@@ -373,6 +389,9 @@ func (w *watchingDelegates) Wait(ctx context.Context, id port.DelegateID) (port.
 		// 拿到结果 = 归属定了（watcher 不再注入）；没拿到（超时/报错）= 还回去，
 		// 由 watcher 在终态到达时照常注入，报告不会因为一次超时就凭空消失。
 		release(err == nil)
+	}
+	if claimed && err == nil {
+		w.watcher.settle(id) // 报告已经在这次调用里交给模型了
 	}
 	return run, err
 }

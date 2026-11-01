@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -152,5 +153,75 @@ func TestRunDelegateE2E(t *testing.T) {
 	// 转写区：派出时出一行状态（任务 id），报告以注入出现。
 	if !strings.Contains(out.String(), "delegate") {
 		t.Fatalf("stdout 应提到 delegate: %q", out.String())
+	}
+}
+
+// TestRunDelegateReconcileE2E 上次退出时中断的转交（D269）：启动补一行提示 + 一条事实注入。
+//
+// 台账是直接写进 profile/jobs 的——重启这条路上，它就是唯一的事实来源（进程早没了）。
+func TestRunDelegateReconcileE2E(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{
+  "model": {"providers":[{"name":"openai-compatible","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:AQ_E2E_KEY"}],"models":[{"name":"m"}]}],"name":"m"},
+  "ui": {"kind":"repl"},
+  "permissions": {"level": "strict"},
+  "limits": {"max_turns": 8, "max_context_tokens": 64000, "tool_output_chars": 20000, "tool_timeout_sec": 60}
+}`
+	writeProfileLayout(t, dir, cfg)
+	t.Setenv("AQ_E2E_KEY", "test-key")
+
+	ledger := filepath.Join(dir, "profiles", "default", "jobs", "delegates.json")
+	if err := os.MkdirAll(filepath.Dir(ledger), 0o755); err != nil {
+		t.Fatalf("建 jobs 目录: %v", err)
+	}
+	body := `{"version":1,"entries":[{"id":"d001","agent":"opencode","session":"","task":"refactor the parser","started_at":"2026-11-01T10:00:00Z","pid":4242}]}`
+	if err := os.WriteFile(ledger, []byte(body), 0o600); err != nil {
+		t.Fatalf("写台账: %v", err)
+	}
+
+	var out bytes.Buffer
+	pr, pw := io.Pipe()
+	code := make(chan int, 1)
+	go func() { code <- run([]string{"-data", dir}, pr, &out, io.Discard) }()
+
+	// 等这条事实落地（启动对账在第一次 Prompt 之前）。
+	var text string
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		_, text = findDelegateInject(loadAllConversations(t, dir))
+		if text != "" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if _, err := io.WriteString(pw, "/quit\n"); err != nil {
+		t.Fatalf("写 stdin: %v", err)
+	}
+	_ = pw.Close()
+	if text == "" {
+		t.Fatalf("没等到转交对账落地；stdout = %q", out.String())
+	}
+	for _, want := range []string{"A delegation had not finished", "d001 (agent opencode)", "refactor the parser"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("对账正文缺 %q：%q", want, text)
+		}
+	}
+	if !strings.Contains(out.String(), "上次退出时中断了 1 笔转交") {
+		t.Fatalf("stdout 应有中断提示：%q", out.String())
+	}
+	select {
+	case c := <-code:
+		if c != 0 {
+			t.Fatalf("exit code = %d", c)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("程序未退出")
+	}
+	// 读即清：台账被取走，下一次启动不该重报（会话里那条注入是**这次**落的历史，
+	// 它会一直在，所以证据在台账文件上）。
+	if data, err := os.ReadFile(ledger); err != nil {
+		t.Fatalf("读台账: %v", err)
+	} else if strings.Contains(string(data), "d001") {
+		t.Fatalf("台账应已清空，得到 %s", data)
 	}
 }

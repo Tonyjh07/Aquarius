@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
 // 转交的上限（§5.18）：任务描述与收下的正文按字符数算，改动文件按条数算。
@@ -161,4 +163,30 @@ func stopReasonText(run DelegateRun) string {
 	default:
 		return run.StopReason
 	}
+}
+
+// UnfinishedDelegate 上次退出时没有收尾的一次转交（启动对账的输入）。
+//
+// 与 UnfinishedJob 同一形状、同一口径：它补的是**事实**不是报告——那次转交当时在跑，
+// 还是跑完了而报告没送到会话。进程早已随退出被终止（Close 会杀进程组），所以这里没有
+// 「可能还在跑」这一档：留下的只有「它存在过、做的是哪件活、结果没有下文」。
+type UnfinishedDelegate struct {
+	ID        DelegateID      `json:"id"`
+	Agent     string          `json:"agent"`
+	Session   conversation.ID `json:"session,omitempty"`
+	Task      string          `json:"task,omitempty"`     // 任务描述（已截断）
+	WorkDir   string          `json:"work_dir,omitempty"` // 子进程的起点
+	StartedAt time.Time       `json:"started_at"`
+	// Stop / Error / EndedAt 非空 = 它跑到终态了，只是报告没送到（与 D264 的任务台账同口径）。
+	Stop    string    `json:"stop,omitempty"`
+	Error   string    `json:"error,omitempty"`
+	EndedAt time.Time `json:"ended_at,omitempty"`
+}
+
+// DelegateReconciler 转交台账（只给装配根与转交收尾观察者用）：形状照 JobReconciler 抄。
+type DelegateReconciler interface {
+	// Unfinished 取走全部未收尾条目（**读即清**）：取走后不再重报。
+	Unfinished(ctx context.Context) ([]UnfinishedDelegate, error)
+	// Settle 报告已送达会话：抹掉该条目，下次启动不再提它。
+	Settle(ctx context.Context, id DelegateID) error
 }
