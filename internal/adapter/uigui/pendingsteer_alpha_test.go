@@ -9,6 +9,7 @@ package uigui
 
 import (
 	"image"
+	"image/color"
 	"testing"
 
 	"gioui.org/gpu/headless"
@@ -139,11 +140,26 @@ func TestPendingSteerControlsSurviveCompose(t *testing.T) {
 			t.Fatalf("%s 圆钮没上屏（合成后透明）：左 %d / 右 %d，热区 %v",
 				name, c.alphaAt(left, cy), c.alphaAt(right, cy), r)
 		}
-		// 控件不跟着气泡淡：整圆覆盖度应满。
-		if a := c.alphaAt(center(r).X, cy); a < 250 {
-			t.Fatalf("%s 圆钮被淡掉了，alpha = %d", name, a)
+		// 控件跟着气泡淡到 70%。合成位图的 alpha 是**覆盖度**（形状有没有上屏），不
+		// 透明度烘进内容层的 RGB——所以判据取「圆钮底色离窗口底色有多远」：满不
+		// 透明是 1、70% 一档约 0.7、整颗丢失是 0（那时这里是纯窗口底色）。
+		bg, ring := tok().windowBg, tok().pillBg
+		full := chanDist(ring, bg)
+		sample := c.content.RGBAAt(r.Min.X+3, cy)
+		got := chanDist(color.NRGBA{R: sample.R, G: sample.G, B: sample.B, A: sample.A}, bg)
+		if full == 0 {
+			t.Fatalf("%s 圆钮底色与窗口底色同值，判据失效", name)
+		}
+		if ratio := float64(got) / float64(full); ratio < 0.55 || ratio > 0.85 {
+			t.Fatalf("%s 圆钮离底色的距离比 = %.2f（%d/%d）, want ≈%.0f%% 档",
+				name, ratio, got, full, steerBubbleAlpha*100)
 		}
 	}
+}
+
+// chanDist 三通道绝对差之和（判「离某个底色有多远」用）。
+func chanDist(c, base color.NRGBA) int {
+	return absInt(int(c.R)-int(base.R)) + absInt(int(c.G)-int(base.G)) + absInt(int(c.B)-int(base.B))
 }
 
 // TestPendingSteerShapesRecorded 控件必须进形状表（上一条的成因级判据）。

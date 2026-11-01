@@ -185,8 +185,9 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 			keyBase: it.keyBase, keyN: it.selCount(),
 		})
 	}
-	// 待响应引导（D272）整体淡一档：它还不是会话节点，同在转写区的两种「我说的话」
-	// 得靠观感分开。控件在下面单独画，不跟着淡——那是唯一能操作它的地方。
+	// 待响应引导（D272）整块淡一档：气泡本体与旁边两枚控件一起算，它还不是会话节点，
+	// 同在转写区的两种「我说的话」得靠观感分开。控件在同一层里画——淡得一样多，才不会
+	// 让人以为气泡是实心、按钮是贴上去的另一件东西。
 	var fade paint.OpacityStack
 	if it.pendID != "" {
 		fade = paint.PushOpacity(gtx.Ops, steerBubbleAlpha)
@@ -199,8 +200,8 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 	st.Pop()
 	u.record(bgRect, mr.radius, mr.bg, viewport)
 	if it.pendID != "" {
-		fade.Pop()
 		u.steerActions(gtx, it.pendID, bgRect, viewport) // D272：引导气泡旁的两枚控件
+		fade.Pop()
 	}
 	return bgRect.Dy()
 }
