@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-01 @ 489defa -->
+<!-- docs-sync: 2026-11-01 @ f1be0da -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1479,6 +1479,19 @@ this build`），后者照实回传。将来加一条 `session/resume` 与句柄
 **不做**：内置代理预设与自动安装（registry 是别人的目录，装与不装是用户的事）、按 registry
 自动升级、ACP v2、客户端 `fs`/`terminal`/`elicitation`、把子代理的转录塞进树、转发我们的
 MCP server、跨会话复用子代理、`session/load` 回放它的历史。
+
+**本版落地口径**（规格没写死、实现定下来的几处，D268）：
+
+- `Start` 立刻返回，`DelegateTask.Session` **为空**——ACP `sessionId` 要等 `session/new`
+  回来才知道，而派活不等握手（有些代理第一次启动会要登录）。句柄里的 id 只用于
+  `Wait`/`Kill`；`sessionId` 在 `DelegateRun.Session` 与日志里。
+- `delegate:` 来源的注入**默认起一轮**（与 `job:` 同口径）：转交完成要主动汇报，而不是
+  悄悄多一条上下文。
+- 已结束的转交在表里保留最近 32 条：`Kill` 之后再来 `Wait`、或先 `Kill` 再 `Wait`，都还能
+  拿到报告（`Wait` 是「读结果」，不是「领一次」）。
+- 关停（D262）：先停收尾观察者（不再注入），再 `session/cancel` 宽限后杀进程组。
+  **未接**启动对账——上次退出时被中断的转交，下次启动**不会**补一条「中断了 N 笔转交」
+  的注入（台账只覆盖后台任务）；这一条列在 roadmap 的 v0.4.0-G3。
 
 ## 6. 插件架构
 

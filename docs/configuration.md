@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-10-30 @ cc106aa -->
+<!-- docs-sync: 2026-11-01 @ f1be0da -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -416,11 +416,34 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 
 设置窗「MCP 与插件」为只读清单；结构化字段的编辑走「高级」页 raw JSON（Q10）。
 
+### delegate（外部代理转交）
+
+把一件复杂任务**整个**交给一个 ACP 代理程序，我们只收回它的报告。
+**配置是唯一事实源**：不内置各家预设——它们的命令名与启动参数变得比我们发版快。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `delegate.agents[].name` | string | — | 名字（`delegate` 工具的 `agent` 参数取值；重复报错） |
+| `delegate.agents[].command` | string | — | 启动命令；启动时按 `PATH` 探测，探不到只标不可用、不挡启动 |
+| `delegate.agents[].args` / `env` | []string / object | `[]` | 参数与环境（值可用 `secret:<名>`，起进程时解析） |
+| `delegate.agents[].workdir` | string | 家目录 | 子进程起点（绝对路径；**不是围栏**） |
+| `delegate.agents[].enabled` | bool | `true` | 键缺失 = 启用 |
+| `delegate.agents[].default` | bool | `false` | 只配一条时可不写；多条目时最多一条 |
+| `delegate.timeout_sec` | int | `1800` | 单次转交总闸；显式 `0` = 不限，上限 `86400` |
+| `delegate.max_concurrent` / `max_total` | int | `2` / `4` | 每会话 / 全局同时进行的转交上限；超限时 `delegate` 直接回绝，不排队 |
+
+清单为空时照常启动：`delegate` / `delegate_wait` / `delegate_kill` 三个工具**不注册**，
+`/delegate list` 给出配置指引。填了之后 `/delegate list` 显示可用性（命令在不在 `PATH` 上）
+与不可用原因；`Title` / `Version` 在第一次转交后才填上（启动不做握手——那要把代理真拉起来）。
+
+**边界要说清**：批准一次转交 = 批准那个程序在**它自己的判断下**动手。它有它自己的文件与
+命令访问，`workdir` 只是起点不是围栏；`session/request_permission` 只覆盖它愿意问的那部分。
+
 ### 暂未消费的键（模板自带，随里程碑启用）
 
 未知键解析时忽略，**写回时原样保留**（provider 条目内的无关键同样保留——编辑器按
 原名合并，Q10 口径）。GUI 语音键与 `/mic` 已可用；TUI 尚无语音入口（用 `/mic`）。
-`delegate.agents` 为空时照常启动（工具不注册），填了才探测；设置窗「外部代理」页尚未落地。
+设置窗「外部代理」页尚未落地（清单与可用性走 `/delegate list`）。
 
 ## 密钥规则（逐 provider、逐把钥匙）
 
