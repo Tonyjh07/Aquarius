@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-01 @ d87ccfe -->
+<!-- docs-sync: 2026-11-01 @ d5e78fd -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -96,6 +96,9 @@ type Conversation struct {
   崩溃恢复无部分写入问题。节点 ID 在 Turn 开始时预分配，作全部流事件关联 ID；第 2 轮起
   构造请求把未提交缓冲投影为合成消息追加在 Path 之后。取消/装配级故障向未完成分片填
   `OK=false` 结果（abortToolCalls 语义），树恒可装配。
+  **唯一的例外是轮内插话**（D273）：用户在工具批之间插的那句话要在树里站成真的 user 节点，
+  于是当前缓冲先提交、再插 user、再开新缓冲——粒度从「一 Turn 一节点」变成「一段一节点」，
+  段只由插话产生（没有插话时仍是一个节点）。
 - **工具调用内嵌分片**（D95）：assistant 节点以 `PartTool` 同片承载调用与结果（`Result=nil` = 未执行）；
   CallID 仅节点内唯一，无跨节点引用。port 装配时把 assistant 节点**按工具分片边界切段**：
   每段产出 1 条 assistant 消息（Content+Reasoning+该段 ToolCalls）+ N 条 tool 应答消息——
@@ -685,6 +688,10 @@ type UserInput struct {
     Command *Command
     Raw     *RawInput   // 拖拽文件 / 粘贴图片 / 语音按钮走同一入口
 }
+
+// 注意：**档位（排队 / 引导）不在 UserInput 里**。它在待发清单上（§5.19）——那是前端直接
+// 调用的另一条路，因为「这一句什么时候到模型眼前」这个决定不能等本轮结束。`Next` 只送
+// 「现在就要起一轮」的东西。
 
 type Command struct{ Name string; Args []string }
 
@@ -1494,9 +1501,70 @@ MCP server、跨会话复用子代理、`session/load` 回放它的历史。
   悄悄多一条上下文。
 - 已结束的转交在表里保留最近 32 条：`Kill` 之后再来 `Wait`、或先 `Kill` 再 `Wait`，都还能
   拿到报告（`Wait` 是「读结果」，不是「领一次」）。
-- 关停（D262）：先停收尾观察者（不再注入），再 `session/cancel` 宽限后杀进程组。
-  **未接**启动对账——上次退出时被中断的转交，下次启动**不会**补一条「中断了 N 笔转交」
-  的注入（台账只覆盖后台任务）；这一条列在 roadmap 的 v0.4.0-G3。
+- 关停（D262）：先停收尾观察者（不再注入），再 `session/cancel` 宽限后杀进程组；进程随退出
+  终止，所以对账里没有「可能还在跑」这一档。
+- 台账与启动对账（D269）：`jobs/delegates.json` 起手记一条、终态只标状态与停因、**报告确认落到
+  会话才销账**；启动时读即清，往发起会话补一条事实注入，同时给用户一行「上次退出时中断了 N 笔
+  转交」。销账三处：收尾观察者投递成功、`delegate_wait` 拿到结果、`Kill` 成功。
+
+### 5.19 `pending.go` —— 待发消息端口（运行中插话，D272/D273）
+
+一句话：**一轮在跑的时候用户说的话，停在哪、什么时候到模型眼前**。两档：
+
+```go
+type Delivery string
+
+const (
+    DeliveryQueue Delivery = "queue" // 本轮收尾后接着起下一轮（缺省）
+    DeliverySteer Delivery = "steer" // 下一次模型请求之前插入本轮
+)
+
+type PendingInput struct {
+    ID       string    `json:"id"`       // 清单内稳定 ID（前端按它撤销/改档/拉回）
+    Text     string    `json:"text"`
+    Delivery Delivery  `json:"delivery"`
+    AddedAt  time.Time `json:"added_at"` // 界面显示「几分钟前」用，不参与排序（有序 = 插入序）
+}
+
+// Pending 待发清单：会话级、内存态、有序、有上限。
+//
+// **前端在自己的事件循环里直接调**，不走 Prompter.Next 的输入通道：主循环此刻还卡在
+// `Handle` 里（一轮没结束），走通道就等于「等本轮结束才看得到」——那正是要修的毛病。
+// 不带 ctx：这几个方法只是内存读写，前端在收尾路径上调它们时不该被一个已取消的 ctx 拦住。
+type Pending interface {
+    Add(text string, d Delivery) (PendingInput, error) // 满 / 空 / 超长 → 错误（前端据此提示）
+    List() []PendingInput                              // 复制一份返回，调用方随便读
+    Remove(id string) bool                             // 撤销
+    SetDelivery(id string, d Delivery) bool            // 改档（排队 ↔ 引导）
+    Take(id string) (PendingInput, bool)               // 取走：拉回输入框（此后不再被取用）
+    Clear() int                                        // 清空（切会话、关停）
+}
+```
+
+**三个状态之间可以互相转换**（用户口径：输入框、待发送、等插入的引导，三个位置都要能来回）：
+
+| 从 → 到 | 怎么做 |
+|---|---|
+| 输入框 → 待发送 | 发送键：生成中入 `queue`；空闲时直接起一轮 |
+| 输入框 → 引导 | 插话键：只在生成中入 `steer`；空闲时与上一行等价 |
+| 待发送 ↔ 引导 | 条目上的档位按钮（`SetDelivery`） |
+| 待发送 / 引导 → 输入框 | 条目上的「拉回」按钮（`Take` 取走，前端填回编辑器） |
+
+**边界**：清单只收**纯文本**——带附件、语音、命令一律不进清单（照旧走输入通道，在本轮之后执行）；
+确认态、提问态下打字仍只是应答（§15.2）；`repl` 是阻塞式读输入，没有这个位置，不入伙。键位与
+待发条的形态不在本文：字段见 [configuration.md](configuration.md)，形态见 [gui-design.md](gui-design.md)。
+
+**上限**：单条 8000 字符、清单 8 条。满了 `Add` 报错，前端提示「待发已满 8 条，先撤销一条」——
+不静默丢弃。
+
+**停止语义**：停止键取消当前轮，**待发清单原样保留但不自动续跑**（`paused` 标记，下一次真实
+用户输入到来时清掉）。停止是「停手」，不是「这些都不要了」；也不能一停就接着跑队列里那条——
+那会让人以为停了其实还在跑。
+
+**切会话与关停**：清单随会话走丢——`/new`、`/switch`、`/load` 时清空并留一行提示（与「不静默丢
+东西」的既有口径一致）；进程退出即丢（不落盘，见下）。
+
+**不落盘**：清单只在内存里，崩溃与关停即丢。要落就得进会话存储（与草稿一起），那是另一件事。
 
 ## 6. 插件架构
 
@@ -1587,13 +1655,16 @@ config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
 
 ```go
 func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
-    mid := a.ids.MessageID()          // Turn 预分配关联 ID（一 Turn 一节点，D95）
-    buf := newTurnBuffer(mid)         // Turn 级流式缓冲：只进 UI，不进领域
+    mid := a.ids.MessageID()          // 段预分配关联 ID（一段一节点，D95 由 D273 修订）
+    buf := newTurnBuffer(mid)         // 段级流式缓冲：只进 UI，不进领域
     for turn := 0; turn < a.limits.MaxTurns; turn++ {
+        if turn > 0 {                 // 工具批之后、下一次请求之前：这里取引导（D273）
+            mid, buf = a.cutSegment(ctx, c, mid, buf) // 有引导才真的切；无引导原样返回
+        }
         req := a.buildRequest(ctx, c, buf) // Path + 未提交缓冲投影 + 记忆索引 + 工具清单 + system
         stream, err := a.llm.Generate(ctx, req)
-        calls, err := a.consume(ctx, stream, buf) // 边收边 Emit DeltaEvent（当前轮缓冲）
-        buf.sealRound()                   // 本轮思考/正文定稿进缓冲（到达序交错）
+        calls, err := a.consume(ctx, stream, buf) // 边收边 Emit DeltaEvent（当前段缓冲）
+        buf.sealRound()                   // 本段思考/正文定稿进缓冲（到达序交错）
         for i, call := range calls {      // 先执行后提交（D95）：结果作为分片追加进缓冲
             _ = a.ui.Emit(ctx, port.ToolCallEvent{Call: call})
             res, err := a.tools.Execute(ctx, call) // 判定 + 确认 + 超时 + 裁剪
@@ -1604,12 +1675,32 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
             buf.addToolPart(call, res)
             _ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
         }
-        if len(calls) == 0 { break }      // Turn 收场
+        if len(calls) == 0 {              // 本可收场——但收尾之前再看一眼引导
+            if mid2, buf2, cut := a.tryCutSegment(ctx, c, mid, buf); cut {
+                mid, buf = mid2, buf2     // 有人插话：本轮不结束，接着跑（D273）
+                continue
+            }
+            break
+        }
     }
-    c.AppendCommitted(buf.Commit(c.Head, a.clock.Now(), outcomeOf(err))) // 每 Turn 一次性提交（D95）
+    commitSegment(ctx, c, buf, outcomeOf(err)) // 每段一次性提交（D95）
     return nil // MaxTurns 用尽：同样先提交再报错
 }
 ```
+
+**切段（D273，修订 D95 的「一 Turn 一节点」）**：`cutSegment` 只做一件有后果的事——把当前
+缓冲提交成一个 assistant 节点，然后把引导消息按到达序追加成 user 节点，再开一个新缓冲继续。
+于是「用户在两段回答之间插的一句话」在树里是**真的两个角色**，不是投影出来的。
+
+- 提交顺序固定为 **assistant 段（`CommittedEvent`）→ user 节点（同一事件，`Role=user`）**：
+  前端照事件序追加，转写区的顺序天然就是「回答前半 → 我说的那句 → 接着跑的回答」。
+  收尾后正常的用户输入仍由前端本地回显（那条不进树时没有事件），只有**轮内**落成的 user
+  节点走 `CommittedEvent`——两者不重叠，不会画两遍。
+- 缓冲为空（这一段没产出任何正文/工具/思考）时不提交空节点，直接接 user 节点。
+- 用量与终态**按段**：每段一个节点、各自的 `Usage` 与 `Outcome`；取消落在哪一段，那段就是
+  `cancelled`，之前提交的段不受影响。
+- 段的存在只来自插话：没有引导时一轮仍是一个节点。
+
 
 上下文装配规则（含压缩）：
 
@@ -1798,6 +1889,24 @@ type lander interface { InjectAndWait(ctx context.Context, in Injection) error }
   模型调试。
 - **不做**：不解析告警格式、不做通用条件 DSL（探针三种类型已覆盖 CI/文件/网页）、
   不允许插件直接注册观察器（插件经 `Injector` 注入）。
+
+#### 7.1.2 待发清单的两个取用边界（D272）
+
+清单在 `Session`（会话级），**只有两个地方取它**，都在会话 goroutine 上：
+
+1. **轮内（引导）**——`Agent.Run` 在工具批结束、下一次请求装配之前取**全部** `steer`
+   （`cutSegment`），并在「本来要收场」那一刻再看一眼（有人插话就不收场）。取用与切段同一
+   动作（§7.1）。
+2. **轮末（排队 + 漏网的引导）**——`runTurn` 提交末段之后按 **FIFO 取一条**（不分档位：
+   引导错过窗口就只是「一句话」，按下一轮发出去是对的），接着起下一轮，**不回到输入循环**。
+   这条让「刚按回车，正好这轮结束了」不会卡在清单里发霉，也让排队消息真的连跑。
+
+**停止语义**：本轮 `ctx` 被取消（停止键）→ 清单**原样保留**，但置 `paused`：轮末不再自动
+续跑，直到用户下一次真实输入（不是空闲唤醒）到来才清掉。停止是停手，不是清空；一停就接着
+跑队列里那条，会让人以为停了其实还在跑。
+
+**交接与丢弃**：清单位于会话上，`/new`、`/switch`、`/load`、删除会话时随旧会话丢弃并留一行
+提示（「N 条待发消息未随会话带走」）；进程退出即丢。
 
 ### 7.2 摄取 / 输出管线
 
