@@ -165,7 +165,15 @@ func (r *run) addDenied(reason string) {
 	r.note("permission denied: %s", reason)
 }
 
-// peerGoneNow 对端是否已经断开（写方是 peer 监听 goroutine，读要走锁）。
+// setPeerGone 记「对端断开了」（写方是 peer 监听 goroutine）。
+func (r *run) setPeerGone() {
+	r.cmu.Lock()
+	r.peerGone = true
+	r.cmu.Unlock()
+}
+
+// peerGoneNow 对端是否已经断开。写读都走同一把收集面锁——这个字段不在 run goroutine
+// 的独占面里，用错锁就是数据竞争。
 func (r *run) peerGoneNow() bool {
 	r.cmu.Lock()
 	defer r.cmu.Unlock()
@@ -232,9 +240,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	go func() {
 		select {
 		case <-conn.Done():
-			r.mu.Lock()
-			r.peerGone = true
-			r.mu.Unlock()
+			r.setPeerGone()
 			r.cancelFn()
 		case <-r.done:
 		}
