@@ -13,6 +13,8 @@
 //	ignore     提示一直不回，连 cancel 也不理（测试宽限杀进程）
 //	permission 提示里先反问权限，按应答回一段正文
 //	partial    先发两段正文，然后直接退出（测试「中途失败也要把已收到的带出去」）
+//	delayed    先报一句进度，等 FAKE_AGENT_DELAY_MS（缺省 8000）毫秒再交报告——手验
+//	           「派活后切走，报告仍落在原会话」靠它，秒回测不出时间差
 //	badcwd     要求 cwd 是绝对路径、mcpServers 为空，否则回 -32602
 package main
 
@@ -21,8 +23,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type rpcMsg struct {
@@ -215,6 +219,21 @@ func handleRequest(mode string, m rpcMsg) {
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": txt}})
 			reply(m.ID, map[string]any{"stopReason": "end_turn"})
 
+		case "delayed":
+			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "已收到，正在处理。"}})
+			select {
+			case <-cancel:
+				reply(m.ID, map[string]any{"stopReason": "cancelled"})
+				return
+			case <-time.After(fakeDelay()):
+			}
+			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "\n\n处理完了：三处改动，全部通过。"}})
+			notify(sid, "tool_call", map[string]any{
+				"toolCallId": "t9", "title": "edit file", "kind": "edit",
+				"locations": []any{map[string]any{"path": "src/a.go"}, map[string]any{"path": "src/b.go"}},
+			})
+			reply(m.ID, map[string]any{"stopReason": "end_turn"})
+
 		case "partial":
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "第一段结论：缓存层没问题。"}})
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "第二段：开始改 src/cache.go"}})
@@ -241,6 +260,14 @@ func handleRequest(mode string, m rpcMsg) {
 	default:
 		fail(m.ID, -32601, "method not found: "+m.Method)
 	}
+}
+
+// fakeDelay 延后模式等多久（手验时可以直接调成 1000 让节奏快一点）。
+func fakeDelay() time.Duration {
+	if ms, err := strconv.Atoi(os.Getenv("FAKE_AGENT_DELAY_MS")); err == nil && ms >= 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return 8 * time.Second
 }
 
 // neverIfIgnore ignore 模式下永远阻塞（等被 kill）；slow 模式返回一个永不就绪的 channel。
