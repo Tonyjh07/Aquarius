@@ -416,7 +416,8 @@ func (m *Manager) wait(r *jobRec) {
 	m.mu.Unlock()
 	_, _ = fmt.Fprintf(r.logFile, "[exit code=%d status=%s]\n", code, status)
 	_ = r.logFile.Close()
-	m.dropLedger(r.job.ID)
+	// 只标状态不抹条目（D264）：删的条件是报告落地，不是进程退出。
+	m.markFinished(r.job.ID, status, code, r.job.EndedAt)
 	// 终态已写进 job 并释放锁：此处关闭 = 唤醒所有 Wait（close 是同步点，
 	// 醒来后取快照必然看得到终态）。
 	close(done)

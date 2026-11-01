@@ -62,6 +62,9 @@ type JobManager interface {
 //
 // 它不是一份报告，只是一组事实——任务当时在跑还是已经结束、日志在哪、末几行长什么样。
 // 报告由内核组装（正文进模型上下文，用英文），适配器只管把事实读出来。
+//
+// Job.Status 到这里有两种可能：running（进程当时还在跑）或终态（跑完了，但报告没送到
+// 会话就被关掉了，D264）。两者都不是正常路径，但后者至少退出码是确定的。
 type UnfinishedJob struct {
 	Job     Job             `json:"job"`
 	Session conversation.ID `json:"session,omitempty"` // 发起会话；空 = 未绑定
@@ -73,11 +76,16 @@ type UnfinishedJob struct {
 	Deadline time.Time `json:"deadline,omitempty"`
 }
 
-// JobReconciler 未收尾台账（D262）：只给装配根的启动对账用。
+// JobReconciler 未收尾台账（D262/D264）：只给装配根与任务收尾观察者用。
 type JobReconciler interface {
 	// Unfinished 取走台账里全部未收尾条目（**读即清**）：取走后不再重报，
 	// 所以调用方拿到什么就得处理完什么。台账不存在返回空。
 	Unfinished(ctx context.Context) ([]UnfinishedJob, error)
+	// Settle 报告已送达会话（D264）：抹掉该任务的台账条目，下次启动不再提它。
+	//
+	// 判据是「**落地并落盘**」，不是「入队」——入队的报告随进程一起消失，那一条就得
+	// 留给下次对账。所以终态与抹账分成两步：进终态只标状态，报告确认送达才删。
+	Settle(ctx context.Context, id JobID) error
 }
 
 // JobStarter 后台启动（job_start；watcher 装饰器也要）。

@@ -59,6 +59,9 @@ type SessionDeps struct {
 	Ingestors []port.Ingestor
 	// UI 轮次外的过程事件（摄取 Note 等 NoticeEvent）；nil 时跳过呈现。
 	UI port.Presenter
+	// Wake 空闲唤醒（D264）：带落地回执的注入（InjectAndWait）入队后自己敲一下，
+	// 否则用户一直不输入就永远等不到排空。装配根接到 UI 的空闲唤醒通道；nil = 不敲。
+	Wake func()
 	// Memories 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
 	// nil 时 /memory 报"未配置编辑器"。
 	Memories MemoryOpener
@@ -117,6 +120,7 @@ type Session struct {
 	log         func(format string, args ...any)
 	ingestors   []port.Ingestor
 	ui          port.Presenter
+	wake        func()
 	memories    MemoryOpener
 	plugins     PluginAdmin
 	models      ModelCatalog
@@ -214,6 +218,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		log:         d.Logf,
 		ingestors:   d.Ingestors,
 		ui:          d.UI,
+		wake:        d.Wake,
 		memories:    d.Memories,
 		plugins:     d.Plugins,
 		models:      d.Models,

@@ -63,9 +63,14 @@ func unfinishedReport(it port.UnfinishedJob) string {
 		}
 		b.WriteString("\n")
 	}
-	if it.Alive {
+	switch {
+	case it.Alive:
 		fmt.Fprintf(&b, "State: it may still be running as PID %d — nothing supervises it any more.\n", it.Job.PID)
-	} else {
+	case it.Job.Status != port.JobRunning && it.Job.Status != "":
+		// 跑完了、报告没送到（D264）：结论是确定的，只是没进过上下文。
+		fmt.Fprintf(&b, "State: it finished (%s, exit code %d) but the completion report never reached this session.\n",
+			it.Job.Status, it.Job.ExitCode)
+	default:
 		b.WriteString("State: it has already exited; the exit code was never recorded.\n")
 	}
 	if it.LogPath != "" {

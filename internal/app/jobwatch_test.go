@@ -109,6 +109,8 @@ func (m *waitJobs) Logs(_ context.Context, id port.JobID, tail int) (string, err
 
 func (m *waitJobs) Kill(context.Context, port.JobID) error { return m.killErr }
 
+func (m *waitJobs) Settle(context.Context, port.JobID) error { return nil }
+
 // Unfinished 对账替身：watcher 测试不涉及启动对账，恒空。
 func (m *waitJobs) Unfinished(context.Context) ([]port.UnfinishedJob, error) {
 	return nil, nil
@@ -488,5 +490,82 @@ func TestJobWatcherDeliverRetries(t *testing.T) {
 	}
 	if len(logged) == 0 {
 		t.Fatal("最终失败应记日志")
+	}
+}
+
+// awaitInjector 带落地回执的注入（D264）：只记「有没有走等落地那条路」。
+type awaitInjector struct {
+	mu   sync.Mutex
+	wait bool
+}
+
+func (a *awaitInjector) Inject(context.Context, port.Injection) error { return nil }
+
+func (a *awaitInjector) InjectAndWait(context.Context, port.Injection) error {
+	a.mu.Lock()
+	a.wait = true
+	a.mu.Unlock()
+	return nil
+}
+
+// TestJobWatcherWaitsForLanding 有回执能力的注入端口就走等落地那条路：
+// 「入队成功」不足以判断报告送没送到（D264）。
+func TestJobWatcherWaitsForLanding(t *testing.T) {
+	jobs := newWaitJobs()
+	jobs.finish(port.Job{ID: "j010", Status: port.JobDone})
+	inj := &awaitInjector{}
+	w := NewJobWatcher(JobWatcherOptions{Jobs: jobs, Injector: func() port.Injector { return inj }})
+	defer w.Close()
+
+	w.Watch(port.WithSessionID(context.Background(), conversation.ID("c1")), "j010", port.JobSpec{})
+	waitForWatch(t, "等落地调用", func() bool {
+		inj.mu.Lock()
+		defer inj.mu.Unlock()
+		return inj.wait
+	})
+}
+
+// TestJobWatcherSettlesLedgerAfterDelivery 报告落地后才销账（D264）。
+func TestJobWatcherSettlesLedgerAfterDelivery(t *testing.T) {
+	jobs := newWaitJobs()
+	jobs.finish(port.Job{ID: "j011", Status: port.JobDone})
+	inj := newCaptureInjector()
+	settled := make(chan port.JobID, 1)
+	w := NewJobWatcher(JobWatcherOptions{
+		Jobs:     jobs,
+		Injector: func() port.Injector { return inj },
+		Landed:   func(id port.JobID) { settled <- id },
+	})
+	defer w.Close()
+
+	w.Watch(port.WithSessionID(context.Background(), conversation.ID("c1")), "j011", port.JobSpec{})
+	waitInjection(t, inj.ch)
+	select {
+	case id := <-settled:
+		if id != "j011" {
+			t.Fatalf("销账 id = %q, want j011", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("报告送达后未销账")
+	}
+}
+
+// TestJobWatcherKeepsLedgerWhenUndelivered 送不到就不销账：留着让下次启动对账补一条事实。
+func TestJobWatcherKeepsLedgerWhenUndelivered(t *testing.T) {
+	jobs := newWaitJobs()
+	jobs.finish(port.Job{ID: "j012", Status: port.JobDone})
+	settled := make(chan port.JobID, 1)
+	w := NewJobWatcher(JobWatcherOptions{
+		Jobs:     jobs,
+		Injector: func() port.Injector { return nil }, // 会话已关：报告无处可落
+		Landed:   func(id port.JobID) { settled <- id },
+	})
+	defer w.Close()
+
+	w.Watch(port.WithSessionID(context.Background(), conversation.ID("c1")), "j012", port.JobSpec{})
+	select {
+	case id := <-settled:
+		t.Fatalf("没送到却销了账: %q", id)
+	case <-time.After(200 * time.Millisecond):
 	}
 }

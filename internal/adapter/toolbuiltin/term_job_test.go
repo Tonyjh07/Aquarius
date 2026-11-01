@@ -48,6 +48,8 @@ func (f *fakeJobs) List(context.Context) ([]port.Job, error) { return f.jobs, ni
 
 func (f *fakeJobs) Unfinished(context.Context) ([]port.UnfinishedJob, error) { return nil, nil }
 
+func (f *fakeJobs) Settle(context.Context, port.JobID) error { return nil }
+
 func (f *fakeJobs) Status(_ context.Context, id port.JobID) (port.Job, error) {
 	for _, j := range f.jobs {
 		if j.ID == id {

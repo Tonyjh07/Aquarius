@@ -14,7 +14,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestLedgerTracksRunningJob 起任务即留痕（含发起会话），终态即抹掉。
+// TestLedgerTracksRunningJob 起任务即留痕（含发起会话）；终态只标状态，报告确认送达才销账。
 func TestLedgerTracksRunningJob(t *testing.T) {
 	dir := t.TempDir()
 	m, err := New(dir)
@@ -44,8 +44,51 @@ func TestLedgerTracksRunningJob(t *testing.T) {
 	if _, err := m.Wait(context.Background(), job.ID); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
+	// 终态不删（D264）：这段窗口里如果退出程序，下次启动还得靠这条说清「跑完了、报告没送到」。
+	d = readLedgerFile(t, dir)
+	if len(d.Entries) != 1 {
+		t.Fatalf("终态后台账条目 = %d, want 1", len(d.Entries))
+	}
+	if got := d.Entries[0]; got.Status != port.JobKilled || got.EndedAt.IsZero() {
+		t.Fatalf("终态条目 = %+v, want status=killed 且带结束时刻", got)
+	}
+	// 报告确认送达后才销账。
+	if err := m.Settle(context.Background(), job.ID); err != nil {
+		t.Fatalf("settle: %v", err)
+	}
 	if d := readLedgerFile(t, dir); len(d.Entries) != 0 {
-		t.Fatalf("终态后台账条目 = %d, want 0", len(d.Entries))
+		t.Fatalf("销账后条目 = %d, want 0", len(d.Entries))
+	}
+}
+
+// TestUnfinishedReportsFinishedJob 跑完而报告没送到的条目（D264）：对账拿到的状态是终态、
+// 退出码是确定的，且不再按 pid 探活（进程早没了，问了只会撞上复用）。
+func TestUnfinishedReportsFinishedJob(t *testing.T) {
+	dir := t.TempDir()
+	m, err := New(dir)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	job, err := m.Start(context.Background(), helperSpec(t, dir, "fail"))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if _, err := m.Wait(context.Background(), job.ID); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	items, err := m.Unfinished(context.Background())
+	if err != nil {
+		t.Fatalf("unfinished: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("条目 = %d, want 1（未销账的终态条目）", len(items))
+	}
+	it := items[0]
+	if it.Job.Status != port.JobFailed || it.Job.ExitCode == 0 {
+		t.Fatalf("item = %+v, want failed 且退出码非 0", it.Job)
+	}
+	if it.Alive {
+		t.Fatal("已结束的条目不该再探活")
 	}
 }
 
@@ -101,7 +144,7 @@ func TestUnfinishedCarriesLogTail(t *testing.T) {
 	if _, err := m.Wait(context.Background(), job.ID); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	// 模拟「上次退出时未收尾」：终态已经抹掉台账，这里手写一条残留。
+	// 模拟「上次退出时未收尾」：换成一条只剩在跑信息的残留（终态字段缺省）。
 	writeLedgerFile(t, dir, ledgerDoc{Version: ledgerVersion, Entries: []ledgerEntry{{
 		ID:        job.ID,
 		Session:   "convA",

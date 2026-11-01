@@ -30,7 +30,7 @@ const (
 	ledgerTailLines = 20
 )
 
-// ledgerEntry 一条在跑任务的台账记录。
+// ledgerEntry 一条在跑（或已结束而报告未送达）任务的台账记录。
 type ledgerEntry struct {
 	ID        port.JobID      `json:"id"`
 	Session   conversation.ID `json:"session,omitempty"`
@@ -41,6 +41,12 @@ type ledgerEntry struct {
 	PID       int             `json:"pid"`
 	LogPath   string          `json:"log_path"`
 	Deadline  time.Time       `json:"deadline,omitempty"`
+	// Status / ExitCode / EndedAt：进终态时补上但不删条目（D264）。删的条件是报告
+	// **落地并落盘**，不是进程退出——中间这段窗口里退出程序，条目得留着让下次对账
+	// 说「任务跑完了、退出码是这样、报告没送到」。
+	Status   port.JobStatus `json:"status,omitempty"`
+	ExitCode int            `json:"exit_code,omitempty"`
+	EndedAt  time.Time      `json:"ended_at,omitempty"`
 }
 
 // ledgerDoc 台账文件形态（版本字段只为将来加字段时能识别旧文件）。
@@ -59,8 +65,29 @@ func (m *Manager) addLedger(e ledgerEntry) {
 	}
 }
 
-// dropLedger 任务进终态：抹掉它的台账条目。
-func (m *Manager) dropLedger(id port.JobID) {
+// markFinished 任务进终态：记下状态与退出码，但**不删**条目（D264）——删要等报告
+// 确认落到会话（Settle）。删早了，那段「已结束、报告还在路上」的窗口一退出就成了
+// 既没有报告、也没有对账的静默丢失。
+func (m *Manager) markFinished(id port.JobID, status port.JobStatus, code int, at time.Time) {
+	if err := m.updateLedger(func(d *ledgerDoc) {
+		for i := range d.Entries {
+			if d.Entries[i].ID == id {
+				d.Entries[i].Status = status
+				d.Entries[i].ExitCode = code
+				d.Entries[i].EndedAt = at
+			}
+		}
+	}); err != nil {
+		m.logLedgerFailure("", err)
+	}
+}
+
+// Settle 报告已送达：抹掉条目（D264）。未知任务静默——报告送到时条目可能已经被
+// 启动对账取走过（跨进程不存在），也可能本来就没记上（台账写失败）。
+func (m *Manager) Settle(ctx context.Context, id port.JobID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := m.updateLedger(func(d *ledgerDoc) {
 		out := d.Entries[:0]
 		for _, e := range d.Entries {
@@ -70,9 +97,11 @@ func (m *Manager) dropLedger(id port.JobID) {
 		}
 		d.Entries = out
 	}); err != nil {
-		// 终态删不掉会留下一条假「未收尾」，下次启动多报一条——记进日志便于追。
+		// 删不掉会留下一条假「未收尾」，下次启动多提一句——记进日志便于追。
 		m.logLedgerFailure("", err)
+		return err
 	}
+	return nil
 }
 
 // updateLedger 读-改-写整份台账（进程内串行；跨进程只有启动对账会读，且读即清）。
@@ -139,18 +168,25 @@ func (m *Manager) Unfinished(ctx context.Context) ([]port.UnfinishedJob, error) 
 
 	out := make([]port.UnfinishedJob, 0, len(d.Entries))
 	for _, e := range d.Entries {
+		status := e.Status
+		if status == "" {
+			status = port.JobRunning
+		}
 		item := port.UnfinishedJob{
 			Job: port.Job{
 				ID:        e.ID,
 				Spec:      port.JobSpec{Command: e.Command, Args: e.Args},
-				Status:    port.JobRunning,
+				Status:    status,
 				PID:       e.PID,
+				ExitCode:  e.ExitCode,
 				StartedAt: e.StartedAt,
+				EndedAt:   e.EndedAt,
 			},
 			Session:  e.Session,
 			LogPath:  e.LogPath,
 			Deadline: e.Deadline,
-			Alive:    alive(e.PID),
+			// 已进终态的条目不再探活：进程都没了还问 pid 只会撞上复用。
+			Alive: status == port.JobRunning && alive(e.PID),
 		}
 		if tail, err := readLogTail(e.LogPath, ledgerTailLines); err == nil {
 			item.LogTail = tail

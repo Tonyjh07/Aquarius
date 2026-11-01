@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-10-31 @ 09eb5fb -->
+<!-- docs-sync: 2026-11-01 @ 489defa -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -586,6 +586,8 @@ type JobManager interface {
     Wait(ctx context.Context, id JobID) (Job, error) // 阻塞到终态（D189：完成是事件）
     // Unfinished 取走台账里未收尾的条目（D262，读即清）：只在本进程刚装配时调用。
     Unfinished(ctx context.Context) ([]UnfinishedJob, error)
+    // Settle 报告已送达会话（D264）：抹掉该任务的台账条目。
+    Settle(ctx context.Context, id JobID) error
 }
 
 type UnfinishedJob struct {
@@ -613,14 +615,20 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 
 **重启对账（D262）**：任务表与 watcher 都是内存态，退出即归零；而 `Start` 起的进程不随父进程
 退出（Windows 不挂 job object、unix `Setpgid` 另起进程组），报告却再也不会产生。所以 `Start`
-在日志同目录写一条台账（id、发起会话、命令、起始时间、pid、日志路径、deadline），进终态时删除，
+在日志同目录写一条台账（id、发起会话、命令、起始时间、pid、日志路径、deadline），
 `Unfinished` 供装配根在启动时读出残留（**读即清**：取走即抹掉，否则每次启动都重报）。对账补的
-是**事实**不是报告——仍在跑，或已退出而退出码未知，附日志路径与末几行——经注入落到发起会话
-（目标不是当前会话时同上走异地落地）。台账写失败只记进任务日志、不阻断启动；台账文件坏掉
-按「没有残留」处理——对账不该被一份读不动的文件挡住启动。不认领
+是**事实**不是报告——仍在跑（附 pid 与日志尾），或**跑完了但报告没送到**（附状态、退出码与
+日志尾）——经注入落到发起会话（目标不是当前会话时同上走异地落地）。台账写失败只记进任务日志、
+不阻断启动；台账文件坏掉按「没有残留」处理——对账不该被一份读不动的文件挡住启动。不认领
 活进程：`Wait` 依赖 `done` 通道与 `cmd.Process`，重启后都没有，按 pid 附着还会撞上 pid 复用。
 `spec.Timeout` 是进程内的定时器，随退出失效，台账里的 deadline 只用于在对账里说明「本该在何时
-结束」。对账注入落地后该条目即删除，否则每次启动都会重报一次。
+结束」。
+
+**销账按「落地」而不是「终态」（D264）**：进终态只把状态与退出码写进条目，`Settle` 才删。
+判据必须是报告**已落成节点并落盘**——入队的报告随进程一起消失，那么这一次退出就会既没有
+报告、也没有对账。落地回执由会话侧的 `InjectAndWait` 给：它等到排空完成才返回，watcher 拿到
+成功即调 `Settle`；送不到就留着条目，下次启动按「已结束、退出码 N、报告未送达」补一条。
+前台 `job_wait` 预领与 `Kill` 成功同样销账——结果已经当场交给模型，不必再报一遍。
 
 ### 5.9 `watch.go` —— 观察器端口
 
@@ -1680,6 +1688,18 @@ type Injection struct {
 }
 type Injector interface { Inject(ctx context.Context, in Injection) error }
 ```
+
+**落地回执（D264）**：`Inject` 的「返回 nil」只说明**入了队**。跨轮生产者（任务收尾报告）要
+判断「这次真的送到了」，会话侧另提供一个可选能力：
+
+```go
+// 实现方是 Session；不在 Injector 里，避免逼所有注入方实现它。
+type lander interface { InjectAndWait(ctx context.Context, in Injection) error }
+```
+
+它入队后自己投一次唤醒，等排空把这条落成节点并落盘才返回；ctx 取消即放弃等待（内容可能稍后
+仍然落地，调用方按**未确认**处理）。语义差别就一句话：入队的报告随进程一起消失，落盘的不会。
+收尾观察者据此决定台账销不销账——判据是落地，不是入队。
 
 - **写入路径**：`Session.Inject` **先校验、后只入队**（带缓冲 channel，非阻塞，队列满立即
   报错）——坏包（思考/工具分片、空内容）当场拒给调用方，不让它无声落进树；排空由会话

@@ -21,6 +21,9 @@ type pendingInjection struct {
 	parts   []conversation.Part
 	trigger bool
 	session conversation.ID // 目标会话（D261）：空 = 落地时取当前会话；非当前则异地落地
+	// done 落地回执（D264）：非 nil 时，排空把这条落成节点并落盘（或确认丢弃）后写入结果。
+	// 投递方靠它区分「已入队」与「已落地」——报告要不要从台账上销账，只能按后者判。
+	done chan error
 }
 
 // Session 实现注入端口（D150）：外部生产者只经此入队，树变更仍由会话 goroutine 独占。
@@ -30,25 +33,68 @@ var _ port.Injector = (*Session)(nil)
 // 校验在入队前做——坏包（思考/工具分片、空内容）当场报给调用方，不让它无声落进树；
 // 队列满则立即返回错误（调用方自行退避重试），不在这里阻塞等空位。
 func (s *Session) Inject(_ context.Context, in port.Injection) error {
-	if len(in.Parts) == 0 {
-		return errors.New("session: 注入内容为空")
-	}
-	if err := conversation.ValidateInjectParts(in.Parts); err != nil {
-		return fmt.Errorf("session: 注入内容非法: %w", err)
-	}
-	item := pendingInjection{
-		source:  strings.TrimSpace(in.Source),
-		trust:   injectTrust(in.Trust),
-		parts:   in.Parts,
-		trigger: resolveInjectTrigger(in.Source, in.Trigger),
-		session: in.Session,
+	item, err := s.pending(in)
+	if err != nil {
+		return err
 	}
 	select {
 	case s.injectCh <- item:
 		return nil
 	default:
-		return errors.New("session: 注入队列已满（稍后重试）")
+		return errInjectQueueFull
 	}
+}
+
+// errInjectQueueFull 队列满（D150）：不阻塞调用方，由它自行退避重试。
+var errInjectQueueFull = errors.New("session: 注入队列已满（稍后重试）")
+
+// InjectAndWait 同 Inject，但**等到真正落地并落盘**才返回（D264）。
+//
+// 只给跨轮生产者（任务收尾报告）用：它们要拿这个结果决定台账销不销账。语义差别就一句话：
+// 入队的报告随进程一起消失，落盘的不会。所以这里等的是排空完成，不只是入队成功。
+//
+// 必须在会话 goroutine 之外调用（会等它排空）；ctx 取消即放弃等待，此时内容**可能**稍后
+// 仍然落地，调用方按未确认处理即可——宁可下次启动多提一句，也不假装送到了。
+func (s *Session) InjectAndWait(ctx context.Context, in port.Injection) error {
+	item, err := s.pending(in)
+	if err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	item.done = done
+	select {
+	case s.injectCh <- item:
+	default:
+		return errInjectQueueFull
+	}
+	// 排空由会话 goroutine 驱动（输入 / 轮末 / 空闲唤醒），这里得自己敲一下，否则
+	// 用户一直不输入就永远等不到。
+	if s.wake != nil {
+		s.wake()
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// pending 校验并组装一条待落地注入；坏包在入队前就退回调用方。
+func (s *Session) pending(in port.Injection) (pendingInjection, error) {
+	if len(in.Parts) == 0 {
+		return pendingInjection{}, errors.New("session: 注入内容为空")
+	}
+	if err := conversation.ValidateInjectParts(in.Parts); err != nil {
+		return pendingInjection{}, fmt.Errorf("session: 注入内容非法: %w", err)
+	}
+	return pendingInjection{
+		source:  strings.TrimSpace(in.Source),
+		trust:   injectTrust(in.Trust),
+		parts:   in.Parts,
+		trigger: resolveInjectTrigger(in.Source, in.Trigger),
+		session: in.Session,
+	}, nil
 }
 
 // injectTrust 端口信任级 → 领域信任级（D170）。两处各自定义是为了守住依赖方向
@@ -124,6 +170,15 @@ func (p drainPoint) plan() drainPlan {
 // 落过节点即落盘（失败上抛）。
 func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []conversation.Message, wantTurn bool, err error) {
 	plan := at.plan()
+	// 回执（D264）：本批全部落地（含异地写过盘）后才回话；中途出错就带着错回。
+	// 放在 defer 里，是为了让每条 return 路径都不会把等待方晾在原地。
+	var receipts []chan error
+	defer func() {
+		for _, ch := range receipts {
+			ch <- err
+			close(ch)
+		}
+	}()
 	for {
 		select {
 		case item := <-s.injectCh:
@@ -133,6 +188,9 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 				if err := s.landElsewhere(ctx, item); err != nil {
 					return landed, wantTurn, err
 				}
+				if item.done != nil {
+					receipts = append(receipts, item.done)
+				}
 				continue
 			}
 			trigger := item.trigger && plan.driven
@@ -141,6 +199,9 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 				return landed, false, err
 			}
 			landed = append(landed, node)
+			if item.done != nil {
+				receipts = append(receipts, item.done)
+			}
 			if trigger {
 				wantTurn = true
 			}

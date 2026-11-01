@@ -108,3 +108,28 @@ func TestReportUnfinishedDropsDeletedSession(t *testing.T) {
 		t.Fatal("不得重建已删除的会话")
 	}
 }
+
+// TestReportUnfinishedFinishedJob 任务跑完而报告没送到（D264）：对账说的是确定的事实
+// ——状态与退出码都在，只是没进过上下文——而不是「可能还在跑」。
+func TestReportUnfinishedFinishedJob(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	it := unfinished("j004", s.Current().ID, false)
+	it.Job.Status = port.JobFailed
+	it.Job.ExitCode = 1
+	it.Job.EndedAt = time.Date(2026, 10, 31, 9, 5, 0, 0, time.UTC)
+
+	if err := s.ReportUnfinished(context.Background(), []port.UnfinishedJob{it}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	path := s.Current().Path()
+	text := path[len(path)-1].Content[0].Text
+	if !strings.Contains(text, "finished (failed, exit code 1)") {
+		t.Fatalf("正文没说明它已结束:\n%s", text)
+	}
+	if !strings.Contains(text, "never reached this session") {
+		t.Fatalf("正文没说明报告未送达:\n%s", text)
+	}
+	if strings.Contains(text, "may still be running") {
+		t.Fatalf("已结束的任务不该说可能还在跑:\n%s", text)
+	}
+}

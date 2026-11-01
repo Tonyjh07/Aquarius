@@ -361,6 +361,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Logf:           func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
 		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
 		UI:             w.presenter,
+		Wake:           w.uiWake, // D264：带回执的注入自己敲一下，等排空才返回
 		Memories:       memoryOpener{w: w},
 		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
 		Models:         modelCatalog{w: w},                                                        // D32/D173/D174：/model 读侧 + 切换 + 探测

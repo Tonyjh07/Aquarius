@@ -40,6 +40,7 @@ func (w *watchingJobs) Kill(ctx context.Context, id port.JobID) error {
 	err := w.JobManager.Kill(ctx, id)
 	if err == nil {
 		w.watcher.Unwatch(id)
+		w.watcher.settle(id) // 结果已经回填给调用方，台账不必再提（D264）
 	}
 	return err
 }
@@ -48,11 +49,16 @@ func (w *watchingJobs) Kill(ctx context.Context, id port.JobID) error {
 // 模型，watcher 不必再注入一条内容相同的报告（否则模型会看到两遍同一件事）。
 // 没等到（超时/取消）则归还，watcher 照常汇报。
 func (w *watchingJobs) Wait(ctx context.Context, id port.JobID) (port.Job, error) {
-	release := w.watcher.Claim(id)
+	release, claimed := w.watcher.Claim(id)
 	j, err := w.JobManager.Wait(ctx, id)
 	if err != nil {
 		release()
 		return j, err
+	}
+	// 预领成立表示这次终态不再由 watcher 汇报：结果已经在前台交给模型，销账。
+	// 预领没成立（watcher 早一步报过）时那条路径已经自己销过账。
+	if claimed {
+		w.watcher.settle(id)
 	}
 	return j, nil
 }

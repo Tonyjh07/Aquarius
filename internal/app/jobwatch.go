@@ -31,6 +31,7 @@ type JobWatcher struct {
 	jobs   port.JobReader
 	inject func() port.Injector
 	wake   func()
+	landed func(port.JobID)
 	logf   func(format string, args ...any)
 
 	sleep func(ctx context.Context, d time.Duration) bool
@@ -94,6 +95,9 @@ type JobWatcherOptions struct {
 	Injector func() port.Injector
 	// Wake 完成报告注入后的空闲唤醒（D167）；nil = 只注入不唤醒（测试/无 UI）。
 	Wake func()
+	// Landed 报告已落地并落盘后的回调（D264）：装配根用它从台账销账。nil = 不销账
+	// （测试、未接对账的装配），条目会留给下次启动对账。
+	Landed func(id port.JobID)
 	// Logf watcher 失败、报告未送达等运行日志（用户面中文）；nil = 丢弃。
 	Logf func(format string, args ...any)
 	// Sleep 覆盖注入重试的等待（测试用；nil = 可取消的 time.Sleep）。
@@ -115,6 +119,7 @@ func NewJobWatcher(opts JobWatcherOptions) *JobWatcher {
 		jobs:    opts.Jobs,
 		inject:  opts.Injector,
 		wake:    opts.Wake,
+		landed:  opts.Landed,
 		logf:    logf,
 		sleep:   sleep,
 		root:    root,
@@ -161,19 +166,20 @@ func (p *JobWatcher) Unwatch(id port.JobID) {
 }
 
 // Claim 预领某任务的终态报告（D189，前台 job_wait 用）：前台自己会把这个结果交给
-// 模型，watcher 就不必再补一条重复的完成报告。返回值是归还函数——前台没等到终态
+// 模型，watcher 就不必再补一条重复的完成报告。返回值 claimed 为 false 表示归属已定
+// （watcher 先一步报了，或预领失败），release 是归还函数——前台没等到终态
 // （超时/取消）时应调用它，让 watcher 照常汇报。
-func (p *JobWatcher) Claim(id port.JobID) (release func()) {
+func (p *JobWatcher) Claim(id port.JobID) (release func(), claimed bool) {
 	if p == nil {
-		return func() {}
+		return func() {}, false
 	}
 	p.mu.Lock()
 	e, ok := p.watches[id]
 	p.mu.Unlock()
 	if !ok || !e.claim() {
-		return func() {}
+		return func() {}, false
 	}
-	return e.release
+	return e.release, true
 }
 
 // CancelSession 撤销某会话的全部 watcher（D262）：删除会话与关停时调用。切换不撤——
@@ -287,9 +293,26 @@ func (p *JobWatcher) report(ctx context.Context, id port.JobID, j port.Job, sess
 	if !p.deliver(ctx, id, in) {
 		return
 	}
+	// 报告已落地并落盘，这时才从台账销账（D264）：销早了，退出时那一段「任务已结束、
+	// 报告还在路上」就既没有报告、也没有对账。
+	p.settle(id)
 	if p.wake != nil {
 		p.wake()
 	}
+}
+
+// settle 报告送达后抹掉台账条目（D264）；未接台账（测试/无对账装配）时跳过。
+func (p *JobWatcher) settle(id port.JobID) {
+	if p.landed != nil {
+		p.landed(id)
+	}
+}
+
+// lander 带落地回执的注入（D264）：返回 nil 表示已落成节点并落盘，不只是入队。
+// 单独一个接口而不是加进 port.Injector：注入端口是所有插件/工具共用的，
+// 只有跨轮生产者需要回执，不该逼所有人实现它。
+type lander interface {
+	InjectAndWait(ctx context.Context, in port.Injection) error
 }
 
 // deliver 投递报告；队列满时做有限重试（任务已结束，丢一条就没人再报）。
@@ -308,7 +331,14 @@ func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injecti
 		if ctx.Err() != nil {
 			return false
 		}
-		if err = inj.Inject(ctx, in); err == nil {
+		// 有回执能力的实现就等落地，否则退回「入队即算送走」——测试替身与旧装配
+		// 都没有回执，行为与改动前一致。
+		if l, ok := inj.(lander); ok {
+			err = l.InjectAndWait(ctx, in)
+		} else {
+			err = inj.Inject(ctx, in)
+		}
+		if err == nil {
 			return true
 		}
 		if ctx.Err() != nil {

@@ -464,9 +464,12 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 			}
 			return nil
 		},
-		Wake: func() {
-			if w.ui != nil {
-				w.ui.Wake()
+		Wake: w.uiWake,
+		// D264：报告落地并落盘后才销账。销早了，退出时那一段「已结束、报告在路上」
+		// 就成了既没有报告、也没有对账的静默丢失。
+		Landed: func(id port.JobID) {
+			if err := jobs.Settle(context.Background(), id); err != nil {
+				fmt.Fprintf(w.stderr, "任务 %s 的台账未能销账: %v\n", id, err)
 			}
 		},
 		Logf: func(format string, args ...any) {
@@ -486,11 +489,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 			}
 			return nil
 		},
-		Wake: func() {
-			if w.ui != nil {
-				w.ui.Wake()
-			}
-		},
+		Wake: w.uiWake,
 		Logf: func(format string, args ...any) {
 			if w.stderr != nil {
 				fmt.Fprintf(w.stderr, format+"\n", args...)
@@ -645,6 +644,14 @@ var _ app.ThinkingSettings = thinkSettings{}
 func (t thinkSettings) PersistThink(on bool) error { return t.w.persist.persistThink(on) }
 
 func (t thinkSettings) PersistEffort(level string) error { return t.w.persist.persistEffort(level) }
+
+// uiWake 空闲唤醒（D167/D264）：接 UI 的唤醒通道，未装配前端时为空操作。
+// 两个轮询器与带回执的注入共用这一条路，唤醒本身是合并式的（容量 1），多敲无害。
+func (w *wiring) uiWake() {
+	if w.ui != nil {
+		w.ui.Wake()
+	}
+}
 
 // watchCancel 实现 app.WatcherCanceller（D262）：两个轮询器都要撤——任务观察器与
 // 观察器各管一类后台任务，会话删掉之后两边的报告都无处可落。
