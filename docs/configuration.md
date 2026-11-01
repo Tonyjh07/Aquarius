@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-01 @ d5e78fd -->
+<!-- docs-sync: 2026-11-01 @ 5171c90 -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -138,6 +138,10 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `ui.keys.send` | string | `"Enter"` | 输入栏**发送**（空闲 = 起一轮；生成中 = 进待发清单按**排队**）。写法 `修饰键+键`（`Ctrl`/`Shift`/`Alt`/`Super`，键名同 `ui.hotkey`）；gui 与 tui 各自解释，非法值启动报错 |
 | `ui.keys.steer` | string | `"Shift+Enter"` | 输入栏**引导**：只在生成中生效（进清单按**引导**，下一次模型请求前插入本轮）；空闲时与 `send` 等价 |
 | `ui.keys.newline` | string | `"Ctrl+Enter"` | 输入栏**换行**（插入 `\n` 不发送）。三个键必须互不相同，重复 = 启动报错 |
+
+**前端各自解释**：gui 认这三个键的全部组合；**tui 只区分得出 Enter 与 Alt+Enter**（多数终端把
+`Shift+Enter` 当普通 `Enter` 送来），所以 tui 的引导缺省是 `Alt+Enter`——配置里写 `Shift+Enter`
+也按 `Alt+Enter` 认；`repl` 一行即一次发送，不分档（没有「生成中途再说话」这个位置）。
 
 ### prompts（人格模块树）
 

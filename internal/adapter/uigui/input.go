@@ -383,6 +383,11 @@ func (u *UI) sendKeys(gtx layout.Context) {
 			case 1:
 				u.submitLine(port.DeliverySteer) // 空闲时与发送等价（§5.19）
 			case 2:
+				// 换行顺带展开成多行（gui-design §15.2）：单行胶囊里塞了换行只会被裁掉，
+				// 用户看不见自己刚换了一行。
+				if !u.expanded {
+					u.setExpanded(true)
+				}
 				u.editor.Insert("\n")
 			default:
 				u.submitEditor()

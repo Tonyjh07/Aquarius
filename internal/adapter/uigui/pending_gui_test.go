@@ -252,6 +252,47 @@ func TestEditDuringGenerationNotPending(t *testing.T) {
 	}
 }
 
+// TestConfirmStateNeverPends 确认态下键入是应答，不进清单也不进输入通道（§15.2）。
+func TestConfirmStateNeverPends(t *testing.T) {
+	p := &fakePending{}
+	u := newPendingUI(p, true)
+	u.m.confirm = &pendingConfirm{prompt: "允许执行？", reply: make(chan port.ConfirmAnswer, 1)}
+	u.editor.SetText("y")
+
+	u.submitEditor()
+
+	if len(p.items) != 0 {
+		t.Fatalf("确认态不该进清单，实际 %+v", p.items)
+	}
+	select {
+	case in := <-u.inCh:
+		t.Fatalf("确认态不该投递消息，收到 %+v", in)
+	default:
+	}
+}
+
+// TestAttachDuringGenerationQueues 带附件的输入不进清单（清单只收纯文本，§5.19 边界）。
+func TestAttachDuringGenerationQueues(t *testing.T) {
+	p := &fakePending{}
+	u := newPendingUI(p, true)
+	u.m.stagedFiles = []stagedAtt{{path: "C:/tmp/a.txt"}}
+	u.editor.SetText("看看这个文件")
+
+	u.submitEditor()
+
+	if len(p.items) != 0 {
+		t.Fatalf("带附件不该进清单，实际 %+v", p.items)
+	}
+	select {
+	case in := <-u.inCh:
+		if in.Raw == nil || len(in.Raw.Attachments) != 1 {
+			t.Fatalf("inCh = %+v, want Raw 带一个附件", in)
+		}
+	default:
+		t.Fatal("带附件应走输入通道")
+	}
+}
+
 func TestPendingBandHeight(t *testing.T) {
 	p := &fakePending{}
 	u := newPendingUI(p, true)
