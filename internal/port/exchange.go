@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // ExchangeFormat 一种可导出/导入的会话格式（§5.16，D242）。
@@ -137,22 +138,22 @@ func FileStem(title string) string {
 // 而那时可能连适配器都没装配。适配器的 Formats() 由这张表派生，两处不会分叉。
 func ExchangeFormats() []ExchangeFormat {
 	return []ExchangeFormat{
-		{Name: "aqx", Ext: ".aqx", Label: "Aquarius 归档"},
+		{Name: "aqx", Ext: ".aqx", Label: i18n.T("port.fmt.aqx.label")},
 		{
-			Name: "chatgpt", Ext: ".json", Label: "ChatGPT 会话", Lossy: true,
-			LossNote: "附件只留一条说明、思考与工具调用不带、注入节点降级为 system、消息的模型/用量等元数据不带",
+			Name: "chatgpt", Ext: ".json", Label: i18n.T("port.fmt.chatgpt.label"), Lossy: true,
+			LossNote: i18n.T("port.fmt.chatgpt.loss"),
 		},
 		{
-			Name: "openai", Ext: ".json", Label: "OpenAI 消息列表", Lossy: true,
-			LossNote: "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system",
+			Name: "openai", Ext: ".json", Label: i18n.T("port.fmt.openai.label"), Lossy: true,
+			LossNote: i18n.T("port.fmt.openai.loss"),
 		},
 		{
-			Name: "sillytavern", Ext: ".jsonl", Label: "SillyTavern 对话", Lossy: true,
-			LossNote: "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system；对方的世界书/正则/作者注不装",
+			Name: "sillytavern", Ext: ".jsonl", Label: i18n.T("port.fmt.sillytavern.label"), Lossy: true,
+			LossNote: i18n.T("port.fmt.sillytavern.loss"),
 		},
 		{
-			Name: "openwebui", Ext: ".json", Label: "Open WebUI 会话", Lossy: true, NoExport: true,
-			LossNote: "只认不写：要喂 Open WebUI 用 chatgpt 那份",
+			Name: "openwebui", Ext: ".json", Label: i18n.T("port.fmt.openwebui.label"), Lossy: true, NoExport: true,
+			LossNote: i18n.T("port.fmt.openwebui.loss"),
 		},
 	}
 }

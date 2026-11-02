@@ -10,18 +10,24 @@ package port
 // 因此这几个方法都不带 ctx：它们只是内存读写，收尾路径上调它们时不该被一个已取消的 ctx 拦住。
 
 import (
-	"errors"
 	"time"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
+
+// localError 文本来自文案表、身份稳定的本地错误（哨兵）：errors.Is 走结构体相等判定。
+type localError struct{ key string }
+
+func (e localError) Error() string { return i18n.T(e.key) }
 
 // 待发清单的拒绝理由（前端据 errors.Is 给不同的提示）。
 var (
 	// ErrPendingFull 已满（8 条）：要加就得先撤销一条。
-	ErrPendingFull = errors.New("pending: 待发清单已满")
+	ErrPendingFull error = localError{"port.err.pending_full"}
 	// ErrPendingEmpty 空文本：没有可发的。
-	ErrPendingEmpty = errors.New("pending: 待发内容为空")
+	ErrPendingEmpty error = localError{"port.err.pending_empty"}
 	// ErrPendingTooLong 单条超长（8000 字符）。
-	ErrPendingTooLong = errors.New("pending: 待发内容过长")
+	ErrPendingTooLong error = localError{"port.err.pending_too_long"}
 )
 
 // Delivery 待发消息的到模型口径。

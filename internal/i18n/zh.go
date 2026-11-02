@@ -14,4 +14,7 @@ var zhTexts = mergeTables(
 	zhExchangeTexts,
 	zhRuntimeTexts,
 	zhErrTexts,
+	zhPortTexts,
+	zhConfigTexts,
+	zhTuiTexts,
 )

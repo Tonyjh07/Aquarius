@@ -12,4 +12,7 @@ var enTexts = mergeTables(
 	enExchangeTexts,
 	enRuntimeTexts,
 	enErrTexts,
+	enPortTexts,
+	enConfigTexts,
+	enTuiTexts,
 )

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -119,7 +120,7 @@ func New(opts Options) *UI {
 	go func() {
 		defer close(u.done)
 		if err := func() error { _, e := u.prog.Run(); return e }(); err != nil {
-			fmt.Fprintf(os.Stderr, "tui: 事件循环退出: %v\n", err)
+			fmt.Fprintf(os.Stderr, "tui: %s: %v\n", i18n.T("err.tui_loop"), err)
 		}
 	}()
 	if !isTerminal(opts.In) {
@@ -148,7 +149,7 @@ func (u *UI) pumpLines(in io.Reader) {
 	}
 	var err error
 	if sc.Err() != nil {
-		err = fmt.Errorf("tui: 读取输入: %w", sc.Err())
+		err = fmt.Errorf("tui: %s: %w", i18n.T("err.read_input"), sc.Err())
 	}
 	u.prog.Send(eofMsg{err: err})
 }

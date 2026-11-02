@@ -14,6 +14,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -111,7 +112,7 @@ func (u *UI) inputFromLine(r lineResult, ok bool) (port.UserInput, error) {
 		return port.UserInput{}, io.EOF
 	}
 	if r.err != nil {
-		return port.UserInput{}, fmt.Errorf("repl: 读取输入: %w", r.err)
+		return port.UserInput{}, fmt.Errorf("repl: %s: %w", i18n.T("err.read_input"), r.err)
 	}
 	u.prompted = false // 消费了一行真实输入，下一轮重新打提示符
 	return uicommon.ParseInput(r.text), nil
@@ -146,7 +147,7 @@ func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, er
 	}
 	u.flushDelta()
 	if _, err := fmt.Fprint(u.out, prompt+" [y/N] "); err != nil {
-		return port.ConfirmAnswer{}, fmt.Errorf("repl: 输出确认提示: %w", err)
+		return port.ConfirmAnswer{}, fmt.Errorf("repl: %s: %w", i18n.T("err.repl_confirm_write"), err)
 	}
 	for {
 		select {
@@ -155,7 +156,7 @@ func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, er
 				return port.ConfirmAnswer{}, nil // 输入流结束：不替用户做破坏性决定
 			}
 			if r.err != nil {
-				return port.ConfirmAnswer{}, fmt.Errorf("repl: 读取确认: %w", r.err)
+				return port.ConfirmAnswer{}, fmt.Errorf("repl: %s: %w", i18n.T("err.repl_confirm_read"), r.err)
 			}
 			u.prompted = false
 			switch strings.ToLower(strings.TrimSpace(r.text)) {
@@ -355,12 +356,12 @@ func (u *UI) history(msg conversation.Message) error {
 		if strings.TrimSpace(text) == "" {
 			return nil
 		}
-		state := "未触发"
+		state := i18n.T("tui.state.idle")
 		if msg.Trigger {
-			state = "已触发响应"
+			state = i18n.T("tui.state.fired")
 		}
-		_, err := fmt.Fprintf(u.out, "注入 · %s · %s\n%s\n",
-			port.InjectSourceLabel(msg.Source), state, text)
+		_, err := fmt.Fprintf(u.out, "%s\n%s\n",
+			i18n.Tf("tui.status.inject", "source", port.InjectSourceLabel(msg.Source), "state", state), text)
 		return err
 	default:
 		return nil

@@ -12,9 +12,12 @@ package port
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // ParseSamplingText 设置窗的四段采样文本 → 采样声明。
@@ -33,40 +36,42 @@ func ParseSamplingText(temperature, topP, maxTokens, stop string) (Sampling, err
 	if v := strings.TrimSpace(temperature); v != "" {
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil {
-			return out, fmt.Errorf("采样温度 %q 不是数字（留空 = 交服务端默认）", v)
+			return out, errors.New(i18n.Tf("port.err.temperature_nan", "v", strconv.Quote(v)))
 		}
 		if n < SettingsTemperatureMin || n > SettingsTemperatureMax {
-			return out, fmt.Errorf("采样温度须在 %g–%g 之间（留空 = 交服务端默认）",
-				SettingsTemperatureMin, SettingsTemperatureMax)
+			return out, errors.New(i18n.Tf("port.err.temperature_range",
+				"min", strconv.FormatFloat(SettingsTemperatureMin, 'g', -1, 64),
+				"max", strconv.FormatFloat(SettingsTemperatureMax, 'g', -1, 64)))
 		}
 		out.Temperature = &n
 	}
 	if v := strings.TrimSpace(topP); v != "" {
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil {
-			return out, fmt.Errorf("top_p %q 不是数字（留空 = 交服务端默认）", v)
+			return out, errors.New(i18n.Tf("port.err.top_p_nan", "v", strconv.Quote(v)))
 		}
 		if n < SettingsTopPMin || n > SettingsTopPMax {
-			return out, fmt.Errorf("top_p 须在 %g–%g 之间（留空 = 交服务端默认）",
-				SettingsTopPMin, SettingsTopPMax)
+			return out, errors.New(i18n.Tf("port.err.top_p_range",
+				"min", strconv.FormatFloat(SettingsTopPMin, 'g', -1, 64),
+				"max", strconv.FormatFloat(SettingsTopPMax, 'g', -1, 64)))
 		}
 		out.TopP = &n
 	}
 	if v := strings.TrimSpace(maxTokens); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
-			return out, fmt.Errorf("输出上限 %q 须为正整数（留空 = 不发送）", v)
+			return out, errors.New(i18n.Tf("port.err.max_tokens", "v", strconv.Quote(v)))
 		}
 		out.MaxTokens = n
 	}
 	if v := strings.TrimSpace(stop); v != "" {
 		var stops []string
 		if err := json.Unmarshal([]byte(v), &stops); err != nil {
-			return out, fmt.Errorf("停止串须写成 JSON 数组，如 [\"\\n\", \"END\"]（留空 = 不发送）: %w", err)
+			return out, fmt.Errorf("%s: %w", i18n.T("port.err.stop_json"), err)
 		}
 		for _, s := range stops {
 			if s == "" {
-				return out, fmt.Errorf("停止串里不能有空串（那不是停止条件）")
+				return out, errors.New(i18n.T("port.err.stop_empty"))
 			}
 		}
 		out.Stop = stops

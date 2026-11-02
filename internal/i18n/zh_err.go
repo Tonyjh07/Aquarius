@@ -17,6 +17,13 @@ var zhErrTexts = map[string]string{
 	"err.replay_history":    "回放历史",
 	"err.clear_screen":      "清屏",
 
+	"err.read_input":         "读取输入",
+	"err.tui_loop":           "事件循环退出",
+	"err.repl_ask_write":     "输出提问",
+	"err.repl_ask_read":      "读取提问回答",
+	"err.repl_confirm_write": "输出确认提示",
+	"err.repl_confirm_read":  "读取确认",
+
 	// 装配缺失：用户装到残缺构建时看到的就是这一行
 	"err.memory_editor_unwired": "未配置记忆编辑器（SessionDeps.Memories）",
 	"err.jobs_unwired":          "未配置任务管理器（SessionDeps.Jobs），/jobs 不可用",

@@ -8,8 +8,12 @@ package uicommon
 // 而不是等用户按下那个键才发现没反应。
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // Mods 修饰键位集（可组合）。
@@ -66,14 +70,14 @@ var keyNameAliases = map[string]string{
 func ParseBinding(s string) (Binding, error) {
 	raw := strings.TrimSpace(s)
 	if raw == "" {
-		return Binding{}, fmt.Errorf("按键绑定为空")
+		return Binding{}, errors.New(i18n.T("keys.err.empty"))
 	}
 	parts := strings.Split(raw, "+")
 	var b Binding
 	for i, p := range parts {
 		p = strings.TrimSpace(p)
 		if p == "" {
-			return Binding{}, fmt.Errorf("按键绑定 %q 有空段", raw)
+			return Binding{}, errors.New(i18n.Tf("keys.err.empty_segment", "v", strconv.Quote(raw)))
 		}
 		if i < len(parts)-1 { // 修饰键段
 			switch strings.ToLower(p) {
@@ -86,7 +90,8 @@ func ParseBinding(s string) (Binding, error) {
 			case "super", "meta", "cmd", "win":
 				b.Mods |= ModSuper
 			default:
-				return Binding{}, fmt.Errorf("按键绑定 %q 里的 %q 不是修饰键（可用 Ctrl/Shift/Alt/Super）", raw, p)
+				return Binding{}, errors.New(i18n.Tf("keys.err.bad_modifier",
+					"v", strconv.Quote(raw), "p", strconv.Quote(p)))
 			}
 			continue
 		}
@@ -98,10 +103,11 @@ func ParseBinding(s string) (Binding, error) {
 			b.Key = strings.ToUpper(p)
 			continue
 		}
-		return Binding{}, fmt.Errorf("按键绑定 %q 里的键名 %q 不认识（可用 Enter/Tab/Escape/Space/Backspace 或单个字符）", raw, p)
+		return Binding{}, errors.New(i18n.Tf("keys.err.bad_key",
+			"v", strconv.Quote(raw), "p", strconv.Quote(p)))
 	}
 	if b.Key == "" {
-		return Binding{}, fmt.Errorf("按键绑定 %q 只有修饰键、没有键名", raw)
+		return Binding{}, errors.New(i18n.Tf("keys.err.only_modifiers", "v", strconv.Quote(raw)))
 	}
 	return b, nil
 }
@@ -127,11 +133,12 @@ func (k KeyBindings) Validate() error {
 	seen := map[string]string{"send": "", "steer": "", "newline": ""}
 	for name, b := range map[string]Binding{"send": k.Send, "steer": k.Steer, "newline": k.Newline} {
 		if b.Key == "" {
-			return fmt.Errorf("ui.keys.%s 未配置", name)
+			return errors.New(i18n.Tf("keys.err.missing", "name", name))
 		}
 		s := b.String()
 		if other := seen[s]; other != "" {
-			return fmt.Errorf("ui.keys.%s 与 ui.keys.%s 撞键（都是 %s）", name, other, s)
+			return errors.New(i18n.Tf("keys.err.collision",
+				"name", name, "other", other, "binding", s))
 		}
 		seen[s] = name
 	}

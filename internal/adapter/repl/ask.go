@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -47,7 +48,7 @@ func (u *UI) askOne(ctx context.Context, idx, total int, q port.AskQuestion) (pi
 	u.flushDelta()
 	var b strings.Builder
 	if total > 1 {
-		fmt.Fprintf(&b, "（第 %d/%d 题）", idx+1, total)
+		b.WriteString(i18n.Tf("ask.counter", "n", strconv.Itoa(idx+1), "total", strconv.Itoa(total)))
 	}
 	b.WriteString(q.Question)
 	b.WriteString("\n")
@@ -60,15 +61,15 @@ func (u *UI) askOne(ctx context.Context, idx, total int, q port.AskQuestion) (pi
 	}
 	switch {
 	case len(q.Options) == 0:
-		b.WriteString("  （直接输入答案；空行 = 不答；/dismiss = 放弃全部）\n")
+		b.WriteString("  " + i18n.T("ask.hint.direct_skip") + "\n")
 	case q.Multiple:
-		b.WriteString("  （可多选：编号用逗号或空格分隔；直接输入文字 = 自己的答案；空行 = 不答；/dismiss = 放弃全部）\n")
+		b.WriteString("  " + i18n.T("ask.hint.multi_skip") + "\n")
 	default:
-		b.WriteString("  （输入编号；直接输入文字 = 自己的答案；空行 = 不答；/dismiss = 放弃全部）\n")
+		b.WriteString("  " + i18n.T("ask.hint.number_skip") + "\n")
 	}
 	b.WriteString("> ")
 	if _, err := fmt.Fprint(u.out, b.String()); err != nil {
-		return nil, false, fmt.Errorf("repl: 输出提问: %w", err)
+		return nil, false, fmt.Errorf("repl: %s: %w", i18n.T("err.repl_ask_write"), err)
 	}
 	u.prompted = true // 提示符已打，等这一行回答
 	for {
@@ -79,7 +80,7 @@ func (u *UI) askOne(ctx context.Context, idx, total int, q port.AskQuestion) (pi
 				return nil, true, nil
 			}
 			if r.err != nil {
-				return nil, false, fmt.Errorf("repl: 读取提问回答: %w", r.err)
+				return nil, false, fmt.Errorf("repl: %s: %w", i18n.T("err.repl_ask_read"), r.err)
 			}
 			u.prompted = false
 			line := strings.TrimSpace(r.text)
@@ -92,7 +93,7 @@ func (u *UI) askOne(ctx context.Context, idx, total int, q port.AskQuestion) (pi
 			if picks, ok := parseAskChoice(line, q.Options); ok {
 				if !q.Multiple && len(picks) > 1 {
 					// 单选给了多个编号：只认第一个，并说清（不静默吞掉）。
-					fmt.Fprintf(u.out, "（本题为单选，只取「%s」）\n", picks[0])
+					fmt.Fprint(u.out, i18n.Tf("ask.single_picked", "picked", picks[0])+"\n")
 					picks = picks[:1]
 				}
 				return picks, false, nil

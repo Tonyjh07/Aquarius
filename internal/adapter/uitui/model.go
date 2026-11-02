@@ -2,6 +2,7 @@ package uitui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -189,7 +191,7 @@ func (m *model) key(msg tea.KeyMsg) *model {
 		}
 		if len(m.input) == 0 { // 输入为空时 = 撤销最后一条待发（D272，TUI 没有待发条可点）
 			if text, ok := m.u.undoPending(); ok {
-				m.add(blockNotice, "[notice] 已撤销待发: "+preview([]byte(text)))
+				m.add(blockNotice, "[notice] "+i18n.Tf("tui.notice.pending_undone", "preview", preview([]byte(text))))
 			}
 			return m
 		}
@@ -260,7 +262,7 @@ func (m *model) submit(text string) {
 		m.echoed = append(m.echoed, line)
 	default:
 		m.add(blockUser, line)
-		m.add(blockNotice, "[notice] 输入缓冲已满，此行未执行")
+		m.add(blockNotice, "[notice] "+i18n.T("tui.notice.buffer_full"))
 	}
 }
 
@@ -565,11 +567,11 @@ func (m *model) replay(msg conversation.Message) {
 
 // injectHeader 注入块头部（D166）：来源经友好化表翻成用户面措辞，末尾记实际触发与否。
 func injectHeader(source string, trigger bool) string {
-	state := "未触发"
+	state := i18n.T("tui.state.idle")
 	if trigger {
-		state = "已触发响应"
+		state = i18n.T("tui.state.fired")
 	}
-	return "注入 · " + port.InjectSourceLabel(source) + " · " + state
+	return i18n.Tf("tui.status.inject", "source", port.InjectSourceLabel(source), "state", state)
 }
 
 // partsText 节点文本：文本分片直连，其余留占位（§4.2 多模态呈现 MVP）；
@@ -710,24 +712,24 @@ func (m *model) statusLine() string {
 	if m.u.opts.Status != nil {
 		st := m.u.opts.Status()
 		if st.Model != "" {
-			parts = append(parts, "模型 "+st.Model)
+			parts = append(parts, i18n.Tf("tui.status.model", "model", st.Model))
 		}
 		if st.Level != "" {
-			parts = append(parts, "权限 "+st.Level)
+			parts = append(parts, i18n.Tf("tui.status.permission", "level", st.Level))
 		}
 		if st.Unattended {
-			parts = append(parts, "无人值守")
+			parts = append(parts, i18n.T("tui.status.unattended"))
 		}
 		if st.Effort != "" {
 			parts = append(parts, "effort "+st.Effort)
 		}
 	}
 	if n := m.u.pendingCount(); n > 0 {
-		parts = append(parts, fmt.Sprintf("待发 %d 条（Ctrl+U 撤销）", n))
+		parts = append(parts, i18n.Tf("tui.status.pending", "n", strconv.Itoa(n)))
 	}
 	if u := m.usage; u.InputTokens > 0 || u.OutputTokens > 0 {
 		parts = append(parts, fmt.Sprintf("↑%d ↓%d", u.InputTokens, u.OutputTokens))
 	}
-	parts = append(parts, "PgUp/PgDn 滚动", "Ctrl+C 取消")
+	parts = append(parts, i18n.T("tui.hint.scroll"), i18n.T("tui.hint.cancel"))
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Join(parts, " · "))
 }

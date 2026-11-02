@@ -13,6 +13,13 @@ var enErrTexts = map[string]string{
 	"err.replay_history":    "replay history",
 	"err.clear_screen":      "clear the screen",
 
+	"err.read_input":         "read input",
+	"err.tui_loop":           "event loop exited",
+	"err.repl_ask_write":     "write the question",
+	"err.repl_ask_read":      "read the answer",
+	"err.repl_confirm_write": "write the confirmation prompt",
+	"err.repl_confirm_read":  "read the confirmation",
+
 	// 装配缺失：用户装到残缺构建时看到的就是这一行
 	"err.memory_editor_unwired": "memory editor is not wired (SessionDeps.Memories)",
 	"err.jobs_unwired":          "job manager is not wired (SessionDeps.Jobs), /jobs is unavailable",

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -83,7 +84,7 @@ func (u *UI) parseAskLine(in port.UserInput, q port.AskQuestion) ([]string, bool
 	}
 	if picks, ok := parseAskChoice(text, q.Options); ok {
 		if !q.Multiple && len(picks) > 1 {
-			u.say(fmt.Sprintf("（本题为单选，只取「%s」）", picks[0]))
+			u.say(i18n.Tf("ask.single_picked", "picked", picks[0]))
 			picks = picks[:1]
 		}
 		return picks, false, nil
@@ -95,7 +96,7 @@ func (u *UI) parseAskLine(in port.UserInput, q port.AskQuestion) ([]string, bool
 func askPromptText(idx, total int, q port.AskQuestion) string {
 	var b strings.Builder
 	if total > 1 {
-		fmt.Fprintf(&b, "（第 %d/%d 题）", idx+1, total)
+		b.WriteString(i18n.Tf("ask.counter", "n", strconv.Itoa(idx+1), "total", strconv.Itoa(total)))
 	}
 	b.WriteString(q.Question)
 	for i, o := range q.Options {
@@ -106,11 +107,11 @@ func askPromptText(idx, total int, q port.AskQuestion) string {
 	}
 	switch {
 	case len(q.Options) == 0:
-		b.WriteString("\n  （直接输入答案；/dismiss = 放弃全部）")
+		b.WriteString("\n  " + i18n.T("ask.hint.direct"))
 	case q.Multiple:
-		b.WriteString("\n  （可多选：编号用逗号或空格分隔；直接输入文字 = 自己的答案；/dismiss = 放弃全部）")
+		b.WriteString("\n  " + i18n.T("ask.hint.multi"))
 	default:
-		b.WriteString("\n  （输入编号；直接输入文字 = 自己的答案；/dismiss = 放弃全部）")
+		b.WriteString("\n  " + i18n.T("ask.hint.number"))
 	}
 	return b.String()
 }

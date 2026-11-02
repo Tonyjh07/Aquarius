@@ -244,12 +244,12 @@ type LLM interface {
 
 // ErrTransient 瞬时错误哨兵（§10 装饰器重试判据）：适配器把 429/5xx/连接中断等
 // 可重试错误用 %w 包进错误链；未标注的错误一律视为不可重试，ctx 取消不算瞬时。
-var ErrTransient = errors.New("port: 瞬时错误（可重试）")
+var ErrTransient error = localError{"port.err.transient"}
 
 // ErrQuota 配额/限流哨兵（D173）：适配器把「这把密钥被限流或额度耗尽」的 429 额外
 // 标成本错误，**同时仍 Is(ErrTransient)**——重试层照旧退避重试，密钥池层先换下一把
 // 钥匙（换钥匙比退避更快，且多账号场景下这本来就是用户要的语义）。
-var ErrQuota = errors.New("port: 密钥被限流或额度耗尽")
+var ErrQuota error = localError{"port.err.quota"}
 
 // Quota 带「多久之后可重试」的配额错误包装（D173 密钥池冷却）：适配器从
 // Retry-After 取 After（0 = 未知，由密钥池取缺省冷却）。Is 同时命中 ErrQuota 与

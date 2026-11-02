@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // LayoutPolicy 剥离控制字符后是否保留换行与制表。
@@ -106,7 +107,7 @@ func AppendPartText(b *strings.Builder, p conversation.Part, mode ImageMode) {
 	case conversation.PartImage:
 		appendImage(b, p, mode)
 	case conversation.PartAudio:
-		b.WriteString("〔音频转写〕")
+		b.WriteString(i18n.T("attach.transcript"))
 	case conversation.PartDoc:
 		b.WriteString(p.Text)
 	case conversation.PartThinking, conversation.PartTool:
@@ -121,14 +122,14 @@ func appendImage(b *strings.Builder, p conversation.Part, mode ImageMode) {
 		if p.Ref != nil && p.Ref.Hash != "" {
 			return
 		}
-		b.WriteString("〔图片〕")
+		b.WriteString(i18n.T("attach.image"))
 	case ImageNamed:
-		name := "图片"
 		if p.Ref != nil {
-			name = "图片：" + p.Ref.Name
+			b.WriteString(i18n.Tf("attach.image_named", "name", p.Ref.Name))
+		} else {
+			b.WriteString(i18n.T("attach.image"))
 		}
-		b.WriteString("〔" + name + "〕")
 	default:
-		b.WriteString("〔图片〕")
+		b.WriteString(i18n.T("attach.image"))
 	}
 }

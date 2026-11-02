@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TrustLevel 注入内容的信任级（D170）。
@@ -55,10 +56,10 @@ type Injector interface {
 // 命令输出、主窗转写头部与遮罩来源行共用这一张表（措辞一致是验收点）。
 func InjectSourceLabel(source string) string {
 	if source == "" {
-		return "未知来源"
+		return i18n.T("port.src.unknown")
 	}
 	if source == "user" {
-		return "手动"
+		return i18n.T("port.src.manual")
 	}
 	name, rest, ok := splitInjectSource(source)
 	if !ok {
@@ -66,17 +67,17 @@ func InjectSourceLabel(source string) string {
 	}
 	switch name {
 	case "user": // 防御：`user:<x>` 少见形态也归「手动」（不静默吞掉余下）
-		return "手动 " + rest
+		return i18n.Tf("port.src.manual_rest", "rest", rest)
 	case "job":
-		return "任务 " + rest
+		return i18n.Tf("port.src.job", "rest", rest)
 	case "poller":
-		return "观察 " + rest
+		return i18n.Tf("port.src.poller", "rest", rest)
 	case "tool":
-		return "工具 " + rest
+		return i18n.Tf("port.src.tool", "rest", rest)
 	case "plugin":
-		return "插件 " + rest
+		return i18n.Tf("port.src.plugin", "rest", rest)
 	case "skill":
-		return "技能 " + rest
+		return i18n.Tf("port.src.skill", "rest", rest)
 	default:
 		return source
 	}
