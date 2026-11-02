@@ -5,4 +5,6 @@ package i18n
 var enTexts = mergeTables(
 	enBootTexts,
 	enCmdTexts,
+	enSessionTexts,
+	enErrTexts,
 )

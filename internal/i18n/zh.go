@@ -7,4 +7,6 @@ package i18n
 var zhTexts = mergeTables(
 	zhBootTexts,
 	zhCmdTexts,
+	zhSessionTexts,
+	zhErrTexts,
 )

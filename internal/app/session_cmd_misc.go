@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -15,19 +16,20 @@ import (
 func (s *Session) execCompact(ctx context.Context, cmd port.Command) (string, error) {
 	node, absorbed, err := s.agent.Compact(ctx, s.cur)
 	if errors.Is(err, ErrNothingToCompact) {
-		return "无需压缩：摘要之上没有新的历史", nil
+		return i18n.T("session.compact.nothing"), nil
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return "已取消压缩（会话未改动）", nil
+		return i18n.T("session.compact.canceled"), nil
 	}
 	if err != nil {
 		return "", err
 	}
 	if err := s.store.Save(ctx, s.cur); err != nil {
-		return "", fmt.Errorf("session: 保存会话: %w", err)
+		return "", wrapSession("err.save_conversation", err)
 	}
-	return fmt.Sprintf("已压缩 %d 条历史 → 1 条摘要（in=%d out=%d tokens）",
-		absorbed, node.Usage.InputTokens, node.Usage.OutputTokens), nil
+	return i18n.Tf("session.compact.done",
+		"absorbed", absorbed,
+		"in", node.Usage.InputTokens, "out", node.Usage.OutputTokens), nil
 }
 
 // execUnattended 实现 /unattended [on|off]（D185 口径四）：无参 = 切换，有参 = 显式
@@ -36,7 +38,7 @@ func (s *Session) execCompact(ctx context.Context, cmd port.Command) (string, er
 // 把它当成另一种免确认档。
 func (s *Session) execUnattended(_ context.Context, args []string) (string, error) {
 	if len(args) > 1 {
-		return "", errors.New("用法: /unattended [on|off]")
+		return "", errors.New(i18n.T("usage.unattended"))
 	}
 	cur := s.unattendedOn()
 	want := !cur
@@ -47,35 +49,33 @@ func (s *Session) execUnattended(_ context.Context, args []string) (string, erro
 		case "off":
 			want = false
 		default:
-			return "", fmt.Errorf("用法: /unattended [on|off]（当前 %s）", onOff(cur))
+			return "", errors.New(i18n.Tf("session.unattended.usage_state", "state", onOff(cur)))
 		}
 	}
 	if want == cur && len(args) == 1 {
-		return fmt.Sprintf("无人值守已是 %s", onOff(cur)), nil
+		return i18n.Tf("session.unattended.already", "state", onOff(cur)), nil
 	}
 	if s.perms == nil {
-		return "", errors.New("session: 未配置无人值守持久化，无法切换（需能写回 config）")
+		return "", errors.New("session: " + i18n.T("err.unattended_unwired"))
 	}
 	if err := s.perms.PersistUnattended(want); err != nil {
-		return "", fmt.Errorf("session: 写回 config 失败: %w", err)
+		return "", wrapSession("err.write_config", err)
 	}
 	if !want {
-		return "无人值守已关闭（越界操作恢复逐次确认；已写回 config）", nil
+		return i18n.T("session.unattended.off"), nil
 	}
-	return "无人值守已开启（已写回 config，工具链路即时生效）\n" +
-		"权限边界不变：模型发起的越界操作会被当场拒绝并说明，不再弹确认等人；" +
-		"你自己输入的命令（删除会话等）与插件授权照常询问。与 -yes 相反——那个是自动放行。", nil
+	return i18n.T("session.unattended.on"), nil
 }
 
 // unattendedOn 无人值守当前是否开着；未接线 = 关（与装饰器同口径）。
 func (s *Session) unattendedOn() bool { return s.perms != nil && s.perms.Unattended() }
 
-// onOff 布尔的中文短写（命令回执用）。
+// onOff 布尔的短写（命令回执用；两种语言各一份，见 i18n 的 common.on / common.off）。
 func onOff(on bool) string {
 	if on {
-		return "开"
+		return i18n.T("common.on")
 	}
-	return "关"
+	return i18n.T("common.off")
 }
 
 // execPermission 实现 /permission：查看或切换权限等级。
@@ -84,32 +84,32 @@ func (s *Session) execPermission(ctx context.Context, cmd port.Command) (string,
 		return s.permissionReport(), nil
 	}
 	if len(cmd.Args) > 1 {
-		return "", errors.New("用法: /permission [read-only|strict|permissive|full-access]")
+		return "", errors.New(i18n.T("usage.permission"))
 	}
 	level, err := perm.Parse(cmd.Args[0])
 	if err != nil {
 		return "", err
 	}
 	if level == s.level {
-		return fmt.Sprintf("权限等级已是 %s", level), nil
+		return i18n.Tf("session.permission.already", "level", level), nil
 	}
 	if s.perms == nil {
-		return "", errors.New("session: 未配置权限持久化，无法切换（需能写回 config）")
+		return "", errors.New("session: " + i18n.T("err.permissions_unwired"))
 	}
 	if err := s.perms.PersistLevel(level); err != nil {
-		return "", fmt.Errorf("session: 写回 config 失败: %w", err)
+		return "", wrapSession("err.write_config", err)
 	}
 	s.level = level
-	return fmt.Sprintf("权限等级已切换为 %s（已写回 config；工具链路即时生效）", level), nil
+	return i18n.Tf("session.permission.switched", "level", level), nil
 }
 
 // execMemory 实现 /memory：打开记忆文件。
 func (s *Session) execMemory(ctx context.Context, cmd port.Command) (string, error) {
 	if s.memories == nil {
-		return "", errors.New("session: 未配置记忆编辑器（SessionDeps.Memories）")
+		return "", errors.New("session: " + i18n.T("err.memory_editor_unwired"))
 	}
 	if len(cmd.Args) > 1 {
-		return "", errors.New("用法: /memory [会话id前缀]（缺省打开全局记忆文件）")
+		return "", errors.New(i18n.T("usage.memory"))
 	}
 	name := port.GlobalMemoryDoc
 	if len(cmd.Args) == 1 {
@@ -121,33 +121,37 @@ func (s *Session) execMemory(ctx context.Context, cmd port.Command) (string, err
 	}
 	path, err := s.memories.Open(name)
 	if err != nil {
-		return "", fmt.Errorf("session: 打开记忆文件: %w", err)
+		return "", wrapSession("err.open_memory", err)
 	}
-	return fmt.Sprintf("已用系统编辑器打开 %s（保存后下次读取即生效）", path), nil
+	return i18n.Tf("session.memory.opened", "path", path), nil
 }
 
 // execUsage 实现 /usage：用量报告。
 func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, error) {
 	rep, err := s.agent.UsageReport(ctx, s.cur)
 	if err != nil {
-		return "", fmt.Errorf("session: 估算用量: %w", err)
+		return "", wrapSession("err.estimate_usage", err)
 	}
 	var b strings.Builder
 	pct := 100 * float64(rep.Estimate) / float64(rep.MaxCtx)
 	tpct := 100 * float64(rep.CompactAt) / float64(rep.MaxCtx)
-	mode := fmt.Sprintf("估算（按服务端返回的 usage 校准 ×%.2f）", rep.Ratio)
+	mode := i18n.Tf("session.usage.mode_estimate", "ratio", fmt.Sprintf("%.2f", rep.Ratio))
 	if rep.Exact {
-		mode = "精确（本地 tokenizer 计数）"
+		mode = i18n.T("session.usage.mode_exact")
 	}
-	fmt.Fprintf(&b, "当前上下文:≈%d / %d tokens（%.1f%%，自动压缩阈值 %d = %.0f%%）\n",
-		rep.Estimate, rep.MaxCtx, pct, rep.CompactAt, tpct)
-	fmt.Fprintf(&b, "计数方式: %s\n", mode)
-	fmt.Fprintf(&b, "上轮实测: in=%d out=%d tokens（服务端返回）\n", rep.LastIn, rep.LastOut)
-	fmt.Fprintf(&b, "本会话累计(Path): in=%d out=%d tokens（%d 次生成）",
-		rep.SumIn, rep.SumOut, rep.Gen)
+	b.WriteString(i18n.Tf("session.usage.context",
+		"est", rep.Estimate, "max", rep.MaxCtx,
+		"pct", fmt.Sprintf("%.1f", pct),
+		"at", rep.CompactAt, "atpct", fmt.Sprintf("%.0f", tpct)))
+	b.WriteByte('\n')
+	b.WriteString(i18n.Tf("session.usage.counter", "mode", mode))
+	b.WriteByte('\n')
+	b.WriteString(i18n.Tf("session.usage.last", "in", rep.LastIn, "out", rep.LastOut))
+	b.WriteByte('\n')
+	b.WriteString(i18n.Tf("session.usage.total", "in", rep.SumIn, "out", rep.SumOut, "gen", rep.Gen))
 	// D205：费用只在单价声明过时才有意义；未声明就整段不出现（写「$0.0000」会被读成免费）。
 	if rep.CostUSD > 0 {
-		fmt.Fprintf(&b, "，约 $%.4f", rep.CostUSD)
+		b.WriteString(i18n.Tf("session.usage.cost", "usd", fmt.Sprintf("%.4f", rep.CostUSD)))
 	}
 	return b.String(), nil
 }
@@ -165,7 +169,7 @@ type jobAdmin interface {
 // 任务由模型经 job_* 工具启动，状态与日志同源（port.JobManager）。
 func (s *Session) jobsReport(ctx context.Context, args []string) (string, error) {
 	if s.jobs == nil {
-		return "", errors.New("session: 未配置任务管理器（SessionDeps.Jobs），/jobs 不可用")
+		return "", errors.New("session: " + i18n.T("err.jobs_unwired"))
 	}
 	sub := "list"
 	if len(args) > 0 {
@@ -174,14 +178,14 @@ func (s *Session) jobsReport(ctx context.Context, args []string) (string, error)
 	switch sub {
 	case "list":
 		if len(args) != 0 {
-			return "", errors.New("用法: /jobs [list|logs <id> [行数]|kill <id>]")
+			return "", errors.New(i18n.T("usage.jobs"))
 		}
 		jobs, err := s.jobs.List(ctx)
 		if err != nil {
-			return "", fmt.Errorf("session: 列出任务: %w", err)
+			return "", wrapSession("err.list_jobs", err)
 		}
 		if len(jobs) == 0 {
-			return "（暂无后台任务；模型可用 job_start 启动）", nil
+			return i18n.T("session.jobs.empty"), nil
 		}
 		var b strings.Builder
 		for _, j := range jobs {
@@ -192,7 +196,7 @@ func (s *Session) jobsReport(ctx context.Context, args []string) (string, error)
 
 	case "logs":
 		if len(args) < 1 || len(args) > 2 {
-			return "", errors.New("用法: /jobs logs <id> [行数]（缺省最后 50 行）")
+			return "", errors.New(i18n.T("usage.jobs_logs"))
 		}
 		id, err := s.resolveJob(ctx, args[0])
 		if err != nil {
@@ -202,34 +206,34 @@ func (s *Session) jobsReport(ctx context.Context, args []string) (string, error)
 		if len(args) == 2 {
 			n, cerr := strconv.Atoi(args[1])
 			if cerr != nil || n <= 0 {
-				return "", errors.New("/jobs logs 行数须为正整数")
+				return "", errors.New(i18n.T("session.jobs.bad_tail"))
 			}
 			tail = n
 		}
 		text, err := s.jobs.Logs(ctx, id, tail)
 		if err != nil {
-			return "", fmt.Errorf("session: 读取 %s 日志: %w", id, err)
+			return "", fmt.Errorf("session: %s: %w", i18n.Tf("err.read_log", "id", id), err)
 		}
 		if strings.TrimSpace(text) == "" {
-			return fmt.Sprintf("任务 %s 日志为空", id), nil
+			return i18n.Tf("session.jobs.logs_empty", "id", id), nil
 		}
-		return fmt.Sprintf("任务 %s 日志（末尾 %d 行）:\n%s", id, tail, text), nil
+		return i18n.Tf("session.jobs.logs", "id", id, "n", tail, "text", text), nil
 
 	case "kill":
 		if len(args) != 1 {
-			return "", errors.New("用法: /jobs kill <id>")
+			return "", errors.New(i18n.T("usage.jobs_kill"))
 		}
 		id, err := s.resolveJob(ctx, args[0])
 		if err != nil {
 			return "", err
 		}
 		if err := s.jobs.Kill(ctx, id); err != nil {
-			return "", fmt.Errorf("session: 终止任务: %w", err)
+			return "", wrapSession("err.kill_job", err)
 		}
-		return fmt.Sprintf("已终止 %s", id), nil
+		return i18n.Tf("session.jobs.killed", "id", id), nil
 
 	default:
-		return "", errors.New("用法: /jobs [list|logs <id> [行数]|kill <id>]")
+		return "", errors.New(i18n.T("usage.jobs"))
 	}
 }
 
@@ -240,11 +244,11 @@ const defaultJobLogsTail = 50
 func (s *Session) resolveJob(ctx context.Context, arg string) (port.JobID, error) {
 	list, err := s.jobs.List(ctx)
 	if err != nil {
-		return "", fmt.Errorf("session: 列出任务: %w", err)
+		return "", wrapSession("err.list_jobs", err)
 	}
 	id, err := port.ResolveJobID(list, arg)
 	if err != nil {
-		return "", fmt.Errorf("session: %w（/jobs 查看可用 ID）", err)
+		return "", fmt.Errorf("session: %w %s", err, i18n.T("session.jobs.hint"))
 	}
 	return id, nil
 }
@@ -267,18 +271,18 @@ const (
 func (s *Session) execMic(ctx context.Context, cmd port.Command) (string, error) {
 	secs := micDefaultSeconds
 	if len(cmd.Args) > 1 {
-		return "", errors.New("用法：/mic [秒数]")
+		return "", errors.New(i18n.T("usage.mic"))
 	}
 	if len(cmd.Args) == 1 {
 		n, err := strconv.Atoi(cmd.Args[0])
 		if err != nil || n < 1 || n > micMaxSeconds {
-			return "", fmt.Errorf("秒数需在 1–%d 之间", micMaxSeconds)
+			return "", errors.New(i18n.Tf("session.mic.range", "max", micMaxSeconds))
 		}
 		secs = n
 	}
 	if s.ui != nil {
 		_ = s.ui.Emit(ctx, port.NoticeEvent{
-			Text: fmt.Sprintf("正在录音，最长 %d 秒…", secs),
+			Text: i18n.Tf("session.mic.recording", "secs", secs),
 		})
 	}
 	return s.ingestAndRun(ctx, port.RawInput{Kind: "mic", Seconds: secs})
@@ -287,20 +291,26 @@ func (s *Session) execMic(ctx context.Context, cmd port.Command) (string, error)
 // permissionReport /permission 无参输出：当前等级 + 全档免确认矩阵（由 perm 判定推导，单一事实源）+ 特权目录。
 func (s *Session) permissionReport() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "当前权限等级: %s（默认 strict）\n", s.level)
-	fmt.Fprintf(&b, "特权目录: %s\n", s.sandboxPath)
-	b.WriteString("免确认矩阵（矩阵之外的操作一律逐次确认）:\n")
+	b.WriteString(i18n.Tf("session.permission.head", "level", s.level))
+	b.WriteByte('\n')
+	b.WriteString(i18n.Tf("session.permission.sandbox", "path", s.sandboxPath))
+	b.WriteByte('\n')
+	b.WriteString(i18n.T("session.permission.matrix"))
+	b.WriteByte('\n')
 	for _, l := range perm.Levels {
 		mark := "  "
 		if l == s.level {
 			mark = "* "
 		}
 		sandbox, other, free := l.Matrix()
-		tools := "工具 Confirm 逐次"
+		toolsText := i18n.T("session.permission.tools_ask")
 		if free {
-			tools = "工具全免确认"
+			toolsText = i18n.T("session.permission.tools_free")
 		}
-		fmt.Fprintf(&b, "%s%-12s 特权 %s | 其他 %-2s | %s\n", mark, l, sandbox, other, tools)
+		// 列宽交给格式串（%-12s / %-2s）：语言只换词，对齐规则不变。
+		fmt.Fprintf(&b, "%s%-12s %s %s | %s %-2s | %s\n", mark, l,
+			i18n.T("session.permission.privileged"), sandbox,
+			i18n.T("session.permission.other"), other, toolsText)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
