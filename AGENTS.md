@@ -165,11 +165,14 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
 
 ## 提交与 PR
 
-- Commit message（英文，祈使句）：`feat: ...` / `fix: ...` / `test: ...` / `docs: ...` / `refactor: ...`
+- Commit message（**标题与正文一律英文**，祈使句）：`feat: ...` / `fix: ...` / `test: ...` / `docs: ...` / `refactor: ...`。
+  正文同样用英文写「为什么这么改」，决策编号、路径、标识符照原样嵌在英文句子里，不要整段中文。
 - **一笔 = 一件能独立回退、独立说清的事，按自然边界算，不按文件数或步骤数算**：一次实现里只有能单独
   回退、单独解释的改动才值得分开；同一目标下的机械推进——同一重构按文件逐个拆、同一功能的第 1/2/3 步、
   实现与它的测试——必须合成一笔。不为「历史整齐」「方便 review」硬拆。
 - PR 说明里写清：改了什么、对应哪一篇的哪一节/哪条决策（如 D22）、如何验证。
+- **推送由用户执行**：代理做完提交与本地门禁就停，`push`（含 `--force-with-lease` 与改写历史后的强推）
+  只在用户明确要求时做；用户没说推，就把提交留在本地并告知待推。
 
 ### 发版与版本 tag
 
@@ -181,8 +184,8 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
   `rsrc_windows_<arch>.syso`。三者口径必须一致（`-ldflags -X main.version`、资源版本、
   发布说明里的 `-version` 示例输出）。
 - **tag 用 annotated**：`git tag -a vX.Y.Z -m "Aquarius vX.Y.Z"`，与提交说明同口径。
-- 推送分支与 tag、创建 GitHub release 由**用户**执行；代理做完提交与本地门禁即可，不主动 push、
-  不打 tag（除非用户明确要求）。
+- 推送分支与 tag、创建 GitHub release 由**用户**执行（推送的一般规则见上一条）；代理做完提交与本地
+  门禁即可，不打 tag（除非用户明确要求）。
 - 发版前门禁 + 构建核对见 `docs/development.md`「发版构建」；核对方式：用发版那组
   `-ldflags` 实际构建一次并跑 `-version`，确认输出与发布说明写的一致。
 
