@@ -62,4 +62,20 @@ var enSessionTexts = map[string]string{
 	"usage.mic":             "Usage: /mic [seconds]",
 	"session.mic.range":     "Seconds must be between 1 and {max}",
 	"session.mic.recording": "Recording, up to {secs} seconds…",
+
+	// 切换会话后的回放提示
+	"session.replay.notice":        "{verb} conversation {title} ({id}), replayed {n} entries",
+	"replay.verb.restored":         "Restored",
+	"replay.verb.started":          "Started",
+	"replay.verb.revised":          "Revised",
+	"replay.verb.regenerated":      "Regenerated",
+	"replay.verb.injected":         "Injected",
+	"replay.verb.reparented":       "Reparented",
+	"replay.verb.reparent_undone":  "Undid the reparent of",
+	"replay.verb.moved":            "Moved to",
+	"replay.verb.skill_loaded":     "Loaded skill in",
+	"replay.verb.switched":         "Switched to",
+	"replay.verb.branch_switched":  "Switched branch to",
+	"replay.verb.imported":         "Imported",
+	"replay.verb.summary_inserted": "Inserted a summary;",
 }

@@ -65,4 +65,20 @@ var zhSessionTexts = map[string]string{
 	"usage.mic":             "用法：/mic [秒数]",
 	"session.mic.range":     "秒数需在 1–{max} 之间",
 	"session.mic.recording": "正在录音，最长 {secs} 秒…",
+
+	// 切换会话后的回放提示（会话切换、改挂、改父、载入技能等都会发这一行）
+	"session.replay.notice":        "{verb}会话 {title} ({id})，回放 {n} 条历史",
+	"replay.verb.restored":         "已恢复",
+	"replay.verb.started":          "已开始",
+	"replay.verb.revised":          "已修订",
+	"replay.verb.regenerated":      "已重新生成",
+	"replay.verb.injected":         "已注入",
+	"replay.verb.reparented":       "已改父",
+	"replay.verb.reparent_undone":  "已撤销改父",
+	"replay.verb.moved":            "已定位至",
+	"replay.verb.skill_loaded":     "已载入技能",
+	"replay.verb.switched":         "已切换到",
+	"replay.verb.branch_switched":  "已切换分支至",
+	"replay.verb.imported":         "已导入",
+	"replay.verb.summary_inserted": "已插入摘要；",
 }

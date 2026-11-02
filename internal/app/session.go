@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -312,13 +313,13 @@ func (s *Session) ReplayHistory(ctx context.Context) (int, error) {
 	if !s.resumed {
 		return 0, nil
 	}
-	return s.replayHistory(ctx, "已恢复")
+	return s.replayHistory(ctx, "replay.verb.restored")
 }
 
 // replayHistory 回放当前会话的可见历史（D40/§7.4 口径：水位 → Head，persona 不回放），
 // 先发 NoticeEvent 说明会话身份与条数；verb 是提示动词——启动「已恢复」、切换「已切换到」
 // （D75）。无 UI 或仅 Root/persona 时直接返回 0。
-func (s *Session) replayHistory(ctx context.Context, verb string) (int, error) {
+func (s *Session) replayHistory(ctx context.Context, verbKey string) (int, error) {
 	if s.ui == nil {
 		return 0, nil
 	}
@@ -335,13 +336,14 @@ func (s *Session) replayHistory(ctx context.Context, verb string) (int, error) {
 		return 0, nil // 仅 Root/persona：没有可回放的历史
 	}
 	n := len(path) - start
-	notice := fmt.Sprintf("%s会话 %s (%s)，回放 %d 条历史", verb, s.cur.Title, s.cur.ID, n)
+	notice := i18n.Tf("session.replay.notice",
+		"verb", i18n.T(verbKey), "title", s.cur.Title, "id", s.cur.ID, "n", n)
 	if err := s.ui.Emit(ctx, port.NoticeEvent{Text: notice}); err != nil {
-		return 0, fmt.Errorf("session: 回放提示: %w", err)
+		return 0, wrapSession("err.replay_notice", err)
 	}
 	for i := start; i < len(path); i++ {
 		if err := s.ui.Emit(ctx, port.HistoryEvent{Message: path[i]}); err != nil {
-			return i - start, fmt.Errorf("session: 回放历史: %w", err)
+			return i - start, wrapSession("err.replay_history", err)
 		}
 	}
 	return n, nil
@@ -354,7 +356,7 @@ func (s *Session) emitClear(ctx context.Context) error {
 		return nil
 	}
 	if err := s.ui.Emit(ctx, port.ClearEvent{}); err != nil {
-		return fmt.Errorf("session: 清屏: %w", err)
+		return wrapSession("err.clear_screen", err)
 	}
 	return nil
 }

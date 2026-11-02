@@ -9,6 +9,9 @@ var enErrTexts = map[string]string{
 	"err.list_jobs":         "list jobs",
 	"err.read_log":          "read log of {id}",
 	"err.kill_job":          "kill job",
+	"err.replay_notice":     "emit the replay notice",
+	"err.replay_history":    "replay history",
+	"err.clear_screen":      "clear the screen",
 
 	// 装配缺失：用户装到残缺构建时看到的就是这一行
 	"err.memory_editor_unwired": "memory editor is not wired (SessionDeps.Memories)",

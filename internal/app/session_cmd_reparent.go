@@ -68,7 +68,7 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 		if err := s.emitClear(ctx); err != nil {
 			return "", err
 		}
-		if _, err := s.replayHistory(ctx, "已改父"); err != nil {
+		if _, err := s.replayHistory(ctx, "replay.verb.reparented"); err != nil {
 			return "", err
 		}
 	}
@@ -104,7 +104,7 @@ func (s *Session) undoReparent(ctx context.Context) (string, error) {
 		if err := s.emitClear(ctx); err != nil {
 			return "", err
 		}
-		if _, err := s.replayHistory(ctx, "已撤销改父"); err != nil {
+		if _, err := s.replayHistory(ctx, "replay.verb.reparent_undone"); err != nil {
 			return "", err
 		}
 	}

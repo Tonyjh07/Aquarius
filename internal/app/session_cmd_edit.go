@@ -70,7 +70,7 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已修订"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.revised"); err != nil {
 		return "", err
 	}
 	desc := "旧分支保留"
@@ -135,7 +135,7 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已重新生成"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.regenerated"); err != nil {
 		return "", err
 	}
 	if err := s.runTurn(ctx); err != nil {

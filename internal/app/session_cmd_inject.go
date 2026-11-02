@@ -54,7 +54,7 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已注入"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.injected"); err != nil {
 		return "", err
 	}
 	if wantTurn {

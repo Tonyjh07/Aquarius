@@ -8,5 +8,6 @@ var zhTexts = mergeTables(
 	zhBootTexts,
 	zhCmdTexts,
 	zhSessionTexts,
+	zhExchangeTexts,
 	zhErrTexts,
 )

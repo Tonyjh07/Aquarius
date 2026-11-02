@@ -6,5 +6,6 @@ var enTexts = mergeTables(
 	enBootTexts,
 	enCmdTexts,
 	enSessionTexts,
+	enExchangeTexts,
 	enErrTexts,
 )

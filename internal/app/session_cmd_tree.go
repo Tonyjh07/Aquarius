@@ -91,7 +91,7 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.switched"); err != nil {
 		return "", err
 	}
 	if note := s.dropPendingNote(); note != "" { // D272：切走即丢，留一行提示
@@ -212,7 +212,7 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已切换到"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.switched"); err != nil {
 		return "", err
 	}
 	suffix := s.dropPendingNote() // D272：删掉当前会话 = 切走，待发随之丢弃
@@ -308,7 +308,7 @@ func (s *Session) execGoto(ctx context.Context, cmd port.Command) (string, error
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已切换分支至"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.branch_switched"); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("Head → %s", id), nil

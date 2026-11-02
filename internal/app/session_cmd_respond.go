@@ -44,7 +44,7 @@ func (s *Session) execRespond(ctx context.Context, cmd port.Command) (string, er
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已定位至"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.moved"); err != nil {
 		return "", err
 	}
 	if err := s.runTurn(ctx); err != nil {

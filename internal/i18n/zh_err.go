@@ -13,6 +13,9 @@ var zhErrTexts = map[string]string{
 	"err.list_jobs":         "列出任务",
 	"err.read_log":          "读取 {id} 日志",
 	"err.kill_job":          "终止任务",
+	"err.replay_notice":     "回放提示",
+	"err.replay_history":    "回放历史",
+	"err.clear_screen":      "清屏",
 
 	// 装配缺失：用户装到残缺构建时看到的就是这一行
 	"err.memory_editor_unwired": "未配置记忆编辑器（SessionDeps.Memories）",

@@ -40,7 +40,7 @@ func (s *Session) startCharacter(ctx context.Context, slug string, n int) (strin
 	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75）
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已开始"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.started"); err != nil {
 		return "", err
 	}
 	// 两种人格模式各说清一件事（§5.17）：默认态 {{original}} 按空；替换态展开为用户人格。

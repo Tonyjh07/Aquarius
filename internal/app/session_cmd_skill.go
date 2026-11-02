@@ -73,7 +73,7 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, "已载入技能"); err != nil {
+	if _, err := s.replayHistory(ctx, "replay.verb.skill_loaded"); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("已载入技能 %s（正文已进上下文，未起响应；下一步直接说你要做什么）\n目录：%s",
