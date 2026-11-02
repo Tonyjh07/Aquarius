@@ -34,6 +34,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -144,6 +145,24 @@ func uiLangSetting(env, cfg string) string {
 	return cfg
 }
 
+// logLevelSetting 选出真正生效的日志级别：`-log-level` > `AQUARIUS_LOG_LEVEL` > `ui.log_level`
+// （D276/§7.9）。三层都空 = 交给 ParseLevel 取 info。环境变量这一层是给「改配置太慢」的
+// 现场用的：级别只在排查时调，改完启动就生效。
+func logLevelSetting(flagVal, env, cfg string) string {
+	for _, v := range []string{flagVal, env, cfg} {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// stderrProxy 转发到「此刻的」w.stderr：TUI/GUI 启动后会重绑这个字段（D114 恢复控制台），
+// 日志句柄若在装配期抓住旧 writer，之后的行就写去了已废弃的流。
+type stderrProxy struct{ w *wiring }
+
+func (p stderrProxy) Write(b []byte) (int, error) { return p.w.stderr.Write(b) }
+
 // wiring 装配态（S4a）：run() 的装配段拆为方法后共享的上下文——原闭包捕获变
 // 字段。bootstrap 填 profile/配置/权限组；assemble_* 填端口组；host/sess 由后续
 // 构造回填（记忆投影与 surfaces 经字段地址读取，等价原闭包对局部变量的捕获）。
@@ -151,6 +170,9 @@ type wiring struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+
+	// log 运行日志（D276/§7.9）：bootstrap 之后开，全量落盘、warn 以上同时上 stderr。
+	log *logging.Logger
 
 	// bootstrap_profile.go 填充
 	dir         string // 数据根 <data>
@@ -263,6 +285,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	modelName := flags.String("model", "", "覆盖 model.name")
 	baseURL := flags.String("base-url", "", "覆盖 model.base_url")
 	autoYes := flags.Bool("yes", false, "跳过逐次确认（等价对每个确认回答 y；危险操作慎用）")
+	logLevel := flags.String("log-level", "", "运行日志级别（debug | info | warn | error；默认取 ui.log_level）")
+	logFormat := flags.String("log-format", "", "运行日志形态（text | json；只影响本次运行）")
 	showVersion := flags.Bool("version", false, "打印版本并退出")
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -281,6 +305,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		return fatal(stderr, "%v", err)
 	}
+
+	// 运行日志（D276/§7.9）：profile 已定、目录已建，从这里起所有运行期事件都走它。
+	// 开不出文件不拦启动——Open 自己降级到 stderr 并记一条 warn。
+	if err := w.openLog(*logLevel, *logFormat); err != nil {
+		return fatal(stderr, "%v", err) // 级别/形态写错是用户能改的错，按启动失败报
+	}
+	defer w.log.Close()
 
 	// 端口装配：全部经端口契约注入（内置不享特权，D13）。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -314,8 +345,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if *autoYes && w.cfg.Permissions.Unattended {
 		// 口径三：-yes = 自动允许，优先于无人值守（自动拒绝）。活开关压到关——状态行与
 		// 菜单勾选必须反映真实判定，否则用户回来看到「无人值守」标记却什么都没被拒。
-		fmt.Fprintf(stderr, "警告：配置里开着无人值守，但本次带 -yes——自动允许优先，"+
-			"越界操作会被执行而不是拒绝；本次不启用无人值守（配置文件未改动）\n")
+		w.log.Warn(logging.Boot, "log.boot.auto_yes_overrides_unattended",
+			"log.act.unattended_disabled")
 		w.unattended.Set(false)
 	}
 	if err := w.assembleTools(ctx, tc.toolConfirmer, tc.toolAsker); err != nil {
@@ -347,7 +378,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	agentPersona := app.NewPersonaComposer(personaSpec, runtimeEnv, nil)
 	sessPersona := app.NewPersonaComposer(personaSpec, runtimeEnv, systemClock{}.Now)
 	if _, missing := agentPersona.Compose(); len(missing) > 0 {
-		fmt.Fprintf(stderr, "警告：人格模块树存在缺失引用 %v（已跳过；请检查 config prompts.modules / prompts.persona）\n", missing)
+		w.log.Warn(logging.Boot, "log.boot.persona_missing", "log.act.skip_missing",
+			"missing", missing)
 	}
 	// D204：采样参数快照（整链缺省 + 逐模型覆盖）——Agent 每轮按模型名现取。
 	w.sampling.Store(w.cfg.Model.samplingTables())

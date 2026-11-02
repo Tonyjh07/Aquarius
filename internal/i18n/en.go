@@ -15,4 +15,5 @@ var enTexts = mergeTables(
 	enPortTexts,
 	enConfigTexts,
 	enTuiTexts,
+	enLogTexts,
 )

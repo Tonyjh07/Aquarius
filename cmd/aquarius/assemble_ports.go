@@ -38,6 +38,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -92,7 +93,8 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 // 会按 provider 各建 client，回调须记到产生剥离的那一条。
 func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 	return func(field string) {
-		fmt.Fprintf(w.stderr, "[llm] 服务端不支持参数 %s：已剥离并记入 config providers[%s].unsupported_params，后续不再重试\n", field, providerName)
+		w.log.Info(logging.LLM, "log.llm.param_rejected", "log.act.recorded_unsupported",
+			"field", field, "provider", providerName)
 		if err := persistConfig(w.cfgPath, func(generic map[string]any) {
 			p := providerSection(generic, providerName)
 			if p == nil {
@@ -106,7 +108,7 @@ func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 			}
 			p["unsupported_params"] = append(list, field)
 		}); err != nil {
-			fmt.Fprintf(w.stderr, "[llm] 记录 unsupported_params 失败: %v（下次启动仍会先试发该字段）\n", err)
+			w.log.Warn(logging.LLM, "log.llm.param_record_failed", "log.act.retry_next_start", "err", err)
 		}
 	}
 }
@@ -128,8 +130,8 @@ func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, er
 			if firstErr == nil {
 				firstErr = err
 			}
-			fmt.Fprintf(w.stderr, "[llm] provider %q 第 %d 把密钥不可用，本次启动跳过它：%v\n",
-				p.Name, i+1, err)
+			w.log.Warn(logging.LLM, "log.llm.key_unavailable", "log.act.skip_key_this_run",
+				"provider", p.Name, "n", i+1, "err", err)
 			continue
 		}
 		c, cnt, cerr := w.newLLMClient(p, key, w.noteUnsupportedFor(p.Name))

@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-02 @ f209091 -->
+<!-- docs-sync: 2026-11-02 @ 4fd9c2f -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -31,8 +31,8 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 | 来源 | 项 |
 |---|---|
-| flag | `-data`（数据目录）、`-profile`（profile 选择）、`-model`（覆盖 model.name）、`-base-url`（覆盖 **primary provider** 的 base_url——调试逃生口） |
-| 环境变量 | `AQUARIUS_MODEL`（覆盖 model.name）、`AQUARIUS_BASE_URL`（同 `-base-url`）、`AQUARIUS_UI_LANG`（覆盖 `ui.lang`，测试与便携安装用）；以及各把密钥引用（`secret:<名>`）指向的同名环境变量 |
+| flag | `-data`（数据目录）、`-profile`（profile 选择）、`-model`（覆盖 model.name）、`-base-url`（覆盖 **primary provider** 的 base_url——调试逃生口）、`-log-level`（覆盖 `ui.log_level`）、`-log-format`（`text` / `json`，只影响本次运行） |
+| 环境变量 | `AQUARIUS_MODEL`（覆盖 model.name）、`AQUARIUS_BASE_URL`（同 `-base-url`）、`AQUARIUS_UI_LANG`（覆盖 `ui.lang`，测试与便携安装用）、`AQUARIUS_LOG_LEVEL`（覆盖 `ui.log_level`）；以及各把密钥引用（`secret:<名>`）指向的同名环境变量 |
 | config | 下表全部字段 |
 
 首次运行会写入一份可运行模板并退出；改好后重新运行。
@@ -130,6 +130,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 |---|---|---|---|
 | `ui.kind` | string | `gui`（模板与键缺省） | `gui` = Gio 桌面窗口（Windows 为完整形态，其它平台为降级实现）；`tui` = 终端界面；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
 | `ui.lang` | string | `auto`（键缺失） | **界面语言**，gui / tui / repl 共用：`auto` = 读系统界面语言、认不出回落 `zh`；`zh` / `en` 强制。**启动时定一次，改完要重启**；`AQUARIUS_UI_LANG` 环境变量可覆盖本键；与 `input.language`（语音识别）互不推断 |
+| `ui.log_level` | string | `info`（键缺失） | **运行日志级别**：`debug` / `info` / `warn` / `error`；低于该级别的行一律不写（`debug` 记请求与装配细节）。`-log-level` 与 `AQUARIUS_LOG_LEVEL` 可覆盖本键；非法值启动报错。日志落 `profiles/<name>/logs/`，`warn` 以上同时进 `stderr` |
 | `ui.hotkey` | string | `""`（= `Alt+A`） | **GUI** 全局呼出/收起快捷键：`修饰键+键`（如 `Alt+A`）；注册失败回退 `Ctrl+Alt+A`；仅 gui 生效 |
 | `ui.theme` | string | `system`（键缺失） | **GUI** 深浅主题：`system`/`light`/`dark`，切换热生效；仅 gui 生效 |
 | `ui.scale` | number | `1.0` | **GUI** 元素缩放倍率：夹 [0.75, 2.5]；设置窗百分比档；热生效；仅 gui 生效 |

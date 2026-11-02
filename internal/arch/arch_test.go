@@ -25,8 +25,9 @@ const (
 	layerPlugin    layer = "plugin"
 	layerCmd       layer = "cmd"
 	layerPluginAPI layer = "pluginapi"
-	layerI18n      layer = "i18n"  // 界面文案表：叶子层，只进不出（D275）
-	layerOther     layer = "other" // assets 等非分层包
+	layerI18n      layer = "i18n"    // 界面文案表：叶子层，只进不出（D275）
+	layerLogging   layer = "logging" // 运行日志：叶子层，只 import i18n（D276）
+	layerOther     layer = "other"   // assets 等非分层包
 )
 
 // allowedTargets 每一层允许 import 的**内部**层。
@@ -47,6 +48,9 @@ var allowedTargets = map[layer][]layer{
 	layerPlugin:    {layerDomain, layerPort, layerPluginAPI},
 	layerPluginAPI: {layerPluginAPI},
 	layerI18n:      {}, // 文案包谁都不 import：它是叶子
+	// 日志包只 import 文案包（日志正文在 log.* 段）；反过来谁都不许 import 它——
+	// 适配器拿的是装配根注入的 Logf 回调，不是这个包（D276）。
+	layerLogging: {layerI18n},
 }
 
 // skippedDirNames 不参与扫描的目录：本地脚手架（不入库）、工具目录、独立子模块。
@@ -155,6 +159,11 @@ func TestGuardCatchesViolation(t *testing.T) {
 		{layerAdapter, layerI18n, true},
 		{layerI18n, layerApp, false},
 		{layerI18n, layerDomain, false},
+		{layerCmd, layerLogging, true},
+		{layerAdapter, layerLogging, false},
+		{layerApp, layerLogging, false},
+		{layerLogging, layerI18n, true},
+		{layerLogging, layerApp, false},
 	}
 	for _, c := range cases {
 		if got := allows(c.src, c.dst); got != c.want {
@@ -241,6 +250,7 @@ func classify(modPath, importPath string) layer {
 		{modPath + "/internal/adapter", layerAdapter},
 		{modPath + "/internal/plugin", layerPlugin},
 		{modPath + "/internal/i18n", layerI18n},
+		{modPath + "/internal/logging", layerLogging},
 		{modPath + "/cmd", layerCmd},
 		{modPath + "/pluginapi", layerPluginAPI},
 	}

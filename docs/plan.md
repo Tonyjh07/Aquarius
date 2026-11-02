@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-02 @ 109f6f4 -->
+<!-- docs-sync: 2026-11-02 @ 4fd9c2f -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -115,8 +115,8 @@
 
 **落点与开关**：
 
-- 全量写 `~/.aquarius/logs/aquarius.log`；按天切、单文件超限轮转一代、保留 7 天；写失败静默
-  （日志不得打断对话，口径同 audit）。
+- 全量写 `profiles/<p>/logs/aquarius-YYYY-MM-DD.log`（随 profile 隔离，与 `audit.log`、`jobs/`
+  同一口径）；按天切、单文件超限轮转一代、保留 7 天；写失败静默（日志不得打断对话，同 audit）。
 - stderr 只出 `warn` 以上，同格式单行；`debug` / `info` 只进文件。
 - 级别：`--log-level` > `AQUARIUS_LOG_LEVEL` > `ui.log_level`（模板 `info`）。级别名与 `event` /
   `action` key 是三条出口共享的契约，改一处即三处一起改。
@@ -127,10 +127,11 @@
 
 **批次**：
 
-- **L1**（M）：`internal/logging`（五段渲染、级别过滤、文本/JSON 双出口、按天切与轮转、并发安全）
-  + `ui.log_level` / `--log-level` / `--log-format` + arch 层 + 单测（格式快照、阈值、轮转、JSON 键
-  稳定、并发）。**先文档后代码**：首笔带 decisions 一条（五段口径与落盘）与 contracts 的日志一节，
-  并把 `AGENTS.md` 语言约定里「日志用中文」改成「日志文案同走文案表、上下文与 key 用英文标识」。
+- **L1**（M，已落地）：`internal/logging`（五段渲染、级别过滤、文本/JSON 双出口、按天切与轮转、
+  保留 7 天、降级到 stderr）+ `ui.log_level` / `-log-level` / `-log-format` + arch 的 `layerLogging`
+  + 单测（格式、阈值、轮转、超期清理、JSON 键跨语言稳定、并发、降级）。决策与规格是 D276 /
+  contracts §7.9，`AGENTS.md` 的语言约定已同笔改。顺带先收口 6 处（启动两条 warn、模型链路三条、
+  日志自身的降级行），剩下的量见 L2 / L3。
 - **L2**（M）：`cmd/aquarius` 那 46 行收口——启动与装配（`main.go` / `assemble_ports.go` /
   `bootstrap_profile.go`）、`welcome.go`、`web.go`、`console_*.go`；`fatal` 与消息框不动。
 - **L3**（M）：适配器 26 处 `Logf` 文案收口（acpgate、characterfs、outputtts、probe、skillfs、

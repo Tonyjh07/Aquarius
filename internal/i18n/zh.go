@@ -17,4 +17,5 @@ var zhTexts = mergeTables(
 	zhPortTexts,
 	zhConfigTexts,
 	zhTuiTexts,
+	zhLogTexts,
 )

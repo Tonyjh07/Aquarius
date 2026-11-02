@@ -12,6 +12,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 )
 
 // errFirstRun 首次运行哨兵：bootstrap 已写好 profile 配置模板并打印指引，
@@ -222,5 +223,26 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 			return errFirstRun
 		}
 	}
+	return nil
+}
+
+// openLog 开运行日志（D276/§7.9）：级别 `-log-level` > `AQUARIUS_LOG_LEVEL` > `ui.log_level`，
+// 形态只认 `--log-format`（排查时才切，不落配置）。落在 profile 自己的 logs/ 下，与
+// `audit.log`、`jobs/` 同一隔离口径；开不出文件不拦启动（logging.Open 降级到 stderr 并记一条）。
+func (w *wiring) openLog(levelFlag, formatFlag string) error {
+	level, err := logging.ParseLevel(logLevelSetting(levelFlag, os.Getenv("AQUARIUS_LOG_LEVEL"), w.cfg.UI.LogLevel))
+	if err != nil {
+		return err
+	}
+	format, err := logging.ParseFormat(formatFlag)
+	if err != nil {
+		return err
+	}
+	w.log = logging.Open(logging.Options{
+		Dir:    filepath.Join(w.profileDir, "logs"),
+		Level:  level,
+		Format: format,
+		Stderr: stderrProxy{w: w},
+	})
 	return nil
 }
