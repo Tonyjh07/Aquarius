@@ -33,6 +33,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -133,6 +134,16 @@ func uiKindDefault(kind string) string {
 	return kind
 }
 
+// uiLangSetting 选出真正生效的 `ui.lang` 写法：`AQUARIUS_UI_LANG` 环境变量 > 配置 > 空
+// （空 = auto，D275/§7.8）。环境变量这一层不长在配置里，是因为首跑路径还没有配置文件，
+// 而界面语言必须在写模板之前就定下来；便携安装也用它临时换语言而不改配置。
+func uiLangSetting(env, cfg string) string {
+	if v := strings.TrimSpace(env); v != "" {
+		return v
+	}
+	return cfg
+}
+
 // wiring 装配态（S4a）：run() 的装配段拆为方法后共享的上下文——原闭包捕获变
 // 字段。bootstrap 填 profile/配置/权限组；assemble_* 填端口组；host/sess 由后续
 // 构造回填（记忆投影与 surfaces 经字段地址读取，等价原闭包对局部变量的捕获）。
@@ -160,6 +171,9 @@ type wiring struct {
 	// keys 输入栏三键（§5.19 / ui.keys）：bootstrap 解析并校验（撞键/非法键名启动即报），
 	// 装配时注入两个前端。repl 不用它——那里一行就是一次发送，没有「生成中途再说话」。
 	keys uicommon.KeyBindings
+	// lang 本次启动生效的界面语言（D275/§7.8）：bootstrap 定好后写进取词口，这里留一份
+	// 只读副本，供启动日志与诊断说话（前端取词直接走 i18n.T，不再传参）。
+	lang i18n.Lang
 
 	// 本机密钥库（D151/D161）：secrets 装配根读链（库里没有才查同名环境变量）、
 	// secretsBin 库本体（界面明文密钥的写入口）。bootstrap 填（profileDir 一就位就有）。

@@ -11,6 +11,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // errFirstRun 首次运行哨兵：bootstrap 已写好 profile 配置模板并打印指引，
@@ -166,6 +167,14 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
 		return fmt.Errorf("ui.kind=%q 仅支持 repl | tui | gui", cfg.UI.Kind)
 	}
+	// 界面语言（D275/§7.8）：环境变量 > ui.lang > auto。非法值启动即报（与 ui.kind 同口径：
+	// 等界面出来了才发现语言没生效，比启动失败难查）。定一次就写进取词口，之后整支进程
+	// 不再变——文案在构造期散进各视图与测量，热切换等于重建整个壳。
+	sel, err := i18n.Parse(uiLangSetting(os.Getenv("AQUARIUS_UI_LANG"), cfg.UI.Lang))
+	if err != nil {
+		return err
+	}
+	w.lang = i18n.Use(sel)
 	// 输入栏三键（§5.19/D272）：非法键名与撞键在启动时报因——等用户按下那个键才发现没
 	// 反应，比启动失败难查得多。
 	keys, err := uicommon.ParseKeyBindings(cfg.UI.Keys.Send, cfg.UI.Keys.Steer, cfg.UI.Keys.Newline)
@@ -206,11 +215,10 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	// D141：首跑落模板的可见回执（gui 双击时只控制台可见；指引全文只在 tui/repl 打）。
 	// gui 继续装配——缺密钥由 run() 的向导窗接管；tui/repl 保持旧契约（指引 + 退出 0）。
 	if w.firstRun {
-		fmt.Fprintf(w.stdout, "已生成配置: %s\n当前 profile: %s（指针: %s）\n",
-			cfgPath, profileName, filepath.Join(dir, "config.json"))
+		fmt.Fprint(w.stdout, i18n.Tf("boot.config_written",
+			"path", cfgPath, "profile", profileName, "pointer", filepath.Join(dir, "config.json")))
 		if cfg.UI.Kind != "gui" {
-			fmt.Fprintf(w.stdout, "请编辑 model.providers（base_url / models / api_key），并设置密钥环境变量后重新运行。\n"+
-				"  api_key 推荐引用格式 secret:<环境变量名>（例如 secret:AQUARIUS_OPENAI_KEY）；也可直接填明文，但启动时会警告\n")
+			fmt.Fprint(w.stdout, i18n.T("boot.first_run.hint"))
 			return errFirstRun
 		}
 	}

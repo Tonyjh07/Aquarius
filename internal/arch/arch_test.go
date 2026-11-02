@@ -25,6 +25,7 @@ const (
 	layerPlugin    layer = "plugin"
 	layerCmd       layer = "cmd"
 	layerPluginAPI layer = "pluginapi"
+	layerI18n      layer = "i18n"  // 界面文案表：叶子层，只进不出（D275）
 	layerOther     layer = "other" // assets 等非分层包
 )
 
@@ -35,13 +36,17 @@ const (
 // adapter 之间允许互相引用：`atomicfile`、`llm/tokenizer`、`uigui/platform` 这类
 // 下层件本来就是被同层复用的（抽共用件正是消除重复的手段）。真正要禁的是
 // **反向依赖**（uigui 被别人依赖）与**跨层**（app 摸 adapter），见 TestNoReverseDependency。
+//
+// i18n 必须单独登记成一层，不能靠 layerOther 兜：other 是「源端 skip、目标端放行」，
+// 那样新包就没有任何约束——今天它只 import 标准库，是因为没人拦而不是因为规矩这么定。
 var allowedTargets = map[layer][]layer{
 	layerDomain:    {layerDomain},
-	layerPort:      {layerDomain},
-	layerApp:       {layerDomain, layerPort},
-	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI},
+	layerPort:      {layerDomain, layerI18n},
+	layerApp:       {layerDomain, layerPort, layerI18n},
+	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI, layerI18n},
 	layerPlugin:    {layerDomain, layerPort, layerPluginAPI},
 	layerPluginAPI: {layerPluginAPI},
+	layerI18n:      {}, // 文案包谁都不 import：它是叶子
 }
 
 // skippedDirNames 不参与扫描的目录：本地脚手架（不入库）、工具目录、独立子模块。
@@ -146,6 +151,10 @@ func TestGuardCatchesViolation(t *testing.T) {
 		{layerPlugin, layerDomain, true},
 		{layerCmd, layerAdapter, true},
 		{layerCmd, layerApp, true},
+		{layerApp, layerI18n, true},
+		{layerAdapter, layerI18n, true},
+		{layerI18n, layerApp, false},
+		{layerI18n, layerDomain, false},
 	}
 	for _, c := range cases {
 		if got := allows(c.src, c.dst); got != c.want {
@@ -231,6 +240,7 @@ func classify(modPath, importPath string) layer {
 		{modPath + "/internal/app", layerApp},
 		{modPath + "/internal/adapter", layerAdapter},
 		{modPath + "/internal/plugin", layerPlugin},
+		{modPath + "/internal/i18n", layerI18n},
 		{modPath + "/cmd", layerCmd},
 		{modPath + "/pluginapi", layerPluginAPI},
 	}

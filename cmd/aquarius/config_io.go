@@ -82,7 +82,7 @@ const defaultConfig = `{
   },
   "tools": { "disabled": ["think"] },
   "skills": { "dirs": [] },
-  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
+  "ui": { "kind": "gui", "lang": "auto", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "prompts": { "modules": {}, "persona": [], "user_name": "User" },
   "characters": { "prefer_system_prompt": false, "apply_post_history": true,

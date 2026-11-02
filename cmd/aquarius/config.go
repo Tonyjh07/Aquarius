@@ -245,6 +245,9 @@ func (c *fileConfig) resolveEndpoint(baseURL, apiKey, from, fallbackSecret strin
 // + 欢迎引导标记（D141）。
 type uiConfig struct {
 	Kind string `json:"kind"`
+	// Lang 界面语言（D275/§7.8）：auto | zh | en；空 = auto（读系统界面语言，认不出回落
+	// zh）。启动时定一次，改完重启；AQUARIUS_UI_LANG 环境变量优先于本键。
+	Lang string `json:"lang,omitempty"`
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。仅 ui.kind=gui 用。
 	Hotkey string `json:"hotkey,omitempty"`
 	// Theme GUI 深浅主题（§15.4/D61）：system | light | dark；空 = system（跟随系统，

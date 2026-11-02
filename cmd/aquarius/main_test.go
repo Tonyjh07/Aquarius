@@ -24,6 +24,14 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 )
 
+// TestMain 把所有测试的界面语言钉成 zh（D275）：`ui.lang` 缺省是 auto，读的是本机系统
+// 语言——换台英文机器跑一遍，凡是断言中文输出的用例都会翻车。要测英文的用例自己
+// t.Setenv("AQUARIUS_UI_LANG", "en")，那正是它们要测的东西。
+func TestMain(m *testing.M) {
+	os.Setenv("AQUARIUS_UI_LANG", "zh")
+	os.Exit(m.Run())
+}
+
 // recordedReq 脚本服务记录的一次请求。
 type recordedReq struct {
 	body []byte
