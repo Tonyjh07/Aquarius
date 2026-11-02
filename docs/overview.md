@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-10-29 @ 8c1f643 -->
+<!-- docs-sync: 2026-11-02 @ f209091 -->
 
 > **定位、统一语言与限界上下文以本文为准**，同时是 **10 分钟建立索引的地图**：内核做什么、
 > 目录怎么分、端口对哪个适配器。内核的逐条规格（领域不变量、端口接口、应用层语义、
@@ -137,6 +137,7 @@ Root(实节点, ID=会话ID, role=root)
 | `internal/domain/perm` | 权限等级与免确认矩阵（纯函数，D22） |
 | `internal/port` | 全部端口：llm/tool/store/memory/blob/modality/ingest/job/ui/misc |
 | `internal/app` | 应用层：agent（Turn 循环）、prompt（装配/水位）、session（命令） |
+| `internal/i18n` | 界面文案：`zh` / `en` 两张 Go 表 + 一个取词口（叶子包，谁都能取词，它谁都不 import；D275） |
 | `internal/adapter/llm` | OpenAI 兼容流式适配器（SSE）+ `llm/tokenizer`（HF BPE 精确计数，D26②） |
 | `internal/adapter/repl` | REPL Presenter + Prompter（标准输入输出） |
 | `internal/adapter/storejson` | 一会话一 JSON + 一代 .bak |

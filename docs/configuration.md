@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-01 @ 5171c90 -->
+<!-- docs-sync: 2026-11-02 @ f209091 -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -32,7 +32,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | 来源 | 项 |
 |---|---|
 | flag | `-data`（数据目录）、`-profile`（profile 选择）、`-model`（覆盖 model.name）、`-base-url`（覆盖 **primary provider** 的 base_url——调试逃生口） |
-| 环境变量 | `AQUARIUS_MODEL`（覆盖 model.name）、`AQUARIUS_BASE_URL`（同 `-base-url`）；以及各把密钥引用（`secret:<名>`）指向的同名环境变量 |
+| 环境变量 | `AQUARIUS_MODEL`（覆盖 model.name）、`AQUARIUS_BASE_URL`（同 `-base-url`）、`AQUARIUS_UI_LANG`（覆盖 `ui.lang`，测试与便携安装用）；以及各把密钥引用（`secret:<名>`）指向的同名环境变量 |
 | config | 下表全部字段 |
 
 首次运行会写入一份可运行模板并退出；改好后重新运行。
@@ -129,6 +129,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `ui.kind` | string | `gui`（模板与键缺省） | `gui` = Gio 桌面窗口（Windows 为完整形态，其它平台为降级实现）；`tui` = 终端界面；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
+| `ui.lang` | string | `auto`（键缺失） | **界面语言**，gui / tui / repl 共用：`auto` = 读系统界面语言、认不出回落 `zh`；`zh` / `en` 强制。**启动时定一次，改完要重启**；`AQUARIUS_UI_LANG` 环境变量可覆盖本键；与 `input.language`（语音识别）互不推断 |
 | `ui.hotkey` | string | `""`（= `Alt+A`） | **GUI** 全局呼出/收起快捷键：`修饰键+键`（如 `Alt+A`）；注册失败回退 `Ctrl+Alt+A`；仅 gui 生效 |
 | `ui.theme` | string | `system`（键缺失） | **GUI** 深浅主题：`system`/`light`/`dark`，切换热生效；仅 gui 生效 |
 | `ui.scale` | number | `1.0` | **GUI** 元素缩放倍率：夹 [0.75, 2.5]；设置窗百分比档；热生效；仅 gui 生效 |
@@ -528,7 +529,7 @@ profile 配置 `<data>/profiles/default/config.json`：
     "echo_thinking": true
   },
   "tools": { "disabled": ["think"] },
-  "ui": { "kind": "gui", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
+  "ui": { "kind": "gui", "lang": "auto", "theme": "system", "scale": 1.0, "font_size": 15, "window_width": 0, "window_height": 0, "welcomed": false },
   "system_prompt": "",
   "prompts": { "modules": {}, "persona": [], "user_name": "User" },
   "input": { "language": "auto" },

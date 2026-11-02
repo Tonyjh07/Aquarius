@@ -15,7 +15,7 @@
   节号**）；内核契约见 [docs/contracts.md](docs/contracts.md)，暂缓事项见 plan.md 末节。工程经验与边界见
   [docs/development.md](docs/development.md) 的「工程准则与边界」。
   当前开发分支 `feat/v0.5.0`。
-- **语言约定**：文档与注释用中文；标识符、commit message 用英文。**进入模型上下文的字符串**（system 提示、工具声明与参数描述、工具回填结果/错误）一律英文；仅面向用户的界面、命令输出与日志用中文。文档文风（陈述事实、结论在前、不写总结段与客套话）见 [docs/README.md](docs/README.md) 的「文风」。
+- **语言约定**：文档与注释用中文；标识符、commit message 用英文。**进入模型上下文的字符串**（system 提示、工具声明与参数描述、工具回填结果/错误）一律英文；**面向用户的界面与命令文案走 `internal/i18n` 文案表**（`zh` / `en` 两套，代码里不写中文字面量，D275 / contracts §7.8）；日志与开发者诊断用中文。文档文风（陈述事实、结论在前、不写总结段与客套话）见 [docs/README.md](docs/README.md) 的「文风」。
 
 ## 本机环境
 
@@ -203,6 +203,7 @@ internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
 internal/app/        agent（Turn 循环）、prompt（装配/水位）、session（命令/摄取分派）、
                      est（token 计数链）、plugins/model/compact_prompt（M4 命令面与压缩提示词）
 internal/plugin/     config/session（声明与宿主契约）、host（发现合并/grant/生命周期，§6.4）
+internal/i18n/       界面文案：zh.go / en.go 两张表 + 取词口（叶子包，D275）
 internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/sleep/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、
