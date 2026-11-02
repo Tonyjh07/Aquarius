@@ -8,11 +8,13 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -215,5 +217,5 @@ func (s *Session) dropPendingNote() string {
 	if n <= 0 {
 		return ""
 	}
-	return fmt.Sprintf("（%d 条待发消息未随会话带走）", n)
+	return i18n.Tf("session.pending.dropped", "n", strconv.Itoa(n))
 }

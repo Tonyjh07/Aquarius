@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -46,7 +46,7 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 		return "", err
 	}
 	if len(landed) == 0 {
-		return "注入已入队（未被排空）", nil
+		return i18n.T("inject.queued"), nil
 	}
 	node := landed[len(landed)-1]
 	// 移 Head 类命令统一口径（D81/D92）：清屏 + 回放新路径，转写区恒与 Head 一致；
@@ -62,15 +62,16 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 			return "", err
 		}
 	}
-	state := "未触发响应"
+	state := i18n.T("inject.state.no_trigger")
 	if node.Trigger {
-		state = "已触发响应"
+		state = i18n.T("inject.state.triggered")
 	}
-	return fmt.Sprintf("已注入一条 %s 上下文（%s；Head → %s）", port.InjectSourceLabel(node.Source), state, s.cur.Head), nil
+	return i18n.Tf("inject.done",
+		"source", port.InjectSourceLabel(node.Source), "state", state, "head", s.cur.Head), nil
 }
 
 // injectUsage /inject 的用法文案（缺参、缺文本共用一份）。
-const injectUsage = "用法: /inject [--source <名>] [--no-trigger] <文本>"
+func injectUsage() string { return i18n.T("usage.inject") }
 
 // injectFlags /inject 认识的 flag：选项可写在文本前后任意位置（flagsAnywhere）。
 var injectFlags = []flagDecl{
@@ -81,10 +82,11 @@ var injectFlags = []flagDecl{
 // parseInjectArgs 解析 /inject 参数：`[--source <名>] [--no-trigger] <文本>`（顺序自由、
 // 选项可在文本任意位置）。文本为剩余参数空格拼接。
 func parseInjectArgs(args []string) (source string, noTrigger bool, text string, err error) {
-	source = "user" // 缺省来源：手动注入（默认触发）
+	// 缺省来源：手动注入（默认触发）
+	source = "user"
 	flags, rest, err := scanFlags(args, flagScan{pos: flagsAnywhere}, injectFlags)
 	if err != nil {
-		return "", false, "", fmt.Errorf("%s（%v）", injectUsage, err)
+		return "", false, "", errors.New(i18n.Tf("inject.usage_error", "usage", injectUsage(), "reason", err))
 	}
 	for _, f := range flags {
 		switch f.name {
@@ -95,7 +97,7 @@ func parseInjectArgs(args []string) (source string, noTrigger bool, text string,
 		}
 	}
 	if text = joinArgs(rest); text == "" {
-		return "", false, "", errors.New(injectUsage)
+		return "", false, "", errors.New(injectUsage())
 	}
 	return source, noTrigger, text, nil
 }

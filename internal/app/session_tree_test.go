@@ -351,8 +351,8 @@ func TestSessionRmconvLastCreatesEmpty(t *testing.T) {
 	if cur.ID == idA {
 		t.Fatal("应新建继任会话（旧 id 不得复用）")
 	}
-	if cur.Title != defaultTitle {
-		t.Fatalf("继任标题 = %q, want %q", cur.Title, defaultTitle)
+	if cur.Title != defaultTitle() {
+		t.Fatalf("继任标题 = %q, want %q", cur.Title, defaultTitle())
 	}
 	if len(store.convs) != 1 {
 		t.Fatalf("库 = %d 个会话, want 仅新会话", len(store.convs))

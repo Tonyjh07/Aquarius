@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -18,11 +18,11 @@ import (
 // first_mes），越界报错并列出可选条数。
 func (s *Session) startCharacter(ctx context.Context, slug string, n int) (string, error) {
 	if s.characters == nil {
-		return "", errors.New("session: 未配置角色卡目录，/character 不可用")
+		return "", errors.New("session: " + i18n.T("char.unavailable"))
 	}
 	card, err := s.characters.Load(ctx, slug)
 	if err != nil {
-		return "", fmt.Errorf("session: 载入角色卡: %w", err)
+		return "", wrapSession("char.load", err)
 	}
 	start := s.persona.ProjectCharacter(card, s.charOpts)
 	greeting, err := start.Greeting(n)
@@ -34,7 +34,7 @@ func (s *Session) startCharacter(ctx context.Context, slug string, n int) (strin
 		return "", err
 	}
 	if err := s.store.Save(ctx, c); err != nil {
-		return "", fmt.Errorf("session: 新建角色会话: %w", err)
+		return "", wrapSession("char.new_conversation", err)
 	}
 	s.cur = c
 	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75）
@@ -44,11 +44,11 @@ func (s *Session) startCharacter(ctx context.Context, slug string, n int) (strin
 		return "", err
 	}
 	// 两种人格模式各说清一件事（§5.17）：默认态 {{original}} 按空；替换态展开为用户人格。
-	mode := "用户人格在最前，卡的角色设定接在后面（{{original}} 按空处理）"
+	mode := i18n.T("char.mode.append")
 	if s.charOpts.PreferSystemPrompt {
-		mode = "卡的 system_prompt 顶掉用户人格（{{original}} 展开为用户人格正文，环境信息保留）"
+		mode = i18n.T("char.mode.replace")
 	}
-	return fmt.Sprintf("已用角色「%s」开始新会话 %s\n人格模式：%s", card.Info.Display, c.ID, mode), nil
+	return i18n.Tf("char.started", "display", card.Info.Display, "id", c.ID, "mode", mode), nil
 }
 
 // newCharacterConversation 建角色会话：Root + persona 快照 + 示例注入节点 + 开场白，
@@ -70,7 +70,7 @@ func (s *Session) newCharacterConversation(card port.CharacterCard, start Charac
 		CreatedAt: s.clock.Now(),
 	}
 	if err := c.AppendCommitted(persona); err != nil {
-		return nil, fmt.Errorf("session: 写入角色 persona 节点: %w", err)
+		return nil, wrapSession("char.write_persona", err)
 	}
 	// 示例走注入节点（§5.17）：persona 之后、开场白之前。Trust=host 与 /skill 同口径——
 	// 卡是用户亲手导入并选择开始的，写的是要遵循的指令，不是待围栏的外部数据；只追加、
@@ -86,13 +86,13 @@ func (s *Session) newCharacterConversation(card port.CharacterCard, start Charac
 			CreatedAt: s.clock.Now(),
 		}
 		if err := c.AppendCommitted(ex); err != nil {
-			return nil, fmt.Errorf("session: 写入角色示例节点: %w", err)
+			return nil, wrapSession("char.write_examples", err)
 		}
 	}
 	// 开场白作 assistant 节点、Head 落在它上面（§5.17）：空开场不造假消息。
 	if strings.TrimSpace(greeting) != "" {
 		if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{{Kind: conversation.PartText, Text: greeting}}); err != nil {
-			return nil, fmt.Errorf("session: 写入开场白: %w", err)
+			return nil, wrapSession("char.write_greeting", err)
 		}
 	}
 	return c, nil

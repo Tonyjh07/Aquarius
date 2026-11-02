@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -20,14 +21,14 @@ func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error)
 	}
 	title := joinArgs(cmd.Args)
 	if title == "" {
-		title = defaultTitle
+		title = defaultTitle()
 	}
 	c, err := s.newConversation(title)
 	if err != nil {
 		return "", err
 	}
 	if err := s.store.Save(ctx, c); err != nil {
-		return "", fmt.Errorf("session: 新建会话: %w", err)
+		return "", wrapSession("err.new_conversation", err)
 	}
 	s.cur = c
 	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75，修订 D72 后果④）
@@ -35,19 +36,19 @@ func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error)
 	}
 	// 待发清单不随会话带走（D272）：明确丢弃 + 一行提示，与「不静默丢东西」的既有口径一致。
 	if note := s.dropPendingNote(); note != "" {
-		return fmt.Sprintf("已新建会话 %s%s", c.ID, note), nil
+		return i18n.Tf("tree.new.done", "id", c.ID) + note, nil
 	}
-	return fmt.Sprintf("已新建会话 %s", c.ID), nil
+	return i18n.Tf("tree.new.done", "id", c.ID), nil
 }
 
 // execList 实现 /list：列出会话。
 func (s *Session) execList(ctx context.Context, cmd port.Command) (string, error) {
 	sums, err := s.store.List(ctx)
 	if err != nil {
-		return "", fmt.Errorf("session: 列出会话: %w", err)
+		return "", wrapSession("err.list_conversations", err)
 	}
 	if len(sums) == 0 {
-		return "（暂无会话）", nil
+		return i18n.T("tree.list.empty"), nil
 	}
 	var b strings.Builder
 	for _, sm := range sums {
@@ -55,7 +56,7 @@ func (s *Session) execList(ctx context.Context, cmd port.Command) (string, error
 		if sm.ID == s.cur.ID {
 			mark = "*"
 		}
-		fmt.Fprintf(&b, "%s %s  %d条  %s\n", mark, sm.ID, sm.MessageN, sm.Title)
+		fmt.Fprintf(&b, "%s %s  %s  %s\n", mark, sm.ID, i18n.Tf("tree.list.count", "n", sm.MessageN), sm.Title)
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
 }
@@ -63,7 +64,7 @@ func (s *Session) execList(ctx context.Context, cmd port.Command) (string, error
 // execSwitch 实现 /switch：切换会话（D75 清屏回放口径）。
 func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
-		return "", errors.New("用法: /switch <id前缀>（/list 查看可用会话，支持唯一前缀）")
+		return "", errors.New(i18n.T("usage.switch"))
 	}
 	id, err := s.resolveConversation(ctx, cmd.Args[0])
 	if err != nil {
@@ -78,12 +79,12 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	}
 	// 切前落盘当前会话：/edit 等只改内存的命令必须带上，否则切走即丢（D75）。
 	if err := s.store.Save(ctx, s.cur); err != nil {
-		return "", fmt.Errorf("session: 保存当前会话: %w", err)
+		return "", wrapSession("err.save_current_conversation", err)
 	}
 	if id != s.cur.ID {
 		next, err := s.store.Load(ctx, id)
 		if err != nil {
-			return "", fmt.Errorf("session: 载入会话 %s: %w", id, err)
+			return "", fmt.Errorf("session: %s: %w", i18n.Tf("err.load_conversation", "id", id), err)
 		}
 		s.cur = next
 	}
@@ -95,16 +96,16 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 		return "", err
 	}
 	if note := s.dropPendingNote(); note != "" { // D272：切走即丢，留一行提示
-		return fmt.Sprintf("已切换到会话 %s%s", s.cur.ID, note), nil
+		return i18n.Tf("tree.switch.done", "id", s.cur.ID) + note, nil
 	}
-	return fmt.Sprintf("已切换到会话 %s", s.cur.ID), nil
+	return i18n.Tf("tree.switch.done", "id", s.cur.ID), nil
 }
 
 // titleFlags /title 认识的 flag；只认一个（第二次出现归标题文本，旧口径）。
 var titleFlags = []flagDecl{{name: "--id", value: true}}
 
 // titleUsage /title 的用法文案（缺 id、缺参共用一份）。
-const titleUsage = "用法: /title [--id <id前缀>] [<标题>]（--id 改非当前会话标题，/list 查看）"
+func titleUsage() string { return i18n.T("usage.title") }
 
 // execTitle 实现 /title：查看或修改会话标题——`--id <前缀>` 改**非当前**会话（D120⑥）。
 // 形态：/title [--id <id前缀>] [<标题>]；--id 仅在**首参位**识别（未知 "--x" 视为标题文本，
@@ -113,7 +114,7 @@ func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, erro
 	target := s.cur
 	flags, rest, err := scanFlags(cmd.Args, flagScan{pos: flagsLeading, limit: 1}, titleFlags)
 	if err != nil {
-		return "", errors.New(titleUsage)
+		return "", errors.New(titleUsage())
 	}
 	if len(flags) > 0 {
 		id, err := s.resolveConversation(ctx, flags[0].value)
@@ -123,23 +124,23 @@ func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, erro
 		if id != s.cur.ID { // 目标非当前：载入副本改标题落盘，**不动 Head、不动 s.cur**
 			c, err := s.store.Load(ctx, id)
 			if err != nil {
-				return "", fmt.Errorf("session: 载入会话 %s: %w", id, err)
+				return "", fmt.Errorf("session: %s: %w", i18n.Tf("err.load_conversation", "id", id), err)
 			}
 			target = c
 		}
 	}
 	if len(rest) == 0 {
-		return fmt.Sprintf("%s 标题: %s", target.ID, target.Title), nil
+		return i18n.Tf("tree.title.show", "id", target.ID, "title", target.Title), nil
 	}
 	title := joinArgs(rest)
 	target.Title = title
 	if err := s.store.Save(ctx, target); err != nil {
-		return "", fmt.Errorf("session: 保存标题: %w", err)
+		return "", wrapSession("err.save_title", err)
 	}
 	if target.ID != s.cur.ID {
-		return fmt.Sprintf("会话 %s 标题已改为: %s", target.ID, title), nil
+		return i18n.Tf("tree.title.set_other", "id", target.ID, "title", title), nil
 	}
-	return fmt.Sprintf("标题已改为: %s", title), nil
+	return i18n.Tf("tree.title.set", "title", title), nil
 }
 
 // execRmconv 实现 /rmconv：删除**整个会话**（区别于 /rm 删消息节点，D120⑥；二次确认）。
@@ -150,7 +151,7 @@ func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, erro
 // 单个 ID 的用法与回执与今天逐字相同。
 func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) == 0 {
-		return "", errors.New("用法: /rmconv <id前缀> [<id前缀>…]（删除整个会话，二次确认；/list 查看可用会话）")
+		return "", errors.New(i18n.T("usage.rmconv"))
 	}
 	targets := make([]conversation.ID, 0, len(cmd.Args))
 	seen := make(map[conversation.ID]bool, len(cmd.Args))
@@ -166,7 +167,7 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 		targets = append(targets, id)
 	}
 	if s.confirmer == nil {
-		return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rmconv 需要二次确认")
+		return "", errors.New("session: " + i18n.T("tree.rmconv.no_confirmer"))
 	}
 	titles := make([]string, len(targets))
 	for i, id := range targets {
@@ -175,13 +176,13 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 	prompt := rmconvPrompt(targets, titles)
 	ans, err := s.confirmer.Confirm(ctx, prompt)
 	if err != nil {
-		return "", fmt.Errorf("session: 确认删除会话: %w", err)
+		return "", wrapSession("err.confirm_delete_conversation", err)
 	}
 	if !ans.Allow {
 		if len(targets) == 1 {
-			return fmt.Sprintf("已取消删除会话 %s", targets[0]), nil
+			return i18n.Tf("tree.rmconv.canceled", "id", targets[0]), nil
 		}
-		return fmt.Sprintf("已取消删除 %d 个会话", len(targets)), nil
+		return i18n.Tf("tree.rmconv.canceled_many", "n", len(targets)), nil
 	}
 	deletingCurrent := false
 	for _, id := range targets {
@@ -191,14 +192,14 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 		// 删会话是 watcher 唯一该撤销的时刻（另一处是关停）：会话没了，报告无处可落。
 		s.cancelWatchersFor(id)
 		if err := s.store.Remove(ctx, id); err != nil {
-			return "", fmt.Errorf("session: 删除会话: %w", err)
+			return "", wrapSession("err.delete_conversation", err)
 		}
 	}
 	if !deletingCurrent {
 		if len(targets) == 1 {
-			return fmt.Sprintf("已删除会话 %s（%s）", targets[0], titles[0]), nil
+			return i18n.Tf("tree.rmconv.deleted", "id", targets[0], "title", titles[0]), nil
 		}
-		return fmt.Sprintf("已删除 %d 个会话：%s", len(targets), targetTitles(titles)), nil
+		return i18n.Tf("tree.rmconv.deleted_many", "n", len(targets), "titles", targetTitles(titles)), nil
 	}
 	// 删的是当前会话：继任 + 落盘 + 清屏回放（转写区恒与 Head 一致，D75/D81）。
 	next, err := s.successorConversation(ctx, seen)
@@ -207,7 +208,7 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 	}
 	s.cur = next
 	if err := s.store.Save(ctx, s.cur); err != nil {
-		return "", fmt.Errorf("session: 保存继任会话: %w", err)
+		return "", wrapSession("err.save_successor", err)
 	}
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
@@ -217,21 +218,21 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 	}
 	suffix := s.dropPendingNote() // D272：删掉当前会话 = 切走，待发随之丢弃
 	if len(targets) == 1 {
-		return fmt.Sprintf("已删除当前会话 %s（%s），已切换到 %s%s", targets[0], titles[0], s.cur.ID, suffix), nil
+		return i18n.Tf("tree.rmconv.deleted_current", "id", targets[0], "title", titles[0], "next", s.cur.ID) + suffix, nil
 	}
-	return fmt.Sprintf("已删除 %d 个会话（含当前会话）：%s；已切换到 %s%s",
-		len(targets), targetTitles(titles), s.cur.ID, suffix), nil
+	return i18n.Tf("tree.rmconv.deleted_current_many",
+		"n", len(targets), "titles", targetTitles(titles), "next", s.cur.ID) + suffix, nil
 }
 
 // rmconvPrompt 删除确认句：单个与多批两种说法，多批时列标题让用户确认删的是哪几个。
 func rmconvPrompt(ids []conversation.ID, titles []string) string {
 	if len(ids) == 1 {
-		return fmt.Sprintf("确认删除会话 %s（%s）？整会话连同其消息树一并删除，此操作不可恢复", ids[0], titles[0])
+		return i18n.Tf("tree.rmconv.prompt", "id", ids[0], "title", titles[0])
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "确认删除 %d 个会话？整会话连同其消息树一并删除，此操作不可恢复：", len(ids))
+	b.WriteString(i18n.Tf("tree.rmconv.prompt_many", "n", len(ids)))
 	for i, id := range ids {
-		fmt.Fprintf(&b, "\n- %s（%s）", id, titles[i])
+		fmt.Fprintf(&b, "\n%s", i18n.Tf("tree.rmconv.prompt_item", "id", id, "title", titles[i]))
 	}
 	return b.String()
 }
@@ -244,10 +245,11 @@ func targetTitles(titles []string) string {
 // summarizeTitles 标题清单的用户面写法（最多列 3 个，其余记数）。
 func summarizeTitles(titles []string) string {
 	const show = 3
+	sep := i18n.T("tree.titles.sep")
 	if len(titles) <= show {
-		return strings.Join(titles, "、")
+		return strings.Join(titles, sep)
 	}
-	return fmt.Sprintf("%s 等 %d 个", strings.Join(titles[:show], "、"), len(titles))
+	return i18n.Tf("tree.titles.more", "names", strings.Join(titles[:show], sep), "n", len(titles))
 }
 
 // conversationTitle 取会话标题（当前会话直读内存；否则查列表，取不到回退 ID）。
@@ -273,7 +275,7 @@ func (s *Session) conversationTitle(ctx context.Context, id conversation.ID) str
 func (s *Session) successorConversation(ctx context.Context, skip map[conversation.ID]bool) (*conversation.Conversation, error) {
 	sums, err := s.store.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("session: 列出会话: %w", err)
+		return nil, wrapSession("err.list_conversations", err)
 	}
 	for _, sm := range sums {
 		if skip[sm.ID] {
@@ -281,24 +283,24 @@ func (s *Session) successorConversation(ctx context.Context, skip map[conversati
 		}
 		c, err := s.store.Load(ctx, sm.ID)
 		if err != nil {
-			return nil, fmt.Errorf("session: 载入会话 %s: %w", sm.ID, err)
+			return nil, fmt.Errorf("session: %s: %w", i18n.Tf("err.load_conversation", "id", sm.ID), err)
 		}
 		return c, nil
 	}
-	return s.newConversation(defaultTitle)
+	return s.newConversation(defaultTitle())
 }
 
 // execGoto 实现 /goto：移动 Head（D81 清屏回放口径）。
 func (s *Session) execGoto(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
-		return "", errors.New("用法: /goto <id>（id 可用 /branch 查看，支持唯一前缀）")
+		return "", errors.New(i18n.T("usage.goto"))
 	}
 	id, err := s.resolveNode(cmd.Args[0])
 	if err != nil {
 		return "", err
 	}
 	if err := s.cur.Checkout(id); err != nil {
-		return "", fmt.Errorf("session: 移动 Head: %w", err)
+		return "", wrapSession("err.move_head", err)
 	}
 	if err := s.persist(ctx); err != nil {
 		return "", err
@@ -311,13 +313,13 @@ func (s *Session) execGoto(ctx context.Context, cmd port.Command) (string, error
 	if _, err := s.replayHistory(ctx, "replay.verb.branch_switched"); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Head → %s", id), nil
+	return i18n.Tf("tree.goto.done", "id", id), nil
 }
 
 // execBranch 实现 /branch：分支视图。
 func (s *Session) execBranch(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) > 1 {
-		return "", errors.New("用法: /branch [id]（缺省取当前 Head）")
+		return "", errors.New(i18n.T("usage.branch"))
 	}
 	id := s.cur.Head
 	if len(cmd.Args) == 1 {
@@ -334,16 +336,16 @@ func (s *Session) execBranch(ctx context.Context, cmd port.Command) (string, err
 	// Root 的"同级"按 D15 即其孩子，改标"顶层消息"且不重复列出下级。
 	isRoot := self.Role == conversation.RoleRoot
 	var b strings.Builder
-	fmt.Fprintf(&b, "当前: %s\n", branchLine(s.cur, self))
-	sibsLabel := "同级分叉"
+	fmt.Fprintf(&b, "%s\n", i18n.Tf("tree.branch.current", "line", branchLine(s.cur, self)))
+	sibsLabel := i18n.T("tree.branch.siblings")
 	if isRoot {
-		sibsLabel = "顶层消息"
+		sibsLabel = i18n.T("tree.branch.top")
 	}
 	sibs := s.cur.Branches(id)
 	if len(sibs) == 0 {
-		fmt.Fprintf(&b, "%s: 无", sibsLabel)
+		b.WriteString(i18n.Tf("tree.branch.none", "label", sibsLabel))
 	} else {
-		fmt.Fprintf(&b, "%s（%d 条，不含自身）:", sibsLabel, len(sibs))
+		b.WriteString(i18n.Tf("tree.branch.siblings_count", "label", sibsLabel, "n", len(sibs)))
 		for _, m := range sibs {
 			b.WriteString("\n  " + branchLine(s.cur, m))
 		}
@@ -351,9 +353,9 @@ func (s *Session) execBranch(ctx context.Context, cmd port.Command) (string, err
 	if !isRoot {
 		kids := s.cur.ChildIDs(id)
 		if len(kids) == 0 {
-			b.WriteString("\n下级: 无")
+			b.WriteString("\n" + i18n.T("tree.branch.children_none"))
 		} else {
-			fmt.Fprintf(&b, "\n下级（%d 条）:", len(kids))
+			b.WriteString("\n" + i18n.Tf("tree.branch.children_count", "n", len(kids)))
 			for _, kid := range kids {
 				if m, ok := s.cur.Find(kid); ok {
 					b.WriteString("\n  " + branchLine(s.cur, m))
@@ -367,7 +369,7 @@ func (s *Session) execBranch(ctx context.Context, cmd port.Command) (string, err
 // execRm 实现 /rm：剪掉节点子树（二次确认）。
 func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
-		return "", errors.New("用法: /rm <id>（剪掉该节点及整棵子树，二次确认）")
+		return "", errors.New(i18n.T("usage.rm"))
 	}
 	id, err := s.resolveNode(cmd.Args[0])
 	if err != nil {
@@ -375,42 +377,42 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	}
 	m, _ := s.cur.Find(id)
 	if m.Role == conversation.RoleRoot {
-		return "", errors.New("session: 会话根节点就是会话本身，不可删除") // 先于确认拒绝，不消费确认应答
+		return "", errors.New("session: " + i18n.T("tree.rm.root")) // 先于确认拒绝，不消费确认应答
 	}
 	if s.confirmer == nil {
-		return "", errors.New("session: 未配置确认器（SessionDeps.Confirmer），/rm 需要二次确认")
+		return "", errors.New("session: " + i18n.T("tree.rm.no_confirmer"))
 	}
 	size := s.cur.SubtreeSize(id)
-	prompt := fmt.Sprintf("确认删除 %s 及其子树（至少 %d 条节点）？此操作不可恢复", id, size)
+	prompt := i18n.Tf("tree.rm.prompt", "id", id, "n", size)
 	// 剪除会连带清掉指向子树内旧节点的溯源边：新版本在子树外时，它会失去「修订自谁」的
 	// 记录（图上版本虚线退回顺接实线）。删之前说明，不让人删完才发现。
 	droppedEditions := s.cur.DroppedEditions(id)
 	if droppedEditions > 0 {
-		prompt += fmt.Sprintf("；另有 %d 个新版本会一并失去溯源记录（图上不再标出修订来源）", droppedEditions)
+		prompt += i18n.Tf("tree.rm.prompt_editions", "n", droppedEditions)
 	}
 	ans, err := s.confirmer.Confirm(ctx, prompt)
 	if err != nil {
-		return "", fmt.Errorf("session: 确认删除: %w", err)
+		return "", wrapSession("err.confirm_delete", err)
 	}
 	if !ans.Allow {
-		return fmt.Sprintf("已取消删除 %s", id), nil
+		return i18n.Tf("tree.rm.canceled", "id", id), nil
 	}
 	before := s.cur.NodeCount()
 	if err := s.cur.Prune(id); err != nil {
-		return "", fmt.Errorf("session: 删除: %w", err)
+		return "", wrapSession("err.delete", err)
 	}
 	removed := before - s.cur.NodeCount() // 实际删除数 = 子树大小（D95 后 Prune 恰删子树，无连带）
 	if err := s.persist(ctx); err != nil {
 		// 删除绝不"半生效"：落盘失败即回滚到最近一次成功保存的状态。
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
 			s.cur = c
-			return "", fmt.Errorf("session: 落盘失败，删除已回滚（会话树未改动）: %w", err)
+			return "", wrapSession("err.rm_persist_rollback", err)
 		}
-		return "", fmt.Errorf("session: 落盘失败且无法回滚，删除仅存在于内存（下次成功保存会写盘，请谨慎继续）: %w", err)
+		return "", wrapSession("err.rm_persist_stuck", err)
 	}
-	line := fmt.Sprintf("已删除 %s 子树（%d 条节点；Head → %s）", id, removed, s.cur.Head)
+	line := i18n.Tf("tree.rm.done", "id", id, "n", removed, "head", s.cur.Head)
 	if droppedEditions > 0 {
-		line += fmt.Sprintf("；%d 个新版本已失去溯源记录", droppedEditions)
+		line += i18n.Tf("tree.rm.done_editions", "n", droppedEditions)
 	}
 	return line, nil
 }
@@ -421,10 +423,10 @@ func branchLine(c *conversation.Conversation, m conversation.Message) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s [%s] %s", m.ID, m.Role, nodeSummary(m))
 	if m.ID == c.Head {
-		b.WriteString(" ← Head")
+		b.WriteString(" " + i18n.T("tree.branch.head"))
 	}
 	if old, ok := c.Edition(m.ID); ok {
-		fmt.Fprintf(&b, "（修订自 %s）", old)
+		fmt.Fprintf(&b, "%s", i18n.Tf("tree.branch.revised", "id", old))
 	}
 	return b.String()
 }
@@ -454,7 +456,7 @@ func nodeSummary(m conversation.Message) string {
 			}
 		}
 		if len(names) > 0 {
-			s = "（调用 " + strings.Join(names, ", ") + "）"
+			s = i18n.Tf("tree.node.tool_call", "names", strings.Join(names, ", "))
 		}
 	}
 	if s == "" {
@@ -463,14 +465,14 @@ func nodeSummary(m conversation.Message) string {
 				if p.Tool.Result.OK {
 					s = strings.TrimSpace(p.Tool.Result.Output)
 				} else {
-					s = "错误: " + p.Tool.Result.Err
+					s = i18n.Tf("tree.node.error", "text", p.Tool.Result.Err)
 				}
 				break
 			}
 		}
 	}
 	if s == "" {
-		return "（空）"
+		return i18n.T("tree.node.empty")
 	}
 	s = strings.Join(strings.Fields(s), " ") // 压成单行
 	if r := []rune(s); len(r) > maxRunes {

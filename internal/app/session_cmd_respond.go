@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -21,7 +22,7 @@ import (
 // 续写的上下文，作为生成起点直接拒绝。
 func (s *Session) execRespond(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
-		return "", errors.New("用法: /respond <id>（id 支持唯一前缀）")
+		return "", errors.New(i18n.T("usage.respond"))
 	}
 	id, err := s.resolveNode(cmd.Args[0])
 	if err != nil {
@@ -32,10 +33,10 @@ func (s *Session) execRespond(ctx context.Context, cmd port.Command) (string, er
 		return "", fmt.Errorf("session: %w", conversation.ErrNotFound)
 	}
 	if m.Role == conversation.RoleRoot {
-		return "", errors.New("不能在会话根节点生成响应（根即会话本身，没有可续写的上下文）")
+		return "", errors.New(i18n.T("respond.root"))
 	}
 	if err := s.cur.Checkout(id); err != nil {
-		return "", fmt.Errorf("session: 移动 Head: %w", err)
+		return "", wrapSession("respond.move_head", err)
 	}
 	if err := s.persist(ctx); err != nil {
 		return "", err
@@ -50,5 +51,5 @@ func (s *Session) execRespond(ctx context.Context, cmd port.Command) (string, er
 	if err := s.runTurn(ctx); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已从该节点生成响应（Head → %s）", s.cur.Head), nil
+	return i18n.Tf("respond.done", "head", s.cur.Head), nil
 }

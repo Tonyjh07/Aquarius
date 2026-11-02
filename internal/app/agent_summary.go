@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -49,7 +50,7 @@ func (a *Agent) generateSummary(ctx context.Context, id conversation.MessageID, 
 		msgs := make([]port.PromptMessage, 0, len(base)+1)
 		msgs = append(msgs, base...)
 		if attempt > 0 {
-			_ = a.ui.Emit(ctx, port.NoticeEvent{Text: "摘要输出未匹配模板，正在带提醒重试"})
+			_ = a.ui.Emit(ctx, port.NoticeEvent{Text: i18n.T("compact.retry_notice")})
 			msgs = append(msgs, port.PromptMessage{
 				Role:    port.PromptUser,
 				Content: []port.PromptPart{{Kind: port.PromptText, Text: compactRetryReminder}},
@@ -104,7 +105,7 @@ func (a *Agent) SummarizeBefore(ctx context.Context, c *conversation.Conversatio
 		return conversation.Message{}, fmt.Errorf("summary: %w", conversation.ErrNotFound)
 	}
 	if tm.Role == conversation.RoleRoot {
-		return conversation.Message{}, errors.New("summary: 会话根节点之前无处可插")
+		return conversation.Message{}, errors.New("summary: " + i18n.T("compact.root_no_place"))
 	}
 	chain, ok := ancestorPath(c, target)
 	if !ok || len(chain) <= 1 {

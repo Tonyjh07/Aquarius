@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -26,34 +27,34 @@ func (s *Session) delegateReport(ctx context.Context, args []string) (string, er
 	switch sub {
 	case "list":
 		if len(args) != 0 {
-			return "", errors.New("用法: /delegate [list|kill <id>]")
+			return "", errors.New(i18n.T("delegate.usage"))
 		}
 		if s.delegates == nil {
-			return delegateEmptyHint, nil
+			return delegateEmptyHint(), nil
 		}
 		list, err := s.delegates.List(ctx)
 		if err != nil {
-			return "", fmt.Errorf("session: 列出外部代理: %w", err)
+			return "", wrapSession("delegate.err_list", err)
 		}
 		if len(list) == 0 {
-			return delegateEmptyHint, nil
+			return delegateEmptyHint(), nil
 		}
 		var b strings.Builder
 		for _, a := range list {
-			state := "可用"
+			state := i18n.T("delegate.state.available")
 			switch {
 			case a.Note != "":
 				state = a.Note
 			case !a.Available:
-				state = "不可用"
+				state = i18n.T("delegate.state.unavailable")
 			}
 			name := a.Name
 			if a.Title != "" {
-				name += "（" + a.Title
 				if a.Version != "" {
-					name += " " + a.Version
+					name += i18n.Tf("delegate.name.versioned", "title", a.Title, "version", a.Version)
+				} else {
+					name += i18n.Tf("delegate.name.titled", "title", a.Title)
 				}
-				name += "）"
 			}
 			fmt.Fprintf(&b, "%s  %s  %s\n", name, state, a.Command)
 		}
@@ -61,25 +62,24 @@ func (s *Session) delegateReport(ctx context.Context, args []string) (string, er
 
 	case "kill":
 		if len(args) != 1 {
-			return "", errors.New("用法: /delegate kill <id>")
+			return "", errors.New(i18n.T("delegate.usage.kill"))
 		}
 		if s.delegates == nil {
-			return "", errors.New("session: 未配置外部代理（SessionDeps.Delegate），/delegate 不可用")
+			return "", errors.New("session: " + i18n.T("delegate.unwired"))
 		}
 		id := port.DelegateID(strings.TrimSpace(args[0]))
 		if id == "" {
-			return "", errors.New("用法: /delegate kill <id>")
+			return "", errors.New(i18n.T("delegate.usage.kill"))
 		}
 		if err := s.delegates.Kill(ctx, id); err != nil {
-			return "", fmt.Errorf("session: 终止转交: %w", err)
+			return "", wrapSession("delegate.err_kill", err)
 		}
-		return fmt.Sprintf("已叫停转交 %s", id), nil
+		return i18n.Tf("delegate.killed", "id", id), nil
 
 	default:
-		return "", errors.New("用法: /delegate [list|kill <id>]")
+		return "", errors.New(i18n.T("delegate.usage"))
 	}
 }
 
 // delegateEmptyHint 零可用代理时的指引：配置是唯一事实源（不内置预设，§5.18）。
-const delegateEmptyHint = "未配置任何外部代理。在 config.json 的 delegate.agents 里写一条（command + 可选 args/env/workdir），" +
-	"并确认该命令在 PATH 上；模型这时不会有 delegate 工具。"
+func delegateEmptyHint() string { return i18n.T("delegate.empty_hint") }

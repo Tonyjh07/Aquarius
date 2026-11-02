@@ -13,11 +13,32 @@ import (
 	"sync/atomic"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // ErrMaxTurns 单次 Run 的"生成 + 工具"循环次数用尽（§7.1）。
-var ErrMaxTurns = errors.New("agent: 超过最大轮次数")
+//
+// 不是 errors.New 常量，而是一个自带 Is 的类型：哨兵值要稳定（上游 errors.Is 靠它），
+// 但它同时是会显示给用户的那句话，文本必须跟着界面语言走。类型带轮次，是因为 %w 会把
+// Error() 的返回值原样带进外层包装——数字留在格式串里就只能是中文语序。
+var ErrMaxTurns error = &maxTurnsError{}
+
+// maxTurnsError 轮次用尽。n = 0 表示调用点不想在句子里带数字。
+type maxTurnsError struct{ n int }
+
+func (e *maxTurnsError) Error() string {
+	if e.n <= 0 {
+		return i18n.T("agent.err.max_turns")
+	}
+	return i18n.Tf("agent.err.max_turns_count", "n", e.n)
+}
+
+// Is 任何一次轮次用尽都算同一个哨兵，调用点带不带数字不影响 errors.Is。
+func (e *maxTurnsError) Is(target error) bool {
+	_, ok := target.(*maxTurnsError)
+	return ok
+}
 
 // defaultMaxTurns Config.MaxTurns <= 0 时的默认值（§8 limits.max_turns；D196）。
 const defaultMaxTurns = 32
@@ -101,15 +122,15 @@ func (a *Agent) setPending(p *pendingList) { a.pending = p }
 func New(d Deps, cfg Config) (*Agent, error) {
 	switch {
 	case d.LLM == nil:
-		return nil, errors.New("agent: LLM 依赖为空")
+		return nil, errors.New("agent: " + i18n.T("agent.err_no_llm"))
 	case d.UI == nil:
-		return nil, errors.New("agent: Presenter 依赖为空")
+		return nil, errors.New("agent: " + i18n.T("agent.err_no_presenter"))
 	case d.IDs == nil:
-		return nil, errors.New("agent: IDGen 依赖为空")
+		return nil, errors.New("agent: " + i18n.T("agent.err_no_idgen"))
 	case d.Clock == nil:
-		return nil, errors.New("agent: Clock 依赖为空")
+		return nil, errors.New("agent: " + i18n.T("agent.err_no_clock"))
 	case strings.TrimSpace(cfg.Model) == "":
-		return nil, errors.New("agent: model 为空")
+		return nil, errors.New("agent: " + i18n.T("agent.err_no_model"))
 	}
 	persona := cfg.Persona
 	if persona == nil { // nil = 空规格默认人格（内置 @default + @env）
@@ -225,7 +246,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		return errors.New("agent: nil conversation")
 	}
 	if len(c.Path()) <= 1 { // 仅 Root = 空会话
-		return errors.New("agent: 会话为空，无可生成的上下文")
+		return errors.New("agent: " + i18n.T("agent.err_empty_conversation"))
 	}
 	// 工具执行上下文：会话 ID（port，memory_* 会话作用域）+ 会话对象（app 内部，context_compact）。
 	ctx = port.WithSessionID(ctx, c.ID)
@@ -242,16 +263,16 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			var cut bool
 			var cerr error
 			if mid, buf, cut, cerr = a.cutSegment(ctx, c, mid, buf); cerr != nil {
-				return fmt.Errorf("切段: %w", cerr)
+				return fmt.Errorf("%s: %w", i18n.T("agent.err_segment"), cerr)
 			}
 			_ = cut
 		}
 		req, err := a.buildRequest(ctx, c, buf)
 		if err != nil {
 			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
-				return fmt.Errorf("装配上下文: %w (commit failed: %v)", err, cerr)
+				return fmt.Errorf("%s: %w (commit failed: %v)", i18n.T("agent.err_assemble"), err, cerr)
 			}
-			return fmt.Errorf("装配上下文: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("agent.err_assemble"), err)
 		}
 		// 三级计数链（D26）：估算当前请求；达阈值 → 自动压缩（轨2）。
 		sentEstimate, _ := a.est.Estimate(ctx, req)
@@ -265,14 +286,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 				// 发起阶段被取消：按取消提交（Outcome: cancelled，返回 nil），
 				// 与断流取消一致（§10）——主循环经 ctx 状态收尾，不报 error 行。
 				if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeCancelled); cerr != nil {
-					return fmt.Errorf("提交取消节点: %w", cerr)
+					return fmt.Errorf("%s: %w", i18n.T("agent.err_commit_cancel"), cerr)
 				}
 				return nil
 			}
 			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
-				return fmt.Errorf("发起生成: %w (commit failed: %v)", err, cerr)
+				return fmt.Errorf("%s: %w (commit failed: %v)", i18n.T("agent.err_start"), err, cerr)
 			}
-			return fmt.Errorf("发起生成: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("agent.err_start"), err)
 		}
 		calls, recvErr := a.consume(ctx, stream, buf, mid)
 		calls = a.normalizeCalls(calls)
@@ -305,14 +326,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		case recvErr != nil:
 			if outcome == conversation.OutcomeCancelled {
 				if _, cerr := a.finishTurn(ctx, c, buf, outcome); cerr != nil {
-					return fmt.Errorf("提交取消节点: %w", cerr)
+					return fmt.Errorf("%s: %w", i18n.T("agent.err_commit_cancel"), cerr)
 				}
 				return nil // 取消已提交，不视为失败
 			}
 			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
-				return fmt.Errorf("生成失败: %w (commit failed: %v)", recvErr, cerr)
+				return fmt.Errorf("%s: %w (commit failed: %v)", i18n.T("agent.err_generate"), recvErr, cerr)
 			}
-			return fmt.Errorf("生成失败: %w", recvErr)
+			return fmt.Errorf("%s: %w", i18n.T("agent.err_generate"), recvErr)
 		case toolErr != nil:
 			// 装配级故障：失败结果已填进分片，提交 Turn 节点后上抛；
 			// 取消（Ctrl+C/超时）按取消收场，不作为错误呈现（§10）。
@@ -328,14 +349,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			var cut bool
 			var cerr error
 			if mid, buf, cut, cerr = a.cutSegment(ctx, c, mid, buf); cerr != nil {
-				return fmt.Errorf("切段: %w", cerr)
+				return fmt.Errorf("%s: %w", i18n.T("agent.err_segment"), cerr)
 			}
 			if cut {
 				continue
 			}
 			// Turn 正常收场：一次性提交（D95）。
 			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeDone); cerr != nil {
-				return fmt.Errorf("提交节点: %w", cerr)
+				return fmt.Errorf("%s: %w", i18n.T("agent.err_commit"), cerr)
 			}
 			return nil
 		}
@@ -345,7 +366,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 	if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeDone); cerr != nil {
 		return fmt.Errorf("%w (commit failed: %v)", ErrMaxTurns, cerr)
 	}
-	return fmt.Errorf("%w（%d）", ErrMaxTurns, a.maxTurns)
+	return &maxTurnsError{n: a.maxTurns}
 }
 
 // finishTurn 提交 Turn 节点并广播（每 Turn 恰一次，D95）：parent 取提交时的 Head
@@ -381,7 +402,7 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 	}
 	req, err := a.buildRequest(ctx, c, nil)
 	if err != nil {
-		return UsageReport{}, fmt.Errorf("装配上下文: %w", err)
+		return UsageReport{}, fmt.Errorf("%s: %w", i18n.T("agent.err_assemble"), err)
 	}
 	est, exact := a.est.Estimate(ctx, req)
 	rep := UsageReport{
@@ -479,7 +500,7 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	if a.tools != nil && a.cfg.Caps.Tools {
 		specs, err := a.tools.Specs(ctx)
 		if err != nil {
-			return port.GenerateRequest{}, fmt.Errorf("工具清单: %w", err)
+			return port.GenerateRequest{}, fmt.Errorf("%s: %w", i18n.T("agent.err_tools"), err)
 		}
 		req.Tools = specs
 	}

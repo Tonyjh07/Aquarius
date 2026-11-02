@@ -134,7 +134,7 @@ func TestSessionTitleAndExitCommands(t *testing.T) {
 	s, _, _ := newTestSession(t, store)
 
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "title"}})
-	if err != nil || !strings.Contains(out, defaultTitle) {
+	if err != nil || !strings.Contains(out, defaultTitle()) {
 		t.Fatalf("title 无参 = %q, %v", out, err)
 	}
 	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "title", Args: []string{"改个", "名字"}}})

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -22,23 +23,23 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 		return out, err
 	}
 	if s.skills == nil {
-		return "", errors.New("session: 未配置技能目录，/skill 不可用")
+		return "", errors.New("session: " + i18n.T("skill.unavailable"))
 	}
 	name := joinArgs(args)
 	if name == "" || name == "list" {
 		if name == "list" && len(args) > 1 {
-			return "", fmt.Errorf("%s", skillAdminUsage)
+			return "", errors.New(skillAdminUsage())
 		}
 		return s.skillList(ctx)
 	}
 	if strings.ContainsAny(name, " \t") {
-		return "", fmt.Errorf("%s（技能名里不含空格）", skillAdminUsage)
+		return "", errors.New(skillAdminUsage() + i18n.T("skill.no_space"))
 	}
 
 	doc, err := s.skills.Load(ctx, name)
 	if err != nil {
 		if errors.Is(err, port.ErrSkillNotFound) {
-			return "", fmt.Errorf("没有名为 %q 的技能（/skill 查看已安装的技能）", name)
+			return "", errors.New(i18n.Tf("skill.not_found", "name", fmt.Sprintf("%q", name)))
 		}
 		return "", err
 	}
@@ -68,7 +69,7 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 		return "", err
 	}
 	if len(landed) == 0 {
-		return "技能已入队（未被排空）", nil
+		return i18n.T("skill.queued"), nil
 	}
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
@@ -76,8 +77,7 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 	if _, err := s.replayHistory(ctx, "replay.verb.skill_loaded"); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已载入技能 %s（正文已进上下文，未起响应；下一步直接说你要做什么）\n目录：%s",
-		doc.Info.Name, doc.Info.Dir), nil
+	return i18n.Tf("skill.loaded", "name", doc.Info.Name, "dir", doc.Info.Dir), nil
 }
 
 // skillList 清单（面向用户的中文输出）：名字、一句说明、来源；坏条目单列原因。
@@ -88,20 +88,20 @@ func (s *Session) skillList(ctx context.Context) (string, error) {
 	}
 	var b strings.Builder
 	if len(list) == 0 {
-		b.WriteString("还没有安装任何技能。\n")
-		b.WriteString("把技能目录放到 <profile>/skills/<名字>/SKILL.md 就生效（或在 config 的 skills.dirs 里加目录）。")
+		b.WriteString(i18n.T("skill.list.empty_head"))
+		b.WriteString(i18n.T("skill.list.empty_hint"))
 	} else {
-		fmt.Fprintf(&b, "已安装 %d 个技能：\n", len(list))
+		b.WriteString(i18n.Tf("skill.list.head", "n", len(list)))
 		for _, sk := range list {
-			fmt.Fprintf(&b, "- %s — %s\n", sk.Name, oneLineUser(sk.Description))
-			fmt.Fprintf(&b, "  来源：%s\n", sk.Source)
+			b.WriteString(i18n.Tf("skill.list.item", "name", sk.Name, "desc", oneLineUser(sk.Description)))
+			b.WriteString(i18n.Tf("skill.list.source", "source", sk.Source))
 		}
-		b.WriteString("用 /skill <名字> 把某个技能载入上下文；模型也会在需要时自己载入。")
+		b.WriteString(i18n.T("skill.list.hint"))
 	}
 	if warns := s.skills.Warnings(ctx); len(warns) > 0 {
-		fmt.Fprintf(&b, "\n未加载的条目（%d 条）：\n", len(warns))
+		b.WriteString(i18n.Tf("skill.list.warnings_head", "n", len(warns)))
 		for _, w := range warns {
-			fmt.Fprintf(&b, "- %s\n", w)
+			b.WriteString(i18n.Tf("skill.list.warning_item", "text", w))
 		}
 	}
 	return strings.TrimRight(b.String(), "\n"), nil

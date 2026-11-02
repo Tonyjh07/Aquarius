@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -44,7 +45,7 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 	if opt.hasAttachOp() {
 		old, ok := s.cur.Find(id)
 		if ok && old.Role != conversation.RoleUser {
-			return "", errors.New("session: 附件增删只适用于用户消息")
+			return "", errors.New("session: " + i18n.T("edit.attach_user_only"))
 		}
 	}
 	// 人格（会话首 system 节点）只能转移历史：另起新分支会把整棵对话留在旧分支、Head 落到
@@ -52,7 +53,7 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 	// 锁成转移历史，命令行也必须给出同一道拦截，否则同一个破坏性操作在两个前端一个有锁、
 	// 一个没有。
 	if old, ok := s.cur.Find(id); ok && s.isPersona(old) && opt.mode != conversation.Carry {
-		return "", errors.New("session: 编辑人格要用 --keep（转移历史）：另起新分支或复制历史会把现有对话留在旧分支，看起来像被清空")
+		return "", errors.New("session: " + i18n.T("edit.persona_keep"))
 	}
 	parts, note, err := s.editPartsWithAttachments(ctx, id, opt)
 	if err != nil {
@@ -60,7 +61,7 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 	}
 	m, err := s.cur.Revise(id, parts, opt.mode)
 	if err != nil {
-		return "", fmt.Errorf("session: 修订: %w", err)
+		return "", wrapSession("edit.revise", err)
 	}
 	if err := s.persist(ctx); err != nil {
 		return "", err
@@ -73,15 +74,15 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 	if _, err := s.replayHistory(ctx, "replay.verb.revised"); err != nil {
 		return "", err
 	}
-	desc := "旧分支保留"
+	desc := i18n.T("edit.branch.kept")
 	switch opt.mode {
 	case conversation.Carry:
-		desc = "后续历史已转移"
+		desc = i18n.T("edit.branch.moved")
 	case conversation.Clone:
-		desc = "后续历史已复制"
+		desc = i18n.T("edit.branch.copied")
 	}
 	if note != "" {
-		desc += "，" + note
+		desc += i18n.Tf("edit.note.attach", "note", note)
 	}
 	// D93：编辑用户消息（Fresh 分叉）= 改写并重新生成——Head 在无回答的新节点上，
 	// 直接重跑一轮（Carry 是原地改写历史，Head 随转移子树；assistant/system 修订
@@ -90,15 +91,16 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 		if err := s.runTurn(ctx); err != nil {
 			return "", err
 		}
-		desc += "，已重新生成回答"
+		desc += i18n.T("edit.note.regen")
 	}
-	return fmt.Sprintf("已修订 %s → %s（%s，%s；Head → %s）", id, m.ID, opt.mode, desc, s.cur.Head), nil
+	return i18n.Tf("edit.revised",
+		"id", id, "new", m.ID, "mode", opt.mode.String(), "desc", desc, "head", s.cur.Head), nil
 }
 
 // execRegen 实现 /regen：重新生成回答（D93 分叉口径）。
 func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
-		return "", errors.New("用法: /regen <id>（id 可为用户或助手消息，支持唯一前缀）")
+		return "", errors.New(i18n.T("usage.regen"))
 	}
 	id, err := s.resolveNode(cmd.Args[0])
 	if err != nil {
@@ -115,7 +117,7 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 		forked = false
 		if s.cur.Head != um.ID {
 			if err := s.cur.Checkout(um.ID); err != nil {
-				return "", fmt.Errorf("session: 移动 Head: %w", err)
+				return "", wrapSession("edit.move_head", err)
 			}
 			if err := s.persist(ctx); err != nil {
 				return "", err
@@ -125,7 +127,7 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 		// 已有回答：原 Parts 原样重发（Revise 内部 cloneParts，多模态分片保真）；
 		// Fresh 开同父兄弟节点，旧回答子树原样留作历史分支。
 		if _, err := s.cur.Revise(um.ID, um.Content, conversation.Fresh); err != nil {
-			return "", fmt.Errorf("session: 重发用户消息: %w", err)
+			return "", wrapSession("edit.resend_user", err)
 		}
 		if err := s.persist(ctx); err != nil {
 			return "", err
@@ -142,9 +144,9 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 		return "", err
 	}
 	if forked {
-		return fmt.Sprintf("已重新生成（旧回答保留为分支；Head → %s）", s.cur.Head), nil
+		return i18n.Tf("edit.regen.forked", "head", s.cur.Head), nil
 	}
-	return fmt.Sprintf("已重新生成（Head → %s）", s.cur.Head), nil
+	return i18n.Tf("edit.regen.done", "head", s.cur.Head), nil
 }
 
 // isPersona 报告节点是否为人格快照（会话首节点）：system 角色且父节点是结构根。
@@ -159,33 +161,34 @@ func (s *Session) isPersona(m conversation.Message) bool {
 func (s *Session) resolveNode(arg string) (conversation.MessageID, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
-		return "", errors.New("缺少节点 id")
+		return "", errors.New(i18n.T("edit.missing_node_id"))
 	}
 	id, hits, ok := port.MatchPrefix(s.cur.IDs(), arg) // 已按 ID 升序，歧义提示可读
 	switch {
 	case ok:
 		return id, nil
 	case len(hits) == 0:
-		return "", fmt.Errorf("会话树中没有节点 %q（/branch 可查看同级 id）", arg)
+		return "", errors.New(i18n.Tf("edit.node_missing", "id", fmt.Sprintf("%q", arg)))
 	default:
-		return "", fmt.Errorf("节点标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(hits, ", "))
+		return "", errors.New(i18n.Tf("edit.node_ambiguous",
+			"id", fmt.Sprintf("%q", arg), "n", len(hits), "hits", strings.Join(hits, ", ")))
 	}
 }
 
 // upstreamUser 沿 Parent 回溯找 id 上游最近一条 user 消息（D92 /regen：
-// 重发对象——id 本身是 user 消息时即其自身）；到 Root（Parent == ""）仍未遇则报错。
+// 重发对象——id 本身是 user 消息时即其自身）；到 Root（Parent 为空）仍未遇则报错。
 func (s *Session) upstreamUser(id conversation.MessageID) (conversation.Message, error) {
 	for cur := id; cur != ""; {
 		m, ok := s.cur.Find(cur)
 		if !ok {
-			return conversation.Message{}, fmt.Errorf("session: 节点 %s 不在会话树中", cur)
+			return conversation.Message{}, errors.New("session: " + i18n.Tf("edit.node_not_in_tree", "id", cur))
 		}
 		if m.Role == conversation.RoleUser {
 			return m, nil
 		}
 		cur = m.Parent
 	}
-	return conversation.Message{}, errors.New("session: 该消息上游没有用户消息，无法重新生成")
+	return conversation.Message{}, errors.New("session: " + i18n.T("edit.no_upstream_user"))
 }
 
 // editPartsWithAttachments 在 editParts 的基础上叠加附件增删（D188）：
@@ -204,10 +207,10 @@ func (s *Session) editPartsWithAttachments(ctx context.Context, id conversation.
 	}
 	old, ok := s.cur.Find(id)
 	if !ok {
-		return nil, "", fmt.Errorf("session: 节点 %s 不在会话树中", id)
+		return nil, "", errors.New("session: " + i18n.Tf("edit.node_not_in_tree", "id", id))
 	}
 	if old.Role != conversation.RoleUser {
-		return nil, "", errors.New("session: 附件增删只适用于用户消息")
+		return nil, "", errors.New("session: " + i18n.T("edit.attach_user_only"))
 	}
 
 	var (
@@ -235,7 +238,7 @@ func (s *Session) editPartsWithAttachments(ctx context.Context, id conversation.
 	}
 	for n := range drop {
 		if n < 0 || n >= total {
-			return nil, "", fmt.Errorf("session: 附件序号 %d 越界（该节点共 %d 个附件）", n, total)
+			return nil, "", errors.New("session: " + i18n.Tf("edit.drop_range", "n", n, "total", total))
 		}
 	}
 	dropped := 0
@@ -271,18 +274,19 @@ func (s *Session) editPartsWithAttachments(ctx context.Context, id conversation.
 				continue
 			}
 			if !filepath.IsAbs(p) {
-				return nil, "", fmt.Errorf("session: 附件路径必须是绝对路径（本产品无工作区概念）：%q", p)
+				return nil, "", errors.New("session: " +
+					i18n.Tf("edit.attach_abs_path", "path", fmt.Sprintf("%q", p)))
 			}
 			raw.Attachments = append(raw.Attachments, port.Attachment{Path: p})
 		}
 		if len(raw.Attachments) > port.MaxAttachments {
-			return nil, "", fmt.Errorf("session: 一条消息最多 %d 个附件（本次新增 %d 个）",
-				port.MaxAttachments, len(raw.Attachments))
+			return nil, "", errors.New("session: " +
+				i18n.Tf("edit.attach_limit_added", "max", port.MaxAttachments, "added", len(raw.Attachments)))
 		}
 		if len(raw.Attachments) > 0 {
 			newParts, note, err := s.ingest(ctx, raw)
 			if err != nil {
-				return nil, "", fmt.Errorf("session: 摄取新附件: %w", err)
+				return nil, "", wrapSession("edit.ingest_attach", err)
 			}
 			parts = append(parts, newParts...)
 			added = countAttachmentParts(newParts)
@@ -293,23 +297,23 @@ func (s *Session) editPartsWithAttachments(ctx context.Context, id conversation.
 	}
 
 	if len(parts) == 0 {
-		return nil, "", errors.New("session: 修订后至少要有正文或一个附件（本次把内容删空了）")
+		return nil, "", errors.New("session: " + i18n.T("edit.empty_after_edit"))
 	}
 	if added+total-dropped > port.MaxAttachments {
-		return nil, "", fmt.Errorf("session: 一条消息最多 %d 个附件（修订后会有 %d 个）",
-			port.MaxAttachments, added+total-dropped)
+		return nil, "", errors.New("session: " +
+			i18n.Tf("edit.attach_limit_total", "max", port.MaxAttachments, "total", added+total-dropped))
 	}
 
 	var changes []string
 	if added > 0 {
-		changes = append(changes, fmt.Sprintf("新增 %d 个附件", added))
+		changes = append(changes, i18n.Tf("edit.attach.added", "n", added))
 	}
 	if dropped > 0 {
-		changes = append(changes, fmt.Sprintf("移除 %d 个附件", dropped))
+		changes = append(changes, i18n.Tf("edit.attach.removed", "n", dropped))
 	}
 	note := ""
 	if len(changes) > 0 {
-		note = strings.Join(changes, "、")
+		note = strings.Join(changes, i18n.T("edit.attach.join"))
 	}
 	return parts, note, nil
 }
@@ -341,7 +345,7 @@ func (s *Session) editParts(id conversation.MessageID, text string, part int) ([
 			out = append(out, p)
 		}
 		if n < part {
-			return nil, fmt.Errorf("session: 正文分片 %d 越界（该节点共 %d 个正文分片）", part, n+1)
+			return nil, errors.New("session: " + i18n.Tf("edit.part_range", "n", part, "total", n+1))
 		}
 		return out, nil
 	}
@@ -385,7 +389,7 @@ func (s *Session) resolveConversation(ctx context.Context, arg string) (conversa
 	}
 	list, err := s.store.List(ctx)
 	if err != nil {
-		return "", fmt.Errorf("session: 列出会话: %w", err)
+		return "", wrapSession("err.list_conversations", err)
 	}
 	ids := make([]conversation.ID, len(list))
 	for i, sm := range list {
@@ -396,21 +400,22 @@ func (s *Session) resolveConversation(ctx context.Context, arg string) (conversa
 	case ok:
 		return id, nil
 	case len(hits) == 0:
-		return "", fmt.Errorf("没有会话 %q（/list 查看可用会话）", arg)
+		return "", errors.New(i18n.Tf("edit.conv_missing", "id", fmt.Sprintf("%q", arg)))
 	default:
-		return "", fmt.Errorf("会话标识 %q 有歧义（命中 %d 个: %s），请加长前缀", arg, len(hits), strings.Join(hits, ", "))
+		return "", errors.New(i18n.Tf("edit.conv_ambiguous",
+			"id", fmt.Sprintf("%q", arg), "n", len(hits), "hits", strings.Join(hits, ", ")))
 	}
 }
 
 // editUsage /edit 的用法文案（命令面与解析错误共用一份，避免两处漂移）。
-const editUsage = "用法: /edit <id> [--keep|--copy] [--part N] [--attach <路径>]... [--drop N]... [--drop-all] [<文本>]（缺省 Fresh 开新分支；--keep 转移后续历史；--copy 复制后续历史；--part N 只改第 N 个正文分片，0 起；--attach 追加附件；--drop N 删除第 N 个附件，0 起；带附件操作时文本可省 = 只改附件）"
+func editUsage() string { return i18n.T("usage.edit") }
 
 // parseEditArgs 解析 /edit：flag 只在紧跟 id 的位置识别（用 flagsLeading：遇到未声明的
-// token（含未知 "--x"）即为文本起点——字面 "--keep" 原样保留的旧口径不变）。--part N =
+// token（含未知「--x」）即为文本起点——字面「--keep」原样保留的旧口径不变）。--part N =
 // 只替换第 N 个正文分片（0 起，D107②）；缺省 -1 = 全部正文并为一条（D107③）。D188 增
 // 附件增删 flag：--attach <路径>（可重复）/ --drop N（可重复，附件分片出现序）/ --drop-all。
 // GUI 结构化提交复用同一 token 序列（D97①/D107②/D188）：
-// Args=[id, flag?, ("--part", N)?, ("--attach", 路径)…, ("--drop", N)…, "--drop-all"?, 文本?]。
+// Args=[id, flag?, --part N?, --attach 路径…, --drop N…, --drop-all?, 文本?]。
 func parseEditArgs(args []string) (editOptions, error) {
 	return parseEditArgsWith(args, nil)
 }
@@ -427,7 +432,7 @@ var editFlags = []flagDecl{
 
 // parseEditArgsWith 同上，另带结构化附件（D188 GUI 编辑态无路径的新增项）。
 func parseEditArgsWith(args []string, extra []port.Attachment) (editOptions, error) {
-	bad := func() (editOptions, error) { return editOptions{}, errors.New(editUsage) }
+	bad := func() (editOptions, error) { return editOptions{}, errors.New(editUsage()) }
 	if len(args) == 0 {
 		return bad()
 	}
@@ -478,7 +483,7 @@ func parseEditArgsWith(args []string, extra []port.Attachment) (editOptions, err
 		if opt.hasAttachOp() {
 			return opt, nil // 只改附件：正文原样保留
 		}
-		return editOptions{}, errors.New(editUsage + "（修订文本不可为空）")
+		return editOptions{}, errors.New(editUsage() + i18n.T("edit.text_empty"))
 	}
 	return opt, nil
 }

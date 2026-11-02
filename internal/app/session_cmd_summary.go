@@ -14,13 +14,14 @@ import (
 	"fmt"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // execSummary 实现 /summary。
 func (s *Session) execSummary(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) == 0 {
-		return "", errors.New("用法: /summary <id> [摘要文本]（不带文本 = 让当前模型总结该节点之上的历史）")
+		return "", errors.New(i18n.T("usage.summary"))
 	}
 	id, err := s.resolveNode(cmd.Args[0])
 	if err != nil {
@@ -34,21 +35,21 @@ func (s *Session) execSummary(ctx context.Context, cmd port.Command) (string, er
 		// 手写档：内容由用户给，不调模型、不记用量。
 		if _, err := s.cur.InsertBefore(id, conversation.RoleSystem,
 			[]conversation.Part{{Kind: conversation.PartText, Text: text}}); err != nil {
-			return "", fmt.Errorf("session: 插入摘要: %w", err)
+			return "", wrapSession("compact.err_insert", err)
 		}
 		if err := s.persist(ctx); err != nil {
 			return "", err
 		}
-		return s.summaryAfterInsert(ctx, fmt.Sprintf("已在 %s 之前插入摘要（手写）", id))
+		return s.summaryAfterInsert(ctx, i18n.Tf("compact.inserted_manual", "id", id))
 	}
 
 	// 模型档：总结 id 之上的祖先链后插入（失败只报错，会话树不动）。
 	node, err := s.agent.SummarizeBefore(ctx, s.cur, id)
 	if errors.Is(err, ErrNoHistoryAbove) {
-		return "该节点之上没有可总结的历史（顶层节点之前不插摘要）", nil
+		return i18n.T("compact.no_history"), nil
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return "已取消插入摘要（会话未改动）", nil
+		return i18n.T("compact.canceled"), nil
 	}
 	if err != nil {
 		return "", err
@@ -56,8 +57,8 @@ func (s *Session) execSummary(ctx context.Context, cmd port.Command) (string, er
 	if err := s.persist(ctx); err != nil {
 		return "", err
 	}
-	return s.summaryAfterInsert(ctx, fmt.Sprintf("已在 %s 之前插入摘要（in=%d out=%d tokens）",
-		id, node.Usage.InputTokens, node.Usage.OutputTokens))
+	return s.summaryAfterInsert(ctx, i18n.Tf("compact.inserted_tokens", "id", id,
+		"in", node.Usage.InputTokens, "out", node.Usage.OutputTokens))
 }
 
 // summaryTarget 校验摘要目标：不能是 Root，也不能是会话首节点（父 = Root，即人格快照）——
@@ -71,14 +72,13 @@ func (s *Session) execSummary(ctx context.Context, cmd port.Command) (string, er
 func (s *Session) summaryTarget(id conversation.MessageID) error {
 	m, ok := s.cur.Find(id)
 	if !ok {
-		return fmt.Errorf("会话树中没有节点 %q", id)
+		return errors.New(i18n.Tf("compact.no_such_node", "id", fmt.Sprintf("%q", id)))
 	}
 	if m.Role == conversation.RoleRoot || m.Parent == conversation.MessageID(s.cur.ID) {
-		return errors.New("不能在会话根或会话首节点之前插入摘要（其上没有可总结的历史）")
+		return errors.New(i18n.T("compact.root_target"))
 	}
 	if s.summaryCovered(id) {
-		return errors.New("该节点之下已被摘要覆盖：新摘要会落在旧摘要之上，水位仍停在旧摘要、不会进入上下文" +
-			"（要重新总结，请把摘要插到旧摘要之后的节点之前）")
+		return errors.New(i18n.T("compact.covered"))
 	}
 	return nil
 }

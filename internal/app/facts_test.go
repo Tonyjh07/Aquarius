@@ -16,8 +16,8 @@ func TestFactsPublishOnConstruct(t *testing.T) {
 	s, _, _ := newTestSession(t, store)
 
 	f := s.Facts()
-	if f.Title != defaultTitle {
-		t.Fatalf("Title = %q, want %q", f.Title, defaultTitle)
+	if f.Title != defaultTitle() {
+		t.Fatalf("Title = %q, want %q", f.Title, defaultTitle())
 	}
 	if f.ConvID != string(s.Current().ID) {
 		t.Fatalf("ConvID = %q, want %q", f.ConvID, s.Current().ID)
@@ -61,7 +61,7 @@ func TestFactsRecomputedAfterTurn(t *testing.T) {
 	if after.LastIn != 100 || after.LastOut != 20 {
 		t.Fatalf("Last = %d/%d, want 100/20（上轮实测）", after.LastIn, after.LastOut)
 	}
-	if after.Title == defaultTitle {
+	if after.Title == defaultTitle() {
 		t.Fatalf("Title 未随首条消息改写: %q", after.Title)
 	}
 	if after.CtxTokens <= 0 {

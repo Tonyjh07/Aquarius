@@ -1,0 +1,152 @@
+package i18n
+
+// enEditTexts 会话编辑、人格（character）、技能与注入：与 zh_edit.go 同 key、同顺序、同占位符名。
+var enEditTexts = map[string]string{
+
+	// 用法
+	"usage.edit":      "Usage: /edit <id> [--keep|--copy] [--part N] [--attach <path>]... [--drop N]... [--drop-all] [<text>] (a fresh branch by default; --keep moves later history over; --copy copies it; --part N rewrites only the Nth text part, 0-based; --attach appends an attachment; --drop N removes the Nth attachment, 0-based; with attachment operations the text may be omitted = attachments only)",
+	"usage.regen":     "Usage: /regen <id> (id may be a user or assistant message; unique prefixes work)",
+	"usage.character": "Usage: /character list | /character show <character> | /character import <card file> | /character start <character> [greeting index] | /character remove <character>",
+	"usage.skill":     "Usage: /skill list | /skill <name> | /skill install <path or link> | /skill remove <name> | /skill update [name|all]",
+	"usage.inject":    "Usage: /inject [--source <name>] [--no-trigger] <text>",
+	"usage.respond":   "Usage: /respond <id> (unique prefixes work)",
+
+	// /edit 与 /regen 的回执
+	"edit.branch.kept":    "old branch kept",
+	"edit.branch.moved":   "later history moved",
+	"edit.branch.copied":  "later history copied",
+	"edit.note.attach":    ", {note}",
+	"edit.note.regen":     ", response regenerated",
+	"edit.revised":        "Revised {id} → {new} ({mode}, {desc}; Head → {head})",
+	"edit.regen.forked":   "Regenerated (the old answer is kept as a branch; Head → {head})",
+	"edit.regen.done":     "Regenerated (Head → {head})",
+	"edit.attach.added":   "added {n} attachments",
+	"edit.attach.removed": "removed {n} attachments",
+	"edit.attach.join":    ", ",
+
+	// /edit 的报错
+	"edit.attach_user_only":   "attachments can only be added to or removed from user messages",
+	"edit.persona_keep":       "editing the persona requires --keep (move the history over): a new branch or a copy would leave the current conversation on the old branch and look like it was wiped",
+	"edit.revise":             "revise",
+	"edit.move_head":          "move Head",
+	"edit.resend_user":        "resend the user message",
+	"edit.missing_node_id":    "missing node id",
+	"edit.node_missing":       "no node {id} in the conversation tree (/branch lists the ids on this level)",
+	"edit.node_ambiguous":     "node id {id} is ambiguous ({n} matches: {hits}), give a longer prefix",
+	"edit.node_not_in_tree":   "node {id} is not in the conversation tree",
+	"edit.no_upstream_user":   "no user message upstream of this one, nothing to regenerate",
+	"edit.drop_range":         "attachment index {n} is out of range (this node has {total} attachments)",
+	"edit.attach_abs_path":    "attachment paths must be absolute (this product has no workspace concept): {path}",
+	"edit.attach_limit_added": "a message takes at most {max} attachments ({added} added this time)",
+	"edit.attach_limit_total": "a message takes at most {max} attachments ({total} after the revision)",
+	"edit.ingest_attach":      "ingest the new attachments",
+	"edit.empty_after_edit":   "a revision must keep the text or at least one attachment (this one removed everything)",
+	"edit.part_range":         "text part {n} is out of range (this node has {total} text parts)",
+	"edit.conv_missing":       "no conversation {id} (/list lists the available ones)",
+	"edit.conv_ambiguous":     "conversation id {id} is ambiguous ({n} matches: {hits}), give a longer prefix",
+	"edit.text_empty":         " (the revision text cannot be empty)",
+
+	// /character 的清单与详情
+	"char.list.empty_head":  "No character card has been imported yet.\n",
+	"char.list.empty_hint":  "Import one with /character import <card file> (PNG / JSON / .charx).",
+	"char.list.head":        "{n} character cards imported:\n",
+	"char.list.item":        "- {display} ({slug}) · {source}/{spec} · {book} world book entries · {greetings} alternate greetings\n",
+	"char.list.hint":        "Use /character show <character> for details, /character start <character> to start a new conversation.",
+	"char.show.head":        "Character card: {display} ({slug})\n",
+	"char.show.spec_source": "Spec: {spec} | Source: {source}",
+	"char.show.imported":    " | Imported: {at}",
+	"char.start_hint":       "\nUse /character start {slug} to start a new conversation.",
+	"char.meta.author":      "Author: {name}",
+	"char.meta.version":     "Version: {version}",
+	"char.meta.tags":        "Tags: {tags}",
+	"char.meta.join":        " | ",
+	"char.list_join":        ", ",
+	"char.warnings.head":    "\nNotes ({n}):\n",
+	"char.warnings.item":    "- {text}\n",
+
+	// /character 的导入、删除与报错
+	"char.unavailable":         "no character card directory configured, /character is unavailable",
+	"char.not_found":           "no character card named {slug} (/character list shows the catalogue)",
+	"char.admin_missing":       "this build has no character card import surface wired",
+	"char.imported":            "Imported character card \"{display}\" ({slug})\n",
+	"char.bad_opening_index":   " (the greeting index is a number)",
+	"char.confirm_remove":      "Remove character card {slug}? Conversations already started with it are unaffected (the card text in a conversation is a snapshot)",
+	"char.confirm_remove_fail": "confirm removing the character card",
+	"char.remove_canceled":     "Canceled removing character card {slug}",
+	"char.removed":             "Removed character card {slug}",
+	"char.load":                "load the character card",
+	"char.new_conversation":    "create the character conversation",
+	"char.write_persona":       "write the character persona node",
+	"char.write_examples":      "write the character example node",
+	"char.write_greeting":      "write the greeting",
+	"char.greeting_range":      "greeting index {n} is out of range: this card offers {total}",
+
+	// 角色会话的回执与人格模式
+	"char.mode.append":  "the user persona comes first and the card's character setting follows ({{original}} counts as empty)",
+	"char.mode.replace": "the card's system_prompt replaces the user persona ({{original}} expands to the persona text; environment info is kept)",
+	"char.started":      "Started a new conversation {id} with character \"{display}\"\nPersona mode: {mode}",
+
+	// 角色卡回执正文（四类 + 两类提示）
+	"char.report.book_injected":  "World book: {total} entries, {constant} of them constant and injected into the persona (paid in tokens every turn)",
+	"char.report.book_kept":      "World book: all {total} entries kept but not injected, {constant} of them constant (not injected with the current switch)",
+	"char.report.assets_head":    "Assets: ",
+	"char.report.assets_icon":    "the icon is used as the avatar",
+	"char.report.assets_no_icon": "no icon",
+	"char.report.assets_extra":   "; the other {n} assets are kept in the original package, neither inlined nor downloaded in this version",
+	"char.report.unsupported":    "Mechanisms not executed: {list} — kept with the original card, never run in this version",
+	"char.report.display_only":   "Display-only fields: author notes, tags, author, version and import date are shown only and never enter the model context.",
+	"char.report.html":           "Screen note: the card text contains HTML tags; the screen shows it as plain text and the tags appear verbatim.",
+	"char.report.opening_long":   "Long greeting: entry {index} is about {tokens} tokens (a quarter of the compaction threshold is about {budget}) and takes a large part of the first turn's context; the card text is used as-is and never truncated.",
+
+	// /skill 的清单与载入
+	"skill.unavailable":        "no skill directory configured, /skill is unavailable",
+	"skill.no_space":           " (a skill name contains no spaces)",
+	"skill.not_found":          "no skill named {name} (/skill lists the installed ones)",
+	"skill.queued":             "The skill was queued (not drained)",
+	"skill.loaded":             "Loaded skill {name} (the text is in context and no response was started; next just say what you want to do)\nDirectory: {dir}",
+	"skill.list.empty_head":    "No skill is installed yet.\n",
+	"skill.list.empty_hint":    "Put a skill directory at <profile>/skills/<name>/SKILL.md and it takes effect (or add directories to skills.dirs in the config).",
+	"skill.list.head":          "{n} skills installed:\n",
+	"skill.list.item":          "- {name} — {desc}\n",
+	"skill.list.source":        "  Source: {source}\n",
+	"skill.list.hint":          "Use /skill <name> to load a skill into context; the model also loads them itself when it needs one.",
+	"skill.list.warnings_head": "\nEntries not loaded ({n}):\n",
+	"skill.list.warning_item":  "- {text}\n",
+
+	// /skill 的安装面
+	"skill.admin_missing":       "this build has no skill install surface wired",
+	"skill.verb.installed":      "Installed",
+	"skill.verb.updated":        "Updated",
+	"skill.confirm_remove":      "Uninstall skill {name}? Only this copy in the install directory is deleted; external skill directories are untouched",
+	"skill.confirm_remove_fail": "confirm uninstalling the skill",
+	"skill.remove_canceled":     "Canceled uninstalling skill {name}",
+	"skill.removed":             "Uninstalled skill {name} (the copy in the install directory is deleted)",
+	"skill.report.zero":         "{verb} 0 skills",
+	"skill.report.head":         "{verb} {n} skills:\n",
+	"skill.report.item":         "- {name}\n",
+	"skill.report.skipped_head": "\nEntries not installed ({n}):\n",
+	"skill.report.footer":       "\nUse /skill list for the catalogue; scripts/ inside a skill still need tool approval to run.",
+
+	// /inject 的回执
+	"inject.queued":           "The injection was queued (not drained)",
+	"inject.state.no_trigger": "no response triggered",
+	"inject.state.triggered":  "response triggered",
+	"inject.done":             "Injected a {source} context ({state}; Head → {head})",
+	"inject.usage_error":      "{usage} ({reason})",
+
+	// /inject 与注入管线的报错
+	"inject.queue_full":       "the injection queue is full (retry later)",
+	"inject.empty":            "the injected content is empty",
+	"inject.invalid":          "the injected content is invalid",
+	"inject.announce":         "present the landed injection",
+	"inject.land":             "land the injection",
+	"inject.target_gone":      "target conversation {target} of injection {source} was deleted, content dropped",
+	"inject.elsewhere_load":   "read conversation {id} for an off-focus landing",
+	"inject.elsewhere_append": "land off-focus in conversation {id}",
+	"inject.elsewhere_save":   "save conversation {id} after an off-focus landing",
+
+	// /respond
+	"respond.root":      "cannot generate a response at the conversation root (the root is the conversation itself and has no context to continue)",
+	"respond.move_head": "move Head",
+	"respond.done":      "Generated a response from that node (Head → {head})",
+}

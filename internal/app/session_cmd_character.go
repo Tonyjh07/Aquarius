@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -22,7 +23,7 @@ func (s *Session) execCharacter(ctx context.Context, args []string) (string, err
 	switch sub {
 	case "list":
 		if len(args) > 0 {
-			return "", fmt.Errorf("%s", characterAdminUsage)
+			return "", errors.New(characterAdminUsage())
 		}
 		return s.characterList(ctx)
 	case "show":
@@ -34,14 +35,14 @@ func (s *Session) execCharacter(ctx context.Context, args []string) (string, err
 	case "remove", "rm":
 		return s.characterRemove(ctx, args)
 	default:
-		return "", fmt.Errorf("%s", characterAdminUsage)
+		return "", errors.New(characterAdminUsage())
 	}
 }
 
 // characterList 清单（面向用户的中文输出）：显示名、slug、来源与规范、世界书与备用开场白条数。
 func (s *Session) characterList(ctx context.Context) (string, error) {
 	if s.characters == nil {
-		return "", errors.New("session: 未配置角色卡目录，/character 不可用")
+		return "", errors.New("session: " + i18n.T("char.unavailable"))
 	}
 	list, err := s.characters.List(ctx)
 	if err != nil {
@@ -49,16 +50,17 @@ func (s *Session) characterList(ctx context.Context) (string, error) {
 	}
 	var b strings.Builder
 	if len(list) == 0 {
-		b.WriteString("还没有导入任何角色卡。\n")
-		b.WriteString("用 /character import <卡文件> 导入一张（PNG / JSON / .charx）。")
+		b.WriteString(i18n.T("char.list.empty_head"))
+		b.WriteString(i18n.T("char.list.empty_hint"))
 		return b.String(), nil
 	}
-	fmt.Fprintf(&b, "已导入 %d 张角色卡：\n", len(list))
+	b.WriteString(i18n.Tf("char.list.head", "n", len(list)))
 	for _, c := range list {
-		fmt.Fprintf(&b, "- %s（%s） · %s/%s · 世界书 %d 条 · 备用开场白 %d 条\n",
-			c.Display, c.Slug, c.Source, c.Spec, c.BookEntries, c.Greetings)
+		b.WriteString(i18n.Tf("char.list.item",
+			"display", c.Display, "slug", c.Slug, "source", c.Source, "spec", c.Spec,
+			"book", c.BookEntries, "greetings", c.Greetings))
 	}
-	b.WriteString("用 /character show <角色> 看详情，/character start <角色> 开新会话。")
+	b.WriteString(i18n.T("char.list.hint"))
 	return b.String(), nil
 }
 
@@ -66,30 +68,30 @@ func (s *Session) characterList(ctx context.Context) (string, error) {
 func (s *Session) characterShow(ctx context.Context, args []string) (string, error) {
 	slug := joinArgs(args)
 	if slug == "" {
-		return "", fmt.Errorf("%s", characterAdminUsage)
+		return "", errors.New(characterAdminUsage())
 	}
 	if s.characters == nil {
-		return "", errors.New("session: 未配置角色卡目录，/character 不可用")
+		return "", errors.New("session: " + i18n.T("char.unavailable"))
 	}
 	card, err := s.characters.Load(ctx, slug)
 	if err != nil {
 		if errors.Is(err, port.ErrCharacterNotFound) {
-			return "", fmt.Errorf("没有名为 %q 的角色卡（/character list 查看清单）", slug)
+			return "", errors.New(i18n.Tf("char.not_found", "slug", fmt.Sprintf("%q", slug)))
 		}
 		return "", err
 	}
 	var b strings.Builder
 	info := card.Info
-	fmt.Fprintf(&b, "角色卡：%s（%s）\n", info.Display, info.Slug)
-	fmt.Fprintf(&b, "规范：%s ｜ 来源：%s", info.Spec, info.Source)
+	b.WriteString(i18n.Tf("char.show.head", "display", info.Display, "slug", info.Slug))
+	b.WriteString(i18n.Tf("char.show.spec_source", "spec", info.Spec, "source", info.Source))
 	if !info.ImportedAt.IsZero() {
-		fmt.Fprintf(&b, " ｜ 导入：%s", info.ImportedAt.Format("2006-01-02 15:04"))
+		b.WriteString(i18n.Tf("char.show.imported", "at", info.ImportedAt.Format("2006-01-02 15:04")))
 	}
 	b.WriteByte('\n')
 	writeDisplayMeta(&b, info)
 	s.writeCharacterReport(&b, card)
 	writeWarnings(&b, info.Warnings)
-	fmt.Fprintf(&b, "\n用 /character start %s 开新会话。", info.Slug)
+	b.WriteString(i18n.Tf("char.start_hint", "slug", info.Slug))
 	return b.String(), nil
 }
 
@@ -97,34 +99,34 @@ func (s *Session) characterShow(ctx context.Context, args []string) (string, err
 func (s *Session) characterImport(ctx context.Context, args []string) (string, error) {
 	source := joinArgs(args)
 	if source == "" {
-		return "", fmt.Errorf("%s", characterAdminUsage)
+		return "", errors.New(characterAdminUsage())
 	}
 	if s.charAdmin == nil {
-		return "", errors.New("本构建未接入角色卡导入面")
+		return "", errors.New(i18n.T("char.admin_missing"))
 	}
 	card, err := s.charAdmin.Import(ctx, source)
 	if err != nil {
 		return "", err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "已导入角色卡「%s」（%s）\n", card.Info.Display, card.Info.Slug)
+	b.WriteString(i18n.Tf("char.imported", "display", card.Info.Display, "slug", card.Info.Slug))
 	s.writeCharacterReport(&b, card)
 	writeWarnings(&b, card.Info.Warnings)
-	fmt.Fprintf(&b, "\n用 /character start %s 开新会话。", card.Info.Slug)
+	b.WriteString(i18n.Tf("char.start_hint", "slug", card.Info.Slug))
 	return b.String(), nil
 }
 
 // characterStart /character start <角色> [开场白序号]。
 func (s *Session) characterStart(ctx context.Context, args []string) (string, error) {
 	if len(args) == 0 || len(args) > 2 {
-		return "", fmt.Errorf("%s", characterAdminUsage)
+		return "", errors.New(characterAdminUsage())
 	}
 	slug := strings.TrimSpace(args[0])
 	n := 0
 	if len(args) == 2 {
 		v, ok := parseIndex(args[1])
 		if !ok {
-			return "", fmt.Errorf("%s（开场白序号是整数）", characterAdminUsage)
+			return "", errors.New(characterAdminUsage() + i18n.T("char.bad_opening_index"))
 		}
 		n = v
 	}
@@ -135,25 +137,25 @@ func (s *Session) characterStart(ctx context.Context, args []string) (string, er
 func (s *Session) characterRemove(ctx context.Context, args []string) (string, error) {
 	slug := joinArgs(args)
 	if slug == "" {
-		return "", fmt.Errorf("%s", characterAdminUsage)
+		return "", errors.New(characterAdminUsage())
 	}
 	if s.charAdmin == nil {
-		return "", errors.New("本构建未接入角色卡导入面")
+		return "", errors.New(i18n.T("char.admin_missing"))
 	}
 	if s.confirmer != nil {
 		ans, err := s.confirmer.Confirm(ctx,
-			fmt.Sprintf("确认删除角色卡 %s？已用它开过的会话不受影响（卡文本在会话里是快照）", slug))
+			i18n.Tf("char.confirm_remove", "slug", slug))
 		if err != nil {
-			return "", fmt.Errorf("确认删除角色卡: %w", err)
+			return "", fmt.Errorf("%s: %w", i18n.T("char.confirm_remove_fail"), err)
 		}
 		if !ans.Allow {
-			return fmt.Sprintf("已取消删除角色卡 %s", slug), nil
+			return i18n.Tf("char.remove_canceled", "slug", slug), nil
 		}
 	}
 	if err := s.charAdmin.Remove(ctx, slug); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已删除角色卡 %s", slug), nil
+	return i18n.Tf("char.removed", "slug", slug), nil
 }
 
 // writeCharacterReport 写四类回执 + 两类提示（§5.17）：正文排版交给 characterReportLines，
@@ -169,16 +171,16 @@ func (s *Session) writeCharacterReport(b *strings.Builder, card port.CharacterCa
 func writeDisplayMeta(b *strings.Builder, info port.CharacterInfo) {
 	var parts []string
 	if info.Creator != "" {
-		parts = append(parts, "作者："+info.Creator)
+		parts = append(parts, i18n.Tf("char.meta.author", "name", info.Creator))
 	}
 	if info.Version != "" {
-		parts = append(parts, "版本："+info.Version)
+		parts = append(parts, i18n.Tf("char.meta.version", "version", info.Version))
 	}
 	if len(info.Tags) > 0 {
-		parts = append(parts, "标签："+strings.Join(info.Tags, "、"))
+		parts = append(parts, i18n.Tf("char.meta.tags", "tags", strings.Join(info.Tags, i18n.T("char.list_join"))))
 	}
 	if len(parts) > 0 {
-		b.WriteString(strings.Join(parts, " ｜ "))
+		b.WriteString(strings.Join(parts, i18n.T("char.meta.join")))
 		b.WriteByte('\n')
 	}
 }
@@ -188,8 +190,8 @@ func writeWarnings(b *strings.Builder, warnings []string) {
 	if len(warnings) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "\n注意（%d 条）：\n", len(warnings))
+	b.WriteString(i18n.Tf("char.warnings.head", "n", len(warnings)))
 	for _, w := range warnings {
-		fmt.Fprintf(b, "- %s\n", w)
+		b.WriteString(i18n.Tf("char.warnings.item", "text", w))
 	}
 }

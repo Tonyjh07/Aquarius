@@ -5,14 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // PluginInfo /plugin list 的一行（§7.3）：宿主快照的 app 侧投影——
 // app 只定义消费面，不 import 插件宿主内部包（同 D13 边界）。
 type PluginInfo struct {
 	Name         string
-	Source       string // "config" | "plugins"（声明来源，D31）
+	Source       string // 「config」 | 「plugins」（声明来源，D31）
 	Transport    string // "stdio" | "streamable-http"
 	Capabilities []string
 	Granted      []string // 已授权能力（config plugins.<name>.granted）
@@ -42,7 +45,7 @@ type PluginAdmin interface {
 // execPlugin /plugin [list|enable <name>|disable <name>]（§7.3 / D31）。
 func (s *Session) execPlugin(ctx context.Context, args []string) (string, error) {
 	if s.plugins == nil {
-		return "", errors.New("session: 未配置插件宿主（SessionDeps.Plugins），/plugin 不可用")
+		return "", errors.New("session: " + i18n.T("plugin.unwired"))
 	}
 	sub := "list"
 	if len(args) > 0 {
@@ -51,16 +54,16 @@ func (s *Session) execPlugin(ctx context.Context, args []string) (string, error)
 	switch sub {
 	case "list", "":
 		if len(args) > 1 {
-			return "", errors.New("用法: /plugin list")
+			return "", errors.New(i18n.T("plugin.usage.list"))
 		}
 		out := formatPlugins(s.plugins.Plugins())
 		if dyn := s.dynamicNames(); len(dyn) > 0 {
-			out += "\n动态命令（MCP prompts）:\n  /" + strings.Join(dyn, "\n  /")
+			out += i18n.T("plugin.dynamic_head") + strings.Join(dyn, "\n  /")
 		}
 		return out, nil
 	case "enable":
 		if len(args) != 2 {
-			return "", errors.New("用法: /plugin enable <name>")
+			return "", errors.New(i18n.T("plugin.usage.enable"))
 		}
 		if err := s.plugins.Enable(ctx, args[1]); err != nil {
 			return "", err
@@ -68,15 +71,16 @@ func (s *Session) execPlugin(ctx context.Context, args []string) (string, error)
 		return enableResult(s.plugins.Plugins(), args[1]), nil
 	case "disable":
 		if len(args) != 2 {
-			return "", errors.New("用法: /plugin disable <name>")
+			return "", errors.New(i18n.T("plugin.usage.disable"))
 		}
 		if err := s.plugins.Disable(args[1]); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("已停用 %s", args[1]), nil
-	case "logs": // S6/D143：tail audit.log 的插件调用行（无参 = 各插件最近调用摘要）
+		return i18n.Tf("plugin.disabled", "name", args[1]), nil
+	// S6/D143：tail audit.log 的插件调用行（无参 = 各插件最近调用摘要）
+	case "logs":
 		if len(args) > 2 {
-			return "", errors.New("用法: /plugin logs [name]")
+			return "", errors.New(i18n.T("plugin.usage.logs"))
 		}
 		name := ""
 		if len(args) == 2 {
@@ -88,7 +92,7 @@ func (s *Session) execPlugin(ctx context.Context, args []string) (string, error)
 		}
 		return out, nil
 	default:
-		return "", errors.New("用法: /plugin [list|enable <name>|disable <name>|logs [name]]")
+		return "", errors.New(i18n.T("plugin.usage"))
 	}
 }
 
@@ -98,38 +102,39 @@ func enableResult(list []PluginInfo, name string) string {
 		if p.Name != name {
 			continue
 		}
-		line := fmt.Sprintf("已启用 %s → %s", name, p.Status)
+		line := i18n.Tf("plugin.enabled_status", "name", name, "status", p.Status)
 		if p.LastErr != "" {
-			line += "（" + p.LastErr + "）"
+			line += i18n.Tf("plugin.enabled_note", "error", p.LastErr)
 		}
 		return line
 	}
-	return fmt.Sprintf("已启用 %s", name)
+	return i18n.Tf("plugin.enabled", "name", name)
 }
 
 // formatPlugins /plugin list 表格：状态/来源/传输/能力授权/调用统计/重启与报因。
 func formatPlugins(list []PluginInfo) string {
 	if len(list) == 0 {
-		return "没有已声明的插件（config mcpServers 或 ~/.aquarius/plugins/*/plugin.json）"
+		return i18n.T("plugin.list.empty")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "插件（%d 个）:\n", len(list))
+	b.WriteString(i18n.Tf("plugin.list.head", "n", strconv.Itoa(len(list))))
+	b.WriteByte('\n')
 	for _, p := range list {
 		fmt.Fprintf(&b, "  [%s] %-16s %s/%s", p.Status, p.Name, orDash(p.Source), orDash(p.Transport))
 		if caps := capLabels(p); caps != "" {
-			fmt.Fprintf(&b, " 能力:%s", caps)
+			b.WriteString(i18n.Tf("plugin.list.caps", "caps", caps))
 		}
 		if p.Calls > 0 {
-			fmt.Fprintf(&b, " 调用%d", p.Calls)
+			b.WriteString(i18n.Tf("plugin.list.calls", "calls", strconv.Itoa(p.Calls)))
 			if p.Errors > 0 {
-				fmt.Fprintf(&b, ", 失败%d", p.Errors)
+				b.WriteString(i18n.Tf("plugin.list.errors", "errors", strconv.Itoa(p.Errors)))
 			}
 		}
 		if p.Restarts > 0 {
-			fmt.Fprintf(&b, " 重启%d", p.Restarts)
+			b.WriteString(i18n.Tf("plugin.list.restarts", "restarts", strconv.Itoa(p.Restarts)))
 		}
 		if p.LastErr != "" {
-			fmt.Fprintf(&b, " 错误:%s", p.LastErr)
+			b.WriteString(i18n.Tf("plugin.list.last_error", "error", p.LastErr))
 		}
 		b.WriteByte('\n')
 	}
@@ -157,10 +162,10 @@ func capLabels(p PluginInfo) string {
 	}
 	parts := make([]string, len(p.Capabilities))
 	for i, c := range p.Capabilities {
-		mark := "(未授权)"
+		mark := i18n.T("plugin.cap.ungranted")
 		for _, g := range p.Granted {
 			if g == c {
-				mark = "(已授权)"
+				mark = i18n.T("plugin.cap.granted")
 				break
 			}
 		}

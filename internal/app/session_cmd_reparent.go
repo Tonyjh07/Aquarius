@@ -3,15 +3,15 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // reparentUsage /reparent 的用法句（两条路各一句，报错时原样给出）。
-const reparentUsage = "用法: /reparent <id> <新父>（都支持唯一前缀，id 与 /branch 里看到的一致）｜/reparent --undo"
+func reparentUsage() string { return i18n.T("usage.reparent") }
 
 // execReparent 实现 /reparent（D255/D256）：整棵子树改挂到新父下，或反做最近一次搬运。
 //
@@ -22,11 +22,11 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 		return s.undoReparent(ctx)
 	}
 	if len(cmd.Args) != 2 {
-		return "", errors.New(reparentUsage)
+		return "", errors.New(reparentUsage())
 	}
 	for _, a := range cmd.Args {
 		if strings.HasPrefix(a, "--") {
-			return "", errors.New(reparentUsage)
+			return "", errors.New(reparentUsage())
 		}
 	}
 	id, err := s.resolveNode(cmd.Args[0])
@@ -41,25 +41,25 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 	head := s.cur.Head
 	res, err := s.cur.Reparent(id, parent)
 	if err != nil {
-		return "", fmt.Errorf("session: 改父: %w", err)
+		return "", wrapSession("err.reparent", err)
 	}
-	line := fmt.Sprintf("已改父：%d 个节点挂到 %s 下（/reparent --undo 可撤销）", res.Moved, parent)
+	line := i18n.Tf("reparent.done", "n", res.Moved, "parent", parent)
 	if s.cur.IsPad(parent) {
-		line += "；目标是衬垫，它会降级为普通节点、版本组随之变化"
+		line += i18n.T("reparent.done_pad")
 	}
 	// 树编辑会话内：只改内存，退出时统一落盘（D258）；转写区也不重画——
 	// 编辑期间连着拖几下手会不停清屏，而这次改动的最终形状在退出时才需要确认。
 	if s.treeEdit != nil {
 		s.treeEdit.edits++
-		return line + "（树编辑中，退出时统一保存）", nil
+		return line + i18n.T("reparent.in_edit"), nil
 	}
 	if err := s.persist(ctx); err != nil {
 		// 与 /rm 同口径：落盘失败不留在内存里半生效——回到最近一次成功保存的状态。
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
 			s.cur = c
-			return "", fmt.Errorf("session: 落盘失败，改父已回滚: %w", err)
+			return "", wrapSession("err.reparent_persist_rollback", err)
 		}
-		return "", fmt.Errorf("session: 落盘失败且无法回滚，改父仅存在于内存: %w", err)
+		return "", wrapSession("err.reparent_persist_stuck", err)
 	}
 
 	// Head 没动，但被搬子树若包含 Head，它上来的那条路换了——转写区要跟着重画
@@ -80,25 +80,25 @@ func (s *Session) undoReparent(ctx context.Context) (string, error) {
 	head := s.cur.Head
 	d, err := s.cur.UndoLastDetachment()
 	if err != nil {
-		return "", fmt.Errorf("session: 撤销改父: %w", err)
+		return "", wrapSession("err.reparent_undo", err)
 	}
-	what := "改父"
+	what := i18n.T("reparent.kind.move")
 	if d.Kind == conversation.DetachTransfer {
-		what = "转移"
+		what = i18n.T("reparent.kind.transfer")
 	}
-	line := fmt.Sprintf("已撤销最近一次%s：%d 个节点挂回 %s 下", what, len(d.Roots), d.Anchor)
+	line := i18n.Tf("reparent.undone", "what", what, "n", len(d.Roots), "anchor", d.Anchor)
 	if s.treeEdit != nil {
 		if s.treeEdit.edits > 0 {
 			s.treeEdit.edits--
 		}
-		return line + "（树编辑中，退出时统一保存）", nil
+		return line + i18n.T("reparent.in_edit"), nil
 	}
 	if err := s.persist(ctx); err != nil {
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
 			s.cur = c
-			return "", fmt.Errorf("session: 落盘失败，撤销已回滚: %w", err)
+			return "", wrapSession("err.undo_persist_rollback", err)
 		}
-		return "", fmt.Errorf("session: 落盘失败且无法回滚，撤销仅存在于内存: %w", err)
+		return "", wrapSession("err.undo_persist_stuck", err)
 	}
 	if pathContains(s.cur, d.Roots[0], head) {
 		if err := s.emitClear(ctx); err != nil {

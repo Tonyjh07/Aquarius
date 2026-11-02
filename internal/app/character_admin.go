@@ -9,11 +9,12 @@ package app
 import (
 	"context"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // characterAdminUsage 管理面用法（用户面；子命令错误统一提示）。
-const characterAdminUsage = "用法: /character list | /character show <角色> | /character import <卡文件> | /character start <角色> [开场白序号] | /character remove <角色>"
+func characterAdminUsage() string { return i18n.T("usage.character") }
 
 // CharacterAdmin 角色卡管理面（装配根实现；线程安全，命令面与设置窗共用）。
 type CharacterAdmin interface {

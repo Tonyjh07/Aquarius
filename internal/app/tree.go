@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -191,7 +192,7 @@ func nodeAttachments(m conversation.Message) []port.AttachmentView {
 			v.Name, v.MIME, v.Size = p.Ref.Name, p.Ref.MIME, p.Ref.Size
 		}
 		if v.Name == "" {
-			v.Name = "(未命名附件)"
+			v.Name = i18n.T("tree.attachment.unnamed")
 		}
 		out = append(out, v)
 		n++

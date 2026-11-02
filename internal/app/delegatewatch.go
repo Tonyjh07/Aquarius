@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -162,7 +163,7 @@ func (w *DelegateWatcher) settle(id port.DelegateID) {
 		return
 	}
 	if err := w.settleFn(context.Background(), id); err != nil {
-		w.logf("转交 %s 销账失败: %v", id, err)
+		w.logf("%s", i18n.Tf("delegate.settle_failed", "id", id, "error", err))
 	}
 }
 
@@ -315,7 +316,7 @@ func (w *DelegateWatcher) deliver(ctx context.Context, id port.DelegateID, in po
 			return true
 		}
 		if attempt == delegateInjectAttempts-1 {
-			w.logf("转交 %s 的报告注入失败: %v", id, err)
+			w.logf("%s", i18n.Tf("delegate.report_failed", "id", id, "error", err))
 			return false
 		}
 		if !w.sleep(ctx, delegateInjectRetryStep*(time.Duration(attempt+1))) {

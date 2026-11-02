@@ -4,8 +4,12 @@ package i18n
 // 对齐。顺序与 key 都不许各自演化，改一边必须改另一边（同构测试守着）。
 var enTexts = mergeTables(
 	enBootTexts,
+	enTreeTexts,
 	enCmdTexts,
+	enEditTexts,
 	enSessionTexts,
+	enAgentTexts,
 	enExchangeTexts,
+	enRuntimeTexts,
 	enErrTexts,
 )

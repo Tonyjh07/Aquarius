@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -97,27 +98,27 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 	}
 	if len(args) == 0 {
 		if s.models == nil {
-			return "", errors.New("session: 未配置模型服务（SessionDeps.Models），/model 不可用")
+			return "", errors.New("session: " + i18n.T("model.unwired"))
 		}
 		models, err := s.models.Models(ctx)
 		if err != nil {
-			return "", fmt.Errorf("session: 列出可用模型: %w", err)
+			return "", wrapSession("model.err_list", err)
 		}
 		return formatModels(s.agent.modelName(), s.models.Current(), models), nil
 	}
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		return "", errors.New("用法: /model [name] 或 /model probe [name]")
+		return "", errors.New(i18n.T("usage.model"))
 	}
 	name := strings.TrimSpace(args[0])
 	if s.modelSwitch == nil {
-		return "", errors.New("session: 未配置模型写回（SessionDeps.ModelSwitch），/model 切换不可用")
+		return "", errors.New("session: " + i18n.T("model.switch_unwired"))
 	}
 	// 先持久化再热切换（同 /permission 口径：写回失败不动运行态）。
 	if err := s.modelSwitch.PersistModel(name); err != nil {
-		return "", fmt.Errorf("session: 写回 config: %w", err)
+		return "", wrapSession("agent.err_persist", err)
 	}
 	s.agent.setModel(name)
-	return fmt.Sprintf("已切换模型 → %s（已写回 config，重启沿用）", name), nil
+	return i18n.Tf("model.switched", "model", name), nil
 }
 
 // formatModels /model 无参输出：provider 行（D173，未声明时省略）+ 当前模型行 +
@@ -126,9 +127,9 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 func formatModels(current string, st ModelStatus, models []port.ModelInfo) string {
 	var b strings.Builder
 	if st.Provider != "" {
-		fmt.Fprintf(&b, "当前 provider: %s\n", st.Provider)
+		b.WriteString(i18n.Tf("model.current_provider", "provider", st.Provider) + "\n")
 	}
-	fmt.Fprintf(&b, "当前模型: %s\n", current)
+	b.WriteString(i18n.Tf("model.current", "model", current) + "\n")
 	// 上下文窗口（D177）：预算 = min(模型窗口, 全局上限)。不显示的话，用户看到压缩
 	// 提前触发只会以为是 bug——窗口比全局小时必须说明是模型侧在压。
 	if line := formatBudget(st.Budget); line != "" {
@@ -140,7 +141,7 @@ func formatModels(current string, st ModelStatus, models []port.ModelInfo) strin
 	if st.Caps != nil {
 		effective = *st.Caps
 		haveCaps = true
-		b.WriteString("生效能力: " + formatCaps(effective) + "\n")
+		b.WriteString(i18n.Tf("model.caps", "caps", formatCaps(effective)) + "\n")
 	}
 	links := st.Chain
 	// 逐环标注（D173）：链上任一模型缺某项，整链就按缺该项处理；不指出是哪一环，
@@ -157,40 +158,42 @@ func formatModels(current string, st ModelStatus, models []port.ModelInfo) strin
 	if haveCaps {
 		var off []string
 		if !effective.Tools {
-			off = append(off, "工具调用")
+			off = append(off, i18n.T("model.cap_tools"))
 		}
 		if !effective.Reasoning {
-			off = append(off, "思考")
+			off = append(off, i18n.T("model.cap_reasoning"))
 		}
 		if !effective.Vision {
-			off = append(off, "图片输入")
+			off = append(off, i18n.T("model.cap_vision"))
 		}
 		if len(off) > 0 {
-			line := fmt.Sprintf("  未启用: %s（在 model.providers[].models[].caps 里声明", strings.Join(off, "、"))
+			cause := ""
 			if culprits := narrowLinks(links, effective); len(culprits) > 0 {
-				line += "；拉低整链的是 " + strings.Join(culprits, "、")
+				cause = i18n.Tf("model.culprit", "names", strings.Join(culprits, i18n.T("model.list_sep")))
 			}
-			b.WriteString(line + "）\n")
+			b.WriteString("  " + i18n.Tf("model.caps_off",
+				"caps", strings.Join(off, i18n.T("model.list_sep")), "cause", cause) + "\n")
 		}
 	}
 	if len(links) > 1 {
-		b.WriteString("降级链:\n")
+		b.WriteString(i18n.T("model.chain") + "\n")
 		for i, l := range links {
 			fmt.Fprintf(&b, "  %d. %s / %s [%s]\n", i+1, l.Provider, l.Model, formatCaps(l.Caps))
 		}
 	}
 	if len(models) == 0 {
-		return b.String() + "（模型服务未返回可用列表，可直接 /model <name> 切换）"
+		return b.String() + i18n.T("model.no_list")
 	}
-	fmt.Fprintf(&b, "可用模型（%d）:\n", len(models))
+	b.WriteString(i18n.Tf("model.list_head", "n", len(models)) + "\n")
 	for _, m := range models {
-		fmt.Fprintf(&b, "  %s", m.Name)
+		b.WriteString("  " + m.Name)
 		// 服务端列表不带能力位（零值 = 未知），只在确实声明了才标注。
 		if marks := capsMarks(m.Caps); len(marks) > 0 {
 			fmt.Fprintf(&b, " [%s]", strings.Join(marks, "/"))
 		}
 		if m.CostIn > 0 || m.CostOutUSD > 0 {
-			fmt.Fprintf(&b, " $%g/$%g 每百万token", m.CostIn, m.CostOutUSD)
+			b.WriteString(" " + i18n.Tf("model.cost",
+				"in", fmt.Sprintf("%g", m.CostIn), "out", fmt.Sprintf("%g", m.CostOutUSD)))
 		}
 		b.WriteByte('\n')
 	}
@@ -201,10 +204,10 @@ func formatModels(current string, st ModelStatus, models []port.ModelInfo) strin
 // 探测是真请求、真花钱，所以绝不自动跑；结果只写回「判定明确」的位。
 func (s *Session) execProbe(ctx context.Context, args []string) (string, error) {
 	if s.prober == nil {
-		return "", errors.New("session: 未配置能力探测（SessionDeps.Prober），/model probe 不可用")
+		return "", errors.New("session: " + i18n.T("model.probe_unwired"))
 	}
 	if len(args) > 1 {
-		return "", errors.New("用法: /model probe [模型名]（省略 = 当前模型）")
+		return "", errors.New(i18n.T("usage.model_probe"))
 	}
 	name := ""
 	if len(args) == 1 {
@@ -214,9 +217,9 @@ func (s *Session) execProbe(ctx context.Context, args []string) (string, error) 
 	out := formatProbe(report)
 	if err != nil {
 		if out != "" {
-			return out, fmt.Errorf("session: 探测: %w", err)
+			return out, wrapSession("model.err_probe", err)
 		}
-		return "", fmt.Errorf("session: 探测: %w", err)
+		return "", wrapSession("model.err_probe", err)
 	}
 	return out, nil
 }
@@ -228,23 +231,24 @@ func formatProbe(r ProbeReport) string {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "能力探测 %s / %s\n", r.Provider, r.Model)
+	b.WriteString(i18n.Tf("model.probe_head", "provider", r.Provider, "model", r.Model) + "\n")
 	for _, res := range r.Results {
 		label := probeLabel(res.Capability)
-		fmt.Fprintf(&b, "  %s: %s", label, probeVerdictLabel(res.Verdict))
+		b.WriteString("  " + label + ": " + probeVerdictLabel(res.Verdict))
 		if res.Reason != "" {
-			fmt.Fprintf(&b, "（%s）", res.Reason)
+			b.WriteString(i18n.Tf("model.probe_reason", "reason", res.Reason))
 		}
-		fmt.Fprintf(&b, " · %s\n", shortDuration(res.Elapsed))
+		b.WriteString(" · " + shortDuration(res.Elapsed) + "\n")
 		if res.Verdict == port.ProbeSupported && res.Usage.OutputTokens > 0 {
 			// 探测会花真钱，用量要让人看得到。
-			fmt.Fprintf(&b, "      用量 %d→%d tokens\n", res.Usage.InputTokens, res.Usage.OutputTokens)
+			b.WriteString("      " + i18n.Tf("model.probe_usage",
+				"in", res.Usage.InputTokens, "out", res.Usage.OutputTokens) + "\n")
 		}
 	}
 	if r.Written {
-		b.WriteString("已按判定明确的项写回配置，重启后生效（无结论的项保持原声明）")
+		b.WriteString(i18n.T("model.probe_written"))
 	} else {
-		b.WriteString("未改动配置（没有判定明确的项，或结果与现有声明一致）")
+		b.WriteString(i18n.T("model.probe_unchanged"))
 	}
 	return b.String()
 }
@@ -253,31 +257,31 @@ func formatProbe(r ProbeReport) string {
 func probeLabel(capability string) string {
 	switch capability {
 	case port.CapTools:
-		return "工具调用"
+		return i18n.T("model.cap_tools")
 	case port.CapReasoning:
-		return "思考"
+		return i18n.T("model.cap_reasoning")
 	case port.CapVision:
-		return "图片输入"
+		return i18n.T("model.cap_vision")
 	}
 	return capability
 }
 
-// probeVerdictLabel 三态判定 → 中文。
+// probeVerdictLabel 三态判定 → 界面用词。
 func probeVerdictLabel(v port.ProbeVerdict) string {
 	switch v {
 	case port.ProbeSupported:
-		return "支持"
+		return i18n.T("model.verdict_supported")
 	case port.ProbeUnsupported:
-		return "不支持"
+		return i18n.T("model.verdict_unsupported")
 	default:
-		return "无结论"
+		return i18n.T("model.verdict_unknown")
 	}
 }
 
 // shortDuration 耗时（探测是人工操作，秒级足够；零值不显示）。
 func shortDuration(d time.Duration) string {
 	if d <= 0 {
-		return "耗时未知"
+		return i18n.T("model.elapsed_unknown")
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
 }
@@ -289,16 +293,17 @@ func narrowLinks(links []ModelLink, effective port.ModelCaps) []string {
 	for _, l := range links {
 		var lost []string
 		if l.Caps.Tools && !effective.Tools {
-			lost = append(lost, "工具")
+			lost = append(lost, i18n.T("model.mark_tools"))
 		}
 		if l.Caps.Reasoning && !effective.Reasoning {
-			lost = append(lost, "思考")
+			lost = append(lost, i18n.T("model.mark_reasoning"))
 		}
 		if l.Caps.Vision && !effective.Vision {
-			lost = append(lost, "图片")
+			lost = append(lost, i18n.T("model.mark_vision"))
 		}
 		if len(lost) > 0 {
-			out = append(out, fmt.Sprintf("%s/%s 失去了 %s", l.Provider, l.Model, strings.Join(lost, "、")))
+			out = append(out, i18n.Tf("model.link_narrowed", "provider", l.Provider, "model", l.Model,
+				"lost", strings.Join(lost, i18n.T("model.list_sep"))))
 		}
 	}
 	return out
@@ -311,13 +316,16 @@ func formatBudget(cb ContextBudget) string {
 	}
 	switch {
 	case cb.ModelWindow <= 0:
-		return fmt.Sprintf("上下文预算: %s tokens（全局上限；模型未声明窗口）", humanTokens(cb.Effective))
+		return i18n.Tf("model.budget_global_only", "effective", humanTokens(cb.Effective))
 	case cb.ModelWindow <= cb.GlobalLimit || cb.GlobalLimit <= 0:
-		return fmt.Sprintf("上下文预算: %s tokens（模型窗口 %s 在压；全局上限 %s）",
-			humanTokens(cb.Effective), humanTokens(cb.ModelWindow), humanTokens(cb.GlobalLimit))
+		return i18n.Tf("model.budget_model",
+			"effective", humanTokens(cb.Effective),
+			"window", humanTokens(cb.ModelWindow),
+			"limit", humanTokens(cb.GlobalLimit))
 	default:
-		return fmt.Sprintf("上下文预算: %s tokens（全局上限在压；模型窗口 %s）",
-			humanTokens(cb.Effective), humanTokens(cb.ModelWindow))
+		return i18n.Tf("model.budget_global",
+			"effective", humanTokens(cb.Effective),
+			"window", humanTokens(cb.ModelWindow))
 	}
 }
 
@@ -336,22 +344,22 @@ func humanTokens(n int) string {
 func formatCaps(c port.ModelCaps) string {
 	marks := capsMarks(c)
 	if len(marks) == 0 {
-		return "（三项均未声明）"
+		return i18n.T("model.caps_none")
 	}
 	return strings.Join(marks, " / ")
 }
 
-// capsMarks 能力位 → 中文标记列表（顺序固定：工具、思考、图片）。
+// capsMarks 能力位 → 短标记列表（顺序固定：工具、思考、图片）。
 func capsMarks(c port.ModelCaps) []string {
 	var marks []string
 	if c.Tools {
-		marks = append(marks, "工具")
+		marks = append(marks, i18n.T("model.mark_tools"))
 	}
 	if c.Reasoning {
-		marks = append(marks, "思考")
+		marks = append(marks, i18n.T("model.mark_reasoning"))
 	}
 	if c.Vision {
-		marks = append(marks, "图片")
+		marks = append(marks, i18n.T("model.mark_vision"))
 	}
 	return marks
 }

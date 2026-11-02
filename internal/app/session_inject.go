@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -42,12 +43,12 @@ func (s *Session) Inject(_ context.Context, in port.Injection) error {
 	case s.injectCh <- item:
 		return nil
 	default:
-		return errInjectQueueFull
+		return errInjectQueueFull()
 	}
 }
 
 // errInjectQueueFull 队列满（D150）：不阻塞调用方，由它自行退避重试。
-var errInjectQueueFull = errors.New("session: 注入队列已满（稍后重试）")
+func errInjectQueueFull() error { return errors.New("session: " + i18n.T("inject.queue_full")) }
 
 // InjectAndWait 同 Inject，但**等到真正落地并落盘**才返回（D264）。
 //
@@ -66,7 +67,7 @@ func (s *Session) InjectAndWait(ctx context.Context, in port.Injection) error {
 	select {
 	case s.injectCh <- item:
 	default:
-		return errInjectQueueFull
+		return errInjectQueueFull()
 	}
 	// 排空由会话 goroutine 驱动（输入 / 轮末 / 空闲唤醒），这里得自己敲一下，否则
 	// 用户一直不输入就永远等不到。
@@ -84,10 +85,10 @@ func (s *Session) InjectAndWait(ctx context.Context, in port.Injection) error {
 // pending 校验并组装一条待落地注入；坏包在入队前就退回调用方。
 func (s *Session) pending(in port.Injection) (pendingInjection, error) {
 	if len(in.Parts) == 0 {
-		return pendingInjection{}, errors.New("session: 注入内容为空")
+		return pendingInjection{}, errors.New("session: " + i18n.T("inject.empty"))
 	}
 	if err := conversation.ValidateInjectParts(in.Parts); err != nil {
-		return pendingInjection{}, fmt.Errorf("session: 注入内容非法: %w", err)
+		return pendingInjection{}, wrapSession("inject.invalid", err)
 	}
 	return pendingInjection{
 		source:  strings.TrimSpace(in.Source),
@@ -209,7 +210,7 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 			}
 			if plan.announce && s.ui != nil {
 				if err := s.ui.Emit(ctx, port.HistoryEvent{Message: node}); err != nil {
-					return landed, wantTurn, fmt.Errorf("注入落地呈现: %w", err)
+					return landed, wantTurn, fmt.Errorf("%s: %w", i18n.T("inject.announce"), err)
 				}
 			}
 		default:
@@ -237,7 +238,7 @@ func (s *Session) landInjection(item pendingInjection, trigger bool) (conversati
 		CreatedAt: s.clock.Now(),
 	}
 	if err := s.cur.AppendCommitted(node); err != nil {
-		return conversation.Message{}, fmt.Errorf("session: 注入落地: %w", err)
+		return conversation.Message{}, wrapSession("inject.land", err)
 	}
 	return node, nil
 }
@@ -255,10 +256,11 @@ func (s *Session) landElsewhere(ctx context.Context, item pendingInjection) erro
 	c, err := s.store.Load(ctx, target)
 	if err != nil {
 		if errors.Is(err, port.ErrConversationNotFound) {
-			s.logf("注入 %s 的目标会话 %s 已删除，内容丢弃", item.source, target)
+			s.logf("%s", i18n.Tf("inject.target_gone", "source", item.source, "target", target))
 			return nil
 		}
-		return fmt.Errorf("session: 异地落地读取会话 %s: %w", target, err)
+		return fmt.Errorf("session: %s: %w",
+			i18n.Tf("inject.elsewhere_load", "id", target), err)
 	}
 	node := conversation.Message{
 		ID:        s.ids.MessageID(),
@@ -271,10 +273,10 @@ func (s *Session) landElsewhere(ctx context.Context, item pendingInjection) erro
 		CreatedAt: s.clock.Now(),
 	}
 	if err := c.AppendCommitted(node); err != nil {
-		return fmt.Errorf("session: 异地落地会话 %s: %w", target, err)
+		return fmt.Errorf("session: %s: %w", i18n.Tf("inject.elsewhere_append", "id", target), err)
 	}
 	if err := s.saveElsewhere(ctx, c); err != nil {
-		return fmt.Errorf("session: 异地落地保存会话 %s: %w", target, err)
+		return fmt.Errorf("session: %s: %w", i18n.Tf("inject.elsewhere_save", "id", target), err)
 	}
 	return nil
 }

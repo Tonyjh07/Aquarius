@@ -7,9 +7,9 @@ package app
 // 两类提示：界面 HTML 降级、开场白偏长。渲染只读事实，不改写卡文本（落树即终稿的铁律）。
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -35,11 +35,11 @@ func characterReportLines(card port.CharacterCard, opts CharacterOptions, greeti
 	if info.BookEntries > 0 {
 		constN := countConstantEnabled(profile.BookEntries)
 		if opts.InjectConstantBook {
-			lines = append(lines, fmt.Sprintf(
-				"世界书：共 %d 条，其中 %d 条常驻条目已注入人格（每轮都付 token）", info.BookEntries, constN))
+			lines = append(lines, i18n.Tf("char.report.book_injected",
+				"total", info.BookEntries, "constant", constN))
 		} else {
-			lines = append(lines, fmt.Sprintf(
-				"世界书：共 %d 条全部保留未注入，其中 %d 条是常驻条目（当前开关下不注入）", info.BookEntries, constN))
+			lines = append(lines, i18n.Tf("char.report.book_kept",
+				"total", info.BookEntries, "constant", constN))
 		}
 	}
 
@@ -49,30 +49,30 @@ func characterReportLines(card port.CharacterCard, opts CharacterOptions, greeti
 		if info.HasAvatar && info.Assets > 0 {
 			iconUsed = 1
 		}
-		line := "资产："
+		line := i18n.T("char.report.assets_head")
 		if info.HasAvatar {
-			line += "图标已用作头像"
+			line += i18n.T("char.report.assets_icon")
 		} else {
-			line += "没有图标"
+			line += i18n.T("char.report.assets_no_icon")
 		}
 		if extra := info.Assets - iconUsed; extra > 0 {
-			line += fmt.Sprintf("；其余 %d 个资产随原包保留，本版不内联、不下载", extra)
+			line += i18n.Tf("char.report.assets_extra", "n", extra)
 		}
 		lines = append(lines, line)
 	}
 
 	// 三、本版不执行的机制：明说保留、不运行，别让用户以为脚本在跑。
 	if len(info.Unsupported) > 0 {
-		lines = append(lines, fmt.Sprintf(
-			"不执行的机制：%s —— 已随原卡保留，本版一律不运行", strings.Join(info.Unsupported, "、")))
+		lines = append(lines, i18n.Tf("char.report.unsupported",
+			"list", strings.Join(info.Unsupported, i18n.T("char.list_join"))))
 	}
 
 	// 四、只展示字段：说明它们只作展示、不进模型上下文。
-	lines = append(lines, "只展示字段：作者备注、标签、作者、版本、导入日期只作展示，不进模型上下文。")
+	lines = append(lines, i18n.T("char.report.display_only"))
 
 	// 提示一、界面 HTML 降级：不净化、不改写，标签会原样显示。
 	if cardHasHTML(profile) {
-		lines = append(lines, "界面提示：卡的文本里有 HTML 标签，界面会按纯文本显示，标签会原样出现。")
+		lines = append(lines, i18n.T("char.report.html"))
 	}
 
 	// 提示二、开场白偏长：给一行 token 估算与占位提醒（不截断、不改写卡）。
@@ -146,9 +146,8 @@ func openingLengthHints(p port.CharacterProfile, budget int) []string {
 	var hints []string
 	for i, o := range openings {
 		if tokens := estimateTokens(o); tokens > budget {
-			hints = append(hints, fmt.Sprintf(
-				"开场白偏长：第 %d 条约 %d tokens（压缩阈值四分之一约 %d），会占掉首轮可用上下文的一大块；卡文本原样使用，不截断。",
-				i+1, tokens, budget))
+			hints = append(hints, i18n.Tf("char.report.opening_long",
+				"index", i+1, "tokens", tokens, "budget", budget))
 		}
 	}
 	return hints

@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // EffortLevels /effort 合法档位（D34）；"off" 表示清除（不发送）。
@@ -19,7 +22,7 @@ func ParseEffort(raw string) (string, error) {
 	case "minimal", "low", "medium", "high":
 		return s, nil
 	default:
-		return "", fmt.Errorf("effort 须为 minimal|low|medium|high|off，当前 %q", raw)
+		return "", errors.New(i18n.Tf("think.effort_invalid", "value", fmt.Sprintf("%q", raw)))
 	}
 }
 
@@ -35,44 +38,43 @@ func (s *Session) execThink(_ context.Context, args []string) (string, error) {
 		return st.Caps == nil || st.Caps.Reasoning
 	}
 	if len(args) == 0 {
-		state := "开"
-		if v := s.agent.thinkState(); v != nil && !*v {
-			state = "关"
-		}
-		out := fmt.Sprintf("原生思考: %s（/think 总开关，off 时不发 reasoning_effort 与 enable_thinking）", state)
+		out := i18n.Tf("think.state", "state", onOff(s.agent.ThinkOn()))
 		if !reasoningOn() {
-			out += "\n当前模型未声明思考能力（模型服务的 caps 里没有 reasoning），整条降级链取与后为关，参数不会发送"
+			out += "\n" + i18n.T("think.no_reasoning")
 			return out, nil
 		}
 		if s.agent.ThinkOn() {
 			if e := s.agent.Effort(); e != "" {
-				out += fmt.Sprintf("\n推理档位: %s（/effort；随开关发送）", e)
+				out += "\n" + i18n.Tf("think.effort_line", "effort", e)
 			} else {
-				out += "\n推理档位: 未设（交服务端默认；/effort 设置）"
+				out += "\n" + i18n.T("think.effort_unset")
 			}
 		}
 		return out, nil
 	}
 	if len(args) != 1 {
-		return "", fmt.Errorf("用法: /think [on|off]")
+		return "", errors.New(i18n.T("usage.think"))
 	}
 	want := strings.EqualFold(strings.TrimSpace(args[0]), "on")
 	if !strings.EqualFold(strings.TrimSpace(args[0]), "on") && !strings.EqualFold(strings.TrimSpace(args[0]), "off") {
-		return "", fmt.Errorf("用法: /think [on|off]（当前 %q）", args[0])
+		return "", errors.New(i18n.Tf("think.usage_state", "value", fmt.Sprintf("%q", args[0])))
 	}
+	// 开关的回执说的是命令里那个词（on / off），不是展示口径的「开 / 关」：
+	// 用户敲的是哪个词，回执就照哪个词说。
+	token := map[bool]string{true: "on", false: "off"}[want]
 	if cur := s.agent.thinkState(); cur != nil && *cur == want {
-		return fmt.Sprintf("原生思考已是 %s", map[bool]string{true: "on", false: "off"}[want]), nil
+		return i18n.Tf("think.already", "state", token), nil
 	}
 	if s.thinking == nil {
-		return "", fmt.Errorf("session: 未配置思考持久化（SessionDeps.Thinking），/think 切换不可用")
+		return "", errors.New("session: " + i18n.T("think.unwired"))
 	}
 	if err := s.thinking.PersistThink(want); err != nil {
-		return "", fmt.Errorf("session: 写回 config: %w", err)
+		return "", wrapSession("agent.err_persist", err)
 	}
 	s.agent.setThink(&want)
-	out := fmt.Sprintf("原生思考已切到 %s（已写回 config，重启沿用）", map[bool]string{true: "on", false: "off"}[want])
+	out := i18n.Tf("think.switched", "state", token)
 	if want && !reasoningOn() {
-		out += "\n注意：当前模型未声明思考能力，参数仍不会发送（到设置窗「模型服务」里给模型加上 reasoning，或重新探测一次）"
+		out += "\n" + i18n.T("think.warn_no_reasoning")
 	}
 	return out, nil
 }
@@ -82,12 +84,12 @@ func (s *Session) execThink(_ context.Context, args []string) (string, error) {
 func (s *Session) execEffort(_ context.Context, args []string) (string, error) {
 	if len(args) == 0 {
 		if e := s.agent.Effort(); e != "" {
-			return fmt.Sprintf("推理档位: %s（是否发送由 /think 决定）", e), nil
+			return i18n.Tf("think.effort_only", "effort", e), nil
 		}
-		return "推理档位: 未设（交服务端默认；/effort minimal|low|medium|high|off）", nil
+		return i18n.T("think.effort_unset_usage"), nil
 	}
 	if len(args) != 1 {
-		return "", fmt.Errorf("用法: /effort [minimal|low|medium|high|off]")
+		return "", errors.New(i18n.T("usage.effort"))
 	}
 	v, err := ParseEffort(args[0])
 	if err != nil {
@@ -95,23 +97,23 @@ func (s *Session) execEffort(_ context.Context, args []string) (string, error) {
 	}
 	if v == s.agent.Effort() {
 		if v == "" {
-			return "推理档位已清除", nil
+			return i18n.T("think.effort_cleared"), nil
 		}
-		return fmt.Sprintf("推理档位已是 %s", v), nil
+		return i18n.Tf("think.effort_already", "effort", v), nil
 	}
 	if s.thinking == nil {
-		return "", fmt.Errorf("session: 未配置档位持久化（SessionDeps.Thinking），/effort 切换不可用")
+		return "", errors.New("session: " + i18n.T("think.effort_unwired"))
 	}
 	if err := s.thinking.PersistEffort(v); err != nil {
-		return "", fmt.Errorf("session: 写回 config: %w", err)
+		return "", wrapSession("agent.err_persist", err)
 	}
 	s.agent.setEffort(v)
 	note := ""
 	if st := s.status(); st.Caps != nil && !st.Caps.Reasoning {
-		note = "\n注意：当前模型未声明思考能力，档位不会发送（到设置窗「模型服务」里给模型加上 reasoning）"
+		note = "\n" + i18n.T("think.effort_warn")
 	}
 	if v == "" {
-		return "推理档位已清除（已写回 config；/think on 时不再发送 reasoning_effort）", nil
+		return i18n.T("think.effort_cleared_note"), nil
 	}
-	return fmt.Sprintf("推理档位已切换为 %s（已写回 config，重启沿用；是否发送由 /think 决定）%s", v, note), nil
+	return i18n.Tf("think.effort_switched", "effort", v, "note", note), nil
 }

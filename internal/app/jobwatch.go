@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -227,7 +228,7 @@ func (p *JobWatcher) run(ctx context.Context, id port.JobID, e *jobEntry) {
 		if ctx.Err() != nil {
 			return // 撤销/关停：不再汇报
 		}
-		p.logf("等待任务 %s 结束失败: %v", id, err)
+		p.logf("%s", i18n.Tf("watch.job.wait_failed", "id", id, "error", err))
 		return
 	}
 	if !e.takeByWatcher() {
@@ -267,7 +268,7 @@ func (p *JobWatcher) report(ctx context.Context, id port.JobID, j port.Job, sess
 		if ctx.Err() != nil {
 			return
 		}
-		p.logf("读取任务 %s 日志失败: %v", id, err)
+		p.logf("%s", i18n.Tf("watch.job.read_log_failed", "id", id, "error", err))
 		logs = ""
 	}
 	logs = strings.TrimRight(logs, "\n")
@@ -318,12 +319,12 @@ type lander interface {
 // deliver 投递报告；队列满时做有限重试（任务已结束，丢一条就没人再报）。
 func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injection) bool {
 	if p.inject == nil {
-		p.logf("后台任务 %s 的完成报告未送达: 注入端口未就绪", id)
+		p.logf("%s", i18n.Tf("watch.job.deliver_no_injector", "id", id))
 		return false
 	}
 	inj := p.inject()
 	if inj == nil {
-		p.logf("后台任务 %s 的完成报告未送达: 会话已关闭", id)
+		p.logf("%s", i18n.Tf("watch.job.deliver_closed", "id", id))
 		return false
 	}
 	var err error
@@ -348,7 +349,7 @@ func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injecti
 			return false
 		}
 	}
-	p.logf("后台任务 %s 的完成报告未送达: %v", id, err)
+	p.logf("%s", i18n.Tf("watch.job.deliver_failed", "id", id, "error", err))
 	return false
 }
 

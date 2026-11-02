@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -80,7 +81,7 @@ func (cs CharacterStart) Greeting(n int) (string, error) {
 		n = 1
 	}
 	if n > len(cs.Openings) {
-		return "", fmt.Errorf("开场白序号 %d 越界：这张卡共有 %d 条可选", n, len(cs.Openings))
+		return "", fmt.Errorf("%s", i18n.Tf("char.greeting_range", "n", n, "total", len(cs.Openings)))
 	}
 	return cs.Openings[n-1], nil
 }

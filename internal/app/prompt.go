@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -752,7 +753,7 @@ func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleO
 			}
 			rc, err := opt.blobs.Get(ctx, *p.Ref)
 			if err != nil {
-				return nil, fmt.Errorf("读取附件 %s: %w", p.Ref.Name, err)
+				return nil, fmt.Errorf("%s: %w", i18n.Tf("prompt.err_read_attachment", "name", p.Ref.Name), err)
 			}
 			data, rerr := io.ReadAll(rc)
 			_ = rc.Close()

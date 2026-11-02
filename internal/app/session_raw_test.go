@@ -197,8 +197,8 @@ func TestSessionRawKeepsDefaultTitle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
-	if s.Current().Title != defaultTitle {
-		t.Fatalf("title = %q, want 保留默认标题 %q", s.Current().Title, defaultTitle)
+	if s.Current().Title != defaultTitle() {
+		t.Fatalf("title = %q, want 保留默认标题 %q", s.Current().Title, defaultTitle())
 	}
 	// 转写文本按 audio 分片语义入树（模型只见 Transcript）。
 	if len(llm.requests) != 1 {

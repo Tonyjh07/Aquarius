@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -434,7 +435,7 @@ func (w *Watcher) deliver(ctx context.Context, e *watchEntry, text string, trigg
 	}
 	inj := w.inject()
 	if inj == nil {
-		w.logf("观察 %s 的报告未送达: 会话已关闭", e.id)
+		w.logf("%s", i18n.Tf("watch.report.closed", "id", e.id))
 		return
 	}
 	in := port.Injection{
@@ -459,7 +460,7 @@ func (w *Watcher) deliver(ctx context.Context, e *watchEntry, text string, trigg
 			return
 		}
 	}
-	w.logf("观察 %s 的报告未送达: %v", e.id, err)
+	w.logf("%s", i18n.Tf("watch.report.failed", "id", e.id, "error", err))
 }
 
 // normalizeWatchSpec 补缺省并夹边界（工具层已校验，这里防其他调用方）。

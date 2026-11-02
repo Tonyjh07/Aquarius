@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -38,7 +39,7 @@ func (a *Agent) cutSegment(ctx context.Context, c *conversation.Conversation, mi
 	}
 	if !buf.empty() {
 		if _, err := a.finishTurn(ctx, c, buf, conversation.OutcomeDone); err != nil {
-			return mid, buf, false, fmt.Errorf("提交段节点: %w", err)
+			return mid, buf, false, fmt.Errorf("%s: %w", i18n.T("agent.err_commit_segment"), err)
 		}
 	}
 	for _, st := range steers {
@@ -64,7 +65,7 @@ func (a *Agent) appendUserNode(ctx context.Context, c *conversation.Conversation
 		CreatedAt: a.clock.Now(),
 	}
 	if err := c.AppendCommitted(node); err != nil {
-		return conversation.Message{}, fmt.Errorf("追加待发消息: %w", err)
+		return conversation.Message{}, fmt.Errorf("%s: %w", i18n.T("agent.err_append_pending"), err)
 	}
 	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
 	return node, nil

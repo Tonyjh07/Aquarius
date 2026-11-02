@@ -18,7 +18,26 @@ import (
 var ErrQuit = errors.New("session: quit")
 
 // defaultTitle 新会话默认标题（首条消息后改写为消息摘要）。
-const defaultTitle = "新会话"
+//
+// 函数不是常量：标题会落进会话库、被「是否还是默认标题」的比较用上，而它的文字要跟着
+// 界面语言走。旧数据里的「新会话」不会因此被改写——比较的是同一语言下的同一个字符串。
+func defaultTitle() string { return i18n.T("session.default_title") }
+
+// isDefaultTitle 判断标题是否还是「没命名」状态（空串也算）。
+//
+// 不能只跟当前语言的默认标题比：会话是中文下建的，切到英文再打开，库里那串文字与当前
+// 表里的不是同一串。两种默认标题都认，才不会把没命名的会话当成用户取的名字而拒绝改写。
+func isDefaultTitle(title string) bool {
+	if title == "" {
+		return true
+	}
+	for _, lang := range [...]i18n.Lang{i18n.LangZh, i18n.LangEn} {
+		if title == i18n.Table(lang)["session.default_title"] {
+			return true
+		}
+	}
+	return false
+}
 
 // titleRunes 标题摘要的最大长度。
 const titleRunes = 24
@@ -197,13 +216,13 @@ func (s *Session) dynamicCommand(name string) CommandHandler {
 func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 	switch {
 	case d.Store == nil:
-		return nil, errors.New("session: store 依赖为空")
+		return nil, errors.New("session: " + i18n.T("session.deps.store_missing"))
 	case d.Agent == nil:
-		return nil, errors.New("session: agent 依赖为空")
+		return nil, errors.New("session: " + i18n.T("session.deps.agent_missing"))
 	case d.IDs == nil:
-		return nil, errors.New("session: IDGen 依赖为空")
+		return nil, errors.New("session: " + i18n.T("session.deps.idgen_missing"))
 	case d.Clock == nil:
-		return nil, errors.New("session: Clock 依赖为空")
+		return nil, errors.New("session: " + i18n.T("session.deps.clock_missing"))
 	}
 	level := d.Level
 	if level == "" {
@@ -254,12 +273,13 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 
 	list, err := d.Store.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("session: 列出会话: %w", err)
+		return nil, wrapSession("err.list_conversations", err)
 	}
 	if len(list) > 0 { // List 按 UpdatedAt 降序，首条即最近
 		c, err := d.Store.Load(ctx, list[0].ID)
 		if err != nil {
-			return nil, fmt.Errorf("session: 恢复会话 %s: %w", list[0].ID, err)
+			return nil, fmt.Errorf("session: %s: %w",
+				i18n.Tf("session.err.restore", "id", list[0].ID), err)
 		}
 		s.cur = c
 		s.resumed = true
@@ -268,12 +288,12 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		s.publishSessions(ctx)
 		return s, nil
 	}
-	s.cur, err = s.newConversation(defaultTitle)
+	s.cur, err = s.newConversation(defaultTitle())
 	if err != nil {
 		return nil, err
 	}
 	if err := d.Store.Save(ctx, s.cur); err != nil {
-		return nil, fmt.Errorf("session: 初始化会话: %w", err)
+		return nil, wrapSession("session.err.init", err)
 	}
 	s.publishTree()     // D80/§7.5：构造完成即发布树只读快照
 	s.publishFacts(ctx) // D82/§7.6：事实快照同组发布
@@ -296,7 +316,7 @@ func (s *Session) newConversation(title string) (*conversation.Conversation, err
 		CreatedAt: s.clock.Now(),
 	}
 	if err := c.AppendCommitted(persona); err != nil {
-		return nil, fmt.Errorf("session: 写入 persona 首节点: %w", err)
+		return nil, wrapSession("session.err.persona", err)
 	}
 	return c, nil
 }
@@ -402,7 +422,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	s.pendingQ.setPaused(false)
 	s.maybeSetTitle(text)
 	if _, err := s.cur.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: text}}); err != nil {
-		return "", fmt.Errorf("session: 追加消息: %w", err)
+		return "", wrapSession("session.err.append", err)
 	}
 	return "", s.runTurn(ctx)
 }
@@ -421,9 +441,10 @@ func (s *Session) runTurn(ctx context.Context) error {
 		if err := s.store.Save(ctx, s.cur); err != nil {
 			if runErr != nil {
 				// 两个错误都保留：Turn 错误为主，保存失败附注。
-				return fmt.Errorf("session: %w（且保存失败: %v）", runErr, err)
+				return fmt.Errorf("session: %w%s", runErr,
+					i18n.Tf("session.save.note", "save", err))
 			}
-			return fmt.Errorf("session: 保存会话: %w", err)
+			return wrapSession("err.save_conversation", err)
 		}
 		// 停止键：本轮 ctx 被取消 → 清单原样保留但置 paused（轮末不再自动续跑）。停止是
 		// 「停手」，不是「这些都不要了」；一停就接着跑队列里那条，会让人以为停了其实还在跑。
@@ -455,14 +476,14 @@ func (s *Session) runTurn(ctx context.Context) error {
 func (s *Session) ingestAndRun(ctx context.Context, raw port.RawInput) (string, error) {
 	parts, note, err := s.ingest(ctx, raw)
 	if err != nil {
-		return "", fmt.Errorf("session: 摄取输入: %w", err)
+		return "", wrapSession("session.err.ingest", err)
 	}
 	if len(parts) == 0 {
-		return "", errors.New("session: 摄取未产出内容")
+		return "", errors.New("session: " + i18n.T("session.ingest.empty"))
 	}
 	s.maybeSetTitle(ingestTitle(parts))
 	if _, err := s.cur.Append(conversation.RoleUser, parts); err != nil {
-		return "", fmt.Errorf("session: 追加消息: %w", err)
+		return "", wrapSession("session.err.append", err)
 	}
 	if note != "" && s.ui != nil {
 		_ = s.ui.Emit(ctx, port.NoticeEvent{Text: note})
@@ -476,7 +497,7 @@ func (s *Session) ingest(ctx context.Context, raw port.RawInput) ([]conversation
 	if raw.Kind == "text" {
 		text := strings.TrimSpace(raw.Text)
 		if text == "" {
-			return nil, "", errors.New("session: 文本输入为空")
+			return nil, "", errors.New("session: " + i18n.T("session.ingest.no_input"))
 		}
 		return []conversation.Part{{Kind: conversation.PartText, Text: text}}, "", nil
 	}
@@ -489,7 +510,8 @@ func (s *Session) ingest(ctx context.Context, raw port.RawInput) ([]conversation
 			return rep.Parts, rep.Note, nil
 		}
 	}
-	return nil, "", fmt.Errorf("session: 没有可用的摄取器处理 %q 输入（当前支持文件与剪贴板；语音输入尚未启用）", raw.Kind)
+	return nil, "", fmt.Errorf("session: %s",
+		i18n.Tf("session.ingest.no_ingestor", "kind", fmt.Sprintf("%q", raw.Kind)))
 }
 
 // ingestTitle 摄取消息的标题摘要：文本分片优先，其次附件名。
@@ -511,7 +533,7 @@ func (s *Session) maybeSetTitle(text string) {
 	if text == "" {
 		return
 	}
-	if s.cur.Title != "" && s.cur.Title != defaultTitle {
+	if !isDefaultTitle(s.cur.Title) {
 		return
 	}
 	r := []rune(text)
@@ -540,13 +562,13 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 	if h := s.dynamicCommand(cmd.Name); h != nil {
 		return h(ctx, cmd.Args)
 	}
-	return "", fmt.Errorf("未知命令 /%s（/help 查看可用命令）", cmd.Name)
+	return "", errors.New(i18n.Tf("session.unknown_command", "name", cmd.Name))
 }
 
 // persist 落盘当前会话。
 func (s *Session) persist(ctx context.Context) error {
 	if err := s.store.Save(ctx, s.cur); err != nil {
-		return fmt.Errorf("session: 保存会话: %w", err)
+		return wrapSession("err.save_conversation", err)
 	}
 	// 树编辑会话期间照常落盘（新消息、轮次不能只活在内存里），但要记下来：
 	// 放弃编辑时得把这次写盘也撤回，否则盘上会留着一份「被放弃的中间态」。

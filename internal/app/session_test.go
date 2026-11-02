@@ -500,7 +500,7 @@ func TestSessionCommands(t *testing.T) {
 		switch {
 		case strings.Contains(ln, "项目 X"):
 			curLine = ln
-		case strings.Contains(ln, defaultTitle):
+		case strings.Contains(ln, defaultTitle()):
 			otherLine = ln
 		}
 	}

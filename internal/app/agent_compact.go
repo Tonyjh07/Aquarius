@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -87,7 +88,7 @@ func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, r
 	switch {
 	case err == nil:
 		_ = a.ui.Emit(ctx, port.NoticeEvent{
-			Text: fmt.Sprintf("上下文 ≈%d tokens 达自动压缩阈值 %d，已生成摘要", est, a.compactAt),
+			Text: i18n.Tf("compact.auto_done", "est", est, "at", a.compactAt),
 		})
 		next, berr := a.buildRequest(ctx, c, buf)
 		if berr != nil {
@@ -100,9 +101,9 @@ func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, r
 	default:
 		kept, omitted := a.est.trimOldest(ctx, req.Messages, a.compactAt, req.Tools...)
 		req.Messages = kept
-		text := fmt.Sprintf("自动压缩失败（%v），已回退最旧裁剪", err)
+		text := i18n.Tf("compact.auto_failed", "err", err)
 		if omitted > 0 {
-			text += fmt.Sprintf("，已省略 %d 条较早消息", omitted)
+			text += i18n.Tf("compact.auto_omitted", "n", omitted)
 		}
 		// 回退裁剪改变了本轮模型看到的内容 → 必须立刻可见（D267）。
 		_ = a.ui.Emit(ctx, port.NoticeEvent{Text: text, Attention: true})
