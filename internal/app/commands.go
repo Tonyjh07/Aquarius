@@ -6,21 +6,22 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // 参数相的共用声明（D250）：枚举值直接取自权威常量表，不在这里抄一份——
 // 两处并存的枚举迟早会分叉，而分叉的表现是「提示里能点，点了报错」。
 var (
-	// onOffParams 开关类命令（/think、/unattended）：两档。
+	// onOffParams 开关类命令（/think、/unattended）：两档。文案放 key，见 D275。
 	onOffParams = []port.CommandParam{{
-		Name: "开关", Kind: port.ParamChoice, Values: []string{"on", "off"},
-		Desc: "不带参数 = 切换当前状态",
+		Name: "cmd.shared.onoff.p1.name", Kind: port.ParamChoice, Values: []string{"on", "off"},
+		Desc: "cmd.shared.onoff.p1.desc",
 	}}
 	// levelParams /permission 的四档，取值来自 perm.Levels。
 	levelParams = []port.CommandParam{{
-		Name: "等级", Kind: port.ParamChoice, Values: permLevelValues(),
-		Desc: "文件类看路径、工具类看风险档，两列互不叠加；不带参数 = 查看当前",
+		Name: "cmd.shared.level.p1.name", Kind: port.ParamChoice, Values: permLevelValues(),
+		Desc: "cmd.shared.level.p1.desc",
 	}}
 )
 
@@ -78,182 +79,173 @@ var (
 func init() {
 	// 每条记录的 Params（D250）逐参数说明「这个位置能填什么」，参数相浮层据此算候选；
 	// Usage 仍是给人一眼看全的那句速记。两者由 TestCommandParamsMatchUsage 对账。
+	// 文案只放 key（D275）：Desc / Usage / Params 的 Name·ValueName·Desc 都是 cmd.* 取词
+	// key，纯语法（命令名、--flag、枚举值、<id> 这类占位）仍是字面量——它们是命令的一部分，
+	// 不是文案，翻不得。翻译发生在 commandInfos 投影时，所以语言选定之后拿到的清单就是
+	// 选定语言的（/help 与补全浮层共用同一份投影）。
 	commandTable = []commandEntry{
-		{Names: []string{"new"}, Usage: "[标题]", Desc: "新建会话",
-			Params: []port.CommandParam{{Name: "标题", Kind: port.ParamText, Desc: "会话标题；省略则用首条消息自动起名"}},
+		{Names: []string{"new"}, Usage: "cmd.new.usage", Desc: "cmd.new.desc",
+			Params: []port.CommandParam{{Name: "cmd.new.p1.name", Kind: port.ParamText, Desc: "cmd.new.p1.desc"}},
 			Run:    (*Session).execNew},
-		{Names: []string{"list"}, Desc: "列出会话", Run: (*Session).execList},
-		{Names: []string{"switch"}, Usage: "<id前缀>", Desc: "切换到既有会话（清屏并回放历史）",
-			Params: []port.CommandParam{{Name: "<id前缀>", Kind: port.ParamText, Desc: "会话 id 的唯一前缀（/list 里能看到）"}},
+		{Names: []string{"list"}, Desc: "cmd.list.desc", Run: (*Session).execList},
+		{Names: []string{"switch"}, Usage: "cmd.switch.usage", Desc: "cmd.switch.desc",
+			Params: []port.CommandParam{{Name: "cmd.switch.p1.name", Kind: port.ParamText, Desc: "cmd.switch.p1.desc"}},
 			Run:    (*Session).execSwitch},
-		{Names: []string{"title"}, Usage: "[--id <id前缀>] [文本]", Desc: "查看/改写会话标题（--id 可改非当前会话）",
+		{Names: []string{"title"}, Usage: "cmd.title.usage", Desc: "cmd.title.desc",
 			Params: []port.CommandParam{
-				{Name: "--id", Kind: port.ParamFlag, ValueName: "<id前缀>", Desc: "改哪个会话；省略 = 当前会话"},
-				{Name: "文本", Kind: port.ParamText, Desc: "新标题；省略 = 只查看"},
+				{Name: "cmd.title.p1.name", Kind: port.ParamFlag, ValueName: "cmd.title.p1.valuename", Desc: "cmd.title.p1.desc"},
+				{Name: "cmd.title.p2.name", Kind: port.ParamText, Desc: "cmd.title.p2.desc"},
 			},
 			Run: (*Session).execTitle},
-		{Names: []string{"goto"}, Usage: "<id>", Desc: "Head 移到任意节点（分支导航；id 支持唯一前缀）",
-			Params: []port.CommandParam{{Name: "<id>", Kind: port.ParamText, Desc: "目标节点 id（支持唯一前缀）"}},
+		{Names: []string{"goto"}, Usage: "cmd.goto.usage", Desc: "cmd.goto.desc",
+			Params: []port.CommandParam{{Name: "cmd.goto.p1.name", Kind: port.ParamText, Desc: "cmd.goto.p1.desc"}},
 			Run:    (*Session).execGoto},
-		{Names: []string{"edit"}, Usage: "<id> [--keep|--copy] [--part N] [--attach <路径>]... [--drop N]... [--drop-all] [<文本>]",
-			Desc: "修改消息：缺省开新分支（等同重新回答）；--keep 把后续历史转到新分支；--copy 深拷贝后续历史；--part N 只改第 N 个正文分片、其余原样保留；--attach 追加附件、--drop N 删除第 N 个附件（0 起）、--drop-all 删除全部附件，带附件操作时文本可省（只对用户消息）",
+		{Names: []string{"edit"}, Usage: "cmd.edit.usage", Desc: "cmd.edit.desc",
 			Params: []port.CommandParam{
-				{Name: "<id>", Kind: port.ParamText, Desc: "要改的消息 id（支持唯一前缀）"},
-				{Name: "--keep", Kind: port.ParamFlag, Desc: "把后续历史转到新分支（人格只能这么改）"},
-				{Name: "--copy", Kind: port.ParamFlag, Desc: "把后续历史深拷贝成独立副本"},
-				{Name: "--part", Kind: port.ParamFlag, ValueName: "N", Desc: "只改第 N 个正文分片（0 起），其余原样保留"},
-				{Name: "--attach", Kind: port.ParamFlag, ValueName: "<路径>", Repeatable: true, Desc: "追加一个附件；可给多次"},
-				{Name: "--drop", Kind: port.ParamFlag, ValueName: "N", Repeatable: true, Desc: "删除第 N 个附件（0 起）；可给多次"},
-				{Name: "--drop-all", Kind: port.ParamFlag, Desc: "删掉全部附件"},
-				{Name: "文本", Kind: port.ParamText, Desc: "新正文；带附件操作时可省略 = 只改附件"},
+				{Name: "cmd.edit.p1.name", Kind: port.ParamText, Desc: "cmd.edit.p1.desc"},
+				{Name: "cmd.edit.p2.name", Kind: port.ParamFlag, Desc: "cmd.edit.p2.desc"},
+				{Name: "cmd.edit.p3.name", Kind: port.ParamFlag, Desc: "cmd.edit.p3.desc"},
+				{Name: "cmd.edit.p4.name", Kind: port.ParamFlag, ValueName: "cmd.edit.p4.valuename", Desc: "cmd.edit.p4.desc"},
+				{Name: "cmd.edit.p5.name", Kind: port.ParamFlag, ValueName: "cmd.edit.p5.valuename", Repeatable: true, Desc: "cmd.edit.p5.desc"},
+				{Name: "cmd.edit.p6.name", Kind: port.ParamFlag, ValueName: "cmd.edit.p6.valuename", Repeatable: true, Desc: "cmd.edit.p6.desc"},
+				{Name: "cmd.edit.p7.name", Kind: port.ParamFlag, Desc: "cmd.edit.p7.desc"},
+				{Name: "cmd.edit.p8.name", Kind: port.ParamText, Desc: "cmd.edit.p8.desc"},
 			},
 			Run: (*Session).execEdit},
-		{Names: []string{"regen"}, Usage: "<id>", Desc: "重新生成：已有回答则在其上游分叉重发；无回答则直接生成",
-			Params: []port.CommandParam{{Name: "<id>", Kind: port.ParamText, Desc: "用户或助手消息 id；取它的上游用户消息重发"}},
+		{Names: []string{"regen"}, Usage: "cmd.regen.usage", Desc: "cmd.regen.desc",
+			Params: []port.CommandParam{{Name: "cmd.regen.p1.name", Kind: port.ParamText, Desc: "cmd.regen.p1.desc"}},
 			Run:    (*Session).execRegen},
-		{Names: []string{"respond"}, Usage: "<id>",
-			Desc:   "从所选节点继续生成一条响应：把其水位以上至该节点的上下文发给模型（已有子节点则开新分支）",
-			Params: []port.CommandParam{{Name: "<id>", Kind: port.ParamText, Desc: "任意非根节点 id（人格/系统/工具节点也行，根不行）"}},
+		{Names: []string{"respond"}, Usage: "cmd.respond.usage", Desc: "cmd.respond.desc",
+			Params: []port.CommandParam{{Name: "cmd.respond.p1.name", Kind: port.ParamText, Desc: "cmd.respond.p1.desc"}},
 			Run:    (*Session).execRespond},
-		{Names: []string{"inject"}, Usage: "[--source <名>] [--no-trigger] <文本>",
-			Desc: "手动注入一条上下文（入树为注入节点）：默认起一轮响应，--no-trigger 只塞进上下文；--source 标注来源",
+		{Names: []string{"inject"}, Usage: "cmd.inject.usage", Desc: "cmd.inject.desc",
 			Params: []port.CommandParam{
-				{Name: "--source", Kind: port.ParamFlag, ValueName: "<名>", Desc: "标注来源（显示在节点上）"},
-				{Name: "--no-trigger", Kind: port.ParamFlag, Desc: "只塞进上下文，不起一轮响应"},
-				{Name: "文本", Kind: port.ParamText, Desc: "要注入的上下文文本"},
+				{Name: "cmd.inject.p1.name", Kind: port.ParamFlag, ValueName: "cmd.inject.p1.valuename", Desc: "cmd.inject.p1.desc"},
+				{Name: "cmd.inject.p2.name", Kind: port.ParamFlag, Desc: "cmd.inject.p2.desc"},
+				{Name: "cmd.inject.p3.name", Kind: port.ParamText, Desc: "cmd.inject.p3.desc"},
 			},
 			Run: (*Session).execInject},
-		{Names: []string{"branch"}, Usage: "[id]", Desc: "展示同级分叉与下级（Root 显示顶层消息；缺省当前 Head）",
-			Params: []port.CommandParam{{Name: "id", Kind: port.ParamText, Desc: "看哪一处的分叉；省略 = 当前 Head"}},
+		{Names: []string{"branch"}, Usage: "cmd.branch.usage", Desc: "cmd.branch.desc",
+			Params: []port.CommandParam{{Name: "cmd.branch.p1.name", Kind: port.ParamText, Desc: "cmd.branch.p1.desc"}},
 			Run:    (*Session).execBranch},
-		{Names: []string{"tree-edit"}, Usage: "[--done|--cancel]",
-			Desc: "树编辑模式：改挂只改内存、退出时统一保存；--done 保存退出，--cancel 放弃全部改动",
+		{Names: []string{"tree-edit"}, Usage: "cmd.tree_edit.usage", Desc: "cmd.tree_edit.desc",
 			Params: []port.CommandParam{
-				{Name: "--done", Kind: port.ParamFlag, Desc: "保存并退出（有改动才比对上下文条数）"},
-				{Name: "--cancel", Kind: port.ParamFlag, Desc: "放弃改动并退出（树回到进入时的样子）"},
+				{Name: "cmd.tree_edit.p1.name", Kind: port.ParamFlag, Desc: "cmd.tree_edit.p1.desc"},
+				{Name: "cmd.tree_edit.p2.name", Kind: port.ParamFlag, Desc: "cmd.tree_edit.p2.desc"},
 			},
 			Run: (*Session).execTreeEdit},
-		{Names: []string{"reparent"}, Usage: "<id> <新父> | --undo",
-			Desc: "改父：整棵子树挂到新父下、成为末子；--undo 反做最近一次搬运（新父不能是 Root、不能是自己或后代）",
+		{Names: []string{"reparent"}, Usage: "cmd.reparent.usage", Desc: "cmd.reparent.desc",
 			Params: []port.CommandParam{
-				{Name: "<id>", Kind: port.ParamText, Desc: "要挪的节点 id（连同整棵子树）"},
-				{Name: "<新父>", Kind: port.ParamText, Desc: "挂到哪个节点下；不能是 Root、自己或自己的后代"},
-				{Name: "--undo", Kind: port.ParamFlag, Desc: "反做最近一次搬运（转移或改父），不留新记录"},
+				{Name: "cmd.reparent.p1.name", Kind: port.ParamText, Desc: "cmd.reparent.p1.desc"},
+				{Name: "cmd.reparent.p2.name", Kind: port.ParamText, Desc: "cmd.reparent.p2.desc"},
+				{Name: "cmd.reparent.p3.name", Kind: port.ParamFlag, Desc: "cmd.reparent.p3.desc"},
 			},
 			Run: (*Session).execReparent},
-		{Names: []string{"rm"}, Usage: "<id>", Desc: "删除节点及整棵子树（二次确认）",
-			Params: []port.CommandParam{{Name: "<id>", Kind: port.ParamText, Desc: "要删的节点 id（连同整棵子树）"}},
+		{Names: []string{"rm"}, Usage: "cmd.rm.usage", Desc: "cmd.rm.desc",
+			Params: []port.CommandParam{{Name: "cmd.rm.p1.name", Kind: port.ParamText, Desc: "cmd.rm.p1.desc"}},
 			Run:    (*Session).execRm},
-		{Names: []string{"rmconv"}, Usage: "<id前缀> [<id前缀>…]", Desc: "删除整个会话（二次确认；删当前会话会自动切换到另一个）",
-			Params: []port.CommandParam{{Name: "<id前缀>", Kind: port.ParamText, Repeatable: true, Desc: "要删的会话 id 唯一前缀；可给多个，一次确认全部删除"}},
+		{Names: []string{"rmconv"}, Usage: "cmd.rmconv.usage", Desc: "cmd.rmconv.desc",
+			Params: []port.CommandParam{{Name: "cmd.rmconv.p1.name", Kind: port.ParamText, Repeatable: true, Desc: "cmd.rmconv.p1.desc"}},
 			Run:    (*Session).execRmconv},
-		{Names: []string{"compact"}, Desc: "触发上下文压缩（把较早的往来压成一条摘要）", Run: (*Session).execCompact},
-		{Names: []string{"summary"}, Usage: "<id> [文本]",
-			Desc: "在节点之前插入摘要（成为新的水位）：带文本 = 手写；不带 = 让当前模型总结该节点之上的历史",
+		{Names: []string{"compact"}, Desc: "cmd.compact.desc", Run: (*Session).execCompact},
+		{Names: []string{"summary"}, Usage: "cmd.summary.usage", Desc: "cmd.summary.desc",
 			Params: []port.CommandParam{
-				{Name: "<id>", Kind: port.ParamText, Desc: "摘要插在这个节点之前"},
-				{Name: "文本", Kind: port.ParamText, Desc: "手写摘要；省略 = 让模型总结该节点之上的历史"},
+				{Name: "cmd.summary.p1.name", Kind: port.ParamText, Desc: "cmd.summary.p1.desc"},
+				{Name: "cmd.summary.p2.name", Kind: port.ParamText, Desc: "cmd.summary.p2.desc"},
 			},
 			Run: (*Session).execSummary},
-		{Names: []string{"mic"}, Usage: "[秒数]",
-			Desc:   "录一段语音，转成文字后作为输入发送（缺省 60 秒，最长 4 分钟）",
-			Params: []port.CommandParam{{Name: "秒数", Kind: port.ParamText, Desc: "录音时长；缺省 60，上限由厂商音频体积决定"}},
+		{Names: []string{"mic"}, Usage: "cmd.mic.usage", Desc: "cmd.mic.desc",
+			Params: []port.CommandParam{{Name: "cmd.mic.p1.name", Kind: port.ParamText, Desc: "cmd.mic.p1.desc"}},
 			Run:    (*Session).execMic},
-		{Names: []string{"permission"}, Usage: "[等级]",
-			Desc:   "查看/切换权限等级（read-only/strict/permissive/full-access）",
+		{Names: []string{"permission"}, Usage: "cmd.permission.usage",
+			Desc:   "cmd.permission.desc",
 			Params: levelParams,
 			Run:    (*Session).execPermission},
-		{Names: []string{"unattended"}, Usage: "[on|off]",
-			Desc:   "无人值守：越界操作当场拒绝并说明、不再等人确认（权限等级不变；无参 = 切换）",
+		{Names: []string{"unattended"}, Usage: "cmd.unattended.usage",
+			Desc:   "cmd.unattended.desc",
 			Params: onOffParams,
 			Run:    argsOnly((*Session).execUnattended)},
-		{Names: []string{"memory"}, Usage: "[会话id]", Desc: "用系统编辑器打开记忆文件（缺省为全局 memories.md）",
-			Params: []port.CommandParam{{Name: "会话id", Kind: port.ParamText, Desc: "开会话记忆；省略 = 全局 memories.md"}},
+		{Names: []string{"memory"}, Usage: "cmd.memory.usage", Desc: "cmd.memory.desc",
+			Params: []port.CommandParam{{Name: "cmd.memory.p1.name", Kind: port.ParamText, Desc: "cmd.memory.p1.desc"}},
 			Run:    (*Session).execMemory},
-		{Names: []string{"usage"}, Desc: "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）", Run: (*Session).execUsage},
-		{Names: []string{"watch"}, Usage: "[list|stop <id>]", Desc: "观察器：模型的声明式定时观察（看命令/文件/网页命中什么），查看或叫停",
+		{Names: []string{"usage"}, Desc: "cmd.usage.desc", Run: (*Session).execUsage},
+		{Names: []string{"watch"}, Usage: "cmd.watch.usage", Desc: "cmd.watch.desc",
 			Params: []port.CommandParam{
-				{Name: "子命令", Kind: port.ParamChoice, Values: []string{"list", "stop"}, Desc: "省略 = list"},
-				{Name: "<id>", Kind: port.ParamText, Desc: "stop 时指定观察器 id"},
+				{Name: "cmd.watch.p1.name", Kind: port.ParamChoice, Values: []string{"list", "stop"}, Desc: "cmd.watch.p1.desc"},
+				{Name: "cmd.watch.p2.name", Kind: port.ParamText, Desc: "cmd.watch.p2.desc"},
 			},
 			Run: argsOnly((*Session).watchReport)},
-		{Names: []string{"jobs"}, Usage: "[list|logs <id> [行数]|kill <id>]", Desc: "后台任务管理（查看、日志、终止）",
+		{Names: []string{"jobs"}, Usage: "cmd.jobs.usage", Desc: "cmd.jobs.desc",
 			Params: []port.CommandParam{
-				{Name: "子命令", Kind: port.ParamChoice, Values: []string{"list", "logs", "kill"}, Desc: "省略 = list"},
-				{Name: "<id>", Kind: port.ParamText, Desc: "logs / kill 时的任务 id"},
-				{Name: "行数", Kind: port.ParamText, Desc: "logs 时取末尾几行"},
+				{Name: "cmd.jobs.p1.name", Kind: port.ParamChoice, Values: []string{"list", "logs", "kill"}, Desc: "cmd.jobs.p1.desc"},
+				{Name: "cmd.jobs.p2.name", Kind: port.ParamText, Desc: "cmd.jobs.p2.desc"},
+				{Name: "cmd.jobs.p3.name", Kind: port.ParamText, Desc: "cmd.jobs.p3.desc"},
 			},
 			Run: argsOnly((*Session).jobsReport)},
-		{Names: []string{"delegate"}, Usage: "[list|kill <id>]", Desc: "外部代理转交：查看配置里的代理与可用性、叫停一次正在进行的转交（派活由模型经 delegate 工具发起）",
+		{Names: []string{"delegate"}, Usage: "cmd.delegate.usage", Desc: "cmd.delegate.desc",
 			Params: []port.CommandParam{
-				{Name: "子命令", Kind: port.ParamChoice, Values: []string{"list", "kill"}, Desc: "省略 = list"},
-				{Name: "<id>", Kind: port.ParamText, Desc: "kill 时的转交 id"},
+				{Name: "cmd.delegate.p1.name", Kind: port.ParamChoice, Values: []string{"list", "kill"}, Desc: "cmd.delegate.p1.desc"},
+				{Name: "cmd.delegate.p2.name", Kind: port.ParamText, Desc: "cmd.delegate.p2.desc"},
 			},
 			Run: argsOnly((*Session).delegateReport)},
-		{Names: []string{"skill"}, Usage: "[list|<名字>|install <路径或链接>|remove <名字>|update [名字|all]]",
-			Desc: "技能：列出已安装技能 / 把某个技能的指令载入上下文（不触发回答）/ 安装、卸载或更新",
+		{Names: []string{"skill"}, Usage: "cmd.skill.usage", Desc: "cmd.skill.desc",
 			Params: []port.CommandParam{
-				{Name: "子命令", Kind: port.ParamChoice, Values: []string{"list", "install", "remove", "update"}, Desc: "省略 = list；也可直接写技能名"},
-				{Name: "<名字>", Kind: port.ParamText, Desc: "技能名（载入 / 卸载 / 更新）"},
-				{Name: "<路径或链接>", Kind: port.ParamText, Desc: "install 的来源：单文件、文件夹、压缩包或链接"},
+				{Name: "cmd.skill.p1.name", Kind: port.ParamChoice, Values: []string{"list", "install", "remove", "update"}, Desc: "cmd.skill.p1.desc"},
+				{Name: "cmd.skill.p2.name", Kind: port.ParamText, Desc: "cmd.skill.p2.desc"},
+				{Name: "cmd.skill.p3.name", Kind: port.ParamText, Desc: "cmd.skill.p3.desc"},
 			},
 			Run: argsOnly((*Session).execSkill)},
-		{Names: []string{"export"}, Usage: "[--format <名字>] [--path <文件>] [--all | --ids <id>[,<id>…]]",
-			Desc: "导出会话（缺省只导当前会话；aqx 无损可原样导回；chatgpt 带全部分支；openai/sillytavern 只导当前那条链；--all 整库、--ids 只导列出的几个，两者都要 aqx）",
+		{Names: []string{"export"}, Usage: "cmd.export.usage", Desc: "cmd.export.desc",
 			Params: []port.CommandParam{
-				{Name: "--format", Kind: port.ParamFlag, ValueName: "<名字>", Values: exportFormatValues(),
-					Desc: "导出格式；缺省 aqx"},
-				{Name: "--path", Kind: port.ParamFlag, ValueName: "<文件>", Desc: "落点；省略 = 导出目录里按标题起名"},
-				{Name: "--all", Kind: port.ParamFlag, Desc: "把整库写进一份 aqx 备份（与 --ids 互斥）"},
-				{Name: "--ids", Kind: port.ParamFlag, ValueName: "<id>[,<id>…]", Repeatable: true,
-					Desc: "只导出这些会话（支持唯一前缀；逗号分隔或给多次）"},
+				{Name: "cmd.export.p1.name", Kind: port.ParamFlag, ValueName: "cmd.export.p1.valuename", Values: exportFormatValues(),
+					Desc: "cmd.export.p1.desc"},
+				{Name: "cmd.export.p2.name", Kind: port.ParamFlag, ValueName: "cmd.export.p2.valuename", Desc: "cmd.export.p2.desc"},
+				{Name: "cmd.export.p3.name", Kind: port.ParamFlag, Desc: "cmd.export.p3.desc"},
+				{Name: "cmd.export.p4.name", Kind: port.ParamFlag, ValueName: "cmd.export.p4.valuename", Repeatable: true,
+					Desc: "cmd.export.p4.desc"},
 			},
 			Run: (*Session).execExport},
-		{Names: []string{"import"}, Usage: "[--pick <序号>]… <文件>",
-			Desc: "导入外部会话（按扩展名与文件头认格式；落成新会话，不覆盖既有会话；一份 aqx 可只取其中几个）",
+		{Names: []string{"import"}, Usage: "cmd.import.usage", Desc: "cmd.import.desc",
 			Params: []port.CommandParam{
-				{Name: "--pick", Kind: port.ParamFlag, ValueName: "<序号>", Repeatable: true,
-					Desc: "只导入清单里的第几项（1 起；逗号分隔或给多次；省略 = 全部）"},
-				{Name: "<文件>", Kind: port.ParamText, Desc: "要导入的文件；路径有空格时用引号括起来"},
+				{Name: "cmd.import.p1.name", Kind: port.ParamFlag, ValueName: "cmd.import.p1.valuename", Repeatable: true,
+					Desc: "cmd.import.p1.desc"},
+				{Name: "cmd.import.p2.name", Kind: port.ParamText, Desc: "cmd.import.p2.desc"},
 			},
 			Run: (*Session).execImport},
-		{Names: []string{"character"}, Usage: "[list|show <slug>|import <路径>|start <slug> [序号]|remove <slug>]",
-			Desc: "角色卡：列出 / 查看 / 导入 / 用卡开新会话 / 删除（只读导入）",
+		{Names: []string{"character"}, Usage: "cmd.character.usage", Desc: "cmd.character.desc",
 			Params: []port.CommandParam{
-				{Name: "子命令", Kind: port.ParamChoice, Values: []string{"list", "show", "import", "start", "remove"}, Desc: "省略 = list"},
-				{Name: "<slug>", Kind: port.ParamText, Desc: "角色目录名（show / start / remove；list 里能看到）"},
-				{Name: "<路径>", Kind: port.ParamText, Desc: "import 的卡文件：PNG / JSON / .charx"},
-				{Name: "序号", Kind: port.ParamText, Desc: "start 用第几条开场白；省略或 1 = 首条"},
+				{Name: "cmd.character.p1.name", Kind: port.ParamChoice, Values: []string{"list", "show", "import", "start", "remove"}, Desc: "cmd.character.p1.desc"},
+				{Name: "cmd.character.p2.name", Kind: port.ParamText, Desc: "cmd.character.p2.desc"},
+				{Name: "cmd.character.p3.name", Kind: port.ParamText, Desc: "cmd.character.p3.desc"},
+				{Name: "cmd.character.p4.name", Kind: port.ParamText, Desc: "cmd.character.p4.desc"},
 			},
 			Run: argsOnly((*Session).execCharacter)},
-		{Names: []string{"quit", "exit"}, Desc: "退出", Run: quitCommand},
-		{Names: []string{"plugin"}, Usage: "[list|enable <name>|disable <name>]",
-			Desc: "MCP 插件管理（列表、启用、停用）",
+		{Names: []string{"quit", "exit"}, Desc: "cmd.quit.desc", Run: quitCommand},
+		{Names: []string{"plugin"}, Usage: "cmd.plugin.usage", Desc: "cmd.plugin.desc",
 			Params: []port.CommandParam{
-				{Name: "子命令", Kind: port.ParamChoice, Values: []string{"list", "enable", "disable", "logs"}, Desc: "省略 = list"},
-				{Name: "<name>", Kind: port.ParamText, Desc: "插件名（enable / disable / logs）"},
+				{Name: "cmd.plugin.p1.name", Kind: port.ParamChoice, Values: []string{"list", "enable", "disable", "logs"}, Desc: "cmd.plugin.p1.desc"},
+				{Name: "cmd.plugin.p2.name", Kind: port.ParamText, Desc: "cmd.plugin.p2.desc"},
 			},
 			Run: argsOnly((*Session).execPlugin)},
-		{Names: []string{"model"}, Usage: "[name] | probe [name]",
-			Desc: "查看可用模型 / 切换并写回配置 / 实测能力（probe）",
+		{Names: []string{"model"}, Usage: "cmd.model.usage", Desc: "cmd.model.desc",
 			Params: []port.CommandParam{
-				{Name: "name", Kind: port.ParamText, Desc: "模型名；直接写 = 切换到这个模型"},
-				{Name: "probe", Kind: port.ParamChoice, Values: []string{"probe"},
-					Desc: "实测能力：工具调用 / 图片输入 / 思考各试一次，只写回判定明确的位"},
-				{Name: "<name>", Kind: port.ParamText, Desc: "probe 要试哪个模型；省略 = 当前模型"},
+				{Name: "cmd.model.p1.name", Kind: port.ParamText, Desc: "cmd.model.p1.desc"},
+				{Name: "cmd.model.p2.name", Kind: port.ParamChoice, Values: []string{"probe"},
+					Desc: "cmd.model.p2.desc"},
+				{Name: "cmd.model.p3.name", Kind: port.ParamText, Desc: "cmd.model.p3.desc"},
 			},
 			Run: argsOnly((*Session).execModel)},
-		{Names: []string{"think"}, Usage: "[on|off]", Desc: "原生思考总开关（写回配置；off 优先于 /effort）",
+		{Names: []string{"think"}, Usage: "cmd.think.usage", Desc: "cmd.think.desc",
 			Params: onOffParams,
 			Run:    argsOnly((*Session).execThink)},
-		{Names: []string{"effort"}, Usage: "[档位]",
-			Desc: "推理档位 minimal|low|medium|high|off（写回配置）",
+		{Names: []string{"effort"}, Usage: "cmd.effort.usage",
+			Desc: "cmd.effort.desc",
 			Params: []port.CommandParam{{
-				Name: "档位", Kind: port.ParamChoice, Values: []string{"minimal", "low", "medium", "high", "off"},
-				Desc: "off = 清除档位；是否真发由 /think 决定",
+				Name: "cmd.effort.p1.name", Kind: port.ParamChoice, Values: []string{"minimal", "low", "medium", "high", "off"},
+				Desc: "cmd.effort.p1.desc",
 			}},
 			Run: argsOnly((*Session).execEffort)},
-		{Names: []string{"help"}, Desc: "列出全部命令（静态清单 + 已注册的动态命令）", Run: helpCommand},
+		{Names: []string{"help"}, Desc: "cmd.help.desc", Run: helpCommand},
 	}
 	commandIndex = buildCommandIndex(commandTable)
 }
@@ -297,8 +289,8 @@ func helpCommand(s *Session, _ context.Context, _ port.Command) (string, error) 
 }
 
 // mcpFamilyLine MCP prompts 家族说明行（D103）：命名规则的说明性文案，非可执行命令、
-// 不入清单（真实动态命令逐条入列）——保留在 help 动态段前。
-const mcpFamilyLine = "/mcp:<server>:<prompt>  MCP prompts 动态命令（随插件启停注册，见 /plugin）"
+// 不入清单（真实动态命令逐条入列）——保留在 help 动态段前。文案在 cmd.mcp.family。
+func mcpFamilyLine() string { return i18n.T("cmd.mcp.family") }
 
 // CommandCatalog 静态命令清单的只读视图（D245）：供装配根做「教程 / 文档文案 vs 真实命令
 // 清单」的对照测试（D141），消费方仍照常用 port.CommandCatalog 逐帧拉清单。
@@ -308,6 +300,10 @@ func CommandCatalog() []port.CommandInfo {
 
 // commandInfos 把注册表投影成端口形状（只取元数据，不暴露处理函数）。
 //
+// 投影时取词（D275）：表里存的是 key，这里换成当前语言的文案。放在投影而不是声明处，
+// 是因为表的填充在 init、语言要到装配根才定；投影是每次 /help 与补全浮层拿清单的必经
+// 之路，语言选定后自然生效。清单 ≤ 数十条，每帧翻一遍的开销与已有的深拷贝同级。
+//
 // Names 逐条拷贝：表是包级只读量，而端口给出去的是 UI 每帧都会拿的清单——把底层切片直接
 // 交出去，任何一处（补全浮层、帮助渲染、第三方壳）顺手改动一个名字就会污染整张表，而且
 // 下一次 /help 才会露出来。拷贝的成本是几十个短字符串，比排查这类问题的成本低。
@@ -316,8 +312,8 @@ func commandInfos(table []commandEntry) []port.CommandInfo {
 	for i, e := range table {
 		out[i] = port.CommandInfo{
 			Names:  append([]string(nil), e.Names...),
-			Usage:  e.Usage,
-			Desc:   e.Desc,
+			Usage:  i18n.T(e.Usage),
+			Desc:   i18n.T(e.Desc),
 			Params: paramsCopy(e.Params),
 		}
 	}
@@ -326,12 +322,18 @@ func commandInfos(table []commandEntry) []port.CommandInfo {
 
 // paramsCopy 深拷贝参数声明（口径同 Names）：`Values` 底层数组若直接交出去，UI 侧
 // 一次顺手改动就会污染包级只读表，而且下一次 /help 才露出来。
+//
+// 顺手取词：Name / ValueName / Desc 一律过 T——`--flag`、枚举值、`<id>` 这类纯语法不在表里，
+// T 原样返回，所以表里只有真需要翻的那几项才有 key。
 func paramsCopy(in []port.CommandParam) []port.CommandParam {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make([]port.CommandParam, len(in))
 	for i, p := range in {
+		p.Name = i18n.T(p.Name)
+		p.ValueName = i18n.T(p.ValueName)
+		p.Desc = i18n.T(p.Desc)
 		p.Values = append([]string(nil), p.Values...)
 		out[i] = p
 	}
@@ -395,7 +397,7 @@ func renderHelp(static, dyn []port.CommandInfo) string {
 	for _, ci := range static {
 		writeHelpLine(&b, ci, col)
 	}
-	b.WriteString(mcpFamilyLine)
+	b.WriteString(mcpFamilyLine())
 	b.WriteByte('\n')
 	for _, ci := range dyn {
 		writeHelpLine(&b, ci, col)

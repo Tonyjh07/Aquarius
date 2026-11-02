@@ -170,5 +170,26 @@ func PlaceholderNames(tmpl string) []string {
 	return out
 }
 
+// mergeTables 把按区域拆开的 zh_*.go / en_*.go 合成一张。
+//
+// 重复 key 直接 panic：后写的会静默盖掉先写的，而盖掉之后两处都还在仓里，谁也看不出哪条
+// 才是真正在用的文案。启动即炸比界面上一句来路不明的话好查。
+func mergeTables(tables ...map[string]string) map[string]string {
+	n := 0
+	for _, t := range tables {
+		n += len(t)
+	}
+	out := make(map[string]string, n)
+	for _, t := range tables {
+		for k, v := range t {
+			if _, dup := out[k]; dup {
+				panic("i18n: 文案 key 重复: " + k)
+			}
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // Table 某一种语言的表（只读；测试与扫描用：同构检查要同时看两份）。
 func Table(lang Lang) map[string]string { return catalogFor(lang).texts }

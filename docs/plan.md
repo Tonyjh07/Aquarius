@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-02 @ 3d1ffc7 -->
+<!-- docs-sync: 2026-11-02 @ c2aa60e -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -55,7 +55,8 @@
   `uitui` + `uicommon` + `repl` 49；含中文断言的测试文件 225 个（`uigui` 101 / `app` 54 / `cmd` 56），
   按「断言跟 key 走」与搬迁同笔改。
 - 搬迁是机械活，但要**一次搬干净并上锁**：`_test.go` 之外含 CJK 的字符串字面量只许出现在
-  `internal/i18n/zh.go`，别处出现即失败（与现有注释测试同一思路）。
+  `internal/i18n/zh*.go`，别处出现即失败（与现有注释测试同一思路）。表按区域拆文件
+  （`zh_boot.go` / `zh_cmd.go` / … 与 `en_*` 一一对应），一张上千条的表读不动也校不动。
 
 **批次**：
 

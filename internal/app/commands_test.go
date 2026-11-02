@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -54,63 +55,146 @@ func TestCommandTableSelfCheck(t *testing.T) {
 	}
 
 	// 参数声明自检（D250）：参数相的候选来自这里，声明不全会让浮层列出点不上的空行。
-	for _, e := range commandTable {
-		for j, p := range e.Params {
-			if p.Name == "" {
-				t.Fatalf("命令 %v 第 %d 个参数没有名字（浮层靠它显示）", e.Names, j)
-			}
-			switch p.Kind {
-			case port.ParamChoice:
-				if len(p.Values) == 0 {
-					t.Fatalf("命令 %v 的参数 %q 是枚举却没给 Values（浮层将一行都列不出）", e.Names, p.Name)
+	//
+	// 逐语言查投影后的形状：表里是取词 key，`--` 前缀、枚举值这类判断只有翻完才成立。
+	eachUILang(t, func(t *testing.T) {
+		for _, ci := range commandInfos(commandTable) {
+			for j, p := range ci.Params {
+				if p.Name == "" {
+					t.Fatalf("命令 %v 第 %d 个参数没有名字（浮层靠它显示）", ci.Names, j)
 				}
-			case port.ParamText:
-				if p.Desc == "" {
-					t.Fatalf("命令 %v 的参数 %q 是自由文本，必须有一句提示（无候选可填，提示是唯一信息）", e.Names, p.Name)
+				switch p.Kind {
+				case port.ParamChoice:
+					if len(p.Values) == 0 {
+						t.Fatalf("命令 %v 的参数 %q 是枚举却没给 Values（浮层将一行都列不出）", ci.Names, p.Name)
+					}
+				case port.ParamText:
+					if p.Desc == "" {
+						t.Fatalf("命令 %v 的参数 %q 是自由文本，必须有一句提示（无候选可填，提示是唯一信息）", ci.Names, p.Name)
+					}
+				case port.ParamFlag:
+					if !strings.HasPrefix(p.Name, "--") {
+						t.Fatalf("命令 %v 的参数 %q 标为开关，但名字不是 -- 开头（浮层按 -- 前缀取候选）", ci.Names, p.Name)
+					}
+				default:
+					t.Fatalf("命令 %v 的参数 %q 有未知性质 %q", ci.Names, p.Name, p.Kind)
 				}
-			case port.ParamFlag:
-				if !strings.HasPrefix(p.Name, "--") {
-					t.Fatalf("命令 %v 的参数 %q 标为开关，但名字不是 -- 开头（浮层按 -- 前缀取候选）", e.Names, p.Name)
-				}
-			default:
-				t.Fatalf("命令 %v 的参数 %q 有未知性质 %q", e.Names, p.Name, p.Kind)
 			}
 		}
+	})
+}
+
+// eachUILang 在两种界面语言下各跑一遍 f，跑完恢复 zh。
+//
+// 命令面的文案是 key，投影出去才是文字（D275）。只按当前语言查一遍等于另一半表没有任何
+// 测试照着——英文表的 Usage 与参数名一旦对不上，用户看到提示却写不进命令。
+func eachUILang(t *testing.T, f func(t *testing.T)) {
+	t.Helper()
+	for _, lang := range []i18n.Lang{i18n.LangZh, i18n.LangEn} {
+		t.Run(string(lang), func(t *testing.T) {
+			i18n.Use(i18n.Selection(lang))
+			t.Cleanup(func() { i18n.Use(i18n.SelectionZh) })
+			f(t)
+		})
 	}
 }
 
 // TestCommandParamsMatchUsage 参数声明与 Usage 对账（D250）：Usage 是给人一眼看全的
 // 那句速记（含 `[--keep|--copy]` 这类分组写法），Params 是逐条可填项——两份事实同一
 // 来源，任何一个参数在 Usage 里找不到代表两者已经分叉（用户看到提示却写不进命令）。
+//
+// 逐语言跑：两份文案表各有一份 Usage 与一份参数名，任何一边翻走样都会在这里现形
+// （中文提示配英文占位词，用户照着敲进去是不认的）。
 func TestCommandParamsMatchUsage(t *testing.T) {
+	eachUILang(t, func(t *testing.T) {
+		for _, e := range commandInfos(commandTable) {
+			if len(e.Params) == 0 {
+				continue
+			}
+			if e.Usage == "" {
+				t.Fatalf("命令 %v 声明了 %d 个参数，Usage 却是空的", e.Names, len(e.Params))
+			}
+			for _, p := range e.Params {
+				// 三种性质的比对口径不同：开关按字面量；自由文本按占位名（去掉尖括号）；
+				// 枚举按「参数名或任一可选值」——`[on|off]` 这种写法里放的是值不是名。
+				var want string
+				switch p.Kind {
+				case port.ParamFlag:
+					want = p.Name
+				case port.ParamChoice:
+					want = strings.Trim(p.Name, "<>")
+					for _, v := range p.Values {
+						if strings.Contains(e.Usage, v) {
+							want = v
+							break
+						}
+					}
+				default:
+					want = strings.Trim(p.Name, "<>")
+				}
+				if !strings.Contains(e.Usage, want) {
+					t.Fatalf("命令 %v 的参数 %q 没出现在 Usage %q 里（两处事实已分叉）", e.Names, p.Name, e.Usage)
+				}
+			}
+		}
+	})
+}
+
+// TestCommandKeysExist 注册表里出现的每个 cmd.* key 都必须在两份文案表里。
+//
+// 拼错一个 key 不会报错：T 找不到就把 key 原样返回，界面上直接印出 `cmd.edit.p5.desc`。
+// 这种错只有人凑近看才发现，所以在这里按集合对账。
+func TestCommandKeysExist(t *testing.T) {
+	used := map[string]bool{}
+	note := func(k string) {
+		if strings.HasPrefix(k, "cmd.") {
+			used[k] = true
+		}
+	}
 	for _, e := range commandTable {
-		if len(e.Params) == 0 {
+		note(e.Desc)
+		note(e.Usage)
+		for _, p := range e.Params {
+			note(p.Name)
+			note(p.ValueName)
+			note(p.Desc)
+		}
+	}
+	for _, lang := range []i18n.Lang{i18n.LangZh, i18n.LangEn} {
+		table := i18n.Table(lang)
+		for k := range used {
+			if _, ok := table[k]; !ok {
+				t.Fatalf("%s 表缺命令面 key %q（界面会原样印出这串 key）", lang, k)
+			}
+		}
+	}
+}
+
+// TestHelpFollowsLanguage /help 行随语言变（D275）：表里是 key，渲染必须取词，
+// 否则切到 en 之后整列帮助还是中文——那正是这次搬迁要解决的问题本身。
+func TestHelpFollowsLanguage(t *testing.T) {
+	s, _, _ := newTestSession(t, newMemStore())
+	i18n.Use(i18n.SelectionEn)
+	defer i18n.Use(i18n.SelectionZh)
+
+	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "help"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"/quit, /exit", "Quit", "cmd.quit.desc"} {
+		if want == "cmd.quit.desc" {
+			if strings.Contains(out, want) {
+				t.Fatalf("help 里印出了未取词的 key %q:\n%s", want, out)
+			}
 			continue
 		}
-		if e.Usage == "" {
-			t.Fatalf("命令 %v 声明了 %d 个参数，Usage 却是空的", e.Names, len(e.Params))
+		if !strings.Contains(out, want) {
+			t.Fatalf("en 的 help 缺 %q:\n%s", want, out)
 		}
-		for _, p := range e.Params {
-			// 三种性质的比对口径不同：开关按字面量；自由文本按占位名（去掉尖括号）；
-			// 枚举按「参数名或任一可选值」——`[on|off]` 这种写法里放的是值不是名。
-			var want string
-			switch p.Kind {
-			case port.ParamFlag:
-				want = p.Name
-			case port.ParamChoice:
-				want = strings.Trim(p.Name, "<>")
-				for _, v := range p.Values {
-					if strings.Contains(e.Usage, v) {
-						want = v
-						break
-					}
-				}
-			default:
-				want = strings.Trim(p.Name, "<>")
-			}
-			if !strings.Contains(e.Usage, want) {
-				t.Fatalf("命令 %v 的参数 %q 没出现在 Usage %q 里（两处事实已分叉）", e.Names, p.Name, e.Usage)
-			}
+	}
+	for _, unwanted := range []string{"退出", "<路径>"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("en 的 help 里还留着中文 %q:\n%s", unwanted, out)
 		}
 	}
 }
@@ -273,7 +357,7 @@ func TestHelpFromCatalog(t *testing.T) {
 	for _, want := range []string{
 		"/quit, /exit", "退出",
 		"/edit <id> [--keep|--copy] [--part N] [--attach <路径>]... [--drop N]... [--drop-all] [<文本>]",
-		mcpFamilyLine,
+		mcpFamilyLine(),
 		"/mcp:srv:probe", "探测一下",
 	} {
 		if !strings.Contains(out, want) {
