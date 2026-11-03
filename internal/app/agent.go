@@ -70,7 +70,7 @@ type Config struct {
 	MaxTurns    int // <=0 = 32
 	// CompactThreshold 自动压缩阈值系数（×MaxContextTokens；<=0 = 0.7，D21 轨2/M2）。
 	CompactThreshold float64
-	// MaxContextTokens 上下文预算 tokens（<=0 = 64000，§8）。
+	// MaxContextTokens 上下文预算 tokens（<=0 = 256000，§8）。
 	MaxContextTokens int
 	// Think 原生思考三态开关（D34）：nil = 键缺失（展示为"开"，但**不发**
 	// enable_thinking 布尔，保持零字段变化）；true/false = 显式开关（/think 写回后生效）。

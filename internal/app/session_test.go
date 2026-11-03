@@ -605,8 +605,11 @@ func TestSessionUsageCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("usage: %v", err)
 	}
+	// 自动压缩阈值随默认预算走（0.7 × DefaultMaxContextTokens），不写死数字。
+	thr := defaultCompactThreshold // 经变量打破常量折叠（int(常量小数) 非法）
+	compactAt := int(thr*float64(DefaultMaxContextTokens) + 0.5)
 	for _, want := range []string{
-		"当前上下文:≈", "tokens", "自动压缩阈值", "44800",
+		"当前上下文:≈", "tokens", "自动压缩阈值", fmt.Sprint(compactAt),
 		"计数方式: 估算", "校准",
 		"上轮实测: in=88 out=12",
 		"本会话累计(Path): in=88 out=12 tokens（1 次生成）",

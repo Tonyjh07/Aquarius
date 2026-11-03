@@ -26,12 +26,15 @@ const (
 )
 
 // defaultCompactThreshold / DefaultMaxContextTokens Config 零值时的默认
-// （§8 limits.compact_threshold=0.7、max_context_tokens=64000）。
+// （§8 limits.compact_threshold=0.7、max_context_tokens=256000）。
 // MaxContextTokens 导出供装配根的硬保底截断装饰器对齐同一预算（D14/§7.1）。
 const (
 	defaultCompactThreshold = 0.7
-	// DefaultMaxContextTokens 上下文预算默认值（见上注）。
-	DefaultMaxContextTokens = 64000
+	// DefaultMaxContextTokens 上下文预算默认值（见上注）。取 256k 是注意力、成本与长程
+	// 任务三者的平衡点：再小，一轮读几个文件就撞压缩；再大，长会话里早期的低相关历史
+	// 会持续占着注意力与费用。这只是「想用多少」的上限，模型声明的窗口比它小时按窗口走
+	// （装配预算 = min(两者)，见配置文档「上下文窗口」）。
+	DefaultMaxContextTokens = 256000
 )
 
 // estimator 三级计数链的②③两层（①在树上，不经这里）。

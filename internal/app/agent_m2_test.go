@@ -414,7 +414,7 @@ func TestUsageReport(t *testing.T) {
 	thr := defaultCompactThreshold // 经变量打破常量折叠（int(常量小数) 非法）
 	wantCompactAt := int(thr*float64(DefaultMaxContextTokens) + 0.5)
 	if rep.CompactAt != wantCompactAt {
-		t.Fatalf("compactAt = %d, want %d（默认 0.7×64000）", rep.CompactAt, wantCompactAt)
+		t.Fatalf("compactAt = %d, want %d（默认阈值×DefaultMaxContextTokens）", rep.CompactAt, wantCompactAt)
 	}
 	if rep.Ratio < calMin || rep.Ratio > calMax {
 		t.Fatalf("ratio = %v, want clamp 内", rep.Ratio)

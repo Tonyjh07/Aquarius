@@ -9,7 +9,7 @@ import (
 )
 
 // TestFactsPublishOnConstruct 构造即发布事实快照（D82/§7.6）：标题/会话 ID 就绪，
-// 上下文预算取默认（Cfg 零值 64000），persona 装配非空故占用 > 0（无 TokenCounter →
+// 上下文预算取默认（Cfg 零值 256000），persona 装配非空故占用 > 0（无 TokenCounter →
 // ③估算非精确），尚无实测用量。
 func TestFactsPublishOnConstruct(t *testing.T) {
 	store := newMemStore()

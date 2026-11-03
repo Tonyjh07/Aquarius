@@ -133,7 +133,7 @@ const defaultConfig = `{
   "permissions": { "level": "strict", "unattended": false },
   "limits": {
     "max_turns": 32,
-    "max_context_tokens": 64000,
+    "max_context_tokens": 256000,
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,
     "tool_timeout_sec": 60

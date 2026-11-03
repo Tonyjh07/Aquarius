@@ -266,10 +266,16 @@ func TestWiringContextBudget(t *testing.T) {
 	if got := w.maxContextBudget(); got != 64000 {
 		t.Fatalf("大窗口模型 = %d, want 64000", got)
 	}
-	// 全局未设 → 内置缺省兜底，再和模型取小。
+	// 全局未设 → 内置缺省兜底（再和模型取小）。
 	cfg.Limits.MaxContextTokens = 0
+	cfg.Model.Name = "plain"
 	if got := w.maxContextBudget(); got != app.DefaultMaxContextTokens {
 		t.Fatalf("全局未设 = %d, want %d", got, app.DefaultMaxContextTokens)
+	}
+	// 200k 窗口比缺省 256k 小 → 模型侧压。
+	cfg.Model.Name = "big"
+	if got := w.maxContextBudget(); got != 200000 {
+		t.Fatalf("全局未设 + 200k 窗口 = %d, want 200000", got)
 	}
 	cfg.Model.Name = "small"
 	if got := w.maxContextBudget(); got != 32000 {

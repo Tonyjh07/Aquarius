@@ -367,7 +367,7 @@ func TestPersistReadTextSettingsZoomKnobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读回 config: %v", err)
 	}
-	if !strings.Contains(string(data), `"max_context_tokens": 64000`) {
+	if !strings.Contains(string(data), `"max_context_tokens": 256000`) {
 		t.Error("limits 段未保留（泛键改写口径破坏了无关键）")
 	}
 }

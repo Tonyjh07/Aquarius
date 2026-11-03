@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-03 @ ff5162d -->
+<!-- docs-sync: 2026-11-03 @ 5c55a61 -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -220,10 +220,14 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `limits.max_turns` | int | 32 | 单次请求内"生成+工具"循环上限（终端类多步任务常见 8 轮以上） |
-| `limits.max_context_tokens` | int | 64000 | 上下文预算**上限**：实际预算 = min(本值, 当前模型声明的 `context_window`)，见上文「上下文窗口」。硬保底由截断装饰器执行 |
+| `limits.max_context_tokens` | int | 256000 | 上下文预算**上限**：实际预算 = min(本值, 当前模型声明的 `context_window`)，见上文「上下文窗口」。硬保底由截断装饰器执行 |
 | `limits.compact_threshold` | float | 0.7 | 自动压缩阈值（×max_context_tokens） |
 | `limits.tool_output_chars` | int | 20000 | 工具结果截断 |
 | `limits.tool_timeout_sec` | int | 60 | 单次工具执行超时秒（模型可经保留参数 `timeout_sec` 逐次覆盖） |
+
+缺省的 256k 是注意力、成本与长程任务三者的平衡点：再小，一轮读几个文件就撞自动压缩；再大，
+长会话里早期那些低相关的历史会一直占着注意力与费用。想更长或更省，改这一项即可——它只管
+「我想用多少」，模型窗口更小时按窗口走。
 
 ### input / audio（语音）
 
@@ -565,7 +569,7 @@ profile 配置 `<data>/profiles/default/config.json`：
   "permissions": { "level": "strict", "unattended": false },
   "limits": {
     "max_turns": 32,
-    "max_context_tokens": 64000,
+    "max_context_tokens": 256000,
     "compact_threshold": 0.7,
     "tool_output_chars": 20000,
     "tool_timeout_sec": 60
