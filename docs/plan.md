@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-03 @ ffb5cbe -->
+<!-- docs-sync: 2026-11-03 @ ab510d8 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -278,9 +278,9 @@
   密钥已能经环境变量或密钥库解析时，页 3 顶部显示「已检测到可用密钥」并允许直接下一步——
   这类用户不该被迫把同一份 Key 再打一遍。
 - **O5**（S）：页 4 / 页 5 迁移与收尾。教程页与完成页基本照搬（文案都在表里），补「第 3 页跳过」时
-  完成页的摘要写法。文档：`gui-design.md` 的欢迎窗段落（D141/D153/D263 三步口径）、`decisions.md`
-  新条目（**D278**，含「跳过不再阻断」这条改判）、`contracts.md` 补 `ui.consent_version` 与
-  `ui.lang` 的向导入口、`configuration.md` 补键、`guide.md` 首章首跑步骤重写。
+  完成页的摘要写法。文档：`gui-design.md` 的欢迎窗段落（D141/D153/D263 三步口径）、`contracts.md`
+  补 `ui.consent_version` 与 `ui.lang` 的向导入口、`configuration.md` 补键、`guide.md` 首章首跑
+  步骤重写。（**D278 正文已写**，含「跳过不再阻断」这条改判——收尾时只需按落地情况订正状态。）
 
 **验收**：
 
