@@ -487,7 +487,7 @@ func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image
 	case mdCode: // 等宽小卡：录宏量高 → 画底 →（高亮，卡内衬偏移）→ 重放（同 paintRow 次序，卡嵌气泡内）
 		return func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(th, b.text)
-			s.Font = monoFace
+			s.Font = codeFont()
 			s.TextSize = th.TextSize * 13.0 / 16.0
 			s.State = rs.sel(k)
 			m := op.Record(gtx.Ops)

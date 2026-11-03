@@ -25,8 +25,13 @@ const logoIconPx = 60
 
 // logoState 解码一次 + 按目标像素边长预缩放（缓存最近一档；帧循环懒调，DPI/尺寸变化
 // 才重建）。失败留 nil 并记日志，圆钮退回纯色。
+//
+// logoMu 守缓存档位（logoPx/logoOp/logoOK）：主窗与设置窗各自在自己那一侧绘制圆钮，
+// 两边都可能撞上 DPI 变化而重算同一档，裸读写就是数据竞争。解码本身由 logoOnce 守，
+// 它同时把 logoSrc/logoErr 的写变成了对所有调用者可见。
 var (
 	logoOnce sync.Once
+	logoMu   sync.Mutex
 	logoErr  bool          // 源图解码失败（只报一次）
 	logoSrc  image.Image   // 解码后的源图（128×128）
 	logoPx   int           // 当前缓存对应的球径（px）
@@ -59,12 +64,14 @@ func logoImageOp(pxPx int) (paint.ImageOp, bool) {
 	if logoErr || logoSrc == nil {
 		return paint.ImageOp{}, false
 	}
+	logoMu.Lock()
+	defer logoMu.Unlock()
 	if logoOK && logoPx == pxPx {
 		return logoOp, true
 	}
-	logoOp = paint.NewImageOp(scaleBox(logoSrc, image.Pt(pxPx, pxPx)))
-	logoPx, logoOK = pxPx, true
-	return logoOp, true
+	op := paint.NewImageOp(scaleBox(logoSrc, image.Pt(pxPx, pxPx)))
+	logoOp, logoPx, logoOK = op, pxPx, true
+	return op, true
 }
 
 // scaleBox 面积平均缩放（纯 Go）：源按 16 位预乘值平均后直存（image.RGBA 即预乘语义）。

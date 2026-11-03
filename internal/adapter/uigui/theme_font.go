@@ -14,8 +14,27 @@ import (
 )
 
 // monoFace 代码块等宽字体面（newTheme 从集合挑 Mono 系；零值 = 回落正文体，D65）。
-// 与 brandColor 等同槽风格：主题组装期写定，帧循环只读。
-var monoFace font.Font
+//
+// 要锁而不是裸变量：主题是**每窗各建一份**（winmgr 每窗独立 Shaper），建窗与主窗帧循环
+// 里读它画代码块是两条 goroutine——「组装期写定、帧循环只读」只在单窗时成立。
+var (
+	monoFaceMu sync.RWMutex
+	monoFace   font.Font
+)
+
+// codeFont 代码块等宽字体面（读侧）；未组装主题时返回零值 = 回落正文体。
+func codeFont() font.Font {
+	monoFaceMu.RLock()
+	defer monoFaceMu.RUnlock()
+	return monoFace
+}
+
+// setCodeFont 写侧，只在 newTheme 里调用。
+func setCodeFont(f font.Font) {
+	monoFaceMu.Lock()
+	monoFace = f
+	monoFaceMu.Unlock()
+}
 
 // faceCache 进程内共享的字体集合（D240）：候选表内容 → 解析结果。
 //
@@ -65,7 +84,7 @@ func sharedFaces(candidates []string) []text.FontFace {
 func newTheme(candidates []string) *material.Theme {
 	th := material.NewTheme()
 	faces := sharedFaces(candidates)
-	monoFace = pickMonoFace(faces)
+	setCodeFont(pickMonoFace(faces))
 	th.Shaper = text.NewShaper(text.WithCollection(faces))
 	return th
 }

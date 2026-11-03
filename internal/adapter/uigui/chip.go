@@ -141,7 +141,7 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 			if strings.TrimSpace(c.args) != "" {
 				add(0, func(gtx layout.Context) layout.Dimensions {
 					s := material.Body2(u.th, c.args)
-					s.Font = monoFace
+					s.Font = codeFont()
 					s.TextSize = u.th.TextSize * 13.0 / 16.0
 					s.State = rs.sel(0)
 					return s.Layout(gtx)
