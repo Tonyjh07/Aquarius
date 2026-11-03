@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-03 @ b3e6f7f -->
+<!-- docs-sync: 2026-11-03 @ ffb5cbe -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -57,7 +57,7 @@
 | 8 | O5 页 4/5 + 文档 | 11-04 晚 | 五页中英各走一遍；`guide.md` 首跑步骤重写 |
 | 9 | L2 23 行 `w.stderr` 收口 | 11-05 上午 | 每行判出 `ctx` 与行动位，`fatal` 不动 |
 | 10 | L3 端口换结构化回调 | 11-05 中午 | `Logf(format, args…)` 这一族消失；`[plugin] ` 前缀收进 `ctx` |
-| 11 | L4 上锁（排 I6 / I7 之后，三把 AST 扫描共用辅助） | 11-05 下午 | `fmt.Fprint*(…stderr…)` 只在 `logging` 与 `fatal` |
+| 11 | L4 上锁（排 I6 之后，与 I6 的扫描共用 AST 辅助） | 11-05 下午 | `fmt.Fprint*(…stderr…)` 只在 `logging` 与 `fatal` |
 | 12 | `en` 全量冒烟 + 608dp / 200% 离屏截帧 | 11-05 下午 | 人工视觉走查在这一段并行 |
 | 13 | 发版闸门 | 11-06 上午 | 干净 clone 构建、`govulncheck`、`winres` 两处版本、页 2 四条正文的生效日期改 11-06、`docs/releases/v0.5.0.md`、tag；**推送给用户执行** |
 
