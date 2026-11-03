@@ -19,7 +19,7 @@ import (
 // secretsPage 密钥库页模块。
 type secretsPage struct{}
 
-func (secretsPage) Key() string { return "密钥库" }
+func (secretsPage) Key() string { return "secrets" }
 
 func (secretsPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec("已存密钥（值不可回显，只给尾 4 位）")}

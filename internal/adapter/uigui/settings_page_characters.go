@@ -24,7 +24,7 @@ import (
 // charactersPage 角色页模块。
 type charactersPage struct{}
 
-func (charactersPage) Key() string { return "角色" }
+func (charactersPage) Key() string { return "characters" }
 
 func (charactersPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec("已导入角色卡")}

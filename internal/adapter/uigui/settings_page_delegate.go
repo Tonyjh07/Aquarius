@@ -16,7 +16,7 @@ import (
 // delegatePage 外部代理页模块。
 type delegatePage struct{}
 
-func (delegatePage) Key() string { return "外部代理" }
+func (delegatePage) Key() string { return "delegate" }
 
 func (delegatePage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{}

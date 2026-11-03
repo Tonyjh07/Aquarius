@@ -12,7 +12,7 @@ import (
 // advPage 高级页模块。
 type advPage struct{}
 
-func (advPage) Key() string { return "高级" }
+func (advPage) Key() string { return "adv" }
 
 func (advPage) Rows(f *settingsForm) []rowDesc {
 	return []rowDesc{sec("config.json 原文"), {kind: rowRaw}}

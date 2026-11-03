@@ -23,20 +23,23 @@ import (
 // 推导）；每页行计划非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」
 // 页（S7b/D145）。另锁两条注册表结构不变量：页常量与注册表长度一致、Key 唯一。
 func TestSettingsPageNamesContract(t *testing.T) {
-	want := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "外部代理", "技能", "角色", "联网", "语音", "高级", "关于"}
-	if settingsPageCount != len(want) {
-		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(want))
+	// wantKeys 是页标识（Key，英文、不随语言变），wantNames 是 zh 下的显示名。两者分开锁：
+	// 页序与标识是契约，显示名只是取词结果——把中文当契约锁，加英文表时就会两头顾此失彼。
+	wantKeys := []string{"general", "model", "providers", "secrets", "chat", "prompt", "tools", "delegate", "skills", "characters", "web", "audio", "adv", "about"}
+	wantNames := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "外部代理", "技能", "角色", "联网", "语音", "高级", "关于"}
+	if settingsPageCount != len(wantKeys) {
+		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(wantKeys))
 	}
 	if int(pageConstCount) != settingsPageCount {
 		t.Fatalf("pageConstCount = %d, settingsPageCount = %d（加页必须同时改常量块与注册表）",
 			int(pageConstCount), settingsPageCount)
 	}
-	for i, name := range want {
-		if settingsPageNames[i] != name {
-			t.Errorf("页 %d 名 = %q, want %q", i, settingsPageNames[i], name)
+	for i, key := range wantKeys {
+		if settingsPages[i].Key() != key {
+			t.Errorf("注册表页 %d Key = %q, want %q", i, settingsPages[i].Key(), key)
 		}
-		if settingsPages[i].Key() != name {
-			t.Errorf("注册表页 %d Key = %q, want %q", i, settingsPages[i].Key(), name)
+		if got := pageName(i); got != wantNames[i] {
+			t.Errorf("页 %d 名 = %q, want %q", i, got, wantNames[i])
 		}
 		if i > 0 && settingsPages[i].Key() == settingsPages[i-1].Key() {
 			t.Errorf("注册表页 %d 与上一页 Key 重复（%q）", i, settingsPages[i].Key())
@@ -52,12 +55,12 @@ func TestSettingsPageNamesContract(t *testing.T) {
 	for p := 0; p < settingsPageCount; p++ {
 		rows := f.pageRows(p)
 		if len(rows) < 2 {
-			t.Fatalf("页 %d（%s）行计划过短: %d 行", p, settingsPageNames[p], len(rows))
+			t.Fatalf("页 %d（%s）行计划过短: %d 行", p, pageName(p), len(rows))
 		}
 		if rows[0].kind != rowTitle {
-			t.Errorf("页 %d（%s）首行 = %v, want rowTitle", p, settingsPageNames[p], rows[0].kind)
-		} else if rows[0].text != settingsPageNames[p] {
-			t.Errorf("页 %d 标题文案 = %q, want %q", p, rows[0].text, settingsPageNames[p])
+			t.Errorf("页 %d（%s）首行 = %v, want rowTitle", p, pageName(p), rows[0].kind)
+		} else if rows[0].text != pageName(p) {
+			t.Errorf("页 %d 标题文案 = %q, want %q", p, rows[0].text, pageName(p))
 		}
 	}
 
@@ -162,7 +165,7 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 			}
 			if _, ok := settingsPages[p].Body(gtx, th, f, rows, i); !ok {
 				t.Errorf("页 %d（%s）第 %d 行（kind=%d）无人认领——加行型时忘了在对应页 Body 分派",
-					p, settingsPageNames[p], i, rows[i].kind)
+					p, pageName(p), i, rows[i].kind)
 			}
 		}
 	}
@@ -188,7 +191,7 @@ func TestPromptRowsLiveOnPromptPage(t *testing.T) {
 	kinds := []rowKind{rowPromptGrid, rowPromptRef, rowPromptBuiltin, rowPromptPreview}
 	for _, page := range []int{pageChat, pageGeneral, pageModel, pageSecrets, pageTools, pageSkills, pageCharacters, pageAdv} {
 		if n := count(page, kinds...); n != 0 {
-			t.Errorf("页 %s 出现了 %d 条提示词行（应只在「系统提示词」页）", settingsPageNames[page], n)
+			t.Errorf("页 %s 出现了 %d 条提示词行（应只在「系统提示词」页）", pageName(page), n)
 		}
 	}
 	if got, want := count(pagePrompt, rowPromptGrid), 1; got != want {
@@ -485,10 +488,10 @@ func TestSettingsPagesRenderContent(t *testing.T) {
 				}
 			}
 		}
-		t.Logf("页 %d（%s）内容区非底色像素 = %d", p, settingsPageNames[p], px)
+		t.Logf("页 %d（%s）内容区非底色像素 = %d", p, pageName(p), px)
 		if px < 1000 {
 			t.Errorf("页 %d（%s）内容区非底色像素 = %d，want ≥1000——该页可能空白",
-				p, settingsPageNames[p], px)
+				p, pageName(p), px)
 		}
 	}
 }

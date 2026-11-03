@@ -27,7 +27,7 @@ import (
 // providersPage 模型服务页模块。
 type providersPage struct{}
 
-func (providersPage) Key() string { return "模型服务" }
+func (providersPage) Key() string { return "providers" }
 
 func (providersPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec("模型服务（provider 列表）")}

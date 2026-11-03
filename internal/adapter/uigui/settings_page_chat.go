@@ -16,7 +16,7 @@ import (
 // chatPage 对话页模块。
 type chatPage struct{}
 
-func (chatPage) Key() string { return "对话" }
+func (chatPage) Key() string { return "chat" }
 
 func (chatPage) Rows(f *settingsForm) []rowDesc {
 	return []rowDesc{

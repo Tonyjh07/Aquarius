@@ -27,7 +27,7 @@ import (
 // webPage 联网页模块。
 type webPage struct{}
 
-func (webPage) Key() string { return "联网" }
+func (webPage) Key() string { return "web" }
 
 // 联网提供商类型档（键值 = config 里的 kind 原文）。搜索与抓取支持的 kind 不同：
 // brave 只做搜索、local 只做抓取——分两侧给档，界面就不会让用户选出「启动会拒」的组合。

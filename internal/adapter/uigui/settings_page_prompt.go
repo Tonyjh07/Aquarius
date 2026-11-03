@@ -13,7 +13,7 @@ import (
 // promptPage 系统提示词页模块。
 type promptPage struct{}
 
-func (promptPage) Key() string { return "系统提示词" }
+func (promptPage) Key() string { return "prompt" }
 
 // Rows 由 promptEditor 给行表（S7/D144 + S7b/D145：独立成页；D154 与遮罩共用一份）。
 func (promptPage) Rows(f *settingsForm) []rowDesc {

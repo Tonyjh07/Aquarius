@@ -28,7 +28,7 @@ const (
 	ttsKindGPTSo   = "gptsovits"
 )
 
-func (audioPage) Key() string { return "语音" }
+func (audioPage) Key() string { return "audio" }
 
 func (audioPage) Rows(f *settingsForm) []rowDesc {
 	asrKind := f.asrKind.value()

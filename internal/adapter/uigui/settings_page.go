@@ -18,6 +18,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // settingsPage 一页的完整契约。页面模块是无状态值（状态一律挂在 *settingsForm 上，与
@@ -77,17 +79,11 @@ var settingsPages = []settingsPage{
 // settingsPageCount 页数 = 注册表长度（不是独立常量：加页只改 settingsPages）。
 var settingsPageCount = len(settingsPages)
 
-// settingsPageNames 页名由注册表推导（导航项与页标题共用）。
-var settingsPageNames = pageKeys()
-
-// pageKeys 逐页取导航文案（settingsPageNames 的唯一来源）。
-func pageKeys() []string {
-	names := make([]string, settingsPageCount)
-	for i, p := range settingsPages {
-		names[i] = p.Key()
-	}
-	return names
-}
+// pageName 第 i 页的导航文案（导航项与页标题共用）。**必须是函数**：语言在 main 里才定，
+// 包级变量初始化时 i18n 还没选语言，存下来的就永远是本机 locale 那套（与 defaultTitle 同一坑）。
+// Key() 是英文标识（"audio"），这里才换成当前语言的说法——标识稳定，页序、测试定位与日志
+// 都靠它，显示出来的字随语言走。
+func pageName(i int) string { return i18n.T("ui.settings.page." + settingsPages[i].Key()) }
 
 // frameworkRow 框架通用行型（页标题 / 分区标题）：所有页面共用同一份渲染；页面模块的
 // Body 先问它、未命中再认领自己的行型。

@@ -18,4 +18,12 @@ var zhTexts = mergeTables(
 	zhConfigTexts,
 	zhTuiTexts,
 	zhLogTexts,
+	zhGuiCommonTexts,
+	zhGuiSettingsTexts,
+	zhGuiPageCoreTexts,
+	zhGuiPageAdminTexts,
+	zhGuiWelcomeTexts,
+	zhGuiChatTexts,
+	zhCmdConfigTexts,
+	zhCmdAdminTexts,
 )

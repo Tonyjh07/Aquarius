@@ -16,4 +16,12 @@ var enTexts = mergeTables(
 	enConfigTexts,
 	enTuiTexts,
 	enLogTexts,
+	enGuiCommonTexts,
+	enGuiSettingsTexts,
+	enGuiPageCoreTexts,
+	enGuiPageAdminTexts,
+	enGuiWelcomeTexts,
+	enGuiChatTexts,
+	enCmdConfigTexts,
+	enCmdAdminTexts,
 )

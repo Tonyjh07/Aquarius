@@ -19,7 +19,7 @@ import (
 // generalPage 常规页模块。
 type generalPage struct{}
 
-func (generalPage) Key() string { return "常规" }
+func (generalPage) Key() string { return "general" }
 
 func (generalPage) Rows(f *settingsForm) []rowDesc {
 	return []rowDesc{

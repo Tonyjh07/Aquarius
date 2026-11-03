@@ -54,7 +54,7 @@ const aboutIconDp unit.Dp = 72
 // aboutPage 关于页模块。
 type aboutPage struct{}
 
-func (aboutPage) Key() string { return "关于" }
+func (aboutPage) Key() string { return "about" }
 
 func (aboutPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{

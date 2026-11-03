@@ -21,7 +21,7 @@ import (
 // modelPage 模型页模块。
 type modelPage struct{}
 
-func (modelPage) Key() string { return "模型" }
+func (modelPage) Key() string { return "model" }
 
 func (modelPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{

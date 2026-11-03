@@ -45,7 +45,7 @@ func TestAdvPageFillsRow(t *testing.T) {
 			continue
 		}
 		if _, ok := page.(fillPage); ok {
-			t.Errorf("页 %s 也实现了 fillPage——撑满行只在无自然高度的整块页成立", settingsPageNames[p])
+			t.Errorf("页 %s 也实现了 fillPage——撑满行只在无自然高度的整块页成立", pageName(p))
 		}
 	}
 }

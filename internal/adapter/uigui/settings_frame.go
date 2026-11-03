@@ -152,7 +152,7 @@ func (f *settingsForm) navItem(gtx layout.Context, th *material.Theme, p int) la
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					pp := paperOf()
-					l := material.Body1(th, settingsPageNames[p])
+					l := material.Body1(th, pageName(p))
 					if f.page == p {
 						l.Color = pp.text
 					} else {

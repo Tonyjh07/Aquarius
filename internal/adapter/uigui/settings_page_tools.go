@@ -13,7 +13,7 @@ import (
 // toolsPage 工具与 MCP 页模块。
 type toolsPage struct{}
 
-func (toolsPage) Key() string { return "工具与 MCP" }
+func (toolsPage) Key() string { return "tools" }
 
 func (toolsPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{}

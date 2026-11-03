@@ -204,7 +204,7 @@ func sec(text string) rowDesc { return rowDesc{kind: rowSection, text: text} }
 // pageRows 本页行计划（每帧现算：providers / 密钥条目数在增删后即变）。首行恒为页标题
 // （页名 = 注册表 Key），其余由该页模块给（D162）。
 func (f *settingsForm) pageRows(page int) []rowDesc {
-	head := rowDesc{kind: rowTitle, text: settingsPageNames[page]}
+	head := rowDesc{kind: rowTitle, text: pageName(page)}
 	return append([]rowDesc{head}, settingsPages[page].Rows(f)...)
 }
 

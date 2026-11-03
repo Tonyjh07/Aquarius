@@ -26,7 +26,7 @@ import (
 // skillsPage 技能页模块。
 type skillsPage struct{}
 
-func (skillsPage) Key() string { return "技能" }
+func (skillsPage) Key() string { return "skills" }
 
 func (skillsPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec("已安装技能")}
