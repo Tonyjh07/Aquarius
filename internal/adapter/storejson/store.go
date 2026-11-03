@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -48,6 +49,13 @@ type Store struct {
 	// keep 保留的 .bak 代数（>=1）：第 1 代为历史名 `<id>.json.bak`，更旧的为
 	// `<id>.json.bak.<i-1>`。写盘时轮转，读盘时按新到旧回退（D254）。
 	keep int
+	// saveLocks 按会话文件串行化本进程内的保存（`<dst>` → *sync.Mutex）。
+	//
+	// 同一会话确实会有两处写：主循环保存当前会话，异地注入写回目标会话（D261），
+	// 两者都不持有跨会话的锁。端口没有「一次保存」之外的原子性承诺，所以串行化
+	// 落在这里——「写临时文件 → 轮转备份 → 换入」三步必须成对，否则旧内容能盖掉
+	// 新内容（临时文件名随机只解决了写坏，解决不了后写先赢）。
+	saveLocks sync.Map
 }
 
 // New 创建存储并确保目录存在（备份保留一代，等价于历史行为）。
@@ -116,9 +124,12 @@ func renameIfExists(from, to string) error {
 	return nil
 }
 
-// Save 整树序列化落盘：先写 .tmp，再把现有文件轮成备份代，最后原子换入（D7/D254）。
+// Save 整树序列化落盘：先写临时文件，再把现有文件轮成备份代，最后原子换入（D7/D254）。
 // 轮转**只在现文件能完整解析时进行**（保存前完整性校验）——坏文件不许挤掉更旧的
 // 可用备份。入树前做不变量自检，坏数据不落盘。
+//
+// 同一会话的保存串行执行（见 Store.saveLocks），临时文件每次随机命名：并发保存
+// 不会写坏、也不会互相盖掉。
 func (s *Store) Save(ctx context.Context, c *conversation.Conversation) error {
 	if err := checkCtx(ctx); err != nil {
 		return err
@@ -134,20 +145,63 @@ func (s *Store) Save(ctx context.Context, c *conversation.Conversation) error {
 		return fmt.Errorf("%s: %w", i18n.Tf("store.err.marshal", "id", c.ID), err)
 	}
 	dst := s.path(c.ID)
-	tmp := dst + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
-		return fmt.Errorf("%s: %w", i18n.Tf("store.err.write", "path", tmp), err)
+	unlock := s.lockSave(dst)
+	defer unlock()
+	tmp, err := writeTemp(dst, append(data, '\n'))
+	if err != nil {
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.write", "path", dst), err)
 	}
+	swapped := false
+	defer func() {
+		if !swapped {
+			_ = os.Remove(tmp)
+		}
+	}()
 	if _, err := os.Stat(dst); err == nil && s.rotatable(dst) {
 		if err := s.rotate(dst); err != nil {
-			_ = os.Remove(tmp)
 			return fmt.Errorf("%s: %w", i18n.Tf("store.err.backup", "path", dst), err)
 		}
 	}
 	if err := os.Rename(tmp, dst); err != nil {
 		return fmt.Errorf("%s: %w", i18n.Tf("store.err.swap", "path", dst), err)
 	}
+	swapped = true
 	return nil
+}
+
+// lockSave 取该目标的进程内保存锁，返回解锁函数。
+func (s *Store) lockSave(dst string) func() {
+	v, _ := s.saveLocks.LoadOrStore(dst, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// writeTemp 在同目录写一份临时文件并返回其路径：名字随机（`<id>.json.<rand>.tmp`），
+// 调用方负责换入或清理。
+//
+// 会话文件沿用 0644（不是密钥，历史口径不变）；CreateTemp 建的 0600 要显式放开。
+func writeTemp(dst string, data []byte) (string, error) {
+	f, err := os.CreateTemp(filepath.Dir(dst), filepath.Base(dst)+".*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmp := f.Name()
+	if err := f.Chmod(0o644); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	return tmp, nil
 }
 
 // rotatable 现文件是否值得轮成备份：能读且能完整解析（不变量自检通过，D254）。
@@ -270,13 +324,21 @@ func (s *Store) Remove(ctx context.Context, id conversation.ID) error {
 		return errors.New(i18n.T("store.err.empty_id"))
 	}
 	dst := s.path(id)
-	paths := []string{dst, dst + ".tmp"}
+	paths := []string{dst}
 	// 备份代按前缀扫目录收集：keep 调小后可能留有更高代的旧文件（D254）。
-	prefix := filepath.Base(dst) + ".bak"
+	// 临时文件同理按「<id>.json.*.tmp」扫（随机名，崩溃后可能留残片；旧版本留下的
+	// 固定名 `<id>.json.tmp` 也落在同一个前缀与后缀里）。
+	bakPrefix := filepath.Base(dst) + ".bak"
+	tmpPrefix := filepath.Base(dst) + "."
 	if entries, err := os.ReadDir(s.dir); err == nil {
 		for _, e := range entries {
-			if !e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
-				paths = append(paths, filepath.Join(s.dir, e.Name()))
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if strings.HasPrefix(name, bakPrefix) ||
+				(strings.HasPrefix(name, tmpPrefix) && strings.HasSuffix(name, ".tmp")) {
+				paths = append(paths, filepath.Join(s.dir, name))
 			}
 		}
 	}

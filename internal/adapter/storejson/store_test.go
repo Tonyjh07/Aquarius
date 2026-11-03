@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -823,6 +824,101 @@ func TestCanceledContextRejected(t *testing.T) {
 	}
 	if _, err := s.List(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("list err = %v, want context.Canceled", err)
+	}
+}
+
+// TestSaveConcurrentSameConversation 同会话并发保存：每次保存要么完整生效、要么不生效，
+// 最终落盘的一定是一棵能通过自检的树，且不留临时文件残片。
+//
+// 固定临时名（`<id>.json.tmp`）时代两处保存会互相截断——并发写同一个文件不是「最后
+// 一个 rename 赢」这么温和，而是把两份 JSON 交错写进同一个临时文件，换入后主文件直接
+// 解析不了。同会话确实有两处保存：主循环存当前会话，异地注入写回目标会话（D261）。
+func TestSaveConcurrentSameConversation(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	// 同 ID、不同规模：内容长度差得越大，交错写越容易暴露。
+	mk := func(n int) *conversation.Conversation {
+		c := conversation.New(conversation.ID("conv-1"), "并发")
+		for i := 0; i < n; i++ {
+			role := conversation.RoleUser
+			if i%2 == 1 {
+				role = conversation.RoleAssistant
+			}
+			if _, err := c.Append(role, []conversation.Part{
+				{Kind: conversation.PartText, Text: strings.Repeat("x", 300+i)},
+			}); err != nil {
+				t.Fatalf("append: %v", err)
+			}
+		}
+		return c
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			c := mk(4 + i*6)
+			for j := 0; j < 10; j++ {
+				if err := s.Save(ctx, c); err != nil {
+					t.Errorf("save (goroutine %d, 第 %d 次): %v", i, j, err)
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	got, err := s.Load(ctx, conversation.ID("conv-1"))
+	if err != nil {
+		t.Fatalf("并发保存后 load: %v", err)
+	}
+	if err := got.Validate(); err != nil {
+		t.Fatalf("并发保存后树不自洽: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Fatalf("残留临时文件: %s", e.Name())
+		}
+	}
+}
+
+// TestRemoveClearsTempResidue 删除会话连带清掉临时文件残片：随机名的新残片与旧版本
+// 留下的固定名 `conv-1.json.tmp` 都要走。
+func TestRemoveClearsTempResidue(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	c := mustConv(t)
+	if err := s.Save(ctx, c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	for _, name := range []string{"conv-1.json.918273.tmp", "conv-1.json.tmp"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{"), 0o644); err != nil {
+			t.Fatalf("write residue %s: %v", name, err)
+		}
+	}
+	if err := s.Remove(ctx, c.ID); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "conv-1.json") {
+			t.Fatalf("残留文件: %s", e.Name())
+		}
 	}
 }
 
