@@ -23,7 +23,7 @@ func (delegatePage) Key() string { return "delegate" }
 func (delegatePage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{}
 	if f.delegates == nil {
-		return append(rows, rowDesc{kind: rowDlgEmpty, text: i18n.T("ui.page.delegate.unwired")})
+		return append(rows, rowDesc{kind: rowDlgEmpty, text: i18n.T("ui.common.unwired")})
 	}
 	rows = append(rows, sec(i18n.T("ui.page.delegate.section_agents")), rowDesc{kind: rowDlgNote})
 	if len(f.delegateSnap.Agents) == 0 {

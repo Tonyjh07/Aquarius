@@ -26,7 +26,7 @@ func (secretsPage) Key() string { return "secrets" }
 func (secretsPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec(i18n.T("ui.page.secrets.section_entries"))}
 	if f.secrets == nil {
-		return append(rows, rowDesc{kind: rowSecretEmpty, text: i18n.T("ui.page.secrets.unwired")})
+		return append(rows, rowDesc{kind: rowSecretEmpty, text: i18n.T("ui.common.unwired")})
 	}
 	if len(f.secretsSnap.Entries) == 0 {
 		rows = append(rows, rowDesc{kind: rowSecretEmpty, text: i18n.T("ui.page.secrets.empty")})

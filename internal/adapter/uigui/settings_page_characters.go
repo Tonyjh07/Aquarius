@@ -30,7 +30,7 @@ func (charactersPage) Key() string { return "characters" }
 func (charactersPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec(i18n.T("ui.page.characters.section_imported"))}
 	if !f.charWired {
-		return append(rows, rowDesc{kind: rowCharEmpty, text: i18n.T("ui.page.characters.unwired")})
+		return append(rows, rowDesc{kind: rowCharEmpty, text: i18n.T("ui.common.unwired")})
 	}
 	if f.charactersSnap.Err != "" {
 		rows = append(rows, rowDesc{kind: rowCharWarn,

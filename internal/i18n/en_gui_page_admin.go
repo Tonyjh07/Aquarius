@@ -4,13 +4,11 @@ package i18n
 var enGuiPageAdminTexts = map[string]string{
 
 	// 工具与 MCP 页
-	"ui.page.tools.unwired":         "Not wired (read-only placeholder)",
 	"ui.page.tools.section_builtin": "Built-in tools (toggles apply immediately, no restart)",
 	"ui.page.tools.section_mcp":     "MCP and plugins (from config / plugin directory)",
 	"ui.page.tools.no_plugins":      "No plugins declared (config mcpServers or plugin directory)",
 
 	// 外部代理页
-	"ui.page.delegate.unwired":        "Not wired (read-only placeholder)",
 	"ui.page.delegate.section_agents": "Agents (config delegate.agents)",
 	"ui.page.delegate.empty": "No external agents yet. Add an entry under delegate.agents in config.json " +
 		"(at least name and command); it shows up here after a restart. Without any agent the model gets no delegate* tools.",
@@ -24,7 +22,6 @@ var enGuiPageAdminTexts = map[string]string{
 	"ui.page.delegate.rescanned":    "Rechecked (availability computed from the current PATH)",
 
 	// 技能页
-	"ui.page.skills.unwired":           "Not wired (read-only placeholder)",
 	"ui.page.skills.section_installed": "Installed skills",
 	"ui.page.skills.empty":             "No skills yet — give a SKILL.md, a folder, an archive or a GitHub link below to install one",
 	"ui.page.skills.section_install":   "Install / import",
@@ -53,7 +50,6 @@ var enGuiPageAdminTexts = map[string]string{
 	"ui.page.skills.status_dir_removed": "Removed skill directory {path}",
 
 	// 角色页
-	"ui.page.characters.unwired":          "Not wired (read-only placeholder)",
 	"ui.page.characters.section_imported": "Imported character cards",
 	"ui.page.characters.read_failed":      "Failed to read the character card directory: {err}",
 	"ui.page.characters.empty":            "No character cards yet — pick a card file (.png / .json / .charx) below to import",
@@ -74,7 +70,6 @@ var enGuiPageAdminTexts = map[string]string{
 	"ui.page.characters.deleted":        "Character card deleted: {slug}",
 
 	// 密钥库页
-	"ui.page.secrets.unwired":         "Not wired (read-only placeholder)",
 	"ui.page.secrets.section_entries": "Stored secrets (values are never shown, only the last 4 characters)",
 	"ui.page.secrets.empty":           "The secret store is empty — fill in a name and a value below to store one",
 	"ui.page.secrets.section_add":     "Add / overwrite",

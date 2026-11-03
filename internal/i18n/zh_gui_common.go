@@ -4,12 +4,11 @@ package i18n
 // 菜单与浮层都取这一族，所以它是全 GUI 的**唯一**出处——同一个「取消」不要在各页各写一条，
 // 否则改一处口径，另一处还留着旧说法。
 //
-// 只收「脱离语境也成立」的词。带语境的短句（「未接线（只读占位）」这类占位标记）留在使用它的
-// 区域表里：那种句子换语言时整句都要重写，拆成词反而译不准。
+// 只收「脱离语境也成立」的词与短句。「未接线（只读占位）」是五个页签共用的空态行，五处各写一条
+// 会变成五个说法；带专属前缀的（「密钥库未接线」）有额外语境，仍留在各自的区域表里。
 var zhGuiCommonTexts = map[string]string{
 
 	// 按钮与动作
-	"ui.common.ok":        "确定",
 	"ui.common.cancel":    "取消",
 	"ui.common.save":      "保存",
 	"ui.common.close":     "关闭",
@@ -17,10 +16,6 @@ var zhGuiCommonTexts = map[string]string{
 	"ui.common.edit":      "编辑",
 	"ui.common.add":       "添加",
 	"ui.common.copy":      "复制",
-	"ui.common.paste":     "粘贴",
-	"ui.common.search":    "搜索",
-	"ui.common.browse":    "浏览…",
-	"ui.common.reset":     "恢复默认",
 	"ui.common.enable":    "启用",
 	"ui.common.disable":   "停用",
 	"ui.common.allow":     "允许",
@@ -29,10 +24,8 @@ var zhGuiCommonTexts = map[string]string{
 	"ui.common.confirm_q": "确认？",
 
 	// 通用后缀与状态
-	"ui.common.restart_effective": "（重启生效）",
-	"ui.common.failed":            "操作失败：{err}",
-	"ui.common.none":              "无",
-	"ui.common.unset":             "未设",
-	"ui.common.auto":              "自动",
-	"ui.common.loading":           "加载中…",
+	"ui.common.failed":  "操作失败：{err}",
+	"ui.common.none":    "无",
+	"ui.common.unset":   "未设",
+	"ui.common.unwired": "未接线（只读占位）",
 }

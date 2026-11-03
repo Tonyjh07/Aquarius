@@ -32,7 +32,7 @@ func (skillsPage) Key() string { return "skills" }
 func (skillsPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec(i18n.T("ui.page.skills.section_installed"))}
 	if f.skills == nil {
-		return append(rows, rowDesc{kind: rowSkillEmpty, text: i18n.T("ui.page.skills.unwired")})
+		return append(rows, rowDesc{kind: rowSkillEmpty, text: i18n.T("ui.common.unwired")})
 	}
 	if len(f.skillsSnap.Skills) == 0 {
 		rows = append(rows, rowDesc{kind: rowSkillEmpty,

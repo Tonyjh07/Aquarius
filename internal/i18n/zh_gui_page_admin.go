@@ -4,13 +4,11 @@ package i18n
 var zhGuiPageAdminTexts = map[string]string{
 
 	// 工具与 MCP 页
-	"ui.page.tools.unwired":         "未接线（只读占位）",
 	"ui.page.tools.section_builtin": "内置工具（开关即时生效，无需重启）",
 	"ui.page.tools.section_mcp":     "MCP 与插件（来源 config / 插件目录）",
 	"ui.page.tools.no_plugins":      "没有已声明的插件（config mcpServers 或 插件目录）",
 
 	// 外部代理页
-	"ui.page.delegate.unwired":        "未接线（只读占位）",
 	"ui.page.delegate.section_agents": "清单（config delegate.agents）",
 	"ui.page.delegate.empty": "一个外部代理都没有。在 config.json 的 delegate.agents 里写一条（至少要有 name 与 command），" +
 		"重启后这里会出现它；没配代理时模型拿不到 delegate* 工具。",
@@ -23,7 +21,6 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.delegate.rescanned":    "已重新检测（可用性按 PATH 现算）",
 
 	// 技能页
-	"ui.page.skills.unwired":           "未接线（只读占位）",
 	"ui.page.skills.section_installed": "已安装技能",
 	"ui.page.skills.empty":             "还没有技能——下面给一个 SKILL.md、文件夹、压缩包或 GitHub 链接即可装进来",
 	"ui.page.skills.section_install":   "安装 / 导入",
@@ -51,7 +48,6 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.skills.status_dir_removed": "已移除技能目录 {path}",
 
 	// 角色页
-	"ui.page.characters.unwired":          "未接线（只读占位）",
 	"ui.page.characters.section_imported": "已导入角色卡",
 	"ui.page.characters.read_failed":      "读取角色卡目录失败：{err}",
 	"ui.page.characters.empty":            "还没有角色卡——下面选一个卡文件（.png / .json / .charx）导入",
@@ -71,7 +67,6 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.characters.deleted":        "已删除角色卡：{slug}",
 
 	// 密钥库页
-	"ui.page.secrets.unwired":         "未接线（只读占位）",
 	"ui.page.secrets.section_entries": "已存密钥（值不可回显，只给尾 4 位）",
 	"ui.page.secrets.empty":           "密钥库还是空的——下面填名字与值即可存入",
 	"ui.page.secrets.section_add":     "新增 / 覆盖",

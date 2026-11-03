@@ -20,7 +20,7 @@ func (toolsPage) Key() string { return "tools" }
 func (toolsPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{}
 	if f.tools == nil {
-		return append(rows, rowDesc{kind: rowToolsEmpty, text: i18n.T("ui.page.tools.unwired")})
+		return append(rows, rowDesc{kind: rowToolsEmpty, text: i18n.T("ui.common.unwired")})
 	}
 	rows = append(rows, sec(i18n.T("ui.page.tools.section_builtin")))
 	for i := range f.toolsSnap.Builtins {
