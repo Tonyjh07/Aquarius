@@ -5,6 +5,7 @@ package uigui
 
 import (
 	"gioui.org/unit"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // fieldH 文本档高度下限（dp，经 gtx.Dp 消费）：单行编辑器 + 上下留白（material 无
@@ -12,7 +13,16 @@ import (
 const fieldH = 40
 
 // fieldLabelW 标签列宽（dp，经 gtx.Dp 消费）：对齐各行控件起点。
-const fieldLabelW = 92
+//
+// **按语言取宽**：中文四字标签（「接口地址」）在 92 里正好一行，同样意思的英文
+// （"Interface address"）要两倍宽——用同一个数，en 下每行标签都折成两三行，行高参差、
+// 控件起点也看不齐。这不是 i18n 的文案问题，是布局里写死的那个数只对中文成立。
+func fieldLabelW() unit.Dp {
+	if i18n.Current() == i18n.LangEn {
+		return 150
+	}
+	return 92
+}
 
 // rowKind 表单行类型（动态行计划：provider 编辑区行数随 providers 数量变化，D110②；
 // S4d/D142 起按页分组——页序与页内容见 pageRows）。

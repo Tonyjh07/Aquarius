@@ -18,3 +18,15 @@ func TestMain(m *testing.M) {
 	i18n.Use(sel)
 	os.Exit(m.Run())
 }
+
+// TestPageKeysResolve 页签取词的闭环：`pageName(i)` 用 "ui.settings.page." + Key() 拼接，
+// 缺键时 `T` 会把拼出来的 key 原样印在页签上，而 i18n 包的缺键扫描看不到这种拼法
+// （那边只登记了前缀）。逐页确认取得到词，才能说拼接那一侧也守住了。
+func TestPageKeysResolve(t *testing.T) {
+	for i := 0; i < settingsPageCount; i++ {
+		key := "ui.settings.page." + settingsPages[i].Key()
+		if got := i18n.T(key); got == key {
+			t.Errorf("页 %d（%s）取不到词：%s 不在表里", i, settingsPages[i].Key(), key)
+		}
+	}
+}

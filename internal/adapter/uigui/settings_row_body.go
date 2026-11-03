@@ -54,7 +54,7 @@ func fieldRow(gtx layout.Context, th *material.Theme, label string, control layo
 	// 改为顶端对齐 + 给标签加与输入框首行等高的内衬，视觉上仍与首行文字齐平。
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			labelW := gtx.Dp(fieldLabelW)
+			labelW := gtx.Dp(fieldLabelW())
 			gtx.Constraints.Min.X = labelW
 			gtx.Constraints.Max.X = labelW
 			return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

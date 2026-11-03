@@ -306,7 +306,7 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 // Metric 缩放——固定裸 px 定高在高 DPI 下裁掉编辑器文字底部（CJK 字面行高 25px > 内容区
 // 20px @1.25）、标签列变窄导致「接口地址」折行。判据取用户可见事实的几何等价物：
 // ① editorBox 返回高 ≥ 编辑器同度量实测行高 + 2×Dp(8)（不裁字）且 ≥ Dp(fieldH)（按压区下限）；
-// ② fieldRow 控件起点 = 行宽 − Dp(fieldLabelW) − Dp(10)（标签列随密度缩放，不折行）。
+// ② fieldRow 控件起点 = 行宽 − Dp(fieldLabelW()) − Dp(10)（标签列随密度缩放，不折行）。
 // 裸 px 实现（旧）在 dpi≠1 时两项皆红；dpi=1 恒绿作正向对照。
 func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 	th := testTheme()
@@ -340,16 +340,16 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 				t.Errorf("dpi %.2f: 编辑框高 %dpx < 下限 Dp(fieldH)=%dpx", dpi, box.Size.Y, want)
 			}
 
-			// 标签列宽（探针控件记录收到的 Flexed 约束）。口径：fieldLabelW 含右间距
-			//（Inset{Right:10} 把标签 Min 压到 fieldLabelW−10，rigid 总占位 = fieldLabelW），
-			// 故控件起点 = 行宽 − Dp(fieldLabelW)——随密度缩放即不折行。
+			// 标签列宽（探针控件记录收到的 Flexed 约束）。口径：fieldLabelW() 含右间距
+			//（Inset{Right:10} 把标签 Min 压到 fieldLabelW()−10，rigid 总占位 = fieldLabelW()），
+			// 故控件起点 = 行宽 − Dp(fieldLabelW())——随密度缩放即不折行。
 			var gotCtrlMax int
 			fieldRow(gtx, th, "接口地址", func(gtx layout.Context) layout.Dimensions {
 				gotCtrlMax = gtx.Constraints.Max.X
 				return layout.Dimensions{}
 			})
-			if want := rowW - gtx.Dp(fieldLabelW); gotCtrlMax != want {
-				t.Errorf("dpi %.2f: 控件起点宽 %dpx，want %dpx（行宽 − Dp(fieldLabelW)）——标签列未随密度缩放",
+			if want := rowW - gtx.Dp(fieldLabelW()); gotCtrlMax != want {
+				t.Errorf("dpi %.2f: 控件起点宽 %dpx，want %dpx（行宽 − Dp(fieldLabelW())）——标签列未随密度缩放",
 					dpi, gotCtrlMax, want)
 			}
 		})

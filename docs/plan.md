@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-03 @ b21b15b -->
+<!-- docs-sync: 2026-11-03 @ 3f3e0a6 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -73,7 +73,20 @@
   `cmd_admin`。设置窗页名改由 `Key()` 的英文标识取词（`settingsPageNames` 是包级变量、语言在 `main`
   才定，不改就永远钉在本机 locale）。剩下的 10 行是诊断与量测（`ico:` 解析错误、`[fade]` 观测行、
   行高量测的假文本），不进表，留给 I4 判定。
-- **I4**（S）：上锁——字面量扫描、缺键扫描、`en` 下的布局走查。
+- **I3b**（M，已落地，I3 的补遗）：I3 的边界写的是 `uigui` 与 `cmd`，`internal/adapter` 的数据面
+  （导入导出、技能安装、角色卡、模型探测、语音合成、密钥库、插件闸门）与 `internal/domain` 的
+  不变量报错一直没搬——实测还有 867 处。这 867 处都在用户视野里：错误链经 `wrapSession` 冒到
+  界面，导入回执与插件确认句本身就是界面。分四片搬完，落 `adapter_exchange` / `adapter_files` /
+  `adapter_llm` / `adapter_gate` 与 `gui_platform` 五对表；`toolbuiltin` / `toolrun` 里**回填给
+  模型**的报错改英文硬编码（与 system 提示同口径），不进表。`domain` 与 `plugin` 因此需要取词，
+  已补进 `internal/arch` 的分层表——它们的不变量报错会原样透到界面，不取词就只能硬编码中文。
+- **I4**（S，已落地）：上锁——字面量扫描（`TestNoCJKLiterals`）、缺键扫描（`TestKeysResolve`）、
+  孤儿 key 扫描（`TestNoOrphanKeys`）、拼接前缀两侧闭环（`TestDynamicKeyPrefixesResolve` +
+  `uigui.TestPageKeysResolve`）。白名单 `cjkAllowed` 只收三类：选语言/选级别之前就要报的错（鸡生蛋）、
+  探测用的关键词表（数据不是文案）、诊断与观测打印（`ico:` / `[fade]` / `[tray]` / 位图解析 / 行高量测
+  假文本）。`en` 布局走查：静态侧把写死的标签列宽改成按语言取（`fieldLabelW()`：zh 92 / en 150），
+  并留一份按显示宽度排序的膨胀清单（`TestEnExpansionReport`，`-v` 时才打印）；视觉侧仍需在 GUI 里
+  按 `ui.lang=en` 走一遍窄窗与 200% 字号。
 
 **验收**：`ui.lang=en` 启动后，从欢迎页到设置窗、`/help`、生成中插话、确认与报错全英文、无一句
 中文残留；切回 `zh` 与今天逐字一致（同一套 key，不是两份手写文案）；字面量扫描与缺键扫描为空。
