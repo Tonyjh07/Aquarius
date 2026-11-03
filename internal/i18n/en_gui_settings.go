@@ -58,6 +58,7 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.act.saved_lang":     "Saved (the interface language takes effect after restart)",
 
 	"ui.settings.err.font_size":     "Font size must be a number between {min} and {max}",
+	"ui.settings.err.placeholder":   "The placeholder is {n} characters; the limit is {max}",
 	"ui.settings.err.win_width":     "Window width must be a non-negative pixel value",
 	"ui.settings.err.win_height":    "Window height must be a non-negative pixel value",
 	"ui.settings.err.hotkey":        "Invalid hotkey",

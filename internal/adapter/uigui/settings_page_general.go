@@ -28,7 +28,7 @@ func (generalPage) Rows(f *settingsForm) []rowDesc {
 		{kind: rowWelcome},
 		sec(i18n.T("ui.page.general.section.perm")), {kind: rowPerm}, {kind: rowUnattended},
 		sec(i18n.T("ui.page.general.section.appearance")),
-		{kind: rowLang}, {kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
+		{kind: rowLang}, {kind: rowPlaceholder}, {kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
 		{kind: rowFontSize}, {kind: rowWinSize},
 		sec(i18n.T("ui.page.general.section.output")), {kind: rowNotify}, {kind: rowTTS},
 		sec(i18n.T("ui.page.general.section.storage")), {kind: rowBackupKeep},
@@ -91,6 +91,28 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						l := material.Body2(th, i18n.T("ui.page.general.lang_hint"))
+						l.Color = paperOf().text3
+						return l.Layout(gtx)
+					})
+				}),
+			)
+		}), true
+	case rowPlaceholder:
+		// D279：自定义灰字，**不随界面语言变**（用户自己写的内容不翻译），因此这里没有
+		// 「重启后生效」——它每帧现取，保存完下一帧就是新值。
+		//
+		// 说明**不放进输入框的占位**：填了值之后占位就不显示了，而那正是用户最需要知道
+		// 「怎么清掉」的时候。所以另起一行灰字挂在框下面（框里留空串），行高跟着长一点。
+		return fieldRow(gtx, th, i18n.T("ui.page.general.placeholder_label"), func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X // 底衬与点击区都要铺满行宽
+					return editorBox(th, &f.placeholder, "")(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Body2(th, i18n.Tf("ui.page.general.placeholder_hint",
+							"max", port.SettingsPlaceholderMax))
 						l.Color = paperOf().text3
 						return l.Layout(gtx)
 					})

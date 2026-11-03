@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-10-30 @ 39f03fa -->
+<!-- docs-sync: 2026-11-03 @ b3e6f7f -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。

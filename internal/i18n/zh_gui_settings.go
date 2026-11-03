@@ -59,6 +59,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.act.saved_lang":     "已保存（界面语言重启后生效）",
 
 	"ui.settings.err.font_size":     "字号须为 {min}–{max} 的数值",
+	"ui.settings.err.placeholder":   "占位文字 {n} 个字符，最多 {max} 个",
 	"ui.settings.err.win_width":     "窗口宽须为非负像素数值",
 	"ui.settings.err.win_height":    "窗口高须为非负像素数值",
 	"ui.settings.err.hotkey":        "快捷键非法",

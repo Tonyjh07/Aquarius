@@ -104,11 +104,13 @@ type settingsForm struct {
 	winW     widget.Editor // D90：主窗像素宽（数值，空 = 不改）
 	winH     widget.Editor // D90：主窗像素高
 	profName widget.Editor // D110③：profile 名（新建/复制/切换共用输入档）
-	think    widget.Bool
-	unattend widget.Bool // D185：无人值守开关（常规页权限区）
-	perm     selectField
-	effort   selectField
-	theme    selectField
+	// placeholder 自定义输入框占位文字（D279/§7.8）：单行，空 = 用内置文案（随界面语言）。
+	placeholder widget.Editor
+	think       widget.Bool
+	unattend    widget.Bool // D185：无人值守开关（常规页权限区）
+	perm        selectField
+	effort      selectField
+	theme       selectField
 	// uiLang 界面语言（D275/§7.8）：保存只写 config，本进程的文案不换（提示重启）。
 	// 与 asrLang（录音语种）是两个字段，两者不互相推断。
 	uiLang selectField
@@ -277,7 +279,7 @@ func newSettingsFormState() *settingsForm {
 		f.pages[i].Axis = layout.Vertical
 	}
 	f.navList.Axis = layout.Vertical // 左栏同款：未设轴向会按视口宽迭代，只画第一项
-	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName} {
+	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName, &f.placeholder} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
 	// 密钥库页（S9-6b）：键名与值都是单行档；值档掩码显示（肩上可视读，落盘/日志仍不回显）。
@@ -350,6 +352,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.effort.setValue(s.Effort)
 	f.theme.setValue(s.Theme) // "" 未命中 → 首项 = 跟随系统
 	f.uiLang.setValue(s.Lang) // "" 未命中 → 首项 = 跟随系统（与 config 键缺失同义）
+	f.placeholder.SetText(s.Placeholder)
 	f.scale.setValue(fmt.Sprintf("%g", s.Scale))
 	f.fontSize.SetText(fmt.Sprintf("%g", s.FontSize))
 	if s.WindowWidth > 0 {

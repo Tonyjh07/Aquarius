@@ -45,13 +45,15 @@ type textSettings struct {
 	} `json:"plugins"`
 	UI struct {
 		// Lang 界面语言（D275/§7.8）：auto | zh | en；键缺失 = auto（= ""）。
-		Lang         string  `json:"lang"`
-		Hotkey       string  `json:"hotkey"`
-		Theme        string  `json:"theme"`
-		Scale        float64 `json:"scale"`         // D90：元素缩放倍率（0 = 缺省 1.0）
-		FontSize     float64 `json:"font_size"`     // D90：正文字号 sp（0 = 缺省 15）
-		WindowWidth  int     `json:"window_width"`  // D90：主窗像素宽（0 = 缺省）
-		WindowHeight int     `json:"window_height"` // D90：主窗像素高
+		Lang string `json:"lang"`
+		// InputPlaceholder 输入框占位文字（D279/§7.8）：用户自定义的灰字，空 = 内置文案。
+		InputPlaceholder string  `json:"input_placeholder"`
+		Hotkey           string  `json:"hotkey"`
+		Theme            string  `json:"theme"`
+		Scale            float64 `json:"scale"`         // D90：元素缩放倍率（0 = 缺省 1.0）
+		FontSize         float64 `json:"font_size"`     // D90：正文字号 sp（0 = 缺省 15）
+		WindowWidth      int     `json:"window_width"`  // D90：主窗像素宽（0 = 缺省）
+		WindowHeight     int     `json:"window_height"` // D90：主窗像素高
 	} `json:"ui"`
 }
 
@@ -78,6 +80,7 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		ToolTimeoutSec:   raw.Limits.ToolTimeoutSec,
 		BackupKeep:       raw.Backup.Keep,
 		Lang:             raw.UI.Lang,
+		Placeholder:      raw.UI.InputPlaceholder,
 		Hotkey:           raw.UI.Hotkey,
 		Theme:            raw.UI.Theme,
 		Scale:            raw.UI.Scale,
@@ -165,6 +168,11 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		return err
 	}
 	p.Lang = string(sel)
+	// 输入框占位文字（D279/§7.8）：折成单行；超长拒写——与界面侧同一组常量
+	// （port.SettingsPlaceholderMax），存得进去的值必定过得了下次启动的同一条归一。
+	if p.Placeholder, err = placeholderForWrite(p.Placeholder); err != nil {
+		return err
+	}
 	if err := validatePromptModules(p.PromptModules); err != nil {
 		return err
 	}
@@ -214,6 +222,7 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 		uiSec["theme"] = p.Theme
 		uiSec["lang"] = p.Lang
+		uiSec["input_placeholder"] = p.Placeholder
 		uiSec["hotkey"] = p.Hotkey
 		uiSec["scale"] = p.Scale
 		uiSec["font_size"] = p.FontSize

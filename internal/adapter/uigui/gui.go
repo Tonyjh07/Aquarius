@@ -25,6 +25,7 @@ package uigui
 import (
 	"context"
 	"image"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -75,6 +77,9 @@ type Options struct {
 	PosFile string
 	// Interrupt 初始中断行为（装配根一般经 SetInterrupt 每轮注入，留 nil 即可）。
 	Interrupt func()
+	// Placeholder 输入框占位文字（D279/§7.8）：用户自定义的那行灰字，**不翻译**；空 = 用
+	// 内置文案（`ui.input.placeholder`，随界面语言）。热改走 SetPlaceholder。
+	Placeholder string
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。
 	Hotkey string
 	// Pending 待发清单（D272）：生成中键入的消息停在这里，由内核在两个取用边界拿走；
@@ -220,6 +225,10 @@ type UI struct {
 	// hotkeyCfg 快捷键配置原子槽（设置窗保存热更新；托盘线程注册读，newUI 预存
 	// opts.Hotkey——u.opts 本身只读不改，防跨线程裸写）。
 	hotkeyCfg atomic.Value
+
+	// placeholder 输入框占位文字原子槽（D279/§7.8，同 hotkeyCfg 口径）：设置窗保存后
+	// SetPlaceholder 热更，输入栏每帧读——下一帧就换字，不用重启（与 ui.lang 正相反）。
+	placeholder atomic.Value
 
 	// zoom 双缩放旋钮原子槽（D90/§15.8，同 hotkeyCfg 口径）：设置窗 SetZoom 热更，
 	// 帧循环每帧读（zoomedMetric 咽喉点）；Load 失败（未预存）= 缺省 1.0/15。
@@ -545,6 +554,7 @@ func newUI(opts Options, window bool) *UI {
 	u.filePicks = make(chan filePick, 4)
 	u.applyTheme(opts.Theme)                            // 主题初始应用（goroutine 启动前，无并发；§15.4/D61）
 	u.hotkeyCfg.Store(opts.Hotkey)                      // 快捷键槽预存（托盘线程 hotkeySetting 读）
+	u.placeholder.Store(opts.Placeholder)               // D279：占位文字槽预存（空 = 内置文案）
 	u.zoom.Store(clampKnobs(opts.Scale, opts.FontSize)) // 缩放槽预存（D90，夹取回落）
 	if f := opts.Interrupt; f != nil {
 		u.SetInterrupt(f)
@@ -567,6 +577,37 @@ func (u *UI) zoomLoad() zoomKnobs {
 		return v
 	}
 	return zoomKnobs{scale: 1.0, fontSp: fontSpBase}
+}
+
+// SetPlaceholder 热更输入框占位文字（D279，设置窗调；任意 goroutine）：原子换存，输入栏
+// 下一帧生效。空串 = 清掉自定义、回落内置文案（那条随界面语言）。
+func (u *UI) SetPlaceholder(s string) {
+	u.placeholder.Store(strings.TrimSpace(s))
+}
+
+// customPlaceholder 用户自定义的占位文字（原子读；未预存/已清空 = ""）。
+func (u *UI) customPlaceholder() string {
+	if v, ok := u.placeholder.Load().(string); ok {
+		return v
+	}
+	return ""
+}
+
+// inputPlaceholder 主输入框这帧该显示的灰字：自定义优先，否则内置文案（随语言）。
+func (u *UI) inputPlaceholder() string {
+	if v := u.customPlaceholder(); v != "" {
+		return v
+	}
+	return i18n.T("ui.input.placeholder")
+}
+
+// reasonPlaceholder 拒绝原因框的灰字（D279）：同一份自定义值作用于两处——用户改的是
+// 「输入框里那行灰字」，不是某一个框；没自定义时各用各的内置文案。
+func (u *UI) reasonPlaceholder() string {
+	if v := u.customPlaceholder(); v != "" {
+		return v
+	}
+	return i18n.T("ui.confirm.reason_placeholder")
 }
 
 // SetZoom 热更双旋钮（D90，设置窗调；任意 goroutine）：原子换存，下一帧 Metric 咽喉点

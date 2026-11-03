@@ -97,6 +97,10 @@ func (w *wiring) applySettings(p uigui.SettingsPatch) ([]port.Command, error) {
 	if p.SamplingSet {
 		w.refreshSampling()
 	}
+	// D279：占位文字热生效——输入栏每帧取词，换槽即下一帧换字（不需要重启，与 ui.lang 相反）。
+	if gui, ok := w.ui.(*uigui.UI); ok {
+		gui.SetPlaceholder(p.Placeholder)
+	}
 	// D179：音色与风格对此后的播报立即生效（服务与模型仍在启动装配时定，改动重启生效）。
 	if w.ttsOut != nil {
 		w.ttsOut.SetStyle(p.TTSVoice, p.TTSDesign, p.TTSStyle, p.TTSTags)
@@ -174,12 +178,13 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Indexer:             w.exchange,                                                                                                                                                        // D249：导入多会话归档时先取清单（勾选面板）
 			PosFile:             filepath.Join(w.profileDir, "gui_pos.json"),                                                                                                                       // 位置记忆随 profile 走（D110 修订①）
 			Hotkey:              w.cfg.UI.Hotkey,
-			Pending:             w.pendingInput,       // D272：生成中键入的消息停在这里
-			Keys:                w.keys,               // §5.19：三键（启动时已校验）                                                                                                                                                   // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
-			Theme:               w.cfg.UI.Theme,       // 主题档 system|light|dark（§15.4/D61；空 = system）
-			Scale:               w.cfg.UI.Scale,       // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
-			FontSize:            w.cfg.UI.FontSize,    // 正文字号 sp（D90；0 = 15）
-			WindowWidth:         w.cfg.UI.WindowWidth, // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
+			Placeholder:         w.cfg.UI.InputPlaceholder, // D279：占位灰字（空 = 内置文案随语言；保存后热更）
+			Pending:             w.pendingInput,            // D272：生成中键入的消息停在这里
+			Keys:                w.keys,                    // §5.19：三键（启动时已校验）                                                                                                                                                   // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
+			Theme:               w.cfg.UI.Theme,            // 主题档 system|light|dark（§15.4/D61；空 = system）
+			Scale:               w.cfg.UI.Scale,            // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
+			FontSize:            w.cfg.UI.FontSize,         // 正文字号 sp（D90；0 = 15）
+			WindowWidth:         w.cfg.UI.WindowWidth,      // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
 			WindowHeight:        w.cfg.UI.WindowHeight,
 			Welcome:             &welcomeManager{cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey, onStore: func() { w.secretsRev.Add(1) }}, // D141：欢迎 / 首次运行引导数据面（S9-6b/D163：明文落库递增快照 Revision）
 			Tools:               &toolsAdmin{w: w},                                                                                                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）

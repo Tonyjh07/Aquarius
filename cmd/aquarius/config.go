@@ -251,6 +251,10 @@ type uiConfig struct {
 	// LogLevel 运行日志级别（D276/§7.9）：debug | info | warn | error；空 = info。启动时定
 	// 一次，改完重启；-log-level 与 AQUARIUS_LOG_LEVEL 优先于本键，非法值启动报错。
 	LogLevel string `json:"log_level,omitempty"`
+	// InputPlaceholder 输入框占位文字（D279/§7.8）：用户自己写的一行灰字，**不翻译**——
+	// ui.lang 切到哪套都用它；空 = 回落内置文案（那一条随语言变）。单行、最多
+	// port.SettingsPlaceholderMax 字符；启动期把换行折成空格，超长截断（手改的值不该拦住启动）。
+	InputPlaceholder string `json:"input_placeholder,omitempty"`
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。仅 ui.kind=gui 用。
 	Hotkey string `json:"hotkey,omitempty"`
 	// Theme GUI 深浅主题（§15.4/D61）：system | light | dark；空 = system（跟随系统，

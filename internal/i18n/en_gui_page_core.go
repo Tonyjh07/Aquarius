@@ -31,6 +31,8 @@ var enGuiPageCoreTexts = map[string]string{
 	"ui.page.general.theme_label":       "Theme",
 	"ui.page.general.lang_label":        "Interface language",
 	"ui.page.general.lang_hint":         "takes effect after restart; the AQUARIUS_UI_LANG environment variable takes precedence",
+	"ui.page.general.placeholder_label": "Input placeholder",
+	"ui.page.general.placeholder_hint":  "empty = built-in hint (follows the UI language); up to {max} characters",
 	"ui.page.general.lang_auto":         "Follow system",
 	"ui.page.general.scale_label":       "Element scale",
 	"ui.page.general.font_size_label":   "Font size",

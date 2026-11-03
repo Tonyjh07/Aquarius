@@ -36,6 +36,8 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.general.theme_label":       "主题",
 	"ui.page.general.lang_label":        "界面语言",
 	"ui.page.general.lang_hint":         "重启后生效；AQUARIUS_UI_LANG 环境变量优先",
+	"ui.page.general.placeholder_label": "输入框占位",
+	"ui.page.general.placeholder_hint":  "留空 = 默认提示（随界面语言）；最多 {max} 字符",
 	"ui.page.general.lang_auto":         "跟随系统",
 	"ui.page.general.scale_label":       "元素缩放",
 	"ui.page.general.font_size_label":   "字号",

@@ -29,7 +29,12 @@ type SettingsPatch struct {
 	Theme      string
 	// Lang 界面语言（D275/§7.8）：auto | zh | en；"" = auto。**启动时定一次**，写回只
 	// 改配置，进程内不换语言——界面照常提示重启（与 profile 切换同一口径）。
-	Lang         string
+	Lang string
+	// Placeholder 输入框占位文字（D279/§7.8）：用户自己写的一行灰字，**不翻译**——切到
+	// 哪套界面语言都用它；"" = 清空自定义，回落内置文案（那一条随语言变）。恒写，
+	// 不给「空 = 保持原值」的语义：清空是这条设置最常被用到的操作之一。
+	// 写回侧归一为单行并按 port.SettingsPlaceholderMax 拒写超限值，界面每帧取词，热生效。
+	Placeholder  string
 	Scale        float64 // D90：元素缩放倍率（cycle 档，恒非零）
 	FontSize     float64 // D90：正文字号 sp；0 = 不改
 	WindowWidth  int     // D90：主窗像素宽；0 = 不改（缺省）
@@ -165,6 +170,11 @@ const (
 	// 手改 config 写更大的值仍按原值走——这里限的是界面入口。
 	SettingsBackupKeepMin = 1
 	SettingsBackupKeepMax = 20
+
+	// SettingsPlaceholderMax 自定义输入框占位文字的字符上限（D279）。占位是**灰字**，它要
+	// 和用户真的在打的字区分开：长到能绕两行就不再是提示，而是正文压在输入框里。120 个
+	// 字符在 608dp 宽的输入栏里约两行多一点，再长就会把编辑区撑高、把胶囊顶变形。
+	SettingsPlaceholderMax = 120
 
 	// SettingsSearchCountMin/Max 一次联网搜索取几条结果。
 	SettingsSearchCountMin = 1

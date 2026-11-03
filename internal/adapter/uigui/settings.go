@@ -198,7 +198,9 @@ type SettingsSnapshot struct {
 	Theme      string // "" = system
 	// Lang 界面语言（D275/§7.8）：auto | zh | en；"" = auto。**启动时定一次**，保存只
 	// 改配置，本进程的文案不换（界面提示重启）。
-	Lang         string
+	Lang string
+	// Placeholder 自定义输入框占位文字（D279/§7.8）：不翻译，"" = 用内置文案（随语言）。
+	Placeholder  string
 	Scale        float64 // D90：元素缩放倍率；0 = 缺省 1.0（表单归一）
 	FontSize     float64 // D90：正文字号 sp；0 = 缺省 15（表单归一）
 	WindowWidth  int     // D90：主窗像素宽；0 = 缺省 608×460dp

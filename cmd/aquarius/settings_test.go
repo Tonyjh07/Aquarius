@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // TestSettingsCommands 命令计划：diff 才发命令、空模型名跳过、空档位 = off 清除、
@@ -597,5 +598,54 @@ func TestPersistSettingsTextKeysLang(t *testing.T) {
 	after, _ := os.ReadFile(cfgPath)
 	if string(before) != string(after) {
 		t.Error("拒写后文件应保持不变")
+	}
+}
+
+// TestPersistSettingsTextKeysPlaceholder 输入框占位文字写回（D279/§7.8）：换行折成单行、
+// 读回快照同值、清空 = 回落内置（写 ""，不是「保持原值」）、超长拒写且原文件不动。
+func TestPersistSettingsTextKeysPlaceholder(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	// 多行输入折成一行：占位是灰字，换行会把输入胶囊撑变形（单行档在界面侧已挡，配置面兜底）。
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme: "system", Placeholder: "  随便问\n或 /help  ",
+	}); err != nil {
+		t.Fatalf("写占位: %v", err)
+	}
+	if s := readTextSettings(cfgPath); s.Placeholder != "随便问 或 /help" {
+		t.Fatalf("占位落盘 = %q, want 折成单行", s.Placeholder)
+	}
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("回读配置: %v", err)
+	}
+	if cfg.UI.InputPlaceholder != "随便问 或 /help" {
+		t.Fatalf("config ui.input_placeholder = %q", cfg.UI.InputPlaceholder)
+	}
+	// 清空 = 清掉自定义（与语言档同理：这条设置最常用的操作之一就是恢复默认）。
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "system"}); err != nil {
+		t.Fatalf("清空占位: %v", err)
+	}
+	if s := readTextSettings(cfgPath); s.Placeholder != "" {
+		t.Fatalf("清空后 = %q, want 空", s.Placeholder)
+	}
+	// 超长拒写：存得进去的值必须过得了下次启动的同一条归一（启动路径会截断，写回路径不许）。
+	before, _ := os.ReadFile(cfgPath)
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme: "system", Placeholder: strings.Repeat("x", port.SettingsPlaceholderMax+1),
+	}); err == nil {
+		t.Fatal("超长占位应拒写")
+	}
+	after, _ := os.ReadFile(cfgPath)
+	if string(before) != string(after) {
+		t.Error("拒写后文件应保持不变")
+	}
+	// 正好到上限应放行（边界属于可用区间）。
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
+		Theme: "system", Placeholder: strings.Repeat("x", port.SettingsPlaceholderMax),
+	}); err != nil {
+		t.Fatalf("上限值应可保存: %v", err)
 	}
 }

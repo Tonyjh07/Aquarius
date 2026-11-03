@@ -61,6 +61,9 @@ const (
 	rowEffort
 	rowHotkey
 	rowLang // D275/§7.8：界面语言（三态；保存只写 config，重启生效）
+	// rowPlaceholder D279/§7.8：输入框占位文字（自定义灰字，单行；空 = 内置文案随语言变）。
+	// 紧跟在界面语言下面：两者都是「界面长什么样」，且热/冷生效的属性不同，并排才好对比。
+	rowPlaceholder
 	rowTheme
 	rowScale
 	rowFontSize

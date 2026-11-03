@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -169,6 +170,12 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 		Hotkey:     strings.TrimSpace(f.hotkey.Text()),
 		Theme:      f.theme.value(),
 		Lang:       f.uiLang.value(),
+		// D279：占位文字恒写（"" = 清空自定义、回落内置），单行档已在表单侧限定。
+		Placeholder: strings.TrimSpace(f.placeholder.Text()),
+	}
+	if n := utf8.RuneCountInString(p.Placeholder); n > port.SettingsPlaceholderMax {
+		return SettingsPatch{}, fmt.Errorf("%s", i18n.Tf("ui.settings.err.placeholder",
+			"max", port.SettingsPlaceholderMax, "n", n))
 	}
 	if p.Model == "" {
 		p.Model = f.snap.Model // 空模型名 = 保持当前

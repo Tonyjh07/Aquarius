@@ -20,12 +20,13 @@ var zhCmdConfigTexts = map[string]string{
 		`（或改为直接填明文）`,
 
 	// config_io.go：读写与指针
-	"cmd.config.err.legacy_config": `检测到旧格式 config`,
-	"cmd.config.err.read":          `读取 {path}`,
-	"cmd.config.err.parse":         `解析配置 {path}`,
-	"cmd.config.err.parse_short":   `解析 {path}`,
-	"cmd.config.err.encode":        `编码 config`,
-	"cmd.config.err.write":         `写入 {path}`,
+	"cmd.config.err.legacy_config":   `检测到旧格式 config`,
+	"cmd.config.err.read":            `读取 {path}`,
+	"cmd.config.err.parse":           `解析配置 {path}`,
+	"cmd.config.err.parse_short":     `解析 {path}`,
+	"cmd.config.err.encode":          `编码 config`,
+	"cmd.config.err.placeholder_max": `ui.input_placeholder 最多 {max} 个字符`,
+	"cmd.config.err.write":           `写入 {path}`,
 
 	// config_io.go：旧格式单项判别（%w 由代码拼在前面，这里只有说明文字）
 	"cmd.config.err.legacy_flat": `{path} 的 model 段为单 provider 平铺字段` +

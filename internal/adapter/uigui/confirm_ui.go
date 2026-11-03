@@ -117,7 +117,7 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.Y = 0
 					if u.m.confirm != nil {
 						// D86：原因编辑器（拒绝原因，可留空；Enter = 拒绝附原因）。
-						re := material.Editor(u.th, &u.reasonEd, i18n.T("ui.confirm.reason_placeholder"))
+						re := material.Editor(u.th, &u.reasonEd, u.reasonPlaceholder())
 						re.TextSize = unit.Sp(15)
 						if u.inFadePass && u.caretFocused {
 							u.drawEditorSelection(gtx, &u.reasonEd) // D133：选区在文字底下
@@ -128,7 +128,7 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 						}
 						return dims
 					}
-					ed := material.Editor(u.th, &u.editor, i18n.T("ui.input.placeholder"))
+					ed := material.Editor(u.th, &u.editor, u.inputPlaceholder())
 					ed.TextSize = unit.Sp(15)
 					if u.inFadePass && u.caretFocused {
 						u.drawEditorSelection(gtx, &u.editor) // D133：选区在文字底下
@@ -214,7 +214,7 @@ func (u *UI) pillContentExpanded(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = 0 // 自然高顶对齐（原 Flex Middle 居中——首行悬半空）
-			ed := material.Editor(u.th, &u.editor, i18n.T("ui.input.placeholder"))
+			ed := material.Editor(u.th, &u.editor, u.inputPlaceholder())
 			ed.TextSize = unit.Sp(15)
 			if u.inFadePass && u.caretFocused {
 				u.drawEditorSelection(gtx, &u.editor) // D133：选区在文字底下

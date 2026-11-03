@@ -14,12 +14,13 @@ var enCmdConfigTexts = map[string]string{
 		`variable name (currently "{ref}"); use plain text instead`,
 
 	// config_io.go
-	"cmd.config.err.legacy_config": `Legacy config detected`,
-	"cmd.config.err.read":          `Reading {path}`,
-	"cmd.config.err.parse":         `Parsing config {path}`,
-	"cmd.config.err.parse_short":   `Parsing {path}`,
-	"cmd.config.err.encode":        `Encoding config`,
-	"cmd.config.err.write":         `Writing {path}`,
+	"cmd.config.err.legacy_config":   `Legacy config detected`,
+	"cmd.config.err.read":            `Reading {path}`,
+	"cmd.config.err.parse":           `Parsing config {path}`,
+	"cmd.config.err.parse_short":     `Parsing {path}`,
+	"cmd.config.err.encode":          `Encoding config`,
+	"cmd.config.err.placeholder_max": `ui.input_placeholder is limited to {max} characters`,
+	"cmd.config.err.write":           `Writing {path}`,
 
 	"cmd.config.err.legacy_flat": `The model section in {path} uses the legacy flat ` +
 		`single-provider fields (base_url/api_key/tokenizer/provider found).` + "\n" +
