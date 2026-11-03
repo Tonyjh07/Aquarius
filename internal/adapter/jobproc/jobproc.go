@@ -64,6 +64,9 @@ type jobRec struct {
 	logFile  *os.File
 	killed   bool // 显式 Kill（区分自然退出）
 	timedOut bool // Timeout 到点终止
+	// timer Timeout 的定时器（无超时任务为 nil）。由收割者 Stop：任务早退之后
+	// 它已经没有意义，留着只是白占一个 timer。
+	timer *time.Timer
 	// done 进入终态时关闭（D189）：Wait 阻塞在这个 channel 上，而不是让调用方
 	// 定时间去问 Status——收割者本来就知道进程什么时候退出。
 	done chan struct{}
@@ -89,15 +92,17 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	if strings.TrimSpace(spec.Command) == "" {
 		return port.Job{}, errors.New("missing command")
 	}
-	// 关停闸门：Close 之后不再起新进程（工具调用都发生在主循环里，关停后不该再有）。
+	// 关停闸门与登记在同一个临界区里：Close 之后不再起新进程（工具调用都发生在主循环
+	// 里，关停后不该再有），而「放行检查」与「登记进 byID」隔开就会留一个窗口——Close
+	// 正好落在中间时，管理器已关闭、进程却在跑且无人收尸（台账写进一个正在收尾的目录）。
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
 		return port.Job{}, errors.New("job manager is closed")
 	}
-	m.mu.Unlock()
 	id, logPath, logFile, err := m.allocLog()
 	if err != nil {
+		m.mu.Unlock()
 		return port.Job{}, err
 	}
 	cmd := exec.Command(spec.Command, spec.Args...)
@@ -107,6 +112,7 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	// 日志头行先于启动写入（§14 M3 遗留：Start 后写会排在子进程输出之后）。
 	_, _ = fmt.Fprintf(logFile, "$ %s\n", commandLine(spec))
 	if err := cmd.Start(); err != nil {
+		m.mu.Unlock()
 		_ = logFile.Close()
 		_ = os.Remove(logPath)
 		return port.Job{}, fmt.Errorf("start %s: %w", spec.Command, err)
@@ -118,7 +124,10 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 		logFile: logFile,
 		done:    make(chan struct{}),
 	}
-	m.mu.Lock()
+	if spec.Timeout > 0 {
+		// 定时器交给收割者 Stop：任务早退后不该再留一个必然空转的 timer。
+		rec.timer = time.AfterFunc(spec.Timeout, func() { m.expire(rec) })
+	}
 	m.byID[id] = rec
 	m.mu.Unlock()
 	sid, _ := port.SessionIDFrom(ctx)
@@ -134,7 +143,6 @@ func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error
 	}
 	if spec.Timeout > 0 {
 		entry.Deadline = rec.job.StartedAt.Add(spec.Timeout)
-		time.AfterFunc(spec.Timeout, func() { m.expire(rec) })
 	}
 	// 台账先于收割写：极短任务可能立刻进终态，晚写会留下一条永远抹不掉的假条目。
 	m.addLedger(entry)
@@ -405,9 +413,10 @@ func (m *Manager) Close() {
 
 // allocLog 分配任务号并以 O_EXCL 原子占位日志文件：
 // 序号跨进程重启从 1 重来时遇到旧日志自动跳号，且并发进程互不撞号。
+//
+// **调用方须持有 m.mu**（Start 把关停闸门、占位与登记放在同一个临界区里）：
+// 这里只管文件占位，不再自己加锁。
 func (m *Manager) allocLog() (port.JobID, string, *os.File, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	for {
 		m.seq++
 		id := port.JobID(fmt.Sprintf("j%03d", m.seq))
@@ -466,7 +475,12 @@ func (m *Manager) wait(r *jobRec) {
 	r.job.ExitCode = code
 	r.job.EndedAt = time.Now()
 	done := r.done
+	timer := r.timer
 	m.mu.Unlock()
+	// 进程已经退出：超时定时器不必再触发（触发后被 Status 守卫吃掉，纯属空转）。
+	if timer != nil {
+		timer.Stop()
+	}
 	_, _ = fmt.Fprintf(r.logFile, "[exit code=%d status=%s]\n", code, status)
 	_ = r.logFile.Close()
 	// 只标状态不抹条目（D264）：删的条件是报告落地，不是进程退出。

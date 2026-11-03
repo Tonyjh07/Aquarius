@@ -460,6 +460,36 @@ func TestStartTimeout(t *testing.T) {
 	})
 }
 
+// TestWaitStopsTimeoutTimer 任务正常结束后超时定时器被停掉：留着它只会在到点时
+// 空转一次（被 Status 守卫吃掉），任务多时白占一堆 timer。
+func TestWaitStopsTimeoutTimer(t *testing.T) {
+	m, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	spec := helperSpec(t, t.TempDir(), "echo", "quick")
+	spec.Timeout = time.Hour
+	job, err := m.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if _, err := m.Wait(context.Background(), job.ID); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	m.mu.Lock()
+	rec := m.byID[job.ID]
+	m.mu.Unlock()
+	if rec == nil {
+		t.Fatalf("任务 %s 不在表内", job.ID)
+	}
+	if rec.timer == nil {
+		t.Fatal("带 Timeout 的任务应记录定时器")
+	}
+	if rec.timer.Stop() {
+		t.Fatal("收割者没有停掉超时定时器")
+	}
+}
+
 // TestStartSkipsExistingLog 序号遇旧日志跳号（跨进程重启不撞号）。
 func TestStartSkipsExistingLog(t *testing.T) {
 	dir := t.TempDir()
