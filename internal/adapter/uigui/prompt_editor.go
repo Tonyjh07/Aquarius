@@ -20,6 +20,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // promptModuleForm 单个模块节点的编辑控件（S7/D144；本窗 goroutine 独占）。orig = 快照
@@ -92,26 +94,26 @@ func newPromptEditor(u *UI) *promptEditor {
 // 模块树说明 → 默认人格多行档 → 有序引用 → 模块库网格 → 内置模块 → 组合预览。
 func (f *promptEditor) rows() []rowDesc {
 	rows := []rowDesc{
-		sec("人格（模块树组合）"),
+		sec(i18n.T("ui.prompt.sec.persona")),
 		{kind: rowPromptNote},
 		{kind: rowSysPrompt},
-		sec("人格引用（有序拼接）"),
+		sec(i18n.T("ui.prompt.sec.refs")),
 	}
 	for i := range f.promptRefs {
 		rows = append(rows, rowDesc{kind: rowPromptRef, field: i})
 	}
 	rows = append(rows, rowDesc{kind: rowPromptRefAdd})
-	rows = append(rows, sec("模块库"))
+	rows = append(rows, sec(i18n.T("ui.prompt.sec.modules")))
 	// 模块库整体占**一个**行（D148）：磁贴在模块库网格里自行排布，模块增删
 	// 只改网格内容、不改行数。逐模块一行是改版前的形态（一屏只能看到一个模块）。
 	rows = append(rows, rowDesc{kind: rowPromptGrid})
 	if len(f.builtins) > 0 {
-		rows = append(rows, sec("内置模块（只读，可引用）"))
+		rows = append(rows, sec(i18n.T("ui.prompt.sec.builtins")))
 		for i := range f.builtins {
 			rows = append(rows, rowDesc{kind: rowPromptBuiltin, field: i})
 		}
 	}
-	return append(rows, sec("组合预览"), rowDesc{kind: rowPromptPreview})
+	return append(rows, sec(i18n.T("ui.prompt.sec.preview")), rowDesc{kind: rowPromptPreview})
 }
 
 // rowBody 人格编辑区的行内容；ok=false = 不是本区的行（交宿主分派）。
@@ -125,10 +127,9 @@ func (f *promptEditor) rowBody(gtx layout.Context, th *material.Theme, rows []ro
 	case rowSection:
 		return paperSection(th, r.text)(gtx), true
 	case rowSysPrompt:
-		return editorBoxH(th, &f.sysPrompt, "默认人格（= 内置 @default 正文；清空 = 内置默认）", 80)(gtx), true
+		return editorBoxH(th, &f.sysPrompt, i18n.T("ui.prompt.ph.system"), 80)(gtx), true
 	case rowPromptNote:
-		l := material.Body2(th, "人格 = 有序引用的展开结果；模块可分组（children 逗号分隔，可多级）。"+
-			"改动只对新会话生效，且重启后应用。")
+		l := material.Body2(th, i18n.T("ui.prompt.note"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	case rowPromptGrid:
@@ -136,14 +137,14 @@ func (f *promptEditor) rowBody(gtx layout.Context, th *material.Theme, rows []ro
 	case rowPromptRef:
 		return f.promptRefRow(gtx, th, r.field), true
 	case rowPromptRefAdd:
-		return paperButton(th, &f.promptRefAdd, "＋ 添加引用", paperBtnSecondary, true)(gtx), true
+		return paperButton(th, &f.promptRefAdd, i18n.T("ui.prompt.btn.add_ref"), paperBtnSecondary, true)(gtx), true
 	case rowPromptBuiltin:
 		return f.promptBuiltinRow(gtx, th, f.builtins[r.field]), true
 	case rowPromptPreview:
 		text := f.promptPrev
 		l := material.Body2(th, text)
 		if strings.TrimSpace(text) == "" {
-			text = "（保存后按模块树组合；预览需装配根接线）"
+			text = i18n.T("ui.prompt.preview_empty")
 			l = material.Body2(th, text)
 			l.Color = paperOf().text3
 		} else {

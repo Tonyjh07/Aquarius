@@ -31,6 +31,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // 缩略图格子口径。
@@ -181,7 +182,7 @@ func imgNames(imgs []imgRef) string {
 	for _, r := range imgs {
 		name := strings.TrimSpace(r.name)
 		if name == "" {
-			name = "图片"
+			name = i18n.T("ui.img.placeholder")
 		}
 		names = append(names, name)
 	}
@@ -218,7 +219,7 @@ func (u *UI) openImage(r imgRef) {
 	}
 	title := strings.TrimSpace(r.name)
 	if title == "" {
-		title = "图片"
+		title = i18n.T("ui.img.placeholder")
 	}
 	u.imageView.Store(&imageContent{title: title, ref: r})
 	if u.wins == nil {
@@ -289,7 +290,7 @@ func (u *UI) imgCell(gtx layout.Context, r imgRef, cell, radius int) {
 func imgPlaceholder(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "图片"
+		return i18n.T("ui.img.placeholder")
 	}
 	if rs := []rune(name); len(rs) > 12 {
 		return string(rs[:12]) + "…"

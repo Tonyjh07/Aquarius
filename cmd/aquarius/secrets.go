@@ -14,10 +14,12 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -45,8 +47,7 @@ func (c *secretChain) Get(ctx context.Context, name string) (string, error) {
 		default:
 			// 解不开/结构坏：警告一次，继续以环境变量兜底（不致命）。
 			if c.warnf != nil && c.warned.CompareAndSwap(false, true) {
-				c.warnf("警告：本机密钥库 %s 读不出（换机拷来、账户不同或文件损坏），已忽略；"+
-					"本次启动只用同名环境变量取密钥。原文件仍在，未做任何改写。\n", c.bin.Path())
+				c.warnf("%s\n", i18n.Tf("cmd.secrets.warn.store_unreadable", "path", c.bin.Path()))
 			}
 		}
 	}
@@ -55,11 +56,12 @@ func (c *secretChain) Get(ctx context.Context, name string) (string, error) {
 			return v, nil
 		}
 	}
-	where := "同名环境变量"
+	where := i18n.T("cmd.secrets.where.env")
 	if c.bin != nil {
-		where = "本机密钥库与同名环境变量"
+		where = i18n.T("cmd.secrets.where.both")
 	}
-	return "", fmt.Errorf("密钥 %q 取不到：%s 都没有这个名字（库文件 %s）", name, where, c.binPathOr("-"))
+	return "", errors.New(i18n.Tf("cmd.secrets.err.missing",
+		"name", strconv.Quote(name), "where", where, "path", c.binPathOr("-")))
 }
 
 // binPathOr 库路径展示（未接线时给占位）。
@@ -190,11 +192,11 @@ func storePlaintextKeyAt(ctx context.Context, bin *secretbin.Store, providerName
 		return ref, nil // 用户填的就是引用：照写，不进库
 	}
 	if bin == nil {
-		return "", fmt.Errorf("provider %q：本机密钥库未接线，无法保存明文密钥", providerName)
+		return "", errors.New(i18n.Tf("cmd.secrets.err.store_unwired", "name", strconv.Quote(providerName)))
 	}
 	name := keySlotName(providerName, origRef, slot)
 	if err := bin.Set(ctx, name, ref); err != nil {
-		return "", fmt.Errorf("provider %q：写入本机密钥库失败: %w", providerName, err)
+		return "", fmt.Errorf("%s: %w", i18n.Tf("cmd.secrets.err.store_failed", "name", strconv.Quote(providerName)), err)
 	}
 	return "secret:" + name, nil
 }
@@ -206,7 +208,5 @@ func keyStoreURI(name string) string { return "secret:" + name }
 // 不再推荐「改用 secret:<环境变量名> 引用环境变量」，而是指路设置窗（要么填明文由界面
 // 转入库，要么直接填引用）。
 func secretBoundWarn(stderr io.Writer, provider string) {
-	fmt.Fprintf(stderr, "警告：provider %q 的 api_key 为明文——密钥直接落在 config.json，"+
-		"本机任意可读进程、备份与同步都可能取用；到设置窗重填一次即转入本机加密密钥库"+
-		"（config 里只留引用），也可手工改写为 \"secret:<名>\"。\n", provider)
+	fmt.Fprintf(stderr, "%s\n", i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote(provider)))
 }

@@ -17,6 +17,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -445,15 +446,16 @@ const mdBlockGapDp unit.Dp = 4
 // injectHeadline 注入卡片头部（D166）：来源（友好化表） + 落地时是否触发了响应。
 // 转写头部与遮罩来源行共用 injectState 一词，措辞不漂移。
 func injectHeadline(source string, trigger bool) string {
-	return "注入 · " + port.InjectSourceLabel(source) + " · " + injectState(trigger)
+	return i18n.Tf("ui.state.inject",
+		"source", port.InjectSourceLabel(source), "state", injectState(trigger))
 }
 
 // injectState 触发状态词（D166）：记录的是**实际发生**（Message.Trigger），不是来源默认表。
 func injectState(trigger bool) string {
 	if trigger {
-		return "已触发响应"
+		return i18n.T("ui.state.fired")
 	}
-	return "未触发"
+	return i18n.T("ui.state.idle")
 }
 
 // mdCodeInsetDp 代码小卡内边距（D66：卡嵌气泡内）。

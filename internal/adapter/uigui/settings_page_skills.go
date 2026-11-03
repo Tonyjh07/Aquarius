@@ -21,6 +21,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // skillsPage 技能页模块。
@@ -29,30 +30,30 @@ type skillsPage struct{}
 func (skillsPage) Key() string { return "skills" }
 
 func (skillsPage) Rows(f *settingsForm) []rowDesc {
-	rows := []rowDesc{sec("已安装技能")}
+	rows := []rowDesc{sec(i18n.T("ui.page.skills.section_installed"))}
 	if f.skills == nil {
-		return append(rows, rowDesc{kind: rowSkillEmpty, text: "未接线（只读占位）"})
+		return append(rows, rowDesc{kind: rowSkillEmpty, text: i18n.T("ui.page.skills.unwired")})
 	}
 	if len(f.skillsSnap.Skills) == 0 {
 		rows = append(rows, rowDesc{kind: rowSkillEmpty,
-			text: "还没有技能——下面给一个 SKILL.md、文件夹、压缩包或 GitHub 链接即可装进来"})
+			text: i18n.T("ui.page.skills.empty")})
 	}
 	for i := range f.skillsSnap.Skills {
 		rows = append(rows, rowDesc{kind: rowSkillItem, field: i})
 	}
 	rows = append(rows,
-		sec("安装 / 导入"),
+		sec(i18n.T("ui.page.skills.section_install")),
 		rowDesc{kind: rowSkillNote},
 		rowDesc{kind: rowSkillSource},
 		rowDesc{kind: rowSkillPick},
-		sec("技能目录（按顺序查找，同名先命中者生效）"),
+		sec(i18n.T("ui.page.skills.section_dirs")),
 	)
 	for i := range f.skillsSnap.Dirs {
 		rows = append(rows, rowDesc{kind: rowSkillDir, field: i})
 	}
 	rows = append(rows, rowDesc{kind: rowSkillDirAdd}, rowDesc{kind: rowSkillRescan})
 	if len(f.skillsSnap.Warnings) > 0 {
-		rows = append(rows, sec("未加载的条目"))
+		rows = append(rows, sec(i18n.T("ui.page.skills.section_warnings")))
 		for i := range f.skillsSnap.Warnings {
 			rows = append(rows, rowDesc{kind: rowSkillWarn, field: i})
 		}
@@ -76,36 +77,34 @@ func (skillsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, 
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	case rowSkillNote:
-		l := material.Body2(th, "支持单文件 SKILL.md、技能文件夹、.zip 压缩包与 GitHub 链接（可写 #分支）。"+
-			"装进来的是副本：更新会覆盖这份副本里的本地改动，卸载只删这份副本。"+
-			"同名技能不覆盖——先卸载再装。")
+		l := material.Body2(th, i18n.T("ui.page.skills.note"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	case rowSkillSource:
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return fieldRow(gtx, th, "来源", editorBox(th, &f.skillSource,
-					"绝对路径或 GitHub 链接（如 https://github.com/o/r 或 …#分支）"))
+				return fieldRow(gtx, th, i18n.T("ui.page.skills.source_label"), editorBox(th, &f.skillSource,
+					i18n.T("ui.page.skills.source_hint")))
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &f.skillInstall, "安装", paperBtnPrimary, f.skillWait == 0)(gtx)
+					return paperButton(th, &f.skillInstall, i18n.T("ui.page.skills.install"), paperBtnPrimary, f.skillWait == 0)(gtx)
 				})
 			}),
 		), true
 	case rowSkillPick:
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return paperButton(th, &f.skillPickFile, "选择文件…", paperBtnSecondary, true)(gtx)
+				return paperButton(th, &f.skillPickFile, i18n.T("ui.page.skills.pick_file"), paperBtnSecondary, true)(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &f.skillPickDir, "选择文件夹…", paperBtnSecondary, true)(gtx)
+					return paperButton(th, &f.skillPickDir, i18n.T("ui.page.skills.pick_dir"), paperBtnSecondary, true)(gtx)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperMicroSp(th), "选中路径只填进上面的来源框，再点「安装」才落盘")
+					l := material.Label(th, paperMicroSp(th), i18n.T("ui.page.skills.pick_hint"))
 					l.Color = paperOf().text3
 					return l.Layout(gtx)
 				})
@@ -119,16 +118,16 @@ func (skillsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, 
 	case rowSkillDirAdd:
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return fieldRow(gtx, th, "添加目录", editorBox(th, &f.skillDirInput, "额外技能根（绝对路径）"))
+				return fieldRow(gtx, th, i18n.T("ui.page.skills.dir_add_label"), editorBox(th, &f.skillDirInput, i18n.T("ui.page.skills.dir_add_hint")))
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &f.skillDirAdd, "添加", paperBtnSecondary, true)(gtx)
+					return paperButton(th, &f.skillDirAdd, i18n.T("ui.common.add"), paperBtnSecondary, true)(gtx)
 				})
 			}),
 		), true
 	case rowSkillRescan:
-		return paperButton(th, &f.skillRescan, "重新扫描", paperBtnSecondary, f.skillWait == 0)(gtx), true
+		return paperButton(th, &f.skillRescan, i18n.T("ui.page.skills.rescan"), paperBtnSecondary, f.skillWait == 0)(gtx), true
 	case rowSkillWarn:
 		if r.field < 0 || r.field >= len(f.skillsSnap.Warnings) {
 			return layout.Dimensions{}, true
@@ -173,7 +172,7 @@ func (skillsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 				return "", err
 			}
 			f.skillDirInput.SetText("")
-			return "已添加技能目录（立即生效）", nil
+			return i18n.T("ui.page.skills.status_dir_added"), nil
 		})
 	}
 	for f.skillRescan.Clicked(gtx) {
@@ -181,7 +180,7 @@ func (skillsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			if err := f.skills.Rescan(); err != nil {
 				return "", err
 			}
-			return "已重新扫描技能目录", nil
+			return i18n.T("ui.page.skills.status_rescanned"), nil
 		})
 	}
 	// 按键分派：`up:` / `rm:` / `cancel:` / `confirm:` / `dir:`。
@@ -206,7 +205,7 @@ func (skillsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 					if err := f.skills.Remove(name); err != nil {
 						return "", err
 					}
-					return "已卸载技能 " + name, nil
+					return i18n.Tf("ui.page.skills.status_uninstalled", "name", name), nil
 				})
 			case strings.HasPrefix(key, "dir:"):
 				dir := strings.TrimPrefix(key, "dir:")
@@ -214,7 +213,7 @@ func (skillsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 					if err := f.skills.RemoveDir(dir); err != nil {
 						return "", err
 					}
-					return "已移除技能目录 " + dir, nil
+					return i18n.Tf("ui.page.skills.status_dir_removed", "path", dir), nil
 				})
 			}
 		}
@@ -253,17 +252,17 @@ func (f *settingsForm) skillItemRow(gtx layout.Context, th *material.Theme, st S
 			if f.skillConfirm == st.Name {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Body2(th, "确认？")
+						l := material.Body2(th, i18n.T("ui.common.confirm_q"))
 						l.Color = paperOf().danger
 						return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, l.Layout)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return f.skillActionButton(gtx, th, "cancel:"+st.Name, "取消", paperBtnSecondary)
+							return f.skillActionButton(gtx, th, "cancel:"+st.Name, i18n.T("ui.common.cancel"), paperBtnSecondary)
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return f.skillActionButton(gtx, th, "confirm:"+st.Name, "确认卸载", paperBtnDanger)
+						return f.skillActionButton(gtx, th, "confirm:"+st.Name, i18n.T("ui.page.skills.confirm_uninstall"), paperBtnDanger)
 					}),
 				)
 			}
@@ -273,11 +272,11 @@ func (f *settingsForm) skillItemRow(gtx layout.Context, th *material.Theme, st S
 						return layout.Dimensions{}
 					}
 					return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return f.skillActionButton(gtx, th, "up:"+st.Name, "更新", paperBtnSecondary)
+						return f.skillActionButton(gtx, th, "up:"+st.Name, i18n.T("ui.page.skills.update"), paperBtnSecondary)
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return f.skillActionButton(gtx, th, "rm:"+st.Name, "卸载", paperBtnDanger)
+					return f.skillActionButton(gtx, th, "rm:"+st.Name, i18n.T("ui.page.skills.uninstall"), paperBtnDanger)
 				}),
 			)
 		}),
@@ -296,7 +295,7 @@ func (f *settingsForm) skillDirRow(gtx layout.Context, th *material.Theme, d Ski
 				return layout.Dimensions{}
 			}
 			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return f.skillActionButton(gtx, th, "dir:"+d.Path, "移除", paperBtnDanger)
+				return f.skillActionButton(gtx, th, "dir:"+d.Path, i18n.T("ui.page.skills.remove_dir"), paperBtnDanger)
 			})
 		}),
 	)

@@ -77,11 +77,13 @@ func resolveProfile(dir, flagName string) (string, error) {
 		if flagName == "" {
 			// 首次运行：写指针指向 default（profile 配置模板随后由 run 的模板分支落盘）。
 			if werr := os.WriteFile(pointerPath, []byte(pointerContent(defaultProfileName)), 0o644); werr != nil {
-				return "", fmt.Errorf("生成 profile 指针 %s: %w", pointerPath, werr)
+				return "", fmt.Errorf("%s: %w",
+					i18n.Tf("cmd.profile.err.write_pointer", "path", pointerPath), werr)
 			}
 		}
 	default:
-		return "", fmt.Errorf("读取 profile 指针 %s: %w", pointerPath, err)
+		return "", fmt.Errorf("%s: %w",
+			i18n.Tf("cmd.profile.err.read_pointer", "path", pointerPath), err)
 	}
 	if flagName != "" {
 		if err := validProfileName(flagName); err != nil {
@@ -92,9 +94,10 @@ func resolveProfile(dir, flagName string) (string, error) {
 		if !slices.Contains(avail, name) {
 			joined := strings.Join(avail, ", ")
 			if joined == "" {
-				joined = "无"
+				joined = i18n.T("ui.common.none")
 			}
-			return "", fmt.Errorf("--profile %s 不存在（profiles/ 下可用：%s）", name, joined)
+			return "", fmt.Errorf("%s", i18n.Tf("cmd.profile.err.not_found",
+				"name", name, "available", joined))
 		}
 		return name, nil
 	}
@@ -280,14 +283,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	hideSpawnedConsole()
 	flags := flag.NewFlagSet("aquarius", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	dataDir := flags.String("data", "", "数据目录（默认 ~/.aquarius）")
-	profileFlag := flags.String("profile", "", "选择 profile（本次运行临时覆盖根 config.json 的指针；须已存在）")
-	modelName := flags.String("model", "", "覆盖 model.name")
-	baseURL := flags.String("base-url", "", "覆盖 model.base_url")
-	autoYes := flags.Bool("yes", false, "跳过逐次确认（等价对每个确认回答 y；危险操作慎用）")
-	logLevel := flags.String("log-level", "", "运行日志级别（debug | info | warn | error；默认取 ui.log_level）")
-	logFormat := flags.String("log-format", "", "运行日志形态（text | json；只影响本次运行）")
-	showVersion := flags.Bool("version", false, "打印版本并退出")
+	dataDir := flags.String("data", "", i18n.T("cmd.boot.flag.data"))
+	profileFlag := flags.String("profile", "", i18n.T("cmd.boot.flag.profile"))
+	modelName := flags.String("model", "", i18n.T("cmd.boot.flag.model"))
+	baseURL := flags.String("base-url", "", i18n.T("cmd.boot.flag.base_url"))
+	autoYes := flags.Bool("yes", false, i18n.T("cmd.boot.flag.yes"))
+	logLevel := flags.String("log-level", "", i18n.T("cmd.boot.flag.log_level"))
+	logFormat := flags.String("log-format", "", i18n.T("cmd.boot.flag.log_format"))
+	showVersion := flags.Bool("version", false, i18n.T("cmd.boot.flag.version"))
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -461,31 +464,31 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 启动提示：GUI 做成 logo 悬浮 tips（§15.1，不入转写区、初始即空）；
 	// repl/TUI 照常一行。
 	if w.cfg.UI.Kind != "gui" {
-		w.ui.Say("Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成")
+		w.ui.Say(i18n.T("cmd.boot.banner"))
 	}
 	// 启动对账（D262）：上次退出时没来得及收尾的任务，补一条「它当时在跑/已结束」的
 	// 事实注入；紧接着的历史回放会把它铺出来。台账读即清，补过就不会再报一次。
 	if items, jerr := w.jobs.Unfinished(ctx); jerr != nil {
-		fmt.Fprintf(stderr, "读取未收尾任务台账: %v\n", jerr)
+		fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.read_unfinished_jobs"), jerr)
 	} else if rerr := w.sess.ReportUnfinished(ctx, items); rerr != nil {
-		fmt.Fprintf(stderr, "补记未收尾任务: %v\n", rerr)
+		fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.report_unfinished_jobs"), rerr)
 	}
 	// 转交对账（D269）：上次退出时还在跑的转交，进程早被终止，报告也不会自己回来——
 	// 补一条事实注入（同时给用户一行提示，否则模型忽然知道某件活的存在、用户却不知道）。
 	if w.delegateMgr != nil {
 		if items, derr := w.delegateMgr.Unfinished(ctx); derr != nil {
-			fmt.Fprintf(stderr, "读取未收尾转交台账: %v\n", derr)
+			fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.read_unfinished_delegates"), derr)
 		} else if len(items) > 0 {
 			if rerr := w.sess.ReportUnfinishedDelegates(ctx, items); rerr != nil {
-				fmt.Fprintf(stderr, "补记未收尾转交: %v\n", rerr)
+				fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.report_unfinished_delegates"), rerr)
 			}
-			w.ui.Say(fmt.Sprintf("上次退出时中断了 %d 笔转交（已补记到发起会话）", len(items)))
+			w.ui.Say(i18n.Tf("cmd.boot.interrupted_delegates", "n", len(items)))
 		}
 	}
 	// 启动历史回放（D40/§7.4）：恢复的会话把水位→Head 的可见历史重放进转写区，
 	// 让用户知道当前是哪个会话、此前聊了什么（新建会话无历史，no-op）。
 	if _, rerr := w.sess.ReplayHistory(ctx); rerr != nil {
-		fmt.Fprintf(stderr, "回放历史: %v\n", rerr)
+		fmt.Fprintf(stderr, "%s: %v\n", i18n.T("err.replay_history"), rerr)
 	}
 	// replay 停止键中断后立刻要发的那句引导（D274）：有它就不等用户再敲一遍。
 	var replay string
@@ -502,7 +505,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 					return 0 // 收尾换行由 ui.Close 后的 defer 统一处理
 				}
-				fmt.Fprintf(stderr, "读取输入失败: %v\n", err)
+				fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.read_input"), err)
 				return 1
 			}
 		}
@@ -531,7 +534,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		// 重新起一轮——用户按停止的意思是「先别跑这个，听我说这句话」，不是「我要走」。
 		if ctx.Err() == nil && w.sess.Stopped() {
 			if text, ok := w.sess.TakeSteer(); ok {
-				w.ui.Say("已中断这一步，用引导消息重新请求")
+				w.ui.Say(i18n.T("cmd.boot.steer_retry"))
 				replay = text
 				continue
 			}

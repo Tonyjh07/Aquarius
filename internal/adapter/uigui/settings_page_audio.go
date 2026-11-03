@@ -13,6 +13,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -33,7 +34,7 @@ func (audioPage) Key() string { return "audio" }
 func (audioPage) Rows(f *settingsForm) []rowDesc {
 	asrKind := f.asrKind.value()
 	ttsKind := f.ttsKind.value()
-	rows := []rowDesc{sec("语音识别（说话转文字）"), {kind: rowAudioASRKind}}
+	rows := []rowDesc{sec(i18n.T("ui.page.audio.section.asr")), {kind: rowAudioASRKind}}
 	// 每档只列它真正会读的字段：适配器不看的东西摆在这里，用户填了也不会生效，
 	// 只会让人怀疑「是不是还要填点什么」。
 	switch asrKind {
@@ -49,7 +50,7 @@ func (audioPage) Rows(f *settingsForm) []rowDesc {
 		rows = append(rows, rowDesc{kind: rowAudioASRProvider}, rowDesc{kind: rowAudioASREndpoint},
 			rowDesc{kind: rowAudioASRKey}, rowDesc{kind: rowAudioASRModel}, rowDesc{kind: rowAudioLang})
 	}
-	rows = append(rows, sec("语音合成（文字转语音）"), rowDesc{kind: rowAudioTTSKind})
+	rows = append(rows, sec(i18n.T("ui.page.audio.section.tts")), rowDesc{kind: rowAudioTTSKind})
 	switch ttsKind {
 	case ttsKindVITS:
 		// vits-simple-api：说话人 ID（音色）+ 风格标签，没有模型名、描述与风格指令。
@@ -71,46 +72,49 @@ func (audioPage) Rows(f *settingsForm) []rowDesc {
 func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
 	switch rows[i].kind {
 	case rowAudioASRKind:
-		return fieldRow(gtx, th, "识别方式", selectBtn(th, &f.asrKind)), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.asr_kind_label"), selectBtn(th, &f.asrKind)), true
 	case rowAudioASRProvider:
 		return f.audioServiceRow(gtx, th, &f.asrProv, &f.asrKeyUse), true
 	case rowAudioASREndpoint:
-		return fieldRow(gtx, th, "端点", editorBox(th, &f.asrBaseURL, "如 https://api.example.com/v1；留空 = 用「服务」那条的")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.endpoint_label"),
+			editorBox(th, &f.asrBaseURL, i18n.T("ui.page.audio.endpoint_hint"))), true
 	case rowAudioASRKey:
 		return f.audioKeyRow(gtx, th, &f.asrKey, "asr"), true
 	case rowAudioASRModel:
-		return fieldRow(gtx, th, "识别模型", editorBox(th, &f.asrModel, "如 mimo-v2.5-asr / whisper-1")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.asr_model_label"),
+			editorBox(th, &f.asrModel, i18n.T("ui.page.audio.asr_model_hint"))), true
 	case rowAudioASRPath:
 		return f.audioModelPathRow(gtx, th), true
 	case rowAudioLang:
-		return fieldRow(gtx, th, "录音语种", selectBtn(th, &f.asrLang)), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.asr_lang_label"), selectBtn(th, &f.asrLang)), true
 	case rowAudioTTSProvider:
 		return f.audioServiceRow(gtx, th, &f.ttsProv, &f.ttsKeyUse), true
 	case rowAudioTTSKind:
-		return fieldRow(gtx, th, "合成方式", selectBtn(th, &f.ttsKind)), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.tts_kind_label"), selectBtn(th, &f.ttsKind)), true
 	case rowAudioTTSEndpoint:
-		return fieldRow(gtx, th, "端点", editorBox(th, &f.ttsBaseURL, "如 https://api.example.com/v1；留空 = 用「服务」那条的")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.endpoint_label"),
+			editorBox(th, &f.ttsBaseURL, i18n.T("ui.page.audio.endpoint_hint"))), true
 	case rowAudioTTSKey:
 		return f.audioKeyRow(gtx, th, &f.ttsKey, "tts"), true
 	case rowAudioTTSModel:
-		return fieldRow(gtx, th, "合成模型", editorBox(th, &f.ttsModel, "如 mimo-v2.5-tts / -voicedesign / -voiceclone")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.tts_model_label"),
+			editorBox(th, &f.ttsModel, i18n.T("ui.page.audio.tts_model_hint"))), true
 	case rowAudioVoice:
-		return fieldRow(gtx, th, "音色", editorBox(th, &f.ttsVoice, "预置音色名；克隆模型填样本文件绝对路径")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.voice_label"),
+			editorBox(th, &f.ttsVoice, i18n.T("ui.page.audio.voice_hint"))), true
 	case rowAudioDesign:
-		return fieldRow(gtx, th, "音色描述", editorBox(th, &f.ttsDesign, "音色设计模型必填（如：温柔的女声）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.design_label"),
+			editorBox(th, &f.ttsDesign, i18n.T("ui.page.audio.design_hint"))), true
 	case rowAudioStyle:
-		return fieldRow(gtx, th, "风格指令", editorBox(th, &f.ttsStyle, "自然语言（如：语速稍快，语气轻松）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.style_label"),
+			editorBox(th, &f.ttsStyle, i18n.T("ui.page.audio.style_hint"))), true
 	case rowAudioTags:
-		return fieldRow(gtx, th, "风格标签", editorBox(th, &f.ttsTags, "如：温柔 语速稍快（会拼在正文前）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.tags_label"),
+			editorBox(th, &f.ttsTags, i18n.T("ui.page.audio.tags_hint"))), true
 	case rowAudioPreview:
 		return f.audioPreviewRow(gtx, th), true
 	case rowAudioNote:
-		l := material.Body2(th, "识别与合成各自是一份完整配置：先选方式（协议），再填本页给出的字段——"+
-			"本地 whisper 只有模型文件，其余方式才有服务与端点。"+
-			"需要端点或密钥的那几档，可以自己填，也可以选一个「服务」再点「填入」，"+
-			"那会把该条目的端点与密钥引用抄过来，之后照样能改。"+
-			"密钥只写不回显（留空 = 保持）。改方式、服务、端点或模型需保存并重启。"+
-			"音色、音色描述与风格保存后对此后的播报生效；试听按当前填写的内容合成一句。")
+		l := material.Body2(th, i18n.T("ui.page.audio.note"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	}
@@ -124,14 +128,12 @@ func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 func (f *settingsForm) audioModelPathRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "模型文件", editorBox(th, &f.asrPath, "本地 whisper 的 ggml 模型绝对路径（如 …\\ggml-base-q5_1.bin）"))
+			return fieldRow(gtx, th, i18n.T("ui.page.audio.model_path_label"),
+				editorBox(th, &f.asrPath, i18n.T("ui.page.audio.model_path_hint")))
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperMicroSp(th),
-					"模型不在仓库里，需要自己下载：到 huggingface.co/ggerganov/whisper.cpp "+
-						"取 ggml-base-q5_1.bin（约 60MB，中文效果与速度的平衡点）。"+
-						"只在「本地 whisper」这一档用到。")
+				l := material.Label(th, paperMicroSp(th), i18n.T("ui.page.audio.model_path_note"))
 				l.Color = paperOf().text3
 				return l.Layout(gtx)
 			})
@@ -142,15 +144,15 @@ func (f *settingsForm) audioModelPathRow(gtx layout.Context, th *material.Theme)
 // audioServiceRow 「服务」一行：从 model.providers 里选一个条目 + 「填入」按钮（D222）。
 // 「未配置」= 不借任何条目（端点与密钥全靠自己填）。
 func (f *settingsForm) audioServiceRow(gtx layout.Context, th *material.Theme, prov *selectField, use *widget.Clickable) layout.Dimensions {
-	return fieldRow(gtx, th, "服务", func(gtx layout.Context) layout.Dimensions {
+	return fieldRow(gtx, th, i18n.T("ui.page.audio.service_label"), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(selectBtn(th, prov)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, use, "填入", paperBtnSecondary, true))
+				return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, use, i18n.T("ui.page.audio.fill"), paperBtnSecondary, true))
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperNoteSp(th), "抄它的端点与密钥引用进本页，之后可改")
+					l := material.Label(th, paperNoteSp(th), i18n.T("ui.page.audio.fill_hint"))
 					l.Color = paperOf().text3
 					return l.Layout(gtx)
 				})
@@ -163,7 +165,8 @@ func (f *settingsForm) audioServiceRow(gtx layout.Context, th *material.Theme, p
 func (f *settingsForm) audioKeyRow(gtx layout.Context, th *material.Theme, ed *widget.Editor, which string) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "密钥", editorBox(th, ed, "secret:名 或明文；留空 = 保持 / 借用"))
+			return fieldRow(gtx, th, i18n.T("ui.page.audio.key_label"),
+				editorBox(th, ed, i18n.T("ui.page.audio.key_hint")))
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -177,24 +180,25 @@ func (f *settingsForm) audioKeyRow(gtx layout.Context, th *material.Theme, ed *w
 
 // audioKeyNote 该通道密钥框的形态说明（值永不回显）。
 func (f *settingsForm) audioKeyNote(which string) string {
-	saved, plain, ref, fallback := false, false, "", ""
-	if which == "asr" {
+	saved, plain, ref := false, false, ""
+	asr := which == "asr"
+	if asr {
 		saved, plain, ref = f.snap.ASRKeySaved, f.snap.ASRKeyPlain, f.snap.ASRKeyRef
-		fallback = "AQUARIUS_ASR_API_KEY"
 	} else {
 		saved, plain, ref = f.snap.TTSKeySaved, f.snap.TTSKeyPlain, f.snap.TTSKeyRef
-		fallback = "AQUARIUS_TTS_API_KEY"
 	}
 	switch {
 	case saved:
 		if ref == "" {
 			ref = "secret:…"
 		}
-		return "已存引用 " + ref + "；留空 = 保持不变"
+		return i18n.Tf("ui.page.audio.keynote.saved", "ref", ref)
 	case plain:
-		return "当前是明文（启动会警告）；填新值覆盖，留空 = 保持不变"
+		return i18n.T("ui.page.audio.keynote.plain")
+	case asr:
+		return i18n.T("ui.page.audio.keynote.fallback_asr")
 	default:
-		return "留空 = 借用所选服务的密钥；未选服务则回落 secret:" + fallback
+		return i18n.T("ui.page.audio.keynote.fallback_tts")
 	}
 }
 
@@ -219,11 +223,11 @@ func (f *settingsForm) fillAudioFromService(prov *selectField, baseURL, key *wid
 }
 
 func (audioPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
-	f.openPicker(gtx, "识别方式", &f.asrKind)
-	f.openPicker(gtx, "语音识别服务", &f.asrProv)
-	f.openPicker(gtx, "录音语种", &f.asrLang)
-	f.openPicker(gtx, "合成方式", &f.ttsKind)
-	f.openPicker(gtx, "语音合成服务", &f.ttsProv)
+	f.openPicker(gtx, i18n.T("ui.page.audio.asr_kind_label"), &f.asrKind)
+	f.openPicker(gtx, i18n.T("ui.page.audio.asr_service_picker"), &f.asrProv)
+	f.openPicker(gtx, i18n.T("ui.page.audio.asr_lang_label"), &f.asrLang)
+	f.openPicker(gtx, i18n.T("ui.page.audio.tts_kind_label"), &f.ttsKind)
+	f.openPicker(gtx, i18n.T("ui.page.audio.tts_service_picker"), &f.ttsProv)
 	for f.asrKeyUse.Clicked(gtx) {
 		f.fillAudioFromService(&f.asrProv, &f.asrBaseURL, &f.asrKey)
 	}
@@ -239,10 +243,10 @@ func (audioPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 		f.voiceBusy = false
 		if err != nil {
 			f.voiceErr = true
-			f.voiceStatus = "试听失败：" + err.Error()
+			f.voiceStatus = i18n.Tf("ui.page.audio.status.preview_failed", "err", err.Error())
 		} else {
 			f.voiceErr = false
-			f.voiceStatus = "已开始播放"
+			f.voiceStatus = i18n.T("ui.page.audio.status.playing")
 		}
 	default:
 	}
@@ -252,11 +256,11 @@ func (audioPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.asrMode
 
 // audioPreviewRow 「试听」按钮 + 行内反馈（合成中禁用按钮，避免连点叠音）。
 func (f *settingsForm) audioPreviewRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	label := "播放示例"
+	label := i18n.T("ui.page.audio.preview_play")
 	if f.voiceBusy {
-		label = "合成中…"
+		label = i18n.T("ui.page.audio.preview_busy")
 	}
-	return fieldRow(gtx, th, "试听", func(gtx layout.Context) layout.Dimensions {
+	return fieldRow(gtx, th, i18n.T("ui.page.audio.preview_label"), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return paperButton(th, &f.voiceTry, label, paperBtnSecondary, !f.voiceBusy)(gtx)
@@ -286,11 +290,11 @@ func (u *UI) previewVoice(f *settingsForm) {
 	}
 	if u.opts.PreviewVoice == nil {
 		f.voiceErr = true
-		f.voiceStatus = "试听不可用：语音合成未配置"
+		f.voiceStatus = i18n.T("ui.page.audio.status.unavailable")
 		return
 	}
 	req := port.SpeechRequest{
-		Text:   "你好，我是 Aquarius。这段声音听起来怎么样？",
+		Text:   i18n.T("ui.page.audio.preview_text"),
 		Voice:  strings.TrimSpace(f.ttsVoice.Text()),
 		Design: strings.TrimSpace(f.ttsDesign.Text()),
 		Style:  strings.TrimSpace(f.ttsStyle.Text()),
@@ -298,7 +302,7 @@ func (u *UI) previewVoice(f *settingsForm) {
 	}
 	f.voiceBusy = true
 	f.voiceErr = false
-	f.voiceStatus = "正在合成…"
+	f.voiceStatus = i18n.T("ui.page.audio.status.synthesizing")
 	win := f.win
 	go func() {
 		err := u.opts.PreviewVoice(req)

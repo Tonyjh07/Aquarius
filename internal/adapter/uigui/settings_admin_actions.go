@@ -8,19 +8,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 func (u *UI) profileAction(f *settingsForm, act string) {
 	if u.opts.Profiles == nil {
 		f.err = true
-		f.status = "profile 管理未接线"
+		f.status = i18n.T("ui.settings.profile.not_wired")
 		return
 	}
 	name := strings.TrimSpace(f.profName.Text())
 	if name == "" {
 		f.err = true
-		f.status = "请先填写 profile 名"
+		f.status = i18n.T("ui.settings.profile.need_name")
 		return
 	}
 	var err error
@@ -32,22 +33,22 @@ func (u *UI) profileAction(f *settingsForm, act string) {
 	case "switch":
 		err = u.opts.Profiles.Switch(name)
 	default:
-		err = fmt.Errorf("未知动作 %q", act)
+		err = fmt.Errorf("%s %q", i18n.T("ui.settings.profile.unknown_act"), act)
 	}
 	if err != nil {
 		f.err = true
-		f.status = "profile " + profileActionLabel(act) + "失败：" + err.Error()
+		f.status = i18n.Tf("ui.settings.profile.failed", "action", profileActionLabel(act), "err", err.Error())
 		return
 	}
 	f.err = false
 	f.profiles = u.opts.Profiles.Snapshot() // 新建/复制后清单刷新，立即可切换
 	switch act {
 	case "create":
-		f.status = "已新建 profile " + name + "（模板已生成；填「Profile 名」后点「切换」启用，重启生效）"
+		f.status = i18n.Tf("ui.settings.profile.created", "name", name)
 	case "copy":
-		f.status = "已复制当前 profile 配置到 " + name + "（仅配置不含会话数据；重启生效）"
+		f.status = i18n.Tf("ui.settings.profile.copied", "name", name)
 	case "switch":
-		f.status = "已切换 profile → " + name + "（重启生效）"
+		f.status = i18n.Tf("ui.settings.profile.switched", "name", name)
 	}
 }
 
@@ -59,12 +60,12 @@ func (u *UI) profileAction(f *settingsForm, act string) {
 func (u *UI) applyProviderChanges(f *settingsForm) {
 	if u.opts.ProviderMgr == nil {
 		f.provErr = true
-		f.provStatus = "provider 编辑未接线"
+		f.provStatus = i18n.T("ui.settings.prov.not_wired")
 		return
 	}
 	if len(f.provs) == 0 {
 		f.provErr = true
-		f.provStatus = "至少保留一个 provider"
+		f.provStatus = i18n.T("ui.settings.prov.need_one")
 		return
 	}
 	// 单价语法先在表单侧拦（D205）：留空合法（不声明），填了就必须是非负数字。
@@ -72,8 +73,8 @@ func (u *UI) applyProviderChanges(f *settingsForm) {
 		for _, mf := range pf.modelForms {
 			if badCost(mf.costIn.Text()) || badCost(mf.costOut.Text()) {
 				f.provErr = true
-				f.provStatus = fmt.Sprintf("模型 %q 的单价须为非负数字（每百万 token，留空 = 不声明）",
-					strings.TrimSpace(mf.name.Text()))
+				f.provStatus = i18n.Tf("ui.settings.prov.bad_cost",
+					"model", strings.TrimSpace(mf.name.Text()))
 				return
 			}
 		}
@@ -88,11 +89,11 @@ func (u *UI) applyProviderChanges(f *settingsForm) {
 	}
 	if err := u.opts.ProviderMgr.Apply(primary, patches); err != nil {
 		f.provErr = true
-		f.provStatus = "应用失败：" + err.Error()
+		f.provStatus = i18n.Tf("ui.settings.prov.apply_failed", "err", err.Error())
 		return
 	}
 	f.provErr = false
-	f.provStatus = "已应用 provider 变更（重启生效）"
+	f.provStatus = i18n.T("ui.settings.prov.applied")
 	f.loadProviders(u.opts.ProviderMgr.Snapshot()) // 以落盘事实源重建编辑区（orig 对齐、primary 回正）
 	f.provOpen = -1                                // 重建后全收起（新形态下的稳定落点）
 }
@@ -103,7 +104,7 @@ func (u *UI) applyProviderChanges(f *settingsForm) {
 func (u *UI) runProviderTest(f *settingsForm, pf *providerForm) {
 	if u.opts.ProviderMgr == nil {
 		f.provErr = true
-		f.provStatus = "provider 编辑未接线"
+		f.provStatus = i18n.T("ui.settings.prov.not_wired")
 		return
 	}
 	patch := providerPatchOf(pf)
@@ -125,7 +126,7 @@ func (u *UI) runFetchModels(f *settingsForm, pf *providerForm, auto bool) {
 			return // 自动拉取没接线就静默（这是进入页面的附带动作，不该报错占屏）
 		}
 		f.provErr = true
-		f.provStatus = "provider 编辑未接线"
+		f.provStatus = i18n.T("ui.settings.prov.not_wired")
 		return
 	}
 	patch := providerPatchOf(pf)
@@ -168,10 +169,10 @@ func (f *settingsForm) drainTestResults() {
 			}
 			if r.err != nil {
 				f.provErr = true
-				f.provStatus = "连通测试 " + r.name + " 失败：" + r.err.Error()
+				f.provStatus = i18n.Tf("ui.settings.prov.test_failed", "name", r.name, "err", r.err.Error())
 			} else {
 				f.provErr = false
-				f.provStatus = "连通正常 · " + strconv.FormatInt(r.ms, 10) + " ms"
+				f.provStatus = i18n.Tf("ui.settings.prov.test_ok", "ms", strconv.FormatInt(r.ms, 10))
 			}
 		default:
 			return
@@ -194,7 +195,7 @@ func (f *settingsForm) applyProbeResult(r testOutcome) {
 	if r.err != nil {
 		mf.probeBusy = false
 		mf.probeErr = true
-		mf.probeStatus = "探测失败：" + r.err.Error()
+		mf.probeStatus = i18n.Tf("ui.settings.prov.probe_failed", "err", r.err.Error())
 		return
 	}
 	mf.probeBusy = false
@@ -248,7 +249,7 @@ func (f *settingsForm) applyModels(r testOutcome) {
 	}
 	if r.err != nil {
 		pf.fetchErr = true
-		pf.fetchNote = "拉取模型列表失败：" + r.err.Error()
+		pf.fetchNote = i18n.Tf("ui.settings.prov.fetch_failed", "err", r.err.Error())
 		if !r.auto {
 			f.provErr = true
 			f.provStatus = pf.fetchNote
@@ -257,7 +258,7 @@ func (f *settingsForm) applyModels(r testOutcome) {
 	}
 	if len(r.models) == 0 {
 		pf.fetchErr = true
-		pf.fetchNote = "服务端未返回任何模型"
+		pf.fetchNote = i18n.T("ui.settings.prov.fetch_empty")
 		if !r.auto {
 			f.provErr = true
 			f.provStatus = pf.fetchNote
@@ -283,10 +284,10 @@ func (f *settingsForm) applyModels(r testOutcome) {
 	pf.fetchErr = false
 	switch {
 	case added == 0:
-		pf.fetchNote = "服务端返回 " + strconv.Itoa(total) + " 个模型，都已在列表中"
+		pf.fetchNote = i18n.Tf("ui.settings.prov.fetch_all_known", "total", strconv.Itoa(total))
 	default:
-		pf.fetchNote = "已补入 " + strconv.Itoa(added) + " 个模型（共 " + strconv.Itoa(total) +
-			" 个，新行默认未启用）"
+		pf.fetchNote = i18n.Tf("ui.settings.prov.fetch_added",
+			"added", strconv.Itoa(added), "total", strconv.Itoa(total))
 	}
 	if !r.auto {
 		f.provErr = false
@@ -314,7 +315,7 @@ func (pf *providerForm) appendModelCand(name string) {
 func (u *UI) runProbeModel(f *settingsForm, pf *providerForm, mf *providerModelForm) {
 	if u.opts.ProviderMgr == nil {
 		mf.probeErr = true
-		mf.probeStatus = "provider 编辑未接线"
+		mf.probeStatus = i18n.T("ui.settings.prov.not_wired")
 		return
 	}
 	if mf.probeBusy {
@@ -323,12 +324,12 @@ func (u *UI) runProbeModel(f *settingsForm, pf *providerForm, mf *providerModelF
 	model := strings.TrimSpace(mf.name.Text())
 	if model == "" {
 		mf.probeErr = true
-		mf.probeStatus = "先填模型名再探测"
+		mf.probeStatus = i18n.T("ui.settings.prov.probe_need_model")
 		return
 	}
 	if strings.TrimSpace(pf.name.Text()) == "" {
 		mf.probeErr = true
-		mf.probeStatus = "先填 provider 名再探测"
+		mf.probeStatus = i18n.T("ui.settings.prov.probe_need_name")
 		return
 	}
 	patch := providerPatchOf(pf)
@@ -354,19 +355,20 @@ func probeSummary(out ProbeOutcome) string {
 			unk++
 		}
 	}
-	s := strconv.Itoa(sup) + " 项支持 / " + strconv.Itoa(unsup) + " 项不支持"
+	s := i18n.Tf("ui.settings.prov.probe_counts",
+		"sup", strconv.Itoa(sup), "unsup", strconv.Itoa(unsup))
 	if unk > 0 {
-		s += " / " + strconv.Itoa(unk) + " 项无结论"
+		s += i18n.Tf("ui.settings.prov.probe_unknown", "unk", strconv.Itoa(unk))
 	}
 	switch {
 	case out.Written:
-		s += "（已写回配置，重启生效）"
+		s += i18n.T("ui.settings.prov.probe_written")
 	case out.Pending && sup+unsup > 0:
-		s += "（已按结论勾选；点「应用 provider 变更」写入配置）"
+		s += i18n.T("ui.settings.prov.probe_pending")
 	case sup+unsup > 0:
-		s += "（与现有声明一致）"
+		s += i18n.T("ui.settings.prov.probe_same")
 	default:
-		s += "（无明确结论，未改动声明）"
+		s += i18n.T("ui.settings.prov.probe_none")
 	}
 	return s
 }

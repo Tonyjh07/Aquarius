@@ -16,8 +16,9 @@ import (
 )
 
 // errFirstRun 首次运行哨兵：bootstrap 已写好 profile 配置模板并打印指引，
-// run 据此按退出码 0 结束（沿袭首跑契约：生成配置后重跑）。
-var errFirstRun = errors.New("bootstrap: 首次运行，已生成配置模板")
+// run 据此按退出码 0 结束（沿袭首跑契约：生成配置后重跑）。哨兵文本只做控制流
+// （errors.Is 判定），不展示给用户，故不随界面语言变。
+var errFirstRun = errors.New("bootstrap: first run, config template written")
 
 // resolveDataDir 解析数据根目录：flag > ~/.aquarius（三级覆盖里的 flag 先于
 // env/config，§8）。
@@ -26,7 +27,7 @@ func resolveDataDir(dataDir string) (string, error) {
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("无法确定家目录: %w", err)
+			return "", fmt.Errorf("%s: %w", i18n.T("cmd.boot.err.home_dir"), err)
 		}
 		dir = filepath.Join(home, ".aquarius")
 	}
@@ -36,7 +37,7 @@ func resolveDataDir(dataDir string) (string, error) {
 		dir = abs
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("创建数据目录 %s: %w", dir, err)
+		return "", fmt.Errorf("%s: %w", i18n.Tf("cmd.boot.err.mkdir_data", "path", dir), err)
 	}
 	return dir, nil
 }
@@ -63,20 +64,20 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	w.profileName = profileName
 	profileDir := filepath.Join(dir, "profiles", profileName)
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
-		return fmt.Errorf("创建 profile 目录 %s: %w", profileDir, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("cmd.boot.err.mkdir_profile", "path", profileDir), err)
 	}
 	w.profileDir = profileDir
 	// 特权目录（D22）：<profile>/sandbox，权限矩阵的免确认 rw 格（随 profile 隔离）。
 	sandboxDir := filepath.Join(profileDir, "sandbox")
 	if err := os.MkdirAll(sandboxDir, 0o755); err != nil {
-		return fmt.Errorf("创建特权目录 %s: %w", sandboxDir, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("cmd.boot.err.mkdir_sandbox", "path", sandboxDir), err)
 	}
 	w.sandboxDir = sandboxDir
 	// 技能兜底根（D201）：<profile>/skills 存在即生效（用户把技能目录放这儿最省事）；
 	// 预先建好空目录，用户不必自己找路径。
 	skillsDir := filepath.Join(profileDir, "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		return fmt.Errorf("创建技能目录 %s: %w", skillsDir, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("cmd.boot.err.mkdir_skills", "path", skillsDir), err)
 	}
 
 	// 本机密钥库（D151/D161）：密钥库落在 profile 内（随 profile 隔离），读链 = 库 → 同名
@@ -84,7 +85,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	// 定，两处（探测与真实构造）就是同一份链。库解不开不阻断：警告 + 环境变量兜底。
 	bin, err := secretbin.New(profileDir)
 	if err != nil {
-		return fmt.Errorf("装配本机密钥库: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.boot.err.secret_store"), err)
 	}
 	w.secretsBin = bin
 	w.secrets = newSecretChain(bin, w.stderr)
@@ -97,15 +98,16 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	cfg, err := loadConfig(cfgPath)
 	if errors.Is(err, os.ErrNotExist) {
 		if werr := writeDefaultConfig(cfgPath); werr != nil {
-			return fmt.Errorf("生成配置失败: %w", werr)
+			return fmt.Errorf("%s: %w", i18n.T("cmd.boot.err.write_config"), werr)
 		}
 		w.firstRun = true
 		if cfg, err = loadConfig(cfgPath); err != nil {
-			return fmt.Errorf("读取刚生成的配置 %s: %w", cfgPath, err)
+			return fmt.Errorf("%s: %w",
+				i18n.Tf("cmd.boot.err.read_new_config", "path", cfgPath), err)
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("读取配置失败: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.boot.err.read_config"), err)
 	}
 
 	// provider 列表校验与缺省归一（D173，启动 fail-fast）：primary 缺省 = 首个，
@@ -125,12 +127,12 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	// 语音不可用的原因只在「用户明显想用」时提示：配了 provider 却找不到，或开了
 	// 播报却没配置。完全没碰语音的配置不该每次启动都挨一行警告。
 	if _, why := cfg.audioProvider("tts"); why != "" && cfg.Output.TTS {
-		fmt.Fprintf(w.stderr, "警告：语音播报已开启但%s，本条不会播报。\n", why)
+		fmt.Fprintln(w.stderr, i18n.Tf("cmd.boot.warn.tts_on", "why", why))
 	}
 	// 本地识别不需要端点与密钥，这里只提示「配了却连不上」的那种。
 	if cfg.Audio.ASR.Kind != kindASRWhisper {
 		if _, why := cfg.audioProvider("asr"); why != "" && cfg.Audio.ASR.configured() {
-			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s。\n", why)
+			fmt.Fprintln(w.stderr, i18n.Tf("cmd.boot.warn.asr_unavailable", "why", why))
 		}
 	}
 	w.cfg = cfg
@@ -154,7 +156,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	// 能力位警告放在覆盖之后：-model / AQUARIUS_MODEL 可能换成链上另一个模型，
 	// 生效能力随之变化，警告得按最终生效的那个算（D173）。
 	if note := cfg.Model.narrowNote(); note != "" {
-		fmt.Fprintf(w.stderr, "警告：%s\n", note)
+		fmt.Fprintln(w.stderr, i18n.Tf("cmd.asm.warning", "text", note))
 	}
 	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 口径。
 	if raw := strings.TrimSpace(cfg.Model.ReasoningEffort); raw != "" {
@@ -166,7 +168,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	}
 	cfg.UI.Kind = uiKindDefault(cfg.UI.Kind)
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
-		return fmt.Errorf("ui.kind=%q 仅支持 repl | tui | gui", cfg.UI.Kind)
+		return fmt.Errorf("%s", i18n.Tf("cmd.boot.err.ui_kind", "kind", cfg.UI.Kind))
 	}
 	// 界面语言（D275/§7.8）：环境变量 > ui.lang > auto。非法值启动即报（与 ui.kind 同口径：
 	// 等界面出来了才发现语言没生效，比启动失败难查）。定一次就写进取词口，之后整支进程

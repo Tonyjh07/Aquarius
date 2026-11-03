@@ -11,10 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // secretsAdmin uigui.SecretsAdmin 的装配根实现。
@@ -49,7 +51,7 @@ func (a *secretsAdmin) Snapshot() uigui.SecretsSnapshot {
 // Put 写入/覆盖一条密钥；值永不回显，同名即覆盖。写成功后递增 Revision。
 func (a *secretsAdmin) Put(name, value string) error {
 	if a.w.secretsBin == nil {
-		return errors.New("本机密钥库未接线，无法写入")
+		return errors.New(i18n.T("cmd.secrets.err.bin_unwired_write"))
 	}
 	if err := a.w.secretsBin.Set(context.Background(), name, value); err != nil {
 		return err
@@ -61,11 +63,11 @@ func (a *secretsAdmin) Put(name, value string) error {
 // Delete 删除一条；名字不存在报错（不静默成功——UI 据此报「已不在」）。
 func (a *secretsAdmin) Delete(name string) error {
 	if a.w.secretsBin == nil {
-		return errors.New("本机密钥库未接线，无法删除")
+		return errors.New(i18n.T("cmd.secrets.err.bin_unwired_delete"))
 	}
 	err := a.w.secretsBin.Delete(context.Background(), name)
 	if errors.Is(err, secretbin.ErrNotFound) {
-		return fmt.Errorf("密钥库中已没有 %q（可能已被删除）", name)
+		return errors.New(i18n.Tf("cmd.secrets.err.entry_missing", "name", strconv.Quote(name)))
 	}
 	if err != nil {
 		return err
@@ -91,18 +93,18 @@ func (a *secretsAdmin) Delete(name string) error {
 func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 	var res uigui.SecretsImportResult
 	if a.w.secretsBin == nil {
-		return res, errors.New("本机密钥库未接线，无法导入")
+		return res, errors.New(i18n.T("cmd.secrets.err.bin_unwired_import"))
 	}
 	ctx := context.Background()
 	cfg, err := loadConfig(a.w.cfgPath)
 	if err != nil {
-		return res, fmt.Errorf("读取配置失败: %w", err)
+		return res, fmt.Errorf("%s: %w", i18n.T("cmd.secrets.err.read_config"), err)
 	}
 	// 库解不开就拒绝：Set 会从空表起步，批量导入等于丢掉库里已有条目。
 	if _, err := a.w.secretsBin.Entries(ctx); err != nil {
 		if errors.Is(err, secretbin.ErrUnreadable) {
-			return res, fmt.Errorf("本机密钥库解不开（原文件未被改写，已留一份 .bak）；"+
-				"导入会从空表起步、把库里已有条目丢掉，故本次不做。请先修复 %s", a.w.secretsBin.Path())
+			return res, errors.New(i18n.Tf("cmd.secrets.err.store_locked",
+				"path", a.w.secretsBin.Path()))
 		}
 		return res, err
 	}
@@ -120,7 +122,7 @@ func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 				// 明文：写进库（键名按 provider 名与钥匙位派生），并登记 config 改写。
 				name := keySlotName(p.Name, "", i)
 				if err := a.w.secretsBin.Set(ctx, name, raw); err != nil {
-					res.Failed = append(res.Failed, fmt.Sprintf("provider %q 第 %d 把密钥写入密钥库失败：%v", p.Name, i+1, err))
+					res.Failed = append(res.Failed, i18n.Tf("cmd.secrets.import.slot_store_failed", "provider", strconv.Quote(p.Name), "slot", i+1, "err", err))
 					continue
 				}
 				imported[name] = true
@@ -132,7 +134,7 @@ func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 			}
 			name, nerr := secretName(raw)
 			if nerr != nil {
-				res.Failed = append(res.Failed, fmt.Sprintf("provider %q 第 %d 把密钥引用非法：%v", p.Name, i+1, nerr))
+				res.Failed = append(res.Failed, i18n.Tf("cmd.secrets.import.slot_ref_invalid", "provider", strconv.Quote(p.Name), "slot", i+1, "err", nerr))
 				continue
 			}
 			if imported[name] {
@@ -142,7 +144,7 @@ func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 			if _, gerr := a.w.secretsBin.Get(ctx, name); gerr == nil {
 				continue
 			} else if !errors.Is(gerr, secretbin.ErrNotFound) {
-				res.Failed = append(res.Failed, fmt.Sprintf("读取密钥库失败（%s）：%v", name, gerr))
+				res.Failed = append(res.Failed, i18n.Tf("cmd.secrets.import.read_failed", "name", name, "err", gerr))
 				continue
 			}
 			// 只读环境变量这一半：库这一半已在上面确认没有这条。直接走 envSecrets（而非
@@ -153,7 +155,7 @@ func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 				continue
 			}
 			if err := a.w.secretsBin.Set(ctx, name, v); err != nil {
-				res.Failed = append(res.Failed, fmt.Sprintf("密钥 %q 写入密钥库失败：%v", name, err))
+				res.Failed = append(res.Failed, i18n.Tf("cmd.secrets.import.store_failed", "name", strconv.Quote(name), "err", err))
 				continue
 			}
 			imported[name] = true
@@ -190,7 +192,7 @@ func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 			}
 		}); err != nil {
 			// 值已在库里（读取链优先取库），只是 config 还留着明文——如实报出，别假装成功。
-			res.Failed = append(res.Failed, fmt.Sprintf("配置里的明文未能改写为引用（密钥已入库，明文仍在 config.json，请重试）：%v", err))
+			res.Failed = append(res.Failed, i18n.Tf("cmd.secrets.import.rewrite_failed", "err", err))
 		} else {
 			for _, slots := range rewrite {
 				for _, name := range slots {

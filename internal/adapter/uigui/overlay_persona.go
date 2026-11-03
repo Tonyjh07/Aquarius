@@ -22,6 +22,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -29,7 +30,7 @@ import (
 func overlayTemplateBody(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	f := ov.prompt
 	if f == nil {
-		l := material.Body2(th, "模板编辑区不可用（未接线）")
+		l := material.Body2(th, i18n.T("ui.overlay.tpl_unavailable"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx)
 	}
@@ -62,7 +63,7 @@ func overlayTemplateBody(gtx layout.Context, th *material.Theme, ov *overlayStat
 func overlayTplStatus(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	text, col := ov.tplStatus, paperOf().text3
 	if text == "" {
-		text = "保存 = 以后新建会话的默认人格（重启后应用）；应用到本会话 = 按此模板改写本会话人格。"
+		text = i18n.T("ui.overlay.tpl_hint")
 	}
 	if ov.tplErr {
 		col = paperOf().danger
@@ -82,7 +83,7 @@ func (ov *overlayState) saveTemplate(u *UI) {
 		return
 	}
 	if u.opts.ApplyPromptTemplate == nil {
-		ov.tplErr, ov.tplStatus = true, "模板未接线（只读）"
+		ov.tplErr, ov.tplStatus = true, i18n.T("ui.overlay.err.tpl_unwired")
 		return
 	}
 	err := u.opts.ApplyPromptTemplate(PromptTemplatePatch{
@@ -92,11 +93,11 @@ func (ov *overlayState) saveTemplate(u *UI) {
 	})
 	if err != nil {
 		ov.tplErr = true
-		ov.tplStatus = "保存失败：" + err.Error()
+		ov.tplStatus = i18n.Tf("ui.overlay.err.save_failed", "err", err.Error())
 		return
 	}
 	ov.tplErr = false
-	ov.tplStatus = "模板已保存（只对新会话生效，重启后应用）"
+	ov.tplStatus = i18n.T("ui.overlay.tpl_saved")
 }
 
 // applyTemplate 应用到本会话（D154）：按当前（可能未保存的）模板展开最终 system 文本，
@@ -109,13 +110,13 @@ func (ov *overlayState) applyTemplate(u *UI, st *historyState) {
 		return
 	}
 	if u.opts.PreviewPrompts == nil {
-		ov.tplErr, ov.tplStatus = true, "无法展开模板（预览未接线）"
+		ov.tplErr, ov.tplStatus = true, i18n.T("ui.overlay.err.preview_unwired")
 		return
 	}
 	text := strings.TrimSpace(u.opts.PreviewPrompts(
 		ov.prompt.promptViews(), ov.prompt.promptRefList(), ov.prompt.sysPrompt.Text()))
 	if text == "" {
-		ov.tplErr, ov.tplStatus = true, "模板展开为空：检查人格引用是否指向已存在的模块"
+		ov.tplErr, ov.tplStatus = true, i18n.T("ui.overlay.err.tpl_empty")
 		return
 	}
 	select {
@@ -125,7 +126,7 @@ func (ov *overlayState) applyTemplate(u *UI, st *historyState) {
 	}}:
 	default:
 		// 输入通道满：命令没投出去 ⇒ 不关遮罩（与 submit 同口径：保数据）。
-		ov.tplErr, ov.tplStatus = true, "输入队列忙，请稍后重试"
+		ov.tplErr, ov.tplStatus = true, i18n.T("ui.overlay.err.queue_busy")
 		return
 	}
 	st.closeOverlay()

@@ -12,13 +12,14 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/repl"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // voiceInput 界面语音键（D179）：录一段 → 转写 → 回文本（不提交，界面回填输入框）。
 func (w *wiring) voiceInput(ctx context.Context) (string, error) {
 	if w.mic == nil {
-		return "", errors.New("语音输入未装配")
+		return "", errors.New(i18n.T("cmd.asm.err.voice_input_unwired"))
 	}
 	text, _, err := w.mic.Listen(ctx, 0)
 	return text, err
@@ -40,10 +41,10 @@ func (w *wiring) voiceSlot() func(context.Context) (string, error) {
 // 播放；服务与模型来自启动装配（这两项保存后重启才生效，与「模型服务」页同口径）。
 func (w *wiring) previewVoice(req port.SpeechRequest) error {
 	if w.ttsSynth == nil {
-		return errors.New("语音合成未配置：先在「语音」页选服务与模型（保存后重启生效）")
+		return errors.New(i18n.T("cmd.asm.err.voice_preview_unconfigured"))
 	}
 	if w.blobs == nil || w.player == nil {
-		return errors.New("语音播放未装配")
+		return errors.New(i18n.T("cmd.asm.err.voice_player_unwired"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -53,7 +54,7 @@ func (w *wiring) previewVoice(req port.SpeechRequest) error {
 	}
 	rc, err := w.blobs.Get(ctx, ref)
 	if err != nil {
-		return fmt.Errorf("读取合成音频：%w", err)
+		return fmt.Errorf("%s：%w", i18n.T("cmd.asm.err.read_synth_audio"), err)
 	}
 	defer rc.Close()
 	return w.player.Play(ctx, ref, rc)
@@ -89,7 +90,7 @@ func (w *wiring) applySettings(p uigui.SettingsPatch) ([]port.Command, error) {
 		return nil, err
 	}
 	if err := persistSettingsTextKeys(w.cfgPath, p); err != nil {
-		return nil, fmt.Errorf("写回 config: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.write_back_config"), err)
 	}
 	// D204：采样参数热生效——从刚写回的 config 现算一份快照换上去，下一次请求就用新值
 	// （逐模型覆盖也跟着刷新；降级目标那份在装配时定，随重启生效）。

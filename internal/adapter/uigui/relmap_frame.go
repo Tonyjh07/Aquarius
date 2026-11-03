@@ -32,6 +32,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // 右图档位（偶然实现，§7 可调；zoom 边界即 A9 的钳制区间）。
@@ -429,7 +430,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	}
 	if g.sol == nil {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			l := material.Body2(th, "关系图未就绪")
+			l := material.Body2(th, i18n.T("ui.relmap.not_ready"))
 			l.Color = paperOf().text2
 			return l.Layout(gtx)
 		})

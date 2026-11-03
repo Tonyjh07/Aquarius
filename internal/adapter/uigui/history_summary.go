@@ -35,6 +35,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -184,15 +185,14 @@ func summaryCard(gtx layout.Context, th *material.Theme, st *historyState, d *su
 	return layout.UniformInset(overlayCardPadDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperNoteSp(th), "插入摘要")
+				l := material.Label(th, paperNoteSp(th), i18n.T("ui.menu.insert_summary"))
 				l.Font.Weight = font.Bold
 				l.Color = pp.text
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				l := material.Label(th, paperMicroSp(th),
-					"插在 "+summaryShortID(d.id)+" 之前；它之上的历史此后不再回传。"+
-						"「插入」用你写的正文，「用模型总结以上历史」让模型来写。")
+					i18n.Tf("ui.history.summary_hint", "id", summaryShortID(d.id)))
 				l.Color = pp.text3
 				return l.Layout(gtx)
 			}),
@@ -205,11 +205,11 @@ func summaryCard(gtx layout.Context, th *material.Theme, st *historyState, d *su
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, layout.Spacer{}.Layout),
-					layout.Rigid(overlayBtn(&d.cancel, th, "取消", false, true)),
+					layout.Rigid(overlayBtn(&d.cancel, th, i18n.T("ui.common.cancel"), false, true)),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-					layout.Rigid(overlayBtn(&d.model, th, "用模型总结以上历史", false, true)),
+					layout.Rigid(overlayBtn(&d.model, th, i18n.T("ui.history.summary_by_model"), false, true)),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-					layout.Rigid(overlayBtn(&d.insert, th, "插入", true, text != "")),
+					layout.Rigid(overlayBtn(&d.insert, th, i18n.T("ui.history.summary_insert"), true, text != "")),
 				)
 			}),
 		)
@@ -233,7 +233,7 @@ func summaryField(gtx layout.Context, th *material.Theme, d *summaryDialog) layo
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return d.list.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-					return material.Editor(th, &d.ed, "写摘要正文…").Layout(gtx)
+					return material.Editor(th, &d.ed, i18n.T("ui.history.summary_placeholder")).Layout(gtx)
 				})
 			})
 		},

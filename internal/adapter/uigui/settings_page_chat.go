@@ -4,12 +4,11 @@ package uigui
 // 已拆到「系统提示词」页，本页只留限额。
 
 import (
-	"fmt"
-
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -20,7 +19,7 @@ func (chatPage) Key() string { return "chat" }
 
 func (chatPage) Rows(f *settingsForm) []rowDesc {
 	return []rowDesc{
-		sec("限额"),
+		sec(i18n.T("ui.page.chat.section_limits")),
 		{kind: rowMaxTurns}, {kind: rowMaxCtx}, {kind: rowCompact},
 		{kind: rowToolChars}, {kind: rowToolTo},
 	}
@@ -29,16 +28,21 @@ func (chatPage) Rows(f *settingsForm) []rowDesc {
 func (chatPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
 	switch rows[i].kind {
 	case rowMaxTurns:
-		return fieldRow(gtx, th, "最大轮数", editorBox(th, &f.maxTurns, "单次提问的工具调用轮数上限（空 = 保持）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.chat.max_turns"),
+			editorBox(th, &f.maxTurns, i18n.T("ui.page.chat.max_turns_hint"))), true
 	case rowMaxCtx:
-		return fieldRow(gtx, th, "上下文上限", editorBox(th, &f.maxCtx, "tokens；自动压缩与截断的预算分母（空 = 保持）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.chat.max_ctx"),
+			editorBox(th, &f.maxCtx, i18n.T("ui.page.chat.max_ctx_hint"))), true
 	case rowCompact:
-		return fieldRow(gtx, th, "压缩阈值", editorBox(th, &f.compact, fmt.Sprintf("%g–%g；占用超阈值触发自动压缩（空 = 保持）",
-			port.SettingsCompactMin, port.SettingsCompactMax))), true
+		return fieldRow(gtx, th, i18n.T("ui.page.chat.compact"), editorBox(th, &f.compact,
+			i18n.Tf("ui.page.chat.compact_hint",
+				"min", port.SettingsCompactMin, "max", port.SettingsCompactMax))), true
 	case rowToolChars:
-		return fieldRow(gtx, th, "工具输出上限", editorBox(th, &f.toolChars, "字符；超出截断（空 = 保持）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.chat.tool_chars"),
+			editorBox(th, &f.toolChars, i18n.T("ui.page.chat.tool_chars_hint"))), true
 	case rowToolTo:
-		return fieldRow(gtx, th, "工具超时", editorBox(th, &f.toolTo, "秒；缺省单次调用超时（空 = 保持）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.chat.tool_timeout"),
+			editorBox(th, &f.toolTo, i18n.T("ui.page.chat.tool_timeout_hint"))), true
 	}
 	return layout.Dimensions{}, false
 }

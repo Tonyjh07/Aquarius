@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-02 @ 4fd9c2f -->
+<!-- docs-sync: 2026-11-03 @ b21b15b -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -66,7 +66,13 @@
 - **I2**（M，已落地）：命令面与 `app` 提示（`Desc` / `Usage` / 结构化回复 / 确认句 / 报错），外加
   随手一起收掉的 `port`（导出格式标签与有损说明、注入来源措辞、采样表单与哨兵报错）和 `uicommon`。
   移出 634 + 40 + 12 条，`app` 只剩两条注册表 panic（那是内部断言，不上界面）。
-- **I3**（M，量最大）：`uigui` 全部界面字面量 → 取词口；CLI（`cmd/aquarius` 的帮助与启动报错）同批收口。
+- **I3**（M，已落地）：`uigui` 全部界面字面量 → 取词口；CLI（`cmd/aquarius` 的帮助与启动报错）同批
+  收口。移出 1092 行（`uigui` 787 + `cmd` 305），落 1032 条 key，按八个区域表拆：`gui_common`（按钮与
+  状态词，全 GUI 唯一出处）、`gui_settings`、`gui_page_core` / `gui_page_admin`（十四个页签分两半）、
+  `gui_welcome`（欢迎窗/教程/菜单/浮层/提示词编辑）、`gui_chat`（对话面与历史窗）、`cmd_config`、
+  `cmd_admin`。设置窗页名改由 `Key()` 的英文标识取词（`settingsPageNames` 是包级变量、语言在 `main`
+  才定，不改就永远钉在本机 locale）。剩下的 10 行是诊断与量测（`ico:` 解析错误、`[fade]` 观测行、
+  行高量测的假文本），不进表，留给 I4 判定。
 - **I4**（S）：上锁——字面量扫描、缺键扫描、`en` 下的布局走查。
 
 **验收**：`ui.lang=en` 启动后，从欢迎页到设置窗、`/help`、生成中插话、确认与报错全英文、无一句

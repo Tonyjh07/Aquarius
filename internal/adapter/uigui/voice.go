@@ -3,6 +3,8 @@ package uigui
 import (
 	"context"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // micButton 右钮此刻是否作语音键（D179）：空输入、无暂存附件、非编辑/确认态，
@@ -65,7 +67,7 @@ func (u *UI) finishVoice(text string, err error) {
 	u.voiceMu.Unlock()
 	u.recording.Store(false)
 	if err != nil {
-		u.m.say("语音输入失败：" + err.Error())
+		u.m.say(i18n.Tf("ui.input.voice_failed", "err", err.Error()))
 		return
 	}
 	text = strings.TrimSpace(text)

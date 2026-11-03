@@ -33,6 +33,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -192,18 +193,18 @@ func importPickCard(gtx layout.Context, th *material.Theme, d *importPickDialog)
 	paperPanel(gtx, image.Rectangle{Max: gtx.Constraints.Max},
 		gtx.Dp(unit.Dp(pp.rCard)), gtx.Dp(1), pp.card, pp.hairline)
 	n := d.count()
-	btn := fmt.Sprintf("导入 %d 个", n)
+	btn := i18n.Tf("ui.history.import_count", "n", n)
 	return layout.UniformInset(overlayCardPadDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperNoteSp(th), "选择要导入的会话")
+				l := material.Label(th, paperNoteSp(th), i18n.T("ui.history.import_pick_title"))
 				l.Font.Weight = font.Bold
 				l.Color = pp.text
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				l := material.Label(th, paperMicroSp(th),
-					fmt.Sprintf("这份备份里有 %d 个会话，默认全要；不要的取消勾选。导进来的都是新会话，不动现有的。", len(d.entries)))
+					i18n.Tf("ui.history.import_pick_hint", "n", len(d.entries)))
 				l.Color = pp.text3
 				return l.Layout(gtx)
 			}),
@@ -217,11 +218,12 @@ func importPickCard(gtx layout.Context, th *material.Theme, d *importPickDialog)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						l := material.Label(th, paperMicroSp(th), fmt.Sprintf("已选 %d / %d", n, len(d.entries)))
+						l := material.Label(th, paperMicroSp(th),
+							i18n.Tf("ui.history.import_pick_selected", "n", n, "total", len(d.entries)))
 						l.Color = pp.text3
 						return l.Layout(gtx)
 					}),
-					layout.Rigid(overlayBtn(&d.cancel, th, "取消", false, true)),
+					layout.Rigid(overlayBtn(&d.cancel, th, i18n.T("ui.common.cancel"), false, true)),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 					layout.Rigid(overlayBtn(&d.ok, th, btn, true, n > 0)),
 				)
@@ -235,7 +237,7 @@ func importPickRow(gtx layout.Context, th *material.Theme, box *widget.Bool, e p
 	pp := paperOf()
 	title := e.Title
 	if title == "" {
-		title = "（无标题）"
+		title = i18n.T("ui.history.no_title")
 	}
 	return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -251,7 +253,7 @@ func importPickRow(gtx layout.Context, th *material.Theme, box *widget.Bool, e p
 			}),
 			layout.Flexed(1, layout.Spacer{}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperMicroSp(th), fmt.Sprintf("%d 条", e.Nodes))
+				l := material.Label(th, paperMicroSp(th), i18n.Tf("ui.history.messages_count", "n", e.Nodes))
 				l.Color = pp.text3
 				return l.Layout(gtx)
 			}),

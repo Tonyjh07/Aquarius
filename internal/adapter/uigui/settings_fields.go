@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -116,15 +117,16 @@ func promptModulesEqual(a, b []PromptModuleView) bool {
 	return true
 }
 
-// profileActionLabel 三动作的反馈前缀（渲染与反馈共用）。
+// profileActionLabel 三动作的反馈前缀（渲染与反馈共用）。用动词小写形而不是
+// ui.common.copy 那种按钮文案：它嵌在「profile … 失败：」这句中间，不是独立按钮。
 func profileActionLabel(act string) string {
 	switch act {
 	case "create":
-		return "新建"
+		return i18n.T("ui.settings.profile.act.create")
 	case "copy":
-		return "复制"
+		return i18n.T("ui.settings.profile.act.copy")
 	case "switch":
-		return "切换"
+		return i18n.T("ui.settings.profile.act.switch")
 	}
 	return act
 }

@@ -5,7 +5,6 @@ package uigui
 // 消费（保存走全局底栏，D142 口径不变）。
 
 import (
-	"fmt"
 	"strings"
 
 	"gioui.org/layout"
@@ -13,6 +12,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -26,43 +26,44 @@ func (generalPage) Rows(f *settingsForm) []rowDesc {
 		sec("Profile"),
 		{kind: rowProfCurrent}, {kind: rowProfName}, {kind: rowProfBtns},
 		{kind: rowWelcome},
-		sec("权限"), {kind: rowPerm}, {kind: rowUnattended},
-		sec("外观与呼出"),
+		sec(i18n.T("ui.page.general.section.perm")), {kind: rowPerm}, {kind: rowUnattended},
+		sec(i18n.T("ui.page.general.section.appearance")),
 		{kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
 		{kind: rowFontSize}, {kind: rowWinSize},
-		sec("输出"), {kind: rowNotify}, {kind: rowTTS},
-		sec("存储"), {kind: rowBackupKeep},
+		sec(i18n.T("ui.page.general.section.output")), {kind: rowNotify}, {kind: rowTTS},
+		sec(i18n.T("ui.page.general.section.storage")), {kind: rowBackupKeep},
 	}
 }
 
 func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
 	switch rows[i].kind {
 	case rowProfCurrent:
-		return fieldRow(gtx, th, "当前", func(gtx layout.Context) layout.Dimensions {
+		return fieldRow(gtx, th, i18n.T("ui.page.general.prof_current_label"), func(gtx layout.Context) layout.Dimensions {
 			txt := f.profiles.Current
 			if len(f.profiles.Items) > 0 {
-				txt += "（可用：" + strings.Join(f.profiles.Items, ", ") + "）"
+				txt += i18n.Tf("ui.page.general.prof_current_avail", "names", strings.Join(f.profiles.Items, ", "))
 			}
 			l := material.Body1(th, txt)
 			l.Color = paperOf().text3
 			return l.Layout(gtx)
 		}), true
 	case rowProfName:
-		return fieldRow(gtx, th, "Profile 名", editorBox(th, &f.profName, "新建 / 复制 / 切换的目标名")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.prof_name_label"),
+			editorBox(th, &f.profName, i18n.T("ui.page.general.prof_name_hint"))), true
 	case rowProfBtns:
 		return f.profileButtonsRow(gtx, th), true
 	case rowWelcome:
 		return f.welcomeRow(gtx, th), true
 	case rowPerm:
-		return fieldRow(gtx, th, "权限等级", selectBtn(th, &f.perm)), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.perm_label"), selectBtn(th, &f.perm)), true
 	case rowUnattended:
 		// D185：越界即拒——说明必须写在开关旁，否则「无人值守」会被读成「免确认」。
-		return fieldRow(gtx, th, "无人值守", func(gtx layout.Context) layout.Dimensions {
+		return fieldRow(gtx, th, i18n.T("ui.page.general.unattended_label"), func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(paperCheckBox(th, &f.unattend, "越界操作当场拒绝，不等人确认")),
+				layout.Rigid(paperCheckBox(th, &f.unattend, i18n.T("ui.page.general.unattended_check"))),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						l := material.Body2(th, "权限等级不变；你自己输入的命令确认照常询问")
+						l := material.Body2(th, i18n.T("ui.page.general.unattended_hint"))
 						l.Color = paperOf().text3
 						return l.Layout(gtx)
 					})
@@ -70,23 +71,26 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 			)
 		}), true
 	case rowHotkey:
-		return fieldRow(gtx, th, "全局快捷键", editorBox(th, &f.hotkey, "如 Alt+A（空 = 默认）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.hotkey_label"),
+			editorBox(th, &f.hotkey, i18n.T("ui.page.general.hotkey_hint"))), true
 	case rowTheme:
-		return fieldRow(gtx, th, "主题", selectBtn(th, &f.theme)), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.theme_label"), selectBtn(th, &f.theme)), true
 	case rowScale:
-		return fieldRow(gtx, th, "元素缩放", selectBtn(th, &f.scale)), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.scale_label"), selectBtn(th, &f.scale)), true
 	case rowFontSize:
-		return fieldRow(gtx, th, "字号", editorBox(th, &f.fontSize, fmt.Sprintf("正文字号 %g–%g（最终 = 字号 × 缩放）",
-			port.SettingsFontSizeMin, port.SettingsFontSizeMax))), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.font_size_label"),
+			editorBox(th, &f.fontSize, i18n.Tf("ui.page.general.font_size_hint",
+				"min", port.SettingsFontSizeMin, "max", port.SettingsFontSizeMax))), true
 	case rowWinSize:
-		return fieldRow(gtx, th, "窗口尺寸", sizeRow(gtx, th, &f.winW, &f.winH)), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.win_size_label"), sizeRow(gtx, th, &f.winW, &f.winH)), true
 	case rowNotify:
-		return paperCheckBox(th, &f.notify, "桌面通知（回答完成时）")(gtx), true
+		return paperCheckBox(th, &f.notify, i18n.T("ui.page.general.notify_check"))(gtx), true
 	case rowTTS:
-		return paperCheckBox(th, &f.tts, "语音播报（回答完成后自动播放）")(gtx), true
+		return paperCheckBox(th, &f.tts, i18n.T("ui.page.general.tts_check"))(gtx), true
 	case rowBackupKeep:
-		return fieldRow(gtx, th, "备份代数", editorBox(th, &f.backupKeep, fmt.Sprintf("会话树保留的备份份数 %d–%d（空 = 默认 3）",
-			port.SettingsBackupKeepMin, port.SettingsBackupKeepMax))), true
+		return fieldRow(gtx, th, i18n.T("ui.page.general.backup_keep_label"),
+			editorBox(th, &f.backupKeep, i18n.Tf("ui.page.general.backup_keep_hint",
+				"min", port.SettingsBackupKeepMin, "max", port.SettingsBackupKeepMax))), true
 	}
 	return layout.Dimensions{}, false
 }
@@ -104,9 +108,9 @@ func (generalPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	for f.welcomeOpen.Clicked(gtx) {
 		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
 	}
-	f.openPicker(gtx, "权限等级", &f.perm)
-	f.openPicker(gtx, "主题", &f.theme)
-	f.openPicker(gtx, "元素缩放", &f.scale)
+	f.openPicker(gtx, i18n.T("ui.page.general.perm_label"), &f.perm)
+	f.openPicker(gtx, i18n.T("ui.page.general.theme_label"), &f.theme)
+	f.openPicker(gtx, i18n.T("ui.page.general.scale_label"), &f.scale)
 }
 
 func (generalPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.profName }
@@ -117,12 +121,12 @@ func (f *settingsForm) profileButtonsRow(gtx layout.Context, th *material.Theme)
 		return paperButton(th, c, label, paperBtnSecondary, true)
 	}
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(btn(&f.profCreate, "新建")),
+		layout.Rigid(btn(&f.profCreate, i18n.T("ui.page.general.prof_create"))),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profCopy, "复制当前"))
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profCopy, i18n.T("ui.page.general.prof_copy")))
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profSwitch, "切换（重启生效）"))
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, btn(&f.profSwitch, i18n.T("ui.page.general.prof_switch")))
 		}),
 	)
 }
@@ -131,14 +135,14 @@ func (f *settingsForm) profileButtonsRow(gtx layout.Context, th *material.Theme)
 // 不带此项；另有「首跑 / `ui.welcomed` 缺失」时自动打开一次（装配根接线）。按钮开次窗，
 // 单实例防重开由注册表保证（§15.7）。
 func (f *settingsForm) welcomeRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return fieldRow(gtx, th, "欢迎引导", func(gtx layout.Context) layout.Dimensions {
+	return fieldRow(gtx, th, i18n.T("ui.page.general.welcome_label"), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return paperButton(th, &f.welcomeOpen, "打开", paperBtnSecondary, true)(gtx)
+				return paperButton(th, &f.welcomeOpen, i18n.T("ui.page.general.welcome_open"), paperBtnSecondary, true)(gtx)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, "模型接入向导 + 快捷键 / 右键菜单 / 常用命令")
+					l := material.Body2(th, i18n.T("ui.page.general.welcome_hint"))
 					l.Color = paperOf().text3
 					return l.Layout(gtx)
 				})

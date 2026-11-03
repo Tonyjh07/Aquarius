@@ -3,7 +3,6 @@ package uigui
 // 历史窗左栏：展开/收起两态、标题行动作钮、会话行与行内删除槽。
 
 import (
-	"fmt"
 	"image"
 
 	"gioui.org/f32"
@@ -16,6 +15,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -37,7 +37,7 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Label(th, paperMicroSp(th), "会话")
+						l := material.Label(th, paperMicroSp(th), i18n.T("ui.history.sessions"))
 						l.Font.Weight = font.Bold
 						l.Color = paperOf().text3
 						return l.Layout(gtx)
@@ -46,9 +46,9 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 					// 会话进出的两个入口（§5.16 的 GUI 出口）：「导入」读外部文件成一个
 					// 新会话、「导出」把**当前**会话写成一份归档。两者都只负责拿路径，选完投一条
 					// 内核命令——搬运、防覆盖、回执全在命令面（铁律 5：壳内不复制内核逻辑）。
-					layout.Rigid(histTextBtn(th, &st.btnImport, "导入")),
+					layout.Rigid(histTextBtn(th, &st.btnImport, i18n.T("ui.history.import"))),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-					layout.Rigid(histTextBtn(th, &st.btnExport, "导出")),
+					layout.Rigid(histTextBtn(th, &st.btnExport, i18n.T("ui.history.export"))),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 					// D160：标题行右端两颗钮——「＋」新建对话（左） + 「◀」收起左栏（右）。
 					// 新建排在收起**左侧**：收起钮语义是「把这条栏收掉」，贴边最右更顺；
@@ -122,7 +122,7 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !st.selMode {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(histTextBtn(th, &st.btnSelect, "选择")),
+						layout.Rigid(histTextBtn(th, &st.btnSelect, i18n.T("ui.history.select"))),
 						layout.Flexed(1, layout.Spacer{}.Layout),
 					)
 				}
@@ -219,14 +219,15 @@ func histPlusGlyph(gtx layout.Context) layout.Dimensions {
 func histSessionRow(gtx layout.Context, th *material.Theme, s port.SessionSummary) layout.Dimensions {
 	title := s.Title
 	if title == "" {
-		title = "新会话"
+		title = i18n.T("ui.history.new_session")
 	}
 	title = truncRunes(title, 18)
 	mark := " "
 	if s.Current {
 		mark = "●"
 	}
-	meta := fmt.Sprintf("%s · %d 条", s.UpdatedAt.Format("01-02 15:04"), s.Messages)
+	meta := i18n.Tf("ui.history.row_meta",
+		"time", s.UpdatedAt.Format("01-02 15:04"), "n", s.Messages)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			l := material.Label(th, paperNoteSp(th), mark+" "+title)

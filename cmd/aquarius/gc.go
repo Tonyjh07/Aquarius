@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -13,13 +14,13 @@ import (
 func collectBlobRefs(ctx context.Context, store port.ConversationStore) (map[string]bool, error) {
 	sums, err := store.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("列出会话: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.list_sessions"), err)
 	}
 	keep := make(map[string]bool)
 	for _, sm := range sums {
 		c, err := store.Load(ctx, sm.ID)
 		if err != nil {
-			return nil, fmt.Errorf("加载会话 %s: %w", sm.ID, err)
+			return nil, fmt.Errorf("%s: %w", i18n.Tf("cmd.asm.err.load_session", "id", sm.ID), err)
 		}
 		for _, m := range c.Snapshot().Nodes {
 			for _, p := range m.Content {
@@ -46,11 +47,11 @@ func runAttachmentGC(ctx context.Context, store port.ConversationStore, blobs po
 	keep, err := collectBlobRefs(ctx, store)
 	if err != nil {
 		if ctx.Err() == nil { // 启动期 Ctrl+C 属正常收尾，不告警
-			fmt.Fprintf(warn, "附件 GC 已跳过（引用收集失败）: %v\n", err)
+			fmt.Fprintf(warn, "%s: %v\n", i18n.T("cmd.asm.err.gc_skipped"), err)
 		}
 		return
 	}
 	if err := blobs.GC(ctx, keep); err != nil && ctx.Err() == nil {
-		fmt.Fprintf(warn, "附件 GC: %v\n", err)
+		fmt.Fprintf(warn, "%s: %v\n", i18n.T("cmd.asm.err.gc"), err)
 	}
 }

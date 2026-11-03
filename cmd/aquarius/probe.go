@@ -12,12 +12,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -49,13 +51,13 @@ func (w *wiring) probeForSettings(ctx context.Context, patch uigui.ProviderPatch
 	provider := strings.TrimSpace(patch.Name)
 	model = strings.TrimSpace(model)
 	if provider == "" {
-		return uigui.ProbeOutcome{}, errors.New("先填 provider 名再探测")
+		return uigui.ProbeOutcome{}, errors.New(i18n.T("cmd.probe.err.need_provider"))
 	}
 	if model == "" {
-		return uigui.ProbeOutcome{}, errors.New("先填模型名再探测")
+		return uigui.ProbeOutcome{}, errors.New(i18n.T("cmd.probe.err.need_model"))
 	}
 	if strings.TrimSpace(patch.BaseURL) == "" {
-		return uigui.ProbeOutcome{}, fmt.Errorf("provider %q 的接口地址为空，先填 base_url 再探测", provider)
+		return uigui.ProbeOutcome{}, errors.New(i18n.Tf("cmd.probe.err.need_base_url", "name", strconv.Quote(provider)))
 	}
 	pc := w.providerFromPatch(patch)
 	client, err := w.probeClient(pc)
@@ -127,7 +129,7 @@ func (w *wiring) probeProvider(ctx context.Context, p *providerConfig, name stri
 	if !declared {
 		// 命令行入口的前提是「模型已在配置里声明」（probeTarget 校验过），到这里说明
 		// 配置在同一进程里被外部改过——必须说出来，不能让用户以为结论已落盘。
-		return report, fmt.Errorf("探测目标已不在配置里（配置被外部改过）")
+		return report, errors.New(i18n.T("cmd.probe.err.target_moved"))
 	}
 	report.Written = written
 	return report, nil
@@ -137,7 +139,7 @@ func (w *wiring) probeProvider(ctx context.Context, p *providerConfig, name stri
 func (w *wiring) probeWithClient(ctx context.Context, p *providerConfig, client *llm.Client, name string) (app.ProbeReport, error) {
 	prober, ok := any(client).(port.Prober)
 	if !ok {
-		return app.ProbeReport{}, fmt.Errorf("provider %q 的协议暂不支持能力探测", p.Name)
+		return app.ProbeReport{}, errors.New(i18n.Tf("cmd.probe.err.protocol_unsupported", "name", strconv.Quote(p.Name)))
 	}
 
 	report := app.ProbeReport{Provider: p.Name, Model: name}
@@ -150,7 +152,7 @@ func (w *wiring) probeWithClient(ctx context.Context, p *providerConfig, client 
 				return report, ctx.Err() // 用户自己撤了：带上已有结论返回
 			}
 			res = port.ProbeResult{Capability: capability, Verdict: port.ProbeInconclusive,
-				Reason: "探测没跑起来：" + perr.Error()}
+				Reason: i18n.Tf("cmd.probe.reason.not_started", "err", perr.Error())}
 		}
 		report.Results = append(report.Results, res)
 	}
@@ -185,8 +187,7 @@ func (w *wiring) providerOf(model string) (*providerConfig, string, error) {
 			return &w.cfg.Model.Providers[i], model, nil
 		}
 	}
-	return nil, "", fmt.Errorf("模型 %q 不在任何 provider 的 models 里；先在配置中声明它再探测"+
-		"（探测结果要写回该模型条目的能力声明）", model)
+	return nil, "", errors.New(i18n.Tf("cmd.probe.err.model_undeclared", "model", strconv.Quote(model)))
 }
 
 // probeClient 造探测用的一次性客户端：第一把钥匙、不记录 unsupported_params（探测只读）。
@@ -195,8 +196,8 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 	// 端点收到 chat 形状的请求只会回些含糊的错，结论会变成三条「无结论」——那比直接说
 	// 「这个协议还问不了」更容易误导。
 	if kind := p.protocolKind(); kind != kindOpenAIChat {
-		return nil, fmt.Errorf("provider %q 的协议 %q 暂不支持能力探测（当前只测 %s）",
-			p.Name, kind, kindOpenAIChat)
+		return nil, errors.New(i18n.Tf("cmd.probe.err.only_openai_chat",
+			"name", strconv.Quote(p.Name), "kind", strconv.Quote(kind), "supported", kindOpenAIChat))
 	}
 	// note 传 nil：探测刻意发可能不被支持的参数，那些结论不该被记成「这个 provider
 	// 不认该参数」——正式请求的剥离记录归正式请求。凭据同样按「草稿」解析：探测不该
@@ -219,7 +220,7 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 func (w *wiring) writeProbeCaps(providerName, model string, results []port.ProbeResult) (written, declared bool, err error) {
 	disk, err := loadConfig(w.cfgPath)
 	if err != nil {
-		return false, false, fmt.Errorf("读取配置: %w", err)
+		return false, false, fmt.Errorf("%s: %w", i18n.T("cmd.probe.err.read_config"), err)
 	}
 	dp := disk.Model.byName(providerName)
 	if dp == nil {
@@ -265,7 +266,7 @@ func (w *wiring) writeProbeCaps(providerName, model string, results []port.Probe
 		}
 	})
 	if err != nil {
-		return false, true, fmt.Errorf("写回能力声明: %w", err)
+		return false, true, fmt.Errorf("%s: %w", i18n.T("cmd.probe.err.write_caps"), err)
 	}
 	return true, true, nil
 }

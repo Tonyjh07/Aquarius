@@ -14,6 +14,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/characterfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -44,7 +45,7 @@ func (v *charactersView) snapshot() uigui.CharactersSnapshot {
 	v.cachedAt = time.Now()
 	store := v.store()
 	if store == nil {
-		v.cached = uigui.CharactersSnapshot{Err: "角色卡目录未就绪"}
+		v.cached = uigui.CharactersSnapshot{Err: i18n.T("cmd.character.err.dir_not_ready")}
 		return v.cached
 	}
 	items, err := store.List(context.Background())

@@ -7,13 +7,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -150,7 +153,7 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		p.Theme = "system"
 	case "system", "light", "dark":
 	default:
-		return fmt.Errorf("非法主题档 %q（须为 system|light|dark）", p.Theme)
+		return errors.New(i18n.Tf("cmd.settings.err.theme", "theme", strconv.Quote(p.Theme)))
 	}
 	if err := validatePromptModules(p.PromptModules); err != nil {
 		return err
@@ -386,17 +389,17 @@ func validateFallbackChain(cfgPath string, links []uigui.FallbackLink) error {
 		prov := strings.TrimSpace(l.Provider)
 		model := strings.TrimSpace(l.Model)
 		if prov == "" {
-			return fmt.Errorf("降级链每项都要选提供者")
+			return errors.New(i18n.T("cmd.settings.err.fallback_required"))
 		}
 		if !known[prov] {
-			return fmt.Errorf("降级链的提供者 %q 不在 provider 列表内（先在「模型服务」页添加或改名）", prov)
+			return errors.New(i18n.Tf("cmd.settings.err.fallback_unknown", "provider", strconv.Quote(prov)))
 		}
 		if prov == cfg.Model.Primary && (model == "" || model == curModel) {
-			return fmt.Errorf("降级链不应含当前生效的 %s/%s（那就是主模型本身）", prov, curModel)
+			return errors.New(i18n.Tf("cmd.settings.err.fallback_primary", "provider", prov, "model", curModel))
 		}
 		key := prov + "/" + model
 		if seen[key] {
-			return fmt.Errorf("降级链重复项 %q", key)
+			return errors.New(i18n.Tf("cmd.settings.err.fallback_dup", "key", strconv.Quote(key)))
 		}
 		seen[key] = true
 	}
@@ -423,23 +426,23 @@ func validateAudioSettings(cfgPath string, p uigui.SettingsPatch) error {
 			Kind: kind, Model: model, ModelPath: modelPath,
 		}
 		if p := strings.TrimSpace(prov); p != "" && !known[p] {
-			return fmt.Errorf("%s引用的服务 %q 不在 provider 列表内"+
-				"（先在「模型服务」页添加，或直接填端点）", label, p)
+			return errors.New(i18n.Tf("cmd.settings.err.audio_unknown",
+				"label", label, "provider", strconv.Quote(p)))
 		}
 		return normalizeAudioChannel(name, &ch, kinds)
 	}
-	if err := check("audio.asr", "语音识别", p.ASRProvider, p.ASRBaseURL, p.ASRKey,
+	if err := check("audio.asr", i18n.T("cmd.settings.audio.asr_label"), p.ASRProvider, p.ASRBaseURL, p.ASRKey,
 		p.ASRKind, p.ASRModel, p.ASRModelPath, asrKinds); err != nil {
 		return err
 	}
-	if err := check("audio.tts", "语音合成", p.TTSProvider, p.TTSBaseURL, p.TTSKey,
+	if err := check("audio.tts", i18n.T("cmd.settings.audio.tts_label"), p.TTSProvider, p.TTSBaseURL, p.TTSKey,
 		p.TTSKind, p.TTSModel, "", ttsKinds); err != nil {
 		return err
 	}
 	switch strings.TrimSpace(p.ASRLang) {
 	case "", "auto", "zh", "en":
 	default:
-		return fmt.Errorf("录音语种只能是自动识别、中文或英文")
+		return errors.New(i18n.T("cmd.settings.err.lang"))
 	}
 	return nil
 }
@@ -458,12 +461,12 @@ func fallbackLinksOf(fbs []fallbackEntry) []uigui.FallbackLink {
 func writeRawConfig(cfgPath, raw string) error {
 	var probe map[string]any
 	if err := json.Unmarshal([]byte(raw), &probe); err != nil {
-		return fmt.Errorf("JSON 解析失败（原文件未动）: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.settings.err.raw_json"), err)
 	}
 	cfgWriteMu.Lock()
 	defer cfgWriteMu.Unlock()
 	if err := atomicfile.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {
-		return fmt.Errorf("写入 %s: %w", cfgPath, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("cmd.settings.err.write_config", "path", cfgPath), err)
 	}
 	return nil
 }

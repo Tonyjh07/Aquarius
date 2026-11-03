@@ -9,6 +9,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -76,7 +77,7 @@ func (m *model) closeOpenChips() {
 		if c := m.blocks[i].chip; c != nil && !c.done {
 			c.done = true
 			c.ok = false
-			c.result = "（未返回——本轮已结束）"
+			c.result = i18n.T("ui.chat.tool_not_returned")
 		}
 	}
 }
@@ -146,12 +147,12 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 // Allow 时忽略原因）。chip confirmA 与 plain 行回显共用。
 func confirmEcho(ans port.ConfirmAnswer) string {
 	if ans.Allow {
-		return "允许"
+		return i18n.T("ui.common.allow")
 	}
 	if r := sanitizeControl(strings.TrimSpace(ans.Reason)); r != "" {
-		return "拒绝：" + r
+		return i18n.Tf("ui.confirm.deny_with_reason", "reason", r)
 	}
-	return "拒绝"
+	return i18n.T("ui.common.deny")
 }
 
 // flushThink 把进行中的思维链落为定稿思考块（D34/§15.3：定稿带耗时秒数）。

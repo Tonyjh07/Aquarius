@@ -21,6 +21,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // DelegateAdmin 外部代理管理面（装配根实现；线程安全——设置窗 goroutine 调用）。
@@ -126,9 +128,9 @@ func (f *settingsForm) delegateAgentRow(gtx layout.Context, th *material.Theme, 
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								label := "停用"
+								label := i18n.T("ui.common.disable")
 								if !st.Enabled {
-									label = "启用"
+									label = i18n.T("ui.common.enable")
 								}
 								return layout.Inset{Right: unit.Dp(6)}.Layout(gtx,
 									f.delegateButton("on:"+st.Name, label, paperBtnSecondary, th))
@@ -137,7 +139,8 @@ func (f *settingsForm) delegateAgentRow(gtx layout.Context, th *material.Theme, 
 								if st.Default {
 									return layout.Dimensions{}
 								}
-								return f.delegateButton("def:"+st.Name, "设为缺省", paperBtnSecondary, th)(gtx)
+								return f.delegateButton("def:"+st.Name,
+									i18n.T("ui.settings.dlg.set_default"), paperBtnSecondary, th)(gtx)
 							}),
 						)
 					})
@@ -148,12 +151,12 @@ func (f *settingsForm) delegateAgentRow(gtx layout.Context, th *material.Theme, 
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return fieldRow(gtx, th, "命令行", editorBox(th, f.delegateEditor(st.Name),
-							"命令 + 参数，如 \"opencode acp\"；含空白的参数用双引号"))
+						return fieldRow(gtx, th, i18n.T("ui.settings.dlg.cmd_label"),
+							editorBox(th, f.delegateEditor(st.Name), i18n.T("ui.settings.dlg.cmd_hint")))
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return f.delegateButton("save:"+st.Name, "保存", paperBtnPrimary, th)(gtx)
+							return f.delegateButton("save:"+st.Name, i18n.T("ui.common.save"), paperBtnPrimary, th)(gtx)
 						})
 					}),
 				)
@@ -171,14 +174,14 @@ func (f *settingsForm) delegateBadges(gtx layout.Context, th *material.Theme, st
 	badges := make([]badge, 0, 3)
 	switch {
 	case !st.Enabled:
-		badges = append(badges, badge{"已停用", paperOf().text3})
+		badges = append(badges, badge{i18n.T("ui.settings.dlg.badge_off"), paperOf().text3})
 	case st.Available:
-		badges = append(badges, badge{"可用", paperOf().ok})
+		badges = append(badges, badge{i18n.T("ui.settings.dlg.badge_ok"), paperOf().ok})
 	default:
-		badges = append(badges, badge{"不可用", paperOf().danger})
+		badges = append(badges, badge{i18n.T("ui.settings.dlg.badge_bad"), paperOf().danger})
 	}
 	if st.Default {
-		badges = append(badges, badge{"缺省", paperOf().text3})
+		badges = append(badges, badge{i18n.T("ui.settings.dlg.badge_default"), paperOf().text3})
 	}
 	children := make([]layout.FlexChild, 0, len(badges))
 	for _, b := range badges {
@@ -201,14 +204,14 @@ func (st DelegateAgentState) metaLine() string {
 	if st.Title != "" || st.Version != "" {
 		name := strings.TrimSpace(st.Title)
 		if name == "" {
-			name = "未报标题"
+			name = i18n.T("ui.settings.dlg.no_title")
 		}
 		if st.Version != "" {
 			name += " " + st.Version
 		}
 		parts = append(parts, name)
 	} else {
-		parts = append(parts, "还没转过：标题与版本要等第一次握手才拿到")
+		parts = append(parts, i18n.T("ui.settings.dlg.never_ran"))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -235,26 +238,26 @@ func (u *UI) dispatchDelegateAction(f *settingsForm, key string) {
 		}
 		err = f.delegates.SetEnabled(name, enabled)
 		if enabled {
-			status = "已启用 " + name + "（重启生效）"
+			status = i18n.Tf("ui.settings.dlg.enabled", "name", name)
 		} else {
-			status = "已停用 " + name + "（重启生效）"
+			status = i18n.Tf("ui.settings.dlg.disabled", "name", name)
 		}
 	case "def":
 		err = f.delegates.SetDefault(name)
-		status = "已把 " + name + " 设为缺省代理（重启生效）"
+		status = i18n.Tf("ui.settings.dlg.set_default_done", "name", name)
 	case "save":
 		line := strings.TrimSpace(f.delegateEditor(name).Text())
 		if line == "" {
-			f.delegateStatus, f.delegateErr = "命令行不能为空——要删掉一个代理，请改 config.json 的 delegate.agents", true
+			f.delegateStatus, f.delegateErr = i18n.T("ui.settings.dlg.cmd_empty"), true
 			return
 		}
 		err = f.delegates.SetCommandLine(name, line)
-		status = "已保存 " + name + " 的命令行（重启生效）"
+		status = i18n.Tf("ui.settings.dlg.cmd_saved", "name", name)
 	default:
 		return
 	}
 	if err != nil {
-		f.delegateStatus, f.delegateErr = "操作失败："+err.Error(), true
+		f.delegateStatus, f.delegateErr = i18n.Tf("ui.common.failed", "err", err.Error()), true
 		return
 	}
 	f.delegateStatus, f.delegateErr = status, false

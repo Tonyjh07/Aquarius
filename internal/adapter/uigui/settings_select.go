@@ -32,6 +32,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // selectField 枚举选择器：按钮上显示当前项，点击弹出**全部选项**的居中模态，点一项即选中。
@@ -272,7 +274,7 @@ func (f *settingsForm) pickerCard(gtx layout.Context, th *material.Theme) layout
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperMicroSp(th), "点一项即选中；点卡片外或按 Esc 取消。")
+				l := material.Label(th, paperMicroSp(th), i18n.T("ui.settings.form.picker_hint"))
 				l.Color = pp.text3
 				return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(6)}.Layout(gtx, l.Layout)
 			}),
@@ -286,7 +288,7 @@ func (f *settingsForm) pickerCard(gtx layout.Context, th *material.Theme) layout
 				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Flexed(1, layout.Spacer{}.Layout),
-						layout.Rigid(paperButton(th, &p.cancel, "取消", paperBtnSecondary, true)),
+						layout.Rigid(paperButton(th, &p.cancel, i18n.T("ui.common.cancel"), paperBtnSecondary, true)),
 					)
 				})
 			}),

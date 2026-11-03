@@ -20,7 +20,6 @@ package uigui
 
 import (
 	"image"
-	"strconv"
 	"strings"
 
 	"gioui.org/f32"
@@ -34,6 +33,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -139,7 +139,7 @@ func (st *historyState) requestBatchExport(u *UI) {
 	st.selPending = ids
 	u.plat.RequestSaveFile(platform.SaveRequest{
 		Purpose:     platform.PurposeExchangeBatchExport,
-		Title:       "导出选中的会话",
+		Title:       i18n.T("ui.history.export_selected_title"),
 		Name:        port.MultiExportStem + def.Ext,
 		DefExt:      strings.TrimPrefix(def.Ext, "."),
 		Filters:     []platform.FileFilter{{Label: def.Label + " (*" + def.Ext + ")", Pattern: "*" + def.Ext}},
@@ -200,10 +200,11 @@ func selRow(gtx layout.Context, th *material.Theme, s port.SessionSummary, check
 	pp := paperOf()
 	title := s.Title
 	if title == "" {
-		title = "新会话"
+		title = i18n.T("ui.history.new_session")
 	}
 	title = truncRunes(title, 14) // 左侧让出勾选框槽后可用宽度少一截
-	meta := s.UpdatedAt.Format("01-02 15:04") + " · " + strconv.Itoa(s.Messages) + " 条"
+	meta := i18n.Tf("ui.history.row_meta",
+		"time", s.UpdatedAt.Format("01-02 15:04"), "n", s.Messages)
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -268,14 +269,14 @@ func selBoxGlyph(gtx layout.Context, checked bool) layout.Dimensions {
 func (st *historyState) selActionBar(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	pp := paperOf()
 	if len(st.sessions) == 0 {
-		l := material.Caption(th, "没有会话可选")
+		l := material.Caption(th, i18n.T("ui.history.select_empty"))
 		l.Color = pp.text3
 		return l.Layout(gtx)
 	}
 	n := st.selCount()
-	allLabel := "全选"
+	allLabel := i18n.T("ui.history.select_all")
 	if n > 0 && n == len(st.sessions) {
-		allLabel = "全不选"
+		allLabel = i18n.T("ui.history.select_none")
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -283,7 +284,7 @@ func (st *historyState) selActionBar(gtx layout.Context, th *material.Theme) lay
 				layout.Rigid(histTextBtn(th, &st.btnSelAll, allLabel)),
 				layout.Flexed(1, layout.Spacer{}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Caption(th, "已选 "+strconv.Itoa(n)+" 个")
+					l := material.Caption(th, i18n.Tf("ui.history.selected_count", "n", n))
 					l.Color = pp.text3
 					return l.Layout(gtx)
 				}),
@@ -293,15 +294,15 @@ func (st *historyState) selActionBar(gtx layout.Context, th *material.Theme) lay
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &st.btnSelCancel, "取消", paperBtnSecondary, true)(gtx)
+					return paperButton(th, &st.btnSelCancel, i18n.T("ui.common.cancel"), paperBtnSecondary, true)(gtx)
 				}),
 				layout.Flexed(1, layout.Spacer{}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &st.btnSelExport, "导出", paperBtnPrimary, n > 0)(gtx)
+					return paperButton(th, &st.btnSelExport, i18n.T("ui.history.export"), paperBtnPrimary, n > 0)(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &st.btnSelDel, "删除", paperBtnDanger, n > 0)(gtx)
+					return paperButton(th, &st.btnSelDel, i18n.T("ui.common.delete"), paperBtnDanger, n > 0)(gtx)
 				}),
 			)
 		}),

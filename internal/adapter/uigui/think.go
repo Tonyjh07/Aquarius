@@ -1,9 +1,9 @@
 package uigui
 
 import (
-	"fmt"
-
 	"gioui.org/widget"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // thinkClick 思考块折叠行的点击控件 get-or-create（D182）：与 chipClick 同口径——按
@@ -23,15 +23,15 @@ func (u *UI) thinkIsOpen(i int) bool { return u.thinkOpen[i] }
 // 耗时只写"已思考"）。流式中不带指示——那时还没到能折叠的定稿态，始终铺开。
 func thinkHeaderText(it blockView, open bool) string {
 	if it.live {
-		return "思考中…"
+		return i18n.T("ui.chat.thinking_live")
 	}
 	arrow := "▸"
 	if open {
 		arrow = "▾"
 	}
-	label := "已思考"
+	label := i18n.T("ui.chat.thought")
 	if it.secs >= 0 {
-		label = fmt.Sprintf("已思考 %d 秒", it.secs)
+		label = i18n.Tf("ui.chat.thought_secs", "n", it.secs)
 	}
 	return arrow + " " + label
 }

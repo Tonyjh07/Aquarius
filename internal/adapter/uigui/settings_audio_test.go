@@ -222,9 +222,9 @@ func TestAudioKindAndModelPathRows(t *testing.T) {
 
 // TestAudioKindCycleOrder 协议档的展示名与键值一一对应（首项是缺省）。
 func TestAudioKindCycleOrder(t *testing.T) {
-	if len(asrKindLevels) != len(asrKindValues) || len(ttsKindLevels) != len(ttsKindValues) {
+	if len(asrKindLevels()) != len(asrKindValues) || len(ttsKindLevels()) != len(ttsKindValues) {
 		t.Fatalf("档位展示名与键值数量不一致: %d/%d, %d/%d",
-			len(asrKindLevels), len(asrKindValues), len(ttsKindLevels), len(ttsKindValues))
+			len(asrKindLevels()), len(asrKindValues), len(ttsKindLevels()), len(ttsKindValues))
 	}
 	if asrKindValues[0] != "chat-audio" || ttsKindValues[0] != "chat-audio" {
 		t.Fatalf("首项应为缺省协议: %q / %q", asrKindValues[0], ttsKindValues[0])

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -84,8 +85,8 @@ func (c *fileConfig) normalizeWeb() error {
 		case webKindBrave:
 			// 只借 key（或 base_url），不引用对话 provider。
 		default:
-			return fmt.Errorf("web.search.providers[%d].kind=%q 不认识（搜索侧支持 %s / %s）",
-				i, p.Kind, webKindDeepSeek, webKindBrave)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.web_search_kind",
+				"i", i, "kind", p.Kind, "a", webKindDeepSeek, "b", webKindBrave))
 		}
 	}
 	for i, p := range c.Web.Fetch.Providers {
@@ -96,17 +97,17 @@ func (c *fileConfig) normalizeWeb() error {
 			}
 		case webKindLocal:
 		default:
-			return fmt.Errorf("web.fetch.providers[%d].kind=%q 不认识（抓取侧支持 %s / %s）",
-				i, p.Kind, webKindDeepSeek, webKindLocal)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.web_fetch_kind",
+				"i", i, "kind", p.Kind, "a", webKindDeepSeek, "b", webKindLocal))
 		}
 	}
 	if n := c.Web.Search.Count; n < 0 || n > port.SettingsSearchCountMax {
-		return fmt.Errorf("web.search.count=%d 超出范围（%d-%d；0 = 缺省 8）",
-			n, port.SettingsSearchCountMin, port.SettingsSearchCountMax)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.web_search_count",
+			"n", n, "min", port.SettingsSearchCountMin, "max", port.SettingsSearchCountMax))
 	}
 	if n := c.Web.Fetch.MaxChars; n < 0 || n > port.SettingsFetchCharsMax {
-		return fmt.Errorf("web.fetch.max_chars=%d 超出范围（%d-%d；0 = 缺省 16000）",
-			n, port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.web_fetch_chars",
+			"n", n, "min", port.SettingsFetchCharsMin, "max", port.SettingsFetchCharsMax))
 	}
 	return nil
 }
@@ -118,8 +119,7 @@ func (c *fileConfig) checkWebEndpoint(p webProvider) error {
 		return nil // 端点自己填了：借不到密钥只让这家不可用，不阻断启动
 	}
 	if c.Model.byName(from) == nil {
-		return fmt.Errorf("from=%q 不在 model.providers 内"+
-			"（填 base_url 独立配置，或引用一个已有的条目）", from)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.web_from_missing", "from", from))
 	}
 	return nil
 }

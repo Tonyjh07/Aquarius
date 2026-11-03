@@ -3,7 +3,7 @@ package uigui
 // 欢迎窗各页正文（接入 / 教程 / 完成）及其卡片、候选列表、连通探针与密钥输入框。
 
 import (
-	"fmt"
+	"errors"
 	"image"
 	"strings"
 	"sync"
@@ -16,6 +16,8 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // pageBody 当前页正文。
@@ -34,21 +36,21 @@ func (f *welcomeForm) pageBody(gtx layout.Context, th *material.Theme) layout.Di
 func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	rows := []layout.Widget{
 		func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "Provider", editorBox(th, &f.name, "provider 名，如 openai"))
+			return fieldRow(gtx, th, "Provider", editorBox(th, &f.name, i18n.T("ui.welcome.ph.provider")))
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "接口地址", editorBox(th, &f.baseURL, "如 https://api.openai.com/v1"))
+			return fieldRow(gtx, th, i18n.T("ui.welcome.label.base_url"), editorBox(th, &f.baseURL, i18n.T("ui.welcome.ph.base_url")))
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "API 密钥", editorBox(th, &f.apiKey, "明文（存入本机加密库）或 secret:名 引用；只写不回显"))
+			return fieldRow(gtx, th, i18n.T("ui.welcome.label.api_key"), editorBox(th, &f.apiKey, i18n.T("ui.welcome.ph.api_key")))
 		},
 		func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "模型名", func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, i18n.T("ui.welcome.label.models"), func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, editorBox(th, &f.models, "逗号可多条；首个 = 缺省请求模型")),
+					layout.Flexed(1, editorBox(th, &f.models, i18n.T("ui.welcome.ph.models"))),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
-							paperButton(th, &f.modelsBtn, "获取模型", paperBtnSecondary, true))
+							paperButton(th, &f.modelsBtn, i18n.T("ui.welcome.btn.fetch_models"), paperBtnSecondary, true))
 					}),
 				)
 			})
@@ -70,7 +72,7 @@ func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.
 		}
 	}
 	kids := []layout.FlexChild{
-		layout.Rigid(welcomePara(th, "填写 OpenAI 兼容端点的接入参数；保存后立即用于对话。")),
+		layout.Rigid(welcomePara(th, i18n.T("ui.welcome.access_intro"))),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return welcomeCard(gtx, th, rows)
@@ -81,7 +83,7 @@ func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(14), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(welcomeBtn(th, &f.testBtn, "测试连通", false)),
+					layout.Rigid(welcomeBtn(th, &f.testBtn, i18n.T("ui.welcome.btn.test"), false)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return welcomeProbe(gtx, th, f)
@@ -141,7 +143,7 @@ func welcomeCard(gtx layout.Context, th *material.Theme, rows []layout.Widget) l
 func welcomeCands(gtx layout.Context, th *material.Theme, f *welcomeForm) layout.Dimensions {
 	hint := f.modelsHint
 	if hint == "" {
-		hint = "点选替换模型名"
+		hint = i18n.T("ui.welcome.cands_hint")
 	}
 	return paperChipFlow(gtx, th, hint, f.cands, f.candClicks)
 }
@@ -160,7 +162,7 @@ func welcomeHairline(gtx layout.Context, pad unit.Dp) layout.Dimensions {
 func welcomeProbe(gtx layout.Context, th *material.Theme, f *welcomeForm) layout.Dimensions {
 	pp := paperOf()
 	if f.probeBusy {
-		l := material.Label(th, paperNoteSp(th), "正在测试…")
+		l := material.Label(th, paperNoteSp(th), i18n.T("ui.welcome.testing"))
 		l.Color = pp.text3
 		return l.Layout(gtx)
 	}
@@ -238,14 +240,14 @@ func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Di
 	}
 	model := p.Models
 	if i := strings.Index(model, ","); i > 0 {
-		model = model[:i] + " 等"
+		model = i18n.Tf("ui.welcome.model_more", "model", model[:i])
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(welcomePara(th, "将要写入 config 的接入参数（确认无误后保存）：")),
+		layout.Rigid(welcomePara(th, i18n.T("ui.welcome.done_intro"))),
 		row("Provider", p.Provider),
-		row("接口地址", p.BaseURL),
-		row("模型", model),
-		row("API 密钥", keyForm),
+		row(i18n.T("ui.welcome.label.base_url"), p.BaseURL),
+		row(i18n.T("ui.welcome.label.model"), model),
+		row(i18n.T("ui.welcome.label.api_key"), keyForm),
 	)
 }
 
@@ -257,11 +259,11 @@ func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Di
 func (f *welcomeForm) keyForm(apiKey string) string {
 	switch {
 	case strings.HasPrefix(apiKey, "secret:"):
-		return "环境变量引用 secret:" + strings.TrimPrefix(apiKey, "secret:") + "（密钥不落盘）"
+		return i18n.Tf("ui.welcome.key_env_ref", "name", strings.TrimPrefix(apiKey, "secret:"))
 	case apiKey != "":
-		return "明文（保存时转入本机加密密钥库，config 只留引用）"
+		return i18n.T("ui.welcome.key_plain")
 	default:
-		return "保持原值（未改）"
+		return i18n.T("ui.welcome.key_keep")
 	}
 }
 
@@ -289,7 +291,7 @@ func newUISideWelcome(mgr WelcomeManager, closeWin func()) *welcomeForm {
 // 窗口形态与次窗一致（Decorated 常规窗；platform.New 惰性——不会提前装托盘/热键）。
 func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	if req.Mgr == nil {
-		return SetupCancelled, fmt.Errorf("向导窗：数据面未接线")
+		return SetupCancelled, errors.New(i18n.T("ui.welcome.err.wizard_unwired"))
 	}
 	plat := newPlatform(Options{Theme: req.Theme}, true)
 	p := resolvePalette(req.Theme, plat.DarkMode())

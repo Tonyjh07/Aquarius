@@ -13,14 +13,15 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // skillActions 三动作的共用实现（装配根）。
@@ -29,7 +30,7 @@ type skillActions struct{ w *wiring }
 // installer 安装内核尚未装配（无 profile 目录 / 装配失败）时报错而不是 panic。
 func (s skillActions) installer() (*skillfs.Installer, error) {
 	if s.w.skillInstall == nil {
-		return nil, errors.New("技能安装面未接线（数据目录未就绪）")
+		return nil, errors.New(i18n.T("cmd.skills.err.install_unwired"))
 	}
 	return s.w.skillInstall, nil
 }
@@ -37,7 +38,7 @@ func (s skillActions) installer() (*skillfs.Installer, error) {
 // catalog 技能清单（安装后重扫用；nil = 只读，不可装）。
 func (s skillActions) catalog() (*skillfs.Catalog, error) {
 	if s.w.skills == nil {
-		return nil, errors.New("技能目录未接线")
+		return nil, errors.New(i18n.T("cmd.skills.err.catalog_unwired"))
 	}
 	return s.w.skills, nil
 }
@@ -134,22 +135,22 @@ func (s skillActions) extraDirs() ([]string, string) {
 func (s skillActions) addDir(dir string) error {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
-		return errors.New("请填写技能目录路径")
+		return errors.New(i18n.T("cmd.skills.err.dir_required"))
 	}
 	if !filepath.IsAbs(dir) {
-		return fmt.Errorf("%q 不是绝对路径（本程序没有工作目录概念，技能目录必须写绝对路径）", dir)
+		return errors.New(i18n.Tf("cmd.skills.err.not_absolute", "dir", strconv.Quote(dir)))
 	}
 	dir = filepath.Clean(dir)
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return fmt.Errorf("%s 不存在或不是文件夹", dir)
+		return errors.New(i18n.Tf("cmd.skills.err.dir_missing", "dir", dir))
 	}
 	extras, fallback := s.extraDirs()
 	if fallback != "" && samePath(dir, fallback) {
-		return errors.New("这一项是内置的兜底技能目录，不需要再添加")
+		return errors.New(i18n.T("cmd.skills.err.builtin_dir_add"))
 	}
 	for _, d := range extras {
 		if samePath(d, dir) {
-			return fmt.Errorf("技能目录 %s 已在清单里", dir)
+			return errors.New(i18n.Tf("cmd.skills.err.dir_exists", "dir", dir))
 		}
 	}
 	next := append(append([]string{}, extras...), dir)
@@ -168,7 +169,7 @@ func (s skillActions) removeDir(dir string) error {
 	dir = strings.TrimSpace(dir)
 	extras, fallback := s.extraDirs()
 	if fallback != "" && samePath(dir, fallback) {
-		return errors.New("内置的兜底技能目录不可移除")
+		return errors.New(i18n.T("cmd.skills.err.builtin_dir_remove"))
 	}
 	next := make([]string, 0, len(extras))
 	found := false
@@ -180,7 +181,7 @@ func (s skillActions) removeDir(dir string) error {
 		next = append(next, d)
 	}
 	if !found {
-		return fmt.Errorf("技能目录 %s 不在清单里（可能已被移除）", dir)
+		return errors.New(i18n.Tf("cmd.skills.err.dir_not_listed", "dir", dir))
 	}
 	if err := s.w.persistSkillDirs(next); err != nil {
 		return err
@@ -263,7 +264,7 @@ func (a *skillsAdmin) Install(source string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return summarizeSkillReport("已安装", rep), nil
+	return summarizeSkillReport(i18n.T("skill.verb.installed"), rep), nil
 }
 
 func (a *skillsAdmin) Update(name string) (string, error) {
@@ -271,7 +272,7 @@ func (a *skillsAdmin) Update(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return summarizeSkillReport("已更新", rep), nil
+	return summarizeSkillReport(i18n.T("skill.verb.updated"), rep), nil
 }
 
 func (a *skillsAdmin) Remove(name string) error { return a.actions().remove(name) }
@@ -290,15 +291,16 @@ func summarizeSkillReport(verb string, rep skillfs.InstallReport) string {
 	}
 	var b strings.Builder
 	if len(names) == 0 {
-		fmt.Fprintf(&b, "%s 0 个技能", verb)
+		b.WriteString(i18n.Tf("cmd.skills.summary.zero", "verb", verb))
 	} else {
-		fmt.Fprintf(&b, "%s %d 个技能：%s", verb, len(names), strings.Join(names, "、"))
+		b.WriteString(i18n.Tf("cmd.skills.summary.list",
+			"verb", verb, "count", len(names), "names", strings.Join(names, i18n.T("cmd.skills.list_sep"))))
 	}
 	for _, n := range rep.Notes {
 		b.WriteString("\n" + n)
 	}
 	if len(rep.Skipped) > 0 {
-		fmt.Fprintf(&b, "\n未安装的条目（%d 条）：", len(rep.Skipped))
+		b.WriteString(i18n.Tf("cmd.skills.summary.skipped_head", "count", len(rep.Skipped)))
 		for _, sk := range rep.Skipped {
 			b.WriteString("\n- " + sk)
 		}

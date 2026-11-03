@@ -14,6 +14,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // profilesManager uigui.ProfilesManager 的装配根实现（D110③）。
@@ -36,10 +37,10 @@ func (m *profilesManager) Create(name string) error {
 	dir := filepath.Join(m.dataDir, "profiles", name)
 	cfg := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(cfg); err == nil {
-		return fmt.Errorf("profile %q 已存在", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.exists", "name", name))
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("创建 profile 目录: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.profile.err.mkdir"), err)
 	}
 	return writeDefaultConfig(cfg)
 }
@@ -53,14 +54,14 @@ func (m *profilesManager) Copy(name string) error {
 	dir := filepath.Join(m.dataDir, "profiles", name)
 	cfg := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(cfg); err == nil {
-		return fmt.Errorf("profile %q 已存在", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.exists", "name", name))
 	}
 	data, err := os.ReadFile(m.profileCfg)
 	if err != nil {
-		return fmt.Errorf("读取当前 profile 配置: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.profile.err.read_current"), err)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("创建 profile 目录: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.profile.err.mkdir"), err)
 	}
 	return os.WriteFile(cfg, data, 0o644)
 }
@@ -72,10 +73,10 @@ func (m *profilesManager) Switch(name string) error {
 		return err
 	}
 	if name == m.current {
-		return fmt.Errorf("已运行在 profile %q", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.already_current", "name", name))
 	}
 	if !slices.Contains(listProfiles(m.dataDir), name) {
-		return fmt.Errorf("profile %q 不存在（可先「新建」或「复制当前」）", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.not_exist", "name", name))
 	}
 	return atomicfile.WriteFile(filepath.Join(m.dataDir, "config.json"),
 		[]byte(pointerContent(name)), 0o644)

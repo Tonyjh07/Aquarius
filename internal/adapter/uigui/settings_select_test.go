@@ -201,8 +201,8 @@ func TestPickerOpenAndCancel(t *testing.T) {
 	// Clickable.Click 把点击登记为「下一帧生效」，之后 Clicked 即为真。
 	f.asrLang.click.Click()
 	f.openPicker(pickerGtx(720, 560), "录音语种", &f.asrLang)
-	if opts := f.pickerOptions(); len(opts) != len(langLevels) {
-		t.Fatalf("弹层选项 = %v, want %v", opts, langLevels)
+	if opts := f.pickerOptions(); len(opts) != len(langLevels()) {
+		t.Fatalf("弹层选项 = %v, want %v", opts, langLevels())
 	}
 	before := f.asrLang.value()
 	// 画一帧把选项按钮就位，再点「取消」，下一帧应收起。
@@ -262,7 +262,7 @@ func TestPickerOnlyOneField(t *testing.T) {
 	if got := f.pick.title; got != "合成方式" {
 		t.Fatalf("弹层应被后者接管，标题 = %q", got)
 	}
-	if opts := f.pickerOptions(); len(opts) != len(ttsKindLevels) {
+	if opts := f.pickerOptions(); len(opts) != len(ttsKindLevels()) {
 		t.Fatalf("选项应换成合成档，实为 %v", opts)
 	}
 }

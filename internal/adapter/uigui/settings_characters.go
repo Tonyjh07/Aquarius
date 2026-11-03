@@ -21,6 +21,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -91,7 +92,7 @@ func (f *settingsForm) drainCharPicks(u *UI) {
 		select {
 		case p := <-u.charPicks:
 			f.charSource.SetText(p.path)
-			f.charStatus, f.charErr = "已选择文件："+p.path+"（点「导入」开始）", false
+			f.charStatus, f.charErr = i18n.Tf("ui.settings.char.picked", "path", p.path), false
 		default:
 			return
 		}
@@ -114,26 +115,26 @@ func (st CharacterState) metaLine() string {
 	parts := []string{}
 	switch st.Source {
 	case "png":
-		parts = append(parts, "PNG 卡")
+		parts = append(parts, i18n.T("ui.settings.char.meta.png"))
 	case "charx":
-		parts = append(parts, "角色卡包")
+		parts = append(parts, i18n.T("ui.settings.char.meta.charx"))
 	default:
-		parts = append(parts, "JSON 卡")
+		parts = append(parts, i18n.T("ui.settings.char.meta.json"))
 	}
 	if st.Spec != "" {
 		parts = append(parts, st.Spec)
 	}
 	if st.BookEntries > 0 {
-		parts = append(parts, strconv.Itoa(st.BookEntries)+" 条世界书")
+		parts = append(parts, i18n.Tf("ui.settings.char.meta.book", "n", strconv.Itoa(st.BookEntries)))
 	}
 	if st.Assets > 0 {
-		parts = append(parts, strconv.Itoa(st.Assets)+" 个资产")
+		parts = append(parts, i18n.Tf("ui.settings.char.meta.assets", "n", strconv.Itoa(st.Assets)))
 	}
 	if st.ImportedAt != "" {
-		parts = append(parts, "导入于 "+st.ImportedAt)
+		parts = append(parts, i18n.Tf("ui.settings.char.meta.imported", "at", st.ImportedAt))
 	}
 	if len(st.Unsupported) > 0 {
-		parts = append(parts, "含未支持的机制（见导入回执）")
+		parts = append(parts, i18n.T("ui.settings.char.meta.unsupported"))
 	}
 	return strings.Join(parts, " · ")
 }

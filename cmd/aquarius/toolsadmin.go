@@ -14,12 +14,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // pluginLogLines 日志尾行上限（/plugin logs 与设置窗同源）。
@@ -95,10 +97,10 @@ func builtinToolNames() []string {
 	return append(toolbuiltin.Names(), contextCompactName)
 }
 
-// builtinToolLabel 内置工具中文词表（context_compact 由装配根补词）。
+// builtinToolLabel 内置工具名称（context_compact 由装配根补词）。
 func builtinToolLabel(name string) string {
 	if name == contextCompactName {
-		return "自动上下文压缩"
+		return i18n.T("cmd.tools.label.context_compact")
 	}
 	return toolbuiltin.DisplayName(name)
 }
@@ -134,14 +136,14 @@ func (a *toolsAdmin) Snapshot() uigui.ToolsSnapshot {
 // SetBuiltinEnabled 内置工具启停：热更新 runner 禁用集 + 写回 config tools.disabled。
 func (a *toolsAdmin) SetBuiltinEnabled(name string, enabled bool) error {
 	if !containsStr(builtinToolNames(), name) {
-		return fmt.Errorf("未知的内置工具 %q", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.tools.err.unknown_builtin", "name", strconv.Quote(name)))
 	}
 	a.w.disabledTools.setEnabled(name, enabled)
 	a.w.runner.SetDisabled(a.w.disabledTools.snapshot())
 	a.w.toolsRev.Add(1)
 	perr := a.w.persist.persistToolsDisabled(sortedDisabled(a.w.disabledTools.snapshot()))
 	if perr != nil {
-		return fmt.Errorf("已热生效，但写回 config tools.disabled 失败: %w", perr)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.tools.err.persist_disabled"), perr)
 	}
 	return nil
 }
@@ -178,28 +180,28 @@ func (a *toolsAdmin) Logs(name string) (string, error) {
 	}
 	f, err := os.CreateTemp("", "aquarius-plugin-logs-*.txt")
 	if err != nil {
-		return "", fmt.Errorf("创建临时日志文件: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("cmd.tools.err.temp_log_create"), err)
 	}
 	path := f.Name()
 	if _, err := f.WriteString(text); err != nil {
 		f.Close()
 		_ = os.Remove(path)
-		return "", fmt.Errorf("写入临时日志文件: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("cmd.tools.err.temp_log_write"), err)
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(path)
-		return "", fmt.Errorf("关闭临时日志文件: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("cmd.tools.err.temp_log_close"), err)
 	}
 	defer os.Remove(path) // 日志是快照：编辑完即清（想要原文走 /plugin logs 终端输出）
 	argv := pickEditor(os.Getenv("VISUAL"), os.Getenv("EDITOR"), runtime.GOOS)
 	cmd := exec.Command(argv[0], append(argv[1:], path)...)
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("运行编辑器 %s: %w", argv[0], err)
+		return "", fmt.Errorf("%s: %w", i18n.Tf("cmd.tools.err.run_editor", "editor", argv[0]), err)
 	}
 	if name == "" {
-		return "已打开插件日志摘要（系统编辑器）", nil
+		return i18n.T("cmd.tools.logs.opened_summary"), nil
 	}
-	return fmt.Sprintf("已打开插件日志：%s（系统编辑器）", name), nil
+	return i18n.Tf("cmd.tools.logs.opened_named", "name", name), nil
 }
 
 // containsStr 顺序查找（小清单）。
@@ -237,12 +239,13 @@ func mcpServerOf(toolName string) (string, bool) {
 
 // formatPluginLogs 格式化：带名 = 逐行（新→旧）；无参 = 各插件摘要。
 func formatPluginLogs(rows []decorate.ToolCallLine, name string, last int) string {
+	empty := i18n.T("cmd.tools.logs.empty")
 	if len(rows) == 0 {
-		return "（尚无插件调用记录）"
+		return empty
 	}
 	if name != "" {
 		var b strings.Builder
-		fmt.Fprintf(&b, "插件 %s 最近调用（最多 %d 条，新→旧）:\n", name, last)
+		b.WriteString(i18n.Tf("cmd.tools.logs.detail_head", "name", name, "last", last) + "\n")
 		for i := len(rows) - 1; i >= 0; i-- {
 			r := rows[i]
 			mark := "ok"
@@ -281,20 +284,21 @@ func formatPluginLogs(rows []decorate.ToolCallLine, name string, last int) strin
 	}
 	sort.Strings(order)
 	if len(order) == 0 {
-		return "（尚无插件调用记录）"
+		return empty
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "插件调用摘要（最近 %d 条内）:\n", last)
+	b.WriteString(i18n.Tf("cmd.tools.logs.summary_head", "last", last) + "\n")
 	for _, server := range order {
 		ag := by[server]
-		line := fmt.Sprintf("  %-16s 调用%d", server, ag.calls)
+		line := i18n.Tf("cmd.tools.logs.summary_calls",
+			"server", fmt.Sprintf("%-16s", server), "calls", ag.calls)
 		if ag.errs > 0 {
-			line += fmt.Sprintf(", 失败%d", ag.errs)
+			line += i18n.Tf("cmd.tools.logs.summary_errors", "errs", ag.errs)
 		}
-		line += " · 最近 " + ag.last
+		line += i18n.Tf("cmd.tools.logs.summary_last", "ts", ag.last)
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
-	b.WriteString("详细：/plugin logs <name> 或设置窗「打开日志」")
+	b.WriteString(i18n.T("cmd.tools.logs.summary_hint"))
 	return b.String()
 }

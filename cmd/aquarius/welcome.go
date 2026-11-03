@@ -16,12 +16,14 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -72,11 +74,11 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 	models := splitCSV(p.Models)
 	switch {
 	case name == "":
-		return fmt.Errorf("provider 名字不可为空")
+		return errors.New(i18n.T("cmd.welcome.err.provider_required"))
 	case baseURL == "":
-		return fmt.Errorf("接口地址（base_url）不可为空")
+		return errors.New(i18n.T("cmd.welcome.err.base_url_required"))
 	case len(models) == 0:
-		return fmt.Errorf("模型名不可为空（首个 = 缺省请求模型）")
+		return errors.New(i18n.T("cmd.welcome.err.models_required"))
 	}
 	// 密钥先落库（config 写回之前，D151/D161）：填的是明文写进本机库、config 只留引用；
 	// 填的是引用则照写。写库失败整体放弃，不留「config 已是引用、库里没有值」的半个状态。
@@ -288,13 +290,13 @@ func apiKeyGap(ctx context.Context, p providerConfig, sec port.Secrets) string {
 		name, err := secretName(ref)
 		if err != nil {
 			if first == "" {
-				first = fmt.Sprintf("provider %q 的密钥引用非法：%v", p.Name, err)
+				first = i18n.Tf("cmd.welcome.key.ref_invalid", "provider", strconv.Quote(p.Name), "err", err)
 			}
 			continue
 		}
 		if _, err := sec.Get(ctx, name); err != nil {
 			if first == "" {
-				first = fmt.Sprintf("provider %q 取不到密钥：%v", p.Name, err)
+				first = i18n.Tf("cmd.welcome.key.fetch_failed", "provider", strconv.Quote(p.Name), "err", err)
 			}
 			continue
 		}
@@ -360,7 +362,7 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		Issues: issues,
 	})
 	if err != nil {
-		return fatal(w.stderr, "欢迎向导窗: %v", err), true
+		return fatal(w.stderr, "%s", i18n.Tf("cmd.welcome.err.wizard", "err", err)), true
 	}
 	if outcome != uigui.SetupDone {
 		if len(issues) == 0 {
@@ -370,8 +372,8 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 			}
 			return 0, false
 		}
-		msg := fmt.Sprintf("已取消配置引导，配置仍不完整，Aquarius 无法启动：\n%s\n\n重新运行 Aquarius 并完成引导即可。",
-			strings.Join(issues, "；"))
+		msg := i18n.Tf("cmd.welcome.cancelled",
+			"issues", strings.Join(issues, i18n.T("cmd.welcome.issues_sep")))
 		fmt.Fprintf(w.stderr, "%s\n", msg)
 		notifyFatal(msg) // 双击启动时 stderr 不可达（D114），经系统消息框呈现
 		return 0, true
@@ -390,7 +392,8 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		}
 	}
 	if issues := missingKeys(ctx, &w.cfg.Model, w.secrets); len(issues) > 0 {
-		return fatal(w.stderr, "配置仍不完整：%s", strings.Join(issues, "；")), true
+		return fatal(w.stderr, "%s", i18n.Tf("cmd.welcome.still_incomplete",
+			"issues", strings.Join(issues, i18n.T("cmd.welcome.issues_sep")))), true
 	}
 	return 0, false
 }

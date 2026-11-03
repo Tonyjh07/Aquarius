@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // SkillsAdmin 技能管理面（装配根实现；线程安全——命令面与次窗 goroutine 共用）。
@@ -100,7 +101,7 @@ func (f *settingsForm) drainSkillResults() {
 			}
 			f.skillsStatus, f.skillsErr = r.status, r.err != nil
 			if r.err != nil {
-				f.skillsStatus = "操作失败：" + r.err.Error()
+				f.skillsStatus = i18n.Tf("ui.common.failed", "err", r.err.Error())
 			}
 		default:
 			return
@@ -169,11 +170,12 @@ func (f *settingsForm) drainSkillPicks(u *UI) {
 		select {
 		case p := <-u.skillPicks:
 			f.skillSource.SetText(p.path)
-			hint := "已选择文件夹"
+			hint := i18n.T("ui.settings.skill.pick_dir")
 			if p.kind == platform.PickSkillFile {
-				hint = "已选择文件"
+				hint = i18n.T("ui.settings.skill.pick_file")
 			}
-			f.skillsStatus, f.skillsErr = hint+"："+p.path+"（点「安装」开始导入）", false
+			f.skillsStatus, f.skillsErr = i18n.Tf("ui.settings.skill.picked",
+				"what", hint, "path", p.path), false
 		default:
 			return
 		}
@@ -185,18 +187,18 @@ func (st SkillState) metaLine() string {
 	parts := []string{}
 	switch st.Kind {
 	case "git":
-		parts = append(parts, "git 安装")
+		parts = append(parts, i18n.T("ui.settings.skill.meta.git"))
 	case "zip":
-		parts = append(parts, "压缩包安装")
+		parts = append(parts, i18n.T("ui.settings.skill.meta.zip"))
 	case "file":
-		parts = append(parts, "单文件安装")
+		parts = append(parts, i18n.T("ui.settings.skill.meta.file"))
 	case "dir":
-		parts = append(parts, "文件夹安装")
+		parts = append(parts, i18n.T("ui.settings.skill.meta.dir"))
 	default:
-		parts = append(parts, "手工放置")
+		parts = append(parts, i18n.T("ui.settings.skill.meta.manual"))
 	}
 	if st.Updated != "" {
-		parts = append(parts, "更新于 "+st.Updated)
+		parts = append(parts, i18n.Tf("ui.settings.skill.meta.updated", "at", st.Updated))
 	}
 	parts = append(parts, st.Dir)
 	return strings.Join(parts, " · ")
@@ -205,7 +207,7 @@ func (st SkillState) metaLine() string {
 // skillDirLabel 技能根展示文案（兜底根注明「兜底」，不写内部字段名）。
 func (d SkillDir) skillDirLabel() string {
 	if d.Fallback {
-		return d.Path + "（兜底，不可删）"
+		return i18n.Tf("ui.settings.skill.dir_fallback", "path", d.Path)
 	}
 	return d.Path
 }

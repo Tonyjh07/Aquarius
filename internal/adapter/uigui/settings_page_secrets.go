@@ -14,6 +14,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // secretsPage 密钥库页模块。
@@ -22,18 +24,18 @@ type secretsPage struct{}
 func (secretsPage) Key() string { return "secrets" }
 
 func (secretsPage) Rows(f *settingsForm) []rowDesc {
-	rows := []rowDesc{sec("已存密钥（值不可回显，只给尾 4 位）")}
+	rows := []rowDesc{sec(i18n.T("ui.page.secrets.section_entries"))}
 	if f.secrets == nil {
-		return append(rows, rowDesc{kind: rowSecretEmpty, text: "未接线（只读占位）"})
+		return append(rows, rowDesc{kind: rowSecretEmpty, text: i18n.T("ui.page.secrets.unwired")})
 	}
 	if len(f.secretsSnap.Entries) == 0 {
-		rows = append(rows, rowDesc{kind: rowSecretEmpty, text: "密钥库还是空的——下面填名字与值即可存入"})
+		rows = append(rows, rowDesc{kind: rowSecretEmpty, text: i18n.T("ui.page.secrets.empty")})
 	}
 	for _, e := range f.secretsSnap.Entries {
 		rows = append(rows, rowDesc{kind: rowSecretEntry, text: e.Name})
 	}
 	rows = append(rows,
-		sec("新增 / 覆盖"),
+		sec(i18n.T("ui.page.secrets.section_add")),
 		rowDesc{kind: rowSecretName},
 		rowDesc{kind: rowSecretValue},
 		rowDesc{kind: rowSecretAdd},
@@ -55,9 +57,11 @@ func (secretsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	case rowSecretName:
-		return fieldRow(gtx, th, "密钥名", editorBox(th, &f.secretName, "如 AQUARIUS_OPENAI_API_KEY；引用写作 secret:<名>")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.secrets.name_label"),
+			editorBox(th, &f.secretName, i18n.T("ui.page.secrets.name_hint"))), true
 	case rowSecretValue:
-		return fieldRow(gtx, th, "密钥值", editorBox(th, &f.secretValue, "存入后不回显；留空 = 不写")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.secrets.value_label"),
+			editorBox(th, &f.secretValue, i18n.T("ui.page.secrets.value_hint"))), true
 	case rowSecretAdd:
 		return f.secretAddRow(gtx, th), true
 	case rowSecretStatus:
@@ -120,21 +124,21 @@ func (f *settingsForm) secretEntryRow(gtx layout.Context, th *material.Theme, na
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !confirming {
-				return f.secretActionButton(gtx, th, "del:"+name, "删除", paperBtnDanger)
+				return f.secretActionButton(gtx, th, "del:"+name, i18n.T("ui.common.delete"), paperBtnDanger)
 			}
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, "确认？")
+					l := material.Body2(th, i18n.T("ui.common.confirm_q"))
 					l.Color = paperOf().danger
 					return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, l.Layout)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return f.secretActionButton(gtx, th, "cancel:"+name, "取消", paperBtnSecondary)
+						return f.secretActionButton(gtx, th, "cancel:"+name, i18n.T("ui.common.cancel"), paperBtnSecondary)
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return f.secretActionButton(gtx, th, "confirm:"+name, "确认删除", paperBtnDanger)
+					return f.secretActionButton(gtx, th, "confirm:"+name, i18n.T("ui.page.secrets.confirm_delete"), paperBtnDanger)
 				}),
 			)
 		}),
@@ -143,7 +147,7 @@ func (f *settingsForm) secretEntryRow(gtx layout.Context, th *material.Theme, na
 
 // secretAddRow 新增/覆盖入口（键名与值在上一行；值字段动作后恒清空）。
 func (f *settingsForm) secretAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return paperButton(th, &f.secretAdd, "存入密钥库", paperBtnPrimary, f.secrets != nil)(gtx)
+	return paperButton(th, &f.secretAdd, i18n.T("ui.page.secrets.add"), paperBtnPrimary, f.secrets != nil)(gtx)
 }
 
 // secretActionButton 密钥库页动作按钮（get-or-create 按 key 缓存；文案与配色按帧给定）。

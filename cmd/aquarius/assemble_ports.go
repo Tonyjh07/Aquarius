@@ -38,6 +38,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -147,7 +148,7 @@ func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, er
 		if firstErr != nil {
 			return nil, nil, firstErr
 		}
-		return nil, nil, fmt.Errorf("provider %q 没有可用的密钥", p.Name)
+		return nil, nil, fmt.Errorf("%s", i18n.Tf("cmd.asm.err.no_key", "provider", p.Name))
 	}
 	if len(keys) == 1 {
 		return keys[0].LLM, counter, nil // 没有别的钥匙可换，轮换层没有存在意义
@@ -156,10 +157,10 @@ func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, er
 	// （调用时才读 w.presenter），装配顺序不成为约束。
 	pool := decorate.NewKeyPool(keys).
 		OnRotate(func(ctx context.Context, from, to string) {
-			w.emitNotice(ctx, fmt.Sprintf("密钥 %s 被限流或额度耗尽，本轮改用 %s", from, to))
+			w.emitNotice(ctx, i18n.Tf("cmd.asm.key.rotated", "from", from, "to", to))
 		}).
 		OnExhaust(func(ctx context.Context, until time.Time) {
-			w.emitNotice(ctx, fmt.Sprintf("%s 的密钥都在冷却，最早 %s 之后恢复", p.Name, until.Format("15:04:05")))
+			w.emitNotice(ctx, i18n.Tf("cmd.asm.key.exhausted", "provider", p.Name, "time", until.Format("15:04:05")))
 		})
 	return pool, counter, nil
 }
@@ -223,7 +224,7 @@ func (w *wiring) buildLLMs() error {
 	for _, fb := range w.cfg.Model.Fallback {
 		p := w.cfg.Model.byName(fb.Provider)
 		if p == nil {
-			return fmt.Errorf("model.fallback 引用的 provider %q 不存在", fb.Provider)
+			return fmt.Errorf("%s", i18n.Tf("cmd.asm.err.fallback_missing", "provider", fb.Provider))
 		}
 		c, counter, ferr := w.buildClient(p)
 		if ferr != nil {
@@ -267,7 +268,7 @@ func (w *wiring) buildPresenter() {
 			},
 		})
 		if err != nil {
-			fmt.Fprintf(w.stderr, "警告：语音播报不可用：%v\n", err)
+			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.tts_unavailable", "err", err))
 		} else {
 			w.ttsOut = out
 			outs = append(outs, out)
@@ -276,7 +277,7 @@ func (w *wiring) buildPresenter() {
 	w.presenter = &outputsPresenter{
 		inner: w.ui,
 		outs:  outs,
-		log:   func(err error) { fmt.Fprintf(w.stderr, "[输出器] %v\n", err) },
+		log:   func(err error) { fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.err.output_adapter", "err", err)) },
 	}
 }
 
@@ -290,7 +291,7 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 
 	if w.cfg.Audio.ASR.configured() {
 		if c, why := w.buildASR(ctx); why != "" {
-			fmt.Fprintf(w.stderr, "警告：语音识别不可用：%s\n", why)
+			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.asr_unavailable", "why", why))
 		} else {
 			w.asr = c
 		}
@@ -298,7 +299,7 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 
 	if w.cfg.Audio.TTS.configured() {
 		if c, why := w.buildTTS(ctx); why != "" {
-			fmt.Fprintf(w.stderr, "警告：语音合成不可用：%s\n", why)
+			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.tts_synth_unavailable", "why", why))
 		} else {
 			w.ttsSynth = c
 		}
@@ -318,11 +319,11 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 			return nil, err.Error()
 		}
 		if conv, err := zhconv.New(zhconv.ModeTW2SP); err != nil {
-			fmt.Fprintf(w.stderr, "警告：中文繁简转换不可用，识别结果将保持原样：%v\n", err)
+			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.zhconv_unavailable", "err", err))
 			return c, ""
 		} else {
 			return &zhSimplifier{inner: c, conv: conv, logf: func(err error) {
-				fmt.Fprintf(w.stderr, "[语音识别] 繁简转换失败，保留原文：%v\n", err)
+				fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.zhconv_failed", "err", err))
 			}}, ""
 		}
 	}
@@ -330,7 +331,7 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 	if why != "" {
 		return nil, why
 	}
-	key, err := resolveAPIKey(ctx, "语音识别", ep.KeyRef, w.secrets, w.stderr)
+	key, err := resolveAPIKey(ctx, i18n.T("cmd.asm.name.asr"), ep.KeyRef, w.secrets, w.stderr)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -369,7 +370,7 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 	if why != "" {
 		return nil, why
 	}
-	key, err := resolveAPIKey(ctx, "语音合成", ep.KeyRef, w.secrets, w.stderr)
+	key, err := resolveAPIKey(ctx, i18n.T("cmd.asm.name.tts"), ep.KeyRef, w.secrets, w.stderr)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -476,7 +477,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		// 就成了既没有报告、也没有对账的静默丢失。
 		Landed: func(id port.JobID) {
 			if err := jobs.Settle(context.Background(), id); err != nil {
-				fmt.Fprintf(w.stderr, "任务 %s 的台账未能销账: %v\n", id, err)
+				fmt.Fprintf(w.stderr, "%s: %v\n", i18n.Tf("cmd.asm.err.job_settle", "id", id), err)
 			}
 		},
 		Logf: func(format string, args ...any) {
@@ -520,7 +521,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	skills := skillfs.New(skillfs.Options{Dirs: append(append([]string{}, w.cfg.Skills.Dirs...),
 		filepath.Join(w.profileDir, "skills"))})
 	for _, warn := range skills.Warnings(ctx) {
-		fmt.Fprintf(w.stderr, "技能：%s\n", warn)
+		fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.skill.line", "text", warn))
 	}
 	w.skills = skills
 	// D202：安装面内核（副本落 `<profile>/skills`、git 检出进 `skill-cache`、台账
@@ -531,20 +532,24 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		CacheDir:   filepath.Join(w.profileDir, "skill-cache"),
 		LedgerPath: filepath.Join(w.profileDir, "skill-installs.json"),
 		Catalog:    skills,
-		Logf:       func(format string, args ...any) { fmt.Fprintf(w.stderr, "技能："+format+"\n", args...) },
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(w.stderr, i18n.T("cmd.asm.skill.prefix")+format+"\n", args...)
+		},
 	})
 	if err != nil {
-		return fmt.Errorf("技能安装面: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.skill_installer"), err)
 	}
 	w.skillInstall = installer
 	// 角色卡目录（§5.17）：`<profile>/characters`。卡目录是唯一事实来源，坏条目在 List 里
 	// 带警告跳过；导入 / 删除经同一份 app.CharacterAdmin（命令面与设置窗共用）。
 	charStore, err := characterfs.New(characterfs.Options{
 		Root: filepath.Join(w.profileDir, "characters"),
-		Logf: func(format string, args ...any) { fmt.Fprintf(w.stderr, "角色卡："+format+"\n", args...) },
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(w.stderr, i18n.T("cmd.asm.char.prefix")+format+"\n", args...)
+		},
 	})
 	if err != nil {
-		return fmt.Errorf("角色卡目录: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.characters_dir"), err)
 	}
 	w.characters = charStore
 	builtinTools := toolbuiltin.New(toolbuiltin.Deps{
@@ -776,7 +781,7 @@ func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 	truncateNotice := func(omitted int) {
 		// 截断改变了本轮模型看到的内容 → 必须立刻可见（D267）。
 		_ = w.presenter.Emit(ctx, port.NoticeEvent{
-			Text:      fmt.Sprintf("硬保底截断：上下文超预算，已省略 %d 条最旧消息", omitted),
+			Text:      i18n.Tf("cmd.asm.notice.truncate", "n", omitted),
 			Attention: true,
 		})
 	}
@@ -803,7 +808,7 @@ func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 	if len(stacked) > 1 {
 		gen = decorate.NewFallback(stacked, func(from, to string) {
 			_ = w.presenter.Emit(ctx, port.NoticeEvent{
-				Text: fmt.Sprintf("模型服务 %s 网络类错误，本轮已降级到 %s（Q5：状态行一次性提示）", from, to),
+				Text: i18n.Tf("cmd.asm.notice.fallback", "from", from, "to", to),
 			})
 		})
 	}

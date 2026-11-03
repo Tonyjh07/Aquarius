@@ -15,13 +15,15 @@ package uigui
 // welcome_view.go，各页正文见 welcome_pages.go。
 
 import (
-	"fmt"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
 
 	"gioui.org/layout"
 	"gioui.org/widget"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // WelcomeSnapshot 欢迎窗快照（开窗现取；**密钥永不进快照**，D35）。
@@ -69,9 +71,9 @@ const (
 // String 结束原因（诊断/测试可读）。
 func (o SetupOutcome) String() string {
 	if o == SetupDone {
-		return "已完成"
+		return i18n.T("ui.welcome.outcome_done")
 	}
-	return "已取消"
+	return i18n.T("ui.welcome.outcome_cancelled")
 }
 
 // SetupRequest 装配前向导窗请求（cmd/aquarius 在「配置不完整」时调用）。
@@ -164,16 +166,16 @@ func (f *welcomeForm) patch() WelcomePatch {
 func (f *welcomeForm) accessErr() error {
 	p := f.patch()
 	if p.Provider == "" {
-		return fmt.Errorf("provider 名不可为空")
+		return errors.New(i18n.T("ui.welcome.err.provider_empty"))
 	}
 	if p.BaseURL == "" {
-		return fmt.Errorf("接口地址（base_url）不可为空")
+		return errors.New(i18n.T("ui.welcome.err.base_url_empty"))
 	}
 	if p.Models == "" {
-		return fmt.Errorf("模型名不可为空（逗号可多条，首个 = 缺省请求模型）")
+		return errors.New(i18n.T("ui.welcome.err.models_empty"))
 	}
 	if f.env.setup && len(f.env.snap.Issues) > 0 && p.APIKey == "" {
-		return fmt.Errorf("请填写 API 密钥：可填 secret:<环境变量名> 引用环境变量，或直接填明文（保存时转入本机加密密钥库）")
+		return errors.New(i18n.T("ui.welcome.err.key_required"))
 	}
 	return nil
 }
@@ -221,7 +223,7 @@ func (f *welcomeForm) onPrev() {
 // 校验不过退回接入页并把原因写在状态行（不静默失败）。
 func (f *welcomeForm) onSave() {
 	if f.env.mgr == nil {
-		f.fail(fmt.Errorf("欢迎窗未接线（数据面缺失）"))
+		f.fail(errors.New(i18n.T("ui.welcome.err.not_wired")))
 		return
 	}
 	if err := f.accessErr(); err != nil {
@@ -255,7 +257,7 @@ func (f *welcomeForm) onSkip() {
 // 错误行——测试成功不是「页面级反馈」，写在页脚会像保存结果。
 func (f *welcomeForm) onTest() {
 	if f.env.mgr == nil {
-		f.fail(fmt.Errorf("欢迎窗未接线（数据面缺失）"))
+		f.fail(errors.New(i18n.T("ui.welcome.err.not_wired")))
 		return
 	}
 	if err := f.accessErr(); err != nil {
@@ -275,7 +277,7 @@ func (f *welcomeForm) onTest() {
 // onFetchModels 「获取模型」：拉一次 /models，结果回灌为候选 chip（D153）。
 func (f *welcomeForm) onFetchModels() {
 	if f.env.mgr == nil {
-		f.fail(fmt.Errorf("欢迎窗未接线（数据面缺失）"))
+		f.fail(errors.New(i18n.T("ui.welcome.err.not_wired")))
 		return
 	}
 	if err := f.accessErr(); err != nil {
@@ -283,7 +285,7 @@ func (f *welcomeForm) onFetchModels() {
 		return
 	}
 	p := f.patch()
-	f.modelsHint = "正在获取模型列表…"
+	f.modelsHint = i18n.T("ui.welcome.models_fetching")
 	go func() {
 		start := time.Now()
 		models, err := f.env.mgr.Models(p)
@@ -320,10 +322,10 @@ func (f *welcomeForm) drain() {
 			f.probeBusy = false
 			if r.err != nil {
 				f.probeErr = true
-				f.probe = "连通失败：" + r.err.Error()
+				f.probe = i18n.Tf("ui.welcome.probe_failed", "err", r.err.Error())
 			} else {
 				f.probeErr = false
-				f.probe = "连通正常 · " + strconv.FormatInt(r.ms, 10) + " ms"
+				f.probe = i18n.Tf("ui.welcome.probe_ok", "ms", strconv.FormatInt(r.ms, 10))
 			}
 		default:
 			return
@@ -336,12 +338,12 @@ func (f *welcomeForm) drain() {
 func (f *welcomeForm) applyModels(r testOutcome) {
 	if r.err != nil {
 		f.cands, f.candClicks = nil, nil
-		f.modelsHint = "获取模型列表失败：" + r.err.Error()
+		f.modelsHint = i18n.Tf("ui.welcome.models_failed", "err", r.err.Error())
 		return
 	}
 	if len(r.models) == 0 {
 		f.cands, f.candClicks = nil, nil
-		f.modelsHint = "服务端未返回任何模型"
+		f.modelsHint = i18n.T("ui.welcome.models_empty")
 		return
 	}
 	total := len(r.models)
@@ -360,13 +362,12 @@ func (f *welcomeForm) applyModels(r testOutcome) {
 	f.cands = r.models
 	f.candClicks = make([]widget.Clickable, len(r.models))
 	if !pristine {
-		f.modelsHint = "已取回 " + strconv.Itoa(total) + " 个候选 · 点选替换（未覆盖已填内容）"
+		f.modelsHint = i18n.Tf("ui.welcome.models_picked", "n", total)
 		return
 	}
 	if total > len(fill) {
-		f.modelsHint = "已自动填入 " + strconv.Itoa(len(fill)) + " 个候选（共 " +
-			strconv.Itoa(total) + " 个）· 点选替换"
+		f.modelsHint = i18n.Tf("ui.welcome.models_filled_total", "n", len(fill), "total", total)
 	} else {
-		f.modelsHint = "已自动填入 " + strconv.Itoa(len(fill)) + " 个候选 · 点选替换"
+		f.modelsHint = i18n.Tf("ui.welcome.models_filled", "n", len(fill))
 	}
 }

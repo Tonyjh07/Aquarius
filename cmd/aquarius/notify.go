@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -35,7 +36,7 @@ func (p *outputsPresenter) Emit(ctx context.Context, ev port.Event) error {
 	req := port.OutputRequest{Message: ce.Message, Parts: ce.Message.Content}
 	for _, out := range p.outs {
 		if err := out.Deliver(ctx, req); err != nil && p.log != nil {
-			p.log(fmt.Errorf("输出器 %s: %w", out.Name(), err))
+			p.log(fmt.Errorf("%s: %w", i18n.Tf("cmd.asm.err.output_deliver", "name", out.Name()), err))
 		}
 	}
 	return nil
@@ -83,7 +84,7 @@ func notifyWith(goos string, detached, waiting func(*exec.Cmd) error) func(title
 // startDetached 分离启动（进程不随调用返回退出），由后台 goroutine 回收句柄。
 func startDetached(cmd *exec.Cmd) error {
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动 %s: %w", cmd.Path, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("cmd.asm.err.start_process", "cmd", cmd.Path), err)
 	}
 	go func() { _ = cmd.Wait() }()
 	return nil

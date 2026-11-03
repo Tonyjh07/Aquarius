@@ -3,7 +3,6 @@ package uigui
 import (
 	"image"
 	"image/color"
-	"strconv"
 	"unicode/utf8"
 
 	"gioui.org/io/event"
@@ -15,6 +14,8 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // complSelBg 补全行高亮底色（tipBg 亮一档）。
@@ -293,7 +294,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	}
 	if over > 0 {
 		hr := image.Rect(card.Min.X+padX, y, card.Max.X-padX, y+rowH)
-		hint := u.complFitText(gtx, "还有 "+strconv.Itoa(over)+" 条，继续输入过滤", hr.Dx())
+		hint := u.complFitText(gtx, i18n.Tf("ui.cmd.more_hint", "n", over), hr.Dx())
 		hintOp, hintDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, hint)
 			s.Color = tok().textDim

@@ -11,6 +11,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -152,7 +153,7 @@ func (h *unattendedHolder) Set(on bool) { h.v.Store(on) }
 func (envSecrets) Get(_ context.Context, name string) (string, error) {
 	v, ok := os.LookupEnv(name)
 	if !ok || v == "" {
-		return "", fmt.Errorf("环境变量 %s 未设置（config 的 api_key 引用它）", name)
+		return "", fmt.Errorf("%s", i18n.Tf("cmd.asm.err.env_unset", "name", name))
 	}
 	return v, nil
 }

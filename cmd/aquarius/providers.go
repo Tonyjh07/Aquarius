@@ -9,15 +9,17 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -119,22 +121,22 @@ func keySnapshots(p *providerConfig) []uigui.ProviderKeySnapshot {
 // 是引用则照写。**写库失败即报错、config 不动**——绝不静默退回明文。
 func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) error {
 	if len(patches) == 0 {
-		return fmt.Errorf("至少保留一个 provider")
+		return errors.New(i18n.T("cmd.provider.err.need_one"))
 	}
 	names := map[string]bool{}
 	for _, p := range patches {
 		if strings.TrimSpace(p.Name) == "" {
-			return fmt.Errorf("provider 名字不可为空")
+			return errors.New(i18n.T("cmd.provider.err.name_required"))
 		}
 		if names[p.Name] {
-			return fmt.Errorf("provider 名 %q 重复", p.Name)
+			return errors.New(i18n.Tf("cmd.provider.err.name_dup", "name", strconv.Quote(p.Name)))
 		}
 		names[p.Name] = true
 		if strings.TrimSpace(p.BaseURL) == "" {
-			return fmt.Errorf("provider %q 的 base_url 不可为空", p.Name)
+			return errors.New(i18n.Tf("cmd.provider.err.base_url_required", "name", strconv.Quote(p.Name)))
 		}
 		if len(p.Models) == 0 {
-			return fmt.Errorf("provider %q 的 models 不可为空（首个 = 缺省请求模型）", p.Name)
+			return errors.New(i18n.Tf("cmd.provider.err.models_required", "name", strconv.Quote(p.Name)))
 		}
 		enabled := 0
 		for _, me := range p.Models {
@@ -144,20 +146,21 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			// 单价（D205）：写出去的配置必须能过启动校验（normalize 同一条口径）——
 			// 负数与其等到重启才报错，不如现在拦住。
 			if me.CostIn < 0 || me.CostOut < 0 {
-				return fmt.Errorf("provider %q 的模型 %q 单价不可为负数（每百万 token）", p.Name, me.Name)
+				return errors.New(i18n.Tf("cmd.provider.err.cost_negative",
+					"provider", strconv.Quote(p.Name), "model", strconv.Quote(me.Name)))
 			}
 		}
 		if enabled == 0 {
 			// 写出去的配置必须能过启动校验（normalize 同一条口径）：没有启用的模型
 			// 等于这家 provider 没有可请求的模型，与其等到重启才报错，不如现在拦住。
-			return fmt.Errorf("provider %q 的模型全部未启用；至少勾选一个", p.Name)
+			return errors.New(i18n.Tf("cmd.provider.err.none_enabled", "name", strconv.Quote(p.Name)))
 		}
 	}
 	if primary == "" {
 		primary = patches[0].Name
 	}
 	if !names[primary] {
-		return fmt.Errorf("primary %q 不在 provider 列表内", primary)
+		return errors.New(i18n.Tf("cmd.provider.err.primary_unknown", "name", strconv.Quote(primary)))
 	}
 	// 密钥先落库（config 写回之前）：任何一条写库失败就整体放弃，不留「config 已是引用、
 	// 库里却没有值」的半个状态。逐槽原引用名从落盘 config 读——改名不 churn 引用。
@@ -405,7 +408,7 @@ func (m *providerManager) Models(p uigui.ProviderPatch) ([]string, error) {
 // 是否写回配置由装配根按「该模型是否已在配置里」判定（未声明 → Pending，等应用落盘）。
 func (m *providerManager) Probe(model string, p uigui.ProviderPatch) (uigui.ProbeOutcome, error) {
 	if m.probe == nil {
-		return uigui.ProbeOutcome{}, fmt.Errorf("能力探测未接线")
+		return uigui.ProbeOutcome{}, errors.New(i18n.T("cmd.provider.err.probe_unwired"))
 	}
 	return m.probe(context.Background(), p, strings.TrimSpace(model))
 }

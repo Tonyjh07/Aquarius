@@ -11,7 +11,6 @@ package uigui
 // 恒空，留空 = 保持原值（D35）。
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -38,18 +38,18 @@ var (
 
 func (webPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{
-		sec("搜索（按顺序尝试，失败换下一家）"),
+		sec(i18n.T("ui.page.web.section.search")),
 	}
 	for i := range f.webSearch {
 		rows = append(rows, rowDesc{kind: rowWebSearchItem, field: i})
 	}
 	rows = append(rows, rowDesc{kind: rowWebSearchAdd}, rowDesc{kind: rowWebSearchCount})
-	rows = append(rows, sec("网页抓取（按顺序尝试，失败换下一家）"))
+	rows = append(rows, sec(i18n.T("ui.page.web.section.fetch")))
 	for i := range f.webFetch {
 		rows = append(rows, rowDesc{kind: rowWebFetchItem, field: i})
 	}
 	rows = append(rows, rowDesc{kind: rowWebFetchAdd}, rowDesc{kind: rowWebFetchChars})
-	rows = append(rows, sec("本地抓取（不经过第三方，直接取网页正文）"))
+	rows = append(rows, sec(i18n.T("ui.page.web.section.local")))
 	rows = append(rows,
 		rowDesc{kind: rowWebProxy}, rowDesc{kind: rowWebUA},
 		rowDesc{kind: rowWebRobots}, rowDesc{kind: rowWebPrivate}, rowDesc{kind: rowWebTimeout},
@@ -63,32 +63,33 @@ func (webPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, row
 	case rowWebSearchItem:
 		return f.webProviderRow(gtx, th, f.webSearch[rows[i].field], true), true
 	case rowWebSearchAdd:
-		return paperButton(th, &f.webSearchAdd, "＋ 添加搜索提供商", paperBtnSecondary, true)(gtx), true
+		return paperButton(th, &f.webSearchAdd, i18n.T("ui.page.web.search_add"), paperBtnSecondary, true)(gtx), true
 	case rowWebSearchCount:
-		return fieldRow(gtx, th, "结果条数", editorBox(th, &f.webCount, fmt.Sprintf("缺省 8（%d–%d）；工具参数可逐次覆盖（空 = 保持）",
-			port.SettingsSearchCountMin, port.SettingsSearchCountMax))), true
+		return fieldRow(gtx, th, i18n.T("ui.page.web.count_label"),
+			editorBox(th, &f.webCount, i18n.Tf("ui.page.web.count_hint",
+				"min", port.SettingsSearchCountMin, "max", port.SettingsSearchCountMax))), true
 	case rowWebFetchItem:
 		return f.webProviderRow(gtx, th, f.webFetch[rows[i].field], false), true
 	case rowWebFetchAdd:
-		return paperButton(th, &f.webFetchAdd, "＋ 添加抓取提供商", paperBtnSecondary, true)(gtx), true
+		return paperButton(th, &f.webFetchAdd, i18n.T("ui.page.web.fetch_add"), paperBtnSecondary, true)(gtx), true
 	case rowWebFetchChars:
-		return fieldRow(gtx, th, "正文上限", editorBox(th, &f.webMaxChars, fmt.Sprintf("字符；缺省 16000（%d–%d）（空 = 保持）",
-			port.SettingsFetchCharsMin, port.SettingsFetchCharsMax))), true
+		return fieldRow(gtx, th, i18n.T("ui.page.web.chars_label"),
+			editorBox(th, &f.webMaxChars, i18n.Tf("ui.page.web.chars_hint",
+				"min", port.SettingsFetchCharsMin, "max", port.SettingsFetchCharsMax))), true
 	case rowWebProxy:
-		return fieldRow(gtx, th, "代理", editorBox(th, &f.webProxy, "如 http://127.0.0.1:7897；空 = 读环境变量")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.web.proxy_label"),
+			editorBox(th, &f.webProxy, i18n.T("ui.page.web.proxy_hint"))), true
 	case rowWebUA:
-		return fieldRow(gtx, th, "User-Agent", editorBox(th, &f.webUA, "空 = 浏览器形态缺省值（很多站点拒绝非浏览器 UA）")), true
+		return fieldRow(gtx, th, "User-Agent", editorBox(th, &f.webUA, i18n.T("ui.page.web.ua_hint"))), true
 	case rowWebRobots:
-		return paperCheckBox(th, &f.webRobots, "遵守 robots.txt（站点声明不许抓的路径就不抓）")(gtx), true
+		return paperCheckBox(th, &f.webRobots, i18n.T("ui.page.web.robots_check"))(gtx), true
 	case rowWebPrivate:
-		return paperCheckBox(th, &f.webPrivate, "允许访问本机与内网地址（只用于调试本机服务）")(gtx), true
+		return paperCheckBox(th, &f.webPrivate, i18n.T("ui.page.web.private_check"))(gtx), true
 	case rowWebTimeout:
-		return fieldRow(gtx, th, "超时", editorBox(th, &f.webTimeout, "秒；缺省 30（空 = 保持）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.web.timeout_label"),
+			editorBox(th, &f.webTimeout, i18n.T("ui.page.web.timeout_hint"))), true
 	case rowWebNote:
-		l := material.Body2(th, "两组列表都是有序的：先试第一家，失败换下一家。"+
-			"端点与密钥可以自己填，也可以选「借用」再点「填入」——那会把「模型服务」里那条的端点与密钥引用抄过来，"+
-			"之后照样能改。密钥只写不回显（留空 = 保持）。本地抓取不需要密钥，但会拒绝内网与回环地址。"+
-			"提供商与安全参数的改动保存后重启生效。")
+		l := material.Body2(th, i18n.T("ui.page.web.note"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	}
@@ -116,11 +117,11 @@ func (webPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.webCount 
 func webKindHint(kind string) string {
 	switch kind {
 	case "deepseek":
-		return "端点与密钥可自填，也可借「模型服务」"
+		return i18n.T("ui.page.web.hint.kind.deepseek")
 	case "brave":
-		return "需订阅令牌"
+		return i18n.T("ui.page.web.hint.kind.brave")
 	case "local":
-		return "本机抓取，无需密钥"
+		return i18n.T("ui.page.web.hint.kind.local")
 	default:
 		return ""
 	}
@@ -154,7 +155,7 @@ func newWebProviderForm(v WebProviderView, search bool, choices []ProviderChoice
 	pf.kind.setValue(v.Kind) // "" 未命中 → 首档（deepseek）
 	// 「借」的下拉：首项「不借」+ 各 provider 名；当前值不在候选里时补一项，
 	// 免得开窗即把一条失联的引用悄悄改成「不借」。
-	displays := []string{"不借"}
+	displays := []string{i18n.T("ui.page.web.from_none")}
 	values := []string{""}
 	for _, c := range choices {
 		if c.Name == "" || slices.Contains(values, c.Name) {
@@ -194,13 +195,12 @@ func (pf *webProviderForm) keyNote() string {
 		if ref == "" {
 			ref = "secret:…"
 		}
-		return "已存引用 " + ref + "；留空 = 保持不变"
+		return i18n.Tf("ui.page.web.keynote.saved", "ref", ref)
 	}
 	if pf.orig.KeyPlain {
-		return "当前是明文（启动会警告）；填新值覆盖，留空 = 保持不变"
+		return i18n.T("ui.page.web.keynote.plain")
 	}
-	return "留空 = 用「借用」那条的；都没有则按类型回落（brave 用 AQUARIUS_BRAVE_API_KEY，" +
-		"deepseek 搜索用 AQUARIUS_DEEPSEEK_SEARCH_API_KEY、抓取用 _FETCH_）"
+	return i18n.T("ui.page.web.keynote.fallback")
 }
 
 // webProviderRow 联网提供商一项：类型 / 借哪个服务 / 端点 / 密钥 / 国家语言 / 条数 +
@@ -220,7 +220,7 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 	}
 	items := []layout.FlexChild{
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "类型", func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, i18n.T("ui.page.web.kind_label"), func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(selectBtn(th, &pf.kind)),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -238,7 +238,7 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 									return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, paperButton(th, &pf.down, "↓", paperBtnSecondary, true))
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, paperButton(th, &pf.del, "删除", paperBtnDanger, true))
+									return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, paperButton(th, &pf.del, i18n.T("ui.common.delete"), paperBtnDanger, true))
 								}),
 							)
 						})
@@ -249,19 +249,20 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 	}
 	if !local {
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "端点", editorBox(th, &pf.baseURL, "如 https://api.deepseek.com；留空 = 用「借用」那条的"))
+			return fieldRow(gtx, th, i18n.T("ui.page.web.endpoint_label"),
+				editorBox(th, &pf.baseURL, i18n.T("ui.page.web.endpoint_hint")))
 		})))
 		// 「借」只对需要鉴权的类型有意义（local 没有端点也没有密钥）。
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "借用", func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, i18n.T("ui.page.web.from_label"), func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(selectBtn(th, &pf.from)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.fromUse, "填入", paperBtnSecondary, true))
+						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.fromUse, i18n.T("ui.page.web.fill"), paperBtnSecondary, true))
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							l := material.Label(th, paperNoteSp(th), "把它的端点与密钥引用抄进本条目，之后可改")
+							l := material.Label(th, paperNoteSp(th), i18n.T("ui.page.web.fill_hint"))
 							l.Color = paperOf().text3
 							return l.Layout(gtx)
 						})
@@ -274,7 +275,8 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return fieldRow(gtx, th, "密钥", editorBox(th, &pf.key, "secret:名 或明文；留空 = 保持 / 借用"))
+					return fieldRow(gtx, th, i18n.T("ui.page.web.key_label"),
+						editorBox(th, &pf.key, i18n.T("ui.page.web.key_hint")))
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -288,19 +290,20 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 	}
 	if brave {
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "国家 / 语言", func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, i18n.T("ui.page.web.country_lang_label"), func(gtx layout.Context) layout.Dimensions {
 				// 两个 Flexed 等分（Rigid 先量、editorBox 铺满 Max.X，会把 Flexed 挤成 0 宽）。
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, editorBox(th, &pf.country, "如 CN（空 = 服务端缺省）")),
+					layout.Flexed(1, editorBox(th, &pf.country, i18n.T("ui.page.web.country_hint"))),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-					layout.Flexed(1, editorBox(th, &pf.lang, "如 zh-hans（空 = 服务端缺省）")),
+					layout.Flexed(1, editorBox(th, &pf.lang, i18n.T("ui.page.web.lang_hint"))),
 				)
 			})
 		})))
 	}
 	if search {
 		items = append(items, layout.Rigid(line(6, func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "本条条数", editorBox(th, &pf.count, "空 = 用上面的「结果条数」"))
+			return fieldRow(gtx, th, i18n.T("ui.page.web.item_count_label"),
+				editorBox(th, &pf.count, i18n.T("ui.page.web.item_count_hint")))
 		})))
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
@@ -308,12 +311,12 @@ func (f *settingsForm) webProviderRow(gtx layout.Context, th *material.Theme, pf
 
 // webProviderEvents 一条提供商的事件消费（类型/借用选择器 + 「填入」+ 上移/下移/删除）。
 func (f *settingsForm) webProviderEvents(gtx layout.Context, pf *webProviderForm, search bool, i int) {
-	kindLabel := "抓取类型"
+	kindLabel := i18n.T("ui.page.web.kind_picker.fetch")
 	if search {
-		kindLabel = "搜索类型"
+		kindLabel = i18n.T("ui.page.web.kind_picker.search")
 	}
 	f.openPicker(gtx, kindLabel, &pf.kind)
-	f.openPicker(gtx, "借用服务", &pf.from)
+	f.openPicker(gtx, i18n.T("ui.page.web.from_picker"), &pf.from)
 	for pf.fromUse.Clicked(gtx) {
 		f.fillWebProviderFrom(pf)
 	}

@@ -13,6 +13,8 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // chipClick 工具 chip 头部点击控件 get-or-create（D67：按块序缓存，块只增不减）。
@@ -45,7 +47,7 @@ func chipHeaderText(c *toolChip, open bool) string {
 			status = "✗"
 		}
 	} else if c.confirmQ != "" {
-		status = "待确认"
+		status = i18n.T("ui.chat.chip_pending")
 	}
 	args := strings.TrimSpace(c.args)
 	if i := strings.IndexByte(args, '\n'); i >= 0 {
@@ -75,9 +77,9 @@ func chipCopyText(c *toolChip) string {
 		b.WriteString(s)
 	}
 	if c.done && c.result != "" {
-		mark := "结果 ✓"
+		mark := i18n.T("ui.chat.chip_result_ok")
 		if !c.ok {
-			mark = "结果 ✗"
+			mark = i18n.T("ui.chat.chip_result_fail")
 		}
 		b.WriteString("\n")
 		b.WriteString(mark)
@@ -107,7 +109,7 @@ func chipRaw(c *toolChip) rawContent {
 	if err != nil {
 		b = []byte(c.name + "\n" + c.args + "\n" + c.result)
 	}
-	return rawContent{title: "工具调用 · " + c.name, text: string(b)}
+	return rawContent{title: i18n.Tf("ui.chat.chip_raw_title", "name", c.name), text: string(b)}
 }
 
 // toolChipRow 工具合并 chip（D67）：头部行可点击折叠/展开；展开体 = 参数（等宽全文）+
@@ -159,9 +161,9 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 			}
 			switch {
 			case c.done:
-				mark := "结果 ✓"
+				mark := i18n.T("ui.chat.chip_result_ok")
 				if !c.ok {
-					mark = "结果 ✗"
+					mark = i18n.T("ui.chat.chip_result_fail")
 				}
 				vs.gap(mdBlockGapDp)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
@@ -178,7 +180,7 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 			case c.confirmQ == "": // 运行中且无待确认（展开查看时）
 				vs.gap(mdBlockGapDp)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
-					l := material.Caption(u.th, "运行中…")
+					l := material.Caption(u.th, i18n.T("ui.chat.chip_running"))
 					l.Color = tok().textDim
 					return l.Layout(gtx)
 				})

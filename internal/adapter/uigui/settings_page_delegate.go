@@ -11,6 +11,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // delegatePage 外部代理页模块。
@@ -21,12 +23,11 @@ func (delegatePage) Key() string { return "delegate" }
 func (delegatePage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{}
 	if f.delegates == nil {
-		return append(rows, rowDesc{kind: rowDlgEmpty, text: "未接线（只读占位）"})
+		return append(rows, rowDesc{kind: rowDlgEmpty, text: i18n.T("ui.page.delegate.unwired")})
 	}
-	rows = append(rows, sec("清单（config delegate.agents）"), rowDesc{kind: rowDlgNote})
+	rows = append(rows, sec(i18n.T("ui.page.delegate.section_agents")), rowDesc{kind: rowDlgNote})
 	if len(f.delegateSnap.Agents) == 0 {
-		text := "一个外部代理都没有。在 config.json 的 delegate.agents 里写一条（至少要有 name 与 command），" +
-			"重启后这里会出现它；没配代理时模型拿不到 delegate* 工具。"
+		text := i18n.T("ui.page.delegate.empty")
 		if f.delegateSnap.Note != "" {
 			text = f.delegateSnap.Note
 		}
@@ -55,10 +56,7 @@ func (delegatePage) Body(gtx layout.Context, th *material.Theme, f *settingsForm
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	case rowDlgNote:
-		l := material.Body2(th, "「可用」只探命令在不在 PATH 上，不做握手——启动时挨个拉起代理是"+
-			"拿用户的时间换一张清单，所以标题与版本要等它真的跑过一次才有。"+
-			"在这里改的都是 config，**重启生效**：转交管理器按启动时的配置装配。"+
-			"要删掉一个代理请改 config.json（这里只改不删）。")
+		l := material.Body2(th, i18n.T("ui.page.delegate.note"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	case rowDlgRefresh:
@@ -69,11 +67,11 @@ func (delegatePage) Body(gtx layout.Context, th *material.Theme, f *settingsForm
 					btn = new(widget.Clickable)
 					f.delegateBtns["refresh"] = btn
 				}
-				return paperButton(th, btn, "重新检测", paperBtnSecondary, true)(gtx)
+				return paperButton(th, btn, i18n.T("ui.page.delegate.refresh"), paperBtnSecondary, true)(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperMicroSp(th), "装在别处之后再扫一遍 PATH；不改任何配置")
+					l := material.Label(th, paperMicroSp(th), i18n.T("ui.page.delegate.refresh_hint"))
 					l.Color = paperOf().text3
 					return l.Layout(gtx)
 				})
@@ -98,7 +96,7 @@ func (delegatePage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			for _, a := range f.delegateSnap.Agents {
 				f.resetDelegateEditor(a.Name, a.CommandLine)
 			}
-			f.delegateStatus, f.delegateErr = "已重新检测（可用性按 PATH 现算）", false
+			f.delegateStatus, f.delegateErr = i18n.T("ui.page.delegate.rescanned"), false
 		}
 	}
 	for key, btn := range f.delegateBtns {

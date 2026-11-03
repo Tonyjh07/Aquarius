@@ -12,6 +12,7 @@ import (
 	"gioui.org/layout"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -42,7 +43,7 @@ func (g *relGraph) nodeRole(li int) conversation.Role {
 // 才有意义（根节点 ID 即会话 ID，D19）。
 func (g *relGraph) activateNode(gtx layout.Context, u *UI, st *historyState, li int) {
 	if g.isRoot(li) {
-		g.copyNodeID(gtx, st, li, "已复制会话 ID")
+		g.copyNodeID(gtx, st, li, i18n.T("ui.relmap.toast.copied_session"))
 		return
 	}
 	g.inspectNode(u, st, li)
@@ -122,7 +123,7 @@ func (g *relGraph) nodeMenuCtx(u *UI, li int) *bubbleMenuCtx {
 		}
 	}
 	ctx.edit, ctx.copy = body, body
-	ctx.raw = rawContent{title: "原文 · " + shortID(string(n.id)), text: body}
+	ctx.raw = rawContent{title: i18n.Tf("ui.relmap.raw_title", "id", shortID(string(n.id))), text: body}
 	return ctx
 }
 

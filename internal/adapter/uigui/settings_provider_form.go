@@ -3,13 +3,13 @@ package uigui
 // 设置窗的 provider 编辑区：provider / 密钥 / 模型 / 降级链四类表单，及其构造、摘要与加载。
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
 	"gioui.org/widget"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -93,7 +93,7 @@ func (mf *providerModelForm) touched() bool {
 func (pf *providerForm) providerSummary(primary bool) string {
 	name := strings.TrimSpace(pf.name.Text())
 	if name == "" {
-		name = "（未命名）"
+		name = i18n.T("ui.settings.form.unnamed")
 	}
 	switch strings.TrimSpace(pf.kind.value()) {
 	case "openai-responses":
@@ -107,9 +107,10 @@ func (pf *providerForm) providerSummary(primary bool) string {
 	if keys < 1 {
 		keys = 1 // 0 条声明也按缺省引用算一把（读侧同口径）
 	}
-	s := fmt.Sprintf("%s · %d 个模型 · %d 把钥匙", name, len(pf.modelForms), keys)
+	s := i18n.Tf("ui.settings.prov.summary", "name", name,
+		"models", len(pf.modelForms), "keys", keys)
 	if primary {
-		s += " · ★ 主"
+		s += i18n.T("ui.settings.prov.summary_primary")
 	}
 	return s
 }
@@ -320,7 +321,7 @@ func (f *settingsForm) loadFallback(chain []FallbackLink, choices []ProviderChoi
 // setAudioProviderChoices 语音页 provider 选择器选项：首项「未配置」，其后为 provider
 // 快照里的名字；当前值不在快照内时补一项，避免开窗即把它悄悄改成「未配置」。
 func (f *settingsForm) setAudioProviderChoices(cur string, c *selectField) {
-	displays := []string{"未配置"}
+	displays := []string{i18n.T("ui.settings.form.unconfigured")}
 	values := []string{""}
 	for _, p := range f.chainChoices {
 		if p.Name == "" || slices.Contains(values, p.Name) {
@@ -361,7 +362,7 @@ func newFallbackForm(l FallbackLink, choices []ProviderChoice) *fallbackForm {
 		displays = append(displays, cur)
 		values = append(values, cur)
 	}
-	displays = append(displays, "（不指定）")
+	displays = append(displays, i18n.T("ui.settings.form.unspecified"))
 	values = append(values, chainPickNone)
 
 	ff := &fallbackForm{provName: cur}

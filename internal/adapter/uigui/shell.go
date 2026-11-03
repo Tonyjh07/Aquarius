@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // toggleTopMost 置顶开关（托盘/logo 菜单，§15.1/D72）：切换主窗置顶态并持久化（与位置
@@ -81,7 +82,7 @@ func (u *UI) exitViaShell() {
 		u.plat.HideMain(h)
 	}
 	// GUI 下没有别的可见回执：保留这行终端日志，供用户确认菜单退出已触发。
-	fmt.Println("[tray] 菜单退出")
+	fmt.Println("[tray] " + i18n.T("ui.state.tray_quit"))
 	u.interruptNow() // D64：进行中的 Turn 立即取消（无轮进行 = nop，空闲退出不受影响）
 	u.signalEOF(nil)
 }

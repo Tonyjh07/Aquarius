@@ -4,7 +4,6 @@ package uigui
 
 import (
 	"image"
-	"strconv"
 	"strings"
 
 	"gioui.org/io/event"
@@ -14,6 +13,8 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // moduleGridRow 「模块库」整块网格作为一个列表行渲染（D148）。
@@ -107,7 +108,7 @@ func (f *promptEditor) drawTileFace(gtx layout.Context, th *material.Theme, r im
 
 	name := strings.TrimSpace(pf.name.Text())
 	if name == "" {
-		name = "（未命名）"
+		name = i18n.T("ui.prompt.tile.unnamed")
 	}
 	pad := gtx.Dp(10)
 	gtx.Constraints = layout.Exact(image.Pt(r.Dx()-2*pad, r.Dy()-2*pad))
@@ -135,9 +136,9 @@ func (f *promptEditor) drawTileFace(gtx layout.Context, th *material.Theme, r im
 // 就只能靠记忆去比对「人格引用」那一段。
 func moduleMeta(pf *promptModuleForm, refs []*promptRefForm) string {
 	name := strings.TrimSpace(pf.name.Text())
-	kind := "正文"
+	kind := i18n.T("ui.prompt.tile.kind_leaf")
 	if len(splitRefList(pf.children.Text())) > 0 {
-		kind = "组头"
+		kind = i18n.T("ui.prompt.tile.kind_group")
 	}
 	used := 0
 	for _, rf := range refs {
@@ -146,9 +147,9 @@ func moduleMeta(pf *promptModuleForm, refs []*promptRefForm) string {
 		}
 	}
 	if used == 0 {
-		return kind + " · 未引用"
+		return i18n.Tf("ui.prompt.tile.unused", "kind", kind)
 	}
-	return kind + " · 被引用 " + strconv.Itoa(used) + " 次"
+	return i18n.Tf("ui.prompt.tile.used", "kind", kind, "n", used)
 }
 
 // drawAddTile 「＋ 新增模块」格（浅底 + 居中加号）。
@@ -161,7 +162,7 @@ func (f *promptEditor) drawAddTile(gtx layout.Context, th *material.Theme, r ima
 	stack := op.Offset(r.Min).Push(gtx.Ops)
 	defer stack.Pop()
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		l := material.Label(th, paperNoteSp(th), "＋ 新增模块")
+		l := material.Label(th, paperNoteSp(th), i18n.T("ui.prompt.tile.add"))
 		l.Color = pp.text2
 		return l.Layout(gtx)
 	})

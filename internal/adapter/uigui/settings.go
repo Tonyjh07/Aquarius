@@ -7,6 +7,7 @@ package uigui
 // ApplySettings 单一写回调（装配根实现），内核命令经 inCh 排队到主循环与键入同路径串行执行。
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -282,37 +283,86 @@ type SettingsSnapshot struct {
 // 别名是为了既有调用点（约 90 处字面量）不用改。
 type SettingsPatch = port.SettingsPatch
 
-// 枚举档（展示值 + 键值；内核 /permission /effort 的校验为单一事实源，此处只负责渲染）。
+// 枚举档的**键值**（config 里的原文，不随语言变）与两列同形的档位（两种语言下写法
+// 一样，不必取词）。带人话展示名的那几档见下方各函数。
 var (
-	// permLevels 权限档（§5/D22，与 domain/perm.Level 对齐）。
+	// permLevels 权限档（§5/D22，与 domain/perm.Level 对齐）：规范值本身就是展示名。
 	permLevels = []string{"read-only", "strict", "permissive", "full-access"}
-	// effortLevels 推理档位（D34）：首项 = 未设（键值 "" = 清除态）。
-	effortLevels = []string{"未设", "minimal", "low", "medium", "high"}
+	// effortValues 推理档位键值（D34）：首项 "" = 未设（清除态）。
 	effortValues = []string{"", "minimal", "low", "medium", "high"}
-	// themeLevels 主题档展示与键值（§15.4/D61：system|light|dark）。
-	themeLevels = []string{"跟随系统", "浅色", "深色"}
+	// themeValues 主题档键值（§15.4/D61：system|light|dark）。
 	themeValues = []string{"system", "light", "dark"}
 	// zoomLevels 元素缩放档（D90/§15.8）：展示百分比，键值 = 倍率字符串（selectField
-	// 键值为 string 的既有口径，表单侧 ParseFloat 换算；%g 往返一致）。
+	// 键值为 string 的既有口径，表单侧 ParseFloat 换算；%g 往返一致）。百分比与倍率
+	// 在两种语言下同形，故展示名与键值共用这一份。
 	zoomLevels = []string{"100%", "125%", "150%", "175%", "200%"}
 	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
-	// langLevels 录音语种提示（D179）：只喂给识别，不改变界面语言。
-	langLevels = []string{"自动识别", "中文", "英文"}
+	// langValues 录音语种提示的键值（D179）：只喂给识别，不改变界面语言。
 	langValues = []string{"auto", "zh", "en"}
-	// asrKindLevels / ttsKindLevels 协议档：展示名是人话，键值是 config 里的 kind 原文。
+	// asrKindValues / ttsKindValues 协议档键值：config 里的 kind 原文（展示名是人话）。
 	// 首项是缺省（chat-audio）。
-	asrKindLevels = []string{"对话接口", "本地 whisper", "OpenAI 转写", "FunASR 原生"}
 	asrKindValues = []string{"chat-audio", "whisper", "openai", "funasr"}
-	ttsKindLevels = []string{"对话接口", "VITS", "GPT-SoVITS"}
 	ttsKindValues = []string{"chat-audio", "vits", "gptsovits"}
 	// kindLevels 协议档（S11-7③/D173）：展示名短（chat/responses/anthropic），键值为
-	// config 里的 kind 原文；空 = openai-chat（读侧归一）。
+	// config 里的 kind 原文；空 = openai-chat（读侧归一）。展示名是协议短名，两种语言
+	// 下同形，故与键值同为包级档位。
 	kindLevels = []string{"chat", "responses", "anthropic"}
 	kindValues = []string{"openai-chat", "openai-responses", "anthropic"}
-	// capLevels 模型能力位三勾选的展示名与键名（S11-7③）：顺序与 port.CapNames 一致。
-	capLabels = []string{"工具", "思考", "图片"}
-	capNames  = []string{port.CapTools, port.CapReasoning, port.CapVision}
+	// capNames 模型能力位三勾选的键名（S11-7③）：顺序与 port.CapNames 一致。
+	capNames = []string{port.CapTools, port.CapReasoning, port.CapVision}
 )
+
+// 下面几个展示名档**必须是函数**：语言在 main 里才定，包级变量初始化时 i18n 还没选
+// 语言，存下来的就永远是本机 locale 那套（与 pageName 同一坑，见 settings_page.go）。
+// 键值档一个都不动——下标对应关系是契约。
+
+// effortLevels 推理档位展示名（D34）：首项 = 未设（键值 "" = 清除态）。
+func effortLevels() []string {
+	return []string{i18n.T("ui.common.unset"), "minimal", "low", "medium", "high"}
+}
+
+// themeLevels 主题档展示名（§15.4/D61）。
+func themeLevels() []string {
+	return []string{
+		i18n.T("ui.settings.level.theme.system"),
+		i18n.T("ui.settings.level.theme.light"),
+		i18n.T("ui.settings.level.theme.dark"),
+	}
+}
+
+// langLevels 录音语种提示的展示名（D179）。
+func langLevels() []string {
+	return []string{
+		i18n.T("ui.settings.level.lang.auto"),
+		i18n.T("ui.settings.level.lang.zh"),
+		i18n.T("ui.settings.level.lang.en"),
+	}
+}
+
+// asrKindLevels 识别协议档展示名（首项 = 缺省 chat-audio）。
+func asrKindLevels() []string {
+	return []string{
+		i18n.T("ui.settings.level.chat_audio"),
+		i18n.T("ui.settings.level.asr.whisper"),
+		i18n.T("ui.settings.level.asr.openai"),
+		i18n.T("ui.settings.level.asr.funasr"),
+	}
+}
+
+// ttsKindLevels 合成协议档展示名（首项 = 缺省 chat-audio）。后两项是协议自己的名字，
+// 两种语言下都照原样显示，不进文案表。
+func ttsKindLevels() []string {
+	return []string{i18n.T("ui.settings.level.chat_audio"), "VITS", "GPT-SoVITS"}
+}
+
+// capLabels 模型能力位三勾选的展示名（S11-7③）：顺序与 capNames 一致。
+func capLabels() []string {
+	return []string{
+		i18n.T("ui.settings.level.cap.tools"),
+		i18n.T("ui.settings.level.cap.reasoning"),
+		i18n.T("ui.settings.level.cap.vision"),
+	}
+}
 
 // 设置窗页（S4d/D142）：内容分页呈现（左侧 140dp 导航栏 + 右页内容 + 全局底栏）。
 // 页序即导航序 = settingsPages 注册序（D162）；页名集与页序为契约（测试锁定）。

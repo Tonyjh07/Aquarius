@@ -1,7 +1,6 @@
 package uigui
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -36,7 +36,7 @@ func (a stagedAtt) displayName() string {
 		if a.blob.Name != "" {
 			return a.blob.Name
 		}
-		return "粘贴的图片"
+		return i18n.T("ui.attach.pasted_image")
 	}
 	return filepath.Base(a.path)
 }
@@ -127,7 +127,7 @@ func (u *UI) attachToolSlot(gtx layout.Context) layout.Dimensions {
 		it := items[0]
 		return u.attachChipState(gtx, it.label, it.thumb, it.click, it.dropped)
 	default:
-		return u.attachChip(gtx, fmt.Sprintf("%d 个文件", len(items)), nil, &u.attachClear)
+		return u.attachChip(gtx, i18n.Tf("ui.attach.file_count", "n", len(items)), nil, &u.attachClear)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -415,41 +416,43 @@ func (m *modelConfig) effectiveMaxContext(global int) int {
 // 弱模型会静默削能力，不能让人自己发现，所以要指名是哪一环。
 func (m *modelConfig) narrowNote() string {
 	cur, chain := m.currentCaps(), m.chainCaps()
+	sep := i18n.T("cmd.config.sep.list")
 	var lost []string
 	if cur.Tools && !chain.Tools {
-		lost = append(lost, "工具调用")
+		lost = append(lost, i18n.T("cmd.config.caps.tools"))
 	}
 	if cur.Reasoning && !chain.Reasoning {
-		lost = append(lost, "思考")
+		lost = append(lost, i18n.T("cmd.config.caps.reasoning"))
 	}
 	if cur.Vision && !chain.Vision {
-		lost = append(lost, "图片输入")
+		lost = append(lost, i18n.T("cmd.config.caps.vision"))
 	}
 	if len(lost) == 0 {
 		return ""
 	}
-	note := fmt.Sprintf("降级链窄于当前模型 %s 的能力，整链按不支持 %s 处理",
-		m.Name, strings.Join(lost, "、"))
+	note := i18n.Tf("cmd.config.narrow.chain", "model", m.Name, "lost", strings.Join(lost, sep))
 	var weak []string
 	for _, l := range m.modelChain()[1:] {
 		var missing []string
 		if cur.Tools && !l.Caps.Tools {
-			missing = append(missing, "工具")
+			missing = append(missing, i18n.T("cmd.config.caps.tools_short"))
 		}
 		if cur.Reasoning && !l.Caps.Reasoning {
-			missing = append(missing, "思考")
+			missing = append(missing, i18n.T("cmd.config.caps.reasoning"))
 		}
 		if cur.Vision && !l.Caps.Vision {
-			missing = append(missing, "图片")
+			missing = append(missing, i18n.T("cmd.config.caps.vision_short"))
 		}
 		if len(missing) > 0 {
-			weak = append(weak, fmt.Sprintf("%s/%s 缺 %s", l.Provider, l.Model, strings.Join(missing, "、")))
+			weak = append(weak, i18n.Tf("cmd.config.narrow.weak_item",
+				"provider", l.Provider, "model", l.Model, "missing", strings.Join(missing, sep)))
 		}
 	}
 	if len(weak) > 0 {
-		note += "（" + strings.Join(weak, "；") + "）"
+		note += i18n.Tf("cmd.config.narrow.weak", "items",
+			strings.Join(weak, i18n.T("cmd.config.sep.item")))
 	}
-	return note + "；检查 model.fallback 各模型的 caps"
+	return note + i18n.T("cmd.config.narrow.tail")
 }
 
 // validateSampling 采样参数的取值范围校验（D204，启动期一次）。只拦「服务端必然拒收」的
@@ -464,18 +467,21 @@ func validateSampling(s port.Sampling, kind, where string) error {
 			hi = temperatureMaxAnthropic
 		}
 		if *t < port.SettingsTemperatureMin || *t > hi {
-			return fmt.Errorf("%s 的 sampling.temperature = %v 超出范围（该协议接受 0..%g）", where, *t, hi)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.sampling_temperature",
+				"where", where, "value", *t, "max", hi))
 		}
 	}
 	if p := s.TopP; p != nil && (*p < port.SettingsTopPMin || *p > port.SettingsTopPMax) {
-		return fmt.Errorf("%s 的 sampling.top_p = %v 超出范围（接受 0..%g）", where, *p, port.SettingsTopPMax)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.sampling_top_p",
+			"where", where, "value", *p, "max", port.SettingsTopPMax))
 	}
 	if s.MaxTokens < 0 {
-		return fmt.Errorf("%s 的 sampling.max_tokens 不可为负数（%d）；不限制就留空", where, s.MaxTokens)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.sampling_max_tokens",
+			"where", where, "n", s.MaxTokens))
 	}
 	for _, v := range s.Stop {
 		if v == "" {
-			return fmt.Errorf("%s 的 sampling.stop 含空串（停止串不能为空）", where)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.sampling_stop", "where", where))
 		}
 	}
 	return nil
@@ -485,29 +491,32 @@ func validateSampling(s port.Sampling, kind, where string) error {
 // primary 缺省 = providers 首个；model.name 缺省 = primary.models[0]。
 func (m *modelConfig) normalize() error {
 	if len(m.Providers) == 0 {
-		return fmt.Errorf("model.providers 不可为空（provider 已改为列表；若为旧格式请手工迁移，见 docs/configuration.md）")
+		return fmt.Errorf("%s", i18n.T("cmd.config.err.providers_empty"))
 	}
 	seen := map[string]bool{}
 	for i := range m.Providers {
 		p := &m.Providers[i]
 		if p.Name == "" {
-			return fmt.Errorf("model.providers[%d].name 不可为空", i)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_name_empty", "i", i))
 		}
 		if seen[p.Name] {
-			return fmt.Errorf("model.providers[%d].name %q 重复", i, p.Name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_name_dup", "i", i, "name", p.Name))
 		}
 		seen[p.Name] = true
 		switch p.protocolKind() {
 		case kindOpenAIChat, kindOpenAIResponses, kindAnthropic:
 		default:
-			return fmt.Errorf("model.providers[%d] (%s) 的 kind %q 不认识（可选：%s / %s / %s）",
-				i, p.Name, p.Kind, kindOpenAIChat, kindOpenAIResponses, kindAnthropic)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_kind",
+				"i", i, "provider", p.Name, "kind", p.Kind,
+				"a", kindOpenAIChat, "b", kindOpenAIResponses, "c", kindAnthropic))
 		}
 		if p.BaseURL == "" {
-			return fmt.Errorf("model.providers[%d] (%s) 的 base_url 不可为空", i, p.Name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_base_url_empty",
+				"i", i, "provider", p.Name))
 		}
 		if len(p.Models) == 0 || strings.TrimSpace(p.Models[0].Name) == "" {
-			return fmt.Errorf("model.providers[%d] (%s) 的 models 不可为空（首个 = 缺省请求模型）", i, p.Name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_models_empty",
+				"i", i, "provider", p.Name))
 		}
 		modelSeen := map[string]bool{}
 		enabled := 0
@@ -515,18 +524,20 @@ func (m *modelConfig) normalize() error {
 			e := &p.Models[j]
 			e.Name = strings.TrimSpace(e.Name)
 			if e.Name == "" {
-				return fmt.Errorf("model.providers[%d] (%s) 的 models[%d].name 不可为空", i, p.Name, j)
+				return fmt.Errorf("%s", i18n.Tf("cmd.config.err.model_name_empty",
+					"i", i, "provider", p.Name, "j", j))
 			}
 			if modelSeen[e.Name] {
-				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 重复", i, p.Name, e.Name)
+				return fmt.Errorf("%s", i18n.Tf("cmd.config.err.model_name_dup",
+					"i", i, "provider", p.Name, "name", e.Name))
 			}
 			modelSeen[e.Name] = true
 			if e.isEnabled() {
 				enabled++
 			}
 			if e.ContextWindow < 0 {
-				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 的 context_window 不可为负数（%d）；不声明就留空",
-					i, p.Name, e.Name, e.ContextWindow)
+				return fmt.Errorf("%s", i18n.Tf("cmd.config.err.context_window_neg",
+					"i", i, "provider", p.Name, "name", e.Name, "n", e.ContextWindow))
 			}
 			// 采样参数（D204）：逐模型按**合并后**的生效值校验（该模型自己的覆盖叠在
 			// model.sampling 上）——只校验将来真会发出去的那份。
@@ -539,13 +550,13 @@ func (m *modelConfig) normalize() error {
 			}
 			// 单价（D205）：负数没有意义，也不该被当成「未声明」静默吞掉。
 			if e.CostIn < 0 || e.CostOut < 0 {
-				return fmt.Errorf("model.providers[%d] (%s) 的模型 %q 的 cost_in / cost_out 不可为负数",
-					i, p.Name, e.Name)
+				return fmt.Errorf("%s", i18n.Tf("cmd.config.err.cost_neg",
+					"i", i, "provider", p.Name, "name", e.Name))
 			}
 		}
 		if enabled == 0 {
-			return fmt.Errorf("model.providers[%d] (%s) 的模型全部未启用；至少启用一个（enabled: false 只是清单占位，不参与选型）",
-				i, p.Name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.no_model_enabled",
+				"i", i, "provider", p.Name))
 		}
 		for j := range p.Keys {
 			p.Keys[j].Label = strings.TrimSpace(p.Keys[j].Label)
@@ -556,7 +567,7 @@ func (m *modelConfig) normalize() error {
 		m.Primary = m.Providers[0].Name
 	}
 	if m.byName(m.Primary) == nil {
-		return fmt.Errorf("model.primary %q 不在 model.providers 内", m.Primary)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.primary_missing", "name", m.Primary))
 	}
 	if m.Name == "" {
 		m.Name = m.primaryProvider().models0()
@@ -566,17 +577,19 @@ func (m *modelConfig) normalize() error {
 		fb.Provider = strings.TrimSpace(fb.Provider)
 		fb.Model = strings.TrimSpace(fb.Model)
 		if fb.Provider == "" {
-			return fmt.Errorf("model.fallback 每项都要写 provider")
+			return fmt.Errorf("%s", i18n.T("cmd.config.err.fallback_no_provider"))
 		}
 		if m.byName(fb.Provider) == nil {
-			return fmt.Errorf("model.fallback %q 不在 model.providers 内", fb.Provider)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.fallback_missing",
+				"provider", fb.Provider))
 		}
 		if fb.Provider == m.Primary && (fb.Model == "" || fb.Model == m.Name) {
-			return fmt.Errorf("model.fallback 不应含当前生效的 %s/%s（那就是 primary 本身）", fb.Provider, m.Name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.fallback_primary",
+				"provider", fb.Provider, "model", m.Name))
 		}
 		key := fb.Provider + "/" + fb.Model
 		if fbSeen[key] {
-			return fmt.Errorf("model.fallback 重复项 %q", key)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.fallback_dup", "key", key))
 		}
 		fbSeen[key] = true
 	}
@@ -614,5 +627,5 @@ func (p *providerConfig) keyLabelAt(i int) string {
 			return l
 		}
 	}
-	return fmt.Sprintf("第 %d 把", i+1)
+	return i18n.Tf("cmd.config.key_label", "n", i+1)
 }

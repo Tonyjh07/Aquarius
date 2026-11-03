@@ -1,4 +1,157 @@
 package i18n
 
 // enGuiChatTexts 与 zhGuiChatTexts 同 key 同顺序（同构测试盯着）。
-var enGuiChatTexts = map[string]string{}
+var enGuiChatTexts = map[string]string{
+
+	// ── 状态行与提示条
+	"ui.state.generating":      "Generating",
+	"ui.state.thinking":        "Thinking",
+	"ui.state.unattended":      "Unattended",
+	"ui.state.edit_hint":       "Editing · Enter to submit / Esc to cancel",
+	"ui.state.edit_hint_carry": "Editing, history carried over · Enter to submit / Esc to cancel",
+	"ui.state.edit_hint_clone": "Editing, history copied · Enter to submit / Esc to cancel",
+	"ui.state.unattended_hint": "Unattended · {hint}",
+
+	"ui.state.unattended_deny": "Unattended · out-of-bounds actions will be denied",
+	"ui.state.inject":          "Injected · {source} · {state}",
+	"ui.state.fired":           "response triggered",
+	"ui.state.idle":            "not triggered",
+
+	"ui.state.pending_full":     "Queue is full (8) — undo one before adding another",
+	"ui.state.pending_empty":    "Nothing to queue — this line was not sent",
+	"ui.state.pending_too_long": "This line is too long (limit 8000 characters) and was not queued",
+	"ui.state.pending_failed":   "Could not queue it: {err}",
+	"ui.state.pending_more":     "{n} more queued (change delivery or undo on the queue bar)",
+	"ui.state.queued":           "Queued",
+	"ui.state.steer":            "Steer",
+
+	"ui.state.buf_full_line":   "Input buffer is full — this line was not executed",
+	"ui.state.buf_full_branch": "Input buffer is full — branch switch not performed",
+	"ui.state.buf_full_attach": "Input buffer is full — attachments not sent",
+	"ui.state.tray_quit":       "Menu quit",
+
+	// ── 对话面块与气泡
+	"ui.chat.none_selected":      "(none selected)",
+	"ui.chat.thinking_raw_title": "Thinking source · {id}",
+	"ui.chat.chip_pending":       "awaiting confirmation",
+	"ui.chat.chip_result_ok":     "Result ✓",
+	"ui.chat.chip_result_fail":   "Result ✗",
+	"ui.chat.chip_raw_title":     "Tool call · {name}",
+	"ui.chat.chip_running":       "Running…",
+	"ui.chat.thinking_live":      "Thinking…",
+	"ui.chat.thought":            "Thought",
+	"ui.chat.thought_secs":       "Thought for {n}s",
+	"ui.chat.tool_not_returned":  "(no result — the turn ended)",
+	"ui.chat.list_sep":           ", ",
+
+	"ui.chat.facts_not_ready": "(not ready)",
+	"ui.chat.ctx_mode_est":    "estimated",
+	"ui.chat.ctx_mode_exact":  "exact",
+	"ui.chat.ctx_usage":       "Context {used}/{max} tokens ({pct}%, {mode})",
+	"ui.chat.tokens_total":    "Total in {in} / out {out} tokens",
+	"ui.chat.tokens_last":     "Last turn in {in} / out {out} tokens",
+
+	// ── 输入区
+	"ui.input.startup_hint":       "Aquarius — type /help for commands, /quit to exit; click the square on the right to stop generating",
+	"ui.input.tip_attach":         "Attach",
+	"ui.input.tip_send":           "Send",
+	"ui.input.tip_voice":          "Voice input",
+	"ui.input.tip_stop_recording": "Stop recording",
+	"ui.input.tip_stop":           "Stop",
+	"ui.input.voice_failed":       "Voice input failed: {err}",
+
+	// ── 提问面板
+	"ui.ask.counter":          "Question {i}/{total}",
+	"ui.ask.free_placeholder": "Type your own answer…",
+	"ui.ask.free_label":       "Type your own…",
+	"ui.ask.free_label_value": "Your answer: {text}",
+	"ui.ask.ignore":           "Ignore",
+	"ui.ask.next":             "Next",
+	"ui.ask.submit":           "Submit",
+
+	// ── 确认
+	"ui.confirm.elevate":          "Raise permission → {level}",
+	"ui.confirm.deny_with_reason": "Denied: {reason}",
+	"ui.confirm.needed":           "Confirmation needed",
+	"ui.confirm.shared_note":      "Both windows show the same confirmation; answering in either one is enough.",
+
+	// ── 附件
+	"ui.attach.pasted_image":  "Pasted image",
+	"ui.attach.file_count":    "{n} files",
+	"ui.attach.dir_not_file":  "{name} is a folder — drop or pick a specific file",
+	"ui.attach.marker_named":  "[attachment: {name}]",
+	"ui.attach.marker_count":  "[{n} attachments: {names}]",
+	"ui.attach.limit_ignored": "At most {n} attachments per message — {name} was ignored",
+
+	// ── 图片
+	"ui.img.placeholder":        "Image",
+	"ui.img.err_unreadable":     "Cannot read this image",
+	"ui.img.err_read_failed":    "Failed to read the image",
+	"ui.img.err_not_image":      "This file is not a recognized image",
+	"ui.img.err_too_large":      "Image too large ({w}×{h}) — preview not supported",
+	"ui.img.err_decode":         "Failed to decode the image",
+	"ui.img.view_hint":          "Scroll to zoom · drag to pan · Esc to close",
+	"ui.img.decoding":           "Decoding…",
+	"ui.img.no_image":           "No image to show",
+	"ui.img.too_large":          "Image too large ({mb} MB, limit {limit}) — not added",
+	"ui.img.too_large_named":    "Image too large ({mb} MB, limit {limit}) — not added: {name}",
+	"ui.img.paste_read_failed":  "Failed to read the clipboard image: {err}",
+	"ui.img.attach_limit_paste": "At most {n} attachments per message — this image was not added",
+
+	// ── 命令折叠条与补全浮层
+	"ui.cmd.header_commands": "{n} commands collapsed",
+	"ui.cmd.header_notes":    "{n} notices",
+	"ui.cmd.expand":          "Click to expand",
+	"ui.cmd.collapse":        "Click to collapse",
+	"ui.cmd.more_hint":       "{n} more — keep typing to filter",
+	"ui.cmd.no_args_label":   "(no arguments)",
+	"ui.cmd.no_args_tail":    "This command takes no arguments; press Enter to run it",
+	"ui.cmd.repeatable":      "may be given more than once",
+	"ui.cmd.tail_sep":        "; ",
+
+	// ── 会话历史窗
+	"ui.history.toast_copied_id": "Node ID copied",
+	"ui.history.zoom":            "Zoom {pct}",
+	"ui.history.fit_tree":        "Fit the tree",
+	"ui.history.reset_view":      "Reset view",
+	"ui.history.focus_line":      "Focus current history",
+	"ui.history.focus_node":      "Focus current node",
+	"ui.history.edits_count":     "{n} changes",
+	"ui.history.discard":         "Discard",
+	"ui.history.status_counts":   "{n} total · {m} shown",
+	"ui.history.legend_depth":    "Depth",
+	"ui.history.legend_shapes":   "Shapes: □ you · ● assistant · ◇ system · ◯ session root · △ injected",
+
+	"ui.history.sessions":    "Sessions",
+	"ui.history.import":      "Import",
+	"ui.history.export":      "Export",
+	"ui.history.select":      "Select",
+	"ui.history.new_session": "New session",
+	"ui.history.row_meta":    "{time} · {n} messages",
+
+	"ui.history.export_selected_title": "Export selected sessions",
+	"ui.history.select_empty":          "No sessions to select",
+	"ui.history.select_all":            "Select all",
+	"ui.history.select_none":           "Select none",
+	"ui.history.selected_count":        "{n} selected",
+
+	"ui.history.summary_hint":        "Inserted before {id}; history above it will no longer be sent. \"Insert\" uses the text you wrote, \"Summarize the history above with the model\" lets the model write it.",
+	"ui.history.summary_by_model":    "Summarize the history above with the model",
+	"ui.history.summary_insert":      "Insert",
+	"ui.history.summary_placeholder": "Write the summary…",
+
+	"ui.history.filter_session_files": "Session files (*.aqx;*.json;*.jsonl)",
+	"ui.history.filter_aqx":           "Aquarius archive (*.aqx)",
+	"ui.history.filter_all":           "All files (*.*)",
+	"ui.history.import_title":         "Import session",
+	"ui.history.export_title":         "Export session",
+
+	"ui.history.import_count":         "Import {n}",
+	"ui.history.import_pick_title":    "Choose sessions to import",
+	"ui.history.import_pick_hint":     "This backup contains {n} sessions; all are selected by default — clear the ones you do not want. Imports always create new sessions and leave existing ones untouched.",
+	"ui.history.import_pick_selected": "{n} / {total} selected",
+	"ui.history.no_title":             "(untitled)",
+	"ui.history.messages_count":       "{n} messages",
+	"ui.img.attach_unwired":           `Attachment store is not connected`,
+	"ui.history.tree_edit":            "Tree editing",
+}

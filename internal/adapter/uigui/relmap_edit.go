@@ -11,7 +11,6 @@ package uigui
 // 节点」之后叠加编辑语义——没开编辑模式时一切照旧（拖节点 = 摆位置）。
 
 import (
-	"fmt"
 	"image"
 	"math"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -180,7 +180,7 @@ func (g *relGraph) endNodeDrag(u *UI, st *historyState, now time.Time) bool {
 	if target < 0 {
 		// 压在自己后代上才解释一句（§5.6.3）；其它情况静默——「拖了但没靠近谁」就是换位置。
 		if blocked >= 0 {
-			st.toast.show("不能挂到自己的后代下", now)
+			st.toast.show(i18n.T("ui.relmap.toast.not_descendant"), now)
 		}
 		g.resetDrop()
 		return false
@@ -196,7 +196,7 @@ func (g *relGraph) endNodeDrag(u *UI, st *historyState, now time.Time) bool {
 	}}:
 	default:
 		// 通道满：这次改挂丢掉，但要留回执——否则用户以为挂上了，树却没动。
-		st.toast.show("命令通道忙，这次改挂没提交", now)
+		st.toast.show(i18n.T("ui.relmap.toast.channel_busy"), now)
 		g.resetDrop()
 		return false
 	}
@@ -268,9 +268,9 @@ func (g *relGraph) drawEditCapsule(gtx layout.Context, th *material.Theme) {
 // relEditCapsuleText 胶囊文案（纯函数，可测）：没改过时不提处数——「已改 0 处」是噪音。
 func relEditCapsuleText(edits int) string {
 	if edits <= 0 {
-		return "编辑树 · 拖动节点改挂"
+		return i18n.T("ui.relmap.edit_capsule")
 	}
-	return fmt.Sprintf("编辑树 · 拖动节点改挂 · 已改 %d 处", edits)
+	return i18n.Tf("ui.relmap.edit_capsule_count", "n", edits)
 }
 
 // dropRing 围绕某节点的卡片盒画一圈 2dp 环（alpha 由调用方给）。

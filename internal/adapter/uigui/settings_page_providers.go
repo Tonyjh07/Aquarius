@@ -12,9 +12,7 @@ package uigui
 // ProviderManager.Probe（与 `/model probe` 同一条写回逻辑，D174）。
 
 import (
-	"fmt"
 	"image"
-	"strconv"
 	"strings"
 
 	"gioui.org/font"
@@ -22,6 +20,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // providersPage 模型服务页模块。
@@ -30,7 +30,7 @@ type providersPage struct{}
 func (providersPage) Key() string { return "providers" }
 
 func (providersPage) Rows(f *settingsForm) []rowDesc {
-	rows := []rowDesc{sec("模型服务（provider 列表）")}
+	rows := []rowDesc{sec(i18n.T("ui.page.providers.section.list"))}
 	for i := range f.provs {
 		rows = append(rows, rowDesc{kind: rowProvSummary, prov: i})
 		if f.provOpen != i { // 同一时刻只展开一张（D176 口径二）
@@ -43,7 +43,7 @@ func (providersPage) Rows(f *settingsForm) []rowDesc {
 			rowDesc{kind: rowProvBase, prov: i},
 			rowDesc{kind: rowProvTok, prov: i},
 			rowDesc{kind: rowProvUnsup, prov: i},
-			rowDesc{kind: rowProvHead, prov: i, text: "密钥池"},
+			rowDesc{kind: rowProvHead, prov: i, text: i18n.T("ui.page.providers.head.keys")},
 		)
 		for k := range pf.keyForms {
 			rows = append(rows, rowDesc{kind: rowProvKey, prov: i, field: k})
@@ -88,10 +88,11 @@ func (providersPage) Body(gtx layout.Context, th *material.Theme, f *settingsFor
 		return f.providerSummaryRow(gtx, th, r.prov), true
 	case rowProvName:
 		pf := f.provs[r.prov]
-		return fieldRow(gtx, th, "名称", editorBox(th, &pf.name, "provider 唯一标识（primary/fallback 按名引用）")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.providers.name_label"),
+			editorBox(th, &pf.name, i18n.T("ui.page.providers.name_hint"))), true
 	case rowProvKind:
 		pf := f.provs[r.prov]
-		return fieldRow(gtx, th, "协议", func(gtx layout.Context) layout.Dimensions {
+		return fieldRow(gtx, th, i18n.T("ui.page.providers.kind_label"), func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(selectBtn(th, &pf.kind)),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -105,29 +106,32 @@ func (providersPage) Body(gtx layout.Context, th *material.Theme, f *settingsFor
 		}), true
 	case rowProvBase:
 		pf := f.provs[r.prov]
-		return fieldRow(gtx, th, "接口地址", editorBox(th, &pf.baseURL, "如 https://api.openai.com/v1")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.providers.base_label"),
+			editorBox(th, &pf.baseURL, i18n.T("ui.page.providers.base_hint"))), true
 	case rowProvModels:
 		return f.providerModelsHead(gtx, th, r.prov), true
 	case rowProvTok:
 		pf := f.provs[r.prov]
-		return fieldRow(gtx, th, "Tokenizer", editorBox(th, &pf.tokenizer, "本地 tokenizer.json 路径；空 = 估算")), true
+		return fieldRow(gtx, th, "Tokenizer",
+			editorBox(th, &pf.tokenizer, i18n.T("ui.page.providers.tokenizer_hint"))), true
 	case rowProvUnsup:
 		pf := f.provs[r.prov]
-		return fieldRow(gtx, th, "不认参数", editorBox(th, &pf.unsupported, "逗号分隔；这些参数会被剔除，不发往服务端")), true
+		return fieldRow(gtx, th, i18n.T("ui.page.providers.unsupported_label"),
+			editorBox(th, &pf.unsupported, i18n.T("ui.page.providers.unsupported_hint"))), true
 	case rowProvHead:
 		return provHeadRow(gtx, th, r.text), true
 	case rowProvKey:
 		return f.providerKeyRow(gtx, th, r.prov, r.field), true
 	case rowProvKeyAdd:
 		pf := f.provs[r.prov]
-		return paperButton(th, &pf.keyAdd, "＋ 添加密钥", paperBtnSecondary, true)(gtx), true
+		return paperButton(th, &pf.keyAdd, i18n.T("ui.page.providers.key_add"), paperBtnSecondary, true)(gtx), true
 	case rowProvModel:
 		return f.providerModelRow(gtx, th, r.prov, r.field), true
 	case rowProvModelPager:
 		return f.providerModelPager(gtx, th, r.prov), true
 	case rowProvModelAdd:
 		pf := f.provs[r.prov]
-		return paperButton(th, &pf.modelAdd, "＋ 添加模型", paperBtnSecondary, true)(gtx), true
+		return paperButton(th, &pf.modelAdd, i18n.T("ui.page.providers.model_add"), paperBtnSecondary, true)(gtx), true
 	case rowProvBtns:
 		return f.providerButtonsRow(gtx, th, r.prov), true
 	case rowProvAdd:
@@ -153,7 +157,7 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 				f.provOpen = i // 展开本张即收起其它（只展开一张）
 			}
 		}
-		f.openPicker(gtx, "协议", &pf.kind)
+		f.openPicker(gtx, i18n.T("ui.page.providers.kind_label"), &pf.kind)
 		for pf.test.Clicked(gtx) {
 			u.runProviderTest(f, pf)
 		}
@@ -235,11 +239,11 @@ func (f *settingsForm) removeProvider(i int) {
 func kindHint(kind string) string {
 	switch kind {
 	case "openai-responses":
-		return "OpenAI Responses API（/responses）"
+		return i18n.T("ui.page.providers.hint.kind.openai_responses")
 	case "anthropic":
-		return "Anthropic Messages API（/messages）"
+		return i18n.T("ui.page.providers.hint.kind.anthropic")
 	default:
-		return "OpenAI 兼容 /chat/completions"
+		return i18n.T("ui.page.providers.hint.kind.openai")
 	}
 }
 
@@ -285,13 +289,13 @@ func (f *settingsForm) providerKeyRow(gtx layout.Context, th *material.Theme, pr
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, editorBox(th, &kf.value, "留空 = 保持；填明文则转入本机密钥库；以 secret: 开头则照写引用")),
+				layout.Flexed(1, editorBox(th, &kf.value, i18n.T("ui.page.providers.key_value_hint"))),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &kf.label, "展示名（空 = 第 N 把）"))
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &kf.label, i18n.T("ui.page.providers.key_label_hint")))
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
-						paperButton(th, &kf.del, "删除", paperBtnDanger, len(f.provs[prov].keyForms) > 1))
+						paperButton(th, &kf.del, i18n.T("ui.common.delete"), paperBtnDanger, len(f.provs[prov].keyForms) > 1))
 				}),
 			)
 		}),
@@ -310,11 +314,11 @@ func (f *settingsForm) providerKeyRow(gtx layout.Context, th *material.Theme, pr
 func keySlotNote(kf *providerKeyForm) string {
 	switch {
 	case kf.snap.Saved:
-		return "当前引用：" + kf.snap.Ref + "（值在密钥库，不回显）"
+		return i18n.Tf("ui.page.providers.keyslot.saved", "ref", kf.snap.Ref)
 	case kf.snap.Plain:
-		return "当前为明文（重启会在日志中提示；重填一次即转入密钥库）"
+		return i18n.T("ui.page.providers.keyslot.plain")
 	default:
-		return "当前未存值（回落缺省引用）"
+		return i18n.T("ui.page.providers.keyslot.empty")
 	}
 }
 
@@ -329,13 +333,13 @@ func (f *settingsForm) providerModelsHead(gtx layout.Context, th *material.Theme
 			on++
 		}
 	}
-	count := fmt.Sprintf("共 %d 个 · 已启用 %d 个", total, on)
+	count := i18n.Tf("ui.page.providers.models_count", "total", total, "on", on)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					// 标题用 Rigid：右侧按钮才拿得到自己的自然宽度（D181 修「按钮被挤扁」）。
-					return provHeadRow(gtx, th, "模型列表")
+					return provHeadRow(gtx, th, i18n.T("ui.page.providers.models_head"))
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -345,7 +349,7 @@ func (f *settingsForm) providerModelsHead(gtx layout.Context, th *material.Theme
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &pf.modelsBtn, "获取模型", paperBtnSecondary, true)(gtx)
+					return paperButton(th, &pf.modelsBtn, i18n.T("ui.page.providers.models_fetch"), paperBtnSecondary, true)(gtx)
 				}),
 			)
 		}),
@@ -374,10 +378,10 @@ func (f *settingsForm) providerModelPager(gtx layout.Context, th *material.Theme
 	if page > pages {
 		page = pages
 	}
-	hint := "第 " + strconv.Itoa(page) + "/" + strconv.Itoa(pages) + " 页"
+	hint := i18n.Tf("ui.page.providers.pager_hint", "page", page, "pages", pages)
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return paperButton(th, &pf.modelPagePrev, "‹ 上一页", paperBtnSecondary, pf.modelPage > 0)(gtx)
+			return paperButton(th, &pf.modelPagePrev, i18n.T("ui.page.providers.pager_prev"), paperBtnSecondary, pf.modelPage > 0)(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -387,7 +391,7 @@ func (f *settingsForm) providerModelPager(gtx layout.Context, th *material.Theme
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return paperButton(th, &pf.modelPageNext, "下一页 ›", paperBtnSecondary, pf.modelPage < pages-1)(gtx)
+			return paperButton(th, &pf.modelPageNext, i18n.T("ui.page.providers.pager_next"), paperBtnSecondary, pf.modelPage < pages-1)(gtx)
 		}),
 	)
 }
@@ -423,40 +427,40 @@ func (f *settingsForm) providerModelRow(gtx layout.Context, th *material.Theme, 
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return capCheck(th, &mf.enabled, "启用")(gtx)
+					return capCheck(th, &mf.enabled, i18n.T("ui.common.enable"))(gtx)
 				}),
 				layout.Flexed(2, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, editorBox(th, &mf.name, "模型名（服务端标识）"))
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, editorBox(th, &mf.name, i18n.T("ui.page.providers.model_name_hint")))
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.contextWin, "窗口 tokens"))
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.contextWin, i18n.T("ui.page.providers.model_ctx_hint")))
 				}),
 				// 单价（D205，每百万 token）：与厂商报价同口径，留空 = 未声明、不折算费用。
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.costIn, "输入 $/M"))
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.costIn, i18n.T("ui.page.providers.model_cost_in_hint")))
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.costOut, "输出 $/M"))
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.costOut, i18n.T("ui.page.providers.model_cost_out_hint")))
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
-						paperButton(th, &mf.del, "删除", paperBtnDanger, len(f.provs[prov].modelForms) > 1))
+						paperButton(th, &mf.del, i18n.T("ui.common.delete"), paperBtnDanger, len(f.provs[prov].modelForms) > 1))
 				}),
 			)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(capCheck(th, &mf.capsTools, capLabels[0])),
+					layout.Rigid(capCheck(th, &mf.capsTools, capLabels()[0])),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, capCheck(th, &mf.capsReason, capLabels[1]))
+						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, capCheck(th, &mf.capsReason, capLabels()[1]))
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, capCheck(th, &mf.capsVision, capLabels[2]))
+						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, capCheck(th, &mf.capsVision, capLabels()[2]))
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return paperButton(th, &mf.probe, "探测能力", paperBtnSecondary, true)(gtx)
+						return paperButton(th, &mf.probe, i18n.T("ui.page.providers.probe"), paperBtnSecondary, true)(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if !mf.probeBusy {
@@ -508,9 +512,9 @@ func (f *settingsForm) providerButtonsRow(gtx layout.Context, th *material.Theme
 	btn := func(c *widget.Clickable, label string) layout.Widget {
 		return paperButton(th, c, label, paperBtnSecondary, true)
 	}
-	primary := "设为主"
+	primary := i18n.T("ui.page.providers.set_primary")
 	if f.primaryIdx == i {
-		primary = "★ 主"
+		primary = i18n.T("ui.page.providers.primary_badge")
 	}
 	// 主 provider 的「★ 主」用强调色文字标识当前主，不铺整块实心底——一行里两块
 	// 实心按钮会互相抢视线；不可删的那条（providers 不可为空）呈禁用态。
@@ -519,26 +523,26 @@ func (f *settingsForm) providerButtonsRow(gtx layout.Context, th *material.Theme
 		mark = paperBtnPrimary
 	}
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(btn(&pf.test, "测试连通")),
+		layout.Rigid(btn(&pf.test, i18n.T("ui.page.providers.test"))),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.setPrimary, primary, mark, true))
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.del, "删除", paperBtnDanger, len(f.provs) > 1))
+			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, paperButton(th, &pf.del, i18n.T("ui.common.delete"), paperBtnDanger, len(f.provs) > 1))
 		}),
 	)
 }
 
 // providerAddRow 新增 provider 入口（编辑区尾部；Apply 校验名字等必填项）。
 func (f *settingsForm) providerAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return paperButton(th, &f.provAdd, "＋ 新增 provider", paperBtnSecondary, true)(gtx)
+	return paperButton(th, &f.provAdd, i18n.T("ui.page.providers.prov_add"), paperBtnSecondary, true)(gtx)
 }
 
 // providerApplyRow provider 区应用按钮 + 反馈文案（成功绿/错误红 = 转写区语义色）。
 func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return paperButton(th, &f.provApply, "应用 provider 变更", paperBtnPrimary, true)(gtx)
+			return paperButton(th, &f.provApply, i18n.T("ui.page.providers.apply"), paperBtnPrimary, true)(gtx)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -546,7 +550,7 @@ func (f *settingsForm) providerApplyRow(gtx layout.Context, th *material.Theme) 
 				col := paperOf().text2
 				switch {
 				case text == "":
-					text, col = "变更全量写回 config，重启生效；「测试连通」「探测能力」发真实请求。", paperOf().text3
+					text, col = i18n.T("ui.page.providers.apply_note"), paperOf().text3
 				case f.provErr:
 					col = paperOf().danger
 				}

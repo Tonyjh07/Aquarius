@@ -28,13 +28,15 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/assets"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // aboutProjectURL 项目主页（GitHub）。
 const aboutProjectURL = "https://github.com/Tonyjh07/Aquarius"
 
-// aboutTagline 一句话定位。
-const aboutTagline = "你的极简 AI 助手"
+// aboutTagline 一句话定位。写成函数而不是常量：包初始化时界面语言还没定（i18n.Use 在 main
+// 里才调），常量会把这句话冻在初始化那一刻的语言上。
+func aboutTagline() string { return i18n.T("ui.page.about.tagline") }
 
 // aboutCopyright 版权行。年份与作者是**声明的口径**，写死而不从构建期推导——它不该随
 // 谁在哪台机器上编译而变。
@@ -44,9 +46,8 @@ const aboutCopyright = "© 2026 Tonyjh07"
 const aboutLicense = "Mozilla Public License 2.0"
 
 // aboutPrivacy 数据边界（与 §9 口径一致）：只说「不收集」会被读成「连模型服务都不发」，
-// 所以两句都说——不收集什么，以及哪些服务会收到内容。
-const aboutPrivacy = "不收集使用数据，也不做联网上报：会话、附件与配置都留在本机；" +
-	"除了你自己配置的模型服务、语音服务与 MCP server 之外，本程序不与其它服务通信。"
+// 所以两句都说——不收集什么，以及哪些服务会收到内容。同样写成函数（见 aboutTagline）。
+func aboutPrivacy() string { return i18n.T("ui.page.about.privacy") }
 
 // aboutIconDp 图标边长（dp，经 gtx.Dp 消费）。
 const aboutIconDp unit.Dp = 72
@@ -59,12 +60,12 @@ func (aboutPage) Key() string { return "about" }
 func (aboutPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{
 		{kind: rowAboutHero},
-		sec("构建"),
+		sec(i18n.T("ui.page.about.section_build")),
 		{kind: rowAboutVersion},
 		{kind: rowAboutRuntime},
-		sec("项目"),
+		sec(i18n.T("ui.page.about.section_project")),
 		{kind: rowAboutProject},
-		sec("版权与许可"),
+		sec(i18n.T("ui.page.about.section_legal")),
 		{kind: rowAboutCopyright},
 		{kind: rowAboutLicense},
 		{kind: rowAboutNote},
@@ -81,29 +82,29 @@ func (aboutPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowAboutHero:
 		return aboutHeroRow(gtx, th, f), true
 	case rowAboutVersion:
-		return fieldRow(gtx, th, "构建版本", func(gtx layout.Context) layout.Dimensions {
+		return fieldRow(gtx, th, i18n.T("ui.page.about.version_label"), func(gtx layout.Context) layout.Dimensions {
 			return aboutValue(gtx, th, aboutVersionText(f.aboutVersion))
 		}), true
 	case rowAboutRuntime:
-		return fieldRow(gtx, th, "运行环境", func(gtx layout.Context) layout.Dimensions {
+		return fieldRow(gtx, th, i18n.T("ui.page.about.runtime_label"), func(gtx layout.Context) layout.Dimensions {
 			return aboutValue(gtx, th, aboutRuntimeText())
 		}), true
 	case rowAboutProject:
 		return aboutProjectRow(gtx, th, f), true
 	case rowAboutCopyright:
-		return fieldRow(gtx, th, "版权", func(gtx layout.Context) layout.Dimensions {
+		return fieldRow(gtx, th, i18n.T("ui.page.about.copyright_label"), func(gtx layout.Context) layout.Dimensions {
 			return aboutValue(gtx, th, aboutCopyright)
 		}), true
 	case rowAboutLicense:
-		return fieldRow(gtx, th, "许可证", func(gtx layout.Context) layout.Dimensions {
+		return fieldRow(gtx, th, i18n.T("ui.page.about.license_label"), func(gtx layout.Context) layout.Dimensions {
 			return aboutValue(gtx, th, aboutLicense)
 		}), true
 	case rowAboutNote:
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(paperNote(th, aboutPrivacy)),
+			layout.Rigid(paperNote(th, aboutPrivacy())),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, paperNote(th,
-					"图标与产品名归作者所有；许可证全文见程序目录与项目主页。"))
+					i18n.T("ui.page.about.legal_note")))
 			}),
 		), true
 	case rowAboutStatus:
@@ -117,15 +118,15 @@ func (aboutPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 		f.aboutStatus, f.aboutErr = "", false
 		if u.plat == nil {
 			f.aboutErr = true
-			f.aboutStatus = "打不开浏览器：平台未接线；可以复制链接后手动打开"
+			f.aboutStatus = i18n.T("ui.page.about.no_browser")
 			continue
 		}
 		if err := u.plat.OpenURL(aboutProjectURL); err != nil {
 			f.aboutErr = true
-			f.aboutStatus = "打不开浏览器：" + err.Error() + "；可以复制链接后手动打开"
+			f.aboutStatus = i18n.Tf("ui.page.about.open_failed", "err", err)
 			continue
 		}
-		f.aboutStatus = "已在浏览器中打开"
+		f.aboutStatus = i18n.T("ui.page.about.opened")
 	}
 	for f.aboutCopy.Clicked(gtx) {
 		f.aboutStatus, f.aboutErr = "", false
@@ -133,7 +134,7 @@ func (aboutPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			Type: "application/text",
 			Data: io.NopCloser(strings.NewReader(aboutProjectURL)),
 		})
-		f.aboutStatus = "链接已复制"
+		f.aboutStatus = i18n.T("ui.page.about.copied")
 	}
 }
 
@@ -144,7 +145,7 @@ func (aboutPage) FirstEditor(*settingsForm) *widget.Editor { return nil }
 func aboutVersionText(version string) string {
 	v := strings.TrimSpace(version)
 	if v == "" || v == "dev" {
-		return "开发构建（未注入版本号）"
+		return i18n.T("ui.page.about.dev_build")
 	}
 	return v
 }
@@ -166,7 +167,7 @@ func aboutValue(gtx layout.Context, th *material.Theme, text string) layout.Dime
 //
 // 链接同时显示全文：浏览器打不开（无默认浏览器 / 被策略拦住）时，用户还能抄走。
 func aboutProjectRow(gtx layout.Context, th *material.Theme, f *settingsForm) layout.Dimensions {
-	return fieldRow(gtx, th, "项目主页", func(gtx layout.Context) layout.Dimensions {
+	return fieldRow(gtx, th, i18n.T("ui.page.about.project_label"), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				l := material.Body1(th, aboutProjectURL)
@@ -176,10 +177,10 @@ func aboutProjectRow(gtx layout.Context, th *material.Theme, f *settingsForm) la
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(paperButton(th, &f.aboutOpen, "打开项目主页", paperBtnPrimary, true)),
+						layout.Rigid(paperButton(th, &f.aboutOpen, i18n.T("ui.page.about.open_project"), paperBtnPrimary, true)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: unit.Dp(8)}.Layout(gtx,
-								paperButton(th, &f.aboutCopy, "复制链接", paperBtnSecondary, true))
+								paperButton(th, &f.aboutCopy, i18n.T("ui.page.about.copy_link"), paperBtnSecondary, true))
 						}),
 					)
 				})
@@ -216,7 +217,7 @@ func aboutHeroRow(gtx layout.Context, th *material.Theme, f *settingsForm) layou
 					return l.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, paperBody(th, aboutTagline))
+					return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, paperBody(th, aboutTagline()))
 				}),
 			)
 		}),

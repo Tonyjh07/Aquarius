@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -169,7 +170,7 @@ func (c *fileConfig) normalizeSkills() error {
 			continue
 		}
 		if !filepath.IsAbs(d) {
-			return fmt.Errorf("skills.dirs[%d]=%q 不是绝对路径（技能目录必须写绝对路径）", i, d)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.skills.dir_not_abs", "i", i, "dir", d))
 		}
 		d = filepath.Clean(d)
 		if seen[d] {
@@ -218,8 +219,7 @@ func (c *fileConfig) resolveEndpoint(baseURL, apiKey, from, fallbackSecret strin
 		pc := c.Model.byName(from)
 		if pc == nil {
 			if needBase && needKey {
-				return ep, fmt.Errorf("引用的服务 %q 不在 model.providers 内"+
-					"（先在「模型服务」页添加，或直接填端点与密钥）", from)
+				return ep, fmt.Errorf("%s", i18n.Tf("cmd.config.endpoint.from_missing", "from", from))
 			}
 		} else {
 			ep.Borrowed = from
@@ -232,7 +232,7 @@ func (c *fileConfig) resolveEndpoint(baseURL, apiKey, from, fallbackSecret strin
 		}
 	}
 	if ep.BaseURL == "" {
-		return ep, fmt.Errorf("端点未配置（填 base_url，或引用一个 model.providers 里的条目）")
+		return ep, fmt.Errorf("%s", i18n.T("cmd.config.endpoint.missing"))
 	}
 	if ep.KeyRef == "" && fallbackSecret != "" {
 		ep.KeyRef = "secret:" + fallbackSecret
@@ -299,7 +299,7 @@ func secretName(ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	name := strings.TrimPrefix(ref, "secret:")
 	if ref == name || name == "" {
-		return "", fmt.Errorf("api_key 的 secret: 引用缺少环境变量名，当前为 %q（或改为直接填明文）", ref)
+		return "", fmt.Errorf("%s", i18n.Tf("cmd.config.secret.name_missing", "ref", ref))
 	}
 	return name, nil
 }

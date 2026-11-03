@@ -11,6 +11,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // blockView 渲染期块视图（live = 本帧实时追加的思考/草稿，非定稿块；
@@ -191,6 +192,6 @@ func (u *UI) gotoBranch(s branchStrip, delta int) {
 		}
 	}
 	if !u.m.submitCommand("/goto " + string(id)) {
-		u.m.add(blockNotice, "输入缓冲已满，分叉切换未执行")
+		u.m.add(blockNotice, i18n.T("ui.state.buf_full_branch"))
 	}
 }

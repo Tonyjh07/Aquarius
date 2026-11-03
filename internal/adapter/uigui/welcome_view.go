@@ -15,6 +15,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // welcomeFrame 欢迎窗单帧（常规窗形态：窗体面铺底，无形状位图/羽化，§15.7）。
@@ -115,19 +117,19 @@ func welcomeHeader(th *material.Theme, f *welcomeForm) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return paperTitle(th, "欢迎使用 Aquarius")(gtx)
+				return paperTitle(th, i18n.T("ui.welcome.title"))(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperNoteSp(th), "三步完成接入；密钥存入本机加密库，配置里只留引用。")
+				l := material.Label(th, paperNoteSp(th), i18n.T("ui.welcome.subtitle"))
 				l.Color = paperOf().text2
 				return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, l.Layout)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						welcomeStep(th, 1, "接入模型", f.page == welcomeAccess),
-						welcomeStep(th, 2, "教程", f.page == welcomeTutorial),
-						welcomeStep(th, 3, "完成", f.page == welcomeDone),
+						welcomeStep(th, 1, i18n.T("ui.welcome.step.access"), f.page == welcomeAccess),
+						welcomeStep(th, 2, i18n.T("ui.welcome.step.tutorial"), f.page == welcomeTutorial),
+						welcomeStep(th, 3, i18n.T("ui.welcome.step.done"), f.page == welcomeDone),
 					)
 				})
 			}),
@@ -187,7 +189,7 @@ func welcomeIssues(th *material.Theme, f *welcomeForm) layout.Widget {
 		if len(f.env.snap.Issues) == 0 {
 			return layout.Dimensions{}
 		}
-		l := material.Body2(th, "配置尚未完成："+strings.Join(f.env.snap.Issues, "；"))
+		l := material.Body2(th, i18n.Tf("ui.welcome.issues", "issues", strings.Join(f.env.snap.Issues, "；")))
 		l.Color = paperOf().danger
 		return l.Layout(gtx)
 	}
@@ -202,9 +204,9 @@ func welcomeStatusLine(th *material.Theme, f *welcomeForm) layout.Widget {
 			// 接入页不放默认提示：模拟稿在卡下留白，密钥说明已经在输入框占位文字里；
 			// 页脚之上只在真有反馈（校验/保存/应用失败）时出现一行。
 			if f.page == welcomeDone {
-				text = "保存后写回配置；provider / 密钥类改动需重启进程生效。"
+				text = i18n.T("ui.welcome.hint.save_restart")
 				if f.env.setup {
-					text = "保存后立刻继续启动。"
+					text = i18n.T("ui.welcome.hint.save_continue")
 				}
 			}
 		} else if f.err {
@@ -224,15 +226,15 @@ func welcomeStatusLine(th *material.Theme, f *welcomeForm) layout.Widget {
 func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pp := paperOf()
-		skipLabel := "跳过此项"
+		skipLabel := i18n.T("ui.welcome.btn.skip")
 		if !f.env.setup {
-			skipLabel = "关闭"
+			skipLabel = i18n.T("ui.common.close")
 		}
-		primary := "下一步"
+		primary := i18n.T("ui.welcome.btn.next")
 		if f.page == welcomeDone {
-			primary = "保存"
+			primary = i18n.T("ui.common.save")
 			if f.env.setup {
-				primary = "保存并继续"
+				primary = i18n.T("ui.welcome.btn.save_continue")
 			}
 		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -252,12 +254,12 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 					}
 					if f.page > welcomeAccess {
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, welcomeBtn(th, &f.prev, "上一步", false))
+							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, welcomeBtn(th, &f.prev, i18n.T("ui.common.back"), false))
 						}))
 					} else {
 						// 首屏也占位（禁用态）：位置固定，翻页时按钮不跳。
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, paperButton(th, &f.prev, "上一步", paperBtnSecondary, false))
+							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, paperButton(th, &f.prev, i18n.T("ui.common.back"), paperBtnSecondary, false))
 						}))
 					}
 					if f.page == welcomeDone {

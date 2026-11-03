@@ -17,6 +17,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -134,7 +135,8 @@ func overlayCard(gtx layout.Context, th *material.Theme, ov *overlayState, st *h
 // overlayInjectSource 注入节点的来源行（D166）：「来源：<友好化来源> · 已触发响应/未触发」。
 // 与主窗转写头部共用 port.InjectSourceLabel，措辞恒一致。
 func overlayInjectSource(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
-	l := material.Caption(th, "来源："+port.InjectSourceLabel(ov.source)+" · "+injectState(ov.trigger))
+	l := material.Caption(th, i18n.Tf("ui.overlay.inject_source",
+		"source", port.InjectSourceLabel(ov.source), "state", injectState(ov.trigger)))
 	l.Color = paperOf().text2
 	return l.Layout(gtx)
 }
@@ -150,34 +152,35 @@ func overlayTitle(gtx layout.Context, th *material.Theme, ov *overlayState) layo
 // root 与 system 都落 blockPlain，会把根节点写成「系统」）；根节点是会话容器、不是一条消息，
 // 故只写「会话根 · <id>」，与图例「◯会话根」同词。Role 未知（快照未就绪）= 系统消息。
 func (ov *overlayState) titleText() string {
+	id := shortID(string(ov.id))
 	if ov.persona {
-		return "人格节点 · " + shortID(string(ov.id))
+		return i18n.Tf("ui.overlay.title.persona", "id", id)
 	}
 	switch ov.role {
 	case conversation.RoleUser:
-		return "用户消息 · " + shortID(string(ov.id))
+		return i18n.Tf("ui.overlay.title.user", "id", id)
 	case conversation.RoleAssistant:
-		return "助手消息 · " + shortID(string(ov.id))
+		return i18n.Tf("ui.overlay.title.assistant", "id", id)
 	case conversation.RoleRoot:
-		return "会话根 · " + shortID(string(ov.id))
+		return i18n.Tf("ui.overlay.title.root", "id", id)
 	case conversation.RoleInject: // D166：注入上下文（只读；来源行在页签下方）
-		return "注入上下文 · " + shortID(string(ov.id))
+		return i18n.Tf("ui.overlay.title.inject", "id", id)
 	default:
-		return "系统消息 · " + shortID(string(ov.id))
+		return i18n.Tf("ui.overlay.title.system", "id", id)
 	}
 }
 
 // overlayTabs 页签行：呈现 / 源码（人格节点多一档「默认模板」，D154）。
 func overlayTabs(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	children := []layout.FlexChild{
-		layout.Rigid(overlayPillBtn(&ov.tabRendered, th, "呈现", ov.page == overlayPageRendered)),
+		layout.Rigid(overlayPillBtn(&ov.tabRendered, th, i18n.T("ui.overlay.tab.rendered"), ov.page == overlayPageRendered)),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-		layout.Rigid(overlayPillBtn(&ov.tabSource, th, "源码", ov.page == overlayPageSource)),
+		layout.Rigid(overlayPillBtn(&ov.tabSource, th, i18n.T("ui.overlay.tab.source"), ov.page == overlayPageSource)),
 	}
 	if ov.persona {
 		children = append(children,
 			layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-			layout.Rigid(overlayPillBtn(&ov.tabTemplate, th, "默认模板", ov.page == overlayPageTemplate)))
+			layout.Rigid(overlayPillBtn(&ov.tabTemplate, th, i18n.T("ui.overlay.tab.template"), ov.page == overlayPageTemplate)))
 	}
 	return layout.Flex{}.Layout(gtx, children...)
 }
@@ -292,23 +295,23 @@ func (ov *overlayState) modeHint() string {
 	case ov.persona && ov.page == overlayPageTemplate:
 		return ""
 	case ov.persona:
-		return "人格固定「转移历史」：旧人格留成无子叶，现有对话整体转到新人格下。"
+		return i18n.T("ui.overlay.hint.persona")
 	case !ov.editable:
 		return ""
 	case !ov.hasChildren:
 		// 没有后续内容时三档等价：都是造一个同级新版本、旧节点留在原分支。
-		return "该节点之后还没有内容：三种方式结果相同，都是留下旧节点、把视图移到新版本。"
+		return i18n.T("ui.overlay.hint.no_children")
 	}
 	switch ov.mode {
 	case conversation.Carry:
-		return "转移历史：旧节点留成无子叶，后续内容改挂到新版本下。"
+		return i18n.T("ui.overlay.hint.carry")
 	case conversation.Clone:
-		return "复制历史：旧分支原样保留，新版本下另挂一份后续副本。"
+		return i18n.T("ui.overlay.hint.clone")
 	default:
 		if ov.role == conversation.RoleUser {
-			return "另起新分支：旧分支原样保留，在新版本下重新生成回答。"
+			return i18n.T("ui.overlay.hint.fresh_user")
 		}
-		return "另起新分支：旧节点与其后续留在原分支，视图移到新版本。"
+		return i18n.T("ui.overlay.hint.fresh_other")
 	}
 }
 
@@ -321,9 +324,9 @@ func overlayFooterRow(gtx layout.Context, th *material.Theme, ov *overlayState) 
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return overlayTplStatus(gtx, th, ov)
 			}),
-			layout.Rigid(overlayBtn(&ov.btnSaveTpl, th, "保存模板", false, ov.prompt != nil)),
+			layout.Rigid(overlayBtn(&ov.btnSaveTpl, th, i18n.T("ui.overlay.btn.save_template"), false, ov.prompt != nil)),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-			layout.Rigid(overlayBtn(&ov.btnApply, th, "应用到本会话", true, ov.prompt != nil)),
+			layout.Rigid(overlayBtn(&ov.btnApply, th, i18n.T("ui.overlay.btn.apply_session"), true, ov.prompt != nil)),
 		)
 	case ov.persona:
 		// 改人格必须保留后续历史：三档都画出来（不是隐藏），另两档禁用——用户要
@@ -333,9 +336,9 @@ func overlayFooterRow(gtx layout.Context, th *material.Theme, ov *overlayState) 
 			text string
 			m    conversation.KeepMode
 		}{
-			{&ov.modeFresh, "另起新分支", conversation.Fresh},
-			{&ov.modeCarry, "转移历史", conversation.Carry},
-			{&ov.modeClone, "复制历史", conversation.Clone},
+			{&ov.modeFresh, i18n.T("ui.overlay.mode.fresh"), conversation.Fresh},
+			{&ov.modeCarry, i18n.T("ui.overlay.mode.carry"), conversation.Carry},
+			{&ov.modeClone, i18n.T("ui.overlay.mode.clone"), conversation.Clone},
 		}
 		for i, md := range modes {
 			if i > 0 {
@@ -347,7 +350,7 @@ func overlayFooterRow(gtx layout.Context, th *material.Theme, ov *overlayState) 
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Spacer{}.Layout(gtx)
 			}),
-			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true, ov.canSave())),
+			layout.Rigid(overlayBtn(&ov.btnSave, th, i18n.T("ui.common.save"), true, ov.canSave())),
 		)
 	case ov.editable:
 		modes := []struct {
@@ -355,9 +358,9 @@ func overlayFooterRow(gtx layout.Context, th *material.Theme, ov *overlayState) 
 			text string
 			m    conversation.KeepMode
 		}{
-			{&ov.modeFresh, "另起新分支", conversation.Fresh},
-			{&ov.modeCarry, "转移历史", conversation.Carry},
-			{&ov.modeClone, "复制历史", conversation.Clone},
+			{&ov.modeFresh, i18n.T("ui.overlay.mode.fresh"), conversation.Fresh},
+			{&ov.modeCarry, i18n.T("ui.overlay.mode.carry"), conversation.Carry},
+			{&ov.modeClone, i18n.T("ui.overlay.mode.clone"), conversation.Clone},
 		}
 		for i, md := range modes {
 			if i > 0 {
@@ -369,18 +372,18 @@ func overlayFooterRow(gtx layout.Context, th *material.Theme, ov *overlayState) 
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Spacer{}.Layout(gtx)
 			}),
-			layout.Rigid(overlayBtn(&ov.btnSave, th, "保存", true, ov.canSave())),
+			layout.Rigid(overlayBtn(&ov.btnSave, th, i18n.T("ui.common.save"), true, ov.canSave())),
 		)
 	default:
 		children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			l := material.Caption(th, "该节点只读")
+			l := material.Caption(th, i18n.T("ui.overlay.readonly"))
 			l.Color = paperOf().text2
 			return l.Layout(gtx)
 		}))
 	}
 	children = append(children,
 		layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout), // 与页签行同款间距：两钮贴在一起会读成一块
-		layout.Rigid(overlayBtn(&ov.btnClose, th, "关闭", false, true)))
+		layout.Rigid(overlayBtn(&ov.btnClose, th, i18n.T("ui.common.close"), false, true)))
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 }
 

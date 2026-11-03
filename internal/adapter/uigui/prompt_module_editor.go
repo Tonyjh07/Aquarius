@@ -18,6 +18,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // ── 模块编辑弹窗（D148）─────────────────────────────────────────────────────
@@ -118,19 +120,19 @@ func (f *promptEditor) moduleEditorFrame(gtx layout.Context, th *material.Theme)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return fieldRow(gtx, th, "名称", editorBox(th, &st.name, "唯一名；不以 @ 开头（保留给内置）"))
+				return fieldRow(gtx, th, i18n.T("ui.prompt.dlg.name"), editorBox(th, &st.name, i18n.T("ui.prompt.dlg.ph.name")))
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return fieldRow(gtx, th, "正文 / 组头", editorBoxH(th, &st.text, "叶：正文；组：组头（可空）", 84))
+				return fieldRow(gtx, th, i18n.T("ui.prompt.dlg.text"), editorBoxH(th, &st.text, i18n.T("ui.prompt.dlg.ph.text"), 84))
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return fieldRow(gtx, th, "子模块", editorBox(th, &st.children, "逗号分隔；填了即成为组，清空即转为叶"))
+				return fieldRow(gtx, th, i18n.T("ui.prompt.dlg.children"), editorBox(th, &st.children, i18n.T("ui.prompt.dlg.ph.children")))
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperMicroSp(th), "改结构不动已有会话：人格在新建会话时才重新组合。")
+				l := material.Label(th, paperMicroSp(th), i18n.T("ui.prompt.dlg.note"))
 				l.Color = pp.text3
 				return l.Layout(gtx)
 			}),
@@ -146,9 +148,9 @@ func (f *promptEditor) moduleEditorFrame(gtx layout.Context, th *material.Theme)
 // moduleEditorTitle 标题行：标题带模块名（一眼看出改的是哪个）+ 右上关闭。
 func (f *promptEditor) moduleEditorTitle(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	st := &f.modEdit
-	title := "编辑模块 · " + st.name.Text()
+	title := i18n.Tf("ui.prompt.dlg.title_edit", "name", st.name.Text())
 	if st.idx < 0 {
-		title = "新增模块"
+		title = i18n.T("ui.prompt.dlg.title_new")
 	}
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -171,12 +173,12 @@ func (f *promptEditor) moduleEditorButtons(gtx layout.Context, th *material.Them
 			if st.idx < 0 { // 新增时没有可删的东西
 				return layout.Dimensions{}
 			}
-			return paperButton(th, &st.btnDel, "删除模块", paperBtnDanger, true)(gtx)
+			return paperButton(th, &st.btnDel, i18n.T("ui.prompt.dlg.delete"), paperBtnDanger, true)(gtx)
 		}),
 		layout.Flexed(1, layout.Spacer{}.Layout),
-		layout.Rigid(paperButton(th, &st.btnCancel, "取消", paperBtnSecondary, true)),
+		layout.Rigid(paperButton(th, &st.btnCancel, i18n.T("ui.common.cancel"), paperBtnSecondary, true)),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-		layout.Rigid(paperButton(th, &st.btnSave, "保存", paperBtnPrimary, true)),
+		layout.Rigid(paperButton(th, &st.btnSave, i18n.T("ui.common.save"), paperBtnPrimary, true)),
 	}
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 }
@@ -202,7 +204,7 @@ func (f *promptEditor) promptRefRow(gtx layout.Context, th *material.Theme, i in
 			l.Color = paperOf().text3
 			return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, l.Layout)
 		}),
-		layout.Flexed(1, editorBox(th, &rf.name, "引用名（模块名或内置 @名）")),
+		layout.Flexed(1, editorBox(th, &rf.name, i18n.T("ui.prompt.ph.ref"))),
 		layout.Rigid(small(&rf.up, "↑")),
 		layout.Rigid(small(&rf.down, "↓")),
 		layout.Rigid(small(&rf.del, "✕")),
@@ -233,7 +235,7 @@ func (f *promptEditor) promptBuiltinRow(gtx layout.Context, th *material.Theme, 
 				btn = new(widget.Clickable)
 				f.promptBtns["ref:"+b.Name] = btn
 			}
-			return paperButton(th, btn, "引用", paperBtnSecondary, true)(gtx)
+			return paperButton(th, btn, i18n.T("ui.prompt.btn.ref"), paperBtnSecondary, true)(gtx)
 		}),
 	)
 }

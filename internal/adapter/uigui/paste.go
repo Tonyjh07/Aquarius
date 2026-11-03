@@ -20,11 +20,12 @@ import (
 	"gioui.org/layout"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // pasteName 粘贴图片在附件库里的名字（会话树里显示这个；重名不影响去重——按内容哈希）。
-const pasteName = "粘贴的图片.png"
+func pasteName() string { return i18n.T("ui.attach.pasted_image") + ".png" }
 
 // imageExt 按扩展名判定是否值得解缩略图（真正的判据仍是解码成功与否，这里只是
 // 避免对每个 .pdf/.docx 都起一次读文件的 goroutine）。
@@ -89,7 +90,7 @@ func (u *UI) startPaste() {
 			return
 		}
 		ref, err := u.opts.Blobs.Put(context.Background(), bytes.NewReader(pngBytes),
-			"image/png", pasteName)
+			"image/png", pasteName())
 		if err != nil {
 			u.post(pasteMsg{err: err})
 			return
@@ -105,13 +106,12 @@ func (u *UI) finishPaste(m pasteMsg) {
 		if platform.NoClipboardImage(m.err) {
 			return // 探测与读取之间剪贴板变了：静默，不算错误
 		}
-		u.m.add(blockNotice, "读取剪贴板图片失败："+m.err.Error())
+		u.m.add(blockNotice, i18n.Tf("ui.img.paste_read_failed", "err", m.err.Error()))
 	case m.tooLarge > 0:
-		u.m.add(blockNotice, fmt.Sprintf("图片过大（%.1f MB，上限 %s），未添加",
-			float64(m.tooLarge)/(1<<20), mbLabel(port.MaxImageBytes)))
+		u.m.add(blockNotice, i18n.Tf("ui.img.too_large",
+			"mb", mbSize(m.tooLarge), "limit", mbLabel(port.MaxImageBytes)))
 	case m.full:
-		u.m.add(blockNotice, fmt.Sprintf("一条消息最多 %d 个附件，这张图未添加",
-			port.MaxAttachments))
+		u.m.add(blockNotice, i18n.Tf("ui.img.attach_limit_paste", "n", port.MaxAttachments))
 	case m.ref != nil:
 		u.m.stageAtt(stagedAtt{blob: m.ref, thumb: m.thumb})
 		u.focusPending = true
@@ -123,6 +123,9 @@ func mbLabel(n int64) string {
 	return fmt.Sprintf("%d MB", n/(1<<20))
 }
 
+// mbSize 字节数 → 一位小数的十进制标签（「12.3」；单位由文案里的 MB 给）。
+func mbSize(n int64) string { return fmt.Sprintf("%.1f", float64(n)/(1<<20)) }
+
 // stagePath 暂存一项路径附件（文件选择框 / 拖拽共用）：目录要当场说清——拖进来一个
 // 文件夹时，与其让用户在摄取报错里猜，不如立刻告诉他「这里只收文件」。
 func (u *UI) stagePath(path string) {
@@ -132,14 +135,14 @@ func (u *UI) stagePath(path string) {
 	isImage := imageExt[strings.ToLower(filepath.Ext(path))]
 	if fi, err := os.Stat(path); err == nil {
 		if fi.IsDir() {
-			u.m.add(blockNotice, fmt.Sprintf("%s 是文件夹，请拖入或选择具体文件",
-				filepath.Base(path)))
+			u.m.add(blockNotice, i18n.Tf("ui.attach.dir_not_file", "name", filepath.Base(path)))
 			return
 		}
 		// 图片上限与贴图同口径（D187 口径六）：这里先拦，免得摄取阶段才报错。
 		if isImage && fi.Size() > port.MaxImageBytes {
-			u.m.add(blockNotice, fmt.Sprintf("图片过大（%.1f MB，上限 %s），未添加：%s",
-				float64(fi.Size())/(1<<20), mbLabel(port.MaxImageBytes), filepath.Base(path)))
+			u.m.add(blockNotice, i18n.Tf("ui.img.too_large_named",
+				"mb", mbSize(fi.Size()), "limit", mbLabel(port.MaxImageBytes),
+				"name", filepath.Base(path)))
 			return
 		}
 	}

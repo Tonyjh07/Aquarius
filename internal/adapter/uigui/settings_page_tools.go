@@ -8,6 +8,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // toolsPage 工具与 MCP 页模块。
@@ -18,18 +20,18 @@ func (toolsPage) Key() string { return "tools" }
 func (toolsPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{}
 	if f.tools == nil {
-		return append(rows, rowDesc{kind: rowToolsEmpty, text: "未接线（只读占位）"})
+		return append(rows, rowDesc{kind: rowToolsEmpty, text: i18n.T("ui.page.tools.unwired")})
 	}
-	rows = append(rows, sec("内置工具（开关即时生效，无需重启）"))
+	rows = append(rows, sec(i18n.T("ui.page.tools.section_builtin")))
 	for i := range f.toolsSnap.Builtins {
 		rows = append(rows, rowDesc{kind: rowBuiltin, field: i})
 	}
-	rows = append(rows, sec("MCP 与插件（来源 config / 插件目录）"))
+	rows = append(rows, sec(i18n.T("ui.page.tools.section_mcp")))
 	for i := range f.toolsSnap.Plugins {
 		rows = append(rows, rowDesc{kind: rowPlugin, field: i})
 	}
 	if len(f.toolsSnap.Plugins) == 0 {
-		rows = append(rows, rowDesc{kind: rowToolsEmpty, text: "没有已声明的插件（config mcpServers 或 插件目录）"})
+		rows = append(rows, rowDesc{kind: rowToolsEmpty, text: i18n.T("ui.page.tools.no_plugins")})
 	}
 	if f.toolsStatus != "" {
 		rows = append(rows, rowDesc{kind: rowToolsStatus})

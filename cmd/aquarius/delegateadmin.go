@@ -15,9 +15,11 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // delegateAdmin uigui.DelegateAdmin 的装配根实现。
@@ -58,18 +60,18 @@ func (a *delegateAdmin) Snapshot() uigui.DelegateSnapshot {
 		}
 		switch {
 		case !enabled:
-			st.Note = "已停用（enabled=false）"
+			st.Note = i18n.T("cmd.delegate.note.disabled")
 		case strings.TrimSpace(ag.Command) == "":
-			st.Note = "缺 command（这一条启动时会被跳过）"
+			st.Note = i18n.T("cmd.delegate.note.no_command")
 		case !delegateAvailable(ag.Command):
-			st.Note = "命令不在 PATH 上：" + ag.Command
+			st.Note = i18n.Tf("cmd.delegate.note.not_on_path", "command", ag.Command)
 		default:
 			st.Available = true
 		}
 		snap.Agents = append(snap.Agents, st)
 	}
 	if len(snap.Agents) == 0 {
-		snap.Note = "一个外部代理都没有：在 config.json 的 delegate.agents 里写一条（name + command），重启后这里会列出它"
+		snap.Note = i18n.T("cmd.delegate.note.empty")
 	}
 	return snap
 }
@@ -81,11 +83,11 @@ func (a *delegateAdmin) SetCommandLine(name, commandLine string) error {
 		return err
 	}
 	if command == "" {
-		return errors.New("命令行不能为空")
+		return errors.New(i18n.T("cmd.delegate.err.command_required"))
 	}
 	idx := a.agentIndex(name)
 	if idx < 0 {
-		return fmt.Errorf("配置里没有代理 %q（可能刚被删掉，重启后本页会刷新）", name)
+		return errors.New(i18n.Tf("cmd.delegate.err.agent_missing_stale", "name", strconv.Quote(name)))
 	}
 	if err := a.patchAgent(name, func(m map[string]any) {
 		m["command"] = command
@@ -110,11 +112,11 @@ func (a *delegateAdmin) SetCommandLine(name, commandLine string) error {
 func (a *delegateAdmin) SetEnabled(name string, enabled bool) error {
 	idx := a.agentIndex(name)
 	if idx < 0 {
-		return fmt.Errorf("配置里没有代理 %q", name)
+		return errors.New(i18n.Tf("cmd.delegate.err.agent_missing", "name", strconv.Quote(name)))
 	}
 	cur := a.w.cfg.Delegate.Agents[idx]
 	if !enabled && cur.Default {
-		return errors.New("缺省代理不能停用：先把别的代理设为缺省，再停用它")
+		return errors.New(i18n.T("cmd.delegate.err.default_disable"))
 	}
 	if err := a.patchAgent(name, func(m map[string]any) {
 		if enabled {
@@ -135,11 +137,11 @@ func (a *delegateAdmin) SetEnabled(name string, enabled bool) error {
 func (a *delegateAdmin) SetDefault(name string) error {
 	idx := a.agentIndex(name)
 	if idx < 0 {
-		return fmt.Errorf("配置里没有代理 %q", name)
+		return errors.New(i18n.Tf("cmd.delegate.err.agent_missing", "name", strconv.Quote(name)))
 	}
 	cur := a.w.cfg.Delegate.Agents[idx]
 	if cur.Enabled != nil && !*cur.Enabled {
-		return errors.New("停用的代理不能设为缺省：先启用它")
+		return errors.New(i18n.T("cmd.delegate.err.disabled_default"))
 	}
 	if err := persistConfig(a.w.cfgPath, func(generic map[string]any) {
 		sec, _ := generic["delegate"].(map[string]any)
@@ -160,7 +162,7 @@ func (a *delegateAdmin) SetDefault(name string) error {
 			delete(m, "default")
 		}
 	}); err != nil {
-		return fmt.Errorf("写回 config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.delegate.err.persist_config"), err)
 	}
 	for i := range a.w.cfg.Delegate.Agents {
 		a.w.cfg.Delegate.Agents[i].Default = a.w.cfg.Delegate.Agents[i].Name == name
@@ -199,10 +201,10 @@ func (a *delegateAdmin) patchAgent(name string, edit func(map[string]any)) error
 		}
 	})
 	if err != nil {
-		return fmt.Errorf("写回 config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.delegate.err.persist_config"), err)
 	}
 	if !found {
-		return fmt.Errorf("config 里没有代理 %q", name)
+		return errors.New(i18n.Tf("cmd.delegate.err.not_in_config", "name", strconv.Quote(name)))
 	}
 	return nil
 }
@@ -269,7 +271,7 @@ func splitCommandLine(line string) (string, []string, error) {
 		}
 	}
 	if inQuote {
-		return "", nil, errors.New("引号没有闭合")
+		return "", nil, errors.New(i18n.T("cmd.delegate.err.unclosed_quote"))
 	}
 	flush()
 	if len(out) == 0 {

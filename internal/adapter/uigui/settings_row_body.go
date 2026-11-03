@@ -9,6 +9,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // rowBodyFn 绑定「第 i 行内容」的 widget（Stacked 子项需要 widget 而不是立即调用）。
@@ -153,13 +155,13 @@ func editorBlock(gtx layout.Context, th *material.Theme, ed *widget.Editor, hint
 func sizeRow(gtx layout.Context, th *material.Theme, w, h *widget.Editor) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-			layout.Flexed(1, editorBox(th, w, "宽 px")),
+			layout.Flexed(1, editorBox(th, w, i18n.T("ui.settings.form.width_px"))),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return material.Body1(th, "×").Layout(gtx)
 				})
 			}),
-			layout.Flexed(1, editorBox(th, h, "高 px")),
+			layout.Flexed(1, editorBox(th, h, i18n.T("ui.settings.form.height_px"))),
 		)
 	}
 }
@@ -168,7 +170,7 @@ func sizeRow(gtx layout.Context, th *material.Theme, w, h *widget.Editor) layout
 func (f *settingsForm) actionsRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return paperButton(th, &f.save, "保存并应用", paperBtnPrimary, true)(gtx)
+			return paperButton(th, &f.save, i18n.T("ui.settings.form.save_apply"), paperBtnPrimary, true)(gtx)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -176,7 +178,7 @@ func (f *settingsForm) actionsRow(gtx layout.Context, th *material.Theme) layout
 				col := paperOf().text2
 				switch {
 				case text == "":
-					text, col = "保存后立即生效；provider 列表在「模型服务」页应用（重启生效）。", paperOf().text3
+					text, col = i18n.T("ui.settings.form.save_hint"), paperOf().text3
 				case f.err:
 					col = paperOf().danger
 				}

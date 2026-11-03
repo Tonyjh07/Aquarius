@@ -12,6 +12,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/mcpgate"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -50,7 +51,7 @@ func (m *mergedMemory) Index(ctx context.Context) ([]port.MemoryIndexEntry, erro
 		entries, err := e.Index(ectx)
 		cancel()
 		if err != nil {
-			m.logf("[plugin] 资源索引失败: %v", err)
+			m.logf("%s: %v", i18n.T("cmd.asm.err.plugin_index"), err)
 			continue
 		}
 		out = append(out, entries...)
@@ -111,7 +112,7 @@ func (m *mergedMemory) Search(ctx context.Context, query string) ([]port.MemoryH
 		extra, err := e.Search(ectx, query)
 		cancel()
 		if err != nil {
-			m.logf("[plugin] 资源检索失败: %v", err)
+			m.logf("%s: %v", i18n.T("cmd.asm.err.plugin_search"), err)
 			continue
 		}
 		for _, h := range extra {
@@ -307,8 +308,8 @@ func (p *pluginSurfaces) refresh() {
 				Names: []string{key},
 				Desc:  pi.Description,
 				Params: []port.CommandParam{{
-					Name: "参数", Kind: port.ParamText,
-					Desc: "这个 prompt 的参数，按服务端声明的顺序填",
+					Name: i18n.T("cmd.asm.mcp.param_name"), Kind: port.ParamText,
+					Desc: i18n.T("cmd.asm.mcp.param_desc"),
 				}},
 			}
 		}

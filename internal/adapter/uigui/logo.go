@@ -14,6 +14,7 @@ import (
 	"gioui.org/op/paint"
 
 	"github.com/Tonyjh07/Aquarius/assets"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // logoIconPx 图标预缩放的名义尺寸（= 球径 48dp @ 125% 缩放 = 60px，D49 行高 48）。
@@ -41,19 +42,19 @@ func logoImageOp(pxPx int) (paint.ImageOp, bool) {
 	}
 	logoOnce.Do(func() {
 		if len(assets.LogoPNG) == 0 {
-			fmt.Println("[logo] 图标未内嵌（assets.LogoPNG 为空）")
+			fmt.Println(i18n.T("ui.logo.missing"))
 			logoErr = true
 			return
 		}
 		img, err := png.Decode(bytes.NewReader(assets.LogoPNG))
 		if err != nil {
-			fmt.Printf("[logo] 图标解码失败: %v\n", err)
+			fmt.Println(i18n.Tf("ui.logo.decode_failed", "err", err))
 			logoErr = true
 			return
 		}
 		logoSrc = img
 		sz := img.Bounds().Size()
-		fmt.Printf("[logo] 图标就绪 %dx%d（按球径预缩放）\n", sz.X, sz.Y)
+		fmt.Println(i18n.Tf("ui.logo.ready", "w", sz.X, "h", sz.Y))
 	})
 	if logoErr || logoSrc == nil {
 		return paint.ImageOp{}, false

@@ -16,6 +16,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -82,9 +83,9 @@ func (u *UI) statusText() string {
 		unattended = u.opts.Status().Unattended
 	}
 	if u.generating.Load() {
-		phase := "生成中"
+		phase := i18n.T("ui.state.generating")
 		if u.m.think.Len() > 0 {
-			phase = "思考中"
+			phase = i18n.T("ui.state.thinking")
 		}
 		parts := []string{phase}
 		if u.opts.Status != nil {
@@ -100,7 +101,7 @@ func (u *UI) statusText() string {
 			}
 		}
 		if unattended {
-			parts = append(parts, "无人值守")
+			parts = append(parts, i18n.T("ui.state.unattended"))
 		}
 		return strings.Join(parts, " · ")
 	}
@@ -110,19 +111,19 @@ func (u *UI) statusText() string {
 		var hint string
 		switch u.m.editMode {
 		case conversation.Carry:
-			hint = "编辑中（转移历史）· Enter 提交 / Esc 取消"
+			hint = i18n.T("ui.state.edit_hint_carry")
 		case conversation.Clone:
-			hint = "编辑中（复制历史）· Enter 提交 / Esc 取消"
+			hint = i18n.T("ui.state.edit_hint_clone")
 		default:
-			hint = "编辑中 · Enter 提交 / Esc 取消"
+			hint = i18n.T("ui.state.edit_hint")
 		}
 		if unattended {
-			return "无人值守 · " + hint
+			return i18n.Tf("ui.state.unattended_hint", "hint", hint)
 		}
 		return hint
 	}
 	if unattended {
-		return "无人值守 · 越界操作会被拒绝"
+		return i18n.T("ui.state.unattended_deny")
 	}
 	return ""
 }
@@ -425,7 +426,7 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	case chip != nil:
 		ctx.raw = chipRaw(chip)
 	case it.kind == blockThinking && it.bi < len(u.m.blocks):
-		ctx.raw = rawContent{title: "思考原文 · " + shortID(string(it.id)), text: u.m.blocks[it.bi].text}
+		ctx.raw = rawContent{title: i18n.Tf("ui.chat.thinking_raw_title", "id", shortID(string(it.id))), text: u.m.blocks[it.bi].text}
 	case it.bi < len(u.m.blocks):
 		b := u.m.blocks[it.bi]
 		txt := b.text
@@ -433,11 +434,11 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 			// D207：纯图块没有正文——原文窗至少要能读出「这条消息带的是哪几张图」。
 			names := make([]string, 0, len(b.imgs))
 			for _, r := range b.imgs {
-				names = append(names, "〔图片："+r.name+"〕")
+				names = append(names, i18n.Tf("attach.image_named", "name", r.name))
 			}
 			txt = strings.Join(names, "\n")
 		}
-		ctx.raw = rawContent{title: "原文 · " + shortID(string(it.id)), text: txt}
+		ctx.raw = rawContent{title: i18n.Tf("ui.relmap.raw_title", "id", shortID(string(it.id))), text: txt}
 	}
 	return ctx
 }

@@ -19,6 +19,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // charactersPage 角色页模块。
@@ -27,22 +28,23 @@ type charactersPage struct{}
 func (charactersPage) Key() string { return "characters" }
 
 func (charactersPage) Rows(f *settingsForm) []rowDesc {
-	rows := []rowDesc{sec("已导入角色卡")}
+	rows := []rowDesc{sec(i18n.T("ui.page.characters.section_imported"))}
 	if !f.charWired {
-		return append(rows, rowDesc{kind: rowCharEmpty, text: "未接线（只读占位）"})
+		return append(rows, rowDesc{kind: rowCharEmpty, text: i18n.T("ui.page.characters.unwired")})
 	}
 	if f.charactersSnap.Err != "" {
-		rows = append(rows, rowDesc{kind: rowCharWarn, text: "读取角色卡目录失败：" + f.charactersSnap.Err})
+		rows = append(rows, rowDesc{kind: rowCharWarn,
+			text: i18n.Tf("ui.page.characters.read_failed", "err", f.charactersSnap.Err)})
 	}
 	if len(f.charactersSnap.Items) == 0 {
 		rows = append(rows, rowDesc{kind: rowCharEmpty,
-			text: "还没有角色卡——下面选一个卡文件（.png / .json / .charx）导入"})
+			text: i18n.T("ui.page.characters.empty")})
 	}
 	for i := range f.charactersSnap.Items {
 		rows = append(rows, rowDesc{kind: rowCharItem, field: i})
 	}
 	rows = append(rows,
-		sec("导入角色卡"),
+		sec(i18n.T("ui.page.characters.section_import")),
 		rowDesc{kind: rowCharNote},
 		rowDesc{kind: rowCharSource},
 		rowDesc{kind: rowCharPick},
@@ -70,30 +72,29 @@ func (charactersPage) Body(gtx layout.Context, th *material.Theme, f *settingsFo
 		l.Color = paperOf().danger
 		return l.Layout(gtx), true
 	case rowCharNote:
-		l := material.Body2(th, "支持 TavernCard 角色卡：PNG 图卡、card.json 与 .charx 卡包。"+
-			"导入的是副本，只读不改原卡；同名不覆盖——先删除再导入。")
+		l := material.Body2(th, i18n.T("ui.page.characters.note"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
 	case rowCharSource:
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return fieldRow(gtx, th, "卡文件", editorBox(th, &f.charSource,
-					"角色卡文件绝对路径（.png / .json / .charx）"))
+				return fieldRow(gtx, th, i18n.T("ui.page.characters.source_label"), editorBox(th, &f.charSource,
+					i18n.T("ui.page.characters.source_hint")))
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return paperButton(th, &f.charImport, "导入", paperBtnPrimary, true)(gtx)
+					return paperButton(th, &f.charImport, i18n.T("ui.page.characters.import"), paperBtnPrimary, true)(gtx)
 				})
 			}),
 		), true
 	case rowCharPick:
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return paperButton(th, &f.charPick, "选择文件…", paperBtnSecondary, true)(gtx)
+				return paperButton(th, &f.charPick, i18n.T("ui.page.characters.pick_file"), paperBtnSecondary, true)(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperMicroSp(th), "选中路径只填进上面的来源框，再点「导入」才落盘")
+					l := material.Label(th, paperMicroSp(th), i18n.T("ui.page.characters.pick_hint"))
 					l.Color = paperOf().text3
 					return l.Layout(gtx)
 				})
@@ -115,12 +116,12 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	for f.charImport.Clicked(gtx) {
 		path := strings.TrimSpace(f.charSource.Text())
 		if path == "" {
-			f.charStatus, f.charErr = "请先填卡文件路径（或用「选择文件…」）", true
+			f.charStatus, f.charErr = i18n.T("ui.page.characters.need_path"), true
 			continue
 		}
 		u.sendCharacterCmd("import", path)
 		f.charSource.SetText("")
-		f.charStatus, f.charErr = "已提交导入："+path+"（结果见主窗对话）", false
+		f.charStatus, f.charErr = i18n.Tf("ui.page.characters.imported", "path", path), false
 	}
 	for f.charPick.Clicked(gtx) {
 		u.plat.RequestPathPick(platform.PickCharacterCard)
@@ -132,7 +133,7 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			case strings.HasPrefix(key, "start:"):
 				slug := strings.TrimPrefix(key, "start:")
 				u.sendCharacterCmd("start", slug)
-				f.charStatus, f.charErr = "已开始对话："+slug, false
+				f.charStatus, f.charErr = i18n.Tf("ui.page.characters.started", "slug", slug), false
 			case strings.HasPrefix(key, "rm:"):
 				f.charConfirm = strings.TrimPrefix(key, "rm:")
 			case strings.HasPrefix(key, "cancel:"):
@@ -141,7 +142,7 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 				slug := strings.TrimPrefix(key, "confirm:")
 				f.charConfirm = ""
 				u.sendCharacterCmd("remove", slug)
-				f.charStatus, f.charErr = "已删除角色卡："+slug, false
+				f.charStatus, f.charErr = i18n.Tf("ui.page.characters.deleted", "slug", slug), false
 			}
 		}
 	}
@@ -182,28 +183,28 @@ func (f *settingsForm) charItemRow(gtx layout.Context, th *material.Theme, st Ch
 			if f.charConfirm == st.Slug {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Body2(th, "确认？")
+						l := material.Body2(th, i18n.T("ui.common.confirm_q"))
 						l.Color = paperOf().danger
 						return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, l.Layout)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return f.charActionButton(gtx, th, "cancel:"+st.Slug, "取消", paperBtnSecondary)
+							return f.charActionButton(gtx, th, "cancel:"+st.Slug, i18n.T("ui.common.cancel"), paperBtnSecondary)
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return f.charActionButton(gtx, th, "confirm:"+st.Slug, "确认删除", paperBtnDanger)
+						return f.charActionButton(gtx, th, "confirm:"+st.Slug, i18n.T("ui.page.characters.confirm_delete"), paperBtnDanger)
 					}),
 				)
 			}
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return f.charActionButton(gtx, th, "start:"+st.Slug, "开始对话", paperBtnSecondary)
+						return f.charActionButton(gtx, th, "start:"+st.Slug, i18n.T("ui.page.characters.start_chat"), paperBtnSecondary)
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return f.charActionButton(gtx, th, "rm:"+st.Slug, "删除", paperBtnDanger)
+					return f.charActionButton(gtx, th, "rm:"+st.Slug, i18n.T("ui.common.delete"), paperBtnDanger)
 				}),
 			)
 		}),

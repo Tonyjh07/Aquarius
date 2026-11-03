@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -188,7 +189,7 @@ func (m *model) submit(text string) {
 			// 缓冲满：暂存的附件还回去（挑文件比打字贵），编辑态照常收尾——同 submitRaw
 			// 「失败不吞附件」的口径。
 			m.stagedFiles = staged
-			m.add(blockNotice, "输入缓冲已满，此行未执行")
+			m.add(blockNotice, i18n.T("ui.state.buf_full_line"))
 		}
 		return
 	}
@@ -197,7 +198,7 @@ func (m *model) submit(text string) {
 		m.echoInput(line)
 	default:
 		m.echoInput(line)
-		m.add(blockNotice, "输入缓冲已满，此行未执行")
+		m.add(blockNotice, i18n.T("ui.state.buf_full_line"))
 	}
 }
 
@@ -217,7 +218,7 @@ func (m *model) submitRaw(atts []stagedAtt, text string) {
 	case m.u.inCh <- port.UserInput{Raw: &raw}:
 		m.stagedFiles = nil // 提交即清暂存（D186）
 	default:
-		m.add(blockNotice, "输入缓冲已满，附件未发送")
+		m.add(blockNotice, i18n.T("ui.state.buf_full_attach"))
 		return
 	}
 	echo := text
@@ -236,9 +237,10 @@ func (m *model) submitRaw(atts []stagedAtt, text string) {
 		names = append(names, a.displayName())
 	}
 	if len(names) == 1 {
-		echo += "〔附件：" + names[0] + "〕"
+		echo += i18n.Tf("ui.attach.marker_named", "name", names[0])
 	} else if len(names) > 1 {
-		echo += fmt.Sprintf("〔附件 %d 个：%s〕", len(names), strings.Join(names, "、"))
+		echo += i18n.Tf("ui.attach.marker_count",
+			"n", len(names), "names", strings.Join(names, i18n.T("ui.chat.list_sep")))
 	}
 	m.blocks = append(m.blocks, block{kind: blockUser, text: strings.TrimSpace(echo), id: "", part: -1, imgs: imgs})
 }
@@ -266,8 +268,8 @@ func (m *model) stageAtt(att stagedAtt) {
 		}
 	}
 	if len(m.stagedFiles) >= port.MaxAttachments {
-		m.add(blockNotice, fmt.Sprintf("一条消息最多 %d 个附件，已忽略 %s",
-			port.MaxAttachments, att.displayName()))
+		m.add(blockNotice, i18n.Tf("ui.attach.limit_ignored",
+			"n", port.MaxAttachments, "name", att.displayName()))
 		return
 	}
 	m.stagedFiles = append(m.stagedFiles, att)

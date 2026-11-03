@@ -14,6 +14,7 @@ import (
 
 	"gioui.org/widget"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -172,13 +173,13 @@ func (u *UI) addPending(text string, d port.Delivery) bool {
 func pendingErrText(err error) string {
 	switch {
 	case errors.Is(err, port.ErrPendingFull):
-		return "待发已满 8 条，先撤销一条再发"
+		return i18n.T("ui.state.pending_full")
 	case errors.Is(err, port.ErrPendingEmpty):
-		return "待发内容为空，这一行没有发出去"
+		return i18n.T("ui.state.pending_empty")
 	case errors.Is(err, port.ErrPendingTooLong):
-		return "这一行太长了（上限 8000 字符），没有进待发"
+		return i18n.T("ui.state.pending_too_long")
 	default:
-		return "没能放进待发：" + err.Error()
+		return i18n.Tf("ui.state.pending_failed", "err", err.Error())
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // pickEditor 选择系统编辑器（D24）：$VISUAL → $EDITOR → 平台默认（windows 记事本 / vi）。
@@ -38,21 +39,21 @@ func openMemoryEditor(mem *memoryfs.Store, fe uiFrontend, stdin io.Reader, stdou
 		}
 		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
 			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-				return "", fmt.Errorf("创建记忆目录: %w", err)
+				return "", fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.mkdir_memory"), err)
 			}
 			if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
-				return "", fmt.Errorf("创建记忆文件 %s: %w", p, err)
+				return "", fmt.Errorf("%s: %w", i18n.Tf("cmd.asm.err.create_memory_file", "path", p), err)
 			}
 		}
 		// TUI 前端先交出终端再拉起编辑器，返回后收回（审查修复）。
 		sus, _ := fe.(terminalSuspend)
 		if sus != nil {
 			if serr := sus.Suspend(); serr != nil {
-				fmt.Fprintf(stderr, "暂停 TUI: %v\n", serr)
+				fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.asm.err.suspend_tui"), serr)
 			}
 			defer func() {
 				if rerr := sus.Resume(); rerr != nil {
-					fmt.Fprintf(stderr, "恢复 TUI: %v\n", rerr)
+					fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.asm.err.resume_tui"), rerr)
 				}
 			}()
 		}
@@ -60,7 +61,7 @@ func openMemoryEditor(mem *memoryfs.Store, fe uiFrontend, stdin io.Reader, stdou
 		cmd := exec.Command(argv[0], append(argv[1:], p)...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("运行编辑器 %s: %w", argv[0], err)
+			return "", fmt.Errorf("%s: %w", i18n.Tf("cmd.asm.err.run_editor", "editor", argv[0]), err)
 		}
 		return p, nil
 	}

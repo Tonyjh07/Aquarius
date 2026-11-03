@@ -9,10 +9,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -56,7 +59,7 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 		known[pc.Name] = true
 	}
 	// checkEndpoint 端点要么自己填，要么借一个存在的条目（D222）。
-	checkEndpoint := func(side string, i int, wp uigui.WebProviderPatch) error {
+	checkEndpoint := func(side webSide, i int, wp uigui.WebProviderPatch) error {
 		if strings.TrimSpace(wp.BaseURL) != "" {
 			return nil // 端点自己填了：借不到密钥只让这家不可用，不阻断保存
 		}
@@ -65,8 +68,8 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 			from = webKindDeepSeek
 		}
 		if !known[from] {
-			return fmt.Errorf("%s提供商第 %d 条借用的服务 %q 不在 provider 列表内"+
-				"（先在「模型服务」页添加，或填一个端点）", side, i+1, from)
+			return errors.New(i18n.Tf("cmd.web.err.borrow_unknown",
+				"side", side.label(), "index", i+1, "from", strconv.Quote(from)))
 		}
 		return nil
 	}
@@ -74,43 +77,43 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 		kind := strings.TrimSpace(wp.Kind)
 		switch kind {
 		case webKindDeepSeek:
-			if err := checkEndpoint("搜索", i, wp); err != nil {
+			if err := checkEndpoint(webSideSearch, i, wp); err != nil {
 				return err
 			}
 		case webKindBrave:
 		default:
-			return fmt.Errorf("搜索提供商第 %d 条的类型 %q 不认识（支持 %s / %s）",
-				i+1, kind, webKindDeepSeek, webKindBrave)
+			return errors.New(i18n.Tf("cmd.web.err.search_kind", "index", i+1,
+				"kind", strconv.Quote(kind), "first", webKindDeepSeek, "second", webKindBrave))
 		}
 		if n := wp.Count; n < 0 || n > port.SettingsSearchCountMax {
-			return fmt.Errorf("搜索提供商第 %d 条的条数 %d 超出范围（%d–%d；0 = 用缺省）",
-				i+1, n, port.SettingsSearchCountMin, port.SettingsSearchCountMax)
+			return errors.New(i18n.Tf("cmd.web.err.provider_count", "index", i+1,
+				"value", n, "min", port.SettingsSearchCountMin, "max", port.SettingsSearchCountMax))
 		}
 	}
 	for i, wp := range p.WebFetchProviders {
 		kind := strings.TrimSpace(wp.Kind)
 		switch kind {
 		case webKindDeepSeek:
-			if err := checkEndpoint("抓取", i, wp); err != nil {
+			if err := checkEndpoint(webSideFetch, i, wp); err != nil {
 				return err
 			}
 		case webKindLocal:
 		default:
-			return fmt.Errorf("抓取提供商第 %d 条的类型 %q 不认识（支持 %s / %s）",
-				i+1, kind, webKindDeepSeek, webKindLocal)
+			return errors.New(i18n.Tf("cmd.web.err.fetch_kind", "index", i+1,
+				"kind", strconv.Quote(kind), "first", webKindDeepSeek, "second", webKindLocal))
 		}
 	}
 	if n := p.WebSearchCount; n < 0 || n > port.SettingsSearchCountMax {
-		return fmt.Errorf("搜索条数 %d 超出范围（%d–%d；0 = 缺省 8）",
-			n, port.SettingsSearchCountMin, port.SettingsSearchCountMax)
+		return errors.New(i18n.Tf("cmd.web.err.search_count",
+			"value", n, "min", port.SettingsSearchCountMin, "max", port.SettingsSearchCountMax))
 	}
 	if n := p.WebFetchMaxChars; n != 0 && (n < port.SettingsFetchCharsMin || n > port.SettingsFetchCharsMax) {
-		return fmt.Errorf("抓取正文上限 %d 超出范围（%d–%d；0 = 缺省 16000）",
-			n, port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
+		return errors.New(i18n.Tf("cmd.web.err.fetch_chars",
+			"value", n, "min", port.SettingsFetchCharsMin, "max", port.SettingsFetchCharsMax))
 	}
 	if n := p.WebFetchTimeoutSec; n < 0 || n > port.SettingsFetchTimeoutMax {
-		return fmt.Errorf("抓取超时 %d 超出范围（%d–%d 秒；0 = 缺省 30）",
-			n, port.SettingsFetchTimeoutMin, port.SettingsFetchTimeoutMax)
+		return errors.New(i18n.Tf("cmd.web.err.fetch_timeout",
+			"value", n, "min", port.SettingsFetchTimeoutMin, "max", port.SettingsFetchTimeoutMax))
 	}
 	return nil
 }
@@ -207,9 +210,9 @@ const (
 // label 面向用户的一侧名（报因用）。
 func (s webSide) label() string {
 	if s == webSideFetch {
-		return "抓取"
+		return i18n.T("cmd.web.side.fetch")
 	}
-	return "搜索"
+	return i18n.T("cmd.web.side.search")
 }
 
 // secretSuffix 派生键名里的一截（英文，与 `AQUARIUS_<…>_API_KEY` 的形态一致）。
@@ -234,7 +237,7 @@ func (w *wiring) storeWebKeysSide(ps []uigui.WebProviderPatch, olds []webProvide
 		}
 		ref, err := storePlaintextKeyAt(context.Background(), w.secretsBin, service, orig[i], typed, 0)
 		if err != nil {
-			return fmt.Errorf("联网密钥保存失败: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("cmd.web.err.key_save"), err)
 		}
 		ps[i].Key = ref
 	}
@@ -275,7 +278,7 @@ func (w *wiring) storeAudioKeys(p *uigui.SettingsPatch) error {
 		}
 		ref, err := storePlaintextKeyAt(context.Background(), w.secretsBin, service, origRef, v, 0)
 		if err != nil {
-			return fmt.Errorf("语音密钥保存失败: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("cmd.web.err.audio_key_save"), err)
 		}
 		*typed = ref
 		return nil

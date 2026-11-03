@@ -5,7 +5,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,12 +14,40 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 )
 
+// legacyConfigError 旧格式哨兵的可比较载体：值语义（零宽结构体）让 `errors.Is` 与
+// `==` 照旧成立，Error() 才去取词——哨兵是控制流，但那句话也会印给用户，不能钉死成英文。
+type legacyConfigError struct{}
+
+func (legacyConfigError) Error() string { return i18n.T("cmd.config.err.legacy_config") }
+
 // ErrLegacyConfig D110 前的旧单文件 config（沿 storejson ErrLegacyFormat 口径：
 // 显式识别报因、绝不静默当零值解析、不做自动迁移——旧文件留存原地由用户手工处置）。
-var ErrLegacyConfig = errors.New("检测到旧格式 config")
+var ErrLegacyConfig error = legacyConfigError{}
+
+// legacyFlatSample / legacyShapeSample 旧格式报错里的 JSON 示例：与语言无关、逐字不译，
+// 两种语言共用同一份——示例里的花括号若进了文案表，会被占位符扫描当成 {name}。
+const (
+	legacyFlatSample = `  "model": { "providers": [ { "name": "openai", "kind": "openai-chat",
+    "base_url": "…", "keys": [ { "api_key": "secret:…" } ],
+    "models": [ { "name": "…" } ], "tokenizer": "", "unsupported_params": [] } ],
+    "primary": "openai", "fallback": [], "name": "…", … }
+`
+
+	legacyShapeSample = `  "model": { "providers": [ { "name": "openai", "kind": "openai-chat",
+    "base_url": "…",
+    "keys": [ { "label": "main", "api_key": "secret:…" } ],
+    "models": [ { "name": "gpt-4o-mini" },
+                 { "name": "gpt-4o", "caps": ["tools","reasoning","vision"] } ],
+    "tokenizer": "", "unsupported_params": [] } ],
+    "primary": "openai",
+    "fallback": [ { "provider": "mimo", "model": "mimo-v2.6-flash" } ],
+    "name": "…", … }
+`
+)
 
 // defaultProfileName 首次运行创建的 profile 名（指针缺省指向它）。
 const defaultProfileName = "default"
@@ -64,7 +91,7 @@ const defaultConfig = `{
       { "name": "openai",
         "kind": "openai-chat",
         "base_url": "https://api.openai.com/v1",
-        "keys": [ { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
+        "keys": [ { "label": "main", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
         "models": [
           { "name": "gpt-4o-mini", "context_window": 128000 },
           { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"], "context_window": 128000 }
@@ -114,14 +141,14 @@ const defaultConfig = `{
 func loadConfig(path string) (*fileConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("读取 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("cmd.config.err.read", "path", path), err)
 	}
 	if err := detectLegacyModelConfig(path, data); err != nil {
 		return nil, err
 	}
 	var cfg fileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("解析配置 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("cmd.config.err.parse", "path", path), err)
 	}
 	return &cfg, nil
 }
@@ -148,14 +175,10 @@ func detectLegacyModelConfig(path string, data []byte) error {
 		if m.BaseURL == "" && m.APIKey == "" && m.Tokenizer == "" && m.Provider == "" {
 			return nil // 无 model 段：交由后续校验（providers 不可为空）
 		}
-		return fmt.Errorf("%w：%s 的 model 段为单 provider 平铺字段（检测到 base_url/api_key/tokenizer/provider）。\n"+
-			"provider 须写成列表（model.providers）：\n"+
-			"  \"model\": { \"providers\": [ { \"name\": \"openai\", \"kind\": \"openai-chat\",\n"+
-			"    \"base_url\": \"…\", \"keys\": [ { \"api_key\": \"secret:…\" } ],\n"+
-			"    \"models\": [ { \"name\": \"…\" } ], \"tokenizer\": \"\", \"unsupported_params\": [] } ],\n"+
-			"    \"primary\": \"openai\", \"fallback\": [], \"name\": \"…\", … }\n"+
-			"请手工改写（不做自动迁移），原平铺字段退役；字段说明见 docs/configuration.md。",
-			ErrLegacyConfig, path)
+		msg := i18n.Tf("cmd.config.err.legacy_flat", "path", path) +
+			legacyFlatSample +
+			i18n.T("cmd.config.err.legacy_flat_tail")
+		return fmt.Errorf("%w: %s", ErrLegacyConfig, msg)
 	}
 	// D173 前的 provider 列表：api_key 是单值字符串、models 是字符串数组、vision 挂在
 	// provider 上。三者任一出现即判旧形状。
@@ -168,30 +191,17 @@ func detectLegacyModelConfig(path string, data []byte) error {
 		}
 		oldModels := len(models) > 0 && len(models[0]) > 0 && models[0][0] == '"'
 		if hasKey || hasVision || oldModels {
-			return fmt.Errorf("%w：%s 的 model.providers[%d] 是旧形状（api_key 单值 / models 字符串数组 / provider 上的 vision）。\n"+
-				"模型与提供商已改版：provider 承载「怎么连」，模型承载「能做什么」。\n"+
-				"  \"model\": { \"providers\": [ { \"name\": \"openai\", \"kind\": \"openai-chat\",\n"+
-				"    \"base_url\": \"…\",\n"+
-				"    \"keys\": [ { \"label\": \"主账号\", \"api_key\": \"secret:…\" } ],\n"+
-				"    \"models\": [ { \"name\": \"gpt-4o-mini\" },\n"+
-				"                 { \"name\": \"gpt-4o\", \"caps\": [\"tools\",\"reasoning\",\"vision\"] } ],\n"+
-				"    \"tokenizer\": \"\", \"unsupported_params\": [] } ],\n"+
-				"    \"primary\": \"openai\",\n"+
-				"    \"fallback\": [ { \"provider\": \"mimo\", \"model\": \"mimo-v2.6-flash\" } ],\n"+
-				"    \"name\": \"…\", … }\n"+
-				"迁移要点：api_key → keys[]（多把即密钥池）；models 字符串 → 对象（能力位写进 caps，\n"+
-				"省略 caps 按协议缺省）；provider 上的 vision 移到对应模型的 caps；fallback 字符串 →\n"+
-				"provider/model 二元组（省略 model = 该 provider 的 models[0]）。\n"+
-				"请手工改写（不做自动迁移）；字段说明见 docs/configuration.md。",
-				ErrLegacyConfig, path, i)
+			msg := i18n.Tf("cmd.config.err.legacy_shape", "path", path, "index", i) +
+				legacyShapeSample +
+				i18n.T("cmd.config.err.legacy_shape_notes") +
+				i18n.T("cmd.config.err.legacy_shape_tail")
+			return fmt.Errorf("%w: %s", ErrLegacyConfig, msg)
 		}
 	}
 	for _, fb := range m.Fallback {
 		if len(fb) > 0 && fb[0] == '"' {
-			return fmt.Errorf("%w：%s 的 model.fallback 仍是 provider 名字数组。\n"+
-				"降级链已改为逐项指定模型：\"fallback\": [ { \"provider\": \"mimo\", \"model\": \"mimo-v2.6-flash\" } ]\n"+
-				"（省略 model = 该 provider 的 models[0]）。请手工改写（不做自动迁移），见 docs/configuration.md。",
-				ErrLegacyConfig, path)
+			return fmt.Errorf("%w: %s", ErrLegacyConfig,
+				i18n.Tf("cmd.config.err.legacy_fallback", "path", path))
 		}
 	}
 	return nil
@@ -217,20 +227,20 @@ func pointerContent(name string) string {
 // 字符、非 . ..、长度 ≤64。指针解析与设置窗新建/复制共用，防手改与注入。
 func validProfileName(name string) error {
 	if name == "" {
-		return fmt.Errorf("profile 名不可为空")
+		return fmt.Errorf("%s", i18n.T("cmd.profile.err.empty"))
 	}
 	if name != strings.TrimSpace(name) {
-		return fmt.Errorf("profile 名首尾不可含空白: %q", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.whitespace", "name", name))
 	}
 	if name == "." || name == ".." {
-		return fmt.Errorf("profile 名非法: %q", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.invalid", "name", name))
 	}
 	if strings.ContainsAny(name, `/\:`) || len(name) > 64 {
-		return fmt.Errorf("profile 名不可含 / \\ : 且长度 ≤64: %q", name)
+		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.charset", "name", name))
 	}
 	for _, r := range name {
 		if r < 0x20 || r == 0x7f {
-			return fmt.Errorf("profile 名不可含控制字符: %q", name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.control", "name", name))
 		}
 	}
 	return nil
@@ -242,28 +252,24 @@ func validProfileName(name string) error {
 func parsePointerFile(path string, data []byte) (string, error) {
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return "", fmt.Errorf("解析 %s: %w", path, err)
+		return "", fmt.Errorf("%s: %w", i18n.Tf("cmd.config.err.parse_short", "path", path), err)
 	}
 	for _, k := range legacyConfigKeys {
 		if _, ok := raw[k]; ok {
-			return "", fmt.Errorf("%w：%s 含旧格式键 %q。\n"+
-				"profile 已改为目录化：根 config.json 仅存当前 profile 指针（{\"profile\":\"<name>\"}），\n"+
-				"主配置落 profiles/<name>/config.json。请手工处置（不做自动迁移），例如迁移到 %s profile：\n"+
-				"  1. 把 %s 移动为 %s\n"+
-				"  2. 新建根 %s，内容：{\"profile\": \"%s\"}\n"+
-				"若该 profile 已存在请改用其他名字或手工合并；字段说明见 docs/configuration.md。",
-				ErrLegacyConfig, path, k, defaultProfileName, path,
-				filepath.Join(filepath.Dir(path), "profiles", defaultProfileName, "config.json"),
-				path, defaultProfileName)
+			pointer := fmt.Sprintf(`{"profile": %q}`, defaultProfileName)
+			return "", fmt.Errorf("%w: %s", ErrLegacyConfig, i18n.Tf("cmd.config.err.legacy_keys",
+				"path", path, "key", k, "profile", defaultProfileName,
+				"target", filepath.Join(filepath.Dir(path), "profiles", defaultProfileName, "config.json"),
+				"pointer", pointer))
 		}
 	}
 	v, ok := raw["profile"]
 	if !ok {
-		return "", fmt.Errorf("%s 缺 profile 键（指针格式：{\"profile\":\"<name>\"}）", path)
+		return "", fmt.Errorf("%s", i18n.Tf("cmd.config.err.pointer_no_key", "path", path))
 	}
 	name, ok := v.(string)
 	if !ok || name == "" {
-		return "", fmt.Errorf("%s 的 profile 键须为非空字符串", path)
+		return "", fmt.Errorf("%s", i18n.Tf("cmd.config.err.pointer_not_string", "path", path))
 	}
 	if err := validProfileName(name); err != nil {
 		return "", fmt.Errorf("%s: %w", path, err)
@@ -308,15 +314,15 @@ func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
 	}
 	var generic map[string]any
 	if err := json.Unmarshal(data, &generic); err != nil {
-		return fmt.Errorf("解析 %s: %w", cfgPath, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("cmd.config.err.parse_short", "path", cfgPath), err)
 	}
 	mutate(generic)
 	out, err := json.MarshalIndent(generic, "", "  ")
 	if err != nil {
-		return fmt.Errorf("编码 config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.config.err.encode"), err)
 	}
 	if err := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); err != nil {
-		return fmt.Errorf("写入 %s: %w", cfgPath, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("cmd.config.err.write", "path", cfgPath), err)
 	}
 	return nil
 }

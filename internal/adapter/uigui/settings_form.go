@@ -228,12 +228,12 @@ func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
 		provOpen:     -1, // S11-7②：开窗全收起（第一张也不自动展开——展开是用户的动作）
 		perm:         selectField{displays: permLevels, values: permLevels},
-		effort:       selectField{displays: effortLevels, values: effortValues},
-		theme:        selectField{displays: themeLevels, values: themeValues},
+		effort:       selectField{displays: effortLevels(), values: effortValues},
+		theme:        selectField{displays: themeLevels(), values: themeValues},
 		scale:        selectField{displays: zoomLevels, values: zoomValues},
-		asrLang:      selectField{displays: langLevels, values: langValues},
-		asrKind:      selectField{displays: asrKindLevels, values: asrKindValues},
-		ttsKind:      selectField{displays: ttsKindLevels, values: ttsKindValues},
+		asrLang:      selectField{displays: langLevels(), values: langValues},
+		asrKind:      selectField{displays: asrKindLevels(), values: asrKindValues},
+		ttsKind:      selectField{displays: ttsKindLevels(), values: ttsKindValues},
 		testResults:  make(chan testOutcome, 8),
 		toolRes:      make(chan toolActionResult, 16),
 		skillRes:     make(chan skillActionResult, 16),

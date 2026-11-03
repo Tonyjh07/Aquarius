@@ -7,6 +7,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // audioConfig 语音配置（D179/D222）：识别与合成各自是一条**完整**的服务配置，
@@ -86,7 +88,7 @@ func (c *fileConfig) normalizeAudio() error {
 		c.Input.Language = "auto"
 	case "auto", "zh", "en":
 	default:
-		return fmt.Errorf("input.language=%q 仅支持 auto | zh | en", c.Input.Language)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.input_language", "lang", c.Input.Language))
 	}
 	if err := normalizeAudioChannel("audio.asr", &c.Audio.ASR, asrKinds); err != nil {
 		return err
@@ -115,25 +117,26 @@ func normalizeAudioChannel(name string, ch *audioChannel, kinds []string) error 
 		ch.Kind = kindChatAudio
 	}
 	if !containsString(kinds, ch.Kind) {
-		return fmt.Errorf("%s.kind=%q 不认识（支持 %s）", name, ch.Kind, strings.Join(kinds, " | "))
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.audio_kind",
+			"name", name, "kind", ch.Kind, "kinds", strings.Join(kinds, " | ")))
 	}
 	if !ch.configured() && !explicitKind {
 		return nil // 未配置 = 该能力不可用
 	}
 	if explicitKind && ch.Kind != kindASRWhisper && ch.Provider == "" && ch.BaseURL == "" {
-		return fmt.Errorf("%s 选了 %s 方式就要填端点（base_url 或引用一个服务）", name, ch.Kind)
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.audio_endpoint", "name", name, "kind", ch.Kind))
 	}
 	switch ch.Kind {
 	case kindASRWhisper:
 		if ch.ModelPath == "" {
-			return fmt.Errorf("%s.model_path 不可为空（本地识别要指定 ggml 模型文件）", name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.audio_model_path", "name", name))
 		}
 	case kindASRFunASR, kindTTSVITS, kindTTSGPTSovits:
 		// FunASR 的模型由服务端启动参数决定；VITS 与 GPT-SoVITS 的「音色」是
 		// 说话人 ID / 参考音频。这三种都没有「模型名」这一层。
 	default:
 		if ch.Model == "" {
-			return fmt.Errorf("%s.model 不可为空（配置了服务就要写明音频模型名）", name)
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.audio_model", "name", name))
 		}
 	}
 	return nil
@@ -159,10 +162,10 @@ func (c *fileConfig) audioProvider(which string) (serviceEndpoint, string) {
 	case "tts":
 		ch = &c.Audio.TTS
 	default:
-		return serviceEndpoint{}, fmt.Sprintf("未知的语音能力 %q", which)
+		return serviceEndpoint{}, i18n.Tf("cmd.config.err.audio_unknown", "which", which)
 	}
 	if !ch.configured() {
-		return serviceEndpoint{}, "未配置语音服务"
+		return serviceEndpoint{}, i18n.T("cmd.config.err.audio_unconfigured")
 	}
 	ep, err := c.resolveEndpoint(ch.BaseURL, ch.APIKey, ch.Provider, deriveKeyName(which))
 	if err != nil {

@@ -6,6 +6,7 @@ package uigui
 import (
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -150,7 +151,10 @@ func complArgItems(ci port.CommandInfo, args []string, tok string) []complItem {
 	if len(params) == 0 {
 		if len(ci.Params) == 0 {
 			// 不吃参数的命令也进参数相：给一句「到此为止」，而不是让浮层凭空消失。
-			return []complItem{{label: "（无参数）", tail: "这个命令不带参数，回车直接执行"}}
+			return []complItem{{
+				label: i18n.T("ui.cmd.no_args_label"),
+				tail:  i18n.T("ui.cmd.no_args_tail"),
+			}}
 		}
 		return complFlagItems(ci, args, tok)
 	}
@@ -193,9 +197,9 @@ func complFlagItems(ci port.CommandInfo, args []string, prefix string) []complIt
 		tail := cp.Desc
 		if cp.Repeatable {
 			if tail != "" {
-				tail += "；"
+				tail += i18n.T("ui.cmd.tail_sep")
 			}
-			tail += "可给多次"
+			tail += i18n.T("ui.cmd.repeatable")
 		}
 		out = append(out, complItem{label: label, tail: tail, insert: cp.Name})
 	}

@@ -24,6 +24,7 @@ import (
 	"gioui.org/widget"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -343,7 +344,7 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 		if id := string(act.id); id != "" {
 			gtx.Execute(clipboard.WriteCmd{Type: "application/text",
 				Data: io.NopCloser(strings.NewReader(id))})
-			st.toast.show("已复制节点 ID", gtx.Now)
+			st.toast.show(i18n.T("ui.history.toast_copied_id"), gtx.Now)
 		}
 	case nodeActGoto:
 		st.sendGoto(u, act.id)

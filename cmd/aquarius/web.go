@@ -10,6 +10,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/webchain"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/webdeepseek"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/webfetchlocal"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -23,14 +24,14 @@ func (w *wiring) buildWeb(ctx context.Context) (port.WebSearch, port.WebFetch) {
 		case webKindDeepSeek:
 			c, err := w.deepseekWeb(ctx, p, webSideSearch)
 			if err != nil {
-				w.webWarn("搜索", i, p, err)
+				w.webWarn(webSideSearch, i, p, err)
 				continue
 			}
 			searches = append(searches, c)
 		case webKindBrave:
 			key, err := w.webKey(ctx, "brave", p.Key)
 			if err != nil {
-				w.webWarn("搜索", i, p, err)
+				w.webWarn(webSideSearch, i, p, err)
 				continue
 			}
 			c, err := webbrave.New(webbrave.Config{
@@ -40,7 +41,7 @@ func (w *wiring) buildWeb(ctx context.Context) (port.WebSearch, port.WebFetch) {
 				Lang:    p.Lang,
 			})
 			if err != nil {
-				w.webWarn("搜索", i, p, err)
+				w.webWarn(webSideSearch, i, p, err)
 				continue
 			}
 			searches = append(searches, c)
@@ -52,7 +53,7 @@ func (w *wiring) buildWeb(ctx context.Context) (port.WebSearch, port.WebFetch) {
 		case webKindDeepSeek:
 			c, err := w.deepseekWeb(ctx, p, webSideFetch)
 			if err != nil {
-				w.webWarn("抓取", i, p, err)
+				w.webWarn(webSideFetch, i, p, err)
 				continue
 			}
 			fetches = append(fetches, c)
@@ -68,7 +69,7 @@ func (w *wiring) buildWeb(ctx context.Context) (port.WebSearch, port.WebFetch) {
 			}
 			c, err := webfetchlocal.New(cfg)
 			if err != nil {
-				w.webWarn("抓取", i, p, err)
+				w.webWarn(webSideFetch, i, p, err)
 				continue
 			}
 			fetches = append(fetches, c)
@@ -121,9 +122,10 @@ func (w *wiring) webKey(ctx context.Context, name, ref string) (string, error) {
 }
 
 // webWarn 一家提供商装不起来：面向用户的警告（不含决策编号，D 规则）。
-func (w *wiring) webWarn(side string, i int, p webProvider, err error) {
+func (w *wiring) webWarn(side webSide, i int, p webProvider, err error) {
 	if w.stderr == nil {
 		return
 	}
-	fmt.Fprintf(w.stderr, "警告：联网%s的第 %d 家提供商（%s）不可用：%v\n", side, i+1, p.Kind, err)
+	fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.web.warn.unavailable",
+		"side", side.label(), "index", i+1, "kind", p.Kind, "err", err))
 }

@@ -11,7 +11,6 @@ package uigui
 // 键位可配（ui.keys），见 input.go 的 sendKeys。
 
 import (
-	"fmt"
 	"image"
 	"strings"
 
@@ -22,6 +21,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -87,7 +87,7 @@ func (u *UI) pendingBand(gtx layout.Context, w, absY int) {
 	if hidden > 0 {
 		y := len(draw) * rowH
 		off := op.Offset(image.Pt(margin, y)).Push(gtx.Ops)
-		l := material.Caption(u.th, fmt.Sprintf("还有 %d 条待发（改档或撤销在待发条上）", hidden))
+		l := material.Caption(u.th, i18n.Tf("ui.state.pending_more", "n", hidden))
 		l.Color = tok().textMuted
 		l.Layout(gtx)
 		off.Pop()
@@ -106,9 +106,9 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 	u.record(rowRect.Add(image.Pt(0, absY)), (rowH-2)/2, tok().pillBg, image.Rectangle{Max: u.frameSize})
 
 	// 档位徽标：引导用品牌色（它会更早到模型眼前），排队用静息灰。
-	badge, bg := "排队", tok().textMuted
+	badge, bg := i18n.T("ui.state.queued"), tok().textMuted
 	if it.Delivery == port.DeliverySteer {
-		badge, bg = "引导", tok().brandColor
+		badge, bg = i18n.T("ui.state.steer"), tok().brandColor
 	}
 	bl := material.Caption(u.th, badge)
 	bl.Color = tok().whiteText

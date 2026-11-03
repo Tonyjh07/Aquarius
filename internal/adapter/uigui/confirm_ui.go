@@ -13,6 +13,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -35,7 +36,7 @@ func (u *UI) factsCard() []string {
 	}
 	title := f.Title
 	if title == "" {
-		title = "（未就绪）"
+		title = i18n.T("ui.chat.facts_not_ready")
 	}
 	l1 := fmt.Sprintf("%s · %s（%s）", profile, title, shortID(f.ConvID))
 	if st.Model != "" {
@@ -50,21 +51,22 @@ func (u *UI) factsCard() []string {
 	}
 	var l2 string
 	if f.CtxMax > 0 {
-		mode := "估算"
+		mode := i18n.T("ui.chat.ctx_mode_est")
 		if f.CtxExact {
-			mode = "精确"
+			mode = i18n.T("ui.chat.ctx_mode_exact")
 		}
-		l2 = fmt.Sprintf("上下文 %d/%d tokens（%.1f%%，%s）",
-			f.CtxTokens, f.CtxMax, 100*float64(f.CtxTokens)/float64(f.CtxMax), mode)
+		l2 = i18n.Tf("ui.chat.ctx_usage",
+			"used", f.CtxTokens, "max", f.CtxMax,
+			"pct", fmt.Sprintf("%.1f", 100*float64(f.CtxTokens)/float64(f.CtxMax)), "mode", mode)
 	}
-	l3 := fmt.Sprintf("累计 in %d / out %d tokens", f.SumIn, f.SumOut)
+	l3 := i18n.Tf("ui.chat.tokens_total", "in", f.SumIn, "out", f.SumOut)
 	out := []string{l1}
 	if l2 != "" {
 		out = append(out, l2)
 	}
 	out = append(out, l3)
 	if f.LastIn > 0 || f.LastOut > 0 {
-		out = append(out, fmt.Sprintf("上轮 in %d / out %d tokens", f.LastIn, f.LastOut))
+		out = append(out, i18n.Tf("ui.chat.tokens_last", "in", f.LastIn, "out", f.LastOut))
 	}
 	return out
 }
@@ -342,11 +344,11 @@ func (u *UI) confirmTipAt(cur point) (string, bool) {
 	elevate := u.confirmElevatable()
 	rects := confirmBtnRects(u.frameSize, u.frameMetric.Dp, elevate)
 	texts := make([]string, len(rects))
-	texts[0] = "拒绝"
-	texts[1] = "允许"
+	texts[0] = i18n.T("ui.common.deny")
+	texts[1] = i18n.T("ui.common.allow")
 	if elevate {
 		next, _ := nextPermLevel(u.opts.Status().Level)
-		texts[2] = "提升权限 → " + next
+		texts[2] = i18n.Tf("ui.confirm.elevate", "level", next)
 	}
 	for i, r := range rects {
 		if u.cursorHitsRect(r, cur) {

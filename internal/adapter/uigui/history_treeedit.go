@@ -20,6 +20,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -124,7 +125,7 @@ func (st *historyState) sendTreeEdit(u *UI, args ...string) {
 // histTreeEditLabel 开关左侧的常显标签（§5.6.1：标签常显，不靠开关颜色猜含义）；
 // 开着时用正文色，关着时退一档。
 func histTreeEditLabel(gtx layout.Context, th *material.Theme, on bool) layout.Dimensions {
-	l := material.Caption(th, "树编辑")
+	l := material.Caption(th, i18n.T("ui.history.tree_edit"))
 	l.Color = paperOf().text2
 	if on {
 		l.Color = paperOf().text

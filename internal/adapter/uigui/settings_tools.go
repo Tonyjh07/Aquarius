@@ -14,6 +14,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // ToolsAdmin 工具与 MCP 管理面（装配根实现；线程安全——次窗 goroutine 调用）。
@@ -94,7 +96,7 @@ func (f *settingsForm) drainToolResults() {
 			f.toolWait--
 			f.toolsStatus, f.toolsErr = r.status, r.err != nil
 			if r.err != nil {
-				f.toolsStatus = "操作失败：" + r.err.Error()
+				f.toolsStatus = i18n.Tf("ui.common.failed", "err", r.err.Error())
 			}
 		default:
 			return
@@ -129,7 +131,7 @@ func (u *UI) dispatchToolAction(f *settingsForm, key string) {
 					if err := f.tools.SetBuiltinEnabled(name, !enabled); err != nil {
 						return "", err
 					}
-					return "内置工具已更新（热生效）", nil
+					return i18n.T("ui.settings.tool.builtin_updated"), nil
 				})
 				return
 			}
@@ -155,7 +157,7 @@ func (u *UI) dispatchToolAction(f *settingsForm, key string) {
 				if err := f.tools.SetPluginEnabled(name, target); err != nil {
 					return "", err
 				}
-				return "插件状态已更新", nil
+				return i18n.T("ui.settings.tool.plugin_updated"), nil
 			})
 		case "logs":
 			u.toolsAsync(f, func() (string, error) { return f.tools.Logs(name) })
@@ -164,7 +166,7 @@ func (u *UI) dispatchToolAction(f *settingsForm, key string) {
 				if err := f.tools.RevokeTrust(name); err != nil {
 					return "", err
 				}
-				return "信任已撤销（下次启用重新确认）", nil
+				return i18n.T("ui.settings.tool.trust_revoked"), nil
 			})
 		default: // "cap:<cap>"：已授权 = 撤销；未授权 = 手动预授权
 			if !strings.HasPrefix(act, "cap:") {
@@ -186,14 +188,14 @@ func (u *UI) dispatchToolAction(f *settingsForm, key string) {
 					if err := f.tools.RevokeGrant(name, capName); err != nil {
 						return "", err
 					}
-					return "已撤销能力并停用插件（再启用即重走确认）", nil
+					return i18n.T("ui.settings.tool.cap_revoked"), nil
 				})
 			} else {
 				u.toolsAsync(f, func() (string, error) {
 					if err := f.tools.GrantCap(name, capName); err != nil {
 						return "", err
 					}
-					return "已预授权（省一次确认，不等于绕过风险）", nil
+					return i18n.T("ui.settings.tool.cap_granted"), nil
 				})
 			}
 		}
@@ -215,13 +217,13 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 	hint := ""
 	switch b.Name {
 	case "think":
-		hint = "思考草稿工具：模型用原生思考草稿空间"
+		hint = i18n.T("ui.settings.tool.hint.think")
 	case "context_compact":
-		hint = "禁用后模型失去自管理上下文能力（自动压缩与 /compact 仍在）"
+		hint = i18n.T("ui.settings.tool.hint.compact")
 	}
-	action := "停用"
+	action := i18n.T("ui.common.disable")
 	if !b.Enabled {
-		action = "启用"
+		action = i18n.T("ui.common.enable")
 	}
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -259,41 +261,49 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 	)
 }
 
-// pluginStatusCN plugin.Status → 中文（工具页展示；未知原样）。
-var pluginStatusCN = map[string]string{
-	"disabled":   "停用",
-	"ready":      "已连接",
-	"connecting": "连接中",
-	"failed":     "首连失败",
-	"restarting": "退避重启",
-	"revoked":    "授权拒绝",
-	"crashed":    "崩溃超限",
+// pluginStatusLabel plugin.Status → 展示名（工具页；未知原样露出状态串）。
+// **必须是函数**：语言在 main 里才定，包级 map 存下的会永远是本机 locale 那套。
+func pluginStatusLabel(status string) string {
+	switch status {
+	case "disabled":
+		return i18n.T("ui.common.disable")
+	case "ready":
+		return i18n.T("ui.settings.tool.status.ready")
+	case "connecting":
+		return i18n.T("ui.settings.tool.status.connecting")
+	case "failed":
+		return i18n.T("ui.settings.tool.status.failed")
+	case "restarting":
+		return i18n.T("ui.settings.tool.status.restarting")
+	case "revoked":
+		return i18n.T("ui.settings.tool.status.revoked")
+	case "crashed":
+		return i18n.T("ui.settings.tool.status.crashed")
+	}
+	return status
 }
 
 // pluginToolRow 插件行：名称/状态/来源传输/能力授权/动作按钮（启停、日志、撤销信任、
 // 逐能力撤销或预授权）。撤销信任仅 source=plugins 且已信任时显示。
 func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p PluginToolState) layout.Dimensions {
-	source := "插件目录"
+	source := i18n.T("ui.settings.tool.source.plugins")
 	if p.Source == "config" {
 		source = "config"
 	}
-	status := pluginStatusCN[p.Status]
-	if status == "" {
-		status = p.Status
-	}
-	meta := "来源 " + source + " · 传输 " + orDashCN(p.Transport)
+	status := pluginStatusLabel(p.Status)
+	meta := i18n.Tf("ui.settings.tool.meta", "source", source, "transport", orDashCN(p.Transport))
 	if p.Restarts > 0 {
-		meta += " · 重启" + strconv.Itoa(p.Restarts) + " 次"
+		meta += i18n.Tf("ui.settings.tool.meta.restarts", "n", strconv.Itoa(p.Restarts))
 	}
 	if p.Calls > 0 {
-		meta += " · 调用" + strconv.Itoa(p.Calls)
+		meta += i18n.Tf("ui.settings.tool.meta.calls", "n", strconv.Itoa(p.Calls))
 		if p.Errors > 0 {
-			meta += "/失败" + strconv.Itoa(p.Errors)
+			meta += i18n.Tf("ui.settings.tool.meta.errors", "n", strconv.Itoa(p.Errors))
 		}
 	}
-	action := "停用"
+	action := i18n.T("ui.common.disable")
 	if !p.Enabled {
-		action = "启用"
+		action = i18n.T("ui.common.enable")
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -321,15 +331,15 @@ func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p P
 			}
 			var caps []string
 			for _, c := range p.Capabilities {
-				mark := "未授权"
+				mark := i18n.T("ui.settings.tool.cap.ungranted")
 				for _, g := range p.Granted {
 					if g == c {
-						mark = "已授权"
+						mark = i18n.T("ui.settings.tool.cap.granted")
 					}
 				}
 				caps = append(caps, c+"("+mark+")")
 			}
-			l := material.Body2(th, "能力: "+strings.Join(caps, ", "))
+			l := material.Body2(th, i18n.Tf("ui.settings.tool.caps_prefix", "list", strings.Join(caps, ", ")))
 			l.Color = tok().textMuted
 			return l.Layout(gtx)
 		}),
@@ -342,14 +352,14 @@ func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p P
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return f.toolActionButton(gtx, th, "p:"+p.Name+":logs", "打开日志")
+						return f.toolActionButton(gtx, th, "p:"+p.Name+":logs", i18n.T("ui.settings.tool.logs"))
 					})
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if p.Source != "plugins" || !p.Trusted {
 						return layout.Dimensions{}
 					}
-					return f.toolActionButton(gtx, th, "p:"+p.Name+":trust", "撤销信任")
+					return f.toolActionButton(gtx, th, "p:"+p.Name+":trust", i18n.T("ui.settings.tool.revoke_trust"))
 				}),
 			)
 		}),
@@ -366,9 +376,9 @@ func (f *settingsForm) pluginToolRow(gtx layout.Context, th *material.Theme, p P
 						granted = true
 					}
 				}
-				label := "预授权 " + capName
+				label := i18n.Tf("ui.settings.tool.grant_prefix", "cap", capName)
 				if granted {
-					label = "撤销 " + capName
+					label = i18n.Tf("ui.settings.tool.revoke_prefix", "cap", capName)
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

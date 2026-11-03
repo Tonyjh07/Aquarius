@@ -18,6 +18,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -121,7 +122,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			if lines := u.factsCard(); len(lines) > 0 {
 				u.hoverCard(gtx, absY, lines, false)
 			} else {
-				u.hoverTip(gtx, absY, startupHint, false)
+				u.hoverTip(gtx, absY, startupHint(), false)
 			}
 			shown = true
 		}
@@ -130,7 +131,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 		if !shown && u.m.confirm == nil && len(u.chipItems()) == 0 &&
 			u.cursorHitsRect(attachSlotRect(pillEnd, gtx.Dp(inputPadDp), rowH,
 				gtx.Dp(inputIconDp)).Add(image.Pt(0, absY)), cur) {
-			u.hoverTip(gtx, absY, "附件", false)
+			u.hoverTip(gtx, absY, i18n.T("ui.input.tip_attach"), false)
 			shown = true
 		}
 		if u.m.confirm != nil {
@@ -142,11 +143,11 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			}
 		} else if u.sendBtn.Hovered() && !u.generating.Load() &&
 			u.overInputBtn(true, cur) {
-			txt := "发送"
+			txt := i18n.T("ui.input.tip_send")
 			if u.micButton() {
-				txt = "语音输入"
+				txt = i18n.T("ui.input.tip_voice")
 				if u.recording.Load() {
-					txt = "停止录音"
+					txt = i18n.T("ui.input.tip_stop_recording")
 				}
 			}
 			u.hoverTip(gtx, absY, txt, true)
@@ -155,7 +156,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 		if u.generating.Load() && u.stopBtn.Hovered() &&
 			u.overInputBtn(true, cur) {
 			// D86：确认态恢复（右圆停止键不再置灰）。
-			u.hoverTip(gtx, absY, "停止", true)
+			u.hoverTip(gtx, absY, i18n.T("ui.input.tip_stop"), true)
 			shown = true
 		}
 	}
@@ -206,7 +207,9 @@ func inputRowRects(w, top, rowH, gap, margin int) (logo, pill, send image.Rectan
 
 // startupHint 启动提示（装配根对 GUI 不再发 Say 启动行，§15.1）。GUI 没有 Ctrl+C
 // 取消绑定（选区存续期 Ctrl+C 只做复制），停止生成走右钮方块——提示照实写。
-const startupHint = "Aquarius — 输入 /help 查看命令，/quit 退出；停止生成点右侧方块"
+// 取词函数而非包级常量：常量的值在包初始化时定，那时 i18n.Use 还没跑（同 settings_page
+// 里 pageName 的注释）。
+func startupHint() string { return i18n.T("ui.input.startup_hint") }
 
 // tipBg 悬浮 tips 底色（实色——位图合成下元素必须自带底板）。
 var tipBg = color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF}

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -23,7 +24,7 @@ import (
 func (u *UI) saveSettings(f *settingsForm) {
 	if f.readOnly || u.opts.ApplySettings == nil {
 		f.err = true
-		f.status = "设置窗未接线（只读占位）"
+		f.status = i18n.T("ui.settings.act.not_wired")
 		return
 	}
 	p, err := f.patch()
@@ -43,7 +44,7 @@ func (u *UI) commitSettings(f *settingsForm, p SettingsPatch) {
 	cmds, err := u.opts.ApplySettings(p)
 	if err != nil {
 		f.err = true
-		f.status = "保存失败：" + err.Error()
+		f.status = i18n.Tf("ui.settings.act.save_failed", "err", err.Error())
 		return
 	}
 	for i := range cmds {
@@ -71,28 +72,28 @@ func (u *UI) commitSettings(f *settingsForm, p SettingsPatch) {
 // savedStatus 保存成功的反馈文案：基础句 + 按「哪些改动要重启才生效」追加后缀。
 // 多条都命中时后者覆盖前者——那正是重排后的语义（越靠后越晚生效），用户不必读四句。
 func savedStatus(p SettingsPatch, snap SettingsSnapshot, snapChain []FallbackLink) string {
-	status := "已保存"
+	status := i18n.T("ui.settings.act.saved")
 	if p.Model != snap.Model {
-		status = "已保存（模型名经 /model 热切换）"
+		status = i18n.T("ui.settings.act.saved_model")
 	}
 	if p.ASRProvider != snap.ASRProvider || p.ASRModel != snap.ASRModel ||
 		p.ASRBaseURL != snap.ASRBaseURL ||
 		p.TTSProvider != snap.TTSProvider || p.TTSModel != snap.TTSModel ||
 		p.TTSBaseURL != snap.TTSBaseURL || p.ASRKey != "" || p.TTSKey != "" {
-		status = "已保存（语音服务与模型的改动重启后生效）"
+		status = i18n.T("ui.settings.act.saved_audio")
 	}
 	if p.RawJSON != "" {
-		status = "已保存（config.json 原文已替换；provider/密钥类改动重启生效）"
+		status = i18n.T("ui.settings.act.saved_raw")
 	}
 	if !promptModulesEqual(snap.PromptModules, p.PromptModules) || !slices.Equal(snap.PromptPersona, p.PromptPersona) {
-		status = "已保存（人格组合只对新会话生效，重启后应用）"
+		status = i18n.T("ui.settings.act.saved_prompt")
 	}
 	if !slices.Equal(p.Fallback, snapChain) {
-		status = "已保存（降级链改动重启后生效）"
+		status = i18n.T("ui.settings.act.saved_fallback")
 	}
 	if !webProvidersEqual(p.WebSearchProviders, snap.WebSearchProviders) ||
 		!webProvidersEqual(p.WebFetchProviders, snap.WebFetchProviders) {
-		status = "已保存（联网提供商改动重启后生效）"
+		status = i18n.T("ui.settings.act.saved_web")
 	}
 	return status
 }
@@ -166,27 +167,28 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	if v := strings.TrimSpace(f.fontSize.Text()); v != "" {
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil || n < port.SettingsFontSizeMin || n > port.SettingsFontSizeMax {
-			return SettingsPatch{}, fmt.Errorf("字号须为 %g–%g 的数值", port.SettingsFontSizeMin, port.SettingsFontSizeMax)
+			return SettingsPatch{}, fmt.Errorf("%s", i18n.Tf("ui.settings.err.font_size",
+				"min", port.SettingsFontSizeMin, "max", port.SettingsFontSizeMax))
 		}
 		p.FontSize = n
 	}
 	if v := strings.TrimSpace(f.winW.Text()); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			return SettingsPatch{}, errors.New("窗口宽须为非负像素数值")
+			return SettingsPatch{}, errors.New(i18n.T("ui.settings.err.win_width"))
 		}
 		p.WindowWidth = n
 	}
 	if v := strings.TrimSpace(f.winH.Text()); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			return SettingsPatch{}, errors.New("窗口高须为非负像素数值")
+			return SettingsPatch{}, errors.New(i18n.T("ui.settings.err.win_height"))
 		}
 		p.WindowHeight = n
 	}
 	if p.Hotkey != "" {
 		if err := platform.ValidateHotkey(p.Hotkey); err != nil {
-			return SettingsPatch{}, fmt.Errorf("快捷键非法：%w", err)
+			return SettingsPatch{}, fmt.Errorf("%s：%w", i18n.T("ui.settings.err.hotkey"), err)
 		}
 	}
 	// S4/D110③ 全量分组页：输出布尔恒写；限制数值空 = 保持；提示词恒写；
@@ -196,35 +198,36 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	if v := strings.TrimSpace(f.maxTurns.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			return SettingsPatch{}, errors.New("最大轮数须为非负整数")
+			return SettingsPatch{}, errors.New(i18n.T("ui.settings.err.max_turns"))
 		}
 		p.MaxTurns = n
 	}
 	if v := strings.TrimSpace(f.maxCtx.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			return SettingsPatch{}, errors.New("上下文上限须为非负整数")
+			return SettingsPatch{}, errors.New(i18n.T("ui.settings.err.max_ctx"))
 		}
 		p.MaxContextTokens = n
 	}
 	if v := strings.TrimSpace(f.compact.Text()); v != "" {
 		n, perr := strconv.ParseFloat(v, 64)
 		if perr != nil || n < port.SettingsCompactMin || n > port.SettingsCompactMax {
-			return SettingsPatch{}, fmt.Errorf("压缩阈值须为 %g–%g 的小数", port.SettingsCompactMin, port.SettingsCompactMax)
+			return SettingsPatch{}, fmt.Errorf("%s", i18n.Tf("ui.settings.err.compact",
+				"min", port.SettingsCompactMin, "max", port.SettingsCompactMax))
 		}
 		p.CompactThreshold = n
 	}
 	if v := strings.TrimSpace(f.toolChars.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			return SettingsPatch{}, errors.New("工具输出上限须为非负整数")
+			return SettingsPatch{}, errors.New(i18n.T("ui.settings.err.tool_chars"))
 		}
 		p.ToolOutputChars = n
 	}
 	if v := strings.TrimSpace(f.toolTo.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < 0 {
-			return SettingsPatch{}, errors.New("工具超时须为非负整数")
+			return SettingsPatch{}, errors.New(i18n.T("ui.settings.err.tool_timeout"))
 		}
 		p.ToolTimeoutSec = n
 	}
@@ -233,8 +236,8 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	if v := strings.TrimSpace(f.backupKeep.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsBackupKeepMin || n > port.SettingsBackupKeepMax {
-			return SettingsPatch{}, fmt.Errorf("备份代数须为 %d–%d 的整数",
-				port.SettingsBackupKeepMin, port.SettingsBackupKeepMax)
+			return SettingsPatch{}, fmt.Errorf("%s", i18n.Tf("ui.settings.err.backup_keep",
+				"min", port.SettingsBackupKeepMin, "max", port.SettingsBackupKeepMax))
 		}
 		p.BackupKeep = n
 	}
@@ -270,7 +273,8 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	if v := strings.TrimSpace(f.webCount.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsSearchCountMin || n > port.SettingsSearchCountMax {
-			return SettingsPatch{}, fmt.Errorf("搜索条数须为 %d–%d 的整数", port.SettingsSearchCountMin, port.SettingsSearchCountMax)
+			return SettingsPatch{}, fmt.Errorf("%s", i18n.Tf("ui.settings.err.search_count",
+				"min", port.SettingsSearchCountMin, "max", port.SettingsSearchCountMax))
 		}
 		p.WebSearchCount = n
 	}
@@ -278,7 +282,8 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	if v := strings.TrimSpace(f.webMaxChars.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsFetchCharsMin || n > port.SettingsFetchCharsMax {
-			return SettingsPatch{}, fmt.Errorf("抓取正文上限须为 %d–%d 的整数", port.SettingsFetchCharsMin, port.SettingsFetchCharsMax)
+			return SettingsPatch{}, fmt.Errorf("%s", i18n.Tf("ui.settings.err.fetch_chars",
+				"min", port.SettingsFetchCharsMin, "max", port.SettingsFetchCharsMax))
 		}
 		p.WebFetchMaxChars = n
 	}
@@ -286,7 +291,8 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	if v := strings.TrimSpace(f.webTimeout.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsFetchTimeoutMin || n > port.SettingsFetchTimeoutMax {
-			return SettingsPatch{}, fmt.Errorf("抓取超时须为 %d–%d 秒的整数", port.SettingsFetchTimeoutMin, port.SettingsFetchTimeoutMax)
+			return SettingsPatch{}, fmt.Errorf("%s", i18n.Tf("ui.settings.err.fetch_timeout",
+				"min", port.SettingsFetchTimeoutMin, "max", port.SettingsFetchTimeoutMax))
 		}
 		p.WebFetchTimeoutSec = n
 	}

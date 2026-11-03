@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/acpgate"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -47,17 +48,18 @@ func (c *fileConfig) delegateOptions(secrets port.Secrets, confirmer port.Confir
 
 	if n := d.TimeoutSec; n != nil {
 		if *n < 0 {
-			return opts, fmt.Errorf("delegate.timeout_sec 不能为负（0 = 不限）：%d", *n)
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_timeout_neg", "n", *n))
 		}
 		if time.Duration(*n)*time.Second > port.MaxDelegateTimeout {
-			return opts, fmt.Errorf("delegate.timeout_sec 超出上限（<= %d 秒）：%d", int(port.MaxDelegateTimeout/time.Second), *n)
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_timeout_max",
+				"max", int(port.MaxDelegateTimeout/time.Second), "n", *n))
 		}
 		opts.Timeout = time.Duration(*n) * time.Second
 	} else {
 		opts.Timeout = port.DefaultDelegateTimeout
 	}
 	if d.MaxConcurrent < 0 || d.MaxTotal < 0 {
-		return opts, fmt.Errorf("delegate.max_concurrent / max_total 不能为负")
+		return opts, fmt.Errorf("%s", i18n.T("cmd.config.err.delegate_negative"))
 	}
 	opts.MaxConcurrent, opts.MaxTotal = d.MaxConcurrent, d.MaxTotal
 
@@ -66,25 +68,29 @@ func (c *fileConfig) delegateOptions(secrets port.Secrets, confirmer port.Confir
 	for i, a := range d.Agents {
 		name := strings.TrimSpace(a.Name)
 		if name == "" {
-			return opts, fmt.Errorf("delegate.agents[%d]：缺 name", i)
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_name_missing", "i", i))
 		}
 		if seen[name] {
-			return opts, fmt.Errorf("delegate.agents[%d]：name %q 重复", i, name)
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_name_dup",
+				"i", i, "name", name))
 		}
 		seen[name] = true
 		cmd := strings.TrimSpace(a.Command)
 		if cmd == "" {
-			return opts, fmt.Errorf("delegate.agents[%d]（%s）：缺 command", i, name)
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_command_missing",
+				"i", i, "name", name))
 		}
 		wd := strings.TrimSpace(a.WorkDir)
 		if wd != "" && !filepath.IsAbs(wd) && !strings.HasPrefix(wd, "/") && !strings.HasPrefix(wd, "\\") {
-			return opts, fmt.Errorf("delegate.agents[%d]（%s）：workdir 必须是绝对路径：%q", i, name, a.WorkDir)
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_workdir",
+				"i", i, "name", name, "workdir", a.WorkDir))
 		}
 		enabled := a.Enabled == nil || *a.Enabled
 		if a.Default {
 			defaults++
 			if !enabled {
-				return opts, fmt.Errorf("delegate.agents[%d]（%s）：default 的代理不能同时 enabled=false", i, name)
+				return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_default_disabled",
+					"i", i, "name", name))
 			}
 		}
 		opts.Agents = append(opts.Agents, acpgate.Agent{
@@ -93,7 +99,7 @@ func (c *fileConfig) delegateOptions(secrets port.Secrets, confirmer port.Confir
 		})
 	}
 	if defaults > 1 {
-		return opts, fmt.Errorf("delegate.agents 里有多条 default（%d 条）：只能有一条", defaults)
+		return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_default_multi", "n", defaults))
 	}
 	return opts, nil
 }

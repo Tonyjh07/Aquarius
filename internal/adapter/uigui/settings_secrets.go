@@ -11,11 +11,12 @@ package uigui
 // 状态行与错误串都不含值。
 
 import (
-	"fmt"
 	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // SecretsAdmin 密钥库管理面（装配根实现；线程安全——次窗 goroutine 调用）。
@@ -96,9 +97,9 @@ func (u *UI) secretsAction(f *settingsForm, act string, name string) {
 	if f.secrets == nil {
 		// 反馈落在本动作自己的槽位上。
 		if act == "import" {
-			f.importErr, f.importStatus = true, "密钥库未接线（只读占位）"
+			f.importErr, f.importStatus = true, i18n.T("ui.settings.sec.not_wired")
 		} else {
-			f.secretsErr, f.secretsStatus = true, "密钥库未接线（只读占位）"
+			f.secretsErr, f.secretsStatus = true, i18n.T("ui.settings.sec.not_wired")
 		}
 		return
 	}
@@ -108,30 +109,30 @@ func (u *UI) secretsAction(f *settingsForm, act string, name string) {
 		v := f.secretValue.Text()
 		f.secretValue.SetText("") // 值永不回显：无论成败都不留在输入框里
 		if n == "" {
-			f.secretsErr, f.secretsStatus = true, "请填写密钥名"
+			f.secretsErr, f.secretsStatus = true, i18n.T("ui.settings.sec.need_name")
 			return
 		}
 		if v == "" {
-			f.secretsErr, f.secretsStatus = true, "请填写密钥值（要清掉某条请用该行「删除」）"
+			f.secretsErr, f.secretsStatus = true, i18n.T("ui.settings.sec.need_value")
 			return
 		}
 		if err := f.secrets.Put(n, v); err != nil {
-			f.secretsErr, f.secretsStatus = true, "存入失败："+err.Error()
+			f.secretsErr, f.secretsStatus = true, i18n.Tf("ui.settings.sec.put_failed", "err", err.Error())
 			return
 		}
-		f.secretsErr, f.secretsStatus = false, "已存入密钥库："+n
+		f.secretsErr, f.secretsStatus = false, i18n.Tf("ui.settings.sec.put_ok", "name", n)
 		f.secretName.SetText("")
 	case "delete":
 		if err := f.secrets.Delete(name); err != nil {
-			f.secretsErr, f.secretsStatus = true, "删除失败："+err.Error()
+			f.secretsErr, f.secretsStatus = true, i18n.Tf("ui.settings.sec.del_failed", "err", err.Error())
 			return
 		}
-		f.secretsErr, f.secretsStatus = false, "已删除："+name
+		f.secretsErr, f.secretsStatus = false, i18n.Tf("ui.settings.sec.del_ok", "name", name)
 		f.secretConfirm = ""
 	case "import":
 		res, err := f.secrets.Import()
 		if err != nil {
-			f.importErr, f.importStatus = true, "导入失败："+err.Error()
+			f.importErr, f.importStatus = true, i18n.Tf("ui.settings.sec.import_failed", "err", err.Error())
 			break
 		}
 		status, isErr := importSummary(res)
@@ -147,18 +148,19 @@ func importSummary(r SecretsImportResult) (string, bool) {
 	var b strings.Builder
 	switch len(r.Imported) {
 	case 0:
-		b.WriteString("没有需要导入的密钥")
+		b.WriteString(i18n.T("ui.settings.sec.import_none"))
 	default:
-		fmt.Fprintf(&b, "已导入 %d 条", len(r.Imported))
+		b.WriteString(i18n.Tf("ui.settings.sec.import_ok", "n", len(r.Imported)))
 		if len(r.Rewritten) > 0 {
-			fmt.Fprintf(&b, "（其中 %d 条配置里的明文已改为 secret: 引用）", len(r.Rewritten))
+			b.WriteString(i18n.Tf("ui.settings.sec.import_rewritten", "n", len(r.Rewritten)))
 		}
 	}
 	if len(r.Skipped) > 0 {
-		fmt.Fprintf(&b, "；另有 %d 条两处都取不到，未导入", len(r.Skipped))
+		b.WriteString(i18n.Tf("ui.settings.sec.import_skipped", "n", len(r.Skipped)))
 	}
 	if len(r.Failed) > 0 {
-		fmt.Fprintf(&b, "；%d 条失败：%s", len(r.Failed), strings.Join(r.Failed, "；"))
+		b.WriteString(i18n.Tf("ui.settings.sec.import_failed_part", "n", len(r.Failed),
+			"list", strings.Join(r.Failed, i18n.T("ui.settings.sec.list_sep"))))
 		return b.String(), true
 	}
 	return b.String(), false

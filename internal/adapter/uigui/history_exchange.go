@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -22,10 +23,10 @@ import (
 // openai 或 openwebui）。
 func exchangeOpenFilters() []platform.FileFilter {
 	return []platform.FileFilter{
-		{Label: "会话文件 (*.aqx;*.json;*.jsonl)", Pattern: "*.aqx;*.json;*.jsonl"},
-		{Label: "Aquarius 归档 (*.aqx)", Pattern: "*.aqx"},
+		{Label: i18n.T("ui.history.filter_session_files"), Pattern: "*.aqx;*.json;*.jsonl"},
+		{Label: i18n.T("ui.history.filter_aqx"), Pattern: "*.aqx"},
 		{Label: "JSON / JSONL (*.json;*.jsonl)", Pattern: "*.json;*.jsonl"},
-		{Label: "所有文件 (*.*)", Pattern: "*.*"},
+		{Label: i18n.T("ui.history.filter_all"), Pattern: "*.*"},
 	}
 }
 
@@ -120,7 +121,7 @@ func knownFormatExt(ext string) bool {
 func (st *historyState) requestImport(u *UI) {
 	u.plat.RequestOpenFile(platform.OpenRequest{
 		Purpose: platform.PurposeExchangeImport,
-		Title:   "导入会话",
+		Title:   i18n.T("ui.history.import_title"),
 		Filters: exchangeOpenFilters(),
 	})
 }
@@ -137,7 +138,7 @@ func (st *historyState) requestExport(u *UI) {
 	def, _ := exportFormatAt(0)
 	u.plat.RequestSaveFile(platform.SaveRequest{
 		Purpose:     platform.PurposeExchangeExport,
-		Title:       "导出会话",
+		Title:       i18n.T("ui.history.export_title"),
 		Name:        name + def.Ext,
 		DefExt:      strings.TrimPrefix(def.Ext, "."),
 		Filters:     exchangeSaveFilters(),

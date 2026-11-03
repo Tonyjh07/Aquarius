@@ -19,6 +19,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -58,7 +59,8 @@ func (u *UI) askHead(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y = gtx.Dp(askHeadDp)
 	kids := []layout.FlexChild{
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			l := material.Caption(u.th, strconv.Itoa(a.cur+1)+"/"+strconv.Itoa(len(a.req.Questions))+" 个问题")
+			l := material.Caption(u.th, i18n.Tf("ui.ask.counter",
+				"i", a.cur+1, "total", len(a.req.Questions)))
 			l.Color = tok().textMuted
 			return l.Layout(gtx)
 		}),
@@ -198,7 +200,7 @@ func (u *UI) askFreeRow(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: unit.Dp(askFreeTopDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return indent.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = gtx.Dp(askFreeRowDp)
-				ed := material.Editor(u.th, &u.askEd, "自己输入答案…")
+				ed := material.Editor(u.th, &u.askEd, i18n.T("ui.ask.free_placeholder"))
 				ed.TextSize = unit.Sp(14)
 				if u.inFadePass && u.askCaret {
 					u.drawEditorSelection(gtx, &u.askEd)
@@ -216,9 +218,9 @@ func (u *UI) askFreeRow(gtx layout.Context) layout.Dimensions {
 		return indent.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return u.askFreeClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.Y = gtx.Dp(askFreeRowDp)
-				label := "自己输入…"
+				label := i18n.T("ui.ask.free_label")
 				if on {
-					label = "自己输入：" + a.free[a.cur]
+					label = i18n.Tf("ui.ask.free_label_value", "text", a.free[a.cur])
 				}
 				l := material.Body2(u.th, sanitizeControl(label))
 				l.TextSize = unit.Sp(14)
@@ -239,18 +241,18 @@ func (u *UI) askFoot(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min.Y = gtx.Dp(askFootDp)
 	last := a.cur >= len(a.req.Questions)-1
 	kids := []layout.FlexChild{
-		layout.Rigid(u.askTextBtn(gtx, &u.askIgnore, "忽略", false)),
+		layout.Rigid(u.askTextBtn(gtx, &u.askIgnore, i18n.T("ui.ask.ignore"), false)),
 		layout.Flexed(1, layout.Spacer{}.Layout),
 	}
 	if a.cur > 0 {
 		kids = append(kids,
-			layout.Rigid(u.askTextBtn(gtx, &u.askPrev, "上一步", false)),
+			layout.Rigid(u.askTextBtn(gtx, &u.askPrev, i18n.T("ui.common.back"), false)),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 		)
 	}
-	next := "下一步"
+	next := i18n.T("ui.ask.next")
 	if last {
-		next = "提交"
+		next = i18n.T("ui.ask.submit")
 	}
 	kids = append(kids, layout.Rigid(u.askTextBtn(gtx, &u.askNextBtn, next, true)))
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)

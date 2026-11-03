@@ -7,6 +7,7 @@ package uigui
 import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -83,15 +84,15 @@ func logoMenuItems(level string, topMost, unattended bool) []menuIt {
 		permSub = append(permSub, menuIt{id: cmdPermBase + uintptr(i), label: lv, checked: lv == level})
 	}
 	return []menuIt{
-		{id: cmdNew, label: "新对话"},
-		{label: "权限", sub: permSub},                             // D73：二级菜单四档，当前档打勾
-		{id: cmdUnattended, label: "无人值守", checked: unattended}, // D185：越界即拒
-		{id: cmdHistory, label: "消息历史"},
-		{id: cmdSettings, label: "设置"},
-		{id: cmdTopMost, label: "置顶", checked: topMost},
-		{id: cmdToggle, label: "隐藏"},
+		{id: cmdNew, label: i18n.T("ui.menu.new_chat")},
+		{label: i18n.T("ui.menu.permission"), sub: permSub},                           // D73：二级菜单四档，当前档打勾
+		{id: cmdUnattended, label: i18n.T("ui.menu.unattended"), checked: unattended}, // D185：越界即拒
+		{id: cmdHistory, label: i18n.T("ui.menu.msg_history")},
+		{id: cmdSettings, label: i18n.T("ui.menu.settings")},
+		{id: cmdTopMost, label: i18n.T("ui.menu.topmost"), checked: topMost},
+		{id: cmdToggle, label: i18n.T("ui.menu.hide")},
 		{}, // 分隔线
-		{id: cmdExit, label: "退出"},
+		{id: cmdExit, label: i18n.T("ui.menu.quit")},
 	}
 }
 
@@ -100,14 +101,14 @@ func logoMenuItems(level string, topMost, unattended bool) []menuIt {
 // D185：加无人值守勾选项（托盘与球右键两处都能开关，热生效）。
 func trayMenuItems(topMost, unattended bool) []menuIt {
 	return []menuIt{
-		{id: cmdToggle, label: "显示 / 隐藏输入窗"},
-		{id: cmdTopMost, label: "窗口置顶", checked: topMost},
-		{id: cmdUnattended, label: "无人值守", checked: unattended},
+		{id: cmdToggle, label: i18n.T("ui.menu.tray_toggle")},
+		{id: cmdTopMost, label: i18n.T("ui.menu.tray_topmost"), checked: topMost},
+		{id: cmdUnattended, label: i18n.T("ui.menu.unattended"), checked: unattended},
 		{},
-		{id: cmdSettings, label: "设置"},
-		{id: cmdHistory, label: "会话历史"},
+		{id: cmdSettings, label: i18n.T("ui.menu.settings")},
+		{id: cmdHistory, label: i18n.T("ui.menu.tray_history")},
 		{},
-		{id: cmdExit, label: "退出"},
+		{id: cmdExit, label: i18n.T("ui.menu.quit")},
 	}
 }
 
@@ -116,18 +117,18 @@ func trayMenuItems(topMost, unattended bool) []menuIt {
 // Clone 深拷贝后续历史）+ 重新生成/复制/引用/查看原文；thinking 定稿块与工具 chip =
 // 复制/查看原文两项（D100③）。「生成响应」（D183）由 bubbleMenuItems 追加在末尾。
 func bubbleMenuBase(kind blockKind) []menuIt {
-	cp := menuIt{id: cmdBubbleCopy, label: "复制"}
-	raw := menuIt{id: cmdBubbleRaw, label: "查看原文"}
+	cp := menuIt{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}
+	raw := menuIt{id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}
 	if kind == blockThinking || kind == blockTool {
 		return []menuIt{cp, raw}
 	}
-	regen := menuIt{id: cmdBubbleRegen, label: "重新生成"}
+	regen := menuIt{id: cmdBubbleRegen, label: i18n.T("ui.menu.regen")}
 	return []menuIt{
-		{id: cmdBubbleEdit, label: "编辑"},
-		{id: cmdBubbleEditKeep, label: "编辑并转移历史"},
-		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
+		{id: cmdBubbleEdit, label: i18n.T("ui.common.edit")},
+		{id: cmdBubbleEditKeep, label: i18n.T("ui.menu.edit_keep")},
+		{id: cmdBubbleEditCopy, label: i18n.T("ui.menu.edit_copy")},
 		regen, cp,
-		{id: cmdBubbleQuote, label: "引用"},
+		{id: cmdBubbleQuote, label: i18n.T("ui.menu.quote")},
 		raw,
 	}
 }
@@ -141,7 +142,7 @@ func bubbleMenuItems(kind blockKind, canRespond bool) []menuIt {
 	if !canRespond {
 		return items
 	}
-	return append(items, menuIt{id: cmdNodeRespond, label: "生成响应"})
+	return append(items, menuIt{id: cmdNodeRespond, label: i18n.T("ui.menu.respond")})
 }
 
 // nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** +
@@ -169,20 +170,20 @@ func nodeMenuItems(kind blockKind, hasText, canSummary, frozen bool) []menuIt {
 	case kind == blockUser || kind == blockAssistant:
 		head = bubbleMenuBase(kind) // 与主界面气泡同集七项
 	default:
-		head = []menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}}
+		head = []menuIt{{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}, {id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}}
 	}
 	// 「生成响应」贴在**气泡项组末尾、分隔线之前**（2026-10-25 用户批注）：它是「对
 	// 这条消息做什么」，与编辑类同组更顺；且**任何非根节点都给**（含人格/系统/工具
 	// 节点）——从任意节点续写都合法（根节点整份菜单已去掉，故这里不再单独设门）。
-	items := append(head, menuIt{id: cmdNodeRespond, label: "生成响应"})
+	items := append(head, menuIt{id: cmdNodeRespond, label: i18n.T("ui.menu.respond")})
 	items = append(items, menuIt{}) // 分隔线
-	items = append(items, menuIt{id: cmdNodeCopyID, label: "复制 ID"})
+	items = append(items, menuIt{id: cmdNodeCopyID, label: i18n.T("ui.menu.copy_id")})
 	if canSummary {
-		items = append(items, menuIt{id: cmdNodeSummary, label: "插入摘要"})
+		items = append(items, menuIt{id: cmdNodeSummary, label: i18n.T("ui.menu.insert_summary")})
 	}
 	items = append(items,
-		menuIt{id: cmdNodeRm, label: "删除该节点及子树"},
-		menuIt{id: cmdNodeGoto, label: "转到"},
+		menuIt{id: cmdNodeRm, label: i18n.T("ui.menu.delete_subtree")},
+		menuIt{id: cmdNodeGoto, label: i18n.T("ui.menu.goto")},
 	)
 	if frozen {
 		for i := range items {

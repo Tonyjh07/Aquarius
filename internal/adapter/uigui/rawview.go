@@ -14,6 +14,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // rawContent 查看原文窗的一次内容快照（D99）：title = 窗内标题行（含节点 ID 前缀），
@@ -65,7 +67,7 @@ func rawViewFrame(gtx layout.Context, th *material.Theme, u *UI, st *rawViewStat
 			return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						title := "（未选择）"
+						title := i18n.T("ui.chat.none_selected")
 						if c := st.applied; c != nil {
 							title = c.title
 						}

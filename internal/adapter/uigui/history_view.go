@@ -13,6 +13,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // historyFrame winHistory 单帧：左栏 + 右图 + 状态栏（§15.7 常规窗，主题 Bg 铺底）。
@@ -101,7 +103,7 @@ func histGraphArea(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 		return st.graph.frame(gtx, th, u, st)
 	}
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		l := material.Label(th, paperNoteSp(th), "关系图未就绪")
+		l := material.Label(th, paperNoteSp(th), i18n.T("ui.relmap.not_ready"))
 		l.Color = paperOf().text3
 		return l.Layout(gtx)
 	})
@@ -129,16 +131,16 @@ func (st *historyState) histStatusCtlItems() []histCtlItem {
 	items := []histCtlItem{
 		{label: "−", click: &st.btnMinus},
 		{label: "＋", click: &st.btnPlus},
-		{label: "缩放 " + zoomPct}, // 只读文字
-		{label: "装下整树", click: &st.btnHome},
-		{label: "回到初始态", click: &st.btnSeed},
-		{label: "聚焦当前历史", click: &st.btnLine},
-		{label: "聚焦当前节点", click: &st.btnNode},
+		{label: i18n.Tf("ui.history.zoom", "pct", zoomPct)}, // 只读文字
+		{label: i18n.T("ui.history.fit_tree"), click: &st.btnHome},
+		{label: i18n.T("ui.history.reset_view"), click: &st.btnSeed},
+		{label: i18n.T("ui.history.focus_line"), click: &st.btnLine},
+		{label: i18n.T("ui.history.focus_node"), click: &st.btnNode},
 	}
 	if st.teOn && st.teEdits > 0 {
 		items = append(items,
-			histCtlItem{label: fmt.Sprintf("已改 %d 处", st.teEdits)}, // 只读文字
-			histCtlItem{label: "放弃", click: &st.btnTreeDiscard},
+			histCtlItem{label: i18n.Tf("ui.history.edits_count", "n", st.teEdits)}, // 只读文字
+			histCtlItem{label: i18n.T("ui.history.discard"), click: &st.btnTreeDiscard},
 		)
 	}
 	return items
@@ -154,7 +156,7 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 		N = st.model.total
 		M = len(st.vis.nodes)
 	}
-	text := fmt.Sprintf("共 %d 条 · 呈现 %d", N, M)
+	text := i18n.Tf("ui.history.status_counts", "n", N, "m", M)
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, paperOf().sunken,
@@ -247,7 +249,7 @@ func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	// 「这里不知道哪来的圆」），而「◯ 会话根」在下面的形状组里已经写明。
 	d := paperOf().depth
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(label("色带")),
+		layout.Rigid(label(i18n.T("ui.history.legend_depth"))),
 		layout.Rigid(swatch(d[0])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 		layout.Rigid(swatch(d[1])),
@@ -256,6 +258,6 @@ func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 		layout.Rigid(swatch(d[3])),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
-		layout.Rigid(label("形状：□ 你 · ● 助手 · ◇ 系统 · ◯ 会话根 · △ 注入")),
+		layout.Rigid(label(i18n.T("ui.history.legend_shapes"))),
 	)
 }

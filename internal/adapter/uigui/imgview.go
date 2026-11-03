@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"image"
 	"image/color"
 	"io"
@@ -32,6 +31,8 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // 预览窗口径。
@@ -134,27 +135,27 @@ func (st *imageViewState) sync(u *UI) {
 func decodePreviewImage(u *UI, r imgRef) imgDecodeResult {
 	rc, err := u.openImg(r)
 	if err != nil || rc == nil {
-		return imgDecodeResult{err: "读不到这张图"}
+		return imgDecodeResult{err: i18n.T("ui.img.err_unreadable")}
 	}
 	defer rc.Close()
 	raw, err := io.ReadAll(io.LimitReader(rc, thumbReadBytes))
 	if err != nil || len(raw) == 0 {
-		return imgDecodeResult{err: "读取图片失败"}
+		return imgDecodeResult{err: i18n.T("ui.img.err_read_failed")}
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
-		return imgDecodeResult{err: "这个文件不是可识别的图片"}
+		return imgDecodeResult{err: i18n.T("ui.img.err_not_image")}
 	}
 	pix := image.Pt(cfg.Width, cfg.Height)
 	if cfg.Width*cfg.Height > thumbMaxPixels {
 		return imgDecodeResult{
 			pix: pix,
-			err: fmt.Sprintf("图片过大（%d×%d），暂不支持预览", cfg.Width, cfg.Height),
+			err: i18n.Tf("ui.img.err_too_large", "w", cfg.Width, "h", cfg.Height),
 		}
 	}
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return imgDecodeResult{pix: pix, err: "图片解码失败"}
+		return imgDecodeResult{pix: pix, err: i18n.T("ui.img.err_decode")}
 	}
 	return imgDecodeResult{img: img, pix: pix}
 }
@@ -163,7 +164,7 @@ func decodePreviewImage(u *UI, r imgRef) imgDecodeResult {
 func (u *UI) openImg(r imgRef) (io.ReadCloser, error) {
 	if r.blob != nil {
 		if u.opts.Blobs == nil {
-			return nil, errors.New("未接入附件库")
+			return nil, errors.New(i18n.T("ui.img.attach_unwired"))
 		}
 		return u.opts.Blobs.Get(context.Background(), *r.blob)
 	}
@@ -278,7 +279,7 @@ func imgViewFrame(gtx layout.Context, th *material.Theme, u *UI, st *imageViewSt
 			return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						title := "（未选择）"
+						title := i18n.T("ui.chat.none_selected")
 						if c := st.applied; c != nil {
 							title = c.title
 						}
@@ -293,7 +294,7 @@ func imgViewFrame(gtx layout.Context, th *material.Theme, u *UI, st *imageViewSt
 					}),
 					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Label(th, paperNoteSp(th), "滚轮缩放 · 拖动平移 · Esc 关闭")
+						l := material.Label(th, paperNoteSp(th), i18n.T("ui.img.view_hint"))
 						l.Color = pp.text3
 						l.MaxLines, l.Truncator = 1, "…"
 						return l.Layout(gtx)
@@ -331,9 +332,9 @@ func (st *imageViewState) viewportFrame(gtx layout.Context, th *material.Theme) 
 		return centeredNote(gtx, th, st.err, pp.text3)
 	case st.img == nil || !st.hasOp:
 		area.Pop()
-		note := "解码中…"
+		note := i18n.T("ui.img.decoding")
 		if st.settled {
-			note = "没有可显示的图"
+			note = i18n.T("ui.img.no_image")
 		}
 		return centeredNote(gtx, th, note, pp.text3)
 	}

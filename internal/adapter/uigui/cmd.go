@@ -15,13 +15,14 @@ package uigui
 // ——那时要读整行输出（`centerStrip`）。
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/widget"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // cmdEntry 命令折叠条里的一条：命令行原文（"" = 只有输出，历史装配的兜底）与其返回文本。
@@ -53,13 +54,13 @@ func (u *UI) cmdIsOpen(i int) bool { return u.cmdOpen[i] }
 // 按条目数会报成「2 条命令」，而屏幕上只有一条命令（D266 起条宽贴合文案，报错
 // 更容易被看见）。没有命令行（nCmd=0）= 这条只装着操作回执 → 说「N 条提示」。
 func cmdHeaderText(nCmd, nNote int, open bool) string {
-	what := fmt.Sprintf("折叠 %d 条命令", nCmd)
+	what := i18n.Tf("ui.cmd.header_commands", "n", nCmd)
 	if nCmd == 0 {
-		what = fmt.Sprintf("%d 条提示", nNote)
+		what = i18n.Tf("ui.cmd.header_notes", "n", nNote)
 	}
-	act := "点击展开"
+	act := i18n.T("ui.cmd.expand")
 	if open {
-		act = "点击收起"
+		act = i18n.T("ui.cmd.collapse")
 	}
 	return what + " · " + act
 }

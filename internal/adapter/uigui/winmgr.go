@@ -26,6 +26,8 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // winKind 功能窗种类（§15.7 窗口清单；设置窗数据面随设置步落地）。
@@ -43,15 +45,15 @@ const (
 func (k winKind) title() string {
 	switch k {
 	case winSettings:
-		return "Aquarius 设置"
+		return i18n.T("ui.win.title.settings")
 	case winHistory:
-		return "Aquarius 会话历史"
+		return i18n.T("ui.win.title.history")
 	case winRaw:
-		return "Aquarius 查看原文"
+		return i18n.T("ui.win.title.raw")
 	case winImage:
-		return "Aquarius 图片预览"
+		return i18n.T("ui.win.title.image")
 	default:
-		return "Aquarius 欢迎"
+		return i18n.T("ui.win.title.welcome")
 	}
 }
 
@@ -60,7 +62,7 @@ func (k winKind) title() string {
 func (k winKind) placeholder() string {
 	switch k {
 	case winSettings:
-		return "设置窗表单未就绪。"
+		return i18n.T("ui.win.ph.settings")
 	case winHistory:
 		return "" // D112/S3：由 historyFrame 渲染，此处不应到达
 	case winRaw:
@@ -70,7 +72,7 @@ func (k winKind) placeholder() string {
 	case winWelcome:
 		return "" // D141：专用帧（welcomeFrame），不走占位正文
 	default:
-		return "欢迎使用 Aquarius——首次运行引导即将提供。"
+		return i18n.T("ui.win.ph.welcome")
 	}
 }
 

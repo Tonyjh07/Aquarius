@@ -5,44 +5,49 @@ package main
 // settings.go 的 readTextSettings / persistSettingsTextKeys。
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// builtinModuleLabels 内置模块中文说明（展示用；名集以 app.BuiltinModuleNames 为准——契约，
-// 缺 label 回退引用名）。
-var builtinModuleLabels = map[string]string{
-	"@default":          "默认人格（system_prompt 或内置默认）",
-	"@env":              "运行环境信息（组）",
-	"@env.platform":     "└ 操作系统 / 架构",
-	"@env.terminal":     "└ 界面形态与 TERM",
-	"@env.sandbox":      "└ 特权沙盒目录（绝对路径时）",
-	"@env.timeout":      "└ 工具缺省调用超时",
-	"@env.date":         "└ 会话创建当天日期",
-	"@char":             "角色卡信息（组；仅角色会话生效）",
-	"@char.identity":    "└ 身份行（你是 <角色名>；仅角色会话生效）",
-	"@char.description": "└ 角色描述（仅角色会话生效）",
-	"@char.personality": "└ 性格（仅角色会话生效）",
-	"@char.scenario":    "└ 情境（仅角色会话生效）",
-	"@char.system":      "└ 卡的 system_prompt（仅角色会话生效；可选替换主提示）",
-	"@char.book":        "└ 常驻世界书条目（仅角色会话生效）",
+// builtinModuleLabels 内置模块说明（展示用；名集以 app.BuiltinModuleNames 为准——契约，
+// 缺 label 回退引用名）。函数而不是包级 map：语言在 main 里才定，包初始化时取词会冻住。
+func builtinModuleLabels() map[string]string {
+	return map[string]string{
+		"@default":          i18n.T("cmd.prompt.mod.default"),
+		"@env":              i18n.T("cmd.prompt.mod.env"),
+		"@env.platform":     i18n.T("cmd.prompt.mod.env_platform"),
+		"@env.terminal":     i18n.T("cmd.prompt.mod.env_terminal"),
+		"@env.sandbox":      i18n.T("cmd.prompt.mod.env_sandbox"),
+		"@env.timeout":      i18n.T("cmd.prompt.mod.env_timeout"),
+		"@env.date":         i18n.T("cmd.prompt.mod.env_date"),
+		"@char":             i18n.T("cmd.prompt.mod.char"),
+		"@char.identity":    i18n.T("cmd.prompt.mod.char_identity"),
+		"@char.description": i18n.T("cmd.prompt.mod.char_description"),
+		"@char.personality": i18n.T("cmd.prompt.mod.char_personality"),
+		"@char.scenario":    i18n.T("cmd.prompt.mod.char_scenario"),
+		"@char.system":      i18n.T("cmd.prompt.mod.char_system"),
+		"@char.book":        i18n.T("cmd.prompt.mod.char_book"),
+	}
 }
 
 // builtinModuleViews 内置只读模块展示清单（设置窗展示 + 一键引用）。
 func builtinModuleViews() []uigui.BuiltinModuleView {
 	names := app.BuiltinModuleNames()
+	labels := builtinModuleLabels()
 	out := make([]uigui.BuiltinModuleView, 0, len(names))
 	for _, n := range names {
-		label := builtinModuleLabels[n]
+		label := labels[n]
 		if label == "" {
-			label = "内置模块"
+			label = i18n.T("cmd.prompt.mod.builtin_fallback")
 		}
 		out = append(out, uigui.BuiltinModuleView{Name: n, Label: label})
 	}
@@ -90,10 +95,11 @@ func validatePromptModules(mods []uigui.PromptModuleView) error {
 			continue
 		}
 		if strings.HasPrefix(name, app.ReservedModulePrefix) {
-			return fmt.Errorf("模块名 %q 不能以 %q 开头（该前缀保留给内置模块）", name, app.ReservedModulePrefix)
+			return errors.New(i18n.Tf("cmd.prompt.err.reserved_prefix",
+				"name", strconv.Quote(name), "prefix", strconv.Quote(app.ReservedModulePrefix)))
 		}
 		if seen[name] {
-			return fmt.Errorf("模块名 %q 重复", name)
+			return errors.New(i18n.Tf("cmd.prompt.err.duplicate", "name", strconv.Quote(name)))
 		}
 		seen[name] = true
 	}

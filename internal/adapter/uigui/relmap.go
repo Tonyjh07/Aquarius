@@ -17,6 +17,7 @@ import (
 	"sort"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -298,21 +299,21 @@ func relStatementOf(m *relModel, i int, convTitle string) string {
 	n := m.nodes[i]
 	switch {
 	case n.role == conversation.RoleRoot:
-		return "会话：" + convTitle + "（第 1 层，共 " + itoa(m.total) + " 条消息）"
+		return i18n.Tf("ui.relmap.stmt_root", "title", convTitle, "n", m.total)
 	case n.role == conversation.RoleSystem:
 		if p := n.parent; p >= 0 && m.nodes[p].role == conversation.RoleRoot {
-			return "系统：人格快照（会话首节点）"
+			return i18n.T("ui.relmap.stmt_persona")
 		}
-		return "系统：压缩摘要（水位节点）"
+		return i18n.T("ui.relmap.stmt_compact")
 	case i == m.anchor:
-		return relRoleName(n.role) + "：当前对话末端（锚点）"
+		return i18n.Tf("ui.relmap.stmt_anchor", "role", relRoleName(n.role))
 	case n.inPath:
-		return relRoleName(n.role) + "：当前对话主干上的一轮"
+		return i18n.Tf("ui.relmap.stmt_trunk", "role", relRoleName(n.role))
 	case n.sibCount > 1:
-		return relRoleName(n.role) + "：第 " + itoa(n.sibIdx+1) + "/" + itoa(n.sibCount) +
-			" 个版本（修订而来）——未走的分支"
+		return i18n.Tf("ui.relmap.stmt_version", "role", relRoleName(n.role),
+			"i", n.sibIdx+1, "n", n.sibCount)
 	default:
-		return relRoleName(n.role) + "：未走的分支"
+		return i18n.Tf("ui.relmap.stmt_branch", "role", relRoleName(n.role))
 	}
 }
 
@@ -320,13 +321,13 @@ func relStatementOf(m *relModel, i int, convTitle string) string {
 func relRoleName(role conversation.Role) string {
 	switch role {
 	case conversation.RoleUser:
-		return "你"
+		return i18n.T("ui.relmap.role.user")
 	case conversation.RoleSystem:
-		return "系统"
+		return i18n.T("ui.relmap.role.system")
 	case conversation.RoleRoot:
-		return "会话"
+		return i18n.T("ui.relmap.role.root")
 	default:
-		return "AI"
+		return i18n.T("ui.relmap.role.assistant")
 	}
 }
 

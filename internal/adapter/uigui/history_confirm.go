@@ -30,6 +30,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -122,13 +123,13 @@ func confirmCard(gtx layout.Context, th *material.Theme, st *historyState, snap 
 	return layout.UniformInset(overlayCardPadDp).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperNoteSp(th), "需要确认")
+				l := material.Label(th, paperNoteSp(th), i18n.T("ui.confirm.needed"))
 				l.Font.Weight = font.Bold
 				l.Color = pp.text
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperMicroSp(th), "主窗与本窗显示的是同一次确认，任一处作答即可。")
+				l := material.Label(th, paperMicroSp(th), i18n.T("ui.confirm.shared_note"))
 				l.Color = pp.text3
 				return l.Layout(gtx)
 			}),
@@ -144,9 +145,9 @@ func confirmCard(gtx layout.Context, th *material.Theme, st *historyState, snap 
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, layout.Spacer{}.Layout),
-					layout.Rigid(overlayBtn(&st.cfm.deny, th, "拒绝", false, true)),
+					layout.Rigid(overlayBtn(&st.cfm.deny, th, i18n.T("ui.common.deny"), false, true)),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-					layout.Rigid(overlayBtn(&st.cfm.allow, th, "允许", true, true)),
+					layout.Rigid(overlayBtn(&st.cfm.allow, th, i18n.T("ui.common.allow"), true, true)),
 				)
 			}),
 		)
