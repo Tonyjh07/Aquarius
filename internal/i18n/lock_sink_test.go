@@ -40,10 +40,15 @@ var materialTextFns = map[string]bool{
 }
 
 // uiguiTextFns `uigui` 自绘的文案出口，按被调函数名匹配（接收者写法不固定：`u.hoverTip`、
-// `sec`、`f.row` 都在这一类里）。
+// `sec`、`f.row` 都在这一类里）。`paperTitle` / `paperSection` / `paperBody` 是主题层的薄封装，
+// 内部才落到 `material.*`——只认 `material` 会绕过它们。
 var uiguiTextFns = map[string]bool{
-	"hoverTip": true, // 悬停提示条
-	"sec":      true, // 设置页分组小标题行
+	"hoverTip":     true, // 悬停提示条
+	"hoverCard":    true, // 悬停卡（`[]string` 形参）
+	"sec":          true, // 设置页分组小标题行
+	"paperTitle":   true, // 纸面风格标题
+	"paperSection": true, // 纸面风格小节标题
+	"paperBody":    true, // 纸面风格正文
 }
 
 // sinkScannedPrefix 出口扫描的范围：`uigui` 是唯一手绘界面的适配器，`uitui` 的文案经命令表
@@ -229,6 +234,15 @@ func commandMetaLiterals(fset *token.FileSet, rel string, f *ast.File) []string 
 // 只认「有字母」而不是「有空格」：`Reason…` 这类单词占位同样要搬进表；反过来 `×`、`· · ·`、
 // `—` 是字形不是文案，`""` 是「本组件不要占位」的显式写法，都放过。
 func englishLiteral(expr ast.Expr) (string, bool) {
+	if comp, ok := expr.(*ast.CompositeLit); ok {
+		// `[]string{"…"}`（`hoverCard` 的形参）：逐个元素看，命中的是这一句本身。
+		for _, el := range comp.Elts {
+			if s, hit := englishLiteral(el); hit {
+				return s, true
+			}
+		}
+		return "", false
+	}
 	lit, ok := expr.(*ast.BasicLit)
 	if !ok || lit.Kind != token.STRING {
 		return "", false
