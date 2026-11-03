@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -485,7 +484,7 @@ func writeRawConfig(cfgPath, raw string) error {
 	}
 	cfgWriteMu.Lock()
 	defer cfgWriteMu.Unlock()
-	if err := atomicfile.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {
+	if err := writeConfigFile(cfgPath, []byte(raw)); err != nil {
 		return fmt.Errorf("%s: %w", i18n.Tf("cmd.settings.err.write_config", "path", cfgPath), err)
 	}
 	return nil

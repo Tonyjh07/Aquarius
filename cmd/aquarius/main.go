@@ -76,7 +76,7 @@ func resolveProfile(dir, flagName string) (string, error) {
 	case errors.Is(err, os.ErrNotExist):
 		if flagName == "" {
 			// 首次运行：写指针指向 default（profile 配置模板随后由 run 的模板分支落盘）。
-			if werr := os.WriteFile(pointerPath, []byte(pointerContent(defaultProfileName)), 0o644); werr != nil {
+			if werr := writeConfigFile(pointerPath, []byte(pointerContent(defaultProfileName))); werr != nil {
 				return "", fmt.Errorf("%s: %w",
 					i18n.Tf("cmd.profile.err.write_pointer", "path", pointerPath), werr)
 			}

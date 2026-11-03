@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
@@ -63,7 +62,7 @@ func (m *profilesManager) Copy(name string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("cmd.profile.err.mkdir"), err)
 	}
-	return os.WriteFile(cfg, data, 0o644)
+	return writeConfigFile(cfg, data)
 }
 
 // Switch 原子写根指针（重启生效）；目标须已存在——新建/复制后立即可切，显式
@@ -78,6 +77,5 @@ func (m *profilesManager) Switch(name string) error {
 	if !slices.Contains(listProfiles(m.dataDir), name) {
 		return fmt.Errorf("%s", i18n.Tf("cmd.profile.err.not_exist", "name", name))
 	}
-	return atomicfile.WriteFile(filepath.Join(m.dataDir, "config.json"),
-		[]byte(pointerContent(name)), 0o644)
+	return writeConfigFile(filepath.Join(m.dataDir, "config.json"), []byte(pointerContent(name)))
 }

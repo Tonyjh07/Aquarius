@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -214,7 +215,26 @@ func detectLegacyModelConfig(path string, data []byte) error {
 
 // writeDefaultConfig 落首次运行模板。
 func writeDefaultConfig(path string) error {
-	return os.WriteFile(path, []byte(defaultConfig), 0o644)
+	return writeConfigFile(path, []byte(defaultConfig))
+}
+
+// configFileMode 配置文件权限：`config.json` 允许内联明文 `model.api_key`（也可写
+// `secret:<名>`），按密钥同级对待——同机其他用户不该读得到。后台任务日志与密钥库
+// 都是 0600，这里是同一口径的第三处。
+const configFileMode fs.FileMode = 0o600
+
+// writeConfigFile 原子写 config 并把权限位**收紧**到 0600。
+//
+// atomicfile 的「覆盖沿用既有权限位」只守一个方向（不把 0600 放宽），配置文件要的
+// 是相反方向：早先按 0644 建出来的那份也得收回来，否则手写的密钥对同机他人一直是
+// 可读的。chmod 失败不回滚写入——内容已经落盘，把它报成「写失败」只会误导调用方；
+// 权限收紧下次写回还会再来一次。
+func writeConfigFile(path string, data []byte) error {
+	if err := atomicfile.WriteFile(path, data, configFileMode); err != nil {
+		return err
+	}
+	_ = os.Chmod(path, configFileMode)
+	return nil
 }
 
 // pointerTemplate 根 config.json 的指针模板（D110①：仅存当前 profile 名）。
@@ -308,7 +328,7 @@ func listProfiles(dir string) []string {
 var cfgWriteMu sync.Mutex
 
 // persistConfig 通用 config 键改写：读入 → mutate 只动目标键（map 级重排保留
-// 其余键与注释性空白）→ 唯一临时文件 + 原子换入（覆盖沿用既有权限位）。
+// 其余键与注释性空白）→ 唯一临时文件 + 原子换入（按 writeConfigFile 收紧权限）。
 // /permission、/model、/think、/effort、/plugin 与 unsupported_params 共用。
 func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
 	cfgWriteMu.Lock()
@@ -326,7 +346,7 @@ func persistConfig(cfgPath string, mutate func(generic map[string]any)) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("cmd.config.err.encode"), err)
 	}
-	if err := atomicfile.WriteFile(cfgPath, append(out, '\n'), 0o644); err != nil {
+	if err := writeConfigFile(cfgPath, append(out, '\n')); err != nil {
 		return fmt.Errorf("%s: %w", i18n.Tf("cmd.config.err.write", "path", cfgPath), err)
 	}
 	return nil
