@@ -51,10 +51,13 @@ type Options struct {
 // mu 保护注册表：装配根的插件刷新回调可能来自崩溃重启 goroutine，
 // 与 REPL 主循环的 Specs/Execute 并发（§10；M4 接入）。
 type Runner struct {
-	mu       sync.Mutex
-	tools    []port.Tool
-	byName   map[string]port.Tool
-	order    []string
+	mu     sync.Mutex
+	tools  []port.Tool
+	byName map[string]port.Tool
+	order  []string
+	// disabled 只在 mu 下整体替换、绝不原地改（SetDisabled 建新表换指针，Specs/Execute
+	// 锁外读一份快照）：读的一侧不加锁就安全，靠的就是这条不变量。要改就得复制整张表，
+	// `r.disabled[name] = true` 会直接变成数据竞争。
 	disabled map[string]bool
 	conf     port.Confirmer
 	level    func() perm.Level
