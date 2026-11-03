@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-03 @ 26f3f74 -->
+<!-- docs-sync: 2026-11-03 @ 3e329af -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -24,7 +24,7 @@
 
 | 版本 | 主题 | 内容 | 状态 |
 |---|---|---|---|
-| v0.5.0 | 多语言界面 + 规范化日志 + 外部代理能力扩张 | 三条主线：**界面 i18n**（`zh` / `en`，见「多语言界面」一节）、**规范化日志**（五段式运行日志，见「规范化日志」一节）与**外部代理申报 `fs` / `terminal`**（见「外部代理能力扩张」一节）。语音前处理与说话人仍在 backlog，不占这一版 | 规划中 |
+| v0.5.0 | 多语言界面 + 规范化日志 + 外部代理能力扩张 | 三条主线：**界面 i18n**（`zh` / `en`，收尾批 I6 / I7 / I8，见「多语言界面」一节）、**规范化日志**（五段式运行日志，收尾批 L2 / L3 / L4，见「规范化日志」一节）与**外部代理申报 `fs` / `terminal`**（见「外部代理能力扩张」一节）。语音前处理与说话人仍在 backlog，不占这一版 | 规划中（i18n 与日志两条的底座已落地，见 [roadmap.md](roadmap.md) 的 v0.5.0 行） |
 
 **方向**：v0.5.0 的三条主线里两条是**规范化**（多语言：界面出中英两套；日志：一行说清五件事），
 另一条是**把转交做深**（外部代理从「只听它说」推到「读写经我们手、命令由我们执行」）。
@@ -47,63 +47,69 @@
   进用户视野的报错与 `stderr` 行。
 - **不进**：文档正文（`docs/` 仍是中文单套，另议）、进入模型上下文的字符串（已全英文，与新规则
   无关）、开发者调试日志、会话与用户内容（不翻译、不检测语言）。
+- **表外唯一一处**：用户自己在设置窗填的输入框占位文字（I8）。它是用户内容进了界面，不随
+  `ui.lang` 变；取词口只负责「没填时用哪一条内置文案」。
 
-**形状**（已定，口径见 D275 与 contracts §7.8，这里只留要做的量）：
-
-- 一个取词口 `internal/i18n`：`zh` / `en` 两张 **Go 表**、`{name}` 具名占位符、缺键回落 `zh`；
-  `ui.lang` 三态（`auto` / `zh` / `en`），**启动定一次**，不做热切。
-- 要搬的量（非测试文件、按包去重）：`uigui` 856 / `app` 634 / `cmd` 369 / `port` 40，另有
-  `uitui` + `uicommon` + `repl` 49；含中文断言的测试文件 225 个（`uigui` 101 / `app` 54 / `cmd` 56），
-  按「断言跟 key 走」与搬迁同笔改。
-- 搬迁是机械活，但要**一次搬干净并上锁**：`_test.go` 之外含 CJK 的字符串字面量只许出现在
-  `internal/i18n/zh*.go`，别处出现即失败（与现有注释测试同一思路）。表按区域拆文件
-  （`zh_boot.go` / `zh_cmd.go` / … 与 `en_*` 一一对应），一张上千条的表读不动也校不动。
+**形状**（已定，口径见 D275 与 contracts §7.8）：一个取词口 `internal/i18n`——`zh` / `en` 两张
+**Go 表**（26 对区域文件、2410 条 key）、`{name}` 具名占位符、缺键回落 `zh`；`ui.lang` 三态
+（`auto` / `zh` / `en`），**启动定一次**，设置窗常规页可改（重启生效）。四条扫描锁已在
+`internal/i18n/lock_test.go`：字面量、缺键、孤儿 key、拼接前缀两侧闭环。本节只留还没做完的三批。
 
 **批次**：
 
-- **I1**（S，已落地）：文案表 + 取词口 + `ui.lang` + 启动选语（D275 / contracts §7.8，实现是
-  `internal/i18n`）；AGENTS 的语言约定已同笔改成「用户面文案走文案表」。
-- **I2**（M，已落地）：命令面与 `app` 提示（`Desc` / `Usage` / 结构化回复 / 确认句 / 报错），外加
-  随手一起收掉的 `port`（导出格式标签与有损说明、注入来源措辞、采样表单与哨兵报错）和 `uicommon`。
-  移出 634 + 40 + 12 条，`app` 只剩两条注册表 panic（那是内部断言，不上界面）。
-- **I3**（M，已落地）：`uigui` 全部界面字面量 → 取词口；CLI（`cmd/aquarius` 的帮助与启动报错）同批
-  收口。移出 1092 行（`uigui` 787 + `cmd` 305），落 1032 条 key，按八个区域表拆：`gui_common`（按钮与
-  状态词，全 GUI 唯一出处）、`gui_settings`、`gui_page_core` / `gui_page_admin`（十四个页签分两半）、
-  `gui_welcome`（欢迎窗/教程/菜单/浮层/提示词编辑）、`gui_chat`（对话面与历史窗）、`cmd_config`、
-  `cmd_admin`。设置窗页名改由 `Key()` 的英文标识取词（`settingsPageNames` 是包级变量、语言在 `main`
-  才定，不改就永远钉在本机 locale）。剩下的 10 行是诊断与量测（`ico:` 解析错误、`[fade]` 观测行、
-  行高量测的假文本），不进表，留给 I4 判定。
-- **I3b**（M，已落地，I3 的补遗）：I3 的边界写的是 `uigui` 与 `cmd`，`internal/adapter` 的数据面
-  （导入导出、技能安装、角色卡、模型探测、语音合成、密钥库、插件闸门）与 `internal/domain` 的
-  不变量报错一直没搬——实测还有 867 处。这 867 处都在用户视野里：错误链经 `wrapSession` 冒到
-  界面，导入回执与插件确认句本身就是界面。分四片搬完，落 `adapter_exchange` / `adapter_files` /
-  `adapter_llm` / `adapter_gate` 与 `gui_platform` 五对表；`toolbuiltin` / `toolrun` 里**回填给
-  模型**的报错改英文硬编码（与 system 提示同口径），不进表。`domain` 与 `plugin` 因此需要取词，
-  已补进 `internal/arch` 的分层表——它们的不变量报错会原样透到界面，不取词就只能硬编码中文。
-- **I4**（S，已落地）：上锁——字面量扫描（`TestNoCJKLiterals`）、缺键扫描（`TestKeysResolve`）、
-  孤儿 key 扫描（`TestNoOrphanKeys`）、拼接前缀两侧闭环（`TestDynamicKeyPrefixesResolve` +
-  `uigui.TestPageKeysResolve`）。白名单 `cjkAllowed` 只收三类：选语言/选级别之前就要报的错（鸡生蛋）、
-  探测用的关键词表（数据不是文案）、诊断与观测打印（`ico:` / `[fade]` / `[tray]` / 位图解析 / 行高量测
-  假文本）。`en` 布局走查：静态侧把写死的标签列宽改成按语言取（`fieldLabelW()`：zh 92 / en 150），
-  并留一份按显示宽度排序的膨胀清单（`TestEnExpansionReport`，`-v` 时才打印）；视觉侧仍需在 GUI 里
-  按 `ui.lang=en` 走一遍窄窗与 200% 字号。
-- **I5**（S，已落地）：设置窗「常规」页补上界面语言选项——D275 落地时只有 config 与
-  `AQUARIUS_UI_LANG` 两个入口，普通用户没有改语言的路径。三态 `auto` / `zh` / `en` 走
-  `selectField`（与主题/缩放同一套模态选择器），值只回填 `ui.lang`、保存后由装配根
-  `persistSettingsTextKeys` 用启动期同一个 `i18n.Parse` 归一与校验（`""` = `auto`，枚举外拒写）；
-  **不改本进程的语言**，行旁写明「重启后生效」，保存反馈也单独一句，免得用户以为点完就变。
-  语言名按惯例各用自己的写法（`简体中文` / `English`），这两条不进表——endonym 不翻译，且 en
-  表出现中文会被 `TestEnHasNoCJK` 拦下，它们进 `cjkAllowed` 白名单并注明理由。与 `input.language`
-  （录音语种）仍是两个字段、两份键值，互不推断。
+- **I6**（L）：测试里的中文期望值跟 key 走。实测 145 个测试文件、586 处「期望值」位置的中文
+  字面量（`strings.Contains(got, "…")` / `got != "…"` / `Equal("…", got)` / `want := "…"`），
+  分布 `app` 220 / `uigui` 201 / `cmd` 31 / `uitui` 21 / `exchange` 20 / 其余约 90。默认语言是
+  `zh`，所以现在全绿；一旦有人在 `en` 下跑回归（或以后加第三种语言）就会成片碎。
+  分类口径三类，判据写死、不留裁量：
+  1. **界面文案**（表里有对应 key，可能是插值后的整句或其中一段）→ 改 `i18n.T` / `i18n.Tf`；
+     子串断言改成「从表里拼出期望值再 `Contains`」，不许退化成「含某个词就算过」。
+  2. **用户数据 / 模型输出 / 落盘内容**（会话消息文本、角色名、转写结果、导出 JSON 的字段值）→
+     保留字面量，进 `testDataLiterals` 白名单，理由只许这三类。
+  3. `t.Fatalf` / `Errorf` 的**失败消息**用中文 → 不受这条锁约束（开发面文案，语言约定就是中文）。
+  锁：`TestNoCJKExpectations`（AST）——`_test.go` 里上述四种位置的中文字面量必须为 0，白名单外
+  出现即失败。配套把 `uigui` 的 `TestMain` 从「硬钉 `zh`」改成尊重 `AQUARIUS_UI_LANG`（缺省
+  `zh`），门禁加一条 `AQUARIUS_UI_LANG=en go test ./...`：前者保证写得对，后者保证真的对。
+  分批按包：`uigui` → `app` → `cmd` + `uitui` + 其余。
+- **I7**（S）：反向缺口——写死的英文可见文案。`TestNoCJKLiterals` 只保证「源码里没有中文」，
+  写一句英文界面文案它抓不到，实践中已经存在（`confirm_ui.go` 里主输入框占位
+  `"Ask anything or type a command..."` 两处、确认原因框 `"reason……"`），中文用户天天看见。
+  **不做词表**（英文短句与标识符、协议串、格式串分不开，误报压不住），改成**出口扫描**：把
+  「往屏幕上写字」的入口列成 sink 清单——`material.Body1/Body2/Caption/H*/Label/Editor`、
+  `hoverTip` / `hoverCard` 的 `texts`、`rowDesc.text`（`sec("…")`）、命令表的 `Desc` / `Usage` /
+  `Params` 文案、`paperTitle` / `paperSection` 一类薄封装——这些位置只接受 `i18n.T/Tf`、变量或
+  空串，直接给字面量即失败。顺带把那三处修掉：占位文字落 `ui.input.placeholder` /
+  `ui.confirm.reason_placeholder`，与 I8 共用同一份取词。新增控件写法若绕开 sink，要同笔进清单。
+- **I8**（S）：输入框占位文字可自定义。配置键 `ui.input_placeholder`，**单条**：占位文字是用户
+  自己写的内容，不翻译，`ui.lang` 切到哪套都用它；空 = 回落内置文案（那一条随语言变）。
+  作用面两处：主输入框与确认态的原因框（同一份自定义值是有意的——用户改的就是「输入框里那行灰字」）。
+  落点：`port.SettingsPatch.Placeholder` → `cmd/aquarius` 的 `textSettings.UI.InputPlaceholder` /
+  `readTextSettings` / `persistSettingsTextKeys`（`TrimSpace`、换行折成空格、单行、120 字符封顶，
+  超限拒写并回报错——与 `theme` / `lang` 同口径：存得进去的值必须过得了下次启动的同一条校验）→
+  `Options.Placeholder` → `UI.placeholder`，**每帧取词、热生效**（不写「重启后生效」）。
+  设置位置：常规页「外观与呼出」区、界面语言行下面，文本框 + 灰色小字「留空 = 默认提示
+  （随界面语言）」。不动 TUI / REPL 的提示，也不动提问面板与历史摘要框的占位（各自表 key 保留）。
+  落码前补 contracts §7.8 一句「用户可覆盖的界面文案」口径与决策编号（D277）。
+- **待补（用户已报，范围未定）**：欢迎 / 引导窗也要修——2026-11-03 走查中提到，具体点等用户给。
+  补进来时按性质并入 I7（写死的英文 → 表）或 I8（可自定义），不单开批次号。
 
-**验收**：`ui.lang=en` 启动后，从欢迎页到设置窗、`/help`、生成中插话、确认与报错全英文、无一句
-中文残留；切回 `zh` 与今天逐字一致（同一套 key，不是两份手写文案）；字面量扫描与缺键扫描为空。
+**验收**：
+
+- `ui.lang=en` 起一遍、`go test ./...` 在 `AQUARIUS_UI_LANG=en` 下也跑一遍，两边都绿；从欢迎页到
+  设置窗、`/help`、生成中插话、确认与报错无一句中文残留；切回 `zh` 与今天逐字一致（同一套 key，
+  不是两份手写文案）。
+- 两条扫描为空，白名单每一条都写得出理由：生产侧出口字面量（I7）、测试侧期望值字面量（I6）。
+- 占位文字三态各对一次：内置（`zh` / `en` 各一句）、自定义（两语言下都是同一句）、清空回落。
+- 真窗口视觉走查（人工，进行中）：窄窗 + 200% 字号下看发条、气泡、设置行与状态行；按
+  `TestEnExpansionReport` 的清单（`-v` 打印）继续看，修掉的记 [roadmap.md](roadmap.md)。
 
 **风险**：
 
-- 英文更长，手绘布局会溢出——待发条、气泡、设置行、状态行与 `clampToWidth` / `measure` 的路径
-  要一并走查，窄窗与 200% 字号各看一遍。
-- 测试里锁着中文断言（golden 流、提示句）会成片碎；口径是**断言跟 key 走**，不跟中文走。
+- 子串断言改 `T()` 容易退化成弱断言（「含某词」），那就把「文案正确」测成了「文案存在」；
+  能整句比就整句比，只能子串时**从表里拼期望值**。
+- 出口扫描是白名单：新写一处可见文案若走了清单外的写法（自绘、拼字符串），锁一样看不见；
+  清单要随新增的文本出口一起长。
+- 占位文字是表外唯一一处「用户内容进界面」；以后若做界面文案检索 / 术语表，这一条要显式绕开。
 - 文案表一旦成为第二份「事实来源」，就容易和界面行为脱节：key 只增不改语义，删改要跟着代码走。
 
 ---
@@ -113,9 +119,10 @@
 > 与多语言同属「规范化」，不是可观测性平台：不引 metrics、不接 OTel、不做采样。一条日志只回答
 > 五件事——什么时候、多重、哪个子系统、出了什么事、当场怎么处置。字段口径这一节定死，别处不复述。
 
-**要什么**：今天 `cmd` 里 46 行 `fmt.Fprintf(stderr, …)`、适配器里 26 处 `Logf` 各写各的
-（`警告：语音播报不可用：…` / `技能：…` / `[llm] …`），没时间、没级别、没机读出口；GUI 双击启动
-时 stderr 无处可看，整趟运行等于没留痕。目标是一处实现、一种行。
+**要什么**：全仓只有**一处**输出口。现在仍有 23 行直接写 `w.stderr`（`cmd/aquarius` 的
+`assemble_ports.go` 15 / `bootstrap_profile.go` 3 / `plugins.go` 2 / `welcome.go` 1 / `web.go` 1 /
+`main.go` 1），另有 24 处带中文格式串的 `Logf` / `logf`（`internal/plugin` 13 / `acpgate` 4 /
+`outputtts` 3 / `skillfs` 2 / `characterfs` 2），这些行没时间、没级别、没上下文。
 
 **字段**（已定，五段固定顺序）：
 
@@ -149,25 +156,29 @@
   `action` key 是三条出口共享的契约，改一处即三处一起改。
 - 包 `internal/logging`：叶子层，只 import 标准库与 `internal/i18n`，并登记进 `internal/arch`
   的 `layerLogging`——理由同 `layerI18n`，不登记就落进 `layerOther` 成后门。
-- **端口不动**：`port` 与适配器里现有的 `Logf func(format string, …)` 回调保留形状，由装配根注入
-  一个「把 format+args 记成一条日志」的适配器；不让适配器 import 日志包（硬性规则 1 的方向）。
+- **适配器不 import 日志包**（硬性规则 1 的方向）：注入回调。现在注入的是 `Logf(format, args…)`
+  这个临时形状，L3 换成结构化回调（五段装得下），`Logf` 这一族随之消失。
 
 **批次**：
 
-- **L1**（M，已落地）：`internal/logging`（五段渲染、级别过滤、文本/JSON 双出口、按天切与轮转、
-  保留 7 天、降级到 stderr）+ `ui.log_level` / `-log-level` / `-log-format` + arch 的 `layerLogging`
-  + 单测（格式、阈值、轮转、超期清理、JSON 键跨语言稳定、并发、降级）。决策与规格是 D276 /
-  contracts §7.9，`AGENTS.md` 的语言约定已同笔改。顺带先收口 6 处（启动两条 warn、模型链路三条、
-  日志自身的降级行），剩下的量见 L2 / L3。
-- **L2**（M）：`cmd/aquarius` 那 46 行收口——启动与装配（`main.go` / `assemble_ports.go` /
-  `bootstrap_profile.go`）、`welcome.go`、`web.go`、`console_*.go`；`fatal` 与消息框不动。
-- **L3**（M）：适配器 26 处 `Logf` 文案收口（acpgate、characterfs、outputtts、probe、skillfs、
-  plugin host、jobwatch / delegatewatch / watcher），装配根统一注入；`audit` 与 `jobproc` 排除。
-- **L4**（S）：上锁——`fmt.Fprint*(…stderr…)` 只许出现在 `logging` 包与 `fatal`；新增日志缺上下文
-  或行动位即测试失败；`configuration.md` 补三个键、`development.md` 补一句「怎么看日志」。
+- **L2**（M）：`cmd/aquarius` 那 23 行收口——`assemble_ports.go`（15）、`bootstrap_profile.go`（3）、
+  `plugins.go`（2）、`welcome.go` / `web.go` / `main.go` 各 1；`fatal` 与消息框不动。装配根当下把
+  `w.stderr` 当默认出口（`stderrProxy`），改成「默认写日志、`warn` 以上再照旧打一行」；每行要
+  判出 `ctx` 与行动位，不能只把 `Fprintf` 换成 `log.Warn`。
+- **L3**（M）：那 24 处调用逐一收口。`Logf(format, args…)` 这个形状装不下五段（没有级别、
+  上下文、行动位），所以本批一并把端口换成**结构化回调**
+  `Logf(level, ctx, eventKey, actKey string, kv …any)`，装配根接到 `logging`；`internal/plugin` 的
+  `[plugin] ` 前缀由 `ctx` 位取代，前缀不许留在文案里。`host` / `characterfs` / `probe` 的
+  `Logf` 字段、`app` 侧 `logf("%s", Tf(...))` 的转发壳一并对齐（`app` 那几处已经有 key，只差
+  级别、上下文与行动位）。`audit`（机器面）与 `jobproc`（原始输出落盘）排除。
+- **L4**（S）：上锁——`fmt.Fprint*(…stderr…)` 与 `fmt.Fprint*(w.stderr…)` 只许出现在 `logging`
+  包与 `fatal`；新增日志缺 `ctx` 或行动位即测试失败；`cmd/linuxgate` / `cmd/iconify` 是开发工具、
+  不进产品日志，扫描白名单里写明这条。`configuration.md` 补齐三个键、`development.md` 补一句
+  「怎么看日志」。
 
-**顺序**：L1 起手即可（只碰新包与 `cmd` 的 flag/config），与 I3 并行不冲突；**L4 排在 I4 之后**，
-两条扫描锁都在 `_test.go` 侧新增，挤在一起会互相改同一个测试文件。
+**顺序**：L2 / L3 是纯搬，动的文件与 I6（`_test.go` 侧）不重叠，可并行；**L4 排在 I6、I7 之后**
+——三条都在 `_test.go` 侧新增扫描，挤在一起会互相改同一批文件；先做 I6 / I7 可以把 AST 辅助
+（定位字面量、白名单、相对路径）一次写对，L4 接第三把。
 
 **验收**：`--log-format json` 跑一轮含附件、语音、插件、后台任务与转交的会话——文件里每行五段齐、
 `event` / `action` 是 key 不是译文；`zh` / `en` 两套文本都读得通；stderr 只有 warn 以上；GUI 双击
@@ -175,8 +186,9 @@
 
 **风险**：
 
-- **与 i18n 表抢同一行**：日志 key 落 `internal/i18n/zh_log.go` / `en_log.go` 两个新文件，
-  `zh.go` 与 `en.go` 的 `mergeTables(…)` 注册行一次性加好——否则和 I3 并行时撞同一行编辑。
+- **与 i18n 表抢同一行**：日志文案只追加到既有的 `internal/i18n/zh_log.go` / `en_log.go`
+  （`log.act.*` 与事件两族），不另开表文件、不动 `mergeTables` 注册行；两边同时改同一行是这类
+  并行唯一的冲突面。
 - **行动位退化成自由文本**：一句一条地写就成了第二份文案表。口径是按**动作**收敛（五六个动作覆盖
   全部日志），事件只说自己那件事。
 - **两条渲染路径要同源**：文本与 JSON 从同一份字段结构渲染，别各拼一遍；时间格式、级别名、key 名
