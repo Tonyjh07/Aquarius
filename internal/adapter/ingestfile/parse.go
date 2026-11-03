@@ -6,6 +6,7 @@ package ingestfile
 // 文本上限 maxDocText 截断、文件上限 maxIngestFile 不解析。
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"github.com/ledongthuc/pdf"
 	"github.com/xuri/excelize/v2"
 	"golang.org/x/net/html"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 var (
@@ -49,13 +52,14 @@ func structuredKind(path string) string {
 func extractStructured(kind string, f *os.File, path string) (string, bool, error) {
 	st, err := f.Stat()
 	if err != nil {
-		return "", false, fmt.Errorf("读取文件大小: %w", err)
+		return "", false, fmt.Errorf("%s: %w", i18n.T("ingest.err.stat_size"), err)
 	}
 	if st.Size() > maxIngestFile {
-		return "", false, fmt.Errorf("文件 %d 字节超过解析上限 %d 字节", st.Size(), maxIngestFile)
+		return "", false, errors.New(i18n.Tf("ingest.err.file_too_large",
+			"size", st.Size(), "max", maxIngestFile))
 	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return "", false, fmt.Errorf("定位文件头: %w", err)
+		return "", false, fmt.Errorf("%s: %w", i18n.T("ingest.err.parse_seek_head"), err)
 	}
 	switch kind {
 	case "pdf":
@@ -67,7 +71,7 @@ func extractStructured(kind string, f *os.File, path string) (string, bool, erro
 	case "html":
 		return extractHTML(f)
 	}
-	return "", false, fmt.Errorf("未支持的解析类型 %q", kind)
+	return "", false, errors.New(i18n.Tf("ingest.err.unknown_kind", "kind", kind))
 }
 
 // normalizePDFBreaks PDF 版式碎片归一（D105 后果③）：GetPlainText 按布局位置断行——
@@ -106,7 +110,7 @@ func extractPDF(f *os.File, size int64) (string, bool, error) {
 	for i := 1; i <= rd.NumPage(); i++ {
 		txt, err := rd.Page(i).GetPlainText(nil)
 		if err != nil {
-			return "", false, fmt.Errorf("第 %d 页提取: %w", i, err)
+			return "", false, fmt.Errorf("%s: %w", i18n.Tf("ingest.err.pdf_page", "page", i), err)
 		}
 		b.WriteString(normalizePDFBreaks(txt))
 		b.WriteString("\n")
@@ -169,9 +173,9 @@ func extractXLSX(f *os.File) (string, bool, error) {
 	for _, sheet := range xl.GetSheetList() {
 		rows, err := xl.GetRows(sheet)
 		if err != nil {
-			return "", false, fmt.Errorf("工作表 %s: %w", sheet, err)
+			return "", false, fmt.Errorf("%s: %w", i18n.Tf("ingest.err.sheet", "sheet", sheet), err)
 		}
-		fmt.Fprintf(&b, "〔工作表 %s〕\n", sheet)
+		fmt.Fprintf(&b, "%s\n", i18n.Tf("ingest.doc.sheet", "sheet", sheet))
 		for _, row := range rows {
 			b.WriteString(strings.Join(row, " | "))
 			b.WriteString("\n")

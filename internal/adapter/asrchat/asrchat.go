@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -62,18 +63,18 @@ type Client struct {
 func New(cfg Config) (*Client, error) {
 	raw := strings.TrimSpace(cfg.BaseURL)
 	if raw == "" {
-		return nil, errors.New("asr: base_url 为空")
+		return nil, errors.New(i18n.T("asr.err.base_url_empty"))
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, fmt.Errorf("asr: 非法 base_url %q", cfg.BaseURL)
+		return nil, errors.New(i18n.Tf("asr.err.base_url_invalid", "url", cfg.BaseURL))
 	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
-		return nil, errors.New("asr: 模型名为空")
+		return nil, errors.New(i18n.T("asr.err.model_empty"))
 	}
 	if cfg.Blobs == nil {
-		return nil, errors.New("asr: 未接附件库")
+		return nil, errors.New(i18n.T("asr.err.no_blobs"))
 	}
 	hc := cfg.HTTP
 	if hc == nil {
@@ -91,29 +92,29 @@ func New(cfg Config) (*Client, error) {
 // Transcribe 把一段音频转成文本。lang 为 auto | zh | en（空 = auto）。
 func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lang string) (string, error) {
 	if ctx == nil {
-		return "", errors.New("asr: nil context")
+		return "", errors.New(i18n.T("asr.err.nil_context"))
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	mime := audioMIME(audio.MIME)
 	if mime == "" {
-		return "", fmt.Errorf("asr: 不支持的音频格式 %q（只支持 wav / mp3）", audio.MIME)
+		return "", errors.New(i18n.Tf("asr.chat.err_unsupported_format", "mime", audio.MIME))
 	}
 	rc, err := c.blobs.Get(ctx, audio)
 	if err != nil {
-		return "", fmt.Errorf("asr: 读取音频附件: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
 	}
 	defer rc.Close()
 	data, err := io.ReadAll(io.LimitReader(rc, maxAudioBytes+1))
 	if err != nil {
-		return "", fmt.Errorf("asr: 读取音频附件: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
 	}
 	if len(data) == 0 {
-		return "", errors.New("asr: 音频附件为空")
+		return "", errors.New(i18n.T("asr.err.audio_empty"))
 	}
 	if len(data) > maxAudioBytes {
-		return "", fmt.Errorf("asr: 音频超过 %d MB 上限，请缩短录音", maxAudioBytes>>20)
+		return "", errors.New(i18n.Tf("asr.err.audio_too_large", "mb", maxAudioBytes>>20))
 	}
 
 	lang = strings.TrimSpace(lang)
@@ -135,11 +136,11 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return "", fmt.Errorf("asr: 编码请求: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.encode_request"), err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+chatPath, bytes.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("asr: 构造请求: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.build_request"), err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.key != "" {
@@ -147,22 +148,22 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("asr: 请求失败: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.request_failed"), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("asr: 服务端返回 %d: %s", resp.StatusCode, snippet(resp.Body))
+		return "", errors.New(i18n.Tf("asr.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
 	}
 	var out response
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("asr: 解析响应: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.parse_response"), err)
 	}
 	if len(out.Choices) == 0 {
-		return "", errors.New("asr: 响应里没有 choices")
+		return "", errors.New(i18n.T("asr.chat.err_no_choices"))
 	}
 	text := strings.TrimSpace(out.Choices[0].Message.Content)
 	if text == "" {
-		return "", errors.New("asr: 没有识别出文字（录音可能为空或太短）")
+		return "", errors.New(i18n.T("asr.err.no_text"))
 	}
 	return text, nil
 }
@@ -191,7 +192,7 @@ func snippet(r io.Reader) string {
 	}
 	s := strings.TrimSpace(string(b))
 	if s == "" {
-		return "（空响应体）"
+		return i18n.T("audio.detail.empty_body")
 	}
 	return s
 }

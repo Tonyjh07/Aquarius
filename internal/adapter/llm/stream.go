@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -90,7 +92,7 @@ func (s *stream) Recv() (port.Delta, error) {
 		if cerr := s.ctx.Err(); cerr != nil {
 			return port.Delta{}, cerr
 		}
-		return port.Delta{}, fmt.Errorf("llm: 读取生成流: %w", err)
+		return port.Delta{}, fmt.Errorf("%s: %w", i18n.T("llm.err.read_stream"), err)
 	}
 	// 未见 [DONE] 即断流：多数兼容服务直接关连接，视作正常结束。
 	return port.Delta{}, io.EOF
@@ -135,10 +137,10 @@ func (s *stream) markSigSeen(index int) {
 func decodeChatPayload(payload string) (port.Delta, bool, error) {
 	var chunk chatChunk
 	if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-		return port.Delta{}, false, fmt.Errorf("llm: 解析流分片: %w（片段: %s）", err, snippet(payload, 200))
+		return port.Delta{}, false, fmt.Errorf("%s: %w", i18n.Tf("llm.err.stream_decode", "snippet", snippet(payload, 200)), err)
 	}
 	if chunk.Error != nil {
-		return port.Delta{}, false, fmt.Errorf("llm: 服务端流式错误: %s", chunk.Error.Message)
+		return port.Delta{}, false, errors.New(i18n.Tf("llm.err.stream_error", "message", chunk.Error.Message))
 	}
 	d := chunk.toDelta()
 	if d.Text == "" && len(d.ToolCalls) == 0 && d.Usage == nil {

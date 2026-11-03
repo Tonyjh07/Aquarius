@@ -15,6 +15,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/micwin"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -48,7 +49,8 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 	}
 	return port.IngestReport{
 		Parts: []conversation.Part{{Kind: conversation.PartText, Text: text}},
-		Note:  fmt.Sprintf("已由语音转写（%.1f 秒录音）", recorded.Seconds()),
+		Note: i18n.Tf("audio.mic.note_transcribed", "seconds",
+			fmt.Sprintf("%.1f", recorded.Seconds())),
 	}, nil
 }
 
@@ -56,17 +58,17 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 // 实际录音时长。dur = 0 时由录音器取缺省值。
 func (in *Ingestor) Listen(ctx context.Context, dur time.Duration) (string, time.Duration, error) {
 	if in.asr == nil {
-		return "", 0, errors.New("语音识别未配置：请在设置「语音」页填写语音服务")
+		return "", 0, errors.New(i18n.T("audio.mic.err_asr_unset"))
 	}
 	if in.rec == nil || in.blobs == nil {
-		return "", 0, errors.New("语音输入未装配（缺少录音器或附件库）")
+		return "", 0, errors.New(i18n.T("audio.mic.err_not_wired"))
 	}
 	wav, recorded, err := in.rec.Record(ctx, dur)
 	if err != nil {
-		return "", 0, fmt.Errorf("录音失败: %w", err)
+		return "", 0, fmt.Errorf("%s: %w", i18n.T("audio.mic.err_record"), err)
 	}
 	if len(wav) == 0 {
-		return "", 0, errors.New("没有录到声音")
+		return "", 0, errors.New(i18n.T("audio.mic.err_silent"))
 	}
 	// 用户按停止会把上下文取消（录音器据此收工）——转写照常走完，取消 ≠ 丢弃。
 	// 只有窗口关闭等真正的收尾才会让它再被打断（进程已是退出路径）。
@@ -74,15 +76,15 @@ func (in *Ingestor) Listen(ctx context.Context, dur time.Duration) (string, time
 	name := fmt.Sprintf("mic-%d.wav", time.Now().UnixMilli())
 	ref, err := in.blobs.Put(netCtx, bytes.NewReader(wav), "audio/wav", name)
 	if err != nil {
-		return "", 0, fmt.Errorf("保存录音: %w", err)
+		return "", 0, fmt.Errorf("%s: %w", i18n.T("audio.mic.err_save"), err)
 	}
 	text, err := in.asr.Transcribe(netCtx, ref, in.lang)
 	if err != nil {
-		return "", 0, fmt.Errorf("语音转写失败: %w", err)
+		return "", 0, fmt.Errorf("%s: %w", i18n.T("audio.mic.err_transcribe"), err)
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return "", 0, errors.New("没有识别出文字，请再说一次")
+		return "", 0, errors.New(i18n.T("audio.mic.err_no_text"))
 	}
 	if recorded <= 0 {
 		recorded = time.Duration(len(wav)) * time.Second / (micwin.SampleRate * micwin.Channels * micwin.Bits / 8)

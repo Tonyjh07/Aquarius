@@ -2,11 +2,13 @@ package mcpgate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 )
 
@@ -54,7 +56,7 @@ func (s *Server) RenderPrompt(ctx context.Context, name string, args []string) (
 		b.WriteString(text.Text)
 	}
 	if b.Len() == 0 {
-		return "", fmt.Errorf("prompt %s 未产出文本内容（插件 %s）", name, s.name)
+		return "", errors.New(i18n.Tf("mcp.err.prompt_empty", "name", name, "plugin", s.name))
 	}
 	return b.String(), nil
 }
@@ -85,8 +87,8 @@ func (s *Server) mapArgs(name string, args []string) (map[string]string, string,
 	usage := usageLine(p)
 	if len(valid) == 0 {
 		if len(args) > 0 {
-			return nil, usage, fmt.Errorf("prompt %s 不声明参数，但收到 %d 个。用法: /mcp:%s:%s %s",
-				name, len(args), s.name, name, usage)
+			return nil, usage, errors.New(i18n.Tf("mcp.err.prompt_no_args",
+				"name", name, "got", len(args), "plugin", s.name, "prompt", name, "usage", usage))
 		}
 		return map[string]string{}, "", nil
 	}
@@ -96,8 +98,8 @@ func (s *Server) mapArgs(name string, args []string) (map[string]string, string,
 	case len(valid) == 1:
 		arguments[valid[0].Name] = strings.Join(args, " ") // 单参数：多词整体送入，不丢词
 	case len(args) > len(valid):
-		return nil, usage, fmt.Errorf("多余参数：prompt %s 声明 %d 个，收到 %d 个。用法: /mcp:%s:%s %s",
-			name, len(valid), len(args), s.name, name, usage)
+		return nil, usage, errors.New(i18n.Tf("mcp.err.prompt_too_many",
+			"name", name, "want", len(valid), "got", len(args), "plugin", s.name, "prompt", name, "usage", usage))
 	default:
 		for i, a := range args {
 			arguments[valid[i].Name] = a
@@ -105,7 +107,8 @@ func (s *Server) mapArgs(name string, args []string) (map[string]string, string,
 	}
 	for _, pa := range valid {
 		if pa.Required && arguments[pa.Name] == "" {
-			return nil, usage, fmt.Errorf("缺少参数 %s。用法: /mcp:%s:%s %s", pa.Name, s.name, name, usage)
+			return nil, usage, errors.New(i18n.Tf("mcp.err.prompt_missing_arg",
+				"arg", pa.Name, "plugin", s.name, "prompt", name, "usage", usage))
 		}
 	}
 	return arguments, usage, nil

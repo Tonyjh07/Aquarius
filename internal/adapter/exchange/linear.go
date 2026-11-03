@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -65,11 +66,11 @@ func (e *Exchange) exportOpenAI(ctx context.Context, c *conversation.Conversatio
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return rep, fmt.Errorf("序列化消息数组: %w", err)
+		return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.marshal_messages"), err)
 	}
 	data = append(data, '\n')
 	if _, err := w.Write(data); err != nil {
-		return rep, fmt.Errorf("写消息数组: %w", err)
+		return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.write_messages"), err)
 	}
 	rep.Bytes = int64(len(data))
 	rep.Nodes = len(doc.Messages)
@@ -83,7 +84,7 @@ func (e *Exchange) exportOpenAI(ctx context.Context, c *conversation.Conversatio
 // importOpenAI 读一个消息数组，接成一条链。
 func (e *Exchange) importOpenAI(ctx context.Context, r io.Reader) (*conversation.Conversation, port.ExchangeReport, error) {
 	rep := port.ExchangeReport{Format: "openai"}
-	data, err := readLimited(r, maxImportBytes, "文件")
+	data, err := readLimited(r, maxImportBytes, i18n.T("exchange.io.what.file"))
 	if err != nil {
 		return nil, rep, err
 	}
@@ -92,7 +93,7 @@ func (e *Exchange) importOpenAI(ctx context.Context, r io.Reader) (*conversation
 	}
 	var doc oaDoc
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, rep, fmt.Errorf("解析消息数组: %w", err)
+		return nil, rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.parse_messages"), err)
 	}
 	counts := map[string]int{}
 	in := importedTree{}
@@ -100,12 +101,12 @@ func (e *Exchange) importOpenAI(ctx context.Context, r io.Reader) (*conversation
 	for i, m := range doc.Messages {
 		role, ok := linearImportRole(m.Role)
 		if !ok {
-			counts["角色 "+m.Role+" 的消息"]++
+			counts[i18n.Tf("exchange.io.drop.unknown_role", "role", m.Role)]++
 			continue
 		}
 		parts := parseLinearContent(m.Content, counts)
 		if len(parts) == 0 {
-			counts["没有正文的消息"]++
+			counts[i18n.T("exchange.io.drop.no_text")]++
 			continue
 		}
 		id := fmt.Sprintf("m%d", i)
@@ -158,7 +159,7 @@ func (e *Exchange) exportSillyTavern(ctx context.Context, c *conversation.Conver
 	var b strings.Builder
 	header, err := json.Marshal(stHeader{CreateDate: formatSTTime(c.CreatedAt)})
 	if err != nil {
-		return rep, fmt.Errorf("序列化首行: %w", err)
+		return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.marshal_header"), err)
 	}
 	b.Write(header)
 	b.WriteByte('\n')
@@ -179,14 +180,14 @@ func (e *Exchange) exportSillyTavern(ctx context.Context, c *conversation.Conver
 			SendDate: formatSTTime(m.CreatedAt),
 		})
 		if err != nil {
-			return rep, fmt.Errorf("序列化消息: %w", err)
+			return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.marshal_message"), err)
 		}
 		b.Write(line)
 		b.WriteByte('\n')
 		n++
 	}
 	if _, err := io.WriteString(w, b.String()); err != nil {
-		return rep, fmt.Errorf("写对话文件: %w", err)
+		return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.write_dialog"), err)
 	}
 	rep.Bytes = int64(b.Len())
 	rep.Nodes = n
@@ -200,7 +201,7 @@ func (e *Exchange) exportSillyTavern(ctx context.Context, c *conversation.Conver
 // importSillyTavern 读 `.jsonl`：首行 header、每行一条 mes。
 func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*conversation.Conversation, port.ExchangeReport, error) {
 	rep := port.ExchangeReport{Format: "sillytavern"}
-	data, err := readLimited(r, maxImportBytes, "文件")
+	data, err := readLimited(r, maxImportBytes, i18n.T("exchange.io.what.file"))
 	if err != nil {
 		return nil, rep, err
 	}
@@ -209,7 +210,7 @@ func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*convers
 	}
 	lines := splitLines(data)
 	if len(lines) == 0 {
-		return nil, rep, errors.New("文件是空的")
+		return nil, rep, errors.New(i18n.T("exchange.err.empty_file"))
 	}
 	// 有些导出省掉首行头，直接从消息起（SillyTavern 自己也容得下）：首行带 `mes` 就整份按
 	// 消息读，否则首行是 header、其余是消息。
@@ -217,7 +218,7 @@ func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*convers
 	var header stHeader
 	if !isSTMessageLine(lines[0]) {
 		if err := json.Unmarshal(lines[0], &header); err != nil {
-			return nil, rep, fmt.Errorf("第一行不是对话头（SillyTavern 的 .jsonl 首行是元信息）: %w", err)
+			return nil, rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.not_st_header"), err)
 		}
 	} else {
 		start = 0
@@ -231,7 +232,8 @@ func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*convers
 	for i, line := range lines[start:] {
 		var m stMessage
 		if err := json.Unmarshal(line, &m); err != nil {
-			return nil, rep, fmt.Errorf("第 %d 行解析失败: %w", i+start+1, err)
+			return nil, rep, fmt.Errorf("%s: %w",
+				i18n.Tf("exchange.err.bad_line", "line", i+start+1), err)
 		}
 		role := conversation.RoleAssistant
 		switch {
@@ -241,7 +243,7 @@ func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*convers
 			role = conversation.RoleUser
 		}
 		if strings.TrimSpace(m.Mes) == "" {
-			counts["没有正文的消息"]++
+			counts[i18n.T("exchange.io.drop.no_text")]++
 			continue
 		}
 		id := fmt.Sprintf("m%d", i)
@@ -280,19 +282,19 @@ func linearText(m conversation.Message, counts map[string]int) (string, bool) {
 			if p.Text != "" {
 				texts = append(texts, p.Text)
 			}
-			counts["文档原文件（只带提取的文本）"]++
+			counts[i18n.T("exchange.io.drop.doc_raw")]++
 		case conversation.PartImage, conversation.PartAudio:
-			counts["附件"]++
+			counts[i18n.T("exchange.io.drop.attach")]++
 		case conversation.PartThinking:
-			counts["思考过程"]++
+			counts[i18n.T("exchange.io.drop.thinking")]++
 		case conversation.PartTool:
-			counts["工具调用"]++
+			counts[i18n.T("exchange.io.drop.tool")]++
 		default:
-			counts["认不出的分片"]++
+			counts[i18n.T("exchange.io.drop.unknown_part")]++
 		}
 	}
 	if len(texts) == 0 {
-		counts["没有正文的消息"]++
+		counts[i18n.T("exchange.io.drop.no_text")]++
 		return "", false
 	}
 	return strings.Join(texts, "\n"), true
@@ -344,7 +346,7 @@ func parseLinearContent(raw json.RawMessage, counts map[string]int) []conversati
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(raw, &items); err != nil {
-		counts["认不出的正文"]++
+		counts[i18n.T("exchange.io.drop.unknown_content")]++
 		return nil
 	}
 	var parts []conversation.Part
@@ -355,9 +357,9 @@ func parseLinearContent(raw json.RawMessage, counts map[string]int) []conversati
 				parts = append(parts, conversation.Part{Kind: conversation.PartText, Text: it.Text})
 			}
 		case "image_url", "input_image":
-			counts["图片（只有地址，字节取不到）"]++
+			counts[i18n.T("exchange.io.drop.image")]++
 		default:
-			counts["正文分片 "+it.Type]++
+			counts[i18n.Tf("exchange.io.drop.part_kind", "kind", it.Type)]++
 		}
 	}
 	return parts
@@ -378,7 +380,7 @@ func branchNote(c *conversation.Conversation) string {
 	if skipped == 0 {
 		return ""
 	}
-	return fmt.Sprintf("旁支上的 %d 条消息（只导出当前那条链）", skipped)
+	return i18n.Tf("exchange.io.dropped.side_branch", "count", skipped)
 }
 
 // stName SillyTavern 那一行的名字：对方靠 is_user / is_system 判角色，名字是展示用。

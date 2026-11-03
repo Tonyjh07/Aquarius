@@ -16,6 +16,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -195,7 +196,7 @@ func TestAQXPickOutOfRange(t *testing.T) {
 	for _, pick := range [][]int{{3}, {0}} {
 		_, _, err := New(Options{Blobs: blobs}).Import(context.Background(),
 			bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"}, pick)
-		if err == nil || !strings.Contains(err.Error(), "清单") ||
+		if err == nil || !strings.Contains(err.Error(), i18n.T("exchange.io.manifest_listing.head")) ||
 			!strings.Contains(err.Error(), "第一个") || !strings.Contains(err.Error(), "第二个") {
 			t.Fatalf("pick %v: err = %v, want 报因并列出清单", pick, err)
 		}
@@ -211,8 +212,8 @@ func TestAQXMultiSessionOnly(t *testing.T) {
 	for _, name := range []string{"chatgpt", "openai", "sillytavern"} {
 		var buf bytes.Buffer
 		_, err := New(Options{}).Export(context.Background(), cs, name, &buf)
-		if err == nil || !strings.Contains(err.Error(), "一次只能写一个会话") ||
-			!strings.Contains(err.Error(), "aqx") {
+		if err == nil || !strings.Contains(err.Error(),
+			i18n.Tf("exchange.err.single_only", "format", name, "count", len(cs))) {
 			t.Fatalf("%s: err = %v, want 一次只能写一个会话 + 指路 aqx", name, err)
 		}
 		if buf.Len() != 0 {
@@ -295,7 +296,8 @@ func TestIndexRejects(t *testing.T) {
 		t.Fatalf("写高版本归档: %v", err)
 	}
 	if _, err := New(Options{}).Index(context.Background(), higher); err == nil ||
-		!strings.Contains(err.Error(), "高于本程序支持") {
+		!strings.Contains(err.Error(), i18n.Tf("exchange.err.version_too_new",
+			"version", 99, "supported", aqxVersion)) {
 		t.Fatalf("高版本 err = %v", err)
 	}
 }

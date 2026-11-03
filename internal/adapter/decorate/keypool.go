@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -75,8 +76,9 @@ func (p *KeyPool) Generate(ctx context.Context, req port.GenerateRequest) (port.
 		if p.onExhaust != nil {
 			p.onExhaust(ctx, earliest)
 		}
-		return nil, fmt.Errorf("llm: %d 把密钥都在冷却（最早 %s 解冻）: %w",
-			len(p.keys), earliest.Format("15:04:05"), port.ErrTransient)
+		return nil, fmt.Errorf("%s: %w",
+			i18n.Tf("secret.keypool.all_cooling", "n", len(p.keys), "until", earliest.Format("15:04:05")),
+			port.ErrTransient)
 	}
 	var lastErr error
 	for i, idx := range order {
@@ -85,7 +87,7 @@ func (p *KeyPool) Generate(ctx context.Context, req port.GenerateRequest) (port.
 			p.succeeded(idx)
 			return stream, nil
 		}
-		lastErr = fmt.Errorf("密钥 %s: %w", p.labelAt(idx), err)
+		lastErr = fmt.Errorf("%s: %w", i18n.Tf("secret.keypool.token", "label", p.labelAt(idx)), err)
 		if ctx.Err() != nil || !errors.Is(err, port.ErrQuota) {
 			// 非配额错误（含 ctx 取消）：不换钥匙——端点故障换钥匙没用。
 			return nil, lastErr
@@ -167,5 +169,5 @@ func (p *KeyPool) labelAt(idx int) string {
 	if l := strings.TrimSpace(p.keys[idx].Label); l != "" {
 		return l
 	}
-	return fmt.Sprintf("第 %d 把", idx+1)
+	return i18n.Tf("secret.keypool.label_nth", "n", idx+1)
 }

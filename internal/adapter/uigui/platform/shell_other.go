@@ -5,6 +5,7 @@
 package platform
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -13,7 +14,7 @@ import (
 // StartShell 非 Windows 无托盘/全局热键：发一次降级提示，让用户知道呼出与常驻不在
 // （D111 修订④「缺失项发一次性降级 notice」）。
 func (p *Plat) StartShell() {
-	p.Notice(unsupported("系统托盘与全局呼出快捷键"))
+	p.Notice(unsupported(i18n.T("ui.platform.feature.tray")))
 }
 
 // ReloadHotkey 无全局热键可重注册（改配置不报错，只是不生效）。
@@ -27,7 +28,7 @@ func (p *Plat) DropTray() {}
 
 // PostMenu 无原生菜单：首次请求发一条降级提示，此后静默（避免每次右键都刷转写区）。
 func (p *Plat) PostMenu(MenuKind) {
-	p.noticeOnce(&p.menuNotice, unsupported("原生右键菜单"))
+	p.noticeOnce(&p.menuNotice, unsupported(i18n.T("ui.platform.feature.menu")))
 }
 
 // SubclassCloseToHide 无 WM_CLOSE 拦截概念：关窗即销毁（由窗口管理器与 Gio 处理）。
@@ -41,7 +42,7 @@ func (p *Plat) RequestFileDialog() { go p.showFileDlg() }
 func (p *Plat) showFileDlg() {
 	paths, ok := pickFileCommand()
 	if !ok {
-		p.Notice(unsupported("文件选择框（Linux 需 zenity 或 kdialog）"))
+		p.Notice(unsupported(i18n.T("ui.platform.dlg.unavailable_open")))
 		return
 	}
 	if len(paths) == 0 || p.host == nil {
@@ -56,14 +57,15 @@ func pickFileCommand() (paths []string, ok bool) {
 	switch runtime.GOOS {
 	case "darwin":
 		out, err := exec.Command("osascript", "-e",
-			`POSIX path of (choose file with prompt "选择附件" with multiple selections allowed)`).Output()
+			`POSIX path of (choose file with prompt `+appleScriptString(i18n.T("ui.platform.dlg.pick_attachment"))+
+				` with multiple selections allowed)`).Output()
 		if err != nil {
 			return nil, true // 命令存在但用户取消/报错：视同取消，不再降级
 		}
 		return splitLines(string(out)), true
 	default:
 		for _, cmd := range [][]string{
-			{"zenity", "--file-selection", "--multiple", "--separator=\n", "--title=选择附件"},
+			{"zenity", "--file-selection", "--multiple", "--separator=\n", "--title=" + i18n.T("ui.platform.dlg.pick_attachment")},
 			{"kdialog", "--getopenfilename", ".", "*", "--multiple", "--separate-output"},
 		} {
 			if _, err := exec.LookPath(cmd[0]); err != nil {

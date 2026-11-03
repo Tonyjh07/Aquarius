@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // zf 一个待写进测试压缩包的条目（有序，图标「取第一个」依赖顺序）。
@@ -113,7 +115,7 @@ func TestParseCharxBasenameMiss(t *testing.T) {
 	if out.Avatar != nil {
 		t.Fatalf("avatar = %q, want nil", out.Avatar)
 	}
-	if !warnsContain(out.Info.Warnings, "找不到同名文件") {
+	if !warnsContain(out.Info.Warnings, i18n.Tf("char.load.asset_missing", "uri", "/user/images/Aria/nope.webp")) {
 		t.Fatalf("warnings = %v", out.Info.Warnings)
 	}
 }
@@ -128,7 +130,7 @@ func TestParseCharxHTTPNotDownloaded(t *testing.T) {
 	if out.Avatar != nil {
 		t.Fatalf("avatar = %q, want nil", out.Avatar)
 	}
-	if !warnsContain(out.Info.Warnings, "网络") {
+	if !warnsContain(out.Info.Warnings, i18n.Tf("char.load.asset_remote", "uri", "https://example.com/a.png")) {
 		t.Fatalf("warnings = %v", out.Info.Warnings)
 	}
 }
@@ -149,7 +151,7 @@ func TestParseCharxCCDefault(t *testing.T) {
 func TestParseCharxNoCardJSON(t *testing.T) {
 	archive := zipWith(zf{"inner.charx", []byte("PK")})
 	_, err := parseCard("dist.zip", archive)
-	if err == nil || !strings.Contains(err.Error(), "发行包") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("char.load.charx_no_card")) {
 		t.Fatalf("err = %v, want a distribution-package note", err)
 	}
 }
@@ -158,7 +160,7 @@ func TestParseCharxNoCardJSON(t *testing.T) {
 func TestParseCharxRejectsSlip(t *testing.T) {
 	archive := zipWith(zf{"card.json", v3Card("Aria", "")}, zf{"../escape.txt", []byte("x")})
 	_, err := parseCard("card.charx", archive)
-	if err == nil || !strings.Contains(err.Error(), "拒绝") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("skill.err.zip_entry_escape", "name", "../escape.txt")) {
 		t.Fatalf("err = %v, want a slip rejection", err)
 	}
 }
@@ -178,7 +180,7 @@ func TestParseCharxRejectsSymlink(t *testing.T) {
 	}
 	_, _ = fw.Write(v3Card("Aria", ""))
 	_ = w.Close()
-	if _, err := parseCard("card.charx", buf.Bytes()); err == nil || !strings.Contains(err.Error(), "符号链接") {
+	if _, err := parseCard("card.charx", buf.Bytes()); err == nil || !strings.Contains(err.Error(), i18n.Tf("skill.err.zip_symlink", "name", "link")) {
 		t.Fatalf("err = %v, want a symlink rejection", err)
 	}
 }
@@ -191,7 +193,7 @@ func TestParseCharxEntryLimit(t *testing.T) {
 		files = append(files, zf{name: fmt.Sprintf("f%05d.txt", i)})
 	}
 	_, err := parseCard("card.charx", zipWith(files...))
-	if err == nil || !strings.Contains(err.Error(), "条目数") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("skill.err.zip_entries", "n", maxZipEntries+1, "max", maxZipEntries)) {
 		t.Fatalf("err = %v, want an entry-count rejection", err)
 	}
 }

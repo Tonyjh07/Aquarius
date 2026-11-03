@@ -6,10 +6,12 @@ package ingestclip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -36,20 +38,20 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 		}, nil
 	}
 	if in.blobs == nil {
-		return port.IngestReport{}, fmt.Errorf("ingestclip: 未配置附件库（port.AttachmentStore）")
+		return port.IngestReport{}, errors.New(i18n.T("audio.clip.err_no_blobs"))
 	}
 	ok, err := in.blobs.Stat(ctx, *raw.Blob)
 	if err != nil {
-		return port.IngestReport{}, fmt.Errorf("ingestclip: 检查附件: %w", err)
+		return port.IngestReport{}, fmt.Errorf("%s: %w", i18n.T("audio.clip.err_stat"), err)
 	}
 	if !ok {
-		return port.IngestReport{}, fmt.Errorf("ingestclip: 附件不存在（须先入附件库）: %.12s… %s",
-			raw.Blob.Hash, raw.Blob.Name)
+		return port.IngestReport{}, errors.New(i18n.Tf("audio.clip.err_missing",
+			"hash", shortHash(raw.Blob.Hash), "name", raw.Blob.Name))
 	}
 	if strings.HasPrefix(raw.Blob.MIME, "image/") {
 		return port.IngestReport{
 			Parts: []conversation.Part{{Kind: conversation.PartImage, Ref: raw.Blob}},
-			Note:  fmt.Sprintf("已附剪贴板图片 %s（%d 字节）", raw.Blob.Name, raw.Blob.Size),
+			Note:  i18n.Tf("audio.clip.note_image", "name", raw.Blob.Name, "size", raw.Blob.Size),
 		}, nil
 	}
 	// 非图片附件（如剪贴板带的文件）：按文档处理并给取用说明。
@@ -57,6 +59,14 @@ func (in *Ingestor) Ingest(ctx context.Context, raw port.RawInput) (port.IngestR
 		raw.Blob.Name, raw.Blob.MIME, raw.Blob.Hash)
 	return port.IngestReport{
 		Parts: []conversation.Part{{Kind: conversation.PartDoc, Ref: raw.Blob, Text: text}},
-		Note:  fmt.Sprintf("已附剪贴板文件 %s（%s）", raw.Blob.Name, raw.Blob.MIME),
+		Note:  i18n.Tf("audio.clip.note_file", "name", raw.Blob.Name, "mime", raw.Blob.MIME),
 	}, nil
+}
+
+// shortHash 报因里只露哈希的前 12 个字符（够定位，又不至于把回执写成一行噪声）。
+func shortHash(hash string) string {
+	if len(hash) > 12 {
+		return hash[:12]
+	}
+	return hash
 }

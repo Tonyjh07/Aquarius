@@ -8,6 +8,7 @@ package platform
 
 import (
 	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"syscall"
 	"unsafe"
 )
@@ -23,7 +24,7 @@ const shellExecuteSuccess = 32
 // OpenURL 用系统默认浏览器打开 url。
 func (p *Plat) OpenURL(url string) error {
 	if url == "" {
-		return fmt.Errorf("链接为空")
+		return fmt.Errorf("%s", i18n.T("ui.platform.url.empty"))
 	}
 	op, err := syscall.UTF16PtrFromString("open")
 	if err != nil {
@@ -38,7 +39,7 @@ func (p *Plat) OpenURL(url string) error {
 		uintptr(unsafe.Pointer(target)),
 		0, 0, swShowNormal)
 	if r <= shellExecuteSuccess {
-		return fmt.Errorf("系统未打开链接（错误码 %d）", r)
+		return fmt.Errorf("%s", i18n.Tf("ui.platform.url.not_opened", "code", r))
 	}
 	return nil
 }

@@ -9,7 +9,6 @@ package skillfs
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -92,7 +92,7 @@ func (c *Catalog) Rescan() {
 	for _, root := range dirs {
 		fi, err := os.Stat(root)
 		if err != nil || !fi.IsDir() {
-			warnings = append(warnings, fmt.Sprintf("技能目录 %s 不存在或不是目录，已跳过", root))
+			warnings = append(warnings, i18n.Tf("skill.err.catalog_dir_missing", "dir", root))
 			continue
 		}
 		c.scanRoot(root, &skills, &warnings, owner)
@@ -116,7 +116,7 @@ func (c *Catalog) scanRoot(root string, skills *[]entry, warnings *[]string, own
 		}
 		ents, err := os.ReadDir(dir)
 		if err != nil {
-			*warnings = append(*warnings, fmt.Sprintf("技能目录 %s 读不出：%v", dir, err))
+			*warnings = append(*warnings, i18n.Tf("skill.err.catalog_dir_unreadable", "dir", dir, "err", err))
 			return
 		}
 		for _, e := range ents {
@@ -133,18 +133,17 @@ func (c *Catalog) scanRoot(root string, skills *[]entry, warnings *[]string, own
 func (c *Catalog) addSkill(dir, path, root string, skills *[]entry, warnings *[]string, owner map[string]string) {
 	fm, _, _, err := readSkill(path)
 	if err != nil {
-		*warnings = append(*warnings, fmt.Sprintf("技能 %s 已跳过：%v", dir, err))
+		*warnings = append(*warnings, i18n.Tf("skill.err.skill_skipped", "dir", dir, "detail", err))
 		return
 	}
 	base := filepath.Base(dir)
 	if fm.Name != base {
-		*warnings = append(*warnings, fmt.Sprintf("技能 %s 已跳过：frontmatter 的 name=%q 与目录名不一致",
-			dir, fm.Name))
+		*warnings = append(*warnings, i18n.Tf("skill.err.skill_skipped", "dir", dir,
+			"detail", i18n.Tf("skill.err.name_dir_mismatch", "name", fm.Name)))
 		return
 	}
 	if prev, ok := owner[fm.Name]; ok {
-		*warnings = append(*warnings, fmt.Sprintf("技能 %q 重复：%s 与 %s 同名，前者生效（先声明者胜）",
-			fm.Name, prev, dir))
+		*warnings = append(*warnings, i18n.Tf("skill.err.skill_duplicate", "name", fm.Name, "prev", prev, "dir", dir))
 		return
 	}
 	owner[fm.Name] = dir
@@ -247,4 +246,9 @@ func (c *Catalog) Names() []string {
 }
 
 // errSkillFileTooLarge 超限文件不上模型面（避免把误放的日志当技能正文回填）。
-var errSkillFileTooLarge = errors.New("SKILL.md 超过 1 MB 上限")
+// 零宽结构体：errors.Is 靠类型相等比较，文案在 Error() 里才取词（启动时才定语言）。
+type skillFileTooLargeError struct{}
+
+func (skillFileTooLargeError) Error() string { return i18n.T("skill.err.file_too_large") }
+
+var errSkillFileTooLarge error = skillFileTooLargeError{}

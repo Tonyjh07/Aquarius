@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm/tokenizer"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -133,11 +134,11 @@ func defaultClient() *http.Client {
 func New(cfg Config) (*Client, error) {
 	raw := strings.TrimSpace(cfg.BaseURL)
 	if raw == "" {
-		return nil, errors.New("llm: base_url 为空")
+		return nil, errors.New(i18n.T("llm.err.base_url_empty"))
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, fmt.Errorf("llm: 非法 base_url %q", cfg.BaseURL)
+		return nil, errors.New(i18n.Tf("llm.err.base_url_invalid", "url", cfg.BaseURL))
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
@@ -158,7 +159,7 @@ func New(cfg Config) (*Client, error) {
 	case ProtoChat, ProtoResponses, ProtoAnthropic:
 		c.proto = p
 	default:
-		return nil, fmt.Errorf("llm: 未知协议 %q", cfg.Protocol)
+		return nil, errors.New(i18n.Tf("llm.err.unknown_protocol", "protocol", cfg.Protocol))
 	}
 	for _, f := range cfg.UnsupportedParams {
 		if f = strings.TrimSpace(f); f != "" {
@@ -188,7 +189,7 @@ func New(cfg Config) (*Client, error) {
 // 未配置时报错——app 据此回落通用估算③。
 func (c *Client) CountTokens(_ context.Context, text string) (int, error) {
 	if c.tok == nil {
-		return 0, errors.New("llm: 未配置 model.tokenizer（回落通用估算）")
+		return 0, errors.New(i18n.T("llm.err.tokenizer_unset"))
 	}
 	return c.tok.Count(text), nil
 }
@@ -197,10 +198,10 @@ func (c *Client) CountTokens(_ context.Context, text string) (int, error) {
 // （D175 口径一）。
 func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.Stream, error) {
 	if ctx == nil {
-		return nil, errors.New("llm: nil context")
+		return nil, errors.New(i18n.T("llm.err.nil_context"))
 	}
 	if strings.TrimSpace(req.Model) == "" {
-		return nil, errors.New("llm: model 为空")
+		return nil, errors.New(i18n.T("llm.err.empty_model"))
 	}
 	if c.proto == ProtoResponses {
 		return c.generateResponses(ctx, req)
@@ -274,14 +275,14 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 //     比「退避等同一把」更快也更符合用户意图。
 //   - 408/5xx（§10）：标注瞬时错误，供装配根的重试装饰器限次退避。
 func (c *Client) statusError(path string, code int, sn string, after time.Duration) error {
+	msg := i18n.Tf("llm.err.status", "base", c.base, "path", path, "code", code, "body", sn)
 	switch {
 	case code == http.StatusTooManyRequests:
-		return fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, path, code, sn,
-			&port.Quota{After: after, Cause: port.ErrTransient})
+		return fmt.Errorf("%s: %w", msg, &port.Quota{After: after, Cause: port.ErrTransient})
 	case transientStatus(code):
-		return fmt.Errorf("llm: POST %s%s: 状态码 %d: %s: %w", c.base, path, code, sn, port.ErrTransient)
+		return fmt.Errorf("%s: %w", msg, port.ErrTransient)
 	}
-	return fmt.Errorf("llm: POST %s%s: 状态码 %d: %s", c.base, path, code, sn)
+	return errors.New(msg)
 }
 
 // unsupportedFields 判定报错片段点名了哪些本次实际发送、但服务端不认的参数（D34）。
@@ -376,20 +377,21 @@ func (c *Client) markUnsupported(fields ...string) {
 // Models 拉取 /models 列表；能力与单价未知，仅填 Name（§5.1）。
 func (c *Client) Models(ctx context.Context) ([]port.ModelInfo, error) {
 	if ctx == nil {
-		return nil, errors.New("llm: nil context")
+		return nil, errors.New(i18n.T("llm.err.nil_context"))
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+modelsPath, nil)
 	if err != nil {
-		return nil, fmt.Errorf("llm: 构造请求: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.err.build_request"), err)
 	}
 	c.authorize(req)
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("llm: GET %s: %w", modelsPath, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("llm.err.get", "path", modelsPath), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("llm: GET %s: 状态码 %d: %s", modelsPath, resp.StatusCode, readSnippet(resp.Body))
+		return nil, errors.New(i18n.Tf("llm.err.get_status", "path", modelsPath,
+			"code", resp.StatusCode, "body", readSnippet(resp.Body)))
 	}
 	var payload struct {
 		Data []struct {
@@ -397,7 +399,7 @@ func (c *Client) Models(ctx context.Context) ([]port.ModelInfo, error) {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, fmt.Errorf("llm: 解析 /models: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.err.parse_models"), err)
 	}
 	out := make([]port.ModelInfo, 0, len(payload.Data))
 	for _, d := range payload.Data {
@@ -413,7 +415,7 @@ func (c *Client) Models(ctx context.Context) ([]port.ModelInfo, error) {
 func (c *Client) post(ctx context.Context, path string, body []byte) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("llm: 构造请求: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.err.build_request"), err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
@@ -425,10 +427,11 @@ func (c *Client) post(ctx context.Context, path string, body []byte) (*http.Resp
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		// 传输层失败（连接拒绝/超时/DNS 抖动）视为瞬时；ctx 已取消的不算（§10）。
+		msg := i18n.Tf("llm.err.post", "path", path)
 		if ctx.Err() == nil {
-			return nil, fmt.Errorf("llm: POST %s: %w: %w", path, err, port.ErrTransient)
+			return nil, fmt.Errorf("%s: %w: %w", msg, err, port.ErrTransient)
 		}
-		return nil, fmt.Errorf("llm: POST %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", msg, err)
 	}
 	return resp, nil
 }

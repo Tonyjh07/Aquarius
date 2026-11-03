@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -34,13 +35,13 @@ const (
 // Play 把 r 写成临时文件后异步播放，立即返回；先停掉上一条。
 func (p *Player) Play(ctx context.Context, audio conversation.BlobRef, r io.Reader) error {
 	if ctx == nil {
-		return errors.New("audio: nil context")
+		return errors.New(i18n.T("audio.play.err_nil_context"))
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if r == nil {
-		return errors.New("audio: 没有可播放的数据")
+		return errors.New(i18n.T("audio.play.err_no_data"))
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -48,7 +49,7 @@ func (p *Player) Play(ctx context.Context, audio conversation.BlobRef, r io.Read
 
 	tmp, err := os.CreateTemp("", "aquarius-tts-*.wav")
 	if err != nil {
-		return fmt.Errorf("audio: 创建临时文件: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("audio.play.err_temp_create"), err)
 	}
 	name := tmp.Name()
 	n, cerr := io.Copy(tmp, io.LimitReader(r, maxAudioBytes+1))
@@ -57,28 +58,28 @@ func (p *Player) Play(ctx context.Context, audio conversation.BlobRef, r io.Read
 	}
 	if cerr != nil {
 		os.Remove(name)
-		return fmt.Errorf("audio: 写临时文件: %w", cerr)
+		return fmt.Errorf("%s: %w", i18n.T("audio.play.err_temp_write"), cerr)
 	}
 	if n == 0 {
 		os.Remove(name)
-		return errors.New("audio: 音频为空")
+		return errors.New(i18n.T("audio.play.err_empty"))
 	}
 	if n > maxAudioBytes {
 		os.Remove(name)
-		return fmt.Errorf("audio: 音频超过 %d MB", maxAudioBytes>>20)
+		return errors.New(i18n.Tf("audio.play.err_too_large", "mb", maxAudioBytes>>20))
 	}
 
 	ptr, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		os.Remove(name)
-		return fmt.Errorf("audio: 文件名: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("audio.play.err_filename"), err)
 	}
 	playMu.Lock()
 	ok, _, _ := procPlaySound.Call(uintptr(unsafe.Pointer(ptr)), 0, sndFilename|sndAsync|sndNoDefault)
 	playMu.Unlock()
 	if ok == 0 {
 		os.Remove(name)
-		return errors.New("audio: 系统播放器拒绝了该音频")
+		return errors.New(i18n.T("audio.play.err_rejected"))
 	}
 	p.file = name
 	return nil

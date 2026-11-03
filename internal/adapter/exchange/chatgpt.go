@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -72,11 +73,11 @@ func (e *Exchange) exportChatGPT(ctx context.Context, c *conversation.Conversati
 	out, rep := toChatConversation(c)
 	data, err := json.MarshalIndent(chatEnvelope{out}, "", "  ")
 	if err != nil {
-		return rep, fmt.Errorf("序列化 ChatGPT 会话: %w", err)
+		return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.marshal_chatgpt"), err)
 	}
 	data = append(data, '\n')
 	if _, err := w.Write(data); err != nil {
-		return rep, fmt.Errorf("写 ChatGPT 会话: %w", err)
+		return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.write_chatgpt"), err)
 	}
 	rep.Bytes = int64(len(data))
 	return rep, nil
@@ -144,17 +145,17 @@ func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
 			if p.Text != "" {
 				texts = append(texts, p.Text)
 			}
-			counts["文档原文件（只带提取的文本）"]++
+			counts[i18n.T("exchange.io.drop.doc_raw")]++
 		case conversation.PartImage, conversation.PartAudio:
 			// 一个字段都不写：ChatGPT 的图片是它的文件服务句柄，我们这边没有可用的地址，
 			// 硬塞一个对方取不到的伪指针只是把「没带」包装成「带了但取不到」。
-			counts["附件（不带字节）"]++
+			counts[i18n.T("exchange.io.drop.attach_no_bytes")]++
 		case conversation.PartThinking:
-			counts["思考过程"]++
+			counts[i18n.T("exchange.io.drop.thinking")]++
 		case conversation.PartTool:
-			counts["工具调用"]++
+			counts[i18n.T("exchange.io.drop.tool")]++
 		default:
-			counts["认不出的分片"]++
+			counts[i18n.T("exchange.io.drop.unknown_part")]++
 		}
 	}
 	if len(texts) == 0 {
@@ -176,20 +177,20 @@ func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
 // 按条列会把回执刷成一页。
 func countChatMeta(m conversation.Message, counts map[string]int) {
 	if m.Outcome != "" {
-		counts["消息终态"]++
+		counts[i18n.T("exchange.io.drop.outcome")]++
 	}
 	if m.Model != "" {
-		counts["模型标注"]++
+		counts[i18n.T("exchange.io.drop.model")]++
 	}
 	if m.Usage != (conversation.Usage{}) {
-		counts["token 用量"]++
+		counts[i18n.T("exchange.io.drop.usage")]++
 	}
 	if m.Source != "" || m.Trust != conversation.TrustExternal || m.Trigger {
-		counts["注入来源与信任级"]++
+		counts[i18n.T("exchange.io.drop.source")]++
 	}
 	for _, p := range m.Content {
 		if p.Kind == conversation.PartThinking && p.Signature != "" {
-			counts["思考签名"]++
+			counts[i18n.T("exchange.io.drop.signature")]++
 		}
 	}
 }
@@ -211,7 +212,7 @@ func chatRole(r conversation.Role) string {
 // importChatGPT 读一份 ChatGPT 导出（数组只取第 1 个会话）。
 func (e *Exchange) importChatGPT(ctx context.Context, r io.Reader) (*conversation.Conversation, port.ExchangeReport, error) {
 	rep := port.ExchangeReport{Format: "chatgpt"}
-	data, err := readLimited(r, maxImportBytes, "文件")
+	data, err := readLimited(r, maxImportBytes, i18n.T("exchange.io.what.file"))
 	if err != nil {
 		return nil, rep, err
 	}
@@ -223,17 +224,17 @@ func (e *Exchange) importChatGPT(ctx context.Context, r io.Reader) (*conversatio
 		// 也接受单个会话对象（有些工具导出时不套数组）。
 		var single chatConversation
 		if err2 := json.Unmarshal(data, &single); err2 != nil || single.Mapping == nil {
-			return nil, rep, fmt.Errorf("解析 ChatGPT 会话: %w", err)
+			return nil, rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.parse_chatgpt"), err)
 		}
 		env = chatEnvelope{single}
 	}
 	if len(env) == 0 {
-		return nil, rep, errors.New("文件里没有会话")
+		return nil, rep, errors.New(i18n.T("exchange.err.no_conversation_in_file"))
 	}
 	in := parseChatTree(env[0])
 	if len(env) > 1 {
 		in.Dropped = append(in.Dropped,
-			fmt.Sprintf("另外 %d 个会话（一个文件里只导入第 1 个）", len(env)-1))
+			i18n.Tf("exchange.io.dropped.extra_conversations", "count", len(env)-1))
 	}
 	c, err := materialize(&in)
 	if err != nil {
@@ -270,7 +271,7 @@ func parseChatTree(conv chatConversation) importedTree {
 		}
 		role, ok := chatImportRole(n.Message.Author.Role)
 		if !ok {
-			counts["角色 "+n.Message.Author.Role+" 的消息"]++
+			counts[i18n.Tf("exchange.io.drop.unknown_role", "role", n.Message.Author.Role)]++
 			continue
 		}
 		parts := parseChatContent(n.Message.Content, counts)
@@ -369,14 +370,14 @@ func parseChatContent(content chatContent, counts map[string]int) []conversation
 			ContentType string `json:"content_type"`
 		}
 		if err := json.Unmarshal(raw, &obj); err != nil {
-			counts["认不出的正文分片"]++
+			counts[i18n.T("exchange.io.drop.content_part")]++
 			continue
 		}
 		switch obj.ContentType {
 		case "image_asset_pointer":
-			counts["图片引用（只有地址，字节取不到）"]++
+			counts[i18n.T("exchange.io.drop.image_ref")]++
 		default:
-			counts["正文分片 "+obj.ContentType]++
+			counts[i18n.Tf("exchange.io.drop.part_kind", "kind", obj.ContentType)]++
 		}
 	}
 	if len(parts) == 0 {
@@ -385,7 +386,7 @@ func parseChatContent(content chatContent, counts map[string]int) []conversation
 			// 这几种只是「装不下」的纯附件消息：分片层的丢项已逐类记过，这里不再重复。
 			// 「整条消息因此消失」由调用方统一记一条，两条事实分开说。
 		default:
-			counts["正文类型 "+content.ContentType+" 的消息"]++
+			counts[i18n.Tf("exchange.io.drop.content_type", "kind", content.ContentType)]++
 		}
 	}
 	return parts
@@ -396,7 +397,7 @@ func droppedLines(counts map[string]int) []string {
 	lines := make([]string, 0, len(counts))
 	for kind, n := range counts {
 		if n > 0 {
-			lines = append(lines, fmt.Sprintf("%s %d 个", kind, n))
+			lines = append(lines, i18n.Tf("exchange.io.dropped.line", "kind", kind, "count", n))
 		}
 	}
 	sort.Strings(lines)

@@ -11,6 +11,7 @@ package platform
 
 import (
 	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"runtime"
 	"sync/atomic"
 	"syscall"
@@ -305,7 +306,7 @@ func (p *Plat) PostMenu(kind MenuKind) {
 	}
 	h := shellHWND.Load()
 	if h == 0 {
-		p.Notice(unsupported("原生右键菜单"))
+		p.Notice(unsupported(i18n.T("ui.platform.feature.menu")))
 		return
 	}
 	procPostMessageW.Call(h, msg, 0, 0)

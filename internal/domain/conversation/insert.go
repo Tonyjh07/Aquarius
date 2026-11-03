@@ -17,7 +17,11 @@ package conversation
 // 两个入口：InsertBefore 只给内容（手写摘要）；InsertCommitted 接受**已组装**的衬垫节点
 // （模型生成的摘要要记 Model/Usage 记账，与 AppendCommitted 对已组装节点的口径一致）。
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
+)
 
 // insertablePadRole 衬垫节点可用的角色（D152/D150）：衬垫是上下文/水位，不是伪造的发言，
 // 故只放 system（水位）与 inject（只追加的上下文）。D152 先把闸门按 system 收，注入节点
@@ -42,14 +46,14 @@ func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, erro
 		return Message{}, fmt.Errorf("insert before %q: %w", id, ErrNotFound)
 	}
 	if target.Role == RoleRoot {
-		return Message{}, fmt.Errorf("insert before %q: %w: 会话根节点之前无处可插", id, ErrInvalidNode)
+		return Message{}, fmt.Errorf("%s: %w", i18n.Tf("conv.err.insert_root", "id", id), ErrInvalidNode)
 	}
 	if !insertablePadRole(pad.Role) {
-		return Message{}, fmt.Errorf("insert before %q: %w: 衬垫节点角色仅限 system|inject（实为 %q）",
-			id, ErrInvalidNode, pad.Role)
+		return Message{}, fmt.Errorf("%s: %w",
+			i18n.Tf("conv.err.insert_pad_role", "id", id, "role", pad.Role), ErrInvalidNode)
 	}
 	if len(pad.Content) == 0 {
-		return Message{}, fmt.Errorf("insert before %q: %w: 衬垫节点没有内容", id, ErrInvalidNode)
+		return Message{}, fmt.Errorf("%s: %w", i18n.Tf("conv.err.insert_pad_empty", "id", id), ErrInvalidNode)
 	}
 	parent := target.Parent
 	pad.Parent = parent // 位置由目标决定，调用方给的 Parent 不作数
@@ -76,8 +80,8 @@ func (c *Conversation) InsertCommitted(id MessageID, pad Message) (Message, erro
 		}
 	}
 	if idx < 0 {
-		return Message{}, fmt.Errorf("insert before %q: %w: 目标节点在父节点 %q 下没有边",
-			id, ErrInvalidNode, parent)
+		return Message{}, fmt.Errorf("%s: %w",
+			i18n.Tf("conv.err.insert_missing_edge", "id", id, "parent", parent), ErrInvalidNode)
 	}
 	stored := pad.Clone()
 	c.nodes[stored.ID] = stored

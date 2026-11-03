@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -89,8 +90,10 @@ func TestCatalogSkipsInvalidEntries(t *testing.T) {
 	if len(warns) != 4 {
 		t.Fatalf("warnings = %d 条：%v", len(warns), warns)
 	}
+	// 断言跟 key 走：模板里 {dir} 之前的那半句必须出现在每条警告里。
+	label, _, _ := strings.Cut(i18n.T("skill.err.skill_skipped"), "{dir}")
 	for _, w := range warns {
-		if !strings.Contains(w, "已跳过") {
+		if !strings.Contains(w, label) {
 			t.Fatalf("警告缺原因说明：%q", w)
 		}
 	}
@@ -111,7 +114,9 @@ func TestCatalogDuplicateNameFirstRootWins(t *testing.T) {
 		t.Fatalf("生效的是后一份：%+v", doc.Info)
 	}
 	warns := c.Warnings(context.Background())
-	if len(warns) != 1 || !strings.Contains(warns[0], "重复") {
+	want := i18n.Tf("skill.err.skill_duplicate", "name", "same",
+		"prev", filepath.Join(a, "same"), "dir", filepath.Join(b, "same"))
+	if len(warns) != 1 || !strings.Contains(warns[0], want) {
 		t.Fatalf("warnings = %v", warns)
 	}
 }
@@ -159,11 +164,13 @@ func TestCatalogLoadBodyLine(t *testing.T) {
 
 // TestCatalogDropsRelativeRoot 相对路径根丢弃（无 cwd 概念），空根只记警告。
 func TestCatalogDropsRelativeRoot(t *testing.T) {
-	c := New(Options{Dirs: []string{"skills", "", filepath.Join(t.TempDir(), "missing")}})
+	missing := filepath.Join(t.TempDir(), "missing")
+	c := New(Options{Dirs: []string{"skills", "", missing}})
 	if dirs := c.Dirs(); len(dirs) != 1 {
 		t.Fatalf("dirs = %v, want 只保留绝对路径", dirs)
 	}
-	if warns := c.Warnings(context.Background()); len(warns) != 1 || !strings.Contains(warns[0], "不存在") {
+	if warns := c.Warnings(context.Background()); len(warns) != 1 ||
+		!strings.Contains(warns[0], i18n.Tf("skill.err.catalog_dir_missing", "dir", missing)) {
 		t.Fatalf("warnings = %v", warns)
 	}
 }

@@ -6,6 +6,7 @@
 package platform
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"syscall"
 	"unsafe"
 )
@@ -37,7 +38,7 @@ func (p *Plat) showSkillPick(kind PickKind) {
 	var path string
 	switch kind {
 	case PickSkillDir:
-		path = browseForFolder("选择技能文件夹")
+		path = browseForFolder(i18n.T("ui.platform.dlg.skill_dir"))
 	case PickCharacterCard:
 		path = openCharacterCard()
 	default:
@@ -52,33 +53,33 @@ func (p *Plat) showSkillPick(kind PickKind) {
 // openSkillFile 单选技能文件（SKILL.md / .zip）。
 func openSkillFile() string {
 	filter := utf16Pairs(
-		"技能文件 (SKILL.md, *.zip)",
+		i18n.T("ui.platform.filter.skill")+" (SKILL.md, *.zip)",
 		"SKILL.md;*.zip",
 		"Markdown (*.md)",
 		"*.md",
-		"压缩包 (*.zip)",
+		i18n.T("ui.platform.filter.zip")+" (*.zip)",
 		"*.zip",
-		"所有文件 (*.*)",
+		i18n.T("ui.platform.filter.all")+" (*.*)",
 		"*.*",
 	)
-	return openSingleFile(filter, "选择技能文件")
+	return openSingleFile(filter, i18n.T("ui.platform.dlg.skill_file"))
 }
 
 // openCharacterCard 单选角色卡文件（PNG / JSON / .charx）。
 func openCharacterCard() string {
 	filter := utf16Pairs(
-		"角色卡 (PNG / JSON / .charx)",
+		i18n.T("ui.platform.filter.character")+" (PNG / JSON / .charx)",
 		"*.png;*.json;*.charx",
-		"PNG 卡 (*.png)",
+		i18n.T("ui.platform.filter.card_png")+" (*.png)",
 		"*.png",
-		"JSON 卡 (*.json)",
+		i18n.T("ui.platform.filter.card_json")+" (*.json)",
 		"*.json",
-		"角色卡包 (*.charx)",
+		i18n.T("ui.platform.filter.card_charx")+" (*.charx)",
 		"*.charx",
-		"所有文件 (*.*)",
+		i18n.T("ui.platform.filter.all")+" (*.*)",
 		"*.*",
 	)
-	return openSingleFile(filter, "选择角色卡文件")
+	return openSingleFile(filter, i18n.T("ui.platform.dlg.character_card"))
 }
 
 // openSingleFile 单选文件框（OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST）：filter 为

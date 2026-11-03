@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -57,7 +58,7 @@ type ParsedCard struct {
 // sourceName 只用于按扩展名区分 JSON（内容看着像，扩展名也得对得上）。
 func parseCard(sourceName string, data []byte) (ParsedCard, error) {
 	if len(data) > maxCardFileBytes {
-		return ParsedCard{}, fmt.Errorf("卡文件 %d MiB 超过 %d MiB 上限", len(data)>>20, maxCardFileBytes>>20)
+		return ParsedCard{}, errors.New(i18n.Tf("char.load.file_too_big", "size", len(data)>>20, "limit", maxCardFileBytes>>20))
 	}
 	switch {
 	case bytes.HasPrefix(data, pngMagic):
@@ -84,7 +85,7 @@ func parseCard(sourceName string, data []byte) (ParsedCard, error) {
 		out.RawJSON = data
 		return out, nil
 	default:
-		return ParsedCard{}, errors.New("认不出这是哪种角色卡（支持 PNG、JSON 与 .charx）")
+		return ParsedCard{}, errors.New(i18n.T("char.load.unknown_format"))
 	}
 }
 
@@ -99,11 +100,11 @@ func looksLikeJSONObject(data []byte) bool {
 func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
 	clean := bytes.TrimPrefix(raw, bom) // 进场先去 BOM：json.Unmarshal 拒它
 	if len(clean) > maxCardJSONBytes {
-		return ParsedCard{}, rawCardData{}, fmt.Errorf("卡 JSON 解码后 %d MiB 超过 %d MiB 上限", len(clean)>>20, maxCardJSONBytes>>20)
+		return ParsedCard{}, rawCardData{}, errors.New(i18n.Tf("char.load.json_too_big", "size", len(clean)>>20, "limit", maxCardJSONBytes>>20))
 	}
 	var rc rawCard
 	if err := json.Unmarshal(clean, &rc); err != nil {
-		return ParsedCard{}, rawCardData{}, fmt.Errorf("卡 JSON 解析失败: %w", err)
+		return ParsedCard{}, rawCardData{}, fmt.Errorf("%s: %w", i18n.T("char.load.json_parse"), err)
 	}
 
 	var (
@@ -121,15 +122,15 @@ func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
 	} else {
 		var top rawCardData
 		if err := json.Unmarshal(clean, &top); err != nil {
-			return ParsedCard{}, rawCardData{}, fmt.Errorf("卡 JSON 顶层解析失败: %w", err)
+			return ParsedCard{}, rawCardData{}, fmt.Errorf("%s: %w", i18n.T("char.load.json_top_parse"), err)
 		}
 		if isPureV1(top) {
-			return ParsedCard{}, rawCardData{}, errors.New("这是旧版规范（V1）的角色卡，本版不读；请导出为 V2 / V3 后再导入")
+			return ParsedCard{}, rawCardData{}, errors.New(i18n.T("char.load.pure_v1"))
 		}
 		if spec == "" {
 			spec = "v2"
 		}
-		warnings = append(warnings, "卡里没有规范的 data 结构，已按顶层字段尽力读取")
+		warnings = append(warnings, i18n.T("char.load.no_data_fallback"))
 		d = top
 	}
 	if spec == "" {
@@ -138,7 +139,7 @@ func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
 
 	name := strings.TrimSpace(d.Name)
 	if name == "" {
-		return ParsedCard{}, rawCardData{}, errors.New("卡里没有 name（角色名必填，不从文件名猜）")
+		return ParsedCard{}, rawCardData{}, errors.New(i18n.T("char.load.name_missing"))
 	}
 	display := strings.TrimSpace(d.Nickname)
 	if display == "" {
@@ -152,7 +153,7 @@ func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
 	entries := make([]port.BookEntry, 0, bookLen(d))
 	for _, e := range d.bookEntries() {
 		if len(e.Content) > maxFieldBytes {
-			return ParsedCard{}, rawCardData{}, fmt.Errorf("世界书条目 %q 的正文超过 %d KiB 上限", e.Comment, maxFieldBytes>>10)
+			return ParsedCard{}, rawCardData{}, errors.New(i18n.Tf("char.load.book_entry_too_big", "comment", e.Comment, "limit", maxFieldBytes>>10))
 		}
 		entries = append(entries, port.BookEntry{
 			Comment:  e.Comment,
@@ -203,11 +204,11 @@ func checkProjectedFields(d rawCardData) error {
 	}
 	for _, f := range fields {
 		if len(f.val) > maxFieldBytes {
-			return fmt.Errorf("投影字段 %s 超过 %d KiB 上限", f.name, maxFieldBytes>>10)
+			return errors.New(i18n.Tf("char.load.field_too_big", "field", f.name, "limit", maxFieldBytes>>10))
 		}
 	}
 	if n := len([]rune(d.PostHistoryInstructions)); n > maxTailRunes {
-		return fmt.Errorf("post_history_instructions 有 %d 字符，超过 %d 字符上限", n, maxTailRunes)
+		return errors.New(i18n.Tf("char.load.tail_too_long", "n", n, "max", maxTailRunes))
 	}
 	return nil
 }
@@ -326,9 +327,9 @@ func detectSpec(spec, version string) (string, string) {
 		return "v2", ""
 	default:
 		if n, err := strconv.Atoi(major); err == nil && n > 3 {
-			return "v3+", fmt.Sprintf("卡片声明规范版本 %s，高于本版读的 3.x；已知字段照常读取", ver)
+			return "v3+", i18n.Tf("char.load.spec_too_new", "version", ver)
 		}
-		return "v2", fmt.Sprintf("卡片声明规范版本 %q 认不出，已按 V2 形状读取", ver)
+		return "v2", i18n.Tf("char.load.spec_unknown", "version", ver)
 	}
 }
 
@@ -341,7 +342,7 @@ func pngCardJSON(data []byte) ([]byte, error) {
 	}
 	decoded, err := decodeBase64Loose(text)
 	if err != nil {
-		return nil, fmt.Errorf("PNG 里的角色卡数据不是合法 base64: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("char.load.png_bad_base64"), err)
 	}
 	return decoded, nil
 }
@@ -375,7 +376,7 @@ func pngText(data []byte) (string, error) {
 	case hasChara:
 		return chara, nil
 	default:
-		return "", errors.New("PNG 里没有角色卡数据（缺少 tEXt 块 ccv3 / chara）")
+		return "", errors.New(i18n.T("char.load.png_no_card"))
 	}
 }
 

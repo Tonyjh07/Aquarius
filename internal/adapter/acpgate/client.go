@@ -2,10 +2,11 @@ package acpgate
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // client ACP 客户端的九个方法（`acp.Client`）。本版只真做两件事：收过程通知、
@@ -52,9 +53,9 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 	switch {
 	case c.m.opts.CurrentSession != nil && r.session != "" && c.m.opts.CurrentSession() != "" &&
 		c.m.opts.CurrentSession() != r.session:
-		denyReason = "你不在发起这次转交的会话"
+		denyReason = i18n.T("acp.deny.not_in_session")
 	case c.m.opts.Confirmer == nil:
-		denyReason = "本构建没有配置确认器"
+		denyReason = i18n.T("acp.deny.no_confirmer")
 	}
 	allow := false
 	if denyReason == "" {
@@ -70,7 +71,7 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 		default:
 			denyReason = strings.TrimSpace(ans.Reason)
 			if denyReason == "" {
-				denyReason = "用户拒绝"
+				denyReason = i18n.T("acp.deny.user_refused")
 			}
 		}
 	}
@@ -118,14 +119,14 @@ func pickOption(opts []acp.PermissionOption, allow bool) (acp.PermissionOptionId
 // 在它自己判断下动手，权限核对它只覆盖它愿意问的那部分（§5.18/§9）。
 func permissionPrompt(a Agent, p acp.RequestPermissionRequest) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "外部代理「%s」请求执行一个操作：", a.Name)
+	b.WriteString(i18n.Tf("acp.prompt.head", "agent", a.Name))
 	if t := p.ToolCall.Title; t != nil && strings.TrimSpace(*t) != "" {
 		b.WriteString("\n  " + strings.TrimSpace(*t))
 	}
 	if s := toolCallText(p.ToolCall); s != "" {
 		b.WriteString("\n  " + s)
 	}
-	b.WriteString("\n\n该代理有它自己的文件与命令访问；批准 = 允许它按自己的判断动手。")
+	b.WriteString("\n\n" + i18n.T("acp.prompt.foot"))
 	return b.String()
 }
 

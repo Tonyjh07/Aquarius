@@ -15,6 +15,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -119,7 +120,7 @@ func TestIngestMultiplePartialFailure(t *testing.T) {
 	if len(rep.Parts) != 1 || rep.Parts[0].Kind != conversation.PartDoc {
 		t.Fatalf("parts = %+v, want 只留成功项", rep.Parts)
 	}
-	if !strings.Contains(rep.Note, "跳过") || !strings.Contains(rep.Note, "missing.txt") {
+	if !strings.Contains(rep.Note, trHead("ingest.note.skipped")) || !strings.Contains(rep.Note, "missing.txt") {
 		t.Fatalf("note = %q, want 列出被跳过项", rep.Note)
 	}
 }
@@ -135,7 +136,8 @@ func TestIngestMultipleAllFail(t *testing.T) {
 	if err == nil {
 		t.Fatal("全失败应报错")
 	}
-	for _, want := range []string{"全部摄取失败", "m1.txt", "not-abs.txt", "绝对路径"} {
+	for _, want := range []string{trHead("ingest.err.all_failed"), "m1.txt", "not-abs.txt",
+		trHead("ingest.err.relative_path")} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("err = %v, want 含 %q", err, want)
 		}
@@ -274,7 +276,7 @@ func TestIngestBinaryDoc(t *testing.T) {
 func TestIngestRejects(t *testing.T) {
 	in, _, dir := newIngestor(t)
 	if _, err := in.Ingest(context.Background(), port.RawInput{Kind: "file", File: "rel/a.txt"}); err == nil ||
-		!strings.Contains(err.Error(), "绝对路径") {
+		!strings.Contains(err.Error(), trHead("ingest.err.relative_path")) {
 		t.Fatalf("相对路径 err = %v", err)
 	}
 	if _, err := in.Ingest(context.Background(), port.RawInput{
@@ -284,7 +286,7 @@ func TestIngestRejects(t *testing.T) {
 	}
 	bare := &Ingestor{}
 	if _, err := bare.Ingest(context.Background(), port.RawInput{Kind: "file", File: filepath.Join(dir, "x")}); err == nil ||
-		!strings.Contains(err.Error(), "附件库") {
+		!strings.Contains(err.Error(), i18n.T("ingest.err.no_blob_store")) {
 		t.Fatalf("nil blobs err = %v", err)
 	}
 }
@@ -431,7 +433,8 @@ func TestIngestXLSXExtract(t *testing.T) {
 		t.Fatalf("ingest: %v", err)
 	}
 	txt := partText(t, rep)
-	for _, want := range []string{"〔工作表 Sheet1〕", "Hello Aquarius XLSX", "42", "〔工作表 数据〕", "中文表"} {
+	for _, want := range []string{i18n.Tf("ingest.doc.sheet", "sheet", "Sheet1"), "Hello Aquarius XLSX", "42",
+		i18n.Tf("ingest.doc.sheet", "sheet", "数据"), "中文表"} {
 		if !strings.Contains(txt, want) {
 			t.Fatalf("xlsx 提取文本缺 %q:\n%s", want, txt)
 		}
@@ -522,4 +525,13 @@ func TestIngestDocOversize(t *testing.T) {
 	if txt := partText(t, rep); !strings.Contains(txt, "failed to parse") {
 		t.Fatalf("超限应回落占位: %q", txt)
 	}
+}
+
+// trHead 文案里第一个占位符之前的那截：断言跟着 key 走，实参不在这里重复。
+func trHead(key string) string {
+	t := i18n.T(key)
+	if i := strings.Index(t, "{"); i >= 0 {
+		return t[:i]
+	}
+	return t
 }

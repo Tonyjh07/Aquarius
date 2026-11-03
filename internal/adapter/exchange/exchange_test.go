@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +17,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -197,7 +200,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 		{
 			name:  "缺 manifest",
 			files: map[string]string{"conversations/1/tree.json": "{}"},
-			want:  "manifest",
+			want:  i18n.T("exchange.err.no_manifest_foreign"),
 		},
 		{
 			// 旧单树形状：认得出来就该说「这是旧版」，而不是含糊地报「缺清单」。
@@ -206,7 +209,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 				"manifest.json": `{"format":"aqx","version":1}`,
 				"tree.json":     "{}",
 			},
-			want: "旧版归档格式",
+			want: i18n.T("exchange.err.legacy_archive"),
 		},
 		{
 			name: "更高版本",
@@ -214,7 +217,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 				"manifest.json":             `{"format":"aqx","version":99}`,
 				"conversations/1/tree.json": "{}",
 			},
-			want: "高于本程序支持",
+			want: i18n.Tf("exchange.err.version_too_new", "version", 99, "supported", aqxVersion),
 		},
 		{
 			name: "tree 不是合法树",
@@ -222,7 +225,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 				"manifest.json":             `{"format":"aqx","version":1,"conversations":[{"id":"x","title":"t","nodes":1}]}`,
 				"conversations/1/tree.json": `{"id":"x","title":"t","head":"nope","nodes":{},"children":{}}`,
 			},
-			want: "根节点",
+			want: i18n.T("store.err.legacy_root"),
 		},
 		{
 			name: "不认识的文件名混进归档",
@@ -231,7 +234,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 				"conversations/1/tree.json": "{}",
 				"other.txt":                 "x",
 			},
-			want: "不认识的条目",
+			want: i18n.Tf("exchange.err.unknown_entries", "names", "other.txt"),
 		},
 		{
 			// zip-slip：条目名带 `..` 不能只是「safeArchivePath 单函数测过」——要走 Import
@@ -242,7 +245,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 				"conversations/1/tree.json": "{}",
 				"../../../evil.json":        "x",
 			},
-			want: "越出解包目录",
+			want: i18n.Tf("exchange.err.entry_escape", "name", "../../../evil.json"),
 		},
 		{
 			name: "绝对路径条目",
@@ -251,7 +254,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 				"conversations/1/tree.json": "{}",
 				"/etc/passwd":               "x",
 			},
-			want: "绝对路径",
+			want: i18n.Tf("exchange.err.entry_abs_path", "name", "/etc/passwd"),
 		},
 	}
 	for _, tc := range cases {
@@ -277,7 +280,7 @@ func TestImportRejectsOversizedArchive(t *testing.T) {
 		many[fmt.Sprintf("blobs/%064d", i)] = "x"
 	}
 	if _, _, err := importOne(context.Background(), ex, bytes.NewReader(zipBytes(t, many)), aqx); err == nil ||
-		!strings.Contains(err.Error(), "条目数") {
+		!strings.Contains(err.Error(), trHead("exchange.err.too_many_entries")) {
 		t.Fatalf("条目数超限 err = %v, want 条目数", err)
 	}
 }
@@ -309,8 +312,12 @@ func TestImportRejectsBlobHashMismatch(t *testing.T) {
 	})
 	_, _, err = importOne(context.Background(), New(Options{Blobs: blobs}),
 		bytes.NewReader(data), port.ExchangeFormat{Name: "aqx"})
-	if err == nil || !strings.Contains(err.Error(), "哈希不符") {
-		t.Fatalf("err = %v, want 哈希不符", err)
+	// 报因里点名「这个名字、却是另一份字节」：两个哈希都由测试自己算，断言跟着 key 走。
+	bad := sha256.Sum256([]byte("内容与名字对不上"))
+	want := i18n.Tf("exchange.err.blob_hash_mismatch",
+		"name", "blobs/"+ref.Hash, "want", shortHash(ref.Hash), "got", shortHash(hex.EncodeToString(bad[:])))
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want 含 %q", err, want)
 	}
 }
 
@@ -401,7 +408,7 @@ func TestExportWithoutBlobStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	if len(rep.Dropped) == 0 || !strings.Contains(rep.Dropped[0], "附件") {
+	if len(rep.Dropped) == 0 || !strings.Contains(rep.Dropped[0], trHead("exchange.io.dropped.missing_blob")) {
 		t.Fatalf("回执应说明附件字节没带上，实际 %v", rep.Dropped)
 	}
 	// 树本身仍然无损：导入后节点与边齐全，只是取不到附件字节。
@@ -412,7 +419,7 @@ func TestExportWithoutBlobStore(t *testing.T) {
 	if got.NodeCount() != src.NodeCount() {
 		t.Fatalf("节点数 = %d, want %d", got.NodeCount(), src.NodeCount())
 	}
-	if len(irep.Dropped) == 0 || !strings.Contains(strings.Join(irep.Dropped, " "), "附件") {
+	if len(irep.Dropped) == 0 || !strings.Contains(strings.Join(irep.Dropped, " "), trHead("exchange.io.dropped.no_blob_store")) {
 		t.Fatalf("导入回执应说明附件字节没入库，实际 %v", irep.Dropped)
 	}
 }
@@ -425,11 +432,11 @@ func TestExportFormatsNotWired(t *testing.T) {
 	c := conversation.New("c1", "t")
 	var buf bytes.Buffer
 	if _, err := exportOne(context.Background(), ex, c, "openwebui", &buf); err == nil ||
-		!strings.Contains(err.Error(), "只认不写") {
+		!strings.Contains(err.Error(), i18n.T("exchange.err.openwebui_readonly")) {
 		t.Fatalf("openwebui: err = %v", err)
 	}
 	if _, err := exportOne(context.Background(), ex, c, "不存在", &buf); err == nil ||
-		!strings.Contains(err.Error(), "可写") {
+		!strings.Contains(err.Error(), trHead("exchange.err.unknown_export")) {
 		t.Fatalf("未知格式应列出可写格式: %v", err)
 	}
 }

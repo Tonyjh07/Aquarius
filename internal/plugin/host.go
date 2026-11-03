@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -152,13 +154,13 @@ func (h *Host) Start(ctx context.Context) {
 			continue
 		}
 		if !h.trustGate(ctx, d) {
-			h.setStatus(name, StatusRevoked, "未获信任或确认被拒绝（fail-closed）")
+			h.setStatus(name, StatusRevoked, i18n.T("plugin.host.status_untrusted"))
 			continue
 		}
 		if h.grant(ctx, d) {
 			h.connect(ctx, name)
 		} else {
-			h.setStatus(name, StatusRevoked, "授权被拒绝或缺少确认器（fail-closed）")
+			h.setStatus(name, StatusRevoked, i18n.T("plugin.host.status_ungranted"))
 		}
 	}
 	h.changed()
@@ -242,8 +244,8 @@ func (h *Host) trustGate(ctx context.Context, d Decl) bool {
 		h.logf("[plugin] %s: 尚未信任且无人可确认，按失败即拒绝跳过", d.Name)
 		return false
 	}
-	prompt := fmt.Sprintf("插件 %q 来自插件目录（%s），本次启动要运行它？\n启动方式：%s",
-		d.Name, SourcePlugins, d.LaunchDesc())
+	prompt := i18n.Tf("plugin.host.trust_prompt",
+		"name", d.Name, "source", SourcePlugins, "launch", d.LaunchDesc())
 	ans, err := h.confirm.Confirm(ctx, prompt)
 	if err != nil {
 		h.logf("[plugin] %s: 信任确认失败: %v", d.Name, err)
@@ -296,7 +298,7 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		}
 	}()
 	for _, c := range pending {
-		ans, err := h.confirm.Confirm(ctx, fmt.Sprintf("插件 %q 请求能力 %q，允许？", d.Name, c))
+		ans, err := h.confirm.Confirm(ctx, i18n.Tf("plugin.host.grant_prompt", "name", d.Name, "cap", c))
 		if err != nil {
 			h.logf("[plugin] %s: 确认 %s 失败: %v", d.Name, c, err)
 			return false
@@ -384,7 +386,7 @@ func (h *Host) watch(name string, s Session, base context.Context) {
 	}
 	m.session = nil
 	if m.restarts >= maxRestarts {
-		msg := fmt.Sprintf("崩溃重启超限（%d 次）: %v", maxRestarts, werr)
+		msg := i18n.Tf("plugin.host.crash_limit", "n", maxRestarts, "err", werr)
 		m.status = StatusCrashed
 		m.lastErr = msg
 		h.mu.Unlock()
@@ -438,7 +440,7 @@ func (h *Host) Enable(ctx context.Context, name string) error {
 	d, ok := h.decls[name]
 	if !ok {
 		h.mu.Unlock()
-		return fmt.Errorf("未声明的插件 %q（既不在 config mcpServers 也无 plugin.json）", name)
+		return errors.New(i18n.Tf("plugin.host.err_unknown", "name", name))
 	}
 	prev := h.states[name]
 	on := true
@@ -451,18 +453,18 @@ func (h *Host) Enable(ctx context.Context, name string) error {
 	h.mu.Unlock()
 	perr := h.saveStates()
 	if !h.trustGate(ctx, d) {
-		h.setStatus(name, StatusRevoked, "未获信任或确认被拒绝（fail-closed）")
+		h.setStatus(name, StatusRevoked, i18n.T("plugin.host.status_untrusted"))
 		h.changed()
-		return fmt.Errorf("%s 未获信任，本次不连接", name)
+		return errors.New(i18n.Tf("plugin.host.err_untrusted", "name", name))
 	}
 	if h.grant(ctx, d) {
 		h.connect(ctx, name)
 	} else {
-		h.setStatus(name, StatusRevoked, "授权被拒绝或缺少确认器（fail-closed）")
+		h.setStatus(name, StatusRevoked, i18n.T("plugin.host.status_ungranted"))
 	}
 	h.changed()
 	if perr != nil {
-		return fmt.Errorf("%s 已在本次运行生效，但状态写回 config 失败: %w", name, perr)
+		return fmt.Errorf("%s: %w", i18n.Tf("plugin.host.err_enable_persist", "name", name), perr)
 	}
 	return nil
 }
@@ -473,7 +475,7 @@ func (h *Host) Disable(name string) error {
 	_, ok := h.decls[name]
 	if !ok {
 		h.mu.Unlock()
-		return fmt.Errorf("未声明的插件 %q（既不在 config mcpServers 也无 plugin.json）", name)
+		return errors.New(i18n.Tf("plugin.host.err_unknown", "name", name))
 	}
 	prev := h.states[name]
 	off := false
@@ -484,7 +486,7 @@ func (h *Host) Disable(name string) error {
 	h.setStatus(name, StatusDisabled, "")
 	h.changed()
 	if perr != nil {
-		return fmt.Errorf("%s 已在本次运行停用，但状态写回 config 失败: %w", name, perr)
+		return fmt.Errorf("%s: %w", i18n.Tf("plugin.host.err_disable_persist", "name", name), perr)
 	}
 	return nil
 }
@@ -496,7 +498,7 @@ func (h *Host) GrantCap(name string, cap string) error {
 	h.mu.Lock()
 	if _, ok := h.decls[name]; !ok {
 		h.mu.Unlock()
-		return fmt.Errorf("未声明的插件 %q", name)
+		return errors.New(i18n.Tf("plugin.host.err_unknown_short", "name", name))
 	}
 	cur := h.states[name]
 	if !cur.HasGranted(cap) {
@@ -507,7 +509,7 @@ func (h *Host) GrantCap(name string, cap string) error {
 	perr := h.saveStates()
 	h.changed() // 授权态变化可见（设置窗快照刷新）
 	if perr != nil {
-		return fmt.Errorf("%s 已在本次运行预授权 %s，但状态写回 config 失败: %w", name, cap, perr)
+		return fmt.Errorf("%s: %w", i18n.Tf("plugin.host.err_grant_persist", "name", name, "cap", cap), perr)
 	}
 	return nil
 }
@@ -519,7 +521,7 @@ func (h *Host) RevokeGrant(name string, cap string) error {
 	h.mu.Lock()
 	if _, ok := h.decls[name]; !ok {
 		h.mu.Unlock()
-		return fmt.Errorf("未声明的插件 %q", name)
+		return errors.New(i18n.Tf("plugin.host.err_unknown_short", "name", name))
 	}
 	prev := h.states[name]
 	granted := make([]string, 0, len(prev.Granted))
@@ -533,10 +535,10 @@ func (h *Host) RevokeGrant(name string, cap string) error {
 	h.mu.Unlock()
 	perr := h.saveStates()
 	h.stop(name)
-	h.setStatus(name, StatusDisabled, "能力已撤销并停用（再启用即重走确认）")
+	h.setStatus(name, StatusDisabled, i18n.T("plugin.host.status_revoked_grant"))
 	h.changed()
 	if perr != nil {
-		return fmt.Errorf("%s 已在本次运行停用并撤销能力 %s，但状态写回 config 失败: %w", name, cap, perr)
+		return fmt.Errorf("%s: %w", i18n.Tf("plugin.host.err_revoke_persist", "name", name, "cap", cap), perr)
 	}
 	return nil
 }
@@ -549,11 +551,11 @@ func (h *Host) RevokeTrust(name string) error {
 	d, ok := h.decls[name]
 	if !ok {
 		h.mu.Unlock()
-		return fmt.Errorf("未声明的插件 %q", name)
+		return errors.New(i18n.Tf("plugin.host.err_unknown_short", "name", name))
 	}
 	if d.Source != SourcePlugins {
 		h.mu.Unlock()
-		return fmt.Errorf("%s 来自 config（用户显式信任），不提供撤销信任", name)
+		return errors.New(i18n.Tf("plugin.host.err_trust_config", "name", name))
 	}
 	cur := h.states[name]
 	cur.Trusted = ""
@@ -561,10 +563,10 @@ func (h *Host) RevokeTrust(name string) error {
 	h.mu.Unlock()
 	perr := h.saveStates()
 	h.stop(name)
-	h.setStatus(name, StatusRevoked, "信任已撤销（下次启用重新确认）")
+	h.setStatus(name, StatusRevoked, i18n.T("plugin.host.status_revoked_trust"))
 	h.changed()
 	if perr != nil {
-		return fmt.Errorf("%s 已在本次运行断开并撤销信任，但状态写回 config 失败: %w", name, perr)
+		return fmt.Errorf("%s: %w", i18n.Tf("plugin.host.err_trust_persist", "name", name), perr)
 	}
 	return nil
 }

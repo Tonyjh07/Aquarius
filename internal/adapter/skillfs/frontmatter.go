@@ -1,6 +1,7 @@
 package skillfs
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // namePattern 开放规范对 name 的要求：小写字母/数字，段间单个连字符，首尾非连字符。
@@ -28,14 +31,14 @@ type frontmatter struct {
 func readSkill(path string) (fm frontmatter, body string, bodyLine int, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return fm, "", 0, fmt.Errorf("读不出 SKILL.md：%w", err)
+		return fm, "", 0, fmt.Errorf("%s: %w", i18n.T("skill.err.read_skill_md"), err)
 	}
 	defer f.Close()
 
 	// 多读 1 字节用于判定超限（不把整份超大文件读进来）。
 	data, err := io.ReadAll(io.LimitReader(f, maxSkillFileBytes+1))
 	if err != nil {
-		return fm, "", 0, fmt.Errorf("读不出 SKILL.md：%w", err)
+		return fm, "", 0, fmt.Errorf("%s: %w", i18n.T("skill.err.read_skill_md"), err)
 	}
 	if len(data) > maxSkillFileBytes {
 		return fm, "", 0, errSkillFileTooLarge
@@ -44,7 +47,7 @@ func readSkill(path string) (fm frontmatter, body string, bodyLine int, err erro
 
 	lines := strings.Split(text, "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return fm, "", 0, fmt.Errorf("缺少 YAML frontmatter（文件须以 --- 开头）")
+		return fm, "", 0, errors.New(i18n.T("skill.err.no_frontmatter"))
 	}
 	close := -1
 	for i := 1; i < len(lines); i++ {
@@ -54,10 +57,10 @@ func readSkill(path string) (fm frontmatter, body string, bodyLine int, err erro
 		}
 	}
 	if close < 0 {
-		return fm, "", 0, fmt.Errorf("frontmatter 未闭合（缺少结束的 ---）")
+		return fm, "", 0, errors.New(i18n.T("skill.err.frontmatter_unclosed"))
 	}
 	if err := yaml.Unmarshal([]byte(strings.Join(lines[1:close], "\n")), &fm); err != nil {
-		return fm, "", 0, fmt.Errorf("frontmatter 不是合法 YAML：%w", err)
+		return fm, "", 0, fmt.Errorf("%s: %w", i18n.T("skill.err.frontmatter_yaml"), err)
 	}
 	fm.Name = strings.TrimSpace(fm.Name)
 	fm.Description = strings.TrimSpace(fm.Description)
@@ -85,19 +88,19 @@ func normalizeText(data []byte) string {
 // validateFrontmatter 校验必填字段（规范口径；这里只拦「模型会因此误判」的错）。
 func validateFrontmatter(fm frontmatter) error {
 	if fm.Name == "" {
-		return fmt.Errorf("frontmatter 缺少必填的 name")
+		return errors.New(i18n.T("skill.err.name_missing"))
 	}
 	if len(fm.Name) > maxNameLen {
-		return fmt.Errorf("name 超过 %d 字符", maxNameLen)
+		return errors.New(i18n.Tf("skill.err.name_too_long", "max", maxNameLen))
 	}
 	if !namePattern.MatchString(fm.Name) {
-		return fmt.Errorf("name=%q 不合规（只允许小写字母、数字与单个连字符，首尾不能是连字符）", fm.Name)
+		return errors.New(i18n.Tf("skill.err.name_invalid", "name", fm.Name))
 	}
 	if fm.Description == "" {
-		return fmt.Errorf("frontmatter 缺少必填的 description（一句「做什么、什么时候用」）")
+		return errors.New(i18n.T("skill.err.desc_missing"))
 	}
 	if n := utf8.RuneCountInString(fm.Description); n > maxDescLen {
-		return fmt.Errorf("description 超过 %d 字符（当前 %d）", maxDescLen, n)
+		return errors.New(i18n.Tf("skill.err.desc_too_long", "max", maxDescLen, "n", n))
 	}
 	return nil
 }

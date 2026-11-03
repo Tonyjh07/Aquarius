@@ -5,7 +5,7 @@
 package platform
 
 import (
-	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"syscall"
 	"unsafe"
 )
@@ -175,7 +175,7 @@ func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, fi
 		// r == 0 既可能是「用户取消」，也可能是「出错」：后者要再查一次
 		// CommDlgExtendedError 才分得清（Call 的第三个返回值不是可靠的 GetLastError 通道）。
 		if code := commDlgExtendedError(); code != 0 {
-			p.noticeOnce(&p.dlgNotice, fmt.Sprintf("文件对话框没能打开（错误码 %d），请重试或换个路径", code))
+			p.noticeOnce(&p.dlgNotice, i18n.Tf("ui.platform.dlg.open_failed", "code", code))
 		}
 		return "", -1
 	}
@@ -195,7 +195,7 @@ func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, fi
 // utf16Filters 过滤器列表 → 对话框串（label/pattern 成对，末尾双 NUL）；空表给「所有文件」。
 func utf16Filters(filters []FileFilter) []uint16 {
 	if len(filters) == 0 {
-		filters = []FileFilter{{Label: "所有文件 (*.*)", Pattern: "*.*"}}
+		filters = []FileFilter{{Label: i18n.T("ui.platform.filter.all") + " (*.*)", Pattern: "*.*"}}
 	}
 	segs := make([]string, 0, len(filters)*2)
 	for _, f := range filters {
@@ -240,15 +240,19 @@ type openFileNameW struct {
 // 只列**真能转成文本**的格式：pptx/rtf/legacy 二进制 Office 没有解析支持，选中后只能
 // 拿到“二进制、未提取”的占位，进去还要模型自己去读一个 zip——选得到却读不出内容，比
 // 选不到更糟。确实要附这些格式的仍可走「所有文件」、拖拽或命令行附件参数。
-var attachFilter = []string{
-	"常见文档与图片",
-	"*.pdf;*.docx;*.xlsx;*.html;*.htm;*.txt;*.md;*.csv;*.json;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
-	"文档",
-	"*.pdf;*.docx;*.xlsx;*.html;*.htm;*.txt;*.md;*.csv;*.json",
-	"图片",
-	"*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
-	"所有文件 (*.*)",
-	"*.*",
+// attachFilter 附件选择框的过滤器（label/pattern 成对）。**函数不是包级变量**：包初始化
+// 时语言还没定（与 settingsPageNames 同一个坑），存下来的 label 会永远是本机 locale 那套。
+func attachFilter() []string {
+	return []string{
+		i18n.T("ui.platform.filter.common"),
+		"*.pdf;*.docx;*.xlsx;*.html;*.htm;*.txt;*.md;*.csv;*.json;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
+		i18n.T("ui.platform.filter.docs"),
+		"*.pdf;*.docx;*.xlsx;*.html;*.htm;*.txt;*.md;*.csv;*.json",
+		i18n.T("ui.platform.filter.images"),
+		"*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp",
+		i18n.T("ui.platform.filter.all") + " (*.*)",
+		"*.*",
+	}
 }
 
 // showFileDlg 文件选择框呈现（shell 线程，D104）：GetOpenFileNameW 自带模态泵，阻塞
@@ -264,8 +268,8 @@ func (p *Plat) showFileDlg() {
 		ofnFileMustExist    = 0x1000
 		ofnExplorer         = 0x80000
 	)
-	filter := utf16Pairs(attachFilter...)
-	title, err := syscall.UTF16FromString("选择附件")
+	filter := utf16Pairs(attachFilter()...)
+	title, err := syscall.UTF16FromString(i18n.T("ui.platform.dlg.pick_attachment"))
 	if err != nil {
 		return
 	}

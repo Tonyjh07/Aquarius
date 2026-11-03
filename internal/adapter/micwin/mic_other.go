@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -20,5 +21,5 @@ func New() *Recorder { return &Recorder{} }
 
 // Record 非 Windows 一律报因（§12：采集仅 Windows）。
 func (r *Recorder) Record(context.Context, time.Duration) ([]byte, time.Duration, error) {
-	return nil, 0, errors.New("mic: 当前平台不支持录音（仅 Windows）")
+	return nil, 0, errors.New(i18n.T("audio.rec.err_unsupported_platform"))
 }

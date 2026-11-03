@@ -23,6 +23,7 @@ import (
 	whisper "github.com/mpyw/whisper.go"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -67,13 +68,13 @@ type Client struct {
 // 每个实例预留 4GiB 地址空间，且同一实例的 Transcribe 串行，逐次加载没有意义。
 func New(cfg Config) (*Client, error) {
 	if cfg.Blobs == nil {
-		return nil, errors.New("asr: 未接附件库")
+		return nil, errors.New(i18n.T("asr.err.no_blobs"))
 	}
 	model := cfg.Model
 	if model == nil {
 		path := strings.TrimSpace(cfg.ModelPath)
 		if path == "" {
-			return nil, errors.New("asr: 未填写本地模型文件路径")
+			return nil, errors.New(i18n.T("asr.whisper.err_model_path_empty"))
 		}
 		m, err := loadModel(path)
 		if err != nil {
@@ -90,17 +91,16 @@ func loadModel(path string) (Model, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("asr: 本地模型文件不存在：%s（到 https://huggingface.co/ggerganov/whisper.cpp "+
-				"下载 ggml-base-q5_1.bin 之类的 ggml 模型，放到该路径）", path)
+			return nil, errors.New(i18n.Tf("asr.whisper.err_model_missing", "path", path))
 		}
-		return nil, fmt.Errorf("asr: 读取本地模型 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("asr.whisper.err_read_model", "path", path), err)
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("asr: 本地模型文件为空：%s", path)
+		return nil, errors.New(i18n.Tf("asr.whisper.err_model_blank", "path", path))
 	}
 	m, err := whisper.New(data, nil)
 	if err != nil {
-		return nil, fmt.Errorf("asr: 加载本地模型 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("asr.whisper.err_load_model", "path", path), err)
 	}
 	return m, nil
 }
@@ -108,7 +108,7 @@ func loadModel(path string) (Model, error) {
 // Transcribe 把一段音频转成文本。lang 为 auto | zh | en（空 = auto）。
 func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lang string) (string, error) {
 	if ctx == nil {
-		return "", errors.New("asr: nil context")
+		return "", errors.New(i18n.T("asr.err.nil_context"))
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -117,14 +117,14 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	closed := c.closed
 	c.mu.Unlock()
 	if closed {
-		return "", errors.New("asr: 本地转写已关闭")
+		return "", errors.New(i18n.T("asr.whisper.err_closed"))
 	}
 	pcm, err := c.readPCM(ctx, audio)
 	if err != nil {
 		return "", err
 	}
 	if len(pcm) < minSamples {
-		return "", errors.New("asr: 录音太短，没听清（至少要有 0.1 秒的声音）")
+		return "", errors.New(i18n.T("asr.whisper.err_too_short"))
 	}
 	lang = strings.TrimSpace(lang)
 	if lang == "" {
@@ -132,11 +132,11 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	}
 	res, err := c.model.Transcribe(ctx, pcm, &whisper.TranscribeOptions{Language: lang})
 	if err != nil {
-		return "", fmt.Errorf("asr: 本地转写失败: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.whisper.err_transcribe"), err)
 	}
 	text := joinSegments(res)
 	if text == "" {
-		return "", errors.New("asr: 没有识别出文字（录音可能为空或太短）")
+		return "", errors.New(i18n.T("asr.err.no_text"))
 	}
 	return text, nil
 }
@@ -191,18 +191,18 @@ func needsSpace(prev, next string) bool {
 func (c *Client) readPCM(ctx context.Context, audio conversation.BlobRef) ([]float32, error) {
 	rc, err := c.blobs.Get(ctx, audio)
 	if err != nil {
-		return nil, fmt.Errorf("asr: 读取音频附件: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
 	}
 	defer rc.Close()
 	data, err := io.ReadAll(io.LimitReader(rc, maxAudioBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("asr: 读取音频附件: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
 	}
 	if len(data) == 0 {
-		return nil, errors.New("asr: 音频附件为空")
+		return nil, errors.New(i18n.T("asr.err.audio_empty"))
 	}
 	if len(data) > maxAudioBytes {
-		return nil, fmt.Errorf("asr: 音频超过 %d MB 上限，请缩短录音", maxAudioBytes>>20)
+		return nil, errors.New(i18n.Tf("asr.err.audio_too_large", "mb", maxAudioBytes>>20))
 	}
 	return decodeWAV(data)
 }
@@ -211,7 +211,7 @@ func (c *Client) readPCM(ctx context.Context, audio conversation.BlobRef) ([]flo
 // 别的采样率/声道数直接报错——whisper.cpp 不做重采样，喂错只会得到乱码文本。
 func decodeWAV(b []byte) ([]float32, error) {
 	if len(b) < 12 || !bytes.Equal(b[0:4], []byte("RIFF")) || !bytes.Equal(b[8:12], []byte("WAVE")) {
-		return nil, errors.New("asr: 本地转写只支持 WAV 录音")
+		return nil, errors.New(i18n.T("asr.whisper.err_wav_only"))
 	}
 	var seenFmt bool
 	for chunk := b[12:]; len(chunk) >= 8; {
@@ -222,7 +222,7 @@ func decodeWAV(b []byte) ([]float32, error) {
 			// 写到管道里的 WAV 会把 data 长度留成 0xFFFFFFFF；截断的文件
 			// 也会比声明的短。都按实际有的字节读。
 			if id != "data" {
-				return nil, fmt.Errorf("asr: WAV 的 %q 块被截断", id)
+				return nil, errors.New(i18n.Tf("asr.whisper.err_chunk_truncated", "id", id))
 			}
 			size = len(chunk)
 		}
@@ -230,7 +230,7 @@ func decodeWAV(b []byte) ([]float32, error) {
 		switch id {
 		case "fmt ":
 			if size < 16 {
-				return nil, errors.New("asr: WAV 的 fmt 块被截断")
+				return nil, errors.New(i18n.T("asr.whisper.err_fmt_truncated"))
 			}
 			tag := binary.LittleEndian.Uint16(body[0:])
 			channels := binary.LittleEndian.Uint16(body[2:])
@@ -241,13 +241,13 @@ func decodeWAV(b []byte) ([]float32, error) {
 				tag = binary.LittleEndian.Uint16(body[24:])
 			}
 			if tag != 1 || channels != 1 || rate != whisper.SampleRate || bits != 16 {
-				return nil, fmt.Errorf("asr: 本地转写要 16bit 单声道 %dHz 的 WAV（当前 格式 %d / %d 声道 / %dHz / %dbit）",
-					whisper.SampleRate, tag, channels, rate, bits)
+				return nil, errors.New(i18n.Tf("asr.whisper.err_wav_format", "rate", whisper.SampleRate,
+					"tag", tag, "channels", channels, "actual", rate, "bits", bits))
 			}
 			seenFmt = true
 		case "data":
 			if !seenFmt {
-				return nil, errors.New("asr: WAV 的 data 块出现在 fmt 块之前")
+				return nil, errors.New(i18n.T("asr.whisper.err_data_before_fmt"))
 			}
 			pcm := make([]float32, size/2)
 			for i := range pcm {
@@ -262,5 +262,5 @@ func decodeWAV(b []byte) ([]float32, error) {
 			chunk = nil
 		}
 	}
-	return nil, errors.New("asr: WAV 里没有 data 块")
+	return nil, errors.New(i18n.T("asr.whisper.err_no_data"))
 }

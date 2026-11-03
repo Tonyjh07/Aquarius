@@ -7,6 +7,7 @@ package platform
 
 import (
 	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"os/exec"
 	"runtime"
 )
@@ -14,7 +15,7 @@ import (
 // OpenURL 用桌面环境的默认浏览器打开 url。
 func (p *Plat) OpenURL(url string) error {
 	if url == "" {
-		return fmt.Errorf("链接为空")
+		return fmt.Errorf("%s", i18n.T("ui.platform.url.empty"))
 	}
 	var name string
 	var args []string
@@ -25,7 +26,7 @@ func (p *Plat) OpenURL(url string) error {
 	}
 	path, err := exec.LookPath(name)
 	if err != nil {
-		return fmt.Errorf("本机没有 %s，请手动打开链接", name)
+		return fmt.Errorf("%s", i18n.Tf("ui.platform.url.no_opener", "cmd", name))
 	}
 	return exec.Command(path, args...).Start()
 }

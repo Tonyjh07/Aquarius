@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -57,7 +58,7 @@ type owMessage struct {
 // importOpenWebUI 读一份 Open WebUI 导出。
 func (e *Exchange) importOpenWebUI(ctx context.Context, r io.Reader) (*conversation.Conversation, port.ExchangeReport, error) {
 	rep := port.ExchangeReport{Format: "openwebui"}
-	data, err := readLimited(r, maxImportBytes, "文件")
+	data, err := readLimited(r, maxImportBytes, i18n.T("exchange.io.what.file"))
 	if err != nil {
 		return nil, rep, err
 	}
@@ -66,7 +67,7 @@ func (e *Exchange) importOpenWebUI(ctx context.Context, r io.Reader) (*conversat
 	}
 	var doc owDoc
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, rep, fmt.Errorf("解析 Open WebUI 会话: %w", err)
+		return nil, rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.parse_openwebui"), err)
 	}
 	msgs := doc.Chat.Msgs
 	if len(doc.Chat.History.Messages) > 0 {
@@ -78,7 +79,7 @@ func (e *Exchange) importOpenWebUI(ctx context.Context, r io.Reader) (*conversat
 		sort.Slice(msgs, func(i, j int) bool { return msgs[i].ID < msgs[j].ID })
 	}
 	if len(msgs) == 0 {
-		return nil, rep, errors.New("文件里没有消息（这份会话是空的）")
+		return nil, rep, errors.New(i18n.T("exchange.err.no_messages"))
 	}
 	in := parseOpenWebUI(doc, msgs)
 	c, err := materialize(&in)
@@ -111,12 +112,12 @@ func parseOpenWebUI(doc owDoc, msgs []owMessage) importedTree {
 	counts := map[string]int{}
 	for _, m := range msgs {
 		if m.ID == "" {
-			counts["没有 id 的消息"]++
+			counts[i18n.T("exchange.io.drop.no_id")]++
 			continue
 		}
 		role, ok := linearImportRole(m.Role)
 		if !ok {
-			counts["角色 "+m.Role+" 的消息"]++
+			counts[i18n.Tf("exchange.io.drop.unknown_role", "role", m.Role)]++
 			continue
 		}
 		parts := parseLinearContent(m.Content, counts)

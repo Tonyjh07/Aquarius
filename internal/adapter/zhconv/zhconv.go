@@ -15,9 +15,12 @@ package zhconv
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // 转换档位（OpenCC 的转换链名）。
@@ -57,7 +60,8 @@ func New(mode string) (*Converter, error) {
 	switch mode {
 	case ModeTW2SP, ModeT2S:
 	default:
-		return nil, fmt.Errorf("繁简转换档位 %q 不认识（支持 %s / %s）", mode, ModeTW2SP, ModeT2S)
+		return nil, errors.New(i18n.Tf("audio.zhconv.err_mode", "mode", mode,
+			"supported", ModeTW2SP+" / "+ModeT2S))
 	}
 	return &Converter{mode: mode}, nil
 }
@@ -93,7 +97,7 @@ func (c *Converter) load() ([]group, error) {
 	for _, fs := range files {
 		g, err := loadGroup(fs)
 		if err != nil {
-			return nil, fmt.Errorf("繁简转换词典加载失败: %w", err)
+			return nil, fmt.Errorf("%s: %w", i18n.T("audio.zhconv.err_dict_load"), err)
 		}
 		chain = append(chain, g)
 	}
@@ -116,7 +120,7 @@ func chainFiles(mode string) ([][]string, error) {
 			{dictTSPhrases, dictTSCharacters},
 		}, nil
 	default:
-		return nil, fmt.Errorf("繁简转换档位 %q 不认识", mode)
+		return nil, errors.New(i18n.Tf("audio.zhconv.err_mode_unknown", "mode", mode))
 	}
 }
 
@@ -144,7 +148,7 @@ func loadGroup(files []string) (group, error) {
 			}
 			key, value, ok := strings.Cut(line, "\t")
 			if !ok {
-				return group{}, fmt.Errorf("%s 有一行不是「键<TAB>值」: %q", name, line)
+				return group{}, errors.New(i18n.Tf("audio.zhconv.err_dict_line", "name", name, "line", line))
 			}
 			// 值可以给多个候选（空格分隔），取第一个——与 OpenCC 的默认行为一致。
 			if fields := strings.Fields(value); len(fields) > 0 {
@@ -160,7 +164,7 @@ func loadGroup(files []string) (group, error) {
 		}
 	}
 	if len(g.table) == 0 {
-		return group{}, fmt.Errorf("%v 一个词条都没读到", files)
+		return group{}, errors.New(i18n.Tf("audio.zhconv.err_dict_empty", "files", files))
 	}
 	return g, nil
 }

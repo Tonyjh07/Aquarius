@@ -20,6 +20,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -29,7 +30,12 @@ var ErrNotFound = port.ErrConversationNotFound
 
 // ErrLegacyFormat 旧格式会话（不兼容的历史格式）：Load 显式报因、List 聚合上报，
 // 绝不静默跳过、不做自动迁移。已有两种：M0 虚拟 Root（D19）、独立 tool 节点（D95 前半部分）。
-var ErrLegacyFormat = errors.New("storejson: 发现旧格式会话")
+// 零宽结构体：errors.Is 与 == 照旧成立，而 Error() 每次取词。
+type legacyFormatError struct{}
+
+func (legacyFormatError) Error() string { return i18n.T("store.err.legacy_format") }
+
+var ErrLegacyFormat error = legacyFormatError{}
 
 var _ port.ConversationStore = (*Store)(nil)
 
@@ -52,10 +58,10 @@ func New(dir string) (*Store, error) {
 // NewWithKeep 同 New，但指定保留的备份代数（keep < 1 归一为 DefaultKeep）。
 func NewWithKeep(dir string, keep int) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
-		return nil, errors.New("storejson: 目录不能为空")
+		return nil, errors.New(i18n.T("store.err.empty_dir"))
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("storejson: 创建目录 %s: %w", dir, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.create_dir", "dir", dir), err)
 	}
 	if keep < 1 {
 		keep = DefaultKeep
@@ -92,7 +98,7 @@ func (s *Store) rotate(dst string) error {
 // removeIfExists / renameIfExists 备份轮转的小工具：源/目标不在不算错。
 func removeIfExists(p string) error {
 	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("storejson: 清理 %s: %w", p, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.clean", "path", p), err)
 	}
 	return nil
 }
@@ -102,10 +108,10 @@ func renameIfExists(from, to string) error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("storejson: 轮转 %s: %w", from, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.rotate", "path", from), err)
 	}
 	if err := os.Rename(from, to); err != nil {
-		return fmt.Errorf("storejson: 轮转 %s → %s: %w", from, to, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.rotate_to", "from", from, "to", to), err)
 	}
 	return nil
 }
@@ -121,25 +127,25 @@ func (s *Store) Save(ctx context.Context, c *conversation.Conversation) error {
 		return errors.New("storejson: nil conversation")
 	}
 	if err := c.Validate(); err != nil {
-		return fmt.Errorf("storejson: 保存 %s 被拒（不变量校验失败）: %w", c.ID, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.save_rejected", "id", c.ID), err)
 	}
 	data, err := json.MarshalIndent(encode(c), "", "  ")
 	if err != nil {
-		return fmt.Errorf("storejson: 序列化 %s: %w", c.ID, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.marshal", "id", c.ID), err)
 	}
 	dst := s.path(c.ID)
 	tmp := dst + ".tmp"
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
-		return fmt.Errorf("storejson: 写入 %s: %w", tmp, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.write", "path", tmp), err)
 	}
 	if _, err := os.Stat(dst); err == nil && s.rotatable(dst) {
 		if err := s.rotate(dst); err != nil {
 			_ = os.Remove(tmp)
-			return fmt.Errorf("storejson: 备份 %s: %w", dst, err)
+			return fmt.Errorf("%s: %w", i18n.Tf("store.err.backup", "path", dst), err)
 		}
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		return fmt.Errorf("storejson: 换入 %s: %w", dst, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("store.err.swap", "path", dst), err)
 	}
 	return nil
 }
@@ -162,7 +168,7 @@ func (s *Store) Load(ctx context.Context, id conversation.ID) (*conversation.Con
 		return nil, err
 	}
 	if id == "" {
-		return nil, errors.New("storejson: 空会话 ID")
+		return nil, errors.New(i18n.T("store.err.empty_id"))
 	}
 	dst := s.path(id)
 	data, err := os.ReadFile(dst)
@@ -175,10 +181,10 @@ func (s *Store) Load(ctx context.Context, id conversation.ID) (*conversation.Con
 		if c, ok := s.loadBackup(id); ok {
 			return c, nil
 		}
-		return nil, fmt.Errorf("storejson: 读取 %s: %w", id, derr)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.read", "id", id), derr)
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("storejson: 读取 %s: %w", id, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.read", "id", id), err)
 	}
 	if c, ok := s.loadBackup(id); ok {
 		return c, nil
@@ -212,7 +218,7 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 	}
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
-		return nil, fmt.Errorf("storejson: 列出 %s: %w", s.dir, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.list", "dir", s.dir), err)
 	}
 	var out []port.ConversationSummary
 	var legacy []string
@@ -242,7 +248,8 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 		})
 	}
 	if len(legacy) > 0 {
-		return nil, fmt.Errorf("%w: %s——请删除对应 .json 文件后重试", ErrLegacyFormat, strings.Join(legacy, ", "))
+		return nil, fmt.Errorf("%w: %s", ErrLegacyFormat,
+			i18n.Tf("store.err.legacy_list", "ids", strings.Join(legacy, ", ")))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
@@ -260,7 +267,7 @@ func (s *Store) Remove(ctx context.Context, id conversation.ID) error {
 		return err
 	}
 	if id == "" {
-		return errors.New("storejson: 空会话 ID")
+		return errors.New(i18n.T("store.err.empty_id"))
 	}
 	dst := s.path(id)
 	paths := []string{dst, dst + ".tmp"}
@@ -285,7 +292,7 @@ func (s *Store) Remove(ctx context.Context, id conversation.ID) error {
 	}
 	for _, p := range paths {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("storejson: 删除 %s: %w", p, err)
+			return fmt.Errorf("%s: %w", i18n.Tf("store.err.remove", "path", p), err)
 		}
 	}
 	return nil
@@ -305,11 +312,11 @@ func EncodeTree(c *conversation.Conversation) ([]byte, error) {
 		return nil, errors.New("storejson: nil conversation")
 	}
 	if err := c.Validate(); err != nil {
-		return nil, fmt.Errorf("storejson: 编码 %s 被拒（不变量校验失败）: %w", c.ID, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.encode_rejected", "id", c.ID), err)
 	}
 	data, err := json.MarshalIndent(encode(c), "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("storejson: 序列化 %s: %w", c.ID, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.marshal", "id", c.ID), err)
 	}
 	return data, nil
 }
@@ -325,7 +332,7 @@ func EncodeTree(c *conversation.Conversation) ([]byte, error) {
 func DecodeTree(data []byte) (*conversation.Conversation, error) {
 	var w wireTree
 	if err := json.Unmarshal(data, &w); err != nil {
-		return nil, fmt.Errorf("解析 JSON: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("store.err.parse_json"), err)
 	}
 	return decodeTree(w)
 }
@@ -415,10 +422,10 @@ func encode(c *conversation.Conversation) wireTree {
 func decode(data []byte, id conversation.ID) (*conversation.Conversation, error) {
 	var w wireTree
 	if err := json.Unmarshal(data, &w); err != nil {
-		return nil, fmt.Errorf("解析 JSON: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("store.err.parse_json"), err)
 	}
 	if w.ID != id {
-		return nil, fmt.Errorf("文件内容属于会话 %q 而非 %q", w.ID, id)
+		return nil, errors.New(i18n.Tf("store.err.id_mismatch", "found", w.ID, "want", id))
 	}
 	return decodeTree(w)
 }
@@ -429,12 +436,13 @@ func decodeTree(w wireTree) (*conversation.Conversation, error) {
 	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
 	root, ok := w.Nodes[conversation.MessageID(w.ID)]
 	if !ok || root.Role != conversation.RoleRoot || w.Head == "" {
-		return nil, fmt.Errorf("%w：缺少会话根节点或已损坏，请删除该文件重建", ErrLegacyFormat)
+		return nil, fmt.Errorf("%w: %s", ErrLegacyFormat, i18n.T("store.err.legacy_root"))
 	}
 	// D95 破坏性切换：独立 tool 节点 / 遗留 tool_calls·tool_result 字段。
 	for nid, n := range w.Nodes {
 		if n.Message.Role == conversation.Role("tool") || len(n.ToolCalls) > 0 || n.ToolResult != nil {
-			return nil, fmt.Errorf("%w：旧版工具节点格式：%q 及其节点无法加载，请删除或手工处置", ErrLegacyFormat, nid)
+			return nil, fmt.Errorf("%w: %s", ErrLegacyFormat,
+				i18n.Tf("store.err.legacy_tool_node", "node", nid))
 		}
 	}
 	s := conversation.Snapshot{
@@ -472,7 +480,7 @@ func decodeTree(w wireTree) (*conversation.Conversation, error) {
 	}
 	c, err := conversation.Restore(s)
 	if err != nil {
-		return nil, fmt.Errorf("不变量校验失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("store.err.invalid"), err)
 	}
 	return c, nil
 }

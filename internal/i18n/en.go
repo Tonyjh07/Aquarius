@@ -24,4 +24,9 @@ var enTexts = mergeTables(
 	enGuiChatTexts,
 	enCmdConfigTexts,
 	enCmdAdminTexts,
+	enAdapterExchangeTexts,
+	enAdapterFilesTexts,
+	enAdapterLLMTexts,
+	enAdapterGateTexts,
+	enGuiPlatformTexts,
 )

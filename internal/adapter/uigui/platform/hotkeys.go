@@ -2,6 +2,7 @@ package platform
 
 import (
 	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"strconv"
 	"strings"
 )
@@ -61,7 +62,7 @@ func parseHotkey(s string) (hotkeyCombo, error) {
 	}
 	parts := strings.Split(s, "+")
 	if len(parts) < 2 {
-		return c, fmt.Errorf("需要修饰键+键（如 Alt+A）: %q", s)
+		return c, fmt.Errorf("%s", i18n.Tf("ui.platform.hotkey.need_combo", "raw", s))
 	}
 	for _, p := range parts[:len(parts)-1] {
 		switch strings.ToLower(strings.TrimSpace(p)) {
@@ -74,11 +75,11 @@ func parseHotkey(s string) (hotkeyCombo, error) {
 		case "win", "super":
 			c.mods |= modWin
 		default:
-			return c, fmt.Errorf("未知修饰键 %q: %q", p, s)
+			return c, fmt.Errorf("%s", i18n.Tf("ui.platform.hotkey.unknown_modifier", "mod", p, "raw", s))
 		}
 	}
 	if c.mods == 0 {
-		return c, fmt.Errorf("至少需要一个修饰键: %q", s)
+		return c, fmt.Errorf("%s", i18n.Tf("ui.platform.hotkey.need_modifier", "raw", s))
 	}
 	key := strings.TrimSpace(parts[len(parts)-1])
 	vk, label, err := parseHotkeyKey(key)
@@ -117,7 +118,7 @@ func parseHotkeyKey(key string) (uintptr, string, error) {
 		case ch >= '0' && ch <= '9':
 			return uintptr(ch), key, nil
 		}
-		return 0, "", fmt.Errorf("不支持的键 %q", key)
+		return 0, "", fmt.Errorf("%s", i18n.Tf("ui.platform.hotkey.unsupported_key", "key", key))
 	}
 	low := strings.ToLower(key)
 	switch low {
@@ -135,5 +136,5 @@ func parseHotkeyKey(key string) (uintptr, string, error) {
 			return vkF1 + uintptr(n-1), "F" + strconv.Itoa(n), nil
 		}
 	}
-	return 0, "", fmt.Errorf("不支持的键 %q", key)
+	return 0, "", fmt.Errorf("%s", i18n.Tf("ui.platform.hotkey.unsupported_key", "key", key))
 }

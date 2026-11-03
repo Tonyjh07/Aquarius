@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // newTestInstaller 建一个装在临时目录里的安装器（catalog 可空）。
@@ -221,7 +223,7 @@ func TestInstallRejectsDuplicateName(t *testing.T) {
 	if err == nil {
 		t.Fatal("同名应被拒绝")
 	}
-	if !strings.Contains(err.Error(), "已存在") {
+	if !strings.Contains(err.Error(), i18n.Tf("skill.install.name_taken", "name", "taken", "source", outside)) {
 		t.Fatalf("错误文案 = %v", err)
 	}
 	if len(reps.Installed) != 0 {
@@ -238,7 +240,7 @@ func TestInstallRejectsDuplicateName(t *testing.T) {
 func TestInstallRelativePathRejected(t *testing.T) {
 	inst := newTestInstaller(t, nil)
 	if _, err := inst.Install(context.Background(), `skills\pdf`); err == nil ||
-		!strings.Contains(err.Error(), "绝对路径") {
+		!strings.Contains(err.Error(), i18n.Tf("skill.install.not_abs", "path", `skills\pdf`)) {
 		t.Fatalf("相对路径应被拒绝：%v", err)
 	}
 }
@@ -309,7 +311,7 @@ func TestUpdateCopySourceRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := inst.Update(context.Background(), "cp"); err == nil ||
-		!strings.Contains(err.Error(), "重新导入") {
+		!strings.Contains(err.Error(), i18n.T("skill.install.copy_source_no_update")) {
 		t.Fatalf("复制来源更新应报错：%v", err)
 	}
 }

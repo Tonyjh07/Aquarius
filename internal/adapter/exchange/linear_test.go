@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -412,9 +413,9 @@ func TestImportSillyTavernBadFiles(t *testing.T) {
 		doc  string
 		want string
 	}{
-		"空文件":        {"", "空"},
+		"空文件":        {"", i18n.T("exchange.err.empty_file")},
 		"首行不是头":      {"{\"mes\":\"x\"}\n", ""},
-		"中间行不是 JSON": {"{\"user_name\":\"u\"}\n{\"mes\":\"好\"}\n不是 JSON\n", "第 3 行"},
+		"中间行不是 JSON": {"{\"user_name\":\"u\"}\n{\"mes\":\"好\"}\n不是 JSON\n", i18n.Tf("exchange.err.bad_line", "line", 3)},
 	}
 	for name, tc := range cases {
 		_, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(tc.doc),

@@ -3,6 +3,8 @@ package conversation
 import (
 	"fmt"
 	"time"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // detachment.go 溯源路牌（D256）：某处曾挂过的内容去了哪里。
@@ -100,11 +102,12 @@ func (c *Conversation) recordDetachment(anchor MessageID, roots []MessageID, new
 // 树搬到意料之外的位置；让人先处理更近的那一条。
 func (c *Conversation) UndoLastDetachment() (Detachment, error) {
 	if len(c.detached) == 0 {
-		return Detachment{}, fmt.Errorf("undo: %w: 没有可撤销的搬运记录", ErrNotFound)
+		return Detachment{}, fmt.Errorf("%s: %w", i18n.T("conv.err.undo_none"), ErrNotFound)
 	}
 	d := c.detached[len(c.detached)-1]
 	if !c.detachmentHolds(d) {
-		return Detachment{}, fmt.Errorf("undo: %w: 最近一条记录已陈旧（%q 下已找不到被搬的节点），请照现状处理", ErrInvalidNode, d.NewHome)
+		return Detachment{}, fmt.Errorf("%s: %w",
+			i18n.Tf("conv.err.undo_stale", "home", d.NewHome), ErrInvalidNode)
 	}
 	for _, r := range d.Roots {
 		c.detachChild(d.NewHome, r)

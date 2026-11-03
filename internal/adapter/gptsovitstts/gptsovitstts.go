@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -78,14 +79,14 @@ type Client struct {
 func New(cfg Config) (*Client, error) {
 	raw := strings.TrimSpace(cfg.BaseURL)
 	if raw == "" {
-		return nil, errors.New("tts: base_url 为空")
+		return nil, errors.New(i18n.T("tts.err.base_url_empty"))
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, fmt.Errorf("tts: 非法 base_url %q", cfg.BaseURL)
+		return nil, errors.New(i18n.Tf("tts.err.base_url_invalid", "url", cfg.BaseURL))
 	}
 	if cfg.Blobs == nil {
-		return nil, errors.New("tts: 未接附件库")
+		return nil, errors.New(i18n.T("tts.err.no_blobs"))
 	}
 	hc := cfg.HTTP
 	if hc == nil {
@@ -121,27 +122,27 @@ func normalizeLang(s string) string {
 // Synthesize 合成一段语音并落附件库，返回引用。
 func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conversation.BlobRef, error) {
 	if ctx == nil {
-		return conversation.BlobRef{}, errors.New("tts: nil context")
+		return conversation.BlobRef{}, errors.New(i18n.T("tts.err.nil_context"))
 	}
 	if err := ctx.Err(); err != nil {
 		return conversation.BlobRef{}, err
 	}
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
-		return conversation.BlobRef{}, errors.New("tts: 要合成的文本为空")
+		return conversation.BlobRef{}, errors.New(i18n.T("tts.err.text_empty"))
 	}
 	if tags := strings.TrimSpace(req.Tags); tags != "" {
 		text = "(" + tags + ")" + text
 	}
 	if len(text) > maxTextBytes {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 单次合成最多 %d 字节文本，请分段播报", maxTextBytes)
+		return conversation.BlobRef{}, errors.New(i18n.Tf("tts.err.text_too_long", "bytes", maxTextBytes))
 	}
 	ref := strings.TrimSpace(req.Voice)
 	if ref == "" {
 		ref = c.refAudio
 	}
 	if ref == "" {
-		return conversation.BlobRef{}, errors.New("tts: 需要填写参考音频路径（音色就是那段录音）")
+		return conversation.BlobRef{}, errors.New(i18n.T("tts.gptsovits.err_ref_missing"))
 	}
 	// 参考音频的文字用「音色描述」框：GPT-SoVITS 要求它与参考音频的实际内容
 	// 一致，否则合成出来的人声会飘。
@@ -156,7 +157,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	name := fmt.Sprintf("speech-%d.wav", time.Now().UnixMilli())
 	out, err := c.blobs.Put(ctx, bytes.NewReader(raw), "audio/wav", name)
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 保存音频: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.save_audio"), err)
 	}
 	return out, nil
 }
@@ -180,33 +181,33 @@ func (c *Client) fetch(ctx context.Context, text, refAudio, promptText string) (
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("tts: 编码请求: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("tts.err.encode_request"), err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+ttsPath, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("tts: 构造请求: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("tts.err.build_request"), err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("tts: 请求失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("tts.err.request_failed"), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("tts: 服务端返回 %d: %s", resp.StatusCode, snippet(resp.Body))
+		return nil, errors.New(i18n.Tf("tts.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAudioBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("tts: 读取音频: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("tts.err.read_audio"), err)
 	}
 	if len(raw) == 0 {
-		return nil, errors.New("tts: 服务端返回了空音频")
+		return nil, errors.New(i18n.T("tts.err.empty_audio"))
 	}
 	if len(raw) > maxAudioBytes {
-		return nil, fmt.Errorf("tts: 音频超过 %d MB，请分段播报", maxAudioBytes>>20)
+		return nil, errors.New(i18n.Tf("tts.err.audio_too_large", "mb", maxAudioBytes>>20))
 	}
 	if !looksLikeWAV(raw) {
-		return nil, fmt.Errorf("tts: 服务端返回的不是 WAV（%s）", sniff(raw))
+		return nil, errors.New(i18n.Tf("tts.err.not_wav", "sniff", sniff(raw)))
 	}
 	return raw, nil
 }
@@ -221,9 +222,9 @@ func sniff(b []byte) string {
 	n := min(len(b), 80)
 	s := strings.TrimSpace(string(b[:n]))
 	if s == "" {
-		return "空响应体"
+		return i18n.T("tts.err.sniff_empty")
 	}
-	return "开头是 " + strconv.Quote(s)
+	return i18n.Tf("tts.err.sniff_head", "text", strconv.Quote(s))
 }
 
 func snippet(r io.Reader) string {
@@ -233,7 +234,7 @@ func snippet(r io.Reader) string {
 	}
 	s := strings.TrimSpace(string(b))
 	if s == "" {
-		return "（空响应体）"
+		return i18n.T("audio.detail.empty_body")
 	}
 	return s
 }

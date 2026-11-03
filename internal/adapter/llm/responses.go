@@ -19,6 +19,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -138,7 +139,7 @@ func encodeResponsesRequest(req port.GenerateRequest) ([]byte, error) {
 	}
 	data, err := json.Marshal(out)
 	if err != nil {
-		return nil, fmt.Errorf("llm: 编码请求体: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.err.encode_body"), err)
 	}
 	return data, nil
 }
@@ -197,7 +198,7 @@ func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 			Type: "function_call_output", CallID: m.CallID, Output: flattenText(m.Content),
 		}}, nil
 	}
-	return nil, fmt.Errorf("llm: 未知消息角色 %q", m.Role)
+	return nil, errors.New(i18n.Tf("llm.err.unknown_role", "role", m.Role))
 }
 
 // responsesContents 消息内容 → Responses content 分片。textType 按角色取 input_text
@@ -208,10 +209,10 @@ func responsesContents(parts []port.PromptPart, textType string, allowImage bool
 	for _, p := range parts {
 		if p.Kind == port.PromptImage {
 			if !allowImage {
-				return nil, errors.New("llm: 该角色的消息不接受图片分片")
+				return nil, errors.New(i18n.T("llm.err.role_image"))
 			}
 			if len(p.Data) == 0 {
-				return nil, errors.New("llm: 图片片段缺少数据（AttachmentStore 未提供字节）")
+				return nil, errors.New(i18n.T("llm.err.image_no_data"))
 			}
 			mime := p.MIME
 			if mime == "" {
@@ -355,7 +356,7 @@ type responsesError struct {
 func (s *stream) decodeResponses(payload string) (port.Delta, bool, error) {
 	var ev responsesEvent
 	if err := json.Unmarshal([]byte(payload), &ev); err != nil {
-		return port.Delta{}, false, fmt.Errorf("llm: 解析流分片: %w（片段: %s）", err, snippet(payload, 200))
+		return port.Delta{}, false, fmt.Errorf("%s: %w", i18n.Tf("llm.err.stream_decode", "snippet", snippet(payload, 200)), err)
 	}
 	switch ev.Type {
 	case "response.output_text.delta":
@@ -416,10 +417,10 @@ func (s *stream) decodeResponses(payload string) (port.Delta, bool, error) {
 		return d, ok, nil
 
 	case "response.failed":
-		return port.Delta{}, false, fmt.Errorf("llm: 服务端生成失败: %s", responsesErrorMessage(ev))
+		return port.Delta{}, false, errors.New(i18n.Tf("llm.err.responses_generate_failed", "message", responsesErrorMessage(ev)))
 
 	case "error":
-		return port.Delta{}, false, fmt.Errorf("llm: 服务端流式错误: %s", responsesErrorMessage(ev))
+		return port.Delta{}, false, errors.New(i18n.Tf("llm.err.stream_error", "message", responsesErrorMessage(ev)))
 	}
 	return port.Delta{}, false, nil
 }
@@ -492,7 +493,7 @@ func responsesErrorMessage(ev responsesEvent) string {
 	if ev.Code != "" {
 		return ev.Code
 	}
-	return "（服务端未给出详情）"
+	return i18n.T("llm.detail.no_detail")
 }
 
 // ---------------------------------------------------------------------------

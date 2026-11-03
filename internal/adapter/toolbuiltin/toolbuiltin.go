@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -120,45 +121,48 @@ func Names() []string {
 	return append(out, delegateNames...)
 }
 
-// displayNames 内置工具中文词表（S6/D143 工具管理页展示；仅 UI 文案，非契约）。
-var displayNames = map[string]string{
-	"memory_list":    "记忆索引",
-	"memory_read":    "读取记忆",
-	"memory_search":  "检索记忆",
-	"memory_write":   "写入记忆",
-	"file_read":      "读取文件",
-	"file_list":      "列出目录",
-	"file_search":    "检索文件",
-	"file_edit":      "编辑文件",
-	"file_write":     "写入文件",
-	"file_delete":    "删除文件",
-	"think":          "思考草稿",
-	"sleep":          "等待",
-	"term_exec":      "执行命令",
-	"job_start":      "启动任务",
-	"job_wait":       "等待任务",
-	"job_list":       "任务列表",
-	"job_status":     "任务状态",
-	"job_logs":       "任务日志",
-	"job_kill":       "结束任务",
-	"window_list":    "窗口列表",
-	"screen_capture": "屏幕截图",
-	"watch_start":    "开始观察",
-	"watch_list":     "观察列表",
-	"watch_stop":     "停止观察",
-	"ask_user":       "提问",
-	"web_search":     "联网搜索",
-	"web_fetch":      "读取网页",
-	"skill":          "载入技能",
-	"delegate":       "转交外部代理",
-	"delegate_wait":  "等待转交",
-	"delegate_kill":  "叫停转交",
+// displayNameKeys 内置工具词表（S6/D143 工具管理页展示；仅界面文案，非契约）。
+//
+// 词表里存 key 而不是句子：语言在 main 才定，包级字面量会在 init 期就钉死在本机
+// locale（§7.1 的同一类毛病）。取词放在 DisplayName 里按调用时的语言来。
+var displayNameKeys = map[string]string{
+	"memory_list":    "tool.label.memory_list",
+	"memory_read":    "tool.label.memory_read",
+	"memory_search":  "tool.label.memory_search",
+	"memory_write":   "tool.label.memory_write",
+	"file_read":      "tool.label.file_read",
+	"file_list":      "tool.label.file_list",
+	"file_search":    "tool.label.file_search",
+	"file_edit":      "tool.label.file_edit",
+	"file_write":     "tool.label.file_write",
+	"file_delete":    "tool.label.file_delete",
+	"think":          "tool.label.think",
+	"sleep":          "tool.label.sleep",
+	"term_exec":      "tool.label.term_exec",
+	"job_start":      "tool.label.job_start",
+	"job_wait":       "tool.label.job_wait",
+	"job_list":       "tool.label.job_list",
+	"job_status":     "tool.label.job_status",
+	"job_logs":       "tool.label.job_logs",
+	"job_kill":       "tool.label.job_kill",
+	"window_list":    "tool.label.window_list",
+	"screen_capture": "tool.label.screen_capture",
+	"watch_start":    "tool.label.watch_start",
+	"watch_list":     "tool.label.watch_list",
+	"watch_stop":     "tool.label.watch_stop",
+	"ask_user":       "tool.label.ask_user",
+	"web_search":     "tool.label.web_search",
+	"web_fetch":      "tool.label.web_fetch",
+	"skill":          "tool.label.skill",
+	"delegate":       "tool.label.delegate",
+	"delegate_wait":  "tool.label.delegate_wait",
+	"delegate_kill":  "tool.label.delegate_kill",
 }
 
-// DisplayName 内置工具中文词表查询（未收录 = 原名字面）。
+// DisplayName 内置工具词表查询（未收录 = 原名字面）。
 func DisplayName(name string) string {
-	if s, ok := displayNames[name]; ok {
-		return s
+	if k, ok := displayNameKeys[name]; ok {
+		return i18n.T(k)
 	}
 	return name
 }

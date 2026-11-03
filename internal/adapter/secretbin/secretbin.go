@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // 密文档名（写进文件头，读时按它分派；跨平台文件只在同档可读）。
@@ -48,11 +49,21 @@ const (
 )
 
 // ErrNotFound 库里没有这个名字（**不是**错误态：调用方继续查同名环境变量）。
-var ErrNotFound = errors.New("secretbin: 密钥不存在")
+// 零宽结构体：errors.Is 与 == 照旧成立，而 Error() 每次取词（§7.2）。
+type secretNotFoundError struct{}
+
+func (secretNotFoundError) Error() string { return i18n.T("secret.err.not_found") }
+
+var ErrNotFound error = secretNotFoundError{}
 
 // ErrUnreadable 库解不开或结构坏（换机拷了 profile、DPAPI 绑了别的账户、文件损坏、
 // 密文被篡改）。调用方据此警告 + 回落环境变量；写路径据此从空表起步（旧文件留 .bak）。
-var ErrUnreadable = errors.New("secretbin: 密钥库解不开")
+// 同上：零宽结构体，比较语义不变。
+type secretUnreadableError struct{}
+
+func (secretUnreadableError) Error() string { return i18n.T("secret.err.unreadable") }
+
+var ErrUnreadable error = secretUnreadableError{}
 
 // Entry 一条密钥的展示项（名字 + 掩码）：值永不回显（D161 落点④）。
 type Entry struct {
@@ -75,10 +86,10 @@ type Store struct {
 // 文件本身**不在此创建**：没有密钥时不落任何文件，首次 Set 才出现。
 func New(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
-		return nil, errors.New("secretbin: 目录不能为空")
+		return nil, errors.New(i18n.T("secret.err.dir_empty"))
 	}
 	if _, err := os.Stat(dir); err != nil {
-		return nil, fmt.Errorf("secretbin: 目录 %s 不可用: %w", dir, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.dir_unusable", "dir", dir), err)
 	}
 	return &Store{
 		path:    filepath.Join(dir, "secrets.bin"),
@@ -116,10 +127,10 @@ func (s *Store) Set(ctx context.Context, name, value string) error {
 		return err
 	}
 	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("secretbin: %q 的值不可为空（要清掉这一条请用删除）", name)
+		return errors.New(i18n.Tf("secret.err.value_empty", "name", name))
 	}
 	if len(value) > maxValueLen {
-		return fmt.Errorf("secretbin: %q 的值过长（上限 %d 字节）", name, maxValueLen)
+		return errors.New(i18n.Tf("secret.err.value_too_long", "name", name, "max", maxValueLen))
 	}
 	m, err := s.load(ctx)
 	if err != nil && !errors.Is(err, ErrUnreadable) {
@@ -195,26 +206,26 @@ func (s *Store) decodeFile(ctx context.Context, path string) (map[string]string,
 		return map[string]string{}, nil // 还没存过任何密钥：空表
 	}
 	if err != nil {
-		return nil, fmt.Errorf("secretbin: 读取 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.read", "path", path), err)
 	}
 	var env envelope
 	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("%w: %s 结构坏: %v", ErrUnreadable, path, err)
+		return nil, fmt.Errorf("%w: %s", ErrUnreadable, i18n.Tf("secret.err.bad_structure", "path", path, "detail", err))
 	}
 	if env.Version != fileVersion {
-		return nil, fmt.Errorf("%w: %s 版本 %d 不被支持（本版认 %d）", ErrUnreadable, path, env.Version, fileVersion)
+		return nil, fmt.Errorf("%w: %s", ErrUnreadable, i18n.Tf("secret.err.bad_version", "path", path, "version", env.Version, "want", fileVersion))
 	}
 	blob, err := base64.StdEncoding.DecodeString(env.Payload)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s 载荷不是合法 base64: %v", ErrUnreadable, path, err)
+		return nil, fmt.Errorf("%w: %s", ErrUnreadable, i18n.Tf("secret.err.bad_base64", "path", path, "detail", err))
 	}
 	plain, err := decrypt(ctx, env.Cipher, s.keyPath, blob)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrUnreadable, path, err)
+		return nil, fmt.Errorf("%w: %s", ErrUnreadable, i18n.Tf("secret.err.decrypt_failed", "path", path, "detail", err))
 	}
 	var m map[string]string
 	if err := json.Unmarshal(plain, &m); err != nil {
-		return nil, fmt.Errorf("%w: %s 明文结构坏: %v", ErrUnreadable, path, err)
+		return nil, fmt.Errorf("%w: %s", ErrUnreadable, i18n.Tf("secret.err.bad_plain", "path", path, "detail", err))
 	}
 	if m == nil {
 		m = map[string]string{}
@@ -226,7 +237,7 @@ func (s *Store) decodeFile(ctx context.Context, path string) (map[string]string,
 func (s *Store) save(ctx context.Context, m map[string]string) error {
 	plain, err := json.Marshal(m)
 	if err != nil {
-		return fmt.Errorf("secretbin: 序列化: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("secret.err.marshal"), err)
 	}
 	cipher := cipherFor()
 	blob, err := encrypt(ctx, cipher, s.keyPath, plain)
@@ -236,16 +247,16 @@ func (s *Store) save(ctx context.Context, m map[string]string) error {
 	env := envelope{Version: fileVersion, Cipher: cipher, Payload: base64.StdEncoding.EncodeToString(blob)}
 	data, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Errorf("secretbin: 序列化信封: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("secret.err.marshal_envelope"), err)
 	}
 	// 旧文件留一代 .bak：先原样搬走，再换入新文件（两处都是整份密文，不留明文退路）。
 	if old, rerr := os.ReadFile(s.path); rerr == nil {
 		if werr := atomicfile.WriteFile(s.path+".bak", old, 0o600); werr != nil {
-			return fmt.Errorf("secretbin: 留备份 %s: %w", s.path+".bak", werr)
+			return fmt.Errorf("%s: %w", i18n.Tf("secret.err.backup", "path", s.path+".bak"), werr)
 		}
 	}
 	if err := atomicfile.WriteFile(s.path, data, 0o600); err != nil {
-		return fmt.Errorf("secretbin: 写入 %s: %w", s.path, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("secret.err.write", "path", s.path), err)
 	}
 	return nil
 }
@@ -268,7 +279,7 @@ func encrypt(ctx context.Context, cipher, keyPath string, plain []byte) ([]byte,
 	case cipherAESGCM:
 		return sealAES(keyPath, plain)
 	}
-	return nil, fmt.Errorf("secretbin: 未知密文档 %q（文件可能来自更新版本）", cipher)
+	return nil, errors.New(i18n.Tf("secret.err.unknown_cipher", "cipher", cipher))
 }
 
 // decrypt 按档解密（keyPath 仅 AES 档用）。
@@ -282,7 +293,7 @@ func decrypt(ctx context.Context, cipher, keyPath string, blob []byte) ([]byte, 
 	case cipherAESGCM:
 		return openAES(keyPath, blob)
 	}
-	return nil, fmt.Errorf("secretbin: 未知密文档 %q（文件可能来自更新版本）", cipher)
+	return nil, errors.New(i18n.Tf("secret.err.unknown_cipher", "cipher", cipher))
 }
 
 // maskOf 掩码：值短于 8 位整条打码（尾 4 位对短值等于全暴露）；够长才留尾 4 位，
@@ -299,18 +310,18 @@ func maskOf(v string) string {
 func validName(name string) error {
 	switch {
 	case name == "":
-		return errors.New("secretbin: 密钥名不可为空")
+		return errors.New(i18n.T("secret.err.name_empty"))
 	case name != strings.TrimSpace(name):
-		return fmt.Errorf("secretbin: 密钥名 %q 首尾不可含空白", name)
+		return errors.New(i18n.Tf("secret.err.name_space", "name", name))
 	case len(name) > maxNameLen:
-		return fmt.Errorf("secretbin: 密钥名过长（上限 %d 字节）", maxNameLen)
+		return errors.New(i18n.Tf("secret.err.name_too_long", "max", maxNameLen))
 	}
 	if strings.ContainsAny(name, ": \t\r\n") {
-		return fmt.Errorf("secretbin: 密钥名 %q 不可含空白或冒号（引用写作 secret:<名>）", name)
+		return errors.New(i18n.Tf("secret.err.name_chars", "name", name))
 	}
 	for _, r := range name {
 		if r < 0x20 || r == 0x7f {
-			return fmt.Errorf("secretbin: 密钥名 %q 不可含控制字符", name)
+			return errors.New(i18n.Tf("secret.err.name_control", "name", name))
 		}
 	}
 	return nil
@@ -328,7 +339,7 @@ func ctxErr(ctx context.Context) error {
 func randBytes(n int) ([]byte, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		return nil, fmt.Errorf("secretbin: 取随机数: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("secret.err.rand"), err)
 	}
 	return b, nil
 }

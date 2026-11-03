@@ -10,6 +10,7 @@ package mcpgate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -63,7 +65,7 @@ func Dial(ctx context.Context, secrets port.Secrets, d plugin.Decl) (*Server, er
 	cli := mcp.NewClient(clientIdentity, nil)
 	cs, err := cli.Connect(ctx, t, nil)
 	if err != nil {
-		return nil, fmt.Errorf("连接插件 %s: %w", d.Name, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("mcp.err.connect", "name", d.Name), err)
 	}
 	s := &Server{name: d.Name, risk: d.ToolRisk(), cli: cli, cs: cs}
 	// prompts 快照：尽力而为（未声明 prompts 能力的 server 合法，留空即可）。
@@ -80,7 +82,7 @@ func transportFor(ctx context.Context, secrets port.Secrets, d plugin.Decl) (mcp
 		cmd := exec.Command(d.Command, d.Args...)
 		env, err := resolveRefs(ctx, secrets, d.Env)
 		if err != nil {
-			return nil, fmt.Errorf("插件 %s 环境变量: %w", d.Name, err)
+			return nil, fmt.Errorf("%s: %w", i18n.Tf("mcp.err.env", "name", d.Name), err)
 		}
 		// 子进程环境 = 父环境剔除 AQUARIUS_* + 声明项（审查修复：宿主密钥
 		//（api_key 等按本项目命名约定存 AQUARIUS_*）不得随继承外泄给插件；
@@ -91,7 +93,7 @@ func transportFor(ctx context.Context, secrets port.Secrets, d plugin.Decl) (mcp
 	case plugin.TransportHTTP:
 		hdr, err := resolveRefs(ctx, secrets, d.Headers)
 		if err != nil {
-			return nil, fmt.Errorf("插件 %s 请求头: %w", d.Name, err)
+			return nil, fmt.Errorf("%s: %w", i18n.Tf("mcp.err.headers", "name", d.Name), err)
 		}
 		return &mcp.StreamableClientTransport{
 			Endpoint:   d.URL,
@@ -100,7 +102,7 @@ func transportFor(ctx context.Context, secrets port.Secrets, d plugin.Decl) (mcp
 			DisableStandaloneSSE: true,
 		}, nil
 	default:
-		return nil, fmt.Errorf("插件 %s: 未知 transport %q", d.Name, d.Transport)
+		return nil, errors.New(i18n.Tf("mcp.err.unknown_transport", "name", d.Name, "transport", d.Transport))
 	}
 }
 
@@ -132,11 +134,11 @@ func resolveRefs(ctx context.Context, secrets port.Secrets, m map[string]string)
 	for k, v := range m {
 		if name, ok := strings.CutPrefix(v, "secret:"); ok {
 			if secrets == nil {
-				return nil, fmt.Errorf("%s 需要 Secrets 端口但未配置", name)
+				return nil, errors.New(i18n.Tf("mcp.err.secrets_missing", "name", name))
 			}
 			val, err := secrets.Get(ctx, name)
 			if err != nil {
-				return nil, fmt.Errorf("取密钥 %s: %w", name, err)
+				return nil, fmt.Errorf("%s: %w", i18n.Tf("mcp.err.secret_read", "name", name), err)
 			}
 			out[k] = val
 			continue

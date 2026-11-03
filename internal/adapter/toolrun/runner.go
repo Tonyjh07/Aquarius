@@ -24,6 +24,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -469,9 +470,9 @@ func confirmPrompt(call tool.Call, target string) string {
 		args = string(r[:160]) + "..."
 	}
 	if target != "" {
-		return fmt.Sprintf("允许 %s 访问 %s？参数: %s", call.Name, target, args)
+		return i18n.Tf("tool.confirm.with_target", "name", call.Name, "target", target, "args", args)
 	}
-	return fmt.Sprintf("允许执行 %s？参数: %s", call.Name, args)
+	return i18n.Tf("tool.confirm.plain", "name", call.Name, "args", args)
 }
 
 // trim 按 rune 截断并标注原长（空上限 = 不裁剪）。

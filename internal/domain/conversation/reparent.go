@@ -1,6 +1,10 @@
 package conversation
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
+)
 
 // reparent.go 改父（D255）：把一棵子树从一个父挪到另一个父。
 //
@@ -33,18 +37,21 @@ func (c *Conversation) Reparent(id, newParent MessageID) (ReparentResult, error)
 		return ReparentResult{}, fmt.Errorf("reparent %q -> %q: %w: new parent not in tree", id, newParent, ErrNotFound)
 	}
 	if m.Role == RoleRoot {
-		return ReparentResult{}, fmt.Errorf("reparent %q: %w: 会话根节点就是会话本身，不可挪动", id, ErrInvalidNode)
+		return ReparentResult{}, fmt.Errorf("%s: %w", i18n.Tf("conv.err.reparent_root", "id", id), ErrInvalidNode)
 	}
 	// Root 不能作新父：Head 落在该支时路径成了 Root → 该支，path[1] 不再是 system，
 	// 装配（waterline 只认位置）会静默丢掉人格。这条不经环拦截，必须单独关。
 	if np.Role == RoleRoot {
-		return ReparentResult{}, fmt.Errorf("reparent %q -> %q: %w: 不能挂到根下（人格会退出装配）", id, newParent, ErrInvalidNode)
+		return ReparentResult{}, fmt.Errorf("%s: %w",
+			i18n.Tf("conv.err.reparent_to_root", "id", id, "parent", newParent), ErrInvalidNode)
 	}
 	if newParent == id || c.isStrictDescendant(id, newParent) {
-		return ReparentResult{}, fmt.Errorf("reparent %q -> %q: %w: 不能挂到自己的后代下", id, newParent, ErrInvalidNode)
+		return ReparentResult{}, fmt.Errorf("%s: %w",
+			i18n.Tf("conv.err.reparent_descendant", "id", id, "parent", newParent), ErrInvalidNode)
 	}
 	if m.Parent == newParent {
-		return ReparentResult{}, fmt.Errorf("reparent %q -> %q: %w: 已经挂在该父下", id, newParent, ErrInvalidNode)
+		return ReparentResult{}, fmt.Errorf("%s: %w",
+			i18n.Tf("conv.err.reparent_same_parent", "id", id, "parent", newParent), ErrInvalidNode)
 	}
 
 	oldParent := m.Parent

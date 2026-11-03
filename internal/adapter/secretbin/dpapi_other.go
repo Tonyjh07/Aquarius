@@ -7,7 +7,11 @@ package secretbin
 // 0600 + 整段加密」：挡住离线备份/误提交，不假装等同于绑定账户的 DPAPI（D151
 // 评估表里已写明这档的边界）。
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
+)
 
 // platformCipher 非 Windows 默认档 = AES-GCM。
 func platformCipher() string { return cipherAESGCM }
@@ -18,9 +22,9 @@ func platformCipher() string { return cipherAESGCM }
 // 只会把「解不开」变成「解出一堆垃圾」）。
 
 func protLocal([]byte) ([]byte, error) {
-	return nil, errors.New("DPAPI 密文档仅 Windows 可用")
+	return nil, errors.New(i18n.T("secret.err.dpapi_other"))
 }
 
 func unprotLocal([]byte) ([]byte, error) {
-	return nil, errors.New("DPAPI 密文档仅 Windows 可用（文件可能来自 Windows 机器）")
+	return nil, errors.New(i18n.T("secret.err.dpapi_other_file"))
 }

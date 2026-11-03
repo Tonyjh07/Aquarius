@@ -10,6 +10,8 @@ import (
 	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // encodeAvatar 把头像来源重编码为只含像素的 PNG（§5.17）。
@@ -23,11 +25,11 @@ func encodeAvatar(src []byte) ([]byte, error) {
 	}
 	img, _, err := image.Decode(bytes.NewReader(src))
 	if err != nil {
-		return nil, fmt.Errorf("头像不是可识别的图片: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("char.load.avatar_not_image"), err)
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("头像重编码失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("char.load.avatar_reencode"), err)
 	}
 	return buf.Bytes(), nil
 }

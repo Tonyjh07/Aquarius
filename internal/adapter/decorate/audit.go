@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -20,7 +21,12 @@ import (
 const defaultAuditCap = 4 << 20 // 4 MiB
 
 // errAuditClosed 审计文件已关闭/不可写的内部错误（调用方静默忽略）。
-var errAuditClosed = errors.New("audit: 文件已关闭")
+// 零宽结构体：errors.Is 照旧，Error() 每次取词（§7.2）。
+type auditClosedError struct{}
+
+func (auditClosedError) Error() string { return i18n.T("tool.err.audit_closed") }
+
+var errAuditClosed error = auditClosedError{}
 
 // Audit 审计日志（§8 audit.log）：JSONL 追加写、超限轮转一代、并发安全。
 // 任何写失败静默——审计不得打断对话。
@@ -225,7 +231,7 @@ func TailToolCalls(path, mcpName string, last int) ([]ToolCallLine, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("读取审计日志: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("tool.err.read_audit"), err)
 	}
 	lines := strings.Split(string(data), "\n")
 	if last > 0 && len(lines) > last {

@@ -48,12 +48,12 @@ func TestUTF16Filters(t *testing.T) {
 
 // TestAttachFilterOnlyOffersParsableDocs 过滤器只列能抽出文字的格式。
 func TestAttachFilterOnlyOffersParsableDocs(t *testing.T) {
-	if len(attachFilter)%2 != 0 {
-		t.Fatalf("过滤器应 label/pattern 成对，现有 %d 段", len(attachFilter))
+	if len(attachFilter())%2 != 0 {
+		t.Fatalf("过滤器应 label/pattern 成对，现有 %d 段", len(attachFilter()))
 	}
 	docPat := ""
-	for i := 0; i+1 < len(attachFilter); i += 2 {
-		label, pat := attachFilter[i], attachFilter[i+1]
+	for i := 0; i+1 < len(attachFilter()); i += 2 {
+		label, pat := attachFilter()[i], attachFilter()[i+1]
 		if label == "文档" {
 			docPat = pat
 		}

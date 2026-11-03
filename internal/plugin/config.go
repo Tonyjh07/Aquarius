@@ -8,11 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // 传输方式与风险档的合法取值：只认 stdio 与 streamable-http 两种传输（D30，声明口径见
@@ -40,16 +42,18 @@ func (m MCPConfig) Validate(name string) error {
 	switch m.Transport {
 	case TransportStdio:
 		if strings.TrimSpace(m.Command) == "" {
-			return fmt.Errorf("插件 %q: stdio 形态缺 command", name)
+			return errors.New(i18n.Tf("plugin.cfg.stdio_no_command", "name", name))
 		}
 	case TransportHTTP:
 		if strings.TrimSpace(m.URL) == "" {
-			return fmt.Errorf("插件 %q: streamable-http 形态缺 url", name)
+			return errors.New(i18n.Tf("plugin.cfg.http_no_url", "name", name))
 		}
 	case "":
-		return fmt.Errorf("插件 %q: transport 必填（%s | %s）", name, TransportStdio, TransportHTTP)
+		return errors.New(i18n.Tf("plugin.cfg.transport_required",
+			"name", name, "stdio", TransportStdio, "http", TransportHTTP))
 	default:
-		return fmt.Errorf("插件 %q: 未知 transport %q（%s | %s）", name, m.Transport, TransportStdio, TransportHTTP)
+		return errors.New(i18n.Tf("plugin.cfg.unknown_transport",
+			"name", name, "transport", m.Transport, "stdio", TransportStdio, "http", TransportHTTP))
 	}
 	return nil
 }
@@ -160,7 +164,7 @@ type Manifest struct {
 func ParseManifest(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("解析 plugin.json: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("plugin.cfg.parse"), err)
 	}
 	if err := m.Validate(); err != nil {
 		return nil, err
@@ -186,10 +190,10 @@ func (m *Manifest) Validate() error {
 // `/mcp:<server>:<prompt>` 命令里——禁止冒号与空白，保证按冒号切分无歧义。
 func validateServerName(name string) error {
 	if name == "" {
-		return fmt.Errorf("插件名为空")
+		return errors.New(i18n.T("plugin.cfg.name_empty"))
 	}
 	if strings.ContainsAny(name, ": \t") {
-		return fmt.Errorf("插件名 %q 含冒号或空白（工具/命令名按冒号切分，不允许）", name)
+		return errors.New(i18n.Tf("plugin.cfg.name_chars", "name", name))
 	}
 	return nil
 }
@@ -200,6 +204,7 @@ func validateRisk(risk, name string) error {
 	case "", RiskSafe, RiskConfirm:
 		return nil
 	default:
-		return fmt.Errorf("插件 %q: 未知 risk %q（%s | %s）", name, risk, RiskSafe, RiskConfirm)
+		return errors.New(i18n.Tf("plugin.cfg.unknown_risk",
+			"name", name, "risk", risk, "safe", RiskSafe, "confirm", RiskConfirm))
 	}
 }

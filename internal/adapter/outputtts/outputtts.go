@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -43,19 +44,19 @@ type Adapter struct {
 // New 创建播报器；三条端口缺一不可。
 func New(cfg Config) (*Adapter, error) {
 	if cfg.Synth == nil {
-		return nil, errors.New("tts: 未接语音合成器")
+		return nil, errors.New(i18n.T("tts.err.no_synth"))
 	}
 	if cfg.Player == nil {
-		return nil, errors.New("tts: 未接播放器")
+		return nil, errors.New(i18n.T("tts.err.no_player"))
 	}
 	if cfg.Blobs == nil {
-		return nil, errors.New("tts: 未接附件库")
+		return nil, errors.New(i18n.T("tts.err.no_blobs"))
 	}
 	return &Adapter{cfg: cfg}, nil
 }
 
 // Name 输出器名（日志/报错用）。
-func (a *Adapter) Name() string { return "语音播报" }
+func (a *Adapter) Name() string { return i18n.T("tts.adapter_name") }
 
 // SetStyle 更新此后播报的音色与风格（设置窗保存后调用，D179「音色/风格立即生效」）。
 // 正在合成或播放的那一条不受影响；空值 = 交给合成器的缺省。

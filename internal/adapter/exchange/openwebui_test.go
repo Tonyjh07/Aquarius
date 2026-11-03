@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -122,9 +123,9 @@ func TestImportOpenWebUIRejects(t *testing.T) {
 		doc  string
 		want string
 	}{
-		"没有消息":    {`{"chat":{}}`, "没有消息"},
-		"悬空父":     {`{"chat":{"messages":[{"id":"a","parentId":"nope","role":"user","content":"x"}]}}`, "父节点"},
-		"不是 JSON": {`not json`, "解析"},
+		"没有消息":    {`{"chat":{}}`, i18n.T("exchange.err.no_messages")},
+		"悬空父":     {`{"chat":{"messages":[{"id":"a","parentId":"nope","role":"user","content":"x"}]}}`, i18n.Tf("exchange.err.dangling_parent_src", "id", "a", "parent", "nope")},
+		"不是 JSON": {`not json`, i18n.T("exchange.err.parse_openwebui")},
 	}
 	for name, tc := range cases {
 		_, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(tc.doc),

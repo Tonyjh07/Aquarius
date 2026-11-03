@@ -18,6 +18,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -70,19 +71,31 @@ type manifestEntry struct {
 	Nodes int    `json:"nodes"`
 }
 
-// droppedBlobFmt 附件字节取不到时的回执行前缀（导出侧：库里没有）。
-const droppedBlobFmt = "附件 %d 个（%s 不在附件库里）"
+// droppedBlobs 附件字节取不到时的回执行前缀（导出侧：库里没有）。
+//
+// 函数而不是包级常量：语言在 main 才定，包初始化时取词会永远钉在本机 locale。
+func droppedBlobs(count int, names string) string {
+	return i18n.Tf("exchange.io.dropped.missing_blob", "count", count, "names", names)
+}
 
-// tooLargeBlobFmt 附件超过单份上限时的回执行（导出侧）。
+// tooLargeBlobs 附件超过单份上限时的回执行（导出侧）。
 //
 // 与「不在库里」分开说：前者去清库也没用，后者补进库就能带上。混成一句会让用户白忙一趟。
-const tooLargeBlobFmt = "附件 %d 个（%s 超过单份 %d MB 上限，没有带上）"
+func tooLargeBlobs(count int, names string, mb int64) string {
+	return i18n.Tf("exchange.io.dropped.blob_too_large", "count", count, "names", names, "mb", mb)
+}
 
-// errLegacyAQX 旧单树归档（根目录一个 tree.json）：本版不读。
+// legacyArchiveError 旧单树归档（根目录一个 tree.json）：本版不读。
 //
 // aqx 尚未正式发布，为一份没人持有的中间形状留长期兼容分支，代价大于收益：读它就得同时
 // 维护两套解包逻辑，而「重新导一次」对用户只是一步。
-var errLegacyAQX = errors.New("这是旧版归档格式（根目录一个 tree.json），本版不认：请用当前版本重新导出一次")
+//
+// 零宽结构体：errors.Is 与 == 照旧成立，而 Error() 每次取词。
+type legacyArchiveError struct{}
+
+func (legacyArchiveError) Error() string { return i18n.T("exchange.err.legacy_archive") }
+
+var errLegacyAQX error = legacyArchiveError{}
 
 // exportAQX 无损导出：一组树 + 附件字节（附件按哈希跨会话共用一份）。
 func (e *Exchange) exportAQX(ctx context.Context, cs []*conversation.Conversation, w io.Writer) (port.ExchangeReport, error) {
@@ -150,18 +163,16 @@ func (e *Exchange) exportAQX(ctx context.Context, cs []*conversation.Conversatio
 		}
 	}
 	if err := zw.Close(); err != nil {
-		return rep, fmt.Errorf("收尾归档: %w", err)
+		return rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.finalize_archive"), err)
 	}
 	rep.Bytes = cw.n
 	if len(missing) > 0 {
 		// 附件字节没带上并入树：树里的引用还在，导回去时那几张图会指向缺失的字节。
 		// 回执必须说明，否则用户以为备份完整。
-		rep.Dropped = append(rep.Dropped, fmt.Sprintf(
-			droppedBlobFmt, len(missing), summarizeNames(missing)))
+		rep.Dropped = append(rep.Dropped, droppedBlobs(len(missing), summarizeNames(missing)))
 	}
 	if len(tooLarge) > 0 {
-		rep.Dropped = append(rep.Dropped, fmt.Sprintf(
-			tooLargeBlobFmt, len(tooLarge), summarizeNames(tooLarge), maxBlobBytes>>20))
+		rep.Dropped = append(rep.Dropped, tooLargeBlobs(len(tooLarge), summarizeNames(tooLarge), maxBlobBytes>>20))
 	}
 	return rep, nil
 }
@@ -172,16 +183,17 @@ func (e *Exchange) exportAQX(ctx context.Context, cs []*conversation.Conversatio
 // 坏掉也不该挡住这次导入，它们本来就不会进库。
 func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
 	rep := port.ExchangeReport{Format: "aqx"}
-	data, err := readLimited(r, maxArchiveBytes, "归档")
+	data, err := readLimited(r, maxArchiveBytes, i18n.T("exchange.io.what.archive"))
 	if err != nil {
 		return nil, rep, err
 	}
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return nil, rep, fmt.Errorf("不是可用的归档文件: %w", err)
+		return nil, rep, fmt.Errorf("%s: %w", i18n.T("exchange.err.not_archive"), err)
 	}
 	if len(zr.File) > maxArchiveEntries {
-		return nil, rep, fmt.Errorf("归档条目数 %d 超过 %d 上限", len(zr.File), maxArchiveEntries)
+		return nil, rep, errors.New(i18n.Tf("exchange.err.too_many_entries",
+			"count", len(zr.File), "max", maxArchiveEntries))
 	}
 	var (
 		man        *manifest
@@ -199,12 +211,12 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 			continue
 		}
 		if f.Mode()&fsSymlink != 0 {
-			return nil, rep, fmt.Errorf("归档里有符号链接 %q：拒绝解包", f.Name)
+			return nil, rep, errors.New(i18n.Tf("exchange.err.archive_symlink", "name", f.Name))
 		}
 		switch {
 		case name == "manifest.json":
 			if man != nil {
-				return nil, rep, errors.New("归档里有重复的 manifest.json")
+				return nil, rep, errors.New(i18n.T("exchange.err.duplicate_manifest"))
 			}
 			m, err := readZipJSON(f, maxManifestBytes)
 			if err != nil {
@@ -217,22 +229,25 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 		case strings.HasPrefix(name, "conversations/"):
 			i, ok := parseTreeName(name)
 			if !ok {
-				return nil, rep, fmt.Errorf("归档里有不认识的条目 %q（会话树应写作 conversations/<序号>/tree.json）", name)
+				return nil, rep, errors.New(i18n.Tf("exchange.err.unknown_entry_tree", "name", name))
 			}
 			if trees[i] != nil {
-				return nil, rep, fmt.Errorf("归档里会话 %d 的树出现了两次", i)
+				return nil, rep, errors.New(i18n.Tf("exchange.err.duplicate_tree", "index", i))
 			}
 			if f.UncompressedSize64 > maxTreeBytes {
-				return nil, rep, fmt.Errorf("会话 %d 的 tree.json 超过 %d MB 上限", i, maxTreeBytes>>20)
+				return nil, rep, errors.New(i18n.Tf("exchange.err.tree_too_large",
+					"index", i, "mb", maxTreeBytes>>20))
 			}
 			trees[i] = f
 		case strings.HasPrefix(name, "blobs/"):
 			if f.UncompressedSize64 > maxBlobBytes {
-				return nil, rep, fmt.Errorf("归档内附件 %q 超过 %d MB 上限", f.Name, maxBlobBytes>>20)
+				return nil, rep, errors.New(i18n.Tf("exchange.err.blob_too_large",
+					"name", f.Name, "mb", maxBlobBytes>>20))
 			}
 			totalBlobs += int64(f.UncompressedSize64)
 			if totalBlobs > maxBlobTotalBytes {
-				return nil, rep, fmt.Errorf("归档内附件总量超过 %d MB 上限", maxBlobTotalBytes>>20)
+				return nil, rep, errors.New(i18n.Tf("exchange.err.blobs_total_too_large",
+					"mb", maxBlobTotalBytes>>20))
 			}
 			blobs = append(blobs, f)
 		default:
@@ -241,23 +256,25 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 	}
 	if len(unknown) > 0 {
 		// aqx 是我们自己的格式：不认识的条目意味着「不是这个版本写的」，猜着读比拒绝更糟。
-		return nil, rep, fmt.Errorf("归档里有不认识的条目 %s（本版只认 manifest.json / conversations/ / blobs/）",
-			summarizeNames(unknown))
+		return nil, rep, errors.New(i18n.Tf("exchange.err.unknown_entries",
+			"names", summarizeNames(unknown)))
 	}
 	if man == nil {
-		return nil, rep, errors.New("归档缺 manifest.json：这不是 Aquarius 归档")
+		return nil, rep, errors.New(i18n.T("exchange.err.no_manifest_foreign"))
 	}
 	if man.Format != "aqx" {
-		return nil, rep, fmt.Errorf("归档声明的格式是 %q，不是 aqx", man.Format)
+		return nil, rep, errors.New(i18n.Tf("exchange.err.wrong_format", "format", man.Format))
 	}
 	if man.Version > aqxVersion {
-		return nil, rep, fmt.Errorf("归档版本 %d 高于本程序支持的 %d：请升级后再导入", man.Version, aqxVersion)
+		return nil, rep, errors.New(i18n.Tf("exchange.err.version_too_new",
+			"version", man.Version, "supported", aqxVersion))
 	}
 	if len(man.Conversations) == 0 {
-		return nil, rep, errors.New("归档清单是空的：没有可导入的会话")
+		return nil, rep, errors.New(i18n.T("exchange.err.empty_manifest"))
 	}
 	if len(man.Conversations) > maxArchiveEntries {
-		return nil, rep, fmt.Errorf("归档清单有 %d 个会话，超过 %d 上限", len(man.Conversations), maxArchiveEntries)
+		return nil, rep, errors.New(i18n.Tf("exchange.err.manifest_too_many",
+			"count", len(man.Conversations), "max", maxArchiveEntries))
 	}
 	sel, err := resolvePick(pick, len(man.Conversations), man.Conversations)
 	if err != nil {
@@ -267,7 +284,7 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 	for _, idx := range sel {
 		f := trees[idx]
 		if f == nil {
-			return nil, rep, fmt.Errorf("归档缺会话 %d 的树（conversations/%d/tree.json）", idx, idx)
+			return nil, rep, errors.New(i18n.Tf("exchange.err.missing_tree", "index", idx))
 		}
 		tree, err := readZipLimited(f, maxTreeBytes, conversationTreeName(idx))
 		if err != nil {
@@ -278,7 +295,8 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 			return nil, rep, err
 		}
 		if n := c.NodeCount(); n > maxNodeCount {
-			return nil, rep, fmt.Errorf("会话 %d 的节点数 %d 超过 %d 上限", idx, n, maxNodeCount)
+			return nil, rep, errors.New(i18n.Tf("exchange.err.too_many_nodes_in",
+				"index", idx, "count", n, "max", maxNodeCount))
 		}
 		rep.Nodes += nodeCount(c)
 		out = append(out, c)
@@ -317,7 +335,7 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 	// 树里引用、归档里却没有的附件：字节就是找不回来了，回执必须逐项说清——
 	// 静默留下一个指向空处的引用，用户要到装配时才发现图没了。
 	if missing := missingBlobs(out, selected); len(missing) > 0 {
-		rep.Dropped = append(rep.Dropped, fmt.Sprintf("附件 %d 个（归档里没有它们的字节）", len(missing)))
+		rep.Dropped = append(rep.Dropped, i18n.Tf("exchange.io.dropped.missing_bytes", "count", len(missing)))
 	}
 	return out, rep, nil
 }
@@ -329,19 +347,19 @@ func (e *Exchange) Index(ctx context.Context, path string) ([]port.ExchangeEntry
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("打开归档: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("exchange.err.open_archive"), err)
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("读取归档信息: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("exchange.err.stat_archive"), err)
 	}
 	if fi.Size() > maxArchiveBytes {
-		return nil, fmt.Errorf("归档超过 %d MB 上限", maxArchiveBytes>>20)
+		return nil, errors.New(i18n.Tf("exchange.err.archive_too_large", "mb", maxArchiveBytes>>20))
 	}
 	zr, err := zip.NewReader(f, fi.Size())
 	if err != nil {
-		return nil, fmt.Errorf("不是可用的归档文件: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("exchange.err.not_archive"), err)
 	}
 	for _, zf := range zr.File {
 		name, err := safeArchivePath(zf.Name)
@@ -356,14 +374,15 @@ func (e *Exchange) Index(ctx context.Context, path string) ([]port.ExchangeEntry
 			return nil, err
 		}
 		if m.Format != "aqx" {
-			return nil, fmt.Errorf("归档声明的格式是 %q，不是 aqx", m.Format)
+			return nil, errors.New(i18n.Tf("exchange.err.wrong_format", "format", m.Format))
 		}
 		if m.Version > aqxVersion {
-			return nil, fmt.Errorf("归档版本 %d 高于本程序支持的 %d：请升级后再导入", m.Version, aqxVersion)
+			return nil, errors.New(i18n.Tf("exchange.err.version_too_new",
+				"version", m.Version, "supported", aqxVersion))
 		}
 		return manifestEntries(m.Conversations), nil
 	}
-	return nil, errors.New("归档缺 manifest.json")
+	return nil, errors.New(i18n.T("exchange.err.no_manifest"))
 }
 
 // conversationTreeName 清单序号 → 归档条目名（1 起、无前导零）。
@@ -404,7 +423,8 @@ func resolvePick(pick []int, total int, entries []manifestEntry) ([]int, error) 
 	out := make([]int, 0, len(pick))
 	for _, i := range pick {
 		if i < 1 || i > total {
-			return nil, fmt.Errorf("清单里没有第 %d 个会话（这份归档共 %d 个）%s", i, total, manifestListing(entries))
+			return nil, errors.New(i18n.Tf("exchange.err.pick_out_of_range",
+				"index", i, "total", total, "listing", manifestListing(entries)))
 		}
 		if seen[i] {
 			continue
@@ -420,13 +440,14 @@ func resolvePick(pick []int, total int, entries []manifestEntry) ([]int, error) 
 func manifestListing(entries []manifestEntry) string {
 	const show = 20
 	var b strings.Builder
-	b.WriteString("\n清单:")
+	b.WriteString("\n" + i18n.T("exchange.io.manifest_listing.head"))
 	for i, e := range entries {
 		if i >= show {
-			fmt.Fprintf(&b, "\n- … 等 %d 个", len(entries))
+			b.WriteString("\n" + i18n.Tf("exchange.io.manifest_listing.more", "count", len(entries)))
 			break
 		}
-		fmt.Fprintf(&b, "\n- %d. %s（%d 条）", i+1, e.Title, e.Nodes)
+		b.WriteString("\n" + i18n.Tf("exchange.io.manifest_listing.item",
+			"index", i+1, "title", e.Title, "count", e.Nodes))
 	}
 	return b.String()
 }
@@ -466,7 +487,7 @@ func (e *Exchange) restoreBlobs(ctx context.Context, files []*zip.File) ([]strin
 		return nil, nil
 	}
 	if e.blobs == nil {
-		return []string{fmt.Sprintf("附件 %d 个（本构建未配置附件库）", len(files))}, nil
+		return []string{i18n.Tf("exchange.io.dropped.no_blob_store", "count", len(files))}, nil
 	}
 	var total int64
 	for _, f := range files {
@@ -482,17 +503,18 @@ func (e *Exchange) restoreBlobs(ctx context.Context, files []*zip.File) ([]strin
 		// 按实际解压字节累计，不信条目声明的大小：压缩包可以谎报 UncompressedSize。
 		total += int64(len(body))
 		if total > maxBlobTotalBytes {
-			return nil, fmt.Errorf("归档内附件总量超过 %d MB 上限", maxBlobTotalBytes>>20)
+			return nil, errors.New(i18n.Tf("exchange.err.blobs_total_too_large", "mb", maxBlobTotalBytes>>20))
 		}
 		sum := sha256.Sum256(body)
 		got := hex.EncodeToString(sum[:])
 		if got != want {
-			return nil, fmt.Errorf("归档内附件 %q 的内容哈希不符（声明 %s，实为 %s）：拒绝导入",
-				f.Name, shortHash(want), shortHash(got))
+			return nil, errors.New(i18n.Tf("exchange.err.blob_hash_mismatch",
+				"name", f.Name, "want", shortHash(want), "got", shortHash(got)))
 		}
 		// 名字与 MIME 不在附件库里（它们随 Part.Ref 存在树里，D17），这里只放字节。
 		if _, err := e.blobs.Put(ctx, bytes.NewReader(body), "", ""); err != nil {
-			return nil, fmt.Errorf("存回附件 %s: %w", shortHash(got), err)
+			return nil, fmt.Errorf("%s: %w",
+				i18n.Tf("exchange.err.store_blob", "hash", shortHash(got)), err)
 		}
 	}
 	return nil, nil
@@ -502,7 +524,11 @@ func (e *Exchange) restoreBlobs(ctx context.Context, files []*zip.File) ([]strin
 //
 // 两者都是「这次没带上」，但原因是两回事：前者去清附件库也没用，后者补进库就能带上。
 // 混成一句「不在附件库里」会让用户白忙一趟。
-var errBlobTooLarge = errors.New("附件超过单份上限")
+type blobTooLargeError struct{}
+
+func (blobTooLargeError) Error() string { return i18n.T("exchange.err.blob_over_limit") }
+
+var errBlobTooLarge error = blobTooLargeError{}
 
 // readBlob 从附件库取一份字节。
 func (e *Exchange) readBlob(ctx context.Context, ref conversation.BlobRef) ([]byte, error) {
@@ -515,7 +541,7 @@ func (e *Exchange) readBlob(ctx context.Context, ref conversation.BlobRef) ([]by
 		return nil, err
 	}
 	defer rc.Close()
-	return readLimited(rc, maxBlobBytes, "附件 "+ref.Name)
+	return readLimited(rc, maxBlobBytes, i18n.Tf("exchange.io.what.attachment", "name", ref.Name))
 }
 
 // collectBlobs 树里被引用的附件（按哈希去重，名字取首个引用；多棵树一起算，共用一份字节）。
@@ -540,10 +566,10 @@ func collectBlobs(cs []*conversation.Conversation) []conversation.BlobRef {
 func writeZipEntry(zw *zip.Writer, name string, fn func(io.Writer) error) error {
 	w, err := zw.Create(name)
 	if err != nil {
-		return fmt.Errorf("建归档条目 %s: %w", name, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("exchange.err.create_entry", "name", name), err)
 	}
 	if err := fn(w); err != nil {
-		return fmt.Errorf("写归档条目 %s: %w", name, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("exchange.err.write_entry", "name", name), err)
 	}
 	return nil
 }
@@ -556,7 +582,7 @@ func readZipJSON(f *zip.File, limit int64) (*manifest, error) {
 	}
 	var m manifest
 	if err := json.Unmarshal(body, &m); err != nil {
-		return nil, fmt.Errorf("解析 %s: %w", f.Name, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("exchange.err.parse_entry", "name", f.Name), err)
 	}
 	return &m, nil
 }
@@ -565,7 +591,7 @@ func readZipJSON(f *zip.File, limit int64) (*manifest, error) {
 func readZipLimited(f *zip.File, limit int64, what string) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
-		return nil, fmt.Errorf("打开 %s: %w", what, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("exchange.err.open_what", "what", what), err)
 	}
 	defer rc.Close()
 	return readLimited(rc, limit, what)
@@ -577,10 +603,10 @@ func readZipLimited(f *zip.File, limit int64, what string) ([]byte, error) {
 func readLimited(r io.Reader, limit int64, what string) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("读 %s: %w", what, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("exchange.err.read_what", "what", what), err)
 	}
 	if int64(len(body)) > limit {
-		return nil, fmt.Errorf("%s 超过 %d MB 上限", what, limit>>20)
+		return nil, errors.New(i18n.Tf("exchange.err.what_too_large", "what", what, "mb", limit>>20))
 	}
 	return body, nil
 }
@@ -603,17 +629,17 @@ func safeArchivePath(name string) (string, error) {
 		return "", nil // 目录条目：归档里不需要建目录，逐条解到库里
 	}
 	if strings.HasPrefix(n, "/") {
-		return "", fmt.Errorf("归档条目 %q 是绝对路径：拒绝解包", name)
+		return "", errors.New(i18n.Tf("exchange.err.entry_abs_path", "name", name))
 	}
 	if len(n) >= 2 && n[1] == ':' {
-		return "", fmt.Errorf("归档条目 %q 带盘符：拒绝解包", name)
+		return "", errors.New(i18n.Tf("exchange.err.entry_drive", "name", name))
 	}
 	clean := path.Clean(n)
 	if clean == "." {
 		return "", nil
 	}
 	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("归档条目 %q 越出解包目录：拒绝解包", name)
+		return "", errors.New(i18n.Tf("exchange.err.entry_escape", "name", name))
 	}
 	return clean, nil
 }
@@ -632,5 +658,5 @@ func summarizeNames(names []string) string {
 	if len(names) <= show {
 		return strings.Join(names, ", ")
 	}
-	return fmt.Sprintf("%s 等 %d 项", strings.Join(names[:show], ", "), len(names))
+	return i18n.Tf("exchange.io.names_more", "names", strings.Join(names[:show], ", "), "count", len(names))
 }

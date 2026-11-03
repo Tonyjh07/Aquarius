@@ -5,6 +5,7 @@
 package platform
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -24,7 +25,7 @@ func (p *Plat) RequestSaveFile(req SaveRequest) {
 func (p *Plat) showOpenFile(req OpenRequest) {
 	path, ok := openFileCommand(req)
 	if !ok {
-		p.noticeOnce(&p.dlgNotice, unsupported("文件选择框（Linux 需 zenity 或 kdialog）"))
+		p.noticeOnce(&p.dlgNotice, unsupported(i18n.T("ui.platform.dlg.unavailable_open")))
 		return
 	}
 	if path == "" || p.host == nil {
@@ -42,7 +43,7 @@ func (p *Plat) showOpenFile(req OpenRequest) {
 func (p *Plat) showSaveFile(req SaveRequest) {
 	path, ok := saveFileCommand(req)
 	if !ok {
-		p.noticeOnce(&p.dlgNotice, unsupported("另存为对话框（Linux 需 zenity 或 kdialog）"))
+		p.noticeOnce(&p.dlgNotice, unsupported(i18n.T("ui.platform.dlg.unavailable_save")))
 		return
 	}
 	if path == "" || p.host == nil {
@@ -66,7 +67,7 @@ func openFileCommand(req OpenRequest) (string, bool) {
 		}
 		return strings.TrimSpace(string(out)), true
 	default:
-		args := []string{"--file-selection", "--title=" + orDefault(title, "选择文件")}
+		args := []string{"--file-selection", "--title=" + orDefault(title, i18n.T("ui.platform.dlg.pick_file"))}
 		args = append(args, zenityFilters(req.Filters)...)
 		cmds := [][]string{
 			append([]string{"zenity"}, args...),
@@ -108,14 +109,14 @@ func saveDefaultName(req SaveRequest) string {
 	if req.Name != "" {
 		return req.Name
 	}
-	return "未命名" + extWithDot(req.DefExt)
+	return i18n.T("ui.platform.dlg.untitled") + extWithDot(req.DefExt)
 }
 
 // zenitySaveArgs zenity 保存框的参数表（单列出来，测试与实现读同一份）。
 func zenitySaveArgs(req SaveRequest) []string {
 	return []string{"zenity", "--file-selection", "--save",
 		"--filename=" + saveDefaultName(req),
-		"--title=" + orDefault(req.Title, "导出会话")}
+		"--title=" + orDefault(req.Title, i18n.T("ui.platform.dlg.export_session"))}
 }
 
 // runPickCommand 依次试给定的命令（zenity → kdialog）：第一条存在的那个负责呈现；
@@ -137,7 +138,7 @@ func runPickCommand(cmds [][]string) (string, bool) {
 // firstFilter 第一项过滤器（没给 = 所有文件）。
 func firstFilter(filters []FileFilter) FileFilter {
 	if len(filters) == 0 {
-		return FileFilter{Label: "所有文件 (*.*)", Pattern: "*.*"}
+		return FileFilter{Label: i18n.T("ui.platform.filter.all") + " (*.*)", Pattern: "*.*"}
 	}
 	return filters[0]
 }
@@ -179,7 +180,7 @@ func zenityPattern(pattern string) string {
 // kdialog 只收一个过滤器串：多档之间用换行分隔（`A | *.a\nB | *.b`），档内模式同样用空格。
 func kdialogFilters(filters []FileFilter) string {
 	if len(filters) == 0 {
-		filters = []FileFilter{{Label: "所有文件", Pattern: "*.*"}}
+		filters = []FileFilter{{Label: i18n.T("ui.platform.filter.all"), Pattern: "*.*"}}
 	}
 	var segs []string
 	for _, f := range filters {

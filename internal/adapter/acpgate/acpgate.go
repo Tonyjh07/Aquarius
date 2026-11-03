@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -131,12 +132,12 @@ func (m *Manager) List(context.Context) ([]port.DelegateInfo, error) {
 		}
 		switch {
 		case !a.Enabled:
-			info.Note = "已停用（delegate.agents 里 enabled=false）"
+			info.Note = i18n.T("acp.note.disabled")
 		case strings.TrimSpace(a.Command) == "":
-			info.Note = "未配置 command"
+			info.Note = i18n.T("acp.note.no_command")
 		default:
 			if _, err := m.opts.LookPath(a.Command); err != nil {
-				info.Note = fmt.Sprintf("命令不在 PATH 上：%s", a.Command)
+				info.Note = i18n.Tf("acp.note.not_on_path", "command", a.Command)
 			} else {
 				info.Available = true
 			}

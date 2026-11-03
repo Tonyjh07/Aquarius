@@ -2,13 +2,18 @@ package decorate
 
 import (
 	"context"
-	"errors"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // errNoCounter 内层未实现 TokenCounter 时的转发错误（估算层据此回落通用估算③，D26）。
-var errNoCounter = errors.New("decorate: 内层未实现 TokenCounter")
+// 零宽结构体：errors.Is 照旧，Error() 每次取词（§7.2）。
+type noCounterError struct{}
+
+func (noCounterError) Error() string { return i18n.T("tool.err.no_counter") }
+
+var errNoCounter error = noCounterError{}
 
 // TokenCounter 可选能力转发：三个装饰器都实现 port.TokenCounter 并向下透传，
 // 保证三级计数链②不因装饰器链断掉（app.New 对最外层做类型断言）。

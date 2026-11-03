@@ -10,10 +10,24 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
+
+// trHead 文案里第一个占位符之前的那截。
+//
+// 断言跟着 key 走：文案改了测试跟着改；实参（计数、名字）不在这里重复一遍，那条由功能用例
+// 自己盯着。只用在这类「回执里提到了某一类东西」的宽断言上。
+func trHead(key string) string {
+	t := i18n.T(key)
+	if i := strings.Index(t, "{"); i >= 0 {
+		return t[:i]
+	}
+	return t
+}
 
 // exportOne 单会话导出。
 func exportOne(ctx context.Context, ex port.SessionExporter, c *conversation.Conversation, format string, w io.Writer) (port.ExchangeReport, error) {

@@ -8,6 +8,7 @@ package platform
 
 import (
 	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"syscall"
 	"unsafe"
 )
@@ -76,7 +77,7 @@ func (p *Plat) ClipboardImage() ([]byte, error) {
 		return nil, ErrNoClipboardImage
 	}
 	if r, _, err := procOpenClipboard.Call(0); r == 0 {
-		return nil, fmt.Errorf("打开剪贴板失败（可能被其他程序占用）：%v", err)
+		return nil, fmt.Errorf("%s", i18n.Tf("ui.platform.clip.open_failed", "err", err))
 	}
 	defer procCloseClipboard.Call()
 

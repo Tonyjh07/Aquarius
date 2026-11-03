@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // 哨兵错误。
@@ -130,7 +132,7 @@ func New(id ID, title string) *Conversation {
 // root/system/inject 一律走 AppendCommitted（Root 由 New 创建，system/inject 为组装节点）。
 func (c *Conversation) Append(role Role, content []Part) (Message, error) {
 	if role != RoleUser && role != RoleAssistant {
-		return Message{}, fmt.Errorf("append: %w: 仅 user|assistant 可走 Append，root/system/inject 用 AppendCommitted", ErrInvalidNode)
+		return Message{}, fmt.Errorf("%s: %w", i18n.T("conv.err.append_role"), ErrInvalidNode)
 	}
 	m := Message{
 		ID:        NewMessageID(),
@@ -151,7 +153,7 @@ func (c *Conversation) Append(role Role, content []Part) (Message, error) {
 // D95 后无跨节点引用检查：工具调用与结果同片，合法性由 checkNodeShape 把守（CallID 节点内唯一）。
 func (c *Conversation) AppendCommitted(m Message) error {
 	if m.Role == RoleRoot {
-		return fmt.Errorf("append %q: %w: root 由 New 创建，不可提交", m.ID, ErrInvalidNode)
+		return fmt.Errorf("%s: %w", i18n.Tf("conv.err.append_root", "id", m.ID), ErrInvalidNode)
 	}
 	if err := checkNodeShape(m); err != nil {
 		return err
@@ -194,7 +196,7 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 		return Message{}, fmt.Errorf("revise %q: %w", id, ErrNotFound)
 	}
 	if old.Role == RoleRoot {
-		return Message{}, fmt.Errorf("revise %q: %w: 会话根节点就是会话本身，不可修订", id, ErrInvalidNode)
+		return Message{}, fmt.Errorf("%s: %w", i18n.Tf("conv.err.revise_root", "id", id), ErrInvalidNode)
 	}
 
 	m := Message{
@@ -334,7 +336,7 @@ func (c *Conversation) Prune(id MessageID) error {
 		return fmt.Errorf("prune %q: %w", id, ErrNotFound)
 	}
 	if m.Role == RoleRoot {
-		return fmt.Errorf("prune %q: %w: 会话根节点就是会话本身，不可删除", id, ErrInvalidNode)
+		return fmt.Errorf("%s: %w", i18n.Tf("conv.err.prune_root", "id", id), ErrInvalidNode)
 	}
 	sub := map[MessageID]bool{}
 	c.collectSubtree(id, sub)

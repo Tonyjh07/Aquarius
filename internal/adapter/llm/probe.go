@@ -27,6 +27,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -59,12 +60,15 @@ func probeImage() ([]byte, error) {
 			image.NewUniform(color.RGBA{R: 0xff, A: 0xff}), image.Point{}, draw.Src)
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, img); err != nil {
-			probeImageErr = fmt.Errorf("llm: 生成探测图片: %w", err)
+			probeImageErr = err
 			return
 		}
 		probeImageData = buf.Bytes()
 	})
-	return probeImageData, probeImageErr
+	if probeImageErr != nil {
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.probe.err_image"), probeImageErr)
+	}
+	return probeImageData, nil
 }
 
 // probeText 探测用的用户消息：模型侧文案，一律英文（AGENTS：进入模型上下文用英文）。
@@ -85,10 +89,10 @@ const probeToolName = "probe_ping"
 // 一套可能正好能用。所以逐问法各试一次，再合并结论。
 func (c *Client) Probe(ctx context.Context, model, capability string) (port.ProbeResult, error) {
 	if ctx == nil {
-		return port.ProbeResult{}, errors.New("llm: nil context")
+		return port.ProbeResult{}, errors.New(i18n.T("llm.err.nil_context"))
 	}
 	if strings.TrimSpace(model) == "" {
-		return port.ProbeResult{}, errors.New("llm: model 为空")
+		return port.ProbeResult{}, errors.New(i18n.T("llm.err.empty_model"))
 	}
 	attempts, err := probeAttempts(model, capability)
 	if err != nil {
@@ -147,7 +151,7 @@ func (c *Client) probeOnce(ctx context.Context, capability string, a probeAttemp
 		if ctx.Err() != nil {
 			return probeOutcome{}, ctx.Err() // 调用方自己撤的，不是探测结论
 		}
-		return finish(port.ProbeInconclusive, "请求没发出去："+err.Error())
+		return finish(port.ProbeInconclusive, i18n.Tf("llm.probe.reason.not_sent", "err", err))
 	}
 	defer resp.Body.Close()
 
@@ -155,17 +159,17 @@ func (c *Client) probeOnce(ctx context.Context, capability string, a probeAttemp
 		sn := readSnippet(resp.Body)
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-			return finish(port.ProbeInconclusive, fmt.Sprintf("鉴权失败（%d），换个密钥或检查 base_url 后重试：%s", resp.StatusCode, sn))
+			return finish(port.ProbeInconclusive, i18n.Tf("llm.probe.reason.auth", "code", resp.StatusCode, "err", sn))
 		case probeRejected(capability, sn):
-			return finish(port.ProbeUnsupported, fmt.Sprintf("服务端拒绝（%d）：%s", resp.StatusCode, sn))
+			return finish(port.ProbeUnsupported, i18n.Tf("llm.probe.reason.rejected", "code", resp.StatusCode, "err", sn))
 		default:
-			return finish(port.ProbeInconclusive, fmt.Sprintf("服务端报错（%d）但没点名该项能力：%s", resp.StatusCode, sn))
+			return finish(port.ProbeInconclusive, i18n.Tf("llm.probe.reason.server_error_disguised", "code", resp.StatusCode, "err", sn))
 		}
 	}
 
 	var payload probeResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&payload); err != nil {
-		return finish(port.ProbeInconclusive, "响应无法解析："+err.Error())
+		return finish(port.ProbeInconclusive, i18n.Tf("llm.probe.reason.decode", "err", err))
 	}
 	if payload.Usage != nil {
 		out.usage = conversation.Usage{
@@ -174,52 +178,50 @@ func (c *Client) probeOnce(ctx context.Context, capability string, a probeAttemp
 		}
 	}
 	if len(payload.Choices) == 0 {
-		return finish(port.ProbeInconclusive, "响应里没有 choices")
+		return finish(port.ProbeInconclusive, i18n.T("llm.probe.reason.no_choices"))
 	}
 	msg := payload.Choices[0].Message
 	switch capability {
 	case port.CapTools:
 		if len(msg.ToolCalls) > 0 {
-			return finish(port.ProbeSupported, fmt.Sprintf("模型发起了工具调用（%s）", msg.ToolCalls[0].Function.Name))
+			return finish(port.ProbeSupported, i18n.Tf("llm.probe.reason.tools_called", "name", msg.ToolCalls[0].Function.Name))
 		}
-		return finish(port.ProbeInconclusive, "请求被接受，但模型没发起工具调用（可能只是没照着做）")
+		return finish(port.ProbeInconclusive, i18n.T("llm.probe.reason.tools_not_called"))
 	case port.CapVision:
 		text := strings.TrimSpace(msg.text())
 		reason := strings.TrimSpace(msg.reasoning())
 		switch visionVerdict(text) {
 		case port.ProbeSupported:
-			return finish(port.ProbeSupported, fmt.Sprintf("带图请求答对了颜色（%s）", snippet(text, 40)))
+			return finish(port.ProbeSupported, i18n.Tf("llm.probe.reason.vision_ok", "text", snippet(text, 40)))
 		case port.ProbeUnsupported:
-			return finish(port.ProbeUnsupported, fmt.Sprintf("带图请求拿到了「%s」，不是图里的%s——图没被真正解码",
-				snippet(text, 40), probeVisionColor))
+			return finish(port.ProbeUnsupported, i18n.Tf("llm.probe.reason.vision_wrong",
+				"text", snippet(text, 40), "color", probeVisionColor))
 		}
 		// 正文没给出可判定的答案（含空正文）：退而看**否定证据**。思考型模型常把额度
 		// 花在思考上、正文只剩一句 "Unknown"；而「图没送到」这句话多半出现在思考里。
 		// 只采信「看不到 / 复述占位文本」这类否定说法——思考里蹦出个颜色词不能算答对。
 		if visionSaysBlind(text) || visionSaysPlaceholder(text) {
 			return finish(port.ProbeUnsupported,
-				fmt.Sprintf("模型在回复里说图没送到（%s）——服务端把图片换成了占位文本",
-					snippet(text, 60)))
+				i18n.Tf("llm.probe.reason.vision_blind_reply", "text", snippet(text, 60)))
 		}
 		if visionSaysBlind(reason) || visionSaysPlaceholder(reason) {
 			return finish(port.ProbeUnsupported,
-				fmt.Sprintf("模型在思考里说图没送到（%s）——服务端把图片换成了占位文本",
-					snippet(reason, 60)))
+				i18n.Tf("llm.probe.reason.vision_blind_reasoning", "text", snippet(reason, 60)))
 		}
 		if text == "" {
 			if payload.Choices[0].FinishReason == "length" {
-				return finish(port.ProbeInconclusive, "输出额度被思考用尽，没留下正文（提高额度后重试）")
+				return finish(port.ProbeInconclusive, i18n.T("llm.probe.reason.budget_exhausted"))
 			}
-			return finish(port.ProbeInconclusive, "请求被接受，但回复为空")
+			return finish(port.ProbeInconclusive, i18n.T("llm.probe.reason.reply_empty"))
 		}
-		return finish(port.ProbeInconclusive, fmt.Sprintf("回复没给出可判定的颜色：%s", snippet(text, 40)))
+		return finish(port.ProbeInconclusive, i18n.Tf("llm.probe.reason.no_color", "text", snippet(text, 40)))
 	case port.CapReasoning:
 		if strings.TrimSpace(msg.reasoning()) != "" {
-			return finish(port.ProbeSupported, fmt.Sprintf("按「%s」问法拿到了思考内容", a.label))
+			return finish(port.ProbeSupported, i18n.Tf("llm.probe.reason.reasoning_ok", "label", a.label))
 		}
-		return finish(port.ProbeInconclusive, fmt.Sprintf("「%s」被接受但没给出思考内容（可能被静默忽略）", a.label))
+		return finish(port.ProbeInconclusive, i18n.Tf("llm.probe.reason.reasoning_ignored", "label", a.label))
 	}
-	return probeOutcome{}, fmt.Errorf("llm: 未知能力 %q", capability)
+	return probeOutcome{}, errors.New(i18n.Tf("llm.probe.err_unknown_capability", "capability", capability))
 }
 
 // mergeProbeOutcomes 合并同一能力的多次问法（D174 口径一：判定必须站得住）。
@@ -229,7 +231,7 @@ func (c *Client) probeOnce(ctx context.Context, capability string, a probeAttemp
 //   - 其余 → 无结论。宁可这轮白花几条 token，也不要把「一半参数不认」判成「没有这项能力」。
 func mergeProbeOutcomes(outs []probeOutcome) probeOutcome {
 	if len(outs) == 0 {
-		return probeOutcome{verdict: port.ProbeInconclusive, reason: "没有可用的问法"}
+		return probeOutcome{verdict: port.ProbeInconclusive, reason: i18n.T("llm.probe.reason.no_attempt")}
 	}
 	if len(outs) == 1 {
 		return outs[0]
@@ -245,15 +247,15 @@ func mergeProbeOutcomes(outs []probeOutcome) probeOutcome {
 		case port.ProbeUnsupported:
 			rejected++
 		}
-		reasons = append(reasons, fmt.Sprintf("%s：%s", o.label, o.reason))
+		reasons = append(reasons, i18n.Tf("llm.probe.reason_join", "label", o.label, "reason", o.reason))
 	}
 	switch {
 	case supported >= 0:
 		return probeOutcome{verdict: port.ProbeSupported, reason: outs[supported].reason}
 	case rejected == len(outs):
-		return probeOutcome{verdict: port.ProbeUnsupported, reason: strings.Join(reasons, "；")}
+		return probeOutcome{verdict: port.ProbeUnsupported, reason: strings.Join(reasons, i18n.T("llm.probe.reason_sep"))}
 	default:
-		return probeOutcome{verdict: port.ProbeInconclusive, reason: strings.Join(reasons, "；")}
+		return probeOutcome{verdict: port.ProbeInconclusive, reason: strings.Join(reasons, i18n.T("llm.probe.reason_sep"))}
 	}
 }
 
@@ -274,7 +276,7 @@ func probeAttempts(model, capability string) ([]probeAttempt, error) {
 			Description: "Probe tool: takes no arguments, returns nothing. Call it to acknowledge.",
 			Schema:      tool.NoArgsSchema,
 		}}
-		return []probeAttempt{{label: "工具清单", req: req}}, nil
+		return []probeAttempt{{label: i18n.T("llm.probe.attempt.tools"), req: req}}, nil
 	case port.CapVision:
 		img, err := probeImage()
 		if err != nil {
@@ -285,7 +287,7 @@ func probeAttempts(model, capability string) ([]probeAttempt, error) {
 			{Kind: port.PromptText, Text: probeVisionPrompt},
 			{Kind: port.PromptImage, MIME: "image/png", Data: img},
 		}}}
-		return []probeAttempt{{label: "带图请求", req: req}}, nil
+		return []probeAttempt{{label: i18n.T("llm.probe.attempt.vision"), req: req}}, nil
 	case port.CapReasoning:
 		// 两套参数分别试：生态里各认一套（reasoning_effort 一派、enable_thinking 一派），
 		// 一起发的话，写死的那一方被拒就会把能用的那方一起否掉。
@@ -301,7 +303,7 @@ func probeAttempts(model, capability string) ([]probeAttempt, error) {
 			{label: "enable_thinking", req: thinking},
 		}, nil
 	default:
-		return nil, fmt.Errorf("llm: 未知能力 %q", capability)
+		return nil, errors.New(i18n.Tf("llm.probe.err_unknown_capability", "capability", capability))
 	}
 }
 
@@ -314,7 +316,7 @@ func encodeProbeRequest(req port.GenerateRequest) ([]byte, error) {
 	}
 	var generic map[string]any
 	if err := json.Unmarshal(body, &generic); err != nil {
-		return nil, fmt.Errorf("llm: 探测请求体解析: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.err.parse_probe_body"), err)
 	}
 	generic["stream"] = false
 	delete(generic, "stream_options")

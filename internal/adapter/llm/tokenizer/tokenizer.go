@@ -15,6 +15,7 @@ package tokenizer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // Tokenizer 已加载的 BPE 分词器（加载后只读；顺序调用 Count，非并发安全）。
@@ -101,7 +104,7 @@ func normalizePath(path string) string {
 func Load(path string) (*Tokenizer, error) {
 	path = normalizePath(path)
 	if path == "" {
-		return nil, fmt.Errorf("tokenizer: 路径为空")
+		return nil, errors.New(i18n.T("llm.tokenizer.err_empty_path"))
 	}
 	file := path
 	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
@@ -109,23 +112,23 @@ func Load(path string) (*Tokenizer, error) {
 	}
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return nil, fmt.Errorf("tokenizer: 读取 %s: %w（检查 model.providers[].tokenizer；目录亦可）", file, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("llm.tokenizer.err_read", "file", file), err)
 	}
 	var hf hfFile
 	if err := json.Unmarshal(data, &hf); err != nil {
-		return nil, fmt.Errorf("tokenizer: 解析 %s: %w", file, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("llm.tokenizer.err_parse", "file", file), err)
 	}
 	if hf.Model.Type != "BPE" {
-		return nil, fmt.Errorf("tokenizer: 不支持的模型类型 %q（仅 BPE）", hf.Model.Type)
+		return nil, errors.New(i18n.Tf("llm.tokenizer.err_model_type", "type", hf.Model.Type))
 	}
 	// normalizer：只支持恒等（缺省或空 Sequence）；其余（NFKC/Lowercase…）
 	// 若静默放行会导致计数与服务端不符却仍标"精确"——一律报错回落通用估算③。
 	if hf.Normalizer != nil && !(hf.Normalizer.Type == "Sequence" && len(hf.Normalizer.Normalizers) == 0) {
-		return nil, fmt.Errorf("tokenizer: 不支持的 normalizer %q（仅支持恒等）", hf.Normalizer.Type)
+		return nil, errors.New(i18n.Tf("llm.tokenizer.err_normalizer", "type", hf.Normalizer.Type))
 	}
 	// pre_tokenizer：Sequence[Split…, ByteLevel]。
 	if hf.PreTokenizer == nil || hf.PreTokenizer.Type != "Sequence" {
-		return nil, fmt.Errorf("tokenizer: 不支持的 pre_tokenizer（仅 Sequence[Split…, ByteLevel]）")
+		return nil, errors.New(i18n.T("llm.tokenizer.err_pretokenizer"))
 	}
 	t := &Tokenizer{
 		vocab:  hf.Model.Vocab,
@@ -139,22 +142,22 @@ func Load(path string) (*Tokenizer, error) {
 		case "Split":
 			re, cerr := regexp2.Compile(st.Pattern.Regex, 0)
 			if cerr != nil {
-				return nil, fmt.Errorf("tokenizer: 编译切分正则 %q: %w", st.Pattern.Regex, cerr)
+				return nil, fmt.Errorf("%s: %w", i18n.Tf("llm.tokenizer.err_regex", "pattern", st.Pattern.Regex), cerr)
 			}
 			t.splits = append(t.splits, re)
 		case "ByteLevel":
 			// 字节级映射恒在最后应用（use_regex=false：不再二次切分）。
 			if i != len(hf.PreTokenizer.PreTokenizers)-1 {
-				return nil, fmt.Errorf("tokenizer: ByteLevel 必须是 pre_tokenizer 末位")
+				return nil, errors.New(i18n.T("llm.tokenizer.err_bytelevel_last"))
 			}
 		default:
-			return nil, fmt.Errorf("tokenizer: 不支持的预切分步骤 %q", st.Type)
+			return nil, errors.New(i18n.Tf("llm.tokenizer.err_pretok_step", "type", st.Type))
 		}
 	}
 	// merges：两种历史格式。
 	var ms []json.RawMessage
 	if err := json.Unmarshal(hf.Model.Merges, &ms); err != nil {
-		return nil, fmt.Errorf("tokenizer: 解析 merges: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.tokenizer.err_merges"), err)
 	}
 	for i, raw := range ms {
 		var s string
@@ -168,7 +171,7 @@ func Load(path string) (*Tokenizer, error) {
 			t.merges[pair[0]+" "+pair[1]] = i
 			continue
 		}
-		return nil, fmt.Errorf("tokenizer: 无法解析 merges[%d]: %s", i, raw)
+		return nil, errors.New(i18n.Tf("llm.tokenizer.err_merge_item", "index", i, "line", raw))
 	}
 	// added tokens：按首 rune 分桶、桶内长者优先（最长匹配）。
 	for _, a := range hf.AddedTokens {

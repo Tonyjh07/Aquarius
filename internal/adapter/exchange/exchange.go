@@ -16,6 +16,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -53,17 +54,17 @@ func (e *Exchange) Export(ctx context.Context, cs []*conversation.Conversation, 
 		return port.ExchangeReport{}, err
 	}
 	if len(cs) == 0 {
-		return port.ExchangeReport{}, errors.New("exchange: 没有要导出的会话")
+		return port.ExchangeReport{}, errors.New(i18n.T("exchange.err.no_conversations"))
 	}
 	for _, c := range cs {
 		if c == nil {
-			return port.ExchangeReport{}, errors.New("exchange: 会话为空")
+			return port.ExchangeReport{}, errors.New(i18n.T("exchange.err.nil_conversation"))
 		}
 	}
 	rep := port.ExchangeReport{Format: format}
 	if format != "aqx" && len(cs) > 1 {
 		// 不写第一个、也不静默丢其余的：别人按那份规范读，一份半成品比没有更糟。
-		return rep, fmt.Errorf("%s 这种格式一次只能写一个会话（现在给了 %d 个）：要备份多个会话请用 aqx", format, len(cs))
+		return rep, errors.New(i18n.Tf("exchange.err.single_only", "format", format, "count", len(cs)))
 	}
 	switch format {
 	case "aqx":
@@ -75,9 +76,10 @@ func (e *Exchange) Export(ctx context.Context, cs []*conversation.Conversation, 
 	case "sillytavern":
 		return e.exportSillyTavern(ctx, cs[0], w)
 	case "openwebui":
-		return rep, errors.New("openwebui 只认不写：要喂 Open WebUI 用 chatgpt 那份")
+		return rep, errors.New(i18n.T("exchange.err.openwebui_readonly"))
 	default:
-		return rep, fmt.Errorf("不认识的导出格式 %q（可写：%s）", format, writableNames())
+		return rep, errors.New(i18n.Tf("exchange.err.unknown_export",
+			"format", format, "names", writableNames()))
 	}
 }
 
@@ -90,7 +92,7 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 	if f.Name != "aqx" {
 		// 非容器只有一项：只认空或 {1}，其余报因（不静默当成「全导」）。
 		if len(pick) > 1 || (len(pick) == 1 && pick[0] != 1) {
-			return nil, rep, errors.New("这种格式只有一项，--pick 只接受 1")
+			return nil, rep, errors.New(i18n.T("exchange.err.pick_single"))
 		}
 	}
 	switch f.Name {
@@ -121,7 +123,7 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 		}
 		return []*conversation.Conversation{c}, rep, nil
 	default:
-		return nil, rep, fmt.Errorf("不认识的导入格式 %q", f.Name)
+		return nil, rep, errors.New(i18n.Tf("exchange.err.unknown_import", "format", f.Name))
 	}
 }
 

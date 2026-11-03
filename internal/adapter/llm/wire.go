@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -115,7 +116,7 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 	}
 	data, err := json.Marshal(out)
 	if err != nil {
-		return nil, fmt.Errorf("llm: 编码请求体: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.err.encode_body"), err)
 	}
 	return data, nil
 }
@@ -183,7 +184,7 @@ func buildContent(parts []port.PromptPart) (any, error) {
 	for _, p := range parts {
 		if p.Kind == port.PromptImage {
 			if len(p.Data) == 0 {
-				return nil, errors.New("llm: 图片片段缺少数据（AttachmentStore 未提供字节）")
+				return nil, errors.New(i18n.T("llm.err.image_no_data"))
 			}
 			mime := p.MIME
 			if mime == "" {

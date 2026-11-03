@@ -14,6 +14,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -39,7 +40,7 @@ func (a *Adapter) Name() string { return "notify" }
 // Deliver 交付一条回答：抽取文本 → 截预览 → send。无文本内容不打扰（返回 nil）。
 func (a *Adapter) Deliver(ctx context.Context, req port.OutputRequest) error {
 	if a.send == nil {
-		return errors.New("notify: 未配置发送器")
+		return errors.New(i18n.T("notify.err.no_sender"))
 	}
 	if err := ctx.Err(); err != nil {
 		return err

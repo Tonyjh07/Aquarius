@@ -11,10 +11,13 @@ package secretbin
 // 用 LocalFree 释放——漏释放就是每次读泄漏一份密钥内存。
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"syscall"
 	"unsafe"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // platformCipher Windows 默认档 = DPAPI（AES 档仍编译在内，测试可覆盖 cipherFor 跑到）。
@@ -40,7 +43,7 @@ type dataBlob struct {
 // protLocal 加密为 DPAPI blob。
 func protLocal(plain []byte) ([]byte, error) {
 	if len(plain) == 0 {
-		return nil, fmt.Errorf("DPAPI: 空明文不可加密")
+		return nil, errors.New(i18n.T("secret.err.dpapi_empty_plain"))
 	}
 	in := dataBlob{cbData: uint32(len(plain)), pbData: &plain[0]}
 	var out dataBlob
@@ -52,7 +55,7 @@ func protLocal(plain []byte) ([]byte, error) {
 	)
 	runtime.KeepAlive(plain)
 	if r == 0 {
-		return nil, fmt.Errorf("CryptProtectData 失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("secret.err.dpapi_protect"), err)
 	}
 	return takeOutBlob(out)
 }
@@ -60,7 +63,7 @@ func protLocal(plain []byte) ([]byte, error) {
 // unprotLocal 还原 DPAPI blob。
 func unprotLocal(blob []byte) ([]byte, error) {
 	if len(blob) == 0 {
-		return nil, fmt.Errorf("DPAPI: 空密文不可还原")
+		return nil, errors.New(i18n.T("secret.err.dpapi_empty_blob"))
 	}
 	in := dataBlob{cbData: uint32(len(blob)), pbData: &blob[0]}
 	var out dataBlob
@@ -74,7 +77,7 @@ func unprotLocal(blob []byte) ([]byte, error) {
 	if r == 0 {
 		// 换机拷 profile / 换了账户的典型症状就落在这里：具体原因交给上层统一措辞
 		// （调用方按 ErrUnreadable 警告 + 回落同名环境变量）。
-		return nil, fmt.Errorf("CryptUnprotectData 失败（本机账户与写入时不是同一个，或文件已损坏）: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("secret.err.dpapi_unprotect"), err)
 	}
 	return takeOutBlob(out)
 }
@@ -82,7 +85,7 @@ func unprotLocal(blob []byte) ([]byte, error) {
 // takeOutBlob 拷出系统分配的输出 blob 并立即释放（不把密钥留在 LocalAlloc 内存里）。
 func takeOutBlob(out dataBlob) ([]byte, error) {
 	if out.pbData == nil || out.cbData == 0 {
-		return nil, fmt.Errorf("DPAPI 返回空结果")
+		return nil, errors.New(i18n.T("secret.err.dpapi_empty_result"))
 	}
 	defer func() { _, _, _ = procFree.Call(uintptr(unsafe.Pointer(out.pbData))) }()
 	buf := make([]byte, int(out.cbData))

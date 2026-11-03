@@ -4,6 +4,7 @@
 package platform
 
 import (
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -16,7 +17,7 @@ func (p *Plat) RequestPathPick(kind PickKind) { go p.showSkillPick(kind) }
 func (p *Plat) showSkillPick(kind PickKind) {
 	path, ok := pickSkillPathCommand(kind)
 	if !ok {
-		p.noticeOnce(&p.menuNotice, unsupported("文件选择框（Linux 需 zenity 或 kdialog）"))
+		p.noticeOnce(&p.menuNotice, unsupported(i18n.T("ui.platform.dlg.unavailable_open")))
 		return
 	}
 	if path == "" || p.host == nil {
@@ -30,12 +31,12 @@ func (p *Plat) showSkillPick(kind PickKind) {
 func pickSkillPathCommand(kind PickKind) (string, bool) {
 	switch runtime.GOOS {
 	case "darwin":
-		script := `POSIX path of (choose file with prompt "选择技能文件")`
+		script := `POSIX path of (choose file with prompt ` + appleScriptString(i18n.T("ui.platform.dlg.skill_file")) + `)`
 		switch kind {
 		case PickSkillDir:
-			script = `POSIX path of (choose folder with prompt "选择技能文件夹")`
+			script = `POSIX path of (choose folder with prompt ` + appleScriptString(i18n.T("ui.platform.dlg.skill_dir")) + `)`
 		case PickCharacterCard:
-			script = `POSIX path of (choose file with prompt "选择角色卡文件")`
+			script = `POSIX path of (choose file with prompt ` + appleScriptString(i18n.T("ui.platform.dlg.character_card")) + `)`
 		}
 		out, err := exec.Command("osascript", "-e", script).Output()
 		if err != nil {
@@ -47,20 +48,24 @@ func pickSkillPathCommand(kind PickKind) (string, bool) {
 		switch kind {
 		case PickSkillDir:
 			cmds = [][]string{
-				{"zenity", "--file-selection", "--directory", "--title=选择技能文件夹"},
+				{"zenity", "--file-selection", "--directory", "--title=" + i18n.T("ui.platform.dlg.skill_dir")},
 				{"kdialog", "--getexistingdirectory", "."},
 			}
 		case PickCharacterCard:
 			cmds = [][]string{
-				{"zenity", "--file-selection", "--file-filter=角色卡 | *.png *.json *.charx",
-					"--file-filter=所有文件 | *", "--title=选择角色卡文件"},
-				{"kdialog", "--getopenfilename", ".", "*.png *.json *.charx | 角色卡"},
+				{"zenity", "--file-selection",
+					"--file-filter=" + i18n.T("ui.platform.filter.character") + " | *.png *.json *.charx",
+					"--file-filter=" + i18n.T("ui.platform.filter.all") + " | *",
+					"--title=" + i18n.T("ui.platform.dlg.character_card")},
+				{"kdialog", "--getopenfilename", ".", "*.png *.json *.charx | " + i18n.T("ui.platform.filter.character")},
 			}
 		default:
 			cmds = [][]string{
-				{"zenity", "--file-selection", "--file-filter=技能文件 | SKILL.md *.zip",
-					"--file-filter=所有文件 | *", "--title=选择技能文件"},
-				{"kdialog", "--getopenfilename", ".", "SKILL.md *.zip | 技能文件"},
+				{"zenity", "--file-selection",
+					"--file-filter=" + i18n.T("ui.platform.filter.skill") + " | SKILL.md *.zip",
+					"--file-filter=" + i18n.T("ui.platform.filter.all") + " | *",
+					"--title=" + i18n.T("ui.platform.dlg.skill_file")},
+				{"kdialog", "--getopenfilename", ".", "SKILL.md *.zip | " + i18n.T("ui.platform.filter.skill")},
 			}
 		}
 		for _, cmd := range cmds {

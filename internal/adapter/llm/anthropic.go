@@ -15,6 +15,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -133,11 +134,11 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 		return nil, err
 	}
 	if len(msgs) == 0 {
-		return nil, errors.New("llm: 没有可发送的消息")
+		return nil, errors.New(i18n.T("llm.err.no_messages"))
 	}
 	// Messages API 要求首条是 user（system 走顶层，不占消息位）。
 	if msgs[0].Role != "user" {
-		return nil, errors.New("llm: 会话上下文以 assistant 开头，该协议要求首条消息为 user")
+		return nil, errors.New(i18n.T("llm.err.leading_assistant"))
 	}
 	out := anthropicRequest{
 		Model:       req.Model,
@@ -175,7 +176,7 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 	}
 	data, err := json.Marshal(out)
 	if err != nil {
-		return nil, fmt.Errorf("llm: 编码请求体: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.err.encode_body"), err)
 	}
 	return data, nil
 }
@@ -212,7 +213,7 @@ func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInb
 			for _, b := range blocks {
 				tb, ok := b.(anthropicText)
 				if !ok {
-					return nil, nil, errors.New("llm: system 消息不接受图片分片")
+					return nil, nil, errors.New(i18n.T("llm.err.system_image"))
 				}
 				system = append(system, tb)
 			}
@@ -234,7 +235,7 @@ func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInb
 			}
 			push("assistant", blocks...)
 		default:
-			return nil, nil, fmt.Errorf("llm: 未知消息角色 %q", m.Role)
+			return nil, nil, errors.New(i18n.Tf("llm.err.unknown_role", "role", m.Role))
 		}
 	}
 	return out, system, nil
@@ -247,10 +248,10 @@ func anthropicBlocks(parts []port.PromptPart, allowImage bool) ([]any, error) {
 	for _, p := range parts {
 		if p.Kind == port.PromptImage {
 			if !allowImage {
-				return nil, errors.New("llm: 该角色的消息不接受图片分片")
+				return nil, errors.New(i18n.T("llm.err.role_image"))
 			}
 			if len(p.Data) == 0 {
-				return nil, errors.New("llm: 图片片段缺少数据（AttachmentStore 未提供字节）")
+				return nil, errors.New(i18n.T("llm.err.image_no_data"))
 			}
 			mime := p.MIME
 			if mime == "" {
@@ -307,7 +308,7 @@ func anthropicToolInput(raw json.RawMessage) (map[string]any, error) {
 	}
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(s), &obj); err != nil {
-		return nil, fmt.Errorf("llm: 工具调用参数不是 JSON 对象（%s）: %w", snippet(s, 80), err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("llm.err.tool_args_not_object", "snippet", snippet(s, 80)), err)
 	}
 	if obj == nil {
 		obj = map[string]any{}
@@ -440,7 +441,7 @@ type anthropicEventErrorDetail struct {
 func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (port.Delta, bool, error) {
 	var ev anthropicEvent
 	if err := json.Unmarshal([]byte(payload), &ev); err != nil {
-		return port.Delta{}, false, fmt.Errorf("llm: 解析流分片: %w（片段: %s）", err, snippet(payload, 200))
+		return port.Delta{}, false, fmt.Errorf("%s: %w", i18n.Tf("llm.err.stream_decode", "snippet", snippet(payload, 200)), err)
 	}
 	switch ev.Type {
 	case "message_start":
@@ -505,7 +506,7 @@ func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (
 		}}, true, nil
 
 	case "error":
-		return port.Delta{}, false, fmt.Errorf("llm: 服务端流式错误: %s", anthropicEventMessage(ev))
+		return port.Delta{}, false, errors.New(i18n.Tf("llm.err.stream_error", "message", anthropicEventMessage(ev)))
 
 	case "ping", "content_block_stop":
 		return port.Delta{}, false, nil
@@ -521,7 +522,7 @@ func anthropicEventMessage(ev anthropicEvent) string {
 	if ev.Error != nil && ev.Error.Type != "" {
 		return ev.Error.Type
 	}
-	return "（服务端未给出详情）"
+	return i18n.T("llm.detail.no_detail")
 }
 
 // ---------------------------------------------------------------------------

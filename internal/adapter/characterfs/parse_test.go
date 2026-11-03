@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -244,7 +245,7 @@ func TestParseCardLimits(t *testing.T) {
 
 // TestParseCardUnrecognized 认不出的容器明确报因，不瞎猜。
 func TestParseCardUnrecognized(t *testing.T) {
-	if _, err := parseCard("card.bin", []byte("hello")); err == nil || !strings.Contains(err.Error(), "认不出") {
+	if _, err := parseCard("card.bin", []byte("hello")); err == nil || !strings.Contains(err.Error(), i18n.T("char.load.unknown_format")) {
 		t.Fatalf("err = %v, want an unrecognized-container error", err)
 	}
 }

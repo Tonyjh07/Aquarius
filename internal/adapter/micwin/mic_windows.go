@@ -6,13 +6,13 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"runtime"
 	"sync"
 	"syscall"
 	"time"
 	"unsafe"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -81,13 +81,13 @@ func New() *Recorder { return &Recorder{} }
 // 已录到的部分照常返回，交给上层决定要不要转写。
 func (r *Recorder) Record(ctx context.Context, max time.Duration) ([]byte, time.Duration, error) {
 	if ctx == nil {
-		return nil, 0, errors.New("mic: nil context")
+		return nil, 0, errors.New(i18n.T("audio.rec.err_nil_context"))
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if n, _, _ := procGetNumDevs.Call(); n == 0 {
-		return nil, 0, errors.New("mic: 没有可用的录音设备")
+		return nil, 0, errors.New(i18n.T("audio.rec.err_no_device"))
 	}
 	max = clampDuration(max)
 	want := int(max.Seconds()) * SampleRate * Channels * Bits / 8
@@ -97,7 +97,7 @@ func (r *Recorder) Record(ctx context.Context, max time.Duration) ([]byte, time.
 
 	event, _, _ := procCreateEvent.Call(0, 0, 0, 0)
 	if event == 0 {
-		return nil, 0, errors.New("mic: 创建录音事件失败")
+		return nil, 0, errors.New(i18n.T("audio.rec.err_create_event"))
 	}
 	defer procCloseHandle.Call(event)
 
@@ -114,14 +114,14 @@ func (r *Recorder) Record(ctx context.Context, max time.Duration) ([]byte, time.
 		uintptr(unsafe.Pointer(&hwi)), waveMapper,
 		uintptr(unsafe.Pointer(&wfx)), event, 0, callbackEvent,
 	); code != noError {
-		return nil, 0, mmError(code, "打开录音设备")
+		return nil, 0, mmError(code, i18n.T("audio.rec.action.open"))
 	}
 	defer procClose.Call(hwi)
 
 	buf := make([]byte, want)
 	hdr := waveHdr{data: uintptr(unsafe.Pointer(&buf[0])), bufferLength: uint32(len(buf))}
 	if code, _, _ := procPrepare.Call(hwi, uintptr(unsafe.Pointer(&hdr)), unsafe.Sizeof(hdr)); code != noError {
-		return nil, 0, mmError(code, "准备录音缓冲")
+		return nil, 0, mmError(code, i18n.T("audio.rec.action.prepare"))
 	}
 	prepared := true
 	defer func() {
@@ -130,10 +130,10 @@ func (r *Recorder) Record(ctx context.Context, max time.Duration) ([]byte, time.
 		}
 	}()
 	if code, _, _ := procAddBuffer.Call(hwi, uintptr(unsafe.Pointer(&hdr)), unsafe.Sizeof(hdr)); code != noError {
-		return nil, 0, mmError(code, "挂载录音缓冲")
+		return nil, 0, mmError(code, i18n.T("audio.rec.action.mount"))
 	}
 	if code, _, _ := procStart.Call(hwi); code != noError {
-		return nil, 0, mmError(code, "开始录音")
+		return nil, 0, mmError(code, i18n.T("audio.rec.action.start"))
 	}
 
 	started := time.Now()
@@ -164,7 +164,7 @@ loop:
 
 	n := int(hdr.bytesRecorded)
 	if n <= 0 {
-		return nil, 0, errors.New("mic: 没有录到声音（检查麦克风是否被静音）")
+		return nil, 0, errors.New(i18n.T("audio.rec.err_silent"))
 	}
 	if n > len(buf) {
 		n = len(buf)
@@ -198,19 +198,19 @@ func mmError(code uintptr, action string) error {
 	var why string
 	switch code {
 	case 2:
-		why = "设备 ID 无效"
+		why = i18n.T("audio.rec.why.bad_id")
 	case 4:
-		why = "设备已被其他程序占用"
+		why = i18n.T("audio.rec.why.busy")
 	case 5:
-		why = "驱动不支持该操作"
+		why = i18n.T("audio.rec.why.unsupported")
 	case 6:
-		why = "没有可用的录音设备"
+		why = i18n.T("audio.rec.why.no_device")
 	case 7:
-		why = "内存不足"
+		why = i18n.T("audio.rec.why.out_of_memory")
 	case 32:
-		why = "设备不支持 16kHz 单声道 16bit 采集"
+		why = i18n.T("audio.rec.why.format")
 	default:
-		why = "未知错误"
+		why = i18n.T("audio.rec.why.unknown")
 	}
-	return fmt.Errorf("mic: %s失败：%s（错误码 %d）", action, why, code)
+	return errors.New(i18n.Tf("audio.rec.err_mm", "action", action, "why", why, "code", code))
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestMaterializeReassignsIDs 源 ID 只用来建边：两次导入同一份数据得到两棵互不相干的树，
@@ -74,10 +75,13 @@ func TestMaterializeRejectsBadInput(t *testing.T) {
 		nodes []importedNode
 		want  string
 	}{
-		"空 ID":  {[]importedNode{{SrcID: "", Role: conversation.RoleUser, Parts: ok}}, "没有 ID"},
-		"重复 ID": {[]importedNode{{SrcID: "a", Role: conversation.RoleUser, Parts: ok}, {SrcID: "a", Role: conversation.RoleAssistant, Parts: ok}}, "重复"},
-		"不认角色":  {[]importedNode{{SrcID: "a", Role: conversation.Role("critic"), Parts: ok}}, "角色"},
-		"没有消息":  {nil, "没有消息"},
+		"空 ID": {[]importedNode{{SrcID: "", Role: conversation.RoleUser, Parts: ok}},
+			i18n.Tf("exchange.err.node_no_id", "index", 1)},
+		"重复 ID": {[]importedNode{{SrcID: "a", Role: conversation.RoleUser, Parts: ok}, {SrcID: "a", Role: conversation.RoleAssistant, Parts: ok}},
+			i18n.Tf("exchange.err.duplicate_node_id", "id", "a")},
+		"不认角色": {[]importedNode{{SrcID: "a", Role: conversation.Role("critic"), Parts: ok}},
+			i18n.Tf("exchange.err.unknown_role", "id", "a", "role", conversation.Role("critic"))},
+		"没有消息": {nil, i18n.T("exchange.err.no_messages")},
 	}
 	for name, tc := range cases {
 		_, err := materialize(&importedTree{Nodes: tc.nodes})
@@ -102,8 +106,9 @@ func TestMaterializeRejectsTooManyNodes(t *testing.T) {
 		prev = id
 	}
 	_, err := materialize(&importedTree{Nodes: nodes})
-	if err == nil || !strings.Contains(err.Error(), "上限") {
-		t.Fatalf("err = %v, want 节点数上限", err)
+	if want := i18n.Tf("exchange.err.import_too_many_nodes",
+		"count", len(nodes), "max", maxImportNodes); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want %q", err, want)
 	}
 }
 
@@ -115,8 +120,10 @@ func TestMaterializeRejectsTooMuchText(t *testing.T) {
 		{SrcID: "a", Role: conversation.RoleUser,
 			Parts: []conversation.Part{{Kind: conversation.PartText, Text: big}}},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "上限") {
-		t.Fatalf("err = %v, want 正文上限", err)
+	if want := i18n.Tf("exchange.err.import_text_too_large",
+		"mb", (maxImportTextBytes+1)>>20, "max", maxImportTextBytes>>20); err == nil ||
+		!strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want %q", err, want)
 	}
 }
 
@@ -126,8 +133,9 @@ func TestMaterializeRejectsDanglingParent(t *testing.T) {
 		{SrcID: "a", Role: conversation.RoleUser, Parent: "nope",
 			Parts: []conversation.Part{{Kind: conversation.PartText, Text: "x"}}},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "父节点") {
-		t.Fatalf("err = %v, want 父节点不在文件里", err)
+	if want := i18n.Tf("exchange.err.dangling_parent_src", "id", "a", "parent", "nope"); err == nil ||
+		!strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want %q", err, want)
 	}
 }
 

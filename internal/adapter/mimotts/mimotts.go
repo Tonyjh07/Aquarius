@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -71,18 +72,18 @@ type Client struct {
 func New(cfg Config) (*Client, error) {
 	raw := strings.TrimSpace(cfg.BaseURL)
 	if raw == "" {
-		return nil, errors.New("tts: base_url 为空")
+		return nil, errors.New(i18n.T("tts.err.base_url_empty"))
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, fmt.Errorf("tts: 非法 base_url %q", cfg.BaseURL)
+		return nil, errors.New(i18n.Tf("tts.err.base_url_invalid", "url", cfg.BaseURL))
 	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
-		return nil, errors.New("tts: 模型名为空")
+		return nil, errors.New(i18n.T("tts.err.model_empty"))
 	}
 	if cfg.Blobs == nil {
-		return nil, errors.New("tts: 未接附件库")
+		return nil, errors.New(i18n.T("tts.err.no_blobs"))
 	}
 	hc := cfg.HTTP
 	if hc == nil {
@@ -103,14 +104,14 @@ func (c *Client) Mode() string { return modeOf(c.model) }
 // Synthesize 合成一段语音并落附件库，返回引用。
 func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conversation.BlobRef, error) {
 	if ctx == nil {
-		return conversation.BlobRef{}, errors.New("tts: nil context")
+		return conversation.BlobRef{}, errors.New(i18n.T("tts.err.nil_context"))
 	}
 	if err := ctx.Err(); err != nil {
 		return conversation.BlobRef{}, err
 	}
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
-		return conversation.BlobRef{}, errors.New("tts: 要合成的文本为空")
+		return conversation.BlobRef{}, errors.New(i18n.T("tts.err.text_empty"))
 	}
 	if req.Tags != "" {
 		text = "(" + strings.TrimSpace(req.Tags) + ")" + text
@@ -125,7 +126,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 		// 描述，接在后面一起交给模型。voice 字段该模型不支持，必须省略。
 		desc := strings.TrimSpace(req.Design)
 		if desc == "" {
-			return conversation.BlobRef{}, errors.New("tts: 音色设计模型需要在设置里填写音色描述")
+			return conversation.BlobRef{}, errors.New(i18n.T("tts.mimo.err_design_missing"))
 		}
 		if s := strings.TrimSpace(req.Style); s != "" {
 			desc += "\n" + s
@@ -135,7 +136,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 		// 音色克隆：voice 是样本文件绝对路径，读出来转 Base64（接口只收
 		// Base64，不收 data: URL）。
 		if voice == "" {
-			return conversation.BlobRef{}, errors.New("tts: 音色克隆模型需要填写样本文件路径")
+			return conversation.BlobRef{}, errors.New(i18n.T("tts.mimo.err_sample_path_missing"))
 		}
 		sample, err := readSample(voice)
 		if err != nil {
@@ -156,11 +157,11 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 
 	payload, err := json.Marshal(request{Model: c.model, Messages: msgs, Audio: audio})
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 编码请求: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.encode_request"), err)
 	}
 	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+chatPath, bytes.NewReader(payload))
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 构造请求: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.build_request"), err)
 	}
 	hreq.Header.Set("Content-Type", "application/json")
 	if c.key != "" {
@@ -168,30 +169,30 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	}
 	resp, err := c.hc.Do(hreq)
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 请求失败: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.request_failed"), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 服务端返回 %d: %s", resp.StatusCode, snippet(resp.Body))
+		return conversation.BlobRef{}, errors.New(i18n.Tf("tts.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
 	}
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&out); err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 解析响应: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.parse_response"), err)
 	}
 	if len(out.Choices) == 0 || out.Choices[0].Message.Audio == nil {
-		return conversation.BlobRef{}, errors.New("tts: 响应里没有音频（服务端可能拒绝了语气或音色参数）")
+		return conversation.BlobRef{}, errors.New(i18n.T("tts.mimo.err_no_audio"))
 	}
 	raw, err := base64.StdEncoding.DecodeString(out.Choices[0].Message.Audio.Data)
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 解码音频: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.mimo.err_decode_audio"), err)
 	}
 	if len(raw) == 0 {
-		return conversation.BlobRef{}, errors.New("tts: 服务端返回了空音频")
+		return conversation.BlobRef{}, errors.New(i18n.T("tts.err.empty_audio"))
 	}
 	name := fmt.Sprintf("speech-%d.wav", time.Now().UnixMilli())
 	ref, err := c.blobs.Put(ctx, bytes.NewReader(raw), "audio/wav", name)
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("tts: 保存音频: %w", err)
+		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.save_audio"), err)
 	}
 	return ref, nil
 }
@@ -214,22 +215,22 @@ func readSample(path string) ([]byte, error) {
 	switch ext {
 	case ".wav", ".mp3":
 	default:
-		return nil, fmt.Errorf("tts: 音色克隆样本只支持 wav / mp3（当前 %q）", path)
+		return nil, errors.New(i18n.Tf("tts.mimo.err_sample_ext", "path", path))
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("tts: 读取音色克隆样本: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("tts.mimo.err_read_sample"), err)
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, maxSampleBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("tts: 读取音色克隆样本: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("tts.mimo.err_read_sample"), err)
 	}
 	if len(data) == 0 {
-		return nil, errors.New("tts: 音色克隆样本为空")
+		return nil, errors.New(i18n.T("tts.mimo.err_sample_empty"))
 	}
 	if len(data) > maxSampleBytes {
-		return nil, fmt.Errorf("tts: 音色克隆样本超过 %d MB", maxSampleBytes>>20)
+		return nil, errors.New(i18n.Tf("tts.mimo.err_sample_too_large", "mb", maxSampleBytes>>20))
 	}
 	return data, nil
 }
@@ -241,7 +242,7 @@ func snippet(r io.Reader) string {
 	}
 	s := strings.TrimSpace(string(b))
 	if s == "" {
-		return "（空响应体）"
+		return i18n.T("audio.detail.empty_body")
 	}
 	return s
 }

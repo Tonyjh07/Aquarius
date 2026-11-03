@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // tree.go 外部格式解析出来的一棵「待入库」树，以及把它搬成我们这棵树的唯一入口。
@@ -69,7 +70,8 @@ func materialize(in *importedTree) (*conversation.Conversation, error) {
 		return nil, err
 	}
 	if len(nodes) > maxImportNodes {
-		return nil, fmt.Errorf("会话节点数 %d 超过 %d 上限", len(nodes), maxImportNodes)
+		return nil, errors.New(i18n.Tf("exchange.err.import_too_many_nodes",
+			"count", len(nodes), "max", maxImportNodes))
 	}
 	var textBytes int64
 	for _, n := range nodes {
@@ -78,7 +80,8 @@ func materialize(in *importedTree) (*conversation.Conversation, error) {
 		}
 	}
 	if textBytes > maxImportTextBytes {
-		return nil, fmt.Errorf("正文合计 %d MB 超过 %d MB 上限", textBytes>>20, maxImportTextBytes>>20)
+		return nil, errors.New(i18n.Tf("exchange.err.import_text_too_large",
+			"mb", textBytes>>20, "max", maxImportTextBytes>>20))
 	}
 
 	id := conversation.NewID()
@@ -107,7 +110,8 @@ func materialize(in *importedTree) (*conversation.Conversation, error) {
 	for _, n := range nodes {
 		parent, ok := newIDs[n.Parent]
 		if !ok {
-			return nil, fmt.Errorf("节点 %q 的父节点不在文件里（源 ID %q）", n.SrcID, n.Parent)
+			return nil, errors.New(i18n.Tf("exchange.err.dangling_parent_src",
+				"id", n.SrcID, "parent", n.Parent))
 		}
 		restored = append(restored, conversation.Message{
 			ID:        newIDs[n.SrcID],
@@ -137,7 +141,7 @@ func materialize(in *importedTree) (*conversation.Conversation, error) {
 		UpdatedAt: updated,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("导入的会话结构不合法: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("exchange.err.bad_structure"), err)
 	}
 	return c, nil
 }
@@ -167,14 +171,14 @@ func resolveHead(in importedTree, nodes []importedNode, newIDs map[string]conver
 		parent, ok := in.ParentOf(cur)
 		if !ok {
 			// 源里根本没有这个 ID：不是「被跳过」而是文件对不上，仍按缺失处理但说明白。
-			return rootID, "当前节点不在文件里（已退回到会话开头）"
+			return rootID, i18n.T("exchange.io.head_not_in_file")
 		}
 		if id, kept := newIDs[parent]; kept {
-			return id, "当前节点没有可显示的内容（不是消息），已退回到上一条"
+			return id, i18n.T("exchange.io.head_skipped_prev")
 		}
 		cur = parent
 	}
-	return rootID, "当前节点没有可显示的内容（不是消息），已退回到会话开头"
+	return rootID, i18n.T("exchange.io.head_skipped_start")
 }
 
 // nodeTime 节点时间：源里给了就用，没给退回 fallback——字段缺失不等于「1970 年」。
@@ -188,22 +192,23 @@ func nodeTime(n importedNode, fallback time.Time) time.Time {
 // checkImported 结构自检：源 ID 唯一且非空、角色可识别、正文不为空的结构错误先报出来。
 func checkImported(in importedTree) ([]importedNode, error) {
 	if len(in.Nodes) == 0 {
-		return nil, errors.New("文件里没有消息（这份会话是空的）")
+		return nil, errors.New(i18n.T("exchange.err.no_messages"))
 	}
 	seen := make(map[string]bool, len(in.Nodes))
 	for i, n := range in.Nodes {
 		if n.SrcID == "" {
-			return nil, fmt.Errorf("第 %d 个节点没有 ID", i+1)
+			return nil, errors.New(i18n.Tf("exchange.err.node_no_id", "index", i+1))
 		}
 		if seen[n.SrcID] {
-			return nil, fmt.Errorf("节点 ID %q 重复", n.SrcID)
+			return nil, errors.New(i18n.Tf("exchange.err.duplicate_node_id", "id", n.SrcID))
 		}
 		seen[n.SrcID] = true
 		switch n.Role {
 		case conversation.RoleUser, conversation.RoleAssistant,
 			conversation.RoleSystem, conversation.RoleInject:
 		default:
-			return nil, fmt.Errorf("节点 %q 的角色 %q 不认识", n.SrcID, n.Role)
+			return nil, errors.New(i18n.Tf("exchange.err.unknown_role",
+				"id", n.SrcID, "role", n.Role))
 		}
 	}
 	return in.Nodes, nil
@@ -222,7 +227,8 @@ func buildEdges(nodes []importedNode, newIDs map[string]conversation.MessageID, 
 	for parent, kids := range order {
 		for _, k := range kids {
 			if _, ok := newIDs[k]; !ok {
-				return nil, fmt.Errorf("节点 %q 的子节点 %q 不在文件里", parent, k)
+				return nil, errors.New(i18n.Tf("exchange.err.child_not_found",
+					"parent", parent, "child", k))
 			}
 			listed[k] = true
 		}
@@ -243,7 +249,7 @@ func buildEdges(nodes []importedNode, newIDs map[string]conversation.MessageID, 
 		kids := order[parent]
 		pid, ok := newIDs[parent]
 		if !ok {
-			return nil, fmt.Errorf("节点 %q 的父节点不在文件里", parent)
+			return nil, errors.New(i18n.Tf("exchange.err.parent_not_found", "parent", parent))
 		}
 		ids := make([]conversation.MessageID, 0, len(kids))
 		for _, k := range kids {
@@ -295,7 +301,7 @@ func depthOf(id string, parent map[string]string) (int, bool) {
 // titleOrDefault 会话标题：源里有就用，没有就给个中性名字（不拿首条消息硬凑）。
 func titleOrDefault(title string) string {
 	if title == "" {
-		return "导入的会话"
+		return i18n.T("exchange.io.default_title")
 	}
 	return title
 }

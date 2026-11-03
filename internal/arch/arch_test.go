@@ -41,11 +41,13 @@ const (
 // i18n 必须单独登记成一层，不能靠 layerOther 兜：other 是「源端 skip、目标端放行」，
 // 那样新包就没有任何约束——今天它只 import 标准库，是因为没人拦而不是因为规矩这么定。
 var allowedTargets = map[layer][]layer{
-	layerDomain:    {layerDomain},
+	// domain 与 plugin 也取词：它们的不变量报错与状态文案会原样冒到界面（app 只加一层
+	// 短语前缀），不取词就只能硬编码中文，英文界面里那半句永远是中文。
+	layerDomain:    {layerDomain, layerI18n},
 	layerPort:      {layerDomain, layerI18n},
 	layerApp:       {layerDomain, layerPort, layerI18n},
 	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI, layerI18n},
-	layerPlugin:    {layerDomain, layerPort, layerPluginAPI},
+	layerPlugin:    {layerDomain, layerPort, layerPluginAPI, layerI18n},
 	layerPluginAPI: {layerPluginAPI},
 	layerI18n:      {}, // 文案包谁都不 import：它是叶子
 	// 日志包只 import 文案包（日志正文在 log.* 段）；反过来谁都不许 import 它——

@@ -10,10 +10,11 @@
 package perm
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // Level 权限等级（config permissions.level 的合法取值）。
@@ -44,7 +45,7 @@ func Parse(s string) (Level, error) {
 			return l, nil
 		}
 	}
-	return "", fmt.Errorf("perm: 未知权限等级 %q（可用：read-only / strict / permissive / full-access）", s)
+	return "", errors.New(i18n.Tf("perm.err.unknown_level", "level", s))
 }
 
 // String 实现 fmt.Stringer。

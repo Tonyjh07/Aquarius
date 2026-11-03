@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -59,14 +60,14 @@ type Client struct {
 func New(cfg Config) (*Client, error) {
 	raw := strings.TrimSpace(cfg.BaseURL)
 	if raw == "" {
-		return nil, errors.New("asr: base_url 为空")
+		return nil, errors.New(i18n.T("asr.err.base_url_empty"))
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, fmt.Errorf("asr: 非法 base_url %q", cfg.BaseURL)
+		return nil, errors.New(i18n.Tf("asr.err.base_url_invalid", "url", cfg.BaseURL))
 	}
 	if cfg.Blobs == nil {
-		return nil, errors.New("asr: 未接附件库")
+		return nil, errors.New(i18n.T("asr.err.no_blobs"))
 	}
 	hc := cfg.HTTP
 	if hc == nil {
@@ -84,7 +85,7 @@ func New(cfg Config) (*Client, error) {
 // （`paraformer-zh` 就是中文），没有可传的 language 参数。
 func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lang string) (string, error) {
 	if ctx == nil {
-		return "", errors.New("asr: nil context")
+		return "", errors.New(i18n.T("asr.err.nil_context"))
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -99,7 +100,7 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+recognitionPath, body)
 	if err != nil {
-		return "", fmt.Errorf("asr: 构造请求: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.build_request"), err)
 	}
 	req.Header.Set("Content-Type", contentType)
 	if c.key != "" {
@@ -107,26 +108,26 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("asr: 请求失败: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.request_failed"), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("asr: 服务端返回 %d: %s", resp.StatusCode, snippet(resp.Body))
+		return "", errors.New(i18n.Tf("asr.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
 	}
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxRespBody)).Decode(&out); err != nil {
-		return "", fmt.Errorf("asr: 解析响应: %w", err)
+		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.parse_response"), err)
 	}
 	if out.Code != 0 {
 		msg := strings.TrimSpace(out.Msg)
 		if msg == "" {
-			msg = "服务端没有说明原因"
+			msg = i18n.T("asr.funasr.no_reason")
 		}
-		return "", fmt.Errorf("asr: 服务端返回错误（code=%d）：%s", out.Code, msg)
+		return "", errors.New(i18n.Tf("asr.funasr.err_server_code", "code", out.Code, "message", msg))
 	}
 	text := strings.TrimSpace(out.Text)
 	if text == "" {
-		return "", errors.New("asr: 没有识别出文字（录音可能为空或太短）")
+		return "", errors.New(i18n.T("asr.err.no_text"))
 	}
 	return text, nil
 }
@@ -137,13 +138,13 @@ func buildMultipart(audio []byte, name string) (io.Reader, string, error) {
 	mw := multipart.NewWriter(&buf)
 	fw, err := mw.CreateFormFile("audio", name)
 	if err != nil {
-		return nil, "", fmt.Errorf("asr: 编码请求: %w", err)
+		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.encode_request"), err)
 	}
 	if _, err := fw.Write(audio); err != nil {
-		return nil, "", fmt.Errorf("asr: 编码请求: %w", err)
+		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.encode_request"), err)
 	}
 	if err := mw.Close(); err != nil {
-		return nil, "", fmt.Errorf("asr: 编码请求: %w", err)
+		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.encode_request"), err)
 	}
 	return &buf, mw.FormDataContentType(), nil
 }
@@ -153,18 +154,18 @@ func buildMultipart(audio []byte, name string) (io.Reader, string, error) {
 func readAudio(ctx context.Context, blobs port.AttachmentStore, audio conversation.BlobRef) ([]byte, string, error) {
 	rc, err := blobs.Get(ctx, audio)
 	if err != nil {
-		return nil, "", fmt.Errorf("asr: 读取音频附件: %w", err)
+		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
 	}
 	defer rc.Close()
 	data, err := io.ReadAll(io.LimitReader(rc, maxAudioBytes+1))
 	if err != nil {
-		return nil, "", fmt.Errorf("asr: 读取音频附件: %w", err)
+		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
 	}
 	if len(data) == 0 {
-		return nil, "", errors.New("asr: 音频附件为空")
+		return nil, "", errors.New(i18n.T("asr.err.audio_empty"))
 	}
 	if len(data) > maxAudioBytes {
-		return nil, "", fmt.Errorf("asr: 音频超过 %d MB 上限，请缩短录音", maxAudioBytes>>20)
+		return nil, "", errors.New(i18n.Tf("asr.err.audio_too_large", "mb", maxAudioBytes>>20))
 	}
 	name := strings.TrimSpace(audio.Name)
 	if name == "" {
@@ -180,7 +181,7 @@ func snippet(r io.Reader) string {
 	}
 	s := strings.TrimSpace(string(b))
 	if s == "" {
-		return "（空响应体）"
+		return i18n.T("audio.detail.empty_body")
 	}
 	return s
 }

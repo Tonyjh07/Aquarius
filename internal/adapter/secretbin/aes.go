@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // aesKeyLen AES-256 密钥长度（字节）；nonceLen GCM 标准 nonce 长度。
@@ -48,25 +50,25 @@ func sealAES(keyPath string, plain []byte) ([]byte, error) {
 func openAES(keyPath string, blob []byte) ([]byte, error) {
 	key, err := os.ReadFile(keyPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("缺少密钥文件 %s（本机换过 profile、或文件被单独拷走）", keyPath)
+		return nil, errors.New(i18n.Tf("secret.err.key_missing", "path", keyPath))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("读取密钥文件 %s: %w", keyPath, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.key_read", "path", keyPath), err)
 	}
 	if len(key) != aesKeyLen {
-		return nil, fmt.Errorf("密钥文件 %s 长度异常（%d 字节，应为 %d）", keyPath, len(key), aesKeyLen)
+		return nil, errors.New(i18n.Tf("secret.err.key_length", "path", keyPath, "got", len(key), "want", aesKeyLen))
 	}
 	aead, err := aeadOf(key)
 	if err != nil {
 		return nil, err
 	}
 	if len(blob) < nonceLen+aead.Overhead() {
-		return nil, errors.New("密文长度不足（文件被截断或不是本档密文）")
+		return nil, errors.New(i18n.T("secret.err.cipher_short"))
 	}
 	nonce, ct := blob[:nonceLen], blob[nonceLen:]
 	plain, err := aead.Open(nil, nonce, ct, nil)
 	if err != nil {
-		return nil, fmt.Errorf("密文校验失败（密钥不对或内容被改动）: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("secret.err.cipher_auth"), err)
 	}
 	return plain, nil
 }
@@ -77,12 +79,12 @@ func loadOrCreateKey(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err == nil {
 		if len(b) != aesKeyLen {
-			return nil, fmt.Errorf("密钥文件 %s 长度异常（%d 字节，应为 %d）", path, len(b), aesKeyLen)
+			return nil, errors.New(i18n.Tf("secret.err.key_length", "path", path, "got", len(b), "want", aesKeyLen))
 		}
 		return b, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("读取密钥文件 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.key_read", "path", path), err)
 	}
 	key, err := randBytes(aesKeyLen)
 	if err != nil {
@@ -92,23 +94,23 @@ func loadOrCreateKey(path string) ([]byte, error) {
 	if errors.Is(err, fs.ErrExist) { // 并发首建：用别人写下的那把
 		other, rerr := os.ReadFile(path)
 		if rerr != nil {
-			return nil, fmt.Errorf("读取密钥文件 %s: %w", path, rerr)
+			return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.key_read", "path", path), rerr)
 		}
 		if len(other) != aesKeyLen {
-			return nil, fmt.Errorf("密钥文件 %s 长度异常", path)
+			return nil, errors.New(i18n.Tf("secret.err.key_length_plain", "path", path))
 		}
 		return other, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("创建密钥文件 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.key_create", "path", path), err)
 	}
 	if _, werr := f.Write(key); werr != nil {
 		_ = f.Close()
 		_ = os.Remove(path)
-		return nil, fmt.Errorf("写入密钥文件 %s: %w", path, werr)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.key_write", "path", path), werr)
 	}
 	if cerr := f.Close(); cerr != nil {
-		return nil, fmt.Errorf("关闭密钥文件 %s: %w", path, cerr)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("secret.err.key_close", "path", path), cerr)
 	}
 	return key, nil
 }
@@ -117,11 +119,11 @@ func loadOrCreateKey(path string) ([]byte, error) {
 func aeadOf(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("构造 AES: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("secret.err.build_aes"), err)
 	}
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("构造 GCM: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("secret.err.build_gcm"), err)
 	}
 	return aead, nil
 }

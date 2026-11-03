@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // mustConv 造一棵小会话：u1(user) ← a1(assistant)。
@@ -632,7 +633,7 @@ func TestLoadRejectsLegacyVirtualRootFormat(t *testing.T) {
 		t.Fatalf("write legacy: %v", err)
 	}
 	_, err = s.Load(context.Background(), conversation.ID("conv-old"))
-	if err == nil || !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "旧格式") {
+	if err == nil || !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), i18n.T("store.err.legacy_format")) {
 		t.Fatalf("err = %v, want ErrLegacyFormat 报因", err)
 	}
 }
@@ -687,7 +688,8 @@ func TestLoadRejectsLegacyToolNodeFormat(t *testing.T) {
 		t.Fatalf("write legacy: %v", err)
 	}
 	_, err = s.Load(context.Background(), conversation.ID("conv-t"))
-	if err == nil || !errors.Is(err, ErrLegacyFormat) || !strings.Contains(err.Error(), "旧版工具节点") {
+	if err == nil || !errors.Is(err, ErrLegacyFormat) ||
+		!strings.Contains(err.Error(), trHead("store.err.legacy_tool_node")) {
 		t.Fatalf("err = %v, want ErrLegacyFormat 报因", err)
 	}
 }
@@ -822,4 +824,13 @@ func TestCanceledContextRejected(t *testing.T) {
 	if _, err := s.List(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("list err = %v, want context.Canceled", err)
 	}
+}
+
+// trHead 文案里第一个占位符之前的那截：断言跟着 key 走，实参（节点 ID 由 map 序决定）不在这里重复。
+func trHead(key string) string {
+	t := i18n.T(key)
+	if i := strings.Index(t, "{"); i >= 0 {
+		return t[:i]
+	}
+	return t
 }

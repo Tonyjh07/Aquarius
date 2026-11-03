@@ -9,6 +9,8 @@ import (
 	"os"
 	"path"
 	"strings"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // `.charx`（ZIP 容器，§5.17）：根目录的 `card.json` 是 V3 对象，图标取 `type=icon`
@@ -28,7 +30,7 @@ const (
 func parseCharxCard(data []byte) (ParsedCard, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return ParsedCard{}, fmt.Errorf("压缩包读不出：%w", err)
+		return ParsedCard{}, fmt.Errorf("%s: %w", i18n.T("skill.err.zip_unreadable"), err)
 	}
 	if err := gateZip(zr); err != nil {
 		return ParsedCard{}, err
@@ -36,7 +38,7 @@ func parseCharxCard(data []byte) (ParsedCard, error) {
 	files, byBase := indexZip(zr)
 	cardFile := lookupZip(files, "card.json")
 	if cardFile == nil {
-		return ParsedCard{}, errors.New("压缩包根目录没有 card.json：这像是发行包，请导入其中的 .charx")
+		return ParsedCard{}, errors.New(i18n.T("char.load.charx_no_card"))
 	}
 	raw, err := readZipEntry(cardFile, maxCardJSONBytes)
 	if err != nil {
@@ -59,12 +61,12 @@ func parseCharxCard(data []byte) (ParsedCard, error) {
 			if f := lookupZip(files, resolved); f != nil {
 				icon, err := readZipEntry(f, maxIconBytes)
 				if err != nil {
-					out.Info.Warnings = append(out.Info.Warnings, "图标读不出："+err.Error())
+					out.Info.Warnings = append(out.Info.Warnings, i18n.Tf("char.load.icon_unreadable", "err", err))
 				} else {
 					out.Avatar = icon
 				}
 			} else {
-				out.Info.Warnings = append(out.Info.Warnings, "图标 "+resolved+" 在包内找不到，已跳过")
+				out.Info.Warnings = append(out.Info.Warnings, i18n.Tf("char.load.icon_missing", "path", resolved))
 			}
 		}
 	}
@@ -107,11 +109,11 @@ func resolveAssetURI(uri string, byBase map[string][]string) (string, string) {
 	case strings.HasPrefix(low, "ccdefault:"):
 		return "", ""
 	case strings.HasPrefix(low, "http://"), strings.HasPrefix(low, "https://"):
-		return "", "资产指向网络地址，本版不下载：" + u
+		return "", i18n.Tf("char.load.asset_remote", "uri", u)
 	case strings.HasPrefix(u, "/user/images/"):
 		names := byBase[strings.ToLower(path.Base(u))]
 		if len(names) == 0 {
-			return "", "资产路径 " + u + " 在包内找不到同名文件，已跳过"
+			return "", i18n.Tf("char.load.asset_missing", "uri", u)
 		}
 		return names[0], ""
 	default:
@@ -123,7 +125,7 @@ func resolveAssetURI(uri string, byBase map[string][]string) (string, string) {
 // `..`、符号链接与加密条目一律拒绝。超限报错，不截断。
 func gateZip(zr *zip.Reader) error {
 	if len(zr.File) > maxZipEntries {
-		return fmt.Errorf("压缩包条目数 %d 超过 %d 上限", len(zr.File), maxZipEntries)
+		return errors.New(i18n.Tf("skill.err.zip_entries", "n", len(zr.File), "max", maxZipEntries))
 	}
 	var total uint64
 	for _, f := range zr.File {
@@ -131,14 +133,14 @@ func gateZip(zr *zip.Reader) error {
 			return err
 		}
 		if f.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("压缩包里有符号链接 %q：拒绝", f.Name)
+			return errors.New(i18n.Tf("skill.err.zip_symlink", "name", f.Name))
 		}
 		if f.Flags&0x1 != 0 { // bit 0 = 加密
-			return fmt.Errorf("压缩包里有加密条目 %q：拒绝", f.Name)
+			return errors.New(i18n.Tf("skill.err.zip_encrypted", "name", f.Name))
 		}
 		total += f.UncompressedSize64
 		if total > maxZipBytes {
-			return fmt.Errorf("压缩包解压总量超过 %d MB 上限", maxZipBytes>>20)
+			return errors.New(i18n.Tf("skill.err.zip_total", "limit", maxZipBytes>>20))
 		}
 	}
 	return nil
@@ -148,14 +150,14 @@ func gateZip(zr *zip.Reader) error {
 func safeZipName(name string) error {
 	n := strings.ReplaceAll(name, `\`, "/")
 	if strings.HasPrefix(n, "/") {
-		return fmt.Errorf("压缩包条目 %q 是绝对路径：拒绝", name)
+		return errors.New(i18n.Tf("skill.err.zip_entry_abs", "name", name))
 	}
 	if len(n) >= 2 && n[1] == ':' {
-		return fmt.Errorf("压缩包条目 %q 带盘符：拒绝", name)
+		return errors.New(i18n.Tf("skill.err.zip_entry_drive", "name", name))
 	}
 	clean := path.Clean(n)
 	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return fmt.Errorf("压缩包条目 %q 越出目标目录：拒绝", name)
+		return errors.New(i18n.Tf("skill.err.zip_entry_escape", "name", name))
 	}
 	return nil
 }
@@ -188,15 +190,15 @@ func lookupZip(files map[string]*zip.File, name string) *zip.File { return files
 func readZipEntry(f *zip.File, limit int64) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
-		return nil, fmt.Errorf("打开压缩包条目 %s: %w", f.Name, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("skill.err.zip_open_entry", "name", f.Name), err)
 	}
 	defer rc.Close()
 	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("读压缩包条目 %s: %w", f.Name, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("skill.err.zip_read_entry", "name", f.Name), err)
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("压缩包条目 %s 超过 %d MB 上限", f.Name, limit>>20)
+		return nil, errors.New(i18n.Tf("skill.err.zip_entry_too_big", "name", f.Name, "limit", limit>>20))
 	}
 	return data, nil
 }

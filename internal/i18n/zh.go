@@ -26,4 +26,9 @@ var zhTexts = mergeTables(
 	zhGuiChatTexts,
 	zhCmdConfigTexts,
 	zhCmdAdminTexts,
+	zhAdapterExchangeTexts,
+	zhAdapterFilesTexts,
+	zhAdapterLLMTexts,
+	zhAdapterGateTexts,
+	zhGuiPlatformTexts,
 )

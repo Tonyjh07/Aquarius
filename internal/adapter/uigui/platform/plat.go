@@ -1,7 +1,7 @@
 package platform
 
 import (
-	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -111,5 +111,5 @@ func darkFromCommands(cmds [][]string) bool {
 
 // unsupported 组装「本平台不支持 X」的降级提示（用户可见，中文）。
 func unsupported(what string) string {
-	return fmt.Sprintf("当前平台（%s）暂不支持%s，功能已降级。", runtime.GOOS, what)
+	return i18n.Tf("ui.platform.downgrade", "os", runtime.GOOS, "feature", what)
 }

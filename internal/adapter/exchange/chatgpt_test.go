@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -344,7 +345,7 @@ func TestChatGPTExportImportHeadOnAttachment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	if !strings.Contains(strings.Join(rep.Dropped, " "), "附件") {
+	if !strings.Contains(strings.Join(rep.Dropped, " "), i18n.T("exchange.io.drop.attach_no_bytes")) {
 		t.Fatalf("导出回执应说明附件不带: %v", rep.Dropped)
 	}
 	format, ok := New(Options{}).Detect("conv.json", buf.Bytes())
@@ -359,23 +360,24 @@ func TestChatGPTExportImportHeadOnAttachment(t *testing.T) {
 	if len(path) != 2 || path[1].Content[0].Text != "看这张图" {
 		t.Fatalf("Head 链 = %+v, want root→看这张图", path)
 	}
-	if !strings.Contains(strings.Join(irep.Dropped, " "), "当前节点") {
+	if !strings.Contains(strings.Join(irep.Dropped, " "), i18n.T("exchange.io.head_skipped_prev")) {
 		t.Fatalf("回执应说明 Head 回退了: %v", irep.Dropped)
 	}
 }
 
 // TestChatGPTImportRejectsBadStructure 坏结构一律报因：父节点悬空、角色不认识、文件里没会话。
 func TestChatGPTImportRejectsBadStructure(t *testing.T) {
-	cases := map[string]string{
-		"父节点不在文件里": `[{"mapping":{
+	cases := map[string]struct{ doc, want string }{
+		"父节点不在文件里": {`[{"mapping":{
 			"a":{"id":"a","message":{"author":{"role":"user"},"content":{"content_type":"text","parts":["x"]}},"parent":"nope"}}}]`,
-		"没有会话": `[]`,
+			i18n.Tf("exchange.err.dangling_parent_src", "id", "a", "parent", "nope")},
+		"没有会话": {`[]`, i18n.T("exchange.err.no_conversation_in_file")},
 	}
-	for want, doc := range cases {
-		_, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(doc),
+	for name, tc := range cases {
+		_, _, err := importOne(context.Background(), New(Options{}), strings.NewReader(tc.doc),
 			port.ExchangeFormat{Name: "chatgpt"})
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("%s: err = %v", want, err)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: err = %v, want 含 %q", name, err, tc.want)
 		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -48,7 +49,7 @@ var _ port.CharacterCatalog = (*Store)(nil)
 // New 组装角色卡目录；Root 必须是绝对路径（不猜工作目录，与技能安装同口径）。
 func New(opts Options) (*Store, error) {
 	if opts.Root == "" || !filepath.IsAbs(opts.Root) {
-		return nil, fmt.Errorf("角色卡根必须是绝对路径（得到 %q）", opts.Root)
+		return nil, errors.New(i18n.Tf("char.err.root_not_abs", "path", opts.Root))
 	}
 	s := &Store{root: filepath.Clean(opts.Root), logf: opts.Logf, now: opts.Now}
 	if s.logf == nil {
@@ -69,7 +70,7 @@ func (s *Store) List(ctx context.Context) ([]port.CharacterInfo, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("读角色卡目录: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("char.load.dir_unreadable"), err)
 	}
 	out := make([]port.CharacterInfo, 0, len(entries))
 	for _, e := range entries {
@@ -101,15 +102,15 @@ func (s *Store) Load(ctx context.Context, slug string) (port.CharacterCard, erro
 	}
 	info, err := s.loadInfo(dir, slug)
 	if err != nil {
-		return port.CharacterCard{}, fmt.Errorf("角色卡 %s 读不出: %w", slug, err)
+		return port.CharacterCard{}, fmt.Errorf("%s: %w", i18n.Tf("char.load.card_unreadable", "slug", slug), err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "card.json"))
 	if err != nil {
-		return port.CharacterCard{}, fmt.Errorf("角色卡 %s 的 card.json 读不出: %w", slug, err)
+		return port.CharacterCard{}, fmt.Errorf("%s: %w", i18n.Tf("char.load.card_json_unreadable", "slug", slug), err)
 	}
 	parsed, _, err := parseCardJSON(raw)
 	if err != nil {
-		return port.CharacterCard{}, fmt.Errorf("角色卡 %s 解析失败: %w", slug, err)
+		return port.CharacterCard{}, fmt.Errorf("%s: %w", i18n.Tf("char.load.card_parse", "slug", slug), err)
 	}
 	card := port.CharacterCard{Info: info, Profile: parsed.Profile}
 	return card, nil
@@ -121,7 +122,7 @@ func (s *Store) Load(ctx context.Context, slug string) (port.CharacterCard, erro
 // 只读导入，不授予任何能力——卡文件里的脚本、路径、URL 都不执行、不访问。
 func (s *Store) Import(ctx context.Context, source string) (port.CharacterCard, error) {
 	if strings.TrimSpace(source) == "" {
-		return port.CharacterCard{}, errors.New("请给卡文件路径（PNG / JSON / .charx）")
+		return port.CharacterCard{}, errors.New(i18n.T("char.err.need_path"))
 	}
 	data, err := readFileLimited(source, maxCardFileBytes)
 	if err != nil {
@@ -137,7 +138,7 @@ func (s *Store) Import(ctx context.Context, source string) (port.CharacterCard, 
 	}
 	dir := filepath.Join(s.root, slug)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return port.CharacterCard{}, fmt.Errorf("建角色目录 %s: %w", dir, err)
+		return port.CharacterCard{}, fmt.Errorf("%s: %w", i18n.Tf("char.save.mkdir", "dir", dir), err)
 	}
 	info := parsed.Info
 	info.Slug = slug
@@ -145,7 +146,7 @@ func (s *Store) Import(ctx context.Context, source string) (port.CharacterCard, 
 
 	if err := atomicfile.WriteFile(filepath.Join(dir, "card.json"), parsed.RawJSON, 0o644); err != nil {
 		_ = os.RemoveAll(dir)
-		return port.CharacterCard{}, fmt.Errorf("写 card.json: %w", err)
+		return port.CharacterCard{}, fmt.Errorf("%s: %w", i18n.T("char.save.card_json"), err)
 	}
 
 	if avatar := s.writeAvatar(dir, parsed, &info); avatar != "" {
@@ -154,12 +155,12 @@ func (s *Store) Import(ctx context.Context, source string) (port.CharacterCard, 
 	}
 	if len(parsed.Archive) > 0 {
 		if err := atomicfile.WriteFile(filepath.Join(dir, "source.charx"), parsed.Archive, 0o644); err != nil {
-			info.Warnings = append(info.Warnings, "原压缩包留档失败："+err.Error())
+			info.Warnings = append(info.Warnings, i18n.Tf("char.save.archive", "err", err))
 		}
 	}
 	if err := writeMeta(dir, info, avatarFile(dir)); err != nil {
 		_ = os.RemoveAll(dir)
-		return port.CharacterCard{}, fmt.Errorf("写 meta.json: %w", err)
+		return port.CharacterCard{}, fmt.Errorf("%s: %w", i18n.T("char.save.meta_json"), err)
 	}
 
 	card := port.CharacterCard{Info: info, Profile: parsed.Profile}
@@ -173,7 +174,7 @@ func (s *Store) Remove(ctx context.Context, slug string) error {
 		return err
 	}
 	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("删除角色卡 %s: %w", slug, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("char.err.remove", "slug", slug), err)
 	}
 	return nil
 }
@@ -185,11 +186,11 @@ func (s *Store) writeAvatar(dir string, parsed ParsedCard, info *port.CharacterI
 	}
 	png, err := encodeAvatar(parsed.Avatar)
 	if err != nil {
-		info.Warnings = append(info.Warnings, "头像跳过："+err.Error())
+		info.Warnings = append(info.Warnings, i18n.Tf("char.save.avatar_skip", "err", err))
 		return ""
 	}
 	if err := atomicfile.WriteFile(filepath.Join(dir, avatarName), png, 0o644); err != nil {
-		info.Warnings = append(info.Warnings, "头像写盘失败："+err.Error())
+		info.Warnings = append(info.Warnings, i18n.Tf("char.save.avatar_write", "err", err))
 		return ""
 	}
 	return avatarName
@@ -205,16 +206,16 @@ func (s *Store) loadInfo(dir, dirName string) (port.CharacterInfo, error) {
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "card.json"))
 	if err != nil {
-		return port.CharacterInfo{}, fmt.Errorf("card.json 读不出: %w", err)
+		return port.CharacterInfo{}, fmt.Errorf("%s: %w", i18n.T("char.load.no_card_json"), err)
 	}
 	parsed, _, err := parseCardJSON(raw)
 	if err != nil {
-		return port.CharacterInfo{}, fmt.Errorf("card.json 解析失败: %w", err)
+		return port.CharacterInfo{}, fmt.Errorf("%s: %w", i18n.T("char.load.no_card_json_parse"), err)
 	}
 	info := parsed.Info
 	info.Slug = dirName
 	info.Source = sourceFromFiles(dir)
-	info.Warnings = append(info.Warnings, "meta.json 缺失或损坏，已从卡重建")
+	info.Warnings = append(info.Warnings, i18n.T("char.load.meta_rebuilt"))
 	info.AvatarPath = existingAvatar(dir)
 	info.HasAvatar = info.AvatarPath != ""
 	if err := writeMeta(dir, info, avatarFile(dir)); err != nil {
@@ -284,10 +285,10 @@ func slugBase(display string) (string, error) {
 		slug = strings.Trim(string([]rune(slug)[:maxSlugRunes]), ".-")
 	}
 	if slug == "" {
-		return "", fmt.Errorf("显示名 %q 归一后为空，无法作目录名", display)
+		return "", errors.New(i18n.Tf("char.err.slug_empty", "display", display))
 	}
 	if isReservedDevice(slug) {
-		return "", fmt.Errorf("显示名 %q 归一后是系统保留名 %q，请改名后再导入", display, slug)
+		return "", errors.New(i18n.Tf("char.err.slug_reserved", "display", display, "slug", slug))
 	}
 	return slug, nil
 }
@@ -354,7 +355,7 @@ func readMeta(dir string) (metaJSON, error) {
 		return metaJSON{}, err
 	}
 	if strings.TrimSpace(m.Display) == "" {
-		return metaJSON{}, errors.New("meta.json 缺显示名")
+		return metaJSON{}, errors.New(i18n.T("char.load.meta_no_display"))
 	}
 	return m, nil
 }
@@ -402,15 +403,15 @@ func sourceFromFiles(dir string) string {
 func readFileLimited(path string, limit int64) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("打开 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("char.load.open_card_file", "path", path), err)
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("读 %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", i18n.Tf("char.load.read_card_file", "path", path), err)
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("卡文件超过 %d MB 上限", limit>>20)
+		return nil, errors.New(i18n.Tf("char.load.file_limit", "limit", limit>>20))
 	}
 	return data, nil
 }

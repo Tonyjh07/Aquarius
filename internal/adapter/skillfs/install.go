@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 const (
@@ -141,13 +142,13 @@ type Installer struct {
 // NewInstaller 建安装器并读入台账（台账坏掉只记日志并从空表起步：装坏的台账不该让助手起不来）。
 func NewInstaller(opts InstallOptions) (*Installer, error) {
 	if !filepath.IsAbs(opts.Root) {
-		return nil, fmt.Errorf("技能安装根必须是绝对路径（得到 %q）", opts.Root)
+		return nil, errors.New(i18n.Tf("skill.err.install_root_not_abs", "path", opts.Root))
 	}
 	if !filepath.IsAbs(opts.CacheDir) {
-		return nil, fmt.Errorf("技能缓存根必须是绝对路径（得到 %q）", opts.CacheDir)
+		return nil, errors.New(i18n.Tf("skill.err.cache_root_not_abs", "path", opts.CacheDir))
 	}
 	if opts.LedgerPath == "" {
-		return nil, errors.New("技能安装台账路径为空")
+		return nil, errors.New(i18n.T("skill.err.ledger_path_empty"))
 	}
 	if opts.HTTP == nil {
 		opts.HTTP = &http.Client{Timeout: 2 * time.Minute}
@@ -166,7 +167,7 @@ func NewInstaller(opts InstallOptions) (*Installer, error) {
 	}
 	for _, d := range []string{opts.Root, opts.CacheDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
-			return nil, fmt.Errorf("创建技能目录 %s: %w", d, err)
+			return nil, fmt.Errorf("%s: %w", i18n.Tf("skill.err.mkdir_skill_dir", "dir", d), err)
 		}
 	}
 	i := &Installer{opts: opts, ledger: map[string]Record{}}
@@ -223,10 +224,10 @@ func (i *Installer) saveLedger() error {
 	l := ledger{Version: ledgerVersion, Installs: i.recordsLocked()}
 	data, err := json.MarshalIndent(l, "", "  ")
 	if err != nil {
-		return fmt.Errorf("编码技能台账: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.ledger_encode"), err)
 	}
 	if err := atomicfile.WriteFile(i.opts.LedgerPath, append(data, '\n'), 0o644); err != nil {
-		return fmt.Errorf("写入技能台账: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.ledger_write"), err)
 	}
 	return nil
 }
@@ -271,9 +272,10 @@ func (i *Installer) Install(ctx context.Context, spec string) (InstallReport, er
 	cands, skips := discoverSkills(root, installScanDepth)
 	rep.Skipped = append(rep.Skipped, skips...)
 	if len(cands) == 0 {
-		msg := fmt.Sprintf("来源 %s 里没有可用的技能（需要含 SKILL.md 的目录）", spec)
+		msg := i18n.Tf("skill.install.no_candidates", "source", spec)
 		if len(skips) > 0 {
-			msg += "；跳过的条目：" + strings.Join(skips, "；")
+			msg += i18n.Tf("skill.install.no_candidates_skips",
+				"skips", strings.Join(skips, i18n.T("skill.install.join")))
 		}
 		return rep, errors.New(msg)
 	}
@@ -290,14 +292,14 @@ func (i *Installer) Install(ctx context.Context, spec string) (InstallReport, er
 	seen := map[string]bool{}
 	for _, c := range cands {
 		if seen[c.name] {
-			return rep, fmt.Errorf("来源里有多个同名技能 %q：一次安装同名会互相覆盖", c.name)
+			return rep, errors.New(i18n.Tf("skill.install.duplicate_name", "name", c.name))
 		}
 		seen[c.name] = true
 		if src2, ok := existing[c.name]; ok {
-			return rep, fmt.Errorf("同名技能 %q 已存在（来自 %s）：请先卸载或改名后再安装", c.name, src2)
+			return rep, errors.New(i18n.Tf("skill.install.name_taken", "name", c.name, "source", src2))
 		}
 		if fi, err := os.Stat(filepath.Join(i.opts.Root, c.name)); err == nil && fi.IsDir() {
-			return rep, fmt.Errorf("同名技能 %q 已存在于安装目录：请先卸载后再安装", c.name)
+			return rep, errors.New(i18n.Tf("skill.install.name_in_install_dir", "name", c.name))
 		}
 	}
 
@@ -310,7 +312,7 @@ func (i *Installer) Install(ctx context.Context, spec string) (InstallReport, er
 		}
 		if err := i.land(c.name, c.dir); err != nil {
 			i.rollback(landed)
-			return rep, fmt.Errorf("安装技能 %s: %w", c.name, err)
+			return rep, fmt.Errorf("%s: %w", i18n.Tf("skill.err.install_skill", "name", c.name), err)
 		}
 		landed = append(landed, c.name)
 		rep.Installed = append(rep.Installed, InstalledSkill{
@@ -352,7 +354,7 @@ func (i *Installer) Update(ctx context.Context, name string) (InstallReport, err
 			}
 		}
 		if len(names) == 0 {
-			return InstallReport{}, errors.New("没有可更新的技能（只有 git 与压缩包来源能更新；复制来源请重新导入）")
+			return InstallReport{}, errors.New(i18n.T("skill.install.nothing_to_update"))
 		}
 	} else {
 		names = []string{strings.TrimSpace(name)}
@@ -366,12 +368,12 @@ func (i *Installer) Update(ctx context.Context, name string) (InstallReport, err
 		}
 		r, ok := i.ledger[n]
 		if !ok {
-			errs = append(errs, fmt.Sprintf("%s：没有安装记录（可能来自 skills.dirs 或手工放置），无法更新", n))
+			errs = append(errs, i18n.Tf("skill.install.no_record", "name", n))
 			continue
 		}
 		updated, err := i.updateOne(ctx, r)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("%s：%v", n, err))
+			errs = append(errs, i18n.Tf("skill.install.update_failed", "name", n, "err", err))
 			continue
 		}
 		rep.Installed = append(rep.Installed, updated)
@@ -383,7 +385,7 @@ func (i *Installer) Update(ctx context.Context, name string) (InstallReport, err
 		i.rescan()
 	}
 	if len(errs) > 0 {
-		return rep, errors.New(strings.Join(errs, "；"))
+		return rep, errors.New(strings.Join(errs, i18n.T("skill.install.join")))
 	}
 	return rep, nil
 }
@@ -393,11 +395,11 @@ func (i *Installer) updateOne(ctx context.Context, r Record) (InstalledSkill, er
 	switch r.Kind {
 	case kindGit:
 		if !i.opts.GitAvailable() {
-			return InstalledSkill{}, errors.New("未检测到 git，无法更新该来源（可先卸载再重新导入）")
+			return InstalledSkill{}, errors.New(i18n.T("skill.err.no_git_update"))
 		}
 		cache := filepath.Join(i.opts.CacheDir, r.Cache)
 		if fi, err := os.Stat(filepath.Join(cache, ".git")); err != nil || !fi.IsDir() {
-			return InstalledSkill{}, errors.New("git 检出缓存已不存在，无法更新（请先卸载再重新导入）")
+			return InstalledSkill{}, errors.New(i18n.T("skill.err.cache_gone"))
 		}
 		if err := i.gitSync(ctx, cache, r.Ref); err != nil {
 			return InstalledSkill{}, err
@@ -415,11 +417,11 @@ func (i *Installer) updateOne(ctx context.Context, r Record) (InstalledSkill, er
 			data, err = os.ReadFile(r.Source)
 		}
 		if err != nil {
-			return InstalledSkill{}, fmt.Errorf("读取压缩包: %w", err)
+			return InstalledSkill{}, fmt.Errorf("%s: %w", i18n.T("skill.err.read_zip"), err)
 		}
 		stage, err := os.MkdirTemp(i.opts.CacheDir, "update-*")
 		if err != nil {
-			return InstalledSkill{}, fmt.Errorf("建临时解压目录: %w", err)
+			return InstalledSkill{}, fmt.Errorf("%s: %w", i18n.T("skill.err.mkdir_stage"), err)
 		}
 		defer os.RemoveAll(stage)
 		if err := extractZip(data, stage); err != nil {
@@ -433,7 +435,7 @@ func (i *Installer) updateOne(ctx context.Context, r Record) (InstalledSkill, er
 			return InstalledSkill{}, err
 		}
 	default:
-		return InstalledSkill{}, errors.New("复制来源没有更新动作：重新导入即可（先卸载，再安装）")
+		return InstalledSkill{}, errors.New(i18n.T("skill.install.copy_source_no_update"))
 	}
 	r.UpdatedAt = i.opts.Now().Format(time.RFC3339)
 	i.ledger[r.Name] = r
@@ -449,14 +451,14 @@ func (i *Installer) Remove(ctx context.Context, name string) error {
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return errors.New("请给出要卸载的技能名")
+		return errors.New(i18n.T("skill.install.remove_need_name"))
 	}
 	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
-		return errors.New("技能名里不能带路径分隔符")
+		return errors.New(i18n.T("skill.install.remove_bad_name"))
 	}
 	dir := filepath.Join(i.opts.Root, name)
 	if filepath.Dir(dir) != filepath.Clean(i.opts.Root) {
-		return errors.New("技能目录不在安装根内，拒绝删除")
+		return errors.New(i18n.T("skill.install.remove_outside_root"))
 	}
 	fi, err := os.Stat(dir)
 	if err != nil || !fi.IsDir() {
@@ -464,10 +466,10 @@ func (i *Installer) Remove(ctx context.Context, name string) error {
 			delete(i.ledger, name)
 			_ = i.saveLedger()
 		}
-		return fmt.Errorf("没有安装副本 %q（来自 skills.dirs 或手工放置的技能请在文件系统里处理）", name)
+		return errors.New(i18n.Tf("skill.install.no_copy", "name", name))
 	}
 	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("删除技能目录: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.remove_dir"), err)
 	}
 	rec, had := i.ledger[name]
 	delete(i.ledger, name)
@@ -504,17 +506,17 @@ func (i *Installer) parseSource(spec string) (source, error) {
 	s := strings.TrimSpace(spec)
 	s = strings.Trim(s, `"'`) // 资源管理器「复制为路径」带引号
 	if s == "" {
-		return source{}, errors.New("请给出来源：SKILL.md 文件、文件夹、.zip 压缩包或 GitHub 链接")
+		return source{}, errors.New(i18n.T("skill.install.need_source"))
 	}
 	if isRemote(s) {
 		return parseRemote(s)
 	}
 	if !filepath.IsAbs(s) {
-		return source{}, fmt.Errorf("%q 不是绝对路径：这里不猜工作目录，请给完整路径", s)
+		return source{}, errors.New(i18n.Tf("skill.install.not_abs", "path", s))
 	}
 	fi, err := os.Stat(s)
 	if err != nil {
-		return source{}, fmt.Errorf("来源不存在或读不出：%w", err)
+		return source{}, fmt.Errorf("%s: %w", i18n.T("skill.err.source_stat"), err)
 	}
 	switch {
 	case fi.IsDir():
@@ -545,13 +547,13 @@ func parseRemote(spec string) (source, error) {
 	}
 	u, err := url.Parse(s)
 	if err != nil {
-		return source{}, fmt.Errorf("链接解析失败：%w", err)
+		return source{}, fmt.Errorf("%s: %w", i18n.T("skill.err.url_parse"), err)
 	}
 	host := strings.ToLower(u.Hostname())
 	if host == "github.com" {
 		seg := splitPath(u.Path)
 		if len(seg) < 2 {
-			return source{}, errors.New("GitHub 链接要指到仓库：https://github.com/<owner>/<repo>")
+			return source{}, errors.New(i18n.T("skill.install.github_needs_repo"))
 		}
 		owner, repo := seg[0], strings.TrimSuffix(seg[1], ".git")
 		sub := ""
@@ -569,7 +571,7 @@ func parseRemote(spec string) (source, error) {
 	if strings.HasSuffix(strings.ToLower(u.Path), ".git") || strings.HasPrefix(strings.ToLower(s), "git@") {
 		return source{kind: kindGit, url: s, ref: ref, cache: cacheKey(s, ref)}, nil
 	}
-	return source{}, errors.New("只支持 GitHub 仓库链接、以 .zip 结尾的下载链接，或本地路径")
+	return source{}, errors.New(i18n.T("skill.install.unsupported_source"))
 }
 
 // splitPath 切 URL 路径段（去空段）。
@@ -594,15 +596,15 @@ func (i *Installer) prepare(ctx context.Context, src source, rep *InstallReport)
 	case kindFile:
 		stage, err := os.MkdirTemp(i.opts.CacheDir, "file-*")
 		if err != nil {
-			return "", "", "", noop, fmt.Errorf("建临时目录: %w", err)
+			return "", "", "", noop, fmt.Errorf("%s: %w", i18n.T("skill.err.mkdir_temp"), err)
 		}
 		cleanup = func() { os.RemoveAll(stage) }
 		data, err := os.ReadFile(src.path)
 		if err != nil {
-			return "", "", "", cleanup, fmt.Errorf("读 SKILL.md: %w", err)
+			return "", "", "", cleanup, fmt.Errorf("%s: %w", i18n.T("skill.err.read_skill_md"), err)
 		}
 		if err := os.WriteFile(filepath.Join(stage, skillFileName), data, 0o644); err != nil {
-			return "", "", "", cleanup, fmt.Errorf("暂存 SKILL.md: %w", err)
+			return "", "", "", cleanup, fmt.Errorf("%s: %w", i18n.T("skill.err.stage_skill_md"), err)
 		}
 		return stage, "", kindFile, cleanup, nil
 
@@ -615,18 +617,18 @@ func (i *Installer) prepare(ctx context.Context, src source, rep *InstallReport)
 			var err error
 			data, err = i.fetch(ctx, src.url)
 			if err != nil {
-				return "", "", "", noop, fmt.Errorf("下载压缩包: %w", err)
+				return "", "", "", noop, fmt.Errorf("%s: %w", i18n.T("skill.err.download_zip"), err)
 			}
 		} else {
 			var err error
 			data, err = os.ReadFile(src.path)
 			if err != nil {
-				return "", "", "", noop, fmt.Errorf("读压缩包: %w", err)
+				return "", "", "", noop, fmt.Errorf("%s: %w", i18n.T("skill.err.read_zip_file"), err)
 			}
 		}
 		stage, err := os.MkdirTemp(i.opts.CacheDir, "zip-*")
 		if err != nil {
-			return "", "", "", noop, fmt.Errorf("建临时解压目录: %w", err)
+			return "", "", "", noop, fmt.Errorf("%s: %w", i18n.T("skill.err.mkdir_stage"), err)
 		}
 		cleanup = func() { os.RemoveAll(stage) }
 		if err := extractZip(data, stage); err != nil {
@@ -649,7 +651,7 @@ func (i *Installer) prepare(ctx context.Context, src source, rep *InstallReport)
 				}
 				args = append(args, src.url, cache)
 				if _, err := i.opts.RunGit(ctx, "", args...); err != nil {
-					return "", "", "", noop, fmt.Errorf("克隆 %s: %w", src.url, err)
+					return "", "", "", noop, fmt.Errorf("%s: %w", i18n.Tf("skill.err.clone", "url", src.url), err)
 				}
 			}
 			root := cache
@@ -661,16 +663,16 @@ func (i *Installer) prepare(ctx context.Context, src source, rep *InstallReport)
 		// 无 git：GitHub 仓库退回压缩包下载（更新时重新下载）。
 		archive, ok := githubArchive(src.url, src.ref)
 		if !ok {
-			return "", "", "", noop, errors.New("未检测到 git，且来源不是 GitHub 仓库：请安装 git 或改用 .zip 压缩包")
+			return "", "", "", noop, errors.New(i18n.T("skill.install.no_git_not_github"))
 		}
-		rep.Notes = append(rep.Notes, "未检测到 git，已改用压缩包下载（更新时重新下载）")
+		rep.Notes = append(rep.Notes, i18n.T("skill.install.note_archive_fallback"))
 		data, err := i.fetch(ctx, archive)
 		if err != nil {
-			return "", "", "", noop, fmt.Errorf("下载仓库压缩包: %w", err)
+			return "", "", "", noop, fmt.Errorf("%s: %w", i18n.T("skill.err.download_archive"), err)
 		}
 		stage, err := os.MkdirTemp(i.opts.CacheDir, "zip-*")
 		if err != nil {
-			return "", "", "", noop, fmt.Errorf("建临时解压目录: %w", err)
+			return "", "", "", noop, fmt.Errorf("%s: %w", i18n.T("skill.err.mkdir_stage"), err)
 		}
 		cleanup = func() { os.RemoveAll(stage) }
 		if err := extractZip(data, stage); err != nil {
@@ -678,7 +680,7 @@ func (i *Installer) prepare(ctx context.Context, src source, rep *InstallReport)
 		}
 		return normalizedStage(stage), "", kindZip, cleanup, nil
 	}
-	return "", "", "", noop, fmt.Errorf("未知来源种类 %q", src.kind)
+	return "", "", "", noop, errors.New(i18n.Tf("skill.err.unknown_source_kind", "kind", src.kind))
 }
 
 // normalizedStage 剥掉压缩包的单一顶层目录（GitHub 归档与「先打包再分享」的常见形态）。
@@ -787,14 +789,14 @@ func (i *Installer) fetch(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("下载 %s：服务端返回 %s", rawURL, resp.Status)
+		return nil, errors.New(i18n.Tf("skill.err.download_status", "url", rawURL, "status", resp.Status))
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxDownloadBytes+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > maxDownloadBytes {
-		return nil, fmt.Errorf("下载内容超过 %d MB 上限", maxDownloadBytes>>20)
+		return nil, errors.New(i18n.Tf("skill.err.download_too_big", "limit", maxDownloadBytes>>20))
 	}
 	return data, nil
 }
@@ -807,18 +809,18 @@ func (i *Installer) gitSync(ctx context.Context, dir, ref string) error {
 			return nil
 		}
 		if _, err := i.opts.RunGit(ctx, dir, "fetch", "--depth", "1", "origin", "HEAD"); err != nil {
-			return fmt.Errorf("拉取更新: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("skill.err.git_pull"), err)
 		}
 		if _, err := i.opts.RunGit(ctx, dir, "reset", "--hard", "FETCH_HEAD"); err != nil {
-			return fmt.Errorf("应用更新: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("skill.err.git_apply"), err)
 		}
 		return nil
 	}
 	if _, err := i.opts.RunGit(ctx, dir, "fetch", "--depth", "1", "origin", ref); err != nil {
-		return fmt.Errorf("拉取分支 %s: %w", ref, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.git_pull_ref", "ref", ref), err)
 	}
 	if _, err := i.opts.RunGit(ctx, dir, "reset", "--hard", "FETCH_HEAD"); err != nil {
-		return fmt.Errorf("应用分支 %s: %w", ref, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.git_apply_ref", "ref", ref), err)
 	}
 	return nil
 }
@@ -843,7 +845,7 @@ func discoverSkills(root string, maxDepth int) ([]candidate, []string) {
 		if fi, err := os.Stat(docPath); err == nil && !fi.IsDir() {
 			fm, _, _, err := readSkill(docPath)
 			if err != nil {
-				skips = append(skips, fmt.Sprintf("%s 已跳过：%v", relOrDot(rel), err))
+				skips = append(skips, i18n.Tf("skill.install.skip_item", "path", relOrDot(rel), "err", err))
 				return
 			}
 			cands = append(cands, candidate{dir: dir, rel: rel, name: fm.Name})
@@ -854,7 +856,7 @@ func discoverSkills(root string, maxDepth int) ([]candidate, []string) {
 		}
 		ents, err := os.ReadDir(dir)
 		if err != nil {
-			skips = append(skips, fmt.Sprintf("%s 读不出：%v", relOrDot(rel), err))
+			skips = append(skips, i18n.Tf("skill.install.skip_unreadable", "path", relOrDot(rel), "err", err))
 			return
 		}
 		for _, e := range ents {
@@ -871,7 +873,7 @@ func discoverSkills(root string, maxDepth int) ([]candidate, []string) {
 // relOrDot 空相对路径显示为「根目录」。
 func relOrDot(rel string) string {
 	if rel == "" {
-		return "根目录"
+		return i18n.T("skill.install.root_dir_label")
 	}
 	return rel
 }
@@ -880,7 +882,7 @@ func relOrDot(rel string) string {
 func (i *Installer) land(name, srcDir string) error {
 	tmp, err := os.MkdirTemp(i.opts.Root, ".install-*")
 	if err != nil {
-		return fmt.Errorf("建临时安装目录: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.mkdir_install_tmp"), err)
 	}
 	deferred := true
 	defer func() {
@@ -894,14 +896,14 @@ func (i *Installer) land(name, srcDir string) error {
 	// 校验前置（D202 口径六）：落位前最后再读一次，确认拷进来的 SKILL.md 仍是这个技能。
 	fm, _, _, err := readSkill(filepath.Join(tmp, skillFileName))
 	if err != nil {
-		return fmt.Errorf("复制后校验失败：%w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.verify_after_copy"), err)
 	}
 	if fm.Name != name {
-		return fmt.Errorf("复制后 name=%q 与预期 %q 不一致", fm.Name, name)
+		return errors.New(i18n.Tf("skill.err.name_changed", "got", fm.Name, "want", name))
 	}
 	target := filepath.Join(i.opts.Root, name)
 	if err := os.Rename(tmp, target); err != nil {
-		return fmt.Errorf("落位到 %s: %w", target, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.land_to", "target", target), err)
 	}
 	deferred = false
 	return nil
@@ -910,19 +912,18 @@ func (i *Installer) land(name, srcDir string) error {
 // replace 用来源目录整体替换已装副本（更新语义；先备份旧副本，失败回滚）。
 func (i *Installer) replace(name, srcDir string) error {
 	if fi, err := os.Stat(srcDir); err != nil || !fi.IsDir() {
-		return fmt.Errorf("更新来源里找不到技能目录 %s（上游可能改名或删掉了）", srcDir)
+		return errors.New(i18n.Tf("skill.err.update_src_missing", "dir", srcDir))
 	}
 	fm, _, _, err := readSkill(filepath.Join(srcDir, skillFileName))
 	if err != nil {
-		return fmt.Errorf("更新来源校验失败：%w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.update_src_invalid"), err)
 	}
 	if fm.Name != name {
-		return fmt.Errorf("更新来源的 name=%q 与已装技能 %q 不一致（上游改过 name，请先卸载再安装）",
-			fm.Name, name)
+		return errors.New(i18n.Tf("skill.err.update_name_mismatch", "got", fm.Name, "want", name))
 	}
 	tmp, err := os.MkdirTemp(i.opts.Root, ".install-*")
 	if err != nil {
-		return fmt.Errorf("建临时安装目录: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.mkdir_install_tmp"), err)
 	}
 	defer os.RemoveAll(tmp)
 	if err := copyTree(srcDir, tmp); err != nil {
@@ -931,16 +932,16 @@ func (i *Installer) replace(name, srcDir string) error {
 	target := filepath.Join(i.opts.Root, name)
 	backupRoot, err := os.MkdirTemp(i.opts.CacheDir, "replace-*")
 	if err != nil {
-		return fmt.Errorf("建回滚目录: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.mkdir_backup"), err)
 	}
 	defer os.RemoveAll(backupRoot)
 	backup := filepath.Join(backupRoot, name)
 	if err := os.Rename(target, backup); err != nil {
-		return fmt.Errorf("暂存旧副本: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.stash_old"), err)
 	}
 	if err := os.Rename(tmp, target); err != nil {
 		_ = os.Rename(backup, target) // 尽量回滚
-		return fmt.Errorf("换入新副本: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.swap_new"), err)
 	}
 	return nil
 }
@@ -955,7 +956,7 @@ func copyTree(src, dst string) error {
 	walk = func(from, to string) error {
 		ents, err := os.ReadDir(from)
 		if err != nil {
-			return fmt.Errorf("读目录 %s: %w", from, err)
+			return fmt.Errorf("%s: %w", i18n.Tf("skill.err.read_dir", "dir", from), err)
 		}
 		for _, e := range ents {
 			name := e.Name()
@@ -966,14 +967,14 @@ func copyTree(src, dst string) error {
 			dstPath := filepath.Join(to, name)
 			info, err := e.Info()
 			if err != nil {
-				return fmt.Errorf("读条目 %s: %w", srcPath, err)
+				return fmt.Errorf("%s: %w", i18n.Tf("skill.err.read_entry", "path", srcPath), err)
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
 				continue // 不跟随符号链接（可能指向来源之外）
 			}
 			if info.IsDir() {
 				if err := os.MkdirAll(dstPath, 0o755); err != nil {
-					return fmt.Errorf("建目录 %s: %w", dstPath, err)
+					return fmt.Errorf("%s: %w", i18n.Tf("skill.err.mkdir", "dir", dstPath), err)
 				}
 				if err := walk(srcPath, dstPath); err != nil {
 					return err
@@ -982,11 +983,11 @@ func copyTree(src, dst string) error {
 			}
 			files++
 			if files > maxCopyFiles {
-				return fmt.Errorf("技能文件数超过 %d 个上限", maxCopyFiles)
+				return errors.New(i18n.Tf("skill.err.too_many_files", "max", maxCopyFiles))
 			}
 			bytes += info.Size()
 			if bytes > maxCopyBytes {
-				return fmt.Errorf("技能总大小超过 %d MB 上限", maxCopyBytes>>20)
+				return errors.New(i18n.Tf("skill.err.total_too_big", "limit", maxCopyBytes>>20))
 			}
 			if err := copyFile(srcPath, dstPath, info.Mode().Perm()); err != nil {
 				return err
@@ -1001,16 +1002,16 @@ func copyTree(src, dst string) error {
 func copyFile(src, dst string, perm os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("读 %s: %w", src, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.read_file", "path", src), err)
 	}
 	defer in.Close()
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 	if err != nil {
-		return fmt.Errorf("写 %s: %w", dst, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.write_file", "path", dst), err)
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
-		return fmt.Errorf("复制 %s: %w", src, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.copy_file", "path", src), err)
 	}
 	return out.Close()
 }
@@ -1019,10 +1020,10 @@ func copyFile(src, dst string, perm os.FileMode) error {
 func extractZip(data []byte, dest string) error {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return fmt.Errorf("压缩包读不出：%w", err)
+		return fmt.Errorf("%s: %w", i18n.T("skill.err.zip_unreadable"), err)
 	}
 	if len(zr.File) > maxZipEntries {
-		return fmt.Errorf("压缩包条目数 %d 超过 %d 上限", len(zr.File), maxZipEntries)
+		return errors.New(i18n.Tf("skill.err.zip_entries", "n", len(zr.File), "max", maxZipEntries))
 	}
 	var total int64
 	for _, f := range zr.File {
@@ -1034,24 +1035,24 @@ func extractZip(data []byte, dest string) error {
 			continue
 		}
 		if f.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("压缩包里有符号链接 %q：拒绝解压", f.Name)
+			return errors.New(i18n.Tf("skill.err.zip_symlink", "name", f.Name))
 		}
 		target := filepath.Join(dest, filepath.FromSlash(rel))
 		if f.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				return fmt.Errorf("建目录 %s: %w", target, err)
+				return fmt.Errorf("%s: %w", i18n.Tf("skill.err.mkdir", "dir", target), err)
 			}
 			continue
 		}
 		if f.UncompressedSize64 > maxZipFileBytes {
-			return fmt.Errorf("压缩包内文件 %q 超过 %d MB 上限", f.Name, maxZipFileBytes>>20)
+			return errors.New(i18n.Tf("skill.err.zip_entry_too_big", "name", f.Name, "limit", maxZipFileBytes>>20))
 		}
 		total += int64(f.UncompressedSize64)
 		if total > maxZipBytes {
-			return fmt.Errorf("压缩包解压总量超过 %d MB 上限", maxZipBytes>>20)
+			return errors.New(i18n.Tf("skill.err.zip_total", "limit", maxZipBytes>>20))
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return fmt.Errorf("建目录 %s: %w", target, err)
+			return fmt.Errorf("%s: %w", i18n.Tf("skill.err.mkdir", "dir", target), err)
 		}
 		if err := extractZipFile(f, target); err != nil {
 			return err
@@ -1064,16 +1065,16 @@ func extractZip(data []byte, dest string) error {
 func extractZipFile(f *zip.File, target string) error {
 	rc, err := f.Open()
 	if err != nil {
-		return fmt.Errorf("打开压缩包条目 %s: %w", f.Name, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.zip_open_entry", "name", f.Name), err)
 	}
 	defer rc.Close()
 	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
-		return fmt.Errorf("写 %s: %w", target, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.write_file", "path", target), err)
 	}
 	if _, err := io.Copy(out, io.LimitReader(rc, maxZipFileBytes+1)); err != nil {
 		out.Close()
-		return fmt.Errorf("解压 %s: %w", f.Name, err)
+		return fmt.Errorf("%s: %w", i18n.Tf("skill.err.unzip_file", "name", f.Name), err)
 	}
 	return out.Close()
 }
@@ -1085,17 +1086,17 @@ func safeZipPath(name string) (string, error) {
 		return "", nil
 	}
 	if strings.HasPrefix(n, "/") {
-		return "", fmt.Errorf("压缩包条目 %q 是绝对路径：拒绝解压", name)
+		return "", errors.New(i18n.Tf("skill.err.zip_entry_abs", "name", name))
 	}
 	if len(n) >= 2 && n[1] == ':' {
-		return "", fmt.Errorf("压缩包条目 %q 带盘符：拒绝解压", name)
+		return "", errors.New(i18n.Tf("skill.err.zip_entry_drive", "name", name))
 	}
 	clean := path.Clean(n)
 	if clean == "." {
 		return "", nil
 	}
 	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("压缩包条目 %q 越出目标目录：拒绝解压", name)
+		return "", errors.New(i18n.Tf("skill.err.zip_entry_escape", "name", name))
 	}
 	return clean, nil
 }
