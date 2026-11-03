@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-03 @ 5acb359 -->
+<!-- docs-sync: 2026-11-03 @ ff5162d -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -91,7 +91,7 @@
   `Options.Placeholder` → `UI.placeholder`，**每帧取词、热生效**（不写「重启后生效」）。
   设置位置：常规页「外观与呼出」区、界面语言行下面，文本框 + 灰色小字「留空 = 默认提示
   （随界面语言）」。不动 TUI / REPL 的提示，也不动提问面板与历史摘要框的占位（各自表 key 保留）。
-  落码前补 contracts §7.8 一句「用户可覆盖的界面文案」口径与决策编号（D278）。
+  落码前补 contracts §7.8 一句「用户可覆盖的界面文案」口径与决策编号（D279）。
 - **欢迎 / 引导窗不在这批里**：它整体重做，见下方「首次运行引导」一节（O1–O5）。i18n 这边只保证
   它用同一套取词口（页 1 的语言选择要能当场切）。
 
@@ -294,7 +294,14 @@ commands only when a sandbox enforces it**」。我们没有沙箱：申报等�
   `uiLangLevels()`，`selectField` 那套模态选择器在向导窗里不适用，改内联三项按钮组——向导窗不走
   `settingsForm`）。写回 `ui.lang` 走启动期同一个 `i18n.Parse` 归一（`""` = `auto`，枚举外拒写）。
 - **O3**（M）：页 2。滚动正文区 + 勾选闸门 + `ui.consent_version` 写回与比对（版本不符 → 下次启动
-  只重过本页）。**正文等内容**：结构先落地，正文进表时同笔把版本常量 +1，并补齐 en 版。
+  只重过本页）。**正文已定稿**：四份中英正文按审查意见改完，落在 `internal/legal/texts/v1/`
+  （`terms.zh.md` / `terms.en.md` / `privacy.zh.md` / `privacy.en.md`）。嵌入方式：`go:embed` 打到
+  叶子包 `internal/legal`，**正文不进 i18n 表**（表只有当前值，升版后回看不到用户同意的旧版；
+  30KB 长正文进 Go 字符串，改一句话的 diff 没法给律师看）——页标题 / 勾选句 / 按钮仍走表。
+  渲染只管三种标记：`**` 整段加粗 + 左侧品牌色竖条、反引号去标记、三列表格拆成「首列加粗 +
+  其余折行」两段。剩两件事：
+  发版日把生效日期改成实际发布日；勾选摘要句写明「同意的是中文正本」。
+  `ui.consent_version` 的常量与正文目录号同源，正文任何实质改动都要 +1。
 - **O4**（M）：页 3。接入卡沿用现有四行（provider / base_url / api_key / models）与「测试连通」
   「抓模型」两个动作，底部加「稍后配置」；空 `model.providers` 改成可启动空态（17 处空值分支 +
   发送时的界面提示 + `modelConfig.normalize` 放宽 + `setupWizard` 的 fatal 收口）。另加一条：
@@ -302,7 +309,7 @@ commands only when a sandbox enforces it**」。我们没有沙箱：申报等�
   这类用户不该被迫把同一份 Key 再打一遍。
 - **O5**（S）：页 4 / 页 5 迁移与收尾。教程页与完成页基本照搬（文案都在表里），补「第 3 页跳过」时
   完成页的摘要写法。文档：`gui-design.md` 的欢迎窗段落（D141/D153/D263 三步口径）、`decisions.md`
-  新条目（**D277**，含「跳过不再阻断」这条改判）、`contracts.md` 补 `ui.consent_version` 与
+  新条目（**D278**，含「跳过不再阻断」这条改判）、`contracts.md` 补 `ui.consent_version` 与
   `ui.lang` 的向导入口、`configuration.md` 补键、`guide.md` 首章首跑步骤重写。
 
 **验收**：
