@@ -282,7 +282,8 @@ func apiKeyGap(ctx context.Context, p providerConfig, sec port.Secrets) string {
 	for _, ref := range p.keyRefs() {
 		ref = strings.TrimSpace(ref)
 		if ref == "" {
-			ref = "secret:AQUARIUS_OPENAI_KEY"
+			// 与 resolveAPIKey 共用同一个常量：两处手写默认引用，换默认 provider 时必漏一处。
+			ref = defaultSecretRef
 		}
 		if !strings.HasPrefix(ref, "secret:") {
 			return ""

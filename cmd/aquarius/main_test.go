@@ -156,7 +156,7 @@ func TestVersionFlag(t *testing.T) {
 // 用户取消 ⇒ 退出 0、不写 welcomed 标记（配置仍不完整，下次再来）。
 func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AQUARIUS_OPENAI_KEY", "") // 模板密钥引用取不到 ⇒ 判「配置不完整」，必走向导
+	t.Setenv("DEEPSEEK_API_KEY", "") // 模板密钥引用取不到 ⇒ 判「配置不完整」，必走向导
 	var got []uigui.SetupRequest
 	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		got = append(got, req)
@@ -180,7 +180,7 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profile 配置未生成: %v", err)
 	}
-	if !strings.Contains(string(profCfg), `"secret:AQUARIUS_OPENAI_KEY"`) {
+	if !strings.Contains(string(profCfg), `"secret:DEEPSEEK_API_KEY"`) {
 		t.Fatalf("模板应使用 secret 引用: %s", profCfg)
 	}
 	if !strings.Contains(string(profCfg), `"level": "strict"`) {
@@ -202,7 +202,7 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("向导窗调用 %d 次, want 1（reqs=%+v）", len(got), got)
 	}
-	if joined := strings.Join(got[0].Issues, "；"); !strings.Contains(joined, "AQUARIUS_OPENAI_KEY") {
+	if joined := strings.Join(got[0].Issues, "；"); !strings.Contains(joined, "DEEPSEEK_API_KEY") {
 		t.Fatalf("向导窗问题清单应指出缺失的密钥: %+v", got[0].Issues)
 	}
 	if !strings.Contains(errBuf.String(), "已取消配置引导") {

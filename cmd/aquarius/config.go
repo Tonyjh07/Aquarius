@@ -292,7 +292,11 @@ type limitsConfig struct {
 
 // defaultSecretRef 密钥引用缺省回落（D35）：api_key 为空时按它取用（resolveAPIKey 与
 // 一键导入共用同一口径——不一致会让「启动用环境变量、导入却跳过」看起来像漏导入）。
-const defaultSecretRef = "secret:AQUARIUS_OPENAI_KEY"
+//
+// 跟默认模板的 provider 走：模板预置 DeepSeek，缺省引用就是它官方文档里的环境变量名。
+// 换成 AQUARIUS_DEEPSEEK_API_KEY 反而要多一步——用户照着 DeepSeek 文档设的是
+// DEEPSEEK_API_KEY。
+const defaultSecretRef = "secret:DEEPSEEK_API_KEY"
 
 // secretName 校验 secret 引用并返回环境变量名。
 func secretName(ref string) (string, error) {
@@ -305,7 +309,7 @@ func secretName(ref string) (string, error) {
 }
 
 // resolveAPIKey 解析某把密钥引用（D35，文件内值优先；D173 逐 provider、逐钥匙独立）：
-//   - 空 → 回落默认引用 secret:AQUARIUS_OPENAI_KEY（经 Secrets 按名取用；
+//   - 空 → 回落默认引用 secret:DEEPSEEK_API_KEY（经 Secrets 按名取用；
 //     库与同名环境变量都缺由 Secrets 报因）
 //   - secret:<名> → 经 port.Secrets 按名取用（**先本机密钥库、再同名环境变量**，D151/D161）
 //   - 其余 → 视为明文直接使用，启动打印警告（**不回显密钥值**）

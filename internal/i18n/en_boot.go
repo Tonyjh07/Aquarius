@@ -4,5 +4,5 @@ package i18n
 var enBootTexts = map[string]string{
 	"boot.config_written": "Wrote config: {path}\nprofile: {profile} (pointer: {pointer})\n",
 	"boot.first_run.hint": "Edit model.providers (base_url / models / api_key), set the key environment variable, then run again.\n" +
-		"  api_key is best written as secret:<ENV_NAME> (for example secret:AQUARIUS_OPENAI_KEY); a literal key works too, but startup warns about it.\n",
+		"  api_key is best written as secret:<ENV_NAME> (for example secret:DEEPSEEK_API_KEY); a literal key works too, but startup warns about it.\n",
 }

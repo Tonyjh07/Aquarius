@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-03 @ 26f3f74 -->
+<!-- docs-sync: 2026-11-03 @ ff5162d -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -438,8 +438,8 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 
 ```json
 "keys": [
-  { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" },
-  { "label": "备用",   "api_key": "secret:AQUARIUS_OPENAI_KEY_2" }
+  { "label": "主账号", "api_key": "secret:DEEPSEEK_API_KEY" },
+  { "label": "备用",   "api_key": "secret:DEEPSEEK_API_KEY_2" }
 ]
 ```
 
@@ -461,7 +461,8 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
   直接报错，不会静默把明文留在盘上。
 - 明文密钥：允许直接填或手改 config，**启动打印警告**（不回显密钥值）；建议确保 config
   不被提交/同步，或到设置窗重填一次转入密钥库。
-- 值为空（或整项删除）→ 该 provider 回落默认 `secret:AQUARIUS_OPENAI_KEY`。
+- 值为空（或整项删除）→ 该 provider 回落默认 `secret:DEEPSEEK_API_KEY`（跟默认模板的 provider 走，
+  也就是 DeepSeek 官方文档里的环境变量名）。
 - **密钥池**：同一 provider 配多把，按序轮换。某把返回 429 / 配额耗尽即换成下一把并立刻重试；
   被拒的那把进入**进程内冷却**（读响应头的 `Retry-After`，缺省 60s），冷却期内直接跳过。全都在冷却
   = 该 provider 这一轮失败，交给降级链。顺序固定「先换钥匙、再换 provider」。冷却状态不落盘，重启清空。
@@ -510,20 +511,20 @@ profile 配置 `<data>/profiles/default/config.json`：
 {
   "model": {
     "providers": [
-      { "name": "openai",
+      { "name": "deepseek",
         "kind": "openai-chat",
-        "base_url": "https://api.openai.com/v1",
-        "keys": [ { "label": "主账号", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
+        "base_url": "https://api.deepseek.com/v1",
+        "keys": [ { "label": "主账号", "api_key": "secret:DEEPSEEK_API_KEY" } ],
         "models": [
-          { "name": "gpt-4o-mini", "context_window": 128000 },
-          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"], "context_window": 128000 }
+          { "name": "deepseek-flash", "caps": ["tools", "reasoning", "vision"], "context_window": 1000000 },
+          { "name": "deepseek-v4-pro", "context_window": 1000000 }
         ],
         "tokenizer": "",
         "unsupported_params": [] }
     ],
-    "primary": "openai",
+    "primary": "deepseek",
     "fallback": [],
-    "name": "gpt-4o-mini",
+    "name": "deepseek-flash",
     "think": true,
     "reasoning_effort": "",
     "think_tool": false,

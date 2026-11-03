@@ -136,7 +136,7 @@ var zhGuiWelcomeTexts = map[string]string{
 	"ui.welcome.label.models":     "模型名",
 	"ui.welcome.label.model":      "模型",
 	"ui.welcome.ph.provider":      "provider 名，如 openai",
-	"ui.welcome.ph.base_url":      "如 https://api.openai.com/v1",
+	"ui.welcome.ph.base_url":      "如 https://api.deepseek.com/v1",
 	"ui.welcome.ph.api_key":       "明文（存入本机加密库）或 secret:名 引用；只写不回显",
 	"ui.welcome.ph.models":        "逗号可多条；首个 = 缺省请求模型",
 	"ui.welcome.btn.fetch_models": "获取模型",

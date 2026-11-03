@@ -74,7 +74,7 @@ var enGuiPageCoreTexts = map[string]string{
 	"ui.page.providers.name_hint":    "unique provider id (primary/fallback refer to it by name)",
 	"ui.page.providers.kind_label":   "Protocol",
 	"ui.page.providers.base_label":   "Endpoint",
-	"ui.page.providers.base_hint":    "e.g. https://api.openai.com/v1",
+	"ui.page.providers.base_hint":    "e.g. https://api.deepseek.com/v1",
 
 	// Model services page: one line per protocol option
 	"ui.page.providers.hint.kind.openai_responses": "OpenAI Responses API (/responses)",

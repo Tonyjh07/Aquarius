@@ -79,7 +79,7 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.providers.name_hint":    "provider 唯一标识（primary/fallback 按名引用）",
 	"ui.page.providers.kind_label":   "协议",
 	"ui.page.providers.base_label":   "接口地址",
-	"ui.page.providers.base_hint":    "如 https://api.openai.com/v1",
+	"ui.page.providers.base_hint":    "如 https://api.deepseek.com/v1",
 
 	// 模型服务页：协议档各一条说明（按档位分开，不拼模板）
 	"ui.page.providers.hint.kind.openai_responses": "OpenAI Responses API（/responses）",

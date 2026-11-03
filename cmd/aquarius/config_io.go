@@ -85,23 +85,28 @@ func (w *wiring) persistSkillDirs(dirs []string) error {
 // defaultConfig 首次运行写入的模板：§8 示例的可运行子集
 // （ui.kind 取 gui——D51 模板默认 = 悬浮球前端，tui 显式指定、repl 为测试/e2e
 // 后端；mcpServers/plugins 为 M4 MCP 接入的声明与状态，缺省皆空）。
+//
+// 模板里的 provider 是 DeepSeek：国内可达、OpenAI 兼容协议，密钥引用直接用官方的
+// DEEPSEEK_API_KEY，用户按官方文档设好环境变量即可跑通。两个模型条目正好覆盖
+// 「省略」与「显式」两条解析路径：flash 显式声明工具 / 思考 / 图像全开（它确实收图），
+// v4-pro 省略 caps（按 openai-chat 协议缺省 = 工具 + 思考，无图像——正好对上它不收图）。
 const defaultConfig = `{
   "model": {
     "providers": [
-      { "name": "openai",
+      { "name": "deepseek",
         "kind": "openai-chat",
-        "base_url": "https://api.openai.com/v1",
-        "keys": [ { "label": "main", "api_key": "secret:AQUARIUS_OPENAI_KEY" } ],
+        "base_url": "https://api.deepseek.com/v1",
+        "keys": [ { "label": "main", "api_key": "secret:DEEPSEEK_API_KEY" } ],
         "models": [
-          { "name": "gpt-4o-mini", "context_window": 128000 },
-          { "name": "gpt-4o", "caps": ["tools", "reasoning", "vision"], "context_window": 128000 }
+          { "name": "deepseek-flash", "caps": ["tools", "reasoning", "vision"], "context_window": 1000000 },
+          { "name": "deepseek-v4-pro", "context_window": 1000000 }
         ],
         "tokenizer": "",
         "unsupported_params": [] }
     ],
-    "primary": "openai",
+    "primary": "deepseek",
     "fallback": [],
-    "name": "gpt-4o-mini",
+    "name": "deepseek-flash",
     "think": true,
     "reasoning_effort": "",
     "think_tool": false,

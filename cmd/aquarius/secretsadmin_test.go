@@ -276,7 +276,7 @@ func TestSecretsAdminImportDefaultsEmptyRef(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("AQUARIUS_OPENAI_KEY", "default-ref-value-3333")
+	t.Setenv("DEEPSEEK_API_KEY", "default-ref-value-3333")
 	bin, err := secretbin.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -285,10 +285,10 @@ func TestSecretsAdminImportDefaultsEmptyRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if len(res.Imported) != 1 || res.Imported[0] != "AQUARIUS_OPENAI_KEY" {
+	if len(res.Imported) != 1 || res.Imported[0] != "DEEPSEEK_API_KEY" {
 		t.Fatalf("Imported = %v, want 回落默认引用", res.Imported)
 	}
-	if got, _ := bin.Get(context.Background(), "AQUARIUS_OPENAI_KEY"); got != "default-ref-value-3333" {
+	if got, _ := bin.Get(context.Background(), "DEEPSEEK_API_KEY"); got != "default-ref-value-3333" {
 		t.Fatalf("回落引用的值 = %q", got)
 	}
 }

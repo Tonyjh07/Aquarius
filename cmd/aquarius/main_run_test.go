@@ -144,13 +144,13 @@ func TestRunPlaintextKeyWarns(t *testing.T) {
 }
 
 // TestRunEmptyAPIKeyFallsBackToDefaultSecret D35：api_key 留空回落默认引用
-// secret:AQUARIUS_OPENAI_KEY（文件内值优先于默认引用；环境变量缺失才报错）。
+// secret:DEEPSEEK_API_KEY（文件内值优先于默认引用；环境变量缺失才报错）。
 // TestRunRelativeDataDirBecomesAbsolute -data 相对路径启动即锚定为绝对：
 // 首跑输出的配置路径可直接复制使用，沙盒提示也因此恒为绝对路径。
 func TestRunRelativeDataDirBecomesAbsolute(t *testing.T) {
 	tmp := t.TempDir()
 	t.Chdir(tmp) // 测试内改 cwd，结束自动还原
-	t.Setenv("AQUARIUS_OPENAI_KEY", "")
+	t.Setenv("DEEPSEEK_API_KEY", "")
 	// D141：模板 ui.kind=gui ⇒ 首跑会开向导窗；这里换假宿主并取消（配置仍不完整）。
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		return uigui.SetupCancelled, nil
@@ -169,19 +169,19 @@ func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":""}],"models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`
 	writeProfileLayout(t, dir, cfg)
-	t.Setenv("AQUARIUS_OPENAI_KEY", "k") // 环境变量就位 → 正常启动
+	t.Setenv("DEEPSEEK_API_KEY", "k") // 环境变量就位 → 正常启动
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-data", dir}, strings.NewReader("/quit\n"), &out, &errBuf); code != 0 {
 		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
 	}
 
-	t.Setenv("AQUARIUS_OPENAI_KEY", "") // 缺失（envSecrets 对空值报错）→ 指名报因
+	t.Setenv("DEEPSEEK_API_KEY", "") // 缺失（envSecrets 对空值报错）→ 指名报因
 	out.Reset()
 	errBuf.Reset()
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
 		t.Fatalf("缺环境变量 code = %d, want 1", code)
 	}
-	if !strings.Contains(errBuf.String(), "AQUARIUS_OPENAI_KEY") {
+	if !strings.Contains(errBuf.String(), "DEEPSEEK_API_KEY") {
 		t.Fatalf("stderr 应指名默认环境变量: %q", errBuf.String())
 	}
 }

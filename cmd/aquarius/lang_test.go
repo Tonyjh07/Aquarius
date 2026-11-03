@@ -33,7 +33,7 @@ func TestUiLangSetting(t *testing.T) {
 // 变量定：这是「测试不依赖本机语言」的唯一把手，也是便携安装临时换语言的入口。
 func TestUILangEnvSelectsEnglish(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AQUARIUS_OPENAI_KEY", "") // 模板密钥取不到 ⇒ 配置不完整 ⇒ 走向导窗
+	t.Setenv("DEEPSEEK_API_KEY", "") // 模板密钥取不到 ⇒ 配置不完整 ⇒ 走向导窗
 	t.Setenv("AQUARIUS_UI_LANG", "en")
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		return uigui.SetupCancelled, nil // 取消：不写盘，退出 0

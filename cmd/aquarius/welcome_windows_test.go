@@ -17,7 +17,7 @@ import (
 
 func TestSetupWizardCancelWithoutKeyShowsMessageBox(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AQUARIUS_OPENAI_KEY", "") // 模板密钥引用取不到 ⇒ 问题清单非空
+	t.Setenv("DEEPSEEK_API_KEY", "") // 模板密钥引用取不到 ⇒ 问题清单非空
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		return uigui.SetupCancelled, nil
 	})()
@@ -34,7 +34,7 @@ func TestSetupWizardCancelWithoutKeyShowsMessageBox(t *testing.T) {
 	if !done || code != 0 {
 		t.Fatalf("setupWizard = (%d, %v), want (0, true)", code, done)
 	}
-	if !strings.Contains(boxText, "AQUARIUS_OPENAI_KEY") {
+	if !strings.Contains(boxText, "DEEPSEEK_API_KEY") {
 		t.Fatalf("消息框应指名缺失的环境变量: %q", boxText)
 	}
 	if !strings.Contains(boxText, "已取消配置引导") {
@@ -45,7 +45,7 @@ func TestSetupWizardCancelWithoutKeyShowsMessageBox(t *testing.T) {
 // 密钥可用时跳过不弹框、不退出（与 welcome_test.go 的结果断言互补，这里盯「无消息框」）。
 func TestSetupWizardSkipWithKeyNoMessageBox(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AQUARIUS_OPENAI_KEY", "sk-from-env")
+	t.Setenv("DEEPSEEK_API_KEY", "sk-from-env")
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		return uigui.SetupCancelled, nil
 	})()

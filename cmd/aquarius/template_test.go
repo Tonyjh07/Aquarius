@@ -41,24 +41,32 @@ func TestDefaultConfigTemplateIsValidV2(t *testing.T) {
 	if p.Kind != kindOpenAIChat {
 		t.Fatalf("kind = %q, want %q", p.Kind, kindOpenAIChat)
 	}
-	if refs := p.keyRefs(); len(refs) != 1 || refs[0] != "secret:AQUARIUS_OPENAI_KEY" {
+	if refs := p.keyRefs(); len(refs) != 1 || refs[0] != "secret:DEEPSEEK_API_KEY" {
 		t.Fatalf("密钥池 = %v", refs)
 	}
+	if p.Name != "deepseek" || cfg.Model.Primary != "deepseek" {
+		t.Fatalf("默认 provider = %q / primary = %q", p.Name, cfg.Model.Primary)
+	}
 	// 两个模型：一个省略 caps（按协议缺省）、一个显式声明；都给窗口。
-	m := p.modelByName("gpt-4o")
+	m := p.modelByName("deepseek-flash")
 	if m == nil || m.Caps == nil {
-		t.Fatalf("gpt-4o 应是显式能力声明: %+v", p.Models)
+		t.Fatalf("deepseek-flash 应是显式能力声明: %+v", p.Models)
 	}
 	if got := p.capsOf(*m); got != (port.ModelCaps{Tools: true, Reasoning: true, Vision: true}) {
-		t.Fatalf("gpt-4o 能力 = %+v", got)
+		t.Fatalf("deepseek-flash 能力 = %+v", got)
 	}
-	for _, name := range []string{"gpt-4o-mini", "gpt-4o"} {
+	for _, name := range []string{"deepseek-flash", "deepseek-v4-pro"} {
 		e := p.modelByName(name)
-		if e == nil || e.ContextWindow != 128000 {
-			t.Fatalf("%s 窗口 = %+v, want 128000", name, e)
+		if e == nil || e.ContextWindow != 1000000 {
+			t.Fatalf("%s 窗口 = %+v, want 1000000", name, e)
 		}
 	}
-	if cfg.Model.Name != "gpt-4o-mini" {
+	// v4-pro 省略 caps ⇒ 继承 openai-chat 协议缺省（工具 + 思考，无视觉），
+	// 与 DeepSeek 该档不收图像一致；写成全开会把图片发过去再被拒。
+	if got := p.capsOf(*p.modelByName("deepseek-v4-pro")); got != (port.ModelCaps{Tools: true, Reasoning: true}) {
+		t.Fatalf("deepseek-v4-pro 能力 = %+v", got)
+	}
+	if cfg.Model.Name != "deepseek-flash" {
 		t.Fatalf("当前模型 = %q", cfg.Model.Name)
 	}
 }

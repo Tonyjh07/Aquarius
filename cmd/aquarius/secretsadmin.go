@@ -88,7 +88,7 @@ func (a *secretsAdmin) Delete(name string) error {
 //     还是明文」这个**可用**的中间态，而不是「config 已是引用、库里没有值」。
 //   - **值永不回显**：返回值与错误串都只带键名与 provider 名（§9）。
 //
-// 空 api_key 与 resolveAPIKey 同口径回落默认引用 `secret:AQUARIUS_OPENAI_KEY`——
+// 空 api_key 与 resolveAPIKey 同口径回落默认引用 `secret:DEEPSEEK_API_KEY`——
 // 不一致的话，「启动用环境变量、导入却跳过」会让用户以为导入漏了。
 func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 	var res uigui.SecretsImportResult

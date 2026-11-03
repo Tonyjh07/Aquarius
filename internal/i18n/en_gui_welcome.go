@@ -136,7 +136,7 @@ var enGuiWelcomeTexts = map[string]string{
 	"ui.welcome.label.models":     "Models",
 	"ui.welcome.label.model":      "Model",
 	"ui.welcome.ph.provider":      "provider name, e.g. openai",
-	"ui.welcome.ph.base_url":      "e.g. https://api.openai.com/v1",
+	"ui.welcome.ph.base_url":      "e.g. https://api.deepseek.com/v1",
 	"ui.welcome.ph.api_key":       "plaintext (stored in the local keystore) or a secret:name reference; write-only",
 	"ui.welcome.ph.models":        "comma-separated; the first is the default request model",
 	"ui.welcome.btn.fetch_models": "Fetch models",

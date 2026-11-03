@@ -130,7 +130,7 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), `"level": "strict"`) {
 		t.Error("permissions 段未保留（泛键改写口径破坏了无关键）")
 	}
-	if !strings.Contains(string(data), `"name": "gpt-4o-mini"`) {
+	if !strings.Contains(string(data), `"name": "deepseek-flash"`) {
 		t.Error("model.name 未保留（命令写回的键不应被文本键改写触碰）")
 	}
 	var back struct {
@@ -146,11 +146,11 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatalf("解析 config: %v", err)
 	}
-	if back.Model.Primary != "openai" {
-		t.Errorf("model.primary = %q, want openai（文本键不触碰 provider 段）", back.Model.Primary)
+	if back.Model.Primary != "deepseek" {
+		t.Errorf("model.primary = %q, want deepseek（文本键不触碰 provider 段）", back.Model.Primary)
 	}
 	if len(back.Model.Providers) == 0 || len(back.Model.Providers[0].Keys) == 0 ||
-		back.Model.Providers[0].Keys[0].APIKey != "secret:AQUARIUS_OPENAI_KEY" {
+		back.Model.Providers[0].Keys[0].APIKey != "secret:DEEPSEEK_API_KEY" {
 		t.Errorf("providers 密钥应不受文本键影响: %+v", back.Model)
 	}
 }
@@ -174,7 +174,7 @@ func TestWriteRawConfig(t *testing.T) {
 
 	raw := string(before)
 	raw = strings.Replace(raw, `"notify": true`, `"notify": false`, 1)
-	raw = strings.Replace(raw, `"gpt-4o-mini"`, `"my-model"`, 2)
+	raw = strings.Replace(raw, `"deepseek-flash"`, `"my-model"`, 2)
 	raw = strings.Replace(raw, `  "system_prompt": "",`, `  "system_prompt": "", "custom_key": {"a": 1},`, 1)
 	if err := writeRawConfig(cfgPath, raw); err != nil {
 		t.Fatalf("合法 raw 写回: %v", err)
@@ -241,7 +241,7 @@ func TestPersistFallbackChainRoundTrip(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
 	}
-	// 先加第二个 provider 与一条链（默认模板只有一个 provider，且 primary=openai）。
+	// 先加第二个 provider 与一条链（默认模板只有一个 provider，且 primary=deepseek）。
 	add := `{"model":{"providers":[{"name":"openai","kind":"openai-chat","base_url":"https://api.openai.com/v1","keys":[{"api_key":"secret:AQUARIUS_OPENAI_KEY"}],"models":[{"name":"gpt-4o-mini"},{"name":"gpt-4o"}]},{"name":"mimo","base_url":"https://api.mimo.ai/v1","keys":[{"api_key":"secret:MIMO_KEY"}],"models":[{"name":"mimo-v2.6-flash"}]}],"primary":"openai","name":"gpt-4o-mini"}}`
 	if err := writeRawConfig(cfgPath, add); err != nil {
 		t.Fatalf("预置配置: %v", err)
@@ -381,18 +381,18 @@ func TestPersistAudioSettingsRoundTrip(t *testing.T) {
 	}
 	p := uigui.SettingsPatch{
 		Theme:       "system",
-		ASRProvider: "openai", ASRModel: "mimo-v2.5-asr", ASRLang: "zh",
-		TTSProvider: "openai", TTSModel: "mimo-v2.5-tts", TTSVoice: "冰糖",
+		ASRProvider: "deepseek", ASRModel: "mimo-v2.5-asr", ASRLang: "zh",
+		TTSProvider: "deepseek", TTSModel: "mimo-v2.5-tts", TTSVoice: "冰糖",
 		TTSDesign: "温柔女声", TTSStyle: "语速稍快", TTSTags: "温柔 慢速",
 	}
 	if err := persistSettingsTextKeys(cfgPath, p); err != nil {
 		t.Fatalf("persistSettingsTextKeys: %v", err)
 	}
 	s := readTextSettings(cfgPath)
-	if s.ASRProvider != "openai" || s.ASRModel != "mimo-v2.5-asr" || s.ASRLang != "zh" {
+	if s.ASRProvider != "deepseek" || s.ASRModel != "mimo-v2.5-asr" || s.ASRLang != "zh" {
 		t.Errorf("识别读回 = %q/%q/%q", s.ASRProvider, s.ASRModel, s.ASRLang)
 	}
-	if s.TTSProvider != "openai" || s.TTSModel != "mimo-v2.5-tts" || s.TTSVoice != "冰糖" ||
+	if s.TTSProvider != "deepseek" || s.TTSModel != "mimo-v2.5-tts" || s.TTSVoice != "冰糖" ||
 		s.TTSDesign != "温柔女声" || s.TTSStyle != "语速稍快" || s.TTSTags != "温柔 慢速" {
 		t.Errorf("合成读回 = %q/%q/%q/%q/%q/%q",
 			s.TTSProvider, s.TTSModel, s.TTSVoice, s.TTSDesign, s.TTSStyle, s.TTSTags)
@@ -418,7 +418,7 @@ func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
 		t.Fatalf("写模板: %v", err)
 	}
 	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
-		Theme: "system", ASRProvider: "openai", ASRModel: "mimo-v2.5-asr", ASRLang: "auto",
+		Theme: "system", ASRProvider: "deepseek", ASRModel: "mimo-v2.5-asr", ASRLang: "auto",
 	}); err != nil {
 		t.Fatalf("persistSettingsTextKeys: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
 		want string
 	}{
 		{"失联的提供者", func(p *uigui.SettingsPatch) { p.ASRProvider = "nope" }, "provider 列表"},
-		{"有服务无模型", func(p *uigui.SettingsPatch) { p.TTSProvider = "openai"; p.TTSModel = "" }, "模型名"},
+		{"有服务无模型", func(p *uigui.SettingsPatch) { p.TTSProvider = "deepseek"; p.TTSModel = "" }, "模型名"},
 		{"非法语种", func(p *uigui.SettingsPatch) { p.ASRLang = "ja" }, "语种"},
 	}
 	for _, c := range cases {

@@ -50,8 +50,8 @@ func TestAPIKeyGapMatrix(t *testing.T) {
 	}{
 		{"引用可解析", "secret:KA", "KA", "k", false},
 		{"引用缺失", "secret:KA", "KA", "", true},
-		{"空值回落默认引用缺失", "", "AQUARIUS_OPENAI_KEY", "", true},
-		{"空值回落默认引用可解析", "", "AQUARIUS_OPENAI_KEY", "k", false},
+		{"空值回落默认引用缺失", "", "DEEPSEEK_API_KEY", "", true},
+		{"空值回落默认引用可解析", "", "DEEPSEEK_API_KEY", "k", false},
 		{"明文不阻断", "sk-plain", "", "", false},
 		{"引用缺变量名", "secret:", "", "", true},
 	}
@@ -325,7 +325,7 @@ func TestWelcomeManagerTest(t *testing.T) {
 func TestSetupWizardContinuesAfterDone(t *testing.T) {
 	srv, _ := scriptServer(t, []string{"好的"})
 	dir := t.TempDir() // 空目录 = 真首跑
-	t.Setenv("AQUARIUS_OPENAI_KEY", "")
+	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("AQ_KEY", "k")
 	profCfg := filepath.Join(dir, "profiles", "default", "config.json")
 	calls := 0
@@ -333,13 +333,13 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 		calls++
 		// 首跑路径的次序事实：模板已落盘（写模板先于开窗），问题清单指名默认环境变量。
 		if got, err := os.ReadFile(profCfg); err != nil || !strings.Contains(string(got), `"kind": "gui"`) ||
-			!strings.Contains(string(got), "secret:AQUARIUS_OPENAI_KEY") {
+			!strings.Contains(string(got), "secret:DEEPSEEK_API_KEY") {
 			t.Errorf("向导窗应在模板落盘之后打开: err=%v cfg=%s", err, got)
 		}
 		if req.Theme != "system" {
 			t.Errorf("向导窗应带 ui.theme 档（模板 system）: %q", req.Theme)
 		}
-		if joined := strings.Join(req.Issues, "；"); !strings.Contains(joined, "AQUARIUS_OPENAI_KEY") {
+		if joined := strings.Join(req.Issues, "；"); !strings.Contains(joined, "DEEPSEEK_API_KEY") {
 			t.Errorf("问题清单应指名缺失的环境变量: %+v", req.Issues)
 		}
 		cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"openai","base_url":%q,"keys":[{"api_key":"secret:AQ_KEY"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"repl","welcomed":true}}`, srv.URL)
@@ -366,7 +366,7 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 // TestSetupWizardRunsOnFirstRunEvenWithKey D210（用户实测故障的回归）：**首跑**即使
 // 密钥已能从环境变量取到，也必须开装配前向导。
 //
-// 复现过的观感：模板里的引用是 `secret:AQUARIUS_OPENAI_KEY`，用户恰好设了这个环境变量，
+// 复现过的观感：模板里的引用是 `secret:DEEPSEEK_API_KEY`，用户恰好设了这个环境变量，
 // 于是 `missingKeys` 为空、向导被跳过；可模板里 `ui.welcomed = false`，主窗起来后又自动
 // 弹了应用内欢迎窗——**欢迎窗与主窗同屏**，用户不知道该跟哪个走，填进去的 key 也落在了
 // 「应用内引导」这条较晚的路径上。
@@ -375,8 +375,8 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 // 已看，D263）且**继续启动**（密钥可用，跳过不该替用户做退出的决定）；③ 主窗不再二次开窗
 // ——由 `welcomed` 已置位保证。
 func TestSetupWizardRunsOnFirstRunEvenWithKey(t *testing.T) {
-	dir := t.TempDir()                             // 空目录 = 真首跑（bootstrap 会写模板）
-	t.Setenv("AQUARIUS_OPENAI_KEY", "sk-from-env") // 模板引用恰好解析得出来
+	dir := t.TempDir()                          // 空目录 = 真首跑（bootstrap 会写模板）
+	t.Setenv("DEEPSEEK_API_KEY", "sk-from-env") // 模板引用恰好解析得出来
 	profCfg := filepath.Join(dir, "profiles", "default", "config.json")
 	var reqs []uigui.SetupRequest
 	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
