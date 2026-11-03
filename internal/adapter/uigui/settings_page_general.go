@@ -23,7 +23,7 @@ func (generalPage) Key() string { return "general" }
 
 func (generalPage) Rows(f *settingsForm) []rowDesc {
 	return []rowDesc{
-		sec("Profile"),
+		sec(i18n.T("ui.page.general.section.profile")),
 		{kind: rowProfCurrent}, {kind: rowProfName}, {kind: rowProfBtns},
 		{kind: rowWelcome},
 		sec(i18n.T("ui.page.general.section.perm")), {kind: rowPerm}, {kind: rowUnattended},

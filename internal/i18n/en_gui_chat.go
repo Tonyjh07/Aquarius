@@ -53,6 +53,7 @@ var enGuiChatTexts = map[string]string{
 
 	// ── 输入区
 	"ui.input.startup_hint":       "Aquarius — type /help for commands, /quit to exit; click the square on the right to stop generating",
+	"ui.input.placeholder":        "Ask anything or type a command…",
 	"ui.input.tip_attach":         "Attach",
 	"ui.input.tip_send":           "Send",
 	"ui.input.tip_voice":          "Voice input",
@@ -70,10 +71,11 @@ var enGuiChatTexts = map[string]string{
 	"ui.ask.submit":           "Submit",
 
 	// ── 确认
-	"ui.confirm.elevate":          "Raise permission → {level}",
-	"ui.confirm.deny_with_reason": "Denied: {reason}",
-	"ui.confirm.needed":           "Confirmation needed",
-	"ui.confirm.shared_note":      "Both windows show the same confirmation; answering in either one is enough.",
+	"ui.confirm.elevate":            "Raise permission → {level}",
+	"ui.confirm.deny_with_reason":   "Denied: {reason}",
+	"ui.confirm.needed":             "Confirmation needed",
+	"ui.confirm.shared_note":        "Both windows show the same confirmation; answering in either one is enough.",
+	"ui.confirm.reason_placeholder": "Reason (optional)…",
 
 	// ── 附件
 	"ui.attach.pasted_image":  "Pasted image",

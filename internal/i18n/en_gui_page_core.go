@@ -4,6 +4,7 @@ package i18n
 var enGuiPageCoreTexts = map[string]string{
 
 	// General page: sections (the "Profile" section title is a config term, left in code)
+	"ui.page.general.section.profile":    "Profile",
 	"ui.page.general.section.perm":       "Permissions",
 	"ui.page.general.section.appearance": "Appearance & summon",
 	"ui.page.general.section.output":     "Output",

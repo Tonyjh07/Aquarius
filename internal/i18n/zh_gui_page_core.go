@@ -9,6 +9,7 @@ package i18n
 var zhGuiPageCoreTexts = map[string]string{
 
 	// 常规页：Profile 区（分区标题 "Profile" 是配置里的术语，不搬）
+	"ui.page.general.section.profile":    "档案",
 	"ui.page.general.section.perm":       "权限",
 	"ui.page.general.section.appearance": "外观与呼出",
 	"ui.page.general.section.output":     "输出",
