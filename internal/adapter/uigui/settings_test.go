@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -509,5 +510,61 @@ func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
 	u.saveSettings(f)
 	if got.RawJSON != "" {
 		t.Fatalf("raw 未改动不应进 patch: %q", got.RawJSON)
+	}
+}
+
+// TestSettingsLangRow 界面语言档（D275/§7.8）：快照回填、patch 带走、未改动不误报重启、
+// 改动后反馈明说「重启后生效」。语言名按惯例各用自己那套写法（English / 简体中文），不随
+// 当前界面语言变。
+func TestSettingsLangRow(t *testing.T) {
+	restoreLight(t)
+	u := newHeadless(t, Options{
+		Settings: func() SettingsSnapshot {
+			s := fillSnapshot()
+			s.Lang = "en"
+			return s
+		},
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+	})
+	f := newSettingsForm(u)
+	if got := f.uiLang.value(); got != "en" {
+		t.Fatalf("回填 lang = %q, want en", got)
+	}
+	if got := f.uiLang.display(); got != "English" {
+		t.Errorf("en 档展示名 = %q, want English", got)
+	}
+	if n := len(f.uiLang.displays); n != len(uiLangValues) {
+		t.Errorf("展示名 %d 条与键值 %d 条不等长", n, len(uiLangValues))
+	}
+
+	p, err := f.patch()
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if p.Lang != "en" {
+		t.Errorf("patch lang = %q, want en", p.Lang)
+	}
+	// 没动过 = 「已保存」，不该冒出「重启后生效」。
+	if got := savedStatus(p, f.snap, f.snapChain); got != i18n.T("ui.settings.act.saved") {
+		t.Errorf("未改语言时反馈 = %q", got)
+	}
+
+	f.uiLang.setValue("zh")
+	p, err = f.patch()
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if p.Lang != "zh" {
+		t.Fatalf("patch lang = %q, want zh", p.Lang)
+	}
+	if got := savedStatus(p, f.snap, f.snapChain); got != i18n.T("ui.settings.act.saved_lang") {
+		t.Errorf("改语言后反馈 = %q", got)
+	}
+	// 快照里的空串与表单的 auto 是同一档：不归一就会白提示一次重启。
+	if got := langOf(""); got != "auto" {
+		t.Errorf("空值归一 = %q, want auto", got)
+	}
+	if langOf("") == langOf("zh") {
+		t.Error("空值与 zh 不应归一为同一档")
 	}
 }

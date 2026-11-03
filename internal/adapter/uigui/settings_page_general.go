@@ -28,7 +28,7 @@ func (generalPage) Rows(f *settingsForm) []rowDesc {
 		{kind: rowWelcome},
 		sec(i18n.T("ui.page.general.section.perm")), {kind: rowPerm}, {kind: rowUnattended},
 		sec(i18n.T("ui.page.general.section.appearance")),
-		{kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
+		{kind: rowLang}, {kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
 		{kind: rowFontSize}, {kind: rowWinSize},
 		sec(i18n.T("ui.page.general.section.output")), {kind: rowNotify}, {kind: rowTTS},
 		sec(i18n.T("ui.page.general.section.storage")), {kind: rowBackupKeep},
@@ -64,6 +64,22 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						l := material.Body2(th, i18n.T("ui.page.general.unattended_hint"))
+						l.Color = paperOf().text3
+						return l.Layout(gtx)
+					})
+				}),
+			)
+		}), true
+	case rowLang:
+		// D275/§7.8：语言在启动时定一次，进程内不换（文案已散进各视图与测量）。这行
+		// 因此只写 config，旁边必须写明「重启后生效」——否则用户点完发现没变，会以为
+		// 控件坏了，接着去翻高级页手改。
+		return fieldRow(gtx, th, i18n.T("ui.page.general.lang_label"), func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(selectBtn(th, &f.uiLang)),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Body2(th, i18n.T("ui.page.general.lang_hint"))
 						l.Color = paperOf().text3
 						return l.Layout(gtx)
 					})
@@ -109,6 +125,7 @@ func (generalPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
 	}
 	f.openPicker(gtx, i18n.T("ui.page.general.perm_label"), &f.perm)
+	f.openPicker(gtx, i18n.T("ui.page.general.lang_label"), &f.uiLang)
 	f.openPicker(gtx, i18n.T("ui.page.general.theme_label"), &f.theme)
 	f.openPicker(gtx, i18n.T("ui.page.general.scale_label"), &f.scale)
 }

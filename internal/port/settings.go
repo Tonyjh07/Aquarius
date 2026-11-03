@@ -21,12 +21,15 @@ package port
 type SettingsPatch struct {
 	Permission string
 	// Unattended 无人值守（D185）：恒写（布尔无留空语义）；与 Permission 一起走内核命令。
-	Unattended   bool
-	Model        string
-	Think        bool
-	Effort       string
-	Hotkey       string
-	Theme        string
+	Unattended bool
+	Model      string
+	Think      bool
+	Effort     string
+	Hotkey     string
+	Theme      string
+	// Lang 界面语言（D275/§7.8）：auto | zh | en；"" = auto。**启动时定一次**，写回只
+	// 改配置，进程内不换语言——界面照常提示重启（与 profile 切换同一口径）。
+	Lang         string
 	Scale        float64 // D90：元素缩放倍率（cycle 档，恒非零）
 	FontSize     float64 // D90：正文字号 sp；0 = 不改
 	WindowWidth  int     // D90：主窗像素宽；0 = 不改（缺省）

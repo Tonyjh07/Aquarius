@@ -56,6 +56,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.act.saved_prompt":   "已保存（人格组合只对新会话生效，重启后应用）",
 	"ui.settings.act.saved_fallback": "已保存（降级链改动重启后生效）",
 	"ui.settings.act.saved_web":      "已保存（联网提供商改动重启后生效）",
+	"ui.settings.act.saved_lang":     "已保存（界面语言重启后生效）",
 
 	"ui.settings.err.font_size":     "字号须为 {min}–{max} 的数值",
 	"ui.settings.err.win_width":     "窗口宽须为非负像素数值",

@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-03 @ 3f3e0a6 -->
+<!-- docs-sync: 2026-11-03 @ 26f3f74 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -87,6 +87,14 @@
   假文本）。`en` 布局走查：静态侧把写死的标签列宽改成按语言取（`fieldLabelW()`：zh 92 / en 150），
   并留一份按显示宽度排序的膨胀清单（`TestEnExpansionReport`，`-v` 时才打印）；视觉侧仍需在 GUI 里
   按 `ui.lang=en` 走一遍窄窗与 200% 字号。
+- **I5**（S，已落地）：设置窗「常规」页补上界面语言选项——D275 落地时只有 config 与
+  `AQUARIUS_UI_LANG` 两个入口，普通用户没有改语言的路径。三态 `auto` / `zh` / `en` 走
+  `selectField`（与主题/缩放同一套模态选择器），值只回填 `ui.lang`、保存后由装配根
+  `persistSettingsTextKeys` 用启动期同一个 `i18n.Parse` 归一与校验（`""` = `auto`，枚举外拒写）；
+  **不改本进程的语言**，行旁写明「重启后生效」，保存反馈也单独一句，免得用户以为点完就变。
+  语言名按惯例各用自己的写法（`简体中文` / `English`），这两条不进表——endonym 不翻译，且 en
+  表出现中文会被 `TestEnHasNoCJK` 拦下，它们进 `cjkAllowed` 白名单并注明理由。与 `input.language`
+  （录音语种）仍是两个字段、两份键值，互不推断。
 
 **验收**：`ui.lang=en` 启动后，从欢迎页到设置窗、`/help`、生成中插话、确认与报错全英文、无一句
 中文残留；切回 `zh` 与今天逐字一致（同一套 key，不是两份手写文案）；字面量扫描与缺键扫描为空。

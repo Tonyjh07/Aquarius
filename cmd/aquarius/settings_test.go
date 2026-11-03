@@ -562,3 +562,40 @@ func TestPersistAudioEndpointRoundTrip(t *testing.T) {
 		t.Fatalf("独立端点应可保存: %v", err)
 	}
 }
+
+// TestPersistSettingsTextKeysLang 界面语言写回（D275/§7.8）：三态归一（"" = auto）、
+// 读回快照同值、枚举外拒写且原文件不动。写进去的值必须过得了下次启动的同一条解析。
+func TestPersistSettingsTextKeysLang(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
+		t.Fatalf("写模板: %v", err)
+	}
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "system", Lang: "en"}); err != nil {
+		t.Fatalf("写 en: %v", err)
+	}
+	if s := readTextSettings(cfgPath); s.Lang != "en" {
+		t.Fatalf("lang 落盘 = %q, want en", s.Lang)
+	}
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("回读配置: %v", err)
+	}
+	if cfg.UI.Lang != "en" {
+		t.Fatalf("config ui.lang = %q, want en", cfg.UI.Lang)
+	}
+	// 空串 = auto（与 config 键缺失同档），不是「保持原值」——语言档没有留空语义。
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "system"}); err != nil {
+		t.Fatalf("空 lang 应归一为 auto: %v", err)
+	}
+	if s := readTextSettings(cfgPath); s.Lang != "auto" {
+		t.Fatalf("空 lang 落盘 = %q, want auto", s.Lang)
+	}
+	before, _ := os.ReadFile(cfgPath)
+	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "system", Lang: "fr"}); err == nil {
+		t.Fatal("枚举外语言应拒写")
+	}
+	after, _ := os.ReadFile(cfgPath)
+	if string(before) != string(after) {
+		t.Error("拒写后文件应保持不变")
+	}
+}

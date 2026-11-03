@@ -44,6 +44,8 @@ type textSettings struct {
 		Enabled *bool `json:"enabled"`
 	} `json:"plugins"`
 	UI struct {
+		// Lang 界面语言（D275/§7.8）：auto | zh | en；键缺失 = auto（= ""）。
+		Lang         string  `json:"lang"`
 		Hotkey       string  `json:"hotkey"`
 		Theme        string  `json:"theme"`
 		Scale        float64 `json:"scale"`         // D90：元素缩放倍率（0 = 缺省 1.0）
@@ -75,6 +77,7 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		ToolOutputChars:  raw.Limits.ToolOutputChars,
 		ToolTimeoutSec:   raw.Limits.ToolTimeoutSec,
 		BackupKeep:       raw.Backup.Keep,
+		Lang:             raw.UI.Lang,
 		Hotkey:           raw.UI.Hotkey,
 		Theme:            raw.UI.Theme,
 		Scale:            raw.UI.Scale,
@@ -155,6 +158,13 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	default:
 		return errors.New(i18n.Tf("cmd.settings.err.theme", "theme", strconv.Quote(p.Theme)))
 	}
+	// 界面语言（D275/§7.8）：三态归一（"" = auto），枚举外拒写——与启动期 i18n.Parse 用
+	// 同一个解析器，界面存得进去的值必定过得了下次启动的校验。
+	sel, err := i18n.Parse(p.Lang)
+	if err != nil {
+		return err
+	}
+	p.Lang = string(sel)
 	if err := validatePromptModules(p.PromptModules); err != nil {
 		return err
 	}
@@ -203,6 +213,7 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 			generic["ui"] = uiSec
 		}
 		uiSec["theme"] = p.Theme
+		uiSec["lang"] = p.Lang
 		uiSec["hotkey"] = p.Hotkey
 		uiSec["scale"] = p.Scale
 		uiSec["font_size"] = p.FontSize

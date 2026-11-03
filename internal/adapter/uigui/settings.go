@@ -190,12 +190,15 @@ type BuiltinModuleView struct {
 type SettingsSnapshot struct {
 	Permission string // 规范值 read-only|strict|permissive|full-access（perm.Level）
 	// Unattended 无人值守开（D185）：运行态现取，与 Permission 同口径。
-	Unattended   bool
-	Model        string
-	Think        bool
-	Effort       string  // "" = 未设（D34 清除态）
-	Hotkey       string  // "" = 默认 Alt+A
-	Theme        string  // "" = system
+	Unattended bool
+	Model      string
+	Think      bool
+	Effort     string // "" = 未设（D34 清除态）
+	Hotkey     string // "" = 默认 Alt+A
+	Theme      string // "" = system
+	// Lang 界面语言（D275/§7.8）：auto | zh | en；"" = auto。**启动时定一次**，保存只
+	// 改配置，本进程的文案不换（界面提示重启）。
+	Lang         string
 	Scale        float64 // D90：元素缩放倍率；0 = 缺省 1.0（表单归一）
 	FontSize     float64 // D90：正文字号 sp；0 = 缺省 15（表单归一）
 	WindowWidth  int     // D90：主窗像素宽；0 = 缺省 608×460dp
@@ -299,6 +302,10 @@ var (
 	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
 	// langValues 录音语种提示的键值（D179）：只喂给识别，不改变界面语言。
 	langValues = []string{"auto", "zh", "en"}
+	// uiLangValues 界面语言的键值（D275/§7.8）：与录音语种**是两回事**，两者不互相
+	// 推断。键值与 langValues 同形但各占一份——共用一份就会在某天「顺手统一」时把两件
+	// 事绑死（改界面语言把识别语种也改掉）。
+	uiLangValues = []string{"auto", "zh", "en"}
 	// asrKindValues / ttsKindValues 协议档键值：config 里的 kind 原文（展示名是人话）。
 	// 首项是缺省（chat-audio）。
 	asrKindValues = []string{"chat-audio", "whisper", "openai", "funasr"}
@@ -336,6 +343,21 @@ func langLevels() []string {
 		i18n.T("ui.settings.level.lang.auto"),
 		i18n.T("ui.settings.level.lang.zh"),
 		i18n.T("ui.settings.level.lang.en"),
+	}
+}
+
+// uiLangLevels 界面语言的展示名（D275/§7.8）。首项随当前语言走（「跟随系统」），后两项
+// **各用自己的语言写自己**（简体中文 / English）——语言选项的标准写法：用户在一段看不懂
+// 的文字里找自己那一项，靠的是那项的字形本身，不是它的译名。
+//
+// 后两条刻意不进文案表：endonym 不翻译，进了表就有两份译文各写一遍的风险（而且 en 表
+// 里出现中文会被 `TestEnHasNoCJK` 拦下）。它们因此进 `cjkAllowed` 白名单——这是「文案表
+// 之外唯一允许出现中文的地方」这一类，理由写在白名单那条注释里。
+func uiLangLevels() []string {
+	return []string{
+		i18n.T("ui.page.general.lang_auto"),
+		"简体中文",
+		"English",
 	}
 }
 

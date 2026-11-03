@@ -60,6 +60,7 @@ const (
 	rowThink
 	rowEffort
 	rowHotkey
+	rowLang // D275/§7.8：界面语言（三态；保存只写 config，重启生效）
 	rowTheme
 	rowScale
 	rowFontSize

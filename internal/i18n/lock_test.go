@@ -75,6 +75,11 @@ var cjkAllowed = map[string][]string{
 
 	// 行高量测用的假文本：只喂给 measure，用来算 baseline，不出现在任何界面上。
 	"internal/adapter/uigui/input.go": {"行"},
+
+	// 界面语言选项里的中文自名（D275）：语言名按惯例用自己的语言写，不翻译。进了表就有
+	// 两份译文各写一遍的风险，而且 en 表里出现中文会被 TestEnHasNoCJK 拦下——所以它留在
+	// 代码里，由这条豁免放行。"English" 无中文，不需列。
+	"internal/adapter/uigui/settings.go": {"简体中文"},
 }
 
 // i18nDynamicKeyPrefixes 拼接取词的已知前缀。

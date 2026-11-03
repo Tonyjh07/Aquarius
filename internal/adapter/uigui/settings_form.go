@@ -104,8 +104,11 @@ type settingsForm struct {
 	perm     selectField
 	effort   selectField
 	theme    selectField
-	scale    selectField // D90：元素缩放（cycle 百分比档）
-	save     widget.Clickable
+	// uiLang 界面语言（D275/§7.8）：保存只写 config，本进程的文案不换（提示重启）。
+	// 与 asrLang（录音语种）是两个字段，两者不互相推断。
+	uiLang selectField
+	scale  selectField // D90：元素缩放（cycle 百分比档）
+	save   widget.Clickable
 	// D141：欢迎 / 首次运行引导入口（设置窗是唯一入口——托盘与球右键菜单都不带此项）。
 	welcomeOpen widget.Clickable
 
@@ -230,6 +233,7 @@ func newSettingsFormState() *settingsForm {
 		perm:         selectField{displays: permLevels, values: permLevels},
 		effort:       selectField{displays: effortLevels(), values: effortValues},
 		theme:        selectField{displays: themeLevels(), values: themeValues},
+		uiLang:       selectField{displays: uiLangLevels(), values: uiLangValues},
 		scale:        selectField{displays: zoomLevels, values: zoomValues},
 		asrLang:      selectField{displays: langLevels(), values: langValues},
 		asrKind:      selectField{displays: asrKindLevels(), values: asrKindValues},
@@ -338,6 +342,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.perm.setValue(s.Permission)
 	f.effort.setValue(s.Effort)
 	f.theme.setValue(s.Theme) // "" 未命中 → 首项 = 跟随系统
+	f.uiLang.setValue(s.Lang) // "" 未命中 → 首项 = 跟随系统（与 config 键缺失同义）
 	f.scale.setValue(fmt.Sprintf("%g", s.Scale))
 	f.fontSize.SetText(fmt.Sprintf("%g", s.FontSize))
 	if s.WindowWidth > 0 {

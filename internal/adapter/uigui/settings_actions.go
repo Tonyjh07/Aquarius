@@ -95,7 +95,21 @@ func savedStatus(p SettingsPatch, snap SettingsSnapshot, snapChain []FallbackLin
 		!webProvidersEqual(p.WebFetchProviders, snap.WebFetchProviders) {
 		status = i18n.T("ui.settings.act.saved_web")
 	}
+	// 放最后：语言是这批里**最晚生效**的一个（要重启），同时改了别的也先说这一句，
+	// 免得用户以为界面马上会变。
+	if langOf(p.Lang) != langOf(snap.Lang) {
+		status = i18n.T("ui.settings.act.saved_lang")
+	}
 	return status
+}
+
+// langOf 界面语言的归一值：config 键缺失（快照 ""）与显式 auto 是同一档。不归一的话，
+// 第一次保存（快照 "" → 表单 auto）会被当成「改了语言」，白提示一句重启。
+func langOf(v string) string {
+	if v == "" {
+		return "auto"
+	}
+	return v
 }
 
 // nextSnapshot 保存后的快照基准：文本键直接取 patch，密钥形态按 patch 的新值与旧形态
@@ -103,7 +117,7 @@ func savedStatus(p SettingsPatch, snap SettingsSnapshot, snapChain []FallbackLin
 func nextSnapshot(p SettingsPatch, snap SettingsSnapshot) SettingsSnapshot {
 	return SettingsSnapshot{
 		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
-		Hotkey: p.Hotkey, Theme: p.Theme,
+		Hotkey: p.Hotkey, Theme: p.Theme, Lang: p.Lang,
 		Scale: p.Scale, FontSize: p.FontSize,
 		WindowWidth: p.WindowWidth, WindowHeight: p.WindowHeight,
 		Notify: p.Notify, TTS: p.TTS,
@@ -154,6 +168,7 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 		Effort:     f.effort.value(),
 		Hotkey:     strings.TrimSpace(f.hotkey.Text()),
 		Theme:      f.theme.value(),
+		Lang:       f.uiLang.value(),
 	}
 	if p.Model == "" {
 		p.Model = f.snap.Model // 空模型名 = 保持当前

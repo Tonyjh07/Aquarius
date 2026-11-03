@@ -55,6 +55,7 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.act.saved_prompt":   "Saved (prompt composition applies to new sessions and after restart)",
 	"ui.settings.act.saved_fallback": "Saved (fallback chain changes take effect after restart)",
 	"ui.settings.act.saved_web":      "Saved (web provider changes take effect after restart)",
+	"ui.settings.act.saved_lang":     "Saved (the interface language takes effect after restart)",
 
 	"ui.settings.err.font_size":     "Font size must be a number between {min} and {max}",
 	"ui.settings.err.win_width":     "Window width must be a non-negative pixel value",
