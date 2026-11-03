@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-03 @ ab510d8 -->
+<!-- docs-sync: 2026-11-03 @ 7c2ccb9 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -419,7 +419,66 @@ commands only when a sandbox enforces it**」。我们没有沙箱：申报等�
   就踩过：配置里漏写 `keys` 时启动回落 `secret:AQUARIUS_OPENAI_KEY`，没设环境变量的机器必挂）。
   `-race` 与 GUI 真窗冒烟**不要**进 CI（前者要 MinGW、后者要显示环境），理由与代价见
   `docs/development.md` 的门禁章节。**拍板前先确认**：这台机器的网络能否稳定访问 runner
-  拉依赖，以及 `linuxgate` 依赖的 WSL 是否要在 CI 里换成真 Linux runner。
+  拉依赖，以及 `linuxgate` 依赖的 WSL 是否要在 CI 里换成真 Linux runner。与本文的「测试并行与
+  `-race` 墙钟」是两件事：这条挡的是「测试偷偷依赖本机环境」，那条压的是本机合入门禁的墙钟。
+
+- **长函数与 `func init()` 收口**（S~M）：全仓三十多个函数超 100 行，最长的三个是
+  `cmd/aquarius/main.go` 的 `run()` 271 行、`cmd/aquarius/settings.go` 的
+  `persistSettingsTextKeys()` 231 行、`uigui/transcript.go` 的 `rowStyle()` 229 行；
+  `app/commands.go` 的 `func init()` 173 行承担命令注册。**判据：只在下一次必须改这个函数时
+  顺带拆**——单为行数动刀，拆完没人验，等于用回归风险换一个数字。`init` 那笔要先确认
+  「填表在 `init`、之后只读」（`/help` 自引用成环，见 [roadmap.md](roadmap.md) 的 v0.3.0-C）
+  不依赖初始化顺序，再决定是抽 `buildCommandTable()` 还是留 `init` 只做调用。
+
+- **伪版本依赖**（S）：`go.mod` 里三条不是 tag——`excelize v2.11.1-0.20260930…`、
+  `lipgloss v1.1.1-0.20250404…`、`ledongthuc/pdf v0.0.0-20260907…`。可重现构建与安全补丁
+  可追溯性偏弱，但 `govulncheck` 当前 0 条可达（D137 的结论仍成立）。**判据**：等上游发 tag
+  （见到 tag 当天换成 tag，并各跑一次绑定测试：excelize → 文档转文本、lipgloss → TUI 观感、
+  pdf → 文档转文本的 PDF 路径（选型见 [roadmap.md](roadmap.md) 的 Q17）），或这三条上出现
+  安全通告时提前动。
+
+---
+
+## 测试并行与 `-race` 墙钟（backlog，未排期）
+
+> **现状**（2026-11-03 实测，16 核）：`go test ./...` 41 秒；`go test -race ./...` **316 秒**
+> （7.7 倍）。包级并行 `go test` 自己就按包打满了，墙钟由**最大包**决定——`internal/adapter/uigui`
+> 一家 281.7 秒 = 全量的 89%。所以能压的只剩包内，而全仓 `t.Parallel()` 目前是 **0**。
+>
+> **收益已量过**（临时 worktree 里用脚本批量插 `t.Parallel()`，随插随跑；原仓库除下面那两处锁修复外
+> 未改。uigui 那一行是一次带失败的运行——失败是下条前置里的时序脆弱用例，不影响墙钟口径）：
+
+| 包 | 现在（`-race`） | 允许包内并行 | 倍数 |
+|---|---|---|---|
+| `jobproc` | 28.8s | 6.6s | 4.4× |
+| `uigui`（683 个顶层测试 / 96 个测试文件） | 281.7s | 53.8s | 5.2× |
+| 全量 `-race` | 316s | 60 秒量级（上限转到下一个最大包 `cmd/aquarius` 25.6s） | — |
+
+> **第一道坎已经拆掉**：批量并行第一次跑就顶出 21 个 `-race` 失败，栈全指向两个无锁包级缓存——
+> `monoFace`（每窗各建一份主题，写它的是设置窗、读它的是主窗的帧循环）与 logo 的缓存档位
+> （`logoOnce` 只守解码，`logoPx`/`logoOp`/`logoOK` 裸读写）。两者都是生产 bug 而非测试噪音，
+> 已在 `7c2ccb9` 修掉（`codeFont()`/`setCodeFont()` + RWMutex、`logoMu`）；同一套并行跑法再跑，
+> **0 个 DATA RACE**。剩下的是机械活加一处脆弱测试。
+
+**剩下三件，按成本排：**
+
+1. **先让 `TestImageViewFrame` 可并行**（S）：`imgthumb_test.go` 用 `select … default` 非阻塞取解码
+   结果，隐含「`frame()` 返回时解码已完成」。并行后必偶发（实验里稳定复现一次）。改成 `select` +
+   `time.After` 超时等待即可，改动只在测试文件。
+2. **`i18n.Use` 的用例不加并行**（零成本）：`lang_test.go`、`placeholder_test.go`、
+   `settings_nav_test.go` 切的是进程级语言槽。Go 的语义正好帮忙——带 `t.Parallel()` 的测试会等
+   所有非并行顶层测试跑完才统一开跑，所以这几处**保持不加**就够了，不用改产品代码。
+3. **逐包落地并压测**（M）：一批一个包，每批 `-race -count=5` 起步确认无偶发。
+
+**顺序**：`jobproc`（零改造、4.4×、已实测全绿）→ 其余小包（`cmd/aquarius` 25.6s、`acpgate` 8.9s、
+`storejson`、`llm` …）→ `uigui`（按测试文件分批，一批一笔提交）。
+
+**重启判据**：现在不做是因为收益不值这份工——单笔提交只跑相关包，全量 `-race` 一天几轮；而
+683 个测试要逐个判断「它确实不与同包他人共享状态」，审的成本高于把 281 秒压到 54 秒。值得重启的
+信号：① 一天里全量 `-race` 跑到 5 轮以上（≈ 半小时）；② `uigui` 测试膨胀到单包 400s+；
+③ 想上「每笔提交都跑全量 `-race`」的钩子（与上文「零碎结构项」里的「持续集成」是两件事，
+那条只跑普通 `go test`）。**别为了数字好看动它**：并行的收益上限就是最大包，`uigui` 不压下来
+全仓数字不会变。
 
 ---
 
