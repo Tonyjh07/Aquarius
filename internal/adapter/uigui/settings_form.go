@@ -23,6 +23,11 @@ type settingsForm struct {
 	page    int                // 当前页（pageGeneral..pageAbout）
 	pages   []widget.List      // 每页一个滚动列表（构造处定轴向）
 	navBtns []widget.Clickable // 左侧导航栏项（按页缓存）
+	// navList 左栏滚动（页数多到一个窗装不下时，靠它把下面的页滚进视口）。与 pages 同款
+	// widget.List：页数按注册表长度长，导航项本身高度还是由 navItem 算。
+	navList widget.List
+	// navPage 左栏上一次滚到的页号（-1 = 还没滚过）：页号变了就把选中项滚进视口。
+	navPage int
 
 	// 工具与 MCP 页：内置工具逐条开关 + 已连 server 的状态与动作（D143）。
 	tools       ToolsAdmin                   // nil = 只读占位（未接线）
@@ -230,6 +235,7 @@ type settingsForm struct {
 func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
 		provOpen:     -1, // S11-7②：开窗全收起（第一张也不自动展开——展开是用户的动作）
+		navPage:      -1, // 左栏首帧把选中页对齐进来（等价于滚到顶）
 		perm:         selectField{displays: permLevels, values: permLevels},
 		effort:       selectField{displays: effortLevels(), values: effortValues},
 		theme:        selectField{displays: themeLevels(), values: themeValues},
@@ -270,6 +276,7 @@ func newSettingsFormState() *settingsForm {
 	for i := range f.pages {
 		f.pages[i].Axis = layout.Vertical
 	}
+	f.navList.Axis = layout.Vertical // 左栏同款：未设轴向会按视口宽迭代，只画第一项
 	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}

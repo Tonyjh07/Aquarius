@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -115,15 +116,23 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 }
 
 // navColumn 左侧导航栏（S4d/D142）：页名竖排，当前页高亮；点击切页在帧首消费。
+//
+// **可滚动**：页数是注册表长度（今天十四页，之后还会长），窗矮一点或字号放大一点就装
+// 不下——从前用 Flex 一路 Rigid 排下来，装不下的项直接被裁掉，且没有任何滚动条提示，
+// 看着像设置项没做完。改成 material.List（与内容区同款）后，滚轮与拖动都能翻，条目自然
+// 高也由 navItem 自己算（en 下页名会折两行）。
 func (f *settingsForm) navColumn(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	// 换页时把选中项滚进视口：点得到的那一项本来就在视口里，但页号也可能被代码改
+	// （将来加「从别处跳进某一页」的入口），届时不能让人对着一个高亮在窗外的左栏发愣。
+	// ScrollTo 对已可见的项是空操作，故点选路径不受影响。
+	if f.navPage != f.page {
+		f.navPage = f.page
+		f.navList.ScrollTo(f.page)
+	}
 	return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		children := make([]layout.FlexChild, 0, settingsPageCount)
-		for p := 0; p < settingsPageCount; p++ {
-			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return f.navItem(gtx, th, p)
-			}))
-		}
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		return material.List(th, &f.navList).Layout(gtx, settingsPageCount, func(gtx layout.Context, p int) layout.Dimensions {
+			return f.navItem(gtx, th, p)
+		})
 	})
 }
 
@@ -131,13 +140,31 @@ func (f *settingsForm) navColumn(gtx layout.Context, th *material.Theme) layout.
 //
 // Paper 版的选中态 = 软底 + 左侧 2dp 品牌色短条。短条不与文字重叠，故可以用品牌色
 // #00AEEF 本身（承载白字的那档才需要深一档）；选中项文字同时升到 text 最亮一档。
+//
+// 项高 = max(最小行高, 页名自然高 + 上下留白)：写死 36 时，en 里 "External agents" 这类
+// 要折两行的页名会压到下一项头上（两行字画在同一格高度里，行距看着是歪的）。
 func (f *settingsForm) navItem(gtx layout.Context, th *material.Theme, p int) layout.Dimensions {
 	return f.navBtns[p].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(navItemDpH))
+		pp := paperOf()
+		l := material.Body1(th, pageName(p))
+		if f.page == p {
+			l.Color = pp.text
+		} else {
+			l.Color = pp.text2
+		}
+		pad := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(6)}
+		// 量一遍（画进一次性 ops 后丢掉）只为拿页名高度：单项高度得在画底衬之前定下来。
+		mGtx := gtx
+		mGtx.Ops = new(op.Ops)
+		md := pad.Layout(mGtx, l.Layout)
+		h := md.Size.Y + gtx.Dp(10)
+		if min := gtx.Dp(navItemDpH); h < min {
+			h = min
+		}
+		size := image.Pt(gtx.Constraints.Max.X, h)
 		return layout.Stack{Alignment: layout.W}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 				if f.page == p {
-					pp := paperOf()
 					r := image.Rectangle{Max: size}
 					paint.FillShape(gtx.Ops, pp.sel,
 						clip.UniformRRect(r, gtx.Dp(unit.Dp(pp.rChip))).Op(gtx.Ops))
@@ -150,16 +177,8 @@ func (f *settingsForm) navItem(gtx layout.Context, th *material.Theme, p int) la
 				return layout.Dimensions{Size: size}
 			}),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					pp := paperOf()
-					l := material.Body1(th, pageName(p))
-					if f.page == p {
-						l.Color = pp.text
-					} else {
-						l.Color = pp.text2
-					}
-					return l.Layout(gtx)
-				})
+				gtx.Constraints.Max = size // 只夹上限，不撑满：纵向居中交给 Stack 的 W 对齐
+				return pad.Layout(gtx, l.Layout)
 			}),
 		)
 	})

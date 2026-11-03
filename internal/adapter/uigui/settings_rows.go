@@ -219,7 +219,8 @@ func (f *settingsForm) pageRows(page int) []rowDesc {
 	return append([]rowDesc{head}, settingsPages[page].Rows(f)...)
 }
 
-// navColumnDp 左侧导航栏宽度（dp，经 gtx.Dp 消费）；navItemDpH 单个导航项高度。
+// navColumnDp 左侧导航栏宽度（dp，经 gtx.Dp 消费）；navItemDpH 单个导航项的**最小**高度
+// （页名折行时按文字自然高长高，见 navItem）。
 const (
 	navColumnDp unit.Dp = 140
 	navItemDpH  unit.Dp = 36
