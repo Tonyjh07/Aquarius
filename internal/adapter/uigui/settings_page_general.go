@@ -58,10 +58,21 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 		return fieldRow(gtx, th, i18n.T("ui.page.general.perm_label"), selectBtn(th, &f.perm)), true
 	case rowUnattended:
 		// D185：越界即拒——说明必须写在开关旁，否则「无人值守」会被读成「免确认」。
+		//
+		// 开关那侧**按上限夹宽**，不能两个都 Rigid：两段都要折行的文字并排时，前一个
+		// Rigid 会拿走它折行后占满的整幅宽度，后一个只剩几个像素。中文字短，剩下那点还
+		// 勉强能读（三行）；en 文案长 1.4 倍，前一格吃满后提示被压成一列一个字（实测
+		// 849×700 窗口下就是一列竖排）。夹到 60% 后，左格在该上限内按自然宽排，右格拿
+		// 剩下的全部——中文版看起来和从前一样，英文版两段都还能成句。
 		return fieldRow(gtx, th, i18n.T("ui.page.general.unattended_label"), func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(paperCheckBox(th, &f.unattend, i18n.T("ui.page.general.unattended_check"))),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if max := gtx.Constraints.Max.X * 3 / 5; gtx.Constraints.Max.X > max {
+						gtx.Constraints.Max.X = max
+					}
+					return paperCheckBox(th, &f.unattend, i18n.T("ui.page.general.unattended_check"))(gtx)
+				}),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						l := material.Body2(th, i18n.T("ui.page.general.unattended_hint"))
 						l.Color = paperOf().text3
