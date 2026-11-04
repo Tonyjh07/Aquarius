@@ -83,14 +83,40 @@ type SetupRequest struct {
 	Issues []string // 问题清单（首屏提示：缺哪个 provider 的哪个环境变量）
 }
 
-// welcomePage 向导页。
+// welcomePage 向导页（D278：五页固定顺序，可回退）。
 type welcomePage int
 
 const (
-	welcomeAccess   welcomePage = iota // 接入模型（三问）
-	welcomeTutorial                    // 教程
-	welcomeDone                        // 完成（摘要 + 保存）
+	// welcomeIntro 第 1 页：品牌、欢迎词与界面语言。
+	welcomeIntro welcomePage = iota
+	// welcomeTerms 第 2 页：用户协议与隐私政策 + 勾选。
+	welcomeTerms
+	// welcomeAccess 第 3 页：接入模型（可跳过）。
+	welcomeAccess
+	// welcomeTutorial 第 4 页：操作指引。
+	welcomeTutorial
+	// welcomeDone 第 5 页：完成（摘要 + 保存）。
+	welcomeDone
 )
+
+// welcomePageCount 总页数（步进条的 n/N 与翻页边界共用一处）。
+const welcomePageCount = int(welcomeDone) + 1
+
+// welcomePageName 页名（每帧取词：第 1 页切语言后它要跟着变）。
+func welcomePageName(p welcomePage) string {
+	switch p {
+	case welcomeIntro:
+		return i18n.T("ui.welcome.step.intro")
+	case welcomeTerms:
+		return i18n.T("ui.welcome.step.terms")
+	case welcomeAccess:
+		return i18n.T("ui.welcome.step.access")
+	case welcomeTutorial:
+		return i18n.T("ui.welcome.step.tutorial")
+	default:
+		return i18n.T("ui.welcome.step.done")
+	}
+}
 
 // welcomeEnv 帧环境（**与 *UI 解耦**：装配前的宿主没有 UI 实例）。
 type welcomeEnv struct {
@@ -108,9 +134,11 @@ type welcomeForm struct {
 	// 接入模型页控件 + 教程页滚动列表。
 	name, baseURL, apiKey, models widget.Editor
 	tutList                       widget.List
-	testBtn                       widget.Clickable
-	modelsBtn                     widget.Clickable // 「获取模型」（D153）
-	prev, next, save, skip        widget.Clickable
+	// consent 第 2 页的勾选闸门（D278）：未勾选时「继续」不可点。
+	consent                widget.Bool
+	testBtn                widget.Clickable
+	modelsBtn              widget.Clickable // 「获取模型」（D153）
+	prev, next, save, skip widget.Clickable
 	// 反馈（本 goroutine 独占；"" = 默认提示）。
 	status string
 	err    bool
@@ -124,10 +152,11 @@ type welcomeForm struct {
 	candClicks []widget.Clickable
 	modelsHint string // 候选行说明（"已自动填入 N 个候选 · 点选替换"）
 	modelsOrig string // 开窗基线：只在没被用户改过时自动填入
-	// 接入页 / 完成页各用一条滚动列表：内容比窗高时（候选 chip 占几行）不能压到页脚。
-	// 用 layout.List 而非 material.List / widget.List：后两者常驻画滚动条（静态表单里
-	// 一条灰色竖条看着像故障），前者只在滚轮/拖动时移动内容。
-	accessList, doneList layout.List
+	// 每页各用一条滚动列表：内容比窗高时（候选 chip 占几行、200% 字号下正文折成十几行）
+	// 不能压到页脚。用 layout.List 而非 material.List / widget.List：后两者常驻画滚动条
+	// （静态表单里一条灰色竖条看着像故障），前者只在滚轮/拖动时移动内容。
+	// introList / termsList 在 200% 字号下是必需品：离屏实测第 1 页正文被页脚切在半行上。
+	introList, termsList, accessList, doneList layout.List
 	// 连通性测试 / 获取模型的异步结果（测试 goroutine 写、帧循环排空）。
 	testResults chan testOutcome
 	// finished 结果已交（幂等：按钮连点/关窗竞争只结束一次）。
@@ -142,6 +171,8 @@ func newWelcomeForm(env welcomeEnv) *welcomeForm {
 	}
 	// 构造不变量（S4c 教训：material.List 未设轴向 = Horizontal）。
 	f.tutList.Axis = layout.Vertical
+	f.introList.Axis = layout.Vertical
+	f.termsList.Axis = layout.Vertical
 	f.accessList.Axis = layout.Vertical
 	f.doneList.Axis = layout.Vertical
 	f.name.SetText(env.snap.Provider)
@@ -197,13 +228,29 @@ func (f *welcomeForm) finish(out SetupOutcome) {
 	}
 }
 
-// onNext 下一页（离开接入页前校验）。
-func (f *welcomeForm) onNext() {
-	if f.page == welcomeAccess {
-		if err := f.accessErr(); err != nil {
-			f.fail(err)
-			return
+// pageErr 离开**当前页**前的闸门（下一页按钮与保存前都走它）。
+// 第 2 页要勾选同意；第 3 页要接入参数齐全；其余页无闸门。
+func (f *welcomeForm) pageErr() error {
+	switch f.page {
+	case welcomeTerms:
+		if !f.consent.Value {
+			return errors.New(i18n.T("ui.welcome.err.consent_required"))
 		}
+	case welcomeAccess:
+		return f.accessErr()
+	}
+	return nil
+}
+
+// canAdvance 当前页的「继续」是否可以点：页脚的禁用态与 onNext 的闸门用同一判据，
+// 不给「按钮亮着但点了报错」留口子。
+func (f *welcomeForm) canAdvance() bool { return f.pageErr() == nil }
+
+// onNext 下一页（先过当前页闸门）。
+func (f *welcomeForm) onNext() {
+	if err := f.pageErr(); err != nil {
+		f.fail(err)
+		return
 	}
 	if f.page < welcomeDone {
 		f.page++
@@ -211,19 +258,25 @@ func (f *welcomeForm) onNext() {
 	f.status, f.err = "", false
 }
 
-// onPrev 上一页。
+// onPrev 上一页（第 1 页无上一步）。
 func (f *welcomeForm) onPrev() {
-	if f.page > welcomeAccess {
+	if f.page > welcomeIntro {
 		f.page--
 	}
 	f.status, f.err = "", false
 }
 
 // onSave 保存：Apply（providers[0] + primary + ui.welcomed）→ 结束宿主。
-// 校验不过退回接入页并把原因写在状态行（不静默失败）。
+// 校验不过退回对应页并把原因写在状态行（不静默失败）：同意没勾退回第 2 页，
+// 接入参数不齐退回第 3 页——用户能直接看见是哪一页缺东西。
 func (f *welcomeForm) onSave() {
 	if f.env.mgr == nil {
 		f.fail(errors.New(i18n.T("ui.welcome.err.not_wired")))
+		return
+	}
+	if !f.consent.Value {
+		f.page = welcomeTerms
+		f.fail(errors.New(i18n.T("ui.welcome.err.consent_required")))
 		return
 	}
 	if err := f.accessErr(); err != nil {

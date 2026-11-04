@@ -112,7 +112,7 @@ func welcomeFrame(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 	)
 }
 
-// welcomeHeader 标题 + 副标题 + 步骤条（编号圆徽）。
+// welcomeHeader 标题 + 副标题 + 步进条（D278）。
 func welcomeHeader(th *material.Theme, f *welcomeForm) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -125,62 +125,66 @@ func welcomeHeader(th *material.Theme, f *welcomeForm) layout.Widget {
 				return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, l.Layout)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						welcomeStep(th, 1, i18n.T("ui.welcome.step.access"), f.page == welcomeAccess),
-						welcomeStep(th, 2, i18n.T("ui.welcome.step.tutorial"), f.page == welcomeTutorial),
-						welcomeStep(th, 3, i18n.T("ui.welcome.step.done"), f.page == welcomeDone),
-					)
-				})
+				return layout.Inset{Top: unit.Dp(14)}.Layout(gtx, welcomeSteps(th, f))
 			}),
 		)
 	}
 }
 
-// welcomeStep 单步指示：编号圆徽（当前步实心 accent + 白字；其余描边空心）+ 步骤名。
-func welcomeStep(th *material.Theme, no int, label string, active bool) layout.FlexChild {
-	return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+// welcomeSteps 步进条：五个圆点 + 当前页名 + n/N（D278）。
+//
+// 五项页名横排在 608dp 窗里中英都会挤（en 更长），且第 1 页切语言后整条要重排——所以只
+// 说三件事：圆点给进度，页名说这一页是什么，n/N 给总量。页名走 Flexed：Gio 先排 Rigid
+// 再分剩余，右侧计数不会被长页名挤掉，页名自己折行。
+func welcomeSteps(th *material.Theme, f *welcomeForm) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
 		pp := paperOf()
-		d := gtx.Dp(unit.Dp(22))
-		return layout.Inset{Right: unit.Dp(18)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(d, d), image.Pt(d, d)
-					return layout.Stack{Alignment: layout.Center}.Layout(gtx,
-						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-							circle := clip.Ellipse{Max: image.Pt(d, d)}
-							if active {
-								paint.FillShape(gtx.Ops, pp.accent, circle.Op(gtx.Ops))
-							} else {
-								paint.FillShape(gtx.Ops, pp.hairline, circle.Op(gtx.Ops))
-								b := gtx.Dp(1)
-								paint.FillShape(gtx.Ops, pp.card,
-									clip.Ellipse{Min: image.Pt(b, b), Max: image.Pt(d-b, d-b)}.Op(gtx.Ops))
-							}
-							return layout.Dimensions{Size: image.Pt(d, d)}
-						}),
-						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-							l := material.Label(th, paperMicroSp(th), strconv.Itoa(no))
-							l.Color = pp.text3
-							if active {
-								l.Color = pp.accentFg
-							}
-							return l.Layout(gtx)
-						}),
-					)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperNoteSp(th), label)
-					l.Color = pp.text3
-					if active {
-						l.Color = pp.text
-						l.Font.Weight = font.Bold
-					}
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, l.Layout)
-				}),
-			)
+		kids := make([]layout.FlexChild, 0, welcomePageCount+2)
+		for p := welcomePage(0); int(p) < welcomePageCount; p++ {
+			kids = append(kids, layout.Rigid(welcomeDot(pp, p < f.page, p == f.page)))
+		}
+		kids = append(kids,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperNoteSp(th), welcomePageName(f.page))
+				l.Color = pp.text
+				l.Font.Weight = font.Bold
+				return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, l.Layout)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperMicroSp(th), i18n.Tf("ui.welcome.step.progress",
+					"n", strconv.Itoa(int(f.page)+1), "total", strconv.Itoa(welcomePageCount)))
+				l.Color = pp.text3
+				return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, l.Layout)
+			}),
+		)
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, kids...)
+	}
+}
+
+// welcomeDot 一个进度圆点：已过 = 实心次级色，当前 = 实心强调色，未到 = 描边空心。
+func welcomeDot(pp paperPalette, done, active bool) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		d := gtx.Dp(unit.Dp(7))
+		if active {
+			d = gtx.Dp(unit.Dp(9))
+		}
+		gtx.Constraints.Min, gtx.Constraints.Max = image.Pt(d, d), image.Pt(d, d)
+		return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			circle := clip.Ellipse{Max: image.Pt(d, d)}
+			switch {
+			case active:
+				paint.FillShape(gtx.Ops, pp.accent, circle.Op(gtx.Ops))
+			case done:
+				paint.FillShape(gtx.Ops, pp.text3, circle.Op(gtx.Ops))
+			default:
+				b := gtx.Dp(1)
+				paint.FillShape(gtx.Ops, pp.hairline, circle.Op(gtx.Ops))
+				paint.FillShape(gtx.Ops, pp.card,
+					clip.Ellipse{Min: image.Pt(b, b), Max: image.Pt(d-b, d-b)}.Op(gtx.Ops))
+			}
+			return layout.Dimensions{Size: image.Pt(d, d)}
 		})
-	})
+	}
 }
 
 // welcomeIssues 问题清单提示（装配前宿主填；空 = 不占位）。
@@ -221,22 +225,32 @@ func welcomeStatusLine(th *material.Theme, f *welcomeForm) layout.Widget {
 	}
 }
 
-// welcomeFooter 页脚：hairline 分隔 + 左「跳过此项」/ 右「上一步」+「下一步」。
+// welcomeFooter 页脚：hairline 分隔 + 左「退出向导」/ 右「上一步」+「继续」（末页 = 完成）。
 // 与正文同底色（Paper 里不出现第二块大底色），只用一条 hairline 分层。
+//
+// 页脚按页定（D278）：第 1 页只有「开始」（无上一步，占位禁用让按钮不跳）；中间页「上一步 /
+// 继续」；末页「保存并继续」/「保存」。退出向导的灰钮只在首页与末页出现——中间页把它挤到
+// 主次难分的位置，而窗标题栏的关闭本来就在。
 func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pp := paperOf()
-		skipLabel := i18n.T("ui.welcome.btn.skip")
-		if !f.env.setup {
-			skipLabel = i18n.T("ui.common.close")
-		}
+		last := f.page == welcomeDone
 		primary := i18n.T("ui.welcome.btn.next")
-		if f.page == welcomeDone {
+		if f.page == welcomeIntro {
+			primary = i18n.T("ui.welcome.btn.start")
+		}
+		if last {
 			primary = i18n.T("ui.common.save")
 			if f.env.setup {
 				primary = i18n.T("ui.welcome.btn.save_continue")
 			}
 		}
+		skipLabel := i18n.T("ui.welcome.btn.later")
+		if !f.env.setup {
+			skipLabel = i18n.T("ui.common.close")
+		}
+		// 第 2 页的「继续」受勾选闸门约束：与 onNext 同一判据（canAdvance）。
+		gate := f.canAdvance()
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				h := gtx.Dp(1)
@@ -246,13 +260,14 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(14), Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					children := []layout.FlexChild{
-						layout.Rigid(welcomeGhostBtn(th, &f.skip, skipLabel)),
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return layout.Dimensions{Size: gtx.Constraints.Min}
-						}),
+					children := make([]layout.FlexChild, 0, 4)
+					if f.page == welcomeIntro || last {
+						children = append(children, layout.Rigid(welcomeGhostBtn(th, &f.skip, skipLabel)))
 					}
-					if f.page > welcomeAccess {
+					children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return layout.Dimensions{Size: gtx.Constraints.Min}
+					}))
+					if f.page > welcomeIntro {
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, welcomeBtn(th, &f.prev, i18n.T("ui.common.back"), false))
 						}))
@@ -262,10 +277,10 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, paperButton(th, &f.prev, i18n.T("ui.common.back"), paperBtnSecondary, false))
 						}))
 					}
-					if f.page == welcomeDone {
+					if last {
 						children = append(children, layout.Rigid(welcomeBtn(th, &f.save, primary, true)))
 					} else {
-						children = append(children, layout.Rigid(welcomeBtn(th, &f.next, primary, true)))
+						children = append(children, layout.Rigid(welcomeBtnOn(th, &f.next, primary, true, gate)))
 					}
 					return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 				})
@@ -289,10 +304,15 @@ func welcomeGhostBtn(th *material.Theme, c *widget.Clickable, label string) layo
 
 // welcomeBtn 按钮（primary = 强调底 + 白字；次要 = 下沉面）。
 func welcomeBtn(th *material.Theme, c *widget.Clickable, label string, primary bool) layout.Widget {
+	return welcomeBtnOn(th, c, label, primary, true)
+}
+
+// welcomeBtnOn 同上，带可用态（第 2 页未勾选时「继续」禁用）。
+func welcomeBtnOn(th *material.Theme, c *widget.Clickable, label string, primary, enabled bool) layout.Widget {
 	kind := paperBtnSecondary
 	if primary {
 		// 强调色分两档：品牌色 #00AEEF 承载白字只有 2.53:1，按钮必须用深一档。
 		kind = paperBtnPrimary
 	}
-	return paperButton(th, c, label, kind, true)
+	return paperButton(th, c, label, kind, enabled)
 }

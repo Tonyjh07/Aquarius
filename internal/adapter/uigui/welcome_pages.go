@@ -23,6 +23,10 @@ import (
 // pageBody 当前页正文。
 func (f *welcomeForm) pageBody(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	switch f.page {
+	case welcomeIntro:
+		return f.introPage(gtx, th)
+	case welcomeTerms:
+		return f.termsPage(gtx, th)
 	case welcomeAccess:
 		return f.accessPage(gtx, th)
 	case welcomeTutorial:
@@ -30,6 +34,39 @@ func (f *welcomeForm) pageBody(gtx layout.Context, th *material.Theme) layout.Di
 	default:
 		return f.donePage(gtx, th)
 	}
+}
+
+// introPage 第 1 页：品牌与「接下来确认哪几件事」（D278）。可滚：200% 字号下这段正文
+// 折成七八行，压在页眉与页脚之间放不下。
+func (f *welcomeForm) introPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return (&f.introList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				d := gtx.Dp(unit.Dp(64))
+				box := image.Rectangle{Max: image.Pt(d, d)}
+				drawLogo(gtx, box)
+				return layout.Dimensions{Size: box.Max}
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(18)}.Layout(gtx, welcomePara(th, i18n.T("ui.welcome.intro.lead")))
+			}),
+		)
+	})
+}
+
+// termsPage 第 2 页：用户协议与隐私政策 + 勾选闸门（D278）。
+// 正文区占满页头与勾选框之间的高度（正文到位后可滚），勾选框固定在底部——
+// 长正文滚到底才看得见闸门，用户不会在没读到的情况下被推着往下点。
+func (f *welcomeForm) termsPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return (&f.termsList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(welcomePara(th, i18n.T("ui.welcome.terms.lead"))),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(10)}.Layout(gtx,
+					paperCheckBox(th, &f.consent, i18n.T("ui.welcome.terms.accept")))
+			}),
+		)
+	})
 }
 
 // accessPage 接入模型页（D153，模拟稿）：一张四行分组卡 + 卡外「测试连通」与内联结果。
@@ -242,13 +279,16 @@ func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Di
 	if i := strings.Index(model, ","); i > 0 {
 		model = i18n.Tf("ui.welcome.model_more", "model", model[:i])
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(welcomePara(th, i18n.T("ui.welcome.done_intro"))),
-		row("Provider", p.Provider),
-		row(i18n.T("ui.welcome.label.base_url"), p.BaseURL),
-		row(i18n.T("ui.welcome.label.model"), model),
-		row(i18n.T("ui.welcome.label.api_key"), keyForm),
-	)
+	// 可滚：四行摘要在 200% 字号下比正文区高（离屏实测只看得见前两行，后两行被页脚切掉）。
+	return (&f.doneList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(welcomePara(th, i18n.T("ui.welcome.done_intro"))),
+			row("Provider", p.Provider),
+			row(i18n.T("ui.welcome.label.base_url"), p.BaseURL),
+			row(i18n.T("ui.welcome.label.model"), model),
+			row(i18n.T("ui.welcome.label.api_key"), keyForm),
+		)
+	})
 }
 
 // keyForm 密钥形态描述（**不回显值**，D35）。

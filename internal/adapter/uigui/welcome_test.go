@@ -70,8 +70,8 @@ func baseFake() *fakeWelcome {
 	}}
 }
 
-// TestWelcomeFormFill D141：快照填表（三类字段）；**密钥字段恒空**（只写不回显，D35）；
-// 起始页 = 接入模型。
+// TestWelcomeFormFill D278：快照填表（三类字段）；**密钥字段恒空**（只写不回显，D35）；
+// 起始页 = 第 1 页（欢迎与语言），不再是接入页。
 func TestWelcomeFormFill(t *testing.T) {
 	f := newWelcomeForm(mustEnv(t, true, []string{"provider \"openai\" 缺密钥：环境变量 AQ_K 未设置"}))
 	if f.name.Text() != "openai" || f.baseURL.Text() != "https://api.example/v1" || f.models.Text() != "m1, m2" {
@@ -80,8 +80,8 @@ func TestWelcomeFormFill(t *testing.T) {
 	if f.apiKey.Text() != "" {
 		t.Fatalf("密钥字段恒空（只写不回显，D35）: %q", f.apiKey.Text())
 	}
-	if f.page != welcomeAccess {
-		t.Fatalf("起始页 = %v, want 接入模型", f.page)
+	if f.page != welcomeIntro {
+		t.Fatalf("起始页 = %v, want 欢迎页", f.page)
 	}
 }
 
@@ -134,10 +134,27 @@ func TestWelcomeFormValidation(t *testing.T) {
 	}
 }
 
-// TestWelcomeFormPageFlow 页推进：接入页校验不过不前移；通过后 0→1→2，上一步可回退且
-// 清反馈。
+// TestWelcomeFormPageFlow 五页推进（D278）：顺序 = 欢迎 → 条款 → 接入 → 教程 → 完成；
+// 闸门两处（条款页未勾选不前移、接入页缺密钥不前移）；上一步可回退且清反馈；第 1 页无上一步。
 func TestWelcomeFormPageFlow(t *testing.T) {
 	f := newWelcomeForm(mustEnv(t, true, []string{"provider \"openai\" 缺密钥：环境变量 AQ_K 未设置"}))
+	f.onPrev() // 第 1 页：无上一步，原地不动
+	if f.page != welcomeIntro {
+		t.Fatalf("第 1 页的上一步应无效：%v", f.page)
+	}
+	f.onNext()
+	if f.page != welcomeTerms {
+		t.Fatalf("欢迎页应推进到条款页：%v", f.page)
+	}
+	f.onNext() // 未勾选：拦在条款页
+	if f.page != welcomeTerms || !f.err {
+		t.Fatalf("未勾选应留在条款页并置错：page=%v err=%v", f.page, f.err)
+	}
+	f.consent.Value = true
+	f.onNext()
+	if f.page != welcomeAccess || f.err || f.status != "" {
+		t.Fatalf("勾选后应到接入页且清反馈：page=%v err=%v status=%q", f.page, f.err, f.status)
+	}
 	f.onNext() // 密钥未填：拦在接入页
 	if f.page != welcomeAccess || !f.err {
 		t.Fatalf("校验不过应留在接入页并置错：page=%v err=%v", f.page, f.err)
@@ -155,6 +172,16 @@ func TestWelcomeFormPageFlow(t *testing.T) {
 	if f.page != welcomeTutorial {
 		t.Fatalf("上一步应回教程页：%v", f.page)
 	}
+	f.onPrev()
+	f.onPrev()
+	if f.page != welcomeTerms {
+		t.Fatalf("应能一路退回条款页：%v", f.page)
+	}
+	f.consent.Value = false
+	f.onSave() // 退回改过勾选：保存要重新过闸门
+	if f.page != welcomeTerms || !f.err {
+		t.Fatalf("未勾选时保存应退回条款页并报错：page=%v err=%v", f.page, f.err)
+	}
 }
 
 // TestWelcomeFormSave 保存：patch 组装（密钥空 = 保持原值语义由数据面处置）→ Apply →
@@ -163,6 +190,7 @@ func TestWelcomeFormSave(t *testing.T) {
 	mgr := baseFake()
 	env, outs := welcomeEnvSnap(mgr, true, nil)
 	f := newWelcomeForm(env)
+	f.consent.Value = true
 	f.apiKey.SetText("secret:AQ_K")
 	f.onSave()
 	if len(mgr.applied) != 1 {
@@ -184,6 +212,7 @@ func TestWelcomeFormSaveError(t *testing.T) {
 	mgr.applyErr = errors.New("写盘失败：磁盘满")
 	env, outs := welcomeEnvSnap(mgr, true, nil)
 	f := newWelcomeForm(env)
+	f.consent.Value = true
 	f.onSave()
 	if !f.err || !strings.Contains(f.status, "磁盘满") {
 		t.Fatalf("失败反馈 = (%v, %q)", f.err, f.status)
@@ -381,6 +410,7 @@ func TestWelcomeUISideHost(t *testing.T) {
 	if f.env.setup {
 		t.Fatal("in-app 宿主不应是装配前形态")
 	}
+	f.consent.Value = true
 	f.apiKey.SetText("sk-plain")
 	f.onSave()
 	if len(mgr.applied) != 1 || closed != 1 {
@@ -424,7 +454,7 @@ func TestWelcomeFrameRendersPages(t *testing.T) {
 	f := newWelcomeForm(env)
 	f.apiKey.SetText("secret:AQ_K")
 
-	for _, page := range []welcomePage{welcomeAccess, welcomeTutorial, welcomeDone} {
+	for _, page := range []welcomePage{welcomeIntro, welcomeTerms, welcomeAccess, welcomeTutorial, welcomeDone} {
 		f.page = page
 		var ops op.Ops
 		gtx := layout.Context{
@@ -612,5 +642,64 @@ func TestWelcomeGeometry(t *testing.T) {
 	}
 	if winWelcome.title() != i18n.T("ui.win.title.welcome") {
 		t.Fatalf("标题 = %q", winWelcome.title())
+	}
+}
+
+// TestWelcomePageOrder D278：五页固定顺序（欢迎 → 条款 → 接入 → 教程 → 完成），每页都有
+// 非空页名；步进条的 n/N 与页序同源，页号变化整条跟着变。
+func TestWelcomePageOrder(t *testing.T) {
+	order := []welcomePage{welcomeIntro, welcomeTerms, welcomeAccess, welcomeTutorial, welcomeDone}
+	if welcomePageCount != len(order) {
+		t.Fatalf("页数 = %d, want %d", welcomePageCount, len(order))
+	}
+	for i, p := range order {
+		if int(p) != i {
+			t.Fatalf("第 %d 页的枚举值 = %d（页序必须与常量顺序一致）", i+1, int(p))
+		}
+		if name := welcomePageName(p); strings.TrimSpace(name) == "" {
+			t.Fatalf("第 %d 页缺页名", i+1)
+		}
+	}
+	// 页名互不相同：步进条只显示当前页名，重名就等于没说这一页是什么。
+	seen := map[string]welcomePage{}
+	for _, p := range order {
+		n := welcomePageName(p)
+		if prev, ok := seen[n]; ok {
+			t.Fatalf("第 %v 页与第 %v 页同名 %q", prev, p, n)
+		}
+		seen[n] = p
+	}
+}
+
+// TestWelcomeCanAdvance D278：页脚「继续」的禁用态与翻页闸门同源——第 2 页要勾选、
+// 第 3 页要接入参数齐全，其余页恒可点。按钮亮着却在点了以后报错是两套判据的典型症状。
+func TestWelcomeCanAdvance(t *testing.T) {
+	f := newWelcomeForm(mustEnv(t, false, nil)) // in-app：密钥留空合法
+	f.page = welcomeIntro
+	if !f.canAdvance() {
+		t.Fatal("第 1 页不该有闸门")
+	}
+	f.page = welcomeTerms
+	if f.canAdvance() {
+		t.Fatal("第 2 页未勾选时不该可点")
+	}
+	f.consent.Value = true
+	if !f.canAdvance() {
+		t.Fatal("第 2 页勾选后应可点")
+	}
+	f.page = welcomeAccess
+	f.name.SetText("  ")
+	if f.canAdvance() {
+		t.Fatal("第 3 页 provider 为空时不该可点")
+	}
+	f.name.SetText("openai")
+	if !f.canAdvance() {
+		t.Fatalf("第 3 页填齐后应可点：%v", f.pageErr())
+	}
+	for _, p := range []welcomePage{welcomeTutorial, welcomeDone} {
+		f.page = p
+		if !f.canAdvance() {
+			t.Fatalf("第 %v 页不该有闸门", p)
+		}
 	}
 }

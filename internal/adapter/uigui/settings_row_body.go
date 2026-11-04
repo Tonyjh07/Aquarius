@@ -54,9 +54,15 @@ func fieldRow(gtx layout.Context, th *material.Theme, label string, control layo
 	// 改为顶端对齐 + 给标签加与输入框首行等高的内衬，视觉上仍与首行文字齐平。
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			labelW := gtx.Dp(fieldLabelW())
-			gtx.Constraints.Min.X = labelW
-			gtx.Constraints.Max.X = labelW
+			// 列宽走 sp 而不是 dp：这是**文字列**，字号放大时列宽得跟着放大。按 dp 取的话
+			// 200% 字号下 "Provider" 会折成 "Provi/der"、中文标签被切（离屏实测）。
+			// 到 2/5 行宽就封顶——再大的字号也不该让标签吃掉控件区，宁可让它自己折行。
+			labelPx := gtx.Sp(unit.Sp(fieldLabelW()))
+			if cap := gtx.Constraints.Max.X * 2 / 5; labelPx > cap {
+				labelPx = cap
+			}
+			gtx.Constraints.Min.X = labelPx
+			gtx.Constraints.Max.X = labelPx
 			return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					l := material.Body1(th, label)
