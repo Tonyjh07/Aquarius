@@ -33,6 +33,7 @@ type WelcomeSnapshot struct {
 	Models   string   // 逗号分隔（首个 = 该 provider 的缺省请求模型）
 	Welcomed bool     // ui.welcomed（键缺失 = 未看）
 	Hotkey   string   // ui.hotkey（教程页展示；空 = Alt+A）
+	Lang     string   // ui.lang（第 1 页语言三态初值；空 = auto）
 	Issues   []string // 「配置不完整」问题清单（缺密钥等）——由装配前宿主填，窗内首条提示
 }
 
@@ -56,6 +57,8 @@ type WelcomeManager interface {
 	Models(p WelcomePatch) ([]string, error)
 	// MarkWelcomed 仅置 `ui.welcomed`（用户显式关闭 = 已看，不再自动弹）。
 	MarkWelcomed() error
+	// SetLang 写回 `ui.lang`（D278 第 1 页）；归一失败的取值由实现拒写。
+	SetLang(lang string) error
 }
 
 // SetupOutcome 装配前向导窗的结束原因。
@@ -120,11 +123,12 @@ func welcomePageName(p welcomePage) string {
 
 // welcomeEnv 帧环境（**与 *UI 解耦**：装配前的宿主没有 UI 实例）。
 type welcomeEnv struct {
-	mgr   WelcomeManager
-	setup bool               // true = 装配前的独立向导窗
-	snap  WelcomeSnapshot    // 开窗快照（填表基准 + 问题提示）
-	done  func(SetupOutcome) // 结束宿主（幂等；由表单保证只调一次）
-	inval func()             // 异步测试结果回灌重绘（headless = nil）
+	mgr     WelcomeManager
+	setup   bool               // true = 装配前的独立向导窗
+	snap    WelcomeSnapshot    // 开窗快照（填表基准 + 问题提示）
+	done    func(SetupOutcome) // 结束宿主（幂等；由表单保证只调一次）
+	inval   func()             // 异步测试结果回灌重绘（headless = nil）
+	retitle func()             // 切语言后重设窗标题（装配前宿主给；其余宿主 nil = 只记录）
 }
 
 // welcomeForm 表单状态（宿主 goroutine 独占）。
@@ -157,10 +161,27 @@ type welcomeForm struct {
 	// （静态表单里一条灰色竖条看着像故障），前者只在滚轮/拖动时移动内容。
 	// introList / termsList 在 200% 字号下是必需品：离屏实测第 1 页正文被页脚切在半行上。
 	introList, termsList, accessList, doneList layout.List
+	// 第 1 页的语言三态（D278）：lang = 当前选择，lang0 = 已落盘的那个（相等 = 没有待写的改动）。
+	// 只在本宿主的 goroutine 里读写，与设置窗的 ui.lang 行同一个取值域（auto | zh | en）。
+	lang     i18n.Selection
+	lang0    i18n.Selection
+	langBtns [3]widget.Clickable
 	// 连通性测试 / 获取模型的异步结果（测试 goroutine 写、帧循环排空）。
 	testResults chan testOutcome
 	// finished 结果已交（幂等：按钮连点/关窗竞争只结束一次）。
 	finished bool
+}
+
+// langSelections 第 1 页三态的取值序（与 welcomeLangLabels 的文案序一一对应：auto/zh/en）。
+var langSelections = [3]i18n.Selection{i18n.SelectionAuto, i18n.SelectionZh, i18n.SelectionEn}
+
+// welcomeLangLabels 第 1 页三态展示名：后两项与设置窗共用（endonym 不翻译），
+// auto 一项本页专用——设置窗里是下拉的一整行，写「Follow system」够宽；这里三等分
+// 的一颗按钮在 200% 字号下会把它折成两行，选中项因此比另两项高出一截（离屏实测）。
+func welcomeLangLabels() []string {
+	labels := uiLangLevels()
+	labels[0] = strings.TrimSpace(i18n.T("ui.welcome.lang.auto"))
+	return labels
 }
 
 // newWelcomeForm 以快照构造表单（开窗与装配前宿主共用口径）。
@@ -179,7 +200,47 @@ func newWelcomeForm(env welcomeEnv) *welcomeForm {
 	f.baseURL.SetText(env.snap.BaseURL)
 	f.models.SetText(env.snap.Models)
 	f.modelsOrig = env.snap.Models
+	// 语言三态初值 = 快照里的 ui.lang；解析失败按 auto 处理（配置里的非法值由启动期
+	// fail-fast 拦，走到这里说明是装配前宿主读到的旧值，不该让向导打不开）。
+	if sel, err := i18n.Parse(env.snap.Lang); err == nil {
+		f.lang = sel
+	} else {
+		f.lang = i18n.SelectionAuto
+	}
+	f.lang0 = f.lang
 	return f
+}
+
+// pickLang 第 1 页选语言（D278）：**装配前当场生效**——文案在装配前由 i18n 全局表提供，
+// 页头、页名、页脚按钮每帧现取词，所以一次 Use 就把整窗换成新语言，窗标题额外重设一次。
+// 装配后（in-app 次窗）只记录：主窗的文案已散进各视图与测量，热切语言属于启动期决策（D275）。
+func (f *welcomeForm) pickLang(sel i18n.Selection) {
+	if sel == f.lang {
+		return
+	}
+	f.lang = sel
+	f.status, f.err = "", false
+	if !f.env.setup {
+		return
+	}
+	i18n.Use(sel)
+	if f.env.retitle != nil {
+		f.env.retitle()
+	}
+}
+
+// saveLang 落盘（只写变化过的那个）：语言是用户的第一个选择，**离开第 1 页就写**——
+// 而不是等到末页保存。中途取消（配置不完整、退出向导）时语言选择照样留着，下次进来
+// 不用再选一遍。写失败不阻断翻页以外的事：翻页/保存会把它当页面错误报出来。
+func (f *welcomeForm) saveLang() error {
+	if f.lang == f.lang0 || f.env.mgr == nil {
+		return nil
+	}
+	if err := f.env.mgr.SetLang(string(f.lang)); err != nil {
+		return err
+	}
+	f.lang0 = f.lang
+	return nil
 }
 
 // patch 当前填入 → 提交（apiKey 只写不回显，空 = 保持原值）。
@@ -248,6 +309,10 @@ func (f *welcomeForm) canAdvance() bool { return f.pageErr() == nil }
 
 // onNext 下一页（先过当前页闸门）。
 func (f *welcomeForm) onNext() {
+	if err := f.saveLang(); err != nil {
+		f.fail(err)
+		return
+	}
 	if err := f.pageErr(); err != nil {
 		f.fail(err)
 		return
@@ -274,6 +339,11 @@ func (f *welcomeForm) onSave() {
 		f.fail(errors.New(i18n.T("ui.welcome.err.not_wired")))
 		return
 	}
+	if err := f.saveLang(); err != nil {
+		f.page = welcomeIntro
+		f.fail(err)
+		return
+	}
 	if !f.consent.Value {
 		f.page = welcomeTerms
 		f.fail(errors.New(i18n.T("ui.welcome.err.consent_required")))
@@ -295,6 +365,9 @@ func (f *welcomeForm) onSave() {
 // onSkip 跳过 / 关闭：装配前 = 交回取消（调用方退出 + 指引）；in-app = 置
 // `ui.welcomed` 后关窗（显式关闭即「已看」，不再自动弹；置位失败不阻断关窗）。
 func (f *welcomeForm) onSkip() {
+	// 语言选择在这一步单独落盘（不管后面是走是留）：它是用户已经做完的一个决定，
+	// 不该因为「配置还没填完就退出」一起丢掉。失败静默——窗马上就关了。
+	_ = f.saveLang()
 	if f.env.setup {
 		f.finish(SetupCancelled)
 		return

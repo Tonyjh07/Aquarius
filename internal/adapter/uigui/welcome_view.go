@@ -44,6 +44,11 @@ func welcomeFrame(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 	for f.modelsBtn.Clicked(gtx) {
 		f.onFetchModels()
 	}
+	for i := range f.langBtns {
+		if f.langBtns[i].Clicked(gtx) {
+			f.pickLang(langSelections[i])
+		}
+	}
 	for i := range f.candClicks {
 		if !f.candClicks[i].Clicked(gtx) {
 			continue

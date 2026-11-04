@@ -162,6 +162,7 @@ var zhGuiWelcomeTexts = map[string]string{
 	"ui.welcome.btn.start":            "开始",
 	"ui.welcome.btn.later":            "以后再说",
 	"ui.welcome.intro.lead":           "接下来依次确认四件事：界面语言、用户协议与隐私政策、模型接入、基本操作。都可以稍后在设置窗里改。",
+	"ui.welcome.lang.auto":            "跟随系统",
 	"ui.welcome.terms.lead":           "本程序以开源许可证发布，但使用本程序仍需遵守你与作者之间的下述约定。请完整阅读后勾选同意。",
 	"ui.welcome.terms.accept":         "我已阅读并同意《Aquarius 用户协议》与《Aquarius 隐私政策》",
 	"ui.welcome.err.consent_required": "请先阅读并勾选同意下面两份文本",

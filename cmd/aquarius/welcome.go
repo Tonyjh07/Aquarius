@@ -48,7 +48,11 @@ type welcomeManager struct {
 func (m *welcomeManager) Snapshot() uigui.WelcomeSnapshot {
 	snap := uigui.WelcomeSnapshot{Hotkey: m.hotkey}
 	cfg, err := loadConfig(m.cfgPath)
-	if err != nil || len(cfg.Model.Providers) == 0 {
+	if err != nil {
+		return snap
+	}
+	snap.Lang = cfg.UI.Lang // D278 第 1 页：空 = auto
+	if len(cfg.Model.Providers) == 0 {
 		return snap
 	}
 	p := cfg.Model.primaryProvider()
@@ -268,6 +272,24 @@ func (m *welcomeManager) MarkWelcomed() error {
 			generic["ui"] = uiSec
 		}
 		uiSec["welcomed"] = true
+	})
+}
+
+// SetLang 写回 `ui.lang`（D278 第 1 页，向导内当场生效、落盘供下次启动）。
+// 归一与启动期 i18n.Parse 同一个解析器：存得进去的值必定过得了下次启动的校验，
+// 而空串一律写成 "auto"（与设置窗那条写回同口径，不留「键不存在」的第三种写法）。
+func (m *welcomeManager) SetLang(lang string) error {
+	sel, err := i18n.Parse(lang)
+	if err != nil {
+		return err
+	}
+	return persistConfig(m.cfgPath, func(generic map[string]any) {
+		uiSec, _ := generic["ui"].(map[string]any)
+		if uiSec == nil {
+			uiSec = map[string]any{}
+			generic["ui"] = uiSec
+		}
+		uiSec["lang"] = string(sel)
 	})
 }
 

@@ -33,6 +33,8 @@ type fakeWelcome struct {
 	models   []string
 	marked   int
 	markErr  error
+	langs    []string // SetLang 调用序（只记值，不模拟落盘）
+	langErr  error
 }
 
 func (f *fakeWelcome) Snapshot() WelcomeSnapshot { return f.snap }
@@ -54,6 +56,11 @@ func (f *fakeWelcome) Models(p WelcomePatch) ([]string, error) {
 
 func (f *fakeWelcome) MarkWelcomed() error { f.marked++; return f.markErr }
 
+func (f *fakeWelcome) SetLang(lang string) error {
+	f.langs = append(f.langs, lang)
+	return f.langErr
+}
+
 // welcomeEnvSnap 表单测试基准环境（快照 + 结局收集）。
 func welcomeEnvSnap(mgr *fakeWelcome, setup bool, issues []string) (welcomeEnv, *[]SetupOutcome) {
 	outs := &[]SetupOutcome{}
@@ -68,6 +75,81 @@ func baseFake() *fakeWelcome {
 	return &fakeWelcome{snap: WelcomeSnapshot{
 		Provider: "openai", BaseURL: "https://api.example/v1", Models: "m1, m2", Welcomed: false,
 	}}
+}
+
+// TestWelcomeLangSelection D278 第 1 页语言三态：初值取快照 ui.lang（空 = auto）；
+// 装配前选了**当场生效**（文案与窗标题都是每帧现取词）；装配后只记录不热切；
+// 落盘时机 = 离开第 1 页（同一个值只写一次），写失败拦在第 1 页并报因。
+func TestWelcomeLangSelection(t *testing.T) {
+	defer i18n.Use(i18n.SelectionZh)
+	i18n.Use(i18n.SelectionZh)
+
+	mgr := baseFake()
+	env, _ := welcomeEnvSnap(mgr, true, nil)
+	f := newWelcomeForm(env)
+	if f.lang != i18n.SelectionAuto {
+		t.Fatalf("快照 ui.lang 空应归一为 auto: %q", f.lang)
+	}
+	f.pickLang(i18n.SelectionEn)
+	if i18n.Current() != i18n.LangEn {
+		t.Fatalf("装配前选语言应当场生效: %q", i18n.Current())
+	}
+	if len(mgr.langs) != 0 {
+		t.Fatalf("选语言本身不该落盘（翻页时才写）: %v", mgr.langs)
+	}
+	f.onNext()
+	if f.page != welcomeTerms {
+		t.Fatalf("落盘成功应正常翻页: %v / %q", f.page, f.status)
+	}
+	if len(mgr.langs) != 1 || mgr.langs[0] != "en" {
+		t.Fatalf("离开第 1 页应写一次 ui.lang: %v", mgr.langs)
+	}
+	f.onPrev()
+	f.onNext()
+	if len(mgr.langs) != 1 {
+		t.Fatalf("同一个值不该重复写: %v", mgr.langs)
+	}
+
+	// 装配后（in-app 次窗）：只记录，不热切——主窗文案已散进各视图与测量（D275）。
+	i18n.Use(i18n.SelectionZh)
+	mgr2 := baseFake()
+	env2, _ := welcomeEnvSnap(mgr2, false, nil)
+	f2 := newWelcomeForm(env2)
+	f2.pickLang(i18n.SelectionEn)
+	if i18n.Current() != i18n.LangZh {
+		t.Fatalf("装配后不该热切界面语言: %q", i18n.Current())
+	}
+	f2.onSkip() // 显式关闭同样保留语言选择
+	if len(mgr2.langs) != 1 || mgr2.langs[0] != "en" {
+		t.Fatalf("关闭时也应落盘语言: %v", mgr2.langs)
+	}
+
+	// 写盘失败：留在第 1 页、报因、不静默往下走。
+	mgr3 := baseFake()
+	mgr3.langErr = errors.New("read-only file system")
+	env3, _ := welcomeEnvSnap(mgr3, true, nil)
+	f3 := newWelcomeForm(env3)
+	f3.pickLang(i18n.SelectionEn)
+	f3.onNext()
+	if f3.page != welcomeIntro || !f3.err || !strings.Contains(f3.status, "read-only file system") {
+		t.Fatalf("写盘失败应拦在第 1 页并报因: page=%v err=%v status=%q", f3.page, f3.err, f3.status)
+	}
+}
+
+// TestWelcomeLangFromSnapshot 初值来自快照（不是恒 auto）：已存的 zh/en 进来就是选中态。
+func TestWelcomeLangFromSnapshot(t *testing.T) {
+	mgr := baseFake()
+	mgr.snap.Lang = "en"
+	env, _ := welcomeEnvSnap(mgr, true, nil)
+	if f := newWelcomeForm(env); f.lang != i18n.SelectionEn {
+		t.Fatalf("初值 = %q, want en", f.lang)
+	}
+	// 非法值（旧配置手写）不该拦住向导：回落 auto。
+	mgr.snap.Lang = "fr"
+	env, _ = welcomeEnvSnap(mgr, true, nil)
+	if f := newWelcomeForm(env); f.lang != i18n.SelectionAuto {
+		t.Fatalf("非法 ui.lang 应回落 auto: %q", f.lang)
+	}
 }
 
 // TestWelcomeFormFill D278：快照填表（三类字段）；**密钥字段恒空**（只写不回显，D35）；

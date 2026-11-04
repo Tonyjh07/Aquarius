@@ -36,9 +36,33 @@ func (f *welcomeForm) pageBody(gtx layout.Context, th *material.Theme) layout.Di
 	}
 }
 
-// introPage 第 1 页：品牌与「接下来确认哪几件事」（D278）。可滚：200% 字号下这段正文
+// introPage 第 1 页：品牌、界面语言与欢迎词（D278）。可滚：200% 字号下这段正文
 // 折成七八行，压在页眉与页脚之间放不下。
+//
+// **语言选择排在正文之前**，两个理由：一是首次启动时界面语言可能正好是用户读不懂的
+// 那种，第一个能操作的控件就该是它（正文可以读不懂，按钮上的「English」不会）；
+// 二是 200% 字号下正文要占掉四行，排在后面的语言行会整个落到折叠线以下——一页里
+// 最重要的一件事反而要滚动才看得见（离屏实测）。
+//
+// 语言三态用并排三钮而不是下拉：这是用户在这个程序里做的**第一个**选择，藏进下拉
+// 等于告诉他「这个先别管」。选中项用主按钮配色，另外两项次按钮——同一组按钮里，
+// 填色的那个就是当前值，不需要额外的勾选标记。
 func (f *welcomeForm) introPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	levels := welcomeLangLabels()
+	btns := make([]layout.FlexChild, 0, len(levels)*2)
+	for i, label := range levels {
+		i, label := i, label
+		if i > 0 {
+			btns = append(btns, layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout))
+		}
+		btns = append(btns, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			kind := paperBtnSecondary
+			if f.lang == langSelections[i] {
+				kind = paperBtnPrimary
+			}
+			return paperButton(th, &f.langBtns[i], label, kind, true)(gtx)
+		}))
+	}
 	return (&f.introList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -48,7 +72,17 @@ func (f *welcomeForm) introPage(gtx layout.Context, th *material.Theme) layout.D
 				return layout.Dimensions{Size: box.Max}
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(18)}.Layout(gtx, welcomePara(th, i18n.T("ui.welcome.intro.lead")))
+				l := material.Label(th, paperNoteSp(th), i18n.T("ui.page.general.lang_label"))
+				l.Color = paperOf().text2
+				return layout.Inset{Top: unit.Dp(20)}.Layout(gtx, l.Layout)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Alignment: layout.Middle}.Layout(gtx, btns...)
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(20)}.Layout(gtx, welcomePara(th, i18n.T("ui.welcome.intro.lead")))
 			}),
 		)
 	})
@@ -356,6 +390,9 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	}
 	f := newWelcomeForm(env)
 	f.env.inval = w.Invalidate
+	// 第 1 页切语言后窗标题也要跟着换（标题不是 i18n 表的读者，得显式重设一次）。
+	// in-app 宿主不给这个回调：那边语言只记录不热切（D278）。
+	f.env.retitle = func() { w.Option(app.Title(winWelcome.title())) }
 
 	width, height, minW, minH := winWelcome.geometry()
 	w.Option(
