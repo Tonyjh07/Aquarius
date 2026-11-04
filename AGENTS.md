@@ -214,3 +214,18 @@ internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（mem
                      webbrave/webchain/webdeepseek/webfetchlocal
 待建：                pluginapi/v1、plugingo（后移出 M4，D29）
 ```
+
+<!-- stc:start -->
+<!-- stc:mode=default -->
+## 中文写作：STC（Simplified Technical Chinese）
+
+写中文时必须按 STC 写。每次会话首次处理中文任务前，必须读取 `.workbuddy/skills/stc/SKILL.md`。
+相对路径以保存本段的 AGENTS.md 或 CLAUDE.md 所在目录为基准。
+按入口说明读取当前任务的细则。已读取的规则可复用；任务类型变化时，补读对应细则。
+默认表达自然、简短、准确。
+
+- 用户指定的内容、数量、格式和文体优先。交付前核对数量、必含内容和格式，修正遗漏。
+- 保留事实、名称、数字、否定词和不确定性。同一个对象和动作保持同一叫法。
+- 合并重复的事实、职责、理由和边界，删除客套和无关解释，保留任务所需的信息。
+- 任务回执按 C10 分为“做完了”“需要你”“知会”。没有事项写“无”。普通问答和成品正文使用自身结构。
+<!-- stc:end -->
