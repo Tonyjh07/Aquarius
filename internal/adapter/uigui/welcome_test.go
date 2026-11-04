@@ -21,6 +21,7 @@ import (
 	"gioui.org/unit"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/legal"
 )
 
 // fakeWelcome WelcomeManager 测试替身（记录调用、可注入失败）。
@@ -35,6 +36,8 @@ type fakeWelcome struct {
 	markErr  error
 	langs    []string // SetLang 调用序（只记值，不模拟落盘）
 	langErr  error
+	consents []int // SetConsent 调用序
+	consErr  error
 }
 
 func (f *fakeWelcome) Snapshot() WelcomeSnapshot { return f.snap }
@@ -59,6 +62,11 @@ func (f *fakeWelcome) MarkWelcomed() error { f.marked++; return f.markErr }
 func (f *fakeWelcome) SetLang(lang string) error {
 	f.langs = append(f.langs, lang)
 	return f.langErr
+}
+
+func (f *fakeWelcome) SetConsent(version int) error {
+	f.consents = append(f.consents, version)
+	return f.consErr
 }
 
 // welcomeEnvSnap 表单测试基准环境（快照 + 结局收集）。
@@ -149,6 +157,76 @@ func TestWelcomeLangFromSnapshot(t *testing.T) {
 	env, _ = welcomeEnvSnap(mgr, true, nil)
 	if f := newWelcomeForm(env); f.lang != i18n.SelectionAuto {
 		t.Fatalf("非法 ui.lang 应回落 auto: %q", f.lang)
+	}
+}
+
+// TestWelcomeConsentOnly 条款改版只重过第 2 页（D278 决策 4）：页序从条款页起、
+// 勾选后才可继续、落盘走 SetConsent（**不重写 provider**），完成后交回 Done。
+func TestWelcomeConsentOnly(t *testing.T) {
+	mgr := baseFake()
+	env, outs := welcomeEnvSnap(mgr, true, nil)
+	env.consentOnly = true
+	f := newWelcomeForm(env)
+	if f.page != welcomeTerms {
+		t.Fatalf("只补同意时应直接落在条款页: %v", f.page)
+	}
+	if f.canAdvance() {
+		t.Fatal("未勾选时「同意并继续」不该可点")
+	}
+	f.onNext() // 未勾选：拦在本页
+	if f.page != welcomeTerms || !f.err {
+		t.Fatalf("未勾选应拦在条款页: page=%v err=%v", f.page, f.err)
+	}
+	f.consent.Value = true
+	f.onNext()
+	if len(mgr.consents) != 1 || mgr.consents[0] != legal.Version {
+		t.Fatalf("应写一次同意版本 %d: %v", legal.Version, mgr.consents)
+	}
+	if len(mgr.applied) != 0 {
+		t.Fatalf("只补同意时不该重写 provider: %+v", mgr.applied)
+	}
+	if len(*outs) != 1 || (*outs)[0] != SetupDone {
+		t.Fatalf("同意后应完成向导: %v", *outs)
+	}
+
+	// 关闭 = 取消（没有「以后再说」这条路：不同意就不能继续用）。
+	mgr2 := baseFake()
+	env2, outs2 := welcomeEnvSnap(mgr2, true, nil)
+	env2.consentOnly = true
+	f2 := newWelcomeForm(env2)
+	f2.onSkip()
+	if len(*outs2) != 1 || (*outs2)[0] != SetupCancelled {
+		t.Fatalf("只补同意时关闭应取消: %v", *outs2)
+	}
+	if mgr2.marked != 0 {
+		t.Fatal("只补同意时不该置 welcomed")
+	}
+}
+
+// TestWelcomeTermsRows 第 2 页正文换成真文本（D278 决策 5）：两份文档都进了滚动区，
+// 且有节标题与正文块——不再是「一段说明 + 一个勾选框」。
+func TestWelcomeTermsRows(t *testing.T) {
+	f := newWelcomeForm(mustEnv(t, true, nil))
+	f.loadTerms()
+	if f.termsErr != nil {
+		t.Fatalf("载入正文失败: %v", f.termsErr)
+	}
+	var titles, sections, paras int
+	for _, r := range f.terms {
+		switch r.kind {
+		case termsDocTitle:
+			titles++
+		case termsSection:
+			sections++
+		case termsPara:
+			paras++
+		}
+	}
+	if titles != 2 {
+		t.Fatalf("应含两份文档标题，实际 %d", titles)
+	}
+	if sections < 20 || paras < 20 {
+		t.Fatalf("正文块太少（节 %d / 段 %d）——正文可能没载进来", sections, paras)
 	}
 }
 
@@ -279,7 +357,8 @@ func TestWelcomeFormSave(t *testing.T) {
 		t.Fatalf("Apply 调用 %d 次, want 1", len(mgr.applied))
 	}
 	got := mgr.applied[0]
-	want := WelcomePatch{Provider: "openai", BaseURL: "https://api.example/v1", APIKey: "secret:AQ_K", Models: "m1, m2"}
+	// ConsentVersion 由向导填（勾选 + 保存 = 同意当前这一版正文，D278 决策 4）。
+	want := WelcomePatch{Provider: "openai", BaseURL: "https://api.example/v1", APIKey: "secret:AQ_K", Models: "m1, m2", ConsentVersion: legal.Version}
 	if got != want {
 		t.Fatalf("patch = %+v, want %+v", got, want)
 	}

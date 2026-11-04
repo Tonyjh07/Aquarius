@@ -163,7 +163,8 @@ var zhGuiWelcomeTexts = map[string]string{
 	"ui.welcome.btn.later":            "以后再说",
 	"ui.welcome.intro.lead":           "接下来依次确认四件事：界面语言、用户协议与隐私政策、模型接入、基本操作。都可以稍后在设置窗里改。",
 	"ui.welcome.lang.auto":            "跟随系统",
-	"ui.welcome.terms.lead":           "本程序以开源许可证发布，但使用本程序仍需遵守你与作者之间的下述约定。请完整阅读后勾选同意。",
+	"ui.welcome.terms.lead":           "本程序以开源许可证发布，但使用本程序仍需遵守你与作者之间的下述约定。",
+	"ui.welcome.err.terms_load":       "正文档载入失败：{err}",
 	"ui.welcome.terms.accept":         "我已阅读并同意《Aquarius 用户协议》与《Aquarius 隐私政策》",
 	"ui.welcome.err.consent_required": "请先阅读并勾选同意下面两份文本",
 	"ui.welcome.issues":               "配置尚未完成：{issues}",
@@ -171,6 +172,8 @@ var zhGuiWelcomeTexts = map[string]string{
 	"ui.welcome.hint.save_continue":   "保存后立刻继续启动。",
 	"ui.welcome.btn.next":             "下一步",
 	"ui.welcome.btn.save_continue":    "保存并继续",
+	"ui.welcome.btn.consent":          "同意并继续",
+	"ui.welcome.consent.renew":        "条款已更新（当前 v{version}）。请重新阅读并同意，其余设置不受影响。",
 
 	// 教程页（文案是契约：TestTutorialTipsMatchMenus 拿这两行菜单说明逐项比对真实菜单项集）
 	"ui.welcome.tut.head_basics":     "基本操作",

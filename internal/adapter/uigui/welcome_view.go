@@ -250,6 +250,11 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 				primary = i18n.T("ui.welcome.btn.save_continue")
 			}
 		}
+		// 只重过第 2 页：本页即末页，按钮说的是这一页真正在做的事。
+		if f.env.consentOnly && f.page == welcomeTerms {
+			last = true
+			primary = i18n.T("ui.welcome.btn.consent")
+		}
 		skipLabel := i18n.T("ui.welcome.btn.later")
 		if !f.env.setup {
 			skipLabel = i18n.T("ui.common.close")
@@ -266,17 +271,22 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(14), Left: unit.Dp(22), Right: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					children := make([]layout.FlexChild, 0, 4)
-					if f.page == welcomeIntro || last {
+					// 只重过第 2 页时既没有「以后再说」也没有「上一步」：这一页是唯一
+					// 的一页，退出就是不用这个程序（窗标题栏仍可关）。
+					if !f.env.consentOnly && (f.page == welcomeIntro || last) {
 						children = append(children, layout.Rigid(welcomeGhostBtn(th, &f.skip, skipLabel)))
 					}
 					children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Dimensions{Size: gtx.Constraints.Min}
 					}))
-					if f.page > welcomeIntro {
+					switch {
+					case f.env.consentOnly:
+						// 没有上一页可回，也不占位——页脚只有一颗按钮。
+					case f.page > welcomeIntro:
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, welcomeBtn(th, &f.prev, i18n.T("ui.common.back"), false))
 						}))
-					} else {
+					default:
 						// 首屏也占位（禁用态）：位置固定，翻页时按钮不跳。
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, paperButton(th, &f.prev, i18n.T("ui.common.back"), paperBtnSecondary, false))

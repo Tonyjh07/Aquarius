@@ -1,6 +1,6 @@
 # Aquarius Privacy Policy
 
-Version 1 · Effective 3 November 2026
+Version {v} · Effective 3 November 2026
 
 This policy explains how Aquarius ("the Program") handles your information. **The conclusion first: the Program does not collect your personal information. Your conversations, attachments, memories and credentials stay on your machine. Content leaves the machine only when you initiate it, and only to a provider you configured yourself.**
 

@@ -22,6 +22,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/legal"
 )
 
 // readCfgMap 读回 config 原文（无关键保留/清点用）。
@@ -369,6 +370,53 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 	}
 }
 
+// TestWelcomeManagerSetConsent 只写同意版本：其余 ui 键与 provider 原封不动
+// （条款改版那次重过不能顺手把 provider 覆盖一遍），非法版本拒写。
+func TestWelcomeManagerSetConsent(t *testing.T) {
+	cfgPath, _ := writeProvidersConfig(t)
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
+	if err := m.SetConsent(legal.Version); err != nil {
+		t.Fatalf("SetConsent: %v", err)
+	}
+	cfg := readCfgMap(t, cfgPath)
+	ui := cfg["ui"].(map[string]any)
+	if got, _ := ui["consent_version"].(float64); int(got) != legal.Version {
+		t.Fatalf("consent_version = %v, want %d", ui["consent_version"], legal.Version)
+	}
+	if ui["kind"] != "repl" {
+		t.Fatalf("其余 ui 键应保留: %v", ui)
+	}
+	provs := cfg["model"].(map[string]any)["providers"].([]any)
+	if len(provs) != 2 {
+		t.Fatalf("provider 不该被动过: %v", provs)
+	}
+	if name, _ := provs[0].(map[string]any)["name"].(string); name != "a" {
+		t.Fatalf("providers[0] 被改写了: %v", provs[0])
+	}
+	if err := m.SetConsent(0); err == nil {
+		t.Fatal("非法版本应拒写")
+	}
+}
+
+// TestWelcomeManagerApplyWritesConsent 首次引导保存时一并留痕（勾选 + 保存 = 同意这一版）。
+func TestWelcomeManagerApplyWritesConsent(t *testing.T) {
+	cfgPath, _ := writeProvidersConfig(t)
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
+	if err := m.Apply(uigui.WelcomePatch{
+		Provider: "openai", BaseURL: "http://127.0.0.1:1/v1", Models: "m1",
+		ConsentVersion: legal.Version,
+	}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	ui := readCfgMap(t, cfgPath)["ui"].(map[string]any)
+	if got, _ := ui["consent_version"].(float64); int(got) != legal.Version {
+		t.Fatalf("consent_version = %v", ui["consent_version"])
+	}
+	if ui["welcomed"] != true {
+		t.Fatalf("welcomed 应同时置位: %v", ui)
+	}
+}
+
 // TestSetupWizardRunsOnFirstRunEvenWithKey D210（用户实测故障的回归）：**首跑**即使
 // 密钥已能从环境变量取到，也必须开装配前向导。
 //
@@ -422,7 +470,7 @@ func TestSetupWizardRunsOnFirstRunEvenWithKey(t *testing.T) {
 // 直接调 setupWizard（不跑 run）：gui 形态的全量 run 会进真实事件循环，门禁里不能走。
 func TestSetupWizardSkippedWhenWelcomedAndKeyOK(t *testing.T) {
 	dir := t.TempDir()
-	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_KEY"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"gui","welcomed":true}}`)
+	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_KEY"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"gui","welcomed":true,"consent_version":1}}`)
 	t.Setenv("AQ_KEY", "k")
 	calls := 0
 	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {

@@ -24,6 +24,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/legal"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -51,7 +52,8 @@ func (m *welcomeManager) Snapshot() uigui.WelcomeSnapshot {
 	if err != nil {
 		return snap
 	}
-	snap.Lang = cfg.UI.Lang // D278 第 1 页：空 = auto
+	snap.Lang = cfg.UI.Lang              // D278 第 1 页：空 = auto
+	snap.Consent = cfg.UI.ConsentVersion // D278 决策 4：0 = 从未同意
 	if len(cfg.Model.Providers) == 0 {
 		return snap
 	}
@@ -142,6 +144,10 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 			generic["ui"] = uiSec
 		}
 		uiSec["welcomed"] = true
+		// 同意是随这次保存留痕的（D278 决策 4）：勾选 + 保存 = 同意这一版正文。
+		if p.ConsentVersion > 0 {
+			uiSec["consent_version"] = p.ConsentVersion
+		}
 	})
 }
 
@@ -263,6 +269,22 @@ func (m *welcomeManager) Models(p uigui.WelcomePatch) ([]string, error) {
 	return out, nil
 }
 
+// SetConsent 仅写回 `ui.consent_version`（D278 决策 4：条款改版后只重过第 2 页）。
+// 不动 provider、不动 welcomed——这次只补一条同意记录。
+func (m *welcomeManager) SetConsent(version int) error {
+	if version <= 0 {
+		return errors.New(i18n.T("cmd.welcome.err.consent_version"))
+	}
+	return persistConfig(m.cfgPath, func(generic map[string]any) {
+		uiSec, _ := generic["ui"].(map[string]any)
+		if uiSec == nil {
+			uiSec = map[string]any{}
+			generic["ui"] = uiSec
+		}
+		uiSec["consent_version"] = version
+	})
+}
+
 // MarkWelcomed 仅置 `ui.welcomed`（用户显式关闭 = 已看，不再自动弹，D141）。
 func (m *welcomeManager) MarkWelcomed() error {
 	return persistConfig(m.cfgPath, func(generic map[string]any) {
@@ -370,7 +392,12 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		return 0, false
 	}
 	issues := missingKeys(ctx, &w.cfg.Model, w.secrets)
-	if len(issues) == 0 && w.cfg.UI.Welcomed {
+	// 条款改版（D278 决策 4）：已同意的版本低于当前正文版本时，**只重过第 2 页**。
+	// 用「低于」而不是「不等于」：用户从新版本回退到旧二进制时不该又被要求读一遍。
+	consentGap := w.cfg.UI.ConsentVersion < legal.Version
+	// 只为同意而来：引导早已走完、配置也齐全（首跑或缺密钥时走的是完整五页）。
+	consentOnly := consentGap && len(issues) == 0 && w.cfg.UI.Welcomed
+	if len(issues) == 0 && w.cfg.UI.Welcomed && !consentGap {
 		return 0, false
 	}
 	w.setupTried = true
@@ -380,14 +407,22 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		onStore: func() { w.secretsRev.Add(1) }, // S9-6b/D163：明文落库递增快照 Revision
 	}
 	outcome, err := setupWindowRunner(uigui.SetupRequest{
-		Theme:  w.cfg.UI.Theme,
-		Mgr:    mgr,
-		Issues: issues,
+		Theme:       w.cfg.UI.Theme,
+		Mgr:         mgr,
+		Issues:      issues,
+		ConsentOnly: consentOnly,
 	})
 	if err != nil {
 		return fatal(w.stderr, "%s", i18n.Tf("cmd.welcome.err.wizard", "err", err)), true
 	}
 	if outcome != uigui.SetupDone {
+		if consentOnly {
+			// 不同意新版条款 = 不能用：这不是「配置不全」，没有「下次再说」这条路。
+			msg := i18n.T("cmd.welcome.consent_declined")
+			fmt.Fprintf(w.stderr, "%s\n", msg)
+			notifyFatal(msg) // 双击启动时 stderr 不可达（D114）
+			return 0, true
+		}
 		if len(issues) == 0 {
 			// 密钥可用：跳过 = 已看。置位失败不阻断启动——下次启动再引导一次。
 			if err := mgr.MarkWelcomed(); err == nil {

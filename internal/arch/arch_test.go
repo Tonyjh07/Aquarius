@@ -27,6 +27,7 @@ const (
 	layerPluginAPI layer = "pluginapi"
 	layerI18n      layer = "i18n"    // 界面文案表：叶子层，只进不出（D275）
 	layerLogging   layer = "logging" // 运行日志：叶子层，只 import i18n（D276）
+	layerLegal     layer = "legal"   // 法律正文：叶子层，只 import i18n（D278）
 	layerOther     layer = "other"   // assets 等非分层包
 )
 
@@ -46,13 +47,16 @@ var allowedTargets = map[layer][]layer{
 	layerDomain:    {layerDomain, layerI18n},
 	layerPort:      {layerDomain, layerI18n},
 	layerApp:       {layerDomain, layerPort, layerI18n},
-	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI, layerI18n},
+	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI, layerI18n, layerLegal},
 	layerPlugin:    {layerDomain, layerPort, layerPluginAPI, layerI18n},
 	layerPluginAPI: {layerPluginAPI},
 	layerI18n:      {}, // 文案包谁都不 import：它是叶子
 	// 日志包只 import 文案包（日志正文在 log.* 段）；反过来谁都不许 import 它——
 	// 适配器拿的是装配根注入的 Logf 回调，不是这个包（D276）。
 	layerLogging: {layerI18n},
+	// 法务正文包同理：四份 md 由 go:embed 打进二进制，读取方是界面适配器；
+	// 它自己只认 i18n.Lang（D278 决策 5）。
+	layerLegal: {layerI18n},
 }
 
 // skippedDirNames 不参与扫描的目录：本地脚手架（不入库）、工具目录、独立子模块。
@@ -166,6 +170,9 @@ func TestGuardCatchesViolation(t *testing.T) {
 		{layerApp, layerLogging, false},
 		{layerLogging, layerI18n, true},
 		{layerLogging, layerApp, false},
+		{layerLegal, layerI18n, true},
+		{layerLegal, layerAdapter, false},
+		{layerAdapter, layerLegal, true},
 	}
 	for _, c := range cases {
 		if got := allows(c.src, c.dst); got != c.want {
@@ -253,6 +260,7 @@ func classify(modPath, importPath string) layer {
 		{modPath + "/internal/plugin", layerPlugin},
 		{modPath + "/internal/i18n", layerI18n},
 		{modPath + "/internal/logging", layerLogging},
+		{modPath + "/internal/legal", layerLegal},
 		{modPath + "/cmd", layerCmd},
 		{modPath + "/pluginapi", layerPluginAPI},
 	}

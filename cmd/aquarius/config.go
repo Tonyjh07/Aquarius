@@ -276,6 +276,10 @@ type uiConfig struct {
 	// Welcomed 欢迎 / 首次运行引导是否已看（D141/§15.7）：键缺失 = 未看——启动后自动
 	// 打开欢迎窗一次（引导完成或用户显式关闭即置位）；入口另在设置窗。
 	Welcomed bool `json:"welcomed,omitempty"`
+	// ConsentVersion 已同意的条款版本（D278 决策 4）：0 = 从未同意。与 legal.Version 比，
+	// **小于**当前版本即需重新同意（只重过向导第 2 页）；大于（回退到旧二进制）视为已同意
+	// ——否则一次降级就要重读一遍条款。
+	ConsentVersion int `json:"consent_version,omitempty"`
 }
 
 // uiKeysConfig 输入栏三键写法（`修饰键+键`，键名同 ui.hotkey）。

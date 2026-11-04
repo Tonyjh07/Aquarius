@@ -24,6 +24,7 @@ import (
 	"gioui.org/widget"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/legal"
 )
 
 // WelcomeSnapshot 欢迎窗快照（开窗现取；**密钥永不进快照**，D35）。
@@ -34,6 +35,7 @@ type WelcomeSnapshot struct {
 	Welcomed bool     // ui.welcomed（键缺失 = 未看）
 	Hotkey   string   // ui.hotkey（教程页展示；空 = Alt+A）
 	Lang     string   // ui.lang（第 1 页语言三态初值；空 = auto）
+	Consent  int      // ui.consent_version（已同意的条款版本；0 = 从未同意）
 	Issues   []string // 「配置不完整」问题清单（缺密钥等）——由装配前宿主填，窗内首条提示
 }
 
@@ -43,6 +45,8 @@ type WelcomePatch struct {
 	BaseURL  string
 	APIKey   string // 只写不回显：空 = 保持原值（D35）
 	Models   string // 逗号分隔；首个 = 缺省请求模型
+	// ConsentVersion 本次同意到的条款版本（legal.Version）；Apply 一并写回。
+	ConsentVersion int
 }
 
 // WelcomeManager 欢迎窗数据面（消费方定义；装配根实现）。
@@ -59,6 +63,9 @@ type WelcomeManager interface {
 	MarkWelcomed() error
 	// SetLang 写回 `ui.lang`（D278 第 1 页）；归一失败的取值由实现拒写。
 	SetLang(lang string) error
+	// SetConsent 仅写回 `ui.consent_version`（重过第 2 页时用：此时 provider 已经配好，
+	// 走 Apply 会把整条 provider 再覆盖一遍）。
+	SetConsent(version int) error
 }
 
 // SetupOutcome 装配前向导窗的结束原因。
@@ -84,6 +91,9 @@ type SetupRequest struct {
 	Theme  string // ui.theme（system | light | dark；空 = system）
 	Mgr    WelcomeManager
 	Issues []string // 问题清单（首屏提示：缺哪个 provider 的哪个环境变量）
+	// ConsentOnly 只补一次同意（D278 决策 4）：引导已完成、配置齐全，只因条款改版而来。
+	// 窗体从第 2 页起，页脚只有「同意并继续」。
+	ConsentOnly bool
 }
 
 // welcomePage 向导页（D278：五页固定顺序，可回退）。
@@ -123,12 +133,15 @@ func welcomePageName(p welcomePage) string {
 
 // welcomeEnv 帧环境（**与 *UI 解耦**：装配前的宿主没有 UI 实例）。
 type welcomeEnv struct {
-	mgr     WelcomeManager
-	setup   bool               // true = 装配前的独立向导窗
-	snap    WelcomeSnapshot    // 开窗快照（填表基准 + 问题提示）
-	done    func(SetupOutcome) // 结束宿主（幂等；由表单保证只调一次）
-	inval   func()             // 异步测试结果回灌重绘（headless = nil）
-	retitle func()             // 切语言后重设窗标题（装配前宿主给；其余宿主 nil = 只记录）
+	mgr   WelcomeManager
+	setup bool               // true = 装配前的独立向导窗
+	snap  WelcomeSnapshot    // 开窗快照（填表基准 + 问题提示）
+	done  func(SetupOutcome) // 结束宿主（幂等；由表单保证只调一次）
+	inval func()             // 异步测试结果回灌重绘（headless = nil）
+	// consentOnly 只重过第 2 页（D278 决策 4：条款改版后其余页不再打扰）。
+	// 此时第 2 页是唯一的页，页脚只留「同意并继续」，没有上一步与退出。
+	consentOnly bool
+	retitle     func() // 切语言后重设窗标题（装配前宿主给；其余宿主 nil = 只记录）
 }
 
 // welcomeForm 表单状态（宿主 goroutine 独占）。
@@ -161,6 +174,11 @@ type welcomeForm struct {
 	// （静态表单里一条灰色竖条看着像故障），前者只在滚轮/拖动时移动内容。
 	// introList / termsList 在 200% 字号下是必需品：离屏实测第 1 页正文被页脚切在半行上。
 	introList, termsList, accessList, doneList layout.List
+	// 第 2 页的法务正文档（进入本页时按当前语言载入；语言变了重取）。
+	terms       []termsRow
+	termsLang   i18n.Lang
+	termsLoaded bool
+	termsErr    error
 	// 第 1 页的语言三态（D278）：lang = 当前选择，lang0 = 已落盘的那个（相等 = 没有待写的改动）。
 	// 只在本宿主的 goroutine 里读写，与设置窗的 ui.lang 行同一个取值域（auto | zh | en）。
 	lang     i18n.Selection
@@ -208,6 +226,9 @@ func newWelcomeForm(env welcomeEnv) *welcomeForm {
 		f.lang = i18n.SelectionAuto
 	}
 	f.lang0 = f.lang
+	if env.consentOnly {
+		f.page = welcomeTerms
+	}
 	return f
 }
 
@@ -246,10 +267,11 @@ func (f *welcomeForm) saveLang() error {
 // patch 当前填入 → 提交（apiKey 只写不回显，空 = 保持原值）。
 func (f *welcomeForm) patch() WelcomePatch {
 	return WelcomePatch{
-		Provider: strings.TrimSpace(f.name.Text()),
-		BaseURL:  strings.TrimSpace(f.baseURL.Text()),
-		APIKey:   strings.TrimSpace(f.apiKey.Text()),
-		Models:   strings.TrimSpace(f.models.Text()),
+		Provider:       strings.TrimSpace(f.name.Text()),
+		BaseURL:        strings.TrimSpace(f.baseURL.Text()),
+		APIKey:         strings.TrimSpace(f.apiKey.Text()),
+		Models:         strings.TrimSpace(f.models.Text()),
+		ConsentVersion: legal.Version,
 	}
 }
 
@@ -317,6 +339,11 @@ func (f *welcomeForm) onNext() {
 		f.fail(err)
 		return
 	}
+	// 只重过第 2 页时，本页的「继续」就是「同意并继续」：直接落盘收尾。
+	if f.env.consentOnly {
+		f.onSave()
+		return
+	}
 	if f.page < welcomeDone {
 		f.page++
 	}
@@ -349,6 +376,17 @@ func (f *welcomeForm) onSave() {
 		f.fail(errors.New(i18n.T("ui.welcome.err.consent_required")))
 		return
 	}
+	// 只为条款改版重过一次（D278 决策 4）：provider 早就配好了，只写同意版本，
+	// 不走 Apply——那会把整条 providers[0] 拿旧快照再覆盖一遍。
+	if f.env.consentOnly {
+		if err := f.env.mgr.SetConsent(legal.Version); err != nil {
+			f.page = welcomeTerms
+			f.fail(err)
+			return
+		}
+		f.finish(SetupDone)
+		return
+	}
 	if err := f.accessErr(); err != nil {
 		f.page = welcomeAccess
 		f.fail(err)
@@ -368,6 +406,12 @@ func (f *welcomeForm) onSkip() {
 	// 语言选择在这一步单独落盘（不管后面是走是留）：它是用户已经做完的一个决定，
 	// 不该因为「配置还没填完就退出」一起丢掉。失败静默——窗马上就关了。
 	_ = f.saveLang()
+	// 只重过第 2 页时没有「以后再说」：不同意就不能继续用（页脚也不给这个按钮，
+	// 这里兜一手窗标题栏关闭）。
+	if f.env.consentOnly {
+		f.finish(SetupCancelled)
+		return
+	}
 	if f.env.setup {
 		f.finish(SetupCancelled)
 		return

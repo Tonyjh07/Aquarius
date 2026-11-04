@@ -163,7 +163,8 @@ var enGuiWelcomeTexts = map[string]string{
 	"ui.welcome.btn.later":            "Set up later",
 	"ui.welcome.intro.lead":           "Four things to settle, in order: interface language, the user agreement and privacy policy, model access, and the basics. All of them can be changed later in Settings.",
 	"ui.welcome.lang.auto":            "System",
-	"ui.welcome.terms.lead":           "The program is released under an open-source licence, but using it is still governed by the agreement below between you and the author. Read it in full, then tick the box.",
+	"ui.welcome.terms.lead":           "The program is released under an open-source licence, but using it is still governed by the agreement below between you and the author.",
+	"ui.welcome.err.terms_load":       "Could not load the legal texts: {err}",
 	"ui.welcome.terms.accept":         "I have read and accept the Aquarius User Agreement and Aquarius Privacy Policy",
 	"ui.welcome.err.consent_required": "Read and accept both documents below to continue",
 	"ui.welcome.issues":               "Setup is incomplete: {issues}",
@@ -171,6 +172,8 @@ var enGuiWelcomeTexts = map[string]string{
 	"ui.welcome.hint.save_continue":   "Startup continues as soon as you save.",
 	"ui.welcome.btn.next":             "Next",
 	"ui.welcome.btn.save_continue":    "Save and continue",
+	"ui.welcome.btn.consent":          "Agree and continue",
+	"ui.welcome.consent.renew":        "The terms have been updated (now v{version}). Please read and accept them again; your other settings are untouched.",
 
 	// 教程页（菜单说明行与真实菜单项集逐项对齐，测试锁定）
 	"ui.welcome.tut.head_basics":     "Basics",

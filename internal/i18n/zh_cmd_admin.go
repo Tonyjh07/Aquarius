@@ -149,6 +149,8 @@ var zhCmdAdminTexts = map[string]string{
 	"cmd.welcome.cancelled":             "已取消配置引导，配置仍不完整，Aquarius 无法启动：\n{issues}\n\n重新运行 Aquarius 并完成引导即可。",
 	"cmd.welcome.still_incomplete":      "配置仍不完整：{issues}",
 	"cmd.welcome.issues_sep":            "；",
+	"cmd.welcome.err.consent_version":   "同意的条款版本不合法：{version}",
+	"cmd.welcome.consent_declined":      "条款已更新，需要重新阅读并同意才能继续使用 Aquarius。",
 
 	// 角色页
 	"cmd.character.err.dir_not_ready": "角色卡目录未就绪",

@@ -1,6 +1,6 @@
 # Aquarius Terms of Service
 
-Version 1 · Effective 3 November 2026
+Version {v} · Effective 3 November 2026
 
 These Terms are entered into between the author of Aquarius (a natural person; GitHub: @Tonyjh07, "we", "us") and you ("you"), and govern your installation, execution and other use of the Aquarius program ("the Program"). **Please read these Terms and the Aquarius Privacy Policy in full before first use. By ticking the consent box or by using the Program, you confirm that you have read, understood and accepted these Terms in full. If you do not agree, do not use the Program.**
 

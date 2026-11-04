@@ -5,10 +5,13 @@ package uigui
 import (
 	"errors"
 	"image"
+	"image/color"
+	"strconv"
 	"strings"
 	"sync"
 
 	"gioui.org/app"
+	"gioui.org/font"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -18,6 +21,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/legal"
 )
 
 // pageBody 当前页正文。
@@ -47,61 +51,350 @@ func (f *welcomeForm) pageBody(gtx layout.Context, th *material.Theme) layout.Di
 // 语言三态用并排三钮而不是下拉：这是用户在这个程序里做的**第一个**选择，藏进下拉
 // 等于告诉他「这个先别管」。选中项用主按钮配色，另外两项次按钮——同一组按钮里，
 // 填色的那个就是当前值，不需要额外的勾选标记。
+//
+// 版式上整页居中（用户 11-04 反馈）：这一页只有品牌、一个选项和两句话，靠左上角
+// 摊着会让 660×640 的窗空掉三分之二。居中用两条 Flexed 分摊留白——内容比视口矮时
+// 上下留白相等；内容更高（200% 字号）时 Flexed 被压成 0，内容从顶部开始滚，不会把
+// 上半截推到视口外。
 func (f *welcomeForm) introPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	levels := welcomeLangLabels()
+	// 视口按「正文行数」折算：整页内容大约要 12 行正文的高度（logo + 语言行 + 两颗
+	// 按钮行 + 两行说明）。行数不够就换竖排 + 可滚的版式，中央对齐会把最后一段截掉。
+	linePx := float32(paperBodySp(th)) * gtx.Metric.PxPerSp
+	bigText := linePx > 0 && float32(gtx.Constraints.Max.Y) < linePx*introFitLines
+	// 按钮组：常规字号横排三等分；大字号竖排——三等分的一颗钮放不下「跟随系统」，
+	// 会折成「跟随系 / 统」两行，并且把选中项撑得比邻居高一截（离屏实测）。
 	btns := make([]layout.FlexChild, 0, len(levels)*2)
 	for i, label := range levels {
 		i, label := i, label
+		kind := paperBtnSecondary
+		if f.lang == langSelections[i] {
+			kind = paperBtnPrimary
+		}
+		btn := func(gtx layout.Context) layout.Dimensions {
+			return paperButton(th, &f.langBtns[i], label, kind, true)(gtx)
+		}
+		if bigText {
+			if i > 0 {
+				btns = append(btns, layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout))
+			}
+			btns = append(btns, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X // 竖排时每颗钮铺满整列
+				return btn(gtx)
+			}))
+			continue
+		}
 		if i > 0 {
 			btns = append(btns, layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout))
 		}
-		btns = append(btns, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			kind := paperBtnSecondary
-			if f.lang == langSelections[i] {
-				kind = paperBtnPrimary
-			}
-			return paperButton(th, &f.langBtns[i], label, kind, true)(gtx)
-		}))
+		btns = append(btns, layout.Flexed(1, btn))
 	}
-	return (&f.introList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+	gap := func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Min} }
+	column := func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				// logo 在本列里居中：列宽减去 logo 宽度，两边各留一半。
 				d := gtx.Dp(unit.Dp(64))
-				box := image.Rectangle{Max: image.Pt(d, d)}
-				drawLogo(gtx, box)
-				return layout.Dimensions{Size: box.Max}
+				pad := (gtx.Constraints.Max.X - d) / 2
+				if pad < 0 {
+					pad = 0
+				}
+				return layout.Inset{Left: pxToDp(gtx, pad)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					box := image.Rectangle{Max: image.Pt(d, d)}
+					drawLogo(gtx, box)
+					return layout.Dimensions{Size: box.Max}
+				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				l := material.Label(th, paperNoteSp(th), i18n.T("ui.page.general.lang_label"))
-				l.Color = paperOf().text2
-				return layout.Inset{Top: unit.Dp(20)}.Layout(gtx, l.Layout)
+				l.Color = paperOf().text3
+				return layout.Inset{Top: unit.Dp(22)}.Layout(gtx, l.Layout)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					if bigText {
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, btns...)
+					}
 					return layout.Flex{Alignment: layout.Middle}.Layout(gtx, btns...)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(20)}.Layout(gtx, welcomePara(th, i18n.T("ui.welcome.intro.lead")))
+				return layout.Inset{Top: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					l := material.Body2(th, i18n.T("ui.welcome.intro.lead"))
+					l.Color = paperOf().text2
+					l.LineHeight = unit.Sp(float32(paperBodySp(th)) * legalLineLead)
+					return l.Layout(gtx)
+				})
 			}),
 		)
-	})
+	}
+	// 内容列夹在 introColumnDp 内并水平居中：左右内衬由可用宽度现算。只加内衬，
+	// 不去改 Min——内衬是从 Max 里减的，先钉 Min = Max 会把列宽再减去两倍留白。
+	boxed := func(gtx layout.Context) layout.Dimensions {
+		w := gtx.Dp(unit.Dp(introColumnDp))
+		pad := (gtx.Constraints.Max.X - w) / 2
+		if pad < 0 {
+			pad = 0
+		}
+		return layout.Inset{Left: pxToDp(gtx, pad), Right: pxToDp(gtx, pad)}.Layout(gtx, column)
+	}
+	if bigText {
+		// 大字号下三钮竖排会把内容顶出视口，这时宁可顶对齐可滚，也不能把正文截掉。
+		return (&f.introList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			return boxed(gtx)
+		})
+	}
+	// 常规字号：上下居中。两条 Flexed 分摊留白——**不能放进 layout.List**：列表给
+	// 子项的 Max 是无界的，Flexed 会把留白算成一整屏高，内容被推到视口外（第一版
+	// 就是这么变成白屏的）。所以居中这一支不用列表，靠字号判断内容装得下。
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Flexed(1, gap),
+		layout.Rigid(boxed),
+		layout.Flexed(1, gap),
+	)
 }
 
-// termsPage 第 2 页：用户协议与隐私政策 + 勾选闸门（D278）。
-// 正文区占满页头与勾选框之间的高度（正文到位后可滚），勾选框固定在底部——
-// 长正文滚到底才看得见闸门，用户不会在没读到的情况下被推着往下点。
-func (f *welcomeForm) termsPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return (&f.termsList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(welcomePara(th, i18n.T("ui.welcome.terms.lead"))),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(10)}.Layout(gtx,
-					paperCheckBox(th, &f.consent, i18n.T("ui.welcome.terms.accept")))
-			}),
-		)
-	})
+// pxToDp 像素 → dp（内衬只认 dp；宽度是现算的，得换回 dp）。
+func pxToDp(gtx layout.Context, px int) unit.Dp {
+	if gtx.Metric.PxPerDp <= 0 {
+		return unit.Dp(px)
+	}
+	return unit.Dp(float32(px) / gtx.Metric.PxPerDp)
 }
+
+// introFitLines 第 1 页内容大致要占的正文行数。视口折算出的行数低于它就改走
+// 「顶对齐 + 可滚 + 三钮竖排」，而不是硬居中（居中时超出的那部分没有滚动区可去）。
+const introFitLines = 14
+
+// introColumnDp 第 1 页正文列的宽度上限：整页居中后内容不能被拉成整幅宽
+// （三颗语言钮各占三分之一窗宽，读起来像三个互不相干的按钮）。
+const introColumnDp = 420
+
+// termsPage 第 2 页：用户协议与隐私政策正文 + 勾选闸门（D278）。
+//
+// 正文区占满页头与勾选框之间的高度并可滚，勾选框固定在底部——长正文滚到底才看得见闸门，
+// 用户不会在没读到的情况下被推着往下点（正文二十来节，滚动区一定比窗矮）。
+func (f *welcomeForm) termsPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	f.loadTerms()
+	check := func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(2)}.Layout(gtx,
+			paperCheckBox(th, &f.consent, i18n.T("ui.welcome.terms.accept")))
+	}
+	if f.termsErr != nil {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Flexed(1, welcomePara(th, f.termsErr.Error())),
+			layout.Rigid(check),
+		)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return (&f.termsList).Layout(gtx, len(f.terms), func(gtx layout.Context, i int) layout.Dimensions {
+				return welcomeTermsRow(gtx, th, f.terms[i])
+			})
+		}),
+		// 滚动区与闸门之间一条 hairline：正文是被滚动的，切口落在半行上；没有这条线，
+		// 勾选框看着像压在了正文上。
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			h := gtx.Dp(1)
+			w := gtx.Constraints.Max.X
+			paint.FillShape(gtx.Ops, paperOf().hairline, clip.Rect(image.Rect(0, 0, w, h)).Op())
+			return layout.Dimensions{Size: image.Pt(w, h)}
+		}),
+		layout.Rigid(check),
+	)
+}
+
+// termsRow 滚动区里的一项：文档标题、节标题，或 legal 的一个正文块。
+type termsRow struct {
+	kind termsRowKind
+	text string
+	cols []string
+	head bool
+}
+
+// termsRowKind 滚动项的类型。
+type termsRowKind int
+
+const (
+	termsNote     termsRowKind = iota // 页首那句说明（在滚动区里，不占正文高度）
+	termsDocTitle                     // 一份文档的大标题
+	termsSection                      // 节标题
+	termsPara
+	termsTip
+	termsTable
+	termsBullet
+)
+
+// loadTerms 取当前语言的正文（进入第 2 页时调用；语言变了重取）。
+//
+// 两份文档拼成一条列表：勾选是一次覆盖两份（D278 决策 4），分成两页会让「同意」指代不明。
+func (f *welcomeForm) loadTerms() {
+	lang := i18n.Current()
+	if f.termsLoaded && f.termsLang == lang {
+		return
+	}
+	f.termsLoaded, f.termsLang, f.termsErr = true, lang, nil
+	f.terms = f.terms[:0]
+	// 页首那句说明也放进滚动区：200% 字号下它要折成三行，固定在顶上会把正文区挤到
+	// 只剩一行高（离屏实测）。
+	if f.env.consentOnly {
+		f.terms = append(f.terms, termsRow{kind: termsNote,
+			text: i18n.Tf("ui.welcome.consent.renew", "version", strconv.Itoa(legal.Version))})
+	}
+	f.terms = append(f.terms, termsRow{kind: termsNote, text: i18n.T("ui.welcome.terms.lead")})
+	for _, d := range []legal.Doc{legal.Terms, legal.Privacy} {
+		doc, err := legal.Load(d, lang)
+		if err != nil {
+			f.termsErr = errors.New(i18n.Tf("ui.welcome.err.terms_load", "err", err.Error()))
+			return
+		}
+		f.terms = appendDocRows(f.terms, doc)
+	}
+}
+
+// appendDocRows 一份文档 → 滚动项（文档标题、导言块、各节标题与块）。
+func appendDocRows(rows []termsRow, doc legal.Document) []termsRow {
+	if doc.Title != "" {
+		rows = append(rows, termsRow{kind: termsDocTitle, text: doc.Title})
+	}
+	rows = appendBlocks(rows, doc.Lead)
+	for _, sec := range doc.Sections {
+		if sec.Title != "" {
+			rows = append(rows, termsRow{kind: termsSection, text: sec.Title})
+		}
+		rows = appendBlocks(rows, sec.Blocks)
+	}
+	return rows
+}
+
+// appendBlocks legal 块 → 滚动项。
+func appendBlocks(rows []termsRow, blocks []legal.Block) []termsRow {
+	for _, b := range blocks {
+		switch b.Kind {
+		case legal.Tip:
+			rows = append(rows, termsRow{kind: termsTip, text: b.Text})
+		case legal.TableRow:
+			rows = append(rows, termsRow{kind: termsTable, cols: b.Cols, head: b.Head})
+		case legal.Bullet:
+			rows = append(rows, termsRow{kind: termsBullet, text: b.Text})
+		default:
+			rows = append(rows, termsRow{kind: termsPara, text: b.Text})
+		}
+	}
+	return rows
+}
+
+// welcomeTermsRow 画一项：文档标题 / 节标题 / 正文 / 提示段（加粗 + 左侧色条）/ 表行 / 列表项。
+func welcomeTermsRow(gtx layout.Context, th *material.Theme, r termsRow) layout.Dimensions {
+	pp := paperOf()
+	switch r.kind {
+	case termsNote:
+		return layout.Inset{Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			l := material.Label(th, paperNoteSp(th), r.text)
+			l.Color = pp.text3
+			l.LineHeight = unit.Sp(float32(paperNoteSp(th)) * legalLineLead)
+			return l.Layout(gtx)
+		})
+	case termsDocTitle:
+		return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			l := material.Subtitle1(th, r.text)
+			l.Color, l.Font.Weight = pp.text, font.Bold
+			return l.Layout(gtx)
+		})
+	case termsSection:
+		return layout.Inset{Top: unit.Dp(14), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			l := material.Body1(th, r.text)
+			l.Color, l.Font.Weight = pp.text, font.Bold
+			return l.Layout(gtx)
+		})
+	case termsTip:
+		// 提示段：左侧竖条 + 加粗正文。竖条用 Background 画——它拿到的 Min 就是内容的
+		// 尺寸，所以竖条与段落的行数严格等高（用 Flex 量的话拿不到内容高度，只能猜）。
+		return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Background{}.Layout(gtx,
+				func(gtx layout.Context) layout.Dimensions {
+					size := gtx.Constraints.Min
+					bar := gtx.Dp(3)
+					paint.FillShape(gtx.Ops, pp.accent, clip.Rect(image.Rect(0, 0, bar, size.Y)).Op())
+					return layout.Dimensions{Size: size}
+				},
+				func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := welcomeTermsText(th, r.text, pp.text)
+						l.Font.Weight = font.Bold
+						return l.Layout(gtx)
+					})
+				},
+			)
+		})
+	case termsTable:
+		// 表行：首列当行标题（约 1/3 宽、加粗），其余列折行排在后面。
+		if len(r.cols) == 0 {
+			return layout.Dimensions{}
+		}
+		col := func(text string, bold bool, first bool) layout.Widget {
+			return func(gtx layout.Context) layout.Dimensions {
+				l := welcomeTermsText(th, text, pp.text)
+				if bold {
+					l.Font.Weight = font.Bold
+				} else if !first {
+					l.Color = pp.text2
+				}
+				return l.Layout(gtx)
+			}
+		}
+		return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			kids := make([]layout.FlexChild, 0, len(r.cols)*2)
+			kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				w := gtx.Constraints.Max.X / 3
+				gtx.Constraints.Min.X, gtx.Constraints.Max.X = w, w
+				return col(r.cols[0], true, true)(gtx)
+			}))
+			if len(r.cols) > 1 {
+				kids = append(kids, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, col(strings.Join(r.cols[1:], " · "), r.head, false))
+				}))
+			}
+			return layout.Flex{}.Layout(gtx, kids...)
+		})
+	case termsBullet:
+		return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					w := gtx.Dp(unit.Dp(14))
+					gtx.Constraints.Min.X, gtx.Constraints.Max.X = w, w
+					l := welcomeTermsText(th, "·", pp.text3)
+					return l.Layout(gtx)
+				}),
+				layout.Flexed(1, welcomeTermsLine(th, r.text, pp.text)),
+			)
+		})
+	default:
+		return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, welcomeTermsLine(th, r.text, pp.text))
+	}
+}
+
+// welcomeTermsLine 一段法务正文（widget 形态，便于直接放进 Flex）。
+func welcomeTermsLine(th *material.Theme, text string, col color.NRGBA) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		l := welcomeTermsText(th, text, col)
+		return l.Layout(gtx)
+	}
+}
+
+// welcomeTermsText 法务正文的文本样式：正文档字号 + 1.6 行高。
+//
+// 行高必须显式给：法务正文是**成段的长文本**，material 的默认行距（约 1.2）会让二十来节
+// 糊成一块，读三行就找不到下一行（离屏实测）。这也是整个界面上唯一需要大行距的地方。
+func welcomeTermsText(th *material.Theme, text string, col color.NRGBA) material.LabelStyle {
+	l := material.Label(th, paperBodySp(th), text)
+	l.Color = col
+	l.LineHeight = unit.Sp(float32(paperBodySp(th)) * legalLineLead)
+	return l
+}
+
+// legalLineLead 法务正文本的行高系数。
+const legalLineLead = 1.6
 
 // accessPage 接入模型页（D153，模拟稿）：一张四行分组卡 + 卡外「测试连通」与内联结果。
 func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
@@ -381,7 +674,7 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	w := new(app.Window)
 	outcome := SetupCancelled
 	var once sync.Once
-	env := welcomeEnv{mgr: req.Mgr, setup: true, snap: snap}
+	env := welcomeEnv{mgr: req.Mgr, setup: true, snap: snap, consentOnly: req.ConsentOnly}
 	env.done = func(out SetupOutcome) {
 		once.Do(func() {
 			outcome = out
