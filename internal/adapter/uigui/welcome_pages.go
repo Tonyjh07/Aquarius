@@ -456,7 +456,7 @@ const legalLineLead = 1.6
 func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	rows := []layout.Widget{
 		func(gtx layout.Context) layout.Dimensions {
-			return fieldRow(gtx, th, "Provider", editorBox(th, &f.name, i18n.T("ui.welcome.ph.provider")))
+			return fieldRow(gtx, th, i18n.T("ui.welcome.label.provider"), editorBox(th, &f.name, i18n.T("ui.welcome.ph.provider")))
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return fieldRow(gtx, th, i18n.T("ui.welcome.label.base_url"), editorBox(th, &f.baseURL, i18n.T("ui.welcome.ph.base_url")))
@@ -618,51 +618,98 @@ func welcomeProbe(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 	)
 }
 
-// tutorialPage 教程页（滚动列表：操作提示 + 常用命令）。
+// tutTwoColSp 两栏版式的最小可用宽度（sp）。低于它就把说明折到用例下一行：左列按 sp
+// 量宽（字号放大时跟着放大），剩下的宽度不够写一句说明时不值得硬分两栏。
+const tutTwoColSp = 420
+
+// tutCmdLeftSp 用例列的标称宽度（sp）。按 sp 而不是 dp：200% 字号下 190dp 只剩五六个字
+// 的位置，用例全被折成三行，右栏反而空着。
+const tutCmdLeftSp = 160
+
+// tutorialPage 第 4 页：操作指引（滚动列表：基本操作 + 常用命令）。
+//
+// 行型与文案在 welcome_tutorial.go，这里只定版式。用 layout.List 而不是 material.List：
+// 后者的滚动条常驻，静态说明页上一条灰色竖条看着像故障（与其余四页同口径）。
 func (f *welcomeForm) tutorialPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	rows := tutorialRows(f.hotkeyLabel())
-	return material.List(th, &f.tutList).Layout(gtx, len(rows), func(gtx layout.Context, i int) layout.Dimensions {
+	pp := paperOf()
+	twoCol := gtx.Constraints.Max.X >= gtx.Sp(unit.Sp(tutTwoColSp))
+	leftPx := gtx.Sp(unit.Sp(tutCmdLeftSp))
+	if lim := gtx.Constraints.Max.X * 45 / 100; leftPx > lim {
+		leftPx = lim // 列宽到 45% 封顶：再宽也不是「用例 / 说明」两栏，而是两段并排
+	}
+	line := func(size unit.Sp, text string, col color.NRGBA) material.LabelStyle {
+		l := material.Label(th, size, text)
+		l.Color = col
+		return l
+	}
+	return (&f.tutList).Layout(gtx, len(rows), func(gtx layout.Context, i int) layout.Dimensions {
 		r := rows[i]
-		return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		top, bottom := unit.Dp(3), unit.Dp(3)
+		if r.kind == tutHead && i > 0 {
+			top = unit.Dp(16) // 分段：不留这段，第二条粗标题会贴在上一段的最后一行说明上
+		}
+		return layout.Inset{Top: top, Bottom: bottom}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			switch r.kind {
 			case tutHead:
-				l := material.Subtitle1(th, r.left)
-				l.Color = th.Fg
+				l := material.Label(th, paperSectionSp(th), r.left)
+				l.Color, l.Font.Weight = pp.text, font.Bold
 				return l.Layout(gtx)
 			case tutCmd:
+				cmd := line(paperNoteSp(th), r.left, pp.text)
+				cmd.Font.Weight = font.Medium
+				desc := line(paperNoteSp(th), r.right, pp.text2)
+				if !twoCol {
+					// 窄窗 / 大字号：用例一行、说明一行。硬分两栏的话右栏只剩几个字的
+					// 位置，两栏都读不成句（608dp + 200% 字号实测）。
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(cmd.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, desc.Layout)
+						}),
+					)
+				}
 				return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						w := gtx.Dp(unit.Dp(190))
-						gtx.Constraints.Min.X, gtx.Constraints.Max.X = w, w
-						l := material.Label(th, paperNoteSp(th), r.left)
-						l.Color = paperOf().text
-						return l.Layout(gtx)
+						gtx.Constraints.Min.X, gtx.Constraints.Max.X = leftPx, leftPx
+						return cmd.Layout(gtx)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						l := material.Label(th, paperNoteSp(th), r.right)
-						l.Color = paperOf().text2
-						return l.Layout(gtx)
+						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, desc.Layout)
 					}),
 				)
 			default:
-				l := material.Label(th, paperNoteSp(th), r.left)
-				l.Color = paperOf().text3
-				return l.Layout(gtx)
+				return line(paperNoteSp(th), r.left, pp.text2).Layout(gtx)
 			}
 		})
 	})
 }
 
-// donePage 完成页：写盘摘要（密钥只报形态、不报值）。
+// donePage 第 5 页：写盘摘要（密钥只报形态、不报值）。
+//
+// 第 3 页按过「稍后配置」时没有接入参数可列：这时只有两句话——空着四行摘要会让用户
+// 以为保存失败了，而真正要说的是「现在能用、之后在哪补」（D278 决策 3）。
 func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	p := f.patch()
+	if strings.TrimSpace(p.Provider) == "" {
+		return (&f.doneList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(welcomePara(th, i18n.T("ui.welcome.done.skipped"))),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					l := material.Label(th, paperNoteSp(th), i18n.T("ui.welcome.done.skipped_hint"))
+					l.Color = paperOf().text2
+					return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, l.Layout)
+				}),
+			)
+		})
+	}
 	keyForm := f.keyForm(p.APIKey)
 	row := func(label, value string) layout.FlexChild {
 		return layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return fieldRow(gtx, th, label, func(gtx layout.Context) layout.Dimensions {
 					l := material.Body1(th, value)
-					l.Color = th.Fg
+					l.Color = paperOf().text
 					return l.Layout(gtx)
 				})
 			})
@@ -676,7 +723,7 @@ func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Di
 	return (&f.doneList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(welcomePara(th, i18n.T("ui.welcome.done_intro"))),
-			row("Provider", p.Provider),
+			row(i18n.T("ui.welcome.label.provider"), p.Provider),
 			row(i18n.T("ui.welcome.label.base_url"), p.BaseURL),
 			row(i18n.T("ui.welcome.label.model"), model),
 			row(i18n.T("ui.welcome.label.api_key"), keyForm),

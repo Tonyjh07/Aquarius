@@ -386,8 +386,9 @@ func TestWelcomeFormSaveError(t *testing.T) {
 	}
 }
 
-// TestWelcomeFormSkip 跳过 / 关闭：装配前 = 交回 Done 且**不写盘**（D278 决策 3：第 3 页的
-// 「稍后配置」直接进主窗，可启动空态；welcomed 由装配根收口置位，表单不碰数据面）；
+// TestWelcomeFormSkip 跳过 / 关闭：装配前**首页的「以后再说」** = 交回 Done 且不写盘
+// （D278 决策 3：不写 provider 的完成 → 可启动空态；welcomed 由装配根收口置位，表单不碰
+// 数据面）；第 3 页的「稍后配置」不走这条路，见 TestWelcomeSkipAccessKeepsWizard。
 // in-app = 置 welcomed（显式关闭即已看）后关窗。
 func TestWelcomeFormSkip(t *testing.T) {
 	mgr := baseFake()
@@ -410,6 +411,71 @@ func TestWelcomeFormSkip(t *testing.T) {
 	}
 	if len(*outs2) != 1 {
 		t.Fatalf("in-app 关闭应关窗: %v", *outs2)
+	}
+
+	// 勾过同意之后从首页退出：同意照样落盘，免得下次启动又把人拉回条款页重读一遍。
+	mgr3 := baseFake()
+	env3, _ := welcomeEnvSnap(mgr3, true, nil)
+	f3 := newWelcomeForm(env3)
+	f3.consent.Value = true
+	f3.onSkip()
+	if len(mgr3.consents) != 1 || mgr3.consents[0] != legal.Version {
+		t.Fatalf("勾过同意再退出应留下同意记录: %v", mgr3.consents)
+	}
+}
+
+// TestWelcomeSkipAccessKeepsWizard 第 3 页「稍后配置」只跳过这一页（O5 收尾口径）：
+// 不结束向导、落在教程页；末页保存落同意 + welcomed，providers 一个字都不动——
+// 否则第 2 页勾过的同意没有落盘点，下次启动又把人拉回条款页。
+func TestWelcomeSkipAccessKeepsWizard(t *testing.T) {
+	mgr := baseFake()
+	env, outs := welcomeEnvSnap(mgr, true, []string{"缺密钥"})
+	f := newWelcomeForm(env)
+	f.consent.Value = true
+	f.page = welcomeAccess
+	f.onSkip()
+	if len(*outs) != 0 {
+		t.Fatalf("跳过接入页不该结束向导: %v", *outs)
+	}
+	if f.page != welcomeTutorial {
+		t.Fatalf("跳过接入页应进教程页: %v", f.page)
+	}
+	if !f.accessSkipped {
+		t.Fatal("应记住接入页被跳过（末页摘要与保存都靠它）")
+	}
+	f.page = welcomeDone
+	f.onSave()
+	if len(mgr.applied) != 0 {
+		t.Fatalf("跳过接入页后保存不该写 provider: %+v", mgr.applied)
+	}
+	if len(mgr.consents) != 1 || mgr.consents[0] != legal.Version {
+		t.Fatalf("跳过接入页也要落同意版本: %v", mgr.consents)
+	}
+	if mgr.marked != 1 {
+		t.Fatalf("保存应置 welcomed: %d", mgr.marked)
+	}
+	if len(*outs) != 1 || (*outs)[0] != SetupDone {
+		t.Fatalf("结局 = %v", *outs)
+	}
+
+	// 回第 3 页补齐参数再往下走：跳过标记作废，保存回到 Apply。
+	mgr2 := baseFake()
+	env2, _ := welcomeEnvSnap(mgr2, true, nil)
+	f2 := newWelcomeForm(env2)
+	f2.consent.Value = true
+	f2.page = welcomeAccess
+	f2.onSkip()
+	f2.onPrev()
+	if f2.page != welcomeAccess {
+		t.Fatalf("从教程页应能退回接入页: %v", f2.page)
+	}
+	f2.onNext()
+	if f2.accessSkipped {
+		t.Fatal("补齐参数后不该再带跳过标记")
+	}
+	f2.onSave()
+	if len(mgr2.applied) != 1 {
+		t.Fatalf("补齐参数后保存应写 provider: %+v", mgr2.applied)
 	}
 }
 

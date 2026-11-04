@@ -153,7 +153,6 @@ type welcomeForm struct {
 	page welcomePage
 	// 接入模型页控件 + 教程页滚动列表。
 	name, baseURL, apiKey, models widget.Editor
-	tutList                       widget.List
 	// consent 第 2 页的勾选闸门（D278）：未勾选时「继续」不可点。
 	consent                widget.Bool
 	testBtn                widget.Clickable
@@ -176,7 +175,7 @@ type welcomeForm struct {
 	// 不能压到页脚。用 layout.List 而非 material.List / widget.List：后两者常驻画滚动条
 	// （静态表单里一条灰色竖条看着像故障），前者只在滚轮/拖动时移动内容。
 	// introList / termsList 在 200% 字号下是必需品：离屏实测第 1 页正文被页脚切在半行上。
-	introList, termsList, accessList, doneList layout.List
+	introList, termsList, accessList, tutList, doneList layout.List
 	// 第 2 页的法务正文档（进入本页时按当前语言载入；语言变了重取）。
 	terms       []termsRow
 	termsLang   i18n.Lang
@@ -187,6 +186,9 @@ type welcomeForm struct {
 	lang     i18n.Selection
 	lang0    i18n.Selection
 	langBtns [3]widget.Clickable
+	// accessSkipped 第 3 页按过「稍后配置」（D278 决策 3）：末页摘要据此改说「还没配置」，
+	// 保存也只落同意与 welcomed，**不碰 providers**。回第 3 页补齐参数后清掉。
+	accessSkipped bool
 	// 连通性测试 / 获取模型的异步结果（测试 goroutine 写、帧循环排空）。
 	testResults chan testOutcome
 	// finished 结果已交（幂等：按钮连点/关窗竞争只结束一次）。
@@ -347,6 +349,11 @@ func (f *welcomeForm) onNext() {
 		f.onSave()
 		return
 	}
+	// 第 3 页过闸门 = 用户这次真要把参数交上去了：之前按过的「稍后配置」作废，
+	// 末页摘要与保存都回到「会写 provider」这一支。
+	if f.page == welcomeAccess {
+		f.accessSkipped = false
+	}
 	if f.page < welcomeDone {
 		f.page++
 	}
@@ -390,6 +397,23 @@ func (f *welcomeForm) onSave() {
 		f.finish(SetupDone)
 		return
 	}
+	// 第 3 页按过「稍后配置」：没有参数可写，但同意（第 2 页勾的）与「已看过引导」
+	// 这两笔记录不能跟着一起丢掉——否则下次启动又弹一次条款页。走 SetConsent +
+	// MarkWelcomed，providers 一个字都不动。
+	if f.accessSkipped {
+		if err := f.env.mgr.SetConsent(legal.Version); err != nil {
+			f.page = welcomeTerms
+			f.fail(err)
+			return
+		}
+		if err := f.env.mgr.MarkWelcomed(); err != nil {
+			f.page = welcomeDone
+			f.fail(err)
+			return
+		}
+		f.finish(SetupDone)
+		return
+	}
 	if err := f.accessErr(); err != nil {
 		f.page = welcomeAccess
 		f.fail(err)
@@ -403,8 +427,9 @@ func (f *welcomeForm) onSave() {
 	f.finish(SetupDone)
 }
 
-// onSkip 跳过 / 关闭：装配前 = 交回取消（调用方退出 + 指引）；in-app = 置
-// `ui.welcomed` 后关窗（显式关闭即「已看」，不再自动弹；置位失败不阻断关窗）。
+// onSkip 跳过 / 关闭：装配前 = 第 3 页只跳过这一页、其余页照走；其余页交回 Done
+// （未写 provider，可启动空态）。in-app = 置 `ui.welcomed` 后关窗（显式关闭即「已看」，
+// 不再自动弹；置位失败不阻断关窗）。
 func (f *welcomeForm) onSkip() {
 	// 语言选择在这一步单独落盘（不管后面是走是留）：它是用户已经做完的一个决定，
 	// 不该因为「配置还没填完就退出」一起丢掉。失败静默——窗马上就关了。
@@ -415,9 +440,23 @@ func (f *welcomeForm) onSkip() {
 		f.finish(SetupCancelled)
 		return
 	}
+	if f.env.setup && f.page == welcomeAccess {
+		// 「稍后配置」跳过的只是这一页（D278 决策 3 的收尾口径）：同意已经在第 2 页
+		// 勾过了，而它的落盘点在末页——原先这里直接 Done，勾过的同意没有写回，下次
+		// 启动又把人拉回条款页。教程页与末页照走，末页摘要改说「还没配置」。
+		f.accessSkipped = true
+		f.page = welcomeTutorial
+		f.status, f.err = "", false
+		return
+	}
 	if f.env.setup {
 		// D278 决策 3：跳过就是 Done——不新增「跳过」结局，装配方按「没写 provider 的
 		// 完成」处理（可启动空态）。写在最前面那句注释仍然算数：语言已经落了盘。
+		if f.consent.Value && f.env.mgr != nil {
+			// 勾过的同意照样留痕：用户是读过了才勾的，退出向导不该让这份记录作废
+			// （否则下次启动只重过条款页，等于白读一遍）。失败静默——窗马上就关了。
+			_ = f.env.mgr.SetConsent(legal.Version)
+		}
 		f.finish(SetupDone)
 		return
 	}

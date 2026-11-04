@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-04 @ 32432de -->
+<!-- docs-sync: 2026-11-04 @ 2866987 -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -129,7 +129,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `ui.kind` | string | `gui`（模板与键缺省） | `gui` = Gio 桌面窗口（Windows 为完整形态，其它平台为降级实现）；`tui` = 终端界面；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
-| `ui.lang` | string | `auto`（键缺失） | **界面语言**，gui / tui / repl 共用：`auto` = 读系统界面语言、认不出回落 `zh`；`zh` / `en` 强制。**启动时定一次，改完要重启**（设置窗「常规」页有同名选项，保存后提示重启）；`AQUARIUS_UI_LANG` 环境变量可覆盖本键；与 `input.language`（语音识别）互不推断 |
+| `ui.lang` | string | `auto`（键缺失） | **界面语言**，gui / tui / repl 共用：`auto` = 读系统界面语言、认不出回落 `zh`；`zh` / `en` 强制。**启动时定一次，改完要重启**（设置窗「常规」页有同名选项，保存后提示重启）；**首次运行向导第 1 页**也能选（那里是特例：向导每帧取词，选完当场生效，离开这一页时写回本键）；`AQUARIUS_UI_LANG` 环境变量可覆盖本键；与 `input.language`（语音识别）互不推断 |
 | `ui.input_placeholder` | string | `""`（= 内置文案） | **GUI** 输入框占位灰字（主输入框与确认态的原因框共用一条）：用户自己写的一句话，**不翻译**——`ui.lang` 切到哪套都用它；空 = 回落内置文案（那条随界面语言变）。折成单行、去首尾空白、最多 120 字符；保存超限拒写，手改超长启动时截断。**热生效**（保存即换，不用重启）；仅 gui 生效 |
 | `ui.log_level` | string | `info`（键缺失） | **运行日志级别**：`debug` / `info` / `warn` / `error`；低于该级别的行一律不写（`debug` 记请求与装配细节）。`-log-level` 与 `AQUARIUS_LOG_LEVEL` 可覆盖本键；非法值启动报错。日志落 `profiles/<name>/logs/`，`warn` 以上同时进 `stderr` |
 | `ui.hotkey` | string | `""`（= `Alt+A`） | **GUI** 全局呼出/收起快捷键：`修饰键+键`（如 `Alt+A`）；注册失败回退 `Ctrl+Alt+A`；仅 gui 生效 |
@@ -137,7 +137,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `ui.scale` | number | `1.0` | **GUI** 元素缩放倍率：夹 [0.75, 2.5]；设置窗百分比档；热生效；仅 gui 生效 |
 | `ui.font_size` | number | `15` | **GUI** 正文字号 sp：最终字号 = font_size × scale；夹 [10, 28]；热生效；仅 gui 生效 |
 | `ui.window_width` / `ui.window_height` | int | `0`（= 缺省 608×460dp） | **GUI** 主窗像素尺寸；UI 侧按地板与粗界夹取；热生效；仅 gui 生效 |
-| `ui.welcomed` | bool | `false`（键缺失） | **GUI** 欢迎 / 首次运行引导是否已看：键缺失 = 未看——**首跑必走装配前向导**（该次引导发生在主窗之前，保存即置位，主窗不再弹欢迎窗）；**标记缺失的升级用户**在启动后自动打开欢迎窗一次；完成或显式关闭即置位；入口另在设置窗 |
+| `ui.welcomed` | bool | `false`（键缺失） | **GUI** 欢迎 / 首次运行引导是否已看：键缺失 = 未看——**首跑必走装配前向导**（该次引导发生在主窗之前，保存即置位，主窗不再弹欢迎窗）；**标记缺失的升级用户**在启动后自动打开欢迎窗一次；完成或显式关闭即置位；入口另在设置窗。第 3 页「稍后配置」不写 `model.providers`，但同样置位（跳过不等于再引导一次） |
 | `ui.consent_version` | int | `0`（键缺失） | **GUI** 已同意的条款版本：与 `internal/legal` 的正文版本比，**小于**它会打开装配前向导的**第 2 页**（只重过这一页，配置与其余四页不打扰）；勾选 + 继续即写回当前版本。大于（回退到旧二进制）视为已同意，不重复打扰 |
 | `ui.keys.send` | string | `"Enter"` | 输入栏**发送**（空闲 = 起一轮；生成中 = 进待发清单按**排队**）。写法 `修饰键+键`（`Ctrl`/`Shift`/`Alt`/`Super`，键名同 `ui.hotkey`）；gui 与 tui 各自解释，非法值启动报错 |
 | `ui.keys.steer` | string | `"Shift+Enter"` | 输入栏**引导**：只在生成中生效（进清单按**引导**，下一次模型请求前插入本轮）；空闲时与 `send` 等价 |
