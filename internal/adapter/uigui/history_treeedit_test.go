@@ -148,14 +148,21 @@ func TestRelTweenRunsToTarget(t *testing.T) {
 func histBottomBtnXY(t *testing.T, q *input.Router, u *UI, st *historyState,
 	c *widget.Clickable, what string) (int, int) {
 	t.Helper()
-	// 扫描区要容得下**语言差**：en 的按钮名更长，状态栏右端的这一串按钮整体左移
-	// （实测开编辑后「树编辑开关」已落到 x<600），只扫最右一小条会在 en 下扫空。
-	for y := 480; y < 560; y += 3 {
-		for x := 330; x < 716; x += 3 {
-			q.Queue(ovPointer(pointer.Move, x, y))
-			histFrameFor(q, u, st)
-			if c.Hovered() {
-				return x, y
+	// 两段扫：先扫状态栏右端那一小条（控件常规位置，命中就结束）；扫空再扫右半屏一遍。
+	// 要两段是因为**语言差**：en 的按钮名更长，树编辑脏时整串按钮会左移一百多像素，
+	// 只扫窄条会在 en 下扫空；而每次都扫整片又白等几倍时间（这个用例在 -race 墙上占大头）。
+	for _, band := range [][3]int{{600, 720, 500}, {330, 716, 500}} {
+		dx := 3
+		if band[0] == 330 {
+			dx = 6 // 兜底那一段粗一档：按钮本身有几十像素宽，扫不到只可能是位置变了
+		}
+		for y := band[2]; y < 560; y += 3 {
+			for x := band[0]; x < band[1]; x += dx {
+				q.Queue(ovPointer(pointer.Move, x, y))
+				histFrameFor(q, u, st)
+				if c.Hovered() {
+					return x, y
+				}
 			}
 		}
 	}
