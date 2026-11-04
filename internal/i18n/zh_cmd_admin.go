@@ -115,7 +115,6 @@ var zhCmdAdminTexts = map[string]string{
 	// 联网（设置窗「联网」页与启动期装配警告）
 	"cmd.web.side.search":        "搜索",
 	"cmd.web.side.fetch":         "抓取",
-	"cmd.web.warn.unavailable":   "警告：联网{side}的第 {index} 家提供商（{kind}）不可用：{err}",
 	"cmd.web.err.borrow_unknown": "{side}提供商第 {index} 条借用的服务 {from} 不在 provider 列表内（先在「模型服务」页添加，或填一个端点）",
 	"cmd.web.err.search_kind":    "搜索提供商第 {index} 条的类型 {kind} 不认识（支持 {first} / {second}）",
 	"cmd.web.err.fetch_kind":     "抓取提供商第 {index} 条的类型 {kind} 不认识（支持 {first} / {second}）",

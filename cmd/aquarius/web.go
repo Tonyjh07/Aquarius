@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -10,7 +9,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/webchain"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/webdeepseek"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/webfetchlocal"
-	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -99,7 +98,7 @@ func (w *wiring) deepseekWeb(ctx context.Context, p webProvider, side webSide) (
 	if err != nil {
 		return nil, err
 	}
-	key, err := resolveAPIKey(ctx, "deepseek web", ep.KeyRef, w.secrets, w.stderr)
+	key, err := resolveAPIKey(ctx, "deepseek web", ep.KeyRef, w.secrets, w.warnPlaintext)
 	if err != nil {
 		return nil, err
 	}
@@ -118,14 +117,11 @@ func (w *wiring) webKey(ctx context.Context, name, ref string) (string, error) {
 	if ref == "" {
 		ref = "secret:AQUARIUS_" + strings.ToUpper(name) + "_API_KEY"
 	}
-	return resolveAPIKey(ctx, name+" web", ref, w.secrets, w.stderr)
+	return resolveAPIKey(ctx, name+" web", ref, w.secrets, w.warnPlaintext)
 }
 
-// webWarn 一家提供商装不起来：面向用户的警告（不含决策编号，D 规则）。
+// webWarn 一家提供商装不起来：只记日志不阻断（其它家照常注册，工具执行时才报因）。
 func (w *wiring) webWarn(side webSide, i int, p webProvider, err error) {
-	if w.stderr == nil {
-		return
-	}
-	fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.web.warn.unavailable",
-		"side", side.label(), "index", i+1, "kind", p.Kind, "err", err))
+	w.note(logging.LevelWarn, logging.Web, "log.web.provider_unavailable",
+		"log.act.skip", "side", side.label(), "index", i+1, "kind", p.Kind, "err", err)
 }

@@ -88,7 +88,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return fmt.Errorf("%s: %w", i18n.T("cmd.boot.err.secret_store"), err)
 	}
 	w.secretsBin = bin
-	w.secrets = newSecretChain(bin, w.stderr)
+	w.secrets = newSecretChain(bin, w.adapterLogf(logging.Perm, "log.perm.line"))
 
 	// profile 配置：不存在 = 该 profile 首次运行，写模板。D141：**gui 不再「写模板即退出」**
 	// ——模板落盘后照常装配，配置缺项（模板的密钥引用通常取不到）由 run() 的欢迎向导窗
@@ -128,13 +128,16 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	cfg.UI.InputPlaceholder = placeholderForStartup(cfg.UI.InputPlaceholder)
 	// 语音不可用的原因只在「用户明显想用」时提示：配了 provider 却找不到，或开了
 	// 播报却没配置。完全没碰语音的配置不该每次启动都挨一行警告。
+	// （这一句与下面两句都在 openLog 之前：先排队，日志开了补记，见 wiring.note。）
 	if _, why := cfg.audioProvider("tts"); why != "" && cfg.Output.TTS {
-		fmt.Fprintln(w.stderr, i18n.Tf("cmd.boot.warn.tts_on", "why", why))
+		w.note(logging.LevelWarn, logging.Audio, "log.audio.tts_unconfigured",
+			"log.act.voice_off", "why", why)
 	}
 	// 本地识别不需要端点与密钥，这里只提示「配了却连不上」的那种。
 	if cfg.Audio.ASR.Kind != kindASRWhisper {
 		if _, why := cfg.audioProvider("asr"); why != "" && cfg.Audio.ASR.configured() {
-			fmt.Fprintln(w.stderr, i18n.Tf("cmd.boot.warn.asr_unavailable", "why", why))
+			w.note(logging.LevelWarn, logging.Audio, "log.audio.asr_unavailable",
+				"log.act.voice_input_off", "why", why)
 		}
 	}
 	w.cfg = cfg
@@ -158,9 +161,11 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		primary.BaseURL = baseURL
 	}
 	// 能力位警告放在覆盖之后：-model / AQUARIUS_MODEL 可能换成链上另一个模型，
-	// 生效能力随之变化，警告得按最终生效的那个算（D173）。
+	// 生效能力随之变化，警告得按最终生效的那个算（D173）。整句由 narrowNote 给（设置窗
+	// 的降级说明与这里同源），所以走 noteText：句子本身就是事件，不再套一层 `警告：`。
 	if note := cfg.Model.narrowNote(); note != "" {
-		fmt.Fprintln(w.stderr, i18n.Tf("cmd.asm.warning", "text", note))
+		w.noteText(logging.LevelWarn, logging.LLM, "log.llm.chain_narrowed",
+			"log.act.continue", note)
 	}
 	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 口径。
 	if raw := strings.TrimSpace(cfg.Model.ReasoningEffort); raw != "" {
@@ -250,5 +255,11 @@ func (w *wiring) openLog(levelFlag, formatFlag string) error {
 		Format: format,
 		Stderr: stderrProxy{w: w},
 	})
+	// bootstrap 段攒下的启动告警（级别刚从同一份配置里读出来）：按原顺序补记，只有够格的
+	// 才会上 stderr——顺序与「就地打一行」时一致。
+	for _, p := range w.pendingLog {
+		w.log.Write(p.level, p.ctx, p.event, p.action, p.msg, p.kv...)
+	}
+	w.pendingLog = nil
 	return nil
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -47,7 +48,7 @@ func (c *secretChain) Get(ctx context.Context, name string) (string, error) {
 		default:
 			// 解不开/结构坏：警告一次，继续以环境变量兜底（不致命）。
 			if c.warnf != nil && c.warned.CompareAndSwap(false, true) {
-				c.warnf("%s\n", i18n.Tf("cmd.secrets.warn.store_unreadable", "path", c.bin.Path()))
+				c.warnf("%s", i18n.Tf("cmd.secrets.warn.store_unreadable", "path", c.bin.Path()))
 			}
 		}
 	}
@@ -73,12 +74,9 @@ func (c *secretChain) binPathOr(fallback string) string {
 }
 
 // newSecretChain 构造读链：库 + 环境变量兜底。bin 可为 nil（库未接线）。
-func newSecretChain(bin *secretbin.Store, stderr io.Writer) *secretChain {
-	return &secretChain{
-		bin:   bin,
-		env:   envSecrets{},
-		warnf: func(format string, args ...any) { fmt.Fprintf(stderr, format, args...) },
-	}
+// warnf 是「库解不开」的落点：整句已译好，由装配根接到运行日志（nil = 不记）。
+func newSecretChain(bin *secretbin.Store, warnf func(string, ...any)) *secretChain {
+	return &secretChain{bin: bin, env: envSecrets{}, warnf: warnf}
 }
 
 // keySlotName 密钥池第 i 把钥匙的库键名——**库里键名的唯一规则**（各写入路径都走它，
@@ -204,9 +202,11 @@ func storePlaintextKeyAt(ctx context.Context, bin *secretbin.Store, providerName
 // keyStoreURI 库里键名 → 设置页展示用的引用写法（不含值）。
 func keyStoreURI(name string) string { return "secret:" + name }
 
-// secretBoundWarn 界面填的明文已改为入库 + 引用后，启动期明文警告的措辞更新（D161）：
+// warnPlaintext 界面填的明文已改为入库 + 引用后，启动期明文警告的措辞更新（D161）：
 // 不再推荐「改用 secret:<环境变量名> 引用环境变量」，而是指路设置窗（要么填明文由界面
-// 转入库，要么直接填引用）。
-func secretBoundWarn(stderr io.Writer, provider string) {
-	fmt.Fprintf(stderr, "%s\n", i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote(provider)))
+// 转入库，要么直接填引用）。落在运行日志里——这句是安全信号，双击启动时 stderr 没人看得见。
+func (w *wiring) warnPlaintext(provider string) {
+	w.noteText(logging.LevelWarn, logging.Perm, "log.perm.plaintext_key",
+		"log.act.plaintext_used",
+		i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote(provider)))
 }

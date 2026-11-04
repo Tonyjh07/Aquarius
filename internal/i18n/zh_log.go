@@ -16,6 +16,15 @@ var zhLogTexts = map[string]string{
 	"log.act.unattended_disabled":  "本次不启用无人值守（配置文件未改动）",
 	"log.act.recorded_unsupported": "已记入 {provider} 的 unsupported_params，后续不再重发",
 	"log.act.retry_next_start":     "下次启动仍会先试发该字段",
+	"log.act.continue":             "照常继续，不影响对话",
+	"log.act.voice_off":            "本次不播报，文字照常",
+	"log.act.voice_input_off":      "本次不识别语音，键入照常",
+	"log.act.keep_raw":             "保留原文，照常识别",
+	"log.act.dropped":              "已丢弃这条回执，对话照常",
+	"log.act.deferred_next_start":  "留到下次启动再处理",
+	"log.act.plaintext_used":       "明文照用，config 里留着它",
+	"log.act.verbatim":             "适配器原话，处置写在句内",
+	"log.act.exit":                 "本次启动以失败退出",
 
 	// 启动
 	"log.boot.file_unavailable": "日志文件打不开（{path}）：{err}",
@@ -28,4 +37,48 @@ var zhLogTexts = map[string]string{
 	"log.llm.param_rejected":      "服务端不认参数 {field}，已从请求里剔除",
 	"log.llm.param_record_failed": "记录 unsupported_params 失败：{err}",
 	"log.llm.key_unavailable":     "provider {provider} 第 {n} 把密钥不可用：{err}",
+	// 整句由 narrowNote 给（与设置窗的降级说明同源），这条只作 JSON 侧的聚合标识。
+	"log.llm.chain_narrowed": "降级链的能力比当前模型窄",
+
+	// 语音
+	"log.audio.tts_unconfigured":   "语音播报已开启，但{why}",
+	"log.audio.asr_unavailable":    "语音识别不可用：{why}",
+	"log.audio.tts_unavailable":    "语音合成不可用：{why}",
+	"log.audio.zhconv_unavailable": "繁简转换不可用，识别结果保持原样：{err}",
+	"log.audio.zhconv_failed":      "繁简转换失败：{err}",
+
+	// 输出与回执
+	"log.ui.tts_output_unavailable": "语音播报输出装不起来：{err}",
+	"log.ui.output_failed":          "回执投递失败：{err}",
+
+	// 后台任务与附件
+	"log.job.settle_failed":            "任务 {id} 的台账没能销账：{err}",
+	"log.job.ledger_unreadable":        "任务台账读不出：{err}",
+	"log.job.unfinished_report_failed": "上次未收尾的任务没能补报进会话：{err}",
+	"log.attach.gc_skipped":            "收集附件引用失败，本次不清理附件：{err}",
+	"log.attach.gc_failed":             "附件清扫失败：{err}",
+
+	// 技能、联网、密钥
+	"log.skill.entry_skipped":      "技能条目被跳过：{text}",
+	"log.web.provider_unavailable": "联网{side}的第 {index} 家提供商（{kind}）不可用：{err}",
+	// 整句由 warnPlaintext 给（沿用 cmd.secrets.warn.plaintext 的措辞），这条只作聚合标识。
+	"log.perm.plaintext_key": "启动时发现明文密钥",
+
+	// 会话、转交与前端
+	"log.session.replay_failed":             "历史回放失败",
+	"log.delegate.ledger_unreadable":        "转交台账读不出：{err}",
+	"log.delegate.unfinished_report_failed": "上次未收尾的转交没能补报进会话：{err}",
+	"log.ui.terminal_suspend_failed":        "把终端交给编辑器时失败：{err}",
+	"log.ui.terminal_resume_failed":         "从编辑器收回终端时失败：{err}",
+	"log.ui.input_failed":                   "读输入失败：{err}",
+
+	// 适配器原话（过渡形状，D276 决策 5）：整句走 msg，这几条只在 JSON 侧标识来源。
+	// L3 把端口换成结构化回调后，这一族连同 log.act.verbatim 一起删。
+	"log.plugin.line":   "{text}",
+	"log.skill.line":    "{text}",
+	"log.session.line":  "{text}",
+	"log.job.line":      "{text}",
+	"log.delegate.line": "{text}",
+	"log.ui.line":       "{text}",
+	"log.perm.line":     "{text}",
 }

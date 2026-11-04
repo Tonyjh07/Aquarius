@@ -76,6 +76,7 @@ const (
 	Boot     Context = "boot"
 	Attach   Context = "attach"
 	LLM      Context = "llm"
+	Audio    Context = "audio"
 	Job      Context = "job"
 	Delegate Context = "delegate"
 	Plugin   Context = "plugin"
@@ -87,7 +88,7 @@ const (
 )
 
 // Contexts 全部已登记的上下文（测试按它校验枚举没被随手加宽）。
-var Contexts = []Context{Boot, Attach, LLM, Job, Delegate, Plugin, Skill, Session, Perm, UI, Web}
+var Contexts = []Context{Boot, Attach, LLM, Audio, Job, Delegate, Plugin, Skill, Session, Perm, UI, Web}
 
 const (
 	// defaultCap 单文件上限，超出轮转一代（口径同 audit.log）。
@@ -189,23 +190,36 @@ func (l *Logger) Close() error {
 // Debug / Info / Warn / Error 四个入口。event 与 action 都是 i18n key，kv 是 `名, 值` 成对
 // （与 i18n.Tf 同一种给法，同一份 kv 同时喂给事件与行动）。
 func (l *Logger) Debug(ctx Context, event, action string, kv ...any) {
-	l.log(LevelDebug, ctx, event, action, kv)
+	l.write(LevelDebug, ctx, event, action, "", kv)
 }
 
 func (l *Logger) Info(ctx Context, event, action string, kv ...any) {
-	l.log(LevelInfo, ctx, event, action, kv)
+	l.write(LevelInfo, ctx, event, action, "", kv)
 }
 
 func (l *Logger) Warn(ctx Context, event, action string, kv ...any) {
-	l.log(LevelWarn, ctx, event, action, kv)
+	l.write(LevelWarn, ctx, event, action, "", kv)
 }
 
 func (l *Logger) Error(ctx Context, event, action string, kv ...any) {
-	l.log(LevelError, ctx, event, action, kv)
+	l.write(LevelError, ctx, event, action, "", kv)
 }
 
-// log 过滤后写一个出口或两个：文件要过级别门槛，stderr 固定 warn 以上。
-func (l *Logger) log(lv Level, ctx Context, event, action string, kv []any) {
+// Log 按变量级别写一条（级别在装配期才定得下来时用；四个具名入口是它的简写）。
+func (l *Logger) Log(lv Level, ctx Context, event, action string, kv ...any) {
+	l.write(lv, ctx, event, action, "", kv)
+}
+
+// Write 写一条**整句已由调用方给出**的日志：msg 非空就不再按 event 取词，event 只留在
+// JSON 侧供聚合。这是适配器 `Logf(format, args…)` 那种形状的过渡出口——拿到的是译好的句子，
+// 没有 key（D276 决策 5：装配根注入的适配器把 format+args 记成一条日志）；端口换成结构化
+// 回调之后没有调用方，届时连同一个 `log.*.line` 占位 key 一起删。
+func (l *Logger) Write(lv Level, ctx Context, event, action, msg string, kv ...any) {
+	l.write(lv, ctx, event, action, msg, kv)
+}
+
+// write 过滤后写一个出口或两个：文件要过级别门槛，stderr 固定 warn 以上。
+func (l *Logger) write(lv Level, ctx Context, event, action, msg string, kv []any) {
 	if l == nil {
 		return
 	}
@@ -215,7 +229,7 @@ func (l *Logger) log(lv Level, ctx Context, event, action string, kv []any) {
 		return
 	}
 	now := l.now()
-	line := l.render(lv, ctx, event, action, kv, now)
+	line := l.render(lv, ctx, event, action, msg, kv, now)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -228,8 +242,10 @@ func (l *Logger) log(lv Level, ctx Context, event, action string, kv []any) {
 }
 
 // render 一条日志的最终字节（不含换行）。文本与 JSON 共用同一份取值，不各拼一遍。
-func (l *Logger) render(lv Level, ctx Context, event, action string, kv []any, now time.Time) string {
-	msg := i18n.Tf(event, kv...)
+func (l *Logger) render(lv Level, ctx Context, event, action, msg string, kv []any, now time.Time) string {
+	if msg == "" {
+		msg = i18n.Tf(event, kv...)
+	}
 	act := ""
 	if action != "" {
 		act = i18n.Tf(action, kv...)

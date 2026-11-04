@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/mcpgate"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -342,7 +342,7 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		},
 		callCtx:    ctx,
 		ioTimeout:  10 * time.Second,
-		logf:       func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
+		logf:       w.adapterLogf(logging.Plugin, "log.plugin.line"),
 		registered: map[string][]string{},
 		prompts:    map[string][]plugin.PromptInfo{},
 	}
@@ -353,7 +353,7 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		PluginsDir:    filepath.Join(w.profileDir, "plugins"),
 		States:        w.cfg.Plugins,
 		Persist:       w.persist.persistPlugins,
-		Logf:          func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
+		Logf:          w.adapterLogf(logging.Plugin, "log.plugin.line"),
 		// S6/D143：宿主状态变化 → 刷新工具面 + 递增工具快照 Revision（设置窗据此重建行）。
 		OnChange: func() {
 			surfaces.refresh()

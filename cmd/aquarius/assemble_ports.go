@@ -58,7 +58,7 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 		return err
 	}
 	w.blobs = blobs
-	runAttachmentGC(ctx, w.store, blobs, w.stderr)
+	w.runAttachmentGC(ctx, w.store, blobs)
 	// 会话进出（/export 与 /import）：导入侧要往附件库回填归档里的字节，故与附件库同期。
 	w.exchange = exchange.New(exchange.Options{Blobs: blobs})
 	// 记忆（D23 布局）：全局 memories.md + 会话 <id>.memory.md（与会话树同目录）。
@@ -82,7 +82,7 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 			}
 			return out
 		},
-		logf:    func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
+		logf:    w.adapterLogf(logging.Session, "log.session.line"),
 		timeout: 5 * time.Second, // 插件投影单次上限（卡死的插件不得拖垮 Turn）
 	}
 	return nil
@@ -124,7 +124,7 @@ func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, er
 	var counter port.TokenCounter
 	var firstErr error
 	for i, ref := range refs {
-		key, err := resolveAPIKey(context.Background(), p.Name, ref, w.secrets, w.stderr)
+		key, err := resolveAPIKey(context.Background(), p.Name, ref, w.secrets, w.warnPlaintext)
 		if err != nil {
 			// 单把解析失败不打断启动：还有别的钥匙可用（D141 的「任一把可用即算配置完整」
 			// 同一口径）。一把都没有才算失败，用第一条错误报因。
@@ -268,14 +268,11 @@ func (w *wiring) buildPresenter() {
 			Design: w.cfg.Audio.TTS.Design,
 			Style:  w.cfg.Audio.TTS.Style,
 			Tags:   w.cfg.Audio.TTS.Tags,
-			Logf: func(format string, args ...any) {
-				if w.stderr != nil {
-					fmt.Fprintf(w.stderr, format+"\n", args...)
-				}
-			},
+			Logf:   w.adapterLogf(logging.UI, "log.ui.line"),
 		})
 		if err != nil {
-			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.tts_unavailable", "err", err))
+			w.note(logging.LevelWarn, logging.UI, "log.ui.tts_output_unavailable",
+				"log.act.voice_off", "err", err)
 		} else {
 			w.ttsOut = out
 			outs = append(outs, out)
@@ -284,7 +281,10 @@ func (w *wiring) buildPresenter() {
 	w.presenter = &outputsPresenter{
 		inner: w.ui,
 		outs:  outs,
-		log:   func(err error) { fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.err.output_adapter", "err", err)) },
+		log: func(err error) {
+			w.note(logging.LevelWarn, logging.UI, "log.ui.output_failed",
+				"log.act.dropped", "err", err)
+		},
 	}
 }
 
@@ -298,7 +298,8 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 
 	if w.cfg.Audio.ASR.configured() {
 		if c, why := w.buildASR(ctx); why != "" {
-			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.asr_unavailable", "why", why))
+			w.note(logging.LevelWarn, logging.Audio, "log.audio.asr_unavailable",
+				"log.act.voice_input_off", "why", why)
 		} else {
 			w.asr = c
 		}
@@ -306,7 +307,8 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 
 	if w.cfg.Audio.TTS.configured() {
 		if c, why := w.buildTTS(ctx); why != "" {
-			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.tts_synth_unavailable", "why", why))
+			w.note(logging.LevelWarn, logging.Audio, "log.audio.tts_unavailable",
+				"log.act.voice_off", "why", why)
 		} else {
 			w.ttsSynth = c
 		}
@@ -326,11 +328,13 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 			return nil, err.Error()
 		}
 		if conv, err := zhconv.New(zhconv.ModeTW2SP); err != nil {
-			fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.zhconv_unavailable", "err", err))
+			w.note(logging.LevelWarn, logging.Audio, "log.audio.zhconv_unavailable",
+				"log.act.keep_raw", "err", err)
 			return c, ""
 		} else {
 			return &zhSimplifier{inner: c, conv: conv, logf: func(err error) {
-				fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.warn.zhconv_failed", "err", err))
+				w.note(logging.LevelWarn, logging.Audio, "log.audio.zhconv_failed",
+					"log.act.keep_raw", "err", err)
 			}}, ""
 		}
 	}
@@ -338,7 +342,7 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 	if why != "" {
 		return nil, why
 	}
-	key, err := resolveAPIKey(ctx, i18n.T("cmd.asm.name.asr"), ep.KeyRef, w.secrets, w.stderr)
+	key, err := resolveAPIKey(ctx, i18n.T("cmd.asm.name.asr"), ep.KeyRef, w.secrets, w.warnPlaintext)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -377,7 +381,7 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 	if why != "" {
 		return nil, why
 	}
-	key, err := resolveAPIKey(ctx, i18n.T("cmd.asm.name.tts"), ep.KeyRef, w.secrets, w.stderr)
+	key, err := resolveAPIKey(ctx, i18n.T("cmd.asm.name.tts"), ep.KeyRef, w.secrets, w.warnPlaintext)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -484,14 +488,11 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		// 就成了既没有报告、也没有对账的静默丢失。
 		Landed: func(id port.JobID) {
 			if err := jobs.Settle(context.Background(), id); err != nil {
-				fmt.Fprintf(w.stderr, "%s: %v\n", i18n.Tf("cmd.asm.err.job_settle", "id", id), err)
+				w.note(logging.LevelError, logging.Job, "log.job.settle_failed",
+					"log.act.deferred_next_start", "id", id, "err", err)
 			}
 		},
-		Logf: func(format string, args ...any) {
-			if w.stderr != nil {
-				fmt.Fprintf(w.stderr, format+"\n", args...)
-			}
-		},
+		Logf: w.adapterLogf(logging.Job, "log.job.line"),
 	})
 	w.jobs = app.NewWatchingJobs(jobs, w.jobWatch)
 	// D190：观察器与任务收尾是两件事——任务有终态（等完成事件），观察器盯不确定的
@@ -505,11 +506,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 			return nil
 		},
 		Wake: w.uiWake,
-		Logf: func(format string, args ...any) {
-			if w.stderr != nil {
-				fmt.Fprintf(w.stderr, format+"\n", args...)
-			}
-		},
+		Logf: w.adapterLogf(logging.Job, "log.job.line"),
 	})
 	toolTimeout := time.Duration(w.cfg.Limits.ToolTimeoutSec) * time.Second
 	if w.cfg.Limits.ToolTimeoutSec <= 0 {
@@ -528,7 +525,8 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	skills := skillfs.New(skillfs.Options{Dirs: append(append([]string{}, w.cfg.Skills.Dirs...),
 		filepath.Join(w.profileDir, "skills"))})
 	for _, warn := range skills.Warnings(ctx) {
-		fmt.Fprintf(w.stderr, "%s\n", i18n.Tf("cmd.asm.skill.line", "text", warn))
+		w.note(logging.LevelWarn, logging.Skill, "log.skill.entry_skipped",
+			"log.act.skip", "text", warn)
 	}
 	w.skills = skills
 	// D202：安装面内核（副本落 `<profile>/skills`、git 检出进 `skill-cache`、台账
@@ -539,9 +537,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		CacheDir:   filepath.Join(w.profileDir, "skill-cache"),
 		LedgerPath: filepath.Join(w.profileDir, "skill-installs.json"),
 		Catalog:    skills,
-		Logf: func(format string, args ...any) {
-			fmt.Fprintf(w.stderr, i18n.T("cmd.asm.skill.prefix")+format+"\n", args...)
-		},
+		Logf:       w.adapterLogf(logging.Skill, "log.skill.line"),
 	})
 	if err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.skill_installer"), err)
@@ -551,8 +547,11 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	// 带警告跳过；导入 / 删除经同一份 app.CharacterAdmin（命令面与设置窗共用）。
 	charStore, err := characterfs.New(characterfs.Options{
 		Root: filepath.Join(w.profileDir, "characters"),
+		// 卡目录的句子是通用的文件错误（「重建 x 的 meta.json 失败」），ctx 只到 session，
+		// 所以保留「角色卡：」这层限定——直到 L3 给每条句子自己的 key。
 		Logf: func(format string, args ...any) {
-			fmt.Fprintf(w.stderr, i18n.T("cmd.asm.char.prefix")+format+"\n", args...)
+			w.noteText(logging.LevelWarn, logging.Session, "log.session.line", "log.act.verbatim",
+				fmt.Sprintf(i18n.T("cmd.asm.char.prefix")+format, args...))
 		},
 	})
 	if err != nil {
@@ -599,11 +598,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 // 零可用代理不是错误：工具面里不出现 delegate*，/delegate 给配置指引——比「注册一个必然
 // 失败的工具」诚实。可用性是装配期快照（PATH 不随运行变）。
 func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer) error {
-	logf := func(format string, args ...any) {
-		if w.stderr != nil {
-			fmt.Fprintf(w.stderr, format+"\n", args...)
-		}
-	}
+	logf := w.adapterLogf(logging.Delegate, "log.delegate.line")
 	// 当前会话（D261 无人应答判定）：走已发布的事实快照无锁读，跨 goroutine 安全
 	// （转交观察者与确认回落都不在会话 goroutine 里）。
 	current := func() conversation.ID {
@@ -736,7 +731,7 @@ type memoryOpener struct{ w *wiring }
 var _ app.MemoryOpener = memoryOpener{}
 
 func (m memoryOpener) Open(name string) (string, error) {
-	return openMemoryEditor(m.w.mem, m.w.ui, m.w.stdin, m.w.stdout, m.w.stderr)(name)
+	return m.w.memoryEditor(m.w.ui)(name)
 }
 
 // contextBudget /model 展示用的预算口径（D177）：生效值 + 这个值是谁决定的。

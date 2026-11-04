@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,8 +85,8 @@ func TestRunAttachmentGC(t *testing.T) {
 	if keep[orphan.Hash] {
 		t.Fatal("孤儿不应进 keep")
 	}
-	var warn bytes.Buffer
-	runAttachmentGC(ctx, store, blobs, &warn)
+	w, warn := testWiringLog(t)
+	w.runAttachmentGC(ctx, store, blobs)
 	if ok, _ := blobs.Stat(ctx, ref); !ok {
 		t.Fatal("被引用附件不应被清")
 	}
@@ -102,10 +103,10 @@ func TestRunAttachmentGC(t *testing.T) {
 		t.Fatalf("put orphan2: %v", err)
 	}
 	warn.Reset()
-	runAttachmentGC(ctx, failingStore{}, blobs, &warn)
-	if want := i18n.T("cmd.asm.err.gc_skipped") + ": " +
-		i18n.T("cmd.asm.err.list_sessions") + ": boom\n"; warn.String() != want {
-		t.Fatalf("warn = %q, want %q", warn.String(), want)
+	w.runAttachmentGC(ctx, failingStore{}, blobs)
+	if want := i18n.Tf("log.attach.gc_skipped", "err",
+		i18n.T("cmd.asm.err.list_sessions")+": boom"); !strings.Contains(warn.String(), want) {
+		t.Fatalf("warn = %q, want it to contain %q", warn.String(), want)
 	}
 	if ok, _ := blobs.Stat(ctx, orphan2); !ok {
 		t.Fatal("收集失败时不应清扫")
@@ -121,8 +122,8 @@ func TestRunAttachmentGCQuietOnCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("blobfs: %v", err)
 	}
-	var warn bytes.Buffer
-	runAttachmentGC(ctx, failingStore{}, blobs, &warn)
+	w, warn := testWiringLog(t)
+	w.runAttachmentGC(ctx, failingStore{}, blobs)
 	if warn.Len() != 0 {
 		t.Fatalf("取消不应告警: %q", warn.String())
 	}

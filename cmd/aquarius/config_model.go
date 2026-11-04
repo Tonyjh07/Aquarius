@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/app"
@@ -645,12 +644,12 @@ func (p *providerConfig) keyRefs() []string {
 }
 
 // resolveKeyAt 解析第 i 把钥匙（越界回落缺省引用）。label 只用于报因，不回显值。
-func (p *providerConfig) resolveKeyAt(ctx context.Context, i int, sec port.Secrets, stderr io.Writer) (string, error) {
+func (p *providerConfig) resolveKeyAt(ctx context.Context, i int, sec port.Secrets, warnPlain func(provider string)) (string, error) {
 	refs := p.keyRefs()
 	if i < 0 || i >= len(refs) {
 		i = 0
 	}
-	return resolveAPIKey(ctx, p.Name, refs[i], sec, stderr)
+	return resolveAPIKey(ctx, p.Name, refs[i], sec, warnPlain)
 }
 
 // keyLabelAt 第 i 把钥匙的展示名（D173）：用户填的 label 优先，空则「第 N 把」。

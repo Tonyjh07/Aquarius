@@ -162,27 +162,20 @@ var enCmdConfigTexts = map[string]string{
 	// main.go / bootstrap_profile.go
 	"cmd.boot.banner": `Aquarius — type /help for commands, /quit to exit; ` +
 		`Ctrl+C cancels the current generation`,
-	"cmd.boot.err.read_unfinished_jobs":        `Reading the unfinished-job ledger`,
-	"cmd.boot.err.report_unfinished_jobs":      `Recording unfinished jobs`,
-	"cmd.boot.err.read_unfinished_delegates":   `Reading the unfinished-delegation ledger`,
-	"cmd.boot.err.report_unfinished_delegates": `Recording unfinished delegations`,
 	"cmd.boot.interrupted_delegates": `{n} delegation(s) were interrupted at last exit ` +
 		`(recorded in their sessions)`,
-	"cmd.boot.err.read_input": `Reading input`,
-	"cmd.boot.steer_retry":    `Interrupted this step; retrying with the steering message`,
+	"cmd.boot.steer_retry": `Interrupted this step; retrying with the steering message`,
 
-	"cmd.boot.err.home_dir":         `Cannot determine the home directory`,
-	"cmd.boot.err.mkdir_data":       `Creating data directory {path}`,
-	"cmd.boot.err.mkdir_profile":    `Creating profile directory {path}`,
-	"cmd.boot.err.mkdir_sandbox":    `Creating privileged directory {path}`,
-	"cmd.boot.err.mkdir_skills":     `Creating skill directory {path}`,
-	"cmd.boot.err.secret_store":     `Setting up the local secret store`,
-	"cmd.boot.err.write_config":     `Failed to generate the config`,
-	"cmd.boot.err.read_new_config":  `Reading the freshly generated config {path}`,
-	"cmd.boot.err.read_config":      `Failed to read the config`,
-	"cmd.boot.err.ui_kind":          `ui.kind="{kind}" supports only repl | tui | gui`,
-	"cmd.boot.warn.tts_on":          `Warning: TTS output is on but {why}; this message will not be spoken.`,
-	"cmd.boot.warn.asr_unavailable": `Warning: speech recognition unavailable: {why}.`,
+	"cmd.boot.err.home_dir":        `Cannot determine the home directory`,
+	"cmd.boot.err.mkdir_data":      `Creating data directory {path}`,
+	"cmd.boot.err.mkdir_profile":   `Creating profile directory {path}`,
+	"cmd.boot.err.mkdir_sandbox":   `Creating privileged directory {path}`,
+	"cmd.boot.err.mkdir_skills":    `Creating skill directory {path}`,
+	"cmd.boot.err.secret_store":    `Setting up the local secret store`,
+	"cmd.boot.err.write_config":    `Failed to generate the config`,
+	"cmd.boot.err.read_new_config": `Reading the freshly generated config {path}`,
+	"cmd.boot.err.read_config":     `Failed to read the config`,
+	"cmd.boot.err.ui_kind":         `ui.kind="{kind}" supports only repl | tui | gui`,
 
 	// profiles.go / config_io.go
 	"cmd.profile.err.empty":           `The profile name cannot be empty`,
@@ -200,28 +193,16 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.profile.err.not_found":       `--profile {name} does not exist (available under profiles/: {available})`,
 
 	// assemble_ports.go / assemble_ui.go / small files
-	"cmd.asm.warning":                    `Warning: {text}`,
-	"cmd.asm.err.no_provider":            `No model provider is configured yet. Add one under Settings → Model (name, endpoint, key, model) and the chat will work`,
-	"cmd.asm.err.no_key":                 `Provider "{provider}" has no usable key`,
-	"cmd.asm.err.fallback_missing":       `model.fallback references provider "{provider}", which does not exist`,
-	"cmd.asm.key.rotated":                `Key {from} was rate limited or ran out of quota; using {to} this round`,
-	"cmd.asm.key.exhausted":              `All keys of {provider} are cooling down; earliest recovery at {time}`,
-	"cmd.asm.warn.tts_unavailable":       `Warning: voice playback unavailable: {err}`,
-	"cmd.asm.err.output_adapter":         `[output] {err}`,
-	"cmd.asm.warn.asr_unavailable":       `Warning: speech recognition unavailable: {why}`,
-	"cmd.asm.warn.tts_synth_unavailable": `Warning: speech synthesis unavailable: {why}`,
-	"cmd.asm.warn.zhconv_unavailable": `Warning: Chinese traditional-to-simplified conversion ` +
-		`unavailable; recognition output stays as is: {err}`,
-	"cmd.asm.warn.zhconv_failed": `[speech recognition] traditional-to-simplified conversion ` +
-		`failed, keeping the original text: {err}`,
-	"cmd.asm.name.asr":            `Speech recognition`,
-	"cmd.asm.name.tts":            `Speech synthesis`,
-	"cmd.asm.err.job_settle":      `The ledger entry for job {id} could not be settled`,
-	"cmd.asm.skill.line":          `Skill: {text}`,
-	"cmd.asm.skill.prefix":        `Skill: `,
-	"cmd.asm.err.skill_installer": `Skill installer`,
-	"cmd.asm.char.prefix":         `Character card: `,
-	"cmd.asm.err.characters_dir":  `Character card directory`,
+	"cmd.asm.err.no_provider":      `No model provider is configured yet. Add one under Settings → Model (name, endpoint, key, model) and the chat will work`,
+	"cmd.asm.err.no_key":           `Provider "{provider}" has no usable key`,
+	"cmd.asm.err.fallback_missing": `model.fallback references provider "{provider}", which does not exist`,
+	"cmd.asm.key.rotated":          `Key {from} was rate limited or ran out of quota; using {to} this round`,
+	"cmd.asm.key.exhausted":        `All keys of {provider} are cooling down; earliest recovery at {time}`,
+	"cmd.asm.name.asr":             `Speech recognition`,
+	"cmd.asm.name.tts":             `Speech synthesis`,
+	"cmd.asm.err.skill_installer":  `Skill installer`,
+	"cmd.asm.char.prefix":          `Character card: `,
+	"cmd.asm.err.characters_dir":   `Character card directory`,
 	"cmd.asm.notice.truncate": `Hard-limit truncation: context over budget, ` +
 		`dropped the {n} oldest messages`,
 	"cmd.asm.notice.fallback": `Model service {from} had a network error; ` +
@@ -235,14 +216,10 @@ var enCmdConfigTexts = map[string]string{
 
 	"cmd.asm.err.mkdir_memory":       `Creating memory directory`,
 	"cmd.asm.err.create_memory_file": `Creating memory file {path}`,
-	"cmd.asm.err.suspend_tui":        `Suspending the TUI`,
-	"cmd.asm.err.resume_tui":         `Resuming the TUI`,
 	"cmd.asm.err.run_editor":         `Running editor {editor}`,
 
 	"cmd.asm.err.list_sessions": `Listing sessions`,
 	"cmd.asm.err.load_session":  `Loading session {id}`,
-	"cmd.asm.err.gc_skipped":    `Attachment GC skipped (reference collection failed)`,
-	"cmd.asm.err.gc":            `Attachment GC`,
 
 	"cmd.asm.err.plugin_index":  `[plugin] resource index failed`,
 	"cmd.asm.err.plugin_search": `[plugin] resource search failed`,

@@ -211,7 +211,7 @@ func TestDeepSeekWebUsesOwnEndpointAndKey(t *testing.T) {
 	if err := bin.Set(ctx, "MY_SEARCH", "sk-own-9999"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	w := &wiring{cfg: cfg, secrets: newSecretChain(bin, io.Discard), stderr: io.Discard}
+	w := &wiring{cfg: cfg, secrets: newSecretChain(bin, nil), stderr: io.Discard}
 	c, err := w.deepseekWeb(ctx, webProvider{
 		Kind:    webKindDeepSeek,
 		BaseURL: srv.URL,
@@ -247,7 +247,7 @@ func TestDeepSeekWebFallsBackPerSide(t *testing.T) {
 			t.Fatalf("Set %s: %v", name, err)
 		}
 	}
-	w := &wiring{cfg: cfg, secrets: newSecretChain(bin, io.Discard), stderr: io.Discard}
+	w := &wiring{cfg: cfg, secrets: newSecretChain(bin, nil), stderr: io.Discard}
 
 	check := func(side webSide, want string) {
 		t.Helper()

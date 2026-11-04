@@ -3,15 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 )
 
 // pickEditor 选择系统编辑器（D24）：$VISUAL → $EDITOR → 平台默认（windows 记事本 / vi）。
@@ -28,10 +27,12 @@ func pickEditor(visual, editor, goos string) []string {
 	return []string{"vi"}
 }
 
-// openMemoryEditor /memory 的装配实现（D24）：文档名 → 磁盘路径（缺失先建空文件）
+// memoryEditor /memory 的装配实现（D24）：文档名 → 磁盘路径（缺失先建空文件）
 // → 系统编辑器阻塞打开；保存后下次读取即生效。
-// stdio 来自 run() 注入的三流——保持"标准流可注入"的 e2e 契约（不直连 os.Std*）。
-func openMemoryEditor(mem *memoryfs.Store, fe uiFrontend, stdin io.Reader, stdout, stderr io.Writer) func(name string) (string, error) {
+// 三流取自 wiring（run() 注入）——保持「标准流可注入」的 e2e 契约（不直连 os.Std*）；
+// 子进程的 stderr 是它自己的原始输出，直接接宿主流，不进运行日志。
+func (w *wiring) memoryEditor(fe uiFrontend) func(name string) (string, error) {
+	mem, stdin, stdout, stderr := w.mem, w.stdin, w.stdout, w.stderr
 	return func(name string) (string, error) {
 		p, err := mem.Path(name)
 		if err != nil {
@@ -49,11 +50,13 @@ func openMemoryEditor(mem *memoryfs.Store, fe uiFrontend, stdin io.Reader, stdou
 		sus, _ := fe.(terminalSuspend)
 		if sus != nil {
 			if serr := sus.Suspend(); serr != nil {
-				fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.asm.err.suspend_tui"), serr)
+				w.note(logging.LevelWarn, logging.UI, "log.ui.terminal_suspend_failed",
+					"log.act.continue", "err", serr)
 			}
 			defer func() {
 				if rerr := sus.Resume(); rerr != nil {
-					fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.asm.err.resume_tui"), rerr)
+					w.note(logging.LevelWarn, logging.UI, "log.ui.terminal_resume_failed",
+						"log.act.continue", "err", rerr)
 				}
 			}()
 		}

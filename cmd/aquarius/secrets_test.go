@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +28,7 @@ import (
 // 判定矩阵与探测器测试不关心密钥库，用最简档。
 func testSecrets(t *testing.T) port.Secrets {
 	t.Helper()
-	return newSecretChain(nil, io.Discard)
+	return newSecretChain(nil, nil)
 }
 
 // testChain 测试用读链 + 库：库落在临时目录（每条测试自成一库）。
@@ -37,10 +38,11 @@ func testChain(t *testing.T, warn io.Writer) (*secretChain, *secretbin.Store) {
 	if err != nil {
 		t.Fatalf("secretbin.New: %v", err)
 	}
-	if warn == nil {
-		warn = io.Discard
+	var warnf func(string, ...any)
+	if warn != nil {
+		warnf = func(format string, args ...any) { fmt.Fprintf(warn, format, args...) }
 	}
-	return newSecretChain(bin, warn), bin
+	return newSecretChain(bin, warnf), bin
 }
 
 // TestSecretChainEnvFallback 库里没有 → 回落同名环境变量（D161 双查的「兜底」一半）。
@@ -116,7 +118,7 @@ func TestSecretChainUnreadableWarnsAndFallsBack(t *testing.T) {
 // TestSecretChainNoBinOnlyEnv 库未接线（bin nil）= 只有环境变量这一档，行为与旧 envSecrets 一致。
 func TestSecretChainNoBinOnlyEnv(t *testing.T) {
 	ctx := context.Background()
-	ch := newSecretChain(nil, io.Discard)
+	ch := newSecretChain(nil, nil)
 	t.Setenv("AQ_ONLY_ENV", "v-12345678")
 	if got, err := ch.Get(ctx, "AQ_ONLY_ENV"); err != nil || got != "v-12345678" {
 		t.Fatalf("Get = (%q, %v)", got, err)
@@ -304,10 +306,10 @@ func TestKeySlotNameStableAcrossRewrite(t *testing.T) {
 
 // TestResolveAPIKeyPlaintextWarnsOnce 明文仍允许但启动警告（D35 兼容），警告不得回显值。
 func TestResolveAPIKeyPlaintextWarnsOnce(t *testing.T) {
-	var buf bytes.Buffer
-	ch, _ := testChain(t, &buf)
+	w, buf := testWiringLog(t)
+	ch, _ := testChain(t, nil)
 	const secret = "sk-plain-INLINE-9999"
-	key, err := resolveAPIKey(context.Background(), "p", secret, ch, &buf)
+	key, err := resolveAPIKey(context.Background(), "p", secret, ch, w.warnPlaintext)
 	if err != nil || key != secret {
 		t.Fatalf("明文应直接可用: (%q, %v)", key, err)
 	}

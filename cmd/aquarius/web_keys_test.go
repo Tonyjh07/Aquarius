@@ -25,7 +25,7 @@ func webWiring(t *testing.T, cfgPath string) (*wiring, *secretbin.Store) {
 	if err != nil {
 		t.Fatalf("secretbin.New: %v", err)
 	}
-	return &wiring{cfgPath: cfgPath, secretsBin: bin, secrets: newSecretChain(bin, os.Stderr)}, bin
+	return &wiring{cfgPath: cfgPath, secretsBin: bin, secrets: newSecretChain(bin, nil)}, bin
 }
 
 // TestStoreWebKeysBravePlaintext 联网页填明文 → 入密钥库 + config 只留引用，键名沿用原有

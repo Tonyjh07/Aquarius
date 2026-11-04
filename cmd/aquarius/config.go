@@ -10,7 +10,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 
@@ -321,8 +320,8 @@ func secretName(ref string) (string, error) {
 //     库与同名环境变量都缺由 Secrets 报因）
 //   - secret:<名> → 经 port.Secrets 按名取用（**先本机密钥库、再同名环境变量**，D151/D161）
 //   - 其余 → 视为明文直接使用，启动打印警告（**不回显密钥值**）
-func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, stderr io.Writer) (string, error) {
-	return resolveAPIKeyTo(ctx, provider, ref, sec, stderr)
+func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, warnPlain func(provider string)) (string, error) {
+	return resolveAPIKeyTo(ctx, provider, ref, sec, warnPlain)
 }
 
 // resolvePatchKey 界面草稿凭据的一次性解析（探测路径专用，D210）：口径与 resolveAPIKey
@@ -337,15 +336,17 @@ func resolvePatchKey(ctx context.Context, provider, ref string, sec port.Secrets
 	return resolveAPIKeyTo(ctx, provider, ref, sec, nil)
 }
 
-// resolveAPIKeyTo 解析主体；warn == nil = 只在内存里用一次、不报落盘形态。
-func resolveAPIKeyTo(ctx context.Context, provider, ref string, sec port.Secrets, warn io.Writer) (string, error) {
+// resolveAPIKeyTo 解析主体；warnPlain == nil = 只在内存里用一次、不报落盘形态。
+// 明文警告的落点是一个回调而不是 io.Writer：装配根把它接到运行日志（D276），
+// 这里只负责说出「哪家 provider 用了明文」。
+func resolveAPIKeyTo(ctx context.Context, provider, ref string, sec port.Secrets, warnPlain func(provider string)) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ref = defaultSecretRef
 	}
 	if !strings.HasPrefix(ref, "secret:") {
-		if warn != nil {
-			secretBoundWarn(warn, provider)
+		if warnPlain != nil {
+			warnPlain(provider)
 		}
 		return ref, nil
 	}

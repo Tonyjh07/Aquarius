@@ -104,3 +104,14 @@ func TestLogSettingRejectsUnknown(t *testing.T) {
 		t.Fatalf("stderr 应指出非法级别：%q", got)
 	}
 }
+
+// testWiringLog 造一个只写内存的 wiring：日志 warn 以上同时进返回的缓冲区（断言不用起进程）。
+// 级别取 debug，文件关掉（Dir 空）——测试只关心「有没有按五段打出来」。
+func testWiringLog(t *testing.T) (*wiring, *bytes.Buffer) {
+	t.Helper()
+	var buf bytes.Buffer
+	w := &wiring{stderr: &buf}
+	w.log = logging.Open(logging.Options{Stderr: &buf, Level: logging.LevelDebug})
+	t.Cleanup(func() { _ = w.log.Close() })
+	return w, &buf
+}

@@ -115,7 +115,6 @@ var enCmdAdminTexts = map[string]string{
 	// Web (settings "Web" page and startup wiring warnings)
 	"cmd.web.side.search":        "search",
 	"cmd.web.side.fetch":         "fetch",
-	"cmd.web.warn.unavailable":   "Warning: web {side} provider #{index} ({kind}) is unavailable: {err}",
 	"cmd.web.err.borrow_unknown": "{side} provider #{index} borrows service {from}, which is not in the provider list (add it on the \"Model services\" page, or fill in an endpoint)",
 	"cmd.web.err.search_kind":    "Unknown type {kind} for search provider #{index} (supported: {first} / {second})",
 	"cmd.web.err.fetch_kind":     "Unknown type {kind} for fetch provider #{index} (supported: {first} / {second})",

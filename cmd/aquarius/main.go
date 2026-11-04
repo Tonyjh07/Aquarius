@@ -166,6 +166,46 @@ type stderrProxy struct{ w *wiring }
 
 func (p stderrProxy) Write(b []byte) (int, error) { return p.w.stderr.Write(b) }
 
+// pendingLog 打开日志之前攒下的一条（bootstrap 段：profile 已经知道，级别还没读出来）。
+type pendingLog struct {
+	level  logging.Level
+	ctx    logging.Context
+	event  string
+	action string
+	msg    string // 非空 = 整句已给（不经 event 取词）
+	kv     []any
+}
+
+// note 记一条运行日志。日志句柄还没开就先排队：bootstrap 读配置那一段已经在报因
+// （语音配了却连不上、链比模型窄），而级别要从同一份配置里读——就地打一行只能落 stderr，
+// GUI 双击启动等于没留痕。openLog 之后按原顺序补记，级别过滤照着走。
+func (w *wiring) note(lv logging.Level, ctx logging.Context, event, action string, kv ...any) {
+	w.emit(pendingLog{level: lv, ctx: ctx, event: event, action: action, kv: kv})
+}
+
+// noteText 同 note，但整句已由调用方给出（适配器 Logf 的形状，见 adapterLogf）。
+func (w *wiring) noteText(lv logging.Level, ctx logging.Context, event, action, msg string) {
+	w.emit(pendingLog{level: lv, ctx: ctx, event: event, action: action, msg: msg})
+}
+
+func (w *wiring) emit(p pendingLog) {
+	if w.log == nil {
+		w.pendingLog = append(w.pendingLog, p)
+		return
+	}
+	w.log.Write(p.level, p.ctx, p.event, p.action, p.msg, p.kv...)
+}
+
+// adapterLogf 注入给适配器的 Logf：拿到的是**已经译好的整句**（`format+args`），没有 key，
+// 所以走 noteText——event 只作 JSON 侧的聚合标识，原文进 msg。级别取 warn：这些句子今天就在
+// stderr 上，收窄成 info 等于让 TUI 用户当场少看一截；行动位记「原文照记」，因为处置写在
+// 句子本身（这个过渡形状随 L3 的结构化回调一起删）。
+func (w *wiring) adapterLogf(ctx logging.Context, event string) func(string, ...any) {
+	return func(format string, args ...any) {
+		w.noteText(logging.LevelWarn, ctx, event, "log.act.verbatim", fmt.Sprintf(format, args...))
+	}
+}
+
 // wiring 装配态（S4a）：run() 的装配段拆为方法后共享的上下文——原闭包捕获变
 // 字段。bootstrap 填 profile/配置/权限组；assemble_* 填端口组；host/sess 由后续
 // 构造回填（记忆投影与 surfaces 经字段地址读取，等价原闭包对局部变量的捕获）。
@@ -175,7 +215,9 @@ type wiring struct {
 	stderr io.Writer
 
 	// log 运行日志（D276/§7.9）：bootstrap 之后开，全量落盘、warn 以上同时上 stderr。
-	log *logging.Logger
+	// pendingLog 是开日志之前攒下的启动告警，Open 之后按序补记（见 note）。
+	log        *logging.Logger
+	pendingLog []pendingLog
 
 	// bootstrap_profile.go 填充
 	dir         string // 数据根 <data>
@@ -429,7 +471,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Skills:         w.skills,             // D201：/skill 与 skill 工具同一份清单
 		SkillAdmin:     skillsAdminApp{w: w}, // D202：/skill install|remove|update
 		WatchCancel:    watchCancel{w: w},    // D262：删除会话与关停时撤两个轮询器；切换不撤
-		Logf:           func(format string, args ...any) { fmt.Fprintf(w.stderr, format+"\n", args...) },
+		Logf:           w.adapterLogf(logging.Session, "log.session.line"),
 		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
 		UI:             w.presenter,
 		Wake:           w.uiWake, // D264：带回执的注入自己敲一下，等排空才返回
@@ -469,18 +511,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 启动对账（D262）：上次退出时没来得及收尾的任务，补一条「它当时在跑/已结束」的
 	// 事实注入；紧接着的历史回放会把它铺出来。台账读即清，补过就不会再报一次。
 	if items, jerr := w.jobs.Unfinished(ctx); jerr != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.read_unfinished_jobs"), jerr)
+		w.note(logging.LevelWarn, logging.Job, "log.job.ledger_unreadable",
+			"log.act.continue", "err", jerr)
 	} else if rerr := w.sess.ReportUnfinished(ctx, items); rerr != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.report_unfinished_jobs"), rerr)
+		w.note(logging.LevelWarn, logging.Job, "log.job.unfinished_report_failed",
+			"log.act.continue", "err", rerr)
 	}
 	// 转交对账（D269）：上次退出时还在跑的转交，进程早被终止，报告也不会自己回来——
 	// 补一条事实注入（同时给用户一行提示，否则模型忽然知道某件活的存在、用户却不知道）。
 	if w.delegateMgr != nil {
 		if items, derr := w.delegateMgr.Unfinished(ctx); derr != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.read_unfinished_delegates"), derr)
+			w.note(logging.LevelWarn, logging.Delegate, "log.delegate.ledger_unreadable",
+				"log.act.continue", "err", derr)
 		} else if len(items) > 0 {
 			if rerr := w.sess.ReportUnfinishedDelegates(ctx, items); rerr != nil {
-				fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.report_unfinished_delegates"), rerr)
+				w.note(logging.LevelWarn, logging.Delegate, "log.delegate.unfinished_report_failed",
+					"log.act.continue", "err", rerr)
 			}
 			w.ui.Say(i18n.Tf("cmd.boot.interrupted_delegates", "n", len(items)))
 		}
@@ -488,7 +534,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 启动历史回放（D40/§7.4）：恢复的会话把水位→Head 的可见历史重放进转写区，
 	// 让用户知道当前是哪个会话、此前聊了什么（新建会话无历史，no-op）。
 	if _, rerr := w.sess.ReplayHistory(ctx); rerr != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", i18n.T("err.replay_history"), rerr)
+		// 这句话已经由 app 侧包好（`err.replay_history` 前缀），整句交给日志，不再套一层。
+		w.noteText(logging.LevelWarn, logging.Session, "log.session.replay_failed",
+			"log.act.continue", rerr.Error())
 	}
 	// replay 停止键中断后立刻要发的那句引导（D274）：有它就不等用户再敲一遍。
 	var replay string
@@ -505,7 +553,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 					return 0 // 收尾换行由 ui.Close 后的 defer 统一处理
 				}
-				fmt.Fprintf(stderr, "%s: %v\n", i18n.T("cmd.boot.err.read_input"), err)
+				w.note(logging.LevelError, logging.UI, "log.ui.input_failed",
+					"log.act.exit", "err", err)
 				return 1
 			}
 		}

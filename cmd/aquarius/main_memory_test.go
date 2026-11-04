@@ -103,7 +103,8 @@ func TestOpenMemoryEditorCreatesFile(t *testing.T) {
 	}
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "aquarius-no-such-editor-xyz") // 必失败的编辑器：断言文件创建与报错
-	open := openMemoryEditor(mem, nil, strings.NewReader(""), io.Discard, io.Discard)
+	w := &wiring{mem: mem, stdin: strings.NewReader(""), stdout: io.Discard, stderr: io.Discard}
+	open := w.memoryEditor(nil)
 
 	if _, err := open(port.GlobalMemoryDoc); err == nil ||
 		!strings.Contains(err.Error(), i18n.Tf("cmd.asm.err.run_editor", "editor", "aquarius-no-such-editor-xyz")) {

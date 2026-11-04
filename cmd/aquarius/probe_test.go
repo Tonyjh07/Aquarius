@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -146,7 +145,7 @@ func TestProbeWritesOnlyDefiniteVerdicts(t *testing.T) {
 		Vision:       `{"error":{"message":"image input is not supported"}}`,
 	})
 	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1"}`) // 无 caps = openai-chat 缺省（工具+思考）
-	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, nil), stderr: os.Stderr}
 
 	report, err := w.probeModel(context.Background(), "")
 	if err != nil {
@@ -196,7 +195,7 @@ func TestProbeInconclusiveLeavesCapsAlone(t *testing.T) {
 		Vision:    `{"choices":[{"message":{"content":""}}]}`,
 	})
 	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1", "caps": ["tools"]}`)
-	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, nil), stderr: os.Stderr}
 
 	before, _ := os.ReadFile(cfgPath)
 	report, err := w.probeModel(context.Background(), "m1")
@@ -250,7 +249,7 @@ func TestProbeTargetResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, nil), stderr: os.Stderr}
 
 	if _, err := w.probeModel(context.Background(), "nope"); err == nil ||
 		err.Error() != i18n.Tf("cmd.probe.err.model_undeclared", "model", strconv.Quote("nope")) {
@@ -292,7 +291,7 @@ func TestProbeProtocolDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, nil), stderr: os.Stderr}
 
 	// 装配根按 kind 造客户端：chat / responses / anthropic 都建得起来，
 	// 且走的是各自的线上形状（协议标识由适配器持有，这里只验映射）。
@@ -332,7 +331,7 @@ func TestProbeForSettings(t *testing.T) {
 	srv := probeServer(t, probeReply{VisionStatus: http.StatusBadRequest,
 		Vision: `{"error":{"message":"image input is not supported"}}`})
 	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1"}`)
-	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, nil), stderr: os.Stderr}
 	patch := uigui.ProviderPatch{
 		Name: "a", Orig: "a", Kind: "openai-chat", BaseURL: srv.URL,
 		Keys: []uigui.ProviderKeyPatch{{Value: "plain-key"}},
@@ -366,7 +365,7 @@ func TestProbeForSettings(t *testing.T) {
 
 	// 改名过程中：写回目标仍是磁盘上的原名（Orig），别写到新名字上找不到。
 	renamedPath, renamedCfg := probeCfg(t, srv.URL, `{"name": "m1"}`)
-	w2 := &wiring{cfg: renamedCfg, cfgPath: renamedPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	w2 := &wiring{cfg: renamedCfg, cfgPath: renamedPath, secrets: newSecretChain(nil, nil), stderr: os.Stderr}
 	renamed := patch
 	renamed.Name, renamed.Orig = "a2", "a"
 	if out, err = w2.probeForSettings(context.Background(), renamed, "m1"); err != nil || !out.Written {
@@ -401,7 +400,7 @@ func TestProbeClientIsReadOnly(t *testing.T) {
 	srv := probeServer(t, probeReply{VisionStatus: http.StatusBadRequest,
 		Vision: `{"error":{"message":"image input is not supported"}}`})
 	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1"}`)
-	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
+	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, nil), stderr: os.Stderr}
 	if _, err := w.probeModel(context.Background(), "m1"); err != nil {
 		t.Fatalf("probe: %v", err)
 	}

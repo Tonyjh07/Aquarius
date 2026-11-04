@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -43,15 +43,17 @@ func collectBlobRefs(ctx context.Context, store port.ConversationStore) (map[str
 
 // runAttachmentGC 启动时附件 GC：收集或清扫失败只告警不阻断启动（§4.2：Prune
 // 会话不立即删附件，孤儿由这里在下次启动时清）。
-func runAttachmentGC(ctx context.Context, store port.ConversationStore, blobs port.AttachmentStore, warn io.Writer) {
+func (w *wiring) runAttachmentGC(ctx context.Context, store port.ConversationStore, blobs port.AttachmentStore) {
 	keep, err := collectBlobRefs(ctx, store)
 	if err != nil {
 		if ctx.Err() == nil { // 启动期 Ctrl+C 属正常收尾，不告警
-			fmt.Fprintf(warn, "%s: %v\n", i18n.T("cmd.asm.err.gc_skipped"), err)
+			w.note(logging.LevelWarn, logging.Attach, "log.attach.gc_skipped",
+				"log.act.skip", "err", err)
 		}
 		return
 	}
 	if err := blobs.GC(ctx, keep); err != nil && ctx.Err() == nil {
-		fmt.Fprintf(warn, "%s: %v\n", i18n.T("cmd.asm.err.gc"), err)
+		w.note(logging.LevelWarn, logging.Attach, "log.attach.gc_failed",
+			"log.act.continue", "err", err)
 	}
 }
