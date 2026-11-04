@@ -52,6 +52,9 @@ func TestPlaceholderFollowsLang(t *testing.T) {
 	u := newHeadless(t, Options{})
 	defer func() { i18n.Use(i18n.SelectionZh) }()
 
+	// 从 zh 起算：进程级语言可能已被 `AQUARIUS_UI_LANG=en` 的全量冒烟置成 en，
+	// 那样下面的「切到 en 后变没变」前后同值，测的就不是这件事了。
+	i18n.Use(i18n.SelectionZh)
 	zhInput := u.inputPlaceholder()
 	i18n.Use(i18n.SelectionEn)
 	enInput := u.inputPlaceholder()

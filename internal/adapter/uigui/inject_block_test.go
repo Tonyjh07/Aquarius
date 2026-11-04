@@ -53,18 +53,25 @@ func TestInjectBlockCommitReplay(t *testing.T) {
 // TestInjectHeadline 卡片头部口径（D166）：来源经友好化表、状态记实际发生。
 func TestInjectHeadline(t *testing.T) {
 	cases := []struct {
-		source  string
-		trigger bool
-		want    string
+		source   string
+		trigger  bool
+		srcKey   string // 来源标签的 key（带名字的用 Tf 填 rest）
+		rest     string
+		stateKey string
 	}{
-		{"job:j1", true, "注入 · 任务 j1 · 已触发响应"},
-		{"tool:think", false, "注入 · 工具 think · 未触发"},
-		{"user", true, "注入 · 手动 · 已触发响应"},
-		{"", false, "注入 · 未知来源 · 未触发"},
+		{"job:j1", true, "port.src.job", "j1", "ui.state.fired"},
+		{"tool:think", false, "port.src.tool", "think", "ui.state.idle"},
+		{"user", true, "port.src.manual", "", "ui.state.fired"},
+		{"", false, "port.src.unknown", "", "ui.state.idle"},
 	}
 	for _, tc := range cases {
-		if got := injectHeadline(tc.source, tc.trigger); got != tc.want {
-			t.Fatalf("headline(%q,%v) = %q, want %q", tc.source, tc.trigger, got, tc.want)
+		src := i18n.T(tc.srcKey)
+		if tc.rest != "" {
+			src = i18n.Tf(tc.srcKey, "rest", tc.rest)
+		}
+		want := i18n.Tf("ui.state.inject", "source", src, "state", i18n.T(tc.stateKey))
+		if got := injectHeadline(tc.source, tc.trigger); got != want {
+			t.Fatalf("headline(%q,%v) = %q, want %q", tc.source, tc.trigger, got, want)
 		}
 	}
 }

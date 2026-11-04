@@ -19,6 +19,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -642,20 +643,20 @@ func TestOverlayPillHugsItsBox(t *testing.T) {
 func TestOverlayTitleText(t *testing.T) {
 	u, st, _ := relGraphFixture(t)
 	for _, tc := range []struct {
-		id   conversation.MessageID
-		want string
+		id  conversation.MessageID
+		key string // 期望取自哪条标题 key（措辞在表里，随界面语言变）
 	}{
-		{"u1", "用户消息 · u1"},
-		{"a1", "助手消息 · a1"},
-		{"p", "人格节点 · p"},
-		{"r", "会话根 · r"},
+		{"u1", "ui.overlay.title.user"},
+		{"a1", "ui.overlay.title.assistant"},
+		{"p", "ui.overlay.title.persona"},
+		{"r", "ui.overlay.title.root"},
 	} {
 		st.openOverlay(u, tc.id, conversation.Fresh, overlayPageRendered)
 		if st.ov == nil {
 			t.Fatalf("%s：遮罩未开", tc.id)
 		}
-		if got := st.ov.titleText(); got != tc.want {
-			t.Errorf("%s 标题 = %q, want %q", tc.id, got, tc.want)
+		if got, want := st.ov.titleText(), i18n.Tf(tc.key, "id", string(tc.id)); got != want {
+			t.Errorf("%s 标题 = %q, want %q", tc.id, got, want)
 		}
 		st.closeOverlay()
 	}
