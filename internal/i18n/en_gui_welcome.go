@@ -161,7 +161,6 @@ var enGuiWelcomeTexts = map[string]string{
 	"ui.welcome.step.progress":        "{n}/{total}",
 	"ui.welcome.btn.start":            "Start",
 	"ui.welcome.btn.later":            "Set up later",
-	"ui.welcome.intro.lead":           "Four things to settle, in order: interface language, the user agreement and privacy policy, model access, and the basics. All of them can be changed later in Settings.",
 	"ui.welcome.lang.auto":            "System",
 	"ui.welcome.terms.lead":           "The program is released under an open-source licence, but using it is still governed by the agreement below between you and the author.",
 	"ui.welcome.err.terms_load":       "Could not load the legal texts: {err}",

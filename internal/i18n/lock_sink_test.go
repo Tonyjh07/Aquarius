@@ -196,8 +196,10 @@ var textFieldStructs = map[string]bool{
 
 // sinkAllowed 出口扫描里允许写死的英文，每条都要写理由（同 cjkAllowed：按整串或前缀匹配）。
 var sinkAllowed = map[string][]string{
-	// 产品名，各语言一致，不翻译。
+	// 产品名，各语言一致，不翻译。欢迎向导第 1 页的品牌行与「关于」页同源（D278）：
+	// 两处显示的是同一个名字，不该一处走表、一处写死。
 	"internal/adapter/uigui/settings_page_about.go": {"Aquarius"},
+	"internal/adapter/uigui/welcome_pages.go":       {"Aquarius"},
 }
 
 // commandMetaLiterals 命令元数据里必须是文案表 key 的字面量。

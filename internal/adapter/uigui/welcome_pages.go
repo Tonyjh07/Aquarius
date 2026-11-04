@@ -17,6 +17,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 
@@ -62,6 +63,13 @@ func (f *welcomeForm) introPage(gtx layout.Context, th *material.Theme) layout.D
 	// 按钮行 + 两行说明）。行数不够就换竖排 + 可滚的版式，中央对齐会把最后一段截掉。
 	linePx := float32(paperBodySp(th)) * gtx.Metric.PxPerSp
 	bigText := linePx > 0 && float32(gtx.Constraints.Max.Y) < linePx*introFitLines
+	// 大字号下品牌区收到最小档，空隙也压紧：一屏本来就装不下全部内容，宁可把
+	// 空间让给「名字 + 语言选择」，也别让 128dp 的圆钮占掉半屏。
+	logoPx := introLogoPx(gtx, bigText)
+	brandTop, langTop := unit.Dp(20), unit.Dp(40)
+	if bigText {
+		brandTop, langTop = unit.Dp(12), unit.Dp(24)
+	}
 	// 按钮组：常规字号横排三等分；大字号竖排——三等分的一颗钮放不下「跟随系统」，
 	// 会折成「跟随系 / 统」两行，并且把选中项撑得比邻居高一截（离屏实测）。
 	btns := make([]layout.FlexChild, 0, len(levels)*2)
@@ -94,21 +102,26 @@ func (f *welcomeForm) introPage(gtx layout.Context, th *material.Theme) layout.D
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				// logo 在本列里居中：列宽减去 logo 宽度，两边各留一半。
-				d := gtx.Dp(unit.Dp(64))
-				pad := (gtx.Constraints.Max.X - d) / 2
+				side := logoPx
+				pad := (gtx.Constraints.Max.X - side) / 2
 				if pad < 0 {
 					pad = 0
 				}
 				return layout.Inset{Left: pxToDp(gtx, pad)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					box := image.Rectangle{Max: image.Pt(d, d)}
+					box := image.Rectangle{Max: image.Pt(side, side)}
 					drawLogo(gtx, box)
 					return layout.Dimensions{Size: box.Max}
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: brandTop}.Layout(gtx, welcomeBrand(th))
+			}),
+			// 语言选择与品牌行之间留出明显的一段：这一页只有三样东西（logo、名字、
+			// 语言），把语言块压到名字下面会让整页挤成一团。
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				l := material.Label(th, paperNoteSp(th), i18n.T("ui.page.general.lang_label"))
 				l.Color = paperOf().text3
-				return layout.Inset{Top: unit.Dp(22)}.Layout(gtx, l.Layout)
+				return layout.Inset{Top: langTop}.Layout(gtx, l.Layout)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -116,14 +129,6 @@ func (f *welcomeForm) introPage(gtx layout.Context, th *material.Theme) layout.D
 						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, btns...)
 					}
 					return layout.Flex{Alignment: layout.Middle}.Layout(gtx, btns...)
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(22)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(th, i18n.T("ui.welcome.intro.lead"))
-					l.Color = paperOf().text2
-					l.LineHeight = unit.Sp(float32(paperBodySp(th)) * legalLineLead)
-					return l.Layout(gtx)
 				})
 			}),
 		)
@@ -160,6 +165,57 @@ func pxToDp(gtx layout.Context, px int) unit.Dp {
 		return unit.Dp(px)
 	}
 	return unit.Dp(float32(px) / gtx.Metric.PxPerDp)
+}
+
+// introLogoDp 第 1 页 logo 的标称边长。比首版的 64dp 大一倍：这一页只有三样东西，
+// 64dp 的圆钮在 620dp 宽的正文区里读起来像个漏画的小图标。
+const introLogoDp = 128
+
+// introLogoMinDp 视口再矮也不低于这个边长（再小就不像 logo 了，Layout 会自己滚）。
+const introLogoMinDp = 72
+
+// introLogoPx logo 边长：默认 introLogoDp，视口矮时按比例收（自适应版）——窗口可以被
+// 拖到很小，128dp 的圆钮加下面两段文字会顶掉语言选择。tight = 已判决要走大字号可滚版式，
+// 这时直接取最小档。
+func introLogoPx(gtx layout.Context, tight bool) int {
+	floor := gtx.Dp(unit.Dp(introLogoMinDp))
+	if tight {
+		return floor
+	}
+	side := gtx.Dp(unit.Dp(introLogoDp))
+	if h := gtx.Constraints.Max.Y; h > 0 {
+		if lim := h * 22 / 100; lim < side {
+			side = lim
+		}
+	}
+	if side < floor {
+		side = floor
+	}
+	return side
+}
+
+// welcomeBrand 品牌行：名字 + 一句话定位，与「关于」页的身份区同源同字（`aboutTagline`）。
+// 两处讲同一件事就该是同一个句子，否则用户在两个窗里看到两种自我描述。
+func welcomeBrand(th *material.Theme) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		// 居中要整列宽：Label 只在自己拿到的约束内对齐。
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperTitleSp(th)*1.6, "Aquarius")
+				l.Font.Weight = font.Bold
+				l.Color = paperOf().text
+				l.Alignment = text.Middle
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperBodySp(th), aboutTagline())
+				l.Color = paperOf().text2
+				l.Alignment = text.Middle
+				return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, l.Layout)
+			}),
+		)
+	}
 }
 
 // introFitLines 第 1 页内容大致要占的正文行数。视口折算出的行数低于它就改走

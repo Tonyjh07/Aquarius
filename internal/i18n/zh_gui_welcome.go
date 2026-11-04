@@ -161,7 +161,6 @@ var zhGuiWelcomeTexts = map[string]string{
 	"ui.welcome.step.progress":        "{n}/{total}",
 	"ui.welcome.btn.start":            "开始",
 	"ui.welcome.btn.later":            "以后再说",
-	"ui.welcome.intro.lead":           "接下来依次确认四件事：界面语言、用户协议与隐私政策、模型接入、基本操作。都可以稍后在设置窗里改。",
 	"ui.welcome.lang.auto":            "跟随系统",
 	"ui.welcome.terms.lead":           "本程序以开源许可证发布，但使用本程序仍需遵守你与作者之间的下述约定。",
 	"ui.welcome.err.terms_load":       "正文档载入失败：{err}",

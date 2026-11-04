@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-03 @ b3e6f7f -->
+<!-- docs-sync: 2026-11-04 @ 67e5f1e -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -138,6 +138,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `ui.font_size` | number | `15` | **GUI** 正文字号 sp：最终字号 = font_size × scale；夹 [10, 28]；热生效；仅 gui 生效 |
 | `ui.window_width` / `ui.window_height` | int | `0`（= 缺省 608×460dp） | **GUI** 主窗像素尺寸；UI 侧按地板与粗界夹取；热生效；仅 gui 生效 |
 | `ui.welcomed` | bool | `false`（键缺失） | **GUI** 欢迎 / 首次运行引导是否已看：键缺失 = 未看——**首跑必走装配前向导**（该次引导发生在主窗之前，保存即置位，主窗不再弹欢迎窗）；**标记缺失的升级用户**在启动后自动打开欢迎窗一次；完成或显式关闭即置位；入口另在设置窗 |
+| `ui.consent_version` | int | `0`（键缺失） | **GUI** 已同意的条款版本：与 `internal/legal` 的正文版本比，**小于**它会打开装配前向导的**第 2 页**（只重过这一页，配置与其余四页不打扰）；勾选 + 继续即写回当前版本。大于（回退到旧二进制）视为已同意，不重复打扰 |
 | `ui.keys.send` | string | `"Enter"` | 输入栏**发送**（空闲 = 起一轮；生成中 = 进待发清单按**排队**）。写法 `修饰键+键`（`Ctrl`/`Shift`/`Alt`/`Super`，键名同 `ui.hotkey`）；gui 与 tui 各自解释，非法值启动报错 |
 | `ui.keys.steer` | string | `"Shift+Enter"` | 输入栏**引导**：只在生成中生效（进清单按**引导**，下一次模型请求前插入本轮）；空闲时与 `send` 等价 |
 | `ui.keys.newline` | string | `"Ctrl+Enter"` | 输入栏**换行**（插入 `\n` 不发送）。三个键必须互不相同，重复 = 启动报错 |
