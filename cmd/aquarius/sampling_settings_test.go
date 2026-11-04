@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -70,7 +71,7 @@ func TestSamplingFormTextRoundTrip(t *testing.T) {
 		t.Fatal("非 JSON 停止串应报错")
 	}
 	if _, err := port.ParseSamplingText("", "", "", `[""]`); err == nil ||
-		!strings.Contains(err.Error(), "空串") {
+		err.Error() != i18n.T("port.err.stop_empty") {
 		t.Fatalf("空停止串 = %v", err)
 	}
 	if _, err := port.ParseSamplingText("abc", "", "", ""); err == nil {

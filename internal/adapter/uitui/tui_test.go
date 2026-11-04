@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -464,7 +465,10 @@ func TestHistoryReplayInject(t *testing.T) {
 	if len(m.blocks) != 2 {
 		t.Fatalf("blocks = %d, want 2", len(m.blocks))
 	}
-	for i, want := range []string{"注入 · 任务 j1 · 已触发响应", "注入 · 工具 think · 未触发"} {
+	for i, want := range []string{
+		i18n.Tf("tui.status.inject", "source", port.InjectSourceLabel("job:j1"), "state", i18n.T("tui.state.fired")),
+		i18n.Tf("tui.status.inject", "source", port.InjectSourceLabel("tool:think"), "state", i18n.T("tui.state.idle")),
+	} {
 		if m.blocks[i].kind != blockInject || !strings.Contains(m.blocks[i].text, want) {
 			t.Fatalf("blocks[%d] = %+v, 缺 %q", i, m.blocks[i], want)
 		}
@@ -552,7 +556,11 @@ func TestStatusLine(t *testing.T) {
 	u.opts.Status = func() Status { return Status{Model: "gpt-x", Level: "strict"} }
 	m.usage = conversation.Usage{InputTokens: 7, OutputTokens: 3}
 	line := m.statusLine()
-	for _, want := range []string{"模型 gpt-x", "权限 strict", "↑7 ↓3", "Ctrl+C"} {
+	for _, want := range []string{
+		i18n.Tf("tui.status.model", "model", "gpt-x"),
+		i18n.Tf("tui.status.permission", "level", "strict"),
+		"↑7 ↓3", "Ctrl+C",
+	} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("status 缺 %q: %q", want, line)
 		}
@@ -571,14 +579,14 @@ func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
 	if !strings.Contains(got, "丢弃这行") {
 		t.Fatalf("View 缺输入行: %q", got)
 	}
-	if !strings.Contains(got, "此行未执行") {
+	if !strings.Contains(got, i18n.T("tui.notice.buffer_full")) {
 		t.Fatalf("View 缺未执行标注: %q", got)
 	}
 	// 消费一行后恢复。
 	<-u.inCh
-	before := strings.Count(m.View(), "此行未执行")
+	before := strings.Count(m.View(), i18n.T("tui.notice.buffer_full"))
 	m.submit("恢复这行")
-	if strings.Count(m.View(), "此行未执行") != before {
+	if strings.Count(m.View(), i18n.T("tui.notice.buffer_full")) != before {
 		t.Fatal("恢复后不应再标注未执行")
 	}
 }
@@ -671,11 +679,11 @@ func TestReasoningFlow(t *testing.T) {
 	}
 	// D185：无人值守标记常驻（与权限档并列）。
 	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict", Unattended: true} }
-	if line := m.statusLine(); !strings.Contains(line, "无人值守") {
+	if line := m.statusLine(); !strings.Contains(line, i18n.T("tui.status.unattended")) {
 		t.Fatalf("status = %q, want 无人值守", line)
 	}
 	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict"} }
-	if line := m.statusLine(); strings.Contains(line, "无人值守") {
+	if line := m.statusLine(); strings.Contains(line, i18n.T("tui.status.unattended")) {
 		t.Fatalf("关闭后不应标注: %q", line)
 	}
 }

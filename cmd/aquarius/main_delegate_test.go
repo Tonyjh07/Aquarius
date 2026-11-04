@@ -18,6 +18,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // buildFakeAgent 现编假 ACP 代理（与 acpgate 包测试用的是同一份源码）。
@@ -215,7 +216,7 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 			t.Fatalf("对账正文缺 %q：%q", want, text)
 		}
 	}
-	if !strings.Contains(out.String(), "上次退出时中断了 1 笔转交") {
+	if !strings.Contains(out.String(), i18n.Tf("cmd.boot.interrupted_delegates", "n", 1)) {
 		t.Fatalf("stdout 应有中断提示：%q", out.String())
 	}
 	// 读即清：台账被取走，下一次启动不该重报（会话里那条注入是**这次**落的历史，

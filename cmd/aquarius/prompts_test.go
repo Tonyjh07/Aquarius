@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestPromptsRoundTrip config prompts 段读写往返：空名行跳过、children/persona 清洗去重
@@ -158,7 +159,7 @@ func TestBuiltinModuleViews(t *testing.T) {
 		if views[i].Name != w {
 			t.Errorf("内置[%d] = %q, want %q（展示序即引用序）", i, views[i].Name, w)
 		}
-		if views[i].Label == "" || views[i].Label == "内置模块" {
+		if views[i].Label == "" || views[i].Label == i18n.T("cmd.prompt.mod.builtin_fallback") {
 			t.Errorf("内置 %s 缺专属说明（显示为 %q）", views[i].Name, views[i].Label)
 		}
 	}
@@ -174,10 +175,19 @@ func TestBuiltinModuleViews(t *testing.T) {
 		}
 	}
 	// 角色卡模块（§5.17/D247）：整组与各子模块都标注「仅角色会话生效」——非角色会话下
-	// 这些引用恒空，用户须一眼看出适用范围。
+	// 这些引用恒空，用户须一眼看出适用范围。逐条钉整句。
+	wantCharLabels := map[string]string{
+		"@char":             i18n.T("cmd.prompt.mod.char"),
+		"@char.identity":    i18n.T("cmd.prompt.mod.char_identity"),
+		"@char.description": i18n.T("cmd.prompt.mod.char_description"),
+		"@char.personality": i18n.T("cmd.prompt.mod.char_personality"),
+		"@char.scenario":    i18n.T("cmd.prompt.mod.char_scenario"),
+		"@char.system":      i18n.T("cmd.prompt.mod.char_system"),
+		"@char.book":        i18n.T("cmd.prompt.mod.char_book"),
+	}
 	for _, v := range views {
-		if strings.HasPrefix(v.Name, "@char") && !strings.Contains(v.Label, "仅角色会话生效") {
-			t.Errorf("角色模块 %s 的说明缺「仅角色会话生效」（显示为 %q）", v.Name, v.Label)
+		if want, ok := wantCharLabels[v.Name]; ok && v.Label != want {
+			t.Errorf("角色模块 %s 的说明漂移（显示为 %q）", v.Name, v.Label)
 		}
 	}
 }

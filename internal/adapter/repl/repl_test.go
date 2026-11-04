@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -280,8 +281,10 @@ func TestEmitHistoryReplayInject(t *testing.T) {
 		Source:  "tool:think",
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "工具上下文"}},
 	}})
-	want := "注入 · 观察 p1 · 已触发响应\n轮询结果\n" +
-		"注入 · 工具 think · 未触发\n工具上下文\n"
+	want := i18n.Tf("tui.status.inject", "source", port.InjectSourceLabel("poller:p1"),
+		"state", i18n.T("tui.state.fired")) + "\n轮询结果\n" +
+		i18n.Tf("tui.status.inject", "source", port.InjectSourceLabel("tool:think"),
+			"state", i18n.T("tui.state.idle")) + "\n工具上下文\n"
 	if buf.String() != want {
 		t.Fatalf("buf = %q, want %q", buf.String(), want)
 	}

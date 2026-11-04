@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -223,10 +224,10 @@ func TestKeyPoolSkipsMultipleCooled(t *testing.T) {
 
 func TestKeyPoolLabelFallback(t *testing.T) {
 	p := NewKeyPool([]KeyEntry{{LLM: &fakeLLM{}}, {LLM: &fakeLLM{}}})
-	if got := p.labelAt(0); got != "第 1 把" {
+	if got := p.labelAt(0); got != i18n.Tf("secret.keypool.label_nth", "n", 1) {
 		t.Fatalf("labelAt(0) = %q", got)
 	}
-	if got := p.labelAt(1); got != "第 2 把" {
+	if got := p.labelAt(1); got != i18n.Tf("secret.keypool.label_nth", "n", 2) {
 		t.Fatalf("labelAt(1) = %q", got)
 	}
 	_ = fmt.Sprintf

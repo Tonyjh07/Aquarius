@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 func newTestBlobs(t *testing.T) *blobfs.Store {
@@ -136,7 +137,7 @@ func TestTranscribeRejectsEmptyTranscript(t *testing.T) {
 	}))
 	defer srv.Close()
 	c, _ := New(Config{BaseURL: srv.URL, Model: "m", Blobs: blobs, HTTP: srv.Client()})
-	if _, err := c.Transcribe(context.Background(), ref, "auto"); err == nil || !strings.Contains(err.Error(), "没有识别出文字") {
+	if _, err := c.Transcribe(context.Background(), ref, "auto"); err == nil || err.Error() != i18n.T("asr.err.no_text") {
 		t.Fatalf("空转写应报因，得到 %v", err)
 	}
 }
@@ -149,7 +150,7 @@ func TestTranscribeRejectsUnsupportedMIME(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	_, err = c.Transcribe(context.Background(), conversation.BlobRef{MIME: "image/png", Hash: "h"}, "auto")
-	if err == nil || !strings.Contains(err.Error(), "不支持的音频格式") {
+	if err == nil || err.Error() != i18n.Tf("asr.chat.err_unsupported_format", "mime", "image/png") {
 		t.Fatalf("应拒绝图片附件，得到 %v", err)
 	}
 }

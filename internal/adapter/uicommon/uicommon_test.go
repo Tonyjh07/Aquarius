@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestSanitizeControlStripsSequences 序列级剥离：CSI、OSC 的两种收尾、其余两字符转义、
@@ -54,19 +55,20 @@ func TestImageModes(t *testing.T) {
 	}
 	bare := conversation.Part{Kind: conversation.PartImage}
 
+	// 占位文案与文件名插值都从文案表取（与生产同一取词口）。
 	cases := []struct {
 		name string
 		mode ImageMode
 		part conversation.Part
 		want string
 	}{
-		{"默认始终占位", ImageAlways, withRef, "〔图片〕"},
-		{"终端无引用也占位", ImageAlways, bare, "〔图片〕"},
+		{"默认始终占位", ImageAlways, withRef, i18n.T("attach.image")},
+		{"终端无引用也占位", ImageAlways, bare, i18n.T("attach.image")},
 		{"GUI 有引用不占位", ImageWhenUnaddressable, withRef, ""},
-		{"GUI 无哈希留占位", ImageWhenUnaddressable, noHash, "〔图片〕"},
-		{"GUI 无引用留占位", ImageWhenUnaddressable, bare, "〔图片〕"},
-		{"TUI 带上文件名", ImageNamed, withRef, "〔图片：shot.png〕"},
-		{"TUI 无引用用泛称", ImageNamed, bare, "〔图片〕"},
+		{"GUI 无哈希留占位", ImageWhenUnaddressable, noHash, i18n.T("attach.image")},
+		{"GUI 无引用留占位", ImageWhenUnaddressable, bare, i18n.T("attach.image")},
+		{"TUI 带上文件名", ImageNamed, withRef, i18n.Tf("attach.image_named", "name", "shot.png")},
+		{"TUI 无引用用泛称", ImageNamed, bare, i18n.T("attach.image")},
 	}
 	for _, tc := range cases {
 		var b strings.Builder

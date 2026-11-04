@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/llm"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -251,7 +253,7 @@ func TestProbeTargetResolution(t *testing.T) {
 	w := &wiring{cfg: cfg, cfgPath: cfgPath, secrets: newSecretChain(nil, io.Discard), stderr: os.Stderr}
 
 	if _, err := w.probeModel(context.Background(), "nope"); err == nil ||
-		!strings.Contains(err.Error(), "不在任何 provider") {
+		err.Error() != i18n.Tf("cmd.probe.err.model_undeclared", "model", strconv.Quote("nope")) {
 		t.Fatalf("未声明模型 = %v, want 报因（要先声明才写得回）", err)
 	}
 	report, err := w.probeModel(context.Background(), "mb")
@@ -310,9 +312,14 @@ func TestProbeProtocolDispatch(t *testing.T) {
 	}
 
 	// 探测：两种非 chat 协议都指名报因（探测器只有 chat 的问法）。
+	wantProto := map[string]string{
+		"m1": i18n.Tf("cmd.probe.err.only_openai_chat",
+			"name", strconv.Quote("a"), "kind", strconv.Quote("anthropic"), "supported", kindOpenAIChat),
+		"m2": i18n.Tf("cmd.probe.err.only_openai_chat",
+			"name", strconv.Quote("r"), "kind", strconv.Quote("openai-responses"), "supported", kindOpenAIChat),
+	}
 	for _, name := range []string{"m1", "m2"} {
-		if _, err := w.probeModel(context.Background(), name); err == nil ||
-			!strings.Contains(err.Error(), "暂不支持能力探测") {
+		if _, err := w.probeModel(context.Background(), name); err == nil || err.Error() != wantProto[name] {
 			t.Fatalf("probe(%s) err = %v, want 指名协议不支持探测", name, err)
 		}
 	}
@@ -383,7 +390,7 @@ func TestProbeForSettings(t *testing.T) {
 		}
 	}
 	if _, err := w.probeForSettings(context.Background(), patch, ""); err == nil ||
-		!strings.Contains(err.Error(), "模型名") {
+		err.Error() != i18n.T("cmd.probe.err.need_model") {
 		t.Fatalf("空模型名 = %v, want 报因", err)
 	}
 }

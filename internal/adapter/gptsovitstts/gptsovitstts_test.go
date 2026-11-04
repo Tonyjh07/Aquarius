@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -91,7 +93,7 @@ func TestSynthesizeRequiresRefAudio(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	_, err = c.Synthesize(context.Background(), port.SpeechRequest{Text: "a"})
-	if err == nil || !strings.Contains(err.Error(), "参考音频") {
+	if err == nil || err.Error() != i18n.T("tts.gptsovits.err_ref_missing") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -130,8 +132,11 @@ func TestSynthesizeRejectsNonWAV(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	_, err = c.Synthesize(context.Background(), port.SpeechRequest{Text: "a", Voice: "/r.wav"})
-	if err == nil || !strings.Contains(err.Error(), "不是 WAV") || !strings.Contains(err.Error(), "ref audio not found") {
-		t.Fatalf("err = %v", err)
+	// 报因 = 「不是 WAV」模板 + 响应体开头（sniff 与生产同路径取词）。
+	wantErr := i18n.Tf("tts.err.not_wav", "sniff",
+		i18n.Tf("tts.err.sniff_head", "text", strconv.Quote(`{"code":400,"message":"ref audio not found"}`)))
+	if err == nil || err.Error() != wantErr {
+		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }
 
@@ -156,7 +161,7 @@ func TestSynthesizeErrors(t *testing.T) {
 		}
 		long := strings.Repeat("字", maxTextBytes)
 		if _, err := c.Synthesize(context.Background(), port.SpeechRequest{Text: long}); err == nil ||
-			!strings.Contains(err.Error(), "最多") {
+			err.Error() != i18n.Tf("tts.err.text_too_long", "bytes", maxTextBytes) {
 			t.Fatalf("err = %v", err)
 		}
 	})
@@ -206,7 +211,7 @@ func TestNewValidates(t *testing.T) {
 	}{
 		{"空端点", Config{Blobs: blobs}, "base_url"},
 		{"非法端点", Config{BaseURL: "x", Blobs: blobs}, "base_url"},
-		{"缺附件库", Config{BaseURL: "https://x"}, "附件库"},
+		{"缺附件库", Config{BaseURL: "https://x"}, i18n.T("tts.err.no_blobs")},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

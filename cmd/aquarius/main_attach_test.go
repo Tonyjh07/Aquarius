@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -103,8 +103,9 @@ func TestRunAttachmentGC(t *testing.T) {
 	}
 	warn.Reset()
 	runAttachmentGC(ctx, failingStore{}, blobs, &warn)
-	if !strings.Contains(warn.String(), "已跳过") {
-		t.Fatalf("warn = %q, want 已跳过", warn.String())
+	if want := i18n.T("cmd.asm.err.gc_skipped") + ": " +
+		i18n.T("cmd.asm.err.list_sessions") + ": boom\n"; warn.String() != want {
+		t.Fatalf("warn = %q, want %q", warn.String(), want)
 	}
 	if ok, _ := blobs.Stat(ctx, orphan2); !ok {
 		t.Fatal("收集失败时不应清扫")

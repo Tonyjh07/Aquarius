@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -75,14 +76,16 @@ func TestIngestClipboardMissingBlob(t *testing.T) {
 	}
 	in := New(blobs)
 	missing := conversation.BlobRef{Hash: strings.Repeat("b", 64), MIME: "image/png", Name: "x.png"}
+	// 报因 = 文案表模板 + 短哈希与附件名（shortHash 截前 12 位）。
+	wantMissing := i18n.Tf("audio.clip.err_missing", "hash", strings.Repeat("b", 12), "name", "x.png")
 	if _, err := in.Ingest(context.Background(), port.RawInput{Kind: "clipboard", Blob: &missing}); err == nil ||
-		!strings.Contains(err.Error(), "附件不存在") {
-		t.Fatalf("err = %v", err)
+		err.Error() != wantMissing {
+		t.Fatalf("err = %v, want %v", err, wantMissing)
 	}
 	// nil blobs 且带 Blob 同样报错。
 	bare := New(nil)
 	if _, err := bare.Ingest(context.Background(), port.RawInput{Kind: "clipboard", Blob: &missing}); err == nil ||
-		!strings.Contains(err.Error(), "附件库") {
+		err.Error() != i18n.T("audio.clip.err_no_blobs") {
 		t.Fatalf("err = %v", err)
 	}
 }

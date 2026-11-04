@@ -19,6 +19,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -104,7 +105,8 @@ func TestOpenMemoryEditorCreatesFile(t *testing.T) {
 	t.Setenv("EDITOR", "aquarius-no-such-editor-xyz") // 必失败的编辑器：断言文件创建与报错
 	open := openMemoryEditor(mem, nil, strings.NewReader(""), io.Discard, io.Discard)
 
-	if _, err := open(port.GlobalMemoryDoc); err == nil || !strings.Contains(err.Error(), "运行编辑器") {
+	if _, err := open(port.GlobalMemoryDoc); err == nil ||
+		!strings.Contains(err.Error(), i18n.Tf("cmd.asm.err.run_editor", "editor", "aquarius-no-such-editor-xyz")) {
 		t.Fatalf("err = %v, want 运行编辑器失败", err)
 	}
 	if _, serr := os.Stat(filepath.Join(dir, port.GlobalMemoryDoc)); serr != nil {
@@ -290,7 +292,8 @@ func TestRunMemoryCommandE2E(t *testing.T) {
 		t.Fatalf("code = %d, stderr = %q, stdout = %q", code, errBuf.String(), out.String())
 	}
 	got := out.String()
-	if !strings.Contains(got, "已用系统编辑器打开") || !strings.Contains(got, port.GlobalMemoryDoc) {
+	memPath := filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc)
+	if !strings.Contains(got, i18n.Tf("session.memory.opened", "path", memPath)) {
 		t.Fatalf("stdout 缺打开提示: %q", got)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc))

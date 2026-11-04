@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestRunRejectsCollidingKeys 三键里有重复 = 启动失败并说明是哪两个撞了。
@@ -23,7 +25,10 @@ func TestRunRejectsCollidingKeys(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("撞键应启动失败，实际退出 0（out=%s）", out.String())
 	}
-	if !strings.Contains(errBuf.String(), "撞键") {
+	// 撞的是哪一对随校验的遍历顺序而定，两种整句都认（值相同，只差 name/other 谁在前）。
+	want1 := i18n.Tf("keys.err.collision", "name", "send", "other", "steer", "binding", "Enter")
+	want2 := i18n.Tf("keys.err.collision", "name", "steer", "other", "send", "binding", "Enter")
+	if got := errBuf.String(); !strings.Contains(got, want1) && !strings.Contains(got, want2) {
 		t.Fatalf("stderr = %q, want 含撞键说明", errBuf.String())
 	}
 }

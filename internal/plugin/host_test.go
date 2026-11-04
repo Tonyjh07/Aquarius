@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -359,7 +360,9 @@ func TestHostCrashRestarts(t *testing.T) {
 		t.Fatalf("dial = %d, want %d（限次后不再重启）", dial.callCount(), maxRestarts+1)
 	}
 	for _, info := range h.List() {
-		if info.Name == "web" && (info.Restarts != maxRestarts || !strings.Contains(info.LastErr, "超限")) {
+		// 报因整句出自文案表模板；{err} 是进程退出原因（平台相关），锁到 err 之前的整段。
+		wantCrashLimit := i18n.Tf("plugin.host.crash_limit", "n", maxRestarts, "err", "")
+		if info.Name == "web" && (info.Restarts != maxRestarts || !strings.Contains(info.LastErr, wantCrashLimit)) {
 			t.Fatalf("info = %+v, want 重启计满 + 超限报因", info)
 		}
 	}
@@ -581,14 +584,17 @@ func TestHostPersistErrorSurfaced(t *testing.T) {
 	defer h.Close()
 
 	err := h.Enable(context.Background(), "web")
-	if err == nil || !strings.Contains(err.Error(), "disk full") || !strings.Contains(err.Error(), "本次运行生效") {
-		t.Fatalf("err = %v, want 写回失败且注明运行态已生效", err)
+	// 报因 = 文案表模板 + 包装的写回错误（测试喂的 disk full 原样带回）。
+	wantEnable := i18n.Tf("plugin.host.err_enable_persist", "name", "web") + ": disk full"
+	if err == nil || err.Error() != wantEnable {
+		t.Fatalf("err = %v, want %v", err, wantEnable)
 	}
 	waitFor(t, func() bool { return statusOf(h, "web") == StatusReady }, "运行态仍就绪")
 
 	err = h.Disable("web")
-	if err == nil || !strings.Contains(err.Error(), "disk full") || !strings.Contains(err.Error(), "停用") {
-		t.Fatalf("disable err = %v, want 写回失败", err)
+	wantDisable := i18n.Tf("plugin.host.err_disable_persist", "name", "web") + ": disk full"
+	if err == nil || err.Error() != wantDisable {
+		t.Fatalf("disable err = %v, want %v", err, wantDisable)
 	}
 	if statusOf(h, "web") != StatusDisabled {
 		t.Fatalf("status = %s, want disabled（运行态仍生效）", statusOf(h, "web"))
@@ -647,8 +653,9 @@ func TestHostGrantCapManual(t *testing.T) {
 			t.Fatalf("granted 重复: %v", i.Granted)
 		}
 	}
-	if err := h.GrantCap("nope", "x"); err == nil || !strings.Contains(err.Error(), "未声明") {
-		t.Fatalf("未声明插件 GrantCap err = %v, want 未声明报错", err)
+	wantUnknown := i18n.Tf("plugin.host.err_unknown_short", "name", "nope")
+	if err := h.GrantCap("nope", "x"); err == nil || err.Error() != wantUnknown {
+		t.Fatalf("未声明插件 GrantCap err = %v, want %v", err, wantUnknown)
 	}
 }
 

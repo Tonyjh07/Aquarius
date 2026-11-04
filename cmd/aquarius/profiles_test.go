@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // newProfilesManager 落一套可运行布局（default profile）并返回管理面。
@@ -45,7 +47,7 @@ func TestProfilesManagerCreateCopySwitch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "profiles", "fresh", "config.json")); err != nil {
 		t.Fatalf("模板未落盘: %v", err)
 	}
-	if err := m.Create("fresh"); err == nil || !strings.Contains(err.Error(), "已存在") {
+	if err := m.Create("fresh"); err == nil || err.Error() != i18n.Tf("cmd.profile.err.exists", "name", "fresh") {
 		t.Fatalf("同名新建 err = %v, want 已存在", err)
 	}
 	tmp := &profilesManager{dataDir: dir}
@@ -75,10 +77,10 @@ func TestProfilesManagerCreateCopySwitch(t *testing.T) {
 	if got := readPointer(t, dir); got != "fresh" {
 		t.Fatalf("指针 = %q, want fresh", got)
 	}
-	if err := m.Switch("nope"); err == nil || !strings.Contains(err.Error(), "不存在") {
+	if err := m.Switch("nope"); err == nil || err.Error() != i18n.Tf("cmd.profile.err.not_exist", "name", "nope") {
 		t.Fatalf("切不存在 err = %v, want 不存在", err)
 	}
-	if err := m.Switch("default"); err == nil || !strings.Contains(err.Error(), "已运行") {
+	if err := m.Switch("default"); err == nil || err.Error() != i18n.Tf("cmd.profile.err.already_current", "name", "default") {
 		t.Fatalf("切当前名 err = %v, want 已运行", err)
 	}
 	if got := readPointer(t, dir); got != "fresh" {

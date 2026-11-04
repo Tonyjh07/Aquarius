@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -218,7 +219,20 @@ func TestRunLegacyProviderShapeRejected(t *testing.T) {
 				t.Fatalf("code = %d, want 1", code)
 			}
 			msg := errBuf.String()
-			if !strings.Contains(msg, "手工改写") || !strings.Contains(msg, "不做自动迁移") {
+			// 两种旧形状各自的整句报因（fallback 名字数组单独一把 key；其余三种走
+			// legacy_shape + 迁移要点 + 收尾，JSON 示例与语言无关、逐字不译）。
+			var wantLegacy string
+			if name == "fallback 名字数组" {
+				wantLegacy = i18n.T("cmd.config.err.legacy_config") + ": " +
+					i18n.Tf("cmd.config.err.legacy_fallback", "path", filepath.Join(prof, "config.json"))
+			} else {
+				wantLegacy = i18n.T("cmd.config.err.legacy_config") + ": " +
+					i18n.Tf("cmd.config.err.legacy_shape", "path", filepath.Join(prof, "config.json"), "index", 0) +
+					legacyShapeSample +
+					i18n.T("cmd.config.err.legacy_shape_notes") +
+					i18n.T("cmd.config.err.legacy_shape_tail")
+			}
+			if !strings.Contains(msg, wantLegacy) {
 				t.Fatalf("stderr 应给出迁移指引: %q", msg)
 			}
 			if _, err := os.Stat(filepath.Join(prof, "config.json")); err != nil {
@@ -362,7 +376,8 @@ func TestModelEnabledFlag(t *testing.T) {
 			Models: []modelEntry{{Name: "m1", Enabled: &off}},
 		}},
 	}
-	if err := bad.normalize(); err == nil || !strings.Contains(err.Error(), "全部未启用") {
+	if err := bad.normalize(); err == nil ||
+		err.Error() != i18n.Tf("cmd.config.err.no_model_enabled", "i", 0, "provider", "a") {
 		t.Fatalf("全部未启用 = %v, want 拒绝", err)
 	}
 }

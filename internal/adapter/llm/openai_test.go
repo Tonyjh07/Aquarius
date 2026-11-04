@@ -15,6 +15,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -592,7 +593,9 @@ func TestGenerateEnumErrorNotStripped(t *testing.T) {
 		Messages: []port.PromptMessage{{Role: port.PromptUser, Content: []port.PromptPart{{Kind: port.PromptText, Text: "hi"}}}},
 		Params:   port.Sampling{ReasoningEffort: "minimal"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "状态码 400") {
+	want := i18n.Tf("llm.err.status", "base", srv.URL, "path", chatPath, "code", 400,
+		"body", `{"error":{"message":"Invalid value 'minimal' for parameter 'reasoning_effort'"}}`)
+	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("err = %v, want 400 上抛", err)
 	}
 	if n != 1 {
@@ -629,7 +632,9 @@ func TestGenerateReasoningContentValueErrorNotStripped(t *testing.T) {
 			{Role: port.PromptAssistant, Reasoning: "先想", Content: []port.PromptPart{{Kind: port.PromptText, Text: "答案"}}},
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "状态码 400") {
+	want := i18n.Tf("llm.err.status", "base", srv.URL, "path", chatPath, "code", 400,
+		"body", `{"error":{"message":"Invalid value for parameter 'reasoning_content'"}}`)
+	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("err = %v, want 400 上抛", err)
 	}
 	if n != 1 {
@@ -999,7 +1004,7 @@ func TestCountTokens(t *testing.T) {
 		t.Fatalf("new: %v", err)
 	}
 	if _, err := c.CountTokens(context.Background(), "hello"); err == nil ||
-		!strings.Contains(err.Error(), "未配置") {
+		!strings.Contains(err.Error(), i18n.T("llm.err.tokenizer_unset")) {
 		t.Fatalf("未配置 err = %v", err)
 	}
 

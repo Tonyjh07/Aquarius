@@ -15,6 +15,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // fakeModel 替身：记录收到的样本与选项，返回脚本化的结果（真模型 60MB 不进仓库，
@@ -150,7 +151,7 @@ func TestTranscribeRejectsShortAudio(t *testing.T) {
 	ref := putWAV(t, blobs, wavBytes(make([]int16, 100)))
 
 	_, err := c.Transcribe(context.Background(), ref, "zh")
-	if err == nil || !strings.Contains(err.Error(), "太短") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("asr.whisper.err_too_short")) {
 		t.Fatalf("err = %v", err)
 	}
 	if m.calls != 0 {
@@ -165,7 +166,7 @@ func TestTranscribeEmptyResult(t *testing.T) {
 	ref := putWAV(t, blobs, wavBytes(make([]int16, 2000)))
 
 	_, err := c.Transcribe(context.Background(), ref, "zh")
-	if err == nil || !strings.Contains(err.Error(), "没有识别出文字") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("asr.err.no_text")) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -197,7 +198,9 @@ func TestDecodeWAVRejectsWrongFormat(t *testing.T) {
 	// 双声道
 	bad = bytes.Clone(good)
 	binary.LittleEndian.PutUint16(bad[22:], 2)
-	if _, err := decodeWAV(bad); err == nil || !strings.Contains(err.Error(), "2 声道") {
+	if _, err := decodeWAV(bad); err == nil || !strings.Contains(err.Error(),
+		i18n.Tf("asr.whisper.err_wav_format", "rate", whisper.SampleRate, "tag", 1,
+			"channels", 2, "actual", 16000, "bits", 16)) {
 		t.Fatalf("双声道应报错，得到 %v", err)
 	}
 	// 8bit
@@ -241,7 +244,8 @@ func TestCloseReleasesModel(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("重复 Close 应幂等: %v", err)
 	}
-	if _, err := c.Transcribe(context.Background(), ref, "zh"); err == nil || !strings.Contains(err.Error(), "已关闭") {
+	if _, err := c.Transcribe(context.Background(), ref, "zh"); err == nil ||
+		!strings.Contains(err.Error(), i18n.T("asr.whisper.err_closed")) {
 		t.Fatalf("关闭后转写应报错，得到 %v", err)
 	}
 }
@@ -270,14 +274,15 @@ func TestNewRequiresModelPath(t *testing.T) {
 		t.Fatalf("blobfs: %v", err)
 	}
 	_, err = New(Config{Blobs: blobs})
-	if err == nil || !strings.Contains(err.Error(), "模型") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("asr.whisper.err_model_path_empty")) {
 		t.Fatalf("err = %v", err)
 	}
 	_, err = New(Config{Blobs: blobs, ModelPath: filepath.Join(t.TempDir(), "nope.bin")})
 	if err == nil || !strings.Contains(err.Error(), "huggingface") {
 		t.Fatalf("缺文件应带下载指引，得到 %v", err)
 	}
-	if _, err := New(Config{Model: &fakeModel{}}); err == nil || !strings.Contains(err.Error(), "附件库") {
+	if _, err := New(Config{Model: &fakeModel{}}); err == nil ||
+		!strings.Contains(err.Error(), i18n.T("asr.err.no_blobs")) {
 		t.Fatalf("缺附件库应报错，得到 %v", err)
 	}
 }
@@ -293,7 +298,7 @@ func TestNewRejectsEmptyModelFile(t *testing.T) {
 		t.Fatalf("写空模型: %v", err)
 	}
 	_, err = New(Config{Blobs: blobs, ModelPath: path})
-	if err == nil || !strings.Contains(err.Error(), "为空") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("asr.whisper.err_model_blank", "path", path)) {
 		t.Fatalf("err = %v", err)
 	}
 }

@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -66,8 +66,10 @@ func TestIngestRecordsStoresAndTranscribes(t *testing.T) {
 	if len(rep.Parts) != 1 || rep.Parts[0].Kind != conversation.PartText || rep.Parts[0].Text != "你好世界" {
 		t.Fatalf("分片 = %+v", rep.Parts)
 	}
-	if !strings.Contains(rep.Note, "已由语音转写") {
-		t.Fatalf("备注 = %q", rep.Note)
+	// 备注 = 文案表模板 + 实际秒数（生产按 %.1f 格式化）。
+	wantNote := i18n.Tf("audio.mic.note_transcribed", "seconds", "2.0")
+	if rep.Note != wantNote {
+		t.Fatalf("备注 = %q, want %q", rep.Note, wantNote)
 	}
 	if asr.lang != "zh" {
 		t.Fatalf("语种 = %q", asr.lang)
@@ -87,7 +89,7 @@ func TestIngestRecordsStoresAndTranscribes(t *testing.T) {
 func TestIngestWithoutASRReportsReason(t *testing.T) {
 	in := New(&fakeRecorder{}, newBlobs(t), nil, "auto")
 	_, err := in.Ingest(context.Background(), port.RawInput{Kind: "mic"})
-	if err == nil || !strings.Contains(err.Error(), "语音识别未配置") {
+	if err == nil || err.Error() != i18n.T("audio.mic.err_asr_unset") {
 		t.Fatalf("应报未配置，得到 %v", err)
 	}
 }
@@ -96,7 +98,9 @@ func TestIngestWithoutASRReportsReason(t *testing.T) {
 func TestIngestRecordingFailure(t *testing.T) {
 	in := New(&fakeRecorder{err: errors.New("没有设备")}, newBlobs(t), &fakeASR{text: "x"}, "auto")
 	_, err := in.Ingest(context.Background(), port.RawInput{Kind: "mic"})
-	if err == nil || !strings.Contains(err.Error(), "录音失败") {
+	// 报因 = 「录音失败」+ 包装的原始错误（测试喂的「没有设备」原样带回）。
+	wantErr := i18n.T("audio.mic.err_record") + ": 没有设备"
+	if err == nil || err.Error() != wantErr {
 		t.Fatalf("应报录音失败，得到 %v", err)
 	}
 }
@@ -105,7 +109,7 @@ func TestIngestRecordingFailure(t *testing.T) {
 func TestIngestEmptyTranscript(t *testing.T) {
 	in := New(&fakeRecorder{wav: []byte("x"), dur: time.Second}, newBlobs(t), &fakeASR{text: " "}, "auto")
 	_, err := in.Ingest(context.Background(), port.RawInput{Kind: "mic"})
-	if err == nil || !strings.Contains(err.Error(), "没有识别出文字") {
+	if err == nil || err.Error() != i18n.T("audio.mic.err_no_text") {
 		t.Fatalf("应报空转写，得到 %v", err)
 	}
 }

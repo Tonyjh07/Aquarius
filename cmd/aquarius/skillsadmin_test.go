@@ -8,10 +8,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // newSkillsWiring 造一份最小 wiring：profileDir + 可写的 config.json + 真实清单/安装器。
@@ -78,7 +80,9 @@ func TestSkillsAdminInstallAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	if !strings.Contains(msg, "已安装 1 个技能") || !strings.Contains(msg, "pdf") {
+	wantInstalled := i18n.Tf("cmd.skills.summary.list",
+		"verb", i18n.T("skill.verb.installed"), "count", 1, "names", "pdf")
+	if !strings.Contains(msg, wantInstalled) {
 		t.Fatalf("安装文案 = %q", msg)
 	}
 	if w.skillsRev.Load() != 1 {
@@ -137,7 +141,8 @@ func TestSkillsAdminExternalAndManaged(t *testing.T) {
 	}
 	// 同名技能的安装要被拒（外部根已生效）。
 	src := writeSkill(t, filepath.Join(t.TempDir(), "lint"), "lint", "Another lint.")
-	if _, err := sa.Install(src); err == nil || !strings.Contains(err.Error(), "已存在") {
+	if _, err := sa.Install(src); err == nil ||
+		err.Error() != i18n.Tf("skill.install.name_taken", "name", "lint", "source", extra) {
 		t.Fatalf("同名安装应被拒：%v", err)
 	}
 }
@@ -150,13 +155,14 @@ func TestSkillsAdminDirsPersistAndApply(t *testing.T) {
 	fallback := filepath.Join(w.profileDir, "skills")
 
 	// 相对路径 / 不存在的目录 / 兜底根：都拒。
-	if err := sa.AddDir("skills"); err == nil || !strings.Contains(err.Error(), "绝对路径") {
+	if err := sa.AddDir("skills"); err == nil ||
+		err.Error() != i18n.Tf("cmd.skills.err.not_absolute", "dir", strconv.Quote("skills")) {
 		t.Fatalf("相对路径应被拒：%v", err)
 	}
 	if err := sa.AddDir(filepath.Join(extra, "nope")); err == nil {
 		t.Fatal("不存在的目录应被拒")
 	}
-	if err := sa.AddDir(fallback); err == nil || !strings.Contains(err.Error(), "兜底") {
+	if err := sa.AddDir(fallback); err == nil || err.Error() != i18n.T("cmd.skills.err.builtin_dir_add") {
 		t.Fatalf("兜底根应被拒：%v", err)
 	}
 
@@ -183,7 +189,7 @@ func TestSkillsAdminDirsPersistAndApply(t *testing.T) {
 		t.Fatal("重复目录应被拒")
 	}
 	// 删兜底根被拒；删额外根成功并清空配置键。
-	if err := sa.RemoveDir(fallback); err == nil || !strings.Contains(err.Error(), "不可移除") {
+	if err := sa.RemoveDir(fallback); err == nil || err.Error() != i18n.T("cmd.skills.err.builtin_dir_remove") {
 		t.Fatalf("删兜底根应被拒：%v", err)
 	}
 	if err := sa.RemoveDir(extra); err != nil {
@@ -211,7 +217,7 @@ func TestSkillsAdminUnwired(t *testing.T) {
 	if snap := sa.Snapshot(); snap.Revision != 0 || len(snap.Skills) != 0 {
 		t.Fatalf("未接线快照 = %+v", snap)
 	}
-	if _, err := sa.Install("/tmp/x"); err == nil || !strings.Contains(err.Error(), "未接线") {
+	if _, err := sa.Install("/tmp/x"); err == nil || err.Error() != i18n.T("cmd.skills.err.install_unwired") {
 		t.Fatalf("未接线安装错误 = %v", err)
 	}
 	if err := sa.Rescan(); err == nil {

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -130,7 +131,7 @@ func TestSynthesizeVoiceDesign(t *testing.T) {
 		t.Fatalf("voicedesign 不应发送 voice: %v", audio)
 	}
 
-	if _, err := c.Synthesize(context.Background(), port.SpeechRequest{Text: "你好"}); err == nil || !strings.Contains(err.Error(), "音色描述") {
+	if _, err := c.Synthesize(context.Background(), port.SpeechRequest{Text: "你好"}); err == nil || err.Error() != i18n.T("tts.mimo.err_design_missing") {
 		t.Fatalf("缺音色描述应报因，得到 %v", err)
 	}
 }
@@ -155,7 +156,7 @@ func TestSynthesizeVoiceClone(t *testing.T) {
 		t.Fatalf("样本未按 Base64 发出: %v", audio["voice"])
 	}
 
-	if _, err := c.Synthesize(context.Background(), port.SpeechRequest{Text: "x"}); err == nil || !strings.Contains(err.Error(), "样本文件路径") {
+	if _, err := c.Synthesize(context.Background(), port.SpeechRequest{Text: "x"}); err == nil || err.Error() != i18n.T("tts.mimo.err_sample_path_missing") {
 		t.Fatalf("缺样本路径应报因，得到 %v", err)
 	}
 	bad := filepath.Join(t.TempDir(), "sample.ogg")
@@ -190,7 +191,7 @@ func TestSynthesizeRejectsResponseWithoutAudio(t *testing.T) {
 	defer srv.Close()
 	c, _ := New(Config{BaseURL: srv.URL, Model: "mimo-v2.5-tts", Blobs: blobs, HTTP: srv.Client()})
 	_, err := c.Synthesize(context.Background(), port.SpeechRequest{Text: "hi"})
-	if err == nil || !strings.Contains(err.Error(), "没有音频") {
+	if err == nil || err.Error() != i18n.T("tts.mimo.err_no_audio") {
 		t.Fatalf("无音频应报因，得到 %v", err)
 	}
 }

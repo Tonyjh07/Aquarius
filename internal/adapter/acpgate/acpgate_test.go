@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -227,8 +228,11 @@ func TestDelegatePermissionAllow(t *testing.T) {
 	if conf.calls != 1 {
 		t.Fatalf("confirm calls = %d", conf.calls)
 	}
-	if !strings.Contains(conf.prompt, "Write src/main.go") || !strings.Contains(conf.prompt, "它自己的文件与命令访问") {
-		t.Fatalf("prompt = %q", conf.prompt)
+	// 权限确认句 = 头部（代理名）+ 工具调用标题与文本 + 边界说明，全部从文案表取词。
+	wantPrompt := i18n.Tf("acp.prompt.head", "agent", "fake") +
+		"\n  Write src/main.go\n  overwrite src/main.go\n\n" + i18n.T("acp.prompt.foot")
+	if conf.prompt != wantPrompt {
+		t.Fatalf("prompt = %q, want %q", conf.prompt, wantPrompt)
 	}
 	if !strings.Contains(run.Report, `"optionId":"allow"`) {
 		t.Fatalf("report = %q（应回 allow_once）", run.Report)
@@ -363,7 +367,7 @@ func TestListReportsMissingCommand(t *testing.T) {
 	if list[0].Available || !strings.Contains(list[0].Note, "PATH") {
 		t.Fatalf("gone = %+v", list[0])
 	}
-	if list[1].Available || !strings.Contains(list[1].Note, "已停用") {
+	if list[1].Available || list[1].Note != i18n.T("acp.note.disabled") {
 		t.Fatalf("off = %+v", list[1])
 	}
 }

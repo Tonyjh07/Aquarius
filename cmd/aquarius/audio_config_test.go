@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // audioTestConfig 一份能过 model.normalize 的最小配置 + 可改的语音段。
@@ -174,7 +176,7 @@ func TestAudioEndpointBorrowMissingNeedsOwnURL(t *testing.T) {
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
 	}
-	if _, why := cfg.audioProvider("asr"); why == "" || !strings.Contains(why, "端点") {
+	if _, why := cfg.audioProvider("asr"); why == "" || why != i18n.T("cmd.config.endpoint.missing") {
 		t.Fatalf("端点无着落应明确报因，得到 %q", why)
 	}
 

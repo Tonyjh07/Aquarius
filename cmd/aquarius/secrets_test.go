@@ -13,11 +13,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -67,17 +69,17 @@ func TestSecretChainBinWins(t *testing.T) {
 // TestSecretChainMissNamesBothPlaces 两处都没有 → 报因**点名查过哪两处**，且不回显值。
 func TestSecretChainMissNamesBothPlaces(t *testing.T) {
 	ctx := context.Background()
-	ch, _ := testChain(t, nil)
+	ch, bin := testChain(t, nil)
 	_, err := ch.Get(ctx, "AQ_NEITHER_PLACE")
 	if err == nil {
 		t.Fatal("两处都没有应报因")
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "本机密钥库") || !strings.Contains(msg, "环境变量") {
-		t.Fatalf("报因应点名查过的两处: %q", msg)
-	}
-	if !strings.Contains(msg, "AQ_NEITHER_PLACE") {
-		t.Fatalf("报因应点名缺失的名字: %q", msg)
+	want := i18n.Tf("cmd.secrets.err.missing",
+		"name", strconv.Quote("AQ_NEITHER_PLACE"),
+		"where", i18n.T("cmd.secrets.where.both"),
+		"path", bin.Path())
+	if msg := err.Error(); msg != want {
+		t.Fatalf("报因应点名查过的两处与名字: %q, want %q", msg, want)
 	}
 }
 
@@ -94,7 +96,8 @@ func TestSecretChainUnreadableWarnsAndFallsBack(t *testing.T) {
 	if got, err := ch.Get(ctx, "AQ_FALLBACK"); err != nil || got != "env-fallback-4242" {
 		t.Fatalf("解不开应回落环境变量 = (%q, %v)", got, err)
 	}
-	if n := strings.Count(warn.String(), "本机密钥库"); n != 1 {
+	unreadable := i18n.Tf("cmd.secrets.warn.store_unreadable", "path", bin.Path())
+	if n := strings.Count(warn.String(), unreadable); n != 1 {
 		t.Fatalf("解不开应恰好警告一次，得 %d 次: %q", n, warn.String())
 	}
 	if !strings.Contains(warn.String(), bin.Path()) {
@@ -105,7 +108,7 @@ func TestSecretChainUnreadableWarnsAndFallsBack(t *testing.T) {
 	if got, err := ch.Get(ctx, "AQ_FALLBACK2"); err != nil || got != "env-fallback-5252" {
 		t.Fatalf("第二次取用 = (%q, %v)", got, err)
 	}
-	if n := strings.Count(warn.String(), "本机密钥库"); n != 1 {
+	if n := strings.Count(warn.String(), unreadable); n != 1 {
 		t.Fatalf("警告应仍只有一次，得 %d 次", n)
 	}
 }
@@ -308,7 +311,7 @@ func TestResolveAPIKeyPlaintextWarnsOnce(t *testing.T) {
 	if err != nil || key != secret {
 		t.Fatalf("明文应直接可用: (%q, %v)", key, err)
 	}
-	if n := strings.Count(buf.String(), "明文"); n != 1 {
+	if n := strings.Count(buf.String(), i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote("p"))); n != 1 {
 		t.Fatalf("明文警告应恰好一次: %d 次，%q", n, buf.String())
 	}
 	if strings.Contains(buf.String(), secret) {
@@ -368,7 +371,8 @@ func TestWelcomeProbeDoesNotWarnPlaintextDraft(t *testing.T) {
 	if _, err := m.Models(patch); err != nil {
 		t.Fatalf("Models: %v", err)
 	}
-	if s := logBuf.String(); strings.Contains(s, "明文") || strings.Contains(s, "config.json") {
+	if s := logBuf.String(); strings.Contains(s, i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote("draftprov"))) ||
+		strings.Contains(s, "config.json") {
 		t.Fatalf("探测不得输出落盘形态警告（草稿还没落盘）: %q", s)
 	}
 }

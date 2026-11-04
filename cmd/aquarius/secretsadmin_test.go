@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestSecretsAdminRoundTrip 列出 / 覆盖 / 删除往返 + Revision 递增。
@@ -250,7 +251,8 @@ func TestSecretsAdminImportRefusesUnreadableStore(t *testing.T) {
 	}
 	before, _ := os.ReadFile(cfgPath)
 	sa := &secretsAdmin{w: &wiring{secretsBin: bin, cfgPath: cfgPath}}
-	if _, err := sa.Import(); err == nil || !strings.Contains(err.Error(), "解不开") {
+	if _, err := sa.Import(); err == nil ||
+		err.Error() != i18n.Tf("cmd.secrets.err.store_locked", "path", bin.Path()) {
 		t.Fatalf("库解不开应拒绝导入: %v", err)
 	}
 	if after, _ := os.ReadFile(cfgPath); string(after) != string(before) {

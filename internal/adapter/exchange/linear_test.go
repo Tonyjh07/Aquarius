@@ -78,7 +78,8 @@ func TestExportOpenAIShape(t *testing.T) {
 	if rep.Bytes != int64(buf.Len()) || rep.Nodes != 3 {
 		t.Fatalf("回执 = %+v（写出 %d 字节）", rep, buf.Len())
 	}
-	if !strings.Contains(strings.Join(rep.Dropped, " "), "思考过程 1 个") {
+	if !strings.Contains(strings.Join(rep.Dropped, " "),
+		i18n.Tf("exchange.io.dropped.line", "kind", i18n.T("exchange.io.drop.thinking"), "count", 1)) {
 		t.Fatalf("回执应说明思考分片没带出去: %v", rep.Dropped)
 	}
 }
@@ -126,10 +127,10 @@ func TestParseLinearContent(t *testing.T) {
 	if len(parts) != 2 || parts[0].Text != "第一段" || parts[1].Text != "第二段" {
 		t.Fatalf("分片 = %+v, want 两段文本", parts)
 	}
-	if counts["图片（只有地址，字节取不到）"] != 1 {
+	if counts[i18n.T("exchange.io.drop.image")] != 1 {
 		t.Fatalf("图片计数 = %v", counts)
 	}
-	if counts["正文分片 audio_url"] != 1 {
+	if counts[i18n.Tf("exchange.io.drop.part_kind", "kind", "audio_url")] != 1 {
 		t.Fatalf("不认的分片应计数: %v", counts)
 	}
 	// 空字符串与空数组都不产生分片（不建空节点）。
@@ -166,7 +167,8 @@ func TestImportSkipsEmptyButCounts(t *testing.T) {
 			if rep.Nodes != 2 {
 				t.Fatalf("读入节点数 = %d, want 2（空消息不建节点）", rep.Nodes)
 			}
-			if !strings.Contains(strings.Join(rep.Dropped, " "), "没有正文") {
+			if !strings.Contains(strings.Join(rep.Dropped, " "),
+				i18n.Tf("exchange.io.dropped.line", "kind", i18n.T("exchange.io.drop.no_text"), "count", 1)) {
 				t.Fatalf("跳过空消息必须进回执: %v", rep.Dropped)
 			}
 			if c.NodeCount() != 3 { // Root + 两条有正文的
@@ -259,10 +261,11 @@ func TestExportLinearDropsBranch(t *testing.T) {
 			t.Fatalf("%s export: %v", format, err)
 		}
 		joined := strings.Join(rep.Dropped, " / ")
-		if !strings.Contains(joined, "旁支上的") {
+		if !strings.Contains(joined, i18n.Tf("exchange.io.dropped.side_branch", "count", 1)) {
 			t.Fatalf("%s 回执应说明旁支没带出去: %v", format, rep.Dropped)
 		}
-		if !strings.Contains(joined, "思考过程") {
+		if !strings.Contains(joined,
+			i18n.Tf("exchange.io.dropped.line", "kind", i18n.T("exchange.io.drop.thinking"), "count", 1)) {
 			t.Fatalf("%s 回执应说明思考分片没带出去: %v", format, rep.Dropped)
 		}
 	}

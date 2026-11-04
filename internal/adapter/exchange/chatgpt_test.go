@@ -174,7 +174,8 @@ func TestChatGPTImportSkipsAndReparents(t *testing.T) {
 	}
 	var joined strings.Builder
 	joined.WriteString(strings.Join(rep.Dropped, " "))
-	if !strings.Contains(joined.String(), "图片") {
+	if !strings.Contains(joined.String(),
+		i18n.Tf("exchange.io.dropped.line", "kind", i18n.T("exchange.io.drop.image_ref"), "count", 1)) {
 		t.Fatalf("回执应说明图片没带进来: %v", rep.Dropped)
 	}
 	// 回答接在「问」之下（中间那张图不在，链路不能断）。
@@ -318,7 +319,7 @@ func TestChatGPTHeadOnSkippedNode(t *testing.T) {
 	if len(path) != 2 || path[1].Content[0].Text != "问" {
 		t.Fatalf("Head 链 = %+v, want root→问（回退到上一条）", path)
 	}
-	if !strings.Contains(strings.Join(rep.Dropped, " "), "当前节点") {
+	if !strings.Contains(strings.Join(rep.Dropped, " "), i18n.T("exchange.io.head_skipped_prev")) {
 		t.Fatalf("回退 Head 是事实，回执要说出来: %v", rep.Dropped)
 	}
 }

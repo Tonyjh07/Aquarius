@@ -15,11 +15,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // readCfgMap 读回 config 原文（无关键保留/清点用）。
@@ -355,10 +357,14 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("向导窗调用 %d 次, want 1", calls)
 	}
-	if !strings.Contains(out.String(), "Aquarius — 输入 /help 查看命令") {
+	if !strings.Contains(out.String(), i18n.T("cmd.boot.banner")) {
 		t.Fatalf("保存后应继续启动（内核起来）: stdout = %q, stderr = %q", out.String(), errBuf.String())
 	}
-	if n := strings.Count(out.String(), "已生成配置"); n != 1 {
+	written := i18n.Tf("boot.config_written",
+		"path", filepath.Join(dir, "profiles", "default", "config.json"),
+		"profile", "default",
+		"pointer", filepath.Join(dir, "config.json"))
+	if n := strings.Count(out.String(), written); n != 1 {
 		t.Fatalf("「已生成配置」应只报一次（重跑 bootstrap 的 firstRun 需重算）: %d 次，stdout = %q", n, out.String())
 	}
 }
@@ -519,7 +525,13 @@ func TestSetupWizardStillIncompleteFatal(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("向导窗调用 %d 次, want 1（只尝试一次，不循环）", calls)
 	}
-	if !strings.Contains(errBuf.String(), "配置仍不完整") {
+	// 整句：配置仍不完整 + issue（provider 取不到密钥：读链两处都没有这个名字）。
+	issues := i18n.Tf("cmd.welcome.key.fetch_failed", "provider", strconv.Quote("openai"),
+		"err", i18n.Tf("cmd.secrets.err.missing",
+			"name", strconv.Quote("AQ_MISSING"),
+			"where", i18n.T("cmd.secrets.where.both"),
+			"path", filepath.Join(dir, "profiles", "default", "secrets.bin")))
+	if want := i18n.Tf("cmd.welcome.still_incomplete", "issues", issues); !strings.Contains(errBuf.String(), want) {
 		t.Fatalf("stderr = %q", errBuf.String())
 	}
 }
@@ -583,7 +595,7 @@ func TestSetupWizardPlaintextNotBlocked(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("明文密钥不应触发向导窗（调用 %d 次）", calls)
 	}
-	if n := strings.Count(errBuf.String(), "明文"); n != 1 {
+	if n := strings.Count(errBuf.String(), i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote("p"))); n != 1 {
 		t.Fatalf("明文警告应恰好一次（探测不得重复打）: %d 次，stderr = %q", n, errBuf.String())
 	}
 }

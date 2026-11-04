@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 func TestSetupWizardCancelWithoutKeyShowsMessageBox(t *testing.T) {
@@ -37,7 +38,9 @@ func TestSetupWizardCancelWithoutKeyShowsMessageBox(t *testing.T) {
 	if !strings.Contains(boxText, "DEEPSEEK_API_KEY") {
 		t.Fatalf("消息框应指名缺失的环境变量: %q", boxText)
 	}
-	if !strings.Contains(boxText, "已取消配置引导") {
+	// 取消报因的 issue 清单内容随密钥探测错误而定，这里钉到占位符前的整段框架。
+	cancelledPrefix, _, _ := strings.Cut(i18n.T("cmd.welcome.cancelled"), "{")
+	if !strings.Contains(boxText, cancelledPrefix) {
 		t.Fatalf("消息框应说明取消后果: %q", boxText)
 	}
 }

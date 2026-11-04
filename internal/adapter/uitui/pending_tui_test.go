@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -142,12 +143,13 @@ func TestTUIAltEnterSteers(t *testing.T) {
 func TestTUIStatusLineCount(t *testing.T) {
 	p := &tuiFakePending{}
 	m, _ := newPendingModel(t, p, true)
-	if strings.Contains(m.statusLine(), "待发") {
-		t.Fatal("没有待发时状态行不该提它")
+	// 没有待发时状态行只由两条按键提示组成（无 Status 回调、无用量），待发段不出现。
+	if got := m.statusLine(); got != strings.Join([]string{i18n.T("tui.hint.scroll"), i18n.T("tui.hint.cancel")}, " · ") {
+		t.Fatalf("没有待发时状态行不该提它: %q", got)
 	}
 	_, _ = p.Add("一条", port.DeliveryQueue)
 	_, _ = p.Add("两条", port.DeliverySteer)
-	if got := m.statusLine(); !strings.Contains(got, "待发 2 条") {
+	if got := m.statusLine(); !strings.Contains(got, i18n.Tf("tui.status.pending", "n", "2")) {
 		t.Fatalf("状态行 = %q, want 待发 2 条", got)
 	}
 }

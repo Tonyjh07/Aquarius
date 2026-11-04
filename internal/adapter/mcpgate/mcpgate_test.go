@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -299,9 +300,10 @@ func TestMapArgsHardening(t *testing.T) {
 	if err != nil || args["who"] != "hello world" {
 		t.Fatalf("args=%v err=%v, want who=hello world", args, err)
 	}
-	// 必填缺失报用法。
-	if _, _, err := s.mapArgs("p", nil); err == nil || !strings.Contains(err.Error(), "用法:") {
-		t.Fatalf("err = %v, want 用法", err)
+	// 必填缺失报用法（报因整句由文案表模板 + 用法行拼出）。
+	wantMissing := i18n.Tf("mcp.err.prompt_missing_arg", "arg", "who", "plugin", "x", "prompt", "p", "usage", "<who>")
+	if _, _, err := s.mapArgs("p", nil); err == nil || err.Error() != wantMissing {
+		t.Fatalf("err = %v, want %v", err, wantMissing)
 	}
 
 	// 双声明：按位映射；第三参 → 多余参数报错（不静默截断）。
@@ -310,16 +312,20 @@ func TestMapArgsHardening(t *testing.T) {
 	if err != nil || args["a"] != "1" || args["b"] != "2" {
 		t.Fatalf("args=%v err=%v", args, err)
 	}
+	wantTooMany := i18n.Tf("mcp.err.prompt_too_many", "name", "p", "want", 2, "got", 3,
+		"plugin", "x", "prompt", "p", "usage", "[a] <b>")
 	if _, _, err := s.mapArgs("p", []string{"1", "2", "3"}); err == nil ||
-		!strings.Contains(err.Error(), "多余参数") {
-		t.Fatalf("err = %v, want 多余参数报错", err)
+		err.Error() != wantTooMany {
+		t.Fatalf("err = %v, want %v", err, wantTooMany)
 	}
 
 	// 未声明参数的 prompt 拒收参数。
 	s.prompts[0].Arguments = nil
+	wantNoArgs := i18n.Tf("mcp.err.prompt_no_args", "name", "p", "got", 1,
+		"plugin", "x", "prompt", "p", "usage", "")
 	if _, _, err := s.mapArgs("p", []string{"x"}); err == nil ||
-		!strings.Contains(err.Error(), "不声明参数") {
-		t.Fatalf("err = %v, want 拒收", err)
+		err.Error() != wantNoArgs {
+		t.Fatalf("err = %v, want %v", err, wantNoArgs)
 	}
 
 	// 未拿到声明（prompts/list 缺失）：整体作 input 交服务端裁决。
@@ -349,8 +355,10 @@ func TestRenderPrompt(t *testing.T) {
 	}
 
 	_, err = s.RenderPrompt(context.Background(), "greet", nil)
-	if err == nil || !strings.Contains(err.Error(), "用法:") || !strings.Contains(err.Error(), "<who>") {
-		t.Fatalf("缺必填参数应报用法: %v", err)
+	wantUsage := i18n.Tf("mcp.err.prompt_missing_arg", "arg", "who", "plugin", "fake",
+		"prompt", "greet", "usage", "<who> [mood]")
+	if err == nil || err.Error() != wantUsage {
+		t.Fatalf("缺必填参数应报用法: %v, want %v", err, wantUsage)
 	}
 }
 

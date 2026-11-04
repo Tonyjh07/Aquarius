@@ -48,14 +48,13 @@ func TestRenderText(t *testing.T) {
 	if !strings.HasPrefix(got, "2026-11-02 18:20:31.482 WARN  llm      ") {
 		t.Fatalf("前缀不对：%q", got)
 	}
-	if !strings.Contains(got, "provider openai 第 2 把密钥不可用：401") {
-		t.Fatalf("事件描述不对：%q", got)
-	}
-	if !strings.Contains(got, "  → 本次启动跳过它") {
-		t.Fatalf("行动位缺失：%q", got)
-	}
-	if !strings.Contains(got, "  provider=openai n=2 err=401") {
-		t.Fatalf("kv 尾巴不对：%q", got)
+	// 整行按生产同样的组成方式从文案表拼：事件描述 + 行动位 + kv 尾巴。
+	want := "2026-11-02 18:20:31.482 WARN  llm      " +
+		i18n.Tf("log.llm.key_unavailable", "provider", "openai", "n", 2, "err", "401") +
+		"  → " + i18n.T("log.act.skip_key_this_run") +
+		"  provider=openai n=2 err=401\n"
+	if got != want {
+		t.Fatalf("整行不匹配：got %q, want %q", got, want)
 	}
 }
 
@@ -109,7 +108,7 @@ func TestJSONShapeAndKeys(t *testing.T) {
 	if rec["level"] != "warn" || rec["ts"] != "2026-11-02T18:20:31.482+08:00" {
 		t.Fatalf("级别或时间不对：%v", rec)
 	}
-	if rec["msg"] != "服务端不认参数 top_p，已从请求里剔除" {
+	if rec["msg"] != i18n.Tf("log.llm.param_rejected", "field", "top_p") {
 		t.Fatalf("msg 不是译文：%v", rec["msg"])
 	}
 	kv, ok := rec["kv"].(map[string]any)
@@ -277,7 +276,9 @@ func TestDegradeWhenDirUnopenable(t *testing.T) {
 	l := Open(Options{Dir: blocker, Level: LevelDebug, Stderr: &stderr, Now: at})
 	defer func() { _ = l.Close() }()
 
-	if !strings.Contains(stderr.String(), "日志文件打不开") {
+	// 报因整句出自文案表模板；{err} 是平台相关的系统错误文本，锁到 err 之前的整段。
+	wantDegrade := i18n.Tf("log.boot.file_unavailable", "path", blocker, "err", "")
+	if !strings.Contains(stderr.String(), wantDegrade) {
 		t.Fatalf("没报降级：%q", stderr.String())
 	}
 	stderr.Reset()

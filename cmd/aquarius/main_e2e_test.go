@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestRunFullTextConversation M0 验收：二进制装配跑通一轮纯文本对话，
@@ -253,11 +254,15 @@ func TestRunRmConfirmE2E(t *testing.T) {
 		t.Fatalf("nodes = %d, want 6", c.NodeCount())
 	}
 	path := c.Path()
-	u1, a1, u2 := path[2].ID, path[3].ID, path[4].ID
+	persona, u1, a1, u2 := path[1].ID, path[2].ID, path[3].ID, path[4].ID
 
 	// 拒绝：确认提示打印在 stdout，回答 n → 节点保留。
 	got := runStdin(nil, fmt.Sprintf("/rm %s\nn\n/quit\n", u2))
-	for _, want := range []string{"确认删除", "[y/N]", "已取消删除"} {
+	for _, want := range []string{
+		i18n.Tf("tree.rm.prompt", "id", u2, "n", 2), // 子树 = u2 + a2
+		"[y/N]",
+		i18n.Tf("tree.rm.canceled", "id", u2),
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stdout 缺 %q: %q", want, got)
 		}
@@ -268,7 +273,7 @@ func TestRunRmConfirmE2E(t *testing.T) {
 
 	// 同意：剪掉 {u2, a2}，Head 回退到最近存活祖先 a1，落盘合法。
 	got = runStdin(nil, fmt.Sprintf("/rm %s\ny\n/quit\n", u2))
-	if !strings.Contains(got, "已删除") {
+	if !strings.Contains(got, i18n.Tf("tree.rm.done", "id", u2, "n", 2, "head", a1)) {
 		t.Fatalf("stdout = %q, want 已删除", got)
 	}
 	if c = load(); c.NodeCount() != 4 || c.Head != a1 {
@@ -280,7 +285,7 @@ func TestRunRmConfirmE2E(t *testing.T) {
 	if strings.Contains(got, "[y/N]") {
 		t.Fatalf("-yes 不应出现确认提示: %q", got)
 	}
-	if !strings.Contains(got, "已删除") {
+	if !strings.Contains(got, i18n.Tf("tree.rm.done", "id", u1, "n", 2, "head", persona)) {
 		t.Fatalf("stdout = %q, want 已删除", got)
 	}
 	if c = load(); c.NodeCount() != 2 {
@@ -324,7 +329,7 @@ func TestRunFallbackDegradesE2E(t *testing.T) {
 		t.Fatalf("code = %d, out = %q", code, out.String())
 	}
 	got := out.String()
-	if !strings.Contains(got, "已降级到") || !strings.Contains(got, "good") {
+	if !strings.Contains(got, i18n.Tf("cmd.asm.notice.fallback", "from", "bad", "to", "good")) {
 		t.Fatalf("stdout 缺降级提示: %q", got)
 	}
 	if !strings.Contains(got, "降级兜底") {

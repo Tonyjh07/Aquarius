@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestSplitCommandLine 命令行拆解：空白切分、双引号成组、反斜杠只在引号内对 `"`/`\` 生效。
@@ -184,7 +186,7 @@ func TestDelegateAdminSnapshotAvailability(t *testing.T) {
 	if snap.Agents[0].Available || !strings.Contains(snap.Agents[0].Note, "PATH") {
 		t.Fatalf("gone = %+v", snap.Agents[0])
 	}
-	if snap.Agents[1].Available || !strings.Contains(snap.Agents[1].Note, "停用") {
+	if snap.Agents[1].Available || snap.Agents[1].Note != i18n.T("cmd.delegate.note.disabled") {
 		t.Fatalf("off = %+v", snap.Agents[1])
 	}
 	if snap.Agents[2].Available || !strings.Contains(snap.Agents[2].Note, "command") {

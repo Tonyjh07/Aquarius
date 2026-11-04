@@ -11,11 +11,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // writeProvidersConfig 双 provider 模板（fallback 链 + 无关键探测）。
@@ -278,7 +280,7 @@ func TestProviderManagerEnabledFlag(t *testing.T) {
 		Orig: "a", Name: "a", BaseURL: "http://a/v1",
 		Models: []uigui.ProviderModelPatch{{Name: "m1", Disabled: true}, {Name: "m2", Disabled: true}},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "至少") {
+	if err == nil || err.Error() != i18n.Tf("cmd.provider.err.none_enabled", "name", strconv.Quote("a")) {
 		t.Fatalf("全部未启用 = %v, want 拒绝", err)
 	}
 

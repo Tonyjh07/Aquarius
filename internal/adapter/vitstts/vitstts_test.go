@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -129,8 +131,11 @@ func TestSynthesizeRejectsNonWAV(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	_, err = c.Synthesize(context.Background(), port.SpeechRequest{Text: "a"})
-	if err == nil || !strings.Contains(err.Error(), "不是 WAV") || !strings.Contains(err.Error(), "model not loaded") {
-		t.Fatalf("err = %v", err)
+	// 报因 = 「不是 WAV」模板 + 响应体开头（sniff 与生产同路径取词）。
+	wantErr := i18n.Tf("tts.err.not_wav", "sniff",
+		i18n.Tf("tts.err.sniff_head", "text", strconv.Quote(`{"detail":"model not loaded"}`)))
+	if err == nil || err.Error() != wantErr {
+		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }
 
@@ -155,7 +160,7 @@ func TestSynthesizeErrors(t *testing.T) {
 		}
 		long := strings.Repeat("字", maxTextBytes)
 		if _, err := c.Synthesize(context.Background(), port.SpeechRequest{Text: long}); err == nil ||
-			!strings.Contains(err.Error(), "最多") {
+			err.Error() != i18n.Tf("tts.err.text_too_long", "bytes", maxTextBytes) {
 			t.Fatalf("err = %v", err)
 		}
 	})

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -80,12 +82,19 @@ func TestFormatPluginLogs(t *testing.T) {
 		{TS: "t4", Name: "builtin_think", DurMS: 1, OK: true}, // 非 mcp 前缀忽略
 	}
 	empty := formatPluginLogs(nil, "", 10)
-	if !strings.Contains(empty, "尚无插件调用记录") {
+	if empty != i18n.T("cmd.tools.logs.empty") {
 		t.Fatalf("空 = %q", empty)
 	}
+	// 摘要整段照生产同样的组成方式从表里拼（server 按名排序、非 mcp 前缀忽略）。
 	sum := formatPluginLogs(rows, "", 10)
-	if !strings.Contains(sum, "web") || !strings.Contains(sum, "docs") ||
-		!strings.Contains(sum, "调用2, 失败1") || strings.Contains(sum, "builtin_think") {
+	wantSum := i18n.Tf("cmd.tools.logs.summary_head", "last", 10) + "\n" +
+		i18n.Tf("cmd.tools.logs.summary_calls", "server", fmt.Sprintf("%-16s", "docs"), "calls", 1) +
+		i18n.Tf("cmd.tools.logs.summary_last", "ts", "t3") + "\n" +
+		i18n.Tf("cmd.tools.logs.summary_calls", "server", fmt.Sprintf("%-16s", "web"), "calls", 2) +
+		i18n.Tf("cmd.tools.logs.summary_errors", "errs", 1) +
+		i18n.Tf("cmd.tools.logs.summary_last", "ts", "t2") + "\n" +
+		i18n.T("cmd.tools.logs.summary_hint")
+	if sum != wantSum {
 		t.Fatalf("摘要缺项: %s", sum)
 	}
 	detail := formatPluginLogs(rows, "web", 10)

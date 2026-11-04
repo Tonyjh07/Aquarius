@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestUiLangSetting 覆盖顺序：环境变量非空（去空白后）压过配置；空则回落到配置原样
@@ -46,7 +47,13 @@ func TestUILangEnvSelectsEnglish(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, "Wrote config") {
 		t.Fatalf("ui.lang=en 下首跑回执应为英文: %q", got)
 	}
-	if strings.Contains(out.String(), "已生成配置") {
+	// 中文泄漏金丝雀：临时切到 zh 表取「已生成配置」回执的原文（到第一个占位符为止），
+	// 断言 en 输出里不出现——路径等动态值不在此钉。
+	prev := i18n.Current()
+	i18n.Use(i18n.SelectionZh)
+	zhWritten := i18n.T("boot.config_written")
+	i18n.Use(i18n.Selection(prev))
+	if zhPrefix, _, _ := strings.Cut(zhWritten, "{"); strings.Contains(out.String(), zhPrefix) {
 		t.Fatalf("ui.lang=en 下仍出现中文: %q", out.String())
 	}
 }

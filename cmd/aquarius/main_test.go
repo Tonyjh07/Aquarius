@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestMain 把所有测试的界面语言钉成 zh（D275）：`ui.lang` 缺省是 auto，读的是本机系统
@@ -166,7 +167,11 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 0 {
 		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
 	}
-	if !strings.Contains(out.String(), "已生成配置") {
+	wantWritten := i18n.Tf("boot.config_written",
+		"path", filepath.Join(dir, "profiles", "default", "config.json"),
+		"profile", "default",
+		"pointer", filepath.Join(dir, "config.json"))
+	if !strings.Contains(out.String(), wantWritten) {
 		t.Fatalf("stdout = %q", out.String())
 	}
 	pointer, err := os.ReadFile(filepath.Join(dir, "config.json"))
@@ -205,7 +210,9 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if joined := strings.Join(got[0].Issues, "；"); !strings.Contains(joined, "DEEPSEEK_API_KEY") {
 		t.Fatalf("向导窗问题清单应指出缺失的密钥: %+v", got[0].Issues)
 	}
-	if !strings.Contains(errBuf.String(), "已取消配置引导") {
+	// 取消报因的 issue 清单内容随密钥探测错误而定，这里钉到占位符前的整段框架。
+	cancelledPrefix, _, _ := strings.Cut(i18n.T("cmd.welcome.cancelled"), "{")
+	if !strings.Contains(errBuf.String(), cancelledPrefix) {
 		t.Fatalf("stderr 应记取消: %q", errBuf.String())
 	}
 	if !strings.Contains(string(profCfg), `"welcomed": false`) {

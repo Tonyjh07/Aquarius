@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/blobfs"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // newTestBlobs 临时目录附件库。
@@ -117,8 +118,10 @@ func TestTranscribeReportsServerCode(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	_, err = c.Transcribe(context.Background(), ref, "zh")
-	if err == nil || !strings.Contains(err.Error(), "模型未加载") || !strings.Contains(err.Error(), "3") {
-		t.Fatalf("err = %v", err)
+	// 报因 = 文案表模板 + 服务端带回的 code 与 msg（msg 是服务端数据，不是界面文案）。
+	wantErr := i18n.Tf("asr.funasr.err_server_code", "code", 3, "message", "模型未加载")
+	if err == nil || err.Error() != wantErr {
+		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }
 

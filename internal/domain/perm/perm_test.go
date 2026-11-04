@@ -1,10 +1,10 @@
 package perm
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestFileMatrix 用户矩阵（§9 / D22）全表覆盖：四档 × {特权, 其他} × {读, 写}。
@@ -86,7 +86,7 @@ func TestParseAndDefault(t *testing.T) {
 			t.Errorf("Parse(%q) = %v, want ok", in, err)
 		}
 	}
-	if _, err := Parse("root"); err == nil || !strings.Contains(err.Error(), "未知权限等级") {
+	if _, err := Parse("root"); err == nil || err.Error() != i18n.Tf("perm.err.unknown_level", "level", "root") {
 		t.Fatalf("Parse(root) = %v, want 报因并列出可用等级", err)
 	}
 }

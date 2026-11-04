@@ -4,8 +4,11 @@ package port
 // 与写回侧解析都调它，两边不会再各写一份。
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestParseSamplingTextEmptyMeansNotSent 留空 = 该项不发送，与「写 0」严格区分。
@@ -76,7 +79,7 @@ func TestParseSamplingTextStop(t *testing.T) {
 		t.Error("非 JSON 停止串应报因")
 	}
 	if _, err := ParseSamplingText("", "", "", `[""]`); err == nil ||
-		!strings.Contains(err.Error(), "空串") {
+		err.Error() != i18n.T("port.err.stop_empty") {
 		t.Errorf("空停止串应点名空串，得到 %v", err)
 	}
 }
@@ -89,8 +92,12 @@ func TestParseSamplingTextMessageIsUserFacing(t *testing.T) {
 		t.Fatal("超界应报因")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "采样温度") {
-		t.Errorf("文案应点名哪一项: %q", msg)
+	// 报因整句出自文案表（超界区间与生产同口径格式化）。
+	wantRange := i18n.Tf("port.err.temperature_range",
+		"min", strconv.FormatFloat(SettingsTemperatureMin, 'g', -1, 64),
+		"max", strconv.FormatFloat(SettingsTemperatureMax, 'g', -1, 64))
+	if msg != wantRange {
+		t.Errorf("文案应点名哪一项: %q, want %q", msg, wantRange)
 	}
 	if strings.Contains(msg, "D2") || strings.Contains(msg, "§") {
 		t.Errorf("文案不应带内部编号: %q", msg)

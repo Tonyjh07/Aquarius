@@ -11,11 +11,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestRunPermissionSwitchWritesBackConfig /permission 切换写回：其余配置键与数值类型不丢、无半截文件残留（D22）。
@@ -84,7 +86,7 @@ func TestRunModelSwitchWritesBackConfig(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, err = %s", code, errBuf.String())
 	}
-	if !strings.Contains(out.String(), "已切换模型 → new-model") {
+	if !strings.Contains(out.String(), i18n.Tf("model.switched", "model", "new-model")) {
 		t.Fatalf("stdout = %q", out.String())
 	}
 
@@ -119,7 +121,7 @@ func TestRunRejectsInvalidPermissionLevel(t *testing.T) {
 	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if !strings.Contains(errBuf.String(), "未知权限等级") {
+	if !strings.Contains(errBuf.String(), i18n.Tf("perm.err.unknown_level", "level", "root")) {
 		t.Fatalf("stderr = %q", errBuf.String())
 	}
 }
@@ -135,7 +137,7 @@ func TestRunPlaintextKeyWarns(t *testing.T) {
 		t.Fatalf("code = %d, stderr = %q", code, errBuf.String())
 	}
 	stderr := errBuf.String()
-	if !strings.Contains(stderr, "明文") || !strings.Contains(stderr, "secret:") {
+	if !strings.Contains(stderr, i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote("p"))) {
 		t.Fatalf("stderr 缺明文警告/建议: %q", stderr)
 	}
 	if strings.Contains(stderr, "sk-plain-abc") {

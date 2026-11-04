@@ -3,8 +3,9 @@ package uicommon
 // keys_test.go 输入栏三键的写法（§5.19 / ui.keys）：解析、撞键、缺省。
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestParseBindingsDefaults 三个值都给空 = 缺省 Enter / Shift+Enter / Ctrl+Enter。
@@ -61,8 +62,16 @@ func TestParseBindingErrors(t *testing.T) {
 // TestParseBindingsCollision 三键撞键 = 启动报错（同一个组合一个语义都定不下来）。
 func TestParseBindingsCollision(t *testing.T) {
 	_, err := ParseKeyBindings("Enter", "Enter", "Ctrl+Enter")
-	if err == nil || !strings.Contains(err.Error(), "撞键") {
-		t.Fatalf("err = %v, want 撞键", err)
+	if err == nil {
+		t.Fatal("want 撞键报错")
+	}
+	// 报因整句出自文案表；三键按 map 遍历校验，先撞进消息的是谁不定，整句二选一。
+	want := []string{
+		i18n.Tf("keys.err.collision", "name", "steer", "other", "send", "binding", "Enter"),
+		i18n.Tf("keys.err.collision", "name", "send", "other", "steer", "binding", "Enter"),
+	}
+	if err.Error() != want[0] && err.Error() != want[1] {
+		t.Fatalf("err = %v, want %v 或 %v", err, want[0], want[1])
 	}
 	if _, err := ParseKeyBindings("Enter", "Ctrl+Enter", "Ctrl+Enter"); err == nil {
 		t.Fatal("steer 与 newline 相同应报错")

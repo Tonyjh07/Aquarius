@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -238,8 +239,10 @@ func TestRunNotifyWiring(t *testing.T) {
 		if code := run([]string{"-data", dir}, strings.NewReader("hi\n/quit\n"), &out, &errBuf); code != 0 {
 			t.Fatalf("发送失败不应影响退出码: %d, stderr = %q", code, errBuf.String())
 		}
-		if !strings.Contains(errBuf.String(), "[输出器]") ||
-			!strings.Contains(errBuf.String(), "无桌面会话") {
+		// 日志整句 = [输出器] 前缀 + 输出器名: 注入的错误文本（后者是测试替身的数据）。
+		wantLog := i18n.Tf("cmd.asm.err.output_adapter", "err",
+			i18n.Tf("cmd.asm.err.output_deliver", "name", "notify")+": 无桌面会话")
+		if !strings.Contains(errBuf.String(), wantLog) {
 			t.Fatalf("stderr 缺输出器日志: %q", errBuf.String())
 		}
 		if !strings.Contains(out.String(), "第二句") {

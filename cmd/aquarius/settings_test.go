@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -165,7 +166,8 @@ func TestWriteRawConfig(t *testing.T) {
 	}
 	before, _ := os.ReadFile(cfgPath)
 
-	if err := writeRawConfig(cfgPath, "{not json"); err == nil || !strings.Contains(err.Error(), "原文件未动") {
+	if err := writeRawConfig(cfgPath, "{not json"); err == nil ||
+		!strings.Contains(err.Error(), i18n.T("cmd.settings.err.raw_json")+": ") {
 		t.Fatalf("非法 JSON err = %v", err)
 	}
 	after, _ := os.ReadFile(cfgPath)

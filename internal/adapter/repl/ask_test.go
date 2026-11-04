@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -44,7 +45,8 @@ func TestAskByNumbers(t *testing.T) {
 	}
 	// 题干、选项与说明都要呈现给用户（编号来自同一序列）。
 	out := buf.String()
-	for _, want := range []string{"Which platform?", "1) Windows", "desktop", "What scope?", "第 1/2 题"} {
+	for _, want := range []string{"Which platform?", "1) Windows", "desktop", "What scope?",
+		i18n.Tf("ask.counter", "n", "1", "total", "2")} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("输出缺 %q：%q", want, out)
 		}
@@ -83,7 +85,7 @@ func TestAskSingleTrimsExtra(t *testing.T) {
 	if got := ans.Answers[0]; len(got) != 1 || got[0] != "a" {
 		t.Fatalf("answers = %v, want [a]", got)
 	}
-	if !strings.Contains(buf.String(), "单选") {
+	if !strings.Contains(buf.String(), i18n.Tf("ask.single_picked", "picked", "a")) {
 		t.Fatalf("未提示只取第一项：%q", buf.String())
 	}
 }
