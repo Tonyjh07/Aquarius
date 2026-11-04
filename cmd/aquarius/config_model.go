@@ -211,10 +211,15 @@ func (m *modelConfig) byName(name string) *providerConfig {
 	return nil
 }
 
-// primaryProvider 当前生效 provider（normalize 校验后调用）。
+// primaryProvider 当前生效 provider；**一条 provider 都没有时返回 nil**（D278 决策 3：
+// 空 `model.providers` 从配置错误降为可启动空态，调用方必须自己接住 nil，不能再假定
+// 一定有一家可用）。
 func (m *modelConfig) primaryProvider() *providerConfig {
 	if p := m.byName(m.Primary); p != nil {
 		return p
+	}
+	if len(m.Providers) == 0 {
+		return nil
 	}
 	return &m.Providers[0]
 }
@@ -238,8 +243,13 @@ func (m *modelConfig) entryCaps(provider, model string) port.ModelCaps {
 }
 
 // currentCaps primary 当前模型自己的能力位（不含链上其他环节）。
+// 空态（无 provider）：三项全关——没有服务可问，能力位写成「有」只会让界面允诺做不到的事。
 func (m *modelConfig) currentCaps() port.ModelCaps {
-	return m.entryCaps(m.primaryProvider().Name, m.Name)
+	p := m.primaryProvider()
+	if p == nil {
+		return port.ModelCaps{}
+	}
+	return m.entryCaps(p.Name, m.Name)
 }
 
 // samplingTables 采样参数的热生效快照（D204）：整链缺省 + 逐模型覆盖。装配根保存一个
@@ -309,7 +319,11 @@ func (m *modelConfig) samplingOverrides() map[string]port.Sampling {
 
 // currentSampling primary 当前模型的生效采样参数（Agent 每轮注入的那份）。
 func (m *modelConfig) currentSampling() port.Sampling {
-	return m.samplingFor(m.primaryProvider().Name, m.Name)
+	p := m.primaryProvider()
+	if p == nil {
+		return m.Sampling.toSampling() // 空态：只剩整链缺省，没有模型可覆盖
+	}
+	return m.samplingFor(p.Name, m.Name)
 }
 
 // costFor 某模型的单价（D205，每百万 token）；未声明 = 零值（界面不显示费用）。
@@ -351,6 +365,9 @@ func (m *modelConfig) chainCaps() port.ModelCaps {
 // ——它是正在跑的事实，藏起来只会让人以为配错了。
 func (m *modelConfig) enrichModels(infos []port.ModelInfo) []port.ModelInfo {
 	p := m.primaryProvider()
+	if p == nil {
+		return infos // 空态：服务端都问不到，没有可补的声明
+	}
 	out := make([]port.ModelInfo, 0, len(infos))
 	for _, info := range infos {
 		if e := p.modelByName(info.Name); e != nil {
@@ -368,9 +385,13 @@ func (m *modelConfig) enrichModels(infos []port.ModelInfo) []port.ModelInfo {
 }
 
 // modelChain 降级链逐环快照（D173：/model 标注「哪一环拉低了整链」）。
-// 首项 = primary 的当前模型，其后按 fallback 顺序。
+// 首项 = primary 的当前模型，其后按 fallback 顺序。空态（无 provider）返回空链——
+// `/model` 据此显示「还没配置模型」，而不是一条 provider 名为空的假链。
 func (m *modelConfig) modelChain() []app.ModelLink {
 	p := m.primaryProvider()
+	if p == nil {
+		return nil
+	}
 	links := []app.ModelLink{{
 		Provider: p.Name, Model: m.Name, Caps: m.currentCaps(), Primary: true,
 	}}
@@ -391,6 +412,9 @@ func (m *modelConfig) modelChain() []app.ModelLink {
 // currentContextWindow primary 当前模型声明的上下文窗口（0 = 未声明）。
 func (m *modelConfig) currentContextWindow() int {
 	p := m.primaryProvider()
+	if p == nil {
+		return 0
+	}
 	e := p.modelByName(m.Name)
 	if e == nil {
 		return 0
@@ -489,9 +513,19 @@ func validateSampling(s port.Sampling, kind, where string) error {
 
 // normalize 应用缺省值并 fail-fast 校验 model 段（D173，启动期调用）：
 // primary 缺省 = providers 首个；model.name 缺省 = primary.models[0]。
+//
+// **一条 provider 都没有是合法的**（D278 决策 3）：首跑向导第 3 页可以跳过、用户也可以
+// 手写配置把 providers 删光。这时程序照常启动，只是发消息时给一条「还没有配置模型提供商」
+// 的提示（`unconfiguredLLM`），配置入口在设置窗「模型服务」。
 func (m *modelConfig) normalize() error {
 	if len(m.Providers) == 0 {
-		return fmt.Errorf("%s", i18n.T("cmd.config.err.providers_empty"))
+		// 空态不校验条目，但悬挂的降级链仍是明确的配置错误——那写的是一条指向不存在
+		// provider 的引用，不是「还没配」。
+		if len(m.Fallback) > 0 {
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.fallback_missing",
+				"provider", strings.TrimSpace(m.Fallback[0].Provider)))
+		}
+		return nil
 	}
 	seen := map[string]bool{}
 	for i := range m.Providers {

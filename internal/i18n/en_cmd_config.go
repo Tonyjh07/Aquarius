@@ -83,8 +83,7 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.config.err.sampling_stop": `{where}: sampling.stop contains an empty string ` +
 		`(a stop string cannot be empty)`,
 
-	"cmd.config.err.providers_empty": `model.providers cannot be empty` +
-		` (providers are a list now; for the old format migrate by hand, see docs/configuration.md)`,
+	// config_model.go：model 段结构校验
 	"cmd.config.err.provider_name_empty": `model.providers[{i}].name cannot be empty`,
 	"cmd.config.err.provider_name_dup":   `model.providers[{i}].name "{name}" is duplicated`,
 	"cmd.config.err.provider_kind": `model.providers[{i}] ({provider}) has unknown kind "{kind}"` +
@@ -202,6 +201,7 @@ var enCmdConfigTexts = map[string]string{
 
 	// assemble_ports.go / assemble_ui.go / small files
 	"cmd.asm.warning":                    `Warning: {text}`,
+	"cmd.asm.err.no_provider":            `No model provider is configured yet. Add one under Settings → Model (name, endpoint, key, model) and the chat will work`,
 	"cmd.asm.err.no_key":                 `Provider "{provider}" has no usable key`,
 	"cmd.asm.err.fallback_missing":       `model.fallback references provider "{provider}", which does not exist`,
 	"cmd.asm.key.rotated":                `Key {from} was rate limited or ran out of quota; using {to} this round`,

@@ -146,13 +146,15 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	if v := os.Getenv("AQUARIUS_MODEL"); v != "" {
 		cfg.Model.Name = v
 	}
-	if v := os.Getenv("AQUARIUS_BASE_URL"); v != "" {
+	// 空态（D278 决策 3）：没有 primary 就没有可覆盖的 base_url——这是调试逃生口，
+	// 不是「新建一家 provider」的入口（那要走设置窗或向导）。
+	if v := os.Getenv("AQUARIUS_BASE_URL"); v != "" && primary != nil {
 		primary.BaseURL = v
 	}
 	if modelName != "" {
 		cfg.Model.Name = modelName
 	}
-	if baseURL != "" {
+	if baseURL != "" && primary != nil {
 		primary.BaseURL = baseURL
 	}
 	// 能力位警告放在覆盖之后：-model / AQUARIUS_MODEL 可能换成链上另一个模型，

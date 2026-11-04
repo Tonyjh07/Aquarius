@@ -23,6 +23,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/legal"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // readCfgMap 读回 config 原文（无关键保留/清点用）。
@@ -556,8 +557,12 @@ func TestSetupWizardSkipMissingKeyStillExits(t *testing.T) {
 	}
 }
 
-// 取不到的引用）⇒ 只尝试一次、报因退出 1——不循环弹窗。
-func TestSetupWizardStillIncompleteFatal(t *testing.T) {
+// 取不到的引用）⇒ 只尝试一次、启动仍失败（退出 1）——不循环弹窗。
+//
+// D278 决策 3 之后报因换了出口：`still_incomplete` 那道闸删了（否则第 3 页的「稍后配置」
+// 会在最后一步被一句「配置仍不完整」挡住），真缺密钥时由装配期 `buildClient` 报同一条
+// 事实——同样指名是哪个 provider、哪个环境变量。
+func TestSetupWizardDoneWithoutKeyFailsAtAssembly(t *testing.T) {
 	dir := t.TempDir()
 	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_MISSING"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"gui"}}`)
 	t.Setenv("AQ_MISSING", "")
@@ -573,14 +578,9 @@ func TestSetupWizardStillIncompleteFatal(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("向导窗调用 %d 次, want 1（只尝试一次，不循环）", calls)
 	}
-	// 整句：配置仍不完整 + issue（provider 取不到密钥：读链两处都没有这个名字）。
-	issues := i18n.Tf("cmd.welcome.key.fetch_failed", "provider", strconv.Quote("openai"),
-		"err", i18n.Tf("cmd.secrets.err.missing",
-			"name", strconv.Quote("AQ_MISSING"),
-			"where", i18n.T("cmd.secrets.where.both"),
-			"path", filepath.Join(dir, "profiles", "default", "secrets.bin")))
-	if want := i18n.Tf("cmd.welcome.still_incomplete", "issues", issues); !strings.Contains(errBuf.String(), want) {
-		t.Fatalf("stderr = %q", errBuf.String())
+	// 报因来自装配期：指名 provider 与取不到的那个引用（含环境变量名）。
+	if !strings.Contains(errBuf.String(), "openai") || !strings.Contains(errBuf.String(), "AQ_MISSING") {
+		t.Fatalf("stderr 应指名 provider 与缺失的引用: %q", errBuf.String())
 	}
 }
 
@@ -665,5 +665,54 @@ func TestWelcomeTutorialCommandsExist(t *testing.T) {
 		if !known[name] {
 			t.Errorf("教程页命令 %q 不在内核命令清单内（清单改了没同步教程）", name)
 		}
+	}
+}
+
+// TestSetupWizardSkipWithoutProviderStarts D278 决策 3：一条 provider 都没有时，页 3 的
+// 「稍后配置」= 交回 Done 而不写 provider ⇒ 照常启动（可启动空态），welcomed 由装配根置位，
+// 不再有 `still_incomplete` 那道 fatal。
+func TestSetupWizardSkipWithoutProviderStarts(t *testing.T) {
+	dir := t.TempDir()
+	profCfg := filepath.Join(writeProfileLayout(t, dir, `{"model":{"providers":[]},"ui":{"kind":"gui"}}`), "config.json")
+	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
+		return uigui.SetupDone, nil // 用户在第 3 页按「稍后配置」
+	})()
+	w := &wiring{stdout: io.Discard, stderr: io.Discard}
+	if err := w.bootstrap(dir, "", "", ""); err != nil {
+		t.Fatalf("空 providers 不该让 bootstrap 失败: %v", err)
+	}
+	if p := w.cfg.Model.primaryProvider(); p != nil {
+		t.Fatalf("空 providers 的 primary 应为 nil，得到 %+v", p)
+	}
+	code, done := w.setupWizard(context.Background(), dir, "", "", "")
+	if done || code != 0 {
+		t.Fatalf("setupWizard = (%d, %v), want (0, false)——跳过应继续启动", code, done)
+	}
+	cfg := readCfgMap(t, profCfg)
+	if ui, _ := cfg["ui"].(map[string]any); ui["welcomed"] != true {
+		t.Fatalf("Done 应收口置位 welcomed: %+v", ui)
+	}
+	if provs, _ := cfg["model"].(map[string]any)["providers"].([]any); len(provs) != 0 {
+		t.Fatalf("跳过不该凭空写出一条 provider: %+v", provs)
+	}
+}
+
+// TestBuildLLMsWithoutProvider 空态装配：不建客户端、不 fatal，占位 LLM 的两条方法都回
+// 「还没有配置模型提供商」（D278 决策 3）。
+func TestBuildLLMsWithoutProvider(t *testing.T) {
+	w := &wiring{stderr: io.Discard, cfg: &fileConfig{}}
+	if err := w.cfg.Model.normalize(); err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if err := w.buildLLMs(); err != nil {
+		t.Fatalf("空态装配不该失败: %v", err)
+	}
+	want := i18n.T("cmd.asm.err.no_provider")
+	if _, err := w.client.Generate(context.Background(), port.GenerateRequest{}); err == nil ||
+		err.Error() != want {
+		t.Fatalf("Generate = %v, want %q", err, want)
+	}
+	if _, err := w.client.Models(context.Background()); err == nil || err.Error() != want {
+		t.Fatalf("Models = %v, want %q", err, want)
 	}
 }

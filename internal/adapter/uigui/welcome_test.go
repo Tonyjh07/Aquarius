@@ -386,18 +386,19 @@ func TestWelcomeFormSaveError(t *testing.T) {
 	}
 }
 
-// TestWelcomeFormSkip 跳过 / 关闭：装配前 = 交回取消（调用方退出 + 指引，不置标记）；
+// TestWelcomeFormSkip 跳过 / 关闭：装配前 = 交回 Done 且**不写盘**（D278 决策 3：第 3 页的
+// 「稍后配置」直接进主窗，可启动空态；welcomed 由装配根收口置位，表单不碰数据面）；
 // in-app = 置 welcomed（显式关闭即已看）后关窗。
 func TestWelcomeFormSkip(t *testing.T) {
 	mgr := baseFake()
 	env, outs := welcomeEnvSnap(mgr, true, nil)
 	f := newWelcomeForm(env)
 	f.onSkip()
-	if len(*outs) != 1 || (*outs)[0] != SetupCancelled {
-		t.Fatalf("装配前跳过应取消: %v", *outs)
+	if len(*outs) != 1 || (*outs)[0] != SetupDone {
+		t.Fatalf("装配前跳过 = 完成（未写 provider）: %v", *outs)
 	}
 	if mgr.marked != 0 {
-		t.Fatalf("装配前取消不应置 welcomed（配置仍不完整，下次还要来）: %d", mgr.marked)
+		t.Fatalf("装配前跳过不该由表单置 welcomed（装配根收口）: %d", mgr.marked)
 	}
 
 	mgr2 := baseFake()
@@ -413,13 +414,14 @@ func TestWelcomeFormSkip(t *testing.T) {
 }
 
 // TestWelcomeFormFinishOnce 幂等：连点跳过只结束一次（关窗与按钮竞争面）。
+// 装配前宿主上的跳过 = Done（D278 决策 3：跳过就是「没写 provider 的完成」）。
 func TestWelcomeFormFinishOnce(t *testing.T) {
 	env, outs := welcomeEnvSnap(baseFake(), true, nil)
 	f := newWelcomeForm(env)
 	f.onSkip()
 	f.onSkip()
 	f.finish(SetupDone)
-	if len(*outs) != 1 || (*outs)[0] != SetupCancelled {
+	if len(*outs) != 1 || (*outs)[0] != SetupDone {
 		t.Fatalf("结局应只交一次且为首次者: %v", *outs)
 	}
 }

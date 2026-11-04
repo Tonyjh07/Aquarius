@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-04 @ 67e5f1e -->
+<!-- docs-sync: 2026-11-04 @ 32432de -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -286,7 +286,7 @@
 | D275 | 界面文案收进 `internal/i18n` 一个取词口，`zh` / `en` 两张 **Go 表**、`{name}` 具名占位符、缺键回落 `zh`；`ui.lang` 三态、**启动定一次**（不做热切）；用户内容、文档正文、模型上下文串、开发者诊断不进表（§7.8） | 生效 |
 | D276 | 运行日志五段式：**时间 / 级别 / 上下文 / 事件 / 行动（已做的处置）**；文本默认、`--log-format json` 换形态（JSON 给 key）；全量落 `logs/` 按天切并轮转、stderr 只出 `warn` 以上；级别 `--log-level` > `AQUARIUS_LOG_LEVEL` > `ui.log_level`；`internal/logging` 叶子层，端口 `Logf` 形状不变；日志文案进文案表（§7.9） | 生效 |
 | D277 | 首跑模板 provider 换成 **`deepseek`**（`kind` 仍 `openai-chat`、`base_url` 写 `https://api.deepseek.com/v1`），两个模型条目覆盖两条能力解析路径（`deepseek-flash` 显式三条含图像，`deepseek-v4-pro` 省略按协议缺省），默认密钥引用 = 官方的 `secret:DEEPSEEK_API_KEY` 且 `apiKeyGap` 改引用常量；隐私政策按「实际只有一家」改写 | 生效 |
-| D278 | 首次运行改为**五页向导**（语言 / 协议 / 模型 / 指引 / 完成）：每帧取词、切语言当场重绘；第 3 页可跳过，`model.providers` 为空从「配置错误」降为**可启动空态**（改判 D141） | O1–O3 已落地；O4–O5 见 [plan.md](plan.md) 的 O 线 |
+| D278 | 首次运行改为**五页向导**（语言 / 协议 / 模型 / 指引 / 完成）：每帧取词、切语言当场重绘；第 3 页可跳过，`model.providers` 为空从「配置错误」降为**可启动空态**（改判 D141） | O1–O4 已落地；O5 见 [plan.md](plan.md) 的 O 线 |
 | D279 | 输入框占位文字可自定义（`ui.input_placeholder`）：**一条共用**主输入框与确认原因框、**不翻译**（用户内容不进表）、空 = 回落内置、恒写、折单行 + 120 字符上限（保存超限拒写 / 启动截断）、**热生效**（§7.8） | 生效 |
 
 ## 记录
@@ -902,6 +902,16 @@
      发消息时才给一条明确提示（「还没有配置模型提供商」+ 指向设置窗「模型服务」），状态栏不显示
      假模型名。`setupWizard` 里 `still_incomplete` 的 fatal 删掉。结局枚举仍是
      `SetupCancelled` / `SetupDone`，**不新增「跳过」结局**——跳过就是 Done 且没写 provider。
+     落地口径（O4）：`primaryProvider()` 无 provider 时返回 nil，六处取值函数（`currentCaps` /
+     `currentSampling` / `enrichModels` / `modelChain` / `currentContextWindow` / `probe`）各补空
+     分支；`normalize` 只拒「指向不存在 provider 的 `model.fallback`」，不再拒空列表；空态装
+     `unconfiguredLLM`（Generate / Models 都回 `cmd.asm.err.no_provider`），`stackDecorators`
+     遇空链直接用它——「到处判空」被收成链上的一环，`/model`、发送路径、装饰器顺序都不用另开
+     分支。`app.New` 允许 `Model` 为空：模型名是「还没配」的合法表现，当作依赖缺失挡在构造期
+     等于把「没配好别进主窗」又捡了回来；状态栏遇空名整段省略，不显示假模型名。页 3 的溢出钮
+     在装配前宿主上写「稍后配置」，按它就是 `SetupDone` 且不写 provider（不新增结局，见否决 4）；
+     现有密钥已能解析时页顶加一行「已检测到可用的密钥，不必再填」——这类用户不该被迫把同一份
+     Key 再打一遍。
   4. **同意要留痕、也要能失效**：`ui.consent_version`（int）对代码里一个常量，一次同意覆盖两份
      文档，不拆两次勾选。用版本号而不是时间戳或哈希——后两者会让「只是改了个错别字」也逼用户
      重看一遍。正文改了就把常量 +1，下次启动**只重过第 2 页**（其余页可跳）。
@@ -936,8 +946,8 @@
   与设置窗那条写回同域，但**不认 `AQUARIUS_UI_LANG`**：该环境变量优先于配置，设了它的用户
   在向导里选完语言、保存后同一次运行会被 bootstrap 覆盖回去（下次启动同理）。已知且有意——
   环境变量优先是既有口径，向导不另开一套判定。
-- **状态**：O1（五页骨架）、O2（页 1 语言三态）、O3（页 2 正文与同意留痕）已落地；O4–O5 见
-  [plan.md](plan.md)。
+- **状态**：O1（五页骨架）、O2（页 1 语言三态）、O3（页 2 正文与同意留痕）、O4（页 3 可跳过 +
+  可启动空态）已落地；O5 见 [plan.md](plan.md)。
 
 ### D279 · 输入框占位文字可由用户自定义（表外唯一一处「用户内容进界面」）
 

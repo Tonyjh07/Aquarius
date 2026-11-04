@@ -110,7 +110,6 @@ var enAgentTexts = map[string]string{
 	"agent.err_no_presenter":       "Presenter dependency is nil",
 	"agent.err_no_idgen":           "IDGen dependency is nil",
 	"agent.err_no_clock":           "Clock dependency is nil",
-	"agent.err_no_model":           "model is empty",
 	"agent.err.max_turns":          "agent: ran out of turns",
 	"agent.err.max_turns_count":    "agent: ran out of turns ({n})",
 

@@ -172,6 +172,9 @@ func (w *wiring) probeTarget(model string) (*providerConfig, string, error) {
 			}
 		}
 		p := w.cfg.Model.primaryProvider()
+		if p == nil {
+			return nil, "", errNoProvider() // 空态（D278 决策 3）：没有模型可探
+		}
 		return p, w.cfg.Model.Name, nil
 	}
 	return w.providerOf(model)
@@ -179,7 +182,7 @@ func (w *wiring) probeTarget(model string) (*providerConfig, string, error) {
 
 // providerOf 找到声明了该模型的 provider（primary 优先），未声明则报因。
 func (w *wiring) providerOf(model string) (*providerConfig, string, error) {
-	if p := w.cfg.Model.primaryProvider(); p.modelByName(model) != nil {
+	if p := w.cfg.Model.primaryProvider(); p != nil && p.modelByName(model) != nil {
 		return p, model, nil
 	}
 	for i := range w.cfg.Model.Providers {

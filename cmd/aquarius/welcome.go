@@ -54,10 +54,12 @@ func (m *welcomeManager) Snapshot() uigui.WelcomeSnapshot {
 	}
 	snap.Lang = cfg.UI.Lang              // D278 第 1 页：空 = auto
 	snap.Consent = cfg.UI.ConsentVersion // D278 决策 4：0 = 从未同意
-	if len(cfg.Model.Providers) == 0 {
-		return snap
-	}
 	p := cfg.Model.primaryProvider()
+	if p == nil {
+		snap.Welcomed = cfg.UI.Welcomed
+		return snap // 空态（D278 决策 3）：没有 provider 可填，页 3 从空白开始
+	}
+	snap.KeyReady = apiKeyGap(context.Background(), *p, m.secrets) == ""
 	snap.Provider = p.Name
 	snap.BaseURL = p.BaseURL
 	names := make([]string, 0, len(p.Models))
@@ -397,6 +399,9 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 	consentGap := w.cfg.UI.ConsentVersion < legal.Version
 	// 只为同意而来：引导早已走完、配置也齐全（首跑或缺密钥时走的是完整五页）。
 	consentOnly := consentGap && len(issues) == 0 && w.cfg.UI.Welcomed
+	// 空态（D278 决策 3）：一条 provider 都没有时 issues 也是空的——没有「缺什么」可报。
+	// 这时**不**强开向导：跳过（welcomed）就是已看，用户随时能在设置窗补上；每次启动都
+	// 弹一次向导不叫「不阻断」，叫唠叨。首跑仍会被 welcomed 缺位带进来。
 	if len(issues) == 0 && w.cfg.UI.Welcomed && !consentGap {
 		return 0, false
 	}
@@ -449,10 +454,10 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 			w.cfg.UI.Welcomed = true
 		}
 	}
-	if issues := missingKeys(ctx, &w.cfg.Model, w.secrets); len(issues) > 0 {
-		return fatal(w.stderr, "%s", i18n.Tf("cmd.welcome.still_incomplete",
-			"issues", strings.Join(issues, i18n.T("cmd.welcome.issues_sep")))), true
-	}
+	// 这里**不再**拦「配完仍不完整」（D278 决策 3，改判 D141）：第 3 页的「稍后配置」就是
+	// 交回 Done 而不写 provider，跳过不该在最后一步被另一句报错挡住。真缺东西时启动后的
+	// 第一条消息会说清楚（空态 → `cmd.asm.err.no_provider`；有 provider 缺密钥 → 装配期的
+	// `cmd.asm.err.no_key`）。
 	return 0, false
 }
 

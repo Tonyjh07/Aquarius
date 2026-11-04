@@ -259,6 +259,11 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 		if !f.env.setup {
 			skipLabel = i18n.T("ui.common.close")
 		}
+		// 第 3 页的「跳过」是这轮唯一有实际落点的那个（D278 决策 3）：按它就直接进主窗，
+		// 所以按钮上明说「稍后配置」，而不是笼统的「以后再说」。
+		if f.page == welcomeAccess && f.env.setup {
+			skipLabel = i18n.T("ui.welcome.btn.config_later")
+		}
 		// 第 2 页的「继续」受勾选闸门约束：与 onNext 同一判据（canAdvance）。
 		gate := f.canAdvance()
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -273,7 +278,10 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 					children := make([]layout.FlexChild, 0, 4)
 					// 只重过第 2 页时既没有「以后再说」也没有「上一步」：这一页是唯一
 					// 的一页，退出就是不用这个程序（窗标题栏仍可关）。
-					if !f.env.consentOnly && (f.page == welcomeIntro || last) {
+					// 第 3 页也留一个退出钮：跳过模型配置是明确允许的，而中间页原本一个
+					// 出口都没有（只有窗标题栏的关闭），看不出「能不能先不配」。
+					canSkip := f.page == welcomeIntro || last || (f.env.setup && f.page == welcomeAccess)
+					if !f.env.consentOnly && canSkip {
 						children = append(children, layout.Rigid(welcomeGhostBtn(th, &f.skip, skipLabel)))
 					}
 					children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {

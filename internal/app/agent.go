@@ -129,9 +129,10 @@ func New(d Deps, cfg Config) (*Agent, error) {
 		return nil, errors.New("agent: " + i18n.T("agent.err_no_idgen"))
 	case d.Clock == nil:
 		return nil, errors.New("agent: " + i18n.T("agent.err_no_clock"))
-	case strings.TrimSpace(cfg.Model) == "":
-		return nil, errors.New("agent: " + i18n.T("agent.err_no_model"))
 	}
+	// `cfg.Model` 可以为空（D278 决策 3）：一条 provider 都没配时，程序照样起得来，
+	// 状态栏据实显示「未配置模型」，第一次生成由装配根的占位 LLM 给出明确提示。
+	// 把它当作依赖缺失挡在构造期，等于又把「没配好就别进主窗」捡了回来。
 	persona := cfg.Persona
 	if persona == nil { // nil = 空规格默认人格（内置 @default + @env）
 		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)

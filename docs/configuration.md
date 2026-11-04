@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-04 @ 67e5f1e -->
+<!-- docs-sync: 2026-11-04 @ 32432de -->
 
 > 本文与当前实现对齐；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -46,7 +46,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `model.providers` | []object | — | provider 列表，至少一条，`name` 唯一。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个启用的条目 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，自动记录、启动省略；**只对 `openai-chat` 生效**）、`headers`（自定义请求头，见下） |
+| `model.providers` | []object | — | provider 列表，`name` 唯一。**空数组是合法的「还没配」**：程序照常启动、状态栏不显示模型名，发消息时提示去设置窗「模型」一栏补；指向不存在 provider 的 `model.fallback` 仍报错。每条：`name`（唯一标识，primary/fallback 按名引用）、`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`）、`base_url`（**路径前缀**，如 `https://api.openai.com/v1`；适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）、`keys`（密钥池，见下）、`models`（模型条目数组，**首个启用的条目 = 该 provider 缺省请求模型**）、`tokenizer`（本地 tokenizer.json 路径，精确计数；空 = 通用估算）、`unsupported_params`（服务端不认的请求参数，自动记录、启动省略；**只对 `openai-chat` 生效**）、`headers`（自定义请求头，见下） |
 | `model.providers[].headers` | object | 无 | 附加到每次请求的自定义请求头，如 `{ "X-Gateway": "route-a", "X-Tenant": "t1" }`。**只对 `openai-chat` 生效**（与 `unsupported_params` 同一口径——`openai-responses` / `anthropic` 是各家自己的规范，乱加头会破坏鉴权）。在默认头与鉴权头之后设置，**同名时以这里为准**。空键名忽略。改后重启生效 |
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
 | `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000, "enabled": false, "cost_in": 0.15, "cost_out": 0.6 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局）；`enabled` 省略 = 启用，**只有 `false` 才参与落键**——未启用的条目保留声明但不参与选型（不进降级链候选、不进 `/model` 清单、不作为该 provider 的缺省模型）；每家的模型**至少要有一个启用**，否则启动与设置窗应用都明确报错；`cost_in`/`cost_out` = 单价（**每百万 token**，与厂商报价同口径），省略 = 未声明（界面不显示费用，不当免费）；`sampling` = 该模型的采样覆盖，见下「采样参数」 |

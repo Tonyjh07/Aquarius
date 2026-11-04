@@ -493,12 +493,22 @@ func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.
 	}
 	kids := []layout.FlexChild{
 		layout.Rigid(welcomePara(th, i18n.T("ui.welcome.access_intro"))),
+	}
+	// 现有密钥已经能解析（环境变量 / 密钥库）：明说一句，免得用户以为非得再贴一遍。
+	if f.env.snap.KeyReady {
+		kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			l := material.Label(th, paperNoteSp(th), i18n.T("ui.welcome.access.key_ready"))
+			l.Color = paperOf().accent
+			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, l.Layout)
+		}))
+	}
+	kids = append(kids,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return welcomeCard(gtx, th, rows)
 			})
 		}),
-	}
+	)
 	kids = append(kids,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(14), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

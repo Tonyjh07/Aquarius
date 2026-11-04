@@ -84,8 +84,6 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.sampling_stop": `{where} 的 sampling.stop 含空串（停止串不能为空）`,
 
 	// config_model.go：model 段结构校验
-	"cmd.config.err.providers_empty": `model.providers 不可为空` +
-		`（provider 已改为列表；若为旧格式请手工迁移，见 docs/configuration.md）`,
 	"cmd.config.err.provider_name_empty": `model.providers[{i}].name 不可为空`,
 	"cmd.config.err.provider_name_dup":   `model.providers[{i}].name "{name}" 重复`,
 	"cmd.config.err.provider_kind": `model.providers[{i}] ({provider}) 的 kind "{kind}" 不认识` +
@@ -192,6 +190,7 @@ var zhCmdConfigTexts = map[string]string{
 
 	// assemble_ports.go / assemble_ui.go / 小文件：装配期提示
 	"cmd.asm.warning":                    `警告：{text}`,
+	"cmd.asm.err.no_provider":            `还没有配置模型提供商：在设置窗「模型」一栏填好提供商（名称、接口地址、密钥、模型名）后即可对话`,
 	"cmd.asm.err.no_key":                 `provider "{provider}" 没有可用的密钥`,
 	"cmd.asm.err.fallback_missing":       `model.fallback 引用的 provider "{provider}" 不存在`,
 	"cmd.asm.key.rotated":                `密钥 {from} 被限流或额度耗尽，本轮改用 {to}`,

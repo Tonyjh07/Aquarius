@@ -212,6 +212,13 @@ func llmProtocol(kind string) llm.Protocol {
 // buildLLMs 为 primary 与 fallback[] 各建一具客户端（含 fallback——避免降级时才
 // 发现缺配置），填好降级链条目与逐 provider 计数器表。
 func (w *wiring) buildLLMs() error {
+	// 空态（D278 决策 3）：一条 provider 都没有时没有客户端可建。装一个只会回
+	// 「还没有配置模型提供商」的占位实现，让后面的装配链照常走完——发消息时才报因，
+	// 而不是在启动这里 fatal。
+	if w.primary == nil {
+		w.client = unconfiguredLLM{}
+		return nil
+	}
 	client, primaryCounter, err := w.buildClient(w.primary)
 	if err != nil {
 		return err
@@ -659,9 +666,9 @@ func (c modelCatalog) Models(ctx context.Context) ([]port.ModelInfo, error) {
 
 // Current 当前 provider / 能力 / 降级链 / 预算的静态快照（启动期确定，切换 = 重启生效）。
 func (c modelCatalog) Current() app.ModelStatus {
-	st := app.ModelStatus{
-		Provider: c.w.primary.Name,
-		Budget:   c.w.contextBudget(),
+	st := app.ModelStatus{Budget: c.w.contextBudget()}
+	if p := c.w.primary; p != nil {
+		st.Provider = p.Name
 	}
 	// 能力位按「整链取与」给出。nil 与「三项都关」是两件事：前者表示装配根根本没接
 	// 模型服务（测试或未接线），展示面改从 Chain 推导；后者是明确的「声明了但全关」。
@@ -804,13 +811,16 @@ func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 		inner = decorate.NewRetry(inner)
 		stacked = append(stacked, decorate.FallbackEntry{Name: e.Name, LLM: inner, Model: e.Model, Sampling: e.Sampling})
 	}
-	var gen port.LLM = stacked[0].LLM
+	var gen port.LLM = w.client
 	if len(stacked) > 1 {
 		gen = decorate.NewFallback(stacked, func(from, to string) {
 			_ = w.presenter.Emit(ctx, port.NoticeEvent{
 				Text: i18n.Tf("cmd.asm.notice.fallback", "from", from, "to", to),
 			})
 		})
+	} else if len(stacked) == 1 {
+		gen = stacked[0].LLM
 	}
+	// len(stacked) == 0 = 空态：没有真实调用可截断、可审计、可降级，直接用占位实现。
 	return gen, nil
 }

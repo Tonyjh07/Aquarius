@@ -624,8 +624,9 @@ func TestNewValidatesDeps(t *testing.T) {
 	}
 	llm := &scriptLLM{t: t}
 	rec := &recorder{}
-	if _, err := New(Deps{LLM: llm, UI: rec, IDs: &seqIDs{}, Clock: fixedClock{testTime}}, Config{}); err == nil {
-		t.Fatal("model 为空应报错")
+	// 模型名可以为空（D278 决策 3：空 provider 是可启动空态），构造不再拦它。
+	if _, err := New(Deps{LLM: llm, UI: rec, IDs: &seqIDs{}, Clock: fixedClock{testTime}}, Config{}); err != nil {
+		t.Fatalf("模型名缺失不该拦构造: %v", err)
 	}
 }
 

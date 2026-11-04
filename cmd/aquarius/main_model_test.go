@@ -147,7 +147,6 @@ func TestModelNormalize(t *testing.T) {
 		mut  func(*modelConfig)
 		want string
 	}{
-		{"providers 空", func(c *modelConfig) { c.Providers = nil }, "providers 不可为空"},
 		{"名字缺失", func(c *modelConfig) { c.Providers[0].Name = "" }, "name 不可为空"},
 		{"名字重复", func(c *modelConfig) { c.Providers[1].Name = "a" }, "重复"},
 		{"base_url 缺失", func(c *modelConfig) { c.Providers[0].BaseURL = "" }, "base_url 不可为空"},
@@ -170,6 +169,37 @@ func TestModelNormalize(t *testing.T) {
 				t.Fatalf("err = %v, want 含 %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestModelNormalizeEmptyProviders 空 providers 是**合法**配置（D278 决策 3）：首跑向导
+// 第 3 页可以跳过，用户也可能手写配置把 providers 删光。此时 normalize 不报错、primary
+// 取不到也不 panic；但指向不存在 provider 的降级链仍是明确错误。
+func TestModelNormalizeEmptyProviders(t *testing.T) {
+	c := modelConfig{}
+	if err := c.normalize(); err != nil {
+		t.Fatalf("空 providers 不该报错: %v", err)
+	}
+	if p := c.primaryProvider(); p != nil {
+		t.Fatalf("空 providers 的 primary 应为 nil，得到 %+v", p)
+	}
+	if caps := c.currentCaps(); caps.Tools || caps.Vision || caps.Reasoning {
+		t.Fatalf("空态不该允诺能力位: %+v", caps)
+	}
+	if got := c.currentContextWindow(); got != 0 {
+		t.Fatalf("空态的上下文窗口应为 0，得到 %d", got)
+	}
+	if got := c.effectiveMaxContext(200000); got != 200000 {
+		t.Fatalf("空态应回落到全局预算，得到 %d", got)
+	}
+	if chain := c.modelChain(); len(chain) != 0 {
+		t.Fatalf("空态的模型链应为空，得到 %+v", chain)
+	}
+	c.Fallback = []fallbackEntry{{Provider: "gone"}}
+	// 断言用 key 与取值（ASCII），不抄中文措辞：文案改了测试不该跟着改。
+	if err := c.normalize(); err == nil ||
+		!strings.Contains(err.Error(), "model.fallback") || !strings.Contains(err.Error(), "gone") {
+		t.Fatalf("悬挂的降级链仍要报因: %v", err)
 	}
 }
 

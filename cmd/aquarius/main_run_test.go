@@ -280,3 +280,20 @@ func TestRunPersonaEnvironmentE2E(t *testing.T) {
 		t.Fatalf("persona = %+v, want 环境块随快照入树", persona)
 	}
 }
+
+// TestRunWithoutProviderStartsAndExplains 空 `model.providers` 是可启动空态（D278 决策 3）：
+// 手写配置把 providers 删光，启动不崩；发第一条消息得到的是一句说人话的提示，不是底层报错。
+func TestRunWithoutProviderStartsAndExplains(t *testing.T) {
+	dir := t.TempDir()
+	writeProfileLayout(t, dir, `{"model":{"providers":[]},"ui":{"kind":"repl","welcomed":true}}`)
+
+	var out, errBuf bytes.Buffer
+	code := run([]string{"-data", dir}, strings.NewReader("hello\n/quit\n"), &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("code = %d（空 provider 不该启动失败），stderr = %s", code, errBuf.String())
+	}
+	got := out.String() + errBuf.String()
+	if !strings.Contains(got, i18n.T("cmd.asm.err.no_provider")) {
+		t.Fatalf("发消息应给出空态提示，实际输出 = %q", got)
+	}
+}

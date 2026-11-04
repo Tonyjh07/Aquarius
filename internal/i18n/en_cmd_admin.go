@@ -147,7 +147,6 @@ var enCmdAdminTexts = map[string]string{
 	"cmd.welcome.key.fetch_failed":      "provider {provider}: the key could not be resolved: {err}",
 	"cmd.welcome.err.wizard":            "Setup wizard window: {err}",
 	"cmd.welcome.cancelled":             "Setup was cancelled and the config is still incomplete, so Aquarius cannot start:\n{issues}\n\nRun Aquarius again and finish the setup.",
-	"cmd.welcome.still_incomplete":      "Config is still incomplete: {issues}",
 	"cmd.welcome.issues_sep":            "; ",
 	"cmd.welcome.err.consent_version":   "Consent version out of range: {version}",
 	"cmd.welcome.consent_declined":      "The terms have changed. Read and accept them to keep using Aquarius.",

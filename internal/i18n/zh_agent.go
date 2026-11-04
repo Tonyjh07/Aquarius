@@ -113,7 +113,6 @@ var zhAgentTexts = map[string]string{
 	"agent.err_no_presenter":       "Presenter 依赖为空",
 	"agent.err_no_idgen":           "IDGen 依赖为空",
 	"agent.err_no_clock":           "Clock 依赖为空",
-	"agent.err_no_model":           "model 为空",
 	"agent.err.max_turns":          "agent: 超过最大轮次数",
 	"agent.err.max_turns_count":    "agent: 超过最大轮次数（{n}）",
 

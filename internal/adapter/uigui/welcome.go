@@ -37,6 +37,9 @@ type WelcomeSnapshot struct {
 	Lang     string   // ui.lang（第 1 页语言三态初值；空 = auto）
 	Consent  int      // ui.consent_version（已同意的条款版本；0 = 从未同意）
 	Issues   []string // 「配置不完整」问题清单（缺密钥等）——由装配前宿主填，窗内首条提示
+	// KeyReady 现有配置里已经有一把能解析的密钥（环境变量或密钥库）。第 3 页据此提示
+	// 「不必再填」，用户就不该被迫把同一份 Key 再打一遍（D278 决策 3 的落地补充）。
+	KeyReady bool
 }
 
 // WelcomePatch 欢迎窗提交（单条 provider 全量覆盖 + 置 `ui.welcomed`）。
@@ -413,7 +416,9 @@ func (f *welcomeForm) onSkip() {
 		return
 	}
 	if f.env.setup {
-		f.finish(SetupCancelled)
+		// D278 决策 3：跳过就是 Done——不新增「跳过」结局，装配方按「没写 provider 的
+		// 完成」处理（可启动空态）。写在最前面那句注释仍然算数：语言已经落了盘。
+		f.finish(SetupDone)
 		return
 	}
 	if f.env.mgr != nil {
