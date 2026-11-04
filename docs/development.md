@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-04 @ 436d8cd -->
+<!-- docs-sync: 2026-11-04 @ 252a91c -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -220,8 +220,26 @@ Review 里提出但**经核实不成立**的：
    文件名构建约束保证这些对象只链入 Windows 目标，`GOOS=linux/darwin` 交叉编译不受影响；
    改版本号同步改 winres.json 的 `fixed`/`info` 两处。
 
-## 发版构建
+### 怎么看运行日志
 
+排障先看日志，别先加打印：一行五段（时间 / 级别 / 上下文 / 事件 / 行动），字段与出口见
+[contracts.md](contracts.md) §7.9。
+
+- **在哪**：`<data>/profiles/<profile>/logs/aquarius-YYYY-MM-DD.log`（`-data` 缺省时
+  `~/.aquarius`）；按天切，单文件超 4 MiB 轮转一代到 `.1`，保留 7 天。GUI 双击启动没有
+  控制台，`debug` / `info` 只在这里。
+- **stderr 上有什么**：`warn` 以上同一套单行（日志包自己写的，不是另一份文案）。
+- **调级别**：`-log-level debug` > `AQUARIUS_LOG_LEVEL` > `ui.log_level`；只调这一次就用 flag，
+  别改配置。非法值启动报错，不静默回落。
+- **给机器读**：`-log-format json` 一行一条，`ctx` / `event` / `action` 是 key（不随界面语言变），
+  `msg` / `act` 是当前语言的译文，`kv` 是占位符取值——按 `event` 聚合、按 `ctx` 过滤都在这份
+  形态上做。
+- **加一条新日志**：装配根用 `w.note` / `w.noteText`，适配器经注入的 `port.Log`（不 import
+  日志包）。事件 key 后面紧跟行动 key（`log.act.*`），五段缺一段 `internal/logging/lock_test.go`
+  就失败；`fmt.Fprint*(…stderr…)` 也过不了那把锁（白名单只有 `fatal`、向导取消报因、TUI 崩溃
+  兜底与本包自己）。
+
+## 发版构建
 - **版本号只在一处注入**：`go build -ldflags "-X main.version=v0.1.0" -o aquarius.exe ./cmd/aquarius`
   （不注入时 `-version` 显示 `dev`）。`aquarius.exe -version` 打印版本、平台与 Go 版本后直接
   退出——发版冒烟与问题排查都用它。

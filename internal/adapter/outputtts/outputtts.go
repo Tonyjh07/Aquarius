@@ -120,7 +120,7 @@ func (a *Adapter) speak(ctx context.Context, seq uint64, text string) {
 	ref, err := a.cfg.Synth.Synthesize(ctx, a.speechRequest(text))
 	if err != nil {
 		if ctx.Err() == nil {
-			a.logf("log.audio.play_synth_failed", err)
+			a.logf("log.audio.play_synth_failed", "log.act.voice_off", err)
 		}
 		return
 	}
@@ -130,13 +130,13 @@ func (a *Adapter) speak(ctx context.Context, seq uint64, text string) {
 	rc, err := a.cfg.Blobs.Get(ctx, ref)
 	if err != nil {
 		if ctx.Err() == nil {
-			a.logf("log.audio.play_read_failed", err)
+			a.logf("log.audio.play_read_failed", "log.act.voice_off", err)
 		}
 		return
 	}
 	defer rc.Close()
 	if err := a.cfg.Player.Play(ctx, ref, rc); err != nil && ctx.Err() == nil {
-		a.logf("log.audio.play_failed", err)
+		a.logf("log.audio.play_failed", "log.act.voice_off", err)
 	}
 }
 
@@ -159,12 +159,13 @@ func (a *Adapter) speechRequest(text string) port.SpeechRequest {
 	}
 }
 
-// logf 一条播报失败：上下文固定 audio，级别取 warn，处置都是「本次不播报，文字照常」。
-func (a *Adapter) logf(event string, err error) {
+// logf 一条播报失败：上下文固定 audio，级别取 warn；处置由调用点给（行动位与事件 key 成对
+// 出现在调用处，与其余适配器同一个形状）。
+func (a *Adapter) logf(event, act string, err error) {
 	if a.cfg.Log == nil {
 		return
 	}
-	a.cfg.Log(port.LogWarn, logCtx, event, "log.act.voice_off", "err", err)
+	a.cfg.Log(port.LogWarn, logCtx, event, act, "err", err)
 }
 
 // bodyText 拼正文分片（跳过思考/附件），空行折叠。

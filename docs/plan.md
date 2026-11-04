@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-04 @ e8f1a73 -->
+<!-- docs-sync: 2026-11-04 @ 252a91c -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -57,7 +57,7 @@
 | 8 | ~~O5 页 4/5 + 文档~~ | 已完成 11-04 | 五页中英各走一遍；`guide.md` 首跑步骤重写 |
 | 9 | ~~L2 23 行 `w.stderr` 收口~~ | 已完成 11-04（`e594f01`） | 每行判出 `ctx` 与行动位，`fatal` 不动 |
 | 10 | ~~L3 端口换结构化回调~~ | 已完成 11-04 | `Logf(format, args…)` 这一族消失；`[plugin] ` 前缀收进 `ctx` |
-| 11 | L4 上锁（接 I6 已落地的 AST 辅助） | 11-05 下午 | `fmt.Fprint*(…stderr…)` 只在 `logging` 与 `fatal` |
+| 11 | ~~L4 上锁（接 I6 已落地的 AST 辅助）~~ | 已完成 11-04 | `internal/logging/lock_test.go` 两把锁：stderr 出口白名单、事件 key 必带行动位与上下文段 |
 | 12 | `en` 全量冒烟 + 608dp / 200% 离屏截帧 | 11-05 下午 | 人工视觉走查在这一段并行 |
 | 13 | 发版闸门 | 11-06 上午 | 干净 clone 构建、`govulncheck`、`winres` 两处版本、页 2 四条正文的生效日期改 11-06、`docs/releases/v0.5.0.md`、tag；**推送给用户执行** |
 
@@ -177,13 +177,17 @@ L4 复用它的 AST 辅助，不再有同批文件的冲突。
   原本散在 `delegate.*` / `watch.*` / `inject.*` 段的事件句归入 `log.*`。新增 `character` 上下文
   （角色卡目录）。i18n 的中文字面量锁随之撤掉对 `logf(...)` 实参的豁免。`audit`（机器面）与
   `jobproc`（原始输出落盘）排除。
-- **L4**（S）：上锁——`fmt.Fprint*(…stderr…)` 与 `fmt.Fprint*(w.stderr…)` 只许出现在 `logging`
-  包与 `fatal`；新增日志缺 `ctx` 或行动位即测试失败；`cmd/linuxgate` / `cmd/iconify` 是开发工具、
-  不进产品日志，扫描白名单里写明这条。`configuration.md` 补齐三个键、`development.md` 补一句
-  「怎么看日志」。
+- ~~**L4**（S）~~（已完成 2026-11-04）：上锁——`fmt.Fprint*(…stderr…)` 只许出现在 `logging`
+  包、`fatal`、向导取消报因与 TUI 崩溃兜底（`cmd/linuxgate` / `cmd/iconify` 是开发工具、
+  不进产品日志，白名单里写明了这条）；调用点的事件 key 后面必须紧跟 `log.act.*`，key 的
+  上下文段必须在 `Contexts` 里登记且与调用点给的 `ctx` 一致。两把锁都在
+  `internal/logging/lock_test.go`。`configuration.md` 的三个键（`ui.log_level`、
+  `-log-level`、`AQUARIUS_LOG_LEVEL`，外加 `-log-format`）L2 时已补齐，本轮只核了一遍；
+  `development.md` 补了「怎么看运行日志」。
 
-**顺序**：L2 / L3 是纯搬；**L4 现在排在 I6 之后已无冲突**——I6 的期望值扫描锁已落地
-（`internal/i18n/lock_expect_test.go`），L4 接的是它的 AST 辅助（定位字面量、白名单、相对路径）。
+**顺序**：L2 / L3 是纯搬；**L4 排在 I6 之后已无冲突**——I6 的期望值扫描锁已落地
+（`internal/i18n/lock_expect_test.go`），L4 沿用它的 AST 口径（字面量定位、白名单按文件给
+理由、相对路径用 `filepath.Rel`）；锁本身放在 `internal/logging`，它守的是日志出口，不是文案表。
 
 **验收**：`--log-format json` 跑一轮含附件、语音、插件、后台任务与转交的会话——文件里每行五段齐、
 `event` / `action` 是 key 不是译文；`zh` / `en` 两套文本都读得通；stderr 只有 warn 以上；GUI 双击
