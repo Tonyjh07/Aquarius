@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（落地档案）
-<!-- docs-sync: 2026-11-03 @ b3e6f7f -->
+<!-- docs-sync: 2026-11-04 @ 436d8cd -->
 
 > **定位**：本文件是**进度档案**——只记「已经落地了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -126,6 +126,7 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | v0.4.0-S | 运行中的插话：待发清单落在会话上（两档 `queue`/`steer`、插入序、上限 8、内存态、切会话丢弃并留一行提示）、`Agent.Run` 在两个边界取用（工具批之后与「本可收场」那一刻取全部引导 → 当前段提交成 assistant 节点 + 引导落成 user 节点 + 新缓冲接着跑；轮末按 FIFO 取一条接着起一轮，不回输入循环）、停止只置 `paused` 不清空、`ui.keys` 三键（启动校验撞键/坏键名）、GUI 待发条（转引导 / 拉回 / ×，只列排队；随转写区揭示进度淡入淡出）与转写区末尾的引导气泡（↓ 回队列 / × 丢弃）与 TUI 状态行计数＋`Ctrl+U` 撤销、轮内 user 节点按 `CommittedEvent` 补气泡（D272/D273） | 已落地 2026-11-01 |
 | v0.5.0-I | 界面 i18n 底座：`internal/i18n` 26 对区域表（2410 条 key）+ 取词口、`ui.lang` 三态与启动选语、设置窗常规页的语言档（重启生效）、四条扫描锁（字面量 / 缺键 / 孤儿 key / 拼接前缀）、`fieldLabelW()` 按语言取宽与 `en` 膨胀清单（D275 / contracts §7.8） | 已落地 2026-11-03（批次 I1–I5） |
 | v0.5.0-I2 | i18n 收尾：出口扫描锁 `TestNoTextLiterals`（`material.*` / `hoverTip` / `hoverCard` / `paper*` 薄封装 / 渲染单元 `text` 字段不收裸英文；命令表 `Desc`·`Usage`·`ValueName` 字面量必须是表内 key）+ 修掉四处写死英文（主输入框占位 ×2、拒绝原因占位、常规页分组标题 `Profile`）；输入框占位文字可自定义（`ui.input_placeholder`，单条共用主输入框与原因框、不翻译、空 = 回落内置、热生效）（D279 / §7.8） | 已落地 2026-11-03（批次 I7–I8） |
+| v0.5.0-I3 | i18n 收尾第二批（I6）：测试期望值跟 key 走——`internal/i18n/lock_expect_test.go` 的 `TestNoCJKExpectations`（AST 扫四类期望位置：strings 判定实参、`==`/`!=` 操作数、`want` 赋值与字段），实测 999 处（uigui 352 / app 351 / cmd+uitui 112 / 其余小包 184），逐处判类处置：界面文案改 `i18n.T/Tf` 整句级重建（多处碎片 Contains 升为整句相等，未弱化），测试数据（用户数据 / 模型输出 / 落盘内容 / 协议或配置值）进 `testDataLiterals` 白名单并写理由；uigui 的 `TestMain` 改为尊重 `AQUARIUS_UI_LANG`（缺省钉 zh）；另收掉锁的已知盲区约 40 组（预构期望切片、表驱动按位置初始化的中文期望）。`zh` 与 `AQUARIUS_UI_LANG=en` 全量双跑绿，`go vet` / `gofmt` / `-race`（i18n+app+cmd 三包）过；门禁加一条 `AQUARIUS_UI_LANG=en go test ./...`（development.md） | 已落地 2026-11-04（批次 I6） |
 | v0.5.0-L1 | 规范化日志内核：`internal/logging` 五段渲染、级别过滤、文本 / JSON 双出口、按天切 + 轮转 + 保留 7 天 + 降级 stderr；`ui.log_level` / `-log-level` / `-log-format`；arch 的 `layerLogging`；日志文案进表（D276 / §7.9） | 已落地 2026-11-03 |
 | v0.5.0-V | `en` 布局走查（人工）：已修「无人值守」行两块折行文字并排塌成一列、设置窗左栏不滚动 + 导航项高度写死 36dp | 进行中（窄窗与 200% 字号未看） |
 

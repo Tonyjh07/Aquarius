@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-03 @ 60c009b -->
+<!-- docs-sync: 2026-11-04 @ 436d8cd -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -9,6 +9,7 @@
 ```bash
 go build ./cmd/aquarius        # 构建单二进制
 go test ./...                  # 全量测试
+AQUARIUS_UI_LANG=en go test ./...   # 全量测试在英文界面语言下再跑一遍（i18n 期望值门禁）
 go test -race ./...            # 竞态检测（合入前必过）
 go test -tags aqvalidate ./... # 变更后整树自检（改领域变更路径时必跑，D215）
 go test ./internal/domain/... -run TestProperty -count=50   # 性质测试加密跑
@@ -118,6 +119,13 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 FAIL——这不是被测代码坏了，是测试自己没自足。同理，**测试替身里任何会让 handler panic、
 连接中断的写法都要当失败处理**：探测把网络错误判成「无结论」，于是期望「无结论」的用例会
 假绿（`probe_test.go` 的假服务曾用 `WriteHeader(0)`，视觉分支从没真正走到）。
+
+**测试期望值跟 key 走**（i18n）：断言里的界面文案期望值从 `internal/i18n` 表取
+（`i18n.T` / `i18n.Tf` 拼出整句再比，不写死中文），被测代码与断言读同一张表，语言定成哪种
+两边都一致。`internal/i18n` 的 `TestNoCJKExpectations` 扫四类期望位置（strings 判定实参、
+`==`/`!=` 操作数、`want` 赋值/字段）锁住这条；确属测试数据（用户数据 / 模型输出 / 落盘内容 /
+协议或配置值）的进该文件里的 `testDataLiterals` 白名单并写理由。`uigui` 的 `TestMain` 用
+`AQUARIUS_UI_LANG` 选语言（缺省 zh），门禁 `AQUARIUS_UI_LANG=en go test ./...` 是它的作用面。
 
 ## 工程准则与边界
 
