@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -103,13 +104,13 @@ func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
 	if !strings.Contains(got, "丢弃这行") {
 		t.Fatalf("缺输入行: %q", got)
 	}
-	if !strings.Contains(got, "此行未执行") {
+	if !strings.Contains(got, i18n.T("ui.state.buf_full_line")) {
 		t.Fatalf("缺未执行标注: %q", got)
 	}
 	<-u.inCh // 消费一行后恢复
-	before := strings.Count(allText(m), "此行未执行")
+	before := strings.Count(allText(m), i18n.T("ui.state.buf_full_line"))
 	m.submit("恢复这行")
-	if strings.Count(allText(m), "此行未执行") != before {
+	if strings.Count(allText(m), i18n.T("ui.state.buf_full_line")) != before {
 		t.Fatal("恢复后不应再标注未执行")
 	}
 }
@@ -124,7 +125,7 @@ func TestConfirmReasonEcho(t *testing.T) {
 		t.Fatal("工具确认应并入 chip")
 	}
 	m.replyConfirm(port.ConfirmAnswer{Reason: "路径越界[2J了"})
-	if got := m.blocks[0].chip.confirmA; got != "拒绝：路径越界了" {
+	if got := m.blocks[0].chip.confirmA; got != i18n.Tf("ui.confirm.deny_with_reason", "reason", "路径越界了") {
 		t.Fatalf("confirmA = %q, want 拒绝：路径越界了（CSI 序列整段吞除）", got)
 	}
 
@@ -132,7 +133,7 @@ func TestConfirmReasonEcho(t *testing.T) {
 	reply2 := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("确认删除 n4？", reply2)
 	m.replyConfirm(port.ConfirmAnswer{Reason: "留错了"})
-	if !strings.Contains(allText(m), "确认删除 n4？ → 拒绝：留错了") {
+	if !strings.Contains(allText(m), "确认删除 n4？ → "+i18n.Tf("ui.confirm.deny_with_reason", "reason", "留错了")) {
 		t.Fatalf("缺回显: %q", allText(m))
 	}
 
@@ -140,7 +141,7 @@ func TestConfirmReasonEcho(t *testing.T) {
 	reply3 := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("再来？", reply3)
 	m.replyConfirm(port.ConfirmAnswer{})
-	if !strings.Contains(allText(m), "再来？ → 拒绝") {
+	if !strings.Contains(allText(m), "再来？ → "+i18n.T("ui.common.deny")) {
 		t.Fatalf("干拒回显缺失: %q", allText(m))
 	}
 }
@@ -237,7 +238,7 @@ func TestConfirmFlow(t *testing.T) {
 	if m.confirm != nil {
 		t.Fatal("应答后确认态应清除")
 	}
-	if !strings.Contains(allText(m), "确认删除？ → 允许") {
+	if !strings.Contains(allText(m), "确认删除？ → "+i18n.T("ui.common.allow")) {
 		t.Fatalf("缺应答记录: %q", allText(m))
 	}
 	select {

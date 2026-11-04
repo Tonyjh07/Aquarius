@@ -14,6 +14,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -106,7 +107,7 @@ func TestPromptModuleAssembleAndSave(t *testing.T) {
 	if len(gotPatch.PromptPersona) != 3 || gotPatch.PromptPersona[2] != "style" {
 		t.Errorf("persona = %v, want [house @env style]", gotPatch.PromptPersona)
 	}
-	if !strings.Contains(f.status, "只对新会话生效") {
+	if !strings.Contains(f.status, i18n.T("ui.settings.act.saved_prompt")) {
 		t.Errorf("反馈未标注只对新会话生效: %q", f.status)
 	}
 }
@@ -378,15 +379,19 @@ func TestModuleMetaRefCount(t *testing.T) {
 		}
 		return out
 	}
-	if got, want := moduleMeta(pf, refs()), "组头 · 未引用"; got != want {
+	group := i18n.T("ui.prompt.tile.kind_group")
+	leafKind := i18n.T("ui.prompt.tile.kind_leaf")
+	if got, want := moduleMeta(pf, refs()), i18n.Tf("ui.prompt.tile.unused", "kind", group); got != want {
 		t.Fatalf("meta = %q，want %q", got, want)
 	}
-	if got, want := moduleMeta(pf, refs("house", "house", "style")), "组头 · 被引用 2 次"; got != want {
+	if got, want := moduleMeta(pf, refs("house", "house", "style")),
+		i18n.Tf("ui.prompt.tile.used", "kind", group, "n", 2); got != want {
 		t.Fatalf("meta = %q，want %q", got, want)
 	}
 	leaf := &promptModuleForm{}
 	leaf.name.SetText("style")
-	if got, want := moduleMeta(leaf, refs("style")), "正文 · 被引用 1 次"; got != want {
+	if got, want := moduleMeta(leaf, refs("style")),
+		i18n.Tf("ui.prompt.tile.used", "kind", leafKind, "n", 1); got != want {
 		t.Fatalf("meta = %q，want %q", got, want)
 	}
 }

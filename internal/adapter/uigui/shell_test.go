@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -23,15 +24,15 @@ func TestLogoMenuItems(t *testing.T) {
 		id    uintptr
 		label string
 	}{
-		{cmdNew, "新对话"},
-		{0, "权限"},
-		{cmdUnattended, "无人值守"},
-		{cmdHistory, "消息历史"},
-		{cmdSettings, "设置"},
-		{cmdTopMost, "置顶"},
-		{cmdToggle, "隐藏"},
+		{cmdNew, i18n.T("ui.menu.new_chat")},
+		{0, i18n.T("ui.menu.permission")},
+		{cmdUnattended, i18n.T("ui.menu.unattended")},
+		{cmdHistory, i18n.T("ui.menu.msg_history")},
+		{cmdSettings, i18n.T("ui.menu.settings")},
+		{cmdTopMost, i18n.T("ui.menu.topmost")},
+		{cmdToggle, i18n.T("ui.menu.hide")},
 		{0, ""},
-		{cmdExit, "退出"},
+		{cmdExit, i18n.T("ui.menu.quit")},
 	}
 	if len(items) != len(want) {
 		t.Fatalf("项数 = %d, want %d（items=%+v）", len(items), len(want), items)
@@ -256,14 +257,14 @@ func TestMenuDispatchBubble(t *testing.T) {
 		id    uintptr
 		label string
 	}{
-		{cmdBubbleEdit, "编辑"},
-		{cmdBubbleEditKeep, "编辑并转移历史"},
-		{cmdBubbleEditCopy, "编辑并复制历史"},
-		{cmdBubbleRegen, "重新生成"},
-		{cmdBubbleCopy, "复制"},
-		{cmdBubbleQuote, "引用"},
-		{cmdBubbleRaw, "查看原文"},
-		{cmdNodeRespond, "生成响应"},
+		{cmdBubbleEdit, i18n.T("ui.common.edit")},
+		{cmdBubbleEditKeep, i18n.T("ui.menu.edit_keep")},
+		{cmdBubbleEditCopy, i18n.T("ui.menu.edit_copy")},
+		{cmdBubbleRegen, i18n.T("ui.menu.regen")},
+		{cmdBubbleCopy, i18n.T("ui.common.copy")},
+		{cmdBubbleQuote, i18n.T("ui.menu.quote")},
+		{cmdBubbleRaw, i18n.T("ui.menu.raw")},
+		{cmdNodeRespond, i18n.T("ui.menu.respond")},
 	}
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
 		items := bubbleMenuItems(kind, true)
@@ -425,21 +426,21 @@ func TestToggleTopMost(t *testing.T) {
 // 无正文节点只剩图侧部分；不可插目标（会话根 / 会话首节点人格）少「插入摘要」一项。
 func TestNodeMenuItemsContract(t *testing.T) {
 	bubble := []menuIt{
-		{id: cmdBubbleEdit, label: "编辑"},
-		{id: cmdBubbleEditKeep, label: "编辑并转移历史"},
-		{id: cmdBubbleEditCopy, label: "编辑并复制历史"},
-		{id: cmdBubbleRegen, label: "重新生成"},
-		{id: cmdBubbleCopy, label: "复制"},
-		{id: cmdBubbleQuote, label: "引用"},
-		{id: cmdBubbleRaw, label: "查看原文"},
+		{id: cmdBubbleEdit, label: i18n.T("ui.common.edit")},
+		{id: cmdBubbleEditKeep, label: i18n.T("ui.menu.edit_keep")},
+		{id: cmdBubbleEditCopy, label: i18n.T("ui.menu.edit_copy")},
+		{id: cmdBubbleRegen, label: i18n.T("ui.menu.regen")},
+		{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")},
+		{id: cmdBubbleQuote, label: i18n.T("ui.menu.quote")},
+		{id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")},
 	}
 	// 「生成响应」贴在气泡项组末尾、分隔线之前（2026-10-25 用户批注，任何非根节点都给）。
-	respond := menuIt{id: cmdNodeRespond, label: "生成响应"}
+	respond := menuIt{id: cmdNodeRespond, label: i18n.T("ui.menu.respond")}
 	graph := []menuIt{
-		{id: cmdNodeCopyID, label: "复制 ID"},
-		{id: cmdNodeSummary, label: "插入摘要"},
-		{id: cmdNodeRm, label: "删除该节点及子树"},
-		{id: cmdNodeGoto, label: "转到"},
+		{id: cmdNodeCopyID, label: i18n.T("ui.menu.copy_id")},
+		{id: cmdNodeSummary, label: i18n.T("ui.menu.insert_summary")},
+		{id: cmdNodeRm, label: i18n.T("ui.menu.delete_subtree")},
+		{id: cmdNodeGoto, label: i18n.T("ui.menu.goto")},
 	}
 	graphNoSummary := append(append([]menuIt{}, graph[:1]...), graph[2:]...)
 	full := append(append([]menuIt{}, bubble...), respond)
@@ -461,7 +462,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 	// root/system（blockPlain）：不给编辑三方式与重新生成，但仍给「生成响应」（从系统
 	// 节点续写也合法；根节点整份菜单在图侧另拦，不在此处）。
 	got := nodeMenuItems(blockPlain, true, true, false)
-	want := append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, respond, {}}, graph...)
+	want := append([]menuIt{{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}, {id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}, respond, {}}, graph...)
 	if len(got) != len(want) {
 		t.Fatalf("root/system 项数 = %d, want %d", len(got), len(want))
 	}
@@ -483,7 +484,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 	}
 	// 不可插目标（会话根 / 会话首节点人格）：少「插入摘要」，其余不变。
 	got = nodeMenuItems(blockPlain, true, false, false)
-	want = append([]menuIt{{id: cmdBubbleCopy, label: "复制"}, {id: cmdBubbleRaw, label: "查看原文"}, respond, {}}, graphNoSummary...)
+	want = append([]menuIt{{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}, {id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}, respond, {}}, graphNoSummary...)
 	if len(got) != len(want) {
 		t.Fatalf("不可插目标项数 = %d, want %d", len(got), len(want))
 	}
@@ -504,11 +505,11 @@ func TestNodeMenuRouting(t *testing.T) {
 	if len(items) != 13 {
 		t.Fatalf("图侧项数 = %d, want 13（气泡七项 + 生成响应 + 分隔 + 图侧四项）", len(items))
 	}
-	if items[len(items)-1].Label != "转到" {
+	if items[len(items)-1].Label != i18n.T("ui.menu.goto") {
 		t.Fatalf("末项 = %q, want 转到", items[len(items)-1].Label)
 	}
 	for _, it := range items {
-		if it.Label == "装下整树" {
+		if it.Label == i18n.T("ui.history.fit_tree") {
 			t.Fatal("图侧菜单不该再有「装下整树」（状态栏按钮仍在）")
 		}
 	}

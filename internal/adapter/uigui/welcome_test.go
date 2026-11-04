@@ -19,6 +19,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // fakeWelcome WelcomeManager 测试替身（记录调用、可注入失败）。
@@ -259,7 +261,7 @@ func TestWelcomeFormTestConnectivity(t *testing.T) {
 	f2 := newWelcomeForm(env2)
 	f2.onTest()
 	waitProbe(t, f2, "连通失败")
-	if !f2.probeErr || !strings.Contains(f2.probe, "连接超时") {
+	if !f2.probeErr || !strings.Contains(f2.probe, i18n.Tf("ui.welcome.probe_failed", "err", "连接超时")) {
 		t.Fatalf("失败反馈 = (%v, %q)", f2.probeErr, f2.probe)
 	}
 	if strings.Contains(f2.probe, " ms") {
@@ -303,7 +305,7 @@ func TestWelcomeFetchModels(t *testing.T) {
 	env, _ := welcomeEnvSnap(mgr, true, nil)
 	f := newWelcomeForm(env) // 模型名 = 快照原值（基线）→ 允许自动填入
 	f.onFetchModels()
-	if !strings.Contains(f.modelsHint, "正在获取") {
+	if !strings.Contains(f.modelsHint, i18n.T("ui.welcome.models_fetching")) {
 		t.Fatalf("应即时报「正在获取…」: %q", f.modelsHint)
 	}
 	waitHint(t, f, "已自动填入")
@@ -394,7 +396,7 @@ func TestWelcomeUISideHost(t *testing.T) {
 
 	f3 := newUISideWelcome(nil, func() {})
 	f3.onSave()
-	if !f3.err || !strings.Contains(f3.status, "未接线") {
+	if !f3.err || !strings.Contains(f3.status, i18n.T("ui.welcome.err.not_wired")) {
 		t.Fatalf("无数据面应报未接线: (%v, %q)", f3.err, f3.status)
 	}
 }
@@ -479,14 +481,14 @@ func TestTrayMenuItemsNoWelcome(t *testing.T) {
 		id    uintptr
 		label string
 	}{
-		{cmdToggle, "显示 / 隐藏输入窗"},
-		{cmdTopMost, "窗口置顶"},
-		{cmdUnattended, "无人值守"},
+		{cmdToggle, i18n.T("ui.menu.tray_toggle")},
+		{cmdTopMost, i18n.T("ui.menu.tray_topmost")},
+		{cmdUnattended, i18n.T("ui.menu.unattended")},
 		{0, ""},
-		{cmdSettings, "设置"},
-		{cmdHistory, "会话历史"},
+		{cmdSettings, i18n.T("ui.menu.settings")},
+		{cmdHistory, i18n.T("ui.menu.tray_history")},
 		{0, ""},
-		{cmdExit, "退出"},
+		{cmdExit, i18n.T("ui.menu.quit")},
 	}
 	if len(items) != len(want) {
 		t.Fatalf("项数 = %d, want %d（items=%+v）", len(items), len(want), items)
@@ -608,7 +610,7 @@ func TestWelcomeGeometry(t *testing.T) {
 	if w != 660 || h != 640 || minW != 560 || minH != 520 {
 		t.Fatalf("几何 = (%d,%d,%d,%d)", w, h, minW, minH)
 	}
-	if winWelcome.title() != "Aquarius 欢迎" {
+	if winWelcome.title() != i18n.T("ui.win.title.welcome") {
 		t.Fatalf("标题 = %q", winWelcome.title())
 	}
 }

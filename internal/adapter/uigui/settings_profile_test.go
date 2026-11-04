@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // fakeProfiles ProfilesManager 假实现（动作分派与反馈断言用）。
@@ -44,7 +46,7 @@ func TestProfileActionsHeadless(t *testing.T) {
 	// 空名拦截：三动作都不触达。
 	for _, act := range []string{"create", "copy", "switch"} {
 		u.profileAction(f, act)
-		if !f.err || !strings.Contains(f.status, "填写 profile 名") {
+		if !f.err || !strings.Contains(f.status, i18n.T("ui.settings.profile.need_name")) {
 			t.Fatalf("%s 空名: (%v, %q)", act, f.err, f.status)
 		}
 	}
@@ -58,10 +60,10 @@ func TestProfileActionsHeadless(t *testing.T) {
 	if f.err || len(mgr.created) != 1 || mgr.created[0] != "work" {
 		t.Fatalf("create 分派 = %+v (%v, %q)", mgr.created, f.err, f.status)
 	}
-	if !strings.Contains(f.status, "重启") {
+	if !strings.Contains(f.status, i18n.Tf("ui.settings.profile.created", "name", "work")) {
 		t.Fatalf("create 反馈 = %q, want 重启提示", f.status)
 	}
-	if !strings.Contains(f.status, "切换") {
+	if !strings.Contains(f.status, i18n.Tf("ui.settings.profile.created", "name", "work")) {
 		t.Fatalf("create 反馈 = %q, want 引导切换", f.status)
 	}
 
@@ -71,7 +73,7 @@ func TestProfileActionsHeadless(t *testing.T) {
 	if f.err || len(mgr.copied) != 1 || mgr.copied[0] != "work" {
 		t.Fatalf("copy 分派 = %+v", mgr.copied)
 	}
-	if !strings.Contains(f.status, "仅配置") {
+	if !strings.Contains(f.status, i18n.Tf("ui.settings.profile.copied", "name", "work")) {
 		t.Fatalf("copy 反馈 = %q, want 仅配置语义", f.status)
 	}
 
@@ -80,7 +82,7 @@ func TestProfileActionsHeadless(t *testing.T) {
 	if f.err || len(mgr.switched) != 1 || mgr.switched[0] != "work" {
 		t.Fatalf("switch 分派 = %+v", mgr.switched)
 	}
-	if !strings.Contains(f.status, "已切换 profile → work") || !strings.Contains(f.status, "重启") {
+	if !strings.Contains(f.status, i18n.Tf("ui.settings.profile.switched", "name", "work")) {
 		t.Fatalf("switch 反馈 = %q", f.status)
 	}
 
@@ -88,7 +90,8 @@ func TestProfileActionsHeadless(t *testing.T) {
 	mgr.errOn = map[string]error{"switch": errors.New("profile %q 不存在")}
 	f.profName.SetText("nope")
 	u.profileAction(f, "switch")
-	if !f.err || !strings.Contains(f.status, "切换失败") || !strings.Contains(f.status, "不存在") {
+	if !f.err || !strings.Contains(f.status, i18n.Tf("ui.settings.profile.failed",
+		"action", profileActionLabel("switch"), "err", "profile %q 不存在")) {
 		t.Fatalf("switch 失败反馈 = (%v, %q)", f.err, f.status)
 	}
 }
@@ -99,7 +102,7 @@ func TestProfileActionsUnwired(t *testing.T) {
 	f := newSettingsForm(u)
 	f.profName.SetText("x")
 	u.profileAction(f, "create")
-	if !f.err || !strings.Contains(f.status, "未接线") {
+	if !f.err || !strings.Contains(f.status, i18n.T("ui.settings.profile.not_wired")) {
 		t.Fatalf("未接线反馈 = (%v, %q)", f.err, f.status)
 	}
 }

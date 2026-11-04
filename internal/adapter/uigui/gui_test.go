@@ -11,6 +11,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -211,7 +212,7 @@ func TestConfirmFromModelReply(t *testing.T) {
 	if u.m.confirm != nil {
 		t.Fatal("应答后确认态应清除")
 	}
-	if !strings.Contains(allText(u.m), "允许执行？ → 允许") {
+	if !strings.Contains(allText(u.m), "允许执行？ → "+i18n.T("ui.common.allow")) {
 		t.Fatalf("缺应答记录: %q", allText(u.m))
 	}
 }
@@ -276,11 +277,11 @@ func TestStatusTextPhase(t *testing.T) {
 	}
 	u.SetInterrupt(func() {})
 	u.m.think.WriteString("想")
-	if got := u.statusText(); !strings.Contains(got, "思考中") || !strings.Contains(got, "m") || !strings.Contains(got, "strict") {
+	if got := u.statusText(); got != i18n.T("ui.state.thinking")+" · m · strict" {
 		t.Fatalf("思考阶段 statusText = %q", got)
 	}
 	u.m.think.Reset()
-	if got := u.statusText(); !strings.Contains(got, "生成中") {
+	if got := u.statusText(); got != i18n.T("ui.state.generating")+" · m · strict" {
 		t.Fatalf("生成阶段 statusText = %q", got)
 	}
 }
@@ -292,18 +293,18 @@ func TestStatusTextUnattended(t *testing.T) {
 	u := newHeadless(t, Options{
 		Status: func() Status { return Status{Model: "m", Level: "strict", Unattended: on} },
 	})
-	if got := u.statusText(); !strings.Contains(got, "无人值守") {
+	if got := u.statusText(); got != i18n.T("ui.state.unattended_deny") {
 		t.Fatalf("空闲态应常驻无人值守标记: %q", got)
 	}
 	// 生成态：模型/权限之后追加标记（不顶掉阶段词）。
 	u.generating.Store(true)
-	if got := u.statusText(); !strings.Contains(got, "生成中") || !strings.Contains(got, "无人值守") {
+	if got := u.statusText(); got != i18n.T("ui.state.generating")+" · m · strict · "+i18n.T("ui.state.unattended") {
 		t.Fatalf("生成态 statusText = %q", got)
 	}
 	u.generating.Store(false)
 	// 编辑态：标记在前，编辑提示仍在（否则提交前看不到修订方式）。
 	u.m.editTarget = "m1"
-	if got := u.statusText(); !strings.Contains(got, "无人值守") || !strings.Contains(got, "编辑中") {
+	if got := u.statusText(); got != i18n.Tf("ui.state.unattended_hint", "hint", i18n.T("ui.state.edit_hint")) {
 		t.Fatalf("编辑态 statusText = %q", got)
 	}
 	u.m.editTarget = ""

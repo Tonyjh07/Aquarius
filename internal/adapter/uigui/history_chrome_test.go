@@ -13,6 +13,8 @@ import (
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/widget"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestHistStatusBarCtlItems 状态栏控件项集契约（D159：删掉「展开全部」）。
@@ -21,7 +23,13 @@ func TestHistStatusBarCtlItems(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	items := st.histStatusCtlItems()
-	want := []string{"−", "＋", "缩放 100%", "装下整树", "回到初始态", "聚焦当前历史", "聚焦当前节点"}
+	want := []string{"−", "＋",
+		i18n.Tf("ui.history.zoom", "pct", "100%"),
+		i18n.T("ui.history.fit_tree"),
+		i18n.T("ui.history.reset_view"),
+		i18n.T("ui.history.focus_line"),
+		i18n.T("ui.history.focus_node"),
+	}
 	if len(items) != len(want) {
 		t.Fatalf("状态栏控件 = %d 项, want %d", len(items), len(want))
 	}
@@ -49,7 +57,7 @@ func TestHistStatusBarCtlItems(t *testing.T) {
 	}
 	// 缩放文案随帧 state 现取。
 	st.graph.zoom = 0.42
-	if got := st.histStatusCtlItems()[2].label; got != "缩放 42%" {
+	if got := st.histStatusCtlItems()[2].label; got != i18n.Tf("ui.history.zoom", "pct", "42%") {
 		t.Fatalf("缩放文案 = %q, want 缩放 42%%", got)
 	}
 }

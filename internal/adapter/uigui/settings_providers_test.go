@@ -15,8 +15,12 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
+
+// errFakeNameEmpty 假 Apply 对空名的拒绝语（测试数据；断言按 apply_failed 句式整句拼回）。
+var errFakeNameEmpty = errors.New("provider 名字不可为空")
 
 // fakeProviderMgr ProviderManager 假实现（Apply/Test/Models/Probe 分派断言）。
 type fakeProviderMgr struct {
@@ -44,7 +48,7 @@ func (f *fakeProviderMgr) Snapshot() []ProviderSnapshot { return f.snap }
 func (f *fakeProviderMgr) Apply(primary string, ps []ProviderPatch) error {
 	for _, p := range ps { // 镜像 cmd 侧校验口径（空名拒写），失败不记账
 		if strings.TrimSpace(p.Name) == "" {
-			return errors.New("provider 名字不可为空")
+			return errFakeNameEmpty
 		}
 	}
 	if primary == "" {
@@ -225,11 +229,14 @@ func TestProviderCardCollapse(t *testing.T) {
 	if f.provOpen != -1 {
 		t.Fatalf("开窗应全收起: provOpen = %d", f.provOpen)
 	}
-	// 摘要文案：名字 · 协议 · N 个模型 · M 把钥匙 · 是否主。
-	if got := f.provs[0].providerSummary(true); !strings.Contains(got, "a · chat · 2 个模型 · 2 把钥匙 · ★ 主") {
+	// 摘要文案：名字 · 协议 · N 个模型 · M 把钥匙 · 是否主（与 providerSummary 同源拼装）。
+	wantSummary := i18n.Tf("ui.settings.prov.summary", "name", "a · chat", "models", 2, "keys", 2) +
+		i18n.T("ui.settings.prov.summary_primary")
+	if got := f.provs[0].providerSummary(true); got != wantSummary {
 		t.Fatalf("摘要[0] = %q", got)
 	}
-	if got := f.provs[1].providerSummary(false); !strings.Contains(got, "b · anthropic · 1 个模型 · 1 把钥匙") || strings.Contains(got, "★") {
+	wantSummary = i18n.Tf("ui.settings.prov.summary", "name", "b · anthropic", "models", 1, "keys", 1)
+	if got := f.provs[1].providerSummary(false); got != wantSummary || strings.Contains(got, "★") {
 		t.Fatalf("摘要[1] = %q", got)
 	}
 
@@ -287,7 +294,7 @@ func TestProviderEditorHeadless(t *testing.T) {
 	// 新增 + 设主 + 应用：patch 全量（Orig 保留）+ primary 分派。
 	f.addProviderForm()
 	u.applyProviderChanges(f) // 帧外可测段：新增的第 3 条无名字 → 报错
-	if !f.provErr || !strings.Contains(f.provStatus, "名字") {
+	if !f.provErr || f.provStatus != i18n.Tf("ui.settings.prov.apply_failed", "err", errFakeNameEmpty.Error()) {
 		t.Fatalf("空名应用反馈 = (%v, %q)", f.provErr, f.provStatus)
 	}
 	latest := f.provs[len(f.provs)-1]
@@ -366,7 +373,7 @@ func TestProviderKeyPoolHeadless(t *testing.T) {
 	}
 	// 形态注脚三种形态各就其位（已入库露引用名、明文只标形态、空标缺省回落）。
 	if !strings.Contains(keySlotNote(pf.keyForms[0]), "secret:KA") ||
-		!strings.Contains(keySlotNote(pf.keyForms[1]), "明文") ||
+		keySlotNote(pf.keyForms[1]) != i18n.T("ui.page.providers.keyslot.plain") ||
 		!strings.Contains(keySlotNote(pf.keyForms[2]), "secret:KC") {
 		t.Fatalf("形态注脚 = %q / %q / %q",
 			keySlotNote(pf.keyForms[0]), keySlotNote(pf.keyForms[1]), keySlotNote(pf.keyForms[2]))
@@ -454,7 +461,7 @@ func TestProviderModelCostValidation(t *testing.T) {
 
 	mf.costIn.SetText("abc")
 	u.applyProviderChanges(f)
-	if !f.provErr || !strings.Contains(f.provStatus, "单价") {
+	if !f.provErr || f.provStatus != i18n.Tf("ui.settings.prov.bad_cost", "model", "m1") {
 		t.Fatalf("非法单价反馈 = (%v, %q)", f.provErr, f.provStatus)
 	}
 	if len(mgr.applied) != 0 {
@@ -517,10 +524,10 @@ func TestFetchModelsAppendsRows(t *testing.T) {
 	if pf.modelForms[1].enabled.Value || pf.modelForms[2].enabled.Value {
 		t.Fatal("补入的模型行应默认未启用（要用户自己勾）")
 	}
-	if !strings.Contains(pf.fetchNote, "已补入 2 个模型") || pf.fetchErr {
+	if pf.fetchNote != i18n.Tf("ui.settings.prov.fetch_added", "added", "2", "total", "3") || pf.fetchErr {
 		t.Fatalf("卡片反馈 = (%v, %q)", pf.fetchErr, pf.fetchNote)
 	}
-	if !strings.Contains(f.provStatus, "已补入 2 个模型") {
+	if f.provStatus != i18n.Tf("ui.settings.prov.fetch_added", "added", "2", "total", "3") {
 		t.Fatalf("手动拉取也应写全局状态行：%q", f.provStatus)
 	}
 
@@ -530,7 +537,7 @@ func TestFetchModelsAppendsRows(t *testing.T) {
 	if len(pf.modelForms) != 3 {
 		t.Fatalf("重复拉取不该生长行：%d", len(pf.modelForms))
 	}
-	if !strings.Contains(pf.fetchNote, "都已在列表中") {
+	if pf.fetchNote != i18n.Tf("ui.settings.prov.fetch_all_known", "total", "3") {
 		t.Fatalf("重复拉取反馈 = %q", pf.fetchNote)
 	}
 
@@ -542,7 +549,7 @@ func TestFetchModelsAppendsRows(t *testing.T) {
 	if len(pf.modelForms) != before {
 		t.Fatalf("失败不该改模型表：%d → %d", before, len(pf.modelForms))
 	}
-	if !pf.fetchErr || !strings.Contains(pf.fetchNote, "失败") {
+	if !pf.fetchErr || pf.fetchNote != i18n.Tf("ui.settings.prov.fetch_failed", "err", "403 forbidden") {
 		t.Fatalf("失败反馈 = (%v, %q)", pf.fetchErr, pf.fetchNote)
 	}
 
@@ -731,8 +738,10 @@ func TestProbeModelRow(t *testing.T) {
 	out = <-f.testResults
 	f.testResults <- out
 	f.drainTestResults()
-	want := "2 项支持 / 0 项不支持 / 1 项无结论"
-	if !strings.Contains(mf.probeStatus, want) {
+	want := i18n.Tf("ui.settings.prov.probe_counts", "sup", "2", "unsup", "0") +
+		i18n.Tf("ui.settings.prov.probe_unknown", "unk", "1") +
+		i18n.T("ui.settings.prov.probe_same")
+	if mf.probeStatus != want {
 		t.Fatalf("三项都要报数：%q 缺 %q", mf.probeStatus, want)
 	}
 	// 空模型名不发探测。

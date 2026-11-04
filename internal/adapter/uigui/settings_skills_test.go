@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // fakeSkillsAdmin 技能管理面替身：动作记参数、快照可预置。
@@ -209,8 +210,9 @@ func TestSkillPickFillsSource(t *testing.T) {
 	if len(admin.installs) != 0 {
 		t.Fatalf("选择动作不该安装：%v", admin.installs)
 	}
-	if !strings.Contains(f.skillsStatus, "点「安装」") {
-		t.Fatalf("状态行 = %q", f.skillsStatus)
+	if want := i18n.Tf("ui.settings.skill.picked", "what", i18n.T("ui.settings.skill.pick_file"),
+		"path", `C:\x\SKILL.md`); f.skillsStatus != want {
+		t.Fatalf("状态行 = %q, want %q", f.skillsStatus, want)
 	}
 }
 
@@ -219,8 +221,9 @@ func TestSkillPickDirHint(t *testing.T) {
 	f, u := skillsForm(t, &fakeSkillsAdmin{snap: SkillsSnapshot{Revision: 1}})
 	u.pushSkillPick(skillPathPick{kind: platform.PickSkillDir, path: `C:\Skills`})
 	f.drainSkillPicks(u)
-	if !strings.Contains(f.skillsStatus, "已选择文件夹") {
-		t.Fatalf("状态行 = %q", f.skillsStatus)
+	if want := i18n.Tf("ui.settings.skill.picked", "what", i18n.T("ui.settings.skill.pick_dir"),
+		"path", `C:\Skills`); f.skillsStatus != want {
+		t.Fatalf("状态行 = %q, want %q", f.skillsStatus, want)
 	}
 }
 
@@ -245,10 +248,10 @@ func TestSkillMetaLine(t *testing.T) {
 // （按钮是 get-or-create 的；这里只锁文案）。
 func TestSkillDirFallbackLabel(t *testing.T) {
 	d := SkillDir{Path: "/profile/skills", Fallback: true}
-	if !strings.Contains(d.skillDirLabel(), "不可删") {
-		t.Fatalf("兜底根文案 = %q", d.skillDirLabel())
+	if want := i18n.Tf("ui.settings.skill.dir_fallback", "path", "/profile/skills"); d.skillDirLabel() != want {
+		t.Fatalf("兜底根文案 = %q, want %q", d.skillDirLabel(), want)
 	}
-	if got := (SkillDir{Path: "/extra"}).skillDirLabel(); strings.Contains(got, "兜底") {
+	if got := (SkillDir{Path: "/extra"}).skillDirLabel(); got != "/extra" {
 		t.Fatalf("额外根不该标兜底：%q", got)
 	}
 }

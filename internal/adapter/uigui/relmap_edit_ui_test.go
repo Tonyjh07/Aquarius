@@ -10,15 +10,16 @@ import (
 	"gioui.org/io/pointer"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // TestRelEditCapsuleText 胶囊文案：没改过不提处数（「已改 0 处」是噪音）。
 func TestRelEditCapsuleText(t *testing.T) {
-	if got := relEditCapsuleText(0); got != "编辑树 · 拖动节点改挂" {
+	if got := relEditCapsuleText(0); got != i18n.T("ui.relmap.edit_capsule") {
 		t.Fatalf("未改文案 = %q", got)
 	}
-	if got := relEditCapsuleText(3); got != "编辑树 · 拖动节点改挂 · 已改 3 处" {
+	if got := relEditCapsuleText(3); got != i18n.Tf("ui.relmap.edit_capsule_count", "n", 3) {
 		t.Fatalf("已改文案 = %q", got)
 	}
 }

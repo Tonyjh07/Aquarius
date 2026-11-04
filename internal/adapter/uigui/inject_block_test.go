@@ -1,10 +1,10 @@
 package uigui
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestInjectBlockCommitReplay 注入节点在提交与回放两路都成独立暗块（D166）：
@@ -73,13 +73,13 @@ func TestInjectHeadline(t *testing.T) {
 // 与转写头部同表；触发状态取快照事实。
 func TestInjectOverlayTitleAndSource(t *testing.T) {
 	ov := &overlayState{id: "i1", role: conversation.RoleInject, source: "poller:p1", trigger: true}
-	if got := ov.titleText(); !strings.HasPrefix(got, "注入上下文 · ") {
+	if got := ov.titleText(); got != i18n.Tf("ui.overlay.title.inject", "id", shortID("i1")) {
 		t.Fatalf("titleText = %q", got)
 	}
-	if got := injectState(ov.trigger); got != "已触发响应" {
+	if got := injectState(ov.trigger); got != i18n.T("ui.state.fired") {
 		t.Fatalf("injectState = %q", got)
 	}
-	if got := injectState(false); got != "未触发" {
+	if got := injectState(false); got != i18n.T("ui.state.idle") {
 		t.Fatalf("injectState(false) = %q", got)
 	}
 }

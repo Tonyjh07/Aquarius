@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/io/input"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -60,11 +61,12 @@ func TestFactsCardVariants(t *testing.T) {
 	if !strings.Contains(lines[0], "default · 分支（short）") {
 		t.Fatalf("line0 = %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "精确") {
+	if !strings.Contains(lines[1], i18n.T("ui.chat.ctx_mode_exact")) {
 		t.Fatalf("line1 = %q（应标精确）", lines[1])
 	}
-	if strings.Contains(strings.Join(lines, "\n"), "上轮") {
-		t.Fatal("无实测不应显示上轮行")
+	// 无实测：末行就是累计行，不该再追加「上轮」那行（tokens_last）。
+	if got, want := lines[len(lines)-1], i18n.Tf("ui.chat.tokens_total", "in", 0, "out", 0); got != want {
+		t.Fatalf("末行 = %q, want %q（无实测不应显示上轮行）", got, want)
 	}
 }
 

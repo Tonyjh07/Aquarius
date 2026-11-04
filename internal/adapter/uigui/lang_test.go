@@ -7,11 +7,18 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// TestMain 把界面语言钉成 zh。本包的文案断言（页名列表、菜单项集、教程行）都按中文写死，
-// 而取词默认跟随本机 locale——换一台英文机器跑，这些断言会整片失败，且失败原因看着像
-// 文案改坏了。钉住之后，跨语言的正确性由 i18n 包的同构测试与各处的英文表负责。
+// TestMain 选定本包测试的界面语言：`AQUARIUS_UI_LANG` 说了算，缺省 zh。
+//
+// 以前硬钉 zh，是因为文案断言按中文写死；I6 之后断言的期望值从 i18n 表里取——被测代码
+// 与断言读同一张表，语言定成哪种两边都一致。钉 zh 只是保底（内部包的单测、CI 默认路径），
+// 环境变量一设，整包就在 en 下跑一遍：这正是门禁 `AQUARIUS_UI_LANG=en go test ./...` 的
+// 作用面（本包是唯一把语言写进 TestMain 的包，其余包吃 i18n 的缺省 zh）。
 func TestMain(m *testing.M) {
-	sel, err := i18n.Parse("zh")
+	raw := os.Getenv("AQUARIUS_UI_LANG")
+	if raw == "" {
+		raw = "zh" // 缺省钉 zh：auto 会跟随系统语言，跨机器跑出两套结果
+	}
+	sel, err := i18n.Parse(raw)
 	if err != nil {
 		panic(err)
 	}

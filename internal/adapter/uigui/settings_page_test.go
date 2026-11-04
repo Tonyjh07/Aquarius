@@ -16,6 +16,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -26,7 +27,11 @@ func TestSettingsPageNamesContract(t *testing.T) {
 	// wantKeys 是页标识（Key，英文、不随语言变），wantNames 是 zh 下的显示名。两者分开锁：
 	// 页序与标识是契约，显示名只是取词结果——把中文当契约锁，加英文表时就会两头顾此失彼。
 	wantKeys := []string{"general", "model", "providers", "secrets", "chat", "prompt", "tools", "delegate", "skills", "characters", "web", "audio", "adv", "about"}
-	wantNames := []string{"常规", "模型", "模型服务", "密钥库", "对话", "系统提示词", "工具与 MCP", "外部代理", "技能", "角色", "联网", "语音", "高级", "关于"}
+	// 显示名与 pageName 同源：按生产口径从文案表按 Key 取词，不再锁死中文字面。
+	wantNames := make([]string, len(wantKeys))
+	for i, k := range wantKeys {
+		wantNames[i] = i18n.T("ui.settings.page." + k)
+	}
 	if settingsPageCount != len(wantKeys) {
 		t.Fatalf("settingsPageCount = %d, want %d", settingsPageCount, len(wantKeys))
 	}

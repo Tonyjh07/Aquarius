@@ -8,6 +8,7 @@ import (
 	"gioui.org/io/key"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -185,20 +186,20 @@ func TestEditTextHint(t *testing.T) {
 		t.Fatalf("静息 statusText = %q, want 空", u.statusText())
 	}
 	u.m.editTarget = "u1"
-	if got := u.statusText(); got != "编辑中 · Enter 提交 / Esc 取消" {
+	if got := u.statusText(); got != i18n.T("ui.state.edit_hint") {
 		t.Fatalf("Fresh 编辑态 statusText = %q", got)
 	}
 	u.m.editMode = conversation.Carry
-	if got := u.statusText(); got != "编辑中（转移历史）· Enter 提交 / Esc 取消" {
+	if got := u.statusText(); got != i18n.T("ui.state.edit_hint_carry") {
 		t.Fatalf("Carry 编辑态 statusText = %q", got)
 	}
 	u.m.editMode = conversation.Clone
-	if got := u.statusText(); got != "编辑中（复制历史）· Enter 提交 / Esc 取消" {
+	if got := u.statusText(); got != i18n.T("ui.state.edit_hint_clone") {
 		t.Fatalf("Clone 编辑态 statusText = %q", got)
 	}
 	u.m.editMode = conversation.Fresh
 	u.generating.Store(true)
-	if got := u.statusText(); got == "" || got == "编辑中 · Enter 提交 / Esc 取消" {
+	if got := u.statusText(); got == "" || got == i18n.T("ui.state.edit_hint") {
 		t.Fatalf("生成状态应优先: %q", got)
 	}
 }

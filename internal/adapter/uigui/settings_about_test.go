@@ -13,6 +13,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // aboutPageUI 关于页测试台：装假平台 + 指定注入版本号的表单。
@@ -42,7 +44,7 @@ func TestAboutPageRows(t *testing.T) {
 	_ = u
 
 	rows := f.pageRows(pageAbout)
-	if rows[0].kind != rowTitle || rows[0].text != "关于" {
+	if rows[0].kind != rowTitle || rows[0].text != pageName(pageAbout) {
 		t.Fatalf("首行 = %+v, want 页标题「关于」", rows[0])
 	}
 	want := []rowKind{rowTitle, rowAboutHero, rowSection, rowAboutVersion, rowAboutRuntime,
@@ -87,11 +89,12 @@ func TestAboutPageRows(t *testing.T) {
 
 // TestAboutVersionText 版本文案：注入值原样展示；空 / dev 明说开发构建。
 func TestAboutVersionText(t *testing.T) {
+	devBuild := i18n.T("ui.page.about.dev_build")
 	cases := []struct{ in, want string }{
 		{"v0.1.0", "v0.1.0"},
 		{"  v0.1.0  ", "v0.1.0"},
-		{"", "开发构建（未注入版本号）"},
-		{"dev", "开发构建（未注入版本号）"},
+		{"", devBuild},
+		{"dev", devBuild},
 	}
 	for _, c := range cases {
 		if got := aboutVersionText(c.in); got != c.want {
@@ -113,7 +116,7 @@ func TestAboutVersionText(t *testing.T) {
 		t.Fatalf("表单版本 = %q, want v0.9.9", f.aboutVersion)
 	}
 	_, f = aboutPageUI(t, "")
-	if got := aboutVersionText(f.aboutVersion); got != "开发构建（未注入版本号）" {
+	if got := aboutVersionText(f.aboutVersion); got != i18n.T("ui.page.about.dev_build") {
 		t.Fatalf("无注入时 = %q", got)
 	}
 }
@@ -132,7 +135,7 @@ func TestAboutPageOpenProject(t *testing.T) {
 	if len(fp.OpenURLs) != 1 || fp.OpenURLs[0] != aboutProjectURL {
 		t.Fatalf("打开链接 = %v, want [%s]", fp.OpenURLs, aboutProjectURL)
 	}
-	if f.aboutErr || !strings.Contains(f.aboutStatus, "已在浏览器") {
+	if f.aboutErr || !strings.Contains(f.aboutStatus, i18n.T("ui.page.about.opened")) {
 		t.Fatalf("成功反馈 = (%v, %q)", f.aboutErr, f.aboutStatus)
 	}
 
@@ -144,7 +147,7 @@ func TestAboutPageOpenProject(t *testing.T) {
 	if !f.aboutErr {
 		t.Fatal("打开失败应标记错误态")
 	}
-	if !strings.Contains(f.aboutStatus, "没有默认浏览器") || !strings.Contains(f.aboutStatus, "复制链接") {
+	if f.aboutStatus != i18n.Tf("ui.page.about.open_failed", "err", fp.OpenURLErr) {
 		t.Fatalf("失败反馈 = %q，want 含原因与替代办法", f.aboutStatus)
 	}
 }
@@ -168,7 +171,7 @@ func TestAboutPageCopyLink(t *testing.T) {
 	if got := strings.TrimSpace(string(content)); got != aboutProjectURL {
 		t.Fatalf("剪贴板 = %q, want %q", got, aboutProjectURL)
 	}
-	if f.aboutErr || f.aboutStatus != "链接已复制" {
+	if f.aboutErr || f.aboutStatus != i18n.T("ui.page.about.copied") {
 		t.Fatalf("复制反馈 = (%v, %q)", f.aboutErr, f.aboutStatus)
 	}
 }

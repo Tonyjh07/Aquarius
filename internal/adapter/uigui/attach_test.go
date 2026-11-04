@@ -9,6 +9,7 @@ import (
 	"gioui.org/io/input"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -39,7 +40,7 @@ func TestAttachStageFlow(t *testing.T) {
 	if len(u.m.stagedFiles) != 0 || u.editor.Text() != "" {
 		t.Fatalf("提交后未清空: staged=%+v editor=%q", u.m.stagedFiles, u.editor.Text())
 	}
-	if n := len(u.m.blocks); n != 1 || u.m.blocks[n-1].text != "总结这个文件 〔附件：报告.pdf〕" {
+	if n := len(u.m.blocks); n != 1 || u.m.blocks[n-1].text != "总结这个文件 "+i18n.Tf("ui.attach.marker_named", "name", "报告.pdf") {
 		t.Fatalf("回显块 = %+v", u.m.blocks)
 	}
 
@@ -57,7 +58,7 @@ func TestAttachStageFlow(t *testing.T) {
 		t.Fatal("inCh 未收到仅附件提交")
 	}
 	// 多项回显：图片进缩略图（D207），文字只列非图片附件。
-	if n := len(u.m.blocks); n == 0 || !strings.Contains(u.m.blocks[n-1].text, "附件：b.txt") {
+	if n := len(u.m.blocks); n == 0 || !strings.Contains(u.m.blocks[n-1].text, i18n.Tf("ui.attach.marker_named", "name", "b.txt")) {
 		t.Fatalf("多项回显 = %+v", u.m.blocks)
 	}
 	if n := len(u.m.blocks); n > 0 {

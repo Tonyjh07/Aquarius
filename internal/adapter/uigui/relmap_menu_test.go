@@ -13,6 +13,7 @@ import (
 	"gioui.org/io/pointer"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // relFixtureBody 夹具节点的正文全文（D132）：刻意长得跟 40 字摘要（"s-<id>"）不同，
@@ -124,8 +125,8 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	// 项集 = 气泡七项 + 生成响应 + 分隔线 + 图侧四项（D139 加「转到」；D152 加「插入摘要」；
 	// 2026-10-25 加「生成响应」，贴气泡项组末尾、分隔线之前）
 	items := u.menuItems(platform.MenuBubble)
-	wantLabels := []string{"编辑", "编辑并转移历史", "编辑并复制历史", "重新生成", "复制",
-		"引用", "查看原文", "生成响应", "", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
+	wantLabels := []string{i18n.T("ui.common.edit"), i18n.T("ui.menu.edit_keep"), i18n.T("ui.menu.edit_copy"), i18n.T("ui.menu.regen"), i18n.T("ui.common.copy"),
+		i18n.T("ui.menu.quote"), i18n.T("ui.menu.raw"), i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -165,7 +166,7 @@ func TestRelGraphRightClickNoSummaryForRootAndPersona(t *testing.T) {
 		t.Fatalf("节点 p（kind=%v）不应可插摘要", ctx.kind)
 	}
 	for _, it := range u.menuItems(platform.MenuBubble) {
-		if it.Label == "插入摘要" {
+		if it.Label == i18n.T("ui.menu.insert_summary") {
 			t.Fatal("节点 p 的菜单不该有「插入摘要」")
 		}
 	}
@@ -309,7 +310,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{"生成响应", "", "复制 ID", "插入摘要", "删除该节点及子树", "转到"}
+	want := []string{i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -361,7 +362,7 @@ func TestRelGraphMenuCopyIDAction(t *testing.T) {
 	if u.nodeAction.Load() != nil { // 故只断言「动作被消费、不重复执行」）
 		t.Fatal("动作槽未排空")
 	}
-	if !st.toast.active(gtx.Now) || st.toast.text != "已复制节点 ID" {
+	if !st.toast.active(gtx.Now) || st.toast.text != i18n.T("ui.history.toast_copied_id") {
 		t.Fatalf("复制 ID 未弹轻提示: %+v", st.toast)
 	}
 }
@@ -412,7 +413,7 @@ func TestRelGraphRootLeftClickCopiesID(t *testing.T) {
 	if st.ov != nil {
 		t.Fatal("会话根左键不应开遮罩")
 	}
-	if !st.toast.active(time.Now()) || st.toast.text != "已复制会话 ID" {
+	if !st.toast.active(time.Now()) || st.toast.text != i18n.T("ui.relmap.toast.copied_session") {
 		t.Fatalf("会话根左键未弹「已复制会话 ID」: %+v", st.toast)
 	}
 	if string(rootID) == "" {

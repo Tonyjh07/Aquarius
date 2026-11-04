@@ -13,6 +13,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // fakeSecretsAdmin SecretsAdmin 测试替身：内存键值表 + Revision 递增 + 动作记录。
@@ -346,7 +348,7 @@ func TestSecretsPageImport(t *testing.T) {
 	// 管理面报错（如库解不开被拒）→ 错误态。
 	sa.importErr = errors.New("本机密钥库解不开")
 	u.secretsAction(f, "import", "")
-	if !f.importErr || !strings.Contains(f.importStatus, "导入失败") {
+	if !f.importErr || !strings.Contains(f.importStatus, i18n.Tf("ui.settings.sec.import_failed", "err", "本机密钥库解不开")) {
 		t.Fatalf("拒绝导入反馈 = (%v, %q)", f.importErr, f.importStatus)
 	}
 }
@@ -356,7 +358,7 @@ func TestSecretsPageImportNoSource(t *testing.T) {
 	restoreLight(t)
 	u, f, _ := secretsPageUI(t, SecretsSnapshot{}, nil)
 	u.secretsAction(f, "import", "")
-	if f.importErr || !strings.Contains(f.importStatus, "没有需要导入") {
+	if f.importErr || !strings.Contains(f.importStatus, i18n.T("ui.settings.sec.import_none")) {
 		t.Fatalf("空导入反馈 = (%v, %q)", f.importErr, f.importStatus)
 	}
 }
@@ -379,12 +381,12 @@ func TestSecretsPageNotWired(t *testing.T) {
 	f.secretName.SetText("X")
 	f.secretValue.SetText("sk-val-1234")
 	u.secretsAction(f, "put", "")
-	if !f.secretsErr || !strings.Contains(f.secretsStatus, "未接线") {
+	if !f.secretsErr || !strings.Contains(f.secretsStatus, i18n.T("ui.settings.sec.not_wired")) {
 		t.Fatalf("未接线反馈 = (%v, %q)", f.secretsErr, f.secretsStatus)
 	}
 	// 「导入旧密钥」同样只置只读反馈（未接线时不触达管理面）。
 	u.secretsAction(f, "import", "")
-	if !f.importErr || !strings.Contains(f.importStatus, "未接线") {
+	if !f.importErr || !strings.Contains(f.importStatus, i18n.T("ui.settings.sec.not_wired")) {
 		t.Fatalf("未接线导入反馈 = (%v, %q)", f.importErr, f.importStatus)
 	}
 }

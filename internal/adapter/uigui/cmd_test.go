@@ -9,6 +9,7 @@ import (
 
 	"gioui.org/io/input"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -20,13 +21,13 @@ func TestCmdHeaderText(t *testing.T) {
 		open      bool
 		want      string
 	}{
-		{cmd: 1, open: false, want: "折叠 1 条命令 · 点击展开"},
-		{cmd: 3, open: false, want: "折叠 3 条命令 · 点击展开"},
-		{cmd: 3, open: true, want: "折叠 3 条命令 · 点击收起"},
+		{cmd: 1, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 1) + " · " + i18n.T("ui.cmd.expand")},
+		{cmd: 3, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 3) + " · " + i18n.T("ui.cmd.expand")},
+		{cmd: 3, open: true, want: i18n.Tf("ui.cmd.header_commands", "n", 3) + " · " + i18n.T("ui.cmd.collapse")},
 		// 一条命令带一项回执：仍报 1 条（按命令行数，不按条目数）。
-		{cmd: 1, note: 2, open: false, want: "折叠 1 条命令 · 点击展开"},
-		{note: 1, open: false, want: "1 条提示 · 点击展开"},
-		{note: 2, open: true, want: "2 条提示 · 点击收起"},
+		{cmd: 1, note: 2, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 1) + " · " + i18n.T("ui.cmd.expand")},
+		{note: 1, open: false, want: i18n.Tf("ui.cmd.header_notes", "n", 1) + " · " + i18n.T("ui.cmd.expand")},
+		{note: 2, open: true, want: i18n.Tf("ui.cmd.header_notes", "n", 2) + " · " + i18n.T("ui.cmd.collapse")},
 	}
 	for _, c := range cases {
 		if got := cmdHeaderText(c.cmd, c.note, c.open); got != c.want {

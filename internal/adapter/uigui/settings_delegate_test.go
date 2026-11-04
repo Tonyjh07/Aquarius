@@ -11,6 +11,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // errFakeWrite 写回失败的替身错误（状态行要把它说出来）。
@@ -162,7 +164,7 @@ func TestDelegateActions(t *testing.T) {
 	// 空命令行：拦下，不写回。
 	f.delegateEditor("ghost").SetText("   ")
 	u.dispatchDelegateAction(f, "save:ghost")
-	if !f.delegateErr || !strings.Contains(f.delegateStatus, "不能为空") {
+	if !f.delegateErr || f.delegateStatus != i18n.T("ui.settings.dlg.cmd_empty") {
 		t.Fatalf("空命令行应拦下: %v %q", f.delegateErr, f.delegateStatus)
 	}
 
@@ -182,8 +184,8 @@ func TestDelegateActions(t *testing.T) {
 			t.Fatalf("ghost 应已缺省且启用: %+v", a)
 		}
 	}
-	if !strings.Contains(f.delegateStatus, "重启生效") {
-		t.Fatalf("状态行应说清重启生效: %q", f.delegateStatus)
+	if want := i18n.Tf("ui.settings.dlg.set_default_done", "name", "ghost"); f.delegateStatus != want {
+		t.Fatalf("状态行应说清重启生效: %q, want %q", f.delegateStatus, want)
 	}
 }
 

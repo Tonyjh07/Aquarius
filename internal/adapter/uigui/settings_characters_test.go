@@ -7,10 +7,10 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -85,8 +85,8 @@ func TestCharPickFillsSource(t *testing.T) {
 	if got := f.charSource.Text(); got != `C:\x\card.png` {
 		t.Fatalf("来源框 = %q", got)
 	}
-	if !strings.Contains(f.charStatus, "点「导入」") {
-		t.Fatalf("状态行 = %q", f.charStatus)
+	if want := i18n.Tf("ui.settings.char.picked", "path", `C:\x\card.png`); f.charStatus != want {
+		t.Fatalf("状态行 = %q, want %q", f.charStatus, want)
 	}
 }
 

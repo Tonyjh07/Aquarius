@@ -14,6 +14,7 @@ import (
 	"gioui.org/unit"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -200,7 +201,7 @@ func TestPendingFullShowsNotice(t *testing.T) {
 	if len(p.items) != 1 {
 		t.Fatalf("满额时不该收下第二条，实际 %+v", p.items)
 	}
-	if len(u.m.blocks) != 1 || !strings.Contains(u.m.blocks[0].text, "待发已满") {
+	if len(u.m.blocks) != 1 || !strings.Contains(u.m.blocks[0].text, i18n.T("ui.state.pending_full")) {
 		t.Fatalf("应有一条满额提示，实际 %+v", u.m.blocks)
 	}
 	select {

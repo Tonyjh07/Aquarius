@@ -25,6 +25,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -77,7 +78,7 @@ func TestNodeSegmentsImages(t *testing.T) {
 	if len(segs) != 2 {
 		t.Fatalf("段数 = %d, want 2（工具边界断段）: %+v", len(segs), segs)
 	}
-	if segs[0].text != "甲" || strings.Contains(segs[0].text, "图片") {
+	if segs[0].text != "甲" || strings.Contains(segs[0].text, i18n.T("attach.image")) {
 		t.Fatalf("segs[0].text = %q, want 仅「甲」", segs[0].text)
 	}
 	if len(segs[0].imgs) != 2 || segs[0].imgs[0].blob.Hash != "h1" || segs[0].imgs[1].blob.Hash != "h2" {

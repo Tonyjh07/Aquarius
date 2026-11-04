@@ -11,6 +11,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -220,8 +221,8 @@ func TestSaveIncludesWeb(t *testing.T) {
 	if got.WebFetchRobots || !got.WebFetchPrivate {
 		t.Fatalf("开关 = robots:%v private:%v", got.WebFetchRobots, got.WebFetchPrivate)
 	}
-	if !strings.Contains(f.status, "已保存") {
-		t.Fatalf("保存反馈 = %q", f.status)
+	if f.status != i18n.T("ui.settings.act.saved") {
+		t.Fatalf("保存反馈 = %q, want %q", f.status, i18n.T("ui.settings.act.saved"))
 	}
 	// 保存后快照跟着走：再存一次不会因为「以为没改」把用户刚填的值丢掉。
 	if !f.snap.WebFetchPrivate || f.snap.WebFetchRobots {

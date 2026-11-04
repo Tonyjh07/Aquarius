@@ -13,6 +13,8 @@ import (
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/widget"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // histTreeUI 带可改树编辑状态的夹具（指针接收，测试中途可翻状态）。
@@ -99,10 +101,10 @@ func TestHistTreeDirtyItems(t *testing.T) {
 	if len(items) != 9 {
 		t.Fatalf("脏时项数 = %d, want 9", len(items))
 	}
-	if items[7].label != "已改 3 处" || items[7].click != nil {
+	if items[7].label != i18n.Tf("ui.history.edits_count", "n", 3) || items[7].click != nil {
 		t.Fatalf("第 8 项 = %+v, want 只读「已改 3 处」", items[7])
 	}
-	if items[8].label != "放弃" || items[8].click == nil {
+	if items[8].label != i18n.T("ui.history.discard") || items[8].click == nil {
 		t.Fatalf("第 9 项 = %+v, want 可点「放弃」", items[8])
 	}
 

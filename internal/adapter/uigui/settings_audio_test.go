@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -93,7 +94,7 @@ func TestSaveIncludesAudio(t *testing.T) {
 		got.TTSStyle != "语速稍快" || got.TTSTags != "温柔 慢速" {
 		t.Fatalf("TTS patch = %+v", got)
 	}
-	if !strings.Contains(f.status, "已保存") {
+	if f.status != i18n.T("ui.settings.act.saved") {
 		t.Fatalf("保存反馈 = %q", f.status)
 	}
 }
@@ -263,7 +264,7 @@ func TestPreviewVoiceUsesDraft(t *testing.T) {
 	f.ttsStyle.SetText("慢一点")
 	f.ttsTags.SetText("沉稳")
 	u.previewVoice(f)
-	if !f.voiceBusy || f.voiceStatus != "正在合成…" {
+	if !f.voiceBusy || f.voiceStatus != i18n.T("ui.page.audio.status.synthesizing") {
 		t.Fatalf("试听应进入合成态: busy=%v status=%q", f.voiceBusy, f.voiceStatus)
 	}
 	select {
@@ -271,9 +272,9 @@ func TestPreviewVoiceUsesDraft(t *testing.T) {
 		f.voiceBusy = false
 		f.voiceErr = err != nil
 		if err != nil {
-			f.voiceStatus = "试听失败：" + err.Error()
+			f.voiceStatus = i18n.Tf("ui.page.audio.status.preview_failed", "err", err.Error())
 		} else {
-			f.voiceStatus = "已开始播放"
+			f.voiceStatus = i18n.T("ui.page.audio.status.playing")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("超时：试听没有回结果")
@@ -284,7 +285,7 @@ func TestPreviewVoiceUsesDraft(t *testing.T) {
 	if got.Voice != "云希" || got.Design != "清亮男声" || got.Style != "慢一点" || got.Tags != "沉稳" {
 		t.Fatalf("试听参数 = %+v", got)
 	}
-	if f.voiceStatus != "已开始播放" {
+	if f.voiceStatus != i18n.T("ui.page.audio.status.playing") {
 		t.Fatalf("试听反馈 = %q", f.voiceStatus)
 	}
 }
@@ -312,7 +313,7 @@ func TestPreviewVoiceFailureAndGuard(t *testing.T) {
 	})
 	rf := newSettingsForm(ro)
 	ro.previewVoice(rf)
-	if !rf.voiceErr || !strings.Contains(rf.voiceStatus, "不可用") {
+	if !rf.voiceErr || rf.voiceStatus != i18n.T("ui.page.audio.status.unavailable") {
 		t.Fatalf("未接线试听反馈 = %q (err=%v)", rf.voiceStatus, rf.voiceErr)
 	}
 

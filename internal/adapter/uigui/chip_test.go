@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -31,7 +32,7 @@ func TestToolChipConfirmMerge(t *testing.T) {
 	}
 
 	m.replyConfirm(port.ConfirmAnswer{Allow: true})
-	if m.blocks[0].chip.confirmA != "允许" {
+	if m.blocks[0].chip.confirmA != i18n.T("ui.common.allow") {
 		t.Fatalf("confirmA = %q, want 允许", m.blocks[0].chip.confirmA)
 	}
 	if m.confirm != nil {
@@ -63,7 +64,7 @@ func TestToolChipConfirmDeny(t *testing.T) {
 	reply := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("允许执行 term_exec？参数: {}", reply)
 	m.replyConfirm(port.ConfirmAnswer{})
-	if m.blocks[0].chip.confirmA != "拒绝" {
+	if m.blocks[0].chip.confirmA != i18n.T("ui.common.deny") {
 		t.Fatalf("confirmA = %q, want 拒绝", m.blocks[0].chip.confirmA)
 	}
 	select {
@@ -86,7 +87,8 @@ func TestConfirmNonToolStaysPlain(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
 	reply := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("确认删除 n1 及其子树（至少 3 条节点）？此操作不可恢复", reply)
+	askDel := "确认删除 n1 及其子树（至少 3 条节点）？此操作不可恢复"
+	m.startConfirm(askDel, reply)
 
 	if m.confirmChip != -1 {
 		t.Fatalf("confirmChip = %d, want -1（不并入）", m.confirmChip)
@@ -98,7 +100,7 @@ func TestConfirmNonToolStaysPlain(t *testing.T) {
 	if m.blocks[0].chip.confirmA != "" {
 		t.Fatal("不应写入 chip")
 	}
-	if !strings.Contains(allText(m), "→ 允许") {
+	if !strings.Contains(allText(m), askDel+" → "+i18n.T("ui.common.allow")) {
 		t.Fatal("非 chip 确认应保留文本行回显（D86 中文回显）")
 	}
 }
@@ -109,7 +111,7 @@ func TestToolChipCommitClosesOpen(t *testing.T) {
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "sleep_tool"}})
 	m.commit(conversation.Message{Role: conversation.RoleAssistant, Outcome: conversation.OutcomeCancelled})
 	c := m.blocks[0].chip
-	if c == nil || !c.done || c.ok || !strings.Contains(c.result, "未返回") {
+	if c == nil || !c.done || c.ok || !strings.Contains(c.result, i18n.T("ui.chat.tool_not_returned")) {
 		t.Fatalf("chip 未收口: %+v", c)
 	}
 }
@@ -157,7 +159,7 @@ func TestChipHeaderText(t *testing.T) {
 		t.Fatalf("失败头部 = %q", h)
 	}
 	pend := &toolChip{name: "x", confirmQ: "允许执行 x？"}
-	if h := chipHeaderText(pend, false); !strings.Contains(h, "待确认") {
+	if h := chipHeaderText(pend, false); h != "▸ 🔧 x · "+i18n.T("ui.chat.chip_pending") {
 		t.Fatalf("待确认头部 = %q", h)
 	}
 }

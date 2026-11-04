@@ -11,6 +11,8 @@ package platform
 import (
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // unsupportedDocExts 选择框不该主推的扩展名：摄取端没有解析器，只能回落二进制占位。
@@ -54,7 +56,7 @@ func TestAttachFilterOnlyOffersParsableDocs(t *testing.T) {
 	docPat := ""
 	for i := 0; i+1 < len(attachFilter()); i += 2 {
 		label, pat := attachFilter()[i], attachFilter()[i+1]
-		if label == "文档" {
+		if label == i18n.T("ui.platform.filter.docs") {
 			docPat = pat
 		}
 		if strings.Contains(pat, "*.*") {

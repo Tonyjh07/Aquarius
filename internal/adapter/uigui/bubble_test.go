@@ -11,6 +11,7 @@ import (
 	"gioui.org/io/pointer"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // rectCenterF 矩形中心的指针坐标（气泡命中测试用）。
@@ -194,16 +195,16 @@ func TestBubbleRectsThinkingChip(t *testing.T) {
 
 	// thinking ctx：复制 = 思考文本；raw = 思考原文标题；无编辑预填。
 	ct := u.bubbleCtx(u.hitBubble(rectCenterI(thinkHit.rect)))
-	if ct.copy != "想一想" || ct.raw.title != "思考原文 · a1" || ct.raw.text != "想一想" || ct.edit != "" {
+	if ct.copy != "想一想" || ct.raw.title != i18n.Tf("ui.chat.thinking_raw_title", "id", "a1") || ct.raw.text != "想一想" || ct.edit != "" {
 		t.Fatalf("thinking ctx = %+v", ct)
 	}
 
 	// chip ctx：复制 = 名+参数+结果（剔除 UI 修饰）；raw = JSON 内嵌参数原值。
 	cc := u.bubbleCtx(u.hitBubble(rectCenterI(chipHit.rect)))
-	if want := "think\n{\"q\":1}\n结果 ✓\n完毕"; cc.copy != want {
+	if want := "think\n{\"q\":1}\n" + i18n.T("ui.chat.chip_result_ok") + "\n完毕"; cc.copy != want {
 		t.Fatalf("chip copy = %q, want %q", cc.copy, want)
 	}
-	if cc.raw.title != "工具调用 · think" ||
+	if cc.raw.title != i18n.Tf("ui.chat.chip_raw_title", "name", "think") ||
 		!strings.Contains(cc.raw.text, `"tool": "think"`) ||
 		!strings.Contains(cc.raw.text, `"q": 1`) {
 		t.Fatalf("chip raw = %+v", cc.raw)
@@ -213,12 +214,12 @@ func TestBubbleRectsThinkingChip(t *testing.T) {
 	// 故多给一项「生成响应」（D183——从该思考所属节点续写）；工具 chip 无节点 ID
 	// （chip 态自足、命中不带 id）不给——`/respond` 要 ID 才有意义。
 	items := bubbleMenuItems(blockThinking, true)
-	if len(items) != 3 || items[0].label != "复制" || items[1].label != "查看原文" ||
-		items[2].id != cmdNodeRespond || items[2].label != "生成响应" {
+	if len(items) != 3 || items[0].label != i18n.T("ui.common.copy") || items[1].label != i18n.T("ui.menu.raw") ||
+		items[2].id != cmdNodeRespond || items[2].label != i18n.T("ui.menu.respond") {
 		t.Fatalf("thinking 菜单项 = %+v, want 复制/查看原文/生成响应", items)
 	}
 	items = bubbleMenuItems(blockTool, false)
-	if len(items) != 2 || items[0].label != "复制" || items[1].label != "查看原文" {
+	if len(items) != 2 || items[0].label != i18n.T("ui.common.copy") || items[1].label != i18n.T("ui.menu.raw") {
 		t.Fatalf("tool 菜单项 = %+v, want 复制/查看原文", items)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -167,7 +168,7 @@ func TestNewSettingsFormReadOnly(t *testing.T) {
 		t.Fatal("回调全 nil 应为只读占位")
 	}
 	u.saveSettings(f)
-	if !f.err || !strings.Contains(f.status, "只读") {
+	if !f.err || !strings.Contains(f.status, i18n.T("ui.settings.act.not_wired")) {
 		t.Errorf("只读保存反馈 = (%v, %q)", f.err, f.status)
 	}
 }
@@ -229,7 +230,7 @@ func TestSaveSettingsHeadless(t *testing.T) {
 	if hk, _ := u.hotkeyCfg.Load().(string); hk != "Ctrl+B" {
 		t.Errorf("快捷键槽 = %q, want Ctrl+B", hk)
 	}
-	if f.err || !strings.Contains(f.status, "已保存") {
+	if f.err || !strings.Contains(f.status, i18n.T("ui.settings.act.saved_model")) {
 		t.Errorf("反馈 = (%v, %q)", f.err, f.status)
 	}
 	if f.snap.Theme != "dark" || f.snap.Model != "m2" {
@@ -251,7 +252,7 @@ func TestSaveSettingsErrors(t *testing.T) {
 		})
 		f := newSettingsForm(u)
 		u.saveSettings(f)
-		if !f.err || !strings.Contains(f.status, "保存失败") {
+		if !f.err || !strings.Contains(f.status, i18n.Tf("ui.settings.act.save_failed", "err", "磁盘已满")) {
 			t.Errorf("反馈 = (%v, %q)", f.err, f.status)
 		}
 		if len(u.inCh) != 0 {
@@ -271,7 +272,8 @@ func TestSaveSettingsErrors(t *testing.T) {
 		f := newSettingsForm(u)
 		f.hotkey.SetText("Nope+Nope")
 		u.saveSettings(f)
-		if !f.err || !strings.Contains(f.status, "快捷键非法") {
+		if !f.err || !strings.Contains(f.status,
+			i18n.T("ui.settings.err.hotkey")+"："+platform.ValidateHotkey("Nope+Nope").Error()) {
 			t.Errorf("反馈 = (%v, %q)", f.err, f.status)
 		}
 		if called != 0 {
@@ -337,7 +339,7 @@ func TestSaveSettingsZoomKnobs(t *testing.T) {
 	if z := u.zoomLoad(); z != (zoomKnobs{scale: 1.5, fontSp: 20}) {
 		t.Errorf("zoom 槽 = %+v, want {1.5 20}（热更）", z)
 	}
-	if f.err || !strings.Contains(f.status, "已保存") {
+	if f.err || !strings.Contains(f.status, i18n.T("ui.settings.act.saved")) {
 		t.Errorf("反馈 = (%v, %q)", f.err, f.status)
 	}
 	if f.snap.Scale != 1.5 || f.snap.FontSize != 20 ||
@@ -486,7 +488,8 @@ func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
 	// 非法数值拦截：压缩阈值越界不落盘。
 	f.compact.SetText("1.5")
 	u.saveSettings(f)
-	if !f.err || !strings.Contains(f.status, "压缩阈值") {
+	if !f.err || !strings.Contains(f.status,
+		i18n.Tf("ui.settings.err.compact", "min", port.SettingsCompactMin, "max", port.SettingsCompactMax)) {
 		t.Fatalf("阈值拦截 = (%v, %q)", f.err, f.status)
 	}
 	f.compact.SetText("0.8")

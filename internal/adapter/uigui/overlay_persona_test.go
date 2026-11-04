@@ -17,6 +17,7 @@ import (
 	"gioui.org/io/key"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -195,7 +196,7 @@ func TestOverlayTemplateSavesOnlyPromptKeys(t *testing.T) {
 	if p.SystemPrompt != "LEGACY" {
 		t.Errorf("写回默认人格 = %q, want LEGACY", p.SystemPrompt)
 	}
-	if ov.tplErr || !strings.Contains(ov.tplStatus, "只对新会话生效") {
+	if ov.tplErr || !strings.Contains(ov.tplStatus, i18n.T("ui.overlay.tpl_saved")) {
 		t.Errorf("保存反馈 = %q（err=%v），want 成功提示", ov.tplStatus, ov.tplErr)
 	}
 }
