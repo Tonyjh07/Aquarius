@@ -26,18 +26,20 @@ import (
 
 // fakeWelcome WelcomeManager 测试替身（记录调用、可注入失败）。
 type fakeWelcome struct {
-	snap     WelcomeSnapshot
-	applied  []WelcomePatch
-	applyErr error
-	tested   []WelcomePatch
-	testErr  error
-	models   []string
-	marked   int
-	markErr  error
-	langs    []string // SetLang 调用序（只记值，不模拟落盘）
-	langErr  error
-	consents []int // SetConsent 调用序
-	consErr  error
+	snap       WelcomeSnapshot
+	applied    []WelcomePatch
+	applyErr   error
+	tested     []WelcomePatch
+	testErr    error
+	models     []string
+	marked     int
+	markErr    error
+	langs      []string // SetLang 调用序（只记值，不模拟落盘）
+	langErr    error
+	consents   []int // SetConsent 调用序
+	consErr    error
+	issues     []string // Issues 的返回值（末页检查）
+	issueCalls int      // Issues 被问了几次（末页只在进页时问一次）
 }
 
 func (f *fakeWelcome) Snapshot() WelcomeSnapshot { return f.snap }
@@ -69,11 +71,18 @@ func (f *fakeWelcome) SetConsent(version int) error {
 	return f.consErr
 }
 
-// welcomeEnvSnap 表单测试基准环境（快照 + 结局收集）。
-func welcomeEnvSnap(mgr *fakeWelcome, setup bool, issues []string) (welcomeEnv, *[]SetupOutcome) {
+// Issues 末页检查（D278）：替身直接回灌预设句子，并记一次调用。
+func (f *fakeWelcome) Issues() []string {
+	f.issueCalls++
+	return f.issues
+}
+
+// welcomeEnvSnap 表单测试基准环境（快照 + 结局收集）。needKey = 本次向导是为「密钥取不到」
+// 而来（页 3 因此要求填一把钥匙）。
+func welcomeEnvSnap(mgr *fakeWelcome, setup, needKey bool) (welcomeEnv, *[]SetupOutcome) {
 	outs := &[]SetupOutcome{}
 	snap := mgr.snap
-	snap.Issues = issues
+	snap.NeedKey = needKey
 	env := welcomeEnv{mgr: mgr, setup: setup, snap: snap, done: func(o SetupOutcome) { *outs = append(*outs, o) }}
 	return env, outs
 }
@@ -93,7 +102,7 @@ func TestWelcomeLangSelection(t *testing.T) {
 	i18n.Use(i18n.SelectionZh)
 
 	mgr := baseFake()
-	env, _ := welcomeEnvSnap(mgr, true, nil)
+	env, _ := welcomeEnvSnap(mgr, true, false)
 	f := newWelcomeForm(env)
 	if f.lang != i18n.SelectionAuto {
 		t.Fatalf("快照 ui.lang 空应归一为 auto: %q", f.lang)
@@ -121,7 +130,7 @@ func TestWelcomeLangSelection(t *testing.T) {
 	// 装配后（in-app 次窗）：只记录，不热切——主窗文案已散进各视图与测量（D275）。
 	i18n.Use(i18n.SelectionZh)
 	mgr2 := baseFake()
-	env2, _ := welcomeEnvSnap(mgr2, false, nil)
+	env2, _ := welcomeEnvSnap(mgr2, false, false)
 	f2 := newWelcomeForm(env2)
 	f2.pickLang(i18n.SelectionEn)
 	if i18n.Current() != i18n.LangZh {
@@ -135,7 +144,7 @@ func TestWelcomeLangSelection(t *testing.T) {
 	// 写盘失败：留在第 1 页、报因、不静默往下走。
 	mgr3 := baseFake()
 	mgr3.langErr = errors.New("read-only file system")
-	env3, _ := welcomeEnvSnap(mgr3, true, nil)
+	env3, _ := welcomeEnvSnap(mgr3, true, false)
 	f3 := newWelcomeForm(env3)
 	f3.pickLang(i18n.SelectionEn)
 	f3.onNext()
@@ -148,13 +157,13 @@ func TestWelcomeLangSelection(t *testing.T) {
 func TestWelcomeLangFromSnapshot(t *testing.T) {
 	mgr := baseFake()
 	mgr.snap.Lang = "en"
-	env, _ := welcomeEnvSnap(mgr, true, nil)
+	env, _ := welcomeEnvSnap(mgr, true, false)
 	if f := newWelcomeForm(env); f.lang != i18n.SelectionEn {
 		t.Fatalf("初值 = %q, want en", f.lang)
 	}
 	// 非法值（旧配置手写）不该拦住向导：回落 auto。
 	mgr.snap.Lang = "fr"
-	env, _ = welcomeEnvSnap(mgr, true, nil)
+	env, _ = welcomeEnvSnap(mgr, true, false)
 	if f := newWelcomeForm(env); f.lang != i18n.SelectionAuto {
 		t.Fatalf("非法 ui.lang 应回落 auto: %q", f.lang)
 	}
@@ -164,7 +173,7 @@ func TestWelcomeLangFromSnapshot(t *testing.T) {
 // 勾选后才可继续、落盘走 SetConsent（**不重写 provider**），完成后交回 Done。
 func TestWelcomeConsentOnly(t *testing.T) {
 	mgr := baseFake()
-	env, outs := welcomeEnvSnap(mgr, true, nil)
+	env, outs := welcomeEnvSnap(mgr, true, false)
 	env.consentOnly = true
 	f := newWelcomeForm(env)
 	if f.page != welcomeTerms {
@@ -191,7 +200,7 @@ func TestWelcomeConsentOnly(t *testing.T) {
 
 	// 关闭 = 取消（没有「以后再说」这条路：不同意就不能继续用）。
 	mgr2 := baseFake()
-	env2, outs2 := welcomeEnvSnap(mgr2, true, nil)
+	env2, outs2 := welcomeEnvSnap(mgr2, true, false)
 	env2.consentOnly = true
 	f2 := newWelcomeForm(env2)
 	f2.onSkip()
@@ -248,7 +257,7 @@ func TestWelcomeFormFill(t *testing.T) {
 // mustEnv 基准环境（快照来自 baseFake）。
 func mustEnv(t *testing.T, setup bool, issues []string) welcomeEnv {
 	t.Helper()
-	env, _ := welcomeEnvSnap(baseFake(), setup, issues)
+	env, _ := welcomeEnvSnap(baseFake(), setup, len(issues) > 0)
 	return env
 }
 
@@ -348,7 +357,7 @@ func TestWelcomeFormPageFlow(t *testing.T) {
 // 结束宿主（SetupDone）。
 func TestWelcomeFormSave(t *testing.T) {
 	mgr := baseFake()
-	env, outs := welcomeEnvSnap(mgr, true, nil)
+	env, outs := welcomeEnvSnap(mgr, true, false)
 	f := newWelcomeForm(env)
 	f.consent.Value = true
 	f.apiKey.SetText("secret:AQ_K")
@@ -371,7 +380,7 @@ func TestWelcomeFormSave(t *testing.T) {
 func TestWelcomeFormSaveError(t *testing.T) {
 	mgr := baseFake()
 	mgr.applyErr = errors.New("写盘失败：磁盘满")
-	env, outs := welcomeEnvSnap(mgr, true, nil)
+	env, outs := welcomeEnvSnap(mgr, true, false)
 	f := newWelcomeForm(env)
 	f.consent.Value = true
 	f.onSave()
@@ -392,7 +401,7 @@ func TestWelcomeFormSaveError(t *testing.T) {
 // in-app = 置 welcomed（显式关闭即已看）后关窗。
 func TestWelcomeFormSkip(t *testing.T) {
 	mgr := baseFake()
-	env, outs := welcomeEnvSnap(mgr, true, nil)
+	env, outs := welcomeEnvSnap(mgr, true, false)
 	f := newWelcomeForm(env)
 	f.onSkip()
 	if len(*outs) != 1 || (*outs)[0] != SetupDone {
@@ -403,7 +412,7 @@ func TestWelcomeFormSkip(t *testing.T) {
 	}
 
 	mgr2 := baseFake()
-	env2, outs2 := welcomeEnvSnap(mgr2, false, nil)
+	env2, outs2 := welcomeEnvSnap(mgr2, false, false)
 	f2 := newWelcomeForm(env2)
 	f2.onSkip()
 	if mgr2.marked != 1 {
@@ -415,7 +424,7 @@ func TestWelcomeFormSkip(t *testing.T) {
 
 	// 勾过同意之后从首页退出：同意照样落盘，免得下次启动又把人拉回条款页重读一遍。
 	mgr3 := baseFake()
-	env3, _ := welcomeEnvSnap(mgr3, true, nil)
+	env3, _ := welcomeEnvSnap(mgr3, true, false)
 	f3 := newWelcomeForm(env3)
 	f3.consent.Value = true
 	f3.onSkip()
@@ -424,12 +433,61 @@ func TestWelcomeFormSkip(t *testing.T) {
 	}
 }
 
+// TestWelcomeDoneCheckAtPageFive 启动前检查在**末页**（D278）：进第 5 页时现问数据面，
+// 且只在本轮不写 provider 时才问——第 3 页填了参数的那一支，钥匙就在这次提交里，
+// 拿落盘态再探一遍只会把用户刚填的那把又说成缺。
+func TestWelcomeDoneCheckAtPageFive(t *testing.T) {
+	// 跳过接入页：落盘态就是启动态，末页该问，并拿到「还缺什么」。
+	mgr := baseFake()
+	mgr.issues = []string{"provider openai 缺密钥"}
+	env, outs := welcomeEnvSnap(mgr, true, true)
+	f := newWelcomeForm(env)
+	f.consent.Value = true
+	f.page = welcomeAccess
+	f.onSkip()
+	if mgr.issueCalls != 0 {
+		t.Fatalf("教程页不该做启动前检查: %d 次", mgr.issueCalls)
+	}
+	f.onNext()
+	if f.page != welcomeDone {
+		t.Fatalf("跳过接入页后应落在末页: %v", f.page)
+	}
+	if mgr.issueCalls != 1 {
+		t.Fatalf("进末页应问一次启动前检查: %d 次", mgr.issueCalls)
+	}
+	if len(f.doneIssues) != 1 {
+		t.Fatalf("末页应带着检查结果: %+v", f.doneIssues)
+	}
+	// 检查不挡保存：仍然交回 Done。
+	f.onSave()
+	if len(*outs) != 1 || (*outs)[0] != SetupDone {
+		t.Fatalf("检查结果不该阻断保存: %v", *outs)
+	}
+
+	// 第 3 页填了参数：钥匙在这次提交里，末页不问。
+	mgr2 := baseFake()
+	mgr2.issues = []string{"provider openai 缺密钥"}
+	env2, _ := welcomeEnvSnap(mgr2, true, true)
+	f2 := newWelcomeForm(env2)
+	f2.consent.Value = true
+	f2.apiKey.SetText("sk-live")
+	f2.page = welcomeAccess
+	f2.onNext()
+	f2.onNext()
+	if f2.page != welcomeDone {
+		t.Fatalf("应落在末页: %v", f2.page)
+	}
+	if mgr2.issueCalls != 0 || len(f2.doneIssues) != 0 {
+		t.Fatalf("写 provider 的一支不该做落盘态检查: %d 次 %+v", mgr2.issueCalls, f2.doneIssues)
+	}
+}
+
 // TestWelcomeSkipAccessKeepsWizard 第 3 页「稍后配置」只跳过这一页（O5 收尾口径）：
 // 不结束向导、落在教程页；末页保存落同意 + welcomed，providers 一个字都不动——
 // 否则第 2 页勾过的同意没有落盘点，下次启动又把人拉回条款页。
 func TestWelcomeSkipAccessKeepsWizard(t *testing.T) {
 	mgr := baseFake()
-	env, outs := welcomeEnvSnap(mgr, true, []string{"缺密钥"})
+	env, outs := welcomeEnvSnap(mgr, true, true)
 	f := newWelcomeForm(env)
 	f.consent.Value = true
 	f.page = welcomeAccess
@@ -460,7 +518,7 @@ func TestWelcomeSkipAccessKeepsWizard(t *testing.T) {
 
 	// 回第 3 页补齐参数再往下走：跳过标记作废，保存回到 Apply。
 	mgr2 := baseFake()
-	env2, _ := welcomeEnvSnap(mgr2, true, nil)
+	env2, _ := welcomeEnvSnap(mgr2, true, false)
 	f2 := newWelcomeForm(env2)
 	f2.consent.Value = true
 	f2.page = welcomeAccess
@@ -482,7 +540,7 @@ func TestWelcomeSkipAccessKeepsWizard(t *testing.T) {
 // TestWelcomeFormFinishOnce 幂等：连点跳过只结束一次（关窗与按钮竞争面）。
 // 装配前宿主上的跳过 = Done（D278 决策 3：跳过就是「没写 provider 的完成」）。
 func TestWelcomeFormFinishOnce(t *testing.T) {
-	env, outs := welcomeEnvSnap(baseFake(), true, nil)
+	env, outs := welcomeEnvSnap(baseFake(), true, false)
 	f := newWelcomeForm(env)
 	f.onSkip()
 	f.onSkip()
@@ -496,7 +554,7 @@ func TestWelcomeFormFinishOnce(t *testing.T) {
 // 循环（drain）→ 内联「● 连通正常 · N ms」/ 失败原因（D153：结果落在测试按钮这一行）。
 func TestWelcomeFormTestConnectivity(t *testing.T) {
 	mgr := baseFake()
-	env, _ := welcomeEnvSnap(mgr, false, nil)
+	env, _ := welcomeEnvSnap(mgr, false, false)
 	f := newWelcomeForm(env)
 	f.onTest()
 	if !f.probeBusy {
@@ -515,7 +573,7 @@ func TestWelcomeFormTestConnectivity(t *testing.T) {
 
 	mgr2 := baseFake()
 	mgr2.testErr = errors.New("连接超时")
-	env2, _ := welcomeEnvSnap(mgr2, false, nil)
+	env2, _ := welcomeEnvSnap(mgr2, false, false)
 	f2 := newWelcomeForm(env2)
 	f2.onTest()
 	waitProbe(t, f2, "连通失败")
@@ -560,7 +618,7 @@ func waitHint(t *testing.T, f *welcomeForm, want string) {
 func TestWelcomeFetchModels(t *testing.T) {
 	mgr := baseFake()
 	mgr.models = []string{"m1", "m2", "m3"}
-	env, _ := welcomeEnvSnap(mgr, true, nil)
+	env, _ := welcomeEnvSnap(mgr, true, false)
 	f := newWelcomeForm(env) // 模型名 = 快照原值（基线）→ 允许自动填入
 	f.onFetchModels()
 	if !strings.Contains(f.modelsHint, i18n.T("ui.welcome.models_fetching")) {
@@ -679,7 +737,7 @@ func TestWelcomeFrameRendersPages(t *testing.T) {
 	_ = u
 	th := testTheme()
 	mgr := baseFake()
-	env, _ := welcomeEnvSnap(mgr, true, []string{"provider \"openai\" 缺密钥：环境变量 AQ_K 未设置"})
+	env, _ := welcomeEnvSnap(mgr, true, true)
 	f := newWelcomeForm(env)
 	f.apiKey.SetText("secret:AQ_K")
 

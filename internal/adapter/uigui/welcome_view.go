@@ -6,7 +6,6 @@ import (
 	"image"
 	"image/color"
 	"strconv"
-	"strings"
 
 	"gioui.org/font"
 	"gioui.org/layout"
@@ -85,9 +84,6 @@ func welcomeFrame(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 										}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 												layout.Rigid(welcomeHeader(th, f)),
-												layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-													return layout.Inset{Top: unit.Dp(10)}.Layout(gtx, welcomeIssues(th, f))
-												}),
 											)
 										})
 									}),
@@ -189,18 +185,6 @@ func welcomeDot(pp paperPalette, done, active bool) layout.Widget {
 			}
 			return layout.Dimensions{Size: image.Pt(d, d)}
 		})
-	}
-}
-
-// welcomeIssues 问题清单提示（装配前宿主填；空 = 不占位）。
-func welcomeIssues(th *material.Theme, f *welcomeForm) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		if len(f.env.snap.Issues) == 0 {
-			return layout.Dimensions{}
-		}
-		l := material.Body2(th, i18n.Tf("ui.welcome.issues", "issues", strings.Join(f.env.snap.Issues, "；")))
-		l.Color = paperOf().danger
-		return l.Layout(gtx)
 	}
 }
 

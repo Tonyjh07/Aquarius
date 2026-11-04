@@ -207,8 +207,9 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("向导窗调用 %d 次, want 1（reqs=%+v）", len(got), got)
 	}
-	if joined := strings.Join(got[0].Issues, "；"); !strings.Contains(joined, "DEEPSEEK_API_KEY") {
-		t.Fatalf("向导窗问题清单应指出缺失的密钥: %+v", got[0].Issues)
+	// 缺什么不再随开窗请求下发（挪到末页现探，D278）：请求只说「这次是为密钥而来」。
+	if !got[0].NeedKey {
+		t.Fatal("缺密钥时应标记 NeedKey（页 3 据此要求填一把钥匙）")
 	}
 	// 取消报因的 issue 清单内容随密钥探测错误而定，这里钉到占位符前的整段框架。
 	cancelledPrefix, _, _ := strings.Cut(i18n.T("cmd.welcome.cancelled"), "{")

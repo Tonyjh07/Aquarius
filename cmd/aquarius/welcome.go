@@ -44,6 +44,19 @@ type welcomeManager struct {
 	onStore func()
 }
 
+// Issues 末页「启动前检查」（D278）：按此刻的配置重跑装配前那段探测，一句一条。
+//
+// 与开窗前的 missingKeys 是同一个判据，区别只在**什么时候问**：开窗前那次只用来决定
+// 「要不要开窗」（以及取消时报因），句子会随那时的语言定死；末页这次由窗体在进页时
+// 现问，于是语言是用户在第 1 页选过的那一种，「还缺什么」也出现在该出现的位置。
+func (m *welcomeManager) Issues() []string {
+	cfg, err := loadConfig(m.cfgPath)
+	if err != nil {
+		return nil // 读不了配置不是「缺密钥」，装配期会以读配置的错误报因
+	}
+	return missingKeys(context.Background(), &cfg.Model, m.secrets)
+}
+
 // Snapshot 欢迎窗快照（开窗现取；**密钥不回显**）：primary provider 三项 + 标记。
 // 读失败/无 provider 返回零值（不阻断开窗，Q10 同口径）。
 func (m *welcomeManager) Snapshot() uigui.WelcomeSnapshot {
@@ -414,7 +427,7 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 	outcome, err := setupWindowRunner(uigui.SetupRequest{
 		Theme:       w.cfg.UI.Theme,
 		Mgr:         mgr,
-		Issues:      issues,
+		NeedKey:     len(issues) > 0,
 		ConsentOnly: consentOnly,
 	})
 	if err != nil {
@@ -434,6 +447,11 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 				w.cfg.UI.Welcomed = true
 			}
 			return 0, false
+		}
+		// 现探一次再成句：用户在窗里切过语言（`i18n.Use` 是进程级的，关窗后仍然生效），
+		// 开窗前拼好的那几句是旧语言；这里重新问一遍，报因与他刚看的界面同一种语言。
+		if got := mgr.Issues(); len(got) > 0 {
+			issues = got
 		}
 		msg := i18n.Tf("cmd.welcome.cancelled",
 			"issues", strings.Join(issues, i18n.T("cmd.welcome.issues_sep")))

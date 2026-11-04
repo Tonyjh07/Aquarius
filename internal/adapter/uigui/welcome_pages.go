@@ -691,16 +691,39 @@ func (f *welcomeForm) tutorialPage(gtx layout.Context, th *material.Theme) layou
 // 以为保存失败了，而真正要说的是「现在能用、之后在哪补」（D278 决策 3）。
 func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	p := f.patch()
-	if strings.TrimSpace(p.Provider) == "" {
-		return (&f.doneList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+	// 本轮不写 provider（第 3 页按过「稍后配置」，或本来就没配）：这里不该列一份「将要
+	// 写入」的摘要——那会让人以为这些参数就是这么用的。说清「没改」+ 启动前检查就够了。
+	if f.accessSkipped || strings.TrimSpace(p.Provider) == "" {
+		head := i18n.T("ui.welcome.done.skipped")
+		if p.Provider != "" {
+			head = i18n.T("ui.welcome.done.kept")
+		}
+		hint := i18n.T("ui.welcome.done.skipped_hint")
+		if p.Provider != "" {
+			hint = i18n.T("ui.welcome.done.kept_hint")
+		}
+		note := func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(welcomePara(th, i18n.T("ui.welcome.done.skipped"))),
+				layout.Rigid(welcomePara(th, head)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Label(th, paperNoteSp(th), i18n.T("ui.welcome.done.skipped_hint"))
+					l := material.Label(th, paperNoteSp(th), hint)
 					l.Color = paperOf().text2
 					return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, l.Layout)
 				}),
 			)
+		}
+		// 有检查结果时先报它：200% 字号下这一页本来就只放得下三四行（正文区可滚），
+		// 「启动后起不来」比「这一页跳过了」更该在首屏。
+		kids := []layout.FlexChild{layout.Rigid(welcomeDoneIssues(th, f.doneIssues))}
+		if len(f.doneIssues) > 0 {
+			kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, note)
+			}))
+		} else {
+			kids = append(kids, layout.Rigid(note))
+		}
+		return (&f.doneList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, kids...)
 		})
 	}
 	keyForm := f.keyForm(p.APIKey)
@@ -729,6 +752,32 @@ func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Di
 			row(i18n.T("ui.welcome.label.api_key"), keyForm),
 		)
 	})
+}
+
+// welcomeDoneIssues 末页「启动前检查」：仍缺的东西（进入本页时由 refreshDoneIssues 现探）。
+//
+// 措辞说的是**启动后**会怎样，不是「保存失败」——这些项不挡保存（可启动空态 / 缺密钥由
+// 装配期报因），挡的是「模型能不能用」，用户据此决定是回去补还是先到此为止。
+func welcomeDoneIssues(th *material.Theme, issues []string) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		if len(issues) == 0 {
+			return layout.Dimensions{}
+		}
+		pp := paperOf()
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Body1(th, i18n.Tf("ui.welcome.done.check",
+					"issues", strings.Join(issues, i18n.T("ui.welcome.issues_sep"))))
+				l.Color = pp.danger
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Label(th, paperNoteSp(th), i18n.T("ui.welcome.done.check_hint"))
+				l.Color = pp.text2
+				return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, l.Layout)
+			}),
+		)
+	}
 }
 
 // keyForm 密钥形态描述（**不回显值**，D35）。
@@ -781,7 +830,7 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	th.Palette.Fg, th.Palette.Bg = p.fg, p.bg
 
 	snap := req.Mgr.Snapshot()
-	snap.Issues = req.Issues
+	snap.NeedKey = req.NeedKey
 	snap.Welcomed = false // 装配前宿主：本次一定是要引导（不是「已看、想再看」）
 
 	w := new(app.Window)

@@ -120,6 +120,42 @@ func TestWelcomeManagerSnapshot(t *testing.T) {
 	}
 }
 
+// TestWelcomeManagerIssues 末页检查（D278）：现探、现成句——语言取**问的那一刻**，
+// 于是第 1 页切过语言之后给的就是新语言（早先这段句子在开窗之前拼好，切语言也不变，
+// 还会在第 1 页就红一段）。密钥可用时为空。
+func TestWelcomeManagerIssues(t *testing.T) {
+	defer i18n.Use(i18n.SelectionZh)
+	i18n.Use(i18n.SelectionZh)
+	cfgPath, _ := writeProvidersConfig(t) // 两条 provider 分别引用 secret:KA / secret:KB
+	t.Setenv("KA", "")
+	t.Setenv("KB", "")
+	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t)}
+
+	zh := m.Issues()
+	if len(zh) != 2 {
+		t.Fatalf("两条 provider 都缺密钥，应有 2 条: %+v", zh)
+	}
+	if !strings.Contains(zh[0], i18n.Tf("cmd.welcome.key.fetch_failed", "provider", strconv.Quote("a"), "err", "")) {
+		t.Fatalf("中文句子应指名 provider 与原因: %q", zh[0])
+	}
+
+	i18n.Use(i18n.SelectionEn)
+	en := m.Issues()
+	if len(en) != 2 || !strings.Contains(en[0], "could not be resolved") {
+		t.Fatalf("切到英文后应给英文句子: %+v", en)
+	}
+	if en[0] == zh[0] {
+		t.Fatalf("切到英文后句子应跟着变（早先这句在开窗之前就定死了）: %q", en[0])
+	}
+
+	i18n.Use(i18n.SelectionZh)
+	t.Setenv("KA", "k")
+	t.Setenv("KB", "k")
+	if got := m.Issues(); len(got) != 0 {
+		t.Fatalf("密钥可用时应为空: %+v", got)
+	}
+}
+
 // TestWelcomeManagerApply 写回（D141）：覆盖 `providers[0]` 三项 + primary + `ui.welcomed`；
 // 无关键（tokenizer / 自定义键）按原条目保留；`model.name` 不在新 models 内 ⇒ 改写为
 // models[0]（否则旧模型名发给新端点）。密钥口径见 D161：填的明文入库、config 只留引用。
@@ -343,8 +379,8 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 		if req.Theme != "system" {
 			t.Errorf("向导窗应带 ui.theme 档（模板 system）: %q", req.Theme)
 		}
-		if joined := strings.Join(req.Issues, "；"); !strings.Contains(joined, "DEEPSEEK_API_KEY") {
-			t.Errorf("问题清单应指名缺失的环境变量: %+v", req.Issues)
+		if !req.NeedKey {
+			t.Error("缺密钥时应标记 NeedKey（末页据此做启动前检查）")
 		}
 		cfg := fmt.Sprintf(`{"model":{"providers":[{"name":"openai","base_url":%q,"keys":[{"api_key":"secret:AQ_KEY"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"repl","welcomed":true}}`, srv.URL)
 		if err := os.WriteFile(profCfg, []byte(cfg), 0o644); err != nil {
@@ -452,8 +488,8 @@ func TestSetupWizardRunsOnFirstRunEvenWithKey(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("首跑应开一次向导窗（密钥可用也要确认），实际 %d 次", len(reqs))
 	}
-	if len(reqs[0].Issues) != 0 {
-		t.Fatalf("密钥可用时问题清单应为空，实际 %+v", reqs[0].Issues)
+	if reqs[0].NeedKey {
+		t.Fatal("密钥可用时不该标记 NeedKey")
 	}
 	cfg := readCfgMap(t, profCfg)
 	if ui, _ := cfg["ui"].(map[string]any); ui["welcomed"] != true {

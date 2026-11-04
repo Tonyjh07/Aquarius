@@ -29,14 +29,16 @@ import (
 
 // WelcomeSnapshot 欢迎窗快照（开窗现取；**密钥永不进快照**，D35）。
 type WelcomeSnapshot struct {
-	Provider string   // 当前 primary provider 名（首跑 = 模板 openai）
-	BaseURL  string   // 该 provider 的 base_url
-	Models   string   // 逗号分隔（首个 = 该 provider 的缺省请求模型）
-	Welcomed bool     // ui.welcomed（键缺失 = 未看）
-	Hotkey   string   // ui.hotkey（教程页展示；空 = Alt+A）
-	Lang     string   // ui.lang（第 1 页语言三态初值；空 = auto）
-	Consent  int      // ui.consent_version（已同意的条款版本；0 = 从未同意）
-	Issues   []string // 「配置不完整」问题清单（缺密钥等）——由装配前宿主填，窗内首条提示
+	Provider string // 当前 primary provider 名（首跑 = 模板 openai）
+	BaseURL  string // 该 provider 的 base_url
+	Models   string // 逗号分隔（首个 = 该 provider 的缺省请求模型）
+	Welcomed bool   // ui.welcomed（键缺失 = 未看）
+	Hotkey   string // ui.hotkey（教程页展示；空 = Alt+A）
+	Lang     string // ui.lang（第 1 页语言三态初值；空 = auto）
+	Consent  int    // ui.consent_version（已同意的条款版本；0 = 从未同意）
+	// NeedKey 本次向导是为「密钥取不到」而来（装配前的 missingKeys 非空）。第 3 页据此
+	// 要求填一把钥匙；「还缺什么」不在这里——那是末页的检查（见 Issues）。
+	NeedKey bool
 	// KeyReady 现有配置里已经有一把能解析的密钥（环境变量或密钥库）。第 3 页据此提示
 	// 「不必再填」，用户就不该被迫把同一份 Key 再打一遍（D278 决策 3 的落地补充）。
 	KeyReady bool
@@ -69,6 +71,11 @@ type WelcomeManager interface {
 	// SetConsent 仅写回 `ui.consent_version`（重过第 2 页时用：此时 provider 已经配好，
 	// 走 Apply 会把整条 provider 再覆盖一遍）。
 	SetConsent(version int) error
+	// Issues 末页检查：按**现在**的配置（含落盘的密钥库 / 环境变量）列出「启动所需的
+	// 东西还缺哪些」，一句一条，空 = 齐全。每次调用现探、并按调用当次语言成句——第 1 页
+	// 切过语言之后再问，给的句子就是新语言（早先这些句子在开窗之前就拼好了，切语言也
+	// 不变，还会在第 1 页就吓人一跳）。
+	Issues() []string
 }
 
 // SetupOutcome 装配前向导窗的结束原因。
@@ -91,9 +98,11 @@ func (o SetupOutcome) String() string {
 
 // SetupRequest 装配前向导窗请求（cmd/aquarius 在「配置不完整」时调用）。
 type SetupRequest struct {
-	Theme  string // ui.theme（system | light | dark；空 = system）
-	Mgr    WelcomeManager
-	Issues []string // 问题清单（首屏提示：缺哪个 provider 的哪个环境变量）
+	Theme string // ui.theme（system | light | dark；空 = system）
+	Mgr   WelcomeManager
+	// NeedKey 本次向导是为「密钥取不到」而来（第 3 页据此要求填钥匙）。缺什么不在这里报：
+	// 「启动前检查」在末页（D278），那时语言已经定下来、用户也刚看完摘要。
+	NeedKey bool
 	// ConsentOnly 只补一次同意（D278 决策 4）：引导已完成、配置齐全，只因条款改版而来。
 	// 窗体从第 2 页起，页脚只有「同意并继续」。
 	ConsentOnly bool
@@ -186,6 +195,10 @@ type welcomeForm struct {
 	lang     i18n.Selection
 	lang0    i18n.Selection
 	langBtns [3]widget.Clickable
+	// doneIssues 末页「启动前检查」的结果（进入本页时现探一次；离开清空）。
+	// 只在**这次不写 provider** 时探：第 3 页填了参数就说明钥匙在这次提交里，页 3 的
+	// 闸门已经管过，拿落盘态再探一遍只会把用户刚填的那把钥匙又说成缺（`refreshDoneIssues`）。
+	doneIssues []string
 	// accessSkipped 第 3 页按过「稍后配置」（D278 决策 3）：末页摘要据此改说「还没配置」，
 	// 保存也只落同意与 welcomed，**不碰 providers**。回第 3 页补齐参数后清掉。
 	accessSkipped bool
@@ -293,7 +306,7 @@ func (f *welcomeForm) accessErr() error {
 	if p.Models == "" {
 		return errors.New(i18n.T("ui.welcome.err.models_empty"))
 	}
-	if f.env.setup && len(f.env.snap.Issues) > 0 && p.APIKey == "" {
+	if f.env.setup && f.env.snap.NeedKey && p.APIKey == "" {
 		return errors.New(i18n.T("ui.welcome.err.key_required"))
 	}
 	return nil
@@ -357,7 +370,29 @@ func (f *welcomeForm) onNext() {
 	if f.page < welcomeDone {
 		f.page++
 	}
+	f.refreshDoneIssues()
 	f.status, f.err = "", false
+}
+
+// refreshDoneIssues 末页检查（D278）：**进到第 5 页才探**，探的是「保存之后还缺什么」。
+//
+// 为什么挪到这里：装配前那段探测原本在开窗之前就把句子拼好了（`Setup is incomplete:
+// …`），于是 ① 第 1 页还没说一句话就先红一段，不像「欢迎」像「报错」；② 用户在第 1 页
+// 切了语言，那几句早成定局的旧语言还挂在那儿，中英混排。现在由数据面现探现成句——
+// 语言是切过之后的那一种，位置是用户刚看完「将要写入什么」的地方。
+//
+// 只在本轮**不写 provider** 时探（第 3 页按过「稍后配置」或 provider 名为空）：那一支的
+// 参数不会进配置，落盘态就是启动态，探出来的是实话；写了 provider 的那一支，钥匙就在
+// 这次提交里，页 3 的闸门已经管过。
+func (f *welcomeForm) refreshDoneIssues() {
+	f.doneIssues = nil
+	if f.page != welcomeDone || f.env.mgr == nil || !f.env.setup || f.env.consentOnly {
+		return
+	}
+	if !f.accessSkipped && strings.TrimSpace(f.name.Text()) != "" {
+		return
+	}
+	f.doneIssues = f.env.mgr.Issues()
 }
 
 // onPrev 上一页（第 1 页无上一步）。
