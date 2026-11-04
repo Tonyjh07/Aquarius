@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -44,10 +45,10 @@ func TestSessionRespondLeaf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("respond: %v", err)
 	}
-	if !strings.Contains(out, "已从该节点生成响应") {
+	c := s.Current()
+	if !strings.Contains(out, i18n.Tf("respond.done", "head", c.Head)) {
 		t.Fatalf("out = %q", out)
 	}
-	c := s.Current()
 	if c.Head == assistant {
 		t.Fatalf("Head 未前移：%s", c.Head)
 	}
@@ -84,7 +85,7 @@ func TestSessionRespondSendsWaterlineToTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("respond: %v", err)
 	}
-	if !strings.Contains(out, "已从该节点生成响应") {
+	if !strings.Contains(out, i18n.Tf("respond.done", "head", s.Current().Head)) {
 		t.Fatalf("out = %q", out)
 	}
 	req := llm.requests[len(llm.requests)-1]
@@ -129,7 +130,7 @@ func TestSessionRespondRejectsRoot(t *testing.T) {
 	before := s.Current().NodeCount()
 
 	_, err := handleCmd(s, "respond", string(root))
-	if err == nil || !strings.Contains(err.Error(), "会话根") {
+	if err == nil || err.Error() != i18n.T("respond.root") {
 		t.Fatalf("err = %v, want 拒绝会话根", err)
 	}
 	if s.Current().NodeCount() != before {
@@ -140,10 +141,11 @@ func TestSessionRespondRejectsRoot(t *testing.T) {
 // TestSessionRespondUsage 用法/未知节点错误路径。
 func TestSessionRespondUsage(t *testing.T) {
 	s, _, _ := respondFixture(t, textStream("首答"))
-	if _, err := handleCmd(s, "respond"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "respond"); err == nil || err.Error() != i18n.T("usage.respond") {
 		t.Fatalf("无参 err = %v, want 用法", err)
 	}
-	if _, err := handleCmd(s, "respond", "nope"); err == nil || !strings.Contains(err.Error(), "没有节点") {
+	if _, err := handleCmd(s, "respond", "nope"); err == nil ||
+		err.Error() != i18n.Tf("edit.node_missing", "id", `"nope"`) {
 		t.Fatalf("未知节点 err = %v", err)
 	}
 }

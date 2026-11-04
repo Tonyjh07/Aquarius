@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -170,7 +171,7 @@ func TestSessionEditAttachOnlyKeepsBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("edit --attach（无文本）: %v", err)
 	}
-	if !strings.Contains(out, "新增 1 个附件") {
+	if !strings.Contains(out, i18n.Tf("edit.attach.added", "n", 1)) {
 		t.Fatalf("回执应说明附件变化: %q", out)
 	}
 	newID := revisedID(s.cur, "u1")
@@ -221,7 +222,7 @@ func TestSessionEditDropOutOfRange(t *testing.T) {
 	before := s.cur.NodeCount()
 
 	_, err := handleCmd(s, "edit", "u1", "--drop", "7")
-	if err == nil || !strings.Contains(err.Error(), "越界") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("edit.drop_range", "n", 7, "total", 2)) {
 		t.Fatalf("err = %v, want 越界", err)
 	}
 	if s.cur.NodeCount() != before {
@@ -247,7 +248,7 @@ func TestSessionEditAttachRejectsNonUser(t *testing.T) {
 	s.publishTree()
 
 	_, err := handleCmd(s, "edit", "a1", "--attach", a, "改回复")
-	if err == nil || !strings.Contains(err.Error(), "用户消息") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("edit.attach_user_only")) {
 		t.Fatalf("err = %v, want 只对用户消息的拒绝", err)
 	}
 }
@@ -270,7 +271,7 @@ func TestSessionEditDropAllKeepsAtLeastOnePart(t *testing.T) {
 	s.publishTree()
 
 	_, err := handleCmd(s, "edit", "u1", "--drop-all")
-	if err == nil || !strings.Contains(err.Error(), "至少") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("edit.empty_after_edit")) {
 		t.Fatalf("err = %v, want 至少剩一分的拒绝", err)
 	}
 }
@@ -280,7 +281,7 @@ func TestSessionEditAttachRelativePathRejected(t *testing.T) {
 	s, _ := editFixture(t)
 
 	_, err := handleCmd(s, "edit", "u1", "--attach", "相对.txt")
-	if err == nil || !strings.Contains(err.Error(), "绝对路径") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("edit.attach_abs_path", "path", `"相对.txt"`)) {
 		t.Fatalf("err = %v, want 绝对路径", err)
 	}
 }

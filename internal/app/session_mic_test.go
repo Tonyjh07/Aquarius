@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -64,7 +64,7 @@ func TestMicCommandDefaultsAndRejectsBadSeconds(t *testing.T) {
 		_, err := s.Handle(context.Background(), port.UserInput{
 			Command: &port.Command{Name: "mic", Args: []string{arg}},
 		})
-		if err == nil || !strings.Contains(err.Error(), "秒数") {
+		if err == nil || err.Error() != i18n.Tf("session.mic.range", "max", micMaxSeconds) {
 			t.Fatalf("/mic %s 应报秒数错误，得到 %v", arg, err)
 		}
 	}

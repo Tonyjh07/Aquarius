@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -49,12 +50,24 @@ func TestSessionWatchCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	for _, want := range []string{"w3", "gh run view", "判据：输出有变化", "已查 4 次", "w4", "判据：输出匹配 /green/"} {
+	for _, want := range []string{
+		"w3", "gh run view",
+		i18n.Tf("watch.list.item",
+			"criterion", i18n.T("watch.criterion.changed"),
+			"interval", 30*time.Second, "checks", "4",
+			"ends", now.Add(time.Hour).Format("15:04:05")),
+		"w4",
+		i18n.Tf("watch.list.item",
+			"criterion", i18n.Tf("watch.criterion.match", "pattern", "green"),
+			"interval", 30*time.Second, "checks", "1",
+			"ends", now.Add(time.Hour).Format("15:04:05")),
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output = %q, want 含 %q", out, want)
 		}
 	}
-	if msg, err := s.watchReport(context.Background(), []string{"stop", "w3"}); err != nil || !strings.Contains(msg, "已停止观察 w3") {
+	if msg, err := s.watchReport(context.Background(), []string{"stop", "w3"}); err != nil ||
+		!strings.Contains(msg, i18n.Tf("watch.stopped", "id", "w3")) {
 		t.Fatalf("stop = %q, err = %v", msg, err)
 	}
 	if len(fw.stopped) != 1 || fw.stopped[0] != "w3" {
@@ -62,7 +75,7 @@ func TestSessionWatchCommand(t *testing.T) {
 	}
 	// 空表、未知 ID、用法错误。
 	if msg, err := (&Session{watches: &fakeWatchManager{}}).watchReport(context.Background(), nil); err != nil ||
-		!strings.Contains(msg, "暂无观察器") {
+		!strings.Contains(msg, i18n.T("watch.list.empty")) {
 		t.Fatalf("空表 = %q, err = %v", msg, err)
 	}
 	if _, err := s.watchReport(context.Background(), []string{"stop", "w9"}); err == nil ||
@@ -76,7 +89,7 @@ func TestSessionWatchCommand(t *testing.T) {
 		t.Fatal("未知子命令应报错")
 	}
 	if _, err := (&Session{}).watchReport(context.Background(), nil); err == nil ||
-		!strings.Contains(err.Error(), "未配置观察器") {
+		!strings.Contains(err.Error(), i18n.T("watch.unwired")) {
 		t.Fatalf("err = %v", err)
 	}
 }

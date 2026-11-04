@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -231,10 +232,10 @@ func TestSessionReplayHistory(t *testing.T) {
 		t.Fatalf("events = %v, want [notice history history]", names)
 	}
 	notice := rec2.events[0].(port.NoticeEvent)
-	for _, want := range []string{"已恢复会话", s2.Current().Title, string(s2.Current().ID), "2 条历史"} {
-		if !strings.Contains(notice.Text, want) {
-			t.Fatalf("notice = %q, 缺 %q", notice.Text, want)
-		}
+	if want := i18n.Tf("session.replay.notice",
+		"verb", i18n.T("replay.verb.restored"),
+		"title", s2.Current().Title, "id", s2.Current().ID, "n", 2); !strings.Contains(notice.Text, want) {
+		t.Fatalf("notice = %q, want 含 %q", notice.Text, want)
 	}
 	got := []conversation.Role{
 		rec2.events[1].(port.HistoryEvent).Message.Role,
@@ -371,10 +372,10 @@ func TestSessionSwitchCommand(t *testing.T) {
 		t.Fatalf("events = %v, want [clear notice history history]", names)
 	}
 	notice := rec.events[1].(port.NoticeEvent)
-	for _, want := range []string{"已切换到会话", titleA, string(idA), "回放 2 条历史"} {
-		if !strings.Contains(notice.Text, want) {
-			t.Fatalf("notice = %q, want 含 %q", notice.Text, want)
-		}
+	if want := i18n.Tf("session.replay.notice",
+		"verb", i18n.T("replay.verb.switched"),
+		"title", titleA, "id", idA, "n", 2); !strings.Contains(notice.Text, want) {
+		t.Fatalf("notice = %q, want 含 %q", notice.Text, want)
 	}
 	// 切前 Save：乙的 /edit 已进库（memStore 存深拷贝，读到即证明保存过）。
 	saved, err := store.Load(ctx, idB)
@@ -406,13 +407,16 @@ func TestSessionSwitchCommand(t *testing.T) {
 	}
 
 	// 无参/未知/歧义：报错、当前会话不动、不发事件（不得清屏）。
+	// 歧义清单按 memStore 的 List 序（UpdatedAt 同刻按 ID 降序）。
+	hits := []string{string(idA), string(idB)}
+	sort.Sort(sort.Reverse(sort.StringSlice(hits)))
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
-		{nil, "用法"},
-		{[]string{"ZZZ"}, "没有会话"},
-		{[]string{"C"}, "有歧义"}, // 会话 id 形如 C<n>，前缀 C 必命中多个
+		{nil, i18n.T("usage.switch")},
+		{[]string{"ZZZ"}, i18n.Tf("edit.conv_missing", "id", `"ZZZ"`)},
+		{[]string{"C"}, i18n.Tf("edit.conv_ambiguous", "id", `"C"`, "n", 2, "hits", strings.Join(hits, ", "))},
 	} {
 		rec.events = nil
 		_, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "switch", Args: tc.args}})
@@ -476,7 +480,7 @@ func TestSessionCommands(t *testing.T) {
 	}
 	// /new
 	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "new", Args: []string{"项目", "X"}}})
-	if err != nil || !strings.Contains(out, "已新建") {
+	if err != nil || !strings.Contains(out, i18n.Tf("tree.new.done", "id", s.Current().ID)) {
 		t.Fatalf("new = %q, %v", out, err)
 	}
 	if s.Current().Title != "项目 X" {
@@ -512,20 +516,20 @@ func TestSessionCommands(t *testing.T) {
 	}
 	// 未启用与未知命令报因（memory 已启用：未配置编辑器时报配置错）。
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "memory"}})
-	if err == nil || !strings.Contains(err.Error(), "未配置记忆编辑器") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("err.memory_editor_unwired")) {
 		t.Fatalf("memory err = %v", err)
 	}
 	// /jobs 已启用（M3）：未配置任务管理器时报配置错；/model 未接模型服务报配置错（D32）。
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "jobs"}})
-	if err == nil || !strings.Contains(err.Error(), "未配置任务管理器") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("err.jobs_unwired")) {
 		t.Fatalf("jobs err = %v", err)
 	}
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "model"}})
-	if err == nil || !strings.Contains(err.Error(), "未配置模型服务") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("model.unwired")) {
 		t.Fatalf("model err = %v", err)
 	}
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "wat"}})
-	if err == nil || !strings.Contains(err.Error(), "未知命令") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("session.unknown_command", "name", "wat")) {
 		t.Fatalf("unknown err = %v", err)
 	}
 	// /quit
@@ -573,13 +577,13 @@ func TestSessionMemoryCommand(t *testing.T) {
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{
 		Name: "memory", Args: []string{"zzzz"},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "没有会话") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("edit.conv_missing", "id", `"zzzz"`)) {
 		t.Fatalf("未知会话 err = %v", err)
 	}
 	_, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{
 		Name: "memory", Args: []string{"a", "b"},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "用法") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("usage.memory")) {
 		t.Fatalf("参数过多 err = %v", err)
 	}
 }
@@ -605,17 +609,31 @@ func TestSessionUsageCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("usage: %v", err)
 	}
-	// 自动压缩阈值随默认预算走（0.7 × DefaultMaxContextTokens），不写死数字。
-	thr := defaultCompactThreshold // 经变量打破常量折叠（int(常量小数) 非法）
-	compactAt := int(thr*float64(DefaultMaxContextTokens) + 0.5)
-	for _, want := range []string{
-		"当前上下文:≈", "tokens", "自动压缩阈值", fmt.Sprint(compactAt),
-		"计数方式: 估算", "校准",
-		"上轮实测: in=88 out=12",
-		"本会话累计(Path): in=88 out=12 tokens（1 次生成）",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("/usage 缺 %q:\n%s", want, out)
-		}
+	// 数值断言打在报告上（88/12 来自脚本流的实测 usage，累计同源、生成一次）。
+	rep, err := agent.UsageReport(context.Background(), s.cur)
+	if err != nil {
+		t.Fatalf("usage report: %v", err)
+	}
+	if rep.LastIn != 88 || rep.LastOut != 12 || rep.SumIn != 88 || rep.SumOut != 12 || rep.Gen != 1 {
+		t.Fatalf("usage report = %+v, want in=88 out=12（两处）且 1 次生成", rep)
+	}
+	// 回执按生产代码同样的组成方式从文案表拼出整份期望（估算值不写死）。
+	pct := 100 * float64(rep.Estimate) / float64(rep.MaxCtx)
+	tpct := 100 * float64(rep.CompactAt) / float64(rep.MaxCtx)
+	mode := i18n.Tf("session.usage.mode_estimate", "ratio", fmt.Sprintf("%.2f", rep.Ratio))
+	if rep.Exact {
+		mode = i18n.T("session.usage.mode_exact")
+	}
+	want := strings.Join([]string{
+		i18n.Tf("session.usage.context",
+			"est", rep.Estimate, "max", rep.MaxCtx,
+			"pct", fmt.Sprintf("%.1f", pct),
+			"at", rep.CompactAt, "atpct", fmt.Sprintf("%.0f", tpct)),
+		i18n.Tf("session.usage.counter", "mode", mode),
+		i18n.Tf("session.usage.last", "in", rep.LastIn, "out", rep.LastOut),
+		i18n.Tf("session.usage.total", "in", rep.SumIn, "out", rep.SumOut, "gen", rep.Gen),
+	}, "\n")
+	if out != want {
+		t.Fatalf("/usage = %q, want %q", out, want)
 	}
 }

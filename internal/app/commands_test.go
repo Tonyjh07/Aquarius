@@ -219,7 +219,7 @@ func TestCommandNamesAreDispatched(t *testing.T) {
 		t.Fatalf("help 输出里没有 /help 自己:\n%s", out)
 	}
 	if _, err := s.execCommand(context.Background(), port.Command{Name: "不存在的命令"}); err == nil ||
-		!strings.Contains(err.Error(), "未知命令") {
+		err.Error() != i18n.Tf("session.unknown_command", "name", "不存在的命令") {
 		t.Fatalf("未知命令 err = %v, want 未知命令", err)
 	}
 }
@@ -355,8 +355,8 @@ func TestHelpFromCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"/quit, /exit", "退出",
-		"/edit <id> [--keep|--copy] [--part N] [--attach <路径>]... [--drop N]... [--drop-all] [<文本>]",
+		"/quit, /exit", i18n.T("cmd.quit.desc"),
+		"/edit " + i18n.T("cmd.edit.usage"),
 		mcpFamilyLine(),
 		"/mcp:srv:probe", "探测一下",
 	} {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -40,7 +41,7 @@ func TestSessionSummaryHandwritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summary: %v", err)
 	}
-	if !strings.Contains(out, "已在 "+string(assistant.ID)+" 之前插入摘要（手写）") {
+	if !strings.Contains(out, i18n.Tf("compact.inserted_manual", "id", assistant.ID)) {
 		t.Fatalf("out = %q", out)
 	}
 	if len(llm.requests) != 1 { // 只有首轮回复那一次；手写档不调模型
@@ -84,7 +85,7 @@ func TestSessionSummaryModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summary: %v", err)
 	}
-	if !strings.Contains(out, "已在 "+string(assistant.ID)+" 之前插入摘要（in=40 out=15 tokens）") {
+	if !strings.Contains(out, i18n.Tf("compact.inserted_tokens", "id", assistant.ID, "in", 40, "out", 15)) {
 		t.Fatalf("out = %q", out)
 	}
 	pad := s.Current().Path()[3]
@@ -122,7 +123,7 @@ func TestSessionSummarySecondRunShortCircuits(t *testing.T) {
 	reqs := len(llm.requests)
 
 	out, err := handleCmd(s, "summary", string(assistant.ID))
-	if err != nil || !strings.Contains(out, "没有可总结的历史") {
+	if err != nil || out != i18n.T("compact.no_history") {
 		t.Fatalf("second summary = %q, %v", out, err)
 	}
 	if len(llm.requests) != reqs {
@@ -141,7 +142,7 @@ func TestSessionSummaryRejects(t *testing.T) {
 	persona := s.Current().Path()[1]
 	before := s.Current().NodeCount()
 
-	if _, err := handleCmd(s, "summary"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "summary"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.summary")) {
 		t.Fatalf("无参数 = %v, want 用法提示", err)
 	}
 	for _, tc := range []struct {
@@ -149,9 +150,9 @@ func TestSessionSummaryRejects(t *testing.T) {
 		id     conversation.MessageID
 		substr string
 	}{
-		{"根节点", conversation.MessageID(s.Current().ID), "不能在会话根或会话首节点之前插入摘要"},
-		{"人格节点", persona.ID, "不能在会话根或会话首节点之前插入摘要"},
-		{"未知节点", "nope", "没有节点"},
+		{"根节点", conversation.MessageID(s.Current().ID), i18n.T("compact.root_target")},
+		{"人格节点", persona.ID, i18n.T("compact.root_target")},
+		{"未知节点", "nope", i18n.Tf("edit.node_missing", "id", `"nope"`)},
 	} {
 		_, err := handleCmd(s, "summary", string(tc.id), "文本")
 		if err == nil || !strings.Contains(err.Error(), tc.substr) {
@@ -182,7 +183,7 @@ func TestSessionSummaryModelFailureKeepsTree(t *testing.T) {
 	}{
 		{"空输出", []*scriptStream{textStream("   "), textStream("   ")}, "empty output"},
 		{"缺模板小节", []*scriptStream{textStream("随便写点什么"), textStream("还是随便写")}, "summary template"},
-		{"取消", []*scriptStream{{steps: []scriptStep{{err: context.Canceled}}}}, "已取消插入摘要"},
+		{"取消", []*scriptStream{{steps: []scriptStep{{err: context.Canceled}}}}, i18n.T("compact.canceled")},
 	}
 	for _, tc := range cases {
 		store := newMemStore()
@@ -267,7 +268,7 @@ func TestSessionSummaryRejectsCoveredTarget(t *testing.T) {
 				args = append(args, "新摘要")
 			}
 			_, err := handleCmd(s, "summary", args...)
-			if err == nil || !strings.Contains(err.Error(), "已被摘要覆盖") {
+			if err == nil || !strings.Contains(err.Error(), i18n.T("compact.covered")) {
 				t.Fatalf("%s（模型档=%v）: err = %v, want 已被摘要覆盖", tc.name, model, err)
 			}
 			if s.Current().NodeCount() != before {
@@ -381,7 +382,8 @@ func TestSessionSummaryKeepsBranchStrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("branch: %v", err)
 	}
-	if !strings.Contains(out, "同级分叉（1 条") || !strings.Contains(out, "a1 [assistant] 回复") {
+	if !strings.Contains(out, i18n.Tf("tree.branch.siblings_count", "label", i18n.T("tree.branch.siblings"), "n", 1)) ||
+		!strings.Contains(out, "a1 [assistant] 回复") {
 		t.Fatalf("/branch 应把 a1 列为同级分叉:\n%s", out)
 	}
 	if strings.Contains(out, string(pad.ID)) {

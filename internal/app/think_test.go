@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -27,11 +28,12 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 
 	// 无参：缺省开、档位未设。
 	out, err := thinkCmd(t, s, "think")
-	if err != nil || !strings.Contains(out, "开") || !strings.Contains(out, "未设") {
+	if err != nil || !strings.Contains(out, i18n.Tf("think.state", "state", onOff(true))) ||
+		!strings.Contains(out, i18n.T("think.effort_unset")) {
 		t.Fatalf("think report = %q, %v", out, err)
 	}
 	out, err = thinkCmd(t, s, "effort")
-	if err != nil || !strings.Contains(out, "未设") {
+	if err != nil || out != i18n.T("think.effort_unset_usage") {
 		t.Fatalf("effort report = %q, %v", out, err)
 	}
 
@@ -54,7 +56,7 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 	if len(*efforts) != 1 || (*efforts)[0] != "high" || s.agent.Effort() != "high" {
 		t.Fatalf("efforts = %v, agent = %q", *efforts, s.agent.Effort())
 	}
-	if out, err = thinkCmd(t, s, "effort", "high"); err != nil || !strings.Contains(out, "已是") {
+	if out, err = thinkCmd(t, s, "effort", "high"); err != nil || out != i18n.Tf("think.effort_already", "effort", "high") {
 		t.Fatalf("重复档位应短路: %q, %v", out, err)
 	}
 	if len(*efforts) != 1 {
@@ -70,10 +72,10 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 		t.Fatalf("thinks = %v, agent on = %v", *thinks, s.agent.ThinkOn())
 	}
 	out, _ = thinkCmd(t, s, "think")
-	if !strings.Contains(out, "关") || strings.Contains(out, "推理档位") {
+	if want := i18n.Tf("think.state", "state", onOff(false)); out != want {
 		t.Fatalf("off 后报告应只显示关态: %q", out)
 	}
-	if out, err = thinkCmd(t, s, "think", "off"); err != nil || !strings.Contains(out, "已是") {
+	if out, err = thinkCmd(t, s, "think", "off"); err != nil || out != i18n.Tf("think.already", "state", "off") {
 		t.Fatalf("重复开关应短路: %q, %v", out, err)
 	}
 	if len(*thinks) != 1 {
@@ -100,10 +102,10 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 
 	// 未配置持久化：拒绝切换。
 	s3, _, _ := newTestSession(t, newMemStore())
-	if _, err := thinkCmd(t, s3, "think", "off"); err == nil || !strings.Contains(err.Error(), "未配置") {
+	if _, err := thinkCmd(t, s3, "think", "off"); err == nil || !strings.Contains(err.Error(), i18n.T("think.unwired")) {
 		t.Fatalf("err = %v, want 未配置报错", err)
 	}
-	if _, err := thinkCmd(t, s3, "effort", "low"); err == nil || !strings.Contains(err.Error(), "未配置") {
+	if _, err := thinkCmd(t, s3, "effort", "low"); err == nil || !strings.Contains(err.Error(), i18n.T("think.effort_unwired")) {
 		t.Fatalf("err = %v, want 未配置报错", err)
 	}
 
@@ -128,10 +130,10 @@ func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("think: %v", err)
 	}
-	if !strings.Contains(out, "未声明思考能力") {
+	if !strings.Contains(out, i18n.T("think.no_reasoning")) {
 		t.Fatalf("think 报告应说明能力缺失: %q", out)
 	}
-	if strings.Contains(out, "推理档位") {
+	if want := i18n.Tf("think.state", "state", onOff(true)) + "\n" + i18n.T("think.no_reasoning"); out != want {
 		t.Fatalf("能力缺失时不该再列档位: %q", out)
 	}
 
@@ -146,7 +148,7 @@ func TestThinkEffortWithoutReasoningCaps(t *testing.T) {
 	if len(*thinks) != 2 || !(*thinks)[1] {
 		t.Fatalf("thinks = %v, want 照常写回", *thinks)
 	}
-	if !strings.Contains(out, "仍不会发送") {
+	if !strings.Contains(out, i18n.T("think.warn_no_reasoning")) {
 		t.Fatalf("切到 on 应提示不会发送: %q", out)
 	}
 }
@@ -160,7 +162,7 @@ func TestEffortWithoutReasoningCaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("effort: %v", err)
 	}
-	if !strings.Contains(out, "未声明思考能力") {
+	if want := i18n.Tf("think.effort_switched", "effort", "high", "note", "\n"+i18n.T("think.effort_warn")); out != want {
 		t.Fatalf("effort 切换应提示能力缺失: %q", out)
 	}
 }

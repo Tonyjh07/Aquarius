@@ -24,6 +24,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -134,7 +135,11 @@ func TestExchangeAQXRoundtripThroughCommands(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("导出的文件不在 %s: %v\n%s", path, err, out)
 	}
-	for _, want := range []string{path, "aqx", "无损", fmt.Sprintf("%d 条消息", srcNodes-1)} {
+	// {bytes} 随文件大小变，不进断言：从表里取「{bytes} 之前」的整段做期望。
+	singleHead := strings.ReplaceAll(
+		strings.SplitN(i18n.T("exchange.export.single"), "{bytes}", 2)[0],
+		"{nodes}", fmt.Sprintf("%d", srcNodes-1))
+	for _, want := range []string{path, "aqx", i18n.T("exchange.fidelity.lossless"), singleHead} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("导出回执缺 %q:\n%s", want, out)
 		}
@@ -156,7 +161,8 @@ func TestExchangeAQXRoundtripThroughCommands(t *testing.T) {
 	if s.Current().Title != srcTitle {
 		t.Fatalf("导入后标题 = %q, want %q", s.Current().Title, srcTitle)
 	}
-	if !strings.Contains(out, "已落成新会话") || strings.Contains(out, "没有带过去") {
+	if !strings.Contains(out, i18n.Tf("exchange.import.one", "nodes", srcNodes-1)) ||
+		strings.Contains(out, i18n.T("exchange.dropped.head")) {
 		t.Fatalf("无损导入回执不该列丢东西:\n%s", out)
 	}
 	// 逐项等价：节点内容、结构、Head、版本链全都对得上（ID 一律重分配，故比对规范形）。
@@ -184,7 +190,13 @@ func TestExchangeLossyExportThroughCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	for _, want := range []string{"有损", "没有带过去", "思考过程", "附件", "旁支"} {
+	for _, want := range []string{
+		i18n.T("exchange.fidelity.lossy"),
+		i18n.T("exchange.dropped.head"),
+		i18n.Tf("exchange.io.dropped.line", "kind", i18n.T("exchange.io.drop.thinking"), "count", 1),
+		i18n.Tf("exchange.io.dropped.line", "kind", i18n.T("exchange.io.drop.attach"), "count", 1),
+		i18n.Tf("exchange.io.dropped.side_branch", "count", 2),
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("有损导出回执缺 %q:\n%s", want, out)
 		}
@@ -217,6 +229,7 @@ func TestExchangeMultiSessionThroughCommands(t *testing.T) {
 	firstID := s.Current().ID
 	firstCanon := canonTree(t, s.Current())
 	firstTitle := s.Current().Title
+	firstNodes := s.Current().NodeCount()
 
 	// 再建两个会话，各自塞点内容（第二个故意更长，便于核对条数）。
 	for _, n := range []int{1, 3} {
@@ -247,11 +260,19 @@ func TestExchangeMultiSessionThroughCommands(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("备份不在 %s: %v\n%s", path, err, out)
 	}
-	if !strings.Contains(out, "3 个会话") {
+	// {nodes} 与 {bytes} 是全库汇总（bytes 随文件大小变）：取 {nodes} 之前的整段核对会话数。
+	multiHead := strings.ReplaceAll(
+		strings.SplitN(i18n.T("exchange.export.multi"), "{nodes}", 2)[0],
+		"{convs}", "3")
+	if !strings.Contains(out, multiHead) {
 		t.Fatalf("导出回执应写会话数:\n%s", out)
 	}
 	// 清单顺序 = List 序：刚建的「会话3」（最新）在最前，最早的种子会话在最后。
-	for _, want := range []string{"- 会话3 · 4 条", "- 会话1 · 2 条", "- " + firstTitle + " · "} {
+	for _, want := range []string{
+		i18n.Tf("exchange.entry", "title", "会话3", "nodes", 4),
+		i18n.Tf("exchange.entry", "title", "会话1", "nodes", 2),
+		i18n.Tf("exchange.entry", "title", firstTitle, "nodes", firstNodes-1),
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("导出回执缺清单行 %q:\n%s", want, out)
 		}
@@ -278,7 +299,11 @@ func TestExchangeMultiSessionThroughCommands(t *testing.T) {
 	if len(sumsAfter) != len(sumsBefore)+2 {
 		t.Fatalf("库 = %d 个会话, want %d（导入两个）", len(sumsAfter), len(sumsBefore)+2)
 	}
-	for _, want := range []string{"已导入 2 个会话", "会话3 · 4 条", "会话1 · 2 条"} {
+	for _, want := range []string{
+		i18n.Tf("exchange.import.multi", "convs", 2, "nodes", 6),
+		i18n.Tf("exchange.entry", "title", "会话3", "nodes", 4),
+		i18n.Tf("exchange.entry", "title", "会话1", "nodes", 2),
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("多会话回执缺 %q:\n%s", want, out)
 		}
@@ -306,7 +331,7 @@ func TestExchangeMultiSessionThroughCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import --pick 3: %v", err)
 	}
-	if strings.Contains(out, "没有带过去") {
+	if strings.Contains(out, i18n.T("exchange.dropped.head")) {
 		t.Fatalf("无损归档不该列丢东西:\n%s", out)
 	}
 	if got := canonTree(t, s.Current()); got != firstCanon {
@@ -341,7 +366,8 @@ func TestExchangeBatchRmconvThroughCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rmconv: %v", err)
 	}
-	if !strings.Contains(out, "已删除 2 个会话") {
+	if !strings.Contains(out, i18n.Tf("tree.rmconv.deleted_many", "n", 2,
+		"titles", strings.Join([]string{"甲", "乙"}, i18n.T("tree.titles.sep")))) {
 		t.Fatalf("回执 = %q", out)
 	}
 	sums, err := s.store.List(ctx)

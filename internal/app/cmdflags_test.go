@@ -5,8 +5,9 @@ package app
 // 将来「统一实现」顺手把某个口径统一掉。
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestScanFlagsLeading 前置口径（/edit、/title）：未声明的 token 即正文起点，其后即使出现
@@ -83,7 +84,7 @@ func TestScanFlagsMissingValue(t *testing.T) {
 	decls := []flagDecl{{name: "--source", value: true}}
 	for _, args := range [][]string{{"--source"}, {"正文", "--source"}} {
 		_, _, err := scanFlags(args, flagScan{pos: flagsAnywhere}, decls)
-		if err == nil || !strings.Contains(err.Error(), "--source") || !strings.Contains(err.Error(), "缺参数") {
+		if err == nil || err.Error() != i18n.Tf("session.flag_missing_value", "flag", "--source") {
 			t.Fatalf("args = %v, err = %v", args, err)
 		}
 	}

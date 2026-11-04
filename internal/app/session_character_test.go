@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -204,7 +205,7 @@ func TestStartCharacterEmptyGreetingNoNode(t *testing.T) {
 func TestStartCharacterUnknownSlug(t *testing.T) {
 	s, _ := newCharSession(t, newMemStore(), CharacterOptions{})
 	_, err := s.startCharacter(context.Background(), "nope", 0)
-	if err == nil || !strings.Contains(err.Error(), "载入角色卡") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("char.load")) {
 		t.Fatalf("err = %v, want a load failure", err)
 	}
 }

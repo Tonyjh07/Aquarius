@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -133,8 +134,13 @@ func TestInjectCommandTriggersTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
-	if !strings.Contains(out, "已注入一条 手动 上下文") || !strings.Contains(out, "已触发响应") {
-		t.Fatalf("out = %q", out)
+	// 回执整句按 execInject 的组成方式从表里拼（来源措辞、触发状态与 Head 同句）。
+	want := i18n.Tf("inject.done",
+		"source", port.InjectSourceLabel("user"),
+		"state", i18n.T("inject.state.triggered"),
+		"head", s.Current().Head)
+	if out != want {
+		t.Fatalf("out = %q, want %q", out, want)
 	}
 	path := s.Current().Path()
 	// [root persona user assistant inject assistant]
@@ -174,8 +180,12 @@ func TestInjectCommandNoTrigger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
-	if !strings.Contains(out, "未触发响应") {
-		t.Fatalf("out = %q", out)
+	want := i18n.Tf("inject.done",
+		"source", port.InjectSourceLabel("user"),
+		"state", i18n.T("inject.state.no_trigger"),
+		"head", s.Current().Head)
+	if out != want {
+		t.Fatalf("out = %q, want %q", out, want)
 	}
 	last := s.Current().Path()[len(s.Current().Path())-1]
 	if last.Role != conversation.RoleInject || last.Trigger {
@@ -208,8 +218,12 @@ func TestInjectCommandSourceDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inject job: %v", err)
 	}
-	if !strings.Contains(out, "已触发响应") {
-		t.Fatalf("out = %q", out)
+	want := i18n.Tf("inject.done",
+		"source", port.InjectSourceLabel("job:j1"),
+		"state", i18n.T("inject.state.triggered"),
+		"head", s2.Current().Head)
+	if out != want {
+		t.Fatalf("out = %q, want %q", out, want)
 	}
 	path := s2.Current().Path()
 	if path[len(path)-2].Source != "job:j1" || !path[len(path)-2].Trigger {
@@ -250,13 +264,13 @@ func TestInjectCommandSourceDefaults(t *testing.T) {
 // 报用法；选项顺序自由）。
 func TestInjectCommandUsageAndParse(t *testing.T) {
 	s, _, _ := injectableSession(t, newMemStore())
-	if _, err := handleCmd(s, "inject"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "inject"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.inject")) {
 		t.Fatalf("空参 err = %v", err)
 	}
-	if _, err := handleCmd(s, "inject", "--source"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "inject", "--source"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.inject")) {
 		t.Fatalf("--source 缺参 err = %v", err)
 	}
-	if _, err := handleCmd(s, "inject", "--no-trigger"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "inject", "--no-trigger"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.inject")) {
 		t.Fatalf("只有选项无文本 err = %v", err)
 	}
 	src, nt, text, err := parseInjectArgs([]string{"前置文本", "--source", "tool:x", "--no-trigger"})
@@ -276,7 +290,8 @@ func TestInjectCommandInHelpAndCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "/inject [--source <名>] [--no-trigger] <文本>") {
+	// /help 的命令行由 cmd.inject.usage 拼出（usage.inject 是带「用法:」前缀的报错句）。
+	if !strings.Contains(out, "/inject "+i18n.T("cmd.inject.usage")) {
 		t.Fatalf("help 缺 /inject:\n%s", out)
 	}
 	found := false

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
 // TestSessionEditPartFlag --part N 只在 flag 位识别（D107②）：与 --keep/--copy 同区、
@@ -124,7 +125,7 @@ func TestSessionEditAssistantPartFidelity(t *testing.T) {
 	// 越界：报错（不产生可续修状态，链上最后节点即当前 Head）。
 	cur = revisedID(c, cur)
 	if _, err := handleCmd(s, "edit", string(cur), "--part", "5", "x"); err == nil ||
-		!strings.Contains(err.Error(), "越界") {
+		!strings.Contains(err.Error(), i18n.Tf("edit.part_range", "n", 5, "total", 1)) {
 		t.Fatalf("越界 err = %v, want 含 越界", err)
 	}
 }

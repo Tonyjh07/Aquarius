@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -59,7 +60,12 @@ func TestSkillInstallSubcommand(t *testing.T) {
 	if len(admin.installed) != 1 || admin.installed[0] != `C:\Users\me\My Skills\pdf extra` {
 		t.Fatalf("来源参数 = %q（应整段当一个来源）", admin.installed)
 	}
-	for _, want := range []string{"已安装 1 个技能", "- pdf", "未检测到 git", "未安装的条目（1 条）"} {
+	for _, want := range []string{
+		i18n.Tf("skill.report.head", "verb", i18n.T("skill.verb.installed"), "n", 1),
+		i18n.Tf("skill.report.item", "name", "pdf"),
+		"未检测到 git",
+		i18n.Tf("skill.report.skipped_head", "n", 1),
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("输出缺 %q：\n%s", want, out)
 		}
@@ -70,7 +76,7 @@ func TestSkillInstallSubcommand(t *testing.T) {
 func TestSkillInstallWithoutAdmin(t *testing.T) {
 	s := adminSession(t, nil)
 	_, err := s.execSkill(context.Background(), []string{"install", "/tmp/x"})
-	if err == nil || !strings.Contains(err.Error(), "未接入") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("skill.admin_missing")) {
 		t.Fatalf("错误 = %v", err)
 	}
 }
@@ -84,7 +90,7 @@ func TestSkillRemoveConfirms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "已取消") {
+	if !strings.Contains(out, i18n.Tf("skill.remove_canceled", "name", "pdf")) {
 		t.Fatalf("输出 = %q", out)
 	}
 	if len(admin.removed) != 0 {
@@ -104,7 +110,7 @@ func TestSkillRemoveAllowed(t *testing.T) {
 	if len(admin.removed) != 1 || admin.removed[0] != "pdf" {
 		t.Fatalf("Remove 调用 = %v", admin.removed)
 	}
-	if !strings.Contains(out, "已卸载技能 pdf") {
+	if !strings.Contains(out, i18n.Tf("skill.removed", "name", "pdf")) {
 		t.Fatalf("输出 = %q", out)
 	}
 }
@@ -120,7 +126,7 @@ func TestSkillUpdateAll(t *testing.T) {
 	if len(admin.updated) != 1 || admin.updated[0] != "" {
 		t.Fatalf("Update 参数 = %v", admin.updated)
 	}
-	if !strings.Contains(out, "已更新 2 个技能") {
+	if !strings.Contains(out, i18n.Tf("skill.report.head", "verb", i18n.T("skill.verb.updated"), "n", 2)) {
 		t.Fatalf("输出 = %q", out)
 	}
 }

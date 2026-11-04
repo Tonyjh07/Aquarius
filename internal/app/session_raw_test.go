@@ -12,6 +12,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestclip"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestfile"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -157,19 +158,19 @@ func TestSessionRawDispatchErrors(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
 	if _, err := s.Handle(context.Background(), port.UserInput{
 		Raw: &port.RawInput{Kind: "file", File: "/abs/x"},
-	}); err == nil || !strings.Contains(err.Error(), "没有可用的摄取器") {
+	}); err == nil || !strings.Contains(err.Error(), i18n.Tf("session.ingest.no_ingestor", "kind", `"file"`)) {
 		t.Fatalf("err = %v", err)
 	}
 	// 未知 Kind（mic 未装，D27）。
 	if _, err := s.Handle(context.Background(), port.UserInput{
 		Raw: &port.RawInput{Kind: "mic"},
-	}); err == nil || !strings.Contains(err.Error(), "摄取器") {
+	}); err == nil || !strings.Contains(err.Error(), i18n.Tf("session.ingest.no_ingestor", "kind", `"mic"`)) {
 		t.Fatalf("err = %v", err)
 	}
 	// Kind=text 空文本。
 	if _, err := s.Handle(context.Background(), port.UserInput{
 		Raw: &port.RawInput{Kind: "text", Text: "   "},
-	}); err == nil || !strings.Contains(err.Error(), "文本输入为空") {
+	}); err == nil || !strings.Contains(err.Error(), i18n.T("session.ingest.no_input")) {
 		t.Fatalf("err = %v", err)
 	}
 }

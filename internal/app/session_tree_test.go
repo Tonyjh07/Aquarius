@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -33,45 +34,54 @@ func TestSessionBranchCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("branch u1: %v", err)
 	}
+	// 期望行按生产代码同样的组成方式从表里拼：/branch 行 = id [角色] 内容预览（+ Head/
+	// 修订标记），夹具文本（问题/改/回复）是喂进树的用户数据，原样保留。
 	for _, want := range []string{
-		"当前: u1 [user] 问题",
-		"同级分叉（1 条，不含自身）:",
-		string(n) + " [user] 改",
-		"（修订自 u1）",
-		"下级（1 条）:",
-		"a1 [assistant] 回复",
+		i18n.Tf("tree.branch.current", "line", branchLine(c, nodeOf(t, c, "u1"))),
+		i18n.Tf("tree.branch.siblings_count", "label", i18n.T("tree.branch.siblings"), "n", 1),
+		branchLine(c, nodeOf(t, c, n)),
+		i18n.Tf("tree.branch.revised", "id", "u1"),
+		i18n.Tf("tree.branch.children_count", "n", 1),
+		branchLine(c, nodeOf(t, c, "a1")),
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("branch 缺 %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, string(n)+" [user] 改 ← Head") {
+	// 同级行不带 Head 标记：完整行 + Head 标记都不该出现。
+	if strings.Contains(out, branchLine(c, nodeOf(t, c, n))+" "+i18n.T("tree.branch.head")) {
 		t.Fatalf("新分支已有回答，同级行不应标 Head:\n%s", out)
 	}
 
 	// 缺省 = Head（编辑生成的回答节点，标 Head）。
 	out, err = handleCmd(s, "branch")
-	if err != nil || !strings.Contains(out, "当前: "+string(c.Head)) ||
-		!strings.Contains(out, "[assistant] 新回答 ← Head") {
+	if err != nil || !strings.Contains(out,
+		i18n.Tf("tree.branch.current", "line", branchLine(c, nodeOf(t, c, c.Head)))) {
 		t.Fatalf("branch 缺省 = %q, %v", out, err)
 	}
 
 	// 无同级分叉 / 错误路径。
 	out, err = handleCmd(s, "branch", "a1")
-	if err != nil || !strings.Contains(out, "同级分叉: 无") || !strings.Contains(out, "下级（1 条）:\n  u2 [user] 追问") {
+	siblingsNone := i18n.Tf("tree.branch.none", "label", i18n.T("tree.branch.siblings"))
+	children := i18n.Tf("tree.branch.children_count", "n", 1) + "\n  " + branchLine(c, nodeOf(t, c, "u2"))
+	if err != nil || !strings.Contains(out, siblingsNone) || !strings.Contains(out, children) {
 		t.Fatalf("无分叉 = %q, %v", out, err)
 	}
 
 	// Root：孩子即"顶层消息"，不重复列下级。
 	out, err = handleCmd(s, "branch", "convT")
-	if err != nil || !strings.Contains(out, "顶层消息（1 条") || strings.Contains(out, "下级") {
+	topCount := i18n.Tf("tree.branch.siblings_count", "label", i18n.T("tree.branch.top"), "n", 1)
+	if err != nil || !strings.Contains(out, topCount) ||
+		strings.Contains(out, i18n.T("tree.branch.children_none")) ||
+		strings.Contains(out, i18n.Tf("tree.branch.children_count", "n", 1)) {
 		t.Fatalf("root branch = %q, %v", out, err)
 	}
 
-	if _, err := handleCmd(s, "branch", "zz"); err == nil || !strings.Contains(err.Error(), "没有节点") {
+	if _, err := handleCmd(s, "branch", "zz"); err == nil ||
+		!strings.Contains(err.Error(), i18n.Tf("edit.node_missing", "id", "\"zz\"")) {
 		t.Fatalf("未知 id err = %v", err)
 	}
-	if _, err := handleCmd(s, "branch", "a", "b"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "branch", "a", "b"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.branch")) {
 		t.Fatalf("多参数 err = %v", err)
 	}
 }
@@ -88,7 +98,7 @@ func TestSessionRmCommand(t *testing.T) {
 			t.Fatalf("new session: %v", err)
 		}
 		buildTree(t, s)
-		if _, err := handleCmd(s, "rm", "u1"); err == nil || !strings.Contains(err.Error(), "未配置确认器") {
+		if _, err := handleCmd(s, "rm", "u1"); err == nil || !strings.Contains(err.Error(), i18n.T("tree.rm.no_confirmer")) {
 			t.Fatalf("err = %v, want 未配置确认器", err)
 		}
 	})
@@ -97,7 +107,7 @@ func TestSessionRmCommand(t *testing.T) {
 		store := newMemStore()
 		s, conf := newConfirmedSession(t, store, nil) // 确认脚本为空：被调用即 Fatalf
 		buildTree(t, s)
-		if _, err := handleCmd(s, "rm", "convT"); err == nil || !strings.Contains(err.Error(), "会话根节点就是会话本身") {
+		if _, err := handleCmd(s, "rm", "convT"); err == nil || !strings.Contains(err.Error(), i18n.T("tree.rm.root")) {
 			t.Fatalf("err = %v, want 会话根节点不可删除", err)
 		}
 		if len(conf.asked) != 0 {
@@ -110,7 +120,7 @@ func TestSessionRmCommand(t *testing.T) {
 		s, _ := newConfirmedSession(t, store, []bool{false})
 		c := buildTree(t, s)
 		out, err := handleCmd(s, "rm", "u1")
-		if err != nil || !strings.Contains(out, "已取消删除 u1") {
+		if err != nil || !strings.Contains(out, i18n.Tf("tree.rm.canceled", "id", "u1")) {
 			t.Fatalf("deny = %q, %v", out, err)
 		}
 		if c.NodeCount() != 5 {
@@ -127,7 +137,7 @@ func TestSessionRmCommand(t *testing.T) {
 			t.Fatalf("rm: %v", err)
 		}
 		// 子树 u1 = {u1,a1,u2} 共 3 条；Head(u2) 回退到最近存活祖先 p。
-		if !strings.Contains(out, "共 3 条节点") && !strings.Contains(out, "3 条节点") {
+		if !strings.Contains(out, i18n.Tf("tree.rm.done", "id", "u1", "n", 3, "head", "p")) {
 			t.Fatalf("out = %q, want 子树计数 3", out)
 		}
 		if !strings.Contains(out, "Head → p") {
@@ -159,7 +169,8 @@ func TestSessionRmCommand(t *testing.T) {
 		}
 		store.err = errors.New("disk full")
 		_, err := handleCmd(s, "rm", "u1")
-		if err == nil || !strings.Contains(err.Error(), "回滚") || !strings.Contains(err.Error(), "disk full") {
+		if err == nil || !strings.Contains(err.Error(), i18n.T("err.rm_persist_rollback")) ||
+			!strings.Contains(err.Error(), "disk full") {
 			t.Fatalf("err = %v, want 回滚且保留 disk full", err)
 		}
 		// 内存与已存副本都回到删除前状态：删除绝不"半生效"。
@@ -184,14 +195,24 @@ func TestSessionRmCommand(t *testing.T) {
 		if newID == "" {
 			t.Fatal("edit 未产生新版本")
 		}
+		// 确认句与回执都按生产代码同样的组成方式从表里拼：子树大小与被牵连的溯源边数
+		// 先于删除取值（与 execRm 的取值时点一致）。
+		size := c.SubtreeSize("a1")
+		dropped := c.DroppedEditions("a1")
 		out, err := handleCmd(s, "rm", "a1")
 		if err != nil {
 			t.Fatalf("rm: %v", err)
 		}
-		if len(conf.asked) != 1 || !strings.Contains(conf.asked[0].prompt, "溯源记录") {
+		wantPrompt := i18n.Tf("tree.rm.prompt", "id", "a1", "n", size)
+		if dropped > 0 {
+			wantPrompt += i18n.Tf("tree.rm.prompt_editions", "n", dropped)
+		}
+		if len(conf.asked) != 1 || conf.asked[0].prompt != wantPrompt {
 			t.Fatalf("确认句应说明溯源会一并清除, got %+v", conf.asked)
 		}
-		if !strings.Contains(out, "失去溯源记录") {
+		wantLine := i18n.Tf("tree.rm.done", "id", "a1", "n", size, "head", newID) +
+			i18n.Tf("tree.rm.done_editions", "n", dropped)
+		if !strings.Contains(out, wantLine) {
 			t.Fatalf("回执应提示已失去溯源, got %q", out)
 		}
 		if _, ok := c.Edition(newID); ok {
@@ -203,10 +224,11 @@ func TestSessionRmCommand(t *testing.T) {
 		store := newMemStore()
 		s, _ := newConfirmedSession(t, store, nil)
 		buildTree(t, s)
-		if _, err := handleCmd(s, "rm"); err == nil || !strings.Contains(err.Error(), "用法") {
+		if _, err := handleCmd(s, "rm"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.rm")) {
 			t.Fatalf("用法 err = %v", err)
 		}
-		if _, err := handleCmd(s, "rm", "zz"); err == nil || !strings.Contains(err.Error(), "没有节点") {
+		if _, err := handleCmd(s, "rm", "zz"); err == nil ||
+			!strings.Contains(err.Error(), i18n.Tf("edit.node_missing", "id", "\"zz\"")) {
 			t.Fatalf("未知 id err = %v", err)
 		}
 	})
@@ -227,7 +249,7 @@ func TestSessionTitleTargetsOtherConversation(t *testing.T) {
 	idB := s.Current().ID
 
 	out, err := handleCmd(s, "title", "--id", string(idA), "甲改")
-	if err != nil || !strings.Contains(out, string(idA)) || !strings.Contains(out, "甲改") {
+	if err != nil || !strings.Contains(out, i18n.Tf("tree.title.set_other", "id", string(idA), "title", "甲改")) {
 		t.Fatalf("title --id = %q, %v", out, err)
 	}
 	if got := store.convs[idA].Title; got != "甲改" {
@@ -241,15 +263,17 @@ func TestSessionTitleTargetsOtherConversation(t *testing.T) {
 	}
 
 	// 无标题：回显目标标题（不写盘）。
-	if out, err = handleCmd(s, "title", "--id", string(idA)); err != nil || !strings.Contains(out, "甲改") {
+	if out, err = handleCmd(s, "title", "--id", string(idA)); err != nil ||
+		!strings.Contains(out, i18n.Tf("tree.title.show", "id", string(idA), "title", "甲改")) {
 		t.Fatalf("title --id 查看 = %q, %v", out, err)
 	}
 	// 错误前缀：报错、不误写。
-	if _, err := handleCmd(s, "title", "--id", "ZZZ", "x"); err == nil || !strings.Contains(err.Error(), "没有会话") {
+	if _, err := handleCmd(s, "title", "--id", "ZZZ", "x"); err == nil ||
+		!strings.Contains(err.Error(), i18n.Tf("edit.conv_missing", "id", "\"ZZZ\"")) {
 		t.Fatalf("未知 --id err = %v", err)
 	}
 	// 缺 --id 参数：用法错误（不消费后续文本）。
-	if _, err := handleCmd(s, "title", "--id"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "title", "--id"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.title")) {
 		t.Fatalf("缺参 err = %v", err)
 	}
 	// --id 缺省：改当前标题（回归）。
@@ -281,7 +305,8 @@ func TestSessionRmconvOtherConversation(t *testing.T) {
 	idB := s.Current().ID
 
 	out, err := handleCmd(s, "rmconv", string(idA))
-	if err != nil || !strings.Contains(out, "已删除会话") {
+	if err != nil || !strings.Contains(out,
+		i18n.Tf("tree.rmconv.deleted", "id", string(idA), "title", defaultTitle())) {
 		t.Fatalf("rmconv = %q, %v", out, err)
 	}
 	if _, ok := store.convs[idA]; ok {
@@ -319,7 +344,8 @@ func TestSessionRmconvCurrentSuccessor(t *testing.T) {
 	}
 	rec.events = nil
 	out, err := handleCmd(s, "rmconv", string(idA))
-	if err != nil || !strings.Contains(out, "已删除当前会话") || !strings.Contains(out, string(idB)) {
+	if err != nil || !strings.Contains(out, i18n.Tf("tree.rmconv.deleted_current",
+		"id", string(idA), "title", defaultTitle(), "next", string(idB))) {
 		t.Fatalf("rmconv 当前 = %q, %v", out, err)
 	}
 	if _, ok := store.convs[idA]; ok {
@@ -341,13 +367,14 @@ func TestSessionRmconvLastCreatesEmpty(t *testing.T) {
 	idA := s.Current().ID
 
 	out, err := handleCmd(s, "rmconv", string(idA))
-	if err != nil || !strings.Contains(out, "已切换到") {
+	cur := s.Current()
+	if err != nil || !strings.Contains(out, i18n.Tf("tree.rmconv.deleted_current",
+		"id", string(idA), "title", defaultTitle(), "next", string(cur.ID))) {
 		t.Fatalf("rmconv 唯一 = %q, %v", out, err)
 	}
 	if _, ok := store.convs[idA]; ok {
 		t.Fatal("旧会话应已删除")
 	}
-	cur := s.Current()
 	if cur.ID == idA {
 		t.Fatal("应新建继任会话（旧 id 不得复用）")
 	}
@@ -369,10 +396,11 @@ func TestSessionRmconvLastCreatesEmpty(t *testing.T) {
 func TestSessionRmconvGuards(t *testing.T) {
 	t.Run("用法与未知 id", func(t *testing.T) {
 		s, _ := newConfirmedSession(t, newMemStore(), nil)
-		if _, err := handleCmd(s, "rmconv"); err == nil || !strings.Contains(err.Error(), "用法") {
+		if _, err := handleCmd(s, "rmconv"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.rmconv")) {
 			t.Fatalf("用法 err = %v", err)
 		}
-		if _, err := handleCmd(s, "rmconv", "ZZZ"); err == nil || !strings.Contains(err.Error(), "没有会话") {
+		if _, err := handleCmd(s, "rmconv", "ZZZ"); err == nil ||
+			!strings.Contains(err.Error(), i18n.Tf("edit.conv_missing", "id", "\"ZZZ\"")) {
 			t.Fatalf("未知 id err = %v", err)
 		}
 	})
@@ -387,7 +415,8 @@ func TestSessionRmconvGuards(t *testing.T) {
 			t.Fatalf("new session: %v", err)
 		}
 		id := s.Current().ID
-		if _, err := handleCmd(s, "rmconv", string(id)); err == nil || !strings.Contains(err.Error(), "未配置确认器") {
+		if _, err := handleCmd(s, "rmconv", string(id)); err == nil ||
+			!strings.Contains(err.Error(), i18n.T("tree.rmconv.no_confirmer")) {
 			t.Fatalf("err = %v, want 未配置确认器", err)
 		}
 		if _, ok := store.convs[id]; !ok {
@@ -400,7 +429,7 @@ func TestSessionRmconvGuards(t *testing.T) {
 		s, _ := newConfirmedSession(t, store, []bool{false})
 		id := s.Current().ID
 		out, err := handleCmd(s, "rmconv", string(id))
-		if err != nil || !strings.Contains(out, "已取消删除会话") {
+		if err != nil || !strings.Contains(out, i18n.Tf("tree.rmconv.canceled", "id", string(id))) {
 			t.Fatalf("deny = %q, %v", out, err)
 		}
 		if _, ok := store.convs[id]; !ok {

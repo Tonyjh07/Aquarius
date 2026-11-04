@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -142,7 +143,7 @@ func (r *replay) renderTree() {
 		b.WriteString(strings.Repeat("  ", depth))
 		fmt.Fprintf(&b, "%s [%s]", r.labels[id], m.Role)
 		if m.Role != conversation.RoleRoot {
-			if s := nodeSummary(m); s != "（空）" {
+			if s := nodeSummary(m); s != i18n.T("tree.node.empty") {
 				b.WriteString(" " + s)
 			}
 			if m.Outcome != "" && m.Outcome != conversation.OutcomeDone {

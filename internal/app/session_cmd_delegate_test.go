@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -49,7 +50,11 @@ func TestSessionDelegateList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	for _, want := range []string{"claude", "Claude Code 0.4.1", "可用", "claude-code-acp", "gemini", "命令不在 PATH 上"} {
+	for _, want := range []string{
+		"claude" + i18n.Tf("delegate.name.versioned", "title", "Claude Code", "version", "0.4.1") +
+			"  " + i18n.T("delegate.state.available") + "  claude-code-acp",
+		"gemini", "命令不在 PATH 上",
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output = %q, want 含 %q", out, want)
 		}
@@ -68,7 +73,8 @@ func TestSessionDelegateList(t *testing.T) {
 func TestSessionDelegateKill(t *testing.T) {
 	fd := &fakeDelegate{}
 	s := &Session{delegates: fd}
-	if msg, err := s.delegateReport(context.Background(), []string{"kill", "d1"}); err != nil || !strings.Contains(msg, "已叫停") {
+	if msg, err := s.delegateReport(context.Background(), []string{"kill", "d1"}); err != nil ||
+		!strings.Contains(msg, i18n.Tf("delegate.killed", "id", "d1")) {
 		t.Fatalf("kill = %q, err = %v", msg, err)
 	}
 	if len(fd.killed) != 1 || fd.killed[0] != "d1" {

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -146,13 +147,18 @@ func TestExportDefaultsToAQXInExportsDir(t *testing.T) {
 	if data, err := os.ReadFile(want); err != nil || string(data) != "aqx-bytes" {
 		t.Fatalf("导出文件 %s 内容 = %q, err = %v", want, data, err)
 	}
-	for _, want := range []string{want, "aqx", "无损", "2 条消息"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("回执缺 %q:\n%s", want, out)
+	aqxFmt, _ := formatOf(t, "aqx")
+	for _, frag := range []string{
+		want, "aqx",
+		fidelityLine(aqxFmt),
+		i18n.Tf("exchange.export.single", "nodes", 2, "bytes", humanBytes(int64(len("aqx-bytes")))),
+	} {
+		if !strings.Contains(out, frag) {
+			t.Fatalf("回执缺 %q:\n%s", frag, out)
 		}
 	}
 	// 无损格式不该出现「没有带过去」这一段。
-	if strings.Contains(out, "没有带过去") {
+	if strings.Contains(out, i18n.T("exchange.dropped.head")) {
 		t.Fatalf("无损导出不该列丢东西:\n%s", out)
 	}
 }
@@ -174,7 +180,8 @@ func TestExportExplicitPathAndFormat(t *testing.T) {
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("目标文件没写出来: %v", err)
 	}
-	if !strings.Contains(out, "有损") {
+	gptFmt, _ := formatOf(t, "chatgpt")
+	if !strings.Contains(out, fidelityLine(gptFmt)) {
 		t.Fatalf("有损格式应写明丢什么:\n%s", out)
 	}
 }
@@ -212,7 +219,7 @@ func TestImportSaveFailureKeepsCurrent(t *testing.T) {
 		t.Fatalf("造源文件: %v", err)
 	}
 	_, err := s.execImport(context.Background(), port.Command{Args: []string{source}})
-	if err == nil || !strings.Contains(err.Error(), "保存导入的会话") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("err.save_import")) {
 		t.Fatalf("err = %v, want 保存导入的会话", err)
 	}
 	if s.cur.ID != before {
@@ -261,7 +268,7 @@ func TestExportRemovesHalfWrittenFile(t *testing.T) {
 	s, _ := exchangeSession(t, ex)
 	target := filepath.Join(t.TempDir(), "half.aqx")
 	if _, err := s.execExport(context.Background(), port.Command{Args: []string{"--path", target}}); err == nil ||
-		!strings.Contains(err.Error(), "导出失败") {
+		!strings.Contains(err.Error(), i18n.T("err.export_failed")) {
 		t.Fatalf("err = %v, want 导出失败", err)
 	}
 	if _, err := os.Stat(target); !errors.Is(err, os.ErrNotExist) {
@@ -274,7 +281,8 @@ func TestExportRejectsReadOnlyAndUnknown(t *testing.T) {
 	ex := &fakeExchange{}
 	s, _ := exportSession(t, ex)
 	_, err := s.execExport(context.Background(), port.Command{Args: []string{"--format", "openwebui"}})
-	if err == nil || !strings.Contains(err.Error(), "只认不写") {
+	owFmt, _ := formatOf(t, "openwebui")
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("exchange.format_readonly", "format", owFmt.Name, "note", owFmt.LossNote)) {
 		t.Fatalf("openwebui: err = %v", err)
 	}
 	_, err = s.execExport(context.Background(), port.Command{Args: []string{"--format", "不存在"}})
@@ -291,7 +299,7 @@ func TestExportRejectsReadOnlyAndUnknown(t *testing.T) {
 func TestExportRejectsPositionalText(t *testing.T) {
 	s, _ := exportSession(t, &fakeExchange{})
 	if _, err := s.execExport(context.Background(), port.Command{Args: []string{"随便"}}); err == nil ||
-		!strings.Contains(err.Error(), "用法") {
+		err.Error() != exportUsage()+"\n"+spacedPathHint() {
 		t.Fatalf("err = %v, want 用法", err)
 	}
 }
@@ -325,7 +333,13 @@ func TestImportLandsInNewConversation(t *testing.T) {
 	if _, err := s.store.Load(context.Background(), s.cur.ID); err != nil {
 		t.Fatalf("导入的会话应已落盘: %v", err)
 	}
-	for _, want := range []string{"已导入", "aqx", "1 条消息", "已落成新会话", "附件 2 个"} {
+	aqxFmt, _ := formatOf(t, "aqx")
+	for _, want := range []string{
+		i18n.Tf("exchange.import.to", "path", source),
+		i18n.Tf("exchange.format", "name", aqxFmt.Name, "label", aqxFmt.Label, "fidelity", fidelityLine(aqxFmt)),
+		i18n.Tf("exchange.import.one", "nodes", 1),
+		i18n.Tf("exchange.dropped.item", "item", "附件 2 个（源文件不含字节）"),
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("回执缺 %q:\n%s", want, out)
 		}
@@ -341,7 +355,8 @@ func TestImportUnknownFormat(t *testing.T) {
 		t.Fatalf("造源文件: %v", err)
 	}
 	_, err := s.execImport(context.Background(), port.Command{Args: []string{source}})
-	if err == nil || !strings.Contains(err.Error(), "认不出") || !strings.Contains(err.Error(), "sillytavern") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("exchange.unknown_import", "formats", importFormatNames())) ||
+		!strings.Contains(err.Error(), "sillytavern") {
 		t.Fatalf("err = %v, want 认不出并列出格式", err)
 	}
 }
@@ -363,7 +378,7 @@ func TestImportBadFile(t *testing.T) {
 		t.Fatal("导入失败不该切走当前会话")
 	}
 	if _, err := s.execImport(context.Background(), port.Command{Args: []string{filepath.Join(t.TempDir(), "没有这个")}}); err == nil ||
-		!strings.Contains(err.Error(), "打开文件") {
+		!strings.Contains(err.Error(), i18n.T("err.open_file")) {
 		t.Fatalf("缺文件 err = %v, want 打开文件", err)
 	}
 }
@@ -372,8 +387,11 @@ func TestImportBadFile(t *testing.T) {
 func TestImportUsage(t *testing.T) {
 	s, _ := exchangeSession(t, &fakeExchange{})
 	for _, args := range [][]string{nil, {"a", "b"}} {
-		if _, err := s.execImport(context.Background(), port.Command{Args: args}); err == nil ||
-			!strings.Contains(err.Error(), "用法") {
+		want := importUsage()
+		if len(args) > 1 {
+			want += "\n" + spacedPathHint()
+		}
+		if _, err := s.execImport(context.Background(), port.Command{Args: args}); err == nil || err.Error() != want {
 			t.Fatalf("args = %v, err = %v", args, err)
 		}
 	}
@@ -383,11 +401,11 @@ func TestImportUsage(t *testing.T) {
 func TestExchangeNotWired(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
 	if _, err := s.execExport(context.Background(), port.Command{}); err == nil ||
-		!strings.Contains(err.Error(), "未接入导出面") {
+		err.Error() != i18n.T("exchange.exporter_missing") {
 		t.Fatalf("export err = %v", err)
 	}
 	if _, err := s.execImport(context.Background(), port.Command{Args: []string{"x"}}); err == nil ||
-		!strings.Contains(err.Error(), "未接入导入面") {
+		err.Error() != i18n.T("exchange.importer_missing") {
 		t.Fatalf("import err = %v", err)
 	}
 }
@@ -426,7 +444,7 @@ func TestImportPathWithSpaces(t *testing.T) {
 func TestImportSuggestsQuotesWhenSplit(t *testing.T) {
 	s, _ := exchangeSession(t, &fakeExchange{})
 	_, err := s.execImport(context.Background(), port.Command{Args: []string{"C:\\我的", "文档\\x.aqx"}})
-	if err == nil || !strings.Contains(err.Error(), "引号") {
+	if err == nil || err.Error() != importUsage()+"\n"+spacedPathHint() {
 		t.Fatalf("err = %v, want 提示用引号", err)
 	}
 }
@@ -471,14 +489,19 @@ func TestHumanBytes(t *testing.T) {
 func TestExchangeReceiptLines(t *testing.T) {
 	aqx, _ := formatOf(t, "aqx")
 	out := exportReceipt(aqx, "/tmp/a.aqx", port.ExchangeReport{Nodes: 3, Bytes: 2048})
-	if !strings.Contains(out, "无损") || strings.Contains(out, "没有带过去") {
+	if !strings.Contains(out, fidelityLine(aqx)) || strings.Contains(out, i18n.T("exchange.dropped.head")) {
 		t.Fatalf("无损回执:\n%s", out)
 	}
 	gpt, _ := formatOf(t, "chatgpt")
 	out = exportReceipt(gpt, "/tmp/a.json", port.ExchangeReport{
 		Nodes: 3, Bytes: 100, Dropped: []string{"思考过程 2 个", "附件 1 个"},
 	})
-	for _, want := range []string{"有损", "没有带过去", "- 思考过程 2 个", "- 附件 1 个"} {
+	for _, want := range []string{
+		fidelityLine(gpt),
+		i18n.T("exchange.dropped.head"),
+		i18n.Tf("exchange.dropped.item", "item", "思考过程 2 个"),
+		i18n.Tf("exchange.dropped.item", "item", "附件 1 个"),
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("有损回执缺 %q:\n%s", want, out)
 		}

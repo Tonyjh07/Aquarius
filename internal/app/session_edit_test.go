@@ -14,6 +14,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -113,13 +114,15 @@ func TestSessionGotoCommand(t *testing.T) {
 	}
 
 	// 前缀歧义 / 不存在 / 用法。
-	if _, err := handleCmd(s, "goto", "u"); err == nil || !strings.Contains(err.Error(), "有歧义") {
+	if _, err := handleCmd(s, "goto", "u"); err == nil ||
+		!strings.Contains(err.Error(), i18n.Tf("edit.node_ambiguous", "id", "\"u\"", "n", 2, "hits", "u1, u2")) {
 		t.Fatalf("歧义 err = %v", err)
 	}
-	if _, err := handleCmd(s, "goto", "zz"); err == nil || !strings.Contains(err.Error(), "没有节点") {
+	if _, err := handleCmd(s, "goto", "zz"); err == nil ||
+		!strings.Contains(err.Error(), i18n.Tf("edit.node_missing", "id", "\"zz\"")) {
 		t.Fatalf("不存在 err = %v", err)
 	}
-	if _, err := handleCmd(s, "goto"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "goto"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.goto")) {
 		t.Fatalf("用法 err = %v", err)
 	}
 
@@ -182,10 +185,10 @@ func TestSessionGotoClearsAndReplays(t *testing.T) {
 	if !ok {
 		t.Fatalf("第二个事件 = %T, want NoticeEvent", rec.events[1])
 	}
-	for _, want := range []string{"已切换分支至会话", "回放 2 条历史"} {
-		if !strings.Contains(notice.Text, want) {
-			t.Fatalf("notice = %q, want 含 %q", notice.Text, want)
-		}
+	if !strings.Contains(notice.Text, i18n.Tf("session.replay.notice",
+		"verb", i18n.T("replay.verb.branch_switched"),
+		"title", s.Current().Title, "id", s.Current().ID, "n", 2)) {
+		t.Fatalf("notice = %q, want 切分支回放提示", notice.Text)
 	}
 	// 回放内容 = 新 Head 路径（含旧回答"回复一"，不含改后的"改过的回复"）。
 	hist, ok := rec.events[3].(port.HistoryEvent)
@@ -237,7 +240,9 @@ func TestSessionEditClearsAndReplays(t *testing.T) {
 		t.Fatalf("events = %v, want [clear notice history history]", names)
 	}
 	notice := rec.events[1].(port.NoticeEvent)
-	if !strings.Contains(notice.Text, "已修订会话") || !strings.Contains(notice.Text, "回放 2 条历史") {
+	if !strings.Contains(notice.Text, i18n.Tf("session.replay.notice",
+		"verb", i18n.T("replay.verb.revised"),
+		"title", s.Current().Title, "id", s.Current().ID, "n", 2)) {
 		t.Fatalf("notice = %q", notice.Text)
 	}
 	hist := rec.events[3].(port.HistoryEvent)
@@ -353,16 +358,19 @@ func TestSessionRegenCommand(t *testing.T) {
 	}
 
 	// 错误路径：用法 / 不存在 / 上游无用户消息（persona 与 Root）。
-	if _, err := handleCmd(s, "regen"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "regen"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.regen")) {
 		t.Fatalf("用法 err = %v", err)
 	}
-	if _, err := handleCmd(s, "regen", "zz"); err == nil || !strings.Contains(err.Error(), "没有节点") {
+	if _, err := handleCmd(s, "regen", "zz"); err == nil ||
+		!strings.Contains(err.Error(), i18n.Tf("edit.node_missing", "id", "\"zz\"")) {
 		t.Fatalf("不存在 err = %v", err)
 	}
-	if _, err := handleCmd(s, "regen", "p"); err == nil || !strings.Contains(err.Error(), "上游没有用户消息") {
+	if _, err := handleCmd(s, "regen", "p"); err == nil ||
+		!strings.Contains(err.Error(), i18n.T("edit.no_upstream_user")) {
 		t.Fatalf("persona err = %v", err)
 	}
-	if _, err := handleCmd(s, "regen", "convT"); err == nil || !strings.Contains(err.Error(), "上游没有用户消息") {
+	if _, err := handleCmd(s, "regen", "convT"); err == nil ||
+		!strings.Contains(err.Error(), i18n.T("edit.no_upstream_user")) {
 		t.Fatalf("root err = %v", err)
 	}
 }
@@ -382,8 +390,9 @@ func TestSessionEditFresh(t *testing.T) {
 	if n == "" {
 		t.Fatal("RevisedFrom 应记录 新→旧")
 	}
-	if !strings.Contains(out, "fresh") || !strings.Contains(out, "旧分支保留") ||
-		!strings.Contains(out, "已重新生成回答") || !strings.Contains(out, string(n)) {
+	if !strings.Contains(out, "fresh") ||
+		!strings.Contains(out, i18n.T("edit.branch.kept")+i18n.T("edit.note.regen")) ||
+		!strings.Contains(out, string(n)) {
 		t.Fatalf("out = %q, want fresh/旧分支保留/已重新生成回答/新节点 id", out)
 	}
 	nm := nodeOf(t, c, n)
@@ -422,7 +431,7 @@ func TestSessionEditCarry(t *testing.T) {
 	if n == "" {
 		t.Fatal("RevisedFrom 应记录 新→旧")
 	}
-	if !strings.Contains(out, "carry") || !strings.Contains(out, "后续历史已转移") {
+	if !strings.Contains(out, "carry") || !strings.Contains(out, i18n.T("edit.branch.moved")) {
 		t.Fatalf("out = %q, want carry/后续历史已转移", out)
 	}
 	if got := c.ChildIDs(n); len(got) != 1 || got[0] != "a1" {
@@ -479,12 +488,12 @@ func TestSessionEditKeepFlagPosition(t *testing.T) {
 		{"flag 紧跟 id", []string{"u1", "--keep", "新问题"}, conversation.Carry, "新问题", ""},
 		{"文本含字面 keep", []string{"u1", "请加 --keep 参数"}, conversation.Fresh, "请加 --keep 参数", ""},
 		{"flag 后多余的 keep 归文本", []string{"u1", "--keep", "保留 --keep 字样"}, conversation.Carry, "保留 --keep 字样", ""},
-		{"flag 在 id 前拒绝", []string{"--keep", "u1", "x"}, conversation.Fresh, "", "用法"},
-		{"有 flag 无文本", []string{"u1", "--keep"}, conversation.Carry, "", "用法"},
+		{"flag 在 id 前拒绝", []string{"--keep", "u1", "x"}, conversation.Fresh, "", i18n.T("usage.edit")},
+		{"有 flag 无文本", []string{"u1", "--keep"}, conversation.Carry, "", i18n.T("usage.edit")},
 		{"copy 紧跟 id", []string{"u1", "--copy", "新问题"}, conversation.Clone, "新问题", ""},
 		{"文本含字面 copy", []string{"u1", "请加 --copy 参数"}, conversation.Fresh, "请加 --copy 参数", ""},
-		{"copy 在 id 前拒绝", []string{"--copy", "u1", "x"}, conversation.Fresh, "", "用法"},
-		{"有 copy 无文本", []string{"u1", "--copy"}, conversation.Clone, "", "用法"},
+		{"copy 在 id 前拒绝", []string{"--copy", "u1", "x"}, conversation.Fresh, "", i18n.T("usage.edit")},
+		{"有 copy 无文本", []string{"u1", "--copy"}, conversation.Clone, "", i18n.T("usage.edit")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -529,8 +538,8 @@ func TestSessionEditClone(t *testing.T) {
 	if n == "" {
 		t.Fatal("RevisedFrom 应记录 新→旧")
 	}
-	if !strings.Contains(out, "clone") || !strings.Contains(out, "后续历史已复制") ||
-		strings.Contains(out, "已重新生成回答") {
+	if !strings.Contains(out, "clone") || !strings.Contains(out, i18n.T("edit.branch.copied")) ||
+		strings.Contains(out, i18n.T("edit.note.regen")) {
 		t.Fatalf("out = %q, want clone/后续历史已复制 且不重发", out)
 	}
 	// 新节点：同父同角色新内容；旧分支原样保留。
@@ -596,7 +605,7 @@ func TestSessionEditAssistantNoRegen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("edit a1: %v", err)
 	}
-	if !strings.Contains(out, "fresh") || strings.Contains(out, "已重新生成回答") {
+	if !strings.Contains(out, "fresh") || strings.Contains(out, i18n.T("edit.note.regen")) {
 		t.Fatalf("out = %q, want fresh 且不重发", out)
 	}
 	n := revisedID(c, "a1")
@@ -745,13 +754,13 @@ func TestSessionEditRejects(t *testing.T) {
 		want string
 		is   error
 	}{
-		{"无参数", nil, "用法", nil},
-		{"缺文本", []string{"u1"}, "用法", nil},
-		{"缺文本但有flag", []string{"u1", "--keep"}, "用法", nil},
-		{"flag 在 id 前", []string{"--keep", "u1", "x"}, "用法", nil},
-		{"空文本", []string{"u1", ""}, "不可为空", nil},
-		{"未知节点", []string{"zz", "x"}, "没有节点", nil},
-		{"root", []string{"convT", "x"}, "会话根节点就是会话本身", conversation.ErrInvalidNode},
+		{"无参数", nil, i18n.T("usage.edit"), nil},
+		{"缺文本", []string{"u1"}, i18n.T("usage.edit"), nil},
+		{"缺文本但有flag", []string{"u1", "--keep"}, i18n.T("usage.edit"), nil},
+		{"flag 在 id 前", []string{"--keep", "u1", "x"}, i18n.T("usage.edit"), nil},
+		{"空文本", []string{"u1", ""}, i18n.T("edit.text_empty"), nil},
+		{"未知节点", []string{"zz", "x"}, i18n.Tf("edit.node_missing", "id", "\"zz\""), nil},
+		{"root", []string{"convT", "x"}, i18n.Tf("conv.err.revise_root", "id", "convT"), conversation.ErrInvalidNode},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

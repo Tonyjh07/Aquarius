@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -58,8 +59,10 @@ func TestSessionPluginCommand(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 	for _, want := range []string{
-		"插件（2 个）", "[ready]", "web", "config/stdio",
-		"能力:network(已授权),fs(未授权)", "调用12, 失败1",
+		i18n.Tf("plugin.list.head", "n", "2"), "[ready]", "web", "config/stdio",
+		i18n.Tf("plugin.list.caps", "caps",
+			"network"+i18n.T("plugin.cap.granted")+",fs"+i18n.T("plugin.cap.ungranted")),
+		i18n.Tf("plugin.list.calls", "calls", "12") + i18n.Tf("plugin.list.errors", "errors", "1"),
 		"[failed]", "bad", "未知 risk",
 	} {
 		if !strings.Contains(out, want) {
@@ -68,7 +71,7 @@ func TestSessionPluginCommand(t *testing.T) {
 	}
 
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"enable", "web"}}})
-	if err != nil || !strings.Contains(out, "已启用 web → ready") {
+	if err != nil || !strings.Contains(out, i18n.Tf("plugin.enabled_status", "name", "web", "status", "ready")) {
 		t.Fatalf("enable = %q, %v", out, err)
 	}
 	if len(admin.enabled) != 1 || admin.enabled[0] != "web" {
@@ -76,24 +79,31 @@ func TestSessionPluginCommand(t *testing.T) {
 	}
 
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"disable", "web"}}})
-	if err != nil || !strings.Contains(out, "已停用 web") {
+	if err != nil || !strings.Contains(out, i18n.Tf("plugin.disabled", "name", "web")) {
 		t.Fatalf("disable = %q, %v", out, err)
 	}
 	if len(admin.disabled) != 1 {
 		t.Fatalf("disabled = %v", admin.disabled)
 	}
 
-	// 用法错误。
-	for _, args := range [][]string{{"enable"}, {"disable", "a", "b"}, {"bogus"}} {
-		if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: args}}); err == nil ||
-			!strings.Contains(err.Error(), "用法") {
-			t.Fatalf("args=%v err=%v, want 用法错误", args, err)
+	// 用法错误：每个错法对应各自的用法行。
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"enable"}, i18n.T("plugin.usage.enable")},
+		{[]string{"disable", "a", "b"}, i18n.T("plugin.usage.disable")},
+		{[]string{"bogus"}, i18n.T("plugin.usage")},
+	} {
+		if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: tc.args}}); err == nil ||
+			err.Error() != tc.want {
+			t.Fatalf("args=%v err=%v, want %q", tc.args, err, tc.want)
 		}
 	}
 	// 未配置宿主。
 	empty := &Session{}
 	if _, err := empty.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin"}}); err == nil ||
-		!strings.Contains(err.Error(), "未配置插件宿主") {
+		!strings.Contains(err.Error(), i18n.T("plugin.unwired")) {
 		t.Fatalf("err = %v, want 未配置报因", err)
 	}
 }
@@ -102,7 +112,7 @@ func TestSessionPluginCommand(t *testing.T) {
 func TestSessionPluginEmptyList(t *testing.T) {
 	s := &Session{plugins: &fakeAdmin{}}
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "plugin"}})
-	if err != nil || !strings.Contains(out, "没有已声明的插件") {
+	if err != nil || !strings.Contains(out, i18n.T("plugin.list.empty")) {
 		t.Fatalf("out=%q err=%v", out, err)
 	}
 }
@@ -122,7 +132,7 @@ func TestSessionPluginLogs(t *testing.T) {
 		t.Fatalf("logs 带名 = %q, %v", out, err)
 	}
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"logs", "a", "b"}}}); err == nil ||
-		!strings.Contains(err.Error(), "用法") {
+		!strings.Contains(err.Error(), i18n.T("plugin.usage.logs")) {
 		t.Fatalf("logs 多参 err = %v, want 用法错误", err)
 	}
 
@@ -169,7 +179,7 @@ func TestSessionDynamicCommands(t *testing.T) {
 	// 整体替换后旧命令注销。
 	s.SetDynamicCommands(map[string]CommandHandler{}, nil)
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "mcp:fake:greet"}}); err == nil ||
-		!strings.Contains(err.Error(), "未知命令") {
+		!strings.Contains(err.Error(), i18n.Tf("session.unknown_command", "name", "mcp:fake:greet")) {
 		t.Fatalf("err = %v, want 未知命令", err)
 	}
 }

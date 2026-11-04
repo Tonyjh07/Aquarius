@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -34,7 +35,7 @@ func TestReparentCommandMovesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reparent: %v", err)
 	}
-	if !strings.Contains(out, "已改父") || !strings.Contains(out, "1 个节点") {
+	if !strings.Contains(out, i18n.Tf("reparent.done", "n", 1, "parent", persona.ID)) {
 		t.Fatalf("output = %q, want 已改父 + 节点数", out)
 	}
 	got, _ := s.Current().Find(a1.ID)
@@ -67,7 +68,8 @@ func TestReparentCommandUndo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("undo: %v", err)
 	}
-	if !strings.Contains(out, "已撤销") || !strings.Contains(out, "挂回") {
+	if !strings.Contains(out, i18n.Tf("reparent.undone",
+		"what", i18n.T("reparent.kind.move"), "n", 1, "anchor", q1.ID)) {
 		t.Fatalf("output = %q, want 已撤销…挂回", out)
 	}
 	got, _ := s.Current().Find(a1.ID)
@@ -95,7 +97,7 @@ func TestReparentCommandRejectsRootAndBadArgs(t *testing.T) {
 		t.Fatal("reparent under root should fail")
 	}
 	if _, err := s.execCommand(context.Background(), port.Command{Name: "reparent", Args: []string{string(a1.ID)}}); err == nil ||
-		!strings.Contains(err.Error(), "用法") {
+		err.Error() != i18n.T("usage.reparent") {
 		t.Fatalf("short args = %v, want 用法 error", err)
 	}
 	if _, err := s.execCommand(context.Background(), port.Command{Name: "reparent", Args: []string{"--undo", "x"}}); err == nil {

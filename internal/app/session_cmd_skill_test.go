@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -74,7 +75,12 @@ func TestSkillCommandList(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"已安装 1 个技能", "- pdf — Fill PDF forms.", "来源：/skills", "未加载的条目"} {
+		for _, want := range []string{
+			i18n.Tf("skill.list.head", "n", 1),
+			i18n.Tf("skill.list.item", "name", "pdf", "desc", "Fill PDF forms."),
+			i18n.Tf("skill.list.source", "source", "/skills"),
+			i18n.Tf("skill.list.warnings_head", "n", 1),
+		} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("清单缺 %q：\n%s", want, out)
 			}
@@ -92,7 +98,7 @@ func TestSkillCommandLoadInjectsText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("skill: %v", err)
 	}
-	if !strings.Contains(out, "已载入技能 pdf") {
+	if !strings.Contains(out, i18n.Tf("skill.loaded", "name", "pdf", "dir", `/skills/pdf`)) {
 		t.Fatalf("out = %q", out)
 	}
 	if len(llm.requests) != baseReqs {
@@ -163,10 +169,12 @@ func TestSkillCommandIgnoresQueueAtDrain(t *testing.T) {
 // TestSkillCommandUnknownName 名字打错报中文原因（不泄露内部编号）。
 func TestSkillCommandUnknownName(t *testing.T) {
 	s, _, _ := skillSession(t, pdfSkills())
-	if _, err := handleCmd(s, "skill", "pfd"); err == nil || !strings.Contains(err.Error(), "没有名为") {
+	if _, err := handleCmd(s, "skill", "pfd"); err == nil ||
+		err.Error() != i18n.Tf("skill.not_found", "name", `"pfd"`) {
 		t.Fatalf("err = %v", err)
 	}
-	if _, err := handleCmd(s, "skill", "pdf", "extra"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "skill", "pdf", "extra"); err == nil ||
+		!strings.Contains(err.Error(), i18n.T("usage.skill")+i18n.T("skill.no_space")) {
 		t.Fatalf("多余参数 err = %v", err)
 	}
 }
@@ -174,7 +182,7 @@ func TestSkillCommandUnknownName(t *testing.T) {
 // TestSkillCommandUnavailable 未接线时报「未配置技能目录」。
 func TestSkillCommandUnavailable(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
-	if _, err := handleCmd(s, "skill"); err == nil || !strings.Contains(err.Error(), "未配置技能目录") {
+	if _, err := handleCmd(s, "skill"); err == nil || !strings.Contains(err.Error(), i18n.T("skill.unavailable")) {
 		t.Fatalf("err = %v", err)
 	}
 }

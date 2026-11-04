@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -296,7 +297,7 @@ func TestSwitchDropsPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execNew: %v", err)
 	}
-	if !strings.Contains(out, "未随会话带走") {
+	if !strings.Contains(out, i18n.Tf("session.pending.dropped", "n", "1")) {
 		t.Fatalf("/new 回执 = %q, want 含丢弃提示", out)
 	}
 	if n := s.pendingQ.count(); n != 0 {

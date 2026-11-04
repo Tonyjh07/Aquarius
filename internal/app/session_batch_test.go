@@ -5,12 +5,14 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -79,6 +81,13 @@ func TestRmconvDeletesSeveralInOneConfirm(t *testing.T) {
 			del = append(del, id)
 		}
 	}
+	// 确认句与回执按 rmconv 的组成方式从表里拼（del 的顺序即命令参数顺序）；
+	// 标题要在删除前取好——rmconv 落库后这些会话就查不到了。
+	delTitles := make([]string, 0, len(del))
+	for _, id := range del {
+		delTitles = append(delTitles, store.convs[conversation.ID(id)].Title)
+	}
+	joinTitles := strings.Join(delTitles, i18n.T("tree.titles.sep"))
 	out, err := handleCmd(s, "rmconv", del[0], del[1])
 	if err != nil {
 		t.Fatalf("rmconv: %v", err)
@@ -86,8 +95,12 @@ func TestRmconvDeletesSeveralInOneConfirm(t *testing.T) {
 	if len(conf.asked) != 1 {
 		t.Fatalf("确认次数 = %d, want 1（一次确认删一批）", len(conf.asked))
 	}
-	if !strings.Contains(conf.asked[0].prompt, "2 个会话") {
-		t.Fatalf("确认句应写清删几个: %s", conf.asked[0].prompt)
+	wantPrompt := i18n.Tf("tree.rmconv.prompt_many", "n", 2)
+	for i, id := range del {
+		wantPrompt += "\n" + i18n.Tf("tree.rmconv.prompt_item", "id", id, "title", delTitles[i])
+	}
+	if conf.asked[0].prompt != wantPrompt {
+		t.Fatalf("确认句应写清删几个: got %q, want %q", conf.asked[0].prompt, wantPrompt)
 	}
 	for _, id := range del {
 		if _, ok := store.convs[conversation.ID(id)]; ok {
@@ -97,8 +110,8 @@ func TestRmconvDeletesSeveralInOneConfirm(t *testing.T) {
 	if s.Current().ID != cur {
 		t.Fatalf("当前会话 = %s, want %s（删的不是当前会话）", s.Current().ID, cur)
 	}
-	if !strings.Contains(out, "已删除 2 个会话") {
-		t.Fatalf("回执 = %q, want 已删除 2 个会话", out)
+	if want := i18n.Tf("tree.rmconv.deleted_many", "n", 2, "titles", joinTitles); !strings.Contains(out, want) {
+		t.Fatalf("回执 = %q, want %q", out, want)
 	}
 }
 
@@ -108,7 +121,7 @@ func TestRmconvBadIDDeletesNothing(t *testing.T) {
 	before := len(store.convs)
 	good := s.Current().ID
 	if _, err := handleCmd(s, "rmconv", string(good), "ZZZ没有这个"); err == nil ||
-		!strings.Contains(err.Error(), "没有会话") {
+		!strings.Contains(err.Error(), i18n.Tf("edit.conv_missing", "id", fmt.Sprintf("%q", "ZZZ没有这个"))) {
 		t.Fatalf("err = %v, want 没有会话", err)
 	}
 	if len(store.convs) != before {
@@ -151,6 +164,11 @@ func TestRmconvCurrentWithBatchSkipsDeleted(t *testing.T) {
 			del = append(del, string(id))
 		}
 	}
+	// 标题要在删除前取好——rmconv 落库后这些会话就查不到了。
+	delTitles := make([]string, 0, len(del))
+	for _, id := range del {
+		delTitles = append(delTitles, store.convs[conversation.ID(id)].Title)
+	}
 	out, err := handleCmd(s, "rmconv", del[0], del[1])
 	if err != nil {
 		t.Fatalf("rmconv: %v", err)
@@ -161,8 +179,10 @@ func TestRmconvCurrentWithBatchSkipsDeleted(t *testing.T) {
 	if _, ok := store.convs[keep]; !ok {
 		t.Fatal("继任会话不该被删掉")
 	}
-	if !strings.Contains(out, "已切换到") {
-		t.Fatalf("回执应写明已切换: %q", out)
+	want := i18n.Tf("tree.rmconv.deleted_current_many",
+		"n", len(del), "titles", strings.Join(delTitles, i18n.T("tree.titles.sep")), "next", string(keep))
+	if !strings.Contains(out, want) {
+		t.Fatalf("回执应写明已切换: got %q, want %q", out, want)
 	}
 }
 
@@ -177,11 +197,14 @@ func TestRmconvSingleKeepsOldWording(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rmconv: %v", err)
 	}
-	if !strings.Contains(out, "已删除会话 "+string(other)) {
-		t.Fatalf("回执 = %q, want 单个 ID 的老说法", out)
+	if want := i18n.Tf("tree.rmconv.deleted", "id", string(other), "title", "别的"); !strings.Contains(out, want) {
+		t.Fatalf("回执 = %q, want %q（单个 ID 的老说法）", out, want)
 	}
-	if len(conf.asked) != 1 || !strings.Contains(conf.asked[0].prompt, "确认删除会话") {
-		t.Fatalf("确认句 = %+v, want 单个会话的老说法", conf.asked)
+	if len(conf.asked) != 1 {
+		t.Fatalf("确认次数 = %d, want 1", len(conf.asked))
+	}
+	if want := i18n.Tf("tree.rmconv.prompt", "id", string(other), "title", "别的"); !strings.Contains(conf.asked[0].prompt, want) {
+		t.Fatalf("确认句 = %+v, want %q（单个会话的老说法）", conf.asked, want)
 	}
 }
 
@@ -218,7 +241,15 @@ func TestExportAllWritesWholeLibrary(t *testing.T) {
 	if _, err := os.Stat(want); err != nil {
 		t.Fatalf("应落在 %s: %v", want, err)
 	}
-	if !strings.Contains(out, "个会话") || !strings.Contains(out, want) {
+	// 内容行按 exportReceipt 的组成方式从表里拼（条数取导出记录，消息数 = 节点数-根）。
+	totalNodes := 0
+	for _, n := range ex.exportedN {
+		totalNodes += n - 1
+	}
+	wantMulti := i18n.Tf("exchange.export.multi",
+		"convs", len(ex.exportIDs), "nodes", totalNodes,
+		"bytes", fmt.Sprintf("%d B", len(ex.payload)))
+	if !strings.Contains(out, wantMulti) || !strings.Contains(out, want) {
 		t.Fatalf("多会话回执应写数量与落点:\n%s", out)
 	}
 }
@@ -268,7 +299,7 @@ func TestExportIDsOnlySelected(t *testing.T) {
 func TestExportAllAndIDsConflict(t *testing.T) {
 	s, _ := exportSession(t, &fakeExchange{})
 	_, err := s.execExport(context.Background(), port.Command{Args: []string{"--all", "--ids", "x"}})
-	if err == nil || !strings.Contains(err.Error(), "只能给一个") {
+	if err == nil || !strings.Contains(err.Error(), i18n.T("exchange.all_and_ids")) {
 		t.Fatalf("err = %v, want 互斥报因", err)
 	}
 }
@@ -280,7 +311,7 @@ func TestExportAllRejectsLossyFormat(t *testing.T) {
 	_, err := s.execExport(context.Background(), port.Command{
 		Args: []string{"--all", "--format", "chatgpt"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "一次只能写一个会话") {
+	if err == nil || !strings.Contains(err.Error(), i18n.Tf("exchange.format_single", "format", "chatgpt")) {
 		t.Fatalf("err = %v, want 一次只能写一个会话", err)
 	}
 	if len(ex.exported) != 0 {
@@ -352,13 +383,20 @@ func TestImportMultiLandsAll(t *testing.T) {
 	if s.Current().ID == before {
 		t.Fatal("应切到第一个导入的会话")
 	}
-	for _, want := range []string{"已导入 3 个会话", "第一个 · 2 条", "第二个 · 3 条", "第三个 · 1 条"} {
+	// 回执按 importReceipt 的组成方式从表里拼：多会话内容行 + 逐条「标题 · 条数」。
+	wants := []string{
+		i18n.Tf("exchange.import.multi", "convs", 3, "nodes", ex.importRep.Nodes),
+		i18n.Tf("exchange.entry", "title", "第一个", "nodes", 2),
+		i18n.Tf("exchange.entry", "title", "第二个", "nodes", 3),
+		i18n.Tf("exchange.entry", "title", "第三个", "nodes", 1),
+	}
+	for _, want := range wants {
 		if !strings.Contains(out, want) {
 			t.Fatalf("回执缺 %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "已落成新会话") {
-		t.Fatalf("多会话回执不该用单会话的说法:\n%s", out)
+	if want := i18n.Tf("exchange.import.one", "nodes", ex.importRep.Nodes); strings.Contains(out, want) {
+		t.Fatalf("多会话回执不该用单会话的说法（%q）:\n%s", want, out)
 	}
 }
 
@@ -375,7 +413,7 @@ func TestImportMultiRollsBackOnFailure(t *testing.T) {
 	}
 	before := len(store.convs)
 	if _, err := s.execImport(context.Background(), port.Command{Args: []string{source}}); err == nil ||
-		!strings.Contains(err.Error(), "保存导入的会话") {
+		!strings.Contains(err.Error(), i18n.T("err.save_import")) {
 		t.Fatalf("err = %v, want 保存导入的会话", err)
 	}
 	if len(store.convs) != before {

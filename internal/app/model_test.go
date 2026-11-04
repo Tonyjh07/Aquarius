@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -20,7 +21,7 @@ func TestSessionModelCommand(t *testing.T) {
 
 	// 未配置模型服务（Models 未接线）。
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model"}}); err == nil ||
-		!strings.Contains(err.Error(), "未配置模型服务") {
+		!strings.Contains(err.Error(), i18n.T("model.unwired")) {
 		t.Fatalf("err = %v, want 未配置模型服务", err)
 	}
 
@@ -35,7 +36,15 @@ func TestSessionModelCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	for _, want := range []string{"当前模型: test-model", "生效能力: 工具 / 思考 / 图片", "gpt-a", "[工具/图片]", "$0.001/$0.002", "mini"} {
+	allMarks := []string{i18n.T("model.mark_tools"), i18n.T("model.mark_reasoning"), i18n.T("model.mark_vision")}
+	for _, want := range []string{
+		i18n.Tf("model.current", "model", "test-model"),
+		i18n.Tf("model.caps", "caps", strings.Join(allMarks, " / ")),
+		"gpt-a",
+		"[" + strings.Join([]string{i18n.T("model.mark_tools"), i18n.T("model.mark_vision")}, "/") + "]",
+		"$0.001/$0.002",
+		"mini",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("/model 缺 %q: %s", want, out)
 		}
@@ -47,7 +56,11 @@ func TestSessionModelCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list(no caps): %v", err)
 	}
-	if !strings.Contains(out, "生效能力: （三项均未声明）") || !strings.Contains(out, "未启用: 工具调用、思考、图片输入") {
+	capsNone := i18n.Tf("model.caps", "caps", i18n.T("model.caps_none"))
+	capsOff := "  " + i18n.Tf("model.caps_off",
+		"caps", strings.Join([]string{i18n.T("model.cap_tools"), i18n.T("model.cap_reasoning"), i18n.T("model.cap_vision")}, i18n.T("model.list_sep")),
+		"cause", "")
+	if !strings.Contains(out, capsNone) || !strings.Contains(out, capsOff) {
 		t.Fatalf("/model 未说明能力缺失: %s", out)
 	} // 列表服务故障上抛。
 	cat.listErr = errors.New("404")
@@ -58,7 +71,7 @@ func TestSessionModelCommand(t *testing.T) {
 
 	// 未配置写回。
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"m2"}}}); err == nil ||
-		!strings.Contains(err.Error(), "未配置模型写回") {
+		!strings.Contains(err.Error(), i18n.T("model.switch_unwired")) {
 		t.Fatalf("err = %v, want 未配置模型写回", err)
 	}
 
@@ -66,7 +79,7 @@ func TestSessionModelCommand(t *testing.T) {
 	persist := &fakeModelSwitch{}
 	s.modelSwitch = persist
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"gpt-x"}}})
-	if err != nil || !strings.Contains(out, "已切换模型 → gpt-x") {
+	if err != nil || !strings.Contains(out, i18n.Tf("model.switched", "model", "gpt-x")) {
 		t.Fatalf("switch = %q, %v", out, err)
 	}
 	if len(persist.persisted) != 1 || persist.persisted[0] != "gpt-x" || s.agent.modelName() != "gpt-x" {
@@ -86,7 +99,7 @@ func TestSessionModelCommand(t *testing.T) {
 	// 用法错误。
 	for _, args := range [][]string{{"a", "b"}, {" "}} {
 		if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: args}}); err == nil ||
-			!strings.Contains(err.Error(), "用法") {
+			!strings.Contains(err.Error(), i18n.T("usage.model")) {
 			t.Fatalf("args=%v err=%v, want 用法", args, err)
 		}
 	}
@@ -112,13 +125,19 @@ func TestModelCommandChainAnnotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model: %v", err)
 	}
+	// 期望句按 formatModels 的组成方式从文案表拼：谁失去了什么、谁拉低整链。
+	culprit := i18n.Tf("model.link_narrowed", "provider", "a", "model", "m1",
+		"lost", strings.Join([]string{i18n.T("model.mark_reasoning"), i18n.T("model.mark_vision")}, i18n.T("model.list_sep")))
+	cause := i18n.Tf("model.culprit", "names", culprit)
 	for _, want := range []string{
-		"生效能力: 工具",
-		"未启用: 思考、图片输入",
-		"拉低整链的是 a/m1 失去了 思考、图片", // 逐环标注：谁本来有能力、因何没用上
-		"降级链:",
-		"1. a / m1 [工具 / 思考 / 图片]",
-		"2. b / mb [工具]",
+		i18n.Tf("model.caps", "caps", i18n.T("model.mark_tools")),
+		"  " + i18n.Tf("model.caps_off",
+			"caps", strings.Join([]string{i18n.T("model.cap_reasoning"), i18n.T("model.cap_vision")}, i18n.T("model.list_sep")),
+			"cause", cause),
+		cause, // 逐环标注：谁本来有能力、因何没用上
+		i18n.T("model.chain"),
+		"1. a / m1 [" + strings.Join([]string{i18n.T("model.mark_tools"), i18n.T("model.mark_reasoning"), i18n.T("model.mark_vision")}, " / ") + "]",
+		"2. b / mb [" + i18n.T("model.mark_tools") + "]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("/model 缺 %q:\n%s", want, out)
@@ -140,7 +159,7 @@ func TestModelCommandBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model: %v", err)
 	}
-	if !strings.Contains(out, "上下文预算: 64k tokens（全局上限；模型未声明窗口）") {
+	if !strings.Contains(out, i18n.Tf("model.budget_global_only", "effective", humanTokens(64000))) {
 		t.Fatalf("/model 未说明预算来源:\n%s", out)
 	}
 
@@ -149,7 +168,8 @@ func TestModelCommandBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model: %v", err)
 	}
-	if !strings.Contains(out, "模型窗口 32k 在压；全局上限 200k") {
+	if !strings.Contains(out, i18n.Tf("model.budget_model",
+		"effective", humanTokens(32000), "window", humanTokens(32000), "limit", humanTokens(200000))) {
 		t.Fatalf("/model 未指出是模型窗口在压:\n%s", out)
 	}
 
@@ -158,7 +178,8 @@ func TestModelCommandBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model: %v", err)
 	}
-	if !strings.Contains(out, "上下文预算: 64k tokens（全局上限在压；模型窗口 128k）") {
+	if !strings.Contains(out, i18n.Tf("model.budget_global",
+		"effective", humanTokens(64000), "window", humanTokens(128000))) {
 		t.Fatalf("/model 未指出是全局上限在压:\n%s", out)
 	}
 }
@@ -170,7 +191,7 @@ func TestModelProbeCommand(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}}); err == nil ||
-		!strings.Contains(err.Error(), "未配置能力探测") {
+		!strings.Contains(err.Error(), i18n.T("model.probe_unwired")) {
 		t.Fatalf("err = %v, want 未配置能力探测", err)
 	}
 
@@ -194,13 +215,13 @@ func TestModelProbeCommand(t *testing.T) {
 		t.Fatalf("探测目标 = %q, want m2", asked)
 	}
 	for _, want := range []string{
-		"能力探测 p1 / m1",
-		"工具调用: 支持",
-		"思考: 无结论",
-		"图片输入: 不支持",
+		i18n.Tf("model.probe_head", "provider", "p1", "model", "m1"),
+		i18n.T("model.cap_tools") + ": " + i18n.T("model.verdict_supported"),
+		i18n.T("model.cap_reasoning") + ": " + i18n.T("model.verdict_unknown"),
+		i18n.T("model.cap_vision") + ": " + i18n.T("model.verdict_unsupported"),
 		"0.8s",
-		"用量 12→5 tokens",
-		"已按判定明确的项写回配置，重启后生效",
+		i18n.Tf("model.probe_usage", "in", 12, "out", 5),
+		i18n.T("model.probe_written"),
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("探测输出缺 %q:\n%s", want, out)
@@ -215,7 +236,7 @@ func TestModelProbeCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
-	if !strings.Contains(out, "未改动配置") {
+	if !strings.Contains(out, i18n.T("model.probe_unchanged")) {
 		t.Fatalf("无结论时应说明未改动:\n%s", out)
 	}
 
@@ -225,13 +246,14 @@ func TestModelProbeCommand(t *testing.T) {
 	}}
 	cat.probeErr = errors.New("boom")
 	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe"}}})
-	if err == nil || !strings.Contains(err.Error(), "boom") || !strings.Contains(out, "工具调用: 支持") {
+	if err == nil || !strings.Contains(err.Error(), "boom") ||
+		!strings.Contains(out, i18n.T("model.cap_tools")+": "+i18n.T("model.verdict_supported")) {
 		t.Fatalf("out=%q err=%v", out, err)
 	}
 
 	// 参数过多 = 用法错误。
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"probe", "a", "b"}}}); err == nil ||
-		!strings.Contains(err.Error(), "用法") {
+		!strings.Contains(err.Error(), i18n.T("usage.model_probe")) {
 		t.Fatalf("err = %v, want 用法", err)
 	}
 }

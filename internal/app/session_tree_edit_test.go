@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -50,7 +51,7 @@ func TestTreeEditDefersWritesUntilDone(t *testing.T) {
 	}
 
 	out := runCmd(t, s, "tree-edit", "--done")
-	if !strings.Contains(out, "已保存并退出") || !strings.Contains(out, "3 处") {
+	if !strings.Contains(out, i18n.Tf("tree.edit.saved", "n", 3)) {
 		t.Fatalf("done output = %q, want 已保存并退出 + 3 处", out)
 	}
 	if store.saves != baselineSaves+1 {
@@ -172,7 +173,7 @@ func TestTreeEditShrinkAsksBeforeSaving(t *testing.T) {
 
 	// 第一次拒绝保存：留在模式里，盘上没写。
 	out := runCmd(t, s, "tree-edit", "--done")
-	if !strings.Contains(out, "已取消保存") {
+	if !strings.Contains(out, i18n.Tf("tree.edit.save_canceled", "n", 1)) {
 		t.Fatalf("declined output = %q, want 已取消保存", out)
 	}
 	if active, _ := s.TreeEditState(); !active {
@@ -183,7 +184,8 @@ func TestTreeEditShrinkAsksBeforeSaving(t *testing.T) {
 	}
 	// 第二次同意：保存并带前后条数。
 	out = runCmd(t, s, "tree-edit", "--done")
-	if !strings.Contains(out, "上下文") || !strings.Contains(out, "条") {
+	if want := i18n.Tf("tree.edit.saved", "n", 1) +
+		i18n.Tf("tree.edit.saved_context", "before", before, "after", contextCount(s.Current())); !strings.Contains(out, want) {
 		t.Fatalf("accepted output = %q, want 上下文前后条数", out)
 	}
 	if store.saves != baselineSaves+1 {
@@ -204,7 +206,7 @@ func TestTreeEditSwitchAsksSaveDiscardCancel(t *testing.T) {
 	runCmd(t, s, "reparent", string(a1.ID), string(persona.ID))
 
 	out := runCmd(t, s, "new", "另一个会话")
-	if !strings.Contains(out, "已取消") {
+	if !strings.Contains(out, i18n.Tf("tree.edit.canceled", "n", 1)) {
 		t.Fatalf("new output = %q, want 已取消（两次都拒绝）", out)
 	}
 	if active, _ := s.TreeEditState(); !active {
@@ -214,7 +216,7 @@ func TestTreeEditSwitchAsksSaveDiscardCancel(t *testing.T) {
 	// 这次放弃：切走，改动不落盘。
 	s.confirmer = &scriptConfirmer{t: t, answers: []bool{false, true}}
 	out = runCmd(t, s, "new", "另一个会话")
-	if !strings.Contains(out, "已新建会话") {
+	if !strings.Contains(out, i18n.Tf("tree.new.done", "id", s.Current().ID)) {
 		t.Fatalf("new output = %q, want 已新建会话", out)
 	}
 	if active, _ := s.TreeEditState(); active {
@@ -234,7 +236,7 @@ func TestTreeEditExitAsksLikeSwitch(t *testing.T) {
 	s.confirmer = conf
 	runCmd(t, s, "tree-edit")
 	out := runCmd(t, s, "tree-edit", "--exit")
-	if !strings.Contains(out, "已退出树编辑") {
+	if !strings.Contains(out, i18n.T("tree.edit.aborted_clean")) {
 		t.Fatalf("exit without edits = %q, want 已退出树编辑", out)
 	}
 	if active, _ := s.TreeEditState(); active {
@@ -250,7 +252,7 @@ func TestTreeEditExitAsksLikeSwitch(t *testing.T) {
 	runCmd(t, s, "tree-edit")
 	runCmd(t, s, "reparent", string(a1.ID), string(persona.ID))
 	out = runCmd(t, s, "tree-edit", "--exit")
-	if !strings.Contains(out, "已取消") {
+	if !strings.Contains(out, i18n.Tf("tree.edit.canceled", "n", 1)) {
 		t.Fatalf("cancel exit = %q, want 已取消", out)
 	}
 	if active, edits := s.TreeEditState(); !active || edits != 1 {
@@ -261,7 +263,7 @@ func TestTreeEditExitAsksLikeSwitch(t *testing.T) {
 	conf = &scriptConfirmer{t: t, answers: []bool{false, true}}
 	s.confirmer = conf
 	out = runCmd(t, s, "tree-edit", "--exit")
-	if !strings.Contains(out, "已放弃") {
+	if !strings.Contains(out, i18n.Tf("tree.edit.aborted", "n", 1)) {
 		t.Fatalf("discard exit = %q, want 已放弃", out)
 	}
 	if active, _ := s.TreeEditState(); active {
@@ -278,7 +280,7 @@ func TestTreeEditExitOutsideMode(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)
 	out := runCmd(t, s, "tree-edit", "--exit")
-	if !strings.Contains(out, "不在树编辑模式") {
+	if !strings.Contains(out, i18n.T("tree.edit.not_active_exit")) {
 		t.Fatalf("--exit outside the mode = %q, want 不在树编辑模式", out)
 	}
 }
@@ -287,14 +289,14 @@ func TestTreeEditUsage(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)
 
-	if out := runCmd(t, s, "tree-edit"); !strings.Contains(out, "已进入树编辑模式") {
+	if out := runCmd(t, s, "tree-edit"); !strings.Contains(out, i18n.T("tree.edit.entered")) {
 		t.Fatalf("enter = %q", out)
 	}
-	if out := runCmd(t, s, "tree-edit"); !strings.Contains(out, "树编辑模式") {
+	if out := runCmd(t, s, "tree-edit"); !strings.Contains(out, i18n.T("tree.edit.status_idle")) {
 		t.Fatalf("second enter should report status, got %q", out)
 	}
 	if _, err := s.execCommand(context.Background(), port.Command{Name: "tree-edit", Args: []string{"--nope"}}); err == nil ||
-		!strings.Contains(err.Error(), "用法") {
+		err.Error() != treeEditUsage() {
 		t.Fatalf("unknown flag = %v, want 用法", err)
 	}
 	runCmd(t, s, "tree-edit", "--done")

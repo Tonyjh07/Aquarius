@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -24,11 +25,11 @@ func TestCharacterReportWorldBook(t *testing.T) {
 		}},
 	}
 	on := reportText(card, CharacterOptions{InjectConstantBook: true}, 0)
-	if !strings.Contains(on, "共 3 条，其中 1 条常驻条目已注入人格") {
+	if !strings.Contains(on, i18n.Tf("char.report.book_injected", "total", 3, "constant", 1)) {
 		t.Fatalf("注入态世界书行缺失/口径不对:\n%s", on)
 	}
 	off := reportText(card, CharacterOptions{}, 0)
-	if !strings.Contains(off, "共 3 条全部保留未注入，其中 1 条是常驻条目") {
+	if !strings.Contains(off, i18n.Tf("char.report.book_kept", "total", 3, "constant", 1)) {
 		t.Fatalf("保留态世界书行缺失/口径不对:\n%s", off)
 	}
 }
@@ -37,15 +38,19 @@ func TestCharacterReportWorldBook(t *testing.T) {
 // 故「其余」要把它扣掉；没有资产也没有头像时不出这一行。
 func TestCharacterReportAssets(t *testing.T) {
 	withIcon := port.CharacterCard{Info: port.CharacterInfo{Assets: 3, HasAvatar: true}}
-	if got := reportText(withIcon, CharacterOptions{}, 0); !strings.Contains(got, "头像") || !strings.Contains(got, "其余 2 个资产随原包保留") {
+	iconLine := i18n.T("char.report.assets_head") + i18n.T("char.report.assets_icon") +
+		i18n.Tf("char.report.assets_extra", "n", 2)
+	if got := reportText(withIcon, CharacterOptions{}, 0); !strings.Contains(got, iconLine) {
 		t.Fatalf("资产行（含图标）不对:\n%s", got)
 	}
 	noAvatar := port.CharacterCard{Info: port.CharacterInfo{Assets: 2}}
-	if got := reportText(noAvatar, CharacterOptions{}, 0); !strings.Contains(got, "其余 2 个资产") {
+	noIconLine := i18n.T("char.report.assets_head") + i18n.T("char.report.assets_no_icon") +
+		i18n.Tf("char.report.assets_extra", "n", 2)
+	if got := reportText(noAvatar, CharacterOptions{}, 0); !strings.Contains(got, noIconLine) {
 		t.Fatalf("资产行（无图标）不对:\n%s", got)
 	}
 	none := port.CharacterCard{}
-	if got := reportText(none, CharacterOptions{}, 0); strings.Contains(got, "资产：") {
+	if got := reportText(none, CharacterOptions{}, 0); strings.Contains(got, i18n.T("char.report.assets_head")) {
 		t.Fatalf("没有资产时不该出资产行:\n%s", got)
 	}
 }
@@ -56,11 +61,14 @@ func TestCharacterReportUnsupported(t *testing.T) {
 		Unsupported: []string{"regex_scripts", "depth_prompt"},
 	}}
 	got := reportText(card, CharacterOptions{}, 0)
-	if !strings.Contains(got, "regex_scripts、depth_prompt") || !strings.Contains(got, "本版一律不运行") {
+	unsupported := strings.Join([]string{"regex_scripts", "depth_prompt"}, i18n.T("char.list_join"))
+	if !strings.Contains(got, i18n.Tf("char.report.unsupported", "list", unsupported)) {
 		t.Fatalf("不执行机制行不对:\n%s", got)
 	}
 	card.Info.Unsupported = nil
-	if got := reportText(card, CharacterOptions{}, 0); strings.Contains(got, "不执行的机制") {
+	// 负向断言取模板占位符之前的前缀：整行缺席时开头一段不该出现。
+	unsupportedHead := strings.SplitN(i18n.T("char.report.unsupported"), "{list}", 2)[0]
+	if got := reportText(card, CharacterOptions{}, 0); strings.Contains(got, unsupportedHead) {
 		t.Fatalf("没有不执行机制时不该出这一行:\n%s", got)
 	}
 }
@@ -68,7 +76,7 @@ func TestCharacterReportUnsupported(t *testing.T) {
 // TestCharacterReportDisplayFields 第四类：只展示字段固定说明一条，任何卡都有。
 func TestCharacterReportDisplayFields(t *testing.T) {
 	got := reportText(port.CharacterCard{}, CharacterOptions{}, 0)
-	if !strings.Contains(got, "只展示字段：") || !strings.Contains(got, "不进模型上下文") {
+	if !strings.Contains(got, i18n.T("char.report.display_only")) {
 		t.Fatalf("只展示字段行缺失:\n%s", got)
 	}
 }
@@ -79,31 +87,36 @@ func TestCharacterReportHTML(t *testing.T) {
 	withHTML := port.CharacterCard{Profile: port.CharacterProfile{
 		Description: "<div style=\"x\">正文</div>",
 	}}
-	if got := reportText(withHTML, CharacterOptions{}, 0); !strings.Contains(got, "HTML 标签") || !strings.Contains(got, "按纯文本显示") {
+	if got := reportText(withHTML, CharacterOptions{}, 0); !strings.Contains(got, i18n.T("char.report.html")) {
 		t.Fatalf("HTML 提示缺失:\n%s", got)
 	}
 	cardDialect := port.CharacterCard{Profile: port.CharacterProfile{
 		Examples: "<START>\n<BOT>: hi\n<USER>: yo",
 	}}
-	if got := reportText(cardDialect, CharacterOptions{}, 0); strings.Contains(got, "HTML 标签") {
+	if got := reportText(cardDialect, CharacterOptions{}, 0); strings.Contains(got, i18n.T("char.report.html")) {
 		t.Fatalf("卡方言标签误报为 HTML:\n%s", got)
 	}
 }
 
 // TestCharacterReportOpeningHint 超长开场白提示：估算超预算时给 token 与序号；短开场不给。
 func TestCharacterReportOpeningHint(t *testing.T) {
+	firstMes := strings.Repeat("a", 400) // ≈100 tokens
 	long := port.CharacterCard{Profile: port.CharacterProfile{
-		FirstMes: strings.Repeat("a", 400), // ≈100 tokens
+		FirstMes: firstMes,
 	}}
 	got := reportText(long, CharacterOptions{}, 10)
-	if !strings.Contains(got, "开场白偏长：第 1 条约") || !strings.Contains(got, "不截断") {
+	want := i18n.Tf("char.report.opening_long",
+		"index", 1, "tokens", estimateTokens(firstMes), "budget", 10)
+	if !strings.Contains(got, want) {
 		t.Fatalf("超长开场白提示缺失:\n%s", got)
 	}
 	short := port.CharacterCard{Profile: port.CharacterProfile{FirstMes: "hi"}}
-	if got := reportText(short, CharacterOptions{}, 10); strings.Contains(got, "开场白偏长") {
+	// 负向断言取模板占位符之前的前缀：整行缺席时开头一段不该出现。
+	openingHead := strings.SplitN(i18n.T("char.report.opening_long"), "{index}", 2)[0]
+	if got := reportText(short, CharacterOptions{}, 10); strings.Contains(got, openingHead) {
 		t.Fatalf("短开场不该提示:\n%s", got)
 	}
-	if got := reportText(long, CharacterOptions{}, 0); strings.Contains(got, "开场白偏长") {
+	if got := reportText(long, CharacterOptions{}, 0); strings.Contains(got, openingHead) {
 		t.Fatalf("预算为 0 时不该判开场白长度:\n%s", got)
 	}
 }

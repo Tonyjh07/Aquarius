@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -64,18 +65,18 @@ func TestSessionJobsCommand(t *testing.T) {
 	}
 	// kill：前缀解析并转发。
 	out, err = handleCmd(s, "jobs", "kill", "j0")
-	if err != nil || !strings.Contains(out, "已终止 j001") {
+	if err != nil || !strings.Contains(out, i18n.Tf("session.jobs.killed", "id", "j001")) {
 		t.Fatalf("kill = %q, %v", out, err)
 	}
 	if len(jobs.killed) != 1 || jobs.killed[0] != "j001" {
 		t.Fatalf("killed = %v", jobs.killed)
 	}
 	// 未知子命令与坏参数报用法。
-	if _, err := handleCmd(s, "jobs", "wat"); err == nil || !strings.Contains(err.Error(), "用法") {
+	if _, err := handleCmd(s, "jobs", "wat"); err == nil || !strings.Contains(err.Error(), i18n.T("usage.jobs")) {
 		t.Fatalf("wat err = %v", err)
 	}
 	if _, err := handleCmd(s, "jobs", "logs", "j001", "-3"); err == nil ||
-		!strings.Contains(err.Error(), "正整数") {
+		!strings.Contains(err.Error(), i18n.T("session.jobs.bad_tail")) {
 		t.Fatalf("bad tail err = %v", err)
 	}
 	if _, err := handleCmd(s, "jobs", "logs", "j999"); err == nil ||
@@ -90,7 +91,7 @@ func TestSessionJobsEmpty(t *testing.T) {
 	s, _, _ := newTestSession(t, store)
 	s.jobs = &fakeJobs{}
 	out, err := handleCmd(s, "jobs", "list")
-	if err != nil || !strings.Contains(out, "暂无后台任务") {
+	if err != nil || !strings.Contains(out, i18n.T("session.jobs.empty")) {
 		t.Fatalf("out = %q, %v", out, err)
 	}
 }
@@ -124,7 +125,7 @@ func TestSessionJobsEdges(t *testing.T) {
 	// 空日志提示。
 	s.jobs = &fakeJobs{jobs: jobs, logs: map[port.JobID]string{"j001": "  \n"}}
 	out, err := handleCmd(s, "jobs", "logs", "j001")
-	if err != nil || !strings.Contains(out, "日志为空") {
+	if err != nil || !strings.Contains(out, i18n.Tf("session.jobs.logs_empty", "id", "j001")) {
 		t.Fatalf("out = %q, %v", out, err)
 	}
 }
@@ -173,7 +174,8 @@ func TestSessionPermissionCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("permission: %v", err)
 	}
-	for _, want := range []string{"strict", "/data/sandbox", "read-only", "permissive", "full-access", "特权 rw"} {
+	for _, want := range []string{"strict", "/data/sandbox", "read-only", "permissive", "full-access",
+		i18n.T("session.permission.privileged") + " rw"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("report 缺 %q:\n%s", want, out)
 		}
@@ -245,10 +247,9 @@ func TestSessionUnattendedCommand(t *testing.T) {
 	if !perms.unattended || len(perms.unattend) != 1 || !perms.unattend[0] {
 		t.Fatalf("切换后 on=%v persisted=%v", perms.unattended, perms.unattend)
 	}
-	for _, want := range []string{"无人值守已开启", "-yes", "权限边界不变"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("开启回执缺 %q:\n%s", want, out)
-		}
+	// 开启回执是整段文案（含与 -yes 的反向关系），整句核对。
+	if want := i18n.T("session.unattended.on"); !strings.Contains(out, want) {
+		t.Fatalf("开启回执缺 %q:\n%s", want, out)
 	}
 
 	// 显式设置同值 = 短路（不重复写回）。
@@ -263,16 +264,16 @@ func TestSessionUnattendedCommand(t *testing.T) {
 	if err != nil || perms.unattended || len(perms.unattend) != 2 || perms.unattend[1] {
 		t.Fatalf("off = %q, %v, on=%v persisted=%v", out, err, perms.unattended, perms.unattend)
 	}
-	if !strings.Contains(out, "恢复逐次确认") {
-		t.Fatalf("关闭回执: %q", out)
+	if want := i18n.T("session.unattended.off"); !strings.Contains(out, want) {
+		t.Fatalf("关闭回执缺 %q: %q", want, out)
 	}
 	// 大小写不敏感（同值 = 短路，不重复写回）+ 非法值报因。
 	out, err = run("OFF")
 	if err != nil {
 		t.Fatalf("OFF: %v", err)
 	}
-	if !strings.Contains(out, "已是") {
-		t.Fatalf("同值时回执应说明已是该状态: %q", out)
+	if want := i18n.Tf("session.unattended.already", "state", i18n.T("common.off")); !strings.Contains(out, want) {
+		t.Fatalf("同值时回执应说明已是该状态: want %q, got %q", want, out)
 	}
 	if perms.unattended || len(perms.unattend) != 2 {
 		t.Fatalf("同值不应写回: on=%v persisted=%v", perms.unattended, perms.unattend)
@@ -312,7 +313,7 @@ func TestSessionCompactCommand(t *testing.T) {
 		t.Fatalf("compact: %v", err)
 	}
 	// 会话 = [root,persona,user,assistant]：absorbed 应为 2（persona 恒回传不计）。
-	if !strings.Contains(out, "已压缩 2 条历史") || !strings.Contains(out, "in=40 out=15") {
+	if !strings.Contains(out, i18n.Tf("session.compact.done", "absorbed", 2, "in", 40, "out", 15)) {
 		t.Fatalf("out = %q, want 精确计数与记账", out)
 	}
 	path := s.Current().Path()
@@ -326,7 +327,7 @@ func TestSessionCompactCommand(t *testing.T) {
 
 	// 重复压缩：其后无新内容 → 短路提示，不发起生成。
 	out, err = s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "compact"}})
-	if err != nil || !strings.Contains(out, "无需压缩") {
+	if err != nil || !strings.Contains(out, i18n.T("session.compact.nothing")) {
 		t.Fatalf("second compact = %q, %v", out, err)
 	}
 }
@@ -344,7 +345,7 @@ func TestSessionCompactCancelFriendly(t *testing.T) {
 	before := s.Current().NodeCount()
 
 	out, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "compact"}})
-	if err != nil || !strings.Contains(out, "已取消压缩") {
+	if err != nil || !strings.Contains(out, i18n.T("session.compact.canceled")) {
 		t.Fatalf("compact cancel = %q, %v", out, err)
 	}
 	if s.Current().NodeCount() != before {
