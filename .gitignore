@@ -30,6 +30,11 @@ go.work.sum
 # 本机环境补充说明（工具链路径、WSL 发行版、镜像与 DNS 等，只对本机有效）
 AGENTS.local.md
 
+# 本机调试辅助（`zz_` 前缀 = 排序垫底的一次性脚本，只对本机有效）：
+# 离屏截图工具 `zz_shot_test.go` 之类。它们要靠包内未导出的状态才能跑，
+# 只能待在包目录里，所以用忽略规则挡住，而不是搬走。
+zz_*_test.go
+
 # 本地 tokenizer 词表（6MB 级，不入库；真实向量测试经环境变量或此路径发现）
 internal/adapter/llm/tokenizer/testdata/tokenizer.json
 
