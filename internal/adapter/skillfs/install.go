@@ -32,7 +32,11 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
+
+// logCtx 运行日志的上下文（`logging.Context` 的取值；适配器不 import 日志包，见 port.Log）。
+const logCtx = "skill"
 
 const (
 	// maxDownloadBytes 远程包（压缩包）下载上限：技能包远小于此，超限基本是拿错了链接。
@@ -78,8 +82,8 @@ type InstallOptions struct {
 	LedgerPath string
 	// Catalog 清单：装/卸/更新后重扫；同时用于「同名已生效」判定。nil = 不重扫/不查名。
 	Catalog *Catalog
-	// Logf 启动期日志（nil = 丢弃）。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：安装台账读不出 / 解析失败；nil = 丢弃。
+	Log port.Log
 	// HTTP 远程下载客户端（nil = 默认，总超时 2 分钟）。
 	HTTP *http.Client
 	// GitAvailable 主机是否有 git（nil = exec.LookPath("git")）；测试可注入。
@@ -162,8 +166,8 @@ func NewInstaller(opts InstallOptions) (*Installer, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	if opts.Logf == nil {
-		opts.Logf = func(string, ...any) {}
+	if opts.Log == nil {
+		opts.Log = func(port.LogLevel, string, string, string, ...any) {}
 	}
 	for _, d := range []string{opts.Root, opts.CacheDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -199,13 +203,15 @@ func (i *Installer) loadLedger() {
 	data, err := os.ReadFile(i.opts.LedgerPath)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			i.opts.Logf("技能台账读不出（从空表起步）：%v", err)
+			i.opts.Log(port.LogWarn, logCtx, "log.skill.ledger_unreadable",
+				"log.act.start_empty", "err", err)
 		}
 		return
 	}
 	var l ledger
 	if err := json.Unmarshal(data, &l); err != nil {
-		i.opts.Logf("技能台账解析失败（从空表起步）：%v", err)
+		i.opts.Log(port.LogWarn, logCtx, "log.skill.ledger_corrupt",
+			"log.act.start_empty", "err", err)
 		return
 	}
 	for _, r := range l.Installs {

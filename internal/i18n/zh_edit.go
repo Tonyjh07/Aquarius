@@ -144,7 +144,6 @@ var zhEditTexts = map[string]string{
 	"inject.invalid":          "注入内容非法",
 	"inject.announce":         "注入落地呈现",
 	"inject.land":             "注入落地",
-	"inject.target_gone":      "注入 {source} 的目标会话 {target} 已删除，内容丢弃",
 	"inject.elsewhere_load":   "异地落地读取会话 {id}",
 	"inject.elsewhere_append": "异地落地会话 {id}",
 	"inject.elsewhere_save":   "异地落地保存会话 {id}",

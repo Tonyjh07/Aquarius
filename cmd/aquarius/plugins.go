@@ -12,7 +12,6 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/mcpgate"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
-	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -25,7 +24,7 @@ import (
 type mergedMemory struct {
 	primary port.MemoryStore
 	extras  func() []port.MemoryStore
-	logf    func(string, ...any)
+	log     port.Log
 	timeout time.Duration // <=0 = 默认 5s
 }
 
@@ -51,7 +50,8 @@ func (m *mergedMemory) Index(ctx context.Context) ([]port.MemoryIndexEntry, erro
 		entries, err := e.Index(ectx)
 		cancel()
 		if err != nil {
-			m.logf("%s: %v", i18n.T("cmd.asm.err.plugin_index"), err)
+			m.log(port.LogWarn, "plugin", "log.plugin.memory_index_failed",
+				"log.act.skip", "err", err)
 			continue
 		}
 		out = append(out, entries...)
@@ -112,7 +112,8 @@ func (m *mergedMemory) Search(ctx context.Context, query string) ([]port.MemoryH
 		extra, err := e.Search(ectx, query)
 		cancel()
 		if err != nil {
-			m.logf("%s: %v", i18n.T("cmd.asm.err.plugin_search"), err)
+			m.log(port.LogWarn, "plugin", "log.plugin.memory_search_failed",
+				"log.act.skip", "err", err)
 			continue
 		}
 		for _, h := range extra {
@@ -186,7 +187,7 @@ type pluginSurfaces struct {
 	ready      func() map[string]plugin.Session
 	callCtx    context.Context
 	ioTimeout  time.Duration // 单次 tools/prompts 拉取上限（<=0 = 默认 10s）
-	logf       func(string, ...any)
+	log        port.Log
 	registered map[string][]string            // server → 已注册工具名
 	prompts    map[string][]plugin.PromptInfo // server → 上次成功的 prompt 清单
 }
@@ -222,14 +223,16 @@ func (p *pluginSurfaces) refresh() {
 		tools, err := ready[name].Tools(tctx)
 		cancel()
 		if err != nil {
-			p.logf("[plugin] %s tools/list: %v", name, err)
+			p.log(port.LogWarn, "plugin", "log.plugin.tools_list_failed",
+				"log.act.keep_previous", "name", name, "err", err)
 			continue
 		}
 		pctx, cancel := context.WithTimeout(p.callCtx, timeout)
 		prompts, perr := ready[name].Prompts(pctx)
 		cancel()
 		if perr != nil {
-			p.logf("[plugin] %s prompts/list: %v", name, perr)
+			p.log(port.LogWarn, "plugin", "log.plugin.prompts_list_failed",
+				"log.act.keep_previous", "name", name, "err", perr)
 		}
 		sn := refreshedSnapshot{name: name, tools: tools, prompts: prompts, promptsOK: perr == nil}
 		for _, t := range tools {
@@ -342,7 +345,7 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		},
 		callCtx:    ctx,
 		ioTimeout:  10 * time.Second,
-		logf:       w.adapterLogf(logging.Plugin, "log.plugin.line"),
+		log:        w.logFrom,
 		registered: map[string][]string{},
 		prompts:    map[string][]plugin.PromptInfo{},
 	}
@@ -353,7 +356,7 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		PluginsDir:    filepath.Join(w.profileDir, "plugins"),
 		States:        w.cfg.Plugins,
 		Persist:       w.persist.persistPlugins,
-		Logf:          w.adapterLogf(logging.Plugin, "log.plugin.line"),
+		Log:           w.logFrom,
 		// S6/D143：宿主状态变化 → 刷新工具面 + 递增工具快照 Revision（设置窗据此重建行）。
 		OnChange: func() {
 			surfaces.refresh()

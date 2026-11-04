@@ -70,15 +70,8 @@ var zhRuntimeTexts = map[string]string{
 	"watch.criterion.match":   "判据：输出匹配 /{pattern}/",
 
 	// 任务收尾观察者（D189）：报告与日志送不出去时的运行日志
-	"watch.job.wait_failed":         "等待任务 {id} 结束失败: {error}",
-	"watch.job.read_log_failed":     "读取任务 {id} 日志失败: {error}",
-	"watch.job.deliver_no_injector": "后台任务 {id} 的完成报告未送达: 注入端口未就绪",
-	"watch.job.deliver_closed":      "后台任务 {id} 的完成报告未送达: 会话已关闭",
-	"watch.job.deliver_failed":      "后台任务 {id} 的完成报告未送达: {error}",
 
 	// 观察器（D190）：报告送不出去时的运行日志
-	"watch.report.closed": "观察 {id} 的报告未送达: 会话已关闭",
-	"watch.report.failed": "观察 {id} 的报告未送达: {error}",
 
 	// /delegate
 	"delegate.usage":             "用法: /delegate [list|kill <id>]",
@@ -95,8 +88,6 @@ var zhRuntimeTexts = map[string]string{
 		"并确认该命令在 PATH 上；模型这时不会有 delegate 工具。",
 
 	// 转交收尾观察者（D261）：销账与注入失败
-	"delegate.settle_failed": "转交 {id} 销账失败: {error}",
-	"delegate.report_failed": "转交 {id} 的报告注入失败: {error}",
 
 	// 新会话的默认标题（首条消息后会被摘要改写）
 	"session.default_title": "新会话",

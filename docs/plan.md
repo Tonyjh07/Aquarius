@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-04 @ 2866987 -->
+<!-- docs-sync: 2026-11-04 @ e8f1a73 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -55,8 +55,8 @@
 | 6 | ~~O3 页 2 正文与勾选闸门~~ | 已完成 11-04（`internal/legal` + 只重过第 2 页） | 正文可滚、未勾选「继续」禁用、`ui.consent_version` 落盘 |
 | 7 | ~~O4 页 3 + 可启动空态~~ | 已完成 11-04 | 删光 `providers` 启动不崩；跳过页 3 发第一条消息有明确提示 |
 | 8 | ~~O5 页 4/5 + 文档~~ | 已完成 11-04 | 五页中英各走一遍；`guide.md` 首跑步骤重写 |
-| 9 | L2 23 行 `w.stderr` 收口 | 11-05 上午 | 每行判出 `ctx` 与行动位，`fatal` 不动 |
-| 10 | L3 端口换结构化回调 | 11-05 中午 | `Logf(format, args…)` 这一族消失；`[plugin] ` 前缀收进 `ctx` |
+| 9 | ~~L2 23 行 `w.stderr` 收口~~ | 已完成 11-04（`e594f01`） | 每行判出 `ctx` 与行动位，`fatal` 不动 |
+| 10 | ~~L3 端口换结构化回调~~ | 已完成 11-04 | `Logf(format, args…)` 这一族消失；`[plugin] ` 前缀收进 `ctx` |
 | 11 | L4 上锁（接 I6 已落地的 AST 辅助） | 11-05 下午 | `fmt.Fprint*(…stderr…)` 只在 `logging` 与 `fatal` |
 | 12 | `en` 全量冒烟 + 608dp / 200% 离屏截帧 | 11-05 下午 | 人工视觉走查在这一段并行 |
 | 13 | 发版闸门 | 11-06 上午 | 干净 clone 构建、`govulncheck`、`winres` 两处版本、页 2 四条正文的生效日期改 11-06、`docs/releases/v0.5.0.md`、tag；**推送给用户执行** |
@@ -69,7 +69,8 @@ L4 复用它的 AST 辅助，不再有同批文件的冲突。
 
 - ~~O4 的空态分支（17 处）咬到装配结构 → 页 3 回退为必填~~（未触发：11-04 一次做完，
   改动面比预估小——占位 LLM 把「到处判空」收成了链上的一环）。
-- L3 的结构化回调改动超出 `Logf` 一族 → 只收 `Logf`，`host` / `characterfs` / `probe` 的对齐进 0.5.1。
+- ~~L3 的结构化回调改动超出 `Logf` 一族 → 只收 `Logf`，`host` / `characterfs` / `probe` 的对齐进 0.5.1。~~
+  （未触发：`port.Log` 一处定义把八个包的对齐收了进来，`probe` 那个没人接的字段也顺手换掉了。）
 
 ---
 
@@ -157,8 +158,8 @@ L4 复用它的 AST 辅助，不再有同批文件的冲突。
   `action` key 是三条出口共享的契约，改一处即三处一起改。
 - 包 `internal/logging`：叶子层，只 import 标准库与 `internal/i18n`，并登记进 `internal/arch`
   的 `layerLogging`——理由同 `layerI18n`，不登记就落进 `layerOther` 成后门。
-- **适配器不 import 日志包**（硬性规则 1 的方向）：注入回调。现在注入的是 `Logf(format, args…)`
-  这个临时形状，L3 换成结构化回调（五段装得下），`Logf` 这一族随之消失。
+- **适配器不 import 日志包**（硬性规则 1 的方向）：注入回调，形状是 `port.Log(level, ctx, event,
+  act, kv…)`（`internal/port/log.go`）。L2 之前那个 `Logf(format, args…)` 临时形状已在 L3 删净。
 
 **批次**：
 
@@ -166,12 +167,16 @@ L4 复用它的 AST 辅助，不再有同批文件的冲突。
   `plugins.go`（2）、`welcome.go` / `web.go` / `main.go` 各 1；`fatal` 与消息框不动。装配根当下把
   `w.stderr` 当默认出口（`stderrProxy`），改成「默认写日志、`warn` 以上再照旧打一行」；每行要
   判出 `ctx` 与行动位，不能只把 `Fprintf` 换成 `log.Warn`。
-- **L3**（M）：那 24 处调用逐一收口。`Logf(format, args…)` 这个形状装不下五段（没有级别、
-  上下文、行动位），所以本批一并把端口换成**结构化回调**
-  `Logf(level, ctx, eventKey, actKey string, kv …any)`，装配根接到 `logging`；`internal/plugin` 的
-  `[plugin] ` 前缀由 `ctx` 位取代，前缀不许留在文案里。`host` / `characterfs` / `probe` 的
-  `Logf` 字段、`app` 侧 `logf("%s", Tf(...))` 的转发壳一并对齐（`app` 那几处已经有 key，只差
-  级别、上下文与行动位）。`audit`（机器面）与 `jobproc`（原始输出落盘）排除。
+- ~~**L3**（M）~~（已完成 2026-11-04）：那 24 处调用逐一收口，端口换成**结构化回调**
+  `port.Log(level, ctx, event, act, kv…)`，装配根 `wiring.logFrom` 接到 `logging`。`internal/plugin`
+  的 `[plugin] ` 前缀由 `ctx` 位取代（`logCtx = "plugin"`），前缀不再留在文案里；`acpgate` /
+  `skillfs` / `characterfs` / `outputtts` / `host` / `probe` 的字段，以及 `app` 侧
+  `logf("%s", Tf(...))` 的转发壳一并换掉（`app` 那几处本来就有 key，补齐级别、上下文与行动位）。
+  适配器里原先硬编码的中文句子按 `log.<ctx>.<what>` 拆成 key，`log.*.line` 占位句与
+  `log.act.verbatim`、以及 `cmd.asm.char.prefix` / `cmd.asm.skill.prefix` 两个行内前缀一并删；
+  原本散在 `delegate.*` / `watch.*` / `inject.*` 段的事件句归入 `log.*`。新增 `character` 上下文
+  （角色卡目录）。i18n 的中文字面量锁随之撤掉对 `logf(...)` 实参的豁免。`audit`（机器面）与
+  `jobproc`（原始输出落盘）排除。
 - **L4**（S）：上锁——`fmt.Fprint*(…stderr…)` 与 `fmt.Fprint*(w.stderr…)` 只许出现在 `logging`
   包与 `fatal`；新增日志缺 `ctx` 或行动位即测试失败；`cmd/linuxgate` / `cmd/iconify` 是开发工具、
   不进产品日志，扫描白名单里写明这条。`configuration.md` 补齐三个键、`development.md` 补一句

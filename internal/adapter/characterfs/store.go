@@ -19,6 +19,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// logCtx 运行日志的上下文（`logging.Context` 的取值；适配器不 import 日志包，见 port.Log）。
+const logCtx = "character"
+
 // avatarName 头像固定文件名（§5.17 落位：`characters/<slug>/avatar.png`）。
 const avatarName = "avatar.png"
 
@@ -30,7 +33,7 @@ const maxSlugRunes = 40
 // app.CharacterAdmin）。目录是唯一事实来源：坏条目跳过不阻断其余。
 type Store struct {
 	root string
-	logf func(format string, args ...any)
+	log  port.Log
 	now  func() time.Time
 }
 
@@ -38,8 +41,8 @@ type Store struct {
 type Options struct {
 	// Root `<profile>/characters` 绝对路径，不存在则按需创建。
 	Root string
-	// Logf 用户面日志（坏条目跳过、meta 重建失败）；nil 时静默。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：坏条目跳过、meta 重建失败；nil 时静默。
+	Log port.Log
 	// Now 导入时间来源；nil 时用 time.Now（测试注入固定时钟）。
 	Now func() time.Time
 }
@@ -51,9 +54,9 @@ func New(opts Options) (*Store, error) {
 	if opts.Root == "" || !filepath.IsAbs(opts.Root) {
 		return nil, errors.New(i18n.Tf("char.err.root_not_abs", "path", opts.Root))
 	}
-	s := &Store{root: filepath.Clean(opts.Root), logf: opts.Logf, now: opts.Now}
-	if s.logf == nil {
-		s.logf = func(string, ...any) {}
+	s := &Store{root: filepath.Clean(opts.Root), log: opts.Log, now: opts.Now}
+	if s.log == nil {
+		s.log = func(port.LogLevel, string, string, string, ...any) {}
 	}
 	if s.now == nil {
 		s.now = time.Now
@@ -80,7 +83,8 @@ func (s *Store) List(ctx context.Context) ([]port.CharacterInfo, error) {
 		dir := filepath.Join(s.root, e.Name())
 		info, err := s.loadInfo(dir, e.Name())
 		if err != nil {
-			s.logf("跳过角色卡目录 %s：%v", e.Name(), err)
+			s.log(port.LogWarn, logCtx, "log.character.dir_skipped",
+				"log.act.skip", "name", e.Name(), "err", err)
 			continue
 		}
 		out = append(out, info)
@@ -219,7 +223,8 @@ func (s *Store) loadInfo(dir, dirName string) (port.CharacterInfo, error) {
 	info.AvatarPath = existingAvatar(dir)
 	info.HasAvatar = info.AvatarPath != ""
 	if err := writeMeta(dir, info, avatarFile(dir)); err != nil {
-		s.logf("重建 %s 的 meta.json 失败：%v", dirName, err)
+		s.log(port.LogWarn, logCtx, "log.character.meta_rebuild_failed",
+			"log.act.continue", "name", dirName, "err", err)
 	}
 	return info, nil
 }

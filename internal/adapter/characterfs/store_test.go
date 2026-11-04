@@ -23,7 +23,7 @@ func newStore(t *testing.T) (*Store, string, *[]string) {
 	logs := &[]string{}
 	s, err := New(Options{
 		Root: root,
-		Logf: func(format string, args ...any) { *logs = append(*logs, format) },
+		Log:  func(_ port.LogLevel, _, event, _ string, _ ...any) { *logs = append(*logs, event) },
 		Now:  func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
 	})
 	if err != nil {

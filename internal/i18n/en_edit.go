@@ -140,7 +140,6 @@ var enEditTexts = map[string]string{
 	"inject.invalid":          "the injected content is invalid",
 	"inject.announce":         "present the landed injection",
 	"inject.land":             "land the injection",
-	"inject.target_gone":      "target conversation {target} of injection {source} was deleted, content dropped",
 	"inject.elsewhere_load":   "read conversation {id} for an off-focus landing",
 	"inject.elsewhere_append": "land off-focus in conversation {id}",
 	"inject.elsewhere_save":   "save conversation {id} after an off-focus landing",

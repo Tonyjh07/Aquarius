@@ -83,7 +83,8 @@ func (m *Manager) ledgerAdd(r *run) {
 		})
 	})
 	if err != nil {
-		m.opts.Logf("转交 %s 写台账失败: %v", r.id, err)
+		m.opts.Log(port.LogWarn, "delegate", "log.delegate.ledger_write_failed",
+			"log.act.continue", "id", r.id, "err", err)
 	}
 }
 
@@ -99,7 +100,8 @@ func (m *Manager) ledgerPID(id port.DelegateID, pid int) {
 			}
 		}
 	}); err != nil {
-		m.opts.Logf("转交 %s 写台账失败: %v", id, err)
+		m.opts.Log(port.LogWarn, "delegate", "log.delegate.ledger_write_failed",
+			"log.act.continue", "id", id, "err", err)
 	}
 }
 
@@ -126,7 +128,8 @@ func (m *Manager) ledgerFinish(r *run, err error) {
 			}
 		}
 	}); uerr != nil {
-		m.opts.Logf("转交 %s 写台账失败: %v", r.id, uerr)
+		m.opts.Log(port.LogWarn, "delegate", "log.delegate.ledger_write_failed",
+			"log.act.continue", "id", r.id, "err", uerr)
 	}
 }
 
@@ -144,7 +147,8 @@ func (m *Manager) Settle(ctx context.Context, id port.DelegateID) error {
 		d.Entries = dropEntry(d.Entries, id)
 	}); err != nil {
 		// 删不掉会留下一条假「未收尾」，下次启动多提一句——记日志便于追。
-		m.opts.Logf("转交 %s 销账失败: %v", id, err)
+		m.opts.Log(port.LogWarn, "delegate", "log.delegate.ledger_settle_failed",
+			"log.act.retry_next_start", "id", id, "err", err)
 		return err
 	}
 	return nil

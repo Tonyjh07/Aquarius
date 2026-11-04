@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -163,9 +162,9 @@ func TestDeliverLogsFailure(t *testing.T) {
 		Synth:  &fakeSynth{err: errors.New("服务端返回 400")},
 		Player: newFakePlayer(),
 		Blobs:  blobs,
-		Logf: func(format string, args ...any) {
+		Log: func(_ port.LogLevel, _, event, _ string, _ ...any) {
 			mu.Lock()
-			logged = format
+			logged = event
 			mu.Unlock()
 		},
 	})
@@ -183,7 +182,7 @@ func TestDeliverLogsFailure(t *testing.T) {
 		got := logged
 		mu.Unlock()
 		if got != "" {
-			if !strings.Contains(got, "语音播报失败") {
+			if got != "log.audio.play_synth_failed" {
 				t.Fatalf("日志 = %q", got)
 			}
 			return

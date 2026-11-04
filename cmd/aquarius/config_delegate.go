@@ -42,8 +42,8 @@ type delegateAgentConfig struct {
 // delegateOptions 解析成 acpgate.Options（含全部校验）。配置错误在启动期报，不拖到
 // 第一次转交才暴露——那时用户已经等了十几分钟。
 func (c *fileConfig) delegateOptions(secrets port.Secrets, confirmer port.Confirmer,
-	current func() conversation.ID, logf func(format string, args ...any)) (acpgate.Options, error) {
-	opts := acpgate.Options{Secrets: secrets, Confirmer: confirmer, CurrentSession: current, Logf: logf}
+	current func() conversation.ID, log port.Log) (acpgate.Options, error) {
+	opts := acpgate.Options{Secrets: secrets, Confirmer: confirmer, CurrentSession: current, Log: log}
 	d := c.Delegate
 
 	if n := d.TimeoutSec; n != nil {

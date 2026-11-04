@@ -73,22 +73,23 @@ func ParseFormat(raw string) (Format, error) {
 type Context string
 
 const (
-	Boot     Context = "boot"
-	Attach   Context = "attach"
-	LLM      Context = "llm"
-	Audio    Context = "audio"
-	Job      Context = "job"
-	Delegate Context = "delegate"
-	Plugin   Context = "plugin"
-	Skill    Context = "skill"
-	Session  Context = "session"
-	Perm     Context = "perm"
-	UI       Context = "ui"
-	Web      Context = "web"
+	Boot      Context = "boot"
+	Attach    Context = "attach"
+	LLM       Context = "llm"
+	Audio     Context = "audio"
+	Job       Context = "job"
+	Delegate  Context = "delegate"
+	Plugin    Context = "plugin"
+	Skill     Context = "skill"
+	Character Context = "character"
+	Session   Context = "session"
+	Perm      Context = "perm"
+	UI        Context = "ui"
+	Web       Context = "web"
 )
 
 // Contexts 全部已登记的上下文（测试按它校验枚举没被随手加宽）。
-var Contexts = []Context{Boot, Attach, LLM, Audio, Job, Delegate, Plugin, Skill, Session, Perm, UI, Web}
+var Contexts = []Context{Boot, Attach, LLM, Audio, Job, Delegate, Plugin, Skill, Character, Session, Perm, UI, Web}
 
 const (
 	// defaultCap 单文件上限，超出轮转一代（口径同 audit.log）。
@@ -211,9 +212,9 @@ func (l *Logger) Log(lv Level, ctx Context, event, action string, kv ...any) {
 }
 
 // Write 写一条**整句已由调用方给出**的日志：msg 非空就不再按 event 取词，event 只留在
-// JSON 侧供聚合。这是适配器 `Logf(format, args…)` 那种形状的过渡出口——拿到的是译好的句子，
-// 没有 key（D276 决策 5：装配根注入的适配器把 format+args 记成一条日志）；端口换成结构化
-// 回调之后没有调用方，届时连同一个 `log.*.line` 占位 key 一起删。
+// JSON 侧供聚合。给的是**整句**而不是 key——装配根只剩少数几处（降级说明、回放失败、明文
+// 密钥）由上游函数把句子拼好了，拆回 key 得连那边的措辞一起改，收益不成比例。事件 key 仍是
+// 聚合标识，`log.*` 段的占位句只为让它能被取词表覆盖。
 func (l *Logger) Write(lv Level, ctx Context, event, action, msg string, kv ...any) {
 	l.write(lv, ctx, event, action, msg, kv)
 }

@@ -52,8 +52,8 @@ type Options struct {
 	// MaxConcurrent 每会话同时进行的转交上限；MaxTotal 全局上限（0 = 用端口缺省）。
 	MaxConcurrent int
 	MaxTotal      int
-	// Logf 运行日志（用户面中文）；nil = 丢弃。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：级别 / 上下文 / 事件 / 行动都按 key 给；nil = 丢弃。
+	Log port.Log
 	// LookPath 可执行探测（测试可覆盖）；nil = exec.LookPath。
 	LookPath func(string) (string, error)
 	// Grace 取消后等它收成 cancelled 的宽限（缺省 2s；测试缩短）。
@@ -113,8 +113,8 @@ func New(opts Options) *Manager {
 			opts.Home = home
 		}
 	}
-	if opts.Logf == nil {
-		opts.Logf = func(string, ...any) {}
+	if opts.Log == nil {
+		opts.Log = func(port.LogLevel, string, string, string, ...any) {}
 	}
 	return &Manager{opts: opts, runs: map[port.DelegateID]*run{}, learned: map[string]learnedInfo{}}
 }

@@ -190,7 +190,6 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.asm.name.asr":             `语音识别`,
 	"cmd.asm.name.tts":             `语音合成`,
 	"cmd.asm.err.skill_installer":  `技能安装面`,
-	"cmd.asm.char.prefix":          `角色卡：`,
 	"cmd.asm.err.characters_dir":   `角色卡目录`,
 	"cmd.asm.notice.truncate":      `硬保底截断：上下文超预算，已省略 {n} 条最旧消息`,
 	"cmd.asm.notice.fallback": `模型服务 {from} 网络类错误，本轮已降级到 {to}` +
@@ -209,10 +208,8 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.asm.err.list_sessions": `列出会话`,
 	"cmd.asm.err.load_session":  `加载会话 {id}`,
 
-	"cmd.asm.err.plugin_index":  `[plugin] 资源索引失败`,
-	"cmd.asm.err.plugin_search": `[plugin] 资源检索失败`,
-	"cmd.asm.mcp.param_name":    `参数`,
-	"cmd.asm.mcp.param_desc":    `这个 prompt 的参数，按服务端声明的顺序填`,
+	"cmd.asm.mcp.param_name": `参数`,
+	"cmd.asm.mcp.param_desc": `这个 prompt 的参数，按服务端声明的顺序填`,
 
 	"cmd.asm.err.output_deliver": `输出器 {name}`,
 	"cmd.asm.err.start_process":  `启动 {cmd}`,

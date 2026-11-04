@@ -477,7 +477,7 @@ func TestJobWatcherDeliverRetries(t *testing.T) {
 	w := NewJobWatcher(JobWatcherOptions{
 		Jobs:     jobs,
 		Injector: func() port.Injector { return flaky },
-		Logf:     func(f string, a ...any) { logged = append(logged, f) },
+		Log:      func(_ port.LogLevel, _, event, _ string, _ ...any) { logged = append(logged, event) },
 		Sleep:    func(context.Context, time.Duration) bool { return true },
 	})
 	defer w.Close()

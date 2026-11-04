@@ -256,7 +256,8 @@ func (s *Session) landElsewhere(ctx context.Context, item pendingInjection) erro
 	c, err := s.store.Load(ctx, target)
 	if err != nil {
 		if errors.Is(err, port.ErrConversationNotFound) {
-			s.logf("%s", i18n.Tf("inject.target_gone", "source", item.source, "target", target))
+			s.logf(port.LogInfo, "log.session.target_gone", "log.act.dropped",
+				"source", item.source, "target", target)
 			return nil
 		}
 		return fmt.Errorf("session: %s: %w",
@@ -304,10 +305,10 @@ func (s *Session) saveElsewhere(ctx context.Context, c *conversation.Conversatio
 	return err
 }
 
-// logf 运行日志（用户面中文）；未接线时丢弃。
-func (s *Session) logf(format string, args ...any) {
+// logf 一条运行日志：上下文固定 session（会话自己的流水）。
+func (s *Session) logf(lv port.LogLevel, event, act string, kv ...any) {
 	if s.log == nil {
 		return
 	}
-	s.log(format, args...)
+	s.log(lv, "session", event, act, kv...)
 }

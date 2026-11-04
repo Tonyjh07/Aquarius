@@ -30,8 +30,8 @@ const (
 type Prober struct {
 	// HTTP 客户端（可注入；nil = 15s 超时的缺省客户端）。
 	Client *http.Client
-	// Logf 诊断日志（用户面中文）；nil = 丢弃。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：与其余适配器同一个结构化出口；nil = 丢弃。
+	Log port.Log
 }
 
 var _ port.WatchProber = (*Prober)(nil)

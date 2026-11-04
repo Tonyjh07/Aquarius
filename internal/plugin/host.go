@@ -66,10 +66,22 @@ type Deps struct {
 	States map[string]State
 	// Persist 状态变更落盘（装配根原子写回 config 的 plugins 段）；nil = 不落盘。
 	Persist func(map[string]State) error
-	// Logf 可观测日志（装配根接到 stderr）；nil = 丢弃。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：级别 / 事件 / 行动按 key 给，上下文固定 plugin；nil = 丢弃。
+	Log port.Log
 	// OnChange 启停/状态变化回调（装配根刷新工具与动态命令面）；锁外触发。
 	OnChange func()
+}
+
+// logCtx 运行日志的上下文（`logging.Context` 的取值；本包不 import 日志包，见 port.Log）。
+const logCtx = "plugin"
+
+// logf 一条运行日志：上下文固定 plugin——原先每句话前面的 `[plugin] ` 前缀就由这一位承担，
+// 前缀不许留在文案里（那样 JSON 侧的 ctx 是空的，而人读的那份又得靠字符串裁掉它）。
+func (h *Host) logf(lv port.LogLevel, event, act string, kv ...any) {
+	if h.log == nil {
+		return
+	}
+	h.log(lv, logCtx, event, act, kv...)
 }
 
 // Host 插件宿主（§6.4）：发现 → 校验 → 授权 → 生命周期 → 可观测。
@@ -79,7 +91,7 @@ type Host struct {
 	confirm  port.Confirmer
 	dir      string
 	persist  func(map[string]State) error
-	logf     func(string, ...any)
+	log      port.Log
 	onChange func()
 	closed   chan struct{}
 
@@ -109,7 +121,7 @@ func New(d Deps) *Host {
 		confirm:  d.Confirm,
 		dir:      d.PluginsDir,
 		persist:  d.Persist,
-		logf:     d.Logf,
+		log:      d.Log,
 		onChange: d.OnChange,
 		closed:   make(chan struct{}),
 		decls:    map[string]Decl{},
@@ -122,9 +134,6 @@ func New(d Deps) *Host {
 	}
 	for name, st := range d.States {
 		h.states[name] = st
-	}
-	if h.logf == nil {
-		h.logf = func(string, ...any) {}
 	}
 	// config 声明（启动前已过 Validate）。
 	for name, srv := range d.ConfigServers {
@@ -180,13 +189,15 @@ func (h *Host) discover() {
 		data, err := os.ReadFile(filepath.Join(h.dir, e.Name(), "plugin.json"))
 		if err != nil {
 			if !os.IsNotExist(err) {
-				h.logf("[plugin] 读取 %s/plugin.json: %v", e.Name(), err)
+				h.logf(port.LogWarn, "log.plugin.manifest_read_failed", "log.act.skip",
+					"name", e.Name(), "err", err)
 			}
 			continue
 		}
 		m, err := ParseManifest(data)
 		if err != nil {
-			h.logf("[plugin] 拒载 %s: %v", e.Name(), err)
+			h.logf(port.LogWarn, "log.plugin.manifest_rejected", "log.act.skip",
+				"name", e.Name(), "err", err)
 			h.mu.Lock()
 			h.broken[e.Name()] = err.Error()
 			h.mu.Unlock()
@@ -219,7 +230,7 @@ func (h *Host) discover() {
 		}
 		h.mu.Unlock()
 		if exists {
-			h.logf("[plugin] %s: 以 config 条目为准；未声明的能力与风险等级继承 plugin.json", m.Name)
+			h.logf(port.LogInfo, "log.plugin.config_wins", "log.act.config_kept", "name", m.Name)
 		}
 	}
 }
@@ -241,18 +252,19 @@ func (h *Host) trustGate(ctx context.Context, d Decl) bool {
 	}
 	h.mu.Unlock()
 	if h.confirm == nil {
-		h.logf("[plugin] %s: 尚未信任且无人可确认，按失败即拒绝跳过", d.Name)
+		h.logf(port.LogWarn, "log.plugin.trust_no_confirmer", "log.act.deny", "name", d.Name)
 		return false
 	}
 	prompt := i18n.Tf("plugin.host.trust_prompt",
 		"name", d.Name, "source", SourcePlugins, "launch", d.LaunchDesc())
 	ans, err := h.confirm.Confirm(ctx, prompt)
 	if err != nil {
-		h.logf("[plugin] %s: 信任确认失败: %v", d.Name, err)
+		h.logf(port.LogWarn, "log.plugin.trust_confirm_failed", "log.act.deny",
+			"name", d.Name, "err", err)
 		return false
 	}
 	if !ans.Allow {
-		h.logf("[plugin] %s: 用户拒绝信任，本次不连接", d.Name)
+		h.logf(port.LogInfo, "log.plugin.trust_declined", "log.act.deny", "name", d.Name)
 		return false
 	}
 	h.mu.Lock()
@@ -261,7 +273,8 @@ func (h *Host) trustGate(ctx context.Context, d Decl) bool {
 	h.states[d.Name] = cur
 	h.mu.Unlock()
 	if err := h.saveStates(); err != nil { // 指纹落盘 ⇒ 下次启动静默
-		h.logf("[plugin] %s: 信任状态写回失败: %v", d.Name, err)
+		h.logf(port.LogWarn, "log.plugin.trust_persist_failed", "log.act.reask_next_start",
+			"name", d.Name, "err", err)
 	}
 	return true
 }
@@ -285,7 +298,8 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		return true
 	}
 	if h.confirm == nil {
-		h.logf("[plugin] %s: 请求能力 %v，但无 Confirmer（fail-closed）", d.Name, pending)
+		h.logf(port.LogWarn, "log.plugin.grant_no_confirmer", "log.act.deny",
+			"name", d.Name, "caps", pending)
 		return false
 	}
 	changed := false
@@ -293,18 +307,21 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 	defer func() {
 		if changed {
 			if err := h.saveStates(); err != nil {
-				h.logf("[plugin] %s 授权状态写回失败: %v", d.Name, err)
+				h.logf(port.LogWarn, "log.plugin.grant_persist_failed", "log.act.reask_next_start",
+					"name", d.Name, "err", err)
 			}
 		}
 	}()
 	for _, c := range pending {
 		ans, err := h.confirm.Confirm(ctx, i18n.Tf("plugin.host.grant_prompt", "name", d.Name, "cap", c))
 		if err != nil {
-			h.logf("[plugin] %s: 确认 %s 失败: %v", d.Name, c, err)
+			h.logf(port.LogWarn, "log.plugin.grant_confirm_failed", "log.act.deny",
+				"name", d.Name, "cap", c, "err", err)
 			return false
 		}
 		if !ans.Allow {
-			h.logf("[plugin] %s: 用户拒绝能力 %s", d.Name, c)
+			h.logf(port.LogInfo, "log.plugin.grant_declined", "log.act.deny",
+				"name", d.Name, "cap", c)
 			return false
 		}
 		h.mu.Lock()
@@ -340,7 +357,8 @@ func (h *Host) connect(ctx context.Context, name string) {
 	s, err := h.dial(dctx, d)
 	cancel()
 	if err != nil {
-		h.logf("[plugin] %s 启动失败: %v", name, err)
+		h.logf(port.LogError, "log.plugin.start_failed", "log.act.plugin_off",
+			"name", name, "err", err)
 		h.setStatus(name, StatusFailed, err.Error())
 		return
 	}
@@ -390,7 +408,8 @@ func (h *Host) watch(name string, s Session, base context.Context) {
 		m.status = StatusCrashed
 		m.lastErr = msg
 		h.mu.Unlock()
-		h.logf("[plugin] %s: %s", name, msg)
+		h.logf(port.LogError, "log.plugin.crash_limit", "log.act.gave_up",
+			"name", name, "n", maxRestarts, "err", werr)
 		h.changed()
 		return
 	}
@@ -400,8 +419,8 @@ func (h *Host) watch(name string, s Session, base context.Context) {
 	m.lastErr = fmt.Sprintf("%v", werr)
 	wait := h.backoff(restart)
 	h.mu.Unlock()
-	h.logf("[plugin] %s 连接终止（%v），%s 后重启（第 %d/%d 次）",
-		name, werr, wait, restart, maxRestarts)
+	h.logf(port.LogWarn, "log.plugin.restarting", "log.act.restart",
+		"name", name, "err", werr, "wait", wait, "n", restart, "max", maxRestarts)
 	h.changed() // 崩溃即刷新：退避期间摘掉指向死会话的工具与动态命令，重连后再挂回
 
 	select {

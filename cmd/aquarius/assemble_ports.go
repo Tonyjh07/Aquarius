@@ -82,7 +82,7 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 			}
 			return out
 		},
-		logf:    w.adapterLogf(logging.Session, "log.session.line"),
+		log:     w.logFrom,
 		timeout: 5 * time.Second, // 插件投影单次上限（卡死的插件不得拖垮 Turn）
 	}
 	return nil
@@ -268,7 +268,7 @@ func (w *wiring) buildPresenter() {
 			Design: w.cfg.Audio.TTS.Design,
 			Style:  w.cfg.Audio.TTS.Style,
 			Tags:   w.cfg.Audio.TTS.Tags,
-			Logf:   w.adapterLogf(logging.UI, "log.ui.line"),
+			Log:    w.logFrom,
 		})
 		if err != nil {
 			w.note(logging.LevelWarn, logging.UI, "log.ui.tts_output_unavailable",
@@ -492,7 +492,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 					"log.act.deferred_next_start", "id", id, "err", err)
 			}
 		},
-		Logf: w.adapterLogf(logging.Job, "log.job.line"),
+		Log: w.logFrom,
 	})
 	w.jobs = app.NewWatchingJobs(jobs, w.jobWatch)
 	// D190：观察器与任务收尾是两件事——任务有终态（等完成事件），观察器盯不确定的
@@ -506,7 +506,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 			return nil
 		},
 		Wake: w.uiWake,
-		Logf: w.adapterLogf(logging.Job, "log.job.line"),
+		Log:  w.logFrom,
 	})
 	toolTimeout := time.Duration(w.cfg.Limits.ToolTimeoutSec) * time.Second
 	if w.cfg.Limits.ToolTimeoutSec <= 0 {
@@ -537,7 +537,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		CacheDir:   filepath.Join(w.profileDir, "skill-cache"),
 		LedgerPath: filepath.Join(w.profileDir, "skill-installs.json"),
 		Catalog:    skills,
-		Logf:       w.adapterLogf(logging.Skill, "log.skill.line"),
+		Log:        w.logFrom,
 	})
 	if err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.skill_installer"), err)
@@ -547,12 +547,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	// 带警告跳过；导入 / 删除经同一份 app.CharacterAdmin（命令面与设置窗共用）。
 	charStore, err := characterfs.New(characterfs.Options{
 		Root: filepath.Join(w.profileDir, "characters"),
-		// 卡目录的句子是通用的文件错误（「重建 x 的 meta.json 失败」），ctx 只到 session，
-		// 所以保留「角色卡：」这层限定——直到 L3 给每条句子自己的 key。
-		Logf: func(format string, args ...any) {
-			w.noteText(logging.LevelWarn, logging.Session, "log.session.line", "log.act.verbatim",
-				fmt.Sprintf(i18n.T("cmd.asm.char.prefix")+format, args...))
-		},
+		Log:  w.logFrom,
 	})
 	if err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.characters_dir"), err)
@@ -598,7 +593,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 // 零可用代理不是错误：工具面里不出现 delegate*，/delegate 给配置指引——比「注册一个必然
 // 失败的工具」诚实。可用性是装配期快照（PATH 不随运行变）。
 func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer) error {
-	logf := w.adapterLogf(logging.Delegate, "log.delegate.line")
+	logf := w.logFrom
 	// 当前会话（D261 无人应答判定）：走已发布的事实快照无锁读，跨 goroutine 安全
 	// （转交观察者与确认回落都不在会话 goroutine 里）。
 	current := func() conversation.ID {
@@ -625,7 +620,7 @@ func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer
 		},
 		Wake:   w.uiWake,
 		Settle: mgr.Settle,
-		Logf:   logf,
+		Log:    logf,
 	})
 	w.delegates = app.NewWatchingDelegates(mgr, w.delegateWatch)
 	w.delegateAgents = mgr.Available(ctx)

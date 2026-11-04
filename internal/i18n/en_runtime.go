@@ -66,15 +66,8 @@ var enRuntimeTexts = map[string]string{
 	"watch.criterion.match":   "Criterion: output matches /{pattern}/",
 
 	// 任务收尾观察者（D189）：报告与日志送不出去时的运行日志
-	"watch.job.wait_failed":         "failed to wait for job {id} to finish: {error}",
-	"watch.job.read_log_failed":     "failed to read the log of job {id}: {error}",
-	"watch.job.deliver_no_injector": "the completion report of job {id} was not delivered: the injector is not ready",
-	"watch.job.deliver_closed":      "the completion report of job {id} was not delivered: the conversation is closed",
-	"watch.job.deliver_failed":      "the completion report of job {id} was not delivered: {error}",
 
 	// 观察器（D190）：报告送不出去时的运行日志
-	"watch.report.closed": "the report of watch {id} was not delivered: the conversation is closed",
-	"watch.report.failed": "the report of watch {id} was not delivered: {error}",
 
 	// /delegate
 	"delegate.usage":             "Usage: /delegate [list|kill <id>]",
@@ -91,8 +84,6 @@ var enRuntimeTexts = map[string]string{
 		"and make sure the command is on PATH; the model has no delegate tool until then.",
 
 	// 转交收尾观察者（D261）：销账与注入失败
-	"delegate.settle_failed": "failed to settle delegation {id}: {error}",
-	"delegate.report_failed": "failed to inject the report of delegation {id}: {error}",
 
 	// 新会话的默认标题（首条消息后会被摘要改写）
 	"session.default_title": "New conversation",

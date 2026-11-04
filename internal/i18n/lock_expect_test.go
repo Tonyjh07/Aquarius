@@ -435,12 +435,10 @@ var testDataLiterals = map[string][]string{
 	"internal/adapter/llm/responses_test.go": {
 		"看图",
 	},
-	// outputtts：消息分片拼成的合成文本与 TTS 协议值；「语音播报失败」是生产 logf
-	// 硬编码（L3 迁表前无 key 可引），临时挂账。
+	// outputtts：消息分片拼成的合成文本与 TTS 协议值。
 	"internal/adapter/outputtts/outputtts_test.go": {
 		"你好\n世界", "冰糖", "温柔", "语速稍快",
 		"新描述", "新标签", "新音色", "新风格",
-		"语音播报失败",
 	},
 	// ingestfile：测试写入文件的提取文本与随附文本。
 	"internal/adapter/ingestfile/ingestfile_test.go": {

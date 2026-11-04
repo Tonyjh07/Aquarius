@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
-	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -29,7 +28,7 @@ type DelegateWatcher struct {
 	inject    func() port.Injector
 	wake      func()
 	settleFn  func(ctx context.Context, id port.DelegateID) error
-	logf      func(format string, args ...any)
+	log       port.Log
 	sleep     func(ctx context.Context, d time.Duration) bool
 
 	root   context.Context
@@ -127,8 +126,8 @@ type DelegateWatcherOptions struct {
 	Wake func()
 	// Settle 报告已送到会话：抹掉台账条目（nil = 不记台账，测试与嵌入式装配）。
 	Settle func(ctx context.Context, id port.DelegateID) error
-	// Logf 运行日志（用户面中文）；nil = 丢弃。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：上下文固定 delegate；nil = 丢弃。
+	Log port.Log
 	// Sleep 覆盖注入重试的等待（测试用）。
 	Sleep func(ctx context.Context, d time.Duration) bool
 }
@@ -139,22 +138,26 @@ func NewDelegateWatcher(opts DelegateWatcherOptions) *DelegateWatcher {
 	if sleep == nil {
 		sleep = sleepCtx
 	}
-	logf := opts.Logf
-	if logf == nil {
-		logf = func(string, ...any) {}
-	}
 	root, cancel := context.WithCancel(context.Background())
 	return &DelegateWatcher{
 		delegates: opts.Delegates,
 		inject:    opts.Injector,
 		wake:      opts.Wake,
 		settleFn:  opts.Settle,
-		logf:      logf,
+		log:       opts.Log,
 		sleep:     sleep,
 		root:      root,
 		cancel:    cancel,
 		watches:   map[port.DelegateID]*delegateEntry{},
 	}
+}
+
+// logf 一条运行日志：上下文固定 delegate（本类型只管转交收尾）。
+func (w *DelegateWatcher) logf(lv port.LogLevel, event, act string, kv ...any) {
+	if w.log == nil {
+		return
+	}
+	w.log(lv, "delegate", event, act, kv...)
 }
 
 // settle 销账（报告已确实送到会话）；没接线就什么都不做。
@@ -163,7 +166,8 @@ func (w *DelegateWatcher) settle(id port.DelegateID) {
 		return
 	}
 	if err := w.settleFn(context.Background(), id); err != nil {
-		w.logf("%s", i18n.Tf("delegate.settle_failed", "id", id, "error", err))
+		w.logf(port.LogWarn, "log.delegate.settle_failed", "log.act.report_next_start",
+			"id", id, "err", err)
 	}
 }
 
@@ -316,7 +320,8 @@ func (w *DelegateWatcher) deliver(ctx context.Context, id port.DelegateID, in po
 			return true
 		}
 		if attempt == delegateInjectAttempts-1 {
-			w.logf("%s", i18n.Tf("delegate.report_failed", "id", id, "error", err))
+			w.logf(port.LogWarn, "log.delegate.report_failed", "log.act.dropped",
+				"id", id, "err", err)
 			return false
 		}
 		if !w.sleep(ctx, delegateInjectRetryStep*(time.Duration(attempt+1))) {

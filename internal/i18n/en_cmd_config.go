@@ -201,7 +201,6 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.asm.name.asr":             `Speech recognition`,
 	"cmd.asm.name.tts":             `Speech synthesis`,
 	"cmd.asm.err.skill_installer":  `Skill installer`,
-	"cmd.asm.char.prefix":          `Character card: `,
 	"cmd.asm.err.characters_dir":   `Character card directory`,
 	"cmd.asm.notice.truncate": `Hard-limit truncation: context over budget, ` +
 		`dropped the {n} oldest messages`,
@@ -221,10 +220,8 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.asm.err.list_sessions": `Listing sessions`,
 	"cmd.asm.err.load_session":  `Loading session {id}`,
 
-	"cmd.asm.err.plugin_index":  `[plugin] resource index failed`,
-	"cmd.asm.err.plugin_search": `[plugin] resource search failed`,
-	"cmd.asm.mcp.param_name":    `Arguments`,
-	"cmd.asm.mcp.param_desc":    `Arguments for this prompt, in the order the server declares`,
+	"cmd.asm.mcp.param_name": `Arguments`,
+	"cmd.asm.mcp.param_desc": `Arguments for this prompt, in the order the server declares`,
 
 	"cmd.asm.err.output_deliver": `Output adapter {name}`,
 	"cmd.asm.err.start_process":  `Starting {cmd}`,

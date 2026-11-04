@@ -19,6 +19,9 @@ import (
 
 var _ port.OutputAdapter = (*Adapter)(nil)
 
+// logCtx 运行日志的上下文（`logging.Context` 的取值；适配器不 import 日志包，见 port.Log）。
+const logCtx = "audio"
+
 // Config 装配参数：语音参数来自 audio.tts，适配器本身无状态。
 type Config struct {
 	Synth  port.Synthesizer
@@ -28,8 +31,8 @@ type Config struct {
 	Design string
 	Style  string
 	Tags   string
-	// Logf 记播放/合成失败（nil = 丢弃）。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：合成 / 取音频 / 播放失败；nil = 丢弃。
+	Log port.Log
 }
 
 // Adapter 语音播报输出器。
@@ -117,7 +120,7 @@ func (a *Adapter) speak(ctx context.Context, seq uint64, text string) {
 	ref, err := a.cfg.Synth.Synthesize(ctx, a.speechRequest(text))
 	if err != nil {
 		if ctx.Err() == nil {
-			a.logf("语音播报失败：%v", err)
+			a.logf("log.audio.play_synth_failed", err)
 		}
 		return
 	}
@@ -127,13 +130,13 @@ func (a *Adapter) speak(ctx context.Context, seq uint64, text string) {
 	rc, err := a.cfg.Blobs.Get(ctx, ref)
 	if err != nil {
 		if ctx.Err() == nil {
-			a.logf("语音播报失败：读取音频: %v", err)
+			a.logf("log.audio.play_read_failed", err)
 		}
 		return
 	}
 	defer rc.Close()
 	if err := a.cfg.Player.Play(ctx, ref, rc); err != nil && ctx.Err() == nil {
-		a.logf("语音播报失败：%v", err)
+		a.logf("log.audio.play_failed", err)
 	}
 }
 
@@ -156,10 +159,12 @@ func (a *Adapter) speechRequest(text string) port.SpeechRequest {
 	}
 }
 
-func (a *Adapter) logf(format string, args ...any) {
-	if a.cfg.Logf != nil {
-		a.cfg.Logf(format, args...)
+// logf 一条播报失败：上下文固定 audio，级别取 warn，处置都是「本次不播报，文字照常」。
+func (a *Adapter) logf(event string, err error) {
+	if a.cfg.Log == nil {
+		return
 	}
+	a.cfg.Log(port.LogWarn, logCtx, event, "log.act.voice_off", "err", err)
 }
 
 // bodyText 拼正文分片（跳过思考/附件），空行折叠。

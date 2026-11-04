@@ -88,7 +88,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return fmt.Errorf("%s: %w", i18n.T("cmd.boot.err.secret_store"), err)
 	}
 	w.secretsBin = bin
-	w.secrets = newSecretChain(bin, w.adapterLogf(logging.Perm, "log.perm.line"))
+	w.secrets = newSecretChain(bin, w.secretsWarn)
 
 	// profile 配置：不存在 = 该 profile 首次运行，写模板。D141：**gui 不再「写模板即退出」**
 	// ——模板落盘后照常装配，配置缺项（模板的密钥引用通常取不到）由 run() 的欢迎向导窗

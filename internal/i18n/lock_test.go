@@ -278,12 +278,11 @@ func cjkLiteralsIn(t *testing.T, rel, path string) []string {
 	return bad
 }
 
-// exemptLits 两类不进表的实参：
+// exemptLits 不进表的实参：`panic(...)`——内部一致性断言，读者是改代码的人（I2 口径），
+// 不上界面。
 //
-//   - `panic(...)`：内部一致性断言，读者是改代码的人（I2 口径），不上界面；
-//   - `Logf(...)` / `logf(...)`：运行日志的注入回调。日志正文归 `log.*` 段且由 L3 迁到
-//     `internal/logging`（D276），在那之前搬进界面表只是把同一句话换两次地方。
-//     日志文案的扫描锁是 L4 的事，别在这里兜。
+// 日志回调在 L3 之后不再吃文案：`port.Log` 的实参是级别、上下文与两个 key（D276），
+// 没有中文可漏，所以这里也不再给它们开口子——口子留着，下次有人往里塞一句话就没人拦了。
 func exemptLits(f *ast.File) map[token.Pos]bool {
 	out := make(map[token.Pos]bool)
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -294,10 +293,6 @@ func exemptLits(f *ast.File) map[token.Pos]bool {
 		switch fn := call.Fun.(type) {
 		case *ast.Ident:
 			if fn.Name != "panic" {
-				return true
-			}
-		case *ast.SelectorExpr:
-			if fn.Sel.Name != "Logf" && fn.Sel.Name != "logf" {
 				return true
 			}
 		default:

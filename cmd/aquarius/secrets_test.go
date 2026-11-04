@@ -38,9 +38,9 @@ func testChain(t *testing.T, warn io.Writer) (*secretChain, *secretbin.Store) {
 	if err != nil {
 		t.Fatalf("secretbin.New: %v", err)
 	}
-	var warnf func(string, ...any)
+	var warnf func(string)
 	if warn != nil {
-		warnf = func(format string, args ...any) { fmt.Fprintf(warn, format, args...) }
+		warnf = func(msg string) { fmt.Fprintf(warn, "%s\n", msg) }
 	}
 	return newSecretChain(bin, warnf), bin
 }

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
-	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -45,7 +44,7 @@ type Watcher struct {
 	prober port.WatchProber
 	inject func() port.Injector
 	wake   func()
-	logf   func(format string, args ...any)
+	log    port.Log
 	sleep  func(ctx context.Context, d time.Duration) bool
 
 	root   context.Context
@@ -107,8 +106,8 @@ type WatcherOptions struct {
 	Injector func() port.Injector
 	// Wake 命中注入后的空闲唤醒；nil = 只注入不唤醒（测试/无 UI）。
 	Wake func()
-	// Logf 运行日志（用户面中文）；nil = 丢弃。
-	Logf func(format string, args ...any)
+	// Log 运行日志（D276）：上下文固定 job；nil = 丢弃。
+	Log port.Log
 	// Sleep 覆盖等待（测试用；nil = 可取消的 timer）。
 	Sleep func(ctx context.Context, d time.Duration) bool
 }
@@ -121,16 +120,12 @@ func NewWatcher(opts WatcherOptions) *Watcher {
 	if sleep == nil {
 		sleep = sleepCtx
 	}
-	logf := opts.Logf
-	if logf == nil {
-		logf = func(string, ...any) {}
-	}
 	root, cancel := context.WithCancel(context.Background())
 	return &Watcher{
 		prober: opts.Prober,
 		inject: opts.Injector,
 		wake:   opts.Wake,
-		logf:   logf,
+		log:    opts.Log,
 		sleep:  sleep,
 		root:   root,
 		cancel: cancel,
@@ -435,7 +430,7 @@ func (w *Watcher) deliver(ctx context.Context, e *watchEntry, text string, trigg
 	}
 	inj := w.inject()
 	if inj == nil {
-		w.logf("%s", i18n.Tf("watch.report.closed", "id", e.id))
+		w.logf(port.LogInfo, "log.job.watch_report_closed", "log.act.dropped", "id", e.id)
 		return
 	}
 	in := port.Injection{
@@ -460,7 +455,15 @@ func (w *Watcher) deliver(ctx context.Context, e *watchEntry, text string, trigg
 			return
 		}
 	}
-	w.logf("%s", i18n.Tf("watch.report.failed", "id", e.id, "error", err))
+	w.logf(port.LogWarn, "log.job.watch_report_failed", "log.act.dropped", "id", e.id, "err", err)
+}
+
+// logf 一条运行日志：上下文固定 job（观察器与任务收尾是同一类流水）。
+func (w *Watcher) logf(lv port.LogLevel, event, act string, kv ...any) {
+	if w.log == nil {
+		return
+	}
+	w.log(lv, "job", event, act, kv...)
 }
 
 // normalizeWatchSpec 补缺省并夹边界（工具层已校验，这里防其他调用方）。

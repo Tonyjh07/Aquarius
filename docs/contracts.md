@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-04 @ 2866987 -->
+<!-- docs-sync: 2026-11-04 @ e8f1a73 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -2227,7 +2227,8 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 4. **不翻译的专名**：产品名 `Aquarius`、语言选项里的自名（`简体中文` / `English`）——各语言写法
    相同，进表就有两份译文各写一遍、还会被 `en` 侧的中文检查拦下的风险。
 
-`panic(...)` 与 `Logf(...)` 的实参不算文案，锁按 AST 跳过（日志正文归 §7.9，由日志自己的锁管）。
+`panic(...)` 的实参不算文案，锁按 AST 跳过（内部一致性断言，读者是改代码的人）。日志回调在
+L3 之后不再吃文案——`port.Log` 的实参是级别、上下文与两个 key，这一档口子随之撤掉。
 拼接取词（`"ui.settings.page." + Key()`）静态看不进去，所以前缀登记在一处、使用方在另一处逐项
 断言：缺一个页名，`T` 会把 key 原样印在页签上。
 
@@ -2241,8 +2242,9 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 
 - **时间**：本地时区到毫秒（`2026-11-02 18:20:31.482`）。落盘文件按天切，跨零点换文件。
 - **级别**：`debug` / `info` / `warn` / `error` 四档，没有别的。
-- **上下文**：子系统标识（`boot`、`attach`、`llm`、`job`、`delegate`、`plugin`、`skill`、`session`、
-  `perm`、`ui`、`web`）——英文枚举，是分类不是文案，不进文案表；新增子系统要在 `logging` 里登记。
+- **上下文**：子系统标识（`boot`、`attach`、`llm`、`audio`、`job`、`delegate`、`plugin`、`skill`、
+  `character`、`session`、`perm`、`ui`、`web`）——英文枚举，是分类不是文案，不进文案表；新增子系统
+  要在 `logging` 里登记。先前的 `[plugin] ` / `技能：` 这类**行内前缀**一律由这一位承担。
 - **事件**：发生了什么，取词 key（`log.<ctx>.<what>`），可带 `{name}` 占位符。
 - **行动**：**当场做了什么处置**（跳过 / 回落 / 重试 / 已改存 / 延后 / 照常继续），取词 key
   （`log.act.*`），按动作收敛复用。不写「用户该做什么」——指令只在写下它的那一刻成立。
@@ -2270,9 +2272,15 @@ goroutine 跑），UI 事件循环直取既竞态又拖帧。
 （§5.2）。`fatal` 与启动期消息框也不并入：启动失败要的是一句话加一个框。
 
 **接法**：`internal/logging` 是叶子层（只 import 标准库与 `internal/i18n`），登记在
-`internal/arch` 的 `layerLogging`。`port` 与适配器里 `Logf func(format string, …)` 的回调**形状
-不变**，装配根注入一个把 `format+args` 记成一条日志的适配器；适配器不 import 日志包
-（adapter → port 的方向）。
+`internal/arch` 的 `layerLogging`；适配器不 import 日志包（adapter → port 的方向），装配根注入
+**结构化回调** `port.Log(level, ctx, event, act, kv…)`（`internal/port/log.go`）：级别与上下文由
+调用点给（`port.LogLevel` / 字符串常量），事件与行动是 i18n key，`kv` 是 `名, 值` 成对。装配根
+（`wiring.logFrom`）只做一次类型翻译——认不出的级别按 `warn`，宁可多报一行也不把错误静默成
+`info`。回调拿到的是 key 不是句子，所以调用点附近不许出现用户面字符串。
+
+少数几处由上游函数把整句拼好了（降级说明、回放失败、明文密钥、密钥库解不开），它们走
+`logging.Write` 的整句入口：`event` 仍作 JSON 侧的聚合标识，`msg` 是原文。这几个 `log.*` 占位句
+只为让 key 落在表里，不进界面。
 
 **与界面文案的分界**：一句提示若用户在界面上也要看到（「语音播报不可用」同时出现在设置窗），它
 属于界面文案，放 §7.8 的表、不加时间戳；同一件事要留痕就在日志里另写一条五段式。同一句话不

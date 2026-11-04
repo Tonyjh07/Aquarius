@@ -28,7 +28,7 @@ import (
 type secretChain struct {
 	bin   *secretbin.Store // nil = 本机库未接线（只剩环境变量这一档）
 	env   port.Secrets     // 同名环境变量（envSecrets）
-	warnf func(string, ...any)
+	warnf func(string)
 	// warned 库解不开只警告一次：启动期每个 provider 都会探一次密钥，逐个都打会把
 	// 一行警告刷成一屏（同一份坏文件，说一遍就够）。
 	warned atomic.Bool
@@ -48,7 +48,7 @@ func (c *secretChain) Get(ctx context.Context, name string) (string, error) {
 		default:
 			// 解不开/结构坏：警告一次，继续以环境变量兜底（不致命）。
 			if c.warnf != nil && c.warned.CompareAndSwap(false, true) {
-				c.warnf("%s", i18n.Tf("cmd.secrets.warn.store_unreadable", "path", c.bin.Path()))
+				c.warnf(i18n.Tf("cmd.secrets.warn.store_unreadable", "path", c.bin.Path()))
 			}
 		}
 	}
@@ -75,7 +75,7 @@ func (c *secretChain) binPathOr(fallback string) string {
 
 // newSecretChain 构造读链：库 + 环境变量兜底。bin 可为 nil（库未接线）。
 // warnf 是「库解不开」的落点：整句已译好，由装配根接到运行日志（nil = 不记）。
-func newSecretChain(bin *secretbin.Store, warnf func(string, ...any)) *secretChain {
+func newSecretChain(bin *secretbin.Store, warnf func(string)) *secretChain {
 	return &secretChain{bin: bin, env: envSecrets{}, warnf: warnf}
 }
 
@@ -205,6 +205,12 @@ func keyStoreURI(name string) string { return "secret:" + name }
 // warnPlaintext 界面填的明文已改为入库 + 引用后，启动期明文警告的措辞更新（D161）：
 // 不再推荐「改用 secret:<环境变量名> 引用环境变量」，而是指路设置窗（要么填明文由界面
 // 转入库，要么直接填引用）。落在运行日志里——这句是安全信号，双击启动时 stderr 没人看得见。
+// secretsWarn 「密钥库解不开」的落点：句子已由读链译好，这里只补五段里的位置。
+func (w *wiring) secretsWarn(msg string) {
+	w.noteText(logging.LevelWarn, logging.Perm, "log.perm.secrets_unreadable",
+		"log.act.env_fallback", msg)
+}
+
 func (w *wiring) warnPlaintext(provider string) {
 	w.noteText(logging.LevelWarn, logging.Perm, "log.perm.plaintext_key",
 		"log.act.plaintext_used",

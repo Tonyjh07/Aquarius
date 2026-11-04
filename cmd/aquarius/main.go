@@ -183,7 +183,8 @@ func (w *wiring) note(lv logging.Level, ctx logging.Context, event, action strin
 	w.emit(pendingLog{level: lv, ctx: ctx, event: event, action: action, kv: kv})
 }
 
-// noteText 同 note，但整句已由调用方给出（适配器 Logf 的形状，见 adapterLogf）。
+// noteText 同 note，但整句已由调用方给出（句子本身就是事件的那几处：降级说明、回放失败、
+// 明文密钥）。
 func (w *wiring) noteText(lv logging.Level, ctx logging.Context, event, action, msg string) {
 	w.emit(pendingLog{level: lv, ctx: ctx, event: event, action: action, msg: msg})
 }
@@ -196,14 +197,22 @@ func (w *wiring) emit(p pendingLog) {
 	w.log.Write(p.level, p.ctx, p.event, p.action, p.msg, p.kv...)
 }
 
-// adapterLogf 注入给适配器的 Logf：拿到的是**已经译好的整句**（`format+args`），没有 key，
-// 所以走 noteText——event 只作 JSON 侧的聚合标识，原文进 msg。级别取 warn：这些句子今天就在
-// stderr 上，收窄成 info 等于让 TUI 用户当场少看一截；行动位记「原文照记」，因为处置写在
-// 句子本身（这个过渡形状随 L3 的结构化回调一起删）。
-func (w *wiring) adapterLogf(ctx logging.Context, event string) func(string, ...any) {
-	return func(format string, args ...any) {
-		w.noteText(logging.LevelWarn, ctx, event, "log.act.verbatim", fmt.Sprintf(format, args...))
+// logFrom 注入给适配器与内核组件的结构化日志出口（`port.Log`，D276/L3）：适配器给级别、
+// 上下文与两个 key，这里翻成 logging 的类型再交 note——适配器不许 import 日志包，翻这一下
+// 就是那条边界的落点。认不出的级别按 warn：宁可多报一行，也不能把一条错误静默成 info。
+func (w *wiring) logFrom(lv port.LogLevel, ctx, event, act string, kv ...any) {
+	level := logging.LevelWarn
+	switch lv {
+	case port.LogDebug:
+		level = logging.LevelDebug
+	case port.LogInfo:
+		level = logging.LevelInfo
+	case port.LogWarn:
+		level = logging.LevelWarn
+	case port.LogError:
+		level = logging.LevelError
 	}
+	w.note(level, logging.Context(ctx), event, act, kv...)
 }
 
 // wiring 装配态（S4a）：run() 的装配段拆为方法后共享的上下文——原闭包捕获变
@@ -471,7 +480,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Skills:         w.skills,             // D201：/skill 与 skill 工具同一份清单
 		SkillAdmin:     skillsAdminApp{w: w}, // D202：/skill install|remove|update
 		WatchCancel:    watchCancel{w: w},    // D262：删除会话与关停时撤两个轮询器；切换不撤
-		Logf:           w.adapterLogf(logging.Session, "log.session.line"),
+		Log:            w.logFrom,
 		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
 		UI:             w.presenter,
 		Wake:           w.uiWake, // D264：带回执的注入自己敲一下，等排空才返回

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
-	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -33,7 +32,7 @@ type JobWatcher struct {
 	inject func() port.Injector
 	wake   func()
 	landed func(port.JobID)
-	logf   func(format string, args ...any)
+	log    port.Log
 
 	sleep func(ctx context.Context, d time.Duration) bool
 
@@ -99,8 +98,8 @@ type JobWatcherOptions struct {
 	// Landed 报告已落地并落盘后的回调（D264）：装配根用它从台账销账。nil = 不销账
 	// （测试、未接对账的装配），条目会留给下次启动对账。
 	Landed func(id port.JobID)
-	// Logf watcher 失败、报告未送达等运行日志（用户面中文）；nil = 丢弃。
-	Logf func(format string, args ...any)
+	// Log watcher 失败、报告未送达等运行日志（D276，上下文固定 job）；nil = 丢弃。
+	Log port.Log
 	// Sleep 覆盖注入重试的等待（测试用；nil = 可取消的 time.Sleep）。
 	Sleep func(ctx context.Context, d time.Duration) bool
 }
@@ -111,17 +110,13 @@ func NewJobWatcher(opts JobWatcherOptions) *JobWatcher {
 	if sleep == nil {
 		sleep = sleepCtx
 	}
-	logf := opts.Logf
-	if logf == nil {
-		logf = func(string, ...any) {}
-	}
 	root, cancel := context.WithCancel(context.Background())
 	return &JobWatcher{
 		jobs:    opts.Jobs,
 		inject:  opts.Injector,
 		wake:    opts.Wake,
 		landed:  opts.Landed,
-		logf:    logf,
+		log:     opts.Log,
 		sleep:   sleep,
 		root:    root,
 		cancel:  cancel,
@@ -228,7 +223,7 @@ func (p *JobWatcher) run(ctx context.Context, id port.JobID, e *jobEntry) {
 		if ctx.Err() != nil {
 			return // 撤销/关停：不再汇报
 		}
-		p.logf("%s", i18n.Tf("watch.job.wait_failed", "id", id, "error", err))
+		p.logf(port.LogWarn, "log.job.wait_failed", "log.act.stop_watch", "id", id, "err", err)
 		return
 	}
 	if !e.takeByWatcher() {
@@ -268,7 +263,8 @@ func (p *JobWatcher) report(ctx context.Context, id port.JobID, j port.Job, sess
 		if ctx.Err() != nil {
 			return
 		}
-		p.logf("%s", i18n.Tf("watch.job.read_log_failed", "id", id, "error", err))
+		p.logf(port.LogWarn, "log.job.log_unreadable", "log.act.report_without_log",
+			"id", id, "err", err)
 		logs = ""
 	}
 	logs = strings.TrimRight(logs, "\n")
@@ -319,12 +315,12 @@ type lander interface {
 // deliver 投递报告；队列满时做有限重试（任务已结束，丢一条就没人再报）。
 func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injection) bool {
 	if p.inject == nil {
-		p.logf("%s", i18n.Tf("watch.job.deliver_no_injector", "id", id))
+		p.logf(port.LogWarn, "log.job.report_no_injector", "log.act.dropped", "id", id)
 		return false
 	}
 	inj := p.inject()
 	if inj == nil {
-		p.logf("%s", i18n.Tf("watch.job.deliver_closed", "id", id))
+		p.logf(port.LogInfo, "log.job.report_closed", "log.act.dropped", "id", id)
 		return false
 	}
 	var err error
@@ -349,8 +345,16 @@ func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injecti
 			return false
 		}
 	}
-	p.logf("%s", i18n.Tf("watch.job.deliver_failed", "id", id, "error", err))
+	p.logf(port.LogWarn, "log.job.report_failed", "log.act.dropped", "id", id, "err", err)
 	return false
+}
+
+// logf 一条运行日志：上下文固定 job（任务观察者只管任务收尾）。
+func (p *JobWatcher) logf(lv port.LogLevel, event, act string, kv ...any) {
+	if p.log == nil {
+		return
+	}
+	p.log(lv, "job", event, act, kv...)
 }
 
 // sleepCtx 可被 ctx 提前唤醒的等待。

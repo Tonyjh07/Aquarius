@@ -70,7 +70,7 @@ func TestPluginSurfacesRefresh(t *testing.T) {
 		session:    &sess,
 		ready:      func() map[string]plugin.Session { return ready },
 		callCtx:    context.Background(),
-		logf:       func(string, ...any) {},
+		log:        func(port.LogLevel, string, string, string, ...any) {},
 		registered: map[string][]string{},
 	}
 	ctx := context.Background()
@@ -150,7 +150,7 @@ func TestMergedMemoryProjectionTimeout(t *testing.T) {
 	m := &mergedMemory{
 		primary: primary,
 		extras:  func() []port.MemoryStore { return []port.MemoryStore{blocked} },
-		logf:    func(string, ...any) {},
+		log:     func(port.LogLevel, string, string, string, ...any) {},
 		timeout: 50 * time.Millisecond,
 	}
 	defer close(blocked.block)
@@ -193,7 +193,7 @@ func TestPluginSurfacesToolDiff(t *testing.T) {
 		session:    &sess,
 		ready:      func() map[string]plugin.Session { return ready },
 		callCtx:    context.Background(),
-		logf:       func(string, ...any) {},
+		log:        func(port.LogLevel, string, string, string, ...any) {},
 		registered: map[string][]string{},
 		prompts:    map[string][]plugin.PromptInfo{},
 	}
@@ -260,7 +260,7 @@ func TestPluginSurfacesFetchTimeout(t *testing.T) {
 		ready:      func() map[string]plugin.Session { return ready },
 		callCtx:    context.Background(),
 		ioTimeout:  50 * time.Millisecond,
-		logf:       func(string, ...any) {},
+		log:        func(port.LogLevel, string, string, string, ...any) {},
 		registered: map[string][]string{},
 		prompts:    map[string][]plugin.PromptInfo{},
 	}

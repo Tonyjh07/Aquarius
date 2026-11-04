@@ -74,9 +74,9 @@ type SessionDeps struct {
 	// WatchCancel 撤销某会话的后台任务观察者（D167/D262）：**删除会话与关停**时调用；
 	// 切换与新建不调用——任务的生命周期跟任务走，不跟焦点走（D261）。nil 时跳过。
 	WatchCancel WatcherCanceller
-	// Logf 运行日志（用户面中文，装配根接到 stderr）：异地落地遇到已删除的会话时说明丢弃。
+	// Log 运行日志（D276，上下文固定 session）：异地落地遇到已删除的会话时说明丢弃。
 	// nil = 丢弃。
-	Logf func(format string, args ...any)
+	Log port.Log
 	// Ingestors 多模态输入摄取器（M3 管线；/attach 等触发命令面留 §14，D27/D33）；
 	// nil 时 Raw 输入报"没有可用的摄取器"。
 	Ingestors []port.Ingestor
@@ -141,7 +141,7 @@ type Session struct {
 	skills      port.SkillCatalog
 	skillAdmin  SkillAdmin
 	watchCancel WatcherCanceller
-	log         func(format string, args ...any)
+	log         port.Log
 	ingestors   []port.Ingestor
 	ui          port.Presenter
 	wake        func()
@@ -248,7 +248,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		skills:      d.Skills,
 		skillAdmin:  d.SkillAdmin,
 		watchCancel: d.WatchCancel,
-		log:         d.Logf,
+		log:         d.Log,
 		ingestors:   d.Ingestors,
 		ui:          d.UI,
 		wake:        d.Wake,
