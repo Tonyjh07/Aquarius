@@ -148,8 +148,10 @@ func TestRelTweenRunsToTarget(t *testing.T) {
 func histBottomBtnXY(t *testing.T, q *input.Router, u *UI, st *historyState,
 	c *widget.Clickable, what string) (int, int) {
 	t.Helper()
-	for y := 500; y < 560; y += 3 {
-		for x := 600; x < 720; x += 3 {
+	// 扫描区要容得下**语言差**：en 的按钮名更长，状态栏右端的这一串按钮整体左移
+	// （实测开编辑后「树编辑开关」已落到 x<600），只扫最右一小条会在 en 下扫空。
+	for y := 480; y < 560; y += 3 {
+		for x := 330; x < 716; x += 3 {
 			q.Queue(ovPointer(pointer.Move, x, y))
 			histFrameFor(q, u, st)
 			if c.Hovered() {

@@ -114,13 +114,13 @@ var enGuiChatTexts = map[string]string{
 	// ── 会话历史窗
 	"ui.history.toast_copied_id": "Node ID copied",
 	"ui.history.zoom":            "Zoom {pct}",
-	"ui.history.fit_tree":        "Fit the tree",
+	"ui.history.fit_tree":        "Fit tree",
 	"ui.history.reset_view":      "Reset view",
-	"ui.history.focus_line":      "Focus current history",
-	"ui.history.focus_node":      "Focus current node",
+	"ui.history.focus_line":      "Focus history",
+	"ui.history.focus_node":      "Focus node",
 	"ui.history.edits_count":     "{n} changes",
 	"ui.history.discard":         "Discard",
-	"ui.history.status_counts":   "{n} total · {m} shown",
+	"ui.history.status_counts":   "{m}/{n} shown",
 	"ui.history.legend_depth":    "Depth",
 	"ui.history.legend_shapes":   "Shapes: □ you · ● assistant · ◇ system · ◯ session root · △ injected",
 
