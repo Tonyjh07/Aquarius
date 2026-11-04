@@ -18,6 +18,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -380,6 +381,15 @@ func referencedKeys(t *testing.T) (map[string]string, error) {
 	return out, nil
 }
 
+// isTableFile 该文件是不是文案表的定义（internal/i18n 下的 zh_*.go / en_*.go）。
+func isTableFile(rel string) bool {
+	if !strings.HasPrefix(rel, "internal/i18n/") {
+		return false
+	}
+	name := path.Base(rel)
+	return strings.HasPrefix(name, "zh_") || strings.HasPrefix(name, "en_")
+}
+
 // allStringLiterals 收集仓库里所有字符串字面量（含测试：测试引用的 key 也是活的）。
 func allStringLiterals(t *testing.T) (map[string]bool, error) {
 	t.Helper()
@@ -400,6 +410,11 @@ func allStringLiterals(t *testing.T) (map[string]bool, error) {
 				return nil
 			}
 			if !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			// 文案表的定义文件本身不算「用」：连同它们一起扫的话，表里每一条 key 都被自己
+			// 的定义命中一次，孤儿检查永远是绿的（实测：塞一条假 key 进去也不报）。
+			if rel, rerr := filepath.Rel(i18nRepoRoot, path); rerr == nil && isTableFile(filepath.ToSlash(rel)) {
 				return nil
 			}
 			fset := token.NewFileSet()
