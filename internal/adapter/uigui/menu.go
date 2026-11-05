@@ -313,10 +313,10 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 	case cmdBubbleEditCopy:
 		_ = u.post(u.editMsgFor(ctx, conversation.Clone))
 	case cmdBubbleRegen:
-		_ = u.post(inputMsg{text: "/regen " + string(ctx.id)})
+		_ = u.post(inputMsg{text: commandLine(uiCmdRegen, string(ctx.id))})
 	case cmdNodeRespond:
 		// 图侧：从所选节点继续生成（与键入同路径，清屏回放后跑一轮）。
-		_ = u.post(inputMsg{text: "/respond " + string(ctx.id)})
+		_ = u.post(inputMsg{text: commandLine(uiCmdRespond, string(ctx.id))})
 	case cmdBubbleCopy:
 		_ = u.post(copyMsg{text: ctx.copy})
 	case cmdBubbleQuote:
@@ -337,7 +337,7 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		// D132 图侧：删除节点 = /rm <id>，与键入同路径经 inCh（缓冲满则丢弃，与图内既有
 		// 口径一致：历史窗无转写区可回显，失败不空转）。
 		select {
-		case u.inCh <- port.UserInput{Command: &port.Command{Name: "rm", Args: []string{string(ctx.id)}}}:
+		case u.inCh <- port.UserInput{Command: &port.Command{Name: uiCmdRm, Args: []string{string(ctx.id)}}}:
 		default:
 		}
 	case cmdNodeSummary:
@@ -368,15 +368,15 @@ func menuDispatch(u *UI, r uintptr) {
 	// 权限子菜单（D73）：cmdPermBase+i → /permission permLevels[i]（与键入同路径——
 	// D22 config 写回 + Agent 热切换，菜单只做呈现与勾选）。
 	if r >= cmdPermBase && r < cmdPermBase+uintptr(len(permLevels)) {
-		_ = u.post(inputMsg{text: "/permission " + permLevels[r-cmdPermBase]})
+		_ = u.post(inputMsg{text: commandLine(uiCmdPermission, permLevels[r-cmdPermBase])})
 		return
 	}
 	switch r {
 	case cmdUnattended:
 		// D185：勾选 = 切换（与键入同路径——config 写回 + 装饰器热生效都在 /unattended 里）。
-		_ = u.post(inputMsg{text: "/unattended"})
+		_ = u.post(inputMsg{text: commandLine(uiCmdUnattended)})
 	case cmdNew:
-		_ = u.post(inputMsg{text: "/new"}) // 新对话：与键入同路径（parseInput → inCh）
+		_ = u.post(inputMsg{text: commandLine(uiCmdNew)}) // 新对话：与键入同路径（parseInput → inCh）
 	case cmdToggle:
 		u.toggleWindow()
 	case cmdTopMost:

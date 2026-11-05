@@ -413,7 +413,7 @@ func (ov *overlayState) submit(u *UI, st *historyState) {
 	}
 	args = append(args, text)
 	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "edit", Args: args}}:
+	case u.inCh <- port.UserInput{Command: &port.Command{Name: uiCmdEdit, Args: args}}:
 	default:
 		// 输入通道满：命令没投出去 ⇒ **不关遮罩**（否则用户改的文本凭空消失，且无迹可寻）。
 		// 与图侧「缓冲满则丢弃」的既有口径同源，这里改成保数据。

@@ -22,7 +22,6 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
-	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // 头像口径：设置页行内方图。
@@ -53,18 +52,6 @@ type CharacterState struct {
 	ImportedAt  string // 用户面短日期（空 = 未知）；由装配根格式化
 	Warnings    []string
 	Unsupported []string
-}
-
-// sendCharacterCmd 投一条 `/character` 命令（经 u.inCh，与键入同路径串行执行；缓冲满丢弃，
-// 用户重点一次即可）。
-func (u *UI) sendCharacterCmd(args ...string) {
-	if u == nil || u.inCh == nil {
-		return
-	}
-	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "character", Args: args}}:
-	default:
-	}
 }
 
 // charPathPick 角色卡选择框回传（平台线程 → 设置窗 goroutine）。

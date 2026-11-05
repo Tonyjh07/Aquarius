@@ -90,7 +90,7 @@ func (d *summaryDialog) submit(u *UI, text string) {
 		args = append(args, text)
 	}
 	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "summary", Args: args}}:
+	case u.inCh <- port.UserInput{Command: &port.Command{Name: uiCmdSummary, Args: args}}:
 	default:
 	}
 	_ = u.post(showExpandMsg{})

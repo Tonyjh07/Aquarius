@@ -75,7 +75,7 @@ func (g *relGraph) gotoNode(u *UI, st *historyState, li int) {
 	}
 	id := g.model.nodes[g.vis.nodes[li]].id
 	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "goto", Args: []string{string(id)}}}:
+	case u.inCh <- port.UserInput{Command: &port.Command{Name: uiCmdGoto, Args: []string{string(id)}}}:
 	default:
 	}
 }

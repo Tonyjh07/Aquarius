@@ -121,7 +121,7 @@ func (ov *overlayState) applyTemplate(u *UI, st *historyState) {
 	}
 	select {
 	case u.inCh <- port.UserInput{Command: &port.Command{
-		Name: "edit",
+		Name: uiCmdEdit,
 		Args: []string{string(ov.id), "--keep", text},
 	}}:
 	default:

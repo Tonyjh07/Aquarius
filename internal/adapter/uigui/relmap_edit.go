@@ -192,7 +192,7 @@ func (g *relGraph) endNodeDrag(u *UI, st *historyState, now time.Time) bool {
 	}
 	select {
 	case u.inCh <- port.UserInput{Command: &port.Command{
-		Name: "reparent", Args: []string{string(id), string(tid)},
+		Name: uiCmdReparent, Args: []string{string(id), string(tid)},
 	}}:
 	default:
 		// 通道满：这次改挂丢掉，但要留回执——否则用户以为挂上了，树却没动。

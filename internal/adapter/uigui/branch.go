@@ -191,7 +191,7 @@ func (u *UI) gotoBranch(s branchStrip, delta int) {
 			id = t
 		}
 	}
-	if !u.m.submitCommand("/goto " + string(id)) {
+	if !u.m.submitCommand(commandLine(uiCmdGoto, string(id))) {
 		u.m.add(blockNotice, i18n.T("ui.state.buf_full_branch"))
 	}
 }

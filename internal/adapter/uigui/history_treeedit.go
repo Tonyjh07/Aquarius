@@ -21,7 +21,6 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
-	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // 开关档位（§5.6.1）：轨道 44×24dp、圆钮 20dp、两端各留 2dp 内边距，钮位移 160ms
@@ -111,15 +110,6 @@ func (st *historyState) syncTreeEdit(u *UI) {
 		return
 	}
 	st.teOn, st.teEdits = u.opts.Tree.TreeEditState()
-}
-
-// sendTreeEdit 投一家子 `/tree-edit`（与键入同路径，壳内不碰结构）：args 空 = 进入，
-// `--exit` = 关开关（有改动按 §5.6.4 三选一），`--cancel` = 放弃改动退出。
-func (st *historyState) sendTreeEdit(u *UI, args ...string) {
-	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "tree-edit", Args: args}}:
-	default:
-	}
 }
 
 // histTreeEditLabel 开关左侧的常显标签（§5.6.1：标签常显，不靠开关颜色猜含义）；

@@ -174,7 +174,7 @@ func (m *model) submit(text string) {
 		if line != "" {
 			args = append(args, line) // 空 = 只改附件（内核据此保留原正文）
 		}
-		cmd := port.Command{Name: "edit", Args: args, Attachments: added}
+		cmd := port.Command{Name: uiCmdEdit, Args: args, Attachments: added}
 		staged := m.stagedFiles
 		// 无论投递成败，编辑态都已收尾（失败只提示，不把用户留在半截状态里）。
 		m.editTarget = ""

@@ -153,7 +153,7 @@ func (st *historyState) requestBatchDelete(u *UI) {
 	if len(ids) == 0 {
 		return
 	}
-	st.sendCmd(u, "rmconv", ids...)
+	postCommand(u, uiCmdRmconv, ids...)
 	st.exitSelMode()
 }
 

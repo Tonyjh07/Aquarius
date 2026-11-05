@@ -165,14 +165,14 @@ func (st *historyState) drainFilePicks(u *UI) {
 				if !ok {
 					f = exportFormatByExt(p.path)
 				}
-				st.sendCmd(u, "export",
+				postCommand(u, uiCmdExport,
 					"--format", f.Name,
 					"--path", withFormatExt(p.path, f))
 			case platform.PurposeExchangeBatchExport:
 				// 落点恒定写 aqx（对话框只一档），ID 取按下「导出」那刻的快照：对话框是异步
 				// 的，这期间用户可能已经退出选择态，sel 那时已经清空。
 				if ids := st.selPending; len(ids) > 0 {
-					st.sendCmd(u, "export",
+					postCommand(u, uiCmdExport,
 						"--ids", strings.Join(ids, ","),
 						"--path", p.path)
 				}
@@ -197,13 +197,5 @@ func (st *historyState) startImport(u *UI, path string) {
 			return
 		}
 	}
-	st.sendCmd(u, "import", path)
-}
-
-// sendCmd 投一条内核命令（与键入同路径：经 u.inCh；缓冲满丢弃）。
-func (st *historyState) sendCmd(u *UI, name string, args ...string) {
-	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: name, Args: args}}:
-	default:
-	}
+	postCommand(u, uiCmdImport, path)
 }

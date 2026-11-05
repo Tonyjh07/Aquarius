@@ -330,7 +330,7 @@ func (u *UI) confirmElevatable() bool {
 // 降级为放行，不阻塞应答。
 func (u *UI) confirmElevate() {
 	if next, ok := nextPermLevel(u.opts.Status().Level); ok {
-		u.m.submitCommand("/permission " + next)
+		u.m.submitCommand(commandLine(uiCmdPermission, next))
 	}
 	u.m.replyConfirm(port.ConfirmAnswer{Allow: true})
 }

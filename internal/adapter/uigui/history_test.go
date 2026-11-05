@@ -87,8 +87,7 @@ func TestHistorySyncModelAndSessions(t *testing.T) {
 func TestHistorySwitchDispatch(t *testing.T) {
 	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
-	st := newHistoryState(u)
-	st.sendSwitch(u, conversation.ID("C42"))
+	postCommand(u, uiCmdSwitch, "C42")
 	select {
 	case in := <-u.inCh:
 		if in.Command == nil || in.Command.Name != "switch" ||

@@ -119,7 +119,7 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			f.charStatus, f.charErr = i18n.T("ui.page.characters.need_path"), true
 			continue
 		}
-		u.sendCharacterCmd("import", path)
+		postCommand(u, uiCmdCharacter, "import", path)
 		f.charSource.SetText("")
 		f.charStatus, f.charErr = i18n.Tf("ui.page.characters.imported", "path", path), false
 	}
@@ -132,7 +132,7 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			switch {
 			case strings.HasPrefix(key, "start:"):
 				slug := strings.TrimPrefix(key, "start:")
-				u.sendCharacterCmd("start", slug)
+				postCommand(u, uiCmdCharacter, "start", slug)
 				f.charStatus, f.charErr = i18n.Tf("ui.page.characters.started", "slug", slug), false
 			case strings.HasPrefix(key, "rm:"):
 				f.charConfirm = strings.TrimPrefix(key, "rm:")
@@ -141,7 +141,7 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			case strings.HasPrefix(key, "confirm:"):
 				slug := strings.TrimPrefix(key, "confirm:")
 				f.charConfirm = ""
-				u.sendCharacterCmd("remove", slug)
+				postCommand(u, uiCmdCharacter, "remove", slug)
 				f.charStatus, f.charErr = i18n.Tf("ui.page.characters.deleted", "slug", slug), false
 			}
 		}

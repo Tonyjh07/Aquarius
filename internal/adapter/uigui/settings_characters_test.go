@@ -97,7 +97,7 @@ func TestCharPickFillsSource(t *testing.T) {
 func TestSendCharacterCmd(t *testing.T) {
 	t.Parallel()
 	u := &UI{inCh: make(chan port.UserInput, 4)}
-	u.sendCharacterCmd("import", `C:\x\card.png`)
+	postCommand(u, uiCmdCharacter, "import", `C:\x\card.png`)
 	select {
 	case in := <-u.inCh:
 		if in.Command == nil || in.Command.Name != "character" {

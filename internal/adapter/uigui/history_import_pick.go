@@ -162,7 +162,7 @@ func (st *historyState) sendImportPick(u *UI, path string, picks []int) {
 		args[1] += "," + fmt.Sprint(n) // 一条 --pick 带全部：逗号分隔（命令面认）
 	}
 	args = append(args, path)
-	st.sendCmd(u, "import", args...)
+	postCommand(u, uiCmdImport, args...)
 }
 
 // importPickCardBox 卡片盒（居中、定宽、按视口高夹取）。

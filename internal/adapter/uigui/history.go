@@ -173,43 +173,12 @@ func (st *historyState) rowClick(i int) *widget.Clickable {
 	return st.rows[i]
 }
 
-// sendSwitch 点会话行 → 投 /switch <id>（D120§5.2 resolve；经 u.inCh 与键入同路径，
-// 壳内不旁路内核）。缓冲满时丢弃（历史窗无转写区，静默——与右图「失败不空转」同向）。
-func (st *historyState) sendSwitch(u *UI, id conversation.ID) {
-	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "switch", Args: []string{string(id)}}}:
-	default:
-	}
-}
-
-// sendNew 点左栏标题行「＋」→ 投 /new（无参 = 默认标题，D160）：经 u.inCh 与键入同路径，
-// 壳内不建会话（铁律 5）。缓冲满丢弃（同 sendSwitch）。
-func (st *historyState) sendNew(u *UI) {
-	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "new"}}:
-	default:
-	}
-}
-
 // rowDelClick 行尾「✕」点击件 get-or-create（同上按行序缓存）。
 func (st *historyState) rowDelClick(i int) *widget.Clickable {
 	for len(st.dels) <= i {
 		st.dels = append(st.dels, new(widget.Clickable))
 	}
 	return st.dels[i]
-}
-
-// sendRmconv 点行尾「✕」→ 投 /rmconv <完整 ID>（D157）：删除整会话（消息树一并删除、
-// 删当前会话自动继任）——**复用内核既有命令**，与键入同路径，壳内不做任何删除逻辑。
-// 二次确认由内核侧发出、两窗同步呈现（本窗弹窗见 confirmFrame）。缓冲满丢弃（同 sendSwitch）。
-func (st *historyState) sendRmconv(u *UI, id conversation.ID) {
-	if id == "" {
-		return
-	}
-	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "rmconv", Args: []string{string(id)}}}:
-	default:
-	}
 }
 
 // dispatch 帧内点击消费：会话行切换 + 行尾「✕」删除 + 左栏收起 + 状态栏控件（预算 −/＋/
@@ -229,7 +198,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	}
 	// 左栏标题行「＋」新建对话（D160）：投 /new，与键入同路径。
 	if st.btnNew.Clicked(gtx) {
-		st.sendNew(u)
+		postCommand(u, uiCmdNew)
 		return
 	}
 	// 会话进出（§5.16）：先要路径，结果回来后才投命令（那是下一帧的事）。
@@ -263,13 +232,15 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	// 已经不在屏上（收不到事件），不该再有机会参与判读。
 	for i := 0; i < len(st.sessions) && i < len(st.dels); i++ {
 		if st.dels[i].Clicked(gtx) {
-			st.sendRmconv(u, st.sessions[i].ID)
+			if id := st.sessions[i].ID; id != "" {
+				postCommand(u, uiCmdRmconv, string(id))
+			}
 			return
 		}
 	}
 	for i := 0; i < len(st.sessions) && i < len(st.rows); i++ {
 		if st.rows[i].Clicked(gtx) {
-			st.sendSwitch(u, st.sessions[i].ID)
+			postCommand(u, uiCmdSwitch, string(st.sessions[i].ID))
 			return
 		}
 	}
@@ -320,14 +291,14 @@ func (st *historyState) dispatchView(u *UI, gtx layout.Context) {
 func (st *historyState) dispatchTreeEdit(u *UI, gtx layout.Context) {
 	if st.btnTree.Clicked(gtx) {
 		if st.teOn {
-			st.sendTreeEdit(u, "--exit")
+			postCommand(u, uiCmdTreeEdit, "--exit")
 		} else {
-			st.sendTreeEdit(u)
+			postCommand(u, uiCmdTreeEdit)
 		}
 		return
 	}
 	if st.teOn && st.teEdits > 0 && st.btnTreeDiscard.Clicked(gtx) {
-		st.sendTreeEdit(u, "--cancel")
+		postCommand(u, uiCmdTreeEdit, "--cancel")
 	}
 }
 
@@ -347,22 +318,13 @@ func (st *historyState) drainNodeAction(u *UI, gtx layout.Context) {
 			st.toast.show(i18n.T("ui.history.toast_copied_id"), gtx.Now)
 		}
 	case nodeActGoto:
-		st.sendGoto(u, act.id)
+		if id := act.id; id != "" {
+			postCommand(u, uiCmdGoto, string(id))
+		}
 		_ = u.post(showExpandMsg{}) // /goto 只改主窗转写区：主窗收在球里则等于没反应
 	case nodeActOpenOverlay:
 		st.openOverlay(u, act.id, act.mode, act.page)
 	case nodeActSummary:
 		st.openSummary(u, act.id)
-	}
-}
-
-// sendGoto 图侧「转到」（D139；2026-10-19 由「在主窗定位」缩短）：投 /goto <id>（与键入同路径，缓冲满丢弃）。
-func (st *historyState) sendGoto(u *UI, id conversation.MessageID) {
-	if id == "" {
-		return
-	}
-	select {
-	case u.inCh <- port.UserInput{Command: &port.Command{Name: "goto", Args: []string{string(id)}}}:
-	default:
 	}
 }
