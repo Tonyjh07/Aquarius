@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-05 @ c541a2c -->
+<!-- docs-sync: 2026-11-05 @ 1cdb251 -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -32,7 +32,8 @@
 2026-10-30（tag `v0.3.0` → `5e14bc8`）；更早的 `v0.2.0` 发布于 2026-10-26（tag `v0.2.0` → `20cd9f6`），
 `v0.1.0` 发布于 2026-10-23（tag `v0.1.0` → `3c2767b`）。
 v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + 常驻内存优化，批次 P2-1…P2-10）
-**全部完成**；其中的 `uigui` 拆包已按实测评移入 backlog（D234）。
+**全部完成**；其中的 `uigui` 拆包按实测评否决，已列入
+[development.md](development.md) 的「已否决的提议」（D234）。
 
 `v0.3.0`（能力扩张）：**命令注册表**（D245）、**会话进出**（D242）、**命令提示参数相**（D250）、
 **aqx 多会话备份**（D249）、**角色卡只读导入**（D243/D247）与**零碎项收口**（D252/D253/D254：
@@ -131,8 +132,9 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | v0.5.0-V | `en` 布局走查（人工）：已修「无人值守」行两块折行文字并排塌成一列、设置窗左栏不滚动 + 导航项高度写死 36dp | 已完成 2026-11-04 |
 | v0.5.0-D | 文档按 STC 审阅与重写：`docs/` 13 篇 + 仓库 `README.md` 过一遍词表与 Anti-Echo；用户面五篇与工程六篇改写，`contracts` / `decisions` 只报不改 | 已完成 2026-11-05 |
 | v0.5.0-E | 测试并行与 `-race` 墙钟收口：`TestImageViewFrame` 改超时等待、语言槽用例上不可并行锁、`jobproc` 35 个、`uigui` 658 个与 `cmd/aquarius` 170 个顶层测试加 `t.Parallel()`；写进程级状态的用例保持串行；`acpgate` 失败路径报告排空；`excelize` 伪版本换上游 `v2.11.1` tag | 已完成 2026-11-05 |
+| v0.5.0-F | 结构收口：`uigui` 命令投递收成一张动作表（`cmd_dispatch.go` 的 `uiCmd*` 常量与 `uiCommandTable`）+ `postCommand()` / `commandLine()` 两个出口，装配根 `TestUICommandNamesMatchCatalog` 与内核命令表对账并用 AST 锁住投递点；`app/commands.go` 的 `init()` 缩成两行调用、表字面量按三段拆开；`run()`、`persistSettingsTextKeys()`、`rowStyle()` 各抽出一段；`funcsize_test.go` 卡住超 100 行函数总数与单函数上限 | 已完成 2026-11-05 |
 
-完成情况：全量 `-race` 341.7s → 约 103s（两轮 104.5 / 101.6 秒；补完 `cmd/aquarius` 后
+**v0.5.0-D / E 完成情况**：全量 `-race` 341.7s → 约 103s（两轮 104.5 / 101.6 秒；补完 `cmd/aquarius` 后
 106.4 / 102.6 秒），3.3×。逐包数字：`uigui` 290.3s → 52.5s（`-count=5` 均值）、
 `jobproc` 52.7s → 12.4s（`-race -count=3` 均值）、`cmd/aquarius` 52.3s → 16.1s（单包独立跑）。
 保持串行：切语言槽的文件、`t.Setenv` 与 `TestMain`、写包级状态的用例、`jobproc` 里 9 个
@@ -147,6 +149,15 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 非引号错误级问题 425 → 10，剩下 10 处是几何位置术语、测试断言与学科术语，逐条登记理由。
 G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句指向，`development.md` 的引用同步改。
 逐篇结果、保留项与两篇只报不改的清单在 [stc/review.md](stc/review.md)。
+
+**v0.5.0-F 完成情况**：`uigui` 拆包按实测否决后从 [plan.md](plan.md) 移出，理由与重启判据
+记在 [development.md](development.md) 的「已否决的提议」。命令分派按「动作表 + 对账锁」收口，
+内核命令表正本仍在 `internal/app/commands.go`；arch 的层白名单不允许 `uigui → app`，所以界面
+另立非导出动作表，只由装配根拿导出的 `UICommandNames()` 对账，不复用内核非导出符号。界面表
+登记 16 条命令，结构化投递与文本拼行分成两条出口，折叠条 `pendingCmd` 仍走文本路径。
+长函数只点名拆四个，不做全仓三十多个函数的逐个体检；守卫用 AST 统计非测试 `.go` 里超过
+100 行的函数，基线 32 个只允许减少，单函数上限 230 行。做法与验收判据见
+[contracts.md](contracts.md) §7.3 和 [releases/v0.5.0.md](releases/v0.5.0.md)。
 
 **`v0.2.0-P2` 已完成**（批次号固定；完工，无剩余项）：
 
@@ -270,8 +281,8 @@ G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句�
 | R-10 | `feat: mark the edit mode in the map and freeze the menu` | 图区左上角胶囊「编辑树 · 拖动节点改挂 · 已改 N 处」（光晕说「模式开了」、胶囊说「拖了会怎样」）+ 编辑态光标 `grab`/`grabbing`（落在右图栏 clip 内）；节点右键菜单编辑期置灰七项（编辑三项 / 重新生成 / 生成响应 / 插入摘要 / 删除），只读项与引用照常——`platform.MenuItem.Disabled` → Windows `MF_GRAYED`，分发处再拦一道防时序；五条测试（胶囊文案、置灰项集、置灰位到平台、分发拦截、编辑态整帧）|
 
 完成后 `uigui` 生产文件 107 个 / 29,014 行，九个被点名的文件全部 ≤ 600 行；仍超 600 的
-`select.go` 722 / `dock.go` 635 / `relmap_frame.go` 621 / `fade.go` 604 未在本次范围，登记在
-[plan.md](plan.md) 的「`uigui` 拆包」一节。
+`select.go` 722 / `dock.go` 635 / `relmap_frame.go` 621 / `fade.go` 604 未在本次范围。
+建子包一项经实测否决，见 [development.md](development.md) 的「已否决的提议」。
 
 **文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
 D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。

@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-04 @ 252a91c -->
+<!-- docs-sync: 2026-11-05 @ 1cdb251 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -2003,7 +2003,9 @@ type lander interface { InjectAndWait(ctx context.Context, in Injection) error }
 - **点击某行 = 按一次 Tab**（填进输入框，不提交）。
 - 卡片复用命令浮层的视觉（同一张深色卡、同一套行高与截断），不另起第二套。
 
-`uigui` 侧自己的命令分派不在本版范围（见 `plan.md` 的 backlog）。
+`uigui` 侧的命令分派已于 v0.5.0 收口：界面用到的命令名在 `uigui/cmd_dispatch.go` 登记，
+结构化投递与文本拼行各走一个出口，投递点写裸字符串会被装配根的扫描测试拦下。内核命令表的
+正本仍在 `internal/app/commands.go`，装配根有一处对账测试保证界面表不超出内核命令清单。
 
 ### 7.4 启动历史回放（D40）
 
