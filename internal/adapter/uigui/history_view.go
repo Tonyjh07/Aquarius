@@ -130,7 +130,7 @@ func (st *historyState) histStatusCtlItems() []histCtlItem {
 	}
 	items := []histCtlItem{
 		{label: "−", click: &st.btnMinus},
-		{label: "＋", click: &st.btnPlus},
+		{label: "+", click: &st.btnPlus},
 		{label: i18n.Tf("ui.history.zoom", "pct", zoomPct)}, // 只读文字
 		{label: i18n.T("ui.history.fit_tree"), click: &st.btnHome},
 		{label: i18n.T("ui.history.reset_view"), click: &st.btnSeed},

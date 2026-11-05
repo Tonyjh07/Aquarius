@@ -54,7 +54,7 @@ func (w *wiring) previewVoice(req port.SpeechRequest) error {
 	}
 	rc, err := w.blobs.Get(ctx, ref)
 	if err != nil {
-		return fmt.Errorf("%s：%w", i18n.T("cmd.asm.err.read_synth_audio"), err)
+		return fmt.Errorf("%s: %w", i18n.T("cmd.asm.err.read_synth_audio"), err)
 	}
 	defer rc.Close()
 	return w.player.Play(ctx, ref, rc)

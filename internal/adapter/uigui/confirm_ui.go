@@ -38,15 +38,14 @@ func (u *UI) factsCard() []string {
 	if title == "" {
 		title = i18n.T("ui.chat.facts_not_ready")
 	}
-	l1 := fmt.Sprintf("%s · %s（%s）", profile, title, shortID(f.ConvID))
+	l1 := i18n.Tf("ui.chat.facts_head", "profile", profile, "title", title, "id", shortID(f.ConvID))
 	if st.Model != "" {
 		l1 += " · " + st.Model
-		if st.Level != "" {
-			l1 += "（" + st.Level
-			if st.Effort != "" {
-				l1 += "，" + st.Effort
-			}
-			l1 += "）"
+		switch {
+		case st.Level != "" && st.Effort != "":
+			l1 += i18n.Tf("ui.chat.facts_state_both", "level", st.Level, "effort", st.Effort)
+		case st.Level != "":
+			l1 += i18n.Tf("ui.chat.facts_state_level", "level", st.Level)
 		}
 	}
 	var l2 string

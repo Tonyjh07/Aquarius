@@ -44,12 +44,15 @@ var enGuiChatTexts = map[string]string{
 	"ui.chat.tool_not_returned":  "(no result — the turn ended)",
 	"ui.chat.list_sep":           ", ",
 
-	"ui.chat.facts_not_ready": "(not ready)",
-	"ui.chat.ctx_mode_est":    "estimated",
-	"ui.chat.ctx_mode_exact":  "exact",
-	"ui.chat.ctx_usage":       "Context {used}/{max} tokens ({pct}%, {mode})",
-	"ui.chat.tokens_total":    "Total in {in} / out {out} tokens",
-	"ui.chat.tokens_last":     "Last turn in {in} / out {out} tokens",
+	"ui.chat.facts_not_ready":   "(not ready)",
+	"ui.chat.facts_head":        "{profile} · {title} ({id})",
+	"ui.chat.facts_state_both":  " ({level}, {effort})",
+	"ui.chat.facts_state_level": " ({level})",
+	"ui.chat.ctx_mode_est":      "estimated",
+	"ui.chat.ctx_mode_exact":    "exact",
+	"ui.chat.ctx_usage":         "Context {used}/{max} tokens ({pct}%, {mode})",
+	"ui.chat.tokens_total":      "Total in {in} / out {out} tokens",
+	"ui.chat.tokens_last":       "Last turn in {in} / out {out} tokens",
 
 	// ── 输入区
 	"ui.input.startup_hint":       "Aquarius — type /help for commands, /quit to exit; click the square on the right to stop generating",

@@ -23,6 +23,7 @@ var enTuiTexts = map[string]string{
 	"tui.status.inject":     "Inject · {source} · {state}",
 	"tui.status.model":      "Model {model}",
 	"tui.status.permission": "Permission {level}",
+	"tui.status.effort":     "Effort {effort}",
 	"tui.status.unattended": "Unattended",
 	"tui.status.pending":    "{n} queued (Ctrl+U to undo)",
 	"tui.hint.scroll":       "PgUp/PgDn to scroll",

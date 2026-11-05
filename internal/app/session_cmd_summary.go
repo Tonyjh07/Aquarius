@@ -110,7 +110,7 @@ func (s *Session) summaryAfterInsert(ctx context.Context, line string) (string, 
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
-	if _, err := s.replayHistory(ctx, line+"；"); err != nil {
+	if _, err := s.replayHistory(ctx, line+i18n.T("session.compact.replay_suffix")); err != nil {
 		return "", err
 	}
 	return line, nil

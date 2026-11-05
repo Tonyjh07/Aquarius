@@ -8,9 +8,10 @@ var enSessionTexts = map[string]string{
 	"common.off": "off",
 
 	// /compact
-	"session.compact.nothing":  "Nothing to compact: no new history above the summary",
-	"session.compact.canceled": "Compaction canceled (the conversation is unchanged)",
-	"session.compact.done":     "Compacted {absorbed} entries into 1 summary (in={in} out={out} tokens)",
+	"session.compact.nothing":       "Nothing to compact: no new history above the summary",
+	"session.compact.canceled":      "Compaction canceled (the conversation is unchanged)",
+	"session.compact.done":          "Compacted {absorbed} entries into 1 summary (in={in} out={out} tokens)",
+	"session.compact.replay_suffix": ";",
 
 	// /unattended
 	"usage.unattended":               "Usage: /unattended [on|off]",

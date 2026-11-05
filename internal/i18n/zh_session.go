@@ -15,6 +15,8 @@ var zhSessionTexts = map[string]string{
 	"session.compact.nothing":  "无需压缩：摘要之上没有新的历史",
 	"session.compact.canceled": "已取消压缩（会话未改动）",
 	"session.compact.done":     "已压缩 {absorbed} 条历史 → 1 条摘要（in={in} out={out} tokens）",
+	// 回放时给摘要行收尾的标点：与界面语言一致的逗号/句读，不写死在代码里。
+	"session.compact.replay_suffix": "；",
 
 	// /unattended
 	"usage.unattended":               "用法: /unattended [on|off]",

@@ -69,7 +69,7 @@ var enGuiPageCoreTexts = map[string]string{
 	"ui.page.model.prov_picker": "Fallback provider",
 	"ui.page.model.model_label": "Model",
 	"ui.page.model.model_hint":  "empty = the provider's default model; undeclared names are allowed",
-	"ui.page.model.chain_add":   "＋ Add fallback",
+	"ui.page.model.chain_add":   "+ Add fallback",
 
 	// Model services page: basic card fields ("Tokenizer" is a term, left in code)
 	"ui.page.providers.section.list": "Model services (providers)",
@@ -90,7 +90,7 @@ var enGuiPageCoreTexts = map[string]string{
 
 	// Model services page: key pool
 	"ui.page.providers.head.keys":      "Key pool",
-	"ui.page.providers.key_add":        "＋ Add key",
+	"ui.page.providers.key_add":        "+ Add key",
 	"ui.page.providers.key_value_hint": "empty = keep; plaintext moves into the local key store; a secret: prefix is stored as a reference",
 	"ui.page.providers.key_label_hint": "display name (empty = key N)",
 
@@ -110,14 +110,14 @@ var enGuiPageCoreTexts = map[string]string{
 	"ui.page.providers.model_ctx_hint":      "context tokens",
 	"ui.page.providers.model_cost_in_hint":  "input $/M",
 	"ui.page.providers.model_cost_out_hint": "output $/M",
-	"ui.page.providers.model_add":           "＋ Add model",
+	"ui.page.providers.model_add":           "+ Add model",
 	"ui.page.providers.probe":               "Probe capabilities",
 
 	// Model services page: card actions and the apply row
 	"ui.page.providers.test":          "Test connection",
 	"ui.page.providers.set_primary":   "Set as primary",
 	"ui.page.providers.primary_badge": "★ Primary",
-	"ui.page.providers.prov_add":      "＋ New provider",
+	"ui.page.providers.prov_add":      "+ New provider",
 	"ui.page.providers.apply":         "Apply provider changes",
 	"ui.page.providers.apply_note":    "Changes are written back to config in full and take effect after restart; Test connection and Probe capabilities send real requests.",
 
@@ -126,10 +126,10 @@ var enGuiPageCoreTexts = map[string]string{
 	"ui.page.web.section.fetch":  "Web fetch (tried in order, next one on failure)",
 	"ui.page.web.section.local":  "Local fetch (reads the page text directly, no third party)",
 
-	"ui.page.web.search_add":  "＋ Add search provider",
+	"ui.page.web.search_add":  "+ Add search provider",
 	"ui.page.web.count_label": "Result count",
 	"ui.page.web.count_hint":  "default 8 ({min}–{max}); tool arguments can override it per call (empty = keep)",
-	"ui.page.web.fetch_add":   "＋ Add fetch provider",
+	"ui.page.web.fetch_add":   "+ Add fetch provider",
 	"ui.page.web.chars_label": "Max characters",
 	"ui.page.web.chars_hint":  "characters; default 16000 ({min}–{max}) (empty = keep)",
 

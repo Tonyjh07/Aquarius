@@ -670,11 +670,11 @@ func TestReasoningFlow(t *testing.T) {
 
 	// 状态行 effort 标注。
 	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict", Effort: "high"} }
-	if line := m.statusLine(); !strings.Contains(line, "effort high") {
+	if line := m.statusLine(); !strings.Contains(line, i18n.Tf("tui.status.effort", "effort", "high")) {
 		t.Fatalf("status = %q, want effort high", line)
 	}
 	m.u.opts.Status = func() Status { return Status{Model: "m", Level: "strict"} }
-	if line := m.statusLine(); strings.Contains(line, "effort") {
+	if line := m.statusLine(); strings.Contains(line, "high") {
 		t.Fatalf("effort 为空不应标注: %q", line)
 	}
 	// D185：无人值守标记常驻（与权限档并列）。

@@ -280,7 +280,7 @@ func TestSaveSettingsErrors(t *testing.T) {
 		f.hotkey.SetText("Nope+Nope")
 		u.saveSettings(f)
 		if !f.err || !strings.Contains(f.status,
-			i18n.T("ui.settings.err.hotkey")+"："+platform.ValidateHotkey("Nope+Nope").Error()) {
+			i18n.T("ui.settings.err.hotkey")+": "+platform.ValidateHotkey("Nope+Nope").Error()) {
 			t.Errorf("反馈 = (%v, %q)", f.err, f.status)
 		}
 		if called != 0 {

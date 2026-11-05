@@ -613,7 +613,7 @@ func (v *expectVisitor) Visit(n ast.Node) ast.Visitor {
 // check 判定一个字符串字面量是否落在四类期望值位置上。
 func (v *expectVisitor) check(lit *ast.BasicLit) {
 	s, err := strconv.Unquote(lit.Value)
-	if err != nil || !hasHan(s) {
+	if err != nil || !hasCJK(s) {
 		return
 	}
 	pos := v.fset.Position(lit.Pos())

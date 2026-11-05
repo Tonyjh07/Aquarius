@@ -1154,5 +1154,5 @@ func tailOutput(s string) string {
 	if len(lines) > 6 {
 		lines = lines[len(lines)-6:]
 	}
-	return "：" + strings.Join(lines, " / ")
+	return ": " + strings.Join(lines, " / ")
 }

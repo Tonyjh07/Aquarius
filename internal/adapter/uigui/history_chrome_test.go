@@ -24,7 +24,7 @@ func TestHistStatusBarCtlItems(t *testing.T) {
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	items := st.histStatusCtlItems()
-	want := []string{"−", "＋",
+	want := []string{"−", "+",
 		i18n.Tf("ui.history.zoom", "pct", "100%"),
 		i18n.T("ui.history.fit_tree"),
 		i18n.T("ui.history.reset_view"),

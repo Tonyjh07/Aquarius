@@ -210,7 +210,7 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	}
 	if p.Hotkey != "" {
 		if err := platform.ValidateHotkey(p.Hotkey); err != nil {
-			return SettingsPatch{}, fmt.Errorf("%s：%w", i18n.T("ui.settings.err.hotkey"), err)
+			return SettingsPatch{}, fmt.Errorf("%s: %w", i18n.T("ui.settings.err.hotkey"), err)
 		}
 	}
 	// S4/D110③ 全量分组页：输出布尔恒写；限制数值空 = 保持；提示词恒写；

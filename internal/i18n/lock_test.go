@@ -65,14 +65,24 @@ var cjkAllowed = map[string][]string{
 	// 诊断：读者是改代码的人，界面上看不到（ico 解析失败退回默认图标、羽化观测打印、
 	// 位图解析细节、托盘与热键的观测打印、GDI 句柄释放告警）。位图那几条的外层调用方
 	// 已经套了一句「读取剪贴板图片失败」，用户看到的是那句。
-	"internal/adapter/uigui/icon.go":                   {"ico: "},
-	"internal/adapter/uigui/fade.go":                   {"[fade] "},
-	"internal/adapter/uigui/platform/clipimg.go":       {"位图", "不支持的位深", "不支持的位图压缩方式"},
+	"internal/adapter/uigui/icon.go": {"ico: "},
+	"internal/adapter/uigui/fade.go": {"[fade] "},
+	"internal/adapter/uigui/platform/clipimg.go": {
+		"位图掩码不全", "位图像素数据不完整", "位图头不足", "位图头长度异常", "位图尺寸非法", "位图过大",
+		"不支持的位深", "不支持的位图压缩方式",
+	},
 	"internal/adapter/uigui/platform/shell_windows.go": {"[tray]", "[hotkey]"},
 	"internal/adapter/uigui/platform/tray_windows.go":  {"[tray]"},
 	"internal/adapter/uigui/platform/win32_windows.go": {
 		"[dib]", "DeleteObject 位图失败", "DeleteDC 失败",
 	},
+
+	// 法务正文的解析规则：顿号是条款号的合法分隔符（数据，不是给人看的文案）。
+	"internal/legal/parse.go": {"^[0-9]+(\\.[0-9]+)*\\.?[\\s、]"},
+
+	// 表单清单解析用的中文逗号：它是**输入数据的分隔符**，与界面语言无关（用户可能粘贴
+	// 任何一种逗号），不是给人看的一句话。
+	"cmd/aquarius/providers.go": {"，"},
 
 	// 行高量测用的假文本：只喂给 measure，用来算 baseline，不出现在任何界面上。
 	"internal/adapter/uigui/input.go": {"行"},
@@ -268,7 +278,7 @@ func cjkLiteralsIn(t *testing.T, rel, path string) []string {
 			return true
 		}
 		s, uerr := strconv.Unquote(lit.Value)
-		if uerr != nil || !hasHan(s) || allowedLiteral(rel, s) {
+		if uerr != nil || !hasCJK(s) || allowedLiteral(rel, s) {
 			return true
 		}
 		pos := fset.Position(lit.Pos())
@@ -385,6 +395,43 @@ func isTableFile(rel string) bool {
 	return strings.HasPrefix(name, "zh_") || strings.HasPrefix(name, "en_")
 }
 
+// TestCJKAllowListStillHits 白名单不能只增不减：每条豁免都必须仍在该文件里命中至少一处，
+// 否则说明文案已经搬走、口子却留着，下一个往这份文件写中文的人白捡一个豁免。
+//
+// 判定与 allowedLiteral 同源：短片段只认整串，长片段才算前缀。
+func TestCJKAllowListStillHits(t *testing.T) {
+	t.Parallel()
+	for rel, frags := range cjkAllowed {
+		path := filepath.Join(i18nRepoRoot, rel)
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Errorf("%s: 白名单指向的文件读不到: %v", rel, err)
+			continue
+		}
+		var lits []string
+		ast.Inspect(f, func(n ast.Node) bool {
+			if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				if v, uerr := strconv.Unquote(lit.Value); uerr == nil {
+					lits = append(lits, v)
+				}
+			}
+			return true
+		})
+		for _, frag := range frags {
+			hit := false
+			for _, s := range lits {
+				if s == frag || (len([]rune(frag)) > 2 && strings.HasPrefix(s, frag)) {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				t.Errorf("%s 的豁免 %q 已不再命中任何字面量：文案搬走后请一并删掉这条", rel, frag)
+			}
+		}
+	}
+}
+
 // allStringLiterals 收集仓库里所有字符串字面量（含测试：测试引用的 key 也是活的）。
 func allStringLiterals(t *testing.T) (map[string]bool, error) {
 	t.Helper()
@@ -434,19 +481,41 @@ func allStringLiterals(t *testing.T) (map[string]bool, error) {
 	return out, nil
 }
 
-// allowedLiteral 该文件是否为这条字面量开了口子。片段按「整串相等或作为前缀」匹配：
-// 用 Contains 的话，一条 "行" 就把该文件里所有带「行」的文案都放过去了。
+// allowedLiteral 该文件是否为这条字面量开了口子。
+//
+// 长片段（3 个字符以上）按「整串相等或作为前缀」匹配，用来放过 API 串或带参数的长句；
+// **短片段（1–2 个字符）只认整串相等**：像 "行" 这样的单字一旦按前缀匹配，同一文件里
+// 以后写的「行高」「一行」都会被静默放行，等于给那份文件开后门。白名单条目还必须
+// 至少命中一处（见 TestCJKAllowListStillHits），防止只增不减。
 func allowedLiteral(rel, s string) bool {
 	for _, frag := range cjkAllowed[rel] {
-		if s == frag || strings.HasPrefix(s, frag) {
+		if s == frag {
+			return true
+		}
+		if len([]rune(frag)) > 2 && strings.HasPrefix(s, frag) {
 			return true
 		}
 	}
 	return false
 }
 
-func hasHan(s string) bool {
-	return strings.ContainsFunc(s, func(r rune) bool { return unicode.Is(unicode.Han, r) })
+// hasCJK 是否含中文或中文标点。只判 Han 会漏掉全角标点：英文界面里靠代码拼出来的
+// 「（」「，」「；」同样是把中文习惯带上了屏，而这正是出口扫描声称覆盖的场景。
+func hasCJK(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool {
+		switch {
+		case unicode.Is(unicode.Han, r):
+			return true
+		// CJK 符号与标点（U+3000–303F，含「」『』）、全角 ASCII 变体（U+FF00–FFEF，
+		// 含（） ，：；）。省略号（…）与破折号（—）不算：英文排版同样用它们，
+		// 纳入判定只会把纯 ASCII 界面误判成中文。
+		case r >= 0x3000 && r <= 0x303F:
+			return true
+		case r >= 0xFF00 && r <= 0xFFEF:
+			return true
+		}
+		return false
+	})
 }
 
 func truncate(s string, n int) string {

@@ -721,7 +721,7 @@ func (m *model) statusLine() string {
 			parts = append(parts, i18n.T("tui.status.unattended"))
 		}
 		if st.Effort != "" {
-			parts = append(parts, "effort "+st.Effort)
+			parts = append(parts, i18n.Tf("tui.status.effort", "effort", st.Effort))
 		}
 	}
 	if n := m.u.pendingCount(); n > 0 {
