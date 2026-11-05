@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-05 @ 1cdb251 -->
+<!-- docs-sync: 2026-11-05 @ f7abd72 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -101,6 +101,9 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 | arch | **架构守卫**：`go/parser` 读全仓生产文件的 import，断言分层方向（`adapter → port ← app → domain`）与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；判定函数另有正反例自检，防「永远绿」；另断言聚合根不导出 map 字段（导出即等于「只有方法能改树」失效） | `internal/arch/arch_test.go` |
 | arch | **注释守卫**：连续 `//` 注释去掉决策编号后不足 12 个可见字符即失败（编号可以当索引或溯源，不能代替说明） | `cmd/aquarius/comments_test.go` |
 | docs | **决策索引守卫**：`docs/decisions.md` 正文每个 `### Dn` 小节，索引表必须有一行对应（**只查这一个方向**——索引可以先有结论、正文后补）；取号口径（`D265–D267` 区间、`D269、D270` 并列）另有正反例自检，防守卫「永远绿」 | `cmd/aquarius/decisions_index_test.go` |
+| cmd | **跨包对账守卫**：AST 取 `uigui` 的 `uiCmd*` 常量与 `uiCommandTable`，与内核 `app.CommandCatalog()` 双向对账；再扫 `uigui` 全部生产文件，`port.Command{Name: …}`、`postCommand` / `commandLine` 的名字位只许是 `uiCmd*` 标识符，写裸字符串即失败。arch 禁 `uigui → app`，所以对账点只能落在装配根 | `cmd/aquarius/ui_command_contract_test.go` |
+| cmd | **规模守卫**：AST 统计非测试 `.go` 里超过 100 行的函数，总数只许减不许增（基线写在常量里，改动基线要连理由一起写），另设单函数行数上限；成功路径也打印实测值，免得下次收紧基线只能靠猜 | `cmd/aquarius/funcsize_test.go` |
+| i18n | **不可并行守卫**：切 `i18n.Use` 语言槽的文件里，顶层测试一律不许加 `t.Parallel()`（进程级状态，并行即互相污染）。判据按**文件**给——切语言槽的调用可能藏在 helper 里；按 AST 认 `*testing.T` 形参挑顶层测试，再扫函数体里任何 `.Parallel()` 调用，`t.Run` 子测试里的也算命中 | `internal/i18n/lock_parallel_test.go` |
 | domain | **性质测试**：随机 Append / Revise(Fresh\|Carry\|Clone) / Prune / Checkout 序列 → 两条不变量恒成立；Carry 边转移后被转移子树零拷贝、身份与内容字节级不变（仅直接孩子的 `Parent` 边改写）；Clone 深拷贝子树与原子树零共享、原子树字节级不变；节点形态校验含「思考分片与工具分片只有 assistant 可携带」「工具分片 CallID 节点内唯一」；`Snapshot` → `Restore` 往返得到同一棵树，坏快照被拒；快照比对证明不可变 | `domain/conversation/property_test.go` |
 | domain | **变更后自检**：`go test -tags aqvalidate ./...` 下四条变更路径（`AppendCommitted`/`Revise`/`Prune`/`InsertCommitted`，含 Revise 的 carry/clone 提前返回分支）末尾各跑一次全树 `Validate`；生产构建为常量 `false`，检查被编译掉、零开销。`validate_tag_test.go` 双向验证这条开关本身（开 tag 时弄坏树必须被拒，不开时自动跳过） | `domain/conversation/validate_tag_test.go` |
 | app | **交互回放**：脚本流 LLM + 收集器 Presenter + 脚本队列 Prompter；摄取管线用假 Transcriber；思考入树的分片顺序与回传开关两态装配 | `app/fakes_test.go`、`app/agent_test.go` |

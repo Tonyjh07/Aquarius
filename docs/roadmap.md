@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-05 @ 1cdb251 -->
+<!-- docs-sync: 2026-11-05 @ f7abd72 -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -132,7 +132,7 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | v0.5.0-V | `en` 布局走查（人工）：已修「无人值守」行两块折行文字并排塌成一列、设置窗左栏不滚动 + 导航项高度写死 36dp | 已完成 2026-11-04 |
 | v0.5.0-D | 文档按 STC 审阅与重写：`docs/` 13 篇 + 仓库 `README.md` 过一遍词表与 Anti-Echo；用户面五篇与工程六篇改写，`contracts` / `decisions` 只报不改 | 已完成 2026-11-05 |
 | v0.5.0-E | 测试并行与 `-race` 墙钟收口：`TestImageViewFrame` 改超时等待、语言槽用例上不可并行锁、`jobproc` 35 个、`uigui` 658 个与 `cmd/aquarius` 170 个顶层测试加 `t.Parallel()`；写进程级状态的用例保持串行；`acpgate` 失败路径报告排空；`excelize` 伪版本换上游 `v2.11.1` tag | 已完成 2026-11-05 |
-| v0.5.0-F | 结构收口：`uigui` 命令投递收成一张动作表（`cmd_dispatch.go` 的 `uiCmd*` 常量与 `uiCommandTable`）+ `postCommand()` / `commandLine()` 两个出口，装配根 `TestUICommandNamesMatchCatalog` 与内核命令表对账并用 AST 锁住投递点；`app/commands.go` 的 `init()` 缩成两行调用、表字面量按三段拆开；`run()`、`persistSettingsTextKeys()`、`rowStyle()` 各抽出一段；`funcsize_test.go` 卡住超 100 行函数总数与单函数上限 | 已完成 2026-11-05 |
+| v0.5.0-G | 发版前审查修复：首跑缺密钥不再 fatal（`unconfiguredLLM{err}` 空态覆盖「provider 在、取不到密钥」）、首页与末页跳过硬校验 consent、`rsrc_windows_*.syso` 重生成到 0.5.0.0、i18n 锁判定从「只看汉字」扩到全角字符区并修掉四处漏网标点、切语言后 `probe`/`modelsHint` 改为渲染时取词、日志文本形态单行化转义、`acpgate` 崩溃报因的 happens-before 补齐、`commandLine` 按 `CommandFields` 规则加引号、`postCommand` 丢包不再误报成功、`storejson.Remove` 与 `Save` 共用会话锁、长函数基线 32→31 | 已完成 2026-11-05 |
 
 **v0.5.0-D / E 完成情况**：全量 `-race` 341.7s → 约 103s（两轮 104.5 / 101.6 秒；补完 `cmd/aquarius` 后
 106.4 / 102.6 秒），3.3×。逐包数字：`uigui` 290.3s → 52.5s（`-count=5` 均值）、
@@ -156,8 +156,34 @@ G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句�
 另立非导出动作表，只由装配根拿导出的 `UICommandNames()` 对账，不复用内核非导出符号。界面表
 登记 16 条命令，结构化投递与文本拼行分成两条出口，折叠条 `pendingCmd` 仍走文本路径。
 长函数只点名拆四个，不做全仓三十多个函数的逐个体检；守卫用 AST 统计非测试 `.go` 里超过
-100 行的函数，基线 32 个只允许减少，单函数上限 230 行。做法与验收判据见
+100 行的函数，基线 31 个只允许减少，单函数上限 225 行。做法与验收判据见
 [contracts.md](contracts.md) §7.3 和 [releases/v0.5.0.md](releases/v0.5.0.md)。
+
+**v0.5.0-G 完成情况**：发版前按五路分区审查（i18n 文案、日志出口、并发与持久化、五页向导与
+法律文本、结构收口与发版资源）走了一遍，报出的问题去重后按 P0/P1/P2 分级修复，用户拍板范围为
+「P0 + P1 + 低成本 P2」，缺密钥一项选择「走空态」而不是把第 3 页改必填。
+
+- **一条阻塞**：首跑机器没设密钥变量时退出码 1（默认模板带 `secret:DEEPSEEK_API_KEY`，
+  providers 非空 → 装配失败 → fatal）。改为同一条可启动空态，并把原先把这个退出行为钉成
+  期望的测试改成期望空态。具体做法记在 [decisions.md](decisions.md) D278 的 O6 段。
+- **P1**：同意闸门补到首页/末页两个跳过出口；版本资源重生成（三个 `.syso` 的 UTF-16 串
+  0.4.0.0 → 0.5.0.0）；i18n 锁的 CJK 判定扩到 U+3000–303F 与 U+FF00–FFEF，白名单短片段
+  只认整串相等，修掉事实卡、压缩摘要回执、技能回执、历史窗加号四处漏网标点；`probe` /
+  `modelsHint` 从「存已拼好的句子」改成「存 key + 参数，渲染时取词」；日志文本形态对
+  `msg`、行动段与每个 `kv` 值做单行化转义；`acpgate` 的 `abort()` 不再依赖 watchdog 写的
+  `peerGone`（与 `Prompt` 返回无 happens-before），改在 `execute` 返回前主动 select
+  `conn.Done()` 置位。
+- **P2**：长函数基线收紧到实测值 31、单函数上限 225，并让守卫在成功时也打印实测值；
+  `go mod tidy` 让 `acp-go-sdk` 归位到直接依赖、清掉三条已作废旧伪版本的校验和；
+  `commandLine` 按 `CommandFields` 的规则加引号（判据同样用 `unicode.IsSpace`，全角空格
+  也算分隔符），并补了经同一个切分器往返的测试；`postCommand` 两处「丢了还报成功」改成
+  读返回值并提示。
+- **范围外多修一处**：`storejson.Remove` 没有用 `Save` 那把每会话锁，边删边存会让会话复活
+  或让 `Save` 的 `os.Rename` 报错；补两行加锁与 `TestRemoveWaitsForInFlightSave`。
+
+判据与验收：`gofmt` / `go vet` / zh 与 `en` 全量 / `-tags aqvalidate` / `go build` /
+全量 `-race` / `docsync -check` 全绿；`acpgate` 与 `storejson` 各按 `-race -count=3` 复跑。
+`internal/legal` 的正文改动由 `TestEnHasNoCJK` 与解析规则测试覆盖。
 
 **`v0.2.0-P2` 已完成**（批次号固定；完工，无剩余项）：
 
