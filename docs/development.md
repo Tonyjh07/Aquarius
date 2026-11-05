@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-05 @ a2ae902 -->
+<!-- docs-sync: 2026-11-05 @ 47b15b0 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -43,7 +43,8 @@ go run ./cmd/ci --install-hooks  # 装 pre-push hook，推送前自动跑 fast
 go run ./cmd/ci -list            # 看清单；-only=a,b 只跑指定项；-jobs=N 手动加并行度
 ```
 
-- **档位与耗时**：fast 3 项约 15 秒、default 9 项约 6 分钟、full 12 项。真正的门禁仍是上面
+- **档位与耗时**：fast 3 项约 15 秒、default 9 项约 5 分半、full 12 项约 8 分钟（本机实测，
+  冷缓存会更久）。真正的门禁仍是上面
   那些命令，`ci` 只是编排与记账，不改变任何一条的判据。
 - **能力探测**：`-race` 要 C 工具链、`linuxgate` 要 WSL、漏洞体检要出网。探测不到的 job
   记「跳过」而不是失败；漏洞体检失败同样降级为跳过——本机没装或断网不等于代码坏了。
