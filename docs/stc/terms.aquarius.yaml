@@ -1,0 +1,127 @@
+# Aquarius 项目术语表（入库正本）。来源：docs/overview.md「统一语言」表（2026-11-04 提取）。
+# term：统一使用的叫法；meaning：这个叫法在项目里的意思；not：不使用的叫法；en：英文界面的叫法。
+# 用途：文档 STC 审阅与重写（v0.5.0 收尾批）时保持同一对象同一叫法。checker 不读本文件，
+# 供 agent 审阅时对照。本机技能目录 .workbuddy/skills/stc/dictionary/ 下留的是同一份副本；
+# 改词表以本文件为准。审阅结论见 docs/stc/review.md。
+
+- term: 会话树
+  meaning: 一棵不可变消息树加一个 Head 游标，是会话的全部数据
+  not: [消息树, 对话树]
+  en: Conversation
+
+- term: 节点
+  meaning: 会话树上的消息，创建后只读；「修改」一律走修订
+  not: [消息对象, 树节点]
+  en: Message
+
+- term: 内容分片
+  meaning: 消息内容的多态片段（Text / Image / Audio / Doc / Thinking / Tool）
+  not: [内容块, 分段]
+  en: Part
+
+- term: 附件
+  meaning: 被消息引用的二进制内容，按 sha256 内容寻址存储
+  not: [文件附件, 附件库条目]
+  en: Attachment
+
+- term: 根
+  meaning: 会话树的空消息节点，仅作树管理，不进模型上下文
+  not: [根节点, 根消息]
+  en: Root
+
+- term: 头
+  meaning: 当前游标，决定发给模型的线性路径
+  not: [游标, 指针, 头节点]
+  en: Head
+
+- term: 人格
+  meaning: 会话首节点（system 角色，config 快照），压缩水位之上也恒回传
+  not: [系统提示, 人设]
+  en: persona
+
+- term: 压缩摘要
+  meaning: system 角色水位节点，其上历史（人格除外）不再回传模型
+  not: [摘要节点, 压缩节点]
+  en: Compact Summary
+
+- term: 权限等级
+  meaning: read-only / strict / permissive / full-access 四档权限矩阵预设
+  not: [权限档位, 权限模式]
+  en: Permission Level
+
+- term: 路径
+  meaning: Root 到 Head 的节点序列，即本次推理的上下文
+  not: [上下文路径, 推理路径]
+  en: Path
+
+- term: 轮次
+  meaning: 一次「模型生成加零到多次工具执行」的循环
+  not: [回合, 一轮对话]
+  en: Turn
+
+- term: 提交
+  meaning: 流式结束后把本轮产出作为不可变节点一次性挂入树
+  not: [落盘, 写入树]
+  en: Commit
+
+- term: 修订
+  meaning: 创建同级新节点（同父）；Fresh 是新分支重新开始，Carry 是后续历史边转移过来，Clone 是深拷贝后续历史为独立副本
+  not: [编辑, 修改, 改写历史]
+  en: Revise
+
+- term: 后台任务
+  meaning: 异步执行的进程，可查状态、拉日志、终止
+  not: [作业, 后台进程]
+  en: Job
+
+- term: 摄取器
+  meaning: 输入方式适配器，把原始输入（文本/文件/剪贴板/麦克风）转成内容分片列表
+  not: [输入器, 摄取适配器]
+  en: Ingestor
+
+- term: 输出器
+  meaning: 输出方式适配器（TTS 播报 / 系统通知 / 导出文件）
+  not: [输出适配器]
+  en: OutputAdapter
+
+- term: 转写
+  meaning: 语音模态端口之一，音频转文本（ASR）
+  not: [识别, 听写]
+  en: Transcriber
+
+- term: 合成
+  meaning: 语音模态端口之一，文本转音频（TTS）
+  not: [朗读, 语音生成]
+  en: Synthesizer
+
+- term: 记忆文档
+  meaning: 一篇 markdown 记忆（name 加文本），用户可直接编辑
+  not: [记忆条目, 记忆库文件]
+  en: MemoryDoc
+
+- term: 技能
+  meaning: 一个目录加 SKILL.md，按需载入的指令包
+  not: [技能包, 技能文件]
+  en: Skill
+
+- term: 外部代理
+  meaning: 经 ACP 接进来的外部程序，把一件复杂任务整个交给它跑，只收回报告
+  not: [子代理, 委托代理]
+  en: Delegate Agent
+
+- term: 增量
+  meaning: 流式返回的文本或工具调用片段
+  not: [流片段, 差量]
+  en: Delta
+
+# ---------------------------------------------------------------------------
+# 项目例外（2026-11-04 拍板）。stc check 报到这些一律跳过，其余照改。
+#
+# 1. 引号：本仓中文用直角引号「」，嵌套用『』，不换成 STC 默认的 “” ‘’。
+#    docs/ + README.md + AGENTS.md 合计约 1,590 处；整批替换会让每篇 diff 被引号淹没，
+#    而本仓的引号本来就一致。
+# 2. 几何与排版的「对齐」：左对齐 / 右对齐 / 窗心对齐 / 定宽对齐 / 对齐主窗 DPI 说的是
+#    位置，不是行话「对齐口径」。G6 不区分这两种，报了按术语保留。
+# 3. 断言原文与学科术语里的程度词：「Bold 的着墨量显著大于 Normal」是测试断言，
+#    「视觉显著性 ≠ 连接度」是关系图术语，不改成数字。
+# 4. 引文、历史机制名、反例：保持原样，不按当下文风重写。
