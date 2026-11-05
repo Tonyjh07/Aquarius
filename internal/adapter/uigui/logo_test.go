@@ -30,7 +30,8 @@ func TestLogoAssetDecode(t *testing.T) {
 // —— 100% 缩放下球径 48px，固定 60px 的图标居中后被 48px 的圆裁掉外圈（用户实测：
 // logo 边缘被截、看着像被放大裁切）。换 DPI/尺寸档时缓存必须重建。
 func TestLogoImageSizedToBall(t *testing.T) {
-	t.Parallel()
+	// 这个用例断言 logoPx 档位，读写的是包级单档缓存；别的并行 UI 测试经
+	// drawLogo → logoImageOp 会并发改它。保持串行：并行批次要等串行用例跑完才开。
 	// 100% 缩放：球径 48px。
 	if _, ok := logoImageOp(48); !ok {
 		t.Fatal("图标应可用（assets.LogoPNG 已内嵌）")
