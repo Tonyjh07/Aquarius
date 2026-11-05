@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-05 @ fa45929 -->
+<!-- docs-sync: 2026-11-05 @ 441be63 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -520,20 +520,25 @@ commands only when a sandbox enforces it**」。Aquarius 没有沙箱：申报�
 > 包级并行 `go test` 自己就按包打满了，降 `-p` 只会更慢；全仓 `t.Parallel()` 改前是 **0**。
 > 2026-11-03 那轮记的是 41 / 316 / 281.7 / 28.8 秒，两轮口径一致，数字随代码增长略涨。
 >
-> **改后**（11-05 实测）：全量 `-race` **约 103 秒**（两轮 104.5 / 101.6 秒，3.3×）；
-> `uigui` 单包 54.7 秒，`-count=5` 压测 262.5 秒（52.5 秒/轮，5.3×）。`jobproc` 先把
-> 35 个测试全部并行（`-race -count=5` 27.1 秒），后来把 9 个墙钟敏感用例退回串行，
-> 最终 `-race -count=3` 37.3 秒（12.4 秒/轮）。瓶颈转到 `cmd/aquarius` 约 68 秒与
-> `uigui` 约 62 秒——两包同时跑时互抢 CPU，全量没有降到单包最快的 52.5 秒。
+> **改后**（11-05 实测）：全量 `-race` **约 103 秒**（前两轮 104.5 / 101.6 秒；补完
+> `cmd/aquarius` 后 106.4 / 102.6 秒，3.3×）；`uigui` 单包 54.7 秒，`-count=5` 压测
+> 262.5 秒（52.5 秒/轮，5.3×）。`jobproc` 先把 35 个测试全部并行（`-race -count=5`
+> 27.1 秒），后来把 9 个墙钟敏感用例退回串行，最终 `-race -count=3` 37.3 秒
+> （12.4 秒/轮）。`cmd/aquarius` 把 268 个顶层测试里的 170 个并行，单包 `-race` 从
+> 约 68 秒降到 16.1 秒，但全量负载下逐包仍是 58–59 秒：`cmd/aquarius` 与 `uigui` 的
+> 62–64 秒同时跑、互抢 CPU，总墙钟由最慢包决定，没有再降。
 
 | 包 | 改前 `-race` | 改后 `-race` | 倍数 |
 |---|---|---|---|
 | `jobproc`（36 个顶层测试，9 个保持串行） | 52.7s | 12.4s（`-race -count=3` 均值） | 约 4.3× |
 | `uigui`（692 个顶层测试 / 97 个测试文件） | 290.3s | 52.5s（`-count=5` 均值） | 5.5× |
+| `cmd/aquarius`（268 个顶层测试，98 个保持串行） | 52.3s | 16.1s（单包独立跑） | 约 3.2× |
 | 全量 `-race` | 341.7s | 约 103s | 3.3× |
 
-表格里两个单包的「改前」取自全量 `-race` 的逐包耗时，「改后」取自单包 `-count=5` 均值，
-两者负载不同，倍数只作量级参考；全量那一行是同一条命令前后对比，可以直接比。
+表格里三个单包的「改前」取自全量 `-race` 的逐包耗时，「改后」取自单包独立跑或
+`-count` 压测均值，负载不同，倍数只作量级参考；全量那一行是同一条命令前后对比，
+可以直接比。`cmd/aquarius` 单包独立跑 16.1 秒，全量负载下逐包 58–59 秒，
+这一行不能读成「全量又少了一分钟」。
 
 **做了什么**（2026-11-05，用户拍板在 v0.5.0 收掉整条）：
 
@@ -551,24 +556,40 @@ commands only when a sandbox enforces it**」。Aquarius 没有沙箱：申报�
 4. **`uigui` 并行化**：88 个文件、658 个顶层测试加 `t.Parallel()`（`03874ae`）。五轮压测
    第一次顶出一处真实竞争：`TestFadeFeatherDisabled` 写包级 `featherDisabled`，同时另一个用例经
    `fadeFrame()` 读同一个变量；把这个用例与两个写包级 `memRoot` 的内存剖析用例退回串行后再压，全绿。
+   全量 `-race` 高负载下又抓到第三处：`TestLogoImageSizedToBall` 裸读包级 `logoPx`，并行 UI 用例
+   经 `drawLogo` 写同一变量；把这个用例也退回串行（`5a61446`）。
+5. **`cmd/aquarius` 并行化**：40 个文件、170 个顶层测试加 `t.Parallel()`（`441be63`），
+   268 个里留 98 个串行。判据按代码实际圈定：`t.Setenv` / `t.Chdir` 用例、语言槽锁命中的
+   `lang_test.go` 与 `welcome_test.go`、换包级钩子的用例、所有走 `run()` / `bootstrap()` 的 E2E
+   （Windows 的 `consoleDetached` 按「主 goroutine 独占」写，`bootstrap` 还会写进程级语言槽）、
+   启动真实子进程或改进程级 GC 旋钮的用例。单包 `-race -count=5` 71.7 秒全绿。
+6. **`acpgate` 失败路径报告完整性**：`TestDelegateErrorKeepsPartialReport` 在全量 `-race`
+   高负载下三轮里有一轮报 `run.Report` 为空。根因不是数据竞争：SDK 在 EOF 时先关 `Done()`
+   让 `Prompt` 拿到 error，之后才在另一条 goroutine 里排空通知队列，项目随即读 `reportText()`。
+   修复在失败收尾前等 SDK 排空信号（`f0b88ca`），同时把 `r.denied` 的裸读收回 `cmu`。
+   单包 `-race -count=20` 与两轮全量 `-race` 全绿。
 
 **保持串行**：`uigui` 里切语言槽的五个文件、`TestEnvBool`（`t.Setenv`）、`TestMain`、
-两个内存剖析测试、`TestFadeFeatherDisabled` 与 `uigui/platform` 子包——这几个用例写进程级或
-包级状态，并行会串台；`jobproc` 里 9 个启动真实子进程、依赖墙钟的用例——冷编译负载下
-会超时。helper 进程测试也不并行。
+两个内存剖析测试、`TestFadeFeatherDisabled`、`TestLogoImageSizedToBall` 与 `uigui/platform`
+子包——这几个用例写进程级或包级状态，并行会串台；`jobproc` 里 9 个启动真实子进程、
+依赖墙钟的用例——冷编译负载下会超时；`cmd/aquarius` 里 98 个用例——判据见第 5 点。
+helper 进程测试也不并行。
 
-**仍未并行**：`cmd/aquarius`（`-race` 约 68 秒，含 E2E 与 `swapSetupWindowRunner` 全局钩子，
-动手前要逐个判共享状态）与其余小包。全量 `-race` 因此停在约 103 秒。
+**仍未并行**：其余小包，以及 `cmd/aquarius` 里剩下的 98 个用例。要继续压那 98 个，得先把
+语言槽从进程级收进实例、把 Windows 的 `consoleDetached` 改成原子量或移出 `run()`、把三个
+注入钩子改成实例字段——都是产品代码改造，本版不做。全量 `-race` 因此停在约 103 秒，
+瓶颈是 `uigui` 的 62–64 秒与 `cmd/aquarius` 的 58–59 秒互抢 CPU；再降要动这两包的负载本身，
+不是再加 `t.Parallel()`。
 
-**发版闸门预跑**（11-05）：干净 clone 构建通过；全新编译缓存下 `go test ./... -count=1` 全绿；
-`govulncheck` 报 0 条可达漏洞（依赖模块里 1 条，代码未调用）；zh / en / aqvalidate 全量、
-`go vet`、`gofmt`、`go build`、`docsync -check` 全绿。**一处已知偶发**：全量 `-race` 三轮里
-有一轮在 `acpgate` 的 `TestDelegateErrorKeepsPartialReport` 报 `run.Report` 为空；该用例单独
-`-race -count=5` 全绿，另两轮全量也全绿。这个包没有并行化，疑为进程退出时报告收集与
-`abort` 抢跑的既有竞态；修这处竞态要动 `acpgate` 错误路径的产品代码，是否在本版收口待拍板。
+**发版闸门预跑**（11-05）：干净 clone 构建通过；全新编译缓存下 `go test ./... -count=1`
+两轮全绿（含 `cmd/aquarius` 并行化后的复跑）；`govulncheck` 报 0 条可达漏洞（依赖模块里
+1 条，代码未调用）；zh / en / aqvalidate 全量、`go vet`、`gofmt`、`go build`、
+`docsync -check` 全绿；`cmd/aquarius` 并行化后两轮全量 `-race` 全绿。**一处未复现的偶发**：
+计时过程里一轮普通 `-json` 全量返回 rc=1，没有留下失败详情，随后四轮普通全量复跑均绿。
+已知竞态已在第 4、6 点收口，本版不留未决竞态；tag 本轮先不打，推送仍由用户执行。
 
 **为什么现在做**：11-03 记的「收益不值这份工」按的是人日估时。按 AI 实做速度
-（S ≈ 20 分钟、M ≈ 1 小时、L ≈ 几小时）重算，658 处机械插入加两轮全包压测约一小时，
+（S ≈ 20 分钟、M ≈ 1 小时、L ≈ 几小时）重算，828 处机械插入加多轮全包压测约一小时多，
 低于「每轮全量 `-race` 多等四分钟」的累积成本。**别为了数字好看动并行配置**：包级并行已经打满，
 收益上限始终由最大包决定。
 
