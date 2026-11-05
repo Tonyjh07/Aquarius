@@ -221,13 +221,24 @@ func (w *wiring) buildLLMs() error {
 	}
 	client, primaryCounter, err := w.buildClient(w.primary)
 	if err != nil {
-		return err
+		// D278 决策 3 的延伸，但只对 gui 成立：首跑模板写的是 `secret:DEEPSEEK_API_KEY`，
+		// 机器上没设这个变量是常态；把用户挡在主窗之外，他连设置窗都进不去补 key。
+		// repl / tui 没有设置窗，缺密钥仍是启动期报因（D141 的原口径）。
+		if w.cfg.UI.Kind != "gui" {
+			return err
+		}
+		w.note(logging.LevelWarn, logging.LLM, "log.llm.provider_unconfigured",
+			"log.act.start_without_key", "provider", w.primary.Name, "err", err)
+		client, primaryCounter = unconfiguredLLM{err: err}, nil
 	}
 	w.client = client
 	// 降级链条目（D173）：Model 空 = 透传 req.Model（primary——agent 每轮注入当前
 	// 模型，热切换不失效）；降级目标 = 该项声明的模型，省略时取该 provider 的 models[0]。
 	w.fallbackEntries = []decorate.FallbackEntry{{Name: w.primary.Name, LLM: client}}
-	w.fallbackCounters = map[string]port.TokenCounter{w.primary.Name: primaryCounter}
+	w.fallbackCounters = make(map[string]port.TokenCounter, 1+len(w.cfg.Model.Fallback))
+	if primaryCounter != nil {
+		w.fallbackCounters[w.primary.Name] = primaryCounter
+	}
 	for _, fb := range w.cfg.Model.Fallback {
 		p := w.cfg.Model.byName(fb.Provider)
 		if p == nil {
@@ -235,7 +246,14 @@ func (w *wiring) buildLLMs() error {
 		}
 		c, counter, ferr := w.buildClient(p)
 		if ferr != nil {
-			return ferr
+			// 降级目标缺密钥只丢这一条降级链，不影响主链启动；否则一条配错的 fallback
+			// 又把整个程序按回 fatal，与上面同一个道理。非 gui 形态沿用原口径。
+			if w.cfg.UI.Kind != "gui" {
+				return ferr
+			}
+			w.note(logging.LevelWarn, logging.LLM, "log.llm.provider_unconfigured",
+				"log.act.fallback_skipped", "provider", fb.Provider, "err", ferr)
+			continue
 		}
 		target := fb.Model
 		if target == "" {
@@ -766,6 +784,10 @@ func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 	// tokenizer；est 链恒取 primary）。
 	fitFor := func(cnt port.TokenCounter) func(context.Context, port.GenerateRequest) (port.GenerateRequest, int) {
 		return func(fctx context.Context, req port.GenerateRequest) (port.GenerateRequest, int) {
+			// 缺密钥的占位链没有计数器：这一环本来就发不出去，不必再估体积。
+			if cnt == nil {
+				return req, 0
+			}
 			reserve := req.Budget.MaxOutputTokens
 			if reserve < minOutputReserve {
 				reserve = minOutputReserve

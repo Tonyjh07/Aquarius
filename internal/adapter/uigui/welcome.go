@@ -156,6 +156,21 @@ type welcomeEnv struct {
 	retitle     func() // 切语言后重设窗标题（装配前宿主给；其余宿主 nil = 只记录）
 }
 
+// hint 一句待显示的文案：文案 key + Tf 参数。存这个而不是拼好的字符串，渲染时才取词——
+// 这样第 1 页切了语言，已经产生的测试结果/候选提示会跟着换语言，而不是把旧语言冻在字段里。
+type hint struct {
+	key  string
+	args []any
+}
+
+// text 现取这句文案（key 空 = 不显示）。
+func (h hint) text() string {
+	if h.key == "" {
+		return ""
+	}
+	return i18n.Tf(h.key, h.args...)
+}
+
 // welcomeForm 表单状态（宿主 goroutine 独占）。
 type welcomeForm struct {
 	env  welcomeEnv
@@ -172,13 +187,16 @@ type welcomeForm struct {
 	err    bool
 	// 连通性内联结果（模拟稿「● 连通正常 · 128 ms」）：与表单错误的展示位置分开——
 	// 测试结果属于「测试连通」这一行，不是整页的错误提示。
-	probe     string
+	//
+	// 存 key + 参数而不是拼好的句子：第 1 页切了语言之后再回来，同一个结果必须跟着换语言。
+	// 拼好的句子会把当时的语言冻在里面（用户反馈过「切完语言报错还是旧语言」）。
+	probe     hint
 	probeErr  bool
 	probeBusy bool
 	// 候选（D153）：点击 chip = 用该名字替换模型名行。
 	cands      []string
 	candClicks []widget.Clickable
-	modelsHint string // 候选行说明（"已自动填入 N 个候选 · 点选替换"）
+	modelsHint hint   // 候选行说明（"已自动填入 N 个候选 · 点选替换"），渲染时取词
 	modelsOrig string // 开窗基线：只在没被用户改过时自动填入
 	// 每页各用一条滚动列表：内容比窗高时（候选 chip 占几行、200% 字号下正文折成十几行）
 	// 不能压到页脚。用 layout.List 而非 material.List / widget.List：后两者常驻画滚动条
@@ -485,9 +503,16 @@ func (f *welcomeForm) onSkip() {
 		return
 	}
 	if f.env.setup {
+		// 条款是使用的先决条件，「以后再说」不能绕过它：第 1 页/末页按了这个按钮而
+		// 还没勾选，就退回第 2 页把话说清楚（D278 决策 2 的闸门对每个出口都成立）。
+		if !f.consent.Value {
+			f.page = welcomeTerms
+			f.fail(errors.New(i18n.T("ui.welcome.err.consent_required")))
+			return
+		}
 		// D278 决策 3：跳过就是 Done——不新增「跳过」结局，装配方按「没写 provider 的
 		// 完成」处理（可启动空态）。写在最前面那句注释仍然算数：语言已经落了盘。
-		if f.consent.Value && f.env.mgr != nil {
+		if f.env.mgr != nil {
 			// 勾过的同意照样留痕：用户是读过了才勾的，退出向导不该让这份记录作废
 			// （否则下次启动只重过条款页，等于白读一遍）。失败静默——窗马上就关了。
 			_ = f.env.mgr.SetConsent(legal.Version)
@@ -514,7 +539,7 @@ func (f *welcomeForm) onTest() {
 		return
 	}
 	p := f.patch()
-	f.probeBusy, f.probe, f.probeErr = true, "", false
+	f.probeBusy, f.probe, f.probeErr = true, hint{}, false
 	go func() {
 		start := time.Now()
 		err := f.env.mgr.Test(p)
@@ -534,7 +559,7 @@ func (f *welcomeForm) onFetchModels() {
 		return
 	}
 	p := f.patch()
-	f.modelsHint = i18n.T("ui.welcome.models_fetching")
+	f.modelsHint = hint{key: "ui.welcome.models_fetching"}
 	go func() {
 		start := time.Now()
 		models, err := f.env.mgr.Models(p)
@@ -571,10 +596,10 @@ func (f *welcomeForm) drain() {
 			f.probeBusy = false
 			if r.err != nil {
 				f.probeErr = true
-				f.probe = i18n.Tf("ui.welcome.probe_failed", "err", r.err.Error())
+				f.probe = hint{"ui.welcome.probe_failed", []any{"err", r.err.Error()}}
 			} else {
 				f.probeErr = false
-				f.probe = i18n.Tf("ui.welcome.probe_ok", "ms", strconv.FormatInt(r.ms, 10))
+				f.probe = hint{"ui.welcome.probe_ok", []any{"ms", strconv.FormatInt(r.ms, 10)}}
 			}
 		default:
 			return
@@ -587,12 +612,12 @@ func (f *welcomeForm) drain() {
 func (f *welcomeForm) applyModels(r testOutcome) {
 	if r.err != nil {
 		f.cands, f.candClicks = nil, nil
-		f.modelsHint = i18n.Tf("ui.welcome.models_failed", "err", r.err.Error())
+		f.modelsHint = hint{"ui.welcome.models_failed", []any{"err", r.err.Error()}}
 		return
 	}
 	if len(r.models) == 0 {
 		f.cands, f.candClicks = nil, nil
-		f.modelsHint = i18n.T("ui.welcome.models_empty")
+		f.modelsHint = hint{key: "ui.welcome.models_empty"}
 		return
 	}
 	total := len(r.models)
@@ -611,12 +636,12 @@ func (f *welcomeForm) applyModels(r testOutcome) {
 	f.cands = r.models
 	f.candClicks = make([]widget.Clickable, len(r.models))
 	if !pristine {
-		f.modelsHint = i18n.Tf("ui.welcome.models_picked", "n", total)
+		f.modelsHint = hint{"ui.welcome.models_picked", []any{"n", total}}
 		return
 	}
 	if total > len(fill) {
-		f.modelsHint = i18n.Tf("ui.welcome.models_filled_total", "n", len(fill), "total", total)
+		f.modelsHint = hint{"ui.welcome.models_filled_total", []any{"n", len(fill), "total", total}}
 	} else {
-		f.modelsHint = i18n.Tf("ui.welcome.models_filled", "n", len(fill))
+		f.modelsHint = hint{"ui.welcome.models_filled", []any{"n", len(fill)}}
 	}
 }

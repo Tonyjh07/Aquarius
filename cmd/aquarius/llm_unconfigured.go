@@ -19,15 +19,26 @@ import (
 // 包级变量会在 `i18n.Use` 之前就把词冻住。
 func errNoProvider() error { return errors.New(i18n.T("cmd.asm.err.no_provider")) }
 
-// unconfiguredLLM 没有 provider 时的占位实现：两条方法都只回 errNoProvider。
-type unconfiguredLLM struct{}
+// unconfiguredLLM 装配不出可用客户端时的占位实现：两条方法都只回报因。
+//
+// err 为空是「一条 provider 都没有」（errNoProvider）；非空是「provider 在、但这一轮
+// 拿不到密钥」——把解析密钥时的第一条错误原样留到发消息那一刻，用户才知道该设哪个环境
+// 变量，而不是只看到一句笼统的「没有可用密钥」。
+type unconfiguredLLM struct{ err error }
 
 var _ port.LLM = unconfiguredLLM{}
 
-func (unconfiguredLLM) Generate(context.Context, port.GenerateRequest) (port.Stream, error) {
-	return nil, errNoProvider()
+func (u unconfiguredLLM) reason() error {
+	if u.err != nil {
+		return u.err
+	}
+	return errNoProvider()
 }
 
-func (unconfiguredLLM) Models(context.Context) ([]port.ModelInfo, error) {
-	return nil, errNoProvider()
+func (u unconfiguredLLM) Generate(context.Context, port.GenerateRequest) (port.Stream, error) {
+	return nil, u.reason()
+}
+
+func (u unconfiguredLLM) Models(context.Context) ([]port.ModelInfo, error) {
+	return nil, u.reason()
 }

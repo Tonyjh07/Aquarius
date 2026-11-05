@@ -465,6 +465,14 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 		}
 		return fatal(w.stderr, "%v", err), true
 	}
+	// 同意是使用的先决条件（D278 决策 2）：窗里已经把「以后再说」拦回条款页，这里再
+	// 兜一道——交回 Done 却没有留下同意记录，就按未同意处理，而不是默默放行。
+	if w.cfg.UI.ConsentVersion < legal.Version {
+		msg := i18n.T("cmd.welcome.consent_declined")
+		fmt.Fprintf(w.stderr, "%s\n", msg)
+		notifyFatal(msg)
+		return 0, true
+	}
 	// Done 的不变量是「已引导」（D263）：真实宿主由 Apply / 跳过置位，这里收口兜底——
 	// 标记缺位就补上，不让双窗问题从「交回 Done 却没置位」这个口子回来。
 	if !w.cfg.UI.Welcomed {

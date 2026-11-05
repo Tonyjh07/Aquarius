@@ -9,6 +9,8 @@ var enLogTexts = map[string]string{
 	"log.act.skip":                 "skipped",
 	"log.act.skip_missing":         "skipped the missing reference; the rest expanded as usual",
 	"log.act.skip_key_this_run":    "skipped for this run",
+	"log.act.start_without_key":    "started without a key; the reason is reported when a message is sent",
+	"log.act.fallback_skipped":     "skipped this fallback chain; the primary chain still starts",
 	"log.act.stderr_only":          "stderr only this run",
 	"log.act.unattended_disabled":  "unattended mode off for this run (config unchanged)",
 	"log.act.recorded_unsupported": "recorded in {provider}'s unsupported_params; not resent later",
@@ -42,10 +44,11 @@ var enLogTexts = map[string]string{
 		"(check prompts.modules / prompts.persona)",
 
 	// 模型链路
-	"log.llm.param_rejected":      "server does not accept parameter {field}; dropped from the request",
-	"log.llm.param_record_failed": "failed to record unsupported_params: {err}",
-	"log.llm.key_unavailable":     "provider {provider} key #{n} is unusable: {err}",
-	"log.llm.chain_narrowed":      "the fallback chain is narrower than the current model",
+	"log.llm.param_rejected":        "server does not accept parameter {field}; dropped from the request",
+	"log.llm.param_record_failed":   "failed to record unsupported_params: {err}",
+	"log.llm.key_unavailable":       "provider {provider} key #{n} is unusable: {err}",
+	"log.llm.provider_unconfigured": "provider {provider} has no usable key this run: {err}",
+	"log.llm.chain_narrowed":        "the fallback chain is narrower than the current model",
 
 	// 语音
 	"log.audio.tts_unconfigured": "speech playback is on, but {why}",

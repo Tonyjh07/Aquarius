@@ -12,6 +12,8 @@ var zhLogTexts = map[string]string{
 	"log.act.skip":                 "已跳过",
 	"log.act.skip_missing":         "已跳过缺失引用，其余模块照常展开",
 	"log.act.skip_key_this_run":    "本次启动跳过它",
+	"log.act.start_without_key":    "没有密钥也照常启动，发消息时才报因",
+	"log.act.fallback_skipped":     "已跳过这条降级链，主链照常启动",
 	"log.act.stderr_only":          "本次只输出到 stderr",
 	"log.act.unattended_disabled":  "本次不启用无人值守（配置文件未改动）",
 	"log.act.recorded_unsupported": "已记入 {provider} 的 unsupported_params，后续不再重发",
@@ -45,9 +47,10 @@ var zhLogTexts = map[string]string{
 		"prompts.persona）",
 
 	// 模型链路
-	"log.llm.param_rejected":      "服务端不认参数 {field}，已从请求里剔除",
-	"log.llm.param_record_failed": "记录 unsupported_params 失败：{err}",
-	"log.llm.key_unavailable":     "provider {provider} 第 {n} 把密钥不可用：{err}",
+	"log.llm.param_rejected":        "服务端不认参数 {field}，已从请求里剔除",
+	"log.llm.param_record_failed":   "记录 unsupported_params 失败：{err}",
+	"log.llm.key_unavailable":       "provider {provider} 第 {n} 把密钥不可用：{err}",
+	"log.llm.provider_unconfigured": "provider {provider} 本轮没有可用密钥：{err}",
 	// 整句由 narrowNote 给（与设置窗的降级说明同源），这条只作 JSON 侧的聚合标识。
 	"log.llm.chain_narrowed": "降级链的能力比当前模型窄",
 

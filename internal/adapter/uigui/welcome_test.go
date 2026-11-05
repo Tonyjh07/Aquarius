@@ -395,17 +395,21 @@ func TestWelcomeFormSaveError(t *testing.T) {
 	}
 }
 
-// TestWelcomeFormSkip 跳过 / 关闭：装配前**首页的「以后再说」** = 交回 Done 且不写盘
-// （D278 决策 3：不写 provider 的完成 → 可启动空态；welcomed 由装配根收口置位，表单不碰
-// 数据面）；第 3 页的「稍后配置」不走这条路，见 TestWelcomeSkipAccessKeepsWizard。
+// TestWelcomeFormSkip 跳过 / 关闭：条款是使用的先决条件，**未勾选同意**时首页/末页的
+// 「以后再说」不能绕过它——退回第 2 页并报因；勾过之后 = 交回 Done、同意落盘，不写
+// provider（D278 决策 2/3：不写 provider 的完成 → 可启动空态；welcomed 由装配根收口）。
+// 第 3 页的「稍后配置」不走这条路，见 TestWelcomeSkipAccessKeepsWizard。
 // in-app = 置 welcomed（显式关闭即已看）后关窗。
 func TestWelcomeFormSkip(t *testing.T) {
 	mgr := baseFake()
 	env, outs := welcomeEnvSnap(mgr, true, false)
 	f := newWelcomeForm(env)
 	f.onSkip()
-	if len(*outs) != 1 || (*outs)[0] != SetupDone {
-		t.Fatalf("装配前跳过 = 完成（未写 provider）: %v", *outs)
+	if len(*outs) != 0 {
+		t.Fatalf("未同意不该结束宿主: %v", *outs)
+	}
+	if f.page != welcomeTerms || !f.err {
+		t.Fatalf("未同意应退回条款页并报因: page=%v err=%v", f.page, f.err)
 	}
 	if mgr.marked != 0 {
 		t.Fatalf("装配前跳过不该由表单置 welcomed（装配根收口）: %d", mgr.marked)
@@ -542,6 +546,7 @@ func TestWelcomeSkipAccessKeepsWizard(t *testing.T) {
 func TestWelcomeFormFinishOnce(t *testing.T) {
 	env, outs := welcomeEnvSnap(baseFake(), true, false)
 	f := newWelcomeForm(env)
+	f.consent.Value = true // 条款是退出向导的先决条件
 	f.onSkip()
 	f.onSkip()
 	f.finish(SetupDone)
@@ -562,10 +567,10 @@ func TestWelcomeFormTestConnectivity(t *testing.T) {
 	}
 	waitProbe(t, f, "连通正常")
 	if f.probeErr || len(mgr.tested) != 1 {
-		t.Fatalf("结果 = (%v, %q) 调用 %d 次", f.probeErr, f.probe, len(mgr.tested))
+		t.Fatalf("结果 = (%v, %q) 调用 %d 次", f.probeErr, f.probe.text(), len(mgr.tested))
 	}
-	if !strings.Contains(f.probe, " ms") {
-		t.Fatalf("成功应带时延：%q", f.probe)
+	if !strings.Contains(f.probe.text(), " ms") {
+		t.Fatalf("成功应带时延：%q", f.probe.text())
 	}
 	if f.status != "" {
 		t.Fatalf("测试结果不应写进页脚状态行：%q", f.status)
@@ -577,11 +582,11 @@ func TestWelcomeFormTestConnectivity(t *testing.T) {
 	f2 := newWelcomeForm(env2)
 	f2.onTest()
 	waitProbe(t, f2, "连通失败")
-	if !f2.probeErr || !strings.Contains(f2.probe, i18n.Tf("ui.welcome.probe_failed", "err", "连接超时")) {
-		t.Fatalf("失败反馈 = (%v, %q)", f2.probeErr, f2.probe)
+	if !f2.probeErr || !strings.Contains(f2.probe.text(), i18n.Tf("ui.welcome.probe_failed", "err", "连接超时")) {
+		t.Fatalf("失败反馈 = (%v, %q)", f2.probeErr, f2.probe.text())
 	}
-	if strings.Contains(f2.probe, " ms") {
-		t.Fatalf("失败不应报时延：%q", f2.probe)
+	if strings.Contains(f2.probe.text(), " ms") {
+		t.Fatalf("失败不应报时延：%q", f2.probe.text())
 	}
 }
 
@@ -591,12 +596,12 @@ func waitProbe(t *testing.T, f *welcomeForm, want string) {
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		f.drain()
-		if strings.Contains(f.probe, want) {
+		if strings.Contains(f.probe.text(), want) {
 			return
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	t.Fatalf("内联结果未在时限内变为含 %q: %q", want, f.probe)
+	t.Fatalf("内联结果未在时限内变为含 %q: %q", want, f.probe.text())
 }
 
 // waitHint 轮询排空异步结果直到候选说明含 want（≤1s）。
@@ -605,12 +610,12 @@ func waitHint(t *testing.T, f *welcomeForm, want string) {
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		f.drain()
-		if strings.Contains(f.modelsHint, want) {
+		if strings.Contains(f.modelsHint.text(), want) {
 			return
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	t.Fatalf("候选说明未在时限内变为含 %q: %q", want, f.modelsHint)
+	t.Fatalf("候选说明未在时限内变为含 %q: %q", want, f.modelsHint.text())
 }
 
 // TestWelcomeFetchModels 「获取模型」（D153）：拉列表 → 自动填入前 8 个 + 候选 chip；
@@ -621,8 +626,8 @@ func TestWelcomeFetchModels(t *testing.T) {
 	env, _ := welcomeEnvSnap(mgr, true, false)
 	f := newWelcomeForm(env) // 模型名 = 快照原值（基线）→ 允许自动填入
 	f.onFetchModels()
-	if !strings.Contains(f.modelsHint, i18n.T("ui.welcome.models_fetching")) {
-		t.Fatalf("应即时报「正在获取…」: %q", f.modelsHint)
+	if !strings.Contains(f.modelsHint.text(), i18n.T("ui.welcome.models_fetching")) {
+		t.Fatalf("应即时报「正在获取…」: %q", f.modelsHint.text())
 	}
 	waitHint(t, f, "已自动填入")
 	if got := f.models.Text(); got != "m1, m2, m3" {

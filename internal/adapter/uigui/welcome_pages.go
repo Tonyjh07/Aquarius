@@ -478,7 +478,7 @@ func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.
 	}
 	// 候选挂在**卡内**模型行下方（模拟稿位置）：它是这一行的补充说明，不是卡外的另一
 	// 个区块——放到卡外会被一条 card 边界与「模型名」割开。
-	if f.modelsHint != "" || len(f.cands) > 0 {
+	if f.modelsHint.key != "" || len(f.cands) > 0 {
 		last := rows[len(rows)-1]
 		rows[len(rows)-1] = func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -571,11 +571,11 @@ func welcomeCard(gtx layout.Context, th *material.Theme, rows []layout.Widget) l
 // welcomeCands 候选行：说明文字与 chip 同排流式折行（模拟稿「已自动填入 2 个候选 ·
 // 点选替换   gpt-5.2  gpt-5.2-mini」）。排布规则见 paperChipFlow。
 func welcomeCands(gtx layout.Context, th *material.Theme, f *welcomeForm) layout.Dimensions {
-	hint := f.modelsHint
-	if hint == "" {
-		hint = i18n.T("ui.welcome.cands_hint")
+	text := f.modelsHint.text()
+	if text == "" {
+		text = i18n.T("ui.welcome.cands_hint")
 	}
-	return paperChipFlow(gtx, th, hint, f.cands, f.candClicks)
+	return paperChipFlow(gtx, th, text, f.cands, f.candClicks)
 }
 
 // welcomeHairline 一条贯通卡面宽度的 hairline。pad = 当前左右内衬，线向两侧各伸出 pad，
@@ -596,7 +596,7 @@ func welcomeProbe(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 		l.Color = pp.text3
 		return l.Layout(gtx)
 	}
-	if f.probe == "" {
+	if f.probe.key == "" {
 		return layout.Dimensions{}
 	}
 	col := pp.ok
@@ -611,7 +611,7 @@ func welcomeProbe(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 			return layout.Dimensions{Size: image.Pt(d, d)}
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			l := material.Label(th, paperNoteSp(th), f.probe)
+			l := material.Label(th, paperNoteSp(th), f.probe.text())
 			l.Color = pp.text2
 			return layout.Inset{Left: unit.Dp(7)}.Layout(gtx, l.Layout)
 		}),

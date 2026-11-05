@@ -386,6 +386,9 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 		if err := os.WriteFile(profCfg, []byte(cfg), 0o644); err != nil {
 			t.Errorf("假宿主写回失败: %v", err)
 		}
+		if err := req.Mgr.SetConsent(legal.Version); err != nil {
+			t.Errorf("假宿主写回同意失败: %v", err)
+		}
 		return uigui.SetupDone, nil
 	})()
 	var out, errBuf bytes.Buffer
@@ -540,8 +543,13 @@ func TestSetupWizardRunsWhenWelcomedMissing(t *testing.T) {
 	t.Setenv("AQ_KEY", "k")
 	profCfg := filepath.Join(dir, "profiles", "default", "config.json")
 	calls := 0
-	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
+	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		calls++
+		// 真实宿主保存时会连同同意一起落盘；假宿主也要留下这条记录，否则装配根的
+		// 兜底检查会按「未同意」拦下（D278 决策 2）。
+		if err := req.Mgr.SetConsent(legal.Version); err != nil {
+			t.Errorf("写回同意失败: %v", err)
+		}
 		return uigui.SetupDone, nil
 	})()
 	w := &wiring{stdout: io.Discard, stderr: io.Discard}
@@ -598,25 +606,27 @@ func TestSetupWizardSkipMissingKeyStillExits(t *testing.T) {
 // D278 决策 3 之后报因换了出口：`still_incomplete` 那道闸删了（否则第 3 页的「稍后配置」
 // 会在最后一步被一句「配置仍不完整」挡住），真缺密钥时由装配期 `buildClient` 报同一条
 // 事实——同样指名是哪个 provider、哪个环境变量。
-func TestSetupWizardDoneWithoutKeyFailsAtAssembly(t *testing.T) {
+// TestSetupWizardDoneWithoutKeyStartsAtAssembly 缺密钥不再是启动期 fatal（D278 决策 3
+// 的延伸）：provider 配置保留、装配出带报因的占位，主窗照常进，发消息时才指出该设哪个
+// 环境变量。原先这里断言「退出 1」，与向导页「稍后配置」的承诺相反。
+func TestSetupWizardDoneWithoutKeyStartsAtAssembly(t *testing.T) {
 	dir := t.TempDir()
 	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_MISSING"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"gui"}}`)
 	t.Setenv("AQ_MISSING", "")
-	calls := 0
-	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
-		calls++ // 不写盘：模拟用户填了同样取不到的引用
-		return uigui.SetupDone, nil
-	})()
-	var out, errBuf bytes.Buffer
-	if code := run([]string{"-data", dir}, strings.NewReader(""), &out, &errBuf); code != 1 {
-		t.Fatalf("code = %d, want 1（stderr=%s）", code, errBuf.String())
+	w := &wiring{stdout: io.Discard, stderr: io.Discard}
+	if err := w.bootstrap(dir, "", "", ""); err != nil {
+		t.Fatalf("bootstrap: %v", err)
 	}
-	if calls != 1 {
-		t.Fatalf("向导窗调用 %d 次, want 1（只尝试一次，不循环）", calls)
+	if err := w.buildLLMs(); err != nil {
+		t.Fatalf("缺密钥不该让装配失败: %v", err)
 	}
-	// 报因来自装配期：指名 provider 与取不到的那个引用（含环境变量名）。
-	if !strings.Contains(errBuf.String(), "openai") || !strings.Contains(errBuf.String(), "AQ_MISSING") {
-		t.Fatalf("stderr 应指名 provider 与缺失的引用: %q", errBuf.String())
+	if w.primary == nil || w.primary.Name != "openai" {
+		t.Fatalf("provider 配置应保留，得到 %+v", w.primary)
+	}
+	// 报因来自发消息那一刻：指名 provider 与取不到的那个引用（含环境变量名）。
+	_, err := w.client.Generate(context.Background(), port.GenerateRequest{})
+	if err == nil || !strings.Contains(err.Error(), "AQ_MISSING") {
+		t.Fatalf("Generate 应报出缺失的引用: %v", err)
 	}
 }
 
@@ -710,8 +720,12 @@ func TestWelcomeTutorialCommandsExist(t *testing.T) {
 func TestSetupWizardSkipWithoutProviderStarts(t *testing.T) {
 	dir := t.TempDir()
 	profCfg := filepath.Join(writeProfileLayout(t, dir, `{"model":{"providers":[]},"ui":{"kind":"gui"}}`), "config.json")
-	defer swapSetupWindowRunner(func(uigui.SetupRequest) (uigui.SetupOutcome, error) {
-		return uigui.SetupDone, nil // 用户在第 3 页按「稍后配置」
+	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
+		// 用户在第 3 页按「稍后配置」，第 2 页的同意仍然落盘（D278 决策 2/3）。
+		if err := req.Mgr.SetConsent(legal.Version); err != nil {
+			t.Errorf("写回同意失败: %v", err)
+		}
+		return uigui.SetupDone, nil
 	})()
 	w := &wiring{stdout: io.Discard, stderr: io.Discard}
 	if err := w.bootstrap(dir, "", "", ""); err != nil {
