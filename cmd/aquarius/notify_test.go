@@ -49,6 +49,7 @@ func assistantCommit(text string, outcome conversation.Outcome) port.CommittedEv
 // TestOutputsPresenterDeliversOnCommitted 只对已完成的 assistant 提交扇出；
 // 其余事件（增量/工具/错误终态）不 Deliver；内层 Emit 原样透传。
 func TestOutputsPresenterDeliversOnCommitted(t *testing.T) {
+	t.Parallel()
 	inner := &fakePresenter{}
 	out := &fakeOutput{name: "notify"}
 	p := &outputsPresenter{inner: inner, outs: []port.OutputAdapter{out}}
@@ -78,6 +79,7 @@ func TestOutputsPresenterDeliversOnCommitted(t *testing.T) {
 // TestOutputsPresenterSwallowsDeliverError Deliver 失败只记日志不打断（§5.7）；
 // 内层 Emit 失败则原样上抛。
 func TestOutputsPresenterSwallowsDeliverError(t *testing.T) {
+	t.Parallel()
 	inner := &fakePresenter{}
 	var logged []error
 	p := &outputsPresenter{
@@ -101,6 +103,7 @@ func TestOutputsPresenterSwallowsDeliverError(t *testing.T) {
 
 // TestOutputsPresenterNoOutputs 无输出器时装饰器等价透传。
 func TestOutputsPresenterNoOutputs(t *testing.T) {
+	t.Parallel()
 	inner := &fakePresenter{}
 	p := &outputsPresenter{inner: inner, log: func(error) { t.Fatal("不应记日志") }}
 	if err := p.Emit(context.Background(), assistantCommit("hi", conversation.OutcomeDone)); err != nil {
@@ -114,6 +117,7 @@ func TestOutputsPresenterNoOutputs(t *testing.T) {
 // TestNotifyWithBranches 发送分支：windows 分离启动（env 带文案、正文不进脚本）、
 // 其余平台带超时上下文同步执行；空正文不打扰；执行错误原样上抛。
 func TestNotifyWithBranches(t *testing.T) {
+	t.Parallel()
 	t.Run("windows 分离启动", func(t *testing.T) {
 		var got *exec.Cmd
 		detachedCalled, waitingCalled := false, false
@@ -273,6 +277,7 @@ func TestRunNotifyWiring(t *testing.T) {
 
 // TestNotifyCmdInjectionSafe 文案只经 argv/环境变量传递，绝不进脚本文本。
 func TestNotifyCmdInjectionSafe(t *testing.T) {
+	t.Parallel()
 	evil := `"; Start-Process calc; "` + "`n`n"
 	// Windows：脚本读 $env，标题正文进环境变量。
 	path, args, env := notifyCmd("windows", "Aquarius", evil)

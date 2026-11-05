@@ -57,6 +57,7 @@ func (f *fakePluginSession) Stats() plugin.Stats {
 // TestPluginSurfacesRefresh 工具面随就绪集增减（session 尚未建好时只刷工具）：
 // 上线注册、下线移除、再上线换新——registered 记录驱动移除。
 func TestPluginSurfacesRefresh(t *testing.T) {
+	t.Parallel()
 	runner := toolrun.New(toolrun.Options{})
 	var sess *app.Session // nil：验证 session 未建时安全短路
 	ready := map[string]plugin.Session{
@@ -145,6 +146,7 @@ func (s *stubStore) Search(context.Context, string) ([]port.MemoryHit, error) {
 // 主存储索引照常返回（每轮 buildRequest 都取索引，无超时会被插件拖死 Turn）；
 // 插件读取的网络错误向上抛，不伪装成 NotFound。
 func TestMergedMemoryProjectionTimeout(t *testing.T) {
+	t.Parallel()
 	primary := &stubStore{index: []port.MemoryIndexEntry{{Name: "memories.md", Summary: "全局"}}}
 	blocked := &stubStore{block: make(chan struct{}), readErr: errors.New("连接重置")}
 	m := &mergedMemory{
@@ -178,6 +180,7 @@ func TestMergedMemoryProjectionTimeout(t *testing.T) {
 // （旧实现只覆盖登记簿，残留名再也摘不掉，disable 也清不干净）；prompts 拉取失败
 // 保留上次成功清单，与工具"失败保留旧登记"同语义。
 func TestPluginSurfacesToolDiff(t *testing.T) {
+	t.Parallel()
 	runner := toolrun.New(toolrun.Options{})
 	var sess *app.Session // nil：只验工具与簿记
 	fake := &fakePluginSession{
@@ -248,6 +251,7 @@ func TestPluginSurfacesToolDiff(t *testing.T) {
 // TestPluginSurfacesFetchTimeout 审查修复：I/O 在锁外且带超时——
 // 阻塞的 Tools 在 ioTimeout 内放弃，本轮保留旧登记，刷新不挂起。
 func TestPluginSurfacesFetchTimeout(t *testing.T) {
+	t.Parallel()
 	runner := toolrun.New(toolrun.Options{})
 	var sess *app.Session
 	fake := &fakePluginSession{

@@ -22,6 +22,7 @@ func (s scriptedTranscriber) Transcribe(context.Context, conversation.BlobRef, s
 
 // TestZhSimplifierConverts 本地识别的繁体输出过一道繁转简再交给上层。
 func TestZhSimplifierConverts(t *testing.T) {
+	t.Parallel()
 	conv, err := zhconv.New(zhconv.ModeTW2SP)
 	if err != nil {
 		t.Fatalf("zhconv.New: %v", err)
@@ -38,6 +39,7 @@ func TestZhSimplifierConverts(t *testing.T) {
 
 // TestZhSimplifierKeepsError 转写失败时原样透传，不把错误吞成空文本。
 func TestZhSimplifierKeepsError(t *testing.T) {
+	t.Parallel()
 	conv, err := zhconv.New(zhconv.ModeTW2SP)
 	if err != nil {
 		t.Fatalf("zhconv.New: %v", err)
@@ -52,6 +54,7 @@ func TestZhSimplifierKeepsError(t *testing.T) {
 // TestZhSimplifierDegradesOnConvertFailure 转换本身失败时保留原文并记一笔——用户宁可
 // 看见繁体，也不想因为转换出错而丢掉识别结果。
 func TestZhSimplifierDegradesOnConvertFailure(t *testing.T) {
+	t.Parallel()
 	var logged error
 	z := &zhSimplifier{
 		inner: scriptedTranscriber{text: "今天天氣不錯"},

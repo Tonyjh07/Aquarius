@@ -18,6 +18,7 @@ import (
 // TestModelNormalize D173 provider 列表校验矩阵：缺省归一（primary/name）与
 // 非法配置逐项报因。
 func TestModelNormalize(t *testing.T) {
+	t.Parallel()
 	// good 每用例重建：Providers 底层数组随 struct 拷贝共享，先例污染后续用例。
 	good := func() modelConfig {
 		return modelConfig{Providers: []providerConfig{
@@ -176,6 +177,7 @@ func TestModelNormalize(t *testing.T) {
 // 第 3 页可以跳过，用户也可能手写配置把 providers 删光。此时 normalize 不报错、primary
 // 取不到也不 panic；但指向不存在 provider 的降级链仍是明确错误。
 func TestModelNormalizeEmptyProviders(t *testing.T) {
+	t.Parallel()
 	c := modelConfig{}
 	if err := c.normalize(); err != nil {
 		t.Fatalf("空 providers 不该报错: %v", err)
@@ -276,6 +278,7 @@ func TestRunLegacyProviderShapeRejected(t *testing.T) {
 // maxContextBudget；它必须与 /model 展示的口径同源，否则会出现「显示还有空间，发出去
 // 却被拒」这种分叉。
 func TestWiringContextBudget(t *testing.T) {
+	t.Parallel()
 	cfg := &fileConfig{}
 	cfg.Limits.MaxContextTokens = 64000
 	cfg.Model = modelConfig{
@@ -330,6 +333,7 @@ func TestWiringContextBudget(t *testing.T) {
 // TestModelEnrichModels D177：服务端 /models 只给名字，能力位与窗口来自配置——
 // 补齐只填不删（列表可用性以服务端为准），未声明的模型保持零值。
 func TestModelEnrichModels(t *testing.T) {
+	t.Parallel()
 	m := modelConfig{
 		Providers: []providerConfig{{
 			Name: "a", BaseURL: "http://a", Kind: kindOpenAIResponses,
@@ -362,6 +366,7 @@ func TestModelEnrichModels(t *testing.T) {
 // TestModelEnabledFlag D180：模型启用位——键缺失 = 启用；缺省请求模型取首个启用项；
 // `/model` 清单不列未启用的声明项（当前模型例外，它是正在跑的事实）；一家全关 = 启动校验拒绝。
 func TestModelEnabledFlag(t *testing.T) {
+	t.Parallel()
 	off, on := false, true
 	m := modelConfig{
 		Providers: []providerConfig{{
@@ -414,6 +419,7 @@ func TestModelEnabledFlag(t *testing.T) {
 
 // TestLoadConfigOutput 输出器开关解析：键缺失 = false（保守），显式 true 生效。
 func TestLoadConfigOutput(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(p, []byte(`{"model":{"name":"m"}}`), 0o644); err != nil {

@@ -11,6 +11,7 @@ import (
 
 // TestPersistUnattendedRoundTrip 写回 → 读回；level 保留；活开关同步。
 func TestPersistUnattendedRoundTrip(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -55,6 +56,7 @@ func TestPersistUnattendedRoundTrip(t *testing.T) {
 
 // TestPersistUnattendedKeepsLevel 与 /permission 交替写回不互相清键。
 func TestPersistUnattendedKeepsLevel(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -79,6 +81,7 @@ func TestPersistUnattendedKeepsLevel(t *testing.T) {
 // TestToolChannelsAutoYesWarnEdge 口径三的告警条件：`-yes` 与配置里的开关同时成立才提示
 // （模板缺省为关，因此正常路径不该打警告）。
 func TestToolChannelsAutoYesWarnEdge(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)

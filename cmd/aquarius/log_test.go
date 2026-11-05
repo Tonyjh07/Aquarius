@@ -16,6 +16,7 @@ import (
 
 // TestLogLevelSetting 三层覆盖顺序：flag 压过环境变量，环境变量压过配置；全空交给解析取 info。
 func TestLogLevelSetting(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, flagVal, env, cfg, want string
 	}{
@@ -36,6 +37,7 @@ func TestLogLevelSetting(t *testing.T) {
 // TestOpenLogWritesUnderProfile 落点随 profile 隔离：profiles/<p>/logs/ 下按天一个文件，
 // 级别生效（配置 debug 时 debug 行进得去）。
 func TestOpenLogWritesUnderProfile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var errBuf bytes.Buffer
 	w := &wiring{stderr: &errBuf, profileDir: dir, cfg: &fileConfig{}}
@@ -65,6 +67,7 @@ func TestOpenLogWritesUnderProfile(t *testing.T) {
 
 // TestOpenLogFlagOverridesConfig flag 改级别时配置里的值不生效（排查时不必先改配置）。
 func TestOpenLogFlagOverridesConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	w := &wiring{stderr: &bytes.Buffer{}, profileDir: dir, cfg: &fileConfig{}}
 	w.cfg.UI.LogLevel = "error"

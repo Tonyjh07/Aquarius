@@ -32,6 +32,7 @@ func (s *stubFront) Ask(context.Context, port.AskRequest) (port.AskAnswer, error
 // TestToolChannelsUnattendedScopedToTools 开关打开：模型链当场拒绝、不调前端；用户面
 // 仍问前端（口径二：`/rm` 这类命令确认照常询问）。
 func TestToolChannelsUnattendedScopedToTools(t *testing.T) {
+	t.Parallel()
 	front := &stubFront{}
 	on := true
 	tc := toolChannelsFor(front, false, func() bool { return on })
@@ -68,6 +69,7 @@ func TestToolChannelsUnattendedScopedToTools(t *testing.T) {
 
 // TestToolChannelsUnattendedHot 关闭时两条链都透传前端；开关一翻即生效（不重新装配）。
 func TestToolChannelsUnattendedHot(t *testing.T) {
+	t.Parallel()
 	front := &stubFront{}
 	on := false
 	tc := toolChannelsFor(front, false, func() bool { return on })
@@ -82,6 +84,7 @@ func TestToolChannelsUnattendedHot(t *testing.T) {
 
 // TestToolChannelsAutoYes 口径三：-yes 走自动允许，**不装**装饰器（开关即便开着也放行）。
 func TestToolChannelsAutoYes(t *testing.T) {
+	t.Parallel()
 	front := &stubFront{}
 	tc := toolChannelsFor(front, true, func() bool { return true })
 	for name, ans := range map[string]port.ConfirmAnswer{
@@ -111,6 +114,7 @@ func TestToolChannelsAutoYes(t *testing.T) {
 
 // TestToolChannelsNilUI 无前端：用户面留空（nil），模型链关闭态 fail-closed 报错。
 func TestToolChannelsNilUI(t *testing.T) {
+	t.Parallel()
 	tc := toolChannelsFor(nil, false, func() bool { return false })
 	if tc.confirmer != nil || tc.asker != nil {
 		t.Fatal("无前端时用户面应为 nil")
@@ -125,6 +129,7 @@ func TestToolChannelsNilUI(t *testing.T) {
 
 // TestToolChannelsCancelled ctx 取消优先（中断不该被当成一次拒绝结论）。
 func TestToolChannelsCancelled(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	tc := toolChannelsFor(&stubFront{}, false, func() bool { return true })

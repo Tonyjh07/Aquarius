@@ -21,6 +21,7 @@ func delegateConf(t *testing.T, raw string) *fileConfig {
 
 // TestDelegateConfigDefaults 键缺失走缺省：总闸 1800、并发 2/4、enabled 缺失 = 启用。
 func TestDelegateConfigDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := delegateConf(t, `{"delegate":{"agents":[{"name":"a","command":"acp"}]}}`)
 	opts, err := cfg.delegateOptions(nil, nil, nil, nil)
 	if err != nil {
@@ -53,6 +54,7 @@ func TestDelegateConfigDefaults(t *testing.T) {
 
 // TestDelegateConfigValidation 配置错误在启动期报，不拖到第一次转交才暴露。
 func TestDelegateConfigValidation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		raw  string
@@ -91,6 +93,7 @@ func TestDelegateConfigValidation(t *testing.T) {
 // TestDefaultConfigCarriesDelegateSection 模板里带上这一段（空清单）：用户照着填就能用，
 // 不必去翻文档才知道键名。
 func TestDefaultConfigCarriesDelegateSection(t *testing.T) {
+	t.Parallel()
 	if !strings.Contains(defaultConfig, `"delegate"`) {
 		t.Fatal("默认配置缺 delegate 段")
 	}

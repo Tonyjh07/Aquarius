@@ -13,6 +13,7 @@ import (
 // （D114 前继承的是已隐藏的自建控制台，不可见）。分离启动前必须挂
 // HideWindow + CREATE_NO_WINDOW。
 func TestNotifyDetachedChildHidden(t *testing.T) {
+	t.Parallel()
 	var got *exec.Cmd
 	send := notifyWith("windows",
 		func(c *exec.Cmd) error { got = c; return nil },

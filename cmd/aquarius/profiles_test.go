@@ -38,6 +38,7 @@ func readPointer(t *testing.T, dir string) string {
 }
 
 func TestProfilesManagerCreateCopySwitch(t *testing.T) {
+	t.Parallel()
 	m, dir := newProfilesManager(t)
 
 	// 新建：模板 config 落盘、进清单；同名拒建。
@@ -96,6 +97,7 @@ func TestProfilesManagerCreateCopySwitch(t *testing.T) {
 }
 
 func TestProfilesManagerCopyMissingSource(t *testing.T) {
+	t.Parallel()
 	m, _ := newProfilesManager(t)
 	m.profileCfg = filepath.Join(m.dataDir, "profiles", "missing", "config.json")
 	if err := m.Copy("x"); err == nil || !errors.Is(err, os.ErrNotExist) {

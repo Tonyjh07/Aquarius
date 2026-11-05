@@ -297,6 +297,7 @@ func TestRunProfileFlagMissingRejected(t *testing.T) {
 // TestParsePointerFile 指针解析：合法指针、缺 profile 键、非法 profile 名、
 // 旧格式键判别（ErrLegacyConfig）。
 func TestParsePointerFile(t *testing.T) {
+	t.Parallel()
 	if name, err := parsePointerFile("p", []byte(`{"profile":"work"}`)); err != nil || name != "work" {
 		t.Fatalf("name = %q, err = %v", name, err)
 	}
@@ -321,6 +322,7 @@ func TestParsePointerFile(t *testing.T) {
 
 // TestValidProfileName profile 名目录安全子集。
 func TestValidProfileName(t *testing.T) {
+	t.Parallel()
 	for _, ok := range []string{"default", "work-1", "测试", "a.b"} {
 		if err := validProfileName(ok); err != nil {
 			t.Fatalf("%q 应合法: %v", ok, err)

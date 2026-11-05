@@ -40,6 +40,7 @@ const minCommentBody = 12
 
 // TestCommentsExplainNotJustCite 扫 cmd/ 与 internal/ 的非测试源码，按「连续 // 行」成块检查。
 func TestCommentsExplainNotJustCite(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	var bad []string
 	for _, top := range []string{"cmd", "internal", "pluginapi"} {
@@ -138,6 +139,7 @@ func isRule(s string) bool {
 // TestShortCommentBlocksSanity 守门测试自检：判定函数喂正反例，避免「规则写错 / 扫描根找错 /
 // 分隔线吃掉整块」把这条守卫变成永远绿。
 func TestShortCommentBlocksSanity(t *testing.T) {
+	t.Parallel()
 	caught := map[string]string{
 		"只有编号":      "package x\n\n// D202/D203：技能页。\nfunc f() {}\n",
 		"编号+两个字的结论": "package x\n\n// D22 两列分工。\nfunc f() {}\n",

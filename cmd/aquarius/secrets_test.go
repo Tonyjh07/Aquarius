@@ -70,6 +70,7 @@ func TestSecretChainBinWins(t *testing.T) {
 
 // TestSecretChainMissNamesBothPlaces 两处都没有 → 报因**点名查过哪两处**，且不回显值。
 func TestSecretChainMissNamesBothPlaces(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ch, bin := testChain(t, nil)
 	_, err := ch.Get(ctx, "AQ_NEITHER_PLACE")
@@ -130,6 +131,7 @@ func TestSecretChainNoBinOnlyEnv(t *testing.T) {
 
 // TestSecretChainErrorHidesValue 守卫：任何错误串都不得包含密钥值（§9 红线）。
 func TestSecretChainErrorHidesValue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const secret = "sk-SUPERSECRET-should-never-appear"
 	ch, bin := testChain(t, io.Discard)
@@ -151,6 +153,7 @@ func TestSecretChainErrorHidesValue(t *testing.T) {
 
 // TestKeySlotName 键名规则：有引用沿用（每一把都如此）、没有就按 provider 名派生。
 func TestKeySlotName(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		provider, origRef string
 		slot              int
@@ -179,6 +182,7 @@ func TestKeySlotName(t *testing.T) {
 // TestDeriveKeyNameNonASCII provider 名里有非 ASCII 内容字符时补指纹：否则「深度求索」
 // 与「月之暗面」会折成同一个 AQUARIUS_PROVIDER_API_KEY，两家静默共用一格密钥。
 func TestDeriveKeyNameNonASCII(t *testing.T) {
+	t.Parallel()
 	a := deriveKeyName("深度求索")
 	b := deriveKeyName("月之暗面")
 	if a == b {
@@ -219,6 +223,7 @@ func validTestName(name string) error {
 // TestStorePlaintextKey 写入口径（D161 落点①）：明文 → 入库 + `secret:<名>`；
 // 引用 → 原样保留、不动库；库未接线 → 报错（不静默退回明文）。
 func TestStorePlaintextKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	bin, err := secretbin.New(t.TempDir())
 	if err != nil {
@@ -273,6 +278,7 @@ func TestStorePlaintextKey(t *testing.T) {
 //
 // 判据：同一槽位连续重填三次，引用名恒定；库里条目数不随重填次数增长。
 func TestKeySlotNameStableAcrossRewrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	bin, err := secretbin.New(t.TempDir())
 	if err != nil {
@@ -306,6 +312,7 @@ func TestKeySlotNameStableAcrossRewrite(t *testing.T) {
 
 // TestResolveAPIKeyPlaintextWarnsOnce 明文仍允许但启动警告（D35 兼容），警告不得回显值。
 func TestResolveAPIKeyPlaintextWarnsOnce(t *testing.T) {
+	t.Parallel()
 	w, buf := testWiringLog(t)
 	ch, _ := testChain(t, nil)
 	const secret = "sk-plain-INLINE-9999"
@@ -357,6 +364,7 @@ func TestResolvePatchKeyNoPlaintextWarn(t *testing.T) {
 // 上一条只锁 resolvePatchKey 本身；这条从 `WelcomeManager.Test` / `Models` 这两个真实入口
 // 走一遍，防「哪天有人把它们改回 resolveAPIKey」。
 func TestWelcomeProbeDoesNotWarnPlaintextDraft(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"data":[{"id":"m1"}]}`))

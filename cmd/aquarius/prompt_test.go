@@ -10,6 +10,7 @@ import (
 
 // TestPromptSpecMapping D144：config prompts 段 → app.PromptSpec 映射（模块树 + 有序引用 + 兼容单串）。
 func TestPromptSpecMapping(t *testing.T) {
+	t.Parallel()
 	cfg := &fileConfig{
 		SystemPrompt: "LEGACY",
 		Prompts: promptsConfig{

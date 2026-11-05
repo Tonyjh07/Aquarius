@@ -20,6 +20,7 @@ func (fakeTranscriber) Transcribe(context.Context, conversation.BlobRef, string)
 // 「语音识别未配置」。根因在装配——摄取器**总会**建出来（`/mic` 靠它报因），
 // 若直接把它转成 Voice，界面那条 `Voice == nil` 的判空就永远不成立。
 func TestVoiceSlotNeedsASR(t *testing.T) {
+	t.Parallel()
 	w := &wiring{}
 	if slot := w.voiceSlot(); slot != nil {
 		t.Fatal("语音识别未装配时不应给语音键槽")

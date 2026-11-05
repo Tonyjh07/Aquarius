@@ -40,6 +40,7 @@ func writeWebCfg(t *testing.T) string {
 // TestReadTextSettingsWeb 读侧：两组提供商按序进快照，密钥只给形态（引用名/明文标记，
 // 永不含值）；respect_robots 键缺失 = 遵守。
 func TestReadTextSettingsWeb(t *testing.T) {
+	t.Parallel()
 	s := readTextSettings(writeWebCfg(t))
 	if len(s.WebSearchProviders) != 1 || s.WebSearchProviders[0].Kind != "brave" {
 		t.Fatalf("搜索提供商 = %+v", s.WebSearchProviders)
@@ -83,6 +84,7 @@ func TestReadTextSettingsWeb(t *testing.T) {
 // TestPersistWebSettingsRoundTrip 写读往返：列表顺序、借用的服务、国家语言、条数、
 // 本地抓取参数与布尔都按表单落盘；`key` 留空 = 沿用原引用（值不回显也不丢）。
 func TestPersistWebSettingsRoundTrip(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	p := uigui.SettingsPatch{
 		Theme: "system",
@@ -144,6 +146,7 @@ func TestPersistWebSettingsRoundTrip(t *testing.T) {
 // TestPersistWebKeepsUnknownKeys 列表项的未知键按同类型的旧条目保留（Q10 口径：用户手写
 // 的字段不因一次保存而丢）。
 func TestPersistWebKeepsUnknownKeys(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	raw := strings.Replace(webCfg, `{"kind": "local"}`,
 		`{"kind": "local", "custom_flag": "keep-me"}`, 1)
@@ -170,6 +173,7 @@ func TestPersistWebKeepsUnknownKeys(t *testing.T) {
 // TestPersistWebNarrowWriteLeavesWebAlone 窄写回（人格模板等）patch 里没有联网列表
 // （nil）时不动 web 段——否则一次模板保存就把用户的联网配置抹平。
 func TestPersistWebNarrowWriteLeavesWebAlone(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "dark"}); err != nil {
 		t.Fatalf("persistSettingsTextKeys: %v", err)
@@ -186,6 +190,7 @@ func TestPersistWebNarrowWriteLeavesWebAlone(t *testing.T) {
 // TestPersistWebPartialWriteTouchesOneSide 只给一侧列表的 patch 只写那一侧：搜索侧的
 // 保存不该把抓取的代理与开关按零值覆盖。
 func TestPersistWebPartialWriteTouchesOneSide(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
 		Theme:              "system",
@@ -204,6 +209,7 @@ func TestPersistWebPartialWriteTouchesOneSide(t *testing.T) {
 
 // TestPersistWebEmptyListClears 空列表 = 清空（该能力不可用），与降级链同口径。
 func TestPersistWebEmptyListClears(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
 		Theme:              "system",
@@ -233,6 +239,7 @@ func loadConfig2Normalize(cfgPath string) error {
 // TestValidateWebSettings 保存前校验与启动期同口径：未知 kind、抓取侧不支持的类型、
 // 借用的 provider 不存在、数值越界都拦下且原文件不动。
 func TestValidateWebSettings(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	base := func() uigui.SettingsPatch {
 		return uigui.SettingsPatch{

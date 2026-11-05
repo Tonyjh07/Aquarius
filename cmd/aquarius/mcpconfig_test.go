@@ -10,6 +10,7 @@ import (
 
 // TestLoadConfigMCPFields mcpServers 声明与 plugins 状态的解析（D30/D31）。
 func TestLoadConfigMCPFields(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfg := `{
   "model": {"providers":[{"name":"openai-compatible","base_url":"http://x","keys":[{"api_key":"secret:K"}],"models":[{"name":"m"}]}],"name":"m"},

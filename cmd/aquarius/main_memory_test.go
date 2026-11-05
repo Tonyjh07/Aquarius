@@ -72,6 +72,7 @@ func toolCallData(id, name, args string) string {
 
 // TestPickEditor 编辑器选择（D24）：$VISUAL → $EDITOR → 平台默认。
 func TestPickEditor(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name                 string
 		visual, editor, goos string

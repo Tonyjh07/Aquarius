@@ -19,6 +19,7 @@ import (
 // TestPromptsRoundTrip config prompts 段读写往返：空名行跳过、children/persona 清洗去重
 // 保序、模块视图按名排序（JSON map 无序）、空正文不写 text 键。
 func TestPromptsRoundTrip(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -115,6 +116,7 @@ func TestPromptsRoundTrip(t *testing.T) {
 // TestPersistPromptsValidation 模块名校验：`@` 前缀（保留给内置）与重名均在落盘前拒绝，
 // 原文件不动（校验先于写，且报因可读）。
 func TestPersistPromptsValidation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		mods  []uigui.PromptModuleView
@@ -150,6 +152,7 @@ func TestPersistPromptsValidation(t *testing.T) {
 // TestBuiltinModuleViews 内置模块展示清单与引擎契约同源（名集 = app.BuiltinModuleNames，
 // 顺序一致），每个都有中文说明（缺 label 会退化成「内置模块」占位）。
 func TestBuiltinModuleViews(t *testing.T) {
+	t.Parallel()
 	views := builtinModuleViews()
 	want := app.BuiltinModuleNames()
 	if len(views) != len(want) {
@@ -195,6 +198,7 @@ func TestBuiltinModuleViews(t *testing.T) {
 // TestPreviewPromptsCompose 组合预览 = 设置窗当前（未保存）表单现状 → 最终 system 文本，
 // 与新建会话同口径：组头 + 子模块换行、顶层引用空行连接、环境事实取本次装配、日期取当天。
 func TestPreviewPromptsCompose(t *testing.T) {
+	t.Parallel()
 	w := &wiring{
 		cfg:         &fileConfig{UI: uiConfig{Kind: "gui"}},
 		sandboxDir:  t.TempDir(), // 绝对路径（跨平台）才附沙盒行

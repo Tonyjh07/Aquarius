@@ -69,6 +69,7 @@ func writeSkill(t *testing.T, dir, name, desc string) string {
 
 // TestSkillsAdminInstallAndSnapshot 安装 → 快照出现该技能（managed + 来源种类 + 可更新标记）。
 func TestSkillsAdminInstallAndSnapshot(t *testing.T) {
+	t.Parallel()
 	w := newSkillsWiring(t)
 	sa := &skillsAdmin{w: w}
 	src := writeSkill(t, filepath.Join(t.TempDir(), "pdf"), "pdf", "Fill PDF forms.")
@@ -124,6 +125,7 @@ func TestSkillsAdminInstallAndSnapshot(t *testing.T) {
 
 // TestSkillsAdminExternalAndManaged 外部技能根里的技能不算 managed，也不显示卸载。
 func TestSkillsAdminExternalAndManaged(t *testing.T) {
+	t.Parallel()
 	extra := t.TempDir()
 	writeSkill(t, filepath.Join(extra, "lint"), "lint", "Check style.")
 	w := newSkillsWiring(t, extra)
@@ -149,6 +151,7 @@ func TestSkillsAdminExternalAndManaged(t *testing.T) {
 
 // TestSkillsAdminDirsPersistAndApply 增删额外目录：写回 config 且立刻热生效；兜底根不可加不可删。
 func TestSkillsAdminDirsPersistAndApply(t *testing.T) {
+	t.Parallel()
 	extra := t.TempDir()
 	w := newSkillsWiring(t)
 	sa := &skillsAdmin{w: w}
@@ -213,6 +216,7 @@ func TestSkillsAdminDirsPersistAndApply(t *testing.T) {
 
 // TestSkillsAdminUnwired 未接线：动作报错、快照不 panic（页面显示只读占位）。
 func TestSkillsAdminUnwired(t *testing.T) {
+	t.Parallel()
 	sa := &skillsAdmin{w: &wiring{}}
 	if snap := sa.Snapshot(); snap.Revision != 0 || len(snap.Skills) != 0 {
 		t.Fatalf("未接线快照 = %+v", snap)
@@ -227,6 +231,7 @@ func TestSkillsAdminUnwired(t *testing.T) {
 
 // TestSkillsAdminAppAdapter 命令面适配器：结构化结果（名字 + 备注 + 跳过），不含内部字段。
 func TestSkillsAdminAppAdapter(t *testing.T) {
+	t.Parallel()
 	w := newSkillsWiring(t)
 	app := skillsAdminApp{w: w}
 	dir := t.TempDir()

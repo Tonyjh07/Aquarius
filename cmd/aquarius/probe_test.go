@@ -140,6 +140,7 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 // TestProbeWritesOnlyDefiniteVerdicts D174：支持→加上、明确不支持→去掉、无结论→不动；
 // 起点是**生效值**（键缺失按协议缺省），否则会把缺省开的位悄悄关掉。
 func TestProbeWritesOnlyDefiniteVerdicts(t *testing.T) {
+	t.Parallel()
 	srv := probeServer(t, probeReply{
 		VisionStatus: http.StatusBadRequest,
 		Vision:       `{"error":{"message":"image input is not supported"}}`,
@@ -188,6 +189,7 @@ func TestProbeWritesOnlyDefiniteVerdicts(t *testing.T) {
 
 // TestProbeInconclusiveLeavesCapsAlone D174：全项无结论 = 一个字都不写。
 func TestProbeInconclusiveLeavesCapsAlone(t *testing.T) {
+	t.Parallel()
 	// 视觉探测也走「接受但没给正文」→ 三项全无结论。
 	srv := probeServer(t, probeReply{
 		Tools:     `{"choices":[{"message":{"content":"I cannot call tools."}}]}`,
@@ -225,6 +227,7 @@ func TestProbeInconclusiveLeavesCapsAlone(t *testing.T) {
 // TestProbeTargetResolution D174 口径四：度量单位是模型条目——未声明的不探（没地方写），
 // fallback provider 的模型也能探。
 func TestProbeTargetResolution(t *testing.T) {
+	t.Parallel()
 	srv := probeServer(t, probeReply{VisionStatus: http.StatusBadRequest,
 		Vision: `{"error":{"message":"image input is not supported"}}`})
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
@@ -269,6 +272,7 @@ func TestProbeTargetResolution(t *testing.T) {
 //   - 探测目前只有 chat 的问法，responses/anthropic 都会明确报因（不能拿 chat 请求
 //     去打别的规范——那会以「密钥无效」「模型不存在」之类的假象暴露，排查方向全错）。
 func TestProbeProtocolDispatch(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	raw := `{
   "model": {
@@ -328,6 +332,7 @@ func TestProbeProtocolDispatch(t *testing.T) {
 // 客户端——改了端点还没应用时，测的是「将要应用的那份」；模型**还没落盘**也照常探，结论
 // 只带回界面（Pending），声明过的才写回（Written）。
 func TestProbeForSettings(t *testing.T) {
+	t.Parallel()
 	srv := probeServer(t, probeReply{VisionStatus: http.StatusBadRequest,
 		Vision: `{"error":{"message":"image input is not supported"}}`})
 	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1"}`)
@@ -397,6 +402,7 @@ func TestProbeForSettings(t *testing.T) {
 // TestProbeClientIsReadOnly 探测不记 unsupported_params（那是正式请求的事），
 // 也不写进 config 的 provider 段。
 func TestProbeClientIsReadOnly(t *testing.T) {
+	t.Parallel()
 	srv := probeServer(t, probeReply{VisionStatus: http.StatusBadRequest,
 		Vision: `{"error":{"message":"image input is not supported"}}`})
 	cfgPath, cfg := probeCfg(t, srv.URL, `{"name": "m1"}`)

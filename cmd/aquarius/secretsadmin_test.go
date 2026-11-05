@@ -17,6 +17,7 @@ import (
 
 // TestSecretsAdminRoundTrip 列出 / 覆盖 / 删除往返 + Revision 递增。
 func TestSecretsAdminRoundTrip(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	bin, err := secretbin.New(dir)
 	if err != nil {
@@ -71,6 +72,7 @@ func TestSecretsAdminRoundTrip(t *testing.T) {
 
 // TestSecretsAdminUnwired 未接线（secretsBin = nil）：写/删报错、快照为空不 panic。
 func TestSecretsAdminUnwired(t *testing.T) {
+	t.Parallel()
 	sa := &secretsAdmin{w: &wiring{}}
 	if s := sa.Snapshot(); len(s.Entries) != 0 || s.Path != "" {
 		t.Fatalf("未接线快照 = %+v", s)
@@ -85,6 +87,7 @@ func TestSecretsAdminUnwired(t *testing.T) {
 
 // TestSecretsAdminPutSurfacesStoreErrors 库自有校验（空值）透传：空值 → 报错、Revision 不动。
 func TestSecretsAdminPutSurfacesStoreErrors(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	bin, err := secretbin.New(dir)
 	if err != nil {
@@ -102,6 +105,7 @@ func TestSecretsAdminPutSurfacesStoreErrors(t *testing.T) {
 
 // TestSecretsAdminDeleteNotFoundWrapsErrNotFound 删不存在时报错，文案含名字（不静默成功）。
 func TestSecretsAdminDeleteNotFoundWrapsErrNotFound(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	bin, err := secretbin.New(dir)
 	if err != nil {
@@ -241,6 +245,7 @@ func TestSecretsAdminImportNothing(t *testing.T) {
 // TestSecretsAdminImportRefusesUnreadableStore 库解不开时**拒绝导入**：普通写路径的
 // 「从空表起步」在批量导入里等于丢掉已有条目，故这里响亮报错、文件保持原样。
 func TestSecretsAdminImportRefusesUnreadableStore(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeImportConfig(t)
 	bin, err := secretbin.New(t.TempDir())
 	if err != nil {
@@ -265,6 +270,7 @@ func TestSecretsAdminImportRefusesUnreadableStore(t *testing.T) {
 
 // TestSecretsAdminImportUnwired 未接线：报错（不静默「没得可导入」）。
 func TestSecretsAdminImportUnwired(t *testing.T) {
+	t.Parallel()
 	if _, err := (&secretsAdmin{w: &wiring{}}).Import(); err == nil {
 		t.Fatal("未接线 Import 应报错")
 	}

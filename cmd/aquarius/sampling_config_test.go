@@ -17,6 +17,7 @@ func fp(v float64) *float64 { return &v }
 // TestSamplingTwoLevelMerge 两级覆盖（D204 口径二）：model.sampling 是整链缺省，
 // models[].sampling 只改写了的那几项；`temperature: 0` 是真值不是「没写」。
 func TestSamplingTwoLevelMerge(t *testing.T) {
+	t.Parallel()
 	m := modelConfig{
 		Sampling: samplingConfig{Temperature: fp(0.8), TopP: fp(0.95), MaxTokens: 1024, Stop: []string{"\n"}},
 		Providers: []providerConfig{{
@@ -73,6 +74,7 @@ func TestSamplingTwoLevelMerge(t *testing.T) {
 
 // TestSamplingKeysMissing 键缺失 = 全不发送（nil / 0 / 空数组），不能变成「发 0」。
 func TestSamplingKeysMissing(t *testing.T) {
+	t.Parallel()
 	var s samplingConfig
 	if err := json.Unmarshal([]byte(`{"max_tokens":0}`), &s); err != nil {
 		t.Fatalf("解析: %v", err)
@@ -95,6 +97,7 @@ func TestSamplingKeysMissing(t *testing.T) {
 // TestSamplingValidateRanges 范围校验（D204 口径四）：Anthropic 只接 0..1，其余 0..2；
 // top_p 三协议都是 0..1。超范围启动报因，不静默截断。
 func TestSamplingValidateRanges(t *testing.T) {
+	t.Parallel()
 	base := func() modelConfig {
 		return modelConfig{
 			Sampling: samplingConfig{Temperature: fp(1.5)},
@@ -158,6 +161,7 @@ func TestSamplingValidateRanges(t *testing.T) {
 // TestModelCostEnrich 单价（D205）：每百万 token 从 config 补齐到 ModelInfo；未声明保持 0
 // （界面据此不显示费用，不当作免费）。
 func TestModelCostEnrich(t *testing.T) {
+	t.Parallel()
 	m := modelConfig{
 		Providers: []providerConfig{{
 			Name: "a", BaseURL: "http://a",
@@ -189,6 +193,7 @@ func TestModelCostEnrich(t *testing.T) {
 
 // TestSamplingConfigRoundTrip 设置窗/高级页写回后仍能读回（JSON 键名与结构稳定）。
 func TestSamplingConfigRoundTrip(t *testing.T) {
+	t.Parallel()
 	src := `{"temperature":0,"top_p":0.9,"max_tokens":256,"stop":["END"]}`
 	var s samplingConfig
 	if err := json.Unmarshal([]byte(src), &s); err != nil {

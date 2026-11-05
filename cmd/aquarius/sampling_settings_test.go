@@ -41,6 +41,7 @@ func samplingCfgPath(t *testing.T, extra string) string {
 // TestSamplingFormTextRoundTrip 表单文本化与解析对上（D204）：留空 = 不发送、0 = 真的发 0、
 // 停止串走 JSON 数组。解析规则与设置窗的前置校验是同一份实现（port.ParseSamplingText）。
 func TestSamplingFormTextRoundTrip(t *testing.T) {
+	t.Parallel()
 	zero := 0.0
 	s := samplingConfig{Temperature: &zero, TopP: fp(0.9), MaxTokens: 256, Stop: []string{"\n", "END"}}
 	got, err := port.ParseSamplingText(numText(s.Temperature), numText(s.TopP), intText(s.MaxTokens), stopsText(s.Stop))
@@ -85,6 +86,7 @@ func TestSamplingFormTextRoundTrip(t *testing.T) {
 // TestSamplingFormRange 表单侧范围（D204 口径四）：温度 0–2、top_p 0–1。协议细分在
 // validateSamplingSettings 里按合并后的值判（Anthropic 只接 0–1）。
 func TestSamplingFormRange(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		temp string
@@ -110,6 +112,7 @@ func TestSamplingFormRange(t *testing.T) {
 // TestSamplingSettingsWriteBack 写回往返（D204）：四项整段替换、空 = 删段；窄写回
 // （SamplingSet = false）不碰采样；逐模型覆盖原样保留。
 func TestSamplingSettingsWriteBack(t *testing.T) {
+	t.Parallel()
 	cfgPath := samplingCfgPath(t, "")
 	p := uigui.SettingsPatch{
 		Theme: "system", SamplingSet: true,
@@ -165,6 +168,7 @@ func TestSamplingSettingsWriteBack(t *testing.T) {
 // TestSamplingSettingsRejectBadConfig 保存前校验（D204 口径五）：落盘配置必须能过启动期
 // 同一条 normalize——超协议范围/负值在这里就被拦下，且原文件不动。
 func TestSamplingSettingsRejectBadConfig(t *testing.T) {
+	t.Parallel()
 	// Anthropic 只接 0–1：同值在 chat 合法，在这里必须拒。
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := `{"model":{"providers":[{"name":"a","kind":"anthropic","base_url":"http://a/v1","models":[{"name":"m1"}]}],"primary":"a","name":"m1"},"ui":{"kind":"repl"}}`
@@ -190,6 +194,7 @@ func TestSamplingSettingsRejectBadConfig(t *testing.T) {
 // TestSamplingRefreshHotApply 热生效（D204 口径六）：保存后换掉快照，下一次取到的就是新值；
 // 逐模型覆盖按模型名命中（含 /model 切过去的名字）。
 func TestSamplingRefreshHotApply(t *testing.T) {
+	t.Parallel()
 	cfgPath := samplingCfgPath(t, "")
 	w := &wiring{cfgPath: cfgPath}
 	w.cfg, _ = loadConfig(cfgPath)
@@ -231,6 +236,7 @@ func TestSamplingRefreshHotApply(t *testing.T) {
 // TestSamplingRefreshKeepsOldOnBadFile 读不回来就保留上一份（D204）：配置刚写成功，读失败
 // 多半是外部并发改坏——不该让下一次请求直接发不出参数。
 func TestSamplingRefreshKeepsOldOnBadFile(t *testing.T) {
+	t.Parallel()
 	cfgPath := samplingCfgPath(t, "")
 	w := &wiring{cfgPath: cfgPath}
 	w.cfg, _ = loadConfig(cfgPath)
@@ -251,6 +257,7 @@ func TestSamplingRefreshKeepsOldOnBadFile(t *testing.T) {
 // TestSamplingAgentCallbackUsesSnapshot Agent 侧回调口径（D204）：SamplingFor 非空就按模型名
 // 现取（不缓存），nil 才回落到装配时那份。
 func TestSamplingAgentCallbackUsesSnapshot(t *testing.T) {
+	t.Parallel()
 	cfgPath := samplingCfgPath(t, "")
 	w := &wiring{cfgPath: cfgPath}
 	w.cfg, _ = loadConfig(cfgPath)

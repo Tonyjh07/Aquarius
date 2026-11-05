@@ -202,6 +202,7 @@ func TestRunTUIConfirmE2E(t *testing.T) {
 // TestRunDefaultsToGUIWhenKeyMissing ui 键缺失与模板同默认 gui（D51；D33 旧默认 tui
 // 随单二进制交付目标改判）。只测回落口径、不起 run——GUI 路径会真开窗，测试禁开真窗。
 func TestRunDefaultsToGUIWhenKeyMissing(t *testing.T) {
+	t.Parallel()
 	if got := uiKindDefault(""); got != "gui" {
 		t.Fatalf("缺 ui 键应默认 gui: %q", got)
 	}

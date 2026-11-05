@@ -33,6 +33,7 @@ func baseWebConfig(t *testing.T) *fileConfig {
 }
 
 func TestNormalizeWebAcceptsProviderLists(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	cfg.Web = webConfig{
 		Search: webSearchConfig{
@@ -53,6 +54,7 @@ func TestNormalizeWebAcceptsProviderLists(t *testing.T) {
 }
 
 func TestNormalizeWebEmptyIsFine(t *testing.T) {
+	t.Parallel()
 	// 没配置 = 联网工具执行时报因，不是启动失败。
 	if err := baseWebConfig(t).normalizeWeb(); err != nil {
 		t.Fatalf("空 web 段应可启动: %v", err)
@@ -60,6 +62,7 @@ func TestNormalizeWebEmptyIsFine(t *testing.T) {
 }
 
 func TestNormalizeWebRejectsUnknownKind(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	cfg.Web.Search.Providers = []webProvider{{Kind: "google"}}
 	err := cfg.normalizeWeb()
@@ -76,6 +79,7 @@ func TestNormalizeWebRejectsUnknownKind(t *testing.T) {
 }
 
 func TestNormalizeWebRejectsMissingProviderRef(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	cfg.Web.Fetch.Providers = []webProvider{{Kind: webKindDeepSeek, From: "nope"}}
 	err := cfg.normalizeWeb()
@@ -85,6 +89,7 @@ func TestNormalizeWebRejectsMissingProviderRef(t *testing.T) {
 }
 
 func TestNormalizeWebRejectsOutOfRangeBudgets(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	cfg.Web.Search.Count = 50
 	if err := cfg.normalizeWeb(); err == nil {
@@ -98,6 +103,7 @@ func TestNormalizeWebRejectsOutOfRangeBudgets(t *testing.T) {
 }
 
 func TestWebProviderFromDefaultsToKind(t *testing.T) {
+	t.Parallel()
 	if got := webProviderFrom(webProvider{Kind: webKindDeepSeek}); got != "deepseek" {
 		t.Fatalf("缺省引用 = %q", got)
 	}
@@ -109,6 +115,7 @@ func TestWebProviderFromDefaultsToKind(t *testing.T) {
 // TestNormalizeWebAcceptsExplicitEndpoint 联网条目自己填了端点就不必引用 provider：
 // 端点、密钥与对话 provider 完全脱钩（D222）。
 func TestNormalizeWebAcceptsExplicitEndpoint(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	cfg.Web = webConfig{
 		Search: webSearchConfig{Providers: []webProvider{{
@@ -126,6 +133,7 @@ func TestNormalizeWebAcceptsExplicitEndpoint(t *testing.T) {
 // TestNormalizeWebExplicitEndpointWithStaleFrom 引用失效但端点自己填了：不该拦启动
 // （借不到密钥只让这一家不可用，装配根会警告）。
 func TestNormalizeWebExplicitEndpointWithStaleFrom(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	cfg.Web.Fetch.Providers = []webProvider{{
 		Kind: webKindDeepSeek, From: "gone", BaseURL: "https://fetch.example.com/v1",
@@ -138,6 +146,7 @@ func TestNormalizeWebExplicitEndpointWithStaleFrom(t *testing.T) {
 // TestWebResolveEndpointPrecedence 取值优先级（D222）：显式字段 → 借 from → 回落
 // 按侧派生的密钥名。借只补缺的那一项。
 func TestWebResolveEndpointPrecedence(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t) // 只有一家 deepseek，端点 https://api.deepseek.com，密钥 secret:AQUARIUS_DEEPSEEK_API_KEY
 	fallback := deriveKeyName("deepseek_search")
 
@@ -181,6 +190,7 @@ func TestWebResolveEndpointPrecedence(t *testing.T) {
 // TestWebResolveEndpointStaleFrom 借的条目不存在：端点没着落才报错；自己填了端点就
 // 只当没借到密钥（装配根随后按回落名取）。
 func TestWebResolveEndpointStaleFrom(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	if _, err := cfg.resolveEndpoint("", "", "gone", ""); err == nil {
 		t.Fatal("端点无着落应报错")
@@ -195,6 +205,7 @@ func TestWebResolveEndpointStaleFrom(t *testing.T) {
 // TestDeepSeekWebUsesOwnEndpointAndKey 装配路径的取值（D222）：条目自己填的端点与密钥
 // 直接生效，不再去看 model.providers 里那条同名的。
 func TestDeepSeekWebUsesOwnEndpointAndKey(t *testing.T) {
+	t.Parallel()
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
@@ -231,6 +242,7 @@ func TestDeepSeekWebUsesOwnEndpointAndKey(t *testing.T) {
 // TestDeepSeekWebFallsBackPerSide 两侧都不填时按侧回落（D222）：搜索与抓取各取自己
 // 那格，不碰对话 provider 的 AQUARIUS_DEEPSEEK_API_KEY。
 func TestDeepSeekWebFallsBackPerSide(t *testing.T) {
+	t.Parallel()
 	cfg := baseWebConfig(t)
 	cfg.Model.Providers[0].Keys = []keyConfig{{APIKey: ""}} // 对话 provider 没有可借的钥匙
 	bin, err := secretbin.New(t.TempDir())

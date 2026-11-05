@@ -14,6 +14,7 @@ import (
 
 // TestDefaultConfigTemplateIsValidV2 模板可解析、可规范化，且含 v2 的模型/密钥形状。
 func TestDefaultConfigTemplateIsValidV2(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)

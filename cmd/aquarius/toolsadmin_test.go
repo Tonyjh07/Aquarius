@@ -22,6 +22,7 @@ import (
 // TestBuiltinDisabledDerivation 默认推导不改今天行为（D143）：键缺失 ⇒ ["think"]；
 // model.think_tool=true ⇒ 空集（兼容读取）；键存在 = 显式清单。
 func TestBuiltinDisabledDerivation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		tools     toolsConfig
@@ -50,6 +51,7 @@ func TestBuiltinDisabledDerivation(t *testing.T) {
 
 // TestPersistToolsDisabledRoundTrip 写回 tools.disabled 后读回（空集也落显式空数组）。
 func TestPersistToolsDisabledRoundTrip(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(path, []byte("{\"model\":{}}"), 0o644); err != nil {
@@ -75,6 +77,7 @@ func TestPersistToolsDisabledRoundTrip(t *testing.T) {
 
 // TestFormatPluginLogs 日志格式化：带名 = 逐行（新→旧）；无参 = 各插件摘要。
 func TestFormatPluginLogs(t *testing.T) {
+	t.Parallel()
 	rows := []decorate.ToolCallLine{
 		{TS: "t1", Name: "mcp:web:search", DurMS: 5, OK: true},
 		{TS: "t2", Name: "mcp:web:fetch", DurMS: 9, OK: false, Err: "timeout"},
@@ -110,6 +113,7 @@ func TestFormatPluginLogs(t *testing.T) {
 // TestToolsAdminSetBuiltinEnabled 内置启停：热更 runner + 写回 config + Revision 递增；
 // 未知名报错；禁用 → runner.Specs 过滤 + Execute unknown。
 func TestToolsAdminSetBuiltinEnabled(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(path, []byte("{\"tools\":{\"disabled\":[\"think\"]}}"), 0o644); err != nil {

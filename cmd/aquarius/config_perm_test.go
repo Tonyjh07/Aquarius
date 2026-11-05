@@ -12,6 +12,7 @@ import (
 // TestWriteConfigFileTightensPerm 新建与覆盖都落在 0600：早先按 0644 建出来的
 // 那份也要收回来（atomicfile 的权限继承只保证不放宽，配置文件要的是相反方向）。
 func TestWriteConfigFileTightensPerm(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows 无 POSIX 权限位（ACL 决定可读性），这条只对类 unix 有意义")
 	}

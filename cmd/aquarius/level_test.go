@@ -10,6 +10,7 @@ import (
 // TestLevelHolderConcurrent 审查修复：TUI 状态行（事件循环 goroutine）读、
 // /permission（REPL 主 goroutine）写——并发读写下 -race 必须干净。
 func TestLevelHolderConcurrent(t *testing.T) {
+	t.Parallel()
 	h := newLevelHolder(perm.DefaultLevel)
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
@@ -40,6 +41,7 @@ func TestLevelHolderConcurrent(t *testing.T) {
 // TestUnattendedHolderConcurrent D185：GUI/TUI 事件循环 goroutine 读（状态行与菜单勾选）、
 // 主 goroutine 写（/unattended 与设置窗）——atomic 存取，-race 必须干净。
 func TestUnattendedHolderConcurrent(t *testing.T) {
+	t.Parallel()
 	h := newUnattendedHolder(false)
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {

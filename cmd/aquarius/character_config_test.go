@@ -12,6 +12,7 @@ import (
 // TestCharacterOptionsDefaults 缺键按文档默认解析：常驻世界书与示例默认开、替换态默认关、
 // 尾部指令默认发；显式值覆盖默认。
 func TestCharacterOptionsDefaults(t *testing.T) {
+	t.Parallel()
 	var cfg fileConfig
 	opts := cfg.characterOptions()
 	if opts.PreferSystemPrompt || !opts.InjectConstantBook || !opts.InjectExamples {
@@ -40,6 +41,7 @@ func TestCharacterOptionsDefaults(t *testing.T) {
 // TestPromptSpecCarriesUserName prompts.user_name 进装配规格（{{user}} 取值）；空 = 由
 // 内核回落 "User"。
 func TestPromptSpecCarriesUserName(t *testing.T) {
+	t.Parallel()
 	if got := (&fileConfig{}).promptSpec().UserName; got != "" {
 		t.Fatalf("空配置 UserName = %q, want 空（回落 User）", got)
 	}
@@ -52,6 +54,7 @@ func TestPromptSpecCarriesUserName(t *testing.T) {
 // TestDefaultConfigCarriesCharacterKeys 首跑模板带上 user_name 与 characters 段，且解析后
 // 与文档默认一致（否则新用户开箱即与文档记载不符）。
 func TestDefaultConfigCarriesCharacterKeys(t *testing.T) {
+	t.Parallel()
 	var cfg fileConfig
 	if err := json.Unmarshal([]byte(defaultConfig), &cfg); err != nil {
 		t.Fatalf("默认模板解析失败: %v", err)

@@ -31,6 +31,7 @@ func webWiring(t *testing.T, cfgPath string) (*wiring, *secretbin.Store) {
 // TestStoreWebKeysBravePlaintext 联网页填明文 → 入密钥库 + config 只留引用，键名沿用原有
 // 引用名（不 churn）。
 func TestStoreWebKeysBravePlaintext(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w, bin := webWiring(t, cfgPath)
 	p := uigui.SettingsPatch{
@@ -64,6 +65,7 @@ func TestStoreWebKeysBravePlaintext(t *testing.T) {
 // TestStoreWebKeysDeepSeekOwnKey 联网的 deepseek 现在也能有自己的密钥（D222）：按侧
 // 区分键名，不占对话 provider 的 `AQUARIUS_DEEPSEEK_API_KEY`，两侧也不互相覆盖。
 func TestStoreWebKeysDeepSeekOwnKey(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w, bin := webWiring(t, cfgPath)
 	p := uigui.SettingsPatch{
@@ -94,6 +96,7 @@ func TestStoreWebKeysDeepSeekOwnKey(t *testing.T) {
 
 // TestStoreWebKeysSkipsLocal local 没有密钥：填了也不入库（那字段对它不参与鉴权）。
 func TestStoreWebKeysSkipsLocal(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w, bin := webWiring(t, cfgPath)
 	p := uigui.SettingsPatch{
@@ -116,6 +119,7 @@ func TestStoreWebKeysSkipsLocal(t *testing.T) {
 
 // TestStoreWebKeysKeepsExistingRefs 已填引用 / 留空 = 不动库（引用原样保留）。
 func TestStoreWebKeysKeepsExistingRefs(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w, bin := webWiring(t, cfgPath)
 	p := uigui.SettingsPatch{
@@ -142,6 +146,7 @@ func TestStoreWebKeysKeepsExistingRefs(t *testing.T) {
 // TestStoreWebKeysUnwiredKeepsPlaintext 库未接线：不报错、保持旧行为（明文照写），
 // 保存不因「存不进库」而失败。
 func TestStoreWebKeysUnwiredKeepsPlaintext(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w := &wiring{cfgPath: cfgPath}
 	p := uigui.SettingsPatch{
@@ -158,6 +163,7 @@ func TestStoreWebKeysUnwiredKeepsPlaintext(t *testing.T) {
 // TestStoreAudioKeysPlaintext 语音页填明文 → 入密钥库 + 只留引用；键名按能力派生，
 // 两个通道各占一格、互不覆盖（D222）。
 func TestStoreAudioKeysPlaintext(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w, bin := webWiring(t, cfgPath)
 	p := uigui.SettingsPatch{ASRKey: "sk-asr-1111", TTSKey: "sk-tts-2222"}
@@ -178,6 +184,7 @@ func TestStoreAudioKeysPlaintext(t *testing.T) {
 
 // TestStoreAudioKeysKeepsRefAndSkipsEmpty 填引用照写、留空保持；都不动库。
 func TestStoreAudioKeysKeepsRefAndSkipsEmpty(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w, bin := webWiring(t, cfgPath)
 	p := uigui.SettingsPatch{ASRKey: "secret:MY_ASR", TTSKey: ""}
@@ -195,6 +202,7 @@ func TestStoreAudioKeysKeepsRefAndSkipsEmpty(t *testing.T) {
 
 // TestStoreAudioKeysUnwiredKeepsPlaintext 库未接线：不报错、明文照写。
 func TestStoreAudioKeysUnwiredKeepsPlaintext(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeWebCfg(t)
 	w := &wiring{cfgPath: cfgPath}
 	p := uigui.SettingsPatch{ASRKey: "sk-plain-keep"}
@@ -208,6 +216,7 @@ func TestStoreAudioKeysUnwiredKeepsPlaintext(t *testing.T) {
 
 // TestStoreAudioKeysReusesExistingRef 该通道原本已有引用：沿用原名，不另造一格。
 func TestStoreAudioKeysReusesExistingRef(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	raw := `{"audio":{"asr":{"provider":"mimo","api_key":"secret:MY_OWN_ASR","model":"m"}}}`
 	if err := os.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {

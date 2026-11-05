@@ -23,6 +23,7 @@ import (
 // TestRunAttachmentGC 启动附件 GC：按全量会话引用保活、清扫孤儿；
 // 引用收集失败（store 报错）时跳过清扫并告警——宁可漏清不误删。
 func TestRunAttachmentGC(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	store, err := storejson.New(filepath.Join(dir, "profiles", "default", "conversations"))
@@ -116,6 +117,7 @@ func TestRunAttachmentGC(t *testing.T) {
 // TestRunAttachmentGCQuietOnCancel 启动期 ctx 取消：跳过清扫且不告警（干净收尾，
 // ctx 提前到装配段创建后 Ctrl+C 不产生误导性错误输出）。
 func TestRunAttachmentGCQuietOnCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	blobs, err := blobfs.New(t.TempDir())

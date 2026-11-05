@@ -15,6 +15,7 @@ import (
 
 // TestSplitCommandLine 命令行拆解：空白切分、双引号成组、反斜杠只在引号内对 `"`/`\` 生效。
 func TestSplitCommandLine(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		line    string
@@ -60,6 +61,7 @@ func TestSplitCommandLine(t *testing.T) {
 
 // TestCommandLineRoundTrip 展示形态能被拆回同样的命令（界面保存的就是它显示的那一行）。
 func TestCommandLineRoundTrip(t *testing.T) {
+	t.Parallel()
 	command := `C:\Program Files\acp\agent.exe`
 	args := []string{"acp", "--title", "my agent"}
 	line := commandLineOf(command, args)
@@ -108,6 +110,7 @@ func readDelegateAgents(t *testing.T, path string) []map[string]any {
 
 // TestDelegateAdminSetCommandLine 改命令行：写回 command/args，空参数时不留 "args": [] 噪音。
 func TestDelegateAdminSetCommandLine(t *testing.T) {
+	t.Parallel()
 	admin, path := delegateAdminFixture(t, `[{"name":"a","command":"old","args":["x"]}]`)
 	if err := admin.SetCommandLine("a", `"C:\tools\agent.exe" acp --stdio`); err != nil {
 		t.Fatalf("set: %v", err)
@@ -145,6 +148,7 @@ func TestDelegateAdminSetCommandLine(t *testing.T) {
 
 // TestDelegateAdminEnabledAndDefault 启停与缺省：缺省不能停用、停用不能设缺省。
 func TestDelegateAdminEnabledAndDefault(t *testing.T) {
+	t.Parallel()
 	admin, path := delegateAdminFixture(t, `[
 		{"name":"a","command":"a","default":true},
 		{"name":"b","command":"b","enabled":false}
@@ -177,6 +181,7 @@ func TestDelegateAdminEnabledAndDefault(t *testing.T) {
 
 // TestDelegateAdminSnapshotAvailability 可用性按 PATH 现算；零代理给一句去哪写。
 func TestDelegateAdminSnapshotAvailability(t *testing.T) {
+	t.Parallel()
 	admin, _ := delegateAdminFixture(t, `[
 		{"name":"gone","command":"definitely-not-on-path-1f2a","enabled":true},
 		{"name":"off","command":"whatever","enabled":false},

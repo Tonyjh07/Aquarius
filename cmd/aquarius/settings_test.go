@@ -17,6 +17,7 @@ import (
 // TestSettingsCommands 命令计划：diff 才发命令、空模型名跳过、空档位 = off 清除、
 // 文本键（provider/base_url/api_key/hotkey/theme）不进命令计划。
 func TestSettingsCommands(t *testing.T) {
+	t.Parallel()
 	cur := uigui.SettingsSnapshot{
 		Permission: "strict",
 		Model:      "m1", Think: true, Effort: "medium", Hotkey: "", Theme: "system",
@@ -88,6 +89,7 @@ func TestSettingsCommands(t *testing.T) {
 // 读回同值；其余键（permissions 段等）经泛键改写保留。D110②：provider 编辑走
 // ProviderManager.Apply（providers 列表结构），不在文本键范围（见 providers_test）。
 func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -160,6 +162,7 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 // TestWriteRawConfig 高级页整文件替换（Q10）：合法 JSON 落盘（原文即最终态），
 // 非法 JSON 拒写且原文件不动。
 func TestWriteRawConfig(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -194,6 +197,7 @@ func TestWriteRawConfig(t *testing.T) {
 
 // TestReadTextSettingsMCPNames MCP/插件只读名清单（sorted）与 RawJSON 原文。
 func TestReadTextSettingsMCPNames(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := `{"mcpServers": {"web": {"transport":"stdio"}, "docs": {}}, "plugins": {"x": {"enabled": true}}, "output": {"notify": true}}`
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
@@ -217,6 +221,7 @@ func TestReadTextSettingsMCPNames(t *testing.T) {
 // TestPersistSettingsTextKeysTheme 主题档归一与拒写："" → system 落盘；枚举外拒写
 // 且原文件不动（D61 落盘口径）。
 func TestPersistSettingsTextKeysTheme(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -240,6 +245,7 @@ func TestPersistSettingsTextKeysTheme(t *testing.T) {
 // TestPersistFallbackChainRoundTrip 降级链写回（S11-7①/D176）：patch.Fallback 全量写回
 // model.fallback（空 model 落省略键）；读回快照同值；nil = 这条写路径不管链（保持不变）。
 func TestPersistFallbackChainRoundTrip(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -291,6 +297,7 @@ func TestPersistFallbackChainRoundTrip(t *testing.T) {
 // TestFallbackChainValidation 降级链保存前校验（S11-7①/D176）：provider 空/未知、
 // 指向 primary 当前模型、重复项都拦下且原文件不动。
 func TestFallbackChainValidation(t *testing.T) {
+	t.Parallel()
 	base := func(t *testing.T) string {
 		t.Helper()
 		cfgPath := filepath.Join(t.TempDir(), "config.json")
@@ -335,6 +342,7 @@ func TestFallbackChainValidation(t *testing.T) {
 
 // TestReadTextSettingsFallback 读失败/解析失败返回零值（快照容错不阻断开窗）。
 func TestReadTextSettingsFallback(t *testing.T) {
+	t.Parallel()
 	if s := readTextSettings(filepath.Join(t.TempDir(), "missing.json")); s.Hotkey != "" || s.Theme != "" ||
 		s.Notify || s.SystemPrompt != "" || s.RawJSON != "" || len(s.MCPServers) > 0 {
 		t.Errorf("缺失文件读回 = %+v, want 零值", s)
@@ -351,6 +359,7 @@ func TestReadTextSettingsFallback(t *testing.T) {
 // TestPersistReadTextSettingsZoomKnobs D90 三旋钮写读往返：scale/font_size/
 // window_width/window_height 写回后读回同值，无关键（permissions/limits）不受影响。
 func TestPersistReadTextSettingsZoomKnobs(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -378,6 +387,7 @@ func TestPersistReadTextSettingsZoomKnobs(t *testing.T) {
 // TestPersistAudioSettingsRoundTrip 语音页写读往返（D179）：识别/合成的服务、模型、
 // 音色、描述、风格、标签与录音语种都按表单落盘并可读回。
 func TestPersistAudioSettingsRoundTrip(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -413,6 +423,7 @@ func TestPersistAudioSettingsRoundTrip(t *testing.T) {
 // TestPersistAudioSettingsKeepsKindAndValidates 语音写回不动 kind（高级页手写值原样
 // 保留）；非法 provider、缺模型名、非法语种一律拒写。
 func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
+	t.Parallel()
 	raw := strings.Replace(defaultConfig,
 		`"audio": { "asr": {}, "tts": {} }`,
 		`"audio": { "asr": { "kind": "chat-audio" }, "tts": { "kind": "chat-audio" } }`, 1)
@@ -457,6 +468,7 @@ func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
 // TestPersistAudioKindAndModelPath 协议位与本地模型路径往返：whisper 只写模型路径也能
 // 落盘并通过校验；协议位写进 config 的 kind 键。
 func TestPersistAudioKindAndModelPath(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -493,6 +505,7 @@ func TestPersistAudioKindAndModelPath(t *testing.T) {
 
 // TestPersistAudioRejectsBadKind 协议位写错时保存就拦住（启动期同样会拒）。
 func TestPersistAudioRejectsBadKind(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -528,6 +541,7 @@ func TestPersistAudioRejectsBadKind(t *testing.T) {
 // TestPersistAudioEndpointRoundTrip 语音的独立端点与密钥（D222）：端点写读往返，
 // 密钥留空 = 保持原引用（只写不回显，patch 里的空没有「清空」语义）。
 func TestPersistAudioEndpointRoundTrip(t *testing.T) {
+	t.Parallel()
 	raw := strings.Replace(defaultConfig,
 		`"audio": { "asr": {}, "tts": {} }`,
 		`"audio": {"asr": {"api_key": "secret:OLD_ASR"}, "tts": {}}`, 1)
@@ -569,6 +583,7 @@ func TestPersistAudioEndpointRoundTrip(t *testing.T) {
 // TestPersistSettingsTextKeysLang 界面语言写回（D275/§7.8）：三态归一（"" = auto）、
 // 读回快照同值、枚举外拒写且原文件不动。写进去的值必须过得了下次启动的同一条解析。
 func TestPersistSettingsTextKeysLang(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -606,6 +621,7 @@ func TestPersistSettingsTextKeysLang(t *testing.T) {
 // TestPersistSettingsTextKeysPlaceholder 输入框占位文字写回（D279/§7.8）：换行折成单行、
 // 读回快照同值、清空 = 回落内置（写 ""，不是「保持原值」）、超长拒写且原文件不动。
 func TestPersistSettingsTextKeysPlaceholder(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)

@@ -43,6 +43,7 @@ func writeProvidersConfig(t *testing.T) (string, string) {
 }
 
 func TestProviderManagerSnapshot(t *testing.T) {
+	t.Parallel()
 	cfgPath, _ := writeProvidersConfig(t)
 	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 	snap := m.Snapshot()
@@ -74,6 +75,7 @@ func TestProviderManagerSnapshot(t *testing.T) {
 }
 
 func TestProviderManagerApply(t *testing.T) {
+	t.Parallel()
 	cfgPath, _ := writeProvidersConfig(t)
 	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 
@@ -234,6 +236,7 @@ func TestProviderManagerApplyKeyPoolAndCaps(t *testing.T) {
 // `enabled: false`；再打开删键恢复缺省形态；同一家的其他模型不受影响。全部关掉 = 拒绝
 // 应用（启动校验同一口径）。
 func TestProviderManagerEnabledFlag(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := `{
   "model": {
@@ -298,6 +301,7 @@ func TestProviderManagerEnabledFlag(t *testing.T) {
 }
 
 func TestProviderManagerApplyValidation(t *testing.T) {
+	t.Parallel()
 	cfgPath, _ := writeProvidersConfig(t)
 	m := &providerManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: os.Stderr}
 	ok := func(name, base, models string) uigui.ProviderPatch {
@@ -326,6 +330,7 @@ func TestProviderManagerApplyValidation(t *testing.T) {
 // TestProviderManagerApplyCost 单价往返（D205）：填了才落键、留空删键、快照回显同一数；
 // 负数被 Apply 拒绝（写出去的配置要能过启动校验）。
 func TestProviderManagerApplyCost(t *testing.T) {
+	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := `{
   "model": {
@@ -402,6 +407,7 @@ func TestProviderManagerApplyCost(t *testing.T) {
 // TestProviderManagerApplyStoresPlaintext D161：编辑区填明文 → 写进本机密钥库 +
 // config 只留 `secret:<名>`；config 字节里搜不到明文；写库失败即报错、config 不动。
 func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
+	t.Parallel()
 	cfgPath, _ := writeProvidersConfig(t)
 	ch, bin := testChain(t, nil)
 	stores := 0

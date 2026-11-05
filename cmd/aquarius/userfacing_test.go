@@ -44,6 +44,7 @@ var userFacingDocs = []string{
 // 与字符串字面量守卫互补：那条防代码往界面上写编号，这条防文档正文里写。两边都失效时
 // 用户就会读到「（D34）」这种只有维护者看得懂的东西。
 func TestNoDecisionIDsInUserFacingDocs(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	docs := append([]string{}, userFacingDocs...)
 	releases, err := filepath.Glob(filepath.Join(root, "docs", "releases", "*.md"))
@@ -77,6 +78,7 @@ func TestNoDecisionIDsInUserFacingDocs(t *testing.T) {
 // TestNoDecisionIDsInUserFacingStrings 遍历 cmd/ 与 internal/ 的非测试源码，
 // 解析出所有字符串字面量（含 raw string），命中内部标记即失败。
 func TestNoDecisionIDsInUserFacingStrings(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..") // cmd/aquarius → 仓库根
 	var bad []string
 	for _, top := range []string{"cmd", "internal", "pluginapi"} {
@@ -133,6 +135,7 @@ func TestNoDecisionIDsInUserFacingStrings(t *testing.T) {
 
 // TestUserFacingIDPatternSanity 守住正则本身：能命中典型编号，也不误伤普通文案。
 func TestUserFacingIDPatternSanity(t *testing.T) {
+	t.Parallel()
 	hit := []string{"密钥只写不回显（D35）", "见 §7.3", "桌面通知（回答完成时，M3）", "D145 后应只留限额"}
 	for _, s := range hit {
 		if userFacingIDPattern.FindString(s) == "" {

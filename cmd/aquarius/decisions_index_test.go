@@ -61,6 +61,7 @@ func atoiOrPanic(s string) int {
 // 索引表 = `## 索引` 与下一个一级标题之间的文本；正文 = `## 记录` 之后。两段任一缺失直接失败——
 // 章节改名时这条测试要跟着失，而不是静默扫 0 行通过。
 func TestDecisionsBodyInIndex(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join("..", "..", "docs", "decisions.md")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -133,6 +134,7 @@ func TestDecisionsBodyInIndex(t *testing.T) {
 // TestDecisionIDsParsing 守住取号口径本身：区间展开、顿号并列、区间不带第二个 D 都要认，
 // 且不能把「D 盘」「Base64」这类文本当编号。
 func TestDecisionIDsParsing(t *testing.T) {
+	t.Parallel()
 	cases := map[string][]int{
 		"D277":        {277},
 		"D265–D267":   {265, 266, 267},

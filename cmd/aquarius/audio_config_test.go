@@ -26,6 +26,7 @@ func audioTestConfig(asr, tts audioChannel) *fileConfig {
 
 // TestNormalizeAudioDefaults 缺省语种 = auto；未配置的通道不算错误。
 func TestNormalizeAudioDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(audioChannel{}, audioChannel{})
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
@@ -43,6 +44,7 @@ func TestNormalizeAudioDefaults(t *testing.T) {
 
 // TestNormalizeAudioTrimsAndFillsKind 空白与缺省协议位归一。
 func TestNormalizeAudioTrimsAndFillsKind(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(
 		audioChannel{Provider: " mimo ", Model: " mimo-v2.5-asr "},
 		audioChannel{Provider: "mimo", Model: "mimo-v2.5-tts", Voice: " 冰糖 ", Style: "语速稍快"},
@@ -67,6 +69,7 @@ func TestNormalizeAudioTrimsAndFillsKind(t *testing.T) {
 
 // TestNormalizeAudioRejectsBadKindAndLanguage 协议位与语种写错是永不生效的配置，fail-fast。
 func TestNormalizeAudioRejectsBadKindAndLanguage(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(audioChannel{Provider: "mimo", Model: "m", Kind: "websocket"}, audioChannel{})
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
@@ -88,6 +91,7 @@ func TestNormalizeAudioRejectsBadKindAndLanguage(t *testing.T) {
 // TestNormalizeAudioRequiresModel 写了 provider 却没写模型：保存后什么都不会发生，
 // 应用时就拦住。
 func TestNormalizeAudioRequiresModel(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(audioChannel{Provider: "mimo"}, audioChannel{})
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
@@ -99,6 +103,7 @@ func TestNormalizeAudioRequiresModel(t *testing.T) {
 
 // TestAudioProviderUnknownName 名字写错不阻断启动，但必须说明不可用。
 func TestAudioProviderUnknownName(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(audioChannel{Provider: "nope", Model: "m"}, audioChannel{})
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
@@ -114,6 +119,7 @@ func TestAudioProviderUnknownName(t *testing.T) {
 // TestAudioEndpointIndependent 独立端点与密钥（D222）：不引用任何 provider 也能用；
 // 只填端点时密钥按能力回落 secret:AQUARIUS_<ASR|TTS>_API_KEY。
 func TestAudioEndpointIndependent(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(
 		audioChannel{BaseURL: "https://asr.example.com/v1", APIKey: "secret:MY_ASR", Model: "m1"},
 		audioChannel{BaseURL: "https://tts.example.com/v1", Model: "m2"},
@@ -143,6 +149,7 @@ func TestAudioEndpointIndependent(t *testing.T) {
 // TestAudioEndpointOverridesBorrow 显式字段只覆盖缺的那一项：填了端点仍借密钥，
 // 填了密钥仍借端点（D222）。
 func TestAudioEndpointOverridesBorrow(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(
 		audioChannel{Provider: "mimo", BaseURL: "https://mirror.example.com/v1", Model: "m1"},
 		audioChannel{Provider: "mimo", APIKey: "secret:MY_TTS", Model: "m2"},
@@ -172,6 +179,7 @@ func TestAudioEndpointOverridesBorrow(t *testing.T) {
 // TestAudioEndpointBorrowMissingNeedsOwnURL 借的条目不存在时：只填了密钥还不够（端点
 // 无从定位），必须自己填端点。
 func TestAudioEndpointBorrowMissingNeedsOwnURL(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(audioChannel{Provider: "gone", APIKey: "secret:K", Model: "m"}, audioChannel{})
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
@@ -194,6 +202,7 @@ func TestAudioEndpointBorrowMissingNeedsOwnURL(t *testing.T) {
 // TestNormalizeAudioKinds 两侧各认自己的协议位：识别认 whisper / openai / funasr，
 // 合成认 vits / gptsovits；写错的一律 fail-fast（永远不会生效的配置）。
 func TestNormalizeAudioKinds(t *testing.T) {
+	t.Parallel()
 	ok := []struct {
 		name string
 		asr  audioChannel
@@ -243,6 +252,7 @@ func TestNormalizeAudioKinds(t *testing.T) {
 // TestNormalizeAudioWhisperNeedsNoEndpoint 本地引擎没有端点也没有密钥：只填模型路径
 // 就算配置好了，不该因为「端点未配置」被拒。
 func TestNormalizeAudioWhisperNeedsNoEndpoint(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(audioChannel{Kind: kindASRWhisper, ModelPath: " /m/ggml-base.bin "}, audioChannel{})
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
@@ -264,6 +274,7 @@ func TestNormalizeAudioWhisperNeedsNoEndpoint(t *testing.T) {
 
 // TestNormalizeAudioEmptyKindDefaults 协议位留空 = chat-audio（老配置的形状，行为不变）。
 func TestNormalizeAudioEmptyKindDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := audioTestConfig(audioChannel{Provider: "mimo", Model: "m"}, audioChannel{Provider: "mimo", Model: "m"})
 	if err := cfg.Model.normalize(); err != nil {
 		t.Fatalf("model.normalize: %v", err)
