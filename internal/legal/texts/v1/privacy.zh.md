@@ -26,7 +26,7 @@
 | 附件 | `profiles/<档名>/attachments/` | 图片与文档原字节，按内容寻址 |
 | 记忆 | `profiles/<档名>/memories.md`、`profiles/<档名>/conversations/<编号>.memory.md` | 纯 markdown，你可以直接编辑 |
 | 配置 | `profiles/<档名>/config.json` | 服务地址、模型名、密钥引用 |
-| 密钥 | `profiles/<档名>/secrets.bin` | 本机加密；换一台机器解不开 |
+| 密钥 | `profiles/<档名>/secrets.bin`（同目录另有 `secrets.key` 与 `secrets.bin.bak`） | 本机加密：Windows 上由系统 DPAPI 绑定本机账户，换一台机器解不开；其他平台用同目录的 `secrets.key` 加密，**复制整个档目录仍可解密**，请把该目录当作敏感数据 |
 | 审计日志 | `profiles/<档名>/audit.log` | 工具调用记录 |
 | 任务日志 | `profiles/<档名>/jobs/` | 后台任务的输出 |
 | 运行日志 | `profiles/<档名>/logs/aquarius-YYYY-MM-DD.log` | 启动、装配与模型链路的告警；按天切分，保留最近 7 天 |
@@ -110,4 +110,4 @@
 
 ## 14. 生效与版本
 
-版本 1，2026 年 11 月 6 日生效。本政策以中文书写，英文译本仅为方便阅读；中英文不一致时，以中文版本为准。
+版本 {v}，2026 年 11 月 6 日生效。本政策以中文书写，英文译本仅为方便阅读；中英文不一致时，以中文版本为准。

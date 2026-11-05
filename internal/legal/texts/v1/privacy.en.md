@@ -26,7 +26,7 @@ The Program is stand-alone software. It has no accounts and no server side. We o
 | Attachments | `profiles/<name>/attachments/` | Original bytes of images and documents, addressed by content |
 | Memories | `profiles/<name>/memories.md`, `profiles/<name>/conversations/<id>.memory.md` | Plain markdown; you can edit them directly |
 | Configuration | `profiles/<name>/config.json` | Service addresses, model names, credential references |
-| Credentials | `profiles/<name>/secrets.bin` | Encrypted on this machine; not readable after moving to another machine |
+| Credentials | `profiles/<name>/secrets.bin` (together with `secrets.key` and `secrets.bin.bak` in the same directory) | Encrypted on this machine: on Windows the system DPAPI binds it to the local account, so it cannot be read on another machine; on other platforms it is encrypted with the `secrets.key` in the same directory, so **copying the whole profile directory still allows decryption** — treat that directory as sensitive |
 | Audit log | `profiles/<name>/audit.log` | Records of tool calls |
 | Job logs | `profiles/<name>/jobs/` | Output of background jobs |
 | Run logs | `profiles/<name>/logs/aquarius-YYYY-MM-DD.log` | Warnings from startup, assembly and the model chain; split by day, kept for 7 days |
@@ -110,4 +110,4 @@ We respond within 15 business days of receipt. If you believe our handling infri
 
 ## 14. Effective date and version
 
-Version 1, effective 6 November 2026. This policy is written in Chinese. This English text is a translation for convenience; the Chinese version prevails.
+Version {v}, effective 6 November 2026. This policy is written in Chinese. This English text is a translation for convenience; the Chinese version prevails.
