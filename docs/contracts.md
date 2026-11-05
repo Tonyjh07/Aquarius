@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-05 @ f7abd72 -->
+<!-- docs-sync: 2026-11-05 @ 16a4b42 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -34,19 +34,9 @@
    ↑ 旧分支（Fresh 模式保留于此；Carry 模式下 m4/m5 转移到 m3'，m3 成为旧版本叶子）
 ```
 
-```go
-// 聚合根（D214）：树只能经方法改动，三张结构表一律私有——导出 map 等于把
-// 「只有方法能改」作废（任何一处 c.Nodes[id] = ... 都能绕过不变量检查）。
-type Conversation struct {
-	ID    ID
-	Title string
-	Head  MessageID // 当前游标（初始 = Root；移动语义走 Checkout）
-
-	nodes       map[MessageID]Message     // 只增（Prune 硬删除外）
-	children    map[MessageID][]MessageID // 结构边（Root 的孩子 = 顶层消息）
-	revisedFrom map[MessageID]MessageID   // 新→旧：版本链（纯结构元数据）
-}
-```
+**聚合根**（D214）：树只能经方法改动——节点表、结构边表、版本链**三张表一律私有**，导出 map
+就等于把「只有方法能改」作废（任何一处直接写表都能绕过不变量检查）。对象对外只露三个标量：
+会话 ID、标题、当前游标 `Head`。
 
 **词汇**（取值就是协议字符串，落盘与外层映射都按它）：分片 `text|image|audio|doc|thinking|tool`
 （thinking/tool 仅 assistant 可携带）；角色 `root|user|assistant|system|inject`；修订模式
@@ -307,129 +297,48 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 
 ### 5.1 `llm.go` —— 生成端口
 
-```go
-// PromptKind / PromptRole 是**装配之后**的两套取值（D227），与树上的 conversation.PartKind /
-// Role 不同：树上含 doc / thinking 这类「怎么存」的区分，投影到请求只剩 text|image（thinking 走
-// 消息级 Reasoning、doc 已在前置摄取拍平成 text）；tool 角色仅是 **API 投影概念**（OpenAI 要求
-// assistant(tool_calls)→tool 应答交错），树上无 tool 节点。
-type PromptKind string // text | image
-type PromptRole string // system | user | assistant | tool
+**两套取值**（D227）：`PromptKind` / `PromptRole` 是**装配之后**的取值，与树上的
+`conversation.PartKind` / `Role` 不同——树上含 doc / thinking 这类「怎么存」的区分，投影到
+请求只剩 text|image（thinking 走消息级 `Reasoning`、doc 已在前置摄取拍平成 text）；tool 角色
+仅是 **API 投影概念**（OpenAI 要求 assistant(tool_calls)→tool 应答交错），树上无 tool 节点。
 
-type PromptMessage struct {
-	Role      PromptRole
-	Content   []PromptPart // {Kind, Text, MIME, Data}；Data 由应用层经 AttachmentStore 内联
-	Reasoning string       // assistant：思维链回传承载（D42），适配器映射为 reasoning_content 等字段
-	ReasoningSignature string // 思考块签名原样回传，适配器按协议前缀认归属（D175）；空 = 无签名
-	ToolCalls []tool.Call
-	CallID    string // role=tool
-}
+**采样参数用指针**（D204）：浮点 nil = 不发送（交服务端默认），非 nil = 照发——`temperature` 0
+是「要确定性输出」这个有意义的取值，用零值兼作「不发送」就永远表达不出来；整数仍以 0 表示
+不发送。逐模型覆盖全局缺省时按非 nil / 非零字段覆盖，停止串非空即整体替换——没有「部分覆盖」
+的语义。推理强度与思考开关同位：空 / nil = 不发送。
 
-type GenerateRequest struct {
-	Model    string
-	Messages []PromptMessage
-	Tools    []tool.Spec
-	Params   Sampling    // 采样参数（D204）
-	Budget   TokenBudget // MaxOutputTokens、MaxCostUSD
-}
+**能力位只描述模型能做什么**（D173）：tools / reasoning / vision 三项独立声明，缺省按协议给
+（§8），空集 = 什么都不假设；「协议怎么写」是适配器的事。单价按**每百万 token**（D205，
+与厂商报价同口径），0 = 未声明。
 
-// Sampling（D204）：**浮点参数用指针**——nil = 不发送（交服务端默认），非 nil = 照发。
-// temperature 0 是「要确定性输出」这个有意义的取值，用零值兼作「不发送」就永远表达不出来。
-// 整数（MaxTokens）仍以 0 表示不发送。Overlay 用非 nil / 非零字段覆盖（逐模型覆盖全局缺省），
-// Stop 非空即整体替换——采样停止串没有「部分覆盖」的语义。
-type Sampling struct {
-	Temperature *float64
-	TopP        *float64
-	MaxTokens   int      // 0 = 不发送；本轮预算非零时以预算为准
-	Stop        []string
-	ReasoningEffort string // 空 = 不发送（D34）
-	Thinking    *bool      // nil = 不发送（D34）
-}
+**计数**（D26 三级链②）：`TokenCounter` 是可选的精确计数（本地 tokenizer 或 `count_tokens`
+API）；未实现或报错时 app 回落通用估算（③），并以服务端实测 usage（①）自校准。
 
-// ModelInfo 的能力位（D173）只描述**模型能做什么**，不描述「协议怎么写」——后者是适配器的事。
-//   Tools / Reasoning / Vision 三项独立声明，缺省按协议给（§8）；空集 = 什么都不假设。
-// 单价按**每百万 token**（D205，与厂商报价同口径），0 = 未声明。
-type ModelInfo struct {
-	Name           string
-	Caps           ModelCaps
-	ContextWindow  int // 0 = 未声明/未知
-	CostIn, CostOutUSD float64
-}
-
-type Delta struct {
-	Text               string
-	Reasoning          bool   // 思维链分片（D34 展示 / D42 入树）
-	ReasoningSignature string // 思考结束时的签名分片（D175），并入当前轮的 PartThinking
-	ToolCalls          []ToolCallDelta // 按 Index 聚合（app 层 ToolCallAssembler）
-	Usage              *Usage          // 流末尾
-}
-
-type Stream interface {
-	Recv() (Delta, error) // io.EOF = 正常结束
-	Close() error         // 中断生成（等价 ctx 取消）
-}
-
-type LLM interface {
-	Generate(ctx context.Context, req GenerateRequest) (Stream, error)
-	Models(ctx context.Context) ([]ModelInfo, error)
-}
-
-// TokenCounter 可选精确计数（三级计数链②，D26）：本地 tokenizer 或 count_tokens API。
-// 未实现/报错时 app 回落通用估算（③），并以服务端实测 usage（①）自校准。
-type TokenCounter interface {
-	CountTokens(ctx context.Context, text string) (int, error)
-}
-```
+**流式增量**（D34/D42/D175）：`Delta` 的文本、思维链分片、思考签名分片、工具调用增量
+（按 Index 聚合，app 层装配）、末尾 usage 各占一位；`Stream.Close` 等价 ctx 取消。
 
 **具名类型止于 JSON 边界**（D227）：`PromptKind` / `PromptRole` 在 `port`、`app` 与各适配器内部一律用具名值，只有真正写进请求体与解析响应体的那一处才转成协议字符串。这样做不是为了类型安全本身——裸 `string` 写错一个字母编译器不管、测试也常常漏——而是让「哪些取值合法」成为可被 `switch` 穷举的事实：跨协议的那几处 `case`（Chat Completions / Anthropic / Responses）攒在同一组常量上，将来协议再加一档时不会只改到其中两家。
 
 ### 5.2 `tool.go` —— 工具端口
 
-```go
-type Tool interface {
-    Spec() tool.Spec
-    Execute(ctx context.Context, call tool.Call) (tool.Result, error)
-}
+**两层**：`Tool` 是被调用的那一件（声明 `Spec()` + 执行）；`ToolRunner` 是包在外面那层，
+一次调用要过**查找 → capability 校验 → Risk 确认 → 超时 → 结果裁剪**（超时可经保留参数
+`timeout_sec` 逐次覆盖，D38）。确认面是并列的 `Confirmer`（布尔 + 原因），两列分工见 §9。
 
-type ToolRunner interface { // 查找 + capability 校验 + Risk 确认 + 超时（可经保留参数 timeout_sec 逐次覆盖，D38）+ 结果裁剪
-    Specs(ctx context.Context) ([]tool.Spec, error)
-    Execute(ctx context.Context, call tool.Call) (tool.Result, error)
-}
+**两个可选能力**：
 
-type Confirmer interface {
-    Confirm(ctx context.Context, prompt string) (bool, error)
-}
+- `FileTarget`（D25）：文件类工具申报本次调用的目标路径与读写操作，`ToolRunner` 据此查权限
+  矩阵的**路径格**（D22 两列分工）；未申报者按执行类看工具列。
+- `Interactive`（D184）：声明「这次要等人应答」的工具不套默认超时（`limits.tool_timeout_sec`），
+  仍受 ctx 与显式 `timeout_sec` 约束——用户思考两分钟不该被当成工具超时。
 
-// FileTarget 可选能力（D25）：文件类工具申报本次调用的目标路径与读写操作，
-// ToolRunner 据此查权限矩阵路径格（D22 两列分工）；未申报者走执行类（看工具列）。
-type FileTarget interface {
-    Target(ctx context.Context, call tool.Call) (path string, op perm.Op, ok bool)
-}
-
-// Interactive 可选能力（D184）：工具需要等人应答（如 ask_user）。
-// ToolRunner 对声明者不套默认超时（limits.tool_timeout_sec），仍受 ctx 与显式
-// timeout_sec 约束——用户思考两分钟不该被当成工具超时。
-type Interactive interface{ Interactive() bool }
-
-// 会话上下文：Agent.Run 执行工具时注入当前会话 ID（值拷贝、只读），
-// 供 memory_* 的 session 作用域等定位资源；不暴露会话树对象（插件不得直接操作树）。
-func WithSessionID(ctx context.Context, id conversation.ID) context.Context
-func SessionIDFrom(ctx context.Context) (conversation.ID, bool)
-```
+**会话上下文**：`Agent.Run` 执行工具时把当前会话 ID 注入 ctx（值拷贝、只读），供 `memory_*`
+的会话作用域定位资源；**不暴露会话树对象**——插件不得直接操作树。
 
 ### 5.3 `store.go` —— 会话存储端口
 
-```go
-type ConversationSummary struct {
-    ID conversation.ID; Title string; MessageN int; UpdatedAt time.Time
-}
-
-type ConversationStore interface { // 整树存取（一会话一 JSON），写前把旧文件轮成备份代
-    Save(ctx context.Context, c *conversation.Conversation) error
-    Load(ctx context.Context, id conversation.ID) (*conversation.Conversation, error)
-    List(ctx context.Context) ([]ConversationSummary, error)
-    Remove(ctx context.Context, id conversation.ID) error
-}
-```
+端口只有四件事：存整树、取整树、列摘要、删。摘要只够列表展示（ID / 标题 / 消息数 / 更新时间），
+不装树。
 
 **找不到会话**返回 `port.ErrConversationNotFound`（`storejson.ErrNotFound` 是它的别名）：
 内核据此区分「会话已被删除」（丢弃注入）与「读取故障」（上抛），不必认识具体适配器。
@@ -441,55 +350,19 @@ type ConversationStore interface { // 整树存取（一会话一 JSON），写�
 
 ### 5.4 `memory.go` —— 记忆端口
 
-```go
-type MemoryDoc struct{ Name, Content string; ModTime time.Time }
-type MemoryIndexEntry struct{ Name, Summary string }
-type MemoryHit struct{ Name string; Line int; Snippet string }
-
-type MemoryStore interface {
-    Index(ctx context.Context) ([]MemoryIndexEntry, error) // 注入 system prompt
-    Read(ctx context.Context, name string) (MemoryDoc, error)
-    Write(ctx context.Context, doc MemoryDoc) error
-    Remove(ctx context.Context, name string) error
-    Search(ctx context.Context, query string) ([]MemoryHit, error)
-}
-```
+端口方法面 = 索引（供 system prompt 注入）、读、写、删、关键词检索五件；后端的差异止于此，
+上层不认「记忆存在哪」（`memory_*` 工具只见全局 + 当前会话两份，§4.4）。
 
 ### 5.5 `blob.go` —— 附件端口
 
-```go
-// BlobRef 见 domain/conversation.BlobRef（Part.Ref 引用之，port 直接引用，不另造 DTO）
-type BlobRef = conversation.BlobRef
-
-type AttachmentStore interface {
-    Put(ctx context.Context, r io.Reader, mime, name string) (BlobRef, error)
-    Get(ctx context.Context, ref BlobRef) (io.ReadCloser, error)
-    Stat(ctx context.Context, ref BlobRef) (bool, error)
-    GC(ctx context.Context, keep map[string]bool) error
-}
-```
+端口方法面 = 存入（拿到引用）、取出、存在性查询、按 keep 集清扫四件。`BlobRef` **直接复用
+领域类型**，不另造一份 DTO——附件引用既是树上的字段，也是端口的入参，两处同形才不会有换算层。
 
 ### 5.6 `modality.go` —— 语音模态端口
 
-```go
-type Transcriber interface { // ASR：云转写（首发 MiMo 形状）/ 本地引擎（后续）
-    Transcribe(ctx context.Context, audio conversation.BlobRef, lang string) (string, error)
-}
-
-// SpeechRequest 一次合成请求（D179）：正文之外，风格与音色都是配置项，
-// 不进模型上下文、不进会话树。字段与 audio.tts 一一对应，适配器按模型决定用哪个。
-type SpeechRequest struct {
-    Text   string // 要播报的正文（进合成请求的 assistant 消息）
-    Voice  string // 预置音色名；voiceclone 模式是样本文件绝对路径；voicedesign 模式不用
-    Design string // voicedesign 模式的音色描述（该模型必填）
-    Style  string // 自然语言风格指令（进 user 消息；空 = 不发）
-    Tags   string // 风格标签（如 "温柔 语速稍快"）：非空时拼成 "(标签)" 前缀置于正文开头
-}
-
-type Synthesizer interface { // TTS：云 TTS（厂商适配器）/ 系统朗读（后续）
-    Synthesize(ctx context.Context, req SpeechRequest) (conversation.BlobRef, error)
-}
-```
+**两个端口，都是「一次请求一次响应」**：识别（`Transcriber`）吃一个附件引用 + 语言，回文本；
+合成（`Synthesizer`）吃一次请求，回 WAV 引用。合成请求除正文外还有**音色、音色描述（voicedesign）、
+风格指令、风格标签**四项，与 `audio.tts` 配置一一对应——这四项不进模型上下文、不进会话树（D179）。
 
 - **厂商形状差异只在适配器里**：首发适配器按 MiMo 的 chat-completions 音频形状实现（ASR = `input_audio`
   内容块 + `asr_options.language`，TTS = `messages[user 风格, assistant 正文]` + `audio{format,voice}`）；
@@ -524,84 +397,23 @@ type Synthesizer interface { // TTS：云 TTS（厂商适配器）/ 系统朗读
 
 ### 5.7 `ingest.go` —— 输入/输出方式端口
 
-```go
-// MaxAttachments 单条消息的附件数上限（D186）：摄取与界面共用，文案由它生成。
-const MaxAttachments = 8
+**输入归一化**：一次输入可以是文本、单个文件、剪贴板图、麦克风音频，或一组附件。多附件的
+顺序固定为 **File 简写 → Attachments 列表 → Blob 简写**（`AttachmentList` 就是这条归一化），
+摄取逐个进行、允许部分成功，没进正文的说明走 `Note`（「已由 ASR 转写」这类）。
 
-type RawInput struct {
-    Kind string // "text" | "file" | "clipboard" | "mic"
-    Text string
-    File string      // 单文件简写（等价于 Attachments 只带一项）
-    Blob *BlobRef    // clipboard 图片 / mic 音频（已先入附件库）
-    Attachments []Attachment // 多附件（D186）：逐个摄取，允许部分成功
-}
-
-// Attachment 一项附件：Path（待摄取的文件路径）与 Blob（已入库字节）二选一。
-type Attachment struct{ Path string; Blob *BlobRef }
-
-// AttachmentList 归一化：File / Blob 简写并入列表，顺序 = File → Attachments → Blob。
-func (r RawInput) AttachmentList() []Attachment
-// HasAttachments 是否带任何附件（含简写）。
-func (r RawInput) HasAttachments() bool
-
-type IngestReport struct {
-    Parts []conversation.Part
-    Note  string // "已由 ASR 转写" 等
-}
-
-type Ingestor interface {
-    Accepts(raw RawInput) bool
-    Ingest(ctx context.Context, raw RawInput) (IngestReport, error)
-}
-
-// Parts 可能含思考分片（PartThinking，D42）：输出器属"对外播报正文"，适配器须自行筛选。
-type OutputRequest struct{ Message conversation.Message; Parts []conversation.Part }
-
-type OutputAdapter interface {
-    Name() string
-    Deliver(ctx context.Context, req OutputRequest) error // 失败只记日志不打断主流程
-}
-```
+**输出侧**：`OutputRequest` 带的是**整条消息 + 分片**，其中可能含思考分片（D42）——输出器属
+「对外播报正文」，**须自行筛选**，端口不做这件事。`Deliver` 失败只记日志、不打断主流程：
+播报是旁路，不该让一次推送失败终结一轮。
 
 ### 5.8 `job.go` —— 后台任务端口
 
-```go
-type JobSpec struct {
-    Command string; Args []string; Env map[string]string
-    WorkDir string        // 进程 cwd（默认家目录），不是"工作区"
-    Timeout time.Duration // 0 = 不限时
-}
+端口方法面：启动（后台）与执行（同步，`term_exec` 走这条）、列表、状态、日志尾、终止、
+阻塞到终态（D189：完成是事件不是轮询），以及启动对账用的两件——取走未收尾条目（**读即清**）
+与报告落地后销账（D264）。
 
-type Job struct {
-    ID JobID; Spec JobSpec
-    Status JobStatus // running | done | failed | killed
-    PID, ExitCode int
-    StartedAt, EndedAt time.Time
-}
-
-type JobManager interface {
-    Start(ctx context.Context, spec JobSpec) (Job, error)         // 后台
-    Run(ctx context.Context, spec JobSpec) (tool.Result, error)   // 同步（term_exec）
-    List(ctx context.Context) ([]Job, error)
-    Status(ctx context.Context, id JobID) (Job, error)
-    Logs(ctx context.Context, id JobID, tail int) (string, error)
-    Kill(ctx context.Context, id JobID) error
-    Wait(ctx context.Context, id JobID) (Job, error) // 阻塞到终态（D189：完成是事件）
-    // Unfinished 取走台账里未收尾的条目（D262，读即清）：只在本进程刚装配时调用。
-    Unfinished(ctx context.Context) ([]UnfinishedJob, error)
-    // Settle 报告已送达会话（D264）：抹掉该任务的台账条目。
-    Settle(ctx context.Context, id JobID) error
-}
-
-type UnfinishedJob struct {
-    Job      Job
-    Session  conversation.ID // 发起会话；空 = 未绑定
-    LogPath  string
-    LogTail  string          // 日志末几行（适配器已按 D41 解码）
-    Alive    bool            // 按 pid 探活：只能算「可能仍在」（pid 会复用）
-    Deadline time.Time       // 本该结束的时刻；定时器随进程退出失效，只用于说明
-}
-```
+规格里的 `WorkDir` 是**进程 cwd**（缺省家目录），不是「工作区」——没有项目根、不做沙箱；
+超时 0 = 不限时。`UnfinishedJob` 是启动对账专用的快照：任务事实 + 发起会话 + 日志路径与尾部
+（适配器已按 D41 解码）+ 按 pid 探到的「可能仍在」+ 本该结束的时刻。
 
 **为什么 `Unfinished` 返回的不是 `[]Job`**：对账要的是「事实 + 去哪儿 + 拿什么佐证」三件东西，
 `Job` 只装得下第一件。`Job` 里塞会话与日志尾会让这个运行时快照在 `job_list` 等只读面上带出
@@ -640,69 +452,24 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 
 ### 5.9 `watch.go` —— 观察器端口
 
-```go
-type WatchKind string   // command | file | http
-type WatchNotify string // match（报一次即结束）| change（每次命中都报）
-
-type WatchSpec struct {
-    Kind WatchKind; Target string
-    Match string           // 正则；空 = 输出哈希变化
-    Notify WatchNotify
-    Interval time.Duration // 固定间隔（5s–1h），不退避
-    MaxChecks int
-    Deadline time.Duration
-    WorkDir string         // 仅 kind=command
-}
-
-type WatchProbe struct { Kind WatchKind; Target, WorkDir string }
-type WatchProbeResult struct {
-    Status int    // HTTP 状态码 / 命令退出码；文件恒 0
-    Output string // 已按上限裁剪
-}
-
-type WatchProber interface { Probe(ctx context.Context, spec WatchProbe) (WatchProbeResult, error) }
-
-type WatchState struct { ID WatchID; Spec WatchSpec; Checks int; StartedAt, EndsAt time.Time }
-
-type WatchManager interface {
-    Start(ctx context.Context, spec WatchSpec) (WatchState, error)
-    List(ctx context.Context) ([]WatchState, error)
-    Stop(ctx context.Context, id WatchID) error
-}
-```
+一条观察器 = 种类（command / file / http）+ 目标 + 判据 + 通知策略：判据是正则，**空 = 按输出
+哈希变化**；通知策略两档，`match` 报一次即结束、`change` 每次都报。间隔是**固定间隔、不退避**
+——以免「越等越久」让日志巡检错过窗口；另有最大检查次数与截止时长兜底，`command` 另带 cwd。
 
 探针只管**取到内容**：非零退出码、非 2xx 都进 `Status` 而不是当错误——判据由 app 层的
 观察器判。取不到（起不来/连不上/路径非法）才返回 error。
 
 ### 5.10 `ui.go` / `misc.go`
 
-```go
-type Event any // DeltaEvent{MessageID, Delta} | ToolCallEvent | ToolResultEvent
-               // | CommittedEvent{Message} | ErrorEvent | NoticeEvent{Text}（裁剪/自动压缩等提示）
-               // | HistoryEvent{Message}（启动恢复的历史回放，D40——不触发输出器扇出）
-type Presenter interface{ Emit(ctx context.Context, ev Event) error }
-type Prompter interface{ Next(ctx context.Context) (UserInput, error) }
+界面端口只有两件：`Presenter`（单向发事件）与 `Prompter`（取下一份输入）。事件表就是「前端
+要知道的全部」——流式增量、工具调用与结果、提交、错误、提示（裁剪 / 自动压缩等），以及启动
+恢复的历史回放（D40）。**历史回放不触发输出器扇出**，否则重开一次会话会把过去所有回答重推一遍。
 
-type UserInput struct {
-    Text    string      // "" = 命令
-    Command *Command
-    Raw     *RawInput   // 拖拽文件 / 粘贴图片 / 语音按钮走同一入口
-}
+输入只有三种：文本、命令、原始输入（拖拽 / 粘贴 / 语音共用 `RawInput`）。**档位（排队 / 引导）
+不在输入里**——档位在待发清单上（§5.19）：「这一句什么时候到模型眼前」不能等本轮结束，
+所以 `Prompter` 只送「现在就要起一轮」的东西。
 
-// 注意：**档位（排队 / 引导）不在 UserInput 里**。它在待发清单上（§5.19）——那是前端直接
-// 调用的另一条路，因为「这一句什么时候到模型眼前」这个决定不能等本轮结束。`Next` 只送
-// 「现在就要起一轮」的东西。
-
-type Command struct{ Name string; Args []string }
-
-type Clock interface{ Now() time.Time }
-type IDGen interface {
-    ConversationID() conversation.ID
-    MessageID() conversation.MessageID
-    CallID() tool.CallID
-}
-type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
-```
+`misc.go` 是三个无状态助手：时钟、ID 生成（会话 / 消息 / 调用 ID，ULID）、密钥读取。
 
 ### 5.11 端口 × 适配器矩阵
 
@@ -730,27 +497,9 @@ type Secrets interface{ Get(ctx context.Context, name string) (string, error) }
 
 ### 5.12 `capture.go` —— 屏幕捕获端口（D178）
 
-```go
-type WindowInfo struct {
-    Handle  uintptr // 平台句柄（不透明；仅回传给 Capture 用）
-    Title   string
-    App     string // 可执行文件名（进程已退出/无权限时为空）
-    Rect    Rect   // 屏幕坐标（物理 px，含 Min 不含 Max）
-    Foreground bool
-}
-
-// Rect 屏幕矩形（物理 px，语义同 image.Rectangle：含 Left/Top、不含 Right/Bottom）。
-type Rect struct{ Left, Top, Right, Bottom int }
-
-type Capture interface {
-    Windows(ctx context.Context) ([]WindowInfo, error) // 顶层可见窗口，z 序自顶向下
-    Screen(ctx context.Context) (Image, error)         // 整个虚拟桌面
-    Window(ctx context.Context, h uintptr) (Image, error) // 指定窗口，含被遮挡/最小化（最小化时经合成器预览取整窗）
-}
-
-// Image 已编码的图片字节（PNG）与像素尺寸。
-type Image struct{ Data []byte; Width, Height int }
-```
+**三项能力**：列顶层可见窗口（z 序自顶向下）、抓整个虚拟桌面、按句柄抓单个窗口（含被遮挡与
+最小化——后者经合成器预览取整窗，不还原窗口、不抢焦点）。图像是**已编码的 PNG 字节 + 像素
+尺寸**；句柄是不透明值，只回传给同一个端口。
 
 - `Rect` 复用平台无关的屏幕矩形（`Left, Top, Right, Bottom`，物理 px，含 Min 不含 Max）。
 - 不做 DPI 缩放：调用方按物理像素拿图，需要缩小时自己缩（`Capture` 只负责「抓得到」）。
@@ -758,29 +507,10 @@ type Image struct{ Data []byte; Width, Height int }
 
 ### 5.13 `ask.go` —— 提问端口（D184）
 
-```go
-type AskOption struct{ Label, Description string }
-
-type AskQuestion struct {
-    Header   string      // 短标题（页签与进度条用）
-    Question string      // 题干
-    Options  []AskOption // 0–9 项；0 项 = 纯自由输入
-    Multiple bool        // 多选
-}
-
-type AskRequest struct{ Questions []AskQuestion } // 1–4 题
-
-// Answers 与 Questions 等长，逐题给选中项（自由输入的原样成一个元素）；未答 = 空切片。
-type AskAnswer struct {
-    Answers   [][]string
-    Dismissed bool // 「忽略」= 放弃全部（不是跳过本题）
-    Away      bool // 无人值守：没人可问（-yes / 非交互），与 Dismissed 文案和期望都不同
-}
-
-type Asker interface {
-    Ask(ctx context.Context, req AskRequest) (AskAnswer, error)
-}
-```
+一次提问 = 1–4 题；每题一个短标题、题干、**0–9 个选项**（0 项 = 纯自由输入）与是否多选。
+答案与题**等长**，逐题给选中项（自由输入原样成一个元素），未答 = 空切片；另有两个终态：
+`Dismissed`（「忽略」= 放弃全部，不是跳过本题）与 `Away`（没人可问，-yes / 非交互）——
+两者的文案与期望都不同，不能合成一个布尔。
 
 - **与 `Confirmer` 分开**（§5.2）：确认答「准不准做」（布尔 + 原因），提问答「选哪个」
   （多题 × 多选 × 自由文本），合并会把两套语义挤进一个结构体。
@@ -795,42 +525,10 @@ type Asker interface {
 
 ### 5.14 `web.go` —— 联网搜索与抓取端口（D197）
 
-```go
-type WebQuery struct {
-    Query     string
-    Count     int    // 1-20；0 = 适配器缺省
-    Freshness string // "" | day | week | month | year
-}
-
-type WebResult struct {
-    Title, URL, Snippet, Summary string
-    SiteName, Date               string
-    Score     float64 // 相关性分（各家量纲不同，只在本批内比较）
-    Authority int     // 0-4；-1 = 未知
-}
-
-type WebResults struct {
-    Items     []WebResult
-    Provider  string   // 实际应答的提供商名
-    Fallbacks []string // 应答之前失败的提供商（非空 = 这次是降级结果）
-}
-
-type WebPage struct {
-    URL, Title, Markdown string
-    Provider             string
-    Fallbacks            []string
-}
-
-type WebSearch interface {
-    Search(ctx context.Context, q WebQuery) (WebResults, error)
-    Provider() string
-}
-
-type WebFetch interface {
-    Fetch(ctx context.Context, rawURL string) (WebPage, error)
-    Provider() string
-}
-```
+**搜索**吃查询 + 条数（0 = 适配器缺省）+ 时效档（空 / day / week / month / year）；**结果集**自带
+「这次是谁应答的」与「应答前失败过谁」——`Fallbacks` 非空就是一次降级结果，用户据此知道
+为什么答案和上次不一样。单条结果的 `Authority` 是 0–4 的档（-1 = 未知），`Score` 只在本批内
+可比（各家量纲不同）。**抓取**吃一个 URL，回标题、Markdown 正文与同一组溯源字段。
 
 - **两个端口，不合成一个**：搜索与抓取的提供商集合天然不同（Brave 只有搜索，本地只有抓取），
   配置也各排各的优先级；合成一个接口就得让每家声明「这一半我不支持」。
@@ -884,27 +582,8 @@ type WebFetch interface {
 
 ### 5.15 `skill.go` —— 技能目录端口（D201）
 
-```go
-type SkillInfo struct {
-    Name        string // frontmatter name（= 目录名；小写字母/数字/连字符）
-    Description string // frontmatter description（工具描述里的一行说明）
-    Dir         string // 技能目录绝对路径（回填给模型做深入读取的锚点）
-    Source      string // 来自哪个技能根（多根同名时说明「哪个生效了」）
-}
-
-type SkillContent struct {
-    Info     SkillInfo
-    Body     string // SKILL.md 正文（frontmatter 之后，行尾归一为 LF，未截断）
-    Path     string // SKILL.md 绝对路径（正文超预算时给 file_read 续读）
-    BodyLine int    // 正文首行在 SKILL.md 里的行号（1 基：续读 offset 要对齐）
-}
-
-type SkillCatalog interface {
-    List(ctx context.Context) ([]SkillInfo, error)  // 按根序 + 目录名排序，确定性
-    Load(ctx context.Context, name string) (SkillContent, error) // 未知名返回 ErrSkillNotFound
-    Warnings(ctx context.Context) []string          // 跳过/被覆盖的条目（用户面，不进模型上下文）
-}
-```
+端口只有三件：列（按根序 + 目录名排序，确定性）、载（未知名返回 `ErrSkillNotFound`），以及
+**跳过 / 被覆盖条目的告警**——告警给用户看，不进模型上下文。
 
 - **只读端口**：技能的安装/卸载是用户面动作（D202），不进 `port`——模型侧只有「列」与「载」。
 - **`Body` 返回未截断正文**：预算（16000 字符页上限、`limits.tool_output_chars`）统一在工具层与
@@ -930,53 +609,19 @@ type SkillCatalog interface {
 把会话搬出去、把别人的会话搬进来。**无损与互通是两种东西**：无损格式必须能原样往返，
 互通格式按别人的规范如实有损，两者共用一层解析但绝不互相冒充。
 
-```go
-type ExchangeFormat struct {
-	Name     string // 命令面标识：aqx | chatgpt | openai | sillytavern | openwebui
-	Ext      string // 建议扩展名（含点）
-	Label    string // 用户面名称
-	Lossy    bool   // 是否丢弃树事实
-	LossNote string // 丢什么（一句话；帮助与回执共用）
-	NoExport bool   // 只认不写（openwebui：与 chatgpt 树同族，不维护第二套同义产物）
-}
+**接口面是三个**：导出（一组会话 + 格式 + 写出流，单会话路径就是一组里只有一项）、导入（读一个
+文件 + 目标清单序号）、以及**单独一层的索引**——界面要「按路径先看一眼有什么」，拿不到这一步
+就只能自己解 ZIP，壳里再写一遍容器解析正是铁律 5 要挡的那类分叉。
 
-// ExchangeEntry 归档里的一个会话（**索引条目**：只给展示与选择）。
-type ExchangeEntry struct {
-	Index int    // 清单序号，**1 起**（--pick 用它）
-	ID    string // 源会话 ID（回执溯源；导入时全部重新分配）
-	Title string // manifest 记的标题（只供展示；导入以 tree.json 为准）
-	Nodes int
-}
+**格式元数据只有一份**（名字、扩展名、用户面名称、是否有损、丢什么、是否只读，代码里是
+`port.ExchangeFormats()`）：命令面的 `--format` 取值、导入识别失败时的「支持这几种」与回执都读
+这份元数据，适配器的 `Formats()` 从同一处派生。放在端口而不是适配器，是因为报错文案也要用，
+而那时可能连适配器都还没装配。有损格式必须写明丢什么（自检守着），否则用户会以为导出的就是全部。
 
-// ExchangeReport 一次进出的回执：数量、字节、丢了什么。
-type ExchangeReport struct {
-	Format  string
-	Nodes   int      // 写出的 / 读入的节点数（多会话是总和）
-	Bytes   int64
-	Dropped []string        // 「附件 3 个（源文件不含字节）」这类事实行
-	Entries []ExchangeEntry // 多会话容器填；单会话与线性格式留空
-}
-
-// SessionExporter /export：把**一组**会话写进 w（单会话路径就是 len(cs) == 1）。消费方 = app.Session。
-type SessionExporter interface {
-	Formats() []ExchangeFormat
-	Export(ctx context.Context, cs []*conversation.Conversation, format string, w io.Writer) (ExchangeReport, error)
-}
-
-// SessionImporter /import：读一个外部文件，变成一组**待入库**的树。pick 是 1 起的清单序号
-// （空 = 全部）；非容器格式只有一项，pick 只接受空或 {1}。
-type SessionImporter interface {
-	Detect(name string, head []byte) (ExchangeFormat, bool)
-	Import(ctx context.Context, r io.Reader, f ExchangeFormat, pick []int) ([]*conversation.Conversation, ExchangeReport, error)
-}
-
-// ExchangeIndexer 列出一份**容器**里的会话清单（界面勾选面板用；命令面读流时自己解析）。
-// 单独一个接口而不塞进 SessionImporter：界面要的是「按路径先看一眼有什么」，拿不到那一步
-// 就只能自己解 ZIP——壳里再写一遍容器解析，正是铁律 5 要挡的那类分叉。
-type ExchangeIndexer interface {
-	Index(ctx context.Context, path string) ([]ExchangeEntry, error)
-}
-```
+**清单条目**只给展示与选择：序号 **1 起**（`--pick` 的取值就是序号）、源会话 ID（回执溯源，导入时全部重新
+分配）、标题（只供认人，导入以 `tree.json` 为准）、节点数。**回执**记数量、字节与丢了什么：
+`Dropped` 是逐项可读的事实行而非错误（「附件 3 个（源文件不含字节）」）；`Entries` 只有多会话
+容器才填，回执据此选「一份会话」还是「N 个会话 + 逐条标题」的版式，不按数量反猜。
 
 **为什么不复用 `port.OutputAdapter`**：那个端口的语义是「每提交一条回答就 `Deliver` 一次」
 （§7.2 的扇出），而导出是用户点一次、作用于**整棵树**的动作。硬塞进同一个接口，要么让
@@ -996,11 +641,6 @@ type ExchangeIndexer interface {
 `currentId`）**只认不写**——它与 `chatgpt` 同为树形，多维护一套同义产物只会让两条路各自
 漂移。要喂 Open WebUI，给它 `chatgpt` 那份即可（它见到 `mapping` 会自动转换）。
 
-上表在代码里由 `port.ExchangeFormats()` 给出（名字、扩展名、有无损、丢什么），命令面的
-`--format` 取值、导入识别失败时的「支持这几种」与回执都读它——**格式清单只有一份**，适配器
-的 `Formats()` 从它派生。放在端口而不是适配器，是因为报错文案也要用，而那时可能连适配器都
-没装配。有损格式必须写明丢什么（自检守着），否则用户会以为导出的就是全部。
-
 **`aqx`（无损，可装多个会话）**：ZIP 容器。
 
 ```
@@ -1009,8 +649,8 @@ conversations/<i>/tree.json  第 i 个会话的落盘 wire 形状（与 storejso
 blobs/<sha256>               附件字节，内容寻址、平铺（跨会话共用一份）
 ```
 
-`conversations` 是清单：每项记 `id` / `title` / `nodes`，**顺序即清单序号**（`--pick` 与勾选面板都用
-它）。清单只给展示与选择，导入以各自的 `tree.json` 为准——标题以树里那份为真。
+`conversations` 是清单：每项记 `id` / `title` / `nodes`，**顺序即清单序号**（`--pick` 与勾选面板都按
+这个顺序取）。清单只给展示与选择，导入以各自的 `tree.json` 为准——标题以树里那份为真。
 
 **为什么一个归档装多个会话**：备份是整库动作，一个会话一个文件就得点二十次、还得记住漏了哪个。
 容器做成「一组树 + 一份共用附件库」，一次写出即完整备份；附件按内容寻址跨会话去重。**版本号仍是 1**。
@@ -1124,38 +764,13 @@ Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份�
 把 TavernCard 一类角色卡读进来，投影成一次会话的初始状态。**只读**：本版不编辑卡、不导出卡，
 「删除」就是删目录。卡是用户挑选的外部内容，导入本身不授予任何能力（与技能安装同口径）。
 
-```go
-// port/character.go
-// CharacterInfo（slug / 显示名 / 来源 / spec / 两条计数 / 头像 / 警告…）与 CharacterCard 的字段见
-// 包注释。与投影有关的三条留在这里：
-//   Info.Unsupported  本版不执行的机制（固定顺序）：regex_scripts / tavern_helper / tavernweave / depth_prompt
-//   Info.AvatarPath   头像绝对路径（空 = 无）——只给界面，是落位事实，绝不进模型上下文
-//   Profile.*         一律**原文**：未做宏替换、未做拼装
-type CharacterProfile struct {
-	Description  string
-	Personality  string
-	Scenario     string
-	SystemPrompt string      // {{original}} 留到组合时——要等用户人格算完才知道展开成什么
-	BookEntries  []BookEntry // 世界书**全部**条目（启用与常量标志原样带出，过滤在 app）
-	Examples     string      // mes_example（<START> 保留为分块符）
-	FirstMes     string
-	Greetings    []string
-	PostHistory  string
-}
+**与投影有关的三条**：`Profile.*` 一律**原文**——不做宏替换、不做拼装（`{{original}}` 留到组合时，
+要等用户人格算完才知道展开成什么）；头像路径只给界面，是落位事实，**绝不进模型上下文**；
+本版不执行的机制有一个**固定顺序**的清单（`regex_scripts` / `tavern_helper` / `tavernweave` /
+`depth_prompt`），照序报给用户，而不是各端各说各的。
 
-// BookEntry 世界书条目：只投影 constant 条目，但标志位要带出来——「哪些算常驻」是投影口径，
-// 不该由解析层替它决定。
-type BookEntry struct {
-	Comment, Content string
-	Enabled          bool // extensions.enabled / enabled；缺键 = true
-	Constant         bool // 缺键 = false
-}
-
-type CharacterCatalog interface {
-	List(ctx context.Context) ([]CharacterInfo, error)            // 按显示名排序
-	Load(ctx context.Context, slug string) (CharacterCard, error) // 未知名返回 ErrCharacterNotFound
-}
-```
+**世界书条目全量带出**（启用位与常量标志原样保留），「哪些算常驻」的过滤在 app 层——不该由
+解析层替 app 层决定。目录端口只有两件：列（按显示名排序）与载（未知名返回 `ErrCharacterNotFound`）。
 
 **卡的三代规范**（字段与语义以 `spec_v1.md` / `spec_v2.md` / `SPEC_V3.md` 为准）：
 
@@ -1252,10 +867,9 @@ source.charx   仅 .charx 来源：原压缩包整份留档
   **选中那条为空就不落节点**——空开场不造假消息。`group_only_greetings` 只保存（本版没有群聊）。
   开场白估算超 `compact_threshold` 的 1/4 时，回执给一行 token 估算与「会占掉首轮可用上下文」的
   提醒，不截断、不改写卡。
-- **尾部指令**：`post_history_instructions` 存进会话的 `Tail`（§4.1），每轮在历史之后追加一条
-  system；`characters.apply_post_history = false` 时只存不发。不拼进人格，是因为它的语义就是
-  「历史之后」——拼接会把位置从尾部挪到最前。provider 限制：Anthropic 把所有 system 并进顶层
-  字段，尾部位置在那里会丢（不为此改投影）。
+- **尾部指令**：`post_history_instructions` 存进会话的 `Tail`（**元数据，不是节点**，§4.1），
+  `characters.apply_post_history = false` 时只存不发；投影位置与 provider 限制见 §7.1。
+  不拼进人格，是因为它的语义就是「历史之后」——拼接会把位置从尾部挪到最前。
 - **会话记住角色**：`Conversation.Character = slug`，只作展示、头像与导出溯源。卡被删后会话照常
   可用（头像回落默认，`Tail` 已是落盘文本），不把会话绑死在目录上。
 - **人格节点是快照，不是活引用**（D247）：`@char.*` 在新建会话时展开进 persona 首节点，之后**与
@@ -1277,11 +891,11 @@ source.charx   仅 .charx 来源：原压缩包整份留档
 回执与 `/character show` 各加一行「界面会按纯文本显示，标签会原样出现」。**不净化、不改写卡文本**：
 净化会让「落树即终稿」变成「落树是净化后终稿」，模型看到的与用户看到的就不再是同一份。
 
-**命令面**：`/character list`（无参同名）、`/character show <slug>`、`/character import <路径>`、
-`/character start <slug> [序号]`、`/character remove <slug>`（二次确认）。导入/删除是**用户面动作**：
-`port.CharacterCatalog` 保持只读两方法，`app.CharacterAdmin` 由消费方定义、装配根实现到 `characterfs`
-（范式同 `app.SkillAdmin`）。**不提供模型可调用的角色卡工具**。设置窗「角色」页见
-[gui-design.md](gui-design.md)；本版不做卡编辑器、不做头像裁剪、不做主题包。
+**命令面**：五个子命令（`list` / `show` / `import` / `start` / `remove`），语法与用户面用法见
+[usage.md](usage.md)。导入与删除是**用户面动作**：`port.CharacterCatalog` 保持只读两方法，
+`app.CharacterAdmin` 由消费方定义、装配根实现到 `characterfs`（范式同 `app.SkillAdmin`）；
+**不提供模型可调用的角色卡工具**。设置窗「角色」页见 [gui-design.md](gui-design.md)；
+本版不做卡编辑器、不做头像裁剪、不做主题包。
 
 **上限与安全**（外部文件一律不可信）：
 
@@ -1320,65 +934,19 @@ source.charx   仅 .charx 来源：原压缩包整份留档
 查网、记文档）都在工具面里；剩下的复杂活在**别的程序**里做得更好——它的工具循环、它对代码库的品味、
 它自带的生态。所以这一节不是「再写一个 agent」，而是**当客户端**：拉起一个 ACP 代理，把任务递过去。
 
-```go
-// port/delegate.go
-type DelegateID string // 一次转交的标识（回执、Wait、Kill、日志都用它）
+**四种对象**：**清单**（`/delegate list` 与工具描述共用一份事实——名字、配置里的命令行、外部代理自报的
+title/version（**没转过就是空**，启动不做握手）、可执行文件是否在 PATH 上、不可用的原因）、
+**派活回执**（ID + 代理 + 会话句柄，**立刻返回**）、**终态运行结果**（停止原因五档
+`end_turn|max_tokens|max_turn_requests|refusal|cancelled`、它自己发起的工具调用数、它报过改动的
+文件、耗时、最终正文、用户面的附注）、**转交规格**（代理名、任务、cwd、会话复用位——**本版只
+接受空值**）。
 
-type DelegateInfo struct {
-    Name      string   // 配置里的名字（delegate 工具 agent 参数的取值）
-    Command   string   // 实际要执行的命令行（配置原样）
-    Title     string   // initialize 报的 agentInfo.title；没转过为空（启动不做握手）
-    Version   string   // agentInfo.version；同上
-    Available bool     // 可执行文件在 PATH 上
-    Note      string   // 不可用原因（用户面一句话）
-}
+**生命周期是异步的**：起进程 → initialize → session/new → session/prompt → 收报告 → 关进程；
+派活即返句柄，终态由收尾观察者取，形状照 `job*` 三件套。**不做同步调用**：转交跑十几到几十分钟，
+同步形态等于把 Turn 钉在子代理上，会话切不走、别的活一件干不了。
 
-type DelegateSpec struct {
-    Agent   string // 空 = 缺省代理
-    Task    string // 任务描述：作为子代理那侧的第一条用户消息，原样发
-    WorkDir string // 子进程 cwd（默认家目录），不是"工作区"
-    Session string // 复用位：空 = 每次新建会话；本版只接受空值
-}
-
-type DelegateRun struct {
-    Agent      string
-    Session    string        // 本次子代理会话句柄（ACP sessionId）：只进回执与日志，本版不重用
-    StopReason string        // end_turn | max_tokens | max_turn_requests | refusal | cancelled
-    ToolCalls  int           // 子代理自己发起的工具调用次数（不是我们的）
-    Changed    []string      // 它报过改动的文件（去重；可能不全，见下）
-    Duration   time.Duration
-    Report     string        // 最终正文（它交付的那段）
-    Notes      []string      // 能力协商、被拒的权限请求、跳过的东西（用户面）
-}
-
-// DelegateLister 清单（/delegate list 与 delegate 工具描述共用一份事实）。
-type DelegateLister interface {
-    List(ctx context.Context) ([]DelegateInfo, error)
-}
-
-// DelegateTask 派活回执（D261）：Start 立刻返回它，报告晚些经注入到达。
-type DelegateTask struct {
-    ID      DelegateID
-    Agent   string
-    Session string // ACP sessionId：只进回执与日志，本版不重用
-}
-
-// DelegateRunner 一次转交的后台生命周期（D261）：起进程 → initialize → session/new →
-// session/prompt → 收报告 → 关进程。形状照 JobStarter / JobReader / JobKiller 抄——
-// 派活即返句柄，终态由收尾观察者取。**不做同步调用**：转交跑十几到几十分钟，同步形态
-// 等于把 Turn 钉在子代理上，会话切不走、别的活一件干不了。
-type DelegateRunner interface {
-    Start(ctx context.Context, spec DelegateSpec) (DelegateTask, error)
-    Wait(ctx context.Context, id DelegateID) (DelegateRun, error) // 阻塞到终态
-    Kill(ctx context.Context, id DelegateID) error
-}
-
-// Delegate 组合体（装配根与实现方共用；消费方各自只声明上面那一个）。
-type Delegate interface {
-    DelegateLister
-    DelegateRunner
-}
-```
+**`Changed` 只是它报过的**（可能不全，不是 diff 结果）；`Notes` 装能力协商、被拒的权限请求与
+跳过的东西，给用户看。
 
 **我们是客户端，不是代理**：Aquarius 不到 Zed / JetBrains 里当那个「被选中的代理」（那是另一条
 产品线，要维护编辑器侧的全部交互）；它只往外派活。所以实现面是协议的**客户端一半**，且只要 v1
@@ -1512,44 +1080,16 @@ MCP server、跨会话复用子代理、`session/load` 回放它的历史。
 
 一句话：**一轮在跑的时候用户说的话，停在哪、什么时候到模型眼前**。两档：
 
-```go
-type Delivery string
+两档：`queue`（本轮收尾后接着起下一轮，缺省）与 `steer`（下一次模型请求之前插入本轮）。
+方法面就是清单的六件事：加（满 / 空 / 超长报错，前端据此提示）、列（**复制一份返回**，调用方
+随便读）、撤销、改档、取走（拉回输入框，此后不再被取用）、清空（切会话与关停）。
 
-const (
-    DeliveryQueue Delivery = "queue" // 本轮收尾后接着起下一轮（缺省）
-    DeliverySteer Delivery = "steer" // 下一次模型请求之前插入本轮
-)
+**前端在自己的事件循环里直接调**，不走输入通道：主循环此刻还卡在 `Handle` 里，走通道就等于
+「等本轮结束才看得到」——那正是要修的毛病。也**不带 ctx**：这几个方法只是内存读写，前端在
+收尾路径上调时不该被一个已取消的 ctx 拦住。
 
-type PendingInput struct {
-    ID       string    `json:"id"`       // 清单内稳定 ID（前端按它撤销/改档/拉回）
-    Text     string    `json:"text"`
-    Delivery Delivery  `json:"delivery"`
-    AddedAt  time.Time `json:"added_at"` // 界面显示「几分钟前」用，不参与排序（有序 = 插入序）
-}
-
-// Pending 待发清单：会话级、内存态、有序、有上限。
-//
-// **前端在自己的事件循环里直接调**，不走 Prompter.Next 的输入通道：主循环此刻还卡在
-// `Handle` 里（一轮没结束），走通道就等于「等本轮结束才看得到」——那正是要修的毛病。
-// 不带 ctx：这几个方法只是内存读写，前端在收尾路径上调它们时不该被一个已取消的 ctx 拦住。
-type Pending interface {
-    Add(text string, d Delivery) (PendingInput, error) // 满 / 空 / 超长 → 错误（前端据此提示）
-    List() []PendingInput                              // 复制一份返回，调用方随便读
-    Remove(id string) bool                             // 撤销
-    SetDelivery(id string, d Delivery) bool            // 改档（排队 ↔ 引导）
-    Take(id string) (PendingInput, bool)               // 取走：拉回输入框（此后不再被取用）
-    Clear() int                                        // 清空（切会话、关停）
-}
-```
-
-**三个状态之间可以互相转换**（用户口径：输入框、待发送、等插入的引导，三个位置都要能来回）：
-
-| 从 → 到 | 怎么做 |
-|---|---|
-| 输入框 → 待发送 | 发送键：生成中入 `queue`；空闲时直接起一轮 |
-| 输入框 → 引导 | 插话键：只在生成中入 `steer`；空闲时与上一行等价 |
-| 待发送 ↔ 引导 | 条目上的 `↑`（转引导）/ 引导气泡上的 `↓`（回队列），都走 `SetDelivery` |
-| 待发送 / 引导 → 输入框 | 条目上的「拉回」按钮（`Take` 取走，前端填回编辑器） |
+三个位置（输入框 / 待发送 / 引导）可互相转换，靠的就是 `SetDelivery` 与 `Take` 这两个方法；
+键位与待发条的形态见 [gui-design.md](gui-design.md)。
 
 **边界**：清单只收**纯文本**——带附件、语音、命令一律不进清单（照旧走输入通道，在本轮之后执行）；
 确认态、提问态下打字仍只是应答（§15.2）；`repl` 是阻塞式读输入，没有这个位置，不入伙。键位与
@@ -1568,9 +1108,8 @@ type Pending interface {
 在真实输入前一直挂着，分不清「刚才停的」与「历史遗留」。
 
 **切会话与关停**：清单随会话走丢——`/new`、`/switch`、`/load` 时清空并留一行提示（与「不静默丢
-东西」的既有口径一致）；进程退出即丢（不落盘，见下）。
-
-**不落盘**：清单只在内存里，崩溃与关停即丢。要落就得进会话存储（与草稿一起），那是另一件事。
+东西」的既有口径一致）；进程退出即丢：清单只在内存里，崩溃与关停都带不走。要落就得进会话存储
+（与草稿一起），那是另一件事。
 
 ## 6. 插件架构
 
@@ -1760,19 +1299,14 @@ system（`characters.apply_post_history = false` 时不发）。因为它不在�
 **三轨压缩【特色功能】**（D21）：
 
 1. **手动**：`/compact` 调 `Agent.Compact`——把水位上（persona 之后）的历史交给当前模型转写为
-   一条 system 摘要节点入树（记 Model/Usage）；失败只报错、树无损。
-   摘要按**英文结构化模板**生成（借鉴 OpenCode 压缩提示词，措辞对任意 agent 通用接手）：
-   Objective / Requirements / Decisions / Work State（Completed·Active·Blocked）/
-   Next Move / Relevant Files / Important Context 七节；首次压缩与链式压缩（已有旧摘要）
-   分两态提示词——后者合并更新、新历史优先、对齐 Work State 与 Next Move；
-   persona 与系统设定恒回传、不入摘要；输出缺模板小节则带提醒重试一次（两次生成的
-   Usage 累计入节点），仍不合格按失败处理。
+   一条 system 摘要节点入树（记 Model/Usage）；失败只报错、树无损。摘要按**英文结构化模板**
+   生成（目标 / 要求 / 决定 / 工作状态 / 下一步 / 相关文件 / 重要上下文七节，措辞对任意 agent
+   通用接手）；首次与链式压缩分两态提示词，后者合并更新、新历史优先；persona 与系统设定恒
+   回传、不入摘要；输出缺小节则带提醒重试一次（两次 Usage 累计入节点），仍不合格按失败处理。
 2. **自动**：**三级 token 计数链**（D26）估算当前请求占用，达 `limits.compact_threshold`
    （默认 0.7 × max_context_tokens）自动触发——①已发生的用服务端实测 usage（自校准）；
-   ②未发送的优先用适配器精确计数（`port.TokenCounter`：本地 tokenizer 或 count_tokens API）；
-   ③适配器不支持时回退通用估算（ASCII÷4 + CJK÷1.5 + 其他÷2 + 结构开销）。
-   每次 Run 至多自动压缩一次；压缩失败回退"最旧裁剪"（保 persona 与最近、丢中间，
-   经 `NoticeEvent` 提示"已省略 k 条"）。
+   ②未发送的优先用适配器精确计数（`port.TokenCounter`）；③不支持时回退通用估算。
+   每次 Run 至多自动压缩一次。
 3. **自触发**：模型经 `context_compact` 工具（Safe）自行管理上下文。
 
 压缩失败回退**最旧裁剪**（保 persona 与最近、丢中间，产出可发送的请求——
@@ -1792,25 +1326,14 @@ system（`characters.apply_post_history = false` 时不发）。因为它不在�
 
 **注入节点**（§4.1 `RoleInject`）是唯一通道：
 
-```go
-// port/inject.go
-type Injection struct {
-    Source  string        // job:<id> / tool:<name> / plugin:<name> / poller:<id> / user
-    Trust   TrustLevel    // TrustHost = 宿主事实；零值/TrustExternal = 外部内容（D170）
-    Parts   []conversation.Part
-    Trigger *bool         // nil = 按来源取默认；非 nil = 显式覆盖（D166）
-    Session conversation.ID // 可选目标会话（D261）；空 = 落地时取当前会话
-}
-type Injector interface { Inject(ctx context.Context, in Injection) error }
-```
+一次注入 = 来源标签（`job:` / `tool:` / `plugin:` / `poller:` / `user`）+ **信任位**（宿主事实
+还是外部内容；零值即外部，D170）+ 内容分片 + 可选的触发覆盖（nil = 按来源取默认，D166）
++ 可选目标会话（空 = 落地时取当前会话，D261）。
 
 **落地回执（D264）**：`Inject` 的「返回 nil」只说明**入了队**。跨轮生产者（任务收尾报告）要
 判断「这次真的送到了」，会话侧另提供一个可选能力：
 
-```go
-// 实现方是 Session；不在 Injector 里，避免逼所有注入方实现它。
-type lander interface { InjectAndWait(ctx context.Context, in Injection) error }
-```
+实现这个能力的是**会话对象本身**——不进 `Injector` 接口，免得逼所有注入方都实现它。
 
 它入队后自己投一次唤醒，等排空把这条落成节点并落盘才返回；ctx 取消即放弃等待（内容可能稍后
 仍然落地，调用方按**未确认**处理）。语义差别就一句话：入队的报告随进程一起消失，落盘的不会。
@@ -1983,25 +1506,9 @@ type lander interface { InjectAndWait(ctx context.Context, in Injection) error }
 写进命令却报错」）。枚举值取自权威常量表（权限等级取 `perm.Levels`、导出格式取
 `port.ExchangeFormats()` 并跳过只读那档），不在注册表里另抄一份。
 
-**补全浮层**（D103 起，D250 扩到参数相）：
-
-- **相判定**：文本以 `/` 开头即开——**空格把浮层从命令相切到参数相**，不关。
-  D103 原口径「出现空格即关」（参数级补全不做）由 D250 取代。
-- **命令相**：对名字做大小写不敏感前缀匹配，保持表序；落笔写 `/名`（**不带尾随空格**）。
-- **参数相**：按**末尾 token** 算（不看光标位置、不解释引号）。
-  - 末尾是 `--` 开头 → 列开关（跳过已用过的，`Repeatable` 的照旧列）；
-  - 上一位是吃值开关 → 它这一位按该开关的 `Values` 给候选，没有 `Values` 只给
-    `ValueName` 提示行；
-  - 否则按已消费的位置参数个数取该位置的声明：`choice` 列可选值、`text` 给一行提示。
-  - 新参数开头同时列开关；不吃参数的命令也给一行「到此为止」的说明，不让浮层凭空消失。
-- **键位**：`Tab` 在候选间轮换（readline 的 `menu-complete`：首按锁定候选表并填第一项，
-  此后依次替换同一段 token 并前移高亮；敲了别的字符即退出轮换）；`Shift+Tab` 同一套轮换
-  但**逆向**（首按落末项，此后后退，环回）；`Enter` 恒提交、不兼职补全；`Esc` 关浮层。
-  ↑↓ 归输入历史，不移动浮层高亮。
-- **提示行不可填**：`insert` 为空的候选（自由文本参数、没有枚举值的开关值位）整行暗色、
-  不登记命中矩形——Tab 跳过它、点击也点不动。
-- **点击某行 = 按一次 Tab**（填进输入框，不提交）。
-- 卡片复用命令浮层的视觉（同一张深色卡、同一套行高与截断），不另起第二套。
+**补全浮层**（D103 起，D250 扩到参数相）：文本以 `/` 开头即开，**空格把浮层从命令相切到参数相**
+（不关——D103 的「见空格即关」由 D250 取代）；参数相按**末尾 token** 算，只取注册表里该位置的
+声明给候选，不从 `Usage` 速记反解。键位、候选行的形态与点击行为见 [gui-design.md](gui-design.md)。
 
 `uigui` 侧的命令分派已于 v0.5.0 收口：界面用到的命令名在 `uigui/cmd_dispatch.go` 登记，
 结构化投递与文本拼行各走一个出口，投递点写裸字符串会被装配根的扫描测试拦下。内核命令表的
