@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-05 @ a2ae902 -->
+<!-- docs-sync: 2026-11-05 @ f7c0b32 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -26,6 +26,10 @@
 |---|---|---|---|
 | v0.5.0 | 发版闸门 | 三条主线、文档 STC 审阅、测试并行与依赖收口、发版前审查修复均已完成，见 [roadmap.md](roadmap.md)；**只剩本地 tag 与 `SHA256SUMS.txt`，推送由用户执行** | 待发版 |
 | v0.6.0 | 外部代理：设置窗直接配 ACP + 申报 `fs` / `terminal` | 三件由浅入深：先把代理**配得明白**（A1，设置窗里增删改、根集、权限、连通性），再让读写**经 Aquarius 转手**（A2），最后让命令**由 Aquarius 执行**（A3，含前置验证）。语音前处理与说话人仍在 backlog | 规划中 |
+
+> **PTC（程序化工具调用）的调研已完成但未排期**，究竟是进 v0.6.0、进 v0.7.0 还是再往后，待拍板；
+> 定下来之前 v0.6.0 就是上表那三件，不改。调研结论、候选引擎的实测与已排除的路都在下文
+> 「程序化工具调用」一节。
 
 ### v0.5.0 发版闸门（剩余）
 
@@ -268,6 +272,172 @@ Apache-2.0），80 维 fbank 输入、192 维 embedding，ONNX 体积 fp32 27MB 
 
 ---
 
+## 程序化工具调用（PTC，backlog，未排期）
+
+> 定位：模型不再逐次发工具调用，而是写一段脚本，脚本里批量调工具，中间结果不进上下文，只把
+> 最终结果交回。动因是参考 DeepSeek Harness（下文 `dsh`）的 harness 形态。
+>
+> 2026-11-05 调研完成，**只登记不排期**：是否进 v0.6.0、以及最终的形态与语言都待拍板。本节记
+> 「要做成什么样」「为什么这么选」「哪些路已排除」，重启时先照此核一遍上游有无变化。
+
+**动因（本仓现状）**：内置工具十几个（`file_*` / `term_exec` / `job_*` / `web_*` / `memory_*` /
+`screen_capture` / `delegate_*`）加 MCP 动态工具，声明每轮全发；`runTools` 是串行 for 循环，
+一次工具调用等于一次完整推理往返；`limits.tool_output_chars` 默认 20000 字符，裁完照样进树、
+照样进下一次请求。于是「读 30 个文件找 3 处」= 30 次往返 + 几十万字符上下文，模型真正需要的
+可能只有 5 行。
+
+### 形态：注册表的呈现模式，不是新增工具
+
+`dsh` 的做法是 `tools: { mode: 'native' | 'ptc' }`。`native` 发全部 JSON schema；`ptc` 下发给模型
+的工具列表**只有 `run_code`**，系统提示换成自动生成的 `.d.ts` SDK（每工具一行签名 + 一句说明），
+模型写的是一个 **async 函数体**（可擦除 TS），`await tools.file_read({...})`，`return` 或打印
+什么就回什么。
+
+`run_code` 是**保留传输**（restriction 层删不掉），但走完整工具流水线（`pre-execute` → 守卫 →
+`execute` → `post-execute` → `result`），所以权限插件能在程序**开跑之前**读到程序全文。
+
+对本仓的直接含义：`GenerateRequest.Tools` 与提示装配已经支持这个切法，改动面比「新增一个工具」
+更小，也不会出现两套调用方式并存、目录成本翻倍。
+
+### 行业做法（七家客户端 + 两套 API）
+
+| 客户端 | 做法 | 脚本在哪跑 |
+|---|---|---|
+| Codex CLI | `exec` 工具收裸 JavaScript | 全新 V8 isolate，无 Node、无文件系统、无网络 |
+| Anthropic API | `code_execution_20260120` + 工具上标 `allowed_callers` | 服务端容器，REPL 跨轮持久 |
+| Cloudflare Code Mode | 只给 `search()` / `execute()` 两个元工具 | Workers isolate |
+| smolagents | `CodeAgent` 直接写 Python | 本地受限解释器 / E2B / Docker |
+| VS Code Copilot | 不写代码，交小模型代跑 | — |
+| Claude Code / Cursor | 只有 Bash/终端 + 审批模式 | 本机，OS 沙箱或分类器 |
+| Cline / Roo Code | 一条消息只发一个动作 | — |
+
+共同点：**脚本内的每次工具调用都回同一个 tool runtime**，审批与沙箱照旧（Codex 明说保证了这
+点）。最后两类不算 PTC。Claude Code 至今不做 code mode，理由是已经有 `Bash`——shell 是最原始的
+PTC，代价是权限只能按命令前缀粒度管。
+
+可用的数字：Cloudflare 2500 个端点全量 schema 要 117 万 token，Code Mode 压到约 1000；Codex 社区
+实测批量化后轮次少 52%、加权 token 少 27–45%，但仍按模型目录开关、默认关；Anthropic 单 cell 90 秒
+墙钟上限**写进工具描述**；smolagents 代码动作比 JSON 动作步骤少 30%、复杂基准成功率高 23%，
+并自述 `LocalPythonExecutor` 不是安全边界；VS Code 的 `tool_search` 省最多 20% token，执行工具限
+10 次调用。
+
+### 五条值得抄
+
+1. **脚本内调用必须回同一 runtime**，脚本不能绕过权限矩阵——这是行业共识，不是本仓多虑。
+2. **预算写进工具描述**，不只写进错误信息。90 秒、20000 字符这些数字模型看得见才会主动分批。
+3. **按模型开关，不按产品开关**。成败在模型侧，所以要做成可开能力，不是默认路径。
+4. **目录二段式**：要么「每工具一行 stub 进描述」（简单、有固定成本），要么 `search` + `describe`
+   （能撑到几百个工具）。
+5. **并行要显式教**，否则模型默认写串行循环，省下的往返又还回去。
+
+### 三条打到原方案上
+
+**并发**：Starlark 没有并发，而 fan-out 正是 PTC 省时间的主要来源（Codex 用 `Promise.all`、
+smolagents 用 `asyncio`、Anthropic 用 `asyncio.gather`）。补救是加一个**数据驱动**的并行原语
+`parallel([{tool, args}, ...])`，由 Go 宿主并发执行、按序返回——不能传闭包，`starlark.Thread`
+不是并发安全的，脚本执行必须留在单线程。
+
+**目录成本会搬家**：现在是 30 份 schema 每轮全发，改完是「1 个 `run_code` + 30 行 stub」。单看省
+很多，但 `file_read` 那种两万字符量级的说明压成一行后丢细节，得配二段式 `describe`。这条要写进
+验收，否则省下的 token 会以另一种形式回来。
+
+**与 `term_exec` 的差别只有三条**：绑定（模型看得见有哪些函数、参数是什么）、权限（每次调用过
+矩阵与确认）、结果（结构化而非 stdout 文本）。答不出这三条，`code_run` 就是 `term_exec` 的重复
+建设。验收里要有这份对照。
+
+### 解释器实测
+
+体积为编译增量，基线是裸二进制 1.23 MB 与现有 `aquarius` 44.66 MB。
+
+| 引擎 | 语言 | 许可证 | 版本 | 增量 | 限额手段 |
+|---|---|---|---|---|---|
+| **Starlark** | Python 方言 | BSD-3 | `v0.0.0-20261021` | **+1.65 MB** | `SetMaxExecutionSteps` + `Cancel()` |
+| **sobek** | JavaScript | MIT | 维护分支（k6 在用） | +10.3 MB | `Interrupt` + 栈深，无步数 |
+| `goja` | JavaScript | MIT | `v0.0.0-20261105` | +10.1 MB | 同上 |
+| `codemode-go` | JS（内嵌 goja） | MIT | v0.4.1 | +9.9 MB | 墙钟 / 计算预算 / 内存采样 / 子调用数 |
+| `gopher-lua` | Lua 5.1 | MIT | v1.1.2 | +1.70 MB | `SetContext` 取消，无步数 |
+| `tengo` | 自有语法 | MIT | v2.17.0（2024-02 停更） | +1.21 MB | `SetMaxAllocs` |
+
+实测关键数字：
+
+- **Starlark**：死循环配 200 万步上限 **21 ms 掐断**，`ExecutionSteps()` 精确指到上限；外部
+  `Cancel` **30 ms 生效**（停止键够用）；20 万次循环 18 ms ≈ 1100 万步/秒，可按步数配额而不是
+  按秒。语法边界在**解析期**就报错：顶层不准写 `for`、没有 `while`、没有 `try`——模型第一版
+  大概率踩，但拿到的是带行列号的明确错误。无 I/O、无 import、默认禁递归。
+- **goja / sobek**：20 万次循环 45 ms（比 Starlark 慢一半有余），`Interrupt` 30 ms 生效。**没有
+  指令计数器、没有内存上限**：`"x".repeat(1<<26)`（64 MB）在中断设在 1 ms 的情况下跑了 164 ms
+  才停——中断只在解释器循环边界生效。
+- **`codemode-go`**：语义最全（2849 行，限额齐备、错误分类齐备、冲突调度），`Binding.Invoke`
+  与本仓 `ToolRunner.Execute` 几乎一对一。但 v0.x、单人维护、绑死 JS，且自带一套与本仓 [contracts.md](contracts.md) §10
+  不同的错误口径。**只当参考，不当底座**。
+- **`meigma/codemode`**：Go 写的、跑 Starlark 的 code-mode 库，Apache-2.0、v0.2.0。每次执行开
+  **独立 worker 进程**，预算管源大小、步数、时间、调用次数、值大小。**当设计模板看**——它独立
+  证明了「Go + Starlark + code mode」成立。
+- **`n9te9/sango`**：纯 Go 进程内 wasm 沙箱，内嵌 QuickJS（约 1 MB）与 CPython 3.13，线性内存
+  有硬上限。但 ABI 是 eval-in/eval-out 四函数，**没有工具回调入口**，要自己写适配器。留作以后。
+
+**已排除**：`expr-lang/expr`、`cel-go`（只有表达式，写不了编排）；`yaegi`（能 import 包 = 没有
+沙箱，且慢）；`wazero` + Python wasm（模块 10–30 MB、启动慢、绑定要过 WASI，与「模型写错而非
+对手逃逸」的威胁模型不匹配）；`gpython`（2023 年后停更，12 行脚本直接 panic）；`risor`（v1.8.1
+停在 2025-05，+11.4 MB）；`term_exec` 起本机 python（没有绑定层，工具调用要绕过 `ToolRunner`，
+等于拆掉权限矩阵与确认）。
+
+### 推荐次序
+
+| 排名 | 方案 | 一句话 |
+|---|---|---|
+| **1** | 自建薄壳 + Starlark | 确定性步数上限、无 I/O 由语言保证、体积最小。**主选** |
+| 2 | 自建薄壳 + sobek | 模型最熟、有 `try/catch`。**唯一值得替换主选的方案** |
+| 3 | 直接用 `codemode-go` | 语义最全但 v0.x、绑死 JS，吃下一整套外来错误口径 |
+| 4 | `gopher-lua` / `golua` | 体积好，只有取消没有步数，语言对模型更冷 |
+| 5 | `sango`（QuickJS wasm） | 真有内存上限，但工具回调要自己造 |
+
+### 隔离：自 re-exec 子进程
+
+`dsh` 每个程序起一个全新 Node 进程，走与 bash 同一套 OS 沙箱，并明确否决拿 `node:vm` 当安全
+机制（「语言 realm 管不住原生 API」）。本仓对应物是 `jobproc`：加一个 `aquarius --script-host`
+自 re-exec，子进程里跑解释器，复用既有的超时、杀进程树与台账。这顺带解决「解释器没有内存
+上限」——堆由子进程与系统兜（`dsh` 取 512 MiB），不靠解释器自觉。
+
+`dsh` 的默认值可直接借：单程序 120 秒（含嵌套工具与审批等待，上限 600 秒）、输出 64 MiB、
+并发挂起子调用 128、并行上限 10；子调用 id 形如 `<parent>:ptc:<n>`，成功回 canonical JSON，
+失败在脚本里可捕获；配额 `floor(timeout/60s × 1024)` 次**尝试**（含失败与参数非法），用完就中止
+整个程序；跑完先 abort 在途、排空队列再返回；失败分八类（exception / timeout / abort /
+worker-exit / invalid-output / output-limit / protocol / sandbox-unavailable），一律是**结果字段**
+而不是异常；返回值必须是无损 JSON，超限算失败，不截断成字符串糊过去。
+
+### system Python 这条路：只作后备
+
+技术上可行：临时目录写脚本 + 一个 shim，工具调用走管道或本地回环，宿主侧照旧过 `ToolRunner`。
+但代价四条都实：**能力边界消失**（脚本可以 `open`、`socket`、`subprocess`，等价于「以用户身份
+执行任意代码」）；**环境不确定**（本机实测 `where python` 命中五个，含 121 字节的商店存根；
+`py -0` 有 3.10–3.14 四套；`python -c pass` 冷启动 564 ms）；**交付口径破**（单二进制变成「先装
+Python」）；**注入风险**——PTC 最有用的场景正是不可信内容进上下文最多的场景，一条
+`urllib.post(..., open("~/.aquarius/secrets.bin").read())` 就出去了，确认机制连提示的机会都没有。
+
+若最终启用，四条约束不能少：配置里显式写解释器路径（绝不猜 PATH）、启动探版本 ≥3.10 不达标
+就禁用、Risk 固定 `Confirm`、工具描述直说「以你的身份执行任意代码，不可用于处理外部内容」。
+
+### 批次草案（拍板后才细化成验收）
+
+- **PTC-1**（M~L）：解释器藏在 `port.ScriptRunner` 后面 + 绑定 + `parallel` 原语 + 限额 + 单测。
+  验收：一个「读 30 个文件统计」的任务从 30 次往返降到 1 次；两种模式的 token 与往返有实测对比，
+  不拍脑袋宣称省了。
+- **PTC-2**（M）：确认去重（同工具同参数只问一次、单脚本确认上限 8、无人值守失败回值）、取消
+  （停止键要能打断脚本与在途调用）、审计行、UI 可展开 chip、`/code` 查看上次脚本。
+- **PTC-3**（S，带前置判据）：Anthropic 原生 `allowed_callers`。判据是报文里真的出现 `caller`
+  字段，否则登记不做。
+
+### 待定（拍板后才排期）
+
+1. **形态**：做成 `tools.mode` 呈现模式（同 `dsh`），还是先按「多一个 `code_run` 工具」起步？
+2. **语言与隔离**：Starlark 进程内起步，还是照 `dsh` 直接用 sobek + 子进程？判据是「模型首跑
+   通过率」——拿 2–3 个模型各写 20 个典型脚本（批量读、过滤聚合、条件重试、错误分支），统计
+   首版能否解析、二次能否跑通；Starlark 明显落后就换 sobek，壳与 app 层不动。
+3. **是否进 v0.6.0**：进来就要把 A1–A3 挪到 v0.7.0，或者只保留 A2 与 PTC 同版。
+
+---
+
 ## 仍需人工拍板与已知未修项
 
 ### 待拍板（技术顺序已由本文定，只剩产品取舍）
@@ -285,6 +455,8 @@ Apache-2.0），80 维 fbank 输入、192 维 embedding，ONNX 体积 fp32 27MB 
   先定要哪个再写代码。
 - **破坏性窗口是否仍然开放**：应用已公开发布，用户可能已有 `~/.aquarius/` 数据。
   本文所有任务按「不破坏既有数据」设计；后续若必须改存储格式，先补迁移器并在本文标注。
+- **PTC 的形态、语言与版本归属**：见上文「程序化工具调用」的待拍板三条——呈现模式还是新增
+  工具、Starlark 还是 sobek、进不进 v0.6.0。→ **动手前拍板**。
 
 ### 已知未修项（留档，等条件成熟再排）
 
