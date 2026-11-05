@@ -95,6 +95,20 @@ func (p *process) terminate(grace time.Duration) {
 	}
 }
 
+// exited 进程是否已经结束（Wait 已返回）。非阻塞，只用来决定要不要等 stderr 排空：
+// 判断「这条失败是不是崩溃」，比只看 watchdog 的标志可靠。
+func (p *process) exited() bool {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return true
+	}
+	select {
+	case <-p.wait():
+		return true
+	default:
+		return false
+	}
+}
+
 // waitStderr 有界地等 stderr 拷贝排空。对端断连只说明 stdout 到了 EOF，exec 的拷贝
 // goroutine 可能还没把最后一截错误输出写进缓冲；不等就报不出「它为什么崩」。
 func (p *process) waitStderr(budget time.Duration) {

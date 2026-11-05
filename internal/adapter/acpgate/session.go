@@ -211,6 +211,24 @@ func (r *run) peerGoneNow() bool {
 	return r.peerGone
 }
 
+// markPeerIfClosed 由 run goroutine 亲自看一眼连接是否已关闭，并在是的时候置 peerGone。
+//
+// 只靠 watchdog 那条 goroutine 置位是不够的：SDK 的 waitForResponse 与 watchdog 都等
+// 同一个 Done()，谁先被唤醒不确定。Prompt 已经因断连返回错误时，watchdog 可能还没跑，
+// abort 就会以为「对端还在」而跳过 stderr 排空，崩溃报因退化成一句没有线索的关闭。
+// 这里把「已关闭」变成本 goroutine 直接观察到的事实，与 Prompt 的返回值之间也就有了
+// happens-before（同一个 channel 的接收）。
+func (r *run) markPeerIfClosed(conn *acp.ClientSideConnection) {
+	if conn == nil {
+		return
+	}
+	select {
+	case <-conn.Done():
+		r.setPeerGone()
+	default:
+	}
+}
+
 // armNotifyDrain 标记「转交已进入 prompt 阶段」。只有这个阶段之后失败才有正文要保住：
 // 起不来、握手/建会话就报错的路径一条 session/update 都收不到，不必等。
 // 只由 run goroutine 调用，与 waitNotifyDrain 同 goroutine，无需加锁。
@@ -386,6 +404,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	select {
 	case res := <-resCh:
 		if res.err != nil {
+			r.markPeerIfClosed(conn)
 			return m.abort(r, proc, fmt.Errorf("session/prompt: %w", res.err))
 		}
 		out.StopReason = string(res.resp.StopReason)
@@ -396,6 +415,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 		select {
 		case res := <-resCh:
 			if res.err != nil {
+				r.markPeerIfClosed(conn)
 				return m.abort(r, proc, fmt.Errorf("session/prompt: %w", res.err))
 			}
 			out.StopReason = string(res.resp.StopReason)
@@ -473,7 +493,9 @@ func (m *Manager) abort(r *run, proc *process, err error) (port.DelegateRun, err
 		out.Notes = notes
 		return out, nil
 	}
-	if r.peerGoneNow() {
+	// 进程已经结束同样要等：这才是「崩了」的实锤，watchdog 的标志只是旁证（它可能与
+	// Prompt 的返回抢同一个 Done()，慢一步）。两条都看，避免报因丢掉 stderr。
+	if r.peerGoneNow() || proc.exited() {
 		// conn.Done() 只保证 stdout 到了 EOF，stderr 的拷贝 goroutine 可能还没排空。
 		proc.waitStderr(stderrDrainBudget)
 		if tail := proc.stderrTail(); tail != "" {
