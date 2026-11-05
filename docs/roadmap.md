@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-05 @ 0233b77 -->
+<!-- docs-sync: 2026-11-05 @ 03874ae -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -130,8 +130,11 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | v0.5.0-L1 | 规范化日志内核：`internal/logging` 五段渲染、级别过滤、文本 / JSON 双出口、按天切 + 轮转 + 保留 7 天 + 降级 stderr；`ui.log_level` / `-log-level` / `-log-format`；arch 的 `layerLogging`；日志文案进表（D276 / §7.9） | 已完成 2026-11-03 |
 | v0.5.0-V | `en` 布局走查（人工）：已修「无人值守」行两块折行文字并排塌成一列、设置窗左栏不滚动 + 导航项高度写死 36dp | 已完成 2026-11-04 |
 | v0.5.0-D | 文档按 STC 审阅与重写：`docs/` 13 篇 + 仓库 `README.md` 过一遍词表与 Anti-Echo；用户面五篇与工程六篇改写，`contracts` / `decisions` 只报不改 | 已完成 2026-11-05 |
+| v0.5.0-E | 测试并行与 `-race` 墙钟收口：`TestImageViewFrame` 改超时等待、语言槽用例上不可并行锁、`jobproc` 35 个与 `uigui` 658 个顶层测试加 `t.Parallel()`；写进程级状态的用例保持串行；`excelize` 伪版本换上游 `v2.11.1` tag | 已完成 2026-11-05 |
 
-完成情况：引号按 11-04 拍板保留 `「」`，在 [stc/terms.aquarius.yaml](stc/terms.aquarius.yaml) 记成项目例外；
+完成情况：全量 `-race` 341.7s → 103.3s，`uigui` 单包 290.3s → 52.5s；两轮 `-race -count=5` 压测全绿，
+逐包数字、串行清单与仍未并行的 `cmd/aquarius` 见 [plan.md](plan.md) 的「测试并行与 `-race` 墙钟」节。
+引号按 11-04 拍板保留 `「」`，在 [stc/terms.aquarius.yaml](stc/terms.aquarius.yaml) 记成项目例外；
 非引号错误级问题 425 → 10，剩下 10 处是几何位置术语、测试断言与学科术语，逐条登记理由。
 G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句指向，`development.md` 的引用同步改。
 逐篇结果、保留项与两篇只报不改的清单在 [stc/review.md](stc/review.md)。
