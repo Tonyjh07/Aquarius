@@ -20,6 +20,15 @@ import (
 // 为什么退出」这类报因，不进上下文。
 const stderrCap = 8 << 10
 
+// notifyDrainBudgetDefault 失败收尾等 SDK 通知排空的兜底上限。正常断连的排空是微秒级，
+// 这个值只在 SDK 语义变化或通知 handler 卡住时起作用：到期就退回现状，不挂住 Wait。
+const notifyDrainBudgetDefault = 2 * time.Second
+
+// notifyDrainQuietWindow 失败收尾等第一条通知交付的静默窗口。只有「断连时队列里还有通知、
+// handler 尚未被调度」才用得到；队列本来是空的失败会等满这个窗口，所以它不宜长，
+// 但要盖得住 -race 满载下的 goroutine 调度延迟。
+const notifyDrainQuietWindow = 500 * time.Millisecond
+
 // stopKind 停止原因（第一次请求胜出：停止键、总闸、关停三处可能同时到）。
 type stopKind int
 
@@ -69,6 +78,14 @@ type run struct {
 	truncated   bool
 	peerGone    bool
 
+	// 通知排空信号。SDK 在断连时先关 Done() 让 Prompt 拿到 error，之后才在另一条
+	// goroutine 里把已入队的通知交回 SessionUpdate；排空完成才 cancel 它传给 handler 的
+	// inboundCtx。notifySeen 等第一条通知交付，drainDone 等那个 ctx 结束。
+	notifyOnce  sync.Once
+	notifySeen  chan struct{}
+	drainDone   chan struct{}
+	notifyArmed bool // 只由 run goroutine 读写：进入 prompt 阶段后才有正文要保住
+
 	done  chan struct{}
 	out   port.DelegateRun
 	err   error
@@ -83,6 +100,8 @@ func newRun(id port.DelegateID, a Agent, spec port.DelegateSpec, session convers
 		stopCh:    make(chan struct{}),
 		cancelCtx: ctx, cancelFn: cancel,
 		changedSeen: map[string]bool{},
+		notifySeen:  make(chan struct{}),
+		drainDone:   make(chan struct{}),
 		done:        make(chan struct{}),
 	}
 }
@@ -165,6 +184,14 @@ func (r *run) addDenied(reason string) {
 	r.note("permission denied: %s", reason)
 }
 
+// deniedCount 收尾时读被拒次数。写方 addDenied 持 cmu，这里不能裸读 r.denied：
+// 权限请求跑在独立 goroutine 上，与收尾可以重叠。
+func (r *run) deniedCount() int {
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
+	return r.denied
+}
+
 // setPeerGone 记「对端断开了」（写方是 peer 监听 goroutine）。
 func (r *run) setPeerGone() {
 	r.cmu.Lock()
@@ -178,6 +205,58 @@ func (r *run) peerGoneNow() bool {
 	r.cmu.Lock()
 	defer r.cmu.Unlock()
 	return r.peerGone
+}
+
+// armNotifyDrain 标记「转交已进入 prompt 阶段」。只有这个阶段之后失败才有正文要保住：
+// 起不来、握手/建会话就报错的路径一条 session/update 都收不到，不必等。
+// 只由 run goroutine 调用，与 waitNotifyDrain 同 goroutine，无需加锁。
+func (r *run) armNotifyDrain() { r.notifyArmed = true }
+
+// observeNotifyCtx 记下 SDK 交给 session/update 的 ctx。每条通知都会走到这里，只认第一次：
+// 同一个 Connection 里所有通知共用同一个 inboundCtx，它的 Done() 才是排空完成的信号。
+func (r *run) observeNotifyCtx(ctx context.Context) {
+	r.notifyOnce.Do(func() {
+		close(r.notifySeen)
+		go func() {
+			<-ctx.Done()
+			close(r.drainDone)
+		}()
+	})
+}
+
+// waitNotifyDrain 失败收尾前等「断连前入队的通知已全部交回 handler」。
+//
+// SDK 在 EOF 时先 cancel 连接 ctx（Done 关闭，Prompt 立刻拿到 error），之后才在另一条
+// goroutine 里排空通知队列，排空完成才 cancel 上面那个 inboundCtx。不等就取报告会读到
+// 还没写入的正文，D268「中途失败也要带出已收正文」便间歇性落空。
+//
+// 两段式：先等第一条通知交付——队列里真有通知，SDK 的排空就一定会调到 handler；
+// 静默窗口里一条都没来，说明队列本来是空的，报告也不会有正文，直接返回。看到通知后
+// 再等 inboundCtx 结束，这一步是 SDK 保证的严格 happens-before，不是时间猜测。
+// budget 是总上限：SDK 语义若变，最多退回「可能少一点正文」，绝不挂住 Wait。
+func (r *run) waitNotifyDrain(budget time.Duration) {
+	if !r.notifyArmed || budget <= 0 {
+		return
+	}
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	quiet := notifyDrainQuietWindow
+	if budget < quiet {
+		quiet = budget
+	}
+	quietTimer := time.NewTimer(quiet)
+	defer quietTimer.Stop()
+	select {
+	case <-r.notifySeen:
+	case <-quietTimer.C:
+		return
+	case <-timer.C:
+		return
+	}
+	select {
+	case <-r.drainDone:
+	case <-timer.C:
+	}
 }
 
 // snapshot 收尾时一次性取走收集结果（拷贝，不与活切片共享底层数组）。
@@ -213,6 +292,10 @@ func (m *Manager) run(r *run) {
 	// 丢掉全部输出是「转交」最不能接受的结果（失败报告里会标明「可能不完整」）。
 	res.Agent = r.agent.Name
 	res.Session = r.sessionID()
+	if err != nil {
+		// 成功路径由 SDK 的响应 barrier 保证正文到齐；失败路径要自己等通知排空。
+		r.waitNotifyDrain(m.opts.NotifyDrainBudget)
+	}
 	res.ToolCalls, res.Changed, res.Notes, res.Denied, res.ChangedOver = r.snapshot()
 	res.Report = r.reportText()
 	m.ledgerFinish(r, err) // 先标终态再放行 Wait：关停时 Close 等到 done 就返回，慢一步就丢
@@ -283,6 +366,8 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	}
 
 	// Prompt 用**独立 ctx**：取消必须显式发通知（§5.18 第 7 步）。
+	// 从这里起失败要保住已交付的正文（D268），失败收尾据此等 SDK 通知排空。
+	r.armNotifyDrain()
 	resCh := make(chan promptOutcome, 1)
 	go func() {
 		resp, err := conn.Prompt(context.Background(), acp.PromptRequest{
@@ -336,8 +421,8 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	if out.StopReason == string(acp.StopReasonCancelled) && stopped == stopNone {
 		r.note("the agent cancelled the turn on its own")
 	}
-	if r.denied > 0 {
-		r.note("%d permission request(s) were rejected (unattended, or you were not in the session that started the delegation)", r.denied)
+	if denied := r.deniedCount(); denied > 0 {
+		r.note("%d permission request(s) were rejected (unattended, or you were not in the session that started the delegation)", denied)
 	}
 	return out, nil
 }

@@ -60,6 +60,9 @@ type Options struct {
 	Grace time.Duration
 	// Handshake 单次启动+握手+建会话的上限（缺省 60s）。
 	Handshake time.Duration
+	// NotifyDrainBudget 失败收尾等 ACP 通知排空的上限（缺省 2s；测试可注入）。
+	// 到期只是退回「可能少一点正文」的现状，不会挂住 Wait。
+	NotifyDrainBudget time.Duration
 	// Now 时钟（测试用）。
 	Now func() time.Time
 	// Home 缺省工作目录（缺省 os.UserHomeDir）。
@@ -101,6 +104,9 @@ func New(opts Options) *Manager {
 	}
 	if opts.Handshake <= 0 {
 		opts.Handshake = 60 * time.Second
+	}
+	if opts.NotifyDrainBudget <= 0 {
+		opts.NotifyDrainBudget = notifyDrainBudgetDefault
 	}
 	if opts.MaxConcurrent <= 0 {
 		opts.MaxConcurrent = port.DefaultDelegateMaxConcurrent

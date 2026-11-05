@@ -21,7 +21,9 @@ var _ acp.Client = (*client)(nil)
 // SessionUpdate 过程通知：数工具调用、记它报过的改动文件、攒最终正文。
 //
 // 子代理的转录、思考、计划表都不进会话树（§5.18）：这里是**收报告**，不是转播。
-func (c *client) SessionUpdate(_ context.Context, n acp.SessionNotification) error {
+func (c *client) SessionUpdate(ctx context.Context, n acp.SessionNotification) error {
+	// 放在最前面：下面按 sid 过滤的分支也会 return，那些通知同样带着排空信号。
+	c.r.observeNotifyCtx(ctx)
 	if sid := c.r.sessionID(); sid != "" && string(n.SessionId) != sid {
 		return nil // 不是本次会话的通知：忽略（多路并存时不串味）
 	}
