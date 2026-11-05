@@ -214,174 +214,186 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 	}
 	return persistConfig(cfgPath, func(generic map[string]any) {
-		uiSec, _ := generic["ui"].(map[string]any)
-		if uiSec == nil {
-			uiSec = map[string]any{}
-			generic["ui"] = uiSec
-		}
-		uiSec["theme"] = p.Theme
-		uiSec["lang"] = p.Lang
-		uiSec["input_placeholder"] = p.Placeholder
-		uiSec["hotkey"] = p.Hotkey
-		uiSec["scale"] = p.Scale
-		uiSec["font_size"] = p.FontSize
-		uiSec["window_width"] = p.WindowWidth
-		uiSec["window_height"] = p.WindowHeight
-		// 输出（布尔无留空语义，恒写）。
-		outSec, _ := generic["output"].(map[string]any)
-		if outSec == nil {
-			outSec = map[string]any{}
-			generic["output"] = outSec
-		}
-		outSec["notify"] = p.Notify
-		outSec["tts"] = p.TTS
-		// 语音（D179/D222，恒全量写）：audio.asr / audio.tts 各自是一份完整配置——
-		// provider 空 = 不借任何条目；base_url 空 = 用借来的（即清掉自己的覆盖）。
-		// kind 不在此管理（高级页手写的值原样保留），voice/design/style/tags 清空 = 回到缺省。
-		//
-		// api_key 例外：空 = **保持**原引用（密钥只写不回显，patch 里的空没有「清空」
-		// 语义——与 provider 页、联网页同口径）。要换端点又不碰密钥时，用户只会填端点。
-		audioSec, _ := generic["audio"].(map[string]any)
-		if audioSec == nil {
-			audioSec = map[string]any{}
-			generic["audio"] = audioSec
-		}
-		setChannel := func(name string, ch map[string]any) {
-			sec, _ := audioSec[name].(map[string]any)
-			if sec == nil {
-				sec = map[string]any{}
-				audioSec[name] = sec
-			}
-			for k, v := range ch {
-				if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
-					delete(sec, k) // 空值不落键（读侧「空 = 缺省」的语义才成立）
-					continue
-				}
-				sec[k] = v
-			}
-		}
-		setKey := func(name, key string) {
-			if k := strings.TrimSpace(key); k != "" {
-				setChannel(name, map[string]any{"api_key": k})
-			}
-		}
-		setChannel("asr", func() map[string]any {
-			m := map[string]any{
-				"provider":   p.ASRProvider,
-				"base_url":   p.ASRBaseURL,
-				"model":      p.ASRModel,
-				"model_path": p.ASRModelPath,
-			}
-			// 协议位留空 = 这条写路径不管协议（高级页手写的值原样保留）。
-			// 设置窗保存时循环档恒有值，所以正常改协议不会走到这个分支。
-			if k := strings.TrimSpace(p.ASRKind); k != "" {
-				m["kind"] = k
-			}
-			return m
-		}())
-		setKey("asr", p.ASRKey)
-		setChannel("tts", func() map[string]any {
-			m := map[string]any{
-				"provider": p.TTSProvider,
-				"base_url": p.TTSBaseURL,
-				"model":    p.TTSModel,
-				"voice":    p.TTSVoice,
-				"design":   p.TTSDesign,
-				"style":    p.TTSStyle,
-				"tags":     p.TTSTags,
-			}
-			if k := strings.TrimSpace(p.TTSKind); k != "" {
-				m["kind"] = k
-			}
-			return m
-		}())
-		setKey("tts", p.TTSKey)
-		inSec, _ := generic["input"].(map[string]any)
-		if inSec == nil {
-			inSec = map[string]any{}
-			generic["input"] = inSec
-		}
-		lang := strings.TrimSpace(p.ASRLang)
-		if lang == "" {
-			lang = "auto"
-		}
-		inSec["language"] = lang
-		// 限额（数值 0 = 不改，表单留空口径）。
-		limSec, _ := generic["limits"].(map[string]any)
-		if limSec == nil {
-			limSec = map[string]any{}
-			generic["limits"] = limSec
-		}
-		if p.MaxTurns > 0 {
-			limSec["max_turns"] = p.MaxTurns
-		}
-		if p.MaxContextTokens > 0 {
-			limSec["max_context_tokens"] = p.MaxContextTokens
-		}
-		if p.CompactThreshold > 0 {
-			limSec["compact_threshold"] = p.CompactThreshold
-		}
-		if p.ToolOutputChars > 0 {
-			limSec["tool_output_chars"] = p.ToolOutputChars
-		}
-		if p.ToolTimeoutSec > 0 {
-			limSec["tool_timeout_sec"] = p.ToolTimeoutSec
-		}
-		// 备份轮转（D254）：留空（0）= 保持 config 现值，只在填了值时才写键。
-		if p.BackupKeep > 0 {
-			bSec, _ := generic["backup"].(map[string]any)
-			if bSec == nil {
-				bSec = map[string]any{}
-				generic["backup"] = bSec
-			}
-			bSec["keep"] = p.BackupKeep
-		}
-		// 人格（恒写：清空 = 合法语义「内置默认」，D20）。
-		generic["system_prompt"] = p.SystemPrompt
-		// 人格模块树（S7/D144，恒全量写）：modules = name → {text?, children?[]}，persona = 有序引用。
-		pSec, _ := generic["prompts"].(map[string]any)
-		if pSec == nil {
-			pSec = map[string]any{}
-			generic["prompts"] = pSec
-		}
-		mods := map[string]any{}
-		for _, m := range p.PromptModules {
-			name := strings.TrimSpace(m.Name)
-			if name == "" {
-				continue // 未填名的新增行 = 尚未创建
-			}
-			node := map[string]any{}
-			if text := strings.TrimSpace(m.Text); text != "" {
-				node["text"] = m.Text
-			}
-			if children := cleanRefs(m.Children); len(children) > 0 {
-				node["children"] = children
-			}
-			mods[name] = node
-		}
-		pSec["modules"] = mods
-		pSec["persona"] = cleanRefs(p.PromptPersona)
-		// 降级链（S11-7①/D176 口径三）：恒全量写（空 = 清空）；链条目 {provider, model?}。
-		if p.Fallback != nil {
-			fbs := make([]any, 0, len(p.Fallback))
-			for _, l := range p.Fallback {
-				entry := map[string]any{"provider": strings.TrimSpace(l.Provider)}
-				if m := strings.TrimSpace(l.Model); m != "" {
-					entry["model"] = m
-				}
-				fbs = append(fbs, entry)
-			}
-			model := modelSection(generic)
-			model["fallback"] = fbs
-		}
-		// 联网（D200）：提供商列表恒全量写（nil = 这条路径不管联网）；本地抓取参数
-		// 数值 0 = 不改、布尔恒写。
-		writeWebSection(generic, p)
-		// 采样参数（D204）：整段替换（空 = 删掉该段 = 全不发送）。
-		if p.SamplingSet {
-			writeSamplingSection(generic, sampling)
-		}
+		applySettingsPatch(generic, p, sampling)
 	})
+}
+
+// applySettingsPatch 把设置窗的一段 patch 写进配置映射。抽出来只搬写回动作，
+// 归一、校验与整文件替换仍留在调用方：写盘顺序和 cfgWriteMu 的保护范围不能变。
+func applySettingsPatch(generic map[string]any, p uigui.SettingsPatch, sampling samplingConfig) {
+	uiSec, _ := generic["ui"].(map[string]any)
+	if uiSec == nil {
+		uiSec = map[string]any{}
+		generic["ui"] = uiSec
+	}
+	uiSec["theme"] = p.Theme
+	uiSec["lang"] = p.Lang
+	uiSec["input_placeholder"] = p.Placeholder
+	uiSec["hotkey"] = p.Hotkey
+	uiSec["scale"] = p.Scale
+	uiSec["font_size"] = p.FontSize
+	uiSec["window_width"] = p.WindowWidth
+	uiSec["window_height"] = p.WindowHeight
+	// 输出（布尔无留空语义，恒写）。
+	outSec, _ := generic["output"].(map[string]any)
+	if outSec == nil {
+		outSec = map[string]any{}
+		generic["output"] = outSec
+	}
+	outSec["notify"] = p.Notify
+	outSec["tts"] = p.TTS
+	applyAudioPatch(generic, p)
+	// 限额（数值 0 = 不改，表单留空口径）。
+	limSec, _ := generic["limits"].(map[string]any)
+	if limSec == nil {
+		limSec = map[string]any{}
+		generic["limits"] = limSec
+	}
+	if p.MaxTurns > 0 {
+		limSec["max_turns"] = p.MaxTurns
+	}
+	if p.MaxContextTokens > 0 {
+		limSec["max_context_tokens"] = p.MaxContextTokens
+	}
+	if p.CompactThreshold > 0 {
+		limSec["compact_threshold"] = p.CompactThreshold
+	}
+	if p.ToolOutputChars > 0 {
+		limSec["tool_output_chars"] = p.ToolOutputChars
+	}
+	if p.ToolTimeoutSec > 0 {
+		limSec["tool_timeout_sec"] = p.ToolTimeoutSec
+	}
+	// 备份轮转（D254）：留空（0）= 保持 config 现值，只在填了值时才写键。
+	if p.BackupKeep > 0 {
+		bSec, _ := generic["backup"].(map[string]any)
+		if bSec == nil {
+			bSec = map[string]any{}
+			generic["backup"] = bSec
+		}
+		bSec["keep"] = p.BackupKeep
+	}
+	// 人格（恒写：清空 = 合法语义「内置默认」，D20）。
+	generic["system_prompt"] = p.SystemPrompt
+	// 人格模块树（S7/D144，恒全量写）：modules = name → {text?, children?[]}，persona = 有序引用。
+	pSec, _ := generic["prompts"].(map[string]any)
+	if pSec == nil {
+		pSec = map[string]any{}
+		generic["prompts"] = pSec
+	}
+	mods := map[string]any{}
+	for _, m := range p.PromptModules {
+		name := strings.TrimSpace(m.Name)
+		if name == "" {
+			continue // 未填名的新增行 = 尚未创建
+		}
+		node := map[string]any{}
+		if text := strings.TrimSpace(m.Text); text != "" {
+			node["text"] = m.Text
+		}
+		if children := cleanRefs(m.Children); len(children) > 0 {
+			node["children"] = children
+		}
+		mods[name] = node
+	}
+	pSec["modules"] = mods
+	pSec["persona"] = cleanRefs(p.PromptPersona)
+	// 降级链（S11-7①/D176 口径三）：恒全量写（空 = 清空）；链条目 {provider, model?}。
+	if p.Fallback != nil {
+		fbs := make([]any, 0, len(p.Fallback))
+		for _, l := range p.Fallback {
+			entry := map[string]any{"provider": strings.TrimSpace(l.Provider)}
+			if m := strings.TrimSpace(l.Model); m != "" {
+				entry["model"] = m
+			}
+			fbs = append(fbs, entry)
+		}
+		model := modelSection(generic)
+		model["fallback"] = fbs
+	}
+	// 联网（D200）：提供商列表恒全量写（nil = 这条路径不管联网）；本地抓取参数
+	// 数值 0 = 不改、布尔恒写。
+	writeWebSection(generic, p)
+	// 采样参数（D204）：整段替换（空 = 删掉该段 = 全不发送）。
+	if p.SamplingSet {
+		writeSamplingSection(generic, sampling)
+	}
+}
+
+// applyAudioPatch 写语音与语音输入两段。asr / tts 的空值语义只在这里用，
+// 所以连两个内部助手一起留在函数内，不提到包级；调用顺序仍由 applySettingsPatch 定。
+func applyAudioPatch(generic map[string]any, p uigui.SettingsPatch) {
+	// 语音（D179/D222，恒全量写）：audio.asr / audio.tts 各自是一份完整配置——
+	// provider 空 = 不借任何条目；base_url 空 = 用借来的（即清掉自己的覆盖）。
+	// kind 不在此管理（高级页手写的值原样保留），voice/design/style/tags 清空 = 回到缺省。
+	//
+	// api_key 例外：空 = **保持**原引用（密钥只写不回显，patch 里的空没有「清空」
+	// 语义——与 provider 页、联网页同口径）。要换端点又不碰密钥时，用户只会填端点。
+	audioSec, _ := generic["audio"].(map[string]any)
+	if audioSec == nil {
+		audioSec = map[string]any{}
+		generic["audio"] = audioSec
+	}
+	setChannel := func(name string, ch map[string]any) {
+		sec, _ := audioSec[name].(map[string]any)
+		if sec == nil {
+			sec = map[string]any{}
+			audioSec[name] = sec
+		}
+		for k, v := range ch {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
+				delete(sec, k) // 空值不落键（读侧「空 = 缺省」的语义才成立）
+				continue
+			}
+			sec[k] = v
+		}
+	}
+	setKey := func(name, key string) {
+		if k := strings.TrimSpace(key); k != "" {
+			setChannel(name, map[string]any{"api_key": k})
+		}
+	}
+	setChannel("asr", func() map[string]any {
+		m := map[string]any{
+			"provider":   p.ASRProvider,
+			"base_url":   p.ASRBaseURL,
+			"model":      p.ASRModel,
+			"model_path": p.ASRModelPath,
+		}
+		// 协议位留空 = 这条写路径不管协议（高级页手写的值原样保留）。
+		// 设置窗保存时循环档恒有值，所以正常改协议不会走到这个分支。
+		if k := strings.TrimSpace(p.ASRKind); k != "" {
+			m["kind"] = k
+		}
+		return m
+	}())
+	setKey("asr", p.ASRKey)
+	setChannel("tts", func() map[string]any {
+		m := map[string]any{
+			"provider": p.TTSProvider,
+			"base_url": p.TTSBaseURL,
+			"model":    p.TTSModel,
+			"voice":    p.TTSVoice,
+			"design":   p.TTSDesign,
+			"style":    p.TTSStyle,
+			"tags":     p.TTSTags,
+		}
+		if k := strings.TrimSpace(p.TTSKind); k != "" {
+			m["kind"] = k
+		}
+		return m
+	}())
+	setKey("tts", p.TTSKey)
+	inSec, _ := generic["input"].(map[string]any)
+	if inSec == nil {
+		inSec = map[string]any{}
+		generic["input"] = inSec
+	}
+	lang := strings.TrimSpace(p.ASRLang)
+	if lang == "" {
+		lang = "auto"
+	}
+	inSec["language"] = lang
 }
 
 // validateFallbackChain 降级链校验（S11-7①/D176）：provider 名不得为空、必须存在于

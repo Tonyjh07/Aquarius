@@ -77,13 +77,31 @@ var (
 )
 
 func init() {
-	// 每条记录的 Params（D250）逐参数说明「这个位置能填什么」，参数相浮层据此算候选；
-	// Usage 仍是给人一眼看全的那句速记。两者由 TestCommandParamsMatchUsage 对账。
-	// 文案只放 key（D275）：Desc / Usage / Params 的 Name·ValueName·Desc 都是 cmd.* 取词
-	// key，纯语法（命令名、--flag、枚举值、<id> 这类占位）仍是字面量——它们是命令的一部分，
-	// 不是文案，翻不得。翻译发生在 commandInfos 投影时，所以语言选定之后拿到的清单就是
-	// 选定语言的（/help 与补全浮层共用同一份投影）。
-	commandTable = []commandEntry{
+	commandTable = buildCommandTable()
+	commandIndex = buildCommandIndex(commandTable)
+}
+
+// buildCommandTable 构造静态命令表。抽成函数由 init 调用，而不是在声明处直接赋值：
+// /help 的处理函数渲染的就是这张表，Go 的初始化依赖分析会穿透函数体，声明处赋值会构成
+// 「表 → /help → 表」的环；init 在所有包级变量初始化之后运行，环到这里才断开。
+// 每条记录的 Params（D250）逐参数说明「这个位置能填什么」，参数相浮层据此算候选；
+// Usage 仍是给人一眼看全的那句速记。两者由 TestCommandParamsMatchUsage 对账。
+// 文案只放 key（D275）：Desc / Usage / Params 的 Name·ValueName·Desc 都是 cmd.* 取词
+// key，纯语法（命令名、--flag、枚举值、<id> 这类占位）仍是字面量——它们是命令的一部分，
+// 不是文案，翻不得。翻译发生在 commandInfos 投影时，所以语言选定之后拿到的清单就是
+// 选定语言的（/help 与补全浮层共用同一份投影）。
+func buildCommandTable() []commandEntry {
+	var table []commandEntry
+	table = append(table, sessionCommands()...)
+	table = append(table, runtimeCommands()...)
+	table = append(table, configCommands()...)
+	return table
+}
+
+// sessionCommands 收会话与消息树命令。分段只为把表字面量拆开，不改任何记录；
+// 三段的拼接顺序就是 /help 与补全浮层的行序，调段序会改掉帮助输出。
+func sessionCommands() []commandEntry {
+	return []commandEntry{
 		{Names: []string{"new"}, Usage: "cmd.new.usage", Desc: "cmd.new.desc",
 			Params: []port.CommandParam{{Name: "cmd.new.p1.name", Kind: port.ParamText, Desc: "cmd.new.p1.desc"}},
 			Run:    (*Session).execNew},
@@ -154,6 +172,13 @@ func init() {
 				{Name: "cmd.summary.p2.name", Kind: port.ParamText, Desc: "cmd.summary.p2.desc"},
 			},
 			Run: (*Session).execSummary},
+	}
+}
+
+// runtimeCommands 收运行期、任务与扩展命令。分段只为把表字面量拆开，不改任何记录；
+// 三段的拼接顺序就是 /help 与补全浮层的行序，调段序会改掉帮助输出。
+func runtimeCommands() []commandEntry {
+	return []commandEntry{
 		{Names: []string{"mic"}, Usage: "cmd.mic.usage", Desc: "cmd.mic.desc",
 			Params: []port.CommandParam{{Name: "cmd.mic.p1.name", Kind: port.ParamText, Desc: "cmd.mic.p1.desc"}},
 			Run:    (*Session).execMic},
@@ -220,6 +245,13 @@ func init() {
 				{Name: "cmd.character.p4.name", Kind: port.ParamText, Desc: "cmd.character.p4.desc"},
 			},
 			Run: argsOnly((*Session).execCharacter)},
+	}
+}
+
+// configCommands 收配置、模型与帮助命令。分段只为把表字面量拆开，不改任何记录；
+// 三段的拼接顺序就是 /help 与补全浮层的行序，调段序会改掉帮助输出。
+func configCommands() []commandEntry {
+	return []commandEntry{
 		{Names: []string{"quit", "exit"}, Desc: "cmd.quit.desc", Run: quitCommand},
 		{Names: []string{"plugin"}, Usage: "cmd.plugin.usage", Desc: "cmd.plugin.desc",
 			Params: []port.CommandParam{
@@ -245,9 +277,7 @@ func init() {
 				Desc: "cmd.effort.p1.desc",
 			}},
 			Run: argsOnly((*Session).execEffort)},
-		{Names: []string{"help"}, Desc: "cmd.help.desc", Run: helpCommand},
-	}
-	commandIndex = buildCommandIndex(commandTable)
+		{Names: []string{"help"}, Desc: "cmd.help.desc", Run: helpCommand}}
 }
 
 // buildCommandIndex 展开别名建索引；记录不完整或重名属于编码期错误，这里 panic——同一张表里

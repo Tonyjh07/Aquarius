@@ -316,73 +316,8 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			})
 			return vs.dims()
 		}, tok().cardInject, cardR, false, false
-	case blockCommand: // 命令折叠条（D265/D266）：带 alpha 的深色薄条、文字居中；点开才铺命令行与输出
-		open := u.cmdIsOpen(it.bi)
-		plain := func(gtx layout.Context) layout.Dimensions {
-			head := func(gtx layout.Context) layout.Dimensions {
-				nCmd, nNote := cmdCounts(it.cmds)
-				s := material.Caption(u.th, cmdHeaderText(nCmd, nNote, open))
-				s.Color = cmdHeadColor()
-				return s.Layout(gtx)
-			}
-			// 折叠：条宽贴合文案（居中由 paintRow 摆整条）；展开：铺满容器、标题居中。
-			if !open {
-				return head(gtx)
-			}
-			return centerStrip(gtx, head)
-		}
-		// 折叠行 = 一个点击件（整条都是热区，与工具 chip 头部同法）；展开后的正文
-		// 不挂点击件——那里要能拖选（与思考块同口径）。
-		cl := u.cmdClick(it.bi)
-		head := func(gtx layout.Context) layout.Dimensions { return cl.Layout(gtx, plain) }
-		return func(gtx layout.Context) layout.Dimensions {
-			vs := beginVStack(gtx)
-			vs.add(head)
-			if !open {
-				return vs.dims()
-			}
-			for k, e := range it.cmds {
-				if k > 0 {
-					vs.gap(mdBlockGapDp)
-				}
-				// 键序恒 2k/2k+1（命令行 / 输出）：与 selCount 一致，开合不漂移后续行序号（D67 同口径）。
-				if e.cmd != "" {
-					off := image.Pt(0, vs.y)
-					vs.add(func(gtx layout.Context) layout.Dimensions {
-						return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							s := material.Body2(u.th, e.cmd)
-							s.Color = tok().textDim
-							s.State = rs.sel(2 * k)
-							return s.Layout(gtx)
-						}, 2*k, off, image.Point{})
-					})
-				}
-				if e.out != "" {
-					off := image.Pt(0, vs.y)
-					vs.add(func(gtx layout.Context) layout.Dimensions {
-						return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							// 输出用正文色（不给 Color）：它是给人读的内容，
-							// 只有命令行那行退到暗色——层次靠「谁更淡」表达。
-							s := material.Body2(u.th, e.out)
-							s.State = rs.sel(2*k + 1)
-							return s.Layout(gtx)
-						}, 2*k+1, off, image.Point{})
-					})
-				}
-				if e.note != "" { // 操作回执（D267）：小字、更淡——它是附注，不是内容
-					off := image.Pt(0, vs.y)
-					vs.add(func(gtx layout.Context) layout.Dimensions {
-						return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							s := material.Caption(u.th, e.note)
-							s.Color = tok().textDim
-							s.State = rs.sel(2*k + 1)
-							return s.Layout(gtx)
-						}, 2*k+1, off, image.Point{})
-					})
-				}
-			}
-			return vs.dims()
-		}, tok().cardCmd, cardR, false, false
+	case blockCommand: // 命令折叠条：形状交给 commandRowStyle，与工具 chip、分叉条同法
+		return u.commandRowStyle(gtx, it, rs, cardR)
 	case blockTool:
 		if it.chip == nil { // 兜底：无 chip 的工具行（防御，正常路径都有 chip）
 			return func(gtx layout.Context) layout.Dimensions {
@@ -438,6 +373,77 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			}, 0, image.Point{}, image.Point{})
 		}, tok().pillBg, cardR, false, false
 	}
+}
+
+// commandRowStyle 命令折叠条的形状（D265/D266）。从 rowStyle 最大的一个 case 抽出：
+// 主题令牌每次调用现取，不提到包级或初始化期，否则切换浅深主题后拿到的还是旧调色板。
+func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR int) (layout.Widget, color.NRGBA, int, bool, bool) {
+	open := u.cmdIsOpen(it.bi)
+	plain := func(gtx layout.Context) layout.Dimensions {
+		head := func(gtx layout.Context) layout.Dimensions {
+			nCmd, nNote := cmdCounts(it.cmds)
+			s := material.Caption(u.th, cmdHeaderText(nCmd, nNote, open))
+			s.Color = cmdHeadColor()
+			return s.Layout(gtx)
+		}
+		// 折叠：条宽贴合文案（居中由 paintRow 摆整条）；展开：铺满容器、标题居中。
+		if !open {
+			return head(gtx)
+		}
+		return centerStrip(gtx, head)
+	}
+	// 折叠行 = 一个点击件（整条都是热区，与工具 chip 头部同法）；展开后的正文
+	// 不挂点击件——那里要能拖选（与思考块同口径）。
+	cl := u.cmdClick(it.bi)
+	head := func(gtx layout.Context) layout.Dimensions { return cl.Layout(gtx, plain) }
+	return func(gtx layout.Context) layout.Dimensions {
+		vs := beginVStack(gtx)
+		vs.add(head)
+		if !open {
+			return vs.dims()
+		}
+		for k, e := range it.cmds {
+			if k > 0 {
+				vs.gap(mdBlockGapDp)
+			}
+			// 键序恒 2k/2k+1（命令行 / 输出）：与 selCount 一致，开合不漂移后续行序号（D67 同口径）。
+			if e.cmd != "" {
+				off := image.Pt(0, vs.y)
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						s := material.Body2(u.th, e.cmd)
+						s.Color = tok().textDim
+						s.State = rs.sel(2 * k)
+						return s.Layout(gtx)
+					}, 2*k, off, image.Point{})
+				})
+			}
+			if e.out != "" {
+				off := image.Pt(0, vs.y)
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						// 输出用正文色（不给 Color）：它是给人读的内容，
+						// 只有命令行那行退到暗色——层次靠「谁更淡」表达。
+						s := material.Body2(u.th, e.out)
+						s.State = rs.sel(2*k + 1)
+						return s.Layout(gtx)
+					}, 2*k+1, off, image.Point{})
+				})
+			}
+			if e.note != "" { // 操作回执（D267）：小字、更淡——它是附注，不是内容
+				off := image.Pt(0, vs.y)
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						s := material.Caption(u.th, e.note)
+						s.Color = tok().textDim
+						s.State = rs.sel(2*k + 1)
+						return s.Layout(gtx)
+					}, 2*k+1, off, image.Point{})
+				})
+			}
+		}
+		return vs.dims()
+	}, tok().cardCmd, cardR, false, false
 }
 
 // mdBlockGapDp 气泡内 markdown 块间距（D66 复合行）。

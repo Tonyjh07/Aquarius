@@ -548,6 +548,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			"log.act.continue", rerr.Error())
 	}
 	// replay 停止键中断后立刻要发的那句引导（D274）：有它就不等用户再敲一遍。
+	return w.mainLoop(ctx)
+}
+
+// mainLoop 是 run() 的主输入循环。抽出来只搬循环本身：装配期登记的 defer 全部留在
+// run() 里，退出时的后进先出顺序（先停前端、再收后台观察者）才不会被打乱。
+func (w *wiring) mainLoop(ctx context.Context) int {
 	var replay string
 	for {
 		var in port.UserInput
