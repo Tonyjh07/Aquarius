@@ -20,6 +20,10 @@ import (
 // 为什么退出」这类报因，不进上下文。
 const stderrCap = 8 << 10
 
+// stderrDrainBudget 对端断连后等 exec 的 stderr 拷贝排空的预算。进程已退出时 cmd.Wait
+// 立刻返回；这个值只给慢机器留兜底，不让报因卡住。
+const stderrDrainBudget = 500 * time.Millisecond
+
 // notifyDrainBudgetDefault 失败收尾等 SDK 通知排空的兜底上限。正常断连的排空是微秒级，
 // 这个值只在 SDK 语义变化或通知 handler 卡住时起作用：到期就退回现状，不挂住 Wait。
 const notifyDrainBudgetDefault = 2 * time.Second
@@ -470,6 +474,8 @@ func (m *Manager) abort(r *run, proc *process, err error) (port.DelegateRun, err
 		return out, nil
 	}
 	if r.peerGoneNow() {
+		// conn.Done() 只保证 stdout 到了 EOF，stderr 的拷贝 goroutine 可能还没排空。
+		proc.waitStderr(stderrDrainBudget)
 		if tail := proc.stderrTail(); tail != "" {
 			return port.DelegateRun{}, fmt.Errorf("%w; the agent exited (stderr: %s)", err, tail)
 		}

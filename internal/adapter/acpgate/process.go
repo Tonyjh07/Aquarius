@@ -19,8 +19,8 @@ type process struct {
 	stdout io.ReadCloser
 	stderr *tailBuffer
 
-	mu   sync.Mutex
-	done bool
+	waitOnce sync.Once
+	waitDone chan struct{}
 }
 
 // startProcess 起进程并接好三根管道（§5.18 进程卫生：环境剔除 AQUARIUS_*、
@@ -56,6 +56,25 @@ func (p *process) kill() error {
 	return killTree(p.cmd)
 }
 
+// wait 只启动一次 cmd.Wait，返回它的完成信号。exec 在 cmd.Stderr 不是 *os.File 时会另起
+// goroutine 把管道内容拷进 tailBuffer，只有 Wait 返回才保证这段拷贝排空。abort 要在读
+// stderr 尾巴前等这个信号，terminate 也走同一处，避免 Wait 被调两次。
+func (p *process) wait() <-chan struct{} {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	p.waitOnce.Do(func() {
+		p.waitDone = make(chan struct{})
+		go func() {
+			_ = p.cmd.Wait()
+			close(p.waitDone)
+		}()
+	})
+	return p.waitDone
+}
+
 // terminate 收尾：先温和地关 stdin（多数代理见到 EOF 会自己退出），再杀进程组，
 // 最后有界地等它被回收——不无限期挂在 Wait 上。
 func (p *process) terminate(grace time.Duration) {
@@ -63,11 +82,7 @@ func (p *process) terminate(grace time.Duration) {
 		return
 	}
 	_ = p.stdin.Close()
-	done := make(chan struct{})
-	go func() {
-		_ = p.cmd.Wait()
-		close(done)
-	}()
+	done := p.wait()
 	select {
 	case <-done:
 		return
@@ -77,6 +92,18 @@ func (p *process) terminate(grace time.Duration) {
 	select {
 	case <-done:
 	case <-time.After(grace + time.Second):
+	}
+}
+
+// waitStderr 有界地等 stderr 拷贝排空。对端断连只说明 stdout 到了 EOF，exec 的拷贝
+// goroutine 可能还没把最后一截错误输出写进缓冲；不等就报不出「它为什么崩」。
+func (p *process) waitStderr(budget time.Duration) {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	select {
+	case <-p.wait():
+	case <-time.After(budget):
 	}
 }
 
