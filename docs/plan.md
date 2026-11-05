@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-05 @ f7abd72 -->
+<!-- docs-sync: 2026-11-05 @ a2ae902 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -31,6 +31,8 @@
 
 - **本地 tag**：`v0.5.0` 未创建。若还有代码落进来，等定稿后再打，避免删 tag 重建。
 - **发布产物**：`SHA256SUMS.txt` 待生成与核对。
+- **发版门禁**：在定稿那笔提交上跑一次 `go run ./cmd/ci --profile=full`（含 `-race`、非 Windows
+  门禁、依赖体检），结果落在 `.ci/last.json`。tag 打在门禁通过的那笔上。
 - **推送**：长期约定由用户执行。
 
 发版前按五路分区做了审查并修完 P0/P1 与低成本 P2（记录见 [roadmap.md](roadmap.md) 的
@@ -119,15 +121,6 @@ commands only when a sandbox enforces it**」。Aquarius 没有沙箱：申报�
 
 > 都是「收益明确、但不值得单开一批」的小项；凑够同批一次做，或搭在相邻功能里顺带做。
 > 每项都记了判据与前因，重启时先照本文核一遍代码是否还长这样。
-
-- **持续集成**（M，未排期）：仓库没有 `.github`，所有门禁只在开发者本机跑，合入前
-  「测试绿」靠自觉。最低成本的补法是只上一条 **Windows runner 的 `go test ./...` + `go vet`**
-  ——这条门禁挡的正是「某个测试偷偷依赖本机环境变量/本机能装的东西」这类问题（`probe_test.go`
-  就踩过：配置里漏写 `keys` 时启动回落 `secret:AQUARIUS_OPENAI_KEY`，没设环境变量的机器必挂）。
-  `-race` 与 GUI 真窗冒烟**不要**进 CI（前者要 MinGW、后者要显示环境），理由与代价见
-  `docs/development.md` 的门禁章节。**拍板前先确认**：这台机器的网络能否稳定访问 runner
-  拉依赖，以及 `linuxgate` 依赖的 WSL 是否要在 CI 里换成真 Linux runner。与
-  「测试并行的剩余部分」是两件事：这条挡的是「测试偷偷依赖本机环境」，那条压的是本机合入门禁的墙钟。
 
 - **伪版本依赖**（S）：`go.mod` 里还剩两条直接依赖不是 tag——`lipgloss`、`ledongthuc/pdf`。
   `excelize` 已于 2026-11-05 换成上游 `v2.11.1`（绑定测试与全量测试通过），不再在此列。

@@ -70,6 +70,7 @@ go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
 go run ./cmd/linuxgate         # 非 Windows 门禁：WSL 内 linux 目标的 build + vet（D119）
 go run ./cmd/docsync           # 刷新改动过的文档头「更新日期 + 代码基线」标记
+go run ./cmd/ci                # 本机门禁（default 档，合入前）；-profile=fast / full 见 development.md
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D137；需网络）
 ```
 
@@ -195,6 +196,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
 cmd/aquarius/        组装根（wiring：config → 插件/授权 → 端口装配含装饰器 → UI）
 cmd/iconify/         开发工具：图标集生成（多尺寸 PNG / ICO / ICNS，纯 Go 无三方依赖）
 cmd/linuxgate/       开发工具：非 Windows 门禁（WSL 内跑 linux 目标 build + vet，D119）
+cmd/ci/              开发工具：本机门禁编排（fast / default / full 三档，pre-push hook）
 cmd/docsync/         开发工具：维护文档头「更新日期 + 代码基线」标记
 assets/              源图标 icon.png 与生成物 icon/（README、Windows 资源嵌入共用）
 pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；D29 后移出 M4，目录见"待建"）

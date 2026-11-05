@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-05 @ f7abd72 -->
+<!-- docs-sync: 2026-11-05 @ a2ae902 -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -133,6 +133,7 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 | v0.5.0-D | 文档按 STC 审阅与重写：`docs/` 13 篇 + 仓库 `README.md` 过一遍词表与 Anti-Echo；用户面五篇与工程六篇改写，`contracts` / `decisions` 只报不改 | 已完成 2026-11-05 |
 | v0.5.0-E | 测试并行与 `-race` 墙钟收口：`TestImageViewFrame` 改超时等待、语言槽用例上不可并行锁、`jobproc` 35 个、`uigui` 658 个与 `cmd/aquarius` 170 个顶层测试加 `t.Parallel()`；写进程级状态的用例保持串行；`acpgate` 失败路径报告排空；`excelize` 伪版本换上游 `v2.11.1` tag | 已完成 2026-11-05 |
 | v0.5.0-G | 发版前审查修复：首跑缺密钥不再 fatal（`unconfiguredLLM{err}` 空态覆盖「provider 在、取不到密钥」）、首页与末页跳过硬校验 consent、`rsrc_windows_*.syso` 重生成到 0.5.0.0、i18n 锁判定从「只看汉字」扩到全角字符区并修掉四处漏网标点、切语言后 `probe`/`modelsHint` 改为渲染时取词、日志文本形态单行化转义、`acpgate` 崩溃报因的 happens-before 补齐、`commandLine` 按 `CommandFields` 规则加引号、`postCommand` 丢包不再误报成功、`storejson.Remove` 与 `Save` 共用会话锁、长函数基线 32→31 | 已完成 2026-11-05 |
+| v0.5.0-CI | 本机门禁编排：`cmd/ci` 三档（fast 3 项约 15 秒 / default 9 项约 6 分钟 / full 12 项）、能力探测（cgo / WSL / 出网，缺则记跳过）、干净环境复查（清 `AQUARIUS_*` 与密钥后重跑组装与探针）、`.ci/last.json` 留痕（提交号 + 工作区脏否 + 每条结论与耗时，fast 档报上一轮 default / full 是否覆盖当前提交）、pre-push hook 只跑 fast、`--json` 供日后托管 runner 直调 | 已完成 2026-11-05 |
 
 **v0.5.0-D / E 完成情况**：全量 `-race` 341.7s → 约 103s（两轮 104.5 / 101.6 秒；补完 `cmd/aquarius` 后
 106.4 / 102.6 秒），3.3×。逐包数字：`uigui` 290.3s → 52.5s（`-count=5` 均值）、

@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-05 @ f7abd72 -->
+<!-- docs-sync: 2026-11-05 @ a2ae902 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -30,6 +30,35 @@ go run ./cmd/linuxgate         # 非 Windows 门禁（WSL 内 build + vet，见�
   `(Get-Command gcc -All | ? { $_.Source -notmatch 'msys64' })[0].Source`。
 - 全部测试**默认不起真实网络**：LLM 用脚本流/httptest 假 SSE 服务，存储用临时目录；
   门控的真实 MCP 验收（`AQUARIUS_E2E_REAL_MCP=1`，拉现成 npx server）除外，缺省 skip。
+
+### 本机门禁（`cmd/ci`）
+
+上面那一串命令由 `go run ./cmd/ci` 收成三档，按「多久跑一次」切，后一档包含前一档：
+
+```bash
+go run ./cmd/ci                  # default 档：合入前（缺省）
+go run ./cmd/ci -profile=fast    # 十几秒：gofmt / 文档标记 / vet
+go run ./cmd/ci -profile=full    # 发版前：另加 -race、非 Windows 门禁、依赖漏洞体检
+go run ./cmd/ci --install-hooks  # 装 pre-push hook，推送前自动跑 fast
+go run ./cmd/ci -list            # 看清单；-only=a,b 只跑指定项；-jobs=N 手动加并行度
+```
+
+- **档位与耗时**：fast 3 项约 15 秒、default 9 项约 6 分钟、full 12 项。真正的门禁仍是上面
+  那些命令，`ci` 只是编排与记账，不改变任何一条的判据。
+- **能力探测**：`-race` 要 C 工具链、`linuxgate` 要 WSL、漏洞体检要出网。探测不到的 job
+  记「跳过」而不是失败；漏洞体检失败同样降级为跳过——本机没装或断网不等于代码坏了。
+- **干净环境复查**（`envclean`）：清掉 `AQUARIUS_*` 与各家密钥后重跑组装与探针那几个包。
+  它挡的是「测试偷偷用上本机配好的密钥」这类问题。**注意它不是沙箱**：同机跑 CI 挡不住
+  全部环境依赖，这一档只覆盖已知最容易出问题的几处。
+- **证据**：每轮写 `.ci/last.json`（不入库），记提交号、工作区是否脏、每条的结论与耗时。
+  fast 档会顺带报上一轮 default / full 的结果与提交号；对不上时明确写「之后的改动未覆盖」，
+  避免拿旧结果当新结果。
+- **pre-push hook** 只跑 fast 档，挡的是「格式没跑、vet 报错」这类；它不替代 default。
+  hook 由程序生成（本仓不存 shell 脚本），覆盖前会备份别人写的 hook。
+- **不进任何档位的两件**：GUI 真窗冒烟（`AQUARIUS_GUI_SMOKE=1`，要显示环境）与真实 MCP
+  验收（`AQUARIUS_E2E_REAL_MCP=1`，要拉现成的 npx server）。它们靠人工跑，档位里不含。
+- **迁到托管 runner**：`--json` 输出整轮结果，那边调 `go run ./cmd/ci --profile=full
+  --json=ci-report.json` 即可。job 定义里没有平台概念，换环境只改 workflow 文件。
 
 ### 非 Windows 门禁（D119）
 
