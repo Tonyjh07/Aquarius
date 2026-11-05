@@ -279,10 +279,10 @@ func (l *Logger) render(lv Level, ctx Context, event, action, msg string, kv []a
 	b.WriteByte(' ')
 	b.WriteString(pad(string(ctx), 8))
 	b.WriteByte(' ')
-	b.WriteString(msg)
+	b.WriteString(lineEscaper.Replace(msg))
 	if act != "" {
 		b.WriteString("  → ")
-		b.WriteString(act)
+		b.WriteString(lineEscaper.Replace(act))
 	}
 	if len(kv) > 0 {
 		b.WriteString("  ")
@@ -316,6 +316,20 @@ func kvMap(kv []any) map[string]string {
 	return out
 }
 
+// lineEscaper 文本形态的单行化：换行、回车、制表符转成字面量，包裹符本身也转义。
+//
+// 文本形态的约定是「一行一条」，而调用方给的 err 经常自带换行（yaml 解析、子进程输出、
+// stderr 尾巴）。原样写下去，一条记录会劈成两行：后半行没有时间、级别与上下文，按级别
+// 或 ctx 过滤时既会漏也会误计。JSON 形态不走这里——那边由 marshal 负责转义。
+var lineEscaper = strings.NewReplacer(
+	"\r\n", `\n`,
+	"\n", `\n`,
+	"\r", `\r`,
+	"\t", `\t`,
+	"«", `\«`,
+	"»", `\»`,
+)
+
 // renderKV 文本侧的 `名=值` 尾巴，保持调用方给的顺序（排查时人按自己写日志的顺序读）。
 func renderKV(kv []any) string {
 	var b strings.Builder
@@ -331,9 +345,11 @@ func renderKV(kv []any) string {
 		first = false
 		b.WriteString(name)
 		b.WriteByte('=')
-		v := fmt.Sprint(kv[i+1])
-		if v == "" || strings.ContainsAny(v, " \t") {
-			b.WriteString("«" + v + "»") // 值里有空白就圈起来，免得看成下一个字段
+		raw := fmt.Sprint(kv[i+1])
+		v := lineEscaper.Replace(raw)
+		// 原文里有空白、引号或包裹符就圈起来：圈内是转义后的一行，圈外仍是 `名=值`。
+		if raw == "" || strings.ContainsAny(raw, " \t\r\n\"«»") {
+			b.WriteString("«" + v + "»")
 			continue
 		}
 		b.WriteString(v)

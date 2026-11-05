@@ -88,6 +88,21 @@ func TestKVQuoting(t *testing.T) {
 	}
 }
 
+// TestTextStaysOneLine 带换行的 err 不能把一条记录劈成两行。文本形态的约定是「一行一条」：
+// 劈开之后后半行没有时间/级别/上下文，按级别或 ctx 过滤时既会漏也会误计。
+func TestTextStaysOneLine(t *testing.T) {
+	l, stderr, _ := newTestLogger(t, LevelDebug, FormatText)
+	l.Warn(LLM, "log.llm.param_record_failed", "log.act.retry_next_start",
+		"err", "exit status 1\nerror: boom\r\ndetail\ttab\rlone-cr")
+	got := stderr.String()
+	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("应只有行尾一个换行：%q", got)
+	}
+	if !strings.Contains(got, `\n`) || !strings.Contains(got, `\r`) || !strings.Contains(got, `\t`) {
+		t.Fatalf("换行/回车/制表应转成字面量：%q", got)
+	}
+}
+
 // TestJSONShapeAndKeys JSON 形态：ctx/event/action 是 key，msg/act 是译文。
 func TestJSONShapeAndKeys(t *testing.T) {
 	defer i18n.Use(i18n.SelectionZh)
