@@ -2,6 +2,7 @@ package uigui
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -82,9 +83,40 @@ func postCommand(u *UI, name string, args ...string) bool {
 
 // commandLine 拼一条文本命令（经 parseInput 的路径要带斜杠与空格分隔的参数）。
 // 折叠条要把命令行记进待发清单，所以那几个动作仍走文本路径，不改用结构化投递。
+//
+// 参数按 CommandFields 的规则加引号：含空白的路径（导入文件、会话标题）不加引号会被
+// 切成两段，`/import` 只拿到前半截。CommandFields 不认转义，所以同时含两种引号的参数
+// 无法安全表示——这种情况下保持原样，别拼出一段更坏的东西。
 func commandLine(name string, args ...string) string {
 	if len(args) == 0 {
 		return "/" + name
 	}
-	return "/" + name + " " + strings.Join(args, " ")
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, "/"+name)
+	for _, a := range args {
+		parts = append(parts, quoteArg(a))
+	}
+	return strings.Join(parts, " ")
+}
+
+// quoteArg 给需要保住的参数加引号（空串也要，否则会被当成「没有这个参数」）。
+//
+// 判据必须与 CommandFields 完全一致：那边用 unicode.IsSpace 断词，所以全角空格
+// （U+3000）也算分隔符——只认 ASCII 空白的写法会把 `C:\我的 文档` 切成两段。
+func quoteArg(s string) string {
+	if s == "" {
+		return `""`
+	}
+	if !strings.ContainsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '"' || r == '\''
+	}) {
+		return s
+	}
+	if !strings.Contains(s, `"`) {
+		return `"` + s + `"`
+	}
+	if !strings.Contains(s, "'") {
+		return "'" + s + "'"
+	}
+	return s
 }

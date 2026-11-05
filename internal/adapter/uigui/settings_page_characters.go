@@ -119,7 +119,11 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			f.charStatus, f.charErr = i18n.T("ui.page.characters.need_path"), true
 			continue
 		}
-		postCommand(u, uiCmdCharacter, "import", path)
+		if !postCommand(u, uiCmdCharacter, "import", path) {
+			// 命令没投出去就不能报「已提交导入」：通道满时用户会以为已经在导。
+			f.charStatus, f.charErr = i18n.T("ui.common.post_dropped"), true
+			continue
+		}
 		f.charSource.SetText("")
 		f.charStatus, f.charErr = i18n.Tf("ui.page.characters.imported", "path", path), false
 	}
@@ -132,8 +136,11 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			switch {
 			case strings.HasPrefix(key, "start:"):
 				slug := strings.TrimPrefix(key, "start:")
-				postCommand(u, uiCmdCharacter, "start", slug)
-				f.charStatus, f.charErr = i18n.Tf("ui.page.characters.started", "slug", slug), false
+				if postCommand(u, uiCmdCharacter, "start", slug) {
+					f.charStatus, f.charErr = i18n.Tf("ui.page.characters.started", "slug", slug), false
+				} else {
+					f.charStatus, f.charErr = i18n.T("ui.common.post_dropped"), true
+				}
 			case strings.HasPrefix(key, "rm:"):
 				f.charConfirm = strings.TrimPrefix(key, "rm:")
 			case strings.HasPrefix(key, "cancel:"):
@@ -141,8 +148,11 @@ func (charactersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 			case strings.HasPrefix(key, "confirm:"):
 				slug := strings.TrimPrefix(key, "confirm:")
 				f.charConfirm = ""
-				postCommand(u, uiCmdCharacter, "remove", slug)
-				f.charStatus, f.charErr = i18n.Tf("ui.page.characters.deleted", "slug", slug), false
+				if postCommand(u, uiCmdCharacter, "remove", slug) {
+					f.charStatus, f.charErr = i18n.Tf("ui.page.characters.deleted", "slug", slug), false
+				} else {
+					f.charStatus, f.charErr = i18n.T("ui.common.post_dropped"), true
+				}
 			}
 		}
 	}

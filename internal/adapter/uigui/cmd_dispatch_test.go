@@ -3,6 +3,7 @@ package uigui
 import (
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -61,5 +62,19 @@ func TestCommandLine(t *testing.T) {
 	}
 	if got := commandLine(uiCmdGoto, "n1", "--keep"); got != "/goto n1 --keep" {
 		t.Fatalf("commandLine(goto, n1, --keep) = %q", got)
+	}
+	// 含空白的参数必须圈起来，否则文本路径按空白切分会把它切成两段（导入文件路径的
+	// 典型形态：`C:\My Docs\a.aqx`）。用同一把切分器验证，而不是只比字符串。
+	line := commandLine(uiCmdImport, `C:\My Docs\a.aqx`)
+	if fields := uicommon.CommandFields(line); len(fields) != 2 || fields[1] != `C:\My Docs\a.aqx` {
+		t.Fatalf("含空白参数被切坏了: line=%q fields=%q", line, fields)
+	}
+	// 空参数要留下一个空位，不能被当成「没有这个参数」。
+	if fields := uicommon.CommandFields(commandLine(uiCmdEdit, "")); len(fields) != 2 || fields[1] != "" {
+		t.Fatalf("空参数丢失: %q", fields)
+	}
+	// 全角空格也是 CommandFields 的分隔符（unicode.IsSpace），中文路径里出现它时同样要圈。
+	if fields := uicommon.CommandFields(commandLine(uiCmdImport, "C:\\我的\u3000文档\\a.aqx")); len(fields) != 2 {
+		t.Fatalf("全角空格被当成分隔符: %q", fields)
 	}
 }

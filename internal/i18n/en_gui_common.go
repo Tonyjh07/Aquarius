@@ -19,8 +19,9 @@ var enGuiCommonTexts = map[string]string{
 	"ui.common.confirm_q": "Confirm?",
 
 	// 通用后缀与状态
-	"ui.common.failed":  "Failed: {err}",
-	"ui.common.none":    "None",
-	"ui.common.unset":   "Not set",
-	"ui.common.unwired": "Not wired yet (read-only placeholder)",
+	"ui.common.failed":       "Failed: {err}",
+	"ui.common.post_dropped": "The UI was busy; that action was not submitted, click again",
+	"ui.common.none":         "None",
+	"ui.common.unset":        "Not set",
+	"ui.common.unwired":      "Not wired yet (read-only placeholder)",
 }

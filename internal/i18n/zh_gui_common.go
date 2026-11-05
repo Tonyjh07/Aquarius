@@ -24,8 +24,10 @@ var zhGuiCommonTexts = map[string]string{
 	"ui.common.confirm_q": "确认？",
 
 	// 通用后缀与状态
-	"ui.common.failed":  "操作失败：{err}",
-	"ui.common.none":    "无",
-	"ui.common.unset":   "未设",
-	"ui.common.unwired": "未接线（只读占位）",
+	"ui.common.failed": "操作失败：{err}",
+	// 图内命令是「通道满即丢」的：投递失败时不能报成功，也不能装作没点过。
+	"ui.common.post_dropped": "界面正忙，这条操作没投出去，请再点一次",
+	"ui.common.none":         "无",
+	"ui.common.unset":        "未设",
+	"ui.common.unwired":      "未接线（只读占位）",
 }
