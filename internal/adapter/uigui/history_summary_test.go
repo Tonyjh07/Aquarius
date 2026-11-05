@@ -57,6 +57,7 @@ type portCommand struct {
 // TestSummaryCardOpensFromNodeMenu 图侧右键 → 「插入摘要」→ 动作槽 → 帧首开卡；
 // 卡在屏时 modalActive 成立（背景手势不再取事件）。
 func TestSummaryCardOpensFromNodeMenu(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const id conversation.MessageID = "a1"
 
@@ -81,6 +82,7 @@ func TestSummaryCardOpensFromNodeMenu(t *testing.T) {
 // TestSummaryHandwrittenDispatches 手写档：卡里写正文 + 点「插入」→ `/summary <id> <文本>`
 // 经 inCh、关卡、唤出主窗。
 func TestSummaryHandwrittenDispatches(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const id conversation.MessageID = "a1"
 	sumOpenCard(t, u, st, q, id)
@@ -108,6 +110,7 @@ func TestSummaryHandwrittenDispatches(t *testing.T) {
 // TestSummaryModelIgnoresTypedText 模型档：点「用模型总结以上历史」→ `/summary <id>`（无文本），
 // 即便卡里已经写了字也不带出去（两种来源二选一）。
 func TestSummaryModelIgnoresTypedText(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const id conversation.MessageID = "a1"
 	sumOpenCard(t, u, st, q, id)
@@ -128,6 +131,7 @@ func TestSummaryModelIgnoresTypedText(t *testing.T) {
 // TestSummaryEmptyTextKeepsCard 空（或纯空白）正文点「插入」：不投命令、卡保持开启，
 // 用户刚敲的字不丢。
 func TestSummaryEmptyTextKeepsCard(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	sumOpenCard(t, u, st, q, "a1")
 	st.sum.ed.SetText("   \n  ")
@@ -151,6 +155,7 @@ func TestSummaryEmptyTextKeepsCard(t *testing.T) {
 // TestSummaryEscAndCancelClose Esc 与「取消」都关卡、都不投命令（卡里可能刚敲了字，
 // 故不点空白关闭——由 TestSummaryNoOutsideClickClose 单独钉）。
 func TestSummaryEscAndCancelClose(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	sumOpenCard(t, u, st, q, "a1")
 	histFrameFor(q, u, st) // 焦点立起来（FocusCmd 在帧尾生效）
@@ -176,6 +181,7 @@ func TestSummaryEscAndCancelClose(t *testing.T) {
 
 // TestSummaryNoOutsideClickClose 点卡片外空白**不**关卡（正文可能刚写一半，误触即丢字）。
 func TestSummaryNoOutsideClickClose(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	sumOpenCard(t, u, st, q, "a1")
 	st.sum.ed.SetText("写了一半")
@@ -190,6 +196,7 @@ func TestSummaryNoOutsideClickClose(t *testing.T) {
 // TestSummaryModalBlocksGraph 卡在屏时右图手势失灵：点节点不再开消息遮罩、也不投命令
 // （模态在 Gio 广播模型下的真实口径）；关卡后同一位置恢复响应。
 func TestSummaryModalBlocksGraph(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	sumOpenCard(t, u, st, q, "a1")
 	histFrameFor(q, u, st) // 图按真实面板尺寸就位
@@ -239,6 +246,7 @@ func TestSummaryModalBlocksGraph(t *testing.T) {
 // TestSummaryRefusesRootAndPersona 会话根与会话首节点（人格）不开卡：根前无处可插；
 // 人格之前插摘要会让摘要顶到路径第二位、被装配当成 persona。
 func TestSummaryRefusesRootAndPersona(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	for _, id := range []conversation.MessageID{"r", "p"} {
 		st.openSummary(u, id)
@@ -251,6 +259,7 @@ func TestSummaryRefusesRootAndPersona(t *testing.T) {
 
 // TestSummaryModalLayersExclusive 两层模态不共存：开卡收遮罩、开遮罩收卡。
 func TestSummaryModalLayersExclusive(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
 	if st.ov == nil {
@@ -269,6 +278,7 @@ func TestSummaryModalLayersExclusive(t *testing.T) {
 // TestSummaryEditorIsMultiline 正文编辑区是多行编辑器（Enter 落换行、不提交）：
 // 摘要是多行 markdown，单行编辑器会把正文压平。
 func TestSummaryEditorIsMultiline(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	sumOpenCard(t, u, st, q, "a1")
 	if st.sum.ed.SingleLine {

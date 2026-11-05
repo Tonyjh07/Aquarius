@@ -31,6 +31,7 @@ func newExchangeUI(t *testing.T, list port.SessionLister) (*UI, *fakePlat, *hist
 // TestHistImportButtonRequestsOpenAndSendsCommand 点「导入」：向平台要一个文件（带导入
 // 用途与过滤器），选完投 `/import <路径>`——不投别的、不自己读文件。
 func TestHistImportButtonRequestsOpenAndSendsCommand(t *testing.T) {
+	t.Parallel()
 	u, fp, st := newExchangeUI(t, nil)
 	const picked = `C:\tmp\别人的会话.json`
 	fp.OnOpenRequest = func(req platform.OpenRequest) (string, bool) {
@@ -74,6 +75,7 @@ func TestHistImportButtonRequestsOpenAndSendsCommand(t *testing.T) {
 // 派生的 .aqx 名、第一档预选），选完投 `/export --format aqx --path <路径>`——用户挑的
 // 就是最终落点。
 func TestHistExportButtonRequestsSaveSendsCommand(t *testing.T) {
+	t.Parallel()
 	u, fp, st := newExchangeUI(t, nil)
 	const picked = `D:\备份\甲会话.aqx`
 	fp.OnSaveRequest = func(req platform.SaveRequest) (string, bool) {
@@ -127,6 +129,7 @@ func TestHistExportButtonRequestsSaveSendsCommand(t *testing.T) {
 // TestHistExportHonoursSelectedFormat 保存框里换了档位：`--format` 跟着换，落点扩展名也
 // 跟着换——选了 SillyTavern 却存成 .aqx 就是格式与文件名对不上。
 func TestHistExportHonoursSelectedFormat(t *testing.T) {
+	t.Parallel()
 	u, fp, st := newExchangeUI(t, nil)
 	idx := -1
 	for i, f := range exportFormats() {
@@ -174,6 +177,7 @@ func TestHistExportHonoursSelectedFormat(t *testing.T) {
 // TestHistExportFallsBackToExtension 平台报不出档位（非 Windows）时按扩展名反推：.jsonl
 // → sillytavern，认不出的扩展名 → aqx（缺省且唯一无损的一档）。
 func TestHistExportFallsBackToExtension(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		picked string
 		want   string
@@ -204,6 +208,7 @@ func TestHistExportFallsBackToExtension(t *testing.T) {
 
 // TestWithFormatExt 落点扩展名与所选格式对齐：已知格式的扩展名换掉，其它一律不切。
 func TestWithFormatExt(t *testing.T) {
+	t.Parallel()
 	jsonl, ok := exportFormatAt(0)
 	for _, f := range exportFormats() {
 		if f.Name == "sillytavern" {
@@ -229,6 +234,7 @@ func TestWithFormatExt(t *testing.T) {
 
 // TestHistExchangeCancelSendsNothing 用户取消（平台回空）→ 一条命令都不投，也不报错。
 func TestHistExchangeCancelSendsNothing(t *testing.T) {
+	t.Parallel()
 	u, fp, st := newExchangeUI(t, nil)
 	fp.OnOpenRequest = func(platform.OpenRequest) (string, bool) { return "", true }
 	fp.OnSaveRequest = func(platform.SaveRequest) (string, bool) { return "", true }
@@ -260,6 +266,7 @@ func TestHistExchangeCancelSendsNothing(t *testing.T) {
 // TestDrainFilePicksIgnoresUnknownPurpose 认不出用途的一笔（将来加新用途）直接丢掉，
 // 不投任何命令——宁可没反应，也不猜用户想干什么。
 func TestDrainFilePicksIgnoresUnknownPurpose(t *testing.T) {
+	t.Parallel()
 	u, _, st := newExchangeUI(t, nil)
 	drainCh(u)
 	u.filePicks <- filePick{purpose: platform.FilePurpose(99), path: `C:\x.aqx`}
@@ -280,6 +287,7 @@ func TestDrainFilePicksIgnoresUnknownPurpose(t *testing.T) {
 //   - 导入必须覆盖全部五档格式：认哪几种就得在框里给到哪几种，否则用户写了扩展名却
 //     在框里找不到那一档。
 func TestExchangeFiltersMatchWhatTheEntryWrites(t *testing.T) {
+	t.Parallel()
 	writable := exportFormats()
 	if len(writable) == 0 {
 		t.Fatal("端口格式表里没有可写格式")

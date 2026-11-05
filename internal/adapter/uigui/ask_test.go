@@ -40,6 +40,7 @@ func askReq() port.AskRequest {
 
 // TestAskToggleSingleAndMultiple 单选互斥、多选取反（再次点选 = 取消）。
 func TestAskToggleSingleAndMultiple(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 
@@ -60,6 +61,7 @@ func TestAskToggleSingleAndMultiple(t *testing.T) {
 
 // TestAskFreeTextJoinsSelection 「自己输入」与已选项一起回填，且切题时保留各自输入。
 func TestAskFreeTextJoinsSelection(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	reply := make(chan port.AskAnswer, 1)
 	m.startAsk(askReq(), reply)
@@ -90,6 +92,7 @@ func TestAskFreeTextJoinsSelection(t *testing.T) {
 
 // TestAskUnansweredQuestionKeepsEmpty 未答题在结果里留空切片（不是补默认值）。
 func TestAskUnansweredQuestionKeepsEmpty(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	reply := make(chan port.AskAnswer, 1)
 	m.startAsk(askReq(), reply)
@@ -104,6 +107,7 @@ func TestAskUnansweredQuestionKeepsEmpty(t *testing.T) {
 
 // TestAskDismissIsNotSkip 「忽略」= 放弃全部：Dismissed 置位、不带半份答案。
 func TestAskDismissIsNotSkip(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	reply := make(chan port.AskAnswer, 1)
 	m.startAsk(askReq(), reply)
@@ -121,6 +125,7 @@ func TestAskDismissIsNotSkip(t *testing.T) {
 
 // TestAskNextAdvancesThenSubmits 下一步逐题推进，最后一题才提交。
 func TestAskNextAdvancesThenSubmits(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	reply := make(chan port.AskAnswer, 1)
 	m.startAsk(askReq(), reply)
@@ -145,6 +150,7 @@ func TestAskNextAdvancesThenSubmits(t *testing.T) {
 
 // TestAskGotoClampsAndSaves 跳题越界无效；跳走前把当前自由输入存回原题。
 func TestAskGotoClampsAndSaves(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 
@@ -163,6 +169,7 @@ func TestAskGotoClampsAndSaves(t *testing.T) {
 
 // TestSubmitAskSemantics 外部输入泵一行文本 → 面板语义（编号/文字/忽略/空行）。
 func TestSubmitAskSemantics(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 
@@ -194,6 +201,7 @@ func TestSubmitAskSemantics(t *testing.T) {
 
 // TestParseAskPicks 编号解析边界：分隔符多样、去重保序、越界与混排一律不认。
 func TestParseAskPicks(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		n    int
@@ -233,6 +241,7 @@ func TestParseAskPicks(t *testing.T) {
 
 // TestAskPanelPxClamp 面板高按内容增长，夹在窗高 70% 以内（内容多也不吃满整窗）。
 func TestAskPanelPxClamp(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.frameSize.X, u.frameSize.Y = winWidthDp, winHeightDp
 	u.m.startAsk(port.AskRequest{Questions: []port.AskQuestion{{
@@ -260,6 +269,7 @@ func TestAskPanelPxClamp(t *testing.T) {
 // TestAskBodyScrollsVertically 中部滚动区必须是竖向（layout.List 零值轴是横向）：
 // 横向时题干与各选项并排成列，右侧选项被面板裁掉、选中行淡底撑满整列高度。
 func TestAskBodyScrollsVertically(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 	if got := m.u.askList.Axis; got != layout.Vertical {
@@ -270,6 +280,7 @@ func TestAskBodyScrollsVertically(t *testing.T) {
 // TestAskBodyLaysRowsOutVertically 中部滚动区把各行向下堆：列表高 = 各行高之和（竖向），
 // 而不是「最高一行」（横轴把每行当成一列，列表高 = 列里最高的元素）。
 func TestAskBodyLaysRowsOutVertically(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 	a := u.m.ask
@@ -303,6 +314,7 @@ func TestAskBodyLaysRowsOutVertically(t *testing.T) {
 // 判据用真指针扫描（不硬编码排版常数）：进度段的点击件在头部右侧命中、面板右上角命中
 // 不到任何可点件（点到那里既不收面板、也不收进度段）。
 func TestAskHeadProgressRightAndNoMinimize(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 	askFrame(q, u)
@@ -341,6 +353,7 @@ func TestAskHeadProgressRightAndNoMinimize(t *testing.T) {
 // + 上下内边距，**不继承底部行的 Min.Y**（继承的话文字被顶到胶囊上沿，用户实测到的
 // 「下一步」字偏上就是这个）。
 func TestAskFootButtonLabelCentered(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 	askFrame(q, u)
@@ -365,6 +378,7 @@ func TestAskFootButtonLabelCentered(t *testing.T) {
 
 // TestAskFootButtonsClickable 真指针点「下一步」推进到下一题（主按钮命中面跟着几何走）。
 func TestAskFootButtonsClickable(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.m.startAsk(askReq(), make(chan port.AskAnswer, 1))
 	askFrame(q, u)
@@ -402,6 +416,7 @@ func TestAskFootButtonsClickable(t *testing.T) {
 // TestAskPanelKeyboard 键盘路径：数字选、Enter 进下一题、Ctrl+Enter 提交、
 // Alt+← 回退、Tab 前进；面板期主编辑器不吃按键。
 func TestAskPanelKeyboard(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	reply := make(chan port.AskAnswer, 1)
 	u.m.startAsk(askReq(), reply)
@@ -484,6 +499,7 @@ func TestAskPanelKeyboard(t *testing.T) {
 
 // TestAskEnterOnLastSubmits Enter 在最后一题直接提交（不必找「提交」钮）。
 func TestAskEnterOnLastSubmits(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	reply := make(chan port.AskAnswer, 1)
 	u.m.startAsk(port.AskRequest{Questions: []port.AskQuestion{{
@@ -508,6 +524,7 @@ func TestAskEnterOnLastSubmits(t *testing.T) {
 // TestAskEscInterruptsNotDismiss Esc = 中断本轮（不是放弃全部）：走停止键同路径，
 // 面板等 Ask 侧据 ctx 取消收场。
 func TestAskEscInterruptsNotDismiss(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	var n int
 	u.SetInterrupt(func() { n++ })
@@ -526,6 +543,7 @@ func TestAskEscInterruptsNotDismiss(t *testing.T) {
 
 // TestAskPanelShrinksTranscript 面板增高从输入带扣，转写区相应压缩（D184 原地展开）。
 func TestAskPanelShrinksTranscript(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.m.add(blockUser, "问")
 	expandFrame(q, u)
@@ -540,6 +558,7 @@ func TestAskPanelShrinksTranscript(t *testing.T) {
 
 // TestAskExpandsCollapsedWindow 窗口收成球时来提问：先展开窗口（否则问题永远没人看得见）。
 func TestAskExpandsCollapsedWindow(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.collapsed = true
 	expandFrame(q, u)
@@ -556,6 +575,7 @@ func TestAskExpandsCollapsedWindow(t *testing.T) {
 
 // TestClearDismissesAsk 清屏（/switch、/new）时面板收场：应答为「放弃全部」，不留悬空面板。
 func TestClearDismissesAsk(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	reply := make(chan port.AskAnswer, 1)
 	m.startAsk(askReq(), reply)
@@ -575,6 +595,7 @@ func TestClearDismissesAsk(t *testing.T) {
 
 // TestAskCanceled 取消上下文 → Ask 返回 ctx.Err，面板收场（不留没人等的提问）。
 func TestAskCanceled(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -609,6 +630,7 @@ func TestAskCanceled(t *testing.T) {
 
 // TestAskDismissedOnEOF 输入流结束 → 放弃全部（不替用户编答案），与 repl/uitui 同口径。
 func TestAskDismissedOnEOF(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 
 	type result struct {
@@ -637,6 +659,7 @@ func TestAskDismissedOnEOF(t *testing.T) {
 
 // TestAskClosedInterface 界面已关闭 → 立即报错，不挂等。
 func TestAskClosedInterface(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	if err := u.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -648,6 +671,7 @@ func TestAskClosedInterface(t *testing.T) {
 
 // TestAskEmptyRequest 空请求直接回空答案（不发面板）。
 func TestAskEmptyRequest(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	ans, err := u.Ask(context.Background(), port.AskRequest{})
 	if err != nil || len(ans.Answers) != 0 {

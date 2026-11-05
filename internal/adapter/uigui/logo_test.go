@@ -13,6 +13,7 @@ import (
 // TestLogoAssetDecode 内嵌品牌图标可解码（§15.2 logo 实装的前置——解码失败时
 // 圆钮退回纯色并记日志）。
 func TestLogoAssetDecode(t *testing.T) {
+	t.Parallel()
 	if len(assets.LogoPNG) == 0 {
 		t.Fatal("assets.LogoPNG 未内嵌")
 	}
@@ -29,6 +30,7 @@ func TestLogoAssetDecode(t *testing.T) {
 // —— 100% 缩放下球径 48px，固定 60px 的图标居中后被 48px 的圆裁掉外圈（用户实测：
 // logo 边缘被截、看着像被放大裁切）。换 DPI/尺寸档时缓存必须重建。
 func TestLogoImageSizedToBall(t *testing.T) {
+	t.Parallel()
 	// 100% 缩放：球径 48px。
 	if _, ok := logoImageOp(48); !ok {
 		t.Fatal("图标应可用（assets.LogoPNG 已内嵌）")
@@ -54,6 +56,7 @@ func TestLogoImageSizedToBall(t *testing.T) {
 
 // TestScaleBox 面积平均缩放（logo 预缩放路径）：尺寸正确、纯色保持。
 func TestScaleBox(t *testing.T) {
+	t.Parallel()
 	// 纯色不透明 → 缩放后仍纯色。
 	src := image.NewNRGBA(image.Rect(0, 0, 128, 128))
 	for y := 0; y < 128; y++ {

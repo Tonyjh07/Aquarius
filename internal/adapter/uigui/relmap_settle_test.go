@@ -124,6 +124,7 @@ func relDriveDone(t *testing.T, q *input.Router, u *UI, st *historyState) {
 // **全在视口内**；只有 zoom 触底（relZoomMin，超长会话）才退化为「Head 在场」（V2）。
 // 修前：wide12x3 38 节点出 27、上越界 461px（用户截图那一幕）。
 func TestRelGraphSettledBoxStaysInView(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		g    port.TreeGraph
@@ -164,6 +165,7 @@ func TestRelGraphSettledBoxStaysInView(t *testing.T) {
 // 时上下留白必须**对称**（P2 盒心居中；修前 fixture7 是 225/78、wide12x3 是 −461/197），
 // 且未触上下限时至少一维贴满（zoom 按当前盒收口，不是按静息盒）。
 func TestRelGraphSettledViewBalanced(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		g    port.TreeGraph
@@ -204,6 +206,7 @@ func TestRelGraphSettledViewBalanced(t *testing.T) {
 // ——盒子只长 ⇒ 只缩，不会有「放大—缩回」的来回摆动（抖动会让人眼盯不住树）。落定后允许
 // 放大一次把留白填掉（V1c），故判据只在 settled 之前生效。
 func TestRelGraphFollowZoomNoBounce(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relWideGraph(12, 3)}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
@@ -229,6 +232,7 @@ func TestRelGraphFollowZoomNoBounce(t *testing.T) {
 
 // TestRelGraphLabelFontClamp 字号钳制（A9）：clamp(12×zoom, 10, 16)。
 func TestRelGraphLabelFontClamp(t *testing.T) {
+	t.Parallel()
 	g := &relGraph{zoom: 0.5}
 	if g.labelFont() != 10 {
 		t.Fatalf("zoom0.5 字号 = %v, want 10", g.labelFont())

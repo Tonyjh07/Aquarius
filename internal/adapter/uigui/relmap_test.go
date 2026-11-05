@@ -62,6 +62,7 @@ func relIdx(t *testing.T, m *relModel, id string) int {
 
 // TestRelA1a_SingleRoot 恰有一个 level=0 节点（结构根唯一，A1a）。
 func TestRelA1a_SingleRoot(t *testing.T) {
+	t.Parallel()
 	m := relMustModel(t, relFixtureGraph())
 	zeros := 0
 	for i := range m.nodes {
@@ -79,6 +80,7 @@ func TestRelA1a_SingleRoot(t *testing.T) {
 
 // TestRelA1b_AnchorExempt 预算切片 maxCount=1 → 仅锚点（豁免预算）。
 func TestRelA1b_AnchorExempt(t *testing.T) {
+	t.Parallel()
 	m := relMustModel(t, relFixtureGraph())
 	vis := relBudget(m, 1)
 	if len(vis.nodes) != 1 || vis.nodes[0] != m.anchor {
@@ -91,6 +93,7 @@ func TestRelA1b_AnchorExempt(t *testing.T) {
 
 // TestRelA11_InPath IsPath 恰为一条根→锚点路径，长度 = level(anchor)+1。
 func TestRelA11_InPath(t *testing.T) {
+	t.Parallel()
 	m := relMustModel(t, relFixtureGraph())
 	var path []int
 	for i := m.anchor; i >= 0; i = m.nodes[i].parent {
@@ -118,6 +121,7 @@ func TestRelA11_InPath(t *testing.T) {
 
 // TestRelA2_PaletteProjection 颜色是 Level mod 4 的纯投影。
 func TestRelA2_PaletteProjection(t *testing.T) {
+	t.Parallel()
 	for lvl := 0; lvl < 20; lvl++ {
 		if got, want := relPaletteIndex(lvl), lvl%4; got != want {
 			t.Fatalf("relPaletteIndex(%d) = %d, want %d", lvl, got, want)
@@ -127,6 +131,7 @@ func TestRelA2_PaletteProjection(t *testing.T) {
 
 // TestRelA3_EdgeDirection 每条断言满足 level(from) < level(to)，且 from 是 to 的父。
 func TestRelA3_EdgeDirection(t *testing.T) {
+	t.Parallel()
 	m := relMustModel(t, relFixtureGraph())
 	vis := relBudget(m, len(m.nodes))
 	for _, e := range vis.edges {
@@ -142,6 +147,7 @@ func TestRelA3_EdgeDirection(t *testing.T) {
 
 // TestRelA4_WeightIndependentOfDegree 把孩子数改成 5，weight 不变。
 func TestRelA4_WeightIndependentOfDegree(t *testing.T) {
+	t.Parallel()
 	g := relFixtureGraph()
 	m1 := relMustModel(t, g)
 	// 目标：a2（w1 分叉位点）——给它加 5 个孩子，weight 必须不变。
@@ -167,6 +173,7 @@ func TestRelA4_WeightIndependentOfDegree(t *testing.T) {
 
 // TestRelA5_LabelMonotone 缩放单调：zoom 越小可见标签数不增；低于下限全隐。
 func TestRelA5_LabelMonotone(t *testing.T) {
+	t.Parallel()
 	weights := []float64{relW0, relW1, relW2, relW3}
 	prev := len(weights) + 1
 	for _, z := range []float64{1.5, 1.3, 1.1, 0.95, 0.85, 0.8, 0.75, 0.7, 0.5} {
@@ -188,6 +195,7 @@ func TestRelA5_LabelMonotone(t *testing.T) {
 
 // TestRelA6_BudgetConsistent 预算后无悬空边：每条边两端都可见，且节点数 = 实际绘制数。
 func TestRelA6_BudgetConsistent(t *testing.T) {
+	t.Parallel()
 	m := relMustModel(t, relFixtureGraph())
 	for _, cap := range []int{1, 2, 3, 4, 5, 7} {
 		vis := relBudget(m, cap)
@@ -205,6 +213,7 @@ func TestRelA6_BudgetConsistent(t *testing.T) {
 
 // TestRelA7_TotalVsPresented 总量（Total）与已呈现量（len(nodes)）不同源、可同时取得。
 func TestRelA7_TotalVsPresented(t *testing.T) {
+	t.Parallel()
 	m := relMustModel(t, relFixtureGraph())
 	vis := relBudget(m, 4)
 	if m.total != 7 {
@@ -217,6 +226,7 @@ func TestRelA7_TotalVsPresented(t *testing.T) {
 
 // TestRelDeriveToLayout 派生 → 预算 → 布局联调：收敛、锚点局部下标有效、层序单调。
 func TestRelDeriveToLayout(t *testing.T) {
+	t.Parallel()
 	m := relMustModel(t, relFixtureGraph())
 	vis := relBudget(m, len(m.nodes))
 	nodes, anchor := relGeo(m, vis)
@@ -234,6 +244,7 @@ func TestRelDeriveToLayout(t *testing.T) {
 
 // TestRelModelGuards 结构非法守卫：空 / 无根 / 多根 / 父缺失 / 自环。
 func TestRelModelGuards(t *testing.T) {
+	t.Parallel()
 	if _, ok := relNewModel(port.TreeGraph{}); ok {
 		t.Fatal("空图应被拒绝")
 	}
@@ -259,6 +270,7 @@ func TestRelModelGuards(t *testing.T) {
 
 // TestRelShapeAndStatement 形状查表与陈述自足（含低 zoom 前缀）。
 func TestRelShapeAndStatement(t *testing.T) {
+	t.Parallel()
 	if relShapeOf(conversation.RoleRoot) != relShapeRing ||
 		relShapeOf(conversation.RoleUser) != relShapeSquare ||
 		relShapeOf(conversation.RoleSystem) != relShapeDiamond ||

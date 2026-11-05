@@ -11,6 +11,7 @@ import (
 
 // TestRawViewFrame 帧内 sync：空槽显示未选择态；内容快照变化才 SetText，ReadOnly 置位。
 func TestRawViewFrame(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	st := newRawViewState()
 	q := new(input.Router)

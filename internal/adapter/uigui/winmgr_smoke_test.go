@@ -13,6 +13,7 @@ import (
 )
 
 func TestSecondaryWindowSmoke(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("AQUARIUS_GUI_SMOKE") == "" {
 		t.Skip("次窗真实窗口冒烟（AQUARIUS_GUI_SMOKE=1 启用）")
 	}

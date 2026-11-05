@@ -83,6 +83,7 @@ func skillsForm(t *testing.T, admin *fakeSkillsAdmin) (*settingsForm, *UI) {
 
 // TestSkillsPageRows 行计划：清单 / 空态 / 来源 / 目录 / 警告 / 状态。
 func TestSkillsPageRows(t *testing.T) {
+	t.Parallel()
 	admin := &fakeSkillsAdmin{snap: SkillsSnapshot{
 		Revision:    1,
 		ManagedRoot: "/profile/skills",
@@ -114,6 +115,7 @@ func TestSkillsPageRows(t *testing.T) {
 
 // TestSkillsPageEmptyAndUnwired 空清单给引导；未接线给只读占位。
 func TestSkillsPageEmptyAndUnwired(t *testing.T) {
+	t.Parallel()
 	f, _ := skillsForm(t, &fakeSkillsAdmin{snap: SkillsSnapshot{Revision: 1}})
 	if !hasRowKind(f.pageRows(pageSkills), rowSkillEmpty) {
 		t.Error("空清单应给空态引导行")
@@ -139,6 +141,7 @@ func hasRowKind(rows []rowDesc, k rowKind) bool {
 
 // TestSkillsInstallIsAsync 安装是异步动作：结果经通道回灌状态行，期间来源框清空。
 func TestSkillsInstallIsAsync(t *testing.T) {
+	t.Parallel()
 	admin := &fakeSkillsAdmin{snap: SkillsSnapshot{Revision: 1}}
 	f, _ := skillsForm(t, admin)
 	f.skillSource.SetText(`C:\Skills\pdf`)
@@ -176,6 +179,7 @@ func TestSkillsInstallIsAsync(t *testing.T) {
 
 // TestSkillsActionError 失败带文案（状态行红字）。
 func TestSkillsActionError(t *testing.T) {
+	t.Parallel()
 	admin := &fakeSkillsAdmin{snap: SkillsSnapshot{Revision: 1}, err: errors.New("同名技能已存在")}
 	f, _ := skillsForm(t, admin)
 	u := &UI{}
@@ -200,6 +204,7 @@ func TestSkillsActionError(t *testing.T) {
 
 // TestSkillPickFillsSource 选择框结果只填来源框，不触发安装。
 func TestSkillPickFillsSource(t *testing.T) {
+	t.Parallel()
 	admin := &fakeSkillsAdmin{snap: SkillsSnapshot{Revision: 1}}
 	f, u := skillsForm(t, admin)
 	u.pushSkillPick(skillPathPick{kind: platform.PickSkillFile, path: `C:\x\SKILL.md`})
@@ -218,6 +223,7 @@ func TestSkillPickFillsSource(t *testing.T) {
 
 // TestSkillPickDirHint 文件夹选择给出对应提示（不是「文件」）。
 func TestSkillPickDirHint(t *testing.T) {
+	t.Parallel()
 	f, u := skillsForm(t, &fakeSkillsAdmin{snap: SkillsSnapshot{Revision: 1}})
 	u.pushSkillPick(skillPathPick{kind: platform.PickSkillDir, path: `C:\Skills`})
 	f.drainSkillPicks(u)
@@ -229,6 +235,7 @@ func TestSkillPickDirHint(t *testing.T) {
 
 // TestSkillMetaLine 元信息行按来源种类给中文（不暴露内部字段名）。
 func TestSkillMetaLine(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		st   SkillState
 		want string
@@ -247,6 +254,7 @@ func TestSkillMetaLine(t *testing.T) {
 // TestSkillDirFallbackNotRemovable 兜底根注明「不可删」，行内不出现移除按钮逻辑
 // （按钮是 get-or-create 的；这里只锁文案）。
 func TestSkillDirFallbackLabel(t *testing.T) {
+	t.Parallel()
 	d := SkillDir{Path: "/profile/skills", Fallback: true}
 	if want := i18n.Tf("ui.settings.skill.dir_fallback", "path", "/profile/skills"); d.skillDirLabel() != want {
 		t.Fatalf("兜底根文案 = %q, want %q", d.skillDirLabel(), want)

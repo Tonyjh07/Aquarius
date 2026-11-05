@@ -36,6 +36,7 @@ func (f *fakeProfiles) Switch(name string) error {
 // TestProfileActionsHeadless profile 三动作：分派经 ProfilesManager、快照刷新、
 // 成功/失败反馈文案、空名拦截、未接线报错。
 func TestProfileActionsHeadless(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProfiles{snap: ProfilesSnapshot{Current: "default", Items: []string{"default"}}}
 	u := newHeadless(t, Options{Profiles: mgr})
 	f := newSettingsForm(u)
@@ -98,6 +99,7 @@ func TestProfileActionsHeadless(t *testing.T) {
 
 // TestProfileActionsUnwired 未接线（TUI/repl 或老装配）时 profile 动作报错不触达。
 func TestProfileActionsUnwired(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	f := newSettingsForm(u)
 	f.profName.SetText("x")

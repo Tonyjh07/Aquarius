@@ -9,6 +9,7 @@ import (
 
 // TestWakeReturnsInput 空闲唤醒经 Next 返回 Wake 标记（不混输入队列，Confirm 不读它）。
 func TestWakeReturnsInput(t *testing.T) {
+	t.Parallel()
 	u := &UI{
 		inCh:   make(chan port.UserInput, 1),
 		wakeCh: make(chan struct{}, 1),

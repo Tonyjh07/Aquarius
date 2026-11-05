@@ -8,6 +8,7 @@ import (
 
 // TestIhistPush 历史记录口径：相邻重复不记、空行不记、超出上限丢最旧的。
 func TestIhistPush(t *testing.T) {
+	t.Parallel()
 	var h ihist
 	h.push("a")
 	h.push("a")  // 相邻重复
@@ -27,6 +28,7 @@ func TestIhistPush(t *testing.T) {
 // TestIhistPrevNext 翻历史：↑ 从最新往回、到头停住；↓ 越过最新回到草稿（用户翻出去
 // 时框里原有的内容不丢）。
 func TestIhistPrevNext(t *testing.T) {
+	t.Parallel()
 	var h ihist
 	h.push("one")
 	h.push("two")
@@ -56,6 +58,7 @@ func TestIhistPrevNext(t *testing.T) {
 
 // TestIhistEmpty 没有历史时 ↑↓ 什么都不做（不能把编辑框清空）。
 func TestIhistEmpty(t *testing.T) {
+	t.Parallel()
 	var h ihist
 	if _, ok := h.prev("x"); ok {
 		t.Fatal("空历史不该有上一条")
@@ -71,6 +74,7 @@ func TestIhistEmpty(t *testing.T) {
 // 过滤器要一帧才生效（Gio 的事件派发按上一帧登记的过滤器走，与浮层同口径）——队列前
 // 先空跑一帧，否则第一下按键会落到编辑器而不是这里。
 func TestHistoryKeysClosedInput(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 	u.editor.SetText("第一条")
 	u.ihist.push("第一条")
@@ -91,6 +95,7 @@ func TestHistoryKeysClosedInput(t *testing.T) {
 
 // TestHistoryKeysSkipExpanded 展开态（多行）方向键仍归光标：不翻历史。
 func TestHistoryKeysSkipExpanded(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 	u.ihist.push("旧话")
 	u.setExpanded(true)
@@ -106,6 +111,7 @@ func TestHistoryKeysSkipExpanded(t *testing.T) {
 
 // TestHistorySkipsEditTarget 编辑既有消息时不翻历史（那不是在写一句话，是在改旧正文）。
 func TestHistorySkipsEditTarget(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 	u.ihist.push("旧话")
 	u.apply(editMsg{id: "u1", text: "旧问题"})

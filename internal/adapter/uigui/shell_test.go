@@ -19,6 +19,7 @@ import (
 // settings.go permLevels 四档、当前档打勾）/ 无人值守（勾选）/ 消息历史 / 设置 / 置顶（勾选）/
 // 隐藏 / 分隔 / 退出；档位空（Status 未就绪）则四档均不勾。
 func TestLogoMenuItems(t *testing.T) {
+	t.Parallel()
 	items := logoMenuItems("strict", true, true)
 	want := []struct {
 		id    uintptr
@@ -78,6 +79,7 @@ func TestLogoMenuItems(t *testing.T) {
 // TestMenuItemsViaHost 菜单项集经宿主回调现取（平台呈现前调用；S4b 口径：平台只拿
 // 中性 DTO，值随出口处数据源变化——顶置勾选态来自平台查询）。
 func TestMenuItemsViaHost(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	fp := fakeOf(u)
 	fp.TopNow = false
@@ -99,6 +101,7 @@ func TestMenuItemsViaHost(t *testing.T) {
 // TestMenuDispatchPerm D73 权限子菜单选中 = 注入 /permission <档>（与键入同路径，
 // D22 写回 + 热切换走内核单一口径）。
 func TestMenuDispatchPerm(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	menuDispatch(u, cmdPermBase+2) // permLevels[2] = permissive
 	drainSync(t, u)
@@ -115,6 +118,7 @@ func TestMenuDispatchPerm(t *testing.T) {
 
 // TestMenuDispatchNew D72 新对话 = 注入 /new（与键入同路径：parseInput → inCh）。
 func TestMenuDispatchNew(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	menuDispatch(u, cmdNew)
 	drainSync(t, u)
@@ -131,6 +135,7 @@ func TestMenuDispatchNew(t *testing.T) {
 // TestMenuDispatchUnattended D185 口径四：球/托盘勾选 = 注入 /unattended（无参切换，
 // 与键入同路径——写回 config + 装饰器热生效都在命令里）。
 func TestMenuDispatchUnattended(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	menuDispatch(u, cmdUnattended)
 	drainSync(t, u)
@@ -147,6 +152,7 @@ func TestMenuDispatchUnattended(t *testing.T) {
 // TestMenuUnattendedChecked D185：菜单勾选源 = Status.Unattended（与状态行同一回调），
 // 现取而非缓存——开关一变，下次弹菜单就是新态。
 func TestMenuUnattendedChecked(t *testing.T) {
+	t.Parallel()
 	on := false
 	u := newHeadless(t, Options{Status: func() Status { return Status{Level: "strict", Unattended: on} }})
 	checked := func() bool {
@@ -172,6 +178,7 @@ func TestMenuUnattendedChecked(t *testing.T) {
 // 进编辑态（预填原文）、引用 = quoteMsg 追加引用前缀、查看原文 = rawView 原子槽 +
 // 次窗；项集 user/assistant 同集七项（呈现契约，测试锁定）。
 func TestMenuDispatchBubble(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 
 	// 重新生成：/regen <id> 进 inCh（与键入同路径）。
@@ -287,6 +294,7 @@ func TestMenuDispatchBubble(t *testing.T) {
 // 不提交 ULW，重显瞬间 DWM 可能露 Gio 不透明表面——showMain 揭示后应立即以最后
 // 一次合成位图补提交一次（与揭示帧补提交同一不变量）。
 func TestShowMainRepresentsAfterReveal(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	fp := fakeOf(u)
 	fp.Main = 0x1234 // 有主窗句柄（呼出门）；矩形查不到 → 回退 u.x/u.y
@@ -310,6 +318,7 @@ func TestShowMainRepresentsAfterReveal(t *testing.T) {
 // 快捷键呼出只投展开消息、**不显示窗口**（位图未提交 → 防闪现未定制窗口）；就绪后呼出
 // 正常揭示（显示 + 激活前台）。揭示经假平台记账、假句柄不落真 Win32。
 func TestShowMainGateBeforeFirstFrame(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	fp := fakeOf(u)
 	fp.Main = 0x1234              // 非 0 过 h 门（headless 无真窗；揭示经假平台记账）
@@ -338,6 +347,7 @@ func TestShowMainGateBeforeFirstFrame(t *testing.T) {
 // TestToggleWindowAndHotkey 显隐策略（§15.1，S4b 中性化）：托盘左键切换显隐——可见 →
 // 平台隐藏；隐藏 → 呼出（揭示 + 展开）；快捷键在可见时投展开↔收起互切。
 func TestToggleWindowAndHotkey(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	fp := fakeOf(u)
 	fp.Main = 0x1234
@@ -375,6 +385,7 @@ func TestToggleWindowAndHotkey(t *testing.T) {
 // TestExitViaShell 退出策略（§15.1/D64）：注销热键 + 清托盘 + 隐藏主窗 + 中断进行中轮次
 // + EOF 收尾（装配根退出）；平台侧动作经假平台记账。
 func TestExitViaShell(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{}) // 需 eofCh/事件循环就绪（EOF 收尾是退出路径的一半）
 	fp := fakeOf(u)
 	fp.Main = 0x1234
@@ -400,6 +411,7 @@ func TestExitViaShell(t *testing.T) {
 
 // TestToggleTopMost 置顶开关（§15.1/D72）：翻转主窗置顶态 + 位置记忆落盘（含停靠边）。
 func TestToggleTopMost(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	posFile := dir + "/gui_pos.json"
 	u := newFrameUI()
@@ -425,6 +437,7 @@ func TestToggleTopMost(t *testing.T) {
 // user/assistant 节点 = 气泡七项 + 分隔线 + 图侧四项；root/system 节点只给复制/查看原文；
 // 无正文节点只剩图侧部分；不可插目标（会话根 / 会话首节点人格）少「插入摘要」一项。
 func TestNodeMenuItemsContract(t *testing.T) {
+	t.Parallel()
 	bubble := []menuIt{
 		{id: cmdBubbleEdit, label: i18n.T("ui.common.edit")},
 		{id: cmdBubbleEditKeep, label: i18n.T("ui.menu.edit_keep")},
@@ -498,6 +511,7 @@ func TestNodeMenuItemsContract(t *testing.T) {
 // TestNodeMenuRouting 图侧上下文的项集走 nodeMenuItems（menuItems 按 ctx.graph 分派），
 // 且删除命令与键入同路径经 inCh。
 func TestNodeMenuRouting(t *testing.T) {
+	t.Parallel()
 	u := newUI(Options{}, false)
 	u.inCh = make(chan port.UserInput, 8)
 	u.bubbleMenu.Store(&bubbleMenuCtx{id: "u1", kind: blockUser, copy: "正文", graph: true, canSummary: true})

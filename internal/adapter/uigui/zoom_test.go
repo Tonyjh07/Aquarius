@@ -13,6 +13,7 @@ import (
 // TestZoomedMetricIdentity 缺省旋钮（1.0/15，含未预存槽的零值 UI）恒等：与未缩放
 // 渲染逐像素一致。
 func TestZoomedMetricIdentity(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	m := unit.Metric{PxPerDp: 1.25, PxPerSp: 1.25}
 	if got := u.zoomedMetric(m); got != m {
@@ -23,6 +24,7 @@ func TestZoomedMetricIdentity(t *testing.T) {
 // TestZoomedMetricScales 叠加语义：PxPerDp ×= scale（元素几何等比）、PxPerSp ×=
 // scale × font/15（Sp 字面量按正文 15 的等比阶梯解释——最终字号 = font × scale）。
 func TestZoomedMetricScales(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.SetZoom(2.0, 20)
 	got := u.zoomedMetric(unit.Metric{PxPerDp: 1, PxPerSp: 1})
@@ -36,6 +38,7 @@ func TestZoomedMetricScales(t *testing.T) {
 
 // TestClampZoomKnobs 越界/NaN 回落缺省（scale∈[0.75,2.5] 缺省 1、font∈[10,28] 缺省 15）。
 func TestClampZoomKnobs(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ scale, font, wScale, wFont float64 }{
 		{0.5, 15, 1, 15},
 		{3, 15, 1, 15},
@@ -58,6 +61,7 @@ func TestClampZoomKnobs(t *testing.T) {
 // TestFrameZoomScalesShapes 帧内生效（咽喉点在 frame 顶）：scale 翻倍 → layout 存进
 // frameMetric 的 PxPerDp 随之翻倍，球锚（ballRect 派生）等比——命中面与绘制同源缩放。
 func TestFrameZoomScalesShapes(t *testing.T) {
+	t.Parallel()
 	for _, scale := range []float64{1, 2} {
 		u := newFrameUI()
 		u.SetZoom(scale, 15)

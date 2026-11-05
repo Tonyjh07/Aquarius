@@ -27,6 +27,7 @@ func histTreeUI(t *testing.T, on bool, edits int) (*UI, *historyState, *fakeRelT
 
 // TestHistTreeSwitchMirrorsKernelState 开关不自己记状态：端口说开就开、说关就关。
 func TestHistTreeSwitchMirrorsKernelState(t *testing.T) {
+	t.Parallel()
 	u, st, tree := histTreeUI(t, false, 0)
 	q := new(input.Router)
 	histFrameFor(q, u, st)
@@ -47,6 +48,7 @@ func TestHistTreeSwitchMirrorsKernelState(t *testing.T) {
 
 // TestHistTreeSwitchSendsCommands 点开关/放弃各投一条命令（壳内不改结构，铁律 5）。
 func TestHistTreeSwitchSendsCommands(t *testing.T) {
+	t.Parallel()
 	u, st, tree := histTreeUI(t, false, 0)
 	q := new(input.Router)
 	histFrameFor(q, u, st)
@@ -88,6 +90,7 @@ func TestHistTreeSwitchSendsCommands(t *testing.T) {
 
 // TestHistTreeDirtyItems 脏时才多出两项：不脏仍是原来那 7 项（D159 契约不变）。
 func TestHistTreeDirtyItems(t *testing.T) {
+	t.Parallel()
 	u, st, tree := histTreeUI(t, true, 0)
 	q := new(input.Router)
 	histFrameFor(q, u, st)
@@ -119,6 +122,7 @@ func TestHistTreeDirtyItems(t *testing.T) {
 // TestRelTweenRunsToTarget 补间本体（纯时间函数，可测）：起点不动、中途在两端之间、
 // 到点落定并停表；同目标重复布防不重置起点（否则每帧重起、永远走不到头）。
 func TestRelTweenRunsToTarget(t *testing.T) {
+	t.Parallel()
 	var a relTween
 	t0 := time.Now()
 	a.retarget(t0, 1, 160, relEaseOutCubic)

@@ -12,6 +12,7 @@ import (
 // TestRrectSD 圆角矩形 SDF（D45/D48 边缘渐隐的几何基础）：中心到近边、边界 0、外正；
 // 角落按圆弧而非方角（round 与 square 的判别点）。
 func TestRrectSD(t *testing.T) {
+	t.Parallel()
 	// 矩形 100×60、半径 10，中心 (50,30)。
 	const cx, cy, hw, hh, rad = 50.0, 30.0, 50.0, 30.0, 10.0
 	near := func(want, got float32, name string) {
@@ -52,6 +53,7 @@ func wantFeatherVis(d float64, fw int) float64 {
 // **只在形状内落笔**（轮廓外不外扩、不堆光晕）；核心不透明、带内不写（整块在带下）、
 // 裁剪区外不写。src=nil 时用元素底色。
 func TestFadeFrameFeatherEdge(t *testing.T) {
+	t.Parallel()
 	const bandPx = 16
 	m := unit.Metric{PxPerDp: 2, PxPerSp: 2} // 2× 下统一带宽（D70）= 3px，剖面可逐像素观测
 	const side = 40                          // 固定几何、r=6 直边段充足——带宽与元素尺寸无关（D70），无需按参数反推边长
@@ -130,6 +132,7 @@ func TestFadeFrameFeatherEdge(t *testing.T) {
 // 边缘与输入胶囊边缘羽化不一致）：同一帧内不同高度的形状沿直边的渐隐剖面必须逐像素
 // 一致——高气泡（短边大）此前带宽封顶、胶囊（48dp 短边）只有其一半左右。修前本测试红。
 func TestFadeFrameFeatherUniformAcrossShapes(t *testing.T) {
+	t.Parallel()
 	const w, h = 460, 400
 	m := unit.Metric{PxPerDp: 2, PxPerSp: 2} // 2× 下胶囊带宽 = 3px，剖面逐像素可分辨
 	shapes := []drawShape{
@@ -163,6 +166,7 @@ func TestFadeFrameFeatherUniformAcrossShapes(t *testing.T) {
 // TestFadeFrameSamplesContent D48/D62：形状内（核心与边带）采样同帧 headless 内容
 // （保文字/图标随渐隐自然淡出），而非一律涂底色——核心与边带处的绿色都应透出。
 func TestFadeFrameSamplesContent(t *testing.T) {
+	t.Parallel()
 	const w, h = 60, 60
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	src := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -198,6 +202,7 @@ func TestFadeFrameSamplesContent(t *testing.T) {
 // TestFadeFrameCornerUniform D47/D48 回归：圆角形状沿对角（圆角法线）的核心+渐隐剖面
 // 连续——不得因采样落空而缺像素（D46 的"十字/阶梯"），也不得在对角外堆出光晕。
 func TestFadeFrameCornerUniform(t *testing.T) {
+	t.Parallel()
 	const w, h = 90, 90
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	// 41×43 圆角 15（复现 GUI 小气泡/1 字气泡的几何）。
@@ -255,6 +260,7 @@ func TestFadeFrameCornerUniform(t *testing.T) {
 // TestFadeFrameBandContinuity D48/D62：跨带元素的左右边在带内按 g(y) 额外衰减，带底
 // 与带下连续（带底 g→1）——同一位图内 g(y) 与 vis 连续相乘，无横缝。
 func TestFadeFrameBandContinuity(t *testing.T) {
+	t.Parallel()
 	const w, h, bandPx = 60, 60, 16
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	shapes := []drawShape{{
@@ -285,6 +291,7 @@ func TestFadeFrameBandContinuity(t *testing.T) {
 // TestFadeFrameBandTopInvisible D54/D62：带顶以上不可见（揭示带全隐段）——带顶上方的
 // 形状像素一律不写。
 func TestFadeFrameBandTopInvisible(t *testing.T) {
+	t.Parallel()
 	const w, h = 40, 40
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	shapes := []drawShape{{
@@ -314,6 +321,7 @@ func TestFadeFrameBandTopInvisible(t *testing.T) {
 // 上带内唯一的像素中心恰在 d=-0.5 = d0 → t=0 → vis=1 → 整条边全不透明（羽化彻底消失，
 // 用户实测：100% 缩放下无羽化）。
 func TestFadeFrameFeatherAtUnitDPIScale(t *testing.T) {
+	t.Parallel()
 	const w, h = 120, 60
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	shapes := []drawShape{{
@@ -350,6 +358,7 @@ func TestFadeFrameFeatherAtUnitDPIScale(t *testing.T) {
 
 // TestFadeFrameEmpty 空输入（无形状/零尺寸/缓冲不足）→ 不写、不 panic。
 func TestFadeFrameEmpty(t *testing.T) {
+	t.Parallel()
 	m := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	out := make([]byte, 10*10*4)
 	if fadeFrame(nil, nil, fadeBands{bottom: 4}, m, out, image.Pt(10, 10)) {

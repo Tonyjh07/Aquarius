@@ -16,6 +16,7 @@ import (
 // TestCmdHeaderText 折叠行文案：条数 + 动作提示，展开态换动作词；全是回执时说「提示」
 // 不说「命令」（D267）。
 func TestCmdHeaderText(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		cmd, note int
 		open      bool
@@ -39,6 +40,7 @@ func TestCmdHeaderText(t *testing.T) {
 // TestCommandEchoFolds 连续命令合成一条：命令行回显与随后的返回文本归进同一条目；
 // 第二条命令追加到同一条折叠条，而不是各占一行。
 func TestCommandEchoFolds(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.submit("/help")
@@ -63,6 +65,7 @@ func TestCommandEchoFolds(t *testing.T) {
 // TestCommandRunBrokenByChat 中间的发言/回答把命令条隔断：再来的命令另起一条——
 // 「连续」以转写流里的相邻为准，跨过内容的合并会把不同时刻的操作揉在一起。
 func TestCommandRunBrokenByChat(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.submit("/regen x")
@@ -82,6 +85,7 @@ func TestCommandRunBrokenByChat(t *testing.T) {
 // 没有它的命令条了，按提交时记下的命令行另起一条——否则这句话会以纯文本行的样子
 // 落在一轮回放/回答后面（正是要治的那种噪声）。
 func TestCommandOutAfterClear(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.submit("/switch 01K")
@@ -108,6 +112,7 @@ func TestCommandOutAfterClear(t *testing.T) {
 // TestCommandStripCollapse 折叠条默认只渲染一行（一条窄的深色薄条），点开才铺命令行与
 // 输出；再点收起。开合是视图态，不改变块。
 func TestCommandStripCollapse(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addCommand("/help")
 	u.m.attachCommandOut("命令列表正文")
@@ -159,6 +164,7 @@ func TestCommandStripCollapse(t *testing.T) {
 // TestCommandStripWidthFollowsState 折叠条宽度随开合变（D266）：收起时是贴合文案的
 // 窄条、水平居中；展开时铺满转写区（输出正文要能读整行）。
 func TestCommandStripWidthFollowsState(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addCommand("/help")
 
@@ -200,6 +206,7 @@ func TestCommandStripWidthFollowsState(t *testing.T) {
 // TestNoticeFoldsIntoStrip 操作回执收进折叠条（D267）：没有命令可归的回执自成一条
 // 「提示条」，紧跟在命令回显后的回执挂到那条命令上——都不再以纯文本行占转写。
 func TestNoticeFoldsIntoStrip(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.NoticeEvent{Text: "已恢复会话 甲 (01K)，回放 3 条历史"})
@@ -232,6 +239,7 @@ func TestNoticeFoldsIntoStrip(t *testing.T) {
 // TestNoticeAttentionStaysInline 改变了本轮上下文的提示（截断/压缩失败）留在转写里当
 // 一行提示（D267）：它必须立刻看得见，也值得事后回看。
 func TestNoticeAttentionStaysInline(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.NoticeEvent{Text: "硬保底截断：已省略 12 条最旧消息", Attention: true})
@@ -247,6 +255,7 @@ func TestNoticeAttentionStaysInline(t *testing.T) {
 // pendingCmd：结果紧跟在回执后面时并进同一条，而不是以纯文本行（助手气泡底板）落下来
 // （D267）。启动提示没有回执在前，仍落纯文本行。
 func TestNoteAbsorbsDirectCommandOut(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.NoticeEvent{Text: "已切换到会话 甲 (01K)，回放 3 条历史"})

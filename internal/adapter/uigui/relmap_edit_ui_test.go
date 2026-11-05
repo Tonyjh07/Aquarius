@@ -16,6 +16,7 @@ import (
 
 // TestRelEditCapsuleText 胶囊文案：没改过不提处数（「已改 0 处」是噪音）。
 func TestRelEditCapsuleText(t *testing.T) {
+	t.Parallel()
 	if got := relEditCapsuleText(0); got != i18n.T("ui.relmap.edit_capsule") {
 		t.Fatalf("未改文案 = %q", got)
 	}
@@ -26,6 +27,7 @@ func TestRelEditCapsuleText(t *testing.T) {
 
 // TestNodeMenuFrozenGreysStructural 编辑期只有只读项可点（§5.6.5）：会改结构的全置灰。
 func TestNodeMenuFrozenGreysStructural(t *testing.T) {
+	t.Parallel()
 	frozenLabels := map[string]bool{
 		"编辑": true, "编辑并转移历史": true, "编辑并复制历史": true,
 		"重新生成": true, "生成响应": true, "插入摘要": true, "删除该节点及子树": true,
@@ -68,6 +70,7 @@ func TestNodeMenuFrozenGreysStructural(t *testing.T) {
 
 // TestFrozenMenuItemsReachPlatform 置灰位要一路走到平台 DTO（否则 Windows 侧永远不灰）。
 func TestFrozenMenuItemsReachPlatform(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.bubbleMenu.Store(&bubbleMenuCtx{id: "u1", kind: blockUser, graph: true, frozen: true})
 	var greyed, lit int
@@ -97,6 +100,7 @@ func TestFrozenMenuItemsReachPlatform(t *testing.T) {
 // TestFrozenMenuDispatchIgnoresStructural 纵深防御：置灰是呈现约定，分发处再拦一道——
 // 编辑期开出的菜单里点结构项一律不生效（防「菜单开着时进了编辑模式」这类时序）。
 func TestFrozenMenuDispatchIgnoresStructural(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.inCh = make(chan port.UserInput, 4)
 	ctx := &bubbleMenuCtx{id: "u1", kind: blockUser, graph: true, frozen: true}
@@ -114,6 +118,7 @@ func TestFrozenMenuDispatchIgnoresStructural(t *testing.T) {
 // TestEditCapsuleDrawnInEditMode 编辑态整帧能画出来（胶囊 + 环 + 虚线 + 光带同屏），
 // 且帧态从内核状态取到（含「已改 N 处」）。
 func TestEditCapsuleDrawnInEditMode(t *testing.T) {
+	t.Parallel()
 	u, st, q, tree := relEditFixture(t)
 	if !st.graph.editOn {
 		t.Fatal("编辑态未同步到图帧态")

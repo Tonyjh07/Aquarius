@@ -123,6 +123,7 @@ func secretsPageUI(t *testing.T, snap SecretsSnapshot, store map[string]string) 
 
 // TestSecretsPageRows 密钥库页行计划：有条目时每有一条 → 一行（名字），再加新增区。
 func TestSecretsPageRows(t *testing.T) {
+	t.Parallel()
 	u, f, _ := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{
 		{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"},
 		{Name: "MCP_DOCS_TOKEN", Mask: "••••••"},
@@ -144,6 +145,7 @@ func TestSecretsPageRows(t *testing.T) {
 // 行计划里既不该再有「从旧处收进来」分区，也不该有导入按钮。功能本身见
 // TestSecretsPageImport（动作分支保留、照常可用）。
 func TestSecretsPageHasNoImportEntry(t *testing.T) {
+	t.Parallel()
 	_, f, _ := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{
 		{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"},
 	}}, nil)
@@ -161,6 +163,7 @@ func TestSecretsPageHasNoImportEntry(t *testing.T) {
 // TestSecretsPagePut 新增/覆盖：填入键名与值 → 存入 → 假管理面记录 + 状态行含名字 +
 // **值字段恒清空**（值永不回显）。
 func TestSecretsPagePut(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u, f, sa := secretsPageUI(t, SecretsSnapshot{}, nil)
 	f.secretName.SetText("AQUARIUS_OPENAI_API_KEY")
@@ -190,6 +193,7 @@ func TestSecretsPagePut(t *testing.T) {
 
 // TestSecretsPagePutValidation 空名/空值拦截：不触达管理面，值字段仍清空（不留在框里）。
 func TestSecretsPagePutValidation(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	cases := []struct{ name, value, wantMsg string }{
 		{"", "sk-x-1234", "密钥名"},
@@ -215,6 +219,7 @@ func TestSecretsPagePutValidation(t *testing.T) {
 
 // TestSecretsPageMask 掩码口径：只出尾 4 位；值短于 8 位整条打码（长值不可整条暴露）。
 func TestSecretsPageMask(t *testing.T) {
+	t.Parallel()
 	_, _, sa := secretsPageUI(t, SecretsSnapshot{}, nil)
 	if err := sa.Put("LONG", "sk-abcdefgh-9876"); err != nil {
 		t.Fatal(err)
@@ -241,6 +246,7 @@ func TestSecretsPageMask(t *testing.T) {
 // TestSecretsPageDeleteNeedsConfirm 删除走行内二次确认：点「删除」只进确认态（不触达）；
 // 点「取消」退回；点「确认删除」才真删。
 func TestSecretsPageDeleteNeedsConfirm(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u, f, sa := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{{Name: "K1", Mask: "••••••1234"}}}, map[string]string{"K1": "sk-1234abcd"})
 	f.syncSecretsSnapshot() // 帧首同款：铺条目行与按钮
@@ -298,6 +304,7 @@ func TestSecretsPageDeleteNeedsConfirm(t *testing.T) {
 // TestSecretsPageConfirmClearedOnSnapshot 条目在别处被删（Revision 变化且条目消失）→
 // 行内二次确认目标被清掉，免得确认按钮指着一条已不在的条目。
 func TestSecretsPageConfirmClearedOnSnapshot(t *testing.T) {
+	t.Parallel()
 	u, f, sa := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{{Name: "K1", Mask: "••••••1234"}}}, map[string]string{"K1": "sk-1234abcd"})
 	f.syncSecretsSnapshot()
 	f.secretConfirm = "K1"
@@ -314,6 +321,7 @@ func TestSecretsPageConfirmClearedOnSnapshot(t *testing.T) {
 // TestSecretsPageImport 一键导入：动作分派到管理面，状态行只报条数、**不含值**；
 // 失败项以错误态呈现。
 func TestSecretsPageImport(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u, f, sa := secretsPageUI(t, SecretsSnapshot{}, nil)
 	sa.importRes = SecretsImportResult{
@@ -355,6 +363,7 @@ func TestSecretsPageImport(t *testing.T) {
 
 // TestSecretsPageImportNoSource 没有可导入的来源：状态行如实说明（不是错误态）。
 func TestSecretsPageImportNoSource(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u, f, _ := secretsPageUI(t, SecretsSnapshot{}, nil)
 	u.secretsAction(f, "import", "")
@@ -365,6 +374,7 @@ func TestSecretsPageImportNoSource(t *testing.T) {
 
 // TestSecretsPageNotWired 未接线（Secrets = nil）：只读占位 + 存入按钮禁用，动作报错。
 func TestSecretsPageNotWired(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u := newHeadless(t, Options{Settings: func() SettingsSnapshot { return fillSnapshot() }})
 	f := newSettingsForm(u)

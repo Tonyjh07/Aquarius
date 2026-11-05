@@ -73,6 +73,7 @@ func relAnchorScreen(t *testing.T, g *relGraph) (f32.Point, int) {
 // 右半**（D7-b 起右基准位是平移**偏好**：两维贴满时它会被可行域钳到右侧贴边，不再恒等
 // 0.72·视宽）；装得下的树另断言所有可见卡片在视口内（fit 语义本体）。
 func TestRelGraphFitViewOnOpen(t *testing.T) {
+	t.Parallel()
 	_, st, _ := relGraphFixture(t)
 	g := st.graph
 	if g.zoom < relZoomMin || g.zoom > relZoomMax {
@@ -99,6 +100,7 @@ func TestRelGraphFitViewOnOpen(t *testing.T) {
 // 于是「树明明装不下、点了等于没点」；这也是用户 2026-10-15 报障的第二个症状。
 // 断言 V1a（盒内可见）/ V1b（上下留白对称）/ V1c（至少一维贴满）。
 func TestRelGraphFitAllAdaptsView(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t) // 已落定
 	g := st.graph
 	// 把视场挪到空白处 + 故意压小 zoom，再触发「装下整树」
@@ -125,6 +127,7 @@ func TestRelGraphFitAllAdaptsView(t *testing.T) {
 // 适配**——只挪视场时「放大读一跳邻域」根本做不到（旧版把域装进视口后 zoom 还停在原处，
 // 域只占屏幕中间一小块）。上限 = relFocusZoomMax（3~5 倍取中）。
 func TestRelGraphFocusAdaptsZoom(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	// 压小 zoom + 挪开视场，再聚焦一跳邻域 ⇒ 期望 zoom **放大**且域盒贴满视口
@@ -170,6 +173,7 @@ func TestRelGraphFocusAdaptsZoom(t *testing.T) {
 
 // TestRelGraphHitTest 命中判定：锚点处命中锚点本地索引。
 func TestRelGraphHitTest(t *testing.T) {
+	t.Parallel()
 	_, st, _ := relGraphFixture(t)
 	sx, li := relAnchorScreen(t, st.graph)
 	if got := st.graph.hitTest(sx.X, sx.Y); got != li {
@@ -184,6 +188,7 @@ func TestRelGraphHitTest(t *testing.T) {
 // （`/goto` 已移进图侧右键菜单「转到」）。开启那一次抬起不得被遮罩自己吃掉
 // （armed 守卫：同帧广播，落点在卡片外）。
 func TestRelGraphClickOpensOverlay(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histFrameFor(q, u, st) // 先出一帧：右图按真实面板尺寸就位
 	sx, li := relAnchorScreen(t, st.graph)
@@ -212,6 +217,7 @@ func TestRelGraphClickOpensOverlay(t *testing.T) {
 // TestRelGraphDragDoesNotOpenOverlay 拖拽（位移超 slop）= 移动节点，**不开遮罩**
 // （D139：单击与拖拽共用同一次按压-抬起序列，以位移仲裁）。
 func TestRelGraphDragDoesNotOpenOverlay(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histFrameFor(q, u, st)
 	sx, _ := relAnchorScreen(t, st.graph)
@@ -232,6 +238,7 @@ func TestRelGraphDragDoesNotOpenOverlay(t *testing.T) {
 // 栏内坐标，点击位置与实际响应位置不错位（2026-10-09 实测报障：整体右偏一个左栏宽）；
 // 左栏上的点击也不得被右图误收。
 func TestRelGraphPointerAreaIsPane(t *testing.T) {
+	t.Parallel()
 	const leftPx = 200
 	u, st, q := relPaneFixture(t, leftPx)
 	g := st.graph
@@ -279,6 +286,7 @@ func TestRelGraphPointerAreaIsPane(t *testing.T) {
 // clip 还会裁掉视口外指针事件 ⇒ 拖拽直接失效）。用户一平移/缩放立即取消跟随
 // （用户视场优先，不跟用户抢）。
 func TestRelGraphFitFollowKeepsAnchorInView(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relChainGraph(120)}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
@@ -331,6 +339,7 @@ func TestRelGraphFitFollowKeepsAnchorInView(t *testing.T) {
 
 // TestRelGraphPanByDrag 空白拖拽 = 平移（绝对跟踪：起点 + 差值）。
 func TestRelGraphPanByDrag(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	ox, oy := st.graph.offX, st.graph.offY
 	start := f32.Pt(10, 10)
@@ -350,6 +359,7 @@ func TestRelGraphPanByDrag(t *testing.T) {
 
 // TestRelGraphWheelZoomAndDegrade A9：滚轮缩放钳 [0.5,1.5]；越界降级纵向平移。
 func TestRelGraphWheelZoomAndDegrade(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	g.zoom, g.z = 1.0, g.dpx // 归一：夹具首帧是 fit zoom（宽树会触底），先回到 1.0 再验放大步
@@ -377,6 +387,7 @@ func TestRelGraphWheelZoomAndDegrade(t *testing.T) {
 // TestRelGraphWheelPanStep 实测修（D121）：滚轮越界降级平移用**定值小步**（relWheelPanPx），
 // 一格滚轮只挪 48px——原实现 16×像素增量（一格 ≈ 1600px）会把树甩出裁剪盒、完全不可见。
 func TestRelGraphWheelPanStep(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	g.zoom = relZoomMin
@@ -404,6 +415,7 @@ func TestRelGraphWheelPanStep(t *testing.T) {
 // 现在松手只在「画面上一个节点都不剩」时才兜底给视图（那种情形抓不到节点，实际不可达），
 // 常规路径下用户的 zoom/平移完全保留；Head 仍在视口内（拖完不会丢）。
 func TestRelGraphDragReleaseKeepsTreeInView(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	sx, li := relAnchorScreen(t, g)
@@ -438,6 +450,7 @@ func TestRelGraphDragReleaseKeepsTreeInView(t *testing.T) {
 // 上一个节点都不剩」时才兜底（那种情形抓不到节点，实际不可达），常规路径下用户的 zoom /
 // 平移完全保留。
 func TestRelGraphDragReleaseKeepsUserView(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	g.zoom, g.z = 0.6, 0.6*g.dpx // 压低 zoom：本夹具在 500×500 下 fit 档位装不下整树
@@ -466,6 +479,7 @@ func TestRelGraphDragReleaseKeepsUserView(t *testing.T) {
 }
 
 func TestRelGraphFitSizeDriven(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)

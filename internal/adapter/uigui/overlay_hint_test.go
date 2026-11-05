@@ -11,6 +11,7 @@ import (
 )
 
 func TestOverlayModeHint(t *testing.T) {
+	t.Parallel()
 	editable := func(mode conversation.KeepMode) *overlayState {
 		return &overlayState{
 			editable:    true,

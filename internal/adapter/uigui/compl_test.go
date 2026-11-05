@@ -53,6 +53,7 @@ func complFixtureUI() (*UI, *input.Router) {
 
 // TestComplPhase 浮层开启判据（D250）：以 "/" 开头即开——空格不再关闭（参数相接上）。
 func TestComplPhase(t *testing.T) {
+	t.Parallel()
 	for text, want := range map[string]bool{
 		"": false, "/": true, "/ed": true, "/EDIT": true, "/中文": true,
 		"/edit ": true, "/edit x": true, "ed": false, " /edit": false,
@@ -65,6 +66,7 @@ func TestComplPhase(t *testing.T) {
 
 // TestComplToken 末尾 token 切分：Tab 替换的就是这一段。
 func TestComplToken(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		text  string
 		start int
@@ -84,6 +86,7 @@ func TestComplToken(t *testing.T) {
 
 // TestComplFilter 命令相候选（D103③）：保持清单序、大小写不敏感、别名命中不回写主名。
 func TestComplFilter(t *testing.T) {
+	t.Parallel()
 	all := complFixture()
 	got := complFilter("E", all)
 	if len(got) != 3 || got[0].insert != "/edit" || got[1].insert != "/effort" || got[2].insert != "/exit" {
@@ -101,6 +104,7 @@ func TestComplFilter(t *testing.T) {
 // TestComplTargetOf 相判定：命令相（还没敲空格）与参数相（已敲）分得清，命令名认得
 // 主名与别名。
 func TestComplTargetOf(t *testing.T) {
+	t.Parallel()
 	all := complFixture()
 	if tgt := complTargetOf("/ed", all); !tgt.cmdPhase || tgt.prefix != "ed" {
 		t.Fatalf("/ed = %+v, want 命令相 prefix=ed", tgt)
@@ -121,6 +125,7 @@ func TestComplTargetOf(t *testing.T) {
 // TestComplArgItems 参数相候选：枚举给可选值、自由文本只给一句提示、开关按已用过的
 // 去重（可重复的照旧列出）、吃值开关的值位按声明的 Values 给。
 func TestComplArgItems(t *testing.T) {
+	t.Parallel()
 	all := complFixture()
 	effort, edit := all[1], all[0]
 
@@ -172,6 +177,7 @@ func TestComplArgItems(t *testing.T) {
 // TestComplArgItemsValueFromValues 吃值开关带枚举值（/export --format）：值位按 Values
 // 给候选，而不是退成提示行。
 func TestComplArgItemsValueFromValues(t *testing.T) {
+	t.Parallel()
 	ci := port.CommandInfo{Names: []string{"export"}, Usage: "[--format <名字>]",
 		Params: []port.CommandParam{
 			{Name: "--format", Kind: port.ParamFlag, ValueName: "<名字>", Values: []string{"aqx", "chatgpt"}},
@@ -185,6 +191,7 @@ func TestComplArgItemsValueFromValues(t *testing.T) {
 // TestComplArgItemsNoParams 不吃参数的命令同样进参数相（D250）：给一行说明，免得浮层
 // 在用户敲完空格后无来由地消失。
 func TestComplArgItemsNoParams(t *testing.T) {
+	t.Parallel()
 	got := complArgItems(port.CommandInfo{Names: []string{"list"}}, nil, "")
 	if len(got) != 1 || got[0].insert != "" {
 		t.Fatalf("无参数命令 = %+v", got)
@@ -193,6 +200,7 @@ func TestComplArgItemsNoParams(t *testing.T) {
 
 // TestComplCycle 轮换状态机：锁定候选只轮可填行、环回、点选不改变候选表。
 func TestComplCycle(t *testing.T) {
+	t.Parallel()
 	items := []complItem{
 		{label: "<id>", insert: ""}, // 提示行：不进轮换
 		{label: "--keep", insert: "--keep"},

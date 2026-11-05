@@ -16,6 +16,7 @@ import (
 // TestAttachStageFlow D186 多附件：选择结果暂存 → 随文提交 Raw{Attachments} → 暂存清空；
 // 空文本 = 仅附件；编辑态不消费暂存；逐项移除与清空；chip 渲染不炸帧。
 func TestAttachStageFlow(t *testing.T) {
+	t.Parallel()
 	u := newEditUI() // inCh 可断言（SingleLine 编辑器对齐生产）
 	q := new(input.Router)
 	complFrame(q, u)
@@ -105,6 +106,7 @@ func TestAttachStageFlow(t *testing.T) {
 
 // TestAttachStageLimits D186 口径三：同一文件不重复暂存；超过单条上限后拒收并提示。
 func TestAttachStageLimits(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 
 	u.m.stageAttach(`C:\x\a.txt`)
@@ -130,6 +132,7 @@ func TestAttachStageLimits(t *testing.T) {
 
 // TestAttachBufferFull D104 后果③：缓冲满投递失败 → 保留暂存 + notice，不制造已发送错觉。
 func TestAttachBufferFull(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), followTail: true, inCh: make(chan port.UserInput, 1)}
 	u.m = newModel(u)
 	u.th = testTheme()
@@ -160,6 +163,7 @@ func TestAttachBufferFull(t *testing.T) {
 
 // TestAttachRowsWrap D186 口径四：chip 超宽按行折（每行放得下才算一行），总高随行数变。
 func TestAttachRowsWrap(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	for i := 0; i < 4; i++ {
 		u.m.stageAttach(`C:\docs\` + strings.Repeat("文件", 3) + string(rune('A'+i)) + ".pdf")
@@ -205,6 +209,7 @@ func TestAttachRowsWrap(t *testing.T) {
 
 // TestAttachBlobStaged D187：已入库项暂存后按 Blob 提交（不再走文件系统）。
 func TestAttachBlobStaged(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	ref := conversation.BlobRef{Hash: "3f2a", Name: "粘贴.png", MIME: "image/png", Size: 1024}
 	u.m.stageBlob(ref)

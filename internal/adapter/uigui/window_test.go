@@ -28,6 +28,7 @@ func newShapeUI(pxPerDp float32) *UI {
 // 羽化沿此取边）+ 可见裁剪区；裁剪后为空、零圆角不登记；带内元素**必须登记**
 // （D62：带渐变只作用于登记形状的像素，取代旧「带整行单绘」）。
 func TestRecordStoresOutlineAndClip(t *testing.T) {
+	t.Parallel()
 	u := newShapeUI(1) // Dp(56) = 56px 淡出带
 	viewport := image.Rect(0, 0, 100, 300)
 
@@ -64,6 +65,7 @@ func TestRecordStoresOutlineAndClip(t *testing.T) {
 // Dp 换算保证不写死 px。D70 起带宽按输入胶囊统一、不再随元素尺寸变（统一性由
 // TestFeatherWidthUnifiedToInputCapsule 断言）。断言写成"由常量推导的界"，改参数不需重写。
 func TestFeatherWidthResponsive(t *testing.T) {
+	t.Parallel()
 	one := unit.Metric{PxPerDp: 1, PxPerSp: 1}
 	two := unit.Metric{PxPerDp: 2, PxPerSp: 2}
 	for _, c := range [][2]int{{200, 40}, {400, 80}, {6, 6}, {90, 3}, {90, 6}, {2000, 2000}} {
@@ -102,6 +104,7 @@ func TestFeatherWidthResponsive(t *testing.T) {
 // 不随元素自身短边变化——多行气泡（短边大）此前封顶 3dp、chip（短边小）不足 1dp，
 // 与胶囊各得不同带宽。修前本测试红（气泡/球≠胶囊值）。
 func TestFeatherWidthUnifiedToInputCapsule(t *testing.T) {
+	t.Parallel()
 	// 单行气泡 / 多行气泡 / 输入胶囊 / chip / 球（dp 尺寸）。
 	sizes := [][2]int{{200, 34}, {300, 150}, {456, 48}, {80, 20}, {60, 60}}
 	for _, m := range []unit.Metric{
@@ -124,6 +127,7 @@ func TestFeatherWidthUnifiedToInputCapsule(t *testing.T) {
 // 间距 12、边距 16 → 默认窗宽 608 下行 576、输入区恰 456）；窗口宽变化只伸缩胶囊
 // （logo 锚左、send 锚右，圆钮直径/间距/字号不动）。
 func TestInputRowRectsFollowsDesign(t *testing.T) {
+	t.Parallel()
 	// 设计稿 1:1 契约（canvas：48/12/16/20、行 576 + 双侧 16 = 608）。
 	if inputRowDp != 48 || inputGapDp != 12 || inputPadDp != 16 || inputIconDp != 20 || winWidthDp != 608 {
 		t.Fatalf("常量偏离设计稿: row=%d gap=%d pad=%d icon=%d win=%d（docs/gui-design.md §15.2/D49）",
@@ -175,6 +179,7 @@ func TestInputRowRectsFollowsDesign(t *testing.T) {
 // 外推越过窗宽（实测 send 右缘 620 > 窗宽 608）→ 按钮越出会被位图缓冲边缘切平（D62 后
 // 同旧形裁的窗界裁切观感）。整链路（inputBar 插值 → record）断言轮廓恒在窗内。
 func TestOvershootStaysInFrame(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockAssistant, "撑起转写区，让输入行落到正常绝对坐标")
 	// 先起动画再翻 collapsed（beginExpand 同序）：静止态由 collapsed 推导，翻早了起点
@@ -200,6 +205,7 @@ func TestOvershootStaysInFrame(t *testing.T) {
 
 // TestFrameItemsLive 帧内容（渲染视图）：定稿块 + 实时思考 + 流式草稿顺序。
 func TestFrameItemsLive(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat()}
 	u.m = newModel(u)
 	u.m.add(blockUser, "你好")
@@ -259,6 +265,7 @@ func frameGtxSize(src input.Source, wDp, hDp int) (layout.Context, *op.Ops) {
 // 殿后。D44–D59 期「形裁/overlay 与 e.Frame 按通道分边」的约束随三通道退役作废（D62）：
 // 位图 alpha 即形状/命中，单通道无亚帧错位，次序仅剩工程约束。
 func TestFrameCommitBeforeSubmitOverlayAfter(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockAssistant, "首帧有内容 → 合成有可提交的位图")
 	var phases []string
@@ -296,6 +303,7 @@ func TestFrameCommitBeforeSubmitOverlayAfter(t *testing.T) {
 // mainPresent（SourceConstantAlpha = u.alpha）；合成失败（composed=false）不提交，
 // 保持上一帧位图。经假平台 OnPresent 钩子捕获。
 func TestFadePresentSubmitsBitmap(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.hwnd = 1 // 非 0 即过门控（windowRectPx 无真句柄 → 回退 u.x/u.y）
 	u.frameSize = image.Pt(100, 80)
@@ -337,6 +345,7 @@ func TestFadePresentSubmitsBitmap(t *testing.T) {
 // ShowWindow 重显瞬间 DWM 可能呈现 Gio 的不透明重定向表面（构建后首启一次性竞态，
 // 无法现场复现），可见态必须有紧随的 ULW 提交焊死；revealPending 清零后不再补。
 func TestFadePresentRevealRepresents(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.hwnd = 1
 	u.frameSize = image.Pt(100, 80)
@@ -363,6 +372,7 @@ func TestFadePresentRevealRepresents(t *testing.T) {
 // TestRepresentAfterShow D88：补提交以最后一次合成位图为准——位图未就绪跳过，
 // 就绪后按 u.x/u.y（无实测矩形时）提交一次。
 func TestRepresentAfterShow(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.frameSize = image.Pt(100, 80)
 	u.x, u.y, u.alpha = 3, 4, 200
@@ -390,6 +400,7 @@ func TestRepresentAfterShow(t *testing.T) {
 // TestRepresentAfterShowLadder D115：揭示后梯次补提交——立即一次 + 每拍一次，全部
 // 经同一矩形口径；主窗再隐藏即止。
 func TestRepresentAfterShowLadder(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.frameSize = image.Pt(10, 10)
 	u.fadeBuf = make([]byte, 10*10*4)
@@ -415,6 +426,7 @@ func TestRepresentAfterShowLadder(t *testing.T) {
 // TestRepresentAfterShowLadderStopsOnHide D115：主窗再隐藏（呼出后又被藏）→ 梯次
 // 不再补提交（防隐藏后仍有帧把位图唤回，presentable 同语义）。
 func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.frameSize = image.Pt(10, 10)
 	u.fadeBuf = make([]byte, 10*10*4)
@@ -444,6 +456,7 @@ func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
 // 口径：梯次开启（亚毫秒拍距）+ 帧循环并发反复重组位图（尺寸交替 ⇒ 每次都重新分配
 // fadeBuf，正是原缺陷的触发条件），跑够多轮让两个 goroutine 的读写充分交错。
 func TestRepresentLadderConcurrentWithFrames(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.hwnd = 1
 	fp := fakeOf(u)
@@ -487,6 +500,7 @@ func TestRepresentLadderConcurrentWithFrames(t *testing.T) {
 // 防隐藏后仍有帧把位图唤回）；唯**启动揭示期**例外——隐藏是我方所为，须照常合成提交，
 // 否则永不首帧、永不揭示。
 func TestPresentableDuringReveal(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	fp := fakeOf(u)
 	if u.presentable() != fp.VisibleNow {
@@ -507,6 +521,7 @@ func TestPresentableDuringReveal(t *testing.T) {
 // 揭示待定；提交失败（GPU 降级）不揭示、待定保持（拍板：降级保持隐藏，下帧重试）；
 // 已揭示不重复。
 func TestFirstPresentRevealsWindow(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.hwnd = 1
 	u.frameSize = image.Pt(100, 80)
@@ -541,6 +556,7 @@ func TestFirstPresentRevealsWindow(t *testing.T) {
 // TestSelForRowState 行选状态缓存（D63）：按行序 get-or-create，跨调用同指针
 // （选中态/焦点跨帧持久）；越界增长幂等。
 func TestSelForRowState(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	a := u.selFor(0)
 	b := u.selFor(0)
@@ -558,6 +574,7 @@ func TestSelForRowState(t *testing.T) {
 // TestCompositeAssistantBubble 单回复单气泡（D66）：一条多块助手消息在 transcript 中
 // 占一行——行选键数 = 块数、气泡底板每消息登记一个矩形。
 func TestCompositeAssistantBubble(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockUser, "问")
 	u.m.add(blockAssistant, "好的：\n\n- 一项\n- 二项\n\n```go\ndone\n```")
@@ -583,6 +600,7 @@ func TestCompositeAssistantBubble(t *testing.T) {
 // 停止尾随；滚回底部 → 恢复尾随（新消息重新贴底）。方向口径：d>0 = 向新内容（尾随），
 // d<0 = 上滚离开底部——与 Gio Windows 侧的滚轮反号、X11 Button4/5 映射一致。
 func TestTranscriptManualScroll(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	for i := 0; i < 40; i++ {
 		u.m.add(blockAssistant, fmt.Sprintf("第 %02d 条：内容高过视口，制造滚动余量。", i))
@@ -636,6 +654,7 @@ func TestTranscriptManualScroll(t *testing.T) {
 // （fadeBandBottomDp）的等高留白：contentH 两者都含、贴底时末行底 = h − lowPad（正好在
 // 底带之外）；上滚到顶时内容仍延伸过视口底 → 底缘进带渐隐、不再硬切。
 func TestTranscriptTopHeadroom(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	for i := 0; i < 40; i++ {
 		u.m.add(blockAssistant, fmt.Sprintf("第 %02d 条：内容高过视口，需要顶部 headroom。", i))
@@ -708,6 +727,7 @@ func TestTranscriptTopHeadroom(t *testing.T) {
 // [transH−Dp(fadeBandBottomDp), transH)——带**止于转写区底**（状态行/输入栏在其下、
 // 不受淡化）；收起态（无转写区）写 size.Y,size.Y = 区间空即关。带高与尾部留白单源。
 func TestLayoutBottomFadeBand(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockAssistant, "一条内容。")
 	gtx, _ := frameGtx(input.Source{})
@@ -740,6 +760,7 @@ func TestLayoutBottomFadeBand(t *testing.T) {
 // TestWheelGesturePinStateMachine D71 状态机：转写区滚轮真有增量 → 手势挂上（锚点 =
 // 当帧光标屏幕坐标）；光标不动保持、移位解除、收起解除；解除后重新滚动重新挂上。
 func TestWheelGesturePinStateMachine(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	for i := 0; i < 40; i++ {
 		u.m.add(blockAssistant, fmt.Sprintf("第 %02d 条：内容高过视口，制造滚动余量。", i))
@@ -796,6 +817,7 @@ func TestWheelGesturePinStateMachine(t *testing.T) {
 // 所在像素 alpha 顶到 ≥1（分层窗逐像素命中保住 → 透明间隙不吞滚轮），只钉 A==0 像素、
 // 解除后不再钉、光标在帧外不落笔。经假平台 OnPresent 钩子捕获提交字节（钉点须在提交前）。
 func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.hwnd = 1 // 非 0 即过门控（windowRectPx 无真句柄 → 回退 u.x/u.y）
 	u.frameSize = image.Pt(400, 300)
@@ -864,6 +886,7 @@ func TestFadePresentPinsCursorPixelDuringGesture(t *testing.T) {
 // 窗口系矩形。透明像素不产 OS 事件（D62 逐像素命中）由窗口层负责，这里只测几何过滤
 // 后的状态机。
 func TestLogoRightClickMenuRequest(t *testing.T) {
+	t.Parallel()
 	type env struct {
 		u     *UI
 		q     *input.Router

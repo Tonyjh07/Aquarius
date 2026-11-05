@@ -59,6 +59,7 @@ func allText(m *model) string {
 // TestSubmitInputAndParse 提交入转写 + 输入投递解析（文本/斜杠命令/空行忽略）。
 // GUI MVP 无输入历史（§15.2 未列），上下键历史留后续。
 func TestSubmitInputAndParse(t *testing.T) {
+	t.Parallel()
 	m, u := newTestModel(t)
 
 	m.submit("你好")
@@ -95,6 +96,7 @@ func TestSubmitInputAndParse(t *testing.T) {
 // TestSubmitOverflowMarksNotExecuted 缓冲满时明确标注"未执行"（不制造"已执行"
 // 错觉，uitui 审查修复同款）；缓冲吸收后恢复。
 func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
+	t.Parallel()
 	m, u := newTestModel(t)
 	for i := 0; i < inputCap; i++ {
 		m.submit("x")
@@ -117,6 +119,7 @@ func TestSubmitOverflowMarksNotExecuted(t *testing.T) {
 
 // TestConfirmReasonEcho D86：拒绝原因回显进 chip confirmA 与 plain 行（消毒同问句）。
 func TestConfirmReasonEcho(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
 	reply := make(chan port.ConfirmAnswer, 1)
@@ -148,6 +151,7 @@ func TestConfirmReasonEcho(t *testing.T) {
 
 // TestStartConfirmResetsReason D86：确认开启清空原因框并请求焦点让入。
 func TestStartConfirmResetsReason(t *testing.T) {
+	t.Parallel()
 	m, u := newTestModel(t)
 	u.reasonEd.SetText("上一次的原因")
 	m.startConfirm("确认删除？", make(chan port.ConfirmAnswer, 1))
@@ -161,6 +165,7 @@ func TestStartConfirmResetsReason(t *testing.T) {
 
 // TestNextPermLevel D86：权限档序列升一档；到顶/未知档不可升。
 func TestNextPermLevel(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		cur, next string
 		ok        bool
@@ -182,6 +187,7 @@ func TestNextPermLevel(t *testing.T) {
 
 // TestConfirmElevatable D86：🔑 仅工具确认且有下一档时可见。
 func TestConfirmElevatable(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI() // 需要 u.m 双向就绪（confirmElevatable 读确认态）
 	m := u.m
 	u.opts.Status = func() Status { return Status{Level: "strict"} }
@@ -216,6 +222,7 @@ func TestConfirmElevatable(t *testing.T) {
 // TestConfirmFlow 确认态：提示入转写、submit 路由应答（y/yes 语义）、拒答记录、
 // 提示出口消毒（§9）。
 func TestConfirmFlow(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	reply := make(chan port.ConfirmAnswer, 1)
 	m.startConfirm("确认删除？", reply)
@@ -277,6 +284,7 @@ func TestConfirmFlow(t *testing.T) {
 // （重构前观感：正文先于 chip），第 2 轮文本重新流式；提交调和回填权威文本、
 // 末段盖节点 ID（分叉条每 Turn 一个挂点），chip 保留实时结果。
 func TestLiveMultiSegmentTurn(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "我先看看"}})
@@ -332,6 +340,7 @@ func TestLiveMultiSegmentTurn(t *testing.T) {
 // 挂点，丢了这一 Turn 无法分叉。原实现在 [:0] 清空后判 flushedDrafts 长度（恒假），
 // 此类 Turn 的挂点全丢（外部审查 2026-10-13 指出的死分支）。
 func TestToolEndingTurnStampsBranchAnchor(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "我先看看"}})
@@ -372,6 +381,7 @@ func TestToolEndingTurnStampsBranchAnchor(t *testing.T) {
 }
 
 func TestEventsAndCommit(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "流式中"}})
@@ -428,6 +438,7 @@ func TestEventsAndCommit(t *testing.T) {
 // TestClearEvent D75：/switch、/new 的清屏——blocks/草稿/思维链/用量归零，
 // 并重置转写滚动与行选态（contentH 归零、跟随贴底）。
 func TestClearEvent(t *testing.T) {
+	t.Parallel()
 	m, u := newTestModel(t)
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
 		Role:    conversation.RoleUser,
@@ -469,6 +480,7 @@ func TestClearEvent(t *testing.T) {
 // TestHistoryReplay D40/§7.4：历史节点按角色定稿渲染；空文本的取消给 [cancelled]
 // 标记；回放不累计用量。
 func TestHistoryReplay(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
@@ -531,6 +543,7 @@ func TestHistoryReplay(t *testing.T) {
 // TestHistoryReplayThinking D42：回放口径恒含思考——思考分片渲染为独立思考块、
 // 不并入正文；实时流场景提交不重复渲染（恰好 1 个思考块）。
 func TestHistoryReplayThinking(t *testing.T) {
+	t.Parallel()
 	parts := []conversation.Part{
 		{Kind: conversation.PartThinking, Text: "先想一想"},
 		{Kind: conversation.PartText, Text: "答案"},
@@ -585,6 +598,7 @@ func TestHistoryReplayThinking(t *testing.T) {
 // TestReasoningFlow D34/§15.3：思维链流式实时可见（think 草稿）→ 正文到达落
 // 定稿块（带耗时秒数）→ 不进正文草稿。
 func TestReasoningFlow(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 
 	// 流中：实时可见于 think 草稿。
@@ -619,6 +633,7 @@ func TestReasoningFlow(t *testing.T) {
 // TestSanitizeControlStripsSequences 出口面：CSI、OSC（BEL 与 ST 收尾）、两字符
 // 转义、截断序列、裸尾 ESC、C0/C1/DEL 全部剥除；\n\t 保留（§9 三处同算法）。
 func TestSanitizeControlStripsSequences(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want string
@@ -642,6 +657,7 @@ func TestSanitizeControlStripsSequences(t *testing.T) {
 // TestTranscriptStripsControlSequences GUI 出口面统一消毒（§15.3）：
 // notice/错误行、流式草稿、工具预览、committed 内容都不得带注入序列进渲染。
 func TestTranscriptStripsControlSequences(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.NoticeEvent{Text: "注意\x1b[2J清屏", Attention: true})
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "流式\x07"}})
@@ -672,6 +688,7 @@ func TestTranscriptStripsControlSequences(t *testing.T) {
 // TestCommitEmptyCancelledShowsMarker 首个 token 前取消的空内容节点显示
 // [cancelled]；done 的空节点不入块。
 func TestCommitEmptyCancelledShowsMarker(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.commit(conversation.Message{Role: conversation.RoleAssistant, Outcome: conversation.OutcomeCancelled})
 	if !strings.Contains(allText(m), "[cancelled]") {
@@ -686,6 +703,7 @@ func TestCommitEmptyCancelledShowsMarker(t *testing.T) {
 
 // TestCommitSystemUsageAccumulated system 节点（/compact 摘要）的用量计入累计。
 func TestCommitSystemUsageAccumulated(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.commit(conversation.Message{
 		Role:  conversation.RoleSystem,
@@ -701,6 +719,7 @@ func TestCommitSystemUsageAccumulated(t *testing.T) {
 
 // TestSayFlushesThink 时序：外部输出先落进行中的思维链（与 uitui 口径一致）。
 func TestSayFlushesThink(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "推理中", Reasoning: true}})
 	m.say("命令输出")
@@ -715,6 +734,7 @@ func TestSayFlushesThink(t *testing.T) {
 // TestReplayStampsPartOrdinals D107④：回放正文块盖段序（段内首个 PartText 序号），
 // 思考/工具块不参与（part -1）。
 func TestReplayStampsPartOrdinals(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.replay(conversation.Message{
 		ID:      "a1",
@@ -743,6 +763,7 @@ func TestReplayStampsPartOrdinals(t *testing.T) {
 // TestCommitStampsPartOrdinals D107④：提交调和盖段序——flushed 草稿回填取段 0、
 // 余段追加取段 1（末段盖节点 ID 的 D81 口径不变）。
 func TestCommitStampsPartOrdinals(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.drafting = true
 	m.draft.WriteString("前半段")
@@ -769,6 +790,7 @@ func TestCommitStampsPartOrdinals(t *testing.T) {
 // TestReplayEmptyOutcomeNoMarker D107 补：空 Outcome 不打终态标记（旧版 Revise 产的
 // 修订节点零值——标记会渲染成 `[]`）。
 func TestReplayEmptyOutcomeNoMarker(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.replay(conversation.Message{
 		ID:      "a1",

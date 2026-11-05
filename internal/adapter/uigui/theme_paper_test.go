@@ -38,6 +38,7 @@ func wcagRatio(a, b color.NRGBA) float64 {
 // **面要逐个列**：同一档文字会同时出现在窗体面、卡面与下沉面（输入框/状态栏）；
 // 只按白面算会漏掉最暗的那个组合（下沉面比白面低 0.4 左右）。
 func TestPaperTextContrast(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		p    paperPalette
@@ -76,6 +77,7 @@ func TestPaperTextContrast(t *testing.T) {
 //   - brand 是与 accent 同色相的标识色，**不得**被当成按钮底（它的白字达不到 AA，
 //     这正是当初拆成两个令牌的原因——把这条性质写成断言，防止以后又被合并回去）。
 func TestPaperAccentContrast(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		p    paperPalette
@@ -94,6 +96,7 @@ func TestPaperAccentContrast(t *testing.T) {
 
 // TestPaperSemanticContrast 语义色（错误/成功/警告）落在卡面上也要能读。
 func TestPaperSemanticContrast(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		p    paperPalette
@@ -119,6 +122,7 @@ func TestPaperSemanticContrast(t *testing.T) {
 // TestPaperGeometryLadder 圆角阶梯四档必须严格递减（窗体 > 卡 > 控件 > chip）。
 // 相等或倒挂会让"大容器更圆、小控件更方"的直觉失效——观感上像随手给的数字。
 func TestPaperGeometryLadder(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		p    paperPalette

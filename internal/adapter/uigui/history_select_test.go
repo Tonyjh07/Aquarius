@@ -119,6 +119,7 @@ func batchDrainCmd(t *testing.T, u *UI) *portCommand {
 // TestSelectModeEnterAndDeselect 「选择」进选择态：缺省全不勾（勾是用户的动作），
 // 且此时点行不再投 /switch。
 func TestSelectModeEnterAndDeselect(t *testing.T) {
+	t.Parallel()
 	u, _, st, q := newBatchSelUI(t)
 	if st.selMode {
 		t.Fatal("初始就在选择态")
@@ -154,6 +155,7 @@ func TestSelectModeEnterAndDeselect(t *testing.T) {
 // TestSelectAllTogglesBothWays 「全选」全勾，再点变「全不选」——一颗钮管两头，
 // 「全选」不该是没有回退方向的死路。
 func TestSelectAllTogglesBothWays(t *testing.T) {
+	t.Parallel()
 	u, _, st, q := newBatchSelUI(t)
 	batchClickBtn(t, q, u, st, &st.btnSelect, "选择")
 
@@ -171,6 +173,7 @@ func TestSelectAllTogglesBothWays(t *testing.T) {
 // 顺序与左栏相反）→ `/rmconv` 的参数仍是**左栏顺序**：命令里的写序即归档清单顺序，
 // 勾选顺序不参与语义。
 func TestSelectBatchDeleteSendsAllIDsInListOrder(t *testing.T) {
+	t.Parallel()
 	u, _, st, q := newBatchSelUI(t)
 	batchClickBtn(t, q, u, st, &st.btnSelect, "选择")
 	batchClickRow(t, q, u, st, 2)
@@ -196,6 +199,7 @@ func TestSelectBatchDeleteSendsAllIDsInListOrder(t *testing.T) {
 // TestSelectBatchExportSendsIDsAndPath 批量导出：保存框只一档 aqx、预填 aquarius-backup.aqx；
 // 落点回来后投 `/export --ids a,c --path <落点>`，并退出选择态。
 func TestSelectBatchExportSendsIDsAndPath(t *testing.T) {
+	t.Parallel()
 	u, fp, st, q := newBatchSelUI(t)
 	const picked = `D:\备份\aquarius-backup.aqx`
 	fp.OnSaveRequest = func(req platform.SaveRequest) (string, bool) {
@@ -238,6 +242,7 @@ func TestSelectBatchExportSendsIDsAndPath(t *testing.T) {
 // TestSelectExportUsesSnapshotWhenModeExits 保存框异步：落点回来前用户可能已退出选择态
 // （Esc），勾选已清空——投出的仍是按下「导出」那刻的快照，不是一条空命令。
 func TestSelectExportUsesSnapshotWhenModeExits(t *testing.T) {
+	t.Parallel()
 	u, fp, st, q := newBatchSelUI(t)
 	var pending string
 	fp.OnSaveRequest = func(platform.SaveRequest) (string, bool) {
@@ -262,6 +267,7 @@ func TestSelectExportUsesSnapshotWhenModeExits(t *testing.T) {
 // TestSelectActionsDisabledWithNothingChecked 一个都没勾时「导出」「删除」点击不投命令，
 // 也不弹保存框（禁用态 = 真不响应，不只是颜色浅一点）。
 func TestSelectActionsDisabledWithNothingChecked(t *testing.T) {
+	t.Parallel()
 	u, fp, st, q := newBatchSelUI(t)
 	batchClickBtn(t, q, u, st, &st.btnSelect, "选择")
 
@@ -279,6 +285,7 @@ func TestSelectActionsDisabledWithNothingChecked(t *testing.T) {
 
 // TestSelectEscAndCancelExit Esc 与「取消」都退出选择态、都不投命令。
 func TestSelectEscAndCancelExit(t *testing.T) {
+	t.Parallel()
 	u, _, st, q := newBatchSelUI(t)
 	batchClickBtn(t, q, u, st, &st.btnSelect, "选择")
 	batchClickRow(t, q, u, st, 1)
@@ -312,6 +319,7 @@ func TestSelectEscAndCancelExit(t *testing.T) {
 // TestSelectKeepsChoicesAcrossResort 勾选按**会话 ID** 记：快照重排（换个顺序）后勾的仍是
 // 同一个会话，不会因为行号变了就跳到别人身上。
 func TestSelectKeepsChoicesAcrossResort(t *testing.T) {
+	t.Parallel()
 	u, _, st, q := newBatchSelUI(t)
 	batchClickBtn(t, q, u, st, &st.btnSelect, "选择")
 	batchClickRow(t, q, u, st, 2) // C3

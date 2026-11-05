@@ -27,6 +27,7 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 // TestWinHostSingleInstance 单实例防重开：同 kind 重开不产生第二实例，
 // 不同 kind 各自开窗；isOpen 与登记一致。
 func TestWinHostSingleInstance(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	var spawned []winKind
 	h := newWinHost(func(k winKind) *winHandle {
@@ -56,6 +57,7 @@ func TestWinHostSingleInstance(t *testing.T) {
 // TestWinHostInvalidateKind D99 invalidateKind：已开窗投递重绘请求、未开/其它 kind
 // = no-op（不 panic）。
 func TestWinHostInvalidateKind(t *testing.T) {
+	t.Parallel()
 	h := newWinHost(func(winKind) *winHandle { return &winHandle{done: make(chan struct{})} })
 	h.invalidateKind(winRaw) // 未开：no-op
 	h.openWin(winRaw)
@@ -77,6 +79,7 @@ func TestWinHostInvalidateKind(t *testing.T) {
 // TestWinHostReopenAfterClose 用户关窗（X → DestroyEvent → done）后 watcher
 // 摘除登记，允许重开。
 func TestWinHostReopenAfterClose(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	var spawns int
 	var handles []*winHandle
@@ -108,6 +111,7 @@ func TestWinHostReopenAfterClose(t *testing.T) {
 
 // TestWinHostCloseAll 退出收编：全部实例收到关闭请求、二次收编幂等为 0。
 func TestWinHostCloseAll(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	var handles []*winHandle
 	h := newWinHost(func(k winKind) *winHandle {
@@ -142,6 +146,7 @@ func TestWinHostCloseAll(t *testing.T) {
 // TestWinHostConcurrentOpen 并发开窗（托盘线程 × 多入口）只产生一个实例
 // （-race 门禁同时覆盖注册表竞态）。
 func TestWinHostConcurrentOpen(t *testing.T) {
+	t.Parallel()
 	var spawns atomic.Int32
 	h := newWinHost(func(k winKind) *winHandle {
 		spawns.Add(1)
@@ -163,6 +168,7 @@ func TestWinHostConcurrentOpen(t *testing.T) {
 
 // TestWinHostHeadlessNoSpawn 无开窗器（headless 构造）：openWin 为 no-op。
 func TestWinHostHeadlessNoSpawn(t *testing.T) {
+	t.Parallel()
 	h := newWinHost(nil)
 	h.openWin(winHistory)
 	if h.isOpen(winHistory) {
@@ -176,6 +182,7 @@ func TestWinHostHeadlessNoSpawn(t *testing.T) {
 // TestWinHostPropagatePalette 主题广播（§15.7/D61）：全部在开句柄换快照 +
 // 逐窗请求重绘；未装配重绘器（nil）的句柄安全跳过。
 func TestWinHostPropagatePalette(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	var handles []*winHandle
 	h := newWinHost(func(k winKind) *winHandle {

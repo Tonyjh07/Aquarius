@@ -48,6 +48,7 @@ func ovSystemNodeID(st *historyState) conversation.MessageID {
 // TestOverlayPersonaEditable 可编辑门：persona 可编辑且默认落 Carry；Root 与非 persona 的
 // system 节点仍只读。
 func TestOverlayPersonaEditable(t *testing.T) {
+	t.Parallel()
 	u, st, _ := relGraphFixture(t)
 	pid := ovPersonaID(st)
 	if pid == "" {
@@ -97,6 +98,7 @@ func TestOverlayPersonaEditable(t *testing.T) {
 // TestOverlayPersonaFreshForcedToCarry 菜单预选 Fresh/Clone 也不能把人格改成那一档：
 // Fresh 会把整段对话挪成旧分支。
 func TestOverlayPersonaFreshForcedToCarry(t *testing.T) {
+	t.Parallel()
 	for _, preset := range []conversation.KeepMode{conversation.Fresh, conversation.Clone} {
 		u, st, _ := relGraphFixture(t)
 		pid := ovPersonaID(st)
@@ -121,6 +123,7 @@ func TestOverlayPersonaFreshForcedToCarry(t *testing.T) {
 // TestOverlayPersonaTabs 页签集：人格节点三档（呈现/源码/默认模板），其余节点两档；
 // 模板页签在打开时不构造编辑区（惰性），切过去才构造。
 func TestOverlayPersonaTabs(t *testing.T) {
+	t.Parallel()
 	u, st, _ := relGraphFixture(t)
 	pid := ovPersonaID(st)
 	st.openOverlay(u, pid, conversation.Fresh, overlayPageRendered)
@@ -171,6 +174,7 @@ func ovTemplateUI(t *testing.T) (*UI, *historyState, *input.Router, *[]PromptTem
 // TestOverlayTemplateSavesOnlyPromptKeys 模板页签 = 设置页同一份编辑区的实例；
 // 「保存模板」走窄写回（只带人格两键），不改其它设置字段。
 func TestOverlayTemplateSavesOnlyPromptKeys(t *testing.T) {
+	t.Parallel()
 	u, st, _, saved, _ := ovTemplateUI(t)
 	pid := ovPersonaID(st)
 	st.openOverlay(u, pid, conversation.Fresh, overlayPageTemplate)
@@ -204,6 +208,7 @@ func TestOverlayTemplateSavesOnlyPromptKeys(t *testing.T) {
 // TestOverlayTemplateApplySubmitsExpandedEdit 「应用到本会话」= 按当前（未保存的）模板
 // 展开最终文本 → /edit <persona> --keep <文本>，并关遮罩。
 func TestOverlayTemplateApplySubmitsExpandedEdit(t *testing.T) {
+	t.Parallel()
 	u, st, _, saved, _ := ovTemplateUI(t)
 	pid := ovPersonaID(st)
 	st.openOverlay(u, pid, conversation.Fresh, overlayPageTemplate)
@@ -237,6 +242,7 @@ func TestOverlayTemplateApplySubmitsExpandedEdit(t *testing.T) {
 // TestOverlayTemplateApplyUnwiredPreview 预览未接线：明确报错、不投命令、不关遮罩
 // （静默回退到「保存过的模板」会让用户以为改的行生效了）。
 func TestOverlayTemplateApplyUnwiredPreview(t *testing.T) {
+	t.Parallel()
 	u, st, _, _, _ := ovTemplateUI(t)
 	u.opts.PreviewPrompts = nil
 	pid := ovPersonaID(st)
@@ -258,6 +264,7 @@ func TestOverlayTemplateApplyUnwiredPreview(t *testing.T) {
 // TestOverlayPersonaCardWider 人格模式卡片上限 640dp（三列模块网格 + 预览需要宽度），
 // 其余节点仍 560dp。
 func TestOverlayPersonaCardWider(t *testing.T) {
+	t.Parallel()
 	gtx, _ := frameGtxSize(input.Source{}, 900, 700)
 	plain := overlayCardBoxFor(gtx, false)
 	persona := overlayCardBoxFor(gtx, true)
@@ -275,6 +282,7 @@ func TestOverlayPersonaCardWider(t *testing.T) {
 // TestOverlayPersonaFrameRendersTabs 离屏渲染：人格遮罩的两个页签都画得出来（呈现实底
 // + 模板页有模块磁贴），且页签行三枚底板——只读节点回归时这里会红。
 func TestOverlayPersonaFrameRendersTabs(t *testing.T) {
+	t.Parallel()
 	const viewW, viewH = 900, 700
 	w, err := headless.NewWindow(viewW, viewH)
 	if err != nil {
@@ -326,6 +334,7 @@ var (
 
 // TestOverlayPersonaEscFromTemplate Esc 在模板页签也关遮罩（焦点落在遮罩自身）。
 func TestOverlayPersonaEscFromTemplate(t *testing.T) {
+	t.Parallel()
 	u, st, q, _, _ := ovTemplateUI(t)
 	pid := ovPersonaID(st)
 	st.openOverlay(u, pid, conversation.Fresh, overlayPageTemplate)

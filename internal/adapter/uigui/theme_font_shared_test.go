@@ -19,6 +19,7 @@ import (
 
 // TestSharedFacesSameCollection 同一候选表两次取用必须是同一份底层数组。
 func TestSharedFacesSameCollection(t *testing.T) {
+	t.Parallel()
 	cands := newPlatform(Options{}, true).SystemFontCandidates()
 	a := sharedFaces(cands)
 	b := sharedFaces(cands)
@@ -36,6 +37,7 @@ func TestSharedFacesSameCollection(t *testing.T) {
 
 // TestSharedFacesCapacityClamped 共享集合的容量必须等于长度（append 会新分配）。
 func TestSharedFacesCapacityClamped(t *testing.T) {
+	t.Parallel()
 	cands := newPlatform(Options{}, true).SystemFontCandidates()
 	faces := sharedFaces(cands)
 	if cap(faces) != len(faces) {
@@ -62,6 +64,7 @@ func TestSharedFacesCapacityClamped(t *testing.T) {
 // 正确的（gofont.Collection 本身即共享返回）。所以这里断言的是**缓存分了档**，而不是
 // 「两份解析结果的地址一定不同」。
 func TestSharedFacesDistinctCandidates(t *testing.T) {
+	t.Parallel()
 	sharedFaces([]string{"/nonexistent/a.ttf"})
 	sharedFaces([]string{"/nonexistent/b.ttf"})
 
@@ -88,6 +91,7 @@ func TestSharedFacesDistinctCandidates(t *testing.T) {
 
 // TestNewThemeSharesFaces 两个主题必须共用一份字体集合（生产每窗各建主题的真实路径）。
 func TestNewThemeSharesFaces(t *testing.T) {
+	t.Parallel()
 	cands := newPlatform(Options{}, true).SystemFontCandidates()
 	th1 := newTheme(cands)
 	th2 := newTheme(cands)

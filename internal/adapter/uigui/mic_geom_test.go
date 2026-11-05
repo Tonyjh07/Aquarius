@@ -9,6 +9,7 @@ import (
 // （弧内缘贴头下缘）量出的净间隙必须同一个数。这是图标观感的核心约束——托架不是
 // 「包住头的一个框」，而是头下半轮廓的等距外扩。
 func TestMicGeomEqualGap(t *testing.T) {
+	t.Parallel()
 	for _, d := range []int{16, 24, 32, 40, 48, 56, 64, 96, 128, 480} {
 		for _, stroke := range []float32{2, 2 * float32(d) / 32, float32(d) * 0.055} {
 			g := micGeomOf(d, stroke)
@@ -33,6 +34,7 @@ func TestMicGeomEqualGap(t *testing.T) {
 // 底座采样，逐点把描边半宽算进去，离圆心都不超过半径。加深托架 / 加宽底座时这里先响，
 // 不必等到肉眼看见白边被圆角切掉。
 func TestMicGeomInsideButton(t *testing.T) {
+	t.Parallel()
 	const steps = 64
 	for _, d := range []int{16, 24, 32, 48, 64, 128, 480} {
 		g := micGeomOf(d, float32(d)*0.055)
@@ -78,6 +80,7 @@ func TestMicGeomInsideButton(t *testing.T) {
 // TestMicGeomOrder 自上而下的次序：头顶 < 臂顶 < 头下圆角圆心 < 托架最底 < 杆底（底座）。
 // 次序错了画出来就不是麦克风（托架跑到头上、杆短到看不见）。
 func TestMicGeomOrder(t *testing.T) {
+	t.Parallel()
 	for _, d := range []int{16, 24, 32, 48, 64, 128, 480} {
 		g := micGeomOf(d, float32(d)*0.055)
 		if !(g.headTop < g.armTop && g.armTop < g.capCy && g.capCy < g.headBottom) {

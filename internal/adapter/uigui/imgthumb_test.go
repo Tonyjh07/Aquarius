@@ -40,6 +40,7 @@ func imgPart(hash, name string) conversation.Part {
 // TestReplayPureImageMessages 纯图消息（有图无字）回放必须成块：块里没有正文但有图，
 // 否则用户贴的图在历史里整条消失（D207）。
 func TestReplayPureImageMessages(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.HistoryEvent{Message: conversation.Message{
 		Role:    conversation.RoleUser,
@@ -67,6 +68,7 @@ func TestReplayPureImageMessages(t *testing.T) {
 // TestNodeSegmentsImages 分段口径：工具边界断段；段内图片按出现序收集，正文不再留
 // 〔图片：…〕占位（图片由缩略图承载）。
 func TestNodeSegmentsImages(t *testing.T) {
+	t.Parallel()
 	segs := nodeSegments([]conversation.Part{
 		{Kind: conversation.PartText, Text: "甲"},
 		imgPart("h1", "a.png"),
@@ -92,6 +94,7 @@ func TestNodeSegmentsImages(t *testing.T) {
 // TestApplyImgCache 缩略图缓存：首份为准（竞态重复回投不覆盖）、失败留墓碑（不再重试）、
 // 超上限按插入序淘汰。
 func TestApplyImgCache(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	first := &thumbSrc{img: image.NewRGBA(image.Rect(0, 0, 1, 1))}
 	u.applyImg(imgMsg{key: "h:a", thumb: first})
@@ -126,6 +129,7 @@ func TestApplyImgCache(t *testing.T) {
 
 // TestOpenImageOpensPreviewWindow 点格子 → 内容入原子槽 + 开/聚焦预览次窗（单实例）。
 func TestOpenImageOpensPreviewWindow(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	var spawned []winKind
 	var last *winHandle
@@ -158,6 +162,7 @@ func TestOpenImageOpensPreviewWindow(t *testing.T) {
 
 // TestImageViewFitZoomPan 预览窗缩放/平移：适配比例（小图不放大）、平移夹取、光标锚点。
 func TestImageViewFitZoomPan(t *testing.T) {
+	t.Parallel()
 	st := newImageViewState(nil, nil)
 	st.img = image.NewRGBA(image.Rect(0, 0, 200, 100))
 	st.pix = image.Pt(200, 100)
@@ -216,6 +221,7 @@ func TestImageViewFitZoomPan(t *testing.T) {
 // TestImageViewFrame 帧级：空槽显示未选择态、内容变化才重解码（指针比较）、
 // 错误文案可见（不崩）。
 func TestImageViewFrame(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	st := newImageViewState(nil, nil)
 	q := new(input.Router)
@@ -257,6 +263,7 @@ func TestImageViewFrame(t *testing.T) {
 // TestPreviewImageFrameDraws 预览窗真实解码 → 绘制路径：路径项读文件解码成功，
 // 帧内滤镜/变换不 panic（含放大态与错误态）。真实次窗由手工验收覆盖。
 func TestPreviewImageFrameDraws(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pic.png")
 	if err := os.WriteFile(path, pngBytes(t, 32, 16, color.NRGBA{R: 0x33, G: 0x66, B: 0x99, A: 0xFF}), 0o600); err != nil {
@@ -307,6 +314,7 @@ func TestPreviewImageFrameDraws(t *testing.T) {
 // TestImageViewEscCloses Esc 关窗：焦点落到本窗输入区（首帧 FocusCmd），随后 Esc 被
 // 消费并调用关闭动作。**注意帧序**：FocusCmd 在帧尾执行，下一帧才投 FocusEvent。
 func TestImageViewEscCloses(t *testing.T) {
+	t.Parallel()
 	u := frameUIWithInbox()
 	closed := 0
 	st := newImageViewState(func() { closed++ }, nil)
@@ -333,6 +341,7 @@ func TestImageViewEscCloses(t *testing.T) {
 // TestTranscriptImageRows 帧级：纯图 user/assistant 行可布局（不 panic、登记气泡底板），
 // chip 展开体的图格也登记点击件。
 func TestTranscriptImageRows(t *testing.T) {
+	t.Parallel()
 	u := frameUIWithInbox()
 	u.m.blocks = []block{
 		{kind: blockUser, imgs: []imgRef{{blob: &conversation.BlobRef{Hash: "h1", Name: "a.png"}, name: "a.png"}}},
@@ -386,6 +395,7 @@ func TestTranscriptImageRows(t *testing.T) {
 
 // TestChipHeaderShowsImageCount 折叠态也要看出这次调用带了图（否则图等于被藏起来）。
 func TestChipHeaderShowsImageCount(t *testing.T) {
+	t.Parallel()
 	c := &toolChip{name: "screen_capture", done: true, ok: true,
 		images: []tool.ImageRef{{Hash: "h1"}, {Hash: "h2"}}}
 	if got := chipHeaderText(c, false); !strings.Contains(got, "🖼2") {
@@ -398,6 +408,7 @@ func TestChipHeaderShowsImageCount(t *testing.T) {
 
 // TestAttachToolResultKeepsImages 工具结果里的图进 chip（展开体渲染与点击都靠它）。
 func TestAttachToolResultKeepsImages(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "screen_capture"}})
 	m.handleEvent(port.ToolResultEvent{Result: tool.Result{
@@ -416,6 +427,7 @@ func TestAttachToolResultKeepsImages(t *testing.T) {
 // 开预览窗。指针路由与 Clickable 的帧序在 Gio 无窗口 Router 下不稳定，故用 Clickable
 // 的程序化点击表达（同一 Clicked 通路），与分叉条点击测试同口径。
 func TestImageClickOpensPreview(t *testing.T) {
+	t.Parallel()
 	u := frameUIWithInbox()
 	var spawned []winKind
 	u.wins = newWinHost(func(k winKind) *winHandle {
@@ -479,6 +491,7 @@ func TestImageClickOpensPreview(t *testing.T) {
 // 「按适配比例缩放后的居中矩形」——垂直方向正好铺满视口，左右余量相等且露出视口
 // 底色（不是窗底，也不是被截断）。
 func TestImageViewLargeImageCentered(t *testing.T) {
+	t.Parallel()
 	const w, h = 707, 650
 	win, err := headless.NewWindow(w, h)
 	if err != nil {

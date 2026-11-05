@@ -22,6 +22,7 @@ func editAttsFixture() []port.AttachmentView {
 // TestEditAttachChipItems D188：编辑态 chip 排 = 已有附件（按序号）+ 新暂存项；
 // 非编辑态只摆暂存项；标记删除只改渲染态，不动列表。
 func TestEditAttachChipItems(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.m.stageAttach(`C:\x\draft.md`)
 	if items := u.chipItems(); len(items) != 1 || items[0].label != "draft.md" {
@@ -60,6 +61,7 @@ func TestEditAttachChipItems(t *testing.T) {
 
 // TestEditAttachDropOnly D188 口径五：删掉已有附件、正文留空 → 只发 --drop，不夹带文本。
 func TestEditAttachDropOnly(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(editMsg{id: "u1", text: "旧问题", part: -1, atts: editAttsFixture()})
 	u.m.toggleEditAtt(1) // 逆序点，验证 Args 里按序号升序
@@ -88,6 +90,7 @@ func TestEditAttachDropOnly(t *testing.T) {
 // TestEditAttachDropAndText D188：正文改写 + 删一项 + 路径新增 → 同一条 /edit 带三类 token，
 // 新增附件按出现序排在 flag 区（文本最后）。
 func TestEditAttachDropAndText(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(editMsg{id: "u1", text: "旧问题", part: -1, atts: editAttsFixture()})
 	u.m.toggleEditAtt(0)
@@ -114,6 +117,7 @@ func TestEditAttachDropAndText(t *testing.T) {
 // TestEditAttachBlobPayload D188：新增附件一律走 Command.Attachments——粘贴图片没有路径，
 // 选文件有路径，两者都进同一列表（顺序即 chip 排顺序）；纯新增、正文留空也能提交。
 func TestEditAttachBlobPayload(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(editMsg{id: "u1", text: "旧问题", part: -1, atts: editAttsFixture()})
 	u.m.stageBlob(conversation.BlobRef{Hash: "h1", Name: "粘贴.png", MIME: "image/png", Size: 9})
@@ -146,6 +150,7 @@ func TestEditAttachBlobPayload(t *testing.T) {
 // TestEditAttachEmptySubmitCancels D92 旧口径保留：编辑态既没改文本也没动附件 → 空提交
 // 仍是取消，不投递。
 func TestEditAttachEmptySubmitCancels(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(editMsg{id: "u1", text: "旧问题", part: -1, atts: editAttsFixture()})
 	u.editor.SetText("")
@@ -163,6 +168,7 @@ func TestEditAttachEmptySubmitCancels(t *testing.T) {
 // TestEditAttachCancelKeepsStaged D188：Esc 退出编辑态清掉已有附件快照与删除标记，
 // 但这次为修订新选的暂存附件保留（用户已经花过力气挑文件）。
 func TestEditAttachCancelKeepsStaged(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(editMsg{id: "u1", text: "旧问题", part: -1, atts: editAttsFixture()})
 	u.m.toggleEditAtt(0)
@@ -181,6 +187,7 @@ func TestEditAttachCancelKeepsStaged(t *testing.T) {
 // TestEditAttachDropAllViaClear D186 汇总 chip 的「清空全部」在编辑态 = 已有附件全标记删除
 // + 清空暂存（提交时仍是 --drop 序列，不动附件库）。
 func TestEditAttachDropAllViaClear(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(editMsg{id: "u1", text: "旧问题", part: -1, atts: editAttsFixture()})
 	u.m.stageAttach(`C:\x\new.md`)
@@ -196,6 +203,7 @@ func TestEditAttachDropAllViaClear(t *testing.T) {
 // TestEditAttachBufferFull D188：投递缓冲满时编辑态照常收尾（不把用户卡在半截状态），
 // 但这次挑的附件退回暂存（挑文件比打字贵，不跟着丢）。
 func TestEditAttachBufferFull(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), followTail: true, inCh: make(chan port.UserInput, 1)}
 	u.m = newModel(u)
 	u.th = testTheme()
@@ -223,6 +231,7 @@ func TestEditAttachBufferFull(t *testing.T) {
 // TestEditAttachFrameRenders D188：编辑态 chip 排（含删除态）走一遍完整帧布局不炸——
 // 尺寸量测、删除线、换行都与暂存 chip 共用同一条渲染路径。
 func TestEditAttachFrameRenders(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.frameSize = image.Pt(winWidthDp, winHeightDp)
 	q := new(input.Router)

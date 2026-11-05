@@ -71,6 +71,7 @@ func newPickUI(t *testing.T, ix *fakeIndexer) (*UI, *historyState) {
 
 // TestImportSingleEntrySkipsPanel 只有一项（非 aqx 或单会话归档）不弹面板，直接投 /import。
 func TestImportSingleEntrySkipsPanel(t *testing.T) {
+	t.Parallel()
 	ix := &fakeIndexer{entries: []port.ExchangeEntry{{Index: 1, ID: "S1", Title: "甲", Nodes: 4}}}
 	u, st := newPickUI(t, ix)
 	u.filePicks <- filePick{purpose: platform.PurposeExchangeImport, path: `C:\a.aqx`}
@@ -88,6 +89,7 @@ func TestImportSingleEntrySkipsPanel(t *testing.T) {
 // TestImportIndexerErrorFallsThrough 取清单失败（不是归档 / 文件坏了）也直接投：命令面会把
 // 原因说清楚，界面不替它编一个说法（壳内不认格式）。
 func TestImportIndexerErrorFallsThrough(t *testing.T) {
+	t.Parallel()
 	ix := &fakeIndexer{err: errors.New("不是归档")}
 	u, st := newPickUI(t, ix)
 	u.filePicks <- filePick{purpose: platform.PurposeExchangeImport, path: `C:\坏.aqx`}
@@ -105,6 +107,7 @@ func TestImportIndexerErrorFallsThrough(t *testing.T) {
 // TestImportNilIndexerFallsThrough 没装清单源（测试瘦 UI / 旧装配）时退回单会话口径：
 // 选完直接投 /import，不弹一个没有数据的空面板。
 func TestImportNilIndexerFallsThrough(t *testing.T) {
+	t.Parallel()
 	u, st := newPickUI(t, nil)
 	u.filePicks <- filePick{purpose: platform.PurposeExchangeImport, path: `C:\a.aqx`}
 	st.drainFilePicks(u)
@@ -118,6 +121,7 @@ func TestImportNilIndexerFallsThrough(t *testing.T) {
 
 // TestImportMultiEntryOpensPanelAllChecked 多项：弹面板、缺省全勾（备份恢复的主路径就是全要）。
 func TestImportMultiEntryOpensPanelAllChecked(t *testing.T) {
+	t.Parallel()
 	ix := &fakeIndexer{entries: pickEntries()}
 	u, st := newPickUI(t, ix)
 	u.filePicks <- filePick{purpose: platform.PurposeExchangeImport, path: `C:\备份.aqx`}
@@ -146,6 +150,7 @@ func TestImportMultiEntryOpensPanelAllChecked(t *testing.T) {
 // TestImportPickSendsCommaSeparatedIndexes 取消勾一个 → `/import --pick 1,3 <路径>`：
 // 一条 --pick 带全部序号（命令面认逗号分隔），序号取清单序号（1 起）。
 func TestImportPickSendsCommaSeparatedIndexes(t *testing.T) {
+	t.Parallel()
 	ix := &fakeIndexer{entries: pickEntries()}
 	u, st := newPickUI(t, ix)
 	u.filePicks <- filePick{purpose: platform.PurposeExchangeImport, path: `C:\备份.aqx`}
@@ -170,6 +175,7 @@ func TestImportPickSendsCommaSeparatedIndexes(t *testing.T) {
 
 // TestImportPickCancelSendsNothing 取消 / Esc 都什么都不投。
 func TestImportPickCancelSendsNothing(t *testing.T) {
+	t.Parallel()
 	ix := &fakeIndexer{entries: pickEntries()}
 	u, st := newPickUI(t, ix)
 	q := new(input.Router)
@@ -207,6 +213,7 @@ func TestImportPickCancelSendsNothing(t *testing.T) {
 // TestImportPickEmptySelectionKeepsPanel 全不勾时「导入」是禁用态：点击不投命令、也不关面板
 // （用户正要重新勾）。
 func TestImportPickEmptySelectionKeepsPanel(t *testing.T) {
+	t.Parallel()
 	ix := &fakeIndexer{entries: pickEntries()}
 	u, st := newPickUI(t, ix)
 	u.filePicks <- filePick{purpose: platform.PurposeExchangeImport, path: `C:\备份.aqx`}
@@ -230,6 +237,7 @@ func TestImportPickEmptySelectionKeepsPanel(t *testing.T) {
 
 // TestImportPickBlocksBackground 面板在屏时左栏行不取事件（模态的纵深防御）。
 func TestImportPickBlocksBackground(t *testing.T) {
+	t.Parallel()
 	ix := &fakeIndexer{entries: pickEntries()}
 	u, st := newPickUI(t, ix)
 	q := new(input.Router)

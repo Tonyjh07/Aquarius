@@ -45,6 +45,7 @@ func (f *keyFrame) press(name key.Name, mods key.Modifiers) {
 // 主回车在 Gio 里报的是 NameReturn（"⏎"），小键盘的才是 NameEnter（"⌤"）——两个都要
 // 认。只认后者时真实键盘上的 Shift+Enter 会漏给编辑器当换行，表现为「按了没反应」。
 func TestShiftEnterSteers(t *testing.T) {
+	t.Parallel()
 	for _, name := range []key.Name{key.NameReturn, key.NameEnter} {
 		p := &fakePending{}
 		u := newPendingUI(p, true)
@@ -63,6 +64,7 @@ func TestShiftEnterSteers(t *testing.T) {
 
 // TestEnterQueuesDuringGeneration 生成中纯回车 = 排队（不是立刻发出去）。
 func TestEnterQueuesDuringGeneration(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.th = testTheme()
@@ -84,6 +86,7 @@ func TestEnterQueuesDuringGeneration(t *testing.T) {
 
 // TestCtrlEnterNewline Ctrl+回车 = 换行不发送（并展开成多行）。
 func TestCtrlEnterNewline(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.th = testTheme()
@@ -107,6 +110,7 @@ func TestCtrlEnterNewline(t *testing.T) {
 
 // TestSteerWhenIdleSends 空闲时按引导键与发送等价（没有「插话」这个位置）。
 func TestSteerWhenIdleSends(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, false)
 	u.th = testTheme()

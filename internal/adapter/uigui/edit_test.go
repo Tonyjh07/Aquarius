@@ -28,6 +28,7 @@ func newEditUI() *UI {
 // 多行文本在 SingleLine 编辑框内压平为空格（所见即所发，D92 后果②；命令管线对
 // buffer 内容零再加工）。
 func TestEditSubmitStructured(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.m.addMsg(blockUser, "旧问题", "u1")
 	u.apply(editMsg{id: "u1", text: "旧问题"})
@@ -58,6 +59,7 @@ func TestEditSubmitStructured(t *testing.T) {
 // TestEditCancel D92 编辑态取消：Esc 清目标与编辑框（不投递）；空提交同样取消；
 // 非编辑态提交照常回显。
 func TestEditCancel(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.m.addMsg(blockUser, "问", "u1")
 	u.apply(editMsg{id: "u1", text: "问"})
@@ -104,6 +106,7 @@ func TestEditCancel(t *testing.T) {
 // flag token（--keep=Carry / --copy=Clone，与 typed 路径同解析，D97①）；Fresh 无
 // token；提交后 editMode 复位 Fresh。
 func TestEditSubmitModes(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		mode conversation.KeepMode
@@ -140,6 +143,7 @@ func TestEditSubmitModes(t *testing.T) {
 // TestQuoteInto D98 引用装配纯函数："> " 单行引用前缀（换行压为空格——SingleLine
 // 编辑框口径）、非空以空格衔接。
 func TestQuoteInto(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		existing string
@@ -163,6 +167,7 @@ func TestQuoteInto(t *testing.T) {
 
 // TestQuoteDispatch D98 引用 apply：追加而非替换（保留既有草稿）、不进编辑态、焦点待入。
 func TestQuoteDispatch(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(quoteMsg{text: "一\n二"})
 	if u.m.editTarget != "" || !u.focusPending {
@@ -181,6 +186,7 @@ func TestQuoteDispatch(t *testing.T) {
 // TestEditTextHint D92/D97 编辑态提示：占用状态行（无生成状态时），方式后缀随
 // editMode；生成状态优先。
 func TestEditTextHint(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	if u.statusText() != "" {
 		t.Fatalf("静息 statusText = %q, want 空", u.statusText())
@@ -207,6 +213,7 @@ func TestEditTextHint(t *testing.T) {
 // TestEditSubmitPartArg D107②：编辑态带分片序号提交 = 结构化 /edit 附 --part N；
 // 取消收尾分片序号归位（生命周期与 editTarget 同步）。
 func TestEditSubmitPartArg(t *testing.T) {
+	t.Parallel()
 	u := newEditUI()
 	u.apply(editMsg{id: "a1", text: "前半段", part: 0})
 	if u.m.editPart != 0 {

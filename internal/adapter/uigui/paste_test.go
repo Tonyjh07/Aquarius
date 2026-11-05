@@ -80,6 +80,7 @@ func frameUIWithInbox() *UI {
 
 // TestPasteImageKeyConsumes 有图：Ctrl+V 被入口消费——暂存出 Blob 项、编辑器文本不变。
 func TestPasteImageKeyConsumes(t *testing.T) {
+	t.Parallel()
 	blobs := &fakeBlobs{}
 	u := frameUIWithInbox()
 	u.opts.Blobs = blobs
@@ -127,6 +128,7 @@ func TestPasteImageKeyConsumes(t *testing.T) {
 
 // TestPasteImageKeyPassesThrough 没图：不注册过滤器，Ctrl+V 照常落到编辑器做文本粘贴。
 func TestPasteImageKeyPassesThrough(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.opts.Blobs = &fakeBlobs{}
 	u.focusPending = true
@@ -145,6 +147,7 @@ func TestPasteImageKeyPassesThrough(t *testing.T) {
 
 // TestPasteTooLarge 超过单图上限：不暂存、明确报因（带大小与上限）。
 func TestPasteTooLarge(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.opts.Blobs = &fakeBlobs{}
 	u.finishPaste(pasteMsg{tooLarge: port.MaxImageBytes + 1})
@@ -158,6 +161,7 @@ func TestPasteTooLarge(t *testing.T) {
 
 // TestPasteNoImageIsSilent 探测与读取之间剪贴板变了：不报错、不暂存。
 func TestPasteNoImageIsSilent(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.opts.Blobs = &fakeBlobs{}
 	u.finishPaste(pasteMsg{err: platform.ErrNoClipboardImage})
@@ -168,6 +172,7 @@ func TestPasteNoImageIsSilent(t *testing.T) {
 
 // TestPasteFullList 暂存位已满：不落盘、明确提示上限。
 func TestPasteFullList(t *testing.T) {
+	t.Parallel()
 	blobs := &fakeBlobs{}
 	u := newFrameUI()
 	u.opts.Blobs = blobs
@@ -182,6 +187,7 @@ func TestPasteFullList(t *testing.T) {
 
 // TestStagePathDirectory 拖进文件夹：不暂存，明确提示「是文件夹」。
 func TestStagePathDirectory(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	dir := t.TempDir()
 	u.stagePath(dir)
@@ -195,6 +201,7 @@ func TestStagePathDirectory(t *testing.T) {
 
 // TestStagePathImageThumb 拖入图片：暂存 + 后台解码缩略图（回投后挂上）。
 func TestStagePathImageThumb(t *testing.T) {
+	t.Parallel()
 	u := frameUIWithInbox()
 	path := filepath.Join(t.TempDir(), "图.png")
 	if err := os.WriteFile(path, pngBytes(t, 8, 8, color.NRGBA{G: 0xFF, A: 0xFF}), 0o600); err != nil {
@@ -212,6 +219,7 @@ func TestStagePathImageThumb(t *testing.T) {
 
 // TestStagePathImageTooLarge 拖入的图片超过单图上限：与贴图同口径，先拦下并报因。
 func TestStagePathImageTooLarge(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	path := filepath.Join(t.TempDir(), "大图.png")
 	f, err := os.Create(path)
@@ -247,6 +255,7 @@ func waitThumb(t *testing.T, u *UI) {
 
 // TestThumbBudget 缩略图预算门：像素数超预算就不解（回落回形针），不报错。
 func TestThumbBudget(t *testing.T) {
+	t.Parallel()
 	data := pngBytes(t, 20, 20, color.NRGBA{A: 0xFF})
 	if th := loadThumbLimit(bytes.NewReader(data), 100); th != nil {
 		t.Fatal("超预算不应解码（400 > 100）")
@@ -261,6 +270,7 @@ func TestThumbBudget(t *testing.T) {
 
 // TestThumbSquare 缩略图等比居中留在方图里（不拉伸变形）。
 func TestThumbSquare(t *testing.T) {
+	t.Parallel()
 	src := image.NewNRGBA(image.Rect(0, 0, 40, 10))
 	img := scaleToSquare(src, 40)
 	if img.Bounds().Size() != image.Pt(40, 40) {
@@ -275,6 +285,7 @@ func TestThumbSquare(t *testing.T) {
 // TestThumbChipRenders 带缩略图的 chip 能正常出帧，且比回形针 chip 宽（图标从 12dp 到
 // 20dp）——量测与绘制同源，否则这里会露出宽度错位。
 func TestThumbChipRenders(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	q := new(input.Router)
 	u.m.stageBlob(conversation.BlobRef{Hash: "h1", Name: "图.png", MIME: "image/png", Size: 9})

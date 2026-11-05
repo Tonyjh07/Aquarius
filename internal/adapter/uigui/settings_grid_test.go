@@ -23,6 +23,7 @@ import (
 
 // TestModuleGridDrawsInsideRow 网格内容必须落在行宽之内（左三分之一不能是空白）。
 func TestModuleGridDrawsInsideRow(t *testing.T) {
+	t.Parallel()
 	const (
 		viewW, viewH = 600, 200
 		pxPerDp      = 1.25
@@ -74,6 +75,7 @@ func TestModuleGridDrawsInsideRow(t *testing.T) {
 
 // TestModuleGridCancelScopedToPress 一次不属于本磁贴的 Cancel 不得清掉拖动状态。
 func TestModuleGridCancelScopedToPress(t *testing.T) {
+	t.Parallel()
 	f := &settingsForm{}
 	pf := &promptModuleForm{}
 	pf.name.SetText("house")

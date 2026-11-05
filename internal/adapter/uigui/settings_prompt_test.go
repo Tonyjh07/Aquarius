@@ -39,6 +39,7 @@ func promptSnapshot() SettingsSnapshot {
 // TestPromptsFormLoad 快照填表：模块行（名称/正文/子模块）与人格引用行（保序）就位，
 // 内置模块清单进表单。
 func TestPromptsFormLoad(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return promptSnapshot() },
 		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -67,6 +68,7 @@ func TestPromptsFormLoad(t *testing.T) {
 // TestPromptModuleAssembleAndSave 保存组装：views 跳过空名行、children 切分去重；
 // patch 带 PromptModules/PromptPersona；人格有变 → 反馈标注「只对新会话生效」。
 func TestPromptModuleAssembleAndSave(t *testing.T) {
+	t.Parallel()
 	var gotPatch SettingsPatch
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return promptSnapshot() },
@@ -114,6 +116,7 @@ func TestPromptModuleAssembleAndSave(t *testing.T) {
 
 // TestPromptRefReorderAndDelete 引用上/下移与删除（越界 no-op）。
 func TestPromptRefReorderAndDelete(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings: func() SettingsSnapshot {
 			return SettingsSnapshot{PromptPersona: []string{"a", "b", "c"}}
@@ -142,6 +145,7 @@ func TestPromptRefReorderAndDelete(t *testing.T) {
 // TestPromptsPreview 组合预览：PreviewPrompts 收到的就是表单现状（模块 + 引用 + 兜底），
 // 结果写进 f.promptPrev 并渲染。
 func TestPromptsPreview(t *testing.T) {
+	t.Parallel()
 	var gotNodes []PromptModuleView
 	var gotPersona []string
 	var gotLegacy string
@@ -179,6 +183,7 @@ func TestPromptsPreview(t *testing.T) {
 // TestSettingsPromptPageRendersPrompts 离屏渲染：「系统提示词」页（S7b/D145 起独立成页）按真窗
 // 尺寸光栅化后，页内容区下半幅确有内容（模块行/预览确实画出；防「新增行没挂进 pageRows」）。
 func TestSettingsPromptPageRendersPrompts(t *testing.T) {
+	t.Parallel()
 	const (
 		viewW, viewH = 900, 700
 		pxPerDp      = 1.25
@@ -249,6 +254,7 @@ func TestSettingsPromptPageRendersPrompts(t *testing.T) {
 // 行数恒为 1：模块增删只改网格内容、不改行计划（这正是「一屏看到全部模块」的实现
 // 方式），所以断言的是「网格行存在且唯一」，不是「行数 == 模块数」。
 func TestPromptPageHasModuleGridRow(t *testing.T) {
+	t.Parallel()
 	f := &settingsForm{page: pagePrompt}
 	for _, n := range []string{"house", "identity", "style"} {
 		pf := &promptModuleForm{}
@@ -274,6 +280,7 @@ func TestPromptPageHasModuleGridRow(t *testing.T) {
 // TestModuleGridMove 拖动落位 = 数组重排（D148）：从 i 挪到 j 后，原 i 的模块应
 // 落在 j 位，其余保持相对顺序。
 func TestModuleGridMove(t *testing.T) {
+	t.Parallel()
 	names := []string{"a", "b", "c", "d", "e"}
 	build := func() *settingsForm {
 		f := &settingsForm{}
@@ -317,6 +324,7 @@ func TestModuleGridMove(t *testing.T) {
 // 模块名就是身份：引用列表里存的是名字，改名后不同步 = 组合里那一段凭空消失，
 // 而表单上看着一切正常（引用名还在，只是再也对不上任何模块）。
 func TestModuleEditorRenameSyncsRefs(t *testing.T) {
+	t.Parallel()
 	f := &settingsForm{page: pagePrompt}
 	pf := &promptModuleForm{}
 	pf.name.SetText("house")
@@ -349,6 +357,7 @@ func TestModuleEditorRenameSyncsRefs(t *testing.T) {
 // TestModuleEditorAddAndDelete 弹窗的新增/删除（D148）：新增追加一个模块行，
 // 删除按弹窗打开时的下标移除。
 func TestModuleEditorAddAndDelete(t *testing.T) {
+	t.Parallel()
 	f := &settingsForm{page: pagePrompt}
 	f.openModuleEditor(-1)
 	f.modEdit.name.SetText("fresh")
@@ -367,6 +376,7 @@ func TestModuleEditorAddAndDelete(t *testing.T) {
 // TestModuleMetaRefCount 磁贴元信息给出「组/叶 + 被引用次数」（D148）：
 // 改了模块却不知道有没有被用上，就只能靠记忆去比对引用段。
 func TestModuleMetaRefCount(t *testing.T) {
+	t.Parallel()
 	pf := &promptModuleForm{}
 	pf.name.SetText("house")
 	pf.children.SetText("a, b")

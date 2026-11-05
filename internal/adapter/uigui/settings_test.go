@@ -36,6 +36,7 @@ func fillSnapshot() SettingsSnapshot {
 
 // TestNewSettingsFormSnapshot 快照填表：各控件取到同名键值；密钥字段恒空（D35）。
 func TestNewSettingsFormSnapshot(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return fillSnapshot() },
 		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -59,6 +60,7 @@ func TestNewSettingsFormSnapshot(t *testing.T) {
 // TestNewSettingsFormDefaults 快照空值：权限对齐默认档 strict（防误发切换）、
 // 主题对齐 system、档位 = 未设、无人值守为关。
 func TestNewSettingsFormDefaults(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{Settings: func() SettingsSnapshot { return SettingsSnapshot{} }})
 	f := newSettingsForm(u)
 	if f.perm.value() != "strict" {
@@ -75,6 +77,7 @@ func TestNewSettingsFormDefaults(t *testing.T) {
 // TestSettingsUnattendedRow D185：无人值守开关在「常规」页权限区、紧跟权限等级行
 // （同一个议题的开关不该散到别的页）；快照 true 时勾上、保存回写 patch。
 func TestSettingsUnattendedRow(t *testing.T) {
+	t.Parallel()
 	var got SettingsPatch
 	snap := fillSnapshot()
 	snap.Unattended = true
@@ -115,6 +118,7 @@ func TestSettingsUnattendedRow(t *testing.T) {
 // TestSettingsBackupKeepRow D254：备份代数行在「常规」页「存储」区；快照回填后
 // 保存进 patch，越界（<1 或 >20）就地拦下不落盘。
 func TestSettingsBackupKeepRow(t *testing.T) {
+	t.Parallel()
 	var got SettingsPatch
 	snap := fillSnapshot()
 	snap.BackupKeep = 5
@@ -162,6 +166,7 @@ func TestSettingsBackupKeepRow(t *testing.T) {
 
 // TestNewSettingsFormReadOnly 无任何回调 = 只读占位（空表 + 保存报错）。
 func TestNewSettingsFormReadOnly(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	f := newSettingsForm(u)
 	if !f.readOnly {
@@ -176,6 +181,7 @@ func TestNewSettingsFormReadOnly(t *testing.T) {
 // TestSaveSettingsHeadless 保存流全链：patch 组装 → 写回调 → 内核命令入队（inCh）
 // → 主题热生效（事件循环消息）→ 快捷键原子槽 → 反馈与快照基准更新。
 func TestSaveSettingsHeadless(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	var gotPatch SettingsPatch
 	called := 0
@@ -241,6 +247,7 @@ func TestSaveSettingsHeadless(t *testing.T) {
 // TestSaveSettingsErrors 错误路径：写回调失败/快捷键非法均不排队命令、不热生效、
 // 反馈错误态；快捷键非法在写回调之前拦截（不落盘）。
 func TestSaveSettingsErrors(t *testing.T) {
+	t.Parallel()
 	t.Run("写回调失败", func(t *testing.T) {
 		restoreLight(t)
 		u := newHeadless(t, Options{
@@ -285,6 +292,7 @@ func TestSaveSettingsErrors(t *testing.T) {
 // TestSaveSettingsThemeUnchanged 主题档未改动 = 不投递 themeMsg（活动快照指针
 // 不换；applyTheme 每次投递都会存新指针，可作跳过判据）。
 func TestSaveSettingsThemeUnchanged(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u := newHeadless(t, Options{
 		Theme:         "light",
@@ -308,6 +316,7 @@ func TestSaveSettingsThemeUnchanged(t *testing.T) {
 // zoom 槽热更（下帧 Metric 咽喉点生效）、窗口尺寸 headless no-op（mainHWND=0）、
 // 快照基准更新含新字段。
 func TestSaveSettingsZoomKnobs(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	var gotPatch SettingsPatch
 	u := newHeadless(t, Options{
@@ -351,6 +360,7 @@ func TestSaveSettingsZoomKnobs(t *testing.T) {
 // TestSaveSettingsZoomDefaults 空快照旋钮归一：缩放/字号空值填表为缺省（1.0/15），
 // 窗口尺寸空 = 保持缺省（0）——保存不误写非零。
 func TestSaveSettingsZoomDefaults(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	var gotPatch SettingsPatch
 	u := newHeadless(t, Options{
@@ -375,6 +385,7 @@ func TestSaveSettingsZoomDefaults(t *testing.T) {
 // 不碰写回调、不投递事件、不动快照基准；合法输入也只产出 patch。保存流之所以能先拦后提交，
 // 靠的就是这一条——校验失败时磁盘与界面状态都不该发生任何变化。
 func TestPatchHasNoSideEffects(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	called := 0
 	u := newHeadless(t, Options{
@@ -424,6 +435,7 @@ func TestPatchHasNoSideEffects(t *testing.T) {
 
 // TestSaveSettingsZoomErrors 旋钮非法输入在写回调之前拦截（不落盘、不热更）。
 func TestSaveSettingsZoomErrors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		font, w, h string
@@ -463,6 +475,7 @@ func TestSaveSettingsZoomErrors(t *testing.T) {
 // TestSaveSettingsFullGroupsHeadless 全量分组页保存流（S4/D110③）：输出布尔恒写、
 // 限制数值空 = 不改/非法拦截、提示词恒写、raw JSON 改动进 patch。
 func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	var got SettingsPatch
 	u := newHeadless(t, Options{
@@ -520,6 +533,7 @@ func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
 // 改动后反馈明说「重启后生效」。语言名按惯例各用自己那套写法（English / 简体中文），不随
 // 当前界面语言变。
 func TestSettingsLangRow(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u := newHeadless(t, Options{
 		Settings: func() SettingsSnapshot {

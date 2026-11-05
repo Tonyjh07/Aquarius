@@ -25,6 +25,7 @@ import (
 //
 // 组内留边距会让相邻行的卡之间插进一段白，竖边逐行断开；卡内行距由内容的内边距给。
 func TestCardPadOnlyAtGroupBoundary(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		first, last      bool
 		wantTop, wantBot int
@@ -48,6 +49,7 @@ func TestCardPadOnlyAtGroupBoundary(t *testing.T) {
 // 判据：沿卡左竖边扫出的长段（≥40px，即真正的边框而非圆角/文字噪点）数量必须接近
 // 可见的分组数。逐行断边时每个卡行各成一段，长段数会随行数线性增长。
 func TestSettingsCardEdgeContinuous(t *testing.T) {
+	t.Parallel()
 	const (
 		viewW, viewH = 900, 740
 		pxPerDp      = 1.25

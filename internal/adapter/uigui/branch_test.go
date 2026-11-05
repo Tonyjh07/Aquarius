@@ -65,6 +65,7 @@ func newBranchUI(tree port.TreeView) *UI {
 // （分叉条跳过空 ID 块 → /goto 后再发消息、分叉已建但按钮不出现），user 节点
 // commit 时应按「最早未盖章且文本一致」回填 ID，分叉条随即出现。
 func TestCommitStampsUserEcho(t *testing.T) {
+	t.Parallel()
 	// 新消息节点 n2 与旧分支 a_old 是同级（树里孩子数 2，用户实测场景）。
 	u := newBranchUI(fakeTree{
 		"n2": {IDs: []conversation.MessageID{"a_old", "n2"}, Index: 1},
@@ -90,6 +91,7 @@ func TestCommitStampsUserEcho(t *testing.T) {
 // TestCommitStampMatching D87 匹配规则：重名文本按 FIFO 对齐；文本不一致不盖章；
 // 命令行回显（永不为节点文本）不被错盖。
 func TestCommitStampMatching(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTree{})
 	m := u.m
 	m.submit("hi")
@@ -114,6 +116,7 @@ func TestCommitStampMatching(t *testing.T) {
 // 空正文不产生 assistant 块 → 转写里没有任何带 ID 的块 → 分叉条无处可挂，
 // 「切到该分支后切不回」（S1-1f 用户实测）。锚点应回填到本轮 chip/思考块上。
 func TestReplayToolTurnAnchorsFork(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTree{
 		"a1": {IDs: []conversation.MessageID{"a1", "u2"}, Index: 0},
 	})
@@ -150,6 +153,7 @@ func TestReplayToolTurnAnchorsFork(t *testing.T) {
 // TestCommitToolTurnAnchorsChip D89 live 路径：本轮 chip 由 ToolCallEvent 先行入块，
 // CommittedEvent 到达时正文为空 → chip 块应按调用 ID 回填节点 ID。
 func TestCommitToolTurnAnchorsChip(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTree{
 		"a1": {IDs: []conversation.MessageID{"a1", "u2"}, Index: 0},
 	})
@@ -180,6 +184,7 @@ func TestCommitToolTurnAnchorsChip(t *testing.T) {
 // TestBranchStrips 分叉条生成（D81）：仅「带节点 ID 且同级 ≥2」的正文块生成一条；
 // 同级唯一的节点、无 ID 的块（notice/思考/命令输出）都不生成；对齐随气泡。
 func TestBranchStrips(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTree{
 		"u1": {IDs: []conversation.MessageID{"u1"}, Index: 0},             // 独子 → 不生成
 		"a1": {IDs: []conversation.MessageID{"a1", "a2", "a3"}, Index: 1}, // 三分叉 → 生成
@@ -206,6 +211,7 @@ func TestBranchStrips(t *testing.T) {
 
 // TestBranchStripsAlignWithUserBubble user 气泡右对齐 → 其分叉条同样右对齐。
 func TestBranchStripsAlignWithUserBubble(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTree{"u1": {IDs: []conversation.MessageID{"u1", "u2"}, Index: 1}})
 	u.m.addMsg(blockUser, "问", "u1")
 	strips := u.branchStrips()
@@ -216,6 +222,7 @@ func TestBranchStripsAlignWithUserBubble(t *testing.T) {
 
 // TestBranchStripsNoTree Tree 未注入（nil）→ 不生成任何分叉条（默认安全）。
 func TestBranchStripsNoTree(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addMsg(blockUser, "问", "u1")
 	if got := u.branchStrips(); got != nil {
@@ -226,6 +233,7 @@ func TestBranchStripsNoTree(t *testing.T) {
 // TestFrameItemsInsertBranch 分叉条紧跟其所属正文块插入，且**不占行选键**
 // （selCount=0）——分叉条增删不漂移其它行的选择序号（D63/D66 键稳定性）。
 func TestFrameItemsInsertBranch(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTree{"a1": {IDs: []conversation.MessageID{"a1", "a2"}, Index: 0}})
 	u.m.addMsg(blockUser, "问", "")
 	u.m.addMsg(blockAssistant, "答", "a1")
@@ -255,6 +263,7 @@ func TestFrameItemsInsertBranch(t *testing.T) {
 // TestGotoBranchDispatch 切换投递（D81）：以 `/goto <兄弟id>` 经输入通道走内核命令
 // 路径（壳内不旁路）；边界不环绕；输入缓冲满 → 提示而非静默丢弃。
 func TestGotoBranchDispatch(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(nil)
 	ids := []conversation.MessageID{"n1", "n2", "n3"}
 
@@ -295,6 +304,7 @@ func TestGotoBranchDispatch(t *testing.T) {
 // ——/goto 停在消息节点上时其回答不在 Head 路径上，切用户消息版本会只剩半截；
 // 端口不可用回退兄弟 id（上方用例 nil 树即此口径）。
 func TestGotoBranchDispatchTail(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTreeTail{
 		fakeTree: fakeTree{},
 		tails:    map[conversation.MessageID]conversation.MessageID{"n1": "old_leaf"},
@@ -320,6 +330,7 @@ func TestGotoBranchDispatchTail(t *testing.T) {
 // 指针路由与 Clickable 的帧序在 Gio 无窗口 Router 下不稳定，故"按下-抬起"用
 // Clickable 的程序化点击表达（同一 Clicked 通路）；几何由 hover 独立证明。
 func TestBranchClickDispatches(t *testing.T) {
+	t.Parallel()
 	u := newBranchUI(fakeTree{"a1": {IDs: []conversation.MessageID{"a1", "a2"}, Index: 0}})
 	u.m.addMsg(blockUser, "问", "")
 	u.m.addMsg(blockAssistant, "答", "a1")

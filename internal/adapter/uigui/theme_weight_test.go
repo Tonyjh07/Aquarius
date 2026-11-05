@@ -111,6 +111,7 @@ func weightProbeTheme(t *testing.T) *material.Theme {
 // text.NoSystemFonts() 把系统字体扫描关掉（两者都会让 Bold 退化成 Regular），
 // 本条立刻失败。
 func TestWeightTiersBoldIsHeavier(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("AQUARIUS_SKIP_PIXEL") != "" {
 		t.Skip("AQUARIUS_SKIP_PIXEL 已设")
 	}
@@ -139,6 +140,7 @@ func TestWeightTiersBoldIsHeavier(t *testing.T) {
 // 换到了带 Medium 的家族——那是好消息，但必须同步更新 docs/gui-design.md §15.4 与 D147
 // 的「二元档」结论，否则文档就与实现脱节了。
 func TestWeightTiersNoMediumFace(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("AQUARIUS_SKIP_PIXEL") != "" {
 		t.Skip("AQUARIUS_SKIP_PIXEL 已设")
 	}

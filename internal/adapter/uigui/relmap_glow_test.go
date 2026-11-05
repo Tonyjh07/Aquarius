@@ -15,6 +15,7 @@ import (
 // TestGlowSweepCoversRing 扫亮进度与可见周长严格对应：p = 0 什么都不画、p = 1 整圈画满，
 // 中途可见长度 = p（八段带子的起点是 0,1/8,…,7/8 的一个排列——「从顶边中点顺时针」）。
 func TestGlowSweepCoversRing(t *testing.T) {
+	t.Parallel()
 	seen := map[float64]bool{}
 	for side := 0; side < 4; side++ {
 		for half := 0; half < 2; half++ {
@@ -56,6 +57,7 @@ func TestGlowSweepCoversRing(t *testing.T) {
 // TestGlowEntersAndExits 时间线档位（§5.6.2）：进入先亮到 0.85 再扫亮，扫完呼吸到 0.7；
 // 退出 160ms 淡到 0；静止即停（不再续帧）。
 func TestGlowEntersAndExits(t *testing.T) {
+	t.Parallel()
 	g := newRelGraph()
 	ms := time.Millisecond
 	t0 := time.Now()
@@ -98,6 +100,7 @@ func TestGlowEntersAndExits(t *testing.T) {
 
 // TestGlowMidFlightReversal 进了又退：从当前亮度接着淡，不跳变（扫亮进度不动）。
 func TestGlowMidFlightReversal(t *testing.T) {
+	t.Parallel()
 	g := newRelGraph()
 	ms := time.Millisecond
 	t0 := time.Now()
@@ -121,6 +124,7 @@ func TestGlowMidFlightReversal(t *testing.T) {
 // TestGlowBandsFillRing 八段带子正好铺满整圈环带：面积逐项相加 = 外框 − 内框（斜面拼接
 // 既不留缝也不重叠，闭合是精确的）。这条断言同时锁住两端的 45° 斜切几何。
 func TestGlowBandsFillRing(t *testing.T) {
+	t.Parallel()
 	const W, H, w float32 = 640, 480, 12
 	total := 0.0
 	for side := 0; side < 4; side++ {
@@ -149,6 +153,7 @@ func relQuadArea(q [4]f32.Point) float64 {
 // TestGlowDrawsInEditMode 编辑态整帧能画出来（八段渐变 + 圆角裁剪不越界），且非编辑态
 // 一个 op 都不多（drawGlow 空转）。
 func TestGlowDrawsInEditMode(t *testing.T) {
+	t.Parallel()
 	tree := &fakeRelTree{g: relFixtureGraph(), editOn: true}
 	u := newHistUI(tree, fakeLister(nil))
 	st := newHistoryState(u)

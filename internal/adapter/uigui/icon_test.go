@@ -35,6 +35,7 @@ func mkICO(entries []struct {
 
 // TestICOImagePicksNearest 条目选择：取尺寸最接近 wantPx 的图像。
 func TestICOImagePicksNearest(t *testing.T) {
+	t.Parallel()
 	data := mkICO([]struct {
 		w       int
 		payload string
@@ -56,6 +57,7 @@ func TestICOImagePicksNearest(t *testing.T) {
 // TestICOImageTrayAsset 内嵌托盘图标可解析出 trayIconPx 档图像（单二进制取图标路径），
 // 且解析出的必须是**那一档**的条目（否则平台侧传的就不是预期分辨率的位图）。
 func TestICOImageTrayAsset(t *testing.T) {
+	t.Parallel()
 	if len(assets.TrayICO) == 0 {
 		t.Fatal("assets.TrayICO 未内嵌")
 	}
@@ -102,6 +104,7 @@ func icoEntryWidth(t *testing.T, data, payload []byte) int {
 
 // TestICOImageRejectsGarbage 非法输入报错（不 panic，回落由调用方处理）。
 func TestICOImageRejectsGarbage(t *testing.T) {
+	t.Parallel()
 	cases := map[string][]byte{
 		"空":     nil,
 		"短":     {0, 0, 1},

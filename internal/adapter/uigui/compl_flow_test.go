@@ -14,6 +14,7 @@ func newInputRouter() *input.Router { return new(input.Router) }
 // TestComplOverlayFlow 浮层帧流（headless，D250）：空格进入参数相而不是关闭、命令相
 // 前缀过滤、Esc 搁置与文本变更重开、未声明参数的命令也给一行提示。
 func TestComplOverlayFlow(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 
 	u.editor.SetText("/e")
@@ -60,6 +61,7 @@ func TestComplOverlayFlow(t *testing.T) {
 // TestComplTabRotation Tab 轮换（D250）：首按锁定候选并填第一项，此后每按依次替换同一
 // 段 token，候选表不随文本变窄；换行时高亮跟着走。
 func TestComplTabRotation(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 	u.editor.SetText("/e")
 	complFrame(q, u)
@@ -104,6 +106,7 @@ func TestComplTabRotation(t *testing.T) {
 // TestComplTabArgs 参数相 Tab 只替换末尾 token，不吞掉前面已写好的参数（含中文参数
 // 名——按 rune 换算光标才不偏）。
 func TestComplTabArgs(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 	u.editor.SetText("/effort m")
 	complFrame(q, u)
@@ -130,6 +133,7 @@ func TestComplTabArgs(t *testing.T) {
 // TestComplShiftTabReverse Shift+Tab 与 Tab 同一套轮换、方向相反（D250）：首按落到末项，
 // 此后后退并环回；Tab 接着按仍往前走。
 func TestComplShiftTabReverse(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 	u.editor.SetText("/e")
 	complFrame(q, u)
@@ -175,6 +179,7 @@ func TestComplShiftTabReverse(t *testing.T) {
 
 // TestComplEnterSubmits Enter 恒提交（D250）：浮层开着也直接发出去，不补全。
 func TestComplEnterSubmits(t *testing.T) {
+	t.Parallel()
 	u := newEditUI() // inCh 可断言
 	u.opts.Commands = fakeCatalog{list: complFixture()}
 	u.focusPending = true
@@ -204,6 +209,7 @@ func TestComplEnterSubmits(t *testing.T) {
 // TestComplNoTabInText 补全落笔不带尾随空白（D250）：带空格的话下一次 Tab 就从「新参数
 // 开头」重新起一轮，轮换再也接不上。
 func TestComplNoTabInText(t *testing.T) {
+	t.Parallel()
 	u, q := complFixtureUI()
 	u.editor.SetText("/e")
 	complFrame(q, u)

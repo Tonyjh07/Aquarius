@@ -55,6 +55,7 @@ func ctx5(t *testing.T) (context.Context, context.CancelFunc) {
 // TestEmitAndSayApplied Emit/Say 从外部 goroutine 投递 → 状态机可见
 // （流式草稿、committed 定稿替换、纯文本行）。
 func TestEmitAndSayApplied(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	ctx := context.Background()
 
@@ -87,6 +88,7 @@ func TestEmitAndSayApplied(t *testing.T) {
 
 // TestSayEmptyIgnored 空文本不入转写（与 uitui 同口径）。
 func TestSayEmptyIgnored(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	u.Say("")
 	drainSync(t, u)
@@ -99,6 +101,7 @@ func TestSayEmptyIgnored(t *testing.T) {
 // 广播（粘滞+同时可见），旧一次性标记会被随机 select 吞掉（uitui 审查修复同款）；
 // 此后 Next 持续返回 EOF。
 func TestNextDrainsQueuedInputBeforeEOF(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	u.post(inputMsg{text: "第一行"})
 	u.post(inputMsg{text: "/quit"})
@@ -124,6 +127,7 @@ func TestNextDrainsQueuedInputBeforeEOF(t *testing.T) {
 
 // TestNextSurfacesError eofMsg 携带的底层错误原样上抛（不静默当 EOF 掩盖故障）。
 func TestNextSurfacesError(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	boom := errors.New("读取输入故障")
 	u.post(eofMsg{err: boom})
@@ -139,6 +143,7 @@ func TestNextSurfacesError(t *testing.T) {
 // TestConfirmRejectsOnEOF 输入流结束时确认不得永久挂起——返回拒绝（对齐 repl
 // "不替用户做破坏性决定"），并同步收尾确认态；随后 Next 仍见 EOF。
 func TestConfirmRejectsOnEOF(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	u.post(eofMsg{})
 	drainSync(t, u)
@@ -161,6 +166,7 @@ func TestConfirmRejectsOnEOF(t *testing.T) {
 // TestConfirmDrainsQueuedAnswer 排队输入在确认打开前已入队——Confirm 必须把它
 // 当应答取走（否则与已关闭的 eofCh 同时就绪时随机选中会把 y 误拒），后续行保留给 Next。
 func TestConfirmDrainsQueuedAnswer(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	u.post(inputMsg{text: "y"})
 	u.post(inputMsg{text: "/quit"})
@@ -185,6 +191,7 @@ func TestConfirmDrainsQueuedAnswer(t *testing.T) {
 // TestConfirmFromModelReply 模型侧应答（输入栏允许/拒绝按钮 → replyConfirm 经
 // 事件循环应用）是 Confirm 的主路径。
 func TestConfirmFromModelReply(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	ctx, cancel := ctx5(t)
 	defer cancel()
@@ -220,6 +227,7 @@ func TestConfirmFromModelReply(t *testing.T) {
 // TestInterruptGenerating 生成中标志驱动停止键（§15.2）：SetInterrupt 非空 = 一轮
 // Turn 进行中；nil 收轮；interruptNow 触发取消。
 func TestInterruptGenerating(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	if u.generating.Load() {
 		t.Fatal("初始不应为生成中")
@@ -245,6 +253,7 @@ func TestInterruptGenerating(t *testing.T) {
 
 // TestCloseIdempotentAndPostSafe Close 幂等；循环退出后的 post 静默丢弃不阻塞。
 func TestCloseIdempotentAndPostSafe(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	u.Say("在循环退出前")
 	if err := u.Close(); err != nil {
@@ -269,6 +278,7 @@ func TestCloseIdempotentAndPostSafe(t *testing.T) {
 // TestStatusTextPhase 状态行（§15.1）：仅生成时显示，思考阶段显示"思考中"。
 // 本测试不向 inbox 投递消息，u.m 无并发写者（t.Cleanup 的 drain 不触碰状态机字段）。
 func TestStatusTextPhase(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Status: func() Status { return Status{Model: "m", Level: "strict"} },
 	})
@@ -289,6 +299,7 @@ func TestStatusTextPhase(t *testing.T) {
 // TestStatusTextUnattended D185 口径五：无人值守开启时状态行常驻标记（空闲也显示），
 // 生成态并列在最后；关闭后回到原状。理由：用户回来只看到一串「已拒绝」会当成 bug。
 func TestStatusTextUnattended(t *testing.T) {
+	t.Parallel()
 	on := true
 	u := newHeadless(t, Options{
 		Status: func() Status { return Status{Model: "m", Level: "strict", Unattended: on} },
@@ -317,6 +328,7 @@ func TestStatusTextUnattended(t *testing.T) {
 // TestExpandMsgs 呼出/互切消息（§15.1）：showExpand 展开并置焦点入栏；
 // toggleExpand 互切、展开时置焦点。drainSync 提供 happens-before 后读取无竞争。
 func TestExpandMsgs(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 
 	u.collapsed = true

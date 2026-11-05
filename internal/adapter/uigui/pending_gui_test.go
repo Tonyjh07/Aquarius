@@ -99,6 +99,7 @@ func testGtx() layout.Context {
 }
 
 func TestSubmitDuringGenerationGoesToPending(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.editor.SetText("顺便看一眼日志")
@@ -122,6 +123,7 @@ func TestSubmitDuringGenerationGoesToPending(t *testing.T) {
 }
 
 func TestSteerSubmitDuringGeneration(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.editor.SetText("插一句")
@@ -134,6 +136,7 @@ func TestSteerSubmitDuringGeneration(t *testing.T) {
 }
 
 func TestSteerSubmitWhenIdleFallsBackToSend(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, false) // 空闲：插话键与发送等价
 	u.editor.SetText("正常一句")
@@ -154,6 +157,7 @@ func TestSteerSubmitWhenIdleFallsBackToSend(t *testing.T) {
 }
 
 func TestRecallPendingMergesWithDraft(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	_, _ = p.Add("待发那句", port.DeliveryQueue)
@@ -176,6 +180,7 @@ func TestRecallPendingMergesWithDraft(t *testing.T) {
 }
 
 func TestTogglePendingDelivery(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	_, _ = p.Add("一条", port.DeliveryQueue)
@@ -191,6 +196,7 @@ func TestTogglePendingDelivery(t *testing.T) {
 }
 
 func TestPendingFullShowsNotice(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{max: 1}
 	u := newPendingUI(p, true)
 	_, _ = p.Add("先来一条", port.DeliveryQueue)
@@ -213,6 +219,7 @@ func TestPendingFullShowsNotice(t *testing.T) {
 
 // TestCommandDuringGenerationStaysQueued 命令不进清单：它照旧走输入通道，等本轮之后执行。
 func TestCommandDuringGenerationStaysQueued(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.editor.SetText("/compact")
@@ -234,6 +241,7 @@ func TestCommandDuringGenerationStaysQueued(t *testing.T) {
 
 // TestEditDuringGenerationNotPending 编辑既有消息走结构化 /edit（命令），不进清单。
 func TestEditDuringGenerationNotPending(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.m.editTarget = "n1"
@@ -256,6 +264,7 @@ func TestEditDuringGenerationNotPending(t *testing.T) {
 
 // TestConfirmStateNeverPends 确认态下键入是应答，不进清单也不进输入通道（§15.2）。
 func TestConfirmStateNeverPends(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.m.confirm = &pendingConfirm{prompt: "允许执行？", reply: make(chan port.ConfirmAnswer, 1)}
@@ -275,6 +284,7 @@ func TestConfirmStateNeverPends(t *testing.T) {
 
 // TestAttachDuringGenerationQueues 带附件的输入不进清单（清单只收纯文本，§5.19 边界）。
 func TestAttachDuringGenerationQueues(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.m.stagedFiles = []stagedAtt{{path: "C:/tmp/a.txt"}}
@@ -297,6 +307,7 @@ func TestAttachDuringGenerationQueues(t *testing.T) {
 
 // TestPendingBandRenders 待发条能真的画出来（一行、两行、超 3 行折计数），不 panic。
 func TestPendingBandRenders(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	u.th = testTheme()
@@ -312,6 +323,7 @@ func TestPendingBandRenders(t *testing.T) {
 }
 
 func TestPendingBandHeight(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	u := newPendingUI(p, true)
 	if got := u.pendingBandPx(testGtx()); got != 0 {

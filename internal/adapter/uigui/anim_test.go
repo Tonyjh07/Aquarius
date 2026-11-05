@@ -12,6 +12,7 @@ import (
 // TestCssEase 消息区曲线 = CSS ease = cubic-bezier(.25,.1,.25,1)（D54 拍板）：端点精确、
 // 区间内单调不越界、先快后慢（中点已过 ~0.8）。
 func TestCssEase(t *testing.T) {
+	t.Parallel()
 	if cssEase(0) != 0 || cssEase(1) != 1 {
 		t.Fatalf("端点: cssEase(0)=%v cssEase(1)=%v, want 0/1", cssEase(0), cssEase(1))
 	}
@@ -46,6 +47,7 @@ func TestCssEase(t *testing.T) {
 
 // TestBackOut 输入栏轻回弹（D54 拍板：easeOutBack c1=1.2 → 峰值过冲约 5.3% ≈ 6%）。
 func TestBackOut(t *testing.T) {
+	t.Parallel()
 	if backOut(0, backOutC1) != 0 || backOut(1, backOutC1) != 1 {
 		t.Fatalf("端点: backOut(0)=%v backOut(1)=%v, want 0/1",
 			backOut(0, backOutC1), backOut(1, backOutC1))
@@ -77,6 +79,7 @@ func TestBackOut(t *testing.T) {
 
 // TestInSine 收起输入栏曲线 = easeInSine：慢起、到球时最快，端点精确且单调。
 func TestInSine(t *testing.T) {
+	t.Parallel()
 	if inSine(0) != 0 || inSine(1) != 1 {
 		t.Fatalf("端点: inSine(0)=%v inSine(1)=%v, want 0/1", inSine(0), inSine(1))
 	}
@@ -102,6 +105,7 @@ func TestInSine(t *testing.T) {
 // TestRevealBand 消息揭示带（D54）：静息 = §15.3 顶带；全隐 = 空带且带顶 = 转写区底；
 // 中途带顶单调上移、带高单调生长，且**带底永远夹在转写区内**（不压状态行/输入行）。
 func TestRevealBand(t *testing.T) {
+	t.Parallel()
 	const h, band = 400, 56
 	if top, bottom := revealBand(1, h, band); top != 0 || bottom != band {
 		t.Fatalf("静息应为 (0,%d), 得 (%d,%d)", band, top, bottom)
@@ -137,6 +141,7 @@ func TestRevealBand(t *testing.T) {
 // 里程碑（0 → logo 圆、split → 胶囊成圆、1 → D49 终位）、split 处连续、缩/长段双间隙
 // 恒 gap（含过冲）、间距单调、两段区间不重叠（缩/长段只改宽、平移段只移位）。
 func TestRowRectsFromSend(t *testing.T) {
+	t.Parallel()
 	const w, top, rowH, gap, margin = 608, 8, 48, 12, 16
 	logo, pillEnd, sendEnd := inputRowRects(w, top, rowH, gap, margin)
 	circle := image.Rect(pillEnd.Min.X, pillEnd.Min.Y, pillEnd.Min.X+rowH, pillEnd.Min.Y+rowH)
@@ -238,6 +243,7 @@ func TestRowRectsFromSend(t *testing.T) {
 // 右钮右缘越过窗宽会被窗边切平（实测 620 > 608）、同帧形裁/overlay 越界；收界**只平移保尺寸**，
 // 窗内 16px 行边距仍留给回弹（D54「越出终位再回落」不落空）；胶囊由夹后 send 导出 → 双间隙仍恒 gap。
 func TestClampRowX(t *testing.T) {
+	t.Parallel()
 	const w, top, rowH, gap, margin = 608, 8, 48, 12, 16
 	logo, pillEnd, sendEnd := inputRowRects(w, top, rowH, gap, margin)
 
@@ -296,6 +302,7 @@ func startAt(u *UI, expand bool) time.Time {
 
 // TestExpandTimeline 展开 700ms 严格先后（D54）：输入栏 260ms 先跑完，消息区 440ms 才起。
 func TestExpandTimeline(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: true}
 	t0 := startAt(u, true)
 	if u.expandAn.stop != nil {
@@ -340,6 +347,7 @@ func TestExpandTimeline(t *testing.T) {
 
 // TestCollapseTimeline 收起 540ms 严格先后（D54）：消息区 320ms 先退，输入栏 220ms 后缩。
 func TestCollapseTimeline(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: false}
 	t0 := startAt(u, false)
 	u.expandAn.advance(t0)
@@ -370,6 +378,7 @@ func TestCollapseTimeline(t *testing.T) {
 // TestExpandReverseNoJump 中途反向（D54）：从当前进度续跑，进度连续不跳变；
 // 无距离的阶段瞬时跳过（反向后不空转吃时长）。
 func TestExpandReverseNoJump(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: true}
 	t0 := startAt(u, true)
 	u.expandAn.advance(t0.Add(65 * time.Millisecond))
@@ -432,6 +441,7 @@ func TestExpandReverseNoJump(t *testing.T) {
 // TestExpandProgressRest 静止态进度由 collapsed 推导（直接翻 collapsed 的调用方不必
 // 手工同步 barP/msgP）；动画中取现算值。
 func TestExpandProgressRest(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat()}
 	if b, m := u.expandProgress(); b != 1 || m != 1 {
 		t.Fatalf("展开静止态应为 (1,1), 得 (%v,%v)", b, m)
@@ -451,6 +461,7 @@ func TestExpandProgressRest(t *testing.T) {
 // TestBeginExpandCollapseFlips 静止态启停（headless 起落 + 逻辑态翻转）：
 // 起点进度必须在翻 collapsed **之前**读到（否则被读成终态、动画零距离瞬时完成）。
 func TestBeginExpandCollapseFlips(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: true}
 	u.beginExpand()
 	if u.collapsed {
@@ -502,6 +513,7 @@ func TestBeginExpandCollapseFlips(t *testing.T) {
 
 // TestToggleExpandReverses 单击 logo = 互切；动画中则反向（D54）。
 func TestToggleExpandReverses(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: true}
 	u.toggleExpand() // 静止收起 → 展开
 	if u.collapsed || !u.expandAn.active || !u.expandAn.expand {
@@ -524,6 +536,7 @@ func TestToggleExpandReverses(t *testing.T) {
 // （逻辑态），几何由 expandAn 从当前进度续跑；headless 不起 ticker。
 // drainSync 给 happens-before 后事件循环空转，测试可直接推进度再投下一条消息。
 func TestExpandMsgsDriveAnim(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 
 	u.collapsed = true
@@ -584,6 +597,7 @@ func TestExpandMsgsDriveAnim(t *testing.T) {
 
 // TestClampedBand 淡出带夹取（D54）：带范围夹进当前窗口，绝不越窗/倒置。
 func TestClampedBand(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), frameSize: image.Pt(100, 300)}
 	u.bandTop, u.bandBottom = 10, 66
 	if top, bottom := u.clampedBand(); top != 10 || bottom != 66 {
@@ -601,6 +615,7 @@ func TestClampedBand(t *testing.T) {
 
 // TestClampedLowBand 底部矮带夹取（D79）：夹进当前窗口，倒置/越界一律退化为空区间 = 关。
 func TestClampedLowBand(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), frameSize: image.Pt(100, 300)}
 	u.bandLowTop, u.bandLowEnd = 288, 300 // 常规：转写区底 300、带高 12
 	if top, end := u.clampedLowBand(); top != 288 || end != 300 {
@@ -626,6 +641,7 @@ func TestClampedLowBand(t *testing.T) {
 
 // TestStepExpandStopsTicker 动画收尾关停唤帧循环（channel 关闭、句柄清空、幂等）。
 func TestStepExpandStopsTicker(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: true}
 	startAt(u, true)
 	ch := make(chan struct{})
@@ -649,6 +665,7 @@ func TestStepExpandStopsTicker(t *testing.T) {
 // 每像素因子 g(y)（fadeFrame），取代旧「带内整行单绘 + record 剔除带内元素」——带内/
 // 跨带元素一律登记，带底动画位不再影响登记。
 func TestRecordDynamicBand(t *testing.T) {
+	t.Parallel()
 	u := newShapeUI(1)
 	viewport := image.Rect(0, 0, 100, 300)
 	u.bandBottom = 200 // 动画中：带底已下移到 200
@@ -674,6 +691,7 @@ func TestRecordDynamicBand(t *testing.T) {
 // TestPillFadeExpand 淡入：展开输入栏阶段完成（进消息阶段）那一刻触发、180ms CSS ease
 // 淡满（与消息揭示并行）；触发前 bar 阶段内容恒隐；曲线/单调/端点精确。
 func TestPillFadeExpand(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: true}
 	t0 := startAt(u, true)
 	// bar 阶段内（含回弹峰值）内容恒隐：无时间线 → 展开动画保持现值 0。
@@ -710,6 +728,7 @@ func TestPillFadeExpand(t *testing.T) {
 // TestPillFadeCollapse 淡出：消息区先开始、内容后起跑（延迟 140ms）、二者**同一刻结束**
 // （= 消息区收起 320ms 终点）；此后 bar 收缩段胶囊已空（保持 0）。
 func TestPillFadeCollapse(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: false}
 	if a := u.contentAlpha(time.Now()); a != 1 {
 		t.Fatalf("静止展开态内容应 1, 得 %v", a)
@@ -742,6 +761,7 @@ func TestPillFadeCollapse(t *testing.T) {
 // TestPillFadeReverse 收起中途反向（D77）：取消进行中的淡出、保持现值不闪隐；
 // bar 完成后再从现值续淡入到 1。
 func TestPillFadeReverse(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), collapsed: false}
 	if a := u.contentAlpha(time.Now()); a != 1 {
 		t.Fatalf("静止展开态内容应 1, 得 %v", a)

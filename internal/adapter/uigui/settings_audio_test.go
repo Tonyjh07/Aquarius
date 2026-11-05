@@ -28,6 +28,7 @@ func audioSnapshot() SettingsSnapshot {
 // TestAudioPageFillsSnapshot 开窗填表：provider 选择器选中快照值，模型与音色等
 // 文本字段原样落位；语种档按值定位。
 func TestAudioPageFillsSnapshot(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -56,6 +57,7 @@ func TestAudioPageFillsSnapshot(t *testing.T) {
 // TestAudioProviderChoicesKeepUnknown 快照引用了一个已不在 provider 列表里的名字时，
 // 选项里补上它——开窗后直接保存不会把它悄悄改成「未配置」。
 func TestAudioProviderChoicesKeepUnknown(t *testing.T) {
+	t.Parallel()
 	s := audioSnapshot()
 	s.TTSProvider = "removed"
 	u := newHeadless(t, Options{
@@ -74,6 +76,7 @@ func TestAudioProviderChoicesKeepUnknown(t *testing.T) {
 
 // TestSaveIncludesAudio 保存提交带上语音页全部字段（草稿值原样）。
 func TestSaveIncludesAudio(t *testing.T) {
+	t.Parallel()
 	var got SettingsPatch
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
@@ -102,6 +105,7 @@ func TestSaveIncludesAudio(t *testing.T) {
 // TestAudioEndpointRows 语音页的端点与密钥行（D222）：端点回填、密钥框恒空（只写不回显），
 // 行计划里有这两行；填的值原样进 patch。
 func TestAudioEndpointRows(t *testing.T) {
+	t.Parallel()
 	s := audioSnapshot()
 	s.ASRBaseURL = "https://asr.example.com/v1"
 	s.ASRKeySaved, s.ASRKeyRef = true, "secret:AQUARIUS_ASR_API_KEY"
@@ -154,6 +158,7 @@ func TestAudioEndpointRows(t *testing.T) {
 
 // TestFillAudioFromService 「填入」把所选服务的端点与密钥引用抄进该通道（D222）。
 func TestFillAudioFromService(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -186,6 +191,7 @@ func TestFillAudioFromService(t *testing.T) {
 // TestAudioKindAndModelPathRows 协议档与本地模型路径行：开窗回填、保存原样进 patch、
 // 行计划里各有一行。
 func TestAudioKindAndModelPathRows(t *testing.T) {
+	t.Parallel()
 	s := audioSnapshot()
 	s.ASRKind = "whisper"
 	s.ASRModelPath = `C:\models\ggml-base-q5_1.bin`
@@ -223,6 +229,7 @@ func TestAudioKindAndModelPathRows(t *testing.T) {
 
 // TestAudioKindCycleOrder 协议档的展示名与键值一一对应（首项是缺省）。
 func TestAudioKindCycleOrder(t *testing.T) {
+	t.Parallel()
 	if len(asrKindLevels()) != len(asrKindValues) || len(ttsKindLevels()) != len(ttsKindValues) {
 		t.Fatalf("档位展示名与键值数量不一致: %d/%d, %d/%d",
 			len(asrKindLevels()), len(asrKindValues), len(ttsKindLevels()), len(ttsKindValues))
@@ -249,6 +256,7 @@ func TestAudioKindCycleOrder(t *testing.T) {
 // TestPreviewVoiceUsesDraft 试听按草稿的音色/描述/风格合成一句（服务与模型来自装配）；
 // 结果回灌状态行。
 func TestPreviewVoiceUsesDraft(t *testing.T) {
+	t.Parallel()
 	var got port.SpeechRequest
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
@@ -292,6 +300,7 @@ func TestPreviewVoiceUsesDraft(t *testing.T) {
 
 // TestPreviewVoiceFailureAndGuard 失败写进状态行；未接线时直接报因；合成中重复点击不叠加。
 func TestPreviewVoiceFailureAndGuard(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },

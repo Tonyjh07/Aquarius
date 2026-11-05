@@ -39,6 +39,7 @@ func aboutFrame(q *input.Router, u *UI, f *settingsForm, ops *op.Ops) {
 
 // TestAboutPageRows 行计划：身份区 → 构建 → 项目 → 版权；状态行只在有反馈时出现。
 func TestAboutPageRows(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u, f := aboutPageUI(t, "v0.1.0")
 	_ = u
@@ -89,6 +90,7 @@ func TestAboutPageRows(t *testing.T) {
 
 // TestAboutVersionText 版本文案：注入值原样展示；空 / dev 明说开发构建。
 func TestAboutVersionText(t *testing.T) {
+	t.Parallel()
 	devBuild := i18n.T("ui.page.about.dev_build")
 	cases := []struct{ in, want string }{
 		{"v0.1.0", "v0.1.0"},
@@ -123,6 +125,7 @@ func TestAboutVersionText(t *testing.T) {
 
 // TestAboutPageOpenProject 点「打开项目主页」→ 平台按正确 URL 打开；失败落红字反馈。
 func TestAboutPageOpenProject(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u, f := aboutPageUI(t, "v0.1.0")
 	fp := fakeOf(u)
@@ -154,6 +157,7 @@ func TestAboutPageOpenProject(t *testing.T) {
 
 // TestAboutPageCopyLink 点「复制链接」→ 帧内写剪贴板 + 状态行反馈。
 func TestAboutPageCopyLink(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u, f := aboutPageUI(t, "v0.1.0")
 	q := new(input.Router)
@@ -178,6 +182,7 @@ func TestAboutPageCopyLink(t *testing.T) {
 
 // TestAboutPageIcon 图标按目标像素取预缩放图并缓存一档；非法尺寸不取图。
 func TestAboutPageIcon(t *testing.T) {
+	t.Parallel()
 	var c aboutIconCache
 	if _, ok := aboutIconOp(&c, 0); ok {
 		t.Fatal("边长 0 不应取图")
@@ -209,6 +214,7 @@ func TestAboutPageIcon(t *testing.T) {
 
 // TestAboutPageHasNoEditors 关于页没有编辑档：开窗焦点不落到本页。
 func TestAboutPageHasNoEditors(t *testing.T) {
+	t.Parallel()
 	_, f := aboutPageUI(t, "v0.1.0")
 	if ed := (aboutPage{}).FirstEditor(f); ed != nil {
 		t.Fatal("关于页不应有编辑档（开窗不抢焦点）")

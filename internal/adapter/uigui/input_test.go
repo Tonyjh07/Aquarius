@@ -15,6 +15,7 @@ import (
 // TestFadeEditorSelectionPainted D133：淡出源（主窗**可见位图**）必须画出编辑器的选区
 // 高亮。同帧同几何下「有选区 vs 无选区」的差异像素即选区，且必须落在胶囊内。
 func TestFadeEditorSelectionPainted(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.editor.SingleLine = true
 	u.editor.Submit = true

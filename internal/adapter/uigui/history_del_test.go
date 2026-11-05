@@ -77,6 +77,7 @@ func delX(t *testing.T, q *input.Router, u *UI, st *historyState, y int) int {
 // TestHistoryRowDelHoverReveal ✕ 只在指针悬浮该行时显示：不在行上 → 全不显示；
 // 移到第 0 行 → 只有第 0 行显示；移到第 1 行 → 只有第 1 行显示。
 func TestHistoryRowDelHoverReveal(t *testing.T) {
+	t.Parallel()
 	u, st, q := delFixture(t)
 
 	// 指针落在左栏内衬里（不在任何行上）。
@@ -117,6 +118,7 @@ func TestHistoryRowDelHoverReveal(t *testing.T) {
 // TestHistoryRowDelDispatchesRmconv 点行尾「✕」→ `/rmconv <全 ID>`；且**不**同时投 /switch
 // （Gio 把一次点击投给所有命中 handler，而 ✕ 画在行命中区之内）。
 func TestHistoryRowDelDispatchesRmconv(t *testing.T) {
+	t.Parallel()
 	u, st, q := delFixture(t)
 	y := delRowY(t, q, u, st, 0)
 	x := delX(t, q, u, st, y)
@@ -145,6 +147,7 @@ func TestHistoryRowDelDispatchesRmconv(t *testing.T) {
 
 // TestHistoryRowDelModalBlocksBackground 确认弹窗在屏时，行与「✕」都不取事件（模态）。
 func TestHistoryRowDelModalBlocksBackground(t *testing.T) {
+	t.Parallel()
 	u, st, q := delFixture(t)
 	y := delRowY(t, q, u, st, 0)
 	x := delX(t, q, u, st, y)
@@ -169,6 +172,7 @@ func TestHistoryRowDelModalBlocksBackground(t *testing.T) {
 // TestHistoryConfirmDialogAnswers 跨窗应答：投影发布 → 弹窗在屏；点「允许」→ 应答带快照身份
 // 投回主窗事件循环 → 同一 replyConfirm 送达 runner，且投影撤下。
 func TestHistoryConfirmDialogAnswers(t *testing.T) {
+	t.Parallel()
 	u, st, q := delFixture(t)
 	reply := make(chan port.ConfirmAnswer, 1)
 	u.m.startConfirm("确认删除会话 C1？", reply) // 与主窗同路：startConfirm 即发布投影
@@ -203,6 +207,7 @@ func TestHistoryConfirmDialogAnswers(t *testing.T) {
 // TestHistoryConfirmAnswerIdentity 快照身份即「哪一次确认」：迟到的应答不得落到刚新起的
 // 下一条确认上；身份相符的应答照常生效。
 func TestHistoryConfirmAnswerIdentity(t *testing.T) {
+	t.Parallel()
 	u, _, _ := delFixture(t)
 	m := u.m
 
@@ -246,6 +251,7 @@ func TestHistoryConfirmAnswerIdentity(t *testing.T) {
 
 // TestHistoryConfirmDialogRefuses 点「拒绝」→ 拒绝应答（Allow = false）同样送达，且不阻塞。
 func TestHistoryConfirmDialogRefuses(t *testing.T) {
+	t.Parallel()
 	u, st, q := delFixture(t)
 	reply := make(chan port.ConfirmAnswer, 1)
 	u.m.startConfirm("确认删除会话 C1？", reply)

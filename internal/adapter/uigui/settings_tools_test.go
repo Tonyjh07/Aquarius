@@ -194,6 +194,7 @@ func clickToolAction(t *testing.T, u *UI, f *settingsForm, ta *fakeToolsAdmin, k
 // （内置启用 / 插件启停 / 逐能力撤销与预授权 / 撤销信任 / 日志）。假 ToolsAdmin 带真实
 // 状态语义（撤销清授权 + 停用、预授权加回），故「同一按钮再点翻转分支」可证。
 func TestToolsPageSnapshotSync(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	snap := ToolsSnapshot{Revision: 1,
 		Builtins: []BuiltinToolState{{Name: "think", Label: "思考草稿", Enabled: false}},
@@ -258,6 +259,7 @@ func TestToolsPageSnapshotSync(t *testing.T) {
 
 // TestToolsPageNotWired 未接线（Tools = nil）：工具页只读占位，不空白。
 func TestToolsPageNotWired(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u := newHeadless(t, Options{Settings: func() SettingsSnapshot { return fillSnapshot() }})
 	f := newSettingsForm(u)

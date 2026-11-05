@@ -60,6 +60,7 @@ func newHistUI(tree port.TreeView, list port.SessionLister) *UI {
 
 // TestHistorySyncModelAndSessions 左栏与右图数据面同步：模型/预算建立、会话行数对齐。
 func TestHistorySyncModelAndSessions(t *testing.T) {
+	t.Parallel()
 	sum := func(id, title string, cur bool) port.SessionSummary {
 		return port.SessionSummary{ID: conversation.ID(id), Title: title, Messages: 3, Current: cur}
 	}
@@ -84,6 +85,7 @@ func TestHistorySyncModelAndSessions(t *testing.T) {
 
 // TestHistorySwitchDispatch 点会话行 → /switch <id> 经 inCh（与键入同路径）。
 func TestHistorySwitchDispatch(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	st.sendSwitch(u, conversation.ID("C42"))
@@ -100,6 +102,7 @@ func TestHistorySwitchDispatch(t *testing.T) {
 
 // TestHistoryRevisionRebuild 发布号变了才重建（R3 懒重排）：同号不重建、换号才重算。
 func TestHistoryRevisionRebuild(t *testing.T) {
+	t.Parallel()
 	g := relFixtureGraph()
 	g.Revision = 1
 	u := newHistUI(fakeRelTree{g: g}, fakeLister(nil))
@@ -137,6 +140,7 @@ func TestHistoryRevisionRebuild(t *testing.T) {
 // a1 下——节点数、锚点、末节点全没动，只有一条边换了父。若变更判定只看这三样，这一改就
 // 落进缝里：模型不重建，松手后线仍连原父。
 func TestHistoryReparentRebuildsModel(t *testing.T) {
+	t.Parallel()
 	g := relFixtureGraph()
 	g.Revision = 1
 	u := newHistUI(fakeRelTree{g: g}, fakeLister(nil))
@@ -162,6 +166,7 @@ func TestHistoryReparentRebuildsModel(t *testing.T) {
 
 // TestHistoryBudgetClampsToHardCap 预算上限钳到 relHardCap（§5.4.3）。
 func TestHistoryBudgetClampsToHardCap(t *testing.T) {
+	t.Parallel()
 	g := relFixtureGraph()
 	u := newHistUI(fakeRelTree{g: g}, fakeLister(nil))
 	st := newHistoryState(u)

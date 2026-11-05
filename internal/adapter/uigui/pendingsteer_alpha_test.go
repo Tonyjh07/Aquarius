@@ -74,6 +74,7 @@ func composeFrame(t *testing.T, u *UI, w, h int) composed {
 // 判据是「被洗淡」的观感本身（三通道整体抬向浅底），不是某个精确的混合系数——离屏
 // 后端的混色空间与 Windows 上屏那道不完全一致，锁死系数只会锁死后端实现。
 func TestPendingSteerBubbleDimmed(t *testing.T) {
+	t.Parallel()
 	const w, h = 800, 462
 
 	realUI := newPendingUI(&fakePending{}, true) // 没有引导 = 只有真节点
@@ -120,6 +121,7 @@ func TestPendingSteerBubbleDimmed(t *testing.T) {
 // 判据是**合成位图的覆盖度**而不是热区存在：控件在气泡左侧的空白区，没登记形状就
 // 整颗不落笔——热区还在、点得着，屏幕上却什么都没有（用户实测就是这一条）。
 func TestPendingSteerControlsSurviveCompose(t *testing.T) {
+	t.Parallel()
 	const w, h = 800, 462
 	p := &fakePending{}
 	_, _ = p.Add("不要截图了", port.DeliverySteer)
@@ -165,6 +167,7 @@ func chanDist(c, base color.NRGBA) int {
 // TestPendingSteerShapesRecorded 控件必须进形状表（上一条的成因级判据）。
 // 气泡 1 块 + 两枚圆钮 = 3 条；少登记就少一条，合成阶段被丢掉。
 func TestPendingSteerShapesRecorded(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("不要截图了", port.DeliverySteer)
 	u := newPendingUI(p, true)

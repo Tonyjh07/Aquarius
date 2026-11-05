@@ -14,6 +14,7 @@ import (
 // TestProviderRowsShareOneCard 同一家 provider 的所有行（字段、密钥池、模型表、**按钮行**）
 // 必须落在同一张卡里；相邻两家不合并成一张。
 func TestProviderRowsShareOneCard(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
 		snapProv("a", "http://a/v1", true, "am1"),
 		snapProv("b", "http://b/v1", false, "bm1"),
@@ -79,6 +80,7 @@ func TestProviderRowsShareOneCard(t *testing.T) {
 // TestProviderCardClosesOnCollapse 收起态只有摘要行落卡，且摘要行自成一张卡（不把上一家
 // 的按钮行续进来）。
 func TestProviderCardClosesOnCollapse(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
 		snapProv("a", "http://a/v1", true, "am1"),
 		snapProv("b", "http://b/v1", false, "bm1"),

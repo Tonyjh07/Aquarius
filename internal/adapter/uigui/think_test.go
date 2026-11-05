@@ -15,6 +15,7 @@ import (
 // TestThinkHeaderText 折叠行文案：▸/▾ + 耗时（回放无耗时只写「已思考」）；流式写
 // 「思考中…」且不带开合指示（那时还没有可折叠的内容边界）。
 func TestThinkHeaderText(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		it   blockView
 		open bool
@@ -37,6 +38,7 @@ func TestThinkHeaderText(t *testing.T) {
 // TestThinkCollapseDefault 定稿思考默认折叠：正文不铺开（高度只有折叠行、行选键不挂），
 // 但折叠行仍是可点的开合热区。
 func TestThinkCollapseDefault(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addMsg(blockThinking, "想一想", "a1")
 	u.m.blocks[0].secs = 5
@@ -87,6 +89,7 @@ func TestThinkCollapseDefault(t *testing.T) {
 // TestThinkLiveNeverCollapses 流式思考不折叠：正文始终铺开、不建点击件（折叠行只在
 // 定稿后才有意义——流式中途收起会让用户看不见正在想什么）。
 func TestThinkLiveNeverCollapses(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.handleEvent(port.DeltaEvent{Delta: port.Delta{Reasoning: true, Text: "先想一想"}})
 
@@ -104,6 +107,7 @@ func TestThinkLiveNeverCollapses(t *testing.T) {
 // TestThinkOpenResetsOnClear 开合态是视图态（同 chip 口径）：清屏后块序从 0 重排，
 // 上一会话某个序位的展开不应被新会话的同序位块继承。
 func TestThinkOpenResetsOnClear(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addMsg(blockThinking, "想一想", "a1")
 	u.thinkOpen = map[int]bool{0: true}

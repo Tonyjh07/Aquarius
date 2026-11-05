@@ -85,6 +85,7 @@ func (f *fakeProviderMgr) Probe(model string, p ProviderPatch) (ProbeOutcome, er
 // TestFallbackChainEditorHeadless 降级链编辑（S11-7①/D176 口径三）：快照填表 →
 // 每项 provider/model 控件就位；添加/上移/下移/删除；保存时链恒全量进 patch。
 func TestFallbackChainEditorHeadless(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	var got SettingsPatch
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
@@ -145,6 +146,7 @@ func TestFallbackChainEditorHeadless(t *testing.T) {
 // TestFallbackChainEmptyAddRowSkipped 「＋ 添加」后未填任何内容 = 空行不落盘（链里不出现
 // 无主项）；且清空链 = 全量写空（键存在但为空数组）。
 func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	var got SettingsPatch
 	u := newHeadless(t, Options{
@@ -166,6 +168,7 @@ func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
 // 只挂「模型服务」页，「模型」页只剩 当前模型/思考/档位/降级链——防两页都挂或都不挂
 // （拆页时最容易犯的错是把行计划整体复制一份而忘了删原处）。
 func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:    func() SettingsSnapshot { return fillSnapshot() },
 		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{snapProv("a", "", true)}},
@@ -215,6 +218,7 @@ func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 // TestProviderCardCollapse 折叠卡片（S11-7②/D176 口径二）：同一时刻只展开一张；
 // 再点摘要行收起；新增条目自动展开；收起后行计划里只留摘要行。
 func TestProviderCardCollapse(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
 		{Name: "a", Kind: "openai-chat", BaseURL: "http://a/v1", Primary: true,
@@ -278,6 +282,7 @@ func TestProviderCardCollapse(t *testing.T) {
 // 与窗口）、新增/设主/删除、全量应用分派（Orig 保留、能力位只在动过勾选时固化）、异步
 // 连通测试回灌。
 func TestProviderEditorHeadless(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{
 		snapProv("a", "http://a/v1", true, "m1"),
 		snapProv("b", "http://b/v1", false, "mb"),
@@ -352,6 +357,7 @@ func TestProviderEditorHeadless(t *testing.T) {
 // TestProviderKeyPoolHeadless 密钥池多把编辑（S11-7③）：快照逐槽填表（值恒空、形态只标
 // 已入库/明文/空）、添加/删除槽（≥1）、patch 逐槽带上 Value（空 = 保持）与 Label。
 func TestProviderKeyPoolHeadless(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{{
 		Name: "a", BaseURL: "http://a/v1", Primary: true,
 		Keys: []ProviderKeySnapshot{
@@ -405,6 +411,7 @@ func TestProviderKeyPoolHeadless(t *testing.T) {
 // TestProviderModelTableHeadless 模型能力表（S11-7③）：勾选初值 = 生效能力（缺省按协议
 // 给全）；上下文窗口填表；「未动」→ Caps nil、「动过」→ 显式列表。
 func TestProviderModelTableHeadless(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{{
 		Name: "a", Kind: "anthropic", BaseURL: "http://a/v1", Primary: true,
 		Models: []ProviderModelSnapshot{
@@ -451,6 +458,7 @@ func TestProviderModelTableHeadless(t *testing.T) {
 // TestProviderModelCostValidation 单价语法（D205）：留空合法（不声明）；非法或负数在
 // 应用前就拦下，且反馈指名道姓地说是哪家的哪个模型。
 func TestProviderModelCostValidation(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{snap: []ProviderSnapshot{{
 		Name: "a", BaseURL: "http://a/v1", Primary: true,
 		Models: []ProviderModelSnapshot{{Name: "m1", Enabled: true}},
@@ -493,6 +501,7 @@ func TestProviderModelCostValidation(t *testing.T) {
 // （已存在的名字跳过），新增行默认未启用、只落在本卡片的反馈里；失败不动表；结果按
 // provider 名回灌（期间删过条目就丢弃）。
 func TestFetchModelsAppendsRows(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{
 		snap:   []ProviderSnapshot{snapProv("a", "http://a/v1", true, "m1")},
 		models: []string{"m1", "m2", "m3"}, // m1 已存在 → 只补 m2/m3
@@ -579,6 +588,7 @@ func TestFetchModelsAppendsRows(t *testing.T) {
 // TestFetchModelsPagination 清单不设上限、界面分页（D181）：一页 provModelPageSize 行，
 // 页数按行数算，末页不整；行计划只在当前页给模型行（未渲染的行不排版）；删行后页码夹回。
 func TestFetchModelsPagination(t *testing.T) {
+	t.Parallel()
 	var listed []string
 	for i := 0; i < provModelPageSize*2+3; i++ { // 2 整页 + 3 行
 		listed = append(listed, fmt.Sprintf("mm%02d", i))
@@ -644,6 +654,7 @@ func pageRowsOfKind(f *settingsForm, page int, kind rowKind) []rowDesc {
 // TestProvidersAutoFetchOnce 切到「模型服务」页自动拉一轮（D181）：每家一次、每窗一次；
 // 先手动拉过的卡片不重复请求；只读窗不拉。
 func TestProvidersAutoFetchOnce(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{
 		snap: []ProviderSnapshot{
 			snapProv("a", "http://a/v1", true, "m1"),
@@ -680,6 +691,7 @@ func TestProvidersAutoFetchOnce(t *testing.T) {
 // TestProbeModelRow 「探测能力」按钮（S11-7③/D174）：走 ProviderManager.Probe，结论回灌
 // 该模型行（写回时同步勾选）。
 func TestProbeModelRow(t *testing.T) {
+	t.Parallel()
 	mgr := &fakeProviderMgr{
 		snap: []ProviderSnapshot{snapProv("a", "http://a/v1", true, "m1")},
 		probeOutcome: ProbeOutcome{

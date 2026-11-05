@@ -24,6 +24,7 @@ import (
 // 推导）；每页行计划非空且首行为页标题——防「某页忘了挂行」；提示词行只挂「系统提示词」
 // 页（S7b/D145）。另锁两条注册表结构不变量：页常量与注册表长度一致、Key 唯一。
 func TestSettingsPageNamesContract(t *testing.T) {
+	t.Parallel()
 	// wantKeys 是页标识（Key，英文、不随语言变），wantNames 是 zh 下的显示名。两者分开锁：
 	// 页序与标识是契约，显示名只是取词结果——把中文当契约锁，加英文表时就会两头顾此失彼。
 	wantKeys := []string{"general", "model", "providers", "secrets", "chat", "prompt", "tools", "delegate", "skills", "characters", "web", "audio", "adv", "about"}
@@ -114,6 +115,7 @@ func TestSettingsPageNamesContract(t *testing.T) {
 // 兜底、被画成别的控件（高级页 raw JSON 编辑器）；这里把那条静默去掉，用本测试响亮兜住：
 // 新增行型忘了在对应页分派 = 本测试立刻红。
 func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
+	t.Parallel()
 	secretsAdmin := &fakeSecretsAdmin{snap: SecretsSnapshot{Entries: []SecretEntry{{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"}}}}
 	secretsAdmin.rev = 1 // 让开窗/帧首同步即采纳（Revision 变了）
 	u := newHeadless(t, Options{
@@ -177,6 +179,7 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 }
 
 func TestPromptRowsLiveOnPromptPage(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return promptSnapshot() },
 		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -225,6 +228,7 @@ func TestPromptRowsLiveOnPromptPage(t *testing.T) {
 // 900×700px（`winSettings` 几何 720×560dp × 1.25 缩放）；底色取自左侧导航栏（纯
 // windowBg），统计范围限定在全局底栏之上的页内容区。
 func TestSettingsFrameRowsFillViewport(t *testing.T) {
+	t.Parallel()
 	const (
 		viewW, viewH = 900, 700 // 真窗首帧像素尺寸（720×560dp @1.25）
 		pxPerDp      = 1.25     // 真窗 Metric（Win32 DPI 96→120 档实测值）
@@ -314,6 +318,7 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 // ② fieldRow 控件起点 = 行宽 − Dp(fieldLabelW()) − Dp(10)（标签列随密度缩放，不折行）。
 // 裸 px 实现（旧）在 dpi≠1 时两项皆红；dpi=1 恒绿作正向对照。
 func TestSettingsRowGeometryTracksDensity(t *testing.T) {
+	t.Parallel()
 	th := testTheme()
 	const rowW = 600
 	for _, dpi := range []float32{1, 1.25, 1.5, 2} {
@@ -364,6 +369,7 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 // TestSettingsWindowGeometry S4d/D142：分页后窗加宽到 720×560（min 620×420）——左侧
 // 140dp 导航栏之外仍留 ≈552dp 页内容区（改前 = 532dp，不得倒退）。
 func TestSettingsWindowGeometry(t *testing.T) {
+	t.Parallel()
 	w, h, minW, minH := winSettings.geometry()
 	if w != 720 || h != 560 || minW != 620 || minH != 420 {
 		t.Fatalf("几何 = (%d,%d,%d,%d), want (720,560,620,420)", w, h, minW, minH)
@@ -376,6 +382,7 @@ func TestSettingsWindowGeometry(t *testing.T) {
 // TestSettingsNavClickSwitchesPage 导航项点击 = 切页（帧首消费，本帧即按新页渲染）；
 // 切页不动任何控件状态（跨页编辑保留），且每页各自的滚动列表独立。
 func TestSettingsNavClickSwitchesPage(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return fillSnapshot() },
@@ -436,6 +443,7 @@ func TestSettingsNavClickSwitchesPage(t *testing.T) {
 // TestSettingsPagesRenderContent 逐页离屏单帧渲染：每页**内容区**必须确有内容
 // （S4c 同款防线的按页复制——分页后「某页空白」是新的可能故障）。
 func TestSettingsPagesRenderContent(t *testing.T) {
+	t.Parallel()
 	const (
 		viewW, viewH = 900, 700 // 真窗首帧像素尺寸（720×560dp @1.25）
 		pxPerDp      = 1.25
@@ -507,6 +515,7 @@ func TestSettingsPagesRenderContent(t *testing.T) {
 // 全局密度问题。这条测试锁住「只在一个地方定义」这个事实：如果有人把某页改回自己的
 // 内边距，六页就会重新变得疏密不一，而肉眼很难逐页比对发现。
 func TestRowInsetContract(t *testing.T) {
+	t.Parallel()
 	// 14 是修订前的值（文字贴描边）；抬到 18 是本决策的可观测结果。
 	if rowInsetDp < 18 {
 		t.Fatalf("rowInsetDp = %d，want ≥18（D148：行腔留白不得退回贴边密度）", rowInsetDp)
@@ -525,6 +534,7 @@ func TestRowInsetContract(t *testing.T) {
 // 各 20px 是反例，上 20 下 10 才对）。这条测试把关系钉住，防止日后又被「对称才整齐」
 // 改回去。
 func TestSectionTitleHugsItsGroup(t *testing.T) {
+	t.Parallel()
 	// 组间空档 = 标题上留白 + 上一组卡片的下组界；组内空档 = 标题下留白 + 本组卡片的
 	// 上组界 + 卡内上边距。判据取用户看到的事实，不取常量比值。
 	between := rowInsetDp + rowSectionTopDp
@@ -565,6 +575,7 @@ func TestSectionTitleHugsItsGroup(t *testing.T) {
 // 上一条仍是绿的）。判据 = 扫描页内容列上「卡边框行」之间的大段空白：以标题文字行为
 // 界，上下两侧的空白高度之比要明显 < 1。
 func TestSectionTitleSpacingRendered(t *testing.T) {
+	t.Parallel()
 	const (
 		viewW, viewH = 900, 746
 		pxPerDp      = 1.25

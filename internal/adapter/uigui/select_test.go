@@ -84,6 +84,7 @@ func selArmDrag(t *testing.T, q *input.Router, u *UI) {
 // 跨块拖动激活 → 锚 0 焦末的整段两键跨度 → 抬手保持 → Ctrl+C 写系统剪贴板
 // （键间 \n 拼接，方向不敏感——本例锚在前）。
 func TestSelDragAcrossBlocksCopy(t *testing.T) {
+	t.Parallel()
 	u, q := newSelUI()
 	r0, r1 := selKeyRect(t, u, 0), selKeyRect(t, u, 1)
 
@@ -135,6 +136,7 @@ func TestSelDragAcrossBlocksCopy(t *testing.T) {
 // TestSelSlopReleaseKeepsCandidate 微抖 + 抬手全程不激活：候选被 Release 收掉，
 // 选区保持无（D91 ①——块内点按不误建选区，原生手势不受干扰）。
 func TestSelSlopReleaseKeepsCandidate(t *testing.T) {
+	t.Parallel()
 	u, q := newSelUI()
 	r0 := selKeyRect(t, u, 0)
 
@@ -153,6 +155,7 @@ func TestSelSlopReleaseKeepsCandidate(t *testing.T) {
 // 越 slop 在本批激活 → pressedNow=false → 锚取 widget Selection().start（双击选词后
 // 拖拽锚词首的通路），而非按压几何点。
 func TestSelAnchorFromWidgetSelection(t *testing.T) {
+	t.Parallel()
 	u, q := newSelUI()
 	r0, r1 := selKeyRect(t, u, 0), selKeyRect(t, u, 1)
 
@@ -179,6 +182,7 @@ func TestSelAnchorFromWidgetSelection(t *testing.T) {
 // TestSelClearSources D91 ④ 清除源全集：结构指纹变化（增行 → keyFp 变）、Escape、
 // 主键新按压、编辑器获焦（focusPending 唤出）、系统 Cancel、model 清屏。
 func TestSelClearSources(t *testing.T) {
+	t.Parallel()
 	u, q := newSelUI()
 
 	// ① 结构指纹：增行 → 下帧 transcript 重算 keyFp → 再下帧消费者比对失配即清
@@ -238,6 +242,7 @@ func TestSelClearSources(t *testing.T) {
 
 // TestPointToCaret 几何：行首/行尾 caret 边界、rect 内命中取本键、rect 上取最近键。
 func TestPointToCaret(t *testing.T) {
+	t.Parallel()
 	u, _ := newSelUI()
 	r0, r1 := selKeyRect(t, u, 0), selKeyRect(t, u, 1)
 	n0 := u.keyRects[0].nrunes
@@ -260,6 +265,7 @@ func TestPointToCaret(t *testing.T) {
 // TestSelSpansOfDirection selSpansOf 纯逻辑：方向归一（反向拖选同果）、同键取区间、
 // 两键之间全选、空键跳过。
 func TestSelSpansOfDirection(t *testing.T) {
+	t.Parallel()
 	nr := map[int]int{0: 3, 1: 4, 2: 5}
 	count := func(k int) int { return nr[k] }
 
@@ -330,6 +336,7 @@ func selLineGroups(t *testing.T, u *UI, k int) [][]int {
 // e 门槛若用本行底会把下一行 rune 混入区间、Min.X 谓词非单调，落点随机漂到
 // 下一行。锁定：每行**左缘**落点 = 本行首 rune（错行即此 bug），且逐行严格递增。
 func TestSelCaretInStaysInPointedLine(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockAssistant, strings.Repeat("这一段话足够长以便在转写区宽度内折行成多个视觉行。", 6))
 	q := new(input.Router)
@@ -359,6 +366,7 @@ func TestSelCaretInStaysInPointedLine(t *testing.T) {
 // 常见形态，锚走几何路径）：首行左缘起手拖到末行右缘——锚/焦点都必须跨行到位，
 // 回拖首行左缘焦点须回到首行（D91 更正回归）。
 func TestSelSameBatchDragCrossLine(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockAssistant, strings.Repeat("同批次按压与拖动的事件批形态也需要跨行可选。", 8))
 	q := new(input.Router)
@@ -395,6 +403,7 @@ func TestSelSameBatchDragCrossLine(t *testing.T) {
 // TestSelDragAcrossMDParagraphs 同一助手气泡内两个 markdown 段落（vstack 双键）
 // 跨块拖选：跨度两键、焦点落次键（D91 ② 手排纵列的块内偏移路径）。
 func TestSelDragAcrossMDParagraphs(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockAssistant, "第一段落比较长一些这样能够折行。\n\n第二段落也需要有内容用于拖选目标。")
 	q := new(input.Router)
@@ -422,6 +431,7 @@ func TestSelDragAcrossMDParagraphs(t *testing.T) {
 // TestSelDragAcrossCollapsedChip 跨折叠工具 chip 拖选：text → chip（键 1/2 不铺开）
 // → text，跨度恰两段（空键跳过、chip 头不捕获）。
 func TestSelDragAcrossCollapsedChip(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockAssistant, "工具前的正文内容")
 	u.m.addToolCall(tool.Call{ID: "c1", Name: "think"})
@@ -460,6 +470,7 @@ func selPointerMod(kind pointer.Kind, p image.Point, mods key.Modifiers) pointer
 // 跳到点击处（可反向）、抬手保持、Ctrl+C 按锚→焦拼接；无激活选区的 Shift+点击
 // 仍走原生路径（入候选不激活，D91 口径）。
 func TestSelShiftClickExtend(t *testing.T) {
+	t.Parallel()
 	u, q := newSelUI()
 	selArmDrag(t, q, u) // 选区 {0,0}..{1,n1} armed
 	if u.sel.anchor != (selPoint{key: 0, rune: 0}) {
@@ -517,6 +528,7 @@ func TestSelShiftClickExtend(t *testing.T) {
 // 焦点端点随动；移出带停止；上缘带内反向推进；松手停止。真窗的唤帧心跳由
 // selHeartbeat 承担（headless w=nil 不启动），此处手动逐帧驱动。
 func TestSelEdgeAutoScroll(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	for i := 0; i < 40; i++ {
 		u.m.addMsg(blockUser, strings.Repeat("内容文本", i+3), "")

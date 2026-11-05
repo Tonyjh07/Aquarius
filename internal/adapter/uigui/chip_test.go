@@ -19,6 +19,7 @@ import (
 // TestToolChipConfirmMerge 确认并入 chip：无 plain 行、应答写回 chip 且送达 runner
 // （D67；应答丢失 = 权限等待永不解除）。
 func TestToolChipConfirmMerge(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec", Args: []byte(`{"cmd":"ls"}`)}})
 	reply := make(chan port.ConfirmAnswer, 1)
@@ -59,6 +60,7 @@ func TestToolChipConfirmMerge(t *testing.T) {
 
 // TestToolChipConfirmDeny 拒绝路径同样留痕并送达。
 func TestToolChipConfirmDeny(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
 	reply := make(chan port.ConfirmAnswer, 1)
@@ -84,6 +86,7 @@ func TestToolChipConfirmDeny(t *testing.T) {
 // TestConfirmNonToolStaysPlain 非工具确认（/rm 二次确认，问句不含工具名）不并入
 // chip：独立文本行 + 原回显（D67）。
 func TestConfirmNonToolStaysPlain(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
 	reply := make(chan port.ConfirmAnswer, 1)
@@ -107,6 +110,7 @@ func TestConfirmNonToolStaysPlain(t *testing.T) {
 
 // TestToolChipCommitClosesOpen commit 收口未完成 chip（取消/异常没有结果事件，D67）。
 func TestToolChipCommitClosesOpen(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "sleep_tool"}})
 	m.commit(conversation.Message{Role: conversation.RoleAssistant, Outcome: conversation.OutcomeCancelled})
@@ -118,6 +122,7 @@ func TestToolChipCommitClosesOpen(t *testing.T) {
 
 // TestToolChipCallIDPairing 并行调用交错按 CallID 回填（D67 否决 FIFO 的原因）。
 func TestToolChipCallIDPairing(t *testing.T) {
+	t.Parallel()
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "a", Name: "t1"}})
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "b", Name: "t2"}})
@@ -139,6 +144,7 @@ func TestToolChipCallIDPairing(t *testing.T) {
 
 // TestChipHeaderText 头部行状态机：▸/▾、…/待确认/✓/✗、参数首行截断（D67）。
 func TestChipHeaderText(t *testing.T) {
+	t.Parallel()
 	long := `{"path":"a.json","extra":"` + strings.Repeat("x", 60) + `"}`
 	c := &toolChip{name: "file_read", args: long}
 	if h := chipHeaderText(c, false); !strings.HasPrefix(h, "▸ 🔧 file_read") || !strings.Contains(h, "…") {
@@ -167,6 +173,7 @@ func TestChipHeaderText(t *testing.T) {
 // TestToolChipView 渲染视图：frameItems 携块序、键位间隔恒 2、默认折叠、待确认
 // 强制展开、应答后回落、chip 为非气泡卡（D67）。
 func TestToolChipView(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "file_read", Args: []byte(`{"path":"a.txt"}`)}})
 
@@ -204,6 +211,7 @@ func TestToolChipView(t *testing.T) {
 // TestToolChipTranscriptKeys 行选键惰性物化（D67）：折叠 chip 头部不挂行选 → 0 键；
 // 展开后参数/结果 2 键；后续行的键位间隔由 selCount 保持（本测试只有 chip，看总量）。
 func TestToolChipTranscriptKeys(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "file_read", Args: []byte(`{"path":"a.txt"}`)}})
 	u.m.handleEvent(port.ToolResultEvent{Result: tool.Result{CallID: "c1", OK: true, Output: "输出"}})

@@ -25,6 +25,7 @@ func smoothstep(t float64) float64 { return t * t * (3 - 2*t) }
 // 预乘合法（C ≤ A）、与参考实现逐字节一致（±1）、渐变单调、带顶以上不可见、
 // 带下不衰减（g=1）、全透明无内容、缓冲过短拒绝。
 func TestFadeFrameBand(t *testing.T) {
+	t.Parallel()
 	const w, h, bandH = 4, 6, 3
 	// 单个越界矩形形状：左右越出缓冲 → 观测列恒在核心（直边段），radius=0 无圆角影响。
 	src := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -137,6 +138,7 @@ func TestFadeFrameBand(t *testing.T) {
 // 近 0）、**带上方与带下方都不衰减（g=1）**——带下即状态行/输入栏，绝不能被淡化；与
 // 顶带重叠段两带相乘；零值（无底带）不改变任何像素。逐行与参考式交叉验证（±1）。
 func TestFadeFrameBottomBand(t *testing.T) {
+	t.Parallel()
 	const w, h = 4, 6
 	src := image.NewRGBA(image.Rect(0, 0, w, h))
 	for i := range src.Pix {
@@ -230,6 +232,7 @@ func TestFadeFrameBottomBand(t *testing.T) {
 // 行、输入栏——整窗 clip，且 tips 画在胶囊上沿之上、几何上跨进带内）一律保持 g=1，
 // 否则 tips 卡片顶沿半透明。转写行本身照常在带内渐隐。
 func TestFadeFrameLowBandSkipsChrome(t *testing.T) {
+	t.Parallel()
 	const w, h = 8, 8
 	const lowTop, lowEnd = 4, 6 // 带 [4,6)：带下 2 行 = 状态行/输入栏区（带底 < 窗底）
 	src := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -283,6 +286,7 @@ func m1x() (m unit.Metric) { return unit.Metric{PxPerDp: 1, PxPerSp: 1} }
 
 // TestSRoundtrip sRGB 编解码恒等（LUT 两端引用同一对公式）。
 func TestSRoundtrip(t *testing.T) {
+	t.Parallel()
 	for _, v := range []float64{0, 0.001, 0.04, 0.041, 0.2, 0.5, 0.8, 1} {
 		if got := srgbEncode(srgbDecode(v)); math.Abs(got-v) > 1e-9 {
 			t.Fatalf("roundtrip(%v) = %v", v, got)

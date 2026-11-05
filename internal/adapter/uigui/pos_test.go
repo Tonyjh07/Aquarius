@@ -9,6 +9,7 @@ import (
 // TestPosRecRoundTrip 位置记忆含置顶态（§15.1 置顶开关）：写读一致；旧文件
 // （无 top_most 键）读出 nil = 缺省置顶口径。
 func TestPosRecRoundTrip(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "gui_pos.json")
 
 	tm := false
@@ -39,6 +40,7 @@ func TestPosRecRoundTrip(t *testing.T) {
 // TestPosRecDocked 停靠记忆（D50）：docked 键随存随取；旧文件（无 docked 键）→
 // 空串 = 未停靠（停靠态恢复忽略 X/Y、按边重算）。
 func TestPosRecDocked(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "gui_pos.json")
 
 	tm := true

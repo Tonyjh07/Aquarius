@@ -30,6 +30,7 @@ func audioRowSet(f *settingsForm) map[rowKind]int {
 // 为什么按适配器源码而不是 config 结构判：结构体里字段恒有，用不用由适配器决定。
 // 把不看的值摆出来，用户会以为「这里空着所以没生效」——那是最难自查的一类困惑。
 func TestAudioRowsFollowKind(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		asrKind string
@@ -102,6 +103,7 @@ func TestAudioRowsFollowKind(t *testing.T) {
 
 // TestAudioKindSwitchRevealsRows 切档后行计划立刻跟着变（每帧现算，不需要保存或重开）。
 func TestAudioKindSwitchRevealsRows(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -128,6 +130,7 @@ func TestAudioKindSwitchRevealsRows(t *testing.T) {
 // TestAudioHiddenFieldsStayInPatch 隐藏不等于丢弃：切到只看少数几档后保存，其它字段的
 // 草稿值仍然随 patch 落盘——否则用户来回切一次档就把之前配好的 TTS 参数弄没了。
 func TestAudioHiddenFieldsStayInPatch(t *testing.T) {
+	t.Parallel()
 	var got SettingsPatch
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
@@ -147,6 +150,7 @@ func TestAudioHiddenFieldsStayInPatch(t *testing.T) {
 
 // TestSelectFieldChoose 选择器的取值语义：按键值定位、越界夹取、选中即改值。
 func TestSelectFieldChoose(t *testing.T) {
+	t.Parallel()
 	c := selectField{
 		displays: []string{"自动识别", "中文", "英文"},
 		values:   []string{"auto", "zh", "en"},
@@ -188,6 +192,7 @@ func pickerGtx(w, h int) layout.Context {
 
 // TestPickerOpenAndCancel 弹层开合：点按钮打开、「取消」收起、不改选项。
 func TestPickerOpenAndCancel(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -219,6 +224,7 @@ func TestPickerOpenAndCancel(t *testing.T) {
 
 // TestPickerChooseWritesValue 弹层里点一项即回写该选择器的值（并收起）。
 func TestPickerChooseWritesValue(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -249,6 +255,7 @@ func TestPickerChooseWritesValue(t *testing.T) {
 
 // TestPickerOnlyOneField 弹层是全窗唯一模态：后打开的选择器接管，前一个不受影响。
 func TestPickerOnlyOneField(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return audioSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -269,6 +276,7 @@ func TestPickerOnlyOneField(t *testing.T) {
 
 // TestSelectBtnShowsCurrent "▾" 指示存在且展示当前项（读起来像可选值而不是动作按钮）。
 func TestSelectBtnShowsCurrent(t *testing.T) {
+	t.Parallel()
 	c := selectField{
 		displays: []string{"自动识别", "中文", "英文"},
 		values:   []string{"auto", "zh", "en"},

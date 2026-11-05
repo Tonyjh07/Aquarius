@@ -20,6 +20,7 @@ func blocksOf(t *testing.T, src string) []mdBlock {
 
 // TestParseMarkdownStructural 结构块映射：标题/段落/代码/列表/引用/分隔线（D65）。
 func TestParseMarkdownStructural(t *testing.T) {
+	t.Parallel()
 	blocks := blocksOf(t, "# 标题一\n\n## 二级\n\n正文段落，两行：\n续行\n\n```go\nx := 1\n```\n\n---")
 	want := []struct {
 		kind  mdKind
@@ -46,6 +47,7 @@ func TestParseMarkdownStructural(t *testing.T) {
 
 // TestParseMarkdownLists 列表平铺：无序/有序前缀、嵌套缩进紧随父项、续行对齐（D65）。
 func TestParseMarkdownLists(t *testing.T) {
+	t.Parallel()
 	blocks := blocksOf(t, "- 甲\n- 乙\n  - 丙\n\n1. 第一\n2. 第二")
 	want := []string{"• 甲", "• 乙", "  • 丙", "1. 第一", "2. 第二"}
 	if len(blocks) != len(want) {
@@ -63,6 +65,7 @@ func TestParseMarkdownLists(t *testing.T) {
 
 // TestParseMarkdownQuote 引用块逐行前缀（D65）。
 func TestParseMarkdownQuote(t *testing.T) {
+	t.Parallel()
 	blocks := blocksOf(t, "> 引用一行\n> 续行\n\n普通段")
 	if len(blocks) != 2 {
 		t.Fatalf("块数 = %d, want 2: %+v", len(blocks), blocks)
@@ -75,6 +78,7 @@ func TestParseMarkdownQuote(t *testing.T) {
 // TestParseMarkdownStreaming 流式未闭合围栏：吞到 EOF 成代码块（D33 定稿渲染前的
 // 过程态允许退化呈现）。
 func TestParseMarkdownStreaming(t *testing.T) {
+	t.Parallel()
 	blocks := blocksOf(t, "```go\nx := 1")
 	if blocks[0].kind != mdCode || blocks[0].lang != "go" || blocks[0].text != "x := 1" {
 		t.Fatalf("未闭合围栏 = %+v", blocks[0])
@@ -84,6 +88,7 @@ func TestParseMarkdownStreaming(t *testing.T) {
 // TestMdInlineStrip 行内剥标记：emphasis/链接取文字/图片取 alt/行内代码逐字/
 // autolink/行内原始 HTML 逐字呈现（§9 只渲染不执行）。
 func TestMdInlineStrip(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ src, want string }{
 		{"**粗**体", "粗体"},
 		{"*斜* 与 _斜2_", "斜 与 斜2"},
@@ -109,6 +114,7 @@ func TestMdInlineStrip(t *testing.T) {
 
 // TestMdUnescape 转义优先于实体（对齐 goldmark Writer.Write）：`\&amp;` 保持字面。
 func TestMdUnescape(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ src, want string }{
 		{"\\&amp;", "&amp;"}, // 转义的 & 字面，amp; 留原文
 		{"a\\*b\\_c", "a*b_c"},
@@ -126,6 +132,7 @@ func TestMdUnescape(t *testing.T) {
 
 // TestMdBlocksFallback 空解析结果回退单段落原文；缓存命中返回同一实例（D65/D66）。
 func TestMdBlocksFallback(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat()} // mdCache 惰性初始化（不依赖 newUI）
 	for _, src := range []string{"   ", "\n\n"} {
 		blocks := u.mdBlocks(src)
@@ -145,6 +152,7 @@ func TestMdBlocksFallback(t *testing.T) {
 
 // TestMdBlocksCacheLimit 缓存上限：超限整表重建（长会话防膨胀，D65）。
 func TestMdBlocksCacheLimit(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat()}
 	for i := 0; i < mdCacheLimit+1; i++ {
 		u.mdBlocks(fmt.Sprintf("消息 %d", i))
@@ -157,6 +165,7 @@ func TestMdBlocksCacheLimit(t *testing.T) {
 // TestFrameItemsMarkdown 助手定稿块 = 单条目携结构块（D66 单回复单气泡）；live 草稿
 // 不解析（D33 口径）。
 func TestFrameItemsMarkdown(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockUser, "给我列个清单")
 	u.m.add(blockAssistant, "好的：\n\n- 一项\n- 二项\n\n```go\ndone\n```")
@@ -194,6 +203,7 @@ func TestFrameItemsMarkdown(t *testing.T) {
 
 // TestMdHeadingSp 标题字号阶梯单调递减且不低于正文（D65）。
 func TestMdHeadingSp(t *testing.T) {
+	t.Parallel()
 	th := testTheme()
 	prev := th.TextSize * 2 // 哨兵：大于 h1（阶梯自 h1 递减、不低于正文）
 	for level := 1; level <= 6; level++ {

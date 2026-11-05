@@ -28,6 +28,7 @@ func charactersForm(t *testing.T, snap CharactersSnapshot) (*settingsForm, *UI) 
 
 // TestCharactersPageRows 行计划：清单 / 来源 / 选择 / 说明 / 状态。
 func TestCharactersPageRows(t *testing.T) {
+	t.Parallel()
 	f, _ := charactersForm(t, CharactersSnapshot{Items: []CharacterState{
 		{Slug: "aria", Display: "Aria", Source: "png", Spec: "v3"},
 		{Slug: "bob", Display: "Bob", Source: "json"},
@@ -55,6 +56,7 @@ func TestCharactersPageRows(t *testing.T) {
 
 // TestCharactersPageEmptyAndUnwired 空清单给引导；未接线给只读占位；读目录失败给告警行。
 func TestCharactersPageEmptyAndUnwired(t *testing.T) {
+	t.Parallel()
 	f, _ := charactersForm(t, CharactersSnapshot{})
 	if !hasRowKind(f.pageRows(pageCharacters), rowCharEmpty) {
 		t.Error("空清单应给空态引导行")
@@ -79,6 +81,7 @@ func TestCharactersPageEmptyAndUnwired(t *testing.T) {
 
 // TestCharPickFillsSource 选择框结果只填来源框，不落盘（导入是另一个动作）。
 func TestCharPickFillsSource(t *testing.T) {
+	t.Parallel()
 	f, u := charactersForm(t, CharactersSnapshot{})
 	u.pushCharPick(charPathPick{path: `C:\x\card.png`})
 	f.drainCharPicks(u)
@@ -92,6 +95,7 @@ func TestCharPickFillsSource(t *testing.T) {
 
 // TestSendCharacterCmd 动作经 `/character` 命令通道（不直连管理面）。
 func TestSendCharacterCmd(t *testing.T) {
+	t.Parallel()
 	u := &UI{inCh: make(chan port.UserInput, 4)}
 	u.sendCharacterCmd("import", `C:\x\card.png`)
 	select {
@@ -109,6 +113,7 @@ func TestSendCharacterCmd(t *testing.T) {
 
 // TestCharInitial 首字回落：去空白；空名给「?」。
 func TestCharInitial(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ in, want string }{
 		{"Aria", "A"},
 		{"  Bob", "B"},
@@ -125,6 +130,7 @@ func TestCharInitial(t *testing.T) {
 
 // TestCharMetaLine 元信息行按来源种类给中文，含条目/资产/导入时间与未支持机制提示。
 func TestCharMetaLine(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		st   CharacterState
 		want string
@@ -146,6 +152,7 @@ func TestCharMetaLine(t *testing.T) {
 
 // TestCharAvatarAsyncLoad 头像后台解码：首帧回落兜底，结果入缓存后可绘制。
 func TestCharAvatarAsyncLoad(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "avatar.png")
 	if err := os.WriteFile(path, pngBytes(t, 24, 24, color.NRGBA{R: 0x20, G: 0x80, B: 0xC0, A: 0xFF}), 0o600); err != nil {
@@ -174,6 +181,7 @@ func TestCharAvatarAsyncLoad(t *testing.T) {
 
 // TestCharAvatarFailureTombstone 解码失败记墓碑：不重试、恒回落兜底。
 func TestCharAvatarFailureTombstone(t *testing.T) {
+	t.Parallel()
 	f, _ := charactersForm(t, CharactersSnapshot{})
 	path := filepath.Join(t.TempDir(), "nope.png")
 	if f.charAvatars.get(path) != nil {

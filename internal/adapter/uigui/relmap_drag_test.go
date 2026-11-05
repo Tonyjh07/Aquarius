@@ -26,6 +26,7 @@ import (
 // 断言：按住期间 tickLayout 恒续帧（不被 settled 掐断）、时钟保持初值；松手后计时重上、
 // 且能在续帧预算内正常收敛。
 func TestRelGraphTwoNodeDragKeepsAnimating(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	mk := func(id, parent string, role conversation.Role, i int) port.GraphNode {
 		return port.GraphNode{
@@ -89,6 +90,7 @@ func TestRelGraphTwoNodeDragKeepsAnimating(t *testing.T) {
 // TestRelGraphDragNodePinsAndSettles 拖节点：视场不平移（那是空白拖拽的事）、节点被临时
 // 固定在指针下、周围被斥力推开；松手后锚撤销、节点回归自由并收敛回原位。
 func TestRelGraphDragNodePinsAndSettles(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	sx, li := relAnchorScreen(t, g)
@@ -161,6 +163,7 @@ func TestRelGraphDragNodePinsAndSettles(t *testing.T) {
 // TestRelGraphDragNodeNearMiss 实测修（D121）：**按下时命中落空**（低 zoom 卡片塌缩、
 // 指针差几像素）不得静默退化成平移——起拖那一刻用更宽的抓手半径补命中，命中即拖该节点。
 func TestRelGraphDragNodeNearMiss(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	li := g.anchor
@@ -197,6 +200,7 @@ func TestRelGraphDragNodeNearMiss(t *testing.T) {
 
 // TestRelGraphDragCancelReleasesPin 指针被取消（拖出窗口/失焦）：锚同样撤销，不得卡在拖动态。
 func TestRelGraphDragCancelReleasesPin(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	sx, li := relAnchorScreen(t, g)
@@ -218,6 +222,7 @@ func TestRelGraphDragCancelReleasesPin(t *testing.T) {
 // 内平滑滑到光标正下方并锁死——「光标和节点的位置不一样」不得持续存在。同时验证起拖
 // 第一帧不瞬跳（偏移保留，衰减起步）。
 func TestRelGraphDragSnapsToCursor(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	li := g.anchor
@@ -263,6 +268,7 @@ func TestRelGraphDragSnapsToCursor(t *testing.T) {
 // （弹簧 + 斥力 + 阻尼，秒级），收敛即停（R3）。曾为 lerp 入场动画（D123），现改为
 // 常驻物理——开窗的运动就是物理过程本身（不是独立时间线）。
 func TestRelGraphPhysicsUnfoldOnOpen(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
 	st := newHistoryState(u) // sync → rebuild → 折叠播种
 	g := st.graph

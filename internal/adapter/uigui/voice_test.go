@@ -11,6 +11,7 @@ import (
 // TestMicButtonOnlyWhenEmpty 空输入且装配了语音 → 右钮是语音键；有输入/暂存/编辑态
 // 都是发送键（D179）。
 func TestMicButtonOnlyWhenEmpty(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{Voice: func(context.Context) (string, error) { return "", nil }})
 	if !u.micButton() {
 		t.Fatal("空输入应为语音键")
@@ -36,6 +37,7 @@ func TestMicButtonOnlyWhenEmpty(t *testing.T) {
 
 // TestMicButtonNeedsVoice 没装配语音：空输入仍保持发送键（不承诺做不到的事）。
 func TestMicButtonNeedsVoice(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	if u.micButton() {
 		t.Fatal("未装配语音时不应显示录音键")
@@ -44,6 +46,7 @@ func TestMicButtonNeedsVoice(t *testing.T) {
 
 // TestFinishVoiceFillsEditor 转写成功：文本回填输入框（不自动发送），录音态结束。
 func TestFinishVoiceFillsEditor(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{Voice: func(context.Context) (string, error) { return "", nil }})
 	u.recording.Store(true)
 	u.finishVoice("  你好，世界  ", nil)
@@ -57,6 +60,7 @@ func TestFinishVoiceFillsEditor(t *testing.T) {
 
 // TestFinishVoiceAppendsToDraft 录音期间已打了字：转写接在后面，不覆盖草稿。
 func TestFinishVoiceAppendsToDraft(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{Voice: func(context.Context) (string, error) { return "", nil }})
 	u.editor.SetText("补充：")
 	u.finishVoice("明天下午三点", nil)
@@ -67,6 +71,7 @@ func TestFinishVoiceAppendsToDraft(t *testing.T) {
 
 // TestFinishVoiceErrorKeepsDraft 失败只提示，不动草稿。
 func TestFinishVoiceErrorKeepsDraft(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{Voice: func(context.Context) (string, error) { return "", nil }})
 	u.editor.SetText("草稿")
 	u.finishVoice("", errors.New("没有可用的录音设备"))
@@ -80,6 +85,7 @@ func TestFinishVoiceErrorKeepsDraft(t *testing.T) {
 
 // TestToggleVoiceRoundTrip 点一下开始录音、再点一下停止；结果经开箱回投回填输入框。
 func TestToggleVoiceRoundTrip(t *testing.T) {
+	t.Parallel()
 	started := make(chan struct{})
 	u := newHeadless(t, Options{Voice: func(ctx context.Context) (string, error) {
 		close(started)

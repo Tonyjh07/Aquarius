@@ -20,6 +20,7 @@ import (
 // TestHistStatusBarCtlItems 状态栏控件项集契约（D159：删掉「展开全部」）。
 // 会话在默认预算内本来就是全量，「展开全部」点了没有任何变化。
 func TestHistStatusBarCtlItems(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	items := st.histStatusCtlItems()
@@ -66,6 +67,7 @@ func TestHistStatusBarCtlItems(t *testing.T) {
 // 拿到让出的宽度；点展开钮还原。判据用**关系图栏宽**（g.viewW，帧首按 Constraints 刷新），
 // 不是左栏自身的宽度——用户要的是「把宽度让给关系图」。
 func TestHistLeftColumnCollapse(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	q := new(input.Router)
@@ -116,6 +118,7 @@ func TestHistLeftColumnCollapse(t *testing.T) {
 // TestHistNewConversationButton 左栏标题行「＋」（D160）：点它投出 `/new`（与键入同路径），
 // 且**不**投 /switch——两颗钮相邻，命中区不许串。
 func TestHistNewConversationButton(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister{
 		{ID: "C1", Title: "甲", Messages: 3, Current: true},
 	})

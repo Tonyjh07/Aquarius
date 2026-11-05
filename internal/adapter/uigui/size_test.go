@@ -12,6 +12,7 @@ import (
 
 // TestClampWindowPx 粗界 [200,3840]×[200,2160] + 布局地板（240dp × DPI × scale 抬下限）。
 func TestClampWindowPx(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		w, h         int
@@ -37,6 +38,7 @@ func TestClampWindowPx(t *testing.T) {
 // （ballRect.x = margin），滑出位只依赖工作区边缘、球径与 sliver——热改窗宽后停靠中的
 // 窗口无需重锚，贴条位置天然不变。
 func TestDockedPosWidthInvariant(t *testing.T) {
+	t.Parallel()
 	work := rect{left: 0, top: 0, right: 1920, bottom: 1080}
 	sliver := int32(dpId(unit.Dp(dockSliverDp)))
 	for _, edge := range []string{"left", "right"} {
@@ -58,6 +60,7 @@ func TestDockedPosWidthInvariant(t *testing.T) {
 // TestExtremeShortWindowLayout 极矮窗地板（D90）：带高夹 ≤ transH/4（顶/底带同规），
 // 转写区高度耗尽时区间收空、不越界不恐慌（fade 层「极矮窗整片渐隐」预留归口）。
 func TestExtremeShortWindowLayout(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		h                    int
 		wantBand, wantLowTop int
@@ -83,6 +86,7 @@ func TestExtremeShortWindowLayout(t *testing.T) {
 // TestNarrowWindowShapesInsideFrame 极窄窗（304px 口径）：布局重排后全部形状仍在窗内
 // （D71 行级手势与 ULW 位图都以 frameSize 为界）。
 func TestNarrowWindowShapesInsideFrame(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.add(blockUser, "窄窗问题")
 	u.m.add(blockAssistant, "窄窗回答，内容长一些以触发多行重排。")

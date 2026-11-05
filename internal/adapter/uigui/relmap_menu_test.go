@@ -87,6 +87,7 @@ func relDrainAs(t *testing.T, u *UI, dst any) bool {
 // 分发，项集 = 气泡项 + 图侧三项）：右键按下武装、**原位抬起**才 fire（菜单不在按键未
 // 松时弹出，免得吃掉这次抬起）；上下文 id = 节点、正文取全文（不是 40 字摘要）。
 func TestRelGraphRightClickMenu(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	g := st.graph
 	sx, li := relAnchorScreen(t, g)
@@ -144,6 +145,7 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 // 「插入摘要」：根前无处可插；人格之前插摘要会让摘要顶到路径第二位、被装配当成 persona。
 // 会话根整份菜单已删（2026-10-25 用户批注），故根只断言「不弹菜单」。
 func TestRelGraphRightClickNoSummaryForRootAndPersona(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	// 会话根：右键不弹任何菜单。
 	li := relNodeIndex(t, st, "r")
@@ -174,6 +176,7 @@ func TestRelGraphRightClickNoSummaryForRootAndPersona(t *testing.T) {
 
 // TestRelGraphRightClickNoMenuOnDragAway 右键按下后**移开抬起**（非原位）→ 不出菜单。
 func TestRelGraphRightClickNoMenuOnDragAway(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	sx, _ := relAnchorScreen(t, st.graph)
 	q.Queue(pointer.Event{Kind: pointer.Press, Position: sx, PointerID: 7,
@@ -191,6 +194,7 @@ func TestRelGraphRightClickNoMenuOnDragAway(t *testing.T) {
 // Carry**（D139：不再投主窗 editMsg）；正文在遮罩内经 NodeText 现取 = **全文**（D132 的
 // 要点：摘要会截断消息）；part 缺省合段（遮罩提交不带 --part）。
 func TestRelGraphMenuEditOpensOverlayWithFullText(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const li = 4 // a1（assistant，正文块）
 	wantID := st.model.nodes[st.vis.nodes[li]].id
@@ -227,6 +231,7 @@ func TestRelGraphMenuEditOpensOverlayWithFullText(t *testing.T) {
 // TestRelGraphMenuRawOpensOverlaySourcePage 菜单「查看原文」→ 开遮罩并**定位源码页签**
 // （D139：图侧不再另开 winRaw 次窗）。
 func TestRelGraphMenuRawOpensOverlaySourcePage(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const li = 4
 	q.Queue(relRightPress(st, li))
@@ -249,6 +254,7 @@ func TestRelGraphMenuRawOpensOverlaySourcePage(t *testing.T) {
 // TestRelGraphMenuRegenAndQuote 菜单「重新生成」/「引用」与主界面同命令路径：/regen <id>
 // 与 quoteMsg（引用文本 = 全文）。
 func TestRelGraphMenuRegenAndQuote(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const li = 4
 	wantID := st.model.nodes[st.vis.nodes[li]].id
@@ -276,6 +282,7 @@ func TestRelGraphMenuRegenAndQuote(t *testing.T) {
 // TestRelGraphMenuRootNodeNoMenu 会话根节点右键**不弹任何菜单**（2026-10-25 用户批注：
 // root 的右键菜单整份删掉；root 左键改为复制会话 ID，见 TestRelGraphRootLeftClickCopiesID）。
 func TestRelGraphMenuRootNodeNoMenu(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	q.Queue(relRightPress(st, 0)) // 0 = 局部 r（结构根）
 	q.Queue(relRightReleaseAt(st, 0))
@@ -298,6 +305,7 @@ func TestRelGraphMenuRootNodeNoMenu(t *testing.T) {
 // TestRelGraphMenuNoBodyNode 图侧取不到正文（NodeText 未命中）→ 只剩图侧项：不拿空
 // 文本预填编辑框（D132 的 hasText 分支；内核也会拒空修订文本，但菜单不该诱导）。
 func TestRelGraphMenuNoBodyNode(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil)) // 不配 texts
 	st := newHistoryState(u)
 	q := new(input.Router)
@@ -324,6 +332,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 // TestRelGraphMenuRm 菜单「删除」→ /rm <id> 经 inCh（与键入同路径；分发在 shell 线程，
 // 故这里直接走 menuChosen）。
 func TestRelGraphMenuRm(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const li = 4
 	want := st.model.nodes[st.vis.nodes[li]].id
@@ -345,6 +354,7 @@ func TestRelGraphMenuRm(t *testing.T) {
 // TestRelGraphMenuCopyIDAction 图侧「复制 ID」走动作槽 → **历史窗帧**内落剪贴板
 // （剪贴板写入必须在 Gio 帧内，分发处不能直连，§15.6）。
 func TestRelGraphMenuCopyIDAction(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const li = 4
 	want := st.model.nodes[st.vis.nodes[li]].id
@@ -369,6 +379,7 @@ func TestRelGraphMenuCopyIDAction(t *testing.T) {
 
 // TestRelGraphMenuRespond 图侧「生成响应」→ 唤出主窗 + 投 /respond <id>（与键入同路径）。
 func TestRelGraphMenuRespond(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const li = 4
 	want := st.model.nodes[st.vis.nodes[li]].id
@@ -398,6 +409,7 @@ func TestRelGraphMenuRespond(t *testing.T) {
 // TestRelGraphRootLeftClickCopiesID 会话根**原位左键**抬起 → 复制会话 ID（= 根节点 ID，
 // D19）+ 轻提示，**不开遮罩**（2026-10-25 用户批注：root 左键改为复制会话 ID、不弹窗）。
 func TestRelGraphRootLeftClickCopiesID(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histFrameFor(q, u, st)
 	if !st.graph.isRoot(0) {

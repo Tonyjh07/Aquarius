@@ -57,6 +57,7 @@ func ovUserID(st *historyState) conversation.MessageID {
 // TestOverlaySubmitModes D139：提交 = 结构化 `/edit` 经 inCh，flag 紧跟 id（D97① 位置
 // 口径）：Fresh 无 flag / Carry = `--keep` / Clone = `--copy`；提交后关遮罩并唤出主窗。
 func TestOverlaySubmitModes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		mode conversation.KeepMode
@@ -110,6 +111,7 @@ func TestOverlaySubmitModes(t *testing.T) {
 
 // TestOverlaySubmitRejectsEmpty 空/纯空白文本不提交（内核亦拒），遮罩保持开启。
 func TestOverlaySubmitRejectsEmpty(t *testing.T) {
+	t.Parallel()
 	u, st, _ := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageSource)
 	st.ov.ed.SetText("   \n ")
@@ -127,6 +129,7 @@ func TestOverlaySubmitRejectsEmpty(t *testing.T) {
 // TestOverlaySubmitKeepsDraftWhenChannelFull 输入通道满时提交**不关遮罩**：命令没投出去，
 // 用户改的文本不能凭空消失（D139 的数据保真口径）。
 func TestOverlaySubmitKeepsDraftWhenChannelFull(t *testing.T) {
+	t.Parallel()
 	u, st, _ := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageSource)
 	st.ov.ed.SetText("改后的问题")
@@ -144,6 +147,7 @@ func TestOverlaySubmitKeepsDraftWhenChannelFull(t *testing.T) {
 
 // TestOverlayReadOnlyNodes root/system 与无正文节点只读：提交不了、编辑器只读。
 func TestOverlayReadOnlyNodes(t *testing.T) {
+	t.Parallel()
 	u, st, _ := relGraphFixture(t)
 	var rootID conversation.MessageID
 	for _, n := range st.model.nodes {
@@ -192,6 +196,7 @@ func TestOverlayReadOnlyNodes(t *testing.T) {
 // （`Router.Frame` 执行命令）才生效，故开遮罩后需先出一帧把焦点（呈现页落在遮罩自身
 // ——无编辑器可获焦）立起来，Esc 才投得到。
 func TestOverlayEscCloses(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
 	histFrameFor(q, u, st) // 焦点立起来
@@ -204,6 +209,7 @@ func TestOverlayEscCloses(t *testing.T) {
 
 // TestOverlayEscClosesFromSourcePage 源码页 Esc 也关（焦点在编辑器上，双挂过滤器）。
 func TestOverlayEscClosesFromSourcePage(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageSource)
 	histFrameFor(q, u, st) // 焦点进编辑器
@@ -218,6 +224,7 @@ func TestOverlayEscClosesFromSourcePage(t *testing.T) {
 // 靠自挂过滤器按卡片盒判定——画 Clickable 挡不住，Gio 事件广播给全部命中 handler）。
 // 点击序列需 Move+Press+Release：Gio 的抬起只投给「已进入窗口」的命中集。
 func TestOverlayClickOutsideCloses(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
 	histFrameFor(q, u, st)
@@ -240,6 +247,7 @@ func TestOverlayClickOutsideCloses(t *testing.T) {
 // （Gio `gtx.Event` 排他消费：抬起已被右图的过滤器抽干，遮罩层收不到——故这里不需要
 // armed 守卫）；随后点卡片外才关。变异敏感：若遮罩改为也消费那次抬起，本用例即红。
 func TestOverlayOpenClickDoesNotCloseItself(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histFrameFor(q, u, st) // 先出一帧：右图按真实面板尺寸就位
 	wgtx, _ := frameGtxSize(q.Source(), 720, 560)
@@ -286,6 +294,7 @@ func TestOverlayOpenClickDoesNotCloseItself(t *testing.T) {
 // 变异验证：去掉 `relGraph.frame` 里的 `overlayActive` 门 ⇒ 本用例红（遮罩被换节点 /
 // 视场被平移）。
 func TestOverlayBackgroundGraphInert(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
 	histFrameFor(q, u, st)
@@ -336,6 +345,7 @@ func TestOverlayBackgroundGraphInert(t *testing.T) {
 // TestOverlayPagesPresentAndSource 两个页签：呈现页解析 markdown（只读预览）、源码页
 // 预填原文且可编辑；解析按源码缓存（同一帧不重复解析）。
 func TestOverlayPagesPresentAndSource(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
 	histFrameFor(q, u, st)
@@ -362,6 +372,7 @@ func TestOverlayPagesPresentAndSource(t *testing.T) {
 // TestOverlayGotoMenuItem 图侧「转到」→ /goto 经 inCh + 唤出主窗（D139：`/goto`
 // 由单击移来；顺带补唤出，否则主窗收在悬浮球里时点了没反应）。
 func TestOverlayGotoMenuItem(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	const li = 4
 	want := st.model.nodes[st.vis.nodes[li]].id
@@ -392,6 +403,7 @@ func TestOverlayGotoMenuItem(t *testing.T) {
 
 // TestOverlayCardGeometryFitsViewport 卡片盒：居中、限宽 ≤560dp、高 ≤ 视口 70%。
 func TestOverlayCardGeometryFitsViewport(t *testing.T) {
+	t.Parallel()
 	_, _, _ = relGraphFixture(t)
 	gtx, _ := frameGtxSize(input.Source{}, 720, 560)
 	card := overlayCardBox(gtx)
@@ -408,6 +420,7 @@ func TestOverlayCardGeometryFitsViewport(t *testing.T) {
 // scrim 压暗（像素变暗），卡片区保持主题底色（不被压暗）——即「压暗一层 + 居中卡片」
 // 真的画出来了，而不是只有状态位在变。
 func TestOverlayDimmedBackdropAndCard(t *testing.T) {
+	t.Parallel()
 	const viewW, viewH = 720, 560
 	w, err := headless.NewWindow(viewW, viewH)
 	if err != nil {
@@ -460,6 +473,7 @@ func TestOverlayDimmedBackdropAndCard(t *testing.T) {
 // 不像右图那样被遮罩的整窗输入区遮蔽，故这里的「不取事件」门是**必需**的。
 // 变异验证：去掉 `historyState.dispatch` 的 `overlayActive` 门 ⇒ 本用例红。
 func TestOverlayBackgroundRowsInert(t *testing.T) {
+	t.Parallel()
 	// 本用例要**有会话行**可点：另起一个带左栏数据的夹具（关系图夹具的 Lister 为空）。
 	texts := map[conversation.MessageID]string{}
 	for _, n := range relFixtureGraph().Nodes {
@@ -549,6 +563,7 @@ func nearColor(a, b color.Color, tol int) bool {
 // ⇒ 等于不居中）时底板落在窗口左上角，本用例红（2026-10-15 用户截图报障：显示未居中，
 // 点击区域却是居中的）。
 func TestOverlayCardPlateHugsHitBox(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	render := ovRenderer(t, u, st, q)
 	render() // 基线帧（让右图物理/视口就位）
@@ -583,6 +598,7 @@ func TestOverlayCardPlateHugsHitBox(t *testing.T) {
 // 「呈现/源码」「保存/关闭」字贴左边、右边多一块、右角是直角）。
 // 变异验证：把 overlayPillBtn/overlayBtn 换回 `Inset 内 Max` 画底 ⇒ 本用例红。
 func TestOverlayPillHugsItsBox(t *testing.T) {
+	t.Parallel()
 	u, _, _ := relGraphFixture(t)
 	const w, h = 240, 60
 	win, err := headless.NewWindow(w, h)
@@ -641,6 +657,7 @@ func TestOverlayPillHugsItsBox(t *testing.T) {
 // 会话容器不是消息 ⇒ 只写「会话根 · <id>」。关键回归：root 与 system 都落 `blockPlain`，
 // 借 blockKind 措辞会把根节点写成「系统」。
 func TestOverlayTitleText(t *testing.T) {
+	t.Parallel()
 	u, st, _ := relGraphFixture(t)
 	for _, tc := range []struct {
 		id  conversation.MessageID
@@ -666,6 +683,7 @@ func TestOverlayTitleText(t *testing.T) {
 // （2026-10-15 用户拍板）：底行**首排**应数到 5 块独立底板（三方式 + 保存 + 关闭）；
 // 旧版只有字色变化时首排只有 保存/关闭 两块 ⇒ 本用例红。
 func TestOverlayModeButtonsArePills(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	histOpenOverlay(t, u, st, ovUserID(st), conversation.Fresh, overlayPageRendered)
 	img := ovRenderer(t, u, st, q)()
@@ -701,6 +719,7 @@ func TestOverlayModeButtonsArePills(t *testing.T) {
 // TestOverlaySaveDisabledWhenDraftEmpty 空草稿时「保存」呈禁用态（D139 ⑤）：配色取次要底
 // + 暗字，且不提交；有草稿才可用。只读节点恒不可用。
 func TestOverlaySaveDisabledWhenDraftEmpty(t *testing.T) {
+	t.Parallel()
 	u, st, _ := relGraphFixture(t)
 	th := u.th
 	pp := paperOf()

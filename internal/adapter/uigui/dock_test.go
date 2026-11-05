@@ -14,6 +14,7 @@ func dpId(dp unit.Dp) int { return int(dp) }
 
 // TestBallRect 锚点与 D49 球几何同源（16/48、行底 16、行上 8；D50 收起态夹取锚点）。
 func TestBallRect(t *testing.T) {
+	t.Parallel()
 	got := ballRect(image.Pt(608, 460), dpId)
 	want := image.Rect(16, 396, 64, 444)
 	if got != want {
@@ -24,6 +25,7 @@ func TestBallRect(t *testing.T) {
 // TestClampAnchor 可见锚点夹取（D50 ①）：收起 = 球（透明窗体可越界）、展开 = 整窗；
 // 顺序右/下先、左/上后（超尺寸时左上优先，与旧口径一致）。
 func TestClampAnchor(t *testing.T) {
+	t.Parallel()
 	work := rect{left: 0, top: 0, right: 1920, bottom: 1080}
 	ball := image.Rect(16, 396, 64, 444)
 
@@ -47,6 +49,7 @@ func TestClampAnchor(t *testing.T) {
 
 // TestSnapDelta 四边吸附（D50 ②）：阈值内取最近边贴齐、超阈值不吸、已贴齐零位移。
 func TestSnapDelta(t *testing.T) {
+	t.Parallel()
 	work := rect{left: 0, top: 0, right: 1920, bottom: 1080}
 	win := image.Rect(0, 0, 608, 460)
 	thr := int32(snapDp)
@@ -73,6 +76,7 @@ func TestSnapDelta(t *testing.T) {
 
 // TestDockableEdge 停靠边判定（D50 ③）：贴齐 + 外侧无相邻显示器；接缝边/不贴边 = 不可。
 func TestDockableEdge(t *testing.T) {
+	t.Parallel()
 	work := rect{left: 0, top: 0, right: 1920, bottom: 1080}
 	ball := image.Rect(16, 396, 64, 444)
 	thr := int32(snapDp)
@@ -95,6 +99,7 @@ func TestDockableEdge(t *testing.T) {
 // TestDockSlideAndPark 停靠/召回落位（D50）：亮态贴齐 → 滑出后恰留 sliver 窄条；
 // 垂直方向不动。
 func TestDockSlideAndPark(t *testing.T) {
+	t.Parallel()
 	work := rect{left: 0, top: 0, right: 1920, bottom: 1080}
 	ball := image.Rect(16, 396, 64, 444)
 	sliver := int32(dockSliverDp)
@@ -128,6 +133,7 @@ func TestDockSlideAndPark(t *testing.T) {
 // TestEvalDock 停靠判定（D50 用户拍板语义）：布防 → 移开停靠；启动恢复（未布防）不停；
 // 展开/拖动/不贴边不停；停靠 + 悬停窄条召回；召回后移开重停。
 func TestEvalDock(t *testing.T) {
+	t.Parallel()
 	// ① 光标在球上且贴可停靠边 → 布防、无动作。
 	if armed, act := evalDock(dockInputs{collapsed: true, edge: "left", over: true}); !armed || act != dockNoneAct {
 		t.Fatalf("布防 = (%v,%v), want (true,none)", armed, act)
@@ -168,6 +174,7 @@ func TestEvalDock(t *testing.T) {
 
 // TestEaseOutCubic 停靠缓动：端点精确、单调不减、前段快于线性（ease-out）。
 func TestEaseOutCubic(t *testing.T) {
+	t.Parallel()
 	if easeOutCubic(0) != 0 || easeOutCubic(1) != 1 ||
 		easeOutCubic(-0.5) != 0 || easeOutCubic(1.5) != 1 {
 		t.Fatalf("端点越界夹取错误: 0=%v 1=%v neg=%v over=%v",
@@ -189,6 +196,7 @@ func TestEaseOutCubic(t *testing.T) {
 // TestArmHeartbeat 心跳安全边界（D50）：headless（w=nil）布防不启动唤帧 goroutine；
 // 未布防时已开的心跳关停且 channel 关闭（收敛，无泄漏）。
 func TestArmHeartbeat(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 
 	u.dockArm = true
@@ -216,6 +224,7 @@ func TestArmHeartbeat(t *testing.T) {
 // 透明区悬停可能零帧，判定全靠帧 + 光标直采）；否则静默零帧。光标项经 heartbeatNeedAt
 // 参数化（真实光标不可控）。
 func TestHeartbeatNeed(t *testing.T) {
+	t.Parallel()
 	far := point{x: -1 << 29, y: -1 << 29} // 任何带外位置
 	u := &UI{plat: newFakePlat()}
 	if u.heartbeatNeedAt(far) {
@@ -254,6 +263,7 @@ func TestHeartbeatNeed(t *testing.T) {
 // 及其上方 approach 余量内 → 心跳；带外（转写区深处/窗外）不因光标项心跳。
 // 几何：608×460@1x，行块 = [396,444)+上下边距 = [388,460)，带顶 = 388−12 = 376。
 func TestHeartbeatInputBand(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
 	u.x, u.y = 100, 200 // 窗口屏幕位 → 带 = 屏幕 x∈[100,708) y∈[576,660)
 	cases := []struct {
@@ -285,6 +295,7 @@ func TestHeartbeatInputBand(t *testing.T) {
 // TestCursorHitsLogo logo 门控（D85）：矩形直采 × WindowFromPoint 命中直证。
 // headless（hwnd=0）退化为纯矩形直采——608×460@1x 窗口系 logo 钮 = [16,396,64,444)。
 func TestCursorHitsLogo(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat(), frameSize: image.Pt(608, 460), frameMetric: unit.Metric{PxPerDp: 1, PxPerSp: 1}}
 	u.x, u.y = 227, 146
 	cases := []struct {
@@ -312,6 +323,7 @@ func TestCursorHitsLogo(t *testing.T) {
 // 顺序左→右恒 [✗ 拒绝][✓ 允许][🔑 提升（仅 elevate）]。tips 直采（confirmTipAt）
 // 与布局期 Flex 排布共用同一套 dp 常量，此处锁几何契约。
 func TestConfirmBtnRects(t *testing.T) {
+	t.Parallel()
 	dp := func(d unit.Dp) int { return int(d) }
 	size := image.Pt(608, 460)
 
@@ -349,6 +361,7 @@ func TestConfirmBtnRects(t *testing.T) {
 // 左上方块、右钮 = 右上方块），命中 = 窗口位 + 矩形含光标屏幕坐标；帧未就绪不命中。
 // 分层窗透明像素/窗外零 pointer 事件，Hover 收不到 Leave——tips 熄灭全靠本判定。
 func TestOverInputBtn(t *testing.T) {
+	t.Parallel()
 	u := &UI{plat: newFakePlat()}
 	u.frameSize = image.Pt(760, 575)
 	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
@@ -390,6 +403,7 @@ func TestOverInputBtn(t *testing.T) {
 // 已移开 → 不悬停就永不停靠（收回后不自动吸附/停靠的实测缺陷）。展开方向仍须清
 // （展开态不可停靠，default 分支同口径）。
 func TestCollapseAnimKeepsDockArm(t *testing.T) {
+	t.Parallel()
 	// ① 收起动画（beginCollapse 同序：先起动画再翻态）：抬手布防证据保留。
 	u := newFrameUI()
 	u.dockArm = true
@@ -419,6 +433,7 @@ func TestCollapseAnimKeepsDockArm(t *testing.T) {
 // 还是滑出位；按 OS 矩形起基，点击期间 ≥1px 抖动的 moveDrag 会把贴齐位回退成滑出位
 // （离边超 snapDp → 布防/停靠断链）。基点必须 = u.x/u.y（undockInstant 记账后即贴齐位）。
 func TestBeginDragBaseFollowsUndock(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.hwnd = 1 // 窗口就绪门控（headless 无真句柄，windowRectPx 恒失败）
 	u.frameSize = image.Pt(760, 575)
@@ -444,6 +459,7 @@ func TestBeginDragBaseFollowsUndock(t *testing.T) {
 // 停靠」把窗口落在半出屏贴边位（球锚点越界合法），展开态整窗锚点会把它推离边缘 →
 // 收起后球离边超 snapDp、布防/停靠断链——纯点击必须原位保留；真拖动仍按态夹取。
 func TestEndDragClickKeepsPark(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	u.frameSize = image.Pt(760, 575) // 展开态锚点 = 输入栏包围盒（D52）
 	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
@@ -475,6 +491,7 @@ func TestEndDragClickKeepsPark(t *testing.T) {
 // TestRowAnchor 展开态锚点几何（D52）：输入栏三段包围盒 = [sideMargin, 镜像边距] ×
 // [行上, 行高]——与 inputBar 同式，转写消息区不参与。
 func TestRowAnchor(t *testing.T) {
+	t.Parallel()
 	size, dp := image.Pt(760, 575), dpId
 	r := rowAnchor(size, dp)
 	if r.Min.X != dp(sideMarginDp) || r.Max.X != size.X-dp(sideMarginDp) {
@@ -490,6 +507,7 @@ func TestRowAnchor(t *testing.T) {
 // TestExpandedClampRowEdge 展开态夹取只限制输入栏（D52）：输入栏贴左缘/提到上沿的
 // 位置不被弹开（旧整窗口径会推开 0～20px 透明边距），再越即夹回。
 func TestExpandedClampRowEdge(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{})
 	u.frameSize = image.Pt(760, 575)
 	u.frameMetric = unit.Metric{PxPerDp: 1, PxPerSp: 1}
@@ -514,6 +532,7 @@ func TestExpandedClampRowEdge(t *testing.T) {
 // TestShowExpandUndocks 呼出消息脱离停靠（D50）：停靠态 showExpand → 状态复位 +
 // 复亮 + 落盘未停靠（headless 下 Win32 为无句柄空转，可断言状态与记忆）。
 func TestShowExpandUndocks(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{PosFile: filepath.Join(t.TempDir(), "pos.json")})
 
 	// 模拟停靠态（事件循环侧状态在 post 之前写入，drainSync 提供 happens-before）。

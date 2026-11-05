@@ -86,6 +86,7 @@ func relFixtures() map[string][]relGeoNode {
 // TestRelSolveSettlesAndInvariants 主性质：解存在、收敛、层序单调（D127 横树 =「子恒在
 // 父之右」的 90° 硬上限）、有界。角度硬投影已废除（D121），横树几何不再有扇区（D127）。
 func TestRelSolveSettlesAndInvariants(t *testing.T) {
+	t.Parallel()
 	for name, nodes := range relFixtures() {
 		nodes := nodes
 		t.Run(name, func(t *testing.T) {
@@ -124,6 +125,7 @@ func TestRelSolveSettlesAndInvariants(t *testing.T) {
 // （≤ 卡片宽的 relCardPenetrationMax），不是「零重叠」——后者在密集分支点本就不可达，
 // 真要它就得把标签砍没（A5 的取舍）。
 func TestRelSolveCardsDoNotOverlap(t *testing.T) {
+	t.Parallel()
 	const half, halfH = 70.0, 17.0
 	nodes := relStar(12)
 	for i := range nodes {
@@ -152,6 +154,7 @@ func TestRelSolveCardsDoNotOverlap(t *testing.T) {
 
 // TestRelSolveReproducible 同输入两次求解逐点相等（R1：确定性种子 → 布局可复现）。
 func TestRelSolveReproducible(t *testing.T) {
+	t.Parallel()
 	nodes := relRandTree(7, 120)
 	a, okA := relSolve(nodes)
 	b, okB := relSolve(nodes)
@@ -171,6 +174,7 @@ func TestRelSolveReproducible(t *testing.T) {
 // TestRelSolveKineticNonIncreasing 动能（本步位移²）总体下降——不要求逐步严格单调
 // （投影可能瞬时注入位移），但首步总远大于末步、且终态静止。
 func TestRelSolveKineticNonIncreasing(t *testing.T) {
+	t.Parallel()
 	nodes := relRandTree(3, 80)
 	sol, ok := relSolve(nodes)
 	if !ok || !sol.Settled {
@@ -187,6 +191,7 @@ func TestRelSolveKineticNonIncreasing(t *testing.T) {
 
 // TestRelValidateInputs 非法输入守卫：空 ok / 多根 / 父越界 / 自环 / 环。
 func TestRelValidateInputs(t *testing.T) {
+	t.Parallel()
 	if sol, ok := relSolve(nil); !ok || len(sol.Pos) != 0 {
 		t.Fatalf("空树应返回空解 ok=true")
 	}
@@ -205,6 +210,7 @@ func TestRelValidateInputs(t *testing.T) {
 
 // TestRelWeightDoesNotAffectStructure 权重只入斥力限幅，不改结构合法性（A4 的布局侧锚）。
 func TestRelWeightDoesNotAffectStructure(t *testing.T) {
+	t.Parallel()
 	nodes := relRandTree(5, 60)
 	heavier := append([]relGeoNode(nil), nodes...)
 	for i := range heavier {
@@ -233,6 +239,7 @@ func relStepUntilSettled(l *relLayout, maxFrames int, pin relPin) (int, bool) {
 // TestRelRestLayoutIsTree 静息布局是确定性树形：根在原点、子 = 父 + (restOff, rowGap)、
 // 有界、两次构造逐点相等。
 func TestRelRestLayoutIsTree(t *testing.T) {
+	t.Parallel()
 	nodes := relRandTree(23, 80)
 	a, ok := newRelLayout(nodes)
 	if !ok {
@@ -260,6 +267,7 @@ func TestRelRestLayoutIsTree(t *testing.T) {
 // TestRelPhysSettlesBoundedReproducible 物理从折叠播种出发可静止、有界、无 NaN，且同
 // 输入两跑终态逐点相等（确定性）。
 func TestRelPhysSettlesBoundedReproducible(t *testing.T) {
+	t.Parallel()
 	for name, nodes := range relFixtures() {
 		nodes := nodes
 		t.Run(name, func(t *testing.T) {
@@ -300,6 +308,7 @@ func TestRelPhysSettlesBoundedReproducible(t *testing.T) {
 // TestRelPhysPinLocksAndPropagates 钉住某节点并拖开：其坐标被锁死，其余节点被弹簧/斥力
 // 带动（整树响应，位移 > 0），布局仍有界。
 func TestRelPhysPinLocksAndPropagates(t *testing.T) {
+	t.Parallel()
 	nodes := relRandTree(11, 40)
 	lay, ok := newRelLayout(nodes)
 	if !ok {
@@ -336,6 +345,7 @@ func TestRelPhysPinLocksAndPropagates(t *testing.T) {
 }
 
 func TestRelPhysIncremental(t *testing.T) {
+	t.Parallel()
 	nodes := relRandTree(17, 30)
 	lay, ok := newRelLayout(nodes)
 	if !ok {

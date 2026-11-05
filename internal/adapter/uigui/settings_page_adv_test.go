@@ -22,6 +22,7 @@ import (
 // TestAdvPageFillsRow （纯几何口径）高级页声明了撑满行，且它必须排在行表末尾——
 // 后面还有行的话，Flex 会把剩余高度分给编辑区、把后续行挤成 0 高。
 func TestAdvPageFillsRow(t *testing.T) {
+	t.Parallel()
 	fp, ok := settingsPages[pageAdv].(fillPage)
 	if !ok {
 		t.Fatal("「高级」页应实现 fillPage（整文件编辑区要随窗口高度撑满）")
@@ -53,6 +54,7 @@ func TestAdvPageFillsRow(t *testing.T) {
 // TestAdvEditorTracksWindowHeight 离屏渲染：同一个 config 文本在两个窗口高度下，编辑框
 // 高度之差 ≈ 窗口高度之差（框跟着窗口长，而不是停在某个固定值）。
 func TestAdvEditorTracksWindowHeight(t *testing.T) {
+	t.Parallel()
 	const (
 		viewW, pxPerDp = 900, 1.25
 		navWpx         = 140 * pxPerDp

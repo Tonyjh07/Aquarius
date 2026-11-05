@@ -33,6 +33,7 @@ func restoreLight(t *testing.T) {
 // TestPalettePresetsTwoVersions 两版预设同构异值：底/文字/卡片全套成对换值，
 // 品牌色与 tips 白字恒定（§15.4 品牌色两版同值）。
 func TestPalettePresetsTwoVersions(t *testing.T) {
+	t.Parallel()
 	l, d := lightPalette(), darkPalette()
 	if l.pillBg == d.pillBg || l.windowBg == d.windowBg || l.fg == d.fg {
 		t.Fatal("深浅预设底色应不同")
@@ -61,6 +62,7 @@ func isLighter(a, b color.NRGBA) bool {
 // （含 fg/bg 与来源标注）。这条替代了原先「applyPalette 写包级槽、currentPalette
 // 反向抄回」的双向同步检查——不再有两套事实源，也就没有「漏配另一半」这种失败模式。
 func TestTokensHaveOneSource(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	for _, p := range []palette{lightPalette(), darkPalette()} {
 		storeTokens(p)
@@ -73,6 +75,7 @@ func TestTokensHaveOneSource(t *testing.T) {
 // TestTokensAreSnapshots 快照是值不是引用：写入后改调用方那份变量，活动值不受影响
 // （把「跨 goroutine 只读快照」落成可断言的性质）。
 func TestTokensAreSnapshots(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	p := lightPalette()
 	storeTokens(p)
@@ -84,6 +87,7 @@ func TestTokensAreSnapshots(t *testing.T) {
 
 // TestTokensFallBackToLight 未初始化时取令牌回落浅色预设（宁可浅色，不要零值全黑）。
 func TestTokensFallBackToLight(t *testing.T) {
+	t.Parallel()
 	activeTokens.Store(nil)
 	t.Cleanup(func() { storeTokens(lightPalette()) })
 	if got := tok(); got != lightPalette() {
@@ -94,6 +98,7 @@ func TestTokensFallBackToLight(t *testing.T) {
 // TestResolvePalette 档位解析：light/dark 直取预设；""/system/未识别 = 跟随系统
 // （系统深浅由平台层给，测试两档都走一遍——不再依赖跑测试的机器当前主题）。
 func TestResolvePalette(t *testing.T) {
+	t.Parallel()
 	for _, dark := range []bool{false, true} {
 		if got := slots(resolvePalette("light", dark)); got != slots(lightPalette()) {
 			t.Error("light 应直取浅色预设")
@@ -116,6 +121,7 @@ func TestResolvePalette(t *testing.T) {
 // TestThemeMessagesHeadless 消息热切换路径（与运行时同一条 apply 链）：
 // 初始档、themeMsg 切换、sysThemeMsg 仅 system 档重解析。
 func TestThemeMessagesHeadless(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	u := newHeadless(t, Options{Theme: "dark"})
 

@@ -35,6 +35,7 @@ func webSnapshot() SettingsSnapshot {
 // TestWebPageFillsSnapshot 开窗填表：两组提供商按序铺开（类型/来源/端点/国家语言/条数），
 // 本地抓取参数原样落位；密钥框恒空（只写不回显，D35）。
 func TestWebPageFillsSnapshot(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -83,6 +84,7 @@ func TestWebPageFillsSnapshot(t *testing.T) {
 // TestWebProviderFormFromDefaults 老配置只写 kind（没有 from）时，「借用」下拉显示同名
 // 条目——启动确实借它，界面不能显示成「不借」。
 func TestWebProviderFormFromDefaults(t *testing.T) {
+	t.Parallel()
 	choices := []ProviderChoice{{Name: "deepseek"}, {Name: "mimo"}}
 	pf := newWebProviderForm(WebProviderView{Kind: "deepseek"}, true, choices)
 	if got := pf.from.value(); got != "deepseek" {
@@ -102,6 +104,7 @@ func TestWebProviderFormFromDefaults(t *testing.T) {
 
 // TestWebPageFillsEndpoint 端点原样回填（自己填过的那份），密钥仍只给形态。
 func TestWebPageFillsEndpoint(t *testing.T) {
+	t.Parallel()
 	s := webSnapshot()
 	s.WebSearchProviders[0] = WebProviderView{
 		Kind: "deepseek", BaseURL: "https://mine.example.com/v1",
@@ -132,6 +135,7 @@ func TestWebPageFillsEndpoint(t *testing.T) {
 
 // TestWebPageRowsAndEditing 行计划随列表长度变化；上移/下移/删除/新增只动本侧列表。
 func TestWebPageRowsAndEditing(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -187,6 +191,7 @@ func TestWebPageRowsAndEditing(t *testing.T) {
 // TestSaveIncludesWeb 保存提交带全部联网字段：列表恒全量写、数值空 = 保持快照原值、
 // 密钥框留空 = 不带值（cmd 侧保持原引用）。
 func TestSaveIncludesWeb(t *testing.T) {
+	t.Parallel()
 	var got SettingsPatch
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
@@ -235,6 +240,7 @@ func TestSaveIncludesWeb(t *testing.T) {
 
 // TestSaveWebRejectsBadNumbers 数值越界在写回调之前拦下（不落盘），并给出中文原因。
 func TestSaveWebRejectsBadNumbers(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, field, value, want string }{
 		{"条数过小", "count", "0", "1–20"},
 		{"条数过大", "count", "21", "1–20"},
@@ -274,6 +280,7 @@ func TestSaveWebRejectsBadNumbers(t *testing.T) {
 // TestWebProviderViewsKeepKeyShapeByKind 保存后回写快照的密钥形态按 kind 对齐：在前面
 // 插一条同类型条目、或删掉一条，下标整体错位也不该把 brave 的引用名贴到别的条目上。
 func TestWebProviderViewsKeepKeyShapeByKind(t *testing.T) {
+	t.Parallel()
 	old := []WebProviderView{
 		{Kind: "brave", KeySaved: true, KeyRef: "secret:BRAVE"},
 	}
@@ -297,6 +304,7 @@ func TestWebProviderViewsKeepKeyShapeByKind(t *testing.T) {
 // TestWebProviderRowShowsOnlyRelevantFields 字段按类型显隐：local 不画端点与「借用」，
 // brave 不画「借用」。
 func TestWebProviderRowShowsOnlyRelevantFields(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -329,6 +337,7 @@ func TestWebProviderRowShowsOnlyRelevantFields(t *testing.T) {
 // TestFillWebProviderFrom 「填入」把所选服务的端点与密钥引用抄进本条目（D222）：只抄
 // 引用名不抄值；目标没有已入库的引用时密钥框保持原样。
 func TestFillWebProviderFrom(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
@@ -367,6 +376,7 @@ func TestFillWebProviderFrom(t *testing.T) {
 // TestFillWebProviderFromSkipsPlainKey 来源 provider 的密钥是明文时（没入库）不抄：
 // 编辑框永远不回显值，凭空写一个引用名反而指向不存在的条目。
 func TestFillWebProviderFromSkipsPlainKey(t *testing.T) {
+	t.Parallel()
 	u := newHeadless(t, Options{
 		Settings:      func() SettingsSnapshot { return webSnapshot() },
 		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },

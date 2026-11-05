@@ -10,6 +10,7 @@ import (
 // TestInjectBlockCommitReplay 注入节点在提交与回放两路都成独立暗块（D166）：
 // 来源/触发随块携带、不落 user 盖章（id 恒空 → 不挂分叉条）、空正文不落块。
 func TestInjectBlockCommitReplay(t *testing.T) {
+	t.Parallel()
 	m, u := newTestModel(t)
 	u.m = m
 	parts := []conversation.Part{{Kind: conversation.PartText, Text: "任务 j1 已完成"}}
@@ -52,6 +53,7 @@ func TestInjectBlockCommitReplay(t *testing.T) {
 
 // TestInjectHeadline 卡片头部口径（D166）：来源经友好化表、状态记实际发生。
 func TestInjectHeadline(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		source   string
 		trigger  bool
@@ -79,6 +81,7 @@ func TestInjectHeadline(t *testing.T) {
 // TestInjectOverlayTitleAndSource 遮罩标题与来源行（D166）：注入节点只读，来源行
 // 与转写头部同表；触发状态取快照事实。
 func TestInjectOverlayTitleAndSource(t *testing.T) {
+	t.Parallel()
 	ov := &overlayState{id: "i1", role: conversation.RoleInject, source: "poller:p1", trigger: true}
 	if got := ov.titleText(); got != i18n.Tf("ui.overlay.title.inject", "id", shortID("i1")) {
 		t.Fatalf("titleText = %q", got)

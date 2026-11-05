@@ -35,6 +35,7 @@ func newExpandUI(t *testing.T) (*UI, *input.Router) {
 // TestExpandGeometry D106②：展开态转写区压缩（460 − (72+112) = 276 @1x，修订⑸ 高 160）、
 // 编辑器切多行；收起还原 388、SingleLine 回位。常态几何零变化（D76 口径）。
 func TestExpandGeometry(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.m.add(blockUser, "问") // 空转写不量高（早退分支）——放一条消息让 transH 生效
 	expandFrame(q, u)
@@ -61,6 +62,7 @@ func TestExpandGeometry(t *testing.T) {
 // TestExpandAttachChipsGrow D186：展开态暂存多个附件 → chip 排换行、胶囊按行数长高、
 // 转写区相应压缩；清空后几何回到展开基线。渲染路径冒烟（不出 panic、几何单调）。
 func TestExpandAttachChipsGrow(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.m.add(blockUser, "问")
 	u.setExpanded(true)
@@ -88,6 +90,7 @@ func TestExpandAttachChipsGrow(t *testing.T) {
 
 // TestExpandMultilineSubmit D106③：多行编辑正常提交（文本带换行入管线，编辑框清空）。
 func TestExpandMultilineSubmit(t *testing.T) {
+	t.Parallel()
 	u, _ := newExpandUI(t)
 	u.setExpanded(true)
 
@@ -112,6 +115,7 @@ func TestExpandMultilineSubmit(t *testing.T) {
 // TestExpandCollapseKeepsText D106 修订⑶：收起不压平——换行原样保留（数据保真），
 // 重新展开即完整多行。
 func TestExpandCollapseKeepsText(t *testing.T) {
+	t.Parallel()
 	u, _ := newExpandUI(t)
 	u.setExpanded(true)
 	u.editor.SetText("一\n二\n三")
@@ -130,6 +134,7 @@ func TestExpandCollapseKeepsText(t *testing.T) {
 
 // TestExpandEsc D106③：展开态 Esc 收起（文本保留）——浮层/编辑态优先级让渡另测。
 func TestExpandEsc(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.setExpanded(true)
 	expandFrame(q, u) // 注册 Esc 过滤器（Focus 限编辑器）
@@ -147,6 +152,7 @@ func TestExpandEsc(t *testing.T) {
 
 // TestExpandEnterShiftEnter D106③：展开态 Enter = 提交（不落换行）、Shift+Enter = 换行。
 func TestExpandEnterShiftEnter(t *testing.T) {
+	t.Parallel()
 	u, q := newExpandUI(t)
 	u.setExpanded(true)
 	expandFrame(q, u)
@@ -180,6 +186,7 @@ func TestExpandEnterShiftEnter(t *testing.T) {
 // TestExpandCollapseWindow D106③：收起窗口（球）时展开态一并复位（文本原样保留，
 // 修订⑶ 不压平）。
 func TestExpandCollapseWindow(t *testing.T) {
+	t.Parallel()
 	u, _ := newExpandUI(t)
 	u.setExpanded(true)
 	u.editor.SetText("一\n二")
@@ -194,6 +201,7 @@ func TestExpandCollapseWindow(t *testing.T) {
 
 // TestEditMultilineAutoExpand D106 修订⑷：编辑多行消息自动展开，预填保真（含换行）。
 func TestEditMultilineAutoExpand(t *testing.T) {
+	t.Parallel()
 	u, _ := newExpandUI(t)
 	u.apply(editMsg{id: "u1", text: "第一行\n第二行"})
 	if !u.expanded || u.editor.SingleLine {
@@ -216,6 +224,7 @@ func TestEditMultilineAutoExpand(t *testing.T) {
 
 // TestCaretRect D106 修订⑴：光标杆高度只随行高（20px 行高 → 杆高 20），与内容高无关。
 func TestCaretRect(t *testing.T) {
+	t.Parallel()
 	r := caretRect(f32.Pt(5, 100), 20)
 	if r.Dy() != 20 || r.Min.Y != 100-16 || r.Max.Y != 100+4 {
 		t.Fatalf("caretRect = %v, want 高 20、基线上 0.8 行下 0.2 行", r)
@@ -224,6 +233,7 @@ func TestCaretRect(t *testing.T) {
 
 // TestSubmitAutoCollapse D106 修订⑥：发送后展开态自动收起（编辑态提交同路）。
 func TestSubmitAutoCollapse(t *testing.T) {
+	t.Parallel()
 	u, _ := newExpandUI(t)
 	u.setExpanded(true)
 	u.editor.SetText("一条消息")

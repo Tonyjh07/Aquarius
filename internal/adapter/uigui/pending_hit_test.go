@@ -65,6 +65,7 @@ func center(r image.Rectangle) image.Point { return r.Min.Add(r.Max).Div(2) }
 
 // TestPendingToggleClickable 点「转引导」= 改档（排队 → 引导）。
 func TestPendingToggleClickable(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("这句要早点到", port.DeliveryQueue)
 	u := newPendingUI(p, true)
@@ -82,6 +83,7 @@ func TestPendingToggleClickable(t *testing.T) {
 
 // TestPendingRecallClickable 点「拉回」= 条目回输入框。
 func TestPendingRecallClickable(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("拉回来改改", port.DeliveryQueue)
 	u := newPendingUI(p, true)
@@ -102,6 +104,7 @@ func TestPendingRecallClickable(t *testing.T) {
 
 // TestPendingDropClickable 点「×」= 撤销。
 func TestPendingDropClickable(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("不要了", port.DeliveryQueue)
 	u := newPendingUI(p, true)
@@ -120,6 +123,7 @@ func TestPendingDropClickable(t *testing.T) {
 // TestPendingFollowsReveal 待发条跟着转写区的揭示进度走：转写区收完（msgP 归零）就不画，
 // 展开中随揭示淡入。待发条在转写区下沿，这就是「展开时显示、收起后隐藏」的自然时机。
 func TestPendingFollowsReveal(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("一条待发", port.DeliveryQueue)
 	u := newPendingUI(p, true)
@@ -168,6 +172,7 @@ func (f *steerFrame) click(p image.Point) {
 
 // TestSteerBubbleRendred 引导消息铺在转写区里、待发条上只有排队。
 func TestSteerBubbleRendered(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("引导一句", port.DeliverySteer)
 	_, _ = p.Add("排队一句", port.DeliveryQueue)
@@ -188,6 +193,7 @@ func TestSteerBubbleRendered(t *testing.T) {
 
 // TestSteerDownReturnsToQueue 点 ↓ = 退回队列（气泡消失、条目回到待发条）。
 func TestSteerDownReturnsToQueue(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("等等，先看这里", port.DeliverySteer)
 	u := newPendingUI(p, true)
@@ -206,6 +212,7 @@ func TestSteerDownReturnsToQueue(t *testing.T) {
 
 // TestSteerDropDiscards 点 × = 丢弃这条引导。
 func TestSteerDropDiscards(t *testing.T) {
+	t.Parallel()
 	p := &fakePending{}
 	_, _ = p.Add("算了不说了", port.DeliverySteer)
 	u := newPendingUI(p, true)

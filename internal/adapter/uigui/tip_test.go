@@ -14,6 +14,7 @@ import (
 // TestFactsCardLines 事实卡内容（D82/S1-1g，§15.1）：五段口径——profile · 会话（标题 +
 // ID 前缀 + 模型/档位）· 上下文占用（pct + 计数方式）· 累计用量 · 上轮实测（有实测才显）。
 func TestFactsCardLines(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.opts.Status = func() Status {
 		return Status{
@@ -44,6 +45,7 @@ func TestFactsCardLines(t *testing.T) {
 // TestFactsCardVariants 事实卡分支措辞（D82）：精确计数、无 effort、无上轮实测、
 // profile 空回落 default。
 func TestFactsCardVariants(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.opts.Status = func() Status {
 		return Status{
@@ -72,6 +74,7 @@ func TestFactsCardVariants(t *testing.T) {
 
 // TestFactsCardUnready 快照未就绪（零值）→ nil，调用方回退启动提示（D82）。
 func TestFactsCardUnready(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI() // opts.Status = nil
 	if lines := u.factsCard(); lines != nil {
 		t.Fatalf("无 Status 回调应得 nil, got %v", lines)
@@ -85,6 +88,7 @@ func TestFactsCardUnready(t *testing.T) {
 // TestHoverCardRegistersShape 多行卡绘制并登记形状（D82）：一次 hoverCard 只登记
 // 一条底板形状；单行包装 hoverTip 同款（泛化不破坏既有调用点）。
 func TestHoverCardRegistersShape(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.frameSize = image.Pt(winWidthDp, winHeightDp)
 	gtx, _ := frameGtx(input.Source{})
@@ -102,6 +106,7 @@ func TestHoverCardRegistersShape(t *testing.T) {
 
 // TestShortID 会话 ID 展示前缀（D82）：长 ID 截 8 位、短 ID 原样。
 func TestShortID(t *testing.T) {
+	t.Parallel()
 	if got := shortID("abcdefgh1234"); got != "abcdefgh" {
 		t.Fatalf("shortID = %q", got)
 	}

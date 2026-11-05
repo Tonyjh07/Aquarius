@@ -23,6 +23,7 @@ import (
 // 内缩一个角半径（≈0.28r，实测 ~6.8px）——左右虚线画进节点里，读作「虚线框嵌在节点中」
 // （用户截图报障）。弧不受影响。
 func TestRelDashedSquareOutlineHugsBadge(t *testing.T) {
+	t.Parallel()
 	const r = 24.0
 	step := (relDashOn + relDashOff) * 1.25
 	pts := shapeOutline(relShapeSquare, 100, 100, r, step)
@@ -60,6 +61,7 @@ func TestRelDashedSquareOutlineHugsBadge(t *testing.T) {
 // TestRelTriangleOutline 注入节点的三角外环（D166）：三顶点朝上，采样点闭合在盒内，
 // 且与其余四形的轮廓语言不同（上尖下宽）。
 func TestRelTriangleOutline(t *testing.T) {
+	t.Parallel()
 	const r = 24.0
 	step := (relDashOn + relDashOff) * 1.25
 	pts := shapeOutline(relShapeTriangle, 100, 100, r, step)
@@ -81,6 +83,7 @@ func TestRelTriangleOutline(t *testing.T) {
 }
 
 func TestRelCardLabelMultiLine(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	g := st.graph
@@ -131,6 +134,7 @@ func TestRelCardLabelMultiLine(t *testing.T) {
 // zoom 下**画出来的卡片——否则卡片画出自己的槽位（邻卡压字）且视场适配漏算边。
 // 估宽/估高都是近似，故按标签 zoom 全程扫描（下限处字号被钳、盒宽随 z 缩小：最坏情形）。
 func TestRelCardHalfCoversDrawnCard(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
 	g := st.graph
@@ -156,6 +160,7 @@ func TestRelCardHalfCoversDrawnCard(t *testing.T) {
 // 定位，Min 为 0 等于不平移，数字贴在形状左上角（用户报障「数字居中问题」）。
 // 这里渲染离屏帧后逐像素验证：白字包围盒中心 ≈ 徽标中心。
 func TestRelGlyphCenteredInBadge(t *testing.T) {
+	t.Parallel()
 	storeTokens(lightPalette())
 	u := newHistUI(fakeRelTree{g: relLongSnippetGraph()}, fakeLister(nil))
 	st := newHistoryState(u)
@@ -223,6 +228,7 @@ func TestRelGlyphCenteredInBadge(t *testing.T) {
 
 // TestRelBudgetControls 预算 −/＋ 钳制（用 150 节点链验证非平凡预算）。
 func TestRelBudgetControls(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
 	st := newHistoryState(u)
 	if st.budget != relDefaultBudget {
@@ -271,6 +277,7 @@ func relChainGraph(n int) port.TreeGraph {
 
 // TestRelGraphRenderFullWindow 整窗渲染（含状态栏控件与图例）不 panic（离屏帧）。
 func TestRelGraphRenderFullWindow(t *testing.T) {
+	t.Parallel()
 	u, st, q := relGraphFixture(t)
 	gtx, ops := frameGtxSize(q.Source(), 720, 560)
 	historyFrame(gtx, u.th, u, st)
@@ -281,6 +288,7 @@ func TestRelGraphRenderFullWindow(t *testing.T) {
 // 渲染不越界——曾以全局索引查本地 sol.Pos 崩溃（index out of range）。150 节点链 +
 // 默认预算 120 → 可见集 = anchor 父链一段，全局索引从 30 起、本地 0..119。
 func TestRelGraphBudgetCulledNoPanic(t *testing.T) {
+	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relChainGraph(150)}, fakeLister(nil))
 	st := newHistoryState(u)
 	if len(st.vis.nodes) != 120 {
@@ -298,6 +306,7 @@ func TestRelGraphBudgetCulledNoPanic(t *testing.T) {
 // 高度仍等于徽标（宽度不改变节点直径语义，A4）；标签不可见（低于 zoom 下限）时退化为
 // 居中方块。
 func TestRelNodeCardCarriesLabel(t *testing.T) {
+	t.Parallel()
 	_, st, _ := relGraphFixture(t)
 	g := st.graph
 	g.zoom, g.z = relZoomLabelMin, relZoomLabelMin*g.dpx // 标签可见档（本测试验的是卡片承载标签）
@@ -328,6 +337,7 @@ func TestRelNodeCardCarriesLabel(t *testing.T) {
 
 // TestRelEstTextWidth 文本宽估算：CJK 按全角记、同字数下宽于 ASCII（卡片宽度量级正确）。
 func TestRelEstTextWidth(t *testing.T) {
+	t.Parallel()
 	cjk := relEstTextW("你今天想聊点什么", 12)
 	ascii := relEstTextW("abcdefghijkl", 12)
 	if cjk <= ascii {

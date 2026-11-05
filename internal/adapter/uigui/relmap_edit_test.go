@@ -47,6 +47,7 @@ func relNodeScreen(t *testing.T, g *relGraph, id string) f32.Point {
 // TestRelDropCandidateRules 落点预演的合法性：最近的一个、非根、非自身后代；
 // 压在自己后代上时只留一句解释、绝不当目标。
 func TestRelDropCandidateRules(t *testing.T) {
+	t.Parallel()
 	_, st, _, _ := relEditFixture(t)
 	g := st.graph
 
@@ -91,6 +92,7 @@ func TestRelDropCandidateRules(t *testing.T) {
 // TestRelDragReparentsOnRelease 编辑态拖到合法目标上松手 → 投 `/reparent <被拖> <目标>`，
 // 预演状态清干净、目标环高亮亮起。
 func TestRelDragReparentsOnRelease(t *testing.T) {
+	t.Parallel()
 	u, st, q, _ := relEditFixture(t)
 	g := st.graph
 	drainCh(u)
@@ -147,6 +149,7 @@ func TestRelDragReparentsOnRelease(t *testing.T) {
 
 // TestRelDragNoTargetKeepsParent 没靠近任何节点 = 只改位置（§5.6.3）：不投命令、槽位固化。
 func TestRelDragNoTargetKeepsParent(t *testing.T) {
+	t.Parallel()
 	u, st, q, _ := relEditFixture(t)
 	g := st.graph
 	drainCh(u)
@@ -182,6 +185,7 @@ func TestRelDragNoTargetKeepsParent(t *testing.T) {
 
 // TestRelDragOnDescendantExplains 压在自己的后代上松手：一句解释、不投命令。
 func TestRelDragOnDescendantExplains(t *testing.T) {
+	t.Parallel()
 	u, st, q, _ := relEditFixture(t)
 	g := st.graph
 	drainCh(u)
@@ -216,6 +220,7 @@ func TestRelDragOnDescendantExplains(t *testing.T) {
 
 // TestRelDragOutsideEditModeJustMoves 没开编辑模式：拖到别人身上也只是摆位置（D121 行为不变）。
 func TestRelDragOutsideEditModeJustMoves(t *testing.T) {
+	t.Parallel()
 	texts := make(map[conversation.MessageID]string)
 	for _, n := range relFixtureGraph().Nodes {
 		texts[n.ID] = relFixtureBody(n.ID)
@@ -258,6 +263,7 @@ func TestRelDragOutsideEditModeJustMoves(t *testing.T) {
 //
 // 2026-10-31 实测报障：边已淡出，物理还拉着——手上是一根看不见的皮筋。
 func TestPinDetachedCutsParentSpring(t *testing.T) {
+	t.Parallel()
 	geo := []relGeoNode{
 		{Parent: -1, Level: 0, Weight: 1},
 		{Parent: 0, Level: 1, Weight: 1},

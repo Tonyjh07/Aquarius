@@ -11,6 +11,7 @@ import (
 
 // TestToastAutoExpires 轻提示到期自动失效（不依赖下一次用户输入）：到期后 active=false。
 func TestToastAutoExpires(t *testing.T) {
+	t.Parallel()
 	var ts toastState
 	now := time.Now()
 	if ts.active(now) {
@@ -30,6 +31,7 @@ func TestToastAutoExpires(t *testing.T) {
 
 // TestToastEmptyTextIgnored show 空文案 = 不显示（防止误触发时闪出空卡）。
 func TestToastEmptyTextIgnored(t *testing.T) {
+	t.Parallel()
 	var ts toastState
 	ts.show("", time.Now())
 	if ts.active(time.Now()) {

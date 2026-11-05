@@ -35,6 +35,7 @@ func bubbleFrame(q *input.Router, u *UI) {
 // assistant 定稿块入列（assistant 复合行 = 单气泡携全部行选键），live 草稿/notice
 // 无节点 ID 不登记（不进右键菜单）。
 func TestBubbleRectsRegistered(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addMsg(blockUser, "问", "u1")
 	u.m.addMsg(blockAssistant, "一\n\n二", "a1")
@@ -73,6 +74,7 @@ func TestBubbleRectsRegistered(t *testing.T) {
 // 武装、同气泡内抬起 = 请求菜单并携命中上下文；跨气泡抬起 / 气泡外按下 / 左键 /
 // Cancel 均不请求。
 func TestBubbleRightGesture(t *testing.T) {
+	t.Parallel()
 	setup := func() (*UI, *input.Router, *int, **bubbleMenuCtx) {
 		u := newFrameUI()
 		u.m.addMsg(blockUser, "问", "u1")
@@ -143,6 +145,7 @@ func TestBubbleRightGesture(t *testing.T) {
 // 菜单复用选态）；无选区 → 整条气泡渲染文本（assistant 复合行按键区间拼接）；
 // edit 预填 user/assistant 均携带（D97 开放助手编辑）。
 func TestBubbleCtxCopy(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addMsg(blockUser, "问", "u1")
 	u.m.addMsg(blockAssistant, "一\n\n二", "a1")
@@ -172,6 +175,7 @@ func TestBubbleCtxCopy(t *testing.T) {
 // 复制文本与查看原文内容（thinking = 思考原文标题、chip = 调用/结果 JSON）；两者菜单
 // 项集 = 复制/查看原文两项。
 func TestBubbleRectsThinkingChip(t *testing.T) {
+	t.Parallel()
 	u := newFrameUI()
 	u.m.addMsg(blockUser, "问", "u1")
 	u.m.addMsg(blockThinking, "想一想", "a1")

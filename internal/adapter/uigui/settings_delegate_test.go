@@ -101,6 +101,7 @@ func openDelegatePage(t *testing.T, opts Options) (*UI, *settingsForm) {
 
 // TestDelegatePageRows 接线时：一条代理一块 + 「重新检测」，命令行编辑档预填配置里的值。
 func TestDelegatePageRows(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	fake := delegateFixture()
 	_, f := openDelegatePage(t, Options{
@@ -134,6 +135,7 @@ func TestDelegatePageRows(t *testing.T) {
 
 // TestDelegatePageNotWired 未接线：只读占位，不空白也不崩。
 func TestDelegatePageNotWired(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	_, f := openDelegatePage(t, Options{Settings: func() SettingsSnapshot { return fillSnapshot() }})
 	rows := f.pageRows(pageDelegates)
@@ -144,6 +146,7 @@ func TestDelegatePageNotWired(t *testing.T) {
 
 // TestDelegateActions 三个动作：保存命令行 / 启停 / 设缺省，反馈都带「重启生效」。
 func TestDelegateActions(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	fake := delegateFixture()
 	u, f := openDelegatePage(t, Options{
@@ -191,6 +194,7 @@ func TestDelegateActions(t *testing.T) {
 
 // TestDelegateActionError 写盘失败：状态行报因，不静默。
 func TestDelegateActionError(t *testing.T) {
+	t.Parallel()
 	restoreLight(t)
 	fake := delegateFixture()
 	fake.err = errFakeWrite
