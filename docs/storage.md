@@ -1,5 +1,5 @@
 # 数据布局与备份
-<!-- docs-sync: 2026-11-05 @ 0233b77 -->
+<!-- docs-sync: 2026-11-05 @ 16a4b42 -->
 
 > 本文与 `storejson` 的实际落盘行为一致；**磁盘形状以本文为准**。
 > 原则：**本地优先、用户数据主权**——全部明文，卸载 = 删二进制 + 删目录，
@@ -17,7 +17,7 @@
     ├── memories.md              # 全局记忆（markdown 单文件；/memory 直开）
     ├── conversations/           # 会话树，一会话一 JSON
     │   ├── <id>.json            # 当前代
-    │   ├── <id>.json.bak        # 上一代（Save 换代前留一代）
+    │   ├── <id>.json.bak        # 第 1 代备份（`backup.keep` 默认 3 代，更旧的是 .bak.1、.bak.2…）
     │   ├── <id>.json.*.tmp      # 写入中的临时文件（随机名，正常结束不存在）
     │   └── <id>.memory.md       # 该会话的会话记忆（随会话就近存放）
     ├── jobs/<任务号>.log        # 后台任务日志（命令头 + 输出 + 退出标记行；任务表只在内存）
@@ -124,10 +124,12 @@
 
 ## .bak 机制与恢复
 
-`Save` 在覆盖前把现有文件挪成 `<id>.json.bak`（保留一代）：
+`Save` 在覆盖前把现有文件轮成备份代（**默认保留 3 代**，`backup.keep` 可配）：第 1 代沿用历史名
+`<id>.json.bak`，更旧的排成 `<id>.json.bak.1`、`.bak.2`…，最老的出局。写前先确认现文件能完整解析
+才轮转——坏文件不该把更旧的可用备份挤掉。
 
-- **主文件损坏/丢失时** `Load` 自动回退读 `.bak`；
-- **误删/误改主文件**手动恢复：
+- **主文件损坏/丢失时** `Load` 按**新到旧**逐代回退；
+- **误删/误改主文件**手动恢复（把某一代拷回主文件名）：
 
 ```powershell
 # PowerShell：把上一代恢复为当前代
@@ -135,7 +137,7 @@ Move-Item ~/.aquarius/profiles/<name>/conversations/<id>.json.bak `
           ~/.aquarius/profiles/<name>/conversations/<id>.json -Force
 ```
 
-- `/rmconv`（删除整个会话）会连 `.bak` / `.tmp` 一起删——想留底先拷走；
+- `/rmconv`（删除整个会话）会连**各代备份**与 `.tmp` 一起删——想留底先拷走；
   `<id>.memory.md` **不动**，删完会话那份会话记忆还在，需要时手工删。
 - `<id>.memory.md` 与会话 JSON 是两份独立文件：会话记忆只有 `/memory` 与 `memory_*`
   工具会写，删会话不联动。
