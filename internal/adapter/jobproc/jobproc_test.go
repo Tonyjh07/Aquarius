@@ -210,7 +210,6 @@ func TestRunEmptyCommand(t *testing.T) {
 
 // TestRunCancelCtx ctx 取消 → 终止进程并上抛 context.Canceled（装配级）。
 func TestRunCancelCtx(t *testing.T) {
-	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -229,7 +228,6 @@ func TestRunCancelCtx(t *testing.T) {
 
 // TestStartLifecycle 后台启动：日志落盘（头行/输出/退出标记）、状态收敛 done、List 可见。
 func TestStartLifecycle(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
@@ -276,7 +274,6 @@ func TestStartLifecycle(t *testing.T) {
 
 // TestStartKill 显式终止：状态 killed、重复 Kill/未知任务报错。
 func TestStartKill(t *testing.T) {
-	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -345,7 +342,6 @@ func TestWaitReturnsOnExit(t *testing.T) {
 
 // TestWaitCancelDoesNotKill 等待方取消只结束等待，不影响任务本身（任务不随会话取消）。
 func TestWaitCancelDoesNotKill(t *testing.T) {
-	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -417,7 +413,6 @@ func TestStartFailureCleansUp(t *testing.T) {
 // TestKillTerminatesProcessTree 杀整棵进程树：Kill 后孤儿子进程也必须终止
 // （以 marker 是否停增判定；直接进程死亡由 TestStartKill 覆盖）。
 func TestKillTerminatesProcessTree(t *testing.T) {
-	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -468,7 +463,6 @@ func TestKillTerminatesProcessTree(t *testing.T) {
 
 // TestStartTimeout Timeout 到点自动终止：状态 failed。
 func TestStartTimeout(t *testing.T) {
-	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -630,7 +624,6 @@ func TestRunCmdQuoting(t *testing.T) {
 // TestRunCancelUnblocksGrandchildren ctx 取消后 Run 不被孙进程持有的输出管道拖住
 // （WaitDelay 兜底；取消只杀直接子进程、孙进程残留是 v1 已知行为，见包注释）。
 func TestRunCancelUnblocksGrandchildren(t *testing.T) {
-	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -661,7 +654,6 @@ func TestRunCancelUnblocksGrandchildren(t *testing.T) {
 // Run 在 WaitDelay 内按退出状态结算，不等孙进程自然退出（仅 unix；windows 形态
 // 由 cmd 的 start /b 行为决定，交由取消路径覆盖）。
 func TestRunPipeHeldAfterExit(t *testing.T) {
-	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("unix shell 后台形态")
 	}
@@ -706,7 +698,6 @@ func TestRunOutputCap(t *testing.T) {
 // TestStartSurvivesCallerCancel §10：后台任务不随调用方 ctx 取消——
 // 启动后取消 ctx，任务照常跑完、状态收敛、日志可查。
 func TestStartSurvivesCallerCancel(t *testing.T) {
-	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
