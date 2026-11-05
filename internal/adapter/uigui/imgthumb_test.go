@@ -239,13 +239,14 @@ func TestImageViewFrame(t *testing.T) {
 		t.Fatalf("applied = %v, want %v", st.applied, c)
 	}
 	// 本 UI 没装附件库 → 解码必然失败；收下结果后 settled 且留错误文案。
+	// 解码走后台 goroutine，本帧返回时结果未必已回投；等它，别用 default 抢跑。
 	select {
 	case r := <-st.res:
 		if st.applied != nil && r.key == st.applied.ref.key() {
 			st.img, st.pix, st.err, st.settled = r.img, r.pix, r.err, true
 		}
-	default:
-		t.Fatal("解码结果未回投")
+	case <-time.After(2 * time.Second):
+		t.Fatal("解码结果未在 2 秒内回投")
 	}
 	if st.err == "" || !st.settled {
 		t.Fatalf("未装附件库应落错误文案: err=%q settled=%v", st.err, st.settled)
