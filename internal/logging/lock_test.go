@@ -55,6 +55,7 @@ var stderrPasses = []stderrPass{
 	{"internal/adapter/uitui/tui.go", "", "TUI 主循环异常退出的兜底：界面已失效，适配器不 import 日志包"},
 	{"cmd/linuxgate/", "", "开发工具：交叉编译门禁，不进产品，日志不跟版本走"},
 	{"cmd/iconify/", "", "开发工具：生成图标资源，同上"},
+	{"cmd/ci/", "", "开发工具：本机门禁编排，stderr 是给开发者的诊断与退出原因"},
 }
 
 // logSinkNames 可能是日志出口的调用名。只用来少扫一点：真正的判据是有没有 `log.*` 字面量

@@ -36,11 +36,11 @@ var i18nScannedTops = []string{"cmd", "internal", "pluginapi"}
 // i18nSkippedDirs 不参与扫描的目录名。
 //
 //   - `testdata` / `spike` / `temp`：测试数据与本地脚手架，不是产品代码；
-//   - `docsync` / `iconify` / `linuxgate`：仓库自用的开发者工具（刷文档标记、生成图标、
-//     交叉编译门禁），读者是改代码的人，文案不跟界面语言走。
+//   - `docsync` / `iconify` / `linuxgate` / `ci`：仓库自用的开发者工具（刷文档标记、生成图标、
+//     交叉编译门禁、本机门禁编排），读者是改代码的人，文案不跟界面语言走。
 var i18nSkippedDirs = map[string]bool{
 	"testdata": true, "spike": true, "temp": true, ".git": true,
-	"docsync": true, "iconify": true, "linuxgate": true,
+	"docsync": true, "iconify": true, "linuxgate": true, "ci": true,
 }
 
 // cjkAllowed 允许留在代码里的中文字面量，每条都要写理由。
