@@ -16,11 +16,13 @@ import (
 
 // TestLedgerTracksRunningJob 起任务即留痕（含发起会话）；终态只标状态，报告确认送达才销账。
 func TestLedgerTracksRunningJob(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	ctx := port.WithSessionID(context.Background(), conversation.ID("convA"))
 	job, err := m.Start(ctx, helperSpec(t, dir, "sleep"))
 	if err != nil {
@@ -64,11 +66,13 @@ func TestLedgerTracksRunningJob(t *testing.T) {
 // TestUnfinishedReportsFinishedJob 跑完而报告没送到的条目（D264）：对账拿到的状态是终态、
 // 退出码是确定的，且不再按 pid 探活（进程早没了，问了只会撞上复用）。
 func TestUnfinishedReportsFinishedJob(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, dir, "fail"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -94,11 +98,13 @@ func TestUnfinishedReportsFinishedJob(t *testing.T) {
 
 // TestUnfinishedTakesAndClears 对账读即清：一次取走，第二次为空（否则每次启动都重报）。
 func TestUnfinishedTakesAndClears(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	ctx := port.WithSessionID(context.Background(), conversation.ID("convA"))
 	job, err := m.Start(ctx, helperSpec(t, dir, "sleep"))
 	if err != nil {
@@ -135,11 +141,13 @@ func TestUnfinishedTakesAndClears(t *testing.T) {
 
 // TestUnfinishedCarriesLogTail 对账带上日志末几行（重启后进程不在了，只能从盘上读）。
 func TestUnfinishedCarriesLogTail(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, dir, "lines", "40"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -178,11 +186,13 @@ func TestUnfinishedCarriesLogTail(t *testing.T) {
 
 // TestUnfinishedIgnoresBrokenLedger 坏台账当作没有：对账不该被一份读不动的文件挡住启动。
 func TestUnfinishedIgnoresBrokenLedger(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	if err := os.WriteFile(filepath.Join(dir, ledgerName), []byte("{not json"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}

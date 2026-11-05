@@ -12,6 +12,7 @@ import (
 // ——而作业 I/O 全程写日志文件/缓冲、stdin 置空，窗口纯属噪音。spawn 前须压
 // CREATE_NO_WINDOW；**只挂这一旗**：job 跑的是用户命令，GUI 子进程（notepad 等）要照常可见。
 func TestSetupProcHidesConsoleWindow(t *testing.T) {
+	t.Parallel()
 	t.Run("cmd /c 形态：原始命令行与压制共存", func(t *testing.T) {
 		cmd := exec.Command("cmd", "/c", "echo hi")
 		setupProc(cmd)

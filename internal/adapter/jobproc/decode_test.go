@@ -11,6 +11,7 @@ import (
 // TestDecodeOutput D41：按行探测——UTF-8 合法原样、否则 GBK 解码、
 // 结构非法字节落 U+FFFD（宽松解码器天然兜底）。
 func TestDecodeOutput(t *testing.T) {
+	t.Parallel()
 	enc := simplifiedchinese.GBK.NewEncoder()
 	gbk := func(s string) string {
 		t.Helper()
@@ -49,6 +50,7 @@ func TestDecodeOutput(t *testing.T) {
 
 // TestCapBufferStringDecodes Run 的字节→文本出口按 D41 解码，截断标注附在解码之后。
 func TestCapBufferStringDecodes(t *testing.T) {
+	t.Parallel()
 	b := &capBuffer{max: 8}
 	b.Write([]byte("\xd6\xd0\xce\xc4")) // 4 字节 GBK 中文
 	b.Write([]byte(strings.Repeat("x", 64)))

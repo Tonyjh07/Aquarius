@@ -15,6 +15,7 @@ import (
 // 不等就会出现「关停返回之后还有一次写盘」——测试里是 TempDir 清理撞上「目录非空」，
 // 真机上则是把台账写进一个已经在收尾的目录。
 func TestCloseWaitsForFinishedReaper(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
@@ -43,6 +44,7 @@ func TestCloseWaitsForFinishedReaper(t *testing.T) {
 // TestCloseDoesNotWaitForRunningJob 仍在跑的任务不等（§10：退出不杀任务）：
 // 等它等于把退出拖成任务时长；台账里那条 running 就是下次启动要说的事实。
 func TestCloseDoesNotWaitForRunningJob(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
@@ -71,6 +73,7 @@ func TestCloseDoesNotWaitForRunningJob(t *testing.T) {
 
 // TestCloseIsIdempotentAndStopsNewJobs Close 幂等；关停之后不再接新任务。
 func TestCloseIsIdempotentAndStopsNewJobs(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {

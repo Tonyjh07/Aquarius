@@ -116,10 +116,12 @@ func awaitReaper(t *testing.T, m *Manager, id port.JobID) {
 
 // TestRunEcho 同步执行：合并输出、正常退出 OK=true。
 func TestRunEcho(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	res, err := m.Run(context.Background(), helperSpec(t, t.TempDir(), "echo", "hello", "world"))
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -132,10 +134,12 @@ func TestRunEcho(t *testing.T) {
 // TestRunDecodesGBKOutput 同步输出按 D41 解码：GBK 行出中文、ASCII 行原样、
 // 结构非法字节落 U+FFFD（Windows cmd 默认 OEM 代码页场景的跨平台复现）。
 func TestRunDecodesGBKOutput(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	res, err := m.Run(context.Background(), helperSpec(t, t.TempDir(), "gbk"))
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -155,10 +159,12 @@ func TestRunDecodesGBKOutput(t *testing.T) {
 
 // TestRunFailExitCode 非零退出 → OK=false + 退出码与输出（交模型自行纠正，§10）。
 func TestRunFailExitCode(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	res, err := m.Run(context.Background(), helperSpec(t, t.TempDir(), "fail"))
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -173,10 +179,12 @@ func TestRunFailExitCode(t *testing.T) {
 
 // TestRunSpawnFailure 启动失败（命令不存在）→ OK=false（模型可纠正，非装配级错误）。
 func TestRunSpawnFailure(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	res, err := m.Run(context.Background(), port.JobSpec{Command: "aquarius-definitely-missing-binary-xyz"})
 	if err != nil {
 		t.Fatalf("启动失败应转 OK=false 而非 error: %v", err)
@@ -188,10 +196,12 @@ func TestRunSpawnFailure(t *testing.T) {
 
 // TestRunEmptyCommand 空 command → OK=false。
 func TestRunEmptyCommand(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	res, err := m.Run(context.Background(), port.JobSpec{})
 	if err != nil || res.OK {
 		t.Fatalf("res = %+v, err = %v", res, err)
@@ -200,10 +210,12 @@ func TestRunEmptyCommand(t *testing.T) {
 
 // TestRunCancelCtx ctx 取消 → 终止进程并上抛 context.Canceled（装配级）。
 func TestRunCancelCtx(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(150 * time.Millisecond)
@@ -217,11 +229,13 @@ func TestRunCancelCtx(t *testing.T) {
 
 // TestStartLifecycle 后台启动：日志落盘（头行/输出/退出标记）、状态收敛 done、List 可见。
 func TestStartLifecycle(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "echo", "bg", "ok"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -262,10 +276,12 @@ func TestStartLifecycle(t *testing.T) {
 
 // TestStartKill 显式终止：状态 killed、重复 Kill/未知任务报错。
 func TestStartKill(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "sleep"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -292,10 +308,12 @@ func TestStartKill(t *testing.T) {
 // TestWaitReturnsOnExit 完成是事件（D189）：不必反复问 Status，Wait 在进程收割者
 // 写终态时返回；已结束的任务立即返回；ctx 取消只停止等待、不动任务。
 func TestWaitReturnsOnExit(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "echo", "wait ok"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -327,10 +345,12 @@ func TestWaitReturnsOnExit(t *testing.T) {
 
 // TestWaitCancelDoesNotKill 等待方取消只结束等待，不影响任务本身（任务不随会话取消）。
 func TestWaitCancelDoesNotKill(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "sleep"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -369,11 +389,13 @@ func treeSpec(mark string) port.JobSpec {
 // TestStartFailureCleansUp 启动失败（不存在的命令）：不留日志、不入任务表
 // （审查修复：头行改到 Start 前写入后，失败分支的清理需要回归保护）。
 func TestStartFailureCleansUp(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := New(dir)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	if _, err := m.Start(context.Background(), port.JobSpec{
 		Command: filepath.Join(dir, "definitely-missing-binary-xyz"),
 	}); err == nil {
@@ -395,10 +417,12 @@ func TestStartFailureCleansUp(t *testing.T) {
 // TestKillTerminatesProcessTree 杀整棵进程树：Kill 后孤儿子进程也必须终止
 // （以 marker 是否停增判定；直接进程死亡由 TestStartKill 覆盖）。
 func TestKillTerminatesProcessTree(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	mark := filepath.Join(t.TempDir(), "mark.txt")
 	job, err := m.Start(context.Background(), treeSpec(mark))
 	if err != nil {
@@ -444,10 +468,12 @@ func TestKillTerminatesProcessTree(t *testing.T) {
 
 // TestStartTimeout Timeout 到点自动终止：状态 failed。
 func TestStartTimeout(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	spec := helperSpec(t, t.TempDir(), "sleep")
 	spec.Timeout = 300 * time.Millisecond
 	job, err := m.Start(context.Background(), spec)
@@ -463,10 +489,12 @@ func TestStartTimeout(t *testing.T) {
 // TestWaitStopsTimeoutTimer 任务正常结束后超时定时器被停掉：留着它只会在到点时
 // 空转一次（被 Status 守卫吃掉），任务多时白占一堆 timer。
 func TestWaitStopsTimeoutTimer(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	spec := helperSpec(t, t.TempDir(), "echo", "quick")
 	spec.Timeout = time.Hour
 	job, err := m.Start(context.Background(), spec)
@@ -492,6 +520,7 @@ func TestWaitStopsTimeoutTimer(t *testing.T) {
 
 // TestStartSkipsExistingLog 序号遇旧日志跳号（跨进程重启不撞号）。
 func TestStartSkipsExistingLog(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "j001.log"), []byte("old"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -500,6 +529,7 @@ func TestStartSkipsExistingLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "echo", "hi"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -515,10 +545,12 @@ func TestStartSkipsExistingLog(t *testing.T) {
 
 // TestLogsTail Logs(id, tail>0) 只回末尾 N 行（末行是退出标记）。
 func TestLogsTail(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "lines", "5"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -541,10 +573,12 @@ func TestLogsTail(t *testing.T) {
 
 // TestLogsDecodesGBKOutput 后台任务日志读出与 Run 同口径按 D41 解码（job_logs 链路）。
 func TestLogsDecodesGBKOutput(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(), helperSpec(t, t.TempDir(), "gbk"))
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -569,6 +603,7 @@ func TestLogsDecodesGBKOutput(t *testing.T) {
 // （`"`→`\"`，cmd.exe 不认反斜杠转义）——setupProc 以 SysProcAttr.CmdLine 直传。
 // 非 Windows 跳过（sh -c 走 argv，无此问题）。
 func TestRunCmdQuoting(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "windows" {
 		t.Skip("仅 Windows 有 cmd.exe 转义问题")
 	}
@@ -576,6 +611,7 @@ func TestRunCmdQuoting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	res, err := m.Run(context.Background(), port.JobSpec{
 		Command: "cmd",
 		Args:    []string{"/c", `echo "a b"`},
@@ -594,10 +630,12 @@ func TestRunCmdQuoting(t *testing.T) {
 // TestRunCancelUnblocksGrandchildren ctx 取消后 Run 不被孙进程持有的输出管道拖住
 // （WaitDelay 兜底；取消只杀直接子进程、孙进程残留是 v1 已知行为，见包注释）。
 func TestRunCancelUnblocksGrandchildren(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(300 * time.Millisecond)
@@ -623,6 +661,7 @@ func TestRunCancelUnblocksGrandchildren(t *testing.T) {
 // Run 在 WaitDelay 内按退出状态结算，不等孙进程自然退出（仅 unix；windows 形态
 // 由 cmd 的 start /b 行为决定，交由取消路径覆盖）。
 func TestRunPipeHeldAfterExit(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("unix shell 后台形态")
 	}
@@ -630,6 +669,7 @@ func TestRunPipeHeldAfterExit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	start := time.Now()
 	res, err := m.Run(context.Background(), port.JobSpec{
 		Command: "/bin/sh", Args: []string{"-c", "sleep 6 &"},
@@ -644,10 +684,12 @@ func TestRunPipeHeldAfterExit(t *testing.T) {
 
 // TestRunOutputCap 输出超限时按上限采集并标注（防刷屏命令吃内存）。
 func TestRunOutputCap(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	res, err := m.Run(context.Background(),
 		helperSpec(t, t.TempDir(), "fill", "5242880")) // 5MB > 4MB 上限
 	if err != nil || !res.OK {
@@ -664,10 +706,12 @@ func TestRunOutputCap(t *testing.T) {
 // TestStartSurvivesCallerCancel §10：后台任务不随调用方 ctx 取消——
 // 启动后取消 ctx，任务照常跑完、状态收敛、日志可查。
 func TestStartSurvivesCallerCancel(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	job, err := m.Start(ctx, helperSpec(t, t.TempDir(), "echo", "still-alive"))
 	if err != nil {
@@ -686,10 +730,12 @@ func TestStartSurvivesCallerCancel(t *testing.T) {
 
 // TestLogsWindow 超出窗口的大日志只读末尾 1MB 并带前缀标注（含 tail 切行）。
 func TestLogsWindow(t *testing.T) {
+	t.Parallel()
 	m, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
+	t.Cleanup(func() { m.Close() })
 	job, err := m.Start(context.Background(),
 		helperSpec(t, t.TempDir(), "fill", "2097152")) // 2MB > 1MB 窗口
 	if err != nil {
@@ -721,6 +767,7 @@ func TestLogsWindow(t *testing.T) {
 
 // TestNewValidation 空日志目录拒绝。
 func TestNewValidation(t *testing.T) {
+	t.Parallel()
 	if _, err := New("  "); err == nil {
 		t.Fatal("空目录应报错")
 	}
