@@ -324,6 +324,11 @@ func (s *Store) Remove(ctx context.Context, id conversation.ID) error {
 		return errors.New(i18n.T("store.err.empty_id"))
 	}
 	dst := s.path(id)
+	// 与 Save 共用同一把每会话锁：否则「边删边存」会让 Save 刚换入的文件落在删除
+	// 之后（会话复活），或者扫目录时把 Save 正在换入的临时文件一起删掉、让那次
+	// os.Rename 报错。锁只按会话 ID 分，Save 与 Remove 之间没有持锁互等。
+	unlock := s.lockSave(dst)
+	defer unlock()
 	paths := []string{dst}
 	// 备份代按前缀扫目录收集：keep 调小后可能留有更高代的旧文件（D254）。
 	// 临时文件同理按「<id>.json.*.tmp」扫（随机名，崩溃后可能留残片；旧版本留下的
