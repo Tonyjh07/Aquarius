@@ -18,8 +18,12 @@ import (
 
 const (
 	longFuncThreshold = 100
-	longFuncBaseline  = 32 // 2026-11-05 收口后的实测值，只允许减少
-	longFuncMaxLines  = 230
+	// 2026-11-05 收口后的实测值：31 个。基线只允许减少——拆掉一个就把这个数改小，
+	// 否则下一次新增超长函数会正好落在余量里，闸门等于没设。
+	longFuncBaseline = 31
+	// 最长的是 cmd/aquarius 的 run()（223 行）。留 2 行余量，随手加几行就会顶到闸门，
+	// 那时要么拆函数，要么把这里连同理由一起改——两种都得是一次有意识的动作。
+	longFuncMaxLines = 225
 )
 
 func TestLongFunctionsDoNotGrow(t *testing.T) {
@@ -87,6 +91,9 @@ func TestLongFunctionsDoNotGrow(t *testing.T) {
 			t.Logf("  %s: %d 行", e.where, e.lines)
 		}
 	}
+	// 基线收紧时要看得到当前实测值：只在失败时报数，改基线就只能靠猜。
+	t.Logf("超 %d 行的非测试函数 %d 个（基线 %d），最长 %d 行（上限 %d）",
+		longFuncThreshold, len(long), longFuncBaseline, maxLines, longFuncMaxLines)
 	if maxLines > longFuncMaxLines {
 		t.Errorf("最长函数 %d 行，超过上限 %d", maxLines, longFuncMaxLines)
 	}
