@@ -1,6 +1,6 @@
 # Aquarius Privacy Policy
 
-Version {v} · Effective 3 November 2026
+Version {v} · Effective 6 November 2026
 
 This policy explains how Aquarius ("the Program") handles your information. **The conclusion first: the Program does not collect your personal information. Your conversations, attachments, memories and credentials stay on your machine. Content leaves the machine only when you initiate it, and only to a provider you configured yourself.**
 
@@ -110,4 +110,4 @@ We respond within 15 business days of receipt. If you believe our handling infri
 
 ## 14. Effective date and version
 
-Version 1, effective 3 November 2026. This policy is written in Chinese. This English text is a translation for convenience; the Chinese version prevails.
+Version 1, effective 6 November 2026. This policy is written in Chinese. This English text is a translation for convenience; the Chinese version prevails.
