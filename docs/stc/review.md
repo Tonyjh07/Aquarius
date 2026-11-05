@@ -1,8 +1,9 @@
 # 文档 STC 审阅报告（v0.5.0 收尾批）
-<!-- docs-sync: 2026-11-05 @ 0233b77 -->
+<!-- docs-sync: 2026-11-05 @ c541a2c -->
 
 > 2026-11-05 完成。工具 `stc` 0.4.1，命令 `stc check <文件> --profile for-document --anti-echo`。
 > 范围：`docs/` 13 篇 + 仓库 `README.md`；`docs/archive/` 只读，不进范围。
+> 清单里的行号与逐篇计数按 2026-11-05 审阅时的版本；plan.md 同日清理后已失效，按条目名称复核。
 > 「改前」指接手时的状态：用户面五篇已由前一个 Agent 改过一轮。
 > `contracts.md` 与 `decisions.md` 只报不改，清单在文末。词表见
 > [terms.aquarius.yaml](terms.aquarius.yaml)。

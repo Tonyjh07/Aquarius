@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-11-05 @ 0233b77 -->
+<!-- docs-sync: 2026-11-05 @ c541a2c -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找该篇的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -95,6 +95,7 @@
 |---|---|---|
 | [archive/relation-map-physics-design.md](archive/relation-map-physics-design.md) | 关系图「全程物理动画」的力积分设计稿（边弹簧 + 阻尼 + 树锚的推导与实测） | 生产物理改采源算法（D128）；形态与现状见 [relation-map-design.md](relation-map-design.md) §5.4 |
 | [archive/decisions-full.md](archive/decisions-full.md) | 压缩前的决策记录全文：实现细节、当时的推演与自问自答式的否决项 | 正文压缩后 [decisions.md](decisions.md) 只留一行结论与够格展开的决策；编号与结论仍以 decisions.md 为准 |
+| [archive/plan-v0.5.0.md](archive/plan-v0.5.0.md) | v0.5.0 三条主线、STC 审阅、发版排期与测试并行的工作稿全文（含验收与风险） | 完成记录见 [roadmap.md](roadmap.md) 的 v0.5.0 行；[plan.md](plan.md) 清理后只留还没做的事 |
 
 ## 维护
 
