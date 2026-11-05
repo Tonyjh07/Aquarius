@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-04 @ 252a91c -->
+<!-- docs-sync: 2026-11-05 @ 0233b77 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -21,9 +21,9 @@ go run ./cmd/linuxgate         # 非 Windows 门禁（WSL 内 build + vet，见�
 - 语言约定：文档/注释中文；标识符、commit message 英文祈使句。
 - **Windows 下 `-race` 需要 CGO + C 编译器**（`-race` 走 cgo，说"需要 C 工具链"没错）。
   装一个 MinGW 系的编译器（WinLibs 的 gcc 或 LLVM-MinGW 的 clang 都行），再把 Go **用户级**
-  env 的 `CC` 指到它的可执行文件：`go env -w CC="…\bin\<编译器>.exe"`（写在 `go env GOENV`
+  env 的 `CC` 指到编译器的可执行文件：`go env -w CC="…\bin\<编译器>.exe"`（写在 `go env GOENV`
   指向的文件里，**不入库**）。只把编译器加进 `PATH` 末尾**不够**：`PATH` 上常见的第一个
-  `gcc` 是 Cygwin 的，Go 明确拒绝它——`runtime/cgo: #error "don't use the cygwin compiler to
+  `gcc` 是 Cygwin 的，Go 明确拒绝这个编译器——`runtime/cgo: #error "don't use the cygwin compiler to
   build native Windows programs; use MinGW instead"`——所以必须用 `CC` 显式指定。
   自检 `go env CC` 指向该编译器后，`go test -race ./...` 直接可用，无需临时环境变量。
   WinLibs 的安装与取路径：`winget install BrechtSanders.WinLibs.MCF.UCRT`、
@@ -57,7 +57,7 @@ sudo apt-get install -y golang-go xorg-dev libx11-xcb-dev libxkbcommon-dev \
 ```
 
 - 发行版自带的 `golang-go` 往往落后于 `go.mod` 要求，而工具刻意固定 `GOTOOLCHAIN=local`
-  （不自动下载）。做法：把模块缓存里已下载的 linux 工具链解到用户级目录，再把它的 `bin`
+  （不自动下载）。做法：把模块缓存里已下载的 linux 工具链解到用户级目录，再把工具链的 `bin`
   前置到 `~/.profile` 的 `PATH`（**不要 sudo**，`apt` 装不动工具链版本）。版本号随
   `go.mod` 一起升，`linuxgate` 报「requires go >= x.y.z」即为此。
 - 受限网络：`proxy.golang.org` 与 `go.dev` 可能不通，apt 可换 `mirrors.aliyun.com`、
@@ -67,7 +67,7 @@ sudo apt-get install -y golang-go xorg-dev libx11-xcb-dev libxkbcommon-dev \
 - 工具缺省**共享 Windows 侧的 `GOMODCACHE`**（`-modcache` 可覆盖），避免在 WSL 内重下
   2GB 级依赖；`GOCACHE` 用 WSL 原生目录（构建缓存不跨系统复用）。
 - 门禁只覆盖编译 + vet，**不跑 Linux 下的 GUI/交互**（WSL 无 X 显示）；非 Windows 的功能
-  对等分级见 [gui-design.md](gui-design.md) §15.6 与 D111，平台层落地后按降级清单走查。
+  对等分级见 [gui-design.md](gui-design.md) §15.6 与 D111，平台层完成后按降级清单走查。
 - Windows 行为回归仍以本地门禁 + `AQUARIUS_GUI_SMOKE=1` 冒烟为准，不要用 Linux 门禁替代。
 
 ## 代码分层速查
@@ -86,7 +86,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 ```
 
 接口由消费方定义；错误 `fmt.Errorf("...: %w")` 包装；值对象具名类型；
-导出符号写注释；命名与 [overview.md](overview.md) 的统一语言对齐（Revise/Carry/Fresh/Head/Part/Job）。
+导出符号写注释；命名与 [overview.md](overview.md) 的统一语言一致（Revise/Carry/Fresh/Head/Part/Job）。
 
 `uigui/platform` 的分家口径（D111 修订）：平台能力只在 `platform` 包实现（`*_windows.go` /
 `*_other.go` 同签名），`uigui` 侧声明所需接口并断言 `*platform.Plat` 满足——**少一个平台方法
@@ -108,10 +108,10 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 | adapter | **契约测试**：storejson / blobfs / jobproc / memoryfs 用临时目录；LLM 用 httptest 假 SSE 录制流回放；toolrun 全等级矩阵表 + 脚本确认器 | `adapter/storejson/store_test.go`、`adapter/llm/openai_test.go`、`adapter/toolrun/runner_test.go` |
 | tokenizer | **官方向量比对**：期望值由 Python `tokenizers` 一次性生成入库（`testdata/gen_*.py`）；fixture 全离线跑，真实 DeepSeek 词表向量需 `AQUARIUS_TOKENIZER_JSON=<路径>`（缺省跳过） | `adapter/llm/tokenizer/tokenizer_test.go` |
 | MCP | **假 server 契约**：测试内起假 MCP server（stdio）跑通发现 / 调用 / 超时 / 崩溃重启 / 授权拒绝 | `internal/adapter/mcpgate/mcpgate_test.go` |
-| e2e | **进程内装配回放**：`run(args, stdin, stdout, stderr)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵、`term_exec`/`job` 链路）；编译出二进制后由 repl 适配器喂 stdin 断言 stdout 也可，装配假 MCP server 验证 `mcp:` 工具全链路 | `cmd/aquarius/main_test.go` |
+| e2e | **进程内装配回放**：`run(args, stdin, stdout, stderr)` + 假服务喂 stdin 断言 stdout（含工具确认 y/n、权限等级矩阵、`term_exec`/`job` 流程）；编译出二进制后由 repl 适配器喂 stdin 断言 stdout 也可，装配假 MCP server 验证 `mcp:` 工具完整流程 | `cmd/aquarius/main_test.go` |
 
 修 bug 先写复现测试；新行为补测试。测试替身放测试文件内或 `internal/adapter/fake/`。
-测试文件不受分层铁律约束——借用真实适配器做链路级验收（如「摄取 → 附件入库 → 装配内联」）是允许的。
+测试文件不受分层铁律约束——借用真实适配器做跨层验收（如「摄取 → 附件入库 → 装配内联」）是允许的。
 
 **测试必须能在干净环境里跑**：不设任何环境变量、不依赖本机特有的路径/密钥/服务，`go test ./...`
 就该全绿。要某个环境变量，用例自己 `t.Setenv` 显式给（含显式置空断言「缺失路径」）。反例：
@@ -125,7 +125,7 @@ FAIL——这不是被测代码坏了，是测试自己没自足。同理，**�
 两边都一致。`internal/i18n` 的 `TestNoCJKExpectations` 扫四类期望位置（strings 判定实参、
 `==`/`!=` 操作数、`want` 赋值/字段）锁住这条；确属测试数据（用户数据 / 模型输出 / 落盘内容 /
 协议或配置值）的进该文件里的 `testDataLiterals` 白名单并写理由。`uigui` 的 `TestMain` 用
-`AQUARIUS_UI_LANG` 选语言（缺省 zh），门禁 `AQUARIUS_UI_LANG=en go test ./...` 是它的作用面。
+`AQUARIUS_UI_LANG` 选语言（缺省 zh），门禁 `AQUARIUS_UI_LANG=en go test ./...` 是这个变量的作用面。
 
 ## 工程准则与边界
 
@@ -137,7 +137,7 @@ FAIL——这不是被测代码坏了，是测试自己没自足。同理，**�
 
 - **守门测试必须自检**。`TestGuardCatchesViolation` 不是摆设：判定函数喂正反例，才不会被
   「规则写错 / 扫描根找错 / 跳过规则吃掉整棵树」这类事故变成永远绿。
-- **手抄的期望表是 bug 的温床**。命令清单那一次的根因不是漏了一行，而是测试自带一份硬编码
+- **手抄的期望表是 bug 的温床**。命令清单那一次，测试自带一份硬编码
   清单，把错误固化成了断言。改成从源码反推之后，「只改一半」必然变红。
 - **API 只为下一笔的删除而存在，就不值得单独提交**。原计划里「加访问器」与「迁回算法」是两笔，
   但中间那层 API 只服务于下一笔的删除，合并后历史反而更清楚。
@@ -164,11 +164,11 @@ Review 里提出但**经核实不成立**的：
 
 - 「`port` 里放业务纯函数（`ResolveJobID` 等）违规」——[contracts.md](contracts.md) §5 明文允许无状态纯函数助手；
   真问题是同一套前缀解析策略曾有 4 份实现，两份分别在 `port/job.go`、`port/watch.go`，另一份
-  在 `app` 的手写循环里——它们已经合并成 `port.MatchPrefix`（v0.2.0 的 P2-1）。
+  在 `app` 的手写循环里——这四份实现已经合并成 `port.MatchPrefix`（v0.2.0 的 P2-1）。
 - 「`mcpgate → plugin` 依赖方向错」——方向是对的（`plugin` 只依赖 `domain`/`port`，`mcpgate`
-  是它的协议适配器）；[overview.md](overview.md) 依赖图已补上 `internal/plugin`。
+  是插件宿主的协议适配器）；[overview.md](overview.md) 依赖图已补上 `internal/plugin`。
 - 「`PromptPart.Kind` 用裸 `string` 违规」——设计原本就这么定（[contracts.md](contracts.md) §5.1）。要改得先改设计，
-  所以它排在 v0.2.0 的收口批次里，不是当下就能顺手换的。
+  所以这项改动排在 v0.2.0 的收口批次里，不是当下就能顺手换的。
 
 ## How-to
 
@@ -242,7 +242,7 @@ Review 里提出但**经核实不成立**的：
 ## 发版构建
 - **版本号只在一处注入**：`go build -ldflags "-X main.version=v0.1.0" -o aquarius.exe ./cmd/aquarius`
   （不注入时 `-version` 显示 `dev`）。`aquarius.exe -version` 打印版本、平台与 Go 版本后直接
-  退出——发版冒烟与问题排查都用它。
+  退出——发版冒烟与问题排查都用 `-version`。
 - **Windows 资源版本**在 `cmd/aquarius/winres/winres.json`（`fixed` / `info` 两处），发版前与
   ldflags 同步改，再 `go generate ./cmd/aquarius` 重生成 `.syso` 并提交。
 - **发布物** = 单个二进制 + `README.md` / `LICENSE` / `THIRD-PARTY-NOTICES.md`（MPL-2.0 与
@@ -278,10 +278,10 @@ go run ./cmd/docsync -check         # 门禁：有文档缺标记即退出 1
 ## 提交规范
 
 - 祈使句英文：`feat:` / `fix:` / `test:` / `docs:` / `refactor:`。**一笔 = 一件能独立回退、独立说清的事**，
-  按自然边界算而非文件数或步骤数：一次重构按文件逐个拆、一个功能的第 1/2/3 步、实现与它的测试，
+  按自然边界算而非文件数或步骤数：一次重构按文件逐个拆、一个功能的第 1/2/3 步、实现与对应测试，
   都合成一笔，别硬拆成多笔。
-- 写文档、写面向人的注释时照[文档地图](README.md)里的「文风」：陈述事实、结论在前，不写总结段与客套话。
+- 写文档、写面向人的注释时按 STC 写（规则与项目词表见[文档地图](README.md)）。
 - PR/提交说明写清：改了什么、对应哪一篇的哪节/哪条决策（如 D22）、如何验证。
 - **改某篇某节 → 按节号对照表检查别处的引用还指不指得对**（见[文档地图](README.md)）；
-  已落地的写进 `docs/roadmap.md`，还没做的写进 `docs/plan.md`（两者不混写）。
+  已完成的写进 `docs/roadmap.md`，还没做的写进 `docs/plan.md`（两者不混写）。
 - 质量门禁全绿（含 `-race`）才算完成。

@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-11-02 @ f209091 -->
+<!-- docs-sync: 2026-11-05 @ 0233b77 -->
 
 > **定位、统一语言与限界上下文以本文为准**，同时是 **10 分钟建立索引的地图**：内核做什么、
 > 目录怎么分、端口对哪个适配器。内核的逐条规格（领域不变量、端口接口、应用层语义、
@@ -58,7 +58,7 @@ Go 单二进制交付，数据全在 `~/.aquarius/`。不是编码工作流产�
 | 转写 / 合成 | Transcriber / Synthesizer | 语音模态端口：ASR（音频→文本）/ TTS（文本→音频） |
 | 记忆文档 | MemoryDoc | 一篇 markdown 记忆（name + 文本） |
 | 技能 | Skill | 一个目录 + `SKILL.md`：按需载入的指令包（发现只读 name/description，命中才载入正文，D201） |
-| 外部代理 | Delegate Agent | 经 ACP 接进来的外部程序：我们把一件复杂任务整个交给它跑，只收回报告（D244） |
+| 外部代理 | Delegate Agent | 经 ACP 接进来的外部程序：Aquarius 把一件复杂任务整个交给外部程序跑，只收回报告（D244） |
 | MCP 网关 | mcpgate | 把 MCP server 适配为内核端口实现的适配器（Tier-2 插件面） |
 | ACP 网关 | acpgate | 把外部 ACP 代理适配为 `delegate` 工具实现的适配器（与 MCP 网关对称） |
 | 增量 | Delta | 流式返回的文本/工具调用片段 |
@@ -82,7 +82,7 @@ Go 单二进制交付，数据全在 `~/.aquarius/`。不是编码工作流产�
 一切一并写入；无自动入库的记忆巩固/摘要记忆管线）、embedding 检索。
 
 > **上下文压缩摘要**（[contracts.md](contracts.md) §4.1 的关键语义与 §7.1 的三轨压缩）不是记忆系统：
-> 它管理的是**对话上下文**（agent 框架必备能力），转写结果以 system 节点入会话树、随会话走，
+> 压缩摘要管理的是**对话上下文**（agent 框架必备能力），转写结果以 system 节点入会话树、随会话走，
 > 与 `memory/*.md` 记忆文档无关。
 
 ## 内核只有三件事
@@ -104,8 +104,8 @@ Go 单二进制交付，数据全在 `~/.aquarius/`。不是编码工作流产�
               cmd/aquarius（装配根：config → 端口 → 会话 → REPL）
 ```
 
-内核另含 `internal/plugin`（插件宿主：发现、grant、崩溃限次重启）——它只依赖 `domain`/`port`，
-和 `app` 同层；`mcpgate` 是它的协议适配器（`mcpgate → plugin` 方向正确）。
+内核另含 `internal/plugin`（插件宿主：发现、grant、崩溃限次重启）——这个包只依赖 `domain`/`port`，
+和 `app` 同层；`mcpgate` 是插件宿主的协议适配器（`mcpgate → plugin` 方向正确）。
 
 铁律（AGENTS.md 全文为准）：
 
@@ -137,7 +137,7 @@ Root(实节点, ID=会话ID, role=root)
 | `internal/domain/perm` | 权限等级与免确认矩阵（纯函数，D22） |
 | `internal/port` | 全部端口：llm/tool/store/memory/blob/modality/ingest/job/ui/misc |
 | `internal/app` | 应用层：agent（Turn 循环）、prompt（装配/水位）、session（命令） |
-| `internal/i18n` | 界面文案：`zh` / `en` 两张 Go 表 + 一个取词口（叶子包，谁都能取词，它谁都不 import；D275） |
+| `internal/i18n` | 界面文案：`zh` / `en` 两张 Go 表 + 一个取词口（叶子包，谁都能取词，这个包不 import 任何包；D275） |
 | `internal/adapter/llm` | OpenAI 兼容流式适配器（SSE）+ `llm/tokenizer`（HF BPE 精确计数，D26②） |
 | `internal/adapter/repl` | REPL Presenter + Prompter（标准输入输出） |
 | `internal/adapter/storejson` | 一会话一 JSON + 一代 .bak |
@@ -152,14 +152,14 @@ Root(实节点, ID=会话ID, role=root)
 （M4）：`decorate`（横切装饰器）/ `mcpgate`（MCP → port 投影）/ `uitui`（bubbletea TUI）+
 `internal/plugin` 宿主（发现/grant/崩溃限次重启）；
 （M5 主体已落位）：`uigui`（Gio 悬浮球 GUI，D43/§15——悬浮球/托盘/快捷键/主题/设置核心档与
-S1/S1b/S1c/S2/S2b 增强均已落地，已落地步骤见 [roadmap.md](roadmap.md)，后续计划见 [plan.md](plan.md)）；
+S1/S1b/S1c/S2/S2b 增强均已完成，步骤见 [roadmap.md](roadmap.md)，后续计划见 [plan.md](plan.md)）；
 待落位：`plugingo` + `pluginapi/v1`（D29 后移）；语音侧适配器（`asrchat`/`asrwhisper`/`asropenai`/
 `asrfunasr`/`mimotts`/`vitstts`/`gptsovitstts`/`zhconv`/`micwin`/`audioplay`/`outputtts`）与屏幕
 捕获（`screencap`）已随 M11 落位。
 
-## 端口 × 内置适配器（落地里程碑）
+## 端口 × 内置适配器（里程碑进度）
 
-| 端口 | 内置适配器 | 落地 | 测试替身 |
+| 端口 | 内置适配器 | 完成 | 测试替身 |
 |---|---|---|---|
 | `LLM` | openai 兼容（+可选本地 tokenizer 精确计数，D26） | **M0 ✓** | 脚本化 Stream |
 | `ConversationStore` | storejson | **M0 ✓** | in-memory |
