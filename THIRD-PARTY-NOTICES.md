@@ -61,7 +61,7 @@
 | `github.com/muesli/cancelreader` | `v0.2.2` | MIT | `Copyright (c) 2022 Erik Geiser and Christian Muehlhaeuser` |
 | `github.com/muesli/reflow` | `v0.3.0` | MIT | `Copyright (c) 2019 Christian Muehlhaeuser` |
 | `github.com/muesli/termenv` | `v0.16.0` | MIT | `Copyright (c) 2019 Christian Muehlhaeuser` |
-| `github.com/richardlehane/mscfb` | `v1.0.8` | Apache-2.0（见 §3.5） | `Copyright 2013 Richard Lehane. All rights reserved.`（源码头，`LICENSE.txt` 内无版权行） |
+| `github.com/richardlehane/mscfb` | `v1.0.9` | Apache-2.0（见 §3.5） | `Copyright 2013 Richard Lehane. All rights reserved.`（源码头，`LICENSE.txt` 内无版权行） |
 | `github.com/richardlehane/msoleps` | `v1.0.6` | Apache-2.0（见 §3.5） | `Copyright 2014 Richard Lehane. All rights reserved.`（源码头，`LICENSE.txt` 内无版权行） |
 | `github.com/rivo/uniseg` | `v0.4.7` | MIT | `Copyright (c) 2019 Oliver Kuederle` |
 | `github.com/segmentio/asm` | `v1.1.3` | MIT | `Copyright (c) 2021 Segment` |
@@ -69,8 +69,8 @@
 | `github.com/temoto/robotstxt` | `v1.1.2` | MIT | `Copyright (c) 2010 Sergey Shepelev <temotor@gmail.com>` |
 | `github.com/tiendc/go-deepcopy` | `v1.7.2` | MIT | `Copyright (c) 2023 tiendc` |
 | `github.com/xo/terminfo` | `v0.0.0-20220910002029-abceb7e1c41e` | MIT | `Copyright (c) 2016 Anmol Sethi` |
-| `github.com/xuri/efp` | `v0.0.2` | BSD-3-Clause | `Copyright (c) 2017 - 2026 Ri Xu All rights reserved.` |
-| `github.com/xuri/excelize/v2` | `v2.11.1-0.20260930021559-01a9ff32fb3c` | BSD-3-Clause | `Copyright (c) 2016-2026 The excelize Authors.` / `Copyright (c) 2011-2017 Geoffrey J. Teale` |
+| `github.com/xuri/efp` | `v0.0.3-0.20260924042702-217b81952dec` | BSD-3-Clause | `Copyright (c) 2017 - 2026 Ri Xu All rights reserved.` |
+| `github.com/xuri/excelize/v2` | `v2.11.1` | BSD-3-Clause | `Copyright (c) 2016-2026 The excelize Authors.` / `Copyright (c) 2011-2017 Geoffrey J. Teale` |
 | `github.com/xuri/nfp` | `v0.0.2-0.20250530014748-2ddeb826f9a9` | BSD-3-Clause | `Copyright (c) 2022-2025 Ri Xu All rights reserved.` |
 | `github.com/yosida95/uritemplate/v3` | `v3.0.2` | BSD-3-Clause | `Copyright (C) 2016, Kohei YOSHIDA <https://yosida95.com/>. All rights reserved.` |
 | `github.com/yuin/goldmark` | `v1.8.2` | MIT | `Copyright (c) 2019 Yusuke Inuzuka` |
@@ -297,7 +297,7 @@ For more information, please refer to <https://unlicense.org/>
 
 适用对象：
 
-- `github.com/richardlehane/mscfb@v1.0.8`——`Copyright 2013 Richard Lehane. All rights reserved.`（版权行在源码头，其 `LICENSE.txt` 是未填写的 Apache-2.0 模板）
+- `github.com/richardlehane/mscfb@v1.0.9`——`Copyright 2013 Richard Lehane. All rights reserved.`（版权行在源码头，其 `LICENSE.txt` 是未填写的 Apache-2.0 模板）
 - `github.com/richardlehane/msoleps@v1.0.6`——`Copyright 2014 Richard Lehane. All rights reserved.`（同上）
 - `github.com/coder/acp-go-sdk@v0.13.5`——`Copyright 2025 Coder Technologies, Inc.`（`LICENSE` 末尾的版权行，正文为标准 Apache-2.0）
 - **OpenCC 繁简转换词典**（`internal/adapter/zhconv/dict/` 下 5 个 `.txt`，内容未改，仅规范化为 LF、无 BOM）——上游 [BYVoid/OpenCC](https://github.com/BYVoid/OpenCC) 以 Apache-2.0 发布，`Copyright (c) 2010-2024 BYVoid and contributors`。
