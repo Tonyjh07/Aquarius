@@ -434,10 +434,22 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	// 也照报（gemini-cli 这类）。所以这里只记下清单，真需要登录时 session/new 会回
 	// -32000（auth required），那时再给出可执行的指引。
 
+	// 额外根（D279）只在对方申报了 `sessionCapabilities.additionalDirectories` 时才发：
+	// 没申报的代理收到这个字段只会当噪声，而我们本地照拦照放——两种情形都要在报告里
+	// 说清楚，否则「根集到底在哪一侧生效」就得靠猜。
+	extra := r.spec.Roots
+	var extraDirs []string
+	if init.AgentCapabilities.SessionCapabilities.AdditionalDirectories != nil {
+		extraDirs = extra
+	} else if len(extra) > 0 {
+		r.note("the agent does not accept additional directories; %d extra root(s) are enforced on this side only", len(extra))
+	}
+
 	nctx, cancelNew := context.WithTimeout(r.cancelCtx, m.opts.Handshake)
 	ns, err := conn.NewSession(nctx, acp.NewSessionRequest{
-		Cwd:        wd,
-		McpServers: []acp.McpServer{}, // 不转发我们的 MCP server（§5.18：两套授权链不搅在一起）
+		Cwd:                   wd,
+		McpServers:            []acp.McpServer{}, // 不转发我们的 MCP server（§5.18：两套授权链不搅在一起）
+		AdditionalDirectories: extraDirs,
 	})
 	cancelNew()
 	if err != nil {

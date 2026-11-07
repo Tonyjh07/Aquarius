@@ -13,6 +13,8 @@
 //	ignore     提示一直不回，连 cancel 也不理（测试宽限杀进程）
 //	permission 提示里先反问权限，按应答回一段正文
 //	partial    先发两段正文，然后直接退出（测试「中途失败也要把已收到的带出去」）
+//	additional initialize 申报 sessionCapabilities.additionalDirectories，且 session/new
+//	           不带这个字段就回 -32602（验证客户端确实发出去了）
 //	fs         按 fs 模式发五个文件请求（读切片 / 写新文件建父目录 / 越界写 / 越界读 /
 //	           写执行控制文件），把每个应答原样编进正文——断言全在测试里做
 //	delayed    先报一句进度，等 FAKE_AGENT_DELAY_MS（缺省 8000）毫秒再交报告——手验
@@ -147,6 +149,16 @@ func handleRequest(mode string, m rpcMsg) {
 		case "v2":
 			reply(m.ID, map[string]any{"protocolVersion": 2, "authMethods": []any{}})
 			return
+		case "additional":
+			reply(m.ID, map[string]any{
+				"protocolVersion": 1,
+				"agentInfo":       map[string]any{"name": "fake", "title": "Fake Agent", "version": "9.9"},
+				"authMethods":     []any{},
+				"agentCapabilities": map[string]any{
+					"sessionCapabilities": map[string]any{"additionalDirectories": map[string]any{}},
+				},
+			})
+			return
 		case "crash":
 			fmt.Fprintln(os.Stderr, "fake agent: boom on purpose")
 			os.Exit(3)
@@ -171,8 +183,9 @@ func handleRequest(mode string, m rpcMsg) {
 			return
 		}
 		var p struct {
-			Cwd        string `json:"cwd"`
-			McpServers []any  `json:"mcpServers"`
+			Cwd                   string   `json:"cwd"`
+			McpServers            []any    `json:"mcpServers"`
+			AdditionalDirectories []string `json:"additionalDirectories"`
 		}
 		_ = json.Unmarshal(m.Params, &p)
 		if !strings.HasPrefix(p.Cwd, "/") && !(len(p.Cwd) > 1 && p.Cwd[1] == ':') {
@@ -181,6 +194,12 @@ func handleRequest(mode string, m rpcMsg) {
 		}
 		if p.McpServers == nil || len(p.McpServers) != 0 {
 			fail(m.ID, -32602, "mcpServers must be an empty list")
+			return
+		}
+		if mode == "additional" && len(p.AdditionalDirectories) == 0 {
+			// 这一模式扮演「申报了 additionalDirectories 的代理」：客户端不发就该被拒，
+			// 发了则原样回显，测试据此断言发的是哪几个根。
+			fail(m.ID, -32602, "additionalDirectories is required in this mode")
 			return
 		}
 		sessCwd = p.Cwd
@@ -248,7 +267,7 @@ func handleRequest(mode string, m rpcMsg) {
 				})),
 				"control_write": fsResult(request("fs/write_text_file", map[string]any{
 					"sessionId": sid, "path": filepath.Join(sessCwd, ".git", "hooks", "pre-commit"),
-					"content":   "#!/bin/sh\nexit 0\n",
+					"content": "#!/bin/sh\nexit 0\n",
 				})),
 			}
 			raw, _ := json.Marshal(out)
