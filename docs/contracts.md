@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-07 @ da08c18 -->
+<!-- docs-sync: 2026-11-07 @ 23873d2 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -478,7 +478,7 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 | `LLM` | openai-chat（缺省）/ openai-responses / anthropic（+可选 `TokenCounter`，D173/D175） | Tier-1 Go 插件 | 脚本化 Stream |
 | `Tool` | memory_*、file_*、term_*、job_*、watch_*、web_*、think | **MCP server** | fake tool |
 | `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
-| `Confirmer` | TUI 确认 / `--yes` | — | 自动应答 |
+| `Confirmer` | TUI 确认 | — | 自动应答 |
 | `Asker` | uigui 提问面板 / uitui 编号选单 / repl 编号选单 | — | 脚本答案 |
 | `ConversationStore` | storejson（一树一 JSON + N 代 `.bak`） | — | in-memory |
 | `MemoryStore` | memoryfs（markdown） | MCP resources / Tier-1 | in-memory |
@@ -509,7 +509,7 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 
 一次提问 = 1–4 题；每题一个短标题、题干、**0–9 个选项**（0 项 = 纯自由输入）与是否多选。
 答案与题**等长**，逐题给选中项（自由输入原样成一个元素），未答 = 空切片；另有两个终态：
-`Dismissed`（「忽略」= 放弃全部，不是跳过本题）与 `Away`（没人可问，-yes / 非交互）——
+`Dismissed`（「忽略」= 放弃全部，不是跳过本题）与 `Away`（没人可问，无人值守 / 非交互）——
 两者的文案与期望都不同，不能合成一个布尔。
 
 - **与 `Confirmer` 分开**（§5.2）：确认答「准不准做」（布尔 + 原因），提问答「选哪个」
@@ -1196,6 +1196,8 @@ config `mcpServers` 条目与 `plugin.json` 的 `mcp` 段字段一致。
 2. **校验**：manifest schema、API 版本协商、provides 自检。
 3. **授权（grant）**：`capabilities` 首次使用弹确认 → 写入 config `plugins.<name>.granted`（D31）；
    `risk=confirm` 工具逐次走 `Confirmer`；
+   **无人值守开着时信任门与能力授权都不问也不放行**（不启动、不落状态，日志说明原因，下次
+   交互启动重问，D285）；
    密钥经 `Secrets` 按名注入插件环境，不落明文配置。
    **stdio 子进程环境 = 父环境剔除 `AQUARIUS_*`（本项目密钥命名约定）+ 声明项**——
    宿主密钥不随继承外泄给插件；PATH/TEMP 等系统变量照常继承（审查修复）。
@@ -1876,10 +1878,11 @@ L3 之后不再吃文案——`port.Log` 的实参是级别、上下文与两个
   热生效）。开启时 `Confirmer` 被 `decorate.Unattended` 装饰：
   **矩阵外的确认不调内层、直接拒绝**并回传「没人能批准，别重试，在权限允许的范围内继续，
   把需要批准的事列出来」（`decorate.UnattendedReason`）——**权限边界不变**，只是不再阻塞等人。
-  - 只包**模型发起**的那条链（`toolrun`）；`/rm`、`/rmconv` 等用户亲手输入的命令确认、
-    插件能力授权照常询问——人就在键盘前。
-  - 与 `-yes`（自动允许）互斥优先：装了 `-yes` 就不装该装饰器，两者同时配置启动告警，
-    且**活开关压到关**（状态行与菜单勾选必须反映真实判定，config 文件不动）。
+  - 只包**模型发起**的那条链（`toolrun`）；`/rm`、`/rmconv` 等用户亲手输入的命令确认照常
+    询问——人就在键盘前。
+  - **插件授权同口径，但不在装饰器里**：宿主自己问 `Deps.Unattended`，开着时信任门与能力
+    授权都不问也不放行（不启动、不落 `Trusted`/`Granted`），日志写明「不是用户拒的」。
+    插件是程序在启动时替自己发起的，不是用户键入的命令。
   - `Asker` 同款（`decorate.UnattendedAsker`）：立即回填「用户不在」（`AskAnswer.Away`），提问不阻塞轮次。
   - 开启期间状态行常驻「无人值守」标记，否则用户回来只看到一串「已拒绝」会当成 bug。
 - **转交出去的边界**（D244，§5.18）：`delegate` 工具是 `Risk=Confirm`——批准一次转交 = 批准那个

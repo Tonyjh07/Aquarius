@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-11-05 @ 0233b77 -->
+<!-- docs-sync: 2026-11-07 @ 23873d2 -->
 
 > **定位、统一语言与限界上下文以本文为准**，同时是 **10 分钟建立索引的地图**：内核做什么、
 > 目录怎么分、端口对哪个适配器。内核的逐条规格（领域不变量、端口接口、应用层语义、
@@ -167,7 +167,7 @@ S1/S1b/S1c/S2/S2b 增强均已完成，步骤见 [roadmap.md](roadmap.md)，后�
 | `Clock` / `IDGen` / `Secrets` | 系统时钟 / ULID / env | **M0 ✓** | 固定 / 递增 / map |
 | `Tool` | toolbuiltin（memory_*/file_*/think/sleep + M3 的 term_exec/job_*）+ app 的 context_compact + mcpgate 的 `mcp:<server>:<tool>` | **M2 ✓**（M3 扩充，M4+MCP） | fake tool |
 | `ToolRunner` | toolrun（权限判定/确认/超时/裁剪，D25） | **M2 ✓** | fake runner |
-| `Confirmer` | repl 确认（读行 y/N；`-yes` 全免）；uitui 确认对话（D33）；uigui 输入栏确认态（D43） | **M1 ✓** | 脚本应答 |
+| `Confirmer` | repl 确认（读行 y/N）；uitui 确认对话（D33）；uigui 输入栏确认态（D43） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs（全局 memories.md + 会话记忆，D23） | **M2 ✓** | in-memory |
 | `AttachmentStore` | blobfs（sha256 寻址 + 启动 GC） | **M3 ✓** | in-memory |
 | `Transcriber` / `Synthesizer` | （选型待定） | backlog（D27） | 假转写 |
