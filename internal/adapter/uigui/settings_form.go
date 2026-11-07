@@ -39,14 +39,23 @@ type settingsForm struct {
 	toolsStatus string                       // 反馈文案（状态行）
 	toolsErr    bool                         // 反馈是否为错误
 
-	// 外部代理页（D270）：清单 / 可用性 / 缺省 / 命令行编辑。动作同步（改一段本地 config +
-	// 探一次 PATH），没有网络也没有握手，不进异步通道。
-	delegates       DelegateAdmin                // nil = 只读占位（未接线）
-	delegateSnap    DelegateSnapshot             // 每次动作后重取（可用性按 PATH 现算）
-	delegateEditors map[string]*widget.Editor    // 命令行编辑档（按代理名 get-or-create）
-	delegateBtns    map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
-	delegateStatus  string                       // 反馈文案（状态行）
-	delegateErr     bool                         // 反馈是否为错误
+	// 外部代理页（D270/A1）：清单 / 可用性 / 缺省 / 字段级编辑。改配置与探 PATH 同步做；
+	// 「测试连接」要起一个真进程，走异步通道（delegateRes），不卡窗口。
+	delegates     DelegateAdmin                   // nil = 只读占位（未接线）
+	delegateSnap  DelegateSnapshot                // 每次动作后重取（可用性按 PATH 现算）
+	delegateOpen  string                          // 展开编辑的代理名（"" = 全部收起）
+	delegateForms map[string]*delegateForm        // 字段编辑档（按代理名 get-or-create）
+	delegateBtns  map[string]*widget.Clickable    // 动作按钮（get-or-create 按 key）
+	delegateAddN  widget.Editor                   // 新增条目的名字
+	delegateAddC  widget.Editor                   // 新增条目的命令行
+	delegateAddB  widget.Clickable                // 「添加」按钮
+	delegateConfr string                          // 待删除的代理名（"" = 无；行内二次确认）
+	delegateProbe map[string]delegateProbeOutcome // 上次探测回执（按代理名）
+	delegateBusy  map[string]bool                 // 探测在途（按钮显示「正在连接」）
+	delegateRes   chan delegateProbeOutcome       // 探测结果通道（旁路 goroutine 回灌）
+	delegateWait  int                             // 在途探测数
+	delegateStat  string                          // 反馈文案（状态行）
+	delegateErr   bool                            // 反馈是否为错误
 
 	// 技能页（D202/D203）：数据面见 settings_skills.go。安装/更新会联网与拉起 git，
 	// 故与工具页同款异步（旁路 goroutine + 结果通道 + Invalidate）；卸载走行内二次确认。
@@ -252,6 +261,8 @@ func newSettingsFormState() *settingsForm {
 		voiceRes:     make(chan error, 2),
 		toolBtns:     map[string]*widget.Clickable{},
 		delegateBtns: map[string]*widget.Clickable{},
+		delegateRes:  make(chan delegateProbeOutcome, 8),
+		delegateBusy: map[string]bool{},
 		skillBtns:    map[string]*widget.Clickable{},
 		secretBtns:   map[string]*widget.Clickable{},
 		// 密钥库快照「上次 Revision」起点 −1：**首帧必采纳**。若起点取 0，库
@@ -305,9 +316,9 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.tools = u.opts.Tools         // S6/D143：工具与 MCP 管理面（nil = 只读占位）
 	f.delegates = u.opts.Delegates // D270：外部代理管理面（nil = 只读占位）
 	f.syncDelegateSnapshot()       // 开窗即取一次（含一次 PATH 探测）
-	for _, a := range f.delegateSnap.Agents {
-		f.resetDelegateEditor(a.Name, a.CommandLine)
-	}
+	f.delegateAddN.SingleLine = true
+	f.delegateAddC.SingleLine = true
+	// 字段档不在这里预填：展开是用户的动作，展开那一刻才把草稿对齐回快照。
 	f.secrets = u.opts.Secrets // S9-6b：密钥库管理面（nil = 只读占位）
 	f.syncSecretsSnapshot()    // 开窗即取一次（帧首同款；动作后再取）
 	f.skills = u.opts.Skills   // D202/D203：技能管理面（nil = 只读占位）

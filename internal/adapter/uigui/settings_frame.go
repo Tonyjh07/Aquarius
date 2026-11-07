@@ -40,8 +40,13 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	f.drainTestResults()  // 连通性 / 获取模型异步结果（最新一条覆盖展示）
 	f.drainToolResults()  // 工具页异步动作结果回灌状态行
 	f.drainSkillResults() // 技能页异步动作结果回灌状态行
-	f.drainSkillPicks(u)  // 技能导入选择框结果（只填来源框，不直接落盘）
-	f.drainCharPicks(u)   // 角色卡选择框结果（只填来源框，不直接落盘）
+	// 外部代理页的「测试连接」：起的是真进程，结果同样走旁路通道。放在帧首而不是页事件里，
+	// 是为了切走页面之后结果也能落地（回灌后不回看，但状态行不该停在「正在连接」）。
+	if f.consumeDelegateProbes() && f.win != nil {
+		f.win.Invalidate()
+	}
+	f.drainSkillPicks(u) // 技能导入选择框结果（只填来源框，不直接落盘）
+	f.drainCharPicks(u)  // 角色卡选择框结果（只填来源框，不直接落盘）
 	// 工具页原子快照（Revision 变了才重建行/按钮；同历史窗口径）。
 	f.syncToolsSnapshot()
 	// 密钥库页原子快照（同口径：Revision 变了才重建条目行）。

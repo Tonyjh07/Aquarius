@@ -111,7 +111,16 @@ const (
 	rowToolsEmpty  // 占位/空态（text = 文案）
 	rowToolsStatus // 异步动作反馈状态行
 	// 外部代理页（D270）：清单逐条（命令行编辑 + 启用/设缺省）+ 页级「重新检测」。
-	rowDlgItem    // 一个代理（field = Agents 下标）
+	// A1 起每条可展开为字段级编辑（命令 / 参数 / 环境 / 工作目录 / 根集 + 测试连接）。
+	rowDlgItem    // 一个代理的头部（field = Agents 下标）
+	rowDlgCmd     // 展开区：可执行命令（单行档）
+	rowDlgArgs    // 展开区：参数（多行档，一行一个）
+	rowDlgEnv     // 展开区：环境变量（多行档，一行一个 KEY=VALUE）
+	rowDlgWorkdir // 展开区：工作目录（单行档）
+	rowDlgRoots   // 展开区：根集（多行档，一行一个）
+	rowDlgSave    // 展开区：保存 / 测试连接（field = Agents 下标）
+	rowDlgProbe   // 展开区：上次探测的回执（field = Agents 下标）
+	rowDlgAdd     // 新增条目：名字 + 命令行 + 「添加」
 	rowDlgEmpty   // 空态/未接线占位（text = 文案）
 	rowDlgNote    // 说明（text 忽略；文案在 Body 内）
 	rowDlgRefresh // 「重新检测」页级动作

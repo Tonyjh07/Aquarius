@@ -24,4 +24,6 @@ var enGuiCommonTexts = map[string]string{
 	"ui.common.none":         "None",
 	"ui.common.unset":        "Not set",
 	"ui.common.unwired":      "Not wired yet (read-only placeholder)",
+	// List separator used when the UI joins "A, B, C" (D275: no literals in source).
+	"ui.common.list_sep": ", ",
 }

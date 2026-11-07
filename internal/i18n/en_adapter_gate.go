@@ -101,6 +101,11 @@ var enAdapterGateTexts = map[string]string{
 	"acp.deny.user_refused":   "the user declined",
 	"acp.prompt.head":         "External agent \"{agent}\" asks to perform an operation:",
 	"acp.prompt.foot":         "This agent has its own file and command access; approving means letting it act on its own judgement.",
+	// Connectivity probe (A1 "test connection"): three failure classes, so the user knows
+	// which part to fix.
+	"acp.probe.err.not_found": "Command not on PATH",
+	"acp.probe.err.start":     "Could not start the process",
+	"acp.probe.err.handshake": "Handshake failed",
 
 	// ---- mcpgate：MCP server 的连接、密钥解析与 prompt 参数用法。 ----
 	"mcp.err.connect":            "cannot connect plugin {name}",

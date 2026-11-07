@@ -46,6 +46,8 @@ var zhCmdAdminTexts = map[string]string{
 	"cmd.delegate.err.name_dup":            "已经有叫 {name} 的代理了：换一个名字",
 	"cmd.delegate.err.workdir_abs":         "工作目录必须是绝对路径：{dir}",
 	"cmd.delegate.err.root_abs":            "根集里的项必须是绝对路径：{root}",
+	"cmd.delegate.err.env_line":            "环境变量第 {line} 行不是 KEY=VALUE",
+	"cmd.delegate.err.probe_unwired":       "转交管理器未装配，测不了连通性",
 	"cmd.delegate.err.agent_missing_stale": "配置里没有代理 {name}（可能刚被删掉，重启后本页会刷新）",
 	"cmd.delegate.err.agent_missing":       "配置里没有代理 {name}",
 	"cmd.delegate.err.default_disable":     "缺省代理不能停用：先把别的代理设为缺省，再停用它",

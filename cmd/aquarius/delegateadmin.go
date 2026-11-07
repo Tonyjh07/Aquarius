@@ -18,7 +18,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/acpgate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
@@ -519,4 +521,33 @@ func splitCommandLine(line string) (string, []string, error) {
 		return "", nil, nil
 	}
 	return out[0], out[1:], nil
+}
+
+// Probe 测一次连通性：起进程 → initialize 握手 → 立刻收掉。
+//
+// 它跑在设置窗的旁路 goroutine 里（界面循环不能等一次进程启动）。三条失败路各有
+// sentinel（不在 PATH / 起不来 / 握手失败），错误前缀直接给用户看，不再二次包装。
+func (a *delegateAdmin) Probe(name string) (uigui.DelegateProbe, error) {
+	if a.w.delegateMgr == nil {
+		return uigui.DelegateProbe{}, errors.New(i18n.T("cmd.delegate.err.probe_unwired"))
+	}
+	// 比 acpgate 自己的总闸多留一秒：让它的「超时」先说话，而不是这里的 ctx 先断。
+	ctx, cancel := context.WithTimeout(context.Background(), acpgate.ProbeTimeout+time.Second)
+	defer cancel()
+	info, err := a.w.delegateMgr.Probe(ctx, name)
+	if err != nil {
+		return uigui.DelegateProbe{}, err
+	}
+	return uigui.DelegateProbe{
+		ProtocolVersion: info.ProtocolVersion,
+		Title:           info.Title,
+		Version:         info.Version,
+		AuthMethods:     info.AuthMethods,
+		LoadSession:     info.LoadSession,
+		PromptImages:    info.PromptImages,
+		PromptAudio:     info.PromptAudio,
+		PromptEmbedded:  info.PromptEmbedded,
+		McpHTTP:         info.McpHTTP,
+		McpSSE:          info.McpSSE,
+	}, nil
 }

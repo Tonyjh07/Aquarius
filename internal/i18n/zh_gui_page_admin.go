@@ -10,12 +10,13 @@ var zhGuiPageAdminTexts = map[string]string{
 
 	// 外部代理页
 	"ui.page.delegate.section_agents": "清单（config delegate.agents）",
-	"ui.page.delegate.empty": "一个外部代理都没有。在 config.json 的 delegate.agents 里写一条（至少要有 name 与 command），" +
+	"ui.page.delegate.empty": "一个外部代理都没有。用下面的「新增代理」加一条（名字 + 命令行），" +
 		"重启后这里会出现它；没配代理时模型拿不到 delegate* 工具。",
 	"ui.page.delegate.note": "「可用」只探命令在不在 PATH 上，不做握手——启动时挨个拉起代理是" +
-		"拿用户的时间换一张清单，所以标题与版本要等它真的跑过一次才有。" +
+		"拿用户的时间换一张清单；要握手请点条目里的「测试连接」（会真起一个进程，十几秒封顶）。" +
 		"在这里改的都是 config，**重启生效**：转交管理器按启动时的配置装配。" +
-		"要删掉一个代理请改 config.json（这里只改不删）。",
+		"保存会把 config.json 整份重写成缩进 JSON——手写的注释与键序不会保留。",
+	"ui.page.delegate.section_add":  "新增代理",
 	"ui.page.delegate.refresh":      "重新检测",
 	"ui.page.delegate.refresh_hint": "装在别处之后再扫一遍 PATH；不改任何配置",
 	"ui.page.delegate.rescanned":    "已重新检测（可用性按 PATH 现算）",

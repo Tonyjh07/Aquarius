@@ -10,13 +10,15 @@ var enGuiPageAdminTexts = map[string]string{
 
 	// 外部代理页
 	"ui.page.delegate.section_agents": "Agents (config delegate.agents)",
-	"ui.page.delegate.empty": "No external agents yet. Add an entry under delegate.agents in config.json " +
-		"(at least name and command); it shows up here after a restart. Without any agent the model gets no delegate* tools.",
+	"ui.page.delegate.empty": "No external agents yet. Add one with \"Add agent\" below (name + command line); " +
+		"it shows up here after a restart. Without any agent the model gets no delegate* tools.",
 	"ui.page.delegate.note": "Availability only checks that the command is on PATH; there is no handshake — " +
-		"starting every agent at launch would trade the user's time for a list, so the title and version " +
-		"only appear once the agent has actually run. Everything changed here is config and " +
-		"**takes effect after restart**: the handoff manager assembles from the config read at startup. " +
-		"To delete an agent, edit config.json (this page only edits, never deletes).",
+		"starting every agent at launch would trade the user's time for a list. Use \"Test connection\" " +
+		"on an entry for a real handshake (it does start a process, capped at about fifteen seconds). " +
+		"Everything changed here is config and **takes effect after restart**: the handoff manager " +
+		"assembles from the config read at startup. Saving rewrites the whole config.json as indented " +
+		"JSON — hand-written comments and key order are not preserved.",
+	"ui.page.delegate.section_add":  "Add an agent",
 	"ui.page.delegate.refresh":      "Recheck",
 	"ui.page.delegate.refresh_hint": "Rescan PATH after installing an agent elsewhere; no config is changed",
 	"ui.page.delegate.rescanned":    "Rechecked (availability computed from the current PATH)",

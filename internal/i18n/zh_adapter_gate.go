@@ -105,6 +105,10 @@ var zhAdapterGateTexts = map[string]string{
 	"acp.deny.user_refused":   "用户拒绝",
 	"acp.prompt.head":         "外部代理「{agent}」请求执行一个操作：",
 	"acp.prompt.foot":         "该代理有它自己的文件与命令访问；批准 = 允许它按自己的判断动手。",
+	// 连通性探测（A1「测试连接」）：三类失败要分开，用户能据此改对地方。
+	"acp.probe.err.not_found": "命令不在 PATH 上",
+	"acp.probe.err.start":     "起不了进程",
+	"acp.probe.err.handshake": "握手失败",
 
 	// ---- mcpgate：MCP server 的连接、密钥解析与 prompt 参数用法。 ----
 	"mcp.err.connect":            "连接插件 {name}",

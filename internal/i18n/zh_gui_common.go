@@ -30,4 +30,6 @@ var zhGuiCommonTexts = map[string]string{
 	"ui.common.none":         "无",
 	"ui.common.unset":        "未设",
 	"ui.common.unwired":      "未接线（只读占位）",
+	// ui.common.list_sep 列表分隔符：界面里拼「A、B、C」用，别在源码里写死（D275 口径）。
+	"ui.common.list_sep": "、",
 }
