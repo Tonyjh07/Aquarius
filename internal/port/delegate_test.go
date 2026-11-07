@@ -49,3 +49,27 @@ func TestDelegateReportTextNoBody(t *testing.T) {
 		t.Fatalf("报告 = %q", got)
 	}
 }
+
+// TestNormalizeRoots 根集归一：去空白、去空项、去重（保序），相对路径拒收。
+//
+// 「多一行空行不算错、重复一条也不算错」是刻意的：手写或模型产出里出现这两样很常见，
+// 为它们报错只会让人反复试错；只有相对路径必须拒——它会让越界判定失去参照物。
+func TestNormalizeRoots(t *testing.T) {
+	t.Parallel()
+	got, err := NormalizeRoots([]string{" /a ", "", "/b", "/a", "   "})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if len(got) != 2 || got[0] != "/a" || got[1] != "/b" {
+		t.Fatalf("roots = %v（want 去空去重保序）", got)
+	}
+	if got, err := NormalizeRoots(nil); err != nil || got != nil {
+		t.Fatalf("空输入应回 nil: %v %v", got, err)
+	}
+	if got, err := NormalizeRoots([]string{"", " "}); err != nil || got != nil {
+		t.Fatalf("全空应回 nil（不是含空串的一条）: %v %v", got, err)
+	}
+	if _, err := NormalizeRoots([]string{"rel/dir"}); err == nil {
+		t.Fatal("相对路径应报错")
+	}
+}

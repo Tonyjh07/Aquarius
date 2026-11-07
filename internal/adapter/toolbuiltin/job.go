@@ -3,7 +3,6 @@ package toolbuiltin
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -400,12 +399,9 @@ func jobWaitText(ctx context.Context, mgr port.JobReader, j port.Job) string {
 // 溢出为负（审查修复——溢出会被 jobproc 静默当成"不限时"）。
 const maxJobTimeoutSec = 30 * 24 * 3600
 
-// absWorkDir 绝对路径判定（§14 M3 遗留：相对 workdir 按绝对路径口径拒收）。
-// 除 filepath.IsAbs 外放行根起始路径（Windows 上 "/tmp" 与 "\tmp" 无盘符但仍是
-// 绝对定位，既有调用与 shell 语义均按当前盘根解析）。
-func absWorkDir(p string) bool {
-	return filepath.IsAbs(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\")
-}
+// absWorkDir 绝对路径判定（§14 M3 遗留：相对 workdir 按绝对路径口径拒收）；
+// 口径由 port.AbsPath 单一提供。
+func absWorkDir(p string) bool { return port.AbsPath(p) }
 
 // resolveJobID 解析任务标识（精确优先 + 唯一前缀，port 共用实现）；
 // 失败附上发现线索（job_list 可查可用 ID）。

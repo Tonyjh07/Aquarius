@@ -51,8 +51,17 @@ var enAdapterGateTexts = map[string]string{
 	"secret.keypool.label_nth":   "key #{n}",
 
 	// ---- toolrun：工具确认句（用户要回答的那一句，带目标路径与参数预览）。 ----
-	"tool.confirm.with_target": "Allow {name} to access {target}? Arguments: {args}",
-	"tool.confirm.plain":       "Allow {name} to run? Arguments: {args}",
+	"tool.confirm.with_target":      "Allow {name} to access {target}? Arguments: {args}",
+	"tool.confirm.plain":            "Allow {name} to run? Arguments: {args}",
+	"tool.confirm.described":        "Allow {name} to run? {summary}",
+	"tool.confirm.described_target": "Allow {name} to access {target}? {summary}",
+
+	// ---- delegate tool confirm summary: the scope is listed in full, the task is clipped. ----
+	"tool.delegate.describe.auto":          "the default agent",
+	"tool.delegate.describe.scope":         "in {dir}",
+	"tool.delegate.describe.scope_default": "in the agent's configured working directory",
+	"tool.delegate.describe.scope_plus":    "{scope}, plus {roots}",
+	"tool.delegate.describe.line":          "Agent {agent}; {scope}; task: {task}",
 
 	// ---- decorate：审计文件与计数转发的内部哨兵（只有测试与诊断看，仍收进表以清干净字面量）。 ----
 	"tool.err.audit_closed": "audit: the file is closed",

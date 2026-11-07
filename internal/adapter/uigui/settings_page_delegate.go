@@ -46,7 +46,6 @@ func (delegatePage) Rows(f *settingsForm) []rowDesc {
 			rowDesc{kind: rowDlgArgs, field: i},
 			rowDesc{kind: rowDlgEnv, field: i},
 			rowDesc{kind: rowDlgWorkdir, field: i},
-			rowDesc{kind: rowDlgRoots, field: i},
 			rowDesc{kind: rowDlgSave, field: i},
 			rowDesc{kind: rowDlgProbe, field: i},
 		)
@@ -92,11 +91,6 @@ func (delegatePage) Body(gtx layout.Context, th *material.Theme, f *settingsForm
 		df := f.delegateFormFor(st.Name)
 		return f.delegateFieldRow(gtx, th, i18n.T("ui.settings.dlg.workdir_label"),
 			&df.workdir, i18n.T("ui.settings.dlg.workdir_hint"), 0), true
-	case rowDlgRoots:
-		st := f.delegateSnap.Agents[r.field]
-		df := f.delegateFormFor(st.Name)
-		return f.delegateFieldRow(gtx, th, i18n.T("ui.settings.dlg.roots_label"),
-			&df.roots, i18n.T("ui.settings.dlg.roots_hint"), delegateMultilineH), true
 	case rowDlgSave:
 		return f.delegateSaveRow(gtx, th, f.delegateSnap.Agents[r.field].Name), true
 	case rowDlgProbe:

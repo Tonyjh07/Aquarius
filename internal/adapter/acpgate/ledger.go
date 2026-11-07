@@ -36,13 +36,16 @@ const (
 
 // delegateLedgerEntry 一条未收尾的转交记录。
 type delegateLedgerEntry struct {
-	ID        port.DelegateID `json:"id"`
-	Agent     string          `json:"agent"`
-	Session   conversation.ID `json:"session,omitempty"`
-	Task      string          `json:"task,omitempty"`
-	WorkDir   string          `json:"work_dir,omitempty"`
-	StartedAt time.Time       `json:"started_at"`
-	PID       int             `json:"pid,omitempty"`
+	ID      port.DelegateID `json:"id"`
+	Agent   string          `json:"agent"`
+	Session conversation.ID `json:"session,omitempty"`
+	Task    string          `json:"task,omitempty"`
+	WorkDir string          `json:"work_dir,omitempty"`
+	// Roots 这次转交额外申请的目录：写进台账是留痕，不是围栏（代理自己起 shell 那条路
+	// 看不见）。读台账的人能看出「这活当时被允许碰哪些额外位置」。
+	Roots     []string  `json:"roots,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+	PID       int       `json:"pid,omitempty"`
 	// Stop / Error / EndedAt：进终态时补上但不删条目（D264 同口径），删的条件是报告
 	// **落地并落盘**，不是这次转交结束。
 	Stop    string    `json:"stop,omitempty"`
@@ -79,6 +82,7 @@ func (m *Manager) ledgerAdd(r *run) {
 			Session:   r.session,
 			Task:      string(task),
 			WorkDir:   r.spec.WorkDir,
+			Roots:     r.spec.Roots,
 			StartedAt: r.started,
 		})
 	})

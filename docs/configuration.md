@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-07 @ 03beedf -->
+<!-- docs-sync: 2026-11-07 @ a739c24 -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -354,7 +354,6 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 | `delegate.agents[].command` | string | — | 启动命令；启动时按 `PATH` 探测，探不到只标不可用、不挡启动 |
 | `delegate.agents[].args` / `env` | []string / object | `[]` | 参数与环境（值可用 `secret:<名>`，起进程时解析） |
 | `delegate.agents[].workdir` | string | 家目录 | 子进程起点（绝对路径；**不是围栏**） |
-| `delegate.agents[].roots` | []string | `[]` | 可访问目录根集（绝对路径，去空去重）。本版只解析与落盘；申报 `fs` 之后才作为越界判据（见 v0.6.0 的 A2/A3） |
 | `delegate.agents[].enabled` | bool | `true` | 键缺失 = 启用 |
 | `delegate.agents[].default` | bool | `false` | 只配一条时可不写；多条目时最多一条 |
 | `delegate.timeout_sec` | int | `1800` | 单次转交总闸；显式 `0` = 不限，上限 `86400` |
@@ -365,7 +364,7 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 与不可用原因；`Title` / `Version` 在第一次转交后才填上（启动不做握手——那要把代理真拉起来）。
 
 **设置窗「外部代理」页改的就是这一段**：清单、可用性（现探 `PATH`）、缺省标记；可就地新增、
-删除（行内二次确认）、改名，点「编辑」展开字段级编辑（命令 / 参数 / `env` / `workdir` / 根集），
+删除（行内二次确认）、改名，点「编辑」展开字段级编辑（命令 / 参数 / `env` / `workdir`），
 另有「测试连接」（起一次进程握手）与「重新检测」。写回 config、**重启生效**（转交管理器按启动时
 的配置装配）。同一个工具在「工具与 MCP」页也能停用——`delegate` 三个工具恒在工具清单里
 （即使当前没有可用代理），停用后即便配了代理，模型也看不到这三个工具。

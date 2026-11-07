@@ -35,7 +35,8 @@ func waitDone(t *testing.T, m *Manager, id port.DelegateID) {
 // TestLedgerWritesAndSettles 正常跑完：条目先有、终态有停因、Settle 之后才消失。
 func TestLedgerWritesAndSettles(t *testing.T) {
 	m, path := ledgerManager(t, "ok")
-	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "do the thing", WorkDir: t.TempDir()})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{
+		Task: "do the thing", WorkDir: t.TempDir(), Roots: []string{"/srv/x"}})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -49,6 +50,10 @@ func TestLedgerWritesAndSettles(t *testing.T) {
 	}
 	if !strings.Contains(d.Entries[0].Task, "do the thing") {
 		t.Fatalf("条目缺任务描述: %q", d.Entries[0].Task)
+	}
+	// 范围要留痕：读台账的人看得出这活当时被允许碰哪些额外位置。
+	if len(d.Entries[0].Roots) != 1 || d.Entries[0].Roots[0] != "/srv/x" {
+		t.Fatalf("条目缺根集: %+v", d.Entries[0])
 	}
 
 	waitDone(t, m, task.ID)
@@ -169,5 +174,18 @@ func writeFixture(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("写夹具: %v", err)
+	}
+}
+
+// TestStartRejectsRelativeRoot 根集在入口归一：相对路径直接拒（它会让越界判定失去参照物）。
+func TestStartRejectsRelativeRoot(t *testing.T) {
+	m, _ := ledgerManager(t, "ok")
+	if _, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "x", Roots: []string{"rel"}}); err == nil {
+		t.Fatal("相对根应报错")
+	}
+	// 归一后重复项进台账只剩一条（去空白、去重是入口的事，不是调用方的事）。
+	if _, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{
+		Task: "x", Roots: []string{" /srv/y ", "/srv/y"}}); err != nil {
+		t.Fatalf("start: %v", err)
 	}
 }

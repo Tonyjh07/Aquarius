@@ -45,7 +45,6 @@ var enCmdAdminTexts = map[string]string{
 	"cmd.delegate.err.name_required":       "The name cannot be empty",
 	"cmd.delegate.err.name_dup":            "There is already an agent named {name}: pick another name",
 	"cmd.delegate.err.workdir_abs":         "The working directory must be an absolute path: {dir}",
-	"cmd.delegate.err.root_abs":            "Every root in the root set must be an absolute path: {root}",
 	"cmd.delegate.err.env_line":            "Environment line {line} is not KEY=VALUE",
 	"cmd.delegate.err.probe_unwired":       "The handoff manager is not wired, so connectivity cannot be tested",
 	"cmd.delegate.err.agent_missing_stale": "No agent {name} in the config (it may just have been deleted; this page refreshes after a restart)",

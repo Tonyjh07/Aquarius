@@ -834,3 +834,57 @@ func TestDisabledSet(t *testing.T) {
 		t.Fatalf("Disabled() = %v", got)
 	}
 }
+
+// TestConfirmPromptUsesDescribe 工具自报摘要时，确认提示用摘要而不是原始参数。
+//
+// 这条守的是「用户看得见要允许什么」：默认提示把参数压成一行截到 160 字，参数里带长
+// 文本的调用（delegate 的 task）会把真正该判断的字段挤出去。
+func TestConfirmPromptUsesDescribe(t *testing.T) {
+	t.Parallel()
+	longTask := strings.Repeat("把这一段很长的任务描述重复很多遍。", 40)
+	call := tool.Call{ID: "c1", Name: "delegate", Args: json.RawMessage(
+		`{"agent":"opencode","task":"` + longTask + `","roots":["/srv/data"]}`)}
+
+	spec := tool.Spec{Name: "delegate", Risk: tool.Confirm, Describe: func(args json.RawMessage) string {
+		var a struct {
+			Agent string   `json:"agent"`
+			Roots []string `json:"roots"`
+		}
+		_ = json.Unmarshal(args, &a)
+		return "代理 " + a.Agent + "；范围 " + strings.Join(a.Roots, " / ")
+	}}
+	got := confirmPrompt(call, "", spec)
+	if !strings.Contains(got, "/srv/data") {
+		t.Fatalf("摘要里的范围被丢了: %q", got)
+	}
+	if !strings.Contains(got, "opencode") {
+		t.Fatalf("摘要里的代理被丢了: %q", got)
+	}
+	if strings.Contains(got, longTask[:40]) {
+		t.Fatalf("不该退回原始参数: %q", got)
+	}
+	if r := []rune(got); len(r) > 200 {
+		t.Fatalf("摘要不该被截断也没必要这么长（%d 字）: %q", len(r), got)
+	}
+
+	// 带目标路径时两者都在。
+	if got := confirmPrompt(call, "/tmp/x", spec); !strings.Contains(got, "/tmp/x") || !strings.Contains(got, "/srv/data") {
+		t.Fatalf("目标与摘要应同时出现: %q", got)
+	}
+}
+
+// TestConfirmPromptFallsBack Describe 返回空串或没设时，退回原始参数预览（行为不变）。
+func TestConfirmPromptFallsBack(t *testing.T) {
+	t.Parallel()
+	call := tool.Call{ID: "c1", Name: "term", Args: json.RawMessage(`{"command":"ls"}`)}
+
+	plain := confirmPrompt(call, "", tool.Spec{Name: "term", Risk: tool.Confirm})
+	if !strings.Contains(plain, "ls") || !strings.Contains(plain, "term") {
+		t.Fatalf("无 Describe 时应给参数预览: %q", plain)
+	}
+	empty := confirmPrompt(call, "", tool.Spec{Name: "term", Risk: tool.Confirm,
+		Describe: func(json.RawMessage) string { return "   " }})
+	if empty != plain {
+		t.Fatalf("Describe 返回空串应退回默认: %q vs %q", empty, plain)
+	}
+}

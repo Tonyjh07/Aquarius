@@ -117,7 +117,6 @@ const (
 	rowDlgArgs    // 展开区：参数（多行档，一行一个）
 	rowDlgEnv     // 展开区：环境变量（多行档，一行一个 KEY=VALUE）
 	rowDlgWorkdir // 展开区：工作目录（单行档）
-	rowDlgRoots   // 展开区：根集（多行档，一行一个）
 	rowDlgSave    // 展开区：保存 / 测试连接（field = Agents 下标）
 	rowDlgProbe   // 展开区：上次探测的回执（field = Agents 下标）
 	rowDlgAdd     // 新增条目：名字 + 命令行 + 「添加」

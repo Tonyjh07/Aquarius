@@ -51,8 +51,6 @@ type DelegateAdmin interface {
 	SetEnv(name string, env map[string]string) error
 	// SetWorkdir 改工作目录（绝对路径；空 = 删掉 workdir 键）。
 	SetWorkdir(name, dir string) error
-	// SetRoots 改根集（绝对路径；空 = 删掉 roots 键）。本版只落盘，执行侧在 A2 才读。
-	SetRoots(name string, roots []string) error
 	// SetEnabled 启用/停用一个代理（写 enabled；重启生效）。
 	SetEnabled(name string, enabled bool) error
 	// SetDefault 指定缺省代理（写 default；同一条上唯一的 true，重启生效）。
@@ -94,7 +92,6 @@ type DelegateAgentState struct {
 	Args        []string // 字段级编辑：参数（一行一个）
 	Env         map[string]string
 	WorkDir     string
-	Roots       []string
 	Title       string // initialize 报的 agentInfo.title；还没转过为空
 	Version     string
 	Available   bool // 命令在 PATH 上（只探存在，不握手）
@@ -164,7 +161,6 @@ type delegateForm struct {
 	args    widget.Editor // 多行：一行一个参数
 	env     widget.Editor // 多行：一行一个 KEY=VALUE
 	workdir widget.Editor
-	roots   widget.Editor // 多行：一行一个根
 }
 
 // newDelegateForm 新建一条字段档（只设单行/多行属性；文本由 loadDelegateForm 填）。
@@ -215,7 +211,6 @@ func (f *settingsForm) loadDelegateForm(st DelegateAgentState) {
 	df.args.SetText(strings.Join(st.Args, "\n"))
 	df.env.SetText(formatDelegateEnv(st.Env))
 	df.workdir.SetText(st.WorkDir)
-	df.roots.SetText(strings.Join(st.Roots, "\n"))
 }
 
 // renameDelegateForm 改名后把档与展开态迁到新名字上（旧档丢掉：名字是 map 的键）。
@@ -482,7 +477,7 @@ func parseEnvText(text string) (map[string]string, error) {
 	return out, nil
 }
 
-// lines 多行文本 → 去空白、去空行的切片（args / roots 共用）。
+// lines 多行文本 → 去空白、去空行的切片（args 用）。
 func lines(text string) []string {
 	out := []string{}
 	for _, line := range strings.Split(text, "\n") {
@@ -618,7 +613,6 @@ func (f *settingsForm) saveDelegateForm(name string) (error, string) {
 		return err, ""
 	}
 	args := lines(df.args.Text())
-	roots := lines(df.roots.Text())
 	workdir := strings.TrimSpace(df.workdir.Text())
 
 	// 写：改名先做，后面几个动作都按新名字写。
@@ -640,9 +634,6 @@ func (f *settingsForm) saveDelegateForm(name string) (error, string) {
 		return err, ""
 	}
 	if err := f.delegates.SetWorkdir(cur, workdir); err != nil {
-		return err, ""
-	}
-	if err := f.delegates.SetRoots(cur, roots); err != nil {
 		return err, ""
 	}
 	return nil, i18n.Tf("ui.settings.dlg.saved", "name", cur)

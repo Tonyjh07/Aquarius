@@ -150,10 +150,6 @@ func (a *fakeDelegateAdmin) SetWorkdir(name, dir string) error {
 	return a.editField(name, "workdir", func(st *DelegateAgentState) { st.WorkDir = dir })
 }
 
-func (a *fakeDelegateAdmin) SetRoots(name string, roots []string) error {
-	return a.editField(name, "roots", func(st *DelegateAgentState) { st.Roots = roots })
-}
-
 // Probe 探测替身：回执与失败都可预设（测试不真起进程）。
 func (a *fakeDelegateAdmin) Probe(name string) (DelegateProbe, error) {
 	a.mu.Lock()
@@ -219,7 +215,7 @@ func TestDelegatePageRows(t *testing.T) {
 			add++
 		case rowDlgRefresh:
 			refresh++
-		case rowDlgCmd, rowDlgArgs, rowDlgEnv, rowDlgWorkdir, rowDlgRoots, rowDlgSave:
+		case rowDlgCmd, rowDlgArgs, rowDlgEnv, rowDlgWorkdir, rowDlgSave:
 			expanded++
 		}
 	}
@@ -244,7 +240,6 @@ func TestDelegateExpand(t *testing.T) {
 	fake.snap.Agents[0].Args = []string{"acp", "--stdio"}
 	fake.snap.Agents[0].Env = map[string]string{"KEY": "secret:openai"}
 	fake.snap.Agents[0].WorkDir = "/tmp/work"
-	fake.snap.Agents[0].Roots = []string{"/tmp/a", "/tmp/b"}
 	u, f := openDelegatePage(t, Options{
 		Settings:  func() SettingsSnapshot { return fillSnapshot() },
 		Delegates: fake,
@@ -258,7 +253,7 @@ func TestDelegateExpand(t *testing.T) {
 	for _, r := range f.pageRows(pageDelegates) {
 		counts[r.kind]++
 	}
-	for _, k := range []rowKind{rowDlgCmd, rowDlgArgs, rowDlgEnv, rowDlgWorkdir, rowDlgRoots, rowDlgSave, rowDlgProbe} {
+	for _, k := range []rowKind{rowDlgCmd, rowDlgArgs, rowDlgEnv, rowDlgWorkdir, rowDlgSave, rowDlgProbe} {
 		if counts[k] != 1 {
 			t.Fatalf("展开后 %v 行数 = %d, want 1（行计划 = %+v）", k, counts[k], f.pageRows(pageDelegates))
 		}
@@ -276,9 +271,6 @@ func TestDelegateExpand(t *testing.T) {
 	}
 	if got := df.workdir.Text(); got != "/tmp/work" {
 		t.Fatalf("工作目录档 = %q", got)
-	}
-	if got := df.roots.Text(); got != "/tmp/a\n/tmp/b" {
-		t.Fatalf("根集档 = %q", got)
 	}
 
 	// 收起后展开字段全部消失。
@@ -305,13 +297,12 @@ func TestDelegateSaveFields(t *testing.T) {
 	df.args.SetText("acp\n\n --stdio ")
 	df.env.SetText("# 注释\nKEY=secret:openai\n")
 	df.workdir.SetText("/tmp/work")
-	df.roots.SetText("/tmp/a\n/tmp/a\n")
 
 	u.dispatchDelegateAction(f, "save:opencode")
 	if f.delegateErr {
 		t.Fatalf("保存失败: %s", f.delegateStat)
 	}
-	want := []string{"cmd:opencode", "args:opencode", "env:opencode", "workdir:opencode", "roots:opencode"}
+	want := []string{"cmd:opencode", "args:opencode", "env:opencode", "workdir:opencode"}
 	got := fake.actions
 	// 展开与保存不记账，替身只记字段动作：前五项应与 want 一致（忽略顺序之外的东西）。
 	if strings.Join(got, "|") != strings.Join(want, "|") {
@@ -326,10 +317,6 @@ func TestDelegateSaveFields(t *testing.T) {
 	}
 	if st.Env["KEY"] != "secret:openai" || len(st.Env) != 1 {
 		t.Fatalf("环境 = %v（注释与空行应忽略）", st.Env)
-	}
-	// 去重是 cmd 层 SetRoots 的事（那里才有配置校验），界面这层只负责去空行。
-	if len(st.Roots) != 2 {
-		t.Fatalf("根集 = %v（应去空行）", st.Roots)
 	}
 	if want := i18n.Tf("ui.settings.dlg.saved", "name", "opencode"); f.delegateStat != want {
 		t.Fatalf("状态行 = %q, want %q", f.delegateStat, want)

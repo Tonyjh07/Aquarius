@@ -173,8 +173,6 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.dlg.env_hint_keys":  "One KEY=VALUE per line; the value may be secret:<name> (stored: {keys})",
 	"ui.settings.dlg.workdir_label":  "Working directory",
 	"ui.settings.dlg.workdir_hint":   "Starting point for the child process (absolute path; empty = home). Not a sandbox",
-	"ui.settings.dlg.roots_label":    "Root set",
-	"ui.settings.dlg.roots_hint":     "One absolute path per line; only becomes a confinement check once fs is advertised (persisted only for now)",
 	"ui.settings.dlg.more_items":     " and {n} more",
 	"ui.settings.dlg.edit":           "Edit",
 	"ui.settings.dlg.collapse":       "Collapse",

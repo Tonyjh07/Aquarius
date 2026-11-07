@@ -2,11 +2,13 @@ package toolbuiltin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -43,11 +45,13 @@ func (t *delegateTool) Spec() tool.Spec {
 			"properties": {
 				"agent": {"type": "string", "enum": [%s], "description": "which agent (omit when only one is configured)"},
 				"task": {"type": "string", "description": "the task description, sent as the agent's first user message (at most %d characters)"},
-				"workdir": {"type": "string", "description": "working directory for the agent process (absolute path; omit to use the agent's configured workdir or the home directory)"}
+				"workdir": {"type": "string", "description": "working directory for the agent process (absolute path; omit to use the agent's configured workdir or the home directory)"},
+				"roots": {"type": "array", "items": {"type": "string"}, "description": "extra directories this task needs beyond workdir (absolute paths). Omit to stay inside workdir only. Every extra root widens what the agent may touch, so add one only when the task genuinely needs it and say why in the task"}
 			},
 			"required": ["task"]
 		}`, quoteList(names), port.MaxDelegateTaskChars)),
-		Risk: tool.Confirm,
+		Risk:     tool.Confirm,
+		Describe: delegateDescribe,
 	}
 }
 
@@ -59,9 +63,10 @@ func (t *delegateTool) Execute(ctx context.Context, call tool.Call) (tool.Result
 		return tool.Result{}, fmt.Errorf("no external agent is configured (delegate.agents)")
 	}
 	var a struct {
-		Agent   string `json:"agent"`
-		Task    string `json:"task"`
-		WorkDir string `json:"workdir"`
+		Agent   string   `json:"agent"`
+		Task    string   `json:"task"`
+		WorkDir string   `json:"workdir"`
+		Roots   []string `json:"roots"`
 	}
 	if err := decodeArgs(call, &a); err != nil {
 		return tool.Result{}, err
@@ -74,7 +79,13 @@ func (t *delegateTool) Execute(ctx context.Context, call tool.Call) (tool.Result
 	if wd != "" && !absWorkDir(wd) {
 		return tool.Result{}, fmt.Errorf("workdir must be an absolute path (omit it to use the agent's configured workdir), got %q", a.WorkDir)
 	}
-	got, err := t.jobs.Start(ctx, port.DelegateSpec{Agent: strings.TrimSpace(a.Agent), Task: task, WorkDir: wd})
+	roots, err := port.NormalizeRoots(a.Roots)
+	if err != nil {
+		return tool.Result{}, fmt.Errorf("delegate: %w", err)
+	}
+	got, err := t.jobs.Start(ctx, port.DelegateSpec{
+		Agent: strings.TrimSpace(a.Agent), Task: task, WorkDir: wd, Roots: roots,
+	})
 	if err != nil {
 		return tool.Result{}, fmt.Errorf("delegate: %w", err)
 	}
@@ -199,4 +210,45 @@ func quoteList(names []string) string {
 		parts[i] = fmt.Sprintf("%q", n)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// delegateDescribe 确认摘要把「代理 / 范围 / 任务」摊在用户面前。
+//
+// 为什么不用默认提示：它把原始参数压成一行截到 160 字，task 一长，workdir 与 roots 就滑出
+// 屏幕——而这两个字段正是用户唯一能判断「该不该批」的东西。所以范围全列、不截断，任务
+// 只留开头：任务写不清楚是模型的问题，范围看不见是界面的问题。
+func delegateDescribe(args json.RawMessage) string {
+	var a struct {
+		Agent   string   `json:"agent"`
+		Task    string   `json:"task"`
+		WorkDir string   `json:"workdir"`
+		Roots   []string `json:"roots"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "" // 参数读不懂就交给默认提示，别在这儿编一句半截的
+	}
+	agent := strings.TrimSpace(a.Agent)
+	if agent == "" {
+		agent = i18n.T("tool.delegate.describe.auto")
+	}
+	scope := i18n.T("tool.delegate.describe.scope_default")
+	if wd := strings.TrimSpace(a.WorkDir); wd != "" {
+		scope = i18n.Tf("tool.delegate.describe.scope", "dir", wd)
+	}
+	// 额外根全列：这里少写一个，用户就少看见一条越界许可。
+	if roots, err := port.NormalizeRoots(a.Roots); err == nil && len(roots) > 0 {
+		scope = i18n.Tf("tool.delegate.describe.scope_plus", "scope", scope,
+			"roots", strings.Join(roots, " / "))
+	}
+	return i18n.Tf("tool.delegate.describe.line", "agent", agent, "scope", scope,
+		"task", clipTaskLine(a.Task))
+}
+
+// clipTaskLine 任务摘要：折成一行，超 80 字截断（够认出是哪件活）。
+func clipTaskLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 80 {
+		return string(r[:80]) + "..."
+	}
+	return s
 }

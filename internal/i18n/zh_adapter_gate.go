@@ -55,8 +55,17 @@ var zhAdapterGateTexts = map[string]string{
 	"secret.keypool.label_nth":   "第 {n} 把",
 
 	// ---- toolrun：工具确认句（用户要回答的那一句，带目标路径与参数预览）。 ----
-	"tool.confirm.with_target": "允许 {name} 访问 {target}？参数: {args}",
-	"tool.confirm.plain":       "允许执行 {name}？参数: {args}",
+	"tool.confirm.with_target":      "允许 {name} 访问 {target}？参数: {args}",
+	"tool.confirm.plain":            "允许执行 {name}？参数: {args}",
+	"tool.confirm.described":        "允许执行 {name}？{summary}",
+	"tool.confirm.described_target": "允许 {name} 访问 {target}？{summary}",
+
+	// ---- delegate 工具的确认摘要：范围全列、任务只留摘要（默认提示会把这两样挤出屏幕）。 ----
+	"tool.delegate.describe.auto":          "缺省代理",
+	"tool.delegate.describe.scope":         "工作目录 {dir}",
+	"tool.delegate.describe.scope_default": "代理配置的工作目录",
+	"tool.delegate.describe.scope_plus":    "{scope}，另可访问 {roots}",
+	"tool.delegate.describe.line":          "代理 {agent}；{scope}；任务：{task}",
 
 	// ---- decorate：审计文件与计数转发的内部哨兵（只有测试与诊断看，仍收进表以清干净字面量）。 ----
 	"tool.err.audit_closed": "audit: 文件已关闭",

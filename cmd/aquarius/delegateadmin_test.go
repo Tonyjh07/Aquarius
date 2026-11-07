@@ -320,9 +320,6 @@ func TestDelegateAdminFields(t *testing.T) {
 	if err := admin.SetWorkdir("a", root); err != nil {
 		t.Fatalf("set workdir: %v", err)
 	}
-	if err := admin.SetRoots("a", []string{root, " " + root + " "}); err != nil {
-		t.Fatalf("set roots: %v", err)
-	}
 
 	agents := readDelegateAgents(t, path)
 	got := agents[0]
@@ -340,15 +337,11 @@ func TestDelegateAdminFields(t *testing.T) {
 	if got["workdir"] != root {
 		t.Fatalf("workdir = %v", got["workdir"])
 	}
-	roots, _ := got["roots"].([]any)
-	if len(roots) != 1 || roots[0] != root {
-		t.Fatalf("roots = %v（应去重）", roots)
-	}
-	if st := admin.w.cfg.Delegate.Agents[0]; st.Command != "/opt/agent" || len(st.Roots) != 1 || st.Env["KEY"] != "secret:openai" {
+	if st := admin.w.cfg.Delegate.Agents[0]; st.Command != "/opt/agent" || st.Env["KEY"] != "secret:openai" {
 		t.Fatalf("内存影子 = %+v", st)
 	}
 
-	// 清空：args / env / workdir / roots 都该删键。
+	// 清空：args / env / workdir 都该删键。
 	if err := admin.SetArgs("a", nil); err != nil {
 		t.Fatalf("clear args: %v", err)
 	}
@@ -358,11 +351,8 @@ func TestDelegateAdminFields(t *testing.T) {
 	if err := admin.SetWorkdir("a", "  "); err != nil {
 		t.Fatalf("clear workdir: %v", err)
 	}
-	if err := admin.SetRoots("a", nil); err != nil {
-		t.Fatalf("clear roots: %v", err)
-	}
 	got = readDelegateAgents(t, path)[0]
-	for _, key := range []string{"args", "env", "workdir", "roots"} {
+	for _, key := range []string{"args", "env", "workdir"} {
 		if _, ok := got[key]; ok {
 			t.Fatalf("清空后不该留 %s: %v", key, got)
 		}
@@ -376,9 +366,6 @@ func TestDelegateAdminFieldValidation(t *testing.T) {
 	if err := admin.SetWorkdir("a", "relative/dir"); err == nil {
 		t.Fatal("相对 workdir 应报错")
 	}
-	if err := admin.SetRoots("a", []string{"relative"}); err == nil {
-		t.Fatal("相对根集项应报错")
-	}
 	if err := admin.SetCommand("a", "   "); err == nil {
 		t.Fatal("空命令应报错")
 	}
@@ -387,7 +374,6 @@ func TestDelegateAdminFieldValidation(t *testing.T) {
 		admin.SetArgs("ghost", nil),
 		admin.SetEnv("ghost", nil),
 		admin.SetWorkdir("ghost", ""),
-		admin.SetRoots("ghost", nil),
 	} {
 		if err == nil {
 			t.Fatal("未知代理应报错")

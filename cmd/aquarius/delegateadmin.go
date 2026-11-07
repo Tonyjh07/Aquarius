@@ -59,7 +59,6 @@ func (a *delegateAdmin) Snapshot() uigui.DelegateSnapshot {
 			Args:        ag.Args,
 			Env:         ag.Env,
 			WorkDir:     ag.WorkDir,
-			Roots:       ag.Roots,
 			Enabled:     enabled,
 			Default:     ag.Default,
 		}
@@ -269,21 +268,6 @@ func (a *delegateAdmin) SetWorkdir(name, dir string) error {
 		}
 		m["workdir"] = dir
 	}, func(ag *delegateAgentConfig) { ag.WorkDir = dir })
-}
-
-// SetRoots 改根集（绝对路径，去空去重；空 = 删键）。本版只落盘：A2 申报 `fs` 之后才有人读它。
-func (a *delegateAdmin) SetRoots(name string, roots []string) error {
-	normalized, err := normalizeRoots(roots)
-	if err != nil {
-		return errors.New(i18n.Tf("cmd.delegate.err.root_abs", "root", strconv.Quote(err.Error())))
-	}
-	idx := a.agentIndex(name)
-	if idx < 0 {
-		return errors.New(i18n.Tf("cmd.delegate.err.agent_missing", "name", strconv.Quote(name)))
-	}
-	return a.updateAgent(idx,
-		func(m map[string]any) { setStringList(m, "roots", normalized) },
-		func(ag *delegateAgentConfig) { ag.Roots = normalized })
 }
 
 // updateAgent 改一条：先写盘（只动这一条），成功后再同步内存里的影子。

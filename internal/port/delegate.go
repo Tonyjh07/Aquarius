@@ -3,6 +3,7 @@ package port
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,9 +52,52 @@ type DelegateSpec struct {
 	Agent   string `json:"agent"` // 空 = 缺省代理
 	Task    string `json:"task"`  // 任务描述：作为子代理那侧的第一条用户消息，原样发
 	WorkDir string `json:"work_dir,omitempty"`
+	// Roots 本次**额外申请**的目录（绝对路径）：范围随这次转交走，不落配置。
+	//
+	// 语义是「在缺省范围之外再加」，不是「范围就是这个」：空 = 只用 WorkDir，所以最省事
+	// 的那条路永远最窄。扩大必须由调用方显式写出来，并过一道确认（见 delegate 工具）。
+	// 它只是 Aquarius 用来拒绝的判据，不是内核围栏——代理自己起 shell 那条路看不见。
+	Roots []string `json:"roots,omitempty"`
 	// Session 复用位：空 = 每次新建会话。本版只接受空值（非空报
 	// "session reuse is not supported in this build"）——攒两份互相矛盾的历史比丢上下文更糟。
 	Session string `json:"session,omitempty"`
+}
+
+// AbsPath 绝对路径判定：Windows 盘符与 Unix 斜杠都认，`\share` 这类 UNC 简写单独放行
+// ——filepath.IsAbs 在 Windows 上对 "/tmp" 返回 false，但它仍是绝对定位，shell 与既有
+// 调用都按当前盘根解析。workdir 与根集共用这一份，别在别处再写第三个版本。
+func AbsPath(p string) bool {
+	return filepath.IsAbs(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\")
+}
+
+// NormalizeRoots 根集归一：去空白、去空项、去重（保序），并逐项校验绝对路径。
+//
+// 归一与校验放在一起，是因为两者都只对「调用方写错」有意见：多一行空行不算错（丢掉），
+// 重复一条也不算错（去重），只有相对路径要报——它会让越界判定失去参照物。
+func NormalizeRoots(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, r := range in {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		if !AbsPath(r) {
+			return nil, fmt.Errorf("root must be an absolute path: %s", r)
+		}
+		if seen[r] {
+			continue
+		}
+		seen[r] = true
+		out = append(out, r)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // DelegateRun 一次转交的终态（报告 + 摘要用的全部事实）。

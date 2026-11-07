@@ -38,6 +38,12 @@ type Spec struct {
 	Description string          `json:"description,omitempty"`
 	Schema      json.RawMessage `json:"schema,omitempty"` // 参数的 JSON Schema
 	Risk        Risk            `json:"risk"`
+	// Describe 确认摘要（可选）：把参数提炼成用户能判断的一句话，供 Risk=Ask 的确认提示用。
+	//
+	// 为什么需要：默认提示把原始参数压成一行截到 160 字，参数里有长文本（delegate 的 task）
+	// 时，真正该看的字段会被挤出去——用户「看得见要允许什么」这件事必须由工具自己保证。
+	// 返回空串 = 退回默认提示。它**不进协议声明**（不是 Schema 的一部分），也不许有副作用。
+	Describe func(args json.RawMessage) string `json:"-"`
 }
 
 // NoArgsSchema 无参工具的参数 Schema（单一事实源）。

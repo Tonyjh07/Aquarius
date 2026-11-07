@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-07 @ 03beedf -->
+<!-- docs-sync: 2026-11-07 @ a739c24 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -52,6 +52,9 @@
   并在用户文档写死。
 - 路径按**会话根集**（`cwd` + 可选的 `additionalDirectories`）**逐段比对、fail closed**；
   越界不静默写，转 `Confirmer`。
+  **根集来源已经定好**（2026-11-07）：`cwd` = 这次转交的 `workdir`，额外根 = `delegate` 的
+  `roots` 参数（确认框里批准过的那几个），**不读配置**。判据就在 `DelegateSpec.Roots` 上，
+  不必再找地方取。语义是「在 workdir 之外额外申请」：不填 = 最窄，填一个多一份许可。
 - 写**执行控制类文件**（版本控制钩子、代理与编辑器设置、MCP 配置）单独问一次——协议点名这几类。
 - `fs/read_text_file` 的 `line` / `limit` 是 **1 基行号切片**，不是字节偏移。
 

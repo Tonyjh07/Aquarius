@@ -174,8 +174,6 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.dlg.env_hint_keys":  "一行一个 KEY=VALUE；值可写 secret:<名>（已存：{keys}）",
 	"ui.settings.dlg.workdir_label":  "工作目录",
 	"ui.settings.dlg.workdir_hint":   "子进程起点（绝对路径；留空 = 家目录）。不是围栏",
-	"ui.settings.dlg.roots_label":    "根集",
-	"ui.settings.dlg.roots_hint":     "一行一个绝对路径；申报 fs 之后才作为越界判据（本版只落盘）",
 	"ui.settings.dlg.more_items":     " 等 {n} 个",
 	"ui.settings.dlg.edit":           "编辑",
 	"ui.settings.dlg.collapse":       "收起",

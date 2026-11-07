@@ -2,10 +2,12 @@ package toolbuiltin
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -94,6 +96,70 @@ func TestDelegateToolStart(t *testing.T) {
 	}
 	if _, err := tl.Execute(context.Background(), call(`{"task":"  "}`)); err == nil {
 		t.Fatal("空任务应报错")
+	}
+}
+
+// TestDelegateToolRoots 根集随这次转交走：归一去重后进 spec，相对路径在工具侧就拒收。
+func TestDelegateToolRoots(t *testing.T) {
+	f := &fakeDelegates{}
+	tl := pick(t, New(delegateDeps(f)), "delegate")
+	if !strings.Contains(string(tl.Spec().Schema), `"roots"`) {
+		t.Fatalf("schema 里应有 roots: %s", tl.Spec().Schema)
+	}
+	_, err := tl.Execute(context.Background(), call(
+		`{"task":"x","workdir":"/tmp","roots":[" /srv/a ","/srv/a",""]}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	got := f.started[0].Roots
+	if len(got) != 1 || got[0] != "/srv/a" {
+		t.Fatalf("roots = %v（want 去空白去重后一条）", got)
+	}
+
+	// 相对路径：不收窄也不放宽，直接拒（它会让越界判定失去参照物）。
+	if _, err := tl.Execute(context.Background(), call(`{"task":"x","roots":["rel"]}`)); err == nil {
+		t.Fatal("相对根应报错")
+	}
+	if len(f.started) != 1 {
+		t.Fatalf("被拒的调用不该起转交: %d", len(f.started))
+	}
+
+	// 不填 = 空（最窄），不是「不限」。
+	if _, err := tl.Execute(context.Background(), call(`{"task":"y"}`)); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(f.started[1].Roots) != 0 {
+		t.Fatalf("不填 roots 应为空，得到 %v", f.started[1].Roots)
+	}
+}
+
+// TestDelegateDescribe 确认摘要：范围全列不被截断，任务只留开头。
+func TestDelegateDescribe(t *testing.T) {
+	long := strings.Repeat("把一段很长的任务描述反复粘贴过来。", 30)
+	got := delegateDescribe(json.RawMessage(
+		`{"agent":"opencode","task":"` + long + `","workdir":"/tmp/w","roots":["/srv/a","/srv/b"]}`))
+	for _, want := range []string{"opencode", "/tmp/w", "/srv/a", "/srv/b"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("摘要缺 %q: %q", want, got)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimRight(got, " "), "...") {
+		t.Fatalf("任务应被截断且留省略号: %q", got)
+	}
+	if n := len([]rune(got)); n > 160 {
+		t.Fatalf("摘要过长（%d 字），范围该是它的主体: %q", n, got)
+	}
+
+	// 不填 agent / workdir：给缺省口径，而不是留空白让人猜。
+	got = delegateDescribe(json.RawMessage(`{"task":"做点事"}`))
+	if !strings.Contains(got, i18n.T("tool.delegate.describe.auto")) ||
+		!strings.Contains(got, i18n.T("tool.delegate.describe.scope_default")) {
+		t.Fatalf("缺省摘要 = %q", got)
+	}
+
+	// 参数读不懂：交回默认提示（返回空串），不编半截话。
+	if s := delegateDescribe(json.RawMessage(`not json`)); s != "" {
+		t.Fatalf("坏参数应返回空串，得到 %q", s)
 	}
 }
 

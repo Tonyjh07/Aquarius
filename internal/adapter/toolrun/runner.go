@@ -199,7 +199,8 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	if it, ok := t.(port.Interactive); ok && it.Interactive() {
 		defTimeout = 0
 	}
-	call, callTimeout, terr := applyCallTimeout(t.Spec(), call, defTimeout)
+	spec := t.Spec()
+	call, callTimeout, terr := applyCallTimeout(spec, call, defTimeout)
 	if terr != nil {
 		return tool.Result{CallID: call.ID, OK: false, Err: terr.Error()}, nil
 	}
@@ -210,7 +211,7 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		if r.conf == nil {
 			return tool.Result{}, fmt.Errorf("tool %s requires confirmation but no Confirmer is configured", call.Name)
 		}
-		ans, err := r.conf.Confirm(ctx, confirmPrompt(call, target))
+		ans, err := r.conf.Confirm(ctx, confirmPrompt(call, target, spec))
 		if err != nil {
 			return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
 		}
@@ -467,7 +468,19 @@ func evalExisting(p string) string {
 }
 
 // confirmPrompt 确认提示：带目标路径与参数预览（用户看得见要允许什么）。
-func confirmPrompt(call tool.Call, target string) string {
+//
+// 工具自己给了 Describe 就用它——默认那行把原始参数截到 160 字，参数里带长文本的调用
+// （delegate 的 task）会把真正要看的字段挤出屏幕。Describe 的输出**不截断**：它短是工具
+// 的责任，不是这里的。
+func confirmPrompt(call tool.Call, target string, spec tool.Spec) string {
+	if spec.Describe != nil {
+		if summary := strings.TrimSpace(spec.Describe(call.Args)); summary != "" {
+			if target != "" {
+				return i18n.Tf("tool.confirm.described_target", "name", call.Name, "target", target, "summary", summary)
+			}
+			return i18n.Tf("tool.confirm.described", "name", call.Name, "summary", summary)
+		}
+	}
 	args := strings.Join(strings.Fields(string(call.Args)), " ")
 	if r := []rune(args); len(r) > 160 {
 		args = string(r[:160]) + "..."
