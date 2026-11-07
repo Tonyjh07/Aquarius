@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-05 @ 16a4b42 -->
+<!-- docs-sync: 2026-11-07 @ da08c18 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -489,7 +489,7 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/逐条镜像到文件 | Tier-1 Go 插件 | 脚本 |
 | `SessionExporter` / `SessionImporter` / `ExchangeIndexer` | exchange（`aqx` 无损、可装一组会话 / `chatgpt` 树 / `openai`·`sillytavern` 线性；D242/D249） | — | 内存往返 |
 | `CharacterCatalog` | characterfs（PNG tEXt / JSON / `.charx` 解析 + `<profile>/characters` 目录；D243） | — | 临时目录假卡 |
-| `Delegate` | acpgate（ACP v1 客户端 → `delegate` 工具；六方法面、不申报 `fs`/`terminal`，D244） | 外部 ACP 代理（配置 `delegate.agents`，命令经 PATH 探测） | 假 ACP 代理（stdio 脚本化 JSON-RPC） |
+| `Delegate` | acpgate（ACP v1 客户端 → `delegate` 工具；申报 `fs`、`terminal` 未申报，D244/D283） | 外部 ACP 代理（配置 `delegate.agents`，命令经 PATH 探测） | 假 ACP 代理（stdio 脚本化 JSON-RPC） |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
 | `WatchProber` / `WatchManager` | probe（command/file/http 取样，D190）/ app.watcher | — | 脚本化探针 |
 | `Presenter` / `Prompter` | uitui（TUI）、repl、uigui（GUI 悬浮球，D43/M5） | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
@@ -945,40 +945,56 @@ title/version（**没转过就是空**，启动不做握手）、可执行文件
 派活即返句柄，终态由收尾观察者取，形状照 `job*` 三件套。**不做同步调用**：转交跑十几到几十分钟，
 同步形态等于把 Turn 钉在子代理上，会话切不走、别的活一件干不了。
 
-**`Changed` 只是它报过的**（可能不全，不是 diff 结果）；`Notes` 装能力协商、被拒的权限请求与
-跳过的东西，给用户看。
+**`Changed` 只是它报过的**（可能不全，不是 diff 结果）；报告另有两段事实：`Wrote`（经 Aquarius
+之手写下的文件）与 `ReadOutside`（问过用户、被批准之后才读到的范围外文件）。**三者不合并**：
+一份是我们经手的，一份是它自称的，混成一份就又变成「不比现在更假」（D283）。`Notes` 装能力
+协商、被拒的权限请求与跳过的东西，给用户看。
 
 **我们是客户端，不是代理**：Aquarius 不到 Zed / JetBrains 里当那个「被选中的代理」（那是另一条
 产品线，要维护编辑器侧的全部交互）；它只往外派活。所以实现面是协议的**客户端一半**，且只要 v1
 （v2 还是 draft，`initialize` 报 `protocolVersion: 1`，对方只认 2 就明确报「协议版本不兼容」，
 不猜也不降级）。
 
-**只做六个方法**（其余一律不申报）：
+**六个协议方法 + 两个 `fs` 方法**（其余一律不申报）：
 
 | 方法 | 方向 | 我们做什么 |
 |---|---|---|
-| `initialize` | 我们 → 它 | 报 `protocolVersion: 1` + **空的 `clientCapabilities`**；读回它的 `agentCapabilities` |
-| `session/new` | 我们 → 它 | 传绝对路径 `cwd` 与**空 `mcpServers`**，拿 `sessionId` |
+| `initialize` | 我们 → 它 | 报 `protocolVersion: 1` + `clientCapabilities.fs = {readTextFile, writeTextFile}`；读回它的 `agentCapabilities` |
+| `session/new` | 我们 → 它 | 传绝对路径 `cwd` 与**空 `mcpServers`**；它申报了 `sessionCapabilities.additionalDirectories` 才带额外根，拿 `sessionId` |
 | `session/prompt` | 我们 → 它 | 发一条 `text` 块（任务描述），等它返回 `stopReason` |
 | `session/update` | 它 → 我们 | 收过程通知：数工具调用、记它报过的改动文件、攒最终正文 |
 | `session/cancel` | 我们 → 它 | 取消是**通知**不是请求；被取消后 `session/prompt` 返回 `cancelled`，那是正常终止 |
 | `session/request_permission` | 它 → 我们 | 它动手前反问；回落到 `port.Confirmer`（§9） |
+| `fs/read_text_file` | 它 → 我们 | 按 1 基行号切片读（`line`/`limit`），CRLF 原样返回；范围与上限见下 |
+| `fs/write_text_file` | 它 → 我们 | 整份写入（不存在就建、父目录也建、既有权限位保留），落盘经 `atomicfile` |
 
-`fs/read_text_file`、`fs/write_text_file`、`terminal/*`、`elicitation` **一个都不申报**：申报等于
-承诺替它读写文件、替它管终端，那是一整条新的能力面（也是它把权限交回我们手里的唯一理由）。
-v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP server 提供工具），不申报正好顺着
-演进方向走。**同理不把我们自己的 MCP server 转发给它**：它的工具面归它自己，转发等于把两套
-授权链搅在一起，出了事也说不清是谁批的。申报已排进后续（`plan.md` 的「外部代理：设置窗直接配
-ACP + 申报能力」）——
-到那时要连带落根集判定与进程监管，不是开关一开；而且它不是「更安全」的开关：申报 `terminal`
-意味着命令改由**我们**执行，能拦是收益，代价是我们按当前用户身份替它跑任意命令，本仓没有沙箱。
+**`fs` 的边界**（D283/D284）：
+
+- **根集** = 这次转交的 `cwd` + 调用时批准过的 `roots`（`delegate` 的调用参数，不落配置）。
+  逐段比对、解析链接后判、fail closed；`additionalDirectories` 只影响「它知不知道」，不影响我们放不放。
+- **越界读**：每次转交最多问 `delegate.outside_read_max` 次（缺省 8，`-1` 不限，`0` 不问直接拒），
+  同一路径只问一次；被拒的留一条备注。**越界写**每次都问，不缓存。
+- **执行控制类文件**写之前单独问一次：`.git/hooks`、`.git/config`、`.gitmodules`、
+  `.github/workflows`、`.vscode`、`.idea`、`.cursor`、`.claude`、`.codex`、`.mcp.json`。
+  清单是代码常量，不进配置（协议点名的三类：钩子、编辑器与代理设置、MCP 配置）。
+- 上限：单次读 8 MiB、单次写 16 MiB；读到的内容必须是 UTF-8 且不含 NUL。
+- **这不是沙箱**：代理自己起 shell 之后读写不经过我们。闸门只覆盖「它愿意走协议」的那条路，
+  收益是审计（`Wrote` / `ReadOutside` 两份事实），不是拦不住的那部分。
+
+`terminal/*` 与 `elicitation` **一个都不申报**：申报 `terminal` 等于承诺替它管终端，命令改由
+**我们**执行——能拦是收益，代价是我们按当前用户身份替它跑任意命令，本仓没有沙箱（A3 要先
+用真实代理验证「它们是否真的改走 `terminal/*`」，判据见 `plan.md`）。
+v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP server 提供工具），这条演进方向
+与本仓的取舍不同：我们有确认面可用，所以申报 `fs` 能让读写过手、留下事实；`terminal` 没有
+等价物。**同理不把我们自己的 MCP server 转发给它**：它的工具面归它自己，转发等于把两套
+授权链搅在一起，出了事也说不清是谁批的。
 
 **传输层**：`coder/acp-go-sdk`（v0.13.5），不自写连接层（D260）。两处机制是选它的实质理由——
 入站请求走独立 goroutine（否则一个等人确认的 `session/request_permission` 会顶住整条连接：
 取消回执、后续通知全停，取消路径当场失效）、通知走串行队列并给响应打水位屏障（响应不得早于
 它前面的通知被处理；自写时漏这条，报告里就会丢最后几条更新）。**这两条与「几路并行」无关，
 单路就需要**——多任务只是让违背它们的代价从「一路卡住」变成「几路一起卡住」。代价照旧：
-SDK 的 `Client` 是九个方法，`fs` 两个与 `terminal` 五个本版只能写成返回 `-32601` 的桩；
+SDK 的 `Client` 是九个方法，`terminal` 五个本版只能写成返回 `-32601` 的桩（`fs` 两个已实现）；
 且它按字段形状猜未知变体（`compaction_summary_chunk` 会落进 `UserMessageChunk`），我们拿不到
 原始 `sessionUpdate` 值。
 

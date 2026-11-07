@@ -381,7 +381,7 @@ func (m *Manager) run(r *run) {
 // execute 一次转交的协议流程。
 func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	wd := m.workDir(r.spec, r.agent)
-	// 根集在这里算定：cwd + 这次调用批准过的额外目录（D279）。解析失败就整次失败——
+	// 根集在这里算定：cwd + 这次调用批准过的额外目录（D283）。解析失败就整次失败——
 	// 一个解析不出的根会让「在不在范围里」变成猜，而猜错的两边都是坏结果。
 	roots, err := pathres.NewRootSet(append([]string{wd}, r.spec.Roots...))
 	if err != nil {
@@ -434,7 +434,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	// 也照报（gemini-cli 这类）。所以这里只记下清单，真需要登录时 session/new 会回
 	// -32000（auth required），那时再给出可执行的指引。
 
-	// 额外根（D279）只在对方申报了 `sessionCapabilities.additionalDirectories` 时才发：
+	// 额外根（D283）只在对方申报了 `sessionCapabilities.additionalDirectories` 时才发：
 	// 没申报的代理收到这个字段只会当噪声，而我们本地照拦照放——两种情形都要在报告里
 	// 说清楚，否则「根集到底在哪一侧生效」就得靠猜。
 	extra := r.spec.Roots
