@@ -176,16 +176,8 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Delegation %s to %s finished in %s (stop=%s, tool calls=%d, files changed=%d).\n",
 		id, run.Agent, run.Duration.Round(time.Second), stopReasonText(run), run.ToolCalls, len(run.Changed))
-	if len(run.Changed) > 0 {
-		b.WriteString("Files it reported changing: " + strings.Join(run.Changed, ", "))
-		if run.ChangedOver > 0 {
-			fmt.Fprintf(&b, " (and %d more not listed)", run.ChangedOver)
-		}
-		b.WriteString("\n")
-	} else if run.ChangedOver > 0 {
-		fmt.Fprintf(&b, "Files it reported changing: at least %d (none listed)\n", run.ChangedOver)
-	}
-	// 经手写的那一段排在上面那段之前：它是事实，上面那段是它自称的。
+	// 先列**我们经手**的那一段，再列它自称的那一段：读报告的人默认这两行是同一件事，
+	// 顺序摆在前面的会被当成依据（D283 把它们分开列，就是不想再混成一个数）。
 	if len(run.Wrote) > 0 {
 		b.WriteString("Files written through this session: " + strings.Join(run.Wrote, ", "))
 		if run.WroteOver > 0 {
@@ -194,6 +186,15 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 		b.WriteString("\n")
 	} else if run.WroteOver > 0 {
 		fmt.Fprintf(&b, "Files written through this session: at least %d (none listed)\n", run.WroteOver)
+	}
+	if len(run.Changed) > 0 {
+		b.WriteString("Files it reported changing: " + strings.Join(run.Changed, ", "))
+		if run.ChangedOver > 0 {
+			fmt.Fprintf(&b, " (and %d more not listed)", run.ChangedOver)
+		}
+		b.WriteString("\n")
+	} else if run.ChangedOver > 0 {
+		fmt.Fprintf(&b, "Files it reported changing: at least %d (none listed)\n", run.ChangedOver)
 	}
 	if len(run.ReadOutside) > 0 {
 		b.WriteString("Files it read outside the session scope, after you approved each one: " + strings.Join(run.ReadOutside, ", "))
