@@ -158,14 +158,8 @@ func firstLine(s string, max int) string {
 }
 
 // ---- 不申报的能力：一律 -32601 ----
-
-func (c *client) ReadTextFile(context.Context, acp.ReadTextFileRequest) (acp.ReadTextFileResponse, error) {
-	return acp.ReadTextFileResponse{}, acp.NewMethodNotFound("fs/read_text_file")
-}
-
-func (c *client) WriteTextFile(context.Context, acp.WriteTextFileRequest) (acp.WriteTextFileResponse, error) {
-	return acp.WriteTextFileResponse{}, acp.NewMethodNotFound("fs/write_text_file")
-}
+//
+// fs 的两个方法见 fs.go（A2 起申报）。
 
 func (c *client) CreateTerminal(context.Context, acp.CreateTerminalRequest) (acp.CreateTerminalResponse, error) {
 	return acp.CreateTerminalResponse{}, acp.NewMethodNotFound("terminal/create")

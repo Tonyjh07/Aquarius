@@ -12,6 +12,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/pathres"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -61,6 +62,10 @@ type run struct {
 	stopCh chan struct{}
 	sessID string
 	proc   *process
+	// roots 本次转交的会话根集（cwd + 调用时批准过的额外目录），已解析：fs 闸门用它
+	// 判定「在不在范围里」。只在 execute 里写一次，之后只读；但读方是各自独立的 fs
+	// 请求 goroutine，所以同样走 mu。
+	roots pathres.RootSet
 
 	cancelCtx context.Context
 	cancelFn  context.CancelFunc
@@ -77,10 +82,15 @@ type run struct {
 	changed     []string
 	changedSeen map[string]bool
 	changedOver int
-	notes       []string
-	denied      int
-	truncated   bool
-	peerGone    bool
+	// wrote 经 Aquarius 写下的文件（事实，不是它自称的）：与 changed 并列进报告，
+	// 两份来源分开列（D283）。
+	wrote     []string
+	wroteSeen map[string]bool
+	wroteOver int
+	notes     []string
+	denied    int
+	truncated bool
+	peerGone  bool
 
 	// 通知排空信号。SDK 在断连时先关 Done() 让 Prompt 拿到 error，之后才在另一条
 	// goroutine 里把已入队的通知交回 SessionUpdate；排空完成才 cancel 它传给 handler 的
@@ -104,6 +114,7 @@ func newRun(id port.DelegateID, a Agent, spec port.DelegateSpec, session convers
 		stopCh:    make(chan struct{}),
 		cancelCtx: ctx, cancelFn: cancel,
 		changedSeen: map[string]bool{},
+		wroteSeen:   map[string]bool{},
 		notifySeen:  make(chan struct{}),
 		drainDone:   make(chan struct{}),
 		done:        make(chan struct{}),
@@ -147,6 +158,20 @@ func (r *run) setSession(id string) {
 	r.mu.Lock()
 	r.sessID = id
 	r.mu.Unlock()
+}
+
+// setRoots 记下本次转交的会话根集（只写一次）。
+func (r *run) setRoots(s pathres.RootSet) {
+	r.mu.Lock()
+	r.roots = s
+	r.mu.Unlock()
+}
+
+// rootSet 当前会话的根集（未设时为空集：什么都不许，fail closed）。
+func (r *run) rootSet() pathres.RootSet {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.roots
 }
 
 func (r *run) sessionID() string {
@@ -281,12 +306,25 @@ func (r *run) waitNotifyDrain(budget time.Duration) {
 	}
 }
 
-// snapshot 收尾时一次性取走收集结果（拷贝，不与活切片共享底层数组）。
-func (r *run) snapshot() (toolCalls int, changed, notes []string, denied, changedOver int) {
+// collected 收尾时一次性取走的收集结果（拷贝，不与活切片共享底层数组）。
+type collected struct {
+	toolCalls                      int
+	changed, wrote, notes          []string
+	denied, changedOver, wroteOver int
+}
+
+func (r *run) snapshot() collected {
 	r.cmu.Lock()
 	defer r.cmu.Unlock()
-	return r.toolCalls, append([]string(nil), r.changed...), append([]string(nil), r.notes...),
-		r.denied, r.changedOver
+	return collected{
+		toolCalls:   r.toolCalls,
+		changed:     append([]string(nil), r.changed...),
+		wrote:       append([]string(nil), r.wrote...),
+		notes:       append([]string(nil), r.notes...),
+		denied:      r.denied,
+		changedOver: r.changedOver,
+		wroteOver:   r.wroteOver,
+	}
 }
 
 // complete 写终态并放行 Wait（只调一次）。
@@ -318,7 +356,10 @@ func (m *Manager) run(r *run) {
 		// 成功路径由 SDK 的响应 barrier 保证正文到齐；失败路径要自己等通知排空。
 		r.waitNotifyDrain(m.opts.NotifyDrainBudget)
 	}
-	res.ToolCalls, res.Changed, res.Notes, res.Denied, res.ChangedOver = r.snapshot()
+	got := r.snapshot()
+	res.ToolCalls, res.Changed, res.Wrote = got.toolCalls, got.changed, got.wrote
+	res.Notes, res.Denied, res.ChangedOver, res.WroteOver =
+		got.notes, got.denied, got.changedOver, got.wroteOver
 	res.Report = r.reportText()
 	m.ledgerFinish(r, err) // 先标终态再放行 Wait：关停时 Close 等到 done 就返回，慢一步就丢
 	r.complete(res, err)
@@ -329,6 +370,13 @@ func (m *Manager) run(r *run) {
 // execute 一次转交的协议流程。
 func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	wd := m.workDir(r.spec, r.agent)
+	// 根集在这里算定：cwd + 这次调用批准过的额外目录（D279）。解析失败就整次失败——
+	// 一个解析不出的根会让「在不在范围里」变成猜，而猜错的两边都是坏结果。
+	roots, err := pathres.NewRootSet(append([]string{wd}, r.spec.Roots...))
+	if err != nil {
+		return port.DelegateRun{}, fmt.Errorf("session root set: %w", err)
+	}
+	r.setRoots(roots)
 	proc, err := m.spawn(r, wd)
 	if err != nil {
 		return port.DelegateRun{}, err
@@ -353,7 +401,14 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	}()
 
 	hctx, cancel := context.WithTimeout(r.cancelCtx, m.opts.Handshake)
-	init, err := conn.Initialize(hctx, acp.InitializeRequest{ProtocolVersion: 1})
+	init, err := conn.Initialize(hctx, acp.InitializeRequest{
+		ProtocolVersion: 1,
+		// 申报 fs（A2）：读写都经我们过手，`Changed` 才有事实可依（D283）。
+		// 这是**经手**不是围栏——代理自己起 shell 的路看不见（与根集同一条口径）。
+		ClientCapabilities: acp.ClientCapabilities{
+			Fs: acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+		},
+	})
 	cancel()
 	if err != nil {
 		return m.abort(r, proc, fmt.Errorf("initialize: %w", err))
@@ -485,12 +540,12 @@ func (m *Manager) abort(r *run, proc *process, err error) (port.DelegateRun, err
 		default:
 			r.note("the delegation was stopped on request%s", early)
 		}
-		_, _, notes, denied, _ := r.snapshot()
-		if denied > 0 {
-			r.note("%d permission request(s) were rejected", denied)
-			_, _, notes, _, _ = r.snapshot()
+		cur := r.snapshot()
+		if cur.denied > 0 {
+			r.note("%d permission request(s) were rejected", cur.denied)
+			cur.notes = r.snapshot().notes
 		}
-		out.Notes = notes
+		out.Notes = cur.notes
 		return out, nil
 	}
 	// 进程已经结束同样要等：这才是「崩了」的实锤，watchdog 的标志只是旁证（它可能与

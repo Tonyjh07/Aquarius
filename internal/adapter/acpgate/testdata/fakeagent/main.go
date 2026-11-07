@@ -13,6 +13,8 @@
 //	ignore     提示一直不回，连 cancel 也不理（测试宽限杀进程）
 //	permission 提示里先反问权限，按应答回一段正文
 //	partial    先发两段正文，然后直接退出（测试「中途失败也要把已收到的带出去」）
+//	fs         按 fs 模式发四个文件请求（读切片 / 写新文件建父目录 / 越界写 / 越界读），
+//	           把每个应答原样编进正文——断言全在测试里做
 //	delayed    先报一句进度，等 FAKE_AGENT_DELAY_MS（缺省 8000）毫秒再交报告——手验
 //	           「派活后切走，报告仍落在原会话」靠它，秒回测不出时间差
 //	badcwd     要求 cwd 是绝对路径、mcpServers 为空，否则回 -32602
@@ -23,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,6 +53,8 @@ var (
 	idMu       sync.Mutex
 	cancel     = make(chan struct{})
 	cancelOnce sync.Once
+	// sessCwd session/new 给的 cwd：fs 模式下用它拼路径（真代理也是这么来的）。
+	sessCwd string
 )
 
 func send(v any) {
@@ -178,6 +183,7 @@ func handleRequest(mode string, m rpcMsg) {
 			fail(m.ID, -32602, "mcpServers must be an empty list")
 			return
 		}
+		sessCwd = p.Cwd
 		reply(m.ID, map[string]any{"sessionId": "sess-1"})
 
 	case "session/prompt":
@@ -217,6 +223,32 @@ func handleRequest(mode string, m rpcMsg) {
 			raw, _ := json.Marshal(resp)
 			txt := "permission: " + string(raw)
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": txt}})
+			reply(m.ID, map[string]any{"stopReason": "end_turn"})
+
+		case "fs":
+			// 四个请求固定顺序：读切片、整读、写新文件（父目录不存在）、越界写、越界读。
+			// 断言全在测试侧做——这里只把每个应答原样带出去。
+			esc := os.Getenv("FAKE_AGENT_ESCAPE")
+			out := map[string]string{
+				"slice": fsResult(request("fs/read_text_file", map[string]any{
+					"sessionId": sid, "path": filepath.Join(sessCwd, "hello.txt"), "line": 2, "limit": 1,
+				})),
+				"whole": fsResult(request("fs/read_text_file", map[string]any{
+					"sessionId": sid, "path": filepath.Join(sessCwd, "whole.txt"),
+				})),
+				"write": fsResult(request("fs/write_text_file", map[string]any{
+					"sessionId": sid, "path": filepath.Join(sessCwd, "sub", "dir", "new.txt"),
+					"content": "written by agent\nsecond line\n",
+				})),
+				"escape_write": fsResult(request("fs/write_text_file", map[string]any{
+					"sessionId": sid, "path": filepath.Join(esc, "outside.txt"), "content": "should not land\n",
+				})),
+				"escape_read": fsResult(request("fs/read_text_file", map[string]any{
+					"sessionId": sid, "path": filepath.Join(esc, "secret.txt"),
+				})),
+			}
+			raw, _ := json.Marshal(out)
+			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": string(raw)}})
 			reply(m.ID, map[string]any{"stopReason": "end_turn"})
 
 		case "delayed":
@@ -260,6 +292,19 @@ func handleRequest(mode string, m rpcMsg) {
 	default:
 		fail(m.ID, -32601, "method not found: "+m.Method)
 	}
+}
+
+// fsResult 一个 fs 应答的紧凑描述：成功给结果 JSON，失败给「error 码: 消息」。
+// 测试拿它断言闸门放行还是拒绝，不在这里做判断。
+func fsResult(m rpcMsg) string {
+	if m.Error != nil {
+		return fmt.Sprintf("error %d: %s", m.Error.Code, m.Error.Message)
+	}
+	b, err := json.Marshal(m.Result)
+	if err != nil {
+		return "unencodable result"
+	}
+	return string(b)
 }
 
 // fakeDelay 延后模式等多久（手验时可以直接调成 1000 让节奏快一点）。

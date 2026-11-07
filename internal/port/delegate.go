@@ -107,6 +107,9 @@ type DelegateRun struct {
 	StopReason string        `json:"stop_reason,omitempty"` // end_turn|max_tokens|max_turn_requests|refusal|cancelled
 	ToolCalls  int           `json:"tool_calls"`            // 子代理自己发起的工具调用次数（不是我们的）
 	Changed    []string      `json:"changed,omitempty"`     // 它报过改动的文件（去重；可能不全）
+	// Wrote 经 Aquarius 之手写下的文件（`fs/write_text_file` 的事实）。与 Changed 并列而
+	// **不合**：一份是我们经手的，一份是它自称的，混成一份就又变成「不比现在更假」（D283）。
+	Wrote []string `json:"wrote,omitempty"`
 	Duration   time.Duration `json:"duration"`
 	Report     string        `json:"report"`          // 最终正文（它交付的那段）
 	Notes      []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
@@ -114,6 +117,9 @@ type DelegateRun struct {
 	// 是超出清单上限、没逐个列出的改动文件数——两者都要说，否则读报告的人以为清单是完整的。
 	Denied      int `json:"denied,omitempty"`
 	ChangedOver int `json:"changed_over,omitempty"`
+	// WroteOver 超出清单上限、没逐个列出的**经手写**文件数（与 ChangedOver 同口径：
+	// 不说清楚，读报告的人会以为清单是完整的）。
+	WroteOver int `json:"wrote_over,omitempty"`
 	// Killed 是被我们终止的（停止键 / delegate_kill）：报告可能是半截的，摘要行要说清。
 	Killed bool `json:"killed,omitempty"`
 }
@@ -166,6 +172,16 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 		b.WriteString("\n")
 	} else if run.ChangedOver > 0 {
 		fmt.Fprintf(&b, "Files it reported changing: at least %d (none listed)\n", run.ChangedOver)
+	}
+	// 经手写的那一段排在上面那段之前：它是事实，上面那段是它自称的。
+	if len(run.Wrote) > 0 {
+		b.WriteString("Files written through this session: " + strings.Join(run.Wrote, ", "))
+		if run.WroteOver > 0 {
+			fmt.Fprintf(&b, " (and %d more not listed)", run.WroteOver)
+		}
+		b.WriteString("\n")
+	} else if run.WroteOver > 0 {
+		fmt.Fprintf(&b, "Files written through this session: at least %d (none listed)\n", run.WroteOver)
 	}
 	if run.Denied > 0 {
 		fmt.Fprintf(&b, "Permission requests it made went unanswered: %d (denied on the spot)\n", run.Denied)
