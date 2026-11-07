@@ -1,6 +1,6 @@
 //go:build !windows
 
-package toolrun
+package pathres
 
 import "os"
 
