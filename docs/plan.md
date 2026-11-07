@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-07 @ da08c18 -->
+<!-- docs-sync: 2026-11-07 @ 341fa01 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -68,6 +68,8 @@
   没申报就不发，本地照拦照放并记一条 note。
 
 **验证**：两个 `fs` 方法走 testy 的 `callbacks`，口径与分工见本节末「验证样本」。
+已跑通（2026-11-07，testy 直连）：写下的字节与它发的一致、记进 `Wrote`，`terminal/*` 五个按
+未申报回 -32601，末尾 `elicitation` 如预期以 -32602 收尾。门禁里跳过（要 cargo、二进制在 temp）。
 
 ### A3 申报 `terminal`（L，前置验证通过才做）
 
