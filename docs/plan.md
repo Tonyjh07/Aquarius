@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-06 @ 37f261c -->
+<!-- docs-sync: 2026-11-07 @ 0197065 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -87,13 +87,22 @@
 **顺带能收的**：`Changed` 从「代理自报」换成「Aquarius 写过的 + 代理报的」两份来源取并集，摘要行里
 区分「经手 N 个 / 自称 M 个」——不比现在更假。
 
+**验证**：两个 `fs` 方法走 testy 的 `callbacks`，口径与分工见本节末「验证样本」。
+
 ### A3 申报 `terminal`（L，前置验证通过才做）
 
 **要什么**：命令由**Aquarius**执行，于是能拦、能限、能杀，输出能进报告。
 
 **先验证再承诺**：申报之后主流代理是否真的改走 `terminal/*`。能力申报只是给出一条**可选**
-路径——代理照旧自己起 shell 的话，Aquarius 只是多开一条攻击面、风险一点没减。**判据**：拿两三个代理
-各跑一次，报文里真的出现 `terminal/create` 才算数；一次都不出现就登记不做，理由写进决策记录。
+路径——代理照旧自己起 shell 的话，Aquarius 只是多开一条攻击面、风险一点没减。
+
+**判据分两层**（样本见本节末「验证样本」）：
+
+- **生态层（决定性）**：opencode、kimi 各跑一次真实任务，报文里真的出现 `terminal/create` 才算数。
+  这一层只能由真实代理回答——它们各自带工具实现，改不改走是它们的决定。
+- **实现层（必要条件）**：testy 的 `callbacks` 场景跑通，五个方法与我们这边的应答全部对上。
+  这一层只证明我们符合协议，**不证明**任何代理会改走；跑得再绿也不能替生态层下结论。
+- 生态层一次都不出现就登记不做，理由写进决策记录。
 
 **义务**：五个方法（`create` / `output` / `wait_for_exit` / `kill` / `release`）；`outputByteLimit`
 要有界缓冲，超限**从头截断且必须落在字符边界**；`kill` 之后终端仍可用（还要能取最终输出与
@@ -103,6 +112,55 @@
 commands only when a sandbox enforces it**」。Aquarius 没有沙箱：申报等于程序按当前用户身份执行
 任意命令，根集只是 Aquarius 用来拒绝的判据，不是内核围栏。用户文档里要跟「两条执行路径并存」一起
 讲清：走 Aquarius 的那条能审，代理自己起的那条永远看不见。
+
+### 验证样本（A2 / A3 共用）
+
+两类样本分工不同，不能互相替代。2026-11-07 定。
+
+**真实链路：opencode、kimi**
+
+| 代理 | 启动 | 角色 |
+|---|---|---|
+| opencode | `opencode acp` | 真实任务里看 `fs/*`、`terminal/*` 是否真被调用 |
+| kimi | `kimi acp`（旧版 `kimi-cli` 是 `--acp`） | 同上 |
+
+两条都要**登录 + 真实模型**，一轮任务几十秒到几分钟，结果随模型波动。它们只回答一个问题：
+主流代理会不会改走我们的回调。**别拿它们做回归**——慢、不确定、还要花钱。
+
+**协议全量：testy**
+
+官方 Rust SDK 仓库 `agentclientprotocol/rust-sdk` 里 `agent-client-protocol-test` crate 的
+`testy` 二进制。确定性、无模型、无 key，按 prompt 文本把协议面逐条打一遍：
+
+- `callbacks`：`session/request_permission`、`fs/write_text_file`、`fs/read_text_file`、
+  `terminal/create`、`terminal/output`、`terminal/wait_for_exit`、`terminal/kill`、
+  `terminal/release` 八个请求，顺序固定。
+- `full`：在 `callbacks` 之上再叠全部稳定 `session/update` 变体、取消与 elicitation。
+- 另有 `session_updates`、`content`、`tool_calls`、`wait_for_cancel`、`cancel_status`、
+  `echo <message>`、`help`。
+
+构建（2026-11-07 在本机验过，cargo 1.96.1，1 分 11 秒出二进制）：
+
+```bash
+git clone --depth 1 https://github.com/agentclientprotocol/rust-sdk.git
+cd rust-sdk
+cargo build -p agent-client-protocol-test --bin testy
+```
+
+构建产 `target/debug/testy.exe`，客户端按普通 stdio agent 拉起，`session/prompt` 发纯文本
+`callbacks` 或 `full` 即可。
+
+**两个已知坑**：
+
+- 本机 `~/.cargo/config.toml` 把 crates-io 换成了 aliyun 镜像，索引缺
+  `agent-client-protocol-schema 1.15.1`，直接 build 报 `failed to select a version`。把
+  workspace `Cargo.toml` 里那条 `=1.15.1` 降到 `=1.15.0`，再跑
+  `cargo update -p agent-client-protocol-schema --precise 1.15.0`。改 `CARGO_HOME`、把镜像源
+  指回官方 index 都绕不过——cargo 拒绝把同一个 URL 再定义成另一个 source。
+- `callbacks` 末尾带 elicitation 覆盖。客户端没在 `initialize` 申报 form elicitation 时，
+  整轮以确定性的 `-32602`（`client does not support form elicitation`）收尾。断言要写成
+  「八个回调全到 + 最后这条已知错误」，别把整轮判失败。testy 还会往会话 `cwd` 写
+  `testy-write.txt`，用临时目录跑。
 
 ---
 
