@@ -118,6 +118,8 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.config.err.delegate_command_missing": `delegate.agents[{i}] ({name}): missing command`,
 	"cmd.config.err.delegate_workdir": `delegate.agents[{i}] ({name}): workdir must be an ` +
 		`absolute path: "{workdir}"`,
+	"cmd.config.err.delegate_root": `delegate.agents[{i}] ({name}): every roots entry must be ` +
+		`an absolute path: "{root}"`,
 	"cmd.config.err.delegate_default_disabled": `delegate.agents[{i}] ({name}): the default agent ` +
 		`cannot also be enabled=false`,
 	"cmd.config.err.delegate_default_multi": `delegate.agents has more than one default ` +

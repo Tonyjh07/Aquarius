@@ -203,3 +203,198 @@ func TestDelegateAdminSnapshotAvailability(t *testing.T) {
 		t.Fatalf("零代理快照 = %+v, want 一句指引", got)
 	}
 }
+
+// TestDelegateAdminAdd Add：数组级追加写盘 + 内存同步；重名/空名/空命令/未闭合引号全拦在界面。
+func TestDelegateAdminAdd(t *testing.T) {
+	t.Parallel()
+	admin, path := delegateAdminFixture(t, `[{"name":"a","command":"a"}]`)
+	if err := admin.Add("b", `"C:/tools/b.exe" acp --stdio`); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	agents := readDelegateAgents(t, path)
+	if len(agents) != 2 {
+		t.Fatalf("agents = %v（want 两条）", agents)
+	}
+	if agents[1]["name"] != "b" || agents[1]["command"] != `C:/tools/b.exe` {
+		t.Fatalf("新条目 = %v", agents[1])
+	}
+	args, _ := agents[1]["args"].([]any)
+	if len(args) != 2 || args[0] != "acp" || args[1] != "--stdio" {
+		t.Fatalf("新条目 args = %v", args)
+	}
+	if _, ok := agents[1]["enabled"]; ok {
+		t.Fatalf("不该写 enabled（键缺失 = 启用）: %v", agents[1])
+	}
+	if got := admin.w.cfg.Delegate.Agents; len(got) != 2 || got[1].Name != "b" || got[1].Command != `C:/tools/b.exe` {
+		t.Fatalf("内存影子 = %+v", got)
+	}
+
+	for _, c := range []struct{ name, line string }{
+		{"", "x"},            // 空名
+		{"  ", "x"},          // 只有空白
+		{"a", "x"},           // 重名
+		{"c", "   "},         // 空命令行
+		{"c", `agent "oops`}, // 引号未闭合
+	} {
+		if err := admin.Add(c.name, c.line); err == nil {
+			t.Fatalf("Add(%q, %q) 应报错", c.name, c.line)
+		}
+	}
+	if got := len(readDelegateAgents(t, path)); got != 2 {
+		t.Fatalf("拦下的新增不该写盘：agents 条数 = %d", got)
+	}
+}
+
+// TestDelegateAdminRemove 删除一条：其余原样保留，内存跟着走；删不存在的报错。
+func TestDelegateAdminRemove(t *testing.T) {
+	t.Parallel()
+	admin, path := delegateAdminFixture(t, `[
+		{"name":"a","command":"a","args":["1"]},
+		{"name":"b","command":"b","default":true},
+		{"name":"c","command":"c","workdir":"/tmp"}
+	]`)
+	if err := admin.Remove("b"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	agents := readDelegateAgents(t, path)
+	if len(agents) != 2 || agents[0]["name"] != "a" || agents[1]["name"] != "c" {
+		t.Fatalf("删后 = %v", agents)
+	}
+	if agents[0]["command"] != "a" || agents[1]["workdir"] != "/tmp" {
+		t.Fatalf("其余字段不该被动: %v", agents)
+	}
+	if got := admin.w.cfg.Delegate.Agents; len(got) != 2 || got[0].Name != "a" || got[1].Name != "c" {
+		t.Fatalf("内存影子 = %+v", got)
+	}
+	if err := admin.Remove("nope"); err == nil {
+		t.Fatal("删不存在的代理应报错")
+	}
+}
+
+// TestDelegateAdminRename 改名：旧名消失、新名就位；重名被拦；改成同名是幂等成功。
+func TestDelegateAdminRename(t *testing.T) {
+	t.Parallel()
+	admin, path := delegateAdminFixture(t, `[
+		{"name":"a","command":"a"},
+		{"name":"b","command":"b"}
+	]`)
+	if err := admin.Rename("a", "a2"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	agents := readDelegateAgents(t, path)
+	if agents[0]["name"] != "a2" || agents[0]["command"] != "a" {
+		t.Fatalf("改名后 = %v", agents[0])
+	}
+	if admin.w.cfg.Delegate.Agents[0].Name != "a2" {
+		t.Fatalf("内存影子 = %+v", admin.w.cfg.Delegate.Agents[0])
+	}
+	if err := admin.Rename("a2", "b"); err == nil {
+		t.Fatal("改成已有名字应报错")
+	}
+	if err := admin.Rename("a2", ""); err == nil {
+		t.Fatal("空名字应报错")
+	}
+	if err := admin.Rename("a2", "a2"); err != nil {
+		t.Fatalf("改成同名应幂等成功: %v", err)
+	}
+	if err := admin.Rename("ghost", "x"); err == nil {
+		t.Fatal("改不存在的代理应报错")
+	}
+}
+
+// TestDelegateAdminFields 字段级编辑：各键单独落盘，空值删键而不是留空数组/空表。
+func TestDelegateAdminFields(t *testing.T) {
+	t.Parallel()
+	admin, path := delegateAdminFixture(t, `[{"name":"a","command":"a"}]`)
+	root := t.TempDir()
+
+	if err := admin.SetCommand("a", "  /opt/agent  "); err != nil {
+		t.Fatalf("set command: %v", err)
+	}
+	if err := admin.SetArgs("a", []string{" acp ", "", " --stdio "}); err != nil {
+		t.Fatalf("set args: %v", err)
+	}
+	if err := admin.SetEnv("a", map[string]string{"KEY": "secret:openai", "PLAIN": "x"}); err != nil {
+		t.Fatalf("set env: %v", err)
+	}
+	if err := admin.SetWorkdir("a", root); err != nil {
+		t.Fatalf("set workdir: %v", err)
+	}
+	if err := admin.SetRoots("a", []string{root, " " + root + " "}); err != nil {
+		t.Fatalf("set roots: %v", err)
+	}
+
+	agents := readDelegateAgents(t, path)
+	got := agents[0]
+	if got["command"] != "/opt/agent" {
+		t.Fatalf("command = %v（应去空白）", got["command"])
+	}
+	args, _ := got["args"].([]any)
+	if len(args) != 2 || args[0] != "acp" || args[1] != "--stdio" {
+		t.Fatalf("args = %v（应去掉空行）", args)
+	}
+	env, _ := got["env"].(map[string]any)
+	if len(env) != 2 || env["KEY"] != "secret:openai" {
+		t.Fatalf("env = %v", env)
+	}
+	if got["workdir"] != root {
+		t.Fatalf("workdir = %v", got["workdir"])
+	}
+	roots, _ := got["roots"].([]any)
+	if len(roots) != 1 || roots[0] != root {
+		t.Fatalf("roots = %v（应去重）", roots)
+	}
+	if st := admin.w.cfg.Delegate.Agents[0]; st.Command != "/opt/agent" || len(st.Roots) != 1 || st.Env["KEY"] != "secret:openai" {
+		t.Fatalf("内存影子 = %+v", st)
+	}
+
+	// 清空：args / env / workdir / roots 都该删键。
+	if err := admin.SetArgs("a", nil); err != nil {
+		t.Fatalf("clear args: %v", err)
+	}
+	if err := admin.SetEnv("a", nil); err != nil {
+		t.Fatalf("clear env: %v", err)
+	}
+	if err := admin.SetWorkdir("a", "  "); err != nil {
+		t.Fatalf("clear workdir: %v", err)
+	}
+	if err := admin.SetRoots("a", nil); err != nil {
+		t.Fatalf("clear roots: %v", err)
+	}
+	got = readDelegateAgents(t, path)[0]
+	for _, key := range []string{"args", "env", "workdir", "roots"} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("清空后不该留 %s: %v", key, got)
+		}
+	}
+}
+
+// TestDelegateAdminFieldValidation 字段级编辑的校验：相对路径拦下，空命令拦下，未知名字拦下。
+func TestDelegateAdminFieldValidation(t *testing.T) {
+	t.Parallel()
+	admin, path := delegateAdminFixture(t, `[{"name":"a","command":"a"}]`)
+	if err := admin.SetWorkdir("a", "relative/dir"); err == nil {
+		t.Fatal("相对 workdir 应报错")
+	}
+	if err := admin.SetRoots("a", []string{"relative"}); err == nil {
+		t.Fatal("相对根集项应报错")
+	}
+	if err := admin.SetCommand("a", "   "); err == nil {
+		t.Fatal("空命令应报错")
+	}
+	for _, err := range []error{
+		admin.SetCommand("ghost", "x"),
+		admin.SetArgs("ghost", nil),
+		admin.SetEnv("ghost", nil),
+		admin.SetWorkdir("ghost", ""),
+		admin.SetRoots("ghost", nil),
+	} {
+		if err == nil {
+			t.Fatal("未知代理应报错")
+		}
+	}
+	agents := readDelegateAgents(t, path)
+	if len(agents) != 1 || agents[0]["command"] != "a" {
+		t.Fatalf("校验失败的调用不该改盘: %v", agents)
+	}
+}

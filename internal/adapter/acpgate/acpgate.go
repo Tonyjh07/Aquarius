@@ -33,8 +33,13 @@ type Agent struct {
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"` // 值支持 secret:<名>（起进程时经 Secrets 解析）
 	WorkDir string            `json:"workdir,omitempty"`
-	Enabled bool              `json:"enabled"`
-	Default bool              `json:"default,omitempty"`
+	// Roots 该代理可以访问的目录根集（绝对路径，空 = 只用 workdir/会话 cwd）。
+	// 它是 A2 申报 `fs` 之后**越界判定的判据**：路径逐段比对、fail closed。注意它只是
+	// Aquarius 用来拒绝的判据，不是内核围栏——协议原文写明根集只有在沙箱真正生效时才
+	// 约束命令（见 v0.6.0 的 A3 一节）。
+	Roots   []string `json:"roots,omitempty"`
+	Enabled bool     `json:"enabled"`
+	Default bool     `json:"default,omitempty"`
 }
 
 // Options 装配依赖（全部由装配根注入）。

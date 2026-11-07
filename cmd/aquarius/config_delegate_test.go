@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,7 @@ func TestDelegateConfigValidation(t *testing.T) {
 		{"重名", `{"delegate":{"agents":[{"name":"a","command":"x"},{"name":"a","command":"y"}]}}`, "重复"},
 		{"缺 command", `{"delegate":{"agents":[{"name":"a"}]}}`, "缺 command"},
 		{"相对 workdir", `{"delegate":{"agents":[{"name":"a","command":"x","workdir":"rel"}]}}`, "绝对路径"},
+		{"相对 root", `{"delegate":{"agents":[{"name":"a","command":"x","roots":["/ok","rel"]}]}}`, "roots"},
 		{"两条 default", `{"delegate":{"agents":[{"name":"a","command":"x","default":true},{"name":"b","command":"y","default":true}]}}`, "default"},
 		{"default 却停用", `{"delegate":{"agents":[{"name":"a","command":"x","default":true,"enabled":false}]}}`, "enabled=false"},
 		{"总闸超上限", `{"delegate":{"timeout_sec":86401}}`, "上限"},
@@ -87,6 +89,31 @@ func TestDelegateConfigValidation(t *testing.T) {
 	}
 	if opts.Timeout != 24*time.Hour {
 		t.Fatalf("timeout = %v", opts.Timeout)
+	}
+}
+
+// TestDelegateConfigRoots 根集归一：去空白、去空项、去重（保序），绝对路径原样留着。
+func TestDelegateConfigRoots(t *testing.T) {
+	t.Parallel()
+	root := filepath.ToSlash(t.TempDir()) // JSON 串里不能直接放 Windows 反斜杠
+	raw := `{"delegate":{"agents":[{"name":"a","command":"x","roots":[" ` + root + ` ","","` + root + `"]}]}}`
+	opts, err := delegateConf(t, raw).delegateOptions(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("options: %v", err)
+	}
+	roots := opts.Agents[0].Roots
+	if len(roots) != 1 || roots[0] != root {
+		t.Fatalf("roots = %v（want 一条去重后的绝对路径）", roots)
+	}
+
+	// 全空：roots 为空，不是含空串的一条。
+	opts, err = delegateConf(t, `{"delegate":{"agents":[{"name":"a","command":"x","roots":[""," "]}]}}`).
+		delegateOptions(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("options: %v", err)
+	}
+	if len(opts.Agents[0].Roots) != 0 {
+		t.Fatalf("全空 roots = %v, want 空", opts.Agents[0].Roots)
 	}
 }
 

@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-05 @ 0233b77 -->
+<!-- docs-sync: 2026-11-07 @ 1862f2f -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -354,6 +354,7 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 | `delegate.agents[].command` | string | — | 启动命令；启动时按 `PATH` 探测，探不到只标不可用、不挡启动 |
 | `delegate.agents[].args` / `env` | []string / object | `[]` | 参数与环境（值可用 `secret:<名>`，起进程时解析） |
 | `delegate.agents[].workdir` | string | 家目录 | 子进程起点（绝对路径；**不是围栏**） |
+| `delegate.agents[].roots` | []string | `[]` | 可访问目录根集（绝对路径，去空去重）。本版只解析与落盘；申报 `fs` 之后才作为越界判据（见 v0.6.0 的 A2/A3） |
 | `delegate.agents[].enabled` | bool | `true` | 键缺失 = 启用 |
 | `delegate.agents[].default` | bool | `false` | 只配一条时可不写；多条目时最多一条 |
 | `delegate.timeout_sec` | int | `1800` | 单次转交总闸；显式 `0` = 不限，上限 `86400` |

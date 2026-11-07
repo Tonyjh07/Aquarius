@@ -76,6 +76,95 @@ func (a *fakeDelegateAdmin) SetDefault(name string) error {
 	return nil
 }
 
+// agent 锁内的条目查找（替身只在这一处按名字取，其余动作共用）。
+func (a *fakeDelegateAdmin) agent(name string) *DelegateAgentState {
+	for i := range a.snap.Agents {
+		if a.snap.Agents[i].Name == name {
+			return &a.snap.Agents[i]
+		}
+	}
+	return nil
+}
+
+func (a *fakeDelegateAdmin) Add(name, commandLine string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil {
+		return a.err
+	}
+	command, args, _ := strings.Cut(commandLine, " ")
+	a.snap.Agents = append(a.snap.Agents, DelegateAgentState{
+		Name: name, CommandLine: commandLine, Command: command, Args: strings.Fields(args),
+		Available: true, Enabled: true,
+	})
+	a.actions = append(a.actions, "add:"+name+"="+commandLine)
+	return nil
+}
+
+func (a *fakeDelegateAdmin) Remove(name string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil {
+		return a.err
+	}
+	out := a.snap.Agents[:0]
+	for _, st := range a.snap.Agents {
+		if st.Name != name {
+			out = append(out, st)
+		}
+	}
+	a.snap.Agents = out
+	a.actions = append(a.actions, "del:"+name)
+	return nil
+}
+
+func (a *fakeDelegateAdmin) Rename(oldName, newName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil {
+		return a.err
+	}
+	if st := a.agent(oldName); st != nil {
+		st.Name = newName
+	}
+	a.actions = append(a.actions, "rename:"+oldName+"="+newName)
+	return nil
+}
+
+func (a *fakeDelegateAdmin) SetCommand(name, command string) error {
+	return a.editField(name, "cmd", func(st *DelegateAgentState) { st.Command = command })
+}
+
+func (a *fakeDelegateAdmin) SetArgs(name string, args []string) error {
+	return a.editField(name, "args", func(st *DelegateAgentState) { st.Args = args })
+}
+
+func (a *fakeDelegateAdmin) SetEnv(name string, env map[string]string) error {
+	return a.editField(name, "env", func(st *DelegateAgentState) { st.Env = env })
+}
+
+func (a *fakeDelegateAdmin) SetWorkdir(name, dir string) error {
+	return a.editField(name, "workdir", func(st *DelegateAgentState) { st.WorkDir = dir })
+}
+
+func (a *fakeDelegateAdmin) SetRoots(name string, roots []string) error {
+	return a.editField(name, "roots", func(st *DelegateAgentState) { st.Roots = roots })
+}
+
+// editField 字段级动作共用：记账 + 改快照里的那一条。
+func (a *fakeDelegateAdmin) editField(name, action string, apply func(*DelegateAgentState)) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil {
+		return a.err
+	}
+	if st := a.agent(name); st != nil {
+		apply(st)
+	}
+	a.actions = append(a.actions, action+":"+name)
+	return nil
+}
+
 // delegateFixture 两个代理：一个可用且缺省，一个不可用。
 func delegateFixture() *fakeDelegateAdmin {
 	return &fakeDelegateAdmin{snap: DelegateSnapshot{Agents: []DelegateAgentState{

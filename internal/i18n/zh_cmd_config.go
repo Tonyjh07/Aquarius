@@ -116,6 +116,8 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.delegate_command_missing": `delegate.agents[{i}]（{name}）：缺 command`,
 	"cmd.config.err.delegate_workdir": `delegate.agents[{i}]（{name}）：workdir 必须是绝对路径：` +
 		`"{workdir}"`,
+	"cmd.config.err.delegate_root": `delegate.agents[{i}]（{name}）：roots 里的项必须是绝对路径：` +
+		`"{root}"`,
 	"cmd.config.err.delegate_default_disabled": `delegate.agents[{i}]（{name}）：` +
 		`default 的代理不能同时 enabled=false`,
 	"cmd.config.err.delegate_default_multi": `delegate.agents 里有多条 default（{n} 条）：只能有一条`,

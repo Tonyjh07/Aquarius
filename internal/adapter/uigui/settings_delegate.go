@@ -29,9 +29,27 @@ import (
 type DelegateAdmin interface {
 	// Snapshot 清单（每次调用都重新探一遍可执行文件，所以「重新检测」= 再取一次）。
 	Snapshot() DelegateSnapshot
+	// Add 追加一条代理（名字 + 命令行）。名字重名、命令行空、引号未闭合都在这里拦下
+	// ——它们都会让下次启动吃 fatal，放进界面拦比让用户改文件好。
+	Add(name, commandLine string) error
+	// Remove 删除一条代理（缺省代理也允许删：删完没有缺省 = 只剩一条时自动选它）。
+	Remove(name string) error
+	// Rename 改一个代理的名字。
+	Rename(oldName, newName string) error
 	// SetCommandLine 改一个代理的命令行（`command args...`，按空白切分；含空白的参数用
 	// 双引号）。只认一次改一条，写回 config delegate.agents，重启生效。
 	SetCommandLine(name, commandLine string) error
+	// SetCommand 只改可执行命令（参数保持不动）。
+	SetCommand(name, command string) error
+	// SetArgs 只改参数（一行一个；空 = 删掉 args 键）。
+	SetArgs(name string, args []string) error
+	// SetEnv 改环境变量表（值可写 secret:<名>；空表 = 删掉 env 键）。界面只负责写文本，
+	// 不解析也不缓存密钥——那是起进程时的事。
+	SetEnv(name string, env map[string]string) error
+	// SetWorkdir 改工作目录（绝对路径；空 = 删掉 workdir 键）。
+	SetWorkdir(name, dir string) error
+	// SetRoots 改根集（绝对路径；空 = 删掉 roots 键）。本版只落盘，执行侧在 A2 才读。
+	SetRoots(name string, roots []string) error
 	// SetEnabled 启用/停用一个代理（写 enabled；重启生效）。
 	SetEnabled(name string, enabled bool) error
 	// SetDefault 指定缺省代理（写 default；同一条上唯一的 true，重启生效）。
@@ -41,14 +59,22 @@ type DelegateAdmin interface {
 // DelegateSnapshot 外部代理页的快照。
 type DelegateSnapshot struct {
 	Agents []DelegateAgentState
+	// Secrets 已存密钥的名字（env 值写 `secret:<名>` 时的候选；取不到给空）。
+	// 只有名字，值永不出库（§9）。
+	Secrets []string
 	// Note 配置层的一句话（零代理时给「去哪写一条」，读不出配置时说原因）。
 	Note string
 }
 
 // DelegateAgentState 一个代理一行。
 type DelegateAgentState struct {
-	Name        string // 配置里的名字（delegate 工具 agent 参数的取值）
-	CommandLine string // `command args...` 的展示形态（改这里就是改它）
+	Name        string   // 配置里的名字（delegate 工具 agent 参数的取值）
+	CommandLine string   // `command args...` 的展示形态（改这里就是改它）
+	Command     string   // 字段级编辑：命令
+	Args        []string // 字段级编辑：参数（一行一个）
+	Env         map[string]string
+	WorkDir     string
+	Roots       []string
 	Title       string // initialize 报的 agentInfo.title；还没转过为空
 	Version     string
 	Available   bool // 命令在 PATH 上（只探存在，不握手）
