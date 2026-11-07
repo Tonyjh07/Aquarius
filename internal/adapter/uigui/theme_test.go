@@ -62,7 +62,6 @@ func isLighter(a, b color.NRGBA) bool {
 // （含 fg/bg 与来源标注）。这条替代了原先「applyPalette 写包级槽、currentPalette
 // 反向抄回」的双向同步检查——不再有两套事实源，也就没有「漏配另一半」这种失败模式。
 func TestTokensHaveOneSource(t *testing.T) {
-	t.Parallel()
 	restoreLight(t)
 	for _, p := range []palette{lightPalette(), darkPalette()} {
 		storeTokens(p)
@@ -75,7 +74,6 @@ func TestTokensHaveOneSource(t *testing.T) {
 // TestTokensAreSnapshots 快照是值不是引用：写入后改调用方那份变量，活动值不受影响
 // （把「跨 goroutine 只读快照」落成可断言的性质）。
 func TestTokensAreSnapshots(t *testing.T) {
-	t.Parallel()
 	restoreLight(t)
 	p := lightPalette()
 	storeTokens(p)
@@ -86,8 +84,11 @@ func TestTokensAreSnapshots(t *testing.T) {
 }
 
 // TestTokensFallBackToLight 未初始化时取令牌回落浅色预设（宁可浅色，不要零值全黑）。
+//
+// 与其余几个写活动快照的用例一样**不 t.Parallel()**：快照是包级全局，并发跑就是互相
+// 覆盖——本用例曾在门禁里间歇失败（拿到别的用例存的 system 档调色板）。Go 的并行用例
+// 在全部串行用例结束后才恢复，所以「不并行」就足以互斥。
 func TestTokensFallBackToLight(t *testing.T) {
-	t.Parallel()
 	activeTokens.Store(nil)
 	t.Cleanup(func() { storeTokens(lightPalette()) })
 	if got := tok(); got != lightPalette() {
@@ -121,7 +122,6 @@ func TestResolvePalette(t *testing.T) {
 // TestThemeMessagesHeadless 消息热切换路径（与运行时同一条 apply 链）：
 // 初始档、themeMsg 切换、sysThemeMsg 仅 system 档重解析。
 func TestThemeMessagesHeadless(t *testing.T) {
-	t.Parallel()
 	restoreLight(t)
 	u := newHeadless(t, Options{Theme: "dark"})
 
