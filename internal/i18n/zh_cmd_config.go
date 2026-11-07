@@ -111,6 +111,7 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.delegate_timeout_neg":     `delegate.timeout_sec 不能为负（0 = 不限）：{n}`,
 	"cmd.config.err.delegate_timeout_max":     `delegate.timeout_sec 超出上限（<= {max} 秒）：{n}`,
 	"cmd.config.err.delegate_negative":        `delegate.max_concurrent / max_total 不能为负`,
+	"cmd.config.err.delegate_outside_read":    `delegate.outside_read_max 最小是 {min}（-1 = 不限，0 = 不问直接拒）：{n}`,
 	"cmd.config.err.delegate_name_missing":    `delegate.agents[{i}]：缺 name`,
 	"cmd.config.err.delegate_name_dup":        `delegate.agents[{i}]：name "{name}" 重复`,
 	"cmd.config.err.delegate_command_missing": `delegate.agents[{i}]（{name}）：缺 command`,

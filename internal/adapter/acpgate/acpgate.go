@@ -52,6 +52,9 @@ type Options struct {
 	// MaxConcurrent 每会话同时进行的转交上限；MaxTotal 全局上限（0 = 用端口缺省）。
 	MaxConcurrent int
 	MaxTotal      int
+	// OutsideReadAsks 越界读的询问次数：>0 = 那么多次；0 = 一次都不问（直接拒并留档）；
+	// 负数 = 不限。nil = port.DefaultDelegateOutsideReadAsks（D284）。
+	OutsideReadAsks *int
 	// Log 运行日志（D276）：级别 / 上下文 / 事件 / 行动都按 key 给；nil = 丢弃。
 	Log port.Log
 	// LookPath 可执行探测（测试可覆盖）；nil = exec.LookPath。
@@ -123,6 +126,14 @@ func New(opts Options) *Manager {
 		opts.Log = func(port.LogLevel, string, string, string, ...any) {}
 	}
 	return &Manager{opts: opts, runs: map[port.DelegateID]*run{}, learned: map[string]learnedInfo{}}
+}
+
+// outsideReadAsks 本次生效的越界读询问次数（Options 与端口的缺省之间取一个）。
+func (m *Manager) outsideReadAsks() int {
+	if m.opts.OutsideReadAsks == nil {
+		return port.DefaultDelegateOutsideReadAsks
+	}
+	return *m.opts.OutsideReadAsks
 }
 
 // List 清单：只探「命令在不在 PATH 上」，不握手（§5.18）。

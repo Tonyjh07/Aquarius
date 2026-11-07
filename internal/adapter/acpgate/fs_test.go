@@ -133,8 +133,21 @@ func TestFsRequestsInRoot(t *testing.T) {
 	if !strings.HasPrefix(got["escape_read"], "error") {
 		t.Fatalf("越界读应被拒，got %s", got["escape_read"])
 	}
-	if conf.calls != 0 {
-		t.Fatalf("这一版越界不走确认，calls = %d", conf.calls)
+	if !strings.HasPrefix(got["control_write"], "error") {
+		t.Fatalf("控制文件写应被拒，got %s", got["control_write"])
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-commit")); !os.IsNotExist(err) {
+		t.Fatal("控制文件写被拒之后盘上不该有文件")
+	}
+	// 三次询问：越界写、越界读、控制文件写（同一次转交里各问一次）。
+	if conf.calls != 3 {
+		t.Fatalf("calls = %d, want 3", conf.calls)
+	}
+	if !strings.Contains(strings.Join(run.Notes, "\n"), "read outside the session root set was refused") {
+		t.Fatalf("被拒的越界读应留一条备注：%v", run.Notes)
+	}
+	if len(run.ReadOutside) != 0 {
+		t.Fatalf("read outside = %v, want 空（都被拒了）", run.ReadOutside)
 	}
 
 	want := mustResolvePath(t, filepath.Join(root, "sub", "dir", "new.txt"))
@@ -165,3 +178,139 @@ func mustResolvePath(t *testing.T, p string) string {
 	}
 	return r
 }
+
+// TestFsOutsideAllowed 用户逐次批准之后：越界读写与控制文件写都放行，报告里两段都出现
+// ——「经手写」与「问过才读」各一份事实。
+func TestFsOutsideAllowed(t *testing.T) {
+	root := t.TempDir()
+	escape := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("one\r\ntwo\r\nthree\r\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "whole.txt"), []byte("alpha\nbeta"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(escape, "secret.txt"), []byte("top secret"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	conf := fakeConfirmer{allow: true}
+	m := newManager(t, "fs", func(o *Options) {
+		o.Home = root
+		o.Confirmer = &conf
+		o.Agents[0].Env["FAKE_AGENT_ESCAPE"] = escape
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "reach outside"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal([]byte(strings.TrimSpace(run.Report)), &got); err != nil {
+		t.Fatalf("report not JSON: %v", err)
+	}
+	if got["escape_write"] != "{}" {
+		t.Fatalf("批准后越界写应成功，got %s", got["escape_write"])
+	}
+	if b, err := os.ReadFile(filepath.Join(escape, "outside.txt")); err != nil || string(b) != "should not land\n" {
+		t.Fatalf("越界写落盘 = %q, %v", string(b), err)
+	}
+	if !strings.Contains(got["escape_read"], "top secret") {
+		t.Fatalf("批准后越界读应拿到内容，got %s", got["escape_read"])
+	}
+	if got["control_write"] != "{}" {
+		t.Fatalf("批准后控制文件写应成功，got %s", got["control_write"])
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-commit")); err != nil {
+		t.Fatalf("控制文件应落盘: %v", err)
+	}
+
+	wantRead := mustResolvePath(t, filepath.Join(escape, "secret.txt"))
+	if len(run.ReadOutside) != 1 || run.ReadOutside[0] != wantRead {
+		t.Fatalf("read outside = %v, want [%s]", run.ReadOutside, wantRead)
+	}
+	text := port.DelegateReportText(task.ID, run)
+	if !strings.Contains(text, "Files it read outside the session scope, after you approved each one: "+wantRead) {
+		t.Fatalf("报告缺越界读清单:\n%s", text)
+	}
+}
+
+// TestAllowReadLimit 越界读的额度：问过才消耗、同一路径不重复问、额度用完直接拒。
+func TestAllowReadLimit(t *testing.T) {
+	conf := &fakeConfirmer{allow: true}
+	m := New(Options{Confirmer: conf, OutsideReadAsks: intPtr(2)})
+	t.Cleanup(m.Close)
+	r := newRun("d1", Agent{Name: "fake"}, port.DelegateSpec{}, "c1")
+	r.setSession("sess-1")
+	c := &client{m: m, r: r}
+	ctx := context.Background()
+
+	for i, p := range []string{"/a", "/b"} {
+		if ok, why := c.allowRead(ctx, p); !ok {
+			t.Fatalf("第 %d 次应放行：%s", i+1, why)
+		}
+	}
+	if conf.calls != 2 {
+		t.Fatalf("calls = %d, want 2", conf.calls)
+	}
+	// 同一路径再读：不再问，直接放行。
+	if ok, _ := c.allowRead(ctx, "/a"); !ok {
+		t.Fatal("同一路径的第二次读不该再问")
+	}
+	if conf.calls != 2 {
+		t.Fatalf("重复路径不该再问，calls = %d", conf.calls)
+	}
+	// 第三个路径：额度用完 → 拒，且不问。
+	if ok, why := c.allowRead(ctx, "/c"); ok || !strings.Contains(why, "limit") {
+		t.Fatalf("额度用完应拒，got ok=%v why=%q", ok, why)
+	}
+	if conf.calls != 2 {
+		t.Fatalf("额度用完后不该再问，calls = %d", conf.calls)
+	}
+}
+
+// TestAllowReadNever 配置成「不问」（0）：一次都不问，直接拒并留档。
+func TestAllowReadNever(t *testing.T) {
+	conf := &fakeConfirmer{allow: true}
+	m := New(Options{Confirmer: conf, OutsideReadAsks: intPtr(0)})
+	t.Cleanup(m.Close)
+	r := newRun("d1", Agent{Name: "fake"}, port.DelegateSpec{}, "c1")
+	r.setSession("sess-1")
+	c := &client{m: m, r: r}
+
+	if ok, _ := c.allowRead(context.Background(), "/a"); ok {
+		t.Fatal("配置成不问时越界读应直接拒")
+	}
+	if conf.calls != 0 {
+		t.Fatalf("不该问用户，calls = %d", conf.calls)
+	}
+	if !strings.Contains(strings.Join(r.snapshot().notes, "\n"), "read outside the session root set was refused") {
+		t.Fatalf("被拒的越界读要留档：%v", r.snapshot().notes)
+	}
+}
+
+// TestAllowReadDeniedCached 用户拒过一次的路径不再重复打扰（否则扫目录会连着问同一件事）。
+func TestAllowReadDeniedCached(t *testing.T) {
+	conf := &fakeConfirmer{allow: false, reason: "nope"}
+	m := New(Options{Confirmer: conf})
+	t.Cleanup(m.Close)
+	r := newRun("d1", Agent{Name: "fake"}, port.DelegateSpec{}, "c1")
+	r.setSession("sess-1")
+	c := &client{m: m, r: r}
+
+	if ok, _ := c.allowRead(context.Background(), "/a"); ok {
+		t.Fatal("拒绝后不该放行")
+	}
+	if ok, _ := c.allowRead(context.Background(), "/a"); ok {
+		t.Fatal("同一路径第二次也不该放行")
+	}
+	if conf.calls != 1 {
+		t.Fatalf("同一路径只问一次，calls = %d", conf.calls)
+	}
+}
+
+// intPtr 取指针（Options 里「没配」与「配成 0」是两件事）。
+func intPtr(n int) *int { return &n }

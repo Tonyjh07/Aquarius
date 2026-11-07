@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,20 @@ func TestDelegateConfigDefaults(t *testing.T) {
 	if opts.Agents[0].Enabled {
 		t.Fatal("enabled=false 应停用")
 	}
+	// 越界读次数：缺省不写 = nil（由 acpgate 取端口的 8）；显式给值照用（含 0 与 -1）。
+	if opts.OutsideReadAsks != nil {
+		t.Fatalf("越界读次数缺省应为 nil，got %d", *opts.OutsideReadAsks)
+	}
+	for _, n := range []int{0, 3, port.DelegateOutsideReadUnlimited} {
+		cfg = delegateConf(t, `{"delegate":{"outside_read_max":`+strconv.Itoa(n)+`}}`)
+		opts, err = cfg.delegateOptions(nil, nil, nil, nil)
+		if err != nil {
+			t.Fatalf("outside_read_max=%d: %v", n, err)
+		}
+		if opts.OutsideReadAsks == nil || *opts.OutsideReadAsks != n {
+			t.Fatalf("outside_read_max = %v, want %d", opts.OutsideReadAsks, n)
+		}
+	}
 }
 
 // TestDelegateConfigValidation 配置错误在启动期报，不拖到第一次转交才暴露。
@@ -69,6 +84,7 @@ func TestDelegateConfigValidation(t *testing.T) {
 		{"总闸超上限", `{"delegate":{"timeout_sec":86401}}`, "上限"},
 		{"总闸为负", `{"delegate":{"timeout_sec":-1}}`, "不能为负"},
 		{"并发为负", `{"delegate":{"max_total":-1}}`, "不能为负"},
+		{"越界读次数太小", `{"delegate":{"outside_read_max":-2}}`, "最小是 -1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -61,21 +61,12 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 	}
 	allow := false
 	if denyReason == "" {
-		ans, err := c.m.opts.Confirmer.Confirm(ctx, permissionPrompt(r.agent, p))
-		switch {
-		case err != nil:
-			if r.stopKind() != stopNone || ctx.Err() != nil {
-				return cancelled, nil
-			}
-			denyReason = err.Error()
-		case ans.Allow:
-			allow = true
-		default:
-			denyReason = strings.TrimSpace(ans.Reason)
-			if denyReason == "" {
-				denyReason = i18n.T("acp.deny.user_refused")
-			}
+		var why string
+		allow, why = c.askUser(ctx, permissionPrompt(r.agent, p))
+		if !allow && (r.stopKind() != stopNone || ctx.Err() != nil) {
+			return cancelled, nil
 		}
+		denyReason = why
 	}
 	if !allow {
 		r.addDenied(denyReason)

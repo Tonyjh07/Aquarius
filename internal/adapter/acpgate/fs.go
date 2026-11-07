@@ -23,6 +23,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -50,8 +51,10 @@ func (c *client) ReadTextFile(ctx context.Context, p acp.ReadTextFileRequest) (a
 		// 解析不出来（链接环、权限）就说不清它要读哪儿 —— fail closed。
 		return acp.ReadTextFileResponse{}, fsDenied(p.Path, "cannot resolve the path: "+err.Error())
 	}
-	if root == "" && !c.allowOutside(ctx, opRead, resolved) {
-		return acp.ReadTextFileResponse{}, fsDenied(p.Path, reasonOutside)
+	if root == "" {
+		if ok, why := c.allowRead(ctx, resolved); !ok {
+			return acp.ReadTextFileResponse{}, fsDenied(p.Path, why)
+		}
 	}
 	f, err := os.Open(resolved)
 	if err != nil {
@@ -103,8 +106,11 @@ func (c *client) WriteTextFile(ctx context.Context, p acp.WriteTextFileRequest) 
 	if err != nil {
 		return acp.WriteTextFileResponse{}, fsDenied(p.Path, "cannot resolve the path: "+err.Error())
 	}
-	if root == "" && !c.allowOutside(ctx, opWrite, resolved) {
-		return acp.WriteTextFileResponse{}, fsDenied(p.Path, reasonOutside)
+	// 控制文件与越界写都要问；控制文件优先（它更具体，且范围之内也会命中）。
+	if rule := executionControl(resolved); rule != "" || root == "" {
+		if ok, why := c.allowWrite(ctx, p.Path, resolved, rule); !ok {
+			return acp.WriteTextFileResponse{}, fsDenied(p.Path, why)
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 		return acp.WriteTextFileResponse{}, fsDenied(p.Path, "cannot create the parent directory: "+err.Error())
@@ -131,14 +137,12 @@ func (c *client) fsGate(ctx context.Context, sid acp.SessionId, path string) err
 	return nil
 }
 
-// opRead / opWrite 越界处置里的操作名（确认句与报告都用它）。
-const (
-	opRead  = "read"
-	opWrite = "write"
-)
-
 // reasonOutside 越界拒绝的原因（同一句用在读与写的拒绝里）。
 const reasonOutside = "outside the session root set"
+
+// reasonReadLimit 次数用完（或配置成不问）时的原因：说清是「额度」而不是「范围」，
+// 代理换个做法（少读几次、或者请用户改配置）才有意义。
+const reasonReadLimit = "the out-of-scope read limit for this delegation is used up"
 
 // fsDenied 我们自己拒掉的 fs 请求。协议没有「权限不足」这个码，选 -32603 是因为它
 // 既不是参数错也不是方法不存在——原因写在 message 里，代理能读懂也能换个做法。
@@ -146,13 +150,89 @@ func fsDenied(path, reason string) *acp.RequestError {
 	return &acp.RequestError{Code: -32603, Message: reason, Data: map[string]any{"path": path}}
 }
 
-// allowOutside 越界访问的处置：现在一律拒（下一笔接确认与次数上限）。
+// allowOutside 越界访问的处置（D284）：读按次数问（默认 8 次），写每次都问。
 //
-// 拒绝是 fail closed 的那一侧；但别把这条判据说成围栏——代理自己起 shell 之后，
+// 拒绝落在 fail closed 那一侧；但别把这条判据说成围栏——代理自己起 shell 之后，
 // 这条路根本不经过我们。
 func (c *client) allowOutside(_ context.Context, op, resolved string) bool {
 	c.r.note("%s outside the session root set was refused: %s", op, resolved)
 	return false
+}
+
+// askUser 越界访问与控制文件的确认：与权限回落（RequestPermission）同一套口径——
+// 无人值守、用户不在发起这次转交的会话、没有配置确认器，一律当场拒。
+func (c *client) askUser(ctx context.Context, prompt string) (bool, string) {
+	if c.r.stopKind() != stopNone || ctx.Err() != nil {
+		return false, "the delegation is stopping"
+	}
+	if c.m.opts.CurrentSession != nil && c.r.session != "" && c.m.opts.CurrentSession() != "" &&
+		c.m.opts.CurrentSession() != c.r.session {
+		return false, i18n.T("acp.deny.not_in_session")
+	}
+	if c.m.opts.Confirmer == nil {
+		return false, i18n.T("acp.deny.no_confirmer")
+	}
+	ans, err := c.m.opts.Confirmer.Confirm(ctx, prompt)
+	switch {
+	case err != nil:
+		return false, err.Error()
+	case ans.Allow:
+		return true, ""
+	}
+	if reason := strings.TrimSpace(ans.Reason); reason != "" {
+		return false, reason
+	}
+	return false, i18n.T("acp.deny.user_refused")
+}
+
+// allowRead 一次越界读的处置：同一路径只问一次（扫目录会连着问同一件事），
+// 次数用完或配置成「不问」时直接拒并留档。
+func (c *client) allowRead(ctx context.Context, resolved string) (bool, string) {
+	if allowed, reason, asked := c.r.outsideVerdict(resolved); asked {
+		if allowed {
+			return true, ""
+		}
+		return false, reason
+	}
+	limit := c.m.outsideReadAsks()
+	switch {
+	case limit == 0:
+		reason := reasonReadLimit + ": delegate.outside_read_max is 0"
+		c.r.markOutsideRead(resolved, false, reason)
+		return false, reason
+	case limit > 0 && c.r.outsideAsksUsed() >= limit:
+		reason := fmt.Sprintf("%s (%d)", reasonReadLimit, limit)
+		c.r.markOutsideRead(resolved, false, reason)
+		return false, reason
+	}
+	c.r.countOutsideAsk()
+	prompt := i18n.Tf("acp.confirm.read_outside", "agent", c.r.agent.Name, "path", resolved)
+	if ok, why := c.askUser(ctx, prompt); !ok {
+		reason := reasonOutside + ": " + why
+		c.r.markOutsideRead(resolved, false, reason)
+		return false, reason
+	}
+	c.r.markOutsideRead(resolved, true, "")
+	return true, ""
+}
+
+// allowWrite 一次越界写或控制文件写的处置：每次都问，不缓存。
+func (c *client) allowWrite(ctx context.Context, path, resolved, rule string) (bool, string) {
+	var prompt string
+	if rule != "" {
+		prompt = i18n.Tf("acp.confirm.control_file", "agent", c.r.agent.Name, "rule", rule, "path", resolved)
+	} else {
+		prompt = i18n.Tf("acp.confirm.write_outside", "agent", c.r.agent.Name, "path", resolved)
+	}
+	if ok, why := c.askUser(ctx, prompt); !ok {
+		// 路径进 note 是为了让报告里能读出「它想改哪儿」，而不是只有一句「被拒了」。
+		c.r.note("write was refused (%s): %s", path, why)
+		if rule != "" {
+			return false, "writing an execution-control file was refused: " + why
+		}
+		return false, reasonOutside + ": " + why
+	}
+	return true, ""
 }
 
 // readTextSlice 按 1 基行号切片读文本。流式推进：越界的那几行只丢弃不加载，
@@ -205,4 +285,51 @@ func (r *run) addWrote(path string) {
 		return
 	}
 	r.wrote = append(r.wrote, path)
+}
+
+// outsideVerdict 这个路径的越界读结论：ok / 已拒（带原因）/ 没问过。
+func (r *run) outsideVerdict(path string) (allowed bool, denyReason string, asked bool) {
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
+	if r.outsideReadOK[path] {
+		return true, "", true
+	}
+	if reason, no := r.outsideReadNo[path]; no {
+		return false, reason, true
+	}
+	return false, "", false
+}
+
+// outsideAsksUsed 已消耗的越界读额度（放行与拒绝都算：问过就是一次）。
+func (r *run) outsideAsksUsed() int {
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
+	return r.outsideReadsAsked
+}
+
+// countOutsideAsk 记一次「问过了」：额度按问的次数算，不按放行的次数算。
+func (r *run) countOutsideAsk() {
+	r.cmu.Lock()
+	r.outsideReadsAsked++
+	r.cmu.Unlock()
+}
+
+// markOutsideRead 记一次越界读的结论。放行的进报告清单，拒掉的留一条用户面备注
+// ——同一路径只记一次，免得扫目录时同一句话刷满整份报告。
+func (r *run) markOutsideRead(path string, allowed bool, denyReason string) {
+	r.cmu.Lock()
+	defer r.cmu.Unlock()
+	if allowed {
+		r.outsideReadOK[path] = true
+		if len(r.outsideRead) >= port.MaxDelegateChangedFiles {
+			r.outsideReadOver++
+			return
+		}
+		r.outsideRead = append(r.outsideRead, path)
+		return
+	}
+	if _, seen := r.outsideReadNo[path]; !seen {
+		r.outsideReadNo[path] = denyReason
+		r.notes = append(r.notes, fmt.Sprintf("read outside the session root set was refused: %s", path))
+	}
 }

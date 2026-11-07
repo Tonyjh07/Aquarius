@@ -102,14 +102,17 @@ var enAdapterGateTexts = map[string]string{
 	"tool.label.delegate_kill":  "Stop delegation",
 
 	// ---- acpgate：外部代理清单的不可用原因、无人应答的拒绝原因、权限确认对话框正文。 ----
-	"acp.note.disabled":       "Disabled (enabled=false in delegate.agents)",
-	"acp.note.no_command":     "No command configured",
-	"acp.note.not_on_path":    "Command not on PATH: {command}",
-	"acp.deny.not_in_session": "you are not in the session that started this delegation",
-	"acp.deny.no_confirmer":   "this build has no confirmer configured",
-	"acp.deny.user_refused":   "the user declined",
-	"acp.prompt.head":         "External agent \"{agent}\" asks to perform an operation:",
-	"acp.prompt.foot":         "This agent has its own file and command access; approving means letting it act on its own judgement.",
+	"acp.note.disabled":         "Disabled (enabled=false in delegate.agents)",
+	"acp.note.no_command":       "No command configured",
+	"acp.note.not_on_path":      "Command not on PATH: {command}",
+	"acp.deny.not_in_session":   "you are not in the session that started this delegation",
+	"acp.deny.no_confirmer":     "this build has no confirmer configured",
+	"acp.deny.user_refused":     "the user declined",
+	"acp.prompt.head":           "External agent \"{agent}\" asks to perform an operation:",
+	"acp.prompt.foot":           "This agent has its own file and command access; approving means letting it act on its own judgement.",
+	"acp.confirm.read_outside":  "External agent \"{agent}\" wants to read a file outside the session scope:\n  {path}\n\nIts own shell could read this anyway; asking once is how the access ends up on the record.",
+	"acp.confirm.write_outside": "External agent \"{agent}\" wants to write a file outside the session scope:\n  {path}\n\nApproving means letting it change this file on its own judgement.",
+	"acp.confirm.control_file":  "External agent \"{agent}\" wants to write an execution-control file ({rule}):\n  {path}\n\nFiles like this decide what runs later (version control hooks, editor or agent settings, MCP config), so they are asked about separately.",
 	// Connectivity probe (A1 "test connection"): three failure classes, so the user knows
 	// which part to fix.
 	"acp.probe.err.not_found": "Command not on PATH",

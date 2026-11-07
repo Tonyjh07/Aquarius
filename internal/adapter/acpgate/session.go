@@ -87,10 +87,17 @@ type run struct {
 	wrote     []string
 	wroteSeen map[string]bool
 	wroteOver int
-	notes     []string
-	denied    int
-	truncated bool
-	peerGone  bool
+	// 越界读的账（D284）：放行过的进报告清单，拒过的记住原因（同一路径不再打扰用户），
+	// 额度按「问过几次」算。
+	outsideRead       []string
+	outsideReadOK     map[string]bool
+	outsideReadNo     map[string]string
+	outsideReadOver   int
+	outsideReadsAsked int
+	notes             []string
+	denied            int
+	truncated         bool
+	peerGone          bool
 
 	// 通知排空信号。SDK 在断连时先关 Done() 让 Prompt 拿到 error，之后才在另一条
 	// goroutine 里把已入队的通知交回 SessionUpdate；排空完成才 cancel 它传给 handler 的
@@ -113,11 +120,13 @@ func newRun(id port.DelegateID, a Agent, spec port.DelegateSpec, session convers
 		started:   time.Now(),
 		stopCh:    make(chan struct{}),
 		cancelCtx: ctx, cancelFn: cancel,
-		changedSeen: map[string]bool{},
-		wroteSeen:   map[string]bool{},
-		notifySeen:  make(chan struct{}),
-		drainDone:   make(chan struct{}),
-		done:        make(chan struct{}),
+		changedSeen:   map[string]bool{},
+		wroteSeen:     map[string]bool{},
+		outsideReadOK: map[string]bool{},
+		outsideReadNo: map[string]string{},
+		notifySeen:    make(chan struct{}),
+		drainDone:     make(chan struct{}),
+		done:          make(chan struct{}),
 	}
 }
 
@@ -308,22 +317,24 @@ func (r *run) waitNotifyDrain(budget time.Duration) {
 
 // collected 收尾时一次性取走的收集结果（拷贝，不与活切片共享底层数组）。
 type collected struct {
-	toolCalls                      int
-	changed, wrote, notes          []string
-	denied, changedOver, wroteOver int
+	toolCalls                                       int
+	changed, wrote, readOutside, notes              []string
+	denied, changedOver, wroteOver, readOutsideOver int
 }
 
 func (r *run) snapshot() collected {
 	r.cmu.Lock()
 	defer r.cmu.Unlock()
 	return collected{
-		toolCalls:   r.toolCalls,
-		changed:     append([]string(nil), r.changed...),
-		wrote:       append([]string(nil), r.wrote...),
-		notes:       append([]string(nil), r.notes...),
-		denied:      r.denied,
-		changedOver: r.changedOver,
-		wroteOver:   r.wroteOver,
+		toolCalls:       r.toolCalls,
+		changed:         append([]string(nil), r.changed...),
+		wrote:           append([]string(nil), r.wrote...),
+		readOutside:     append([]string(nil), r.outsideRead...),
+		notes:           append([]string(nil), r.notes...),
+		denied:          r.denied,
+		changedOver:     r.changedOver,
+		wroteOver:       r.wroteOver,
+		readOutsideOver: r.outsideReadOver,
 	}
 }
 
@@ -357,9 +368,9 @@ func (m *Manager) run(r *run) {
 		r.waitNotifyDrain(m.opts.NotifyDrainBudget)
 	}
 	got := r.snapshot()
-	res.ToolCalls, res.Changed, res.Wrote = got.toolCalls, got.changed, got.wrote
-	res.Notes, res.Denied, res.ChangedOver, res.WroteOver =
-		got.notes, got.denied, got.changedOver, got.wroteOver
+	res.ToolCalls, res.Changed, res.Wrote, res.ReadOutside = got.toolCalls, got.changed, got.wrote, got.readOutside
+	res.Notes, res.Denied = got.notes, got.denied
+	res.ChangedOver, res.WroteOver, res.ReadOutsideOver = got.changedOver, got.wroteOver, got.readOutsideOver
 	res.Report = r.reportText()
 	m.ledgerFinish(r, err) // 先标终态再放行 Wait：关停时 Close 等到 done 就返回，慢一步就丢
 	r.complete(res, err)

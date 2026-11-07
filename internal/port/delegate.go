@@ -29,6 +29,13 @@ const (
 	DefaultDelegateMaxConcurrent = 2
 	// DefaultDelegateMaxTotal 全局同时进行的转交上限。
 	DefaultDelegateMaxTotal = 4
+
+	// DefaultDelegateOutsideReadAsks 越界读的缺省询问次数（D284）：问满这么多次之后，
+	// 本次转交里再来的越界读直接拒并留档。默认给一个数而不是「不限」，是因为一次
+	// 转交里的读请求可以是几百次——不设上限等于让用户点两百次。
+	DefaultDelegateOutsideReadAsks = 8
+	// DelegateOutsideReadUnlimited 不限次（配置里写 -1：每次都问，且都算数）。
+	DelegateOutsideReadUnlimited = -1
 )
 
 // DelegateID 一次转交的标识（回执、Wait、Kill、日志都用它）。
@@ -102,17 +109,20 @@ func NormalizeRoots(in []string) ([]string, error) {
 
 // DelegateRun 一次转交的终态（报告 + 摘要用的全部事实）。
 type DelegateRun struct {
-	Agent      string        `json:"agent"`
-	Session    string        `json:"session,omitempty"`     // ACP sessionId：只进回执与日志，本版不重用
-	StopReason string        `json:"stop_reason,omitempty"` // end_turn|max_tokens|max_turn_requests|refusal|cancelled
-	ToolCalls  int           `json:"tool_calls"`            // 子代理自己发起的工具调用次数（不是我们的）
-	Changed    []string      `json:"changed,omitempty"`     // 它报过改动的文件（去重；可能不全）
+	Agent      string   `json:"agent"`
+	Session    string   `json:"session,omitempty"`     // ACP sessionId：只进回执与日志，本版不重用
+	StopReason string   `json:"stop_reason,omitempty"` // end_turn|max_tokens|max_turn_requests|refusal|cancelled
+	ToolCalls  int      `json:"tool_calls"`            // 子代理自己发起的工具调用次数（不是我们的）
+	Changed    []string `json:"changed,omitempty"`     // 它报过改动的文件（去重；可能不全）
 	// Wrote 经 Aquarius 之手写下的文件（`fs/write_text_file` 的事实）。与 Changed 并列而
 	// **不合**：一份是我们经手的，一份是它自称的，混成一份就又变成「不比现在更假」（D283）。
 	Wrote []string `json:"wrote,omitempty"`
-	Duration   time.Duration `json:"duration"`
-	Report     string        `json:"report"`          // 最终正文（它交付的那段）
-	Notes      []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
+	// ReadOutside 它读过、而且是**问过用户之后**读的、落在会话根集之外的文件（D284）。
+	// 没问成的那些进 Notes；这里只列真的给出去过的。
+	ReadOutside []string      `json:"read_outside,omitempty"`
+	Duration    time.Duration `json:"duration"`
+	Report      string        `json:"report"`          // 最终正文（它交付的那段）
+	Notes       []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
 	// Denied 它提出而没人应答的权限请求数（无人值守、或用户不在发起会话）；ChangedOver
 	// 是超出清单上限、没逐个列出的改动文件数——两者都要说，否则读报告的人以为清单是完整的。
 	Denied      int `json:"denied,omitempty"`
@@ -120,6 +130,8 @@ type DelegateRun struct {
 	// WroteOver 超出清单上限、没逐个列出的**经手写**文件数（与 ChangedOver 同口径：
 	// 不说清楚，读报告的人会以为清单是完整的）。
 	WroteOver int `json:"wrote_over,omitempty"`
+	// ReadOutsideOver 同上，针对 ReadOutside。
+	ReadOutsideOver int `json:"read_outside_over,omitempty"`
 	// Killed 是被我们终止的（停止键 / delegate_kill）：报告可能是半截的，摘要行要说清。
 	Killed bool `json:"killed,omitempty"`
 }
@@ -182,6 +194,15 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 		b.WriteString("\n")
 	} else if run.WroteOver > 0 {
 		fmt.Fprintf(&b, "Files written through this session: at least %d (none listed)\n", run.WroteOver)
+	}
+	if len(run.ReadOutside) > 0 {
+		b.WriteString("Files it read outside the session scope, after you approved each one: " + strings.Join(run.ReadOutside, ", "))
+		if run.ReadOutsideOver > 0 {
+			fmt.Fprintf(&b, " (and %d more not listed)", run.ReadOutsideOver)
+		}
+		b.WriteString("\n")
+	} else if run.ReadOutsideOver > 0 {
+		fmt.Fprintf(&b, "Files it read outside the session scope: at least %d (none listed)\n", run.ReadOutsideOver)
 	}
 	if run.Denied > 0 {
 		fmt.Fprintf(&b, "Permission requests it made went unanswered: %d (denied on the spot)\n", run.Denied)

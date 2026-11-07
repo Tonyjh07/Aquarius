@@ -24,6 +24,9 @@ type delegateConfig struct {
 	// MaxConcurrent / MaxTotal 每会话与全局的同时转交上限；0/省略 = 端口缺省（2/4）。
 	MaxConcurrent int `json:"max_concurrent,omitempty"`
 	MaxTotal      int `json:"max_total,omitempty"`
+	// OutsideReadMax 越界读的询问次数（D284）：省略 = 8；-1 = 不限（每次都问）；
+	// 0 = 一次都不问，直接拒并留档。
+	OutsideReadMax *int `json:"outside_read_max,omitempty"`
 }
 
 // delegateAgentConfig 一个外部代理的声明（形状照 mcpServers：command + args + env）。
@@ -61,6 +64,13 @@ func (c *fileConfig) delegateOptions(secrets port.Secrets, confirmer port.Confir
 		return opts, fmt.Errorf("%s", i18n.T("cmd.config.err.delegate_negative"))
 	}
 	opts.MaxConcurrent, opts.MaxTotal = d.MaxConcurrent, d.MaxTotal
+	if n := d.OutsideReadMax; n != nil {
+		if *n < port.DelegateOutsideReadUnlimited {
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_outside_read",
+				"n", *n, "min", port.DelegateOutsideReadUnlimited))
+		}
+		opts.OutsideReadAsks = n
+	}
 
 	seen := map[string]bool{}
 	defaults := 0

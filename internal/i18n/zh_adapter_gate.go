@@ -114,6 +114,10 @@ var zhAdapterGateTexts = map[string]string{
 	"acp.deny.user_refused":   "用户拒绝",
 	"acp.prompt.head":         "外部代理「{agent}」请求执行一个操作：",
 	"acp.prompt.foot":         "该代理有它自己的文件与命令访问；批准 = 允许它按自己的判断动手。",
+	// fs 越界与控制文件（A2）：三句都要说清「它要碰哪里」与「为什么问你」。
+	"acp.confirm.read_outside":  "外部代理「{agent}」要读会话范围之外的文件：\n  {path}\n\n它自己的 shell 本来也读得到，这里问一次是为了让这份访问留痕。",
+	"acp.confirm.write_outside": "外部代理「{agent}」要写会话范围之外的文件：\n  {path}\n\n批准 = 允许它按自己的判断改这个文件。",
+	"acp.confirm.control_file":  "外部代理「{agent}」要写一个执行控制类文件（{rule}）：\n  {path}\n\n这类文件能改变「之后谁会跑起来」（版本控制钩子、编辑器或代理的设置、MCP 配置），所以单独问一次。",
 	// 连通性探测（A1「测试连接」）：三类失败要分开，用户能据此改对地方。
 	"acp.probe.err.not_found": "命令不在 PATH 上",
 	"acp.probe.err.start":     "起不了进程",

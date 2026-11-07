@@ -13,8 +13,8 @@
 //	ignore     提示一直不回，连 cancel 也不理（测试宽限杀进程）
 //	permission 提示里先反问权限，按应答回一段正文
 //	partial    先发两段正文，然后直接退出（测试「中途失败也要把已收到的带出去」）
-//	fs         按 fs 模式发四个文件请求（读切片 / 写新文件建父目录 / 越界写 / 越界读），
-//	           把每个应答原样编进正文——断言全在测试里做
+//	fs         按 fs 模式发五个文件请求（读切片 / 写新文件建父目录 / 越界写 / 越界读 /
+//	           写执行控制文件），把每个应答原样编进正文——断言全在测试里做
 //	delayed    先报一句进度，等 FAKE_AGENT_DELAY_MS（缺省 8000）毫秒再交报告——手验
 //	           「派活后切走，报告仍落在原会话」靠它，秒回测不出时间差
 //	badcwd     要求 cwd 是绝对路径、mcpServers 为空，否则回 -32602
@@ -245,6 +245,10 @@ func handleRequest(mode string, m rpcMsg) {
 				})),
 				"escape_read": fsResult(request("fs/read_text_file", map[string]any{
 					"sessionId": sid, "path": filepath.Join(esc, "secret.txt"),
+				})),
+				"control_write": fsResult(request("fs/write_text_file", map[string]any{
+					"sessionId": sid, "path": filepath.Join(sessCwd, ".git", "hooks", "pre-commit"),
+					"content":   "#!/bin/sh\nexit 0\n",
 				})),
 			}
 			raw, _ := json.Marshal(out)
