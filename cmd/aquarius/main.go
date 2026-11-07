@@ -338,7 +338,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	profileFlag := flags.String("profile", "", i18n.T("cmd.boot.flag.profile"))
 	modelName := flags.String("model", "", i18n.T("cmd.boot.flag.model"))
 	baseURL := flags.String("base-url", "", i18n.T("cmd.boot.flag.base_url"))
-	autoYes := flags.Bool("yes", false, i18n.T("cmd.boot.flag.yes"))
 	logLevel := flags.String("log-level", "", i18n.T("cmd.boot.flag.log_level"))
 	logFormat := flags.String("log-format", "", i18n.T("cmd.boot.flag.log_format"))
 	showVersion := flags.Bool("version", false, i18n.T("cmd.boot.flag.version"))
@@ -395,14 +394,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}()
 	w.buildPresenter()
 	// 逐次确认（§5.11 Confirmer 矩阵）与提问通道（D184）：默认都走前端交互面。
-	tc := toolChannelsFor(w.ui, *autoYes, w.unattended.Get)
-	if *autoYes && w.cfg.Permissions.Unattended {
-		// 口径三：-yes = 自动允许，优先于无人值守（自动拒绝）。活开关压到关——状态行与
-		// 菜单勾选必须反映真实判定，否则用户回来看到「无人值守」标记却什么都没被拒。
-		w.log.Warn(logging.Boot, "log.boot.auto_yes_overrides_unattended",
-			"log.act.unattended_disabled")
-		w.unattended.Set(false)
-	}
+	tc := toolChannelsFor(w.ui, w.unattended.Get)
 	if err := w.assembleTools(ctx, tc.toolConfirmer, tc.toolAsker); err != nil {
 		return fatal(stderr, "%v", err)
 	}

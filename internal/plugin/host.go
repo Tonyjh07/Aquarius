@@ -68,6 +68,10 @@ type Deps struct {
 	Persist func(map[string]State) error
 	// Log 运行日志（D276）：级别 / 事件 / 行动按 key 给，上下文固定 plugin；nil = 丢弃。
 	Log port.Log
+	// Unattended 无人值守是否开着（热态，每次授权前现问）；nil = 当作关。
+	// 开着时信任门与能力授权**不问也不放行**：没人能批准，直接不启动并留一条日志
+	// ——与工具链同一条口径，但走这里而不是装饰器，因为日志要说清「不是用户拒的」。
+	Unattended func() bool
 	// OnChange 启停/状态变化回调（装配根刷新工具与动态命令面）；锁外触发。
 	OnChange func()
 }
@@ -84,16 +88,22 @@ func (h *Host) logf(lv port.LogLevel, event, act string, kv ...any) {
 	h.log(lv, logCtx, event, act, kv...)
 }
 
+// unattendedNow 无人值守是否开着；没注入探针时当作关（缺省行为与以前一致）。
+func (h *Host) unattendedNow() bool {
+	return h.unattended != nil && h.unattended()
+}
+
 // Host 插件宿主（§6.4）：发现 → 校验 → 授权 → 生命周期 → 可观测。
 // 只编排 plugin.Session（消费方接口），不 import 任何适配器（同 D13 边界）。
 type Host struct {
-	dial     Dialer
-	confirm  port.Confirmer
-	dir      string
-	persist  func(map[string]State) error
-	log      port.Log
-	onChange func()
-	closed   chan struct{}
+	dial       Dialer
+	confirm    port.Confirmer
+	dir        string
+	persist    func(map[string]State) error
+	log        port.Log
+	onChange   func()
+	unattended func() bool
+	closed     chan struct{}
 
 	mu      sync.Mutex
 	decls   map[string]Decl     // 发现合并结果（config 覆盖同名 plugin.json，D31）
@@ -117,17 +127,18 @@ type managed struct {
 // New 构造宿主（发现前状态为空；调 Start 后可用）。
 func New(d Deps) *Host {
 	h := &Host{
-		dial:     d.Dial,
-		confirm:  d.Confirm,
-		dir:      d.PluginsDir,
-		persist:  d.Persist,
-		log:      d.Log,
-		onChange: d.OnChange,
-		closed:   make(chan struct{}),
-		decls:    map[string]Decl{},
-		broken:   map[string]string{},
-		states:   map[string]State{},
-		managed:  map[string]*managed{},
+		dial:       d.Dial,
+		confirm:    d.Confirm,
+		dir:        d.PluginsDir,
+		persist:    d.Persist,
+		log:        d.Log,
+		onChange:   d.OnChange,
+		unattended: d.Unattended,
+		closed:     make(chan struct{}),
+		decls:      map[string]Decl{},
+		broken:     map[string]string{},
+		states:     map[string]State{},
+		managed:    map[string]*managed{},
 		backoff: func(restart int) time.Duration {
 			return baseRestartWait << (restart - 1) // 1s, 2s, 4s
 		},
@@ -251,6 +262,11 @@ func (h *Host) trustGate(ctx context.Context, d Decl) bool {
 		return true // 已信任且启动描述未变
 	}
 	h.mu.Unlock()
+	if h.unattendedNow() {
+		// 没人能批准，就别把启动挂在等人上：不启动、不落指纹，下次交互启动再问。
+		h.logf(port.LogInfo, "log.plugin.trust_unattended", "log.act.deny", "name", d.Name)
+		return false
+	}
 	if h.confirm == nil {
 		h.logf(port.LogWarn, "log.plugin.trust_no_confirmer", "log.act.deny", "name", d.Name)
 		return false
@@ -296,6 +312,12 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 	h.mu.Unlock()
 	if len(pending) == 0 {
 		return true
+	}
+	if h.unattendedNow() {
+		// 与信任门同一条口径：不阻塞、不授予、下次交互启动再问。
+		h.logf(port.LogInfo, "log.plugin.grant_unattended", "log.act.deny",
+			"name", d.Name, "caps", pending)
+		return false
 	}
 	if h.confirm == nil {
 		h.logf(port.LogWarn, "log.plugin.grant_no_confirmer", "log.act.deny",

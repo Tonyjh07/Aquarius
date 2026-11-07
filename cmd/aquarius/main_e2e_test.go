@@ -229,7 +229,7 @@ func TestRunRejectsUnknownUIKind(t *testing.T) {
 }
 
 // TestRunRmConfirmE2E /rm 二次确认端到端（M1）：REPL 确认读行——
-// 拒绝则保留、同意则剪枝落盘、-yes 跳过确认；全程会话树满足不变量。
+// 拒绝则保留、同意则剪枝落盘；全程会话树满足不变量。
 func TestRunRmConfirmE2E(t *testing.T) {
 	srv, reqs := scriptServer(t, []string{"收到一。", "收到二。"})
 	dir := t.TempDir()
@@ -255,7 +255,7 @@ func TestRunRmConfirmE2E(t *testing.T) {
 		t.Fatalf("nodes = %d, want 6", c.NodeCount())
 	}
 	path := c.Path()
-	persona, u1, a1, u2 := path[1].ID, path[2].ID, path[3].ID, path[4].ID
+	a1, u2 := path[3].ID, path[4].ID
 
 	// 拒绝：确认提示打印在 stdout，回答 n → 节点保留。
 	got := runStdin(nil, fmt.Sprintf("/rm %s\nn\n/quit\n", u2))
@@ -279,18 +279,6 @@ func TestRunRmConfirmE2E(t *testing.T) {
 	}
 	if c = load(); c.NodeCount() != 4 || c.Head != a1 {
 		t.Fatalf("同意后 nodes/head = %d/%s, want 4/%s", c.NodeCount(), c.Head, a1)
-	}
-
-	// -yes：跳过确认直接删。
-	got = runStdin([]string{"-yes"}, fmt.Sprintf("/rm %s\n/quit\n", u1))
-	if strings.Contains(got, "[y/N]") {
-		t.Fatalf("-yes 不应出现确认提示: %q", got)
-	}
-	if !strings.Contains(got, i18n.Tf("tree.rm.done", "id", u1, "n", 2, "head", persona)) {
-		t.Fatalf("stdout = %q, want 已删除", got)
-	}
-	if c = load(); c.NodeCount() != 2 {
-		t.Fatalf("-yes 后 nodes = %d, want 2（root+persona）", c.NodeCount())
 	}
 	// 只有首轮对话花生成请求（其余均为命令）。
 	if reqs.len() != 2 {

@@ -15,7 +15,6 @@ var zhLogTexts = map[string]string{
 	"log.act.start_without_key":    "没有密钥也照常启动，发消息时才报因",
 	"log.act.fallback_skipped":     "已跳过这条降级链，主链照常启动",
 	"log.act.stderr_only":          "本次只输出到 stderr",
-	"log.act.unattended_disabled":  "本次不启用无人值守（配置文件未改动）",
 	"log.act.recorded_unsupported": "已记入 {provider} 的 unsupported_params，后续不再重发",
 	"log.act.retry_next_start":     "下次启动仍会先试发该字段",
 	"log.act.continue":             "照常继续，不影响对话",
@@ -41,8 +40,6 @@ var zhLogTexts = map[string]string{
 
 	// 启动
 	"log.boot.file_unavailable": "日志文件打不开（{path}）：{err}",
-	"log.boot.auto_yes_overrides_unattended": "配置里开着无人值守，但本次带 -yes，自动允许优先——" +
-		"越界操作会被执行而不是拒绝",
 	"log.boot.persona_missing": "人格模块树存在缺失引用 {missing}（检查 prompts.modules / " +
 		"prompts.persona）",
 
@@ -115,11 +112,13 @@ var zhLogTexts = map[string]string{
 	"log.plugin.trust_no_confirmer":   "插件 {name} 尚未信任，且无人可确认",
 	"log.plugin.trust_confirm_failed": "插件 {name} 的信任确认失败：{err}",
 	"log.plugin.trust_declined":       "用户拒绝了插件 {name} 的信任",
+	"log.plugin.trust_unattended":     "无人值守：没人能批准插件 {name} 的信任，本次不启动",
 	"log.plugin.trust_persist_failed": "插件 {name} 的信任状态写回失败：{err}",
 	"log.plugin.grant_no_confirmer":   "插件 {name} 请求能力 {caps}，但无人可确认",
 	"log.plugin.grant_persist_failed": "插件 {name} 的授权状态写回失败：{err}",
 	"log.plugin.grant_confirm_failed": "插件 {name} 的能力 {cap} 确认失败：{err}",
 	"log.plugin.grant_declined":       "用户拒绝了插件 {name} 的能力 {cap}",
+	"log.plugin.grant_unattended":     "无人值守：没人能批准插件 {name} 的能力 {caps}，本次不启动",
 	"log.plugin.start_failed":         "插件 {name} 启动失败：{err}",
 	"log.plugin.crash_limit":          "插件 {name} 连续崩溃 {n} 次：{err}",
 	"log.plugin.restarting":           "插件 {name} 连接终止（{err}），{wait} 后重启（第 {n}/{max} 次）",

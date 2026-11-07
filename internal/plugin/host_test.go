@@ -767,3 +767,64 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// TestHostUnattendedSkipsApproval 无人值守下信任门与能力授权都**不问也不放行**：
+// 没人能批准，插件本次不启动，状态不落盘（下次交互启动重新问）。
+func TestHostUnattendedSkipsApproval(t *testing.T) {
+	unattended := func() bool { return true }
+
+	t.Run("能力授权", func(t *testing.T) {
+		dial := &fakeDial{}
+		conf := &fakeConfirm{} // 脚本为空：一旦问就报错
+		persists := 0
+		h := New(Deps{
+			Dial:       dial.dialer(),
+			Confirm:    conf,
+			Unattended: unattended,
+			ConfigServers: map[string]MCPServer{
+				"web": {MCPConfig: MCPConfig{Transport: "stdio", Command: "x"}, Capabilities: []string{"network"}},
+			},
+			Persist: func(map[string]State) error { persists++; return nil },
+		})
+		h.Start(context.Background())
+		defer h.Close()
+		if statusOf(h, "web") != StatusRevoked || dial.callCount() != 0 {
+			t.Fatalf("status = %s dial = %d, want revoked/0", statusOf(h, "web"), dial.callCount())
+		}
+		if len(conf.prompts) != 0 {
+			t.Fatalf("无人值守不该问用户: %v", conf.prompts)
+		}
+		if persists != 0 {
+			t.Fatalf("不该落盘授权（下次启动要重问）: %d 次", persists)
+		}
+	})
+
+	t.Run("信任门", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "loose"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		manifest := `{"name":"loose","mcp":{"transport":"stdio","command":"x"}}`
+		if err := os.WriteFile(filepath.Join(dir, "loose", "plugin.json"), []byte(manifest), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dial := &fakeDial{}
+		conf := &fakeConfirm{}
+		persists := 0
+		h := New(Deps{
+			Dial:       dial.dialer(),
+			Confirm:    conf,
+			Unattended: unattended,
+			PluginsDir: dir,
+			Persist:    func(map[string]State) error { persists++; return nil },
+		})
+		h.Start(context.Background())
+		defer h.Close()
+		if statusOf(h, "loose") != StatusRevoked || dial.callCount() != 0 {
+			t.Fatalf("status = %s dial = %d, want revoked/0", statusOf(h, "loose"), dial.callCount())
+		}
+		if len(conf.prompts) != 0 || persists != 0 {
+			t.Fatalf("不该问也不该落盘: prompts=%v persists=%d", conf.prompts, persists)
+		}
+	})
+}

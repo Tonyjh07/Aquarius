@@ -146,7 +146,6 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.boot.flag.profile":    `选择 profile（本次运行临时覆盖根 config.json 的指针；须已存在）`,
 	"cmd.boot.flag.model":      `覆盖 model.name`,
 	"cmd.boot.flag.base_url":   `覆盖 model.base_url`,
-	"cmd.boot.flag.yes":        `跳过逐次确认（等价对每个确认回答 y；危险操作慎用）`,
 	"cmd.boot.flag.log_level":  `运行日志级别（debug | info | warn | error；默认取 ui.log_level）`,
 	"cmd.boot.flag.log_format": `运行日志形态（text | json；只影响本次运行）`,
 	"cmd.boot.flag.version":    `打印版本并退出`,

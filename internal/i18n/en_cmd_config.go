@@ -154,8 +154,6 @@ var enCmdConfigTexts = map[string]string{
 		`this run; the profile must exist)`,
 	"cmd.boot.flag.model":    `Override model.name`,
 	"cmd.boot.flag.base_url": `Override model.base_url`,
-	"cmd.boot.flag.yes": `Skip each confirmation (answer y to every prompt; ` +
-		`use with care on dangerous operations)`,
 	"cmd.boot.flag.log_level": `Run log level (debug | info | warn | error; ` +
 		`defaults to ui.log_level)`,
 	"cmd.boot.flag.log_format": `Run log format (text | json; this run only)`,

@@ -189,6 +189,7 @@ func TestCharacterCardE2E(t *testing.T) {
 		"/compact",
 		"bye",
 		"/character remove Alice",
+		"y", // 删卡先过二次确认（确认与命令共用同一个读行流，顺序不能错）
 		"next",
 		"/character start Bob",
 		"msg-bob",
@@ -198,7 +199,7 @@ func TestCharacterCardE2E(t *testing.T) {
 	}, "\n") + "\n"
 
 	var out bytes.Buffer
-	if code := run([]string{"-data", dir, "-yes"}, strings.NewReader(stdin), &out, io.Discard); code != 0 {
+	if code := run([]string{"-data", dir}, strings.NewReader(stdin), &out, io.Discard); code != 0 {
 		t.Fatalf("run code = %d\nstdout:\n%s", code, out.String())
 	}
 	// 三张卡都导入成功（清单里能看到显示名）。

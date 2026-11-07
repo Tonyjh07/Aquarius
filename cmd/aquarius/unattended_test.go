@@ -77,30 +77,3 @@ func TestPersistUnattendedKeepsLevel(t *testing.T) {
 		t.Fatalf("两键应同时保留: %+v", cfg.Permissions)
 	}
 }
-
-// TestToolChannelsAutoYesWarnEdge 口径三的告警条件：`-yes` 与配置里的开关同时成立才提示
-// （模板缺省为关，因此正常路径不该打警告）。
-func TestToolChannelsAutoYesWarnEdge(t *testing.T) {
-	t.Parallel()
-	cfgPath := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(cfgPath, []byte(defaultConfig), 0o644); err != nil {
-		t.Fatalf("写模板: %v", err)
-	}
-	cfg, err := loadConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("loadConfig: %v", err)
-	}
-	if cfg.Permissions.Unattended {
-		t.Fatal("模板缺省应为关")
-	}
-	if err := os.WriteFile(cfgPath, []byte(`{"permissions":{"level":"strict","unattended":true}}`), 0o644); err != nil {
-		t.Fatalf("写配置: %v", err)
-	}
-	cfg, err = loadConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("loadConfig: %v", err)
-	}
-	if !cfg.Permissions.Unattended {
-		t.Fatal("应读回 true")
-	}
-}

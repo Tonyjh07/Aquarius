@@ -12,7 +12,6 @@ var enLogTexts = map[string]string{
 	"log.act.start_without_key":    "started without a key; the reason is reported when a message is sent",
 	"log.act.fallback_skipped":     "skipped this fallback chain; the primary chain still starts",
 	"log.act.stderr_only":          "stderr only this run",
-	"log.act.unattended_disabled":  "unattended mode off for this run (config unchanged)",
 	"log.act.recorded_unsupported": "recorded in {provider}'s unsupported_params; not resent later",
 	"log.act.retry_next_start":     "the field is still sent first on the next start",
 	"log.act.continue":             "carried on as usual; the conversation is unaffected",
@@ -38,8 +37,6 @@ var enLogTexts = map[string]string{
 
 	// 启动
 	"log.boot.file_unavailable": "cannot open the log file ({path}): {err}",
-	"log.boot.auto_yes_overrides_unattended": "-yes was given while unattended mode is on; " +
-		"auto-allow wins, so out-of-bounds actions run instead of being denied",
 	"log.boot.persona_missing": "persona module tree has missing references {missing} " +
 		"(check prompts.modules / prompts.persona)",
 
@@ -111,11 +108,13 @@ var enLogTexts = map[string]string{
 	"log.plugin.trust_no_confirmer":   "plugin {name} is not trusted yet, and nobody can confirm",
 	"log.plugin.trust_confirm_failed": "trust confirmation for plugin {name} failed: {err}",
 	"log.plugin.trust_declined":       "the user declined to trust plugin {name}",
+	"log.plugin.trust_unattended":     "unattended mode: nobody can approve trust for plugin {name}; not started this run",
 	"log.plugin.trust_persist_failed": "failed to write back the trust state of plugin {name}: {err}",
 	"log.plugin.grant_no_confirmer":   "plugin {name} asked for capabilities {caps}, but nobody can confirm",
 	"log.plugin.grant_persist_failed": "failed to write back the grants of plugin {name}: {err}",
 	"log.plugin.grant_confirm_failed": "confirmation for capability {cap} of plugin {name} failed: {err}",
 	"log.plugin.grant_declined":       "the user declined capability {cap} of plugin {name}",
+	"log.plugin.grant_unattended":     "unattended mode: nobody can approve capabilities {caps} of plugin {name}; not started this run",
 	"log.plugin.start_failed":         "plugin {name} failed to start: {err}",
 	"log.plugin.crash_limit":          "plugin {name} crashed {n} times in a row: {err}",
 	"log.plugin.restarting":           "plugin {name} connection ended ({err}); restarting in {wait} (attempt {n}/{max})",

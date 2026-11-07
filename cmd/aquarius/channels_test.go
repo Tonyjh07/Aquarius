@@ -1,7 +1,7 @@
 package main
 
-// 确认 / 提问通道装配测试（D185 口径二/三/六）：无人值守只管模型链、-yes 优先且不装
-// 装饰器、开关热生效（装饰器每次调用现取）。
+// 确认 / 提问通道装配测试（D185 口径二/六）：无人值守只管模型链、用户面照常问前端、
+// 开关热生效（装饰器每次调用现取）。
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func TestToolChannelsUnattendedScopedToTools(t *testing.T) {
 	t.Parallel()
 	front := &stubFront{}
 	on := true
-	tc := toolChannelsFor(front, false, func() bool { return on })
+	tc := toolChannelsFor(front, func() bool { return on })
 
 	ans, err := tc.toolConfirmer.Confirm(context.Background(), "delete?")
 	if err != nil {
@@ -72,7 +72,7 @@ func TestToolChannelsUnattendedHot(t *testing.T) {
 	t.Parallel()
 	front := &stubFront{}
 	on := false
-	tc := toolChannelsFor(front, false, func() bool { return on })
+	tc := toolChannelsFor(front, func() bool { return on })
 	if ans, err := tc.toolConfirmer.Confirm(context.Background(), "p"); err != nil || ans.Reason != "from-ui" {
 		t.Fatalf("关闭态应透传前端: %+v, %v", ans, err)
 	}
@@ -82,40 +82,10 @@ func TestToolChannelsUnattendedHot(t *testing.T) {
 	}
 }
 
-// TestToolChannelsAutoYes 口径三：-yes 走自动允许，**不装**装饰器（开关即便开着也放行）。
-func TestToolChannelsAutoYes(t *testing.T) {
-	t.Parallel()
-	front := &stubFront{}
-	tc := toolChannelsFor(front, true, func() bool { return true })
-	for name, ans := range map[string]port.ConfirmAnswer{
-		"tool": mustConfirm(t, tc.toolConfirmer),
-		"user": mustConfirm(t, tc.confirmer),
-	} {
-		if !ans.Allow {
-			t.Fatalf("%s 链在 -yes 下应自动允许: %+v", name, ans)
-		}
-	}
-	if front.confirms != 0 {
-		t.Fatal("-yes 不应打扰前端")
-	}
-	// 提问同款：无人应答（Away），不阻塞。
-	for name, ask := range map[string]port.AskAnswer{
-		"tool": mustAsk(t, tc.toolAsker),
-		"user": mustAsk(t, tc.asker),
-	} {
-		if !ask.Away || ask.Dismissed {
-			t.Fatalf("%s 链在 -yes 下应回 Away: %+v", name, ask)
-		}
-	}
-	if front.asks != 0 {
-		t.Fatal("-yes 不应打扰前端")
-	}
-}
-
 // TestToolChannelsNilUI 无前端：用户面留空（nil），模型链关闭态 fail-closed 报错。
 func TestToolChannelsNilUI(t *testing.T) {
 	t.Parallel()
-	tc := toolChannelsFor(nil, false, func() bool { return false })
+	tc := toolChannelsFor(nil, func() bool { return false })
 	if tc.confirmer != nil || tc.asker != nil {
 		t.Fatal("无前端时用户面应为 nil")
 	}
@@ -132,7 +102,7 @@ func TestToolChannelsCancelled(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	tc := toolChannelsFor(&stubFront{}, false, func() bool { return true })
+	tc := toolChannelsFor(&stubFront{}, func() bool { return true })
 	if _, err := tc.toolConfirmer.Confirm(ctx, "p"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -143,15 +113,6 @@ func mustConfirm(t *testing.T, c port.Confirmer) port.ConfirmAnswer {
 	ans, err := c.Confirm(context.Background(), "p")
 	if err != nil {
 		t.Fatalf("confirm: %v", err)
-	}
-	return ans
-}
-
-func mustAsk(t *testing.T, a port.Asker) port.AskAnswer {
-	t.Helper()
-	ans, err := a.Ask(context.Background(), port.AskRequest{})
-	if err != nil {
-		t.Fatalf("ask: %v", err)
 	}
 	return ans
 }

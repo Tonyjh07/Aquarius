@@ -357,6 +357,8 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		States:        w.cfg.Plugins,
 		Persist:       w.persist.persistPlugins,
 		Log:           w.logFrom,
+		// 无人值守下信任门与能力授权直接不启动（没人能批准），而不是把启动挂在等人上。
+		Unattended: w.unattended.Get,
 		// S6/D143：宿主状态变化 → 刷新工具面 + 递增工具快照 Revision（设置窗据此重建行）。
 		OnChange: func() {
 			surfaces.refresh()
