@@ -67,6 +67,46 @@ func TestDelegateConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestDelegateConfigTerminal terminal 的两个键（A3）：缺省申报、写 false 才关；
+// 询问次数与 outside_read_max 同构（缺省不写、0 = 不问、-1 = 不限）。
+func TestDelegateConfigTerminal(t *testing.T) {
+	t.Parallel()
+	cfg := delegateConf(t, `{"delegate":{"agents":[{"name":"a","command":"acp"}]}}`)
+	opts, err := cfg.delegateOptions(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("options: %v", err)
+	}
+	if opts.Terminal != nil {
+		t.Fatal("terminal 缺省应为 nil（由 acpgate 按申报处理）")
+	}
+	if opts.TerminalAsks != nil {
+		t.Fatalf("命令确认次数缺省应为 nil，got %d", *opts.TerminalAsks)
+	}
+
+	cfg = delegateConf(t, `{"delegate":{"terminal":false,"terminal_ask_max":0}}`)
+	opts, err = cfg.delegateOptions(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("options: %v", err)
+	}
+	if opts.Terminal == nil || *opts.Terminal {
+		t.Fatal("terminal=false 应关掉申报")
+	}
+	if opts.TerminalAsks == nil || *opts.TerminalAsks != 0 {
+		t.Fatalf("terminal_ask_max = %v, want 0", opts.TerminalAsks)
+	}
+
+	for _, n := range []int{1, port.DelegateTerminalAskUnlimited} {
+		cfg = delegateConf(t, `{"delegate":{"terminal_ask_max":`+strconv.Itoa(n)+`}}`)
+		opts, err = cfg.delegateOptions(nil, nil, nil, nil)
+		if err != nil {
+			t.Fatalf("terminal_ask_max=%d: %v", n, err)
+		}
+		if opts.TerminalAsks == nil || *opts.TerminalAsks != n {
+			t.Fatalf("terminal_ask_max = %v, want %d", opts.TerminalAsks, n)
+		}
+	}
+}
+
 // TestDelegateConfigValidation 配置错误在启动期报，不拖到第一次转交才暴露。
 func TestDelegateConfigValidation(t *testing.T) {
 	t.Parallel()
@@ -85,6 +125,7 @@ func TestDelegateConfigValidation(t *testing.T) {
 		{"总闸为负", `{"delegate":{"timeout_sec":-1}}`, "不能为负"},
 		{"并发为负", `{"delegate":{"max_total":-1}}`, "不能为负"},
 		{"越界读次数太小", `{"delegate":{"outside_read_max":-2}}`, "最小是 -1"},
+		{"命令确认次数太小", `{"delegate":{"terminal_ask_max":-2}}`, "最小是 -1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

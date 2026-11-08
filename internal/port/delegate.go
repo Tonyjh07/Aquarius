@@ -40,6 +40,9 @@ const (
 	DefaultDelegateTerminalAsks = 8
 	// DelegateOutsideReadUnlimited 不限次（配置里写 -1：每次都问，且都算数）。
 	DelegateOutsideReadUnlimited = -1
+	// DelegateTerminalAskUnlimited 命令确认不限次（同上：-1 就是每次都问）。数值与
+	// 越界读那条相同，分开命名是因为它们回答的是两件事。
+	DelegateTerminalAskUnlimited = -1
 )
 
 // DelegateID 一次转交的标识（回执、Wait、Kill、日志都用它）。

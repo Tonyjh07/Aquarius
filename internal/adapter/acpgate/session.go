@@ -451,7 +451,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 		// （与根集同一条口径）。
 		ClientCapabilities: acp.ClientCapabilities{
 			Fs:       acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
-			Terminal: true,
+			Terminal: m.terminalEnabled(),
 		},
 	})
 	cancel()

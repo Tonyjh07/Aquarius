@@ -27,6 +27,12 @@ type delegateConfig struct {
 	// OutsideReadMax 越界读的询问次数（D284）：省略 = 8；-1 = 不限（每次都问）；
 	// 0 = 一次都不问，直接拒并留档。
 	OutsideReadMax *int `json:"outside_read_max,omitempty"`
+	// Terminal 是否申报 terminal 能力（A3）：省略 = 申报；写 false 之后五个 terminal/*
+	// 方法一律 -32601，代理只能自己起 shell——那条路看不见，也审不了。
+	Terminal *bool `json:"terminal,omitempty"`
+	// TerminalAskMax 命令确认的询问次数（A3）：省略 = 8；-1 = 不限；0 = 一次都不问，
+	// 直接拒并留档。与 OutsideReadMax 同构，用户不必学第二套形状。
+	TerminalAskMax *int `json:"terminal_ask_max,omitempty"`
 }
 
 // delegateAgentConfig 一个外部代理的声明（形状照 mcpServers：command + args + env）。
@@ -70,6 +76,16 @@ func (c *fileConfig) delegateOptions(secrets port.Secrets, confirmer port.Confir
 				"n", *n, "min", port.DelegateOutsideReadUnlimited))
 		}
 		opts.OutsideReadAsks = n
+	}
+	if d.Terminal != nil {
+		opts.Terminal = d.Terminal
+	}
+	if n := d.TerminalAskMax; n != nil {
+		if *n < port.DelegateTerminalAskUnlimited {
+			return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_terminal_ask",
+				"n", *n, "min", port.DelegateTerminalAskUnlimited))
+		}
+		opts.TerminalAsks = n
 	}
 
 	seen := map[string]bool{}

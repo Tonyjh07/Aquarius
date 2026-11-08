@@ -57,6 +57,9 @@ type Options struct {
 	// TerminalAsks 命令确认的询问次数（A3）：>0 = 那么多次；0 = 一次都不问（直接拒并
 	// 留档）；负数 = 不限。nil = port.DefaultDelegateTerminalAsks。
 	TerminalAsks *int
+	// Terminal 是否申报 terminal 能力（A3）：nil = 申报。关掉之后 initialize 里不带这个
+	// 能力，五个方法回 -32601——此时代理只能自己起 shell，那条路我们看不见。
+	Terminal *bool
 	// Log 运行日志（D276）：级别 / 上下文 / 事件 / 行动都按 key 给；nil = 丢弃。
 	Log port.Log
 	// LookPath 可执行探测（测试可覆盖）；nil = exec.LookPath。
@@ -136,6 +139,11 @@ func (m *Manager) outsideReadAsks() int {
 		return port.DefaultDelegateOutsideReadAsks
 	}
 	return *m.opts.OutsideReadAsks
+}
+
+// terminalEnabled 本次转交是否申报 terminal 能力。
+func (m *Manager) terminalEnabled() bool {
+	return m.opts.Terminal == nil || *m.opts.Terminal
 }
 
 // terminalAsks 本次生效的命令确认次数（同上）。

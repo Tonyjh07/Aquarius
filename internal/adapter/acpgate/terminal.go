@@ -276,7 +276,7 @@ func (t *terminalTable) countAsk() {
 //
 // 顺序是 校验 → 占额度 → 确认 → 起进程：确认放在起进程之前，拒了就什么都没发生。
 func (c *client) CreateTerminal(ctx context.Context, p acp.CreateTerminalRequest) (acp.CreateTerminalResponse, error) {
-	if err := c.termGate(ctx, p.SessionId); err != nil {
+	if err := c.termGate(ctx, p.SessionId, "terminal/create"); err != nil {
 		return acp.CreateTerminalResponse{}, err
 	}
 	wd, err := c.terminalDir(p.Cwd)
@@ -321,7 +321,7 @@ func (c *client) CreateTerminal(ctx context.Context, p acp.CreateTerminalRequest
 
 // TerminalOutput 当前输出与（已结束时的）退出状态。
 func (c *client) TerminalOutput(ctx context.Context, p acp.TerminalOutputRequest) (acp.TerminalOutputResponse, error) {
-	if err := c.termGate(ctx, p.SessionId); err != nil {
+	if err := c.termGate(ctx, p.SessionId, "terminal/output"); err != nil {
 		return acp.TerminalOutputResponse{}, err
 	}
 	term, ok := c.r.terms.get(p.TerminalId)
@@ -341,7 +341,7 @@ func (c *client) TerminalOutput(ctx context.Context, p acp.TerminalOutputRequest
 // WaitForTerminalExit 等命令结束。三个出口：进程退出、请求 ctx 取消、本次转交被停——
 // 少了最后一个，代理不发 cancel 时我们会永远挂着。
 func (c *client) WaitForTerminalExit(ctx context.Context, p acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error) {
-	if err := c.termGate(ctx, p.SessionId); err != nil {
+	if err := c.termGate(ctx, p.SessionId, "terminal/wait_for_exit"); err != nil {
 		return acp.WaitForTerminalExitResponse{}, err
 	}
 	term, ok := c.r.terms.get(p.TerminalId)
@@ -367,7 +367,7 @@ func (c *client) WaitForTerminalExit(ctx context.Context, p acp.WaitForTerminalE
 
 // KillTerminal 杀进程树，但**不释放**：之后仍要能取输出与退出码（kimi 就是这么用的）。
 func (c *client) KillTerminal(ctx context.Context, p acp.KillTerminalRequest) (acp.KillTerminalResponse, error) {
-	if err := c.termGate(ctx, p.SessionId); err != nil {
+	if err := c.termGate(ctx, p.SessionId, "terminal/kill"); err != nil {
 		return acp.KillTerminalResponse{}, err
 	}
 	term, ok := c.r.terms.get(p.TerminalId)
@@ -380,7 +380,7 @@ func (c *client) KillTerminal(ctx context.Context, p acp.KillTerminalRequest) (a
 
 // ReleaseTerminal 释放：活着的先杀，再清掉缓冲；之后这个 id 一律「不认识」。
 func (c *client) ReleaseTerminal(ctx context.Context, p acp.ReleaseTerminalRequest) (acp.ReleaseTerminalResponse, error) {
-	if err := c.termGate(ctx, p.SessionId); err != nil {
+	if err := c.termGate(ctx, p.SessionId, "terminal/release"); err != nil {
 		return acp.ReleaseTerminalResponse{}, err
 	}
 	term, ok := c.r.terms.drop(p.TerminalId)
@@ -391,8 +391,14 @@ func (c *client) ReleaseTerminal(ctx context.Context, p acp.ReleaseTerminalReque
 	return acp.ReleaseTerminalResponse{}, nil
 }
 
-// termGate terminal 请求的共同前置（与 fsGate 同口径，只是没有路径参数）。
-func (c *client) termGate(ctx context.Context, sid acp.SessionId) error {
+// termGate terminal 请求的共同前置：没申报就是方法不存在（与 fsGate 同口径，只是没有
+// 路径参数）。
+func (c *client) termGate(ctx context.Context, sid acp.SessionId, method string) error {
+	if !c.m.terminalEnabled() {
+		// 关掉之后仍可能收到：能力是给代理看的，它不看也照发。回 -32601 与「没申报」
+		// 一致，别让它以为换个参数就能过。
+		return acp.NewMethodNotFound(method)
+	}
 	if c.r.stopKind() != stopNone || ctx.Err() != nil {
 		return acp.NewRequestCancelled(map[string]any{"error": "the delegation is stopping"})
 	}

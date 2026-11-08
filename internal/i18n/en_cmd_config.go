@@ -115,6 +115,8 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.config.err.delegate_negative": `delegate.max_concurrent / max_total cannot be negative`,
 	"cmd.config.err.delegate_outside_read": `delegate.outside_read_max must be at least {min} ` +
 		`(-1 = unlimited, 0 = never ask, deny instead): {n}`,
+	"cmd.config.err.delegate_terminal_ask": `delegate.terminal_ask_max must be at least {min} ` +
+		`(-1 = unlimited, 0 = never ask, deny instead): {n}`,
 	"cmd.config.err.delegate_name_missing":    `delegate.agents[{i}]: missing name`,
 	"cmd.config.err.delegate_name_dup":        `delegate.agents[{i}]: name "{name}" is duplicated`,
 	"cmd.config.err.delegate_command_missing": `delegate.agents[{i}] ({name}): missing command`,

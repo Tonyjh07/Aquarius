@@ -3,6 +3,7 @@ package acpgate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -366,6 +367,64 @@ func TestTerminalCallbacks(t *testing.T) {
 	text := port.DelegateReportText(task.ID, run)
 	if !strings.Contains(text, "Commands run through this session: ") || !strings.Contains(text, "one two") {
 		t.Fatalf("报告缺命令清单：\n%s", text)
+	}
+}
+
+// TestTerminalCapabilitySwitch 关掉之后：initialize 里没有 terminal，五个方法回 -32601
+// （与「没申报」一致，代理换个参数也过不去）。
+func TestTerminalCapabilitySwitch(t *testing.T) {
+	root := t.TempDir()
+	conf := &fakeConfirmer{allow: true}
+	off := false
+
+	m := newManager(t, "caps", func(o *Options) {
+		o.Home = root
+		o.Confirmer = conf
+		o.Terminal = &off
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "what do you support"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if strings.Contains(run.Report, "terminal") {
+		t.Fatalf("关掉之后不该申报 terminal：%s", run.Report)
+	}
+	if !strings.Contains(run.Report, "readTextFile") {
+		t.Fatalf("fs 仍应申报（两个开关互不影响）：%s", run.Report)
+	}
+
+	offMgr := New(Options{Confirmer: conf, Terminal: &off})
+	t.Cleanup(offMgr.Close)
+	c := newTestClient(t, offMgr, root)
+	_, err = c.CreateTerminal(context.Background(), acp.CreateTerminalRequest{
+		SessionId: "sess-1", Command: echoCmd,
+	})
+	var re *acp.RequestError
+	if !errors.As(err, &re) || re.Code != -32601 {
+		t.Fatalf("关掉之后应是方法不存在，got %v", err)
+	}
+	if conf.calls != 0 {
+		t.Fatalf("关掉之后不该问用户：calls = %d", conf.calls)
+	}
+}
+
+// TestTerminalCapabilityDefault 缺省申报：报告里能看到 terminal 为 true。
+func TestTerminalCapabilityDefault(t *testing.T) {
+	m := newManager(t, "caps", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "what do you support"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if !strings.Contains(run.Report, `"terminal":true`) {
+		t.Fatalf("缺省应申报 terminal：%s", run.Report)
 	}
 }
 

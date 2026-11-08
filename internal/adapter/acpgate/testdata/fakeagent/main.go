@@ -17,6 +17,7 @@
 //	           不带这个字段就回 -32602（验证客户端确实发出去了）
 //	fs         按 fs 模式发五个文件请求（读切片 / 写新文件建父目录 / 越界写 / 越界读 /
 //	           写执行控制文件），把每个应答原样编进正文——断言全在测试里做
+//	caps       把 initialize 收到的 clientCapabilities 原样编进正文（验证申报了什么）
 //	terminal   把五个 terminal/* 方法各走一遍（建两条命令、取输出、等退出、杀、释放，
 //	           再取一次已释放的 id），应答原样编进正文；命令路径由 FAKE_AGENT_CMD 给
 //	delayed    先报一句进度，等 FAKE_AGENT_DELAY_MS（缺省 8000）毫秒再交报告——手验
@@ -59,6 +60,8 @@ var (
 	cancelOnce sync.Once
 	// sessCwd session/new 给的 cwd：fs 模式下用它拼路径（真代理也是这么来的）。
 	sessCwd string
+	// clientCaps initialize 收到的客户端能力（caps 模式下原样回吐）。
+	clientCaps json.RawMessage
 )
 
 func send(v any) {
@@ -140,6 +143,11 @@ func handleNotification(m rpcMsg) {
 func handleRequest(mode string, m rpcMsg) {
 	switch m.Method {
 	case "initialize":
+		var ip struct {
+			ClientCapabilities json.RawMessage `json:"clientCapabilities"`
+		}
+		_ = json.Unmarshal(m.Params, &ip)
+		clientCaps = ip.ClientCapabilities
 		switch mode {
 		case "auth":
 			reply(m.ID, map[string]any{
@@ -274,6 +282,10 @@ func handleRequest(mode string, m rpcMsg) {
 			}
 			raw, _ := json.Marshal(out)
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": string(raw)}})
+			reply(m.ID, map[string]any{"stopReason": "end_turn"})
+
+		case "caps":
+			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": string(clientCaps)}})
 			reply(m.ID, map[string]any{"stopReason": "end_turn"})
 
 		case "terminal":
