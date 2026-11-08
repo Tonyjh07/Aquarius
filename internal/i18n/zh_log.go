@@ -11,7 +11,7 @@ var zhLogTexts = map[string]string{
 	// 处置（跨上下文复用）
 	"log.act.skip":                 "已跳过",
 	"log.act.skip_missing":         "已跳过缺失引用，其余模块照常展开",
-	"log.act.skip_key_this_run":    "本次启动跳过它",
+	"log.act.skip_key_this_run":    "本次启动跳过这个密钥",
 	"log.act.start_without_key":    "没有密钥也照常启动，发消息时才报因",
 	"log.act.fallback_skipped":     "已跳过这条降级链，主链照常启动",
 	"log.act.stderr_only":          "本次只输出到 stderr",
@@ -23,7 +23,7 @@ var zhLogTexts = map[string]string{
 	"log.act.keep_raw":             "保留原文，照常识别",
 	"log.act.dropped":              "已丢弃这条回执，对话照常",
 	"log.act.deferred_next_start":  "留到下次启动再处理",
-	"log.act.plaintext_used":       "明文照用，config 里留着它",
+	"log.act.plaintext_used":       "明文照用，config 里保留原值",
 	"log.act.exit":                 "本次启动以失败退出",
 	"log.act.deny":                 "按拒绝处理，本次不连接",
 	"log.act.config_kept":          "以 config 条目为准",

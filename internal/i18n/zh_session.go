@@ -23,14 +23,14 @@ var zhSessionTexts = map[string]string{
 	"session.unattended.usage_state": "用法: /unattended [on|off]（当前 {state}）",
 	"session.unattended.already":     "无人值守已是 {state}",
 	"session.unattended.off":         "无人值守已关闭（越界操作恢复逐次确认；已写回 config）",
-	"session.unattended.on": "无人值守已开启（已写回 config，工具链路即时生效）\n" +
+	"session.unattended.on": "无人值守已开启（已写回 config，工具调用立即生效）\n" +
 		"权限边界不变：模型发起的越界操作会被当场拒绝并说明，不再弹确认等人；" +
 		"你自己输入的命令（删除会话等）与插件授权照常询问。与 -yes 相反——那个是自动放行。",
 
 	// /permission
 	"usage.permission":              "用法: /permission [read-only|strict|permissive|full-access]",
 	"session.permission.already":    "权限等级已是 {level}",
-	"session.permission.switched":   "权限等级已切换为 {level}（已写回 config；工具链路即时生效）",
+	"session.permission.switched":   "权限等级已切换为 {level}（已写回 config；工具调用立即生效）",
 	"session.permission.head":       "当前权限等级: {level}（默认 strict）",
 	"session.permission.sandbox":    "特权目录: {path}",
 	"session.permission.matrix":     "免确认矩阵（矩阵之外的操作一律逐次确认）:",
@@ -40,7 +40,7 @@ var zhSessionTexts = map[string]string{
 	"session.permission.tools_free": "工具全免确认",
 
 	// /memory
-	"usage.memory":          "用法: /memory [会话id前缀]（缺省打开全局记忆文件）",
+	"usage.memory":          "用法: /memory [会话 ID 前缀]（缺省打开全局记忆文件）",
 	"session.memory.opened": "已用系统编辑器打开 {path}（保存后下次读取即生效）",
 
 	// /usage

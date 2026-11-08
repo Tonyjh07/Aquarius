@@ -1,5 +1,5 @@
 # GUI 设计规格（`internal/adapter/uigui`）
-<!-- docs-sync: 2026-11-05 @ 0233b77 -->
+<!-- docs-sync: 2026-11-08 @ dea4be1 -->
 
 > `ui.kind=gui` 那一层壳的实现规格：悬浮球形态、输入栏与转写浮层、主题令牌、多窗宿主、
 > 响应式缩放、气泡菜单。**内核设计不在这里**——领域、端口、应用层与存储见
@@ -649,7 +649,7 @@ Go Mono 等宽面（theme 集合补面，CJK 缺字自动回落）。详见 D65/
   - **数据面**：`uigui.SecretsAdmin`（消费方定义、装配根实现）——`Snapshot()`（含 `Revision` +
     库路径 + 名字/掩码条目）+ `Put` / `Delete` / `Import`（同步动作）；装配根实现 over
     `secretbin.Store`，每写入/删除递增 `Revision`。未接线（`Options.Secrets == nil`）= 只读占位
-    （页面显示占位文案、按钮禁用、动作报「未接线」）。
+    （页面显示占位文案、按钮禁用、动作报「密钥库不可用」）。
 - **形态**：`Decorated(true)` 常规窗——**不接**主窗专属机制：无 ULW 形状位图（常规
   不透明窗）、无位置记忆、不置顶、不拖拽把手；任务栏条目照常
   （`WS_EX_TOOLWINDOW` 只挂主窗 HWND，次窗不参与）。

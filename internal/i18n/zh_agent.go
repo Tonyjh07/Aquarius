@@ -27,7 +27,7 @@ var zhAgentTexts = map[string]string{
 	"model.chain":            "降级链:",
 	"model.no_list":          "（模型服务未返回可用列表，可直接 /model <name> 切换）",
 	"model.list_head":        "可用模型（{n}）:",
-	"model.cost":             "${in}/${out} 每百万token",
+	"model.cost":             "${in}/${out} 每百万 tokens",
 	"model.caps_none":        "（三项均未声明）",
 	"model.list_sep":         "、",
 
@@ -69,7 +69,7 @@ var zhAgentTexts = map[string]string{
 	"think.already":           "原生思考已是 {state}",
 	"think.unwired":           "未配置思考持久化（SessionDeps.Thinking），/think 切换不可用",
 	"think.switched":          "原生思考已切到 {state}（已写回 config，重启沿用）",
-	"think.warn_no_reasoning": "注意：当前模型未声明思考能力，参数仍不会发送（到设置窗「模型服务」里给模型加上 reasoning，或重新探测一次）",
+	"think.warn_no_reasoning": "注意：当前模型未声明思考能力，参数仍不会发送。到设置窗「模型服务」里给模型加上 reasoning，或重新探测一次",
 
 	// /effort
 	"think.effort_only":         "推理档位: {effort}（是否发送由 /think 决定）",
@@ -89,7 +89,7 @@ var zhAgentTexts = map[string]string{
 	"compact.inserted_tokens": "已在 {id} 之前插入摘要（in={in} out={out} tokens）",
 	"compact.no_such_node":    "会话树中没有节点 {id}",
 	"compact.root_target":     "不能在会话根或会话首节点之前插入摘要（其上没有可总结的历史）",
-	"compact.covered":         "该节点之下已被摘要覆盖：新摘要会落在旧摘要之上，水位仍停在旧摘要、不会进入上下文（要重新总结，请把摘要插到旧摘要之后的节点之前）",
+	"compact.covered":         "该节点之下已被摘要覆盖：新摘要会落在旧摘要之上，水位仍停在旧摘要，不会进入上下文。要重新总结，请把摘要插到旧摘要之后的节点之前",
 	"compact.root_no_place":   "会话根节点之前无处可插",
 	"compact.err_insert":      "插入摘要",
 	"compact.retry_notice":    "摘要输出未匹配模板，正在带提醒重试",

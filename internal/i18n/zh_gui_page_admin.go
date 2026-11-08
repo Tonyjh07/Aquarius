@@ -6,16 +6,16 @@ var zhGuiPageAdminTexts = map[string]string{
 	// 工具与 MCP 页
 	"ui.page.tools.section_builtin": "内置工具（开关即时生效，无需重启）",
 	"ui.page.tools.section_mcp":     "MCP 与插件（来源 config / 插件目录）",
-	"ui.page.tools.no_plugins":      "没有已声明的插件（config mcpServers 或 插件目录）",
+	"ui.page.tools.no_plugins":      "没有已声明的插件。在 config 的 mcpServers 里写一条，或把插件放进插件目录。",
 
 	// 外部代理页
 	"ui.page.delegate.section_agents": "清单（config delegate.agents）",
 	"ui.page.delegate.empty": "一个外部代理都没有。用下面的「新增代理」加一条（名字 + 命令行），" +
-		"重启后这里会出现它；没配代理时模型拿不到 delegate* 工具。",
-	"ui.page.delegate.note": "「可用」只探命令在不在 PATH 上，不做握手——启动时挨个拉起代理是" +
-		"拿用户的时间换一张清单；要握手请点条目里的「测试连接」（会真起一个进程，十几秒封顶）。" +
-		"在这里改的都是 config，**重启生效**：转交管理器按启动时的配置装配。" +
-		"保存会把 config.json 整份重写成缩进 JSON——手写的注释与键序不会保留。",
+		"重启后这里会出现这个代理；没配代理时模型拿不到 delegate* 工具。",
+	"ui.page.delegate.note": "「可用」只看命令在不在 PATH 上，不做握手；要看真实握手请点条目里的" +
+		"「测试连接」（会启动一个进程，最多十几秒）。这里改的都是 config，重启生效：" +
+		"转交管理器在启动时按读到的配置初始化。" +
+		"保存会把 config.json 整份重写成缩进 JSON，手写的注释与键序不会保留。",
 	"ui.page.delegate.section_add":  "新增代理",
 	"ui.page.delegate.refresh":      "重新检测",
 	"ui.page.delegate.refresh_hint": "装在别处之后再扫一遍 PATH；不改任何配置",
@@ -33,7 +33,7 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.skills.install":            "安装",
 	"ui.page.skills.pick_file":          "选择文件…",
 	"ui.page.skills.pick_dir":           "选择文件夹…",
-	"ui.page.skills.pick_hint":          "选中路径只填进上面的来源框，再点「安装」才落盘",
+	"ui.page.skills.pick_hint":          "选中路径只填进上面的来源框，再点「安装」才会真正安装",
 	"ui.page.skills.section_dirs":       "技能目录（按顺序查找，同名先命中者生效）",
 	"ui.page.skills.dir_add_label":      "添加目录",
 	"ui.page.skills.dir_add_hint":       "额外技能根（绝对路径）",
@@ -59,7 +59,7 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.characters.source_hint":    "角色卡文件绝对路径（.png / .json / .charx）",
 	"ui.page.characters.import":         "导入",
 	"ui.page.characters.pick_file":      "选择文件…",
-	"ui.page.characters.pick_hint":      "选中路径只填进上面的来源框，再点「导入」才落盘",
+	"ui.page.characters.pick_hint":      "选中路径只填进上面的来源框，再点「导入」才会真正导入",
 	"ui.page.characters.start_chat":     "开始对话",
 	"ui.page.characters.confirm_delete": "确认删除",
 	"ui.page.characters.need_path":      "请先填卡文件路径（或用「选择文件…」）",
@@ -83,7 +83,7 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.chat.max_turns":         "最大轮数",
 	"ui.page.chat.max_turns_hint":    "单次提问的工具调用轮数上限（空 = 保持）",
 	"ui.page.chat.max_ctx":           "上下文上限",
-	"ui.page.chat.max_ctx_hint":      "tokens；自动压缩与截断的预算分母（空 = 保持）",
+	"ui.page.chat.max_ctx_hint":      "tokens；自动压缩与截断按这个值算预算（空 = 保持）",
 	"ui.page.chat.compact":           "压缩阈值",
 	"ui.page.chat.compact_hint":      "{min}–{max}；占用超阈值触发自动压缩（空 = 保持）",
 	"ui.page.chat.tool_chars":        "工具输出上限",
@@ -111,7 +111,7 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.about.open_project":    "打开项目主页",
 	"ui.page.about.copy_link":       "复制链接",
 	"ui.page.about.dev_build":       "开发构建（未注入版本号）",
-	"ui.page.about.no_browser":      "打不开浏览器：平台未接线；可以复制链接后手动打开",
+	"ui.page.about.no_browser":      "打不开浏览器：当前平台不支持；可以复制链接后手动打开",
 	"ui.page.about.open_failed":     "打不开浏览器：{err}；可以复制链接后手动打开",
 	"ui.page.about.opened":          "已在浏览器中打开",
 	"ui.page.about.copied":          "链接已复制",

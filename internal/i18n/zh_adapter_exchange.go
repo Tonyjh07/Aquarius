@@ -6,7 +6,7 @@ var zhAdapterExchangeTexts = map[string]string{
 	// ---- 回执里的丢项与清单（导出侧逐类计数、导入侧逐条说明）----
 	"exchange.io.dropped.missing_blob":        "附件 {count} 个（{names} 不在附件库里）",
 	"exchange.io.dropped.blob_too_large":      "附件 {count} 个（{names} 超过单份 {mb} MB 上限，没有带上）",
-	"exchange.io.dropped.missing_bytes":       "附件 {count} 个（归档里没有它们的字节）",
+	"exchange.io.dropped.missing_bytes":       "附件 {count} 个（归档里没有这些附件的字节）",
 	"exchange.io.dropped.no_blob_store":       "附件 {count} 个（本构建未配置附件库）",
 	"exchange.io.dropped.extra_conversations": "另外 {count} 个会话（一个文件里只导入第 1 个）",
 	"exchange.io.dropped.side_branch":         "旁支上的 {count} 条消息（只导出当前那条链）",

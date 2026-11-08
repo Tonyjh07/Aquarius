@@ -9,7 +9,7 @@ package i18n
 var zhGuiPageCoreTexts = map[string]string{
 
 	// 常规页：Profile 区（分区标题 "Profile" 是配置里的术语，不搬）
-	"ui.page.general.section.profile":    "档案",
+	"ui.page.general.section.profile":    "Profile",
 	"ui.page.general.section.perm":       "权限",
 	"ui.page.general.section.appearance": "外观与呼出",
 	"ui.page.general.section.output":     "输出",
@@ -163,7 +163,7 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.web.from_label":         "借用",
 	"ui.page.web.from_picker":        "借用服务",
 	"ui.page.web.fill":               "填入",
-	"ui.page.web.fill_hint":          "把它的端点与密钥引用抄进本条目，之后可改",
+	"ui.page.web.fill_hint":          "把所选服务的端点与密钥引用抄进本条目，之后可改",
 	"ui.page.web.key_label":          "密钥",
 	"ui.page.web.key_hint":           "secret:名 或明文；留空 = 保持 / 借用",
 	"ui.page.web.country_lang_label": "国家 / 语言",
@@ -175,7 +175,7 @@ var zhGuiPageCoreTexts = map[string]string{
 	// 联网页：密钥框下方的形态说明（值永不回显）
 	"ui.page.web.keynote.saved":    "已存引用 {ref}；留空 = 保持不变",
 	"ui.page.web.keynote.plain":    "当前是明文（启动会警告）；填新值覆盖，留空 = 保持不变",
-	"ui.page.web.keynote.fallback": "留空 = 用「借用」那条的；都没有则按类型回落（brave 用 AQUARIUS_BRAVE_API_KEY，deepseek 搜索用 AQUARIUS_DEEPSEEK_SEARCH_API_KEY、抓取用 _FETCH_）",
+	"ui.page.web.keynote.fallback": "留空 = 用「借用」那条的；都没有就按类型回落：brave 用 AQUARIUS_BRAVE_API_KEY，deepseek 搜索用 AQUARIUS_DEEPSEEK_SEARCH_API_KEY，deepseek 抓取用 AQUARIUS_DEEPSEEK_FETCH_API_KEY",
 
 	// 语音页：识别与合成的分区 / 方式
 	"ui.page.audio.section.asr":        "语音识别（说话转文字）",
@@ -186,7 +186,7 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.audio.tts_service_picker": "语音合成服务",
 	"ui.page.audio.service_label":      "服务",
 	"ui.page.audio.fill":               "填入",
-	"ui.page.audio.fill_hint":          "抄它的端点与密钥引用进本页，之后可改",
+	"ui.page.audio.fill_hint":          "抄所选服务的端点与密钥引用进本页，之后可改",
 
 	// 语音页：端点 / 模型 / 语种
 	"ui.page.audio.endpoint_label":  "端点",
@@ -225,7 +225,7 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.audio.preview_label":         "试听",
 	"ui.page.audio.preview_play":          "播放示例",
 	"ui.page.audio.preview_busy":          "合成中…",
-	"ui.page.audio.preview_text":          "你好，我是 Aquarius。这段声音听起来怎么样？",
+	"ui.page.audio.preview_text":          "你好，这里是 Aquarius。这段声音听起来怎么样？",
 	"ui.page.audio.status.synthesizing":   "正在合成…",
 	"ui.page.audio.status.playing":        "已开始播放",
 	"ui.page.audio.status.preview_failed": "试听失败：{err}",

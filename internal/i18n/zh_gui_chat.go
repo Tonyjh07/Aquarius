@@ -75,7 +75,7 @@ var zhGuiChatTexts = map[string]string{
 	"ui.ask.submit":           "提交",
 
 	// ── 确认（confirm_ui.go 的动作提示 / history_confirm.go 的跨窗确认卡）
-	"ui.confirm.elevate":            "提升权限 → {level}",
+	"ui.confirm.elevate":            "把权限提到 {level}",
 	"ui.confirm.deny_with_reason":   "拒绝：{reason}",
 	"ui.confirm.needed":             "需要确认",
 	"ui.confirm.shared_note":        "主窗与本窗显示的是同一次确认，任一处作答即可。",
@@ -91,14 +91,14 @@ var zhGuiChatTexts = map[string]string{
 
 	// ── 图片（imgview.go / imgthumb.go / paste.go）
 	"ui.img.placeholder":        "图片",
-	"ui.img.err_unreadable":     "读不到这张图",
-	"ui.img.err_read_failed":    "读取图片失败",
+	"ui.img.err_unreadable":     "读不到这张图，请重新选择或粘贴",
+	"ui.img.err_read_failed":    "读取图片失败，请重试",
 	"ui.img.err_not_image":      "这个文件不是可识别的图片",
 	"ui.img.err_too_large":      "图片过大（{w}×{h}），暂不支持预览",
-	"ui.img.err_decode":         "图片解码失败",
+	"ui.img.err_decode":         "图片解码失败，换一张试试",
 	"ui.img.view_hint":          "滚轮缩放 · 拖动平移 · Esc 关闭",
 	"ui.img.decoding":           "解码中…",
-	"ui.img.no_image":           "没有可显示的图",
+	"ui.img.no_image":           "没有可显示的图片",
 	"ui.img.too_large":          "图片过大（{mb} MB，上限 {limit}），未添加",
 	"ui.img.too_large_named":    "图片过大（{mb} MB，上限 {limit}），未添加：{name}",
 	"ui.img.paste_read_failed":  "读取剪贴板图片失败：{err}",
@@ -136,12 +136,12 @@ var zhGuiChatTexts = map[string]string{
 	"ui.history.row_meta":    "{time} · {n} 条",
 
 	"ui.history.export_selected_title": "导出选中的会话",
-	"ui.history.select_empty":          "没有会话可选",
+	"ui.history.select_empty":          "没有会话可选（先新建或导入一个）",
 	"ui.history.select_all":            "全选",
-	"ui.history.select_none":           "全不选",
+	"ui.history.select_none":           "取消全选",
 	"ui.history.selected_count":        "已选 {n} 个",
 
-	"ui.history.summary_hint":        "插在 {id} 之前；它之上的历史此后不再回传。「插入」用你写的正文，「用模型总结以上历史」让模型来写。",
+	"ui.history.summary_hint":        "插在 {id} 之前；这个节点之上的历史此后不再回传。「插入」用你写的正文，「用模型总结以上历史」让模型来写。",
 	"ui.history.summary_by_model":    "用模型总结以上历史",
 	"ui.history.summary_insert":      "插入",
 	"ui.history.summary_placeholder": "写摘要正文…",

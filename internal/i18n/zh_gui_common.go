@@ -4,8 +4,8 @@ package i18n
 // 菜单与浮层都取这一族，所以它是全 GUI 的**唯一**出处——同一个「取消」不要在各页各写一条，
 // 否则改一处口径，另一处还留着旧说法。
 //
-// 只收「脱离语境也成立」的词与短句。「未接线（只读占位）」是五个页签共用的空态行，五处各写一条
-// 会变成五个说法；带专属前缀的（「密钥库未接线」）有额外语境，仍留在各自的区域表里。
+// 只收「脱离语境也成立」的词与短句。「当前不可用（只读占位）」是五个页签共用的空态行，五处各写一条
+// 会变成五个说法；带专属前缀的（「密钥库不可用」）有额外语境，仍留在各自的区域表里。
 var zhGuiCommonTexts = map[string]string{
 
 	// 按钮与动作
@@ -29,7 +29,7 @@ var zhGuiCommonTexts = map[string]string{
 	"ui.common.post_dropped": "界面正忙，这条操作没投出去，请再点一次",
 	"ui.common.none":         "无",
 	"ui.common.unset":        "未设",
-	"ui.common.unwired":      "未接线（只读占位）",
+	"ui.common.unwired":      "当前不可用（只读占位）",
 	// ui.common.list_sep 列表分隔符：界面里拼「A、B、C」用，别在源码里写死（D275 口径）。
 	"ui.common.list_sep": "、",
 }

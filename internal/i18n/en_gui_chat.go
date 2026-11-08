@@ -135,7 +135,7 @@ var enGuiChatTexts = map[string]string{
 	"ui.history.row_meta":    "{time} · {n} messages",
 
 	"ui.history.export_selected_title": "Export selected sessions",
-	"ui.history.select_empty":          "No sessions to select",
+	"ui.history.select_empty":          "No sessions to select (create or import one first)",
 	"ui.history.select_all":            "Select all",
 	"ui.history.select_none":           "Select none",
 	"ui.history.selected_count":        "{n} selected",

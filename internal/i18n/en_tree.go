@@ -17,7 +17,7 @@ var enTreeTexts = map[string]string{
 
 	// /new、/list、/switch
 	"tree.new.done":    "Created conversation {id}",
-	"tree.list.empty":  "(no conversations)",
+	"tree.list.empty":  "(no conversations yet; /new starts one)",
 	"tree.list.count":  "{n} msgs",
 	"tree.switch.done": "Switched to conversation {id}",
 
@@ -88,7 +88,7 @@ var enTreeTexts = map[string]string{
 
 	// /reparent
 	"reparent.done":          "Reparented: {n} nodes now hang under {parent} (/reparent --undo reverses it)",
-	"reparent.done_pad":      "; the target is a pad, so it drops to a regular node and its version group changes",
+	"reparent.done_pad":      "; the new parent is an inserted summary node, so it becomes a regular node and its version group changes",
 	"reparent.in_edit":       " (tree edit mode: saved together on exit)",
 	"reparent.kind.move":     "reparent",
 	"reparent.kind.transfer": "transfer",

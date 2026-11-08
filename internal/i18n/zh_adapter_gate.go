@@ -9,8 +9,8 @@ var zhAdapterGateTexts = map[string]string{
 	// ---- secretbin：本机加密密钥库（D151/D161）。错误只带名字与路径，绝不回显密钥值。 ----
 	"secret.err.key_missing":        "缺少密钥文件 {path}（本机换过 profile、或文件被单独拷走）",
 	"secret.err.key_read":           "读取密钥文件 {path}",
-	"secret.err.key_length":         "密钥文件 {path} 长度异常（{got} 字节，应为 {want}）",
-	"secret.err.key_length_plain":   "密钥文件 {path} 长度异常",
+	"secret.err.key_length":         "密钥文件 {path} 长度不对（{got} 字节，应为 {want}）",
+	"secret.err.key_length_plain":   "密钥文件 {path} 长度不对",
 	"secret.err.key_create":         "创建密钥文件 {path}",
 	"secret.err.key_write":          "写入密钥文件 {path}",
 	"secret.err.key_close":          "关闭密钥文件 {path}",
@@ -91,7 +91,7 @@ var zhAdapterGateTexts = map[string]string{
 	"tool.label.job_list":       "任务列表",
 	"tool.label.job_status":     "任务状态",
 	"tool.label.job_logs":       "任务日志",
-	"tool.label.job_kill":       "结束任务",
+	"tool.label.job_kill":       "终止任务",
 	"tool.label.window_list":    "窗口列表",
 	"tool.label.screen_capture": "屏幕截图",
 	"tool.label.watch_start":    "开始观察",
@@ -103,7 +103,7 @@ var zhAdapterGateTexts = map[string]string{
 	"tool.label.skill":          "载入技能",
 	"tool.label.delegate":       "转交外部代理",
 	"tool.label.delegate_wait":  "等待转交",
-	"tool.label.delegate_kill":  "叫停转交",
+	"tool.label.delegate_kill":  "终止转交",
 
 	// ---- acpgate：外部代理清单的不可用原因、无人应答的拒绝原因、权限确认对话框正文。 ----
 	"acp.note.disabled":       "已停用（delegate.agents 里 enabled=false）",
@@ -113,13 +113,13 @@ var zhAdapterGateTexts = map[string]string{
 	"acp.deny.no_confirmer":   "本构建没有配置确认器",
 	"acp.deny.user_refused":   "用户拒绝",
 	"acp.prompt.head":         "外部代理「{agent}」请求执行一个操作：",
-	"acp.prompt.foot":         "该代理有它自己的文件与命令访问；批准 = 允许它按自己的判断动手。",
+	"acp.prompt.foot":         "该代理有自己的文件与命令访问权限；批准即表示同意代理按自己的判断动手。",
 	// fs 越界与控制文件（A2）：三句都要说清「它要碰哪里」与「为什么问你」。
-	"acp.confirm.read_outside":  "外部代理「{agent}」要读会话范围之外的文件：\n  {path}\n\n它自己的 shell 本来也读得到，这里问一次是为了让这份访问留痕。",
-	"acp.confirm.write_outside": "外部代理「{agent}」要写会话范围之外的文件：\n  {path}\n\n批准 = 允许它按自己的判断改这个文件。",
+	"acp.confirm.read_outside":  "外部代理「{agent}」要读会话范围之外的文件：\n  {path}\n\n代理自己的 shell 本来也读得到，这里问一次是为了让这份访问留痕。",
+	"acp.confirm.write_outside": "外部代理「{agent}」要写会话范围之外的文件：\n  {path}\n\n批准即允许代理按自己的判断改这个文件。",
 	"acp.confirm.control_file":  "外部代理「{agent}」要写一个执行控制类文件（{rule}）：\n  {path}\n\n这类文件能改变「之后谁会跑起来」（版本控制钩子、编辑器或代理的设置、MCP 配置），所以单独问一次。",
 	// 命令确认（A3）：命令、目录、环境变量三者都要出现——策略匹配的是三者，不是命令名。
-	"acp.confirm.terminal":     "外部代理「{agent}」要执行一条命令：\n  {command}\n目录：{cwd}\n\n命令按你的身份运行，由 Aquarius 代它起进程；批准 = 允许它整条跑完。",
+	"acp.confirm.terminal":     "外部代理「{agent}」要执行一条命令：\n  {command}\n目录：{cwd}\n\n命令按你的身份运行，进程由 Aquarius 代起；批准即允许整条命令跑完。",
 	"acp.confirm.terminal_env": "环境变量：{env}",
 	// 连通性探测（A1「测试连接」）：三类失败要分开，用户能据此改对地方。
 	"acp.probe.err.not_found": "命令不在 PATH 上",
@@ -155,7 +155,7 @@ var zhAdapterGateTexts = map[string]string{
 	"plugin.host.status_ungranted":     "授权被拒绝或缺少确认器（fail-closed）",
 	"plugin.host.status_revoked_grant": "能力已撤销并停用（再启用即重走确认）",
 	"plugin.host.status_revoked_trust": "信任已撤销（下次启用重新确认）",
-	"plugin.host.trust_prompt":         "插件「{name}」来自插件目录（{source}），本次启动要运行它？\n启动方式：{launch}",
+	"plugin.host.trust_prompt":         "插件「{name}」来自插件目录（{source}），本次启动要运行这个插件？\n启动方式：{launch}",
 	"plugin.host.grant_prompt":         "插件「{name}」请求能力「{cap}」，允许？",
 	"plugin.host.crash_limit":          "崩溃重启超限（{n} 次）: {err}",
 	"plugin.host.err_unknown":          "未声明的插件「{name}」（既不在 config mcpServers 也无 plugin.json）",

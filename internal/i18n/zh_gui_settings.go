@@ -47,7 +47,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.form.unspecified":  "（不指定）",
 
 	// ── 保存流与表单校验（settings_actions.go）：反馈文案与就地拦截的报错。
-	"ui.settings.act.not_wired":      "设置窗未接线（只读占位）",
+	"ui.settings.act.not_wired":      "设置窗当前不可用（只读占位）",
 	"ui.settings.act.save_failed":    "保存失败：{err}",
 	"ui.settings.act.saved":          "已保存",
 	"ui.settings.act.saved_model":    "已保存（模型名经 /model 热切换）",
@@ -74,7 +74,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.err.fetch_timeout": "抓取超时须为 {min}–{max} 秒的整数",
 
 	// ── profile 区与管理动作（settings_admin_actions.go）。
-	"ui.settings.profile.not_wired":   "profile 管理未接线",
+	"ui.settings.profile.not_wired":   "profile 管理不可用",
 	"ui.settings.profile.need_name":   "请先填写 profile 名",
 	"ui.settings.profile.unknown_act": "未知动作",
 	"ui.settings.profile.act.create":  "新建",
@@ -86,7 +86,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.profile.switched":    "已切换 profile → {name}（重启生效）",
 
 	// ── provider 编辑区（settings_admin_actions.go / settings_provider_form.go）。
-	"ui.settings.prov.not_wired":        "provider 编辑未接线",
+	"ui.settings.prov.not_wired":        "provider 编辑不可用",
 	"ui.settings.prov.need_one":         "至少保留一个 provider",
 	"ui.settings.prov.bad_cost":         "模型 \"{model}\" 的单价须为非负数字（每百万 token，留空 = 不声明）",
 	"ui.settings.prov.apply_failed":     "应用失败：{err}",
@@ -106,11 +106,11 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.prov.fetch_empty":      "服务端未返回任何模型",
 	"ui.settings.prov.fetch_all_known":  "服务端返回 {total} 个模型，都已在列表中",
 	"ui.settings.prov.fetch_added":      "已补入 {added} 个模型（共 {total} 个，新行默认未启用）",
-	"ui.settings.prov.summary":          "{name} · {models} 个模型 · {keys} 把钥匙",
+	"ui.settings.prov.summary":          "{name} · {models} 个模型 · {keys} 个密钥",
 	"ui.settings.prov.summary_primary":  " · ★ 主",
 
 	// ── 密钥库页（settings_secrets.go）。
-	"ui.settings.sec.not_wired":          "密钥库未接线（只读占位）",
+	"ui.settings.sec.not_wired":          "密钥库不可用（只读占位）",
 	"ui.settings.sec.need_name":          "请填写密钥名",
 	"ui.settings.sec.need_value":         "请填写密钥值（要清掉某条请用该行「删除」）",
 	"ui.settings.sec.put_failed":         "存入失败：{err}",
@@ -173,7 +173,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.dlg.env_hint":       "一行一个 KEY=VALUE；值可写 secret:<名>",
 	"ui.settings.dlg.env_hint_keys":  "一行一个 KEY=VALUE；值可写 secret:<名>（已存：{keys}）",
 	"ui.settings.dlg.workdir_label":  "工作目录",
-	"ui.settings.dlg.workdir_hint":   "子进程起点（绝对路径；留空 = 家目录）。不是围栏",
+	"ui.settings.dlg.workdir_hint":   "子进程的起点（绝对路径；留空 = 家目录）这个目录不限制代理能访问哪些路径",
 	"ui.settings.dlg.more_items":     " 等 {n} 个",
 	"ui.settings.dlg.edit":           "编辑",
 	"ui.settings.dlg.collapse":       "收起",

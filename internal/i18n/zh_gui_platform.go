@@ -40,12 +40,12 @@ var zhGuiPlatformTexts = map[string]string{
 	// 打开链接
 	"ui.platform.url.empty":      "链接为空",
 	"ui.platform.url.no_opener":  "本机没有 {cmd}，请手动打开链接",
-	"ui.platform.url.not_opened": "系统未打开链接（错误码 {code}）",
+	"ui.platform.url.not_opened": "系统没能打开链接（错误码 {code}），可以复制链接后手动打开",
 
 	// 热键配置校验（设置窗填错时显示在那一行下面）
-	"ui.platform.hotkey.need_combo":       "需要修饰键+键（如 Alt+A）:「{raw}」",
-	"ui.platform.hotkey.unknown_modifier": "未知修饰键「{mod}」:「{raw}」",
-	"ui.platform.hotkey.need_modifier":    "至少需要一个修饰键:「{raw}」",
+	"ui.platform.hotkey.need_combo":       "需要修饰键加键（如 Alt+A）：「{raw}」",
+	"ui.platform.hotkey.unknown_modifier": "未知修饰键「{mod}」：「{raw}」",
+	"ui.platform.hotkey.need_modifier":    "至少需要一个修饰键：「{raw}」",
 	"ui.platform.hotkey.unsupported_key":  "不支持的键「{key}」",
 
 	// 功能降级提示与功能名

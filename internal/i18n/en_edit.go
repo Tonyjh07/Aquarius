@@ -138,11 +138,11 @@ var enEditTexts = map[string]string{
 	"inject.queue_full":       "the injection queue is full (retry later)",
 	"inject.empty":            "the injected content is empty",
 	"inject.invalid":          "the injected content is invalid",
-	"inject.announce":         "present the landed injection",
-	"inject.land":             "land the injection",
-	"inject.elsewhere_load":   "read conversation {id} for an off-focus landing",
-	"inject.elsewhere_append": "land off-focus in conversation {id}",
-	"inject.elsewhere_save":   "save conversation {id} after an off-focus landing",
+	"inject.announce":         "show the injected content",
+	"inject.land":             "write the injection",
+	"inject.elsewhere_load":   "read target conversation {id}",
+	"inject.elsewhere_append": "write to target conversation {id}",
+	"inject.elsewhere_save":   "save target conversation {id}",
 
 	// /respond
 	"respond.root":      "cannot generate a response at the conversation root (the root is the conversation itself and has no context to continue)",

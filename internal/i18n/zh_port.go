@@ -19,8 +19,8 @@ var zhPortTexts = map[string]string{
 	// 有损说明（无损的 aqx 没有这一条）
 	"port.fmt.chatgpt.loss":     "附件只留一条说明、思考与工具调用不带、注入节点降级为 system、消息的模型/用量等元数据不带",
 	"port.fmt.openai.loss":      "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system",
-	"port.fmt.sillytavern.loss": "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system；对方的世界书/正则/作者注不装",
-	"port.fmt.openwebui.loss":   "只认不写：要喂 Open WebUI 用 chatgpt 那份",
+	"port.fmt.sillytavern.loss": "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system；对方的世界书、正则与作者注不会带过来",
+	"port.fmt.openwebui.loss":   "只读不写：要供给 Open WebUI，请用 chatgpt 那份",
 
 	// 注入来源的友好名
 	"port.src.unknown":     "未知来源",

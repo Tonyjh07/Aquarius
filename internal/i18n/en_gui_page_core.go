@@ -170,7 +170,7 @@ var enGuiPageCoreTexts = map[string]string{
 	// Web page: key state note under the key box (values are never shown)
 	"ui.page.web.keynote.saved":    "stored reference {ref}; empty = keep unchanged",
 	"ui.page.web.keynote.plain":    "currently plaintext (warned at startup); enter a new value to overwrite, empty = keep unchanged",
-	"ui.page.web.keynote.fallback": "empty = use the borrowed entry's; if there is none, fall back by type (brave uses AQUARIUS_BRAVE_API_KEY, deepseek search uses AQUARIUS_DEEPSEEK_SEARCH_API_KEY, fetch uses _FETCH_)",
+	"ui.page.web.keynote.fallback": "empty = use the borrowed entry's; if there is none, fall back by type: brave uses AQUARIUS_BRAVE_API_KEY, deepseek search uses AQUARIUS_DEEPSEEK_SEARCH_API_KEY, deepseek fetch uses AQUARIUS_DEEPSEEK_FETCH_API_KEY",
 
 	// Audio page: sections and methods
 	"ui.page.audio.section.asr":        "Speech recognition (speech to text)",

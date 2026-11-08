@@ -123,7 +123,7 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.delegate_default_multi": `delegate.agents 里有多条 default（{n} 条）：只能有一条`,
 
 	"cmd.config.err.delegate_option_empty": `delegate.agents[{i}]（{name}）：options 里有空键或空值` +
-		`（键是代理的配置项名，值是它列出的候选之一）`,
+		`（键是代理的配置项名，值是代理列出的候选之一）`,
 
 	// config_audio.go：语音
 	"cmd.config.err.input_language":     `input.language="{lang}" 仅支持 auto | zh | en`,
@@ -196,13 +196,12 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.asm.err.skill_installer":  `技能安装面`,
 	"cmd.asm.err.characters_dir":   `角色卡目录`,
 	"cmd.asm.notice.truncate":      `硬保底截断：上下文超预算，已省略 {n} 条最旧消息`,
-	"cmd.asm.notice.fallback": `模型服务 {from} 网络类错误，本轮已降级到 {to}` +
-		`（Q5：状态行一次性提示）`,
+	"cmd.asm.notice.fallback":      `模型服务 {from} 出现网络类错误，本轮已降级到 {to}`,
 
-	"cmd.asm.err.voice_input_unwired": `语音输入未装配`,
+	"cmd.asm.err.voice_input_unwired": `语音输入不可用`,
 	"cmd.asm.err.voice_preview_unconfigured": `语音合成未配置：先在「语音」页选服务与模型` +
 		`（保存后重启生效）`,
-	"cmd.asm.err.voice_player_unwired": `语音播放未装配`,
+	"cmd.asm.err.voice_player_unwired": `语音播放不可用`,
 	"cmd.asm.err.read_synth_audio":     `读取合成音频`,
 
 	"cmd.asm.err.mkdir_memory":       `创建记忆目录`,
@@ -219,5 +218,5 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.asm.err.start_process":  `启动 {cmd}`,
 
 	"cmd.asm.err.write_back_config": `写回 config`,
-	"cmd.asm.err.env_unset":         `环境变量 {name} 未设置（config 的 api_key 引用它）`,
+	"cmd.asm.err.env_unset":         `环境变量 {name} 未设置（config 的 api_key 引用了这个变量）`,
 }

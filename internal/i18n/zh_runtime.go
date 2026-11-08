@@ -83,9 +83,9 @@ var zhRuntimeTexts = map[string]string{
 	"delegate.state.unavailable": "不可用",
 	"delegate.name.titled":       "（{title}）",
 	"delegate.name.versioned":    "（{title} {version}）",
-	"delegate.killed":            "已叫停转交 {id}",
+	"delegate.killed":            "已终止转交 {id}",
 	"delegate.empty_hint": "未配置任何外部代理。在 config.json 的 delegate.agents 里写一条（command + 可选 args/env/workdir），" +
-		"并确认该命令在 PATH 上；模型这时不会有 delegate 工具。",
+		"并确认该命令在 PATH 上；没配代理时，模型拿不到 delegate 工具。",
 
 	// 转交收尾观察者（D261）：销账与注入失败
 

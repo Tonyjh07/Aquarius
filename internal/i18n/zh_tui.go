@@ -33,7 +33,7 @@ var zhTuiTexts = map[string]string{
 	"tui.hint.cancel":       "Ctrl+C 取消",
 
 	// TUI 通知
-	"tui.notice.pending_undone": "已撤销待发: {preview}",
+	"tui.notice.pending_undone": "已撤销待发：{preview}",
 	"tui.notice.buffer_full":    "输入缓冲已满，此行未执行",
 
 	// 附件占位（终端、TUI、GUI 共用）

@@ -18,7 +18,7 @@ var enSessionTexts = map[string]string{
 	"session.unattended.usage_state": "Usage: /unattended [on|off] (currently {state})",
 	"session.unattended.already":     "Unattended is already {state}",
 	"session.unattended.off":         "Unattended is off (out-of-bounds operations ask again one by one; written back to config)",
-	"session.unattended.on": "Unattended is on (written back to config, effective immediately on the tool path)\n" +
+	"session.unattended.on": "Unattended is on (written back to config; takes effect immediately for tool calls)\n" +
 		"The permission boundary is unchanged: out-of-bounds operations the model starts are refused on the spot " +
 		"with a reason instead of waiting for approval; commands you type yourself (deleting a conversation, " +
 		"for instance) and plugin grants still ask. The opposite of -yes, which approves everything.",
@@ -26,7 +26,7 @@ var enSessionTexts = map[string]string{
 	// /permission
 	"usage.permission":              "Usage: /permission [read-only|strict|permissive|full-access]",
 	"session.permission.already":    "Permission level is already {level}",
-	"session.permission.switched":   "Permission level switched to {level} (written back to config; effective immediately on the tool path)",
+	"session.permission.switched":   "Permission level switched to {level} (written back to config; takes effect immediately for tool calls)",
 	"session.permission.head":       "Current permission level: {level} (strict by default)",
 	"session.permission.sandbox":    "Privileged directory: {path}",
 	"session.permission.matrix":     "Pre-approved matrix (anything outside it is confirmed case by case):",

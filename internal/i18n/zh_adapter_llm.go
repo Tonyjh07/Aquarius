@@ -100,7 +100,7 @@ var zhAdapterLLMTexts = map[string]string{
 	"asr.whisper.err_wav_only":         "asr: 本地转写只支持 WAV 录音",
 	"asr.whisper.err_chunk_truncated":  "asr: WAV 的「{id}」块被截断",
 	"asr.whisper.err_fmt_truncated":    "asr: WAV 的 fmt 块被截断",
-	"asr.whisper.err_wav_format":       "asr: 本地转写要 16bit 单声道 {rate}Hz 的 WAV（当前 格式 {tag} / {channels} 声道 / {actual}Hz / {bits}bit）",
+	"asr.whisper.err_wav_format":       "asr: 本地转写要 16bit 单声道 {rate}Hz 的 WAV（当前格式 {tag} / {channels} 声道 / {actual}Hz / {bits}bit）",
 	"asr.whisper.err_data_before_fmt":  "asr: WAV 的 data 块出现在 fmt 块之前",
 	"asr.whisper.err_no_data":          "asr: WAV 里没有 data 块",
 
@@ -150,7 +150,7 @@ var zhAdapterLLMTexts = map[string]string{
 	// ---- ingestmic（录音 → 附件库 → 转写，回执说明与报因）----
 	"audio.mic.note_transcribed": "已由语音转写（{seconds} 秒录音）",
 	"audio.mic.err_asr_unset":    "语音识别未配置：请在设置「语音」页填写语音服务",
-	"audio.mic.err_not_wired":    "语音输入未装配（缺少录音器或附件库）",
+	"audio.mic.err_not_wired":    "语音输入不可用（缺少录音器或附件库）",
 	"audio.mic.err_record":       "录音失败",
 	"audio.mic.err_silent":       "没有录到声音",
 	"audio.mic.err_save":         "保存录音",

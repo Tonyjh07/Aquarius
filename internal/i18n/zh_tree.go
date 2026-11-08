@@ -7,9 +7,9 @@ package i18n
 var zhTreeTexts = map[string]string{
 
 	// 用法
-	"usage.switch":    "用法: /switch <id前缀>（/list 查看可用会话，支持唯一前缀）",
-	"usage.title":     "用法: /title [--id <id前缀>] [<标题>]（--id 改非当前会话标题，/list 查看）",
-	"usage.rmconv":    "用法: /rmconv <id前缀> [<id前缀>…]（删除整个会话，二次确认；/list 查看可用会话）",
+	"usage.switch":    "用法: /switch <id 前缀>（/list 查看可用会话，支持唯一前缀）",
+	"usage.title":     "用法: /title [--id <id 前缀>] [<标题>]（--id 改非当前会话标题，/list 查看）",
+	"usage.rmconv":    "用法: /rmconv <id 前缀> [<id 前缀>…]（删除整个会话，二次确认；/list 查看可用会话）",
 	"usage.goto":      "用法: /goto <id>（id 可用 /branch 查看，支持唯一前缀）",
 	"usage.branch":    "用法: /branch [id]（缺省取当前 Head）",
 	"usage.rm":        "用法: /rm <id>（剪掉该节点及整棵子树，二次确认）",
@@ -18,7 +18,7 @@ var zhTreeTexts = map[string]string{
 
 	// /new、/list、/switch
 	"tree.new.done":    "已新建会话 {id}",
-	"tree.list.empty":  "（暂无会话）",
+	"tree.list.empty":  "（还没有会话；/new 新建一个）",
 	"tree.list.count":  "{n}条",
 	"tree.switch.done": "已切换到会话 {id}",
 
@@ -82,14 +82,14 @@ var zhTreeTexts = map[string]string{
 	"tree.edit.saved_context":   "；上下文 {before} → {after} 条",
 	"tree.edit.aborted_clean":   "已退出树编辑（没有改动）",
 	"tree.edit.aborted":         "已放弃 {n} 处改挂，树回到进入编辑时的样子",
-	"tree.edit.aborted_saved":   "（会话期间落过盘，文件已一并回滚）",
+	"tree.edit.aborted_saved":   "（会话期间保存过，文件已一并回滚）",
 	"tree.edit.confirm_save":    "树编辑有 {n} 处未保存改动，保存后退出？",
 	"tree.edit.confirm_discard": "放弃这 {n} 处改动并退出树编辑？",
 	"tree.edit.canceled":        "已取消：仍在树编辑模式（{n} 处改动未保存）",
 
 	// /reparent
 	"reparent.done":          "已改父：{n} 个节点挂到 {parent} 下（/reparent --undo 可撤销）",
-	"reparent.done_pad":      "；目标是衬垫，它会降级为普通节点、版本组随之变化",
+	"reparent.done_pad":      "；新父是插入的摘要节点，改挂后变成普通节点，版本分组也随之变化",
 	"reparent.in_edit":       "（树编辑中，退出时统一保存）",
 	"reparent.kind.move":     "改父",
 	"reparent.kind.transfer": "转移",
@@ -105,15 +105,15 @@ var zhTreeTexts = map[string]string{
 	"err.move_head":                   "移动 Head",
 	"err.confirm_delete":              "确认删除",
 	"err.delete":                      "删除",
-	"err.rm_persist_rollback":         "落盘失败，删除已回滚（会话树未改动）",
-	"err.rm_persist_stuck":            "落盘失败且无法回滚，删除仅存在于内存（下次成功保存会写盘，请谨慎继续）",
+	"err.rm_persist_rollback":         "保存失败，删除已回滚（会话树未改动）",
+	"err.rm_persist_stuck":            "保存失败且无法回滚，删除只存在于内存（下次保存成功时会写盘，请谨慎继续）",
 	"err.restore_tree_edit":           "回滚树编辑",
 	"err.save_after_restore":          "回滚后保存",
 	"err.confirm":                     "确认",
 	"err.reparent":                    "改父",
-	"err.reparent_persist_rollback":   "落盘失败，改父已回滚",
-	"err.reparent_persist_stuck":      "落盘失败且无法回滚，改父仅存在于内存",
+	"err.reparent_persist_rollback":   "保存失败，改父已回滚",
+	"err.reparent_persist_stuck":      "保存失败且无法回滚，改父只存在于内存",
 	"err.reparent_undo":               "撤销改父",
-	"err.undo_persist_rollback":       "落盘失败，撤销已回滚",
-	"err.undo_persist_stuck":          "落盘失败且无法回滚，撤销仅存在于内存",
+	"err.undo_persist_rollback":       "保存失败，撤销已回滚",
+	"err.undo_persist_stuck":          "保存失败且无法回滚，撤销只存在于内存",
 }

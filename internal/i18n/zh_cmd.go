@@ -26,15 +26,15 @@ var zhCmdTexts = map[string]string{
 
 	// /switch
 	"cmd.switch.desc":    "切换到既有会话（清屏并回放历史）",
-	"cmd.switch.usage":   "<id前缀>",
-	"cmd.switch.p1.name": "<id前缀>",
+	"cmd.switch.usage":   "<id 前缀>",
+	"cmd.switch.p1.name": "<id 前缀>",
 	"cmd.switch.p1.desc": "会话 id 的唯一前缀（/list 里能看到）",
 
 	// /title
 	"cmd.title.desc":         "查看/改写会话标题（--id 可改非当前会话）",
-	"cmd.title.usage":        "[--id <id前缀>] [文本]",
+	"cmd.title.usage":        "[--id <id 前缀>] [文本]",
 	"cmd.title.p1.name":      "--id",
-	"cmd.title.p1.valuename": "<id前缀>",
+	"cmd.title.p1.valuename": "<id 前缀>",
 	"cmd.title.p1.desc":      "改哪个会话；省略 = 当前会话",
 	"cmd.title.p2.name":      "文本",
 	"cmd.title.p2.desc":      "新标题；省略 = 只查看",
@@ -75,10 +75,10 @@ var zhCmdTexts = map[string]string{
 	"cmd.regen.desc":    "重新生成：已有回答则在其上游分叉重发；无回答则直接生成",
 	"cmd.regen.usage":   "<id>",
 	"cmd.regen.p1.name": "<id>",
-	"cmd.regen.p1.desc": "用户或助手消息 id；取它的上游用户消息重发",
+	"cmd.regen.p1.desc": "用户或助手消息 id；取这条消息的上游用户消息重发",
 
 	// /respond
-	"cmd.respond.desc":    "从所选节点继续生成一条响应：把其水位以上至该节点的上下文发给模型（已有子节点则开新分支）",
+	"cmd.respond.desc":    "从所选节点继续生成一条响应：把该节点水位以上的上下文发给模型；已有子节点时开新分支",
 	"cmd.respond.usage":   "<id>",
 	"cmd.respond.p1.name": "<id>",
 	"cmd.respond.p1.desc": "任意非根节点 id（人格/系统/工具节点也行，根不行）",
@@ -126,8 +126,8 @@ var zhCmdTexts = map[string]string{
 
 	// /rmconv
 	"cmd.rmconv.desc":    "删除整个会话（二次确认；删当前会话会自动切换到另一个）",
-	"cmd.rmconv.usage":   "<id前缀> [<id前缀>…]",
-	"cmd.rmconv.p1.name": "<id前缀>",
+	"cmd.rmconv.usage":   "<id 前缀> [<id 前缀>…]",
+	"cmd.rmconv.p1.name": "<id 前缀>",
 	"cmd.rmconv.p1.desc": "要删的会话 id 唯一前缀；可给多个，一次确认全部删除",
 
 	// /compact
@@ -157,8 +157,8 @@ var zhCmdTexts = map[string]string{
 
 	// /memory
 	"cmd.memory.desc":    "用系统编辑器打开记忆文件（缺省为全局 memories.md）",
-	"cmd.memory.usage":   "[会话id]",
-	"cmd.memory.p1.name": "会话id",
+	"cmd.memory.usage":   "[会话 ID]",
+	"cmd.memory.p1.name": "会话 ID",
 	"cmd.memory.p1.desc": "开会话记忆；省略 = 全局 memories.md",
 
 	// /usage
@@ -183,7 +183,7 @@ var zhCmdTexts = map[string]string{
 	"cmd.jobs.p3.desc": "logs 时取末尾几行",
 
 	// /delegate
-	"cmd.delegate.desc":    "外部代理转交：查看配置里的代理与可用性、叫停一次正在进行的转交（派活由模型经 delegate 工具发起）",
+	"cmd.delegate.desc":    "外部代理转交：查看配置里的代理与可用性、终止一次还没跑完的转交（派活由模型经 delegate 工具发起）",
 	"cmd.delegate.usage":   "[list|kill <id>]",
 	"cmd.delegate.p1.name": "子命令",
 	"cmd.delegate.p1.desc": "省略 = list",
@@ -201,7 +201,7 @@ var zhCmdTexts = map[string]string{
 	"cmd.skill.p3.desc": "install 的来源：单文件、文件夹、压缩包或链接",
 
 	// /export
-	"cmd.export.desc": "导出会话（缺省只导当前会话；aqx 无损可原样导回；chatgpt 带全部分支；" +
+	"cmd.export.desc": "导出会话（缺省只导当前会话；aqx 无损可原样导回；chatgpt 带全部旁支；" +
 		"openai/sillytavern 只导当前那条链；--all 整库、--ids 只导列出的几个，两者都要 aqx）",
 	"cmd.export.usage":        "[--format <名字>] [--path <文件>] [--all | --ids <id>[,<id>…]]",
 	"cmd.export.p1.name":      "--format",
