@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-07 @ 88ff242 -->
+<!-- docs-sync: 2026-11-08 @ c00d8ef -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -361,6 +361,8 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 | `delegate.timeout_sec` | int | `1800` | 单次转交总闸；显式 `0` = 不限，上限 `86400` |
 | `delegate.max_concurrent` / `max_total` | int | `2` / `4` | 每会话 / 全局同时转交的上限；超限时 `delegate` 直接回绝，不排队 |
 | `delegate.outside_read_max` | int | `8` | 一次转交里「读会话范围之外的文件」最多问你几次；同一文件只问一次。`-1` = 不限（每次都问）、`0` = 不问直接拒（留在报告里）。范围外**写**不受这个值影响，每次都问 |
+| `delegate.terminal` | bool | `true` | 是否申报 `terminal` 能力：申报之后代理可以把命令交给 Aquarius 执行（能拦、能停、能进报告）。写 `false` 后五个 `terminal/*` 方法一律回「方法不存在」，代理只能自己起 shell——那条路看不见 |
+| `delegate.terminal_ask_max` | int | `8` | 一次转交里「执行一条命令」最多问你几次。`-1` = 不限、`0` = 不问直接拒（留在报告里）。额度按「问过几次」算，拒过的也算 |
 
 清单为空时照常启动：`delegate` / `delegate_wait` / `delegate_kill` 三个工具**不注册**，
 `/delegate list` 给出配置指引。填了之后 `/delegate list` 显示可用性（命令在不在 `PATH` 上）

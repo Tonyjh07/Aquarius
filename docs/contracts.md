@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-07 @ c70f493 -->
+<!-- docs-sync: 2026-11-08 @ c00d8ef -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -489,7 +489,7 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 | `Ingestor` / `OutputAdapter` | 文本/文件/剪贴板/麦克风；通知/TTS/逐条镜像到文件 | Tier-1 Go 插件 | 脚本 |
 | `SessionExporter` / `SessionImporter` / `ExchangeIndexer` | exchange（`aqx` 无损、可装一组会话 / `chatgpt` 树 / `openai`·`sillytavern` 线性；D242/D249） | — | 内存往返 |
 | `CharacterCatalog` | characterfs（PNG tEXt / JSON / `.charx` 解析 + `<profile>/characters` 目录；D243） | — | 临时目录假卡 |
-| `Delegate` | acpgate（ACP v1 客户端 → `delegate` 工具；申报 `fs`、`terminal` 未申报，D244/D283） | 外部 ACP 代理（配置 `delegate.agents`，命令经 PATH 探测） | 假 ACP 代理（stdio 脚本化 JSON-RPC） |
+| `Delegate` | acpgate（ACP v1 客户端 → `delegate` 工具；申报 `fs` 与 `terminal`，D244/D283/D286） | 外部 ACP 代理（配置 `delegate.agents`，命令经 PATH 探测） | 假 ACP 代理（stdio 脚本化 JSON-RPC） |
 | `JobManager` | jobproc（本机进程 + 日志落盘） | — | 假任务 |
 | `WatchProber` / `WatchManager` | probe（command/file/http 取样，D190）/ app.watcher | — | 脚本化探针 |
 | `Presenter` / `Prompter` | uitui（TUI）、repl、uigui（GUI 悬浮球，D43/M5） | Tier-1（v1 不开放） | 收集器 / 脚本队列 |
@@ -945,21 +945,21 @@ title/version（**没转过就是空**，启动不做握手）、可执行文件
 派活即返句柄，终态由收尾观察者取，形状照 `job*` 三件套。**不做同步调用**：转交跑十几到几十分钟，
 同步形态等于把 Turn 钉在子代理上，会话切不走、别的活一件干不了。
 
-**`Changed` 只是它报过的**（可能不全，不是 diff 结果）；报告另有两段事实：`Wrote`（经 Aquarius
-之手写下的文件）与 `ReadOutside`（问过用户、被批准之后才读到的范围外文件）。**三者不合并**：
-一份是我们经手的，一份是它自称的，混成一份就又变成「不比现在更假」（D283）。`Notes` 装能力
-协商、被拒的权限请求与跳过的东西，给用户看。
+**`Changed` 只是它报过的**（可能不全，不是 diff 结果）；报告另有三段事实：`Commands`（经 Aquarius
+执行过的命令与退出码）、`Wrote`（经 Aquarius 之手写下的文件）与 `ReadOutside`（问过用户、被批准
+之后才读到的范围外文件）。**不合并**：一份是我们经手的，一份是它自称的，混成一份就又变成「不比
+现在更假」（D283）。`Notes` 装能力协商、被拒的命令与权限请求、跳过的东西，给用户看。
 
 **我们是客户端，不是代理**：Aquarius 不到 Zed / JetBrains 里当那个「被选中的代理」（那是另一条
 产品线，要维护编辑器侧的全部交互）；它只往外派活。所以实现面是协议的**客户端一半**，且只要 v1
 （v2 还是 draft，`initialize` 报 `protocolVersion: 1`，对方只认 2 就明确报「协议版本不兼容」，
 不猜也不降级）。
 
-**六个协议方法 + 两个 `fs` 方法**（其余一律不申报）：
+**六个协议方法 + 两个 `fs` 方法 + 五个 `terminal` 方法**（其余一律不申报）：
 
 | 方法 | 方向 | 我们做什么 |
 |---|---|---|
-| `initialize` | 我们 → 它 | 报 `protocolVersion: 1` + `clientCapabilities.fs = {readTextFile, writeTextFile}`；读回它的 `agentCapabilities` |
+| `initialize` | 我们 → 它 | 报 `protocolVersion: 1` + `clientCapabilities`（`fs` 两项、`terminal` 一项）；读回它的 `agentCapabilities` |
 | `session/new` | 我们 → 它 | 传绝对路径 `cwd` 与**空 `mcpServers`**；它申报了 `sessionCapabilities.additionalDirectories` 才带额外根，拿 `sessionId` |
 | `session/prompt` | 我们 → 它 | 发一条 `text` 块（任务描述），等它返回 `stopReason` |
 | `session/update` | 它 → 我们 | 收过程通知：数工具调用、记它报过的改动文件、攒最终正文 |
@@ -967,6 +967,11 @@ title/version（**没转过就是空**，启动不做握手）、可执行文件
 | `session/request_permission` | 它 → 我们 | 它动手前反问；回落到 `port.Confirmer`（§9） |
 | `fs/read_text_file` | 它 → 我们 | 按 1 基行号切片读（`line`/`limit`），CRLF 原样返回；范围与上限见下 |
 | `fs/write_text_file` | 它 → 我们 | 整份写入（不存在就建、父目录也建、既有权限位保留），落盘经 `atomicfile` |
+| `terminal/create` | 它 → 我们 | 校验 cwd → 问用户 → 起进程（不给 shell），返回终端 id |
+| `terminal/output` | 它 → 我们 | 累计输出（被截断时是它最长的后缀）+ `truncated` + 结束后的 `exitStatus` |
+| `terminal/wait_for_exit` | 它 → 我们 | 等结束；出口是进程退出、请求 ctx 取消、本次转交被停 |
+| `terminal/kill` | 它 → 我们 | 杀进程树，**不释放**：之后仍能取输出与退出码 |
+| `terminal/release` | 它 → 我们 | 活着的先杀再清缓冲，归还额度；之后这个 id 一律不认识 |
 
 **`fs` 的边界**（D283/D284）：
 
@@ -981,12 +986,35 @@ title/version（**没转过就是空**，启动不做握手）、可执行文件
 - **这不是沙箱**：代理自己起 shell 之后读写不经过我们。闸门只覆盖「它愿意走协议」的那条路，
   收益是审计（`Wrote` / `ReadOutside` 两份事实），不是拦不住的那部分。
 
-`terminal/*` 与 `elicitation` **一个都不申报**：申报 `terminal` 等于承诺替它管终端，命令改由
-**我们**执行——能拦是收益，代价是我们按当前用户身份替它跑任意命令，本仓没有沙箱（A3 要先
-用真实代理验证「这些代理是否真的改走 `terminal/*`」，判据见 `plan.md`）。
-v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP server 提供工具），这条演进方向
-与本仓的取舍不同：我们有确认面可用，所以申报 `fs` 能让读写过手、留下事实；`terminal` 没有
-等价物。**同理不把我们自己的 MCP server 转发给它**：它的工具面归它自己，转发等于把两套
+**`terminal` 的边界**（A3/D286）：
+
+- **命令由我们起进程**：`exec.Command(command, args)`，**不给 shell**；环境 = 父环境剔除
+  `AQUARIUS_*` + 代理给的 `env`；stdout 与 stderr 合流进同一个缓冲（分成两根会让输出顺序失真）。
+- **`cwd` 缺省 = 会话 `cwd`**，给了就必须是绝对路径且落在根集之内；越界**直接拒、不问**——
+  它只是「从哪儿开始」，命令起来随时能 `cd` 出去，为它弹确认框拦不住任何东西。
+- **每条命令都问一次**（`Confirmer`），额度 `delegate.terminal_ask_max`（缺省 8，`-1` 不限，
+  `0` 不问直接拒）。确认框里命令、目录、环境变量三者都出现——策略匹配的是这三者，不是命令名。
+  **不自造命令白/黑名单**：四态策略表是 v0.7.0 的事。
+- **输出缓冲有界**：单条上限 = 代理给的 `outputByteLimit`（缺省 1 MiB，**请求超过 8 MiB 就拒**，
+  不静默降下来）；超限**从头丢**并落在字符边界，`truncated` 一旦为真不再回落。方向不能反：
+  主流实现按字符串长度差取增量，留头丢尾会让长度忽增忽减。
+- **`kill` 不释放、`release` 才清**：退出之后仍要能取输出与退出码。转交收尾杀掉所有还活着的
+  终端（含等它们回填退出码），不等代理 `release`。
+- 常量上限：并发 4 条、每次转交建 32 条、缓冲合计 16 MiB（按活着的算，`release` 归还）。
+- **结果进报告**：`Commands` 一行列命令与退出码，失败的那条附输出末尾一小段，排在文件清单**之前**；
+  命令的输出**不进正文**——正文是代理交付的那段，塞满输出会把结论冲掉。
+
+**这不是围栏，协议自己写着**：「The root set declares the session's scope. It confines shell
+commands only when a sandbox enforces it」。申报 `terminal` 等于按当前用户身份替它跑任意命令；
+根集只是我们用来拒绝的判据。代价换回来的是「它跑了什么」这条事实。
+
+**两条执行路径并存**（用户文档同口径）：走 `terminal/*` 的那条能审、能拒、能停；代理自己起
+shell 的那条永远看不见。哪条走哪条由代理决定——读源码已知 kimi-code 走（它把
+`clientCapabilities.terminal` 绑成 Bash 工具的开关），opencode v2.0.15 不走（它的 ACP 端不读
+`fs` 与 `terminal`）。同一次转交，给前者能审，给后者看不见。
+
+`elicitation` **不申报**：本构建没有「回头问用户一个结构化问题」的交互面，申报等于承诺一个
+不存在的功能。**也不把我们自己的 MCP server 转发给它**：它的工具面归它自己，转发等于把两套
 授权链搅在一起，出了事也说不清是谁批的。
 
 **传输层**：`coder/acp-go-sdk`（v0.13.5），不自写连接层（D260）。两处机制是选它的实质理由——
@@ -994,8 +1022,8 @@ v2 已把客户端 `fs`/`terminal` 整套删掉（改成客户端自己起 MCP s
 取消回执、后续通知全停，取消路径当场失效）、通知走串行队列并给响应打水位屏障（响应不得早于
 它前面的通知被处理；自写时漏这条，报告里就会丢最后几条更新）。**这两条与「几路并行」无关，
 单路就需要**——多任务只是让违背它们的代价从「一路卡住」变成「几路一起卡住」。代价照旧：
-SDK 的 `Client` 是九个方法，`terminal` 五个本版只能写成返回 `-32601` 的桩（`fs` 两个已实现）；
-且它按字段形状猜未知变体（`compaction_summary_chunk` 会落进 `UserMessageChunk`），我们拿不到
+SDK 的 `Client` 是九个方法，本版九个都实现（A2 的 `fs` 两个、A3 的 `terminal` 五个）；
+它按字段形状猜未知变体（`compaction_summary_chunk` 会落进 `UserMessageChunk`），我们拿不到
 原始 `sessionUpdate` 值。
 
 **登录**：`initialize` 的 `authMethods` 非空即表示对方要求的认证尚未完成，此时 `session/new`
@@ -1072,10 +1100,12 @@ this build`），后者照实回传。将来加一条 `session/resume` 与句柄
 | 收下的正文 | 200000 字符（保头尾，中间省略并注明） |
 | 记的改动文件 | 200 条（超出只报总数） |
 | 同时进行的转交 | 每会话 2、全局 4（`delegate.max_concurrent` / `delegate.max_total`） |
+| 单条命令输出 | 代理给的 `outputByteLimit`（缺省 1 MiB，最大 8 MiB，超了拒） |
+| 同时活着的终端 | 每次转交 4 条，累计建 32 条，缓冲合计 16 MiB |
 
 **不做**：内置代理预设与自动安装（registry 是别人的目录，装与不装是用户的事）、按 registry
-自动升级、ACP v2、客户端 `fs`/`terminal`/`elicitation`、把子代理的转录塞进树、转发我们的
-MCP server、跨会话复用子代理、`session/load` 回放它的历史。
+自动升级、ACP v2、客户端 `elicitation`、把子代理的转录塞进树、转发我们的 MCP server、
+跨会话复用子代理、`session/load` 回放它的历史。
 
 **本版落地口径**（规格没写死、实现定下来的几处，D268）：
 
