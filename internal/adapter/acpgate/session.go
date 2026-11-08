@@ -415,6 +415,7 @@ func (m *Manager) run(r *run) {
 	got := r.snapshot()
 	res.ToolCalls, res.Changed, res.Wrote, res.ReadOutside = got.toolCalls, got.changed, got.wrote, got.readOutside
 	res.Commands = got.commands
+	res.Options = optionsReport(r.agent.Options, r.options())
 	res.Notes, res.Denied = got.notes, got.denied
 	res.ChangedOver, res.WroteOver, res.ReadOutsideOver = got.changedOver, got.wroteOver, got.readOutsideOver
 	res.Report = r.reportText()

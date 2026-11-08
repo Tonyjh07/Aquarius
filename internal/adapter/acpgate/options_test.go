@@ -126,6 +126,36 @@ func TestSessionOptionsApplied(t *testing.T) {
 	if run.StopReason != "end_turn" {
 		t.Fatalf("stopReason = %q", run.StopReason)
 	}
+	// 报告里读得出实际用了什么：值取代理回报的那份，配置过的项不标「默认」。
+	text := port.DelegateReportText(task.ID, run)
+	if !strings.Contains(text, `Agent options: model="beta/model-2", mode="plan", thinking="high"`) {
+		t.Fatalf("报告缺选项行：\n%s", text)
+	}
+}
+
+// TestSessionOptionsReportDefault 一项都没配时也要写出模型，并标明那是对方的默认值
+// ——否则同一份结论没法复现，用户也不知道自己其实没选过模型。
+func TestSessionOptionsReportDefault(t *testing.T) {
+	m := newManager(t, "options", func(o *Options) { o.Home = t.TempDir() })
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "x"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	text := port.DelegateReportText(task.ID, run)
+	if !strings.Contains(text, `Agent options: model="alpha/model-1" (the agent's default)`) {
+		t.Fatalf("报告应写出默认模型：\n%s", text)
+	}
+	// 没配的 mode 不列：那是噪音。
+	if strings.Contains(text, "mode=") {
+		t.Fatalf("没配置的项不该出现在报告里：\n%s", text)
+	}
+	if len(run.Options) != 1 || run.Options[0].Set {
+		t.Fatalf("options = %+v，want 只有 model 且标记为默认", run.Options)
+	}
 }
 
 // TestSessionOptionsSkippedWhenEqual 已经是该值就不发请求（省一次往返，

@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	acp "github.com/coder/acp-go-sdk"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // optionListLimit 错误信息里最多列多少个候选值。opencode 一次广告二十多个模型，
@@ -84,6 +86,34 @@ func applyOneOption(ctx context.Context, conn *acp.ClientSideConnection, sid acp
 			id, want, reportedValue(got))
 	}
 	return next, nil
+}
+
+// optionsReport 报告用的选项清单。model 恒在（没配就写对方的默认值，否则读报告的人
+// 不知道该用什么复现这份结论），其余只列配置指定过的项；没配的不列是噪音。
+//
+// 值取快照里最后回报的那一份，不是请求的那一份：代理自己改过也要如实写。
+func optionsReport(configured map[string]string, snapshot []acp.SessionConfigOption) []port.OptionValue {
+	ids := make([]string, 0, len(configured)+1)
+	ids = append(ids, "model")
+	rest := make([]string, 0, len(configured))
+	for id := range configured {
+		if id != "model" {
+			rest = append(rest, id)
+		}
+	}
+	sort.Strings(rest)
+	ids = append(ids, rest...)
+
+	out := make([]port.OptionValue, 0, len(ids))
+	for _, id := range ids {
+		opt := findOption(snapshot, id)
+		if opt == nil || opt.Select == nil {
+			continue // 该代理没有这一项（或它不是选择型）：没发生的事不进报告
+		}
+		_, set := configured[id]
+		out = append(out, port.OptionValue{Name: id, Value: string(opt.Select.CurrentValue), Set: set})
+	}
+	return out
 }
 
 // orderOptionIDs 按固定顺序排要设的项。

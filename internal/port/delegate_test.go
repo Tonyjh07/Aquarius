@@ -50,6 +50,42 @@ func TestDelegateReportTextNoBody(t *testing.T) {
 	}
 }
 
+// TestDelegateReportTextOptions 会话配置那一行：值按字面量渲染，没配置过的项标出
+// 「对方默认」，并且排在命令与文件之前——读的人要先知道这份结论是谁给的。
+func TestDelegateReportTextOptions(t *testing.T) {
+	run := DelegateRun{
+		Agent:      "kimi",
+		StopReason: "end_turn",
+		Duration:   time.Second,
+		Wrote:      []string{"/repo/a.go"},
+		Options: []OptionValue{
+			{Name: "model", Value: "gw/deepseek-v4.1-flash", Set: true},
+			{Name: "mode", Value: "plan", Set: true},
+		},
+	}
+	got := DelegateReportText("d005", run)
+	want := `Agent options: model="gw/deepseek-v4.1-flash", mode="plan"` + "\n"
+	if !strings.Contains(got, want) {
+		t.Fatalf("选项行不对：\n got %s\nwant %s", got, want)
+	}
+	if strings.Index(got, "Agent options") > strings.Index(got, "Files written") {
+		t.Fatalf("选项应排在文件之前：\n%s", got)
+	}
+
+	// 没配置过就写明是对方的默认值：默认值随时会变，读的人要知道自己没选过。
+	defaulted := DelegateReportText("d006", DelegateRun{
+		Agent: "x", Options: []OptionValue{{Name: "model", Value: "xiaomi/mimo-v2.6-pro"}},
+	})
+	if !strings.Contains(defaulted, `model="xiaomi/mimo-v2.6-pro" (the agent's default)`) {
+		t.Fatalf("缺默认标注：\n%s", defaulted)
+	}
+
+	// 一项都没有（代理不支持选模型）时整行不出现，别留一个空壳。
+	if got := DelegateReportText("d007", DelegateRun{Agent: "x"}); strings.Contains(got, "Agent options") {
+		t.Fatalf("没有选项时不该出现这一行：\n%s", got)
+	}
+}
+
 // TestDelegateReportTextCommands 命令清单排在文件之前（动作比结果更该先看到）：
 // 每条按字面量渲染，失败的附输出末尾一行；命令里的换行不能把一行拆成两行。
 func TestDelegateReportTextCommands(t *testing.T) {

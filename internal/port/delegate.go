@@ -124,6 +124,15 @@ type CommandRun struct {
 	Tail     string `json:"tail,omitempty"`      // 失败时的输出末尾（已压成一行）
 }
 
+// OptionValue 一项会话配置在本次转交里的实际值（D287）。
+type OptionValue struct {
+	Name  string `json:"name"`  // 配置项名（代理广告的那个）
+	Value string `json:"value"` // 代理最后回报的当前值
+	// Set 这一项是否由配置指定。false = 用的是代理自己的默认值——模型尤其要标出来：
+	// 它随时可能变，不写清楚就无法复现同一份结论。
+	Set bool `json:"set,omitempty"`
+}
+
 // DelegateRun 一次转交的终态（报告 + 摘要用的全部事实）。
 type DelegateRun struct {
 	Agent      string   `json:"agent"`
@@ -140,7 +149,10 @@ type DelegateRun struct {
 	// Commands 经 Aquarius 执行的命令（`terminal/create` 的事实，A3）。被拒的那些不进这里
 	// ——它们没跑，只进 Notes。条数由运行时上限管住（每次转交 32 条），所以这份清单不会
 	// 溢出，也不必再带一个「还有 N 条没列」。
-	Commands []CommandRun  `json:"commands,omitempty"`
+	Commands []CommandRun `json:"commands,omitempty"`
+	// Options 实际生效的会话配置（D287）：model 恒在，其余只列配置指定过的项。
+	// 值取代理最后回报的那一份，不是我们请求的那一份。
+	Options  []OptionValue `json:"options,omitempty"`
 	Duration time.Duration `json:"duration"`
 	Report   string        `json:"report"`          // 最终正文（它交付的那段）
 	Notes    []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
@@ -197,6 +209,10 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Delegation %s to %s finished in %s (stop=%s, tool calls=%d, files changed=%d).\n",
 		id, run.Agent, run.Duration.Round(time.Second), stopReasonText(run), run.ToolCalls, len(run.Changed))
+	// 模型紧跟标题：读报告的人要先知道这份结论是谁给的，再看它做了什么。
+	if len(run.Options) > 0 {
+		b.WriteString("Agent options: " + optionsText(run.Options) + "\n")
+	}
 	// 先列**我们经手**的那一段，再列它自称的那一段：读报告的人默认这两行是同一件事，
 	// 顺序摆在前面的会被当成依据（D283 把它们分开列，就是不想再混成一个数）。
 	// 命令排在文件之前：动作比结果更该先被看到（A3）。
@@ -246,6 +262,20 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 	}
 	b.WriteString(body)
 	return b.String()
+}
+
+// optionsText 会话配置的一行写法。值包在双引号里；没配置过的项标出「对方默认」，
+// 读的人才不会把默认值当成自己选的那个。
+func optionsText(opts []OptionValue) string {
+	parts := make([]string, 0, len(opts))
+	for _, o := range opts {
+		s := o.Name + "=" + quoteCommand(o.Value)
+		if !o.Set {
+			s += " (the agent's default)"
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // commandsText 命令清单的一行写法。每条命令包在双引号里：脚本里的逗号不会被当成清单
