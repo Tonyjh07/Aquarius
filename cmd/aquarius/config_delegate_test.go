@@ -147,6 +147,42 @@ func TestDelegateConfigValidation(t *testing.T) {
 	}
 }
 
+// TestDelegateConfigOptions 会话选项（D287）：键与值都去空白后原样带下去；
+// 空键或空值在启动期就报——那两项没有什么「等连上再判断」的余地。
+func TestDelegateConfigOptions(t *testing.T) {
+	t.Parallel()
+	cfg := delegateConf(t, `{"delegate":{"agents":[{"name":"a","command":"x",
+		"options":{"model":" gw/m1 ","mode":"plan"}}]}}`)
+	opts, err := cfg.delegateOptions(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("options: %v", err)
+	}
+	got := opts.Agents[0].Options
+	if len(got) != 2 || got["model"] != "gw/m1" || got["mode"] != "plan" {
+		t.Fatalf("options = %v（键值都该去空白）", got)
+	}
+
+	// 没写这一项时留空，不是空 map：运行时据此判断「什么都不用设」。
+	cfg = delegateConf(t, `{"delegate":{"agents":[{"name":"a","command":"x"}]}}`)
+	opts, err = cfg.delegateOptions(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("options: %v", err)
+	}
+	if opts.Agents[0].Options != nil {
+		t.Fatalf("没写 options 时该是 nil，got %v", opts.Agents[0].Options)
+	}
+
+	for _, raw := range []string{
+		`{"delegate":{"agents":[{"name":"a","command":"x","options":{" ":"plan"}}]}}`,
+		`{"delegate":{"agents":[{"name":"a","command":"x","options":{"mode":"  "}}]}}`,
+	} {
+		_, err := delegateConf(t, raw).delegateOptions(nil, nil, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "空键或空值") {
+			t.Fatalf("%s: err = %v", raw, err)
+		}
+	}
+}
+
 // TestDefaultConfigCarriesDelegateSection 模板里带上这一段（空清单）：用户照着填就能用，
 // 不必去翻文档才知道键名。
 func TestDefaultConfigCarriesDelegateSection(t *testing.T) {

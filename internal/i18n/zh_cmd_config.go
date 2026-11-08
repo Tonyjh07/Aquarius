@@ -122,6 +122,9 @@ var zhCmdConfigTexts = map[string]string{
 		`default 的代理不能同时 enabled=false`,
 	"cmd.config.err.delegate_default_multi": `delegate.agents 里有多条 default（{n} 条）：只能有一条`,
 
+	"cmd.config.err.delegate_option_empty": `delegate.agents[{i}]（{name}）：options 里有空键或空值` +
+		`（键是代理的配置项名，值是它列出的候选之一）`,
+
 	// config_audio.go：语音
 	"cmd.config.err.input_language":     `input.language="{lang}" 仅支持 auto | zh | en`,
 	"cmd.config.err.audio_kind":         `{name}.kind="{kind}" 不认识（支持 {kinds}）`,

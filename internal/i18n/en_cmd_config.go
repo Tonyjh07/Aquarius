@@ -127,6 +127,10 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.config.err.delegate_default_multi": `delegate.agents has more than one default ` +
 		`({n} entries): only one is allowed`,
 
+	"cmd.config.err.delegate_option_empty": `delegate.agents[{i}] ({name}): options has an ` +
+		`empty key or an empty value (the key is the agent's option name, the value one of ` +
+		`the entries it lists)`,
+
 	// config_audio.go
 	"cmd.config.err.input_language": `input.language="{lang}" supports only auto | zh | en`,
 	"cmd.config.err.audio_kind":     `{name}.kind="{kind}" is not recognized (supported: {kinds})`,

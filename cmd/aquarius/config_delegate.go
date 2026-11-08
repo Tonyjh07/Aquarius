@@ -45,6 +45,10 @@ type delegateAgentConfig struct {
 	// Enabled 键缺失 = 启用（写 false 才停用）：老配置没有这一段时不该把代理全关掉。
 	Enabled *bool `json:"enabled,omitempty"`
 	Default bool  `json:"default,omitempty"`
+	// Options 建会话后要设上的会话选项（D287）：键是代理广告的配置项名（`model` /
+	// `mode` / `thinking` 这类），值是它广告的候选。解析期只查空键与空值——某项存不存在
+	// 要等连上代理才知道，只能留到转交时报。
+	Options map[string]string `json:"options,omitempty"`
 }
 
 // delegateOptions 解析成 acpgate.Options（含全部校验）。配置错误在启动期报，不拖到
@@ -118,9 +122,21 @@ func (c *fileConfig) delegateOptions(secrets port.Secrets, confirmer port.Confir
 					"i", i, "name", name))
 			}
 		}
+		var sessionOpts map[string]string
+		for k, v := range a.Options {
+			key, val := strings.TrimSpace(k), strings.TrimSpace(v)
+			if key == "" || val == "" {
+				return opts, fmt.Errorf("%s", i18n.Tf("cmd.config.err.delegate_option_empty",
+					"i", i, "name", name))
+			}
+			if sessionOpts == nil {
+				sessionOpts = make(map[string]string, len(a.Options))
+			}
+			sessionOpts[key] = val
+		}
 		opts.Agents = append(opts.Agents, acpgate.Agent{
 			Name: name, Command: cmd, Args: a.Args, Env: a.Env,
-			WorkDir: wd, Enabled: enabled, Default: a.Default,
+			WorkDir: wd, Enabled: enabled, Default: a.Default, Options: sessionOpts,
 		})
 	}
 	if defaults > 1 {
