@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-07 @ c70f493 -->
+<!-- docs-sync: 2026-11-08 @ a69216e -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -24,7 +24,7 @@
 
 | 版本 | 主题 | 剩余工作 | 状态 |
 |---|---|---|---|
-| v0.6.0 | 外部代理：设置窗直接配 ACP + 申报 `fs` / `terminal` | A1、A2 已落地；剩 A3 申报 `terminal`（含前置验证）。语音前处理与说话人仍在 backlog | 进行中 |
+| v0.6.0 | 外部代理：设置窗直接配 ACP + 申报 `fs` / `terminal` | A1、A2 已落地；A3 前置验证已过、剩五笔提交。语音前处理与说话人仍在 backlog | 进行中 |
 | v0.7.0 | 决策策略：工具粒度四态放行 + 模型辅助决策 | 单条主线（D280/D281）。前置是 v0.6.0 落地——A2 跑起来才会产生第一批真实确认记录，正好当标注集 | 未开工 |
 
 > **PTC（程序化工具调用）的调研已完成但未排期**，究竟是搭进 v0.7.0（那一版已排了决策策略）、
@@ -37,7 +37,7 @@
 
 > 2026-11-03 拍板：代理不再只靠手写 `config.json` 配，设置窗要能直接增删改。这条把申报面也一并
 > 带出来——申报 `fs` / `terminal` 的口径取决于「配置里到底能写什么」，两块拆开做等于把同一套
-> 字段口径写两遍，所以同版、按 A1 → A2 → A3 由浅入深（A1 已落地，剩 A2、A3）。
+> 字段口径写两遍，所以同版、按 A1 → A2 → A3 由浅入深（A1、A2 已落地，剩 A3）。
 > 「转接的任务并行」仍不在这一线——转接的并行随后台化一起进主线（D261）。
 
 ### A2 申报 `fs`（已完成）
@@ -71,29 +71,88 @@
 已跑通（2026-11-07，testy 直连）：写下的字节与它发的一致、记进 `Wrote`，`terminal/*` 五个按
 未申报回 -32601，末尾 `elicitation` 如预期以 -32602 收尾。门禁里跳过（要 cargo、二进制在 temp）。
 
-### A3 申报 `terminal`（L，前置验证通过才做）
+### A3 申报 `terminal`（前置验证已过，待做）
 
 **要什么**：命令由**Aquarius**执行，于是能拦、能限、能杀，输出能进报告。
 
-**先验证再承诺**：申报之后主流代理是否真的改走 `terminal/*`。能力申报只是给出一条**可选**
-路径——代理照旧自己起 shell 的话，Aquarius 只是多开一条攻击面、风险一点没减。
+**前置验证的结论（2026-11-08，读源码得出，没有跑真实任务）**：
 
-**判据分两层**（样本见本节末「验证样本」）：
+- **kimi-code 走**。`packages/acp-server` 在 `initialize` 里把 `clientCapabilities.terminal`
+  绑成开关（`server.ts`），开关打开时 Bash 工具改经 `terminal/create` 交给我们跑
+  （`acp-terminal/acpTerminalRunner.ts`）；`fs` 两个能力同样各自绑开关（`server.ts`），
+  所以 A2 在它身上也生效。
+- **opencode（v2.0.15）不走**。它的 ACP 端只读 `elicitation`、`session.compaction` 与 `_meta`
+  的扩展位（`packages/cli/src/acp/capabilities.ts`），`fs` 与 `terminal` 一个都不读，整个
+  `packages/` 里没有一处 `terminal/create` 或 `fs/*` 的调用。
+- 判据是「主流代理里至少有一家真的改走」，kimi 这一条足够；opencode 那条反向证据正好当
+  「两条执行路径并存」的实例写进用户文档：同一次转交，给 kimi 能审，给 opencode 看不见。
 
-- **生态层（决定性）**：opencode、kimi 各跑一次真实任务，报文里真的出现 `terminal/create` 才算数。
-  这一层只能由真实代理回答——这些代理各自带工具实现，改不改走是各自的决定。
-- **实现层（必要条件）**：testy 的 `callbacks` 场景跑通，五个方法与我们这边的应答全部对上。
-  这一层只证明我们符合协议，**不证明**任何代理会改走；跑得再绿也不能替生态层下结论。
-- 生态层一次都不出现就登记不做，理由写进决策记录。
+**报文形状（kimi 定死的，照着写，别按协议的一般情形想象）**：
+
+| 字段 | 值 |
+|---|---|
+| `command` | 它的 `shellPath`（bash），不是用户写的命令 |
+| `args` | 恒两项：`-c` 与 `cd '<cwd>' && <命令>` |
+| `cwd` | 非空绝对路径 |
+| `env` | `NO_COLOR=1`、`TERM=dumb`、`GIT_TERMINAL_PROMPT`、`SHELL` |
+| `outputByteLimit` | 4 MiB |
+
+它拿我们的回答做什么，直接决定实现的三个细节：
+
+- 每 250 ms 调一次 `terminal/output`，按**字符串长度差**取增量 → `output` 必须始终是
+  **累计全文**；截断只能「丢头、长度停在上限」，长度忽增忽减会让它重复或漏段。
+- 退出之后还要再取一次 `output`，然后才 `release` → 退出后输出仍可取，`release` 才清。
+- `kill` 之后还要 `wait_for_exit` 拿退出码 → `kill` 不释放、不吞退出码。
 
 **义务**：五个方法（`create` / `output` / `wait_for_exit` / `kill` / `release`）；`outputByteLimit`
-要有界缓冲，超限**从头截断且必须落在字符边界**；`kill` 之后终端仍可用（还要能取最终输出与
-退出码），`release` 才释放；命令策略要匹配 `command` + `args` + `env` 三者，不是只看命令名。
+要有界缓冲，超限**从头截断且必须落在字符边界**；命令策略要匹配 `command` + `args` + `env`
+三者，不是只看命令名。
 
 **一条不能含糊的**：协议原文——「The root set declares the session's scope. **It confines shell
 commands only when a sandbox enforces it**」。Aquarius 没有沙箱：申报等于程序按当前用户身份执行
 任意命令，根集只是 Aquarius 用来拒绝的判据，不是内核围栏。用户文档里要跟「两条执行路径并存」一起
 讲清：走 Aquarius 的那条能审，代理自己起的那条永远看不见。
+
+**定的口径**（2026-11-08 拍板）：
+
+- 开关 `delegate.terminal` 缺省 `true`；关掉之后 `initialize` 不申报，五个方法回 `-32601`。
+- 确认一律走 `Confirmer`，**不自造命令白/黑名单**——四态策略表是 v0.7.0 的事，这里先塞一套
+  等于把同一套字段口径写两遍。
+- 额度 `delegate.terminal_ask_max`：缺省 8、`-1` 不限、`0` 一次都不问（直接拒并留档），
+  与 `outside_read_max` 同构；额度按「问过几次」算。
+- `cwd` 越界**直接拒**、不问：它只是「从哪儿开始」，命令本来就能 `cd` 出去，问它拦不住任何东西。
+- 不给 shell，直接执行 `command` + `args`；环境 = 父环境剔 `AQUARIUS_*` + 代理给的覆盖。
+- 常量上限：并发 4 条、本次转交建过 32 条、单条缓冲 = 代理给的 `outputByteLimit`
+  （缺省 1 MiB，**请求超过 8 MiB 就拒**，不静默截断）、同时在用缓冲合计 16 MiB
+  （按活着的终端算，`release` 归还；超了拒新的 `create`）。
+- 报告只列命令与退出码，**输出不进正文**；失败的那条附输出末尾一小段。
+
+**待实测两处**（先按注释写，跑通再补测试注释）：空输出时回 `output: ""` 对端收不收；
+Windows 上 `.cmd/.bat`（`npm` → `npm.cmd`）不能直接 exec，按结果二选一——经 `cmd.exe /c`
+包一层，或拒并让代理换写法。kimi 用 bash，所以它这条不会踩到；别的代理未必。
+
+**提交拆分**（五笔，每笔可独立回退）：
+
+1. `feat(acpgate): run the delegated agent's commands through a managed terminal`
+   申报 + 五个方法 + 终端表（`terminal.go`：`byID` / `next` / `total` / `inuse`）；`create` 走
+   校验 → 确认 → 起进程，进程输出合流进有界环形缓冲；`wait_for_exit` 三出口（退出 / 请求 ctx /
+   本次转交被停）；转交收尾杀掉全部活着的终端。判据：`terminal_test.go` 用假 agent 打通五个
+   方法，另测截断落字符边界、`kill` 后仍可取输出与退出码、`release` 后 id 失效、并发与总数
+   上限、`cwd` 越界拒、`AQUARIUS_*` 剔除。
+2. `feat(port): report the commands the delegated agent ran through us`
+   `port.CommandRun{Line, ExitCode, Signal}` + `DelegateRun.Commands` / `CommandsOver`；
+   `DelegateReportText` 加一行，排在「经手写的文件」之前（动作比结果更该先看到）。判据：
+   渲染断言；被拒的命令只进 `Notes`。
+3. `feat(config): let the terminal capability be switched off`
+   `delegate.terminal`、`delegate.terminal_ask_max` 两个键 + 校验（0 / -1 / 负数非法 / 缺省）
+   + 默认配置模板。判据：解析测试；关掉之后 `initialize` 里没有 `terminal`。
+4. `docs: describe the terminal capability and when it is bypassed`
+   contracts §5.18（义务、根集不是围栏、opencode 那个反例）、guide（确认框、怎么关）、
+   configuration（两个键）、decisions（为什么申报、为什么不设命令白名单、为什么输出不进正文）、
+   plan 收尾；提交前 `docsync`。
+5. `test(acpgate): assert the terminal callbacks against the official test agent`
+   testy 的 `callbacks` 扩到五个 `terminal/*`，断言输出与退出码。门禁里仍跳过（要 cargo、
+   二进制在 temp），与 A2 那一笔同口径。
 
 ### 验证样本（A2 / A3 共用）
 
@@ -101,13 +160,17 @@ commands only when a sandbox enforces it**」。Aquarius 没有沙箱：申报�
 
 **真实链路：opencode、kimi**
 
+> 2026-11-08：这一层的结论已经拿到，方式是**读这两家的源码**，比实跑更确定（不受模型波动、
+> 不花钱、能追到调用点）。结论写在 A3 一节开头。实跑留着复核用——代理换了实现，读源码看不出来
+> 的时候再跑。
+
 | 代理 | 启动 | 角色 |
 |---|---|---|
-| opencode | `opencode acp` | 真实任务里看 `fs/*`、`terminal/*` 是否真被调用 |
-| kimi | `kimi acp`（旧版 `kimi-cli` 是 `--acp`） | 同上 |
+| opencode | `opencode acp` | 不复核：源码里就不读这两项能力，跑也是空白 |
+| kimi | `kimi acp`（旧版 `kimi-cli` 是 `--acp`） | 复核：确认 `terminal/create` 真的出现在报文里 |
 
-两条都要**登录 + 真实模型**，一轮任务几十秒到几分钟，结果随模型波动。这两条只回答一个问题：
-主流代理会不会改走我们的回调。**别拿这两条做回归**——慢、不确定、还要花钱。
+实跑要**登录 + 真实模型**，一轮任务几十秒到几分钟，结果随模型波动。这一层只回答一个问题：
+主流代理会不会改走我们的回调。**别拿它做回归**——慢、不确定、还要花钱。
 
 **协议全量：testy**
 
@@ -619,6 +682,11 @@ Python」）；**注入风险**——PTC 最有用的场景正是不可信内容
   本文所有任务按「不破坏既有数据」设计；后续若必须改存储格式，先补迁移器并在本文标注。
 - **PTC 的形态、语言与版本归属**：见上文「程序化工具调用」的待拍板三条——呈现模式还是新增
   工具、Starlark 还是 sobek、进不进 v0.6.0。→ **动手前拍板**。
+- **按次指定外部代理用哪个模型**：ACP 稳定面没有这个入参，模型走**会话配置选项**——建会话的响应
+  里带 `configOptions`，其中 `category: "model"` 的那一项用 `session/set_config_option` 设值。
+  kimi-code 与 opencode 都实现了这个形状，值是 `provider/modelID`。两条路选一条：给
+  `delegate.agents[]` 加 `model` 键（按次可控，设不上就整次失败、不静默换模型），或只让用户改
+  代理自己的全局配置（零改动，但所有转交共用一个模型）。→ **动手前拍板**，与 A3 无依赖。
 
 ### 已知未修项（留档，等条件成熟再排）
 
