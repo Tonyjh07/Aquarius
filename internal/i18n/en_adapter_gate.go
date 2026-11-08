@@ -113,6 +113,8 @@ var enAdapterGateTexts = map[string]string{
 	"acp.confirm.read_outside":  "External agent \"{agent}\" wants to read a file outside the session scope:\n  {path}\n\nIts own shell could read this anyway; asking once is how the access ends up on the record.",
 	"acp.confirm.write_outside": "External agent \"{agent}\" wants to write a file outside the session scope:\n  {path}\n\nApproving means letting it change this file on its own judgement.",
 	"acp.confirm.control_file":  "External agent \"{agent}\" wants to write an execution-control file ({rule}):\n  {path}\n\nFiles like this decide what runs later (version control hooks, editor or agent settings, MCP config), so they are asked about separately.",
+	"acp.confirm.terminal":      "External agent \"{agent}\" wants to run a command:\n  {command}\nIn: {cwd}\n\nThe command runs as you, started by Aquarius; approving lets it run to the end.",
+	"acp.confirm.terminal_env":  "Environment: {env}",
 	// Connectivity probe (A1 "test connection"): three failure classes, so the user knows
 	// which part to fix.
 	"acp.probe.err.not_found": "Command not on PATH",

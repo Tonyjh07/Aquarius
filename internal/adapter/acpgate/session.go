@@ -66,6 +66,11 @@ type run struct {
 	// 判定「在不在范围里」。只在 execute 里写一次，之后只读；但读方是各自独立的 fs
 	// 请求 goroutine，所以同样走 mu。
 	roots pathres.RootSet
+	// wd 会话 cwd（子进程的起点）：terminal/create 没给 cwd 时用它。
+	wd string
+
+	// terms 终端表（A3）：五个 terminal/* 方法共用。自己带锁，与上面的 mu 无关。
+	terms terminalTable
 
 	cancelCtx context.Context
 	cancelFn  context.CancelFunc
@@ -174,6 +179,20 @@ func (r *run) setRoots(s pathres.RootSet) {
 	r.mu.Lock()
 	r.roots = s
 	r.mu.Unlock()
+}
+
+// setWorkDir 记下会话 cwd（terminal/create 的缺省起点）。
+func (r *run) setWorkDir(wd string) {
+	r.mu.Lock()
+	r.wd = wd
+	r.mu.Unlock()
+}
+
+// workDir 会话 cwd（未设时为空：terminalDir 会发现它不是绝对路径而拒，fail closed）。
+func (r *run) workDir() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.wd
 }
 
 // rootSet 当前会话的根集（未设时为空集：什么都不许，fail closed）。
@@ -388,11 +407,14 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 		return port.DelegateRun{}, fmt.Errorf("session root set: %w", err)
 	}
 	r.setRoots(roots)
+	r.setWorkDir(wd)
 	proc, err := m.spawn(r, wd)
 	if err != nil {
 		return port.DelegateRun{}, err
 	}
 	defer proc.terminate(m.opts.Grace)
+	// 终端先于子代理收：代理可能自己已经不再 release，命令却还在跑。
+	defer r.closeTerminals()
 
 	conn := acp.NewClientSideConnection(&client{m: m, r: r}, proc.stdin, proc.stdout)
 	// SDK 的诊断日志按字节刷到 stderr（正常收尾也会打一条 "connection closed"）；
@@ -415,9 +437,12 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	init, err := conn.Initialize(hctx, acp.InitializeRequest{
 		ProtocolVersion: 1,
 		// 申报 fs（A2）：读写都经我们过手，`Changed` 才有事实可依（D283）。
-		// 这是**经手**不是围栏——代理自己起 shell 的路看不见（与根集同一条口径）。
+		// 申报 terminal（A3）：命令改由我们起进程、收输出、可停，于是「它跑了什么」
+		// 才留得下来。两条都是**经手**不是围栏——代理自己起 shell 的路看不见
+		// （与根集同一条口径）。
 		ClientCapabilities: acp.ClientCapabilities{
-			Fs: acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+			Fs:       acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+			Terminal: true,
 		},
 	})
 	cancel()

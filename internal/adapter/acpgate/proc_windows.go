@@ -3,6 +3,7 @@
 package acpgate
 
 import (
+	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
@@ -30,3 +31,6 @@ func killTree(cmd *exec.Cmd) error {
 	}
 	return cmd.Process.Kill()
 }
+
+// exitSignal Windows 上没有「被哪个信号杀掉」这一说：被 taskkill 结束也只留一个退出码。
+func exitSignal(*os.ProcessState) string { return "" }

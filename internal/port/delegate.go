@@ -34,6 +34,9 @@ const (
 	// 本次转交里再来的越界读直接拒并留档。默认给一个数而不是「不限」，是因为一次
 	// 转交里的读请求可以是几百次——不设上限等于让用户点两百次。
 	DefaultDelegateOutsideReadAsks = 8
+	// DefaultDelegateTerminalAsks 命令确认的缺省次数（A3）：代理跑十来条命令是常事，
+	// 每条都问会把用户淹掉，问满这么多次之后本次转交里的命令直接拒并留档。
+	DefaultDelegateTerminalAsks = 8
 	// DelegateOutsideReadUnlimited 不限次（配置里写 -1：每次都问，且都算数）。
 	DelegateOutsideReadUnlimited = -1
 )

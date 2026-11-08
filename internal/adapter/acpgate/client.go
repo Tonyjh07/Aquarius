@@ -9,8 +9,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// client ACP 客户端的九个方法（`acp.Client`）。本版只真做两件事：收过程通知、
-// 回落权限请求；`fs/*` 与 `terminal/*` 一律 -32601——不申报就不承诺（§5.18）。
+// client ACP 客户端的九个方法（`acp.Client`）。真做四件：收过程通知、回落权限请求、
+// `fs/*`（A2，见 fs.go）、`terminal/*`（A3，见 terminal.go）。申报什么就承诺什么，
+// 没申报的一律 -32601。
 type client struct {
 	m *Manager
 	r *run
@@ -146,28 +147,4 @@ func firstLine(s string, max int) string {
 		return s
 	}
 	return string([]rune(s)[:max]) + "…"
-}
-
-// ---- 不申报的能力：一律 -32601 ----
-//
-// fs 的两个方法见 fs.go（A2 起申报）。
-
-func (c *client) CreateTerminal(context.Context, acp.CreateTerminalRequest) (acp.CreateTerminalResponse, error) {
-	return acp.CreateTerminalResponse{}, acp.NewMethodNotFound("terminal/create")
-}
-
-func (c *client) KillTerminal(context.Context, acp.KillTerminalRequest) (acp.KillTerminalResponse, error) {
-	return acp.KillTerminalResponse{}, acp.NewMethodNotFound("terminal/kill")
-}
-
-func (c *client) TerminalOutput(context.Context, acp.TerminalOutputRequest) (acp.TerminalOutputResponse, error) {
-	return acp.TerminalOutputResponse{}, acp.NewMethodNotFound("terminal/output")
-}
-
-func (c *client) ReleaseTerminal(context.Context, acp.ReleaseTerminalRequest) (acp.ReleaseTerminalResponse, error) {
-	return acp.ReleaseTerminalResponse{}, acp.NewMethodNotFound("terminal/release")
-}
-
-func (c *client) WaitForTerminalExit(context.Context, acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error) {
-	return acp.WaitForTerminalExitResponse{}, acp.NewMethodNotFound("terminal/wait_for_exit")
 }

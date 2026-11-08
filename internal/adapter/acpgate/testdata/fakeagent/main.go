@@ -17,6 +17,8 @@
 //	           不带这个字段就回 -32602（验证客户端确实发出去了）
 //	fs         按 fs 模式发五个文件请求（读切片 / 写新文件建父目录 / 越界写 / 越界读 /
 //	           写执行控制文件），把每个应答原样编进正文——断言全在测试里做
+//	terminal   把五个 terminal/* 方法各走一遍（建两条命令、取输出、等退出、杀、释放，
+//	           再取一次已释放的 id），应答原样编进正文；命令路径由 FAKE_AGENT_CMD 给
 //	delayed    先报一句进度，等 FAKE_AGENT_DELAY_MS（缺省 8000）毫秒再交报告——手验
 //	           「派活后切走，报告仍落在原会话」靠它，秒回测不出时间差
 //	badcwd     要求 cwd 是绝对路径、mcpServers 为空，否则回 -32602
@@ -274,6 +276,60 @@ func handleRequest(mode string, m rpcMsg) {
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": string(raw)}})
 			reply(m.ID, map[string]any{"stopReason": "end_turn"})
 
+		case "terminal":
+			out := map[string]string{}
+			cmd := os.Getenv("FAKE_AGENT_CMD")
+			if cmd == "" {
+				fail(m.ID, -32603, "FAKE_AGENT_CMD is not set")
+				return
+			}
+			// 1. 一条会自己结束的命令：不显式给 cwd（验证缺省 = 会话 cwd），
+			//    环境变量原样传下去。
+			ca := request("terminal/create", map[string]any{
+				"sessionId": sid, "command": cmd, "args": []string{"one", "two"},
+				"env": []any{
+					map[string]any{"name": "ECHOCMD_ECHO", "value": "FOO"},
+					map[string]any{"name": "FOO", "value": "bar"},
+					map[string]any{"name": "AQUARIUS_SECRET", "value": "leak"},
+				},
+				"outputByteLimit": 65536,
+			})
+			out["create_a"] = fsResult(ca)
+			ida := terminalID(ca)
+			if ida != "" {
+				out["output_a"] = fsResult(pollOutput(sid, ida))
+				out["wait_a"] = fsResult(request("terminal/wait_for_exit",
+					map[string]any{"sessionId": sid, "terminalId": ida}))
+			}
+			// 2. 一条长命令：活着时 output 没有 exitStatus；kill 之后仍要能拿到退出信息。
+			cb := request("terminal/create", map[string]any{
+				"sessionId": sid, "command": cmd, "args": []string{"sleep"},
+				"env":             []any{map[string]any{"name": "ECHOCMD_SLEEP_MS", "value": "30000"}},
+				"outputByteLimit": 4096,
+			})
+			out["create_b"] = fsResult(cb)
+			idb := terminalID(cb)
+			if idb != "" {
+				out["output_b"] = fsResult(request("terminal/output",
+					map[string]any{"sessionId": sid, "terminalId": idb}))
+				out["kill_b"] = fsResult(request("terminal/kill",
+					map[string]any{"sessionId": sid, "terminalId": idb}))
+				out["wait_b"] = fsResult(request("terminal/wait_for_exit",
+					map[string]any{"sessionId": sid, "terminalId": idb}))
+				out["release_b"] = fsResult(request("terminal/release",
+					map[string]any{"sessionId": sid, "terminalId": idb}))
+			}
+			if ida != "" {
+				out["release_a"] = fsResult(request("terminal/release",
+					map[string]any{"sessionId": sid, "terminalId": ida}))
+				// 释放之后再取：id 已经不认识，这就是「release 才清」的样子。
+				out["output_released"] = fsResult(request("terminal/output",
+					map[string]any{"sessionId": sid, "terminalId": ida}))
+			}
+			raw, _ := json.Marshal(out)
+			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": string(raw)}})
+			reply(m.ID, map[string]any{"stopReason": "end_turn"})
+
 		case "delayed":
 			notify(sid, "agent_message_chunk", map[string]any{"content": map[string]any{"type": "text", "text": "已收到，正在处理。"}})
 			select {
@@ -328,6 +384,37 @@ func fsResult(m rpcMsg) string {
 		return "unencodable result"
 	}
 	return string(b)
+}
+
+// terminalID 从 terminal/create 的应答里取 id（失败时空串）。
+func terminalID(m rpcMsg) string {
+	if m.Error != nil {
+		return ""
+	}
+	if res, ok := m.Result.(map[string]any); ok {
+		if id, ok := res["terminalId"].(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+// pollOutput 轮询 terminal/output 直到出现 exitStatus（最多 5 秒），返回最后一次应答。
+// 真代理也是这么用的（kimi 每 250 ms 取一次），所以这里顺带验证「退出后还能取到输出」。
+func pollOutput(sid, id string) rpcMsg {
+	params := map[string]any{"sessionId": sid, "terminalId": id}
+	var last rpcMsg
+	for i := 0; i < 100; i++ {
+		last = request("terminal/output", params)
+		if last.Error != nil {
+			return last
+		}
+		if res, ok := last.Result.(map[string]any); ok && res["exitStatus"] != nil {
+			return last
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return last
 }
 
 // fakeDelay 延后模式等多久（手验时可以直接调成 1000 让节奏快一点）。

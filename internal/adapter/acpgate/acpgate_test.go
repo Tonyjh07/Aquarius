@@ -16,8 +16,12 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// fakeAgent 测试期现编的脚本化 ACP 代理（testdata/fakeagent）。
-var fakeAgent string
+// fakeAgent 测试期现编的脚本化 ACP 代理（testdata/fakeagent）；echoCmd 是 terminal
+// 回调测试里被代跑的那条命令（testdata/echocmd）。
+var (
+	fakeAgent string
+	echoCmd   string
+)
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "acpgate-test")
@@ -25,16 +29,24 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "temp dir: %v\n", err)
 		os.Exit(1)
 	}
-	bin := filepath.Join(dir, "fakeagent")
+	suffix := ""
 	if runtime.GOOS == "windows" {
-		bin += ".exe"
+		suffix = ".exe"
 	}
-	out, err := exec.Command("go", "build", "-o", bin, "./testdata/fakeagent").CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "build fake agent: %v\n%s", err, out)
-		os.Exit(1)
+	for _, p := range []struct {
+		name, pkg string
+		dst       *string
+	}{
+		{"fakeagent", "./testdata/fakeagent", &fakeAgent},
+		{"echocmd", "./testdata/echocmd", &echoCmd},
+	} {
+		bin := filepath.Join(dir, p.name+suffix)
+		if out, err := exec.Command("go", "build", "-o", bin, p.pkg).CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "build %s: %v\n%s", p.name, err, out)
+			os.Exit(1)
+		}
+		*p.dst = bin
 	}
-	fakeAgent = bin
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

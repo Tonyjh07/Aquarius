@@ -1,10 +1,9 @@
 // Package acpgate 实现 port.Delegate（§5.18/D244）：把一件复杂任务**整个**交给一个
 // ACP 代理进程去跑，我们只收回它的报告。
 //
-// 我们是客户端，不是代理：只做 ACP v1 的六个方法（initialize / session/new /
-// session/prompt / session/update / session/cancel / session/request_permission），
-// `fs/*` 与 `terminal/*` 一个都不申报——申报等于承诺替它读写文件、替它管终端，
-// 那是一整条新的能力面（D260 的「能力扩张」已排后续）。
+// 我们是客户端，不是代理：做 ACP v1 的六个方法，外加代理回调给我们的 `fs/*`（A2）与
+// `terminal/*`（A3）——申报一项就等于承诺替它做那一项。两条回调都是**经手**，不是围栏：
+// 代理自己起 shell 的那条路看不见（D283/A3）。
 //
 // 一次转交 = 一个进程、一个 ACP 会话（D261：后台任务模型，派活即返句柄）。进程跑完即关，
 // sessionId 不跨次使用——攒两份互相矛盾的历史比丢上下文更糟。
@@ -55,6 +54,9 @@ type Options struct {
 	// OutsideReadAsks 越界读的询问次数：>0 = 那么多次；0 = 一次都不问（直接拒并留档）；
 	// 负数 = 不限。nil = port.DefaultDelegateOutsideReadAsks（D284）。
 	OutsideReadAsks *int
+	// TerminalAsks 命令确认的询问次数（A3）：>0 = 那么多次；0 = 一次都不问（直接拒并
+	// 留档）；负数 = 不限。nil = port.DefaultDelegateTerminalAsks。
+	TerminalAsks *int
 	// Log 运行日志（D276）：级别 / 上下文 / 事件 / 行动都按 key 给；nil = 丢弃。
 	Log port.Log
 	// LookPath 可执行探测（测试可覆盖）；nil = exec.LookPath。
@@ -134,6 +136,14 @@ func (m *Manager) outsideReadAsks() int {
 		return port.DefaultDelegateOutsideReadAsks
 	}
 	return *m.opts.OutsideReadAsks
+}
+
+// terminalAsks 本次生效的命令确认次数（同上）。
+func (m *Manager) terminalAsks() int {
+	if m.opts.TerminalAsks == nil {
+		return port.DefaultDelegateTerminalAsks
+	}
+	return *m.opts.TerminalAsks
 }
 
 // List 清单：只探「命令在不在 PATH 上」，不握手（§5.18）。

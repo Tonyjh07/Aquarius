@@ -118,6 +118,9 @@ var zhAdapterGateTexts = map[string]string{
 	"acp.confirm.read_outside":  "外部代理「{agent}」要读会话范围之外的文件：\n  {path}\n\n它自己的 shell 本来也读得到，这里问一次是为了让这份访问留痕。",
 	"acp.confirm.write_outside": "外部代理「{agent}」要写会话范围之外的文件：\n  {path}\n\n批准 = 允许它按自己的判断改这个文件。",
 	"acp.confirm.control_file":  "外部代理「{agent}」要写一个执行控制类文件（{rule}）：\n  {path}\n\n这类文件能改变「之后谁会跑起来」（版本控制钩子、编辑器或代理的设置、MCP 配置），所以单独问一次。",
+	// 命令确认（A3）：命令、目录、环境变量三者都要出现——策略匹配的是三者，不是命令名。
+	"acp.confirm.terminal":     "外部代理「{agent}」要执行一条命令：\n  {command}\n目录：{cwd}\n\n命令按你的身份运行，由 Aquarius 代它起进程；批准 = 允许它整条跑完。",
+	"acp.confirm.terminal_env": "环境变量：{env}",
 	// 连通性探测（A1「测试连接」）：三类失败要分开，用户能据此改对地方。
 	"acp.probe.err.not_found": "命令不在 PATH 上",
 	"acp.probe.err.start":     "起不了进程",
