@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-08 @ c00d8ef -->
+<!-- docs-sync: 2026-11-08 @ a88d0ae -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1012,6 +1012,25 @@ commands only when a sandbox enforces it」。申报 `terminal` 等于按当前�
 shell 的那条永远看不见。哪条走哪条由代理决定——读源码已知 kimi-code 走（它把
 `clientCapabilities.terminal` 绑成 Bash 工具的开关），opencode v2.0.15 不走（它的 ACP 端不读
 `fs` 与 `terminal`）。同一次转交，给前者能审，给后者看不见。
+
+**会话选项**（D287）：`session/new` 的响应带 `configOptions`（模型、思考档位、模式），要改只能
+走 `session/set_config_option`——协议里**没有**「建会话时指定模型」的字段。`delegate.agents[].options`
+的键是代理广告的 `configId`，值是它广告的 `value`，两者原样使用：
+
+- **不解析、不拼接**：两家的格式本来就不同（kimi 用配置里的模型键 `gw/deepseek-v4.1-flash`，
+  opencode 用 `providerID/modelID`），拼不出来。
+- **不按显示名匹配**：`name` 与 `value` 常常不是一个东西（kimi 的 name 正是它 config.toml 里
+  `model` 字段的值），照界面上看到的名字填会被代理拒。
+- **顺序固定**：`model` → `thought_level` → `mode` → 其余按 id 升序。思考档位的合法值跟着当前
+  模型走，先切模型才有得选；而 map 无序，不定顺序就是随机失败。
+- **每步读回**：广告过不等于设得上（opencode 把 `deepseek/*` 列进候选，设它却回 model not found）；
+  设完从响应里读 `currentValue`，不等于目标即失败。任何一项设不上 → **整次转交失败**，不静默
+  按默认跑下去——那会让用户以为在用自己选的模型。
+- **报告写出实际生效值**：`model` 恒在，没配置过的标「对方默认」（默认值随版本变，不写下来
+  同一份结论就复现不了）；其余只列配置指定过的项。
+
+代价：`options` 也让用户能写 `"mode": "yolo"` 这类模式。代理一旦全自动，A2 的读写与 A3 的命令
+可能根本不经过我们 ——**可配置的自由与可审性在这里此消彼长**，用户文档要写明。
 
 `elicitation` **不申报**：本构建没有「回头问用户一个结构化问题」的交互面，申报等于承诺一个
 不存在的功能。**也不把我们自己的 MCP server 转发给它**：它的工具面归它自己，转发等于把两套

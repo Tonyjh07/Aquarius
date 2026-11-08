@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-08 @ c00d8ef -->
+<!-- docs-sync: 2026-11-08 @ a88d0ae -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -358,6 +358,7 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 | `delegate.agents[].workdir` | string | 家目录 | 子进程起点（绝对路径；**不是围栏**） |
 | `delegate.agents[].enabled` | bool | `true` | 键缺失 = 启用 |
 | `delegate.agents[].default` | bool | `false` | 只配一条时可不写；多条目时最多一条 |
+| `delegate.agents[].options` | object | `{}` | 建会话后要设上的会话选项：键是代理的配置项名（`model` / `mode` / `thinking` 这类），值是它列出的候选之一。**值必须照它广告的原样写**，显示名常常与它不同（kimi 显示 `trae/deepseek-v4.1-flash`，能填的是 `gw/deepseek-v4.1-flash`）。设不上就整次转交失败并列出可填值，不静默换回默认。开「测试连接」可以看到当前模型与可选个数 |
 | `delegate.timeout_sec` | int | `1800` | 单次转交总闸；显式 `0` = 不限，上限 `86400` |
 | `delegate.max_concurrent` / `max_total` | int | `2` / `4` | 每会话 / 全局同时转交的上限；超限时 `delegate` 直接回绝，不排队 |
 | `delegate.outside_read_max` | int | `8` | 一次转交里「读会话范围之外的文件」最多问你几次；同一文件只问一次。`-1` = 不限（每次都问）、`0` = 不问直接拒（留在报告里）。范围外**写**不受这个值影响，每次都问 |
