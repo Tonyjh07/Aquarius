@@ -16,6 +16,26 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// TestCommandText 命令行展示：参数边界要看得出来。
+//
+// 真实代理给的是 `bash.exe -c "<一整段脚本>"`——把脚本原样拼进去，读的人会以为 `-c`
+// 后面跟着五个参数；引号标出来才说明那是**一个**。
+func TestCommandText(t *testing.T) {
+	got := commandText(`C:\Git\bin\bash.exe`, []string{"-c", `cd 'E:\repo' && echo hi`})
+	want := `C:\Git\bin\bash.exe -c "cd 'E:\repo' && echo hi"`
+	if got != want {
+		t.Fatalf("commandText = %q, want %q", got, want)
+	}
+	// 不含空白的参数不加引号：`-c` 与 `ls` 本来就分得清。
+	if got := commandText("bash", []string{"-c", "ls"}); got != "bash -c ls" {
+		t.Fatalf("无空白参数不该加引号：%q", got)
+	}
+	// 空参数要标出来，否则两个连续空格看不出中间还有个参数。
+	if got := commandText("bash", []string{""}); got != `bash ""` {
+		t.Fatalf("空参数应写成双引号：%q", got)
+	}
+}
+
 // TestHeadBufferTruncatesFromHead 有界缓冲：超限从**头部**丢，落在字符边界上，
 // 长度不忽增忽减（代理按长度差取增量）。
 //

@@ -79,6 +79,19 @@ func TestDelegateReportTextCommands(t *testing.T) {
 	if got := DelegateReportText("d004", DelegateRun{Agent: "x"}); strings.Contains(got, "Commands run") {
 		t.Fatalf("没有命令时不该出现这一行：\n%s", got)
 	}
+	// 反斜杠不写成两个：真实代理在 Windows 上给的就是这种路径，`\\` 会让报告里的路径
+	// 一眼认不出来。
+	win := DelegateReportText("d005", DelegateRun{Agent: "kimi", Duration: time.Second,
+		Commands: []CommandRun{{Line: `C:\Git\bin\bash.exe -c cd 'E:\repo' && git status`, ExitCode: &code0}}})
+	if !strings.Contains(win, `"C:\Git\bin\bash.exe -c cd 'E:\repo' && git status" (exit 0)`) {
+		t.Fatalf("Windows 路径不该被转义：\n%s", win)
+	}
+	// 命令里本来就有双引号时外面改用反引号：两串双引号套在一起，一条命令会被读成两条。
+	nested := DelegateReportText("d006", DelegateRun{Agent: "kimi", Duration: time.Second,
+		Commands: []CommandRun{{Line: `bash -c "git status"`, ExitCode: &code0}}})
+	if !strings.Contains(nested, "`bash -c \"git status\"` (exit 0)") {
+		t.Fatalf("含双引号的命令应改用反引号：\n%s", nested)
+	}
 }
 
 // TestNormalizeRoots 根集归一：去空白、去空项、去重（保序），相对路径拒收。

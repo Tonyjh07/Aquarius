@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -249,12 +248,12 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 	return b.String()
 }
 
-// commandsText 命令清单的一行写法。命令按字面量渲染（%q）：脚本里的换行、引号与逗号
-// 原样保留，读者不会把一条命令看成两条，也不会把参数里的逗号当成清单分隔符。
+// commandsText 命令清单的一行写法。每条命令包在双引号里：脚本里的逗号不会被当成清单
+// 分隔符，换行也只写成 \n，不会把一行拆成两行。
 func commandsText(cmds []CommandRun) string {
 	parts := make([]string, 0, len(cmds))
 	for _, c := range cmds {
-		s := strconv.Quote(c.Line)
+		s := quoteCommand(c.Line)
 		switch {
 		case c.Signal != "":
 			s += " (stopped by " + c.Signal + ")"
@@ -262,11 +261,31 @@ func commandsText(cmds []CommandRun) string {
 			s += fmt.Sprintf(" (exit %d)", *c.ExitCode)
 		}
 		if c.Tail != "" {
-			s += "; tail: " + strconv.Quote(c.Tail)
+			s += "; tail: " + quoteCommand(c.Tail)
 		}
 		parts = append(parts, s)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// quoteCommand 命令的展开展示：原样放进引号里，只把控制字符写成转义形式。
+//
+// 不用 strconv.Quote：它会把 `E:\Aquarius` 里的每个反斜杠写成两个，报告里的路径一眼
+// 认不出来。读这段的人要的是「它跑了什么」，不是一段能重新解析的字面量。
+//
+// 引号要挑一个命令里没出现的：外面套双引号、里面也是一串双引号时，一段命令会被读成
+// 两个字符串——那正是这份报告最不该犯的错。
+func quoteCommand(s string) string {
+	esc := strings.NewReplacer("\r", `\r`, "\n", `\n`, "\t", `\t`)
+	s = esc.Replace(s)
+	switch {
+	case !strings.ContainsRune(s, '"'):
+		return `"` + s + `"`
+	case !strings.ContainsRune(s, '`'):
+		return "`" + s + "`"
+	default:
+		return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+	}
 }
 
 // stopReasonText 停止原因的用户面/模型面措辞：max_tokens、refusal 这些必须被看见，

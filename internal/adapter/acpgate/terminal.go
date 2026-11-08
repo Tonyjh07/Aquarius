@@ -500,11 +500,30 @@ func clip(s string, max int) string {
 
 // commandText 命令行的一行写法（确认框与备注里用）。换行保留：脚本里的换行是它的一部分，
 // 抹掉会让人看成另一条命令。
+//
+// 参数逐个过一遍 argv 的展示写法：`bash -c cd 'x' && git status` 与「-c 后面跟着一整段
+// 脚本」读起来是两回事，而真正被执行的只有后者。
 func commandText(command string, args []string) string {
-	if len(args) == 0 {
-		return command
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, argText(command))
+	for _, a := range args {
+		parts = append(parts, argText(a))
 	}
-	return command + " " + strings.Join(args, " ")
+	return strings.Join(parts, " ")
+}
+
+// argText 单个 argv 的展示写法：含空白或引号才加双引号，让「这是一个参数」看得出来。
+//
+// 不转义反斜杠（Windows 路径满屏 `\\` 更难读），所以这不是一段可直接粘贴的 shell 命令：
+// 它回答的是「代理到底给了哪些参数」，不是「照抄能跑」。
+func argText(s string) string {
+	if s == "" {
+		return `""`
+	}
+	if !strings.ContainsAny(s, " \t\r\n\"") {
+		return s
+	}
+	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 }
 
 // terminalEnv 代理给的命令环境。剔除 AQUARIUS_*：宿主密钥不跟着命令走（与起子代理
