@@ -110,8 +110,12 @@ func optionsReport(configured map[string]string, snapshot []acp.SessionConfigOpt
 		if opt == nil || opt.Select == nil {
 			continue // 该代理没有这一项（或它不是选择型）：没发生的事不进报告
 		}
-		_, set := configured[id]
-		out = append(out, port.OptionValue{Name: id, Value: string(opt.Select.CurrentValue), Set: set})
+		// Set 看的是「现值与配置值一致」，不是「配置里有这一项」：设置失败时报告仍会被
+		// 交出去（D268 要保住已收到的正文），那时现值还是对方的默认值，写成「已配置」
+		// 会让读报告的人以为用上了。
+		cur := string(opt.Select.CurrentValue)
+		want, set := configured[id]
+		out = append(out, port.OptionValue{Name: id, Value: cur, Set: set && want == cur})
 	}
 	return out
 }

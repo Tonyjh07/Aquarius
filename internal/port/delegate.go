@@ -128,8 +128,8 @@ type CommandRun struct {
 type OptionValue struct {
 	Name  string `json:"name"`  // 配置项名（代理广告的那个）
 	Value string `json:"value"` // 代理最后回报的当前值
-	// Set 这一项是否由配置指定。false = 用的是代理自己的默认值——模型尤其要标出来：
-	// 它随时可能变，不写清楚就无法复现同一份结论。
+	// Set 现值是否就是配置指定的那个值。false = 现值仍是代理自己的默认值（也可能是配置
+	// 的值没设上）——模型尤其要标出来：它随时可能变，不写清楚就无法复现同一份结论。
 	Set bool `json:"set,omitempty"`
 }
 
