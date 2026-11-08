@@ -439,6 +439,7 @@ func TestDelegateProbe(t *testing.T) {
 	fake.probeInfo = DelegateProbe{
 		ProtocolVersion: 1, Title: "opencode", Version: "2.0.15",
 		AuthMethods: []string{"Log in first"}, LoadSession: true,
+		Model: "xiaomi/mimo-v2.6-pro", ModelCount: 23,
 	}
 	u, f := openDelegatePage(t, Options{
 		Settings:  func() SettingsSnapshot { return fillSnapshot() },
@@ -475,6 +476,14 @@ func TestDelegateProbe(t *testing.T) {
 	}
 	if !strings.Contains(line, "Log in first") {
 		t.Fatalf("登录方式应出现在能力行: %q", line)
+	}
+	// 模型行给当前值与可选个数：用户填 options 时要照着它填。
+	model := delegateModelLine(out.info)
+	if !strings.Contains(model, "xiaomi/mimo-v2.6-pro") || !strings.Contains(model, "23") {
+		t.Fatalf("模型行 = %q", model)
+	}
+	if got := delegateModelLine(DelegateProbe{}); got != "" {
+		t.Fatalf("代理不支持选模型时不该出这一行：%q", got)
 	}
 }
 

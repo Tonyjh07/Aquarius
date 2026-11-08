@@ -177,7 +177,7 @@ func TestDelegateConfigOptions(t *testing.T) {
 		`{"delegate":{"agents":[{"name":"a","command":"x","options":{"mode":"  "}}]}}`,
 	} {
 		_, err := delegateConf(t, raw).delegateOptions(nil, nil, nil, nil)
-		if err == nil || !strings.Contains(err.Error(), "空键或空值") {
+		if err == nil || !strings.Contains(err.Error(), "delegate.agents") {
 			t.Fatalf("%s: err = %v", raw, err)
 		}
 	}

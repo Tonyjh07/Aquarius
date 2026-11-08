@@ -51,7 +51,7 @@ func applyOneOption(ctx context.Context, conn *acp.ClientSideConnection, sid acp
 			id, optionIDs(snapshot))
 	}
 	if opt.Select == nil {
-		return snapshot, fmt.Errorf("session option %q is a on/off switch; this build only sets options that pick from a list (D287)", id)
+		return snapshot, fmt.Errorf("session option %q is a on/off switch; this build only sets options that pick from a list", id)
 	}
 	values := selectValues(opt.Select)
 	if !containsString(values, want) {

@@ -125,6 +125,7 @@ var zhAdapterGateTexts = map[string]string{
 	"acp.probe.err.not_found": "命令不在 PATH 上",
 	"acp.probe.err.start":     "起不了进程",
 	"acp.probe.err.handshake": "握手失败",
+	"acp.probe.err.session":   "建不了会话",
 
 	// ---- mcpgate：MCP server 的连接、密钥解析与 prompt 参数用法。 ----
 	"mcp.err.connect":            "连接插件 {name}",

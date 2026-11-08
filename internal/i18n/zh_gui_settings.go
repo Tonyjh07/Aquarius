@@ -198,6 +198,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.dlg.cap_embedded":   "内联上下文",
 	"ui.settings.dlg.cap_mcp_http":   "MCP over HTTP",
 	"ui.settings.dlg.cap_mcp_sse":    "MCP over SSE",
+	"ui.settings.dlg.option_model":   "当前模型 {current}（可选 {n} 个）",
 
 	// ── 工具与 MCP 页（settings_tools.go）。
 	"ui.settings.tool.builtin_updated":   "内置工具已更新（热生效）",

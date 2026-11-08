@@ -120,6 +120,7 @@ var enAdapterGateTexts = map[string]string{
 	"acp.probe.err.not_found": "Command not on PATH",
 	"acp.probe.err.start":     "Could not start the process",
 	"acp.probe.err.handshake": "Handshake failed",
+	"acp.probe.err.session":   "Could not open a session",
 
 	// ---- mcpgate：MCP server 的连接、密钥解析与 prompt 参数用法。 ----
 	"mcp.err.connect":            "cannot connect plugin {name}",

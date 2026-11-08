@@ -40,6 +40,55 @@ func TestProbeHandshake(t *testing.T) {
 	}
 }
 
+// TestProbeOptions 探测顺带把会话配置项带回来：用户填 options 时缺的正是这份清单。
+func TestProbeOptions(t *testing.T) {
+	t.Parallel()
+	m := newManager(t, "options", func(o *Options) { o.Home = t.TempDir() })
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	info, err := m.Probe(ctx, "fake")
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	var model *ProbeOption
+	for i := range info.Options {
+		if info.Options[i].ID == "model" {
+			model = &info.Options[i]
+		}
+	}
+	if model == nil {
+		t.Fatalf("探测回执缺 model 项：%+v", info.Options)
+	}
+	if model.Category != "model" || model.Current != "alpha/model-1" {
+		t.Fatalf("model 项 = %+v", *model)
+	}
+	if len(model.Values) != 3 || model.Values[1].Value != "beta/model-2" {
+		t.Fatalf("候选 = %+v", model.Values)
+	}
+	// 开关形状没有候选，不列。
+	for _, o := range info.Options {
+		if o.ID == "verbose" {
+			t.Fatalf("开关形状不该进候选清单：%+v", o)
+		}
+	}
+}
+
+// TestProbeSessionRefused 建会话失败单列一类：没登录的代理握手是成功的，把它混进
+// 「握手失败」会把用户指向错误的地方。
+func TestProbeSessionRefused(t *testing.T) {
+	t.Parallel()
+	m := newManager(t, "auth", func(o *Options) { o.Home = t.TempDir() })
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, err := m.Probe(ctx, "fake")
+	if !errors.Is(err, ErrProbeSession) {
+		t.Fatalf("err = %v，want ErrProbeSession", err)
+	}
+	if !strings.Contains(err.Error(), "authentication required") {
+		t.Fatalf("要带上对方的原因：%v", err)
+	}
+}
+
 // TestProbeFailureClasses 三类失败分开报：找不到命令 / 起不来 / 握手失败（带 stderr 尾巴）。
 func TestProbeFailureClasses(t *testing.T) {
 	t.Parallel()

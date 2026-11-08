@@ -72,6 +72,10 @@ type DelegateProbe struct {
 	PromptEmbedded  bool
 	McpHTTP         bool
 	McpSSE          bool
+	// Model 探测时建一次会话读到的当前模型与它有几个可选项。用户在 `options` 里填
+	// 模型时，最缺的就是「当前是哪个、还有多少可选」；完整候选在转交报错时给出。
+	Model      string
+	ModelCount int
 }
 
 // DelegateSnapshot 外部代理页的快照。
@@ -400,6 +404,14 @@ func (f *settingsForm) delegateProbeRow(gtx layout.Context, th *material.Theme, 
 			}
 			return layout.Dimensions{}
 		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if line := delegateModelLine(out.info); line != "" {
+				l := material.Label(th, paperMicroSp(th), line)
+				l.Color = paperOf().text3
+				return l.Layout(gtx)
+			}
+			return layout.Dimensions{}
+		}),
 	)
 }
 
@@ -436,6 +448,15 @@ func delegateCapLine(p DelegateProbe) string {
 		line += " · " + i18n.Tf("ui.settings.dlg.cap_auth", "methods", strings.Join(p.AuthMethods, i18n.T("ui.common.list_sep")))
 	}
 	return line
+}
+
+// delegateModelLine 当前模型那一行。探测没带回模型（该代理不支持选模型）就不出这一行。
+// 只给当前值与可选个数：候选可能有二十多个，界面里放不下，完整清单在转交报错时给出。
+func delegateModelLine(p DelegateProbe) string {
+	if p.Model == "" {
+		return ""
+	}
+	return i18n.Tf("ui.settings.dlg.option_model", "current", p.Model, "n", strconv.Itoa(p.ModelCount))
 }
 
 // formatDelegateEnv 环境变量表 → 多行文本（按键排序：同配置每次展开看到同一顺序）。

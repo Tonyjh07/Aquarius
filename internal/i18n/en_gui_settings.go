@@ -197,6 +197,7 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.dlg.cap_embedded":   "embedded context",
 	"ui.settings.dlg.cap_mcp_http":   "MCP over HTTP",
 	"ui.settings.dlg.cap_mcp_sse":    "MCP over SSE",
+	"ui.settings.dlg.option_model":   "Current model {current} ({n} to choose from)",
 
 	// Tools & MCP page (settings_tools.go).
 	"ui.settings.tool.builtin_updated":   "Built-in tool updated (live)",

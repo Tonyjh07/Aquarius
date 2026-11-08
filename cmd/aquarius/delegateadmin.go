@@ -522,7 +522,7 @@ func (a *delegateAdmin) Probe(name string) (uigui.DelegateProbe, error) {
 	if err != nil {
 		return uigui.DelegateProbe{}, err
 	}
-	return uigui.DelegateProbe{
+	out := uigui.DelegateProbe{
 		ProtocolVersion: info.ProtocolVersion,
 		Title:           info.Title,
 		Version:         info.Version,
@@ -533,5 +533,13 @@ func (a *delegateAdmin) Probe(name string) (uigui.DelegateProbe, error) {
 		PromptEmbedded:  info.PromptEmbedded,
 		McpHTTP:         info.McpHTTP,
 		McpSSE:          info.McpSSE,
-	}, nil
+	}
+	// 当前模型单独取出来给设置窗显示一行；其余选项这一版不在界面上摊开。
+	for _, o := range info.Options {
+		if o.Category == "model" || o.ID == "model" {
+			out.Model, out.ModelCount = o.Current, len(o.Values)
+			break
+		}
+	}
+	return out, nil
 }
