@@ -78,6 +78,14 @@ func findDelegateInject(convs []*conversation.Conversation) (*conversation.Conve
 	return nil, ""
 }
 
+// 端到端等的两个预算。转交要真起进程，而全量跑时它还要和别的包的测试抢 CPU：
+// 20 秒在并行跑里不够用（见过 29 秒才落地）。轮询成功即退出，预算给宽不花钱；
+// 这两个数只防「程序真的卡死」，不是断言的一部分。
+const (
+	e2eReportWait = 60 * time.Second
+	e2eExitWait   = 30 * time.Second
+)
+
 // TestRunDelegateE2E 派出 → 切走（/new）→ 报告落在**发起**会话。
 //
 // 时序不是靠 sleep 猜的：转交用真进程跑到终态，注入走 D261 的异地落地；测试轮询
@@ -112,7 +120,7 @@ func TestRunDelegateE2E(t *testing.T) {
 
 	var origin *conversation.Conversation
 	var text string
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(e2eReportWait)
 	for time.Now().Before(deadline) {
 		origin, text = findDelegateInject(loadAllConversations(t, dir))
 		if origin != nil {
@@ -134,7 +142,7 @@ func TestRunDelegateE2E(t *testing.T) {
 		if c != 0 {
 			t.Fatalf("exit code = %d, stdout = %q", c, out.String())
 		}
-	case <-time.After(15 * time.Second):
+	case <-time.After(e2eExitWait):
 		t.Fatal("程序未退出")
 	}
 
@@ -187,7 +195,7 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 
 	// 等这条事实落地（启动对账在第一次 Prompt 之前）。
 	var text string
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(e2eReportWait)
 	for time.Now().Before(deadline) {
 		_, text = findDelegateInject(loadAllConversations(t, dir))
 		if text != "" {
@@ -205,7 +213,7 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 		if c != 0 {
 			t.Fatalf("exit code = %d", c)
 		}
-	case <-time.After(15 * time.Second):
+	case <-time.After(e2eExitWait):
 		t.Fatal("程序未退出")
 	}
 	if text == "" {
