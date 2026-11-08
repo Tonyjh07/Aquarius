@@ -6,7 +6,7 @@ package i18n
 // zh 时全绿，但「跟 key 走」的契约只对生产代码成立：一旦有人在 `AQUARIUS_UI_LANG=en` 下跑
 // 回归（或以后加第三种语言），成片断言会碎，且碎因看着像文案改坏了。
 //
-// 判据（plan.md I6，写死、不留裁量）——`_test.go` 里**四类期望值位置**的中文字面量必须为 0：
+// 判据写死、不留裁量——`_test.go` 里**四类期望值位置**的中文字面量必须为 0：
 //
 //  1. `strings.Contains/ContainsAny/ContainsRune/Count/HasPrefix/HasSuffix/EqualFold/Compare`
 //     与名为 `Equal` 的判定调用的实参（子串断言改成「从表里拼出期望值再比」）；

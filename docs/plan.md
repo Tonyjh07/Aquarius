@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-08 @ a88d0ae -->
+<!-- docs-sync: 2026-11-08 @ ecd3996 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -24,204 +24,10 @@
 
 | 版本 | 主题 | 剩余工作 | 状态 |
 |---|---|---|---|
-| v0.6.0 | 外部代理：设置窗直接配 ACP + 申报 `fs` / `terminal` + 会话选项 | A1、A2、A3、A4 已落地。语音前处理与说话人仍在 backlog | 进行中 |
-| v0.7.0 | 决策策略：工具粒度四态放行 + 模型辅助决策 | 单条主线（D280/D281）。前置是 v0.6.0 落地——A2 跑起来才会产生第一批真实确认记录，正好当标注集 | 未开工 |
+| v0.7.0 | 决策策略：工具粒度四态放行 + 模型辅助决策 | 单条主线（D280/D281）。前置的 v0.6.0 已发布，外部代理的读写与命令确认从这里开始积累记录 | 未开工 |
 
 > **PTC（程序化工具调用）的调研已完成但未排期**，究竟是搭进 v0.7.0（那一版已排了决策策略）、
-> 还是再往后，待拍板；定下来之前 v0.6.0 就是上表那三件，不改。调研结论、候选引擎的实测与已排除
-> 的路都在下文「程序化工具调用」一节。
-
----
-
-## 外部代理：设置窗直接配 ACP + 申报能力（v0.6.0，整条主线）
-
-> 2026-11-03 拍板：代理不再只靠手写 `config.json` 配，设置窗要能直接增删改。这条把申报面也一并
-> 带出来——申报 `fs` / `terminal` 的口径取决于「配置里到底能写什么」，两块拆开做等于把同一套
-> 字段口径写两遍，所以同版、按 A1 → A2 → A3 由浅入深（三件都已落地）。
-> 「转接的任务并行」仍不在这一线——转接的并行随后台化一起进主线（D261）。
-
-### A2 申报 `fs`（已完成）
-
-**要什么**：把「代理改了哪些文件」从**代理自称**变成**Aquarius 经手**。现在 `Changed` 取的是代理
-`tool_call_update` 里报的路径——代理不报就漏、代理报错就脏；这一份清单是报告里最容易被当成事实
-的一段。申报 `fs.readTextFile` / `fs.writeTextFile` 之后读写都过 Aquarius 的进程，这是唯一能拿到
-可靠改动清单的路径。
-
-**义务**（协议的 MUST/SHOULD，逐条落地）：
-
-- `fs/write_text_file` 文件不存在**必须创建**；父目录不存在要不要建协议没说，按「建」处理
-  并在用户文档写死。
-- 路径按**会话根集**（`cwd` + 可选的 `additionalDirectories`）**逐段比对、fail closed**；
-  越界不静默写，转 `Confirmer`。
-  **根集来源已经定好**（2026-11-07）：`cwd` = 这次转交的 `workdir`，额外根 = `delegate` 的
-  `roots` 参数（确认框里批准过的那几个），**不读配置**。判据就在 `DelegateSpec.Roots` 上。
-  语义是「在 workdir 之外额外申请」：不填 = 最窄，填一个多一份许可。
-- 写**执行控制类文件**（版本控制钩子、代理与编辑器设置、MCP 配置）单独问一次——协议点名这几类。
-- `fs/read_text_file` 的 `line` / `limit` 是 **1 基行号切片**，不是字节偏移。
-
-**落地时定的三条**（D283/D284）：
-
-- `Changed` **不合并**：新增 `Wrote`（经手写的）与 `ReadOutside`（问过才读的越界读），报告分三段列。
-- 越界读按次数问（`delegate.outside_read_max`：缺省 8、`-1` 不限、`0` 不问直接拒），同一路径只问一次；
-  越界写每次都问；控制文件清单是代码常量。
-- `additionalDirectories` 只在对方申报了 `sessionCapabilities.additionalDirectories` 时才发；
-  没申报就不发，本地照拦照放并记一条 note。
-
-**验证**：两个 `fs` 方法走 testy 的 `callbacks`，口径与分工见本节末「验证样本」。
-已跑通（2026-11-07，testy 直连）：写下的字节与它发的一致、记进 `Wrote`，`terminal/*` 五个
-当时按未申报回 -32601（A3 之后这五个已实现，见下节），末尾 `elicitation` 如预期以 -32602 收尾。
-门禁里跳过（要 cargo、二进制在 temp）。
-
-### A3 申报 `terminal`（已落地）
-
-**落地**（2026-11-08）：申报与五个方法（`terminal.go`）、报告里的命令清单、两个配置键
-（`delegate.terminal` / `delegate.terminal_ask_max`）、文档。口径与代价记在 D286。
-testy 的 `callbacks` 也跑过了：命令 `printf testy terminal` 真的跑起来、退出码 0，五个
-`terminal/*` 全通；它仍在门禁里跳过（要 cargo、二进制在 temp）。
-
-### A4 会话选项（已落地）
-
-**落地**（2026-11-08）：`delegate.agents[].options`——键是代理广告的 `configId`，值是它广告的
-`value`。建会话后按 `model` → `thought_level` → `mode` → 其余的顺序设上，每步读回
-`currentValue`；任何一项设不上就整次失败并列出可填值。报告恒写实际模型（没配过的标「对方
-默认」）。探测顺带建一次会话，把配置项与候选带回来，设置窗显示当前模型与可选个数。
-
-实测两家的形状记在 D287：`id` 与 `category` 都是 `model`，但 kimi 的值是它自己配置里的模型键、
-opencode 是 `providerID/modelID`，两家的显示名都与可填值不同。
-
-**要什么**：命令由**Aquarius**执行，于是能拦、能限、能杀，输出能进报告。
-
-**前置验证的结论（2026-11-08，读源码得出，没有跑真实任务）**：
-
-- **kimi-code 走**。`packages/acp-server` 在 `initialize` 里把 `clientCapabilities.terminal`
-  绑成开关（`server.ts`），开关打开时 Bash 工具改经 `terminal/create` 交给我们跑
-  （`acp-terminal/acpTerminalRunner.ts`）；`fs` 两个能力同样各自绑开关（`server.ts`），
-  所以 A2 在它身上也生效。
-- **opencode（v2.0.15）不走**。它的 ACP 端只读 `elicitation`、`session.compaction` 与 `_meta`
-  的扩展位（`packages/cli/src/acp/capabilities.ts`），`fs` 与 `terminal` 一个都不读，整个
-  `packages/` 里没有一处 `terminal/create` 或 `fs/*` 的调用。
-- 判据是「主流代理里至少有一家真的改走」，kimi 这一条足够；opencode 那条反向证据正好当
-  「两条执行路径并存」的实例写进用户文档：同一次转交，给 kimi 能审，给 opencode 看不见。
-
-**报文形状（kimi 定死的，照着写，别按协议的一般情形想象）**：
-
-| 字段 | 值 |
-|---|---|
-| `command` | 它的 `shellPath`（bash），不是用户写的命令 |
-| `args` | 恒两项：`-c` 与 `cd '<cwd>' && <命令>` |
-| `cwd` | 非空绝对路径 |
-| `env` | `NO_COLOR=1`、`TERM=dumb`、`GIT_TERMINAL_PROMPT`、`SHELL` |
-| `outputByteLimit` | 4 MiB |
-
-它拿我们的回答做什么，直接决定实现的三个细节：
-
-- 每 250 ms 调一次 `terminal/output`，按**字符串长度差**取增量 → `output` 必须始终是
-  **累计全文**；截断只能「丢头、长度停在上限」，长度忽增忽减会让它重复或漏段。
-- 退出之后还要再取一次 `output`，然后才 `release` → 退出后输出仍可取，`release` 才清。
-- `kill` 之后还要 `wait_for_exit` 拿退出码 → `kill` 不释放、不吞退出码。
-
-**义务**：五个方法（`create` / `output` / `wait_for_exit` / `kill` / `release`）；`outputByteLimit`
-要有界缓冲，超限**从头截断且必须落在字符边界**；命令策略要匹配 `command` + `args` + `env`
-三者，不是只看命令名。
-
-**一条不能含糊的**：协议原文——「The root set declares the session's scope. **It confines shell
-commands only when a sandbox enforces it**」。Aquarius 没有沙箱：申报等于程序按当前用户身份执行
-任意命令，根集只是 Aquarius 用来拒绝的判据，不是内核围栏。用户文档里要跟「两条执行路径并存」一起
-讲清：走 Aquarius 的那条能审，代理自己起的那条永远看不见。
-
-**定的口径**（2026-11-08 拍板）：
-
-- 开关 `delegate.terminal` 缺省 `true`；关掉之后 `initialize` 不申报，五个方法回 `-32601`。
-- 确认一律走 `Confirmer`，**不自造命令白/黑名单**——四态策略表是 v0.7.0 的事，这里先塞一套
-  等于把同一套字段口径写两遍。
-- 额度 `delegate.terminal_ask_max`：缺省 8、`-1` 不限、`0` 一次都不问（直接拒并留档），
-  与 `outside_read_max` 同构；额度按「问过几次」算。
-- `cwd` 越界**直接拒**、不问：它只是「从哪儿开始」，命令本来就能 `cd` 出去，问它拦不住任何东西。
-- 不给 shell，直接执行 `command` + `args`；环境 = 父环境剔 `AQUARIUS_*` + 代理给的覆盖。
-- 常量上限：并发 4 条、本次转交建过 32 条、单条缓冲 = 代理给的 `outputByteLimit`
-  （缺省 1 MiB，**请求超过 8 MiB 就拒**，不静默截断）、同时在用缓冲合计 16 MiB
-  （按活着的终端算，`release` 归还；超了拒新的 `create`）。
-- 报告只列命令与退出码，**输出不进正文**；失败的那条附输出末尾一小段。
-
-**待实测两处**（先按注释写，跑通再补测试注释）：空输出时回 `output: ""` 对端收不收；
-Windows 上 `.cmd/.bat`（`npm` → `npm.cmd`）不能直接 exec，按结果二选一——经 `cmd.exe /c`
-包一层，或拒并让代理换写法。kimi 用 bash，所以它这条不会踩到；别的代理未必。
-
-**提交拆分**（五笔，每笔可独立回退）：
-
-1. `feat(acpgate): run the delegated agent's commands through a managed terminal`
-   申报 + 五个方法 + 终端表（`terminal.go`：`byID` / `next` / `total` / `inuse`）；`create` 走
-   校验 → 确认 → 起进程，进程输出合流进有界环形缓冲；`wait_for_exit` 三出口（退出 / 请求 ctx /
-   本次转交被停）；转交收尾杀掉全部活着的终端。判据：`terminal_test.go` 用假 agent 打通五个
-   方法，另测截断落字符边界、`kill` 后仍可取输出与退出码、`release` 后 id 失效、并发与总数
-   上限、`cwd` 越界拒、`AQUARIUS_*` 剔除。
-2. `feat(port): report the commands the delegated agent ran through us`
-   `port.CommandRun{Line, ExitCode, Signal}` + `DelegateRun.Commands` / `CommandsOver`；
-   `DelegateReportText` 加一行，排在「经手写的文件」之前（动作比结果更该先看到）。判据：
-   渲染断言；被拒的命令只进 `Notes`。
-3. `feat(config): let the terminal capability be switched off`
-   `delegate.terminal`、`delegate.terminal_ask_max` 两个键 + 校验（0 / -1 / 负数非法 / 缺省）
-   + 默认配置模板。判据：解析测试；关掉之后 `initialize` 里没有 `terminal`。
-4. `docs: describe the terminal capability and when it is bypassed`
-   contracts §5.18（义务、根集不是围栏、opencode 那个反例）、guide（确认框、怎么关）、
-   configuration（两个键）、decisions（为什么申报、为什么不设命令白名单、为什么输出不进正文）、
-   plan 收尾；提交前 `docsync`。
-5. `test(acpgate): assert the terminal callbacks against the official test agent`
-   testy 的 `callbacks` 扩到五个 `terminal/*`，断言输出与退出码。门禁里仍跳过（要 cargo、
-   二进制在 temp），与 A2 那一笔同口径。
-
-### 验证样本（A2 / A3 共用）
-
-两类样本分工不同，不能互相替代。2026-11-07 定。
-
-**真实链路：opencode、kimi**
-
-> 2026-11-08：这一层的结论已经拿到，方式是**读这两家的源码**，比实跑更确定（不受模型波动、
-> 不花钱、能追到调用点）。结论写在 A3 一节开头。实跑留着复核用——代理换了实现，读源码看不出来
-> 的时候再跑。
-
-| 代理 | 启动 | 角色 |
-|---|---|---|
-| opencode | `opencode acp` | 不复核：源码里就不读这两项能力，跑也是空白 |
-| kimi | `kimi acp`（旧版 `kimi-cli` 是 `--acp`） | 复核：确认 `terminal/create` 真的出现在报文里 |
-
-实跑要**登录 + 真实模型**，一轮任务几十秒到几分钟，结果随模型波动。这一层只回答一个问题：
-主流代理会不会改走我们的回调。**别拿它做回归**——慢、不确定、还要花钱。
-
-**协议全量：testy**
-
-官方 Rust SDK 仓库 `agentclientprotocol/rust-sdk` 里 `agent-client-protocol-test` crate 的
-`testy` 二进制。确定性、无模型、无 key，按 prompt 文本把协议面逐条打一遍：
-
-- `callbacks`：`session/request_permission`、`fs/write_text_file`、`fs/read_text_file`、
-  `terminal/create`、`terminal/output`、`terminal/wait_for_exit`、`terminal/kill`、
-  `terminal/release` 八个请求，顺序固定。
-- `full`：在 `callbacks` 之上再叠全部稳定 `session/update` 变体、取消与 elicitation。
-- 另有 `session_updates`、`content`、`tool_calls`、`wait_for_cancel`、`cancel_status`、
-  `echo <message>`、`help`。
-
-构建（2026-11-07 在本机验过，cargo 1.96.1，1 分 11 秒出二进制）：
-
-```bash
-git clone --depth 1 https://github.com/agentclientprotocol/rust-sdk.git
-cd rust-sdk
-cargo build -p agent-client-protocol-test --bin testy
-```
-
-构建产 `target/debug/testy.exe`，客户端按普通 stdio agent 拉起，`session/prompt` 发纯文本
-`callbacks` 或 `full` 即可。
-
-**两个已知坑**：
-
-- 本机 `~/.cargo/config.toml` 把 crates-io 换成了 aliyun 镜像，索引缺
-  `agent-client-protocol-schema 1.15.1`，直接 build 报 `failed to select a version`。把
-  workspace `Cargo.toml` 里那条 `=1.15.1` 降到 `=1.15.0`，再跑
-  `cargo update -p agent-client-protocol-schema --precise 1.15.0`。改 `CARGO_HOME`、把镜像源
-  指回官方 index 都绕不过——cargo 拒绝把同一个 URL 再定义成另一个 source。
-- `callbacks` 末尾带 elicitation 覆盖。客户端没在 `initialize` 申报 form elicitation 时，
-  整轮以确定性的 `-32602`（`client does not support form elicitation`）收尾。断言要写成
-  「八个回调全到 + 最后这条已知错误」，别把整轮判失败。testy 还会往会话 `cwd` 写
-  `testy-write.txt`，用临时目录跑。
+> 还是再往后，待拍板。调研结论、候选引擎的实测与已排除的路都在下文「程序化工具调用」一节。
 
 ---
 
@@ -231,8 +37,8 @@ cargo build -p agent-client-protocol-test --bin testy
 > ② 那一档「模型辅助」由一个决策模型代替用户点确认；③ 设置这些策略最自然的时刻就是弹框那一刻，
 > 所以确认框本身要给两个即时动作——直选档位、以后都允许（D280/D281/D282）。
 >
-> **前置是 v0.6.0**：A2 落地后才有第一批「用户批/拒了什么」的真实记录，那是阈值唯一的
-> 标注来源。本版开工前不改 A2/A3 的任何口径。
+> **前置已具备**：v0.6.0 带出了 `fs` / `terminal` 两条真实确认路径，从那一版起「用户批了什么、
+> 拒了什么」才有记录可当标注集。本版开工前不改这两条确认路径的任何口径。
 
 ### 要什么
 
@@ -518,7 +324,7 @@ Apache-2.0），80 维 fbank 输入、192 维 embedding，ONNX 体积 fp32 27MB 
 > 定位：模型不再逐次发工具调用，而是写一段脚本，脚本里批量调工具，中间结果不进上下文，只把
 > 最终结果交回。动因是参考 DeepSeek Harness（下文 `dsh`）的 harness 形态。
 >
-> 2026-11-05 调研完成，**只登记不排期**：是否进 v0.6.0、以及最终的形态与语言都待拍板。本节记
+> 2026-11-05 调研完成，**只登记不排期**：进哪个版本、以及最终的形态与语言都待拍板。本节记
 > 「要做成什么样」「为什么这么选」「哪些路已排除」，重启时先照此核一遍上游有无变化。
 
 **动因（本仓现状）**：内置工具十几个（`file_*` / `term_exec` / `job_*` / `web_*` / `memory_*` /
@@ -675,7 +481,8 @@ Python」）；**注入风险**——PTC 最有用的场景正是不可信内容
 2. **语言与隔离**：Starlark 进程内起步，还是照 `dsh` 直接用 sobek + 子进程？判据是「模型首跑
    通过率」——拿 2–3 个模型各写 20 个典型脚本（批量读、过滤聚合、条件重试、错误分支），统计
    首版能否解析、二次能否跑通；Starlark 明显落后就换 sobek，壳与 app 层不动。
-3. **是否进 v0.6.0**：进来就要把 A1–A3 挪到 v0.7.0，或者只保留 A2 与 PTC 同版。
+3. **排在哪个版本**：v0.6.0 已发布，PTC 没进。要进 v0.7.0 就得把四态策略表那一线往后挪，
+   或者只挑 PTC-1 单独成一版；不排期就继续留在本节。
 
 ---
 
@@ -697,7 +504,7 @@ Python」）；**注入风险**——PTC 最有用的场景正是不可信内容
 - **破坏性窗口是否仍然开放**：应用已公开发布，用户可能已有 `~/.aquarius/` 数据。
   本文所有任务按「不破坏既有数据」设计；后续若必须改存储格式，先补迁移器并在本文标注。
 - **PTC 的形态、语言与版本归属**：见上文「程序化工具调用」的待拍板三条——呈现模式还是新增
-  工具、Starlark 还是 sobek、进不进 v0.6.0。→ **动手前拍板**。
+  工具、Starlark 还是 sobek、排进哪一版。→ **动手前拍板**。
 
 ### 已知未修项（留档，等条件成熟再排）
 
@@ -764,6 +571,6 @@ Python」）；**注入风险**——PTC 最有用的场景正是不可信内容
 - **外部代理转交（ACP）的后续**（2026-10-27 调研记录，主线见 [contracts.md](contracts.md) §5.18/D244）：v1 只做
   全新会话、不落盘、不转发 Aquarius 的 MCP server。登记但**未排期**的两件：① 会话内复用子代理
   （`session/resume` + `<profile>/delegate/` 句柄落盘，端口复用位已留）；② 子代理转录按需落盘
-  供事后翻（不进上下文）。客户端 `fs`/`terminal` 申报已从这条里提出来单列，见
-  「外部代理：设置窗直接配 ACP + 申报能力」；**转接的并行**不单列——这项随后台化一起进主线
-  （D261）。**明确不做**：内置代理预设、按 registry 自动安装与升级、ACP v2。
+  供事后翻（不进上下文）。设置窗配置与 `fs` / `terminal` 申报已随 v0.6.0 发布
+  （见 [roadmap.md](roadmap.md)）；**转接的并行**不单列——这项随后台化一起进主线（D261）。
+  **明确不做**：内置代理预设、按 registry 自动安装与升级、ACP v2。

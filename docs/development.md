@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-05 @ 47b15b0 -->
+<!-- docs-sync: 2026-11-08 @ ecd3996 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -159,6 +159,31 @@ FAIL——这不是被测代码坏了，是测试自己没自足。同理，**�
 `==`/`!=` 操作数、`want` 赋值/字段）锁住这条；确属测试数据（用户数据 / 模型输出 / 落盘内容 /
 协议或配置值）的进该文件里的 `testDataLiterals` 白名单并写理由。`uigui` 的 `TestMain` 用
 `AQUARIUS_UI_LANG` 选语言（缺省 zh），门禁 `AQUARIUS_UI_LANG=en go test ./...` 是这个变量的作用面。
+
+### 外部代理的协议验证（testy）
+
+`fs` 与 `terminal` 这两组回调不靠真代理做回归：真代理要登录、要真实模型，一轮几十秒到几分钟，
+结果还随模型波动。协议面交给官方 Rust SDK 里的测试代理 `testy`（`agent-client-protocol-test`）
+——确定性、无模型、无 key：
+
+```bash
+git clone --depth 1 https://github.com/agentclientprotocol/rust-sdk.git
+cd rust-sdk
+cargo build -p agent-client-protocol-test --bin testy
+AQUARIUS_TESTY=<clone>/target/debug/testy.exe go test ./internal/adapter/acpgate -run TestTesty -v
+```
+
+`callbacks` 按固定顺序发八个反向请求：权限反问、`fs` 两个、`terminal` 五个，末尾是
+`elicitation`。本构建没申报 form elicitation，所以整轮以 `-32602` 收尾——**这是确定性的预期，
+不是失败**，断言写成「八个回调全到 + 最后这条已知错误」。
+
+两个坑：本机 cargo 的 crates-io 镜像缺 `agent-client-protocol-schema 1.15.1`，要把 workspace
+`Cargo.toml` 里的 `=1.15.1` 降到 `=1.15.0`，再 `cargo update -p agent-client-protocol-schema
+--precise 1.15.0`（改 `CARGO_HOME`、换镜像都绕不过：cargo 拒绝把同一个 URL 定义成两个 source）；
+testy 会往会话 `cwd` 写 `testy-write.txt`，用临时目录跑。
+
+不进 `cmd/ci`：要 cargo 构建，二进制放 `temp/` 会被清掉。真代理那一层（主流代理会不会真的改走
+回调）只在对方换实现时复核，结论见 [contracts.md](contracts.md) §5.18。
 
 ## 工程准则与边界
 

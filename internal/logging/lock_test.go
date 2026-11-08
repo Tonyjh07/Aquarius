@@ -44,7 +44,7 @@ type stderrPass struct {
 	why  string
 }
 
-// stderrPasses 直写 stderr 的白名单（plan.md L4）。
+// stderrPasses 直写 stderr 的白名单。
 //
 // 判断口径是「这句话是不是**面向用户的最终结论**、是不是**日志出口本身**」——运行日志不得
 // 从这里走；要留痕就去 `note` / `port.Log`。

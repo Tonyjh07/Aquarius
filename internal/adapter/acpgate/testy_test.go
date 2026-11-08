@@ -26,7 +26,7 @@ import (
 //
 // 跑法：`AQUARIUS_TESTY=<testy 可执行文件> go test ./internal/adapter/acpgate -run TestTesty -v`
 //
-// 不进门禁的原因：要 cargo 构建、二进制在 temp 目录里会被清掉（见 plan.md「验证样本」）。
+// 不进门禁的原因与跑法见 development.md「外部代理的协议验证（testy）」。
 func TestTestyCallbacks(t *testing.T) {
 	bin := os.Getenv("AQUARIUS_TESTY")
 	if bin == "" {

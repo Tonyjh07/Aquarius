@@ -448,7 +448,7 @@ const reasonTerminalLimit = "the command-approval limit for this delegation is u
 // allowTerminal 一条命令的处置：额度内问一次，额度用完（或配置成 0）直接拒并留档。
 //
 // 不自造命令白/黑名单：四态策略表是 v0.7.0 的事，这里先塞一套，等于把同一套字段口径
-// 写两遍（plan.md A3）。
+// 写两遍（D286）。
 func (c *client) allowTerminal(ctx context.Context, prompt string) (bool, string) {
 	limit := c.m.terminalAsks()
 	switch {
