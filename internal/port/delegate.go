@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,6 +111,17 @@ func NormalizeRoots(in []string) ([]string, error) {
 	return out, nil
 }
 
+// CommandRun 一条经 Aquarius 执行的命令（A3）。
+//
+// 只记事实，不记判断：命令与参数原样、退出码或信号；失败的那条另附输出末尾一小段——
+// 读报告的人看到一个非零退出码却不知道它为什么失败，等于什么也没看到。
+type CommandRun struct {
+	Line     string `json:"line"`                // command + args 原样（报告里按字面量渲染）
+	ExitCode *int   `json:"exit_code,omitempty"` // 正常结束时的退出码
+	Signal   string `json:"signal,omitempty"`    // 被信号终止时的信号名
+	Tail     string `json:"tail,omitempty"`      // 失败时的输出末尾（已压成一行）
+}
+
 // DelegateRun 一次转交的终态（报告 + 摘要用的全部事实）。
 type DelegateRun struct {
 	Agent      string   `json:"agent"`
@@ -122,10 +134,14 @@ type DelegateRun struct {
 	Wrote []string `json:"wrote,omitempty"`
 	// ReadOutside 它读过、而且是**问过用户之后**读的、落在会话根集之外的文件（D284）。
 	// 没问成的那些进 Notes；这里只列真的给出去过的。
-	ReadOutside []string      `json:"read_outside,omitempty"`
-	Duration    time.Duration `json:"duration"`
-	Report      string        `json:"report"`          // 最终正文（它交付的那段）
-	Notes       []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
+	ReadOutside []string `json:"read_outside,omitempty"`
+	// Commands 经 Aquarius 执行的命令（`terminal/create` 的事实，A3）。被拒的那些不进这里
+	// ——它们没跑，只进 Notes。条数由运行时上限管住（每次转交 32 条），所以这份清单不会
+	// 溢出，也不必再带一个「还有 N 条没列」。
+	Commands []CommandRun  `json:"commands,omitempty"`
+	Duration time.Duration `json:"duration"`
+	Report   string        `json:"report"`          // 最终正文（它交付的那段）
+	Notes    []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
 	// Denied 它提出而没人应答的权限请求数（无人值守、或用户不在发起会话）；ChangedOver
 	// 是超出清单上限、没逐个列出的改动文件数——两者都要说，否则读报告的人以为清单是完整的。
 	Denied      int `json:"denied,omitempty"`
@@ -181,6 +197,10 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 		id, run.Agent, run.Duration.Round(time.Second), stopReasonText(run), run.ToolCalls, len(run.Changed))
 	// 先列**我们经手**的那一段，再列它自称的那一段：读报告的人默认这两行是同一件事，
 	// 顺序摆在前面的会被当成依据（D283 把它们分开列，就是不想再混成一个数）。
+	// 命令排在文件之前：动作比结果更该先被看到（A3）。
+	if len(run.Commands) > 0 {
+		b.WriteString("Commands run through this session: " + commandsText(run.Commands) + "\n")
+	}
 	if len(run.Wrote) > 0 {
 		b.WriteString("Files written through this session: " + strings.Join(run.Wrote, ", "))
 		if run.WroteOver > 0 {
@@ -224,6 +244,26 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 	}
 	b.WriteString(body)
 	return b.String()
+}
+
+// commandsText 命令清单的一行写法。命令按字面量渲染（%q）：脚本里的换行、引号与逗号
+// 原样保留，读者不会把一条命令看成两条，也不会把参数里的逗号当成清单分隔符。
+func commandsText(cmds []CommandRun) string {
+	parts := make([]string, 0, len(cmds))
+	for _, c := range cmds {
+		s := strconv.Quote(c.Line)
+		switch {
+		case c.Signal != "":
+			s += " (stopped by " + c.Signal + ")"
+		case c.ExitCode != nil:
+			s += fmt.Sprintf(" (exit %d)", *c.ExitCode)
+		}
+		if c.Tail != "" {
+			s += "; tail: " + strconv.Quote(c.Tail)
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // stopReasonText 停止原因的用户面/模型面措辞：max_tokens、refusal 这些必须被看见，

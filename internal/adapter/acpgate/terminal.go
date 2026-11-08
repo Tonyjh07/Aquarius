@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -87,6 +88,29 @@ func (b *headBuffer) Visible() (string, bool) {
 	return strings.ToValidUTF8(trimIncompleteTail(s), "\uFFFD"), b.truncated
 }
 
+// TailRunes 末尾最多 n 个字符（报告里给失败的命令附的「输出末尾」）。
+//
+// 只从尾部切一段，不把整个缓冲转成字符串：调这个的时候缓冲可能已经有几 MiB。
+func (b *headBuffer) TailRunes(n int) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n <= 0 || len(b.buf) == 0 {
+		return ""
+	}
+	start := len(b.buf) - n*utf8.UTFMax
+	if start < 0 {
+		start = 0
+	}
+	for start < len(b.buf) && !utf8.RuneStart(b.buf[start]) {
+		start++ // 从字符边界起，免得开头是两个替换字符
+	}
+	rs := []rune(string(b.buf[start:]))
+	if len(rs) > n {
+		rs = rs[len(rs)-n:]
+	}
+	return string(rs)
+}
+
 // trimIncompleteTail 去掉末尾那段「起了头但没写完」的 UTF-8 字节。
 func trimIncompleteTail(s string) string {
 	for i := len(s) - 1; i >= 0 && i >= len(s)-utf8.UTFMax; i-- {
@@ -104,6 +128,8 @@ func trimIncompleteTail(s string) string {
 // terminal 一条被我们代跑的命令。
 type terminal struct {
 	id   string
+	line string // command + args（报告里列的就是这一行）
+
 	cmd  *exec.Cmd
 	out  *headBuffer
 	done chan struct{} // 进程退出（并回填退出信息）之后关闭
@@ -289,6 +315,7 @@ func (c *client) CreateTerminal(ctx context.Context, p acp.CreateTerminalRequest
 		return acp.CreateTerminalResponse{}, terminalDenied(fmt.Sprintf("cannot start the command: %v", err))
 	}
 	c.r.terms.attach(term)
+	c.r.addCommand(term)
 	return acp.CreateTerminalResponse{TerminalId: id}, nil
 }
 
@@ -511,7 +538,7 @@ func startTerminal(id, command string, args []string, wd string, env map[string]
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	t := &terminal{id: id, cmd: cmd, out: buf, done: make(chan struct{})}
+	t := &terminal{id: id, line: commandText(command, args), cmd: cmd, out: buf, done: make(chan struct{})}
 	go func() {
 		_ = cmd.Wait()
 		t.recordExit()
@@ -542,8 +569,57 @@ func exitStatusOf(code *int, sig string) *acp.TerminalExitStatus {
 }
 
 // closeTerminals 转交收尾：杀掉还活着的终端，不等代理 release——它可能永远不发。
+//
+// 杀完有界地等它们回填退出信息：报告要列退出码，停在「刚才还在跑」等于白列一行。
 func (r *run) closeTerminals() {
-	for _, term := range r.terms.killAll() {
+	alive := r.terms.killAll()
+	for _, term := range alive {
 		term.kill()
 	}
+	deadline := time.After(terminalExitGrace)
+	for _, term := range alive {
+		select {
+		case <-term.done:
+		case <-deadline:
+			return
+		}
+	}
+}
+
+// terminalExitGrace 收尾时等全部终端回填退出信息的合计上限。
+const terminalExitGrace = 2 * time.Second
+
+// addCommand 记一条**真的跑起来了**的命令（被拒的不算：它没跑）。
+func (r *run) addCommand(term *terminal) {
+	r.cmu.Lock()
+	r.commands = append(r.commands, term)
+	r.cmu.Unlock()
+}
+
+// commandRuns 报告用的命令清单（按创建序）。退出信息在收尾之后取，所以这里读到的
+// 都是终态；仍在跑（收尾宽限用尽）的那条就只留命令本身，不编一个退出码。
+func commandRuns(terms []*terminal) []port.CommandRun {
+	if len(terms) == 0 {
+		return nil
+	}
+	out := make([]port.CommandRun, 0, len(terms))
+	for _, term := range terms {
+		run := port.CommandRun{Line: term.line}
+		code, sig, done := term.exited()
+		if done {
+			run.ExitCode, run.Signal = code, sig
+			if sig != "" || (code != nil && *code != 0) {
+				run.Tail = oneLine(term.out.TailRunes(200), 200)
+			}
+		}
+		out = append(out, run)
+	}
+	return out
+}
+
+// oneLine 把一段输出压成一行（报告里那句「失败时附的末尾一小段」必须是一行，
+// 否则十几条命令的报告会被撑成几十行）。
+func oneLine(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	return clip(s, max)
 }

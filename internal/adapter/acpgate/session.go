@@ -71,6 +71,9 @@ type run struct {
 
 	// terms 终端表（A3）：五个 terminal/* 方法共用。自己带锁，与上面的 mu 无关。
 	terms terminalTable
+	// commands 真的跑起来的命令（按创建序）：报告要列「它替你跑了什么」。与 terms 不同，
+	// release 之后这里仍然留着——报告说的是发生过的事。
+	commands []*terminal
 
 	cancelCtx context.Context
 	cancelFn  context.CancelFunc
@@ -338,13 +341,14 @@ func (r *run) waitNotifyDrain(budget time.Duration) {
 type collected struct {
 	toolCalls                                       int
 	changed, wrote, readOutside, notes              []string
+	commands                                        []port.CommandRun
 	denied, changedOver, wroteOver, readOutsideOver int
 }
 
 func (r *run) snapshot() collected {
 	r.cmu.Lock()
-	defer r.cmu.Unlock()
-	return collected{
+	terms := append([]*terminal(nil), r.commands...)
+	got := collected{
 		toolCalls:       r.toolCalls,
 		changed:         append([]string(nil), r.changed...),
 		wrote:           append([]string(nil), r.wrote...),
@@ -355,6 +359,10 @@ func (r *run) snapshot() collected {
 		wroteOver:       r.wroteOver,
 		readOutsideOver: r.outsideReadOver,
 	}
+	r.cmu.Unlock()
+	// 命令清单在锁外组装：读终态与取输出尾巴都不该压着收集面的锁。
+	got.commands = commandRuns(terms)
+	return got
 }
 
 // complete 写终态并放行 Wait（只调一次）。
@@ -388,6 +396,7 @@ func (m *Manager) run(r *run) {
 	}
 	got := r.snapshot()
 	res.ToolCalls, res.Changed, res.Wrote, res.ReadOutside = got.toolCalls, got.changed, got.wrote, got.readOutside
+	res.Commands = got.commands
 	res.Notes, res.Denied = got.notes, got.denied
 	res.ChangedOver, res.WroteOver, res.ReadOutsideOver = got.changedOver, got.wroteOver, got.readOutsideOver
 	res.Report = r.reportText()

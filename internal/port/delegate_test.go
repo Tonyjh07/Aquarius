@@ -50,6 +50,37 @@ func TestDelegateReportTextNoBody(t *testing.T) {
 	}
 }
 
+// TestDelegateReportTextCommands 命令清单排在文件之前（动作比结果更该先看到）：
+// 每条按字面量渲染，失败的附输出末尾一行；命令里的换行不能把一行拆成两行。
+func TestDelegateReportTextCommands(t *testing.T) {
+	code0, code2 := 0, 2
+	run := DelegateRun{
+		Agent:      "kimi",
+		StopReason: "end_turn",
+		Duration:   time.Second,
+		Wrote:      []string{"/repo/a.go"},
+		Commands: []CommandRun{
+			{Line: "bash -c cd '/repo' && git status", ExitCode: &code0},
+			{Line: "bash -c make", ExitCode: &code2, Tail: "error: undefined: x"},
+			{Line: "bash -c sleep 600", Signal: "killed"},
+			{Line: "bash -c ls\npwd"},
+		},
+	}
+	got := DelegateReportText("d003", run)
+	want := `Commands run through this session: "bash -c cd '/repo' && git status" (exit 0), ` +
+		`"bash -c make" (exit 2); tail: "error: undefined: x", ` +
+		`"bash -c sleep 600" (stopped by killed), "bash -c ls\npwd"`
+	if !strings.Contains(got, want) {
+		t.Fatalf("命令清单不对：\n got %s\nwant %s", got, want)
+	}
+	if strings.Index(got, "Commands run") > strings.Index(got, "Files written") {
+		t.Fatalf("命令应排在文件之前：\n%s", got)
+	}
+	if got := DelegateReportText("d004", DelegateRun{Agent: "x"}); strings.Contains(got, "Commands run") {
+		t.Fatalf("没有命令时不该出现这一行：\n%s", got)
+	}
+}
+
 // TestNormalizeRoots 根集归一：去空白、去空项、去重（保序），相对路径拒收。
 //
 // 「多一行空行不算错、重复一条也不算错」是刻意的：手写或模型产出里出现这两样很常见，

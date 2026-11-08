@@ -348,6 +348,25 @@ func TestTerminalCallbacks(t *testing.T) {
 	if conf.calls != 2 {
 		t.Fatalf("两条命令应各问一次，calls = %d", conf.calls)
 	}
+
+	// 报告要列出「它替你跑了什么」：两条命令与各自结局，被拒的才算备注。
+	if len(run.Commands) != 2 {
+		t.Fatalf("commands = %+v，want 两条", run.Commands)
+	}
+	if run.Commands[0].Line != echoCmd+" one two" {
+		t.Fatalf("第一条 = %q，want 原样命令行", run.Commands[0].Line)
+	}
+	if run.Commands[0].ExitCode == nil || *run.Commands[0].ExitCode != 0 {
+		t.Fatalf("第一条退出码 = %v", run.Commands[0].ExitCode)
+	}
+	killed := run.Commands[1]
+	if killed.ExitCode == nil && killed.Signal == "" {
+		t.Fatalf("被杀的这条也要给出结局：%+v", killed)
+	}
+	text := port.DelegateReportText(task.ID, run)
+	if !strings.Contains(text, "Commands run through this session: ") || !strings.Contains(text, "one two") {
+		t.Fatalf("报告缺命令清单：\n%s", text)
+	}
 }
 
 // newTestClient 造一个「已建好会话」的客户端（根集 = roots），供直连测试用。
