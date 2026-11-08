@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-08 @ c00d8ef -->
+<!-- docs-sync: 2026-11-08 @ 3ff5788 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -24,7 +24,7 @@
 
 | 版本 | 主题 | 剩余工作 | 状态 |
 |---|---|---|---|
-| v0.6.0 | 外部代理：设置窗直接配 ACP + 申报 `fs` / `terminal` | A1、A2、A3 已落地；剩 A3 的 testy 一笔。语音前处理与说话人仍在 backlog | 进行中 |
+| v0.6.0 | 外部代理：设置窗直接配 ACP + 申报 `fs` / `terminal` | A1、A2、A3 已落地。语音前处理与说话人仍在 backlog | 进行中 |
 | v0.7.0 | 决策策略：工具粒度四态放行 + 模型辅助决策 | 单条主线（D280/D281）。前置是 v0.6.0 落地——A2 跑起来才会产生第一批真实确认记录，正好当标注集 | 未开工 |
 
 > **PTC（程序化工具调用）的调研已完成但未排期**，究竟是搭进 v0.7.0（那一版已排了决策策略）、
@@ -68,14 +68,16 @@
   没申报就不发，本地照拦照放并记一条 note。
 
 **验证**：两个 `fs` 方法走 testy 的 `callbacks`，口径与分工见本节末「验证样本」。
-已跑通（2026-11-07，testy 直连）：写下的字节与它发的一致、记进 `Wrote`，`terminal/*` 五个按
-未申报回 -32601，末尾 `elicitation` 如预期以 -32602 收尾。门禁里跳过（要 cargo、二进制在 temp）。
+已跑通（2026-11-07，testy 直连）：写下的字节与它发的一致、记进 `Wrote`，`terminal/*` 五个
+当时按未申报回 -32601（A3 之后这五个已实现，见下节），末尾 `elicitation` 如预期以 -32602 收尾。
+门禁里跳过（要 cargo、二进制在 temp）。
 
-### A3 申报 `terminal`（已落地，只剩 testy 一笔）
+### A3 申报 `terminal`（已落地）
 
-**落地**（2026-11-08，五笔提交里的前四笔）：申报与五个方法（`terminal.go`）、报告里的命令清单、
-两个配置键（`delegate.terminal` / `delegate.terminal_ask_max`）、文档。口径与代价记在 D286。
-剩下的一笔是把 testy 的 `callbacks` 扩到五个 `terminal/*`——它在门禁里仍跳过（要 cargo）。
+**落地**（2026-11-08）：申报与五个方法（`terminal.go`）、报告里的命令清单、两个配置键
+（`delegate.terminal` / `delegate.terminal_ask_max`）、文档。口径与代价记在 D286。
+testy 的 `callbacks` 也跑过了：命令 `printf testy terminal` 真的跑起来、退出码 0，五个
+`terminal/*` 全通；它仍在门禁里跳过（要 cargo、二进制在 temp）。
 
 **要什么**：命令由**Aquarius**执行，于是能拦、能限、能杀，输出能进报告。
 
