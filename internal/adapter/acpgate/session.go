@@ -68,6 +68,10 @@ type run struct {
 	roots pathres.RootSet
 	// wd 会话 cwd（子进程的起点）：terminal/create 没给 cwd 时用它。
 	wd string
+	// optSnapshot 当前生效的会话配置选项（D287）。建会话时写入，设置选项后换成响应里的
+	// 那份，代理推 config_option_update 时也跟着换——后一项的候选可能由前一项决定，
+	// 读旧快照校验会拒掉本来合法的值。写得勤（通知 goroutine 也会改），所以走 mu。
+	optSnapshot []acp.SessionConfigOption
 
 	// terms 终端表（A3）：五个 terminal/* 方法共用。自己带锁，与上面的 mu 无关。
 	terms terminalTable
@@ -189,6 +193,20 @@ func (r *run) setWorkDir(wd string) {
 	r.mu.Lock()
 	r.wd = wd
 	r.mu.Unlock()
+}
+
+// setOptions 换掉会话配置选项快照（建会话、设置成功、代理推通知三处）。
+func (r *run) setOptions(snap []acp.SessionConfigOption) {
+	r.mu.Lock()
+	r.optSnapshot = snap
+	r.mu.Unlock()
+}
+
+// options 当前快照的副本。
+func (r *run) options() []acp.SessionConfigOption {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]acp.SessionConfigOption(nil), r.optSnapshot...)
 }
 
 // workDir 会话 cwd（未设时为空：terminalDir 会发现它不是绝对路径而拒，fail closed）。
@@ -491,6 +509,19 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	}
 	sid := ns.SessionId
 	r.setSession(string(sid))
+	r.setOptions(ns.ConfigOptions)
+
+	// 配置里写死的会话选项（D287）：必须赶在发任务之前。设不上就整次失败——静默按
+	// 对方的默认跑下去，用户会以为在用自己选的那个模型。
+	if len(r.agent.Options) > 0 {
+		octx, cancelOpt := context.WithTimeout(r.cancelCtx, m.opts.Handshake)
+		snap, err := applySessionOptions(octx, conn, sid, r.options(), r.agent.Options)
+		cancelOpt()
+		if err != nil {
+			return m.abort(r, proc, fmt.Errorf("session options: %w", err))
+		}
+		r.setOptions(snap)
+	}
 
 	// 总闸：到点走与停止键同一条取消路径（而不是杀进程走人）——先把机会留给
 	// 「收成 cancelled、保住已交付的正文」。

@@ -37,6 +37,10 @@ func (c *client) SessionUpdate(ctx context.Context, n acp.SessionNotification) e
 		c.r.addLocations(u.ToolCall.Locations)
 	case u.ToolCallUpdate != nil:
 		c.r.addLocations(u.ToolCallUpdate.Locations)
+	case u.ConfigOptionUpdate != nil:
+		// 代理自己也能改配置（kimi 切模型后会把 thinking 的候选整组换掉），
+		// 快照跟着换，后面读到的才是现值（D287）。
+		c.r.setOptions(u.ConfigOptionUpdate.ConfigOptions)
 	}
 	return nil
 }

@@ -34,6 +34,9 @@ type Agent struct {
 	WorkDir string            `json:"workdir,omitempty"`
 	Enabled bool              `json:"enabled"`
 	Default bool              `json:"default,omitempty"`
+	// Options 建会话后要设上的配置项（D287）：键是代理广告的 configId，值是它广告的
+	// value，两者原样使用。空 = 什么都不设，用对方的默认。
+	Options map[string]string `json:"options,omitempty"`
 }
 
 // Options 装配依赖（全部由装配根注入）。
