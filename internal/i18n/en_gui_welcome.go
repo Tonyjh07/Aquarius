@@ -3,11 +3,6 @@ package i18n
 // enGuiWelcomeTexts 与 zhGuiWelcomeTexts 同 key 同顺序（同构测试盯着）。
 var enGuiWelcomeTexts = map[string]string{
 
-	// 品牌图标的启动自检
-	"ui.logo.missing":       "[logo] icon not embedded (assets.LogoPNG is empty)",
-	"ui.logo.decode_failed": "[logo] icon decode failed: {err}",
-	"ui.logo.ready":         "[logo] icon ready {w}x{h} (pre-scaled to the ball size)",
-
 	// 右键菜单项
 	"ui.menu.new_chat":       "New chat",
 	"ui.menu.permission":     "Permission",

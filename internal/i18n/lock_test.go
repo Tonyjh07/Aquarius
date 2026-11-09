@@ -62,19 +62,13 @@ var cjkAllowed = map[string][]string{
 	},
 	"internal/adapter/llm/openai.go": {"不支持", "无法识别", "未支持"},
 
-	// 诊断：读者是改代码的人，界面上看不到（ico 解析失败退回默认图标、羽化观测打印、
-	// 位图解析细节、托盘与热键的观测打印、GDI 句柄释放告警）。位图那几条的外层调用方
-	// 已经套了一句「读取剪贴板图片失败」，用户看到的是那句。
+	// 诊断：读者是改代码的人，界面上看不到（ico 解析失败退回默认图标、位图解析细节）。
+	// 位图那几条的外层调用方已经套了一句「读取剪贴板图片失败」，用户看到的是那句。
+	// 托盘、快捷键、图标、首帧上屏这批过去也在里面，D288 收编进运行日志后不再需要开口子。
 	"internal/adapter/uigui/icon.go": {"ico: "},
-	"internal/adapter/uigui/fade.go": {"[fade] "},
 	"internal/adapter/uigui/platform/clipimg.go": {
 		"位图掩码不全", "位图像素数据不完整", "位图头不足", "位图头长度异常", "位图尺寸非法", "位图过大",
 		"不支持的位深", "不支持的位图压缩方式",
-	},
-	"internal/adapter/uigui/platform/shell_windows.go": {"[tray]", "[hotkey]"},
-	"internal/adapter/uigui/platform/tray_windows.go":  {"[tray]"},
-	"internal/adapter/uigui/platform/win32_windows.go": {
-		"[dib]", "DeleteObject 位图失败", "DeleteDC 失败",
 	},
 
 	// 法务正文的解析规则：顿号是条款号的合法分隔符（数据，不是给人看的文案）。

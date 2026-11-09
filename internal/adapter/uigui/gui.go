@@ -73,6 +73,9 @@ type Status struct {
 type Options struct {
 	// Status 状态栏数据源；nil = 底栏只显示"思考中/生成中"。
 	Status func() Status
+	// Log 运行日志出口（D288）：托盘、快捷键、图标、首帧上屏这些界面外的诊断走这里，
+	// 不再直写 stdout。nil = 不记（headless 测试与未注入的旧路径）。
+	Log port.Log
 	// PosFile 窗口位置记忆文件（§15.1）；空 = 不记忆。
 	PosFile string
 	// Interrupt 初始中断行为（装配根一般经 SetInterrupt 每轮注入，留 nil 即可）。
@@ -538,6 +541,8 @@ func newUI(opts Options, window bool) *UI {
 	u.m = newModel(u)
 	u.pendingFn = opts.Pending
 	u.keys = opts.Keys
+	setLogSink(opts.Log) // D288：包级诊断（图标 / 羽化）的出口
+	reportFeatherDisabled()
 	if u.keys.Send.Key == "" {
 		u.keys = uicommon.DefaultKeyBindings()
 	}

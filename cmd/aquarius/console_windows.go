@@ -74,6 +74,15 @@ var (
 
 const mbIconError = 0x10 // MessageBoxW：错误图标
 
+// consoleVisible 本次启动是否还连着一块终端屏幕（D288）：双击路径已脱离即 false，其余为 true。
+//
+// 判据只用「是否脱离」，不查 `GetConsoleWindow`：ConPTY / mintty 这类终端下本进程可以没有
+// 原生控制台句柄，但 stdout 仍是一条通向那块屏幕的流——按句柄判会把这类终端一律当成双击。
+// 反过来判错的代价也小：写到不可用的流上只会静默失败（日志不打断对话）。
+func consoleVisible() bool {
+	return !consoleDetached
+}
+
 // consoleDetached 控制台已由本进程脱离标记（run() 主 goroutine 独占读写，无并发）。
 var consoleDetached bool
 

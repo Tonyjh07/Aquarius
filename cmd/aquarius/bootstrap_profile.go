@@ -246,6 +246,8 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 // openLog 开运行日志（D276/§7.9）：级别 `-log-level` > `AQUARIUS_LOG_LEVEL` > `ui.log_level`，
 // 形态只认 `--log-format`（排查时才切，不落配置）。落在 profile 自己的 logs/ 下，与
 // `audit.log`、`jobs/` 同一隔离口径；开不出文件不拦启动（logging.Open 降级到 stderr 并记一条）。
+// 终端回显（D288）只给 gui：从终端启动时整份日志同时打到那块屏幕，双击启动没有屏幕可打；
+// tui/repl 的终端本身就是界面，插日志会破屏。
 func (w *wiring) openLog(levelFlag, formatFlag string) error {
 	level, err := logging.ParseLevel(logLevelSetting(levelFlag, os.Getenv("AQUARIUS_LOG_LEVEL"), w.cfg.UI.LogLevel))
 	if err != nil {
@@ -255,12 +257,16 @@ func (w *wiring) openLog(levelFlag, formatFlag string) error {
 	if err != nil {
 		return err
 	}
-	w.log = logging.Open(logging.Options{
+	opts := logging.Options{
 		Dir:    filepath.Join(w.profileDir, "logs"),
 		Level:  level,
 		Format: format,
 		Stderr: stderrProxy{w: w},
-	})
+	}
+	if w.cfg.UI.Kind == "gui" && consoleVisible() {
+		opts.Echo = stdoutProxy{w: w}
+	}
+	w.log = logging.Open(opts)
 	// bootstrap 段攒下的启动告警（级别刚从同一份配置里读出来）：按原顺序补记，只有够格的
 	// 才会上 stderr——顺序与「就地打一行」时一致。
 	for _, p := range w.pendingLog {

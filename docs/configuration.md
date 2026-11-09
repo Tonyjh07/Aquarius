@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-09 @ d823dfc -->
+<!-- docs-sync: 2026-11-09 @ 38be2ed -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -131,7 +131,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `ui.kind` | string | `gui`（模板与键缺省） | `gui` = Gio 桌面窗口（Windows 为完整形态，其他平台为降级实现）；`tui` = 终端界面；`repl` = 行式（测试/e2e 后端）；其他值启动报错 |
 | `ui.lang` | string | `auto`（键缺失） | **界面语言**，gui / tui / repl 共用：`auto` = 读系统界面语言、认不出回落 `zh`；`zh` / `en` 强制。**启动时定一次，改完要重启**（设置窗「常规」页有同名选项，保存后提示重启）；**装配前向导第 1 页**也能选（那里是特例：向导每帧取词，选完当场生效，离开这一页时写回本键）；`AQUARIUS_UI_LANG` 环境变量可覆盖本键；与 `input.language`（语音识别）互不推断 |
 | `ui.input_placeholder` | string | `""`（= 内置文案） | **GUI** 输入框占位灰字，主输入框与确认态的原因框共用一条。用户自己写的一句话，**不翻译**——`ui.lang` 切到哪套都用这一句；空 = 回落内置文案（那条随界面语言变）。折成单行、去首尾空白、最多 120 字符；保存超限拒写，手改超长启动时截断。**热生效**（保存即换，不用重启）；仅 gui 生效 |
-| `ui.log_level` | string | `info`（键缺失） | **运行日志级别**：`debug` / `info` / `warn` / `error`；低于该级别的行一律不写（`debug` 记请求与装配细节）。`-log-level` 与 `AQUARIUS_LOG_LEVEL` 可覆盖本键；非法值启动报错。日志落 `profiles/<name>/logs/`，`warn` 以上同时进 `stderr` |
+| `ui.log_level` | string | `info`（键缺失） | **运行日志级别**：`debug` / `info` / `warn` / `error`；低于该级别的行一律不写（`debug` 记请求与装配细节）。`-log-level` 与 `AQUARIUS_LOG_LEVEL` 可覆盖本键；非法值启动报错。日志落 `profiles/<name>/logs/`；`warn` 以上同时进 `stderr`；从终端启动的 GUI 另把整份日志回显到该终端（双击启动不回显，看文件） |
 | `ui.hotkey` | string | `""`（= `Alt+A`） | **GUI** 全局呼出/收起快捷键：`修饰键+键`（如 `Alt+A`）；注册失败回退 `Ctrl+Alt+A`；仅 gui 生效 |
 | `ui.theme` | string | `system`（键缺失） | **GUI** 深浅主题：`system`/`light`/`dark`，切换热生效；仅 gui 生效 |
 | `ui.scale` | number | `1.0` | **GUI** 元素缩放倍率：夹 [0.75, 2.5]；设置窗百分比档；热生效；仅 gui 生效 |

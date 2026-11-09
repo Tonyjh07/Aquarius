@@ -2,7 +2,6 @@ package uigui
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"image/png"
 	"math"
@@ -14,7 +13,7 @@ import (
 	"gioui.org/op/paint"
 
 	"github.com/Tonyjh07/Aquarius/assets"
-	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // logoIconPx 图标预缩放的名义尺寸（= 球径 48dp @ 125% 缩放 = 60px，D49 行高 48）。
@@ -47,19 +46,19 @@ func logoImageOp(pxPx int) (paint.ImageOp, bool) {
 	}
 	logoOnce.Do(func() {
 		if len(assets.LogoPNG) == 0 {
-			fmt.Println(i18n.T("ui.logo.missing"))
+			logf(port.LogWarn, "log.ui.logo_missing", "log.act.default_icon")
 			logoErr = true
 			return
 		}
 		img, err := png.Decode(bytes.NewReader(assets.LogoPNG))
 		if err != nil {
-			fmt.Println(i18n.Tf("ui.logo.decode_failed", "err", err))
+			logf(port.LogWarn, "log.ui.logo_decode_failed", "log.act.default_icon", "err", err)
 			logoErr = true
 			return
 		}
 		logoSrc = img
 		sz := img.Bounds().Size()
-		fmt.Println(i18n.Tf("ui.logo.ready", "w", sz.X, "h", sz.Y))
+		logf(port.LogInfo, "log.ui.logo_ready", "log.act.continue", "w", sz.X, "h", sz.Y)
 	})
 	if logoErr || logoSrc == nil {
 		return paint.ImageOp{}, false

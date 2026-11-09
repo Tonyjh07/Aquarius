@@ -29,7 +29,6 @@ var zhGuiChatTexts = map[string]string{
 	"ui.state.buf_full_line":   "输入缓冲已满，此行未执行",
 	"ui.state.buf_full_branch": "输入缓冲已满，分叉切换未执行",
 	"ui.state.buf_full_attach": "输入缓冲已满，附件未发送",
-	"ui.state.tray_quit":       "菜单退出",
 
 	// ── 对话面块与气泡（interact.go / chip.go / think.go / confirm_ui.go 的事实卡）
 	"ui.chat.none_selected":      "（未选择）",

@@ -3,11 +3,6 @@ package i18n
 // zhGuiWelcomeTexts 欢迎窗与教程、右键菜单项、浮层（overlay）、提示词编辑器与引用图（relmap）：这些是「讲清楚怎么用」的句子，与设置窗的字段说明分开维护。
 var zhGuiWelcomeTexts = map[string]string{
 
-	// 品牌图标的启动自检（写 stderr 的诊断行，前缀 [logo] 是它的出处标记）
-	"ui.logo.missing":       "[logo] 图标未内嵌（assets.LogoPNG 为空）",
-	"ui.logo.decode_failed": "[logo] 图标解码失败: {err}",
-	"ui.logo.ready":         "[logo] 图标就绪 {w}x{h}（按球径预缩放）",
-
 	// 右键菜单项（托盘 / 悬浮球 / 气泡 / 图侧节点共用一张表，项集与项序是契约）
 	"ui.menu.new_chat":       "新对话",
 	"ui.menu.permission":     "权限",

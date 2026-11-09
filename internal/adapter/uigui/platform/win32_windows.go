@@ -7,7 +7,7 @@
 package platform
 
 import (
-	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 	"syscall"
 	"unsafe"
 )
@@ -310,11 +310,11 @@ func ensureDIB(w, h int32) error {
 		// （stock 对象不可选入内存 DC），故「先换选再删」是伪修法，会逐次误报。
 		// 保留的真实改进只有一条：**返回值查证**——真失败时留证（节流）而不静默。
 		if r, _, _ := procDeleteObject.Call(d.hbm); r == 0 {
-			dibReleaseFail("DeleteObject 位图失败（位图将泄漏）")
+			dibReleaseFail("log.ui.dib_delete_bitmap_failed")
 		}
 		if d.hdc != 0 {
 			if r, _, _ := procDeleteDC.Call(d.hdc); r == 0 {
-				dibReleaseFail("DeleteDC 失败（内存 DC 将泄漏）")
+				dibReleaseFail("log.ui.dib_delete_dc_failed")
 			}
 		}
 		d.hbm, d.hdc, d.ptr = 0, 0, nil
@@ -343,12 +343,13 @@ func ensureDIB(w, h int32) error {
 }
 
 // dibReleaseFail 位图释放异常节流留证（D134）：释放失败 = 真泄漏，让它可见而非静默。
+// event 是两件事各自的 key（位图 / 内存 DC），不是文案（D288）。
 var dibReleaseFailN int
 
-func dibReleaseFail(what string) {
+func dibReleaseFail(event string) {
 	dibReleaseFailN++
 	if dibReleaseFailN <= 5 {
-		fmt.Printf("[dib] 释放异常 x%d：%s\n", dibReleaseFailN, what)
+		pkgLogf(port.LogDebug, event, "log.act.leak_watch", "n", dibReleaseFailN)
 	}
 }
 
@@ -438,7 +439,8 @@ func (p *Plat) Present(x, y, w, h int32, bits []byte, alpha byte) bool {
 		ok = r != 0
 		mainPresentN++
 		if mainPresentN == 1 || (!ok && mainPresentN <= 8) {
-			fmt.Printf("[ulw] UpdateLayeredWindow %dx%d@(%d,%d): %v\n", w, h, x, y, ok)
+			p.logf(port.LogDebug, "log.ui.present_probe", "log.act.continue",
+				"w", w, "h", h, "x", x, "y", y, "ok", ok)
 		}
 	})
 	return ok

@@ -10,12 +10,12 @@ package uigui
 // 像素语义 = 预乘线性 + sRGB 存储（此处转为 ULW 所需的字节空间预乘）。
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"math"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"gioui.org/gpu/headless"
@@ -23,6 +23,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // fadeState headless 离屏渲染状态（全帧像素源，事件循环 goroutine 独占）。
@@ -219,10 +221,17 @@ func envBool(name string) bool {
 	return false
 }
 
-func init() {
-	if featherDisabled {
-		fmt.Println("[fade] 羽化已禁用（AQUARIUS_NO_FEATHER）——ULW 换壳后羽化收益对比观测")
+// reportFeatherDisabled 启动时把羽化禁用这一事实记进运行日志（D288）：环境变量在
+// 包初始化时就定了，但日志出口要等 newUI 注入，所以这一行挪到构造期发，且只发一次。
+var featherReported sync.Once
+
+func reportFeatherDisabled() {
+	if !featherDisabled {
+		return
 	}
+	featherReported.Do(func() {
+		logf(port.LogInfo, "log.ui.feather_disabled", "log.act.continue")
+	})
 }
 
 // fadeBands 淡出带几何（窗口坐标、物理 px；零值 = 两带皆无）：
@@ -474,9 +483,8 @@ func (u *UI) fadePresent(composed bool) {
 		if u.revealPending.Load() {
 			fadeStallN++
 			if fadeStallN <= 8 {
-				msg := fmt.Sprintf("[fade] 揭示期合成未就绪 x%d: hwnd=%x size=%dx%d presentable=%v",
-					fadeStallN, u.hwnd, u.frameSize.X, u.frameSize.Y, u.presentable())
-				fmt.Println(msg)
+				u.logf(port.LogDebug, "log.ui.compose_stalled", "log.act.continue",
+					"n", fadeStallN, "hwnd", u.hwnd, "w", u.frameSize.X, "h", u.frameSize.Y)
 			}
 		}
 		return

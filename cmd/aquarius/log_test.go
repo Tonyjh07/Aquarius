@@ -88,6 +88,43 @@ func TestOpenLogFlagOverridesConfig(t *testing.T) {
 	}
 }
 
+// TestOpenLogEchoesForTerminalGUI 终端回显（D288）：gui 从终端启动时 info 也打到 stdout；
+// repl 的终端就是界面，不许回显。
+func TestOpenLogEchoesForTerminalGUI(t *testing.T) {
+	if !consoleVisible() {
+		t.Skip("本机没有可见控制台（双击启动口径），回显按设计关闭")
+	}
+	cases := []struct {
+		kind  string
+		echo  bool
+		title string
+	}{
+		{kind: "gui", echo: true, title: "gui 回显"},
+		{kind: "repl", echo: false, title: "repl 不回显"},
+	}
+	for _, c := range cases {
+		t.Run(c.title, func(t *testing.T) {
+			dir := t.TempDir()
+			var out, errBuf bytes.Buffer
+			w := &wiring{stdout: &out, stderr: &errBuf, profileDir: dir, cfg: &fileConfig{}}
+			w.cfg.UI.Kind = c.kind
+			if err := w.openLog("", ""); err != nil {
+				t.Fatalf("openLog: %v", err)
+			}
+			defer func() { _ = w.log.Close() }()
+
+			w.log.Info(logging.Boot, "log.act.skip", "")
+			got := out.String()
+			if c.echo && !strings.Contains(got, "INFO") {
+				t.Fatalf("gui 的 info 应回显到终端：%q", got)
+			}
+			if !c.echo && got != "" {
+				t.Fatalf("%s 不该回显：%q", c.kind, got)
+			}
+		})
+	}
+}
+
 // TestLogSettingRejectsUnknown 级别写错启动即报：静默回落等于用户以为在看 warn 以上的日志。
 func TestLogSettingRejectsUnknown(t *testing.T) {
 	dir := t.TempDir()

@@ -166,6 +166,12 @@ type stderrProxy struct{ w *wiring }
 
 func (p stderrProxy) Write(b []byte) (int, error) { return p.w.stderr.Write(b) }
 
+// stdoutProxy 同 stderrProxy，供日志的终端回显用（D288）：gui 从终端启动时日志写到
+// 这一刻的 stdout，D114 恢复控制台重绑后跟着走，不会停在旧句柄上。
+type stdoutProxy struct{ w *wiring }
+
+func (p stdoutProxy) Write(b []byte) (int, error) { return p.w.stdout.Write(b) }
+
 // pendingLog 打开日志之前攒下的一条（bootstrap 段：profile 已经知道，级别还没读出来）。
 type pendingLog struct {
 	level  logging.Level

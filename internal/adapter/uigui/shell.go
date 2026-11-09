@@ -6,10 +6,8 @@ package uigui
 // 策略（只是平台侧能力降级：呼出/常驻缺失，见 platform 包）。
 
 import (
-	"fmt"
-
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
-	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // toggleTopMost 置顶开关（托盘/logo 菜单，§15.1/D72）：切换主窗置顶态并持久化（与位置
@@ -81,8 +79,8 @@ func (u *UI) exitViaShell() {
 	if h := u.mainHandle(); h != 0 {
 		u.plat.HideMain(h)
 	}
-	// GUI 下没有别的可见回执：保留这行终端日志，供用户确认菜单退出已触发。
-	fmt.Println("[tray] " + i18n.T("ui.state.tray_quit"))
+	// GUI 下没有别的可见回执：这行日志是「菜单退出已触发」的唯一记录（终端启动时同屏可见）。
+	u.logf(port.LogInfo, "log.ui.tray_quit", "log.act.menu_exit")
 	u.interruptNow() // D64：进行中的 Turn 立即取消（无轮进行 = nop，空闲退出不受影响）
 	u.signalEOF(nil)
 }

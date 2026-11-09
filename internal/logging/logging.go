@@ -112,6 +112,7 @@ type Options struct {
 	Level    Level     // 文件门槛（低于它的行不写）
 	Format   Format    // 渲染形态
 	Stderr   io.Writer // stderr 出口；nil = 不写 stderr
+	Echo     io.Writer // 终端回显出口（D288）；nil = 不回显
 	Now      func() time.Time
 	CapBytes int64 // 单文件上限；<=0 用 4 MiB
 	KeepDays int   // 保留天数；<=0 用 7
@@ -124,6 +125,7 @@ type Logger struct {
 	level  Level
 	format Format
 	stderr io.Writer
+	echo   io.Writer
 	now    func() time.Time
 	cap    int64
 	keep   int
@@ -143,6 +145,7 @@ func Open(opts Options) *Logger {
 		level:  opts.Level,
 		format: opts.Format,
 		stderr: opts.Stderr,
+		echo:   opts.Echo,
 		now:    opts.Now,
 		cap:    opts.CapBytes,
 		keep:   opts.KeepDays,
@@ -219,14 +222,18 @@ func (l *Logger) Write(lv Level, ctx Context, event, action, msg string, kv ...a
 	l.write(lv, ctx, event, action, msg, kv)
 }
 
-// write 过滤后写一个出口或两个：文件要过级别门槛，stderr 固定 warn 以上。
+// write 过滤后写出口：文件与回显要过级别门槛，stderr 固定 warn 以上。
+//
+// 回显开着时不再写 stderr（D288）：两者对终端用户是同一块屏幕，同一条 warn 会出现两遍，
+// 而回显门槛更低、已经覆盖那一档。
 func (l *Logger) write(lv Level, ctx Context, event, action, msg string, kv []any) {
 	if l == nil {
 		return
 	}
 	toFile := l.dir != "" && lv >= l.level
-	toStderr := l.stderr != nil && lv >= stderrLevel
-	if !toFile && !toStderr {
+	toEcho := l.echo != nil && lv >= l.level
+	toStderr := l.stderr != nil && lv >= stderrLevel && !toEcho
+	if !toFile && !toEcho && !toStderr {
 		return
 	}
 	now := l.now()
@@ -236,6 +243,9 @@ func (l *Logger) write(lv Level, ctx Context, event, action, msg string, kv []an
 	defer l.mu.Unlock()
 	if toFile {
 		l.writeFileLocked(line, now)
+	}
+	if toEcho {
+		_, _ = io.WriteString(l.echo, line+"\n")
 	}
 	if toStderr {
 		_, _ = io.WriteString(l.stderr, line+"\n")

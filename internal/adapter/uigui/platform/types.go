@@ -5,6 +5,8 @@ package platform
 // `uigui` 内部另有 point/rect（小写字段、自绘几何用），两侧在门面处转换——DTO 用导出
 // 字段是跨包可见性的硬要求。
 
+import "github.com/Tonyjh07/Aquarius/internal/port"
+
 // Handle 原生窗口句柄（HLD）。非 Windows 恒 0（无句柄概念；Gio 不暴露原生窗口）。
 type Handle uintptr
 
@@ -118,6 +120,9 @@ type Config struct {
 	TrayIcon []byte
 	// Hotkey 初始全局快捷键（如 "Alt+A"）；空 = 默认。运行时改绑经 Host.HotkeySetting。
 	Hotkey string
+	// Log 运行日志出口（D288）：托盘与快捷键的启动诊断走这里（五段式，落文件，
+	// 终端启动时回显到终端）。nil = 不记。
+	Log port.Log
 }
 
 // Host 平台回调宿主（由 uigui 实现）：平台层只回传**动作枚举**，不解析业务语义。

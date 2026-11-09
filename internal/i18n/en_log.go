@@ -34,6 +34,14 @@ var enLogTexts = map[string]string{
 	"log.act.report_without_log":   "the report carries no log tail",
 	"log.act.keep_previous":        "the previous registration was kept",
 	"log.act.env_fallback":         "continued with the environment variable",
+	"log.act.default_hotkey":       "fell back to the default hotkey",
+	"log.act.fallback_hotkey":      "fell back to the alternative combination",
+	"log.act.tray_only":            "only the tray icon can summon the window now",
+	"log.act.tray_off":             "no tray icon; the window works as usual",
+	"log.act.shell_off":            "no tray or hotkey this run; the main window works as usual",
+	"log.act.default_icon":         "fell back to the system default icon",
+	"log.act.leak_watch":           "recorded; the run continues",
+	"log.act.menu_exit":            "exited through the menu; everything was shut down",
 
 	// 启动
 	"log.boot.file_unavailable": "cannot open the log file ({path}): {err}",
@@ -61,6 +69,26 @@ var enLogTexts = map[string]string{
 	// 输出与回执
 	"log.ui.tts_output_unavailable": "speech playback output could not be built: {err}",
 	"log.ui.output_failed":          "failed to deliver a receipt: {err}",
+
+	// 窗口外壳、图标与首帧（D288：过去直写 stdout 的那批诊断）
+	"log.ui.shell_window_failed":      "failed to create the tray message window: {err}",
+	"log.ui.hotkey_invalid":           "invalid hotkey setting ({err}); using the default {key}",
+	"log.ui.hotkey_ok":                "global hotkey {key} registered",
+	"log.ui.hotkey_conflict":          "global hotkey {key} could not be registered; using {fallback}",
+	"log.ui.hotkey_fallback_ok":       "alternative hotkey {key} registered",
+	"log.ui.hotkey_failed":            "both hotkey combinations failed to register",
+	"log.ui.close_hooked":             "close interception installed (closing hides the window)",
+	"log.ui.tray_icon_ok":             "tray icon added (left click toggles, right click opens the menu)",
+	"log.ui.tray_icon_failed":         "failed to add the tray icon: {err}",
+	"log.ui.tray_quit":                "quit through the tray menu",
+	"log.ui.logo_missing":             "brand icon is not embedded (assets.LogoPNG is empty)",
+	"log.ui.logo_decode_failed":       "failed to decode the brand icon: {err}",
+	"log.ui.logo_ready":               "brand icon ready {w}x{h} (pre-scaled to the ball size)",
+	"log.ui.feather_disabled":         "feathering disabled (AQUARIUS_NO_FEATHER)",
+	"log.ui.compose_stalled":          "composition not ready during reveal (attempt {n}): hwnd={hwnd} size={w}x{h}",
+	"log.ui.present_probe":            "first frame presented at {w}x{h}@({x},{y}): {ok}",
+	"log.ui.dib_delete_bitmap_failed": "failed to release the bitmap (DeleteObject returned 0; it will leak)",
+	"log.ui.dib_delete_dc_failed":     "failed to release the memory DC (DeleteDC returned 0; it will leak)",
 
 	// 后台任务与附件
 	"log.job.settle_failed":            "the ledger entry for job {id} could not be settled: {err}",

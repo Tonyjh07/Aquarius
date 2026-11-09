@@ -150,6 +150,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 		// 设置窗「角色」页只读数据面（§5.17）：角色卡目录晚于 UI 就绪，故现取。
 		charView := newCharactersView(func() *characterfs.Store { return w.characters })
 		ui := uigui.New(uigui.Options{
+			Log: w.logFrom, // D288：托盘 / 快捷键 / 图标 / 首帧的诊断走运行日志（不再直写 stdout）
 			Status: func() uigui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
 					st := uigui.Status{

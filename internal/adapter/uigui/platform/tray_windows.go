@@ -5,7 +5,7 @@
 package platform
 
 import (
-	"fmt"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 	"syscall"
 	"unsafe"
 )
@@ -64,9 +64,9 @@ func (p *Plat) addTrayIcon(hwnd uintptr) {
 	nid.hIcon = icon
 	copy(nid.szTip[:], syscall.StringToUTF16("Aquarius"))
 	if r, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid))); r != 0 {
-		fmt.Println("[tray] Shell_NotifyIconW(NIM_ADD) = 成功（左键显隐，右键菜单）")
+		p.logf(port.LogInfo, "log.ui.tray_icon_ok", "log.act.continue")
 	} else {
-		fmt.Printf("[tray] Shell_NotifyIconW(NIM_ADD) = 失败: %v\n", err)
+		p.logf(port.LogWarn, "log.ui.tray_icon_failed", "log.act.tray_off", "err", err)
 	}
 }
 

@@ -2,9 +2,11 @@ package platform
 
 import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -49,6 +51,7 @@ type dlgRequest struct {
 
 // New 构造平台实现（各平台方法见同目录 *_windows.go / *_other.go）。
 func New(cfg Config) *Plat {
+	setLogSink(cfg.Log)
 	return &Plat{cfg: cfg}
 }
 
@@ -57,6 +60,37 @@ func (p *Plat) SetHost(h Host) { p.host = h }
 
 // Config 返回构造选项（只读）。
 func (p *Plat) Config() Config { return p.cfg }
+
+// logf 平台层诊断走运行日志（D288）：上下文恒为 `ui`，未注入 = 不记。
+func (p *Plat) logf(lv port.LogLevel, event, act string, kv ...any) {
+	if p.cfg.Log != nil {
+		p.cfg.Log(lv, "ui", event, act, kv...)
+	}
+}
+
+// 主窗 DIB 与 ULW 状态本身就是进程级单例（`mbits` / `mainPresentN`），释放告警要从
+// 无接收者的包级函数里发，于是日志出口也留一份包级引用。多次 New 会覆盖——与那些
+// 单例同一假设，测试里不并发断言日志。
+var (
+	pkgLogMu  sync.RWMutex
+	pkgLogOut port.Log
+)
+
+func setLogSink(l port.Log) {
+	pkgLogMu.Lock()
+	pkgLogOut = l
+	pkgLogMu.Unlock()
+}
+
+// pkgLogf 包级诊断（位图释放）走日志；未注入 = 不记。
+func pkgLogf(lv port.LogLevel, event, act string, kv ...any) {
+	pkgLogMu.RLock()
+	l := pkgLogOut
+	pkgLogMu.RUnlock()
+	if l != nil {
+		l(lv, "ui", event, act, kv...)
+	}
+}
 
 // Notice 向宿主发降级提示（无宿主 = 丢弃）。
 func (p *Plat) Notice(msg string) {

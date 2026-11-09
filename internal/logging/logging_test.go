@@ -377,3 +377,33 @@ func TestNoFileOnlyStderr(t *testing.T) {
 		t.Fatalf("空 Dir 不该影响 stderr：%q", stderr.String())
 	}
 }
+
+// TestEchoMirrorsLevel 终端回显（D288）：门槛与文件一致，info 也回显。
+func TestEchoMirrorsLevel(t *testing.T) {
+	var echo bytes.Buffer
+	l := Open(Options{Level: LevelInfo, Echo: &echo, Now: at})
+	defer func() { _ = l.Close() }()
+	l.Info(Boot, "log.act.skip", "")
+	l.Debug(Boot, "log.act.skip", "")
+	got := echo.String()
+	if !strings.Contains(got, " INFO  boot") {
+		t.Fatalf("info 应回显：%q", got)
+	}
+	if strings.Contains(got, "DEBUG") {
+		t.Fatalf("低于门槛的 debug 不该回显：%q", got)
+	}
+}
+
+// TestEchoReplacesStderr 回显开着时不再另写 stderr（D288）：同一条 warn 不得在一个终端里出现两遍。
+func TestEchoReplacesStderr(t *testing.T) {
+	var echo, stderr bytes.Buffer
+	l := Open(Options{Level: LevelInfo, Echo: &echo, Stderr: &stderr, Now: at})
+	defer func() { _ = l.Close() }()
+	l.Warn(Boot, "log.act.skip", "")
+	if strings.Count(echo.String(), "WARN") != 1 {
+		t.Fatalf("回显应恰好一条 warn：%q", echo.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("回显开着时 stderr 应留空：%q", stderr.String())
+	}
+}

@@ -96,7 +96,7 @@ type platformAPI interface {
 const trayIconPx = 32
 
 func newPlatform(opts Options, window bool) platformAPI {
-	cfg := platform.Config{Hotkey: opts.Hotkey}
+	cfg := platform.Config{Hotkey: opts.Hotkey, Log: opts.Log}
 	if window {
 		// 托盘图标：.ico 内嵌资源 → trayIconPx 档（平台无关解析在此完成，平台只负责呈现）。
 		// 档位是**交给 shell 的单张位图**：取越小，shell 在 >100% DPI 的任务栏上越要靠

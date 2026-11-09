@@ -10,8 +10,8 @@
 package platform
 
 import (
-	"fmt"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 	"runtime"
 	"sync/atomic"
 	"syscall"
@@ -91,7 +91,7 @@ func (p *Plat) runShell() {
 	hwnd, _, err := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(cls)), 0,
 		0, 0, 0, 0, 0, hwndMessage, 0, hInst, 0)
 	if hwnd == 0 {
-		fmt.Printf("[tray] 消息窗口创建失败: %v\n", err)
+		p.logf(port.LogWarn, "log.ui.shell_window_failed", "log.act.shell_off", "err", err)
 		return
 	}
 	shellHWND.Store(hwnd)
@@ -114,20 +114,22 @@ func (p *Plat) runShell() {
 func (p *Plat) registerHotkey(hwnd uintptr) {
 	combo, err := parseHotkey(p.hotkeySetting())
 	if err != nil {
-		fmt.Printf("[hotkey] 配置非法(%v)，用默认 %s\n", err, defaultHotkey)
+		p.logf(port.LogWarn, "log.ui.hotkey_invalid", "log.act.default_hotkey",
+			"err", err, "key", defaultHotkey)
 		combo, _ = parseHotkey(defaultHotkey)
 	}
 	if r, _, _ := procRegisterHotKey.Call(hwnd, 1, combo.mods, combo.vk); r != 0 {
-		fmt.Printf("[hotkey] RegisterHotKey(%s) = 成功\n", combo.label)
+		p.logf(port.LogInfo, "log.ui.hotkey_ok", "log.act.continue", "key", combo.label)
 		return
 	}
 	fb := fallbackHotkey()
-	fmt.Printf("[hotkey] RegisterHotKey(%s) = 失败，回退 %s\n", combo.label, fb.label)
+	p.logf(port.LogWarn, "log.ui.hotkey_conflict", "log.act.fallback_hotkey",
+		"key", combo.label, "fallback", fb.label)
 	if r, _, _ := procRegisterHotKey.Call(hwnd, 2, fb.mods, fb.vk); r != 0 {
-		fmt.Printf("[hotkey] 回退 %s = 成功\n", fb.label)
+		p.logf(port.LogInfo, "log.ui.hotkey_fallback_ok", "log.act.continue", "key", fb.label)
 		return
 	}
-	fmt.Println("[hotkey] 两档均失败，呼出仅剩托盘")
+	p.logf(port.LogWarn, "log.ui.hotkey_failed", "log.act.tray_only")
 }
 
 // ReloadHotkey 请求托盘线程重注册全局快捷键（设置窗改 hotkey 后）。注册归属托盘线程
@@ -214,7 +216,7 @@ func (p *Plat) SubclassCloseToHide(h Handle) {
 			return // 接管失败：不接拖放（否则 WM_DROPFILES 没人接，掉的路径白收）
 		}
 		shellPrevProc = r
-		fmt.Println("[tray] WM_CLOSE 拦截已挂（关窗 = 隐藏）")
+		p.logf(port.LogInfo, "log.ui.close_hooked", "log.act.continue")
 		// 拖放与关窗拦截同一时刻挂（同一子类过程、同一生命周期）。
 		procDragAcceptFiles.Call(uintptr(h), 1)
 	})

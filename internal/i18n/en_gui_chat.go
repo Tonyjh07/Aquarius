@@ -28,7 +28,6 @@ var enGuiChatTexts = map[string]string{
 	"ui.state.buf_full_line":   "Input buffer is full — this line was not executed",
 	"ui.state.buf_full_branch": "Input buffer is full — branch switch not performed",
 	"ui.state.buf_full_attach": "Input buffer is full — attachments not sent",
-	"ui.state.tray_quit":       "Menu quit",
 
 	// ── 对话面块与气泡
 	"ui.chat.none_selected":      "(none selected)",

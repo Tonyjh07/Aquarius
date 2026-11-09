@@ -37,6 +37,14 @@ var zhLogTexts = map[string]string{
 	"log.act.report_without_log":   "报告里不带日志尾部",
 	"log.act.keep_previous":        "保留上一轮的登记",
 	"log.act.env_fallback":         "改用环境变量继续读",
+	"log.act.default_hotkey":       "改用默认快捷键",
+	"log.act.fallback_hotkey":      "已回退到备用组合",
+	"log.act.tray_only":            "呼出只剩托盘",
+	"log.act.tray_off":             "没有托盘图标，窗口照常",
+	"log.act.shell_off":            "托盘与快捷键本次不可用，主窗照常",
+	"log.act.default_icon":         "改用系统默认图标",
+	"log.act.leak_watch":           "已记录，继续运行",
+	"log.act.menu_exit":            "经菜单退出，已收尾",
 
 	// 启动
 	"log.boot.file_unavailable": "日志文件打不开（{path}）：{err}",
@@ -64,6 +72,26 @@ var zhLogTexts = map[string]string{
 	// 输出与回执
 	"log.ui.tts_output_unavailable": "语音播报输出装不起来：{err}",
 	"log.ui.output_failed":          "回执投递失败：{err}",
+
+	// 窗口外壳、图标与首帧（D288：过去直写 stdout 的那批诊断）
+	"log.ui.shell_window_failed":      "托盘消息窗口创建失败：{err}",
+	"log.ui.hotkey_invalid":           "快捷键配置非法（{err}），改用默认 {key}",
+	"log.ui.hotkey_ok":                "全局快捷键 {key} 已注册",
+	"log.ui.hotkey_conflict":          "全局快捷键 {key} 注册失败，改为 {fallback}",
+	"log.ui.hotkey_fallback_ok":       "备用快捷键 {key} 已注册",
+	"log.ui.hotkey_failed":            "两档快捷键都注册失败",
+	"log.ui.close_hooked":             "关窗拦截已挂（关窗 = 隐藏）",
+	"log.ui.tray_icon_ok":             "托盘图标已添加（左键显隐，右键菜单）",
+	"log.ui.tray_icon_failed":         "托盘图标添加失败：{err}",
+	"log.ui.tray_quit":                "已从托盘菜单退出",
+	"log.ui.logo_missing":             "品牌图标未内嵌（assets.LogoPNG 为空）",
+	"log.ui.logo_decode_failed":       "品牌图标解码失败：{err}",
+	"log.ui.logo_ready":               "品牌图标就绪 {w}×{h}（按球径预缩放）",
+	"log.ui.feather_disabled":         "羽化已禁用（AQUARIUS_NO_FEATHER）",
+	"log.ui.compose_stalled":          "揭示期合成未就绪（第 {n} 次）：hwnd={hwnd} 尺寸={w}×{h}",
+	"log.ui.present_probe":            "首帧上屏 {w}×{h}@({x},{y})：{ok}",
+	"log.ui.dib_delete_bitmap_failed": "位图释放失败（DeleteObject 返回 0，位图将泄漏）",
+	"log.ui.dib_delete_dc_failed":     "内存 DC 释放失败（DeleteDC 返回 0，DC 将泄漏）",
 
 	// 后台任务与附件
 	"log.job.settle_failed":            "任务 {id} 的台账没能销账：{err}",
