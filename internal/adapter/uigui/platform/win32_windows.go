@@ -439,8 +439,12 @@ func (p *Plat) Present(x, y, w, h int32, bits []byte, alpha byte) bool {
 		ok = r != 0
 		mainPresentN++
 		if mainPresentN == 1 || (!ok && mainPresentN <= 8) {
-			p.logf(port.LogDebug, "log.ui.present_probe", "log.act.continue",
-				"w", w, "h", h, "x", x, "y", y, "ok", ok)
+			event := "log.ui.present_ok"
+			if !ok {
+				event = "log.ui.present_failed"
+			}
+			p.logf(port.LogDebug, event, "log.act.continue",
+				"w", w, "h", h, "x", x, "y", y)
 		}
 	})
 	return ok
