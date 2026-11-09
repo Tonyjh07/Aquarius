@@ -945,3 +945,46 @@ func TestConfirmCarriesStructure(t *testing.T) {
 		t.Fatalf("执行类风险 = %v/%v", got2.Risk, got2.HasRisk)
 	}
 }
+
+// TestPolicyOverrides 例外表覆盖矩阵两个方向（D280），并受硬名单约束。
+func TestPolicyOverrides(t *testing.T) {
+	sbx := mustAbs(t, "sbx")
+	outside := mustAbs(t, "outside/w.txt")
+	inside := mustAbs(t, "sbx/w.txt")
+	hooks := mustAbs(t, ".git/hooks/pre-commit")
+
+	cases := []struct {
+		name      string
+		path      string
+		mode      perm.Mode
+		sensitive []string
+		wantAsk   bool
+	}{
+		{"放宽：矩阵 Ask → allow", outside, perm.ModeAllow, nil, false},
+		{"收紧：矩阵 Allow → ask", inside, perm.ModeAsk, nil, true},
+		{"模型辅助：本版按 ask 处理", outside, perm.ModeAssist, nil, true},
+		{"硬名单：自动放行失效", hooks, perm.ModeAllow, nil, true},
+		{"敏感根：自动放行失效", outside, perm.ModeAllow, []string{mustAbs(t, "outside")}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &scriptConf{answers: []bool{true}}
+			r := New(Options{
+				Tools:       []port.Tool{fileTool("fw", tc.path, perm.OpWrite, tool.Confirm, "ok")},
+				Confirmer:   conf,
+				Level:       levelFn(perm.Strict),
+				SandboxPath: sbx,
+				Sensitive:   tc.sensitive,
+				Overrides: func() perm.Overrides {
+					return perm.Overrides{{Origin: perm.OriginTool, Tool: "fw", Mode: tc.mode}}
+				},
+			})
+			if _, err := r.Execute(context.Background(), c("fw", `{}`)); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			if got := len(conf.asked) > 0; got != tc.wantAsk {
+				t.Fatalf("ask = %v, want %v（asked=%v）", got, tc.wantAsk, conf.asked)
+			}
+		})
+	}
+}

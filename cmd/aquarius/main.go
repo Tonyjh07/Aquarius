@@ -238,6 +238,7 @@ type wiring struct {
 	primary     *providerConfig
 	level       perm.Level
 	lvl         *levelHolder
+	policy      *policyHolder
 	unattended  *unattendedHolder
 	persist     *cfgWriter
 	// firstRun 本次为该 profile 首次运行（已写模板，D141）；setupTried 装配前向导窗

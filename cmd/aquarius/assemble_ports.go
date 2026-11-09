@@ -599,6 +599,8 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		Disabled:    w.disabledTools.snapshot(),
 		Confirmer:   confirmer,
 		Level:       w.lvl.Get,
+		Overrides:   w.policy.Get,
+		Sensitive:   w.sensitiveRoots(),
 		SandboxPath: w.sandboxDir,
 		Timeout:     toolTimeout,
 		MaxOutput:   maxOutput,
@@ -624,6 +626,9 @@ func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer
 	if err != nil {
 		return err
 	}
+	// 放行策略（D280）：与本地工具共用一张表，来源维区分两条线。
+	opts.Overrides = w.policy.Get
+	opts.Sensitive = w.sensitiveRoots()
 	// D269：台账与任务台账同目录——它们回答的是同一类问题「上次退出时还有什么没收尾」。
 	opts.LedgerPath = filepath.Join(w.profileDir, "jobs", "delegates.json")
 	mgr := acpgate.New(opts)

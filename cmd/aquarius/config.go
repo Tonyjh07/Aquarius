@@ -182,12 +182,22 @@ func (c *fileConfig) normalizeSkills() error {
 	return nil
 }
 
-// permissionsConfig 权限配置（D22：仅等级预设；allow/ask 明细键已移除，矩阵外一律 ask）。
+// permissionsConfig 权限配置（D22 等级 + D280 例外表；矩阵外一律 ask）。
 type permissionsConfig struct {
 	Level string `json:"level"` // 空 = strict（perm.DefaultLevel）
 	// Unattended 无人值守（D185）：true 时模型发起的越界调用当场拒绝并说明，不阻塞轮次。
 	// 权限档本身不变——它只关掉「等人点确认」这一环。缺省 false。
 	Unattended bool `json:"unattended,omitempty"`
+	// Overrides 放行策略例外（D280）：只存用户改过的条目，空 = 全按矩阵。
+	// 「禁用」不在这里：它是 tools.disabled，落在装配层。
+	Overrides []policyOverride `json:"overrides,omitempty"`
+}
+
+// policyOverride 一条放行策略例外。Tool 为空只对 acpgate 成立（该来源整体）。
+type policyOverride struct {
+	Origin string `json:"origin"` // toolrun | acpgate
+	Tool   string `json:"tool,omitempty"`
+	Mode   string `json:"mode"` // ask | assist | allow
 }
 
 // serviceEndpoint 一路外部服务「怎么连」：端点 + 密钥引用（D222）。

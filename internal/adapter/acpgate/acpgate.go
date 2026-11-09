@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -46,6 +47,11 @@ type Options struct {
 	Secrets port.Secrets
 	// Confirmer 权限回落（§9）：子代理动手前反问，答不上来就不动手。
 	Confirmer port.Confirmer
+	// Overrides 放行策略例外（D280）：来源固定 acpgate，工具维通常为空（整来源）。
+	// allow 越过确认，ask 照问；assist 在决策模型接上之前按 ask 处理。
+	Overrides func() perm.Overrides
+	// Sensitive 硬名单的敏感根（D280 第 6 条）：命中时 allow 降回询问。
+	Sensitive []string
 	// CurrentSession 当前会话（D261 无人应答判定）：转交绑发起会话，用户不在该会话时
 	// 确认无人应答——当场拒绝并写进报告，不让转交卡在等确认上。nil = 不判（测试/无 UI）。
 	CurrentSession func() conversation.ID

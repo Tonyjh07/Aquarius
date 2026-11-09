@@ -6,6 +6,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -71,10 +72,15 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 		req := port.ConfirmRequest{
 			Origin: port.OriginAgent,
 			Tool:   toolTitle(p),
+			Target: toolTarget(p),
 			Task:   r.taskSummary(),
 			Prompt: permissionPrompt(r.agent, p),
 		}
-		allow, why = c.askUser(ctx, req)
+		if c.policy(req.Tool, req.Target) == perm.Allow {
+			allow = true // 策略表明说放行这一来源（或这个工具），不再问
+		} else {
+			allow, why = c.askUser(ctx, req)
+		}
 		if !allow && (r.stopKind() != stopNone || ctx.Err() != nil) {
 			return cancelled, nil
 		}
@@ -179,4 +185,28 @@ func (r *run) taskSummary() string {
 		return string(n[:80]) + "…"
 	}
 	return task
+}
+
+// policy 外部代理这一侧的当前档位（D280）：工具维为空表示该来源整体。
+// 命中硬名单时 allow 降回询问；assist 在决策模型接上之前与 ask 同路。
+func (c *client) policy(tool, target string) perm.Decision {
+	if c.m.opts.Overrides == nil {
+		return perm.Ask
+	}
+	d := c.m.opts.Overrides().Apply(perm.Ask, perm.OriginAgent, tool)
+	if d == perm.Allow && perm.HardTarget(target, c.m.opts.Sensitive) {
+		return perm.Ask
+	}
+	return d
+}
+
+// toolTarget 这次调用涉及的第一处路径（ACP 的 locations）。权限反问通常只带标题，
+// 但带位置时硬名单要能看见它；没有就返回空串。
+func toolTarget(p acp.RequestPermissionRequest) string {
+	for _, loc := range p.ToolCall.Locations {
+		if s := strings.TrimSpace(loc.Path); s != "" {
+			return s
+		}
+	}
+	return ""
 }

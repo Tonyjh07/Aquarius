@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -420,5 +421,32 @@ func TestDelegateErrorKeepsPartialReport(t *testing.T) {
 	}
 	if run.Agent != "fake" {
 		t.Fatalf("run.Agent = %q", run.Agent)
+	}
+}
+
+// TestDelegatePolicyAllowsWithoutAsking 策略表把 acpgate 来源设成自动放行时，
+// 权限反问不再弹给用户（D280）：报告里仍按 allow 回选项。
+func TestDelegatePolicyAllowsWithoutAsking(t *testing.T) {
+	conf := &fakeConfirmer{allow: true}
+	m := newManager(t, "permission", func(o *Options) {
+		o.Home = t.TempDir()
+		o.Confirmer = conf
+		o.Overrides = func() perm.Overrides {
+			return perm.Overrides{{Origin: perm.OriginAgent, Mode: perm.ModeAllow}}
+		}
+	})
+	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "edit"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	run, err := m.Wait(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if conf.calls != 0 {
+		t.Fatalf("confirm calls = %d, want 0（策略表已放行）", conf.calls)
+	}
+	if !strings.Contains(run.Report, `"optionId":"allow"`) {
+		t.Fatalf("report = %q（应回 allow_once）", run.Report)
 	}
 }

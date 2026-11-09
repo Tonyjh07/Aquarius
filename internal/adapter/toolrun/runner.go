@@ -37,6 +37,11 @@ type Options struct {
 	Confirmer port.Confirmer
 	// Level 当前权限等级（func 以支持 /permission 运行时切换）；nil = perm.DefaultLevel。
 	Level func() perm.Level
+	// Overrides 放行策略例外（D280）；nil = 全按矩阵。优先级：例外 > 矩阵 > 缺省 ask。
+	Overrides func() perm.Overrides
+	// Sensitive 硬名单的敏感根（密钥目录、配置目录、系统目录，D280 第 6 条）：
+	// 目标落在这里时，即便策略表设了自动放行也照问。
+	Sensitive []string
 	// SandboxPath 特权目录（D22 路径格的 inSandbox 判定基准）。
 	SandboxPath string
 	// Timeout 缺省单次工具执行超时（可被保留参数 timeout_sec 逐次覆盖，D38）；<=0 = 不限。
@@ -56,12 +61,14 @@ type Runner struct {
 	// disabled 只在 mu 下整体替换、绝不原地改（SetDisabled 建新表换指针，Specs/Execute
 	// 锁外读一份快照）：读的一侧不加锁就安全，靠的就是这条不变量。要改就得复制整张表，
 	// `r.disabled[name] = true` 会直接变成数据竞争。
-	disabled map[string]bool
-	conf     port.Confirmer
-	level    func() perm.Level
-	sandbox  string
-	timeout  time.Duration
-	maxOut   int
+	disabled  map[string]bool
+	conf      port.Confirmer
+	level     func() perm.Level
+	overrides func() perm.Overrides
+	sensitive []string
+	sandbox   string
+	timeout   time.Duration
+	maxOut    int
 }
 
 var (
@@ -71,13 +78,15 @@ var (
 // New 创建 Runner 并注册初始工具。
 func New(opts Options) *Runner {
 	r := &Runner{
-		byName:   map[string]port.Tool{},
-		disabled: map[string]bool{},
-		conf:     opts.Confirmer,
-		level:    opts.Level,
-		sandbox:  opts.SandboxPath,
-		timeout:  opts.Timeout,
-		maxOut:   opts.MaxOutput,
+		byName:    map[string]port.Tool{},
+		disabled:  map[string]bool{},
+		conf:      opts.Confirmer,
+		level:     opts.Level,
+		overrides: opts.Overrides,
+		sensitive: append([]string(nil), opts.Sensitive...),
+		sandbox:   opts.SandboxPath,
+		timeout:   opts.Timeout,
+		maxOut:    opts.MaxOutput,
 	}
 	if r.level == nil {
 		r.level = func() perm.Level { return perm.DefaultLevel }
@@ -205,7 +214,8 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 
 	// 权限判定：工具声明的风险档与调用目标的路径档各管一列、取更严者（D22）。
 	decision, target, op, hasOp := r.decide(ctx, t, call)
-	if decision == perm.Ask {
+	// Assist 在决策模型接上之前（P4）与 Ask 同路：宁可多问一句，也不静默放行。
+	if decision != perm.Allow {
 		if r.conf == nil {
 			return tool.Result{}, fmt.Errorf("tool %s requires confirmation but no Confirmer is configured", call.Name)
 		}
@@ -355,13 +365,26 @@ func specDeclaresTimeout(spec tool.Spec) bool {
 // 读结构体而不是从提示文本里反解。
 func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.Decision, string, perm.Op, bool) {
 	level := r.level()
+	base := level.Tool(t.Spec().Risk)
+	target := ""
+	var op perm.Op
+	var hasOp bool
 	if ft, ok := t.(port.FileTarget); ok {
-		if path, op, ok := ft.Target(ctx, call); ok {
-			return level.File(r.inSandbox(path), op), path, op, true
+		if path, fileOp, ok := ft.Target(ctx, call); ok {
+			base, target, op, hasOp = level.File(r.inSandbox(path), fileOp), path, fileOp, true
 		}
 		// 申报失败（如参数非法）：退回执行类按 Risk 兜底，宁可多问。
 	}
-	return level.Tool(t.Spec().Risk), "", 0, false
+	decision := base
+	if r.overrides != nil {
+		decision = r.overrides().Apply(base, perm.OriginTool, t.Spec().Name)
+	}
+	// 硬名单（D280 第 6 条）：策略表把这一条放宽到免确认，但目标属于密钥目录、
+	// 配置目录、系统目录或执行控制类文件时，仍然问一次。
+	if decision == perm.Allow && perm.HardTarget(target, r.sensitive) {
+		decision = perm.Ask
+	}
+	return decision, target, op, hasOp
 }
 
 // inSandbox 判定路径是否位于特权目录内（含边界：/a/sandbox 不覆盖 /a/sandbox2）。

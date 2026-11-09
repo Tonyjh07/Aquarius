@@ -195,6 +195,10 @@ func (c *client) allowRead(ctx context.Context, resolved string) (bool, string) 
 		}
 		return false, reason
 	}
+	if c.policy("", resolved) == perm.Allow {
+		c.r.markOutsideRead(resolved, true, "")
+		return true, ""
+	}
 	limit := c.m.outsideReadAsks()
 	switch {
 	case limit == 0:
@@ -223,6 +227,10 @@ func (c *client) allowRead(ctx context.Context, resolved string) (bool, string) 
 
 // allowWrite 一次越界写或控制文件写的处置：每次都问，不缓存。
 func (c *client) allowWrite(ctx context.Context, path, resolved, rule string) (bool, string) {
+	// 策略表放行这一来源的写；控制文件在 policy 里已被硬名单降回询问。
+	if c.policy("", resolved) == perm.Allow {
+		return true, ""
+	}
 	var prompt string
 	if rule != "" {
 		prompt = i18n.Tf("acp.confirm.control_file", "agent", c.r.agent.Name, "rule", rule, "path", resolved)

@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-08 @ a88d0ae -->
+<!-- docs-sync: 2026-11-09 @ d823dfc -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -194,6 +194,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 |---|---|---|---|
 | `permissions.level` | string | `strict` | `read-only` / `strict` / `permissive` / `full-access`；非法值启动报错；`/permission` 切换**写回**本字段 |
 | `permissions.unattended` | bool | `false` | 无人值守：模型发起的越界操作**当场拒绝**并说明，不再弹确认等人；权限等级本身不变。`/unattended [on|off]`、球/托盘菜单「无人值守」、设置窗「常规」→「权限」勾选都会**写回**本字段并热生效。你自己键入的命令确认（删除会话等）与插件授权照常询问 |
+| `permissions.overrides` | array | `[]` | 按「来源 × 工具」存放行例外，覆盖矩阵两个方向。每项 `{origin, tool, mode}`：`origin` 取 `toolrun`（本地工具）或 `acpgate`（外部代理）；`tool` 只对 `toolrun` 必填，`acpgate` 留空表示整个来源；`mode` 取 `ask` / `assist` / `allow`。**只写改过的条目**，没写的跟矩阵走。「禁用」不在这里，用 `tools.disabled` |
 
 等级语义（矩阵格 = 免确认范围，矩阵外逐次确认）：
 
@@ -203,6 +204,11 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `strict` | rw | r | Confirm 逐次 |
 | `permissive` | rw | rw | Confirm 逐次 |
 | `full-access` | rw | rw | 全免 |
+
+例外表覆盖矩阵，两个方向都行：矩阵判免确认的可以改成每次都问，矩阵判询问的可以改成自动放行。
+优先级是**用户显式 > 矩阵 > 缺省询问**，`full-access` 也在这条规则之下。命中硬名单时例外表说了不算：
+配置文件、密钥库、系统目录、版本控制钩子与编辑器/代理设置（`.git/hooks`、`.vscode`、`.mcp.json` 等）
+即便设成自动放行也照问。
 
 两列分工、互不叠加：文件类看路径格（读全盘免确认），执行类看工具列（Safe 免、
 Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 授权流不随等级变化。

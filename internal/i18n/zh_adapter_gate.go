@@ -187,6 +187,10 @@ var zhAdapterGateTexts = map[string]string{
 
 	// ---- domain/perm：权限等级解析（config permissions.level 与 /permission 共用）。
 	// 四个等级名是数据，留在译文里不翻。 ----
-	"perm.err.unknown_level": "perm: 未知权限等级「{level}」（可用：read-only / strict / permissive / full-access）",
-	"notify.err.no_sender":   "notify: 未配置发送器",
+	"perm.err.unknown_level":  "perm: 未知权限等级「{level}」（可用：read-only / strict / permissive / full-access）",
+	"perm.err.unknown_mode":   "perm: 未知策略档位「{mode}」（可用：ask / assist / allow）",
+	"perm.err.unknown_origin": "perm: 未知策略来源「{origin}」（可用：toolrun / acpgate）",
+	"perm.err.override_at":    "permissions.overrides[{index}]：{err}",
+	"perm.err.override_tool":  "permissions.overrides[{index}]：来源 toolrun 的条目必须写明 tool",
+	"notify.err.no_sender":    "notify: 未配置发送器",
 }

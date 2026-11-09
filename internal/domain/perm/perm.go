@@ -67,7 +67,9 @@ func (o Op) String() string {
 	return "read"
 }
 
-// Decision 判定结果：Allow = 免确认执行；Ask = 经 Confirmer 逐次确认（矩阵外唯一出口，D22）。
+// Decision 判定结果：Allow = 免确认执行；Ask = 逐次确认；Assist = 先问决策模型，
+// 拿不准再问用户（D280 四态里的一档）。矩阵本身只产出 Allow / Ask，「矩阵外一律
+// ask」这条（D22）不因 Assist 改变——Assist 只能来自用户显式设的例外。
 type Decision int
 
 const (
@@ -75,12 +77,17 @@ const (
 	Allow Decision = iota
 	// Ask 逐次确认。
 	Ask
+	// Assist 先问决策模型，拿不准再问用户；决策模型未接时等同 Ask。
+	Assist
 )
 
 // String 实现 fmt.Stringer。
 func (d Decision) String() string {
-	if d == Ask {
+	switch d {
+	case Ask:
 		return "ask"
+	case Assist:
+		return "assist"
 	}
 	return "allow"
 }

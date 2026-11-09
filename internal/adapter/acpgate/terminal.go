@@ -21,6 +21,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -450,6 +451,10 @@ const reasonTerminalLimit = "the command-approval limit for this delegation is u
 // 不自造命令白/黑名单：四态策略表是 v0.7.0 的事，这里先塞一套，等于把同一套字段口径
 // 写两遍（D286）。
 func (c *client) allowTerminal(ctx context.Context, line, prompt string) (bool, string) {
+	// 策略表放行这一来源的命令；命令内容不进硬名单判定（判不了它到底写哪儿）。
+	if c.policy("", "") == perm.Allow {
+		return true, ""
+	}
 	limit := c.m.terminalAsks()
 	switch {
 	case limit == 0:
