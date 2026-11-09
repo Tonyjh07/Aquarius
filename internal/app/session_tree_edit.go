@@ -182,7 +182,7 @@ func (s *Session) confirm(ctx context.Context, prompt string) (bool, error) {
 	if s.confirmer == nil {
 		return true, nil
 	}
-	ans, err := s.confirmer.Confirm(ctx, prompt)
+	ans, err := s.confirmer.Confirm(ctx, port.ConfirmRequest{Origin: port.OriginCommand, Prompt: prompt})
 	if err != nil {
 		return false, wrapSession("err.confirm", err)
 	}

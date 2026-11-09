@@ -42,7 +42,7 @@ func Unattended(inner port.Confirmer, on func() bool) port.Confirmer {
 	return unattendedConfirmer{inner: inner, on: on}
 }
 
-func (u unattendedConfirmer) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (u unattendedConfirmer) Confirm(ctx context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ConfirmAnswer{}, err
 	}
@@ -52,7 +52,7 @@ func (u unattendedConfirmer) Confirm(ctx context.Context, prompt string) (port.C
 	if u.inner == nil {
 		return port.ConfirmAnswer{}, errNoConfirmer
 	}
-	return u.inner.Confirm(ctx, prompt)
+	return u.inner.Confirm(ctx, req)
 }
 
 // unattendedAsker 提问端口的无人值守装饰器（口径六）。

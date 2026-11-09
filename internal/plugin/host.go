@@ -273,7 +273,7 @@ func (h *Host) trustGate(ctx context.Context, d Decl) bool {
 	}
 	prompt := i18n.Tf("plugin.host.trust_prompt",
 		"name", d.Name, "source", SourcePlugins, "launch", d.LaunchDesc())
-	ans, err := h.confirm.Confirm(ctx, prompt)
+	ans, err := h.confirm.Confirm(ctx, port.ConfirmRequest{Origin: port.OriginCommand, Prompt: prompt})
 	if err != nil {
 		h.logf(port.LogWarn, "log.plugin.trust_confirm_failed", "log.act.deny",
 			"name", d.Name, "err", err)
@@ -335,7 +335,10 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		}
 	}()
 	for _, c := range pending {
-		ans, err := h.confirm.Confirm(ctx, i18n.Tf("plugin.host.grant_prompt", "name", d.Name, "cap", c))
+		ans, err := h.confirm.Confirm(ctx, port.ConfirmRequest{
+			Origin: port.OriginCommand,
+			Prompt: i18n.Tf("plugin.host.grant_prompt", "name", d.Name, "cap", c),
+		})
 		if err != nil {
 			h.logf(port.LogWarn, "log.plugin.grant_confirm_failed", "log.act.deny",
 				"name", d.Name, "cap", c, "err", err)

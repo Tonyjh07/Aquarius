@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // TestWakeReturnsInput 空闲唤醒经 Next 返回 Wake 标记。
@@ -27,7 +29,7 @@ func TestWakeReturnsInput(t *testing.T) {
 func TestConfirmIgnoresWake(t *testing.T) {
 	u := New(strings.NewReader("y\n"), &bytes.Buffer{})
 	u.Wake()
-	ans, err := u.Confirm(context.Background(), "确认？")
+	ans, err := u.Confirm(context.Background(), port.ConfirmRequest{Prompt: "确认？"})
 	if err != nil {
 		t.Fatalf("Confirm: %v", err)
 	}

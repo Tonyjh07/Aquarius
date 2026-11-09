@@ -303,7 +303,7 @@ func (c *client) CreateTerminal(ctx context.Context, p acp.CreateTerminalRequest
 		return acp.CreateTerminalResponse{}, terminalDenied(err.Error())
 	}
 	line := commandText(p.Command, p.Args)
-	if ok, why := c.allowTerminal(ctx, terminalPrompt(c.r.agent.Name, line, wd, env)); !ok {
+	if ok, why := c.allowTerminal(ctx, line, terminalPrompt(c.r.agent.Name, line, wd, env)); !ok {
 		c.r.terms.unreserve(id, limit)
 		c.r.note("command was refused (%s): %s", line, why)
 		return acp.CreateTerminalResponse{}, terminalDenied(why)
@@ -449,7 +449,7 @@ const reasonTerminalLimit = "the command-approval limit for this delegation is u
 //
 // 不自造命令白/黑名单：四态策略表是 v0.7.0 的事，这里先塞一套，等于把同一套字段口径
 // 写两遍（D286）。
-func (c *client) allowTerminal(ctx context.Context, prompt string) (bool, string) {
+func (c *client) allowTerminal(ctx context.Context, line, prompt string) (bool, string) {
 	limit := c.m.terminalAsks()
 	switch {
 	case limit == 0:
@@ -459,7 +459,10 @@ func (c *client) allowTerminal(ctx context.Context, prompt string) (bool, string
 		return false, fmt.Sprintf("%s (%d)", reasonTerminalLimit, limit)
 	}
 	c.r.terms.countAsk()
-	return c.askUser(ctx, prompt)
+	req := port.ConfirmRequest{
+		Origin: port.OriginAgent, Target: line, Task: c.r.taskSummary(), Prompt: prompt,
+	}
+	return c.askUser(ctx, req)
 }
 
 // terminalPrompt 命令确认的用户面文案：命令、目录、环境变量三者都出现（策略匹配的是

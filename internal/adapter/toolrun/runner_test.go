@@ -64,14 +64,17 @@ type scriptConf struct {
 	answers    []bool
 	denyReason string // D86：拒绝时附带的原因（空 = 干拒）
 	asked      []string
+	reqs       []port.ConfirmRequest // 结构化请求原样留档（D280 地基）
 	err        error
 }
 
-func (c *scriptConf) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (c *scriptConf) Confirm(_ context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
+	prompt := req.Prompt
 	if c.err != nil {
 		return port.ConfirmAnswer{}, c.err
 	}
 	c.asked = append(c.asked, prompt)
+	c.reqs = append(c.reqs, req)
 	if len(c.answers) == 0 {
 		return port.ConfirmAnswer{}, errors.New("scriptConf: 没有对应脚本的确认请求")
 	}
@@ -886,5 +889,59 @@ func TestConfirmPromptFallsBack(t *testing.T) {
 		Describe: func(json.RawMessage) string { return "   " }})
 	if empty != plain {
 		t.Fatalf("Describe 返回空串应退回默认: %q vs %q", empty, plain)
+	}
+}
+
+// TestConfirmCarriesStructure 确认请求带着判定依据（D280 第 7 条）：来源、工具、
+// 操作、目标、风险都在结构体里，界面与策略表不必从句子里反解。
+func TestConfirmCarriesStructure(t *testing.T) {
+	sbx := mustAbs(t, "sbx")
+	outside := mustAbs(t, "outside/w.txt")
+
+	conf := &scriptConf{answers: []bool{true}}
+	r := New(Options{
+		Tools:       []port.Tool{fileTool("fw", outside, perm.OpWrite, tool.Confirm, "ok")},
+		Confirmer:   conf,
+		Level:       levelFn(perm.Strict),
+		SandboxPath: sbx,
+	})
+	if _, err := r.Execute(context.Background(), c("fw", `{}`)); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(conf.reqs) != 1 {
+		t.Fatalf("确认次数 = %d, want 1", len(conf.reqs))
+	}
+	got := conf.reqs[0]
+	if got.Origin != port.OriginTool || got.Tool != "fw" {
+		t.Fatalf("来源/工具 = %q/%q", got.Origin, got.Tool)
+	}
+	if !got.HasOp || got.Op != perm.OpWrite {
+		t.Fatalf("操作 = %v/%v, want write", got.Op, got.HasOp)
+	}
+	if got.Target != outside {
+		t.Fatalf("目标 = %q, want %q", got.Target, outside)
+	}
+	if !got.HasRisk || got.Risk != tool.Confirm {
+		t.Fatalf("风险 = %v/%v, want confirm", got.Risk, got.HasRisk)
+	}
+	if got.Prompt == "" {
+		t.Fatal("Prompt 不应为空（现有界面只读它）")
+	}
+
+	// 执行类工具没有文件目标：HasOp 为 false，Target 留空，风险照填。
+	conf2 := &scriptConf{answers: []bool{true}}
+	r2 := New(Options{
+		Tools: []port.Tool{execTool("term", tool.Confirm, "ran")}, Confirmer: conf2,
+		Level: levelFn(perm.Strict),
+	})
+	if _, err := r2.Execute(context.Background(), c("term", `{}`)); err != nil {
+		t.Fatalf("execute term: %v", err)
+	}
+	got2 := conf2.reqs[0]
+	if got2.HasOp || got2.Target != "" {
+		t.Fatalf("执行类不该带文件目标: op=%v target=%q", got2.HasOp, got2.Target)
+	}
+	if !got2.HasRisk || got2.Risk != tool.Confirm {
+		t.Fatalf("执行类风险 = %v/%v", got2.Risk, got2.HasRisk)
 	}
 }

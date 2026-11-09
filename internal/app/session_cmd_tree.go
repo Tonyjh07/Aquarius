@@ -174,7 +174,7 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 		titles[i] = s.conversationTitle(ctx, id)
 	}
 	prompt := rmconvPrompt(targets, titles)
-	ans, err := s.confirmer.Confirm(ctx, prompt)
+	ans, err := s.confirmer.Confirm(ctx, port.ConfirmRequest{Origin: port.OriginCommand, Prompt: prompt})
 	if err != nil {
 		return "", wrapSession("err.confirm_delete_conversation", err)
 	}
@@ -390,7 +390,7 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	if droppedEditions > 0 {
 		prompt += i18n.Tf("tree.rm.prompt_editions", "n", droppedEditions)
 	}
-	ans, err := s.confirmer.Confirm(ctx, prompt)
+	ans, err := s.confirmer.Confirm(ctx, port.ConfirmRequest{Origin: port.OriginCommand, Prompt: prompt})
 	if err != nil {
 		return "", wrapSession("err.confirm_delete", err)
 	}

@@ -159,12 +159,12 @@ func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 // 应答三路，优先级：模型侧已应答（reply）→ 排队输入 → 输入流结束（拒，
 // 对齐 repl"不替用户做破坏性决定"）。取排队输入或走 EOF 时同步发 confirmResultMsg
 // 关闭模型侧确认态，避免残留（uitui 审查修复同款结构）。
-func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (u *UI) Confirm(ctx context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ConfirmAnswer{}, err
 	}
 	reply := make(chan port.ConfirmAnswer, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
-	u.post(confirmMsg{prompt: prompt, reply: reply})
+	u.post(confirmMsg{req: req, reply: reply})
 	for {
 		select { // 模型侧应答优先（避免多取一行）
 		case ans := <-reply:

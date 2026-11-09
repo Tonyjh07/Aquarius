@@ -141,12 +141,12 @@ func (u *UI) Say(text string) {
 // Confirm 逐次确认（/rm 二次确认、Risk=Confirm 工具等）：
 // 打印提示并读取一行回答；y/yes（大小写不敏感）为同意，其余与输入流结束均为拒绝。
 // 只读 lines，不理会 wakeCh——任务完成不能替用户回答确认。
-func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (u *UI) Confirm(ctx context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ConfirmAnswer{}, err
 	}
 	u.flushDelta()
-	if _, err := fmt.Fprint(u.out, prompt+" [y/N] "); err != nil {
+	if _, err := fmt.Fprint(u.out, req.Prompt+" [y/N] "); err != nil {
 		return port.ConfirmAnswer{}, fmt.Errorf("repl: %s: %w", i18n.T("err.repl_confirm_write"), err)
 	}
 	for {

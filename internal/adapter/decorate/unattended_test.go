@@ -19,7 +19,7 @@ type countingConf struct {
 	err    error
 }
 
-func (c *countingConf) Confirm(_ context.Context, _ string) (port.ConfirmAnswer, error) {
+func (c *countingConf) Confirm(_ context.Context, _ port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	c.calls++
 	return c.answer, c.err
 }
@@ -40,7 +40,7 @@ func (a *countingAsker) Ask(_ context.Context, _ port.AskRequest) (port.AskAnswe
 func TestUnattendedDeniesWithoutInner(t *testing.T) {
 	inner := &countingConf{answer: port.ConfirmAnswer{Allow: true}}
 	c := Unattended(inner, func() bool { return true })
-	ans, err := c.Confirm(context.Background(), "delete 3 files?")
+	ans, err := c.Confirm(context.Background(), port.ConfirmRequest{Prompt: "delete 3 files?"})
 	if err != nil {
 		t.Fatalf("Confirm: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestUnattendedDeniesWithoutInner(t *testing.T) {
 func TestUnattendedPassThrough(t *testing.T) {
 	inner := &countingConf{answer: port.ConfirmAnswer{Allow: true}}
 	c := Unattended(inner, func() bool { return false })
-	ans, err := c.Confirm(context.Background(), "p")
+	ans, err := c.Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"})
 	if err != nil || !ans.Allow {
 		t.Fatalf("透传 = %+v, %v", ans, err)
 	}
@@ -74,13 +74,13 @@ func TestUnattendedPassThrough(t *testing.T) {
 	}
 	// on == nil 视为关闭（装配根未接线时不静默拒绝）。
 	inner2 := &countingConf{answer: port.ConfirmAnswer{Allow: false, Reason: "不"}}
-	ans, err = Unattended(inner2, nil).Confirm(context.Background(), "p")
+	ans, err = Unattended(inner2, nil).Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"})
 	if err != nil || ans.Allow || ans.Reason != "不" {
 		t.Fatalf("on=nil 透传 = %+v, %v", ans, err)
 	}
 	// 内层错误原样上抛。
 	boom := errors.New("boom")
-	_, err = Unattended(&countingConf{err: boom}, func() bool { return false }).Confirm(context.Background(), "p")
+	_, err = Unattended(&countingConf{err: boom}, func() bool { return false }).Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want %v", err, boom)
 	}
@@ -90,7 +90,7 @@ func TestUnattendedPassThrough(t *testing.T) {
 func TestUnattendedContextFirst(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	ans, err := Unattended(&countingConf{}, func() bool { return true }).Confirm(ctx, "p")
+	ans, err := Unattended(&countingConf{}, func() bool { return true }).Confirm(ctx, port.ConfirmRequest{Prompt: "p"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -99,7 +99,7 @@ func TestUnattendedContextFirst(t *testing.T) {
 	}
 	// 关闭态同款：取消也不该落到内层。
 	inner := &countingConf{}
-	_, err = Unattended(inner, func() bool { return false }).Confirm(ctx, "p")
+	_, err = Unattended(inner, func() bool { return false }).Confirm(ctx, port.ConfirmRequest{Prompt: "p"})
 	if !errors.Is(err, context.Canceled) || inner.calls != 0 {
 		t.Fatalf("err = %v, calls = %d", err, inner.calls)
 	}
@@ -107,7 +107,7 @@ func TestUnattendedContextFirst(t *testing.T) {
 
 // TestUnattendedNoInnerFailClosed 无内层且关闭：报错而非静默放行。
 func TestUnattendedNoInnerFailClosed(t *testing.T) {
-	if _, err := Unattended(nil, func() bool { return false }).Confirm(context.Background(), "p"); err == nil {
+	if _, err := Unattended(nil, func() bool { return false }).Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"}); err == nil {
 		t.Fatal("无内层确认器应报错（fail-closed）")
 	}
 }

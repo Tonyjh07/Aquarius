@@ -95,7 +95,8 @@ type fakeConfirm struct {
 	prompts []string
 }
 
-func (c *fakeConfirm) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (c *fakeConfirm) Confirm(_ context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
+	prompt := req.Prompt
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.prompts = append(c.prompts, prompt)

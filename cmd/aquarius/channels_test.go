@@ -19,7 +19,7 @@ type stubFront struct {
 	asks     int
 }
 
-func (s *stubFront) Confirm(context.Context, string) (port.ConfirmAnswer, error) {
+func (s *stubFront) Confirm(_ context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	s.confirms++
 	return port.ConfirmAnswer{Allow: true, Reason: "from-ui"}, nil
 }
@@ -37,7 +37,7 @@ func TestToolChannelsUnattendedScopedToTools(t *testing.T) {
 	on := true
 	tc := toolChannelsFor(front, func() bool { return on })
 
-	ans, err := tc.toolConfirmer.Confirm(context.Background(), "delete?")
+	ans, err := tc.toolConfirmer.Confirm(context.Background(), port.ConfirmRequest{Prompt: "delete?"})
 	if err != nil {
 		t.Fatalf("tool confirm: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestToolChannelsUnattendedScopedToTools(t *testing.T) {
 	}
 
 	// 用户面照常询问。
-	if ans, err := tc.confirmer.Confirm(context.Background(), "rm?"); err != nil || !ans.Allow || ans.Reason != "from-ui" {
+	if ans, err := tc.confirmer.Confirm(context.Background(), port.ConfirmRequest{Prompt: "rm?"}); err != nil || !ans.Allow || ans.Reason != "from-ui" {
 		t.Fatalf("用户面确认 = %+v, %v", ans, err)
 	}
 	if got, err := tc.asker.Ask(context.Background(), port.AskRequest{}); err != nil || len(got.Answers) != 1 {
@@ -73,11 +73,11 @@ func TestToolChannelsUnattendedHot(t *testing.T) {
 	front := &stubFront{}
 	on := false
 	tc := toolChannelsFor(front, func() bool { return on })
-	if ans, err := tc.toolConfirmer.Confirm(context.Background(), "p"); err != nil || ans.Reason != "from-ui" {
+	if ans, err := tc.toolConfirmer.Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"}); err != nil || ans.Reason != "from-ui" {
 		t.Fatalf("关闭态应透传前端: %+v, %v", ans, err)
 	}
 	on = true
-	if ans, err := tc.toolConfirmer.Confirm(context.Background(), "p"); err != nil || ans.Allow {
+	if ans, err := tc.toolConfirmer.Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"}); err != nil || ans.Allow {
 		t.Fatalf("开启后应即拒绝: %+v, %v", ans, err)
 	}
 }
@@ -89,7 +89,7 @@ func TestToolChannelsNilUI(t *testing.T) {
 	if tc.confirmer != nil || tc.asker != nil {
 		t.Fatal("无前端时用户面应为 nil")
 	}
-	if _, err := tc.toolConfirmer.Confirm(context.Background(), "p"); err == nil {
+	if _, err := tc.toolConfirmer.Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"}); err == nil {
 		t.Fatal("无前端 + 关闭态应 fail-closed 报错")
 	}
 	if _, err := tc.toolAsker.Ask(context.Background(), port.AskRequest{}); err == nil {
@@ -103,14 +103,14 @@ func TestToolChannelsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	tc := toolChannelsFor(&stubFront{}, func() bool { return true })
-	if _, err := tc.toolConfirmer.Confirm(ctx, "p"); !errors.Is(err, context.Canceled) {
+	if _, err := tc.toolConfirmer.Confirm(ctx, port.ConfirmRequest{Prompt: "p"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
 
 func mustConfirm(t *testing.T, c port.Confirmer) port.ConfirmAnswer {
 	t.Helper()
-	ans, err := c.Confirm(context.Background(), "p")
+	ans, err := c.Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"})
 	if err != nil {
 		t.Fatalf("confirm: %v", err)
 	}

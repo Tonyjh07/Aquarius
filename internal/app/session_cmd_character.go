@@ -143,8 +143,10 @@ func (s *Session) characterRemove(ctx context.Context, args []string) (string, e
 		return "", errors.New(i18n.T("char.admin_missing"))
 	}
 	if s.confirmer != nil {
-		ans, err := s.confirmer.Confirm(ctx,
-			i18n.Tf("char.confirm_remove", "slug", slug))
+		ans, err := s.confirmer.Confirm(ctx, port.ConfirmRequest{
+			Origin: port.OriginCommand,
+			Prompt: i18n.Tf("char.confirm_remove", "slug", slug),
+		})
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", i18n.T("char.confirm_remove_fail"), err)
 		}

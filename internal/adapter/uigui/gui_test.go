@@ -150,7 +150,7 @@ func TestConfirmRejectsOnEOF(t *testing.T) {
 
 	ctx, cancel := ctx5(t)
 	defer cancel()
-	ans, err := u.Confirm(ctx, "危险操作？")
+	ans, err := u.Confirm(ctx, port.ConfirmRequest{Prompt: "危险操作？"})
 	if err != nil || ans.Allow {
 		t.Fatalf("confirm = %v, %v, want (false, nil)", ans, err)
 	}
@@ -174,7 +174,7 @@ func TestConfirmDrainsQueuedAnswer(t *testing.T) {
 
 	ctx, cancel := ctx5(t)
 	defer cancel()
-	ans, err := u.Confirm(ctx, "确认删除？")
+	ans, err := u.Confirm(ctx, port.ConfirmRequest{Prompt: "确认删除？"})
 	if err != nil || !ans.Allow {
 		t.Fatalf("confirm = %v, %v, want 排队输入 y 作答为真", ans, err)
 	}
@@ -202,7 +202,7 @@ func TestConfirmFromModelReply(t *testing.T) {
 	}
 	resCh := make(chan result, 1)
 	go func() {
-		ans, err := u.Confirm(ctx, "允许执行？")
+		ans, err := u.Confirm(ctx, port.ConfirmRequest{Prompt: "允许执行？"})
 		resCh <- result{ans, err}
 	}()
 	// Confirm 构造后立即投递 confirmMsg：墙钟余量 + 屏障（FIFO——屏障处理到即代表

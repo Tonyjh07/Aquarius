@@ -23,6 +23,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/atomicfile"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -161,7 +162,7 @@ func (c *client) allowOutside(_ context.Context, op, resolved string) bool {
 
 // askUser 越界访问与控制文件的确认：与权限回落（RequestPermission）同一套口径——
 // 无人值守、用户不在发起这次转交的会话、没有配置确认器，一律当场拒。
-func (c *client) askUser(ctx context.Context, prompt string) (bool, string) {
+func (c *client) askUser(ctx context.Context, req port.ConfirmRequest) (bool, string) {
 	if c.r.stopKind() != stopNone || ctx.Err() != nil {
 		return false, "the delegation is stopping"
 	}
@@ -172,7 +173,7 @@ func (c *client) askUser(ctx context.Context, prompt string) (bool, string) {
 	if c.m.opts.Confirmer == nil {
 		return false, i18n.T("acp.deny.no_confirmer")
 	}
-	ans, err := c.m.opts.Confirmer.Confirm(ctx, prompt)
+	ans, err := c.m.opts.Confirmer.Confirm(ctx, req)
 	switch {
 	case err != nil:
 		return false, err.Error()
@@ -207,7 +208,11 @@ func (c *client) allowRead(ctx context.Context, resolved string) (bool, string) 
 	}
 	c.r.countOutsideAsk()
 	prompt := i18n.Tf("acp.confirm.read_outside", "agent", c.r.agent.Name, "path", resolved)
-	if ok, why := c.askUser(ctx, prompt); !ok {
+	req := port.ConfirmRequest{
+		Origin: port.OriginAgent, Op: perm.OpRead, HasOp: true, Target: resolved,
+		Task: c.r.taskSummary(), Prompt: prompt,
+	}
+	if ok, why := c.askUser(ctx, req); !ok {
 		reason := reasonOutside + ": " + why
 		c.r.markOutsideRead(resolved, false, reason)
 		return false, reason
@@ -224,7 +229,11 @@ func (c *client) allowWrite(ctx context.Context, path, resolved, rule string) (b
 	} else {
 		prompt = i18n.Tf("acp.confirm.write_outside", "agent", c.r.agent.Name, "path", resolved)
 	}
-	if ok, why := c.askUser(ctx, prompt); !ok {
+	req := port.ConfirmRequest{
+		Origin: port.OriginAgent, Op: perm.OpWrite, HasOp: true, Target: resolved,
+		Task: c.r.taskSummary(), Prompt: prompt,
+	}
+	if ok, why := c.askUser(ctx, req); !ok {
 		// 路径进 note 是为了让报告里能读出「它想改哪儿」，而不是只有一句「被拒了」。
 		c.r.note("write was refused (%s): %s", path, why)
 		if rule != "" {

@@ -204,12 +204,22 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	}
 
 	// 权限判定：工具声明的风险档与调用目标的路径档各管一列、取更严者（D22）。
-	decision, target := r.decide(ctx, t, call)
+	decision, target, op, hasOp := r.decide(ctx, t, call)
 	if decision == perm.Ask {
 		if r.conf == nil {
 			return tool.Result{}, fmt.Errorf("tool %s requires confirmation but no Confirmer is configured", call.Name)
 		}
-		ans, err := r.conf.Confirm(ctx, confirmPrompt(call, target, spec))
+		req := port.ConfirmRequest{
+			Origin:  port.OriginTool,
+			Tool:    call.Name,
+			Op:      op,
+			HasOp:   hasOp,
+			Target:  target,
+			Risk:    spec.Risk,
+			HasRisk: true,
+			Prompt:  confirmPrompt(call, target, spec),
+		}
+		ans, err := r.conf.Confirm(ctx, req)
 		if err != nil {
 			return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
 		}
@@ -340,15 +350,18 @@ func specDeclaresTimeout(spec tool.Spec) bool {
 }
 
 // decide 权限判定：文件类看路径格，执行类看工具列（D22）。
-func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.Decision, string) {
+// decide 权限判定：文件类按路径格，执行类按工具列（D22）。
+// 同时把判定依据交回给调用方——确认请求要带上操作、目标与风险，让界面与策略表
+// 读结构体而不是从提示文本里反解。
+func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.Decision, string, perm.Op, bool) {
 	level := r.level()
 	if ft, ok := t.(port.FileTarget); ok {
 		if path, op, ok := ft.Target(ctx, call); ok {
-			return level.File(r.inSandbox(path), op), path
+			return level.File(r.inSandbox(path), op), path, op, true
 		}
 		// 申报失败（如参数非法）：退回执行类按 Risk 兜底，宁可多问。
 	}
-	return level.Tool(t.Spec().Risk), ""
+	return level.Tool(t.Spec().Risk), "", 0, false
 }
 
 // inSandbox 判定路径是否位于特权目录内（含边界：/a/sandbox 不覆盖 /a/sandbox2）。

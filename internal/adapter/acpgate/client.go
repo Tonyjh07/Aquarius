@@ -7,6 +7,7 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // client ACP 客户端的九个方法（`acp.Client`）。真做四件：收过程通知、回落权限请求、
@@ -67,7 +68,13 @@ func (c *client) RequestPermission(ctx context.Context, p acp.RequestPermissionR
 	allow := false
 	if denyReason == "" {
 		var why string
-		allow, why = c.askUser(ctx, permissionPrompt(r.agent, p))
+		req := port.ConfirmRequest{
+			Origin: port.OriginAgent,
+			Tool:   toolTitle(p),
+			Task:   r.taskSummary(),
+			Prompt: permissionPrompt(r.agent, p),
+		}
+		allow, why = c.askUser(ctx, req)
 		if !allow && (r.stopKind() != stopNone || ctx.Err() != nil) {
 			return cancelled, nil
 		}
@@ -151,4 +158,25 @@ func firstLine(s string, max int) string {
 		return s
 	}
 	return string([]rune(s)[:max]) + "…"
+}
+
+// toolTitle 对方给这次调用的标题（通常就是工具名或一句动作描述），没有则为空。
+func toolTitle(p acp.RequestPermissionRequest) string {
+	if t := p.ToolCall.Title; t != nil {
+		return strings.TrimSpace(*t)
+	}
+	return ""
+}
+
+// taskSummary 这一趟转交的任务摘要（首行，最多 80 字）：确认框与决策模型都需要一句
+// 「在干什么」，整段任务写进去会把「要改哪个文件」挤出视野（D281 第 4 条口径）。
+func (r *run) taskSummary() string {
+	task := strings.TrimSpace(r.spec.Task)
+	if i := strings.IndexByte(task, '\n'); i >= 0 {
+		task = strings.TrimSpace(task[:i])
+	}
+	if n := []rune(task); len(n) > 80 {
+		return string(n[:80]) + "…"
+	}
+	return task
 }

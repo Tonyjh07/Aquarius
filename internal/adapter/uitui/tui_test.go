@@ -224,7 +224,7 @@ func TestConfirmRejectsOnEOF(t *testing.T) {
 	defer func() { _ = u.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	ans, err := u.Confirm(ctx, "危险操作？")
+	ans, err := u.Confirm(ctx, port.ConfirmRequest{Prompt: "危险操作？"})
 	if err != nil || ans.Allow {
 		t.Fatalf("confirm = %v, %v, want (false, nil)", ans, err)
 	}
@@ -243,7 +243,7 @@ func TestConfirmDrainsQueuedAnswer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ans, err := u.Confirm(ctx, "确认删除？")
+	ans, err := u.Confirm(ctx, port.ConfirmRequest{Prompt: "确认删除？"})
 	if err != nil || !ans.Allow {
 		t.Fatalf("confirm = %v, %v, want 排队输入 y 作答为真", ans, err)
 	}

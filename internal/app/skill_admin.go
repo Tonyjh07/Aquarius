@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // SkillInstallReport 安装/更新结果（用户面文案的原料：名字、过程说明、跳过原因）。
@@ -82,7 +83,10 @@ func (s *Session) skillRemove(ctx context.Context, rest []string) (string, bool,
 		return "", true, fmt.Errorf("%s", i18n.T("skill.admin_missing"))
 	}
 	if s.confirmer != nil {
-		ans, err := s.confirmer.Confirm(ctx, i18n.Tf("skill.confirm_remove", "name", name))
+		ans, err := s.confirmer.Confirm(ctx, port.ConfirmRequest{
+			Origin: port.OriginCommand,
+			Prompt: i18n.Tf("skill.confirm_remove", "name", name),
+		})
 		if err != nil {
 			return "", true, fmt.Errorf("%s: %w", i18n.T("skill.confirm_remove_fail"), err)
 		}

@@ -137,7 +137,8 @@ type scriptConfirmer struct {
 
 var _ port.Confirmer = (*scriptConfirmer)(nil)
 
-func (c *scriptConfirmer) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (c *scriptConfirmer) Confirm(_ context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
+	prompt := req.Prompt
 	if len(c.answers) == 0 {
 		c.t.Fatalf("scriptConfirmer: 没有对应脚本的确认请求: %s", prompt)
 	}

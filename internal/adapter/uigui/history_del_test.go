@@ -175,7 +175,7 @@ func TestHistoryConfirmDialogAnswers(t *testing.T) {
 	t.Parallel()
 	u, st, q := delFixture(t)
 	reply := make(chan port.ConfirmAnswer, 1)
-	u.m.startConfirm("确认删除会话 C1？", reply) // 与主窗同路：startConfirm 即发布投影
+	u.m.startConfirm(port.ConfirmRequest{Prompt: "确认删除会话 C1？"}, reply) // 与主窗同路：startConfirm 即发布投影
 	if !st.confirmActive(u) {
 		t.Fatal("startConfirm 未发布确认投影")
 	}
@@ -212,7 +212,7 @@ func TestHistoryConfirmAnswerIdentity(t *testing.T) {
 	m := u.m
 
 	replyA := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("第一条？", replyA)
+	m.startConfirm(port.ConfirmRequest{Prompt: "第一条？"}, replyA)
 	shareA := u.confirmShare.Load()
 	if shareA == nil {
 		t.Fatal("第一条未发布投影")
@@ -224,7 +224,7 @@ func TestHistoryConfirmAnswerIdentity(t *testing.T) {
 	<-replyA
 
 	replyB := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("第二条？", replyB)
+	m.startConfirm(port.ConfirmRequest{Prompt: "第二条？"}, replyB)
 	u.apply(confirmResultMsg{ans: port.ConfirmAnswer{Allow: true}, share: shareA})
 	if m.confirm == nil {
 		t.Fatal("迟到应答误答了下一次确认")
@@ -254,7 +254,7 @@ func TestHistoryConfirmDialogRefuses(t *testing.T) {
 	t.Parallel()
 	u, st, q := delFixture(t)
 	reply := make(chan port.ConfirmAnswer, 1)
-	u.m.startConfirm("确认删除会话 C1？", reply)
+	u.m.startConfirm(port.ConfirmRequest{Prompt: "确认删除会话 C1？"}, reply)
 	histFrameFor(q, u, st)
 
 	st.cfm.deny.Click()

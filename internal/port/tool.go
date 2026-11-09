@@ -31,9 +31,39 @@ type ConfirmAnswer struct {
 	Reason string
 }
 
-// Confirmer 逐次确认（Risk=Confirm 的工具、越界文件访问、插件授权等）。
+// ConfirmOrigin 一次确认的来源（D280 策略表的来源维）。
+type ConfirmOrigin string
+
+const (
+	// OriginTool 本地模型发起的工具调用（toolrun）。
+	OriginTool ConfirmOrigin = "toolrun"
+	// OriginAgent 外部代理经 ACP 发起的反向请求（acpgate）。
+	OriginAgent ConfirmOrigin = "acpgate"
+	// OriginCommand 用户自己键入的破坏性命令确认（/rm 等）与插件、技能授权。
+	// 这类请求不代表模型行为，策略表不参与。
+	OriginCommand ConfirmOrigin = "command"
+)
+
+// ConfirmRequest 一次确认的完整请求（D280 第 7 条）。
+//
+// Prompt 是已经拼好的用户面文本，现有界面只读它；策略表与决策模型读其余字段，
+// 不再从一句中文里反解「要干什么」。拿不到的字段留零值：HasOp / HasRisk 区分
+// 「读」与「不涉及文件」、Safe 与「不适用」。
+type ConfirmRequest struct {
+	Origin  ConfirmOrigin
+	Tool    string // 工具名；外部代理的权限反问填对方给的工具标题
+	Op      perm.Op
+	HasOp   bool
+	Target  string // 目标路径、命令或其他标识
+	Risk    tool.Risk
+	HasRisk bool
+	Task    string // 外部代理这一趟的任务摘要（首 80 字）
+	Prompt  string
+}
+
+// Confirm 逐次确认（Risk=Confirm 的工具、越界文件访问、插件授权等）。
 type Confirmer interface {
-	Confirm(ctx context.Context, prompt string) (ConfirmAnswer, error)
+	Confirm(ctx context.Context, req ConfirmRequest) (ConfirmAnswer, error)
 }
 
 // FileTarget 可选能力（D25）：文件类工具申报本次调用的目标路径与读写操作，

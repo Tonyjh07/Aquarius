@@ -168,7 +168,7 @@ func TestConfirmReadsAnswer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			ui := New(strings.NewReader(tc.in), &buf)
-			got, err := ui.Confirm(context.Background(), "确认删除 n4？")
+			got, err := ui.Confirm(context.Background(), port.ConfirmRequest{Prompt: "确认删除 n4？"})
 			if err != nil || got.Allow != tc.want {
 				t.Fatalf("confirm = %v, %v, want %v", got, err, tc.want)
 			}
@@ -184,7 +184,7 @@ func TestConfirmCanceledContext(t *testing.T) {
 	ui := New(strings.NewReader("y\n"), io.Discard)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := ui.Confirm(ctx, "p"); !errors.Is(err, context.Canceled) {
+	if _, err := ui.Confirm(ctx, port.ConfirmRequest{Prompt: "p"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }

@@ -85,31 +85,35 @@ func (m *model) closeOpenChips() {
 // startConfirm 打开确认态（Confirm 投递；输入栏切按钮组，§15.2）。
 // 工具权限确认（问句含工具名且最新 chip 未完成）并入该 chip（D67）；
 // 其余（/rm 二次确认等）保持独立文本行。
-func (m *model) startConfirm(prompt string, reply chan port.ConfirmAnswer) {
-	m.confirm = &pendingConfirm{prompt: sanitizeControl(prompt), reply: reply}
+func (m *model) startConfirm(req port.ConfirmRequest, reply chan port.ConfirmAnswer) {
+	prompt := sanitizeControl(req.Prompt)
+	m.confirm = &pendingConfirm{prompt: prompt, reply: reply}
 	// D157：发布跨窗投影（历史窗据此画同步确认弹窗；窗口未开则只存快照）。
-	m.confirm.share = &confirmShare{prompt: m.confirm.prompt}
+	m.confirm.share = &confirmShare{prompt: prompt}
 	m.u.publishConfirm(m.confirm.share)
 	m.u.reasonEd.SetText("") // D86：原因框清空待填
 	m.u.reasonFocus = true   // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性口径）
-	if i := m.openChipFor(m.confirm.prompt); i >= 0 {
-		m.blocks[i].chip.confirmQ = m.confirm.prompt
+	if i := m.openChipFor(req.Tool); i >= 0 {
+		m.blocks[i].chip.confirmQ = prompt
 		m.confirmChip = i
 		return
 	}
 	m.confirmChip = -1
-	m.add(blockPlain, m.confirm.prompt)
+	m.add(blockPlain, prompt)
 }
 
-// openChipFor 确认问句归属的最新未完成 chip（D67）：问句含其工具名才算（confirmPrompt
-// 格式含 call.Name；/rm 等命令确认不含 → 不并入）。无 chip 或最新 chip 不匹配返回 -1。
-func (m *model) openChipFor(prompt string) int {
+// openChipFor 确认归属的最新未完成 chip（D67）：读请求里的工具名精确匹配。
+// 命令确认（/rm、插件授权）没有工具名，不并入，保持独立文本行。
+func (m *model) openChipFor(name string) int {
+	if name == "" {
+		return -1
+	}
 	for i := len(m.blocks) - 1; i >= 0; i-- {
 		c := m.blocks[i].chip
 		if c == nil {
 			continue
 		}
-		if !c.done && c.confirmQ == "" && c.name != "" && strings.Contains(prompt, c.name) {
+		if !c.done && c.confirmQ == "" && c.name == name {
 			return i
 		}
 		return -1

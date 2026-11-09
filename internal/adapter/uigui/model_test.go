@@ -123,7 +123,7 @@ func TestConfirmReasonEcho(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
 	reply := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("允许执行 term_exec？参数: {}", reply)
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "允许执行 term_exec？参数: {}"}, reply)
 	if m.confirmChip < 0 {
 		t.Fatal("工具确认应并入 chip")
 	}
@@ -134,7 +134,7 @@ func TestConfirmReasonEcho(t *testing.T) {
 
 	// 非 chip 确认（/rm 类）：plain 行回显带原因。
 	reply2 := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("确认删除 n4？", reply2)
+	m.startConfirm(port.ConfirmRequest{Prompt: "确认删除 n4？"}, reply2)
 	m.replyConfirm(port.ConfirmAnswer{Reason: "留错了"})
 	if !strings.Contains(allText(m), "确认删除 n4？ → "+i18n.Tf("ui.confirm.deny_with_reason", "reason", "留错了")) {
 		t.Fatalf("缺回显: %q", allText(m))
@@ -142,7 +142,7 @@ func TestConfirmReasonEcho(t *testing.T) {
 
 	// 干拒与允许文案不变。
 	reply3 := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("再来？", reply3)
+	m.startConfirm(port.ConfirmRequest{Prompt: "再来？"}, reply3)
 	m.replyConfirm(port.ConfirmAnswer{})
 	if !strings.Contains(allText(m), "再来？ → "+i18n.T("ui.common.deny")) {
 		t.Fatalf("干拒回显缺失: %q", allText(m))
@@ -154,7 +154,7 @@ func TestStartConfirmResetsReason(t *testing.T) {
 	t.Parallel()
 	m, u := newTestModel(t)
 	u.reasonEd.SetText("上一次的原因")
-	m.startConfirm("确认删除？", make(chan port.ConfirmAnswer, 1))
+	m.startConfirm(port.ConfirmRequest{Prompt: "确认删除？"}, make(chan port.ConfirmAnswer, 1))
 	if got := u.reasonEd.Text(); got != "" {
 		t.Fatalf("reasonEd = %q, want 清空", got)
 	}
@@ -193,7 +193,7 @@ func TestConfirmElevatable(t *testing.T) {
 	u.opts.Status = func() Status { return Status{Level: "strict"} }
 
 	// 非 chip 确认（/rm 类）：不可见。
-	m.startConfirm("确认删除 n4？", make(chan port.ConfirmAnswer, 1))
+	m.startConfirm(port.ConfirmRequest{Prompt: "确认删除 n4？"}, make(chan port.ConfirmAnswer, 1))
 	if u.confirmElevatable() {
 		t.Fatal("非工具确认不应显示提升钮")
 	}
@@ -201,7 +201,7 @@ func TestConfirmElevatable(t *testing.T) {
 
 	// 工具确认：strict 档可见。
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
-	m.startConfirm("允许执行 term_exec？", make(chan port.ConfirmAnswer, 1))
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "允许执行 term_exec？"}, make(chan port.ConfirmAnswer, 1))
 	if !u.confirmElevatable() {
 		t.Fatal("strict 档工具确认应显示提升钮")
 	}
@@ -225,7 +225,7 @@ func TestConfirmFlow(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModel(t)
 	reply := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("确认删除？", reply)
+	m.startConfirm(port.ConfirmRequest{Prompt: "确认删除？"}, reply)
 	if m.confirm == nil {
 		t.Fatal("确认态未设置")
 	}
@@ -256,7 +256,7 @@ func TestConfirmFlow(t *testing.T) {
 
 	// 拒答：非 y/yes 一律 false（与 repl 语义一致）。
 	reply2 := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("再来？", reply2)
+	m.startConfirm(port.ConfirmRequest{Prompt: "再来？"}, reply2)
 	m.submit("") // 空应答
 	select {
 	case ans := <-reply2:
@@ -272,7 +272,7 @@ func TestConfirmFlow(t *testing.T) {
 
 	// 提示出口消毒：确认提示可携带注入序列（§9）。
 	reply3 := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("危险\x1b[2J清屏？", reply3)
+	m.startConfirm(port.ConfirmRequest{Prompt: "危险\x1b[2J清屏？"}, reply3)
 	if strings.Contains(allText(m), "\x1b") {
 		t.Fatalf("确认提示泄漏控制序列: %q", allText(m))
 	}

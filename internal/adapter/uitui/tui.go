@@ -254,12 +254,12 @@ func (u *UI) Say(text string) {
 // 对话框打开前就已全部入队，只等 reply/EOF 会先撞上已关闭的 EOF 而把 y 误拒）→
 // 输入流结束（拒，对齐 repl"不替用户做破坏性决定"）。取排队输入或走 EOF 时同步发
 // confirmResultMsg 关闭模型侧对话框，避免残留对话框吞掉后续输入。
-func (u *UI) Confirm(ctx context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (u *UI) Confirm(ctx context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ConfirmAnswer{}, err
 	}
 	reply := make(chan port.ConfirmAnswer, 1) // 缓冲 1：取消后无人接收，事件循环侧非阻塞投递
-	u.prog.Send(confirmMsg{prompt: prompt, reply: reply})
+	u.prog.Send(confirmMsg{prompt: req.Prompt, reply: reply})
 	for {
 		select { // 模型侧应答优先（避免多取一行）
 		case ans := <-reply:

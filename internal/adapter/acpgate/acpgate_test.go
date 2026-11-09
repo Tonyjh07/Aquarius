@@ -58,11 +58,14 @@ type fakeConfirmer struct {
 	reason string
 	calls  int
 	prompt string
+	req    port.ConfirmRequest
 }
 
-func (f *fakeConfirmer) Confirm(_ context.Context, prompt string) (port.ConfirmAnswer, error) {
+func (f *fakeConfirmer) Confirm(_ context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
+	prompt := req.Prompt
 	f.calls++
 	f.prompt = prompt
+	f.req = req
 	return port.ConfirmAnswer{Allow: f.allow, Reason: f.reason}, nil
 }
 
@@ -245,6 +248,13 @@ func TestDelegatePermissionAllow(t *testing.T) {
 		"\n  Write src/main.go\n  overwrite src/main.go\n\n" + i18n.T("acp.prompt.foot")
 	if conf.prompt != wantPrompt {
 		t.Fatalf("prompt = %q, want %q", conf.prompt, wantPrompt)
+	}
+	// 结构化字段：来源是外部代理，工具与任务摘要都带上，界面与策略表不再猜。
+	if conf.req.Origin != port.OriginAgent {
+		t.Fatalf("origin = %q, want %q", conf.req.Origin, port.OriginAgent)
+	}
+	if conf.req.Tool == "" || conf.req.Task == "" {
+		t.Fatalf("tool/task 应有值: %+v", conf.req)
 	}
 	if !strings.Contains(run.Report, `"optionId":"allow"`) {
 		t.Fatalf("report = %q（应回 allow_once）", run.Report)

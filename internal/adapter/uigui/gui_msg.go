@@ -64,8 +64,8 @@ type (
 	askDoneMsg struct{}
 	// confirmMsg 确认请求（Confirm 投递）。
 	confirmMsg struct {
-		prompt string
-		reply  chan port.ConfirmAnswer
+		req   port.ConfirmRequest
+		reply chan port.ConfirmAnswer
 	}
 	// confirmResultMsg Confirm 侧自行得出应答后的确认态收尾（关态 + 记转写）。
 	// share 非空 = 次窗（历史窗确认弹窗）的应答，其指针身份须与当前确认一致才生效（D157）。
@@ -156,7 +156,7 @@ func (u *UI) apply(msg uiMsg) bool {
 			u.setExpanded(false)
 		}
 	case confirmMsg:
-		u.m.startConfirm(m.prompt, m.reply)
+		u.m.startConfirm(m.req, m.reply)
 	case confirmResultMsg:
 		// D157：带快照身份的应答（历史窗弹窗）只对**同一次**确认生效——迟到应答丢弃，
 		// 不得误答刚好新起的下一条确认。无身份（Confirm 侧自行收尾）照旧直接应答。

@@ -23,7 +23,7 @@ func TestToolChipConfirmMerge(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec", Args: []byte(`{"cmd":"ls"}`)}})
 	reply := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm(`允许执行 term_exec？参数: {"cmd":"ls"}`, reply)
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: `允许执行 term_exec？参数: {"cmd":"ls"}`}, reply)
 
 	if len(m.blocks) != 1 {
 		t.Fatalf("blocks = %d, want 1（确认并入 chip）", len(m.blocks))
@@ -64,7 +64,7 @@ func TestToolChipConfirmDeny(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
 	reply := make(chan port.ConfirmAnswer, 1)
-	m.startConfirm("允许执行 term_exec？参数: {}", reply)
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "允许执行 term_exec？参数: {}"}, reply)
 	m.replyConfirm(port.ConfirmAnswer{})
 	if m.blocks[0].chip.confirmA != i18n.T("ui.common.deny") {
 		t.Fatalf("confirmA = %q, want 拒绝", m.blocks[0].chip.confirmA)
@@ -91,7 +91,7 @@ func TestConfirmNonToolStaysPlain(t *testing.T) {
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
 	reply := make(chan port.ConfirmAnswer, 1)
 	askDel := "确认删除 n1 及其子树（至少 3 条节点）？此操作不可恢复"
-	m.startConfirm(askDel, reply)
+	m.startConfirm(port.ConfirmRequest{Prompt: askDel}, reply)
 
 	if m.confirmChip != -1 {
 		t.Fatalf("confirmChip = %d, want -1（不并入）", m.confirmChip)
@@ -189,7 +189,7 @@ func TestToolChipView(t *testing.T) {
 	if u.chipIsOpen(0, items[0].chip) {
 		t.Fatal("默认折叠")
 	}
-	u.m.startConfirm(`允许执行 file_read？参数: {"path":"a.txt"}`, make(chan port.ConfirmAnswer, 1))
+	u.m.startConfirm(port.ConfirmRequest{Tool: "file_read", Prompt: `允许执行 file_read？参数: {"path":"a.txt"}`}, make(chan port.ConfirmAnswer, 1))
 	if !u.chipIsOpen(0, u.m.blocks[0].chip) {
 		t.Fatal("待确认应强制展开")
 	}

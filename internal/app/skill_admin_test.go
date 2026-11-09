@@ -146,12 +146,12 @@ func TestSkillAdminErrorsSurface(t *testing.T) {
 // denyConfirmer / allowConfirmer 固定答复的确认器。
 type denyConfirmer struct{}
 
-func (denyConfirmer) Confirm(context.Context, string) (port.ConfirmAnswer, error) {
+func (denyConfirmer) Confirm(context.Context, port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	return port.ConfirmAnswer{Allow: false}, nil
 }
 
 type allowConfirmer struct{}
 
-func (allowConfirmer) Confirm(context.Context, string) (port.ConfirmAnswer, error) {
+func (allowConfirmer) Confirm(context.Context, port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	return port.ConfirmAnswer{Allow: true}, nil
 }
