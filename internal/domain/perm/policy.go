@@ -111,3 +111,20 @@ func (o Overrides) Apply(base Decision, origin Origin, tool string) Decision {
 		return Ask
 	}
 }
+
+// execToolNames 执行类工具（D280）：命令与任务内容都是模型现编的，按工具放行等于给
+// 一个 shell。它们**可以**被设成自动放行（比 full-access 窄），但界面必须先标红并
+// 二次确认——单条策略会被忘掉，全局面板有明确的心理预期，一条策略没有。
+//
+// 清单是代码常量而不是配置：这类判定跟着工具的语义走，不是用户可以调的旋钮。
+var execToolNames = []string{"term_exec", "job_start"}
+
+// IsExec 该工具是否执行类（命令/任务由模型现编）。
+func IsExec(tool string) bool {
+	for _, n := range execToolNames {
+		if n == tool {
+			return true
+		}
+	}
+	return false
+}

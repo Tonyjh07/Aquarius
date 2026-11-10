@@ -17,10 +17,11 @@ import (
 
 // fakeToolsAdmin ToolsAdmin 测试替身（可变快照 + 动作记录）。
 type fakeToolsAdmin struct {
-	mu       sync.Mutex
-	snap     ToolsSnapshot
-	actions  []string
-	grantErr error
+	mu        sync.Mutex
+	snap      ToolsSnapshot
+	actions   []string
+	grantErr  error
+	policyErr error
 }
 
 func (a *fakeToolsAdmin) Snapshot() ToolsSnapshot {
@@ -39,6 +40,36 @@ func (a *fakeToolsAdmin) SetBuiltinEnabled(name string, enabled bool) error {
 	}
 	a.snap.Revision++
 	a.actions = append(a.actions, "builtin:"+name)
+	return nil
+}
+
+// SetToolPolicy 放行档位：写回快照里的行（"" = 默认），动作记成 policy:<名>/<档>。
+func (a *fakeToolsAdmin) SetToolPolicy(name, mode string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.policyErr != nil {
+		return a.policyErr
+	}
+	for i := range a.snap.Builtins {
+		if a.snap.Builtins[i].Name == name {
+			a.snap.Builtins[i].Policy = mode
+		}
+	}
+	a.snap.Revision++
+	a.actions = append(a.actions, "policy:"+name+"/"+mode)
+	return nil
+}
+
+// SetAgentPolicy 外部代理整来源的档位。
+func (a *fakeToolsAdmin) SetAgentPolicy(mode string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.policyErr != nil {
+		return a.policyErr
+	}
+	a.snap.AgentPolicy = mode
+	a.snap.Revision++
+	a.actions = append(a.actions, "agentpolicy:/"+mode)
 	return nil
 }
 

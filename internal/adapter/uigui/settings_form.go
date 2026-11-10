@@ -39,6 +39,12 @@ type settingsForm struct {
 	toolsStatus string                       // 反馈文案（状态行）
 	toolsErr    bool                         // 反馈是否为错误
 
+	// 放行档位（D280/D282）：挂在工具行上，所以状态与工具页共用一张表。
+	// polSegs 按工具名缓存分段控件（外部代理用空串）；polConfirm 是执行类待二次确认
+	// 的工具名（"" = 无）——确认态不落快照，故不随 Revision 走。
+	polSegs    map[string]*segmented
+	polConfirm string
+
 	// 外部代理页（D270/A1）：清单 / 可用性 / 缺省 / 字段级编辑。改配置与探 PATH 同步做；
 	// 「测试连接」要起一个真进程，走异步通道（delegateRes），不卡窗口。
 	delegates     DelegateAdmin                   // nil = 只读占位（未接线）
@@ -271,6 +277,7 @@ func newSettingsFormState() *settingsForm {
 		secretsRev: -1,
 		// 技能页快照同理：起点 −1 让首帧必采纳（空安装面 Revision 常为 0）。
 		skillsRev: -1,
+		polSegs:   map[string]*segmented{},
 		// 角色页头像异步解码的结果通道与记账（§5.17）。
 		charBtns: map[string]*widget.Clickable{},
 	}

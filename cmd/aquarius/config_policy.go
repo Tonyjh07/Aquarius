@@ -7,6 +7,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -95,4 +96,56 @@ func systemRoots() []string {
 		return out
 	}
 	return []string{"/etc", "/usr", "/bin", "/sbin", "/boot"}
+}
+
+// setOverride 写入或删除一条例外（mode 空 = 删除）：校验 → 落盘 → 换表。
+//
+// 先落盘再换表：写文件失败时用户看到的是「策略没变」，而不是「界面上变了、重启后
+// 又变回去」。与工具启停的写回顺序一致。
+func (w *wiring) setOverride(origin, tool, mode string) error {
+	origin = strings.TrimSpace(origin)
+	tool = strings.TrimSpace(tool)
+	o, err := perm.ParseOrigin(origin)
+	if err != nil {
+		return err
+	}
+	if tool == "" && o == perm.OriginTool {
+		// 本地工具没有「整来源」这一档：那一维的意义是「某个具体工具带什么档」，
+		// 空工具只对外部代理成立（它的回调没有稳定工具名）。
+		return fmt.Errorf("%s", i18n.T("cmd.policy.err.need_tool"))
+	}
+	var m perm.Mode
+	if mode != "" {
+		if m, err = perm.ParseMode(mode); err != nil {
+			return err
+		}
+	}
+
+	cur := w.cfg.Permissions.Overrides
+	list := make([]policyOverride, 0, len(cur)+1)
+	replaced := false
+	for _, ov := range cur {
+		if ov.Origin == origin && ov.Tool == tool {
+			replaced = true
+			if mode != "" { // 删除 = 跳过这一条
+				ov.Mode = string(m)
+				list = append(list, ov)
+			}
+			continue
+		}
+		list = append(list, ov)
+	}
+	if !replaced && mode != "" {
+		list = append(list, policyOverride{Origin: origin, Tool: tool, Mode: string(m)})
+	}
+	overrides, err := parsePolicyOverrides(list)
+	if err != nil {
+		return err
+	}
+	if err := w.persist.persistPolicyOverrides(list); err != nil {
+		return fmt.Errorf("%s: %w", i18n.T("cmd.policy.err_persist"), err)
+	}
+	w.cfg.Permissions.Overrides = list
+	w.policy.Set(overrides)
+	return nil
 }

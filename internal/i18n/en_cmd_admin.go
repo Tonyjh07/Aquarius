@@ -7,6 +7,8 @@ var enCmdAdminTexts = map[string]string{
 	"cmd.tools.label.context_compact": "Automatic context compaction",
 	"cmd.tools.err.unknown_builtin":   "Unknown builtin tool {name}",
 	"cmd.tools.err.persist_disabled":  "Applied live, but writing config tools.disabled failed",
+	"cmd.policy.err.need_tool":        "Local tools have no \"all requests\" entry; name the tool",
+	"cmd.policy.err_persist":          "The policy took effect, but writing config permissions.overrides failed",
 	"cmd.tools.err.temp_log_create":   "Create temporary log file",
 	"cmd.tools.err.temp_log_write":    "Write temporary log file",
 	"cmd.tools.err.temp_log_close":    "Close temporary log file",

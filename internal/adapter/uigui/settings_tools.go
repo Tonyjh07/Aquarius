@@ -24,6 +24,12 @@ type ToolsAdmin interface {
 	Snapshot() ToolsSnapshot
 	// SetBuiltinEnabled 内置工具启停（热生效；写回 config tools.disabled）。未知名报错。
 	SetBuiltinEnabled(name string, enabled bool) error
+	// SetToolPolicy 单个内置工具的放行档位（D280/D282）："" = 回默认（跟随权限档）。
+	// 写回 config permissions.overrides，runner 立即按新表判定。
+	SetToolPolicy(name, mode string) error
+	// SetAgentPolicy 外部代理整来源的放行档位（"" = 回默认）。ACP 的 fs/terminal 回调
+	// 没有稳定的工具名，这一维到不了工具粒度。
+	SetAgentPolicy(mode string) error
 	// SetPluginEnabled 插件启停（Enable 含信任门与 capability 授权流——会弹主窗确认）。
 	SetPluginEnabled(name string, enabled bool) error
 	// GrantCap 手动预授权一个能力（免一次确认；省确认不等于绕过风险，UI 需标注）。
@@ -40,8 +46,13 @@ type ToolsAdmin interface {
 // ToolsSnapshot 工具与 MCP 页的原子快照。
 type ToolsSnapshot struct {
 	Revision int64
-	Builtins []BuiltinToolState // 内置工具（含禁用态）
-	Plugins  []PluginToolState  // MCP 插件（config / 插件目录两来源）
+	// Level 当前权限档（read-only|strict|permissive|full-access）：行里的「默认」读起来
+	// 是「跟随哪个档」，说明行要用它把话说完。
+	Level string
+	// AgentPolicy 外部代理整来源的档位："" = 默认（跟随权限档）。
+	AgentPolicy string
+	Builtins    []BuiltinToolState // 内置工具（含禁用态与放行档位）
+	Plugins     []PluginToolState  // MCP 插件（config / 插件目录两来源）
 }
 
 // BuiltinToolState 单个内置工具。
@@ -49,6 +60,10 @@ type BuiltinToolState struct {
 	Name    string // 工具名（与 Spec 一致；契约）
 	Label   string // 中文词表（展示）
 	Enabled bool   // 禁用集之外 = 可见/可用
+	// Policy 放行档位："" = 默认（跟随权限档）| ask | assist | allow。
+	Policy string
+	// Exec 执行类（命令由模型现编）：设「允许」要先标红并二次确认。
+	Exec bool
 }
 
 // PluginToolState 单个插件。
@@ -212,7 +227,7 @@ func (f *settingsForm) toolActionButton(gtx layout.Context, th *material.Theme, 
 	return material.Button(th, btn, label).Layout(gtx)
 }
 
-// builtinToolRow 内置工具行：中文词表 + 工具名 + 后果提示 + 启停按钮。
+// builtinToolRow 内置工具行：中文词表 + 工具名 + 后果提示 + 放行档位 + 启停按钮。
 func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b BuiltinToolState) layout.Dimensions {
 	hint := ""
 	switch b.Name {
@@ -225,7 +240,14 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 	if !b.Enabled {
 		action = i18n.T("ui.common.enable")
 	}
-	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+	values, labels := policySegments(b.Policy)
+	sel := policyIndex(values, b.Policy)
+	// 确认态里把「允许」画成选中：用户点的是它，落库要等他点确认。
+	if f.polConfirm == b.Name {
+		sel = policyIndex(values, "allow")
+	}
+	pp := paperOf()
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -233,6 +255,9 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								l := material.Body1(th, b.Label)
+								if b.Exec && sel == policyIndex(values, "allow") {
+									l.Color = pp.danger
+								}
 								return l.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -253,6 +278,11 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 						return l.Layout(gtx)
 					}),
 				)
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return f.polSegFor(b.Name).layout(gtx, th, labels, sel)
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {

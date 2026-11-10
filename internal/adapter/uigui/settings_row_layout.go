@@ -176,6 +176,7 @@ func rowInCard(k rowKind) bool {
 		rowSamplingNote,
 		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus,
 		rowCharEmpty, rowCharWarn, rowCharNote, rowCharStatus,
+		rowToolsNote, rowToolsHard, rowToolsStatus,
 		rowAboutHero, rowAboutNote, rowAboutStatus:
 		return false
 	}

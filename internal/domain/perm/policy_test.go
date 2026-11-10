@@ -94,3 +94,19 @@ func TestParsePolicyNames(t *testing.T) {
 		t.Error("ui 不是策略来源")
 	}
 }
+
+// TestIsExec 执行类判定：只有命令/任务由模型现编的那两个算执行类；其余内置工具
+// （含写文件）不是——写文件有目标路径，执行类没有可预审的内容。
+func TestIsExec(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"term_exec", "job_start"} {
+		if !IsExec(name) {
+			t.Fatalf("%s 应是执行类", name)
+		}
+	}
+	for _, name := range []string{"", "file_write", "file_read", "web_fetch", "mcp:s:run"} {
+		if IsExec(name) {
+			t.Fatalf("%s 不该是执行类", name)
+		}
+	}
+}

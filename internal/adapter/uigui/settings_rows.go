@@ -106,10 +106,15 @@ const (
 	rowSamplingStop // stop（JSON 数组文本，如 ["\n"]）
 	rowSamplingNote // 说明（0 与留空的区别）
 	// 工具与 MCP 页：内置工具逐条开关 + 已连 server 的状态行与动作按钮（D143）。
-	rowBuiltin     // 内置工具行（name = 工具名；field = 快照下标）
+	rowBuiltin     // 内置工具行（name = 工具名；field = 快照下标；含放行档位分段）
 	rowPlugin      // 插件行（name = 插件名；field = 快照下标）
 	rowToolsEmpty  // 占位/空态（text = 文案）
 	rowToolsStatus // 异步动作反馈状态行
+	// D280/D282：放行档位并进工具页——说明、外部代理整来源一行、硬名单、执行类确认。
+	rowToolsNote    // 内置工具区说明（默认跟随哪个权限档）
+	rowToolsAgent   // 外部代理 · 全部请求（一个档位分段）
+	rowToolsHard    // 硬名单说明（text 忽略；文案在 Body 内）
+	rowToolsConfirm // 执行类自动放行的行内二次确认（field = 内置工具下标）
 	// 外部代理页（D270）：清单逐条（命令行编辑 + 启用/设缺省）+ 页级「重新检测」。
 	// A1 起每条可展开为字段级编辑（命令 / 参数 / 环境 / 工作目录 / 根集 + 测试连接）。
 	rowDlgItem    // 一个代理的头部（field = Agents 下标）

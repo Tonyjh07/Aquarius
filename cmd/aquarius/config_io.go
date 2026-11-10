@@ -495,3 +495,25 @@ func (c *cfgWriter) persistToolsDisabled(disabled []string) error {
 		tools["disabled"] = disabled
 	})
 }
+
+// persistPolicyOverrides 写回 config 的 permissions.overrides（D280）：设置窗改一条就
+// 调一次。空表写显式空数组而不是删键——「用户删掉了最后一条例外」与「没设过」在
+// 语义上不同，留着这个键能让下一次读配置的人分得清。
+func (c *cfgWriter) persistPolicyOverrides(list []policyOverride) error {
+	rows := make([]map[string]any, 0, len(list))
+	for _, ov := range list {
+		row := map[string]any{"origin": ov.Origin, "mode": ov.Mode}
+		if ov.Tool != "" {
+			row["tool"] = ov.Tool // 空工具 = 整个来源（acpgate），不写键
+		}
+		rows = append(rows, row)
+	}
+	return persistConfig(c.path, func(generic map[string]any) {
+		perms, _ := generic["permissions"].(map[string]any)
+		if perms == nil {
+			perms = map[string]any{}
+			generic["permissions"] = perms
+		}
+		perms["overrides"] = rows
+	})
+}

@@ -47,12 +47,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	}
 	f.drainSkillPicks(u) // 技能导入选择框结果（只填来源框，不直接落盘）
 	f.drainCharPicks(u)  // 角色卡选择框结果（只填来源框，不直接落盘）
-	// 工具页原子快照（Revision 变了才重建行/按钮；同历史窗口径）。
-	f.syncToolsSnapshot()
-	// 密钥库页原子快照（同口径：Revision 变了才重建条目行）。
-	f.syncSecretsSnapshot()
-	// 技能页原子快照（同口径）。
-	f.syncSkillsSnapshot()
+	f.syncPageSnapshots()
 	// 角色页快照（本页现取，装配根侧节流读盘）+ 头像异步结果排空。
 	f.syncCharactersSnapshot(u)
 	for f.save.Clicked(gtx) {
@@ -118,6 +113,13 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 			return dims
 		}),
 	)
+}
+
+// syncPageSnapshots 各管理面的帧首同步（Revision 变了才重建行/按钮，同历史窗口径）。
+func (f *settingsForm) syncPageSnapshots() {
+	f.syncToolsSnapshot()
+	f.syncSecretsSnapshot()
+	f.syncSkillsSnapshot()
 }
 
 // navColumn 左侧导航栏（S4d/D142）：页名竖排，当前页高亮；点击切页在帧首消费。

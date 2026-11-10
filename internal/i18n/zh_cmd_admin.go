@@ -7,6 +7,8 @@ var zhCmdAdminTexts = map[string]string{
 	"cmd.tools.label.context_compact": "自动上下文压缩",
 	"cmd.tools.err.unknown_builtin":   "未知的内置工具 {name}",
 	"cmd.tools.err.persist_disabled":  "已热生效，但写回 config tools.disabled 失败",
+	"cmd.policy.err.need_tool":        "本地工具没有「全部请求」这一档，请指定工具名",
+	"cmd.policy.err_persist":          "策略已生效，但写回 config permissions.overrides 失败",
 	"cmd.tools.err.temp_log_create":   "创建临时日志文件",
 	"cmd.tools.err.temp_log_write":    "写入临时日志文件",
 	"cmd.tools.err.temp_log_close":    "关闭临时日志文件",

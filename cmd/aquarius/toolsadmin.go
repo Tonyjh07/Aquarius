@@ -21,6 +21,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
@@ -115,11 +116,32 @@ var _ uigui.ToolsAdmin = (*toolsAdmin)(nil)
 // Snapshot 原子快照：内置清单（词表 + 禁用态）+ 插件清单（host.List 投影）。
 func (a *toolsAdmin) Snapshot() uigui.ToolsSnapshot {
 	s := uigui.ToolsSnapshot{Revision: a.w.toolsRev.Load()}
-	disabled := a.w.disabledTools.snapshot()
+	if a.w.lvl != nil {
+		s.Level = a.w.lvl.Get().String()
+	}
+	// 例外表按来源摊开：本地工具落到各自行上，外部代理是整来源的一条。
+	perTool := map[string]string{}
+	for _, ov := range a.w.policy.Get() {
+		switch ov.Origin {
+		case perm.OriginTool:
+			perTool[ov.Tool] = string(ov.Mode)
+		case perm.OriginAgent:
+			s.AgentPolicy = string(ov.Mode)
+		}
+	}
+	// 装配早期或只装一部分的调用方（测试）可能还没接上这些面：缺的按空处理。
+	disabled := map[string]bool{}
+	if a.w.disabledTools != nil {
+		disabled = a.w.disabledTools.snapshot()
+	}
 	for _, name := range builtinToolNames() {
 		s.Builtins = append(s.Builtins, uigui.BuiltinToolState{
 			Name: name, Label: builtinToolLabel(name), Enabled: !disabled[name],
+			Policy: perTool[name], Exec: perm.IsExec(name),
 		})
+	}
+	if a.w.host == nil {
+		return s
 	}
 	for _, p := range a.w.host.List() {
 		s.Plugins = append(s.Plugins, uigui.PluginToolState{
@@ -145,6 +167,29 @@ func (a *toolsAdmin) SetBuiltinEnabled(name string, enabled bool) error {
 	if perr != nil {
 		return fmt.Errorf("%s: %w", i18n.T("cmd.tools.err.persist_disabled"), perr)
 	}
+	return nil
+}
+
+// SetToolPolicy 单个内置工具的放行档位（D280/D282；"" = 回默认 / 跟随权限档）。
+// 写回 config permissions.overrides，runner 与 acpgate 拿的都是 policyHolder，立即生效。
+func (a *toolsAdmin) SetToolPolicy(name, mode string) error {
+	if !containsStr(builtinToolNames(), name) {
+		return fmt.Errorf("%s", i18n.Tf("cmd.tools.err.unknown_builtin", "name", strconv.Quote(name)))
+	}
+	return a.setPolicy(string(perm.OriginTool), name, mode)
+}
+
+// SetAgentPolicy 外部代理整来源的放行档位（"" = 回默认）。
+func (a *toolsAdmin) SetAgentPolicy(mode string) error {
+	return a.setPolicy(string(perm.OriginAgent), "", mode)
+}
+
+// setPolicy 落盘 → 换表 → 递增 Revision（界面据此重建行）。
+func (a *toolsAdmin) setPolicy(origin, tool, mode string) error {
+	if err := a.w.setOverride(origin, tool, mode); err != nil {
+		return err
+	}
+	a.w.toolsRev.Add(1)
 	return nil
 }
 

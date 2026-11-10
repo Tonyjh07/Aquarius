@@ -6,6 +6,7 @@ var zhGuiPageAdminTexts = map[string]string{
 	// 工具与 MCP 页
 	"ui.page.tools.section_builtin": "内置工具（开关即时生效，无需重启）",
 	"ui.page.tools.section_mcp":     "MCP 与插件（来源 config / 插件目录）",
+	"ui.page.tools.section_policy":  "外部代理的放行",
 	"ui.page.tools.no_plugins":      "没有已声明的插件。在 config 的 mcpServers 里写一条，或把插件放进插件目录。",
 
 	// 外部代理页
@@ -115,4 +116,19 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.about.open_failed":     "打不开浏览器：{err}；可以复制链接后手动打开",
 	"ui.page.about.opened":          "已在浏览器中打开",
 	"ui.page.about.copied":          "链接已复制",
+	// 放行档位（D280/D282）：挂在「工具与 MCP」页的工具行上。
+	"ui.page.policy.seg.default": "默认",
+	"ui.page.policy.seg.ask":     "询问",
+	"ui.page.policy.seg.allow":   "允许",
+	"ui.page.policy.note": "「默认」跟随权限档 {level}。改过的行按这里设的档位判定；" +
+		"「允许」是以后不再询问，收紧成「询问」同样生效。",
+	"ui.page.policy.agent_label": "外部代理 · 全部请求",
+	"ui.page.policy.hard_note": "密钥文件、配置文件、系统目录与版本控制钩子不受这里影响。" +
+		"命中这些路径时照旧询问，自动放行不生效。",
+	"ui.page.policy.mode.assist_short": "辅助",
+	"ui.page.policy.updated":           "已更新，立即生效",
+	"ui.page.policy.exec_confirm": "给 {tool} 设成自动放行？命令由模型即时生成，" +
+		"设好之后模型不再询问。",
+	"ui.page.policy.confirm_ok":     "确认放行",
+	"ui.page.policy.confirm_cancel": "取消",
 }

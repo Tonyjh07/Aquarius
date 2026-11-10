@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-09 @ 68d5e4f -->
+<!-- docs-sync: 2026-11-10 @ 230382e -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -132,9 +132,10 @@ MCP 配置、密钥目录、系统目录。即便该工具设成自动放行，�
 
 2. `feat(perm): keep per-tool overrides beside the matrix` —— 只存例外的策略表 + 判定 + 单测
 
-**P3 界面**（第 5 笔依赖第 2 笔，不能提前放出来）
+**P3 界面**（第 5 笔依赖第 2 笔，不能提前放出来；第 3 笔已交付，编号保留不跳）
 
-3. `feat(ui): show only the tools that deviate from the matrix` —— 设置页、执行类标红与二次确认
+3. `feat(ui): pick each tool's allow level on its own row` —— 工具页行内三段档位 + 执行类确认
+   （已交付；原计划是一页独立的策略表，实际改成并入「工具与 MCP」，见 D280 补充）
 4. `feat(ui): pick a level in the confirm bubble instead of stepping up` —— 🔑 改直选 + runner 重判
 5. `feat(ui): let the confirm bubble widen the policy` —— 「以后都允许」+ 审计
 
