@@ -62,7 +62,7 @@ var zhSessionTexts = map[string]string{
 	"session.lore.item":     "- {title} · order {order} · 约 {tok} tokens",
 	"session.lore.foot":     "已激活 {on} 条 · {tok} tokens",
 	"session.lore.empty":    "这一轮没有条目命中（共 {total} 条参与检索）。",
-	"session.lore.dropped":  "另有 {dropped} 条命中但装不下（预算用完），要它们生效就调大 characters.lore.budget_ratio。",
+	"session.lore.dropped":  "另有 {dropped} 条命中但装不下（预算用完）；要让这些条目生效，调大 characters.lore.budget_ratio。",
 
 	// /jobs
 	"usage.jobs":              "用法: /jobs [list|logs <id> [行数]|kill <id>]",
