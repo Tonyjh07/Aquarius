@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-08 @ ecd3996 -->
+<!-- docs-sync: 2026-11-11 @ e61e5bf -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -331,13 +331,17 @@ testy 会往会话 `cwd` 写 `testy-write.txt`，用临时目录跑。
 - 由 `cmd/docsync` 维护，不手写：
 
 ```bash
-go run ./cmd/docsync                # 只刷新工作区里改过的文档（提交前跑）
+go run ./cmd/docsync                # 逐篇校正（提交前跑，或事后补跑）
 go run ./cmd/docsync -commit HEAD   # 只刷新该提交改过的文档（提交后补；需 --amend 并回）
-go run ./cmd/docsync -all           # 全部刷成今天 + HEAD
+go run ./cmd/docsync -all           # 全部刷成今天 + HEAD（会让每篇都声称今天更新，一般用不上）
 go run ./cmd/docsync -check         # 门禁：有文档缺标记即退出 1
 ```
 
-- 没改过的文档保持旧标记不动（仍然准确），所以一次文档提交只会动到那几篇。
+- 默认模式逐篇判定：工作区里改过的篇目写「今天 + HEAD」（提交后 HEAD 正好是那笔提交的父
+  提交）；工作区干净的篇目去 git 历史里找最近一次内容改动，日期与哈希都取自那次提交。
+  两种情形算出来一致，所以提交前跑与事后补跑等价，重复跑不改任何文件。
+- 历史扫描按「去掉标记行之后的内容」比对，只改标记的提交跳过——批量补标记不会把全仓日期
+  算成同一天，缺标记的文档也走这条规则补齐。
 - 覆盖 `docs/**/*.md` 与根 `README.md`；`AGENTS.md` 不参与（与代码同批改，标记会立刻过时）。
 
 ## 提交规范

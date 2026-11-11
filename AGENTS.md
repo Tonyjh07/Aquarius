@@ -69,7 +69,7 @@ go test ./internal/domain/... -run TestProperty -count=50   # domain 性质测�
 go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
 go run ./cmd/linuxgate         # 非 Windows 门禁：WSL 内 linux 目标的 build + vet（D119）
-go run ./cmd/docsync           # 刷新改动过的文档头「更新日期 + 代码基线」标记
+go run ./cmd/docsync           # 刷新文档头「更新日期 + 代码基线」标记（改过的用今天+HEAD，其余按历史）
 go run ./cmd/ci                # 本机门禁（default 档，合入前）；-profile=fast / full 见 development.md
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D137；需网络）
 ```
@@ -159,9 +159,9 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D
 - **先文档后代码**：设计有变，先改对应篇目（+ 够格时补 decisions），再动代码。改完按
   [docs/README.md](docs/README.md) 的节号对照表检查别处的引用是否还指得对。
 - **改动某篇某节之后**：按文件名搜一遍别处是否残留旧口径（口径变了就是事实变了，不只是「补一句」）。
-- **改了 `docs/**/*.md` 或 `README.md` → 提交前跑 `go run ./cmd/docsync`**：它只刷新工作区里改过的
-  文档，把头部标记（更新日期 + 代码基线哈希）刷成本次提交之前的状态。标记是 HTML 注释，渲染后
-  不出现，别手写、别删。
+- **改了 `docs/**/*.md` 或 `README.md` → 提交前跑 `go run ./cmd/docsync`**：改过的篇目刷成
+  「今天 + HEAD」，没改过的按 git 历史找回最近一次内容改动（所以提交后补跑、修旧标记都
+  是同一个命令）。标记是 HTML 注释，渲染后不出现，别手写、别删。
 - 编号不进用户面（硬性规则 10）；存档（`docs/archive/`）只读；本机路径不进仓库文档。
 
 ## 提交与 PR
