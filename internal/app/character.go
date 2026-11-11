@@ -102,3 +102,16 @@ func (c *PersonaComposer) ExpandCardText(text string) string {
 	}
 	return expandMacros(text, cp.Display, c.spec.UserName, c.now().Format("2006-01-02"), orig)
 }
+
+// ExpandLoreText 展开世界书文本里的宏（§5.17/D294）：`{{char}}` 取会话所绑卡的显示名，
+// `{{user}}` 取 prompts.user_name，与卡文本同一套替换器（§7.7）。
+//
+// 与 ExpandCardText 分开是因为取值来源不同：世界书要在**装配期**展开，那时会话绑的是哪
+// 张卡只由 slug 决定，组合器本身不持卡（人格已经快照进树了）。`{{original}}` 在世界书里
+// 没有意义，按空展开。
+func (c *PersonaComposer) ExpandLoreText(text, char string) string {
+	if text == "" {
+		return text
+	}
+	return expandMacros(text, char, c.spec.UserName, c.now().Format("2006-01-02"), "")
+}

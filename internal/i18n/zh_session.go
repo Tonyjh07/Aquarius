@@ -51,6 +51,18 @@ var zhSessionTexts = map[string]string{
 	"session.usage.last":          "上轮实测: in={in} out={out} tokens（服务端返回）",
 	"session.usage.total":         "本会话累计(Path): in={in} out={out} tokens（{gen} 次生成）",
 	"session.usage.cost":          "，约 ${usd}",
+	"session.usage.lore":          "世界书: 激活 {on} 条 · {tok} tokens",
+	"session.usage.lore_dropped":  "世界书: 激活 {on} 条 · {tok} tokens（另有 {dropped} 条命中但装不下）",
+
+	// /lore：世界书激活（只读，与装配同一份判定）
+	"session.lore.none":     "这个会话没有绑定角色卡，没有世界书。",
+	"session.lore.missing":  "这张卡已经不在目录里，世界书取不到（人格快照仍在）。",
+	"session.lore.head":     "世界书: 卡「{name}」共 {total} 条，扫描最近 {depth} 条消息，预算 {budget} tokens（占上下文 {pct}%）",
+	"session.lore.untitled": "（无标题）",
+	"session.lore.item":     "- {title} · order {order} · 约 {tok} tokens",
+	"session.lore.foot":     "已激活 {on} 条 · {tok} tokens",
+	"session.lore.empty":    "这一轮没有条目命中（共 {total} 条参与检索）。",
+	"session.lore.dropped":  "另有 {dropped} 条命中但装不下（预算用完），要它们生效就调大 characters.lore.budget_ratio。",
 
 	// /jobs
 	"usage.jobs":              "用法: /jobs [list|logs <id> [行数]|kill <id>]",

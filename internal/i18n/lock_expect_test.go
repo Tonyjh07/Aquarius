@@ -71,6 +71,15 @@ var testDataLiterals = map[string][]string{
 	// 决策模型客户端测试：中文任务描述是**用户数据**（外部代理写的 task），断言的是
 	// 按 rune 截断后 state 里的那一行——换成 ASCII 就测不出「切成半个字」。
 	"internal/adapter/decide/client_test.go": {"task: 更新文"},
+	// 世界书激活测试：条目标题、正文与触发词都是**卡里的用户数据**——匹配与排序断言的
+	// 就是这些串本身，换成英文等于换了被测对象（D294）。
+	"internal/app/lorebook_test.go": {
+		"灰塔", "港口", "严格", "你是船长", "高",
+		"答第一句", "答第二句", "语音说的话",
+	},
+	// 世界书接线的断言：比对的仍是卡里的条目标题与正文（用户数据），不是界面文案。
+	"internal/app/lore_wire_test.go":    {"每轮都在"},
+	"internal/app/session_lore_test.go": {"灰塔", "港口", "常驻设定"},
 	// markdown 解析器的输入与渲染结果：列表/引用前缀（`• `/`▏ `/`1. `）硬编码在生产
 	// markdown.go，不在 i18n 表里，整条都是解析数据。
 	"internal/adapter/uigui/markdown_test.go": {

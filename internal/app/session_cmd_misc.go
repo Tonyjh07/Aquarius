@@ -153,6 +153,69 @@ func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, erro
 	if rep.CostUSD > 0 {
 		b.WriteString(i18n.Tf("session.usage.cost", "usd", fmt.Sprintf("%.4f", rep.CostUSD)))
 	}
+	// §5.17/D294：世界书一行只在真有命中时出现——没绑卡或没触发时多一行「激活 0 条」
+	// 只是噪音，而这行的用处是解释「上下文为什么比上一轮大」。
+	if rep.Lore.Hits > 0 {
+		b.WriteByte('\n')
+		if rep.Lore.Dropped > 0 {
+			b.WriteString(i18n.Tf("session.usage.lore_dropped",
+				"on", len(rep.Lore.Entries), "tok", rep.Lore.Tokens, "dropped", rep.Lore.Dropped))
+		} else {
+			b.WriteString(i18n.Tf("session.usage.lore",
+				"on", len(rep.Lore.Entries), "tok", rep.Lore.Tokens))
+		}
+	}
+	return b.String(), nil
+}
+
+// execLore /lore（§5.17/D294）：列出这一轮世界书激活了哪些条目。只读——与装配走同一份
+// 判定，不落树、不改任何状态；重算一次比把上次的结果记在某处更不容易与真相分家。
+func (s *Session) execLore(ctx context.Context, cmd port.Command) (string, error) {
+	if s.cur == nil {
+		return "", nil
+	}
+	if s.characters == nil || s.cur.Character == "" {
+		return i18n.T("session.lore.none"), nil
+	}
+	card, err := s.characters.Load(ctx, s.cur.Character)
+	if err != nil {
+		return i18n.T("session.lore.missing"), nil
+	}
+	rep, err := s.agent.UsageReport(ctx, s.cur)
+	if err != nil {
+		return "", wrapSession("err.estimate_usage", err)
+	}
+	depth, budget, maxCtx := s.agent.LoreFacts()
+	pct := 0.0
+	if maxCtx > 0 {
+		pct = 100 * float64(budget) / float64(maxCtx)
+	}
+	var b strings.Builder
+	b.WriteString(i18n.Tf("session.lore.head",
+		"name", card.Info.Display, "total", len(card.Profile.BookEntries),
+		"depth", depth, "budget", budget, "pct", fmt.Sprintf("%.0f", pct)))
+	act := rep.Lore
+	if len(act.Entries) == 0 {
+		b.WriteByte('\n')
+		b.WriteString(i18n.Tf("session.lore.empty", "total", act.Scanned))
+		return b.String(), nil
+	}
+	for _, e := range act.Entries {
+		title := strings.TrimSpace(e.Comment)
+		if title == "" {
+			title = i18n.T("session.lore.untitled")
+		}
+		// token 按未展开宏的正文估——这个数是用来说明量级，不是计费口径。
+		b.WriteByte('\n')
+		b.WriteString(i18n.Tf("session.lore.item",
+			"title", title, "order", e.Order, "tok", estimateTokens(loreSection(e, e.Content))))
+	}
+	b.WriteByte('\n')
+	b.WriteString(i18n.Tf("session.lore.foot", "on", len(act.Entries), "tok", act.Tokens))
+	if act.Dropped > 0 {
+		b.WriteByte('\n')
+		b.WriteString(i18n.Tf("session.lore.dropped", "dropped", act.Dropped))
+	}
 	return b.String(), nil
 }
 

@@ -20,6 +20,8 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.config.err.parse_short":     `Parsing {path}`,
 	"cmd.config.err.encode":          `Encoding config`,
 	"cmd.config.err.placeholder_max": `ui.input_placeholder is limited to {max} characters`,
+	"cmd.config.err_lore_scan_depth": `characters.lore.scan_depth accepts 0-100 (0 means the default of 4)`,
+	"cmd.config.err_lore_budget":     `characters.lore.budget_ratio accepts 0-1 (0 means the default of 0.15)`,
 	"cmd.config.err.write":           `Writing {path}`,
 
 	"cmd.config.err.legacy_flat": `The model section in {path} uses the legacy flat ` +

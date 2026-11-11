@@ -54,6 +54,9 @@ type Deps struct {
 	Blobs port.AttachmentStore
 	// Memory 为 nil = 不注入记忆索引与会话记忆（M2，§7.1 承载）。
 	Memory port.MemoryStore
+	// Characters 角色卡目录（§5.17）：会话绑了卡时按 slug 取世界书条目（D294）。
+	// nil = 没有世界书，装配与查询都不做这件事。
+	Characters port.CharacterCatalog
 }
 
 // Config Agent 行为配置。
@@ -90,6 +93,9 @@ type Config struct {
 	// Vision = 图片是直接给模型看，还是降级为文字占位并写明原因。
 	// 零值 = 三项全关（显式空 caps 就是这个意思，不是「不知道」）。
 	Caps port.ModelCaps
+	// Lore 世界书按关键词激活的口径（§5.17/D294）。Enabled 由配置面解析后显式传入
+	// （键缺失 = 开），零值 = 关。
+	Lore LoreOptions
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（§7.1，内核唯一的编排）。
@@ -113,6 +119,8 @@ type Agent struct {
 	// pending 待发清单（D272/D273）：会话级一份，由 Session 在构造时注入；
 	// nil = 没有清单（直接构造 Agent 的测试），此时切段与队列续跑都退化成空操作。
 	pending *pendingList
+	// lore 世界书条目来源（D294）；nil = 没有角色卡目录，装配时不读世界书。
+	lore *loreSource
 }
 
 // setPending 注入待发清单（Session 构造时调用；一个进程只有一个在跑的 Session）。
@@ -172,6 +180,9 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	ag.model.Store(cfg.Model) // 生成模型初值（/model 热切换，D32）
 	ag.think.Store(cfg.Think) // 思考三态初值（nil = 键缺失，D34）
 	ag.effort.Store(cfg.ReasoningEffort)
+	if d.Characters != nil {
+		ag.lore = &loreSource{catalog: d.Characters}
+	}
 	return ag, nil
 }
 
@@ -181,6 +192,12 @@ func (a *Agent) setModel(name string) { a.model.Store(name) }
 // CompactTokens 自动压缩阈值 tokens（= CompactThreshold × MaxContextTokens）；命令面据此
 // 判超长开场白（按它的四分之一），与自动压缩用的是同一个数，不各算各的。
 func (a *Agent) CompactTokens() int { return a.compactAt }
+
+// LoreFacts 世界书口径（§5.17/D294）：扫描深度、预算 tokens 与上下文预算，给 /lore 展示用。
+func (a *Agent) LoreFacts() (depth, budget, maxCtx int) {
+	opt := a.cfg.Lore.withDefaults()
+	return opt.ScanDepth, int(float64(a.maxCtx) * opt.BudgetRatio), a.maxCtx
+}
 
 // setThink 切换原生思考三态（/think，D34）：nil = 键缺失态。
 func (a *Agent) setThink(v *bool) { a.think.Store(v) }
@@ -394,6 +411,8 @@ type UsageReport struct {
 	Gen       int     // Path 内带用量的生成次数
 	LastIn    int     // 最近一次实测输入 tokens
 	LastOut   int     // 最近一次实测输出 tokens
+	// Lore 本轮世界书激活情况（D294）：条数、token 与被预算挡掉的条数。
+	Lore LoreActivation
 }
 
 // UsageReport 汇总当前上下文估算与树上实测用量（估算走三级链，实测直接读节点）。
@@ -412,6 +431,7 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 		MaxCtx:    a.maxCtx,
 		CompactAt: a.compactAt,
 		Ratio:     a.est.ratio,
+		Lore:      a.loreActivation(ctx, c, c.Path()),
 	}
 	for _, m := range c.Path() {
 		if m.Usage.InputTokens == 0 && m.Usage.OutputTokens == 0 {
@@ -453,18 +473,8 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 		})
 	}
 	msgs = append(msgs, path...)
-	// 记忆注入（§7.1 承载 / D23）：索引（全局+当前会话）与会话记忆全文追加进
-	// 首条 system；msgs[0] 恒为 system（persona 或兜底）。读取失败静默跳过，不阻断对话。
-	if block := a.memoryBlock(ctx, c.ID); block != "" && len(msgs) > 0 && msgs[0].Role == port.PromptSystem {
-		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: block})
-	}
-	// 常驻声明（D170 口径三）：工具输出、文件内容、命令输出是**数据**而不是指令。
-	// 每次装配追加进首条 system——它在树外，`/system` 改人格不会把它改掉；也不逐条给
-	// 工具结果套围栏（那会把上下文撑爆，还让正常代码读起来像可疑数据）。
-	// 单列一条 system 会让"首条 system 是人格"的既有口径分叉，故并进同一条正文。
-	if len(msgs) > 0 && msgs[0].Role == port.PromptSystem {
-		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: "\n\n" + untrustedDataNote})
-	}
+	msgs = a.attachLore(ctx, c, treePath, msgs)
+	msgs = a.attachSystemNotes(ctx, c, msgs)
 	// 会话尾部指令（§5.17/D243）：角色卡的 post_history_instructions 展开稿存在会话元数据
 	// `Tail` 里，开关打开且非空时在**历史之后**追加一条 system。它是元数据不是节点——不进
 	// 水位、不进树，只影响本次请求；位置放在最末是它的语义（"历史之后"）所要求的。

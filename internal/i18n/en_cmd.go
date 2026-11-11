@@ -161,6 +161,7 @@ var enCmdTexts = map[string]string{
 
 	// /usage
 	"cmd.usage.desc": "Show token usage (context occupancy / last turn measured / conversation total)",
+	"cmd.lore.desc":  "Show which lorebook entries this round activates (read-only, never written to the tree)",
 
 	// /watch
 	"cmd.watch.desc":    "Watchers: declarative timed observations the model can declare (watch a command, file or page and report hits); list or stop them",

@@ -26,6 +26,8 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.parse_short":     `解析 {path}`,
 	"cmd.config.err.encode":          `编码 config`,
 	"cmd.config.err.placeholder_max": `ui.input_placeholder 最多 {max} 个字符`,
+	"cmd.config.err_lore_scan_depth": `characters.lore.scan_depth 只接受 0–100（0 表示用缺省 4）`,
+	"cmd.config.err_lore_budget":     `characters.lore.budget_ratio 只接受 0–1（0 表示用缺省 0.15）`,
 	"cmd.config.err.write":           `写入 {path}`,
 
 	// config_io.go：旧格式单项判别（%w 由代码拼在前面，这里只有说明文字）

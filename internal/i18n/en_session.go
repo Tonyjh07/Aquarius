@@ -47,6 +47,18 @@ var enSessionTexts = map[string]string{
 	"session.usage.last":          "Last turn measured: in={in} out={out} tokens (reported by the server)",
 	"session.usage.total":         "Conversation total (Path): in={in} out={out} tokens ({gen} generations)",
 	"session.usage.cost":          ", about ${usd}",
+	"session.usage.lore":          "Lorebook: {on} active · {tok} tokens",
+	"session.usage.lore_dropped":  "Lorebook: {on} active · {tok} tokens ({dropped} more matched but did not fit)",
+
+	// /lore: lorebook activation (read-only, same decision the assembly makes)
+	"session.lore.none":     "This conversation is not bound to a character card, so there is no lorebook.",
+	"session.lore.missing":  "That card is no longer in the catalog, so the lorebook cannot be read (the persona snapshot remains).",
+	"session.lore.head":     "Lorebook: card \"{name}\", {total} entries, scanning the last {depth} messages, budget {budget} tokens ({pct}% of the context)",
+	"session.lore.untitled": "(untitled)",
+	"session.lore.item":     "- {title} · order {order} · about {tok} tokens",
+	"session.lore.foot":     "{on} active · {tok} tokens",
+	"session.lore.empty":    "Nothing matched this round ({total} entries took part).",
+	"session.lore.dropped":  "{dropped} more matched but did not fit the budget; raise characters.lore.budget_ratio to include them.",
 
 	// /jobs
 	"usage.jobs":              "Usage: /jobs [list|logs <id> [lines]|kill <id>]",

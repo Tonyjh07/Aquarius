@@ -91,6 +91,34 @@ type charactersConfig struct {
 	InjectConstantBook *bool `json:"inject_constant_book,omitempty"`
 	// InjectExamples mes_example 落注入节点；键缺失 = 注入（默认开）。
 	InjectExamples *bool `json:"inject_examples,omitempty"`
+	// Lore 世界书按关键词激活（§5.17/D294）。
+	Lore loreConfig `json:"lore"`
+}
+
+// loreConfig 世界书激活（§5.17/D294）。`enabled` 键缺失 = 开：卡里写了触发词就是想让它生效，
+// 关掉是例外不是缺省。另两项省略即取 app 层的缺省值（扫描 4 条、预算占上下文的 15%）。
+type loreConfig struct {
+	Enabled     *bool   `json:"enabled,omitempty"`
+	ScanDepth   int     `json:"scan_depth,omitempty"`
+	BudgetRatio float64 `json:"budget_ratio,omitempty"`
+}
+
+// loreOptions 世界书激活口径（§5.17/D294）：范围写错在启动期报错（扫描深度 0–100 条、
+// 预算比例 0–1），省略的键按缺省走。0 在这里表示「没写」而不是「关」——关有 `enabled`。
+func (c *fileConfig) loreOptions() (app.LoreOptions, error) {
+	l := c.Characters.Lore
+	opt := app.LoreOptions{
+		Enabled:     l.Enabled == nil || *l.Enabled,
+		ScanDepth:   l.ScanDepth,
+		BudgetRatio: l.BudgetRatio,
+	}
+	if l.ScanDepth < 0 || l.ScanDepth > 100 {
+		return app.LoreOptions{}, fmt.Errorf("%s", i18n.T("cmd.config.err_lore_scan_depth"))
+	}
+	if l.BudgetRatio < 0 || l.BudgetRatio > 1 {
+		return app.LoreOptions{}, fmt.Errorf("%s", i18n.T("cmd.config.err_lore_budget"))
+	}
+	return opt, nil
 }
 
 // characterOptions 角色卡投影开关（§5.17/D247）：把 config 三态（键缺失/显式）解析成

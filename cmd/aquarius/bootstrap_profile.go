@@ -133,6 +133,12 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	} else {
 		w.decide = opts
 	}
+	// 世界书激活（§5.17/D294）：扫描深度与预算比例写错了启动即报，缺省键按缺省值走。
+	if opts, err := cfg.loreOptions(); err != nil {
+		return err
+	} else {
+		w.lore = opts
+	}
 	// D279/§7.8：占位文字折成单行；超长截断（保存路径拒写，这里只保证启动能起来）。
 	cfg.UI.InputPlaceholder = placeholderForStartup(cfg.UI.InputPlaceholder)
 	// 语音不可用的原因只在「用户明显想用」时提示：配了 provider 却找不到，或开了

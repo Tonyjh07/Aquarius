@@ -251,6 +251,8 @@ type wiring struct {
 	// decider 为 nil = 不启用（off、没配全或建不出来），确认链原样透传。
 	decide  decideOptions
 	decider port.Decider
+	// lore 世界书激活口径（§5.17/D294）：bootstrap 校验，装配时交给 Agent。
+	lore app.LoreOptions
 	// firstRun 本次为该 profile 首次运行（已写模板，D141）；setupTried 装配前向导窗
 	// 本进程只尝试一次（向导后仍不完整即报因退出，不循环弹窗）。
 	firstRun   bool
@@ -450,6 +452,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		app.Deps{
 			LLM: gen, UI: w.presenter, IDs: ids, Clock: systemClock{},
 			Tools: auditedRunner, Memory: w.merged, Blobs: w.blobs,
+			Characters: w.characters, // D294：世界书条目按会话绑的 slug 现取
 		},
 		app.Config{
 			Model: w.cfg.Model.Name, Persona: agentPersona, MaxTurns: w.cfg.Limits.MaxTurns,
@@ -459,6 +462,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Caps:         w.cfg.Model.chainCaps(),                                      // D173：降级链取与
 			// §5.17/D247：会话尾部指令（卡的 post_history_instructions）是否随每轮装配发出。
 			ApplyPostHistory: w.cfg.applyPostHistory(),
+			// §5.17/D294：世界书按关键词激活（缺省开；卡里写了触发词就是想让它生效）。
+			Lore: w.lore,
 			// D204：采样参数走原子快照——整链缺省 + 逐模型覆盖；设置窗保存后换掉整份即热生效。
 			Sampling:    w.cfg.Model.Sampling.toSampling(),
 			SamplingFor: w.samplingFor,
