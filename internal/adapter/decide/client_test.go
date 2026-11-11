@@ -5,6 +5,7 @@ package decide
 // 「毫无风险」，然后被放行。
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,17 +73,13 @@ func TestDecideRequestBody(t *testing.T) {
 	if got.State != wantState {
 		t.Fatalf("state =\n%q\nwant\n%q", got.State, wantState)
 	}
-	if len(got.Questions) != 3 {
-		t.Fatalf("questions = %d, want 3", len(got.Questions))
-	}
-	if q := got.Questions["should_allow"]; q.Type != "noul" || q.Instructions != shouldAllowPrompt {
+	if q := got.Questions.ShouldAllow; q.Type != "noul" || q.Instructions != shouldAllowPrompt {
 		t.Fatalf("should_allow = %+v", q)
 	}
-	if q := got.Questions["needs_human"]; q.Type != "noul" || q.Instructions != needsHumanPrompt {
+	if q := got.Questions.NeedsHuman; q.Type != "noul" || q.Instructions != needsHumanPrompt {
 		t.Fatalf("needs_human = %+v", q)
 	}
-	q := got.Questions["risk"]
-	if q.Type != "score" || q.Instructions != riskPrompt || len(q.Criteria) != 3 {
+	if q := got.Questions.Risk; q.Type != "score" || q.Instructions != riskPrompt || len(q.Criteria) != 3 {
 		t.Fatalf("risk = %+v", q)
 	}
 	// 三个分数原样交回，不在适配器里做取舍。
@@ -170,6 +167,32 @@ func TestNewNormalizesBaseURL(t *testing.T) {
 	}
 	if _, err := New(Options{BaseURL: "http://x"}); err == nil {
 		t.Fatal("空模型名应报错")
+	}
+}
+
+// TestDecideQuestionOrder 三题的先后是契约：joint head 对题块位置敏感，换一下顺序
+// 同一条调用会从「人可以不管你」变成「人得看一眼」（实测 needs_human 0.03 → 0.75）。
+// 所以请求体里必须是 should_allow → risk → needs_human，与标定时一致。
+func TestDecideQuestionOrder(t *testing.T) {
+	var raw []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ = io.ReadAll(r.Body)
+		fmt.Fprint(w, okBody(0.5, 1, 0.5))
+	}))
+	defer srv.Close()
+	c, _ := New(Options{BaseURL: srv.URL, Model: "m"})
+	if _, err := c.Decide(context.Background(), port.DecideRequest{}); err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	allow := bytes.Index(raw, []byte(`"should_allow"`))
+	risk := bytes.Index(raw, []byte(`"risk"`))
+	human := bytes.Index(raw, []byte(`"needs_human"`))
+	if allow < 0 || risk < 0 || human < 0 {
+		t.Fatalf("三题没凑齐: %s", raw)
+	}
+	if !(allow < risk && risk < human) {
+		t.Fatalf("题目顺序是 %d/%d/%d，应为 should_allow → risk → needs_human:\n%s",
+			allow, risk, human, raw)
 	}
 }
 

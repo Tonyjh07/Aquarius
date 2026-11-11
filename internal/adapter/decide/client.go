@@ -86,9 +86,19 @@ func New(opts Options) (*Client, error) {
 
 // request System One 请求体。
 type request struct {
-	Model     string              `json:"model"`
-	State     string              `json:"state"`
-	Questions map[string]question `json:"questions"`
+	Model     string    `json:"model"`
+	State     string    `json:"state"`
+	Questions questions `json:"questions"`
+}
+
+// questions 三题一次问完。**顺序是契约的一部分**，所以是结构体而不是 map：
+// 一次前向里三题按序拼进序列，joint head 对位置敏感——同一份 state 只把三题的先后
+// 换一下，`needs_human` 能从 0.03 跳到 0.75（2026-11-11 实测，其余不变）。标定用的是
+// should_allow → risk → needs_human，这里照抄，`go test` 也钉着这个顺序。
+type questions struct {
+	ShouldAllow question `json:"should_allow"`
+	Risk        question `json:"risk"`
+	NeedsHuman  question `json:"needs_human"`
 }
 
 type question struct {
@@ -118,10 +128,10 @@ func (c *Client) Decide(ctx context.Context, req port.DecideRequest) (port.Decis
 	body := request{
 		Model: c.model,
 		State: c.state(req),
-		Questions: map[string]question{
-			"should_allow": {Type: "noul", Instructions: shouldAllowPrompt},
-			"risk":         {Type: "score", Instructions: riskPrompt, Criteria: riskCriteria},
-			"needs_human":  {Type: "noul", Instructions: needsHumanPrompt},
+		Questions: questions{
+			ShouldAllow: question{Type: "noul", Instructions: shouldAllowPrompt},
+			Risk:        question{Type: "score", Instructions: riskPrompt, Criteria: riskCriteria},
+			NeedsHuman:  question{Type: "noul", Instructions: needsHumanPrompt},
 		},
 	}
 	raw, err := json.Marshal(body)
