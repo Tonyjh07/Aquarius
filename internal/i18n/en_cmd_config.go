@@ -154,6 +154,15 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.config.err.web_from_missing": `from="{from}" is not in model.providers ` +
 		`(set base_url for a standalone setup, or reference an existing entry)`,
 
+	// config_decide.go (D290): decision model thresholds and switches
+	"cmd.config.err.decide_mode": `decide.mode="{mode}" is not recognized ` +
+		`(supports {a} / {b} / {c})`,
+	"cmd.config.err.decide_range": `{field}={v} is out of range ({min}-{max}; ` +
+		`0 or omitted means the default)`,
+	"cmd.config.err.decide_order": `decide.allow.human_below={allow} is above ` +
+		`decide.deny.human_above={deny}: allow is checked first, so the deny tier would ` +
+		`never fire`,
+
 	// main.go: flag help
 	"cmd.boot.flag.data": `Data directory (default ~/.aquarius)`,
 	"cmd.boot.flag.profile": `Choose a profile (overrides the root config.json pointer for ` +

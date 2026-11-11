@@ -46,6 +46,8 @@ var zhLogTexts = map[string]string{
 	"log.act.leak_watch":           "已写入日志，继续运行",
 	"log.act.menu_exit":            "已收尾",
 	"log.act.allow_once":           "本次照常放行，下次仍会问",
+	"log.act.decide_off":           "工具确认照旧问你",
+	"log.act.decide_on":            "工具确认前先问一次模型",
 
 	// 启动
 	"log.boot.file_unavailable": "日志文件打不开（{path}）：{err}",
@@ -118,6 +120,9 @@ var zhLogTexts = map[string]string{
 	"log.perm.plaintext_key":         "启动时发现明文密钥",
 	"log.perm.secrets_unreadable":    "密钥库解不开",
 	"log.perm.policy_persist_failed": "「以后都允许」没能写进策略表：{err}",
+	"log.perm.decide_unconfigured":   "决策模型没启用：decide.mode={mode}，但端点或模型名没配全",
+	"log.perm.decide_unusable":       "决策模型没启用：decide.mode={mode}，客户端建不出来：{err}",
+	"log.perm.decide_ready":          "决策模型就绪：{model}（{mode}）",
 
 	// 会话、转交与前端
 	"log.session.replay_failed":             "历史回放失败",

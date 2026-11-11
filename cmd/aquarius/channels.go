@@ -23,21 +23,30 @@ type toolChannels struct {
 	toolAsker     port.Asker
 }
 
-// toolChannelsFor 由前端交互面造两条链：用户面原样透传前端，模型链套
-// decorate.Unattended / UnattendedAsker，开关每次调用现取（热生效）。
+// toolChannelsFor 由前端交互面造两条链：用户面原样透传前端，模型链先过 wrap（决策
+// 模型，可选），再由 decorate.Unattended / UnattendedAsker 罩住，开关每次调用现取
+// （热生效）。
+//
+// 顺序是**不可换**的：无人值守说的是「没人可批，越界即拒」，套在决策模型外面，才
+// 不会出现「模型说可以，于是无人值守下也放行」。反过来罩就漏了这条。
 //
 // ui 为 nil（测试/无交互装配）时用户面留空：模型链在关闭态下 fail-closed 报错，
 // 而不是静默放行。
-func toolChannelsFor(ui uiFrontend, unattendedOn func() bool) toolChannels {
+func toolChannelsFor(ui uiFrontend, unattendedOn func() bool,
+	wrap func(port.Confirmer) port.Confirmer) toolChannels {
 	var confirmer port.Confirmer
 	var asker port.Asker
 	if ui != nil {
 		confirmer, asker = ui, ui
 	}
+	toolConfirmer := confirmer
+	if wrap != nil {
+		toolConfirmer = wrap(toolConfirmer)
+	}
 	return toolChannels{
 		confirmer:     confirmer,
 		asker:         asker,
-		toolConfirmer: decorate.Unattended(confirmer, unattendedOn),
+		toolConfirmer: decorate.Unattended(toolConfirmer, unattendedOn),
 		toolAsker:     decorate.UnattendedAsker(asker, unattendedOn),
 	}
 }

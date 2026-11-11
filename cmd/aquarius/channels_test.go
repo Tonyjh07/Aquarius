@@ -35,7 +35,7 @@ func TestToolChannelsUnattendedScopedToTools(t *testing.T) {
 	t.Parallel()
 	front := &stubFront{}
 	on := true
-	tc := toolChannelsFor(front, func() bool { return on })
+	tc := toolChannelsFor(front, func() bool { return on }, nil)
 
 	ans, err := tc.toolConfirmer.Confirm(context.Background(), port.ConfirmRequest{Prompt: "delete?"})
 	if err != nil {
@@ -72,7 +72,7 @@ func TestToolChannelsUnattendedHot(t *testing.T) {
 	t.Parallel()
 	front := &stubFront{}
 	on := false
-	tc := toolChannelsFor(front, func() bool { return on })
+	tc := toolChannelsFor(front, func() bool { return on }, nil)
 	if ans, err := tc.toolConfirmer.Confirm(context.Background(), port.ConfirmRequest{Prompt: "p"}); err != nil || ans.Reason != "from-ui" {
 		t.Fatalf("关闭态应透传前端: %+v, %v", ans, err)
 	}
@@ -85,7 +85,7 @@ func TestToolChannelsUnattendedHot(t *testing.T) {
 // TestToolChannelsNilUI 无前端：用户面留空（nil），模型链关闭态 fail-closed 报错。
 func TestToolChannelsNilUI(t *testing.T) {
 	t.Parallel()
-	tc := toolChannelsFor(nil, func() bool { return false })
+	tc := toolChannelsFor(nil, func() bool { return false }, nil)
 	if tc.confirmer != nil || tc.asker != nil {
 		t.Fatal("无前端时用户面应为 nil")
 	}
@@ -102,10 +102,49 @@ func TestToolChannelsCancelled(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	tc := toolChannelsFor(&stubFront{}, func() bool { return true })
+	tc := toolChannelsFor(&stubFront{}, func() bool { return true }, nil)
 	if _, err := tc.toolConfirmer.Confirm(ctx, port.ConfirmRequest{Prompt: "p"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
+}
+
+// TestToolChannelsDeciderInsideUnattended 决策模型罩在无人值守**之内**：无人值守开着
+// 时，模型说「可以」也不能放行——那一条说的是「没人可批」，不是「可以自作主张」。
+func TestToolChannelsDeciderInsideUnattended(t *testing.T) {
+	t.Parallel()
+	front := &stubFront{}
+	wrapCalls := 0
+	wrap := func(inner port.Confirmer) port.Confirmer {
+		wrapCalls++
+		return autoAllow{inner: inner}
+	}
+	tc := toolChannelsFor(front, func() bool { return true }, wrap)
+	if wrapCalls != 1 || tc.toolConfirmer == nil {
+		t.Fatalf("wrap 调用 %d 次", wrapCalls)
+	}
+	ans, err := tc.toolConfirmer.Confirm(context.Background(), port.ConfirmRequest{
+		Origin: port.OriginTool, Prompt: "p",
+	})
+	if err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if ans.Allow {
+		t.Fatal("无人值守必须压过自动放行")
+	}
+	if front.confirms != 0 {
+		t.Fatalf("也不该走到前端（调用 %d 次）", front.confirms)
+	}
+	// 用户面（`/rm` 之类）不经过决策模型。
+	if ans := mustConfirm(t, tc.confirmer); ans.Reason != "from-ui" {
+		t.Fatalf("用户面 = %+v", ans)
+	}
+}
+
+// autoAllow 永远放行的确认器，用来模拟决策模型判了 allow。
+type autoAllow struct{ inner port.Confirmer }
+
+func (a autoAllow) Confirm(context.Context, port.ConfirmRequest) (port.ConfirmAnswer, error) {
+	return port.ConfirmAnswer{Allow: true}, nil
 }
 
 func mustConfirm(t *testing.T, c port.Confirmer) port.ConfirmAnswer {

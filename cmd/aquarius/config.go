@@ -44,6 +44,8 @@ type fileConfig struct {
 	Backup backupConfig `json:"backup"`
 	// Delegate 外部代理转交（§5.18/D244）：agents 是唯一事实源（不内置预设）。
 	Delegate delegateConfig `json:"delegate"`
+	// Decide 模型辅助决策（D290）：实验性，模板不生成这一段。
+	Decide decideConfig `json:"decide"`
 	// MCPServers MCP server 声明（D30/D31，M4 启用；校验见 plugin.MCPServer.Validate）。
 	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
 	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。

@@ -68,6 +68,9 @@ var testDataLiterals = map[string][]string{
 		"第一行", "启动提示", "允许执行？ → ", // 用户数据
 		"最终答案", // 模型输出
 	},
+	// 决策模型客户端测试：中文任务描述是**用户数据**（外部代理写的 task），断言的是
+	// 按 rune 截断后 state 里的那一行——换成 ASCII 就测不出「切成半个字」。
+	"internal/adapter/decide/client_test.go": {"task: 更新文"},
 	// markdown 解析器的输入与渲染结果：列表/引用前缀（`• `/`▏ `/`1. `）硬编码在生产
 	// markdown.go，不在 i18n 表里，整条都是解析数据。
 	"internal/adapter/uigui/markdown_test.go": {

@@ -124,6 +124,12 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	if err := cfg.normalizeSkills(); err != nil {
 		return err
 	}
+	// 模型辅助决策（D290）：未知 mode 与越界阈值在这里就拦下；端点缺失留到装配根。
+	if opts, err := cfg.decideOptions(); err != nil {
+		return err
+	} else {
+		w.decide = opts
+	}
 	// D279/§7.8：占位文字折成单行；超长截断（保存路径拒写，这里只保证启动能起来）。
 	cfg.UI.InputPlaceholder = placeholderForStartup(cfg.UI.InputPlaceholder)
 	// 语音不可用的原因只在「用户明显想用」时提示：配了 provider 却找不到，或开了

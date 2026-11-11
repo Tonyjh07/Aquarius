@@ -780,11 +780,11 @@ func (w *wiring) listModels(ctx context.Context) ([]port.ModelInfo, error) {
 // （发给服务端前裁到预算内）；跨 provider 降级（D110②/Q5/修订③）罩全体最外——
 // 重试在内、降级在外。审计句柄存 wiring（run 据此登记退出时关闭）。
 func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
-	audit, err := decorate.NewAudit(filepath.Join(w.profileDir, "audit.log"), 0)
-	if err != nil {
+	// 审计通常在确认链之前就打开了（决策模型的判定要落同一条日志），这里只补开。
+	if err := w.openAudit(); err != nil {
 		return nil, err
 	}
-	w.audit = audit
+	audit := w.audit
 	maxCtx := w.maxContextBudget()
 	// fit 闭包工厂：逐 provider 用各自 tokenizer 计数（fallback client 可配不同
 	// tokenizer；est 链恒取 primary）。

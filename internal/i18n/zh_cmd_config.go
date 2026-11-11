@@ -145,6 +145,13 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.web_from_missing": `from="{from}" 不在 model.providers 内` +
 		`（填 base_url 独立配置，或引用一个已有的条目）`,
 
+	// config_decide.go（D290）：模型辅助决策的阈值与开关
+	"cmd.config.err.decide_mode": `decide.mode="{mode}" 不认识（支持 {a} / {b} / {c}）`,
+	"cmd.config.err.decide_range": `{field}={v} 超出范围（{min}-{max}；` +
+		`0 或省略 = 默认值）`,
+	"cmd.config.err.decide_order": `decide.allow.human_below={allow} 大于 ` +
+		`decide.deny.human_above={deny}：放行先判，拒绝档永远不会生效`,
+
 	// main.go：命令行 flag 帮助（-h 里出现）
 	"cmd.boot.flag.data":       `数据目录（默认 ~/.aquarius）`,
 	"cmd.boot.flag.profile":    `选择 profile（本次运行临时覆盖根 config.json 的指针；须已存在）`,

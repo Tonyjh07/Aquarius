@@ -43,6 +43,8 @@ var enLogTexts = map[string]string{
 	"log.act.leak_watch":           "written to the log; the run continues",
 	"log.act.menu_exit":            "shut down",
 	"log.act.allow_once":           "allowed this time, will ask again",
+	"log.act.decide_off":           "tool confirmations still go to you",
+	"log.act.decide_on":            "each tool confirmation is asked of the model first",
 
 	// 启动
 	"log.boot.file_unavailable": "cannot open the log file ({path}): {err}",
@@ -114,6 +116,9 @@ var enLogTexts = map[string]string{
 	"log.perm.plaintext_key":         "a plaintext key was found at startup",
 	"log.perm.secrets_unreadable":    "the secret store could not be opened",
 	"log.perm.policy_persist_failed": "the always-allow rule was not written: {err}",
+	"log.perm.decide_unconfigured":   "the decision model is off: decide.mode={mode}, but the endpoint or model name is missing",
+	"log.perm.decide_unusable":       "the decision model is off: decide.mode={mode}, and the client could not be built: {err}",
+	"log.perm.decide_ready":          "the decision model is ready: {model} ({mode})",
 
 	// 会话、转交与前端
 	"log.session.replay_failed":             "history replay failed",

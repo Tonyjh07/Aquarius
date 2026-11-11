@@ -247,6 +247,10 @@ type wiring struct {
 	policy      *policyHolder
 	unattended  *unattendedHolder
 	persist     *cfgWriter
+	// decide 模型辅助决策（D290）：bootstrap 归一并校验，装配根按需建客户端。
+	// decider 为 nil = 不启用（off、没配全或建不出来），确认链原样透传。
+	decide  decideOptions
+	decider port.Decider
 	// firstRun 本次为该 profile 首次运行（已写模板，D141）；setupTried 装配前向导窗
 	// 本进程只尝试一次（向导后仍不完整即报因退出，不循环弹窗）。
 	firstRun   bool
@@ -400,8 +404,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(w.stdout)
 	}()
 	w.buildPresenter()
+	// 审计要先于确认链就位：决策模型的判定落在同一条 audit.log（D290）。
+	if err := w.openAudit(); err != nil {
+		return fatal(stderr, "%v", err)
+	}
+	defer w.audit.Close()
+	// 模型辅助决策（D290）：只在模型发起的那条链上，`off` / 没配全时原样透传。
+	w.buildDecider()
 	// 逐次确认（§5.11 Confirmer 矩阵）与提问通道（D184）：默认都走前端交互面。
-	tc := toolChannelsFor(w.ui, w.unattended.Get)
+	tc := toolChannelsFor(w.ui, w.unattended.Get, w.wrapDecide)
 	if err := w.assembleTools(ctx, tc.toolConfirmer, tc.toolAsker); err != nil {
 		return fatal(stderr, "%v", err)
 	}
@@ -421,7 +432,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fatal(stderr, "%v", err)
 	}
-	defer w.audit.Close()
 	auditedRunner := decorate.AuditTool(w.runner, w.audit)
 	ids := systemIDGen{}
 	// D37：运行环境块（随 config 快照进 persona）——平台、终端形态与 TERM、特权沙盒目录。
