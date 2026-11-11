@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-11 @ 760c048 -->
+<!-- docs-sync: 2026-11-11 @ ea19aff -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -155,9 +155,11 @@ MCP 配置、密钥目录、系统目录。即便该工具设成自动放行，�
    `internal/adapter/decide/testdata/`，代码改动前后各跑一轮比对判定漂移。**这批语料抓到了一处真错**：
    题目顺序（`fix(decide): send the three questions in the calibrated order`，见 D290 决策 9）
 
-**P5 文档**
+**P5 文档** —— 已交付
 
-8. `docs: record the policy precedence and what it cannot override`
+8. `docs: record the policy precedence and what it cannot override` —— 契约 §9.1–9.3：
+   优先级四层（禁用 > 例外 > 矩阵 > 缺省 ask）、硬名单三类（执行控制类文件 / 敏感根 / 空目标不算）、
+   以及「这套东西管不到什么」六条；D280/D281 补记与状态收尾
 
 ### 验证
 
