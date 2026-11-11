@@ -3,7 +3,8 @@
 ## 中文
 
 > 说明：本文件由程序生成，启动时按版本重写。想留自己的笔记，另建文件。
-> 磁盘布局的完整口径见仓库的 `docs/storage.md`，这里只是速查。
+> 仓库是 <https://github.com/Tonyjh07/Aquarius>；磁盘布局的完整口径见
+> <https://github.com/Tonyjh07/Aquarius/blob/main/docs/storage.md>，这里只是速查。
 
 ### 这是什么
 

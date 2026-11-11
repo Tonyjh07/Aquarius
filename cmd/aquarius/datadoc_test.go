@@ -105,6 +105,22 @@ func TestDataReadmeEntriesExistInStorageDoc(t *testing.T) {
 	}
 }
 
+// TestDataReadmeLinksBothLanguages 两段都要带仓库与 storage.md 的链接。读者常常只有这个
+// 目录，没有仓库——链接是唯一能把「完整口径在哪」指出去的东西，少一边就等于少一位读者。
+func TestDataReadmeLinksBothLanguages(t *testing.T) {
+	links := []string{
+		"https://github.com/Tonyjh07/Aquarius",
+		"https://github.com/Tonyjh07/Aquarius/blob/main/docs/storage.md",
+	}
+	for name, src := range map[string][]byte{"zh.md": assets.DataReadmeZH, "en.md": assets.DataReadmeEN} {
+		for _, want := range links {
+			if !strings.Contains(string(src), want) {
+				t.Errorf("%s 缺少链接 %s", name, want)
+			}
+		}
+	}
+}
+
 // TestDataReadmeStaysShort 单语正文行数上限。这份东西的用处是速查，一旦长到要翻页，
 // 读者会去翻的就不是它了；上限比现状留一点余量，只为挡住持续膨胀。
 func TestDataReadmeStaysShort(t *testing.T) {
