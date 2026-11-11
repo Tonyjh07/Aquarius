@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-09 @ 38be2ed -->
+<!-- docs-sync: 2026-11-11 @ 850c015 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -323,7 +323,10 @@ API）；未实现或报错时 app 回落通用估算（③），并以服务端
 
 **两层**：`Tool` 是被调用的那一件（声明 `Spec()` + 执行）；`ToolRunner` 是包在外面那层，
 一次调用要过**查找 → capability 校验 → Risk 确认 → 超时 → 结果裁剪**（超时可经保留参数
-`timeout_sec` 逐次覆盖，D38）。确认面是并列的 `Confirmer`（布尔 + 原因），两列分工见 §9。
+`timeout_sec` 逐次覆盖，D38）。确认面是并列的 `Confirmer`，两列分工见 §9：`ConfirmAnswer`
+是 `{Allow, Reason, Level}`——`Allow` + `Reason` 是「准不准做、为什么不做」，`Level` 非空
+表示用户在确认框里**直选了权限档**，runner 据此按那一档重判本次（D282：界面不做安全判定，
+只上报选了哪档）。
 
 **两个可选能力**：
 
