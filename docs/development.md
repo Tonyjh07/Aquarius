@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-11 @ e61e5bf -->
+<!-- docs-sync: 2026-11-11 @ a793021 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -305,15 +305,26 @@ testy 会往会话 `cwd` 写 `testy-write.txt`，用临时目录跑。
   兜底与本包自己）。
 
 ## 发版构建
-- **版本号只在一处注入**：`go build -ldflags "-X main.version=v0.1.0" -o aquarius.exe ./cmd/aquarius`
-  （不注入时 `-version` 显示 `dev`）。`aquarius.exe -version` 打印版本、平台与 Go 版本后直接
-  退出——发版冒烟与问题排查都用 `-version`。
+
+发版命令只有这一条，参数照抄：
+
+```bash
+go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=v0.1.0" -o aquarius.exe ./cmd/aquarius
+```
+
+- **版本号只在这一处注入**，不注入时 `-version` 显示 `dev`。`aquarius.exe -version` 打印版本、
+  平台与 Go 版本后直接退出——发版冒烟与问题排查都用 `-version`。
+- **发布构建剥调试信息、不写本机路径**：`-s -w` 去掉符号表与 DWARF，`-trimpath` 把源码路径
+  换成模块相对路径，`-buildvcs=false` 不嵌版本库信息。Windows/amd64 上 64 MB 降到 45 MB，
+  启动不变慢。代价只有一个：崩溃栈只有函数名与地址，没有文件名和行号。日常开发用
+  `go build ./cmd/aquarius`（带调试信息），不要顺手加上这组参数。
 - **Windows 资源版本**在 `cmd/aquarius/winres/winres.json`（`fixed` / `info` 两处），发版前与
   ldflags 同步改，再 `go generate ./cmd/aquarius` 重生成 `.syso` 并提交。
 - **发布物** = 单个二进制 + `README.md` / `LICENSE` / `THIRD-PARTY-NOTICES.md`（MPL-2.0 与
   第三方署名义务）。依赖有增减时，先按 `THIRD-PARTY-NOTICES.md` 顶部命令核对清单再打包。
 - **发版前**：全量门禁（含 `-race` 与 `linuxgate`）+ `govulncheck`，并从一个**干净 clone**
-  构建一次（排除工作区未跟踪文件与本地 `go.work` 的影响），用 `-version` 确认注入生效。
+  用上面那条命令构建一次（排除工作区未跟踪文件与本地 `go.work` 的影响），再用 `-version`
+  确认注入生效。
 - 发布说明放 `docs/releases/<tag>.md`，与 tag 一起提交；内容面向用户，不写内部决策编号。
 
 ## 文档头部标记（更新日期 + 代码基线）
