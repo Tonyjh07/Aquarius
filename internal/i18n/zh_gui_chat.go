@@ -14,9 +14,18 @@ var zhGuiChatTexts = map[string]string{
 	"ui.state.unattended_hint": "无人值守 · {hint}",
 
 	"ui.state.unattended_deny": "无人值守 · 越界操作会被拒绝",
-	"ui.state.inject":          "注入 · {source} · {state}",
 	"ui.state.fired":           "已触发响应",
 	"ui.state.idle":            "未触发",
+
+	// 注入块折叠行（inject.go）：第一段是类别，第二段是来源余下部分。类别按来源前缀
+	// 分，因为「工具 think」整句自带类别，直接接在后面会读成「工具注入 · 工具 think」。
+	"ui.inject.kind.clock":  "指令更新",
+	"ui.inject.kind.job":    "任务注入",
+	"ui.inject.kind.poller": "观察注入",
+	"ui.inject.kind.tool":   "工具注入",
+	"ui.inject.kind.plugin": "插件注入",
+	"ui.inject.kind.skill":  "技能注入",
+	"ui.inject.kind.user":   "手动注入",
 
 	"ui.state.pending_full":     "待发已满 8 条，先撤销一条再发",
 	"ui.state.pending_empty":    "待发内容为空，这一行没有发出去",

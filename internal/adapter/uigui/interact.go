@@ -241,6 +241,15 @@ func (u *UI) updateClicks(gtx layout.Context) {
 			u.cmdOpen[i] = !u.cmdOpen[i]
 		}
 	}
+	// 注入块折叠行点击 → 展开/收起（D166 形态修订；默认折叠只留「类别 · 来源」一行）。
+	for i, b := range u.m.blocks {
+		if b.kind == blockInject && u.injectClick(i).Clicked(gtx) {
+			if u.injectOpen == nil {
+				u.injectOpen = map[int]bool{}
+			}
+			u.injectOpen[i] = !u.injectOpen[i]
+		}
+	}
 	// 分叉条左右切换（D81）：投递 `/goto <兄弟id>` 经输入通道（与键入同路径，壳内不
 	// 旁路）；已在边界则不环绕（按钮置暗且不投递）。
 	for _, s := range u.branchStrips() {

@@ -1,7 +1,10 @@
 package uigui
 
 import (
+	"strings"
 	"testing"
+
+	"gioui.org/io/input"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -51,30 +54,74 @@ func TestInjectBlockCommitReplay(t *testing.T) {
 	}
 }
 
-// TestInjectHeadline 卡片头部口径（D166）：来源经友好化表、状态记实际发生。
+// TestInjectHeadline 折叠行文案：`▸ 类别 · 来源`，展开时箭头朝下。类别按来源前缀分，
+// 余下部分不带前缀词（否则读成「工具注入 · 工具 think」）；未知前缀回落成来源标签。
 func TestInjectHeadline(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		source   string
-		trigger  bool
-		srcKey   string // 来源标签的 key（带名字的用 Tf 填 rest）
-		rest     string
-		stateKey string
-	}{
-		{"job:j1", true, "port.src.job", "j1", "ui.state.fired"},
-		{"tool:think", false, "port.src.tool", "think", "ui.state.idle"},
-		{"user", true, "port.src.manual", "", "ui.state.fired"},
-		{"", false, "port.src.unknown", "", "ui.state.idle"},
+	cases := []struct{ source, title string }{
+		{"job:j1", i18n.T("ui.inject.kind.job") + injectSep + "j1"},
+		{"tool:think", i18n.T("ui.inject.kind.tool") + injectSep + "think"},
+		{"clock", i18n.T("ui.inject.kind.clock") + injectSep + i18n.T("port.src.clock")},
+		{"user", i18n.T("ui.inject.kind.user")},
+		{"weird", "weird"}, // 未知前缀：原样给来源，不猜类别
 	}
 	for _, tc := range cases {
-		src := i18n.T(tc.srcKey)
-		if tc.rest != "" {
-			src = i18n.Tf(tc.srcKey, "rest", tc.rest)
+		if got, want := injectHeadline(tc.source, false), "▸ "+tc.title; got != want {
+			t.Fatalf("headline(%q,false) = %q, want %q", tc.source, got, want)
 		}
-		want := i18n.Tf("ui.state.inject", "source", src, "state", i18n.T(tc.stateKey))
-		if got := injectHeadline(tc.source, tc.trigger); got != want {
-			t.Fatalf("headline(%q,%v) = %q, want %q", tc.source, tc.trigger, got, want)
+		if got, want := injectHeadline(tc.source, true), "▾ "+tc.title; got != want {
+			t.Fatalf("headline(%q,true) = %q, want %q", tc.source, got, want)
 		}
+	}
+}
+
+// TestInjectCollapse 注入块默认折成一行，点开才铺触发状态与正文；再点收起。
+// 开合是视图态，不改变块本身。
+func TestInjectCollapse(t *testing.T) {
+	t.Parallel()
+	u := newFrameUI()
+	u.m.commit(conversation.Message{
+		ID: "i1", Role: conversation.RoleInject, Source: "clock",
+		Content: []conversation.Part{{Kind: conversation.PartText, Text: "The date has changed: today is 2026-11-11."}},
+	})
+	m := u.m
+
+	gtx, _ := frameGtx(input.Source{})
+	u.transcript(gtx, 600, 400)
+	if u.injectIsOpen(0) {
+		t.Fatal("注入块应默认折叠")
+	}
+	if len(u.injectClicks) != 1 {
+		t.Fatalf("折叠行点击件 = %d, want 1", len(u.injectClicks))
+	}
+	if got := u.blockText(0, 1); got != "" {
+		t.Fatalf("折叠时正文不应铺开（行选键无文本）: %q", got)
+	}
+	collapsedH := u.contentH
+
+	// 展开：触发状态与正文全文都铺开，内容变高。
+	u.injectClicks[0].Click()
+	u.updateClicks(gtx)
+	if !u.injectIsOpen(0) {
+		t.Fatal("点击折叠行应展开")
+	}
+	u.transcript(gtx, 600, 400)
+	if u.contentH <= collapsedH {
+		t.Fatalf("展开后内容高 = %d，折叠时 = %d（应更高）", u.contentH, collapsedH)
+	}
+	got := u.blockText(0, 1)
+	if !strings.Contains(got, "2026-11-11") {
+		t.Fatalf("展开后正文没铺开:\n%s", got)
+	}
+
+	// 再点一次收起：块没变。
+	u.injectClicks[0].Click()
+	u.updateClicks(gtx)
+	if u.injectIsOpen(0) {
+		t.Fatal("再点一次应收起")
+	}
+	if len(m.blocks) != 1 || m.blocks[0].kind != blockInject {
+		t.Fatalf("开合不应改变块: %+v", m.blocks)
 	}
 }
 

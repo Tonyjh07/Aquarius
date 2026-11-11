@@ -13,9 +13,17 @@ var enGuiChatTexts = map[string]string{
 	"ui.state.unattended_hint": "Unattended · {hint}",
 
 	"ui.state.unattended_deny": "Unattended · out-of-bounds actions will be denied",
-	"ui.state.inject":          "Injected · {source} · {state}",
 	"ui.state.fired":           "response triggered",
 	"ui.state.idle":            "not triggered",
+
+	// 注入块折叠行（inject.go）：与中文侧同 key 同顺序。
+	"ui.inject.kind.clock":  "Instruction update",
+	"ui.inject.kind.job":    "Task injection",
+	"ui.inject.kind.poller": "Observer injection",
+	"ui.inject.kind.tool":   "Tool injection",
+	"ui.inject.kind.plugin": "Plugin injection",
+	"ui.inject.kind.skill":  "Skill injection",
+	"ui.inject.kind.user":   "Manual injection",
 
 	"ui.state.pending_full":     "Queue is full (8) — undo one before adding another",
 	"ui.state.pending_empty":    "Nothing to queue — this line was not sent",

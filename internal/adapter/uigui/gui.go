@@ -451,6 +451,11 @@ type UI struct {
 	cmdOpen   map[int]bool
 	cmdClicks []*widget.Clickable
 
+	// 注入块视图态（D166 形态修订）：正文是进模型的原文，默认折成一行「类别 · 来源」，
+	// 点开才铺触发状态与全文。同口径按块序缓存、不进 model、清屏复位。
+	injectOpen   map[int]bool
+	injectClicks []*widget.Clickable
+
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
 	reasonFocus  bool // D86：确认开启后把焦点让入原因框（一次性，同 focusPending 口径）

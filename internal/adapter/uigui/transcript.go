@@ -18,7 +18,6 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
-	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // transcript 转写区：两遍布局（量高 → 滚动定界 → 绘制），**底部锚定**——新消息贴着
@@ -296,24 +295,36 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			}
 			return vs.dims()
 		}, tok().cardThinking, cardR, false, false
-	case blockInject: // 注入节点（D166）：暗卡片——头部来源/触发（元信息，不选）+ 正文可选
-		header := injectHeadline(it.source, it.trigger)
+	case blockInject: // 注入块：默认折成一行「类别 · 来源」，点开才铺触发状态与正文
+		el := u.injectClick(it.bi)
+		open := u.injectIsOpen(it.bi)
+		head := injectHeadline(it.source, open)
 		return func(gtx layout.Context) layout.Dimensions {
 			vs := beginVStack(gtx)
 			vs.add(func(gtx layout.Context) layout.Dimensions {
-				s := material.Caption(u.th, header)
-				s.Color = tok().textInject
-				return s.Layout(gtx)
-			})
-			off := image.Pt(0, vs.y)
-			vs.add(func(gtx layout.Context) layout.Dimensions {
-				return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					s := material.Body2(u.th, it.text)
+				return el.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					s := material.Caption(u.th, head)
 					s.Color = tok().textInject
-					s.State = rs.sel(0)
 					return s.Layout(gtx)
-				}, 0, off, image.Point{})
+				})
 			})
+			if open {
+				vs.gap(mdBlockGapDp)
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					s := material.Caption(u.th, injectState(it.trigger))
+					s.Color = tok().textDim
+					return s.Layout(gtx)
+				})
+				off := image.Pt(0, vs.y)
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						s := material.Body2(u.th, it.text)
+						s.Color = tok().textInject
+						s.State = rs.sel(0)
+						return s.Layout(gtx)
+					}, 0, off, image.Point{})
+				})
+			}
 			return vs.dims()
 		}, tok().cardInject, cardR, false, false
 	case blockCommand: // 命令折叠条：形状交给 commandRowStyle，与工具 chip、分叉条同法
@@ -451,11 +462,6 @@ const mdBlockGapDp unit.Dp = 4
 
 // injectHeadline 注入卡片头部（D166）：来源（友好化表） + 落地时是否触发了响应。
 // 转写头部与遮罩来源行共用 injectState 一词，措辞不漂移。
-func injectHeadline(source string, trigger bool) string {
-	return i18n.Tf("ui.state.inject",
-		"source", port.InjectSourceLabel(source), "state", injectState(trigger))
-}
-
 // injectState 触发状态词（D166）：记录的是**实际发生**（Message.Trigger），不是来源默认表。
 func injectState(trigger bool) string {
 	if trigger {
