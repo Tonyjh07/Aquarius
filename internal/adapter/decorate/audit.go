@@ -58,6 +58,23 @@ type auditLine struct {
 	Dir    string `json:"dir,omitempty"`
 	Op     string `json:"op,omitempty"`
 	Target string `json:"target,omitempty"`
+	// kind=decide：这一次本来怎么判、依据是哪三个数（D290）。嵌套成对象是为了让
+	// 其余 kind 的行不长出五个零值字段——风险 0.00 与「没拿到分数」在审计里必须
+	// 可区分，`scored` 就是那道分界。
+	Decide *decideAudit `json:"decide,omitempty"`
+}
+
+// decideAudit kind=decide 的载荷。
+type decideAudit struct {
+	Verdict string `json:"verdict"` // allow | ask | deny | error
+	Model   string `json:"model,omitempty"`
+	// Scored 是否真拿到了分数。false 时下面三个数是零值，别读成「风险 0」。
+	Scored   bool    `json:"scored"`
+	Risk     float64 `json:"risk"`
+	Human    float64 `json:"human"`
+	Allow    float64 `json:"allow"`
+	ThrRisk  float64 `json:"thr_risk"`
+	ThrHuman float64 `json:"thr_human"`
 }
 
 // NewAudit 打开（不存在则创建）审计文件；capBytes <=0 用默认上限。
@@ -311,6 +328,30 @@ func (a *Audit) Policy(origin, tool, mode, dir, op, target string, applied bool,
 	_ = a.record(auditLine{
 		TS: tsNow(), Kind: "policy", Name: tool, OK: applied, Err: errMsg,
 		Origin: origin, Mode: mode, Dir: dir, Op: op, Target: target,
+	})
+}
+
+// Decide 记一次决策模型判定（D290）：结论、三个分数、当时生效的两个阈值与延迟。
+//
+// 落一条**判定**而不是一次请求：`shadow` 下用户照样点了确认，这里记的是「如果开着
+// 会怎么判」，两边对照着看才知道默认值该往哪挪。`should_allow` 也一并记下——它不参与
+// 判定，但正是重标定时要重新算相关系数的那一列。
+func (a *Audit) Decide(rec DecideRecord) {
+	op := ""
+	if rec.Request.HasOp {
+		op = rec.Request.Op.String()
+	}
+	_ = a.record(auditLine{
+		TS: tsNow(), Kind: "decide", Name: rec.Request.Tool, OK: rec.Scored, Err: rec.Err,
+		DurMS:  rec.Decision.Latency.Milliseconds(),
+		Origin: string(rec.Request.Origin), Mode: string(rec.Mode),
+		Op: op, Target: rec.Request.Target,
+		Decide: &decideAudit{
+			Verdict: string(rec.Verdict), Model: rec.Decision.Model, Scored: rec.Scored,
+			Risk: rec.Decision.Risk, Human: rec.Decision.NeedsHuman,
+			Allow:   rec.Decision.ShouldAllow,
+			ThrRisk: rec.Policy.AllowRiskBelow, ThrHuman: rec.Policy.AllowHumanBelow,
+		},
 	})
 }
 
