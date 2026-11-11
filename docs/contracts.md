@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-11 @ d03a60c -->
+<!-- docs-sync: 2026-11-11 @ 3bd91cf -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -487,6 +487,7 @@ jobproc 在适配器内按行解码（D41），端口契约不暴露字节编码
 | `Tool` | memory_*、file_*、term_*、job_*、watch_*、web_*、think | **MCP server** | fake tool |
 | `ToolRunner` | toolrun（查找/权限判定/确认/超时/裁剪，D25） | — | fake runner |
 | `Confirmer` | TUI 确认 | — | 自动应答 |
+| `Decider` | decide（System One 客户端，`POST {base}/v1/systemone`，D281/D290） | 任何同协议服务：Jev / Cloudflare `clef-flash` / Ollama ≥ 0.35.1 / Unsloth Decision API | 固定分数 |
 | `Asker` | uigui 提问面板 / uitui 编号选单 / repl 编号选单 | — | 脚本答案 |
 | `ConversationStore` | storejson（一树一 JSON + N 代 `.bak`） | — | in-memory |
 | `MemoryStore` | memoryfs（markdown） | MCP resources / Tier-1 | in-memory |
@@ -1183,6 +1184,45 @@ this build`），后者照实回传。将来加一条 `session/resume` 与句柄
 **切会话与关停**：清单随会话走丢——`/new`、`/switch`、`/load` 时清空并留一行提示（与「不静默丢
 东西」的既有口径一致）；进程退出即丢：清单只在内存里，崩溃与关停都带不走。要落就得进会话存储
 （与草稿一起），那是另一件事。
+
+### 5.20 `decide.go` —— 决策模型端口（D281/D290）
+
+一句话：**「这次要不要打扰用户」交给一次前向的概率**，而不是让模型生成一段话。输出空间封闭，
+被注入也只能把概率推向错的一边，吐不出「你该做什么」。
+
+```go
+type Decider interface {
+    Decide(ctx context.Context, req DecideRequest) (Decision, error)
+}
+
+type DecideRequest struct {
+    Origin, Tool, Op, Target string
+    Risk                     string // 调用方粗判：low / medium / high
+    Task                     string // 外部代理声称的任务，已按 decide.task_chars 截断
+}
+
+type Decision struct {
+    ShouldAllow, Risk, NeedsHuman float64 // 三题的概率与期望值
+    Latency                       time.Duration
+    Model                         string
+}
+```
+
+四条约定：
+
+- **端口只给分数，不给结论**。三档分流由装饰器按 `decide.allow.*` / `decide.deny.*` 算（D290）。
+  适配器只负责「问一次、解析、返回」，换模型重标阈值时不必动适配器。
+- **三题一次问完**：`should_allow`（noul）、`risk`（score 三档）、`needs_human`（noul）。同一份
+  state 一次前向拿三个数。其中 `should_allow` 只进审计、不参与判定——实测 `should_allow` 与
+  `needs_human` 的 Pearson 系数为 −0.93，留这一题是为阴影期重标定。
+- **state 是固定六行**（`origin` / `tool` / `op` / `target` / `risk` / `task`），三句题面写死在
+  适配器里，不开放配置。措辞换一个字分数就整体位移，改了等于整组阈值作废（D290 代价 ④）。
+- **错误即「没判成」**：超时、非 2xx、JSON 不合形状、题型不被认，一律返回 error，由装饰器交回
+  base 确认。**error 绝不等价于 Allow**（D281 第 5 条）。超时由装饰器按 `decide.timeout_ms`
+  设在 ctx 上，适配器不自己设。
+
+`shadow` 档只落审计、不改行为；`off` 档整个端口不装配。两种档位下 `ToolRunner` 与 `acpgate`
+都不出现 `if decider != nil`。
 
 ## 6. 插件架构
 

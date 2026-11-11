@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-09 @ 38be2ed -->
+<!-- docs-sync: 2026-11-11 @ 3bd91cf -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -238,6 +238,68 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 缺省的 256k 是注意力、成本与长程任务三者的平衡点：再小，一轮读几个文件就撞自动压缩；再大，
 长会话里早期那些与当前话题关系不大的历史会一直占着注意力与费用。想更长或更省，改这一项即可——
 全局预算只管「我想用多少」，模型窗口更小时按窗口走。
+
+### decide（模型辅助决策，实验性）
+
+**实验性功能**：默认关闭，只在 config 与「高级」页原文件编辑里出现，不进设置窗——阈值要等
+真实确认记录攒出来才可能整组换掉，先做成可改的配置项。
+开着的时候，工具调用的确认先问一次决策模型：明显该批的直接跑，明显该拒的（可选）直接拒，
+其余照旧问你。**失败即上交**——超时、端点不通、解析不出、题面不认，一律回到原来的确认，
+绝不默认放行。
+
+协议是 System One：`POST {base_url}/v1/systemone`，三题一次问完（`should_allow`、`risk`、
+`needs_human`）。同一份客户端覆盖 Jev、Cloudflare `clef-flash`、Ollama 与 Unsloth Decision API，
+只换 `base_url` 与 `model`。**不是** OpenAI chat 形状：拿 `kind: openai-chat` 的服务去接，必然失败。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `decide.mode` | string | `off` | `off`（不启用）/ `shadow`（只记审计、不改行为）/ `on`（按阈值分流） |
+| `decide.base_url` | string | `""` | 端点根，如 `http://127.0.0.1:11434`；带不带 `/v1` 都认。`mode` 非 `off` 时必填 |
+| `decide.api_key` | string | `secret:AQUARIUS_DECIDE_API_KEY` | `secret:` 引用或明文；本机服务留空即可 |
+| `decide.model` | string | `""` | 服务端认的模型名（`clef-flash` / `laya` 这类）。`mode` 非 `off` 时必填 |
+| `decide.timeout_ms` | int | `1500` | 单次判定总闸，`[200, 10000]`。超时即交回原确认，不重试、不问第二遍 |
+| `decide.warmup` | bool | `true` | 启动后异步发一次最小请求，把连接或模型拉热。本机冷启动 6.6 s，不预热则首次判定必然超时 |
+| `decide.task_chars` | int | `80` | 外部代理声称的任务截断到多少字符（`[0, 400]`，`0` = 不带） |
+| `decide.allow.risk_below` | float | `0.5` | 「明显该批」的 `risk` 上界，`[0, 2]`。score 三档的期望值，`0.5` 落在低档之内 |
+| `decide.allow.human_below` | float | `0.15` | 「明显该批」的 `needs_human` 上界，`[0, 1]` |
+| `decide.deny.enabled` | bool | `false` | 是否启用「明显该拒」这一档。**默认关**：同一批样本换一种问法，这一侧的召回会掉到一半，被误拒的又恰好是发版、部署这类事 |
+| `decide.deny.human_above` | float | `0.85` | `needs_human` 不小于此值即拒，`[0, 1]`；仅 `deny.enabled` 为真时生效 |
+
+三档分流，放行要求两个条件同时成立：
+
+```
+risk < allow.risk_below  且  needs_human < allow.human_below   → 直接跑
+deny.enabled 且 needs_human >= deny.human_above                → 直接拒并记一条 note
+其余                                                            → 照旧问你
+```
+
+默认值来自本机 46 条语料 × 2 种问法的实测：该批 20/21 放行、该问与该拒零误放。换模型或
+换端点是常态，**调阈值前先跑一遍 `internal/adapter/decide/testdata/` 里那批语料**，看判定漂了
+多少再改，别凭感觉挪。
+
+```json
+"decide": {
+  "mode": "shadow",
+  "base_url": "http://127.0.0.1:11434",
+  "model": "clef-flash",
+  "timeout_ms": 1500,
+  "warmup": true,
+  "allow": { "risk_below": 0.5, "human_below": 0.15 },
+  "deny": { "enabled": false, "human_above": 0.85 }
+}
+```
+
+几条硬约定：
+
+- **模板不生成这一段**。写了才生效，不写就当没有这个功能——实验性功能的默认形态是「不存在」。
+- **`mode` 非 `off` 但端点或模型名缺失**：启动留一行错，按 `off` 运行。不挡启动，也绝不放行。
+- **三句题面属于契约，写死在代码里**，不开放配置。换一个字都让分数整体位移（实测
+  `needs_human` 换措辞后拒绝侧召回从 11/12 掉到 6/12）。要改题面，等于整组阈值重标。
+- **`shadow` 与 `off` 的行为必须逐条一致**，差别只在审计里多一行。这是影子模式唯一能自证的地方。
+- 审计按判定落 `{model, verdict, risk, needs_human, thresholds, latency}`，`kind=decide`；
+  门禁批的与用户批的分开列。
+- 本机跑法：Ollama ≥ 0.35.1 拉 `clef-flash`，那是含 joint head 的真模型；LM Studio 加载同一份
+  GGUF 只会聊天、给不出概率（文件里没有那个头）。
 
 ### input / audio（语音）
 
