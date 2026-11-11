@@ -242,7 +242,7 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 	for _, text := range texts {
 		m := op.Record(gtx.Ops)
 		cap := material.Caption(u.th, text)
-		cap.Color = tok().whiteText
+		cap.Color = tok().popText
 		dims := cap.Layout(gtx)
 		lines = append(lines, line{op: m.Stop(), w: dims.Size.X, h: dims.Size.Y})
 		w = max(w, dims.Size.X)
@@ -262,8 +262,8 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 		Min: image.Pt(x, y),
 		Max: image.Pt(x+w+2*padX, y+h+2*padY),
 	}
-	st := clip.UniformRRect(bgRect, radius).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, tok().tipBg)
+	// D282：底板改走与补全候选、档位列表同一套浮层令牌（跟主题走，不再固定深色）。
+	u.popCard(gtx, bgRect, radius, bgRect.Add(image.Pt(0, absY)))
 	ly := bgRect.Min.Y + padY
 	for _, ln := range lines {
 		inner := op.Offset(image.Pt(bgRect.Min.X+padX, ly)).Push(gtx.Ops)
@@ -271,8 +271,6 @@ func (u *UI) hoverCard(gtx layout.Context, absY int, texts []string, rightAlign 
 		inner.Pop()
 		ly += ln.h
 	}
-	st.Pop()
-	u.record(bgRect.Add(image.Pt(0, absY)), radius, tok().tipBg, image.Rectangle{Max: u.frameSize})
 }
 
 // updateEditor 消费编辑器事件（Enter → SubmitEvent → 提交）。material.Editor.Layout

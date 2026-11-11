@@ -79,10 +79,7 @@ func (u *UI) drawLevelPick(gtx layout.Context, absY int, pill image.Rectangle) {
 	}
 	cur := u.currentPermLevel()
 	card, rows := levelPickRects(gtx, pill, -absY)
-	st := clip.UniformRRect(card, gtx.Dp(10)).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, tok().tipBg)
-	st.Pop()
-	u.record(card.Add(image.Pt(0, absY)), gtx.Dp(10), tok().tipBg, image.Rectangle{Max: u.frameSize})
+	u.popCard(gtx, card, gtx.Dp(popRadiusDp), card.Add(image.Pt(0, absY)))
 
 	for i, r := range rows {
 		win := r.Add(image.Pt(0, absY))
@@ -92,7 +89,7 @@ func (u *UI) drawLevelPick(gtx layout.Context, absY int, pill image.Rectangle) {
 	padX := gtx.Dp(levelPadDp)
 	fo := op.Offset(image.Pt(card.Min.X+padX, rows[len(rows)-1].Max.Y+gtx.Dp(levelFootGap))).Push(gtx.Ops)
 	l := material.Caption(u.th, i18n.T("ui.confirm.level_note"))
-	l.Color = tok().textDim
+	l.Color = tok().popDim
 	l.MaxLines = 2 // 与 levelFootDp 的两行高配套：更窄的窗里截断，不越出卡片
 	gtx2 := gtx
 	gtx2.Constraints = layout.Constraints{Max: image.Pt(card.Dx()-2*padX, gtx.Dp(levelFootDp))}
@@ -113,7 +110,7 @@ func (u *UI) levelRow(gtx layout.Context, i int, r, win image.Rectangle, cur str
 	cl.Layout(gtx2, func(gtx layout.Context) layout.Dimensions {
 		if current || u.cursorHitsRect(win, u.cursorPos()) {
 			st := clip.UniformRRect(image.Rectangle{Max: r.Size()}, gtx.Dp(6)).Push(gtx.Ops)
-			paint.Fill(gtx.Ops, complSelBg)
+			paint.Fill(gtx.Ops, tok().popSel)
 			st.Pop()
 		}
 		return layout.Inset{Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -122,7 +119,7 @@ func (u *UI) levelRow(gtx layout.Context, i int, r, win image.Rectangle, cur str
 					gtx.Constraints.Min.Y = 0
 					l := material.Body2(u.th, lv)
 					l.TextSize = unit.Sp(13)
-					l.Color = tok().whiteText
+					l.Color = tok().popText
 					return l.Layout(gtx)
 				}),
 				layout.Flexed(1, layout.Spacer{}.Layout),
@@ -132,7 +129,7 @@ func (u *UI) levelRow(gtx layout.Context, i int, r, win image.Rectangle, cur str
 					}
 					gtx.Constraints.Min.Y = 0
 					l := material.Caption(u.th, i18n.T("ui.confirm.level_current"))
-					l.Color = tok().textDim
+					l.Color = tok().popDim
 					return l.Layout(gtx)
 				}),
 			)

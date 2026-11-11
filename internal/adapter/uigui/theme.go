@@ -49,6 +49,17 @@ type palette struct {
 	actionAllow   color.NRGBA // ✓ 允许
 	actionElevate color.NRGBA // 🔑 提升权限
 	tipBg         color.NRGBA // 悬浮 tips 底色
+	// 浮层面（D282 起：提示卡 / 补全候选 / 档位列表共用一套）——跟主题走，不固定深色：
+	// 浅色版是白面 + 细描边，深色版是比窗底亮一阶的深面 + 更深一档的描边。浮层在
+	// 主窗没有阴影可用（ULW 位图），分层只能靠描边与面阶差。
+	popBg   color.NRGBA // 浮层面
+	popEdge color.NRGBA // 浮层描边（1dp）
+	popSel  color.NRGBA // 悬停/选中行底
+	popText color.NRGBA // 浮层主文字
+	popDim  color.NRGBA // 浮层次要文字（说明、标记）
+	// popAccent 浮层里的强调文字（补全的命令名/参数名）：品牌色在白面上只有 2.53:1，
+	// 够不着 AA，承载文字的场合取同色相的深一档（与次窗 accent/brand 的分工同口径）。
+	popAccent color.NRGBA
 	// depthMap 深度色带（D120§3.2，S3 关系图）：`Level mod 4` → 节点填充色——颜色是
 	// 层号的纯投影（A2）；浅色版以品牌色为首色族（相邻色相 ≥ 40°），深色版压低明度保证
 	// 深底可分辨。加色不改代码：纯数据预设（§15.4/D61）。
@@ -91,6 +102,13 @@ func lightPalette() palette {
 		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
 		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
 		tipBg:         color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF},
+		// 浮层：白面 + 细边（压在 #ECF0F3 的窗底上仍分得清）；选中行浅蓝灰一档。
+		popBg:     color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
+		popEdge:   color.NRGBA{R: 0xDC, G: 0xE1, B: 0xE8, A: 0xFF},
+		popSel:    color.NRGBA{R: 0xEA, G: 0xF1, B: 0xF7, A: 0xFF},
+		popText:   color.NRGBA{R: 0x0F, G: 0x17, B: 0x2A, A: 0xFF},
+		popDim:    color.NRGBA{R: 0x66, G: 0x70, B: 0x7E, A: 0xFF},
+		popAccent: color.NRGBA{R: 0x0A, G: 0x76, B: 0xAE, A: 0xFF},
 		// 深度色带浅色版（D120§3.2）：品牌色为首色族，相邻色相 ≥ 40°（198/32/275/144）。
 		depthMap: [4]color.NRGBA{
 			{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
@@ -129,6 +147,13 @@ func darkPalette() palette {
 		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
 		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
 		tipBg:         color.NRGBA{R: 0x2E, G: 0x32, B: 0x38, A: 0xFF},
+		// 浮层：比窗底（#15181C）亮一阶的深面，描边再亮一档；深底上文字取亮灰。
+		popBg:     color.NRGBA{R: 0x2A, G: 0x2F, B: 0x36, A: 0xFF},
+		popEdge:   color.NRGBA{R: 0x3A, G: 0x41, B: 0x4A, A: 0xFF},
+		popSel:    color.NRGBA{R: 0x34, G: 0x3B, B: 0x44, A: 0xFF},
+		popText:   color.NRGBA{R: 0xE8, G: 0xEB, B: 0xEF, A: 0xFF},
+		popDim:    color.NRGBA{R: 0x9A, G: 0xA1, B: 0xAB, A: 0xFF},
+		popAccent: color.NRGBA{R: 0x4A, G: 0xA8, B: 0xE0, A: 0xFF},
 		// 深度色带深色版（D120§3.2）：压低明度、相邻色相 ≥ 40°（198/32/275/144）深底可辨。
 		depthMap: [4]color.NRGBA{
 			{R: 0x0B, G: 0x6F, B: 0xA8, A: 0xFF},

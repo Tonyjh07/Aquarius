@@ -2,7 +2,6 @@ package uigui
 
 import (
 	"image"
-	"image/color"
 	"unicode/utf8"
 
 	"gioui.org/io/event"
@@ -17,9 +16,6 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
-
-// complSelBg 补全行高亮底色（tipBg 亮一档）。
-var complSelBg = color.NRGBA{R: 0x36, G: 0x3B, B: 0x41, A: 0xFF}
 
 // complMaxRows 补全浮层最多显示的行数（D103：超出部分折叠为提示行）。
 const complMaxRows = 8
@@ -246,9 +242,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	// 换到窗口系绘制（输入栏局部 T=translate(0,absY) → offset(-absY) = 恒等）；
 	// 热区注册在同一变换内 → pointer.Position 即窗口系，与 complRows 一致。
 	wt := op.Offset(image.Pt(0, -absY)).Push(gtx.Ops)
-	st := clip.UniformRRect(card, gtx.Dp(10)).Push(gtx.Ops)
-	paint.Fill(gtx.Ops, tok().tipBg)
-	st.Pop()
+	u.popCard(gtx, card, gtx.Dp(popRadiusDp), card)
 	cur := u.cursorPos()
 	y := card.Min.Y + padY
 	for i := 0; i < n; i++ {
@@ -258,12 +252,12 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 		y += rowH + gap
 		if fillable && (i == u.complSel || u.cursorHitsRect(r, cur)) {
 			hs := clip.Rect(r).Push(gtx.Ops)
-			paint.Fill(gtx.Ops, complSelBg)
+			paint.Fill(gtx.Ops, tok().popSel)
 			hs.Pop()
 		}
-		labelColor := tok().brandColor
+		labelColor := tok().popAccent // 命令名/参数名：品牌色的可读版本（白面上 4.98:1）
 		if !fillable {
-			labelColor = tok().textDim
+			labelColor = tok().popDim
 		}
 		nameOp, nameDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, it.label)
@@ -274,10 +268,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 		tail := u.complFitText(gtx, it.tail, r.Dx()-nameDims.Size.X-gtx.Dp(complTailGapDp))
 		tailOp, tailDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, tail)
-			s.Color = tok().textMuted
-			if !fillable {
-				s.Color = tok().textDim
-			}
+			s.Color = tok().popDim
 			s.TextSize = unit.Sp(13)
 			return s.Layout(gtx)
 		})
@@ -297,7 +288,7 @@ func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 		hint := u.complFitText(gtx, i18n.Tf("ui.cmd.more_hint", "n", over), hr.Dx())
 		hintOp, hintDims := complMeasure(gtx, func(gtx layout.Context) layout.Dimensions {
 			s := material.Body2(u.th, hint)
-			s.Color = tok().textDim
+			s.Color = tok().popDim
 			s.TextSize = unit.Sp(12)
 			return s.Layout(gtx)
 		})
