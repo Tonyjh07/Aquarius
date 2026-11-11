@@ -174,7 +174,15 @@ func (u *UI) updateClicks(gtx layout.Context) {
 		u.m.replyConfirm(port.ConfirmAnswer{Reason: u.confirmReason()})
 	}
 	if u.elevateBtn.Clicked(gtx) {
-		u.confirmElevate() // D86：/permission 升一档 + 放行本次
+		u.toggleLevelPick() // D282：开/收档位列表（选完由 runner 按新档重判）
+	}
+	if u.m.confirm != nil && u.levelPickOpen {
+		for i := range u.levelBtns {
+			if i < len(permLevels) && u.levelBtns[i].Clicked(gtx) {
+				u.pickLevel(permLevels[i])
+				break
+			}
+		}
 	}
 	if u.attachBtn.Clicked(gtx) {
 		u.plat.RequestFileDialog() // D104：附件槽 → shell 线程文件选择框（模态泵不嵌 Gio 泵）

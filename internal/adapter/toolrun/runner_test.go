@@ -14,6 +14,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -62,7 +63,8 @@ func (s *stubTool) Target(context.Context, tool.Call) (string, perm.Op, bool) {
 // scriptConf 记录提示并按脚本应答的确认器。
 type scriptConf struct {
 	answers    []bool
-	denyReason string // D86：拒绝时附带的原因（空 = 干拒）
+	levels     []string // D282：逐次的「直选档位」（与 answers 同步前进；空串 = 普通应答）
+	denyReason string   // D86：拒绝时附带的原因（空 = 干拒）
 	asked      []string
 	reqs       []port.ConfirmRequest // 结构化请求原样留档（D280 地基）
 	err        error
@@ -80,7 +82,11 @@ func (c *scriptConf) Confirm(_ context.Context, req port.ConfirmRequest) (port.C
 	}
 	a := c.answers[0]
 	c.answers = c.answers[1:]
-	return port.ConfirmAnswer{Allow: a, Reason: c.denyReason}, nil
+	var lv string
+	if len(c.levels) > 0 {
+		lv, c.levels = c.levels[0], c.levels[1:]
+	}
+	return port.ConfirmAnswer{Allow: a, Reason: c.denyReason, Level: lv}, nil
 }
 
 func fileTool(name, path string, op perm.Op, risk tool.Risk, out string) *stubTool {
@@ -243,6 +249,66 @@ func TestExecColumnMatrix(t *testing.T) {
 		if len(conf2.asked) != 0 {
 			t.Fatalf("%s safe 不应确认", l)
 		}
+	}
+}
+
+// TestConfirmLevelRejudge D282：确认框里直选档位，runner 按新档重判本次——新档判
+// Allow 就放行（不再问第二次），判 Ask 就回到确认态再问一次，且第二轮不再重判。
+func TestConfirmLevelRejudge(t *testing.T) {
+	sbx := mustAbs(t, "sbx")
+	outside := mustAbs(t, "elsewhere/a.txt")
+	run := func(t *testing.T, lv string) (*scriptConf, tool.Result) {
+		t.Helper()
+		conf := &scriptConf{answers: []bool{true, true}, levels: []string{lv, "permissive"}}
+		r := New(Options{
+			Tools:       []port.Tool{fileTool("fw", outside, perm.OpWrite, tool.Confirm, "ok")},
+			Confirmer:   conf,
+			Level:       levelFn(perm.Strict),
+			SandboxPath: sbx,
+		})
+		res, err := r.Execute(context.Background(), c("fw", `{}`))
+		if err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		return conf, res
+	}
+
+	// strict 下越界写要问；选 permissive（越界写免确认）→ 直接放行。
+	conf, res := run(t, "permissive")
+	if !res.OK || len(conf.asked) != 1 {
+		t.Fatalf("选放宽档应放行：res=%+v asked=%d", res, len(conf.asked))
+	}
+
+	// 选 read-only（越界写仍要问）→ 回到确认态；第二轮明确答了才走，且第二轮带的
+	// 档位不再重判（否则会来回弹）。
+	conf, res = run(t, "read-only")
+	if !res.OK || len(conf.asked) != 2 {
+		t.Fatalf("选收紧档应再问一次：res=%+v asked=%d", res, len(conf.asked))
+	}
+	if want := i18n.Tf("tool.confirm.level_still_asks", "level", "read-only"); !strings.HasPrefix(conf.asked[1], want) {
+		t.Fatalf("第二问 = %q, want 前缀 %q", conf.asked[1], want)
+	}
+
+	// 档名解析不出（界面 bug）：不静默放行，照问一次。
+	conf, res = run(t, "bogus")
+	if !res.OK || len(conf.asked) != 2 {
+		t.Fatalf("未知档应回到确认态：res=%+v asked=%d", res, len(conf.asked))
+	}
+}
+
+// TestConfirmLevelDeniedAfterRejudge 回到确认态后用户拒绝：按拒绝回填，不再执行。
+func TestConfirmLevelDeniedAfterRejudge(t *testing.T) {
+	sbx := mustAbs(t, "sbx")
+	conf := &scriptConf{answers: []bool{false, false}, levels: []string{"read-only"}}
+	r := New(Options{
+		Tools:       []port.Tool{fileTool("fw", mustAbs(t, "elsewhere/a.txt"), perm.OpWrite, tool.Confirm, "ok")},
+		Confirmer:   conf,
+		Level:       levelFn(perm.Strict),
+		SandboxPath: sbx,
+	})
+	res, err := r.Execute(context.Background(), c("fw", `{}`))
+	if err != nil || res.OK || !strings.Contains(res.Err, "user denied") {
+		t.Fatalf("res=%+v err=%v", res, err)
 	}
 }
 

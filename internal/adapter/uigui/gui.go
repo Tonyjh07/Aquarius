@@ -278,15 +278,20 @@ type UI struct {
 	stopBtn   widget.Clickable
 	// 语音输入（D179）：空输入时右钮 = 录音键；录音中变停止键。recording 供帧循环
 	// 读（点击路径与完成回投都在事件循环 goroutine 改）。
-	recording    atomic.Bool
-	voiceMu      sync.Mutex
-	voiceCancel  context.CancelFunc
-	allowBtn     widget.Clickable
-	denyBtn      widget.Clickable
-	elevateBtn   widget.Clickable    // D86：提升权限钮（仅工具确认且有下一档时布局）
-	attachBtn    widget.Clickable    // D104：附件槽（文件选择框入口，D49 灰槽实装）
-	attachClear  widget.Clickable    // D186：收起态汇总 chip（点击清空全部暂存）
-	attachClicks []*widget.Clickable // D186：展开态逐项 chip（按暂存序号缓存，点删该项）
+	recording   atomic.Bool
+	voiceMu     sync.Mutex
+	voiceCancel context.CancelFunc
+	allowBtn    widget.Clickable
+	denyBtn     widget.Clickable
+	elevateBtn  widget.Clickable // D282：档位钮（工具确认时布局，点开档位列表）
+	// D282 档位列表（确认态胶囊上方的浮层）：展开态与四行点击件，仅事件循环
+	// goroutine 读写；行序与 permLevels 一一对应。
+	levelPickOpen bool
+	levelBtns     [permLevelCount]widget.Clickable
+	levelRows     []image.Rectangle   // 各行命中矩形（窗口系，随帧重登记）
+	attachBtn     widget.Clickable    // D104：附件槽（文件选择框入口，D49 灰槽实装）
+	attachClear   widget.Clickable    // D186：收起态汇总 chip（点击清空全部暂存）
+	attachClicks  []*widget.Clickable // D186：展开态逐项 chip（按暂存序号缓存，点删该项）
 	// editAttClicks D188：编辑态已有附件的 chip（按节点内附件序号缓存，点击 = 标记删除/恢复）。
 	editAttClicks map[int]*widget.Clickable
 	expandBtn     widget.Clickable // D106：展开槽（输入框放大切换，D49 灰槽实装）

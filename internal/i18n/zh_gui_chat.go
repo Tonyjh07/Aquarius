@@ -74,7 +74,10 @@ var zhGuiChatTexts = map[string]string{
 	"ui.ask.submit":           "提交",
 
 	// ── 确认（confirm_ui.go 的动作提示 / history_confirm.go 的跨窗确认卡）
-	"ui.confirm.elevate":            "把权限提到 {level}",
+	"ui.confirm.elevate":            "选择权限档位",
+	"ui.confirm.level_echo":         "改档位：{level}",
+	"ui.confirm.level_note":         "此后所有调用都按这一档（全局，不是这一次）",
+	"ui.confirm.level_current":      "当前",
 	"ui.confirm.deny_with_reason":   "拒绝：{reason}",
 	"ui.confirm.needed":             "需要确认",
 	"ui.confirm.shared_note":        "主窗与本窗显示的是同一次确认，任一处作答即可。",

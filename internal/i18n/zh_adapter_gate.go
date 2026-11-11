@@ -59,6 +59,8 @@ var zhAdapterGateTexts = map[string]string{
 	"tool.confirm.plain":            "允许执行 {name}？参数: {args}",
 	"tool.confirm.described":        "允许执行 {name}？{summary}",
 	"tool.confirm.described_target": "允许 {name} 访问 {target}？{summary}",
+	// 确认框里直选档位后仍要问的那一次：先说明「换档也没免掉」，再放原来的问句。
+	"tool.confirm.level_still_asks": "权限档 {level} 下这一步仍需确认。",
 
 	// ---- delegate 工具的确认摘要：范围全列、任务只留摘要（默认提示会把这两样挤出屏幕）。 ----
 	"tool.delegate.describe.auto":          "缺省代理",

@@ -55,6 +55,8 @@ var enAdapterGateTexts = map[string]string{
 	"tool.confirm.plain":            "Allow {name} to run? Arguments: {args}",
 	"tool.confirm.described":        "Allow {name} to run? {summary}",
 	"tool.confirm.described_target": "Allow {name} to access {target}? {summary}",
+	// Same confirmation again after the user picked a level that still asks.
+	"tool.confirm.level_still_asks": "Permission level {level} still asks for this step.",
 
 	// ---- delegate tool confirm summary: the scope is listed in full, the task is clipped. ----
 	"tool.delegate.describe.auto":          "the default agent",

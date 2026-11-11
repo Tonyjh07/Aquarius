@@ -164,6 +164,9 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	// D103 补全浮层（tips 之后画——盖住转写区下部，胶囊上方锚定）：chrome 形状整窗
 	// 登记不受淡化带作用；行矩形随帧重登记（fade pass 同几何复登，bubbleRects 同构）。
 	u.drawCompl(gtx, absY, pill)
+	// D282 档位列表：与补全浮层同一锚定（胶囊上方、深色实色卡），压在它之上——
+	// 确认态不会有补全候选，两卡同屏只是理论情形，顺序取「后画的在上」。
+	u.drawLevelPick(gtx, absY, pill)
 }
 
 // inputExtraDp 展开态输入带增高量（D106 单源，dp）：胶囊增高超出常排 48 的部分。

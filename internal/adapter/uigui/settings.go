@@ -290,6 +290,11 @@ type SettingsPatch = port.SettingsPatch
 
 // 枚举档的**键值**（config 里的原文，不随语言变）与两列同形的档位（两种语言下写法
 // 一样，不必取词）。带人话展示名的那几档见下方各函数。
+
+// permLevelCount 权限档的档数（D282 档位列表的控件数组长度；与 permLevels 同源，
+// 由 TestPermLevelCount 锁住）。
+const permLevelCount = 4
+
 var (
 	// permLevels 权限档（§5/D22，与 domain/perm.Level 对齐）：规范值本身就是展示名。
 	permLevels = []string{"read-only", "strict", "permissive", "full-access"}

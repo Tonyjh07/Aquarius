@@ -233,6 +233,27 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 		if err != nil {
 			return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
 		}
+		if lv := strings.TrimSpace(ans.Level); lv != "" {
+			// D282：用户在确认框里直选了档位。UI 只上报选了哪档，放不放行在这里算——
+			// 界面拿不到目标路径与 sandbox 判定，两套界面各写一遍矩阵迟早不一致。
+			allowed := false
+			if lvl, perr := perm.Parse(lv); perr == nil {
+				d, _, _, _ := r.decideAt(ctx, t, call, lvl)
+				allowed = d == perm.Allow
+			}
+			if allowed {
+				ans = port.ConfirmAnswer{Allow: true}
+			} else {
+				// 新档位判 Ask（或档名解析不出）：回到确认态，这一次仍要明确回答，
+				// **不替用户放行**。第二轮的 Level 不再重判——否则用户与新档位的分歧
+				// 会变成一个来回弹的圈，而用户其实只想对这一次表态。
+				req.Prompt = i18n.Tf("tool.confirm.level_still_asks", "level", lv) + "\n" + req.Prompt
+				if ans, err = r.conf.Confirm(ctx, req); err != nil {
+					return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
+				}
+				ans.Level = ""
+			}
+		}
 		if !ans.Allow {
 			// D86：拒绝原因原样回传（用户自填文本，同用户消息口径不翻译）；200 rune
 			// 截断防失控粘贴——与 confirmPrompt 的参数预览同量级。
@@ -359,12 +380,18 @@ func specDeclaresTimeout(spec tool.Spec) bool {
 	return ok
 }
 
-// decide 权限判定：文件类看路径格，执行类看工具列（D22）。
-// decide 权限判定：文件类按路径格，执行类按工具列（D22）。
+// decide 权限判定：按当前权限档判（/permission 切换后即刻生效）。
+func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.Decision, string, perm.Op, bool) {
+	return r.decideAt(ctx, t, call, r.level())
+}
+
+// decideAt 权限判定：文件类按路径格，执行类按工具列（D22）。
 // 同时把判定依据交回给调用方——确认请求要带上操作、目标与风险，让界面与策略表
 // 读结构体而不是从提示文本里反解。
-func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.Decision, string, perm.Op, bool) {
-	level := r.level()
+//
+// level 显式传入而不是读 r.level()：确认框里直选档位之后要按**刚选的**那一档重判本次
+// （D282），而 /permission 的那次写回是异步的（经输入通道投递），等不到它落地。
+func (r *Runner) decideAt(ctx context.Context, t port.Tool, call tool.Call, level perm.Level) (perm.Decision, string, perm.Op, bool) {
 	base := level.Tool(t.Spec().Risk)
 	target := ""
 	var op perm.Op

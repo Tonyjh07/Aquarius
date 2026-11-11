@@ -77,6 +77,9 @@ type toolChip struct {
 type pendingConfirm struct {
 	prompt string
 	reply  chan port.ConfirmAnswer
+	// req 这次确认的完整请求（D280）：界面读来源决定给不给「直选档位」（D282 只对
+	// 工具确认成立），后续「以后都允许」也要用工具与目标算范围。
+	req port.ConfirmRequest
 	// share 本次确认在窗间的投影身份（D157）：由 startConfirm 发布、replyConfirm 撤下；
 	// 次窗应答据此校验「答的是不是这一次」（迟到应答不得落到下一次确认上）。
 	share *confirmShare

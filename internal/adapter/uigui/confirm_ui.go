@@ -14,7 +14,6 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
-	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // factsCard logo 悬停事实卡内容（D82/S1-1g，§15.1）：profile · 会话（标题+ID 前缀）·
@@ -149,8 +148,9 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm == nil {
 					return layout.Dimensions{}
 				}
-				// D86 确认动作区：左→右 [✗ 拒绝][✓ 允许][🔑 提升权限]（⌀36、间距 8；
-				// 右内边距 12 = 胶囊 padding 16 − 4 圆形光学校正）。
+				// D86 确认动作区：左→右 [✗ 拒绝][✓ 允许][🔑 选档位]（⌀36、间距 8；
+				// 右内边距 12 = 胶囊 padding 16 − 4 圆形光学校正）。D282：🔑 点开档位
+				// 列表（不是一键提档），列表收起时 icon 不表示状态。
 				return layout.Inset{Left: unit.Dp(inputGapDp), Right: unit.Dp(-confirmBtnOptDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					kids := []layout.FlexChild{
 						layout.Rigid(confirmBtn(gtx, &u.denyBtn, tok().actionDeny, glyphDeny)),
@@ -159,7 +159,7 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 								confirmBtn(gtx, &u.allowBtn, tok().actionAllow, glyphAllow))
 						}),
 					}
-					if u.confirmElevatable() {
+					if u.confirmLevelable() {
 						kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: unit.Dp(confirmBtnGapDp)}.Layout(gtx,
 								confirmBtn(gtx, &u.elevateBtn, tok().actionElevate, glyphKey))
@@ -299,39 +299,15 @@ func iconSlot(gtx layout.Context, draw func(gtx layout.Context, box image.Rectan
 	return layout.Dimensions{Size: box.Size()}
 }
 
-// nextPermLevel 权限档序列的下一档（D86）：无下一档（已 full-access / 档名未知）
-// 返回 false。
-func nextPermLevel(level string) (string, bool) {
-	for i, lv := range permLevels {
-		if lv == level && i+1 < len(permLevels) {
-			return permLevels[i+1], true
-		}
-	}
-	return "", false
-}
+// confirmLevelable 🔑 档位钮可见性（D282 修订 D86）：只给**工具确认**（来源 toolrun）。
+// 外部代理与命令行确认不读权限档（acpgate 只看策略表、/rm 与任何档无关），给了也是
+// 点了没用的钮。
+func (u *UI) confirmLevelable() bool { return u.levelPickable() }
 
-// confirmElevatable 🔑 提升钮可见性（D86）：仅工具确认（问句并入 chip，confirmChip ≥ 0）
-// 且当前档有下一档时显示；/rm 等非工具确认与 full-access 档隐藏。
-func (u *UI) confirmElevatable() bool {
-	if u.m.confirm == nil || u.m.confirmChip < 0 {
-		return false
-	}
-	if u.opts.Status == nil {
-		return false
-	}
-	_, ok := nextPermLevel(u.opts.Status().Level)
-	return ok
-}
-
-// confirmElevate 一键提档放行（D86）：经输入通道投 /permission <下一档>（托盘 D73
-// 同路径，PersistLevel 写回 config；转写回显由 /permission 报告承载）+ 放行本次——
-// 放行是显式点击授权，档位只影响后续判定，二者无时序依赖。投递失败（缓冲满）只
-// 降级为放行，不阻塞应答。
-func (u *UI) confirmElevate() {
-	if next, ok := nextPermLevel(u.opts.Status().Level); ok {
-		u.m.submitCommand(commandLine(uiCmdPermission, next))
-	}
-	u.m.replyConfirm(port.ConfirmAnswer{Allow: true})
+// toggleLevelPick 开/收档位列表（🔑 是开关，不是一键提档：D282 改成直选之后，
+// 再点一次应当是收回，而不是又选一档）。
+func (u *UI) toggleLevelPick() {
+	u.levelPickOpen = !u.levelPickOpen
 }
 
 // confirmTipAt 确认态三钮 tips 判定（D86）：窗口系矩形直采 × OS 命中直证（D85）。
@@ -340,14 +316,13 @@ func (u *UI) confirmTipAt(cur point) (string, bool) {
 	if u.frameSize.X <= 0 || u.frameMetric.PxPerDp <= 0 {
 		return "", false
 	}
-	elevate := u.confirmElevatable()
-	rects := confirmBtnRects(u.frameSize, u.frameMetric.Dp, elevate)
+	levelable := u.confirmLevelable()
+	rects := confirmBtnRects(u.frameSize, u.frameMetric.Dp, levelable)
 	texts := make([]string, len(rects))
 	texts[0] = i18n.T("ui.common.deny")
 	texts[1] = i18n.T("ui.common.allow")
-	if elevate {
-		next, _ := nextPermLevel(u.opts.Status().Level)
-		texts[2] = i18n.Tf("ui.confirm.elevate", "level", next)
+	if levelable {
+		texts[2] = i18n.T("ui.confirm.elevate")
 	}
 	for i, r := range rects {
 		if u.cursorHitsRect(r, cur) {

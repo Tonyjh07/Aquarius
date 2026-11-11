@@ -87,12 +87,20 @@ func (m *model) closeOpenChips() {
 // 其余（/rm 二次确认等）保持独立文本行。
 func (m *model) startConfirm(req port.ConfirmRequest, reply chan port.ConfirmAnswer) {
 	prompt := sanitizeControl(req.Prompt)
-	m.confirm = &pendingConfirm{prompt: prompt, reply: reply}
+	m.confirm = &pendingConfirm{prompt: prompt, reply: reply, req: req}
 	// D157：发布跨窗投影（历史窗据此画同步确认弹窗；窗口未开则只存快照）。
 	m.confirm.share = &confirmShare{prompt: prompt}
 	m.u.publishConfirm(m.confirm.share)
-	m.u.reasonEd.SetText("") // D86：原因框清空待填
-	m.u.reasonFocus = true   // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性口径）
+	m.u.reasonEd.SetText("")  // D86：原因框清空待填
+	m.u.reasonFocus = true    // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性口径）
+	m.u.levelPickOpen = false // D282：换一次确认 = 档位列表收起（旧列表不该跟到新问句上）
+	if i := m.reopenChipFor(req.Tool); i >= 0 {
+		// D282：同一件请求又回来了（选档位后被判 Ask）——沿用那块 chip，只换问句。
+		m.blocks[i].chip.confirmQ = prompt
+		m.blocks[i].chip.confirmA = ""
+		m.confirmChip = i
+		return
+	}
 	if i := m.openChipFor(req.Tool); i >= 0 {
 		m.blocks[i].chip.confirmQ = prompt
 		m.confirmChip = i
@@ -100,6 +108,21 @@ func (m *model) startConfirm(req port.ConfirmRequest, reply chan port.ConfirmAns
 	}
 	m.confirmChip = -1
 	m.add(blockPlain, prompt)
+}
+
+// reopenChipFor 刚答过又立刻回来的同一次确认（D282 直选档位 → 判 Ask → 回到确认态）：
+// 只看最新一块，且它必须留过一版问答。不跨块向前找——并行调用里找错 chip 会把问句
+// 贴到另一次调用上。
+func (m *model) reopenChipFor(name string) int {
+	if name == "" || len(m.blocks) == 0 {
+		return -1
+	}
+	i := len(m.blocks) - 1
+	c := m.blocks[i].chip
+	if c == nil || c.done || c.name != name || c.confirmQ == "" {
+		return -1
+	}
+	return i
 }
 
 // openChipFor 确认归属的最新未完成 chip（D67）：读请求里的工具名精确匹配。
@@ -137,7 +160,8 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	}
 	m.confirm = nil
 	m.confirmChip = -1
-	m.u.publishConfirm(nil) // D157：收尾即撤下跨窗投影（历史窗下一帧收起弹窗）
+	m.u.levelPickOpen = false // D282：答完即收档位列表，不留一张浮卡在下一轮上
+	m.u.publishConfirm(nil)   // D157：收尾即撤下跨窗投影（历史窗下一帧收起弹窗）
 	if prompt != "" {
 		m.add(blockPlain, prompt+" → "+confirmEcho(ans))
 	}
@@ -147,9 +171,13 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	}
 }
 
-// confirmEcho 应答回显文案（D86）：允许 / 拒绝 / 拒绝：<原因>（原因消毒同问句；
-// Allow 时忽略原因）。chip confirmA 与 plain 行回显共用。
+// confirmEcho 应答回显文案（D86/D282）：改档位 / 允许 / 拒绝 / 拒绝：<原因>（原因消毒
+// 同问句；Allow 时忽略原因）。chip confirmA 与 plain 行回显共用。
 func confirmEcho(ans port.ConfirmAnswer) string {
+	if lv := strings.TrimSpace(ans.Level); lv != "" {
+		// 只记「选了哪档」：放没放行由 runner 按新档重判，可能紧接着又弹一次确认。
+		return i18n.Tf("ui.confirm.level_echo", "level", lv)
+	}
 	if ans.Allow {
 		return i18n.T("ui.common.allow")
 	}

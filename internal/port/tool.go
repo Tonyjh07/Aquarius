@@ -29,6 +29,11 @@ type ToolRunner interface {
 type ConfirmAnswer struct {
 	Allow  bool
 	Reason string
+	// Level 用户在确认框里直选的权限档（D282）：非空 = 按这一档重判本次，此时
+	// Allow 不参与判定。界面只上报「选了哪档」，结论由 perm 算（改档位 = 永久改全局，
+	// 与 /permission 同一次授权）。只有工具确认会带回它——外部代理与命令行确认
+	// 不读权限档，界面不给这个入口。
+	Level string
 }
 
 // ConfirmOrigin 一次确认的来源（D280 策略表的来源维）。

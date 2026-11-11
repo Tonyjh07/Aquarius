@@ -163,59 +163,102 @@ func TestStartConfirmResetsReason(t *testing.T) {
 	}
 }
 
-// TestNextPermLevel D86：权限档序列升一档；到顶/未知档不可升。
-func TestNextPermLevel(t *testing.T) {
+// TestConfirmLevelable D282：🔑 只给工具确认（来源 toolrun）——外部代理与命令行
+// 确认不读权限档，给了也是点了没用的钮。
+func TestConfirmLevelable(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		cur, next string
-		ok        bool
-	}{
-		{"read-only", "strict", true},
-		{"strict", "permissive", true},
-		{"permissive", "full-access", true},
-		{"full-access", "", false},
-		{"unknown", "", false},
-		{"", "", false},
-	}
-	for _, tc := range cases {
-		next, ok := nextPermLevel(tc.cur)
-		if next != tc.next || ok != tc.ok {
-			t.Fatalf("nextPermLevel(%q) = %q, %v, want %q, %v", tc.cur, next, ok, tc.next, tc.ok)
-		}
-	}
-}
-
-// TestConfirmElevatable D86：🔑 仅工具确认且有下一档时可见。
-func TestConfirmElevatable(t *testing.T) {
-	t.Parallel()
-	u := newFrameUI() // 需要 u.m 双向就绪（confirmElevatable 读确认态）
+	u := newFrameUI() // 需要 u.m 双向就绪（confirmLevelable 读确认态）
 	m := u.m
-	u.opts.Status = func() Status { return Status{Level: "strict"} }
 
-	// 非 chip 确认（/rm 类）：不可见。
-	m.startConfirm(port.ConfirmRequest{Prompt: "确认删除 n4？"}, make(chan port.ConfirmAnswer, 1))
-	if u.confirmElevatable() {
-		t.Fatal("非工具确认不应显示提升钮")
+	// /rm 类确认（来源 command）：不可见。
+	m.startConfirm(port.ConfirmRequest{Origin: port.OriginCommand, Prompt: "确认删除 n4？"},
+		make(chan port.ConfirmAnswer, 1))
+	if u.confirmLevelable() {
+		t.Fatal("命令行确认不应显示档位钮")
 	}
 	m.replyConfirm(port.ConfirmAnswer{})
 
-	// 工具确认：strict 档可见。
-	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "term_exec"}})
-	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "允许执行 term_exec？"}, make(chan port.ConfirmAnswer, 1))
-	if !u.confirmElevatable() {
-		t.Fatal("strict 档工具确认应显示提升钮")
+	// 外部代理（来源 acpgate）：不可见。
+	m.startConfirm(port.ConfirmRequest{Origin: port.OriginAgent, Tool: "terminal", Prompt: "允许执行命令？"},
+		make(chan port.ConfirmAnswer, 1))
+	if u.confirmLevelable() {
+		t.Fatal("外部代理的确认不应显示档位钮")
 	}
+	m.replyConfirm(port.ConfirmAnswer{})
 
-	// full-access 档：到顶不可见。
+	// 工具确认：可见（与当前档无关——列表里四档全给，升降同一处）。
 	u.opts.Status = func() Status { return Status{Level: "full-access"} }
-	if u.confirmElevatable() {
-		t.Fatal("full-access 档不应显示提升钮")
+	m.startConfirm(port.ConfirmRequest{Origin: port.OriginTool, Tool: "term_exec", Prompt: "允许执行 term_exec？"},
+		make(chan port.ConfirmAnswer, 1))
+	if !u.confirmLevelable() {
+		t.Fatal("工具确认应显示档位钮（满档也要能降）")
 	}
+}
 
-	// Status 未配置：不可见（提档无据）。
-	u.opts.Status = nil
-	if u.confirmElevatable() {
-		t.Fatal("无 Status 数据源不应显示提升钮")
+// TestPickLevel D282：选一档 = 投 /permission（永久改档）+ 把选中的档交给 runner 重判；
+// 列表随即收起，UI 自己不判允许。
+func TestPickLevel(t *testing.T) {
+	t.Parallel()
+	u := newFrameUI()
+	u.inCh = make(chan port.UserInput, 1) // 投递 /permission 要有去处（缓冲满 = 丢弃）
+	m := u.m
+	reply := make(chan port.ConfirmAnswer, 1)
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "file_write"}})
+	m.startConfirm(port.ConfirmRequest{Origin: port.OriginTool, Tool: "file_write", Prompt: "允许写 a.txt？"}, reply)
+	u.levelPickOpen = true
+
+	u.pickLevel("permissive")
+
+	if u.levelPickOpen {
+		t.Fatal("选完应收起列表")
+	}
+	select {
+	case ans := <-reply:
+		if ans.Level != "permissive" || ans.Allow {
+			t.Fatalf("应答 = %+v, want Level=permissive 且 Allow=false（放不放行由 runner 算）", ans)
+		}
+	default:
+		t.Fatal("未把应答送回 runner")
+	}
+	if m.confirm != nil {
+		t.Fatal("应答后确认态应结束")
+	}
+	// /permission 那条命令进了输入通道（与托盘/设置同一条路径），且标为待回显。
+	if want := commandLine(uiCmdPermission, "permissive"); m.pendingCmd != want {
+		t.Fatalf("pendingCmd = %q, want %q", m.pendingCmd, want)
+	}
+}
+
+// TestConfirmRelayReusesChip D282：选档位后判 Ask → 同一件请求再问一次，问句贴回原来
+// 那块 chip（不另起一行纯文本，也不新开 chip），上一版的「改档位：…」留痕被清掉。
+func TestConfirmRelayReusesChip(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModel(t)
+	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "file_write"}})
+	first := make(chan port.ConfirmAnswer, 1)
+	m.startConfirm(port.ConfirmRequest{Origin: port.OriginTool, Tool: "file_write", Prompt: "允许写 a.txt？"}, first)
+	chip := m.blocks[m.confirmChip].chip
+	origPrompt := m.confirm.prompt
+	m.replyConfirm(port.ConfirmAnswer{Level: "read-only"})
+	if chip.confirmA == "" {
+		t.Fatal("应答未留痕")
+	}
+	blocks := len(m.blocks)
+
+	m.startConfirm(port.ConfirmRequest{Origin: port.OriginTool, Tool: "file_write",
+		Prompt: i18n.Tf("tool.confirm.level_still_asks", "level", "read-only") + "\n" + origPrompt},
+		make(chan port.ConfirmAnswer, 1))
+	if len(m.blocks) != blocks {
+		t.Fatalf("重判回来多开了块：%d → %d", blocks, len(m.blocks))
+	}
+	if m.confirmChip < 0 || m.blocks[m.confirmChip].chip != chip {
+		t.Fatal("重判回来应沿用原来那块 chip")
+	}
+	if chip.confirmA != "" {
+		t.Fatalf("上一版留痕未清：%q", chip.confirmA)
+	}
+	if want := i18n.Tf("tool.confirm.level_still_asks", "level", "read-only") + "\n" + origPrompt; chip.confirmQ != want {
+		t.Fatalf("chip 问句 = %q, want %q", chip.confirmQ, want)
 	}
 }
 

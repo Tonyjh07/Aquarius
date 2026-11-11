@@ -73,7 +73,10 @@ var enGuiChatTexts = map[string]string{
 	"ui.ask.submit":           "Submit",
 
 	// ── 确认
-	"ui.confirm.elevate":            "Raise permission → {level}",
+	"ui.confirm.elevate":            "Pick a permission level",
+	"ui.confirm.level_echo":         "Level: {level}",
+	"ui.confirm.level_note":         "Every later call uses this level — it is global, not just this once",
+	"ui.confirm.level_current":      "current",
 	"ui.confirm.deny_with_reason":   "Denied: {reason}",
 	"ui.confirm.needed":             "Confirmation needed",
 	"ui.confirm.shared_note":        "Both windows show the same confirmation; answering in either one is enough.",
