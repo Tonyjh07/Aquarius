@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-11 @ d0b9540 -->
+<!-- docs-sync: 2026-11-11 @ 5c0a313 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -778,8 +778,9 @@ Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份�
 本版不执行的机制有一个**固定顺序**的清单（`regex_scripts` / `tavern_helper` / `tavernweave` /
 `depth_prompt`），照序报给用户，而不是各端各说各的。
 
-**世界书条目全量带出**（启用位与常量标志原样保留），「哪些算常驻」的过滤在 app 层——不该由
-解析层替 app 层决定。目录端口只有两件：列（按显示名排序）与载（未知名返回 `ErrCharacterNotFound`）。
+**世界书条目全量带出**（启用位、常量标志与检索字段原样保留），「哪些算常驻、哪些命中」的判定在
+app 层——不该由解析层替 app 层决定。检索字段的读法见下一节。目录端口只有两件：列（按显示名排序）
+与载（未知名返回 `ErrCharacterNotFound`）。
 
 **卡的三代规范**（字段与语义以 `spec_v1.md` / `spec_v2.md` / `SPEC_V3.md` 为准）：
 
@@ -933,9 +934,54 @@ source.charx   仅 .charx 来源：原压缩包整份留档
 不合规即报错并指出是哪一项；**不做「尽力修复」**。卡文本可以包含任意指令，这是角色卡的用途本身；
 防线在别处——导入不授予工具权限、不执行脚本、不读卡里引用的本地路径与 URL。
 
-**不做**：写回 PNG/JSON/`.charx`、编辑卡、导出卡、**世界书的关键词检索与非 constant 条目的任何
-激活**（常驻条目注入见上文，那不是检索）、`group_only_greetings`、表情/背景/语音资产、PNG 的
-`chara-ext-asset_`、从网络取资产、导入时自动开一轮对话。
+#### 世界书检索（D294）
+
+**目的**：卡里带 `keys` 的条目（非 `constant`）在过去一条都不进上下文，卡是残的。检索把「这段对话
+提到了什么」与「卡里怎么写的」对上，只把命中的条目带进本轮请求。
+
+**读哪些字段**（精简档，其余键保留不用）：
+
+| 卡里的键 | 含义 | 两代写法 |
+|---|---|---|
+| `keys` / `key` | 主触发词 | V3 用 `keys` 数组，老卡用 `key`，都读 |
+| `secondary_keys` / `keysecondary` | 次要触发词，与 `selective` 配合 | 同上 |
+| `content` | 命中后进上下文的正文 | — |
+| `comment` / `name` | 标题（`/lore` 与 `## <标题>` 小节用） | — |
+| `insertion_order` / `order` | 排序权重，大者优先 | — |
+| `position` | 插入位点 | 顶层字符串（`before_char` / `after_char`）与 `extensions.position` 数字（`0` / `1` / `4`）并存时**以数字为准** |
+| `depth` + `role` | `position=4`（按深度）时：插到倒数第几条之前、以 `system` / `user` / `assistant` 身份 | `extensions.depth` / `extensions.role` |
+| `case_sensitive` | 匹配是否区分大小写（缺键 = 不区分） | — |
+
+**不读**：`probability`、`useProbability`、`matchWholeWords`、`selectiveLogic` 的四值语义、
+`sticky` / `cooldown` / `delay`、`group`、条目级 `scan_depth`、递归控制位。这些键原样留在
+`card.json` 里，升级时不需要重新导入。
+
+**匹配**：对最近 `scan_depth` 条（缺省 4）**用户与助手正文**做子串比较——不含 system 节点、
+注入节点与工具输出（工具回填里偶然出现的词不该激活整卡设定）。`keys` 先做宏展开（`{{user}}` /
+`{{char}}`，§7.7）再比较；不展开就会拿字面 `{{user}}` 去匹配。空 `keys` 且非 `constant` 的条目
+永不命中。
+
+**位点**：`position` 只落两档——`after_char`（缺省）与按深度。`before_char` 与作者注两档一律按
+`after_char` 摆（`before_char` 会走到 persona 之前，而 persona 是快照、位置敏感；作者注两档要动
+`Tail` 的语义，收益不抵复杂度）。
+
+**预算与淘汰**：`characters.lore.budget_ratio`（占上下文预算的比例，缺省 0.15）。命中条目按
+`insertion_order` 降序装进预算，装不下就**整条不激活**——不截断正文，截断后条目语义会变形。
+`constant` 条目归 `@char.book`（上文），检索器一律跳过，同一段正文不进两次。
+
+**装配**：全部命中条目拼成**一条** system 消息（不是一条目一条），条目间以空行分隔、有 `comment`
+的加 `## <标题>`；顺序按 `insertion_order` 降序而非命中顺序——集合不变时这段前缀逐字节稳定。
+位置在 persona 之后、常驻声明之前（§7.1）。按深度那档插在最近的第 `depth` 条消息之前，身份由
+`role` 定。
+
+**失败与降级**：载卡失败（卡被删）→ 本轮没有世界书，人格与对话照常；预算为 0 或条目全装不下 →
+零条，`/lore` 说明是被预算挡掉的。
+
+**不做**：独立世界书文件（卡以外的东西）、群聊多卡、正则 `keys`、递归激活（命中条目的正文不再
+触发别的条目）、向量检索、`probability` 随机激活。
+
+**不做**：写回 PNG/JSON/`.charx`、编辑卡、导出卡、`group_only_greetings`、表情/背景/语音资产、
+PNG 的 `chara-ext-asset_`、从网络取资产、导入时自动开一轮对话。
 
 ### 5.18 `delegate.go` —— 外部代理转交端口（ACP 客户端，D244）
 
@@ -1417,8 +1463,15 @@ system（`characters.apply_post_history = false` 时不发）。因为它不在�
 | 内容 | 承载 | 位置 | 会被压缩挤掉 |
 |---|---|---|---|
 | 人格四件 + 卡 `system_prompt` + 常驻世界书 | persona 首节点（`@char.*` 模块展开，§4.1） | 序列最前 | 否（水位之上恒回传） |
+| 非 `constant` 的世界书条目（按关键词命中） | **装配期合成**的一条 system（不进树，D294） | persona 之后、常驻声明之前 | 否（每轮重算） |
 | `mes_example` | `Role=inject`、`Trust=host` 节点 | persona 之后 | 是 |
 | `post_history_instructions` | `Conversation.Tail` 元数据 | 序列最末 | 否（不在树里） |
+
+**世界书激活条目凭什么不进树**（D294）：它的命中集合**每轮都可能变**——落树等于每轮多一个节点，
+回溯时还会读到"当时命中了什么"与当前消息矛盾的旧集合。而它又必须让用户能核对，所以核对口是
+`/lore`（现算一次列命中条目）与 `/usage`（条数 + token），不是转写区。两条与之相邻的事实走相反
+路线：日期说明一天一条、落树（D292）；示例对话一次落树（D247）。判据是**频率**——每轮都变的东西
+不进树。
 
 **常量世界书进 persona 是有代价的选择**：它每轮都付 token、永不被压缩消化（§5.17 的上限
 一节记了为什么不设聚合上限）。压缩提示词明确要求「不要复述开场设定」（`compact_prompt.go`
