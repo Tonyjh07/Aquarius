@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-11 @ 3bd91cf -->
+<!-- docs-sync: 2026-11-11 @ 760c048 -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -255,15 +255,15 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 |---|---|---|---|
 | `decide.mode` | string | `off` | `off`（不启用）/ `shadow`（只记审计、不改行为）/ `on`（按阈值分流） |
 | `decide.base_url` | string | `""` | 端点根，如 `http://127.0.0.1:11434`；带不带 `/v1` 都认。`mode` 非 `off` 时必填 |
-| `decide.api_key` | string | `secret:AQUARIUS_DECIDE_API_KEY` | `secret:` 引用或明文；本机服务留空即可 |
+| `decide.api_key` | string | `""` | `secret:` 引用或明文；空 = 不带 `Authorization`，本机服务（Ollama、Unsloth）就这样 |
 | `decide.model` | string | `""` | 服务端认的模型名（`clef-flash` / `laya` 这类）。`mode` 非 `off` 时必填 |
 | `decide.timeout_ms` | int | `1500` | 单次判定总闸，`[200, 10000]`。超时即交回原确认，不重试、不问第二遍 |
 | `decide.warmup` | bool | `true` | 启动后异步发一次最小请求，把连接或模型拉热。本机冷启动 6.6 s，不预热则首次判定必然超时 |
-| `decide.task_chars` | int | `80` | 外部代理声称的任务截断到多少字符（`[0, 400]`，`0` = 不带） |
-| `decide.allow.risk_below` | float | `0.5` | 「明显该批」的 `risk` 上界，`[0, 2]`。score 三档的期望值，`0.5` 落在低档之内 |
-| `decide.allow.human_below` | float | `0.15` | 「明显该批」的 `needs_human` 上界，`[0, 1]` |
+| `decide.task_chars` | int | `80` | 外部代理声称的任务截断到多少字符（`[0, 400]`，显式 `0` = 不带这一行的内容） |
+| `decide.allow.risk_below` | float | `0.5` | 「明显该批」的 `risk` 上界，值域 `(0, 2]`；`0` 或省略 = 默认。score 三档的期望值，`0.5` 落在低档之内 |
+| `decide.allow.human_below` | float | `0.15` | 「明显该批」的 `needs_human` 上界，值域 `(0, 1]`；`0` 或省略 = 默认。不得大于 `deny.human_above` |
 | `decide.deny.enabled` | bool | `false` | 是否启用「明显该拒」这一档。**默认关**：同一批样本换一种问法，这一侧的召回会掉到一半，被误拒的又恰好是发版、部署这类事 |
-| `decide.deny.human_above` | float | `0.85` | `needs_human` 不小于此值即拒，`[0, 1]`；仅 `deny.enabled` 为真时生效 |
+| `decide.deny.human_above` | float | `0.85` | `needs_human` 不小于此值即拒，值域 `(0, 1]`；仅 `deny.enabled` 为真时生效 |
 
 三档分流，放行要求两个条件同时成立：
 
@@ -273,9 +273,17 @@ deny.enabled 且 needs_human >= deny.human_above                → 直接拒并
 其余                                                            → 照旧问你
 ```
 
-默认值来自本机 46 条语料 × 2 种问法的实测：该批 20/21 放行、该问与该拒零误放。换模型或
-换端点是常态，**调阈值前先跑一遍 `internal/adapter/decide/testdata/` 里那批语料**，看判定漂了
-多少再改，别凭感觉挪。
+默认值来自本机 46 条语料 × 2 种问法的实测：该批 15/15 放行、该拒 12 条零误放，该问的
+19 条里有 5 条被放行（那几条本来就没有客观危险，只是按你的权限档该问一句——模型看不到
+你的档位）。换模型或换端点是常态，**调阈值前先跑一遍 `internal/adapter/decide/testdata/`
+里那批语料**，看判定漂了多少再改，别凭感觉挪：
+
+```
+DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run TestCorpusBaseline -v
+```
+
+判定与基准不一致会逐条列出分数变化。`-args -decide.update` 重录基准——那是一次**有意的**
+接受漂移，不是让红灯变绿的手段。
 
 ```json
 "decide": {
@@ -293,11 +301,16 @@ deny.enabled 且 needs_human >= deny.human_above                → 直接拒并
 
 - **模板不生成这一段**。写了才生效，不写就当没有这个功能——实验性功能的默认形态是「不存在」。
 - **`mode` 非 `off` 但端点或模型名缺失**：启动留一行错，按 `off` 运行。不挡启动，也绝不放行。
-- **三句题面属于契约，写死在代码里**，不开放配置。换一个字都让分数整体位移（实测
-  `needs_human` 换措辞后拒绝侧召回从 11/12 掉到 6/12）。要改题面，等于整组阈值重标。
+- **三句题面与三题的先后都属于契约，写死在代码里**，不开放配置。换一个字都让分数整体
+  位移（实测 `needs_human` 换措辞后拒绝侧召回从 11/12 掉到 6/12）；连题目顺序换一下，同
+  一条只读调用的 `needs_human` 都会从 0.03 跳到 0.75。要改题面，等于整组阈值重标。
 - **`shadow` 与 `off` 的行为必须逐条一致**，差别只在审计里多一行。这是影子模式唯一能自证的地方。
-- 审计按判定落 `{model, verdict, risk, needs_human, thresholds, latency}`，`kind=decide`；
-  门禁批的与用户批的分开列。
+- 审计按判定落一行 `kind=decide`：结论、三个分数、当时生效的两个阈值与延迟。`shadow` 下
+  记的是「如果开着会怎么判」，和你的实际点击对着看就知道默认值该往哪挪。
+- **决策模型在无人值守之内**：无人值守开着时，决策模型判「可以」也照样拒——那条说的是
+  没人可批，不是可以自作主张。
+- 阈值写成互相矛盾的一组（`allow.human_below` 大于 `deny.human_above`）启动即报错：放行
+  先判，那样拒绝档永远不会生效。
 - 本机跑法：Ollama ≥ 0.35.1 拉 `clef-flash`，那是含 joint head 的真模型；LM Studio 加载同一份
   GGUF 只会聊天、给不出概率（文件里没有那个头）。
 

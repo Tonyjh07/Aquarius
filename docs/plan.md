@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-11 @ 3bd91cf -->
+<!-- docs-sync: 2026-11-11 @ 760c048 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -145,13 +145,15 @@ MCP 配置、密钥目录、系统目录。即便该工具设成自动放行，�
    （已交付；范围进了例外表本身（`Override.Dir`），给不给钮由判定侧的 `CanPersist` 说，
    设置页多一区「目录级放宽」作撤销入口，见 D282 的落地补充）
 
-**P4 决策模型**（默认 `off`，可与 P3 并行；配置面见 D290）
+**P4 决策模型**（默认 `off`，可与 P3 并行；配置面见 D290）—— 已交付
 
 6. `feat(decide): ask a decision model before troubling the user` —— 端口 + 装饰器 + 三档开关 + 审计；
-   阈值与超时从 `decide` 段读，缺省值在这一笔里给定（`risk < 0.5`、`needs_human < 0.15`、1500 ms）
-7. `feat(decide): talk the System One protocol so Jev and Clef both fit`
+   缺省值在这一笔里给定（`risk < 0.5`、`needs_human < 0.15`、1500 ms）
+7. `feat(decide): talk the System One protocol so Jev and Clef both fit` —— 协议客户端 + `decide` 段
+   + 装配（这一段在配置文档里先写好，接上客户端才生效）
 8. `test(decide): keep the calibration corpus as a regression baseline` —— 46 条语料进
-   `internal/adapter/decide/testdata/`，代码改动前后各跑一轮比对判定漂移
+   `internal/adapter/decide/testdata/`，代码改动前后各跑一轮比对判定漂移。**这批语料抓到了一处真错**：
+   题目顺序（`fix(decide): send the three questions in the calibrated order`，见 D290 决策 9）
 
 **P5 文档**
 

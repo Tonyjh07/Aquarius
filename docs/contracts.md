@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-11 @ 3bd91cf -->
+<!-- docs-sync: 2026-11-11 @ 760c048 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1212,17 +1212,35 @@ type Decision struct {
 
 - **端口只给分数，不给结论**。三档分流由装饰器按 `decide.allow.*` / `decide.deny.*` 算（D290）。
   适配器只负责「问一次、解析、返回」，换模型重标阈值时不必动适配器。
-- **三题一次问完**：`should_allow`（noul）、`risk`（score 三档）、`needs_human`（noul）。同一份
-  state 一次前向拿三个数。其中 `should_allow` 只进审计、不参与判定——实测 `should_allow` 与
+- **三题一次问完，顺序固定**：`should_allow`（noul）→ `risk`（score 三档）→ `needs_human`（noul）。
+  三块按序拼进同一次前向，位置会改变分数——同一份 state 只把先后换一下，`needs_human` 从
+  0.03 跳到 0.75（实测）。所以请求体用结构体而不是 map：map 的键序由编码器决定，等于把
+  判定交给一个语言细节。其中 `should_allow` 只进审计、不参与判定——实测 `should_allow` 与
   `needs_human` 的 Pearson 系数为 −0.93，留这一题是为阴影期重标定。
-- **state 是固定六行**（`origin` / `tool` / `op` / `target` / `risk` / `task`），三句题面写死在
-  适配器里，不开放配置。措辞换一个字分数就整体位移，改了等于整组阈值作废（D290 代价 ④）。
-- **错误即「没判成」**：超时、非 2xx、JSON 不合形状、题型不被认，一律返回 error，由装饰器交回
-  base 确认。**error 绝不等价于 Allow**（D281 第 5 条）。超时由装饰器按 `decide.timeout_ms`
-  设在 ctx 上，适配器不自己设。
+- **state 是固定六行**（`origin` / `tool` / `op` / `target` / `risk` / `task`），逐行解析，
+  所以字段里的换行要压平（否则目标路径能伪造出一行 `risk: low`）。`risk` 一行给的是工具
+  规格的两档（`safe` → low、`confirm` → medium），不是严重度——严重度由 `risk` 那道 score
+  题自己判。三句题面与三档锚点写死在适配器里，不开放配置。
+- **错误即「没判成」**：遇到超时、非 2xx、JSON 不合形状、题型不被认，适配器一律返回 error，
+  装饰器据此交回 base 确认。**error 绝不等价于 Allow**（D281 第 5 条）。超时由装饰器按
+  `decide.timeout_ms` 设在 ctx 上，适配器不自己设。
 
 `shadow` 档只落审计、不改行为；`off` 档整个端口不装配。两种档位下 `ToolRunner` 与 `acpgate`
 都不出现 `if decider != nil`。
+
+装饰器在**无人值守之内**：无人值守说的是「没人可批，越界即拒」，套在里面才不会被一次自动
+放行绕过去。只处理 `OriginTool` 与 `OriginAgent`——用户自己敲的命令没有可问的上下文。
+
+审计落 `kind=decide` 行：`name`（工具）、`origin`、`op`、`target`、`mode`（shadow / on）、
+`dur_ms`（判定延迟），以及一个嵌套对象 `decide`：
+
+```json
+"decide": {"verdict": "allow | ask | deny | error", "scored": true,
+           "risk": 0.03, "human": 0.02, "allow": 0.90,
+           "thr_risk": 0.5, "thr_human": 0.15, "model": "clef-flash"}
+```
+
+`scored=false` 表示没拿到分数（那三个零值不可当真）；`allow` 就是只进审计的 `should_allow`。
 
 ## 6. 插件架构
 
