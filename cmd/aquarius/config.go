@@ -198,6 +198,9 @@ type policyOverride struct {
 	Origin string `json:"origin"` // toolrun | acpgate
 	Tool   string `json:"tool,omitempty"`
 	Mode   string `json:"mode"` // ask | assist | allow
+	// Dir 收窄到的目录（D282）：空 = 整个工具，非空 = 只对该目录内的目标生效。
+	// 由确认框的「以后都允许」写进来（文件类工具），设置窗不设它、只管撤销。
+	Dir string `json:"dir,omitempty"`
 }
 
 // serviceEndpoint 一路外部服务「怎么连」：端点 + 密钥引用（D222）。

@@ -201,6 +201,7 @@ var enGuiSettingsTexts = map[string]string{
 
 	// Tools & MCP page (settings_tools.go).
 	"ui.settings.tool.builtin_updated":   "Built-in tool updated (live)",
+	"ui.settings.tool.dir_revoked":       "Directory allowance revoked",
 	"ui.settings.tool.plugin_updated":    "Plugin state updated",
 	"ui.settings.tool.trust_revoked":     "Trust revoked (confirmation is required on the next enable)",
 	"ui.settings.tool.cap_revoked":       "Capability revoked and plugin disabled (re-enabling runs confirmation again)",

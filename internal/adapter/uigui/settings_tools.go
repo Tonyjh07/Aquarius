@@ -30,6 +30,9 @@ type ToolsAdmin interface {
 	// SetAgentPolicy 外部代理整来源的放行档位（"" = 回默认）。ACP 的 fs/terminal 回调
 	// 没有稳定的工具名，这一维到不了工具粒度。
 	SetAgentPolicy(mode string) error
+	// RevokeDirPolicy 撤销一条目录级放宽（D282 的「以后都允许」在文件类工具上写下的
+	// 那条）。这是它唯一的撤销入口——确认框里点出来的东西，用户事后只在这里能找回来。
+	RevokeDirPolicy(tool, dir string) error
 	// SetPluginEnabled 插件启停（Enable 含信任门与 capability 授权流——会弹主窗确认）。
 	SetPluginEnabled(name string, enabled bool) error
 	// GrantCap 手动预授权一个能力（免一次确认；省确认不等于绕过风险，UI 需标注）。
@@ -53,6 +56,16 @@ type ToolsSnapshot struct {
 	AgentPolicy string
 	Builtins    []BuiltinToolState // 内置工具（含禁用态与放行档位）
 	Plugins     []PluginToolState  // MCP 插件（config / 插件目录两来源）
+	// DirRules 目录级放宽（D282）：「以后都允许」在文件类工具上只收窄到目标所在目录，
+	// 这些条目不在任何一行工具档位里，得单独列出来才看得见、撤得掉。
+	DirRules []DirRule
+}
+
+// DirRule 一条目录级放宽：工具 + 目录，两个字段一起构成身份。
+type DirRule struct {
+	Tool  string
+	Label string // 工具中文词表（展示）
+	Dir   string
 }
 
 // BuiltinToolState 单个内置工具。
@@ -137,6 +150,19 @@ func (f *settingsForm) syncToolsSnapshot() {
 func (u *UI) dispatchToolAction(f *settingsForm, key string) {
 	snap := f.toolsSnap
 	switch {
+	case strings.HasPrefix(key, "d:"):
+		// 目录级放宽的撤销（D282）：key = "d:<工具>:<目录>"。目录里带冒号（盘符后面那个），
+		// 所以只按**首个**冒号切工具名——同插件那一段的理由。
+		rest := strings.TrimPrefix(key, "d:")
+		if i := strings.Index(rest, ":"); i > 0 {
+			tool, dir := rest[:i], rest[i+1:]
+			u.toolsAsync(f, func() (string, error) {
+				if err := f.tools.RevokeDirPolicy(tool, dir); err != nil {
+					return "", err
+				}
+				return i18n.T("ui.settings.tool.dir_revoked"), nil
+			})
+		}
 	case strings.HasPrefix(key, "b:"): // 内置工具启停
 		name := strings.TrimPrefix(key, "b:")
 		for _, b := range snap.Builtins {

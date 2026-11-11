@@ -41,15 +41,23 @@ type Audit struct {
 // auditLine 单条审计记录（一行 JSON）。
 type auditLine struct {
 	TS    string `json:"ts"`              // RFC3339Nano（UTC）
-	Kind  string `json:"kind"`            // "llm" | "tool"
+	Kind  string `json:"kind"`            // "llm" | "tool" | "policy"
 	Model string `json:"model,omitempty"` // kind=llm：目标模型
-	Name  string `json:"name,omitempty"`  // kind=tool：工具名
+	Name  string `json:"name,omitempty"`  // kind=tool/policy：工具名
 	Msgs  int    `json:"msgs,omitempty"`  // kind=llm：请求消息条数
 	DurMS int64  `json:"dur_ms"`
 	OK    bool   `json:"ok"`
 	Err   string `json:"err,omitempty"`
 	In    int    `json:"in,omitempty"`  // usage.input_tokens（流末）
 	Out   int    `json:"out,omitempty"` // usage.output_tokens（流末）
+	// kind=policy：「以后都允许」写进策略表的那一条（D282）。谁、哪个工具、放宽到
+	// 哪一档、范围多宽，以及促使它的那次调用（操作 + 目标）——确认疲劳最容易发生在
+	// 这一刻，事后要能看出「这条是第 N 次弹窗时点的」。
+	Origin string `json:"origin,omitempty"`
+	Mode   string `json:"mode,omitempty"`
+	Dir    string `json:"dir,omitempty"`
+	Op     string `json:"op,omitempty"`
+	Target string `json:"target,omitempty"`
 }
 
 // NewAudit 打开（不存在则创建）审计文件；capBytes <=0 用默认上限。
@@ -294,6 +302,16 @@ func (t *auditTool) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 		DurMS: time.Since(start).Milliseconds(), OK: err == nil && res.OK, Err: errMsg,
 	})
 	return res, err
+}
+
+// Policy 记一条策略写入（D282「以后都允许」）：规范化的范围 + 触发它的那次调用。
+// applied=false 表示这次没写进配置（目标命中硬名单、或写盘失败），errMsg 说明原因——
+// 「用户以为放宽了、其实没有」必须能从审计里读出来。
+func (a *Audit) Policy(origin, tool, mode, dir, op, target string, applied bool, errMsg string) {
+	_ = a.record(auditLine{
+		TS: tsNow(), Kind: "policy", Name: tool, OK: applied, Err: errMsg,
+		Origin: origin, Mode: mode, Dir: dir, Op: op, Target: target,
+	})
 }
 
 // ---------------------------------------------------------------------------

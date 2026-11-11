@@ -24,10 +24,17 @@ type fakeToolsAdmin struct {
 	policyErr error
 }
 
+// Snapshot 快照按值交出（切片也复制）：真实实现每次现建行，装配根改状态时不会碰到
+// 界面已持有的那一份。直接返回共享切片会让「异步动作改快照」与「帧内读快照」踩同一块
+// 内存——那是测试替身自己的别名，不是被测代码的问题（-race 下当场报出来）。
 func (a *fakeToolsAdmin) Snapshot() ToolsSnapshot {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.snap
+	out := a.snap
+	out.Builtins = append([]BuiltinToolState(nil), a.snap.Builtins...)
+	out.Plugins = append([]PluginToolState(nil), a.snap.Plugins...)
+	out.DirRules = append([]DirRule(nil), a.snap.DirRules...)
+	return out
 }
 
 func (a *fakeToolsAdmin) SetBuiltinEnabled(name string, enabled bool) error {
@@ -57,6 +64,25 @@ func (a *fakeToolsAdmin) SetToolPolicy(name, mode string) error {
 	}
 	a.snap.Revision++
 	a.actions = append(a.actions, "policy:"+name+"/"+mode)
+	return nil
+}
+
+// RevokeDirPolicy 撤销一条目录级放宽：从快照里摘掉，动作记成 dirrevoke:<名>/<目录>。
+func (a *fakeToolsAdmin) RevokeDirPolicy(tool, dir string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.policyErr != nil {
+		return a.policyErr
+	}
+	out := a.snap.DirRules[:0]
+	for _, r := range a.snap.DirRules {
+		if r.Tool != tool || r.Dir != dir {
+			out = append(out, r)
+		}
+	}
+	a.snap.DirRules = out
+	a.snap.Revision++
+	a.actions = append(a.actions, "dirrevoke:"+tool+"/"+dir)
 	return nil
 }
 
@@ -285,6 +311,43 @@ func TestToolsPageSnapshotSync(t *testing.T) {
 	}
 	if got := ta.actionList(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("动作序列 = %v, want %v", got, want)
+	}
+}
+
+// TestToolsPageDirRules D282：目录级放宽单列一区（它不落在任何一行工具档位里），
+// 撤销走同一套异步动作 + 快照刷新。
+func TestToolsPageDirRules(t *testing.T) {
+	t.Parallel()
+	restoreLight(t)
+	snap := ToolsSnapshot{Revision: 1,
+		Builtins: []BuiltinToolState{{Name: "file_write", Label: "写文件", Enabled: true}},
+		DirRules: []DirRule{{Tool: "file_write", Label: "写文件", Dir: "/proj"}},
+	}
+	u, f, ta := toolsPageUI(t, snap)
+	f.navBtns[pageTools].Click()
+	toolsFrame(f, u)
+	if f.page != pageTools {
+		t.Fatalf("page = %d, want 工具与 MCP", f.page)
+	}
+	found := false
+	for _, r := range f.pageRows(pageTools) {
+		if r.kind == rowToolsDir {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("目录级放宽没有成行")
+	}
+
+	clickToolAction(t, u, f, ta, "d:file_write:/proj", "目录级放宽已撤销")
+	if len(f.toolsSnap.DirRules) != 0 {
+		t.Fatalf("撤销后快照仍有条目: %+v", f.toolsSnap.DirRules)
+	}
+	// 撤销后这一区整体消失（没有条目就不该留一个空标题）。
+	for _, r := range f.pageRows(pageTools) {
+		if r.kind == rowToolsDir {
+			t.Fatal("条目撤完仍留着目录行")
+		}
 	}
 }
 

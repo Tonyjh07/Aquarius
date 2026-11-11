@@ -284,6 +284,7 @@ type UI struct {
 	allowBtn    widget.Clickable
 	denyBtn     widget.Clickable
 	elevateBtn  widget.Clickable // D282：档位钮（工具确认时布局，点开档位列表）
+	persistBtn  widget.Clickable // D282：以后都允许（仅判定侧允许写策略表时布局）
 	// D282 档位列表（确认态胶囊上方的浮层）：展开态与四行点击件，仅事件循环
 	// goroutine 读写；行序与 permLevels 一一对应。
 	levelPickOpen bool

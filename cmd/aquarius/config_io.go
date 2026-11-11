@@ -506,6 +506,9 @@ func (c *cfgWriter) persistPolicyOverrides(list []policyOverride) error {
 		if ov.Tool != "" {
 			row["tool"] = ov.Tool // 空工具 = 整个来源（acpgate），不写键
 		}
+		if ov.Dir != "" {
+			row["dir"] = ov.Dir // 目录级放宽（D282）：只有「以后都允许」会写
+		}
 		rows = append(rows, row)
 	}
 	return persistConfig(c.path, func(generic map[string]any) {

@@ -7,6 +7,9 @@ var enGuiPageAdminTexts = map[string]string{
 	"ui.page.tools.section_builtin": "Built-in tools (toggles apply immediately, no restart)",
 	"ui.page.tools.section_mcp":     "MCP and plugins (from config / plugin directory)",
 	"ui.page.tools.section_policy":  "Allow policy for external agents",
+	"ui.page.tools.section_dir":     "Directory-wide allowances (from always-allow in the confirm bubble)",
+	"ui.page.tools.dir_rule":        "{tool}: no longer asked in this directory",
+	"ui.page.tools.dir_revoke":      "Revoke",
 	"ui.page.tools.no_plugins":      "No plugins declared. Add one to mcpServers in config, or drop a plugin into the plugin directory.",
 
 	// 外部代理页

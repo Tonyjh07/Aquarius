@@ -202,6 +202,7 @@ var zhGuiSettingsTexts = map[string]string{
 
 	// ── 工具与 MCP 页（settings_tools.go）。
 	"ui.settings.tool.builtin_updated":   "内置工具已更新（热生效）",
+	"ui.settings.tool.dir_revoked":       "目录级放宽已撤销",
 	"ui.settings.tool.plugin_updated":    "插件状态已更新",
 	"ui.settings.tool.trust_revoked":     "信任已撤销（下次启用重新确认）",
 	"ui.settings.tool.cap_revoked":       "已撤销能力并停用插件（再启用即重走确认）",

@@ -119,9 +119,16 @@ func (a *toolsAdmin) Snapshot() uigui.ToolsSnapshot {
 	if a.w.lvl != nil {
 		s.Level = a.w.lvl.Get().String()
 	}
-	// 例外表按来源摊开：本地工具落到各自行上，外部代理是整来源的一条。
+	// 例外表按来源摊开：本地工具落到各自行上，外部代理是整来源的一条；带目录的
+	// （D282「以后都允许」）不参与工具行——那是另一条更窄的规则，单独列。
 	perTool := map[string]string{}
 	for _, ov := range a.w.policy.Get() {
+		if ov.Dir != "" {
+			s.DirRules = append(s.DirRules, uigui.DirRule{
+				Tool: ov.Tool, Label: builtinToolLabel(ov.Tool), Dir: ov.Dir,
+			})
+			continue
+		}
 		switch ov.Origin {
 		case perm.OriginTool:
 			perTool[ov.Tool] = string(ov.Mode)
@@ -176,17 +183,23 @@ func (a *toolsAdmin) SetToolPolicy(name, mode string) error {
 	if !containsStr(builtinToolNames(), name) {
 		return fmt.Errorf("%s", i18n.Tf("cmd.tools.err.unknown_builtin", "name", strconv.Quote(name)))
 	}
-	return a.setPolicy(string(perm.OriginTool), name, mode)
+	return a.setPolicy(string(perm.OriginTool), name, "", mode)
 }
 
 // SetAgentPolicy 外部代理整来源的放行档位（"" = 回默认）。
 func (a *toolsAdmin) SetAgentPolicy(mode string) error {
-	return a.setPolicy(string(perm.OriginAgent), "", mode)
+	return a.setPolicy(string(perm.OriginAgent), "", "", mode)
+}
+
+// RevokeDirPolicy 撤销一条目录级放宽（D282）：这条规则由确认框写入，界面上只有
+// 工具页那一行能撤——mode 空即删除。
+func (a *toolsAdmin) RevokeDirPolicy(tool, dir string) error {
+	return a.setPolicy(string(perm.OriginTool), tool, dir, "")
 }
 
 // setPolicy 落盘 → 换表 → 递增 Revision（界面据此重建行）。
-func (a *toolsAdmin) setPolicy(origin, tool, mode string) error {
-	if err := a.w.setOverride(origin, tool, mode); err != nil {
+func (a *toolsAdmin) setPolicy(origin, tool, dir, mode string) error {
+	if err := a.w.setOverride(origin, tool, dir, mode); err != nil {
 		return err
 	}
 	a.w.toolsRev.Add(1)

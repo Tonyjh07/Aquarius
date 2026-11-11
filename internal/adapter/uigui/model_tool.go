@@ -179,6 +179,11 @@ func confirmEcho(ans port.ConfirmAnswer) string {
 		return i18n.Tf("ui.confirm.level_echo", "level", lv)
 	}
 	if ans.Allow {
+		if ans.Persist {
+			// D282：点了「以后都允许」——回显要把这半句带上，否则用户看到的与点普通的
+			// 允许一模一样，下次不再来问时他会以为哪里坏了。
+			return i18n.T("ui.confirm.always_echo")
+		}
 		return i18n.T("ui.common.allow")
 	}
 	if r := sanitizeControl(strings.TrimSpace(ans.Reason)); r != "" {

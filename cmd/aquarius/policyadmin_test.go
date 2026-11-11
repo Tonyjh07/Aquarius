@@ -12,7 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // newPolicyTestWiring 一个只带策略相关字段的 wiring（无窗口、无网络）。
@@ -142,6 +144,110 @@ func TestToolPolicyRejectsBadInput(t *testing.T) {
 	data, _ := os.ReadFile(path)
 	if strings.Contains(string(data), "overrides") {
 		t.Fatalf("失败路径不该落盘：%s", data)
+	}
+}
+
+// TestPermitOverrideWritesDirScope D282：确认框点了「以后都允许」——写一条带目录的
+// 例外；它与同一工具的工具级条目是两条规则，改一条不该顶掉另一条；审计要落一行。
+func TestPermitOverrideWritesDirScope(t *testing.T) {
+	t.Parallel()
+	w, a, path := newPolicyTestWiring(t, `{"permissions":{"level":"strict"}}`)
+	auditPath := filepath.Join(t.TempDir(), "audit.log")
+	au, err := decorate.NewAudit(auditPath, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.audit = au
+
+	dir := filepath.Join(string(filepath.Separator), "proj")
+	target := filepath.Join(dir, "a.txt")
+	ov := perm.AutoAllow(perm.OriginTool, "file_write", target, true)
+	w.permitOverride(ov, port.ConfirmRequest{Origin: port.OriginTool, Tool: "file_write",
+		Op: perm.OpWrite, HasOp: true, Target: target})
+
+	rows := readOverrides(t, path)
+	if len(rows) != 1 || rows[0]["dir"] != dir || rows[0]["mode"] != "allow" {
+		t.Fatalf("目录级条目 = %v", rows)
+	}
+	// 快照把它单列成 DirRules，不混进工具行的档位（那是另一条更宽的规则）。
+	snap := a.Snapshot()
+	if len(snap.DirRules) != 1 || snap.DirRules[0].Dir != dir {
+		t.Fatalf("快照 DirRules = %+v", snap.DirRules)
+	}
+	for _, b := range snap.Builtins {
+		if b.Name == "file_write" && b.Policy != "" {
+			t.Fatalf("目录级条目串到了工具行档位：%q", b.Policy)
+		}
+	}
+
+	// 再写工具级：两条并存，互不覆盖。
+	if err := a.SetToolPolicy("file_write", "ask"); err != nil {
+		t.Fatal(err)
+	}
+	rows = readOverrides(t, path)
+	if len(rows) != 2 {
+		t.Fatalf("工具级 + 目录级应并存：%v", rows)
+	}
+
+	// 撤销目录级：只剩工具级那条。
+	if err := a.RevokeDirPolicy("file_write", dir); err != nil {
+		t.Fatal(err)
+	}
+	rows = readOverrides(t, path)
+	if len(rows) != 1 || rows[0]["mode"] != "ask" {
+		t.Fatalf("撤销目录级后 = %v", rows)
+	}
+
+	// 审计：两行 policy（写成功一条、撤销一条），字段能对上。
+	if err := au.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 { // 撤销走 setOverride，不写 policy 审计（它不是一个「放宽」）
+		t.Fatalf("审计行数 = %d：%s", len(lines), data)
+	}
+	var line map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &line); err != nil {
+		t.Fatalf("审计行不是 JSON：%v", err)
+	}
+	if line["kind"] != "policy" || line["name"] != "file_write" || line["dir"] != dir ||
+		line["op"] != "write" || line["target"] != target || line["ok"] != true {
+		t.Fatalf("审计行 = %v", line)
+	}
+}
+
+// TestPermitOverrideSkipsHardTarget 目标命中硬名单：不写（那条规则永远轮不到，
+// 写进去只会在偏离清单里骗人），但审计留一行说清为什么。
+func TestPermitOverrideSkipsHardTarget(t *testing.T) {
+	t.Parallel()
+	w, a, path := newPolicyTestWiring(t, `{"permissions":{"level":"strict"}}`)
+	w.cfgPath = filepath.Join(string(filepath.Separator), "secret", "config.json")
+	auditPath := filepath.Join(t.TempDir(), "audit.log")
+	au, err := decorate.NewAudit(auditPath, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.audit = au
+
+	target := w.cfgPath // 配置本身就在敏感根里（改写它等于接管权限）
+	w.permitOverride(perm.AutoAllow(perm.OriginTool, "file_write", target, true),
+		port.ConfirmRequest{Origin: port.OriginTool, Tool: "file_write", Op: perm.OpWrite, HasOp: true, Target: target})
+
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "overrides") {
+		t.Fatalf("硬名单目标不该写盘：%s", data)
+	}
+	_ = a
+	if err := au.Close(); err != nil {
+		t.Fatal(err)
+	}
+	audit, _ := os.ReadFile(auditPath)
+	if !strings.Contains(string(audit), `"ok":false`) {
+		t.Fatalf("审计应记下没写成：%s", audit)
 	}
 }
 

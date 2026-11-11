@@ -318,18 +318,18 @@ func TestCursorHitsLogo(t *testing.T) {
 	// 「hwnd=0 退化直采」分支——真窗行为归 GUI 手工验收（D85）。
 }
 
-// TestConfirmBtnRects 确认态三钮矩形推导（D86）：默认窗宽 608×460 @1x 下胶囊右缘
-// 532，最右钮右缘 = 532−12（D86 右内边距，含光学校正），⌀36、间距 8、行内垂直居中；
-// 顺序左→右恒 [✗ 拒绝][✓ 允许][🔑 提升（仅 elevate）]。tips 直采（confirmTipAt）
-// 与布局期 Flex 排布共用同一套 dp 常量，此处锁几何契约。
+// TestConfirmBtnRects 确认态圆钮矩形推导（D86/D282）：默认窗宽 608×460 @1x 下胶囊
+// 右缘 532，最右钮右缘 = 532−12（D86 右内边距，含光学校正），⌀36、间距 8、行内垂直
+// 居中；顺序左→右恒 [✗ 拒绝][✓ 允许][🔑 选档位][✓✓ 以后都允许]，后两枚各自按条件
+// 出现、最右者贴边。tips 直采（confirmTipAt）与布局期 Flex 排布共用同一套 dp 常量。
 func TestConfirmBtnRects(t *testing.T) {
 	t.Parallel()
 	dp := func(d unit.Dp) int { return int(d) }
 	size := image.Pt(608, 460)
 
-	rects2 := confirmBtnRects(size, dp, false)
+	rects2 := confirmBtnRects(size, dp, false, false)
 	if len(rects2) != 2 {
-		t.Fatalf("len = %d, want 2（无提升钮）", len(rects2))
+		t.Fatalf("len = %d, want 2（无档位钮、无放宽钮）", len(rects2))
 	}
 	want2 := []image.Rectangle{
 		image.Rect(440, 402, 476, 438), // ✗ 拒绝
@@ -341,19 +341,41 @@ func TestConfirmBtnRects(t *testing.T) {
 		}
 	}
 
-	rects3 := confirmBtnRects(size, dp, true)
+	rects3 := confirmBtnRects(size, dp, true, false)
 	if len(rects3) != 3 {
 		t.Fatalf("len = %d, want 3", len(rects3))
 	}
 	want3 := []image.Rectangle{
 		image.Rect(396, 402, 432, 438), // ✗ 拒绝
 		image.Rect(440, 402, 476, 438), // ✓ 允许
-		image.Rect(484, 402, 520, 438), // 🔑 提升在最右
+		image.Rect(484, 402, 520, 438), // 🔑 选档位在最右
 	}
 	for i, r := range rects3 {
 		if r != want3[i] {
 			t.Fatalf("rects3[%d] = %v, want %v", i, r, want3[i])
 		}
+	}
+
+	rects4 := confirmBtnRects(size, dp, true, true)
+	if len(rects4) != 4 {
+		t.Fatalf("len = %d, want 4", len(rects4))
+	}
+	want4 := []image.Rectangle{
+		image.Rect(352, 402, 388, 438), // ✗ 拒绝
+		image.Rect(396, 402, 432, 438), // ✓ 允许
+		image.Rect(440, 402, 476, 438), // 🔑 选档位
+		image.Rect(484, 402, 520, 438), // ✓✓ 以后都允许（最右）
+	}
+	for i, r := range rects4 {
+		if r != want4[i] {
+			t.Fatalf("rects4[%d] = %v, want %v", i, r, want4[i])
+		}
+	}
+
+	// 只有放宽钮（非工具确认不会出现：CanPersist 只由 toolrun 置位）：几何仍成立。
+	rects3b := confirmBtnRects(size, dp, false, true)
+	if len(rects3b) != 3 || rects3b[2] != want4[3] {
+		t.Fatalf("rects3b = %v, want 3 枚且最右贴边 %v", rects3b, want4[3])
 	}
 }
 

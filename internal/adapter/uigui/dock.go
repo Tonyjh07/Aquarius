@@ -240,11 +240,11 @@ func inputBtnRects(size image.Point, dp func(unit.Dp) int, right bool) image.Rec
 	return image.Rect(a.Min.X, a.Min.Y, a.Min.X+h, a.Min.Y+h)
 }
 
-// confirmBtnRects 确认态三钮窗口系矩形（pill 几何推导，D86 tips 直采用）：
-// 左→右 = [✗ 拒绝][✓ 允许][🔑 提升权限]（elevate=false 时无第三枚），⌀36、间距 8、
-// 行内垂直居中；最右钮右缘 = 胶囊右缘 − 12dp（D86 右内边距，含圆形光学校正）。
+// confirmBtnRects 确认态圆钮窗口系矩形（pill 几何推导，D86 tips 直采用）：
+// 左→右 = [✗ 拒绝][✓ 允许][🔑 选档位][✓✓ 以后都允许]（后两枚按条件出现），⌀36、
+// 间距 8、行内垂直居中；最右钮右缘 = 胶囊右缘 − 12dp（D86 右内边距，含圆形光学校正）。
 // 与布局期的 Flex 排布是同一几何的两面（同 inputBtnRects 派生口径，非布局实测）。
-func confirmBtnRects(size image.Point, dp func(unit.Dp) int, elevate bool) []image.Rectangle {
+func confirmBtnRects(size image.Point, dp func(unit.Dp) int, levelable, persistable bool) []image.Rectangle {
 	_, pill, _ := inputRowRects(size.X, dp(pillTopDp), dp(inputRowDp), dp(inputGapDp), dp(sideMarginDp))
 	top := ballRect(size, dp).Min.Y // 行上 = logo 上（D49 换形不跳动，同 rowAnchor 口径）
 	d := dp(confirmBtnDp)
@@ -252,11 +252,14 @@ func confirmBtnRects(size image.Point, dp func(unit.Dp) int, elevate bool) []ima
 	right := pill.Max.X - dp(confirmBtnEdgeDp)
 	cy := top + dp(inputRowDp)/2
 	n := 2
-	if elevate {
-		n = 3
+	if levelable {
+		n++
+	}
+	if persistable {
+		n++
 	}
 	rects := make([]image.Rectangle, n)
-	for i := n - 1; i >= 0; i-- { // 从最右（提升/允许）往左回排
+	for i := n - 1; i >= 0; i-- { // 从最右（以后都允许/档位/允许）往左回排
 		rects[i] = image.Rect(right-d, cy-d/2, right, cy+d/2)
 		right -= d + gap
 	}

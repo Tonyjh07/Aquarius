@@ -13,6 +13,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
@@ -148,9 +149,10 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 				if u.m.confirm == nil {
 					return layout.Dimensions{}
 				}
-				// D86 确认动作区：左→右 [✗ 拒绝][✓ 允许][🔑 选档位]（⌀36、间距 8；
-				// 右内边距 12 = 胶囊 padding 16 − 4 圆形光学校正）。D282：🔑 点开档位
-				// 列表（不是一键提档），列表收起时 icon 不表示状态。
+				// D86 确认动作区：左→右 [✗ 拒绝][✓ 允许][🔑 选档位][✓✓ 以后都允许]
+				// （⌀36、间距 8；右内边距 12 = 胶囊 padding 16 − 4 圆形光学校正）。
+				// D282：🔑 点开档位列表（不是一键提档），列表收起时 icon 不表示状态；
+				// 第四颗只在判定侧允许写策略表时出现（硬名单里的目标放宽了也不生效）。
 				return layout.Inset{Left: unit.Dp(inputGapDp), Right: unit.Dp(-confirmBtnOptDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					kids := []layout.FlexChild{
 						layout.Rigid(confirmBtn(gtx, &u.denyBtn, tok().actionDeny, glyphDeny)),
@@ -163,6 +165,12 @@ func (u *UI) pillContent(gtx layout.Context) layout.Dimensions {
 						kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: unit.Dp(confirmBtnGapDp)}.Layout(gtx,
 								confirmBtn(gtx, &u.elevateBtn, tok().actionElevate, glyphKey))
+						}))
+					}
+					if u.confirmPersistable() {
+						kids = append(kids, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(confirmBtnGapDp)}.Layout(gtx,
+								confirmBtn(gtx, &u.persistBtn, tok().actionPersist, glyphAlways))
 						}))
 					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, kids...)
@@ -266,6 +274,22 @@ func glyphAllow(gtx layout.Context, d int, _ color.NRGBA) {
 	paint.FillShape(gtx.Ops, tok().whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(3))}.Op())
 }
 
+// glyphAlways ✓✓（两个勾，第二个右移半格）：读作「一直是这样」，与单勾的「允许」
+// 区分开又不至于靠图标猜意思——真正的含义在 tooltip 里。
+func glyphAlways(gtx layout.Context, d int, _ color.NRGBA) {
+	a := float32(d) * 0.15
+	cx, cy := float32(d)/2, float32(d)/2
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	for _, off := range []float32{-a * 1.7, a * 0.7} { // 两个勾，各占半个钮宽
+		x := cx + off
+		p.MoveTo(f32.Pt(x-a*0.7, cy))
+		p.LineTo(f32.Pt(x-a*0.2, cy+a*0.55))
+		p.LineTo(f32.Pt(x+a*0.9, cy-a*0.65))
+	}
+	paint.FillShape(gtx.Ops, tok().whiteText, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
+}
+
 // glyphKey 🔑（环头 + 杆 + 两齿；环 = 白实心圆挖钮底色孔——实色钮上与描边等效，
 // 本版 gio 无 clip.Circle，方盒 UniformRRect 即内切圆）。
 func glyphKey(gtx layout.Context, d int, fill color.NRGBA) {
@@ -304,25 +328,47 @@ func iconSlot(gtx layout.Context, draw func(gtx layout.Context, box image.Rectan
 // 点了没用的钮。
 func (u *UI) confirmLevelable() bool { return u.levelPickable() }
 
+// confirmPersistable 「以后都允许」钮可见性（D282）：判定侧说这次可以写策略表才算——
+// 目标命中硬名单时它置 false（写了也永远轮不到，点了只会让人以为放宽了）。
+func (u *UI) confirmPersistable() bool {
+	return u.m.confirm != nil && u.m.confirm.req.CanPersist
+}
+
+// confirmPersistTip 第四颗钮的 tooltip：把**它到底放宽到哪**说清（D282 第 6 条）。
+// 范围算在 perm.AutoAllow 里，与写进配置的那一条同源——两处各算一遍迟早对不上。
+func (u *UI) confirmPersistTip() string {
+	req := u.m.confirm.req
+	ov := perm.AutoAllow(perm.OriginTool, req.Tool, req.Target, req.HasOp)
+	if ov.Dir != "" {
+		return i18n.Tf("ui.confirm.always_dir", "name", req.Tool, "dir", ov.Dir)
+	}
+	return i18n.Tf("ui.confirm.always", "name", req.Tool)
+}
+
 // toggleLevelPick 开/收档位列表（🔑 是开关，不是一键提档：D282 改成直选之后，
 // 再点一次应当是收回，而不是又选一档）。
 func (u *UI) toggleLevelPick() {
 	u.levelPickOpen = !u.levelPickOpen
 }
 
-// confirmTipAt 确认态三钮 tips 判定（D86）：窗口系矩形直采 × OS 命中直证（D85）。
+// confirmTipAt 确认态圆钮 tips 判定（D86）：窗口系矩形直采 × OS 命中直证（D85）。
 // 返回 (tooltip 文本, 是否命中)；按钮在胶囊右段，tip 右对齐。
 func (u *UI) confirmTipAt(cur point) (string, bool) {
 	if u.frameSize.X <= 0 || u.frameMetric.PxPerDp <= 0 {
 		return "", false
 	}
-	levelable := u.confirmLevelable()
-	rects := confirmBtnRects(u.frameSize, u.frameMetric.Dp, levelable)
+	levelable, persistable := u.confirmLevelable(), u.confirmPersistable()
+	rects := confirmBtnRects(u.frameSize, u.frameMetric.Dp, levelable, persistable)
 	texts := make([]string, len(rects))
 	texts[0] = i18n.T("ui.common.deny")
 	texts[1] = i18n.T("ui.common.allow")
+	next := 2
 	if levelable {
-		texts[2] = i18n.T("ui.confirm.elevate")
+		texts[next] = i18n.T("ui.confirm.elevate")
+		next++
+	}
+	if persistable {
+		texts[next] = u.confirmPersistTip()
 	}
 	for i, r := range rects {
 		if u.cursorHitsRect(r, cur) {

@@ -176,6 +176,11 @@ func (u *UI) updateClicks(gtx layout.Context) {
 	if u.elevateBtn.Clicked(gtx) {
 		u.toggleLevelPick() // D282：开/收档位列表（选完由 runner 按新档重判）
 	}
+	if u.persistBtn.Clicked(gtx) && u.confirmPersistable() {
+		// D282：放行这一次 + 让判定侧把范围写进策略表。范围（工具级还是目录级）由
+		// runner 算，界面只说「别再问这个」。
+		u.m.replyConfirm(port.ConfirmAnswer{Allow: true, Persist: true})
+	}
 	if u.m.confirm != nil && u.levelPickOpen {
 		for i := range u.levelBtns {
 			if i < len(permLevels) && u.levelBtns[i].Clicked(gtx) {

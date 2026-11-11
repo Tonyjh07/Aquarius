@@ -600,6 +600,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		Confirmer:   confirmer,
 		Level:       w.lvl.Get,
 		Overrides:   w.policy.Get,
+		Permit:      w.permitOverride,
 		Sensitive:   w.sensitiveRoots(),
 		SandboxPath: w.sandboxDir,
 		Timeout:     toolTimeout,

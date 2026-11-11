@@ -47,7 +47,8 @@ type palette struct {
 	// 确认态三钮（D86）：实色圆白字，两版同值（饱和实色，两主题对比度均足）。
 	actionDeny    color.NRGBA // ✗ 拒绝
 	actionAllow   color.NRGBA // ✓ 允许
-	actionElevate color.NRGBA // 🔑 提升权限
+	actionElevate color.NRGBA // 🔑 选档位
+	actionPersist color.NRGBA // ✓✓ 以后都允许
 	tipBg         color.NRGBA // 悬浮 tips 底色
 	// 浮层面（D282 起：提示卡 / 补全候选 / 档位列表共用一套）——跟主题走，不固定深色：
 	// 浅色版是白面 + 细描边，深色版是比窗底亮一阶的深面 + 更深一档的描边。浮层在
@@ -101,6 +102,7 @@ func lightPalette() palette {
 		actionDeny:    color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
 		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
 		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
+		actionPersist: color.NRGBA{R: 0x2C, G: 0x6F, B: 0xD1, A: 0xFF},
 		tipBg:         color.NRGBA{R: 0x26, G: 0x2A, B: 0x2E, A: 0xFF},
 		// 浮层：白面 + 细边（压在 #ECF0F3 的窗底上仍分得清）；选中行浅蓝灰一档。
 		popBg:     color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
@@ -146,6 +148,7 @@ func darkPalette() palette {
 		actionDeny:    color.NRGBA{R: 0xD9, G: 0x3A, B: 0x3A, A: 0xFF},
 		actionAllow:   color.NRGBA{R: 0x2E, G: 0xA8, B: 0x57, A: 0xFF},
 		actionElevate: color.NRGBA{R: 0xF5, G: 0xA6, B: 0x23, A: 0xFF},
+		actionPersist: color.NRGBA{R: 0x2C, G: 0x6F, B: 0xD1, A: 0xFF},
 		tipBg:         color.NRGBA{R: 0x2E, G: 0x32, B: 0x38, A: 0xFF},
 		// 浮层：比窗底（#15181C）亮一阶的深面，描边再亮一档；深底上文字取亮灰。
 		popBg:     color.NRGBA{R: 0x2A, G: 0x2F, B: 0x36, A: 0xFF},

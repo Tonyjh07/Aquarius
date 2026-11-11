@@ -39,6 +39,14 @@ func (toolsPage) Rows(f *settingsForm) []rowDesc {
 	if len(f.toolsSnap.Plugins) == 0 {
 		rows = append(rows, rowDesc{kind: rowToolsEmpty, text: i18n.T("ui.page.tools.no_plugins")})
 	}
+	// 目录级放宽（D282）：确认框里点「以后都允许」写进来的条目，只在某个目录内生效，
+	// 不落在任何一行工具档位里——单独列出来，撤销出口也在这里。
+	if len(f.toolsSnap.DirRules) > 0 {
+		rows = append(rows, sec(i18n.T("ui.page.tools.section_dir")))
+		for i := range f.toolsSnap.DirRules {
+			rows = append(rows, rowDesc{kind: rowToolsDir, field: i})
+		}
+	}
 	// 外部代理没有稳定的工具名（ACP 的 fs/terminal 回调），只能按整个来源设一条。
 	rows = append(rows, sec(i18n.T("ui.page.tools.section_policy")),
 		rowDesc{kind: rowToolsAgent}, rowDesc{kind: rowToolsHard})
@@ -63,6 +71,11 @@ func (toolsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 		return f.policyConfirmRow(gtx, th, f.toolsSnap.Builtins[r.field].Name), true
 	case rowToolsAgent:
 		return f.agentPolicyRow(gtx, th), true
+	case rowToolsDir:
+		if r.field < 0 || r.field >= len(f.toolsSnap.DirRules) {
+			return layout.Dimensions{}, true
+		}
+		return f.dirRuleRow(gtx, th, f.toolsSnap.DirRules[r.field]), true
 	case rowPlugin:
 		if r.field < 0 || r.field >= len(f.toolsSnap.Plugins) {
 			return layout.Dimensions{}, true
@@ -130,6 +143,34 @@ func (f *settingsForm) policyNoteRow(gtx layout.Context, th *material.Theme) lay
 	l := material.Body2(th, i18n.Tf("ui.page.policy.note", "level", f.toolsSnap.Level))
 	l.Color = paperOf().text3
 	return l.Layout(gtx)
+}
+
+// dirRuleRow 一条目录级放宽（D282）：[工具名 · 目录][撤销]。
+//
+// 这一行的存在本身就是提示——用户是在弹框里点的「以后都允许」，隔几天不会记得点过，
+// 目录要写全（不缩写、不换成「该项目」之类），否则他认不出这是哪个目录。
+func (f *settingsForm) dirRuleRow(gtx layout.Context, th *material.Theme, rule DirRule) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						l := material.Body1(th, i18n.Tf("ui.page.tools.dir_rule", "tool", rule.Label))
+						return l.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						l := material.Body2(th, rule.Dir)
+						l.Color = tok().textDim
+						return l.Layout(gtx)
+					}),
+				)
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return f.toolActionButton(gtx, th, "d:"+rule.Tool+":"+rule.Dir,
+				i18n.T("ui.page.tools.dir_revoke"))
+		}),
+	)
 }
 
 // agentPolicyRow 外部代理整来源一行：名字固定是「全部请求」。

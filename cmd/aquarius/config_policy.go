@@ -16,6 +16,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // parsePolicyOverrides 校验并转换配置里的例外表。
@@ -40,7 +41,13 @@ func parsePolicyOverrides(raw []policyOverride) (perm.Overrides, error) {
 		if tool == "" && origin == perm.OriginTool {
 			return nil, errors.New(i18n.Tf("perm.err.override_tool", "index", i))
 		}
-		out = append(out, perm.Override{Origin: origin, Tool: tool, Mode: mode})
+		dir := strings.TrimSpace(ov.Dir)
+		if dir != "" && tool == "" {
+			// 目录级条目必须挂在具体工具上：来源级的「整个代理只在这个目录里放行」
+			// 说不清是谁的路径（ACP 的回调连稳定工具名都没有）。
+			return nil, errors.New(i18n.Tf("perm.err.override_dir_tool", "index", i))
+		}
+		out = append(out, perm.Override{Origin: origin, Tool: tool, Mode: mode, Dir: dir})
 	}
 	return out, nil
 }
@@ -100,11 +107,15 @@ func systemRoots() []string {
 
 // setOverride 写入或删除一条例外（mode 空 = 删除）：校验 → 落盘 → 换表。
 //
+// 身份是 (来源, 工具, 目录) 三项：目录级条目（D282「以后都允许」写进来的）与同一个
+// 工具的工具级条目是两条不同的规则，改一条不该把另一条顶掉。
+//
 // 先落盘再换表：写文件失败时用户看到的是「策略没变」，而不是「界面上变了、重启后
 // 又变回去」。与工具启停的写回顺序一致。
-func (w *wiring) setOverride(origin, tool, mode string) error {
+func (w *wiring) setOverride(origin, tool, dir, mode string) error {
 	origin = strings.TrimSpace(origin)
 	tool = strings.TrimSpace(tool)
+	dir = strings.TrimSpace(dir)
 	o, err := perm.ParseOrigin(origin)
 	if err != nil {
 		return err
@@ -113,6 +124,9 @@ func (w *wiring) setOverride(origin, tool, mode string) error {
 		// 本地工具没有「整来源」这一档：那一维的意义是「某个具体工具带什么档」，
 		// 空工具只对外部代理成立（它的回调没有稳定工具名）。
 		return fmt.Errorf("%s", i18n.T("cmd.policy.err.need_tool"))
+	}
+	if dir != "" && tool == "" {
+		return fmt.Errorf("%s", i18n.T("perm.err.override_dir_tool"))
 	}
 	var m perm.Mode
 	if mode != "" {
@@ -125,7 +139,7 @@ func (w *wiring) setOverride(origin, tool, mode string) error {
 	list := make([]policyOverride, 0, len(cur)+1)
 	replaced := false
 	for _, ov := range cur {
-		if ov.Origin == origin && ov.Tool == tool {
+		if ov.Origin == origin && ov.Tool == tool && strings.TrimSpace(ov.Dir) == dir {
 			replaced = true
 			if mode != "" { // 删除 = 跳过这一条
 				ov.Mode = string(m)
@@ -136,7 +150,7 @@ func (w *wiring) setOverride(origin, tool, mode string) error {
 		list = append(list, ov)
 	}
 	if !replaced && mode != "" {
-		list = append(list, policyOverride{Origin: origin, Tool: tool, Mode: string(m)})
+		list = append(list, policyOverride{Origin: origin, Tool: tool, Mode: string(m), Dir: dir})
 	}
 	overrides, err := parsePolicyOverrides(list)
 	if err != nil {
@@ -148,4 +162,38 @@ func (w *wiring) setOverride(origin, tool, mode string) error {
 	w.cfg.Permissions.Overrides = list
 	w.policy.Set(overrides)
 	return nil
+}
+
+// permitOverride 确认框里点了「以后都允许」（D282）：写策略表 + 落一条审计。
+//
+// 尽力而为：写失败只记日志与审计，不向调用方报错——用户点的是「允许」，本次已经放行，
+// 写不进配置不该变成一次失败的工具调用。目标命中硬名单时不写（那条规则永远轮不到，
+// 写进去只会在偏离清单里骗人），只留审计。
+func (w *wiring) permitOverride(ov perm.Override, req port.ConfirmRequest) {
+	if perm.HardTarget(req.Target, w.sensitiveRoots()) {
+		// 不写：这条规则永远轮不到（判定侧照样降回询问），写进去只会在偏离清单里骗人。
+		w.auditPolicy(ov, req, false, "hard target: the rule would be overridden anyway")
+		return
+	}
+	if err := w.setOverride(string(ov.Origin), ov.Tool, ov.Dir, string(ov.Mode)); err != nil {
+		w.logFrom(port.LogWarn, "perm", "log.perm.policy_persist_failed", "log.act.allow_once",
+			"tool", ov.Tool, "err", err.Error())
+		w.auditPolicy(ov, req, false, err.Error())
+		return
+	}
+	w.toolsRev.Add(1) // 设置窗据此重建行（偏离清单里多了这一条）
+	w.auditPolicy(ov, req, true, "")
+}
+
+// auditPolicy 「以后都允许」的审计行（D282）：写成功、被硬名单拦下、写盘失败都记一条。
+// 这是这条全球永久放宽唯一「事后看得见」的出口——它的代价只能靠文案与审计兜。
+func (w *wiring) auditPolicy(ov perm.Override, req port.ConfirmRequest, applied bool, why string) {
+	if w.audit == nil {
+		return
+	}
+	op := ""
+	if req.HasOp {
+		op = req.Op.String()
+	}
+	w.audit.Policy(string(ov.Origin), ov.Tool, string(ov.Mode), ov.Dir, op, req.Target, applied, why)
 }

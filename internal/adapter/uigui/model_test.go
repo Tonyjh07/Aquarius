@@ -3,11 +3,13 @@ package uigui
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -192,6 +194,59 @@ func TestConfirmLevelable(t *testing.T) {
 		make(chan port.ConfirmAnswer, 1))
 	if !u.confirmLevelable() {
 		t.Fatal("工具确认应显示档位钮（满档也要能降）")
+	}
+}
+
+// TestConfirmPersistable D282：「以后都允许」只看判定侧那句话（CanPersist）——目标
+// 命中硬名单时判定侧置 false，界面不能自作主张给钮；tooltip 要说清放宽到哪。
+func TestConfirmPersistable(t *testing.T) {
+	t.Parallel()
+	u := newFrameUI()
+	m := u.m
+
+	// 判定侧没说可以写：不给钮。
+	m.startConfirm(port.ConfirmRequest{Origin: port.OriginTool, Tool: "file_write", Prompt: "允许写 a.txt？"},
+		make(chan port.ConfirmAnswer, 1))
+	if u.confirmPersistable() {
+		t.Fatal("CanPersist=false 时不该出现放宽钮")
+	}
+	m.replyConfirm(port.ConfirmAnswer{})
+
+	// 文件类：范围收窄到目录，tooltip 把目录写出来。
+	target := filepath.Join(string(filepath.Separator), "proj", "sub", "a.txt")
+	m.startConfirm(port.ConfirmRequest{
+		Origin: port.OriginTool, Tool: "file_write", Target: target, HasOp: true,
+		Op: perm.OpWrite, CanPersist: true, Prompt: "允许写 a.txt？",
+	}, make(chan port.ConfirmAnswer, 1))
+	if !u.confirmPersistable() {
+		t.Fatal("CanPersist=true 时应出现放宽钮")
+	}
+	want := i18n.Tf("ui.confirm.always_dir", "name", "file_write", "dir", filepath.Dir(target))
+	if got := u.confirmPersistTip(); got != want {
+		t.Fatalf("tip = %q, want %q", got, want)
+	}
+	m.replyConfirm(port.ConfirmAnswer{})
+
+	// 执行类：没有路径可收窄，tooltip 只提工具名。
+	m.startConfirm(port.ConfirmRequest{
+		Origin: port.OriginTool, Tool: "term_exec", CanPersist: true, Prompt: "允许执行？",
+	}, make(chan port.ConfirmAnswer, 1))
+	if got, want := u.confirmPersistTip(), i18n.Tf("ui.confirm.always", "name", "term_exec"); got != want {
+		t.Fatalf("tip = %q, want %q", got, want)
+	}
+}
+
+// TestConfirmPersistEcho 点「以后都允许」的回显要与普通「允许」区分开：否则下次
+// 不再弹框时，用户会以为是哪里坏了（D282）。
+func TestConfirmPersistEcho(t *testing.T) {
+	t.Parallel()
+	plain := confirmEcho(port.ConfirmAnswer{Allow: true})
+	keep := confirmEcho(port.ConfirmAnswer{Allow: true, Persist: true})
+	if keep == plain {
+		t.Fatalf("回显相同：%q", keep)
+	}
+	if want := i18n.T("ui.confirm.always_echo"); keep != want {
+		t.Fatalf("回显 = %q, want %q", keep, want)
 	}
 }
 

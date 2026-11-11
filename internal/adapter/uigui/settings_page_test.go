@@ -119,8 +119,13 @@ func TestSettingsNativeRowsCoveredEveryPage(t *testing.T) {
 	secretsAdmin := &fakeSecretsAdmin{snap: SecretsSnapshot{Entries: []SecretEntry{{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"}}}}
 	secretsAdmin.rev = 1 // 让开窗/帧首同步即采纳（Revision 变了）
 	u := newHeadless(t, Options{
-		Settings:    func() SettingsSnapshot { return promptSnapshot() },
-		Tools:       &fakeToolsAdmin{snap: ToolsSnapshot{Revision: 1, Builtins: []BuiltinToolState{{Name: "think", Enabled: true}}, Plugins: []PluginToolState{{Name: "p", Source: "config", Enabled: true}}}},
+		Settings: func() SettingsSnapshot { return promptSnapshot() },
+		Tools: &fakeToolsAdmin{snap: ToolsSnapshot{
+			Revision: 1,
+			Builtins: []BuiltinToolState{{Name: "think", Enabled: true}},
+			Plugins:  []PluginToolState{{Name: "p", Source: "config", Enabled: true}},
+			DirRules: []DirRule{{Tool: "file_write", Label: "写文件", Dir: "/proj"}},
+		}},
 		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "a", Primary: true}}},
 		Secrets:     secretsAdmin,
 		Skills: &fakeSkillsAdmin{snap: SkillsSnapshot{

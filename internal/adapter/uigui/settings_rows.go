@@ -115,6 +115,7 @@ const (
 	rowToolsAgent   // 外部代理 · 全部请求（一个档位分段）
 	rowToolsHard    // 硬名单说明（text 忽略；文案在 Body 内）
 	rowToolsConfirm // 执行类自动放行的行内二次确认（field = 内置工具下标）
+	rowToolsDir     // 目录级放宽一条（field = 快照 DirRules 下标；带撤销钮）
 	// 外部代理页（D270）：清单逐条（命令行编辑 + 启用/设缺省）+ 页级「重新检测」。
 	// A1 起每条可展开为字段级编辑（命令 / 参数 / 环境 / 工作目录 / 根集 + 测试连接）。
 	rowDlgItem    // 一个代理的头部（field = Agents 下标）
