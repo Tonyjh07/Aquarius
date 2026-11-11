@@ -12,28 +12,34 @@
 //
 // 用法：
 //
-//	go run ./cmd/docsync                  # 只刷新工作区里改过的文档（提交前跑）
+//	go run ./cmd/docsync                  # 逐篇校正（提交前或事后补跑都行）
 //	go run ./cmd/docsync -commit <提交>    # 只刷新该提交改过的文档（提交后补）
 //	go run ./cmd/docsync -all             # 全部文档统一刷成 -date/-rev
 //	go run ./cmd/docsync -check           # 只检查每个文档都有标记（门禁）
 //
 // 语义：标记里的提交是**该文档内容对应的代码基线**。
 //
-//   - 默认模式（工作区）：只刷新「去掉标记后的内容与 HEAD 版本不同」的文档，标记写
-//     HEAD——文档本身不改代码，指向提交前的代码基线才有意义。提交前跑一次，标记就
-//     跟着进这笔提交；重复跑不会把已同步的文档再刷一遍。
+//   - 默认模式（逐篇）：工作区里内容改过的篇目写「今天 + HEAD」——文档本身不改代码，
+//     指向提交前的基线才有意义，提交之后 HEAD 正好成为那笔提交的父提交；工作区干净的
+//     篇目去 git 历史里找**最近一次内容改动**，日期取那次提交、哈希取该提交的父提交。
+//     两种情形算出来的值一致，所以提交前跑、提交后补跑都落在同一个标记上，重复跑不改
+//     任何文件。
 //   - `-commit` 模式：读该提交的变更清单，只挑其中改过的文档，日期取该提交的日期、
-//     哈希取它的父提交（同样是代码基线）。因为标记会改文件内容，跑完要
+//     哈希取该提交的父提交（同样是代码基线）。因为标记会改文件内容，跑完要
 //     `git commit --amend --no-edit` 把标记并回那笔提交。
 //
-// 没改过的文档保持旧标记不动（仍然准确），避免每次提交都改一遍全仓文档。
-// 缺标记的文档无论是否改过都补上，日期/哈希取它最后一次提交（同样是父提交）。
+// 历史扫描按「去掉标记行之后的内容」比对，只改标记的提交不算改动——否则一次批量补
+// 标记的提交会把全仓日期都算成同一天。缺标记的文档也走同一条规则补齐。
+//
+// `-date`/`-rev` 只作用于这次要刷新哪几篇：默认模式下是工作区里改过的，`-all` 下是全部；
+// 工作区干净的篇目一律以历史为准，免得手填的值覆盖掉可核对的记录。
 //
 // 覆盖范围：`docs/` 下全部 `*.md`（含子目录，如 `docs/releases/`）与仓库根的
 // `README.md`。`AGENTS.md` 不参与——它与代码同批修改，标记会立刻过时。
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -42,6 +48,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -120,7 +127,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("docsync", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	check := fs.Bool("check", false, "只检查：有文档缺标记则退出 1（不写文件）")
-	all := fs.Bool("all", false, "全部文档统一刷成 -date/-rev（默认只刷新工作区改过的文档）")
+	all := fs.Bool("all", false, "全部文档统一刷成 -date/-rev（默认逐篇判定）")
 	commit := fs.String("commit", "", "只刷新该提交改过的文档（哈希取它的父提交）")
 	date := fs.String("date", "", "更新日期 YYYY-MM-DD（默认今天 / -commit 取该提交日期）")
 	rev := fs.String("rev", "", "对应提交（默认 HEAD；-commit 取它的父提交）")
@@ -163,7 +170,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	day := *date
 	sha := *rev
-	selected := map[string]bool{}
+	today := time.Now().Format("2006-01-02")
+	picked := make(map[string]want, len(files))
 	switch {
 	case *commit != "":
 		// 读该提交的变更清单，只挑文档；日期/基线取该提交与它的父提交。
@@ -181,72 +189,108 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		for _, p := range changed {
-			selected[p] = true
-		}
-		if len(selected) == 0 {
+		if len(changed) == 0 {
 			fmt.Fprintf(stdout, "提交 %s 没有改动文档，无需同步\n", *commit)
 			return 0
 		}
+		for _, rel := range changed {
+			picked[rel] = want{day, sha}
+		}
 	case *all:
+		if day == "" {
+			day = today
+		}
+		if sha == "" {
+			if sha, err = gitRev(base); err != nil {
+				return fail(stderr, err)
+			}
+		}
 		for _, p := range files {
-			selected[relOf(base, p)] = true
+			picked[relOf(base, p)] = want{day, sha}
 		}
 	default:
-		// 工作区模式：逐个比对「去掉标记后的内容」与 HEAD 版本——只有内容真的改过
-		// （或文件是新增的）才刷新标记。这样重复运行不会把刚补的历史标记刷成今天。
+		// 逐篇：工作区里内容改过的用今天 + HEAD（提交后即为父提交），其余去 git 历史里
+		// 找最近一次内容改动。两种情况的值一致，所以提交前跑与事后补跑等价。
+		head := sha
+		if head == "" {
+			if head, err = gitRev(base); err != nil {
+				return fail(stderr, err)
+			}
+		}
+		hist, err := loadHistory(base)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		cf, err := openCatFile(base)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		defer cf.Close()
 		for _, p := range files {
 			rel := relOf(base, p)
 			raw, err := os.ReadFile(p)
 			if err != nil {
 				return fail(stderr, err)
 			}
-			old, tracked := headContent(base, rel)
-			if !tracked || stripMarker(string(raw)) != stripMarker(old) {
-				selected[rel] = true
+			old, tracked, err := cf.get(head + ":" + rel)
+			if err != nil {
+				return fail(stderr, err)
 			}
-		}
-	}
-
-	if day == "" {
-		day = time.Now().Format("2006-01-02")
-	}
-	if sha == "" {
-		if sha, err = gitRev(base); err != nil {
-			return fail(stderr, err)
+			if !tracked || stripMarker(string(raw)) != stripMarker(old) {
+				d, r := day, sha
+				if d == "" {
+					d = today
+				}
+				if r == "" {
+					r = head
+				}
+				picked[rel] = want{d, r}
+				continue
+			}
+			// 工作区干净：历史里最近一次内容改动（只改标记行的提交会被跳过）。
+			e, ok, err := lastContent(cf, rel, hist[rel])
+			if err != nil {
+				return fail(stderr, err)
+			}
+			if !ok {
+				if !hasMarker(string(raw)) {
+					return fail(stderr, fmt.Errorf("没有提交历史: %s", rel)) // 补不上
+				}
+				continue // 读不到历史时保持旧标记，不凭空猜
+			}
+			picked[rel] = want{e.day, e.rev()}
 		}
 	}
 
 	updated := 0
 	for _, path := range files {
 		rel := relOf(base, path)
+		w, ok := picked[rel]
+		if !ok {
+			continue
+		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return fail(stderr, err)
 		}
-		src := string(raw)
-		d, r := day, sha
-		if !selected[rel] {
-			// 未选中：已有标记就保持原样；缺标记则用该文件最后一次提交补（贴近事实）。
-			if hasMarker(src) {
-				continue
-			}
-			if cd, cr, err := lastCommit(base, path); err == nil {
-				d, r = cd, cr
-			}
-		}
-		next := syncText(src, d, r)
-		if next == src {
+		next := syncText(string(raw), w.date, w.rev)
+		if next == string(raw) {
 			continue
 		}
 		if err := os.WriteFile(path, []byte(next), 0o644); err != nil {
 			return fail(stderr, err)
 		}
-		fmt.Fprintf(stdout, "已更新 %s → %s @ %s\n", rel, d, r)
+		fmt.Fprintf(stdout, "已更新 %s → %s @ %s\n", rel, w.date, w.rev)
 		updated++
 	}
-	fmt.Fprintf(stdout, "完成：更新 %d 个（%s @ %s）\n", updated, day, sha)
+	fmt.Fprintf(stdout, "完成：更新 %d 个（共 %d 个文档）\n", updated, len(files))
 	return 0
+}
+
+// want 一篇文档这次应写的标记值。
+type want struct {
+	date string
+	rev  string
 }
 
 // stripMarker 去掉头部标记行，并抹平 H1 之后的前导空行——两侧都做才能对齐，
@@ -274,13 +318,143 @@ func stripMarker(src string) string {
 	return strings.Join(out, "\n")
 }
 
-// headContent 取该路径在 HEAD 里的内容；tracked = 是否存在于 HEAD。
-func headContent(root, rel string) (string, bool) {
-	s, err := revContent(root, "HEAD", rel)
-	if err != nil {
-		return "", false
+// histEntry 一条「这笔提交动过这篇文档」的记录。
+// parent 是首父的短哈希，根提交为空；day 是该提交的日期。
+type histEntry struct {
+	sha    string // 完整哈希，用于取这一版的内容
+	short  string // 短哈希，根提交拿它当代码基线
+	parent string
+	day    string
+}
+
+// rev 标记里应写的提交：代码基线（父提交）；根提交没有父，用它自己。
+func (e histEntry) rev() string {
+	if e.parent == "" {
+		return e.short
 	}
-	return s, true
+	return e.parent
+}
+
+// loadHistory 一次读完 docs/ 与 README.md 的提交历史：路径 → 从新到旧的记录。
+// 逐篇各起一次 git log 在 Windows 上要好几秒，所以这里合并成一次。
+func loadHistory(root string) (map[string][]histEntry, error) {
+	out, err := exec.Command("git", "-C", root, "log", "--format=%x1e%H%x1f%p%x1f%h%x1f%ad",
+		"--date=short", "--name-only", "--", "docs", "README.md").Output()
+	if err != nil {
+		return nil, fmt.Errorf("读文档历史失败: %w", err)
+	}
+	idx := make(map[string][]histEntry)
+	for _, rec := range strings.Split(string(out), "\x1e") {
+		rec = strings.TrimLeft(rec, "\n")
+		if rec == "" {
+			continue
+		}
+		lines := strings.Split(rec, "\n")
+		head := strings.SplitN(lines[0], "\x1f", 4)
+		if len(head) != 4 {
+			continue
+		}
+		sha, short, day := head[0], head[2], strings.TrimSpace(head[3])
+		parent := ""
+		if ps := strings.Fields(head[1]); len(ps) > 0 {
+			parent = ps[0] // 合并提交取首父
+		}
+		for _, line := range lines[1:] {
+			rel := filepath.ToSlash(strings.TrimSpace(line))
+			if rel == "" {
+				continue
+			}
+			idx[rel] = append(idx[rel], histEntry{sha: sha, short: short, parent: parent, day: day})
+		}
+	}
+	return idx, nil
+}
+
+// lastContent 该文档**内容**最近一次改动：从新到旧比对「去掉标记后的内容」，
+// 只改标记行的提交跳过——否则一次批量补标记的提交会把全仓日期都算成同一天。
+func lastContent(cf *catFile, rel string, hist []histEntry) (histEntry, bool, error) {
+	for _, e := range hist {
+		now, ok, err := cf.get(e.sha + ":" + rel)
+		if err != nil {
+			return histEntry{}, false, err
+		}
+		if !ok {
+			continue // 该提交里没有这个路径（改名前后），继续往前找
+		}
+		if e.parent != "" {
+			before, has, err := cf.get(e.parent + ":" + rel)
+			if err != nil {
+				return histEntry{}, false, err
+			}
+			if has && stripMarker(now) == stripMarker(before) {
+				continue // 只改了标记行
+			}
+		}
+		return e, true, nil
+	}
+	return histEntry{}, false, nil
+}
+
+// catFile 一个 `git cat-file --batch` 会话：逐条取「提交:路径」的内容。
+// 每篇文档要查好几份历史内容，各起一次 git show 太贵。
+type catFile struct {
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	out *bufio.Reader
+}
+
+func openCatFile(root string) (*catFile, error) {
+	cmd := exec.Command("git", "-C", root, "cat-file", "--batch")
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("启动 git cat-file: %w", err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("启动 git cat-file: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("启动 git cat-file: %w", err)
+	}
+	return &catFile{cmd: cmd, in: in, out: bufio.NewReader(out)}, nil
+}
+
+// get 取 rev:path 的内容；该提交里没有这个路径时 ok = false。
+func (c *catFile) get(spec string) (string, bool, error) {
+	if _, err := io.WriteString(c.in, spec+"\n"); err != nil {
+		return "", false, fmt.Errorf("读 %s 失败: %w", spec, err)
+	}
+	head, err := c.out.ReadString('\n')
+	if err != nil {
+		return "", false, fmt.Errorf("读 %s 失败: %w", spec, err)
+	}
+	head = strings.TrimSuffix(head, "\n")
+	if strings.HasSuffix(head, " missing") || strings.HasSuffix(head, " ambiguous") {
+		return "", false, nil
+	}
+	// 应答形如「<oid> blob <字节数>」，内容另起一行。
+	fields := strings.Fields(head)
+	if len(fields) != 3 {
+		return "", false, fmt.Errorf("读 %s 失败：看不懂的应答 %q", spec, head)
+	}
+	size, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return "", false, fmt.Errorf("读 %s 失败：应答里的字节数 %q", spec, fields[2])
+	}
+	buf := make([]byte, size)
+	if _, err := io.ReadFull(c.out, buf); err != nil {
+		return "", false, fmt.Errorf("读 %s 失败: %w", spec, err)
+	}
+	if _, err := c.out.ReadByte(); err != nil { // 内容后的换行
+		return "", false, fmt.Errorf("读 %s 失败: %w", spec, err)
+	}
+	return string(buf), true, nil
+}
+
+// Close 关闭会话并回收子进程。
+func (c *catFile) Close() error {
+	_ = c.in.Close()
+	return c.cmd.Wait()
 }
 
 // targets 收集待维护的文件：docs/ 下全部 markdown（递归）+ 根 README.md。
@@ -357,25 +531,6 @@ func isDocPath(rel string) bool {
 		return true
 	}
 	return strings.HasPrefix(rel, "docs/")
-}
-
-// lastCommit 该文件最后一次提交的日期（YYYY-MM-DD）与**代码基线**（那次提交的父提交）。
-// 与 -commit 模式同口径：文档内容由提交 L 产出，它对应的代码基线是 parent(L)。
-func lastCommit(root, path string) (string, string, error) {
-	out, err := exec.Command("git", "-C", root, "log", "-1", "--format=%ad|%H", "--date=short", "--",
-		relOf(root, path)).Output()
-	if err != nil {
-		return "", "", err
-	}
-	parts := strings.SplitN(strings.TrimSpace(string(out)), "|", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("没有提交历史: %s", path)
-	}
-	sha, err := parentRev(root, parts[1])
-	if err != nil {
-		return "", "", err
-	}
-	return parts[0], sha, nil
 }
 
 // commitDate 该提交的日期（YYYY-MM-DD）。

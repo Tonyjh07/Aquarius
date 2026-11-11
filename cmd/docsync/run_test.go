@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // gitRepo 建一个临时仓库（有 go.mod，便于 repoRoot 与 targets 工作），返回根目录。
@@ -165,5 +166,110 @@ func TestRunCheckReportsMissing(t *testing.T) {
 	out.Reset()
 	if code := run([]string{"-root", dir, "-check"}, &out, &errBuf); code != 0 {
 		t.Fatalf("补齐后 code = %d, stdout = %s", code, out.String())
+	}
+}
+
+// git 在 dir 里执行一条命令，返回去空白输出。
+func git(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// appendTo 往仓库里的文件追加一行。
+func appendTo(t *testing.T, dir, name, line string) {
+	t.Helper()
+	path := filepath.Join(dir, filepath.FromSlash(name))
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(raw, []byte(line)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// read 读仓库里的文件。
+func read(t *testing.T, dir, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// TestRunHistoryFillsCommittedDoc 工作区干净的文档也要按历史补标记：
+// 日期/基线取它最近一次内容改动的那笔提交，而不是「今天 + HEAD」。
+func TestRunHistoryFillsCommittedDoc(t *testing.T) {
+	dir := gitRepo(t)
+
+	// 第二笔提交改 docs/a.md；之后再提交一笔只动代码的提交，让 HEAD 与内容提交分开。
+	appendTo(t, dir, "docs/a.md", "补充一段\n")
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-m", "docs: a")
+	contentDay := git(t, dir, "log", "-1", "--format=%ad", "--date=short", "HEAD")
+	parent := git(t, dir, "rev-parse", "--short", "HEAD^")
+
+	appendTo(t, dir, "go.mod", "\n// touch\n")
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-m", "chore: touch code")
+	head := git(t, dir, "rev-parse", "--short", "HEAD")
+
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-root", dir}, &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
+	}
+	got := read(t, dir, "docs/a.md")
+	if !strings.Contains(got, contentDay+" @ "+parent) {
+		t.Fatalf("标记应为内容提交的日期 @ 它的父提交 %s @ %s:\n%s", contentDay, parent, got)
+	}
+	if strings.Contains(got, "@ "+head) {
+		t.Fatalf("标记不该指向只改代码的 HEAD:\n%s", got)
+	}
+	if today := time.Now().Format("2006-01-02"); contentDay != today && strings.Contains(got, today+" @") {
+		t.Fatalf("干净文档不该被刷成今天:\n%s", got)
+	}
+}
+
+// TestRunHistorySkipsMarkerOnlyCommit 只改标记行的提交不算内容改动：历史要往回找，
+// 顺带保证重复跑幂等（第二次不写任何文件）。
+func TestRunHistorySkipsMarkerOnlyCommit(t *testing.T) {
+	dir := gitRepo(t)
+
+	appendTo(t, dir, "docs/a.md", "补充一段\n")
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-m", "docs: a")
+	contentDay := git(t, dir, "log", "-1", "--format=%ad", "--date=short", "HEAD")
+	parent := git(t, dir, "rev-parse", "--short", "HEAD^")
+
+	// 手工塞一个错误的标记并单独提交（模拟「补标记」那类提交）。
+	body := read(t, dir, "docs/a.md")
+	body = strings.Replace(body, "# A\n", "# A\n<!-- docs-sync: 2020-01-01 @ deadbee -->\n", 1)
+	if err := os.WriteFile(filepath.Join(dir, "docs", "a.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-m", "docs: markers")
+
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"-root", dir}, &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
+	}
+	got := read(t, dir, "docs/a.md")
+	if !strings.Contains(got, contentDay+" @ "+parent) {
+		t.Fatalf("应跳过只改标记的提交，回到内容提交 %s @ %s:\n%s", contentDay, parent, got)
+	}
+
+	// 再跑一次：标记已是历史值，不该再动。
+	out.Reset()
+	if code := run([]string{"-root", dir}, &out, &errBuf); code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, errBuf.String())
+	}
+	if again := read(t, dir, "docs/a.md"); again != got {
+		t.Fatalf("重复跑改了文件:\nbefore %s\nafter  %s", got, again)
 	}
 }
