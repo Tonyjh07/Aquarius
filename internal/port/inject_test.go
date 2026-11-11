@@ -11,6 +11,7 @@ func TestInjectSourceLabel(t *testing.T) {
 		"tool:think":   "工具 think",
 		"plugin:demo":  "插件 demo",
 		"skill:pdf":    "技能 pdf",
+		"clock":        "日期变更",
 		"weird":        "weird",
 		"other:a:b":    "other:a:b",
 		"":             "未知来源",

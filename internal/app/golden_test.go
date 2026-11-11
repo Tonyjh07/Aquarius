@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -220,13 +221,17 @@ func runReplay(t *testing.T, name string, lines []string, answers []bool, stream
 	rec := &recorder{}
 	llm := &scriptLLM{t: t, streams: streams}
 	ids := ulidIDs{}
-	agent := newAgent(t, llm, rec, Deps{IDs: ids}, Config{})
+	// 时钟钉在"今天"，而不是固定的 testTime：跨日期的日期说明比的是日历日，而领域层的
+	// Revise/Append 用真实时钟落时间——两边差一天，回放里就会凭空多出一条日期说明。
+	// 回放不渲染时间戳，只要求整段落在同一个日历日。日期说明本身由 date_note_test.go 覆盖。
+	clock := fixedClock{time.Now()}
+	agent := newAgent(t, llm, rec, Deps{IDs: ids, Clock: clock}, Config{})
 	confirmer := &scriptConfirmer{t: t, answers: answers}
 	sess, err := NewSession(context.Background(), SessionDeps{
 		Store:     newMemStore(),
 		Agent:     agent,
 		IDs:       ids,
-		Clock:     fixedClock{testTime},
+		Clock:     clock,
 		Confirmer: confirmer,
 	})
 	if err != nil {

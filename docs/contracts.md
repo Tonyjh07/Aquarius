@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-11 @ ea19aff -->
+<!-- docs-sync: 2026-11-11 @ d0b9540 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1397,6 +1397,14 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
           回传（键缺失 = 开）= 置入该段 assistant 消息的 `PromptMessage.Reasoning`，由适配器
           映射为 `reasoning_content` 字段；关（显式 false）= 装配时丢弃不发。
 ```
+
+**跨日期的日期说明**（D292）：persona 里的日期是会话创建当天，跨过午夜就成了过期事实。内核在
+**用户消息入树之前**比一次日历日（当前 Head 的日期 vs 今天）：不同就落一条 `Role=inject`、
+`Trust=host`、`Source=clock`、`Trigger=false` 的节点，正文给出今天并点明上一段对话是哪一天，
+让模型知道 persona 里那句日期已经过期。它走普通注入节点那条路——转写区里看得见（来源写
+「日期变更」）、随树落盘、不自己起一轮。判据只看 Head，所以一天最多一条，第二天再开口自然
+再落一条；Head 没有时间（未提交缓冲的合成节点）时不动。装配层不做这件事：装配期合成的内容
+用户看不见，用户就无从判断模型到底知不知道今天几号。
 
 **会话尾部指令**（D243）：`Conversation.Tail` 是**元数据不是节点**——每轮在历史之后追加一条
 system（`characters.apply_post_history = false` 时不发）。因为它不在树里，水位、压缩与分支

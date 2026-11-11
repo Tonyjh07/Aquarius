@@ -57,6 +57,7 @@ func (a *Agent) cutSegment(ctx context.Context, c *conversation.Conversation, mi
 // 走 CommittedEvent——否则转写区里那句话凭空消失。常态输入相反：前端先本地回显，
 // 事件到达时按「最早未盖章且文本一致」回填 ID，不会画两遍。
 func (a *Agent) appendUserNode(ctx context.Context, c *conversation.Conversation, text string) (conversation.Message, error) {
+	a.noteDateChange(ctx, c) // 跨过午夜就先补一条日期说明，位置恒在这句话之前
 	node := conversation.Message{
 		ID:        a.ids.MessageID(),
 		Parent:    c.Head,

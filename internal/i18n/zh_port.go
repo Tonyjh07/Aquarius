@@ -31,4 +31,5 @@ var zhPortTexts = map[string]string{
 	"port.src.tool":        "工具 {rest}",
 	"port.src.plugin":      "插件 {rest}",
 	"port.src.skill":       "技能 {rest}",
+	"port.src.clock":       "日期变更",
 }

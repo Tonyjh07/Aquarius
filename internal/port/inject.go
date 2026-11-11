@@ -61,6 +61,10 @@ func InjectSourceLabel(source string) string {
 	if source == "user" {
 		return i18n.T("port.src.manual")
 	}
+	// 日期说明节点（`clock`）没有「余下」这一段：它与工具注入并列，来源本身就是全部信息。
+	if source == "clock" {
+		return i18n.T("port.src.clock")
+	}
 	name, rest, ok := splitInjectSource(source)
 	if !ok {
 		return source

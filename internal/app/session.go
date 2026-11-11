@@ -421,6 +421,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	// 真实用户输入到来 = 停手结束（D272）：停止键只停当前轮与自动续跑，用户再开口就恢复。
 	s.pendingQ.setPaused(false)
 	s.maybeSetTitle(text)
+	s.agent.noteDateChange(ctx, s.cur) // 跨日期时先补一条日期说明（D292）
 	if _, err := s.cur.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: text}}); err != nil {
 		return "", wrapSession("session.err.append", err)
 	}
@@ -482,6 +483,7 @@ func (s *Session) ingestAndRun(ctx context.Context, raw port.RawInput) (string, 
 		return "", errors.New("session: " + i18n.T("session.ingest.empty"))
 	}
 	s.maybeSetTitle(ingestTitle(parts))
+	s.agent.noteDateChange(ctx, s.cur) // 跨日期时先补一条日期说明（D292）
 	if _, err := s.cur.Append(conversation.RoleUser, parts); err != nil {
 		return "", wrapSession("session.err.append", err)
 	}

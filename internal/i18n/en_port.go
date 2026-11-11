@@ -25,4 +25,5 @@ var enPortTexts = map[string]string{
 	"port.src.tool":        "tool {rest}",
 	"port.src.plugin":      "plugin {rest}",
 	"port.src.skill":       "skill {rest}",
+	"port.src.clock":       "date change",
 }

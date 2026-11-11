@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-11 @ 760c048 -->
+<!-- docs-sync: 2026-11-11 @ d0b9540 -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -167,7 +167,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | `@env.terminal` | `- Terminal: <ui 形态> (TERM=… \| TERM unset)` |
 | `@env.sandbox` | `- Privileged sandbox directory: …`（仅绝对路径时出） |
 | `@env.timeout` | `- Tool timeout: …`（仅配置了超时时出） |
-| `@env.date` | `- Current date: YYYY-MM-DD`（**会话创建当天**） |
+| `@env.date` | `- Current date: YYYY-MM-DD`（**会话创建当天**；隔天再聊时会另落一条日期说明把日期改正，见 [contracts.md](contracts.md) 的装配一节） |
 | `@char` | **角色卡组**（组头无文本），子模块见下；**只在角色会话里有内容** |
 | `@char.identity` | `You are <角色显示名>.` |
 | `@char.description` / `@char.personality` / `@char.scenario` | 卡的对应字段，各带一个英文标签 |
