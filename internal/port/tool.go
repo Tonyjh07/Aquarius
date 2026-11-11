@@ -34,6 +34,12 @@ type ConfirmAnswer struct {
 	// 与 /permission 同一次授权）。只有工具确认会带回它——外部代理与命令行确认
 	// 不读权限档，界面不给这个入口。
 	Level string
+	// Persist 用户点了「以后都允许」（D282）：范围由判定侧按工具性质算（执行类落工具、
+	// 文件类收窄到目标所在目录），界面不参与——它只表达「别再问这个」。没有策略表可写
+	// 时退化为一次放行。
+	//
+	// 与 Allow 同义（点它当然是放行这次），单独一位是为了让判定侧知道要不要写策略表。
+	Persist bool
 }
 
 // ConfirmOrigin 一次确认的来源（D280 策略表的来源维）。
@@ -64,6 +70,10 @@ type ConfirmRequest struct {
 	HasRisk bool
 	Task    string // 外部代理这一趟的任务摘要（首 80 字）
 	Prompt  string
+	// CanPersist 这次确认允许提供「以后都允许」（D282）：判定侧在置位时已经算过
+	// 「写了也不会生效」的情形（目标命中硬名单——那条规则永远轮不到），界面据此
+	// 决定给不给这个钮。界面自己不做这个判断：它拿不到敏感根。
+	CanPersist bool
 }
 
 // Confirm 逐次确认（Risk=Confirm 的工具、越界文件访问、插件授权等）。

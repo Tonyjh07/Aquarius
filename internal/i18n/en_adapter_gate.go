@@ -184,10 +184,11 @@ var enAdapterGateTexts = map[string]string{
 
 	// ---- domain/perm：权限等级解析（config permissions.level 与 /permission 共用）。
 	// 四个等级名是数据，留在译文里不翻。 ----
-	"perm.err.unknown_level":  "perm: unknown permission level \"{level}\" (available: read-only / strict / permissive / full-access)",
-	"perm.err.unknown_mode":   "perm: unknown policy mode \"{mode}\" (available: ask / assist / allow)",
-	"perm.err.unknown_origin": "perm: unknown policy origin \"{origin}\" (available: toolrun / acpgate)",
-	"perm.err.override_at":    "permissions.overrides[{index}]: {err}",
-	"perm.err.override_tool":  "permissions.overrides[{index}]: an entry for toolrun must name a tool",
-	"notify.err.no_sender":    "notify: no sender configured",
+	"perm.err.unknown_level":     "perm: unknown permission level \"{level}\" (available: read-only / strict / permissive / full-access)",
+	"perm.err.unknown_mode":      "perm: unknown policy mode \"{mode}\" (available: ask / assist / allow)",
+	"perm.err.unknown_origin":    "perm: unknown policy origin \"{origin}\" (available: toolrun / acpgate)",
+	"perm.err.override_at":       "permissions.overrides[{index}]: {err}",
+	"perm.err.override_tool":     "permissions.overrides[{index}]: an entry for toolrun must name a tool",
+	"perm.err.override_dir_tool": "permissions.overrides[{index}]: an entry with dir must name a tool",
+	"notify.err.no_sender":       "notify: no sender configured",
 }

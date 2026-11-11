@@ -42,6 +42,7 @@ var enLogTexts = map[string]string{
 	"log.act.default_icon":         "fell back to the system default icon",
 	"log.act.leak_watch":           "written to the log; the run continues",
 	"log.act.menu_exit":            "shut down",
+	"log.act.allow_once":           "allowed this time, will ask again",
 
 	// 启动
 	"log.boot.file_unavailable": "cannot open the log file ({path}): {err}",
@@ -106,12 +107,13 @@ var enLogTexts = map[string]string{
 	"log.attach.gc_failed":             "attachment cleanup failed: {err}",
 
 	// 技能、联网、密钥
-	"log.skill.entry_skipped":      "skill entry skipped: {text}",
-	"log.skill.ledger_unreadable":  "cannot read the skill ledger: {err}",
-	"log.skill.ledger_corrupt":     "cannot parse the skill ledger: {err}",
-	"log.web.provider_unavailable": "web {side} provider #{index} ({kind}) is unavailable: {err}",
-	"log.perm.plaintext_key":       "a plaintext key was found at startup",
-	"log.perm.secrets_unreadable":  "the secret store could not be opened",
+	"log.skill.entry_skipped":        "skill entry skipped: {text}",
+	"log.skill.ledger_unreadable":    "cannot read the skill ledger: {err}",
+	"log.skill.ledger_corrupt":       "cannot parse the skill ledger: {err}",
+	"log.web.provider_unavailable":   "web {side} provider #{index} ({kind}) is unavailable: {err}",
+	"log.perm.plaintext_key":         "a plaintext key was found at startup",
+	"log.perm.secrets_unreadable":    "the secret store could not be opened",
+	"log.perm.policy_persist_failed": "the always-allow rule was not written: {err}",
 
 	// 会话、转交与前端
 	"log.session.replay_failed":             "history replay failed",

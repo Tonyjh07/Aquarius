@@ -193,7 +193,7 @@ func (c *client) policy(tool, target string) perm.Decision {
 	if c.m.opts.Overrides == nil {
 		return perm.Ask
 	}
-	d := c.m.opts.Overrides().Apply(perm.Ask, perm.OriginAgent, tool)
+	d := c.m.opts.Overrides().Apply(perm.Ask, perm.OriginAgent, tool, target)
 	if d == perm.Allow && perm.HardTarget(target, c.m.opts.Sensitive) {
 		return perm.Ask
 	}

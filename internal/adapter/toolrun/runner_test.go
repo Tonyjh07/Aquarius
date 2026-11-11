@@ -64,6 +64,7 @@ func (s *stubTool) Target(context.Context, tool.Call) (string, perm.Op, bool) {
 type scriptConf struct {
 	answers    []bool
 	levels     []string // D282：逐次的「直选档位」（与 answers 同步前进；空串 = 普通应答）
+	persists   []bool   // D282：逐次的「以后都允许」（同上）
 	denyReason string   // D86：拒绝时附带的原因（空 = 干拒）
 	asked      []string
 	reqs       []port.ConfirmRequest // 结构化请求原样留档（D280 地基）
@@ -86,7 +87,11 @@ func (c *scriptConf) Confirm(_ context.Context, req port.ConfirmRequest) (port.C
 	if len(c.levels) > 0 {
 		lv, c.levels = c.levels[0], c.levels[1:]
 	}
-	return port.ConfirmAnswer{Allow: a, Reason: c.denyReason, Level: lv}, nil
+	var keep bool
+	if len(c.persists) > 0 {
+		keep, c.persists = c.persists[0], c.persists[1:]
+	}
+	return port.ConfirmAnswer{Allow: a, Reason: c.denyReason, Level: lv, Persist: keep}, nil
 }
 
 func fileTool(name, path string, op perm.Op, risk tool.Risk, out string) *stubTool {
@@ -309,6 +314,100 @@ func TestConfirmLevelDeniedAfterRejudge(t *testing.T) {
 	res, err := r.Execute(context.Background(), c("fw", `{}`))
 	if err != nil || res.OK || !strings.Contains(res.Err, "user denied") {
 		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+// TestConfirmPersist D282：确认框里点了「以后都允许」——本次照常放行，范围交给
+// Permit（文件类收窄到目标所在目录、执行类落到工具级），界面不参与判定。
+func TestConfirmPersist(t *testing.T) {
+	sbx := mustAbs(t, "sbx")
+	target := filepath.Join(mustAbs(t, "proj"), "a.txt")
+
+	var got []perm.Override
+	var reqs []port.ConfirmRequest
+	r := New(Options{
+		Tools:       []port.Tool{fileTool("fw", target, perm.OpWrite, tool.Confirm, "ok")},
+		Confirmer:   &scriptConf{answers: []bool{true}, persists: []bool{true}},
+		Level:       levelFn(perm.Strict),
+		SandboxPath: sbx,
+		Permit: func(ov perm.Override, req port.ConfirmRequest) {
+			got = append(got, ov)
+			reqs = append(reqs, req)
+		},
+	})
+	res, err := r.Execute(context.Background(), c("fw", `{}`))
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Permit 调用 %d 次, want 1", len(got))
+	}
+	if want := filepath.Dir(target); got[0].Dir != want || got[0].Mode != perm.ModeAllow || got[0].Tool != "fw" {
+		t.Fatalf("override = %+v, want dir=%s", got[0], want)
+	}
+	// 请求要带上判定依据（Op/Target），审计靠它说清「是哪一次调用促使的」。
+	if reqs[0].Op != perm.OpWrite || reqs[0].Target != target {
+		t.Fatalf("req = %+v, want op=write target=%s", reqs[0], target)
+	}
+
+	// 执行类：命令没有可收窄的维度，落工具级。
+	var execOv perm.Override
+	r2 := New(Options{
+		Tools:     []port.Tool{execTool("term_exec", tool.Confirm, "ok")},
+		Confirmer: &scriptConf{answers: []bool{true}, persists: []bool{true}},
+		Level:     levelFn(perm.Strict),
+		Permit:    func(ov perm.Override, _ port.ConfirmRequest) { execOv = ov },
+	})
+	if _, err := r2.Execute(context.Background(), c("term_exec", `{}`)); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if execOv.Dir != "" || execOv.Mode != perm.ModeAllow {
+		t.Fatalf("执行类 override = %+v, want 工具级", execOv)
+	}
+
+	// 没装 Permit（测试/未装配）：照常放行，不报错、不写任何东西。
+	r3 := New(Options{
+		Tools:       []port.Tool{fileTool("fw", target, perm.OpWrite, tool.Confirm, "ok")},
+		Confirmer:   &scriptConf{answers: []bool{true}, persists: []bool{true}},
+		Level:       levelFn(perm.Strict),
+		SandboxPath: sbx,
+	})
+	if res, err := r3.Execute(context.Background(), c("fw", `{}`)); err != nil || !res.OK {
+		t.Fatalf("无 Permit 应照常放行：res=%+v err=%v", res, err)
+	}
+}
+
+// TestConfirmPersistHardTarget 目标命中硬名单时，请求不标 CanPersist：写了也不会
+// 生效（判定侧照样降回询问），界面据此不显示那颗钮。
+func TestConfirmPersistHardTarget(t *testing.T) {
+	secrets := mustAbs(t, "secrets")
+	target := filepath.Join(secrets, "key.txt")
+	conf := &scriptConf{answers: []bool{true}}
+	r := New(Options{
+		Tools:     []port.Tool{fileTool("fw", target, perm.OpWrite, tool.Confirm, "ok")},
+		Confirmer: conf, Level: levelFn(perm.Strict),
+		Sensitive: []string{secrets},
+	})
+	if _, err := r.Execute(context.Background(), c("fw", `{}`)); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(conf.reqs) != 1 || conf.reqs[0].CanPersist {
+		t.Fatalf("硬名单目标的确认不该提供「以后都允许」：%+v", conf.reqs)
+	}
+
+	// 普通目标反过来要置位。
+	plain := filepath.Join(mustAbs(t, "proj"), "a.txt")
+	conf2 := &scriptConf{answers: []bool{true}}
+	r2 := New(Options{
+		Tools:     []port.Tool{fileTool("fw", plain, perm.OpWrite, tool.Confirm, "ok")},
+		Confirmer: conf2, Level: levelFn(perm.Strict),
+		Sensitive: []string{secrets},
+	})
+	if _, err := r2.Execute(context.Background(), c("fw", `{}`)); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !conf2.reqs[0].CanPersist {
+		t.Fatal("普通目标应提供「以后都允许」")
 	}
 }
 

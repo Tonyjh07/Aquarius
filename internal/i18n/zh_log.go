@@ -45,6 +45,7 @@ var zhLogTexts = map[string]string{
 	"log.act.default_icon":         "改用系统默认图标",
 	"log.act.leak_watch":           "已写入日志，继续运行",
 	"log.act.menu_exit":            "已收尾",
+	"log.act.allow_once":           "本次照常放行，下次仍会问",
 
 	// 启动
 	"log.boot.file_unavailable": "日志文件打不开（{path}）：{err}",
@@ -114,8 +115,9 @@ var zhLogTexts = map[string]string{
 	"log.skill.ledger_corrupt":     "技能台账解析失败：{err}",
 	"log.web.provider_unavailable": "联网{side}的第 {index} 家提供商（{kind}）不可用：{err}",
 	// 整句由 warnPlaintext 给（沿用 cmd.secrets.warn.plaintext 的措辞），这条只作聚合标识。
-	"log.perm.plaintext_key":      "启动时发现明文密钥",
-	"log.perm.secrets_unreadable": "密钥库解不开",
+	"log.perm.plaintext_key":         "启动时发现明文密钥",
+	"log.perm.secrets_unreadable":    "密钥库解不开",
+	"log.perm.policy_persist_failed": "「以后都允许」没能写进策略表：{err}",
 
 	// 会话、转交与前端
 	"log.session.replay_failed":             "历史回放失败",

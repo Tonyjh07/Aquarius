@@ -10,6 +10,7 @@ package perm
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -67,38 +68,88 @@ func ParseOrigin(s string) (Origin, error) {
 
 // Override 一条例外。Tool 为空 = 该来源的全部请求（ACP 的 fs/terminal 回调没有
 // 稳定的工具名，用空工具表达「这个来源整体」）。
+//
+// Dir 非空 = 这条只对**该目录内的目标**生效（D282 的「以后都允许」落在文件类工具时
+// 就是这种形态）：`file_write` 一步放宽到全盘可写，是从「这个文件」跨到「任何文件」，
+// 而用户点下去时想的是「我一直在同一个项目里干活」。
 type Override struct {
 	Origin Origin
 	Tool   string
 	Mode   Mode
+	Dir    string
+}
+
+// AutoAllow 由一次确认生成「以后都允许」的例外（D282）：执行类落到工具级（命令内容
+// 每次都不一样，没有可收窄的维度），文件类收窄到目标所在目录；没有目标路径的操作
+// （执行类之外的少数工具）也只能落到工具级。
+//
+// 判定与文案共用这一个函数：界面上那句「以后这个目录里不再询问」与实际写进配置的
+// 范围必须是同一个值，两处各算一遍迟早对不上。
+func AutoAllow(origin Origin, tool, target string, hasTarget bool) Override {
+	ov := Override{Origin: origin, Tool: tool, Mode: ModeAllow}
+	if !hasTarget || IsExec(tool) {
+		return ov
+	}
+	if dir := filepath.Dir(strings.TrimSpace(target)); dir != "" && dir != "." {
+		ov.Dir = dir
+	}
+	return ov
 }
 
 // Overrides 例外表：只有用户改过的条目，顺序无意义。
 type Overrides []Override
 
-// Resolve 命中哪条例外：先找工具精确匹配，再看该来源的通配条目。
-// 两条都存在时取更具体的——「外部代理整体要问，但这个代理的写文件放行」得能表达。
-func (o Overrides) Resolve(origin Origin, tool string) (Override, bool) {
+// Resolve 命中哪条例外，从具体到宽泛：目录级（目标在该目录内）> 工具级 > 来源级。
+// 「外部代理整体要问，但这个代理的写文件放行」与「这个工具的写文件只在某个项目里
+// 放行」都得能表达，所以按具体程度取，不是先到先得。
+//
+// target 为空（执行类没有目标路径）时目录级条目一律不命中——一条「某目录内放行」
+// 的规则不该罩住没有路径的调用。
+func (o Overrides) Resolve(origin Origin, tool, target string) (Override, bool) {
+	var best Override
+	var hasBest bool
+	bestDir := -1
+	var toolWide Override
+	var hasToolWide bool
 	var fallback Override
 	var hasFallback bool
 	for _, ov := range o {
 		if ov.Origin != origin {
 			continue
 		}
-		if ov.Tool != "" && ov.Tool == tool {
-			return ov, true
+		if ov.Tool == "" { // 该来源整体
+			if !hasFallback {
+				fallback, hasFallback = ov, true
+			}
+			continue
 		}
-		if ov.Tool == "" && !hasFallback {
-			fallback, hasFallback = ov, true
+		if ov.Tool != tool {
+			continue
 		}
+		if ov.Dir == "" {
+			if !hasToolWide {
+				toolWide, hasToolWide = ov, true
+			}
+			continue
+		}
+		// 目录级：嵌套目录时取更深的那个（用户后来又给子目录单点了一次）。
+		if target != "" && withinRoot(target, ov.Dir) && len(ov.Dir) > bestDir {
+			best, hasBest, bestDir = ov, true, len(ov.Dir)
+		}
+	}
+	switch {
+	case hasBest:
+		return best, true
+	case hasToolWide:
+		return toolWide, true
 	}
 	return fallback, hasFallback
 }
 
 // Apply 判定层的最终结论：例外覆盖矩阵，两个方向都允许（D280 第 2 条）。
-// 没有命中例外时原样返回矩阵结论。
-func (o Overrides) Apply(base Decision, origin Origin, tool string) Decision {
-	ov, ok := o.Resolve(origin, tool)
+// 没有命中例外时原样返回矩阵结论。target 只参与目录级例外的范围比较。
+func (o Overrides) Apply(base Decision, origin Origin, tool, target string) Decision {
+	ov, ok := o.Resolve(origin, tool, target)
 	if !ok {
 		return base
 	}

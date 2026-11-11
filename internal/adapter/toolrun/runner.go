@@ -39,6 +39,10 @@ type Options struct {
 	Level func() perm.Level
 	// Overrides 放行策略例外（D280）；nil = 全按矩阵。优先级：例外 > 矩阵 > 缺省 ask。
 	Overrides func() perm.Overrides
+	// Permit 把一条「以后都允许」写进策略表并落审计（D282）：范围由本包按
+	// perm.AutoAllow 算好，落盘与审计是装配根的事（它持有配置与审计文件）。
+	// nil = 没有可写的表（测试、未装配）：本次照常放行，只是什么也不记。
+	Permit func(perm.Override, port.ConfirmRequest)
 	// Sensitive 硬名单的敏感根（密钥目录、配置目录、系统目录，D280 第 6 条）：
 	// 目标落在这里时，即便策略表设了自动放行也照问。
 	Sensitive []string
@@ -65,6 +69,7 @@ type Runner struct {
 	conf      port.Confirmer
 	level     func() perm.Level
 	overrides func() perm.Overrides
+	permit    func(perm.Override, port.ConfirmRequest)
 	sensitive []string
 	sandbox   string
 	timeout   time.Duration
@@ -83,6 +88,7 @@ func New(opts Options) *Runner {
 		conf:      opts.Confirmer,
 		level:     opts.Level,
 		overrides: opts.Overrides,
+		permit:    opts.Permit,
 		sensitive: append([]string(nil), opts.Sensitive...),
 		sandbox:   opts.SandboxPath,
 		timeout:   opts.Timeout,
@@ -228,6 +234,9 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 			Risk:    spec.Risk,
 			HasRisk: true,
 			Prompt:  confirmPrompt(call, target, spec),
+			// 硬名单里的目标放宽了也不会生效（decideAt 最后那一步照样降回询问），
+			// 所以不提供这个钮，而不是让用户点了之后发现还在问。
+			CanPersist: !perm.HardTarget(target, r.sensitive),
 		}
 		ans, err := r.conf.Confirm(ctx, req)
 		if err != nil {
@@ -265,6 +274,11 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 				denied += ": " + reason
 			}
 			return tool.Result{CallID: call.ID, OK: false, Err: denied}, nil
+		}
+		// D282「以后都允许」：写策略表是**顺带**的，本次放行与它无关——用户点的是允许，
+		// 写失败也不是拒绝的理由（装配根那边只记日志与审计）。
+		if ans.Persist {
+			r.persistAllow(req)
 		}
 	}
 
@@ -385,6 +399,15 @@ func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.
 	return r.decideAt(ctx, t, call, r.level())
 }
 
+// persistAllow 把「以后都允许」交给装配根（D282）：范围由 perm.AutoAllow 算——执行类
+// 落工具级，文件类收窄到目标所在目录。本包只提供判定上下文，落盘与审计不在这里。
+func (r *Runner) persistAllow(req port.ConfirmRequest) {
+	if r.permit == nil {
+		return
+	}
+	r.permit(perm.AutoAllow(perm.OriginTool, req.Tool, req.Target, req.HasOp), req)
+}
+
 // decideAt 权限判定：文件类按路径格，执行类按工具列（D22）。
 // 同时把判定依据交回给调用方——确认请求要带上操作、目标与风险，让界面与策略表
 // 读结构体而不是从提示文本里反解。
@@ -404,7 +427,7 @@ func (r *Runner) decideAt(ctx context.Context, t port.Tool, call tool.Call, leve
 	}
 	decision := base
 	if r.overrides != nil {
-		decision = r.overrides().Apply(base, perm.OriginTool, t.Spec().Name)
+		decision = r.overrides().Apply(base, perm.OriginTool, t.Spec().Name, target)
 	}
 	// 硬名单（D280 第 6 条）：策略表把这一条放宽到免确认，但目标属于密钥目录、
 	// 配置目录、系统目录或执行控制类文件时，仍然问一次。
