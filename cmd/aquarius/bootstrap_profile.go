@@ -56,6 +56,9 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		return err
 	}
 	w.dir = dir
+	// 数据目录说明（D291）：写完这一步任何 profile 都还没碰，换 profile 也只需重写一次。
+	// 它只是给人看的手册，写不出来不拦启动。
+	w.writeDataReadme()
 
 	profileName, err := resolveProfile(dir, profileFlag)
 	if err != nil {

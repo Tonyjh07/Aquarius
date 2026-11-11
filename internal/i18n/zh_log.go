@@ -48,11 +48,16 @@ var zhLogTexts = map[string]string{
 	"log.act.allow_once":           "本次照常放行，下次仍会问",
 	"log.act.decide_off":           "工具确认照旧问你",
 	"log.act.decide_on":            "工具确认前先问一次模型",
+	"log.act.readme_written":       "已按当前版本重写，手改会被覆盖",
+	"log.act.readme_kept":          "保留原文件，本次不覆盖",
 
 	// 启动
 	"log.boot.file_unavailable": "日志文件打不开（{path}）：{err}",
 	"log.boot.persona_missing": "人格模块树存在缺失引用 {missing}（检查 prompts.modules / " +
 		"prompts.persona）",
+	"log.boot.readme_written": "数据目录说明已写好：{path}",
+	"log.boot.readme_kept":    "{path} 不是本程序生成的，原样保留",
+	"log.boot.readme_failed":  "数据目录说明写不出来（{path}）：{err}",
 
 	// 模型链路
 	"log.llm.param_rejected":        "服务端不认参数 {field}，已从请求里剔除",

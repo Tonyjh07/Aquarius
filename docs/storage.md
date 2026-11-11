@@ -1,5 +1,5 @@
 # 数据布局与备份
-<!-- docs-sync: 2026-11-05 @ 16a4b42 -->
+<!-- docs-sync: 2026-11-11 @ cbcc59f -->
 
 > 本文与 `storejson` 的实际落盘行为一致；**磁盘形状以本文为准**。
 > 原则：**本地优先、用户数据主权**——全部明文，卸载 = 删二进制 + 删目录，
@@ -11,8 +11,10 @@
 ```
 ~/.aquarius/                     # -data 可整体改指
 ├── config.json                  # 当前 profile 指针：{"profile": "<name>"}
+├── README.md                    # 数据目录说明（程序生成，中英同文件；手改会被下次启动覆盖）
 └── profiles/<name>/             # profile 整目录隔离（会话/记忆/附件/密钥/技能都在里面）
     ├── config.json              # 主配置（写回 = 随机临时文件 + 原子换入、0600；字段见 configuration.md）
+    ├── config.json.bak          # 上一代配置（每次写回前留）；另有 config.json.bak-<时间戳> 的历史快照
     ├── sandbox/                 # Agent 特权目录（写这里免确认，启动自动创建）
     ├── memories.md              # 全局记忆（markdown 单文件；/memory 直开）
     ├── conversations/           # 会话树，一会话一 JSON
@@ -21,9 +23,11 @@
     │   ├── <id>.json.*.tmp      # 写入中的临时文件（随机名，正常结束不存在）
     │   └── <id>.memory.md       # 该会话的会话记忆（随会话就近存放）
     ├── jobs/<任务号>.log        # 后台任务日志（命令头 + 输出 + 退出标记行；任务表只在内存）
+    ├── logs/                    # 运行日志（按天切、超量轮转；与审计日志分开）
     ├── audit.log                # 审计日志（JSONL：每次模型调用/工具调用一行）
     ├── audit.log.1              # 上一代审计日志（超过 4 MB 轮转一代）
     ├── attachments/<sha256>     # 内容寻址附件（同内容去重；启动按全量会话引用清扫）
+    ├── exports/                 # 会话导出的缺省落点
     ├── gui_pos.json             # 主窗位置记忆
     ├── secrets.bin              # 本机密钥库（密文；另留一代 secrets.bin.bak）
     ├── secrets.key              # 密钥库的加密密钥（仅非 Windows 平台；0600）
@@ -41,6 +45,9 @@
 
 - **profile 切换**：`--profile <name>` 进程级覆盖，或设置窗切换（原子写根指针）——均重启生效。
   切换 = 换整目录，会话 / 记忆 / 附件 / 密钥互相隔离。
+- **根目录的 `README.md` 由程序生成**：中英同文件，说明这个目录里每个条目是什么、谁写的、
+  能不能删。启动时按版本重写；首行去掉生成标记（或自己整个替换掉）就不再覆盖——想长期留笔记，
+  另建文件更省事。它的正文在 `assets/data-readme/`，与本文的目录树有测试对着核。
 - **旧单文件 config**（目录化之前的布局）启动即显式报 `ErrLegacyConfig` 并给手工迁移步骤，
   **不做自动迁移**。
 - `conversations/` 是唯一会被 `List` 扫描的目录：只认 `.json` 后缀，`.bak` / `.tmp` 不参与列表。
