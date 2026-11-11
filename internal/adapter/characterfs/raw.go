@@ -1,5 +1,7 @@
 package characterfs
 
+import "encoding/json"
+
 // 卡 JSON 的读取形状（§5.17）。只声明我们读的键——原卡 JSON 逐字节留在 card.json，
 // 未知键一个不删，所以这里不需要把它们都列出来。
 //
@@ -42,21 +44,40 @@ type rawAsset struct {
 	Ext  string `json:"ext"`
 }
 
-// rawBook 卡的 `character_book`（只取 entries；keys / scan_depth 一类本版不用于检索）。
+// rawBook 卡的 `character_book`（§5.17/D294）：只读 entries，卡级的 `scan_depth` 不读
+// （扫描深度是全局配置，条目级与卡级都留给以后）。
 type rawBook struct {
 	Entries []rawBookEntry `json:"entries"`
 }
 
-// rawBookEntry 世界书条目。`enabled` 缺键默认 true；`extensions.enabled` 优先。
+// rawBookEntry 世界书条目。`enabled` 缺键默认 true、`extensions.enabled` 优先。
+//
+// 触发词、排序与位点都有**两代写法**（真卡里并存且会不一致，D294）：`keys` / `key`、
+// `secondary_keys` / `keysecondary`、`insertion_order` / `order`、顶层 `position`（字符串）/
+// `extensions.position`（数字）。指针字段用来区分「缺键」与「显式 0」。
 type rawBookEntry struct {
-	Comment    string     `json:"comment"`
-	Content    string     `json:"content"`
-	Constant   bool       `json:"constant"`
-	Enabled    *bool      `json:"enabled"`
-	Extensions rawBookExt `json:"extensions"`
+	Comment       string          `json:"comment"`
+	Name          string          `json:"name"`
+	Content       string          `json:"content"`
+	Constant      bool            `json:"constant"`
+	Enabled       *bool           `json:"enabled"`
+	Keys          []string        `json:"keys"`
+	Key           []string        `json:"key"`
+	SecondaryKeys []string        `json:"secondary_keys"`
+	KeySecondary  []string        `json:"keysecondary"`
+	InsertionOrdr *int            `json:"insertion_order"`
+	Order         *int            `json:"order"`
+	Position      json.RawMessage `json:"position"`
+	CaseSensitive *bool           `json:"case_sensitive"`
+	Extensions    rawBookExt      `json:"extensions"`
 }
 
-// rawBookExt 条目扩展里的启用位（SillyTavern 有时把它放这里）。
+// rawBookExt 条目扩展：启用位（SillyTavern 有时把它放这里）、位点、深度与身份。
+// 位点在这边是**数字**（0 人格前 / 1 人格后 / 2 作者注前 / 3 作者注后 / 4 按深度）。
 type rawBookExt struct {
-	Enabled *bool `json:"enabled"`
+	Enabled       *bool `json:"enabled"`
+	Position      *int  `json:"position"`
+	Depth         *int  `json:"depth"`
+	Role          *int  `json:"role"`
+	CaseSensitive *bool `json:"case_sensitive"`
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -30,6 +31,69 @@ func pngWithText(chunks ...[2]string) []byte {
 		b.Write([]byte{0, 0, 0, 0})
 	}
 	return b.Bytes()
+}
+
+// TestParseBookRetrievalFields 世界书检索字段（D294）：两代写法合并、`extensions.position`
+// 数字优先于顶层字符串、缺键取缺省。
+func TestParseBookRetrievalFields(t *testing.T) {
+	raw := []byte(`{"spec":"chara_card_v3","spec_version":"3.0","data":{
+		"name":"Aria",
+		"character_book":{"entries":[
+			{"keys":["a","a",""],"key":["b"],"secondary_keys":["c"],"keysecondary":["d"],
+			 "insertion_order":50,"order":10,"position":"before_char",
+			 "extensions":{"position":4,"depth":2,"role":1,"case_sensitive":true},
+			 "content":"full"},
+			{"key":["x"],"keysecondary":["y"],"order":7,"position":"after_an","content":"old"},
+			{"position":1,"content":"numeric top-level"},
+			{"position":"nonsense","content":"unknown"},
+			{"content":"bare"}
+		]}}}`)
+	out, err := parseCard("card.json", raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := out.Profile.BookEntries
+	if len(got) != 5 {
+		t.Fatalf("entries = %d, want 5", len(got))
+	}
+	want := []port.BookEntry{
+		{Comment: "", Content: "full", Enabled: true,
+			Keys: []string{"a", "b"}, SecondaryKeys: []string{"c", "d"},
+			Order: 50, Position: port.BookAtDepth, Depth: 2, Role: port.BookRoleUser, CaseSensitive: true},
+		{Comment: "", Content: "old", Enabled: true,
+			Keys: []string{"x"}, SecondaryKeys: []string{"y"},
+			Order: 7, Position: port.BookAfterAuthorNote, Depth: 4, Role: port.BookRoleSystem},
+		{Comment: "", Content: "numeric top-level", Enabled: true,
+			Position: port.BookAfterChar, Depth: 4, Role: port.BookRoleSystem},
+		{Comment: "", Content: "unknown", Enabled: true,
+			Position: port.BookAfterChar, Depth: 4, Role: port.BookRoleSystem},
+		{Comment: "", Content: "bare", Enabled: true,
+			Position: port.BookAfterChar, Depth: 4, Role: port.BookRoleSystem},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entries = %+v\nwant %+v", got, want)
+	}
+}
+
+// TestParseBookTitle 条目名：`comment` 优先，`name` 兜底，两者都空则空。
+func TestParseBookTitle(t *testing.T) {
+	raw := []byte(`{"spec":"chara_card_v3","spec_version":"3.0","data":{"name":"A",
+		"character_book":{"entries":[
+			{"comment":"C","name":"N","content":"1"},
+			{"name":"N2","content":"2"},
+			{"content":"3"}
+		]}}}`)
+	out, err := parseCard("card.json", raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var titles []string
+	for _, e := range out.Profile.BookEntries {
+		titles = append(titles, e.Comment)
+	}
+	if want := []string{"C", "N2", ""}; !reflect.DeepEqual(titles, want) {
+		t.Fatalf("titles = %q, want %q", titles, want)
+	}
 }
 
 // TestParseJSONV2 纯 JSON V2 卡的字段归一：投影字段分列读入、元数据只留展示、
@@ -70,17 +134,15 @@ func TestParseJSONV2(t *testing.T) {
 		t.Fatalf("RawJSON must be the card bytes verbatim")
 	}
 	want := []port.BookEntry{
-		{Comment: "Lore", Content: "body", Constant: true, Enabled: true},
-		{Comment: "Off", Content: "x", Constant: true, Enabled: false},
-		{Comment: "Def", Content: "y", Constant: false, Enabled: true},
+		{Comment: "Lore", Content: "body", Constant: true, Enabled: true,
+			Position: port.BookAfterChar, Depth: 4, Role: port.BookRoleSystem},
+		{Comment: "Off", Content: "x", Constant: true, Enabled: false,
+			Position: port.BookAfterChar, Depth: 4, Role: port.BookRoleSystem},
+		{Comment: "Def", Content: "y", Constant: false, Enabled: true,
+			Position: port.BookAfterChar, Depth: 4, Role: port.BookRoleSystem},
 	}
-	if len(out.Profile.BookEntries) != len(want) {
-		t.Fatalf("book len = %d, want %d", len(out.Profile.BookEntries), len(want))
-	}
-	for i := range want {
-		if out.Profile.BookEntries[i] != want[i] {
-			t.Fatalf("book[%d] = %+v, want %+v", i, out.Profile.BookEntries[i], want[i])
-		}
+	if !reflect.DeepEqual(out.Profile.BookEntries, want) {
+		t.Fatalf("book = %+v, want %+v", out.Profile.BookEntries, want)
 	}
 }
 

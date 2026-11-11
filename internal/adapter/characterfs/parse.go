@@ -155,12 +155,7 @@ func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
 		if len(e.Content) > maxFieldBytes {
 			return ParsedCard{}, rawCardData{}, errors.New(i18n.Tf("char.load.book_entry_too_big", "comment", e.Comment, "limit", maxFieldBytes>>10))
 		}
-		entries = append(entries, port.BookEntry{
-			Comment:  e.Comment,
-			Content:  e.Content,
-			Enabled:  bookEnabled(e),
-			Constant: e.Constant,
-		})
+		entries = append(entries, bookEntry(e))
 	}
 
 	info := port.CharacterInfo{
@@ -298,6 +293,146 @@ func bookEnabled(e rawBookEntry) bool {
 		return *e.Enabled
 	}
 	return true
+}
+
+// bookEntry 把一条原始条目归一成端口形状（§5.17/D294）。这里只做「两种写法二选一」的合并，
+// 不做任何取舍——哪些算常驻、哪些命中、装不装得下，全在 app 层。
+func bookEntry(e rawBookEntry) port.BookEntry {
+	return port.BookEntry{
+		Comment:       bookTitle(e),
+		Content:       e.Content,
+		Enabled:       bookEnabled(e),
+		Constant:      e.Constant,
+		Keys:          mergeKeys(e.Keys, e.Key),
+		SecondaryKeys: mergeKeys(e.SecondaryKeys, e.KeySecondary),
+		Order:         bookOrder(e),
+		Position:      bookPosition(e),
+		Depth:         bookDepth(e),
+		Role:          bookRole(e),
+		CaseSensitive: bookCaseSensitive(e),
+	}
+}
+
+// bookTitle 条目名：`comment` 优先，其次 `name`（V3 用 name，老卡用 comment）。
+func bookTitle(e rawBookEntry) string {
+	if s := strings.TrimSpace(e.Comment); s != "" {
+		return s
+	}
+	return strings.TrimSpace(e.Name)
+}
+
+// mergeKeys 合并两代触发词写法（`keys` 与 `key`、`secondary_keys` 与 `keysecondary`），
+// 去空白、去重、保持出现顺序。空串留在列表里会让子串匹配恒命中，必须剔掉。
+func mergeKeys(lists ...[]string) []string {
+	var out []string
+	seen := make(map[string]bool)
+	for _, list := range lists {
+		for _, k := range list {
+			k = strings.TrimSpace(k)
+			if k == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// bookOrder 排序权重：`insertion_order` 优先，其次老卡的 `order`，都没有 = 0。
+func bookOrder(e rawBookEntry) int {
+	if e.InsertionOrdr != nil {
+		return *e.InsertionOrdr
+	}
+	if e.Order != nil {
+		return *e.Order
+	}
+	return 0
+}
+
+// bookPosition 插入位点：`extensions.position`（数字）优先于顶层 `position`（字符串或数字）。
+// 两者并存且不一致是真卡里的常态（D294），数字是较新的一代。
+func bookPosition(e rawBookEntry) port.BookPosition {
+	if e.Extensions.Position != nil {
+		return clampBookPosition(*e.Extensions.Position)
+	}
+	if len(e.Position) > 0 {
+		var n int
+		if json.Unmarshal(e.Position, &n) == nil {
+			return clampBookPosition(n)
+		}
+		var s string
+		if json.Unmarshal(e.Position, &s) == nil {
+			return bookPositionByName(s)
+		}
+	}
+	return port.BookAfterChar
+}
+
+// clampBookPosition 数字位点收进已知五档；负数按人格前、超界按人格后（保守：不往历史里塞）。
+func clampBookPosition(n int) port.BookPosition {
+	switch {
+	case n < 0:
+		return port.BookBeforeChar
+	case n > 4:
+		return port.BookAfterChar
+	}
+	return port.BookPosition(n)
+}
+
+// bookPositionByName 字符串写法的位点；认不出的按人格后（缺省档）。
+func bookPositionByName(s string) port.BookPosition {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "0", "before_char":
+		return port.BookBeforeChar
+	case "1", "after_char":
+		return port.BookAfterChar
+	case "2", "before_an", "before_author_note":
+		return port.BookBeforeAuthorNote
+	case "3", "after_an", "after_author_note":
+		return port.BookAfterAuthorNote
+	case "4", "at_depth":
+		return port.BookAtDepth
+	default:
+		return port.BookAfterChar
+	}
+}
+
+// bookDepth 按深度插入的位置（缺键 = 4）：负数没有意义，收到 0。
+func bookDepth(e rawBookEntry) int {
+	if e.Extensions.Depth == nil {
+		return 4
+	}
+	if d := *e.Extensions.Depth; d > 0 {
+		return d
+	}
+	return 0
+}
+
+// bookRole 按深度插入的身份：0 system / 1 user / 2 assistant（缺键与未知值都按 system）。
+func bookRole(e rawBookEntry) string {
+	if e.Extensions.Role == nil {
+		return port.BookRoleSystem
+	}
+	switch *e.Extensions.Role {
+	case 1:
+		return port.BookRoleUser
+	case 2:
+		return port.BookRoleAssistant
+	default:
+		return port.BookRoleSystem
+	}
+}
+
+// bookCaseSensitive 匹配是否区分大小写（`extensions.case_sensitive` 优先，缺键 = 不区分）。
+func bookCaseSensitive(e rawBookEntry) bool {
+	if e.Extensions.CaseSensitive != nil {
+		return *e.Extensions.CaseSensitive
+	}
+	if e.CaseSensitive != nil {
+		return *e.CaseSensitive
+	}
+	return false
 }
 
 // isPureV1 顶层六字段齐且没有 data —— 纯 V1 卡（本版不读）。

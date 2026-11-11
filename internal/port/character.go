@@ -53,14 +53,50 @@ type CharacterProfile struct {
 	PostHistory  string      // post_history_instructions（进会话 Tail）
 }
 
-// BookEntry 世界书条目（§5.17）：只投影 constant 条目，但标志位要带出来——
-// 「哪些算常驻」是投影口径，不该由解析层替它决定。
+// BookEntry 世界书条目（§5.17/D294）。解析层只如实读出：常量与启用位、检索用的触发词、
+// 排序权重与位点。「哪些算常驻、哪些命中、装不装得下」全部由 app 层判定——那是投影口径，
+// 不是卡的形状。
 type BookEntry struct {
-	Comment  string // 条目标题（作常驻段的小节标题）
+	Comment  string // 条目标题（作常驻段的小节标题、`/lore` 里的条目名）
 	Content  string
 	Enabled  bool // extensions.enabled / enabled；缺键 = true
 	Constant bool // constant；缺键 = false
+	// Keys 主触发词（D294）：`keys` 与老格式的 `key` 合并后的结果，宏尚未展开。
+	Keys []string
+	// SecondaryKeys 次要触发词：与 `selective` 配合，本版只带出、不参与判定。
+	SecondaryKeys []string
+	// Order 排序权重（`insertion_order` 优先，其次 `order`）：大者优先装进预算。
+	Order int
+	// Position 插入位点。两代写法冲突时以 `extensions.position` 的数字为准。
+	Position BookPosition
+	// Depth 按深度插入时，插在倒数第几条消息之前（`extensions.depth`，缺键 = 4）。
+	Depth int
+	// Role 按深度插入时的身份：system / user / assistant（`extensions.role`，缺键 = system）。
+	Role string
+	// CaseSensitive 匹配是否区分大小写（`case_sensitive`，缺键 = 不区分）。
+	CaseSensitive bool
 }
+
+// BookPosition 世界书条目的插入位点（§5.17/D294）。数字沿用 SillyTavern 的
+// `extensions.position`：0 人格前、1 人格后、2 作者注前、3 作者注后、4 按深度。
+//
+// 解析层保留全部五档，app 层只落两档（人格后与按深度）——把「哪几档值得做」留成投影决策。
+type BookPosition int
+
+const (
+	BookBeforeChar BookPosition = iota
+	BookAfterChar
+	BookBeforeAuthorNote
+	BookAfterAuthorNote
+	BookAtDepth
+)
+
+// BookRoleSystem / BookRoleUser / BookRoleAssistant 按深度插入的身份（D294）。
+const (
+	BookRoleSystem    = "system"
+	BookRoleUser      = "user"
+	BookRoleAssistant = "assistant"
+)
 
 // CharacterCard 一张卡的完整内容：事实 + 投影原文（头像路径在 Info.AvatarPath）。
 type CharacterCard struct {
