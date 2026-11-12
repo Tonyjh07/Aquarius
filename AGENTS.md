@@ -9,7 +9,7 @@
 ## 项目概览
 
 - **Aquarius**：面向个人的极简 AI 助手（对话优先、多模态出入、文档记忆、可插拔工具/模型）。
-- **技术栈**：Go ≥ 1.27.3（D30 的 go-sdk 要求 1.25 → D137 为 x/net 漏洞 1.26 → 为清 stdlib 漏洞升到 1.27.2 → 同一理由升 1.27.3），单二进制交付（`go build ./cmd/aquarius`），无 cgo，纯 Go 依赖优先。
+- **技术栈**：Go ≥ 1.27.4（D30 的 go-sdk 要求 1.25 → D137 为 x/net 漏洞 1.26 → 为清 stdlib 漏洞升到 1.27.2 → 同一理由升到 1.27.3 → 1.27.4），单二进制交付（`go build ./cmd/aquarius`），无 cgo，纯 Go 依赖优先。
 - **当前状态**：里程碑现状见 [docs/roadmap.md](docs/roadmap.md)（进度档案）；**接下来做什么见
   [docs/plan.md](docs/plan.md)**（规划的唯一维护处，工作稿：会频繁重排，**别的文档不要引用它的
   节号**）；内核契约见 [docs/contracts.md](docs/contracts.md)，暂缓事项见 plan.md 末节。工程经验与边界见
