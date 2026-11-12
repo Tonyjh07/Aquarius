@@ -230,7 +230,10 @@ func clickToolAction(t *testing.T, u *UI, f *settingsForm, ta *fakeToolsAdmin, k
 	f.toolsStatus, f.toolsErr = "", false
 	wantN := ta.actionCount() + 1
 	btn.Click()
-	deadline := time.Now().Add(3 * time.Second)
+	// 预算放宽到 20 秒：这一圈每帧都要真渲染 720×560，全量 `-race` 下几十个包并行跑时，
+	// 帧耗时会涨一个量级，3 秒预算会假超时（2026-11-12 发版门禁实测踩中）。条件满足即返回，
+	// 正常路径不受影响。
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		toolsFrame(f, u)
 		if ta.actionCount() >= wantN && f.toolsStatus != "" {
