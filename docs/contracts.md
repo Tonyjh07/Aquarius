@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-12 @ ac30588 -->
+<!-- docs-sync: 2026-11-12 @ 151fa22 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
