@@ -203,6 +203,8 @@ type settingsForm struct {
 	voiceBusy   bool   // 试听合成在途
 	voiceStatus string // 试听反馈（成功/失败）
 	voiceErr    bool
+	// vadOn 按说话分段开关（D295）：默认开，关掉退回整段录音。
+	vadOn widget.Bool
 
 	// 联网页（D200）：搜索与抓取各自一组有序提供商（顺序即优先级），加本地抓取的
 	// 网络与安全参数。密钥只写不回显（空 = 保持），与 provider 密钥池同口径。
@@ -419,6 +421,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.ttsDesign.SetText(s.TTSDesign)
 	f.ttsStyle.SetText(s.TTSStyle)
 	f.ttsTags.SetText(s.TTSTags)
+	f.vadOn.Value = s.VADEnabled // D295：默认开
 	f.loadPrompts(s.PromptModules, s.PromptPersona)
 	f.loadFallback(s.Fallback, f.chainChoices) // D176 口径三：降级链
 	f.loadWeb(s)                               // D200：联网提供商与本地抓取参数

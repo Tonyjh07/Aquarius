@@ -156,13 +156,14 @@ var zhAdapterLLMTexts = map[string]string{
 	"audio.mic.err_save":         "保存录音",
 	"audio.mic.err_transcribe":   "语音转写失败",
 	"audio.mic.err_no_text":      "没有识别出文字，请再说一次",
+	"audio.mic.err_segmenter":    "语音分段失败",
 
 	// ---- micwin（winmm 采集；两个平台实现共用同一套 key）----
 	"audio.rec.err_nil_context":          "mic: nil context",
+	"audio.rec.err_nil_sink":             "mic: 没有接收音频的调用方",
 	"audio.rec.err_unsupported_platform": "mic: 当前平台不支持录音（仅 Windows）",
 	"audio.rec.err_no_device":            "mic: 没有可用的录音设备",
 	"audio.rec.err_create_event":         "mic: 创建录音事件失败",
-	"audio.rec.err_silent":               "mic: 没有录到声音（检查麦克风是否被静音）",
 	"audio.rec.err_mm":                   "mic: {action}失败：{why}（错误码 {code}）",
 	"audio.rec.action.open":              "打开录音设备",
 	"audio.rec.action.prepare":           "准备录音缓冲",
@@ -175,6 +176,10 @@ var zhAdapterLLMTexts = map[string]string{
 	"audio.rec.why.out_of_memory":        "内存不足",
 	"audio.rec.why.format":               "设备不支持 16kHz 单声道 16bit 采集",
 	"audio.rec.why.unknown":              "未知错误",
+
+	// ---- vadsilero（按说话分段；两个实现共用同一套 key）----
+	"audio.vad.err_threshold":     "语音分段阈值需在 0–1 之间（当前 {v}）",
+	"audio.vad.err_neg_threshold": "语音分段的收尾阈值必须低于开始阈值",
 
 	// ---- audioplay（临时文件 + PlaySound；两个平台实现共用同一套 key）----
 	"audio.play.err_nil_context":          "audio: nil context",

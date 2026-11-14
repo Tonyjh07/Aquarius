@@ -8,10 +8,11 @@ import (
 	"testing"
 )
 
-// TestWrapWAV WAV 头字段与长度（16kHz / mono / 16bit）。
+// TestWrapWAV WAV 头字段与长度（16kHz / mono / 16bit）。分段结果按段各封一次 WAV。
 func TestWrapWAV(t *testing.T) {
+	t.Parallel()
 	pcm := bytes.Repeat([]byte{0x01, 0x02}, 1600) // 0.1 秒
-	wav := wrapWAV(pcm)
+	wav := WrapWAV(pcm)
 	if len(wav) != 44+len(pcm) {
 		t.Fatalf("长度 = %d, want %d", len(wav), 44+len(pcm))
 	}

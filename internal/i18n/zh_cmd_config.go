@@ -130,6 +130,9 @@ var zhCmdConfigTexts = map[string]string{
 	// config_audio.go：语音
 	"cmd.config.err.input_language":     `input.language="{lang}" 仅支持 auto | zh | en`,
 	"cmd.config.err.audio_kind":         `{name}.kind="{kind}" 不认识（支持 {kinds}）`,
+	"cmd.config.err.vad_threshold":      `audio.vad.threshold 需在 {min}–{max} 之间（当前 {v}）`,
+	"cmd.config.err.vad_min_silence":    `audio.vad.min_silence_ms 需在 0–{max} 之间（当前 {v}）`,
+	"cmd.config.err.vad_min_speech":     `audio.vad.min_speech_ms 需在 0–{max} 之间（当前 {v}）`,
 	"cmd.config.err.audio_endpoint":     `{name} 选了 {kind} 方式就要填端点（base_url 或引用一个服务）`,
 	"cmd.config.err.audio_model_path":   `{name}.model_path 不可为空（本地识别要指定 ggml 模型文件）`,
 	"cmd.config.err.audio_model":        `{name}.model 不可为空（配置了服务就要写明音频模型名）`,

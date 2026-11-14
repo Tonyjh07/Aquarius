@@ -491,9 +491,10 @@ var testDataLiterals = map[string][]string{
 	"internal/adapter/ingestclip/ingestclip_test.go": {
 		"粘贴的文本",
 	},
-	// 录音器错误原文（经 audio.mic.err_record 的 {err} 位回传）与转写样例。
+	// 录音器错误原文（经 audio.mic.err_record 的 {err} 位回传）、转写样例与假分段器的
+	// 段文本——它们扮演模型输出与用户语音转写，不是界面文案。
 	"internal/adapter/ingestmic/ingestmic_test.go": {
-		": 没有设备", "你好世界",
+		": 没有设备", "你好世界", "第一句", "第二句", "第三句", "半句话", ": 阈值越界",
 	},
 	// 作业输出里的中文探针文本。
 	"internal/adapter/jobproc/decode_test.go":  {"中文"},

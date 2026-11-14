@@ -122,7 +122,7 @@ const defaultConfig = `{
                   "inject_constant_book": true, "inject_examples": true },
   "backup": { "keep": 3 },
   "input": { "language": "auto" },
-  "audio": { "asr": {}, "tts": {} },
+  "audio": { "asr": {}, "tts": {}, "vad": { "enabled": true } },
   "output": { "tts": false, "notify": true },
   "web": {
     "search": { "providers": [], "count": 8 },

@@ -17,6 +17,7 @@ var enLogTexts = map[string]string{
 	"log.act.continue":             "carried on as usual; the conversation is unaffected",
 	"log.act.voice_off":            "no playback this run; text is unaffected",
 	"log.act.voice_input_off":      "no speech input this run; typing is unaffected",
+	"log.act.use_whole_recording":  "recording as one segment this run; voice still works",
 	"log.act.keep_raw":             "kept the original text and transcribed as usual",
 	"log.act.dropped":              "dropped this receipt; the conversation is unaffected",
 	"log.act.deferred_next_start":  "left for the next start",
@@ -66,6 +67,7 @@ var enLogTexts = map[string]string{
 	// 语音
 	"log.audio.tts_unconfigured": "speech playback is on, but {why}",
 	"log.audio.asr_unavailable":  "speech recognition is unavailable: {why}",
+	"log.audio.vad_fallback":     "speech segmentation parameters are unusable; recording as one segment: {why}",
 	"log.audio.tts_unavailable":  "speech synthesis is unavailable: {why}",
 	"log.audio.zhconv_unavailable": "traditional-to-simplified conversion is unavailable; " +
 		"transcripts stay as they are: {err}",

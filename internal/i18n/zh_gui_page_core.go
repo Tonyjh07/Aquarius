@@ -206,6 +206,8 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.audio.style_hint":   "自然语言（如：语速稍快，语气轻松）",
 	"ui.page.audio.tags_label":   "风格标签",
 	"ui.page.audio.tags_hint":    "如：温柔 语速稍快（会拼在正文前）",
+	"ui.page.audio.vad_label":    "按说话分段",
+	"ui.page.audio.vad_hint":     "停顿够长就切成独立的一段、逐段转写（默认开）",
 	"ui.page.audio.note":         "识别与合成各自是一份完整配置：先选方式（协议），再填本页给出的字段——本地 whisper 只有模型文件，其余方式才有服务与端点。需要端点或密钥的那几档，可以自己填，也可以选一个「服务」再点「填入」，那会把该条目的端点与密钥引用抄过来，之后照样能改。密钥只写不回显（留空 = 保持）。改方式、服务、端点或模型需保存并重启。音色、音色描述与风格保存后对此后的播报生效；试听按当前填写的内容合成一句。",
 
 	// 语音页：本地 whisper 的模型文件（只这一档用到，按档位单列）

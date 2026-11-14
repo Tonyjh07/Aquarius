@@ -287,6 +287,8 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	p.TTSDesign = strings.TrimSpace(f.ttsDesign.Text())
 	p.TTSStyle = strings.TrimSpace(f.ttsStyle.Text())
 	p.TTSTags = strings.TrimSpace(f.ttsTags.Text())
+	p.VADEnabled = f.vadOn.Value // D295：按说话分段（默认开）
+	p.VADSet = true              // 表单提交管这一项；窄写回不给这个标志
 	// 联网（D200）：两组提供商恒全量写（空 = 清空，= 该能力不可用）；数值空 = 保持
 	// 快照原值、非法拦截；布尔恒写。密钥框留空 = 不带值（cmd 侧保持原引用）。
 	p.WebSearchProviders = f.webProviderPatches(true)

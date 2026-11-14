@@ -181,6 +181,7 @@ const (
 	rowAudioStyle       // 风格指令
 	rowAudioTags        // 风格标签
 	rowAudioPreview     // 试听按钮 + 行内反馈
+	rowAudioVAD         // 按说话分段开关（D295）
 	rowAudioNote        // 说明（重启生效 / 各字段适用模型）
 	// D200：联网页（搜索 / 抓取提供商 + 本地抓取参数）。
 	rowWebSearchItem  // 搜索提供商一项（field = webSearch 下标）

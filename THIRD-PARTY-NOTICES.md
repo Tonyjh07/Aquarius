@@ -4,7 +4,7 @@
 
 ## 一、范围与维护
 
-- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 65 个模块。
+- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 66 个模块。
   - `spike/` 下各目录是独立 `go.mod` 的试验工程，不属于交付物，不在本清单内。
   - `assets/` 下图标为本项目自制素材，不含第三方组件。
   - 随源码内嵌、但不是 Go 模块的数据（繁简转换词典）单列在 §二末尾。
@@ -68,6 +68,7 @@
 | `github.com/segmentio/encoding` | `v0.5.4` | MIT | `Copyright (c) 2019 Segment.io, Inc.` |
 | `github.com/temoto/robotstxt` | `v1.1.2` | MIT | `Copyright (c) 2010 Sergey Shepelev <temotor@gmail.com>` |
 | `github.com/tiendc/go-deepcopy` | `v1.7.2` | MIT | `Copyright (c) 2023 tiendc` |
+| `github.com/vithnilica/go-silerovad` | `v0.0.0-20261009220311-dc87378735b7` | MIT（另含内嵌模型权重，见 §3.9） | `Copyright (c) 2026 Vít Hnilica` |
 | `github.com/xo/terminfo` | `v0.0.0-20220910002029-abceb7e1c41e` | MIT | `Copyright (c) 2016 Anmol Sethi` |
 | `github.com/xuri/efp` | `v0.0.3-0.20260924042702-217b81952dec` | BSD-3-Clause | `Copyright (c) 2017 - 2026 Ri Xu All rights reserved.` |
 | `github.com/xuri/excelize/v2` | `v2.11.1` | BSD-3-Clause | `Copyright (c) 2016-2026 The excelize Authors.` / `Copyright (c) 2011-2017 Geoffrey J. Teale` |
@@ -97,7 +98,7 @@
 
 ## 三、许可证全文
 
-### 3.1 MIT License（39 个组件）
+### 3.1 MIT License（40 个组件）
 
 适用组件：
 
@@ -816,6 +817,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+### 3.9 `github.com/vithnilica/go-silerovad` 内嵌模型权重
+
+该模块是 Silero VAD v6 的纯 Go 实现，语音活动检测的推理直接写在 Go 里，权重随源码内嵌（`silero_vad.bin`，约 1.2 MB），不需要 onnxruntime 或外部模型文件。
+
+- **Go 代码**：MIT，`Copyright (c) 2026 Vít Hnilica`，许可正文与 §3.1 逐字相同。
+- **模型权重**：来自 Silero VAD（<https://github.com/snakers4/silero-vad>，tag `v6.2.1`，文件 `src/silero_vad/data/silero_vad.onnx`），`Copyright (c) Silero Team`，同样以 MIT 发布。随本项目分发的是上游导出的派生数据文件：只保留 16 kHz 分支的常量，float32 数值未改，换了容器与排列顺序。
+- **本项目未修改**上述源码或权重。
 
 ## 四、其他说明
 

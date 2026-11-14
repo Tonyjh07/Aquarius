@@ -425,8 +425,8 @@ func TestPersistAudioSettingsRoundTrip(t *testing.T) {
 func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
 	t.Parallel()
 	raw := strings.Replace(defaultConfig,
-		`"audio": { "asr": {}, "tts": {} }`,
-		`"audio": { "asr": { "kind": "chat-audio" }, "tts": { "kind": "chat-audio" } }`, 1)
+		`"audio": { "asr": {}, "tts": {}, "vad": { "enabled": true } }`,
+		`"audio": { "asr": { "kind": "chat-audio" }, "tts": { "kind": "chat-audio" }, "vad": { "enabled": true } }`, 1)
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)
@@ -543,8 +543,8 @@ func TestPersistAudioRejectsBadKind(t *testing.T) {
 func TestPersistAudioEndpointRoundTrip(t *testing.T) {
 	t.Parallel()
 	raw := strings.Replace(defaultConfig,
-		`"audio": { "asr": {}, "tts": {} }`,
-		`"audio": {"asr": {"api_key": "secret:OLD_ASR"}, "tts": {}}`, 1)
+		`"audio": { "asr": {}, "tts": {}, "vad": { "enabled": true } }`,
+		`"audio": {"asr": {"api_key": "secret:OLD_ASR"}, "tts": {}, "vad": { "enabled": true }}`, 1)
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(cfgPath, []byte(raw), 0o644); err != nil {
 		t.Fatalf("写模板: %v", err)

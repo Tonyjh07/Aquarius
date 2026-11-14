@@ -79,6 +79,11 @@ type SettingsPatch struct {
 	ASRKey     string
 	TTSBaseURL string
 	TTSKey     string
+	// VADEnabled 按说话分段（D295）。这一项默认是「开」，所以不能用「零值 = 保持原值」，
+	// 也不能无条件写——窄写回（人格模板、provider 应用）给的是零值，恒写会把用户开着的
+	// 分段静默关掉。口径与 SamplingSet 一致：VADSet 说「这条写路径管这一项」。
+	VADEnabled bool
+	VADSet     bool
 
 	// 联网（D200）：两组提供商列表恒全量写（nil = 这条写路径不管联网，空数组 = 清空）。
 	// 数值 0 = 不改（留空保持快照原值）；布尔恒写（robots 的「键缺失 = 遵守」在写侧

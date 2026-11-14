@@ -134,8 +134,11 @@ var enCmdConfigTexts = map[string]string{
 		`the entries it lists)`,
 
 	// config_audio.go
-	"cmd.config.err.input_language": `input.language="{lang}" supports only auto | zh | en`,
-	"cmd.config.err.audio_kind":     `{name}.kind="{kind}" is not recognized (supported: {kinds})`,
+	"cmd.config.err.input_language":  `input.language="{lang}" supports only auto | zh | en`,
+	"cmd.config.err.audio_kind":      `{name}.kind="{kind}" is not recognized (supported: {kinds})`,
+	"cmd.config.err.vad_threshold":   `audio.vad.threshold must be between {min} and {max} (currently {v})`,
+	"cmd.config.err.vad_min_silence": `audio.vad.min_silence_ms must be between 0 and {max} (currently {v})`,
+	"cmd.config.err.vad_min_speech":  `audio.vad.min_speech_ms must be between 0 and {max} (currently {v})`,
 	"cmd.config.err.audio_endpoint": `{name} uses the {kind} mode, so an endpoint is required ` +
 		`(base_url or a referenced service)`,
 	"cmd.config.err.audio_model_path": `{name}.model_path cannot be empty ` +

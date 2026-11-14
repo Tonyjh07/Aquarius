@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/characterfs"
@@ -16,13 +17,20 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// voiceInput 界面语音键（D179）：录一段 → 转写 → 回文本（不提交，界面回填输入框）。
+// voiceInput 界面语音键（D179/D295）：录一段 → 按说话分段逐段转写 → 拼成一段文本回填。
+//
+// 界面的回填口只有一个文本框，而分段产出的是一组文本，所以这里按说话的段序用换行
+// 接起来：用户在输入框里看到的仍是「刚才说的那段话」，只是自然分了段。不自动发送
+// （识别有误差，直接发送等于替用户按回车）。
 func (w *wiring) voiceInput(ctx context.Context) (string, error) {
 	if w.mic == nil {
 		return "", errors.New(i18n.T("cmd.asm.err.voice_input_unwired"))
 	}
-	text, _, err := w.mic.Listen(ctx, 0)
-	return text, err
+	texts, _, err := w.mic.Listen(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(texts, "\n"), nil
 }
 
 // voiceSlot 界面语音键槽（D179）：语音识别没装配就给 nil。

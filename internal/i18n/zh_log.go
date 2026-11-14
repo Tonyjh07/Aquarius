@@ -20,6 +20,7 @@ var zhLogTexts = map[string]string{
 	"log.act.continue":             "照常继续，不影响对话",
 	"log.act.voice_off":            "本次不播报，文字照常",
 	"log.act.voice_input_off":      "本次不识别语音，键入照常",
+	"log.act.use_whole_recording":  "本次按整段录音处理，语音照常可用",
 	"log.act.keep_raw":             "保留原文，照常识别",
 	"log.act.dropped":              "已丢弃这条回执，对话照常",
 	"log.act.deferred_next_start":  "留到下次启动再处理",
@@ -70,6 +71,7 @@ var zhLogTexts = map[string]string{
 	// 语音
 	"log.audio.tts_unconfigured":   "语音播报已开启，但{why}",
 	"log.audio.asr_unavailable":    "语音识别不可用：{why}",
+	"log.audio.vad_fallback":       "按说话分段的参数不可用，本次按整段录音处理：{why}",
 	"log.audio.tts_unavailable":    "语音合成不可用：{why}",
 	"log.audio.zhconv_unavailable": "繁简转换不可用，识别结果保持原样：{err}",
 	"log.audio.zhconv_failed":      "繁简转换失败：{err}",

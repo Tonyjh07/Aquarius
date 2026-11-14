@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
@@ -284,5 +285,80 @@ func TestNormalizeAudioEmptyKindDefaults(t *testing.T) {
 	}
 	if cfg.Audio.ASR.Kind != kindChatAudio || cfg.Audio.TTS.Kind != kindChatAudio {
 		t.Fatalf("协议位 = %q / %q", cfg.Audio.ASR.Kind, cfg.Audio.TTS.Kind)
+	}
+}
+
+// TestVADDefaultsAndOverrides 按说话分段的默认值与覆盖（D295）：键缺失 = 开，
+// 显式 false = 关，四个参数留空取上游缺省。
+func TestVADDefaultsAndOverrides(t *testing.T) {
+	t.Parallel()
+	// 键全缺失：默认开，参数取缺省。
+	var zero vadConfig
+	if !zero.enabled() {
+		t.Fatal("键缺失应默认开启分段")
+	}
+	if zero.thresholdOrDefault() != vadDefaultThreshold {
+		t.Fatalf("缺省阈值 = %v", zero.thresholdOrDefault())
+	}
+	if zero.minSilenceOrDefault() != vadDefaultMinSilenceMS*time.Millisecond {
+		t.Fatalf("缺省静音门槛 = %v", zero.minSilenceOrDefault())
+	}
+	if zero.minSpeechOrDefault() != vadDefaultMinSpeechMS*time.Millisecond {
+		t.Fatalf("缺省最短语音 = %v", zero.minSpeechOrDefault())
+	}
+	// 收尾阈值恒低于开始阈值：把阈值压到最低时也不能反过来。
+	low := vadConfig{Threshold: vadMinThreshold}
+	if low.negThresholdOrDefault() >= low.thresholdOrDefault() {
+		t.Fatalf("收尾阈值 %v 不低于开始阈值 %v", low.negThresholdOrDefault(), low.thresholdOrDefault())
+	}
+
+	off := false
+	v := vadConfig{Enabled: &off, Threshold: 0.6, MinSilenceMS: 300, MinSpeechMS: 400}
+	if v.enabled() {
+		t.Fatal("显式 false 应关闭分段")
+	}
+	if v.thresholdOrDefault() != 0.6 {
+		t.Fatalf("阈值 = %v", v.thresholdOrDefault())
+	}
+	if v.minSilenceOrDefault() != 300*time.Millisecond || v.minSpeechOrDefault() != 400*time.Millisecond {
+		t.Fatalf("时长参数 = %v / %v", v.minSilenceOrDefault(), v.minSpeechOrDefault())
+	}
+}
+
+// TestNormalizeVADRejectsOutOfRange 越界的参数启动即报错（D295）：
+// 阈值调错会让「说三句得三段」变成「一句话被切成十段」，静默跑下去更难排查。
+func TestNormalizeVADRejectsOutOfRange(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		v    vadConfig
+	}{
+		{"阈值过低", vadConfig{Threshold: 0.01}},
+		{"阈值过高", vadConfig{Threshold: 1.2}},
+		{"静音门槛过长", vadConfig{MinSilenceMS: vadMaxSilenceMS + 1}},
+		{"静音门槛为负", vadConfig{MinSilenceMS: -1}},
+		{"最短语音过长", vadConfig{MinSpeechMS: vadMaxSpeechMS + 1}},
+		{"最短语音为负", vadConfig{MinSpeechMS: -1}},
+	}
+	for _, c := range cases {
+		if err := normalizeVAD(&c.v); err == nil {
+			t.Errorf("%s 应报错", c.name)
+		}
+	}
+	// 合法值（含全零 = 全缺省）一律放行。
+	for _, v := range []vadConfig{{}, {Threshold: vadMinThreshold}, {Threshold: vadMaxThreshold},
+		{MinSilenceMS: vadMaxSilenceMS}, {MinSpeechMS: vadMaxSpeechMS}} {
+		vv := v
+		if err := normalizeVAD(&vv); err != nil {
+			t.Errorf("合法值被拒: %+v → %v", v, err)
+		}
+	}
+}
+
+// TestDefaultTemplateCarriesVAD 首跑模板带上分段开关（默认开），用户一眼能看到这项存在。
+func TestDefaultTemplateCarriesVAD(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(defaultConfig, `"vad"`) {
+		t.Fatal("首跑模板应含 audio.vad 段")
 	}
 }

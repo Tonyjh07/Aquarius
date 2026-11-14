@@ -33,6 +33,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/vadsilero"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/vitstts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/zhconv"
 	"github.com/Tonyjh07/Aquarius/internal/app"
@@ -332,8 +333,35 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 		}
 	}
 
-	// 语音键与 /mic 共用同一摄取器：录 → 附件库 → 转写。
-	w.mic = ingestmic.New(w.recorder, w.blobs, w.asr, w.cfg.Input.Language)
+	// 语音键与 /mic 共用同一摄取器：录 → 分段 → 附件库 → 逐段转写。
+	// 分段关掉时注入整段实现，下游因此只有一条路径（D295）。
+	w.mic = ingestmic.New(w.recorder, w.blobs, w.asr, w.cfg.Input.Language, w.segmenterFactory())
+}
+
+// segmenterFactory 每次采集现开一个分段器（D295：检测器带跨帧隐状态，不能跨采集复用）。
+//
+// 关掉分段（`audio.vad.enabled=false`）返回整段实现——行为与分段能力上线前一致。
+// 参数配错（阈值越界）不该让语音整个不可用：退回整段并记一条警告，语音还能用。
+func (w *wiring) segmenterFactory() func() (port.SpeechSegmenter, error) {
+	if !w.cfg.Audio.VAD.enabled() {
+		return func() (port.SpeechSegmenter, error) { return vadsilero.NewWhole(), nil }
+	}
+	opts := vadsilero.Options{
+		Threshold:    w.cfg.Audio.VAD.thresholdOrDefault(),
+		MinSilence:   w.cfg.Audio.VAD.minSilenceOrDefault(),
+		MinSpeech:    w.cfg.Audio.VAD.minSpeechOrDefault(),
+		SpeechPad:    w.cfg.Audio.VAD.padOrDefault(),
+		NegThreshold: w.cfg.Audio.VAD.negThresholdOrDefault(),
+	}
+	return func() (port.SpeechSegmenter, error) {
+		seg, err := vadsilero.New(opts)
+		if err != nil {
+			w.note(logging.LevelWarn, logging.Audio, "log.audio.vad_fallback",
+				"log.act.use_whole_recording", "why", err.Error())
+			return vadsilero.NewWhole(), nil
+		}
+		return seg, nil
+	}
 }
 
 // buildASR 按 audio.asr.kind 现建识别适配器。第二个返回值非空 = 不可用的原因。

@@ -156,13 +156,14 @@ var enAdapterLLMTexts = map[string]string{
 	"audio.mic.err_save":         "Saving the recording",
 	"audio.mic.err_transcribe":   "Transcription failed",
 	"audio.mic.err_no_text":      "No text recognised, please say it again",
+	"audio.mic.err_segmenter":    "Speech segmentation failed",
 
 	// ---- micwin（winmm 采集；两个平台实现共用同一套 key）----
 	"audio.rec.err_nil_context":          "mic: nil context",
+	"audio.rec.err_nil_sink":             "mic: no caller is receiving the audio",
 	"audio.rec.err_unsupported_platform": "mic: recording is not supported on this platform (Windows only)",
 	"audio.rec.err_no_device":            "mic: no recording device available",
 	"audio.rec.err_create_event":         "mic: failed to create the recording event",
-	"audio.rec.err_silent":               "mic: nothing was recorded (check whether the microphone is muted)",
 	"audio.rec.err_mm":                   "mic: {action} failed: {why} (error code {code})",
 	"audio.rec.action.open":              "opening the recording device",
 	"audio.rec.action.prepare":           "preparing the recording buffer",
@@ -175,6 +176,10 @@ var enAdapterLLMTexts = map[string]string{
 	"audio.rec.why.out_of_memory":        "out of memory",
 	"audio.rec.why.format":               "the device does not support 16kHz mono 16bit capture",
 	"audio.rec.why.unknown":              "unknown error",
+
+	// ---- vadsilero（按说话分段；两个实现共用同一套 key）----
+	"audio.vad.err_threshold":     "The speech segmentation threshold must be between 0 and 1 (currently {v})",
+	"audio.vad.err_neg_threshold": "The speech end threshold must be below the speech start threshold",
 
 	// ---- audioplay（临时文件 + PlaySound；两个平台实现共用同一套 key）----
 	"audio.play.err_nil_context":          "audio: nil context",

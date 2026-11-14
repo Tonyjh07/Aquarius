@@ -7,16 +7,95 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// audioConfig 语音配置（D179/D222）：识别与合成各自是一条**完整**的服务配置，
+// audioConfig 语音配置（D179/D222/D295）：识别与合成各自是一条**完整**的服务配置，
 // 端点与密钥可以自己填，也可以借 model.providers 里的一条（不继承 kind、能力位，
-// 也不进降级链）。
+// 也不进降级链）。VAD 是采集侧的前处理，不属于任何一路服务。
 type audioConfig struct {
 	ASR audioChannel `json:"asr"`
 	TTS audioChannel `json:"tts"`
+	VAD vadConfig    `json:"vad"`
+}
+
+// vadConfig 按说话分段（D295）。默认值取上游 Silero VAD 的缺省：
+// 阈值 0.5、静音 100ms 判结束、短于 250ms 的段丢弃、两端各补 30ms。
+//
+// Enabled 用 *bool 区分「键缺失 = 开」与「显式 false = 关」：这一项默认是开的，
+// 用 bool 表达不了默认开（零值恒为 false，老配置会被静默关掉）。
+type vadConfig struct {
+	Enabled      *bool   `json:"enabled,omitempty"`
+	Threshold    float64 `json:"threshold,omitempty"`
+	MinSilenceMS int     `json:"min_silence_ms,omitempty"`
+	MinSpeechMS  int     `json:"min_speech_ms,omitempty"`
+}
+
+// 分段参数的缺省值与合法范围。
+const (
+	vadDefaultThreshold    = 0.5
+	vadDefaultMinSilenceMS = 100
+	vadDefaultMinSpeechMS  = 250
+	vadDefaultPadMS        = 30
+	vadMinThreshold        = 0.05
+	vadMaxThreshold        = 0.95
+	vadMaxSilenceMS        = 5000
+	vadMaxSpeechMS         = 5000
+)
+
+// enabled 分段是否开启（键缺失 = 开，D295 决策 5）。
+func (v vadConfig) enabled() bool { return v.Enabled == nil || *v.Enabled }
+
+// thresholdOrDefault 开始说话的阈值。
+func (v vadConfig) thresholdOrDefault() float32 {
+	if v.Threshold <= 0 {
+		return vadDefaultThreshold
+	}
+	return float32(v.Threshold)
+}
+
+// negThresholdOrDefault 收尾阈值：比开始阈值低 0.15，与上游一致。
+//
+// 阈值压低到接近下限时那 0.15 会吃掉全部余量（收尾阈值撞上 0.05 的下限就与开始
+// 阈值持平），这时按「半个阈值」让步进跟着走——两个阈值相等会让分段器永远判不出
+// 「说完了」，段只有在录音结束那一刻才收尾。
+func (v vadConfig) negThresholdOrDefault() float32 {
+	t := v.thresholdOrDefault()
+	step := float32(0.15)
+	if t/2 < step {
+		step = t / 2
+	}
+	n := t - step
+	if n < vadMinThreshold {
+		n = vadMinThreshold
+	}
+	if n >= t {
+		return t / 2
+	}
+	return n
+}
+
+// minSilenceOrDefault 判定一句话说完的静音时长。
+func (v vadConfig) minSilenceOrDefault() time.Duration {
+	if v.MinSilenceMS <= 0 {
+		return vadDefaultMinSilenceMS * time.Millisecond
+	}
+	return time.Duration(v.MinSilenceMS) * time.Millisecond
+}
+
+// minSpeechOrDefault 丢弃过短瞬态的门槛。
+func (v vadConfig) minSpeechOrDefault() time.Duration {
+	if v.MinSpeechMS <= 0 {
+		return vadDefaultMinSpeechMS * time.Millisecond
+	}
+	return time.Duration(v.MinSpeechMS) * time.Millisecond
+}
+
+// padOrDefault 段两端补偿量（不开放配置，沿用上游缺省）。
+func (v vadConfig) padOrDefault() time.Duration {
+	return vadDefaultPadMS * time.Millisecond
 }
 
 // audioChannel 一路语音能力的端点、密钥与参数。
@@ -93,7 +172,28 @@ func (c *fileConfig) normalizeAudio() error {
 	if err := normalizeAudioChannel("audio.asr", &c.Audio.ASR, asrKinds); err != nil {
 		return err
 	}
+	if err := normalizeVAD(&c.Audio.VAD); err != nil {
+		return err
+	}
 	return normalizeAudioChannel("audio.tts", &c.Audio.TTS, ttsKinds)
+}
+
+// normalizeVAD 校验按说话分段的参数（D295）。越界即启动报错：分段的阈值调错会让
+// 「说三句得三段」变成「一句话被切成十段」，静默跑下去比启动失败更难排查。
+func normalizeVAD(v *vadConfig) error {
+	if v.Threshold != 0 && (v.Threshold < vadMinThreshold || v.Threshold > vadMaxThreshold) {
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.vad_threshold",
+			"min", vadMinThreshold, "max", vadMaxThreshold, "v", v.Threshold))
+	}
+	if v.MinSilenceMS < 0 || v.MinSilenceMS > vadMaxSilenceMS {
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.vad_min_silence",
+			"max", vadMaxSilenceMS, "v", v.MinSilenceMS))
+	}
+	if v.MinSpeechMS < 0 || v.MinSpeechMS > vadMaxSpeechMS {
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.vad_min_speech",
+			"max", vadMaxSpeechMS, "v", v.MinSpeechMS))
+	}
+	return nil
 }
 
 // normalizeAudioChannel 归一一路语音配置并按协议校验必填项（启动期与保存前共用同一

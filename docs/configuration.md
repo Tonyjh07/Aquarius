@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-11 @ fb4b422 -->
+<!-- docs-sync: 2026-11-14 @ d2b5d9f -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -347,6 +347,10 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 | `audio.tts.design` | string | — | voicedesign 模式的音色描述；`kind=gptsovits` 时是参考音频对应的文字 |
 | `audio.tts.style` | string | — | 自然语言风格指令（如 `语速稍快，语气轻松`） |
 | `audio.tts.tags` | string | — | 风格标签，非空时拼成 `(标签)` 前缀置于正文开头 |
+| `audio.vad.enabled` | bool | `true` | 按说话分段：停顿够长就切成独立的一段，逐段转写 |
+| `audio.vad.threshold` | float | `0.5` | 判为「开始说话」的概率阈值，`0`–`1`；调低更灵敏、也更容易被噪声触发 |
+| `audio.vad.min_silence_ms` | int | `100` | 停顿多久算这一句说完，毫秒；调大则断句更少、每段更长 |
+| `audio.vad.min_speech_ms` | int | `250` | 短于这个长度的声音片段丢弃，毫秒；挡住咳嗽、敲键盘这类瞬态 |
 
 `kind` 决定打哪个端点、字段怎么摆——**不是靠模型名猜的**，同一个模型名可以挂在不同的服务端后面。
 
@@ -365,6 +369,17 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 
 **录音时长有硬顶**：传输上限由厂商的音频体积上限反推（16kHz 单声道 16bit ≈ 32KB/s，Base64 再膨胀
 4/3）——MiMo 当前 10MB 折合约 4 分钟。应用内默认 60 秒，命令可带秒数覆盖，但不得超过这个硬顶。
+
+**按说话分段**（`audio.vad`，默认开）解决的是「说三句、中间各停一秒，转写出来是一整块」。
+开着时应用边录边判：检到语音才开始缓冲，静音超过 `min_silence_ms` 就把这一段切成独立片段、
+单独入库与转写。说三句得到三段文字；一句话都不说时整次录音什么都不产生，不建附件也不发起转写。
+
+- 一次按键/一条 `/mic` **仍然只提交一条消息**，多段是这条消息里的多个分片，按说话顺序排。
+- 判定在本地做，音频不出本机；分段只影响「切成几段」，不改变转写走哪家服务。
+- 误判（环境噪声被当成说话）的退路是把 `enabled` 关掉——关掉后退回整段录音，行为与旧版本一致。
+- `threshold` 与 `min_silence_ms` 按环境调：嘈杂房间把 `threshold` 调高一点（如 0.6），
+  说话慢、停顿多就把 `min_silence_ms` 调大一点（如 300），免得一句话被切碎。
+- 这一路不改 `audio.asr`：识别服务、模型、语种照旧。
 
 **本地识别**（`kind=whisper`）不下载模型：自行下载 `ggml-base-q5_1.bin`（约 60MB，
 `huggingface.co/ggerganov/whisper.cpp`）后把绝对路径填进 `model_path`。模型文件读不到时启动会

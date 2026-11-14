@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-11-07 @ ae271ef -->
+<!-- docs-sync: 2026-11-14 @ d2b5d9f -->
 
 > **定位、统一语言与限界上下文以本文为准**，同时是 **10 分钟建立索引的地图**：内核做什么、
 > 目录怎么分、端口对哪个适配器。内核的逐条规格（领域不变量、端口接口、应用层语义、
@@ -154,8 +154,8 @@ Root(实节点, ID=会话ID, role=root)
 （M5 主体已落位）：`uigui`（Gio 悬浮球 GUI，D43/§15——悬浮球/托盘/快捷键/主题/设置核心档与
 S1/S1b/S1c/S2/S2b 增强均已完成，步骤见 [roadmap.md](roadmap.md)，后续计划见 [plan.md](plan.md)）；
 待落位：`plugingo` + `pluginapi/v1`（D29 后移）；语音侧适配器（`asrchat`/`asrwhisper`/`asropenai`/
-`asrfunasr`/`mimotts`/`vitstts`/`gptsovitstts`/`zhconv`/`micwin`/`audioplay`/`outputtts`）与屏幕
-捕获（`screencap`）已随 M11 落位。
+`asrfunasr`/`mimotts`/`vitstts`/`gptsovitstts`/`zhconv`/`micwin`/`vadsilero`/`audioplay`/`outputtts`）与屏幕
+捕获（`screencap`）已随 M11 与 v0.8.0 落位。
 
 ## 端口 × 内置适配器（里程碑进度）
 
@@ -170,8 +170,9 @@ S1/S1b/S1c/S2/S2b 增强均已完成，步骤见 [roadmap.md](roadmap.md)，后�
 | `Confirmer` | repl 确认（读行 y/N）；uitui 确认对话（D33）；uigui 输入栏确认态（D43） | **M1 ✓** | 脚本应答 |
 | `MemoryStore` | memoryfs（全局 memories.md + 会话记忆，D23） | **M2 ✓** | in-memory |
 | `AttachmentStore` | blobfs（sha256 寻址 + 启动 GC） | **M3 ✓** | in-memory |
-| `Transcriber` / `Synthesizer` | （选型待定） | backlog（D27） | 假转写 |
-| `Ingestor` / `OutputAdapter` | ingestfile/ingestclip（文本/文件/剪贴板）；notify | **M3 ✓** | 脚本 |
+| `Transcriber` / `Synthesizer` | asrchat / asrwhisper / asropenai / asrfunasr；mimotts / vitstts / gptsovitstts（D179/D223，M11 ✓） | **M11 ✓** | 假转写 |
+| `Recorder` / `SpeechSegmenter` | micwin（Windows waveIn 推帧，非 Windows 报因）；vadsilero（内嵌权重逐帧判定，D295） | **v0.8.0 ✓** | 脚本帧源 / 固定分段 |
+| `Ingestor` / `OutputAdapter` | ingestfile/ingestclip/ingestmic（文本/文件/剪贴板/麦克风）；notify | **M3 ✓**（mic 随 M11） | 脚本 |
 | `JobManager` | jobproc（日志落盘，D8 内存表；进程输出按行解码为 UTF-8，D41） | **M3 ✓** | 假任务 |
 
 ## 两个稳定级

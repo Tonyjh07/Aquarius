@@ -4,7 +4,6 @@ package micwin
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"runtime"
 	"sync"
@@ -43,6 +42,14 @@ const (
 	pollInterval  = 30 * time.Millisecond
 )
 
+// bufferCount 同时在飞的缓冲块数。waveIn 是环形队列：一块满了发事件、自动接上下一块，
+// 采集器在事件到达时把这一块读出来推给调用方。四块 = 约 128ms 的余量，
+// 足够盖住一次 GC 停顿而不丢音频。
+const bufferCount = 4
+
+// bufferBytes 单块长度：一帧（32ms）的整数倍，帧长与 VAD 的推理步长同值。
+const bufferBytes = port.FrameBytes * 4
+
 // maxRecordBytes 硬顶对应的裸 PCM 字节数（4 分钟）。
 const maxRecordBytes = 4 * 60 * SampleRate * Channels * Bits / 8
 
@@ -77,30 +84,95 @@ type Recorder struct {
 // New 创建录音器（不打开设备；Record 时才检查有没有设备）。
 func New() *Recorder { return &Recorder{} }
 
-// Record 采集一段音频，直到 ctx 取消（用户松手）或到达 max。ctx 取消不当作失败：
-// 已录到的部分照常返回，交给上层决定要不要转写。
-func (r *Recorder) Record(ctx context.Context, max time.Duration) ([]byte, time.Duration, error) {
+// Record 连续采集，把音频按 port.FrameBytes 一帧推给 sink，直到 ctx 取消（用户松手）、
+// 到达 max、或 sink 表示不再需要。
+//
+// ctx 取消不当作失败：已推出去的帧照常有效，返回 nil。停止是用户的正常操作，
+// 而他把停止按下去的前提正是刚说完话——这条语义丢了，按停止就等于丢半句话。
+func (r *Recorder) Record(ctx context.Context, max time.Duration, sink port.FrameSink) error {
 	if ctx == nil {
-		return nil, 0, errors.New(i18n.T("audio.rec.err_nil_context"))
+		return errors.New(i18n.T("audio.rec.err_nil_context"))
+	}
+	if sink == nil {
+		return errors.New(i18n.T("audio.rec.err_nil_sink"))
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if n, _, _ := procGetNumDevs.Call(); n == 0 {
-		return nil, 0, errors.New(i18n.T("audio.rec.err_no_device"))
+		return errors.New(i18n.T("audio.rec.err_no_device"))
 	}
 	max = clampDuration(max)
-	want := int(max.Seconds()) * SampleRate * Channels * Bits / 8
-	if want <= 0 || want > maxRecordBytes {
-		want = maxRecordBytes
-	}
 
 	event, _, _ := procCreateEvent.Call(0, 0, 0, 0)
 	if event == 0 {
-		return nil, 0, errors.New(i18n.T("audio.rec.err_create_event"))
+		return errors.New(i18n.T("audio.rec.err_create_event"))
 	}
 	defer procCloseHandle.Call(event)
 
+	hwi, bufs, hdrs, err := openSession(event)
+	if err != nil {
+		return err
+	}
+	defer procClose.Call(hwi)
+	defer unprepareAll(hwi, hdrs)
+	defer runtime.KeepAlive(bufs)
+
+	if code, _, _ := procStart.Call(hwi); code != noError {
+		return mmError(code, i18n.T("audio.rec.action.start"))
+	}
+
+	started := time.Now()
+	written := 0
+	ended := false
+	// pending 攒够一帧就推：waveIn 的块长度是帧的整数倍，但块与块之间可能只录到一半，
+	// 由这里补齐再推，调用方因此永远拿到定长帧。
+	pending := make([]byte, 0, port.FrameBytes+bufferBytes)
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			goto done
+		case <-ticker.C:
+		}
+		if time.Since(started) >= max || written >= maxRecordBytes {
+			break
+		}
+		// 事件到达 = 至少有一块录满了（WIM_DATA）；没到达就继续等。
+		if res, _, _ := procWait.Call(event, 0); res != 0 {
+			continue
+		}
+		// 把已完成、还没取走的块全部取走并重新挂回队列。一次事件只报一块，
+		// 但被推迟处理时队列里可能已经积了好几块。
+		pending = drainBuffers(hwi, hdrs, bufs, pending)
+		var err error
+		pending, written, ended, err = pushFrames(pending, written, sink)
+		if err != nil {
+			procStop.Call(hwi)
+			return err
+		}
+		if ended {
+			procStop.Call(hwi)
+			goto done
+		}
+	}
+done:
+	procStop.Call(hwi)
+	procReset.Call(hwi)
+	// 停止时不足一帧的尾巴补零推出去：丢掉它等于截断最后一个字。
+	if len(pending) > 0 && written < maxRecordBytes {
+		frame := make([]byte, port.FrameBytes)
+		copy(frame, pending)
+		_, _ = sink(frame)
+	}
+	return nil
+}
+
+// openSession 打开默认输入设备并挂上全部缓冲块。返回设备句柄、缓冲与已挂上的块头；
+// 调用方负责 procClose 与 unprepareAll（出错时这里已经把自己挂上的那些收回去了）。
+func openSession(event uintptr) (uintptr, [][]byte, []waveHdr, error) {
 	wfx := waveFormatEx{
 		formatTag:      waveFormatPCM,
 		channels:       Channels,
@@ -114,83 +186,81 @@ func (r *Recorder) Record(ctx context.Context, max time.Duration) ([]byte, time.
 		uintptr(unsafe.Pointer(&hwi)), waveMapper,
 		uintptr(unsafe.Pointer(&wfx)), event, 0, callbackEvent,
 	); code != noError {
-		return nil, 0, mmError(code, i18n.T("audio.rec.action.open"))
+		return 0, nil, nil, mmError(code, i18n.T("audio.rec.action.open"))
 	}
-	defer procClose.Call(hwi)
-
-	buf := make([]byte, want)
-	hdr := waveHdr{data: uintptr(unsafe.Pointer(&buf[0])), bufferLength: uint32(len(buf))}
-	if code, _, _ := procPrepare.Call(hwi, uintptr(unsafe.Pointer(&hdr)), unsafe.Sizeof(hdr)); code != noError {
-		return nil, 0, mmError(code, i18n.T("audio.rec.action.prepare"))
-	}
-	prepared := true
-	defer func() {
-		if prepared {
-			procUnprepare.Call(hwi, uintptr(unsafe.Pointer(&hdr)), unsafe.Sizeof(hdr))
+	bufs := make([][]byte, bufferCount)
+	hdrs := make([]waveHdr, bufferCount)
+	for i := range bufs {
+		bufs[i] = make([]byte, bufferBytes)
+		hdrs[i].data = uintptr(unsafe.Pointer(&bufs[i][0]))
+		hdrs[i].bufferLength = uint32(len(bufs[i]))
+		if code, _, _ := procPrepare.Call(hwi, uintptr(unsafe.Pointer(&hdrs[i])), unsafe.Sizeof(hdrs[i])); code != noError {
+			unprepareAll(hwi, hdrs[:i])
+			procClose.Call(hwi)
+			return 0, nil, nil, mmError(code, i18n.T("audio.rec.action.prepare"))
 		}
-	}()
-	if code, _, _ := procAddBuffer.Call(hwi, uintptr(unsafe.Pointer(&hdr)), unsafe.Sizeof(hdr)); code != noError {
-		return nil, 0, mmError(code, i18n.T("audio.rec.action.mount"))
-	}
-	if code, _, _ := procStart.Call(hwi); code != noError {
-		return nil, 0, mmError(code, i18n.T("audio.rec.action.start"))
-	}
-
-	started := time.Now()
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		case <-ticker.C:
-		}
-		if time.Since(started) >= max {
-			break
-		}
-		// 缓冲录满（WOM_DONE 等价于 WIM_DATA 事件）也收工。
-		if res, _, _ := procWait.Call(event, 0); res == 0 {
-			break
+		if code, _, _ := procAddBuffer.Call(hwi, uintptr(unsafe.Pointer(&hdrs[i])), unsafe.Sizeof(hdrs[i])); code != noError {
+			unprepareAll(hwi, hdrs[:i+1])
+			procClose.Call(hwi)
+			return 0, nil, nil, mmError(code, i18n.T("audio.rec.action.mount"))
 		}
 	}
-
-	procStop.Call(hwi)
-	procReset.Call(hwi) // 把缓冲标记为完成并回填 bytesRecorded
-	procUnprepare.Call(hwi, uintptr(unsafe.Pointer(&hdr)), unsafe.Sizeof(hdr))
-	prepared = false
-	runtime.KeepAlive(&hdr)
-	runtime.KeepAlive(buf)
-
-	n := int(hdr.bytesRecorded)
-	if n <= 0 {
-		return nil, 0, errors.New(i18n.T("audio.rec.err_silent"))
-	}
-	if n > len(buf) {
-		n = len(buf)
-	}
-	dur := time.Duration(n) * time.Second / (SampleRate * Channels * Bits / 8)
-	return wrapWAV(buf[:n]), dur, nil
+	return hwi, bufs, hdrs, nil
 }
 
-// wrapWAV 给裸 PCM 加上 44 字节 WAV 头（16kHz 单声道 16bit）。
-func wrapWAV(pcm []byte) []byte {
-	out := make([]byte, 44+len(pcm))
-	copy(out[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(out[4:], uint32(36+len(pcm)))
-	copy(out[8:12], "WAVE")
-	copy(out[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(out[16:], 16)
-	binary.LittleEndian.PutUint16(out[20:], waveFormatPCM)
-	binary.LittleEndian.PutUint16(out[22:], Channels)
-	binary.LittleEndian.PutUint32(out[24:], SampleRate)
-	binary.LittleEndian.PutUint32(out[28:], SampleRate*Channels*Bits/8)
-	binary.LittleEndian.PutUint16(out[32:], Channels*Bits/8)
-	binary.LittleEndian.PutUint16(out[34:], Bits)
-	copy(out[36:40], "data")
-	binary.LittleEndian.PutUint32(out[40:], uint32(len(pcm)))
-	copy(out[44:], pcm)
-	return out
+// drainBuffers 把已完成、还没取走的缓冲块全部取走，并重新挂回队列接着录。
+// 返回把取到的音频接在 pending 之后的新切片。
+//
+// 一次 WIM_DATA 只报一块，但处理被推迟时队列里可能已经积了好几块，所以这里整圈扫一遍。
+func drainBuffers(hwi uintptr, hdrs []waveHdr, bufs [][]byte, pending []byte) []byte {
+	for i := 0; i < bufferCount; i++ {
+		h, buf := &hdrs[i], bufs[i]
+		if h.flags&flagDone == 0 {
+			continue
+		}
+		n := int(h.bytesRecorded)
+		if n > len(buf) {
+			n = len(buf)
+		}
+		pending = append(pending, buf[:n]...)
+		// 这一块回收，重新挂回队列。
+		procUnprepare.Call(hwi, uintptr(unsafe.Pointer(h)), unsafe.Sizeof(*h))
+		h.bytesRecorded, h.flags = 0, 0
+		if code, _, _ := procPrepare.Call(hwi, uintptr(unsafe.Pointer(h)), unsafe.Sizeof(*h)); code != noError {
+			// 这里没法返回错误（调用方是一次循环体）：把块标记成「未就绪」，
+			// 下一轮自然不再取它；真正的失败由后续 procAddBuffer 的返回码暴露。
+			continue
+		}
+		procAddBuffer.Call(hwi, uintptr(unsafe.Pointer(h)), unsafe.Sizeof(*h))
+	}
+	return pending
+}
+
+// pushFrames 把攒够的整帧推给 sink。返回剩下的不足一帧的尾巴、已推字节数与
+// 「调用方不要了」的标志。
+func pushFrames(pending []byte, written int, sink port.FrameSink) ([]byte, int, bool, error) {
+	for len(pending) >= port.FrameBytes {
+		more, err := sink(pending[:port.FrameBytes])
+		if err != nil {
+			return pending, written, false, err
+		}
+		written += port.FrameBytes
+		pending = pending[port.FrameBytes:]
+		if !more {
+			return pending, written, true, nil
+		}
+	}
+	return pending, written, false, nil
+}
+
+// flagDone WAVEHDR.dwFlags 的 WHDR_DONE（0x00000001）：这一块已经录满、可以取走。
+const flagDone = 0x00000001
+
+// unprepareAll 给已挂上的块收尾（出错路径与正常退出共用）。
+func unprepareAll(hwi uintptr, hdrs []waveHdr) {
+	for i := range hdrs {
+		procUnprepare.Call(hwi, uintptr(unsafe.Pointer(&hdrs[i])), unsafe.Sizeof(hdrs[i]))
+	}
 }
 
 // mmError 把 winmm 的 MMRESULT 翻成可读原因。

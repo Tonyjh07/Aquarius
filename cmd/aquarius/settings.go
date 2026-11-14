@@ -103,6 +103,7 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		TTSTags:      raw.Audio.TTS.Tags,
 		ASRBaseURL:   raw.Audio.ASR.BaseURL,
 		TTSBaseURL:   raw.Audio.TTS.BaseURL,
+		VADEnabled:   raw.Audio.VAD.enabled(),
 		// 联网（D200）：提供商列表与本地抓取参数，文件即事实源。
 		WebSearchProviders: webProviderViewsOf(raw.Web.Search.Providers),
 		WebSearchCount:     raw.Web.Search.Count,
@@ -394,6 +395,17 @@ func applyAudioPatch(generic map[string]any, p uigui.SettingsPatch) {
 		lang = "auto"
 	}
 	inSec["language"] = lang
+	// 按说话分段（D295）：写显式 true/false——这一项的默认是「开」，删键会让用户
+	// 关掉之后又被读成开，所以不能沿用「空值不落键」的口径。VADSet 为假（窄写回）
+	// 时整段不动，免得一次人格模板保存就把用户的开关抹掉。
+	if p.VADSet {
+		vadSec, _ := audioSec["vad"].(map[string]any)
+		if vadSec == nil {
+			vadSec = map[string]any{}
+			audioSec["vad"] = vadSec
+		}
+		vadSec["enabled"] = p.VADEnabled
+	}
 }
 
 // validateFallbackChain 降级链校验（S11-7①/D176）：provider 名不得为空、必须存在于

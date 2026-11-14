@@ -251,6 +251,8 @@ type SettingsSnapshot struct {
 	TTSKeySaved bool
 	TTSKeyPlain bool
 	TTSKeyRef   string
+	// VADEnabled 按说话分段（D295）：默认开。关掉退回整段录音（误判时的退路）。
+	VADEnabled bool
 
 	// 联网（D200）：搜索与抓取各自一组**有序**提供商（顺序即优先级），加本地抓取的
 	// 网络与安全参数。提供商本体只给「怎么连」的展示值，密钥永不进快照（只给

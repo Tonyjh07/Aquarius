@@ -50,6 +50,8 @@ func (audioPage) Rows(f *settingsForm) []rowDesc {
 		rows = append(rows, rowDesc{kind: rowAudioASRProvider}, rowDesc{kind: rowAudioASREndpoint},
 			rowDesc{kind: rowAudioASRKey}, rowDesc{kind: rowAudioASRModel}, rowDesc{kind: rowAudioLang})
 	}
+	// 分段开关放在识别段末尾：它只影响「录进来的音频怎么切」，与合成无关（D295）。
+	rows = append(rows, rowDesc{kind: rowAudioVAD})
 	rows = append(rows, sec(i18n.T("ui.page.audio.section.tts")), rowDesc{kind: rowAudioTTSKind})
 	switch ttsKind {
 	case ttsKindVITS:
@@ -111,6 +113,9 @@ func (audioPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 	case rowAudioTags:
 		return fieldRow(gtx, th, i18n.T("ui.page.audio.tags_label"),
 			editorBox(th, &f.ttsTags, i18n.T("ui.page.audio.tags_hint"))), true
+	case rowAudioVAD:
+		return fieldRow(gtx, th, i18n.T("ui.page.audio.vad_label"),
+			capCheck(th, &f.vadOn, i18n.T("ui.page.audio.vad_hint"))), true
 	case rowAudioPreview:
 		return f.audioPreviewRow(gtx, th), true
 	case rowAudioNote:

@@ -30,10 +30,42 @@ type Synthesizer interface {
 	Synthesize(ctx context.Context, req SpeechRequest) (conversation.BlobRef, error)
 }
 
-// Recorder 麦克风采集（D179）：录一段 16kHz 单声道 16bit 的 WAV。
-// ctx 取消 = 用户主动停止，已录到的音频照常返回（不当作失败）。
+// FrameBytes 一帧音频的字节数（D295）：16kHz 单声道 16bit 下 32ms = 512 采样 = 1024 字节。
+// 与语音活动检测的推理步长取同一个数，分段器因此不必自己再切帧。
+const FrameBytes = 1024
+
+// FrameSink 接收采集器推来的音频帧（D295）。pcm 是裸 PCM16 小端、单声道、16kHz，
+// 长度恒为 FrameBytes；调用方不得保留切片，需要留存请自行拷贝。
+//
+// 返回 false = 调用方已不需要后续帧（例如已攒够想要的段），采集器据此提前收工。
+// 返回错误 = 中止采集，错误原样上抛给 Record 的调用者。
+type FrameSink func(pcm []byte) (bool, error)
+
+// Recorder 麦克风采集（D179/D295）：连续推 16kHz 单声道 16bit 的 PCM 帧。
+//
+// ctx 取消 = 用户主动停止，此时已推出去的帧照常有效、Record 返回 nil 而不是错误；
+// 停止不是失败，这是这条链路上唯一不能丢的语义（用户按停止的前提是他刚说完话）。
 type Recorder interface {
-	Record(ctx context.Context, max time.Duration) (wav []byte, dur time.Duration, err error)
+	Record(ctx context.Context, max time.Duration, sink FrameSink) error
+}
+
+// SpeechSegment 一段语音（D295）：裸 PCM16 小端、单声道、16kHz。
+// At 是这段在整次录音里的起点，只用于展示与排错，不进模型上下文。
+type SpeechSegment struct {
+	PCM []byte
+	At  time.Duration
+}
+
+// SpeechSegmenter 语音分段（D295）：逐帧喂入，按说话切段。
+//
+// Feed 交出**在这一帧之内新结束的**语音段（一帧最多结束一段，也可能一段都不结束），
+// Flush 收尾交出仍在进行的那一段（太短的段按 MinSpeech 丢弃）。
+//
+// 一个采集流一个实例：检测器自带跨帧的隐状态（上下文窗口与 LSTM 记忆），
+// 两路采集共用一个实例等于让两段音频互相污染。实现不保证并发安全。
+type SpeechSegmenter interface {
+	Feed(frame []byte) ([]SpeechSegment, error)
+	Flush() ([]SpeechSegment, error)
 }
 
 // AudioPlayer 播放合成好的语音（D179：整段合成后异步播放；新一条开始前停上一条）。

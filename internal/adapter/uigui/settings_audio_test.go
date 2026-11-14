@@ -350,3 +350,52 @@ func TestPreviewVoiceFailureAndGuard(t *testing.T) {
 		t.Fatalf("合成中重复点击应被忽略，实际调用 %d 次", calls)
 	}
 }
+
+// TestAudioPageVADToggle 按说话分段开关（D295）：快照填表、提交进 patch，
+// 且 patch 带 VADSet 标志（窄写回不该顺手改这一项）。
+func TestAudioPageVADToggle(t *testing.T) {
+	t.Parallel()
+	s := audioSnapshot()
+	s.VADEnabled = true
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return s },
+		ApplySettings: func(SettingsPatch) ([]port.Command, error) { return nil, nil },
+		ProviderMgr:   &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "openai"}, {Name: "mimo"}}},
+	})
+	f := newSettingsForm(u)
+	if !f.vadOn.Value {
+		t.Fatal("快照开着时开关应为开")
+	}
+	p, err := f.patch()
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if !p.VADSet || !p.VADEnabled {
+		t.Fatalf("提交应带 VADSet=true 与值 true，得到 set=%v val=%v", p.VADSet, p.VADEnabled)
+	}
+	// 关掉再提交：仍是显式写（这一项的默认是开，不能靠删键表达关）。
+	f.vadOn.Value = false
+	p, err = f.patch()
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if !p.VADSet || p.VADEnabled {
+		t.Fatalf("关闭应显式提交，得到 set=%v val=%v", p.VADSet, p.VADEnabled)
+	}
+}
+
+// TestAudioPageVADDefaultsOn 快照缺这一项（老配置）时不显示成关闭：
+// 「键缺失 = 开」是配置口径，界面照同一条走。
+func TestAudioPageVADDefaultsOn(t *testing.T) {
+	t.Parallel()
+	s := audioSnapshot()
+	s.VADEnabled = true // 快照读取侧已把「键缺失」归一成 true
+	u := newHeadless(t, Options{
+		Settings:    func() SettingsSnapshot { return s },
+		ProviderMgr: &fakeProviderMgr{snap: []ProviderSnapshot{{Name: "openai"}}},
+	})
+	f := newSettingsForm(u)
+	if !f.vadOn.Value {
+		t.Fatal("快照归一为开时开关应为开")
+	}
+}

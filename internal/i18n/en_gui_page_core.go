@@ -201,6 +201,8 @@ var enGuiPageCoreTexts = map[string]string{
 	"ui.page.audio.style_hint":   "plain language (e.g. a bit faster, relaxed tone)",
 	"ui.page.audio.tags_label":   "Style tags",
 	"ui.page.audio.tags_hint":    "e.g. gentle slightly faster (appended in front of the text)",
+	"ui.page.audio.vad_label":    "Split by speech",
+	"ui.page.audio.vad_hint":     "Cut at longer pauses and transcribe each part (on by default)",
 	"ui.page.audio.note":         "Recognition and synthesis are two complete configurations: pick a method (protocol) first, then fill in the fields this page shows — local whisper takes only a model file, every other method also has a service and an endpoint. For the methods that need an endpoint or key you can fill them in yourself, or pick a Service and press Fill: that copies the entry's endpoint and key reference, and you can still change them afterwards. Keys are write-only and never shown (empty = keep). Changing the method, service, endpoint or model requires saving and restarting. Voice, voice description and style take effect for later speech once saved; the preview synthesizes one sentence from what is currently filled in.",
 
 	// Audio page: the local whisper model file (only that method uses it)
