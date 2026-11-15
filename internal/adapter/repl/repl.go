@@ -269,6 +269,10 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 		_, err := fmt.Fprint(u.out, "[clear]\n")
 		return err
 
+	case port.ContextViewEvent:
+		// 上下文全文只投给有次窗的前端（§7.1）；这一份已落进导出目录，读文件即可。
+		return nil
+
 	default:
 		u.flushDelta()
 		_, err := fmt.Fprintf(u.out, "%v\n", ev)

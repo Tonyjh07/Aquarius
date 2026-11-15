@@ -7,7 +7,30 @@ import (
 	"testing"
 
 	"gioui.org/io/input"
+
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
+
+// TestContextViewEvent 内核投来的上下文全文只进只读次窗，不进转写（§7.1）。
+// headless 下 openWin no-op，因此这里验的是「原子槽收到、转写不变」这两件。
+func TestContextViewEvent(t *testing.T) {
+	t.Parallel()
+	u := newFrameUI()
+	u.wins = newWinHost(nil)
+
+	before := len(u.m.blocks)
+	title := i18n.Tf("session.ctx.view_title", "model", "m", "tok", 10)
+	body := "full context body\nsecond line"
+	u.apply(eventMsg{ev: port.ContextViewEvent{Title: title, Text: body}})
+	if got := len(u.m.blocks); got != before {
+		t.Fatalf("转写块数 %d → %d，上下文全文不该进转写", before, got)
+	}
+	c := u.rawView.Load()
+	if c == nil || c.title != title || c.text != body {
+		t.Fatalf("次窗内容 = %+v", c)
+	}
+}
 
 // TestRawViewFrame 帧内 sync：空槽显示未选择态；内容快照变化才 SetText，ReadOnly 置位。
 func TestRawViewFrame(t *testing.T) {

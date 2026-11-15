@@ -82,24 +82,34 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 // autoCompact 自动压缩轨（D21 轨2 / M2）：估算达阈值时先尝试 Compact——
 // 成功则重建请求（水位生效）并发 NoticeEvent；无可压缩内容则维持原请求；
 // 失败回退"最旧裁剪"（D21：保 leading system 与最近、丢中间）并提示省略条数。
-// 返回（执行后的请求, 用于 usage 校准的该请求估算）。
-func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, req port.GenerateRequest, est int, buf *turnBuffer) (port.GenerateRequest, int) {
+// 返回（执行后的请求, 与它配套的段标签, 用于 usage 校准的该请求估算）。
+//
+// 标签跟着请求一起换：重建就重新取一份，裁剪就按被删的下标平移——否则
+// `/context last` 会拿着旧标签去索引新消息，读到的是错位的正文。
+func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, req port.GenerateRequest, marks []sectionMark, est int, buf *turnBuffer) (port.GenerateRequest, []sectionMark, int) {
 	_, _, err := a.Compact(ctx, c)
 	switch {
 	case err == nil:
 		_ = a.ui.Emit(ctx, port.NoticeEvent{
 			Text: i18n.Tf("compact.auto_done", "est", est, "at", a.compactAt),
 		})
-		next, berr := a.buildRequest(ctx, c, buf)
+		next, nextMarks, berr := a.buildRequestTracked(ctx, c, buf)
 		if berr != nil {
-			return req, est // 重建失败：沿用原请求（下一轮生成会暴露同因错误）
+			return req, marks, est // 重建失败：沿用原请求（下一轮生成会暴露同因错误）
 		}
 		ne, _ := a.est.Estimate(ctx, next)
-		return next, ne
+		return next, nextMarks, ne
 	case errors.Is(err, ErrNothingToCompact):
-		return req, est // 摘要之上无新内容（如 persona 巨大）：无可压，维持原请求
+		return req, marks, est // 摘要之上无新内容（如 persona 巨大）：无可压，维持原请求
 	default:
+		// 前导 system 的位置与 trimOldest 同一规则（它不从这几条里裁）：算出来是为了把
+		// 段标签平移到裁剪后的下标，两处都从「消息序列本身」读，不各存一份状态。
+		lead := 0
+		for lead < len(req.Messages) && req.Messages[lead].Role == port.PromptSystem {
+			lead++
+		}
 		kept, omitted := a.est.trimOldest(ctx, req.Messages, a.compactAt, req.Tools...)
+		marks = shiftMarks(marks, lead, omitted)
 		req.Messages = kept
 		text := i18n.Tf("compact.auto_failed", "err", err)
 		if omitted > 0 {
@@ -108,6 +118,26 @@ func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, r
 		// 回退裁剪改变了本轮模型看到的内容 → 必须立刻可见（D267）。
 		_ = a.ui.Emit(ctx, port.NoticeEvent{Text: text, Attention: true})
 		ne, _ := a.est.Estimate(ctx, req)
-		return req, ne
+		return req, marks, ne
 	}
+}
+
+// shiftMarks 把标签对准裁剪后的消息序列：trimOldest 只从**前导 system 之后**逐条删，
+// 即 kept = before[:lead] + before[lead+omitted:]。lead 之前的标签原位不动，其后的整体
+// 前移 omitted，落在被删区间里的标签连同消息一起丢弃。
+func shiftMarks(marks []sectionMark, lead, omitted int) []sectionMark {
+	if omitted <= 0 {
+		return marks
+	}
+	out := marks[:0]
+	for _, mk := range marks {
+		switch {
+		case mk.Msg < lead:
+			out = append(out, mk) // 前导 system 内部（人格/世界书/记忆/常驻声明）不动
+		case mk.Msg >= lead+omitted:
+			mk.Msg -= omitted
+			out = append(out, mk)
+		}
+	}
+	return out
 }

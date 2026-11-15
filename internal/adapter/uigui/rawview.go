@@ -16,6 +16,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // rawContent 查看原文窗的一次内容快照（D99）：title = 窗内标题行（含节点 ID 前缀），
@@ -48,6 +49,15 @@ func (st *rawViewState) sync(u *UI) {
 	st.applied = c
 	st.ed.ReadOnly = true
 	st.ed.SetText(c.text)
+}
+
+// showContextView 把一份长文本铺进查看原文窗（§7.1）。内容由内核经 ContextViewEvent
+// 投来——已经落过盘的那一份，所以这里只负责呈现，不做格式化。
+func (u *UI) showContextView(ev port.ContextViewEvent) {
+	raw := rawContent{title: ev.Title, text: ev.Text}
+	u.rawView.Store(&raw)
+	u.wins.openWin(winRaw)
+	u.wins.invalidateKind(winRaw)
 }
 
 // rawViewFrame winRaw 单帧：窗体面铺满 + hairline 分隔的标题行 + 下沉面只读块。

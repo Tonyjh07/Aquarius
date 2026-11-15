@@ -165,6 +165,12 @@ var zhCmdTexts = map[string]string{
 	"cmd.usage.desc": "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）",
 	"cmd.lore.desc":  "查看本轮世界书激活了哪些条目（只读，不落树）",
 
+	// /context
+	"cmd.context.desc":    "查看装配好、即将发给模型的上下文（分块用量 / 单条全文 / 整份落盘）",
+	"cmd.context.usage":   "[last | full [last] | 编号]",
+	"cmd.context.p1.name": "编号",
+	"cmd.context.p1.desc": "省略 = 概览；last = 上一轮实发；full = 整份写入导出目录",
+
 	// /watch
 	"cmd.watch.desc":    "观察器：模型的声明式定时观察（看命令/文件/网页命中什么），查看或叫停",
 	"cmd.watch.usage":   "[list|stop <id>]",

@@ -163,6 +163,12 @@ var enCmdTexts = map[string]string{
 	"cmd.usage.desc": "Show token usage (context occupancy / last turn measured / conversation total)",
 	"cmd.lore.desc":  "Show which lorebook entries this round activates (read-only, never written to the tree)",
 
+	// /context
+	"cmd.context.desc":    "Show the assembled context about to be sent to the model (per-section usage / one message in full / a full dump)",
+	"cmd.context.usage":   "[last | full [last] | number]",
+	"cmd.context.p1.name": "number",
+	"cmd.context.p1.desc": "omitted = overview; last = what the previous round sent; full = write the whole thing to the export directory",
+
 	// /watch
 	"cmd.watch.desc":    "Watchers: declarative timed observations the model can declare (watch a command, file or page and report hits); list or stop them",
 	"cmd.watch.usage":   "[list|stop <id>]",

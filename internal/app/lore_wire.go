@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strconv"
 	"sync"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -58,16 +59,17 @@ func (l *loreSource) load(ctx context.Context, slug string) loreCard {
 //
 // 不进树：命中集合每轮都可能变，落树等于每轮多一个节点，回溯时还会读到与当前消息矛盾的
 // 旧集合。判定全在 ActivateLore，这里只负责摆放。
-func (a *Agent) attachLore(ctx context.Context, c *conversation.Conversation, treePath []conversation.Message, msgs []port.PromptMessage) []port.PromptMessage {
+func (a *Agent) attachLore(ctx context.Context, c *conversation.Conversation, treePath []conversation.Message, msgs []port.PromptMessage, marks []sectionMark) ([]port.PromptMessage, []sectionMark) {
 	if len(msgs) == 0 || msgs[0].Role != port.PromptSystem {
-		return msgs
+		return msgs, marks
 	}
 	act := a.loreActivation(ctx, c, treePath)
 	if act.Text == "" {
-		return msgs
+		return msgs, marks
 	}
+	marks = append(marks, sectionMark{Msg: 0, Part: len(msgs[0].Content), Kind: labelLore, Detail: strconv.Itoa(len(act.Entries))})
 	msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: "\n\n" + act.Text})
-	return msgs
+	return msgs, marks
 }
 
 // attachSystemNotes 把记忆块与「外部内容是数据」的常驻声明追加进首条 system（§7.1/D23/D170）。
@@ -75,15 +77,17 @@ func (a *Agent) attachLore(ctx context.Context, c *conversation.Conversation, tr
 // 两段都在树外、每轮重算：`/system` 改人格不会把它们改掉。常驻声明单列一条 system 会让
 // 「首条 system 是人格」的既有口径分叉，所以并进同一条正文；也不逐条给工具结果套围栏
 // ——那会把上下文撑爆，还让正常代码读起来像可疑数据。记忆读取失败静默跳过，不阻断对话。
-func (a *Agent) attachSystemNotes(ctx context.Context, c *conversation.Conversation, msgs []port.PromptMessage) []port.PromptMessage {
+func (a *Agent) attachSystemNotes(ctx context.Context, c *conversation.Conversation, msgs []port.PromptMessage, marks []sectionMark) ([]port.PromptMessage, []sectionMark) {
 	if len(msgs) == 0 || msgs[0].Role != port.PromptSystem {
-		return msgs
+		return msgs, marks
 	}
-	if block := a.memoryBlock(ctx, c.ID); block != "" {
+	if block, parts := a.memoryBlock(ctx, c.ID); block != "" {
+		marks = append(marks, sectionMark{Msg: 0, Part: len(msgs[0].Content), Kind: labelMemory, Detail: parts})
 		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: block})
 	}
+	marks = append(marks, sectionMark{Msg: 0, Part: len(msgs[0].Content), Kind: labelNote})
 	msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: "\n\n" + untrustedDataNote})
-	return msgs
+	return msgs, marks
 }
 
 // loreActivation 本轮的世界书激活结果（§5.17/D294）。没有卡、没有条目或开关关掉时返回零值。

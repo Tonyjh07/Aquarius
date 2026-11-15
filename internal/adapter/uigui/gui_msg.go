@@ -99,6 +99,12 @@ type (
 func (u *UI) apply(msg uiMsg) bool {
 	switch m := msg.(type) {
 	case eventMsg:
+		// 上下文全文（§7.1）走次窗，不进转写：它是一份十几万字符的排查材料，
+		// 进转写区会把 markdown 解析与逐行选区一起拖进来。内容已先行落盘，忽略也无损。
+		if cv, ok := m.ev.(port.ContextViewEvent); ok {
+			u.showContextView(cv)
+			break
+		}
 		u.m.handleEvent(m.ev)
 	case sayMsg:
 		u.m.say(m.text)

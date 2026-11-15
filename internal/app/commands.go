@@ -195,6 +195,11 @@ func runtimeCommands() []commandEntry {
 			Run:    (*Session).execMemory},
 		{Names: []string{"usage"}, Desc: "cmd.usage.desc", Run: (*Session).execUsage},
 		{Names: []string{"lore"}, Desc: "cmd.lore.desc", Run: (*Session).execLore},
+		{Names: []string{"context"}, Usage: "cmd.context.usage", Desc: "cmd.context.desc",
+			Params: []port.CommandParam{
+				{Name: "cmd.context.p1.name", Kind: port.ParamText, Desc: "cmd.context.p1.desc"},
+			},
+			Run: (*Session).execContext},
 		{Names: []string{"watch"}, Usage: "cmd.watch.usage", Desc: "cmd.watch.desc",
 			Params: []port.CommandParam{
 				{Name: "cmd.watch.p1.name", Kind: port.ParamChoice, Values: []string{"list", "stop"}, Desc: "cmd.watch.p1.desc"},

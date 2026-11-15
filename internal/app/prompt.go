@@ -442,10 +442,50 @@ type assembleOpts struct {
 	vision bool
 }
 
+// assembledMessage 装配产物里的一条消息，外加它来自哪一类内容（/context 用，§7.1）。
+//
+// 标签与消息在生产处一一对应地记下来，而不是事后按角色反推：一条 system 在这条路上
+// 可能是人格、压缩摘要或宿主注入，角色本身分不出这三种，反推只能靠位置猜。
+type assembledMessage struct {
+	Msg    port.PromptMessage
+	Label  string // 类别 token（contextLabel*），由展示层翻译
+	Detail string // 类别的补充信息（注入来源、调用 ID 等；空 = 无）
+}
+
+// 装配标签（/context 的类别）：只在这一层产出，展示层只管翻译。
+const (
+	labelPersona    = "persona"
+	labelSummary    = "summary"
+	labelUser       = "user"
+	labelAssistant  = "assistant"
+	labelTool       = "tool"
+	labelToolImage  = "tool_image"
+	labelInjectHost = "inject_host"
+	labelInjectExt  = "inject_external"
+	// 首条 system 里由装配期追加的几段（不在树里、每轮重算）。
+	labelLore   = "lore"
+	labelMemory = "memory"
+	labelNote   = "note"
+	labelTail   = "tail"
+)
+
 // assemblePath 把 Path() 装配为模型消息序列（§7.1，含 D21 水位裁剪）：
 // persona（path[1] 的 system 节点）恒回传；最新压缩摘要之上的历史（persona 之外）一律不回传；
 // Root 空节点不进上下文。
 func assemblePath(ctx context.Context, path []conversation.Message, opt assembleOpts) ([]port.PromptMessage, error) {
+	labeled, err := assemblePathLabeled(ctx, path, opt)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]port.PromptMessage, len(labeled))
+	for i, m := range labeled {
+		out[i] = m.Msg
+	}
+	return out, nil
+}
+
+// assemblePathLabeled 与 assemblePath 同一套序列，多带每条的类别标签。
+func assemblePathLabeled(ctx context.Context, path []conversation.Message, opt assembleOpts) ([]assembledMessage, error) {
 	personaIdx, watermarkIdx := waterline(path)
 	start := 1 // 起点恒 ≥ 1：Root 不进上下文
 	if watermarkIdx >= 0 {
@@ -464,7 +504,7 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 		seq = append(seq, i)
 	}
 
-	var out []port.PromptMessage
+	var out []assembledMessage
 	for _, i := range seq {
 		m := path[i]
 		switch m.Role {
@@ -476,12 +516,17 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			if err != nil {
 				return nil, err
 			}
+			label := labelPersona
 			// 摘要是模型写的、且吸收了其上的不可信内容，进去时标成"上下文"（D170）：
 			// 否则等于把命令输出/文件内容经摘要洗成系统设定。persona 不套这句。
 			if i == watermarkIdx {
 				parts = append([]port.PromptPart{{Kind: port.PromptText, Text: summaryPrefix}}, parts...)
+				label = labelSummary
 			}
-			out = append(out, port.PromptMessage{Role: port.PromptSystem, Content: parts})
+			out = append(out, assembledMessage{
+				Msg:   port.PromptMessage{Role: port.PromptSystem, Content: parts},
+				Label: label,
+			})
 		case conversation.RoleInject:
 			// 注入节点按**显式信任位**投影（D170）：宿主事实 → system（用户动作仍取 user）；
 			// 其余（工具/插件/未知/未声明）→ user + 数据围栏（§9 口径，防伪装成用户指令）。
@@ -489,9 +534,14 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			if err != nil {
 				return nil, err
 			}
-			if pm != nil {
-				out = append(out, *pm)
+			if pm == nil {
+				continue
 			}
+			label := labelInjectExt
+			if m.Trust == conversation.TrustHost {
+				label = labelInjectHost
+			}
+			out = append(out, assembledMessage{Msg: *pm, Label: label, Detail: injectDetail(m.Source)})
 		case conversation.RoleAssistant:
 			// D95 Turn 粒度：一个节点可含多段"思考/正文 + 工具分片"交错——按 tool 边界
 			// 切段投影（调用与结果同片恒成对；Result=nil 的分片不声明也不应答）。
@@ -499,7 +549,9 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, msgs...)
+			for _, pm := range msgs {
+				out = append(out, assembledMessage{Msg: pm, Label: assistantLabel(pm)})
+			}
 		case conversation.RoleUser:
 			if len(m.Content) == 0 {
 				continue
@@ -508,13 +560,38 @@ func assemblePath(ctx context.Context, path []conversation.Message, opt assemble
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, port.PromptMessage{Role: port.PromptUser, Content: parts})
+			out = append(out, assembledMessage{
+				Msg:   port.PromptMessage{Role: port.PromptUser, Content: parts},
+				Label: labelUser,
+			})
 		default:
 			// 未知角色：不入上下文（前向兼容；非法角色本就进不了树）。
 			continue
 		}
 	}
 	return out, nil
+}
+
+// assistantLabel 给一个 assistant 节点投影出的消息定标签：同一节点按工具分片切段后，
+// 正文分段仍是 assistant，工具应答是 tool，工具产图那条 user 是 tool_image。
+func assistantLabel(pm port.PromptMessage) string {
+	switch pm.Role {
+	case port.PromptTool:
+		return labelTool
+	case port.PromptUser:
+		return labelToolImage
+	default:
+		return labelAssistant
+	}
+}
+
+// injectDetail 注入来源的展示补充：只带前缀（`job:` / `tool:` 之后的 id 属于实现细节，
+// 在这张表里没有增量信息）。
+func injectDetail(source string) string {
+	if i := strings.IndexByte(source, ':'); i > 0 {
+		return source[:i]
+	}
+	return source
 }
 
 // 注入内容的数据围栏（D150/§9）：不可信上下文一律被这对标签包住，并前置一句英文

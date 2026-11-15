@@ -121,6 +121,9 @@ type Agent struct {
 	pending *pendingList
 	// lore 世界书条目来源（D294）；nil = 没有角色卡目录，装配时不读世界书。
 	lore *loreSource
+	// lastSnap 上一轮实发请求的留档（/context last，§7.1）：只留最近一份，覆盖式。
+	// 存在的原因只有一个——命令在回合间隙执行，拿不到「刚发出去的那份」。
+	lastSnap atomic.Pointer[contextSnapshot]
 }
 
 // setPending 注入待发清单（Session 构造时调用；一个进程只有一个在跑的 Session）。
@@ -285,7 +288,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 			}
 			_ = cut
 		}
-		req, err := a.buildRequest(ctx, c, buf)
+		req, marks, err := a.buildRequestTracked(ctx, c, buf)
 		if err != nil {
 			if _, cerr := a.finishTurn(ctx, c, buf, conversation.OutcomeError); cerr != nil {
 				return fmt.Errorf("%s: %w (commit failed: %v)", i18n.T("agent.err_assemble"), err, cerr)
@@ -296,8 +299,11 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		sentEstimate, _ := a.est.Estimate(ctx, req)
 		if !autoTried && sentEstimate >= a.compactAt {
 			autoTried = true
-			req, sentEstimate = a.autoCompact(ctx, c, req, sentEstimate, buf)
+			req, marks, sentEstimate = a.autoCompact(ctx, c, req, marks, sentEstimate, buf)
 		}
+		// 留档在压缩之后：`/context last` 要看的是「真正发出去的那份」，
+		// 压缩前后的差异正是最容易被误读的地方。
+		a.saveLast(req, marks)
 		stream, err := a.llm.Generate(ctx, req)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -455,15 +461,23 @@ func (a *Agent) assembleOpts() assembleOpts {
 // Turn 粒度（D95）：buf 非空时把未提交缓冲投影为合成 assistant 消息追加在 Path 尾部——
 // 第 2 轮起模型能看到本 Turn 前几轮的调用与结果（合成节点不进树，仅本次请求可见）。
 func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, buf *turnBuffer) (port.GenerateRequest, error) {
+	req, _, err := a.buildRequestTracked(ctx, c, buf)
+	return req, err
+}
+
+// buildRequestTracked 与 buildRequest 同一套装配，多回一张「哪一段是什么」的清单
+// （/context 用，§7.1）。清单在追加处顺手记下，不从成品反推——反推只能靠位置猜。
+func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Conversation, buf *turnBuffer) (port.GenerateRequest, []sectionMark, error) {
 	treePath := c.Path()
 	if buf != nil && !buf.empty() {
 		treePath = append(treePath, buf.inFlight())
 	}
-	path, err := assemblePath(ctx, treePath, a.assembleOpts())
+	labeled, err := assemblePathLabeled(ctx, treePath, a.assembleOpts())
 	if err != nil {
-		return port.GenerateRequest{}, err
+		return port.GenerateRequest{}, nil, err
 	}
-	msgs := make([]port.PromptMessage, 0, len(path)+1)
+	msgs := make([]port.PromptMessage, 0, len(labeled)+1)
+	var marks []sectionMark
 	// persona 恒回传（D20）：树内 persona 在位则由它充当 system；否则按人格模块树兜底注入（D144）。
 	if !(len(treePath) > 1 && treePath[1].Role == conversation.RoleSystem) {
 		sysText, _ := a.persona.Compose()
@@ -471,10 +485,15 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 			Role:    port.PromptSystem,
 			Content: []port.PromptPart{{Kind: port.PromptText, Text: sysText}},
 		})
+		marks = append(marks, sectionMark{Msg: 0, Part: 0, Kind: labelPersona})
 	}
-	msgs = append(msgs, path...)
-	msgs = a.attachLore(ctx, c, treePath, msgs)
-	msgs = a.attachSystemNotes(ctx, c, msgs)
+	base := len(msgs)
+	for i, am := range labeled {
+		msgs = append(msgs, am.Msg)
+		marks = append(marks, sectionMark{Msg: base + i, Part: -1, Kind: am.Label, Detail: am.Detail})
+	}
+	msgs, marks = a.attachLore(ctx, c, treePath, msgs, marks)
+	msgs, marks = a.attachSystemNotes(ctx, c, msgs, marks)
 	// 会话尾部指令（§5.17/D243）：角色卡的 post_history_instructions 展开稿存在会话元数据
 	// `Tail` 里，开关打开且非空时在**历史之后**追加一条 system。它是元数据不是节点——不进
 	// 水位、不进树，只影响本次请求；位置放在最末是它的语义（"历史之后"）所要求的。
@@ -483,6 +502,7 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 			Role:    port.PromptSystem,
 			Content: []port.PromptPart{{Kind: port.PromptText, Text: c.Tail}},
 		})
+		marks = append(marks, sectionMark{Msg: len(msgs) - 1, Part: 0, Kind: labelTail})
 	}
 
 	req := port.GenerateRequest{
@@ -511,20 +531,21 @@ func (a *Agent) buildRequest(ctx context.Context, c *conversation.Conversation, 
 	if a.tools != nil && a.cfg.Caps.Tools {
 		specs, err := a.tools.Specs(ctx)
 		if err != nil {
-			return port.GenerateRequest{}, fmt.Errorf("%s: %w", i18n.T("agent.err_tools"), err)
+			return port.GenerateRequest{}, nil, fmt.Errorf("%s: %w", i18n.T("agent.err_tools"), err)
 		}
 		req.Tools = specs
 	}
-	return req, nil
+	return req, marks, nil
 }
 
 // memoryBlock 构造记忆注入块（§7.1 承载）：记忆索引（只含全局 + 当前会话两份，
 // D23 名字白名单）+ 当前会话记忆全文（水位无关：压缩/回溯后仍在）。任一读取失败静默跳过。
-func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
+func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) (string, string) {
 	if a.memory == nil {
-		return ""
+		return "", ""
 	}
 	var b strings.Builder
+	var parts []string
 	if entries, err := a.memory.Index(ctx); err == nil {
 		want := map[string]bool{port.GlobalMemoryDoc: true, port.SessionMemoryDoc(id): true}
 		var lines []string
@@ -537,13 +558,15 @@ func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) string {
 			sort.Strings(lines) // 确定性（索引顺序不承诺）
 			b.WriteString(memoryIndexHeading)
 			b.WriteString(strings.Join(lines, "\n"))
+			parts = append(parts, "index")
 		}
 	}
 	if doc, err := a.memory.Read(ctx, port.SessionMemoryDoc(id)); err == nil {
 		if strings.TrimSpace(doc.Content) != "" {
 			b.WriteString(sessionMemoryHeading)
 			b.WriteString(doc.Content)
+			parts = append(parts, "session")
 		}
 	}
-	return b.String()
+	return b.String(), strings.Join(parts, "+")
 }
