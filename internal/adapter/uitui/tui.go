@@ -26,6 +26,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -62,6 +63,9 @@ type Options struct {
 	Interrupt func()
 	// History 输入历史上限（<=0 = 50）。
 	History int
+	// HistoryStore 输入历史的落盘存储（与 GUI 共用同一份文件）：启动时载入既有条目，
+	// 提交时追加。nil = 只在内存。
+	HistoryStore *inhistory.Store
 	// Pending 待发清单（D272）：生成中键入的消息停在这里，由内核在两个取用边界拿走；
 	// nil = 没有清单（全部经输入通道，等本轮结束）。
 	Pending func() port.Pending

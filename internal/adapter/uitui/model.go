@@ -78,7 +78,11 @@ type model struct {
 
 // newModel 初始模型（宽度默认 80，等 WindowSizeMsg 校正）。
 func newModel(u *UI) *model {
-	return &model{u: u, histIdx: -1, width: 80, height: 24}
+	m := &model{u: u, histIdx: -1, width: 80, height: 24}
+	if u.opts.HistoryStore != nil {
+		m.history = u.opts.HistoryStore.Lines() // 重启后 ↑ 能翻到上次输入的句子
+	}
+	return m
 }
 
 func (m *model) Init() tea.Cmd { return nil }
@@ -288,10 +292,15 @@ func isYes(s string) bool {
 	return false
 }
 
-// pushHistory 记输入历史（去重相邻、上限取 Options.History）。
+// pushHistory 记输入历史（去重相邻、上限取 Options.History），同时追加到落盘存储。
+//
+// 内存那份负责本次会话的 ↑↓，落盘那份负责下次启动；文件口径与 GUI 相同（inhistory）。
 func (m *model) pushHistory(line string) {
 	if n := len(m.history); n > 0 && m.history[n-1] == line {
 		return
+	}
+	if m.u.opts.HistoryStore != nil {
+		m.u.opts.HistoryStore.Push(line)
 	}
 	m.history = append(m.history, line)
 	if max := m.u.opts.History; len(m.history) > max {

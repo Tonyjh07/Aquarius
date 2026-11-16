@@ -612,7 +612,7 @@ func (u *UI) submitLine(d port.Delivery) {
 			if u.addPending(text, d) {
 				u.editor.SetText("")
 				if u.m.editTarget == "" {
-					u.ihist.push(text)
+					u.rememberInput(text)
 				}
 				if u.expanded {
 					u.setExpanded(false)
@@ -628,7 +628,7 @@ func (u *UI) submitLine(d port.Delivery) {
 	// D250：进输入历史。编辑既有消息走的也是这里（submitEditor），但那不是「用户打的
 	// 一句话」，翻历史时翻回来只会是一条被改过的旧正文，故只在普通输入时记。
 	if u.m.editTarget == "" {
-		u.ihist.push(text)
+		u.rememberInput(text)
 	}
 	u.m.submit(text)
 	// D106 修订⑥：发送后自动收起——长文输完即走，胶囊回常态（编辑态与仅附件提交同路；

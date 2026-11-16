@@ -34,6 +34,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -293,9 +294,11 @@ type wiring struct {
 	characters *characterfs.Store
 	// exchange 会话进出适配器（/export 与 /import，§5.16）：导入侧要往附件库
 	// 回填归档里的字节，故与 blobs 同期装配。
-	exchange  *exchange.Exchange
-	runner    *toolrun.Runner
-	audit     *decorate.Audit
+	exchange *exchange.Exchange
+	runner   *toolrun.Runner
+	audit    *decorate.Audit
+	// inputHist 输入历史的落盘存储（GUI 与 TUI 共用一份文件）：newUI 时惰性打开。
+	inputHist *inhistory.Store
 	client    port.LLM
 	ui        uiFrontend
 	presenter *outputsPresenter

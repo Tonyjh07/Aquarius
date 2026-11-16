@@ -36,6 +36,17 @@ func (h *ihist) push(line string) {
 	}
 }
 
+// rememberInput 记一条已提交的输入：内存历史与落盘存储各记一份。
+//
+// 两处都要写：内存那份负责本次会话的 ↑↓，落盘那份负责下次启动——只有内存那份时
+// 重启就归零，只有落盘那份时每翻一次历史都要读文件。
+func (u *UI) rememberInput(text string) {
+	u.ihist.push(text)
+	if u.opts.History != nil {
+		u.opts.History.Push(text)
+	}
+}
+
 // reset 回到草稿态（提交后、清空后都调）。
 func (h *ihist) reset() {
 	h.pos = 0

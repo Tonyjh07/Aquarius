@@ -14,6 +14,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -189,6 +190,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Hotkey:              w.cfg.UI.Hotkey,
 			Placeholder:         w.cfg.UI.InputPlaceholder, // D279：占位灰字（空 = 内置文案随语言；保存后热更）
 			Pending:             w.pendingInput,            // D272：生成中键入的消息停在这里
+			History:             w.inputHistory(),          // 输入历史落盘（与 TUI 同一份文件）
 			Keys:                w.keys,                    // §5.19：三键（启动时已校验）                                                                                                                                                   // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
 			Theme:               w.cfg.UI.Theme,            // 主题档 system|light|dark（§15.4/D61；空 = system）
 			Scale:               w.cfg.UI.Scale,            // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
@@ -230,10 +232,22 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 				}
 				return uitui.Status{}
 			},
-			Pending: w.pendingInput, // D272：生成中键入的行停在清单里
-			Keys:    w.keys,         // §5.19：三键（启动时已校验；TUI 引导键回落 Alt+Enter）
+			Pending:      w.pendingInput,   // D272：生成中键入的行停在清单里
+			HistoryStore: w.inputHistory(), // 输入历史落盘（与 GUI 同一份文件）
+			Keys:         w.keys,           // §5.19：三键（启动时已校验；TUI 引导键回落 Alt+Enter）
 		})
 	default:
 		w.ui = repl.New(stdin, stdout)
 	}
+}
+
+// inputHistory 输入历史的落盘存储（`<profile>/input_history.jsonl`，D300）。
+//
+// 惰性建：newUI 只在 profile 就位之后调用一次，之后 GUI 与 TUI 拿的是同一个指针。
+// 进程内只有这一个写者（提交发生在各自的事件循环），Store 自己带锁。
+func (w *wiring) inputHistory() *inhistory.Store {
+	if w.inputHist == nil {
+		w.inputHist = inhistory.Open(filepath.Join(w.profileDir, "input_history.jsonl"))
+	}
+	return w.inputHist
 }

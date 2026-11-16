@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -14,6 +15,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -782,5 +784,24 @@ func TestRenderMDFallback(t *testing.T) {
 	m, _ := newTestModel(t)
 	if got := m.renderMD("**x**"); got != "**x**" {
 		t.Fatalf("renderMD = %q", got)
+	}
+}
+
+// TestHistoryLoadedFromStore TUI 与 GUI 看同一份落盘历史（inhistory）：启动时载入，
+// 提交时追加——两份前端不各记各的。
+func TestHistoryLoadedFromStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "input_history.jsonl")
+	store := inhistory.Open(path)
+	store.Push("typed in the other front end")
+
+	u := &UI{opts: Options{History: 50, HistoryStore: store}}
+	m := newModel(u)
+	if len(m.history) != 1 || m.history[0] != "typed in the other front end" {
+		t.Fatalf("history = %v, want the persisted entry", m.history)
+	}
+
+	m.pushHistory("typed here")
+	if got := inhistory.Open(path).Lines(); len(got) != 2 || got[1] != "typed here" {
+		t.Fatalf("persisted history = %v", got)
 	}
 }

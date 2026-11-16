@@ -40,6 +40,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -92,6 +93,9 @@ type Options struct {
 	// Keys 输入栏三键（§5.19）：发送 / 引导 / 换行。零值 = 缺省 Enter / Shift+Enter /
 	// Ctrl+Enter（三键互不相同由配置面保证；这里再兜一次缺省）。
 	Keys uicommon.KeyBindings
+	// History 输入历史的落盘存储（与 TUI 共用同一份文件）：启动时载入，提交时追加。
+	// nil = 只在内存（headless 测试与未注入的路径）。
+	History *inhistory.Store
 	// Theme 主题档（§15.4/D61）：system | light | dark；空 = system（跟随系统）。
 	Theme string
 	// Scale 元素缩放倍率（D90/§15.8）：默认 1.0，夹 [0.75,2.5]，越界回落 1.0；设置窗热更。
@@ -556,6 +560,9 @@ func newUI(opts Options, window bool) *UI {
 	reportFeatherDisabled()
 	if u.keys.Send.Key == "" {
 		u.keys = uicommon.DefaultKeyBindings()
+	}
+	if opts.History != nil {
+		u.ihist.lines = opts.History.Lines() // 重启后 ↑ 能翻到上次输入的句子
 	}
 	u.plat = newPlatform(opts, window)         // 平台实现（profile/主题解析前就绪）
 	u.representLadder = defaultRepresentLadder // 揭示补提交梯次拍距（D115/D135）
