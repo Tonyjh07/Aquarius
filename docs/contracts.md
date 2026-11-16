@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-16 @ e6e08ce -->
+<!-- docs-sync: 2026-11-16 @ bc64f70 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -231,6 +231,7 @@
 | `think` | 显式整理思路（no-op）；**默认隐藏**（D143），要草稿工具时在设置窗「工具与 MCP」页启用 | Safe |
 | `sleep` | 等 N 秒（1–3600）；只在需要控节奏时用——等后台任务用 `job_wait`（D189） | Safe |
 | `file_read` / `file_list` / `file_search` | 通用文件读取（路径按 §9 矩阵，读全盘免确认）；分页与图片内联见 §4.2 | Safe |
+| `file_grep` | 按**内容**递归搜索（D301）：返回 `路径:行号:内容`；`query` 缺省为字面量，`regex=true` 走 RE2；`ignore_case` 折叠大小写；跳过 `.git`/`.hg`/`.svn`/`node_modules`、二进制与大文件；命中/文件数/单文件大小三道上限 | Safe |
 | `file_edit` | 按精确子串替换（`old_string` 须唯一）；保留原换行与 BOM | Confirm |
 | `file_write` / `file_delete` | 覆盖写入 / 删除 | Confirm |
 | `term_exec` | 终端命令同步执行（超时返回，输出保头尾） | Confirm |
