@@ -157,6 +157,17 @@ var enSessionTexts = map[string]string{
 	"session.raw.dump_line":     "# {text}",
 	"session.raw.dump_note":     "# below is the response body verbatim; drop the lines starting with # and it is the original",
 
+	// /cost: three views over usage and spend (every number comes from Usage on the tree)
+	"usage.cost":                "Usage: /cost [session | model | day]",
+	"session.cost.head_session": "Usage and spend · this conversation",
+	"session.cost.row_session":  "{n} rounds · in {in} · out {out} · {usd}",
+	"session.cost.head_model":   "Usage and spend · by model (all conversations)",
+	"session.cost.head_day":     "Usage and spend · by day (all conversations updated in the last {days} days)",
+	"session.cost.row":          "{key}  in {in} · out {out} · {usd} · {n} calls",
+	"session.cost.uncosted":     " ({n} calls had no declared price and are not converted)",
+	"session.cost.empty":        "No usage recorded yet",
+	"session.cost.no_price":     "no price",
+
 	// /audit: a viewing surface for the audit log (what the model and tools actually did)
 	"usage.audit":             "Usage: /audit [-n count] [--tool name]",
 	"session.audit.head":      "Audit log · last {n} lines ({all} in the file)",

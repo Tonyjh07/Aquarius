@@ -194,6 +194,11 @@ func runtimeCommands() []commandEntry {
 			Params: []port.CommandParam{{Name: "cmd.memory.p1.name", Kind: port.ParamText, Desc: "cmd.memory.p1.desc"}},
 			Run:    (*Session).execMemory},
 		{Names: []string{"usage"}, Desc: "cmd.usage.desc", Run: (*Session).execUsage},
+		{Names: []string{"cost"}, Usage: "cmd.cost.usage", Desc: "cmd.cost.desc",
+			Params: []port.CommandParam{
+				{Name: "cmd.cost.p1.name", Kind: port.ParamChoice, Values: []string{"session", "model", "day"}, Desc: "cmd.cost.p1.desc"},
+			},
+			Run: (*Session).execCost},
 		{Names: []string{"lore"}, Desc: "cmd.lore.desc", Run: (*Session).execLore},
 		{Names: []string{"context"}, Usage: "cmd.context.usage", Desc: "cmd.context.desc",
 			Params: []port.CommandParam{

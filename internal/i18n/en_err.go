@@ -6,6 +6,7 @@ var enErrTexts = map[string]string{
 	"err.write_config":      "write back to config",
 	"err.open_memory":       "open memory file",
 	"err.estimate_usage":    "estimate usage",
+	"err.cost_list":         "list conversations",
 	"err.list_jobs":         "list jobs",
 	"err.read_log":          "read log of {id}",
 	"err.kill_job":          "kill job",

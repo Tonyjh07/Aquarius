@@ -177,6 +177,12 @@ var zhCmdTexts = map[string]string{
 	"cmd.raw.p1.name": "帧号",
 	"cmd.raw.p1.desc": "省略 = 最近一次的概览；-2 = 倒数第二次；full = 整份写入导出目录",
 
+	// /cost
+	"cmd.cost.desc":    "查看用量与花费（当前会话 / 按模型 / 按天）",
+	"cmd.cost.usage":   "[session | model | day]",
+	"cmd.cost.p1.name": "视角",
+	"cmd.cost.p1.desc": "省略 = 当前会话；model = 按模型（跨会话）；day = 按天（跨会话）",
+
 	// /audit
 	"cmd.audit.desc":    "查看审计日志（最近几次模型与工具调用）",
 	"cmd.audit.usage":   "[-n 行数] [--tool 工具名]",

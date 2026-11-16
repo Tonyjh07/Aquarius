@@ -10,6 +10,7 @@ var zhErrTexts = map[string]string{
 	"err.write_config":      "写回 config 失败",
 	"err.open_memory":       "打开记忆文件",
 	"err.estimate_usage":    "估算用量",
+	"err.cost_list":         "读取会话列表",
 	"err.list_jobs":         "列出任务",
 	"err.read_log":          "读取 {id} 日志",
 	"err.kill_job":          "终止任务",

@@ -175,6 +175,12 @@ var enCmdTexts = map[string]string{
 	"cmd.raw.p1.name": "frame number",
 	"cmd.raw.p1.desc": "omitted = overview of the latest; -2 = the one before it; full = write it to the export directory",
 
+	// /cost
+	"cmd.cost.desc":    "Show usage and spend (current conversation / by model / by day)",
+	"cmd.cost.usage":   "[session | model | day]",
+	"cmd.cost.p1.name": "view",
+	"cmd.cost.p1.desc": "omitted = this conversation; model = by model across conversations; day = by day across conversations",
+
 	// /audit
 	"cmd.audit.desc":    "Show the audit log (recent model and tool calls)",
 	"cmd.audit.usage":   "[-n count] [--tool name]",

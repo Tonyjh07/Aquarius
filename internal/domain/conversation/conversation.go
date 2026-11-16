@@ -443,6 +443,24 @@ func (c *Conversation) Path() []Message {
 	return out
 }
 
+// Messages 全部节点快照（创建时间升序，同一时刻按 ID），含已放弃分支上的节点。
+//
+// 与 Path 的区别就是用途：Path 是「这次推理看到什么」，Messages 是「这个会话发生过什么」。
+// 花费统计必须用后者——被放弃的分支照样真花过钱，只算当前分支的账会少算。
+func (c *Conversation) Messages() []Message {
+	out := make([]Message, 0, len(c.nodes))
+	for _, m := range c.nodes {
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
 // Branches 返回 id 所在版本组的其他成员（不含 id 自身），按创建时间升序；供 UI 做新旧
 // 版本对比、命令行 `/branch` 列同级分叉。Root 的分叉 = 其孩子（顶层消息）；id 不在树中、
 // 或 id 本身是衬垫（它不属于任何版本组）返回 nil。

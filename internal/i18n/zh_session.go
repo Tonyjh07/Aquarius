@@ -161,6 +161,17 @@ var zhSessionTexts = map[string]string{
 	"session.raw.dump_line":     "# {text}",
 	"session.raw.dump_note":     "# 以下为服务端返回原文；去掉 # 开头的行就是原件",
 
+	// /cost：用量与花费的三个视角（数字全部来自会话树上的 Usage）
+	"usage.cost":                "用法：/cost [session | model | day]",
+	"session.cost.head_session": "用量与花费 · 本会话",
+	"session.cost.row_session":  "{n} 轮 · in {in} · out {out} · {usd}",
+	"session.cost.head_model":   "用量与花费 · 按模型（全部会话）",
+	"session.cost.head_day":     "用量与花费 · 按天（全部会话，最近 {days} 天内改过的）",
+	"session.cost.row":          "{key}  in {in} · out {out} · {usd} · {n} 次",
+	"session.cost.uncosted":     "（{n} 次未声明单价，未折算）",
+	"session.cost.empty":        "还没有用量记录",
+	"session.cost.no_price":     "未折算",
+
 	// /audit：审计日志的查看口（模型与工具实际做了什么）
 	"usage.audit":             "用法：/audit [-n 行数] [--tool 工具名]",
 	"session.audit.head":      "审计日志 · 最近 {n} 行（文件共 {all} 行）",
