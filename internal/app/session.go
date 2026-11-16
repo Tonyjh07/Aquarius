@@ -107,6 +107,9 @@ type SessionDeps struct {
 	// ExportsDir 导出缺省落点（`--path` 不给时用；装配根给 `<profile>/exports`）。
 	// 空 = 必须显式 --path，否则报未配置。
 	ExportsDir string
+	// AuditPath 审计日志路径（`/audit`）。空 = 未接入审计日志，命令报错。
+	// 与 Plugins 分开传：插件面读的是同一份文件的插件那几行，审计面读全部 kind。
+	AuditPath string
 	// Characters 角色卡目录（/character，§5.17）；nil 时 /character 报未接入。
 	Characters port.CharacterCatalog
 	// CharacterAdmin 角色卡管理面（/character import|remove，§5.17）；nil 时子命令报未接入。
@@ -154,6 +157,7 @@ type Session struct {
 	exporter    port.SessionExporter
 	importer    port.SessionImporter
 	exportsDir  string
+	auditPath   string
 	characters  port.CharacterCatalog
 	charAdmin   CharacterAdmin
 	charOpts    CharacterOptions
@@ -261,6 +265,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		exporter:    d.Exporter,
 		importer:    d.Importer,
 		exportsDir:  d.ExportsDir,
+		auditPath:   d.AuditPath,
 		characters:  d.Characters,
 		charAdmin:   d.CharacterAdmin,
 		charOpts:    d.CharacterOpts,

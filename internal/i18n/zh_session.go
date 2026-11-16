@@ -161,6 +161,19 @@ var zhSessionTexts = map[string]string{
 	"session.raw.dump_line":     "# {text}",
 	"session.raw.dump_note":     "# 以下为服务端返回原文；去掉 # 开头的行就是原件",
 
+	// /audit：审计日志的查看口（模型与工具实际做了什么）
+	"usage.audit":             "用法：/audit [-n 行数] [--tool 工具名]",
+	"session.audit.head":      "审计日志 · 最近 {n} 行（文件共 {all} 行）",
+	"session.audit.head_tool": "审计日志 · {tool} 的最近 {n} 行（文件共 {all} 行）",
+	"session.audit.empty":     "还没有审计记录",
+	"session.audit.no_match":  "没有工具名为 {tool} 的记录",
+	"session.audit.no_path":   "本构建未接入审计日志",
+	"session.audit.err_read":  "读取审计日志",
+	"session.audit.ok":        "ok",
+	"session.audit.fail":      "失败",
+	"session.audit.usage":     "  in {in} · out {out}",
+	"session.audit.hint":      "「--tool 工具名」只看某个工具，「-n 行数」看更多",
+
 	// 切换会话后的回放提示（会话切换、改挂、改父、载入技能等都会发这一行）
 	"session.replay.notice":       "{verb}会话 {title} ({id})，回放 {n} 条历史",
 	"replay.verb.restored":        "已恢复",

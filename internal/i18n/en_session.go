@@ -157,6 +157,19 @@ var enSessionTexts = map[string]string{
 	"session.raw.dump_line":     "# {text}",
 	"session.raw.dump_note":     "# below is the response body verbatim; drop the lines starting with # and it is the original",
 
+	// /audit: a viewing surface for the audit log (what the model and tools actually did)
+	"usage.audit":             "Usage: /audit [-n count] [--tool name]",
+	"session.audit.head":      "Audit log · last {n} lines ({all} in the file)",
+	"session.audit.head_tool": "Audit log · last {n} lines for {tool} ({all} in the file)",
+	"session.audit.empty":     "No audit entries yet",
+	"session.audit.no_match":  "No entries for a tool named {tool}",
+	"session.audit.no_path":   "This build has no audit log wired up",
+	"session.audit.err_read":  "reading the audit log",
+	"session.audit.ok":        "ok",
+	"session.audit.fail":      "FAIL",
+	"session.audit.usage":     "  in {in} · out {out}",
+	"session.audit.hint":      "\"--tool name\" narrows it to one tool, \"-n count\" shows more",
+
 	// 切换会话后的回放提示
 	"session.replay.notice":       "{verb} conversation {title} ({id}), replayed {n} entries",
 	"replay.verb.restored":        "Restored",

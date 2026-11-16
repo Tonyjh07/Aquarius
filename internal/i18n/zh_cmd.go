@@ -177,6 +177,14 @@ var zhCmdTexts = map[string]string{
 	"cmd.raw.p1.name": "帧号",
 	"cmd.raw.p1.desc": "省略 = 最近一次的概览；-2 = 倒数第二次；full = 整份写入导出目录",
 
+	// /audit
+	"cmd.audit.desc":    "查看审计日志（最近几次模型与工具调用）",
+	"cmd.audit.usage":   "[-n 行数] [--tool 工具名]",
+	"cmd.audit.p1.name": "行数",
+	"cmd.audit.p1.desc": "显示最后几行，缺省 20",
+	"cmd.audit.p2.name": "工具名",
+	"cmd.audit.p2.desc": "只看该工具的记录",
+
 	// /watch
 	"cmd.watch.desc":    "观察器：模型的声明式定时观察（看命令/文件/网页命中什么），查看或叫停",
 	"cmd.watch.usage":   "[list|stop <id>]",

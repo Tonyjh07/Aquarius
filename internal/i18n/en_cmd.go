@@ -175,6 +175,14 @@ var enCmdTexts = map[string]string{
 	"cmd.raw.p1.name": "frame number",
 	"cmd.raw.p1.desc": "omitted = overview of the latest; -2 = the one before it; full = write it to the export directory",
 
+	// /audit
+	"cmd.audit.desc":    "Show the audit log (recent model and tool calls)",
+	"cmd.audit.usage":   "[-n count] [--tool name]",
+	"cmd.audit.p1.name": "count",
+	"cmd.audit.p1.desc": "how many trailing lines to show, 20 by default",
+	"cmd.audit.p2.name": "tool name",
+	"cmd.audit.p2.desc": "show only that tool's entries",
+
 	// /watch
 	"cmd.watch.desc":    "Watchers: declarative timed observations the model can declare (watch a command, file or page and report hits); list or stop them",
 	"cmd.watch.usage":   "[list|stop <id>]",
