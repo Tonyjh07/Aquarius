@@ -46,7 +46,8 @@ var version = "dev"
 func main() {
 	// 常驻内存策略：压低 GC 摆动倍数 + 装泄漏保险上限（GOMEMLIMIT / GOGC 显式设置时尊重用户口径）。
 	applyMemoryPolicy()
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	// 顶层 panic 落盘（D299）：双击启动没有控制台，崩溃不能等于什么都没留下。
+	os.Exit(guard(func() int { return run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr) }, os.Stderr))
 }
 
 // fatal 启动期致命错误：stderr 报因并返回退出码 1；控制台不可见（GUI 双击启动，

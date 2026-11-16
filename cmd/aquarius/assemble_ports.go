@@ -315,6 +315,8 @@ func (w *wiring) buildPresenter() {
 				"log.act.dropped", "err", err)
 		},
 	}
+	// 上次崩过就在这里说一声：提示一次即记账，同一个报告不会每次启动都弹（D299）。
+	w.noticePendingCrash(context.Background())
 }
 
 // assembleAudio 装配语音端口（D179/D222）：录音/播放恒在（未配置时执行报因），识别与

@@ -264,6 +264,8 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 // 终端回显（D288）只给 gui：从终端启动时整份日志同时打到那块屏幕，双击启动没有屏幕可打；
 // tui/repl 的终端本身就是界面，插日志会破屏。
 func (w *wiring) openLog(levelFlag, formatFlag string) error {
+	// 崩溃报告落点：profile 已定，从这一刻起顶层 panic 写进本 profile 的日志目录（D299）。
+	setCrashDir(filepath.Join(w.profileDir, "logs"))
 	level, err := logging.ParseLevel(logLevelSetting(levelFlag, os.Getenv("AQUARIUS_LOG_LEVEL"), w.cfg.UI.LogLevel))
 	if err != nil {
 		return err
