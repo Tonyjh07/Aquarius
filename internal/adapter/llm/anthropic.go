@@ -370,15 +370,18 @@ func (c *Client) generateAnthropic(ctx context.Context, req port.GenerateRequest
 		cancel()
 		return nil, err
 	}
+	tr := c.startTrace(anthropicPath, req.Model, resp)
 	if resp.StatusCode != http.StatusOK {
 		code := resp.StatusCode
-		sn := readSnippet(resp.Body)
+		sn := tr.readBody(resp.Body)
 		after := retryAfter(resp)
 		_ = resp.Body.Close()
 		cancel()
+		tr.finish(port.WireEndStatus)
 		return nil, c.statusError(anthropicPath, code, sn, after)
 	}
-	s := newRawStream(streamCtx, cancel, resp.Body, newWireNames(req.Tools))
+	s := newRawStream(streamCtx, cancel, &tracedBody{ReadCloser: resp.Body, tr: tr}, newWireNames(req.Tools))
+	s.attachTrace(tr)
 	st := &anthropicStreamState{}
 	s.decode = func(payload string) (port.Delta, bool, error) {
 		return decodeAnthropicEvent(s, st, payload)

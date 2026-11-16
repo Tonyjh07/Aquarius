@@ -361,7 +361,7 @@ func (m *model) handleEvent(ev port.Event) {
 		m.add(blockNotice, "[notice] "+sanitizeControl(e.Text))
 	case port.ClearEvent:
 		m.clear() // 转写重开（D75：/switch、/new）
-	case port.ContextViewEvent:
+	case port.TextViewEvent:
 		// 上下文全文只投给有次窗的前端（§7.1）。行式界面没有次窗，而这份内容
 		// 已经写进导出目录了，读文件即可——这里刻意什么都不做。
 		return

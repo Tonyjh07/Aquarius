@@ -8,7 +8,7 @@ import (
 )
 
 // Event UI 事件（联合类型）：DeltaEvent | ToolCallEvent | ToolResultEvent | CommittedEvent
-// | ErrorEvent | NoticeEvent | HistoryEvent | ClearEvent | ContextViewEvent。
+// | ErrorEvent | NoticeEvent | HistoryEvent | ClearEvent | TextViewEvent。
 type Event any
 
 // DeltaEvent 流式增量，只进 UI 不进领域（D3）；MessageID 为 Turn 开始时预分配的关联 ID。
@@ -60,12 +60,12 @@ type NoticeEvent struct {
 	Attention bool
 }
 
-// ContextViewEvent 一份长文本投给只读次窗（§7.1）：Title 是窗内标题行，Text 是全文。
+// TextViewEvent 一份长文本投给只读次窗（§7.1）：Title 是窗内标题行，Text 是全文。
 //
-// 只为「铺不下」的内容存在——一份装配好的上下文动辄十几万字符，进转写区要过 markdown
-// 解析与逐行选区，而它的用途是逐字比对。前端有只读次窗就投进去，没有（行式界面）就
-// 忽略：调用方在发事件之前**已经把全文写进导出目录**，忽略该事件不会丢失信息。
-type ContextViewEvent struct {
+// 只为「铺不下」的内容存在——一份装配好的上下文、一份原始响应都动辄十几万字符，进转写区
+// 要过 markdown 解析与逐行选区，而它们的用途是逐字比对。前端有只读次窗就投进去，没有
+// （行式界面）就忽略：调用方在发事件之前**已经把全文写进导出目录**，忽略该事件不会丢失信息。
+type TextViewEvent struct {
 	Title string
 	Text  string
 }

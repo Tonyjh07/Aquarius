@@ -74,6 +74,9 @@ type Config struct {
 	// NoteUnsupported 剥离成功后的记录回调（装配根写回 config `model.unsupported_params`）；
 	// nil = 只在本进程内记住。**只对 openai-chat 生效**（同上）。
 	NoteUnsupported func(field string)
+	// Trace 原始响应留档回调（§7.1，`/raw`）：每次生成收流结束时交出一份有界的响应体
+	// 原文与元信息。nil = 不采。回调在收流的那条 goroutine 上执行，必须立即返回。
+	Trace func(port.WireTrace)
 	// HTTPClient 为 nil 时使用无整体超时的默认客户端（由 ctx 控制时长）。
 	HTTPClient *http.Client
 }
@@ -89,7 +92,8 @@ type Client struct {
 	mu      sync.Mutex           // 保护 omit（记录回调与编码并发取快照）
 	omit    map[string]bool      // 服务端已知不认的参数（启动注入 + 本次运行记录，D34；仅 chat 用）
 	note    func(field string)
-	headers map[string]string // 自定义请求头（D253；仅 chat 用）
+	headers map[string]string    // 自定义请求头（D253；仅 chat 用）
+	trace   func(port.WireTrace) // 原始响应留档（§7.1；nil = 不采）
 }
 
 var _ port.TokenCounter = (*Client)(nil)
@@ -145,11 +149,12 @@ func New(cfg Config) (*Client, error) {
 		hc = defaultClient()
 	}
 	c := &Client{
-		base: strings.TrimRight(raw, "/"),
-		key:  strings.TrimSpace(cfg.APIKey),
-		hc:   hc,
-		omit: make(map[string]bool, len(cfg.UnsupportedParams)),
-		note: cfg.NoteUnsupported,
+		base:  strings.TrimRight(raw, "/"),
+		key:   strings.TrimSpace(cfg.APIKey),
+		hc:    hc,
+		omit:  make(map[string]bool, len(cfg.UnsupportedParams)),
+		note:  cfg.NoteUnsupported,
+		trace: cfg.Trace,
 	}
 	// 协议校验（D175）：只在认得的取值里挑；写错一个词就 fail-fast——把请求发给
 	// 另一套形状的服务端，报回来的错根本看不出是配置还是服务端的问题。
@@ -225,12 +230,17 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 		cancel()
 		return nil, err
 	}
+	// 每份响应各配一份留档（§7.1）：最终只有「真正用的那份」会被 finish 交出去，
+	// 中途那次 400 的身份则以一条 note 留在成功那份上——剥离重试是适配器内部的
+	// 决定，不写下来用户只能靠「怎么突然通了」猜。
+	tr := c.startTrace(chatPath, req.Model, resp)
 	if resp.StatusCode != http.StatusOK {
 		code := resp.StatusCode
-		sn := readSnippet(resp.Body)
+		sn := tr.readBody(resp.Body)
 		after := retryAfter(resp)
 		_ = resp.Body.Close()
 		resp = nil
+		firstCode, firstSn := code, sn
 		// D34：服务端点名不认的参数 → 本次剥离重试，成功后记录（装配根写回 config，
 		// 以后启动直接省略）。stream_options 的兼容回退并入同一机制（历史口径：报错
 		// 片段出现该名即剥，各家措辞不一）。
@@ -249,23 +259,29 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 					cancel()
 					return nil, e
 				}
+				tr = c.startTrace(chatPath, req.Model, resp2)
 				if resp2.StatusCode == http.StatusOK {
 					resp = resp2
+					tr.note("llm.trace.stripped", "fields", strings.Join(stripped, ", "))
 					c.markUnsupported(stripped...)
 				} else {
 					code = resp2.StatusCode
-					sn = readSnippet(resp2.Body)
+					sn = tr.readBody(resp2.Body)
 					after = retryAfter(resp2)
 					_ = resp2.Body.Close()
+					tr.note("llm.trace.first_error", "code", firstCode, "body", firstSn)
 				}
 			}
 		}
 		if resp == nil {
 			cancel()
+			tr.finish(port.WireEndStatus)
 			return nil, c.statusError(chatPath, code, sn, after)
 		}
 	}
-	return newStream(streamCtx, cancel, resp.Body, newWireNames(req.Tools)), nil
+	s := newStream(streamCtx, cancel, &tracedBody{ReadCloser: resp.Body, tr: tr}, newWireNames(req.Tools))
+	s.attachTrace(tr)
+	return s, nil
 }
 
 // statusError 非 200 响应的统一报因（两套协议共用；D175 口径一）。

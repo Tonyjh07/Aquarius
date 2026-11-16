@@ -169,6 +169,12 @@ var enCmdTexts = map[string]string{
 	"cmd.context.p1.name": "number",
 	"cmd.context.p1.desc": "omitted = overview; last = what the previous round sent; full = write the whole thing to the export directory",
 
+	// /raw
+	"cmd.raw.desc":    "Show the raw response from the model API (metadata / one frame verbatim / a full dump)",
+	"cmd.raw.usage":   "[-count | full [-count] | frame number]",
+	"cmd.raw.p1.name": "frame number",
+	"cmd.raw.p1.desc": "omitted = overview of the latest; -2 = the one before it; full = write it to the export directory",
+
 	// /watch
 	"cmd.watch.desc":    "Watchers: declarative timed observations the model can declare (watch a command, file or page and report hits); list or stop them",
 	"cmd.watch.usage":   "[list|stop <id>]",

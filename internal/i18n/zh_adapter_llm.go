@@ -23,6 +23,10 @@ var zhAdapterLLMTexts = map[string]string{
 	"llm.err.read_stream":      "llm: 读取生成流",
 	"llm.detail.no_detail":     "（服务端未给出详情）",
 
+	// ---- 原始响应留档（/raw 里的适配器侧事实）----
+	"llm.trace.stripped":    "服务端不认 {fields}，剥离后重试成功",
+	"llm.trace.first_error": "首次状态码 {code}：{body}",
+
 	// ---- llm 各协议的请求体形状（messages / responses / anthropic）----
 	"llm.err.no_messages":               "llm: 没有可发送的消息",
 	"llm.err.leading_assistant":         "llm: 会话上下文以 assistant 开头，该协议要求首条消息为 user",

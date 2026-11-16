@@ -36,6 +36,8 @@ type stream struct {
 	sigSeen  map[int]bool
 	// names 端点别名 → 内部工具名（D195）：回传的调用先换算，再交给上层派发。
 	names *wireNames
+	// trace 原始响应留档（§7.1）；nil = 不采。收流结束时恰回调一次。
+	trace *traceRec
 }
 
 // newRawStream 建流但不设解码器（调用方随后自行指定，见 responses.go）。
@@ -68,21 +70,25 @@ func (s *stream) Recv() (port.Delta, error) {
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
 			s.done = true
+			s.endTrace(port.WireEndDone)
 			return port.Delta{}, io.EOF
 		}
 		d, ok, err := s.decode(payload)
 		if err != nil {
+			s.endTrace(port.WireEndError)
 			return port.Delta{}, err
 		}
 		if !ok {
 			if s.finish {
 				s.done = true
+				s.endTrace(port.WireEndDone)
 				return port.Delta{}, io.EOF
 			}
 			continue // 无增量分片
 		}
 		if s.finish {
 			s.done = true // 本片增量照发，但流到此为止
+			s.endTrace(port.WireEndDone)
 		}
 		return s.localize(d), nil
 	}
@@ -90,18 +96,33 @@ func (s *stream) Recv() (port.Delta, error) {
 	if err := s.scanner.Err(); err != nil {
 		// 父 ctx 取消优先报告 ctx 错误（连接层错误对调用方无意义）。
 		if cerr := s.ctx.Err(); cerr != nil {
+			s.endTrace(port.WireEndCancelled)
 			return port.Delta{}, cerr
 		}
+		s.endTrace(port.WireEndError)
 		return port.Delta{}, fmt.Errorf("%s: %w", i18n.T("llm.err.read_stream"), err)
 	}
-	// 未见 [DONE] 即断流：多数兼容服务直接关连接，视作正常结束。
+	// 未见 [DONE] 即断流：多数兼容服务直接关连接，视作正常结束——但对排查而言
+	// 「没等到结束标记」和「按协议收尾」是两件事，留档里分开记。
+	s.endTrace(port.WireEndEOF)
 	return port.Delta{}, io.EOF
+}
+
+// attachTrace 挂上原始响应留档（收流结束时交出）。
+func (s *stream) attachTrace(tr *traceRec) { s.trace = tr }
+
+// endTrace 结束留档（nil 安全；重复调用由 traceRec 自己挡）。
+func (s *stream) endTrace(end string) {
+	if s.trace != nil {
+		s.trace.finish(end)
+	}
 }
 
 // Close 中断生成（等价 ctx 取消）。
 func (s *stream) Close() error {
 	s.done = true
 	s.cancel()
+	s.endTrace(port.WireEndCancelled) // 已正常收尾的不会被改写（once）
 	return s.body.Close()
 }
 

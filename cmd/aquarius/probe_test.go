@@ -300,7 +300,7 @@ func TestProbeProtocolDispatch(t *testing.T) {
 	// 装配根按 kind 造客户端：chat / responses / anthropic 都建得起来，
 	// 且走的是各自的线上形状（协议标识由适配器持有，这里只验映射）。
 	for _, name := range []string{"r", "a"} {
-		if _, _, err := w.newLLMClient(cfg.Model.byName(name), "", nil); err != nil {
+		if _, _, err := w.newLLMClient(cfg.Model.byName(name), "", nil, false); err != nil {
 			t.Fatalf("provider %s 的客户端应能建起来: %v", name, err)
 		}
 	}

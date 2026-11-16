@@ -120,7 +120,7 @@ func (s *Session) dumpContext(ctx context.Context, last bool) (string, error) {
 	// 界面有只读次窗就顺手铺开同一份；没有（行式界面）就忽略这条事件——文件已经写了，
 	// 忽略不会丢信息。两者内容逐字相同，所以「看的」和「存的」不会各说一套。
 	if s.ui != nil {
-		_ = s.ui.Emit(ctx, port.ContextViewEvent{
+		_ = s.ui.Emit(ctx, port.TextViewEvent{
 			Title: i18n.Tf("session.ctx.view_title", "model", rep.Model, "tok", rep.Total),
 			Text:  body,
 		})

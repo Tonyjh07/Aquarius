@@ -209,7 +209,7 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, _, err := w.newLLMClient(p, key, nil)
+	c, _, err := w.newLLMClient(p, key, nil, false)
 	return c, err
 }
 

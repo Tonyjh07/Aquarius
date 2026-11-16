@@ -23,6 +23,10 @@ var enAdapterLLMTexts = map[string]string{
 	"llm.err.read_stream":      "llm: reading the generation stream",
 	"llm.detail.no_detail":     "(server gave no detail)",
 
+	// ---- 原始响应留档（/raw 里的适配器侧事实）----
+	"llm.trace.stripped":    "the server rejected {fields}; retried without it and succeeded",
+	"llm.trace.first_error": "first attempt, status {code}: {body}",
+
 	// ---- llm 各协议的请求体形状（messages / responses / anthropic）----
 	"llm.err.no_messages":               "llm: no messages to send",
 	"llm.err.leading_assistant":         "llm: the conversation starts with assistant, this protocol requires the first message to be user",

@@ -124,6 +124,9 @@ type Agent struct {
 	// lastSnap 上一轮实发请求的留档（/context last，§7.1）：只留最近一份，覆盖式。
 	// 存在的原因只有一个——命令在回合间隙执行，拿不到「刚发出去的那份」。
 	lastSnap atomic.Pointer[contextSnapshot]
+	// wires 最近几次生成的原始响应留档（/raw，§7.1）：适配器收流结束时回调写入，
+	// 环形留 wireKeep 份，最旧在后。只在内存（`/raw full` 才落盘）。
+	wires atomic.Pointer[wireLog]
 }
 
 // setPending 注入待发清单（Session 构造时调用；一个进程只有一个在跑的 Session）。

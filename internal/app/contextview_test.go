@@ -153,9 +153,9 @@ func TestContextDumpWritesFile(t *testing.T) {
 		t.Fatalf("回执里没有文件名：%q", out)
 	}
 	// 次窗事件与文件同源：内容必须逐字节相同，否则「看的」和「存的」会各说一套。
-	var view *port.ContextViewEvent
+	var view *port.TextViewEvent
 	for _, ev := range rec.events {
-		if cv, ok := ev.(port.ContextViewEvent); ok {
+		if cv, ok := ev.(port.TextViewEvent); ok {
 			view = &cv
 		}
 	}

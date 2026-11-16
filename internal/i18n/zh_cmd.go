@@ -171,6 +171,12 @@ var zhCmdTexts = map[string]string{
 	"cmd.context.p1.name": "编号",
 	"cmd.context.p1.desc": "省略 = 概览；last = 上一轮实发；full = 整份写入导出目录",
 
+	// /raw
+	"cmd.raw.desc":    "查看模型 API 的原始返回（元信息 / 单帧原文 / 整份落盘）",
+	"cmd.raw.usage":   "[-次数 | full [-次数] | 帧号]",
+	"cmd.raw.p1.name": "帧号",
+	"cmd.raw.p1.desc": "省略 = 最近一次的概览；-2 = 倒数第二次；full = 整份写入导出目录",
+
 	// /watch
 	"cmd.watch.desc":    "观察器：模型的声明式定时观察（看命令/文件/网页命中什么），查看或叫停",
 	"cmd.watch.usage":   "[list|stop <id>]",

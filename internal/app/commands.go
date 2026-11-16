@@ -200,6 +200,11 @@ func runtimeCommands() []commandEntry {
 				{Name: "cmd.context.p1.name", Kind: port.ParamText, Desc: "cmd.context.p1.desc"},
 			},
 			Run: (*Session).execContext},
+		{Names: []string{"raw"}, Usage: "cmd.raw.usage", Desc: "cmd.raw.desc",
+			Params: []port.CommandParam{
+				{Name: "cmd.raw.p1.name", Kind: port.ParamText, Desc: "cmd.raw.p1.desc"},
+			},
+			Run: (*Session).execRaw},
 		{Names: []string{"watch"}, Usage: "cmd.watch.usage", Desc: "cmd.watch.desc",
 			Params: []port.CommandParam{
 				{Name: "cmd.watch.p1.name", Kind: port.ParamChoice, Values: []string{"list", "stop"}, Desc: "cmd.watch.p1.desc"},

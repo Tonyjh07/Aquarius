@@ -51,9 +51,9 @@ func (st *rawViewState) sync(u *UI) {
 	st.ed.SetText(c.text)
 }
 
-// showContextView 把一份长文本铺进查看原文窗（§7.1）。内容由内核经 ContextViewEvent
+// showTextView 把一份长文本铺进查看原文窗（§7.1）。内容由内核经 TextViewEvent
 // 投来——已经落过盘的那一份，所以这里只负责呈现，不做格式化。
-func (u *UI) showContextView(ev port.ContextViewEvent) {
+func (u *UI) showTextView(ev port.TextViewEvent) {
 	raw := rawContent{title: ev.Title, text: ev.Text}
 	u.rawView.Store(&raw)
 	u.wins.openWin(winRaw)

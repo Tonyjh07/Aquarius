@@ -136,7 +136,7 @@ func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, er
 				"provider", p.Name, "n", i+1, "err", err)
 			continue
 		}
-		c, cnt, cerr := w.newLLMClient(p, key, w.noteUnsupportedFor(p.Name))
+		c, cnt, cerr := w.newLLMClient(p, key, w.noteUnsupportedFor(p.Name), true)
 		if cerr != nil {
 			return nil, nil, cerr
 		}
@@ -178,14 +178,24 @@ func (w *wiring) emitNotice(ctx context.Context, text string) {
 // 词表与适配器的 `llm.Protocol` 是同一套，这里做一次映射就够，两处不会再各定义一遍。
 // key 由调用方解析（密钥池逐把解析后再进来）。note 为 nil = 不记录服务端不认的参数
 // （能力探测用：探测刻意发可能不被支持的参数，不该把结论记成正式请求的剥离清单）。
-func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string)) (*llm.Client, port.TokenCounter, error) {
-	c, cerr := llm.New(llm.Config{
+// rec = 留原始响应给 `/raw`（§7.1）：只有真正进会话的那条链要，探测不该占这个位置。
+func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string), rec bool) (*llm.Client, port.TokenCounter, error) {
+	cfg := llm.Config{
 		BaseURL: p.BaseURL, APIKey: key, Tokenizer: p.Tokenizer,
 		Protocol:          llmProtocol(p.protocolKind()),
 		UnsupportedParams: p.UnsupportedParams,
 		NoteUnsupported:   note,
 		Headers:           p.Headers,
-	})
+	}
+	if rec {
+		// Agent 晚于客户端构造，故经 atomic 指针惰性取（调用时才读）。
+		cfg.Trace = func(t port.WireTrace) {
+			if a := w.agentPtr.Load(); a != nil {
+				a.RecordWire(t)
+			}
+		}
+	}
+	c, cerr := llm.New(cfg)
 	if cerr != nil {
 		return nil, nil, cerr
 	}
