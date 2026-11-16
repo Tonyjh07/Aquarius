@@ -82,6 +82,7 @@ var zhAdapterGateTexts = map[string]string{
 	"tool.label.file_read":      "读取文件",
 	"tool.label.file_list":      "列出目录",
 	"tool.label.file_search":    "检索文件",
+	"tool.label.file_grep":      "搜索内容",
 	"tool.label.file_edit":      "编辑文件",
 	"tool.label.file_write":     "写入文件",
 	"tool.label.file_delete":    "删除文件",

@@ -78,6 +78,7 @@ var enAdapterGateTexts = map[string]string{
 	"tool.label.file_read":      "Read file",
 	"tool.label.file_list":      "List directory",
 	"tool.label.file_search":    "Search files",
+	"tool.label.file_grep":      "Search file contents",
 	"tool.label.file_edit":      "Edit file",
 	"tool.label.file_write":     "Write file",
 	"tool.label.file_delete":    "Delete file",
