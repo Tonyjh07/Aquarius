@@ -89,6 +89,7 @@ func renderDiag(p diagPack) string {
 	b.WriteString(diagLine(i18n.Tf("session.diag.anchor", "at", stamp(p.Anchor),
 		"elapsed", p.Elapsed.Round(100*time.Millisecond).String())))
 	b.WriteByte('\n')
+	b.WriteString("#\n")
 
 	b.WriteString(diagLine(i18n.T("session.diag.sec_ctx")))
 	b.WriteByte('\n')
