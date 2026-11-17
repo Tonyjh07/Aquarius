@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-17 @ b80ea1d -->
+<!-- docs-sync: 2026-11-17 @ 6ac7f95 -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -49,15 +49,15 @@ go run ./cmd/ci -list            # 看清单；-only=a,b 只跑指定项；-jobs
 - **能力探测**：`-race` 要 C 工具链、`linuxgate` 要 WSL、漏洞体检要出网。探测不到的 job
   记「跳过」而不是失败；漏洞体检失败同样降级为跳过——本机没装或断网不等于代码坏了。
 - **干净环境复查**（`envclean`）：清掉 `AQUARIUS_*` 与各家密钥后重跑组装与探针那几个包。
-  它挡的是「测试偷偷用上本机配好的密钥」这类问题。**注意它不是沙箱**：同机跑 CI 挡不住
+  这一档挡的是「测试偷偷用上本机配好的密钥」这类问题。**注意这一档不是沙箱**：同机跑 CI 挡不住
   全部环境依赖，这一档只覆盖已知最容易出问题的几处。
 - **证据**：每轮写 `.ci/last.json`（不入库），记提交号、工作区是否脏、每条的结论与耗时。
   fast 档会顺带报上一轮 default / full 的结果与提交号；对不上时明确写「之后的改动未覆盖」，
   避免拿旧结果当新结果。
-- **pre-push hook** 只跑 fast 档，挡的是「格式没跑、vet 报错」这类；它不替代 default。
+- **pre-push hook** 只跑 fast 档，挡的是「格式没跑、vet 报错」这类；hook 不替代 default。
   hook 由程序生成（本仓不存 shell 脚本），覆盖前会备份别人写的 hook。
 - **不进任何档位的两件**：GUI 真窗冒烟（`AQUARIUS_GUI_SMOKE=1`，要显示环境）与真实 MCP
-  验收（`AQUARIUS_E2E_REAL_MCP=1`，要拉现成的 npx server）。它们靠人工跑，档位里不含。
+  验收（`AQUARIUS_E2E_REAL_MCP=1`，要拉现成的 npx server）。这两项靠人工跑，档位里不含。
 - **迁到托管 runner**：`--json` 输出整轮结果，那边调 `go run ./cmd/ci --profile=full
   --json=ci-report.json` 即可。job 定义里没有平台概念，换环境只改 workflow 文件。
 
