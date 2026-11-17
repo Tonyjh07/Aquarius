@@ -64,6 +64,8 @@ func TestExecDiag(t *testing.T) {
 	writeAuditLines(t, s.auditPath, []string{
 		`{"ts":"` + anchor.Add(-time.Hour).Format(time.RFC3339Nano) + `","kind":"tool","name":"old_tool","ok":true}`,
 		`{"ts":"` + anchor.Add(time.Second).Format(time.RFC3339Nano) + `","kind":"llm","name":"m","ok":true,"in":11,"out":22}`,
+		// 收流 2s + 尾部 2s：这一行在尾巴里、但在收流区间之外，用来看 Elapsed 是否真的进了窗口。
+		`{"ts":"` + anchor.Add(3*time.Second).Format(time.RFC3339Nano) + `","kind":"tool","name":"mid_tool","ok":true}`,
 		`{"ts":"` + anchor.Add(time.Minute).Format(time.RFC3339Nano) + `","kind":"tool","name":"late_tool","ok":false}`,
 	})
 
@@ -101,14 +103,15 @@ func TestExecDiag(t *testing.T) {
 	if !strings.Contains(body, "Hello") || !strings.Contains(body, "[DONE]") {
 		t.Fatalf("原始返回不完整：\n%s", body)
 	}
-	// 审计行只含窗口内那一行。
-	if !strings.Contains(body, "llm") || strings.Contains(body, "old_tool") || strings.Contains(body, "late_tool") {
+	// 审计行只含窗口内的那些：锚点那一行、收流区间内的，以及尾部宽限内的。
+	if !strings.Contains(body, "llm") || !strings.Contains(body, "mid_tool") ||
+		strings.Contains(body, "old_tool") || strings.Contains(body, "late_tool") {
 		t.Fatalf("审计窗口不对：\n%s", body)
 	}
 	if strings.Contains(body, "Authorization") || strings.Contains(body, "api_key") {
 		t.Fatalf("包里出现了不该有的东西：\n%s", body)
 	}
-	if !strings.Contains(out, entries[0].Name()) || !strings.Contains(out, "B") {
+	if !strings.Contains(out, entries[0].Name()) || !strings.Contains(out, humanBytes(int64(len(body)))) {
 		t.Fatalf("回执缺路径或大小：%q", out)
 	}
 	// 次窗与文件同源（逐字节相同）。
@@ -139,6 +142,24 @@ func TestExecDiagWithoutAudit(t *testing.T) {
 	s.agent.RecordWire(port.WireTrace{Meta: port.WireMeta{Proto: "openai-chat", Status: 200}, Raw: []byte("data: x\n\n")})
 	if _, err := s.execDiag(ctx, port.Command{Name: "diag"}); err != nil {
 		t.Fatalf("execDiag: %v", err)
+	}
+	entries, err := os.ReadDir(s.exportsDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("导出目录应有 1 个文件，实际 %v（err=%v）", entries, err)
+	}
+	data, err := os.ReadFile(filepath.Join(s.exportsDir, entries[0].Name()))
+	if err != nil {
+		t.Fatalf("读回: %v", err)
+	}
+	body := string(data)
+	// 缺审计一节不算失败：那一节写明「窗口内没有」，另外两节照发。
+	if !strings.Contains(body, i18n.T("session.diag.audit_none")) {
+		t.Fatalf("缺「窗口内没有」：\n%s", body)
+	}
+	for _, want := range []string{"一、", "三、"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("缺少第 %s 节：\n%s", want, body)
+		}
 	}
 }
 

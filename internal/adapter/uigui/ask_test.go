@@ -339,9 +339,9 @@ func TestAskHeadProgressRightAndNoMinimize(t *testing.T) {
 	if headY < 0 {
 		t.Fatal("扫不到进度段（头部右侧应可点跳题）")
 	}
-	// 进度段必须落在面板右半侧（「移到右边」）。
-	if winWidthDp-100 < winWidthDp/2 {
-		t.Fatalf("进度段命中点 x=%d 不在窗口右半侧", winWidthDp-100)
+	// 进度段必须落在面板右半侧（「移到右边」）：从左侧四分之一处点在头部同一行上不命中。
+	if hitTab(winWidthDp/4, headY) {
+		t.Fatal("头部左半侧也命中进度段：进度段没有移到右边")
 	}
 	// 面板右上角不再有最小化钮：那里点下去不命中进度段（原最小化位置在进度段右侧）。
 	if hitTab(winWidthDp-85, headY) {

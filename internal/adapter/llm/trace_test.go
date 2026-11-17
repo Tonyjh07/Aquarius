@@ -45,6 +45,9 @@ func TestTraceCapturesRawStream(t *testing.T) {
 	c, got, closeSrv := traceClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("X-Request-Id", "req-1")
+		// 敏感头：白名单之外的一律不留档，这是「响应头也进视图」这条的口子。
+		w.Header().Set("Authorization", "Bearer sk-secret")
+		w.Header().Set("Set-Cookie", "sid=abc")
 		fmt.Fprint(w, sseScript)
 	})
 	defer closeSrv()
@@ -74,6 +77,11 @@ func TestTraceCapturesRawStream(t *testing.T) {
 	}
 	if len(tr.Meta.Headers) == 0 || !strings.Contains(strings.Join(tr.Meta.Headers, "|"), "X-Request-Id: req-1") {
 		t.Fatalf("headers = %v, want x-request-id", tr.Meta.Headers)
+	}
+	for _, h := range tr.Meta.Headers {
+		if strings.Contains(h, "sk-secret") || strings.Contains(h, "sid=abc") {
+			t.Fatalf("留档带出了敏感响应头: %v", tr.Meta.Headers)
+		}
 	}
 	if tr.Meta.Started.IsZero() {
 		t.Fatal("started is zero")

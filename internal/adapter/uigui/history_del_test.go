@@ -277,3 +277,28 @@ func TestHistoryConfirmDialogRefuses(t *testing.T) {
 		t.Fatal("应答后确认态应收尾")
 	}
 }
+
+// TestHistoryRowClickSwitches 点会话行（不是 ✕）投的是 `/switch <全 ID>`——这一条走的是
+// 真指针事件与生产命中区，与 postCommand 直投的路径不同：行件被谁遮住、命中区错位，都只有
+// 真点一次才看得出来。
+func TestHistoryRowClickSwitches(t *testing.T) {
+	t.Parallel()
+	u, st, q := delFixture(t)
+
+	y := delRowY(t, q, u, st, 1) // 第 1 行（C2），避开第 0 行的当前态
+	q.Queue(ovPointer(pointer.Move, 100, y))
+	histFrameFor(q, u, st)
+	ovClick(q, 100, y)
+	histFrameFor(q, u, st)
+	histFrameFor(q, u, st) // 点击在下一帧才被点击件消费
+
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "switch" ||
+			len(in.Command.Args) != 1 || in.Command.Args[0] != "C2" {
+			t.Fatalf("inCh = %+v, want /switch C2", in)
+		}
+	default:
+		t.Fatal("inCh 空：点行没有投出 /switch")
+	}
+}

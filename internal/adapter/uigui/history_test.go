@@ -83,8 +83,9 @@ func TestHistorySyncModelAndSessions(t *testing.T) {
 	historyFrame(gtx, u.th, u, st)
 }
 
-// TestHistorySwitchDispatch 点会话行 → /switch <id> 经 inCh（与键入同路径）。
-func TestHistorySwitchDispatch(t *testing.T) {
+// TestHistorySwitchPostPath 投递助手本身：postCommand 走的是输入通道（与键入同路径）。
+// 真点一行会不会走到这里由 history_del_test.go 的 TestHistoryRowClickSwitches 覆盖。
+func TestHistorySwitchPostPath(t *testing.T) {
 	t.Parallel()
 	u := newHistUI(fakeRelTree{g: relFixtureGraph()}, fakeLister(nil))
 	postCommand(u, uiCmdSwitch, "C42")
