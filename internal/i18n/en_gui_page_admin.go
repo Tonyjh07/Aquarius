@@ -77,6 +77,9 @@ var enGuiPageAdminTexts = map[string]string{
 	// 密钥库页
 	"ui.page.secrets.section_entries": "Stored secrets (values are never shown, only the last 4 characters)",
 	"ui.page.secrets.empty":           "The secret store is empty — fill in a name and a value below to store one",
+	"ui.page.secrets.section_import":  "Bring in what is stored elsewhere",
+	"ui.page.secrets.import_note":     "Move keys that are still plaintext in config (models, speech, decision, web) into the local secret store; config keeps only secret:<name> references. Reference values that exist only in a same-named environment variable are brought in too. Values do not change, and the plaintext warning stops appearing.",
+	"ui.page.secrets.import_btn":      "Import plaintext keys",
 	"ui.page.secrets.section_add":     "Add / overwrite",
 	"ui.page.secrets.name_label":      "Secret name",
 	"ui.page.secrets.name_hint":       "e.g. AQUARIUS_OPENAI_API_KEY; reference it as secret:<name>",

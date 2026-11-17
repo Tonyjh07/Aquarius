@@ -171,7 +171,7 @@ func rowInCard(k rowKind) bool {
 	switch k {
 	case rowTitle, rowSection, rowPromptNote, rowPromptGrid, rowToolsEmpty, rowRaw,
 		rowPromptPreview, rowProfBtns, rowProvAdd, rowProvApply,
-		rowPromptRefAdd, rowSecretEmpty, rowSecretAdd, rowSecretStatus,
+		rowPromptRefAdd, rowSecretEmpty, rowSecretNote, rowSecretImport, rowSecretAdd, rowSecretStatus,
 		rowChainNote, rowChainAdd, rowWebSearchAdd, rowWebFetchAdd, rowWebNote,
 		rowSamplingNote,
 		rowSkillEmpty, rowSkillNote, rowSkillRescan, rowSkillWarn, rowSkillStatus,

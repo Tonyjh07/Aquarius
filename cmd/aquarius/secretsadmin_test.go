@@ -217,6 +217,81 @@ func TestSecretsAdminImport(t *testing.T) {
 	}
 }
 
+// TestSecretsAdminImportOtherSections 语音、决策、联网三处的明文也在导入范围内（D304）：
+// 启动期的明文警告来自 warnPlaintext 的全部调用点，只收 provider 那一路的话，「导入完就
+// 不再报警告」这句话对这几处不成立。空值与已经是引用的照旧不动。
+func TestSecretsAdminImportOtherSections(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := `{
+  "model": {
+    "providers": [{"name": "a", "base_url": "http://a/v1", "keys": [{"api_key": "secret:AQ_KEEP"}], "models": [{"name": "m"}]}],
+    "primary": "a", "name": "m"
+  },
+  "audio": {"asr": {"api_key": "sk-asr-1111"}, "tts": {"api_key": "secret:AQ_TTS"}},
+  "decide": {"api_key": "sk-decide-3333"},
+  "web": {
+    "search": {"providers": [{"kind": "brave", "key": "sk-brave-4444"}]},
+    "fetch": {"providers": [{"kind": "local"}]}
+  },
+  "ui": {"kind": "repl"}
+}`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	bin, err := secretbin.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &wiring{secretsBin: bin, cfgPath: cfgPath}
+	res, err := (&secretsAdmin{w: w}).Import()
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	want := []string{"AQUARIUS_ASR_API_KEY", "AQUARIUS_BRAVE_API_KEY", "AQUARIUS_DECIDE_API_KEY"}
+	if strings.Join(res.Imported, ",") != strings.Join(want, ",") {
+		t.Fatalf("Imported = %v, want %v", res.Imported, want)
+	}
+	if strings.Join(res.Rewritten, ",") != strings.Join(want, ",") {
+		t.Fatalf("Rewritten = %v, want %v", res.Rewritten, want)
+	}
+	if len(res.Failed) != 0 {
+		t.Fatalf("Failed = %v", res.Failed)
+	}
+	// 值原样进库（导入不改值）。
+	for name, val := range map[string]string{
+		"AQUARIUS_ASR_API_KEY":    "sk-asr-1111",
+		"AQUARIUS_DECIDE_API_KEY": "sk-decide-3333",
+		"AQUARIUS_BRAVE_API_KEY":  "sk-brave-4444",
+	} {
+		if got, err := bin.Get(context.Background(), name); err != nil || got != val {
+			t.Fatalf("%s = (%q, %v), want %q", name, got, err, val)
+		}
+	}
+	// 重读 config：三处都成了引用，已是引用与空值（本地抓取）都没被动过。
+	raw, _ := os.ReadFile(cfgPath)
+	for _, leaked := range []string{"sk-asr-1111", "sk-decide-3333", "sk-brave-4444"} {
+		if strings.Contains(string(raw), leaked) {
+			t.Fatalf("config 里仍有明文 %q", leaked)
+		}
+	}
+	cfg2, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg2.Audio.ASR.APIKey != "secret:AQUARIUS_ASR_API_KEY" || cfg2.Audio.TTS.APIKey != "secret:AQ_TTS" {
+		t.Fatalf("audio 段 = %q / %q", cfg2.Audio.ASR.APIKey, cfg2.Audio.TTS.APIKey)
+	}
+	if cfg2.Decide.APIKey != "secret:AQUARIUS_DECIDE_API_KEY" {
+		t.Fatalf("decide = %q", cfg2.Decide.APIKey)
+	}
+	if got := cfg2.Web.Search.Providers[0].Key; got != "secret:AQUARIUS_BRAVE_API_KEY" {
+		t.Fatalf("web.search key = %q", got)
+	}
+	if got := cfg2.Web.Fetch.Providers[0].Key; got != "" {
+		t.Fatalf("local 抓取不该长密钥: %q", got)
+	}
+}
+
 // TestSecretsAdminImportNothing 没有可导入的来源：不动库、Report 全空、Revision 不动。
 func TestSecretsAdminImportNothing(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")

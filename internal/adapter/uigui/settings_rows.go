@@ -159,6 +159,8 @@ const (
 	// S9-6b/D161：密钥库页（名字 + 尾 4 位掩码；值永不回显）。
 	rowSecretEntry  // 已存条目行（name = 键名；行内删除/二次确认）
 	rowSecretEmpty  // 空态/未接线占位（text = 文案）
+	rowSecretNote   // 导入区说明（文案走 i18n，text 忽略）
+	rowSecretImport // 「收进存量明文」按钮行（按钮 + 右侧一行导入反馈；D304）
 	rowSecretName   // 新增/覆盖的键名（单行编辑档）
 	rowSecretValue  // 新增/覆盖的值（单行编辑档；动作后恒清空）
 	rowSecretAdd    // 「存入」按钮行

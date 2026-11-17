@@ -403,9 +403,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	w.newUI(w.stdin, w.stdout) // D114：bootstrap 恢复控制台后可能已重绑（脱离→AllocConsole）
 	defer func() {
-		// 先停前端事件循环再写收尾换行：TUI 渲染器写同一 stdout，
-		// 直接 Fprintln 会与其并发竞争（-race 复现）。走 w.stdout（D114：
-		// 恢复路径重绑后的控制台流）。
+		// 先停前端事件循环再写收尾换行：TUI 渲染器写同一 stdout，直接 Fprintln 会与
+		// 其并发竞争（-race 复现）；走 w.stdout（D114：恢复路径重绑后的控制台流）。
 		_ = w.ui.Close()
 		fmt.Fprintln(w.stdout)
 	}()

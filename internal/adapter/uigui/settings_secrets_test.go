@@ -141,22 +141,30 @@ func TestSecretsPageRows(t *testing.T) {
 	}
 }
 
-// TestSecretsPageHasNoImportEntry 导入入口已从界面撤下（D206：功能保留、不给入口）：
-// 行计划里既不该再有「从旧处收进来」分区，也不该有导入按钮。功能本身见
-// TestSecretsPageImport（动作分支保留、照常可用）。
-func TestSecretsPageHasNoImportEntry(t *testing.T) {
+// TestSecretsPageHasImportEntry 导入入口回来了（D304）：行计划里有「从旧处收进来」分区、
+// 一行说明与一个按钮——D206 撤下入口之后，用户只能逐页重填密钥，而 usage.md 又写着「导入
+// 会改配置」，两边说法对不上。动作本身见 TestSecretsPageImport。
+func TestSecretsPageHasImportEntry(t *testing.T) {
 	t.Parallel()
 	_, f, _ := secretsPageUI(t, SecretsSnapshot{Entries: []SecretEntry{
 		{Name: "AQUARIUS_OPENAI_API_KEY", Mask: "••••••1234"},
 	}}, nil)
 	f.secretsSnap = f.secrets.Snapshot()
+	var section, note, btn bool
 	for _, r := range f.pageRows(pageSecrets) {
-		if r.kind == rowSection && strings.Contains(r.text, "旧") {
-			t.Fatalf("密钥库页仍有导入分区: %q", r.text)
+		switch r.kind {
+		case rowSection:
+			if r.text == i18n.T("ui.page.secrets.section_import") {
+				section = true
+			}
+		case rowSecretNote:
+			note = true
+		case rowSecretImport:
+			btn = true
 		}
-		if strings.Contains(r.text, "导入") {
-			t.Fatalf("密钥库页仍有导入相关行: %q", r.text)
-		}
+	}
+	if !section || !note || !btn {
+		t.Fatalf("导入区不全：分区=%v 说明=%v 按钮=%v", section, note, btn)
 	}
 }
 

@@ -35,6 +35,11 @@ func (secretsPage) Rows(f *settingsForm) []rowDesc {
 		rows = append(rows, rowDesc{kind: rowSecretEntry, text: e.Name})
 	}
 	rows = append(rows,
+		sec(i18n.T("ui.page.secrets.section_import")),
+		rowDesc{kind: rowSecretNote},
+		rowDesc{kind: rowSecretImport},
+	)
+	rows = append(rows,
 		sec(i18n.T("ui.page.secrets.section_add")),
 		rowDesc{kind: rowSecretName},
 		rowDesc{kind: rowSecretValue},
@@ -56,6 +61,12 @@ func (secretsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 		l := material.Body2(th, r.text)
 		l.Color = paperOf().text3
 		return l.Layout(gtx), true
+	case rowSecretNote:
+		l := material.Body2(th, i18n.T("ui.page.secrets.import_note"))
+		l.Color = paperOf().text3
+		return l.Layout(gtx), true
+	case rowSecretImport:
+		return f.secretImportRow(gtx, th), true
 	case rowSecretName:
 		return fieldRow(gtx, th, i18n.T("ui.page.secrets.name_label"),
 			editorBox(th, &f.secretName, i18n.T("ui.page.secrets.name_hint"))), true
@@ -73,6 +84,9 @@ func (secretsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 func (secretsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	for f.secretAdd.Clicked(gtx) {
 		u.secretsAction(f, "put", "")
+	}
+	for f.secretImport.Clicked(gtx) {
+		u.secretsAction(f, "import", "")
 	}
 	// 按键名分派：`del:` = 请求删除（进二次确认）；`confirm:` = 真删；`cancel:` = 退出确认。
 	// 按钮只在「密钥库」页渲染，未渲染的 Clicked 恒假，故不会误触别的页。
@@ -148,6 +162,28 @@ func (f *settingsForm) secretEntryRow(gtx layout.Context, th *material.Theme, na
 // secretAddRow 新增/覆盖入口（键名与值在上一行；值字段动作后恒清空）。
 func (f *settingsForm) secretAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return paperButton(th, &f.secretAdd, i18n.T("ui.page.secrets.add"), paperBtnPrimary, f.secrets != nil)(gtx)
+}
+
+// secretImportRow 一键收进存量明文的入口（D304）：把 config 里仍是明文的密钥收进本机
+// 密钥库（config 改写为 `secret:<名>` 引用），顺带把「库里没有、只存在于同名环境变量
+// 里」的引用值也收进来。未接线时禁用。
+//
+// 反馈**同行**摆在按钮右侧（口径同 provider 应用行）：导入结果若单起一行落在新增区之后，
+// 用户点完按钮在视口里看不到任何反馈。
+func (f *settingsForm) secretImportRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
+	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return paperButton(th, &f.secretImport, i18n.T("ui.page.secrets.import_btn"), paperBtnSecondary, f.secrets != nil)(gtx)
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if f.importStatus == "" {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return f.secretStatusRowOf(gtx, th, f.importStatus, f.importErr)
+			})
+		}),
+	)
 }
 
 // secretActionButton 密钥库页动作按钮（get-or-create 按 key 缓存；文案与配色按帧给定）。

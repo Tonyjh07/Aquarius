@@ -102,13 +102,14 @@ type settingsForm struct {
 	secretsRev    int64                        // 上帧 Revision
 	secretBtns    map[string]*widget.Clickable // 动作按钮（get-or-create 按 key）
 	secretAdd     widget.Clickable             // 「＋ 存入」按钮
+	secretImport  widget.Clickable             // 「收进存量明文」按钮（D304）
 	secretName    widget.Editor                // 新增/覆盖的键名（单行）
 	secretValue   widget.Editor                // 新增/覆盖的值（单行；动作后恒清空）
 	secretsStatus string                       // 反馈文案（状态行；不含值）
 	secretsErr    bool                         // 反馈是否为错误
 	secretConfirm string                       // 待删目标名（"" = 无；行内二次确认）
-	// importStatus/importErr 一键导入的反馈。导入入口已从界面撤下（D206），这两个槽位与
-	// 动作分支保留：功能仍在，只是不给按钮。
+	// importStatus/importErr 一键导入的反馈（D304：入口在「从旧处收进来」那一块，反馈同行
+	// 摆在按钮右侧）。
 	importStatus string
 	importErr    bool
 

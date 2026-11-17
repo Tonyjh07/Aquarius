@@ -74,6 +74,9 @@ var zhGuiPageAdminTexts = map[string]string{
 	// 密钥库页
 	"ui.page.secrets.section_entries": "已存密钥（值不可回显，只给尾 4 位）",
 	"ui.page.secrets.empty":           "密钥库还是空的——下面填名字与值即可存入",
+	"ui.page.secrets.section_import":  "从旧处收进来",
+	"ui.page.secrets.import_note":     "把 config 里仍是明文的密钥（模型服务、语音、决策、联网）收进本机密钥库，config 只留 secret:<名> 引用；只在同名环境变量里的引用值也一并收进来。密钥值不变，收完不再报明文警告。",
+	"ui.page.secrets.import_btn":      "收进存量明文",
 	"ui.page.secrets.section_add":     "新增 / 覆盖",
 	"ui.page.secrets.name_label":      "密钥名",
 	"ui.page.secrets.name_hint":       "如 AQUARIUS_OPENAI_API_KEY；引用写作 secret:<名>",
