@@ -11,7 +11,7 @@ package perm
 // 清单是代码常量，不进配置、界面不可调。能调就等于把这条防线交给当时想图省事的人。
 
 import (
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -71,8 +71,8 @@ func withinRoot(target, root string) bool {
 	if strings.TrimSpace(root) == "" {
 		return false
 	}
-	t := strings.ToLower(filepath.ToSlash(filepath.Clean(target)))
-	b := strings.ToLower(filepath.ToSlash(filepath.Clean(root)))
+	t := strings.ToLower(slashClean(target))
+	b := strings.ToLower(slashClean(root))
 	if b == "." || b == "/" {
 		return false
 	}
@@ -85,9 +85,18 @@ func withinRoot(target, root string) bool {
 	return strings.HasPrefix(t, b)
 }
 
+// slashClean 平台无关的路径规整：两种分隔符都当分隔符、折叠重复、去尾分隔。
+//
+// 不用 filepath.Clean——它只认**宿主**的分隔符，同一条 `C:\proj\.git\hooks`
+// 在 Linux 上会被当成一整段名字，判定结果跟着宿主变。硬名单是安全边界，
+// 判据不该取决于跑在哪台机器上。
+func slashClean(p string) string {
+	return path.Clean(strings.ReplaceAll(p, `\`, "/"))
+}
+
 // pathSegments 按两种分隔符切段（代理写的路径在 Windows 上也可能用 `/`）。
 func pathSegments(p string) []string {
-	return strings.FieldsFunc(filepath.ToSlash(p), func(r rune) bool { return r == '/' })
+	return strings.FieldsFunc(slashClean(p), func(r rune) bool { return r == '/' })
 }
 
 // hasSequence 连续子序列匹配（大小写不敏感）。
