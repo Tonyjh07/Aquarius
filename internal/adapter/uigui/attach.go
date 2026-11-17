@@ -38,7 +38,25 @@ func (a stagedAtt) displayName() string {
 		}
 		return i18n.T("ui.attach.pasted_image")
 	}
-	return filepath.Base(a.path)
+	return pathBase(a.path)
+}
+
+// pathBase 取路径末段：两种分隔符都认。
+//
+// 不用 filepath.Base：它只认宿主的分隔符，而附件路径可能来自异平台（历史草稿、
+// 代理给的路径、跨机同步的会话）。显示名取不出文件名时 chip 会退化成整条路径。
+func pathBase(p string) string {
+	if p == "" {
+		return "."
+	}
+	s := strings.TrimRight(p, `/\`)
+	if s == "" { // 全是分隔符（如 "/"）
+		return "/"
+	}
+	if i := strings.LastIndexAny(s, `/\`); i >= 0 {
+		return s[i+1:]
+	}
+	return s
 }
 
 // attachment 转成端口附件项（port.Attachment：路径与已入库引用二选一）。
