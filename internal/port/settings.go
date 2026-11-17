@@ -15,7 +15,7 @@ package port
 
 // SettingsPatch 设置窗保存提交（表单全量）。
 //
-// 数值键 0 = 不改（表单留空 = 保持快照原值的既有口径）；Notify/TTS 恒写（布尔无留空
+// 数值键 0 = 不改（表单留空 = 保持快照原值的既有规则）；Notify/TTS 恒写（布尔无留空
 // 语义）；SystemPrompt 恒写（清空 = 合法语义「内置默认」）；RawJSON 非空 = 高级页整
 // 文件替换（保存前由写回方校验 JSON）。
 type SettingsPatch struct {
@@ -28,7 +28,7 @@ type SettingsPatch struct {
 	Hotkey     string
 	Theme      string
 	// Lang 界面语言（D275/§7.8）：auto | zh | en；"" = auto。**启动时定一次**，写回只
-	// 改配置，进程内不换语言——界面照常提示重启（与 profile 切换同一口径）。
+	// 改配置，进程内不换语言——界面照常提示重启（与 profile 切换同一套规则）。
 	Lang string
 	// Placeholder 输入框占位文字（D279/§7.8）：用户自己写的一行灰字，**不翻译**——切到
 	// 哪套界面语言都用它；"" = 清空自定义，回落内置文案（那一条随语言变）。恒写，
@@ -55,7 +55,7 @@ type SettingsPatch struct {
 	PromptModules []PromptModuleView
 	PromptPersona []string
 	RawJSON       string // "" = 不改
-	// Fallback 降级链（D176 口径三；恒全量写：空 = 清空）。链条目 {provider, model}，
+	// Fallback 降级链（D176 规则三；恒全量写：空 = 清空）。链条目 {provider, model}，
 	// 模型可为空（取该 provider 的缺省模型）；写回侧校验 provider 名存在。
 	Fallback []FallbackLink
 	// 语音（D179；恒全量写）：provider 空 = 该能力关闭；model 非空且 provider 空时
@@ -81,7 +81,7 @@ type SettingsPatch struct {
 	TTSKey     string
 	// VADEnabled 按说话分段（D295）。这一项默认是「开」，所以不能用「零值 = 保持原值」，
 	// 也不能无条件写——窄写回（人格模板、provider 应用）给的是零值，恒写会把用户开着的
-	// 分段静默关掉。口径与 SamplingSet 一致：VADSet 说「这条写路径管这一项」。
+	// 分段静默关掉。规则与 SamplingSet 一致：VADSet 说「这条写路径管这一项」。
 	VADEnabled bool
 	VADSet     bool
 
@@ -99,7 +99,7 @@ type SettingsPatch struct {
 	WebFetchTimeoutSec int
 
 	// 采样参数（D204；恒全量写）：空串 = 该项不发送（删键），有值 = 照写（含 0）。
-	// 与「数值 0 = 不改」的限额口径不同——这里 0 是有效取值，不能被当成「没填」。
+	// 与「数值 0 = 不改」的限额规则不同——这里 0 是有效取值，不能被当成「没填」。
 	// SamplingSet 区分「设置窗保存（整段替换）」与「窄写回（别动采样）」——窄写回
 	// （人格模板、provider 应用等）给的是零值，不该顺手把用户的采样参数抹平。
 	SamplingSet         bool
@@ -109,7 +109,7 @@ type SettingsPatch struct {
 	SamplingStop        string
 }
 
-// FallbackLink 降级链一项（D173/D176 口径三）：provider + 模型名。模型可为空
+// FallbackLink 降级链一项（D173/D176 规则三）：provider + 模型名。模型可为空
 // （= 取该 provider 的缺省模型），也可手填未声明的名字——链是运行时路由，不要求
 // 目标模型已写进 provider 的 models 声明（声明只影响能力位与窗口）。
 type FallbackLink struct {
@@ -118,7 +118,7 @@ type FallbackLink struct {
 }
 
 // WebProviderPatch 联网提供商一条的提交（D200/D222）。Key 空 = 保持原值（只写不回显）；
-// `secret:` 前缀照写引用，否则明文转进密钥库（与 provider 页同口径）。
+// `secret:` 前缀照写引用，否则明文转进密钥库（与 provider 页同规则）。
 type WebProviderPatch struct {
 	Kind    string
 	From    string
@@ -145,7 +145,7 @@ type PromptModuleView struct {
 //
 // 为什么收成一张表：同一个数原先写了两到三份——界面表单填一次、启动期配置校验一次、
 // 抓取实现再兜一次——改一处忘一处就是「设置窗能存进去、重启却被拒」这类故障。现在
-// 界面只负责照表提示（用户一点保存就看到错误，不必等落盘），装配根与启动校验照表权威
+// 界面只负责照表提示（用户一点保存就看到错误，不必等写入磁盘），装配根与启动校验照表权威
 // 判定，两侧引用同一组常量。放在 port 而不是界面包里，是因为内核侧也要用，而反向依赖
 // 界面既过不了分层守卫，也会把这张表钉死在界面包里。
 const (
@@ -195,7 +195,7 @@ const (
 	// （Anthropic 只接 0–1）由启动校验按协议细判，不在这里一刀切。
 	SettingsTemperatureMin = 0.0
 	SettingsTemperatureMax = 2.0
-	// SettingsTopPMin/Max 核采样。三协议口径一致。
+	// SettingsTopPMin/Max 核采样。三协议规则一致。
 	SettingsTopPMin = 0.0
 	SettingsTopPMax = 1.0
 )

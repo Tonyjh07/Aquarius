@@ -1,6 +1,6 @@
 package skillfs
 
-// install_test.go 覆盖安装面口径（D202/D203）：四来源、同名不覆盖、zip 门禁、更新覆盖、
+// install_test.go 覆盖安装面规则（D202/D203）：四来源、同名不覆盖、zip 门禁、更新覆盖、
 // 卸载、台账失效清理。git 用注入的假 RunGit（不起真实仓库），网络用 httptest。
 
 import (
@@ -189,7 +189,7 @@ func TestInstallZipRejectsSlip(t *testing.T) {
 	}
 }
 
-// TestSafeZipPath 条目归一与拒绝口径。
+// TestSafeZipPath 条目归一与拒绝规则。
 func TestSafeZipPath(t *testing.T) {
 	ok := map[string]string{
 		"a/b.md": "a/b.md",

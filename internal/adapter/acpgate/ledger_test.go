@@ -1,6 +1,6 @@
 package acpgate
 
-// 转交台账（D269）：派活记一条、终态标状态、报告落地才销账、读即清。
+// 转交台账（D269）：派活记一条、终态标状态、报告送达才销账、读即清。
 
 import (
 	"context"
@@ -59,13 +59,13 @@ func TestLedgerWritesAndSettles(t *testing.T) {
 	waitDone(t, m, task.ID)
 	d = readDoc(t, path)
 	if len(d.Entries) != 1 {
-		t.Fatalf("终态后条目应仍在（报告还没落地），得到 %+v", d.Entries)
+		t.Fatalf("终态后条目应仍在（报告还没送达），得到 %+v", d.Entries)
 	}
 	if d.Entries[0].EndedAt.IsZero() || d.Entries[0].PID == 0 {
 		t.Fatalf("终态条目缺 ended_at/pid: %+v", d.Entries[0])
 	}
 
-	// 报告落地 → 销账。
+	// 报告送达 → 销账。
 	if err := m.Settle(context.Background(), task.ID); err != nil {
 		t.Fatalf("settle: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestLedgerBadFileDoesNotBlock(t *testing.T) {
 	}
 }
 
-// TestLedgerDisabledWithoutPath 没给路径 = 不落盘（测试与嵌入式装配的缺省）。
+// TestLedgerDisabledWithoutPath 没给路径 = 不写入磁盘（测试与嵌入式装配的缺省）。
 func TestLedgerDisabledWithoutPath(t *testing.T) {
 	m := newManager(t, "ok", func(o *Options) { o.Home = t.TempDir() })
 	task, err := m.Start(context.Background(), port.DelegateSpec{Task: "x"})

@@ -34,7 +34,7 @@ func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error)
 	if err := s.emitClear(ctx); err != nil { // 新会话从空白开始（D75，修订 D72 后果④）
 		return "", err
 	}
-	// 待发清单不随会话带走（D272）：明确丢弃 + 一行提示，与「不静默丢东西」的既有口径一致。
+	// 待发清单不随会话带走（D272）：明确丢弃 + 一行提示，与「不静默丢东西」的既有规则一致。
 	if note := s.dropPendingNote(); note != "" {
 		return i18n.Tf("tree.new.done", "id", c.ID) + note, nil
 	}
@@ -61,7 +61,7 @@ func (s *Session) execList(ctx context.Context, cmd port.Command) (string, error
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
-// execSwitch 实现 /switch：切换会话（D75 清屏回放口径）。
+// execSwitch 实现 /switch：切换会话（D75 清屏回放规则）。
 func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
 		return "", errors.New(i18n.T("usage.switch"))
@@ -77,7 +77,7 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	} else if !ok {
 		return note, nil
 	}
-	// 切前落盘当前会话：/edit 等只改内存的命令必须带上，否则切走即丢（D75）。
+	// 切前写入磁盘当前会话：/edit 等只改内存的命令必须带上，否则切走即丢（D75）。
 	if err := s.store.Save(ctx, s.cur); err != nil {
 		return "", wrapSession("err.save_current_conversation", err)
 	}
@@ -101,7 +101,7 @@ func (s *Session) execSwitch(ctx context.Context, cmd port.Command) (string, err
 	return i18n.Tf("tree.switch.done", "id", s.cur.ID), nil
 }
 
-// titleFlags /title 认识的 flag；只认一个（第二次出现归标题文本，旧口径）。
+// titleFlags /title 认识的 flag；只认一个（第二次出现归标题文本，旧规则）。
 var titleFlags = []flagDecl{{name: "--id", value: true}}
 
 // titleUsage /title 的用法文案（缺 id、缺参共用一份）。
@@ -109,7 +109,7 @@ func titleUsage() string { return i18n.T("usage.title") }
 
 // execTitle 实现 /title：查看或修改会话标题——`--id <前缀>` 改**非当前**会话（D120⑥）。
 // 形态：/title [--id <id前缀>] [<标题>]；--id 仅在**首参位**识别（未知 "--x" 视为标题文本，
-// 同 /edit 的 flag 口径）；缺省作用于当前会话。
+// 同 /edit 的 flag 规则）；缺省作用于当前会话。
 func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, error) {
 	target := s.cur
 	flags, rest, err := scanFlags(cmd.Args, flagScan{pos: flagsLeading, limit: 1}, titleFlags)
@@ -121,7 +121,7 @@ func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, erro
 		if err != nil {
 			return "", err
 		}
-		if id != s.cur.ID { // 目标非当前：载入副本改标题落盘，**不动 Head、不动 s.cur**
+		if id != s.cur.ID { // 目标非当前：载入副本改标题写入磁盘，**不动 Head、不动 s.cur**
 			c, err := s.store.Load(ctx, id)
 			if err != nil {
 				return "", fmt.Errorf("session: %s: %w", i18n.Tf("err.load_conversation", "id", id), err)
@@ -201,7 +201,7 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 		}
 		return i18n.Tf("tree.rmconv.deleted_many", "n", len(targets), "titles", targetTitles(titles)), nil
 	}
-	// 删的是当前会话：继任 + 落盘 + 清屏回放（转写区恒与 Head 一致，D75/D81）。
+	// 删的是当前会话：继任 + 写入磁盘 + 清屏回放（转写区恒与 Head 一致，D75/D81）。
 	next, err := s.successorConversation(ctx, seen)
 	if err != nil {
 		return "", err
@@ -290,7 +290,7 @@ func (s *Session) successorConversation(ctx context.Context, skip map[conversati
 	return s.newConversation(defaultTitle())
 }
 
-// execGoto 实现 /goto：移动 Head（D81 清屏回放口径）。
+// execGoto 实现 /goto：移动 Head（D81 清屏回放规则）。
 func (s *Session) execGoto(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
 		return "", errors.New(i18n.T("usage.goto"))
@@ -306,7 +306,7 @@ func (s *Session) execGoto(ctx context.Context, cmd port.Command) (string, error
 		return "", err
 	}
 	// D81：移 Head 后清屏 + 回放新路径——转写区恒与 Head 一致（此前不回放是缺口：
-	// 切分支后界面仍停在旧分支）。口径与 /switch（D75）一致。
+	// 切分支后界面仍停在旧分支）。规则与 /switch（D75）一致。
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
@@ -403,7 +403,7 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	}
 	removed := before - s.cur.NodeCount() // 实际删除数 = 子树大小（D95 后 Prune 恰删子树，无连带）
 	if err := s.persist(ctx); err != nil {
-		// 删除绝不"半生效"：落盘失败即回滚到最近一次成功保存的状态。
+		// 删除绝不"半生效"：写入磁盘失败即回滚到最近一次成功保存的状态。
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
 			s.cur = c
 			return "", wrapSession("err.rm_persist_rollback", err)
@@ -433,7 +433,7 @@ func branchLine(c *conversation.Conversation, m conversation.Message) string {
 
 // nodeSummary 节点内容的单行预览（分支列表/回放树用）。
 // 内容与工具输出均为不可信数据，只渲染不执行（§9）。
-// 预览取**正文口径**：跳过思考分片（D42——思考恒在正文之前，不筛会占满预览、掩盖版本差异；
+// 预览取**正文规则**：跳过思考分片（D42——思考恒在正文之前，不筛会占满预览、掩盖版本差异；
 // 实时与回放的完整展示仍含思考）。
 func nodeSummary(m conversation.Message) string {
 	const maxRunes = 40

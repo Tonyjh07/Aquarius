@@ -4,7 +4,7 @@ package main
 // 定义**的接口——uigui.SkillsAdmin（设置窗「技能」页，返回用户面文案）与 app.SkillAdmin
 // （/skill install|remove|update 命令面，返回结构化结果）。
 //
-// 为什么不进 port：安装/卸载/更新是用户面动作，模型侧只该「列」与「载」（D202 口径一）
+// 为什么不进 port：安装/卸载/更新是用户面动作，模型侧只该「列」与「载」（D202 规则一）
 // ——让模型能拉远端指令包，等于把注入面交给远端内容。
 //
 // 两套接口的 Install 签名不同（UI 要现成的中文摘要，命令面要能自己排版），故拆成两个
@@ -130,7 +130,7 @@ func (s skillActions) extraDirs() ([]string, string) {
 
 // addDir 追加一个额外技能根：校验 → 写回 config → 热生效。
 //
-// 顺序上**先落盘再生效**：写盘失败时运行态不动，用户看到的仍是旧目录表——比「运行态
+// 顺序上**先写入磁盘再生效**：写盘失败时运行态不动，用户看到的仍是旧目录表——比「运行态
 // 已改、重启后又没了」可解释得多。
 func (s skillActions) addDir(dir string) error {
 	dir = strings.TrimSpace(dir)

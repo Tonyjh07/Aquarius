@@ -89,7 +89,7 @@ func newPendingUI(p *fakePending, generating bool) *UI {
 	return u
 }
 
-// defaultKeysForTest 缺省三键（测试不关心可配置性，只关心缺省口径）。
+// defaultKeysForTest 缺省三键（测试不关心可配置性，只关心缺省规则）。
 func defaultKeysForTest() uicommon.KeyBindings { return uicommon.DefaultKeyBindings() }
 
 // testGtx 量高用的最小 layout 上下文（1px = 1dp，无可见输出）。

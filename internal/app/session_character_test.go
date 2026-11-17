@@ -122,7 +122,7 @@ func TestStartCharacterLandsPersonaExamplesGreeting(t *testing.T) {
 	if cur.Head != greeting.ID {
 		t.Fatalf("head = %s, want greeting %s", cur.Head, greeting.ID)
 	}
-	// 落盘副本带齐元数据与节点。
+	// 写入磁盘副本带齐元数据与节点。
 	saved := store.convs[cur.ID]
 	if saved == nil || saved.Character != "aria" || saved.Tail != "Stay Aria." || saved.NodeCount() != 4 {
 		t.Fatalf("saved = %+v", saved)
@@ -136,7 +136,7 @@ func TestStartCharacterLandsPersonaExamplesGreeting(t *testing.T) {
 	}
 }
 
-// TestStartCharacterSelectsAlternateGreeting 序号 2 = alternate_greetings[0]（合并列表口径）。
+// TestStartCharacterSelectsAlternateGreeting 序号 2 = alternate_greetings[0]（合并列表规则）。
 func TestStartCharacterSelectsAlternateGreeting(t *testing.T) {
 	s, _ := newCharSession(t, newMemStore(), CharacterOptions{InjectExamples: true})
 	if _, err := s.startCharacter(context.Background(), "aria", 2); err != nil {
@@ -149,7 +149,7 @@ func TestStartCharacterSelectsAlternateGreeting(t *testing.T) {
 	}
 }
 
-// TestStartCharacterOutOfRange 越界序号报错并保留当前会话（不落盘、不切换）。
+// TestStartCharacterOutOfRange 越界序号报错并保留当前会话（不写入磁盘、不切换）。
 func TestStartCharacterOutOfRange(t *testing.T) {
 	store := newMemStore()
 	s, _ := newCharSession(t, store, CharacterOptions{InjectExamples: true})

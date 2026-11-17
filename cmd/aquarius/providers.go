@@ -1,7 +1,7 @@
 package main
 
 // provider 列表管理面（D110②/③）：设置窗 provider 编辑区的装配根实现。
-// 快照 = config providers（容错：旧格式/解析失败返回空，不阻断开窗——Q10 口径）；
+// 快照 = config providers（容错：旧格式/解析失败返回空，不阻断开窗——Q10 规则）；
 // Apply = 全量替换 model.providers（泛键写回：按 Orig 名保留原条目的无关键与逐槽密钥、
 // 清理 fallback 悬挂引用）；Test = 真实最小请求（/models，短超时）；Probe = 能力探测
 // 写回（与 `/model probe` 同一条逻辑，D174）。
@@ -116,7 +116,7 @@ func keySnapshots(p *providerConfig) []uigui.ProviderKeySnapshot {
 // 新条目从空起步。fallback 悬挂引用（删除/改名产生的）一并清理；model.name 不动
 // （启动 normalize 兜底缺省）。
 //
-// 密钥入口径（D151/D161）：编辑区填的**明文**写进本机密钥库，config 里只落
+// 密钥入规则（D151/D161）：编辑区填的**明文**写进本机密钥库，config 里只落
 // `secret:<名>` 引用（名沿用同槽原引用名，否则按 provider 名 + 槽号生成）；填的本来就
 // 是引用则照写。**写库失败即报错、config 不动**——绝不静默退回明文。
 func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) error {
@@ -143,7 +143,7 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			if !me.Disabled {
 				enabled++
 			}
-			// 单价（D205）：写出去的配置必须能过启动校验（normalize 同一条口径）——
+			// 单价（D205）：写出去的配置必须能过启动校验（normalize 同一条规则）——
 			// 负数与其等到重启才报错，不如现在拦住。
 			if me.CostIn < 0 || me.CostOut < 0 {
 				return errors.New(i18n.Tf("cmd.provider.err.cost_negative",
@@ -151,7 +151,7 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			}
 		}
 		if enabled == 0 {
-			// 写出去的配置必须能过启动校验（normalize 同一条口径）：没有启用的模型
+			// 写出去的配置必须能过启动校验（normalize 同一条规则）：没有启用的模型
 			// 等于这家 provider 没有可请求的模型，与其等到重启才报错，不如现在拦住。
 			return errors.New(i18n.Tf("cmd.provider.err.none_enabled", "name", strconv.Quote(p.Name)))
 		}
@@ -162,8 +162,8 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 	if !names[primary] {
 		return errors.New(i18n.Tf("cmd.provider.err.primary_unknown", "name", strconv.Quote(primary)))
 	}
-	// 密钥先落库（config 写回之前）：任何一条写库失败就整体放弃，不留「config 已是引用、
-	// 库里却没有值」的半个状态。逐槽原引用名从落盘 config 读——改名不 churn 引用。
+	// 密钥先写进密钥库（config 写回之前）：任何一条写库失败就整体放弃，不留「config 已是引用、
+	// 库里却没有值」的半个状态。逐槽原引用名从写入磁盘 config 读——改名不 churn 引用。
 	disk, _ := loadConfig(m.cfgPath)
 	writes := make([][]keyWrite, len(patches))
 	for i := range patches {
@@ -183,7 +183,7 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 					return err
 				}
 				w.ref = ref
-				// 明文真的落库了（非空且不是引用）：递增密钥库快照 Revision，让同一次
+				// 明文真的写进密钥库了（非空且不是引用）：递增密钥库快照 Revision，让同一次
 				// 设置窗会话里切到「密钥库」页也能看见新条目（S9-6b/D163）。
 				if m.onStore != nil && !strings.HasPrefix(typed, "secret:") {
 					m.onStore()
@@ -213,7 +213,7 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 			entry := map[string]any{}
 			if base != nil {
 				for k, v := range base {
-					entry[k] = v // 无关键保留（Q10 口径：未知键不丢）
+					entry[k] = v // 无关键保留（Q10 规则：未知键不丢）
 				}
 			}
 			entry["name"] = strings.TrimSpace(p.Name)
@@ -245,15 +245,15 @@ func (m *providerManager) Apply(primary string, patches []uigui.ProviderPatch) e
 	})
 }
 
-// keyWrite 单槽密钥的落库结果：ref 空 = 保持原值（含原引用名）；label 空 = 沿用原 label。
+// keyWrite 单槽密钥的写进密钥库结果：ref 空 = 保持原值（含原引用名）；label 空 = 沿用原 label。
 type keyWrite struct {
 	ref   string
 	label string
 }
 
-// writeKeys 密钥池写回（D173）：逐槽以上次落盘条目为底（无关键保留），ref 非空覆盖
+// writeKeys 密钥池写回（D173）：逐槽以上次写入磁盘条目为底（无关键保留），ref 非空覆盖
 // api_key、label 非空覆盖 label；槽数少于一前次声明的按本次编辑为准（多余槽消失）。
-// ws 为空（本次没提交任何密钥槽）= 整池保持原值（与「配置文件外部编辑」并存的口径）。
+// ws 为空（本次没提交任何密钥槽）= 整池保持原值（与「配置文件外部编辑」并存的规则）。
 func writeKeys(base map[string]any, ws []keyWrite) []any {
 	var old []any
 	if base != nil {
@@ -280,7 +280,7 @@ func writeKeys(base map[string]any, ws []keyWrite) []any {
 		if w.ref != "" {
 			entry["api_key"] = w.ref
 		} else if _, ok := entry["api_key"]; !ok {
-			entry["api_key"] = "" // 键恒存在（读侧 keyRefs 同口径）
+			entry["api_key"] = "" // 键恒存在（读侧 keyRefs 同一套规则）
 		}
 		if w.label != "" {
 			entry["label"] = w.label
@@ -310,7 +310,7 @@ func writeModels(base map[string]any, models []uigui.ProviderModelPatch) []any {
 	for _, me := range models {
 		name := strings.TrimSpace(me.Name)
 		if name == "" {
-			continue // 空名条目跳过（同启动 normalize 口径）
+			continue // 空名条目跳过（同启动 normalize 规则）
 		}
 		entry := map[string]any{}
 		if pm, ok := byName[name]; ok {
@@ -336,7 +336,7 @@ func writeModels(base map[string]any, models []uigui.ProviderModelPatch) []any {
 			delete(entry, "cost_out")
 		}
 		if me.Disabled {
-			entry["enabled"] = false // 显式落键；启用是缺省形态，键不落盘（D180）
+			entry["enabled"] = false // 显式落键；启用是缺省形态，键不写入磁盘（D180）
 		} else {
 			delete(entry, "enabled")
 		}
@@ -402,10 +402,10 @@ func (m *providerManager) Models(p uigui.ProviderPatch) ([]string, error) {
 	return out, nil
 }
 
-// Probe 对某模型发起三项能力探测并带回结论（S11-7③/D174；D181 修口径）：以**编辑区当前
+// Probe 对某模型发起三项能力探测并带回结论（S11-7③/D174；D181 修规则）：以**编辑区当前
 // patch**（端点 / 协议 / 第一把钥匙）构造客户端并探测——改了端点还没应用时测的是「将
 // 要应用的那份」，模型行是编辑区里新建的也能探。结论**无条件带回界面**（回填勾选）；
-// 是否写回配置由装配根按「该模型是否已在配置里」判定（未声明 → Pending，等应用落盘）。
+// 是否写回配置由装配根按「该模型是否已在配置里」判定（未声明 → Pending，等应用写入磁盘）。
 func (m *providerManager) Probe(model string, p uigui.ProviderPatch) (uigui.ProbeOutcome, error) {
 	if m.probe == nil {
 		return uigui.ProbeOutcome{}, errors.New(i18n.T("cmd.provider.err.probe_unwired"))
@@ -413,7 +413,7 @@ func (m *providerManager) Probe(model string, p uigui.ProviderPatch) (uigui.Prob
 	return m.probe(context.Background(), p, strings.TrimSpace(model))
 }
 
-// client 以 patch 构造一次性 llm client（凭据解析口径 = Test/Models 共用）：协议取
+// client 以 patch 构造一次性 llm client（凭据解析规则 = Test/Models 共用）：协议取
 // patch 的 Kind（S11-7③ 起协议在编辑面）；Kind 空则回退按 Orig 名从 config 取（兼容不
 // 填 Kind 的调用方）。第一把密钥值空 = 取 config 内原条目同槽引用（按 Orig 名），再走
 // D35 解析。
@@ -457,7 +457,7 @@ func (m *providerManager) loadCfg() *fileConfig {
 	return cfg
 }
 
-// splitCSV 逗号分隔清单解析（表单单行口径）：中英文逗号皆可、去空白、丢空项。
+// splitCSV 逗号分隔清单解析（表单单行规则）：中英文逗号皆可、去空白、丢空项。
 func splitCSV(s string) []string {
 	s = strings.ReplaceAll(s, "，", ",")
 	var out []string
@@ -472,7 +472,7 @@ func splitCSV(s string) []string {
 // joinCSV 清单 → 逗号分隔展示串。
 func joinCSV(list []string) string { return strings.Join(list, ", ") }
 
-// anyList []string → []any（泛键写回口径）。
+// anyList []string → []any（泛键写回规则）。
 func anyList(list []string) []any {
 	out := make([]any, 0, len(list))
 	for _, v := range list {

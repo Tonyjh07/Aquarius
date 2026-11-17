@@ -5,7 +5,7 @@ import "testing"
 // fp 采样参数指针形（D204：nil = 不发送、非 nil 照发，含 0）。
 func fp(v float64) *float64 { return &v }
 
-// TestSamplingOverlay 逐模型覆盖的合并口径（D204 口径二）：只改写了的那几项，
+// TestSamplingOverlay 逐模型覆盖的合并规则（D204 规则二）：只改写了的那几项，
 // 其余继承缺省；0 是**真值**不是「没写」；Stop 非空整体替换。
 func TestSamplingOverlay(t *testing.T) {
 	base := Sampling{Temperature: fp(0.7), TopP: fp(0.9), MaxTokens: 512, Stop: []string{"\n"}}

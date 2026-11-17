@@ -11,7 +11,7 @@ var enAgentTexts = map[string]string{
 	"usage.effort":      "Usage: /effort [minimal|low|medium|high|off]",
 	"usage.summary":     "Usage: /summary <id> [summary text] (without text, the current model summarizes the history above that node)",
 
-	// /model：当前口径与切换
+	// /model：当前规则与切换
 	"model.unwired":          "no model service configured (SessionDeps.Models); /model is unavailable",
 	"model.switch_unwired":   "no model write-back configured (SessionDeps.ModelSwitch); switching with /model is unavailable",
 	"model.probe_unwired":    "no capability probe configured (SessionDeps.Prober); /model probe is unavailable",
@@ -53,7 +53,7 @@ var enAgentTexts = map[string]string{
 	"model.budget_model":       "Context budget: {effective} tokens (the model window {window} is binding; global limit {limit})",
 	"model.budget_global":      "Context budget: {effective} tokens (the global limit is binding; model window {window})",
 
-	// 错误链短语（/model 走 session: 前缀，与 /permission 同口径）
+	// 错误链短语（/model 走 session: 前缀，与 /permission 同规则）
 	"model.err_list":  "list available models",
 	"model.err_probe": "probe",
 

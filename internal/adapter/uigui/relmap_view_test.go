@@ -67,7 +67,7 @@ func relAnchorScreen(t *testing.T, g *relGraph) (f32.Point, int) {
 	return f32.Pt(x, y), li
 }
 
-// TestRelGraphFitViewOnOpen A13（D127 横树版，D140 改口径）：开窗 = 整树适配视口 + 平移
+// TestRelGraphFitViewOnOpen A13（D127 横树版，D140 改规则）：开窗 = 整树适配视口 + 平移
 // 构图（Head 偏右、纵向盒心）；触底（长会话 zoom 到 relZoomMin 仍装不下）时退化为
 // 「Head 在场 + 视图跟随」。断言：zoom 夹在 [relZoomMin, relZoomMax]（A9）；**Head 在视口
 // 右半**（D7-b 起右基准位是平移**偏好**：两维贴满时它会被可行域钳到右侧贴边，不再恒等
@@ -523,6 +523,6 @@ func TestRelGraphFitSizeDriven(t *testing.T) {
 //	wide12x3  静息盒 879×1165 → 落定盒 976×1781（纵向 1.53×） 上留白 −461px、38 节点出 27
 //	chain120  静息盒 65 高    → 落定盒 200 高（3.06×）          120 节点出 97（zoom 触底）
 //
-// 新口径（D140）：zoom 按**当前盒**收口（不是静息盒）、纵向**盒心**居中（不是 Head 居中）、
+// 新规则（D140）：zoom 按**当前盒**收口（不是静息盒）、纵向**盒心**居中（不是 Head 居中）、
 // Head 只在装得下时落右基准位（D7-b 去掉了「过去 ≤ 基准位」那条 zoom 约束，换来两维尽量
 // 贴满）。下面三条断言 = 新不变量 V1a（盒内可见）/ V1b（上下留白对称）/ V1c（至少一维贴满）。

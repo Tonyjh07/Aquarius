@@ -119,7 +119,7 @@ func renderDiag(p diagPack) string {
 // diagLine 头部注释行（统一补 `# `）。空行调用方自己写，这里不吞。
 func diagLine(s string) string { return "# " + s }
 
-// diagName 诊断包文件名里的会话尾巴：前 8 位 ID（与 `/context full`、`/raw full` 同口径）。
+// diagName 诊断包文件名里的会话尾巴：前 8 位 ID（与 `/context full`、`/raw full` 同规则）。
 func diagName(id string) string {
 	if len(id) > 8 {
 		return id[:8]

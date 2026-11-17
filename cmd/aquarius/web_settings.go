@@ -3,8 +3,8 @@ package main
 // web_settings.go 设置窗「联网」页的装配根侧（D200）：config `web` 段与设置窗快照/
 // 提交之间的换算与保存前校验。
 //
-// 口径与启动期 normalizeWeb 一致——那边是最后一道闸（写坏了启动就报错），这边把它
-// 提前到落盘之前，用户看到的是「设置窗保存失败」，而不是下次启动才炸。密钥只写不回显：
+// 规则与启动期 normalizeWeb 一致——那边是最后一道闸（写坏了启动就报错），这边把它
+// 提前到写入磁盘之前，用户看到的是「设置窗保存失败」，而不是下次启动才炸。密钥只写不回显：
 // 快照只带形态（引用 / 明文），提交里留空 = 保持原引用。
 
 import (
@@ -34,7 +34,7 @@ func webProviderViewsOf(ps []webProvider) []uigui.WebProviderView {
 		key := strings.TrimSpace(p.Key)
 		switch {
 		case key == "":
-			// 空 = 回落同名 secret（brave 的既有口径），界面按「留空」呈现。
+			// 空 = 回落同名 secret（brave 的既有规则），界面按「留空」呈现。
 		case strings.HasPrefix(key, "secret:"):
 			v.KeySaved = true
 			v.KeyRef = key
@@ -46,7 +46,7 @@ func webProviderViewsOf(ps []webProvider) []uigui.WebProviderView {
 	return out
 }
 
-// validateWebSettings 联网配置保存前校验（D200/D222）：与 normalizeWeb 同口径——未知
+// validateWebSettings 联网配置保存前校验（D200/D222）：与 normalizeWeb 同规则——未知
 // kind、抓取侧写了只做搜索的 kind、deepseek 借的条目不存在且端点也没自己填、数值越界。
 // 密钥缺失不在这里拦（启动时警告并跳过该家，其余提供商照常可用）。
 func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
@@ -122,7 +122,7 @@ func validateWebSettings(cfgPath string, p uigui.SettingsPatch) error {
 // 提供商列表**恒全量写**（空数组 = 清空 = 该能力不可用）；列表项的未知键按**同类型**的
 // 旧条目保留，`key` 留空 = 沿用旧引用（值永不回显，D35）。
 //
-// 判「这条写路径管不管联网」用**列表是否 nil**（与降级链同口径）：设置窗保存总会给
+// 判「这条写路径管不管联网」用**列表是否 nil**（与降级链同规则）：设置窗保存总会给
 // 两个非 nil 列表（空表单 = 空切片），而窄写回（人格模板等）给的是零值 —— 后者不该
 // 顺手把用户的联网配置抹平。同一侧的其他键也只在该侧列表非 nil 时写：只改搜索的
 // patch 不该把抓取的代理与开关按零值覆盖。
@@ -166,7 +166,7 @@ func writeWebSection(generic map[string]any, p uigui.SettingsPatch) {
 	}
 }
 
-// storeWebKeys 联网页填的明文密钥转入本机密钥库——与 provider 页**同一条口径**：
+// storeWebKeys 联网页填的明文密钥转入本机密钥库——与 provider 页**同一条规则**：
 // config 里只留 `secret:<名>`，键名沿用该条目原有的引用、否则按服务派生。
 //
 // 为什么要在保存前做这一步：联网页的密钥框同样写着「填明文」，provider 页填明文会被
@@ -258,7 +258,7 @@ func webKeyService(kind string, side webSide) (string, bool) {
 }
 
 // storeAudioKeys 语音页填的明文密钥转入本机密钥库——与 provider 页、联网页**同一条
-// 口径**（D222）：config 里只留 `secret:<名>`，键名沿用该通道原有的引用、否则按能力
+// 规则**（D222）：config 里只留 `secret:<名>`，键名沿用该通道原有的引用、否则按能力
 // 派生（`AQUARIUS_ASR_API_KEY` / `AQUARIUS_TTS_API_KEY`）。
 //
 // 为什么按能力而不是按 provider：同一家 provider 的对话、识别、合成往往是三把不同的
@@ -289,7 +289,7 @@ func (w *wiring) storeAudioKeys(p *uigui.SettingsPatch) error {
 	return store("tts", disk.Audio.TTS.APIKey, &p.TTSKey)
 }
 
-// webOrigRefs 按 kind 对齐地取出各条旧的密钥引用（与 webProviderEntries 同一对齐口径：
+// webOrigRefs 按 kind 对齐地取出各条旧的密钥引用（与 webProviderEntries 同一对齐规则：
 // 用户插一条、删一条都不会让引用贴错条目）。
 func webOrigRefs(olds []webProvider, ps []uigui.WebProviderPatch) []string {
 	used := make([]bool, len(olds))
@@ -336,7 +336,7 @@ func webProviderEntries(oldVal any, ps []uigui.WebProviderPatch) []any {
 			}
 			used[i] = true
 			for k, v := range prev {
-				entry[k] = v // 未知键保留（Q10 口径：用户手写的字段不丢）
+				entry[k] = v // 未知键保留（Q10 规则：用户手写的字段不丢）
 			}
 			break
 		}

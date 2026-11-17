@@ -1,7 +1,7 @@
 package main
 
-// 无人值守落盘测试（D185 口径四）：`/unattended` 与菜单/设置窗都走这一条写回——config
-// 的 permissions.unattended 落盘 + 活开关同步 + 其余 permissions 键（level）不丢。
+// 无人值守写入磁盘测试（D185 规则四）：`/unattended` 与菜单/设置窗都走这一条写回——config
+// 的 permissions.unattended 写入磁盘 + 活开关同步 + 其余 permissions 键（level）不丢。
 
 import (
 	"os"
@@ -37,7 +37,7 @@ func TestPersistUnattendedRoundTrip(t *testing.T) {
 		t.Fatal("活开关应同步为 true")
 	}
 
-	// 关闭也落成显式 false（不是删键——否则下次读回会回到「键缺失」语义，虽然缺省也是
+	// 关闭也写成显式 false（不是删键——否则下次读回会回到「键缺失」语义，虽然缺省也是
 	// false，但显式写更能表达用户意图）。
 	if err := w.persistUnattended(false); err != nil {
 		t.Fatalf("persistUnattended(false): %v", err)

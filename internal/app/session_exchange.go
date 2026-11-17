@@ -4,7 +4,7 @@ package app
 //
 // 命令面只做「文件与树之间的搬运」这一层：格式清单、保真边界、丢什么由端口与适配器给出
 // （port.ExchangeFormats），这里负责挑路径、防覆盖、落了半截就删、以及把回执写成用户能读的
-// 几行。导入落成**新**会话并清屏回放——与 `/switch` 同一口径，不覆盖既有会话。
+// 几行。导入写成**新**会话并清屏回放——与 `/switch` 同一套规则，不覆盖既有会话。
 
 import (
 	"context"
@@ -32,13 +32,13 @@ var exportFlags = []flagDecl{
 // exportUsage /export 的用法文案。
 func exportUsage() string { return i18n.T("usage.export") }
 
-// importUsage /import 的用法文案（路径含空格时用引号括起来，与其余命令同一口径）。
+// importUsage /import 的用法文案（路径含空格时用引号括起来，与其余命令同一套规则）。
 func importUsage() string { return i18n.T("usage.import") }
 
 // importFlags /import 认识的 flag：只认路径之前的一段（`--pick 1,3 <文件>`）。
 var importFlags = []flagDecl{{name: "--pick", value: true}}
 
-// multiExportStem 多会话导出的缺省文件名（没有单一会话标题可用）；口径在端口，
+// multiExportStem 多会话导出的缺省文件名（没有单一会话标题可用）；规则在端口，
 // 界面批量导出的预填名读同一份。
 const multiExportStem = port.MultiExportStem
 
@@ -225,7 +225,7 @@ func (s *Session) exportPath(want string, f port.ExchangeFormat, stem string) (s
 	return filepath.Join(s.exportsDir, stem+f.Ext), nil
 }
 
-// writeExport 落盘：写一半失败就把半截文件删掉——留个残档比没有更坏（用户会以为备份成了）。
+// writeExport 写入磁盘：写一半失败就把半截文件删掉——留个残档比没有更坏（用户会以为备份成了）。
 func (s *Session) writeExport(ctx context.Context, path string, f port.ExchangeFormat, cs []*conversation.Conversation) (port.ExchangeReport, error) {
 	var rep port.ExchangeReport
 	out, err := os.Create(path)
@@ -243,7 +243,7 @@ func (s *Session) writeExport(ctx context.Context, path string, f port.ExchangeF
 	return rep, nil
 }
 
-// execImport 实现 /import：认格式 → 读入（可只取其中几项）→ 全部落成新会话 → 切到第一个并回放。
+// execImport 实现 /import：认格式 → 读入（可只取其中几项）→ 全部写成新会话 → 切到第一个并回放。
 func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, error) {
 	if s.importer == nil {
 		return "", errors.New(i18n.T("exchange.importer_missing"))
@@ -287,9 +287,9 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	if len(trees) == 0 {
 		return "", errors.New(i18n.T("exchange.empty_import"))
 	}
-	// 先全部自检并取好身份、再一次性落盘：第 3 个会话坏了，不该留下前 2 个已入库的半截状态。
+	// 先全部自检并取好身份、再一次性写入磁盘：第 3 个会话坏了，不该留下前 2 个已入库的半截状态。
 	// 新会话 ID 与 /new 同源（端口只管「文件 → 树」，会话身份由这里分配）。Root 节点 ID
-	// 恒等于会话 ID（domain 的构造口径），所以换 ID 要连 Root 和挂在它下面的边一起换。
+	// 恒等于会话 ID（domain 的构造规则），所以换 ID 要连 Root 和挂在它下面的边一起换。
 	imported := make([]*conversation.Conversation, 0, len(trees))
 	for _, c := range trees {
 		c, err := remapConversationID(c, s.ids.ConversationID())
@@ -301,7 +301,7 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	saved := make([]conversation.ID, 0, len(imported))
 	for _, c := range imported {
 		if err := s.store.Save(ctx, c); err != nil {
-			// 回滚本批已落盘的：半截导入比没导入更糟——用户不知道哪几个进来了。
+			// 回滚本批已写入磁盘的：半截导入比没导入更糟——用户不知道哪几个进来了。
 			for _, id := range saved {
 				_ = s.store.Remove(ctx, id)
 			}
@@ -310,7 +310,7 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 		saved = append(saved, c.ID)
 	}
 	s.cur = imported[0]
-	// 会话已经落盘并切过来了：从这里往下是「界面刷新」，失败时不能把已完成的事实报成失败。
+	// 会话已经写入磁盘并切过来了：从这里往下是「界面刷新」，失败时不能把已完成的事实报成失败。
 	// 用户要知道「导入成功了，但界面没刷干净」，否则会以为白导一次。
 	if err := s.emitClear(ctx); err != nil {
 		return "", wrapSession("exchange.refresh_failed", err)
@@ -350,7 +350,7 @@ func parsePicks(flags []cmdFlag) ([]int, error) {
 	return out, nil
 }
 
-// parsePickIndex 序号字面量：正整数（0 起是另一种口径，写错就会导错文件里的另一项）。
+// parsePickIndex 序号字面量：正整数（0 起是另一种规则，写错就会导错文件里的另一项）。
 func parsePickIndex(v string) (int, bool) {
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 1 {
@@ -359,7 +359,7 @@ func parsePickIndex(v string) (int, bool) {
 	return n, true
 }
 
-// remapConversationID 换会话 ID：Root 节点 ID 恒等于会话 ID（domain 的构造口径），所以
+// remapConversationID 换会话 ID：Root 节点 ID 恒等于会话 ID（domain 的构造规则），所以
 // Root 的 ID、它自己那条结构与挂在它上面的边要一起换，换完再走 Restore 的全树自检。
 func remapConversationID(c *conversation.Conversation, id conversation.ID) (*conversation.Conversation, error) {
 	snap := c.Snapshot()
@@ -441,7 +441,7 @@ func exportReceipt(f port.ExchangeFormat, path string, rep port.ExchangeReport) 
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// importReceipt 导入回执：落成哪个会话、什么格式、读进来多少条、这次没带进来什么。
+// importReceipt 导入回执：写成哪个会话、什么格式、读进来多少条、这次没带进来什么。
 //
 // 多会话时内容行换成「已导入 N 个会话（M 条消息）」再逐条列「标题 · 条数」；只有一个会话
 // 时维持三行老样子——不为多会话把最常见的单会话回执拖长。

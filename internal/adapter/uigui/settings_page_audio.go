@@ -1,7 +1,7 @@
 package uigui
 
 // settings_page_audio.go 「语音」页（D179 页面注册表）：识别服务 + 合成服务 + 音色与
-// 风格 + 试听。本页是**字段页**：保存走全局底栏；服务/模型改动与「模型服务」页同口径
+// 风格 + 试听。本页是**字段页**：保存走全局底栏；服务/模型改动与「模型服务」页同规则
 // （保存后重启生效），音色与风格对此后的播报立即生效，试听按当前草稿的音色/风格合成
 // 一句（服务与模型仍来自启动装配）。
 
@@ -288,7 +288,7 @@ func (f *settingsForm) audioPreviewRow(gtx layout.Context, th *material.Theme) l
 }
 
 // previewVoice 试听（D179）：草稿里的音色/描述/风格立刻参与合成；服务与模型来自启动
-// 装配（保存并重启后生效，与「模型服务」页同口径）。合成在后台跑，结果投 voiceRes。
+// 装配（保存并重启后生效，与「模型服务」页同规则）。合成在后台跑，结果投 voiceRes。
 func (u *UI) previewVoice(f *settingsForm) {
 	if f.voiceBusy {
 		return

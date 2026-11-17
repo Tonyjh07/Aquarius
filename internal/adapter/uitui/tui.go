@@ -30,7 +30,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// inputLineLimit 单行输入上限（防超长粘贴撑爆扫描器；与 repl 同口径）。
+// inputLineLimit 单行输入上限（防超长粘贴撑爆扫描器；与 repl 同规则）。
 const inputLineLimit = 1 << 20
 
 var (
@@ -63,7 +63,7 @@ type Options struct {
 	Interrupt func()
 	// History 输入历史上限（<=0 = 50）。
 	History int
-	// HistoryStore 输入历史的落盘存储（与 GUI 共用同一份文件）：启动时载入既有条目，
+	// HistoryStore 输入历史的磁盘存储（与 GUI 共用同一份文件）：启动时载入既有条目，
 	// 提交时追加。nil = 只在内存。
 	HistoryStore *inhistory.Store
 	// Pending 待发清单（D272）：生成中键入的消息停在这里，由内核在两个取用边界拿走；
@@ -210,7 +210,7 @@ func (u *UI) Wake() {
 	}
 }
 
-// Next 阻塞读取下一条输入（斜杠命令解析与 repl 同口径）；
+// Next 阻塞读取下一条输入（斜杠命令解析与 repl 同规则）；
 // io.EOF = Ctrl+D（空输入）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
 // 广播到达时先取尽排队输入（eofMsg 经事件循环排队，先于它的提交必已入队），
 // 取空才返回 EOF——任何 select 次序下都不丢输入、也不吞 EOF（审查修复）。
@@ -323,7 +323,7 @@ type (
 	eofMsg struct{ err error }
 )
 
-// parseInput 单行输入解析（斜杠开头 = 命令；与 repl.Next 同口径，实现见 uicommon）。
+// parseInput 单行输入解析（斜杠开头 = 命令；与 repl.Next 同规则，实现见 uicommon）。
 func parseInput(line string) port.UserInput {
 	return uicommon.ParseInput(line)
 }

@@ -21,7 +21,7 @@ import (
 
 // secretsAdmin uigui.SecretsAdmin 的装配根实现。
 //
-// 快照修订号存在装配根全局 wiring 上（wiring.secretsRev，同 toolsRev 口径）：写/删后
+// 快照修订号存在装配根全局 wiring 上（wiring.secretsRev，同 toolsRev 规则）：写/删后
 // 递增，设置窗据此重建条目行；以后若出现别的写入路径，也一起递增同一计数器。
 type secretsAdmin struct {
 	w *wiring
@@ -80,15 +80,15 @@ func (a *secretsAdmin) Delete(name string) error {
 // 明文的密钥收进本机密钥库、config 改写成 `secret:<名>` 引用；对**已经写成引用**的槽位，
 // 再把「库里没有、只存在于同名环境变量里」的值也收进来。
 //
-// 三条口径：
+// 三条规则：
 //   - **库解不开即拒绝**（不与 secretbin.Set 的「从空表起步」同路）：Set 的单条语义是
-//     「向导窗首次填密钥必须能落盘」（D161 落点②），那是从零起步；批量导入落在同一个
+//     「向导窗首次填密钥必须能写入磁盘」（D161 落点②），那是从零起步；批量导入落在同一个
 //     坑里就变成**把已有条目整份丢掉**。故先探一次库，解不开就报因不动文件。
-//   - **先落库、后改 config**（同 D161 写路径顺序）：任何一步失败都留「库里有值、config
+//   - **先写进密钥库、后改 config**（同 D161 写路径顺序）：任何一步失败都留「库里有值、config
 //     还是明文」这个**可用**的中间态，而不是「config 已是引用、库里没有值」。
 //   - **值永不回显**：返回值与错误串都只带键名与位置（§9）。
 //
-// 空 api_key 与 resolveAPIKey 同口径回落默认引用 `secret:DEEPSEEK_API_KEY`——
+// 空 api_key 与 resolveAPIKey 同规则回落默认引用 `secret:DEEPSEEK_API_KEY`——
 // 不一致的话，「启动用环境变量、导入却跳过」会让用户以为导入漏了。这条只对 provider
 // 生效：语音、决策、联网的空值是「借别处 / 还没配」，把它们补成库里一条新条目不是导入。
 func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
@@ -212,7 +212,7 @@ type importTarget struct {
 	service  string // 派生键名用的服务名（keySlotName 的第一个参数）
 	slot     int    // 密钥池下标（provider 的多把钥匙用；其余恒 0）
 	ref      string // 当前值（明文 / `secret:<名>` / 空）
-	fallback string // 空值时的缺省引用（只有 provider 有：与 resolveAPIKey 同口径）
+	fallback string // 空值时的缺省引用（只有 provider 有：与 resolveAPIKey 同一套规则）
 	path     []any  // config 里的位置
 }
 
@@ -268,7 +268,7 @@ func webImportTargets(ps []webProvider, side webSide, key string) []importTarget
 		}
 		out = append(out, importTarget{
 			where: i18n.Tf("cmd.secrets.import.where.web", "side", key, "kind", ps[i].Kind),
-			// service 与界面填明文时的派生口径同一套（webKeyService）：同一个 kind 不会
+			// service 与界面填明文时的派生规则同一套（webKeyService）：同一个 kind 不会
 			// 因为「从哪个入口进的库」而占两个名字。
 			service: service,
 			ref:     ps[i].Key,

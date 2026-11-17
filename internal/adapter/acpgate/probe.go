@@ -229,7 +229,7 @@ func stderrTailOf(p *process) string {
 // probeClient 探测用的客户端：什么也不做。
 //
 // 握手阶段对方不该发任何请求；真发了就是它在探我们申报了哪些能力——这时按「没申报、
-// 不接受」回绝，正好与 acpgate 自己的口径一致（不申报就不承诺）。
+// 不接受」回绝，正好与 acpgate 自己的规则一致（不申报就不承诺）。
 type probeClient struct{}
 
 var errProbeNoCaps = errors.New("the probe client advertises no client capabilities")

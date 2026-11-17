@@ -193,7 +193,7 @@ func (p *Plat) WindowFromPoint(pt Point) Handle {
 	return Handle(h)
 }
 
-// WorkArea 最近显示器工作区（查询类直接调）——锚点夹取/吸附/停靠共用口径
+// WorkArea 最近显示器工作区（查询类直接调）——锚点夹取/吸附/停靠共用规则
 // （D50：点取锚点中心，含多显示器）。
 func (p *Plat) WorkArea(pt Point) (Rect, bool) {
 	wp := toWinPoint(pt)
@@ -216,7 +216,7 @@ func (p *Plat) MonitorAt(pt Point) bool {
 
 // WindowDPI 指定窗口 DPI 比例（D90：GetDpiForWindow 直查，恢复期 dp→px 换算用——
 // 废除旧「窗高÷默认高」反推，窗口尺寸可配后该假设必错）。查询类直接调（铁律 1 不限）；
-// 句柄无效或老系统无此 API → 0，回落 1.0 = 100% 口径（与旧默认行为一致）。
+// 句柄无效或老系统无此 API → 0，回落 1.0 = 100% 规则（与旧默认行为一致）。
 func (p *Plat) WindowDPI(h Handle) float64 {
 	v, _, _ := procGetDpiForWindow.Call(uintptr(h))
 	if v == 0 {

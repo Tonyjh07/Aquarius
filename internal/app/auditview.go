@@ -15,12 +15,12 @@ import (
 // auditview.go `/audit` 的读与渲染：审计文件每行已经记了 kind、工具名、耗时、
 // 成败与 usage，这里只是把它读出来——**不新增字段、不显示参数内容**。
 //
-// 为什么另起一个查看口：审计行是全仓唯一「模型与工具实际做了什么」的落盘事实，
+// 为什么另起一个查看口：审计行是全仓唯一「模型与工具实际做了什么」的磁盘记录，
 // 但此前只有 `/plugin logs` 顺带 tail 插件那几行（D143）。出问题时翻 profile 目录
 // 的 JSONL 不是给用户准备的读法。
 //
 // 读法上有一条刻意的克制：视图不做统计、不做时间窗过滤，只按文件顺序倒着取 N 行。
-// 统计要另立口径（`/cost` 才是账），这里要的是「刚才那几次调用长什么样」。
+// 统计要另立规则（`/cost` 才是账），这里要的是「刚才那几次调用长什么样」。
 
 // auditDefaultLines 缺省显示行数。
 const auditDefaultLines = 20
@@ -60,7 +60,7 @@ type auditDecide struct {
 
 // readAudit 读整份审计文件，返回可解析的行与总行数（含解析失败的空行/坏行）。
 //
-// 文件不存在 = 空结果（没有记录不是错误，与 TailToolCalls 同口径）；坏行跳过——
+// 文件不存在 = 空结果（没有记录不是错误，与 TailToolCalls 同规则）；坏行跳过——
 // 审计文件可能被截断或正在被另一个进程追加，读侧不该因此整份失败。
 func readAudit(path string) ([]auditRow, int, error) {
 	data, err := os.ReadFile(path)

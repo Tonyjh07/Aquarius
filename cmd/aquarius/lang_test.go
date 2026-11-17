@@ -58,7 +58,7 @@ func TestUILangEnvSelectsEnglish(t *testing.T) {
 	}
 }
 
-// TestUILangRejectsUnknown 非法 ui.lang 启动即报（与 ui.kind 同口径），并且要指出是哪个键
+// TestUILangRejectsUnknown 非法 ui.lang 启动即报（与 ui.kind 同规则），并且要指出是哪个键
 // ——否则用户只看到「启动失败」，不知道该改哪一处。
 func TestUILangRejectsUnknown(t *testing.T) {
 	dir := t.TempDir()

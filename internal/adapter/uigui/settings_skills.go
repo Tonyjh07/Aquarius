@@ -4,9 +4,9 @@ package uigui
 // 类型，装配根实现（`cmd/aquarius/skillsadmin.go`，落在 `skillfs.Installer` 上）。
 //
 // 与密钥库页的差别：安装/更新会 clone 仓库或下载压缩包（秒级到分钟级），故动作一律
-// **异步**（与工具页同口径：旁路 goroutine + 结果通道 + Invalidate），页面只读快照。
+// **异步**（与工具页同规则：旁路 goroutine + 结果通道 + Invalidate），页面只读快照。
 //
-// 边界（D203 口径三）：只认用户给的路径或链接，不做「技能市场 / 仓库浏览」——安装面
+// 边界（D203 规则三）：只认用户给的路径或链接，不做「技能市场 / 仓库浏览」——安装面
 // 越像应用商店，越容易把「远端说了算」的指令包塞进上下文。
 
 import (
@@ -149,7 +149,7 @@ type filePick struct {
 }
 
 // pushFilePick 投递文件框结果（平台线程调用）：通道满即丢（重选一次即可），随后催历史窗
-// 重绘让帧首取走——与技能选择框同一口径，只是取走的是历史窗。
+// 重绘让帧首取走——与技能选择框同一套规则，只是取走的是历史窗。
 func (u *UI) pushFilePick(p filePick) {
 	select {
 	case u.filePicks <- p:
@@ -160,8 +160,8 @@ func (u *UI) pushFilePick(p filePick) {
 	}
 }
 
-// drainSkillPicks 帧首取走选择框结果：**只填来源框**，由用户再点「安装」才落盘
-// （D203 口径四：选择动作 ≠ 安装动作，避免误点即复制一整棵树）。
+// drainSkillPicks 帧首取走选择框结果：**只填来源框**，由用户再点「安装」才写入磁盘
+// （D203 规则四：选择动作 ≠ 安装动作，避免误点即复制一整棵树）。
 func (f *settingsForm) drainSkillPicks(u *UI) {
 	if u == nil || u.skillPicks == nil {
 		return

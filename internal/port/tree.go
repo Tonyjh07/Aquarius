@@ -19,7 +19,7 @@ type BranchInfo struct {
 }
 
 // EdgeKind 节点与其父之间**边**的种类（D120§2.3）：会话树只持久化 `RevisedFrom`（新→旧），
-// Fresh/Carry/Clone 的 KeepMode 不落库，故版本链**只分两类**、不猜细分。
+// Fresh/Carry/Clone 的 KeepMode 不写进密钥库，故版本链**只分两类**、不猜细分。
 type EdgeKind string
 
 const (
@@ -35,7 +35,7 @@ type GraphNode struct {
 	ID      conversation.MessageID
 	Parent  conversation.MessageID // 结构根为空串
 	Role    conversation.Role      // root/user/assistant/system/inject（类别）
-	Snippet string                 // 展示用短摘要（渲染文本首行片段；非推理口径）
+	Snippet string                 // 展示用短摘要（渲染文本首行片段；非推理规则）
 	// Source/Trigger 注入节点的来源与触发记录（D150；仅 Role=inject 非零值），与
 	// Role/Snippet 同族、出自同一快照：展示侧据此画来源行与「已触发/未触发」。
 	Source  string
@@ -44,14 +44,14 @@ type GraphNode struct {
 	CreatedAt time.Time
 	// EdgeKind 与父边的种类；结构根无父边，为零值（""）。
 	EdgeKind EdgeKind
-	// SiblingIdx/SiblingCount 版本组中的序号与总数（版本 i/n 口径，与 BranchInfo 同源）；
+	// SiblingIdx/SiblingCount 版本组中的序号与总数（版本 i/n 规则，与 BranchInfo 同源）；
 	// 衬垫不属于任何版本组，两值都恒为 0。
 	SiblingIdx   int
 	SiblingCount int
 }
 
 // TreeGraph 会话树整树只读快照（D112②/D120⑦，S3 relation-map 数据面）。
-// 与 Branches/Tail 同源、同一不可变快照发布；展示口径，不参与推理装配。
+// 与 Branches/Tail 同源、同一不可变快照发布；展示规则，不参与推理装配。
 type TreeGraph struct {
 	// Anchor 当前 Head 消息（锚点，D120§2.1）；节点不在图内时为空串。
 	Anchor conversation.MessageID
@@ -81,8 +81,8 @@ type TreeView interface {
 	// Graph 返回整树只读快照（D112②/D120⑦，S3 relation-map 数据面）；尚未发布时 ok=false。
 	Graph() (TreeGraph, bool)
 	// NodeText 返回 id 的正文全文（D132：气泡级动作的数据源）——`GraphNode.Snippet` 只有
-	// 40 字摘要，拿它预填编辑框会在提交时把消息截断成摘要。口径 = 正文分片（PartText）
-	// 依序拼接，跳过思考/工具/附件分片（与气泡块的正文口径同源）；id 不在树中（或尚未
+	// 40 字摘要，拿它预填编辑框会在提交时把消息截断成摘要。规则 = 正文分片（PartText）
+	// 依序拼接，跳过思考/工具/附件分片（与气泡块的正文规则同源）；id 不在树中（或尚未
 	// 发布）时 ok=false——调用方据此退化为空文本（内核拒空修订文本，不会误改）。
 	NodeText(id conversation.MessageID) (string, bool)
 	// NodeAttachments 返回 id 的附件分片清单（D188：编辑态 chip 的数据源），按节点内
@@ -91,12 +91,12 @@ type TreeView interface {
 	NodeAttachments(id conversation.MessageID) []AttachmentView
 	// TreeEditState 返回树编辑模式的状态（D258）：是否在模式内、已改几处（未保存）。
 	// 只读——**进出的唯一入口是 `/tree-edit` 命令**（UI 不自己记状态，否则开关与内核
-	// 「谁在模式里」会有两份说法）。每次打开会话窗都是关闭态：模式不落盘。
+	// 「谁在模式里」会有两份说法）。每次打开会话窗都是关闭态：模式不写入磁盘。
 	TreeEditState() (active bool, edits int)
 }
 
 // AttachmentView 一个附件分片的只读投影（D188）：序号 + 展示名 + 媒体类型 + 字节数。
-// 不含路径与哈希——UI 只需要"这是哪个附件"，增删的口径是节点内的**序号**（按名删
+// 不含路径与哈希——UI 只需要"这是哪个附件"，增删的规则是节点内的**序号**（按名删
 // 在重名时无法消歧）。
 type AttachmentView struct {
 	// Index 节点内附件分片的 0 基出现序（`/edit --drop N` 的 N）。
@@ -111,7 +111,7 @@ type SessionSummary struct {
 	ID        conversation.ID
 	Title     string
 	UpdatedAt time.Time
-	// Messages 消息节点数（不含 Root，与 store 列表口径一致）。
+	// Messages 消息节点数（不含 Root，与 store 列表规则一致）。
 	Messages int
 	// Current 是否当前会话。
 	Current bool

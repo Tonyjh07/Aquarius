@@ -44,7 +44,7 @@ func (r resourceStore) Index(ctx context.Context) ([]port.MemoryIndexEntry, erro
 	return out, nil
 }
 
-// Read 按 URI 取文本；二进制内容拒绝（v1 只内联文本，同 D10 口径）。
+// Read 按 URI 取文本；二进制内容拒绝（v1 只内联文本，同 D10 规则）。
 func (r resourceStore) Read(ctx context.Context, name string) (port.MemoryDoc, error) {
 	res, err := r.s.cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: name})
 	if err != nil {

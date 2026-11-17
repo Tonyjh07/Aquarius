@@ -24,7 +24,7 @@ func userMessage(text string) conversation.Message {
 	}
 }
 
-// tuiFakePending port.Pending 的内存实现（只验界面这一侧的口径）。
+// tuiFakePending port.Pending 的内存实现（只验界面这一侧的规则）。
 type tuiFakePending struct {
 	items []port.PendingInput
 	seq   int
@@ -173,7 +173,7 @@ func TestTUICtrlUUndoesLastPending(t *testing.T) {
 	}
 }
 
-// TestTUIUserNodeWithoutEcho 轮内落成的 user 节点没有本地回显 → 补一块；有回显的核销不重复。
+// TestTUIUserNodeWithoutEcho 轮内写成的 user 节点没有本地回显 → 补一块；有回显的核销不重复。
 func TestTUIUserNodeWithoutEcho(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.echoed = []string{"普通一句"}

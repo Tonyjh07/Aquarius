@@ -42,7 +42,7 @@ type BlobRef struct {
 type ToolPart struct {
 	CallID   string          `json:"call_id"` // 节点内唯一（不再全树唯一，D95）
 	Name     string          `json:"name"`
-	Args     json.RawMessage `json:"args,omitempty"` // 与 tool.Call.Args 同口径：落盘为 JSON 对象而非 base64
+	Args     json.RawMessage `json:"args,omitempty"` // 与 tool.Call.Args 同一套规则：写入磁盘为 JSON 对象而非 base64
 	Result   *tool.Result    `json:"result,omitempty"`
 	Approval ApprovalState   `json:"approval,omitempty"` // 预留：M5 工具确认
 }
@@ -109,7 +109,7 @@ type Message struct {
 	// Source 注入来源（D150；仅 Role=inject 非空）：`job:<id>` / `tool:<name>` /
 	// `plugin:<name>` / `poller:<id>` / `user`。只作展示与审计，不进模型上下文。
 	Source string `json:"source,omitempty"`
-	// Trigger 本条落地时是否随附起了一轮响应（D150；仅 Role=inject 有意义）。
+	// Trigger 本条实现时是否随附起了一轮响应（D150；仅 Role=inject 有意义）。
 	// 记的是**实际发生**的事，供回放/审计——重放不再触发（否则加载会话就自己跑起 Turn）。
 	Trigger bool `json:"trigger,omitempty"`
 	// Trust 注入节点的信任级（D170；仅 Role=inject 有意义）。

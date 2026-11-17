@@ -81,7 +81,7 @@ func TestMakeTreeSnapshotBranches(t *testing.T) {
 }
 
 // TestMakeTreeSnapshotOrderTieBreak CreatedAt 相等（Revise 同刻）时按 ID 升序——与
-// domain `Conversation.Branches` 的排序口径一致，保证快照确定性。
+// domain `Conversation.Branches` 的排序规则一致，保证快照确定性。
 func TestMakeTreeSnapshotOrderTieBreak(t *testing.T) {
 	c := conversation.New(conversation.ID("convT"), "同刻")
 	txt := []conversation.Part{{Kind: conversation.PartText, Text: "x"}}

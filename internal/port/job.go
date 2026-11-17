@@ -44,7 +44,7 @@ type Job struct {
 	EndedAt   time.Time `json:"ended_at"`
 }
 
-// JobManager 后台任务端口：独立进程 + 日志落盘 ~/.aquarius/jobs/<id>.log；
+// JobManager 后台任务端口：独立进程 + 日志写入磁盘 ~/.aquarius/jobs/<id>.log；
 // 任务表 v1 内存态（D8），任务不受会话取消影响，job_kill 显式终止（§10）。
 //
 // 方法按消费方拆成下面几个小接口（§2.2）：各调用方只声明它真正用到的那几个，
@@ -83,7 +83,7 @@ type JobReconciler interface {
 	Unfinished(ctx context.Context) ([]UnfinishedJob, error)
 	// Settle 报告已送达会话（D264）：抹掉该任务的台账条目，下次启动不再提它。
 	//
-	// 判据是「**落地并落盘**」，不是「入队」——入队的报告随进程一起消失，那一条就得
+	// 判据是「**送达并写入磁盘**」，不是「入队」——入队的报告随进程一起消失，那一条就得
 	// 留给下次对账。所以终态与抹账分成两步：进终态只标状态，报告确认送达才删。
 	Settle(ctx context.Context, id JobID) error
 }

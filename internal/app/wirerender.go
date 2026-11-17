@@ -103,7 +103,7 @@ func wireEndLine(m port.WireMeta, frames []WireFrame) string {
 		"n", len(frames), "data", data, "comment", comment)
 }
 
-// renderWireDump 整份落盘/次窗的内容：一段标注 + 原始字节。
+// renderWireDump 整份写入磁盘/次窗的内容：一段标注 + 原始字节。
 //
 // 头部每行以 `#` 打头，所以「去掉 # 开头的行」就是服务端原样返回的响应体——
 // 既让人看得懂这份文件是什么，又不至于把原件改成一份加工品。

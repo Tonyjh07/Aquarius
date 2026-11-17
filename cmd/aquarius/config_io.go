@@ -25,7 +25,7 @@ type legacyConfigError struct{}
 
 func (legacyConfigError) Error() string { return i18n.T("cmd.config.err.legacy_config") }
 
-// ErrLegacyConfig D110 前的旧单文件 config（沿 storejson ErrLegacyFormat 口径：
+// ErrLegacyConfig D110 前的旧单文件 config（沿 storejson ErrLegacyFormat 规则：
 // 显式识别报因、绝不静默当零值解析、不做自动迁移——旧文件留存原地由用户手工处置）。
 var ErrLegacyConfig error = legacyConfigError{}
 
@@ -54,7 +54,7 @@ const (
 const defaultProfileName = "default"
 
 // legacyConfigKeys D110 前单文件 config 的顶层键：根 config.json 任一出现即判旧格式
-// （encoding/json 对未知键静默零值——旧文件「看起来正常」地丢光配置，必须显式识别，D95 同口径）。
+// （encoding/json 对未知键静默零值——旧文件「看起来正常」地丢光配置，必须显式识别，D95 同规则）。
 var legacyConfigKeys = []string{
 	"model", "ui", "mcpServers", "plugins", "permissions",
 	"limits", "system_prompt", "output", "input",
@@ -62,7 +62,7 @@ var legacyConfigKeys = []string{
 
 // persistSkillDirs 把额外技能根写回 config 的 `skills.dirs`（设置窗「技能」页的目录增删）。
 //
-// 只写「额外目录」：兜底根 `<profile>/skills` 恒在最后，不进配置（D201 口径二）。
+// 只写「额外目录」：兜底根 `<profile>/skills` 恒在最后，不进配置（D201 规则二）。
 // 空表 = 删除该键（老配置里只有空数组时不留下 `"dirs": []` 噪音）。
 func (w *wiring) persistSkillDirs(dirs []string) error {
 	return persistConfig(w.cfgPath, func(generic map[string]any) {
@@ -162,7 +162,7 @@ func loadConfig(path string) (*fileConfig, error) {
 
 // detectLegacyModelConfig 旧形状判别（D110② 单 provider 平铺 / D173 之前 provider 列表
 // 单值密钥）：两种都报 ErrLegacyConfig 与手工改写指引。Unmarshal 对旧键静默零值——
-// 不先判别的话，旧配置会「看起来正常」地丢光模型与密钥（D95 影子结构同口径）。
+// 不先判别的话，旧配置会「看起来正常」地丢光模型与密钥（D95 影子结构同规则）。
 func detectLegacyModelConfig(path string, data []byte) error {
 	var probe struct {
 		Model struct {
@@ -221,14 +221,14 @@ func writeDefaultConfig(path string) error {
 
 // configFileMode 配置文件权限：`config.json` 允许内联明文 `model.api_key`（也可写
 // `secret:<名>`），按密钥同级对待——同机其他用户不该读得到。后台任务日志与密钥库
-// 都是 0600，这里是同一口径的第三处。
+// 都是 0600，这里是同一套规则的第三处。
 const configFileMode fs.FileMode = 0o600
 
 // writeConfigFile 原子写 config 并把权限位**收紧**到 0600。
 //
 // atomicfile 的「覆盖沿用既有权限位」只守一个方向（不把 0600 放宽），配置文件要的
 // 是相反方向：早先按 0644 建出来的那份也得收回来，否则手写的密钥对同机他人一直是
-// 可读的。chmod 失败不回滚写入——内容已经落盘，把它报成「写失败」只会误导调用方；
+// 可读的。chmod 失败不回滚写入——内容已经写入磁盘，把它报成「写失败」只会误导调用方；
 // 权限收紧下次写回还会再来一次。
 func writeConfigFile(path string, data []byte) error {
 	if err := atomicfile.WriteFile(path, data, configFileMode); err != nil {
@@ -274,7 +274,7 @@ func validProfileName(name string) error {
 
 // parsePointerFile 解析根 config.json 指针（D110①），返回当前 profile 名。
 // 旧单文件 config 显式判别报 ErrLegacyConfig 并给出手工迁移步骤——普通 Unmarshal
-// 会把旧键静默丢成零值指针，「看起来正常」地换到空 profile，绝不允许（D95 同口径）。
+// 会把旧键静默丢成零值指针，「看起来正常」地换到空 profile，绝不允许（D95 同规则）。
 func parsePointerFile(path string, data []byte) (string, error) {
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -412,7 +412,7 @@ func (c *cfgWriter) persistLevel(l perm.Level) error {
 }
 
 // persistUnattended 实现 /unattended 与菜单/设置窗开关写回 config 的
-// permissions.unattended（D185 口径四）：成功后同步活开关，工具与提问链路即时生效。
+// permissions.unattended（D185 规则四）：成功后同步活开关，工具与提问链路即时生效。
 func (c *cfgWriter) persistUnattended(on bool) error {
 	if err := persistConfig(c.path, func(generic map[string]any) {
 		perms, _ := generic["permissions"].(map[string]any)

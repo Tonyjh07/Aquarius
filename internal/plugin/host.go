@@ -64,13 +64,13 @@ type Deps struct {
 	PluginsDir string
 	// States config `plugins` 初始状态（D31；nil = 全部默认）。
 	States map[string]State
-	// Persist 状态变更落盘（装配根原子写回 config 的 plugins 段）；nil = 不落盘。
+	// Persist 状态变更写入磁盘（装配根原子写回 config 的 plugins 段）；nil = 不写入磁盘。
 	Persist func(map[string]State) error
 	// Log 运行日志（D276）：级别 / 事件 / 行动按 key 给，上下文固定 plugin；nil = 丢弃。
 	Log port.Log
 	// Unattended 无人值守是否开着（热态，每次授权前现问）；nil = 当作关。
 	// 开着时信任门与能力授权**不问也不放行**：没人能批准，直接不启动并留一条日志
-	// ——与工具链同一条口径，但走这里而不是装饰器，因为日志要说清「不是用户拒的」。
+	// ——与工具链同一条规则，但走这里而不是装饰器，因为日志要说清「不是用户拒的」。
 	Unattended func() bool
 	// OnChange 启停/状态变化回调（装配根刷新工具与动态命令面）；锁外触发。
 	OnChange func()
@@ -288,14 +288,14 @@ func (h *Host) trustGate(ctx context.Context, d Decl) bool {
 	cur.Trusted = fp
 	h.states[d.Name] = cur
 	h.mu.Unlock()
-	if err := h.saveStates(); err != nil { // 指纹落盘 ⇒ 下次启动静默
+	if err := h.saveStates(); err != nil { // 指纹写入磁盘 ⇒ 下次启动静默
 		h.logf(port.LogWarn, "log.plugin.trust_persist_failed", "log.act.reask_next_start",
 			"name", d.Name, "err", err)
 	}
 	return true
 }
 
-// grant capability 首用逐项确认（§6.4 #3）：通过则写入 State.Granted 并落盘。
+// grant capability 首用逐项确认（§6.4 #3）：通过则写入 State.Granted 并写入磁盘。
 // 返回 false = 拒绝（或无确认器 fail-closed），调用方置 revoked 不启动。
 func (h *Host) grant(ctx context.Context, d Decl) bool {
 	if len(d.Capabilities) == 0 {
@@ -314,7 +314,7 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		return true
 	}
 	if h.unattendedNow() {
-		// 与信任门同一条口径：不阻塞、不授予、下次交互启动再问。
+		// 与信任门同一条规则：不阻塞、不授予、下次交互启动再问。
 		h.logf(port.LogInfo, "log.plugin.grant_unattended", "log.act.deny",
 			"name", d.Name, "caps", pending)
 		return false
@@ -325,7 +325,7 @@ func (h *Host) grant(ctx context.Context, d Decl) bool {
 		return false
 	}
 	changed := false
-	// 任何返回路径都把已授予项落盘（审查修复：中途拒绝不得留下"内存已授、磁盘未授"）。
+	// 任何返回路径都把已授予项写入磁盘（审查修复：中途拒绝不得留下"内存已授、磁盘未授"）。
 	defer func() {
 		if changed {
 			if err := h.saveStates(); err != nil {
@@ -535,7 +535,7 @@ func (h *Host) Disable(name string) error {
 	return nil
 }
 
-// GrantCap 手动预授权一个能力（S6/D143）：免一次确认写入 State.Granted 并落盘。
+// GrantCap 手动预授权一个能力（S6/D143）：免一次确认写入 State.Granted 并写入磁盘。
 // 插件未启用时仅记录授权——下一次 Enable 不再对该能力弹确认（省一次确认，不等于
 // 绕过风险；UI 需标注）。未知能力不校验（声明清单之外的能力由调用方负责，host 只记状态）。
 func (h *Host) GrantCap(name string, cap string) error {
@@ -710,7 +710,7 @@ func (h *Host) setStatus(name string, st Status, lastErr string) {
 	h.mu.Unlock()
 }
 
-// saveStates 落盘当前状态（拷贝隔离）。返回错误由调用方处置：
+// saveStates 写入磁盘当前状态（拷贝隔离）。返回错误由调用方处置：
 // Enable/Disable 向用户上抛（运行态仍生效）、grant 的 defer 只记日志——
 // 不阻断运行态（审查修复：写回失败不再静默）。
 func (h *Host) saveStates() error {

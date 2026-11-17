@@ -94,7 +94,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	w.secrets = newSecretChain(bin, w.secretsWarn)
 
 	// profile 配置：不存在 = 该 profile 首次运行，写模板。D141：**gui 不再「写模板即退出」**
-	// ——模板落盘后照常装配，配置缺项（模板的密钥引用通常取不到）由 run() 的欢迎向导窗
+	// ——模板写入磁盘后照常装配，配置缺项（模板的密钥引用通常取不到）由 run() 的欢迎向导窗
 	// 接管；tui/repl 保持旧契约（控制台已恢复、指引可见 ⇒ 打印指引 + errFirstRun，见本节末）。
 	cfgPath := filepath.Join(profileDir, "config.json")
 	w.cfgPath = cfgPath
@@ -182,7 +182,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 		w.noteText(logging.LevelWarn, logging.LLM, "log.llm.chain_narrowed",
 			"log.act.continue", note)
 	}
-	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 口径。
+	// 思考参数启动校验（D34）：effort 档位与 /effort 命令共用 app.ParseEffort 规则。
 	if raw := strings.TrimSpace(cfg.Model.ReasoningEffort); raw != "" {
 		effort, err := app.ParseEffort(raw)
 		if err != nil {
@@ -194,7 +194,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	if cfg.UI.Kind != "repl" && cfg.UI.Kind != "tui" && cfg.UI.Kind != "gui" {
 		return fmt.Errorf("%s", i18n.Tf("cmd.boot.err.ui_kind", "kind", cfg.UI.Kind))
 	}
-	// 界面语言（D275/§7.8）：环境变量 > ui.lang > auto。非法值启动即报（与 ui.kind 同口径：
+	// 界面语言（D275/§7.8）：环境变量 > ui.lang > auto。非法值启动即报（与 ui.kind 同规则：
 	// 等界面出来了才发现语言没生效，比启动失败难查）。定一次就写进取词口，之后整支进程
 	// 不再变——文案在构造期散进各视图与测量，热切换等于重建整个壳。
 	sel, err := i18n.Parse(uiLangSetting(os.Getenv("AQUARIUS_UI_LANG"), cfg.UI.Lang))
@@ -260,7 +260,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 
 // openLog 开运行日志（D276/§7.9）：级别 `-log-level` > `AQUARIUS_LOG_LEVEL` > `ui.log_level`，
 // 形态只认 `--log-format`（排查时才切，不落配置）。落在 profile 自己的 logs/ 下，与
-// `audit.log`、`jobs/` 同一隔离口径；开不出文件不拦启动（logging.Open 降级到 stderr 并记一条）。
+// `audit.log`、`jobs/` 同一隔离规则；开不出文件不拦启动（logging.Open 降级到 stderr 并记一条）。
 // 终端回显（D288）只给 gui：从终端启动时整份日志同时打到那块屏幕，双击启动没有屏幕可打；
 // tui/repl 的终端本身就是界面，插日志会破屏。
 func (w *wiring) openLog(levelFlag, formatFlag string) error {

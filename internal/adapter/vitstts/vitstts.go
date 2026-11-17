@@ -108,7 +108,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	if text == "" {
 		return conversation.BlobRef{}, errors.New(i18n.T("tts.err.text_empty"))
 	}
-	// 风格标签拼在正文前（与其它合成器同口径）：VITS 没有独立的风格参数，
+	// 风格标签拼在正文前（与其它合成器同规则）：VITS 没有独立的风格参数，
 	// 但标点与停顿会跟着正文走，效果仍成立。
 	if tags := strings.TrimSpace(req.Tags); tags != "" {
 		text = "(" + tags + ")" + text

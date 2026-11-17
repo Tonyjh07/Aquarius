@@ -19,7 +19,7 @@ package i18n
 // 表驱动测试按**位置**初始化的元素（无字段名可判，AST 拿不到对应关系）——这三处是已知盲区，
 // 靠 `AQUARIUS_UI_LANG=en go test ./...` 兜底。
 //
-// 白名单 `testDataLiterals` 只收 plan I6 第 2 类：用户数据 / 模型输出 / 落盘内容——它们的
+// 白名单 `testDataLiterals` 只收 plan I6 第 2 类：用户数据 / 模型输出 / 写入磁盘的内容——它们的
 // 中文是被测对象本身，不随界面语言变。每一条都要写得出理由（同 cjkAllowed：按文件给、
 // 整串相等或前缀匹配）。
 
@@ -48,7 +48,7 @@ var expectStringsFns = map[string]bool{
 var expectEqualFns = map[string]bool{"Equal": true}
 
 // testDataLiterals 白名单：测试期望值里「不是文案」的中文，按仓库相对路径分组。
-// 只许三类理由（plan I6 第 2 类）：用户数据、模型输出、落盘内容。匹配口径同 cjkAllowed：
+// 只许三类理由（plan I6 第 2 类）：用户数据、模型输出、写入磁盘的内容。匹配规则同 cjkAllowed：
 // 整串相等或以片段为前缀——写短片段要小心，一条 "会话" 会放过 "会话树"。
 var testDataLiterals = map[string][]string{
 	// 气泡测试的消息正文：用户内容原样流回，不随界面语言变（下同，uigui 各测试文件）。
@@ -179,7 +179,7 @@ var testDataLiterals = map[string][]string{
 		"新问题", "新回答", "回复", "追问", "改写的回答", "改写文本", "并为一",
 		"新的人格",
 	},
-	// session_tree_test：会话标题与消息文本等落盘内容。
+	// session_tree_test：会话标题与消息文本等写入磁盘的内容。
 	"internal/app/session_tree_test.go": {
 		"甲改", "乙调", "乙改名", "--你好 世界",
 	},
@@ -286,7 +286,7 @@ var testDataLiterals = map[string][]string{
 	"internal/app/think_test.go": {
 		"先想一想再算一算", "答案", "先想一想",
 	},
-	// summary_test：手写摘要落树与脚本流摘要/回复；branch 行格式骨架与节点正文无法拆分。
+	// summary_test：手写摘要写入会话树与脚本流摘要/回复；branch 行格式骨架与节点正文无法拆分。
 	"internal/app/session_summary_test.go": {
 		"手写 摘要", "## Objective", "模型回复", "模型摘要", "开篇摘要", "新摘要", "继续",
 		"a1 [assistant] 回复",
@@ -409,7 +409,7 @@ var testDataLiterals = map[string][]string{
 	"internal/app/sessionlist_test.go": {
 		"甲改名", "乙",
 	},
-	// tree：节点正文，钉住「不 TrimSpace」口径。
+	// tree：节点正文，钉住「不 TrimSpace」规则。
 	"internal/app/tree_test.go": {
 		"第一段\n\n  第二段保留首尾空白",
 	},
@@ -515,7 +515,7 @@ var testDataLiterals = map[string][]string{
 	"internal/adapter/notify/notify_test.go": {
 		"来自消息内容", "无桌面会话", "前后", "第一段回答 带换行 第二段", "正式回答",
 	},
-	// storejson：会话树落盘内容。
+	// storejson：会话树写入磁盘的内容。
 	"internal/adapter/storejson/store_test.go": {
 		"先想一想", "答案", "测试会话", "改过标题",
 	},
@@ -590,7 +590,7 @@ func TestNoCJKExpectations(t *testing.T) {
 		t.Fatalf("测试期望值里仍有中文字面量 %d 处（跟 key 走：期望值从 i18n 表拼，不写死）：\n"+
 			"  %s\n\n"+
 			"改法：界面文案改 i18n.T/i18n.Tf（key 从 zh_*.go 反查，插值句用 Tf 填占位符后再比，\n"+
-			"不许退化成「含某个词就算过」）；确属测试数据（用户数据 / 模型输出 / 落盘内容）的\n"+
+			"不许退化成「含某个词就算过」）；确属测试数据（用户数据 / 模型输出 / 写入磁盘的内容）的\n"+
 			"进 testDataLiterals 并写理由。t.Fatalf 的失败消息不受此锁管。",
 			len(bad), strings.Join(bad, "\n  "))
 	}
@@ -698,7 +698,7 @@ func isWantName(name string) bool {
 	return strings.HasPrefix(strings.ToLower(name), "want")
 }
 
-// allowedExpect 该文件的这条字面量是否已在白名单开口。匹配口径同 allowedLiteral。
+// allowedExpect 该文件的这条字面量是否已在白名单开口。匹配规则同 allowedLiteral。
 func allowedExpect(rel, s string) bool {
 	for _, frag := range testDataLiterals[rel] {
 		if s == frag || strings.HasPrefix(s, frag) {

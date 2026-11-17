@@ -2,7 +2,7 @@ package ingestfile
 
 // 常见文档转文本提取（Q17/D105，S2b-3）：pdf/docx/xlsx/html 各用现成纯 Go 库
 // （选型表与 spike 实证见 D105）；pptx/rtf/legacy 二进制 Office 首批缓，走二进制占位。
-// 统一口径：提取尽力而为——任何解析失败由调用方回落二进制占位（不让摄取整体失败）；
+// 统一规则：提取尽力而为——任何解析失败由调用方回落二进制占位（不让摄取整体失败）；
 // 文本上限 maxDocText 截断、文件上限 maxIngestFile 不解析。
 
 import (
@@ -26,7 +26,7 @@ var (
 	// maxIngestFile 结构化文档解析的文件大小上限（xlsx 经 OpenReader 全量缓冲，
 	// 32MB 封顶内存）；超出不解析、回落占位。
 	maxIngestFile int64 = 32 << 20
-	// maxDocText 提取文本上限（截断标注沿文本类口径——全文可 file_read 取）。
+	// maxDocText 提取文本上限（截断标注沿文本类规则——全文可 file_read 取）。
 	maxDocText = 64 << 10
 )
 
@@ -46,7 +46,7 @@ func structuredKind(path string) string {
 	return ""
 }
 
-// extractStructured 分派到各格式提取器；f 已由调用方 Seek(0)（统一口径）。
+// extractStructured 分派到各格式提取器；f 已由调用方 Seek(0)（统一规则）。
 // docx 走 path 复开（godocx.OpenDocument 按路径读——与入库 fd 分离，D105 后果④）。
 // 返回（提取文本, 是否截断, 解析错误）。
 func extractStructured(kind string, f *os.File, path string) (string, bool, error) {

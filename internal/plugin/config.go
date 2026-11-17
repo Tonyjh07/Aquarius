@@ -17,7 +17,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// 传输方式与风险档的合法取值：只认 stdio 与 streamable-http 两种传输（D30，声明口径见
+// 传输方式与风险档的合法取值：只认 stdio 与 streamable-http 两种传输（D30，声明规则见
 // §6.3、§8）。
 const (
 	TransportStdio = "stdio"
@@ -82,7 +82,7 @@ func (s MCPServer) Validate(name string) error {
 type State struct {
 	// Enabled 启停；nil = 默认启用（D31）。
 	Enabled *bool `json:"enabled,omitempty"`
-	// Granted capability allowlist（grant 确认的落盘处）。
+	// Granted capability allowlist（grant 确认后写入磁盘的地方）。
 	Granted []string `json:"granted,omitempty"`
 	// Trusted 启动信任指纹（D138）：发现源 = plugins 时，用户在信任门里确认过一次的
 	// 启动描述指纹（`Decl.Fingerprint()`）。**随 profile 走**（config 就在 profiles/<name>/）。

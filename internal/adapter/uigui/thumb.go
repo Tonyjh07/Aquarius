@@ -1,6 +1,6 @@
 package uigui
 
-// 暂存附件的缩略图（D187 口径四）：图片类附件在 chip 里显示一张小图代替回形针，
+// 暂存附件的缩略图（D187 规则四）：图片类附件在 chip 里显示一张小图代替回形针，
 // 让「贴的是哪张图」一眼可辨。
 //
 // 两条纪律：
@@ -22,7 +22,7 @@ import (
 	"gioui.org/op/paint"
 )
 
-// 缩略图口径。
+// 缩略图规则。
 const (
 	attachThumbDp = 20 // chip 内缩略图边长（与回形针槽同高）
 	thumbPx       = 40 // 预缩放边长（2x：高 DPI 下仍是下采样，边缘干净）
@@ -64,7 +64,7 @@ func loadThumbLimit(r io.Reader, maxPixels int) *thumbSrc {
 }
 
 // loadThumbSide 解码成边长 side 的方图（转写区缩略图比 chip 图标大一档，共用同一
-// 预算门与方图口径：方图意味着绘制方只需要按格宽等比铺，不必在两处各写一遍比例）。
+// 预算门与方图规则：方图意味着绘制方只需要按格宽等比铺，不必在两处各写一遍比例）。
 func loadThumbSide(r io.Reader, side, maxPixels int) *thumbSrc {
 	// 只读一遍字节：DecodeConfig 与 Decode 都从头开始，读成字节再各包一个 Reader，
 	// 避免对同一文件句柄做两次 seek。

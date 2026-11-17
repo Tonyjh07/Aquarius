@@ -46,7 +46,7 @@ type probeCall struct {
 
 func (f *fakeProviderMgr) Snapshot() []ProviderSnapshot { return f.snap }
 func (f *fakeProviderMgr) Apply(primary string, ps []ProviderPatch) error {
-	for _, p := range ps { // 镜像 cmd 侧校验口径（空名拒写），失败不记账
+	for _, p := range ps { // 镜像 cmd 侧校验规则（空名拒写），失败不记账
 		if strings.TrimSpace(p.Name) == "" {
 			return errFakeNameEmpty
 		}
@@ -82,7 +82,7 @@ func (f *fakeProviderMgr) Probe(model string, p ProviderPatch) (ProbeOutcome, er
 	return f.probeOutcome, f.probeErr
 }
 
-// TestFallbackChainEditorHeadless 降级链编辑（S11-7①/D176 口径三）：快照填表 →
+// TestFallbackChainEditorHeadless 降级链编辑（S11-7①/D176 规则三）：快照填表 →
 // 每项 provider/model 控件就位；添加/上移/下移/删除；保存时链恒全量进 patch。
 func TestFallbackChainEditorHeadless(t *testing.T) {
 	t.Parallel()
@@ -143,7 +143,7 @@ func TestFallbackChainEditorHeadless(t *testing.T) {
 	}
 }
 
-// TestFallbackChainEmptyAddRowSkipped 「＋ 添加」后未填任何内容 = 空行不落盘（链里不出现
+// TestFallbackChainEmptyAddRowSkipped 「＋ 添加」后未填任何内容 = 空行不写入磁盘（链里不出现
 // 无主项）；且清空链 = 全量写空（键存在但为空数组）。
 func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
 	t.Parallel()
@@ -164,7 +164,7 @@ func TestFallbackChainEmptyAddRowSkipped(t *testing.T) {
 	}
 }
 
-// TestProviderRowsLiveOnProvidersPage 拆页契约（S11-7①/D176 口径一）：provider 编辑行
+// TestProviderRowsLiveOnProvidersPage 拆页契约（S11-7①/D176 规则一）：provider 编辑行
 // 只挂「模型服务」页，「模型」页只剩 当前模型/思考/档位/降级链——防两页都挂或都不挂
 // （拆页时最容易犯的错是把行计划整体复制一份而忘了删原处）。
 func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
@@ -215,7 +215,7 @@ func TestProviderRowsLiveOnProvidersPage(t *testing.T) {
 	}
 }
 
-// TestProviderCardCollapse 折叠卡片（S11-7②/D176 口径二）：同一时刻只展开一张；
+// TestProviderCardCollapse 折叠卡片（S11-7②/D176 规则二）：同一时刻只展开一张；
 // 再点摘要行收起；新增条目自动展开；收起后行计划里只留摘要行。
 func TestProviderCardCollapse(t *testing.T) {
 	t.Parallel()
@@ -473,7 +473,7 @@ func TestProviderModelCostValidation(t *testing.T) {
 		t.Fatalf("非法单价反馈 = (%v, %q)", f.provErr, f.provStatus)
 	}
 	if len(mgr.applied) != 0 {
-		t.Fatalf("校验失败不该落盘: %+v", mgr.applied)
+		t.Fatalf("校验失败不该写入磁盘: %+v", mgr.applied)
 	}
 
 	mf = f.provs[0].modelForms[0]

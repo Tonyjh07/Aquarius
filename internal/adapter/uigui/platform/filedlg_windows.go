@@ -40,7 +40,7 @@ func (p *Plat) RequestFileDialog() {
 }
 
 // RequestOpenFile 请求通用单选文件框（会话导入）：请求体先入原子槽，再投消息让 shell
-// 线程取走呈现——模态泵不能嵌 Gio 泵，与附件框同一口径。
+// 线程取走呈现——模态泵不能嵌 Gio 泵，与附件框同一套规则。
 //
 // 已有一个框在等时直接放弃本次请求：对话框挂在消息窗上，模态期间主窗仍可点，连点两次会
 // 覆盖同一份请求体（用途可能都变了），比「这次没反应」更坏。
@@ -258,7 +258,7 @@ func attachFilter() []string {
 // showFileDlg 文件选择框呈现（shell 线程，D104）：GetOpenFileNameW 自带模态泵，阻塞
 // 本线程与 TrackPopupMenu 同语义（D72 先例）；选中 → Host.FilesPicked 回传，
 // 取消/出错静默。
-// D186 口径五：开 OFN_ALLOWMULTISELECT | OFN_EXPLORER，一次可选多个附件。
+// D186 规则五：开 OFN_ALLOWMULTISELECT | OFN_EXPLORER，一次可选多个附件。
 func (p *Plat) showFileDlg() {
 	const (
 		ofnHideReadOnly     = 0x4

@@ -205,7 +205,7 @@ func TestJobStartSpecs(t *testing.T) {
 		!strings.Contains(err.Error(), "must be an absolute path") {
 		t.Fatalf("相对 workdir err = %v, want 拒收", err)
 	}
-	// 根起始路径（Windows 无盘符口径）仍接受。
+	// 根起始路径（Windows 无盘符规则）仍接受。
 	if _, err := js.Execute(context.Background(), call(`{"command":"srv","workdir":"/tmp"}`)); err != nil {
 		t.Fatalf("根起始 workdir 应接受: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestJobWaitReturnsResult(t *testing.T) {
 }
 
 // blockingJobs 等不到终态的任务管理器：Wait 阻塞到 ctx 结束（测 job_wait 的
-// 「仍在跑」回填与「不吃默认工具超时」的口径）。
+// 「仍在跑」回填与「不吃默认工具超时」的规则）。
 type blockingJobs struct {
 	fakeJobs
 }
@@ -380,7 +380,7 @@ func TestJobWaitNotInteractiveChain(t *testing.T) {
 // keep=max/2 使头尾合计 max-1，按 len-max 会少报 1。
 func TestTrimHeadTailOddMax(t *testing.T) {
 	s := strings.Repeat("a", 100)
-	out := trimHeadTail(s, 11) // keep=5，实际保留 10，省略 90（旧口径报 89）
+	out := trimHeadTail(s, 11) // keep=5，实际保留 10，省略 90（旧规则报 89）
 	if !strings.Contains(out, "middle 90 chars omitted") {
 		t.Fatalf("奇数上限省略计数错: %q", out)
 	}

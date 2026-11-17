@@ -1,6 +1,6 @@
 package main
 
-// profile 管理面测试（D110③/修订④）：新建/复制/切换三动作的落盘行为、
+// profile 管理面测试（D110③/修订④）：新建/复制/切换三动作写入磁盘的行为、
 // 同名拒建、切换存在性校验与指针原子写。
 
 import (
@@ -41,12 +41,12 @@ func TestProfilesManagerCreateCopySwitch(t *testing.T) {
 	t.Parallel()
 	m, dir := newProfilesManager(t)
 
-	// 新建：模板 config 落盘、进清单；同名拒建。
+	// 新建：模板 config 写入磁盘、进清单；同名拒建。
 	if err := m.Create("fresh"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "profiles", "fresh", "config.json")); err != nil {
-		t.Fatalf("模板未落盘: %v", err)
+		t.Fatalf("模板未写入磁盘: %v", err)
 	}
 	if err := m.Create("fresh"); err == nil || err.Error() != i18n.Tf("cmd.profile.err.exists", "name", "fresh") {
 		t.Fatalf("同名新建 err = %v, want 已存在", err)

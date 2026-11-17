@@ -28,7 +28,7 @@ func newTestLogger(t *testing.T, lv Level, f Format) (*Logger, *bytes.Buffer, st
 	return l, &stderr, dir
 }
 
-// logFile 读某个日期的落盘内容（不存在则空串）。
+// logFile 读某个日期写到磁盘的内容（不存在则空串）。
 func logFile(t *testing.T, dir, day string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, filePrefix+day+".log"))

@@ -1,7 +1,7 @@
 // Package ingestmic 实现麦克风摄取（port.Ingestor，§7.2 / D179 / D295）：
-// RawInput{Kind:"mic"} → 连续采集 → 按说话分段 → 每段落成附件并转写 → 文本分片。
+// RawInput{Kind:"mic"} → 连续采集 → 按说话分段 → 每段写成附件并转写 → 文本分片。
 //
-// 音频本身不随消息进树：模型只见转写文本（§4.2 口径不变）。每段仍落库，
+// 音频本身不随消息进树：模型只见转写文本（§4.2 规则不变）。每段仍写进密钥库，
 // 便于回放与 GC（也保留了「这段文字是哪一段录音转来的」这一事实）。
 //
 // 一次采集 = 一条消息（D295 决策 4）：说几句就有几个文本分片，按说话顺序排，
@@ -161,7 +161,7 @@ func (in *Ingestor) recorded(n int64) time.Duration {
 		int64(micwin.SampleRate*micwin.Channels*micwin.Bits/8))
 }
 
-// transcribeSegment 把一段录音落库并转写。空文本（这段没识别出字）跳过而不是失败：
+// transcribeSegment 把一段录音写进密钥库并转写。空文本（这段没识别出字）跳过而不是失败：
 // 多段里有一段是噪音时，不该让整条消息失败。
 func (in *Ingestor) transcribeSegment(ctx context.Context, seg port.SpeechSegment, idx int) (string, error) {
 	wav := micwin.WrapWAV(seg.PCM)

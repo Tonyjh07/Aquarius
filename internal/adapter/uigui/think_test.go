@@ -104,7 +104,7 @@ func TestThinkLiveNeverCollapses(t *testing.T) {
 	}
 }
 
-// TestThinkOpenResetsOnClear 开合态是视图态（同 chip 口径）：清屏后块序从 0 重排，
+// TestThinkOpenResetsOnClear 开合态是视图态（同 chip 规则）：清屏后块序从 0 重排，
 // 上一会话某个序位的展开不应被新会话的同序位块继承。
 func TestThinkOpenResetsOnClear(t *testing.T) {
 	t.Parallel()

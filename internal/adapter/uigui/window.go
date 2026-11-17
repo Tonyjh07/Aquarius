@@ -123,7 +123,7 @@ func (u *UI) moveWindowTo(x, y int32) { u.plat.MoveWindow(x, y) }
 // resizeWindowTo 改主窗尺寸（保位，D90）。
 func (u *UI) resizeWindowTo(w, h int32) { u.plat.ResizeWindow(w, h) }
 
-// workArea 最近显示器工作区（锚点夹取/吸附/停靠共用口径）。
+// workArea 最近显示器工作区（锚点夹取/吸附/停靠共用规则）。
 func (u *UI) workArea(p point) (rect, bool) {
 	r, ok := u.plat.WorkArea(platform.Point{X: p.x, Y: p.y})
 	return toRect(r), ok
@@ -282,7 +282,7 @@ func (u *UI) onHWND(h platform.Handle) {
 		}
 	}
 	u.plat.SetTopMost(on)
-	// D90：配置像素尺寸先落（app.Size 只收 dp、建窗期 DPI 未就绪无法换算，px 口径在
+	// D90：配置像素尺寸先落（app.Size 只收 dp、建窗期 DPI 未就绪无法换算，px 规则在
 	// 挂接点经窗口线程补投）；同步等待完成后，位置恢复/停靠重算按落定矩形取值。
 	u.applyConfiguredSize()
 	rc, ok := u.windowRect()
@@ -295,7 +295,7 @@ func (u *UI) onHWND(h platform.Handle) {
 		if p, found := loadPos(u.opts.PosFile); found {
 			// D50：停靠记忆优先（停靠位重算，X/Y 忽略）；失败/非停靠走普通恢复——
 			// D52：锚点 = 输入栏包围盒（非停靠恢复恒为展开态，posRec 无 collapsed 键），
-			// 与拖动夹取同口径（重启不跳位）；frameMetric 未就绪 → restorePx 直查 DPI（D90）。
+			// 与拖动夹取同规则（重启不跳位）；frameMetric 未就绪 → restorePx 直查 DPI（D90）。
 			if (p.Docked == "left" || p.Docked == "right") && u.restoreDock(p, rc) {
 				return
 			}

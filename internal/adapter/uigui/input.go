@@ -127,7 +127,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 			shown = true
 		}
 		// D104/D186：附件槽 tooltip（D85 直采；收起态有附件 chip = 自示意、不叠 tooltip）。
-		// D188：编辑态的已有附件同样占住附件位，口径一致。
+		// D188：编辑态的已有附件同样占住附件位，规则一致。
 		if !shown && u.m.confirm == nil && len(u.chipItems()) == 0 &&
 			u.cursorHitsRect(attachSlotRect(pillEnd, gtx.Dp(inputPadDp), rowH,
 				gtx.Dp(inputIconDp)).Add(image.Pt(0, absY)), cur) {
@@ -136,7 +136,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 		}
 		if u.m.confirm != nil {
 			// D86：确认态三钮 tips（图标无文字，tooltip 承担可发现性）——布局几何
-			// 直采 × OS 命中直证（D85 口径；Clickable.Hovered 事件态在本窗不可靠）。
+			// 直采 × OS 命中直证（D85 规则；Clickable.Hovered 事件态在本窗不可靠）。
 			if txt, ok := u.confirmTipAt(cur); ok {
 				u.hoverTip(gtx, absY, txt, true)
 				shown = true
@@ -340,7 +340,7 @@ func (u *UI) updateEditor(gtx layout.Context) {
 		}
 		if _, isSubmit := evt.(widget.SubmitEvent); isSubmit {
 			// D250：Enter 只提交，不再兼职补全判定——补全一律走 Tab（readline 的
-			// menu-complete 口径：Tab 才是「换一个候选」，Enter 是「就按现在这样发」）。
+			// menu-complete 规则：Tab 才是「换一个候选」，Enter 是「就按现在这样发」）。
 			u.submitEditor()
 		}
 	}
@@ -405,7 +405,7 @@ func (u *UI) sendKeys(gtx layout.Context) {
 	}
 }
 
-// gioMods 端口口径的修饰键位集 → Gio 的 key.Modifiers。
+// gioMods 端口规则的修饰键位集 → Gio 的 key.Modifiers。
 func gioMods(m uicommon.Mods) key.Modifiers {
 	var out key.Modifiers
 	if m&uicommon.ModCtrl != 0 {
@@ -423,7 +423,7 @@ func gioMods(m uicommon.Mods) key.Modifiers {
 	return out
 }
 
-// gioEventMods 事件里的修饰键折回端口口径（只保留我们认识的四位）。
+// gioEventMods 事件里的修饰键折回端口规则（只保留我们认识的四位）。
 func gioEventMods(m key.Modifiers) uicommon.Mods {
 	var out uicommon.Mods
 	if m&key.ModCtrl != 0 {
@@ -481,7 +481,7 @@ func (u *UI) historyKeys(gtx layout.Context) {
 // 同受 gtx.Focused 门控（paintSelection 里 `if !gtx.Focused(e) { return }`），而淡出源的
 // Source 是零值（disabled）⇒ 恒 false ⇒ 输入栏拖选出的选区**从不进位图**（用户报障
 // 2026-10-13：光标跟手、看不见选区）。D62 只补了 caret，这里补选区：经 Editor.Regions
-// 取 [start,end) 的行盒、按 selection 色铺（与转写区行选区同口径 selColor）。
+// 取 [start,end) 的行盒、按 selection 色铺（与转写区行选区同规则 selColor）。
 //
 // **必须在 ed.Layout 之前调用**：选区要在文字**底下**（Gio 的顺序是 paintSelection →
 // paintText）；而 Regions 读的是上一次量期结果——淡出源与真窗 pass 同帧同几何同文本
@@ -542,7 +542,7 @@ func (u *UI) caretLineH(gtx layout.Context) int {
 
 // updateReasonEditor 消费确认态原因编辑器事件（D86）：Enter → SubmitEvent → 拒绝
 // （附原因；允许/提升必经按钮）。焦点一次性让入（reasonFocus，主编辑器确认态隐藏
-// ——不转移则键入落空），沿 D63 口径不回投常驻焦点。
+// ——不转移则键入落空），沿 D63 规则不回投常驻焦点。
 func (u *UI) updateReasonEditor(gtx layout.Context) {
 	if !u.inFadePass {
 		u.caretFocused = gtx.Focused(&u.reasonEd) // 真窗 pass 捕获（同主编辑器）
@@ -576,7 +576,7 @@ func (u *UI) drawReasonCaret(gtx layout.Context, dims layout.Dimensions) {
 	cl.Pop()
 }
 
-// confirmReason 取原因文本（TrimSpace + 控制序列消毒，同确认问句口径）。
+// confirmReason 取原因文本（TrimSpace + 控制序列消毒，同确认问句规则）。
 func (u *UI) confirmReason() string {
 	return sanitizeControl(strings.TrimSpace(u.reasonEd.Text()))
 }

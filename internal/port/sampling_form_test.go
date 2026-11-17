@@ -92,7 +92,7 @@ func TestParseSamplingTextMessageIsUserFacing(t *testing.T) {
 		t.Fatal("超界应报因")
 	}
 	msg := err.Error()
-	// 报因整句出自文案表（超界区间与生产同口径格式化）。
+	// 报因整句出自文案表（超界区间与生产同规则格式化）。
 	wantRange := i18n.Tf("port.err.temperature_range",
 		"min", strconv.FormatFloat(SettingsTemperatureMin, 'g', -1, 64),
 		"max", strconv.FormatFloat(SettingsTemperatureMax, 'g', -1, 64))

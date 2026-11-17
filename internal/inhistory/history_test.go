@@ -14,7 +14,7 @@ func tmpPath(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "input_history.jsonl")
 }
 
-// TestPushThenReopen 落盘的意义就在这一条：重启后还读得到。
+// TestPushThenReopen 写入磁盘的意义就在这一条：重启后还读得到。
 func TestPushThenReopen(t *testing.T) {
 	path := tmpPath(t)
 	s := Open(path)
@@ -98,7 +98,7 @@ func TestCompactsLongFile(t *testing.T) {
 	}
 }
 
-// TestEmptyPathStaysInMemory 空路径 = 只用内存（禁用落盘时不报错、不写文件）。
+// TestEmptyPathStaysInMemory 空路径 = 只用内存（禁用写入磁盘时不报错、不写文件）。
 func TestEmptyPathStaysInMemory(t *testing.T) {
 	s := Open("")
 	s.Push("only in memory")

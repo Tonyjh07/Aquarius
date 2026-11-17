@@ -59,7 +59,7 @@ type Config struct {
 	BaseURL string // 如 https://api.openai.com/v1（末尾斜杠可省）
 	APIKey  string // 空 = 不带 Authorization（本地服务）
 	// Headers 附加到每次 chat 请求的自定义头（D253）：兼容端点需要的网关/路由/计费头。
-	// **只对 openai-chat 生效**（同 UnsupportedParams 的口径——Responses/Anthropic 是自家
+	// **只对 openai-chat 生效**（同 UnsupportedParams 的规则——Responses/Anthropic 是自家
 	// 规范，乱加头会破坏鉴权）。在默认头与鉴权之后设置，故同名时以这里为准。
 	Headers map[string]string
 	// Protocol 协议形状（D175）；空 = openai-chat。
@@ -69,7 +69,7 @@ type Config struct {
 	Tokenizer string
 	// UnsupportedParams 启动注入的"服务端已知不认"参数名（D34：由上一次 400 剥离
 	// 成功后记录进 config，重启生效）；命中者编码时直接省略。**只对 openai-chat 生效**
-	// （D175 口径四：Responses/Anthropic 是自家规范，参数写错就是 bug，不该静默剥离）。
+	// （D175 规则四：Responses/Anthropic 是自家规范，参数写错就是 bug，不该静默剥离）。
 	UnsupportedParams []string
 	// NoteUnsupported 剥离成功后的记录回调（装配根写回 config `model.unsupported_params`）；
 	// nil = 只在本进程内记住。**只对 openai-chat 生效**（同上）。
@@ -82,7 +82,7 @@ type Config struct {
 }
 
 // Client OpenAI 兼容生成客户端（chat / responses 两套形状共用 HTTP、鉴权、错误分类与
-// 计数实现，D175 口径一：差异全在线上格式）。
+// 计数实现，D175 规则一：差异全在线上格式）。
 type Client struct {
 	base    string
 	key     string
@@ -117,7 +117,7 @@ func defaultClient() *http.Client {
 	dialer := &net.Dialer{Timeout: dialTimeout}
 	return &http.Client{
 		Transport: &http.Transport{
-			// Proxy 保持与 http.DefaultTransport 同口径（走环境变量），免得
+			// Proxy 保持与 http.DefaultTransport 同规则（走环境变量），免得
 			// 仅因自定义 Transport 就丢掉代理设置。
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -200,7 +200,7 @@ func (c *Client) CountTokens(_ context.Context, text string) (int, error) {
 }
 
 // Generate 发起流式生成，返回 SSE 生成流。端口语义与协议无关，形状差异按 c.proto 分派
-// （D175 口径一）。
+// （D175 规则一）。
 func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.Stream, error) {
 	if ctx == nil {
 		return nil, errors.New(i18n.T("llm.err.nil_context"))
@@ -242,7 +242,7 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 		resp = nil
 		firstCode, firstSn := code, sn
 		// D34：服务端点名不认的参数 → 本次剥离重试，成功后记录（装配根写回 config，
-		// 以后启动直接省略）。stream_options 的兼容回退并入同一机制（历史口径：报错
+		// 以后启动直接省略）。stream_options 的兼容回退并入同一机制（历史规则：报错
 		// 片段出现该名即剥，各家措辞不一）。
 		if stripped := unsupportedFields(sn, req, true); len(stripped) > 0 {
 			omit := c.omitCopy()
@@ -255,7 +255,7 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 				if e != nil {
 					// 第二次 post 的传输层错误不得被吞成首轮状态码（审查修复：
 					// 瞬时断连会误判为 400 非瞬时，装饰器层就不再重试）——
-					// 按 post 口径上抛（含 ErrTransient 标注）。
+					// 按 post 规则上抛（含 ErrTransient 标注）。
 					cancel()
 					return nil, e
 				}
@@ -284,7 +284,7 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 	return s, nil
 }
 
-// statusError 非 200 响应的统一报因（两套协议共用；D175 口径一）。
+// statusError 非 200 响应的统一报因（两套协议共用；D175 规则一）。
 //
 //   - 429（D173 密钥池）：限流/配额耗尽。标 ErrTransient 照旧走重试，同时包成
 //     *port.Quota 带上冷却时长，让密钥池层先换下一把钥匙——多账号场景下「换钥匙」
@@ -304,8 +304,8 @@ func (c *Client) statusError(path string, code int, sn string, after time.Durati
 // unsupportedFields 判定报错片段点名了哪些本次实际发送、但服务端不认的参数（D34）。
 // 思考参数要求"字段名 + 未知参数措辞"同时出现——枚举值错误
 // （如 "invalid value 'x' for reasoning_effort"）不匹配，照常报错、不掩盖配置问题；
-// stream_options 保留历史的"仅出现即剥"口径（各家报错措辞差异大）；
-// 消息级 reasoning_content 回传同走"字段名 + 未知措辞"口径（D42 剥离兜底）。
+// stream_options 保留历史的"仅出现即剥"规则（各家报错措辞差异大）；
+// 消息级 reasoning_content 回传同走"字段名 + 未知措辞"规则（D42 剥离兜底）。
 func unsupportedFields(sn string, req port.GenerateRequest, includeUsage bool) []string {
 	var out []string
 	if includeUsage && strings.Contains(sn, "stream_options") {

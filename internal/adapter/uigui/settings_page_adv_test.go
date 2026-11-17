@@ -1,6 +1,6 @@
 package uigui
 
-// settings_page_adv_test.go 高级页（config.json 整文件编辑）的高度口径回归。
+// settings_page_adv_test.go 高级页（config.json 整文件编辑）的高度规则回归。
 //
 // 复现过的问题：编辑区写死 220dp，窗口拉高后框底下留一大片空白，窗口高度在这个页面上
 // 等于白给。修法 = 该页按 Flex 排、编辑区吸走剩余高度（fillPage），于是「窗口给多少就
@@ -19,7 +19,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestAdvPageFillsRow （纯几何口径）高级页声明了撑满行，且它必须排在行表末尾——
+// TestAdvPageFillsRow （纯几何规则）高级页声明了撑满行，且它必须排在行表末尾——
 // 后面还有行的话，Flex 会把剩余高度分给编辑区、把后续行挤成 0 高。
 func TestAdvPageFillsRow(t *testing.T) {
 	t.Parallel()
@@ -40,7 +40,7 @@ func TestAdvPageFillsRow(t *testing.T) {
 		t.Errorf("撑满行下标 = %d（共 %d 行），want 末行——后面的行会被挤成 0 高", i, len(rows))
 	}
 
-	// 其余页仍走滚动列表：撑满行不是全局口径，只属于「整块内容没有自然高度」的页。
+	// 其余页仍走滚动列表：撑满行不是全局规则，只属于「整块内容没有自然高度」的页。
 	for p, page := range settingsPages {
 		if p == pageAdv {
 			continue

@@ -15,7 +15,7 @@ package conversation
 // 「摘要替换了当前节点」，T 自己被留成旧版本叶子；这里要的是「插在前面、T 仍在摘要之后」。
 //
 // 两个入口：InsertBefore 只给内容（手写摘要）；InsertCommitted 接受**已组装**的衬垫节点
-// （模型生成的摘要要记 Model/Usage 记账，与 AppendCommitted 对已组装节点的口径一致）。
+// （模型生成的摘要要记 Model/Usage 记账，与 AppendCommitted 对已组装节点的规则一致）。
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ import (
 
 // insertablePadRole 衬垫节点可用的角色（D152/D150）：衬垫是上下文/水位，不是伪造的发言，
 // 故只放 system（水位）与 inject（只追加的上下文）。D152 先把闸门按 system 收，注入节点
-// 落地（D150）后在此一并放开。
+// 实现（D150）后在此一并放开。
 func insertablePadRole(role Role) bool { return role == RoleSystem || role == RoleInject }
 
 // InsertBefore 在 id 之前插入一个衬垫节点（D152）：内容由调用方给，ID/父/时间戳由领域定。

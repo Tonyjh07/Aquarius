@@ -14,7 +14,7 @@ import (
 // fp 采样参数指针形（D204）。
 func fp(v float64) *float64 { return &v }
 
-// TestSamplingTwoLevelMerge 两级覆盖（D204 口径二）：model.sampling 是整链缺省，
+// TestSamplingTwoLevelMerge 两级覆盖（D204 规则二）：model.sampling 是整链缺省，
 // models[].sampling 只改写了的那几项；`temperature: 0` 是真值不是「没写」。
 func TestSamplingTwoLevelMerge(t *testing.T) {
 	t.Parallel()
@@ -94,7 +94,7 @@ func TestSamplingKeysMissing(t *testing.T) {
 	}
 }
 
-// TestSamplingValidateRanges 范围校验（D204 口径四）：Anthropic 只接 0..1，其余 0..2；
+// TestSamplingValidateRanges 范围校验（D204 规则四）：Anthropic 只接 0..1，其余 0..2；
 // top_p 三协议都是 0..1。超范围启动报因，不静默截断。
 func TestSamplingValidateRanges(t *testing.T) {
 	t.Parallel()

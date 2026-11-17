@@ -14,7 +14,7 @@ import (
 )
 
 // providerForm 单个 provider 的编辑控件组（D110②；本窗 goroutine 独占）。S11-7② 起
-// 折叠成一张卡片（D176 口径二）：收起态只露一行摘要（`rowProvSummary`），展开才露出
+// 折叠成一张卡片（D176 规则二）：收起态只露一行摘要（`rowProvSummary`），展开才露出
 // 下面的字段行。S11-7③ 起展开区含**密钥池**（多把，`keyForms`）与**模型能力表**
 // （每行 name + 三个能力勾选 + 上下文窗口 + 「探测能力」按钮，`modelForms`）。
 // 同一时刻只展开一张（展开多张又回到「一堵墙」）。
@@ -29,7 +29,7 @@ type providerForm struct {
 	modelsBtn   widget.Clickable // 「获取模型」（D153）：拉 /models 并列候选
 	del         widget.Clickable
 	setPrimary  widget.Clickable
-	// 折叠卡片（S11-7②/D176 口径二）：toggle = 摘要行点击件；expanded 由表单级
+	// 折叠卡片（S11-7②/D176 规则二）：toggle = 摘要行点击件；expanded 由表单级
 	// provOpen 决定。
 	toggle widget.Clickable
 	// 密钥池（S11-7③/D173）：每把一组（label + 值只写不回显 + 删除），尾部「＋ 添加」。
@@ -105,7 +105,7 @@ func (pf *providerForm) providerSummary(primary bool) string {
 	}
 	keys := len(pf.keyForms)
 	if keys < 1 {
-		keys = 1 // 0 条声明也按缺省引用算一把（读侧同口径）
+		keys = 1 // 0 条声明也按缺省引用算一把（读侧同一套规则）
 	}
 	s := i18n.Tf("ui.settings.prov.summary", "name", name,
 		"models", len(pf.modelForms), "keys", keys)
@@ -115,7 +115,7 @@ func (pf *providerForm) providerSummary(primary bool) string {
 	return s
 }
 
-// fallbackForm 降级链一项的编辑控件组（D176 口径三；本窗 goroutine 独占）。
+// fallbackForm 降级链一项的编辑控件组（D176 规则三；本窗 goroutine 独占）。
 // 提供者与模型都得能改：provider 走枚举选择器（选项即 f.chainChoices），模型是单行
 // 编辑档（可填未声明的名字——链是运行时路由）。
 type fallbackForm struct {
@@ -194,7 +194,7 @@ func newProviderKeyForm(k ProviderKeySnapshot) *providerKeyForm {
 	return kf
 }
 
-// defaultCapsFor 某协议的缺省能力位（与装配根按协议给的缺省同口径，§8）：
+// defaultCapsFor 某协议的缺省能力位（与装配根按协议给的缺省同规则，§8）：
 // 只用于**新建模型行**时把勾选初值画成「缺省生效的样子」——这些行尚未写进 config，
 // 拿不到生效值。键缺失的语义（写回时 Caps 仍为 nil）不受影响。
 func defaultCapsFor(kind string) []string {

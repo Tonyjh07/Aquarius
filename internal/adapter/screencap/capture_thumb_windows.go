@@ -301,7 +301,7 @@ func sentinelLike(pix []byte, i int) bool {
 
 // composited 判断这一帧是否已经盖上缩略图内容：与基线帧比较，只要有一个像素不同就算到了。
 // 不按颜色本身判内容——纯黑、纯白、单色面板都是合法内容，按单色判会把用户正要看的画面
-// 拒掉（与 blank 的口径一致）。基线读不到时退回「不全为哨兵底色」。
+// 拒掉（与 blank 的规则一致）。基线读不到时退回「不全为哨兵底色」。
 func composited(shot, baseline []byte, w, h int) bool {
 	if w <= 0 || h <= 0 || len(shot) < w*h*4 {
 		return false

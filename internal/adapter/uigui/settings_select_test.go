@@ -128,7 +128,7 @@ func TestAudioKindSwitchRevealsRows(t *testing.T) {
 }
 
 // TestAudioHiddenFieldsStayInPatch 隐藏不等于丢弃：切到只看少数几档后保存，其它字段的
-// 草稿值仍然随 patch 落盘——否则用户来回切一次档就把之前配好的 TTS 参数弄没了。
+// 草稿值仍然随 patch 写入磁盘——否则用户来回切一次档就把之前配好的 TTS 参数弄没了。
 func TestAudioHiddenFieldsStayInPatch(t *testing.T) {
 	t.Parallel()
 	var got SettingsPatch
@@ -141,10 +141,10 @@ func TestAudioHiddenFieldsStayInPatch(t *testing.T) {
 	f.asrKind.setValue(asrKindWhisper) // 识别模型行此刻不在页上
 	u.saveSettings(f)
 	if got.ASRModel != "mimo-v2.5-asr" {
-		t.Errorf("隐藏字段的草稿值应照旧落盘，实为 %q", got.ASRModel)
+		t.Errorf("隐藏字段的草稿值应照旧写入磁盘，实为 %q", got.ASRModel)
 	}
 	if got.TTSStyle != "语速稍快" || got.TTSDesign != "温柔女声" {
-		t.Errorf("合成侧草稿值应照旧落盘，实为 %+v", got)
+		t.Errorf("合成侧草稿值应照旧写入磁盘，实为 %+v", got)
 	}
 }
 

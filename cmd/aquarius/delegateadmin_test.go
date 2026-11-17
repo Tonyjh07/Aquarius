@@ -302,7 +302,7 @@ func TestDelegateAdminRename(t *testing.T) {
 	}
 }
 
-// TestDelegateAdminFields 字段级编辑：各键单独落盘，空值删键而不是留空数组/空表。
+// TestDelegateAdminFields 字段级编辑：各键单独写入磁盘，空值删键而不是留空数组/空表。
 func TestDelegateAdminFields(t *testing.T) {
 	t.Parallel()
 	admin, path := delegateAdminFixture(t, `[{"name":"a","command":"a"}]`)

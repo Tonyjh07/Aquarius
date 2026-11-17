@@ -26,7 +26,7 @@ func jobEchoSpec(t *testing.T) string {
 }
 
 // TestRunTermExecE2E M3 验收①：term_exec 经确认链路执行，
-// 输出回填给模型（第二次请求可见）、tool 节点 OK 落树。
+// 输出回填给模型（第二次请求可见）、tool 节点 OK 写入会话树。
 // 命令带引号（Windows 回归：cmd /c 的原始命令行不得被 argv 转义破坏）。
 func TestRunTermExecE2E(t *testing.T) {
 	srv, reqs := rawScriptServer(t, [][]string{
@@ -117,11 +117,11 @@ func findJobInject(convs []*conversation.Conversation) (*conversation.Conversati
 }
 
 // TestRunJobLifecycleE2E M3 验收②：job_start 后台启动（经确认），`/jobs` 列表可见、
-// `/jobs logs` 日志可查（日志落盘 ~/.aquarius/jobs/<id>.log），任务结束后完成报告
+// `/jobs logs` 日志可查（日志写入磁盘 ~/.aquarius/jobs/<id>.log），任务结束后完成报告
 // 落进会话并起一轮（D189）。
 //
 // 时序不靠 sleep 猜（§10：任务不随退出终止，猜时间既会撞上「子进程还攥着日志句柄」的
-// 清理失败，也会撞上「报告还没落地」的空断言）：喂前段 → 轮询会话树等注入出现，
+// 清理失败，也会撞上「报告还没实现」的空断言）：喂前段 → 轮询会话树等注入出现，
 // 再喂后段。/jobs logs 放最后一段，正好也验了「日志在任务结束后仍可查」。
 func TestRunJobLifecycleE2E(t *testing.T) {
 	srv, reqs := rawScriptServer(t, [][]string{
@@ -140,7 +140,7 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 	if _, err := io.WriteString(pw, "启动后台任务\ny\n/jobs\n"); err != nil {
 		t.Fatalf("写 stdin: %v", err)
 	}
-	// 等任务真的结束并落成注入：这时收割者已写完日志与台账，Settle 也已销账。
+	// 等任务真的结束并写成注入：这时收割者已写完日志与台账，Settle 也已销账。
 	var report string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
@@ -151,9 +151,9 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 	}
 	if report == "" {
 		// 不读 out：run 还在写它（边写边读是数据竞争），等退出后由下面的断言报。
-		t.Fatal("没等到任务完成报告（注入没落地）")
+		t.Fatal("没等到任务完成报告（注入没送达）")
 	}
-	// 报告落地即起一轮（D189）：等这次请求发出，再收尾，断言才有确定的下标。
+	// 报告送达即起一轮（D189）：等这次请求发出，再收尾，断言才有确定的下标。
 	for time.Now().Before(deadline) && reqs.len() < 3 {
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -191,7 +191,7 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 	if !strings.Contains(report, "job-e2e") {
 		t.Fatalf("完成报告正文 = %q，应含日志末段", report)
 	}
-	// 任务日志文件落盘（jobs/<id>.log）。
+	// 任务日志文件写入磁盘（jobs/<id>.log）。
 	logPath := filepath.Join(dir, "profiles", "default", "jobs", "j001.log")
 	data, err := os.ReadFile(logPath)
 	if err != nil {

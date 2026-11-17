@@ -163,16 +163,16 @@ var zhCmdTexts = map[string]string{
 
 	// /usage
 	"cmd.usage.desc": "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）",
-	"cmd.lore.desc":  "查看本轮世界书激活了哪些条目（只读，不落树）",
+	"cmd.lore.desc":  "查看本轮世界书激活了哪些条目（只读，不写进会话）",
 
 	// /context
-	"cmd.context.desc":    "查看装配好、即将发给模型的上下文（分块用量 / 单条全文 / 整份落盘）",
+	"cmd.context.desc":    "查看装配好、即将发给模型的上下文（分块用量 / 单条全文 / 整份写入导出目录）",
 	"cmd.context.usage":   "[last | full [last] | 编号]",
 	"cmd.context.p1.name": "编号",
 	"cmd.context.p1.desc": "省略 = 概览；last = 上一轮实发；full = 整份写入导出目录",
 
 	// /raw
-	"cmd.raw.desc":    "查看模型 API 的原始返回（元信息 / 单帧原文 / 整份落盘）",
+	"cmd.raw.desc":    "查看模型 API 的原始返回（元信息 / 单帧原文 / 整份写入导出目录）",
 	"cmd.raw.usage":   "[-次数 | full [-次数] | 帧号]",
 	"cmd.raw.p1.name": "帧号",
 	"cmd.raw.p1.desc": "省略 = 最近一次的概览；-2 = 倒数第二次；full = 整份写入导出目录",

@@ -39,7 +39,7 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 	if err := s.Inject(ctx, in); err != nil {
 		return "", err
 	}
-	// 驱动式排空：本条触发的注入落地后起一轮（Trigger 记 true），不触发的只落地。
+	// 驱动式排空：本条触发的注入实现后起一轮（Trigger 记 true），不触发的只写入。
 	// 本条命令移动了 Head，注入随下面的清屏回放一起呈现，故按「命令点」排空。
 	landed, wantTurn, err := s.drainInjections(ctx, drainBeforeReplay)
 	if err != nil {
@@ -49,7 +49,7 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 		return i18n.T("inject.queued"), nil
 	}
 	node := landed[len(landed)-1]
-	// 移 Head 类命令统一口径（D81/D92）：清屏 + 回放新路径，转写区恒与 Head 一致；
+	// 移 Head 类命令统一规则（D81/D92）：清屏 + 回放新路径，转写区恒与 Head 一致；
 	// 回放在跑轮之前——先让用户看到「注入已就位」，再跑生成。
 	if err := s.emitClear(ctx); err != nil {
 		return "", err

@@ -277,7 +277,7 @@ func hasArg(args []string, name string) bool {
 	return false
 }
 
-// complCycle Tab 轮换状态（readline 的 menu-complete 口径）。
+// complCycle Tab 轮换状态（readline 的 menu-complete 规则）。
 //
 // 首次 Tab 算一次候选并填第一项，候选表就此**锁定**；此后再按 Tab 依次替换同一段 token
 // 并前移高亮。锁定是关键：不锁的话每替一次文本都变，候选会跟着缩成一项，轮换退化成

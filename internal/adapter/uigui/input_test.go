@@ -23,7 +23,7 @@ func TestFadeEditorSelectionPainted(t *testing.T) {
 	u.editor.SetText("hello world 选区可见性")
 	q := new(input.Router)
 	// 一帧 = 真窗 pass（layout + 提交）+ 淡出源 pass。获焦标记在两遍之间按真窗 pass 的
-	// 口径置位（headless 无 Focus 源，gtx.Focused 恒 false，故测试手动喂真窗那一遍的值）。
+	// 规则置位（headless 无 Focus 源，gtx.Focused 恒 false，故测试手动喂真窗那一遍的值）。
 	frame := func(focused bool) {
 		gtx, ops := frameGtx(q.Source())
 		u.stepExpand(time.Now()) // 帧驱动同真窗 frame：推进展开进度/pillAlpha（D77 内容显隐）

@@ -52,7 +52,7 @@ func TestNodeMenuFrozenGreysStructural(t *testing.T) {
 			}
 			seenOpen++
 		default:
-			t.Fatalf("菜单里出现了未归类的项「%s」——置灰口径要跟着项集走", it.label)
+			t.Fatalf("菜单里出现了未归类的项「%s」——置灰规则要跟着项集走", it.label)
 		}
 	}
 	if seenGrey != len(frozenLabels) || seenOpen != len(openLabels) {

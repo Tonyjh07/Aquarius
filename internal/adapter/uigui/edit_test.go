@@ -141,7 +141,7 @@ func TestEditSubmitModes(t *testing.T) {
 }
 
 // TestQuoteInto D98 引用装配纯函数："> " 单行引用前缀（换行压为空格——SingleLine
-// 编辑框口径）、非空以空格衔接。
+// 编辑框规则）、非空以空格衔接。
 func TestQuoteInto(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

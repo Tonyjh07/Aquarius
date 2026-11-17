@@ -15,11 +15,11 @@ import (
 // 不换确认态。1–4 题用顶部右侧进度段表示（可点跳题），每题 0–9 个选项（单选 ○ / 多选 ☑），
 // 末行「自己输入」点开就地变输入框。
 //
-// 取消与放弃是两件事（D184 口径三）：
+// 取消与放弃是两件事（D184 规则三）：
 //   - Esc / 停止键 = 中断本轮 → Ask 返回 ctx.Err，Runner 按装配级故障中止 Turn；
 //   - 「忽略」= 放弃全部 → AskAnswer{Dismissed:true}，模型拿到「按你自己判断继续」。
 const (
-	askMaxQuestions = 4 // 题量上限（与 ask_user 声明同口径）
+	askMaxQuestions = 4 // 题量上限（与 ask_user 声明同一套规则）
 	askMaxOptions   = 9 // 每题选项上限
 
 	askPadDp      = 16  // 面板上内边距（与胶囊 padding 同源）
@@ -52,7 +52,7 @@ type pendingAsk struct {
 // Ask 提问（port.Asker）：投递面板请求并等应答。
 //
 // 三路收场：面板提交/忽略（reply）→ 正常返回；ctx 取消（Esc/停止键/中断）→ 上抛
-// ctx.Err 并让面板收尾；输入流结束（关窗）→ 按「放弃全部」返回，与 repl/uitui 同口径
+// ctx.Err 并让面板收尾；输入流结束（关窗）→ 按「放弃全部」返回，与 repl/uitui 同规则
 // （不替用户编答案）。
 func (u *UI) Ask(ctx context.Context, req port.AskRequest) (port.AskAnswer, error) {
 	if err := ctx.Err(); err != nil {
@@ -93,7 +93,7 @@ func (m *model) startAsk(req port.AskRequest, reply chan port.AskAnswer) {
 	m.u.askEd.SetText("")
 	// layout.List 的零值轴是**横向**（`layout.Axis` 的零值 = Horizontal），不显式设成竖向的话
 	// 题干与各选项会被排成一列列并排：题干在左、选项挤到右侧被面板裁掉，选中行淡底还会
-	// 撑满整列高度。与 history.go / welcome.go 的滚动区同一处口径。
+	// 撑满整列高度。与 history.go / welcome.go 的滚动区同一处规则。
 	m.u.askList.Axis = layout.Vertical
 	m.u.askList.Position = layout.Position{}
 	if m.u.collapsed || m.u.expandAn.active {
@@ -114,7 +114,7 @@ func (m *model) endAsk() {
 	m.u.askOpen.Store(false)
 	m.u.askFocus = false
 	m.u.askFreeFocus = false
-	m.u.focusPending = true // 焦点回主编辑器（D63 一次性口径）
+	m.u.focusPending = true // 焦点回主编辑器（D63 一次性规则）
 }
 
 // askSaveFree 把编辑器里的自由输入存回当前题（切题/提交前调用）。
@@ -217,7 +217,7 @@ func (m *model) askSubmit() {
 	}
 	reply := a.reply
 	m.endAsk()
-	m.u.setExpanded(false) // 提交即收起（与发送后自动收起同口径）
+	m.u.setExpanded(false) // 提交即收起（与发送后自动收起同一套规则）
 	if reply != nil {
 		select {
 		case reply <- port.AskAnswer{Answers: answers}:
@@ -255,7 +255,7 @@ func (m *model) askOpenFree() {
 	m.u.askFreeFocus = true
 }
 
-// submitAsk 把一行文本按面板语义解释（外部输入泵/管道输入与 GUI 共用一条口径）：
+// submitAsk 把一行文本按面板语义解释（外部输入泵/管道输入与 GUI 共用一条规则）：
 // 纯编号 = 选选项（多选可逗号/空格分隔）、其他文本 = 自由答案、空行 = 不动、
 // `/dismiss` = 放弃全部。
 func (m *model) submitAsk(text string) {

@@ -16,7 +16,7 @@ import (
 
 // linear.go 线性互通（§5.16）：`openai` 与 `sillytavern`。
 //
-// 线性装不下一棵树，所以口径必须写死：**取 Head 路径**（= 当前上下文那条链），不做「自动挑
+// 线性装不下一棵树，所以规则必须写死：**取 Head 路径**（= 当前上下文那条链），不做「自动挑
 // 一个分支」的猜测。两者都只含正文分片：思考、工具、附件分片丢弃并计入回执；角色映射
 // user→user、assistant→assistant、system+inject→system（注入不是用户发言，降级成 system 比
 // 伪装成用户更诚实）。
@@ -25,7 +25,7 @@ import (
 
 // headPath 导出用的那条链：当前上下文（Root → Head）。
 //
-// Root 是挂点，不写进任何格式；其余节点按原角色映射，persona（首个 system 节点）自然落成
+// Root 是挂点，不写进任何格式；其余节点按原角色映射，persona（首个 system 节点）自然写成
 // system——它是这次会话的语气来源，丢了会让导入回来的对话少一半上下文。
 func headPath(c *conversation.Conversation) []conversation.Message {
 	return c.Path()
@@ -322,7 +322,7 @@ func linearImportRole(role string) (conversation.Role, bool) {
 	case "system", "developer":
 		return conversation.RoleSystem, true
 	case "tool", "function":
-		// 工具结果：读成注入节点，既不冒充用户也不丢内容（与 chatgpt 侧同口径）。
+		// 工具结果：读成注入节点，既不冒充用户也不丢内容（与 chatgpt 侧同规则）。
 		return conversation.RoleInject, true
 	default:
 		return "", false

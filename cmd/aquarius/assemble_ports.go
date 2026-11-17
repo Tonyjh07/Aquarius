@@ -128,7 +128,7 @@ func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, er
 		key, err := resolveAPIKey(context.Background(), p.Name, ref, w.secrets, w.warnPlaintext)
 		if err != nil {
 			// 单把解析失败不打断启动：还有别的钥匙可用（D141 的「任一把可用即算配置完整」
-			// 同一口径）。一把都没有才算失败，用第一条错误报因。
+			// 同一套规则）。一把都没有才算失败，用第一条错误报因。
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -174,7 +174,7 @@ func (w *wiring) emitNotice(ctx context.Context, text string) {
 	_ = w.presenter.Emit(ctx, port.NoticeEvent{Text: text})
 }
 
-// newLLMClient 建客户端本体（协议分派的唯一落点，D175 口径一）：config 里的 `kind`
+// newLLMClient 建客户端本体（协议分派的唯一落点，D175 规则一）：config 里的 `kind`
 // 词表与适配器的 `llm.Protocol` 是同一套，这里做一次映射就够，两处不会再各定义一遍。
 // key 由调用方解析（密钥池逐把解析后再进来）。note 为 nil = 不记录服务端不认的参数
 // （能力探测用：探测刻意发可能不被支持的参数，不该把结论记成正式请求的剥离清单）。
@@ -234,7 +234,7 @@ func (w *wiring) buildLLMs() error {
 	if err != nil {
 		// D278 决策 3 的延伸，但只对 gui 成立：首跑模板写的是 `secret:DEEPSEEK_API_KEY`，
 		// 机器上没设这个变量是常态；把用户挡在主窗之外，他连设置窗都进不去补 key。
-		// repl / tui 没有设置窗，缺密钥仍是启动期报因（D141 的原口径）。
+		// repl / tui 没有设置窗，缺密钥仍是启动期报因（D141 的原规则）。
 		if w.cfg.UI.Kind != "gui" {
 			return err
 		}
@@ -258,7 +258,7 @@ func (w *wiring) buildLLMs() error {
 		c, counter, ferr := w.buildClient(p)
 		if ferr != nil {
 			// 降级目标缺密钥只丢这一条降级链，不影响主链启动；否则一条配错的 fallback
-			// 又把整个程序按回 fatal，与上面同一个道理。非 gui 形态沿用原口径。
+			// 又把整个程序按回 fatal，与上面同一个道理。非 gui 形态沿用原规则。
 			if w.cfg.UI.Kind != "gui" {
 				return ferr
 			}
@@ -521,7 +521,7 @@ func (w *wiring) silence() {
 }
 
 // assembleTools 装配内置工具 + ToolRunner 门面（D25：查找/权限判定/确认/超时/裁剪）。
-// 后台任务（§5.8/D8）：日志落盘 <profile>/jobs，任务表内存态。
+// 后台任务（§5.8/D8）：日志写入磁盘 <profile>/jobs，任务表内存态。
 func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, asker port.Asker) error {
 	if err := w.assembleDelegates(ctx, confirmer); err != nil {
 		return err
@@ -542,7 +542,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 			return nil
 		},
 		Wake: w.uiWake,
-		// D264：报告落地并落盘后才销账。销早了，退出时那一段「已结束、报告在路上」
+		// D264：报告送达并写入磁盘后才销账。销早了，退出时那一段「已结束、报告在路上」
 		// 就成了既没有报告、也没有对账的静默丢失。
 		Landed: func(id port.JobID) {
 			if err := jobs.Settle(context.Background(), id); err != nil {
@@ -793,7 +793,7 @@ func (m memoryOpener) Open(name string) (string, error) {
 	return m.w.memoryEditor(m.w.ui)(name)
 }
 
-// contextBudget /model 展示用的预算口径（D177）：生效值 + 这个值是谁决定的。
+// contextBudget /model 展示用的预算规则（D177）：生效值 + 这个值是谁决定的。
 func (w *wiring) contextBudget() app.ContextBudget {
 	global := w.cfg.Limits.MaxContextTokens
 	if global <= 0 {

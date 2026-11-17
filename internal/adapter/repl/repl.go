@@ -201,7 +201,7 @@ func (u *UI) Emit(_ context.Context, ev port.Event) error {
 				}
 				u.thinking = true
 			}
-			// 模型流是不可信数据，出口剥控制序列（§9，与 TUI/回放同口径）。
+			// 模型流是不可信数据，出口剥控制序列（§9，与 TUI/回放同规则）。
 			_, err := io.WriteString(u.out, sanitizeControl(e.Delta.Text))
 			return err
 		}
@@ -340,7 +340,7 @@ func (u *UI) history(msg conversation.Message) error {
 			}
 		}
 		flushSeg()
-		// 空内容的取消/错误也要有反馈（与实时 CommittedEvent 同口径）。
+		// 空内容的取消/错误也要有反馈（与实时 CommittedEvent 同规则）。
 		if msg.Outcome != conversation.OutcomeDone {
 			fmt.Fprintf(&b, "[%s]\n", msg.Outcome)
 		}
@@ -379,7 +379,7 @@ func partsText(parts []conversation.Part) string {
 	return uicommon.PartsText(parts, uicommon.ImageAlways)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/回放分段共用口径）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/回放分段共用规则）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageAlways)
 }

@@ -1,6 +1,6 @@
 package skillfs
 
-// skillfs_test.go 覆盖发现与校验口径（D201 口径一/二/六）：目录布局、坏条目跳过、
+// skillfs_test.go 覆盖发现与校验规则（D201 规则一/二/六）：目录布局、坏条目跳过、
 // 同名先声明者胜、正文行号（file_read 续读要对齐）、CRLF/BOM 容忍、相对根丢弃。
 
 import (

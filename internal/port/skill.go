@@ -8,7 +8,7 @@ import (
 // ErrSkillNotFound 按名载入技能未命中（D201）。工具层据此区分「名字打错了」与「读不出」。
 var ErrSkillNotFound = errors.New("skill not found")
 
-// SkillInfo 一个已发现技能的最小事实（D201 口径三：只有这一层常驻工具描述）。
+// SkillInfo 一个已发现技能的最小事实（D201 规则三：只有这一层常驻工具描述）。
 type SkillInfo struct {
 	Name        string // frontmatter name（= 目录名；小写字母/数字/连字符）
 	Description string // frontmatter description：做什么 + 什么时候该用
@@ -16,7 +16,7 @@ type SkillInfo struct {
 	Source      string // 命中的技能根（多根时说明「哪一份生效了」）
 }
 
-// SkillContent 按名载入的技能正文（D201 口径三第二级）。
+// SkillContent 按名载入的技能正文（D201 规则三第二级）。
 //
 // Body 是 frontmatter 之后的原文（行尾已归一为 LF，未截断）：预算由工具层与
 // ToolRunner 统一收口，适配器不猜调用方要多少。

@@ -5,7 +5,7 @@ package uigui
 // 这类句子与助手气泡同底板、同字号，读起来像模型在说话。连续的命令因此合成一条淡灰
 // 圆角条，默认只留一行「折叠 N 条命令，点击展开」，点开才铺命令行与输出。
 //
-// 判据仍是 D75/D81 的镜面口径：转写区里的**内容**必须能在树上找到；命令不是内容，
+// 判据仍是 D75/D81 的镜面规则：转写区里的**内容**必须能在树上找到；命令不是内容，
 // 所以既不占一条消息的位置，也不冒充用户气泡。
 //
 // 形态（D266）：底色是**带 alpha 的深色薄层**（`cardCmd`），不是实色卡——命令回显是
@@ -34,7 +34,7 @@ type cmdEntry struct {
 	note string
 }
 
-// cmdClick 折叠行的点击控件 get-or-create（与 thinkClick 同口径：按块序缓存，
+// cmdClick 折叠行的点击控件 get-or-create（与 thinkClick 同规则：按块序缓存，
 // m.blocks 只增不减，块序变化只发生在清屏后）。
 func (u *UI) cmdClick(i int) *widget.Clickable {
 	for len(u.cmdClicks) <= i {
@@ -44,7 +44,7 @@ func (u *UI) cmdClick(i int) *widget.Clickable {
 }
 
 // cmdIsOpen 命令条展开态：默认折叠（map 零值 = 收起），视图态只存 UI、不进 model；
-// 清屏复位（与 chipOpen/thinkOpen 同口径）。
+// 清屏复位（与 chipOpen/thinkOpen 同规则）。
 func (u *UI) cmdIsOpen(i int) bool { return u.cmdOpen[i] }
 
 // cmdHeaderText 折叠行文案：条数 + 动作提示。整条文字居中，所以不带 ▸/▾ 箭头——

@@ -22,7 +22,7 @@ import (
 	"gioui.org/widget"
 )
 
-// selTouchSlopDp 跨块拖选起手 slop（与 Gio gesture 的 touchSlop 同口径：欧氏距离，
+// selTouchSlopDp 跨块拖选起手 slop（与 Gio gesture 的 touchSlop 同规则：欧氏距离，
 // d² > slop² 才算拖动——小于此值留给块内原生点击/拖选）。
 const selTouchSlopDp unit.Dp = 3
 
@@ -39,7 +39,7 @@ type selPoint struct {
 	rune int
 }
 
-// selGeom 单选键几何（D91 ②）：每帧 paint 由量期记录译出落盘、消费者阶段读取
+// selGeom 单选键几何（D91 ②）：每帧 paint 由量期记录译出写入磁盘、消费者阶段读取
 // （一帧陈旧可接受——按下命中与焦点跟随都基于上一帧几何）。origin = 键 widget 原点
 // （窗口系）；rect = 各视觉行盒并集（窗口系，命中/最近判定）；lines = 各视觉行盒
 // （窗口系、按行单调，caretIn 二分用——Regions 的行带 = 整行高，行内恒定）；
@@ -136,7 +136,7 @@ func (r *rowSel) note(k int, off image.Point) {
 // vstack 手排纵列（D91 ②）：等价 layout.Flex{Axis: Vertical} 的 Rigid 路径——量期
 // 即知每子项 y（Flex 的 Offset 在回放期才施加，量期不可知，键几何无法捕获）。
 // 子项约束同 Flex（Min=(crossMin,0)、Max=(crossMax, remaining)），间距以 gap 递进，
-// 返回 (maxCross, total)——与 Flex 的尺寸口径逐像素一致（既有行高 golden 为闸）。
+// 返回 (maxCross, total)——与 Flex 的尺寸规则逐像素一致（既有行高 golden 为闸）。
 type vstack struct {
 	gtx       layout.Context
 	y         int
@@ -273,7 +273,7 @@ func (u *UI) updateSel(gtx layout.Context) {
 				continue
 			}
 			// Shift+点击 = 跨块扩选（D101）：选区 active 时保留锚、焦点跳到点击处、
-			// 不进候选（无拖拽语义）；无激活选区仍原生（widget 自身扩选，D91 口径）。
+			// 不进候选（无拖拽语义）；无激活选区仍原生（widget 自身扩选，D91 规则）。
 			if s.active && e.Modifiers.Contain(key.ModShift) {
 				if p, ok := u.pointToCaret(pos); ok {
 					s.focus = p
@@ -363,7 +363,7 @@ func (u *UI) updateSel(gtx layout.Context) {
 // → 按帧推进 scrollPx（名义 60fps、满速 900dp/s、带内深度线性 0.35–1.0，分数步长
 // 累加器防整除吞步），推进后以指针位重算焦点（端点随动）；followTail 推进期间关闭、
 // 向下触底恢复。transH/边界取上一帧值（消费者阶段先于 transcript 量高），一帧陈旧
-// 与 keyRects 同口径。
+// 与 keyRects 同规则。
 func (u *UI) selAutoScroll(gtx layout.Context) {
 	s := &u.sel
 	if !s.active || !s.cand || u.transH <= 0 {
@@ -551,7 +551,7 @@ func (u *UI) caretIn(k int, p image.Point) int {
 		}
 		return scr[0].Bounds
 	}
-	// ① 视觉行：首个行带底越过 p.Y 的行（行带落盘即窗口系，与 p 同系；越出底部取
+	// ① 视觉行：首个行带底越过 p.Y 的行（行带写入磁盘即窗口系，与 p 同系；越出底部取
 	// 末行、顶部取首行）——定行后转 widget 系与 Regions 盒（widget 系）同系比较。
 	li := sort.Search(len(g.lines), func(i int) bool { return g.lines[i].Max.Y > p.Y })
 	if li == len(g.lines) {
@@ -641,7 +641,7 @@ func selSpansOf(a, f selPoint, nrunes func(key int) int) []selSpan {
 }
 
 // selText 当前选区文本（D91/D92）：逐键 Text() rune 切片、键间 `\n` 拼接；空选区 = ""。
-// selCopy 与气泡右键「复制选区」（D92 复用 D91 选态）共用此拼接口径。
+// selCopy 与气泡右键「复制选区」（D92 复用 D91 选态）共用此拼接规则。
 func (u *UI) selText() string {
 	var parts []string
 	for _, sp := range u.selSpansBuf {
@@ -674,7 +674,7 @@ func (u *UI) selCopy(gtx layout.Context) {
 }
 
 // blockText 整条气泡的渲染文本（D92）：[base, base+n) 行选键逐键 Text()、键间
-// `\n` 拼接（与 selCopy 同拼接口径；未铺开键无文本、跳过）。
+// `\n` 拼接（与 selCopy 同拼接规则；未铺开键无文本、跳过）。
 func (u *UI) blockText(base, n int) string {
 	var parts []string
 	for k := base; k < base+n; k++ {
@@ -685,7 +685,7 @@ func (u *UI) blockText(base, n int) string {
 	return strings.Join(parts, "\n")
 }
 
-// writeKeyRects 量期记录 → 窗口系几何落盘（paint 期、行原点已定）+ 结构指纹流式
+// writeKeyRects 量期记录 → 窗口系几何写入磁盘（paint 期、行原点已定）+ 结构指纹流式
 // 喂哈希（逐键 laid/text，行序即键序）。尾截由 transcript 收口（结构缩小时清尾）。
 func (u *UI) writeKeyRects(rs *rowSel, content image.Point, h hash.Hash64) {
 	for k := 0; k < rs.n; k++ {

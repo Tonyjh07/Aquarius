@@ -78,7 +78,7 @@ const (
 	rowToolTo
 	rowSysPrompt
 	rowRaw
-	// S11-7③/D176 口径二：「模型服务」页 provider 卡片。
+	// S11-7③/D176 规则二：「模型服务」页 provider 卡片。
 	rowProvSummary // 折叠卡片收起态摘要行（点击展开/收起）
 	rowProvName    // 名称（单行档）
 	rowProvKind    // 协议（选择器：chat/responses/anthropic）
@@ -205,7 +205,7 @@ const (
 	rowAboutProject   // 项目主页（链接全文 + 打开 / 复制链接）
 	rowAboutCopyright // 版权
 	rowAboutLicense   // 许可证
-	rowAboutNote      // 说明（隐私口径 / 图标与产品名归属；不落卡）
+	rowAboutNote      // 说明（隐私规则 / 图标与产品名归属；不落卡）
 	rowAboutStatus    // 打开 / 复制反馈（不落卡）
 )
 

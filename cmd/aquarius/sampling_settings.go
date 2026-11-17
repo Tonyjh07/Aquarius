@@ -47,7 +47,7 @@ func intText(v int) string {
 
 // validateSamplingSettings 保存前的完整校验（D204）：把这次改动叠进**磁盘上那份配置的
 // 内存副本**，跑一遍启动期同一条 normalize——写出去的配置必须能过启动校验，否则用户
-// 重启后连对话都开不起来（与 provider 应用同口径）。
+// 重启后连对话都开不起来（与 provider 应用同规则）。
 func validateSamplingSettings(cfgPath string, s samplingConfig) error {
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {

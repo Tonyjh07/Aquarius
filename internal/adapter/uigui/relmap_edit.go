@@ -30,7 +30,7 @@ import (
 // 拖动改挂的档位：落点半径、淡出与呼吸时长、环宽、虚线步长（都是可调的呈现常数，
 // 不影响任何语义——把它们当成「手感旋钮」，改这些不需要改契约）。
 const (
-	relDropReachDp  = 48.0 // 落点判定半径（dp，屏幕口径——手势容差跟手不跟 zoom）
+	relDropReachDp  = 48.0 // 落点判定半径（dp，屏幕规则——手势容差跟手不跟 zoom）
 	relDropFadeMs   = 120  // 旧父边淡出时长（拖起）
 	relDropPulseMs  = 600  // 目标环呼吸周期
 	relDropFlashMs  = 400  // 改挂成功后目标环的高亮时长
@@ -96,7 +96,7 @@ func (g *relGraph) isStrictAncestor(anc, node int) bool {
 // relBoxGap 两个矩形之间的最近距离（相交/相贴记 0）。
 //
 // 落点判定按**卡片到卡片**算，不按指针到卡片：卡片是长条形（徽标 + 标签），指针在卡片
-// 一角时「离得挺近」，而真正要判的是「这两张卡挨上了没有」——设计稿 §5.6.3 的口径。
+// 一角时「离得挺近」，而真正要判的是「这两张卡挨上了没有」——设计稿 §5.6.3 的规则。
 func relBoxGap(a, b image.Rectangle) float32 {
 	dx := float32(0)
 	if a.Max.X < b.Min.X {

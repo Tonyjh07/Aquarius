@@ -66,7 +66,7 @@ func TestSynthesizeSendsQueryParams(t *testing.T) {
 			t.Errorf("查询串缺 %q: %s", want, q)
 		}
 	}
-	// 风格标签拼在正文前（与其它合成器同口径）。
+	// 风格标签拼在正文前（与其它合成器同规则）。
 	if !strings.Contains(q, "text=%28%E6%B8%A9%E6%9F%94%29") {
 		t.Errorf("标签未拼进正文: %s", q)
 	}
@@ -80,7 +80,7 @@ func TestSynthesizeSendsQueryParams(t *testing.T) {
 	defer rc.Close()
 	body, _ := io.ReadAll(rc)
 	if string(body) != string(wavBody) {
-		t.Fatalf("落库音频不一致: %d 字节", len(body))
+		t.Fatalf("写进密钥库音频不一致: %d 字节", len(body))
 	}
 }
 

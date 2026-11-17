@@ -86,7 +86,7 @@ var enAdapterExchangeTexts = map[string]string{
 	"exchange.err.parse_entry":    "parse {name}",
 	"exchange.err.what_too_large": "{what} is over the {mb} MB limit",
 
-	// 归档条目路径的口径（与技能安装的 zip-slip 同源）
+	// 归档条目路径的规则（与技能安装的 zip-slip 同源）
 	"exchange.err.entry_abs_path": "archive entry {name} is an absolute path: refusing to unpack",
 	"exchange.err.entry_drive":    "archive entry {name} carries a drive letter: refusing to unpack",
 	"exchange.err.entry_escape":   "archive entry {name} climbs out of the target directory: refusing to unpack",
@@ -161,7 +161,7 @@ var enAdapterExchangeTexts = map[string]string{
 	"ingest.err.sheet":           "worksheet {sheet}",
 	"ingest.doc.sheet":           "[worksheet {sheet}]",
 
-	// ---- 会话落盘（storejson）----
+	// ---- 会话写入磁盘（storejson）----
 	"store.err.legacy_format":    "storejson: legacy conversation format found",
 	"store.err.empty_dir":        "storejson: the directory must not be empty",
 	"store.err.create_dir":       "storejson: create directory {dir}",

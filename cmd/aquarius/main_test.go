@@ -222,7 +222,7 @@ func TestRunFirstTimeGeneratesConfig(t *testing.T) {
 }
 
 // TestRunLegacyRootConfigRejected 旧单文件 config（D110 前布局）启动即显式报因
-// 并给出手工迁移步骤——绝不静默当零值指针解析（D95 同口径，D110④）。
+// 并给出手工迁移步骤——绝不静默当零值指针解析（D95 同规则，D110④）。
 func TestRunLegacyRootConfigRejected(t *testing.T) {
 	dir := t.TempDir()
 	legacy := `{"model":{"name":"m","base_url":"http://127.0.0.1:1"},"ui":{"kind":"repl"}}`

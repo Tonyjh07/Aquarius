@@ -467,7 +467,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 		// 申报 fs（A2）：读写都经我们过手，`Changed` 才有事实可依（D283）。
 		// 申报 terminal（A3）：命令改由我们起进程、收输出、可停，于是「它跑了什么」
 		// 才留得下来。两条都是**经手**不是围栏——代理自己起 shell 的路看不见
-		// （与根集同一条口径）。
+		// （与根集同一条规则）。
 		ClientCapabilities: acp.ClientCapabilities{
 			Fs:       acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
 			Terminal: m.terminalEnabled(),

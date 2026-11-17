@@ -58,7 +58,7 @@ func TestEstimateRequestPayload(t *testing.T) {
 	}
 }
 
-// TestPayloadIncludesReasoning D42：回传思考计入请求 payload——估算口径 = 发送口径
+// TestPayloadIncludesReasoning D42：回传思考计入请求 payload——估算规则 = 发送规则
 // （/usage、自动压缩阈值按实际发出的文本计）。
 func TestPayloadIncludesReasoning(t *testing.T) {
 	text := []port.PromptPart{{Kind: port.PromptText, Text: "答案"}}

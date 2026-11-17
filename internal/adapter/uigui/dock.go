@@ -243,10 +243,10 @@ func inputBtnRects(size image.Point, dp func(unit.Dp) int, right bool) image.Rec
 // confirmBtnRects 确认态圆钮窗口系矩形（pill 几何推导，D86 tips 直采用）：
 // 左→右 = [✗ 拒绝][✓ 允许][🔑 选档位][✓✓ 以后都允许]（后两枚按条件出现），⌀36、
 // 间距 8、行内垂直居中；最右钮右缘 = 胶囊右缘 − 12dp（D86 右内边距，含圆形光学校正）。
-// 与布局期的 Flex 排布是同一几何的两面（同 inputBtnRects 派生口径，非布局实测）。
+// 与布局期的 Flex 排布是同一几何的两面（同 inputBtnRects 派生规则，非布局实测）。
 func confirmBtnRects(size image.Point, dp func(unit.Dp) int, levelable, persistable bool) []image.Rectangle {
 	_, pill, _ := inputRowRects(size.X, dp(pillTopDp), dp(inputRowDp), dp(inputGapDp), dp(sideMarginDp))
-	top := ballRect(size, dp).Min.Y // 行上 = logo 上（D49 换形不跳动，同 rowAnchor 口径）
+	top := ballRect(size, dp).Min.Y // 行上 = logo 上（D49 换形不跳动，同 rowAnchor 规则）
 	d := dp(confirmBtnDp)
 	gap := dp(confirmBtnGapDp)
 	right := pill.Max.X - dp(confirmBtnEdgeDp)
@@ -268,7 +268,7 @@ func confirmBtnRects(size image.Point, dp func(unit.Dp) int, levelable, persista
 
 // overInputBtn 光标是否在输入栏圆钮上（cur = 光标屏幕坐标，生产传 cursorPos 直采）。
 // 分层窗按像素 alpha 命中穿透：光标到透明像素/窗外后零 pointer 事件，Hover 收不到
-// Leave（实测 tips 移开不消，D53）——显隐判定在事件态之上叠光标直采，与停靠悬停同口径。
+// Leave（实测 tips 移开不消，D53）——显隐判定在事件态之上叠光标直采，与停靠悬停同规则。
 func (u *UI) overInputBtn(right bool, cur point) bool {
 	if u.frameSize.X <= 0 || u.frameMetric.PxPerDp <= 0 {
 		return false
@@ -286,7 +286,7 @@ func (u *UI) cursorHitsLogo(cur point) bool {
 	return u.cursorHitsRect(inputBtnRects(u.frameSize, u.frameMetric.Dp, false), cur)
 }
 
-// cursorHitsRect 通用钮命中直证（D85 口径）：矩形直采 × WindowFromPoint——OS 命中是
+// cursorHitsRect 通用钮命中直证（D85 规则）：矩形直采 × WindowFromPoint——OS 命中是
 // 鼠标路由的同一份真相，零事件场景照常成立、被遮挡与圆角外穿透像素天然排除；
 // 无窗口句柄（headless）退化为纯矩形直采。logo（D85）与确认态三钮 tips（D86）共用。
 func (u *UI) cursorHitsRect(r image.Rectangle, cur point) bool {
@@ -299,7 +299,7 @@ func (u *UI) cursorHitsRect(r image.Rectangle, cur point) bool {
 	return u.windowFromPoint(cur) == u.hwnd
 }
 
-// anchorFor 当前状态的可见锚点（夹取/吸附共用口径，D50/D52）：收起 = 球、
+// anchorFor 当前状态的可见锚点（夹取/吸附共用规则，D50/D52）：收起 = 球、
 // 展开 = 输入栏包围盒（转写消息区可越出上沿）。
 func (u *UI) anchorFor() (image.Rectangle, bool) {
 	if u.collapsed {
@@ -577,7 +577,7 @@ func (u *UI) stopDockAnim() {
 }
 
 // stepAnim 每帧推进停靠动画（frame 调，置于两遍 layout 之前；layout 被 headless 二次
-// 调用，位置/alpha 前推只能每帧一次）。完成时收尾：召回侧清停靠记忆并落盘。
+// 调用，位置/alpha 前推只能每帧一次）。完成时收尾：召回侧清停靠记忆并写入磁盘。
 func (u *UI) stepAnim() {
 	a := &u.dockAn
 	if !a.active {
@@ -595,7 +595,7 @@ func (u *UI) stepAnim() {
 		toDock := a.toDock
 		u.stopDockAnim()
 		if !toDock {
-			// 召回完成：落盘亮态贴齐位 + 未停靠（滑出侧在 startDock 已落盘）。
+			// 召回完成：写入磁盘亮态贴齐位 + 未停靠（滑出侧在 startDock 已写入磁盘）。
 			u.dockHint.Store(dockNoneInt)
 			u.savePosRec("")
 		}

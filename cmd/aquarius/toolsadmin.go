@@ -3,7 +3,7 @@ package main
 // 工具与 MCP 管理面装配根侧（S6/D143）：实现 uigui.ToolsAdmin（消费方定义接口）——
 // 内置工具启停（热生效，config tools.disabled）+ 插件启停/授权/信任/日志。动作由
 // 设置窗**异步**调用（Host.Enable 拨号上限 15s、信任/能力确认弹窗在主窗——次窗同步
-// 调必冻窗），本文件方法只做「改内存 → 落盘 → 递增 Revision」。host/runner 由
+// 调必冻窗），本文件方法只做「改内存 → 写入磁盘 → 递增 Revision」。host/runner 由
 // wiring 后绑定（newUI 早于宿主构造；方法仅在设置窗打开后调用，彼时已就绪）。
 
 import (
@@ -197,7 +197,7 @@ func (a *toolsAdmin) RevokeDirPolicy(tool, dir string) error {
 	return a.setPolicy(string(perm.OriginTool), tool, dir, "")
 }
 
-// setPolicy 落盘 → 换表 → 递增 Revision（界面据此重建行）。
+// setPolicy 写入磁盘 → 换表 → 递增 Revision（界面据此重建行）。
 func (a *toolsAdmin) setPolicy(origin, tool, dir, mode string) error {
 	if err := a.w.setOverride(origin, tool, dir, mode); err != nil {
 		return err

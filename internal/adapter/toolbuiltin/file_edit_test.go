@@ -71,7 +71,7 @@ func TestFileEditRejectsAmbiguous(t *testing.T) {
 	}
 }
 
-// TestFileEditPreservesCRLFAndBOM 换行与 BOM 原样保留（D172 口径四）。
+// TestFileEditPreservesCRLFAndBOM 换行与 BOM 原样保留（D172 规则四）。
 // 模型给 LF 时要在比对前规约，否则同一段内容会因行尾差异而"找不到"。
 func TestFileEditPreservesCRLFAndBOM(t *testing.T) {
 	tl, p := editFile(t, "\xef\xbb\xbfline one\r\nline two\r\nline three\r\n")

@@ -157,7 +157,7 @@ func TestFadeFrameBottomBand(t *testing.T) {
 		}
 		return out
 	}
-	// 转写视口 clip（带底 == 窗底时即整窗）；带底 < 窗底的 chrome 口径见
+	// 转写视口 clip（带底 == 窗底时即整窗）；带底 < 窗底的 chrome 规则见
 	// TestFadeFrameLowBandSkipsChrome。
 	viewport := image.Rectangle{Max: image.Pt(w, h)}
 	at := func(out []byte, x, y int) byte { return out[(y*w+x)*4+3] } // ch3 = A
@@ -218,7 +218,7 @@ func TestFadeFrameBottomBand(t *testing.T) {
 		t.Fatalf("重叠行 alpha = %d, want %.0f（相乘）", at(out3, 0, 3), want3)
 	}
 
-	// ④ 零值（无底带，收起态口径）= 不衰减。
+	// ④ 零值（无底带，收起态规则）= 不衰减。
 	out4 := run(fadeBands{}, viewport)
 	for x := 0; x < w; x++ {
 		if a := at(out4, x, h-1); a != 0xFF {
@@ -256,7 +256,7 @@ func TestFadeFrameLowBandSkipsChrome(t *testing.T) {
 	}
 	at := func(out []byte, x, y int) byte { return out[(y*w+x)*4+3] } // ch3 = A
 
-	// ① chrome（整窗 clip = 悬浮 tips 口径）：跨进带内的顶沿**不淡化**（全 255）。
+	// ① chrome（整窗 clip = 悬浮 tips 规则）：跨进带内的顶沿**不淡化**（全 255）。
 	chrome := run(image.Rectangle{Max: image.Pt(w, h)})
 	for y := 3; y < 7; y++ {
 		for x := 0; x < w; x++ {

@@ -22,7 +22,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
-// frameItems 定稿块 + 实时思考/草稿（流式可见；对齐 D33"流式原样、定稿渲染"口径）。
+// frameItems 定稿块 + 实时思考/草稿（流式可见；对齐 D33"流式原样、定稿渲染"规则）。
 // 助手定稿块 = 单条目携 markdown 结构块（D66 单回复单气泡），工具块 = 合并 chip
 // 携块序（D67），live 草稿原样单行；带分叉的正文块后紧跟一条分叉条（D81）。
 func (u *UI) frameItems() []blockView {
@@ -129,7 +129,7 @@ func (u *UI) statusText() string {
 }
 
 // flushCopy 处理挂起的复制请求（D92，frame 每帧调用）：clipboard.WriteCmd 须在 Gio
-// 帧上下文执行——shell 线程分发的 copyMsg 经主循环记账（pendingCopy）到这里落盘。
+// 帧上下文执行——shell 线程分发的 copyMsg 经主循环记账（pendingCopy）到这里写入磁盘。
 func (u *UI) flushCopy(gtx layout.Context) {
 	if u.pendingCopy == "" {
 		return
@@ -378,7 +378,7 @@ func (u *UI) hitBubble(p image.Point) int {
 }
 
 // updateBubbleRight 气泡右键消费者（D92）：命中解析 + 菜单请求。bubbleRects 一帧
-// 陈旧（与 keyRects 同口径）——命中基于上一帧气泡矩形；「原位」= 按下与抬起落在
+// 陈旧（与 keyRects 同规则）——命中基于上一帧气泡矩形；「原位」= 按下与抬起落在
 // 同一气泡（抬起位置定菜单位）。
 func (u *UI) updateBubbleRight(gtx layout.Context) {
 	press, release, fire := u.bubbleRight.update(gtx.Source)
@@ -405,7 +405,7 @@ type bubbleMenuCtx struct {
 	raw  rawContent
 	// graph 该上下文来自消息管理面的图节点右键（D132）——项集与分发据此切换到
 	// nodeMenuItems（气泡七项 + 图侧四项）。两个生产方（主界面气泡 / 图节点）共用
-	// 同一呈现与同一分发，差别只有这一位与 edit/copy/raw 的取数口径。
+	// 同一呈现与同一分发，差别只有这一位与 edit/copy/raw 的取数规则。
 	graph bool
 	// canSummary 目标节点能否「插入摘要」（D152；仅图侧置位）：会话根与会话首节点人格
 	// 之外都可以——前者根前无处可插，后者之前插摘要会让摘要顶到路径第二位（被装配当 persona）。
@@ -419,7 +419,7 @@ type bubbleMenuCtx struct {
 // bubbleCtx 组装菜单上下文（D92/D97/D99/D100）：复制文本此刻定——选区激活取选区
 // （D91 后果⑤：副键留菜单复用选态），否则按块角色（chip 用其态字段，见 D100④；
 // thinking 定稿折叠后键未铺开，见 D182——两者都不是行选键能取到的文本；其余逐键
-// Text 拼接与 selCopy 同口径）；编辑预填仅 user/assistant；raw 按块角色组装。
+// Text 拼接与 selCopy 同规则）；编辑预填仅 user/assistant；raw 按块角色组装。
 func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 	it := u.bubbleRects[h]
 	ctx := &bubbleMenuCtx{id: it.id, kind: it.kind}
@@ -431,7 +431,7 @@ func (u *UI) bubbleCtx(h int) *bubbleMenuCtx {
 		ctx.copy = chipCopyText(chip)
 	case it.kind == blockThinking:
 		// D182：思考块定稿默认折叠，正文不铺开 → 行选键里没有文本（D100④ 同款问题）。
-		// 复制口径改取所源块原文，与「思考原文」窗同源。
+		// 复制规则改取所源块原文，与「思考原文」窗同源。
 		ctx.copy = u.m.blocks[it.bi].text
 	default:
 		ctx.copy = u.blockText(it.keyBase, it.keyN)
@@ -510,7 +510,7 @@ func (u *UI) moveDrag() {
 }
 
 // endDrag 抬起/取消收尾：锚点夹取 + 四边吸附贴齐（D50）+ 持久化位置。
-// 按下时已脱离停靠（undockInstant），故落盘恒为未停靠。
+// 按下时已脱离停靠（undockInstant），故写入磁盘恒为未停靠。
 // 纯点击（位移 ≤ dragClickSlackPx）跳过夹取/吸附：「点击脱离停靠」把窗口落在半出屏
 // 贴边位（球锚点越界合法），若再按抬手时的态夹一次，展开态整窗锚点会把它推离边缘、
 // 收起后球离边超 snapDp → 布防/停靠断链（D50 实测缺陷修订，§15.1）。

@@ -18,7 +18,7 @@ import (
 var namePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // frontmatter SKILL.md 的 YAML 头（只取驱动行为的字段：其余键原样忽略，
-// `allowed-tools` 等实验字段不驱动任何行为，见 D201 口径一）。
+// `allowed-tools` 等实验字段不驱动任何行为，见 D201 规则一）。
 type frontmatter struct {
 	Name          string `yaml:"name"`
 	Description   string `yaml:"description"`
@@ -85,7 +85,7 @@ func normalizeText(data []byte) string {
 	return s
 }
 
-// validateFrontmatter 校验必填字段（规范口径；这里只拦「模型会因此误判」的错）。
+// validateFrontmatter 校验必填字段（规范规则；这里只拦「模型会因此误判」的错）。
 func validateFrontmatter(fm frontmatter) error {
 	if fm.Name == "" {
 		return errors.New(i18n.T("skill.err.name_missing"))

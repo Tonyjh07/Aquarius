@@ -91,7 +91,7 @@ func TestStoreContract(t *testing.T) {
 			if ents, _ := s.Entries(ctx); len(ents) != 1 {
 				t.Fatalf("覆盖不应新增条目: %+v", ents)
 			}
-			// 换代留了 .bak（同 storejson 口径）。
+			// 换代留了 .bak（同 storejson 规则）。
 			if _, err := os.Stat(s.Path() + ".bak"); err != nil {
 				t.Fatalf("覆盖后应有一代 .bak: %v", err)
 			}
@@ -239,7 +239,7 @@ func TestTamperedCiphertextRejected(t *testing.T) {
 			if _, err := s.Get(ctx, "K1"); !errors.Is(err, ErrUnreadable) {
 				t.Fatalf("篡改应 ErrUnreadable，得 %v", err)
 			}
-			_ = fs.ErrNotExist // 保持 fs 导入（与 os.ErrNotExist 同义，读路径口径提示）
+			_ = fs.ErrNotExist // 保持 fs 导入（与 os.ErrNotExist 同义，读路径规则提示）
 		})
 	}
 }
@@ -310,7 +310,7 @@ func TestAESKeyFilePermission(t *testing.T) {
 	}
 }
 
-// TestNameAndValueValidation 写入口径：非法名字/空值被拦（不落盘、不静默）。
+// TestNameAndValueValidation 写入规则：非法名字/空值被拦（不写入磁盘、不静默）。
 func TestNameAndValueValidation(t *testing.T) {
 	withCipher(t, func() string { return cipherAESGCM })
 	ctx := context.Background()
@@ -351,7 +351,7 @@ func TestMask(t *testing.T) {
 	}
 }
 
-// TestNewRejectsBadDir 目录不存在即报因（调用方负责 MkdirAll，同 atomicfile 口径）。
+// TestNewRejectsBadDir 目录不存在即报因（调用方负责 MkdirAll，同 atomicfile 规则）。
 func TestNewRejectsBadDir(t *testing.T) {
 	if _, err := New(filepath.Join(t.TempDir(), "no-such-dir")); err == nil {
 		t.Fatalf("不存在的目录应报错")

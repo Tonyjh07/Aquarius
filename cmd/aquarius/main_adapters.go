@@ -117,7 +117,7 @@ var _ port.Secrets = envSecrets{}
 // levelHolder 权限等级活状态（D22 执行接入）：/permission 写回成功后 Set，
 // ToolRunner 经 Get 读取。atomic.Value 存取——TUI 状态行回调（事件循环 goroutine）
 // 与 REPL 主 goroutine 并发读写（D33 引入第二 goroutine 打破"单 goroutine"前提，
-// 审查修复，与 agentPtr 同口径）。
+// 审查修复，与 agentPtr 同规则）。
 type levelHolder struct{ v atomic.Value } // perm.Level
 
 // newLevelHolder 构造并写入初值。
@@ -135,7 +135,7 @@ func (h *levelHolder) Get() perm.Level {
 func (h *levelHolder) Set(l perm.Level) { h.v.Store(l) }
 
 // unattendedHolder 无人值守开关活状态（D185）：`/unattended`、球/托盘菜单勾选、设置窗
-// 写回成功后 Set，装配根的装饰器与状态行经 Get 现取。atomic 存取与 levelHolder 同口径
+// 写回成功后 Set，装配根的装饰器与状态行经 Get 现取。atomic 存取与 levelHolder 同规则
 // （GUI/TUI 事件循环 goroutine 读、主 goroutine 写）。
 type unattendedHolder struct{ v atomic.Bool }
 

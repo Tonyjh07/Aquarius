@@ -1,7 +1,7 @@
 package main
 
 // 设置窗「联网」页装配根侧测试（D200）：web 段写读往返、密钥只写不回显、保存前校验
-// 与启动期 normalizeWeb 同口径。
+// 与启动期 normalizeWeb 同规则。
 
 import (
 	"os"
@@ -82,7 +82,7 @@ func TestReadTextSettingsWeb(t *testing.T) {
 }
 
 // TestPersistWebSettingsRoundTrip 写读往返：列表顺序、借用的服务、国家语言、条数、
-// 本地抓取参数与布尔都按表单落盘；`key` 留空 = 沿用原引用（值不回显也不丢）。
+// 本地抓取参数与布尔都按表单写入磁盘；`key` 留空 = 沿用原引用（值不回显也不丢）。
 func TestPersistWebSettingsRoundTrip(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeWebCfg(t)
@@ -143,7 +143,7 @@ func TestPersistWebSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPersistWebKeepsUnknownKeys 列表项的未知键按同类型的旧条目保留（Q10 口径：用户手写
+// TestPersistWebKeepsUnknownKeys 列表项的未知键按同类型的旧条目保留（Q10 规则：用户手写
 // 的字段不因一次保存而丢）。
 func TestPersistWebKeepsUnknownKeys(t *testing.T) {
 	t.Parallel()
@@ -207,7 +207,7 @@ func TestPersistWebPartialWriteTouchesOneSide(t *testing.T) {
 	}
 }
 
-// TestPersistWebEmptyListClears 空列表 = 清空（该能力不可用），与降级链同口径。
+// TestPersistWebEmptyListClears 空列表 = 清空（该能力不可用），与降级链同规则。
 func TestPersistWebEmptyListClears(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeWebCfg(t)
@@ -236,7 +236,7 @@ func loadConfig2Normalize(cfgPath string) error {
 	return cfg.normalizeWeb()
 }
 
-// TestValidateWebSettings 保存前校验与启动期同口径：未知 kind、抓取侧不支持的类型、
+// TestValidateWebSettings 保存前校验与启动期同规则：未知 kind、抓取侧不支持的类型、
 // 借用的 provider 不存在、数值越界都拦下且原文件不动。
 func TestValidateWebSettings(t *testing.T) {
 	t.Parallel()

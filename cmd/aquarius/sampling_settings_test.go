@@ -1,7 +1,7 @@
 package main
 
 // sampling_settings_test.go 设置窗采样参数的装配根侧（D204）：表单文本化与解析、保存前
-// 校验（落盘配置必须过启动期同一条 normalize）、写回 model.sampling、以及「保存后整份
+// 校验（写入磁盘配置必须过启动期同一条 normalize）、写回 model.sampling、以及「保存后整份
 // 换掉快照」这条热生效路径（refreshSampling / samplingFor）。
 
 import (
@@ -83,7 +83,7 @@ func TestSamplingFormTextRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSamplingFormRange 表单侧范围（D204 口径四）：温度 0–2、top_p 0–1。协议细分在
+// TestSamplingFormRange 表单侧范围（D204 规则四）：温度 0–2、top_p 0–1。协议细分在
 // validateSamplingSettings 里按合并后的值判（Anthropic 只接 0–1）。
 func TestSamplingFormRange(t *testing.T) {
 	t.Parallel()
@@ -127,7 +127,7 @@ func TestSamplingSettingsWriteBack(t *testing.T) {
 		t.Fatalf("回读: %v", err)
 	}
 	if cfg.Model.Sampling.Temperature == nil || *cfg.Model.Sampling.Temperature != 0 {
-		t.Fatalf("温度 0 应落盘: %+v", cfg.Model.Sampling)
+		t.Fatalf("温度 0 应写入磁盘: %+v", cfg.Model.Sampling)
 	}
 	if cfg.Model.Sampling.MaxTokens != 256 || len(cfg.Model.Sampling.Stop) != 2 {
 		t.Fatalf("写回 = %+v", cfg.Model.Sampling)
@@ -165,7 +165,7 @@ func TestSamplingSettingsWriteBack(t *testing.T) {
 	}
 }
 
-// TestSamplingSettingsRejectBadConfig 保存前校验（D204 口径五）：落盘配置必须能过启动期
+// TestSamplingSettingsRejectBadConfig 保存前校验（D204 规则五）：写入磁盘配置必须能过启动期
 // 同一条 normalize——超协议范围/负值在这里就被拦下，且原文件不动。
 func TestSamplingSettingsRejectBadConfig(t *testing.T) {
 	t.Parallel()
@@ -187,11 +187,11 @@ func TestSamplingSettingsRejectBadConfig(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(cfgPath)
 	if strings.Contains(string(raw), `"sampling"`) {
-		t.Fatalf("拒绝后不该落盘:\n%s", raw)
+		t.Fatalf("拒绝后不该写入磁盘:\n%s", raw)
 	}
 }
 
-// TestSamplingRefreshHotApply 热生效（D204 口径六）：保存后换掉快照，下一次取到的就是新值；
+// TestSamplingRefreshHotApply 热生效（D204 规则六）：保存后换掉快照，下一次取到的就是新值；
 // 逐模型覆盖按模型名命中（含 /model 切过去的名字）。
 func TestSamplingRefreshHotApply(t *testing.T) {
 	t.Parallel()
@@ -254,7 +254,7 @@ func TestSamplingRefreshKeepsOldOnBadFile(t *testing.T) {
 	}
 }
 
-// TestSamplingAgentCallbackUsesSnapshot Agent 侧回调口径（D204）：SamplingFor 非空就按模型名
+// TestSamplingAgentCallbackUsesSnapshot Agent 侧回调规则（D204）：SamplingFor 非空就按模型名
 // 现取（不缓存），nil 才回落到装配时那份。
 func TestSamplingAgentCallbackUsesSnapshot(t *testing.T) {
 	t.Parallel()

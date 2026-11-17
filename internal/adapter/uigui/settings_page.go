@@ -9,7 +9,7 @@ package uigui
 // 模块**：页序 = 注册序，导航栏 / 页标题 / 滚动列表 / 页名契约测试全部由注册表推导——
 // 加一页 = 一个新文件 + 在 settingsPages 里加一行。
 //
-// 分派口径：行型（rowKind）仍是**单一共用词表**（设置页与遮罩「默认模板」页签共用同一份
+// 分派规则：行型（rowKind）仍是**单一共用词表**（设置页与遮罩「默认模板」页签共用同一份
 // 行表，D154），但**渲染按页拆开**——框架只认页标题 / 分区标题（frameworkRow），其余由该页
 // 自己的 Body 认领。Body 返回 claimed 表示「这行我认识」：未认领的行不会再被静默兜底，
 // 由行型覆盖测试（每个 Rows() 产出的行型都必须被对应页 Body 认领）响亮地兜住。
@@ -61,8 +61,8 @@ type fillPage interface {
 // 本表次序由 TestSettingsPageNamesContract 锁定。
 var settingsPages = []settingsPage{
 	generalPage{},    // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
-	modelPage{},      // 模型：当前模型名 / 原生思考与推理档位 / 有序降级链（D176 口径一）
-	providersPage{},  // 模型服务：provider 管理（协议/端点/密钥池/模型能力表；D176 口径二）
+	modelPage{},      // 模型：当前模型名 / 原生思考与推理档位 / 有序降级链（D176 规则一）
+	providersPage{},  // 模型服务：provider 管理（协议/端点/密钥池/模型能力表；D176 规则二）
 	secretsPage{},    // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
 	chatPage{},       // 对话：限额
 	promptPage{},     // 系统提示词：人格模块树 / 有序引用 / 内置只读模块 / 组合预览

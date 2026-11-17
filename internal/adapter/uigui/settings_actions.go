@@ -21,7 +21,7 @@ import (
 //
 // 两段分开是因为它们改的东西不同：`patch` 只读表单与快照、不产生副作用，可以单独测；
 // 提交那一段才碰通道与原子槽。原先混在一个 271 行的函数里，校验与热生效交替出现，
-// 想确认「非法输入到底有没有落盘」得把整段读完。
+// 想确认「非法输入到底有没有写入磁盘」得把整段读完。
 func (u *UI) saveSettings(f *settingsForm) {
 	if f.readOnly || u.opts.ApplySettings == nil {
 		f.err = true
@@ -155,7 +155,7 @@ func nextSnapshot(p SettingsPatch, snap SettingsSnapshot) SettingsSnapshot {
 
 // patch 采集表单成提交 patch（纯读：只碰表单与快照，无副作用，可单独测）。
 //
-// 校验口径三条：空 = 保持快照原值（数值项）、非法即拒（不落盘、不热更）、布尔恒写。
+// 校验规则三条：空 = 保持快照原值（数值项）、非法即拒（不写入磁盘、不热更）、布尔恒写。
 // 所有取值范围读 port.Settings*——写回侧的权威校验用的是同一张表，见 D230。
 //
 // 报错时返回零值 patch 而不是「填到一半的那份」：拿着半成品去提交，等于把没校验过的
@@ -180,7 +180,7 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 	if p.Model == "" {
 		p.Model = f.snap.Model // 空模型名 = 保持当前
 	}
-	// D90 三旋钮（写回调前校验，非法不落盘）：缩放 = cycle 档（恒合法）；字号/窗口
+	// D90 三旋钮（写回调前校验，非法不写入磁盘）：缩放 = cycle 档（恒合法）；字号/窗口
 	// 尺寸空 = 保持快照原值，数值非法/越界拦截。
 	p.Scale = f.snap.Scale
 	if v, err := strconv.ParseFloat(f.scale.value(), 64); err == nil {
@@ -254,7 +254,7 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 		p.ToolTimeoutSec = n
 	}
 	// D254：会话树保留的备份代数。空 = 保持现值；填了必须是表内区间（写回侧按同一组
-	// 常量给出提示，界面先拦一道，用户不必等落盘才知道越界）。
+	// 常量给出提示，界面先拦一道，用户不必等写入磁盘才知道越界）。
 	if v := strings.TrimSpace(f.backupKeep.Text()); v != "" {
 		n, perr := strconv.Atoi(v)
 		if perr != nil || n < port.SettingsBackupKeepMin || n > port.SettingsBackupKeepMax {

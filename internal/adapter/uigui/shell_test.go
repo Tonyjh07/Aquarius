@@ -76,7 +76,7 @@ func TestLogoMenuItems(t *testing.T) {
 	}
 }
 
-// TestMenuItemsViaHost 菜单项集经宿主回调现取（平台呈现前调用；S4b 口径：平台只拿
+// TestMenuItemsViaHost 菜单项集经宿主回调现取（平台呈现前调用；S4b 规则：平台只拿
 // 中性 DTO，值随出口处数据源变化——顶置勾选态来自平台查询）。
 func TestMenuItemsViaHost(t *testing.T) {
 	t.Parallel()
@@ -99,7 +99,7 @@ func TestMenuItemsViaHost(t *testing.T) {
 }
 
 // TestMenuDispatchPerm D73 权限子菜单选中 = 注入 /permission <档>（与键入同路径，
-// D22 写回 + 热切换走内核单一口径）。
+// D22 写回 + 热切换走内核单一规则）。
 func TestMenuDispatchPerm(t *testing.T) {
 	t.Parallel()
 	u := newHeadless(t, Options{})
@@ -132,7 +132,7 @@ func TestMenuDispatchNew(t *testing.T) {
 	}
 }
 
-// TestMenuDispatchUnattended D185 口径四：球/托盘勾选 = 注入 /unattended（无参切换，
+// TestMenuDispatchUnattended D185 规则四：球/托盘勾选 = 注入 /unattended（无参切换，
 // 与键入同路径——写回 config + 装饰器热生效都在命令里）。
 func TestMenuDispatchUnattended(t *testing.T) {
 	t.Parallel()
@@ -409,7 +409,7 @@ func TestExitViaShell(t *testing.T) {
 	}
 }
 
-// TestToggleTopMost 置顶开关（§15.1/D72）：翻转主窗置顶态 + 位置记忆落盘（含停靠边）。
+// TestToggleTopMost 置顶开关（§15.1/D72）：翻转主窗置顶态 + 位置记忆写入磁盘（含停靠边）。
 func TestToggleTopMost(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

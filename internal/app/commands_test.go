@@ -115,7 +115,7 @@ func TestCommandParamsMatchUsage(t *testing.T) {
 				t.Fatalf("命令 %v 声明了 %d 个参数，Usage 却是空的", e.Names, len(e.Params))
 			}
 			for _, p := range e.Params {
-				// 三种性质的比对口径不同：开关按字面量；自由文本按占位名（去掉尖括号）；
+				// 三种性质的比对规则不同：开关按字面量；自由文本按占位名（去掉尖括号）；
 				// 枚举按「参数名或任一可选值」——`[on|off]` 这种写法里放的是值不是名。
 				var want string
 				switch p.Kind {

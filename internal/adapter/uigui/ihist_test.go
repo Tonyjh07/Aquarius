@@ -6,7 +6,7 @@ import (
 	"gioui.org/io/key"
 )
 
-// TestIhistPush 历史记录口径：相邻重复不记、空行不记、超出上限丢最旧的。
+// TestIhistPush 历史记录规则：相邻重复不记、空行不记、超出上限丢最旧的。
 func TestIhistPush(t *testing.T) {
 	t.Parallel()
 	var h ihist
@@ -71,7 +71,7 @@ func TestIhistEmpty(t *testing.T) {
 // TestHistoryKeysClosedInput 收起态单行输入的 ↑↓ 真的翻到历史（D250 顺带补上的键面）：
 // 这些键本来归编辑器，历史命中后编辑框内容换成历史条目。
 //
-// 过滤器要一帧才生效（Gio 的事件派发按上一帧登记的过滤器走，与浮层同口径）——队列前
+// 过滤器要一帧才生效（Gio 的事件派发按上一帧登记的过滤器走，与浮层同规则）——队列前
 // 先空跑一帧，否则第一下按键会落到编辑器而不是这里。
 func TestHistoryKeysClosedInput(t *testing.T) {
 	t.Parallel()

@@ -18,22 +18,22 @@ type ModelLink struct {
 	Primary         bool
 }
 
-// ModelStatus 当前模型服务的静态口径快照（D173/D177：`/model` 与 `/think` 的展示依据）。
+// ModelStatus 当前模型服务的静态规则快照（D173/D177：`/model` 与 `/think` 的展示依据）。
 // 四项都是**启动期确定、运行态不热切**的事实（切换模型 = 重启生效），所以一次取回，
 // 而不是拆成四个回调各问一次。
 type ModelStatus struct {
 	// Provider 当前生效的 provider 名；空 = 未声明（省略该行）。
 	Provider string
 	// Caps 整条降级链的生效能力（整链取与）。nil = 装配根未声明能力——
-	// 这时展示面改从 Chain 推导，与「服务端不报模态、能力只来自配置」同一口径。
+	// 这时展示面改从 Chain 推导，与「服务端不报模态、能力只来自配置」同一套规则。
 	Caps *port.ModelCaps
 	// Chain 降级链逐环快照；空 = 未声明（省略链路与「谁拉低了整链」两段）。
 	Chain []ModelLink
-	// Budget 上下文预算口径；零值 = 未声明（Effective 为 0 时该行不显示）。
+	// Budget 上下文预算规则；零值 = 未声明（Effective 为 0 时该行不显示）。
 	Budget ContextBudget
 }
 
-// ModelCatalog 模型服务面（`/model` 的读侧）：可用清单 + 静态口径快照。
+// ModelCatalog 模型服务面（`/model` 的读侧）：可用清单 + 静态规则快照。
 // 装配根把配置与 LLM 适配器适配到此接口；nil 时 `/model` 报「未配置模型服务」。
 type ModelCatalog interface {
 	// Models 服务端可用模型列表（经配置补能力位与单价）。
@@ -57,7 +57,7 @@ type ModelSwitcher interface {
 	PersistModel(name string) error
 }
 
-// ContextBudget 上下文预算的可读口径（D177：`/model` 展示用）。三处消费者（压缩阈值、
+// ContextBudget 上下文预算的可读规则（D177：`/model` 展示用）。三处消费者（压缩阈值、
 // /usage 占用、硬保底截断）用的是同一个 Effective，这里只解释它从哪儿来。
 type ContextBudget struct {
 	// Effective 实际生效的预算 tokens。
@@ -78,8 +78,8 @@ type ProbeReport struct {
 	Written bool
 }
 
-// status 当前模型服务的静态口径快照；模型服务未接线时返回零值（各项都不显示，
-// 与「未声明就省略该行」同一口径）。
+// status 当前模型服务的静态规则快照；模型服务未接线时返回零值（各项都不显示，
+// 与「未声明就省略该行」同一套规则）。
 func (s *Session) status() ModelStatus {
 	if s.models == nil {
 		return ModelStatus{}
@@ -113,7 +113,7 @@ func (s *Session) execModel(ctx context.Context, args []string) (string, error) 
 	if s.modelSwitch == nil {
 		return "", errors.New("session: " + i18n.T("model.switch_unwired"))
 	}
-	// 先持久化再热切换（同 /permission 口径：写回失败不动运行态）。
+	// 先持久化再热切换（同 /permission 规则：写回失败不动运行态）。
 	if err := s.modelSwitch.PersistModel(name); err != nil {
 		return "", wrapSession("agent.err_persist", err)
 	}
@@ -200,7 +200,7 @@ func formatModels(current string, st ModelStatus, models []port.ModelInfo) strin
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// execProbe /model probe [name]（D174 口径三）：手动发起的能力探测。
+// execProbe /model probe [name]（D174 规则三）：手动发起的能力探测。
 // 探测是真请求、真花钱，所以绝不自动跑；结果只写回「判定明确」的位。
 func (s *Session) execProbe(ctx context.Context, args []string) (string, error) {
 	if s.prober == nil {
@@ -253,7 +253,7 @@ func formatProbe(r ProbeReport) string {
 	return b.String()
 }
 
-// probeLabel 能力名 → 界面用词（与 /model 的能力行同口径）。
+// probeLabel 能力名 → 界面用词（与 /model 的能力行同规则）。
 func probeLabel(capability string) string {
 	switch capability {
 	case port.CapTools:

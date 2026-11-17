@@ -28,7 +28,7 @@ func TestSettingsPageNamesContract(t *testing.T) {
 	// wantKeys 是页标识（Key，英文、不随语言变），wantNames 是 zh 下的显示名。两者分开锁：
 	// 页序与标识是契约，显示名只是取词结果——把中文当契约锁，加英文表时就会两头顾此失彼。
 	wantKeys := []string{"general", "model", "providers", "secrets", "chat", "prompt", "tools", "delegate", "skills", "characters", "web", "audio", "adv", "about"}
-	// 显示名与 pageName 同源：按生产口径从文案表按 Key 取词，不再锁死中文字面。
+	// 显示名与 pageName 同源：按生产规则从文案表按 Key 取词，不再锁死中文字面。
 	wantNames := make([]string, len(wantKeys))
 	for i, k := range wantKeys {
 		wantNames[i] = i18n.T("ui.settings.page." + k)
@@ -355,7 +355,7 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 				t.Errorf("dpi %.2f: 编辑框高 %dpx < 下限 Dp(fieldH)=%dpx", dpi, box.Size.Y, want)
 			}
 
-			// 标签列宽（探针控件记录收到的 Flexed 约束）。口径：fieldLabelW() 含右间距
+			// 标签列宽（探针控件记录收到的 Flexed 约束）。规则：fieldLabelW() 含右间距
 			//（Inset{Right:10} 把标签 Min 压到 fieldLabelW()−10，rigid 总占位 = fieldLabelW()），
 			// 故控件起点 = 行宽 − Dp(fieldLabelW())——随密度缩放即不折行。
 			var gotCtrlMax int

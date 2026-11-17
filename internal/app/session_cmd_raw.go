@@ -72,7 +72,7 @@ func (s *Session) execRaw(ctx context.Context, cmd port.Command) (string, error)
 	return renderWireOverview(tr, frames, back, total), nil
 }
 
-// dumpRaw 整份原始返回落盘，顺手铺进只读次窗。
+// dumpRaw 整份原始返回写入磁盘，顺手铺进只读次窗。
 //
 // 用 `.txt` 不用 `.md`：正文里常有 `___`、`**`、`#` 这些 markdown 记号，渲染一遍就不是
 // 原文了；而这份文件的用途就是逐字对照。
@@ -85,7 +85,7 @@ func (s *Session) dumpRaw(ctx context.Context, tr port.WireTrace) (string, error
 	}
 	stem := "raw"
 	if s.cur != nil {
-		// 会话 ID 只取前 8 位：导出目录里一眼要能扫完（与 `/context full` 同口径）。
+		// 会话 ID 只取前 8 位：导出目录里一眼要能扫完（与 `/context full` 同规则）。
 		id := string(s.cur.ID)
 		if len(id) > 8 {
 			id = id[:8]

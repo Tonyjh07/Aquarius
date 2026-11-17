@@ -61,7 +61,7 @@ func TestTestyCallbacks(t *testing.T) {
 	if want := 1 + len(run.Commands); conf.calls != want {
 		t.Fatalf("conf.calls = %d, want %d（1 次权限反问 + %d 条命令）", conf.calls, want, len(run.Commands))
 	}
-	// 写经我们过手：落地在 cwd 下，字节与它发的一模一样（不做换行转换），并记进 Wrote。
+	// 写经我们过手：实现在 cwd 下，字节与它发的一模一样（不做换行转换），并记进 Wrote。
 	want := filepath.Join(mustResolvePath(t, work), "testy-write.txt")
 	if len(run.Wrote) != 1 || !strings.EqualFold(run.Wrote[0], want) {
 		t.Fatalf("wrote = %v, want [%s]", run.Wrote, want)
@@ -71,7 +71,7 @@ func TestTestyCallbacks(t *testing.T) {
 		t.Fatalf("读回写下的文件: %v", readErr)
 	}
 	if string(b) != "written by testy\n" {
-		t.Fatalf("落盘内容 = %q, want %q", string(b), "written by testy\n")
+		t.Fatalf("写入磁盘的内容 = %q, want %q", string(b), "written by testy\n")
 	}
 
 	// 五个 terminal/* 都走通了：testy 在 callbacks 里至少建一条命令，且每条都留下了结局。

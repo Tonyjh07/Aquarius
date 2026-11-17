@@ -2,13 +2,13 @@ package app
 
 // 命令参数里的 flag 解析（/edit、/inject、/title 三处共用一份实现）。
 //
-// 三处的历史口径不同，差异只有两条，都在这里显式声明：
+// 三处的历史规则不同，差异只有两条，都在这里显式声明：
 //   - 位置：/edit 与 /title 只认正文之前的一段（正文里出现「--keep」是字面文本，不再当
 //     flag），/inject 认整段任意位置（选项写在正文前后都行）；
 //   - 个数：/title 只认一个（第二个「--id」归正文），其余不限。
 //
 // 相同的部分——哪些 token 是 flag、哪些吃一个值、缺值怎么报、剩余 token 怎么拼正文——
-// 只写一遍。此前三处各有一套，改一处口径另两处不会跟着变。
+// 只写一遍。此前三处各有一套，改一处规则另两处不会跟着变。
 
 import (
 	"errors"
@@ -35,10 +35,10 @@ const (
 	flagsAnywhere
 )
 
-// flagScan 一次扫描的口径。
+// flagScan 一次扫描的规则。
 type flagScan struct {
 	pos flagPos
-	// limit 最多认几个 flag（0 = 不限）。/title 用 1 保持「--id 只认首参位」的旧口径。
+	// limit 最多认几个 flag（0 = 不限）。/title 用 1 保持「--id 只认首参位」的旧规则。
 	limit int
 }
 

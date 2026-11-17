@@ -173,7 +173,7 @@ func (t *fileGrep) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 
 // grepLines 把一个文件的命中行写进 out，返回本文件的命中数。
 //
-// 行号从 1 起，与 file_read 的前缀口径一致（同一个人在两处读同一个文件，编号不该跳）。
+// 行号从 1 起，与 file_read 的前缀规则一致（同一个人在两处读同一个文件，编号不该跳）。
 func grepLines(out *strings.Builder, path, body string, match func(string) bool, room int) (found int) {
 	for i, line := range strings.Split(body, "\n") {
 		if room <= 0 {

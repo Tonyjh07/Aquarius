@@ -2,7 +2,7 @@ package uigui
 
 // 工具与 MCP 管理页数据面（S6/D143）：消费方定义接口与快照类型，装配根实现。
 //
-// 并发口径（同 §15.7）：快照经原子槽读取（次窗 goroutine 无锁读），动作**一律异步**
+// 并发规则（同 §15.7）：快照经原子槽读取（次窗 goroutine 无锁读），动作**一律异步**
 // ——`Host.Enable` 拨号上限 15s、信任/能力确认弹窗在主窗，次窗同步调必冻窗；动作在
 // 旁路 goroutine 执行，结果经通道回灌，完成后 Invalidate 重绘（快照 Revision 已递增）。
 
@@ -132,7 +132,7 @@ func (f *settingsForm) drainToolResults() {
 	}
 }
 
-// syncToolsSnapshot 工具页原子快照同步（Revision 变了才重建行与按钮；同历史窗口径）。
+// syncToolsSnapshot 工具页原子快照同步（Revision 变了才重建行与按钮；同历史窗规则）。
 // 帧首调用一次（settingsFrame）；测试可直接调以铺好行表。
 func (f *settingsForm) syncToolsSnapshot() {
 	if f.tools == nil {
@@ -268,7 +268,7 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 	}
 	values, labels := policySegments(b.Policy)
 	sel := policyIndex(values, b.Policy)
-	// 确认态里把「允许」画成选中：用户点的是它，落库要等他点确认。
+	// 确认态里把「允许」画成选中：用户点的是它，写进密钥库要等他点确认。
 	if f.polConfirm == b.Name {
 		sel = policyIndex(values, "allow")
 	}

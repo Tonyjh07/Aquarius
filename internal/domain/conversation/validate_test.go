@@ -49,7 +49,7 @@ func TestValidateRejectsEditionSelfLoop(t *testing.T) {
 	}
 }
 
-// TestValidateAllowsEditionChainAcrossParents 版本链跨父之后仍然合法（D255 并存口径）：
+// TestValidateAllowsEditionChainAcrossParents 版本链跨父之后仍然合法（D255 并存规则）：
 // 旧节点无子、新版本挂在别的父下，结构边与版本链各自成立，Validate 不该拦。
 func TestValidateAllowsEditionChainAcrossParents(t *testing.T) {
 	useFixedClock(t)

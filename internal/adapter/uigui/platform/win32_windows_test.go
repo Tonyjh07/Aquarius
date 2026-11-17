@@ -82,7 +82,7 @@ func TestAttachOrderKeepsFirstULW(t *testing.T) {
 		t.Fatal("挂接序（先隐藏、后挂样式）后首帧 ULW 失败——errno=87 = 层样式在可见态挂接后被隐藏")
 	}
 	if p.MainHandle() != Handle(h) {
-		t.Fatalf("MainHandle = %#x, want %#x（AttachMain 未落库）", p.MainHandle(), h)
+		t.Fatalf("MainHandle = %#x, want %#x（AttachMain 未写进密钥库）", p.MainHandle(), h)
 	}
 }
 
@@ -96,18 +96,18 @@ func TestTopMostHandle(t *testing.T) {
 	}
 }
 
-// TestTopMostDefaultNoHandle 无句柄（未挂接/headless）= 缺省置顶（口径与旧实现一致）。
+// TestTopMostDefaultNoHandle 无句柄（未挂接/headless）= 缺省置顶（规则与旧实现一致）。
 func TestTopMostDefaultNoHandle(t *testing.T) {
 	p := New(Config{})
 	if !p.TopMost() {
-		t.Fatal("未挂接主窗时应缺省置顶（缺省口径）")
+		t.Fatal("未挂接主窗时应缺省置顶（缺省规则）")
 	}
 	if p.Visible() {
 		t.Fatal("未挂接主窗时不可见（防隐藏后仍有帧提交）")
 	}
 }
 
-// TestWindowDPIInvalidHandle 句柄无效 → 回落 1.0（100% 口径，D90）。
+// TestWindowDPIInvalidHandle 句柄无效 → 回落 1.0（100% 规则，D90）。
 func TestWindowDPIInvalidHandle(t *testing.T) {
 	p := New(Config{})
 	if got := p.WindowDPI(0); got != 1.0 {

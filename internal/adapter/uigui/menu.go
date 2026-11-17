@@ -1,6 +1,6 @@
 package uigui
 
-// 菜单内容与命令分发（中性，D111/S4b 口径：菜单**项集**与**命令语义**是 UI 关注点、
+// 菜单内容与命令分发（中性，D111/S4b 规则：菜单**项集**与**命令语义**是 UI 关注点、
 // 平台无关；HMENU 构建与 TrackPopupMenu 呈现归平台实现，见 platform 包）。项序与文案
 // 是契约，测试锁定。
 
@@ -20,7 +20,7 @@ const (
 	cmdSettings = 106 // 功能窗入口（§15.7/D60：设置窗核心档）
 	cmdNew      = 107 // 新对话（logo 右键菜单，D72：注入 /new 与键入同路径）
 	cmdPermBase = 108 // 权限子菜单四档基值（D73：+i 对齐 settings.go permLevels 序）
-	// 无人值守勾选项（D185 口径四：与 /unattended 同路径）。ID 必须避开权限子菜单的
+	// 无人值守勾选项（D185 规则四：与 /unattended 同路径）。ID 必须避开权限子菜单的
 	// [cmdPermBase, cmdPermBase+len(permLevels)) 区间——分发先按区间拦，落在里面会被
 	// 当成某档权限（112 = 108+4，紧随其后）。
 	cmdUnattended = 112
@@ -56,7 +56,7 @@ const (
 )
 
 // nodeAction 图侧动作（D132）：id = 目标节点；槽在 UI 上（跨窗共享的原子槽，同 rawView
-// 口径），由历史窗帧首排空。D139：开遮罩只带定位信息（id/方式/页签），**正文在帧内现取**
+// 规则），由历史窗帧首排空。D139：开遮罩只带定位信息（id/方式/页签），**正文在帧内现取**
 // —— 大文本不过原子槽，避免跨线程搬大对象。
 type nodeAction struct {
 	kind nodeActKind
@@ -158,7 +158,7 @@ func bubbleMenuItems(kind blockKind, canRespond bool) []menuIt {
 // 也不该出现摘要——摘要会顶到路径第二位、被装配当成 persona（水位语义随之失效）。
 // 注：会话根整份菜单在 openNodeMenu 处已被拦（2026-10-25 用户批注），本函数不再对根设门。
 // frozen=true（树编辑模式期，D258/§5.6.5）时**只留只读项**：编辑三项、重新生成、生成响应、
-// 插入摘要、删除全部置灰。设计稿原写「删除/切版本/插入摘要/生成响应四项」，落码扩到编辑类，
+// 插入摘要、删除全部置灰。设计稿原写「删除/切版本/插入摘要/生成响应四项」，实现扩到编辑类，
 // 依据是同一节的纲：「编辑期结构只经拖拽一条路径变化」——编辑（Fresh/Carry/Clone）与重新生成
 // 都会造成结构改动，留着它们等于开第二条路径。只读项（复制 / 复制 ID / 查看原文）与引用
 // （只往输入框追加文字，不动树）照常。
@@ -281,7 +281,7 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 	}
 	// D132/D139：图侧触发（消息管理面在次窗）时，动作一律落到**本窗**遮罩，不再投主窗
 	// 输入栏/另开次窗——编辑三项 = 开遮罩并预选方式、「查看原文」= 开遮罩并定位源码页签。
-	// 气泡侧右键时主窗必在前景，编辑进输入栏、查看原文进 winRaw 的老口径**不变**。
+	// 气泡侧右键时主窗必在前景，编辑进输入栏、查看原文进 winRaw 的老规则**不变**。
 	if ctx.graph {
 		switch r {
 		case cmdBubbleEdit:
@@ -301,7 +301,7 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 			return
 		case cmdBubbleQuote, cmdBubbleRegen, cmdNodeRespond:
 			// 这三项仍落在主窗输入栏/内核（引用追加、重生成、从节点续写），故图侧触发时
-			// 先唤出主窗，否则用户什么也看不见（D132 口径，D139 保留）。
+			// 先唤出主窗，否则用户什么也看不见（D132 规则，D139 保留）。
 			_ = u.post(showExpandMsg{})
 		}
 	}
@@ -335,7 +335,7 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		u.nodeAction.Store(&nodeAction{kind: nodeActCopyID, id: ctx.id})
 	case cmdNodeRm:
 		// D132 图侧：删除节点 = /rm <id>，与键入同路径经 inCh（缓冲满则丢弃，与图内既有
-		// 口径一致：历史窗无转写区可回显，失败不空转）。
+		// 规则一致：历史窗无转写区可回显，失败不空转）。
 		select {
 		case u.inCh <- port.UserInput{Command: &port.Command{Name: uiCmdRm, Args: []string{string(ctx.id)}}}:
 		default:

@@ -30,7 +30,7 @@ import (
 // updateCorpus `-decide.update` 重写基准文件。
 var updateCorpus = flag.Bool("decide.update", false, "rewrite testdata/corpus.golden.json")
 
-// corpusCase 一条语料。字段口径与 temp/p4probe 的标定语料一致。
+// corpusCase 一条语料。字段规则与 temp/p4probe 的标定语料一致。
 type corpusCase struct {
 	ID     string `json:"id"`
 	Expect string `json:"expect"` // allow | ask | deny：编语料时的先验判断

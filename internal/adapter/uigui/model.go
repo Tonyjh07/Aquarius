@@ -42,7 +42,7 @@ type block struct {
 	chip *toolChip
 	id   conversation.MessageID
 	// source/trigger 仅注入块使用（D166）：来源键（展示期经 port.InjectSourceLabel
-	// 翻成用户面措辞）与落地时是否随附起了响应。只作展示，不改标题、不挂分叉条。
+	// 翻成用户面措辞）与实现时是否随附起了响应。只作展示，不改标题、不挂分叉条。
 	source  string
 	trigger bool
 	// part 正文分片序号（D107②）：该块所源正文段内首个 PartText 在节点 Content 中的
@@ -85,7 +85,7 @@ type pendingConfirm struct {
 	share *confirmShare
 }
 
-// model 渲染状态机：事件面口径对齐 uitui/model.go（§15.5）——
+// model 渲染状态机：事件面规则对齐 uitui/model.go（§15.5）——
 // Delta.Reasoning 分流进思考草稿、CommittedEvent 定稿落块、HistoryEvent 回放
 // （思考暗块先行）、Say 纯文本块。仅事件循环 goroutine 读写；
 // 输入编辑态在 Gio editor（window.go），不在此处。
@@ -117,7 +117,7 @@ type model struct {
 	// **新增**的附件（提交时按 chip 序进 Command.Attachments），不再是"留到下一条"。
 	stagedFiles []stagedAtt
 	// editAtts 编辑态目标节点的已有附件（D188，进编辑态时从 port.TreeView 取一次快照）。
-	// 序号口径与 /edit --drop N 一致（附件分片出现序）。生命周期与 editTarget 同步收尾。
+	// 序号规则与 /edit --drop N 一致（附件分片出现序）。生命周期与 editTarget 同步收尾。
 	editAtts []port.AttachmentView
 	// editDropped 编辑态已标记删除的已有附件序号（D188：提交时翻成 --drop N）。
 	editDropped map[int]bool
@@ -140,7 +140,7 @@ func newModel(u *UI) *model {
 }
 
 // say 纯文本行（启动提示）。命令结果走 attachCommandOut 先进折叠条（D265）——
-// 只有找不到归属的命令结果才落成纯文本行。
+// 只有找不到归属的命令结果才写成纯文本行。
 func (m *model) say(text string) {
 	m.flushThink() // 时序：思维链先于外部输出
 	s := sanitizeControl(text)
@@ -319,8 +319,8 @@ func (m *model) clear() {
 	// D182：思考块折叠态按块序缓存（块只增不减），清屏后块序从 0 重排——一并复位，
 	// 新会话的思考块回到默认折叠，不继承上一会话某个序位的开合。
 	m.u.thinkOpen = nil
-	m.u.cmdOpen = nil    // D265 同口径：命令条的开合也不跨清屏继承
-	m.u.injectOpen = nil // 注入块的折叠态同口径
+	m.u.cmdOpen = nil    // D265 同一套规则：命令条的开合也不跨清屏继承
+	m.u.injectOpen = nil // 注入块的折叠态同一套规则
 	// pendingCmd **不清**（D265）：清屏正发生在 /switch、/regen 这类命令中途，
 	// 它们的返回文本还没到——抹掉就等于让那条结果无处可归。
 }

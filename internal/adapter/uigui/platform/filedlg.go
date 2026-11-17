@@ -1,6 +1,6 @@
 package platform
 
-// 文件选择框的多选结果解析（D186 口径五）：GetOpenFileNameW 打开 OFN_ALLOWMULTISELECT
+// 文件选择框的多选结果解析（D186 规则五）：GetOpenFileNameW 打开 OFN_ALLOWMULTISELECT
 // 后，缓冲区有两种形态，都要解析对——
 //
 //	单选：一个完整路径 + 双 NUL   "C:\\a\\报告.pdf\0\0"

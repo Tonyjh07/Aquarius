@@ -49,7 +49,7 @@ type MenuItem struct {
 	Sub      []MenuItem
 }
 
-// PickKind 专用选择框的用途（技能导入 D203 口径四 / 角色卡导入 §5.17）：决定过滤器与
+// PickKind 专用选择框的用途（技能导入 D203 规则四 / 角色卡导入 §5.17）：决定过滤器与
 // 是否选目录。附件槽用固定的「多选附件」语义（RequestFileDialog + FilesPicked），
 // 不复用本枚举。
 type PickKind int
@@ -148,7 +148,7 @@ type Host interface {
 	// Notice 降级提示（缺失能力告知用户；平台层不直接碰 UI）。
 	Notice(msg string)
 	// SkillPathPicked 专用选择框结果（kind 区分文件/文件夹/角色卡；空路径 = 取消）。
-	// 与 FilesPicked 分开：附件槽是「多选 + 直投附件」，用途与语义都不同（D203 口径四）。
+	// 与 FilesPicked 分开：附件槽是「多选 + 直投附件」，用途与语义都不同（D203 规则四）。
 	SkillPathPicked(kind PickKind, path string)
 	// FilePicked 通用（单选）文件框结果（空路径 = 取消）：purpose 原样带回请求时的标签，
 	// 由宿主决定「导入这个文件」还是「写到这个落点」。与 FilesPicked / SkillPathPicked

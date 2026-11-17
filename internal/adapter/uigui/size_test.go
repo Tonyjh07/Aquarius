@@ -83,7 +83,7 @@ func TestExtremeShortWindowLayout(t *testing.T) {
 	}
 }
 
-// TestNarrowWindowShapesInsideFrame 极窄窗（304px 口径）：布局重排后全部形状仍在窗内
+// TestNarrowWindowShapesInsideFrame 极窄窗（304px 规则）：布局重排后全部形状仍在窗内
 // （D71 行级手势与 ULW 位图都以 frameSize 为界）。
 func TestNarrowWindowShapesInsideFrame(t *testing.T) {
 	t.Parallel()

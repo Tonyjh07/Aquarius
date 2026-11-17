@@ -55,7 +55,7 @@ func ovUserID(st *historyState) conversation.MessageID {
 }
 
 // TestOverlaySubmitModes D139：提交 = 结构化 `/edit` 经 inCh，flag 紧跟 id（D97① 位置
-// 口径）：Fresh 无 flag / Carry = `--keep` / Clone = `--copy`；提交后关遮罩并唤出主窗。
+// 规则）：Fresh 无 flag / Carry = `--keep` / Clone = `--copy`；提交后关遮罩并唤出主窗。
 func TestOverlaySubmitModes(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -127,7 +127,7 @@ func TestOverlaySubmitRejectsEmpty(t *testing.T) {
 }
 
 // TestOverlaySubmitKeepsDraftWhenChannelFull 输入通道满时提交**不关遮罩**：命令没投出去，
-// 用户改的文本不能凭空消失（D139 的数据保真口径）。
+// 用户改的文本不能凭空消失（D139 的数据保真规则）。
 func TestOverlaySubmitKeepsDraftWhenChannelFull(t *testing.T) {
 	t.Parallel()
 	u, st, _ := relGraphFixture(t)
@@ -290,7 +290,7 @@ func TestOverlayOpenClickDoesNotCloseItself(t *testing.T) {
 }
 
 // TestOverlayBackgroundGraphInert 遮罩开启期右图手势完全失灵（不消费事件）：点节点不再
-// 开新遮罩、拖空白不再平移视场。这是「模态」在 Gio 广播模型下的真实口径。
+// 开新遮罩、拖空白不再平移视场。这是「模态」在 Gio 广播模型下的真实规则。
 // 变异验证：去掉 `relGraph.frame` 里的 `overlayActive` 门 ⇒ 本用例红（遮罩被换节点 /
 // 视场被平移）。
 func TestOverlayBackgroundGraphInert(t *testing.T) {
@@ -607,7 +607,7 @@ func TestOverlayPillHugsItsBox(t *testing.T) {
 	}
 	defer win.Release()
 
-	// 底色取 Paper 令牌（次窗口径）：未选中/次要 = sunken，选中/主操作 = accent。
+	// 底色取 Paper 令牌（次窗规则）：未选中/次要 = sunken，选中/主操作 = accent。
 	pp := paperOf()
 	for _, tc := range []struct {
 		name string

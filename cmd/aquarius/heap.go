@@ -29,7 +29,7 @@ const (
 // 会污染同进程的其它用例。
 //
 // 两个旋钮各自尊重环境变量：GOMEMLIMIT 或 GOGC 显式给出时，对应的那个不覆盖——那是用户或
-// 部署方的口径。判断只能看环境变量：运行时的「未设置」与 GOMEMLIMIT=off 读数相同（都是
+// 部署方的规则。判断只能看环境变量：运行时的「未设置」与 GOMEMLIMIT=off 读数相同（都是
 // math.MaxInt64），分不出意图；GOGC 同理，SetGCPercent 的返回值也分不出「默认 100」与
 // 「读到显式 100」。
 func applyMemoryPolicy() {

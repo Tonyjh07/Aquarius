@@ -177,10 +177,10 @@ func TestSessionTextRoundPersists(t *testing.T) {
 	if cur.Title != "讲个笑话" {
 		t.Fatalf("title = %q, want 首条消息摘要", cur.Title)
 	}
-	// 已落盘且可跨"进程"恢复。
+	// 已写入磁盘且可跨"进程"恢复。
 	saved := store.convs[cur.ID]
 	if saved == nil || saved.NodeCount() != 4 {
-		t.Fatalf("saved = %+v, want 落盘 4 节点", saved)
+		t.Fatalf("saved = %+v, want 写入磁盘 4 节点", saved)
 	}
 
 	// 重启会话：恢复同一棵树继续对话。
@@ -255,7 +255,7 @@ func TestSessionReplayHistory(t *testing.T) {
 }
 
 // TestSessionReplayHistoryWatermark D21×D40：有压缩摘要时从摘要节点起回放
-// （与 assemblePath 同口径——回放内容 = 模型可见上下文）。
+// （与 assemblePath 同规则——回放内容 = 模型可见上下文）。
 func TestSessionReplayHistoryWatermark(t *testing.T) {
 	store := newMemStore()
 	c := conversation.New(conversation.ID("Cw"), "带摘要")
@@ -328,7 +328,7 @@ func TestSessionReplayHistoryNoHistoryOnlyPersona(t *testing.T) {
 }
 
 // TestSessionSwitchCommand D75：/switch 切到既有会话——精确/唯一前缀解析、切前 Save 当前
-// 会话（/edit 只改内存，不落盘即丢）、先 ClearEvent 再 Notice + HistoryEvent 回放目标可见历史；
+// 会话（/edit 只改内存，不写入磁盘即丢）、先 ClearEvent 再 Notice + HistoryEvent 回放目标可见历史；
 // 无参/未知/歧义报错且不改动当前会话、不发任何事件。
 func TestSessionSwitchCommand(t *testing.T) {
 	ctx := context.Background()
@@ -351,7 +351,7 @@ func TestSessionSwitchCommand(t *testing.T) {
 	}
 	idB := s.Current().ID
 
-	// /edit 只改内存（不即时落盘）：切换必须先把当前会话 Save，否则切走即丢。
+	// /edit 只改内存（不即时写入磁盘）：切换必须先把当前会话 Save，否则切走即丢。
 	edited := "改过的乙内容"
 	pathB := s.Current().Path()
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "edit",
@@ -391,7 +391,7 @@ func TestSessionSwitchCommand(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("切换前未把当前会话的 /edit 落盘")
+		t.Fatal("切换前未把当前会话的 /edit 写入磁盘")
 	}
 
 	// 切回乙：唯一前缀解析 + 同样清屏回放。
@@ -432,7 +432,7 @@ func TestSessionSwitchCommand(t *testing.T) {
 	}
 }
 
-// TestSessionNewClearsTranscript D75（修订 D72 后果④）：/new 除落盘外还发 ClearEvent
+// TestSessionNewClearsTranscript D75（修订 D72 后果④）：/new 除写入磁盘外还发 ClearEvent
 // 清屏——新会话无可回放，故只有 clear 一条，不带 HistoryEvent。
 func TestSessionNewClearsTranscript(t *testing.T) {
 	ctx := context.Background()
@@ -487,7 +487,7 @@ func TestSessionCommands(t *testing.T) {
 		t.Fatalf("title = %q", s.Current().Title)
 	}
 	if store.convs[s.Current().ID] == nil {
-		t.Fatal("/new 应立即落盘")
+		t.Fatal("/new 应立即写入磁盘")
 	}
 	// /list：两行，当前会话带 * 标记（UpdatedAt 同刻按 ID 序——全局计数器位移
 	// 不影响本断言语义，按标题定位行而非位置）。

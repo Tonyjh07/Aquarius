@@ -37,7 +37,7 @@ const (
 //
 // 首行只放版本号，不放时间戳。放了时间，「内容没变」就永不成立，每次启动都要重写一遍
 // （D291 决策 4）。三段正文都走 go:embed，缘由同 internal/legal：正文是给人读的
-// Markdown，改一句要能在 diff 里看见；落盘内容两种语言同时出现，进 i18n 表只会取到
+// Markdown，改一句要能在 diff 里看见；写入磁盘的内容两种语言同时出现，进 i18n 表只会取到
 // 其中一种，所以这三段不经过取词口。
 func renderDataReadme(version string) []byte {
 	ver := strings.TrimSpace(version)

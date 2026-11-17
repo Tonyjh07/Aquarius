@@ -114,7 +114,7 @@ var zhAdapterLLMTexts = map[string]string{
 	"asr.chat.err_unsupported_format": "asr: 不支持的音频格式「{mime}」（只支持 wav / mp3）",
 	"asr.chat.err_no_choices":         "asr: 响应里没有 choices",
 
-	// ---- tts 合成端公共（配置校验、HTTP、音频落地；四个适配器共用）----
+	// ---- tts 合成端公共（配置校验、HTTP、音频实现；四个适配器共用）----
 	"tts.err.nil_context":      "tts: nil context",
 	"tts.err.base_url_empty":   "tts: base_url 为空",
 	"tts.err.base_url_invalid": "tts: 非法 base_url「{url}」",

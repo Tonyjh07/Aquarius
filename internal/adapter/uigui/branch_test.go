@@ -21,7 +21,7 @@ func (f fakeTree) Branches(id conversation.MessageID) (port.BranchInfo, bool) {
 	return bi, ok
 }
 
-// Tail 版本末端（D94）：固定视图未配置末端表 → 即自身（既有分派测试口径不变）。
+// Tail 版本末端（D94）：固定视图未配置末端表 → 即自身（既有分派测试规则不变）。
 func (f fakeTree) Tail(id conversation.MessageID) (conversation.MessageID, bool) {
 	return id, true
 }
@@ -53,7 +53,7 @@ func (f fakeTreeTail) Tail(id conversation.MessageID) (conversation.MessageID, b
 	return id, true
 }
 
-// newBranchUI 带树视图与输入通道的最小 UI（headless，同 newFrameUI 口径）。
+// newBranchUI 带树视图与输入通道的最小 UI（headless，同 newFrameUI 规则）。
 func newBranchUI(tree port.TreeView) *UI {
 	u := newFrameUI()
 	u.opts.Tree = tree
@@ -302,7 +302,7 @@ func TestGotoBranchDispatch(t *testing.T) {
 
 // TestGotoBranchDispatchTail D94：切换落点 = 目标版本的对话末端（port.TreeView.Tail）
 // ——/goto 停在消息节点上时其回答不在 Head 路径上，切用户消息版本会只剩半截；
-// 端口不可用回退兄弟 id（上方用例 nil 树即此口径）。
+// 端口不可用回退兄弟 id（上方用例 nil 树即此规则）。
 func TestGotoBranchDispatchTail(t *testing.T) {
 	t.Parallel()
 	u := newBranchUI(fakeTreeTail{

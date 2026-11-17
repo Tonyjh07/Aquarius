@@ -46,8 +46,8 @@ type delegateLedgerEntry struct {
 	Roots     []string  `json:"roots,omitempty"`
 	StartedAt time.Time `json:"started_at"`
 	PID       int       `json:"pid,omitempty"`
-	// Stop / Error / EndedAt：进终态时补上但不删条目（D264 同口径），删的条件是报告
-	// **落地并落盘**，不是这次转交结束。
+	// Stop / Error / EndedAt：进终态时补上但不删条目（D264 同规则），删的条件是报告
+	// **送达并写入磁盘**，不是这次转交结束。
 	Stop    string    `json:"stop,omitempty"`
 	Error   string    `json:"error,omitempty"`
 	EndedAt time.Time `json:"ended_at,omitempty"`

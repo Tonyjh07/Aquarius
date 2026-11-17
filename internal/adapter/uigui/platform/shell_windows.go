@@ -250,7 +250,7 @@ func (p *Plat) subClassProc(hwnd, uMsg, wParam, lParam uintptr) uintptr {
 	return r
 }
 
-// handleDropFiles 处理 WM_DROPFILES（D187 口径三）：wParam = HDROP，逐项 DragQueryFileW
+// handleDropFiles 处理 WM_DROPFILES（D187 规则三）：wParam = HDROP，逐项 DragQueryFileW
 // 取路径，取完立刻 DragFinish 交还系统内存（不交还 = 泄漏）。
 // 路径一次全交宿主（与文件框多选同一条暂存路），目录判定留给 uigui。
 func (p *Plat) handleDropFiles(hdrop uintptr) {

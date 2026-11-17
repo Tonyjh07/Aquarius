@@ -121,7 +121,7 @@ func (f *settingsForm) secretEntryRow(gtx layout.Context, th *material.Theme, na
 	confirming := f.secretConfirm == name
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			// 名字与掩码**竖排**（同插件行口径）：横排会被右侧「确认删除/取消」挤压，
+			// 名字与掩码**竖排**（同插件行规则）：横排会被右侧「确认删除/取消」挤压，
 			// 掩码在中途折行，读起来像数据坏了。
 			return layout.Inset{Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -168,7 +168,7 @@ func (f *settingsForm) secretAddRow(gtx layout.Context, th *material.Theme) layo
 // 密钥库（config 改写为 `secret:<名>` 引用），顺带把「库里没有、只存在于同名环境变量
 // 里」的引用值也收进来。未接线时禁用。
 //
-// 反馈**同行**摆在按钮右侧（口径同 provider 应用行）：导入结果若单起一行落在新增区之后，
+// 反馈**同行**摆在按钮右侧（规则同 provider 应用行）：导入结果若单起一行落在新增区之后，
 // 用户点完按钮在视口里看不到任何反馈。
 func (f *settingsForm) secretImportRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Baseline, Spacing: layout.SpaceStart}.Layout(gtx,

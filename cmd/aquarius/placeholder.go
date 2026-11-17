@@ -43,7 +43,7 @@ func placeholderForStartup(s string) string {
 	return string([]rune(s)[:port.SettingsPlaceholderMax])
 }
 
-// placeholderForWrite 保存路径：超长返回错误，调用方不落盘（`cmd.config.err.placeholder_max`）。
+// placeholderForWrite 保存路径：超长返回错误，调用方不写入磁盘（`cmd.config.err.placeholder_max`）。
 func placeholderForWrite(s string) (string, error) {
 	s, over := checkPlaceholder(s)
 	if over {

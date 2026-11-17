@@ -116,7 +116,7 @@ func encodeLUTAt(v float64) float64 {
 	return encodeLUT[int(v*4096)]
 }
 
-// writePremul 单像素转换（淡出带与边缘渐隐共用同一口径）：源 = headless 语义
+// writePremul 单像素转换（淡出带与边缘渐隐共用同一套规则）：源 = headless 语义
 // （A 直通 alpha、C = sRGB_encode(线性预乘值)），目标 alpha = av（0..1）→ 输出
 // 字节空间预乘 BGRA（out[oi..oi+3]）。返回是否写入非透明像素。
 func writePremul(src []byte, si int, av float64, out []byte, oi int) bool {
@@ -238,7 +238,7 @@ func reportFeatherDisabled() {
 //   - [top, bottom) 顶带（D54 揭示带 / §15.3 静息顶带）：y < top 不可见，带内 0 → 1；
 //   - [lowTop, lowEnd) 底部矮带（D79）：带内 1 → 0 渐隐到带底（= 转写区底），带下
 //     恢复 1（状态行/输入栏在带之下、不受淡化）；lowEnd <= lowTop 即无底带
-//     （收起态与零值调用皆走此口径）。**作用域按 clip 界定**：只乘 `clip 底 ≤ 带底`
+//     （收起态与零值调用皆走此规则）。**作用域按 clip 界定**：只乘 `clip 底 ≤ 带底`
 //     的形状（= 转写视口登记的滚动内容）——chrome 形状（悬浮 tips/状态行/输入栏，
 //     整窗 clip）几何上跨进带内也保持 g=1。
 type fadeBands struct {
@@ -413,7 +413,7 @@ func (u *UI) clampedLowBand() (top, end int) {
 
 // fadeCompose 合成阶段（frame 调，**在 commit/submit/present 之前**）：headless 同布局
 // 重渲 → 整窗位图（av = vis × g(y) × alpha，D62 全帧合成）。不改屏幕态——它是一帧里
-// 唯一的慢段（离屏 GPU 重渲 + 预乘），先跑完，之后的移窗/提交/ULW 才各自落地。
+// 唯一的慢段（离屏 GPU 重渲 + 预乘），先跑完，之后的移窗/提交/ULW 才各自实现。
 // 返回位图是否可上屏（false = 降级：非 Windows / hwnd 未到 / 主窗隐藏 / 离屏渲染失败，
 // fadePresent 保持上一帧位图）。主窗隐藏在此判定（隐藏期间不提交，防被唤回）——唯启动
 // 揭示期例外（revealPending，D78：隐藏是我方所为，须照常合成提交否则永不首帧）。
@@ -512,7 +512,7 @@ func (u *UI) fadePresent(composed bool) {
 // 启动后整幅不透明，直至停靠动画催生帧才自愈）。加固为梯次：① 立即补提交一次（D88
 // 原机制，同步、窗口线程）；② Invalidate 催一帧走完整 compose→ULW（实测自愈路径）；
 // ③ representLadder 各拍再补提交，任一拍发现主窗已再隐藏（visMain）即止。位图/矩形
-// 口径同 fadePresent（尺寸与实测矩形不符跳帧防拉伸）。
+// 规则同 fadePresent（尺寸与实测矩形不符跳帧防拉伸）。
 //
 // **D135：梯次走位图快照，不读帧循环字段。** 立即那次在帧循环内直读 u.fadeBuf 无竞态；
 // 但跨 goroutine 直读 u.fadeBuf/frameSize/x/y/alpha 与帧循环 fadeCompose 的
@@ -526,7 +526,7 @@ func (u *UI) representAfterShow() {
 		u.w.Invalidate() // 并发安全（Gio）；催一帧让常规提交路径接管
 	}
 	// 梯次三件套在 spawn 前捕获（go 语句给 happens-before）：goroutine 只碰捕获值与
-	// 快照，不读帧循环字段（-race 口径）；测试把 u.representLadder 置空即不启 goroutine。
+	// 快照，不读帧循环字段（-race 规则）；测试把 u.representLadder 置空即不启 goroutine。
 	delays, vis, present := u.representLadder, u.plat.Visible, u.plat.Present
 	shot, ok := u.snapshotFade()
 	if len(delays) == 0 || !ok {
@@ -543,7 +543,7 @@ func (u *UI) representAfterShow() {
 	}()
 }
 
-// representOnce 以最后一次合成位图按 fadePresent 同口径提交一次（present 经窗口线程，
+// representOnce 以最后一次合成位图按 fadePresent 同规则提交一次（present 经窗口线程，
 // 铁律 1）。提交函数作参数传：梯次 goroutine 用 spawn 前捕获的槽值，不迟到读全局。
 // 仅帧循环内调用（D135：跨 goroutine 路径走 presentShot）。
 func (u *UI) representOnce(present func(x, y, w, h int32, bits []byte, alpha byte) bool) {
@@ -562,7 +562,7 @@ type fadeShot struct {
 	alpha byte
 }
 
-// snapshotFade 复制当前合成位图与提交口径（帧循环内调用）。尺寸/长度不足即 false。
+// snapshotFade 复制当前合成位图与提交规则（帧循环内调用）。尺寸/长度不足即 false。
 func (u *UI) snapshotFade() (fadeShot, bool) {
 	size := u.frameSize.X * u.frameSize.Y * 4
 	if u.frameSize.X <= 0 || u.frameSize.Y <= 0 || len(u.fadeBuf) < size {

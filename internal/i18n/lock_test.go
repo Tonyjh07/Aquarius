@@ -282,7 +282,7 @@ func cjkLiteralsIn(t *testing.T, rel, path string) []string {
 	return bad
 }
 
-// exemptLits 不进表的实参：`panic(...)`——内部一致性断言，读者是改代码的人（I2 口径），
+// exemptLits 不进表的实参：`panic(...)`——内部一致性断言，读者是改代码的人（I2 规则），
 // 不上界面。
 //
 // 日志回调在 L3 之后不再吃文案：`port.Log` 的实参是级别、上下文与两个 key（D276），

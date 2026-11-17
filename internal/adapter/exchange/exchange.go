@@ -1,7 +1,7 @@
 // Package exchange 实现 port.SessionExporter 与 port.SessionImporter（§5.16，D242）：
 // 把会话搬出去、把别人的会话搬进来。
 //
-// 无损与互通是两种东西：`aqx` 必须能原样往返（落盘 wire 形状 + 附件字节），互通格式按别人的
+// 无损与互通是两种东西：`aqx` 必须能原样往返（写入磁盘 wire 形状 + 附件字节），互通格式按别人的
 // 规范如实有损。两者共用一层容器与校验，但绝不互相冒充——回执里的「没有带出去」是事实，
 // 不是免责声明。
 package exchange
@@ -318,7 +318,7 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// decodeTree 解析落盘 wire 形状的树（`sheet` 参数只为错误文案带上来源）。
+// decodeTree 解析写入磁盘 wire 形状的树（`sheet` 参数只为错误文案带上来源）。
 func decodeTree(data []byte, source string) (*conversation.Conversation, error) {
 	c, err := storejson.DecodeTree(data)
 	if err != nil {

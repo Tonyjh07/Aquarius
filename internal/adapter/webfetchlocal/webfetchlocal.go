@@ -285,7 +285,7 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (port.WebPage, error)
 	if c.robots {
 		ok, err := c.allowedByRobots(ctx, u)
 		if err != nil {
-			// robots 取不到（网络错误/非 2xx）不阻断抓取：与主流抓取器同口径，
+			// robots 取不到（网络错误/非 2xx）不阻断抓取：与主流抓取器同规则，
 			// 只有明确的 Disallow 才拒绝。
 			ok = true
 		}

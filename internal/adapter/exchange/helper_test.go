@@ -4,7 +4,7 @@ package exchange
 //
 // 端口签名是「一组会话」（§5.16 的 aqx 容器），但绝大多数格式只装得下一条链；这些用例关心
 // 的是那一条链本身，逐处写 `[]*conversation.Conversation{c}` 只会把断言埋进样板里。
-// 多会话口径由 aqx 的多会话用例单列断言。
+// 多会话规则由 aqx 的多会话用例单列断言。
 
 import (
 	"context"

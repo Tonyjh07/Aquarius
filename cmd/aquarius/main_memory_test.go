@@ -160,11 +160,11 @@ func findToolPart(c *conversation.Conversation) (*conversation.ToolPart, bool) {
 }
 
 // TestRunMemoryWriteConfirmE2E M2 验收：模型经 memory_write 写记忆；
-// Confirm 拦截（strict 答 y 落盘 / 答 n 拒绝不写）；permissive 等级矩阵免确认（矩阵生效）。
+// Confirm 拦截（strict 答 y 写入磁盘 / 答 n 拒绝不写）；permissive 等级矩阵免确认（矩阵生效）。
 func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 	toolArgs := `{"name":"memories.md","content":"喜欢绿茶","mode":"overwrite"}`
 
-	t.Run("strict 同意后落盘", func(t *testing.T) {
+	t.Run("strict 同意后写入磁盘", func(t *testing.T) {
 		srv, reqs := rawScriptServer(t, [][]string{
 			{toolCallData("call_mw", "memory_write", toolArgs)},
 			{contentData("记下了。")},
@@ -185,7 +185,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 		}
 		data, err := os.ReadFile(filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc))
 		if err != nil {
-			t.Fatalf("记忆文件未落盘: %v", err)
+			t.Fatalf("记忆文件未写入磁盘: %v", err)
 		}
 		if !strings.Contains(string(data), "喜欢绿茶") {
 			t.Fatalf("memory = %q", data)
@@ -204,7 +204,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 		}
 	})
 
-	t.Run("strict 拒绝不落盘", func(t *testing.T) {
+	t.Run("strict 拒绝不写入磁盘", func(t *testing.T) {
 		srv, _ := rawScriptServer(t, [][]string{
 			{toolCallData("call_mw", "memory_write", toolArgs)},
 			{contentData("好的，不写。")},
@@ -253,7 +253,7 @@ func TestRunMemoryWriteConfirmE2E(t *testing.T) {
 			t.Fatalf("工具应直接执行: %q", got)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "profiles", "default", port.GlobalMemoryDoc)); err != nil {
-			t.Fatalf("记忆文件应落盘: %v", err)
+			t.Fatalf("记忆文件应写入磁盘: %v", err)
 		}
 	})
 }

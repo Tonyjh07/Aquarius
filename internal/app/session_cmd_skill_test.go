@@ -1,6 +1,6 @@
 package app
 
-// session_cmd_skill_test.go /skill（D201）：清单展示、按名载入的注入口径（宿主信任、
+// session_cmd_skill_test.go /skill（D201）：清单展示、按名载入的注入规则（宿主信任、
 // 不触发、来源可读）、名字打错与未接线的报错。
 
 import (
@@ -136,7 +136,7 @@ func TestSkillCommandLoadInjectsText(t *testing.T) {
 }
 
 // TestSkillCommandIgnoresQueueAtDrain /skill 的排空点拿到的一定只有本条技能正文：外部生产者
-// 攒下的注入已在 `Handle` 入口的排空点①落地（用户输入优先）。所以命令面在这里不必再判
+// 攒下的注入已在 `Handle` 入口的排空点①实现（用户输入优先）。所以命令面在这里不必再判
 // 「该不该起一轮」——这条测试钉住的是那个前提，前提变了就会红。
 func TestSkillCommandIgnoresQueueAtDrain(t *testing.T) {
 	s, llm, _ := skillSession(t, pdfSkills(), textStream("本轮回复"))
@@ -147,7 +147,7 @@ func TestSkillCommandIgnoresQueueAtDrain(t *testing.T) {
 		t.Fatalf("inject: %v", err)
 	}
 	baseReqs := len(llm.requests)
-	// 走命令入口（不是直接调 execSkill）：排空点①要先把这个任务报告落地成未触发。
+	// 走命令入口（不是直接调 execSkill）：排空点①要先把这个任务报告送达成未触发。
 	if _, err := handleCmd(s, "skill", "pdf"); err != nil {
 		t.Fatalf("skill: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestSkillCommandIgnoresQueueAtDrain(t *testing.T) {
 		}
 	}
 	if report.Role != conversation.RoleInject || report.Trigger {
-		t.Fatalf("排队注入 = %+v（应已由排空点①落地、Trigger=false）", report)
+		t.Fatalf("排队注入 = %+v（应已由排空点①送达、Trigger=false）", report)
 	}
 }
 

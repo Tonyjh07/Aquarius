@@ -1,7 +1,7 @@
 package decorate
 
 // 决策模型装饰器的单测（D281/D290）：三档分流的边界、失败即上交、shadow 与 off 逐条一致、
-// 用户自己的命令不进模型。这几条是「它不会替你放行」的全部可执行口径。
+// 用户自己的命令不进模型。这几条是「它不会替你放行」的全部可执行规则。
 
 import (
 	"context"
@@ -225,7 +225,7 @@ func TestDecideRequestShape(t *testing.T) {
 		t.Fatalf("risk = %q, want medium", got.Risk)
 	}
 
-	// 没申报操作时 op 留空，不能落成默认的 read。
+	// 没申报操作时 op 留空，不能写成默认的 read。
 	dec2 := &fakeDecider{dec: port.Decision{Risk: 0.1}}
 	req2 := port.ConfirmRequest{Origin: port.OriginTool, Tool: "job_wait"}
 	if _, err := Decide(&countingConf{answer: port.ConfirmAnswer{Allow: true}}, dec2,

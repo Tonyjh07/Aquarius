@@ -1,11 +1,11 @@
 package uigui
 
-// settings_provider_card_test.go provider 折叠卡片的**分组边界**回归（D176 口径二）。
+// settings_provider_card_test.go provider 折叠卡片的**分组边界**回归（D176 规则二）。
 //
 // 复现过的故障：provider 卡片里的「＋ 添加密钥」「＋ 添加模型」与底部动作行
 // （测试连通 / 设为主 / 删除）被判成「不落卡」，卡在这些行之前收边——同一个 provider
 // 被切成两三张卡，按钮浮在卡外、谁也不属于（用户 2026-10-22 截图报障）。数据层与
-// 行计划断言全绿，只有像素/分组口径能发现。
+// 行计划断言全绿，只有像素/分组规则能发现。
 
 import (
 	"testing"

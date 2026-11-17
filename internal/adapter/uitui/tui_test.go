@@ -383,7 +383,7 @@ func TestClearEvent(t *testing.T) {
 }
 
 // TestHistoryReplay D40/§7.4：历史节点按角色定稿渲染——user 行、assistant 工具调用行
-// 与正文、tool 结果行、system 摘要块；空文本的取消给 [cancelled] 标记（与 commit 同口径）；
+// 与正文、tool 结果行、system 摘要块；空文本的取消给 [cancelled] 标记（与 commit 同规则）；
 // 回放只展示不累计用量。
 func TestHistoryReplay(t *testing.T) {
 	m, _ := newTestModel(t)
@@ -480,7 +480,7 @@ func TestHistoryReplayInject(t *testing.T) {
 	}
 }
 
-// TestHistoryReplayThinking D42：回放口径恒含思考——思考分片渲染为独立暗块、不并入正文；
+// TestHistoryReplayThinking D42：回放规则恒含思考——思考分片渲染为独立暗块、不并入正文；
 // 实时流场景下"思考分片 → 节点提交（Content 带思考）"恰好落一个暗块，不重复渲染。
 func TestHistoryReplayThinking(t *testing.T) {
 	parts := []conversation.Part{
@@ -787,7 +787,7 @@ func TestRenderMDFallback(t *testing.T) {
 	}
 }
 
-// TestHistoryLoadedFromStore TUI 与 GUI 看同一份落盘历史（inhistory）：启动时载入，
+// TestHistoryLoadedFromStore TUI 与 GUI 看同一份写入磁盘历史（inhistory）：启动时载入，
 // 提交时追加——两份前端不各记各的。
 func TestHistoryLoadedFromStore(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "input_history.jsonl")

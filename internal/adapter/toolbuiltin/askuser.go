@@ -124,7 +124,7 @@ func (t *askUser) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	return okResult(askAnswerText(req.Questions, ans.Answers)), nil
 }
 
-// askRequest 校验并规范化模型给的问题（D184 口径一）。
+// askRequest 校验并规范化模型给的问题（D184 规则一）。
 func askRequest(in askInput) (port.AskRequest, error) {
 	if len(in.Questions) == 0 {
 		return port.AskRequest{}, errors.New("questions must not be empty; send 1-4 questions")
@@ -179,17 +179,17 @@ func clipRunes(s string, max int) string {
 
 // 模型面文案（D168：英文、集中可门禁）。
 const (
-	// askDismissedText 用户点了「忽略」= 放弃全部（D184 口径三）。
+	// askDismissedText 用户点了「忽略」= 放弃全部（D184 规则三）。
 	askDismissedText = "The user dismissed the questions without answering. " +
 		"Proceed with your best judgement and state your assumptions."
-	// askAwayText 无人值守：用户不在，没人能答（D184 口径九）。
+	// askAwayText 无人值守：用户不在，没人能答（D184 规则九）。
 	askAwayText = "The user is not available to answer (unattended run). " +
 		"Proceed with your best judgement, state your assumptions, and do not ask again."
 	// askUnanswered 单题未答（多题时用户可能只答了一部分）。
 	askUnanswered = "Unanswered"
 )
 
-// askAnswerText 把答案拼成模型可读的一行（D184 口径二）：
+// askAnswerText 把答案拼成模型可读的一行（D184 规则二）：
 // `User has answered your questions: "Q1"="A1, A2"; "Q2"="Unanswered".`
 func askAnswerText(qs []port.AskQuestion, answers [][]string) string {
 	parts := make([]string, 0, len(qs))

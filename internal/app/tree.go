@@ -15,7 +15,7 @@ var _ port.TreeView = (*Session)(nil)
 // treeSnapshot 会话树只读快照（D80/§7.5，前置 A）：整树一次重建、整体发布的**不可变**
 // 值——发布后不再改写，UI 事件循环 goroutine 无锁读，故无竞态（-race 干净）。
 //
-// 口径：展示面（供 UI 画分叉编号与左右切换），不参与推理装配（装配走 assemblePath/水位）。
+// 规则：展示面（供 UI 画分叉编号与左右切换），不参与推理装配（装配走 assemblePath/水位）。
 type treeSnapshot struct {
 	// branches 每个节点 → 其同级视图（同父全部孩子按创建序 + 自身下标）。
 	// 同一父节点下的所有孩子共享同一个 IDs 切片（只读，调用方不得改写）。
@@ -33,7 +33,7 @@ type treeSnapshot struct {
 
 // makeTreeSnapshot 把领域视图翻译成展示面端口结构（D80/§7.5）。
 //
-// 排序与末端口径都不在这里：同级按 (CreatedAt, ID) 升序（D15/D16）与「子树最新叶子」
+// 排序与末端规则都不在这里：同级按 (CreatedAt, ID) 升序（D15/D16）与「子树最新叶子」
 // （D94）都是领域规则，由 `Conversation.View` 给出——展示面只做形状转换。
 // 此前这里各写了一份，规则一改就要改两处。
 func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
@@ -119,7 +119,7 @@ func sameGraph(a, b port.TreeGraph) bool {
 }
 
 // Branches 实现 port.TreeView（D80/§7.5）：读已发布的不可变快照，无锁——可从 UI 事件
-// 循环 goroutine 直接调用（§15.5 线程安全回调口径）。id 不在树中（或尚未发布）→ ok=false。
+// 循环 goroutine 直接调用（§15.5 线程安全回调规则）。id 不在树中（或尚未发布）→ ok=false。
 func (s *Session) Branches(id conversation.MessageID) (port.BranchInfo, bool) {
 	snap := s.tree.Load()
 	if snap == nil {
@@ -129,7 +129,7 @@ func (s *Session) Branches(id conversation.MessageID) (port.BranchInfo, bool) {
 	return bi, ok
 }
 
-// Tail 实现 port.TreeView（D94）：读已发布的不可变快照，无锁——口径同 Branches。
+// Tail 实现 port.TreeView（D94）：读已发布的不可变快照，无锁——规则同 Branches。
 func (s *Session) Tail(id conversation.MessageID) (conversation.MessageID, bool) {
 	snap := s.tree.Load()
 	if snap == nil {
@@ -140,7 +140,7 @@ func (s *Session) Tail(id conversation.MessageID) (conversation.MessageID, bool)
 }
 
 // Graph 实现 port.TreeView（D112②/D120⑦，S3 relation-map 数据面）：读已发布的不可变
-// 快照，无锁——口径同 Branches；尚未发布时 ok=false。返回值整体按值拷贝，Nodes 切片为
+// 快照，无锁——规则同 Branches；尚未发布时 ok=false。返回值整体按值拷贝，Nodes 切片为
 // 快照内部数据，调用方只读、不得改写。
 func (s *Session) Graph() (port.TreeGraph, bool) {
 	snap := s.tree.Load()
@@ -151,7 +151,7 @@ func (s *Session) Graph() (port.TreeGraph, bool) {
 }
 
 // NodeText 实现 port.TreeView（D132：气泡级动作的数据源）：快照内该节点的正文全文，
-// 无锁——口径同 Branches/Tail/Graph；尚未发布或 id 不在树中 → ok=false。
+// 无锁——规则同 Branches/Tail/Graph；尚未发布或 id 不在树中 → ok=false。
 func (s *Session) NodeText(id conversation.MessageID) (string, bool) {
 	snap := s.tree.Load()
 	if snap == nil {
@@ -179,7 +179,7 @@ func (s *Session) NodeAttachments(id conversation.MessageID) []port.AttachmentVi
 }
 
 // nodeAttachments 节点附件分片清单（D188）：序号即 `/edit --drop N` 的 N——与 editParts
-// 的删除口径同源（都按 image/doc/audio 分片的出现序数），两处必须一起改。
+// 的删除规则同源（都按 image/doc/audio 分片的出现序数），两处必须一起改。
 func nodeAttachments(m conversation.Message) []port.AttachmentView {
 	var out []port.AttachmentView
 	n := 0
@@ -201,7 +201,7 @@ func nodeAttachments(m conversation.Message) []port.AttachmentView {
 }
 
 // isAttachmentPart 附件分片判定（D188）：image/doc/audio——与 nodeBodyText 跳过的分片、
-// editParts 保留的分片同一口径，三处共用这一个判据。
+// editParts 保留的分片同一套规则，三处共用这一个判据。
 func isAttachmentPart(k conversation.PartKind) bool {
 	switch k {
 	case conversation.PartImage, conversation.PartDoc, conversation.PartAudio:
@@ -211,7 +211,7 @@ func isAttachmentPart(k conversation.PartKind) bool {
 }
 
 // nodeBodyText 节点正文全文（D132）：PartText 分片依序拼接，跳过思考/工具/附件分片——
-// 与气泡块的正文口径一致（编辑预填、复制、引用、查看原文共用同一份）。分隔 "\n\n" 是
+// 与气泡块的正文规则一致（编辑预填、复制、引用、查看原文共用同一份）。分隔 "\n\n" 是
 // `/edit` 缺省合段（D107③ 把全部正文分片并为一条）的逆运算：原样提交即无损往返。
 // 不做 TrimSpace——正文可能是代码块，首尾空白是有内容的（§9）。
 func nodeBodyText(m conversation.Message) string {

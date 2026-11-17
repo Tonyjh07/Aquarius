@@ -164,7 +164,7 @@ func (s *Store) Read(ctx context.Context, name string) (port.MemoryDoc, error) {
 	return doc, nil
 }
 
-// Write 写入记忆文档（整文件覆盖；自动创建父目录）。ModTime 忽略（落盘后回读即真值）。
+// Write 写入记忆文档（整文件覆盖；自动创建父目录）。ModTime 忽略（写入磁盘后回读即真值）。
 func (s *Store) Write(ctx context.Context, doc port.MemoryDoc) error {
 	if err := ctx.Err(); err != nil {
 		return err

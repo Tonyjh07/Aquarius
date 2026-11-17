@@ -21,7 +21,7 @@ import (
 )
 
 // TestRunFullTextConversation M0 验收：二进制装配跑通一轮纯文本对话，
-// 会话树落盘且不变量成立；再次启动恢复同一会话，历史进入上下文。
+// 会话树写入磁盘且不变量成立；再次启动恢复同一会话，历史进入上下文。
 func TestRunFullTextConversation(t *testing.T) {
 	srv, reqs := scriptServer(t, []string{
 		"你好，我是脚本模型。",
@@ -42,7 +42,7 @@ func TestRunFullTextConversation(t *testing.T) {
 		}
 	}
 
-	// 会话树已落盘且合法。
+	// 会话树已写入磁盘且合法。
 	c := loadStored(t, dir)
 	if c.NodeCount() != 4 {
 		t.Fatalf("nodes = %d, want 4（root+persona+user+assistant；/quit 不入树）", c.NodeCount())
@@ -200,7 +200,7 @@ func TestRunTUIConfirmE2E(t *testing.T) {
 }
 
 // TestRunDefaultsToGUIWhenKeyMissing ui 键缺失与模板同默认 gui（D51；D33 旧默认 tui
-// 随单二进制交付目标改判）。只测回落口径、不起 run——GUI 路径会真开窗，测试禁开真窗。
+// 随单二进制交付目标改判）。只测回落规则、不起 run——GUI 路径会真开窗，测试禁开真窗。
 func TestRunDefaultsToGUIWhenKeyMissing(t *testing.T) {
 	t.Parallel()
 	if got := uiKindDefault(""); got != "gui" {
@@ -229,7 +229,7 @@ func TestRunRejectsUnknownUIKind(t *testing.T) {
 }
 
 // TestRunRmConfirmE2E /rm 二次确认端到端（M1）：REPL 确认读行——
-// 拒绝则保留、同意则剪枝落盘；全程会话树满足不变量。
+// 拒绝则保留、同意则剪枝写入磁盘；全程会话树满足不变量。
 func TestRunRmConfirmE2E(t *testing.T) {
 	srv, reqs := scriptServer(t, []string{"收到一。", "收到二。"})
 	dir := t.TempDir()
@@ -272,7 +272,7 @@ func TestRunRmConfirmE2E(t *testing.T) {
 		t.Fatalf("拒绝后 nodes = %d, want 6", c.NodeCount())
 	}
 
-	// 同意：剪掉 {u2, a2}，Head 回退到最近存活祖先 a1，落盘合法。
+	// 同意：剪掉 {u2, a2}，Head 回退到最近存活祖先 a1，写入磁盘合法。
 	got = runStdin(nil, fmt.Sprintf("/rm %s\ny\n/quit\n", u2))
 	if !strings.Contains(got, i18n.Tf("tree.rm.done", "id", u2, "n", 2, "head", a1)) {
 		t.Fatalf("stdout = %q, want 已删除", got)
@@ -371,7 +371,7 @@ func TestRunProfileSwitchRestartE2E(t *testing.T) {
 		t.Fatalf("default conversations = %v, want 1", files)
 	}
 
-	// 切换 = 原子写根指针（profilesManager.Switch 同口径）。
+	// 切换 = 原子写根指针（profilesManager.Switch 同规则）。
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(pointerContent("work")), 0o644); err != nil {
 		t.Fatal(err)
 	}

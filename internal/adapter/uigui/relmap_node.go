@@ -100,7 +100,7 @@ func (g *relGraph) openNodeMenu(u *UI, li int) {
 //   - 正文经 `port.TreeView.NodeText` 取**全文**（GraphNode.Snippet 只有 40 字摘要，拿它
 //     预填编辑框会在提交时把消息截断成摘要——D132 的要点）；取不到（节点无正文/快照
 //     未发布）→ edit/copy 空，项集随之收敛为图侧三项（nodeMenuItems 的 hasText 分支）；
-//   - part = -1（缺省合段，/edit 语义：全部正文分片并为一条；与 NodeText 的拼接口径互逆）；
+//   - part = -1（缺省合段，/edit 语义：全部正文分片并为一条；与 NodeText 的拼接规则互逆）；
 //   - raw = 正文原文（与主界面「原文 · <id>」同款标题）。
 func (g *relGraph) nodeMenuCtx(u *UI, li int) *bubbleMenuCtx {
 	if li < 0 || li >= len(g.vis.nodes) || g.model == nil {
@@ -119,7 +119,7 @@ func (g *relGraph) nodeMenuCtx(u *UI, li int) *bubbleMenuCtx {
 	body := ""
 	if u.opts.Tree != nil {
 		if t, ok := u.opts.Tree.NodeText(n.id); ok {
-			body = sanitizeControl(t) // 与气泡块同口径：控制序列不进菜单文本（§9）
+			body = sanitizeControl(t) // 与气泡块同一套规则：控制序列不进菜单文本（§9）
 		}
 	}
 	ctx.edit, ctx.copy = body, body

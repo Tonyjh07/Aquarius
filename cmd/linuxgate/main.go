@@ -6,7 +6,7 @@
 // `GOOS=linux go build ./...` 验证——Go 自带的交叉编译不带 Linux C 工具链与开发头。
 //
 // 本工具在 Windows 宿主上经 WSL 调用 Linux 侧原生工具链（工具链齐全时 cgo 天然可用），
-// 在 Linux/macOS 宿主上直接本地跑。两侧口径一致：`go build ./...` + `go vet ./...`
+// 在 Linux/macOS 宿主上直接本地跑。两侧规则一致：`go build ./...` + `go vet ./...`
 // （vet 会一并类型检查 _test.go，能挡住「测试文件依赖 Windows 专属符号」这类缺口）。
 //
 // 前置（WSL 内一次性）：

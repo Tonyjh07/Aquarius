@@ -17,7 +17,7 @@ var (
 
 // 系统深浅检测相关常量（Win32 头文件取值）。
 const (
-	hkeyCurrentUser = 0x80000001 // HKEY_CURRENT_USER（预定义句柄，与 x/sys 同口径零扩展）
+	hkeyCurrentUser = 0x80000001 // HKEY_CURRENT_USER（预定义句柄，与 x/sys 同一套规则零扩展）
 	keyRead         = 0x20019    // KEY_READ
 	regDWORD        = 4          // REG_DWORD
 	personalizePath = `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`

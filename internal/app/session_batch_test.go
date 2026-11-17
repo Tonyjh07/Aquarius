@@ -82,7 +82,7 @@ func TestRmconvDeletesSeveralInOneConfirm(t *testing.T) {
 		}
 	}
 	// 确认句与回执按 rmconv 的组成方式从表里拼（del 的顺序即命令参数顺序）；
-	// 标题要在删除前取好——rmconv 落库后这些会话就查不到了。
+	// 标题要在删除前取好——rmconv 写进密钥库后这些会话就查不到了。
 	delTitles := make([]string, 0, len(del))
 	for _, id := range del {
 		delTitles = append(delTitles, store.convs[conversation.ID(id)].Title)
@@ -164,7 +164,7 @@ func TestRmconvCurrentWithBatchSkipsDeleted(t *testing.T) {
 			del = append(del, string(id))
 		}
 	}
-	// 标题要在删除前取好——rmconv 落库后这些会话就查不到了。
+	// 标题要在删除前取好——rmconv 写进密钥库后这些会话就查不到了。
 	delTitles := make([]string, 0, len(del))
 	for _, id := range del {
 		delTitles = append(delTitles, store.convs[conversation.ID(id)].Title)
@@ -353,7 +353,7 @@ func TestImportPickRejectsZero(t *testing.T) {
 	}
 }
 
-// TestImportMultiLandsAll 多会话导入：全部落盘、切到第一个、回执逐条列标题与条数。
+// TestImportMultiLandsAll 多会话导入：全部写入磁盘、切到第一个、回执逐条列标题与条数。
 func TestImportMultiLandsAll(t *testing.T) {
 	ex := &fakeExchange{detected: "aqx"}
 	ex.importedM = []*conversation.Conversation{newConv(t), newConv(t), newConv(t)}
@@ -400,7 +400,7 @@ func TestImportMultiLandsAll(t *testing.T) {
 	}
 }
 
-// TestImportMultiRollsBackOnFailure 第 3 个落盘失败 → 前两个也撤掉，库里一个都不多。
+// TestImportMultiRollsBackOnFailure 第 3 个写入磁盘失败 → 前两个也撤掉，库里一个都不多。
 func TestImportMultiRollsBackOnFailure(t *testing.T) {
 	ex := &fakeExchange{detected: "aqx"}
 	ex.importedM = []*conversation.Conversation{newConv(t), newConv(t), newConv(t)}

@@ -54,7 +54,7 @@ func parsePolicyOverrides(raw []policyOverride) (perm.Overrides, error) {
 
 // policyHolder 例外表活状态：设置窗写回成功后 Set，ToolRunner 与转交管理器经 Get
 // 现取。用 atomic.Value 的整体替换而不是原地改切片——并发读者可能正持有旧表
-// （与 levelHolder 同口径）。
+// （与 levelHolder 同规则）。
 type policyHolder struct{ v atomic.Value } // perm.Overrides
 
 // newPolicyHolder 构造并写入初值；nil 表存成 nil，读取侧据此跳过查表。
@@ -105,12 +105,12 @@ func systemRoots() []string {
 	return []string{"/etc", "/usr", "/bin", "/sbin", "/boot"}
 }
 
-// setOverride 写入或删除一条例外（mode 空 = 删除）：校验 → 落盘 → 换表。
+// setOverride 写入或删除一条例外（mode 空 = 删除）：校验 → 写入磁盘 → 换表。
 //
 // 身份是 (来源, 工具, 目录) 三项：目录级条目（D282「以后都允许」写进来的）与同一个
 // 工具的工具级条目是两条不同的规则，改一条不该把另一条顶掉。
 //
-// 先落盘再换表：写文件失败时用户看到的是「策略没变」，而不是「界面上变了、重启后
+// 先写入磁盘再换表：写文件失败时用户看到的是「策略没变」，而不是「界面上变了、重启后
 // 又变回去」。与工具启停的写回顺序一致。
 func (w *wiring) setOverride(origin, tool, dir, mode string) error {
 	origin = strings.TrimSpace(origin)

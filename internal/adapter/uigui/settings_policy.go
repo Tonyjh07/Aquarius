@@ -32,7 +32,7 @@ func policyModeLabels() []string {
 
 // policySegments 某一行当前的档位选项：默认 / 询问 / 允许。
 //
-// 已写成 `assist` 的行（手改配置，或 P4 落地决策模型之后设过）要多给一格，否则三项
+// 已写成 `assist` 的行（手改配置，或 P4 实现决策模型之后设过）要多给一格，否则三项
 // 全不亮，读起来像「没设过」。这一格只在值本来就是 assist 时出现，不构成入口。
 func policySegments(cur string) (values, labels []string) {
 	values, labels = policyModeValues(), policyModeLabels()
@@ -60,7 +60,7 @@ func policyIndex(values []string, cur string) int {
 
 // polSegFor 某一行（工具名 / 外部代理用空串）的分段控件 get-or-create。
 //
-// 控件按地址缓存：换实例 = 丢掉用户正按下的那次点击（同工具页按钮口径）。
+// 控件按地址缓存：换实例 = 丢掉用户正按下的那次点击（同工具页按钮规则）。
 func (f *settingsForm) polSegFor(name string) *segmented {
 	seg := f.polSegs[name]
 	if seg == nil {

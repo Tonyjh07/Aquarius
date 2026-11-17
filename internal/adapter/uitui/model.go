@@ -292,9 +292,9 @@ func isYes(s string) bool {
 	return false
 }
 
-// pushHistory 记输入历史（去重相邻、上限取 Options.History），同时追加到落盘存储。
+// pushHistory 记输入历史（去重相邻、上限取 Options.History），同时追加到写入磁盘存储。
 //
-// 内存那份负责本次会话的 ↑↓，落盘那份负责下次启动；文件口径与 GUI 相同（inhistory）。
+// 内存那份负责本次会话的 ↑↓，写入磁盘那份负责下次启动；文件规则与 GUI 相同（inhistory）。
 func (m *model) pushHistory(line string) {
 	if n := len(m.history); n > 0 && m.history[n-1] == line {
 		return
@@ -463,7 +463,7 @@ func (m *model) commit(msg conversation.Message) {
 		}
 	default:
 		// user 节点无事件面（输入已单独入块）；工具结果随 assistant 节点分片呈现（D95）。
-		// D272：轮内落成的 user 节点（引导/排队）没有本地回显——按「最早一条已回显且
+		// D272：轮内写成的 user 节点（引导/排队）没有本地回显——按「最早一条已回显且
 		// 文本一致」核销，核销不到就补一块，否则那句话在转写区里消失。
 		if msg.Role == conversation.RoleUser && strings.TrimSpace(text) != "" {
 			if len(m.echoed) > 0 && m.echoed[0] == strings.TrimSpace(text) {
@@ -478,7 +478,7 @@ func (m *model) commit(msg conversation.Message) {
 }
 
 // textSegments 按工具分片把节点正文切段（D95 Turn 粒度）：段 = tool 分片之间的连续
-// text/image/audio/doc 分片，渲染口径与 partsText 一致（§4.2 占位、§9 出口消毒）。
+// text/image/audio/doc 分片，渲染规则与 partsText 一致（§4.2 占位、§9 出口消毒）。
 // thinking 分片不进正文（回放单独成块，D42）。
 func textSegments(parts []conversation.Part) []string {
 	var segs []string
@@ -524,7 +524,7 @@ func (m *model) replay(msg conversation.Message) {
 			case conversation.PartThinking:
 				flushSeg()
 				if strings.TrimSpace(p.Text) != "" {
-					m.add(blockThinking, "[thinking] "+p.Text) // D42：展示口径恒含思考
+					m.add(blockThinking, "[thinking] "+p.Text) // D42：展示规则恒含思考
 				}
 			case conversation.PartTool:
 				flushSeg()
@@ -549,7 +549,7 @@ func (m *model) replay(msg conversation.Message) {
 			}
 		}
 		flushSeg()
-		// 非 done 终态：标记并入最后一个正文块（与实时 commit 同口径；repl 亦打 [cancelled]）；
+		// 非 done 终态：标记并入最后一个正文块（与实时 commit 同规则；repl 亦打 [cancelled]）；
 		// 无正文段（空内容的取消/错误）单独给标记块。
 		if msg.Outcome != conversation.OutcomeDone {
 			marked := false
@@ -596,7 +596,7 @@ func partsText(parts []conversation.Part) string {
 	return uicommon.PartsText(parts, uicommon.ImageNamed)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用口径）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用规则）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageNamed)
 }
@@ -624,7 +624,7 @@ func (m *model) add(kind blockKind, text string) {
 	m.scroll = 0
 }
 
-// flushThink 把进行中的思维链落为暗块（D34 展示口径）：不进正文草稿；
+// flushThink 把进行中的思维链落为暗块（D34 展示规则）：不进正文草稿；
 // 节点侧已由 PartThinking 入树并按 config 回传（D42），此处只管呈现。
 func (m *model) flushThink() {
 	if m.think.Len() == 0 {

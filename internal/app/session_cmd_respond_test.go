@@ -30,7 +30,7 @@ func respondFixture(t *testing.T, streams ...*scriptStream) (*Session, *scriptLL
 }
 
 // TestSessionRespondLeaf 叶子节点（无子节点）：Head 移过去后原样追加一条 assistant 子节点，
-// 不产生分叉；清屏 + 回放（与 /goto 同口径）。
+// 不产生分叉；清屏 + 回放（与 /goto 同规则）。
 func TestSessionRespondLeaf(t *testing.T) {
 	store := newMemStore()
 	s, llm, rec := newTestSession(t, store, textStream("首答"), textStream("续答"))
@@ -66,14 +66,14 @@ func TestSessionRespondLeaf(t *testing.T) {
 		t.Fatalf("llm requests = %d, want 2", len(llm.requests))
 	}
 	if saved := store.convs[c.ID]; saved == nil || saved.Head != c.Head {
-		t.Fatalf("saved = %+v, want 已落盘 Head=%s", saved, c.Head)
+		t.Fatalf("saved = %+v, want 已写入磁盘 Head=%s", saved, c.Head)
 	}
 	if !slices.Contains(eventNames(rec.events[mark:]), "clear") {
 		t.Fatal("respond 未清屏（转写区须与 Head 一致）")
 	}
 }
 
-// TestSessionRespondSendsWaterlineToTarget 关键口径：发往 API 的内容是「水位 → 所选节点」。
+// TestSessionRespondSendsWaterlineToTarget 关键规则：发往 API 的内容是「水位 → 所选节点」。
 // 在有回答的 user 节点上 respond，装配请求须含该 user 文本、不含其后旧的 assistant 回答，
 // 产物与之同级（旧分支保留）。
 func TestSessionRespondSendsWaterlineToTarget(t *testing.T) {
@@ -100,7 +100,7 @@ func TestSessionRespondSendsWaterlineToTarget(t *testing.T) {
 		t.Fatalf("装配请求未含所选节点正文: %q", got)
 	}
 	if strings.Contains(got, "旧回答") {
-		t.Fatalf("装配请求含了所选节点之后的旧回答（水位口径错）: %q", got)
+		t.Fatalf("装配请求含了所选节点之后的旧回答（水位规则错）: %q", got)
 	}
 
 	c := s.Current()

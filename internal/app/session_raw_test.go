@@ -146,7 +146,7 @@ func TestSessionRawFilePipeline(t *testing.T) {
 	if err := s.Current().Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
-	// 已落盘（memStore.Save 被 runTurn 调用）。
+	// 已写入磁盘（memStore.Save 被 runTurn 调用）。
 	if got := s.Current(); got.ID == "" {
 		t.Fatal("会话未保存")
 	}

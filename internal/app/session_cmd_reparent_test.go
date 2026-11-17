@@ -25,7 +25,7 @@ func reparentFixture(t *testing.T, s *Session) (persona, q1, a1 conversation.Mes
 	return persona, q1, a1
 }
 
-// TestReparentCommandMovesAndPersists 命令面改父：子树挂到新父下、立即落盘，回执带条数与撤销提示。
+// TestReparentCommandMovesAndPersists 命令面改父：子树挂到新父下、立即写入磁盘，回执带条数与撤销提示。
 func TestReparentCommandMovesAndPersists(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)
@@ -42,13 +42,13 @@ func TestReparentCommandMovesAndPersists(t *testing.T) {
 	if got.Parent != persona.ID {
 		t.Fatalf("a1.parent = %q, want %s", got.Parent, persona.ID)
 	}
-	// 落盘：store 里的那份也变了（不是只有内存）。
+	// 写入磁盘：store 里的那份也变了（不是只有内存）。
 	saved, ok := store.convs[s.Current().ID]
 	if !ok {
 		t.Fatal("conversation not saved")
 	}
 	if m, _ := saved.Find(a1.ID); m.Parent != persona.ID {
-		t.Fatalf("saved parent = %q, want %s（会话外应立即落盘）", m.Parent, persona.ID)
+		t.Fatalf("saved parent = %q, want %s（会话外应立即写入磁盘）", m.Parent, persona.ID)
 	}
 	if n := len(s.Current().Detachments()); n != 1 {
 		t.Fatalf("detachments = %d, want 1", n)

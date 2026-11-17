@@ -17,7 +17,7 @@ import (
 // 一条记录只描述「发生过一次搬运」，不改变任何结构事实：路径、版本组、装配、删除统计都不读它。
 // 要「从断点挂回来」是两次改父，不是让记录承担父子关系。
 //
-// 与结构边的校验口径不同：记录天然违反「父子双向一致」（旧节点此刻无子，而它曾经的孩子挂在
+// 与结构边的校验规则不同：记录天然违反「父子双向一致」（旧节点此刻无子，而它曾经的孩子挂在
 // 别处），所以它不进结构边检查，只照版本链的先例查**三端都在树**；另加一条陈旧性检查——
 // 被记的子树根现在必须确实挂在 NewHome 下，否则标 Stale（检出但不删：另一次搬运可能让它重新成立）。
 
@@ -31,7 +31,7 @@ const (
 	DetachReparent DetachmentKind = "reparent"
 )
 
-// String 实现 fmt.Stringer（落盘与回执都用它，避免两处各写一套词表）。
+// String 实现 fmt.Stringer（写入磁盘与回执都用它，避免两处各写一套词表）。
 func (k DetachmentKind) String() string { return string(k) }
 
 // Detachment 一条溯源路牌：一次搬运一条，不按孩子拆。
@@ -45,7 +45,7 @@ type Detachment struct {
 	Kind    DetachmentKind
 	At      time.Time
 	// Stale 记录已失效：被搬的子树根现在不挂在 NewHome 下。存储里不存这个值，
-	// 由 Detachments() 现算——派生状态落库会在下一次结构变动后变成谎言。
+	// 由 Detachments() 现算——派生状态写进密钥库会在下一次结构变动后变成谎言。
 	Stale bool
 }
 

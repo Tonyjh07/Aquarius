@@ -79,7 +79,7 @@ func (f *Fallback) Models(ctx context.Context) ([]port.ModelInfo, error) {
 	return f.entries[0].LLM.Models(ctx)
 }
 
-// CountTokens 三级计数链②透传（D26，同 Retry/Truncate/audit 口径）：取 primary
+// CountTokens 三级计数链②透传（D26，同 Retry/Truncate/audit 规则）：取 primary
 // 内链的精确计数；未实现时报错，estimator 静默回落估算③。
 func (f *Fallback) CountTokens(ctx context.Context, text string) (int, error) {
 	return countVia(ctx, f.entries[0].LLM, text)

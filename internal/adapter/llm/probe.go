@@ -37,7 +37,7 @@ var _ port.Prober = (*Client)(nil)
 //
 // 别压得太狠：思考型模型会先把额度花在思考上，正文还没开始就被截断（`finish_reason`
 // = "length"），于是「其实答上来了」被洗成空正文。64 曾在实测里正好踩中这种情况——
-// 思考吃掉全部 64 tokens，正文为空，结论只能落成「无结论」。
+// 思考吃掉全部 64 tokens，正文为空，结论只能写成「无结论」。
 const probeMaxTokens = 256
 
 // probeVisionColor 探测图的主色（判定基准）。纯红：几乎所有视觉模型都会一口答对，
@@ -224,7 +224,7 @@ func (c *Client) probeOnce(ctx context.Context, capability string, a probeAttemp
 	return probeOutcome{}, errors.New(i18n.Tf("llm.probe.err_unknown_capability", "capability", capability))
 }
 
-// mergeProbeOutcomes 合并同一能力的多次问法（D174 口径一：判定必须站得住）。
+// mergeProbeOutcomes 合并同一能力的多次问法（D174 规则一：判定必须站得住）。
 //
 //   - 任一问法拿到正面证据 → 支持（能出思考就算有这项能力，别管是哪个参数起的作用）；
 //   - 所有问法都被点名拒绝 → 不支持；
@@ -446,7 +446,7 @@ func isWordByte(b byte) bool {
 		(b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
-// probeRejected 服务端报错正文是否点名了该项能力（= 明确的「不支持」证据）。// 判定口径按能力分开：工具看 tool/function，图片看 image/vision，思考看参数名。
+// probeRejected 服务端报错正文是否点名了该项能力（= 明确的「不支持」证据）。// 判定规则按能力分开：工具看 tool/function，图片看 image/vision，思考看参数名。
 func probeRejected(capability, snippet string) bool {
 	s := strings.ToLower(snippet)
 	switch capability {

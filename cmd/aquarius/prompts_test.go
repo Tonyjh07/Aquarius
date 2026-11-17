@@ -59,7 +59,7 @@ func TestPromptsRoundTrip(t *testing.T) {
 		t.Error("快照内置模块清单为空（设置窗无法展示可引用内置模块）")
 	}
 
-	// 落盘结构 = modules: name → {text?, children?[]}；纯组不写 text 键。
+	// 写入磁盘结构 = modules: name → {text?, children?[]}；纯组不写 text 键。
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatalf("读回 config: %v", err)
@@ -77,7 +77,7 @@ func TestPromptsRoundTrip(t *testing.T) {
 		t.Fatalf("prompts.modules 不是对象: %v", pSec["modules"])
 	}
 	if len(mods) != 3 {
-		t.Fatalf("落盘模块数 = %d, want 3（空名行不进）: %v", len(mods), mods)
+		t.Fatalf("写入磁盘模块数 = %d, want 3（空名行不进）: %v", len(mods), mods)
 	}
 	house, _ := mods["house"].(map[string]any)
 	if house["text"] != "HOUSE:" {
@@ -113,7 +113,7 @@ func TestPromptsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPersistPromptsValidation 模块名校验：`@` 前缀（保留给内置）与重名均在落盘前拒绝，
+// TestPersistPromptsValidation 模块名校验：`@` 前缀（保留给内置）与重名均在写入磁盘前拒绝，
 // 原文件不动（校验先于写，且报因可读）。
 func TestPersistPromptsValidation(t *testing.T) {
 	t.Parallel()
@@ -143,7 +143,7 @@ func TestPersistPromptsValidation(t *testing.T) {
 				t.Fatal(rerr)
 			}
 			if string(data) != defaultConfig {
-				t.Error("校验失败仍改动了 config（应落盘前拒绝）")
+				t.Error("校验失败仍改动了 config（应写入磁盘前拒绝）")
 			}
 		})
 	}
@@ -196,7 +196,7 @@ func TestBuiltinModuleViews(t *testing.T) {
 }
 
 // TestPreviewPromptsCompose 组合预览 = 设置窗当前（未保存）表单现状 → 最终 system 文本，
-// 与新建会话同口径：组头 + 子模块换行、顶层引用空行连接、环境事实取本次装配、日期取当天。
+// 与新建会话同规则：组头 + 子模块换行、顶层引用空行连接、环境事实取本次装配、日期取当天。
 func TestPreviewPromptsCompose(t *testing.T) {
 	t.Parallel()
 	w := &wiring{
@@ -223,7 +223,7 @@ func TestPreviewPromptsCompose(t *testing.T) {
 		t.Errorf("persona 未引用 @default，兜底串不应出现:\n%s", got)
 	}
 
-	// 未保存的新增空名行不进预览（与保存同口径）；persona 空 = 默认引用（@default + @env）。
+	// 未保存的新增空名行不进预览（与保存同规则）；persona 空 = 默认引用（@default + @env）。
 	got = w.previewPrompts([]uigui.PromptModuleView{{Name: "  ", Text: "DRAFT"}}, nil, "LEGACY")
 	if !strings.HasPrefix(got, "LEGACY") {
 		t.Errorf("默认引用应从 @default（= system_prompt 正文）起: %q", got)

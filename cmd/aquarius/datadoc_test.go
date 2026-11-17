@@ -85,7 +85,7 @@ func TestDataReadmeCoversBothLanguages(t *testing.T) {
 }
 
 // TestDataReadmeEntriesExistInStorageDoc 表里的条目名必须能在 storage.md 的目录树里找到。
-// 这是唯一能拦住「代码里那份说明与磁盘口径分家」的一条：新增目录时改了 storage.md 却忘了
+// 这是唯一能拦住「代码里那份说明与磁盘规则分家」的一条：新增目录时改了 storage.md 却忘了
 // 改 README，测试红。
 //
 // 带 `<...>`（参数化路径）与 `*`（通配）的条目跳过——它们在正文里的写法与目录树不同。
@@ -106,7 +106,7 @@ func TestDataReadmeEntriesExistInStorageDoc(t *testing.T) {
 }
 
 // TestDataReadmeLinksBothLanguages 两段都要带仓库与 storage.md 的链接。读者常常只有这个
-// 目录，没有仓库——链接是唯一能把「完整口径在哪」指出去的东西，少一边就等于少一位读者。
+// 目录，没有仓库——链接是唯一能把「完整规则在哪」指出去的东西，少一边就等于少一位读者。
 func TestDataReadmeLinksBothLanguages(t *testing.T) {
 	links := []string{
 		"https://github.com/Tonyjh07/Aquarius",
@@ -147,7 +147,7 @@ func TestEnsureDataReadmeCreates(t *testing.T) {
 		t.Fatalf("读完失败：%v", err)
 	}
 	if string(got) != string(renderDataReadme("v0.7.0")) {
-		t.Fatal("落盘内容与渲染结果不同")
+		t.Fatal("写入磁盘的内容与渲染结果不同")
 	}
 }
 

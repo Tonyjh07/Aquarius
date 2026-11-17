@@ -178,7 +178,7 @@ func TestImportSkipsEmptyButCounts(t *testing.T) {
 	}
 }
 
-// TestLinearRoleMapping 角色双向映射：user/assistant 照搬，system 与 inject 都落成 system，
+// TestLinearRoleMapping 角色双向映射：user/assistant 照搬，system 与 inject 都写成 system，
 // 导入侧把 system 读回 system、tool/function 读成注入节点。
 func TestLinearRoleMapping(t *testing.T) {
 	out := map[conversation.Role]string{

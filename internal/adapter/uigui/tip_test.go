@@ -11,7 +11,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestFactsCardLines 事实卡内容（D82/S1-1g，§15.1）：五段口径——profile · 会话（标题 +
+// TestFactsCardLines 事实卡内容（D82/S1-1g，§15.1）：五段规则——profile · 会话（标题 +
 // ID 前缀 + 模型/档位）· 上下文占用（pct + 计数方式）· 累计用量 · 上轮实测（有实测才显）。
 func TestFactsCardLines(t *testing.T) {
 	t.Parallel()

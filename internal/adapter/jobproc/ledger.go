@@ -42,7 +42,7 @@ type ledgerEntry struct {
 	LogPath   string          `json:"log_path"`
 	Deadline  time.Time       `json:"deadline,omitempty"`
 	// Status / ExitCode / EndedAt：进终态时补上但不删条目（D264）。删的条件是报告
-	// **落地并落盘**，不是进程退出——中间这段窗口里退出程序，条目得留着让下次对账
+	// **送达并写入磁盘**，不是进程退出——中间这段窗口里退出程序，条目得留着让下次对账
 	// 说「任务跑完了、退出码是这样、报告没送到」。
 	Status   port.JobStatus `json:"status,omitempty"`
 	ExitCode int            `json:"exit_code,omitempty"`
@@ -209,7 +209,7 @@ func (m *Manager) logLedgerFailure(logPath string, err error) {
 	_, _ = fmt.Fprintf(f, "[ledger update failed: %v]\n", err)
 }
 
-// readLogTail 读日志末尾 n 行（与 Logs 同一口径）；文件不存在返回空。
+// readLogTail 读日志末尾 n 行（与 Logs 同一套规则）；文件不存在返回空。
 func readLogTail(path string, n int) (string, error) {
 	text, truncated, err := readLogWindow(path)
 	if err != nil || text == "" {

@@ -1,6 +1,6 @@
 package app
 
-// session_inject_wait_test.go 注入落地回执（D264）：报「已落地并落盘」才回话，
+// session_inject_wait_test.go 注入送达回执（D264）：报「已送达并写入磁盘」才回话，
 // 任务报告的台账销账靠它判，不再靠「入队成功」。
 
 import (
@@ -30,7 +30,7 @@ func TestInjectAndWaitLandsBeforeReturning(t *testing.T) {
 	}
 	path := stored.Path()
 	if last := path[len(path)-1]; last.Source != "job:j1" {
-		t.Fatalf("末节点 = %+v, want job:j1（返回前应已落盘）", last)
+		t.Fatalf("末节点 = %+v, want job:j1（返回前应已写入磁盘）", last)
 	}
 }
 
@@ -57,7 +57,7 @@ func TestInjectAndWaitElsewherePersisted(t *testing.T) {
 	if last := path[len(path)-1]; last.Source != "job:j2" {
 		t.Fatalf("A 的末节点 = %+v, want job:j2", last)
 	}
-	// 当前会话（乙）不该多出这条：异地落地只碰目标会话的盘。
+	// 当前会话（乙）不该多出这条：异地送达只碰目标会话的盘。
 	for _, n := range s.Current().Path() {
 		if n.Source == "job:j2" {
 			t.Fatal("异地报告落进了当前会话")
@@ -73,6 +73,6 @@ func TestInjectAndWaitGivesUpOnCancel(t *testing.T) {
 
 	err := s.InjectAndWait(ctx, port.Injection{Source: "job:j3", Parts: injectPart("x")})
 	if err == nil {
-		t.Fatal("没人排空时应返回错误，不能假装已落地")
+		t.Fatal("没人排空时应返回错误，不能假装已送达")
 	}
 }

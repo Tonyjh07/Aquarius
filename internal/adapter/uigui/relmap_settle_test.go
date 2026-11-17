@@ -50,7 +50,7 @@ func relWideGraph(fan, depth int) port.TreeGraph {
 }
 
 // relBoxOf 给定本地索引集在当前物理位形下的卡片外接盒（含 relFitMargin）。测试侧**独立
-// 复算**：被测口径就是「可见卡片都在视口内」，若测试与实现借同一个函数，算错法相同就测不出错。
+// 复算**：被测规则就是「可见卡片都在视口内」，若测试与实现借同一个函数，算错法相同就测不出错。
 func relBoxOf(g *relGraph, idx []int) (minX, minY, maxX, maxY float64) {
 	minX, minY = math.Inf(1), math.Inf(1)
 	maxX, maxY = math.Inf(-1), math.Inf(-1)

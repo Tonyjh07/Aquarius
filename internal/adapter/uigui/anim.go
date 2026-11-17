@@ -482,7 +482,7 @@ func revealBand(msgP float64, h, bandPx int) (top, bottom int) {
 		bandPx = 0
 	}
 	if msgP >= 1 {
-		return 0, bandPx // 静息 = 现有顶带（不按 h 夹，保持既有口径）
+		return 0, bandPx // 静息 = 现有顶带（不按 h 夹，保持既有规则）
 	}
 	if msgP < 0 {
 		msgP = 0

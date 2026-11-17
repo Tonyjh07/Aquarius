@@ -40,7 +40,7 @@ type Options struct {
 	// Overrides 放行策略例外（D280）；nil = 全按矩阵。优先级：例外 > 矩阵 > 缺省 ask。
 	Overrides func() perm.Overrides
 	// Permit 把一条「以后都允许」写进策略表并落审计（D282）：范围由本包按
-	// perm.AutoAllow 算好，落盘与审计是装配根的事（它持有配置与审计文件）。
+	// perm.AutoAllow 算好，写入磁盘与审计是装配根的事（它持有配置与审计文件）。
 	// nil = 没有可写的表（测试、未装配）：本次照常放行，只是什么也不记。
 	Permit func(perm.Override, port.ConfirmRequest)
 	// Sensitive 硬名单的敏感根（密钥目录、配置目录、系统目录，D280 第 6 条）：
@@ -264,7 +264,7 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 			}
 		}
 		if !ans.Allow {
-			// D86：拒绝原因原样回传（用户自填文本，同用户消息口径不翻译）；200 rune
+			// D86：拒绝原因原样回传（用户自填文本，同用户消息规则不翻译）；200 rune
 			// 截断防失控粘贴——与 confirmPrompt 的参数预览同量级。
 			denied := "user denied " + call.Name
 			if reason := strings.TrimSpace(ans.Reason); reason != "" {
@@ -400,7 +400,7 @@ func (r *Runner) decide(ctx context.Context, t port.Tool, call tool.Call) (perm.
 }
 
 // persistAllow 把「以后都允许」交给装配根（D282）：范围由 perm.AutoAllow 算——执行类
-// 落工具级，文件类收窄到目标所在目录。本包只提供判定上下文，落盘与审计不在这里。
+// 落工具级，文件类收窄到目标所在目录。本包只提供判定上下文，写入磁盘与审计不在这里。
 func (r *Runner) persistAllow(req port.ConfirmRequest) {
 	if r.permit == nil {
 		return
@@ -413,7 +413,7 @@ func (r *Runner) persistAllow(req port.ConfirmRequest) {
 // 读结构体而不是从提示文本里反解。
 //
 // level 显式传入而不是读 r.level()：确认框里直选档位之后要按**刚选的**那一档重判本次
-// （D282），而 /permission 的那次写回是异步的（经输入通道投递），等不到它落地。
+// （D282），而 /permission 的那次写回是异步的（经输入通道投递），等不到它实现。
 func (r *Runner) decideAt(ctx context.Context, t port.Tool, call tool.Call, level perm.Level) (perm.Decision, string, perm.Op, bool) {
 	base := level.Tool(t.Spec().Risk)
 	target := ""

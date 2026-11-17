@@ -45,9 +45,9 @@ import (
 var version = "dev"
 
 func main() {
-	// 常驻内存策略：压低 GC 摆动倍数 + 装泄漏保险上限（GOMEMLIMIT / GOGC 显式设置时尊重用户口径）。
+	// 常驻内存策略：压低 GC 摆动倍数 + 装泄漏保险上限（GOMEMLIMIT / GOGC 显式设置时尊重用户规则）。
 	applyMemoryPolicy()
-	// 顶层 panic 落盘（D299）：双击启动没有控制台，崩溃不能等于什么都没留下。
+	// 顶层 panic 写入磁盘（D299）：双击启动没有控制台，崩溃不能等于什么都没留下。
 	os.Exit(guard(func() int { return run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr) }, os.Stderr))
 }
 
@@ -63,7 +63,7 @@ func fatal(stderr io.Writer, format string, args ...any) int {
 
 // resolveProfile 解析当前 profile 名（D110①/修订②）：--profile flag > 根 config.json
 // 指针，两者仅决定「读哪个 profile」。指针不存在 = 首次运行，写指针指向 default；
-// 旧单文件 config 经 parsePointerFile 显式报 ErrLegacyConfig（D95 同口径，不做自动迁移）。
+// 旧单文件 config 经 parsePointerFile 显式报 ErrLegacyConfig（D95 同规则，不做自动迁移）。
 // flag 显式选择视为用户断言：指向不存在的 profile 报因列出可用名，不自动创建、不写回指针。
 func resolveProfile(dir, flagName string) (string, error) {
 	pointerPath := filepath.Join(dir, "config.json")
@@ -77,7 +77,7 @@ func resolveProfile(dir, flagName string) (string, error) {
 		}
 	case errors.Is(err, os.ErrNotExist):
 		if flagName == "" {
-			// 首次运行：写指针指向 default（profile 配置模板随后由 run 的模板分支落盘）。
+			// 首次运行：写指针指向 default（profile 配置模板随后由 run 的模板分支写入磁盘）。
 			if werr := writeConfigFile(pointerPath, []byte(pointerContent(defaultProfileName))); werr != nil {
 				return "", fmt.Errorf("%s: %w",
 					i18n.Tf("cmd.profile.err.write_pointer", "path", pointerPath), werr)
@@ -132,7 +132,7 @@ type uiFrontend interface {
 
 // run 程序主体（标准流可注入，便于端到端回放测试）。返回进程退出码。
 // uiKindDefault ui.kind 键缺失回落（D51：与模板/文档同默认 = gui；显式值原样保留）。
-// 独立成函数 = 缺省口径可测，避免测试真开窗。
+// 独立成函数 = 缺省规则可测，避免测试真开窗。
 func uiKindDefault(kind string) string {
 	if kind == "" {
 		return "gui"
@@ -231,7 +231,7 @@ type wiring struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	// log 运行日志（D276/§7.9）：bootstrap 之后开，全量落盘、warn 以上同时上 stderr。
+	// log 运行日志（D276/§7.9）：bootstrap 之后开，全量写入磁盘、warn 以上同时上 stderr。
 	// pendingLog 是开日志之前攒下的启动告警，Open 之后按序补记（见 note）。
 	log        *logging.Logger
 	pendingLog []pendingLog
@@ -253,7 +253,7 @@ type wiring struct {
 	// decider 为 nil = 不启用（off、没配全或建不出来），确认链原样透传。
 	decide  decideOptions
 	decider port.Decider
-	// lore 世界书激活口径（§5.17/D294）：bootstrap 校验，装配时交给 Agent。
+	// lore 世界书激活规则（§5.17/D294）：bootstrap 校验，装配时交给 Agent。
 	lore app.LoreOptions
 	// firstRun 本次为该 profile 首次运行（已写模板，D141）；setupTried 装配前向导窗
 	// 本进程只尝试一次（向导后仍不完整即报因退出，不循环弹窗）。
@@ -297,7 +297,7 @@ type wiring struct {
 	exchange *exchange.Exchange
 	runner   *toolrun.Runner
 	audit    *decorate.Audit
-	// inputHist 输入历史的落盘存储（GUI 与 TUI 共用一份文件）：newUI 时惰性打开。
+	// inputHist 输入历史的磁盘存储（GUI 与 TUI 共用一份文件）：newUI 时惰性打开。
 	inputHist *inhistory.Store
 	client    port.LLM
 	ui        uiFrontend

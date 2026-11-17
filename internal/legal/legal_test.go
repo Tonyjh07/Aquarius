@@ -104,7 +104,7 @@ func TestVersionMatchesDir(t *testing.T) {
 	}
 }
 
-// TestParseMarks 解析口径：** 段整段判 Tip 且星号去掉、反引号去掉、分隔行不产出块、
+// TestParseMarks 解析规则：** 段整段判 Tip 且星号去掉、反引号去掉、分隔行不产出块、
 // 表格首行是表头且数据行进 Cols、导言与节分流。
 func TestParseMarks(t *testing.T) {
 	// 样例故意用 ASCII：这是解析器的输入，不是界面文案（中文样例会被 i18n 的
@@ -182,7 +182,7 @@ func TestParseClauses(t *testing.T) {
 	}
 }
 
-// TestLoadAtFallsBack 英文缺文件时回落中文母版（与 i18n.T 同口径：界面不会空着）。
+// TestLoadAtFallsBack 英文缺文件时回落中文母版（与 i18n.T 同规则：界面不会空着）。
 func TestLoadAtFallsBack(t *testing.T) {
 	doc, err := LoadAt(Terms, i18n.Lang("fr"), Version)
 	if err != nil {

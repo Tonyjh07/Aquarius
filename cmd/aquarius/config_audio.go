@@ -197,7 +197,7 @@ func normalizeVAD(v *vadConfig) error {
 }
 
 // normalizeAudioChannel 归一一路语音配置并按协议校验必填项（启动期与保存前共用同一
-// 口径：落盘的配置必须能过启动校验）。
+// 规则：写入磁盘的配置必须能过启动校验）。
 func normalizeAudioChannel(name string, ch *audioChannel, kinds []string) error {
 	ch.Provider = strings.TrimSpace(ch.Provider)
 	ch.BaseURL = strings.TrimSpace(ch.BaseURL)

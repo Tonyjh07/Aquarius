@@ -24,7 +24,7 @@ type Attachment struct {
 
 // RawInput 原始输入（文本 / 文件 / 剪贴板 / 麦克风）。
 //
-// 多附件口径（D186）：Attachments 是列表，File / Blob 保留为**单附件简写**
+// 多附件规则（D186）：Attachments 是列表，File / Blob 保留为**单附件简写**
 // （File ≡ 一个 Path 项、Blob ≡ 一个已入库项），两者与 Attachments 可以同时出现。
 type RawInput struct {
 	Kind        string                `json:"kind"` // "text" | "file" | "clipboard" | "mic"

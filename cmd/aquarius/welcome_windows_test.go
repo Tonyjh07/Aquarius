@@ -4,7 +4,7 @@ package main
 
 // 欢迎向导取消路径的可见报因（D263，v0.3.0 实测「跳过后静默退出」的回归）：双击启动时
 // 控制台已脱离（D114），stderr 不可达——缺密钥的取消必须经系统消息框呈现，窗口不能凭空
-// 消失。消息框注入位与 console_windows.go 的其他 Win32 面函数同口径。
+// 消失。消息框注入位与 console_windows.go 的其他 Win32 面函数同规则。
 
 import (
 	"context"

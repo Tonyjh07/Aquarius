@@ -14,7 +14,7 @@ import (
 // config 的形状；同一张表也要给 /model 展示用，两处取值必须是同一个来源。
 type PriceFunc func(model string) (in, out float64)
 
-// Cost 费用折算装饰器（D205 口径三）：适配器只把响应映射成 Usage，价格由这一层补。
+// Cost 费用折算装饰器（D205 规则三）：适配器只把响应映射成 Usage，价格由这一层补。
 //
 // 位置在**每个 provider 的内链里**（降级装饰器之内）：降级会改写请求模型，成本要用
 // 实际跑的那家单价——放在降级外面就只能看到 primary 的名字。

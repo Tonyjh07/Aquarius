@@ -179,7 +179,7 @@ func TestSkillsAdminDirsPersistAndApply(t *testing.T) {
 	if len(dirs) != 2 || !samePath(dirs[0], extra) || !samePath(dirs[1], fallback) {
 		t.Fatalf("热生效目录 = %v", dirs)
 	}
-	// 落盘：重新读 config 应能看到额外目录。
+	// 写入磁盘：重新读 config 应能看到额外目录。
 	cfg, err := loadConfig(w.cfgPath)
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)

@@ -2,7 +2,7 @@
 // uiFrontend 六面（port.Presenter + Prompter + Confirmer + Say/Prompt/SetInterrupt/
 // Close），装配根按 ui.kind=gui 换壳——薄壳零业务逻辑，D28 输出器装饰器自动继承。
 //
-// 并发模型（§15.5，照抄 uitui 修复后的口径，不重踩竞态）：
+// 并发模型（§15.5，照抄 uitui 修复后的规则，不重踩竞态）：
 //   - 渲染状态机 model 由事件循环 goroutine 独占；Gio 窗口模式在 Window.Event
 //     泵内排空 inbox（runWindow），headless（无窗口测试）经 runHeadless 排空，
 //     两者共用 apply。
@@ -44,7 +44,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// inputCap 输入缓冲容量：打字/外部输入快于装配根消费时暂存（同 uitui 口径）。
+// inputCap 输入缓冲容量：打字/外部输入快于装配根消费时暂存（同 uitui 规则）。
 const inputCap = 256
 
 // inboxCap 事件收件箱容量：流式 delta 高频投递，消费侧每事件全量排空；
@@ -60,7 +60,7 @@ var (
 
 // Status 状态行数据（浮层底栏生成时经回调现取）。自 D82 起与 uitui.Status 形状分叉：
 // GUI 额外携带 logo 事实卡（§15.1/S1-1g）要的 profile 与会话事实快照（port.SessionFacts，
-// app 侧原子发布零值安全）——tooltip 按 roadmap 只做 GUI（同 Q15 口径），TUI 不扩展。
+// app 侧原子发布零值安全）——tooltip 按 roadmap 只做 GUI（同 Q15 规则），TUI 不扩展。
 type Status struct {
 	Model      string
 	Level      string
@@ -93,7 +93,7 @@ type Options struct {
 	// Keys 输入栏三键（§5.19）：发送 / 引导 / 换行。零值 = 缺省 Enter / Shift+Enter /
 	// Ctrl+Enter（三键互不相同由配置面保证；这里再兜一次缺省）。
 	Keys uicommon.KeyBindings
-	// History 输入历史的落盘存储（与 TUI 共用同一份文件）：启动时载入，提交时追加。
+	// History 输入历史的磁盘存储（与 TUI 共用同一份文件）：启动时载入，提交时追加。
 	// nil = 只在内存（headless 测试与未注入的路径）。
 	History *inhistory.Store
 	// Theme 主题档（§15.4/D61）：system | light | dark；空 = system（跟随系统）。
@@ -103,11 +103,11 @@ type Options struct {
 	// FontSize 正文字号 sp（D90/§15.8）：默认 15，夹 [10,28]；最终字号 = FontSize × Scale。
 	FontSize float64
 	// WindowWidth/WindowHeight 主窗像素尺寸（D90/§15.8）：0 = 缺省 app.Size(unit.Dp(608/460))
-	// 现行为；配置后按字面 px 建窗（挂接点 SetWindowPos 落地）。热改走 SetWindowSize，
+	// 现行为；配置后按字面 px 建窗（挂接点 SetWindowPos 实现）。热改走 SetWindowSize，
 	// 不回写本字段——config 是事实源。
 	WindowWidth  int
 	WindowHeight int
-	// Settings 设置窗核心档快照数据源（开窗现取；同 Status 线程安全口径）；
+	// Settings 设置窗核心档快照数据源（开窗现取；同 Status 线程安全规则）；
 	// nil = 设置窗空表单。
 	Settings func() SettingsSnapshot
 	// ApplySettings 设置窗单一写回调（§15.7 装配根实现）：持久化核心档文本键并
@@ -126,7 +126,7 @@ type Options struct {
 	// 实现方须线程安全（历史窗 goroutine 调用——快照读，无锁）。
 	Lister port.SessionLister
 	// Indexer 归档清单只读面（D249）：导入一个多会话归档时先取清单，弹勾选面板让用户
-	// 决定导哪几个。nil = 不弹面板，选完文件直接投 /import（单会话口径）。
+	// 决定导哪几个。nil = 不弹面板，选完文件直接投 /import（单会话规则）。
 	// 只有适配器解容器（铁律 5）：界面拿的是「序号 + 标题 + 条数」，不碰 ZIP。
 	Indexer port.ExchangeIndexer
 	// Profiles profile 管理面（D110③/修订④）：设置窗 profile 区数据面与三动作
@@ -156,7 +156,7 @@ type Options struct {
 	// 逐帧问：装配根实现可自行节流读盘；nil = 该页只读占位。
 	Characters func() CharactersSnapshot
 	// PreviewPrompts 人格组合预览（S7/D144，装配根实现）：按设置窗当前（未保存）模块树 +
-	// 引用展开最终 system 文本（纯计算，与新建会话同口径；不落盘、不阻断）。nil = 无预览行。
+	// 引用展开最终 system 文本（纯计算，与新建会话同规则；不写入磁盘、不阻断）。nil = 无预览行。
 	PreviewPrompts func(nodes []PromptModuleView, persona []string, legacy string) string
 	// ApplyPromptTemplate 人格模板写回（D154，装配根实现）：只改 config 的 system_prompt +
 	// prompts 两键——历史窗遮罩「默认模板」页签保存走这条路，避免全量设置 patch 盖掉同时
@@ -217,7 +217,7 @@ func clampFontSp(v float64) float64 {
 	return v
 }
 
-// clampKnobs 成对夹取（newUI 预存与 SetZoom 共用口径）。
+// clampKnobs 成对夹取（newUI 预存与 SetZoom 共用规则）。
 func clampKnobs(scale, fontSp float64) zoomKnobs {
 	return zoomKnobs{scale: clampScale(scale), fontSp: clampFontSp(fontSp)}
 }
@@ -233,11 +233,11 @@ type UI struct {
 	// opts.Hotkey——u.opts 本身只读不改，防跨线程裸写）。
 	hotkeyCfg atomic.Value
 
-	// placeholder 输入框占位文字原子槽（D279/§7.8，同 hotkeyCfg 口径）：设置窗保存后
+	// placeholder 输入框占位文字原子槽（D279/§7.8，同 hotkeyCfg 规则）：设置窗保存后
 	// SetPlaceholder 热更，输入栏每帧读——下一帧就换字，不用重启（与 ui.lang 正相反）。
 	placeholder atomic.Value
 
-	// zoom 双缩放旋钮原子槽（D90/§15.8，同 hotkeyCfg 口径）：设置窗 SetZoom 热更，
+	// zoom 双缩放旋钮原子槽（D90/§15.8，同 hotkeyCfg 规则）：设置窗 SetZoom 热更，
 	// 帧循环每帧读（zoomedMetric 咽喉点）；Load 失败（未预存）= 缺省 1.0/15。
 	zoom atomic.Value
 
@@ -300,7 +300,7 @@ type UI struct {
 	// editAttClicks D188：编辑态已有附件的 chip（按节点内附件序号缓存，点击 = 标记删除/恢复）。
 	editAttClicks map[int]*widget.Clickable
 	expandBtn     widget.Clickable // D106：展开槽（输入框放大切换，D49 灰槽实装）
-	expanded      bool             // D106：展开态（胶囊原地增高、编辑器多行；会话级不落盘）
+	expanded      bool             // D106：展开态（胶囊原地增高、编辑器多行；会话级不写入磁盘）
 	// 提问面板（D184，§15.2）：面板长在展开态胶囊里，字段只在事件循环 goroutine 读写。
 	askEd        widget.Editor                     // 「自己输入」编辑器
 	askList      layout.List                       // 中部滚动区（题干 + 选项 + 自由输入行）
@@ -326,7 +326,7 @@ type UI struct {
 	complDismissed bool            // Esc 后搁置（文本变更即重开）
 	complOpenNow   bool            // 本帧浮层开启
 	complEsc       bool            // 本帧 Esc 已被浮层消费（updateEditor 编辑态让渡）
-	complArmed     bool            // 行点击武装态（D72 口径）
+	complArmed     bool            // 行点击武装态（D72 规则）
 	complPressPt   image.Point     // 武装按下点（窗口系）
 	complList      []complItem     // 当前候选（drawCompl 呈现）
 	complRows      []complRowRect  // 可填行的命中矩形（窗口系，随帧重登记）
@@ -388,7 +388,7 @@ type UI struct {
 	selRows []*widget.Selectable
 
 	// D91 跨块拖选观察者：sel = 状态机（候选/激活/锚/焦点/指纹）；keyRects = 上帧
-	// 行键几何（量期记录、paint 期译窗口系，消费者阶段读——一帧陈旧是既定口径）；
+	// 行键几何（量期记录、paint 期译窗口系，消费者阶段读——一帧陈旧是既定规则）；
 	// keyFp = 结构指纹（fnv64 流式喂自 writeKeyRects，变化即清选：流式/开合/重排）；
 	// selSpansBuf = 消费者阶段预算的逐键跨度（测量闭包绘制期读取）；
 	// selScratch = Regions 每键转录暂存（rowSel.paint）。仅事件循环 goroutine 读写。
@@ -399,7 +399,7 @@ type UI struct {
 	selScratch  []widget.Region
 
 	// 气泡右键（D92）：bubbleRects = paint 期逐行登记的气泡底板矩形（随帧复位，
-	// 消费者阶段读上一帧——与 keyRects 同口径的一帧陈旧）；bubbleRight = 武装-原位
+	// 消费者阶段读上一帧——与 keyRects 同规则的一帧陈旧）；bubbleRight = 武装-原位
 	// 抬手手势态（D72 logoRight 同款）；bubbleMenu = 命中后组好的菜单上下文原子槽
 	// （过线程到 shell 呈现）；bubbleMenuHook = 测试注入口（headless 不投 shell）。
 	// 仅事件循环 goroutine 读写（bubbleMenu 原子槽除外）。
@@ -408,13 +408,13 @@ type UI struct {
 	bubbleMenu     atomic.Pointer[bubbleMenuCtx]
 	bubbleMenuHook func(*bubbleMenuCtx)
 	// pendingCopy 挂起的剪贴板写入（D92）：copyMsg 记账，frame 内 flushCopy 经
-	// gtx.Execute 落盘后清空。仅事件循环 goroutine 读写。
+	// gtx.Execute 写入磁盘后清空。仅事件循环 goroutine 读写。
 	pendingCopy string
 	// rawView 查看原文窗内容原子槽（D99）：菜单分发处（托盘线程）Store，winRaw 次窗
 	// 帧内 Load——跨线程只经原子快照，不共享可变态（§15.7 并发模型）。
 	rawView atomic.Pointer[rawContent]
 	// imageView 图片预览窗内容原子槽（D207）：主窗事件循环（点击格子的那一刻）Store，
-	// winImage 次窗帧内 Load——同 rawView 口径，跨线程只经原子快照；窗单实例，
+	// winImage 次窗帧内 Load——同 rawView 规则，跨线程只经原子快照；窗单实例，
 	// 已开 = 聚焦 + 原地换图。
 	imageView atomic.Pointer[imageContent]
 	// nodeAction 图侧菜单动作槽（D132）：shell 线程菜单分发 Store，历史窗帧首 Swap
@@ -438,31 +438,31 @@ type UI struct {
 	// 转写区图片缩略图（D207）：imgLookup = 内容寻址 → 已解好的方图（nil 值 =
 	// 解码失败的墓碑，不再重试）；imgLoading = 在途集合（同一张图只起一个 goroutine）；
 	// imgOrder = 插入序（超上限从头淘汰）；imgClicks = 格子点击件（按「块序 + 图序」
-	// 缓存，照 chipClick 口径）。字节来源走 opts.Blobs（已入库）或本地路径。
+	// 缓存，照 chipClick 规则）。字节来源走 opts.Blobs（已入库）或本地路径。
 	// 仅事件循环 goroutine 读写。
 	imgLookup  map[string]*thumbSrc
 	imgLoading map[string]bool
 	imgOrder   []string
 	imgClicks  map[imgClickKey]*widget.Clickable
 
-	// 思考块视图态（D182）：定稿思考默认折叠成一行，用户点开才铺正文。与 chip 同口径
+	// 思考块视图态（D182）：定稿思考默认折叠成一行，用户点开才铺正文。与 chip 同规则
 	// ——按块序缓存、不进 model、清屏（会话重建）时复位。仅事件循环 goroutine 读写。
 	thinkOpen   map[int]bool
 	thinkClicks []*widget.Clickable
 
-	// 命令折叠条视图态（D265）：连续命令默认折成一行，点开才铺命令行与输出。同口径
+	// 命令折叠条视图态（D265）：连续命令默认折成一行，点开才铺命令行与输出。同规则
 	// 按块序缓存、不进 model、清屏复位。
 	cmdOpen   map[int]bool
 	cmdClicks []*widget.Clickable
 
 	// 注入块视图态（D166 形态修订）：正文是进模型的原文，默认折成一行「类别 · 来源」，
-	// 点开才铺触发状态与全文。同口径按块序缓存、不进 model、清屏复位。
+	// 点开才铺触发状态与全文。同规则按块序缓存、不进 model、清屏复位。
 	injectOpen   map[int]bool
 	injectClicks []*widget.Clickable
 
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。
-	reasonFocus  bool // D86：确认开启后把焦点让入原因框（一次性，同 focusPending 口径）
+	reasonFocus  bool // D86：确认开启后把焦点让入原因框（一次性，同 focusPending 规则）
 	focusPending bool
 	// caretFocused 编辑器焦点态（真窗 pass 捕获，fade pass 读——D62 caret 自绘：
 	// material.Editor 的 caret 由 gtx.Focused 门控，零值 Source 渲染不画 caret）。
@@ -489,7 +489,7 @@ type UI struct {
 	pillAlpha float64
 
 	// 形状与全帧合成：本帧可见元素的矩形清单，连同当帧 Metric 与窗口尺寸一起供离屏渲染
-	// 与命中测试复用（D44/D62，坐标口径见 docs/gui-design.md §15.1、§15.3）。
+	// 与命中测试复用（D44/D62，坐标规则见 docs/gui-design.md §15.1、§15.3）。
 	shapes      []drawShape // 本帧可见元素矩形（窗口系、物理 px；layout 坐标即物理）
 	frameMetric unit.Metric // 当前帧 Metric（headless 同源渲染用）
 	frameSize   image.Point // 当前帧窗口尺寸（物理 px）
@@ -523,7 +523,7 @@ type UI struct {
 	// skillPicks 技能导入选择框结果通道（平台线程 → 设置窗 goroutine，D203）：容量小，
 	// 满即丢（结果只是「填进来源框」，丢了重选一次即可）；读出后 invalidate 设置窗重绘。
 	skillPicks chan skillPathPick
-	// charPicks 角色卡选择框结果通道（平台线程 → 设置窗 goroutine，§5.17）：口径同 skillPicks。
+	// charPicks 角色卡选择框结果通道（平台线程 → 设置窗 goroutine，§5.17）：规则同 skillPicks。
 	charPicks chan charPathPick
 	// filePicks 会话进出的文件框结果通道（平台线程 → 历史窗 goroutine）：满即丢；
 	// 读出后由帧首投一条内核命令（壳内不做搬运）。
@@ -594,7 +594,7 @@ func newUI(opts Options, window bool) *UI {
 	return u
 }
 
-// zoomLoad 当前旋钮（原子读；未预存 = 缺省 1.0/15——零值 UI 直接可用，headless 测试口径）。
+// zoomLoad 当前旋钮（原子读；未预存 = 缺省 1.0/15——零值 UI 直接可用，headless 测试规则）。
 func (u *UI) zoomLoad() zoomKnobs {
 	if v, ok := u.zoom.Load().(zoomKnobs); ok {
 		return v
@@ -641,7 +641,7 @@ func (u *UI) SetZoom(scale, fontSp float64) {
 
 // SetWindowSize 热改主窗像素尺寸（D90，设置窗调；任意 goroutine）：按实测 DPI × 当前
 // 缩放夹取后经窗口线程 SetWindowPos（铁律 1），Gio 收 WM_SIZE 下帧重排。停靠位与窗宽
-// 无关（球锚左定，dockSlidePos 口径），无需重锚；0/负值忽略。
+// 无关（球锚左定，dockSlidePos 规则），无需重锚；0/负值忽略。
 func (u *UI) SetWindowSize(w, h int) {
 	if w <= 0 || h <= 0 {
 		return

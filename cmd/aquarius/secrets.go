@@ -175,7 +175,7 @@ func nameFingerprint(name string) string {
 	return fmt.Sprintf("%04X", h.Sum32()&0xFFFF)
 }
 
-// storePlaintextKey 界面填了明文密钥时的写入口径（D161 落点①）：明文写进本机密钥库，
+// storePlaintextKey 界面填了明文密钥时的写入规则（D161 落点①）：明文写进本机密钥库，
 // 返回写进 config 的 `secret:<名>` 引用；填的本来就是引用则原样保留、不动库。
 // **写库失败即报错**——绝不静默退回明文（那等于把用户以为存住的东西留在盘上明文）。
 func storePlaintextKey(ctx context.Context, bin *secretbin.Store, providerName, origRef, typed string) (string, error) {

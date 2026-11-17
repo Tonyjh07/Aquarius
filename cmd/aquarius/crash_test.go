@@ -67,7 +67,7 @@ func TestPendingCrashIgnoresAckFile(t *testing.T) {
 	}
 }
 
-// TestGuardTurnsPanicIntoExitCode 顶层 panic 转成非零码，且报告落盘、stderr 有一句话。
+// TestGuardTurnsPanicIntoExitCode 顶层 panic 转成非零码，且报告写入磁盘、stderr 有一句话。
 func TestGuardTurnsPanicIntoExitCode(t *testing.T) {
 	dir := t.TempDir()
 	setCrashDir(dir)

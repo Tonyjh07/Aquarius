@@ -20,7 +20,7 @@ type RuntimeEnv struct {
 	Platform   string // 如 "windows/amd64"
 	Terminal   string // UI 形态：tui / repl（cfg.UI.Kind）
 	TERM       string // 终端 TERM 环境变量（可空）
-	SandboxDir string // 特权沙盒目录（仅绝对路径才附提示，139d585 口径）
+	SandboxDir string // 特权沙盒目录（仅绝对路径才附提示，139d585 规则）
 	// ToolTimeoutSec 缺省单次调用超时（D38）；0 = 不附超时说明行。
 	ToolTimeoutSec int
 }
@@ -51,7 +51,7 @@ type PromptSpec struct {
 // CharacterPrompt 一张卡在装配时需要的取值（§5.17/D247）。
 //
 // 由装配根从 port.CharacterCard 归一后填进 PromptSpec；原文照抄，宏替换与拼装
-// 都发生在组合时（落树即终稿，与 persona 快照同口径）。
+// 都发生在组合时（写入会话树即终稿，与 persona 快照同规则）。
 type CharacterPrompt struct {
 	Display      string           // {{char}} 取值（nickname 优先，否则 name）
 	Description  string           // 卡的角色描述（原文）
@@ -200,7 +200,7 @@ func replacementMode(cp *CharacterPrompt) bool {
 // 每个字段是**独立叶子**而不是组头文本：`@char` 组只做容器，「空组不出」会连带吞掉组头，
 // 三件全空的卡连 `You are <display>.` 都出不来（语料里确有两张）。字段为空即空模块、
 // 不计缺失——与 `@env.*` 同一做法，于是 `@char.*` 可以永久留在 prompts.persona 里而不改变
-// 普通会话的输出。卡文本在此做宏替换（落树即终稿，与 persona 快照同口径）。
+// 普通会话的输出。卡文本在此做宏替换（写入会话树即终稿，与 persona 快照同规则）。
 func (c *PersonaComposer) charModules(cp *CharacterPrompt, u string) map[string]PromptModule {
 	mods := map[string]PromptModule{
 		"@char":             {Children: []string{"@char.identity", "@char.description", "@char.personality", "@char.scenario"}},
@@ -355,7 +355,7 @@ func defaultPersonaText(legacy string) string {
 	return defaultSystem
 }
 
-// envLines 环境信息内置模块取值（D37 口径）：字段为空不出行（空值不回传）。
+// envLines 环境信息内置模块取值（D37 规则）：字段为空不出行（空值不回传）。
 func envLines(env RuntimeEnv) map[string]string {
 	lines := map[string]string{}
 	if env.Platform != "" {
@@ -373,7 +373,7 @@ func envLines(env RuntimeEnv) map[string]string {
 		lines["@env.sandbox"] = fmt.Sprintf("- Privileged sandbox directory: %q (writes there skip confirmation from the strict permission level upward).",
 			env.SandboxDir)
 	}
-	// @env.timeout 保留参数的口径（D38/D171）：`job_start` 的 `timeout_sec` 是任务超时、
+	// @env.timeout 保留参数的规则（D38/D171）：`job_start` 的 `timeout_sec` 是任务超时、
 	// 自有语义，不参与保留参数（runner 按 schema 判定），所以这里不能写成"任何工具"。
 	if env.ToolTimeoutSec > 0 {
 		lines["@env.timeout"] = fmt.Sprintf("- Tool timeout: default %ds per call; pass the optional \"timeout_sec\" argument (1-%d) on any tool call to override it for that call (tools whose schema declares their own \"timeout_sec\" keep their own meaning).",
@@ -430,7 +430,7 @@ func waterline(path []conversation.Message) (personaIdx, watermarkIdx int) {
 	return personaIdx, -1
 }
 
-// assembleOpts 装配口径（§7.1）：附件库、思考回传（D42）、视觉能力（D169）。
+// assembleOpts 装配规则（§7.1）：附件库、思考回传（D42）、视觉能力（D169）。
 //
 // 三件事都只影响「怎么投影」，不影响树本身，收进一个结构体是为了让调用方
 // 显式回答它们——散成多个布尔参数时，新加一个能力位很容易在某个调用点漏掉。
@@ -529,7 +529,7 @@ func assemblePathLabeled(ctx context.Context, path []conversation.Message, opt a
 			})
 		case conversation.RoleInject:
 			// 注入节点按**显式信任位**投影（D170）：宿主事实 → system（用户动作仍取 user）；
-			// 其余（工具/插件/未知/未声明）→ user + 数据围栏（§9 口径，防伪装成用户指令）。
+			// 其余（工具/插件/未知/未声明）→ user + 数据围栏（§9 规则，防伪装成用户指令）。
 			pm, err := projectInjection(ctx, m, opt)
 			if err != nil {
 				return nil, err
@@ -624,7 +624,7 @@ func projectInjection(ctx context.Context, m conversation.Message, opt assembleO
 		}
 		return &port.PromptMessage{Role: role, Content: parts}, nil
 	}
-	// 围栏正文同样中和闭合标签（D170 口径二）：否则外部内容可以提前收尾，
+	// 围栏正文同样中和闭合标签（D170 规则二）：否则外部内容可以提前收尾，
 	// 把后文伪装成围栏之外的用户/宿主说明。
 	fenced := make([]port.PromptPart, 0, len(parts)+2)
 	fenced = append(fenced, port.PromptPart{Kind: port.PromptText, Text: injectFenceNote})

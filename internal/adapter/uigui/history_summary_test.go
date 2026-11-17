@@ -194,7 +194,7 @@ func TestSummaryNoOutsideClickClose(t *testing.T) {
 }
 
 // TestSummaryModalBlocksGraph 卡在屏时右图手势失灵：点节点不再开消息遮罩、也不投命令
-// （模态在 Gio 广播模型下的真实口径）；关卡后同一位置恢复响应。
+// （模态在 Gio 广播模型下的真实规则）；关卡后同一位置恢复响应。
 func TestSummaryModalBlocksGraph(t *testing.T) {
 	t.Parallel()
 	u, st, q := relGraphFixture(t)

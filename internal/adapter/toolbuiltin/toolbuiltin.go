@@ -26,7 +26,7 @@ type Deps struct {
 	PathOf  PathOf               // 记忆文档名 → 磁盘路径（FileTarget 申报）
 	Jobs    port.JobManager      // 任务端口（term_exec / job_*）
 	Sandbox string               // 特权沙盒目录（相对路径报错时给可行动的替代提示）
-	Blobs   port.AttachmentStore // 附件库：file_read 读图片时落盘（nil = 图片不可用）
+	Blobs   port.AttachmentStore // 附件库：file_read 读图片时写入磁盘（nil = 图片不可用）
 	Vision  bool                 // 当前模型是否接受图片输入（D169/D173：装配根按整链 caps 取与；false 必须明确报因）
 	Capture port.Capture         // 屏幕捕获（D178；nil = 截图工具明确报「本构建未提供」）
 	Asker   port.Asker           // 提问通道（D184；nil = ask_user 明确报「本构建未提供」）

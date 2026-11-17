@@ -66,7 +66,7 @@ func (m *profilesManager) Copy(name string) error {
 }
 
 // Switch 原子写根指针（重启生效）；目标须已存在——新建/复制后立即可切，显式
-// 指向不存在的名字一律拒写（同 --profile 口径，D110 修订②）。
+// 指向不存在的名字一律拒写（同 --profile 规则，D110 修订②）。
 func (m *profilesManager) Switch(name string) error {
 	if err := validProfileName(name); err != nil {
 		return err

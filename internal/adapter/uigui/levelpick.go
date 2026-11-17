@@ -43,7 +43,7 @@ func (u *UI) levelPickable() bool {
 // 卡片是浮层、不可见时没有任何控件能反推它的位置，几何错（出窗、行叠行）只能靠
 // 断言拿住。
 //
-// 局部坐标可以是负的（卡越过输入行上沿、长在转写区之上，与 hoverCard 同口径），
+// 局部坐标可以是负的（卡越过输入行上沿、长在转写区之上，与 hoverCard 同规则），
 // minTop 给出「窗顶在局部坐标里的位置」（= -absY），越界时整体下移。
 func levelPickRects(gtx layout.Context, pill image.Rectangle, minTop int) (image.Rectangle, []image.Rectangle) {
 	n := len(permLevels)

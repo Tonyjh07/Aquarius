@@ -79,7 +79,7 @@ func (m *model) replay(msg conversation.Message) {
 			}
 		}
 		flushSeg()
-		// 非 done 终态：标记行并入最后一个正文气泡（与实时 commit 同口径）；
+		// 非 done 终态：标记行并入最后一个正文气泡（与实时 commit 同规则）；
 		// 无正文段（空内容的取消/错误）单独给标记块。
 		// 空 Outcome 不打标记（D107 补：旧版 Revise 产的修订节点零值——标记会渲染成 `[]`）。
 		if msg.Outcome != "" && msg.Outcome != conversation.OutcomeDone {
@@ -145,7 +145,7 @@ func (m *model) submit(text string) {
 	// D92/D97 编辑态：提交 = 结构化 /edit 命令——Args 直达不经斜杠解析（parseEditArgs
 	// 的 Join 对单元素是恒等，多行文本保真）；修订方式转为 flag token（--keep=Carry/
 	// --copy=Clone，与 typed 路径同解析，D97①）；不回显 blockUser，修订结果由 /edit 的
-	// 清屏回放呈现（D81 口径：转写区恒与 Head 一致）。
+	// 清屏回放呈现（D81 规则：转写区恒与 Head 一致）。
 	if m.editTarget != "" {
 		id := m.editTarget
 		mode := m.editMode
@@ -160,7 +160,7 @@ func (m *model) submit(text string) {
 		if part >= 0 {
 			args = append(args, "--part", strconv.Itoa(part)) // D107②：精确替换该正文分片
 		}
-		// D188：删掉的已有附件 → --drop N（序号口径 = 节点内附件分片出现序，升序稳定）；
+		// D188：删掉的已有附件 → --drop N（序号规则 = 节点内附件分片出现序，升序稳定）；
 		// 新增附件一律走 Command.Attachments——**顺序即 chip 排顺序**（含路径项：路径也
 		// 走结构化载荷，混合贴图与选文件时才不会因为"两条通道"把次序打乱；`--attach`
 		// 仍是纯文本界面（repl/TUI）的入口）。
@@ -187,7 +187,7 @@ func (m *model) submit(text string) {
 		case m.u.inCh <- port.UserInput{Command: &cmd}:
 		default:
 			// 缓冲满：暂存的附件还回去（挑文件比打字贵），编辑态照常收尾——同 submitRaw
-			// 「失败不吞附件」的口径。
+			// 「失败不吞附件」的规则。
 			m.stagedFiles = staged
 			m.add(blockNotice, i18n.T("ui.state.buf_full_line"))
 		}
@@ -204,7 +204,7 @@ func (m *model) submit(text string) {
 
 // submitRaw 投递 Raw 摄取输入（D186 多附件）：附件列表 + 已输入文本一并进摄取管线；
 // 用户节点无 CommittedEvent（Agent 只广播 Turn/system 节点）→ 本地回显 blockUser
-// （文本 + 附件名示意——与回放的摄取分片呈现存在口径差，D104③ 后果①）。
+// （文本 + 附件名示意——与回放的摄取分片呈现存在规则差，D104③ 后果①）。
 // 缓冲满：恢复暂存 + notice（编辑框已清、文本丢失，D104 后果③）。
 func (m *model) submitRaw(atts []stagedAtt, text string) {
 	if len(atts) == 0 {

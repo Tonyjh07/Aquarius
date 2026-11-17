@@ -114,7 +114,7 @@ var enAdapterLLMTexts = map[string]string{
 	"asr.chat.err_unsupported_format": "asr: unsupported audio format \"{mime}\" (only wav / mp3)",
 	"asr.chat.err_no_choices":         "asr: the response has no choices",
 
-	// ---- tts 合成端公共（配置校验、HTTP、音频落地；四个适配器共用）----
+	// ---- tts 合成端公共（配置校验、HTTP、音频实现；四个适配器共用）----
 	"tts.err.nil_context":      "tts: nil context",
 	"tts.err.base_url_empty":   "tts: base_url is empty",
 	"tts.err.base_url_invalid": "tts: invalid base_url \"{url}\"",

@@ -1,6 +1,6 @@
 package main
 
-// 确认 / 提问通道装配测试（D185 口径二/六）：无人值守只管模型链、用户面照常问前端、
+// 确认 / 提问通道装配测试（D185 规则二/六）：无人值守只管模型链、用户面照常问前端、
 // 开关热生效（装饰器每次调用现取）。
 
 import (
@@ -30,7 +30,7 @@ func (s *stubFront) Ask(context.Context, port.AskRequest) (port.AskAnswer, error
 }
 
 // TestToolChannelsUnattendedScopedToTools 开关打开：模型链当场拒绝、不调前端；用户面
-// 仍问前端（口径二：`/rm` 这类命令确认照常询问）。
+// 仍问前端（规则二：`/rm` 这类命令确认照常询问）。
 func TestToolChannelsUnattendedScopedToTools(t *testing.T) {
 	t.Parallel()
 	front := &stubFront{}

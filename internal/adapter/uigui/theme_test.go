@@ -72,7 +72,7 @@ func TestTokensHaveOneSource(t *testing.T) {
 }
 
 // TestTokensAreSnapshots 快照是值不是引用：写入后改调用方那份变量，活动值不受影响
-// （把「跨 goroutine 只读快照」落成可断言的性质）。
+// （把「跨 goroutine 只读快照」写成可断言的性质）。
 func TestTokensAreSnapshots(t *testing.T) {
 	restoreLight(t)
 	p := lightPalette()

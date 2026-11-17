@@ -136,7 +136,7 @@ func paperDark() paperPalette {
 	}
 }
 
-// resolvePaper 次窗 Paper 预设（跟随系统深浅；与 palette 同一套解析口径）。
+// resolvePaper 次窗 Paper 预设（跟随系统深浅；与 palette 同一套解析规则）。
 func resolvePaper(mode string, dark bool) paperPalette {
 	switch mode {
 	case "light":
@@ -176,7 +176,7 @@ func applyPaper(p paperPalette) { activePaper.Store(&p) }
 // ——分区标题与正文**完全同大**，页面标题只大 25%。设置页此前直接取这三档，渲染出来
 // 「标题、分区、正文、说明」四层挤成两层，层级丢失。
 //
-// 定档口径（相对 th.TextSize 线性缩放，用户调字号时整体跟着走）：
+// 定档规则（相对 th.TextSize 线性缩放，用户调字号时整体跟着走）：
 //
 //	页标题   +25%   加粗
 //	分区标题  −8%   加粗 + 字距微开（靠颜色与"小一号的粗体"与正文分开）
@@ -268,7 +268,7 @@ func applyPaperTheme(th *material.Theme, pp paperPalette) {
 // 为什么不直接 material.CheckBox：它的 IconColor 固定取 th.Palette.ContrastBg——
 // 也就是「主按钮底色」。在 Paper 里主按钮底是 accent（要压白字），而勾选框是**标识性
 // 图形**，按分工该用 brand。两者混用会让勾选框比主按钮还暗一档，与「图示用亮色、
-// 文字底用深色」的口径打架（实测：复选框残留 Gio 靛蓝 #3F51B5）。
+// 文字底用深色」的规则打架（实测：复选框残留 Gio 靛蓝 #3F51B5）。
 func paperCheckBox(th *material.Theme, c *widget.Bool, label string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pp := paperOf()

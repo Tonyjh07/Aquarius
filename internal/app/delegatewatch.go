@@ -11,7 +11,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 转交报告的注入重试（与 jobInjectAttempts 同一口径：队列满时最多再来 3 次）。
+// 转交报告的注入重试（与 jobInjectAttempts 同一套规则：队列满时最多再来 3 次）。
 const (
 	delegateInjectAttempts  = 3
 	delegateInjectRetryStep = time.Second
@@ -122,7 +122,7 @@ type DelegateWatcherOptions struct {
 	Delegates port.DelegateRunner
 	// Injector 延迟取注入端口（会话在工具装配之后才建好）；返回 nil = 正在退出，丢弃。
 	Injector func() port.Injector
-	// Wake 报告落地后的空闲唤醒；nil = 只注入不唤醒。
+	// Wake 报告送达后的空闲唤醒；nil = 只注入不唤醒。
 	Wake func()
 	// Settle 报告已送到会话：抹掉台账条目（nil = 不记台账，测试与嵌入式装配）。
 	Settle func(ctx context.Context, id port.DelegateID) error
@@ -229,7 +229,7 @@ func (w *DelegateWatcher) Unwatch(id port.DelegateID) {
 }
 
 // CancelSession 撤销某会话的全部 watcher（删除会话与关停时调用）。切换不撤——
-// 报告按归属异地落地，watcher 的生命周期跟任务走（D261）。
+// 报告按归属异地送达，watcher 的生命周期跟任务走（D261）。
 func (w *DelegateWatcher) CancelSession(id conversation.ID) {
 	if w == nil || id == "" {
 		return
@@ -305,7 +305,7 @@ func (w *DelegateWatcher) forget(id port.DelegateID, e *delegateEntry) {
 	w.mu.Unlock()
 }
 
-// deliver 投递注入，队列满时重试（与 JobWatcher 同一口径）。返回是否落地。
+// deliver 投递注入，队列满时重试（与 JobWatcher 同一套规则）。返回是否送达。
 func (w *DelegateWatcher) deliver(ctx context.Context, id port.DelegateID, in port.Injection) bool {
 	for attempt := 0; attempt < delegateInjectAttempts; attempt++ {
 		if ctx.Err() != nil {
@@ -331,7 +331,7 @@ func (w *DelegateWatcher) deliver(ctx context.Context, id port.DelegateID, in po
 	return false
 }
 
-// delegateFailureText 转交失败的报告正文（英文：进模型上下文）。它必须落地——否则
+// delegateFailureText 转交失败的报告正文（英文：进模型上下文）。它必须实现——否则
 // 一次失败就是一条静默丢失的活。已经收到的正文一并带上：中途失败不该把十几分钟的
 // 输出一起丢掉。
 func delegateFailureText(id port.DelegateID, agent string, run port.DelegateRun, err error) string {

@@ -141,7 +141,7 @@ func watchStartText(st port.WatchState) string {
 		st.Spec.MaxChecks, st.EndsAt.Format("15:04:05"))
 }
 
-// notifyText 通知口径的用户可读说明（进模型上下文，英文）。
+// notifyText 通知规则的用户可读说明（进模型上下文，英文）。
 func notifyText(n port.WatchNotify) string {
 	if n == port.WatchNotifyChange {
 		return "report each time it becomes true again and keep watching"

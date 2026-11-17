@@ -105,7 +105,7 @@ func (f *promptEditor) closeModuleEditor() { f.modEdit.open = false }
 func (f *promptEditor) commitModuleEditor() {
 	st := &f.modEdit
 	name := strings.TrimSpace(st.name.Text())
-	if name == "" { // 空名 = 不要这个模块（与保存时跳过空名行同口径）
+	if name == "" { // 空名 = 不要这个模块（与保存时跳过空名行同一套规则）
 		f.closeModuleEditor()
 		return
 	}

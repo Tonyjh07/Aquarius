@@ -73,7 +73,7 @@ func openAES(keyPath string, blob []byte) ([]byte, error) {
 	return plain, nil
 }
 
-// loadOrCreateKey 读密钥文件；不存在则生成 32 随机字节并以 0600 **独占创建**落地。
+// loadOrCreateKey 读密钥文件；不存在则生成 32 随机字节并以 0600 **独占创建**实现。
 // 并发首建时后到者读走先到者写下的那把（O_EXCL 的 EEXIST 即此意）。
 func loadOrCreateKey(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)

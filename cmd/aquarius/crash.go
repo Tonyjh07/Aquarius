@@ -15,7 +15,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// crash.go 顶层 panic 的落盘与「上次崩过」的提示。
+// crash.go 顶层 panic 写入磁盘与「上次崩过」的提示。
 //
 // 为什么必须有：双击启动的 GUI 没有控制台（D108 自建控制台已脱离），顶层 panic 在
 // 用户眼里等于「窗口一闪就没了」——没有栈、没有时间、没有版本，连从哪儿查都不知道。
@@ -46,7 +46,7 @@ func crashDirPath() string {
 // 「配置写错了」和「程序自己崩了」。
 const crashExitCode = 2
 
-// guard 跑一次主流程并把顶层 panic 落盘；返回进程退出码。
+// guard 跑一次主流程并把顶层 panic 写入磁盘；返回进程退出码。
 func guard(fn func() int, stderr io.Writer) (code int) {
 	code = 1 // 未执行到 fn 就 panic 的兜底（defer 里会被覆盖）
 	defer func() {

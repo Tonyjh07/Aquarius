@@ -1,7 +1,7 @@
 package uigui
 
 // ihist.go 输入框的输入历史（D250 顺带补上）：↑↓ 在收起态翻历史，Shift+Enter 展开成
-// 多行编辑时方向键仍归光标。口径与 TUI 同（internal/adapter/uitui）：去重相邻、上限
+// 多行编辑时方向键仍归光标。规则与 TUI 同（internal/adapter/uitui）：去重相邻、上限
 // 固定、翻到底回草稿。
 
 import "strings"
@@ -36,10 +36,10 @@ func (h *ihist) push(line string) {
 	}
 }
 
-// rememberInput 记一条已提交的输入：内存历史与落盘存储各记一份。
+// rememberInput 记一条已提交的输入：内存历史与写入磁盘存储各记一份。
 //
-// 两处都要写：内存那份负责本次会话的 ↑↓，落盘那份负责下次启动——只有内存那份时
-// 重启就归零，只有落盘那份时每翻一次历史都要读文件。
+// 两处都要写：内存那份负责本次会话的 ↑↓，写入磁盘那份负责下次启动——只有内存那份时
+// 重启就归零，只有写入磁盘那份时每翻一次历史都要读文件。
 func (u *UI) rememberInput(text string) {
 	u.ihist.push(text)
 	if u.opts.History != nil {

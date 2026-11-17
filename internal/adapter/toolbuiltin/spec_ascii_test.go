@@ -33,7 +33,7 @@ func checkASCII(t *testing.T, s, where string) {
 }
 
 // checkSchemaASCII schema 是嵌入的 JSON 文本，逐字段取值检查（不解析结构：
-// 只是防止中文字面量漏进去，保持与上面同口径）。
+// 只是防止中文字面量漏进去，保持与上面同规则）。
 func checkSchemaASCII(t *testing.T, name, schema string) {
 	t.Helper()
 	for _, line := range strings.Split(schema, "\n") {

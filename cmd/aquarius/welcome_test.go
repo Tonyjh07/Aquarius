@@ -73,7 +73,7 @@ func TestAPIKeyGapMatrix(t *testing.T) {
 }
 
 // TestMissingKeysCoversFallback D141：primary 与 fallback[] 逐条探测——降级目标缺密钥
-// 同样阻断（否则降级时才炸，D110 修订③「提前建客户端」同口径）。
+// 同样阻断（否则降级时才炸，D110 修订③「提前建客户端」同规则）。
 func TestMissingKeysCoversFallback(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("KA", "k")
@@ -158,7 +158,7 @@ func TestWelcomeManagerIssues(t *testing.T) {
 
 // TestWelcomeManagerApply 写回（D141）：覆盖 `providers[0]` 三项 + primary + `ui.welcomed`；
 // 无关键（tokenizer / 自定义键）按原条目保留；`model.name` 不在新 models 内 ⇒ 改写为
-// models[0]（否则旧模型名发给新端点）。密钥口径见 D161：填的明文入库、config 只留引用。
+// models[0]（否则旧模型名发给新端点）。密钥规则见 D161：填的明文入库、config 只留引用。
 func TestWelcomeManagerApply(t *testing.T) {
 	cfgPath, _ := writeProvidersConfig(t)
 	ch, bin := testChain(t, nil)
@@ -171,7 +171,7 @@ func TestWelcomeManagerApply(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 	if stores != 1 {
-		t.Fatalf("onStore 调用 = %d, want 1（填入明文落库；S9-6b/D163）", stores)
+		t.Fatalf("onStore 调用 = %d, want 1（填入明文写进密钥库；S9-6b/D163）", stores)
 	}
 	generic := readCfgMap(t, cfgPath)
 	model := generic["model"].(map[string]any)
@@ -289,7 +289,7 @@ func TestWelcomeManagerApplyDropsDanglingFallback(t *testing.T) {
 	}
 }
 
-// TestWelcomeManagerApplyValidation 校验矩阵：三类必填项缺失即报因、不落盘。
+// TestWelcomeManagerApplyValidation 校验矩阵：三类必填项缺失即报因、不写入磁盘。
 func TestWelcomeManagerApplyValidation(t *testing.T) {
 	cfgPath, cfg := writeProvidersConfig(t)
 	m := &welcomeManager{cfgPath: cfgPath, secrets: testSecrets(t), stderr: io.Discard}
@@ -371,10 +371,10 @@ func TestSetupWizardContinuesAfterDone(t *testing.T) {
 	calls := 0
 	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		calls++
-		// 首跑路径的次序事实：模板已落盘（写模板先于开窗），问题清单指名默认环境变量。
+		// 首跑路径的次序事实：模板已写入磁盘（写模板先于开窗），问题清单指名默认环境变量。
 		if got, err := os.ReadFile(profCfg); err != nil || !strings.Contains(string(got), `"kind": "gui"`) ||
 			!strings.Contains(string(got), "secret:DEEPSEEK_API_KEY") {
-			t.Errorf("向导窗应在模板落盘之后打开: err=%v cfg=%s", err, got)
+			t.Errorf("向导窗应在模板写入磁盘之后打开: err=%v cfg=%s", err, got)
 		}
 		if req.Theme != "system" {
 			t.Errorf("向导窗应带 ui.theme 档（模板 system）: %q", req.Theme)
@@ -545,7 +545,7 @@ func TestSetupWizardRunsWhenWelcomedMissing(t *testing.T) {
 	calls := 0
 	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
 		calls++
-		// 真实宿主保存时会连同同意一起落盘；假宿主也要留下这条记录，否则装配根的
+		// 真实宿主保存时会连同同意一起写入磁盘；假宿主也要留下这条记录，否则装配根的
 		// 兜底检查会按「未同意」拦下（D278 决策 2）。
 		if err := req.Mgr.SetConsent(legal.Version); err != nil {
 			t.Errorf("写回同意失败: %v", err)
@@ -649,7 +649,7 @@ func TestSetupWizardCancelledExitsZero(t *testing.T) {
 }
 
 // TestSetupWizardSkippedForREPL D141：tui/repl 不走向导窗——密钥缺失仍走内核装配期的
-// fatal 报因（旧口径）。
+// fatal 报因（旧规则）。
 func TestSetupWizardSkippedForREPL(t *testing.T) {
 	dir := t.TempDir()
 	writeProfileLayout(t, dir, `{"model":{"providers":[{"name":"openai","base_url":"http://127.0.0.1:1/v1","keys":[{"api_key":"secret:AQ_MISSING"}],"models":[{"name":"m1"}]}],"name":"m1"},"ui":{"kind":"repl"}}`)
@@ -721,7 +721,7 @@ func TestSetupWizardSkipWithoutProviderStarts(t *testing.T) {
 	dir := t.TempDir()
 	profCfg := filepath.Join(writeProfileLayout(t, dir, `{"model":{"providers":[]},"ui":{"kind":"gui"}}`), "config.json")
 	defer swapSetupWindowRunner(func(req uigui.SetupRequest) (uigui.SetupOutcome, error) {
-		// 用户在第 3 页按「稍后配置」，第 2 页的同意仍然落盘（D278 决策 2/3）。
+		// 用户在第 3 页按「稍后配置」，第 2 页的同意仍然写入磁盘（D278 决策 2/3）。
 		if err := req.Mgr.SetConsent(legal.Version); err != nil {
 			t.Errorf("写回同意失败: %v", err)
 		}

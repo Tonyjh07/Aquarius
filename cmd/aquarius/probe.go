@@ -5,7 +5,7 @@ package main
 //
 // 两条纪律：
 //   - 探测**只读运行态**：不改 config 以外的任何东西，也不改 `unsupported_params`。
-//     写回是唯一副作用，且要重启才生效（与 provider 编辑同口径——port.LLM 构造期固化）。
+//     写回是唯一副作用，且要重启才生效（与 provider 编辑同规则——port.LLM 构造期固化）。
 //   - 探测用该 provider 的**第一把钥匙**：探测不该扰动密钥池的冷却状态（S11-4）。
 
 import (
@@ -40,10 +40,10 @@ func (w *wiring) probeModel(ctx context.Context, model string) (app.ProbeReport,
 	return w.probeProvider(ctx, p, name)
 }
 
-// probeForSettings 设置窗「探测能力」按钮的数据面（S11-7③/D174；D181 修口径）：用**编辑区
+// probeForSettings 设置窗「探测能力」按钮的数据面（S11-7③/D174；D181 修规则）：用**编辑区
 // 当前值**（端点 / 协议 / 第一把钥匙）造一次性客户端——改了端点还没应用时，该测的是「将要
 // 应用的那份」，而不是启动快照里那份。结论一律带回界面；写回 config 只在该模型**已经在
-// 配置里**的时候发生，否则留给「应用 provider 变更」一并落盘（Pending）。
+// 配置里**的时候发生，否则留给「应用 provider 变更」一并写入磁盘（Pending）。
 //
 // 为什么不要求先保存：模型行是不是「已声明」由配置文件决定，而用户眼里表格里那一行就是
 // 声明。以前直接报「不在 models 里」，用户无从下手——他并没有别的地方可以声明。
@@ -81,7 +81,7 @@ func (w *wiring) probeForSettings(ctx context.Context, patch uigui.ProviderPatch
 
 // providerFromPatch 把编辑区提交拼成一个临时 providerConfig（探测只用到名字 / 协议 /
 // 端点 / 第一把钥匙 / 不认参数）。钥匙引用：编辑区填了就用填的（明文或 secret:），空则
-// 回落落盘 config 里同一条 provider 的原引用（按 Orig 名——改名过程中引用不丢）。
+// 回落写入磁盘 config 里同一条 provider 的原引用（按 Orig 名——改名过程中引用不丢）。
 func (w *wiring) providerFromPatch(patch uigui.ProviderPatch) *providerConfig {
 	pc := &providerConfig{
 		Name:              strings.TrimSpace(patch.Name),
@@ -128,7 +128,7 @@ func (w *wiring) probeProvider(ctx context.Context, p *providerConfig, name stri
 	}
 	if !declared {
 		// 命令行入口的前提是「模型已在配置里声明」（probeTarget 校验过），到这里说明
-		// 配置在同一进程里被外部改过——必须说出来，不能让用户以为结论已落盘。
+		// 配置在同一进程里被外部改过——必须说出来，不能让用户以为结论已写入磁盘。
 		return report, errors.New(i18n.T("cmd.probe.err.target_moved"))
 	}
 	report.Written = written
@@ -159,7 +159,7 @@ func (w *wiring) probeWithClient(ctx context.Context, p *providerConfig, client 
 	return report, nil
 }
 
-// probeTarget 定位要探测的模型条目（D174 口径四：度量单位是「模型条目」）。
+// probeTarget 定位要探测的模型条目（D174 规则四：度量单位是「模型条目」）。
 // 只有声明过的模型才有地方写 caps，所以未声明的模型直接报因——悄悄探完不写回，
 // 用户会以为已经改好了。
 func (w *wiring) probeTarget(model string) (*providerConfig, string, error) {
@@ -204,7 +204,7 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 	}
 	// note 传 nil：探测刻意发可能不被支持的参数，那些结论不该被记成「这个 provider
 	// 不认该参数」——正式请求的剥离记录归正式请求。凭据同样按「草稿」解析：探测不该
-	// 补发落盘形态警告，那条留给真实构造路径（D210）。
+	// 补发写入磁盘形态警告，那条留给真实构造路径（D210）。
 	key, err := resolvePatchKey(context.Background(), p.Name, p.keyRefs()[0], w.secrets)
 	if err != nil {
 		return nil, err
@@ -213,13 +213,13 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 	return c, err
 }
 
-// writeProbeCaps 把判定明确的几位合并进该模型条目并写回 config（D174 口径二）。
+// writeProbeCaps 把判定明确的几位合并进该模型条目并写回 config（D174 规则二）。
 // 返回 written（是否真的写回了——无明确结论且声明没变 = 不打扰文件）与 declared
 // （该模型条目在**磁盘配置**里是否存在；false = 还没应用，结论只能留在界面上）。
 //
 // 比较基准是**磁盘上的声明**而不是内存里的：同一进程里连探两次，第二次看到的应当是
 // 上次写回的结果，否则每次都会「写回」一遍。内存那份不动——它驱动的是运行中的装配
-// 口径（重启才生效），这里改了会让 /model 显示与实际发出去的请求不一致。
+// 规则（重启才生效），这里改了会让 /model 显示与实际发出去的请求不一致。
 func (w *wiring) writeProbeCaps(providerName, model string, results []port.ProbeResult) (written, declared bool, err error) {
 	disk, err := loadConfig(w.cfgPath)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 )
 
 // TestPosRecRoundTrip 位置记忆含置顶态（§15.1 置顶开关）：写读一致；旧文件
-// （无 top_most 键）读出 nil = 缺省置顶口径。
+// （无 top_most 键）读出 nil = 缺省置顶规则。
 func TestPosRecRoundTrip(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "gui_pos.json")

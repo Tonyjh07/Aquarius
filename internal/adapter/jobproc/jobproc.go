@@ -1,5 +1,5 @@
 // Package jobproc 实现 port.JobManager（§5.8）：
-//   - 后台任务 = 独立进程，stdout/stderr 落盘 <logDir>/<id>.log；
+//   - 后台任务 = 独立进程，stdout/stderr 写入磁盘 <logDir>/<id>.log；
 //   - 任务表 v1 内存态（D8），进程内互斥更新（watcher goroutine 写、/jobs 读，过 -race）；
 //   - 任务不随会话取消（§10：Start 不绑定调用方 ctx），job_kill 显式终止
 //     （Windows 杀进程树 / unix 杀进程组）；Timeout 到点自动终止。
@@ -83,7 +83,7 @@ func New(logDir string) (*Manager, error) {
 	return &Manager{logDir: logDir, byID: map[port.JobID]*jobRec{}, ledgerPath: ledgerPathFor(logDir)}, nil
 }
 
-// Start 后台启动任务：独立进程 + 日志落盘，返回即刻快照（Status=running）。
+// Start 后台启动任务：独立进程 + 日志写入磁盘，返回即刻快照（Status=running）。
 // 不绑定调用方 ctx（§10：会话取消不影响后台任务）；spec.Timeout>0 到点自动终止。
 func (m *Manager) Start(ctx context.Context, spec port.JobSpec) (port.Job, error) {
 	if err := ctx.Err(); err != nil {
@@ -483,7 +483,7 @@ func (m *Manager) wait(r *jobRec) {
 	}
 	_, _ = fmt.Fprintf(r.logFile, "[exit code=%d status=%s]\n", code, status)
 	_ = r.logFile.Close()
-	// 只标状态不抹条目（D264）：删的条件是报告落地，不是进程退出。
+	// 只标状态不抹条目（D264）：删的条件是报告送达，不是进程退出。
 	m.markFinished(r.job.ID, status, code, r.job.EndedAt)
 	// 终态已写进 job 并释放锁：此处关闭 = 唤醒所有 Wait（close 是同步点，
 	// 醒来后取快照必然看得到终态）。

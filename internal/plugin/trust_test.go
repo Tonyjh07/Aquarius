@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// trustHost 搭一个只走插件目录发现的 host（D138 用）。第三个返回是**落盘态取值函数**
+// trustHost 搭一个只走插件目录发现的 host（D138 用）。第三个返回是**写入磁盘态取值函数**
 // ——Persist 发生在 Start 之后，按值返回 map 头（彼时为 nil）拿不到后写入。
 func trustHost(t *testing.T, manifest string, states map[string]State) (*Host, *fakeConfirm, func() map[string]State, *fakeDial) {
 	t.Helper()
@@ -45,7 +45,7 @@ func stdioManifest() string {
 
 // TestTrustGateAsksOnceForPluginsDir D138：插件目录发现的条目**首次必须确认**才连接
 // （此前 capabilities 为空即静默启动 = 丢个 plugin.json 进去就 exec），提示里带启动方式
-// 原文（用户据此判断要不要信），确认后指纹落盘。
+// 原文（用户据此判断要不要信），确认后指纹写入磁盘。
 func TestTrustGateAsksOnceForPluginsDir(t *testing.T) {
 	h, conf, persisted, dial := trustHost(t, stdioManifest(), nil)
 	h.Start(context.Background())
@@ -65,7 +65,7 @@ func TestTrustGateAsksOnceForPluginsDir(t *testing.T) {
 		t.Fatalf("提示 %q, want 含启动命令与来源标注", conf.prompts[0])
 	}
 	if persisted()["p"].Trusted == "" {
-		t.Fatal("确认后未落盘 trust 指纹（下次启动会再问）")
+		t.Fatal("确认后未写入磁盘 trust 指纹（下次启动会再问）")
 	}
 }
 

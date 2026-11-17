@@ -1,6 +1,6 @@
 package llm
 
-// anthropic 适配器（D175 口径一/二/三/四）：Anthropic Messages API 的线上格式。
+// anthropic 适配器（D175 规则一/二/三/四）：Anthropic Messages API 的线上格式。
 // HTTP、鉴权头、错误分类（*port.Quota / ErrTransient）与 SSE 骨架复用 Client
 // （openai.go / stream.go）——换一套线上格式不该顺带换掉重试、密钥池与计数。
 
@@ -24,7 +24,7 @@ const anthropicPath = "/messages"
 // anthropicVersion 必需的 API 版本头（Messages API 要求显式声明版本）。
 const anthropicVersion = "2023-06-01"
 
-// anthropicSigPrefix 思考块签名的协议前缀（D175 口径三）：只有本协议认它。
+// anthropicSigPrefix 思考块签名的协议前缀（D175 规则三）：只有本协议认它。
 const anthropicSigPrefix = "anthropic:"
 
 // anthropicDefaultMaxTokens 未配置输出预算时的 max_tokens。
@@ -330,7 +330,7 @@ func toAnthropicTools(specs []tool.Spec, wn *wireNames) []anthropicTool {
 	return out
 }
 
-// anthropicThinkingOf 思考参数映射（D34 口径 + D175 口径四）。Messages API 没有
+// anthropicThinkingOf 思考参数映射（D34 规则 + D175 规则四）。Messages API 没有
 // `enable_thinking` 这种布尔开关，只有 `thinking` 对象，所以两件事要合成一件事：
 //
 //   - 键缺失（nil）且无档位 = 零字段变化，不发 thinking（交服务端默认）；
@@ -357,7 +357,7 @@ func anthropicThinkingOf(p port.Sampling) *anthropicThinking {
 // ---------------------------------------------------------------------------
 
 // generateAnthropic anthropic 协议的生成入口。与 chat 的差别：鉴权头（x-api-key +
-// anthropic-version）、端点（/messages），以及**没有剥离重试**（D175 口径四：自家规范，
+// anthropic-version）、端点（/messages），以及**没有剥离重试**（D175 规则四：自家规范，
 // 参数写错就是 bug，静默剥掉只会让配置错误浮不上来）。
 func (c *Client) generateAnthropic(ctx context.Context, req port.GenerateRequest) (port.Stream, error) {
 	body, err := encodeAnthropicRequest(req)
@@ -529,7 +529,7 @@ func anthropicEventMessage(ev anthropicEvent) string {
 }
 
 // ---------------------------------------------------------------------------
-// 思考签名：服务端返回的签名随思考分片带回，续跑时原样回传（D175 口径三）
+// 思考签名：服务端返回的签名随思考分片带回，续跑时原样回传（D175 规则三）
 // ---------------------------------------------------------------------------
 
 // encodeAnthropicSignature 编码思考块签名为树内不透明串：前缀 + 原样签名。

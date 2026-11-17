@@ -59,7 +59,7 @@ func TestEditAttachChipItems(t *testing.T) {
 	}
 }
 
-// TestEditAttachDropOnly D188 口径五：删掉已有附件、正文留空 → 只发 --drop，不夹带文本。
+// TestEditAttachDropOnly D188 规则五：删掉已有附件、正文留空 → 只发 --drop，不夹带文本。
 func TestEditAttachDropOnly(t *testing.T) {
 	t.Parallel()
 	u := newEditUI()
@@ -147,7 +147,7 @@ func TestEditAttachBlobPayload(t *testing.T) {
 	}
 }
 
-// TestEditAttachEmptySubmitCancels D92 旧口径保留：编辑态既没改文本也没动附件 → 空提交
+// TestEditAttachEmptySubmitCancels D92 旧规则保留：编辑态既没改文本也没动附件 → 空提交
 // 仍是取消，不投递。
 func TestEditAttachEmptySubmitCancels(t *testing.T) {
 	t.Parallel()

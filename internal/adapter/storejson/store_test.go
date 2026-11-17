@@ -77,7 +77,7 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
-// TestRoundtripThinkingPart D42/D175：思考分片落盘回环——kind/text/signature 原样保留且整树校验通过。
+// TestRoundtripThinkingPart D42/D175：思考分片写入磁盘回环——kind/text/signature 原样保留且整树校验通过。
 func TestRoundtripThinkingPart(t *testing.T) {
 	s, err := New(t.TempDir())
 	if err != nil {
@@ -113,7 +113,7 @@ func TestRoundtripThinkingPart(t *testing.T) {
 	}
 }
 
-// TestRoundtripInjectTrust 注入节点的信任位随树落盘（D170）：装配在重载后仍要区分
+// TestRoundtripInjectTrust 注入节点的信任位随树写入磁盘（D170）：装配在重载后仍要区分
 // 宿主事实与外部内容，只按 Source 前缀猜是 fail-open。
 func TestRoundtripInjectTrust(t *testing.T) {
 	s, err := New(t.TempDir())
@@ -417,7 +417,7 @@ func TestListSortedAndSkipsBak(t *testing.T) {
 	ctx := context.Background()
 
 	a := conversation.New(conversation.ID("conv-a"), "A")
-	a.Character = "alice" // §5.17/D243：角色 slug 随会话元数据落盘，列表带出
+	a.Character = "alice" // §5.17/D243：角色 slug 随会话元数据写入磁盘，列表带出
 	if _, err := a.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: "a"}}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestSaveRejectsInvalidTree(t *testing.T) {
 	}
 }
 
-// TestRoundtripDetachments 溯源路牌落盘回环（D256）：写出的文件里有 detached 键，
+// TestRoundtripDetachments 溯源路牌写入磁盘回环（D256）：写出的文件里有 detached 键，
 // 读回来锚点/子树根/新位置/种类/时刻一项不差。没有路牌时该键不出现（omitempty），
 // 旧文件缺这个键照常加载——TestLoadOldFileWithoutMetadataKeys 已覆盖缺键路径。
 func TestRoundtripDetachments(t *testing.T) {
@@ -828,7 +828,7 @@ func TestCanceledContextRejected(t *testing.T) {
 }
 
 // TestSaveConcurrentSameConversation 同会话并发保存：每次保存要么完整生效、要么不生效，
-// 最终落盘的一定是一棵能通过自检的树，且不留临时文件残片。
+// 最终写入磁盘的一定是一棵能通过自检的树，且不留临时文件残片。
 //
 // 固定临时名（`<id>.json.tmp`）时代两处保存会互相截断——并发写同一个文件不是「最后
 // 一个 rename 赢」这么温和，而是把两份 JSON 交错写进同一个临时文件，换入后主文件直接

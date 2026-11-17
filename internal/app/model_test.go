@@ -86,7 +86,7 @@ func TestSessionModelCommand(t *testing.T) {
 		t.Fatalf("persisted = %v, agent = %q", persist.persisted, s.agent.modelName())
 	}
 
-	// 写回失败不动运行态（同 /permission 口径）。
+	// 写回失败不动运行态（同 /permission 规则）。
 	persist.err = errors.New("disk full")
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "model", Args: []string{"m3"}}}); err == nil ||
 		!strings.Contains(err.Error(), "disk full") {

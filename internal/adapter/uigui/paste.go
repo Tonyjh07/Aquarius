@@ -34,7 +34,7 @@ var imageExt = map[string]bool{
 	".webp": true, ".bmp": true,
 }
 
-// pasteImageKey 有图才抢 Ctrl+V（D187 口径一）：命中即消费，编辑器不会再收到这个键
+// pasteImageKey 有图才抢 Ctrl+V（D187 规则一）：命中即消费，编辑器不会再收到这个键
 // （也就不会去读文本剪贴板）。
 func (u *UI) pasteImageKey(gtx layout.Context) {
 	if u.opts.Blobs == nil {
@@ -57,7 +57,7 @@ func (u *UI) pasteImageKey(gtx layout.Context) {
 		if !isKey || ke.State != key.Press {
 			continue // Release 不重复触发
 		}
-		// 上一张还没落库时再按：吞掉这个键、不排队——否则同一张图会被贴出好几份。
+		// 上一张还没写进密钥库时再按：吞掉这个键、不排队——否则同一张图会被贴出好几份。
 		if u.pasting.Load() {
 			continue
 		}
@@ -67,10 +67,10 @@ func (u *UI) pasteImageKey(gtx layout.Context) {
 }
 
 // startPaste 后台读剪贴板 → 转 PNG → 入附件库 → 回投。整条链都在 goroutine 里
-// （大图转 PNG 与 20MB 落盘都能到几十上百毫秒），UI 线程只做「挂到暂存列表」这一件事。
+// （大图转 PNG 与 20MB 写入磁盘都能到几十上百毫秒），UI 线程只做「挂到暂存列表」这一件事。
 //
 // 上限判定在入附件库**之前**：先拿暂存位数量快照（跨 goroutine 读 u.m 是数据竞争），
-// 超限就不落盘，免得留下没人引用的字节。
+// 超限就不写入磁盘，免得留下没人引用的字节。
 func (u *UI) startPaste() {
 	u.pasting.Store(true)
 	room := len(u.m.stagedFiles) < port.MaxAttachments
@@ -138,7 +138,7 @@ func (u *UI) stagePath(path string) {
 			u.m.add(blockNotice, i18n.Tf("ui.attach.dir_not_file", "name", filepath.Base(path)))
 			return
 		}
-		// 图片上限与贴图同口径（D187 口径六）：这里先拦，免得摄取阶段才报错。
+		// 图片上限与贴图同规则（D187 规则六）：这里先拦，免得摄取阶段才报错。
 		if isImage && fi.Size() > port.MaxImageBytes {
 			u.m.add(blockNotice, i18n.Tf("ui.img.too_large_named",
 				"mb", mbSize(fi.Size()), "limit", mbLabel(port.MaxImageBytes),
@@ -152,7 +152,7 @@ func (u *UI) stagePath(path string) {
 	}
 }
 
-// startThumbLoad 后台读图片文件做缩略图（D187 口径四）：不阻塞帧循环，结果回投后
+// startThumbLoad 后台读图片文件做缩略图（D187 规则四）：不阻塞帧循环，结果回投后
 // 按附件去重键找到那条暂存项挂上。
 //
 // 一次读完再解（os.ReadFile 内部即关句柄）：拖进来的图可能是用户马上要删的临时文件，

@@ -2,7 +2,7 @@ package uigui
 
 // toast_test.go 轻提示组件（toast.go）单元测试：显示/到期可见性判定（零依赖、
 // 不涉窗）。到期的**擦除**由渲染帧的 op.InvalidateCmd{At} 驱动（见 toast.go 注释），
-// 故这里只钉住帧态的可见性口径——那正是渲染分支的判据。
+// 故这里只钉住帧态的可见性规则——那正是渲染分支的判据。
 
 import (
 	"testing"

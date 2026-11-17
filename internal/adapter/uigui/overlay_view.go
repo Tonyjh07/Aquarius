@@ -141,14 +141,14 @@ func overlayInjectSource(gtx layout.Context, th *material.Theme, ov *overlayStat
 	return l.Layout(gtx)
 }
 
-// overlayTitle 标题行：角色词 +「消息」+ 节点 ID 前缀（ID 与「原文 · <id>」同款口径）。
+// overlayTitle 标题行：角色词 +「消息」+ 节点 ID 前缀（ID 与「原文 · <id>」同款规则）。
 func overlayTitle(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	l := material.Label(th, paperBodySp(th), ov.titleText())
 	l.Color = paperOf().text
 	return l.Layout(gtx)
 }
 
-// titleText 标题文案（2026-10-15 用户拍板的口径）：角色词取**快照 Role**（不是 blockKind——
+// titleText 标题文案（2026-10-15 用户拍板的规则）：角色词取**快照 Role**（不是 blockKind——
 // root 与 system 都落 blockPlain，会把根节点写成「系统」）；根节点是会话容器、不是一条消息，
 // 故只写「会话根 · <id>」，与图例「◯会话根」同词。Role 未知（快照未就绪）= 系统消息。
 func (ov *overlayState) titleText() string {

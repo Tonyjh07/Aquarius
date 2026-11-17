@@ -72,7 +72,7 @@ type watchEntry struct {
 	mu       sync.Mutex
 	checks   int
 	lastHash string
-	hit      bool // 上一次判据是否命中（change 口径只报翻转）
+	hit      bool // 上一次判据是否命中（change 规则只报翻转）
 	failed   bool // 上一次取样是否失败（首报 + 恢复报，中间静默）
 }
 
@@ -215,8 +215,8 @@ func (w *Watcher) Stop(_ context.Context, id port.WatchID) error {
 	return nil
 }
 
-// CancelSession 撤销某会话的全部观察器（D262 同一口径：删除会话与关停时；切换不撤，
-// 命中报告按归属异地落地）。
+// CancelSession 撤销某会话的全部观察器（D262 同一套规则：删除会话与关停时；切换不撤，
+// 命中报告按归属异地送达）。
 func (w *Watcher) CancelSession(id conversation.ID) {
 	if w == nil || id == "" {
 		return
@@ -364,7 +364,7 @@ func (w *Watcher) forget(e *watchEntry) {
 	w.mu.Unlock()
 }
 
-// reportHit 命中报告：状态行是宿主事实，探针正文是不可信数据（D170 同一口径，
+// reportHit 命中报告：状态行是宿主事实，探针正文是不可信数据（D170 同一套规则，
 // 正文本层围栏单独包住）。
 func (w *Watcher) reportHit(ctx context.Context, e *watchEntry, res port.WatchProbeResult) {
 	var b strings.Builder
@@ -405,7 +405,7 @@ func (w *Watcher) reportRecovered(ctx context.Context, e *watchEntry) {
 	w.deliver(ctx, e, msg, watchNoTrigger())
 }
 
-// watchNoTrigger 失败/恢复报告的触发口径：只入上下文，不起轮次。
+// watchNoTrigger 失败/恢复报告的触发规则：只入上下文，不起轮次。
 func watchNoTrigger() *bool { f := false; return &f }
 
 // writeOutput 把探针正文包进围栏；正文里的闭合标签先中和，否则一次取样就能提前

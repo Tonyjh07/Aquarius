@@ -38,7 +38,7 @@ func TestSessionWakeRunsTriggeredInjection(t *testing.T) {
 	}
 }
 
-// TestSessionWakeNonTriggeredInjection 非触发注入只落地：不起轮、不落 user 节点。
+// TestSessionWakeNonTriggeredInjection 非触发注入只写入：不起轮、不落 user 节点。
 func TestSessionWakeNonTriggeredInjection(t *testing.T) {
 	s, llm, _ := newTestSession(t, newMemStore())
 	ctx := context.Background()
@@ -62,7 +62,7 @@ func TestSessionWakeNonTriggeredInjection(t *testing.T) {
 	}
 }
 
-// TestSessionWakeEmptyNoop 没有待落地注入时唤醒是 no-op。
+// TestSessionWakeEmptyNoop 没有待实现注入时唤醒是 no-op。
 func TestSessionWakeEmptyNoop(t *testing.T) {
 	s, llm, _ := newTestSession(t, newMemStore())
 	before := len(s.Current().Path())

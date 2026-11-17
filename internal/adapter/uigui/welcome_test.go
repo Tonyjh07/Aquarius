@@ -34,7 +34,7 @@ type fakeWelcome struct {
 	models     []string
 	marked     int
 	markErr    error
-	langs      []string // SetLang 调用序（只记值，不模拟落盘）
+	langs      []string // SetLang 调用序（只记值，不模拟写入磁盘）
 	langErr    error
 	consents   []int // SetConsent 调用序
 	consErr    error
@@ -96,7 +96,7 @@ func baseFake() *fakeWelcome {
 
 // TestWelcomeLangSelection D278 第 1 页语言三态：初值取快照 ui.lang（空 = auto）；
 // 装配前选了**当场生效**（文案与窗标题都是每帧现取词）；装配后只记录不热切；
-// 落盘时机 = 离开第 1 页（同一个值只写一次），写失败拦在第 1 页并报因。
+// 写入磁盘时机 = 离开第 1 页（同一个值只写一次），写失败拦在第 1 页并报因。
 func TestWelcomeLangSelection(t *testing.T) {
 	defer i18n.Use(i18n.SelectionZh)
 	i18n.Use(i18n.SelectionZh)
@@ -112,11 +112,11 @@ func TestWelcomeLangSelection(t *testing.T) {
 		t.Fatalf("装配前选语言应当场生效: %q", i18n.Current())
 	}
 	if len(mgr.langs) != 0 {
-		t.Fatalf("选语言本身不该落盘（翻页时才写）: %v", mgr.langs)
+		t.Fatalf("选语言本身不该写入磁盘（翻页时才写）: %v", mgr.langs)
 	}
 	f.onNext()
 	if f.page != welcomeTerms {
-		t.Fatalf("落盘成功应正常翻页: %v / %q", f.page, f.status)
+		t.Fatalf("写入磁盘成功应正常翻页: %v / %q", f.page, f.status)
 	}
 	if len(mgr.langs) != 1 || mgr.langs[0] != "en" {
 		t.Fatalf("离开第 1 页应写一次 ui.lang: %v", mgr.langs)
@@ -138,7 +138,7 @@ func TestWelcomeLangSelection(t *testing.T) {
 	}
 	f2.onSkip() // 显式关闭同样保留语言选择
 	if len(mgr2.langs) != 1 || mgr2.langs[0] != "en" {
-		t.Fatalf("关闭时也应落盘语言: %v", mgr2.langs)
+		t.Fatalf("关闭时也应写入磁盘语言: %v", mgr2.langs)
 	}
 
 	// 写盘失败：留在第 1 页、报因、不静默往下走。
@@ -170,7 +170,7 @@ func TestWelcomeLangFromSnapshot(t *testing.T) {
 }
 
 // TestWelcomeConsentOnly 条款改版只重过第 2 页（D278 决策 4）：页序从条款页起、
-// 勾选后才可继续、落盘走 SetConsent（**不重写 provider**），完成后交回 Done。
+// 勾选后才可继续、写入磁盘走 SetConsent（**不重写 provider**），完成后交回 Done。
 func TestWelcomeConsentOnly(t *testing.T) {
 	mgr := baseFake()
 	env, outs := welcomeEnvSnap(mgr, true, false)
@@ -396,7 +396,7 @@ func TestWelcomeFormSaveError(t *testing.T) {
 }
 
 // TestWelcomeFormSkip 跳过 / 关闭：条款是使用的先决条件，**未勾选同意**时首页/末页的
-// 「以后再说」不能绕过它——退回第 2 页并报因；勾过之后 = 交回 Done、同意落盘，不写
+// 「以后再说」不能绕过它——退回第 2 页并报因；勾过之后 = 交回 Done、同意写入磁盘，不写
 // provider（D278 决策 2/3：不写 provider 的完成 → 可启动空态；welcomed 由装配根收口）。
 // 第 3 页的「稍后配置」不走这条路，见 TestWelcomeSkipAccessKeepsWizard。
 // in-app = 置 welcomed（显式关闭即已看）后关窗。
@@ -426,7 +426,7 @@ func TestWelcomeFormSkip(t *testing.T) {
 		t.Fatalf("in-app 关闭应关窗: %v", *outs2)
 	}
 
-	// 勾过同意之后从首页退出：同意照样落盘，免得下次启动又把人拉回条款页重读一遍。
+	// 勾过同意之后从首页退出：同意照样写入磁盘，免得下次启动又把人拉回条款页重读一遍。
 	mgr3 := baseFake()
 	env3, _ := welcomeEnvSnap(mgr3, true, false)
 	f3 := newWelcomeForm(env3)
@@ -439,9 +439,9 @@ func TestWelcomeFormSkip(t *testing.T) {
 
 // TestWelcomeDoneCheckAtPageFive 启动前检查在**末页**（D278）：进第 5 页时现问数据面，
 // 且只在本轮不写 provider 时才问——第 3 页填了参数的那一支，钥匙就在这次提交里，
-// 拿落盘态再探一遍只会把用户刚填的那把又说成缺。
+// 拿写入磁盘态再探一遍只会把用户刚填的那把又说成缺。
 func TestWelcomeDoneCheckAtPageFive(t *testing.T) {
-	// 跳过接入页：落盘态就是启动态，末页该问，并拿到「还缺什么」。
+	// 跳过接入页：写入磁盘态就是启动态，末页该问，并拿到「还缺什么」。
 	mgr := baseFake()
 	mgr.issues = []string{"provider openai 缺密钥"}
 	env, outs := welcomeEnvSnap(mgr, true, true)
@@ -482,13 +482,13 @@ func TestWelcomeDoneCheckAtPageFive(t *testing.T) {
 		t.Fatalf("应落在末页: %v", f2.page)
 	}
 	if mgr2.issueCalls != 0 || len(f2.doneIssues) != 0 {
-		t.Fatalf("写 provider 的一支不该做落盘态检查: %d 次 %+v", mgr2.issueCalls, f2.doneIssues)
+		t.Fatalf("写 provider 的一支不该做写入磁盘态检查: %d 次 %+v", mgr2.issueCalls, f2.doneIssues)
 	}
 }
 
-// TestWelcomeSkipAccessKeepsWizard 第 3 页「稍后配置」只跳过这一页（O5 收尾口径）：
+// TestWelcomeSkipAccessKeepsWizard 第 3 页「稍后配置」只跳过这一页（O5 收尾规则）：
 // 不结束向导、落在教程页；末页保存落同意 + welcomed，providers 一个字都不动——
-// 否则第 2 页勾过的同意没有落盘点，下次启动又把人拉回条款页。
+// 否则第 2 页勾过的同意没有写入磁盘点，下次启动又把人拉回条款页。
 func TestWelcomeSkipAccessKeepsWizard(t *testing.T) {
 	mgr := baseFake()
 	env, outs := welcomeEnvSnap(mgr, true, true)

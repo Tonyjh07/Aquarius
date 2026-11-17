@@ -8,7 +8,7 @@ package uigui
 //     自动开一次（D263 起 welcomed 缺位的启动已由装配前向导接管，正常到不了这里）。
 //
 // 数据面经 `WelcomeManager`（消费方定义的小接口，装配根实现——同 SettingsSnapshot /
-// ProviderManager 口径）；表单状态仅本宿主 goroutine 读写，不跨窗共享（§15.7 并发模型）。
+// ProviderManager 规则）；表单状态仅本宿主 goroutine 读写，不跨窗共享（§15.7 并发模型）。
 // **密钥只写不回显**（快照结构无密钥字段，D35）。
 
 // 本文件只留契约类型、表单状态与动作；文案见 welcome_tutorial.go，帧骨架见
@@ -40,7 +40,7 @@ type WelcomeSnapshot struct {
 	// 要求填一把钥匙；「还缺什么」不在这里——那是末页的检查（见 Issues）。
 	NeedKey bool
 	// KeyReady 现有配置里已经有一把能解析的密钥（环境变量或密钥库）。第 3 页据此提示
-	// 「不必再填」，用户就不该被迫把同一份 Key 再打一遍（D278 决策 3 的落地补充）。
+	// 「不必再填」，用户就不该被迫把同一份 Key 再打一遍（D278 决策 3 的实现补充）。
 	KeyReady bool
 }
 
@@ -58,7 +58,7 @@ type WelcomePatch struct {
 type WelcomeManager interface {
 	// Snapshot 开窗现取（密钥不回显）。
 	Snapshot() WelcomeSnapshot
-	// Apply 写回 `model.providers[0]`（覆盖）+ primary + `ui.welcomed`；失败报因、不落盘。
+	// Apply 写回 `model.providers[0]`（覆盖）+ primary + `ui.welcomed`；失败报因、不写入磁盘。
 	Apply(p WelcomePatch) error
 	// Test 连通性测试（真实最小请求；调用方 goroutine 负责，不进帧循环）。
 	Test(p WelcomePatch) error
@@ -71,7 +71,7 @@ type WelcomeManager interface {
 	// SetConsent 仅写回 `ui.consent_version`（重过第 2 页时用：此时 provider 已经配好，
 	// 走 Apply 会把整条 provider 再覆盖一遍）。
 	SetConsent(version int) error
-	// Issues 末页检查：按**现在**的配置（含落盘的密钥库 / 环境变量）列出「启动所需的
+	// Issues 末页检查：按**现在**的配置（含写入磁盘的密钥库 / 环境变量）列出「启动所需的
 	// 东西还缺哪些」，一句一条，空 = 齐全。每次调用现探、并按调用当次语言成句——第 1 页
 	// 切过语言之后再问，给的句子就是新语言（早先这些句子在开窗之前就拼好了，切语言也
 	// 不变，还会在第 1 页就吓人一跳）。
@@ -208,14 +208,14 @@ type welcomeForm struct {
 	termsLang   i18n.Lang
 	termsLoaded bool
 	termsErr    error
-	// 第 1 页的语言三态（D278）：lang = 当前选择，lang0 = 已落盘的那个（相等 = 没有待写的改动）。
+	// 第 1 页的语言三态（D278）：lang = 当前选择，lang0 = 已写入磁盘的那个（相等 = 没有待写的改动）。
 	// 只在本宿主的 goroutine 里读写，与设置窗的 ui.lang 行同一个取值域（auto | zh | en）。
 	lang     i18n.Selection
 	lang0    i18n.Selection
 	langBtns [3]widget.Clickable
 	// doneIssues 末页「启动前检查」的结果（进入本页时现探一次；离开清空）。
 	// 只在**这次不写 provider** 时探：第 3 页填了参数就说明钥匙在这次提交里，页 3 的
-	// 闸门已经管过，拿落盘态再探一遍只会把用户刚填的那把钥匙又说成缺（`refreshDoneIssues`）。
+	// 闸门已经管过，拿写入磁盘态再探一遍只会把用户刚填的那把钥匙又说成缺（`refreshDoneIssues`）。
 	doneIssues []string
 	// accessSkipped 第 3 页按过「稍后配置」（D278 决策 3）：末页摘要据此改说「还没配置」，
 	// 保存也只落同意与 welcomed，**不碰 providers**。回第 3 页补齐参数后清掉。
@@ -238,7 +238,7 @@ func welcomeLangLabels() []string {
 	return labels
 }
 
-// newWelcomeForm 以快照构造表单（开窗与装配前宿主共用口径）。
+// newWelcomeForm 以快照构造表单（开窗与装配前宿主共用规则）。
 func newWelcomeForm(env welcomeEnv) *welcomeForm {
 	f := &welcomeForm{env: env, testResults: make(chan testOutcome, 4)}
 	for _, ed := range []*widget.Editor{&f.name, &f.baseURL, &f.apiKey, &f.models} {
@@ -286,7 +286,7 @@ func (f *welcomeForm) pickLang(sel i18n.Selection) {
 	}
 }
 
-// saveLang 落盘（只写变化过的那个）：语言是用户的第一个选择，**离开第 1 页就写**——
+// saveLang 写入磁盘（只写变化过的那个）：语言是用户的第一个选择，**离开第 1 页就写**——
 // 而不是等到末页保存。中途取消（配置不完整、退出向导）时语言选择照样留着，下次进来
 // 不用再选一遍。写失败不阻断翻页以外的事：翻页/保存会把它当页面错误报出来。
 func (f *welcomeForm) saveLang() error {
@@ -375,7 +375,7 @@ func (f *welcomeForm) onNext() {
 		f.fail(err)
 		return
 	}
-	// 只重过第 2 页时，本页的「继续」就是「同意并继续」：直接落盘收尾。
+	// 只重过第 2 页时，本页的「继续」就是「同意并继续」：直接写入磁盘收尾。
 	if f.env.consentOnly {
 		f.onSave()
 		return
@@ -400,7 +400,7 @@ func (f *welcomeForm) onNext() {
 // 语言是切过之后的那一种，位置是用户刚看完「将要写入什么」的地方。
 //
 // 只在本轮**不写 provider** 时探（第 3 页按过「稍后配置」或 provider 名为空）：那一支的
-// 参数不会进配置，落盘态就是启动态，探出来的是实话；写了 provider 的那一支，钥匙就在
+// 参数不会进配置，写入磁盘态就是启动态，探出来的是实话；写了 provider 的那一支，钥匙就在
 // 这次提交里，页 3 的闸门已经管过。
 func (f *welcomeForm) refreshDoneIssues() {
 	f.doneIssues = nil
@@ -484,7 +484,7 @@ func (f *welcomeForm) onSave() {
 // （未写 provider，可启动空态）。in-app = 置 `ui.welcomed` 后关窗（显式关闭即「已看」，
 // 不再自动弹；置位失败不阻断关窗）。
 func (f *welcomeForm) onSkip() {
-	// 语言选择在这一步单独落盘（不管后面是走是留）：它是用户已经做完的一个决定，
+	// 语言选择在这一步单独写入磁盘（不管后面是走是留）：它是用户已经做完的一个决定，
 	// 不该因为「配置还没填完就退出」一起丢掉。失败静默——窗马上就关了。
 	_ = f.saveLang()
 	// 只重过第 2 页时没有「以后再说」：不同意就不能继续用（页脚也不给这个按钮，
@@ -494,8 +494,8 @@ func (f *welcomeForm) onSkip() {
 		return
 	}
 	if f.env.setup && f.page == welcomeAccess {
-		// 「稍后配置」跳过的只是这一页（D278 决策 3 的收尾口径）：同意已经在第 2 页
-		// 勾过了，而它的落盘点在末页——原先这里直接 Done，勾过的同意没有写回，下次
+		// 「稍后配置」跳过的只是这一页（D278 决策 3 的收尾规则）：同意已经在第 2 页
+		// 勾过了，而它写入磁盘的地点在末页——原先这里直接 Done，勾过的同意没有写回，下次
 		// 启动又把人拉回条款页。教程页与末页照走，末页摘要改说「还没配置」。
 		f.accessSkipped = true
 		f.page = welcomeTutorial

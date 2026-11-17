@@ -373,7 +373,7 @@ func commandInfos(table []commandEntry) []port.CommandInfo {
 	return out
 }
 
-// paramsCopy 深拷贝参数声明（口径同 Names）：`Values` 底层数组若直接交出去，UI 侧
+// paramsCopy 深拷贝参数声明（规则同 Names）：`Values` 底层数组若直接交出去，UI 侧
 // 一次顺手改动就会污染包级只读表，而且下一次 /help 才露出来。
 //
 // 顺手取词：Name / ValueName / Desc 一律过 T——`--flag`、枚举值、`<id>` 这类纯语法不在表里，

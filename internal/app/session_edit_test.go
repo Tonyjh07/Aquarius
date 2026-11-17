@@ -87,13 +87,13 @@ func revisedID(c *conversation.Conversation, old conversation.MessageID) convers
 	return ""
 }
 
-// TestSessionGotoCommand /goto：Head 导航 + 唯一前缀解析 + 落盘 + 错误路径。
+// TestSessionGotoCommand /goto：Head 导航 + 唯一前缀解析 + 写入磁盘 + 错误路径。
 func TestSessionGotoCommand(t *testing.T) {
 	store := newMemStore()
 	s, _ := newConfirmedSession(t, store, nil)
 	c := buildTree(t, s)
 
-	// 精确 id 并落盘（memStore 存副本，断言真实发生过 Save）。
+	// 精确 id 并写入磁盘（memStore 存副本，断言真实发生过 Save）。
 	out, err := handleCmd(s, "goto", "a1")
 	if err != nil || out != "Head → a1" {
 		t.Fatalf("goto = %q, %v", out, err)
@@ -102,7 +102,7 @@ func TestSessionGotoCommand(t *testing.T) {
 		t.Fatalf("head = %s, want a1", c.Head)
 	}
 	if saved := store.convs[c.ID]; saved == nil || saved.Head != "a1" {
-		t.Fatalf("saved head = %+v, want 已落盘 a1", saved)
+		t.Fatalf("saved head = %+v, want 已写入磁盘 a1", saved)
 	}
 
 	// 唯一前缀命中。
@@ -220,7 +220,7 @@ func TestSessionGotoClearsAndReplays(t *testing.T) {
 }
 
 // TestSessionEditClearsAndReplays D92：/edit 修订后清屏 + 回放新路径——Head 移动类
-// 命令统一口径（D81；此前只入树不回放，界面停在旧文本）。
+// 命令统一规则（D81；此前只入树不回放，界面停在旧文本）。
 func TestSessionEditClearsAndReplays(t *testing.T) {
 	ctx := context.Background()
 	s, _, rec := newTestSession(t, newMemStore(), textStream("回复一"))
@@ -252,7 +252,7 @@ func TestSessionEditClearsAndReplays(t *testing.T) {
 }
 
 // TestSessionEditUserRegenerates D93：编辑用户消息（Fresh 分叉）= 改写并重新生成——
-// 清屏回放后 Head 在新节点上直接重跑一轮；assistant 修订不触发生成（既有口径）。
+// 清屏回放后 Head 在新节点上直接重跑一轮；assistant 修订不触发生成（既有规则）。
 func TestSessionEditUserRegenerates(t *testing.T) {
 	ctx := context.Background()
 	s, _, rec := newTestSession(t, newMemStore(), textStream("回复一"), textStream("改后回答"))
@@ -335,7 +335,7 @@ func TestSessionRegenCommand(t *testing.T) {
 		t.Fatalf("回放节点 = %s, want %s", hist.Message.ID, nu)
 	}
 	if saved := store.convs[c.ID]; saved == nil || saved.Head != c.Head {
-		t.Fatalf("saved head = %+v, want 已落盘", saved)
+		t.Fatalf("saved head = %+v, want 已写入磁盘", saved)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -376,7 +376,7 @@ func TestSessionRegenCommand(t *testing.T) {
 }
 
 // TestSessionEditFresh /edit 缺省 Fresh：同级新节点、旧分支原样保留、Head 移到新节点、
-// 落盘；编辑用户消息即重新生成回答（D93），Head 落在新分支的回答上。
+// 写入磁盘；编辑用户消息即重新生成回答（D93），Head 落在新分支的回答上。
 func TestSessionEditFresh(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store, textStream("新回答"))
@@ -408,7 +408,7 @@ func TestSessionEditFresh(t *testing.T) {
 		t.Fatalf("head = %s (%+v), want 新节点下的回答", c.Head, nodeOf(t, c, c.Head))
 	}
 	if saved := store.convs[c.ID]; saved == nil || saved.Head != c.Head {
-		t.Fatalf("saved = %+v, want 已落盘新 Head", saved)
+		t.Fatalf("saved = %+v, want 已写入磁盘新 Head", saved)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)

@@ -141,7 +141,7 @@ func TestBubbleRightGesture(t *testing.T) {
 	}
 }
 
-// TestBubbleCtxCopy D92/D97 复制口径：有选区 → 选区文本优先（D91 后果⑤：副键留
+// TestBubbleCtxCopy D92/D97 复制规则：有选区 → 选区文本优先（D91 后果⑤：副键留
 // 菜单复用选态）；无选区 → 整条气泡渲染文本（assistant 复合行按键区间拼接）；
 // edit 预填 user/assistant 均携带（D97 开放助手编辑）。
 func TestBubbleCtxCopy(t *testing.T) {

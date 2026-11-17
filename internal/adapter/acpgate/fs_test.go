@@ -122,7 +122,7 @@ func TestFsRequestsInRoot(t *testing.T) {
 	}
 	wantOnDisk := "written by agent\nsecond line\n"
 	if b, err := os.ReadFile(filepath.Join(root, "sub", "dir", "new.txt")); err != nil || string(b) != wantOnDisk {
-		t.Fatalf("落盘内容 = %q, %v；want %q（父目录应被创建）", string(b), err, wantOnDisk)
+		t.Fatalf("写入磁盘的内容 = %q, %v；want %q（父目录应被创建）", string(b), err, wantOnDisk)
 	}
 	if !strings.HasPrefix(got["escape_write"], "error") {
 		t.Fatalf("越界写应被拒，got %s", got["escape_write"])
@@ -216,7 +216,7 @@ func TestFsOutsideAllowed(t *testing.T) {
 		t.Fatalf("批准后越界写应成功，got %s", got["escape_write"])
 	}
 	if b, err := os.ReadFile(filepath.Join(escape, "outside.txt")); err != nil || string(b) != "should not land\n" {
-		t.Fatalf("越界写落盘 = %q, %v", string(b), err)
+		t.Fatalf("越界写写入磁盘 = %q, %v", string(b), err)
 	}
 	if !strings.Contains(got["escape_read"], "top secret") {
 		t.Fatalf("批准后越界读应拿到内容，got %s", got["escape_read"])
@@ -225,7 +225,7 @@ func TestFsOutsideAllowed(t *testing.T) {
 		t.Fatalf("批准后控制文件写应成功，got %s", got["control_write"])
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-commit")); err != nil {
-		t.Fatalf("控制文件应落盘: %v", err)
+		t.Fatalf("控制文件应写入磁盘: %v", err)
 	}
 
 	wantRead := mustResolvePath(t, filepath.Join(escape, "secret.txt"))

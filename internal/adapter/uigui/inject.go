@@ -21,7 +21,7 @@ import (
 // injectSep 头部两段的连接符（中英同形：窄间隔点，比「·」两侧留白更紧）。
 const injectSep = " · "
 
-// injectClick 折叠行的点击控件 get-or-create（与 chipClick 同口径：按块序缓存，
+// injectClick 折叠行的点击控件 get-or-create（与 chipClick 同规则：按块序缓存，
 // m.blocks 只增不减，块序变化只发生在清屏后）。
 func (u *UI) injectClick(i int) *widget.Clickable {
 	for len(u.injectClicks) <= i {
@@ -31,7 +31,7 @@ func (u *UI) injectClick(i int) *widget.Clickable {
 }
 
 // injectIsOpen 注入块展开态：默认折叠（map 零值 = 收起），视图态只存 UI、不进 model；
-// 清屏复位（与 chipOpen/cmdOpen 同口径）。
+// 清屏复位（与 chipOpen/cmdOpen 同规则）。
 func (u *UI) injectIsOpen(i int) bool { return u.injectOpen[i] }
 
 // injectHeadline 折叠行整行文案：`▸ 指令更新 · 日期变更`（展开时箭头朝下）。
@@ -50,7 +50,7 @@ func injectHeadline(source string, open bool) string {
 //
 // 类别按来源前缀定，**余下部分不带前缀词**：`port.InjectSourceLabel` 给的是「工具 think」
 // 这样自带类别的整句，直接接在「工具注入」后面会读成「工具注入 · 工具 think」。
-// 未知前缀不猜类别，整段回落成来源标签——那时读者更需要看见原文。
+// 未知前缀不猜类别，整段回写成来源标签——那时读者更需要看见原文。
 func injectTitle(source string) string {
 	name, rest := source, ""
 	if i := strings.IndexByte(source, ':'); i >= 0 {
@@ -76,7 +76,7 @@ func injectTitle(source string) string {
 	case "user":
 		kind = i18n.T("ui.inject.kind.user")
 	default:
-		// 未知前缀不猜类别，整段回落成来源标签——那时读者更需要看见原文。
+		// 未知前缀不猜类别，整段回写成来源标签——那时读者更需要看见原文。
 		return port.InjectSourceLabel(source)
 	}
 	if rest == "" {

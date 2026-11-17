@@ -152,7 +152,7 @@ type settingsForm struct {
 	promptEditor
 
 	// provider 编辑区（D110②）：每条一组控件 + 测试/设主/删除；provApply 全量应用。
-	// S11-7② 起按卡片折叠（D176 口径二）：每张卡片一行摘要，同一时刻只展开一张
+	// S11-7② 起按卡片折叠（D176 规则二）：每张卡片一行摘要，同一时刻只展开一张
 	// （provOpen = 展开的下标；-1 = 全收起）。
 	provs       []*providerForm
 	primaryIdx  int // 当前 primary（provs 下标；应用时取该条名字）
@@ -165,9 +165,9 @@ type settingsForm struct {
 	testResults chan testOutcome // 连通性测试异步结果（测试 goroutine 写、帧循环排空）
 	win         *app.Window      // 结果回灌的 Invalidate（headless = nil）
 
-	// 降级链（D176 口径三）：链是列表不是文本框——每项 provider / model，可上移/下移/删除/
+	// 降级链（D176 规则三）：链是列表不是文本框——每项 provider / model，可上移/下移/删除/
 	// 添加。chain/snapChain 以「磁盘快照」为基线（保存 diff + 未改动判定），链改动随
-	// 「保存并应用」写回（重启生效，与 provider 变更同口径）。
+	// 「保存并应用」写回（重启生效，与 provider 变更同规则）。
 	chain     []*fallbackForm
 	snapChain []FallbackLink
 	chainAdd  widget.Clickable
@@ -208,7 +208,7 @@ type settingsForm struct {
 	vadOn widget.Bool
 
 	// 联网页（D200）：搜索与抓取各自一组有序提供商（顺序即优先级），加本地抓取的
-	// 网络与安全参数。密钥只写不回显（空 = 保持），与 provider 密钥池同口径。
+	// 网络与安全参数。密钥只写不回显（空 = 保持），与 provider 密钥池同规则。
 	webSearch    []*webProviderForm
 	webFetch     []*webProviderForm
 	webSearchAdd widget.Clickable
@@ -250,7 +250,7 @@ type settingsForm struct {
 }
 
 // newSettingsFormState 表单控件与固定档的构造骨架（快照无关：列表轴向 / 枚举档 /
-// 单行档 / 结果通道）。与快照填表分开 = 开窗路径与测试共用同一构造口径（S4c：
+// 单行档 / 结果通道）。与快照填表分开 = 开窗路径与测试共用同一构造规则（S4c：
 // 列表轴向属构造不变量——轴向错配会让 material.List 按视口**宽**迭代，只画首行）。
 func newSettingsFormState() *settingsForm {
 	f := &settingsForm{
@@ -275,7 +275,7 @@ func newSettingsFormState() *settingsForm {
 		skillBtns:    map[string]*widget.Clickable{},
 		secretBtns:   map[string]*widget.Clickable{},
 		// 密钥库快照「上次 Revision」起点 −1：**首帧必采纳**。若起点取 0，库
-		// Revision 恰为 0（空库、或本进程 provider 写路径直接落库未经过本管理面）
+		// Revision 恰为 0（空库、或本进程 provider 写路径直接写进密钥库未经过本管理面）
 		// 时会被当「没变」而跳过，窗口打开即显示空列表。
 		secretsRev: -1,
 		// 技能页快照同理：起点 −1 让首帧必采纳（空安装面 Revision 常为 0）。
@@ -303,7 +303,7 @@ func newSettingsFormState() *settingsForm {
 	for _, ed := range []*widget.Editor{&f.model, &f.hotkey, &f.fontSize, &f.winW, &f.winH, &f.profName, &f.placeholder} {
 		ed.SingleLine = true // 表单单行档（Enter 无提交语义，保存走按钮）
 	}
-	// 密钥库页（S9-6b）：键名与值都是单行档；值档掩码显示（肩上可视读，落盘/日志仍不回显）。
+	// 密钥库页（S9-6b）：键名与值都是单行档；值档掩码显示（肩上可视读，写入磁盘/日志仍不回显）。
 	f.secretName.SingleLine = true
 	f.secretValue.SingleLine = true
 	f.secretValue.Mask = '•'
@@ -321,7 +321,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	if u.opts.ProviderMgr != nil {
 		snap := u.opts.ProviderMgr.Snapshot()
 		f.loadProviders(snap)    // D110②：provider 编辑区
-		f.loadChainChoices(snap) // D176 口径三：降级链的 provider 选项
+		f.loadChainChoices(snap) // D176 规则三：降级链的 provider 选项
 	}
 	f.tools = u.opts.Tools         // S6/D143：工具与 MCP 管理面（nil = 只读占位）
 	f.delegates = u.opts.Delegates // D270：外部代理管理面（nil = 只读占位）
@@ -360,7 +360,7 @@ func newSettingsForm(u *UI) *settingsForm {
 		&f.samplingTemp, &f.samplingTopP, &f.samplingMax, &f.samplingStop} {
 		ed.SingleLine = true
 	}
-	f.asrKey.Mask = '•' // 只写不回显（D35 同口径）
+	f.asrKey.Mask = '•' // 只写不回显（D35 同一套规则）
 	f.ttsKey.Mask = '•'
 	// f.sysPrompt / f.rawCfg 保持多行（表单仅有的多行档）。
 	f.snap = s
@@ -424,7 +424,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.ttsTags.SetText(s.TTSTags)
 	f.vadOn.Value = s.VADEnabled // D295：默认开
 	f.loadPrompts(s.PromptModules, s.PromptPersona)
-	f.loadFallback(s.Fallback, f.chainChoices) // D176 口径三：降级链
+	f.loadFallback(s.Fallback, f.chainChoices) // D176 规则三：降级链
 	f.loadWeb(s)                               // D200：联网提供商与本地抓取参数
 	// D204：采样参数填表（空串 = 不发送，保持空）。
 	f.samplingTemp.SetText(s.SamplingTemperature)

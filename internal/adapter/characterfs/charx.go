@@ -121,7 +121,7 @@ func resolveAssetURI(uri string, byBase map[string][]string) (string, string) {
 	}
 }
 
-// gateZip 压缩包门禁（沿用技能安装口径，§5.15）：条目数与展开总量设上限；绝对路径、盘符、
+// gateZip 压缩包门禁（沿用技能安装规则，§5.15）：条目数与展开总量设上限；绝对路径、盘符、
 // `..`、符号链接与加密条目一律拒绝。超限报错，不截断。
 func gateZip(zr *zip.Reader) error {
 	if len(zr.File) > maxZipEntries {

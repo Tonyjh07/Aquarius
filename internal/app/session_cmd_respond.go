@@ -41,7 +41,7 @@ func (s *Session) execRespond(ctx context.Context, cmd port.Command) (string, er
 	if err := s.persist(ctx); err != nil {
 		return "", err
 	}
-	// 移 Head 后清屏回放（与 /goto 同口径 D81）：转写区恒与 Head 一致，生成过程可见。
+	// 移 Head 后清屏回放（与 /goto 同规则 D81）：转写区恒与 Head 一致，生成过程可见。
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}

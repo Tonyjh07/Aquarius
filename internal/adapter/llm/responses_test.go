@@ -1,7 +1,7 @@
 package llm
 
 // openai-responses 适配器测试（S11-5②）：请求体形状、SSE 事件族回放、签名编解码、
-// 与 chat 的差异（无剥离重试、429 仍走密钥池口径）。
+// 与 chat 的差异（无剥离重试、429 仍走密钥池规则）。
 // 全部用 httptest 假 server 回放录制的分片，不起真实网络。
 
 import (
@@ -329,7 +329,7 @@ func TestResponsesNoReasoningParams(t *testing.T) {
 	}
 }
 
-// TestResponsesForeignSignatureIgnored D175 口径三：别家前缀的签名一律不回放——
+// TestResponsesForeignSignatureIgnored D175 规则三：别家前缀的签名一律不回放——
 // 跨 provider 复制会话时不能把 A 家的签名发给 B 家。
 func TestResponsesForeignSignatureIgnored(t *testing.T) {
 	srv, rec := newResponsesServer(t, `data: {"type":"response.completed","response":{}}`+"\n")
@@ -489,7 +489,7 @@ func TestResponsesStatusErrors(t *testing.T) {
 	}
 }
 
-// TestResponsesNoStripRetry D175 口径四：非 chat 协议不做剥离重试——参数被点名拒绝
+// TestResponsesNoStripRetry D175 规则四：非 chat 协议不做剥离重试——参数被点名拒绝
 // 就照实报错，不静默剥掉（否则配置错误永远浮不上来），且只有一次请求。
 func TestResponsesNoStripRetry(t *testing.T) {
 	var mu sync.Mutex

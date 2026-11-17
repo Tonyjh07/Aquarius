@@ -320,7 +320,7 @@ func TestStoreLoadNotFound(t *testing.T) {
 	}
 }
 
-// TestStoreImportRejectsReservedDevice 设备名拒绝导入（不落盘）。
+// TestStoreImportRejectsReservedDevice 设备名拒绝导入（不写入磁盘）。
 func TestStoreImportRejectsReservedDevice(t *testing.T) {
 	s, root, _ := newStore(t)
 	_, err := s.Import(context.Background(), writeCard(t, "c.json", cardJSONNamed("CON")))

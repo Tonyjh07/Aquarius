@@ -79,7 +79,7 @@ func TestCharactersPageEmptyAndUnwired(t *testing.T) {
 	}
 }
 
-// TestCharPickFillsSource 选择框结果只填来源框，不落盘（导入是另一个动作）。
+// TestCharPickFillsSource 选择框结果只填来源框，不写入磁盘（导入是另一个动作）。
 func TestCharPickFillsSource(t *testing.T) {
 	t.Parallel()
 	f, u := charactersForm(t, CharactersSnapshot{})

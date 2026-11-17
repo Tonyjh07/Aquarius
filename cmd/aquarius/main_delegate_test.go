@@ -79,7 +79,7 @@ func findDelegateInject(convs []*conversation.Conversation) (*conversation.Conve
 }
 
 // 端到端等的两个预算。转交要真起进程，而全量跑时它还要和别的包的测试抢 CPU：
-// 20 秒在并行跑里不够用（见过 29 秒才落地）。轮询成功即退出，预算给宽不花钱；
+// 20 秒在并行跑里不够用（见过 29 秒才实现）。轮询成功即退出，预算给宽不花钱；
 // 这两个数只防「程序真的卡死」，不是断言的一部分。
 const (
 	e2eReportWait = 60 * time.Second
@@ -88,7 +88,7 @@ const (
 
 // TestRunDelegateE2E 派出 → 切走（/new）→ 报告落在**发起**会话。
 //
-// 时序不是靠 sleep 猜的：转交用真进程跑到终态，注入走 D261 的异地落地；测试轮询
+// 时序不是靠 sleep 猜的：转交用真进程跑到终态，注入走 D261 的异地送达；测试轮询
 // 会话树直到注入出现，再收掉 stdin 让程序退出。
 func TestRunDelegateE2E(t *testing.T) {
 	agent := buildFakeAgent(t)
@@ -130,7 +130,7 @@ func TestRunDelegateE2E(t *testing.T) {
 	}
 	_ = pw.Close()
 	if origin == nil {
-		t.Fatalf("没等到转交报告落地；stdout = %q", out.String())
+		t.Fatalf("没等到转交报告送达；stdout = %q", out.String())
 	}
 	for _, want := range []string{"Delegation d001 to fake", "tool calls=2", "files changed=2", "Hello world"} {
 		if !strings.Contains(text, want) {
@@ -193,7 +193,7 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 	code := make(chan int, 1)
 	go func() { code <- run([]string{"-data", dir}, pr, &out, io.Discard) }()
 
-	// 等这条事实落地（启动对账在第一次 Prompt 之前）。
+	// 等这条事实实现（启动对账在第一次 Prompt 之前）。
 	var text string
 	deadline := time.Now().Add(e2eReportWait)
 	for time.Now().Before(deadline) {
@@ -217,7 +217,7 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 		t.Fatal("程序未退出")
 	}
 	if text == "" {
-		t.Fatalf("没等到转交对账落地；stdout = %q", out.String())
+		t.Fatalf("没等到转交对账送达；stdout = %q", out.String())
 	}
 	for _, want := range []string{"A delegation had not finished", "d001 (agent opencode)", "refactor the parser"} {
 		if !strings.Contains(text, want) {

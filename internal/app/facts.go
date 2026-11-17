@@ -41,7 +41,7 @@ func factsSigOf(c *conversation.Conversation) factsSig {
 
 // publishFacts 重建并原子发布会话展示事实快照（D82/§7.6）：调用点与 publishTree 同组
 // （NewSession 两分支 + Handle 返回前），均在会话 goroutine。签名门控见上；计数失败
-// 保留旧快照并返回（下次 Handle 自愈重试，est ③「计数失败不阻断」同款口径）。
+// 保留旧快照并返回（下次 Handle 自愈重试，est ③「计数失败不阻断」同款规则）。
 func (s *Session) publishFacts(ctx context.Context) {
 	if s.cur == nil {
 		return

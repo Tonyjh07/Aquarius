@@ -153,14 +153,14 @@ func TestSessionRmCommand(t *testing.T) {
 		}
 		saved := store.convs[c.ID]
 		if saved == nil || saved.Head != "p" || saved.NodeCount() != 2 {
-			t.Fatalf("saved = %+v, want 删除结果已落盘", saved)
+			t.Fatalf("saved = %+v, want 删除结果已写入磁盘", saved)
 		}
 		if err := c.Validate(); err != nil {
 			t.Fatalf("validate: %v", err)
 		}
 	})
 
-	t.Run("落盘失败回滚", func(t *testing.T) {
+	t.Run("写入磁盘失败回滚", func(t *testing.T) {
 		store := newMemStore()
 		s, _ := newConfirmedSession(t, store, []bool{true})
 		c := buildTree(t, s)
@@ -235,7 +235,7 @@ func TestSessionRmCommand(t *testing.T) {
 }
 
 // TestSessionTitleTargetsOtherConversation /title --id 改非当前会话标题（D120⑥）：
-// 目标落盘、当前会话与其标题不受影响；无标题回显目标标题；--id 缺省作用于当前（回归）；
+// 目标写入磁盘、当前会话与其标题不受影响；无标题回显目标标题；--id 缺省作用于当前（回归）；
 // 非 --id 的 "--x" 仍按标题文本处理。
 func TestSessionTitleTargetsOtherConversation(t *testing.T) {
 	store := newMemStore()
@@ -320,7 +320,7 @@ func TestSessionRmconvOtherConversation(t *testing.T) {
 	}
 }
 
-// TestSessionRmconvCurrentSuccessor 删当前会话 → 继任到其余会话并清屏（D75/D81 口径）。
+// TestSessionRmconvCurrentSuccessor 删当前会话 → 继任到其余会话并清屏（D75/D81 规则）。
 func TestSessionRmconvCurrentSuccessor(t *testing.T) {
 	store := newMemStore()
 	rec := &recorder{}
@@ -385,7 +385,7 @@ func TestSessionRmconvLastCreatesEmpty(t *testing.T) {
 		t.Fatalf("库 = %d 个会话, want 仅新会话", len(store.convs))
 	}
 	if saved := store.convs[cur.ID]; saved == nil || saved.ID != cur.ID {
-		t.Fatalf("新会话未落盘: %+v", saved)
+		t.Fatalf("新会话未写入磁盘: %+v", saved)
 	}
 	if err := cur.Validate(); err != nil {
 		t.Fatalf("新会话不合法: %v", err)

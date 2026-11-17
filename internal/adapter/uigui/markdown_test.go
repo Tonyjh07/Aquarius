@@ -30,7 +30,7 @@ func TestParseMarkdownStructural(t *testing.T) {
 	}{
 		{mdHeading, "标题一", 1, ""},
 		{mdHeading, "二级", 2, ""},
-		{mdPara, "正文段落，两行：\n续行", 0, ""}, // 软换行保 \n（聊天口径）
+		{mdPara, "正文段落，两行：\n续行", 0, ""}, // 软换行保 \n（聊天规则）
 		{mdCode, "x := 1", 0, "go"},
 		{mdRule, "", 0, ""},
 	}
@@ -163,7 +163,7 @@ func TestMdBlocksCacheLimit(t *testing.T) {
 }
 
 // TestFrameItemsMarkdown 助手定稿块 = 单条目携结构块（D66 单回复单气泡）；live 草稿
-// 不解析（D33 口径）。
+// 不解析（D33 规则）。
 func TestFrameItemsMarkdown(t *testing.T) {
 	t.Parallel()
 	u := newFrameUI()

@@ -10,7 +10,7 @@ import (
 func fixedNow() time.Time { return time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC) }
 
 // TestPersonaComposerEnv D37/D144：环境信息内置模块逐字段展开；空字段不出行；
-// @env.date 恒出（= 会话创建当天）；非绝对沙盒不附提示（139d585 口径）。
+// @env.date 恒出（= 会话创建当天）；非绝对沙盒不附提示（139d585 规则）。
 func TestPersonaComposerEnv(t *testing.T) {
 	compose := func(env RuntimeEnv) string {
 		got, missing := NewPersonaComposer(PromptSpec{}, env, fixedNow).Compose()
@@ -62,7 +62,7 @@ func TestPersonaComposerEnv(t *testing.T) {
 		t.Fatalf("relative sandbox must not be hinted:\n%s", got)
 	}
 
-	// 超时说明行（D38 发现性）：缺省秒数与保留参数口径；0 不附。
+	// 超时说明行（D38 发现性）：缺省秒数与保留参数规则；0 不附。
 	got = compose(RuntimeEnv{Platform: "linux/amd64", ToolTimeoutSec: 60})
 	if !strings.Contains(got, "- Tool timeout: default 60s per call") ||
 		!strings.Contains(got, `"timeout_sec" argument (1-3600)`) ||

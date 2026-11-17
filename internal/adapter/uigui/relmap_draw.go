@@ -276,7 +276,7 @@ func (g *relGraph) diamond(gtx layout.Context, xs, ys, r float32, fill color.NRG
 }
 
 // triangle 正三角（inject：注入上下文，D166）。外接半径 0.95r——顶点朝上，底边
-// 只向下压 0.475r，整体仍在 2r 盒内（与菱形同口径，尖不顶出卡片内边距）。
+// 只向下压 0.475r，整体仍在 2r 盒内（与菱形同规则，尖不顶出卡片内边距）。
 func (g *relGraph) triangle(gtx layout.Context, xs, ys, r float32, fill color.NRGBA) {
 	d := r * 0.95
 	var p clip.Path

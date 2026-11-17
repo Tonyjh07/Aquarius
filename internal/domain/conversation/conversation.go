@@ -80,7 +80,7 @@ func (k KeepMode) String() string {
 // wire 格式；反过来用 Restore 重建并自检。领域不为「磁盘上长什么样」负责。
 //
 // 因此本类型**不是** wire 格式：它故意没有任何 JSON tag——直接 json.Marshal 它只会得到
-// ID/Title/Head 与两个时间戳（三张结构表是私有的），落盘会静默丢掉整棵树。要存盘请走
+// ID/Title/Head 与两个时间戳（三张结构表是私有的），写入磁盘会静默丢掉整棵树。要存盘请走
 // Snapshot，要读盘请走 Restore。
 type Conversation struct {
 	ID    ID

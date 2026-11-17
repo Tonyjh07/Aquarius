@@ -30,7 +30,7 @@ var (
 	ErrPendingTooLong error = localError{"port.err.pending_too_long"}
 )
 
-// Delivery 待发消息的到模型口径。
+// Delivery 待发消息的到模型规则。
 type Delivery string
 
 const (

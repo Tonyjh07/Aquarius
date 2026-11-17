@@ -1,6 +1,6 @@
 package app
 
-// session_drain_test.go 排空点的口径表（D150/D167）：四个时机各自的两条口径——触发型注入
+// session_drain_test.go 排空点的规则表（D150/D167）：四个时机各自的两条规则——触发型注入
 // 是否真起一轮、是否逐条呈现。此前这两条由调用点传两个布尔，四个组合里有一个（只驱动不
 // 呈现之外的「既不驱动也不呈现」）从不出现却没有东西拦住；收成具名时机后由下面这张表锁定。
 
@@ -13,8 +13,8 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestDrainPlanTable 口径表：① 入口与 ② 轮末只落地且逐条呈现；③ 唤醒驱动且呈现；
-// ③' 命令点驱动但不呈现（调用方清屏回放）。未知取值按最保守的一档（只落地、呈现）。
+// TestDrainPlanTable 规则表：① 入口与 ② 轮末只写入且逐条呈现；③ 唤醒驱动且呈现；
+// ③' 命令点驱动但不呈现（调用方清屏回放）。未知取值按最保守的一档（只写入、呈现）。
 func TestDrainPlanTable(t *testing.T) {
 	cases := []struct {
 		at       drainPoint
@@ -36,7 +36,7 @@ func TestDrainPlanTable(t *testing.T) {
 	}
 }
 
-// TestDrainBeforeReplayKeepsTrigger 命令点排空：触发型注入落地时 Trigger 记为 true（本条确实
+// TestDrainBeforeReplayKeepsTrigger 命令点排空：触发型注入实现时 Trigger 记为 true（本条确实
 // 会起一轮），但 Drain 不逐条呈现——呈现交给调用方的清屏回放。
 func TestDrainBeforeReplayKeepsTrigger(t *testing.T) {
 	s, _, rec := injectableSession(t, newMemStore(), textStream("收到"))
@@ -60,7 +60,7 @@ func TestDrainBeforeReplayKeepsTrigger(t *testing.T) {
 	}
 }
 
-// TestDrainAfterTurnDoesNotTrigger 轮末排空：触发型注入只落地、Trigger 记 false（记的是
+// TestDrainAfterTurnDoesNotTrigger 轮末排空：触发型注入只写入、Trigger 记 false（记的是
 // 实际发生），也不要求跑轮。
 func TestDrainAfterTurnDoesNotTrigger(t *testing.T) {
 	s, _, _ := injectableSession(t, newMemStore())
@@ -75,7 +75,7 @@ func TestDrainAfterTurnDoesNotTrigger(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 	if len(landed) != 1 || landed[0].Trigger || wantTurn {
-		t.Fatalf("landed = %+v, wantTurn = %v（轮末只落地）", landed, wantTurn)
+		t.Fatalf("landed = %+v, wantTurn = %v（轮末只送达）", landed, wantTurn)
 	}
 	if landed[0].Role != conversation.RoleInject {
 		t.Fatalf("role = %s, want inject", landed[0].Role)
@@ -105,7 +105,7 @@ func TestDrainOnWakeTriggersAndAnnounces(t *testing.T) {
 	}
 }
 
-// TestDrainLandsInOtherSession 目标会话不是当前会话的注入**异地落地**（D261）：读目标树、
+// TestDrainLandsInOtherSession 目标会话不是当前会话的注入**异地送达**（D261）：读目标树、
 // 追加注入、写回；当前会话的树一动不动，也不要求当前会话跑轮。
 func TestDrainLandsInOtherSession(t *testing.T) {
 	store := newMemStore()
@@ -131,7 +131,7 @@ func TestDrainLandsInOtherSession(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 	if len(landed) != 0 || wantTurn {
-		t.Fatalf("landed = %+v, wantTurn = %v（异地落地不属于当前会话，不起轮）", landed, wantTurn)
+		t.Fatalf("landed = %+v, wantTurn = %v（异地送达不属于当前会话，不起轮）", landed, wantTurn)
 	}
 	if got := len(s.Current().Path()); got != before {
 		t.Fatalf("当前会话 path 长度 = %d, want %d（异地的落不到这里）", got, before)
@@ -142,7 +142,7 @@ func TestDrainLandsInOtherSession(t *testing.T) {
 		t.Fatalf("reload other: %v", err)
 	}
 	if got.Head == head {
-		t.Fatal("目标会话 Head 未前移——报告没有落地")
+		t.Fatal("目标会话 Head 未前移——报告没有送达")
 	}
 	path := got.Path()
 	last := path[len(path)-1] // Path 按 root→Head 排列，末项即最新节点

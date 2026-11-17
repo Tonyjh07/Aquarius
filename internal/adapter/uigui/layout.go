@@ -58,7 +58,7 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 	u.frameMetric = gtx.Metric
 	u.frameSize = size
 	u.shapes = u.shapes[:0]
-	// D54：淡出带缺省 = §15.3 静息顶带（收起态无转写区，带只作兜底口径）。
+	// D54：淡出带缺省 = §15.3 静息顶带（收起态无转写区，带只作兜底规则）。
 	u.bandTop, u.bandBottom = 0, gtx.Dp(fadeBandDp)
 	// D79：底部矮带缺省**关**（收起态无转写区）——区间空即无带；展开路径按转写区底重设。
 	u.bandLowTop, u.bandLowEnd = size.Y, size.Y

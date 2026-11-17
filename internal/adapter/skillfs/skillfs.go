@@ -225,7 +225,7 @@ func (c *Catalog) Dirs() []string {
 }
 
 // SetDirs 替换技能根并重扫（设置页「技能」页增删目录）：调用方负责把兜底根排最后。
-// 相对路径仍按启动口径丢弃（无 cwd 可依）。
+// 相对路径仍按启动规则丢弃（无 cwd 可依）。
 func (c *Catalog) SetDirs(dirs []string) {
 	c.mu.Lock()
 	c.dirs = normalizeDirs(dirs)

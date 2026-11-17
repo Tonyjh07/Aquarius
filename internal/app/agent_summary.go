@@ -29,7 +29,7 @@ var ErrNoHistoryAbove = errors.New("agent: no history above target")
 // existing = 其上已有旧摘要（合并更新提示词）。id 是流式事件的关联 ID：调用方随后用同一个
 // ID 落节点，UI 才能把流内草稿替换成定稿。
 // 至多两次生成：输出为空或缺模板小节时发 NoticeEvent 并带提醒重试一次；两次都不合格按失败
-// 返回（调用方不落树）。返回（摘要正文, 两次生成的累计用量, 错误）。
+// 返回（调用方不写入会话树）。返回（摘要正文, 两次生成的累计用量, 错误）。
 func (a *Agent) generateSummary(ctx context.Context, id conversation.MessageID, history []port.PromptMessage, existing bool) (string, conversation.Usage, error) {
 	base := make([]port.PromptMessage, 0, len(history)+2)
 	base = append(base, port.PromptMessage{

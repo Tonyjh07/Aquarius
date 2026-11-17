@@ -629,7 +629,7 @@ const tutCmdLeftSp = 160
 // tutorialPage 第 4 页：操作指引（滚动列表：基本操作 + 常用命令）。
 //
 // 行型与文案在 welcome_tutorial.go，这里只定版式。用 layout.List 而不是 material.List：
-// 后者的滚动条常驻，静态说明页上一条灰色竖条看着像故障（与其余四页同口径）。
+// 后者的滚动条常驻，静态说明页上一条灰色竖条看着像故障（与其余四页同规则）。
 func (f *welcomeForm) tutorialPage(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	rows := tutorialRows(f.hotkeyLabel())
 	pp := paperOf()
@@ -824,7 +824,7 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	}
 	plat := newPlatform(Options{Theme: req.Theme}, true)
 	p := resolvePalette(req.Theme, plat.DarkMode())
-	activeTokens.Store(&p) // 装配前：主窗 goroutine 尚未启动，写活动快照无并发（同 newUI 口径）
+	activeTokens.Store(&p) // 装配前：主窗 goroutine 尚未启动，写活动快照无并发（同 newUI 规则）
 	applyPaper(resolvePaper(req.Theme, p.isDark()))
 	th := newTheme(plat.SystemFontCandidates())
 	th.Palette.Fg, th.Palette.Bg = p.fg, p.bg

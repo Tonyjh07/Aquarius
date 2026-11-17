@@ -2,7 +2,7 @@ package i18n
 
 // zhTreeTexts 会话树与改父：/tree、/reparent 的用法、回执与报错。
 //
-// 一条文案一行 key：长回执拆成「一行一句事实」，拼接交给调用方——与 zh_exchange.go 同口径。
+// 一条文案一行 key：长回执拆成「一行一句事实」，拼接交给调用方——与 zh_exchange.go 同规则。
 // 带标点的续行（`；另有…`）单独成 key，因为多一种情形就少印一行，而不是少半句译文。
 var zhTreeTexts = map[string]string{
 

@@ -43,7 +43,7 @@ const (
 	// 「内容出视口 + 左侧大片空白」。现放到 [0.1, 2.0]：一屏能看整棵树，也能放大到逐字读。
 	// **可读性不靠 zoom 下限，靠两条既有机制**：字号钳 [relLabelMinSp, relLabelMaxSp]；
 	// 标签预算 relLabelVisible（zoom 低于 relZoomLabelMin 时标签全隐 ⇒ overview 只剩徽标
-	// 与边）。卡片预留 HalfW/HalfH 仍按 relZoomLabelMin 的最坏口径算，与「低于该 zoom 不画
+	// 与边）。卡片预留 HalfW/HalfH 仍按 relZoomLabelMin 的最坏规则算，与「低于该 zoom 不画
 	// 标签」自洽。
 	relZoomMin  = 0.1
 	relZoomMax  = 2.0
@@ -70,7 +70,7 @@ const (
 	// 节点还停在按下时的相对位置（零跳变），随后中心**逐帧滑向光标正下方**并锁死——
 	// 若直接清零，按在标签上起拖会瞬移 100~185px（标签区离节点中心很远）。
 	relGrabDecay = 0.5 // ≈7 帧（120ms）归零
-	relWheelMax  = 1e6 // 滚轮范围上限（放开；主窗 D71 钉点口径不适用本窗）
+	relWheelMax  = 1e6 // 滚轮范围上限（放开；主窗 D71 钉点规则不适用本窗）
 	// relWheelPanPx 滚轮越界降级平移的**定值步长**（px，D121 实测修）：滚轮原始增量是
 	// 像素累计（Windows 一格 ≈ ±100），按增量乘 16 会把视场甩出裁剪盒（≈1600px/格）——
 	// 「某些缩放下树完全不可见」的元凶之一。定值 48px/格 = 一眼可见、一格一格走。
@@ -102,9 +102,9 @@ const (
 	// 且静息布局的槽距兜不住。
 	relLabelLines = 3
 	// relLabelLineLead 行高系数（sp）：LineHeight = 字号 × 本系数。**显式钉住**（不依赖
-	// 字体默认度量）⇒ 卡片高度可按「行数 × 行高」估算，与布局预留同口径。
+	// 字体默认度量）⇒ 卡片高度可按「行数 × 行高」估算，与布局预留同规则。
 	relLabelLineLead = 1.25
-	// relLabelEmDp / relLabelLineHDp 标签块的**最坏缩放**口径（世界 dp）：zoom 下限
+	// relLabelEmDp / relLabelLineHDp 标签块的**最坏缩放**规则（世界 dp）：zoom 下限
 	// （relZoomLabelMin = 0.75）处字号被钳到 10sp 而标签盒宽随 z 线性缩小 ⇒ 每行字数
 	// 最少（em 最宽）、行高最大。布局（HalfW/HalfH，relGeo）按此上界预留 ⇒ 任何 zoom 下
 	// 文本都装得进自己的卡（R3：缩放不改布局）。推导：em = 10sp ÷ 0.75 ≈ 13.3dp。
@@ -153,7 +153,7 @@ type relGraph struct {
 	sol    *relSolution
 	lay    *relLayout // 增量求解态（D121：拖拽逐帧松弛必须从当前坐标接着走）
 
-	zoom         float64    // 视场倍率 [relZoomMin, relZoomMax]（A9，用户口径）
+	zoom         float64    // 视场倍率 [relZoomMin, relZoomMax]（A9，用户规则）
 	z            float64    // **有效**缩放 = zoom × PxPerDp（dp 世界 → 屏幕 px；含 DPI 换算）
 	spx          float64    // Metric.PxPerSp（标签 px 换算；帧首刷新，0/1 = 1）
 	dpx          float64    // Metric.PxPerDp（帧首刷新；0/1 = 1）
@@ -360,7 +360,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	// 适配（everFit，A13）；显式取景动作（viewPending：装下整树 / 两个聚焦域，D140）。
 	// **数据变更不碰视场**——用户的 zoom/平移是私有的，一条新消息进来不抢
 	// （D121 实测修：此前每条消息都重置 zoom/视口）。三者都在帧首消费：viewW/viewH/dpx
-	// 与 g.z 刚刷新完，取景算出的平移量才是本帧的（与 fitPending/everFit 同一口径）。
+	// 与 g.z 刚刷新完，取景算出的平移量才是本帧的（与 fitPending/everFit 同一套规则）。
 	if g.fitPending {
 		g.fitPending = false
 		g.recenterTree()
@@ -405,7 +405,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		cur.Add(gtx.Ops)
 	}
 	stack.Pop()
-	// 拖拽/收敛中的交互态：本帧松弛后若还要继续，追加一次重绘请求（Gio 的动画口径，
+	// 拖拽/收敛中的交互态：本帧松弛后若还要继续，追加一次重绘请求（Gio 的动画规则，
 	// 比 Window.Invalidate 轻；收敛即停 → R3 随即恢复）。
 	if g.tickLayout() {
 		gtx.Execute(op.InvalidateCmd{})
@@ -512,7 +512,7 @@ func (g *relGraph) dragPinWorld() relPoint {
 
 // update 手势状态机：平移 / 拖节点（D121）/ 缩放（gesture.Scroll）/ 悬停 / 点击 / 右键菜单。
 func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
-	// 滚轮：范围放开（主窗转写区的 D71 钉点口径不适用本窗，§10.2）。
+	// 滚轮：范围放开（主窗转写区的 D71 钉点规则不适用本窗，§10.2）。
 	if d := g.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, gesture.Vertical,
 		pointer.ScrollRange{}, pointer.ScrollRange{Min: -relWheelMax, Max: relWheelMax}); d != 0 {
 		g.wheel(d)
@@ -542,7 +542,7 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 			g.wheel(int(e.Scroll.Y))
 		case pointer.Press:
 			if e.Buttons.Contain(pointer.ButtonSecondary) {
-				// D132：右键 = 武装（同气泡口径 D92——按下武装、抬起才 fire，免得菜单在
+				// D132：右键 = 武装（同气泡规则 D92——按下武装、抬起才 fire，免得菜单在
 				// 按键未松时就弹出来吃掉这次抬起）；按在空白处不武装。
 				// 会话根**不武装**（2026-10-25 用户批注：root 的右键菜单整份删掉）。
 				g.menuNode = g.hitTest(e.Position.X, e.Position.Y)
@@ -600,7 +600,7 @@ func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
 		case pointer.Release:
 			if g.menuArm {
 				g.menuArm = false
-				// 「原位」抬起（同一节点）才 fire——与气泡右键同口径（D92）。
+				// 「原位」抬起（同一节点）才 fire——与气泡右键同规则（D92）。
 				if h := g.menuNode; h >= 0 && h == g.hitTest(e.Position.X, e.Position.Y) {
 					g.openNodeMenu(u, h)
 				}

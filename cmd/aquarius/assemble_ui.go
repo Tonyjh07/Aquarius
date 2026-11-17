@@ -47,7 +47,7 @@ func (w *wiring) voiceSlot() func(context.Context) (string, error) {
 }
 
 // previewVoice 设置窗「语音」页试听（D179）：用表单草稿的音色/描述/风格合成一句并
-// 播放；服务与模型来自启动装配（这两项保存后重启才生效，与「模型服务」页同口径）。
+// 播放；服务与模型来自启动装配（这两项保存后重启才生效，与「模型服务」页同规则）。
 func (w *wiring) previewVoice(req port.SpeechRequest) error {
 	if w.ttsSynth == nil {
 		return errors.New(i18n.T("cmd.asm.err.voice_preview_unconfigured"))
@@ -70,7 +70,7 @@ func (w *wiring) previewVoice(req port.SpeechRequest) error {
 }
 
 // settingsSnapshot 设置窗快照（§15.7/D60-D61）：config 文本键（文件即事实源）+
-// 运行态（等级活槽与 Agent 访问器，同状态行口径）。
+// 运行态（等级活槽与 Agent 访问器，同状态行规则）。
 func (w *wiring) settingsSnapshot() uigui.SettingsSnapshot {
 	s := readTextSettings(w.cfgPath)
 	s.Permission = w.lvl.Get().String()
@@ -80,8 +80,8 @@ func (w *wiring) settingsSnapshot() uigui.SettingsSnapshot {
 		s.Think = agent.ThinkOn()
 		s.Effort = agent.CurrentEffort()
 	}
-	// S11-7①/D176 口径三：降级链取**启动时载入的** config（链改动与 provider 变更同
-	// 口径——重启生效），并现算链窄于当前模型的警示。
+	// S11-7①/D176 规则三：降级链取**启动时载入的** config（链改动与 provider 变更同
+	// 规则——重启生效），并现算链窄于当前模型的警示。
 	s.Fallback = fallbackLinksOf(w.cfg.Model.Fallback)
 	s.FallbackNote = w.cfg.Model.narrowNote()
 	return s
@@ -91,7 +91,7 @@ func (w *wiring) settingsSnapshot() uigui.SettingsSnapshot {
 // （设置窗经输入通道与键入同路径串行执行，壳内不旁路）。
 func (w *wiring) applySettings(p uigui.SettingsPatch) ([]port.Command, error) {
 	// 联网与语音页填的明文密钥先转入密钥库、patch 里的 Key 换成引用（与 provider 页同一
-	// 口径），再落盘——否则同一次「填明文」在设置窗不同页面会得到不同结果。
+	// 规则），再写入磁盘——否则同一次「填明文」在设置窗不同页面会得到不同结果。
 	if err := w.storeWebKeys(&p); err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 						Effort:     agent.CurrentEffort(), // D34：effort 档位（off 时为空）
 						Unattended: w.unattended.Get(),    // D185：状态行常驻标记 + 菜单勾选源
 						// D82：logo 事实卡（§15.1/S1-1g）——D110 起为真实 profile 名，
-						// 会话事实取 app 侧发布快照（无锁原子读，§15.5 同口径）。
+						// 会话事实取 app 侧发布快照（无锁原子读，§15.5 同规则）。
 						Profile: w.profileName,
 					}
 					if sess := w.sessPtr.Load(); sess != nil {
@@ -181,7 +181,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Settings:            w.settingsSnapshot,
 			ApplySettings:       w.applySettings,
 			Profiles:            &profilesManager{dataDir: w.dir, current: w.profileName, profileCfg: w.cfgPath},                                                                                   // D110③：profile 区
-			ProviderMgr:         &providerManager{cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin, stderr: w.stderr, probe: w.probeForSettings, onStore: func() { w.secretsRev.Add(1) }}, // D110②：provider 编辑区（D161：明文入库；S9-6b/D163：落库递增快照 Revision；S11-7③：能力探测走 /model probe 同一写回）
+			ProviderMgr:         &providerManager{cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin, stderr: w.stderr, probe: w.probeForSettings, onStore: func() { w.secretsRev.Add(1) }}, // D110②：provider 编辑区（D161：明文入库；S9-6b/D163：写进密钥库后递增快照 Revision；S11-7③：能力探测走 /model probe 同一写回）
 			Tree:                sessionTree{p: &w.sessPtr},                                                                                                                                        // D80/§7.5：分叉条只读数据面
 			Commands:            sessionCommands{p: &w.sessPtr},                                                                                                                                    // D103/S2b-1：补全浮层命令清单只读数据面
 			Lister:              sessionList{p: &w.sessPtr},                                                                                                                                        // D120⑥：会话历史窗左栏只读数据面
@@ -190,14 +190,14 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Hotkey:              w.cfg.UI.Hotkey,
 			Placeholder:         w.cfg.UI.InputPlaceholder, // D279：占位灰字（空 = 内置文案随语言；保存后热更）
 			Pending:             w.pendingInput,            // D272：生成中键入的消息停在这里
-			History:             w.inputHistory(),          // 输入历史落盘（与 TUI 同一份文件）
+			History:             w.inputHistory(),          // 输入历史写入磁盘（与 TUI 同一份文件）
 			Keys:                w.keys,                    // §5.19：三键（启动时已校验）                                                                                                                                                   // 全局呼出快捷键（§15.1；空 = 默认 Alt+A）
 			Theme:               w.cfg.UI.Theme,            // 主题档 system|light|dark（§15.4/D61；空 = system）
 			Scale:               w.cfg.UI.Scale,            // 元素缩放倍率（D90/§15.8；0 = 1.0，UI 侧夹取）
 			FontSize:            w.cfg.UI.FontSize,         // 正文字号 sp（D90；0 = 15）
 			WindowWidth:         w.cfg.UI.WindowWidth,      // 主窗像素尺寸（D90；0 = 缺省 608×460dp）
 			WindowHeight:        w.cfg.UI.WindowHeight,
-			Welcome:             &welcomeManager{cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey, onStore: func() { w.secretsRev.Add(1) }}, // D141：欢迎 / 首次运行引导数据面（S9-6b/D163：明文落库递增快照 Revision）
+			Welcome:             &welcomeManager{cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey, onStore: func() { w.secretsRev.Add(1) }}, // D141：欢迎 / 首次运行引导数据面（S9-6b/D163：明文写进密钥库后递增快照 Revision）
 			Tools:               &toolsAdmin{w: w},                                                                                                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）
 			Secrets:             &secretsAdmin{w: w},                                                                                                                                            // S9-6b/D161：密钥库管理面（secretsBin 由 bootstrap 填，开窗时已就绪）
 			Delegates:           &delegateAdmin{w: w},                                                                                                                                           // D270：外部代理管理面（显示配置事实 + 现探 PATH，改动重启生效）
@@ -233,7 +233,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 				return uitui.Status{}
 			},
 			Pending:      w.pendingInput,   // D272：生成中键入的行停在清单里
-			HistoryStore: w.inputHistory(), // 输入历史落盘（与 GUI 同一份文件）
+			HistoryStore: w.inputHistory(), // 输入历史写入磁盘（与 GUI 同一份文件）
 			Keys:         w.keys,           // §5.19：三键（启动时已校验；TUI 引导键回落 Alt+Enter）
 		})
 	default:
@@ -241,7 +241,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 	}
 }
 
-// inputHistory 输入历史的落盘存储（`<profile>/input_history.jsonl`，D300）。
+// inputHistory 输入历史的磁盘存储（`<profile>/input_history.jsonl`，D300）。
 //
 // 惰性建：newUI 只在 profile 就位之后调用一次，之后 GUI 与 TUI 拿的是同一个指针。
 // 进程内只有这一个写者（提交发生在各自的事件循环），Store 自己带锁。

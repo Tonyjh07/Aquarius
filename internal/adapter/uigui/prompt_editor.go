@@ -25,7 +25,7 @@ import (
 )
 
 // promptModuleForm 单个模块节点的编辑控件（S7/D144；本窗 goroutine 独占）。orig = 快照
-// 原名（保存提示与「改名同步引用」的口径）。
+// 原名（保存提示与「改名同步引用」的规则）。
 type promptModuleForm struct {
 	orig     string
 	name     widget.Editor

@@ -86,7 +86,7 @@ type WatchManager interface {
 	Stop(ctx context.Context, id WatchID) error
 }
 
-// ResolveWatchID 按标识解析观察器（精确优先，其次唯一前缀），口径与任务一致。
+// ResolveWatchID 按标识解析观察器（精确优先，其次唯一前缀），规则与任务一致。
 func ResolveWatchID(list []WatchState, arg string) (WatchID, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {

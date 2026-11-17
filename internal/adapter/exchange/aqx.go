@@ -25,7 +25,7 @@ import (
 // `aqx` 容器（§5.16）：一个 ZIP，里面三样东西——
 //
 //	manifest.json              {"format":"aqx","version":1,"conversations":[…]}
-//	conversations/<i>/tree.json 第 i 个会话的落盘 wire 形状（storejson 同一份）
+//	conversations/<i>/tree.json 第 i 个会话在磁盘上的 wire 形状（storejson 同一份）
 //	blobs/<sha256>            附件字节，内容寻址、平铺（**跨会话共用一份**）
 //
 // 为什么不把 format/version 塞进 tree.json：那份形状要与磁盘上的会话文件逐字段一致，
@@ -313,7 +313,7 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 		}
 		rep.Entries = entries
 	}
-	// 附件回填：只处理选中会话引用到的那些（没选中的树不会进库，其附件也不必落盘）。
+	// 附件回填：只处理选中会话引用到的那些（没选中的树不会进库，其附件也不必写入磁盘）。
 	need := make(map[string]bool)
 	for _, c := range out {
 		for _, ref := range collectBlobs([]*conversation.Conversation{c}) {
@@ -611,12 +611,12 @@ func readLimited(r io.Reader, limit int64, what string) ([]byte, error) {
 	return body, nil
 }
 
-// fsSymlink 符号链接条目：归档里出现符号链接一律拒绝（与技能安装的 zip-slip 口径同源）。
+// fsSymlink 符号链接条目：归档里出现符号链接一律拒绝（与技能安装的 zip-slip 规则同源）。
 const fsSymlink = os.ModeSymlink
 
-// safeArchivePath 校验并归一归档条目路径（绝对路径、盘符、`..`、空名一律按口径处理）。
+// safeArchivePath 校验并归一归档条目路径（绝对路径、盘符、`..`、空名一律按规则处理）。
 //
-// 与技能安装的 zip-slip 口径同源：归档同样是不可信输入。返回空串 = 无意义的条目（跳过）。
+// 与技能安装的 zip-slip 规则同源：归档同样是不可信输入。返回空串 = 无意义的条目（跳过）。
 //
 // 独立的目录条目（名字以 `/` 结尾，或模式位带目录）也返回空串：第三方重新打包时常带上
 // `blobs/` 这样的一条纯目录记录，它不是「不认识的条目」，拒绝整份归档太严。

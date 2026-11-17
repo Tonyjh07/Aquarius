@@ -80,7 +80,7 @@ var zhSessionTexts = map[string]string{
 	"session.mic.range":     "秒数需在 1–{max} 之间",
 	"session.mic.recording": "正在录音，最长 {secs} 秒…",
 
-	// /context（§7.1）：装配结果的概览、单条全文与整份落盘
+	// /context（§7.1）：装配结果的概览、单条全文与整份写入磁盘
 	"usage.context":                          "用法：/context [last | full [last] | 消息编号]",
 	"session.ctx.head":                       "模型 {model} · 上下文 {est} / {max}（{pct}%）· 压缩线 {at}",
 	"session.ctx.params":                     "采样：{params}",
@@ -129,7 +129,7 @@ var zhSessionTexts = map[string]string{
 	"session.ctx.dump_section":               "## [{n}] {role} · {title} · {tok} tok",
 	"session.ctx.dump_tool_head":             "## 工具声明",
 
-	// /raw（§7.1）：原始返回的概览、单帧与整份落盘
+	// /raw（§7.1）：原始返回的概览、单帧与整份写入磁盘
 	"usage.raw":                 "用法：/raw [-k | full [-k] | 帧号]",
 	"session.raw.when_now":      "最近一次请求",
 	"session.raw.when_back":     "倒数第 {k} 次请求",

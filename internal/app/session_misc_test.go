@@ -28,7 +28,7 @@ func newTestAgent(t *testing.T) *Agent {
 	return a
 }
 
-// TestSessionTitleAndExitCommands /title 无参显示、有参改写并落盘；/exit = /quit 别名。
+// TestSessionTitleAndExitCommands /title 无参显示、有参改写并写入磁盘；/exit = /quit 别名。
 // TestSessionJobsCommand /jobs 命令（M3）：list/logs/kill、前缀解析、用法与空表提示。
 func TestSessionJobsCommand(t *testing.T) {
 	store := newMemStore()
@@ -143,7 +143,7 @@ func TestSessionTitleAndExitCommands(t *testing.T) {
 		t.Fatalf("title 有参 = %q, %v", out, err)
 	}
 	if store.convs[s.Current().ID].Title != "改个 名字" {
-		t.Fatalf("标题未落盘: %q", store.convs[s.Current().ID].Title)
+		t.Fatalf("标题未写入磁盘: %q", store.convs[s.Current().ID].Title)
 	}
 	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "exit"}}); !errors.Is(err, ErrQuit) {
 		t.Fatalf("exit = %v, want ErrQuit", err)
@@ -220,7 +220,7 @@ func TestSessionPermissionCommand(t *testing.T) {
 	}
 }
 
-// TestSessionUnattendedCommand /unattended（D185 口径四/五）：无参 = 切换、有参 = 显式
+// TestSessionUnattendedCommand /unattended（D185 规则四/五）：无参 = 切换、有参 = 显式
 // 设置；写回成功后活开关同步；回执要说清与 -yes 的反向关系（拒绝 vs 放行）。
 func TestSessionUnattendedCommand(t *testing.T) {
 	perms := &fakePerms{}
@@ -285,7 +285,7 @@ func TestSessionUnattendedCommand(t *testing.T) {
 		t.Fatal("多参应报错")
 	}
 
-	// 无持久化回调：有参报错，无参也报错（无法落盘就不该假装切了）。
+	// 无持久化回调：有参报错，无参也报错（无法写入磁盘就不该假装切了）。
 	s2, err := NewSession(context.Background(), SessionDeps{
 		Store: newMemStore(), Agent: agent, IDs: &seqIDs{}, Clock: fixedClock{testTime},
 	})
@@ -297,7 +297,7 @@ func TestSessionUnattendedCommand(t *testing.T) {
 	}
 }
 
-// TestSessionCompactCommand D21 手动轨：/compact 生成摘要节点、落盘、报记账；重复压缩短路。
+// TestSessionCompactCommand D21 手动轨：/compact 生成摘要节点、写入磁盘、报记账；重复压缩短路。
 func TestSessionCompactCommand(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store,
@@ -322,7 +322,7 @@ func TestSessionCompactCommand(t *testing.T) {
 		t.Fatalf("last = %+v, want 摘要节点", last)
 	}
 	if _, ok := store.convs[s.Current().ID].Find(last.ID); !ok {
-		t.Fatal("摘要节点应已落盘")
+		t.Fatal("摘要节点应已写入磁盘")
 	}
 
 	// 重复压缩：其后无新内容 → 短路提示，不发起生成。

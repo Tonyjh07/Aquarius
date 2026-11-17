@@ -14,8 +14,8 @@ import (
 // execSkill 实现 /skill（D201）：无参/`list` 列清单，带名字 = 把该技能正文注入上下文。
 //
 // 载入不触发新一轮：用户载入技能之后紧接着要说自己的要求，替他把那轮跑掉只会浪费一次
-// 生成（与 /inject --no-trigger 同口径）。注入落地后走「清屏 + 回放」（移 Head 类命令
-// 统一口径，D81/D92），让转写区与 Head 恒一致。
+// 生成（与 /inject --no-trigger 同规则）。注入实现后走「清屏 + 回放」（移 Head 类命令
+// 统一规则，D81/D92），让转写区与 Head 恒一致。
 func (s *Session) execSkill(ctx context.Context, args []string) (string, error) {
 	// 安装面（D202）：install / remove / update 先分派，避免被「带名字 = 载入」吃掉；
 	// 也不依赖清单（装之前可能一个技能都没有）。
@@ -53,7 +53,7 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 	in := port.Injection{
 		Source: "skill:" + doc.Info.Name,
 		// 用户亲手载入 → 宿主事实（D170）：技能正文正是「要遵循的指令」，不该被当成
-		// 外部数据套围栏（与 /inject 同口径）。
+		// 外部数据套围栏（与 /inject 同规则）。
 		Trust:   port.TrustHost,
 		Parts:   []conversation.Part{{Kind: conversation.PartText, Text: b.String()}},
 		Trigger: &noTrigger,
@@ -62,7 +62,7 @@ func (s *Session) execSkill(ctx context.Context, args []string) (string, error) 
 		return "", err
 	}
 	// 队列里此刻只可能有本条刚入队的技能正文（Trigger 显式 false）。外部生产者攒下的注入
-	// 已在 Handle 入口的排空点①落地——用户输入优先，注入不抢手输入。故这里不会有该起一轮
+	// 已在 Handle 入口的排空点①实现——用户输入优先，注入不抢手输入。故这里不会有该起一轮
 	// 的注入，wantTurn 恒为 false。
 	landed, _, err := s.drainInjections(ctx, drainBeforeReplay)
 	if err != nil {

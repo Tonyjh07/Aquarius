@@ -169,7 +169,7 @@ func (u *UI) addPending(text string, d port.Delivery) bool {
 }
 
 // pendingErrText 三种拒绝理由的用户面说法（前端不该把 errors.New 的中文原样甩出来，
-// 但也别另造一套口径——这里只是把它说完整）。
+// 但也别另造一套规则——这里只是把它说完整）。
 func pendingErrText(err error) string {
 	switch {
 	case errors.Is(err, port.ErrPendingFull):

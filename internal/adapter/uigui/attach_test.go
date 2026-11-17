@@ -104,7 +104,7 @@ func TestAttachStageFlow(t *testing.T) {
 	}
 }
 
-// TestAttachStageLimits D186 口径三：同一文件不重复暂存；超过单条上限后拒收并提示。
+// TestAttachStageLimits D186 规则三：同一文件不重复暂存；超过单条上限后拒收并提示。
 func TestAttachStageLimits(t *testing.T) {
 	t.Parallel()
 	u := newEditUI()
@@ -161,7 +161,7 @@ func TestAttachBufferFull(t *testing.T) {
 	}
 }
 
-// TestAttachRowsWrap D186 口径四：chip 超宽按行折（每行放得下才算一行），总高随行数变。
+// TestAttachRowsWrap D186 规则四：chip 超宽按行折（每行放得下才算一行），总高随行数变。
 func TestAttachRowsWrap(t *testing.T) {
 	t.Parallel()
 	u := newFrameUI()

@@ -38,7 +38,7 @@ type fileConfig struct {
 	// Skills 技能目录（D201）：额外技能根（绝对路径、按声明序，先命中者胜）。
 	Skills skillsConfig `json:"skills"`
 	// Characters 角色卡投影开关（§5.17/D247）：只影响**之后新建**的角色会话；已开始的会话
-	// 人格与尾部指令已快照/落盘（`apply_post_history` 例外，它决定发不发，立即生效）。
+	// 人格与尾部指令已快照/写入磁盘（`apply_post_history` 例外，它决定发不发，立即生效）。
 	Characters charactersConfig `json:"characters"`
 	// Backup 备份轮转（D254）：会话树写盘前保留的 .bak 代数，用户可自定义。
 	Backup backupConfig `json:"backup"`
@@ -52,7 +52,7 @@ type fileConfig struct {
 	Plugins map[string]plugin.State `json:"plugins"`
 }
 
-// backupConfig 备份轮转（D254）。只有会话树用它——密钥库按自己的单代口径走。
+// backupConfig 备份轮转（D254）。只有会话树用它——密钥库按自己的单代规则走。
 type backupConfig struct {
 	// Keep 保留的备份代数（>=1）；0/省略 = 默认 3。
 	Keep int `json:"keep,omitempty"`
@@ -103,7 +103,7 @@ type loreConfig struct {
 	BudgetRatio float64 `json:"budget_ratio,omitempty"`
 }
 
-// loreOptions 世界书激活口径（§5.17/D294）：范围写错在启动期报错（扫描深度 0–100 条、
+// loreOptions 世界书激活规则（§5.17/D294）：范围写错在启动期报错（扫描深度 0–100 条、
 // 预算比例 0–1），省略的键按缺省走。0 在这里表示「没写」而不是「关」——关有 `enabled`。
 func (c *fileConfig) loreOptions() (app.LoreOptions, error) {
 	l := c.Characters.Lore
@@ -303,7 +303,7 @@ type uiConfig struct {
 	// 其余未识别值亦按 system 处理）。仅 ui.kind=gui 用。
 	Theme string `json:"theme,omitempty"`
 	// Scale 元素缩放倍率（D90/§15.8）：默认 1.0；界面按 port.SettingsScale* 夹取，越界回落
-	// 1.0（这是显示口径的兜底，不是拒绝启动——手改过配置的旧值仍照旧被夹到可用档位）。
+	// 1.0（这是显示规则的兜底，不是拒绝启动——手改过配置的旧值仍照旧被夹到可用档位）。
 	Scale float64 `json:"scale,omitempty"`
 	// FontSize 正文字号 sp（D90/§15.8）：默认 15；界面按 port.SettingsFontSize* 夹取，
 	// 最终字号 = FontSize × Scale。
@@ -341,7 +341,7 @@ type limitsConfig struct {
 }
 
 // defaultSecretRef 密钥引用缺省回落（D35）：api_key 为空时按它取用（resolveAPIKey 与
-// 一键导入共用同一口径——不一致会让「启动用环境变量、导入却跳过」看起来像漏导入）。
+// 一键导入共用同一套规则——不一致会让「启动用环境变量、导入却跳过」看起来像漏导入）。
 //
 // 跟默认模板的 provider 走：模板预置 DeepSeek，缺省引用就是它官方文档里的环境变量名。
 // 换成 AQUARIUS_DEEPSEEK_API_KEY 反而要多一步——用户照着 DeepSeek 文档设的是
@@ -367,19 +367,19 @@ func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, 
 	return resolveAPIKeyTo(ctx, provider, ref, sec, warnPlain)
 }
 
-// resolvePatchKey 界面草稿凭据的一次性解析（探测路径专用，D210）：口径与 resolveAPIKey
+// resolvePatchKey 界面草稿凭据的一次性解析（探测路径专用，D210）：规则与 resolveAPIKey
 // 完全一致，只是**不打明文警告**。
 //
 // 为什么：那句警告说的是「密钥直接落在 config.json」——一项**已写盘**的事实。但探测用的
-// 是编辑框里的草稿，它根本还没落盘（保存时才入库、config 只留引用）；拿它警告等于告诉用户
+// 是编辑框里的草稿，它根本还没写入磁盘（保存时才入库、config 只留引用）；拿它警告等于告诉用户
 // 一件没发生的事。叠加一个现实后果：欢迎窗的「测试连通」与「获取模型」各探一次，同一份
-// 草稿会被警告两遍（用户实测日志里就是两条一模一样的话）。落盘形态的警告仍由真实构造路径
+// 草稿会被警告两遍（用户实测日志里就是两条一模一样的话）。写入磁盘形态的警告仍由真实构造路径
 // （resolveAPIKey）负责，那里每次启动最多一遍。
 func resolvePatchKey(ctx context.Context, provider, ref string, sec port.Secrets) (string, error) {
 	return resolveAPIKeyTo(ctx, provider, ref, sec, nil)
 }
 
-// resolveAPIKeyTo 解析主体；warnPlain == nil = 只在内存里用一次、不报落盘形态。
+// resolveAPIKeyTo 解析主体；warnPlain == nil = 只在内存里用一次、不报写入磁盘形态。
 // 明文警告的落点是一个回调而不是 io.Writer：装配根把它接到运行日志（D276），
 // 这里只负责说出「哪家 provider 用了明文」。
 func resolveAPIKeyTo(ctx context.Context, provider, ref string, sec port.Secrets, warnPlain func(provider string)) (string, error) {

@@ -34,7 +34,7 @@ func (u *UI) askPanel(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 	// 焦点落点（与遮罩同一套：FocusFilter 使其可获焦 + event.Op 登记命中面），否则
-	// FocusCmd 无处落地——面板会拿不到任何键盘事件。
+	// FocusCmd 无处生效——面板会拿不到任何键盘事件。
 	gtx.Event(key.FocusFilter{Target: &u.askTag})
 	event.Op(gtx.Ops, &u.askTag)
 	// 面板内边距只给上下：左右由 pillContent 的 inputPadDp 统一（避免双层缩进）。

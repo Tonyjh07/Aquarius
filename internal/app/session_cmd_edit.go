@@ -41,7 +41,7 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 	if err != nil {
 		return "", err
 	}
-	// D188 口径四：附件增删只对用户消息开放——附件语义只属于用户输入。
+	// D188 规则四：附件增删只对用户消息开放——附件语义只属于用户输入。
 	if opt.hasAttachOp() {
 		old, ok := s.cur.Find(id)
 		if ok && old.Role != conversation.RoleUser {
@@ -67,7 +67,7 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 		return "", err
 	}
 	// D92：Revise 已移 Head（Fresh 恒移、Carry 例外）——清屏回放新路径，
-	// 转写区恒与 Head 一致（D81 口径，/goto 同款；此前只入树不回放是缺口）。
+	// 转写区恒与 Head 一致（D81 规则，/goto 同款；此前只入树不回放是缺口）。
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
@@ -97,7 +97,7 @@ func (s *Session) execEdit(ctx context.Context, cmd port.Command) (string, error
 		"id", id, "new", m.ID, "mode", opt.mode.String(), "desc", desc, "head", s.cur.Head), nil
 }
 
-// execRegen 实现 /regen：重新生成回答（D93 分叉口径）。
+// execRegen 实现 /regen：重新生成回答（D93 分叉规则）。
 func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) != 1 {
 		return "", errors.New(i18n.T("usage.regen"))
@@ -133,7 +133,7 @@ func (s *Session) execRegen(ctx context.Context, cmd port.Command) (string, erro
 			return "", err
 		}
 	}
-	// Head 已就位：清屏回放（D81 口径）后重跑一轮生成。
+	// Head 已就位：清屏回放（D81 规则）后重跑一轮生成。
 	if err := s.emitClear(ctx); err != nil {
 		return "", err
 	}
@@ -225,7 +225,7 @@ func (s *Session) editPartsWithAttachments(ctx context.Context, id conversation.
 		}
 	}
 
-	// 删除：序号口径 = 节点内附件分片的出现序；先统一去重，再一次性剔除。
+	// 删除：序号规则 = 节点内附件分片的出现序；先统一去重，再一次性剔除。
 	drop := map[int]bool{}
 	for _, n := range opt.drop {
 		drop[n] = true
@@ -260,7 +260,7 @@ func (s *Session) editPartsWithAttachments(ctx context.Context, id conversation.
 	}
 
 	// 新增：走既有摄取管线（附件先入库再分片），失败即整体失败——编辑是显式动作，
-	// 这里不做"部分成功"（与发消息时的宽容口径不同：那时用户已经写完问题）。
+	// 这里不做"部分成功"（与发消息时的宽容规则不同：那时用户已经写完问题）。
 	added := 0
 	if len(opt.attach) > 0 {
 		raw := port.RawInput{Kind: "file"}
@@ -411,7 +411,7 @@ func (s *Session) resolveConversation(ctx context.Context, arg string) (conversa
 func editUsage() string { return i18n.T("usage.edit") }
 
 // parseEditArgs 解析 /edit：flag 只在紧跟 id 的位置识别（用 flagsLeading：遇到未声明的
-// token（含未知「--x」）即为文本起点——字面「--keep」原样保留的旧口径不变）。--part N =
+// token（含未知「--x」）即为文本起点——字面「--keep」原样保留的旧规则不变）。--part N =
 // 只替换第 N 个正文分片（0 起，D107②）；缺省 -1 = 全部正文并为一条（D107③）。D188 增
 // 附件增删 flag：--attach <路径>（可重复）/ --drop N（可重复，附件分片出现序）/ --drop-all。
 // GUI 结构化提交复用同一 token 序列（D97①/D107②/D188）：

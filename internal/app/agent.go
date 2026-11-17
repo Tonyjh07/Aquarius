@@ -93,7 +93,7 @@ type Config struct {
 	// Vision = 图片是直接给模型看，还是降级为文字占位并写明原因。
 	// 零值 = 三项全关（显式空 caps 就是这个意思，不是「不知道」）。
 	Caps port.ModelCaps
-	// Lore 世界书按关键词激活的口径（§5.17/D294）。Enabled 由配置面解析后显式传入
+	// Lore 世界书按关键词激活的规则（§5.17/D294）。Enabled 由配置面解析后显式传入
 	// （键缺失 = 开），零值 = 关。
 	Lore LoreOptions
 }
@@ -125,7 +125,7 @@ type Agent struct {
 	// 存在的原因只有一个——命令在回合间隙执行，拿不到「刚发出去的那份」。
 	lastSnap atomic.Pointer[contextSnapshot]
 	// wires 最近几次生成的原始响应留档（/raw，§7.1）：适配器收流结束时回调写入，
-	// 环形留 wireKeep 份，最旧在后。只在内存（`/raw full` 才落盘）。
+	// 环形留 wireKeep 份，最旧在后。只在内存（`/raw full` 才写入磁盘）。
 	wires atomic.Pointer[wireLog]
 }
 
@@ -199,7 +199,7 @@ func (a *Agent) setModel(name string) { a.model.Store(name) }
 // 判超长开场白（按它的四分之一），与自动压缩用的是同一个数，不各算各的。
 func (a *Agent) CompactTokens() int { return a.compactAt }
 
-// LoreFacts 世界书口径（§5.17/D294）：扫描深度、预算 tokens 与上下文预算，给 /lore 展示用。
+// LoreFacts 世界书规则（§5.17/D294）：扫描深度、预算 tokens 与上下文预算，给 /lore 展示用。
 func (a *Agent) LoreFacts() (depth, budget, maxCtx int) {
 	opt := a.cfg.Lore.withDefaults()
 	return opt.ScanDepth, int(float64(a.maxCtx) * opt.BudgetRatio), a.maxCtx
@@ -208,10 +208,10 @@ func (a *Agent) LoreFacts() (depth, budget, maxCtx int) {
 // setThink 切换原生思考三态（/think，D34）：nil = 键缺失态。
 func (a *Agent) setThink(v *bool) { a.think.Store(v) }
 
-// thinkState 取三态开关（wire 口径）：nil = 未显式设置（不发 enable_thinking）。
+// thinkState 取三态开关（wire 规则）：nil = 未显式设置（不发 enable_thinking）。
 func (a *Agent) thinkState() *bool { return a.think.Load() }
 
-// ThinkOn 展示口径的开关状态（D34：键缺失视为"开"）。
+// ThinkOn 展示规则的开关状态（D34：键缺失视为"开"）。
 func (a *Agent) ThinkOn() bool {
 	v := a.think.Load()
 	return v == nil || *v
@@ -237,7 +237,7 @@ func (a *Agent) Sampling() port.Sampling {
 	return a.cfg.Sampling
 }
 
-// CurrentEffort 状态行口径（D34）：think off 时 effort 不发送，故显示空。
+// CurrentEffort 状态行规则（D34）：think off 时 effort 不发送，故显示空。
 func (a *Agent) CurrentEffort() string {
 	if v := a.think.Load(); v != nil && !*v {
 		return ""
@@ -282,7 +282,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 	for turn := 0; turn < a.maxTurns; turn++ {
 		// 工具批之后、下一次请求之前：这里取引导（D273）。有引导才真的切——切了就是
-		// 「当前段提交成 assistant 节点 + 引导按到达序落成 user 节点 + 新缓冲」。
+		// 「当前段提交成 assistant 节点 + 引导按到达序写成 user 节点 + 新缓冲」。
 		if turn > 0 {
 			var cut bool
 			var cerr error
@@ -455,7 +455,7 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 	return rep, nil
 }
 
-// assembleOpts 本轮装配口径（§7.1）：附件库 + 思考回传（D42）+ 视觉能力（D173）。
+// assembleOpts 本轮装配规则（§7.1）：附件库 + 思考回传（D42）+ 视觉能力（D173）。
 func (a *Agent) assembleOpts() assembleOpts {
 	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Caps.Vision}
 }

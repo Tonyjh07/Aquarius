@@ -26,11 +26,11 @@ func TestCharacterReportWorldBook(t *testing.T) {
 	}
 	on := reportText(card, CharacterOptions{InjectConstantBook: true}, 0)
 	if !strings.Contains(on, i18n.Tf("char.report.book_injected", "total", 3, "constant", 1)) {
-		t.Fatalf("注入态世界书行缺失/口径不对:\n%s", on)
+		t.Fatalf("注入态世界书行缺失/规则不对:\n%s", on)
 	}
 	off := reportText(card, CharacterOptions{}, 0)
 	if !strings.Contains(off, i18n.Tf("char.report.book_kept", "total", 3, "constant", 1)) {
-		t.Fatalf("保留态世界书行缺失/口径不对:\n%s", off)
+		t.Fatalf("保留态世界书行缺失/规则不对:\n%s", off)
 	}
 }
 

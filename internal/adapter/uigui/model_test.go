@@ -638,7 +638,7 @@ func TestHistoryReplay(t *testing.T) {
 	}
 }
 
-// TestHistoryReplayThinking D42：回放口径恒含思考——思考分片渲染为独立思考块、
+// TestHistoryReplayThinking D42：回放规则恒含思考——思考分片渲染为独立思考块、
 // 不并入正文；实时流场景提交不重复渲染（恰好 1 个思考块）。
 func TestHistoryReplayThinking(t *testing.T) {
 	t.Parallel()
@@ -815,7 +815,7 @@ func TestCommitSystemUsageAccumulated(t *testing.T) {
 	}
 }
 
-// TestSayFlushesThink 时序：外部输出先落进行中的思维链（与 uitui 口径一致）。
+// TestSayFlushesThink 时序：外部输出先落进行中的思维链（与 uitui 规则一致）。
 func TestSayFlushesThink(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModel(t)
@@ -859,7 +859,7 @@ func TestReplayStampsPartOrdinals(t *testing.T) {
 }
 
 // TestCommitStampsPartOrdinals D107④：提交调和盖段序——flushed 草稿回填取段 0、
-// 余段追加取段 1（末段盖节点 ID 的 D81 口径不变）。
+// 余段追加取段 1（末段盖节点 ID 的 D81 规则不变）。
 func TestCommitStampsPartOrdinals(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModel(t)

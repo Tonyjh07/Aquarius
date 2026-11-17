@@ -1,6 +1,6 @@
 package main
 
-// 联网页密钥入库测试：与 provider 页同一口径——填明文 → 收进密钥库、config 只留引用。
+// 联网页密钥入库测试：与 provider 页同一套规则——填明文 → 收进密钥库、config 只留引用。
 //
 // 出过的不一致：设置窗两个页面的密钥框都写着「填明文」，provider 页会转入密钥库并只留
 // `secret:<名>`，联网页却把明文原样写进 config（外加一条启动警告）。同一个动作、两种
@@ -46,7 +46,7 @@ func TestStoreWebKeysBravePlaintext(t *testing.T) {
 	if v, err := bin.Get(context.Background(), "AQUARIUS_BRAVE_API_KEY"); err != nil || v != "sk-brave-PLAIN-1234" {
 		t.Fatalf("库里值 = (%q, %v)", v, err)
 	}
-	// 落盘后 config 里不得出现明文。
+	// 写入磁盘后 config 里不得出现明文。
 	if err := persistSettingsTextKeys(cfgPath, p); err != nil {
 		t.Fatalf("persistSettingsTextKeys: %v", err)
 	}

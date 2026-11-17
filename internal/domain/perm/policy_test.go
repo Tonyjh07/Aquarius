@@ -93,7 +93,7 @@ func TestOverridesApply(t *testing.T) {
 // TestAutoAllow 确认框里点「以后都允许」生成的例外（D282）：文件类收窄到目标所在
 // 目录，执行类与没有目标的操作落到工具级。
 func TestAutoAllow(t *testing.T) {
-	// 期望值按平台分隔符写：AutoAllow 存的是 filepath 口径，配置只在同一台机器上读。
+	// 期望值按平台分隔符写：AutoAllow 存的是 filepath 规则，配置只在同一台机器上读。
 	wantDir := filepath.FromSlash("/proj/a")
 	dir := AutoAllow(OriginTool, "file_write", filepath.FromSlash("/proj/a/x.txt"), true)
 	if dir.Mode != ModeAllow || dir.Dir != wantDir || dir.Tool != "file_write" {

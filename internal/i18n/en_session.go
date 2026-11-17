@@ -125,7 +125,7 @@ var enSessionTexts = map[string]string{
 	"session.ctx.dump_section":               "## [{n}] {role} · {title} · {tok} tok",
 	"session.ctx.dump_tool_head":             "## Tool declarations",
 
-	// /raw（§7.1）：原始返回的概览、单帧与整份落盘
+	// /raw（§7.1）：原始返回的概览、单帧与整份写入磁盘
 	"usage.raw":                 "Usage: /raw [-k | full [-k] | frame number]",
 	"session.raw.when_now":      "Latest request",
 	"session.raw.when_back":     "Request {k} from the latest",

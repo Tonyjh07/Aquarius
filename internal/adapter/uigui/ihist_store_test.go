@@ -7,7 +7,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 )
 
-// TestHistoryLoadedOnStart 构造界面时从落盘历史载入：重启后 ↑ 能翻到上次输入的句子。
+// TestHistoryLoadedOnStart 构造界面时从写入磁盘历史载入：重启后 ↑ 能翻到上次输入的句子。
 func TestHistoryLoadedOnStart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "input_history.jsonl")
 	seed := inhistory.Open(path)

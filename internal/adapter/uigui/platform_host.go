@@ -5,7 +5,7 @@ package uigui
 
 import "github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
 
-// platHost 把平台回调桥到 UI（u 的方法本身已按跨线程口径实现：post 线程安全、
+// platHost 把平台回调桥到 UI（u 的方法本身已按跨线程规则实现：post 线程安全、
 // 菜单项集只读原子槽/回调访问器）。
 type platHost struct{ u *UI }
 
@@ -25,7 +25,7 @@ func (h *platHost) ToggleShow() { h.u.toggleWindow() }
 // HotkeyPressed 全局快捷键：隐藏 → 呼出；可见 → 展开↔收起。
 func (h *platHost) HotkeyPressed() { h.u.hotkeyToggle() }
 
-// ToggleTopMost 置顶开关（含位置记忆落盘）。
+// ToggleTopMost 置顶开关（含位置记忆写入磁盘）。
 func (h *platHost) ToggleTopMost() { h.u.toggleTopMost() }
 
 // Exit 菜单退出（中断进行中轮次 → EOF 收尾）。

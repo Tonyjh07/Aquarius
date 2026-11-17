@@ -3,7 +3,7 @@ package skillfs
 // install.go 技能的安装 / 卸载 / 更新（§5.15、D202/D203）。
 //
 // 三条边界：
-//   - **只在用户面**：本文件的能力不经 port 暴露，模型侧永远只有「列」与「载」（D202 口径一）。
+//   - **只在用户面**：本文件的能力不经 port 暴露，模型侧永远只有「列」与「载」（D202 规则一）。
 //   - **落位统一为副本**：内容一律复制进 `<profile>/skills/<name>/`，git 检出留在
 //     `<profile>/skill-cache/<repo-key>/`；卸载 = 删副本目录，不碰别人仓库里的兄弟技能。
 //   - **校验前置 + 失败不留残渣**：先复制到同一卷的临时目录、重新解析 frontmatter 校验，
@@ -198,7 +198,7 @@ func (i *Installer) recordsLocked() []Record {
 	return out
 }
 
-// loadLedger 读台账；目录已消失的条目顺手清掉（D202 口径三：目录消失即清条目）。
+// loadLedger 读台账；目录已消失的条目顺手清掉（D202 规则三：目录消失即清条目）。
 func (i *Installer) loadLedger() {
 	data, err := os.ReadFile(i.opts.LedgerPath)
 	if err != nil {
@@ -808,7 +808,7 @@ func (i *Installer) fetch(ctx context.Context, rawURL string) ([]byte, error) {
 }
 
 // gitSync 同步已存在的检出：无分支走 `pull --ff-only`（失败退回 fetch+reset），
-// 指定分支则 `fetch --depth 1 origin <ref>` + `reset --hard FETCH_HEAD`（D202 口径四）。
+// 指定分支则 `fetch --depth 1 origin <ref>` + `reset --hard FETCH_HEAD`（D202 规则四）。
 func (i *Installer) gitSync(ctx context.Context, dir, ref string) error {
 	if ref == "" {
 		if _, err := i.opts.RunGit(ctx, dir, "pull", "--ff-only"); err == nil {
@@ -838,7 +838,7 @@ type candidate struct {
 	name string // frontmatter name
 }
 
-// discoverSkills 在来源根里向下找 SKILL.md（命中即停，不再下钻；与清单扫描同口径）。
+// discoverSkills 在来源根里向下找 SKILL.md（命中即停，不再下钻；与清单扫描同规则）。
 // 坏的候选进 skips（用户面原因），不影响好的一起装。
 func discoverSkills(root string, maxDepth int) ([]candidate, []string) {
 	var (
@@ -899,7 +899,7 @@ func (i *Installer) land(name, srcDir string) error {
 	if err := copyTree(srcDir, tmp); err != nil {
 		return err
 	}
-	// 校验前置（D202 口径六）：落位前最后再读一次，确认拷进来的 SKILL.md 仍是这个技能。
+	// 校验前置（D202 规则六）：落位前最后再读一次，确认拷进来的 SKILL.md 仍是这个技能。
 	fm, _, _, err := readSkill(filepath.Join(tmp, skillFileName))
 	if err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("skill.err.verify_after_copy"), err)

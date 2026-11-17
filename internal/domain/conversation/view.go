@@ -35,7 +35,7 @@ func (c *Conversation) IDs() []MessageID {
 }
 
 // SubtreeSize 统计 id 及其整棵子树的节点数（/rm 确认提示用）；id 不在树中返回 0。
-// 与 Prune 的删除范围同口径（D95 后无跨节点引用，剪除范围即子树本身）。
+// 与 Prune 的删除范围同规则（D95 后无跨节点引用，剪除范围即子树本身）。
 func (c *Conversation) SubtreeSize(id MessageID) int {
 	if _, ok := c.nodes[id]; !ok {
 		return 0
@@ -82,7 +82,7 @@ func (c *Conversation) Edition(id MessageID) (MessageID, bool) {
 }
 
 // padNode 报告 id 是否为「衬垫」（D152）：为把摘要或注入上下文顶进路径中间而造的节点，
-// 本身不是任何发言的版本分支。判据不落库、全从结构读：
+// 本身不是任何发言的版本分支。判据不写进密钥库、全从结构读：
 //   - 角色 system|inject——衬垫承载的是上下文与水位，不是伪造的发言；
 //   - 恰好一个孩子——衬垫占据目标原来的位置，目标改挂到它下面；
 //   - 孩子比它自己更早——InsertBefore 顶开的是一个**已在树中**的节点，故目标先于衬垫
@@ -154,8 +154,8 @@ func (c *Conversation) versionGroup(owner MessageID) []MessageID {
 
 // View 整树只读视图：一次构建、发布后不再改写（调用方只读，不得改写其中切片）。
 //
-// 为什么由领域提供：同级排序口径（(CreatedAt, ID) 升序——Revise 出来的兄弟节点
-// CreatedAt 不保证等于插入序，D15/D16）与「末端」口径（D94：子树里最新的叶子，分支切换
+// 为什么由领域提供：同级排序规则（(CreatedAt, ID) 升序——Revise 出来的兄弟节点
+// CreatedAt 不保证等于插入序，D15/D16）与「末端」规则（D94：子树里最新的叶子，分支切换
 // 落点）都是领域规则。此前 app 侧把两条各写了一遍，规则一改就要改两处，还很难保证一致。
 type View struct {
 	// Head 当前游标（快照需要它做图谱锚点）。
@@ -166,7 +166,7 @@ type View struct {
 	// 版本组不是「同一个父的孩子」：衬垫（padNode）被跨过，它的孩子提升到祖父那一层
 	// ——否则插一条摘要就会把原来同父的两个回答拆到两个组里，分叉编号与切换按钮一起消失。
 	VersionGroups []SiblingGroup
-	// Tails 每个节点 → 其版本子树的对话末端（D94），口径与 Tail 相同。
+	// Tails 每个节点 → 其版本子树的对话末端（D94），规则与 Tail 相同。
 	Tails map[MessageID]MessageID
 }
 
@@ -245,7 +245,7 @@ func (c *Conversation) View() View {
 	return v
 }
 
-// nodeLess 统一排序口径：(CreatedAt, ID) 升序。同级排序与整树排序共用这一处，
+// nodeLess 统一排序规则：(CreatedAt, ID) 升序。同级排序与整树排序共用这一处，
 // 避免「分叉编号」与「节点表」用两种顺序（D15/D16）。
 func nodeLess(a, b Message) bool {
 	if !a.CreatedAt.Equal(b.CreatedAt) {

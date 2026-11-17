@@ -84,7 +84,7 @@ type SessionExporter interface {
 // SessionImporter `/import`：读一个外部文件，变成一组**待入库**的树。
 //
 // 外部文件是不可信输入：实现先解析成 DTO，再走 conversation.Restore 的统一自检（重复 ID、
-// 悬空父、Head 不在树一律拒绝，不「尽力修复」）。落成新会话与节点 ID 重分配是消费方的事，
+// 悬空父、Head 不在树一律拒绝，不「尽力修复」）。写成新会话与节点 ID 重分配是消费方的事，
 // 不在端口里做——端口只负责「文件 → 树」。
 type SessionImporter interface {
 	// Detect 按文件名与文件头判断这是谁的格式；认不出返回 false（调用方报「认不出这份文件」

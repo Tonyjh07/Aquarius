@@ -125,7 +125,7 @@ func (ov *overlayState) applyTemplate(u *UI, st *historyState) {
 		Args: []string{string(ov.id), "--keep", text},
 	}}:
 	default:
-		// 输入通道满：命令没投出去 ⇒ 不关遮罩（与 submit 同口径：保数据）。
+		// 输入通道满：命令没投出去 ⇒ 不关遮罩（与 submit 同规则：保数据）。
 		ov.tplErr, ov.tplStatus = true, i18n.T("ui.overlay.err.queue_busy")
 		return
 	}

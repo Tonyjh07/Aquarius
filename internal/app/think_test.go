@@ -90,7 +90,7 @@ func TestSessionThinkEffortCommands(t *testing.T) {
 		t.Fatalf("thinks = %v", *thinks)
 	}
 
-	// 写回失败：报错且运行态不动（同 /permission 口径）。
+	// 写回失败：报错且运行态不动（同 /permission 规则）。
 	s2, _, _ := newTestSession(t, newMemStore())
 	s2.thinking = &fakeThinking{err: errors.New("disk full")}
 	if _, err := thinkCmd(t, s2, "think", "off"); err == nil || !strings.Contains(err.Error(), "disk full") {
@@ -222,7 +222,7 @@ func TestRunReasoningCommitted(t *testing.T) {
 }
 
 // TestRunCancelledKeepsThinking D42：取消终态的已生成思考同样入树
-// （与正文同口径——回放/审计能看到"想到哪被掐断"）。
+// （与正文同规则——回放/审计能看到"想到哪被掐断"）。
 func TestRunCancelledKeepsThinking(t *testing.T) {
 	stream := &scriptStream{steps: []scriptStep{
 		{delta: port.Delta{Text: "先想一想", Reasoning: true}},

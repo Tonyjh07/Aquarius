@@ -71,7 +71,7 @@ func (p *Plat) addTrayIcon(hwnd uintptr) {
 }
 
 // trayIcon 托盘图标：内嵌 ico（uigui 侧已解析出 16px 档）→ CreateIconFromResourceEx；
-// 未给图标/解析失败回落系统默认图标（spike 口径）。
+// 未给图标/解析失败回落系统默认图标（spike 规则）。
 func (p *Plat) trayIcon() uintptr {
 	if b := p.cfg.TrayIcon; len(b) > 0 {
 		if h, _, _ := procCreateIconFromResourceEx.Call(

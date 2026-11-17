@@ -45,7 +45,7 @@ func (p *Plat) WorkArea(Point) (Rect, bool) { return Rect{}, false }
 // MonitorAt 无显示器拓扑（停靠永不触发）。
 func (p *Plat) MonitorAt(Point) bool { return false }
 
-// WindowDPI 无逐窗 DPI 源（恒 1.0 = 100% 口径，D90）；实际缩放由 Gio 的 Metric 承担。
+// WindowDPI 无逐窗 DPI 源（恒 1.0 = 100% 规则，D90）；实际缩放由 Gio 的 Metric 承担。
 func (p *Plat) WindowDPI(Handle) float64 { return 1.0 }
 
 // MainDPI 同 WindowDPI（恒 1.0）。
@@ -57,7 +57,7 @@ func (p *Plat) HideFromTaskbar(Handle) {}
 // Visible 主窗恒可见（非 Windows 无我方发起的隐藏路径）。
 func (p *Plat) Visible() bool { return true }
 
-// TopMost 无置顶查询（恒真，缺省口径与 Windows 一致）。
+// TopMost 无置顶查询（恒真，缺省规则与 Windows 一致）。
 func (p *Plat) TopMost() bool { return true }
 
 // SetTopMost 无置顶设置能力。

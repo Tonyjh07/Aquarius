@@ -79,8 +79,8 @@ func (e *estimator) Calibrate(raw, actual int) {
 
 // payloadOf 拼接请求的可计数文本（思考回传 + 思考块签名 + 消息内容 + 工具调用参数 + 工具声明），
 // 返回文本与结构开销（每消息常数；图片字节不计入——按占位粗估已含在常数里）。
-// 签名按整串计入（D175）：它确实随请求发出去，只是模型侧不解析明文——估算口径要与发送
-// 口径一致，否则 /usage 与压缩阈值会系统性低估。
+// 签名按整串计入（D175）：它确实随请求发出去，只是模型侧不解析明文——估算规则要与发送
+// 规则一致，否则 /usage 与压缩阈值会系统性低估。
 func payloadOf(req port.GenerateRequest) (string, int) {
 	var b strings.Builder
 	for _, m := range req.Messages {
@@ -112,7 +112,7 @@ func payloadOf(req port.GenerateRequest) (string, int) {
 	return b.String(), perMessageOverhead * len(req.Messages)
 }
 
-// estimateTokens 通用字符估算（D26 ③）：ASCII ≈4 字符/token（OpenAI 官方口径）、
+// estimateTokens 通用字符估算（D26 ③）：ASCII ≈4 字符/token（OpenAI 官方规则）、
 // CJK ≈1.5 字符/token、其余非 ASCII ≈2 字符/token。中文语料偏保守（宁早压缩勿撞上限）。
 func estimateTokens(text string) int {
 	var ascii, cjk, other int

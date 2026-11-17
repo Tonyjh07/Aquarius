@@ -1,6 +1,6 @@
 package llm
 
-// openai-responses 适配器（D175 口径一/二/四）：协议形状的差异全在本文件。
+// openai-responses 适配器（D175 规则一/二/四）：协议形状的差异全在本文件。
 // HTTP、鉴权、tokenizer、错误分类（*port.Quota / ErrTransient）、SSE 骨架与增量
 // 端口语义都复用 Client（openai.go / stream.go）——「换成另一套线上格式」不该顺带
 // 换掉重试、密钥池、计数这些横切能力。
@@ -25,7 +25,7 @@ import (
 
 const responsesPath = "/responses"
 
-// responsesSigPrefix 思考块签名的协议前缀（D175 口径三）：只有本协议认这个前缀，
+// responsesSigPrefix 思考块签名的协议前缀（D175 规则三）：只有本协议认这个前缀，
 // 别家签名（`anthropic:`）一律忽略——跨 provider 复制会话时不会把 A 家的签名发给 B 家。
 const responsesSigPrefix = "responses:"
 
@@ -240,7 +240,7 @@ func responsesSummary(text string) []responsesSummaryPart {
 	return []responsesSummaryPart{{Type: "summary_text", Text: text}}
 }
 
-// responsesReasoningOf 思考参数映射（D34 + D175 口径四）：
+// responsesReasoningOf 思考参数映射（D34 + D175 规则四）：
 //
 //   - `reasoning_effort` → `reasoning.effort`；
 //   - `enable_thinking` 在本协议没有对应字段：显式 false = 不发 reasoning（交服务端默认），
@@ -282,7 +282,7 @@ func toResponsesTools(specs []tool.Spec, wn *wireNames) []responsesTool {
 // generateResponses openai-responses 的生成入口。端口语义与 chat 一致（Recv 给增量、
 // io.EOF 收流），差别只在线上格式。
 //
-// **没有剥离重试**（D175 口径四）：Responses 是自家规范，参数写错就是 bug——静默剥掉
+// **没有剥离重试**（D175 规则四）：Responses 是自家规范，参数写错就是 bug——静默剥掉
 // 一个字段会让配置错误永远浮不上来；chat 的兼容重试是面对「生态各写各的」的止损。
 func (c *Client) generateResponses(ctx context.Context, req port.GenerateRequest) (port.Stream, error) {
 	body, err := encodeResponsesRequest(req)
@@ -500,7 +500,7 @@ func responsesErrorMessage(ev responsesEvent) string {
 }
 
 // ---------------------------------------------------------------------------
-// 思考签名编解码：树内只存一个不透明串，取用时还原成协议要的字段（D175 口径三）
+// 思考签名编解码：树内只存一个不透明串，取用时还原成协议要的字段（D175 规则三）
 // ---------------------------------------------------------------------------
 
 // responsesSigBody 签名解压后的负载：原样回放所需的两项。
@@ -511,7 +511,7 @@ type responsesSigBody struct {
 
 // encodeResponsesSignature 编码思考块签名为树内不透明串：
 // `responses:` + base64(flate(JSON{id, encrypted_content}))。
-// 压一道是因为 encrypted_content 要随会话树落盘——原样存会把会话文件撑大一大截，
+// 压一道是因为 encrypted_content 要随会话树写入磁盘——原样存会把会话文件撑大一大截，
 // 而它是服务端生成的高熵串，压缩率恰好很高。
 // 没有 encrypted_content 就返回空串 = 不加签名：没它就回放不了，留个空壳只会误导。
 func encodeResponsesSignature(id, encrypted string) string {

@@ -22,7 +22,7 @@ func (m *model) commit(msg conversation.Message) {
 	case conversation.RoleAssistant:
 		start := len(m.blocks)
 		// D100②：本轮思考块补盖节点 ID（未盖章 = 本轮所产——前轮已在各自 commit 盖过），
-		// thinking 右键取"所源节点"语义；分叉条挂点口径不变（branchStrips 不取 thinking）。
+		// thinking 右键取"所源节点"语义；分叉条挂点规则不变（branchStrips 不取 thinking）。
 		for i := range m.blocks {
 			if b := &m.blocks[i]; b.kind == blockThinking && b.id == "" {
 				b.id = msg.ID
@@ -103,7 +103,7 @@ func (m *model) commit(msg conversation.Message) {
 		// D207：纯图提交（无正文）也要盖章——回显块的正文同样为空，按空串配对。
 		if msg.Role == conversation.RoleUser {
 			if imgs := nodeImages(msg.Content); text != "" || len(imgs) > 0 {
-				// D272：轮内落成的 user 节点（引导/排队）没有本地回显——它进清单时界面
+				// D272：轮内写成的 user 节点（引导/排队）没有本地回显——它进清单时界面
 				// 只在待发条上画过一行，从没进过转写区。没得盖章就补一块，否则那句话
 				// 在转写区里凭空消失。
 				if !m.stampUserBlock(text, msg.ID, imgs) {
@@ -143,8 +143,8 @@ type nodeSeg struct {
 // nodeSegments 按工具分片把节点正文切段（D95）：段 = tool 分片之间的连续
 // text/image/audio/doc 分片；thinking 不进正文（回放单独成块，D42）。
 //
-// 判空口径（D207 修订）：**有图且无字也要成段**——纯图消息原来会被 TrimSpace 判空整段
-// 丢掉，图就再也不出现。段序与 textSegments 原口径一致（仅工具边界断段）。
+// 判空规则（D207 修订）：**有图且无字也要成段**——纯图消息原来会被 TrimSpace 判空整段
+// 丢掉，图就再也不出现。段序与 textSegments 原规则一致（仅工具边界断段）。
 func nodeSegments(parts []conversation.Part) []nodeSeg {
 	var (
 		segs  []nodeSeg

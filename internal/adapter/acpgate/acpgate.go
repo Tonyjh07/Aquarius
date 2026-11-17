@@ -414,7 +414,7 @@ func (m *Manager) agentNames() []string {
 	return out
 }
 
-// workDir 子进程 cwd：工具参数 → 配置 workdir → 家目录（与 JobSpec.WorkDir 同一口径）。
+// workDir 子进程 cwd：工具参数 → 配置 workdir → 家目录（与 JobSpec.WorkDir 同一套规则）。
 // 两者都不是围栏，只是起点（§5.18）。
 func (m *Manager) workDir(spec port.DelegateSpec, a Agent) string {
 	for _, wd := range []string{strings.TrimSpace(spec.WorkDir), strings.TrimSpace(a.WorkDir), m.opts.Home} {

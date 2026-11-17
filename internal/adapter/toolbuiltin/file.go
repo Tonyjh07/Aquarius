@@ -22,7 +22,7 @@ import (
 // 单页读取预算（D169）：行数、字符、单行长度三重上限。
 //
 // 字符预算（16000）刻意略小于缺省的 tool_output_chars（20000），与 term_exec 的
-// 保头尾预算同口径——这样 ToolRunner 的统一裁剪不会二次触发，页尾那条
+// 保头尾预算同规则——这样 ToolRunner 的统一裁剪不会二次触发，页尾那条
 // 「continue with offset」才不会被裁掉；分页是 file_read 唯一的截断方式。
 const (
 	maxReadLines     = 2000
@@ -31,7 +31,7 @@ const (
 )
 
 // maxImageBytes 单张图片上限（D169）：超过就报错并给出实际大小，不静默降级成文本。
-// 与粘贴/拖拽入口共用端口常量——两处口径必须一致，否则同一个文件「能贴不能读」。
+// 与粘贴/拖拽入口共用端口常量——两处规则必须一致，否则同一个文件「能贴不能读」。
 const maxImageBytes = port.MaxImageBytes
 
 // 目录列举与搜索结果上限（防爆上下文）。
@@ -205,7 +205,7 @@ func imageMIME(head []byte) string {
 
 // readImage 把图片写进附件库并回填引用（D169）。
 //
-// 字节不进 tool 结果 JSON：工具结果会落盘进会话树，图片按内容寻址单独存一份，
+// 字节不进 tool 结果 JSON：工具结果会写入磁盘进会话树，图片按内容寻址单独存一份，
 // 装配时再投影成 tool 应答之后的一条 user 消息（OpenAI 兼容端点不接受 tool 角色带
 // 图片块；必须排齐同一段全部应答之后，见 app.prompt 的装配说明）。模型不支持看图时
 // **明确报因**，不静默转成文本占位。
@@ -528,7 +528,7 @@ func (t *fileWrite) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 	return okResult(fmt.Sprintf("wrote %s (%d chars)", p, len([]rune(a.Content)))), nil
 }
 
-// fileEdit 按精确子串替换文件内容（D172；Risk=Confirm，与 file_write 同权限口径）。
+// fileEdit 按精确子串替换文件内容（D172；Risk=Confirm，与 file_write 同权限规则）。
 type fileEdit struct{ sandbox string }
 
 func (t *fileEdit) Spec() tool.Spec {
@@ -598,7 +598,7 @@ func (t *fileEdit) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 		return tool.Result{}, fmt.Errorf("%s looks like a binary file; file_edit only edits text", p)
 	}
 
-	// 换行与 BOM 原样保留（D172 口径四）：文件是 CRLF 就还按 CRLF 比对与写回，
+	// 换行与 BOM 原样保留（D172 规则四）：文件是 CRLF 就还按 CRLF 比对与写回，
 	// 模型给的 \n 在比对前先规约——否则同一段内容会因行尾差异而"找不到"。
 	bom, body := splitBOM(raw)
 	crlf := bytes.Contains(body, []byte("\r\n"))
@@ -622,7 +622,7 @@ func (t *fileEdit) Execute(ctx context.Context, call tool.Call) (tool.Result, er
 	return okResult(fmt.Sprintf("edited %s (%d replacement(s))", p, n)), nil
 }
 
-// replaceUnique 精确替换并守住唯一性（D172 口径二/三）：
+// replaceUnique 精确替换并守住唯一性（D172 规则二/三）：
 // 唯一命中才能改；多处命中且未开 replace_all 一律报错——猜测"应该是哪一处"
 // 是模型最容易悄悄改错地方的地方。精确匹配失败时逐级降级：行尾归一 → 去首尾空白。
 func replaceUnique(text, oldStr, newStr string, all, crlf bool) (string, int, error) {

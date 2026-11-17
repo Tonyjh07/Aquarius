@@ -17,7 +17,7 @@ func systemLanguage() Lang {
 }
 
 // langFromLCID 把 LCID 的主语言 ID（低 10 位）映射到 Lang：0x04 = 中文（简繁都算），
-// 0x09 = 英文；其余不认识。主语言 ID 口径见 Win32 的 MAKELANGID/PRIMARYLANGID。
+// 0x09 = 英文；其余不认识。主语言 ID 规则见 Win32 的 MAKELANGID/PRIMARYLANGID。
 func langFromLCID(lcid uint32) Lang {
 	switch lcid & 0x3ff {
 	case 0x04:

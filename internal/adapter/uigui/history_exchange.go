@@ -6,7 +6,7 @@ package uigui
 //
 // 壳内不搬运：认格式、防覆盖、写半截删掉、回执怎么写，全在命令面（铁律 5）。这里唯一
 // 多做的事是给保存框预填一个由标题派生的文件名——那是「界面该替用户填的默认值」，
-// 与内核口径共用一个函数（port.FileStem），不会分叉。
+// 与内核规则共用一个函数（port.FileStem），不会分叉。
 
 import (
 	"context"
@@ -146,7 +146,7 @@ func (st *historyState) requestExport(u *UI) {
 	})
 }
 
-// drainFilePicks 帧首取走文件框结果并投命令（通道满即丢，同其余图内命令口径）。
+// drainFilePicks 帧首取走文件框结果并投命令（通道满即丢，同其余图内命令规则）。
 // u.filePicks 为 nil（headless 测试的瘦 UI）时什么都不做。
 func (st *historyState) drainFilePicks(u *UI) {
 	if u.filePicks == nil {

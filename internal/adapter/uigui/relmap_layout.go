@@ -294,7 +294,7 @@ func (l *relLayout) restPos() []relPoint {
 }
 
 // boxCenterOf 给定位形的包围盒中心（世界 dp；含卡片半宽/半高）。整棵树的平铺位置
-// 一律用**盒心**度量——它就是 fitView/recenterTree 对准视口中心的那个点（两份口径
+// 一律用**盒心**度量——它就是 fitView/recenterTree 对准视口中心的那个点（两份规则
 // 必须一致，否则「树锚」与「视场」说的不是同一个地方）。
 func (l *relLayout) boxCenterOf(x, y []float64) (float64, float64) {
 	minX, minY := math.Inf(1), math.Inf(1)
@@ -350,7 +350,7 @@ func (l *relLayout) seedCollapsed() {
 
 // wake 重新上钟（2026-10-18 实测修）：撤销 pull/pin 或数据变更后唤醒物理，必须把
 // friction 拨回初值——否则时钟可能已被上一段动画耗尽（阈值以下），新一段收敛首帧就
-// 判停，看起来是「动画不动」。与 seedCollapsed/setPositions 的复位口径一致。
+// 判停，看起来是「动画不动」。与 seedCollapsed/setPositions 的复位规则一致。
 func (l *relLayout) wake() {
 	if l == nil {
 		return

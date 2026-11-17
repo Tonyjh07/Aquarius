@@ -4,7 +4,7 @@ package main
 // （uigui.WelcomeManager 实现）+ 「配置不完整」的装配前判定 + 向导窗宿主（可注入，
 // 测试不真开窗）。
 //
-// 判定口径（D141）：**阻断启动** = primary 或任一 fallback 的 api_key 经
+// 判定规则（D141）：**阻断启动** = primary 或任一 fallback 的 api_key 经
 // port.Secrets 取不到；**不阻断** = 密钥可用、只是 `ui.welcomed` 缺失（正常启动、
 // 启动后自动开一次欢迎窗，见 assemble_ui.go）。探测走端口、不直读 os.Getenv，且
 // **不打印明文警告**——警告只在 resolveAPIKey 的真实构造路径发一次（D35）。
@@ -58,7 +58,7 @@ func (m *welcomeManager) Issues() []string {
 }
 
 // Snapshot 欢迎窗快照（开窗现取；**密钥不回显**）：primary provider 三项 + 标记。
-// 读失败/无 provider 返回零值（不阻断开窗，Q10 同口径）。
+// 读失败/无 provider 返回零值（不阻断开窗，Q10 同规则）。
 func (m *welcomeManager) Snapshot() uigui.WelcomeSnapshot {
 	snap := uigui.WelcomeSnapshot{Hotkey: m.hotkey}
 	cfg, err := loadConfig(m.cfgPath)
@@ -84,7 +84,7 @@ func (m *welcomeManager) Snapshot() uigui.WelcomeSnapshot {
 	return snap
 }
 
-// Apply 写回（D141）：覆盖 `model.providers[0]`（无关键保留，口径同
+// Apply 写回（D141）：覆盖 `model.providers[0]`（无关键保留，规则同
 // providerManager.Apply）+ primary + `ui.welcomed`。两处一致性补丁：
 //   - primary 改名 → 清理该名在 fallback 内的悬挂引用（否则下次启动 normalize fail-fast）；
 //   - `model.name` 不在新 models 内（含空）→ 改写为 models[0]（否则旧模型名会被发给新
@@ -101,7 +101,7 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 	case len(models) == 0:
 		return errors.New(i18n.T("cmd.welcome.err.models_required"))
 	}
-	// 密钥先落库（config 写回之前，D151/D161）：填的是明文写进本机库、config 只留引用；
+	// 密钥先写进密钥库（config 写回之前，D151/D161）：填的是明文写进本机库、config 只留引用；
 	// 填的是引用则照写。写库失败整体放弃，不留「config 已是引用、库里没有值」的半个状态。
 	keyRef, err := welcomeKeyRef(m, name, p.APIKey)
 	if err != nil {
@@ -114,7 +114,7 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 		if len(old) > 0 {
 			if first, ok := old[0].(map[string]any); ok {
 				for k, v := range first {
-					entry[k] = v // 无关键保留（Q10 口径：tokenizer / unsupported_params / 未知键不丢）
+					entry[k] = v // 无关键保留（Q10 规则：tokenizer / unsupported_params / 未知键不丢）
 				}
 			}
 		}
@@ -166,10 +166,10 @@ func (m *welcomeManager) Apply(p uigui.WelcomePatch) error {
 	})
 }
 
-// welcomeKeyRef 欢迎窗密钥写入口径（D161 落点①）：明文 → 写进本机密钥库、返回
+// welcomeKeyRef 欢迎窗密钥写入规则（D161 落点①）：明文 → 写进本机密钥库、返回
 // `secret:<名>` 引用；引用 → 原样保留；空 → 返回 ""（保持原值）。
 // 键名沿用 providers[0] 现有引用名（改名不 churn），否则按 provider 名生成。
-// 明文真的落库时回调 onStore（S9-6b/D163：递增密钥库快照 Revision）。
+// 明文真的写进密钥库时回调 onStore（S9-6b/D163：递增密钥库快照 Revision）。
 func welcomeKeyRef(m *welcomeManager, name, typed string) (string, error) {
 	if strings.TrimSpace(typed) == "" {
 		return "", nil
@@ -188,7 +188,7 @@ func welcomeKeyRef(m *welcomeManager, name, typed string) (string, error) {
 	return ref, nil
 }
 
-// welcomeKeys 欢迎窗密钥写回（口径同 writeKeys，但欢迎窗只编辑第一把）：原条目的
+// welcomeKeys 欢迎窗密钥写回（规则同 writeKeys，但欢迎窗只编辑第一把）：原条目的
 // 密钥池原样保留（label / 后续槽位记忆不丢），keyRef 非空时覆盖**第一把**的 api_key。
 // 空 = 保持原值（D35 只写不回显）。
 func welcomeKeys(base map[string]any, keyRef string) []any {
@@ -206,12 +206,12 @@ func welcomeKeys(base map[string]any, keyRef string) []any {
 		}
 	}
 	if keys == nil {
-		keys = []any{} // 空数组而非 null：键存在但为空 = 一条缺省引用（读侧同口径）
+		keys = []any{} // 空数组而非 null：键存在但为空 = 一条缺省引用（读侧同一套规则）
 	}
 	return keys
 }
 
-// welcomeModels 欢迎窗模型条目写回（口径同 writeModels，但欢迎窗只给名字表）：按名字
+// welcomeModels 欢迎窗模型条目写回（规则同 writeModels，但欢迎窗只给名字表）：按名字
 // 继承原条目的能力位与上下文窗口（欢迎窗不编辑这些）；新增的名字从空起步。顺序以本次
 // 编辑为准。
 func welcomeModels(base map[string]any, names []string) []any {
@@ -238,7 +238,7 @@ func welcomeModels(base map[string]any, names []string) []any {
 	return out
 }
 
-// Test 连通性测试（口径同 providerManager.Test）：以 patch 构造一次性 client（8s 超时）
+// Test 连通性测试（规则同 providerManager.Test）：以 patch 构造一次性 client（8s 超时）
 // 拉 /models。APIKey 空 = 取 config 内 providers[0] 原值，再走 D35 解析。
 func (m *welcomeManager) Test(p uigui.WelcomePatch) error {
 	_, err := m.Models(p)
@@ -312,9 +312,9 @@ func (m *welcomeManager) MarkWelcomed() error {
 	})
 }
 
-// SetLang 写回 `ui.lang`（D278 第 1 页，向导内当场生效、落盘供下次启动）。
+// SetLang 写回 `ui.lang`（D278 第 1 页，向导内当场生效、写入磁盘供下次启动）。
 // 归一与启动期 i18n.Parse 同一个解析器：存得进去的值必定过得了下次启动的校验，
-// 而空串一律写成 "auto"（与设置窗那条写回同口径，不留「键不存在」的第三种写法）。
+// 而空串一律写成 "auto"（与设置窗那条写回同规则，不留「键不存在」的第三种写法）。
 func (m *welcomeManager) SetLang(lang string) error {
 	sel, err := i18n.Parse(lang)
 	if err != nil {
@@ -330,7 +330,7 @@ func (m *welcomeManager) SetLang(lang string) error {
 	})
 }
 
-// apiKeyGap 密钥可解析性探测（D141，装配前）：空值回落默认引用与 resolveAPIKey 同口径；
+// apiKeyGap 密钥可解析性探测（D141，装配前）：空值回落默认引用与 resolveAPIKey 同规则；
 // 明文恒可解析（**不打警告**——警告只在真实构造路径发一次，D35）；引用型经 port.Secrets
 // 按名取用（先本机密钥库、再同名环境变量；不直读 os.Getenv，端口契约优先，D151/D161）。
 // D173 密钥池：**任一把**能取到就算可用（轮换本来就是为「某把用完」准备的），
@@ -398,7 +398,7 @@ func missingKeys(ctx context.Context, m *modelConfig, sec port.Secrets) []string
 // 若不接管，主窗起来又会自动弹应用内欢迎窗，两窗同屏。
 //
 // 跳过（取消）按密钥两分（D263）：密钥可用 = 置位标记（用户显式关闭 = 已看，与应用内跳过
-// 同口径）后照常启动；密钥取不到 = 程序起不来，可见报因（双击启动时 stderr 不可达，D114，
+// 同规则）后照常启动；密钥取不到 = 程序起不来，可见报因（双击启动时 stderr 不可达，D114，
 // 经系统消息框呈现）后退出 0——不再静默消失。
 //
 // 返回 (退出码, 是否结束 run)。
@@ -422,7 +422,7 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 	mgr := &welcomeManager{
 		cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin,
 		stderr: w.stderr, hotkey: w.cfg.UI.Hotkey,
-		onStore: func() { w.secretsRev.Add(1) }, // S9-6b/D163：明文落库递增快照 Revision
+		onStore: func() { w.secretsRev.Add(1) }, // S9-6b/D163：明文写进密钥库后递增快照 Revision
 	}
 	outcome, err := setupWindowRunner(uigui.SetupRequest{
 		Theme:       w.cfg.UI.Theme,

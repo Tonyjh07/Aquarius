@@ -2,7 +2,7 @@ package app
 
 // D188 编辑消息增删附件的内核测试：flag 解析（三组合 / 空文本 / 越界 / 非法序号）、
 // 附件分片增删的作用面（追加序、drop 后序、drop-all、至少剩一片）、只对用户消息开放、
-// 以及 port.TreeView.NodeAttachments 的序号口径。
+// 以及 port.TreeView.NodeAttachments 的序号规则。
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestParseEditAttachArgs 附件 flag 的解析口径：可重复、与既有 flag 混用、文本可空。
+// TestParseEditAttachArgs 附件 flag 的解析规则：可重复、与既有 flag 混用、文本可空。
 func TestParseEditAttachArgs(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -286,7 +286,7 @@ func TestSessionEditAttachRelativePathRejected(t *testing.T) {
 	}
 }
 
-// TestNodeAttachmentsView NodeAttachments 的序号口径：按附件分片出现序，跳过正文/思考/工具。
+// TestNodeAttachmentsView NodeAttachments 的序号规则：按附件分片出现序，跳过正文/思考/工具。
 func TestNodeAttachmentsView(t *testing.T) {
 	s, _ := editFixture(t)
 	got := s.NodeAttachments("u1")
@@ -304,7 +304,7 @@ func TestNodeAttachmentsView(t *testing.T) {
 	}
 }
 
-// nodeBodyTextOf 节点正文（与 port.TreeView.NodeText 同口径，直接查会话树）。
+// nodeBodyTextOf 节点正文（与 port.TreeView.NodeText 同规则，直接查会话树）。
 func nodeBodyTextOf(c *conversation.Conversation, id conversation.MessageID) (string, bool) {
 	m, ok := c.Find(id)
 	if !ok {

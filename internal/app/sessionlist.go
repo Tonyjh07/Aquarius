@@ -19,7 +19,7 @@ type sessionSnapshot struct {
 // publishSessions 重建并原子发布会话列表快照：由 store.List 汇总，标出当前会话。
 // 发布点与 tree/facts 同组（构造完成 + 每次 Handle 返回前）——命令与 Turn 都可能改变
 // 列表（新建/切换/改名/删除/追加消息与更新时间）。读失败时**保留上一版**（不空转，同
-// facts 降级口径）；UI 侧不做任何 store I/O。
+// facts 降级规则）；UI 侧不做任何 store I/O。
 //
 // 成本注：store.List 会读并解码全部会话 JSON；个人助手会话数有限，每次输入一次可接受。
 // 若日后成为热路径，可按树/事实快照同款签名门控（D82）收敛重算。

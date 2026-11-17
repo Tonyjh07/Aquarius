@@ -1,6 +1,6 @@
 package i18n
 
-// zhAdapterExchangeTexts 内部适配器的导入导出与附件侧：exchange（aqx 容器、各来源格式的导入）、ingestfile（把外部文件读成消息）、storejson（会话落盘）。这些句子多在报错链与回执里，会一路冒到界面提示或 /export 的输出。key 前缀 exchange.io.* / exchange.err.* / ingest.* / store.*，不得与 zh_exchange.go 已有的 exchange.* 撞名。
+// zhAdapterExchangeTexts 内部适配器的导入导出与附件侧：exchange（aqx 容器、各来源格式的导入）、ingestfile（把外部文件读成消息）、storejson（会话写入磁盘）。这些句子多在报错链与回执里，会一路冒到界面提示或 /export 的输出。key 前缀 exchange.io.* / exchange.err.* / ingest.* / store.*，不得与 zh_exchange.go 已有的 exchange.* 撞名。
 var zhAdapterExchangeTexts = map[string]string{
 
 	// ---- 回执里的丢项与清单（导出侧逐类计数、导入侧逐条说明）----
@@ -86,7 +86,7 @@ var zhAdapterExchangeTexts = map[string]string{
 	"exchange.err.parse_entry":    "解析 {name}",
 	"exchange.err.what_too_large": "{what} 超过 {mb} MB 上限",
 
-	// 归档条目路径的口径（与技能安装的 zip-slip 同源）
+	// 归档条目路径的规则（与技能安装的 zip-slip 同源）
 	"exchange.err.entry_abs_path": "归档条目「{name}」是绝对路径：拒绝解包",
 	"exchange.err.entry_drive":    "归档条目「{name}」带盘符：拒绝解包",
 	"exchange.err.entry_escape":   "归档条目「{name}」越出解包目录：拒绝解包",
@@ -161,7 +161,7 @@ var zhAdapterExchangeTexts = map[string]string{
 	"ingest.err.sheet":           "工作表 {sheet}",
 	"ingest.doc.sheet":           "〔工作表 {sheet}〕",
 
-	// ---- 会话落盘（storejson）----
+	// ---- 会话写入磁盘（storejson）----
 	"store.err.legacy_format":    "storejson: 发现旧格式会话",
 	"store.err.empty_dir":        "storejson: 目录不能为空",
 	"store.err.create_dir":       "storejson: 创建目录 {dir}",

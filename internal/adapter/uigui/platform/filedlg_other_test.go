@@ -65,7 +65,7 @@ func TestZenityFiltersSplitSemicolons(t *testing.T) {
 	}
 }
 
-// TestSaveCommandHasNoOverwritePrompt 保存框不设覆盖确认（与实现和文档同一个口径）。
+// TestSaveCommandHasNoOverwritePrompt 保存框不设覆盖确认（与实现和文档同一个规则）。
 //
 // 导出是「再存一份」：同名时命令面加 -2 后缀并在回执里写清落点。对话框里先问「要覆盖吗」，
 // 答「是」之后文件仍然存成 -2，是个无效选择题。zenity 的 --confirm-overwrite 也已被标为
@@ -117,7 +117,7 @@ func TestAppleScriptString(t *testing.T) {
 	}
 }
 
-// TestExtWithDot 缺省扩展名不带点（与 Win32 契约同口径），拼预填名时补上。
+// TestExtWithDot 缺省扩展名不带点（与 Win32 契约同规则），拼预填名时补上。
 func TestExtWithDot(t *testing.T) {
 	if got := extWithDot("aqx"); got != ".aqx" {
 		t.Fatalf("extWithDot(aqx) = %q, want .aqx", got)

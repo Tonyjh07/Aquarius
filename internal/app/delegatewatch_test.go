@@ -125,11 +125,11 @@ func TestDelegateWatcherReportsTerminal(t *testing.T) {
 	select {
 	case <-woken:
 	case <-time.After(2 * time.Second):
-		t.Fatal("报告落地后应唤醒会话")
+		t.Fatal("报告送达后应唤醒会话")
 	}
 }
 
-// TestDelegateWatcherReportsFailure 转交失败也要落地：否则一次失败就是一条静默丢失的活。
+// TestDelegateWatcherReportsFailure 转交失败也要实现：否则一次失败就是一条静默丢失的活。
 func TestDelegateWatcherReportsFailure(t *testing.T) {
 	d := newScriptedDelegate()
 	ci := newCaptureInjector()
@@ -193,7 +193,7 @@ func TestWatchingDelegatesKillUnwatches(t *testing.T) {
 	}
 }
 
-// TestDelegateCancelSessionDropsReport 删会话时撤 watcher：报告不再尝试落地。
+// TestDelegateCancelSessionDropsReport 删会话时撤 watcher：报告不再尝试实现。
 func TestDelegateCancelSessionDropsReport(t *testing.T) {
 	d := newScriptedDelegate()
 	ci := newCaptureInjector()

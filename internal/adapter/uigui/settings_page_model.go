@@ -1,11 +1,11 @@
 package uigui
 
-// settings_page_model.go 「模型」页（D162 页面注册表；D176 口径一）：**用哪个**——当前
+// settings_page_model.go 「模型」页（D162 页面注册表；D176 规则一）：**用哪个**——当前
 // 模型名 / 原生思考与推理档位 / 有序降级链。provider 本体（怎么连：协议 / 端点 / 密钥池 /
 // 模型能力表）搬到「模型服务」页（settings_page_providers.go），这一页只做路由决策。
 //
-// 降级链是**列表**不是文本框（D176 口径三）：每项一行 provider / model，可上移/下移/删除，
-// 尾部「＋ 添加」。链改动随「保存并应用」全量写回 config（重启生效，与 provider 变更同口径）。
+// 降级链是**列表**不是文本框（D176 规则三）：每项一行 provider / model，可上移/下移/删除，
+// 尾部「＋ 添加」。链改动随「保存并应用」全量写回 config（重启生效，与 provider 变更同规则）。
 
 import (
 	"gioui.org/layout"

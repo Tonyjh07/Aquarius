@@ -13,7 +13,7 @@ import (
 var EffortLevels = []string{"minimal", "low", "medium", "high"}
 
 // ParseEffort 校验档位：off → ""（清除态），枚举外报错。装配根启动校验与
-// /effort 命令共用同一口径（单一事实源）。
+// /effort 命令共用同一套规则（单一事实源）。
 func ParseEffort(raw string) (string, error) {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	switch s {
@@ -27,12 +27,12 @@ func ParseEffort(raw string) (string, error) {
 }
 
 // execThink /think [on|off]（D34）：无参显示原生思考开关与当前档位；有参先写回
-// config 再切 Agent 热态（同 /permission"写回失败不动运行态"口径）。
+// config 再切 Agent 热态（同 /permission"写回失败不动运行态"规则）。
 // 语义：总开关——off 时 reasoning_effort 与 enable_thinking 一律不发（覆盖 /effort）。
 // D173：整条链没有思考能力时，即便开着也不发送，无参显示里要说明——否则用户会
 // 以为「设了档位却没生效」是 bug。
 func (s *Session) execThink(_ context.Context, args []string) (string, error) {
-	// reasoningOn 当前链是否声明了思考能力（未注入 = 不判断，按老口径走）。
+	// reasoningOn 当前链是否声明了思考能力（未注入 = 不判断，按老规则走）。
 	reasoningOn := func() bool {
 		st := s.status()
 		return st.Caps == nil || st.Caps.Reasoning
@@ -59,7 +59,7 @@ func (s *Session) execThink(_ context.Context, args []string) (string, error) {
 	if !strings.EqualFold(strings.TrimSpace(args[0]), "on") && !strings.EqualFold(strings.TrimSpace(args[0]), "off") {
 		return "", errors.New(i18n.Tf("think.usage_state", "value", fmt.Sprintf("%q", args[0])))
 	}
-	// 开关的回执说的是命令里那个词（on / off），不是展示口径的「开 / 关」：
+	// 开关的回执说的是命令里那个词（on / off），不是展示规则的「开 / 关」：
 	// 用户敲的是哪个词，回执就照哪个词说。
 	token := map[bool]string{true: "on", false: "off"}[want]
 	if cur := s.agent.thinkState(); cur != nil && *cur == want {

@@ -28,7 +28,7 @@ func swapFakeConsole(t *testing.T, count int, hwnd uintptr) *[]string {
 	return &calls
 }
 
-// TestHideSpawnedConsole 钉住 D108/D114 判定口径：仅「唯一挂载者 + 有控制台」才脱离。
+// TestHideSpawnedConsole 钉住 D108/D114 判定规则：仅「唯一挂载者 + 有控制台」才脱离。
 func TestHideSpawnedConsole(t *testing.T) {
 	tests := []struct {
 		name        string

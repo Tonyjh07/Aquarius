@@ -21,8 +21,8 @@ const (
 	TrustHost
 )
 
-// Injection 一条待注入会话的上下文（D150）：来源 + 内容分片 + 触发口径。
-// 值语义；调用方经 Injector 交给内核，内核负责落地为 `Role=inject` 节点。
+// Injection 一条待注入会话的上下文（D150）：来源 + 内容分片 + 触发规则。
+// 值语义；调用方经 Injector 交给内核，内核负责实现为 `Role=inject` 节点。
 type Injection struct {
 	// Source 注入来源（D150）：`job:<id>` / `tool:<name>` / `plugin:<name>` / `poller:<id>` / `user`。
 	// 只作展示与审计（不进模型上下文）；未知前缀按普通来源处理，不设白名单。
@@ -36,8 +36,8 @@ type Injection struct {
 	// Trigger 是否随附起一轮响应：nil = 由内核按来源取默认（任务/观察/手动注入默认起，
 	// 工具/插件注入默认不起）；非 nil = 调用方显式覆盖。
 	Trigger *bool
-	// Session 目标会话（D167/D261，仅任务收尾/观察器等跨轮生产者使用）：空 = 落地时取当前会话；
-	// 非空而落地时当前会话已不是它 → 落到**那个会话自己的树**上（异地落地：load → 追加 →
+	// Session 目标会话（D167/D261，仅任务收尾/观察器等跨轮生产者使用）：空 = 实现时取当前会话；
+	// 非空而实现时当前会话已不是它 → 落到**那个会话自己的树**上（异地送达：load → 追加 →
 	// save），不丢弃。树变更仍只在会话 goroutine（§7.5），这里只是排空时的归属路由。
 	Session conversation.ID
 }

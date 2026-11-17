@@ -120,7 +120,7 @@ func TestPendingSteerOrder(t *testing.T) {
 	}
 }
 
-// TestSteerCutsSegment 工具批之后取引导：当前段提交成 assistant 节点、引导落成 user 节点，
+// TestSteerCutsSegment 工具批之后取引导：当前段提交成 assistant 节点、引导写成 user 节点，
 // 下一次请求里模型看得见那句话，树里三个节点按序（D273）。
 func TestSteerCutsSegment(t *testing.T) {
 	// 第 1 次生成产出正文 + 一次工具调用；工具执行时「用户插了一句」；第 2 次生成收尾。

@@ -1,7 +1,7 @@
 package app
 
 // session_summary_test.go D152：/summary 两档（手写直插 / 模型总结后插入）、
-// 目标约束、失败不落树、水位效果与清屏回放。
+// 目标约束、失败不写入会话树、水位效果与清屏回放。
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func summaryFixture(t *testing.T, store port.ConversationStore,
 	return s, llm, rec, path[2], path[3]
 }
 
-// TestSessionSummaryHandwritten 手写档：摘要插到目标之前（目标仍在摘要之后），落盘，
+// TestSessionSummaryHandwritten 手写档：摘要插到目标之前（目标仍在摘要之后），写入磁盘，
 // 无模型调用，Head 不变，清屏回放。
 func TestSessionSummaryHandwritten(t *testing.T) {
 	store := newMemStore()
@@ -62,7 +62,7 @@ func TestSessionSummaryHandwritten(t *testing.T) {
 		t.Fatalf("head = %s, want 不变 %s", s.Current().Head, assistant.ID)
 	}
 	if _, ok := store.convs[s.Current().ID].Find(pad.ID); !ok {
-		t.Fatal("摘要节点应已落盘")
+		t.Fatal("摘要节点应已写入磁盘")
 	}
 	if got := eventNames(rec.events); !contains(got, "clear") {
 		t.Fatalf("events = %v, want 清屏回放", got)
@@ -98,13 +98,13 @@ func TestSessionSummaryModel(t *testing.T) {
 	// 摘要输入 = 目标之上的历史（persona + 用户消息），不含目标自身。
 	req := llm.requests[1]
 	if txt := reqText(req); !strings.Contains(txt, "Do not mention the summary process") || !strings.Contains(txt, "hi") {
-		t.Fatalf("摘要请求不符合压缩提示词口径:\n%s", txt)
+		t.Fatalf("摘要请求不符合压缩提示词规则:\n%s", txt)
 	}
 	if strings.Contains(reqText(req), "模型回复") {
 		t.Fatal("目标节点自身的内容不得进摘要输入（它留在水位之后）")
 	}
 	if _, ok := store.convs[s.Current().ID].Find(pad.ID); !ok {
-		t.Fatal("摘要节点应已落盘")
+		t.Fatal("摘要节点应已写入磁盘")
 	}
 }
 
@@ -174,7 +174,7 @@ func TestSessionSummaryRejects(t *testing.T) {
 }
 
 // TestSessionSummaryModelFailureKeepsTree 生成失败（含模板不合格、取消、传输错误）
-// 一律只报错：会话树与落盘状态都不动。
+// 一律只报错：会话树与写入磁盘状态都不动。
 func TestSessionSummaryModelFailureKeepsTree(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -202,7 +202,7 @@ func TestSessionSummaryModelFailureKeepsTree(t *testing.T) {
 			t.Fatalf("%s: 失败不得改动会话树", tc.name)
 		}
 		if store.convs[s.Current().ID].NodeCount() != before {
-			t.Fatalf("%s: 失败不得落盘", tc.name)
+			t.Fatalf("%s: 失败不得写入磁盘", tc.name)
 		}
 	}
 }
@@ -348,7 +348,7 @@ func TestSummaryPadKeepsBranchSlots(t *testing.T) {
 	}
 }
 
-// TestSessionSummaryKeepsBranchStrip /summary 之后命令行与图上口径一致：/branch a2 把 a1
+// TestSessionSummaryKeepsBranchStrip /summary 之后命令行与图上规则一致：/branch a2 把 a1
 // 列为同级分叉，不把摘要衬垫当成分叉。
 func TestSessionSummaryKeepsBranchStrip(t *testing.T) {
 	store := newMemStore()

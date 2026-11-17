@@ -32,7 +32,7 @@ type providerConfig struct {
 	// D173：只对 openai-chat 生效（另两种协议是自家规范，参数写错就是 bug）。
 	UnsupportedParams []string `json:"unsupported_params,omitempty"`
 	// Headers 附加到每次 chat 请求的自定义头（D253）：兼容端点（自建网关/镜像）需要的
-	// 路由或计费头。**只对 openai-chat 生效**（同 UnsupportedParams 口径）。值原样发送，
+	// 路由或计费头。**只对 openai-chat 生效**（同 UnsupportedParams 规则）。值原样发送，
 	// 同名时覆盖适配器的默认头与鉴权头。
 	Headers map[string]string `json:"headers,omitempty"`
 }
@@ -61,7 +61,7 @@ type modelEntry struct {
 	// Sampling 逐模型采样参数覆盖（D204）：只写想改的那几项，其余继承 model.sampling
 	// （Overlay 合并）。键缺失 = 完全继承。
 	Sampling *samplingConfig `json:"sampling,omitempty"`
-	// CostIn / CostOut 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明。
+	// CostIn / CostOut 单价，**每百万 token**（D205，与厂商报价同规则）；0 = 未声明。
 	CostIn  float64 `json:"cost_in,omitempty"`
 	CostOut float64 `json:"cost_out,omitempty"`
 }
@@ -223,7 +223,7 @@ func (m *modelConfig) primaryProvider() *providerConfig {
 	return &m.Providers[0]
 }
 
-// entryCaps 链上一项的能力位（未声明的模型名按协议缺省，与 currentCaps 同口径）。
+// entryCaps 链上一项的能力位（未声明的模型名按协议缺省，与 currentCaps 同规则）。
 func (m *modelConfig) entryCaps(provider, model string) port.ModelCaps {
 	p := m.byName(provider)
 	if p == nil {
@@ -344,7 +344,7 @@ func (m *modelConfig) costFor(provider, model string) (in, out float64) {
 }
 
 // chainCaps 整条降级链的生效能力（D173：三项各自取与）。降级发生在半路上——图片
-// 那时已经进了请求体，剥不掉；工具与思考同口径（发出去就收不回）。
+// 那时已经进了请求体，剥不掉；工具与思考同规则（发出去就收不回）。
 func (m *modelConfig) chainCaps() port.ModelCaps {
 	caps := m.currentCaps()
 	for _, fb := range m.Fallback {

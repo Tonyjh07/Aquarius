@@ -160,7 +160,7 @@ type DelegateRun struct {
 	// 是超出清单上限、没逐个列出的改动文件数——两者都要说，否则读报告的人以为清单是完整的。
 	Denied      int `json:"denied,omitempty"`
 	ChangedOver int `json:"changed_over,omitempty"`
-	// WroteOver 超出清单上限、没逐个列出的**经手写**文件数（与 ChangedOver 同口径：
+	// WroteOver 超出清单上限、没逐个列出的**经手写**文件数（与 ChangedOver 同规则：
 	// 不说清楚，读报告的人会以为清单是完整的）。
 	WroteOver int `json:"wrote_over,omitempty"`
 	// ReadOutsideOver 同上，针对 ReadOutside。
@@ -204,7 +204,7 @@ type Delegate interface {
 //
 // 摘要行是**宿主事实**（谁、多久、停在哪、动过哪些文件），正文是**外部代理写的**——
 // 后者进上下文时要套数据围栏，由投影层按 Injection.Trust 决定（D170），不在这里拼。
-// 英文是硬规则：这段先进模型上下文（与 job 报告同口径）。
+// 英文是硬规则：这段先进模型上下文（与 job 报告同规则）。
 func DelegateReportText(id DelegateID, run DelegateRun) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Delegation %s to %s finished in %s (stop=%s, tool calls=%d, files changed=%d).\n",
@@ -344,7 +344,7 @@ func stopReasonText(run DelegateRun) string {
 
 // UnfinishedDelegate 上次退出时没有收尾的一次转交（启动对账的输入）。
 //
-// 与 UnfinishedJob 同一形状、同一口径：它补的是**事实**不是报告——那次转交当时在跑，
+// 与 UnfinishedJob 同一形状、同一套规则：它补的是**事实**不是报告——那次转交当时在跑，
 // 还是跑完了而报告没送到会话。进程早已随退出被终止（Close 会杀进程组），所以这里没有
 // 「可能还在跑」这一档：留下的只有「它存在过、做的是哪件活、结果没有下文」。
 type UnfinishedDelegate struct {
@@ -354,7 +354,7 @@ type UnfinishedDelegate struct {
 	Task      string          `json:"task,omitempty"`     // 任务描述（已截断）
 	WorkDir   string          `json:"work_dir,omitempty"` // 子进程的起点
 	StartedAt time.Time       `json:"started_at"`
-	// Stop / Error / EndedAt 非空 = 它跑到终态了，只是报告没送到（与 D264 的任务台账同口径）。
+	// Stop / Error / EndedAt 非空 = 它跑到终态了，只是报告没送到（与 D264 的任务台账同规则）。
 	Stop    string    `json:"stop,omitempty"`
 	Error   string    `json:"error,omitempty"`
 	EndedAt time.Time `json:"ended_at,omitempty"`

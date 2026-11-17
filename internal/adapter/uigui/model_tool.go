@@ -14,7 +14,7 @@ import (
 )
 
 // submitCommand 投递一条命令且**不入转写块**（D81 分叉按钮）：与 model.submit 同走
-// `inCh`（壳内不旁路内核，同 D72/D73 菜单口径），区别仅在不回显——按钮不是用户输入，
+// `inCh`（壳内不旁路内核，同 D72/D73 菜单规则），区别仅在不回显——按钮不是用户输入，
 // 转写里写一行 `/goto <ulid>` 是噪音。返回 false = 输入缓冲满（点击丢弃，调用方给提示）。
 //
 // 但**返回文本仍要归处**（D265）：记下命令行，结果回来时归进命令折叠条——否则它会以
@@ -92,7 +92,7 @@ func (m *model) startConfirm(req port.ConfirmRequest, reply chan port.ConfirmAns
 	m.confirm.share = &confirmShare{prompt: prompt}
 	m.u.publishConfirm(m.confirm.share)
 	m.u.reasonEd.SetText("")  // D86：原因框清空待填
-	m.u.reasonFocus = true    // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性口径）
+	m.u.reasonFocus = true    // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性规则）
 	m.u.levelPickOpen = false // D282：换一次确认 = 档位列表收起（旧列表不该跟到新问句上）
 	if i := m.reopenChipFor(req.Tool); i >= 0 {
 		// D282：同一件请求又回来了（选档位后被判 Ask）——沿用那块 chip，只换问句。
@@ -231,7 +231,7 @@ func (m *model) addMsg(kind blockKind, text string, id conversation.MessageID) {
 	m.blocks = append(m.blocks, b)
 }
 
-// addInject 追加注入块（D166）：来源/触发只作头部展示（D150 的落地事实）。
+// addInject 追加注入块（D166）：来源/触发只作头部展示（D150 的实现事实）。
 // 空正文的注入不落块——没有可读内容，头部单独成行只会制造噪声。
 func (m *model) addInject(text, source string, trigger bool) {
 	if strings.TrimSpace(text) == "" {
@@ -251,7 +251,7 @@ func partsText(parts []conversation.Part) string {
 	return uicommon.PartsText(parts, uicommon.ImageWhenUnaddressable)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用口径）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用规则）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageWhenUnaddressable)
 }

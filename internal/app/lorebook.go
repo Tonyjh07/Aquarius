@@ -12,10 +12,10 @@ import (
 // 拼成一段进本轮请求。整份逻辑是纯函数——吃条目、扫描文本与预算，出不进树的一段文字，
 // 所以它可以在测试里逐条断言，也不依赖会话或磁盘。
 //
-// 三条口径都在这里落地：只扫用户与助手的正文（工具回填里偶然出现的词不该激活整卡设定）、
+// 三条规则都在这里实现：只扫用户与助手的正文（工具回填里偶然出现的词不该激活整卡设定）、
 // 常驻条目跳过（它们已经随 persona 每轮都在）、装不下就整条不激活（截断后条目语义会变形）。
 
-// 世界书缺省口径：扫描最近几条消息、允许占上下文预算的多少（§5.17/D294）。
+// 世界书缺省规则：扫描最近几条消息、允许占上下文预算的多少（§5.17/D294）。
 const (
 	// DefaultLoreScanDepth 扫描最近多少条用户/助手消息。
 	DefaultLoreScanDepth = 4
@@ -25,7 +25,7 @@ const (
 	loreSectionSep = "\n\n"
 )
 
-// LoreOptions 世界书激活口径（config `characters.lore` 解析后的结果）。
+// LoreOptions 世界书激活规则（config `characters.lore` 解析后的结果）。
 type LoreOptions struct {
 	Enabled     bool
 	ScanDepth   int     // <=0 取 DefaultLoreScanDepth

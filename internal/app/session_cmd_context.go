@@ -89,7 +89,7 @@ func (s *Session) showContextMessage(ctx context.Context, n int) (string, error)
 	return body, nil
 }
 
-// dumpContext 整份上下文落盘，回执给路径与大小。
+// dumpContext 整份上下文写入磁盘，回执给路径与大小。
 //
 // 文件名带时间戳：同一轮里连开两次不该互相覆盖，而「上次那份」正是要拿来比的。
 func (s *Session) dumpContext(ctx context.Context, last bool) (string, error) {

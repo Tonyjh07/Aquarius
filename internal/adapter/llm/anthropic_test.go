@@ -1,7 +1,7 @@
 package llm
 
 // anthropic 适配器测试（S11-6）：请求体形状（system 顶层、tool_use/tool_result 内容块）、
-// SSE 事件族回放、思考签名、鉴权头，以及与既有协议共用的错误口径。
+// SSE 事件族回放、思考签名、鉴权头，以及与既有协议共用的错误规则。
 // 全部用 httptest 假 server 回放录制的分片，不起真实网络。
 
 import (
@@ -384,7 +384,7 @@ func TestAnthropicRoleMerging(t *testing.T) {
 	}
 }
 
-// TestAnthropicForeignSignatureIgnored D175 口径三：别家前缀的签名不回放。
+// TestAnthropicForeignSignatureIgnored D175 规则三：别家前缀的签名不回放。
 func TestAnthropicForeignSignatureIgnored(t *testing.T) {
 	srv, rec := newAnthropicServer(t, `data: {"type":"message_stop"}`+"\n")
 	c := anthropicClient(t, srv.URL, "")
@@ -445,7 +445,7 @@ func TestAnthropicErrorEvents(t *testing.T) {
 }
 
 // TestAnthropicStatusErrors 429 → *port.Quota（含 Retry-After 冷却）；5xx → 瞬时；
-// 鉴权错误不换钥匙口径由装饰器判——这里只验分类。且**只有一次请求**（无剥离重试）。
+// 鉴权错误不换钥匙规则由装饰器判——这里只验分类。且**只有一次请求**（无剥离重试）。
 func TestAnthropicStatusErrors(t *testing.T) {
 	cases := []struct {
 		code       int

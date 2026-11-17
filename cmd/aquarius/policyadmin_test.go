@@ -124,7 +124,7 @@ func TestToolPolicyRoundTrip(t *testing.T) {
 	}
 }
 
-// TestToolPolicyRejectsBadInput 拼错一律报错且不落盘（静默跳过会让用户以为已设过）。
+// TestToolPolicyRejectsBadInput 拼错一律报错且不写入磁盘（静默跳过会让用户以为已设过）。
 func TestToolPolicyRejectsBadInput(t *testing.T) {
 	t.Parallel()
 	_, a, path := newPolicyTestWiring(t, `{"permissions":{"level":"strict"}}`)
@@ -143,7 +143,7 @@ func TestToolPolicyRejectsBadInput(t *testing.T) {
 	}
 	data, _ := os.ReadFile(path)
 	if strings.Contains(string(data), "overrides") {
-		t.Fatalf("失败路径不该落盘：%s", data)
+		t.Fatalf("失败路径不该写入磁盘：%s", data)
 	}
 }
 

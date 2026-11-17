@@ -23,7 +23,7 @@ func TestBallRect(t *testing.T) {
 }
 
 // TestClampAnchor 可见锚点夹取（D50 ①）：收起 = 球（透明窗体可越界）、展开 = 整窗；
-// 顺序右/下先、左/上后（超尺寸时左上优先，与旧口径一致）。
+// 顺序右/下先、左/上后（超尺寸时左上优先，与旧规则一致）。
 func TestClampAnchor(t *testing.T) {
 	t.Parallel()
 	work := rect{left: 0, top: 0, right: 1920, bottom: 1080}
@@ -423,7 +423,7 @@ func TestOverInputBtn(t *testing.T) {
 // endDrag 抬手即布防（「曾悬停」的证据），而收起动画 320+220ms 内 evalDockFrame 被
 // 抑制——若 layout 连布防一起清，动画结束首帧重新布防又要求光标在球上、此刻光标通常
 // 已移开 → 不悬停就永不停靠（收回后不自动吸附/停靠的实测缺陷）。展开方向仍须清
-// （展开态不可停靠，default 分支同口径）。
+// （展开态不可停靠，default 分支同规则）。
 func TestCollapseAnimKeepsDockArm(t *testing.T) {
 	t.Parallel()
 	// ① 收起动画（beginCollapse 同序：先起动画再翻态）：抬手布防证据保留。
@@ -527,7 +527,7 @@ func TestRowAnchor(t *testing.T) {
 }
 
 // TestExpandedClampRowEdge 展开态夹取只限制输入栏（D52）：输入栏贴左缘/提到上沿的
-// 位置不被弹开（旧整窗口径会推开 0～20px 透明边距），再越即夹回。
+// 位置不被弹开（旧整窗规则会推开 0～20px 透明边距），再越即夹回。
 func TestExpandedClampRowEdge(t *testing.T) {
 	t.Parallel()
 	u := newHeadless(t, Options{})
@@ -552,7 +552,7 @@ func TestExpandedClampRowEdge(t *testing.T) {
 }
 
 // TestShowExpandUndocks 呼出消息脱离停靠（D50）：停靠态 showExpand → 状态复位 +
-// 复亮 + 落盘未停靠（headless 下 Win32 为无句柄空转，可断言状态与记忆）。
+// 复亮 + 写入磁盘未停靠（headless 下 Win32 为无句柄空转，可断言状态与记忆）。
 func TestShowExpandUndocks(t *testing.T) {
 	t.Parallel()
 	u := newHeadless(t, Options{PosFile: filepath.Join(t.TempDir(), "pos.json")})
@@ -578,6 +578,6 @@ func TestShowExpandUndocks(t *testing.T) {
 	}
 	p, ok := loadPos(u.opts.PosFile)
 	if !ok || p.Docked != "" {
-		t.Fatalf("落盘 = %+v,%v, want 未停靠", p, ok)
+		t.Fatalf("写入磁盘 = %+v,%v, want 未停靠", p, ok)
 	}
 }

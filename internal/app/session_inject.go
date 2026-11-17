@@ -13,18 +13,18 @@ import (
 )
 
 // injectQueueCap 注入队列容量（D150）：生产者在外部 goroutine（工具/MCP/轮询器），
-// 排空在会话 goroutine；队列满时 Inject 立即报错——**绝不阻塞**调用方（§10 并发口径）。
+// 排空在会话 goroutine；队列满时 Inject 立即报错——**绝不阻塞**调用方（§10 并发规则）。
 const injectQueueCap = 64
 
-// pendingInjection 队列里的一条待落地注入（触发口径已解析好，排空时只看这一个布尔）。
+// pendingInjection 队列里的一条待实现注入（触发规则已解析好，排空时只看这一个布尔）。
 type pendingInjection struct {
 	source  string
 	trust   conversation.InjectTrust
 	parts   []conversation.Part
 	trigger bool
-	session conversation.ID // 目标会话（D261）：空 = 落地时取当前会话；非当前则异地落地
-	// done 落地回执（D264）：非 nil 时，排空把这条落成节点并落盘（或确认丢弃）后写入结果。
-	// 投递方靠它区分「已入队」与「已落地」——报告要不要从台账上销账，只能按后者判。
+	session conversation.ID // 目标会话（D261）：空 = 实现时取当前会话；非当前则异地实现
+	// done 送达回执（D264）：非 nil 时，排空把这条写成节点并写入磁盘（或确认丢弃）后写入结果。
+	// 投递方靠它区分「已入队」与「已实现」——报告要不要从台账上销账，只能按后者判。
 	done chan error
 }
 
@@ -50,13 +50,13 @@ func (s *Session) Inject(_ context.Context, in port.Injection) error {
 // errInjectQueueFull 队列满（D150）：不阻塞调用方，由它自行退避重试。
 func errInjectQueueFull() error { return errors.New("session: " + i18n.T("inject.queue_full")) }
 
-// InjectAndWait 同 Inject，但**等到真正落地并落盘**才返回（D264）。
+// InjectAndWait 同 Inject，但**等到真正送达并写入磁盘**才返回（D264）。
 //
 // 只给跨轮生产者（任务收尾报告）用：它们要拿这个结果决定台账销不销账。语义差别就一句话：
-// 入队的报告随进程一起消失，落盘的不会。所以这里等的是排空完成，不只是入队成功。
+// 入队的报告随进程一起消失，写入磁盘的不会。所以这里等的是排空完成，不只是入队成功。
 //
 // 必须在会话 goroutine 之外调用（会等它排空）；ctx 取消即放弃等待，此时内容**可能**稍后
-// 仍然落地，调用方按未确认处理即可——宁可下次启动多提一句，也不假装送到了。
+// 仍然实现，调用方按未确认处理即可——宁可下次启动多提一句，也不假装送到了。
 func (s *Session) InjectAndWait(ctx context.Context, in port.Injection) error {
 	item, err := s.pending(in)
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *Session) InjectAndWait(ctx context.Context, in port.Injection) error {
 	}
 }
 
-// pending 校验并组装一条待落地注入；坏包在入队前就退回调用方。
+// pending 校验并组装一条待实现注入；坏包在入队前就退回调用方。
 func (s *Session) pending(in port.Injection) (pendingInjection, error) {
 	if len(in.Parts) == 0 {
 		return pendingInjection{}, errors.New("session: " + i18n.T("inject.empty"))
@@ -108,7 +108,7 @@ func injectTrust(t port.TrustLevel) conversation.InjectTrust {
 	return conversation.TrustExternal
 }
 
-// resolveInjectTrigger 触发口径（D150，内核唯一一处默认表）：显式覆盖优先；
+// resolveInjectTrigger 触发规则（D150，内核唯一一处默认表）：显式覆盖优先；
 // 未给定时按来源取默认——任务/轮询/手动注入默认起一轮（完成应当主动汇报），
 // 工具/插件注入默认不起（Turn 内注入只补上下文，打断流程会重复计费）。
 // 未知来源按不可信处理，默认不起。
@@ -119,7 +119,7 @@ func resolveInjectTrigger(source string, override *bool) bool {
 	switch {
 	case strings.HasPrefix(source, "job:"), strings.HasPrefix(source, "poller:"),
 		strings.HasPrefix(source, "delegate:"):
-		return true // 转交完成要主动汇报（与任务终态同一口径，§5.18）
+		return true // 转交完成要主动汇报（与任务终态同一套规则，§5.18）
 	case source == "user":
 		return true
 	default: // tool:<name> / plugin:<name> / 未知
@@ -127,24 +127,24 @@ func resolveInjectTrigger(source string, override *bool) bool {
 	}
 }
 
-// drainPoint 注入排空的执行时机（D150）：调用方只说「在哪排空」，触发口径与呈现方式
+// drainPoint 注入排空的执行时机（D150）：调用方只说「在哪排空」，触发规则与呈现方式
 // 由 drainPlan 一处决定——不再由调用点自己传两个布尔，四个取值里那个从没被用过的组合
 // 也随之消失。
 type drainPoint int
 
 const (
-	// drainBeforeInput ① `Handle` 入口：用户输入优先，注入只落地、不抢手输入。
+	// drainBeforeInput ① `Handle` 入口：用户输入优先，注入只写入、不抢手输入。
 	drainBeforeInput drainPoint = iota
-	// drainAfterTurn ② 轮末：轮内注入只落地，不打断当前轮。
+	// drainAfterTurn ② 轮末：轮内注入只写入，不打断当前轮。
 	drainAfterTurn
-	// drainOnWake ③ 空闲唤醒：触发型注入落地后自己跑一轮，逐条呈现。
+	// drainOnWake ③ 空闲唤醒：触发型注入实现后自己跑一轮，逐条呈现。
 	drainOnWake
 	// drainBeforeReplay ③' 命令自己移 Head（`/inject`、`/skill`）：触发型注入照样起一轮，
 	// 但不逐条呈现——调用方紧接着清屏回放，让新路径连注入一起铺开。
 	drainBeforeReplay
 )
 
-// drainPlan 一个排空点的口径：这里只回答两件事，其余（落地、落盘、丢弃错投）各点相同。
+// drainPlan 一个排空点的规则：这里只回答两件事，其余（实现、写入磁盘、丢弃错投）各点相同。
 type drainPlan struct {
 	// driven 触发型注入是否真起一轮；false 时 Trigger 记 false（记的是**实际发生**）。
 	driven bool
@@ -153,7 +153,7 @@ type drainPlan struct {
 	announce bool
 }
 
-// plan 排空点的口径表（单一事实源）。未列出的取值按「只落地、逐条呈现」处理：宁可多一次
+// plan 排空点的规则表（单一事实源）。未列出的取值按「只写入、逐条呈现」处理：宁可多一次
 // 呈现，也不凭空多起一轮生成。
 func (p drainPoint) plan() drainPlan {
 	switch p {
@@ -166,14 +166,14 @@ func (p drainPoint) plan() drainPlan {
 	}
 }
 
-// drainInjections 排空注入队列并逐条落地（D150，各排空点共用）：每条落成 `Role=inject`
-// 节点（挂当前 Head，Head 随之前移）。Trigger 记「本条落地时**实际**起没起响应」——是否
+// drainInjections 排空注入队列并逐条实现（D150，各排空点共用）：每条写成 `Role=inject`
+// 节点（挂当前 Head，Head 随之前移）。Trigger 记「本条实现时**实际**起没起响应」——是否
 // 真起一轮由排空点的 driven 决定，是否该跑轮经 wantTurn 回给调用方（跑轮的时机因点而异：
 // 唤醒点立即跑，命令点先清屏回放再跑）。
-// 落过节点即落盘（失败上抛）。
+// 落过节点即写入磁盘（失败上抛）。
 func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []conversation.Message, wantTurn bool, err error) {
 	plan := at.plan()
-	// 回执（D264）：本批全部落地（含异地写过盘）后才回话；中途出错就带着错回。
+	// 回执（D264）：本批全部实现（含异地写过盘）后才回话；中途出错就带着错回。
 	// 放在 defer 里，是为了让每条 return 路径都不会把等待方晾在原地。
 	var receipts []chan error
 	defer func() {
@@ -186,7 +186,7 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 		select {
 		case item := <-s.injectCh:
 			// 目标会话不是当前会话（D261）：落到它自己的树上，不等用户切回去。
-			// 转交与后台任务都注定跨切换，报告按归属落地而不是按焦点落地。
+			// 转交与后台任务都注定跨切换，报告按归属实现而不是按焦点实现。
 			if item.session != "" && item.session != s.cur.ID {
 				if err := s.landElsewhere(ctx, item); err != nil {
 					return landed, wantTurn, err
@@ -224,8 +224,8 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 	}
 }
 
-// landInjection 把一条注入落成不可变节点（D150）：父 = 当前 Head，Head 随之前移。
-// Source 只作展示与审计（不进上下文）；Trigger 记**本条落地时是否实际起了一轮响应**。
+// landInjection 把一条注入写成不可变节点（D150）：父 = 当前 Head，Head 随之前移。
+// Source 只作展示与审计（不进上下文）；Trigger 记**本条实现时是否实际起了一轮响应**。
 func (s *Session) landInjection(item pendingInjection, trigger bool) (conversation.Message, error) {
 	node := conversation.Message{
 		ID:        s.ids.MessageID(),
@@ -243,7 +243,7 @@ func (s *Session) landInjection(item pendingInjection, trigger bool) (conversati
 	return node, nil
 }
 
-// landElsewhere 异地落地（D261）：目标会话不是当前会话时，读它的树、追加注入、写回。
+// landElsewhere 异地送达（D261）：目标会话不是当前会话时，读它的树、追加注入、写回。
 //
 // 为什么可以这样做：树变更仍只在会话 goroutine 里发生（§7.5）——这里读改写的是**不在
 // 内存里**的会话，它唯一的另一份活体是磁盘，而磁盘只有这个 goroutine 在碰。切回来时
@@ -287,7 +287,7 @@ func (s *Session) landElsewhere(ctx context.Context, item pendingInjection) erro
 // Windows 上这是最容易撞的一步：GUI 会话列表、/tree、启动 GC 都可能正开着同一个
 // `<id>.json` 读，而轮转 + os.Rename 在目标被打开时会报 sharing violation。那些读
 // 句柄活得很短（毫秒级），退避重试几次就过去了；不重试的话这份报告会直接消失，
-// 而投递方早已认为「已落地」。
+// 而投递方早已认为「已实现」。
 func (s *Session) saveElsewhere(ctx context.Context, c *conversation.Conversation) error {
 	var err error
 	for _, wait := range []time.Duration{0, 20 * time.Millisecond, 60 * time.Millisecond, 200 * time.Millisecond} {

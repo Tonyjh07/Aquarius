@@ -238,7 +238,7 @@ func TestSaveIncludesWeb(t *testing.T) {
 	}
 }
 
-// TestSaveWebRejectsBadNumbers 数值越界在写回调之前拦下（不落盘），并给出中文原因。
+// TestSaveWebRejectsBadNumbers 数值越界在写回调之前拦下（不写入磁盘），并给出中文原因。
 func TestSaveWebRejectsBadNumbers(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ name, field, value, want string }{

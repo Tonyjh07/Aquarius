@@ -121,7 +121,7 @@ type ModelInfo struct {
 	// ContextWindow 上下文窗口 tokens（D177）；0 = 未声明/未知。服务端 /models 不返回
 	// 窗口，只能来自 config；0 表示「按全局预算」，不是「窗口为零」。
 	ContextWindow int
-	// CostIn, CostOutUSD 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明
+	// CostIn, CostOutUSD 单价，**每百万 token**（D205，与厂商报价同规则）；0 = 未声明
 	// （「没填」不等于「免费」，故不显示费用）。按一次调用的用量折算时除以 1e6。
 	CostIn, CostOutUSD float64
 }
@@ -213,7 +213,7 @@ type Delta struct {
 	Usage     *conversation.Usage
 	// Reasoning 思维链分片（D34 展示 / D42 入树）：Text 承载推理文本——UI 实时呈现，
 	// 同时进 commit buffer 提交为 PartThinking 分片；是否回传由装配层的
-	// config `model.echo_thinking` 决定（port.Delta 本身不带口径）。
+	// config `model.echo_thinking` 决定（port.Delta 本身不带规则）。
 	Reasoning bool
 	// ReasoningSignature 思考块签名（D175）：协议适配器在思考结束后一次性给出（Anthropic
 	// 的 thinking block signature、Responses 的 encrypted_content），随当前轮思考缓冲

@@ -109,7 +109,7 @@ func TestFallbackToZh(t *testing.T) {
 	}
 }
 
-// TestUseSelectsLanguage 选语：en 表生效后取到英文；未知语言给母版（宁可口径旧，也不给空表）。
+// TestUseSelectsLanguage 选语：en 表生效后取到英文；未知语言给母版（宁可规则旧，也不给空表）。
 func TestUseSelectsLanguage(t *testing.T) {
 	defer Use(SelectionZh)
 

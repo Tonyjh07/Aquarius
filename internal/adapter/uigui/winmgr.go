@@ -30,7 +30,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// winKind 功能窗种类（§15.7 窗口清单；设置窗数据面随设置步落地）。
+// winKind 功能窗种类（§15.7 窗口清单；设置窗数据面随设置步实现）。
 type winKind int
 
 const (
@@ -242,7 +242,7 @@ func (h *winHost) closeAll() int {
 	return n
 }
 
-// isOpen 查询开窗状态（测试/菜单勾选口径）。
+// isOpen 查询开窗状态（测试/菜单勾选规则）。
 func (h *winHost) isOpen(k winKind) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()

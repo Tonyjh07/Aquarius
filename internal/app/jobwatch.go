@@ -25,7 +25,7 @@ const (
 // 在写终态时唤醒（D189）。需要「定时看某个外部状态」的是观察器，不是这里。
 //
 // 并发（§7.5）：Watch/Unwatch/Claim/CancelSession 可在会话 goroutine 调用；每条
-// watcher 在自己的 goroutine 里只等 Wait 并读 Status/Logs，**不碰会话树**——落地仍经
+// watcher 在自己的 goroutine 里只等 Wait 并读 Status/Logs，**不碰会话树**——实现仍经
 // port.Injector 回到会话 goroutine。Close 取消全部并等待，避免测试/长驻场景泄漏。
 type JobWatcher struct {
 	jobs   port.JobReader
@@ -95,7 +95,7 @@ type JobWatcherOptions struct {
 	Injector func() port.Injector
 	// Wake 完成报告注入后的空闲唤醒（D167）；nil = 只注入不唤醒（测试/无 UI）。
 	Wake func()
-	// Landed 报告已落地并落盘后的回调（D264）：装配根用它从台账销账。nil = 不销账
+	// Landed 报告已送达并写入磁盘后的回调（D264）：装配根用它从台账销账。nil = 不销账
 	// （测试、未接对账的装配），条目会留给下次启动对账。
 	Landed func(id port.JobID)
 	// Log watcher 失败、报告未送达等运行日志（D276，上下文固定 job）；nil = 丢弃。
@@ -179,7 +179,7 @@ func (p *JobWatcher) Claim(id port.JobID) (release func(), claimed bool) {
 }
 
 // CancelSession 撤销某会话的全部 watcher（D262）：删除会话与关停时调用。切换不撤——
-// 报告按归属异地落地，watcher 的生命周期跟任务走（D261）。空 id 不动作。
+// 报告按归属异地送达，watcher 的生命周期跟任务走（D261）。空 id 不动作。
 func (p *JobWatcher) CancelSession(id conversation.ID) {
 	if p == nil || id == "" {
 		return
@@ -279,7 +279,7 @@ func (p *JobWatcher) report(ctx context.Context, id port.JobID, j port.Job, sess
 		b.WriteString("\n</injected-context>")
 	}
 	if ctx.Err() != nil {
-		return // 关停已撤销 watcher：报告不再落地
+		return // 关停已撤销 watcher：报告不再实现
 	}
 	in := port.Injection{
 		Source:  source,
@@ -290,7 +290,7 @@ func (p *JobWatcher) report(ctx context.Context, id port.JobID, j port.Job, sess
 	if !p.deliver(ctx, id, in) {
 		return
 	}
-	// 报告已落地并落盘，这时才从台账销账（D264）：销早了，退出时那一段「任务已结束、
+	// 报告已送达并写入磁盘，这时才从台账销账（D264）：销早了，退出时那一段「任务已结束、
 	// 报告还在路上」就既没有报告、也没有对账。
 	p.settle(id)
 	if p.wake != nil {
@@ -305,7 +305,7 @@ func (p *JobWatcher) settle(id port.JobID) {
 	}
 }
 
-// lander 带落地回执的注入（D264）：返回 nil 表示已落成节点并落盘，不只是入队。
+// lander 带送达回执的注入（D264）：返回 nil 表示已写成节点并写入磁盘，不只是入队。
 // 单独一个接口而不是加进 port.Injector：注入端口是所有插件/工具共用的，
 // 只有跨轮生产者需要回执，不该逼所有人实现它。
 type lander interface {
@@ -328,7 +328,7 @@ func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injecti
 		if ctx.Err() != nil {
 			return false
 		}
-		// 有回执能力的实现就等落地，否则退回「入队即算送走」——测试替身与旧装配
+		// 有回执能力的实现就等送达，否则退回「入队即算送走」——测试替身与旧装配
 		// 都没有回执，行为与改动前一致。
 		if l, ok := inj.(lander); ok {
 			err = l.InjectAndWait(ctx, in)

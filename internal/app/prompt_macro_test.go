@@ -97,7 +97,7 @@ func TestComposeExpandsMacrosInUserPrompts(t *testing.T) {
 		t.Fatalf("system_prompt 未展开 {{user}}: %q", got)
 	}
 	if !strings.Contains(got, "Date 2026-10-18; char {{char}}; user Sam") {
-		t.Fatalf("无角色绑定时自定义模块口径不对: %q", got)
+		t.Fatalf("无角色绑定时自定义模块规则不对: %q", got)
 	}
 	spec.Character = &CharacterPrompt{Display: "Aria"}
 	got, _ = NewPersonaComposer(spec, RuntimeEnv{}, now).Compose()

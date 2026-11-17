@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// SampleRate / Channels / Bits 采集格式（D179 口径七）。
+// SampleRate / Channels / Bits 采集格式（D179 规则七）。
 const (
 	SampleRate = 16000
 	Channels   = 1
@@ -38,7 +38,7 @@ func clampDuration(d time.Duration) time.Duration {
 
 // WrapWAV 给裸 PCM 加上 44 字节 WAV 头（16kHz 单声道 16bit）。
 //
-// 分段结果要落成独立附件，而附件与转写都按 WAV 走（D179 不动），所以封装这一步
+// 分段结果要写成独立附件，而附件与转写都按 WAV 走（D179 不动），所以封装这一步
 // 从采集器搬到这里，由摄取侧对每一段各调一次。
 func WrapWAV(pcm []byte) []byte {
 	out := make([]byte, 44+len(pcm))

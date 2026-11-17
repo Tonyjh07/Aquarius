@@ -99,7 +99,7 @@ func whole() func() (port.SpeechSegmenter, error) {
 	return func() (port.SpeechSegmenter, error) { return vadsilero.NewWhole(), nil }
 }
 
-// TestIngestRecordsStoresAndTranscribes 录音落库后交给转写，音频不进分片。
+// TestIngestRecordsStoresAndTranscribes 录音写进密钥库后交给转写，音频不进分片。
 func TestIngestRecordsStoresAndTranscribes(t *testing.T) {
 	t.Parallel()
 	blobs := newBlobs(t)
@@ -149,10 +149,10 @@ func TestIngestStoresWAVPerSegment(t *testing.T) {
 	defer rc.Close()
 	back, _ := io.ReadAll(rc)
 	if len(back) != 44+8*port.FrameBytes {
-		t.Fatalf("落库音频 = %d 字节，want WAV 头 + 8 帧 = %d", len(back), 44+8*port.FrameBytes)
+		t.Fatalf("写进密钥库音频 = %d 字节，want WAV 头 + 8 帧 = %d", len(back), 44+8*port.FrameBytes)
 	}
 	if string(back[0:4]) != "RIFF" {
-		t.Fatalf("落库音频不是 WAV：%q", back[0:4])
+		t.Fatalf("写进密钥库音频不是 WAV：%q", back[0:4])
 	}
 	_ = rep
 }

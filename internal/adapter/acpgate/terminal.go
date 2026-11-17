@@ -164,7 +164,7 @@ func (t *terminal) kill() {
 	_ = killTree(t.cmd)
 }
 
-// terminalTable 一次转交的终端表。账目口径与越界读（D284）一致：上限是**本次转交**的，
+// terminalTable 一次转交的终端表。账目规则与越界读（D284）一致：上限是**本次转交**的，
 // 不跨次累积。
 type terminalTable struct {
 	mu    sync.Mutex
@@ -392,7 +392,7 @@ func (c *client) ReleaseTerminal(ctx context.Context, p acp.ReleaseTerminalReque
 	return acp.ReleaseTerminalResponse{}, nil
 }
 
-// termGate terminal 请求的共同前置：没申报就是方法不存在（与 fsGate 同口径，只是没有
+// termGate terminal 请求的共同前置：没申报就是方法不存在（与 fsGate 同规则，只是没有
 // 路径参数）。
 func (c *client) termGate(ctx context.Context, sid acp.SessionId, method string) error {
 	if !c.m.terminalEnabled() {
@@ -448,7 +448,7 @@ const reasonTerminalLimit = "the command-approval limit for this delegation is u
 
 // allowTerminal 一条命令的处置：额度内问一次，额度用完（或配置成 0）直接拒并留档。
 //
-// 不自造命令白/黑名单：四态策略表是 v0.7.0 的事，这里先塞一套，等于把同一套字段口径
+// 不自造命令白/黑名单：四态策略表是 v0.7.0 的事，这里先塞一套，等于把同一套字段规则
 // 写两遍（D286）。
 func (c *client) allowTerminal(ctx context.Context, line, prompt string) (bool, string) {
 	// 策略表放行这一来源的命令；命令内容不进硬名单判定（判不了它到底写哪儿）。
@@ -535,7 +535,7 @@ func argText(s string) string {
 }
 
 // terminalEnv 代理给的命令环境。剔除 AQUARIUS_*：宿主密钥不跟着命令走（与起子代理
-// 那一侧同一条口径，§5.18 进程卫生）。
+// 那一侧同一条规则，§5.18 进程卫生）。
 func terminalEnv(list []acp.EnvVariable) map[string]string {
 	if len(list) == 0 {
 		return nil

@@ -1,6 +1,6 @@
 package app
 
-// session_exchange_e2e_test.go 会话进出的端到端验收（§5.16 的验收口径）：
+// session_exchange_e2e_test.go 会话进出的端到端验收（§5.16 的验收规则）：
 // 走**命令面**（不是直接调适配器）导一份 `aqx` 出去、再导回来，逐项比对两棵树。
 //
 // 与适配器侧的往返测试分工：那边证明「格式能原样搬运」，这边证明「接上命令面之后仍然是
@@ -169,13 +169,13 @@ func TestExchangeAQXRoundtripThroughCommands(t *testing.T) {
 	if got, want := canonTree(t, s.Current()), srcCanon; got != want {
 		t.Fatalf("导回来不是同一棵树:\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
-	// 旧会话仍在库里（导入不覆盖），新会话也已落盘。
+	// 旧会话仍在库里（导入不覆盖），新会话也已写入磁盘。
 	store := s.store
 	if _, err := store.Load(context.Background(), oldID); err != nil {
 		t.Fatalf("旧会话应仍在库里: %v", err)
 	}
 	if _, err := store.Load(context.Background(), s.Current().ID); err != nil {
-		t.Fatalf("导入的会话应已落盘: %v", err)
+		t.Fatalf("导入的会话应已写入磁盘: %v", err)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestExchangeMultiSessionThroughCommands(t *testing.T) {
 	s, blobs, exports := newExchangeE2ESession(t)
 	ctx := context.Background()
 	seedExchangeTree(t, s, blobs)
-	// /new 不落盘旧会话（只有 /switch 会先存一次），所以先把种子树存下来——--all 是从库里读的。
+	// /new 不写入磁盘旧会话（只有 /switch 会先存一次），所以先把种子树存下来——--all 是从库里读的。
 	if err := s.store.Save(ctx, s.Current()); err != nil {
 		t.Fatalf("save seed: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestExchangeBatchRmconvThroughCommands(t *testing.T) {
 
 // canonTree 树的规范形：抹掉 ID，只留「结构和内容如何相连」。
 //
-// 为什么不能直接比快照：导入按口径重分配全部节点 ID（源 ID 只用来建边），两张快照的 ID
+// 为什么不能直接比快照：导入按规则重分配全部节点 ID（源 ID 只用来建边），两张快照的 ID
 // 必然不同。把节点按「从 Root 深度优先、兄弟按结构序」编号，ID 的差异就消失了，剩下的
 // 差异才是真差异。
 func canonTree(t *testing.T, c *conversation.Conversation) string {
@@ -428,7 +428,7 @@ func canonTree(t *testing.T, c *conversation.Conversation) string {
 		}
 		fmt.Fprintf(&b, "[%d] role=%s outcome=%s model=%s source=%s trust=%s trigger=%v usage=%+v at=%s parts=%s\n",
 			i, m.Role, m.Outcome, m.Model, m.Source, m.Trust, m.Trigger, m.Usage,
-			// 内存里的时间带单调时钟读数、落盘后没有：比对前统一去掉（Round(0) 只保留墙钟）。
+			// 内存里的时间带单调时钟读数、写入磁盘后没有：比对前统一去掉（Round(0) 只保留墙钟）。
 			m.CreatedAt.Round(0).UTC().Format("2006-01-02T15:04:05Z07:00"), parts)
 	}
 	for _, ed := range snap.RevisedFrom {

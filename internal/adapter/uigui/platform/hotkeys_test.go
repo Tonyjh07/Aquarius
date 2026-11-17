@@ -57,7 +57,7 @@ func TestFallbackHotkey(t *testing.T) {
 	}
 }
 
-// TestValidateHotkey 设置窗写配置前的校验口径：合法放行、非法报错（与注册同解析）。
+// TestValidateHotkey 设置窗写配置前的校验规则：合法放行、非法报错（与注册同解析）。
 func TestValidateHotkey(t *testing.T) {
 	if err := ValidateHotkey("Alt+A"); err != nil {
 		t.Errorf("ValidateHotkey(Alt+A) = %v, want nil", err)

@@ -32,7 +32,7 @@ func (s *Session) execCompact(ctx context.Context, cmd port.Command) (string, er
 		"in", node.Usage.InputTokens, "out", node.Usage.OutputTokens), nil
 }
 
-// execUnattended 实现 /unattended [on|off]（D185 口径四）：无参 = 切换，有参 = 显式
+// execUnattended 实现 /unattended [on|off]（D185 规则四）：无参 = 切换，有参 = 显式
 // 设置；写回 config 成功后活开关即时生效（装饰器每次调用现取）。
 // 开关语义是「越界即拒」，与 `-yes`（自动允许）相反——报告里必须说清，否则用户会
 // 把它当成另一种免确认档。
@@ -67,7 +67,7 @@ func (s *Session) execUnattended(_ context.Context, args []string) (string, erro
 	return i18n.T("session.unattended.on"), nil
 }
 
-// unattendedOn 无人值守当前是否开着；未接线 = 关（与装饰器同口径）。
+// unattendedOn 无人值守当前是否开着；未接线 = 关（与装饰器同规则）。
 func (s *Session) unattendedOn() bool { return s.perms != nil && s.perms.Unattended() }
 
 // onOff 布尔的短写（命令回执用；两种语言各一份，见 i18n 的 common.on / common.off）。
@@ -169,7 +169,7 @@ func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, erro
 }
 
 // execLore /lore（§5.17/D294）：列出这一轮世界书激活了哪些条目。只读——与装配走同一份
-// 判定，不落树、不改任何状态；重算一次比把上次的结果记在某处更不容易与真相分家。
+// 判定，不写入会话树、不改任何状态；重算一次比把上次的结果记在某处更不容易与真相分家。
 func (s *Session) execLore(ctx context.Context, cmd port.Command) (string, error) {
 	if s.cur == nil {
 		return "", nil
@@ -205,7 +205,7 @@ func (s *Session) execLore(ctx context.Context, cmd port.Command) (string, error
 		if title == "" {
 			title = i18n.T("session.lore.untitled")
 		}
-		// token 按未展开宏的正文估——这个数是用来说明量级，不是计费口径。
+		// token 按未展开宏的正文估——这个数是用来说明量级，不是计费规则。
 		b.WriteByte('\n')
 		b.WriteString(i18n.Tf("session.lore.item",
 			"title", title, "order", e.Order, "tok", estimateTokens(loreSection(e, e.Content))))

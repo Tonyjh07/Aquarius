@@ -55,7 +55,7 @@ func TestInjectBlockCommitReplay(t *testing.T) {
 }
 
 // TestInjectHeadline 折叠行文案：`▸ 类别 · 来源`，展开时箭头朝下。类别按来源前缀分，
-// 余下部分不带前缀词（否则读成「工具注入 · 工具 think」）；未知前缀回落成来源标签。
+// 余下部分不带前缀词（否则读成「工具注入 · 工具 think」）；未知前缀回写成来源标签。
 func TestInjectHeadline(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ source, title string }{

@@ -86,7 +86,7 @@ func wireBaseName(name string) string {
 			c >= 'A' && c <= 'Z':
 			b.WriteByte(c)
 		default:
-			// 多字节 UTF-8 逐字节落成多个下划线也无妨：只为可移植，不要求可逆。
+			// 多字节 UTF-8 逐字节写成多个下划线也无妨：只为可移植，不要求可逆。
 			b.WriteByte('_')
 		}
 	}

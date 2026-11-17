@@ -57,7 +57,7 @@ func keyRefAfterSave(typed, old string) string {
 // webProviderViews 提交值 + 旧快照的密钥形态 → 新快照视图（密钥永不回显，只带形态）：
 // 填了新值 = 明文（除非是 `secret:` 引用）；没填 = 沿用旧形态。
 //
-// 旧形态按 **kind** 对齐（与装配根侧写回同口径）：用户在前面插一条、或删掉一条，下标会
+// 旧形态按 **kind** 对齐（与装配根侧写回同规则）：用户在前面插一条、或删掉一条，下标会
 // 整体错位，按位置硬套会把 brave 的引用名贴到 deepseek 条目上——那条本来就不用自己的
 // 密钥，界面会凭空显示一行「已存引用」。同类型多条按出现顺序依次认领。
 func webProviderViews(ps []WebProviderPatch, old []WebProviderView) []WebProviderView {
@@ -132,7 +132,7 @@ func profileActionLabel(act string) string {
 }
 
 // profileAction profile 区三动作（D110③/修订④）：名字非空校验 → ProfilesManager
-// 执行 → 反馈写表单状态（成功绿/错误红，同保存流口径）并刷新快照。headless 可测
+// 执行 → 反馈写表单状态（成功绿/错误红，同保存流规则）并刷新快照。headless 可测
 // （不进帧渲染）。
 
 func providerPatchOf(pf *providerForm) ProviderPatch {
@@ -153,7 +153,7 @@ func providerPatchOf(pf *providerForm) ProviderPatch {
 	for _, mf := range pf.modelForms {
 		name := strings.TrimSpace(mf.name.Text())
 		if name == "" {
-			continue // 空名模型行 = 尚未创建（cmd 侧同口径跳过）
+			continue // 空名模型行 = 尚未创建（cmd 侧同一套规则跳过）
 		}
 		win := 0
 		if v := strings.TrimSpace(mf.contextWin.Text()); v != "" {

@@ -104,7 +104,7 @@ func TestImportIndexerErrorFallsThrough(t *testing.T) {
 	}
 }
 
-// TestImportNilIndexerFallsThrough 没装清单源（测试瘦 UI / 旧装配）时退回单会话口径：
+// TestImportNilIndexerFallsThrough 没装清单源（测试瘦 UI / 旧装配）时退回单会话规则：
 // 选完直接投 /import，不弹一个没有数据的空面板。
 func TestImportNilIndexerFallsThrough(t *testing.T) {
 	t.Parallel()

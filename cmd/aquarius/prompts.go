@@ -107,7 +107,7 @@ func validatePromptModules(mods []uigui.PromptModuleView) error {
 }
 
 // previewPrompts 组合预览（S7/D144）：设置窗当前（未保存）模块树 + 引用 → 最终 system 文本。
-// 与新建会话同口径（环境事实取本次装配、日期取当天），仅纯计算、不落盘。
+// 与新建会话同规则（环境事实取本次装配、日期取当天），仅纯计算、不写入磁盘。
 func (w *wiring) previewPrompts(mods []uigui.PromptModuleView, persona []string, legacy string) string {
 	spec := app.PromptSpec{Persona: cleanRefs(persona), Legacy: legacy, UserName: w.cfg.Prompts.UserName}
 	if len(mods) > 0 {
@@ -126,7 +126,7 @@ func (w *wiring) previewPrompts(mods []uigui.PromptModuleView, persona []string,
 
 // applyPromptTemplate 人格模板窄写回（D154）：只改 config 的 system_prompt 与 prompts
 // 两键。历史窗遮罩的「默认模板」页签走这条路——不进全量 SettingsPatch，免得把同时开着的
-// 设置窗刚改的主题/限额用旧快照盖回去。校验口径与设置页保存一致（模块名校验）。
+// 设置窗刚改的主题/限额用旧快照盖回去。校验规则与设置页保存一致（模块名校验）。
 func (w *wiring) applyPromptTemplate(p uigui.PromptTemplatePatch) error {
 	if err := validatePromptModules(p.Modules); err != nil {
 		return err
@@ -158,8 +158,8 @@ func (w *wiring) applyPromptTemplate(p uigui.PromptTemplatePatch) error {
 	})
 }
 
-// runtimeEnv 运行环境事实（D37 口径）：平台、终端形态与 TERM、特权沙盒目录，以及缺省调用
-// 超时（D38 发现性，保留参数口径）。装配与设置窗预览共用，避免两处漂移。
+// runtimeEnv 运行环境事实（D37 规则）：平台、终端形态与 TERM、特权沙盒目录，以及缺省调用
+// 超时（D38 发现性，保留参数规则）。装配与设置窗预览共用，避免两处漂移。
 func (w *wiring) runtimeEnv() app.RuntimeEnv {
 	return app.RuntimeEnv{
 		Platform:       runtime.GOOS + "/" + runtime.GOARCH,

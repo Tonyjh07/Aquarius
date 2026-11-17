@@ -21,8 +21,8 @@ type CharacterOptions struct {
 
 // CharacterStart 一张卡开新会话所需的投影文本（§5.17）。
 //
-// 全是**展开后的终稿**：人格与示例、尾部指令在这里做完宏替换，之后落树 / 落盘即定型，
-// 改 `prompts.user_name` 不再影响它（快照口径）。卡被删后这些文本照常可用。
+// 全是**展开后的终稿**：人格与示例、尾部指令在这里做完宏替换，之后写入会话树 / 写入磁盘即定型，
+// 改 `prompts.user_name` 不再影响它（快照规则）。卡被删后这些文本照常可用。
 type CharacterStart struct {
 	Slug    string // 会话记住的角色 slug（Conversation.Character）
 	Persona string // 展开后的人格（含 @char.* 模块），落 persona 首节点
@@ -36,7 +36,7 @@ type CharacterStart struct {
 }
 
 // CharacterPromptFromCard 把一张卡归一成组合器需要的取值（§5.17/D247）。
-// 原文照抄，不拼装、不改写——拼法发生在组合时（落树即终稿）。
+// 原文照抄，不拼装、不改写——拼法发生在组合时（写入会话树即终稿）。
 func CharacterPromptFromCard(card port.CharacterCard, opts CharacterOptions) *CharacterPrompt {
 	p := card.Profile
 	return &CharacterPrompt{

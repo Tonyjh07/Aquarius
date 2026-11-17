@@ -125,7 +125,7 @@ func TestModelNormalize(t *testing.T) {
 		}
 	})
 	t.Run("窗口只看当前模型", func(t *testing.T) {
-		// 降级链上的小窗口不压当前预算（D177 口径三）：装配发生在换模型之前。
+		// 降级链上的小窗口不压当前预算（D177 规则三）：装配发生在换模型之前。
 		c := good()
 		if err := c.normalize(); err != nil {
 			t.Fatalf("normalize: %v", err)
@@ -206,7 +206,7 @@ func TestModelNormalizeEmptyProviders(t *testing.T) {
 }
 
 // TestRunLegacyProfileConfigRejected 旧单 provider 平铺字段（D110② 前格式）的
-// profile 配置启动即显式报因并给出改写指引——绝不静默零值解析（D95 同口径）。
+// profile 配置启动即显式报因并给出改写指引——绝不静默零值解析（D95 同规则）。
 func TestRunLegacyProfileConfigRejected(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "profiles", "default"), 0o755); err != nil {
@@ -275,7 +275,7 @@ func TestRunLegacyProviderShapeRejected(t *testing.T) {
 }
 
 // TestWiringContextBudget D177：装配根的三处消费者（压缩阈值 / /usage / 截断）都读
-// maxContextBudget；它必须与 /model 展示的口径同源，否则会出现「显示还有空间，发出去
+// maxContextBudget；它必须与 /model 展示的规则同源，否则会出现「显示还有空间，发出去
 // 却被拒」这种分叉。
 func TestWiringContextBudget(t *testing.T) {
 	t.Parallel()

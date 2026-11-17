@@ -4,7 +4,7 @@ package uigui
 //
 // 手测只能看到进程总量，说不清「谁占的」。这里用仓库已有的 headless 帧驱动，把每类负载
 // 各自跑一遍——每跑完一步就强制 GC 一次，读 MemStats 的 HeapAlloc（**存活堆**，不是累计
-// 分配），与上一步做差，并把整份堆快照落盘（pprof 可看函数/类型分布）。
+// 分配），与上一步做差，并把整份堆快照写入磁盘（pprof 可看函数/类型分布）。
 //
 // 启用（默认 skip，不拖慢门禁）：
 //
@@ -17,7 +17,7 @@ package uigui
 //	go tool pprof -sample_index=inuse_space <dir>/<step>-heap.pprof
 //	go tool pprof -sample_index=inuse_space -base <dir>/<prev>.pprof <dir>/<step>.pprof
 //
-// 口径：
+// 规则：
 //   - 每步先 runtime.GC() 两次再读 HeapAlloc——存活对象才是「占着不放」的部分；累计分配
 //     （TotalAlloc）把瞬时垃圾也算进来，无法归因。
 //   - **所有被测对象挂到 memRoot 保活**：Go 的变量活跃期到「最后一次使用」为止，不显式保活
@@ -28,7 +28,7 @@ package uigui
 //
 // 两个用例分工：
 //   - TestMemProfileStages  按「用户操作」分步，回答「哪类操作涨内存」。
-//   - TestMemProfileFont    按「装配步骤」拆字体成本，回答「为什么涨」，并验证共享口径。
+//   - TestMemProfileFont    按「装配步骤」拆字体成本，回答「为什么涨」，并验证共享规则。
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// memRoot 保活所有测量对象（见文件头「口径」第二条）。包级变量，GC 视为根。
+// memRoot 保活所有测量对象（见文件头「规则」第二条）。包级变量，GC 视为根。
 var memRoot []any
 
 // memKeep 把对象挂到根上。
@@ -271,11 +271,11 @@ func TestMemProfileStages(t *testing.T) {
 	t.Log(strings.TrimSpace(out))
 }
 
-// TestMemProfileFont 拆字体成本，验证共享口径。生产里每个顶层窗各调一次 newTheme，
+// TestMemProfileFont 拆字体成本，验证共享规则。生产里每个顶层窗各调一次 newTheme，
 // 所以这一步的增量就是「多开一个窗口的固定成本」。
 //
 //	A  只解析字体文件（opentype.ParseCollection）
-//	B  在 A 之上建 Shaper（默认口径：另扫整机字体库）
+//	B  在 A 之上建 Shaper（默认规则：另扫整机字体库）
 //	C  在 B 之上首次排版（字体表的惰性解析在此发生）
 //	D  第二个 Shaper **复用同一份字体集合**（多窗共享的唯一改动）
 //	E  D 之上首次排版（验证惰性解析的数据也可共享）
@@ -300,7 +300,7 @@ func TestMemProfileFont(t *testing.T) {
 	memKeep(faces)
 	m.probe("A-parse-collection")
 
-	// B：建 Shaper（默认口径，会再扫整机字体库——那是粗体面的来源）。
+	// B：建 Shaper（默认规则，会再扫整机字体库——那是粗体面的来源）。
 	sh1 := text.NewShaper(text.WithCollection(faces))
 	memKeep(sh1)
 	m.probe("B-shaper")
@@ -336,7 +336,7 @@ func TestMemProfileFont(t *testing.T) {
 		m.probe("G-tokenizer")
 	}
 
-	// H：gofont 集合（CJK 字体缺失时的回退口径，也是等宽面的来源）。
+	// H：gofont 集合（CJK 字体缺失时的回退规则，也是等宽面的来源）。
 	mono := monoFontFaces()
 	memKeep(mono)
 	m.probe("H-gofont-mono-faces")

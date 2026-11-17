@@ -8,7 +8,7 @@ import "runtime"
 //   - Linux：GNOME `gsettings`（color-scheme 含 "dark"）→ KDE `kreadconfig6/5`（已试）；
 //   - macOS：`defaults read -g AppleInterfaceStyle`（深色时输出 "Dark"）。
 //
-// 命令缺失/查询失败 = 浅色保守回落（与 Windows 侧「键缺失 = 浅色」同口径）。变化事件
+// 命令缺失/查询失败 = 浅色保守回落（与 Windows 侧「键缺失 = 浅色」同规则）。变化事件
 // 依赖桌面环境广播：非 Windows 侧暂无监听（首帧与设置窗切换时重查），属已知降级。
 func (p *Plat) DarkMode() bool {
 	switch runtime.GOOS {

@@ -344,7 +344,7 @@ func TestFileTools(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	if _, err := os.Stat(target); err != nil {
-		t.Fatalf("文件未落盘: %v", err)
+		t.Fatalf("文件未写入磁盘: %v", err)
 	}
 	if m, _ := filepath.Glob(target + "*"); len(m) > 1 {
 		t.Fatalf("残留临时文件: %v", m)

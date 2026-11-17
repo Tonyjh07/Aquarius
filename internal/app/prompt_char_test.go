@@ -47,7 +47,7 @@ func TestComposeCharacterFields(t *testing.T) {
 	}
 }
 
-// TestComposeCharacterCardTextMacros 卡文本在投影时做宏替换（§7.7）：落树即终稿。
+// TestComposeCharacterCardTextMacros 卡文本在投影时做宏替换（§7.7）：写入会话树即终稿。
 func TestComposeCharacterCardTextMacros(t *testing.T) {
 	spec := PromptSpec{
 		UserName: "Sam",

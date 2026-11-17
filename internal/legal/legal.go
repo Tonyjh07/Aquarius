@@ -75,7 +75,7 @@ type Document struct {
 func Load(d Doc, lang i18n.Lang) (Document, error) { return LoadAt(d, lang, Version) }
 
 // LoadAt 取指定版本（回看用户同意过的那一版用得上）。英文缺文件时回落中文母版——
-// 与 i18n.T 的回落同口径：界面不会空着，测试会红。
+// 与 i18n.T 的回落同规则：界面不会空着，测试会红。
 func LoadAt(d Doc, lang i18n.Lang, v int) (Document, error) {
 	name := fmt.Sprintf("texts/v%d/%s.%s.md", v, d, lang)
 	raw, err := texts.ReadFile(name)

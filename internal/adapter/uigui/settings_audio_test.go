@@ -385,7 +385,7 @@ func TestAudioPageVADToggle(t *testing.T) {
 }
 
 // TestAudioPageVADDefaultsOn 快照缺这一项（老配置）时不显示成关闭：
-// 「键缺失 = 开」是配置口径，界面照同一条走。
+// 「键缺失 = 开」是配置规则，界面照同一条走。
 func TestAudioPageVADDefaultsOn(t *testing.T) {
 	t.Parallel()
 	s := audioSnapshot()

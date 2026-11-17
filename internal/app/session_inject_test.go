@@ -22,7 +22,7 @@ func injectableSession(t *testing.T, store port.ConversationStore, streams ...*s
 }
 
 // TestInjectRejectsBadParts Inject 入队前校验（D150）：思考/工具分片与空内容当场拒，
-// 坏包不占队列、不落树。
+// 坏包不占队列、不写入会话树。
 func TestInjectRejectsBadParts(t *testing.T) {
 	s, _, _ := injectableSession(t, newMemStore())
 	before := s.Current().NodeCount()
@@ -48,7 +48,7 @@ func TestInjectRejectsBadParts(t *testing.T) {
 	}
 }
 
-// TestInjectQueueNonBlockingQueueFull 队列满时 Inject 立即报错、不阻塞（§10 并发口径）。
+// TestInjectQueueNonBlockingQueueFull 队列满时 Inject 立即报错、不阻塞（§10 并发规则）。
 func TestInjectQueueNonBlockingQueueFull(t *testing.T) {
 	s, _, _ := injectableSession(t, newMemStore())
 	in := port.Injection{Source: "user", Parts: []conversation.Part{{Kind: conversation.PartText, Text: "x"}}}
@@ -62,8 +62,8 @@ func TestInjectQueueNonBlockingQueueFull(t *testing.T) {
 	}
 }
 
-// TestInjectDrainAtHandleEntry 排空点①（Handle 入口）：入队 → Handle（无参命令）落地注入，
-// Trigger 记 false（只落地不起轮），且不花模型调用。
+// TestInjectDrainAtHandleEntry 排空点①（Handle 入口）：入队 → Handle（无参命令）实现注入，
+// Trigger 记 false（只写入不起轮），且不花模型调用。
 func TestInjectDrainAtHandleEntry(t *testing.T) {
 	s, llm, _ := injectableSession(t, newMemStore())
 	if err := s.Inject(context.Background(), port.Injection{
@@ -71,7 +71,7 @@ func TestInjectDrainAtHandleEntry(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("inject: %v", err)
 	}
-	// job: 默认该触发，但排空点①只落地（Trigger 记实际发生 = false）。
+	// job: 默认该触发，但排空点①只写入（Trigger 记实际发生 = false）。
 	if _, err := s.Handle(context.Background(), port.UserInput{Command: &port.Command{Name: "list"}}); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestInjectDrainAtHandleEntry(t *testing.T) {
 	if inject.Source != "job:j1" || inject.Trigger {
 		t.Fatalf("inject 节点 = %+v, want source=job:j1 trigger=false", inject)
 	}
-	// 信任位随节点落树（D170）：没声明就是外部内容，装配时会被围栏。
+	// 信任位随节点写入会话树（D170）：没声明就是外部内容，装配时会被围栏。
 	if inject.Trust != conversation.TrustExternal {
 		t.Fatalf("Trust = %q, want 零值/外部（调用方未声明）", inject.Trust)
 	}
@@ -110,7 +110,7 @@ func TestInjectDrainAtTurnEndWithFakeTool(t *testing.T) {
 	if last.Trigger {
 		t.Fatal("轮内注入 Trigger 应记 false（未起响应）")
 	}
-	// 本轮第二个请求（工具后收场轮）里不含注入文本——注入在轮末才落地。
+	// 本轮第二个请求（工具后收场轮）里不含注入文本——注入在轮末才实现。
 	for _, m := range llm.requests[len(llm.requests)-1].Messages {
 		for _, p := range m.Content {
 			if strings.Contains(p.Text, "轮内注入内容") {
@@ -123,7 +123,7 @@ func TestInjectDrainAtTurnEndWithFakeTool(t *testing.T) {
 	}
 }
 
-// TestInjectCommandTriggersTurn /inject 缺省（来源 user）= 触发：落地触发型注入 + 跑一轮，
+// TestInjectCommandTriggersTurn /inject 缺省（来源 user）= 触发：实现触发型注入 + 跑一轮，
 // 产物是该注入节点的 assistant 子节点；清屏回放。
 func TestInjectCommandTriggersTurn(t *testing.T) {
 	store := newMemStore()
@@ -166,11 +166,11 @@ func TestInjectCommandTriggersTurn(t *testing.T) {
 		t.Fatalf("应清屏回放: %v", names)
 	}
 	if saved := store.convs[s.Current().ID]; saved == nil || saved.NodeCount() != 6 {
-		t.Fatalf("落盘 = %+v", saved)
+		t.Fatalf("写入磁盘 = %+v", saved)
 	}
 }
 
-// TestInjectCommandNoTrigger /inject --no-trigger：只落地、不起响应，不花模型调用。
+// TestInjectCommandNoTrigger /inject --no-trigger：只写入、不起响应，不花模型调用。
 func TestInjectCommandNoTrigger(t *testing.T) {
 	s, llm, _ := injectableSession(t, newMemStore(), textStream("收到"))
 	s.Handle(context.Background(), port.UserInput{Text: "hi"})
@@ -245,7 +245,7 @@ func TestInjectCommandSourceDefaults(t *testing.T) {
 		t.Fatalf("--no-trigger 应覆盖默认: %+v requests %d", last3, len(llm3.requests))
 	}
 
-	// delegate: 默认触发（§5.18）：转交完成要主动汇报，与任务终态同一口径。
+	// delegate: 默认触发（§5.18）：转交完成要主动汇报，与任务终态同一套规则。
 	s4, llm4, _ := injectableSession(t, newMemStore(), textStream("a"), textStream("b"))
 	s4.Handle(context.Background(), port.UserInput{Text: "hi"})
 	if _, err := handleCmd(s4, "inject", "--source", "delegate:claude", "转交完成"); err != nil {

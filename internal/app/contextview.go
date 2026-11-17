@@ -21,9 +21,9 @@ import (
 // 任何「按规则再拼一遍」的实现都会随规则演进与真实请求分叉，而这种视图一旦分叉就正好
 // 失去它唯一的价值。
 //
-// 视图层自己不落盘、不发事件：落盘与次窗由命令层决定（`/context full` 两者都做）。
+// 视图层自己不写入磁盘、不发事件：写入磁盘与次窗由命令层决定（`/context full` 两者都做）。
 //
-// 另有一处**必须**守住的界限——它是排查工具，不是会话事实：不落树。
+// 另有一处**必须**守住的界限——它是排查工具，不是会话事实：不写入会话树。
 
 // sectionMark 一段内容的坐标（§7.1）：Part < 0 表示整条消息，否则是该消息的第几个分片。
 type sectionMark struct {
@@ -74,7 +74,7 @@ type contextSnapshot struct {
 // ContextReport 装配「下一轮将发送」的请求并取其视图。
 //
 // 命令在回合间隙执行，未提交缓冲（turnBuffer）此刻不存在，所以这里看到的是本轮开头
-// 会发的形状；要看刚落盘那一轮的实发内容用 LastContextReport。
+// 会发的形状；要看刚写入磁盘那一轮的实发内容用 LastContextReport。
 func (a *Agent) ContextReport(ctx context.Context, c *conversation.Conversation) (ContextReport, error) {
 	if c == nil {
 		return ContextReport{}, errors.New("agent: nil conversation")
@@ -202,7 +202,7 @@ func partText(p port.PromptPart) (string, int, int) {
 	return p.Text, 0, 0
 }
 
-// estimateTools 工具声明的估算量：与计数链的 payload 同口径（名字 + 描述 + Schema）。
+// estimateTools 工具声明的估算量：与计数链的 payload 同规则（名字 + 描述 + Schema）。
 func estimateTools(specs []tool.Spec) int {
 	var b strings.Builder
 	for _, s := range specs {

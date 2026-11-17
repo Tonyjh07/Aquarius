@@ -41,7 +41,7 @@ const (
 // fileVersion 文件格式版本（换代时旧版本显式报错，不静默当零值解析）。
 const fileVersion = 1
 
-// 键名/值约束（写入口径：名字要能被 `secret:<名>` 引用，空值没有意义——清掉一条
+// 键名/值约束（写入规则：名字要能被 `secret:<名>` 引用，空值没有意义——清掉一条
 // 用 Delete，不是写个空串）。
 const (
 	maxNameLen  = 128
@@ -82,7 +82,7 @@ type Store struct {
 	keyPath string // secrets.key（仅 AES 档用）
 }
 
-// New 绑定密钥库文件路径（父目录须已存在，由调用方 MkdirAll——同 atomicfile 口径）。
+// New 绑定密钥库文件路径（父目录须已存在，由调用方 MkdirAll——同 atomicfile 规则）。
 // 文件本身**不在此创建**：没有密钥时不落任何文件，首次 Set 才出现。
 func New(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
@@ -118,7 +118,7 @@ func (s *Store) Get(ctx context.Context, name string) (string, error) {
 }
 
 // Set 写入/覆盖一条密钥。库解不开时**从空表起步**（旧文件留一代 .bak）——换机后
-// 首次填密钥必须能落盘，否则向导窗无路可走（D161 落点②）。
+// 首次填密钥必须能写入磁盘，否则向导窗无路可走（D161 落点②）。
 func (s *Store) Set(ctx context.Context, name, value string) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -180,7 +180,7 @@ func (s *Store) Entries(ctx context.Context) ([]Entry, error) {
 }
 
 // load 读并解密整表。文件不存在 = 空表（不是错误）；解不开/结构坏/旧版本 = ErrUnreadable，
-// 此时先试一代 .bak——两代都救不回来才报 ErrUnreadable（同 storejson 的主/备口径）。
+// 此时先试一代 .bak——两代都救不回来才报 ErrUnreadable（同 storejson 的主/备规则）。
 func (s *Store) load(ctx context.Context) (map[string]string, error) {
 	m, err := s.decodeFile(ctx, s.path)
 	if err == nil {
@@ -233,7 +233,7 @@ func (s *Store) decodeFile(ctx context.Context, path string) (map[string]string,
 	return m, nil
 }
 
-// save 加密整表落盘：旧文件先留一代 .bak，再经 atomicfile 原子换入（0600）。
+// save 加密整表写入磁盘：旧文件先留一代 .bak，再经 atomicfile 原子换入（0600）。
 func (s *Store) save(ctx context.Context, m map[string]string) error {
 	plain, err := json.Marshal(m)
 	if err != nil {

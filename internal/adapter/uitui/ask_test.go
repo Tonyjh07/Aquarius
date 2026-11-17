@@ -39,7 +39,7 @@ func TestAskByNumbers(t *testing.T) {
 	if got := ans.Answers[1]; len(got) != 1 || got[0] != "only this file" {
 		t.Fatalf("第 2 题 = %v", got)
 	}
-	// 转写文本与 repl 同口径（无 Program 时不投递，这里直接验文本生成）。
+	// 转写文本与 repl 同规则（无 Program 时不投递，这里直接验文本生成）。
 	text := askPromptText(0, 2, askReq().Questions[0])
 	for _, want := range []string{"第 1/2 题", "Which platform?", "1) Windows", "desktop"} {
 		if !strings.Contains(text, want) {

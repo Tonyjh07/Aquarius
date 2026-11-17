@@ -123,7 +123,7 @@ func (u *UI) Wake() {
 	}
 }
 
-// Next 阻塞读取下一条输入（斜杠命令解析与 repl 同口径）；
+// Next 阻塞读取下一条输入（斜杠命令解析与 repl 同规则）；
 // io.EOF = 用户关窗（DestroyEvent）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
 // 广播到达时先取尽排队输入（eofMsg 经 inbox 排队，先于它的提交必已入队），
 // 取空才返回 EOF——任何 select 次序下都不丢输入、也不吞 EOF（uitui 审查修复同款）。

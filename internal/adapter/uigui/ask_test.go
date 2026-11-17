@@ -628,7 +628,7 @@ func TestAskCanceled(t *testing.T) {
 	}
 }
 
-// TestAskDismissedOnEOF 输入流结束 → 放弃全部（不替用户编答案），与 repl/uitui 同口径。
+// TestAskDismissedOnEOF 输入流结束 → 放弃全部（不替用户编答案），与 repl/uitui 同规则。
 func TestAskDismissedOnEOF(t *testing.T) {
 	t.Parallel()
 	u := newHeadless(t, Options{})

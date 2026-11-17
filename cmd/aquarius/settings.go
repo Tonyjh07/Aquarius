@@ -3,7 +3,7 @@ package main
 // 设置窗装配根侧（§15.7 读写契约，D60/D61）：读 = config 文本键 + 运行态快照；
 // 写 = 单一 patch 回调——文本键泛键改写（persistConfig 复用），权限/模型/思考/档位
 // 给出内核命令计划交设置窗排队执行（与键入命令同路径：串行、回执进转写区——
-// 壳内不旁路，热生效与 /permission /model /think /effort 同口径）。
+// 壳内不旁路，热生效与 /permission /model /think /effort 同规则）。
 
 import (
 	"encoding/json"
@@ -87,7 +87,7 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		WindowWidth:      raw.UI.WindowWidth,
 		WindowHeight:     raw.UI.WindowHeight,
 		RawJSON:          string(data),
-		// 语音（D179/D222）：文件即事实源（服务/模型改动重启生效，与快照口径一致）。
+		// 语音（D179/D222）：文件即事实源（服务/模型改动重启生效，与快照规则一致）。
 		// 端点原样回填；密钥只带形态（D35）。
 		ASRProvider:  raw.Audio.ASR.Provider,
 		ASRKind:      raw.Audio.ASR.Kind,
@@ -151,7 +151,7 @@ func keyShapeOf(ref string) (saved, plain bool, name string) {
 // 旋钮 scale/font_size/window_width/window_height。D110②：provider/base_url/api_key
 // 由 ProviderManager.Apply 全量写回，不在此列。有覆盖的键由命令各自写回，cfgWriteMu
 // 串行防丢更新）。
-// theme 先归一校验（"" → system），非法值拒写防落盘；旋钮数值原样落盘（UI 侧
+// theme 先归一校验（"" → system），非法值拒写防写入磁盘；旋钮数值原样写入磁盘（UI 侧
 // clampWindowPx/clampKnobs 统一夹取，config 侧不重复校验）。
 func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	switch p.Theme {
@@ -184,12 +184,12 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		}
 	}
 	// 语音（D179）：引用的 provider 必须存在、配了服务就要有模型名，语种只认三档。
-	// 高级页整文件替换时跳过（与降级链同口径：那一份配置以用户手写的文件为准）。
+	// 高级页整文件替换时跳过（与降级链同规则：那一份配置以用户手写的文件为准）。
 	if p.RawJSON == "" {
 		if err := validateAudioSettings(cfgPath, p); err != nil {
 			return err
 		}
-		// 联网（D200）：kind / 借用的对话 provider / 数值范围，与启动期 normalizeWeb 同口径。
+		// 联网（D200）：kind / 借用的对话 provider / 数值范围，与启动期 normalizeWeb 同规则。
 		if err := validateWebSettings(cfgPath, p); err != nil {
 			return err
 		}
@@ -197,13 +197,13 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 	if p.RawJSON != "" {
 		// 高级页（Q10）：整文件替换——JSON 对象校验后原子写（cfgWriteMu 串行与其他
 		// 写回互斥）；原文即最终态，未知键天然保留。后续 mutate 在新文件上照常叠加
-		// 本 patch 的其余键（读-改-写重新读盘，口径一致）。
+		// 本 patch 的其余键（读-改-写重新读盘，规则一致）。
 		if err := writeRawConfig(cfgPath, p.RawJSON); err != nil {
 			return err
 		}
 	}
 	// 采样参数（D204）：只有设置窗整段提交时才管这一段（窄写回不碰采样）。写前跑一遍
-	// 启动期同一条 normalize——落盘的配置必须能过启动校验，否则重启后连对话都起不来。
+	// 启动期同一条 normalize——写入磁盘的配置必须能过启动校验，否则重启后连对话都起不来。
 	var sampling samplingConfig
 	if p.SamplingSet && p.RawJSON == "" {
 		var err error
@@ -244,7 +244,7 @@ func applySettingsPatch(generic map[string]any, p uigui.SettingsPatch, sampling 
 	outSec["notify"] = p.Notify
 	outSec["tts"] = p.TTS
 	applyAudioPatch(generic, p)
-	// 限额（数值 0 = 不改，表单留空口径）。
+	// 限额（数值 0 = 不改，表单留空规则）。
 	limSec, _ := generic["limits"].(map[string]any)
 	if limSec == nil {
 		limSec = map[string]any{}
@@ -299,7 +299,7 @@ func applySettingsPatch(generic map[string]any, p uigui.SettingsPatch, sampling 
 	}
 	pSec["modules"] = mods
 	pSec["persona"] = cleanRefs(p.PromptPersona)
-	// 降级链（S11-7①/D176 口径三）：恒全量写（空 = 清空）；链条目 {provider, model?}。
+	// 降级链（S11-7①/D176 规则三）：恒全量写（空 = 清空）；链条目 {provider, model?}。
 	if p.Fallback != nil {
 		fbs := make([]any, 0, len(p.Fallback))
 		for _, l := range p.Fallback {
@@ -329,7 +329,7 @@ func applyAudioPatch(generic map[string]any, p uigui.SettingsPatch) {
 	// kind 不在此管理（高级页手写的值原样保留），voice/design/style/tags 清空 = 回到缺省。
 	//
 	// api_key 例外：空 = **保持**原引用（密钥只写不回显，patch 里的空没有「清空」
-	// 语义——与 provider 页、联网页同口径）。要换端点又不碰密钥时，用户只会填端点。
+	// 语义——与 provider 页、联网页同规则）。要换端点又不碰密钥时，用户只会填端点。
 	audioSec, _ := generic["audio"].(map[string]any)
 	if audioSec == nil {
 		audioSec = map[string]any{}
@@ -396,7 +396,7 @@ func applyAudioPatch(generic map[string]any, p uigui.SettingsPatch) {
 	}
 	inSec["language"] = lang
 	// 按说话分段（D295）：写显式 true/false——这一项的默认是「开」，删键会让用户
-	// 关掉之后又被读成开，所以不能沿用「空值不落键」的口径。VADSet 为假（窄写回）
+	// 关掉之后又被读成开，所以不能沿用「空值不落键」的规则。VADSet 为假（窄写回）
 	// 时整段不动，免得一次人格模板保存就把用户的开关抹掉。
 	if p.VADSet {
 		vadSec, _ := audioSec["vad"].(map[string]any)
@@ -410,8 +410,8 @@ func applyAudioPatch(generic map[string]any, p uigui.SettingsPatch) {
 
 // validateFallbackChain 降级链校验（S11-7①/D176）：provider 名不得为空、必须存在于
 // config 的 providers 列表；二元组不得重复；不得指向当前生效的 primary 当前模型。
-// 与启动期 modelConfig.normalize 同口径，只是运行在这里以「设置窗保存前」拦截
-// （否则落盘即进入一份启动会被拒的配置）。
+// 与启动期 modelConfig.normalize 同规则，只是运行在这里以「设置窗保存前」拦截
+// （否则写入磁盘即进入一份启动会被拒的配置）。
 func validateFallbackChain(cfgPath string, links []uigui.FallbackLink) error {
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
@@ -451,7 +451,7 @@ func validateFallbackChain(cfgPath string, links []uigui.FallbackLink) error {
 
 // validateAudioSettings 语音配置保存前校验（D179/D222）：一路语音要么借一个存在的
 // provider，要么自己填端点；必填项按协议位判定（模型名 / 本地模型文件）。语种只认三档。
-// 与启动期的 normalizeAudio 共用同一套判定，只是提前到落盘前——否则写进去的是一份
+// 与启动期的 normalizeAudio 共用同一套判定，只是提前到写入磁盘前——否则写进去的是一份
 // 启动会拒的配置。密钥能不能取到不在这里拦（启动时警告并让该能力不可用，其余照常）。
 func validateAudioSettings(cfgPath string, p uigui.SettingsPatch) error {
 	cfg, err := loadConfig(cfgPath)
@@ -499,7 +499,7 @@ func fallbackLinksOf(fbs []fallbackEntry) []uigui.FallbackLink {
 	return out
 }
 
-// writeRawConfig 高级页整文件替换（S4/D110③/Q10）：JSON 对象校验通过才落盘，
+// writeRawConfig 高级页整文件替换（S4/D110③/Q10）：JSON 对象校验通过才写入磁盘，
 // 解析失败报因且原文件不动。
 func writeRawConfig(cfgPath, raw string) error {
 	var probe map[string]any

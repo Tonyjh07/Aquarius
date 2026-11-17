@@ -135,7 +135,7 @@ func TestPasteImageKeyPassesThrough(t *testing.T) {
 	q := new(input.Router)
 	complFrame(q, u)
 
-	q.Queue(key.EditEvent{Text: "文字"}) // 模拟系统文本粘贴（Gio 的粘贴落成 EditEvent）
+	q.Queue(key.EditEvent{Text: "文字"}) // 模拟系统文本粘贴（Gio 的粘贴写成 EditEvent）
 	complFrame(q, u)
 	if len(u.m.stagedFiles) != 0 {
 		t.Fatalf("无图不应暂存: %+v", u.m.stagedFiles)
@@ -170,7 +170,7 @@ func TestPasteNoImageIsSilent(t *testing.T) {
 	}
 }
 
-// TestPasteFullList 暂存位已满：不落盘、明确提示上限。
+// TestPasteFullList 暂存位已满：不写入磁盘、明确提示上限。
 func TestPasteFullList(t *testing.T) {
 	t.Parallel()
 	blobs := &fakeBlobs{}
@@ -178,7 +178,7 @@ func TestPasteFullList(t *testing.T) {
 	u.opts.Blobs = blobs
 	u.finishPaste(pasteMsg{full: true})
 	if len(blobs.put) != 0 {
-		t.Fatalf("满员不应落盘: %d", len(blobs.put))
+		t.Fatalf("满员不应写入磁盘: %d", len(blobs.put))
 	}
 	if n := len(u.m.blocks); n == 0 || u.m.blocks[n-1].kind != blockNotice {
 		t.Fatalf("应提示满员: %+v", u.m.blocks)
@@ -217,7 +217,7 @@ func TestStagePathImageThumb(t *testing.T) {
 	}
 }
 
-// TestStagePathImageTooLarge 拖入的图片超过单图上限：与贴图同口径，先拦下并报因。
+// TestStagePathImageTooLarge 拖入的图片超过单图上限：与贴图同规则，先拦下并报因。
 func TestStagePathImageTooLarge(t *testing.T) {
 	t.Parallel()
 	u := newFrameUI()

@@ -1,8 +1,8 @@
 package app
 
-// cmdflags_test.go 命令参数 flag 扫描（/edit、/inject、/title 三处共用）：位置口径、个数
-// 上限、值型 flag、缺参报因、正文拼接。三处命令的历史口径各不相同，这里逐条钉住，防止
-// 将来「统一实现」顺手把某个口径统一掉。
+// cmdflags_test.go 命令参数 flag 扫描（/edit、/inject、/title 三处共用）：位置规则、个数
+// 上限、值型 flag、缺参报因、正文拼接。三处命令的历史规则各不相同，这里逐条钉住，防止
+// 将来「统一实现」顺手把某个规则统一掉。
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// TestScanFlagsLeading 前置口径（/edit、/title）：未声明的 token 即正文起点，其后即使出现
+// TestScanFlagsLeading 前置规则（/edit、/title）：未声明的 token 即正文起点，其后即使出现
 // 已声明的 flag 也当字面文本。
 func TestScanFlagsLeading(t *testing.T) {
 	decls := []flagDecl{{name: "--keep"}, {name: "--part", value: true}}
@@ -48,7 +48,7 @@ func TestScanFlagsLeading(t *testing.T) {
 	}
 }
 
-// TestScanFlagsAnywhere 任意位置口径（/inject）：选项写在正文前后都认，正文次序不变。
+// TestScanFlagsAnywhere 任意位置规则（/inject）：选项写在正文前后都认，正文次序不变。
 func TestScanFlagsAnywhere(t *testing.T) {
 	decls := []flagDecl{{name: "--source", value: true}, {name: "--no-trigger"}}
 	flags, rest, err := scanFlags([]string{"前置", "--source", "tool:x", "--no-trigger", "后置"},

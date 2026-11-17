@@ -35,7 +35,7 @@ var (
 	enCatalog = &catalog{lang: LangEn, texts: enTexts}
 
 	// current 当前生效的表。GUI 在渲染、设置、托盘几个 goroutine 里取词，所以走原子槽
-	// 而不是裸变量——与 hotkeyCfg 同口径（D275：启动定一次，之后只读）。
+	// 而不是裸变量——与 hotkeyCfg 同规则（D275：启动定一次，之后只读）。
 	current atomic.Pointer[catalog]
 )
 
@@ -44,7 +44,7 @@ var (
 func init() { current.Store(zhCatalog) }
 
 // Parse 校验 `ui.lang` 的写法：空与 auto 等价，其余只认 zh / en。非法值报错——与 ui.kind
-// 同口径：等界面出来了才发现语言没生效，比启动失败难查得多。
+// 同规则：等界面出来了才发现语言没生效，比启动失败难查得多。
 func Parse(raw string) (Selection, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", string(SelectionAuto):
@@ -76,7 +76,7 @@ func Use(sel Selection) Lang {
 	return lang
 }
 
-// catalogFor 按语言取表；未知语言给母版（宁可口径旧，也不给一张空表）。
+// catalogFor 按语言取表；未知语言给母版（宁可规则旧，也不给一张空表）。
 func catalogFor(lang Lang) *catalog {
 	if lang == LangEn {
 		return enCatalog

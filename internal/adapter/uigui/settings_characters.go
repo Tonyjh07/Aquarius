@@ -24,7 +24,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// 头像口径：设置页行内方图。
+// 头像规则：设置页行内方图。
 const (
 	charAvatarDp unit.Dp = 44 // 行内头像边长（dp）
 	charAvatarPx         = 88 // 解码边长（2x：高 DPI 下仍是下采样，边缘干净）
@@ -69,8 +69,8 @@ func (u *UI) pushCharPick(p charPathPick) {
 	}
 }
 
-// drainCharPicks 帧首取走选择框结果：**只填来源框**，由用户再点「导入」才落盘（选择动作
-// ≠ 导入动作，与技能进口同口径）。
+// drainCharPicks 帧首取走选择框结果：**只填来源框**，由用户再点「导入」才写入磁盘（选择动作
+// ≠ 导入动作，与技能进口同规则）。
 func (f *settingsForm) drainCharPicks(u *UI) {
 	if u == nil || u.charPicks == nil {
 		return

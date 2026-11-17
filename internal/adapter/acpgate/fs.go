@@ -160,7 +160,7 @@ func (c *client) allowOutside(_ context.Context, op, resolved string) bool {
 	return false
 }
 
-// askUser 越界访问与控制文件的确认：与权限回落（RequestPermission）同一套口径——
+// askUser 越界访问与控制文件的确认：与权限回落（RequestPermission）同一套规则——
 // 无人值守、用户不在发起这次转交的会话、没有配置确认器，一律当场拒。
 func (c *client) askUser(ctx context.Context, req port.ConfirmRequest) (bool, string) {
 	if c.r.stopKind() != stopNone || ctx.Err() != nil {

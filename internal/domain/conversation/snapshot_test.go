@@ -6,7 +6,7 @@ import (
 )
 
 // TestSnapshotRestoreRoundTrip 导出再重建必须得到一棵等价的树（节点、边、版本链、Head 全等），
-// 且重建后不变量成立。这是 storejson 落盘的地基：格式换了也得能原样装回来。
+// 且重建后不变量成立。这是 storejson 写入磁盘的地基：格式换了也得能原样装回来。
 func TestSnapshotRestoreRoundTrip(t *testing.T) {
 	c := buildTree(t)
 	root := MessageID(c.ID)

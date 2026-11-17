@@ -211,7 +211,7 @@ func TestPartSignatureOnlyOnThinking(t *testing.T) {
 	c := New(NewID(), "sig")
 	mustAppend(t, c, RoleUser, "q")
 
-	// 思考分片带签名：合法，且原样落树。
+	// 思考分片带签名：合法，且原样写入会话树。
 	th := []Part{{Kind: PartThinking, Text: "想", Signature: "anthropic:abc"}}
 	a, err := c.Append(RoleAssistant, th)
 	if err != nil {

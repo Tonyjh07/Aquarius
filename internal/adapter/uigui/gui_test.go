@@ -86,7 +86,7 @@ func TestEmitAndSayApplied(t *testing.T) {
 	}
 }
 
-// TestSayEmptyIgnored 空文本不入转写（与 uitui 同口径）。
+// TestSayEmptyIgnored 空文本不入转写（与 uitui 同规则）。
 func TestSayEmptyIgnored(t *testing.T) {
 	t.Parallel()
 	u := newHeadless(t, Options{})
@@ -296,7 +296,7 @@ func TestStatusTextPhase(t *testing.T) {
 	}
 }
 
-// TestStatusTextUnattended D185 口径五：无人值守开启时状态行常驻标记（空闲也显示），
+// TestStatusTextUnattended D185 规则五：无人值守开启时状态行常驻标记（空闲也显示），
 // 生成态并列在最后；关闭后回到原状。理由：用户回来只看到一串「已拒绝」会当成 bug。
 func TestStatusTextUnattended(t *testing.T) {
 	t.Parallel()

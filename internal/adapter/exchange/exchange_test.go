@@ -84,7 +84,7 @@ func fixture(t *testing.T, blobs port.AttachmentStore) *conversation.Conversatio
 }
 
 // TestAQXRoundtripEquivalent aqx 无损往返：节点、边、版本链、Head、时间戳、分片全部字段、
-// 附件字节逐项相同（§5.16 的验收口径）。
+// 附件字节逐项相同（§5.16 的验收规则）。
 func TestAQXRoundtripEquivalent(t *testing.T) {
 	blobsDir := t.TempDir()
 	blobs, err := blobfs.New(blobsDir)
@@ -321,7 +321,7 @@ func TestImportRejectsBlobHashMismatch(t *testing.T) {
 	}
 }
 
-// TestSafeArchivePath 归档条目口径：绝对路径、盘符、`..` 拒绝；`.`、空名与目录条目跳过。
+// TestSafeArchivePath 归档条目规则：绝对路径、盘符、`..` 拒绝；`.`、空名与目录条目跳过。
 func TestSafeArchivePath(t *testing.T) {
 	ok := map[string]string{
 		"tree.json":    "tree.json",
@@ -462,7 +462,7 @@ func assertSnapshotsEqual(t *testing.T, want, got conversation.Snapshot) {
 		if !ok {
 			t.Fatalf("节点 %s 丢失", w.ID)
 		}
-		// 内存里的时间带单调时钟读数、落盘后没有：比对前统一去掉（Round(0) 只保留墙钟）。
+		// 内存里的时间带单调时钟读数、写入磁盘后没有：比对前统一去掉（Round(0) 只保留墙钟）。
 		w.CreatedAt, g.CreatedAt = w.CreatedAt.Round(0), g.CreatedAt.Round(0)
 		wj, err := json.Marshal(w)
 		if err != nil {

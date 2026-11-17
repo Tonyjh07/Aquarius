@@ -23,7 +23,7 @@ const (
 	maxImportBytes = 256 << 20
 	// maxImportTextBytes 全部节点正文合计上限。
 	maxImportTextBytes = 64 << 20
-	// maxImportNodes 节点数上限（与 aqx 同一口径）。
+	// maxImportNodes 节点数上限（与 aqx 同一套规则）。
 	maxImportNodes = 20000
 )
 
@@ -60,7 +60,7 @@ type importedTree struct {
 // 最后由 conversation.Restore 做统一自检。
 //
 // 源 ID 只用来建边，绝不带进新树：导两次同一份文件得到两棵互相独立的树，也不会与既有会话
-// 撞 ID（§5.16「落成新会话」）。
+// 撞 ID（§5.16「写成新会话」）。
 //
 // 收 *importedTree 而不是值：它自己发现的事实（当前节点被跳过时回退了）也要进回执，而回执
 // 的丢项清单是调用方在返回后读的那一份。

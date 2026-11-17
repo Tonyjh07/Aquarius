@@ -31,7 +31,7 @@ func TestDegradedSurface(t *testing.T) {
 		t.Error("非 Windows 主窗恒可见（无我方隐藏路径）")
 	}
 	if !p.TopMost() {
-		t.Error("非 Windows 置顶恒真（缺省口径与 Windows 一致）")
+		t.Error("非 Windows 置顶恒真（缺省规则与 Windows 一致）")
 	}
 	if p.Present(0, 0, 4, 4, make([]byte, 4*4*4), 255) {
 		t.Error("非 Windows 无 ULW 像素提交（内容由 Gio 自身表面渲染）")
@@ -40,7 +40,7 @@ func TestDegradedSurface(t *testing.T) {
 
 // TestShellServicesDegradeQuietly 外壳面（托盘/热键/菜单/文件框）在非 Windows 不 panic
 // 且不发请求：缺失能力由 StartShell/PostMenu 发降级提示（提示经 Host 回传，宿主为 nil
-// 时静默——headless 口径）。
+// 时静默——headless 规则）。
 func TestShellServicesDegradeQuietly(t *testing.T) {
 	p := New(Config{})
 	p.SetHost(nil)

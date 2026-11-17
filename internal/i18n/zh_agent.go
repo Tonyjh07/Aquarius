@@ -14,7 +14,7 @@ var zhAgentTexts = map[string]string{
 	"usage.effort":      "用法: /effort [minimal|low|medium|high|off]",
 	"usage.summary":     "用法: /summary <id> [摘要文本]（不带文本 = 让当前模型总结该节点之上的历史）",
 
-	// /model：当前口径与切换
+	// /model：当前规则与切换
 	"model.unwired":          "未配置模型服务（SessionDeps.Models），/model 不可用",
 	"model.switch_unwired":   "未配置模型写回（SessionDeps.ModelSwitch），/model 切换不可用",
 	"model.probe_unwired":    "未配置能力探测（SessionDeps.Prober），/model probe 不可用",
@@ -56,7 +56,7 @@ var zhAgentTexts = map[string]string{
 	"model.budget_model":       "上下文预算: {effective} tokens（模型窗口 {window} 在压；全局上限 {limit}）",
 	"model.budget_global":      "上下文预算: {effective} tokens（全局上限在压；模型窗口 {window}）",
 
-	// 错误链短语（/model 走 session: 前缀，与 /permission 同口径）
+	// 错误链短语（/model 走 session: 前缀，与 /permission 同规则）
 	"model.err_list":  "列出可用模型",
 	"model.err_probe": "探测",
 

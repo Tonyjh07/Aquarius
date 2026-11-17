@@ -1,7 +1,7 @@
 package main
 
 // 本机密钥库在装配根的测试（D151/D161）：读链的解析顺序（库 → 同名环境变量 → 报因）、
-// 库解不开时警告 + 兜底、写入口径（明文入库 + 改引用）、以及**守卫**——日志与报错
+// 库解不开时警告 + 兜底、写入规则（明文入库 + 改引用）、以及**守卫**——日志与报错
 // 字符串里不得出现密钥值（§9）。
 
 import (
@@ -220,7 +220,7 @@ func validTestName(name string) error {
 	return nil
 }
 
-// TestStorePlaintextKey 写入口径（D161 落点①）：明文 → 入库 + `secret:<名>`；
+// TestStorePlaintextKey 写入规则（D161 落点①）：明文 → 入库 + `secret:<名>`；
 // 引用 → 原样保留、不动库；库未接线 → 报错（不静默退回明文）。
 func TestStorePlaintextKey(t *testing.T) {
 	t.Parallel()
@@ -329,10 +329,10 @@ func TestResolveAPIKeyPlaintextWarnsOnce(t *testing.T) {
 }
 
 // TestResolvePatchKeyNoPlaintextWarn D210（用户实测故障的回归）：探测路径解析草稿里的
-// 明文**不得**打落盘警告。
+// 明文**不得**打写入磁盘警告。
 //
 // 复现过的误报：欢迎窗「测试连通」与「获取模型」各解析一次输入框里的 key，`resolveAPIKey`
-// 见到非 `secret:` 就打「密钥直接落在 config.json」——可那份草稿根本还没落盘（保存时才入库、
+// 见到非 `secret:` 就打「密钥直接落在 config.json」——可那份草稿根本还没写入磁盘（保存时才入库、
 // config 只留引用），于是同一次填写在日志里留下两条一模一样的假警告。
 //
 // 判据：解析结果与 resolveAPIKey 一致（明文照用），但**日志端一个字都不写**；真实构造路径
@@ -346,9 +346,9 @@ func TestResolvePatchKeyNoPlaintextWarn(t *testing.T) {
 		t.Fatalf("草稿明文应照用: (%q, %v)", key, err)
 	}
 	if buf.Len() != 0 {
-		t.Fatalf("探测路径不该打落盘警告（草稿还没落盘）: %q", buf.String())
+		t.Fatalf("探测路径不该打写入磁盘警告（草稿还没写入磁盘）: %q", buf.String())
 	}
-	// 引用形态两边同口径（走 Secrets 按名取用，成功即静默）。
+	// 引用形态两边同规则（走 Secrets 按名取用，成功即静默）。
 	t.Setenv("AQ_PATCH_REF", "sk-from-env")
 	if got, err := resolvePatchKey(context.Background(), "p", "secret:AQ_PATCH_REF", ch); err != nil || got != "sk-from-env" {
 		t.Fatalf("引用应正常解析: (%q, %v)", got, err)
@@ -359,7 +359,7 @@ func TestResolvePatchKeyNoPlaintextWarn(t *testing.T) {
 }
 
 // TestWelcomeProbeDoesNotWarnPlaintextDraft D210 端到端那半条：管理器收到的日志端（
-// `welcomeManager.stderr`——就是用户的控制台）在「测试连通 / 获取模型」时不得出现落盘警告。
+// `welcomeManager.stderr`——就是用户的控制台）在「测试连通 / 获取模型」时不得出现写入磁盘警告。
 //
 // 上一条只锁 resolvePatchKey 本身；这条从 `WelcomeManager.Test` / `Models` 这两个真实入口
 // 走一遍，防「哪天有人把它们改回 resolveAPIKey」。
@@ -383,7 +383,7 @@ func TestWelcomeProbeDoesNotWarnPlaintextDraft(t *testing.T) {
 	}
 	if s := logBuf.String(); strings.Contains(s, i18n.Tf("cmd.secrets.warn.plaintext", "provider", strconv.Quote("draftprov"))) ||
 		strings.Contains(s, "config.json") {
-		t.Fatalf("探测不得输出落盘形态警告（草稿还没落盘）: %q", s)
+		t.Fatalf("探测不得输出写入磁盘形态警告（草稿还没写入磁盘）: %q", s)
 	}
 }
 

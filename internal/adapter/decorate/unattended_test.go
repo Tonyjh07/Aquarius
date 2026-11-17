@@ -1,7 +1,7 @@
 package decorate
 
-// 无人值守装饰器单测（D185 口径一/三/六）：开 = 不调内层且原因稳定、关 = 透传、
-// ctx 取消优先——这几条是「不阻塞轮次」与「权限边界不变」的全部可执行口径。
+// 无人值守装饰器单测（D185 规则一/三/六）：开 = 不调内层且原因稳定、关 = 透传、
+// ctx 取消优先——这几条是「不阻塞轮次」与「权限边界不变」的全部可执行规则。
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func TestUnattendedDeniesWithoutInner(t *testing.T) {
 		t.Fatalf("Confirm: %v", err)
 	}
 	if ans.Allow {
-		t.Fatal("无人值守必须拒绝（口径一：拒绝而非放行）")
+		t.Fatal("无人值守必须拒绝（规则一：拒绝而非放行）")
 	}
 	if ans.Reason != UnattendedReason {
 		t.Fatalf("Reason = %q, want %q", ans.Reason, UnattendedReason)
@@ -53,7 +53,7 @@ func TestUnattendedDeniesWithoutInner(t *testing.T) {
 	if inner.calls != 0 {
 		t.Fatalf("内层被调用 %d 次，应为 0", inner.calls)
 	}
-	// 原因要覆盖三件事，否则模型会反复撞同一面墙（口径一）。
+	// 原因要覆盖三件事，否则模型会反复撞同一面墙（规则一）。
 	for _, want := range []string{"unattended mode", "Do not retry", "permission level allows", "needs approval"} {
 		if !strings.Contains(UnattendedReason, want) {
 			t.Fatalf("原因缺 %q: %q", want, UnattendedReason)
@@ -112,7 +112,7 @@ func TestUnattendedNoInnerFailClosed(t *testing.T) {
 	}
 }
 
-// TestUnattendedAskerAway 开启时回填 Away（不是 Dismissed——口径六）。
+// TestUnattendedAskerAway 开启时回填 Away（不是 Dismissed——规则六）。
 func TestUnattendedAskerAway(t *testing.T) {
 	inner := &countingAsker{answer: port.AskAnswer{Answers: [][]string{{"A"}}}}
 	a := UnattendedAsker(inner, func() bool { return true })

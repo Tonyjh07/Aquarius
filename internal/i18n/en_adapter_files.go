@@ -2,7 +2,7 @@ package i18n
 
 // enAdapterFilesTexts 与 zhAdapterFilesTexts 同 key 同顺序（同构测试盯着）。
 var enAdapterFilesTexts = map[string]string{
-	// 压缩包门禁：skillfs 的解压与 characterfs 的 .charx 走同一套口径（§5.15 / §5.17），
+	// 压缩包门禁：skillfs 的解压与 characterfs 的 .charx 走同一套规则（§5.15 / §5.17），
 	// 同一句话只此一条，两个包共用。
 	"skill.err.zip_unreadable":    "cannot read the archive",
 	"skill.err.zip_entries":       "the archive has {n} entries, over the {max} limit",
@@ -139,7 +139,7 @@ var enAdapterFilesTexts = map[string]string{
 	"char.load.open_card_file":       "cannot open the card file {path}",
 	"char.load.read_card_file":       "cannot read the card file {path}",
 
-	// 角色卡导入与落盘（草稿目录、卡与 meta 的写入、头像归一、删除目录）。
+	// 角色卡导入与写入磁盘（草稿目录、卡与 meta 的写入、头像归一、删除目录）。
 	"char.err.root_not_abs":  "the character card root must be an absolute path (got \"{path}\")",
 	"char.err.need_path":     "give the path of a card file (PNG / JSON / .charx)",
 	"char.err.remove":        "cannot delete character card {slug}",

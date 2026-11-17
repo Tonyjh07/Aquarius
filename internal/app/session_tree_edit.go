@@ -11,11 +11,11 @@ import (
 
 // treeEditSession 一次树编辑会话（D258）：结构改动只改内存，退出时统一落一次盘。
 //
-// 为什么要会话而不是「每次改父都落盘」：一次整理往往连着改十几处，逐次写盘会把备份轮转
+// 为什么要会话而不是「每次改父都写入磁盘」：一次整理往往连着改十几处，逐次写盘会把备份轮转
 // 刷成同一天的中间态，而中间态恰恰是最没有价值的备份。
 type treeEditSession struct {
 	baseline conversation.Snapshot // 进入时的整树快照（放弃时回到它）
-	before   int                   // 进入时的上下文条数（退出比对用，装配口径）
+	before   int                   // 进入时的上下文条数（退出比对用，装配规则）
 	edits    int                   // 已生效的改父次数
 	saved    bool                  // 会话期间落过盘（来了新消息/跑了轮次），放弃时要把那次写盘也撤回
 }
@@ -189,7 +189,7 @@ func (s *Session) confirm(ctx context.Context, prompt string) (bool, error) {
 	return ans.Allow, nil
 }
 
-// contextCount 数一棵树会进上下文的节点条数（装配口径，D20/D21）：persona 恒回传、
+// contextCount 数一棵树会进上下文的节点条数（装配规则，D20/D21）：persona 恒回传、
 // 最新摘要之上的历史不回传、Root 不进上下文。退出编辑时用它前后对比。
 func contextCount(c *conversation.Conversation) int {
 	path := c.Path()

@@ -49,7 +49,7 @@ type Options struct {
 
 var _ port.CharacterCatalog = (*Store)(nil)
 
-// New 组装角色卡目录；Root 必须是绝对路径（不猜工作目录，与技能安装同口径）。
+// New 组装角色卡目录；Root 必须是绝对路径（不猜工作目录，与技能安装同规则）。
 func New(opts Options) (*Store, error) {
 	if opts.Root == "" || !filepath.IsAbs(opts.Root) {
 		return nil, errors.New(i18n.Tf("char.err.root_not_abs", "path", opts.Root))

@@ -6,7 +6,7 @@ import (
 )
 
 // TestProviderHeadersConfig 自定义请求头从 config 解析进 providerConfig（D253）；
-// 缺键即 nil（不落盘、不上线）。
+// 缺键即 nil（不写入磁盘、不上线）。
 func TestProviderHeadersConfig(t *testing.T) {
 	t.Parallel()
 	var cfg fileConfig

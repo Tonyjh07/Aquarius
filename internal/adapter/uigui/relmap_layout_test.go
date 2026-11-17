@@ -1,6 +1,6 @@
 package uigui
 
-// 关系图布局内核性质测试（D124，取代 D120④/D121 的梯度下降口径）。
+// 关系图布局内核性质测试（D124，取代 D120④/D121 的梯度下降规则）。
 // 力导向坐标不确定 ⇒ 只断言**不变量**：静息树形（层序）/ 有界盒 / 同输入可复现 /
 // 物理动能降至静止 / pin 传播位移并锁死 / 松手回归静息；另覆盖输入合法性守卫。
 
@@ -180,7 +180,7 @@ func TestRelSolveKineticNonIncreasing(t *testing.T) {
 	if !ok || !sol.Settled {
 		t.Fatalf("未收敛: ok=%v sol=%+v", ok, sol)
 	}
-	// 已收敛即终态静止：再解一次应给出相同结果（R3 的纯函数口径）。
+	// 已收敛即终态静止：再解一次应给出相同结果（R3 的纯函数规则）。
 	again, _ := relSolve(nodes)
 	for i := range sol.Pos {
 		if sol.Pos[i] != again.Pos[i] {

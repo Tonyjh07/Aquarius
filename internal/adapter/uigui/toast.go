@@ -59,7 +59,7 @@ func (ts *toastState) active(now time.Time) bool {
 
 // toastFrame 轻提示单帧：底部居中浮层。无提示 = 零尺寸空操作。
 // bg = 浮层底色（各窗按自有配色传入：次窗传 paperOf().tipBg，主窗传包级 tipBg），
-// 文字恒白（深底上的高对比，与既有悬浮 tips 同口径）。
+// 文字恒白（深底上的高对比，与既有悬浮 tips 同规则）。
 func toastFrame(gtx layout.Context, th *material.Theme, ts *toastState, bg color.NRGBA) layout.Dimensions {
 	if !ts.active(gtx.Now) {
 		return layout.Dimensions{}
@@ -96,7 +96,7 @@ func toastFrame(gtx layout.Context, th *material.Theme, ts *toastState, bg color
 	}
 	box := image.Rectangle{Min: image.Pt(x, y), Max: image.Pt(x+w, y+h)}
 
-	// 浮层：先阴影再底板（同遮罩卡片口径），底板自带圆角、不借窗底色。
+	// 浮层：先阴影再底板（同遮罩卡片规则），底板自带圆角、不借窗底色。
 	paperShadow(gtx, box, rad, gtx.Dp(toastShadowDp), toastShadowDy, toastShadowPk)
 	paint.FillShape(gtx.Ops, bg, clip.UniformRRect(box, rad).Op(gtx.Ops))
 

@@ -1,7 +1,7 @@
 package uigui
 
 // settings_skills_test.go 「技能」页（D202/D203）：快照同步、行计划、异步动作回灌、
-// 选择框只填来源框（不直接落盘）、行型覆盖（主覆盖测试见 settings_page_test.go）。
+// 选择框只填来源框（不直接写入磁盘）、行型覆盖（主覆盖测试见 settings_page_test.go）。
 
 import (
 	"errors"

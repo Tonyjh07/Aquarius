@@ -10,7 +10,7 @@ package vadsilero
 
 import "time"
 
-// SampleRate / Channels / Bits 采集格式（D179 口径七）：与 micwin 同一套数。
+// SampleRate / Channels / Bits 采集格式（D179 规则七）：与 micwin 同一套数。
 // 检测器只吃 16kHz 单声道，换格式要连检测器一起换。
 const (
 	SampleRate = 16000

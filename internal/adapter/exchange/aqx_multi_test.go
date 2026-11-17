@@ -1,6 +1,6 @@
 package exchange
 
-// aqx_multi_test.go 一个归档装一组会话的读写口径（§5.16 / D249）：
+// aqx_multi_test.go 一个归档装一组会话的读写规则（§5.16 / D249）：
 // 清单顺序、附件跨会话去重、导入的 --pick、旧形状拒绝、Index 只看清单。
 
 import (

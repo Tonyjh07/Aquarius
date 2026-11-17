@@ -1090,9 +1090,9 @@ func TestDefaultClientHandshakeBounds(t *testing.T) {
 		t.Fatalf("握手无界：DialContext 已设=%v ResponseHeaderTimeout=%v",
 			tr.DialContext != nil, tr.ResponseHeaderTimeout)
 	}
-	// 代理口径不得因自定义 Transport 丢失（否则仅因换了 Transport 就丢掉环境变量代理）。
+	// 代理规则不得因自定义 Transport 丢失（否则仅因换了 Transport 就丢掉环境变量代理）。
 	if tr.Proxy == nil {
-		t.Fatal("Proxy 未设（应保持 http.ProxyFromEnvironment 口径）")
+		t.Fatal("Proxy 未设（应保持 http.ProxyFromEnvironment 规则）")
 	}
 
 	// 注入的客户端原样使用，不得被改写（D110 的 8s 探测客户端即此路径）。

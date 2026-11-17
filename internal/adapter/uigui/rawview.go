@@ -63,7 +63,7 @@ func (u *UI) showTextView(ev port.TextViewEvent) {
 // rawViewFrame winRaw 单帧：窗体面铺满 + hairline 分隔的标题行 + 下沉面只读块。
 //
 // 只读块必须有边界：整窗一个白色也就没有「这块是内容、那块是留白」的区分，长文读起来
-// 像窗子没加载完。故内容走 sunken 面 + hairline，与设置页的输入框同一口径。
+// 像窗子没加载完。故内容走 sunken 面 + hairline，与设置页的输入框同一套规则。
 func rawViewFrame(gtx layout.Context, th *material.Theme, u *UI, st *rawViewState) layout.Dimensions {
 	st.sync(u)
 	pp := paperOf()

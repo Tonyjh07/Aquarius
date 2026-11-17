@@ -16,7 +16,7 @@ const (
 	reportTailCap = 50000
 )
 
-// 收集面的并发口径：session/update 跑在 SDK 的通知 goroutine 上，request_permission
+// 收集面的并发规则：session/update 跑在 SDK 的通知 goroutine 上，request_permission
 // 每个请求各开一条 goroutine，收尾读取又在 run goroutine 上——三者可以重叠，所以每个
 // 入口都走 r.cmu。
 

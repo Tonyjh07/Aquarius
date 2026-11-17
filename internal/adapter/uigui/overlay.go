@@ -9,7 +9,7 @@ package uigui
 //     --copy，默认 Fresh）→ 提交 = 结构化 `Command{Name:"edit", Args:[id,
 //     ("--keep"|"--copy")?, 文本]}` 经 u.inCh（与键入同路径，--part 缺省合段）。
 //
-// **隔离口径（D139 的要点，实测修正）**：Gio 把一次点击投给**所有命中**的 handler（不是
+// **隔离规则（D139 的要点，实测修正）**：Gio 把一次点击投给**所有命中**的 handler（不是
 // 「顶层命中即止」），所以「画一层 Clickable 挡住底下」这条路**不存在**。真正起作用的是
 // 两条叠加：
 //  1. **整窗输入区**（本文件 overlayFrame 里 `clip.Rect(整窗)` + `event.Op(&ov.tag)`）：
@@ -219,7 +219,7 @@ func (st *historyState) hasChildren(id conversation.MessageID) bool {
 	return false
 }
 
-// nodeKindOf 快照内节点的展示档位（与图的 relNodeKind 同口径；找不到 = plain）。
+// nodeKindOf 快照内节点的展示档位（与图的 relNodeKind 同规则；找不到 = plain）。
 func (st *historyState) nodeKindOf(id conversation.MessageID) blockKind {
 	if st.model == nil {
 		return blockPlain
@@ -232,7 +232,7 @@ func (st *historyState) nodeKindOf(id conversation.MessageID) blockKind {
 	return blockPlain
 }
 
-// nodeRoleOf 快照内节点的 Role（找不到 = ok false；与 nodeKindOf 同一次遍历口径）。
+// nodeRoleOf 快照内节点的 Role（找不到 = ok false；与 nodeKindOf 同一次遍历方式）。
 func (st *historyState) nodeRoleOf(id conversation.MessageID) (conversation.Role, bool) {
 	if st.model == nil {
 		return "", false
@@ -246,7 +246,7 @@ func (st *historyState) nodeRoleOf(id conversation.MessageID) (conversation.Role
 }
 
 // injectInfoOf 注入节点的来源与触发记录（D166）：遮罩来源行用；非注入节点或快照
-// 未就绪 = 零值。与 nodeRoleOf 同一次遍历口径（模型里 Source/Trigger 只在 inject 上有值）。
+// 未就绪 = 零值。与 nodeRoleOf 同一次遍历方式（模型里 Source/Trigger 只在 inject 上有值）。
 func (st *historyState) injectInfoOf(id conversation.MessageID) (source string, trigger bool) {
 	if st.model == nil {
 		return "", false
@@ -277,9 +277,9 @@ func (st *historyState) modalActive(u *UI) bool {
 
 // events 遮罩键鼠事件（D139）：Esc 关闭；卡片盒外的抬起 = 点空白关闭。
 //
-// **两处 Gio 口径**（缺任一则本层收不到事件）：
+// **两处 Gio 规则**（缺任一则本层收不到事件）：
 //  1. 指针：需 `event.Op` 在**整窗 clip** 内声明路由锚点（与右图同款），否则抬起根本
-//     不会命中本 tag；这条整窗输入区同时就是背景遮蔽器（见文件头「隔离口径」）。
+//     不会命中本 tag；这条整窗输入区同时就是背景遮蔽器（见文件头「隔离规则」）。
 //  2. 键：Gio 只把键事件投给**当前获焦**的 handler。呈现页没有编辑器可获焦，故本层
 //     自带焦点落点（`key.FocusFilter{Target: &ov.tag}` + 开遮罩时一次 FocusCmd），
 //     Esc 双挂：编辑器焦点（源码页）与遮罩焦点（呈现页）各一。
@@ -396,9 +396,9 @@ func (ov *overlayState) canSave() bool {
 	return ov.editable && strings.TrimSpace(ov.ed.Text()) != ""
 }
 
-// submit 提交修订（D139）：结构化 `/edit`（flag 紧跟 id，D97① 位置口径；--part 缺省
-// = 合段，沿用 D132 图侧口径）→ 关遮罩 + 唤出主窗展开（user + Fresh 会重新生成，
-// D93；沿用 D132 的 showExpandMsg 口径，不唤出则生成过程看不见）。
+// submit 提交修订（D139）：结构化 `/edit`（flag 紧跟 id，D97① 位置规则；--part 缺省
+// = 合段，沿用 D132 图侧规则）→ 关遮罩 + 唤出主窗展开（user + Fresh 会重新生成，
+// D93；沿用 D132 的 showExpandMsg 规则，不唤出则生成过程看不见）。
 func (ov *overlayState) submit(u *UI, st *historyState) {
 	if !ov.canSave() {
 		return // 只读节点 / 空草稿：无提交可言（内核亦拒）
@@ -416,7 +416,7 @@ func (ov *overlayState) submit(u *UI, st *historyState) {
 	case u.inCh <- port.UserInput{Command: &port.Command{Name: uiCmdEdit, Args: args}}:
 	default:
 		// 输入通道满：命令没投出去 ⇒ **不关遮罩**（否则用户改的文本凭空消失，且无迹可寻）。
-		// 与图侧「缓冲满则丢弃」的既有口径同源，这里改成保数据。
+		// 与图侧「缓冲满则丢弃」的既有规则同源，这里改成保数据。
 		return
 	}
 	st.closeOverlay()
@@ -432,5 +432,5 @@ func (ov *overlayState) shown() []mdBlock {
 	return ov.blocks
 }
 
-// wakeFrame 追加一帧重绘请求（Gio 动画口径，比 Window.Invalidate 轻；§15.5）。
+// wakeFrame 追加一帧重绘请求（Gio 动画规则，比 Window.Invalidate 轻；§15.5）。
 func wakeFrame(gtx layout.Context) { gtx.Execute(op.InvalidateCmd{}) }

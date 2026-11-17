@@ -47,14 +47,14 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 	if s.cur.IsPad(parent) {
 		line += i18n.T("reparent.done_pad")
 	}
-	// 树编辑会话内：只改内存，退出时统一落盘（D258）；转写区也不重画——
+	// 树编辑会话内：只改内存，退出时统一写入磁盘（D258）；转写区也不重画——
 	// 编辑期间连着拖几下手会不停清屏，而这次改动的最终形状在退出时才需要确认。
 	if s.treeEdit != nil {
 		s.treeEdit.edits++
 		return line + i18n.T("reparent.in_edit"), nil
 	}
 	if err := s.persist(ctx); err != nil {
-		// 与 /rm 同口径：落盘失败不留在内存里半生效——回到最近一次成功保存的状态。
+		// 与 /rm 同规则：写入磁盘失败不留在内存里半生效——回到最近一次成功保存的状态。
 		if c, lerr := s.store.Load(ctx, s.cur.ID); lerr == nil {
 			s.cur = c
 			return "", wrapSession("err.reparent_persist_rollback", err)
@@ -63,7 +63,7 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 	}
 
 	// Head 没动，但被搬子树若包含 Head，它上来的那条路换了——转写区要跟着重画
-	// （与 /goto 的清屏回放同口径）。不包含时路径一字未变，不必打断阅读。
+	// （与 /goto 的清屏回放同规则）。不包含时路径一字未变，不必打断阅读。
 	if pathContains(s.cur, id, head) {
 		if err := s.emitClear(ctx); err != nil {
 			return "", err

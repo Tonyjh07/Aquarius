@@ -17,7 +17,7 @@ import (
 )
 
 // maxCaptureEdge 截图长边上限（D178）：超过就按比例缩小再编码，
-// 避免一张 4K 截图把上下文吃掉小半（口径同 file_read 的图片上限）。
+// 避免一张 4K 截图把上下文吃掉小半（规则同 file_read 的图片上限）。
 const maxCaptureEdge = 1600
 
 // windowTitleChars 窗口标题在清单里的字符上限：标题是用户数据，可能很长，

@@ -41,12 +41,12 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	f.drainToolResults()  // 工具页异步动作结果回灌状态行
 	f.drainSkillResults() // 技能页异步动作结果回灌状态行
 	// 外部代理页的「测试连接」：起的是真进程，结果同样走旁路通道。放在帧首而不是页事件里，
-	// 是为了切走页面之后结果也能落地（回灌后不回看，但状态行不该停在「正在连接」）。
+	// 是为了切走页面之后结果也能实现（回灌后不回看，但状态行不该停在「正在连接」）。
 	if f.consumeDelegateProbes() && f.win != nil {
 		f.win.Invalidate()
 	}
-	f.drainSkillPicks(u) // 技能导入选择框结果（只填来源框，不直接落盘）
-	f.drainCharPicks(u)  // 角色卡选择框结果（只填来源框，不直接落盘）
+	f.drainSkillPicks(u) // 技能导入选择框结果（只填来源框，不直接写入磁盘）
+	f.drainCharPicks(u)  // 角色卡选择框结果（只填来源框，不直接写入磁盘）
 	f.syncPageSnapshots()
 	// 角色页快照（本页现取，装配根侧节流读盘）+ 头像异步结果排空。
 	f.syncCharactersSnapshot(u)
@@ -55,7 +55,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	}
 	// 当前页事件（D162：页模块自带事件，谁持有控件谁处理）。**所有页都调一次**：改前
 	// provider / 工具页 / profile 等动作本就是帧级无条件消费（未渲染的控件 Clicked 恒假），
-	// 这样口径与改前一致；页内需要按当前页收窄的（如模块网格手势）由该页自行判 f.page。
+	// 这样规则与改前一致；页内需要按当前页收窄的（如模块网格手势）由该页自行判 f.page。
 	for _, p := range settingsPages {
 		p.Events(gtx, u, f)
 	}
@@ -115,7 +115,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 	)
 }
 
-// syncPageSnapshots 各管理面的帧首同步（Revision 变了才重建行/按钮，同历史窗口径）。
+// syncPageSnapshots 各管理面的帧首同步（Revision 变了才重建行/按钮，同历史窗规则）。
 func (f *settingsForm) syncPageSnapshots() {
 	f.syncToolsSnapshot()
 	f.syncSecretsSnapshot()
@@ -215,7 +215,7 @@ func (f *settingsForm) bottomBar(gtx layout.Context, th *material.Theme) layout.
 
 // row 第 i 行渲染（material.List 回调；行内容按 pageRows 的类型分派）。
 //
-// 版面口径（D148 Paper 版）：
+// 版面规则（D148 Paper 版）：
 //   - **表单行**（字段/开关/按钮组）落进「分组卡」：连续的字段行合成一张卡，卡内
 //     行间一条 hairline，卡外沿 1dp 描边、组首/组尾给圆角。
 //   - **非表单行**（页标题/分区标题/说明/网格/预览/整组按钮行）自带上下留白，不落卡。

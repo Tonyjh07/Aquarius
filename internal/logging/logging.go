@@ -92,11 +92,11 @@ const (
 var Contexts = []Context{Boot, Attach, LLM, Audio, Job, Delegate, Plugin, Skill, Character, Session, Perm, UI, Web}
 
 const (
-	// defaultCap 单文件上限，超出轮转一代（口径同 audit.log）。
+	// defaultCap 单文件上限，超出轮转一代（规则同 audit.log）。
 	defaultCap = 4 << 20 // 4 MiB
 	// defaultKeepDays 保留天数：超期文件在下次 Open 时清掉。
 	defaultKeepDays = 7
-	// filePrefix 落盘文件名前缀：`aquarius-YYYY-MM-DD.log`。
+	// filePrefix 写入磁盘文件名前缀：`aquarius-YYYY-MM-DD.log`。
 	filePrefix = "aquarius-"
 	// timeLayoutText 文本形态的时间列（本地时区到毫秒）。
 	timeLayoutText = "2006-01-02 15:04:05.000"
@@ -108,7 +108,7 @@ const (
 
 // Options 构造参数。零值可用：不落文件、只写 Stderr（除 Stderr 之外全取缺省）。
 type Options struct {
-	Dir      string    // 落盘目录；空 = 不落文件
+	Dir      string    // 写入磁盘目录；空 = 不落文件
 	Level    Level     // 文件门槛（低于它的行不写）
 	Format   Format    // 渲染形态
 	Stderr   io.Writer // stderr 出口；nil = 不写 stderr

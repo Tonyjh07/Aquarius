@@ -124,9 +124,9 @@ func renameIfExists(from, to string) error {
 	return nil
 }
 
-// Save 整树序列化落盘：先写临时文件，再把现有文件轮成备份代，最后原子换入（D7/D254）。
+// Save 整树序列化写入磁盘：先写临时文件，再把现有文件轮成备份代，最后原子换入（D7/D254）。
 // 轮转**只在现文件能完整解析时进行**（保存前完整性校验）——坏文件不许挤掉更旧的
-// 可用备份。入树前做不变量自检，坏数据不落盘。
+// 可用备份。入树前做不变量自检，坏数据不写入磁盘。
 //
 // 同一会话的保存串行执行（见 Store.saveLocks），临时文件每次随机命名：并发保存
 // 不会写坏、也不会互相盖掉。
@@ -180,7 +180,7 @@ func (s *Store) lockSave(dst string) func() {
 // writeTemp 在同目录写一份临时文件并返回其路径：名字随机（`<id>.json.<rand>.tmp`），
 // 调用方负责换入或清理。
 //
-// 会话文件沿用 0644（不是密钥，历史口径不变）；CreateTemp 建的 0600 要显式放开。
+// 会话文件沿用 0644（不是密钥，历史规则不变）；CreateTemp 建的 0600 要显式放开。
 func writeTemp(dst string, data []byte) (string, error) {
 	f, err := os.CreateTemp(filepath.Dir(dst), filepath.Base(dst)+".*.tmp")
 	if err != nil {
@@ -370,7 +370,7 @@ func (s *Store) path(id conversation.ID) string {
 	return filepath.Join(s.dir, string(id)+".json")
 }
 
-// EncodeTree 把整棵树编码成落盘用的 JSON 字节（缩进形式，与磁盘上的会话文件同形）。
+// EncodeTree 把整棵树编码成写入磁盘用的 JSON 字节（缩进形式，与磁盘上的会话文件同形）。
 //
 // 导出复用这一份形状而不是另造一套「归档专用」的树：同一棵树在磁盘上和在归档里长一样，
 // 出问题时用编辑器打开任意一边都能读，也免得两份 wire 各自漂移（D242）。
@@ -498,7 +498,7 @@ func decode(data []byte, id conversation.ID) (*conversation.Conversation, error)
 }
 
 // decodeTree wire 结构 → 领域树：旧格式显式识别（D19/D95）+ 不变量自检。
-// Load 与 DecodeTree 共用这一份，识别与校验口径不会分叉。
+// Load 与 DecodeTree 共用这一份，识别与校验规则不会分叉。
 func decodeTree(w wireTree) (*conversation.Conversation, error) {
 	// D19 破坏性切换：M0 虚拟 Root 格式（无 Root 节点或 Head 为空）不兼容，明确报因引导重建。
 	root, ok := w.Nodes[conversation.MessageID(w.ID)]

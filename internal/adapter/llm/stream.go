@@ -18,7 +18,7 @@ import (
 // （Responses 的 response.completed）都算正常收流（io.EOF）。
 //
 // 三套协议共用这条骨架：SSE 的「行怎么读」与「流何时结束」是同一件事，差异全在
-// decode——把一条 data 载荷映射成端口增量（D175 口径一）。
+// decode——把一条 data 载荷映射成端口增量（D175 规则一）。
 type stream struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -153,7 +153,7 @@ func (s *stream) markSigSeen(index int) {
 	s.sigSeen[index] = true
 }
 
-// decodeChatPayload chat.completion.chunk → 增量（D175 口径一：SSE 骨架共用，载荷解析
+// decodeChatPayload chat.completion.chunk → 增量（D175 规则一：SSE 骨架共用，载荷解析
 // 各协议一份）。无增量的分片（finish_reason 等）返回 ok=false。
 func decodeChatPayload(payload string) (port.Delta, bool, error) {
 	var chunk chatChunk

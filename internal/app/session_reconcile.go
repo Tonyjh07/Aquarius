@@ -16,9 +16,9 @@ import (
 // 不认领活进程：Wait 依赖内存里的 done 通道与 cmd.Process，重启后都拿不到，按 pid 附着
 // 还会撞上 pid 复用。没人监督的进程该怎么办由用户决定（日志在盘上，pid 也写在正文里）。
 //
-// 落地走与任务报告同一条路：目标会话是当前会话就挂当前 Head，否则异地落地到它自己
+// 实现走与任务报告同一条路：目标会话是当前会话就挂当前 Head，否则异地送达到它自己
 // 的树上；目标已被删除则丢弃并记一条运行日志。启动作业在 UI 起来之前，所以这里是
-// 同步落地而不是入队——队列要等人来排空，而用户启动后可能一句话都不说。
+// 同步实现而不是入队——队列要等人来排空，而用户启动后可能一句话都不说。
 func (s *Session) ReportUnfinished(ctx context.Context, items []port.UnfinishedJob) error {
 	if len(items) == 0 {
 		return nil
@@ -91,7 +91,7 @@ func unfinishedReport(it port.UnfinishedJob) string {
 	return b.String()
 }
 
-// jobCommandLine 命令行的展示形态（参数含空白时加引号，同 jobproc 的日志头口径）。
+// jobCommandLine 命令行的展示形态（参数含空白时加引号，同 jobproc 的日志头规则）。
 func jobCommandLine(spec port.JobSpec) string {
 	parts := make([]string, 0, 1+len(spec.Args))
 	if cmd := strings.TrimSpace(spec.Command); cmd != "" {
@@ -109,7 +109,7 @@ func jobCommandLine(spec port.JobSpec) string {
 
 // ReportUnfinishedDelegates 转交的启动对账（D269）：上次退出时没有收尾的转交，补一条事实。
 //
-// 与任务对账同一路：目标会话是当前会话就挂当前 Head，否则异地落地；目标已删除则丢弃并
+// 与任务对账同一路：目标会话是当前会话就挂当前 Head，否则异地送达；目标已删除则丢弃并
 // 记日志。正文按「外部」信任级注入——任务描述来自用户，但报错段是子代理自己写的，
 // 混在一段里只能按最低的那一档处理。
 func (s *Session) ReportUnfinishedDelegates(ctx context.Context, items []port.UnfinishedDelegate) error {

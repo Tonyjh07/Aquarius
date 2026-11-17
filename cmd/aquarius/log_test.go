@@ -92,7 +92,7 @@ func TestOpenLogFlagOverridesConfig(t *testing.T) {
 // repl 的终端就是界面，不许回显。
 func TestOpenLogEchoesForTerminalGUI(t *testing.T) {
 	if !consoleVisible() {
-		t.Skip("本机没有可见控制台（双击启动口径），回显按设计关闭")
+		t.Skip("本机没有可见控制台（双击启动规则），回显按设计关闭")
 	}
 	cases := []struct {
 		kind  string

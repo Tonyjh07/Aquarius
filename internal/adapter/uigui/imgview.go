@@ -8,7 +8,7 @@ package uigui
 // 交互：起手适配窗口（小图不放大，1:1 更清楚），滚轮以光标为锚点缩放（1×–8×），
 // 按住拖动平移，Esc 关闭。
 //
-// 解码纪律同缩略图（D187 口径四）：先 DecodeConfig 看尺寸、超预算就不解；解码在
+// 解码纪律同缩略图（D187 规则四）：先 DecodeConfig 看尺寸、超预算就不解；解码在
 // 本窗起的 goroutine 里做（卡帧只可能卡这个窗），结果经 channel 回帧循环。
 
 import (
@@ -35,7 +35,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// 预览窗口径。
+// 预览窗规则。
 const (
 	imgViewZoomMax = 8.0 // 最大放大倍率（相对适配尺寸）
 	// imgViewZoomK 滚轮增量的缩放系数：一格滚轮约 ±100 像素增量 → 约 ×1.16 每格。

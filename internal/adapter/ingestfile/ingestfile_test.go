@@ -105,7 +105,7 @@ func TestIngestMultipleAllOK(t *testing.T) {
 	}
 }
 
-// TestIngestMultiplePartialFailure D186 口径二：坏文件只跳过它自己，其余照常入树，
+// TestIngestMultiplePartialFailure D186 规则二：坏文件只跳过它自己，其余照常入树，
 // 回执里逐条列出被跳过的文件名与原因。
 func TestIngestMultiplePartialFailure(t *testing.T) {
 	in, _, dir := newIngestor(t)
@@ -125,7 +125,7 @@ func TestIngestMultiplePartialFailure(t *testing.T) {
 	}
 }
 
-// TestIngestMultipleAllFail D186 口径二：全部失败才报错，错误里列出每一项的原因。
+// TestIngestMultipleAllFail D186 规则二：全部失败才报错，错误里列出每一项的原因。
 func TestIngestMultipleAllFail(t *testing.T) {
 	in, _, dir := newIngestor(t)
 	_, err := in.Ingest(context.Background(), port.RawInput{Kind: "file",
@@ -144,7 +144,7 @@ func TestIngestMultipleAllFail(t *testing.T) {
 	}
 }
 
-// TestIngestTooManyAttachments D186 口径三：超过单条上限直接拒收，报因里带上限数字。
+// TestIngestTooManyAttachments D186 规则三：超过单条上限直接拒收，报因里带上限数字。
 func TestIngestTooManyAttachments(t *testing.T) {
 	in, _, dir := newIngestor(t)
 	p := writeFile(t, dir, "x.txt", []byte("x"))

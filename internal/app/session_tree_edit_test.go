@@ -55,7 +55,7 @@ func TestTreeEditDefersWritesUntilDone(t *testing.T) {
 		t.Fatalf("done output = %q, want 已保存并退出 + 3 处", out)
 	}
 	if store.saves != baselineSaves+1 {
-		t.Fatalf("saves after done = %d, want exactly %d（一次落盘）", store.saves, baselineSaves+1)
+		t.Fatalf("saves after done = %d, want exactly %d（一次写入磁盘）", store.saves, baselineSaves+1)
 	}
 	if m, _ := store.convs[s.Current().ID].Find(a1.ID); m.Parent != persona.ID {
 		t.Fatalf("saved parent after done = %q, want %q", m.Parent, persona.ID)
@@ -94,7 +94,7 @@ func TestTreeEditCancelRestoresTree(t *testing.T) {
 	}
 }
 
-// TestTreeEditCancelAfterMessageSaved 会话期间来过新消息（照常落盘），放弃仍要回滚：
+// TestTreeEditCancelAfterMessageSaved 会话期间来过新消息（照常写入磁盘），放弃仍要回滚：
 // 内存与文件都回到进入编辑时的样子，不能「盘上留着、下次复活」。
 func TestTreeEditCancelAfterMessageSaved(t *testing.T) {
 	store := newMemStore()
@@ -108,7 +108,7 @@ func TestTreeEditCancelAfterMessageSaved(t *testing.T) {
 
 	runCmd(t, s, "tree-edit")
 	runCmd(t, s, "reparent", string(a1.ID), string(persona.ID))
-	// 模拟编辑期间来了新消息并落盘。
+	// 模拟编辑期间来了新消息并写入磁盘。
 	if _, err := s.Current().Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: "插一句"}}); err != nil {
 		t.Fatalf("append during edit: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestTreeEditSwitchAsksSaveDiscardCancel(t *testing.T) {
 		t.Fatal("cancelled switch should keep the edit session")
 	}
 
-	// 这次放弃：切走，改动不落盘。
+	// 这次放弃：切走，改动不写入磁盘。
 	s.confirmer = &scriptConfirmer{t: t, answers: []bool{false, true}}
 	out = runCmd(t, s, "new", "另一个会话")
 	if !strings.Contains(out, i18n.Tf("tree.new.done", "id", s.Current().ID)) {
@@ -259,7 +259,7 @@ func TestTreeEditExitAsksLikeSwitch(t *testing.T) {
 		t.Fatalf("state after cancelled exit = %v/%d, want active with 1 edit", active, edits)
 	}
 
-	// 拒绝保存、同意放弃：退出且改动不落盘。
+	// 拒绝保存、同意放弃：退出且改动不写入磁盘。
 	conf = &scriptConfirmer{t: t, answers: []bool{false, true}}
 	s.confirmer = conf
 	out = runCmd(t, s, "tree-edit", "--exit")

@@ -75,7 +75,7 @@ func TestNodeCountAndIDs(t *testing.T) {
 	}
 }
 
-// TestSubtreeSizeMatchesPrune SubtreeSize 的口径必须与 Prune 的实际删除量一致——
+// TestSubtreeSizeMatchesPrune SubtreeSize 的规则必须与 Prune 的实际删除量一致——
 // 它俩是同一个数字的两种取法（/rm 的确认提示与实际结果），不一致就是骗用户。
 func TestSubtreeSizeMatchesPrune(t *testing.T) {
 	c := buildTree(t)
@@ -170,7 +170,7 @@ func newestLeafForTest(t *testing.T, c *Conversation, root MessageID) MessageID 
 	return best
 }
 
-// TestViewMatchesTailAndBranches View 是展示面唯一的数据来源，它给的口径必须与
+// TestViewMatchesTailAndBranches View 是展示面唯一的数据来源，它给的规则必须与
 // Tail / Branches 逐节点一致——否则「切到某个版本的末端」与界面画出的分叉会各说各话。
 func TestViewMatchesTailAndBranches(t *testing.T) {
 	c := buildTree(t)
@@ -194,7 +194,7 @@ func TestViewMatchesTailAndBranches(t *testing.T) {
 			t.Fatalf("VersionEnd(%s) 不存在，但 View 列了它", m.ID)
 		}
 		if got := view.Tails[m.ID]; got != want {
-			t.Fatalf("View.Tails[%s] = %s, want %s（与版本末端同口径）", m.ID, got, want)
+			t.Fatalf("View.Tails[%s] = %s, want %s（与版本末端同一套规则）", m.ID, got, want)
 		}
 	}
 	// 版本组 = 每个节点归到「最近的非衬垫祖先」名下，组内按 (CreatedAt, ID) 升序；

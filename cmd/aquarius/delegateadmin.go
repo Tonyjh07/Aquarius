@@ -2,7 +2,7 @@ package main
 
 // 设置窗「外部代理」页的管理面（D270）：实现 uigui.DelegateAdmin。
 //
-// 口径三条：
+// 规则三条：
 //  1. **页面显示的是配置 + 现算的 PATH 探测**，不是运行中的转交管理器。转交管理器按启动
 //     时的配置装配（命令、参数、env、上限），热改它等于在别人的进程还在跑时换掉它的身份；
 //     所以这里改完一律「重启生效」，页面也照着新配置显示——而不是显示一份跑着但已过期的事实。
@@ -122,10 +122,10 @@ func (a *delegateAdmin) SetCommandLine(name, commandLine string) error {
 	})
 }
 
-// Add 追加一条代理。名字与命令行的校验口径与解析期一致：缺名、重名、空命令、
+// Add 追加一条代理。名字与命令行的校验规则与解析期一致：缺名、重名、空命令、
 // 引号未闭合都在这里拦，不留给下次启动。
 //
-// 写盘时不写 `enabled`：键缺失 = 启用（与手写配置同口径，少一行噪音）。
+// 写盘时不写 `enabled`：键缺失 = 启用（与手写配置同规则，少一行噪音）。
 func (a *delegateAdmin) Add(name, commandLine string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -436,7 +436,7 @@ func (a *delegateAdmin) patchAgent(name string, edit func(map[string]any)) error
 	return nil
 }
 
-// commandLineOf 命令行展示形态：参数含空白时加双引号（与 /delegate list 同口径）。
+// commandLineOf 命令行展示形态：参数含空白时加双引号（与 /delegate list 同规则）。
 func commandLineOf(command string, args []string) string {
 	parts := make([]string, 0, 1+len(args))
 	if cmd := strings.TrimSpace(command); cmd != "" {

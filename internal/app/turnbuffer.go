@@ -94,7 +94,7 @@ func (b *turnBuffer) sealRound() {
 	b.round = conversation.Usage{}
 }
 
-// addToolPart 把一个"调用+结果"作为工具分片按到达序追加进 content（D95 同片落库）。
+// addToolPart 把一个"调用+结果"作为工具分片按到达序追加进 content（D95 同片写进密钥库）。
 func (b *turnBuffer) addToolPart(call tool.Call, res *tool.Result) {
 	b.content = append(b.content, conversation.Part{Kind: conversation.PartTool, Tool: &conversation.ToolPart{
 		CallID: string(call.ID),

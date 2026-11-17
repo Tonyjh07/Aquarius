@@ -1,6 +1,6 @@
 package main
 
-// heap_test.go 常驻内存策略的装配口径：两个旋钮各自「默认装、环境变量优先」。
+// heap_test.go 常驻内存策略的装配规则：两个旋钮各自「默认装、环境变量优先」。
 // GOMEMLIMIT / GOGC 都是进程级全局状态，测试各自还原原值，避免影响同进程的其它用例。
 
 import (
@@ -43,7 +43,7 @@ func TestApplyMemoryPolicySetsDefaults(t *testing.T) {
 	}
 }
 
-// TestApplyMemoryPolicyHonorsEnv 环境变量显式给出时对应的旋钮一律不动——用户/部署方的口径
+// TestApplyMemoryPolicyHonorsEnv 环境变量显式给出时对应的旋钮一律不动——用户/部署方的规则
 // 优先，代码里的默认值不该盖掉它。另一个旋钮照装。
 func TestApplyMemoryPolicyHonorsEnv(t *testing.T) {
 	t.Setenv("GOMEMLIMIT", "512MiB")

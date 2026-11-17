@@ -1,6 +1,6 @@
 package platform
 
-// 拖拽路径解析（D187 口径三）：WM_DROPFILES 的 HDROP 句柄只能经 DragQueryFileW 逐项
+// 拖拽路径解析（D187 规则三）：WM_DROPFILES 的 HDROP 句柄只能经 DragQueryFileW 逐项
 // 取，路径本身是 UTF-16（含终止 NUL），可能带空格、中文、代理对。把「按项取路径 +
 // 去 NUL + 跳过空项」抽成平台无关的纯函数，Win32 调用留在 shell_windows.go——
 // 这样路径解析可在任意平台单测。

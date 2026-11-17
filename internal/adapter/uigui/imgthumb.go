@@ -2,13 +2,13 @@ package uigui
 
 // imgthumb.go 转写区图片缩略图（D207）：气泡里的图片以固定方图呈现，点击进预览窗。
 //
-// 三条纪律（与暂存 chip 的缩略图同源，D187 口径四）：
+// 三条纪律（与暂存 chip 的缩略图同源，D187 规则四）：
 //   - **解码前先看尺寸**（`image.DecodeConfig`）：像素数超预算就不解，格子回落占位；
 //   - **解码不占 UI 线程**：读附件库/文件与解码全在后台 goroutine，结果经 inbox 回投；
 //   - **同一张图只解一次**：缓存按内容寻址的键（附件库哈希），在途去重，失败留墓碑
 //     ——解码不出来的图每帧重试一次会变成持续的卡帧源。
 //
-// 尺寸口径：格子边长固定（转写 120dp、工具 chip 展开体 96dp），解码成边长 240px 的
+// 尺寸规则：格子边长固定（转写 120dp、工具 chip 展开体 96dp），解码成边长 240px 的
 // 方图（2x 下采样，高清屏边缘干净）。方图 = 内部等比居中 + 透明留边，绘制时按格宽
 // 直接铺，既不变形也不必在绘制路径里再算比例。
 
@@ -34,7 +34,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// 缩略图格子口径。
+// 缩略图格子规则。
 const (
 	imgCellDp     unit.Dp = 120 // 转写气泡内的格子边长
 	imgChipCellDp unit.Dp = 96  // 工具 chip 展开体的格子边长
@@ -173,7 +173,7 @@ func (u *UI) applyImg(m imgMsg) {
 	}
 }
 
-// imgNames 一组图片的显示名拼接（纯图气泡的复制口径：没有可选文本时给名字）。
+// imgNames 一组图片的显示名拼接（纯图气泡的复制规则：没有可选文本时给名字）。
 func imgNames(imgs []imgRef) string {
 	if len(imgs) == 0 {
 		return ""
@@ -195,7 +195,7 @@ type imgClickKey struct {
 	bi, ii int
 }
 
-// imgClick 图片格点击件 get-or-create（照 chipClick 口径按块序/格序缓存）。
+// imgClick 图片格点击件 get-or-create（照 chipClick 规则按块序/格序缓存）。
 func (u *UI) imgClick(k imgClickKey) *widget.Clickable {
 	if u.imgClicks == nil {
 		u.imgClicks = map[imgClickKey]*widget.Clickable{}

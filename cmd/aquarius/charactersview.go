@@ -4,7 +4,7 @@ package main
 //
 // 页面动作（导入 / 删除 / 开始对话）走 `/character` 命令通道，这一份只提供**清单快照**：
 // 读角色卡目录（characterfs.Store.List）并做一次短 TTL 缓存。设置窗在「角色」页逐帧问，
-// 若每帧都读盘就是热路径；缓存让「命令在那头落地」后最多 TTL 之内反映出来，同时避免
+// 若每帧都读盘就是热路径；缓存让「命令在那头实现」后最多 TTL 之内反映出来，同时避免
 // 逐帧读盘。线程安全（设置窗 goroutine 调用；store 在开窗前已就绪）。
 
 import (
@@ -18,7 +18,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// charactersViewTTL 快照缓存寿命：命令落地到设置窗刷新之间的最大延迟。
+// charactersViewTTL 快照缓存寿命：命令实现到设置窗刷新之间的最大延迟。
 const charactersViewTTL = 400 * time.Millisecond
 
 // charactersView 角色卡清单快照源。store 是取值函数而不是指针——角色卡目录晚于 UI 构造

@@ -87,7 +87,7 @@ func TestDecisionsBodyInIndex(t *testing.T) {
 	for _, n := range decisionIDs(strings.Join(lines[indexAt:bodyAt], "\n")) {
 		inIndex[n] = true
 	}
-	// 索引表本该有几百行；个位数说明取号口径坏了（比如表格被挪进别的章节），
+	// 索引表本该有几百行；个位数说明取号规则坏了（比如表格被挪进别的章节），
 	// 让它失，而不是让正文漏行在空集合上「恰好通过」。
 	if len(inIndex) < 100 {
 		t.Fatalf("索引表只取到 %d 个决策号，明显不对——检查 `## 索引` 是否还在原位", len(inIndex))
@@ -131,7 +131,7 @@ func TestDecisionsBodyInIndex(t *testing.T) {
 	}
 }
 
-// TestDecisionIDsParsing 守住取号口径本身：区间展开、顿号并列、区间不带第二个 D 都要认，
+// TestDecisionIDsParsing 守住取号规则本身：区间展开、顿号并列、区间不带第二个 D 都要认，
 // 且不能把「D 盘」「Base64」这类文本当编号。
 func TestDecisionIDsParsing(t *testing.T) {
 	t.Parallel()

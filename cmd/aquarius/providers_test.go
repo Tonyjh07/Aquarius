@@ -117,7 +117,7 @@ func TestProviderManagerApply(t *testing.T) {
 	}
 	data, _ := os.ReadFile(cfgPath)
 	if !strings.Contains(string(data), `"custom_hint": "keep-me"`) {
-		t.Fatal("provider 条目无关键未保留（Q10 口径破坏）")
+		t.Fatal("provider 条目无关键未保留（Q10 规则破坏）")
 	}
 
 	// 密钥值空 = 保持原值（只写不回显：Keys 槽位不带 Value）。
@@ -234,7 +234,7 @@ func TestProviderManagerApplyKeyPoolAndCaps(t *testing.T) {
 
 // TestProviderManagerEnabledFlag 模型启用位往返（D180）：缺省 = 启用（不落键）；关掉写
 // `enabled: false`；再打开删键恢复缺省形态；同一家的其他模型不受影响。全部关掉 = 拒绝
-// 应用（启动校验同一口径）。
+// 应用（启动校验同一套规则）。
 func TestProviderManagerEnabledFlag(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
@@ -394,7 +394,7 @@ func TestProviderManagerApplyCost(t *testing.T) {
 		t.Fatalf("留空不该落键:\n%s", raw)
 	}
 
-	// 负数：拒绝（与启动期 normalize 同口径）。
+	// 负数：拒绝（与启动期 normalize 同规则）。
 	err = m.Apply("a", []uigui.ProviderPatch{{
 		Orig: "a", Name: "a", BaseURL: "http://a/v1",
 		Models: []uigui.ProviderModelPatch{{Name: "m1", CostIn: -1}},
@@ -439,7 +439,7 @@ func TestProviderManagerApplyStoresPlaintext(t *testing.T) {
 	if got := cfg.Model.Providers[1].keyRefs()[0]; got != "secret:KB" {
 		t.Fatalf("留空应保持原引用: %q", got)
 	}
-	// onStore 每次明文真的落库才回调（S9-6b/D163）：第一次 Apply 只填了一条 → 恰好 1 次。
+	// onStore 每次明文真的写进密钥库才回调（S9-6b/D163）：第一次 Apply 只填了一条 → 恰好 1 次。
 	if stores != 1 {
 		t.Fatalf("onStore 调用 = %d, want 1（只有一条填了明文）", stores)
 	}
@@ -575,7 +575,7 @@ func TestProviderManagerTestRespectsKind(t *testing.T) {
 }
 
 // TestProviderManagerModels 「获取模型」数据面（D153）：去重保序、空 id 跳过、失败报因；
-// 密钥解析与 Test 同口径（Orig 取 config 原值）。
+// 密钥解析与 Test 同规则（Orig 取 config 原值）。
 func TestProviderManagerModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

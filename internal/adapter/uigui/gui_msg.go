@@ -32,10 +32,10 @@ type (
 		atts []port.AttachmentView
 	}
 	// copyMsg 写剪贴板请求（D92 气泡菜单复制项经 shell 线程分发投递）：记账到
-	// pendingCopy，下一帧经 gtx.Execute(clipboard.WriteCmd) 落盘（剪贴板写入必须在
+	// pendingCopy，下一帧经 gtx.Execute(clipboard.WriteCmd) 写入磁盘（剪贴板写入必须在
 	// Gio 帧上下文执行，shell 线程不可直达）。
 	copyMsg struct{ text string }
-	// quoteMsg 引用请求（D98 气泡菜单「引用」经 shell 线程分发投递）：文本口径与复制
+	// quoteMsg 引用请求（D98 气泡菜单「引用」经 shell 线程分发投递）：文本规则与复制
 	// 一致（选区优先/整条渲染文本，D98①），Gio 侧经 quoteInto 追加引用块进输入框。
 	quoteMsg struct{ text string }
 	// attachMsg 文件选择框 / 拖拽的结果（D104/D186：shell 或平台线程 →
@@ -100,7 +100,7 @@ func (u *UI) apply(msg uiMsg) bool {
 	switch m := msg.(type) {
 	case eventMsg:
 		// 上下文全文（§7.1）走次窗，不进转写：它是一份十几万字符的排查材料，
-		// 进转写区会把 markdown 解析与逐行选区一起拖进来。内容已先行落盘，忽略也无损。
+		// 进转写区会把 markdown 解析与逐行选区一起拖进来。内容已先行写入磁盘，忽略也无损。
 		if cv, ok := m.ev.(port.TextViewEvent); ok {
 			u.showTextView(cv)
 			break
@@ -111,7 +111,7 @@ func (u *UI) apply(msg uiMsg) bool {
 	case inputMsg:
 		u.m.submit(m.text)
 	case editMsg:
-		// D92/D97 编辑态入口：预填原文 + 修订方式 + 焦点入编辑框（同唤出口径——layout
+		// D92/D97 编辑态入口：预填原文 + 修订方式 + 焦点入编辑框（同唤出规则——layout
 		// 次帧执行 FocusCmd）；提交/Esc 的收尾见 model.submit 与 cancelEdit。
 		// D106 修订⑷：多行原文先展开再预填（SingleLine=false 下 SetText 保真——
 		// 原顺序会在进入编辑态就压平换行）。

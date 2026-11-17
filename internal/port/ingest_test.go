@@ -6,7 +6,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 )
 
-// TestRawInputAttachmentList D186 口径一：File / Blob 是单附件简写，归一化后并入列表；
+// TestRawInputAttachmentList D186 规则一：File / Blob 是单附件简写，归一化后并入列表；
 // 顺序固定为「File → Attachments → Blob」（调用方按这个序生成分片）。
 func TestRawInputAttachmentList(t *testing.T) {
 	blob := &conversation.BlobRef{Hash: "h1", MIME: "image/png", Name: "p.png"}

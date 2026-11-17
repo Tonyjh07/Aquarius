@@ -1,7 +1,7 @@
 package uigui
 
 // relmap_view.go 右图视场：缩放与平移、视图跟随、整树适配、聚焦域、盒与填充率、
-// 装盒所需的缩放推导。全部只读帧态、只改 zoom/off（D126–D140 的视场口径）。
+// 装盒所需的缩放推导。全部只读帧态、只改 zoom/off（D126–D140 的视场规则）。
 
 import (
 	"math"
@@ -33,7 +33,7 @@ func (g *relGraph) zoomAt(cx, cy, factor float64) {
 	g.offY = cy - wy*g.z
 }
 
-// wheel 滚轮（口径同主窗转写区：d<0 = 滚上，d>0 = 滚下）：滚上放大、滚下缩小；
+// wheel 滚轮（规则同主窗转写区：d<0 = 滚上，d>0 = 滚下）：滚上放大、滚下缩小；
 // 钳制边界后**降级为纵向平移**（A9，不静默失效）。越界平移用**定值步长**
 // （relWheelPanPx，D121 实测修）——滚轮原始增量是像素累计（一格 ≈ ±100），
 // 按增量乘 16 会把视场甩出裁剪盒，树「完全不可见」。
@@ -100,7 +100,7 @@ const relZoomEps = 0.004
 //   - **zoom 收口**：按**当前盒**算 zoomForBox——展开期**立即缩**（盒子连续地在长，缩也是
 //     连续的，V1「盒内可见」不破：这是「舒展到一半就出视口」的正面解法）；**落定后**允许
 //     迟缓放大一次，把多余留白填掉（用户 2026-10-15：「舒展后下方空白小一点」）。
-//     「只缩不放」的旧口径（D2）按此改订：展开期只缩（不回弹），落定后补一次填满。
+//     「只缩不放」的旧规则（D2）按此改订：展开期只缩（不回弹），落定后补一次填满。
 //   - **平移目标**：横向 P1（Head 落右基准位，装得下才保得住）+ 纵向 P2（**盒心**居中）。
 //     纵向原按 Head 居中——Head 不在盒的纵向中点时整盒被顶向一侧（实测上留白 −461px、
 //     下留白 197px：顶端被裁、下方大片空白，正是用户截图那一幕）。
@@ -216,7 +216,7 @@ func (g *relGraph) clampAnchorVisible() bool {
 	return dx != 0 || dy != 0
 }
 
-// fitView 开窗首帧：整棵可见树**适配视口**（A13，D127 横树版，D140 改口径）。
+// fitView 开窗首帧：整棵可见树**适配视口**（A13，D127 横树版，D140 改规则）。
 //
 //   - **zoom 基准取静息盒**（restBox）：首帧树还在 0.6 折叠播种态，按当前盒会算出一个
 //     过大的 zoom，而跟随期「展开只缩不放」救不回来。展开期的实际适配由 followSpanStep
@@ -269,7 +269,7 @@ func (g *relGraph) recenterTree() {
 		g.centerBox(b) // 装得下：盒心对准视口中心
 		return
 	}
-	// 装不下（长会话）：视图跟随（与 fitView 的回退口径一致）——至少当前消息可见。
+	// 装不下（长会话）：视图跟随（与 fitView 的回退规则一致）——至少当前消息可见。
 	g.followSpanStart()
 }
 
@@ -302,7 +302,7 @@ func (g *relGraph) anyNodeVisible() bool {
 //	                  「聚焦当前节点」，域比文案宽是刻意的——父是理解当前节点的前提，子是
 //	                  「接下来会是什么」的答案）
 //
-// 共同口径（D140 改订）：内容按**当前物理位形**取盒（用户此刻看到的树就是这一片），
+// 共同规则（D140 改订）：内容按**当前物理位形**取盒（用户此刻看到的树就是这一片），
 // **zoom 跟着一起适配**（上限 relFocusZoomMax，D3）——只挪视场不动 zoom 时，放大读一跳
 // 邻域与「一屏看整树」都做不到。装不下（长链触底）时沿用视图跟随兜底（Head 优先在场）。
 // 用户手动 zoom 仍是私有的：跟随一旦收敛就停，且 wheel/pan 立即取消跟随。
@@ -343,7 +343,7 @@ func (g *relGraph) focusScope(scope int) {
 	g.zoom = g.zoomForBox(b, relFocusZoomMax)
 	g.z = g.zoom * g.dpx
 	if scope == focusScopeAll {
-		// 整树：与「装下整树」同口径（P1 横向基准 + P2 盒心）；树还在展开就继续跟随
+		// 整树：与「装下整树」同规则（P1 横向基准 + P2 盒心）；树还在展开就继续跟随
 		g.followSpanStep(true)
 		g.fitFollow = !g.lay.settled
 		return
@@ -432,7 +432,7 @@ func (g *relGraph) relayoutFromSeed() {
 	g.everFit = false // 让下一帧的 fitView 按新播种态重新适配视口
 }
 
-// ——— D140：视场盒（静息盒只用于首帧 zoom，其余口径一律取当前位形）———
+// ——— D140：视场盒（静息盒只用于首帧 zoom，其余规则一律取当前位形）———
 
 // viewBox 世界盒（dp；含卡片占位与 relFitMargin）。
 type viewBox struct {
@@ -516,11 +516,11 @@ func (g *relGraph) restBox() (viewBox, bool) {
 	return a.box()
 }
 
-// zoomForBox 把盒装进视口的 zoom（D140 口径）：整盒两维都装得下；上限 maxZoom（滚轮档 =
+// zoomForBox 把盒装进视口的 zoom（D140 规则）：整盒两维都装得下；上限 maxZoom（滚轮档 =
 // relZoomMax、显式取景档 = relFocusZoomMax）、下限 relZoomMin（极端长会话装不下时由
 // followSpanStep 的 Head 安全网兜住，A12）。
 //
-// **D7-b 去掉的那条**：旧口径还要求「Head 左侧的过去部分装进右基准位以左」（按静息盒算），
+// **D7-b 去掉的那条**：旧规则还要求「Head 左侧的过去部分装进右基准位以左」（按静息盒算），
 // 于是宽树永远在右边留 28% 空、且整个视场被这个语义按住不动。现在右基准位降级为**平移
 // 偏好**（spanTarget 的 P1）：装得下才落在那儿，装不下就让步——两维尽量贴满。
 func (g *relGraph) zoomForBox(b viewBox, maxZoom float64) float64 {

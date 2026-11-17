@@ -11,7 +11,7 @@ import (
 )
 
 // Ask 提问通道的 TUI 降级实现（D184）：逐题在转写区打印题干与编号选项，
-// 然后等输入行给一行回答——没有页签与键位，语义与 repl 同口径：
+// 然后等输入行给一行回答——没有页签与键位，语义与 repl 同规则：
 //   - 数字 = 选第 N 项（1 起；多选用逗号/空格分隔）；
 //   - 其他文本 = 自由答案；
 //   - 空行 = 本题不答（TUI 的空行被输入行吞掉，等价于直接回车）；
@@ -66,7 +66,7 @@ func (u *UI) askOne(ctx context.Context, idx, total int, q port.AskQuestion) (pi
 	}
 }
 
-// parseAskLine 解析一行回答（与 repl 同口径）。
+// parseAskLine 解析一行回答（与 repl 同规则）。
 func (u *UI) parseAskLine(in port.UserInput, q port.AskQuestion) ([]string, bool, error) {
 	text := strings.TrimSpace(in.Text)
 	if in.Command != nil {

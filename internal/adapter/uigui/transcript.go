@@ -87,12 +87,12 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	if base < 0 {
 		base = 0
 	}
-	// 键几何落盘（D91 ②）：本帧量期记录 → 行原点定后译窗口系；复位[:0]保容量
+	// 键几何写入磁盘（D91 ②）：本帧量期记录 → 行原点定后译窗口系；复位[:0]保容量
 	//（行盒缓冲逐帧复用），指纹流式喂哈希（行序 = 键序）。消费者阶段（下一帧
-	// updateSel）读到的即上一帧整帧几何——一帧陈旧是既定口径。
+	// updateSel）读到的即上一帧整帧几何——一帧陈旧是既定规则。
 	u.keyRects = u.keyRects[:0]
 	u.bubbleRects = u.bubbleRects[:0] // D92：气泡矩形随帧复位（paint 期重登记）
-	u.steerHot = u.steerHot[:0]       // D272：引导气泡的控件热区同口径随帧复位
+	u.steerHot = u.steerHot[:0]       // D272：引导气泡的控件热区同一套规则随帧复位
 	u.pruneSteerCtl(u.pendingSteers())
 	fph := fnv.New64a()
 	y := base - u.scrollPx + pad
@@ -242,7 +242,7 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			blocks = []mdBlock{{kind: mdPara, text: it.text}} // live 草稿/兜底：纯文本单块
 		}
 		// D91 ② 手排纵列：量期即知块偏移（Flex 的 Offset 回放期才施加，量期不可知
-		// ——行盒/高亮定位须块内偏移）；尺寸口径与 Flex Rigid 逐像素一致。
+		// ——行盒/高亮定位须块内偏移）；尺寸规则与 Flex Rigid 逐像素一致。
 		// D207：段内图片排在正文块之后（同一个气泡里，不另起一条）。
 		imgs := it.imgs
 		return func(gtx layout.Context) layout.Dimensions {
@@ -404,7 +404,7 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 		return centerStrip(gtx, head)
 	}
 	// 折叠行 = 一个点击件（整条都是热区，与工具 chip 头部同法）；展开后的正文
-	// 不挂点击件——那里要能拖选（与思考块同口径）。
+	// 不挂点击件——那里要能拖选（与思考块同规则）。
 	cl := u.cmdClick(it.bi)
 	head := func(gtx layout.Context) layout.Dimensions { return cl.Layout(gtx, plain) }
 	return func(gtx layout.Context) layout.Dimensions {
@@ -417,7 +417,7 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 			if k > 0 {
 				vs.gap(mdBlockGapDp)
 			}
-			// 键序恒 2k/2k+1（命令行 / 输出）：与 selCount 一致，开合不漂移后续行序号（D67 同口径）。
+			// 键序恒 2k/2k+1（命令行 / 输出）：与 selCount 一致，开合不漂移后续行序号（D67 同规则）。
 			if e.cmd != "" {
 				off := image.Pt(0, vs.y)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
@@ -460,7 +460,7 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 // mdBlockGapDp 气泡内 markdown 块间距（D66 复合行）。
 const mdBlockGapDp unit.Dp = 4
 
-// injectHeadline 注入卡片头部（D166）：来源（友好化表） + 落地时是否触发了响应。
+// injectHeadline 注入卡片头部（D166）：来源（友好化表） + 写入时是否触发了响应。
 // 转写头部与遮罩来源行共用 injectState 一词，措辞不漂移。
 // injectState 触发状态词（D166）：记录的是**实际发生**（Message.Trigger），不是来源默认表。
 func injectState(trigger bool) string {

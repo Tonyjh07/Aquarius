@@ -26,7 +26,7 @@ func newStore(t *testing.T) *Store {
 	return s
 }
 
-// TestWriteReadRoundtrip 全局与会话文档写读往返；ModTime 落盘后回读。
+// TestWriteReadRoundtrip 全局与会话文档写读往返；ModTime 写入磁盘后回读。
 func TestWriteReadRoundtrip(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -182,7 +182,7 @@ func TestWriteCreatesDirs(t *testing.T) {
 	}
 	file := filepath.Join(filepath.Dir(s.global), "conversations", name)
 	if _, err := os.Stat(file); err != nil {
-		t.Fatalf("会话记忆文件未落盘: %v", err)
+		t.Fatalf("会话记忆文件未写入磁盘: %v", err)
 	}
 	matches, _ := filepath.Glob(file + "*")
 	for _, m := range matches {

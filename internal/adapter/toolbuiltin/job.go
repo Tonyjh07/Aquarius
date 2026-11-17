@@ -368,7 +368,7 @@ func (t *jobWait) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	return okResult(jobWaitText(ctx, mgr, j)), nil
 }
 
-// jobWaitText 终态回执：状态行 + 日志尾部（与 watcher 报告同一份口径，只是走工具
+// jobWaitText 终态回执：状态行 + 日志尾部（与 watcher 报告同一份规则，只是走工具
 // 回填而不是注入）。日志是不可信进程输出，正文里点明一句。
 func jobWaitText(ctx context.Context, mgr port.JobReader, j port.Job) string {
 	dur := time.Duration(0)
@@ -399,8 +399,8 @@ func jobWaitText(ctx context.Context, mgr port.JobReader, j port.Job) string {
 // 溢出为负（审查修复——溢出会被 jobproc 静默当成"不限时"）。
 const maxJobTimeoutSec = 30 * 24 * 3600
 
-// absWorkDir 绝对路径判定（§14 M3 遗留：相对 workdir 按绝对路径口径拒收）；
-// 口径由 port.AbsPath 单一提供。
+// absWorkDir 绝对路径判定（§14 M3 遗留：相对 workdir 按绝对路径规则拒收）；
+// 规则由 port.AbsPath 单一提供。
 func absWorkDir(p string) bool { return port.AbsPath(p) }
 
 // resolveJobID 解析任务标识（精确优先 + 唯一前缀，port 共用实现）；

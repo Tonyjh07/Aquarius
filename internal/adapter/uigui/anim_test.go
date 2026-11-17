@@ -233,7 +233,7 @@ func TestRowRectsFromSend(t *testing.T) {
 	if pn, sn := rowRectsFromSend(logo, pillEnd, sendEnd, -1, w); pn != logo || sn != logo {
 		t.Fatalf("p<0 应夹为 logo 圆: %v/%v", pn, sn)
 	}
-	// w≤0 跳过收界（纯几何口径）：过冲原始外推仍在。
+	// w≤0 跳过收界（纯几何规则）：过冲原始外推仍在。
 	if _, sRaw := rowRectsFromSend(logo, pillEnd, sendEnd, 1.053, 0); sRaw.Max.X <= w {
 		t.Fatalf("w=0 不应收界: %v", sRaw)
 	}
@@ -259,7 +259,7 @@ func TestClampRowX(t *testing.T) {
 		}
 	}
 
-	// 峰值处原始外推确实越窗（复现缺陷的口径），收界后贴窗但仍在终位右侧（回弹保留）。
+	// 峰值处原始外推确实越窗（复现缺陷的规则），收界后贴窗但仍在终位右侧（回弹保留）。
 	rawS := lerpRect(logo, sendEnd, 1.053)
 	if rawS.Max.X <= w {
 		t.Fatalf("峰值外推应越窗（否则收界无意义）: send=%v w=%d", rawS, w)
@@ -661,7 +661,7 @@ func TestStepExpandStopsTicker(t *testing.T) {
 	u.stepExpand(time.Now()) // 幂等：无动画直接返回
 }
 
-// TestRecordDynamicBand record 不随带底剔除（D62 修订 D54 口径）：带渐变改为全帧合成的
+// TestRecordDynamicBand record 不随带底剔除（D62 修订 D54 规则）：带渐变改为全帧合成的
 // 每像素因子 g(y)（fadeFrame），取代旧「带内整行单绘 + record 剔除带内元素」——带内/
 // 跨带元素一律登记，带底动画位不再影响登记。
 func TestRecordDynamicBand(t *testing.T) {
@@ -677,7 +677,7 @@ func TestRecordDynamicBand(t *testing.T) {
 	if len(u.shapes) != 2 {
 		t.Fatalf("跨带底矩形应登记: %+v", u.shapes)
 	}
-	// 带底 0 = 静息顶带口径，登记行为一致。
+	// 带底 0 = 静息顶带规则，登记行为一致。
 	u.shapes = u.shapes[:0]
 	u.bandBottom = 0
 	u.record(image.Rect(10, 0, 90, 50), 12, tok().brandColor, viewport)

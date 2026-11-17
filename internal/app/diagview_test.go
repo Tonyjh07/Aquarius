@@ -34,7 +34,7 @@ func TestPickDiagAudit(t *testing.T) {
 	}
 }
 
-// TestExecDiag 命令面：落盘一份、回执带路径与大小、三节齐全、时间窗只含那一行，
+// TestExecDiag 命令面：写入磁盘一份、回执带路径与大小、三节齐全、时间窗只含那一行，
 // 次窗与文件逐字节相同。
 func TestExecDiag(t *testing.T) {
 	s, _, rec := newTestSession(t, newMemStore())
@@ -120,7 +120,7 @@ func TestExecDiag(t *testing.T) {
 		}
 	}
 	if view == nil || view.Text != body {
-		t.Fatal("次窗内容与落盘文件不一致")
+		t.Fatal("次窗内容与写入磁盘文件不一致")
 	}
 }
 

@@ -116,7 +116,7 @@ func TestSettingsUnattendedRow(t *testing.T) {
 }
 
 // TestSettingsBackupKeepRow D254：备份代数行在「常规」页「存储」区；快照回填后
-// 保存进 patch，越界（<1 或 >20）就地拦下不落盘。
+// 保存进 patch，越界（<1 或 >20）就地拦下不写入磁盘。
 func TestSettingsBackupKeepRow(t *testing.T) {
 	t.Parallel()
 	var got SettingsPatch
@@ -245,7 +245,7 @@ func TestSaveSettingsHeadless(t *testing.T) {
 }
 
 // TestSaveSettingsErrors 错误路径：写回调失败/快捷键非法均不排队命令、不热生效、
-// 反馈错误态；快捷键非法在写回调之前拦截（不落盘）。
+// 反馈错误态；快捷键非法在写回调之前拦截（不写入磁盘）。
 func TestSaveSettingsErrors(t *testing.T) {
 	t.Parallel()
 	t.Run("写回调失败", func(t *testing.T) {
@@ -284,7 +284,7 @@ func TestSaveSettingsErrors(t *testing.T) {
 			t.Errorf("反馈 = (%v, %q)", f.err, f.status)
 		}
 		if called != 0 {
-			t.Error("快捷键非法必须在写回调之前拦截（不落盘）")
+			t.Error("快捷键非法必须在写回调之前拦截（不写入磁盘）")
 		}
 	})
 }
@@ -433,7 +433,7 @@ func TestPatchHasNoSideEffects(t *testing.T) {
 	}
 }
 
-// TestSaveSettingsZoomErrors 旋钮非法输入在写回调之前拦截（不落盘、不热更）。
+// TestSaveSettingsZoomErrors 旋钮非法输入在写回调之前拦截（不写入磁盘、不热更）。
 func TestSaveSettingsZoomErrors(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -498,7 +498,7 @@ func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
 		t.Fatalf("MCP 只读清单 = %v", f.snap.MCPServers)
 	}
 
-	// 非法数值拦截：压缩阈值越界不落盘。
+	// 非法数值拦截：压缩阈值越界不写入磁盘。
 	f.compact.SetText("1.5")
 	u.saveSettings(f)
 	if !f.err || !strings.Contains(f.status,
@@ -521,7 +521,7 @@ func TestSaveSettingsFullGroupsHeadless(t *testing.T) {
 	if got.RawJSON != `{"a": 2}` {
 		t.Fatalf("raw patch = %q", got.RawJSON)
 	}
-	// raw 与当前快照一致（TrimSpace 口径）→ 不进 patch（got.RawJSON 留零值）。
+	// raw 与当前快照一致（TrimSpace 规则）→ 不进 patch（got.RawJSON 留零值）。
 	f.rawCfg.SetText(strings.TrimSpace(f.snap.RawJSON))
 	u.saveSettings(f)
 	if got.RawJSON != "" {

@@ -118,7 +118,7 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.providers.model_add":           "＋ 添加模型",
 	"ui.page.providers.probe":               "探测能力",
 
-	// 模型服务页：卡片动作与尾部落盘
+	// 模型服务页：卡片动作与尾部写入磁盘
 	"ui.page.providers.test":          "测试连通",
 	"ui.page.providers.set_primary":   "设为主",
 	"ui.page.providers.primary_badge": "★ 主",

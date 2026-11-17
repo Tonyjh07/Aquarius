@@ -226,7 +226,7 @@ func TestRunCancelCtx(t *testing.T) {
 	}
 }
 
-// TestStartLifecycle 后台启动：日志落盘（头行/输出/退出标记）、状态收敛 done、List 可见。
+// TestStartLifecycle 后台启动：日志写入磁盘（头行/输出/退出标记）、状态收敛 done、List 可见。
 func TestStartLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	m, err := New(dir)
@@ -268,7 +268,7 @@ func TestStartLifecycle(t *testing.T) {
 		t.Fatalf("日志首行 = %q, want $ 命令头", first)
 	}
 	if _, err := os.Stat(filepath.Join(dir, string(job.ID)+".log")); err != nil {
-		t.Fatalf("日志文件未落盘: %v", err)
+		t.Fatalf("日志文件未写入磁盘: %v", err)
 	}
 }
 
@@ -565,7 +565,7 @@ func TestLogsTail(t *testing.T) {
 	}
 }
 
-// TestLogsDecodesGBKOutput 后台任务日志读出与 Run 同口径按 D41 解码（job_logs 链路）。
+// TestLogsDecodesGBKOutput 后台任务日志读出与 Run 同规则按 D41 解码（job_logs 链路）。
 func TestLogsDecodesGBKOutput(t *testing.T) {
 	t.Parallel()
 	m, err := New(t.TempDir())

@@ -1,6 +1,6 @@
 package main
 
-// main_run_test.go 运行期写回与密钥：权限/模型切换落盘、非法权限与 effort、
+// main_run_test.go 运行期写回与密钥：权限/模型切换写入磁盘、非法权限与 effort、
 // 明文密钥告警、数据目录转绝对路径、空密钥回落默认 secret、缺失密钥报因、
 // think 工具可见性、人格环境注入。
 
@@ -188,7 +188,7 @@ func TestRunEmptyAPIKeyFallsBackToDefaultSecret(t *testing.T) {
 	}
 }
 
-// TestRunRejectsBadEffort D34：reasoning_effort 非法值启动即报因（与 /effort 同口径）。
+// TestRunRejectsBadEffort D34：reasoning_effort 非法值启动即报因（与 /effort 同规则）。
 func TestRunRejectsBadEffort(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","keys":[{"api_key":"secret:X"}],"models":[{"name":"m"}]}],"name":"m","reasoning_effort":"extreme"},"ui":{"kind":"repl"}}`
@@ -199,7 +199,7 @@ func TestRunRejectsBadEffort(t *testing.T) {
 		t.Fatalf("code = %d, want 1", code)
 	}
 	if !strings.Contains(errBuf.String(), "minimal|low|medium|high|off") {
-		t.Fatalf("stderr = %q, want 档位口径", errBuf.String())
+		t.Fatalf("stderr = %q, want 档位规则", errBuf.String())
 	}
 }
 

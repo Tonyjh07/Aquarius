@@ -3,7 +3,7 @@ package uigui
 // 设置窗（§15.7/D60 核心档 + §15.4/D61 主题档）：跨层契约类型（快照 / 补丁 / 管理者接口）、
 // 枚举档与页常量。表单状态与两段构造见 settings_form.go，provider 编辑组见
 // settings_provider_form.go，行计划与渲染见 settings_rows.go，保存流见 settings_actions.go。
-// 并发口径（§15.7）：表单状态仅次窗事件循环 goroutine 读写、不跨窗共享；持久化经
+// 并发规则（§15.7）：表单状态仅次窗事件循环 goroutine 读写、不跨窗共享；持久化经
 // ApplySettings 单一写回调（装配根实现），内核命令经 inCh 排队到主循环与键入同路径串行执行。
 
 import (
@@ -47,7 +47,7 @@ type ProviderModelSnapshot struct {
 	CapsExplicit  bool     // false = 键缺失（按协议缺省）
 	ContextWindow int      // 该模型上下文窗口 tokens（0 = 不声明，跟随全局）
 	Enabled       bool     // 是否启用（D180：键缺失 = true；不启用 = 保留声明但不参与选型）
-	// CostIn / CostOut 单价，**每百万 token**（D205，与厂商报价同口径）；0 = 未声明，
+	// CostIn / CostOut 单价，**每百万 token**（D205，与厂商报价同规则）；0 = 未声明，
 	// 未声明就不折算费用（宁可没有数，也不给一个猜的）。
 	CostIn  float64
 	CostOut float64
@@ -67,7 +67,7 @@ type ProviderSnapshot struct {
 }
 
 // ProviderKeyPatch provider 密钥池单槽提交（S11-7③）：Value 空 = 保持不变（含沿用键名，
-// D161 落点③——原引用名从落盘 config 按槽位下标读取）；Value 以 `secret:` 开头 = 照写
+// D161 落点③——原引用名从写入磁盘 config 按槽位下标读取）；Value 以 `secret:` 开头 = 照写
 // 引用（不进库）；否则明文写库后 config 只落引用。Label 空 = 不留展示名。
 type ProviderKeyPatch struct {
 	Value string
@@ -76,7 +76,7 @@ type ProviderKeyPatch struct {
 
 // ProviderModelPatch provider 模型条目提交（S11-7③）：Caps nil = 保持原声明（键缺失
 // 与显式都原样保留）；非 nil（含空数组）= 以本次为准（显式声明）。ContextWindow 0 = 不声明。
-// Disabled = true 时落盘为显式 `enabled: false`（D180）；缺省（false）= 启用、不落键。
+// Disabled = true 时写入磁盘为显式 `enabled: false`（D180）；缺省（false）= 启用、不落键。
 // 用「禁用」而不是「启用」命名，是为了让零值等于默认行为：忘了填的提交不会把模型全关掉。
 type ProviderModelPatch struct {
 	Name          string
@@ -88,7 +88,7 @@ type ProviderModelPatch struct {
 	CostOut float64
 }
 
-// ProviderPatch provider 编辑区单条提交（Apply 全量替换口径）。Orig = 编辑前的
+// ProviderPatch provider 编辑区单条提交（Apply 全量替换规则）。Orig = 编辑前的
 // 原名（cmd 侧按它保留原条目的无关键；空 = 新增条目）。
 type ProviderPatch struct {
 	Orig        string
@@ -110,11 +110,11 @@ type ProbeOutcome struct {
 	// Written 是否真的写回了 config（无明确结论且声明没变 = false）。
 	Written bool
 	// Pending 该模型还没写进配置（编辑区新加、尚未应用）：结论只回填到勾选，
-	// 等「应用 provider 变更」一并落盘（D181）。此时 Written 恒 false。
+	// 等「应用 provider 变更」一并写入磁盘（D181）。此时 Written 恒 false。
 	Pending bool
 }
 
-// FallbackLink 降级链一项（D173/D176 口径三）。定义在 port：写回规则要挪进 app 与
+// FallbackLink 降级链一项（D173/D176 规则三）。定义在 port：写回规则要挪进 app 与
 // 装配根，两边都得认这份形状，而 uigui 不能成为公共依赖。
 type FallbackLink = port.FallbackLink
 
@@ -148,7 +148,7 @@ type WebProviderView struct {
 }
 
 // WebProviderPatch 联网提供商一条的提交（D200/D222）。Key 空 = 保持原值（只写不回显）；
-// `secret:` 前缀照写引用，否则明文转进密钥库（与 provider 页同口径）。定义在 port，
+// `secret:` 前缀照写引用，否则明文转进密钥库（与 provider 页同规则）。定义在 port，
 // 理由同 FallbackLink。
 type WebProviderPatch = port.WebProviderPatch
 
@@ -182,14 +182,14 @@ type BuiltinModuleView struct {
 	Label string // 中文说明
 }
 
-// SettingsSnapshot 设置窗核心档快照（开窗现取；同 Status 口径线程安全回调）。
+// SettingsSnapshot 设置窗核心档快照（开窗现取；同 Status 规则线程安全回调）。
 // Permission/Model/Think/Effort 由装配根取运行态（等级活槽与 Agent 访问器），
 // 其余取 config 文件；密钥永不进快照（D35 只写不回显）。provider 编辑数据面走
 // ProviderManager（D110②），不在本快照。MCPServers/Plugins 只读展示（编辑走
 // 高级页 raw JSON，Q10）；RawJSON = config.json 原文（高级页，解析失败不阻断开窗）。
 type SettingsSnapshot struct {
 	Permission string // 规范值 read-only|strict|permissive|full-access（perm.Level）
-	// Unattended 无人值守开（D185）：运行态现取，与 Permission 同口径。
+	// Unattended 无人值守开（D185）：运行态现取，与 Permission 同规则。
 	Unattended bool
 	Model      string
 	Think      bool
@@ -214,7 +214,7 @@ type SettingsSnapshot struct {
 	CompactThreshold float64
 	ToolOutputChars  int
 	ToolTimeoutSec   int
-	// BackupKeep 会话树保留的备份代数（D254；0 = 缺省 3，与 config 键缺失同口径）。
+	// BackupKeep 会话树保留的备份代数（D254；0 = 缺省 3，与 config 键缺失同规则）。
 	BackupKeep    int
 	SystemPrompt  string              // 默认人格（= 内置模块 @default 正文；空 = 内置默认）
 	PromptModules []PromptModuleView  // 人格模块树（config prompts.modules，按名排序）
@@ -242,7 +242,7 @@ type SettingsSnapshot struct {
 	TTSStyle  string // 自然语言风格指令
 	TTSTags   string // 风格标签（拼成 "(标签)" 前缀）
 	// 语音的端点与密钥（D222）：可以自己填，也可以借 ASRProvider/TTSProvider 指向的
-	// 条目。密钥永不进快照（只给形态标记，D35 同口径）。
+	// 条目。密钥永不进快照（只给形态标记，D35 同规则）。
 	ASRBaseURL  string
 	ASRKeySaved bool
 	ASRKeyPlain bool
@@ -256,7 +256,7 @@ type SettingsSnapshot struct {
 
 	// 联网（D200）：搜索与抓取各自一组**有序**提供商（顺序即优先级），加本地抓取的
 	// 网络与安全参数。提供商本体只给「怎么连」的展示值，密钥永不进快照（只给
-	// KeySaved / KeyPlain 这两个形态标记，D35 同口径）。
+	// KeySaved / KeyPlain 这两个形态标记，D35 同规则）。
 	WebSearchProviders []WebProviderView
 	WebSearchCount     int // 0 = 缺省 8
 	WebFetchProviders  []WebProviderView
@@ -267,11 +267,11 @@ type SettingsSnapshot struct {
 	WebFetchPrivate    bool   // 允许回环/私网目标（调试用）
 	WebFetchTimeoutSec int    // 0 = 缺省 30
 
-	// Fallback 降级链（D173/D176 口径三）。模型 "" = 取该 provider 的缺省模型。
+	// Fallback 降级链（D173/D176 规则三）。模型 "" = 取该 provider 的缺省模型。
 	// 链条目可指向声明之外的模型名——它是运行时路由，不要求目标先在 provider 里声明。
 	Fallback []FallbackLink
 	// FallbackNote 链窄于当前模型能力时的警示文案（cmd 侧按 caps 现算；空 = 不窄）。
-	// 与其余快照同口径：开窗取一次（降级链改动要重启才生效，运行态本就不同步）。
+	// 与其余快照同规则：开窗取一次（降级链改动要重启才生效，运行态本就不同步）。
 	FallbackNote string
 
 	// 采样参数（D204）：整链缺省。**空串 = 不发送**（交服务端默认），"0" = 真的发 0。
@@ -305,7 +305,7 @@ var (
 	// themeValues 主题档键值（§15.4/D61：system|light|dark）。
 	themeValues = []string{"system", "light", "dark"}
 	// zoomLevels 元素缩放档（D90/§15.8）：展示百分比，键值 = 倍率字符串（selectField
-	// 键值为 string 的既有口径，表单侧 ParseFloat 换算；%g 往返一致）。百分比与倍率
+	// 键值为 string 的既有规则，表单侧 ParseFloat 换算；%g 往返一致）。百分比与倍率
 	// 在两种语言下同形，故展示名与键值共用这一份。
 	zoomLevels = []string{"100%", "125%", "150%", "175%", "200%"}
 	zoomValues = []string{"1", "1.25", "1.5", "1.75", "2"}
@@ -401,7 +401,7 @@ func capLabels() []string {
 // pageConstCount 与注册表长度的等式由测试锁住，两处漏一处就响亮失败。
 const (
 	pageGeneral    = iota // 常规：Profile 区 / 欢迎引导 / 权限等级 / 外观与呼出 / 输出
-	pageModel             // 模型：当前模型名 / 原生思考与推理档位 / 降级链（D176 口径一）
+	pageModel             // 模型：当前模型名 / 原生思考与推理档位 / 降级链（D176 规则一）
 	pageProviders         // 模型服务：provider 编辑区（协议 / 端点 / 密钥池 / 模型能力表；D176）
 	pageSecrets           // 密钥库：已存名字 + 尾 4 位掩码 / 新增覆盖 / 行内二次确认删除（S9-6b/D161）
 	pageChat              // 对话：限额

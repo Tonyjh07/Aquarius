@@ -119,7 +119,7 @@ func encodePNG(img image.Image) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// writeFile 原子写出（唯一临时名 + rename，与仓库写盘口径一致）。
+// writeFile 原子写出（唯一临时名 + rename，与仓库写盘规则一致）。
 func writeFile(path string, data []byte) error {
 	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {

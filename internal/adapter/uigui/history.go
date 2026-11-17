@@ -9,7 +9,7 @@ package uigui
 // 切会话后 app 在同款发布点重建快照 → 本窗按**签名**识别变更、重排并重锚（R3：
 // 平移/缩放/悬停不重排，只有数据变更 / rebudget 才重排——数据变更 = 快照签名变化）。
 //
-// 落地序（§10.3）：第 6 步 = 左栏 + 状态栏 + 窗壳（右图占位）；第 7 步 = 右图自绘、
+// 实现顺序（§10.3）：第 6 步 = 左栏 + 状态栏 + 窗壳（右图占位）；第 7 步 = 右图自绘、
 // 手势与右键菜单（relmap_frame.go，接入 st.graph）。
 
 // 本文件只留窗的状态与行为（快照同步、行点击投递、键与指针分派）；
@@ -52,7 +52,7 @@ type historyState struct {
 	btnMinus, btnPlus, btnHome widget.Clickable
 	btnSeed, btnLine, btnNode  widget.Clickable
 	// btnLeft 左栏收起/展开（D159）：展开时画在左栏标题行右端、收起时画在窄条顶部；
-	// leftCollapsed 是它的帧态（本窗自持，不落盘——收起是临时视图选择，不是配置）。
+	// leftCollapsed 是它的帧态（本窗自持，不写入磁盘——收起是临时视图选择，不是配置）。
 	btnLeft       widget.Clickable
 	leftCollapsed bool
 	// teOn/teEdits 树编辑模式的**只读**状态（D258，每帧从端口取，见 syncTreeEdit）：
@@ -165,7 +165,7 @@ func (st *historyState) sync(u *UI) {
 	}
 }
 
-// rowClick 左栏会话行点击件 get-or-create（按行序缓存，同 branchClick 口径）。
+// rowClick 左栏会话行点击件 get-or-create（按行序缓存，同 branchClick 规则）。
 func (st *historyState) rowClick(i int) *widget.Clickable {
 	for len(st.rows) <= i {
 		st.rows = append(st.rows, new(widget.Clickable))
@@ -226,7 +226,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	}
 	// D157：行尾「✕」**先收**。实测点 ✕ 时只投 /rmconv（✕ 的命中区把同位置的行遮掉），
 	// 但顺序照旧钉死在前：不依赖「谁遮了谁」这种命中链细节——将来排版挪动、或 Gio 的
-	// 遮挡口径变化，也不会一次点击既删会话又切会话。
+	// 遮挡规则变化，也不会一次点击既删会话又切会话。
 	//
 	// 两个循环都只走**当前快照的行数**：点击件是按行序缓存的，会话删过之后尾部的旧件
 	// 已经不在屏上（收不到事件），不该再有机会参与判读。

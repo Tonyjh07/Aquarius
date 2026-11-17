@@ -182,7 +182,7 @@ func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historySta
 							}))
 						}
 						// 树编辑模式（D257/D258）：分组竖线 + 常显标签 + 开关。
-						// 开关是**帧态**（不落盘）：每次开窗都是关闭态，状态只有内核一份。
+						// 开关是**帧态**（不写入磁盘）：每次开窗都是关闭态，状态只有内核一份。
 						kids = append(kids,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return histVDivider(gtx, 10, 14)

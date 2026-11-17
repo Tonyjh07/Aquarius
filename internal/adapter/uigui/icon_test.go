@@ -61,11 +61,11 @@ func TestICOImageTrayAsset(t *testing.T) {
 	if len(assets.TrayICO) == 0 {
 		t.Fatal("assets.TrayICO 未内嵌")
 	}
-	// 档位口径钉在字面量上（不能拿 trayIconPx 自证：那边改了这边跟着变，等于没钉）。
+	// 档位规则钉在字面量上（不能拿 trayIconPx 自证：那边改了这边跟着变，等于没钉）。
 	// 来源：用户 2026-10-13「托盘图标模糊，可以再清晰一倍」——16 档单张位图在 >100% DPI
 	// 的任务栏上只能插值放大；32 档有 4 倍像素量，shell 下采样到 16 仍然干净。
 	if trayIconPx != 32 {
-		t.Fatalf("trayIconPx = %d，口径应为 32（改它 = 改「托盘清晰一倍」的交付档位）", trayIconPx)
+		t.Fatalf("trayIconPx = %d，规则应为 32（改它 = 改「托盘清晰一倍」的交付档位）", trayIconPx)
 	}
 	b, err := icoImage(assets.TrayICO, trayIconPx)
 	if err != nil {

@@ -91,7 +91,7 @@ func TestEmitReasoningLine(t *testing.T) {
 }
 
 // TestEmitDeltaStripsControlSequences §9：实时增量（正文与思维链）同样只渲染不执行——
-// 模型流携带的 ANSI/C1 序列不得直通终端（与 TUI、回放同口径）。
+// 模型流携带的 ANSI/C1 序列不得直通终端（与 TUI、回放同规则）。
 func TestEmitDeltaStripsControlSequences(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)
@@ -266,7 +266,7 @@ func TestEmitHistoryReplay(t *testing.T) {
 }
 
 // TestEmitHistoryReplayInject 注入节点回放（D166）：头部来源（友好化） + 触发状态，
-// 正文另起一行；与 TUI 同口径。
+// 正文另起一行；与 TUI 同规则。
 func TestEmitHistoryReplayInject(t *testing.T) {
 	var buf bytes.Buffer
 	ui := New(strings.NewReader(""), &buf)
@@ -290,7 +290,7 @@ func TestEmitHistoryReplayInject(t *testing.T) {
 	}
 }
 
-// TestEmitHistoryReplayThinking D42：回放口径恒含思考——[thinking] 行在工具/正文之前，
+// TestEmitHistoryReplayThinking D42：回放规则恒含思考——[thinking] 行在工具/正文之前，
 // 思考不并入正文行。
 func TestEmitHistoryReplayThinking(t *testing.T) {
 	var buf bytes.Buffer
@@ -340,7 +340,7 @@ func TestHistoryStripsControlSequences(t *testing.T) {
 }
 
 // TestPreviewStripsGBKInvalidUTF8 工具结果预览剥非法 UTF-8（Windows cmd 默认
-// OEM 代码页输出），与 uitui.preview 同口径。
+// OEM 代码页输出），与 uitui.preview 同规则。
 func TestPreviewStripsGBKInvalidUTF8(t *testing.T) {
 	in := []byte{'d', 'i', 'r', ' ', 0xc4, 0xe3, 0xba, 0xc3, '\r', '\n', 'o', 'k'}
 	got := preview(in)

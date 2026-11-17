@@ -1,7 +1,7 @@
 package main
 
 // 工具与 MCP 管理面装配根侧测试（S6/D143）：禁用集推导、写盘往返、日志格式化、
-// toolsAdmin.SetBuiltinEnabled（热更 runner + 落盘 + Revision 递增）——全部无窗口。
+// toolsAdmin.SetBuiltinEnabled（热更 runner + 写入磁盘 + Revision 递增）——全部无窗口。
 
 import (
 	"context"

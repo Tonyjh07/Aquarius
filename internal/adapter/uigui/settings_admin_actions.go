@@ -94,7 +94,7 @@ func (u *UI) applyProviderChanges(f *settingsForm) {
 	}
 	f.provErr = false
 	f.provStatus = i18n.T("ui.settings.prov.applied")
-	f.loadProviders(u.opts.ProviderMgr.Snapshot()) // 以落盘事实源重建编辑区（orig 对齐、primary 回正）
+	f.loadProviders(u.opts.ProviderMgr.Snapshot()) // 以写入磁盘事实源重建编辑区（orig 对齐、primary 回正）
 	f.provOpen = -1                                // 重建后全收起（新形态下的稳定落点）
 }
 
@@ -118,7 +118,7 @@ func (u *UI) runProviderTest(f *settingsForm, pf *providerForm) {
 
 // runFetchModels 拉一次 /models 并落进模型列表（D153/D181）：auto = 切到本页时自动触发
 // （每窗一次），否则是用户点「获取模型」。两者走同一条结果路径——新增行一律**默认未启用**，
-// 由用户勾选后随「应用 provider 变更」落盘。与连通测试同一异步口径（goroutine + 结果通道
+// 由用户勾选后随「应用 provider 变更」写入磁盘。与连通测试同一异步规则（goroutine + 结果通道
 // + Invalidate）；**只读**，不改配置。
 func (u *UI) runFetchModels(f *settingsForm, pf *providerForm, auto bool) {
 	if u.opts.ProviderMgr == nil {
@@ -182,7 +182,7 @@ func (f *settingsForm) drainTestResults() {
 
 // applyProbeResult 「探测能力」结果落回该模型行（行内反馈）与 provider 区状态行。
 // D181：判定明确的结论**一律**回填勾选——写回配置了就跟基线一起推进；没写回（模型还没
-// 应用，或声明本就一致）就只改勾选，让 touched() 为真，等「应用 provider 变更」一并落盘。
+// 应用，或声明本就一致）就只改勾选，让 touched() 为真，等「应用 provider 变更」一并写入磁盘。
 func (f *settingsForm) applyProbeResult(r testOutcome) {
 	pf := f.provByName(r.name)
 	if pf == nil {

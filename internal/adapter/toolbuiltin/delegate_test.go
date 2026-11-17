@@ -90,7 +90,7 @@ func TestDelegateToolStart(t *testing.T) {
 		t.Fatalf("result = %q", res.Output)
 	}
 
-	// 相对 workdir 在工具侧就拒收（绝对路径口径与 job_start 一致）。
+	// 相对 workdir 在工具侧就拒收（绝对路径规则与 job_start 一致）。
 	if _, err := tl.Execute(context.Background(), call(`{"task":"x","workdir":"rel/dir"}`)); err == nil {
 		t.Fatal("相对 workdir 应报错")
 	}
@@ -150,7 +150,7 @@ func TestDelegateDescribe(t *testing.T) {
 		t.Fatalf("摘要过长（%d 字），范围该是它的主体: %q", n, got)
 	}
 
-	// 不填 agent / workdir：给缺省口径，而不是留空白让人猜。
+	// 不填 agent / workdir：给缺省规则，而不是留空白让人猜。
 	got = delegateDescribe(json.RawMessage(`{"task":"做点事"}`))
 	if !strings.Contains(got, i18n.T("tool.delegate.describe.auto")) ||
 		!strings.Contains(got, i18n.T("tool.delegate.describe.scope_default")) {

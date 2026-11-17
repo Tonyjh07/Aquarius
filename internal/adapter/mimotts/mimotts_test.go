@@ -76,7 +76,7 @@ func TestSynthesizePresetUsesStyleAndTags(t *testing.T) {
 	defer rc.Close()
 	back, _ := io.ReadAll(rc)
 	if !bytes.Equal(back, want) {
-		t.Fatalf("落库音频 = %q, want %q", back, want)
+		t.Fatalf("写进密钥库音频 = %q, want %q", back, want)
 	}
 
 	msgs := got["messages"].([]any)

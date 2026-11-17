@@ -8,7 +8,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// loreOn 缺省开着的激活口径（预算按给定上限 1.0 的比例算，测试里好算）。
+// loreOn 缺省开着的激活规则（预算按给定上限 1.0 的比例算，测试里好算）。
 func loreOn(depth int, ratio float64) LoreOptions {
 	return LoreOptions{Enabled: true, ScanDepth: depth, BudgetRatio: ratio}
 }

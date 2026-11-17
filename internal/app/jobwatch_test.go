@@ -341,7 +341,7 @@ func TestJobWatcherCloseStops(t *testing.T) {
 }
 
 // TestJobWatcherNeutralizesFenceCloseInLogs 任务日志是外部进程写的：里面出现围栏闭合
-// 标签时必须中和，否则一行日志就能提前收尾，把后文伪装成宿主说明（D170 口径二）。
+// 标签时必须中和，否则一行日志就能提前收尾，把后文伪装成宿主说明（D170 规则二）。
 func TestJobWatcherNeutralizesFenceCloseInLogs(t *testing.T) {
 	jobs := newWaitJobs()
 	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -493,7 +493,7 @@ func TestJobWatcherDeliverRetries(t *testing.T) {
 	}
 }
 
-// awaitInjector 带落地回执的注入（D264）：只记「有没有走等落地那条路」。
+// awaitInjector 带送达回执的注入（D264）：只记「有没有走等送达那条路」。
 type awaitInjector struct {
 	mu   sync.Mutex
 	wait bool
@@ -508,7 +508,7 @@ func (a *awaitInjector) InjectAndWait(context.Context, port.Injection) error {
 	return nil
 }
 
-// TestJobWatcherWaitsForLanding 有回执能力的注入端口就走等落地那条路：
+// TestJobWatcherWaitsForLanding 有回执能力的注入端口就走等送达那条路：
 // 「入队成功」不足以判断报告送没送到（D264）。
 func TestJobWatcherWaitsForLanding(t *testing.T) {
 	jobs := newWaitJobs()
@@ -518,14 +518,14 @@ func TestJobWatcherWaitsForLanding(t *testing.T) {
 	defer w.Close()
 
 	w.Watch(port.WithSessionID(context.Background(), conversation.ID("c1")), "j010", port.JobSpec{})
-	waitForWatch(t, "等落地调用", func() bool {
+	waitForWatch(t, "等送达调用", func() bool {
 		inj.mu.Lock()
 		defer inj.mu.Unlock()
 		return inj.wait
 	})
 }
 
-// TestJobWatcherSettlesLedgerAfterDelivery 报告落地后才销账（D264）。
+// TestJobWatcherSettlesLedgerAfterDelivery 报告送达后才销账（D264）。
 func TestJobWatcherSettlesLedgerAfterDelivery(t *testing.T) {
 	jobs := newWaitJobs()
 	jobs.finish(port.Job{ID: "j011", Status: port.JobDone})

@@ -59,7 +59,7 @@ type palette struct {
 	popText color.NRGBA // 浮层主文字
 	popDim  color.NRGBA // 浮层次要文字（说明、标记）
 	// popAccent 浮层里的强调文字（补全的命令名/参数名）：品牌色在白面上只有 2.53:1，
-	// 够不着 AA，承载文字的场合取同色相的深一档（与次窗 accent/brand 的分工同口径）。
+	// 够不着 AA，承载文字的场合取同色相的深一档（与次窗 accent/brand 的分工同规则）。
 	popAccent color.NRGBA
 	// depthMap 深度色带（D120§3.2，S3 关系图）：`Level mod 4` → 节点填充色——颜色是
 	// 层号的纯投影（A2）；浅色版以品牌色为首色族（相邻色相 ≥ 40°），深色版压低明度保证
@@ -192,7 +192,7 @@ func resolvePalette(mode string, dark bool) palette {
 }
 
 // activeTokens 主窗自绘的活动令牌快照。写入点只有两处，都在窗口事件循环启动之前或
-// 由主窗事件循环独占（与 activePaper 同口径）：newUI/RunSetupWindow 装配期、applyTheme。
+// 由主窗事件循环独占（与 activePaper 同规则）：newUI/RunSetupWindow 装配期、applyTheme。
 // 读侧是渲染 goroutine，故用原子指针：只读快照，不共享可变态。
 var activeTokens atomic.Pointer[palette]
 

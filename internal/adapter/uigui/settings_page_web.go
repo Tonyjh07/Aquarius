@@ -6,7 +6,7 @@ package uigui
 // 为什么单开一页而不是塞进「工具与 MCP」：这里的每一条都是「怎么连外部服务」的配置，
 // 与工具启停是两件事；塞进工具页会让那张页同时承载启停开关与端点/密钥，越读越乱。
 //
-// 本页是**字段页**（保存走全局底栏）。提供商列表的改动与「模型服务」页同口径：
+// 本页是**字段页**（保存走全局底栏）。提供商列表的改动与「模型服务」页同规则：
 // 保存后重启生效（适配器在启动装配时构造，端口不可热换）。密钥只写不回显——编辑框
 // 恒空，留空 = 保持原值（D35）。
 
@@ -414,7 +414,7 @@ func (f *settingsForm) loadWeb(s SettingsSnapshot) {
 }
 
 // webProviderPatches 组装一侧的提供商提交（编辑区现值 → patch）。密钥框留空 = 不带值
-// （cmd 侧按「保持原引用」处理），填了 `secret:` 前缀照写引用、否则按明文落盘。
+// （cmd 侧按「保持原引用」处理），填了 `secret:` 前缀照写引用、否则按明文写入磁盘。
 func (f *settingsForm) webProviderPatches(search bool) []WebProviderPatch {
 	list := *f.webList(search)
 	out := make([]WebProviderPatch, 0, len(list))

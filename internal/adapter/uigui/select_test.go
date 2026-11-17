@@ -325,7 +325,7 @@ func selLineGroups(t *testing.T, u *UI, k int) [][]int {
 		}
 		li, ok := topOf[b[0].Bounds.Min.Y]
 		if !ok {
-			t.Fatalf("rune %d 盒顶 %d 不在任何行带上（几何口径破裂）", m, b[0].Bounds.Min.Y)
+			t.Fatalf("rune %d 盒顶 %d 不在任何行带上（几何规则破裂）", m, b[0].Bounds.Min.Y)
 		}
 		groups[li] = append(groups[li], m)
 	}
@@ -468,7 +468,7 @@ func selPointerMod(kind pointer.Kind, p image.Point, mods key.Modifiers) pointer
 
 // TestSelShiftClickExtend D101：选区 active 时 Shift+点击跨块扩选——锚不动、焦点
 // 跳到点击处（可反向）、抬手保持、Ctrl+C 按锚→焦拼接；无激活选区的 Shift+点击
-// 仍走原生路径（入候选不激活，D91 口径）。
+// 仍走原生路径（入候选不激活，D91 规则）。
 func TestSelShiftClickExtend(t *testing.T) {
 	t.Parallel()
 	u, q := newSelUI()

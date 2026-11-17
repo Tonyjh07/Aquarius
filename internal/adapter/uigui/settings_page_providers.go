@@ -1,10 +1,10 @@
 package uigui
 
-// settings_page_providers.go 「模型服务」页（D162 页面注册表；D176 口径一）：provider
+// settings_page_providers.go 「模型服务」页（D162 页面注册表；D176 规则一）：provider
 // 管理——协议 / 端点 / 密钥池 / 模型能力表。这一页回答「怎么连」，与「模型」页的
 // 「用哪个」分开：两件事各自有明确的问题，混在一页就是 N 家 × 10 行的一堵墙。
 //
-// 形态（D176 口径二）：每家一张折叠卡片，收起态一行摘要、展开才露出全部字段；同一
+// 形态（D176 规则二）：每家一张折叠卡片，收起态一行摘要、展开才露出全部字段；同一
 // 时刻只展开一张。展开区含三块：端点/协议等基本字段、密钥池（多把，值只写不回显）、
 // 模型能力表（每行 name + 三能力勾选 + 上下文窗口 + 「探测能力」）。
 //
@@ -33,7 +33,7 @@ func (providersPage) Rows(f *settingsForm) []rowDesc {
 	rows := []rowDesc{sec(i18n.T("ui.page.providers.section.list"))}
 	for i := range f.provs {
 		rows = append(rows, rowDesc{kind: rowProvSummary, prov: i})
-		if f.provOpen != i { // 同一时刻只展开一张（D176 口径二）
+		if f.provOpen != i { // 同一时刻只展开一张（D176 规则二）
 			continue
 		}
 		pf := f.provs[i]
@@ -64,7 +64,7 @@ func (providersPage) Rows(f *settingsForm) []rowDesc {
 }
 
 // OnEnter 首次切到本页时自动拉一轮各家服务端模型清单（D181）：结果并入模型列表（新增行
-// 默认未启用），随「应用 provider 变更」落盘。每窗只拉一次——来回切页不该反复打网络。
+// 默认未启用），随「应用 provider 变更」写入磁盘。每窗只拉一次——来回切页不该反复打网络。
 func (providersPage) OnEnter(u *UI, f *settingsForm) {
 	if f.provFetched || f.readOnly || u.opts.ProviderMgr == nil {
 		return
@@ -179,7 +179,7 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 		}
 		for k, kf := range pf.keyForms {
 			for kf.del.Clicked(gtx) {
-				if len(pf.keyForms) > 1 { // 至少留一把（providers 不可为空，同口径）
+				if len(pf.keyForms) > 1 { // 至少留一把（providers 不可为空，同一套规则）
 					pf.keyForms = append(pf.keyForms[:k], pf.keyForms[k+1:]...)
 				}
 			}
@@ -193,7 +193,7 @@ func (providersPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 				u.runProbeModel(f, pf, mf)
 			}
 			for mf.del.Clicked(gtx) {
-				if len(pf.modelForms) > 1 { // 至少留一行（models 不可为空，启动校验同口径）
+				if len(pf.modelForms) > 1 { // 至少留一行（models 不可为空，启动校验同一套规则）
 					pf.modelForms = append(pf.modelForms[:m], pf.modelForms[m+1:]...)
 					pf.modelPage = min(pf.modelPage, pf.modelPageCount()-1) // 删到末页空 = 退一页
 				}
@@ -247,7 +247,7 @@ func kindHint(kind string) string {
 	}
 }
 
-// providerSummaryRow 折叠卡片收起态（S11-7②/D176 口径二）：整行可点（点击展开/收起），
+// providerSummaryRow 折叠卡片收起态（S11-7②/D176 规则二）：整行可点（点击展开/收起），
 // 左侧一个 caret（▸ 收起 / ▾ 展开），右侧一行摘要（名字 · 协议 · N 个模型 · M 把钥匙 · 是否主）。
 func (f *settingsForm) providerSummaryRow(gtx layout.Context, th *material.Theme, i int) layout.Dimensions {
 	pf := f.provs[i]
@@ -404,7 +404,7 @@ func (pf *providerForm) modelPageCount() int {
 	return (len(pf.modelForms) + provModelPageSize - 1) / provModelPageSize
 }
 
-// modelPageBounds 当前页的行下标区间（越界夹回；行计划与渲染共用一处口径）。
+// modelPageBounds 当前页的行下标区间（越界夹回；行计划与渲染共用一处规则）。
 func (pf *providerForm) modelPageBounds() (start, end int) {
 	pages := pf.modelPageCount()
 	if pf.modelPage >= pages {
@@ -435,7 +435,7 @@ func (f *settingsForm) providerModelRow(gtx layout.Context, th *material.Theme, 
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.contextWin, i18n.T("ui.page.providers.model_ctx_hint")))
 				}),
-				// 单价（D205，每百万 token）：与厂商报价同口径，留空 = 未声明、不折算费用。
+				// 单价（D205，每百万 token）：与厂商报价同规则，留空 = 未声明、不折算费用。
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, editorBox(th, &mf.costIn, i18n.T("ui.page.providers.model_cost_in_hint")))
 				}),

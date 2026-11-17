@@ -164,7 +164,7 @@ func zenityFilters(filters []FileFilter) []string {
 	return out
 }
 
-// zenityPattern 分号分隔的通配符 → 空格分隔（zenity 认多个模式的口径）。
+// zenityPattern 分号分隔的通配符 → 空格分隔（zenity 认多个模式的规则）。
 func zenityPattern(pattern string) string {
 	var parts []string
 	for _, seg := range strings.Split(pattern, ";") {
@@ -206,7 +206,7 @@ func appleScriptString(s string) string {
 	return `"` + r.Replace(s) + `"`
 }
 
-// extWithDot 扩展名补点（SaveRequest.DefExt 不带点，与 Win32 的 lpstrDefExt 同口径）。
+// extWithDot 扩展名补点（SaveRequest.DefExt 不带点，与 Win32 的 lpstrDefExt 同规则）。
 func extWithDot(ext string) string {
 	if ext == "" || strings.HasPrefix(ext, ".") {
 		return ext

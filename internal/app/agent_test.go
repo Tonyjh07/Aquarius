@@ -135,7 +135,7 @@ func TestRunToolRound(t *testing.T) {
 		t.Fatalf("turn content = %+v, want [tool, text 答案]", turn.Content)
 	}
 
-	// 第二次请求带上了 assistant 调用声明与 tool 应答（port 投影口径，D95）。
+	// 第二次请求带上了 assistant 调用声明与 tool 应答（port 投影规则，D95）。
 	if len(llm.requests) != 2 {
 		t.Fatalf("requests = %d, want 2", len(llm.requests))
 	}

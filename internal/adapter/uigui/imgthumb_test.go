@@ -65,7 +65,7 @@ func TestReplayPureImageMessages(t *testing.T) {
 	}
 }
 
-// TestNodeSegmentsImages 分段口径：工具边界断段；段内图片按出现序收集，正文不再留
+// TestNodeSegmentsImages 分段规则：工具边界断段；段内图片按出现序收集，正文不再留
 // 〔图片：…〕占位（图片由缩略图承载）。
 func TestNodeSegmentsImages(t *testing.T) {
 	t.Parallel()
@@ -376,7 +376,7 @@ func TestTranscriptImageRows(t *testing.T) {
 	if n := items[1].selCount(); n != 0 {
 		t.Fatalf("纯图 assistant 行的行选键 = %d, want 0", n)
 	}
-	// 复制口径：没有可选文本 → 落到图片名（复制空串没有意义）。
+	// 复制规则：没有可选文本 → 落到图片名（复制空串没有意义）。
 	u2 := newFrameUI()
 	u2.m.blocks = []block{{kind: blockUser, id: "u1", imgs: []imgRef{
 		{blob: &conversation.BlobRef{Hash: "h1", Name: "a.png"}, name: "a.png"},
@@ -425,7 +425,7 @@ func TestAttachToolResultKeepsImages(t *testing.T) {
 
 // TestImageClickOpensPreview 点击链路（headless 帧）：格子点击件命中 → 内容入原子槽 +
 // 开预览窗。指针路由与 Clickable 的帧序在 Gio 无窗口 Router 下不稳定，故用 Clickable
-// 的程序化点击表达（同一 Clicked 通路），与分叉条点击测试同口径。
+// 的程序化点击表达（同一 Clicked 通路），与分叉条点击测试同规则。
 func TestImageClickOpensPreview(t *testing.T) {
 	t.Parallel()
 	u := frameUIWithInbox()

@@ -59,7 +59,7 @@ func TestDetachmentsStaleIsComputed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("revise carry: %v", err)
 	}
-	// 模拟「后来又被搬走」：a1 从新版本挪到 Root 下（改父尚未落地，直接改结构）。
+	// 模拟「后来又被搬走」：a1 从新版本挪到 Root 下（改父尚未实现，直接改结构）。
 	c.children[m.ID] = nil
 	c.children[MessageID(c.ID)] = append(c.children[MessageID(c.ID)], a1.ID)
 	am := c.nodes[a1.ID]

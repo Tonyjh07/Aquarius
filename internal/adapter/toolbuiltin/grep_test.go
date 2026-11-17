@@ -120,7 +120,7 @@ func TestFileGrepHitLimit(t *testing.T) {
 	}
 }
 
-// TestFileGrepRejectsBadArgs 非绝对路径与空 query 都明确报错（与其它文件工具同口径）。
+// TestFileGrepRejectsBadArgs 非绝对路径与空 query 都明确报错（与其它文件工具同规则）。
 func TestFileGrepRejectsBadArgs(t *testing.T) {
 	r := pick(t, New(Deps{}), "file_grep")
 	if _, err := r.Execute(context.Background(), call(`{"path":"relative/dir","query":"x"}`)); err == nil {

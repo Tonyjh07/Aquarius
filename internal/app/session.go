@@ -74,7 +74,7 @@ type SessionDeps struct {
 	// WatchCancel 撤销某会话的后台任务观察者（D167/D262）：**删除会话与关停**时调用；
 	// 切换与新建不调用——任务的生命周期跟任务走，不跟焦点走（D261）。nil 时跳过。
 	WatchCancel WatcherCanceller
-	// Log 运行日志（D276，上下文固定 session）：异地落地遇到已删除的会话时说明丢弃。
+	// Log 运行日志（D276，上下文固定 session）：异地送达遇到已删除的会话时说明丢弃。
 	// nil = 丢弃。
 	Log port.Log
 	// Ingestors 多模态输入摄取器（M3 管线；/attach 等触发命令面留 §14，D27/D33）；
@@ -82,7 +82,7 @@ type SessionDeps struct {
 	Ingestors []port.Ingestor
 	// UI 轮次外的过程事件（摄取 Note 等 NoticeEvent）；nil 时跳过呈现。
 	UI port.Presenter
-	// Wake 空闲唤醒（D264）：带落地回执的注入（InjectAndWait）入队后自己敲一下，
+	// Wake 空闲唤醒（D264）：带送达回执的注入（InjectAndWait）入队后自己敲一下，
 	// 否则用户一直不输入就永远等不到排空。装配根接到 UI 的空闲唤醒通道；nil = 不敲。
 	Wake func()
 	// Memories 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
@@ -165,7 +165,7 @@ type Session struct {
 	charAdmin   CharacterAdmin
 	charOpts    CharacterOptions
 	cur         *conversation.Conversation
-	// treeEdit 树编辑会话（D258）：非 nil 时改父只改内存、退出时统一落盘；
+	// treeEdit 树编辑会话（D258）：非 nil 时改父只改内存、退出时统一写入磁盘；
 	// nil = 不在模式里。状态只在这里存一份，UI 经 TreeEditActive 读。
 	treeEdit *treeEditSession
 	// tree 会话树只读快照（D80/§7.5，前置 A）：树变更后由 publishTree 整体重建并原子
@@ -184,7 +184,7 @@ type Session struct {
 	// ReplayHistory 仅在恢复时回放（新建会话无历史可回放，D40/§7.4）。
 	resumed bool
 	// injectCh 注入队列（D150）：工具/MCP/轮询器等外部生产者经 Inject 非阻塞入队，
-	// 落地由会话 goroutine 在排空点（Handle 入口 / 轮末 / 驱动式命令）独占执行——
+	// 实现由会话 goroutine 在排空点（Handle 入口 / 轮末 / 驱动式命令）独占执行——
 	// 树变更始终单线程（§7.5），外部 goroutine 只碰这个 channel。
 	injectCh chan pendingInjection
 	// pendingQ 待发清单（D272）：会话级、内存态、有序、有上限。前端在**自己的事件循环
@@ -219,7 +219,7 @@ func (s *Session) dynamicCommand(name string) CommandHandler {
 	return s.dynamic[name]
 }
 
-// NewSession 恢复最近更新的会话；没有则新建并落盘（会话树跨进程持久化）。
+// NewSession 恢复最近更新的会话；没有则新建并写入磁盘（会话树跨进程持久化）。
 func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 	switch {
 	case d.Store == nil:
@@ -345,7 +345,7 @@ func (s *Session) ReplayHistory(ctx context.Context) (int, error) {
 	return s.replayHistory(ctx, "replay.verb.restored")
 }
 
-// replayHistory 回放当前会话的可见历史（D40/§7.4 口径：水位 → Head，persona 不回放），
+// replayHistory 回放当前会话的可见历史（D40/§7.4 规则：水位 → Head，persona 不回放），
 // 先发 NoticeEvent 说明会话身份与条数；verb 是提示动词——启动「已恢复」、切换「已切换到」
 // （D75）。无 UI 或仅 Root/persona 时直接返回 0。
 func (s *Session) replayHistory(ctx context.Context, verbKey string) (int, error) {
@@ -359,7 +359,7 @@ func (s *Session) replayHistory(ctx context.Context, verbKey string) (int, error
 		start = personaIdx + 1 // 跳过 persona（配置快照，非对话内容）
 	}
 	if watermarkIdx >= 0 {
-		start = watermarkIdx // 有压缩摘要：从摘要节点起（含），与 assemblePath 同口径
+		start = watermarkIdx // 有压缩摘要：从摘要节点起（含），与 assemblePath 同一套规则
 	}
 	if start >= len(path) {
 		return 0, nil // 仅 Root/persona：没有可回放的历史
@@ -391,7 +391,7 @@ func (s *Session) emitClear(ctx context.Context) error {
 }
 
 // Handle 处理一次用户输入：命令走 execCommand；Raw 走多模态摄取管线（M3）；
-// 普通文本入树 → Turn → 落盘。返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。
+// 普通文本入树 → Turn → 写入磁盘。返回值是命令的文本输出（空 = 无）；Turn 过程输出已由 Presenter 呈现。
 func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error) {
 	s.lastStop.Store(false)
 	// D80/§7.5：树变更只发生在 Handle 内（命令面与 Turn），返回前重发一次只读快照——
@@ -401,7 +401,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	defer s.publishFacts(ctx)
 	defer s.publishSessions(ctx)
 	// D167 排空点③：空闲唤醒不是用户输入——先做驱动式排空（触发型注入自己跑一轮），
-	// 不追加 user 节点。必须排在下面的普通排空之前，否则报告会先被落地成未触发。
+	// 不追加 user 节点。必须排在下面的普通排空之前，否则报告会先被实现成未触发。
 	if in.Wake {
 		_, wantTurn, err := s.drainInjections(ctx, drainOnWake)
 		if err != nil {
@@ -412,7 +412,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 		}
 		return "", nil
 	}
-	// D150 排空点①：用户输入优先，先把外部生产者攒下的注入落地（只落地、不起轮，
+	// D150 排空点①：用户输入优先，先把外部生产者攒下的注入实现（只写入、不起轮，
 	// 触发留给本轮——用户马上就发话，不必为注入单起一轮）。
 	if _, _, err := s.drainInjections(ctx, drainBeforeInput); err != nil {
 		return "", err
@@ -437,9 +437,9 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 	return "", s.runTurn(ctx)
 }
 
-// runTurn 执行一轮 Turn 并落盘：成败都保存（error/cancelled 终态的节点同样持久化）。
+// runTurn 执行一轮 Turn 并写入磁盘：成败都保存（error/cancelled 终态的节点同样持久化）。
 //
-// D150 排空点②：本 Turn 提交后，把轮内（工具等）攒下的注入落地——**只落地、不打断当前轮**
+// D150 排空点②：本 Turn 提交后，把轮内（工具等）攒下的注入实现——**只写入、不打断当前轮**
 // （Trigger 记 false）；轮内注入是补上下文，何时起响应交给用户的下一条输入或空闲唤醒。
 //
 // 轮末取一条（D272 边界②）：本段提交之后按 FIFO 取一条待发（不分档位——引导错过窗口就只是
@@ -466,8 +466,8 @@ func (s *Session) runTurn(ctx context.Context) error {
 		if runErr != nil {
 			return runErr
 		}
-		// 轮内注入的落地：只落地、Trigger 记 false；发 HistoryEvent 让转写区补上这条记录
-		// （轮末不清屏，与 /goto 的回放口径区分）。
+		// 轮内注入的实现：只写入、Trigger 记 false；发 HistoryEvent 让转写区补上这条记录
+		// （轮末不清屏，与 /goto 的回放规则区分）。
 		if _, _, err := s.drainInjections(ctx, drainAfterTurn); err != nil {
 			return err
 		}
@@ -482,7 +482,7 @@ func (s *Session) runTurn(ctx context.Context) error {
 }
 
 // ingestAndRun 多模态输入管线（M3，D27：/attach 等触发命令面留 §14，D27/D33）：
-// RawInput → Ingestor 分派 → Part 入树（user）→ Turn → 落盘；摄取 Note 经 NoticeEvent 提示。
+// RawInput → Ingestor 分派 → Part 入树（user）→ Turn → 写入磁盘；摄取 Note 经 NoticeEvent 提示。
 func (s *Session) ingestAndRun(ctx context.Context, raw port.RawInput) (string, error) {
 	parts, note, err := s.ingest(ctx, raw)
 	if err != nil {
@@ -556,7 +556,7 @@ func (s *Session) maybeSetTitle(text string) {
 }
 
 // cancelWatchersFor 撤销某会话的后台任务观察者（D262）：只在**删除会话**与关停时调用。
-// 切换不撤销——任务的生命周期跟任务走，报告按归属异地落地，不随焦点丢弃（D261）。
+// 切换不撤销——任务的生命周期跟任务走，报告按归属异地送达，不随焦点丢弃（D261）。
 func (s *Session) cancelWatchersFor(id conversation.ID) {
 	if s.watchCancel != nil {
 		s.watchCancel.CancelSession(id)
@@ -576,12 +576,12 @@ func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, er
 	return "", errors.New(i18n.Tf("session.unknown_command", "name", cmd.Name))
 }
 
-// persist 落盘当前会话。
+// persist 写入磁盘当前会话。
 func (s *Session) persist(ctx context.Context) error {
 	if err := s.store.Save(ctx, s.cur); err != nil {
 		return wrapSession("err.save_conversation", err)
 	}
-	// 树编辑会话期间照常落盘（新消息、轮次不能只活在内存里），但要记下来：
+	// 树编辑会话期间照常写入磁盘（新消息、轮次不能只活在内存里），但要记下来：
 	// 放弃编辑时得把这次写盘也撤回，否则盘上会留着一份「被放弃的中间态」。
 	if s.treeEdit != nil {
 		s.treeEdit.saved = true

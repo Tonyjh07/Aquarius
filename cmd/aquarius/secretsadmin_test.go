@@ -351,7 +351,7 @@ func TestSecretsAdminImportUnwired(t *testing.T) {
 	}
 }
 
-// TestSecretsAdminImportDefaultsEmptyRef 空 api_key 与启动解析同口径回落默认引用：
+// TestSecretsAdminImportDefaultsEmptyRef 空 api_key 与启动解析同规则回落默认引用：
 // 该引用只存在于环境变量里时也应收进库（否则「启动能用、导入却没动」看着像漏了）。
 func TestSecretsAdminImportDefaultsEmptyRef(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")

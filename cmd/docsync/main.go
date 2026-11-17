@@ -481,7 +481,7 @@ func targets(root string) ([]string, error) {
 }
 
 // commitDocs 该提交**内容真的改过**的文档（相对仓库根、斜杠分隔）。
-// 只改了标记行的不算：与默认模式同口径，避免一次提交把顺带加标记的页面日期全刷掉。
+// 只改了标记行的不算：与默认模式同规则，避免一次提交把顺带加标记的页面日期全刷掉。
 func commitDocs(root, rev string) ([]string, error) {
 	out, err := exec.Command("git", "-C", root, "show", "--name-only", "--pretty=format:", rev).Output()
 	if err != nil {
@@ -522,7 +522,7 @@ func revContent(root, rev, rel string) (string, error) {
 	return string(out), nil
 }
 
-// isDocPath 与 targets 同一口径：docs/ 下的 .md，或根 README.md。
+// isDocPath 与 targets 同一套规则：docs/ 下的 .md，或根 README.md。
 func isDocPath(rel string) bool {
 	if !strings.EqualFold(filepath.Ext(rel), ".md") {
 		return false

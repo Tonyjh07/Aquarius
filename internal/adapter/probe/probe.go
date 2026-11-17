@@ -39,7 +39,7 @@ var _ port.WatchProber = (*Prober)(nil)
 // New 建一个探针实现。
 func New() *Prober { return &Prober{} }
 
-// Probe 取样一次（D190）。命令走平台 shell（与 term_exec 同口径：整条命令行交给
+// Probe 取样一次（D190）。命令走平台 shell（与 term_exec 同规则：整条命令行交给
 // shell，引号/管道语义不在这里重新发明）。
 func (p *Prober) Probe(ctx context.Context, spec port.WatchProbe) (port.WatchProbeResult, error) {
 	switch spec.Kind {
@@ -128,7 +128,7 @@ func (p *Prober) http(ctx context.Context, spec port.WatchProbe) (port.WatchProb
 	return port.WatchProbeResult{Status: resp.StatusCode, Output: clip(string(body))}, nil
 }
 
-// shellCommand 平台 shell 包装（与 term_exec 同口径）。
+// shellCommand 平台 shell 包装（与 term_exec 同规则）。
 func shellCommand(ctx context.Context, command string) *exec.Cmd {
 	command = strings.TrimSpace(command)
 	if command == "" {

@@ -45,7 +45,7 @@ func fallbackHotkey() hotkeyCombo {
 
 // ValidateHotkey 校验快捷键写法（设置窗写入前的语法校验）。语义 = 能否被平台解析注册：
 // 各平台同一套语法（MOD_*/VK_* 表），非 Windows 侧只是不注册（发降级提示），
-// 校验口径保持一致，配置跨平台通用。
+// 校验规则保持一致，配置跨平台通用。
 func ValidateHotkey(s string) error {
 	_, err := parseHotkey(s)
 	return err

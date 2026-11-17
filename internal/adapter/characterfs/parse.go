@@ -44,7 +44,7 @@ var (
 // ParsedCard 一张解析完成的卡（§5.17）：投影字段 + 原卡字节 + 头像来源。
 //
 // 只读、不猜：RawJSON 是原卡 JSON 逐字节（落 card.json 用，未知键一个不删）；
-// Avatar 是头像的**来源像素**（PNG 卡 = 卡文件本身，落盘时去 tEXt 重编码的活另做；
+// Avatar 是头像的**来源像素**（PNG 卡 = 卡文件本身，写入磁盘时去 tEXt 重编码的活另做；
 // JSON 卡 = nil）；Archive 是 `.charx` 的原压缩包整份（落 source.charx 用，其余卡为 nil）。
 type ParsedCard struct {
 	Info    port.CharacterInfo
@@ -72,7 +72,7 @@ func parseCard(sourceName string, data []byte) (ParsedCard, error) {
 		}
 		out.Info.Source = "png"
 		out.RawJSON = raw
-		out.Avatar = data // 原图；落盘时重编码只留像素（§5.17）
+		out.Avatar = data // 原图；写入磁盘时重编码只留像素（§5.17）
 		return out, nil
 	case bytes.HasPrefix(data, zipMagic):
 		return parseCharxCard(data)

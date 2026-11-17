@@ -10,7 +10,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestCloseWaitsForFinishedReaper Close 等已结束任务的收割者收尾：返回时台账终态已经落盘。
+// TestCloseWaitsForFinishedReaper Close 等已结束任务的收割者收尾：返回时台账终态已经写入磁盘。
 //
 // 不等就会出现「关停返回之后还有一次写盘」——测试里是 TempDir 清理撞上「目录非空」，
 // 真机上则是把台账写进一个已经在收尾的目录。
@@ -31,7 +31,7 @@ func TestCloseWaitsForFinishedReaper(t *testing.T) {
 		return err == nil && j.Status != port.JobRunning
 	})
 	m.Close()
-	// Close 返回即可断言：终态条目已落盘（markFinished 在 done 关闭之前）。
+	// Close 返回即可断言：终态条目已写入磁盘（markFinished 在 done 关闭之前）。
 	d := readLedgerFile(t, dir)
 	if len(d.Entries) != 1 {
 		t.Fatalf("台账条目 = %d, want 1", len(d.Entries))

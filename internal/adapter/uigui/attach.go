@@ -25,7 +25,7 @@ import (
 type stagedAtt struct {
 	path string
 	blob *conversation.BlobRef
-	// thumb 缩略图（D187 口径四）：图片类附件解码出的方图小样，chip 里替代回形针。
+	// thumb 缩略图（D187 规则四）：图片类附件解码出的方图小样，chip 里替代回形针。
 	// nil = 不是图片、或像素数超预算没解（回落回形针，绝不为了小图标卡帧）。
 	thumb *thumbSrc
 }
@@ -58,7 +58,7 @@ func (a stagedAtt) key() string {
 	return "path:" + strings.ToLower(filepath.Clean(a.path))
 }
 
-// chip 尺寸口径（D186 口径四，单位 dp）。
+// chip 尺寸规则（D186 规则四，单位 dp）。
 const (
 	attachChipDp    = 32  // chip 高（单行胶囊 48 内垂直居中）
 	attachNameMaxDp = 200 // 名称显示预算（超宽截断）
@@ -116,7 +116,7 @@ func (u *UI) chipItems() []chipItem {
 	return out
 }
 
-// attachToolSlot 收起态（单行胶囊）的附件位（D186 口径四）：无附件 = 图标槽；
+// attachToolSlot 收起态（单行胶囊）的附件位（D186 规则四）：无附件 = 图标槽；
 // 一个 = 该附件的 chip；多个 = 汇总 chip（点一下清空全部——逐项删除在展开态做）。
 func (u *UI) attachToolSlot(gtx layout.Context) layout.Dimensions {
 	items := u.chipItems()
@@ -165,7 +165,7 @@ func (u *UI) attachChip(gtx layout.Context, label string, thumb *thumbSrc, cl *w
 // attachChipState 同上，另带「已标记删除」态（D188 编辑态已有附件）：文字压暗 + 删除线、
 // 右侧 × 变 +（点击即恢复）——不能让它看起来像普通 chip。
 func (u *UI) attachChipState(gtx layout.Context, label string, thumb *thumbSrc, cl *widget.Clickable, dropped bool) layout.Dimensions {
-	// 压暗色 = tips 白字降不透明度（两主题同口径，不新增主题令牌）。
+	// 压暗色 = tips 白字降不透明度（两主题同规则，不新增主题令牌）。
 	dimFg := tok().whiteText
 	dimFg.A = 0x70
 	return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -230,7 +230,7 @@ func (u *UI) attachChipState(gtx layout.Context, label string, thumb *thumbSrc, 
 	})
 }
 
-// attachRows 把附件 chip 按可用宽分行（D186 口径四：横排、超宽换行）：返回每行下标。
+// attachRows 把附件 chip 按可用宽分行（D186 规则四：横排、超宽换行）：返回每行下标。
 func (u *UI) attachRows(gtx layout.Context, maxW int) [][]int {
 	items := u.chipItems()
 	if len(items) == 0 || maxW <= 0 {
@@ -267,7 +267,7 @@ func (u *UI) attachFlowHeightPx(gtx layout.Context, maxW int) int {
 	return len(rows)*gtx.Dp(attachChipDp) + (len(rows)-1)*gtx.Dp(attachRowGapDp)
 }
 
-// attachFlowMaxW 展开态 chip 排可用宽（与 attachChipsFlow 同口径；高度预估略收一点，
+// attachFlowMaxW 展开态 chip 排可用宽（与 attachChipsFlow 同规则；高度预估略收一点，
 // 让预估行数不少于实排行数——预估偏小只会多留白，偏大会压扁编辑区）。
 func (u *UI) attachFlowMaxW(gtx layout.Context) int {
 	pillW := u.frameSize.X - 2*gtx.Dp(sideMarginDp) - 2*gtx.Dp(inputRowDp) - 2*gtx.Dp(inputGapDp)
@@ -291,7 +291,7 @@ func (u *UI) attachOverflowPx(gtx layout.Context) int {
 	return flow - one
 }
 
-// attachChipsFlow 展开态 chip 排（D186 口径四）：横排、超宽换行，每个 chip 可点删。
+// attachChipsFlow 展开态 chip 排（D186 规则四）：横排、超宽换行，每个 chip 可点删。
 // maxW = 本排可用宽（调用方按工具行剩余宽算出，右侧要给展开槽留位）。
 func (u *UI) attachChipsFlow(gtx layout.Context, maxW int) layout.Dimensions {
 	if maxW <= 0 {

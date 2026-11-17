@@ -132,7 +132,7 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 		t.Fatalf("读回 config: %v", err)
 	}
 	if !strings.Contains(string(data), `"level": "strict"`) {
-		t.Error("permissions 段未保留（泛键改写口径破坏了无关键）")
+		t.Error("permissions 段未保留（泛键改写规则破坏了无关键）")
 	}
 	if !strings.Contains(string(data), `"name": "deepseek-flash"`) {
 		t.Error("model.name 未保留（命令写回的键不应被文本键改写触碰）")
@@ -159,7 +159,7 @@ func TestPersistReadTextSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestWriteRawConfig 高级页整文件替换（Q10）：合法 JSON 落盘（原文即最终态），
+// TestWriteRawConfig 高级页整文件替换（Q10）：合法 JSON 写入磁盘（原文即最终态），
 // 非法 JSON 拒写且原文件不动。
 func TestWriteRawConfig(t *testing.T) {
 	t.Parallel()
@@ -191,7 +191,7 @@ func TestWriteRawConfig(t *testing.T) {
 	}
 	var probe map[string]any
 	if err := json.Unmarshal(data, &probe); err != nil {
-		t.Fatalf("落盘非合法 JSON: %v", err)
+		t.Fatalf("写入磁盘非合法 JSON: %v", err)
 	}
 }
 
@@ -218,8 +218,8 @@ func TestReadTextSettingsMCPNames(t *testing.T) {
 	}
 }
 
-// TestPersistSettingsTextKeysTheme 主题档归一与拒写："" → system 落盘；枚举外拒写
-// 且原文件不动（D61 落盘口径）。
+// TestPersistSettingsTextKeysTheme 主题档归一与拒写："" → system 写入磁盘；枚举外拒写
+// 且原文件不动（D61 写入磁盘规则）。
 func TestPersistSettingsTextKeysTheme(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
@@ -230,7 +230,7 @@ func TestPersistSettingsTextKeysTheme(t *testing.T) {
 		t.Fatalf("空 theme 应归一为 system: %v", err)
 	}
 	if s := readTextSettings(cfgPath); s.Theme != "system" {
-		t.Errorf("theme 落盘 = %q, want system", s.Theme)
+		t.Errorf("theme 写入磁盘 = %q, want system", s.Theme)
 	}
 	before, _ := os.ReadFile(cfgPath)
 	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "blue"}); err == nil {
@@ -380,12 +380,12 @@ func TestPersistReadTextSettingsZoomKnobs(t *testing.T) {
 		t.Fatalf("读回 config: %v", err)
 	}
 	if !strings.Contains(string(data), `"max_context_tokens": 256000`) {
-		t.Error("limits 段未保留（泛键改写口径破坏了无关键）")
+		t.Error("limits 段未保留（泛键改写规则破坏了无关键）")
 	}
 }
 
 // TestPersistAudioSettingsRoundTrip 语音页写读往返（D179）：识别/合成的服务、模型、
-// 音色、描述、风格、标签与录音语种都按表单落盘并可读回。
+// 音色、描述、风格、标签与录音语种都按表单写入磁盘并可读回。
 func TestPersistAudioSettingsRoundTrip(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
@@ -466,7 +466,7 @@ func TestPersistAudioSettingsKeepsKindAndValidates(t *testing.T) {
 }
 
 // TestPersistAudioKindAndModelPath 协议位与本地模型路径往返：whisper 只写模型路径也能
-// 落盘并通过校验；协议位写进 config 的 kind 键。
+// 写入磁盘并通过校验；协议位写进 config 的 kind 键。
 func TestPersistAudioKindAndModelPath(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
@@ -499,7 +499,7 @@ func TestPersistAudioKindAndModelPath(t *testing.T) {
 	}
 	// 写进去的配置必须能过启动校验（否则重启后连对话都起不来）。
 	if err := cfg.normalizeAudio(); err != nil {
-		t.Fatalf("落盘配置过不了启动校验: %v", err)
+		t.Fatalf("写入磁盘配置过不了启动校验: %v", err)
 	}
 }
 
@@ -563,13 +563,13 @@ func TestPersistAudioEndpointRoundTrip(t *testing.T) {
 	}
 	if cfg.Audio.ASR.BaseURL != "https://asr.example.com/v1" ||
 		cfg.Audio.TTS.BaseURL != "https://tts.example.com/v1" {
-		t.Fatalf("端点未落盘: %+v", cfg.Audio)
+		t.Fatalf("端点未写入磁盘: %+v", cfg.Audio)
 	}
 	if cfg.Audio.ASR.APIKey != "secret:OLD_ASR" {
 		t.Fatalf("留空应保持原引用，得 %q", cfg.Audio.ASR.APIKey)
 	}
 	if cfg.Audio.TTS.APIKey != "secret:NEW_TTS" {
-		t.Fatalf("新引用未落盘，得 %q", cfg.Audio.TTS.APIKey)
+		t.Fatalf("新引用未写入磁盘，得 %q", cfg.Audio.TTS.APIKey)
 	}
 	// 只填端点也能通过保存前校验（不借任何 provider）。
 	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{
@@ -592,7 +592,7 @@ func TestPersistSettingsTextKeysLang(t *testing.T) {
 		t.Fatalf("写 en: %v", err)
 	}
 	if s := readTextSettings(cfgPath); s.Lang != "en" {
-		t.Fatalf("lang 落盘 = %q, want en", s.Lang)
+		t.Fatalf("lang 写入磁盘 = %q, want en", s.Lang)
 	}
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
@@ -606,7 +606,7 @@ func TestPersistSettingsTextKeysLang(t *testing.T) {
 		t.Fatalf("空 lang 应归一为 auto: %v", err)
 	}
 	if s := readTextSettings(cfgPath); s.Lang != "auto" {
-		t.Fatalf("空 lang 落盘 = %q, want auto", s.Lang)
+		t.Fatalf("空 lang 写入磁盘 = %q, want auto", s.Lang)
 	}
 	before, _ := os.ReadFile(cfgPath)
 	if err := persistSettingsTextKeys(cfgPath, uigui.SettingsPatch{Theme: "system", Lang: "fr"}); err == nil {
@@ -633,7 +633,7 @@ func TestPersistSettingsTextKeysPlaceholder(t *testing.T) {
 		t.Fatalf("写占位: %v", err)
 	}
 	if s := readTextSettings(cfgPath); s.Placeholder != "随便问 或 /help" {
-		t.Fatalf("占位落盘 = %q, want 折成单行", s.Placeholder)
+		t.Fatalf("占位写入磁盘 = %q, want 折成单行", s.Placeholder)
 	}
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {

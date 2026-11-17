@@ -1,7 +1,7 @@
 package app
 
-// session_reconcile_test.go 启动对账的落地口径（D262）：事实注入落到发起会话，
-// 目标不是当前会话就异地落地，目标已删除就丢弃。
+// session_reconcile_test.go 启动对账的实现规则（D262）：事实注入落到发起会话，
+// 目标不是当前会话就异地送达，目标已删除就丢弃。
 
 import (
 	"context"

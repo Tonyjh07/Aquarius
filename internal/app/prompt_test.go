@@ -596,7 +596,7 @@ func appendInject(t *testing.T, c *conversation.Conversation, source, text strin
 	appendInjectTrust(t, c, source, conversation.TrustExternal, text)
 }
 
-// appendInjectTrust 带信任级落地注入节点（D170）。
+// appendInjectTrust 带信任级实现注入节点（D170）。
 func appendInjectTrust(t *testing.T, c *conversation.Conversation, source string, trust conversation.InjectTrust, text string) {
 	t.Helper()
 	err := c.AppendCommitted(conversation.Message{
@@ -671,7 +671,7 @@ func TestAssemblePathInjectionProjection(t *testing.T) {
 	}
 }
 
-// TestAssemblePathInjectionNeutralizesFenceClose 围栏正文里的闭合标签必须中和（D170 口径二）。
+// TestAssemblePathInjectionNeutralizesFenceClose 围栏正文里的闭合标签必须中和（D170 规则二）。
 //
 // 不中和的话，外部内容只要写一行 `</injected-context>` 就能提前收尾，
 // 后面的内容读起来就像围栏之外的用户/宿主说明——这是唯一一条不需要"越权"就能利用的注入面。

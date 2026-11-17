@@ -67,7 +67,7 @@ func (a *fakeSecretsAdmin) Delete(name string) error {
 	return nil
 }
 
-// Import 一键导入的测试替身：按预设的 importRes / importErr 返回（真口径见
+// Import 一键导入的测试替身：按预设的 importRes / importErr 返回（真规则见
 // cmd/aquarius 侧；本层只关心动作分派、状态行与「值不回显」）。
 func (a *fakeSecretsAdmin) Import() (SecretsImportResult, error) {
 	a.mu.Lock()
@@ -76,7 +76,7 @@ func (a *fakeSecretsAdmin) Import() (SecretsImportResult, error) {
 	return a.importRes, a.importErr
 }
 
-// rebuild 从 store 重建快照条目（按名字排序，掩码只出尾 4 位；与 secretbin 口径一致）。
+// rebuild 从 store 重建快照条目（按名字排序，掩码只出尾 4 位；与 secretbin 规则一致）。
 func (a *fakeSecretsAdmin) rebuild() {
 	names := make([]string, 0, len(a.store))
 	for n := range a.store {
@@ -225,7 +225,7 @@ func TestSecretsPagePutValidation(t *testing.T) {
 	}
 }
 
-// TestSecretsPageMask 掩码口径：只出尾 4 位；值短于 8 位整条打码（长值不可整条暴露）。
+// TestSecretsPageMask 掩码规则：只出尾 4 位；值短于 8 位整条打码（长值不可整条暴露）。
 func TestSecretsPageMask(t *testing.T) {
 	t.Parallel()
 	_, _, sa := secretsPageUI(t, SecretsSnapshot{}, nil)

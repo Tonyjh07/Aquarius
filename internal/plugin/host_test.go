@@ -140,7 +140,7 @@ func statusOf(h *Host, name string) Status {
 // 发现与授权
 // ---------------------------------------------------------------------------
 
-// TestHostStartGrantAndConnect 授权通过 → 落盘 granted → 连接就绪 → OnChange 触发。
+// TestHostStartGrantAndConnect 授权通过 → 写入磁盘 granted → 连接就绪 → OnChange 触发。
 func TestHostStartGrantAndConnect(t *testing.T) {
 	dial := &fakeDial{}
 	conf := &fakeConfirm{answers: []bool{true}}
@@ -540,7 +540,7 @@ func TestHostEnableResetsRestartBudget(t *testing.T) {
 }
 
 // TestHostGrantPartialPersist 审查修复：能力逐项确认中途拒绝，
-// 已授予项仍须落盘（不留"内存已授、磁盘未授"）。
+// 已授予项仍须写入磁盘（不留"内存已授、磁盘未授"）。
 func TestHostGrantPartialPersist(t *testing.T) {
 	dial := &fakeDial{}
 	var persisted map[string]State
@@ -564,10 +564,10 @@ func TestHostGrantPartialPersist(t *testing.T) {
 		t.Fatalf("status=%s dial=%d, want revoked/0", statusOf(h, "web"), dial.callCount())
 	}
 	if persists == 0 || !persisted["web"].HasGranted("network") {
-		t.Fatalf("persisted = %+v（%d 次），want network 已落盘", persisted, persists)
+		t.Fatalf("persisted = %+v（%d 次），want network 已写入磁盘", persisted, persists)
 	}
 	if persisted["web"].HasGranted("fs") {
-		t.Fatal("被拒绝的 fs 不应落盘")
+		t.Fatal("被拒绝的 fs 不应写入磁盘")
 	}
 }
 
@@ -609,7 +609,7 @@ func boolPtr(b bool) *bool { return &b }
 // 管理面（S6/D143）：GrantCap / RevokeGrant / RevokeTrust
 // ---------------------------------------------------------------------------
 
-// TestHostGrantCapManual 手动预授权：免确认写入 granted + 落盘 + 触发 OnChange。
+// TestHostGrantCapManual 手动预授权：免确认写入 granted + 写入磁盘 + 触发 OnChange。
 // 未声明插件报错。
 func TestHostGrantCapManual(t *testing.T) {
 	changed := 0
@@ -631,7 +631,7 @@ func TestHostGrantCapManual(t *testing.T) {
 	}
 	st, ok := persisted["web"]
 	if !ok || !st.HasGranted("network") {
-		t.Fatalf("GrantCap 未落盘 granted: %+v", persisted)
+		t.Fatalf("GrantCap 未写入磁盘 granted: %+v", persisted)
 	}
 	found := false
 	for _, i := range h.List() {
@@ -770,7 +770,7 @@ func itoa(n int) string {
 }
 
 // TestHostUnattendedSkipsApproval 无人值守下信任门与能力授权都**不问也不放行**：
-// 没人能批准，插件本次不启动，状态不落盘（下次交互启动重新问）。
+// 没人能批准，插件本次不启动，状态不写入磁盘（下次交互启动重新问）。
 func TestHostUnattendedSkipsApproval(t *testing.T) {
 	unattended := func() bool { return true }
 
@@ -796,7 +796,7 @@ func TestHostUnattendedSkipsApproval(t *testing.T) {
 			t.Fatalf("无人值守不该问用户: %v", conf.prompts)
 		}
 		if persists != 0 {
-			t.Fatalf("不该落盘授权（下次启动要重问）: %d 次", persists)
+			t.Fatalf("不该写入磁盘授权（下次启动要重问）: %d 次", persists)
 		}
 	})
 
@@ -825,7 +825,7 @@ func TestHostUnattendedSkipsApproval(t *testing.T) {
 			t.Fatalf("status = %s dial = %d, want revoked/0", statusOf(h, "loose"), dial.callCount())
 		}
 		if len(conf.prompts) != 0 || persists != 0 {
-			t.Fatalf("不该问也不该落盘: prompts=%v persists=%d", conf.prompts, persists)
+			t.Fatalf("不该问也不该写入磁盘: prompts=%v persists=%d", conf.prompts, persists)
 		}
 	})
 }

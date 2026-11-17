@@ -175,7 +175,7 @@ func toolTitle(p acp.RequestPermissionRequest) string {
 }
 
 // taskSummary 这一趟转交的任务摘要（首行，最多 80 字）：确认框与决策模型都需要一句
-// 「在干什么」，整段任务写进去会把「要改哪个文件」挤出视野（D281 第 4 条口径）。
+// 「在干什么」，整段任务写进去会把「要改哪个文件」挤出视野（D281 第 4 条规则）。
 func (r *run) taskSummary() string {
 	task := strings.TrimSpace(r.spec.Task)
 	if i := strings.IndexByte(task, '\n'); i >= 0 {

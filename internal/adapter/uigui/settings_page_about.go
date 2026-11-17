@@ -38,14 +38,14 @@ const aboutProjectURL = "https://github.com/Tonyjh07/Aquarius"
 // 里才调），常量会把这句话冻在初始化那一刻的语言上。
 func aboutTagline() string { return i18n.T("ui.page.about.tagline") }
 
-// aboutCopyright 版权行。年份与作者是**声明的口径**，写死而不从构建期推导——它不该随
+// aboutCopyright 版权行。年份与作者是**声明的规则**，写死而不从构建期推导——它不该随
 // 谁在哪台机器上编译而变。
 const aboutCopyright = "© 2026 Tonyjh07"
 
 // aboutLicense 许可证（仓库根 LICENSE = MPL-2.0 全文）。
 const aboutLicense = "Mozilla Public License 2.0"
 
-// aboutPrivacy 数据边界（与 §9 口径一致）：只说「不收集」会被读成「连模型服务都不发」，
+// aboutPrivacy 数据边界（与 §9 规则一致）：只说「不收集」会被读成「连模型服务都不发」，
 // 所以两句都说——不收集什么，以及哪些服务会收到内容。同样写成函数（见 aboutTagline）。
 func aboutPrivacy() string { return i18n.T("ui.page.about.privacy") }
 

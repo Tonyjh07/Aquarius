@@ -146,7 +146,7 @@ func editorBoxFill(th *material.Theme, ed *widget.Editor, hint string) layout.Wi
 	}
 }
 
-// editorBlock 两种高度口径共用的编辑区本体：下沉底衬 + 内缩一圈窗底（1dp 描边环）+
+// editorBlock 两种高度规则共用的编辑区本体：下沉底衬 + 内缩一圈窗底（1dp 描边环）+
 // 内边距 8dp。
 func editorBlock(gtx layout.Context, th *material.Theme, ed *widget.Editor, hint string, size image.Point) layout.Dimensions {
 	fillFieldBg(gtx, th, image.Rectangle{Max: size})

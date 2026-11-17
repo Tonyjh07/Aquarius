@@ -6,7 +6,7 @@ package vadsilero
 //  1. 帧 → 概率：一帧 32ms，正好是上游的推理步长，喂进去即可。
 //  2. 事件 → 字节区间：上游的 At 是「流起点算起的时间」，且**已经含了首尾补偿**
 //     （Segmenter 的 SpeechPad 自己会减/加），所以这里直接换算成字节，不再补第二遍。
-//  3. 区间 → PCM：按区间切出来交出去，落库与转写都只认这段 PCM。
+//  3. 区间 → PCM：按区间切出来交出去，写进密钥库与转写都只认这段 PCM。
 //
 // 缓冲的规矩只有一条：**只要当前段还没交出，它起点之后的音频一个字节都不能丢**。
 // 上游把段首往回补了 SpeechPad，所以起点可能落在几帧之前；而段尾只有在静音判够
@@ -37,7 +37,7 @@ type Options struct {
 	SpeechPad time.Duration
 }
 
-// withDefaults 补零值，口径与上游 SegmenterOptions 一致。
+// withDefaults 补零值，规则与上游 SegmenterOptions 一致。
 func withDefaults(o Options) Options {
 	if o.Threshold == 0 {
 		o.Threshold = 0.5

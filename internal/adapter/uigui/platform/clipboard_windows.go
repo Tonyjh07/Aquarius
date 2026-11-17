@@ -1,6 +1,6 @@
 //go:build windows
 
-// 剪贴板位图读取（Windows，D187 口径一/二）：先 IsClipboardFormatAvailable 探格式
+// 剪贴板位图读取（Windows，D187 规则一/二）：先 IsClipboardFormatAvailable 探格式
 // （不打开剪贴板，绝不阻塞别的程序），命中才 OpenClipboard 取一次句柄并即刻关闭。
 //
 // 取到的字节再交给平台无关的 clipimg.go 转 PNG——本文件只管「取字节」。

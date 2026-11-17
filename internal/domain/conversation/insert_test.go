@@ -107,7 +107,7 @@ func TestInsertBeforeKeepsHeadInSubtree(t *testing.T) {
 }
 
 // TestInsertBeforeWaterlineSummaryIsSystemNode 摘要节点落在路径上的目标之前——
-// 装配口径（水位 = 路径上最后一个 system）由此成立：其上历史不再回传。
+// 装配规则（水位 = 路径上最后一个 system）由此成立：其上历史不再回传。
 func TestInsertBeforeWaterlineSummaryIsSystemNode(t *testing.T) {
 	c, _, a1, _, _ := insertFixture(t)
 	if err := c.Checkout(a1.ID); err != nil {

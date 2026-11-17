@@ -1,6 +1,6 @@
 package platform
 
-// 剪贴板位图解码（D187 口径二）：Windows 剪贴板里的位图并不统一——浏览器与截图
+// 剪贴板位图解码（D187 规则二）：Windows 剪贴板里的位图并不统一——浏览器与截图
 // 工具放注册格式 "PNG"，老一些的工具只放 CF_DIB（BITMAPINFOHEADER + 像素）或
 // CF_DIBV5（BITMAPV5HEADER，带 alpha 掩码）。这里把三种形态统一成 **PNG 字节**，
 // 上层只认 PNG 一种输入。

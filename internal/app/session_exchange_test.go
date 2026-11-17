@@ -1,7 +1,7 @@
 package app
 
 // session_exchange_test.go `/export` 与 `/import` 的命令面：路径挑选、防覆盖、半截文件
-// 清理、导入落成新会话、回执口径，以及未接线时如实报「本构建没接」。
+// 清理、导入写成新会话、回执规则，以及未接线时如实报「本构建没接」。
 
 import (
 	"bytes"
@@ -207,7 +207,7 @@ func TestExportDoesNotOverwrite(t *testing.T) {
 	}
 }
 
-// TestImportSaveFailureKeepsCurrent 落盘失败时不动当前会话：导入的树还没进库，
+// TestImportSaveFailureKeepsCurrent 写入磁盘失败时不动当前会话：导入的树还没进库，
 // 切过去就等于「会话在内存里但重启就没了」。
 func TestImportSaveFailureKeepsCurrent(t *testing.T) {
 	ex := &fakeExchange{detected: "aqx", imported: newConv(t)}
@@ -304,7 +304,7 @@ func TestExportRejectsPositionalText(t *testing.T) {
 	}
 }
 
-// TestImportLandsInNewConversation 导入落成**新**会话：ID 由这里分配、不覆盖既有会话、
+// TestImportLandsInNewConversation 导入写成**新**会话：ID 由这里分配、不覆盖既有会话、
 // 切过去并清屏回放。
 func TestImportLandsInNewConversation(t *testing.T) {
 	ex := &fakeExchange{}
@@ -331,7 +331,7 @@ func TestImportLandsInNewConversation(t *testing.T) {
 		t.Fatalf("旧会话应仍在库里: %v", err)
 	}
 	if _, err := s.store.Load(context.Background(), s.cur.ID); err != nil {
-		t.Fatalf("导入的会话应已落盘: %v", err)
+		t.Fatalf("导入的会话应已写入磁盘: %v", err)
 	}
 	aqxFmt, _ := formatOf(t, "aqx")
 	for _, want := range []string{
@@ -485,7 +485,7 @@ func TestHumanBytes(t *testing.T) {
 	}
 }
 
-// TestExchangeReceiptLines 回执的两行口径：无损不列丢东西，有损列「没有带过去」逐项。
+// TestExchangeReceiptLines 回执的两行规则：无损不列丢东西，有损列「没有带过去」逐项。
 func TestExchangeReceiptLines(t *testing.T) {
 	aqx, _ := formatOf(t, "aqx")
 	out := exportReceipt(aqx, "/tmp/a.aqx", port.ExchangeReport{Nodes: 3, Bytes: 2048})

@@ -398,7 +398,7 @@ func TestRepresentAfterShow(t *testing.T) {
 }
 
 // TestRepresentAfterShowLadder D115：揭示后梯次补提交——立即一次 + 每拍一次，全部
-// 经同一矩形口径；主窗再隐藏即止。
+// 经同一矩形规则；主窗再隐藏即止。
 func TestRepresentAfterShowLadder(t *testing.T) {
 	t.Parallel()
 	u := newFrameUI()
@@ -453,7 +453,7 @@ func TestRepresentAfterShowLadderStopsOnHide(t *testing.T) {
 // （u.fadeBuf 切片头 / frameSize / x / y / alpha 被梯次读、被帧循环写）与内容层（Present
 // 可能读到正在被 clear+逐像素填充的位图 ⇒ 撕裂帧）。
 //
-// 口径：梯次开启（亚毫秒拍距）+ 帧循环并发反复重组位图（尺寸交替 ⇒ 每次都重新分配
+// 规则：梯次开启（亚毫秒拍距）+ 帧循环并发反复重组位图（尺寸交替 ⇒ 每次都重新分配
 // fadeBuf，正是原缺陷的触发条件），跑够多轮让两个 goroutine 的读写充分交错。
 func TestRepresentLadderConcurrentWithFrames(t *testing.T) {
 	t.Parallel()
@@ -597,7 +597,7 @@ func TestCompositeAssistantBubble(t *testing.T) {
 }
 
 // TestTranscriptManualScroll 消息区手动滚动（§15.3）：滚轮在转写区上滚离底 → 内容上移、
-// 停止尾随；滚回底部 → 恢复尾随（新消息重新贴底）。方向口径：d>0 = 向新内容（尾随），
+// 停止尾随；滚回底部 → 恢复尾随（新消息重新贴底）。方向规则：d>0 = 向新内容（尾随），
 // d<0 = 上滚离开底部——与 Gio Windows 侧的滚轮反号、X11 Button4/5 映射一致。
 func TestTranscriptManualScroll(t *testing.T) {
 	t.Parallel()

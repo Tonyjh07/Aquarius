@@ -217,7 +217,7 @@ func New() port.Capture { return capture{} }
 type capture struct{}
 
 // Windows 顶层可见窗口，z 序自顶向下（EnumWindows 的枚举序）。
-// 过滤：不可见、被 DWM 隐藏（cloaked）、无标题、零面积、本进程自己的窗口（D178 口径四）。
+// 过滤：不可见、被 DWM 隐藏（cloaked）、无标题、零面积、本进程自己的窗口（D178 规则四）。
 func (capture) Windows(ctx context.Context) ([]port.WindowInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -296,7 +296,7 @@ func (capture) Screen(ctx context.Context) (port.Image, error) {
 }
 
 // Window 抓指定窗口：最小化窗口经桌面合成器的预览取整窗；其余走 PrintWindow 抓客户区
-// （被遮挡/非顶层也抓得到），失败时回退到屏幕上的客户区 BitBlt；都拿不到就明确报因（D178 口径二）。
+// （被遮挡/非顶层也抓得到），失败时回退到屏幕上的客户区 BitBlt；都拿不到就明确报因（D178 规则二）。
 // 活动弹窗（菜单/下拉/owned 对话框）是独立顶层窗口，按屏幕偏移合成进主图。
 func (capture) Window(ctx context.Context, h uintptr) (port.Image, error) {
 	if err := ctx.Err(); err != nil {
@@ -489,7 +489,7 @@ func rgbaFromDIB(bits unsafe.Pointer, w, h int) []byte {
 
 // blank 判定「没画出来」：整张图纯黑（DIB 初值 / PrintWindow 失败会返回全零）。
 // 不能按「单色」判——白页、纯色面板、暗色编辑器的空白区都是合法内容，
-// 按单色判会把用户正要看的画面拒掉（D178 口径二）。
+// 按单色判会把用户正要看的画面拒掉（D178 规则二）。
 func blank(rgba []byte, w, h int) bool {
 	if w <= 0 || h <= 0 || len(rgba) < w*h*4 {
 		return true

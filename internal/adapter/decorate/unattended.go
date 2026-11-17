@@ -2,10 +2,10 @@ package decorate
 
 // 无人值守装饰器（D185）：开关打开时「越界即拒」，而不是把人从别处叫回来点确认。
 //
-// 语义边界（口径一/二）：
+// 语义边界（规则一/二）：
 //   - **拒绝而非放行**——权限矩阵原样，矩阵外的调用当场回绝并说明；模型自己改道。
 //   - **只管模型发起的那条链**——装配根只把装饰器罩到 `toolrun` 上；`/rm`、`/rmconv`
-//     等用户亲手输入的命令确认照常询问（人就在键盘前）。插件授权同口径但不走这里：
+//     等用户亲手输入的命令确认照常询问（人就在键盘前）。插件授权同规则但不走这里：
 //     宿主自己判无人值守，因为它要说清「不是用户拒的」。
 //   - **不抢占交互面**——不开窗、不闪、不进输入栏，纯粹是一个同步返回。
 //
@@ -55,7 +55,7 @@ func (u unattendedConfirmer) Confirm(ctx context.Context, req port.ConfirmReques
 	return u.inner.Confirm(ctx, req)
 }
 
-// unattendedAsker 提问端口的无人值守装饰器（口径六）。
+// unattendedAsker 提问端口的无人值守装饰器（规则六）。
 type unattendedAsker struct {
 	inner port.Asker
 	on    func() bool

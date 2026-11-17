@@ -482,7 +482,7 @@ func relGeo(m *relModel, vis relVisible) (nodes []relGeoNode, anchorLocal int) {
 		}
 		r := m.nodes[gi].weight * relNodeBaseDp / 2 // 徽标半径（= 节点半径，dp）
 		// 半宽 = 卡片半宽的**精确**值（徽标半 + 左右内边距 + 间距 + 标签区半宽），
-		// 与 relmap_frame 的 nodeCardBox 同口径——少算内边距会让邻卡压掉最后一个字。
+		// 与 relmap_frame 的 nodeCardBox 同规则——少算内边距会让邻卡压掉最后一个字。
 		nodes[k] = relGeoNode{
 			Parent: p, Level: m.nodes[gi].level, Weight: m.nodes[gi].weight,
 			HalfW: r + 2*relCardPadDp + relCardGapDp + relLabelMaxDp/2,
@@ -508,7 +508,7 @@ func relCardHalfH(m *relModel, gi int) float64 {
 }
 
 // relLabelBlockWorst 标签文本块的世界尺寸**上界**（dp）：宽 = 估宽（封顶
-// relLabelMaxDp）、高 = 行数 × relLabelLineHDp。行数按最坏缩放口径的字宽
+// relLabelMaxDp）、高 = 行数 × relLabelLineHDp。行数按最坏缩放规则的字宽
 // （relLabelEmDp，= zoom 下限处 1em 的世界宽度）估 ⇒ 上界。绘制侧
 // （relGraph.labelBlock）按当前缩放给出精确值，恒不超过本上界。
 func relLabelBlockWorst(txt string) (w, h float64, lines int) {

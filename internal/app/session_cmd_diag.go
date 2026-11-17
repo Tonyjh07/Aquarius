@@ -56,7 +56,7 @@ func (s *Session) execDiag(ctx context.Context, cmd port.Command) (string, error
 	})
 }
 
-// dumpDiag 落盘 + 铺进只读次窗，回执给路径与大小。
+// dumpDiag 写入磁盘 + 铺进只读次窗，回执给路径与大小。
 //
 // 锚点取的是**上下文交付时刻**而不是原始返回的起点：两者是同一次请求的两端，取先发生
 // 的那个，窗口才把这一段整个盖住。

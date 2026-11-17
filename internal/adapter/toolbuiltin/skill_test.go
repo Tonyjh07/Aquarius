@@ -1,6 +1,6 @@
 package toolbuiltin
 
-// skill_test.go 覆盖 skill 工具的三件事（D201 口径三）：清单进工具描述且封顶、
+// skill_test.go 覆盖 skill 工具的三件事（D201 规则三）：清单进工具描述且封顶、
 // 载入回填正文与目录、正文超预算时按行切断并给 file_read 续读行号。
 
 import (

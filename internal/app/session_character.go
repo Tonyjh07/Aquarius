@@ -11,7 +11,7 @@ import (
 )
 
 // startCharacter 用一张已导入的卡开新会话（§5.17）：投影人格/示例/尾部指令 → 选开场白 →
-// 建会话（**独立路径**，见 newCharacterConversation）→ 落盘 → 清屏回放。
+// 建会话（**独立路径**，见 newCharacterConversation）→ 写入磁盘 → 清屏回放。
 //
 // 人格是**快照**：卡文本在投影时做完宏替换就落进 persona 首节点，之后与目录脱钩——改 config、
 // 换卡版本、删卡都不改写已有会话；要按新卡重来就再开一次。n 是开场白序号（1 起，缺省/1 =
@@ -72,7 +72,7 @@ func (s *Session) newCharacterConversation(card port.CharacterCard, start Charac
 	if err := c.AppendCommitted(persona); err != nil {
 		return nil, wrapSession("char.write_persona", err)
 	}
-	// 示例走注入节点（§5.17）：persona 之后、开场白之前。Trust=host 与 /skill 同口径——
+	// 示例走注入节点（§5.17）：persona 之后、开场白之前。Trust=host 与 /skill 同规则——
 	// 卡是用户亲手导入并选择开始的，写的是要遵循的指令，不是待围栏的外部数据；只追加、
 	// 不动水位，因此可被后续压缩挤掉。
 	if strings.TrimSpace(start.Examples) != "" {

@@ -136,7 +136,7 @@ func parseOpenWebUI(doc owDoc, msgs []owMessage) importedTree {
 		}
 		in.Nodes = append(in.Nodes, node)
 	}
-	// 与 chatgpt 侧同一套跳过口径：空节点与装不下的消息不留空壳，子节点顺父指针往上接。
+	// 与 chatgpt 侧同一套跳过规则：空节点与装不下的消息不留空壳，子节点顺父指针往上接。
 	reparentOpenWebUI(byID, in.Nodes)
 	in.Dropped = droppedLines(counts)
 	return in
@@ -144,7 +144,7 @@ func parseOpenWebUI(doc owDoc, msgs []owMessage) importedTree {
 
 // reparentOpenWebUI 把「父节点没被收下」的节点接到最近一个被收下的祖先上。
 //
-// 与 chatgpt 的 reparent 同口径（那份读的是 mapping，这份读的是扁平消息表），所以各写一遍而
+// 与 chatgpt 的 reparent 同规则（那份读的是 mapping，这份读的是扁平消息表），所以各写一遍而
 // 不是硬凑一个泛型：两边的源结构不同，硬抽出来只会多一层参数化的绕。
 
 func reparentOpenWebUI(byID map[string]owMessage, nodes []importedNode) {

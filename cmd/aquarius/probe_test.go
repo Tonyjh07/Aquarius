@@ -74,9 +74,9 @@ func probeServer(t *testing.T, r probeReply) *probeSrv {
 	if r.ToolsStatus == 0 {
 		r.ToolsStatus = http.StatusOK
 	}
-	// 视觉与工具同口径：0 不是合法状态码，写进 WriteHeader 会让 handler panic、连接被
+	// 视觉与工具同规则：0 不是合法状态码，写进 WriteHeader 会让 handler panic、连接被
 	// 中断——客户端只看到网络错误，照样判「无结论」，测试于是假绿。缺省补成 200。
-	// 视觉与工具同口径：0 不是合法状态码，写进 WriteHeader 会让 handler panic、连接被
+	// 视觉与工具同规则：0 不是合法状态码，写进 WriteHeader 会让 handler panic、连接被
 	// 中断——客户端只看到网络错误，照样判「无结论」，测试于是假绿。缺省补成 200。
 	if r.VisionStatus == 0 {
 		r.VisionStatus = http.StatusOK
@@ -224,7 +224,7 @@ func TestProbeInconclusiveLeavesCapsAlone(t *testing.T) {
 	}
 }
 
-// TestProbeTargetResolution D174 口径四：度量单位是模型条目——未声明的不探（没地方写），
+// TestProbeTargetResolution D174 规则四：度量单位是模型条目——未声明的不探（没地方写），
 // fallback provider 的模型也能探。
 func TestProbeTargetResolution(t *testing.T) {
 	t.Parallel()
@@ -267,7 +267,7 @@ func TestProbeTargetResolution(t *testing.T) {
 	}
 }
 
-// TestProbeProtocolDispatch 协议分派与探测的两处口径：
+// TestProbeProtocolDispatch 协议分派与探测的两处规则：
 //   - 三种协议的 provider 都能由装配根按 kind 造出客户端（D175）；
 //   - 探测目前只有 chat 的问法，responses/anthropic 都会明确报因（不能拿 chat 请求
 //     去打别的规范——那会以「密钥无效」「模型不存在」之类的假象暴露，排查方向全错）。
@@ -329,7 +329,7 @@ func TestProbeProtocolDispatch(t *testing.T) {
 }
 
 // TestProbeForSettings 设置窗「探测能力」数据面（S11-7③/D181）：以编辑区 patch 造瞬时
-// 客户端——改了端点还没应用时，测的是「将要应用的那份」；模型**还没落盘**也照常探，结论
+// 客户端——改了端点还没应用时，测的是「将要应用的那份」；模型**还没写入磁盘**也照常探，结论
 // 只带回界面（Pending），声明过的才写回（Written）。
 func TestProbeForSettings(t *testing.T) {
 	t.Parallel()
@@ -358,14 +358,14 @@ func TestProbeForSettings(t *testing.T) {
 	// 还没应用的模型（编辑区新加的一行）：照常探，结论只带回界面——不报错、不写盘。
 	out, err = w.probeForSettings(context.Background(), patch, "m2")
 	if err != nil {
-		t.Fatalf("未落盘模型也该能探: %v", err)
+		t.Fatalf("未写入磁盘模型也该能探: %v", err)
 	}
 	if !out.Pending || out.Written || len(out.Results) != 3 {
-		t.Fatalf("未落盘结论 = %+v, want Pending", out)
+		t.Fatalf("未写入磁盘结论 = %+v, want Pending", out)
 	}
 	after, _ = loadConfig(cfgPath)
 	if e := after.Model.Providers[0].modelByName("m2"); e != nil {
-		t.Fatalf("未落盘模型不该被探测写进配置: %+v", e)
+		t.Fatalf("未写入磁盘模型不该被探测写进配置: %+v", e)
 	}
 
 	// 改名过程中：写回目标仍是磁盘上的原名（Orig），别写到新名字上找不到。

@@ -219,7 +219,7 @@ func (in *Ingestor) ingestPath(ctx context.Context, path string) (ingestItem, er
 
 // withCaption 把随附文本（raw.Text，D104② 暂存随文发）并入首分片：file kind 现状
 // 无视 RawInput.Text——GUI 暂存随文发后该字段承载已输入文本，须进树（标题优先取
-// 文本分片由 ingestTitle 既有口径承接）。空文本原样返回。
+// 文本分片由 ingestTitle 既有规则承接）。空文本原样返回。
 func (in *Ingestor) withCaption(raw port.RawInput, parts []conversation.Part) []conversation.Part {
 	if strings.TrimSpace(raw.Text) == "" {
 		return parts
@@ -280,7 +280,7 @@ func isTextish(mime string, head []byte, path string) bool {
 		return false
 	}
 	if len(head) > 0 && bytes.IndexByte(head, 0) >= 0 {
-		return false // 含 NUL 判定为二进制（与 file_read 同口径）
+		return false // 含 NUL 判定为二进制（与 file_read 同一套规则）
 	}
 	if strings.HasPrefix(mime, "text/") {
 		return true

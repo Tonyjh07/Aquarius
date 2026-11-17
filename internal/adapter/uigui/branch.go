@@ -34,14 +34,14 @@ type blockView struct {
 	// imgs 该条目的图片（D207）：user/assistant 正文块由 model 块带出，渲染期按
 	// 固定方图排在正文下方（不占行选键——图片不可选文本）。
 	imgs []imgRef
-	// source/trigger 注入块的头部数据（D166）：来源键与落地时是否触发了响应。
+	// source/trigger 注入块的头部数据（D166）：来源键与写入时是否触发了响应。
 	source  string
 	trigger bool
 	// cmds 命令折叠条的条目（D265）：命令行与它自己的返回文本。
 	cmds []cmdEntry
 	// pendID 待发清单里那条「引导」的 ID（D272）：非空 = 这块不是会话节点，而是用户
 	// 已经说出口、还没被下一次请求取走的话。渲染成普通用户气泡，右侧带「↓ 回队列 /
-	// × 丢弃」两枚控件；不登记右键菜单（没有节点可编辑），也不随会话落盘。
+	// × 丢弃」两枚控件；不登记右键菜单（没有节点可编辑），也不随会话写入磁盘。
 	pendID string
 }
 
@@ -61,7 +61,7 @@ func (it blockView) menuable() bool {
 // selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数；工具 chip = 恒 2
 // （参数/结果——开合切换不漂移后续行序号，D67）；**分叉条 = 0**（D81：无文本可选，且
 // 不占键 → 分叉条的增删不漂移其它行的选择序号）；**纯图气泡 = 0**（D207：没有文本可
-// 选，图格只响应点击）；**命令折叠条 = 每条 2**（命令行/输出，D265 同 D67 口径：
+// 选，图格只响应点击）；**命令折叠条 = 每条 2**（命令行/输出，D265 同 D67 规则：
 // 折叠时不铺正文，但键数恒定——否则展开一次就把后面所有行的选择序号推移一位）；其余行恒 1。
 func (it blockView) selCount() int {
 	switch {
@@ -118,7 +118,7 @@ func (u *UI) branchStrips() []branchStrip {
 	return out
 }
 
-// branchClick 分叉条左右点击件 get-or-create（D81；照 chipClick 口径按序缓存）。
+// branchClick 分叉条左右点击件 get-or-create（D81；照 chipClick 规则按序缓存）。
 func (u *UI) branchClick(slot int, next bool) *widget.Clickable {
 	if next {
 		for len(u.branchNext) <= slot {
@@ -177,7 +177,7 @@ func (u *UI) branchRow(s *branchStrip, cardR int) (layout.Widget, color.NRGBA, i
 const branchGapDp unit.Dp = 6
 
 // gotoBranch 投递一次分叉切换（D81）：delta = -1 左（更旧版本）/ +1 右（更新版本）。
-// 越界不环绕；输入缓冲满时给提示而不是静默丢弃（同 model.submit 口径）。
+// 越界不环绕；输入缓冲满时给提示而不是静默丢弃（同 model.submit 规则）。
 // D94：落点 = 目标版本的对话末端（port.TreeView.Tail）——/goto 停在消息节点上时其
 // 回答不在 Head 路径上，切用户消息版本会只剩半截；端口不可用回退兄弟 id。
 func (u *UI) gotoBranch(s branchStrip, delta int) {

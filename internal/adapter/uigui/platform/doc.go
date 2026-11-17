@@ -1,6 +1,6 @@
 // Package platform 提供 GUI（`uigui`）所需的平台能力（D111/S4b）。
 //
-// 分层口径（D111 修订）：
+// 分层规则（D111 修订）：
 //   - 本包**不 import gio**，也不 import `uigui`——因此三平台都能单独交叉编译与单测
 //     （`uigui` 因 Gio 只能在 WSL/Linux 侧验，见 D119）；需要回传 UI 语义时只经注入的
 //     `Host` 回调（菜单命令 ID、显隐/退出/文件选中之类的动作枚举），业务语义留在 `uigui`。

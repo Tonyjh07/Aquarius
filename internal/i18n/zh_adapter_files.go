@@ -1,8 +1,8 @@
 package i18n
 
-// zhAdapterFilesTexts 文件型适配器：skillfs（技能安装/卸载/更新的校验与回执）、characterfs（角色卡解析与落盘）。key 前缀 skill.install.* / char.load.* / char.err.*。
+// zhAdapterFilesTexts 文件型适配器：skillfs（技能安装/卸载/更新的校验与回执）、characterfs（角色卡解析与写入磁盘）。key 前缀 skill.install.* / char.load.* / char.err.*。
 var zhAdapterFilesTexts = map[string]string{
-	// 压缩包门禁：skillfs 的解压与 characterfs 的 .charx 走同一套口径（§5.15 / §5.17），
+	// 压缩包门禁：skillfs 的解压与 characterfs 的 .charx 走同一套规则（§5.15 / §5.17），
 	// 同一句话只此一条，两个包共用。
 	"skill.err.zip_unreadable":    "压缩包读不出",
 	"skill.err.zip_entries":       "压缩包条目数 {n} 超过 {max} 上限",
@@ -139,7 +139,7 @@ var zhAdapterFilesTexts = map[string]string{
 	"char.load.open_card_file":       "打开卡文件 {path}",
 	"char.load.read_card_file":       "读卡文件 {path}",
 
-	// 角色卡导入与落盘（草稿目录、卡与 meta 的写入、头像归一、删除目录）。
+	// 角色卡导入与写入磁盘（草稿目录、卡与 meta 的写入、头像归一、删除目录）。
 	"char.err.root_not_abs":  "角色卡根必须是绝对路径（得到「{path}」）",
 	"char.err.need_path":     "请给卡文件路径（PNG / JSON / .charx）",
 	"char.err.remove":        "删除角色卡 {slug}",

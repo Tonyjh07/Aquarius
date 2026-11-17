@@ -17,7 +17,7 @@ import (
 // loreSource 世界书的条目来源，按 slug 在进程内缓存。
 //
 // 缓存不过期：本版卡不可编辑，同名重导入会产生新 slug。唯一例外是先删卡、再导入一张同名
-// 卡——slug 会被复用，已开的会话沿用启动时的条目（人格同样是旧快照，口径一致）。
+// 卡——slug 会被复用，已开的会话沿用启动时的条目（人格同样是旧快照，规则一致）。
 // 换一张卡重开会话即可。
 type loreSource struct {
 	catalog port.CharacterCatalog
@@ -32,7 +32,7 @@ type loreCard struct {
 }
 
 // load 取一张卡的条目。未导入或读失败返回零值：世界书缺失不该挡住对话，
-// 人格快照仍在，会话照常进行（D294 的降级口径）。
+// 人格快照仍在，会话照常进行（D294 的降级规则）。
 func (l *loreSource) load(ctx context.Context, slug string) loreCard {
 	if slug == "" {
 		return loreCard{}
@@ -57,7 +57,7 @@ func (l *loreSource) load(ctx context.Context, slug string) loreCard {
 // attachLore 把本轮激活的世界书条目并进首条 system（§5.17/D294）：位置在 persona 之后、
 // 记忆与常驻声明之前（那两段由调用方随后追加）。
 //
-// 不进树：命中集合每轮都可能变，落树等于每轮多一个节点，回溯时还会读到与当前消息矛盾的
+// 不进树：命中集合每轮都可能变，写入会话树等于每轮多一个节点，回溯时还会读到与当前消息矛盾的
 // 旧集合。判定全在 ActivateLore，这里只负责摆放。
 func (a *Agent) attachLore(ctx context.Context, c *conversation.Conversation, treePath []conversation.Message, msgs []port.PromptMessage, marks []sectionMark) ([]port.PromptMessage, []sectionMark) {
 	if len(msgs) == 0 || msgs[0].Role != port.PromptSystem {
@@ -75,7 +75,7 @@ func (a *Agent) attachLore(ctx context.Context, c *conversation.Conversation, tr
 // attachSystemNotes 把记忆块与「外部内容是数据」的常驻声明追加进首条 system（§7.1/D23/D170）。
 //
 // 两段都在树外、每轮重算：`/system` 改人格不会把它们改掉。常驻声明单列一条 system 会让
-// 「首条 system 是人格」的既有口径分叉，所以并进同一条正文；也不逐条给工具结果套围栏
+// 「首条 system 是人格」的既有规则分叉，所以并进同一条正文；也不逐条给工具结果套围栏
 // ——那会把上下文撑爆，还让正常代码读起来像可疑数据。记忆读取失败静默跳过，不阻断对话。
 func (a *Agent) attachSystemNotes(ctx context.Context, c *conversation.Conversation, msgs []port.PromptMessage, marks []sectionMark) ([]port.PromptMessage, []sectionMark) {
 	if len(msgs) == 0 || msgs[0].Role != port.PromptSystem {

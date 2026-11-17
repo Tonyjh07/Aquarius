@@ -81,7 +81,7 @@ func (u *UI) updateCompl(gtx layout.Context) {
 		u.complSel = len(u.complList) - 1
 	}
 	// 键面（Focus 限编辑器——浮层随编辑框起落；编辑器不认 Tab，↑↓ 归历史，故只剩这两个）。
-	// 过滤器由上一帧 drawCompl 登记，Gio 一帧陈旧与手势同口径。
+	// 过滤器由上一帧 drawCompl 登记，Gio 一帧陈旧与手势同规则。
 	//
 	// Shift+Tab 与 Tab 同键名（key.NameTab + ModShift），故过滤器得把它列进 Optional——不列
 	// 的话带修饰键的事件直接不匹配，逆向轮换根本到不了这里。
@@ -156,7 +156,7 @@ func (u *UI) complInsertAt(start int, ins string) {
 }
 
 // complClicks 行点击消费（drawCompl 登记 Press/Release 于各行矩形）：武装-原位抬起
-// （D72 口径）→ 命中行落笔一次，等价于按一下 Tab（D250：点击不再等于提交，Enter 才是
+// （D72 规则）→ 命中行落笔一次，等价于按一下 Tab（D250：点击不再等于提交，Enter 才是
 // 提交）。提示行没有登记矩形，自然点不到。
 func (u *UI) complClicks(gtx layout.Context) {
 	for {
@@ -219,7 +219,7 @@ func (u *UI) complClick(i int) {
 // 都着底色。提示行（insert 为空）整行暗色、不登记命中矩形——看得见、点不动。
 //
 // 绘制与命中统一用窗口系坐标（绘制经 offset(-absY) 换到窗口系，热区注册同系）；动画期
-// 不画（D54 tips 同口径），行矩形每帧重登记（fade pass 重渲同几何复登，与 bubbleRects
+// 不画（D54 tips 同规则），行矩形每帧重登记（fade pass 重渲同几何复登，与 bubbleRects
 // 同构）。
 func (u *UI) drawCompl(gtx layout.Context, absY int, pill image.Rectangle) {
 	u.complRows = u.complRows[:0]
