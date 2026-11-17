@@ -1,6 +1,8 @@
 package app
 
 import (
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,18 +36,21 @@ func TestPersonaComposerEnv(t *testing.T) {
 		}
 	}
 
+	// 沙盒目录取真实临时目录：判据是「绝对路径才附提示」，写死 `C:\…` 在
+	// 非 Windows 宿主上不是绝对路径（filepath.IsAbs）。
+	sandbox := filepath.Join(t.TempDir(), "sandbox")
 	full := RuntimeEnv{
 		Platform:   "windows/amd64",
 		Terminal:   "tui",
 		TERM:       "xterm-256color",
-		SandboxDir: `C:\data\sandbox`,
+		SandboxDir: sandbox,
 	}
 	got = compose(full)
 	for _, want := range []string{
 		"Runtime environment:",
 		"- Platform: windows/amd64",
 		"- Terminal: tui (TERM=xterm-256color)",
-		`- Privileged sandbox directory: "C:\\data\\sandbox"`,
+		"- Privileged sandbox directory: " + strconv.Quote(sandbox),
 		"skip confirmation from the strict permission level upward",
 	} {
 		if !strings.Contains(got, want) {
