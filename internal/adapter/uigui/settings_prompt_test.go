@@ -216,10 +216,12 @@ func TestSettingsPromptPageRendersPrompts(t *testing.T) {
 	}
 	settingsFrame(gtx, th, u, f)
 	if err := w.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("离屏帧提交失败: %v", err)
 	}
 	img := image.NewRGBA(image.Rectangle{Max: sz})
 	if err := w.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("离屏取像失败: %v", err)
 	}
 

@@ -52,10 +52,12 @@ func TestModuleGridDrawsInsideRow(t *testing.T) {
 	}
 	f.moduleGridRow(gtx, th)
 	if err := w.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("帧提交: %v", err)
 	}
 	img := image.NewRGBA(image.Rectangle{Max: image.Pt(viewW, viewH)})
 	if err := w.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("取像: %v", err)
 	}
 	// 背景纯白；磁贴有描边与浅底。左三分之一有像素 = 没被整体推走。

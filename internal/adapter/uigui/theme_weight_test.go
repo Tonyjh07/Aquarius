@@ -71,10 +71,12 @@ func shapeOnce(t *testing.T, th *material.Theme, wt font.Weight, s string, sp fl
 	}()
 
 	if err := win.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("渲染帧: %v", err)
 	}
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	if err := win.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("截图: %v", err)
 	}
 

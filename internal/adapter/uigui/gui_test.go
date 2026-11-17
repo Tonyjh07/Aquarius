@@ -354,3 +354,27 @@ func TestExpandMsgs(t *testing.T) {
 			u.collapsed, u.focusPending)
 	}
 }
+
+// skipNoGL 离屏渲染失败时区分「这台机器拿不到 GL 上下文」与「渲染真出错」：
+// 前者跳过。headless 服务器、WSL、远程桌面都常有这种情况——EGL 初始化看起来成功，
+// 第一次 MakeCurrent 才报错，所以不能只检查 NewWindow 的返回值。
+func skipNoGL(t *testing.T, err error) {
+	t.Helper()
+	if isNoGLError(err) {
+		t.Skipf("离屏渲染不可用（无 GPU/软件后端）: %v", err)
+	}
+}
+
+// isNoGLError GL 上下文类错误（eglMakeCurrent error 0x3008 是 WSL 上最常见的一种）。
+func isNoGLError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, key := range []string{"egl", "glx", "wgl", "dri3", "no available context", "not initialized"} {
+		if strings.Contains(s, key) {
+			return true
+		}
+	}
+	return false
+}

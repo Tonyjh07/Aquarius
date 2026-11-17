@@ -527,10 +527,12 @@ func TestImageViewLargeImageCentered(t *testing.T) {
 	imgViewFrame(gtx, testTheme(), u, st)
 	q.Frame(&ops)
 	if err := win.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("离屏帧提交失败: %v", err)
 	}
 	shot := image.NewRGBA(image.Rect(0, 0, w, h))
 	if err := win.Screenshot(shot); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("离屏取像失败: %v", err)
 	}
 

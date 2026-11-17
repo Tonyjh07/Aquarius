@@ -56,10 +56,12 @@ func composeFrame(t *testing.T, u *UI, w, h int) composed {
 	u.layout(gtx)
 	q.Frame(gtx.Ops)
 	if err := win.Frame(gtx.Ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("离屏渲染失败: %v", err)
 	}
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	if err := win.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("截图失败: %v", err)
 	}
 	out := make([]byte, w*h*4)

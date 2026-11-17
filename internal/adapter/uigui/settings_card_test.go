@@ -90,10 +90,12 @@ func TestSettingsCardEdgeContinuous(t *testing.T) {
 	ops.Reset()
 	settingsFrame(mk(), th, u, f)
 	if err := w.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("帧提交: %v", err)
 	}
 	img := image.NewRGBA(image.Rectangle{Max: sz})
 	if err := w.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("取像: %v", err)
 	}
 

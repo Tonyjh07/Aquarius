@@ -185,10 +185,12 @@ func TestRelGlyphCenteredInBadge(t *testing.T) {
 		Constraints: layout.Exact(image.Pt(500, 500))}
 	g.frame(gtx, u.th, u, st)
 	if err := w.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("渲染失败: %v", err)
 	}
 	img := image.NewRGBA(image.Rect(0, 0, 500, 500))
 	if err := w.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("截图失败: %v", err)
 	}
 	// 锚点徽标盒（屏幕坐标）

@@ -271,10 +271,12 @@ func TestSettingsFrameRowsFillViewport(t *testing.T) {
 	}
 	settingsFrame(gtx, th, u, f)
 	if err := w.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("离屏帧提交失败: %v", err)
 	}
 	img := image.NewRGBA(image.Rectangle{Max: sz})
 	if err := w.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("离屏取像失败: %v", err)
 	}
 
@@ -491,10 +493,12 @@ func TestSettingsPagesRenderContent(t *testing.T) {
 		f.page = p
 		settingsFrame(gtx, th, u, f)
 		if err := w.Frame(&ops); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("页 %d 离屏帧提交失败: %v", p, err)
 		}
 		img := image.NewRGBA(image.Rectangle{Max: image.Pt(viewW, viewH)})
 		if err := w.Screenshot(img); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("页 %d 离屏取像失败: %v", p, err)
 		}
 		bg := color.RGBAModel.Convert(img.At(2, 2)).(color.RGBA) // 导航栏顶角 = windowBg
@@ -615,10 +619,12 @@ func TestSectionTitleSpacingRendered(t *testing.T) {
 	ops.Reset()
 	settingsFrame(mk(), th, u, f)
 	if err := w.Frame(&ops); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("帧提交: %v", err)
 	}
 	img := image.NewRGBA(image.Rectangle{Max: sz})
 	if err := w.Screenshot(img); err != nil {
+		skipNoGL(t, err)
 		t.Fatalf("取像: %v", err)
 	}
 

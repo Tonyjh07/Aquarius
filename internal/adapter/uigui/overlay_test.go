@@ -434,10 +434,12 @@ func TestOverlayDimmedBackdropAndCard(t *testing.T) {
 		historyFrame(gtx, u.th, u, st)
 		q.Frame(ops)
 		if err := w.Frame(ops); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("离屏渲染失败: %v", err)
 		}
 		img := image.NewRGBA(image.Rect(0, 0, viewW, viewH))
 		if err := w.Screenshot(img); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("截图失败: %v", err)
 		}
 		return img
@@ -533,10 +535,12 @@ func ovRenderer(t *testing.T, u *UI, st *historyState, q *input.Router) func() *
 		historyFrame(gtx, u.th, u, st)
 		q.Frame(ops)
 		if err := win.Frame(ops); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("离屏渲染失败: %v", err)
 		}
 		img := image.NewRGBA(image.Rect(0, 0, w, h))
 		if err := win.Screenshot(img); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("截图失败: %v", err)
 		}
 		return img
@@ -623,10 +627,12 @@ func TestOverlayPillHugsItsBox(t *testing.T) {
 			gtx, ops := frameGtxSize(input.Source{}, w, h)
 			tc.w(gtx)
 			if err := win.Frame(ops); err != nil {
+				skipNoGL(t, err)
 				t.Fatalf("离屏渲染失败: %v", err)
 			}
 			img := image.NewRGBA(image.Rect(0, 0, w, h))
 			if err := win.Screenshot(img); err != nil {
+				skipNoGL(t, err)
 				t.Fatalf("截图失败: %v", err)
 			}
 			// 底板像素：颜色匹配**且不透明**（离屏底是透明黑，否则会和主钮的黑色底板撞上）。

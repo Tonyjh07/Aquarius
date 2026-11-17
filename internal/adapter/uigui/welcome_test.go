@@ -756,10 +756,12 @@ func TestWelcomeFrameRendersPages(t *testing.T) {
 		}
 		welcomeFrame(gtx, th, f)
 		if err := w.Frame(&ops); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("页 %v 离屏帧提交失败: %v", page, err)
 		}
 		img := image.NewRGBA(image.Rectangle{Max: sz})
 		if err := w.Screenshot(img); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("页 %v 离屏取像失败: %v", page, err)
 		}
 		bg := color.RGBAModel.Convert(img.At(0, 0)).(color.RGBA)

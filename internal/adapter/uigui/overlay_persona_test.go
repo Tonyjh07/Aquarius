@@ -297,6 +297,7 @@ func TestOverlayPersonaFrameRendersTabs(t *testing.T) {
 		historyFrame(gtx, u.th, u, st)
 		q.Frame(ops)
 		if err := w.Frame(ops); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("离屏渲染失败: %v", err)
 		}
 		img := image.NewRGBA(image.Rect(0, 0, viewW, viewH))

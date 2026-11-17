@@ -83,10 +83,12 @@ func TestAdvEditorTracksWindowHeight(t *testing.T) {
 			Constraints: layout.Exact(image.Pt(viewW, viewH)),
 		}, th, u, f)
 		if err := w.Frame(&ops); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("离屏帧提交失败: %v", err)
 		}
 		img := image.NewRGBA(image.Rectangle{Max: image.Pt(viewW, viewH)})
 		if err := w.Screenshot(img); err != nil {
+			skipNoGL(t, err)
 			t.Fatalf("离屏取像失败: %v", err)
 		}
 		bg := color.RGBAModel.Convert(img.At(2, 2)).(color.RGBA) // 导航栏顶角 = 窗体底色
