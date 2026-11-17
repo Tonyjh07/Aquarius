@@ -137,7 +137,7 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 	code := make(chan int, 1)
 	go func() { code <- run([]string{"-data", dir}, pr, &out, io.Discard) }()
 
-	if _, err := io.WriteString(pw, "启动后台任务\ny\n/jobs\n"); err != nil {
+	if _, err := io.WriteString(pw, "启动后台任务\ny\n"); err != nil {
 		t.Fatalf("写 stdin: %v", err)
 	}
 	// 等任务真的结束并写成注入：这时收割者已写完日志与台账，Settle 也已销账。
@@ -154,10 +154,15 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 		t.Fatal("没等到任务完成报告（注入没送达）")
 	}
 	// 报告送达即起一轮（D189）：等这次请求发出，再收尾，断言才有确定的下标。
-	for time.Now().Before(deadline) && reqs.len() < 3 {
+	//
+	// 这一段不能提前塞 /jobs：用户输入优先于空闲唤醒（repl.Next 先取 lines），命令
+	// 会抢在注入前面把它实现成「未触发」，第三轮就永远不来。任务结束得越快越容易
+	// 撞上——Linux 上 /bin/sh 起停在一瞬，而 Windows 上进程启动慢，反倒侥幸不撞。
+	reqDeadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(reqDeadline) && reqs.len() < 3 {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if _, err := io.WriteString(pw, "/jobs logs j001\n/quit\n"); err != nil {
+	if _, err := io.WriteString(pw, "/jobs\n/jobs logs j001\n/quit\n"); err != nil {
 		t.Fatalf("写 stdin: %v", err)
 	}
 	_ = pw.Close()
@@ -180,7 +185,7 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 	}
 	// 三次请求：起任务 → 回填启动结果 → 完成报告起的那一轮。
 	if reqs.len() != 3 {
-		t.Fatalf("llm requests = %d, want 3（起任务 / 回填 / 完成报告）", reqs.len())
+		t.Fatalf("llm requests = %d, want 3（起任务 / 回填 / 完成报告）; out = %q", reqs.len(), out.String())
 	}
 	if !strings.Contains(string(reqs.at(1).body), "j001") {
 		t.Fatalf("第二次请求应回填启动结果: %.400s", reqs.at(1).body)

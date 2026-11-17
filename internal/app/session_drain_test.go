@@ -82,6 +82,64 @@ func TestDrainAfterTurnDoesNotTrigger(t *testing.T) {
 	}
 }
 
+// TestDrainAfterTurnOwesTurn 轮末实现的触发型注入欠一轮（D189）：报告在轮内到达时
+// 只写入、不打断当前轮；但这笔账要记下来，由随后的空闲唤醒兑现。不记的话唤醒点看到
+// 队列已空会径直返回，机器越快（任务在轮内就结束）越容易漏掉那一轮。
+func TestDrainAfterTurnOwesTurn(t *testing.T) {
+	s, llm, _ := injectableSession(t, newMemStore(), textStream("收到报告"))
+	ctx := context.Background()
+
+	if err := s.Inject(ctx, port.Injection{
+		Source: "job:j1", // 默认该触发
+		Parts:  injectPart("任务完成"),
+	}); err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	if _, wantTurn, err := s.drainInjections(ctx, drainAfterTurn); err != nil || wantTurn {
+		t.Fatalf("轮末排空 wantTurn = %v, err = %v（不该在本轮内起轮）", wantTurn, err)
+	}
+	if !s.owedTurn {
+		t.Fatal("轮末实现的触发型注入应记一笔欠轮")
+	}
+
+	// 空闲唤醒：队列已空，仍要把欠的那一轮补上。
+	if _, err := s.Handle(ctx, port.UserInput{Wake: true}); err != nil {
+		t.Fatalf("handle wake: %v", err)
+	}
+	if got := len(llm.requests); got != 1 {
+		t.Fatalf("Generate 次数 = %d, want 1（欠轮应在唤醒时补上）", got)
+	}
+	if s.owedTurn {
+		t.Fatal("欠轮兑现后应清零，否则每次唤醒都会多跑一轮")
+	}
+}
+
+// TestOwedTurnConsumedByRealInput 真实用户输入兑现欠轮：那一轮本身就带着已落树的注入，
+// 不该再额外补一轮。
+func TestOwedTurnConsumedByRealInput(t *testing.T) {
+	s, llm, _ := injectableSession(t, newMemStore(), textStream("答"))
+	ctx := context.Background()
+
+	if err := s.Inject(ctx, port.Injection{Source: "job:j1", Parts: injectPart("任务完成")}); err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	if _, _, err := s.drainInjections(ctx, drainAfterTurn); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if !s.owedTurn {
+		t.Fatal("前置：应已记下欠轮")
+	}
+	if _, err := s.Handle(ctx, port.UserInput{Text: "接着说"}); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if got := len(llm.requests); got != 1 {
+		t.Fatalf("Generate 次数 = %d, want 1（用户那一轮已兑现，不另起）", got)
+	}
+	if s.owedTurn {
+		t.Fatal("用户输入后欠轮应清零")
+	}
+}
+
 // TestDrainOnWakeTriggersAndAnnounces 唤醒点排空：触发型注入 Trigger 记 true、要求跑轮，
 // 并逐条呈现（唤醒没有清屏回放，靠 HistoryEvent 补上这条记录）。
 func TestDrainOnWakeTriggersAndAnnounces(t *testing.T) {

@@ -208,6 +208,12 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 			if trigger {
 				wantTurn = true
 			}
+			// 轮末实现的触发型注入欠一轮（D189）：报告是在本轮内到的，不能打断本轮；
+			// 但「任务完成即汇报」这条规则要求接着跑，交给下一次空闲唤醒（见 Handle）。
+			// 入口点①不记账：用户马上就发话，那一轮自然带上这条注入。
+			if item.trigger && !plan.driven && at == drainAfterTurn {
+				s.owedTurn = true
+			}
 			if plan.announce && s.ui != nil {
 				if err := s.ui.Emit(ctx, port.HistoryEvent{Message: node}); err != nil {
 					return landed, wantTurn, fmt.Errorf("%s: %w", i18n.T("inject.announce"), err)

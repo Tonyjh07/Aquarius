@@ -192,6 +192,11 @@ type Session struct {
 	// 那正是这条端口要修的毛病。切会话即丢（见 dropPending）。字段名不叫 pending：
 	// 注入队列的入口方法已经叫 pending（session_inject.go）。
 	pendingQ *pendingList
+	// owedTurn 轮末实现的触发型注入欠着一轮（D189）：轮内到达的完成报告只能写入、
+	// 不能打断当前轮（② 轮末不驱动），但这一轮不能就这么算了——记一笔，等随后的
+	// 空闲唤醒补上。不记的话唤醒点看到的队列已经空了，会径直返回。
+	// 只在会话 goroutine 读写。
+	owedTurn bool
 	// lastStop 最近一轮是否被停止键中断（装配根据此决定「拿引导重新请求」，D274）。
 	// 不用 paused 位：那个位在真实输入前一直挂着，分不清「刚才停的」与「历史遗留」。
 	lastStop atomic.Bool
@@ -407,11 +412,14 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 		if err != nil {
 			return "", err
 		}
-		if wantTurn {
+		if wantTurn || s.owedTurn {
+			s.owedTurn = false
 			return "", s.runTurn(ctx)
 		}
 		return "", nil
 	}
+	// 真实用户输入到来：这一轮必然带上已落树的注入，欠着的那一轮就由它兑现了。
+	s.owedTurn = false
 	// D150 排空点①：用户输入优先，先把外部生产者攒下的注入实现（只写入、不起轮，
 	// 触发留给本轮——用户马上就发话，不必为注入单起一轮）。
 	if _, _, err := s.drainInjections(ctx, drainBeforeInput); err != nil {
