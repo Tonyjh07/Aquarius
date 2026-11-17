@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-14 @ d2b5d9f -->
+<!-- docs-sync: 2026-11-17 @ b80ea1d -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -19,7 +19,7 @@
 - `--profile <name>`：进程级覆盖指针（**不写回**）；指向不存在的 profile 启动即报错并列出可用名，不自动创建。
 - 指针文件不存在 = 首次运行：写指针（指向 `default`）+ `profiles/default/config.json` 模板后退出；某 profile 的 `config.json` 缺失时同样只写该 profile 的模板。
 - **切换 = 重启生效**：进程内不热切。设置窗「Profile」区可新建 / 复制当前 / 切换（切换 = 原子写指针）；「复制」仅复制配置（新 profile 以当前 profile 的 config.json 为底，**不带会话/记忆/附件数据**）。
-- 旧单文件 config（目录化之前的布局）启动即显式报 `ErrLegacyConfig` 并给出手工迁移步骤——**不做自动迁移**，沿 storejson `ErrLegacyFormat` 口径。
+- 旧单文件 config（目录化之前的布局）启动即显式报 `ErrLegacyConfig` 并给出手工迁移步骤——**不做自动迁移**，沿 storejson `ErrLegacyFormat` 规则。
 
 ## 三级覆盖
 
@@ -47,9 +47,9 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `model.providers` | []object | — | provider 列表，`name` 唯一。**空数组是合法的「还没配」**：程序照常启动、状态栏不显示模型名，发消息时提示去设置窗「模型」一栏补；指向不存在 provider 的 `model.fallback` 仍报错。每条：`name`（唯一标识，primary/fallback 按名引用）；`kind`（协议：`openai-chat`（空 = 该档，端点 `/chat/completions`）/ `openai-responses`（端点 `/responses`）/ `anthropic`（端点 `/messages`））；`base_url`（**路径前缀**，如 `https://api.openai.com/v1`，适配器在其后追加 `/chat/completions`、`/responses`、`/messages`）；`keys`（密钥池，见下）；`models`（模型条目数组，**首个启用的条目 = 该 provider 缺省请求模型**）；`tokenizer`（本地 tokenizer.json 路径，精确计数，空 = 通用估算）；`unsupported_params`（服务端不认的请求参数，自动记录、启动省略，**只对 `openai-chat` 生效**）；`headers`（自定义请求头，见下） |
-| `model.providers[].headers` | object | 无 | 附加到每次请求的自定义请求头，如 `{ "X-Gateway": "route-a", "X-Tenant": "t1" }`。**只对 `openai-chat` 生效**（与 `unsupported_params` 同一口径——`openai-responses` / `anthropic` 是各家自己的规范，乱加头会破坏鉴权）。在默认头与鉴权头之后设置，**同名时以这里为准**。空键名忽略。改后重启生效 |
+| `model.providers[].headers` | object | 无 | 附加到每次请求的自定义请求头，如 `{ "X-Gateway": "route-a", "X-Tenant": "t1" }`。**只对 `openai-chat` 生效**（与 `unsupported_params` 同一套规则——`openai-responses` / `anthropic` 是各家自己的规范，乱加头会破坏鉴权）。在默认头与鉴权头之后设置，**同名时以这里为准**。空键名忽略。改后重启生效 |
 | `model.providers[].keys` | []object | `[{ "api_key": "" }]` | **密钥池**：`{ "label": "主账号", "api_key": "secret:…" }`。`label` 只用于界面展示；`api_key` 规则同下「密钥规则」。按序轮换：某把被限流（429/配额）即换成下一把，被拒的钥匙冷却一段时间（读 `Retry-After`，缺省 60s）。空数组 = 一条空引用（回落默认引用） |
-| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000, "enabled": false, "cost_in": 0.15, "cost_out": 0.6 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局）；`enabled` 省略 = 启用，**只有 `false` 才参与落键**。未启用的条目保留声明但不参与选型（不进降级链候选、不进 `/model` 清单、不作为该 provider 的缺省模型）；每家的模型**至少要有一个启用**，否则启动与设置窗应用都明确报错；`cost_in`/`cost_out` = 单价（**每百万 token**，与厂商报价同口径），省略 = 未声明（界面不显示费用，不当免费）；`sampling` = 该模型的采样覆盖，见下「采样参数」 |
+| `model.providers[].models` | []object | — | 模型条目 `{ "name": "…", "caps": ["tools","reasoning","vision"], "context_window": 128000, "enabled": false, "cost_in": 0.15, "cost_out": 0.6 }`。`name` 唯一非空；`caps` 三项能力的集合，**省略 = 按协议给缺省，写了（含 `[]`）就以声明为准**（见下表）；`context_window` = 该模型的上下文窗口 tokens，**省略/0 = 不声明**（预算只看全局）；`enabled` 省略 = 启用，**只有 `false` 才参与落键**。未启用的条目保留声明但不参与选型（不进降级链候选、不进 `/model` 清单、不作为该 provider 的缺省模型）；每家的模型**至少要有一个启用**，否则启动与设置窗应用都明确报错；`cost_in`/`cost_out` = 单价（**每百万 token**，与厂商报价同一套规则），省略 = 未声明（界面不显示费用，不当免费）；`sampling` = 该模型的采样覆盖，见下「采样参数」 |
 | `model.primary` | string | 首个 provider | 当前生效 provider；不在列表内启动报错 |
 | `model.fallback` | []object | `[]` | 有序降级链：`{ "provider": "mimo", "model": "mimo-v2.6-flash" }`；`model` 省略 = 该 provider 首个**启用**的模型。同一 provider 可重复出现（同家不同型号兜底），但 `{provider, model}` 二元组不得重复。**仅网络类错误**（429/408/5xx/连接/超时）在内层同 provider 重试耗尽后触发（重试在内、降级在外）；401/400 等配置错误不降级直接暴露；无粘态（每次调用仍从 primary 起试）；流中途断连既不重试也不降级 |
 | `model.name` | string | primary 首个**启用**的模型 | 当前模型名；`/model` 热切换并写回本字段（provider/base_url 重启生效）。切到**没在 `models` 里声明**的名字也允许——按协议缺省给能力 |
@@ -119,7 +119,7 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 - 改完**保存即生效**（设置窗「模型」页保存就换这份快照），不必重启；降级目标那份随重启装配。
   入口只有设置窗「模型」页与 config 两处。
 
-**单价与费用**（`models[].cost_in` / `cost_out`）：单位是**每百万 token**（与厂商报价同口径），
+**单价与费用**（`models[].cost_in` / `cost_out`）：单位是**每百万 token**（与厂商报价同一套规则），
 填的是美元。两个都填了才折算：每轮结束后 `Usage.CostUSD` 按当轮用量累加，`/usage` 汇总显示；
 缺任意一项就不给数（宁可没有，也不给一个猜的）。`/model` 列表里带单价的模型会标注 `$入/$出 每百万token`。
 设置窗「模型服务」页的模型行可直接填这两格，留空 = 未声明。
@@ -220,7 +220,7 @@ Confirm 仅 full-access 免）。**执行接入已生效**；`network`/`secret` 
 - 无人值守不是提权：越界操作**不会**被执行，也不会被悄悄跳过；模型会改道去用权限内的手段。
 - 要「全放行」就把等级调到 `full-access`：这一档免掉确认（无人值守随之无事可做），不是
   替你回答「可以吗」。
-- 插件授权同口径：无人值守开着时，`plugins/` 目录里第一次见到的 server 不启动，该 server
+- 插件授权同一套规则：无人值守开着时，`plugins/` 目录里第一次见到的 server 不启动，该 server
   声明的能力同样不给（没人能批准）；日志会写明原因，下次交互启动再问。
 - 开启期间状态行常驻「无人值守」标记；回来看到一串「已拒绝」时，看状态行就知道原因。
 - 模型提问（`ask_user`）同样处理：没人可问时直接回「用户不在」，不让轮次卡在提问面板上。
@@ -412,20 +412,20 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 
 ### characters（角色卡）
 
-角色卡只读导入（PNG / JSON / `.charx`），投影成一次会话的开头；卡的落位与解析口径属于设计，
+角色卡只读导入（PNG / JSON / `.charx`），投影成一次会话的开头；卡的落位与解析规则属于设计，
 见 [contracts.md](contracts.md) 的领域模型与角色卡端口一节。这里只列会影响行为的四个开关、
-一组世界书激活口径与用户名的取值。
+一组世界书激活规则与用户名的取值。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `characters.prefer_system_prompt` | bool | `false` | `false` = **你的人格在前，卡的系统提示作为附加段**（推荐：卡不该悄悄替换你的规则与安全约束）；`true` = 卡里的 `system_prompt` 替换主提示，其中的 `{{original}}` 展开成你的人格，卡的角色设定段始终保留。**两种模式下运行环境信息都保留**——那是事实，不是人格 |
-| `characters.apply_post_history` | bool | `true` | 每轮把卡的 `post_history_instructions` 追加在**历史之后**（语义就是「最后再说一句」）；内容随会话落盘，关掉只是不再发送，不会删掉 |
+| `characters.apply_post_history` | bool | `true` | 每轮把卡的 `post_history_instructions` 追加在**历史之后**（语义就是「最后再说一句」）；内容随会话写入磁盘，关掉只是不再发送，不会删掉 |
 | `characters.inject_constant_book` | bool | `true` | 注入卡的**常驻**世界书条目（`constant: true` 且未禁用），按卡内顺序进人格段。默认开是因为不少卡把角色设定整个写在常驻条目里，不注入就是个空壳。**代价**：常驻条目在人格段里，每轮都付 token、**不会被上下文压缩挤掉**；觉得占地方就关掉这个开关再重开一次会话 |
 | `characters.inject_examples` | bool | `true` | 注入卡的示例对话（`mes_example`），落在人格之后的注入节点里，**会随历史增长被挤掉**；关掉只是不再发送，卡文件照留 |
 
 - 你希望在卡里被怎么称呼，用 `prompts.user_name`（默认 `User`）指定，见上文 prompts 段。
-- 四个开关**只影响之后新建的角色会话**，已开始的会话保持建会话时的口径（人格与尾部指令
-  都已快照/落盘）；只有 `apply_post_history` 对已有会话是**立即**生效的（该开关决定发不发，
+- 四个开关**只影响之后新建的角色会话**，已开始的会话保持建会话时的规则（人格与尾部指令
+  都已快照/写入磁盘）；只有 `apply_post_history` 对已有会话是**立即**生效的（该开关决定发不发，
   不改内容）。
 - 卡的 `creator_notes`（作者留言）、`tags`、`creator`、`character_version` 只展示，**不进上下文**；
   卡的**不常驻**世界书条目见下面的激活段，正则脚本、扩展脚本一类的机制**保留但不执行**——
@@ -545,7 +545,7 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 
 以上键都可以在 GUI 设置窗的「联网」页编辑（两组提供商是有序列表，可增删与调序；密钥框
 只写不回显，留空 = 保持原引用）。「借用」下拉选中一条后点「填入」，会把那条的端点与
-**密钥引用名**抄进本条目（永不抄值），之后照常可以改。设置窗保存前按与启动同一口径校验，
+**密钥引用名**抄进本条目（永不抄值），之后照常可以改。设置窗保存前按与启动同一套规则校验，
 写坏的组合进不了盘。
 
 ### mcpServers / plugins
@@ -585,7 +585,7 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
   - provider 名里含中文、全角或重音字母时，规范化会剔除这些字符（`深度求索` 与 `月之暗面`
     都变 `AQUARIUS_PROVIDER_API_KEY`、互相覆盖），这类名字补 4 位指纹区分，
     如 `AQUARIUS_OPENAI_03F5_API_KEY`。
-  联网页的 brave 密钥同口径入库（沿用 `AQUARIUS_BRAVE_API_KEY` 或自定义引用名）；deepseek
+  联网页的 brave 密钥同一套规则入库（沿用 `AQUARIUS_BRAVE_API_KEY` 或自定义引用名）；deepseek
   这类可独立配置的条目按**侧**分槽（`AQUARIUS_DEEPSEEK_SEARCH_API_KEY` /
   `AQUARIUS_DEEPSEEK_FETCH_API_KEY`，不占对话 provider 的 `AQUARIUS_DEEPSEEK_API_KEY`）；
   语音页按**能力**分槽（`AQUARIUS_ASR_API_KEY` / `AQUARIUS_TTS_API_KEY`）。密钥库不可写时
@@ -596,7 +596,7 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
   也就是 DeepSeek 官方文档里的环境变量名）。
 - **密钥池**：同一 provider 配多把，按序轮换。某把返回 429 / 配额耗尽即换成下一把并立刻重试；
   被拒的那把进入**进程内冷却**（读响应头的 `Retry-After`，缺省 60s），冷却期内直接跳过。全都在冷却
-  = 该 provider 这一轮失败，交给降级链。顺序固定「先换钥匙、再换 provider」。冷却状态不落盘，重启清空。
+  = 该 provider 这一轮失败，交给降级链。顺序固定「先换钥匙、再换 provider」。冷却状态不写入磁盘，重启清空。
   换钥匙与「全在冷却」都会在界面上给一行提示。只有一把钥匙时不启用轮换（没有别的可换）；某一把
   引用取不到时跳过该钥匙继续启动（其余钥匙照用），全部取不到才报因。5xx/网络类错误**不换钥匙**——
   端点故障换钥匙没用。
@@ -607,7 +607,7 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
   直填的那把（收库后退化为 `secret:<名>` 引用），以及「config 只写引用、真值只在同名环境变量里」
   的那些（值抄进库、config 不动）。只处理 **config 真正引用到的名字**，不扫全部 `AQUARIUS_*`
   环境变量（那会把无关变量也固化下来）。库解不开时**拒绝导入**，不套用普通写路径的「从空表起步」
-  ——批量导入会因此丢掉库里已有条目。顺序是先落库、后改 config，失败留「库里有值、config 还是
+  ——批量导入会因此丢掉库里已有条目。顺序是先写进密钥库、后改 config，失败留「库里有值、config 还是
   明文」这个可用中间态。值永不回显，反馈只报条数。
 - 无论哪种形态，密钥都不进会话树、附件、日志；stdio 插件子进程环境剔除 `AQUARIUS_*` 变量。
 - 设置窗密钥输入**只写不回显**：留空 = 保持原值（按编辑前原名匹配保留，改名不丢密钥）。
@@ -710,8 +710,8 @@ profile 配置 `<data>/profiles/default/config.json`：
 - 「模型」页：当前模型名 + 原生思考与推理档位 + 有序降级链（每项 `provider / model`，可增删与上移下移；链窄于当前模型能力时上方给一行警示）。
 - 「模型服务」页：provider 管理（**折叠卡片**，同时只展开一张）——名称/协议/接口地址/密钥池/**模型列表**/tokenizer/不认参数。另有设为主、删除与连通性「测试」（真实最小请求，8s 超时）。模型列表每行 = **启用**勾选 + 名字 + 上下文窗口 + 三能力勾选 +「探测能力」；表头有「共 N 个 · 已启用 M 个」与「获取模型」，下面一行是本卡片的拉取反馈，尾部「＋ 添加模型」。切进本页时会**自动拉一轮**各家的 `/models`（每窗一次），结果全部并进列表、新增行默认未启用；行数不设上限，超过 8 行分页。密钥值**只写不回显**（留空 = 保持原值）；能力勾选**动过才固化成显式声明**（未动 = 保持原形态）。「探测能力」以**编辑区现值**探（模型还没应用也能探，结论先回填勾选）。「应用 provider 变更」整体写回，重启生效。
 - 「权限与思考」「外观与呼出」：热生效项照旧；模型名经 `/model` 热切换。
-- 「输出」「限额」「人格模块树」：保存即写回；人格组合**只影响之后新建的会话**，且**重启后生效**（与 `system_prompt` 同口径）。「存储」区的**备份代数**写回 `backup.keep`，同样**重启后生效**（会话树在启动时按该值装配轮转）。
-- 「MCP 与插件」：只读清单；「联网」页 = 搜索与抓取两组提供商（有序列表，可增删与上下移）。本地抓取参数（条数、正文上限、代理、UA、robots、超时）也在这一页。每条可自己填端点与密钥。也可以选「借用」再点「填入」，把某个 `model.providers` 条目的端点与密钥引用抄过来（永不抄值）。密钥框只写不回显（留空 = 保持原引用）；保存前按启动同一口径校验，写坏的组合进不了盘，原文件不动。
+- 「输出」「限额」「人格模块树」：保存即写回；人格组合**只影响之后新建的会话**，且**重启后生效**（与 `system_prompt` 同一套规则）。「存储」区的**备份代数**写回 `backup.keep`，同样**重启后生效**（会话树在启动时按该值装配轮转）。
+- 「MCP 与插件」：只读清单；「联网」页 = 搜索与抓取两组提供商（有序列表，可增删与上下移）。本地抓取参数（条数、正文上限、代理、UA、robots、超时）也在这一页。每条可自己填端点与密钥。也可以选「借用」再点「填入」，把某个 `model.providers` 条目的端点与密钥引用抄过来（永不抄值）。密钥框只写不回显（留空 = 保持原引用）；保存前按启动同一套规则校验，写坏的组合进不了盘，原文件不动。
 - 「语音」页 = 识别与合成两份独立配置（服务、端点、密钥、模型）+ 音色/音色描述/风格/标签 + 试听。同样支持「借用」+「填入」；密钥框只写不回显，填明文会先收进本机密钥库（识别存 `AQUARIUS_ASR_API_KEY`、合成存 `AQUARIUS_TTS_API_KEY`）。服务与模型的改动重启生效，音色与风格对此后的播报立即生效。
 - 「高级」页 = config.json **原文整文件编辑**（保存前 JSON 校验，解析失败原文件不动；未知键天然保留）。编辑区随窗口高度撑满，不设固定高度。
 

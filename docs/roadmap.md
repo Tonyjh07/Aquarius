@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-17 @ 4577c68 -->
+<!-- docs-sync: 2026-11-17 @ b80ea1d -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -79,13 +79,13 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 `v0.8.0`（语音分段）：**采集口从「一次返回整段 WAV」改为连续推帧**、**新分段端口与
 `vadsilero` 适配器**（内嵌 Silero VAD，纯 Go 无 cgo）、**`ingestmic` 边录边判逐段转写**、
 **`audio.vad` 配置面与语音页开关**（D295）四批已完成。这是 v0.8.0 的首批，版本仍在开发中。一次采集仍是一条消息，
-多段落成多个文本分片；纯静音不建附件、不发起转写；`enabled=false` 退回整段录音，
+多段切成多个文本分片；纯静音不建附件、不发起转写；`enabled=false` 退回整段录音，
 行为与 D179 逐字一致。余额：阈值未在真实环境中标定（缺省沿用上游）；`go-silerovad`
 无上游 tag，只能钉提交，与另两条伪版本依赖一起留在 [plan.md](plan.md) 的暂缓事项里。
-第二批是**装配结果的查看口**：`/context` 给分块账、单条全文与整份落盘，`last` 回看上一轮
+第二批是**装配结果的查看口**：`/context` 给分块账、单条全文与整份写入磁盘，`last` 回看上一轮
 实际发出的那份，图形界面下整份全文复开只读次窗（D296）。视图只读装配产物，标签由装配函数
 在追加处记下，所以账与请求同源。第三批反过来看**收回来什么**：`/raw` 给协议、状态码、耗时与
-帧目录，按帧号取原文，`full` 整份落盘并复开同一扇只读次窗（D297）。留档由适配器对响应体
+帧目录，按帧号取原文，`full` 整份写入磁盘并复开同一扇只读次窗（D297）。留档由适配器对响应体
 套一层有界 tee 取字节原文，解析路径一行未改；只留最近 4 次、只在内存、单次 2 MiB。
 
 第四批是「看得见、收得回、别在沉默里坏掉」的七条：`/audit` 把审计日志读成表——时间、种类、名字、
@@ -138,7 +138,7 @@ session/model/day 三个视角，不另建台账（D302）；`/diag` 按**一个
 | S3 | 会话管理界面：relation-map | 已完成（D112 数据面 + D120 形态规格 + D121/D122/D124/D128 物理与交互；规格见 [relation-map-design.md](relation-map-design.md)） |
 | S4 | 配置底座：全量设置窗 + 配置文件化 | 已完成（D110①② + D141③ 欢迎窗 + D210/D263 修订） |
 | S4a | 大文件拆分重构 | 已完成（8 个 refactor commit；2026-10-22 按需补齐测试文件拆分） |
-| S4b | GUI 跨平台抽象层 | 已完成（D111 + D119 非 Windows 门禁口径） |
+| S4b | GUI 跨平台抽象层 | 已完成（D111 + D119 非 Windows 门禁规则） |
 | S4c | 设置窗渲染异常修复 | 已完成（D113：`layout.List` 轴向不变量 + 离屏渲染回归） |
 | S4d | 设置窗分组导航 | 已完成（D142：分页 + 左侧导航） |
 | S4e | 设置窗枚举档改选择器 + 语音页按协议位收字段 | 已完成（D224/D225） |
@@ -178,7 +178,7 @@ session/model/day 三个视角，不另建台账（D302）；`/diag` 按**一个
 | v0.4.0-S | 运行中的插话：待发清单落在会话上（两档 `queue`/`steer`、插入序、上限 8、内存态、切会话丢弃并留一行提示）、`Agent.Run` 在两个边界取用（工具批之后与「本可收场」那一刻取全部引导 → 当前段提交成 assistant 节点 + 引导落成 user 节点 + 新缓冲接着跑；轮末按 FIFO 取一条接着起一轮，不回输入循环）、停止只置 `paused` 不清空、`ui.keys` 三键（启动校验撞键/坏键名）、GUI 待发条（转引导 / 拉回 / ×，只列排队；随转写区揭示进度淡入淡出）与转写区末尾的引导气泡（↓ 回队列 / × 丢弃）与 TUI 状态行计数＋`Ctrl+U` 撤销、轮内 user 节点按 `CommittedEvent` 补气泡（D272/D273） | 已完成 2026-11-01 |
 | v0.5.0-I | 界面 i18n 底座：`internal/i18n` 26 对区域表（2410 条 key）+ 取词口、`ui.lang` 三态与启动选语、设置窗常规页的语言档（重启生效）、四条扫描锁（字面量 / 缺键 / 孤儿 key / 拼接前缀）、`fieldLabelW()` 按语言取宽与 `en` 膨胀清单（D275 / contracts §7.8） | 已完成 2026-11-03（批次 I1–I5） |
 | v0.5.0-I2 | i18n 收尾：出口扫描锁 `TestNoTextLiterals`（`material.*` / `hoverTip` / `hoverCard` / `paper*` 薄封装 / 渲染单元 `text` 字段不收裸英文；命令表 `Desc`·`Usage`·`ValueName` 字面量必须是表内 key）+ 修掉四处写死英文（主输入框占位 ×2、拒绝原因占位、常规页分组标题 `Profile`）；输入框占位文字可自定义（`ui.input_placeholder`，单条共用主输入框与原因框、不翻译、空 = 回落内置、热生效）（D279 / §7.8） | 已完成 2026-11-03（批次 I7–I8） |
-| v0.5.0-I3 | i18n 收尾第二批（I6）：测试期望值跟 key 走——`internal/i18n/lock_expect_test.go` 的 `TestNoCJKExpectations`（AST 扫四类期望位置：strings 判定实参、`==`/`!=` 操作数、`want` 赋值与字段），实测 999 处（uigui 352 / app 351 / cmd+uitui 112 / 其余小包 184），逐处判类处置：界面文案改 `i18n.T/Tf` 整句级重建（多处碎片 Contains 升为整句相等，未弱化），测试数据（用户数据 / 模型输出 / 落盘内容 / 协议或配置值）进 `testDataLiterals` 白名单并写理由；uigui 的 `TestMain` 改为尊重 `AQUARIUS_UI_LANG`（缺省钉 zh）；另收掉锁的已知盲区约 40 组（预构期望切片、表驱动按位置初始化的中文期望）。`zh` 与 `AQUARIUS_UI_LANG=en` 全量双跑绿，`go vet` / `gofmt` / `-race`（i18n+app+cmd 三包）过；门禁加一条 `AQUARIUS_UI_LANG=en go test ./...`（development.md） | 已完成 2026-11-04（批次 I6） |
+| v0.5.0-I3 | i18n 收尾第二批（I6）：测试期望值跟 key 走——`internal/i18n/lock_expect_test.go` 的 `TestNoCJKExpectations`（AST 扫四类期望位置：strings 判定实参、`==`/`!=` 操作数、`want` 赋值与字段），实测 999 处（uigui 352 / app 351 / cmd+uitui 112 / 其余小包 184），逐处判类处置：界面文案改 `i18n.T/Tf` 整句级重建（多处碎片 Contains 升为整句相等，未弱化），测试数据（用户数据 / 模型输出 / 写入磁盘的内容 / 协议或配置值）进 `testDataLiterals` 白名单并写理由；uigui 的 `TestMain` 改为尊重 `AQUARIUS_UI_LANG`（缺省钉 zh）；另收掉锁的已知盲区约 40 组（预构期望切片、表驱动按位置初始化的中文期望）。`zh` 与 `AQUARIUS_UI_LANG=en` 全量双跑绿，`go vet` / `gofmt` / `-race`（i18n+app+cmd 三包）过；门禁加一条 `AQUARIUS_UI_LANG=en go test ./...`（development.md） | 已完成 2026-11-04（批次 I6） |
 | v0.5.0-L1 | 规范化日志内核：`internal/logging` 五段渲染、级别过滤、文本 / JSON 双出口、按天切 + 轮转 + 保留 7 天 + 降级 stderr；`ui.log_level` / `-log-level` / `-log-format`；arch 的 `layerLogging`；日志文案进表（D276 / §7.9） | 已完成 2026-11-03 |
 | v0.5.0-V | `en` 布局走查（人工）：已修「无人值守」行两块折行文字并排塌成一列、设置窗左栏不滚动 + 导航项高度写死 36dp | 已完成 2026-11-04 |
 | v0.5.0-D | 文档按 STC 审阅与重写：`docs/` 13 篇 + 仓库 `README.md` 过一遍词表与 Anti-Echo；用户面五篇与工程六篇改写，`contracts` / `decisions` 只报不改 | 已完成 2026-11-05 |
@@ -250,7 +250,7 @@ G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句�
 | P2-5 | `07fef4b refactor: split the settings save flow into collect and commit` | 四笔：`d441b7c` 四个设置 DTO 搬进 `port`、`uigui` 留类型别名（D229，2 files, +140/−104，零字面量改动）；`b462ee0` 取值范围收成 20 个 `port.Settings*` 常量，提示文案由常量拼（D230，11 files, +146/−52，数值一处未变）；`6ff9242` 采样四段文本的解析收进 `port.ParseSamplingText`，界面前置校验与写回解析同一份实现（D231，6 files, +228/−110，删 `cmd` 侧重复解析 49 行）；`07fef4b` `saveSettings` 271 行拆成 `patch()` 采集校验 + `commitSettings()` 提交编排，报错返回零值 patch（D232，2 files, +190/−124） |
 | P2-7b | `a3502d6 refactor: keep the theme tokens in one snapshot` | 文档笔 `c0e3023`（D233）。删掉 22 个包级颜色 `var` 与 `applyPalette`/`currentPalette` 的逐字段双向抄写，活动值只留一份 `atomic.Pointer[palette]` 快照，绘制点经 `tok()` 取结构体副本（形态照 `theme_paper.go` 的 `paperOf()`）。110 处绘制点改形态、配色值一处未变；原「同步完整性」测试换成单一来源 / 快照隔离 / 空快照回落三条（23 files, +182/−220） |
 | P2-6 | 取消（2026-10-25） | 拆包移到 backlog，依据是本轮实测：三包合计只占 `uigui` 的 24%，搬完父包仍 1.5 万行、最大单文件不变；代价是 391 处按类型的字段改名、75 个白盒测试的夹具重写、装配根 261 处换限定名（D234）。已落的两笔前置（设置逻辑归位、`theme` 令牌数据化）保留——这两笔各自是净删，不因拆包取消而失去意义 |
-| P2-7c | `dafa77f refactor: name the drain points and scan command flags once` | 文档笔 `0e98e5d`（D235）。注入排空的三个时机收成四个具名排空点（`drainBeforeInput`/`drainAfterTurn`/`drainOnWake`/`drainBeforeReplay`），「是否驱动一轮 / 是否逐条呈现」由一张口径表给出，调用点不再组合 `(driven, announce)` 两个布尔（那个从未被用过的组合随之消失）；三条命令的 flag 解析收成一份 `flagScan`，「位置」与「个数上限」两处真实差异显式声明，其余口径只写一遍（值型吃值、缺参报因、正文拼接）；顺带写明并测住 `/skill` 排空点的前提（队列里只会有本条技能正文，因为外部注入已在入口完成）。新增 `cmdflags_test.go`、`session_drain_test.go`，既有命令测试原样通过（12 files, +507/−81；新增测试 282 行，删三套手写解析循环与五处布尔传参） |
+| P2-7c | `dafa77f refactor: name the drain points and scan command flags once` | 文档笔 `0e98e5d`（D235）。注入排空的三个时机收成四个具名排空点（`drainBeforeInput`/`drainAfterTurn`/`drainOnWake`/`drainBeforeReplay`），「是否驱动一轮 / 是否逐条呈现」由一张规则表给出，调用点不再组合 `(driven, announce)` 两个布尔（那个从未被用过的组合随之消失）；三条命令的 flag 解析收成一份 `flagScan`，「位置」与「个数上限」两处真实差异显式声明，其余规则只写一遍（值型吃值、缺参报因、正文拼接）；顺带写明并测住 `/skill` 排空点的前提（队列里只会有本条技能正文，因为外部注入已在入口完成）。新增 `cmdflags_test.go`、`session_drain_test.go`，既有命令测试原样通过（12 files, +507/−81；新增测试 282 行，删三套手写解析循环与五处布尔传参） |
 | P2-8 | `3599fd2 feat: hold the resident heap to 1.5x live and cap leaks at 768MiB` | 文档笔 `2ef7a9f`（D236）→ 修订笔 `1808f51`（D238）→ 归因 `memprofile_test.go`（D239）。初版是进程级堆软上限 256MiB：`main` 在装配前调一次 `debug.SetMemoryLimit`，`GOMEMLIMIT` 显式设置时不覆盖；不改 `GOGC`（3 files, +71/−0）。**真实 profile 复测推翻了初版前提**：空闲期与设计一致（工作集 323→329MB、存活堆 101→154MB、GC 约 120 秒一次），但压力操作（展开/收起、设置翻页、历史管理拖节点与切会话）把存活堆推到 454MB、工作集峰值 972.9MB、私有字节 1093.5MB——256MB 上限低于存活堆，会在这类路径上连续 GC；而空闲工作集里约 170MB 是非堆加字体，封堆对非堆内存无效。D238 改为 `GOGC=50`（摆动收到 1↔1.5 倍）+ 768MiB 只当泄漏保险，两个旋钮各自尊重同名环境变量（3 files, +88/−35）。**同一套压力操作复测**：空闲工作集 323→311MB、峰值 972.9→903.0MB、私有峰值 1093.5→1046.7MB、压力段存活堆 454→479MB（GC 目标 504→705MB）、全程 GC 14→30 次。改善幅度约 5–7%，低于预估——存活堆本身就涨了三倍，压倍数只压缩存活堆上面那一层。**D239 归因**（新增 `memprofile_test.go`，环境变量门控、默认 skip）：按用户操作逐步强制 GC 后读存活堆并落 pprof，结论是**涨的全在字体**——每开一窗各建一份主题（解析字体文件 +75～80MB）并各自首次排版（字形轮廓 +37MB），而四十轮对话 +1.3MB、拖节点 30 帧 / 翻遍设置页 / 展开收起 10 次各 0–2.4MB。三窗合计约 336MB，与实测 454–479MB 同量级。字体侧再拆：第二个 Shaper 复用同一份集合只 +1.3MB（共享可行），`NoSystemFonts` 让首次排版那 37MB 变 +0.0MB（证明这 37MB 来自整机字体库扫描） |
 | P2-9 | `f10f3fb refactor: wake the docked heartbeat every 100ms` | 文档笔 `e2cf1c9`（D237）。停靠/收起态心跳 50ms → 100ms：节拍收成 `heartbeatInterval` 常量，判据 `heartbeatNeed` 一处不改（变的是「多久复评一次」）。代价明写：悬停召回、布防识别、tips 点亮的延迟上限从 ≤50ms 变为 ≤100ms（D84/D85 的延迟描述按新节拍读）；停靠/召回动画另有 16ms ticker，不受影响。绘制帧数减半，长期停留的停靠/输入状态直接省一半合成与提交（1 file, +10/−3） |
 | P2-10 | `d1e7ae2 feat: parse the CJK faces once and share them across windows` | 文档笔 `9512eba`（D240）。D239 量出每窗各解析一遍同一份中文字体（75～80MB/窗），而解析结果在 `ParseCollection` 返回后完全只读，重复解析是纯浪费。改为进程内按候选表内容缓存一份（`sharedFaces`），交给 `NewShaper` 前**封容量**（防调用方 append 改写共享底层数组，`gofont.Collection` 同一条防护）；Shaper 仍每窗各建一份（首次排版要按 Shaper 解析字形轮廓），整机字体扫描按 D240 保持开启（CJK 粗体面的来源，D147）。**实测同一套量法前后对照：整轮存活堆 502.5MB → 281.9MB（−220.6MB）**——历史窗与设置窗主题各从 +74.9MB 降到 +1.4MB；主窗/历史窗/设置窗首排的 +37～80MB 不变（印证「按 Shaper 存」的预判）；展开夹具从 +112.4MB 降到 +38.8MB；四十轮对话、拖节点、翻页仍各 0–2.4MB。新增 `theme_font_shared_test.go` 四条守卫（同候选返回同一底层数组 / 容量封住 / 不同候选分档 / 两主题共享面但不共享 Shaper），`TestWeightTiers*` 两条像素守卫继续通过（粗体零退化），`-race` 与 linux 门禁全绿（2 files, +147/−6）。顺带修掉一处隐式竞态：`monoFace` 是包级单值，原来后建的窗会覆盖前一个窗的等宽面，共享后各窗取到同一个 |
@@ -289,7 +289,7 @@ G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句�
 | # | 提交 | 主要结果 |
 |---|---|---|
 | E-1 | `feat: let one aqx archive carry a group of conversations` | 端口 `ExchangeEntry`/`ExchangeReport.Entries`/`ExchangeIndexer` 与两个新签名（导入收 `pick`、返回一组树）；`aqx` 容器写读换成 `manifest.json` + `conversations/<i>/tree.json` + 跨会话共用 `blobs/`（版本仍是 1）、`Index` 只读清单、`resolvePick` 越界并列清单、上限改按**每会话**卡；三份互通格式收到多于一个会话直接报错；导出仍只写当前会话、导入已落全部树并回滚 |
-| E-2 | `feat: back up and restore groups of conversations from the command line` | `/export --all`（整库）与 `--ids <id>[,<id>…]`（互斥、`--format` 非 aqx 报错）、`/import --pick <序号>`；导入「先全部自检、再一次性落盘」（第 3 个坏则库里一个都不多）、切到第一个导入的会话并清屏回放；回执多会话逐条列标题与条数；命令表两条记录 |
+| E-2 | `feat: back up and restore groups of conversations from the command line` | `/export --all`（整库）与 `--ids <id>[,<id>…]`（互斥、`--format` 非 aqx 报错）、`/import --pick <序号>`；导入「先全部自检、再一次性写入磁盘」（第 3 个坏则库里一个都不多）、切到第一个导入的会话并清屏回放；回执多会话逐条列标题与条数；命令表两条记录 |
 | E-3 | `feat: delete several conversations behind one confirmation` | `/rmconv <id> [<id>…]`：先全部解析、再一次确认、最后才动库；删到当前会话时继任者跳过本批要删的；单个 ID 的用法与回执逐字不变 |
 | E-4 | `feat: pick which conversations to import from an archive` | GUI 勾选面板（每行标题 + 条数、缺省全勾、只一项不弹）、`Options.Indexer` 注入、`modalActive` 认面板、`startImport` 分流（清单取不到也直接投，原因由命令面说） |
 | E-5 | `feat: select conversations in the history list to export or delete them` | 左栏底部「选择」钮 + 行内自绘复选框（`widget.Bool` 嵌在行点击件里收不到指针事件）+ 动作条（全选 / 已选 N 个 / 取消 / 导出 / 删除）+ Esc 退出；导出 = 保存框只一档 aqx、ID 取按下那刻的快照 → `/export --ids`；删除 = `/rmconv`。**「导出全部会话」不单列：全选即整库** |
@@ -303,11 +303,11 @@ G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句�
 | D-2 | `7bb9465` | `@char` 组与六个条件内置叶子（无卡 / 字段空 ⇒ 空模块、不计缺失）；`Compose` 先算 `U` 再展开卡文本；`{{char}}`/`{{user}}`/`{{date}}`/`{{original}}` 与 `<BOT>`/`<USER>`/`<START>` 宏替换器；不带卡输出逐字节不变（golden 锁） |
 | D-3 | `48e6c69` | `adapter/characterfs` 读 V2/V3 纯 JSON 与 PNG（`tEXt` 关键字大小写不敏感、`ccv3` 优先、进场去 BOM）；字段归一、`data` 与顶层镜像的取舍、`nickname` 优先 |
 | D-4 | `8e89f4b` | `.charx`（ZIP）：根 `card.json`、资产 URI 三形态、图标优选 `name=main`、zip-slip 与条目 / 展开门禁、原包留档；缺 `card.json` 报「这是发行包，请导入其中的 `.charx`」 |
-| D-5 | `4ecbdf8` | 头像落盘写去 `tEXt` 重编码的像素 PNG（52 MB → 2.22 MiB 像素无损）；引 `x/image/webp` 认 webp 资产 |
+| D-5 | `4ecbdf8` | 头像写入磁盘写去 `tEXt` 重编码的像素 PNG（52 MB → 2.22 MiB 像素无损）；引 `x/image/webp` 认 webp 资产 |
 | D-6 | `c39bf8e` | `<profile>/characters/<slug>/` 落位（`card.json` 逐字节 + `meta.json` 原子写 + `avatar.png` + 可选 `source.charx`）；slug 归一与大小写不敏感查重；`List` 坏条目带警告跳过、`meta.json` 缺失时从卡重建 |
 | D-7 | `59bf9b0` | 卡片字段投影成会话文本：有效引用追加 `["@char.book","@char","@char.system"]`、`prefer_system_prompt` 两态（替换态仍带 `@env`）、`{{original}}` 两处展开、常驻世界书按 `constant && enabled` 过滤、`mes_example` 走注入节点 |
-| D-8 | `5155c5c` | `Conversation.Character`/`Tail` 进 `Snapshot`/`Restore` 与落盘 wire（旧文件缺键 = 空）；装配末尾追加 `Tail`、config 开关控制；`Tail` 存宏替换后的终稿 |
-| D-9 | `0b6f8fb` | `/character start` 走独立新建路径（不改被 `/new`/`/switch`/`/import` 共用的 `newConversation`）：投影 → 选开场白（合并列表，n 从 1 起）→ 建会话 → 落盘 → 清屏回放 |
+| D-8 | `5155c5c` | `Conversation.Character`/`Tail` 进 `Snapshot`/`Restore` 与磁盘上的 wire（旧文件缺键 = 空）；装配末尾追加 `Tail`、config 开关控制；`Tail` 存宏替换后的终稿 |
+| D-9 | `0b6f8fb` | `/character start` 走独立新建路径（不改被 `/new`/`/switch`/`/import` 共用的 `newConversation`）：投影 → 选开场白（合并列表，n 从 1 起）→ 建会话 → 写入磁盘 → 清屏回放 |
 | D-10 | `2cd2940` | 卡里 `data.assets` 条数与「宿主不执行的机制」记账（`CharacterInfo.Assets`/`Unsupported`），回执据此分列 |
 | D-11 | `ff4da71` | 导入回执四类（世界书 / 资产 / 不执行机制 / 只展示字段）+ 界面卡降级提示 + 超长开场白提示 |
 | D-12 | `e83e461` | `app.CharacterAdmin` 与装配根实现（范式同 `app.SkillAdmin`）；同名卡不覆盖、删除二次确认 |
@@ -351,11 +351,11 @@ G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句�
 | R-2 | `2097663 feat: record provenance when a carry moves a subtree` | 领域新增 `Detachment` 与私有表：Carry 搬孩子时记一条（锚点 = 旧版本、根 = 整批孩子、新位置 = 新版本）；`Detachments()` 现算 `Stale`；`Prune` 删任一端连带清；`Snapshot`/`Restore` 与 `storejson` 的 `detached` 键（缺键即空、不升 wire 版本）；`Validate` 查三端在树；三条单元测试 + 转移属性断言 |
 | R-3 | `6d2289b refactor: share the child transfer between carry and reparent` | Carry 里那段整批边转移收成 `transferChildren(from, to)`：孩子整批搬到 `to` 的末尾、只改这些孩子的 `Parent`，返回被搬的列表；Carry 用这个函数并照旧记路牌，改父那笔直接用，只看新判断 |
 | R-4 | `18ccf44 feat: let a subtree change parents` | `Reparent(id, newParent)`：存在性 → 拦 Root（被搬方与新父）、环（自己/严格后代）、同父 → `detachChild`/`attachChild` → 记路牌（锚点 = 原父、根 = [id]）→ 自检；不动 Head、不改版本链；返回 `ReparentResult{Moved}`。`Validate` 与 `aqvalidate` 下均通过；四条单元测试 + 随机性质测试（合法就成功、非法一律拒且不多记路牌） |
-| R-5 | `9006649 feat: expose reparenting as a command` | `/reparent <id> <新父>` 与 `--undo`（命令注册表加一条：`execReparent` + `execReparent --undo`）：唯一前缀解析两边、会话外立即落盘（失败回滚到上次保存）、被搬子树含 Head 时清屏回放；撤销走 `UndoLastDetachment`（消费记录、不写新记录）；领域补 `UndoLastDetachment` 与 `IsPad`（衬垫落点提示）；三条命令测试 + 两条撤销单元测试；usage 命令表补行 |
-| R-6 | `5239e5c feat: defer tree edits until the session ends` | `/tree-edit [--done|--cancel]`：进入时存整树快照与上下文条数，改父/撤销只改内存（`treeEdit.edits` 计数），退出一次落盘；放弃用快照重建（会话期间落过盘就把回滚结果再写一次）；上下文变少先确认（带 N→M）、变多只提示；`/switch`、`/new` 走同一个出口（保存/放弃/取消两问）；`TreeEditState()` 供 UI；六条会话测试 |
+| R-5 | `9006649 feat: expose reparenting as a command` | `/reparent <id> <新父>` 与 `--undo`（命令注册表加一条：`execReparent` + `execReparent --undo`）：唯一前缀解析两边、会话外立即写入磁盘（失败回滚到上次保存）、被搬子树含 Head 时清屏回放；撤销走 `UndoLastDetachment`（消费记录、不写新记录）；领域补 `UndoLastDetachment` 与 `IsPad`（衬垫落点提示）；三条命令测试 + 两条撤销单元测试；usage 命令表补行 |
+| R-6 | `5239e5c feat: defer tree edits until the session ends` | `/tree-edit [--done|--cancel]`：进入时存整树快照与上下文条数，改父/撤销只改内存（`treeEdit.edits` 计数），退出一次写入磁盘；放弃用快照重建（会话期间落过盘就把回滚结果再写一次）；上下文变少先确认（带 N→M）、变多只提示；`/switch`、`/new` 走同一个出口（保存/放弃/取消两问）；`TreeEditState()` 供 UI；六条会话测试 |
 | R-7 | `feat: put the tree edit switch in the status bar` | `port.TreeView` 加 `TreeEditState()`（app 侧 `TreeEditActive` 更名，`sessionTree` 转发）；`/tree-edit --exit`（关开关走与切会话同一套三选一，不在模式里不算错）；状态栏右端加分隔线 + 常显标签 + 44×24dp 开关（160ms `easeOutCubic` 位移，`relTween` 通用补间，脏时出「已改 N 处」+「放弃」）；开关只投影内核状态、点击只投命令；四条界面测试 + 两条会话测试 |
 | R-8 | `feat: ring the relation map with the edit glow` | `relmap_glow.go`：右图内缘 12dp 四色（顶紫/右蓝/底青/左金）四层光带（12/8/3/1dp，alpha 0.10/0.14/0.32/0.55），八段带子各画一道两色渐变（Gio 只有两色色标）——45° 斜面拼接正好铺满环带（面积断言），外缘 10dp 圆角裁剪；进入 260ms `easeOutCubic` 从顶边中点顺时针扫亮（0.85 扫、扫完 600ms 呼吸到 0.7）、退出 160ms `inSine` 淡出且扫亮就地停住；浅色主题 +25% alpha、降饱和一档；过渡期才续帧。四条测试（扫亮覆盖、铺满、时间线、编辑态整帧）|
-| R-9 | `ec94fb4 feat: reparent by dragging a node onto another` | `relmap_edit.go`：编辑态拖节点即改挂——落点预演按**卡片到卡片**最近边 ≤48dp（屏幕口径）取唯一合法目标（非自身/非自身严格后代/非根），拖起 120ms 淡出旧父边、被拖卡片 2dp 提环、目标 2dp 呼吸环（0.6↔1.0，600ms）、一条 4/4dp 虚线预览；松手有目标 → 投 `/reparent <id> <目标>` 并给目标 400ms 高亮回执，无目标 → 只改位置（槽位固化，不投命令）；压在自己后代上给一句「不能挂到自己的后代下」；通道满不假装成功。五条测试（预演规则、改挂投递、无目标只改位置、后代解释、非编辑态不投命令）|
+| R-9 | `ec94fb4 feat: reparent by dragging a node onto another` | `relmap_edit.go`：编辑态拖节点即改挂——落点预演按**卡片到卡片**最近边 ≤48dp（屏幕规则）取唯一合法目标（非自身/非自身严格后代/非根），拖起 120ms 淡出旧父边、被拖卡片 2dp 提环、目标 2dp 呼吸环（0.6↔1.0，600ms）、一条 4/4dp 虚线预览；松手有目标 → 投 `/reparent <id> <目标>` 并给目标 400ms 高亮回执，无目标 → 只改位置（槽位固化，不投命令）；压在自己后代上给一句「不能挂到自己的后代下」；通道满不假装成功。五条测试（预演规则、改挂投递、无目标只改位置、后代解释、非编辑态不投命令）|
 | R-10 | `feat: mark the edit mode in the map and freeze the menu` | 图区左上角胶囊「编辑树 · 拖动节点改挂 · 已改 N 处」（光晕说「模式开了」、胶囊说「拖了会怎样」）+ 编辑态光标 `grab`/`grabbing`（落在右图栏 clip 内）；节点右键菜单编辑期置灰七项（编辑三项 / 重新生成 / 生成响应 / 插入摘要 / 删除），只读项与引用照常——`platform.MenuItem.Disabled` → Windows `MF_GRAYED`，分发处再拦一道防时序；五条测试（胶囊文案、置灰项集、置灰位到平台、分发拦截、编辑态整帧）|
 
 完成后 `uigui` 生产文件 107 个 / 29,014 行，九个被点名的文件全部 ≤ 600 行；仍超 600 的
@@ -432,7 +432,7 @@ Revise/Carry 语义；流式不进领域；依赖方向 `adapter → port ← ap
 | Q12 | UI 响应式迁移范围 | **主窗布局由可用空间推导**（min/max/比例约束），次窗不迁移；字号/控件基准不随窗口尺寸变，由 `ui.scale` 显式缩放 |
 | Q13 | 底部淡化区 | **常驻视口底缘矮带 + 等高底部留白**（上滚离底后底缘渐隐更自然；贴底时最后一行在带外）。带高 = **12dp**（D79 实测定值） |
 | Q14 | 「附件解析」档位 | **加常见文档转文本**：pdf/docx/html/… → 提取文本入树；图片/音频仍走字节内联与既有路径 |
-| Q15 | 命令提示与补全做哪些端 | **只做 GUI**（§15.2 浮层口径，含动态 `/mcp:*`）；TUI 保持无补全现状 |
+| Q15 | 命令提示与补全做哪些端 | **只做 GUI**（§15.2 浮层规则，含动态 `/mcp:*`）；TUI 保持无补全现状 |
 | Q16 | 第二批补充 3 项的归置 | **合成一个「输入行」阶段 S2b**（命令补全 + 附件按钮/解析 + 展开按钮），不加长 S1 |
 | Q17 | 文档转文本实现选型 | **已拍板（D105）**：pdf=`ledongthuc/pdf`、docx=`gomutex/godocx`、xlsx=`xuri/excelize/v2`、html=`golang.org/x/net/html`；pptx/rtf 缓（回落二进制占位） |
 

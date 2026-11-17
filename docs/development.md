@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-11 @ a793021 -->
+<!-- docs-sync: 2026-11-17 @ b80ea1d -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -66,15 +66,15 @@ go run ./cmd/ci -list            # 看清单；-only=a,b 只跑指定项；-jobs
 GUI（`uigui`）依赖 Gio，而 **Gio 在 Linux 上必须 cgo**（X11/Wayland/EGL/Vulkan/GL 全走
 cgo；`CGO_ENABLED=0 GOOS=linux` 时 `gioui.org/internal/vk` 报「build constraints exclude
 all Go files」，加 `-tags novulkan` 又栽在 `gioui.org/internal/gl` 的 `Functions` 无定义）。
-所以**不存在**「Windows 上一条 `GOOS=linux go build ./...` 验完」的口径——Linux 目标需要
-Linux 的 C 工具链与开发头。Windows 宿主的口径 = **在 WSL 里用原生 Linux 工具链跑**：
+所以**不存在**「Windows 上一条 `GOOS=linux go build ./...` 验完」的规则——Linux 目标需要
+Linux 的 C 工具链与开发头。Windows 宿主的规则 = **在 WSL 里用原生 Linux 工具链跑**：
 
 ```bash
 go run ./cmd/linuxgate          # 缺省：WSL 发行版 Ubuntu，目标 linux/amd64
 go run ./cmd/linuxgate -distro <发行版> -proxy <模块代理>
 ```
 
-工具做两件事（与本地门禁同口径）：`go build ./...` + `go vet ./...`。**vet 会一并类型检查
+工具做两件事（与本地门禁同一套规则）：`go build ./...` + `go vet ./...`。**vet 会一并类型检查
 `_test.go`**，能挡住「测试文件依赖 Windows 专属符号」这类只在非 Windows 才暴露的缺口。
 非 Windows 宿主（真 Linux/macOS）直接本地跑同一命令。本机已配成什么样（发行版名、工具链
 位置、镜像与 DNS）记在不入库的 `AGENTS.local.md`。
@@ -118,7 +118,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 接口由消费方定义；错误 `fmt.Errorf("...: %w")` 包装；值对象具名类型；
 导出符号写注释；命名与 [overview.md](overview.md) 的统一语言一致（Revise/Carry/Fresh/Head/Part/Job）。
 
-`uigui/platform` 的分家口径（D111 修订）：平台能力只在 `platform` 包实现（`*_windows.go` /
+`uigui/platform` 的分家规则（D111 修订）：平台能力只在 `platform` 包实现（`*_windows.go` /
 `*_other.go` 同签名），`uigui` 侧声明所需接口并断言 `*platform.Plat` 满足——**少一个平台方法
 就编译不过**。平台向 UI 回传只经 `platform.Host` 的动作枚举（菜单命令 ID / 显隐 / 退出 /
 选中文件 / 系统主题变化），业务语义留在 `uigui`。headless 测试装假平台（`fakeplat_test.go`），
@@ -130,7 +130,7 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
 |---|---|---|
 | arch | **架构守卫**：`go/parser` 读全仓生产文件的 import，断言分层方向（`adapter → port ← app → domain`）与两条反向约束（`cmd` 只进不出、`uigui` 不被内部包依赖）；判定函数另有正反例自检，防「永远绿」；另断言聚合根不导出 map 字段（导出即等于「只有方法能改树」失效） | `internal/arch/arch_test.go` |
 | arch | **注释守卫**：连续 `//` 注释去掉决策编号后不足 12 个可见字符即失败（编号可以当索引或溯源，不能代替说明） | `cmd/aquarius/comments_test.go` |
-| docs | **决策索引守卫**：`docs/decisions.md` 正文每个 `### Dn` 小节，索引表必须有一行对应（**只查这一个方向**——索引可以先有结论、正文后补）；取号口径（`D265–D267` 区间、`D269、D270` 并列）另有正反例自检，防守卫「永远绿」 | `cmd/aquarius/decisions_index_test.go` |
+| docs | **决策索引守卫**：`docs/decisions.md` 正文每个 `### Dn` 小节，索引表必须有一行对应（**只查这一个方向**——索引可以先有结论、正文后补）；取号规则（`D265–D267` 区间、`D269、D270` 并列）另有正反例自检，防守卫「永远绿」 | `cmd/aquarius/decisions_index_test.go` |
 | cmd | **跨包对账守卫**：AST 取 `uigui` 的 `uiCmd*` 常量与 `uiCommandTable`，与内核 `app.CommandCatalog()` 双向对账；再扫 `uigui` 全部生产文件，`port.Command{Name: …}`、`postCommand` / `commandLine` 的名字位只许是 `uiCmd*` 标识符，写裸字符串即失败。arch 禁 `uigui → app`，所以对账点只能落在装配根 | `cmd/aquarius/ui_command_contract_test.go` |
 | cmd | **规模守卫**：AST 统计非测试 `.go` 里超过 100 行的函数，总数只许减不许增（基线写在常量里，改动基线要连理由一起写），另设单函数行数上限；成功路径也打印实测值，免得下次收紧基线只能靠猜 | `cmd/aquarius/funcsize_test.go` |
 | i18n | **不可并行守卫**：切 `i18n.Use` 语言槽的文件里，顶层测试一律不许加 `t.Parallel()`（进程级状态，并行即互相污染）。判据按**文件**给——切语言槽的调用可能藏在 helper 里；按 AST 认 `*testing.T` 形参挑顶层测试，再扫函数体里任何 `.Parallel()` 调用，`t.Run` 子测试里的也算命中 | `internal/i18n/lock_parallel_test.go` |
@@ -156,7 +156,7 @@ FAIL——这不是被测代码坏了，是测试自己没自足。同理，**�
 **测试期望值跟 key 走**（i18n）：断言里的界面文案期望值从 `internal/i18n` 表取
 （`i18n.T` / `i18n.Tf` 拼出整句再比，不写死中文），被测代码与断言读同一张表，语言定成哪种
 两边都一致。`internal/i18n` 的 `TestNoCJKExpectations` 扫四类期望位置（strings 判定实参、
-`==`/`!=` 操作数、`want` 赋值/字段）锁住这条；确属测试数据（用户数据 / 模型输出 / 落盘内容 /
+`==`/`!=` 操作数、`want` 赋值/字段）锁住这条；确属测试数据（用户数据 / 模型输出 / 写入磁盘的内容 /
 协议或配置值）的进该文件里的 `testDataLiterals` 白名单并写理由。`uigui` 的 `TestMain` 用
 `AQUARIUS_UI_LANG` 选语言（缺省 zh），门禁 `AQUARIUS_UI_LANG=en go test ./...` 是这个变量的作用面。
 

@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-11-14 @ d2b5d9f -->
+<!-- docs-sync: 2026-11-17 @ b80ea1d -->
 
 > **定位、统一语言与限界上下文以本文为准**，同时是 **10 分钟建立索引的地图**：内核做什么、
 > 目录怎么分、端口对哪个适配器。内核的逐条规格（领域不变量、端口接口、应用层语义、
@@ -173,7 +173,7 @@ S1/S1b/S1c/S2/S2b 增强均已完成，步骤见 [roadmap.md](roadmap.md)，后�
 | `Transcriber` / `Synthesizer` | asrchat / asrwhisper / asropenai / asrfunasr；mimotts / vitstts / gptsovitstts（D179/D223，M11 ✓） | **M11 ✓** | 假转写 |
 | `Recorder` / `SpeechSegmenter` | micwin（Windows waveIn 推帧，非 Windows 报因）；vadsilero（内嵌权重逐帧判定，D295） | **v0.8.0 ✓** | 脚本帧源 / 固定分段 |
 | `Ingestor` / `OutputAdapter` | ingestfile/ingestclip/ingestmic（文本/文件/剪贴板/麦克风）；notify | **M3 ✓**（mic 随 M11） | 脚本 |
-| `JobManager` | jobproc（日志落盘，D8 内存表；进程输出按行解码为 UTF-8，D41） | **M3 ✓** | 假任务 |
+| `JobManager` | jobproc（日志写入磁盘，D8 内存表；进程输出按行解码为 UTF-8，D41） | **M3 ✓** | 假任务 |
 
 ## 两个稳定级
 
