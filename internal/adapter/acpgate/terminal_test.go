@@ -212,6 +212,9 @@ func TestTerminalRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create long: %v", err)
 	}
+	// 先等它真的写出第一行再杀：kill 是先到先得的，进程还没轮到 stdout 就被杀掉时
+	// 下面的断言无从谈起（Linux 上进程启动更快，更容易撞上这一拍）。
+	waitTerminalOutput(t, c, long.TerminalId, "out:sleep")
 	if _, err := c.KillTerminal(ctx, acp.KillTerminalRequest{SessionId: "sess-1", TerminalId: long.TerminalId}); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
@@ -483,6 +486,27 @@ func pollTerminal(t *testing.T, c *client, id string) acp.TerminalOutputResponse
 			t.Fatalf("命令 %s 没在 10 秒内结束：\n%s", id, resp.Output)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitTerminalOutput 等到命令输出里出现某个片段（命令尚未结束时用；结束时用 pollTerminal）。
+func waitTerminalOutput(t *testing.T, c *client, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := c.TerminalOutput(context.Background(), acp.TerminalOutputRequest{
+			SessionId: "sess-1", TerminalId: id,
+		})
+		if err != nil {
+			t.Fatalf("output(%s): %v", id, err)
+		}
+		if strings.Contains(resp.Output, want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("命令 %s 没在 10 秒内输出 %q：\n%s", id, want, resp.Output)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
