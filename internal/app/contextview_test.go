@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -244,7 +245,7 @@ func TestContextSnapshotAfterCompact(t *testing.T) {
 	marks = shiftMarks(marks, 1, len(req.Messages)-2)
 	trimmed = append(trimmed[:1], trimmed[len(trimmed)-1:]...)
 	req.Messages = trimmed
-	a.saveLast(req, marks)
+	a.saveLast(time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC), req, marks)
 	rep, ok := a.LastContextReport(context.Background())
 	if !ok {
 		t.Fatal("快照缺失")

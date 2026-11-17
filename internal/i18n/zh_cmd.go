@@ -191,6 +191,9 @@ var zhCmdTexts = map[string]string{
 	"cmd.audit.p2.name": "工具名",
 	"cmd.audit.p2.desc": "只看该工具的记录",
 
+	// /diag
+	"cmd.diag.desc": "把这一次请求的上下文、审计行与原始返回打成一份诊断包（写入导出目录）",
+
 	// /watch
 	"cmd.watch.desc":    "观察器：模型的声明式定时观察（看命令/文件/网页命中什么），查看或叫停",
 	"cmd.watch.usage":   "[list|stop <id>]",

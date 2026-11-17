@@ -110,6 +110,8 @@ type SessionDeps struct {
 	// AuditPath 审计日志路径（`/audit`）。空 = 未接入审计日志，命令报错。
 	// 与 Plugins 分开传：插件面读的是同一份文件的插件那几行，审计面读全部 kind。
 	AuditPath string
+	// Version 构建版本（`/diag` 写进包头）。app 不 import 构建信息，由装配根给。
+	Version string
 	// Characters 角色卡目录（/character，§5.17）；nil 时 /character 报未接入。
 	Characters port.CharacterCatalog
 	// CharacterAdmin 角色卡管理面（/character import|remove，§5.17）；nil 时子命令报未接入。
@@ -158,6 +160,7 @@ type Session struct {
 	importer    port.SessionImporter
 	exportsDir  string
 	auditPath   string
+	version     string
 	characters  port.CharacterCatalog
 	charAdmin   CharacterAdmin
 	charOpts    CharacterOptions
@@ -266,6 +269,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		importer:    d.Importer,
 		exportsDir:  d.ExportsDir,
 		auditPath:   d.AuditPath,
+		version:     d.Version,
 		characters:  d.Characters,
 		charAdmin:   d.CharacterAdmin,
 		charOpts:    d.CharacterOpts,

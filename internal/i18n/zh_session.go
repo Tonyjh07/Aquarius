@@ -172,6 +172,21 @@ var zhSessionTexts = map[string]string{
 	"session.cost.empty":        "还没有用量记录",
 	"session.cost.no_price":     "未折算",
 
+	// /diag：一次请求的三份事实合包（上下文账 + 审计行 + 原始返回）
+	"session.diag.usage_err":  "用法：/diag（不带参数，打的是最近一次请求）",
+	"session.diag.no_context": "拿不到这次请求的上下文快照——先跑一轮再说",
+	"session.diag.no_trace":   "还没有收到过模型的返回，没有可打包的原始响应",
+	"session.diag.head":       "诊断包 · Aquarius {version} · {os}/{arch} · {go}",
+	"session.diag.made":       "生成于 {when}",
+	"session.diag.warn":       "含会话正文，发出去前自己过一遍。",
+	"session.diag.anchor":     "锚点：{at} · 收流 {elapsed} · 三部分都取自这一次请求",
+	"session.diag.sec_ctx":    "── 一、发出去的上下文（分块账）──",
+	"session.diag.sec_audit":  "── 二、这一轮的审计行（{from} ~ {to}）──",
+	"session.diag.sec_wire":   "── 三、模型的原始返回 ──",
+	"session.diag.audit_none": "（窗口内没有审计行：这一请求没走审计日志，或那一行没落下来）",
+	"session.diag.dumped":     "已写入 {path}（{size}）",
+	"session.diag.view_title": "诊断包 · {model}",
+
 	// /audit：审计日志的查看口（模型与工具实际做了什么）
 	"usage.audit":             "用法：/audit [-n 行数] [--tool 工具名]",
 	"session.audit.head":      "审计日志 · 最近 {n} 行（文件共 {all} 行）",

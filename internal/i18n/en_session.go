@@ -168,6 +168,21 @@ var enSessionTexts = map[string]string{
 	"session.cost.empty":        "No usage recorded yet",
 	"session.cost.no_price":     "no price",
 
+	// /diag: three facts about one request bundled together
+	"session.diag.usage_err":  "Usage: /diag (no arguments; it bundles the latest request)",
+	"session.diag.no_context": "No context snapshot for that request yet — run one turn first",
+	"session.diag.no_trace":   "No model response has been received yet, so there is nothing to bundle",
+	"session.diag.head":       "Diagnostic bundle · Aquarius {version} · {os}/{arch} · {go}",
+	"session.diag.made":       "Generated at {when}",
+	"session.diag.warn":       "This contains conversation text — read it over before sending it anywhere.",
+	"session.diag.anchor":     "Anchor: {at} · stream {elapsed} · all three parts come from this one request",
+	"session.diag.sec_ctx":    "── 1. The context that went out (token account) ──",
+	"session.diag.sec_audit":  "── 2. Audit lines for this turn ({from} ~ {to}) ──",
+	"session.diag.sec_wire":   "── 3. The raw response from the model ──",
+	"session.diag.audit_none": "(no audit lines in that window: the request bypassed the audit log, or the line was never written)",
+	"session.diag.dumped":     "Wrote {path} ({size})",
+	"session.diag.view_title": "Diagnostic bundle · {model}",
+
 	// /audit: a viewing surface for the audit log (what the model and tools actually did)
 	"usage.audit":             "Usage: /audit [-n count] [--tool name]",
 	"session.audit.head":      "Audit log · last {n} lines ({all} in the file)",

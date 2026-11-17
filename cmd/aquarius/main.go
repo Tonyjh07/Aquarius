@@ -511,6 +511,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Importer:       w.exchange,                                                                // 会话进出：/import
 		ExportsDir:     filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
 		AuditPath:      filepath.Join(w.profileDir, "audit.log"),                                  // /audit 读全量审计行
+		Version:        version,                                                                   // /diag 写进包头（-ldflags 注入）
 		Characters:     w.characters,                                                              // 角色卡只读清单（/character，§5.17）
 		CharacterAdmin: w.characters,                                                              // §5.17：/character import|remove
 		CharacterOpts:  w.cfg.characterOptions(),                                                  // §5.17：三处默认开的投影开关由 config 解析

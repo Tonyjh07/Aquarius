@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
@@ -56,12 +57,16 @@ type ContextReport struct {
 	ToolText  string // 工具声明的可读清单（dump 用）
 	ToolTok   int
 	Total     int
-	Exact     bool
+	Exact     bool // 精确计数（false = 估算）
 	Last      bool // 来自上一轮实发快照（而非「下一轮将发送」）
+	// At 这份请求交出去的时刻（只有 Last 有值）。`/diag` 拿它与原始返回的起点对齐，
+	// 三部分才落在同一次请求上；`/context` 不展示它。
+	At time.Time
 }
 
 // contextSnapshot 上一轮实发请求的留档（/context last）：只留一份，覆盖式。
 type contextSnapshot struct {
+	at    time.Time // 交出去的时刻（`/diag` 的对齐锚点）
 	req   port.GenerateRequest
 	marks []sectionMark
 }
@@ -78,7 +83,7 @@ func (a *Agent) ContextReport(ctx context.Context, c *conversation.Conversation)
 	if err != nil {
 		return ContextReport{}, fmt.Errorf("%s: %w", i18n.T("agent.err_assemble"), err)
 	}
-	return a.reportFrom(ctx, req, marks, false), nil
+	return a.reportFrom(ctx, req, marks, false, time.Time{}), nil
 }
 
 // LastContextReport 上一轮真正发出去的请求的视图（含自动压缩之后的形态）。
@@ -88,16 +93,16 @@ func (a *Agent) LastContextReport(ctx context.Context) (ContextReport, bool) {
 	if snap == nil {
 		return ContextReport{}, false
 	}
-	return a.reportFrom(ctx, snap.req, snap.marks, true), true
+	return a.reportFrom(ctx, snap.req, snap.marks, true, snap.at), true
 }
 
-// saveLast 留档一份实发请求（只留最近一份）。
-func (a *Agent) saveLast(req port.GenerateRequest, marks []sectionMark) {
-	a.lastSnap.Store(&contextSnapshot{req: req, marks: marks})
+// saveLast 留档一份实发请求（只留最近一份）。at 取交付时刻，`/diag` 靠它与原始返回对齐。
+func (a *Agent) saveLast(at time.Time, req port.GenerateRequest, marks []sectionMark) {
+	a.lastSnap.Store(&contextSnapshot{at: at, req: req, marks: marks})
 }
 
 // reportFrom 把（请求, 标签）摊成视图。纯读取，不改请求。
-func (a *Agent) reportFrom(ctx context.Context, req port.GenerateRequest, marks []sectionMark, last bool) ContextReport {
+func (a *Agent) reportFrom(ctx context.Context, req port.GenerateRequest, marks []sectionMark, last bool, at time.Time) ContextReport {
 	rep := ContextReport{
 		Model:     req.Model,
 		Params:    paramsSummary(req.Params),
@@ -106,6 +111,7 @@ func (a *Agent) reportFrom(ctx context.Context, req port.GenerateRequest, marks 
 		Tools:     len(req.Tools),
 		ToolTok:   estimateTools(req.Tools),
 		Last:      last,
+		At:        at,
 	}
 	rep.Total, rep.Exact = a.est.Estimate(ctx, req)
 

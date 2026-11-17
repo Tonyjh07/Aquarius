@@ -189,6 +189,9 @@ var enCmdTexts = map[string]string{
 	"cmd.audit.p2.name": "tool name",
 	"cmd.audit.p2.desc": "show only that tool's entries",
 
+	// /diag
+	"cmd.diag.desc": "Bundle this request's context, audit lines and raw response into one diagnostic file",
+
 	// /watch
 	"cmd.watch.desc":    "Watchers: declarative timed observations the model can declare (watch a command, file or page and report hits); list or stop them",
 	"cmd.watch.usage":   "[list|stop <id>]",

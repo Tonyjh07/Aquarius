@@ -306,7 +306,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		}
 		// 留档在压缩之后：`/context last` 要看的是「真正发出去的那份」，
 		// 压缩前后的差异正是最容易被误读的地方。
-		a.saveLast(req, marks)
+		a.saveLast(a.clock.Now(), req, marks)
 		stream, err := a.llm.Generate(ctx, req)
 		if err != nil {
 			if ctx.Err() != nil {
