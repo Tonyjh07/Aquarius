@@ -15,6 +15,8 @@
 //	    libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libvulkan-dev
 //
 // 用法：go run ./cmd/linuxgate            # 缺省 linux/amd64，WSL 发行版 Ubuntu
+//
+//	go run ./cmd/linuxgate -test      # 连 go test ./... 一起跑（慢一倍多，发布前用）
 package main
 
 import (
@@ -24,6 +26,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -48,22 +51,26 @@ func main() {
 	proxy := flag.String("proxy", "https://goproxy.cn,direct", "模块代理（GOPROXY）")
 	modcache := flag.String("modcache", "", "共享模块缓存目录（Windows 路径；空 = 自动探测，用于免下载）")
 	runVet := flag.Bool("vet", true, "同时跑 go vet ./...")
+	runTest := flag.Bool("test", false, "同时跑 go test ./...（慢，发布前用）")
 	flag.Parse()
 
 	root, err := repoRoot()
 	if err != nil {
 		fail(err)
 	}
-	if code := gate(*distro, *target, *proxy, *modcache, root, *runVet); code != 0 {
+	if code := gate(*distro, *target, *proxy, *modcache, root, *runVet, *runTest); code != 0 {
 		os.Exit(code)
 	}
 }
 
 // gate 依次跑各步骤；返回进程退出码（0 = 全绿）。
-func gate(distro, target, proxy, modcache, root string, runVet bool) int {
+func gate(distro, target, proxy, modcache, root string, runVet, runTest bool) int {
 	steps := []string{"build ./..."}
 	if runVet {
 		steps = append(steps, "vet ./...")
+	}
+	if runTest {
+		steps = append(steps, "test -count=1 ./...")
 	}
 	if runtime.GOOS != "windows" { // 原生 Linux/macOS：本机工具链直接跑
 		if target != runtime.GOOS {
@@ -113,7 +120,11 @@ func gate(distro, target, proxy, modcache, root string, runVet bool) int {
 			return 1
 		}
 	}
-	fmt.Println("\n[OK] Linux 目标：build + vet 全绿")
+	done := "build + vet"
+	if runTest {
+		done = "build + vet + test"
+	}
+	fmt.Printf("\n[OK] Linux 目标：%s 全绿\n", done)
 	return 0
 }
 
@@ -251,16 +262,20 @@ func repoRoot() (string, error) {
 }
 
 // wslPath Windows 路径 → WSL 挂载路径（E:\Aquarius → /mnt/e/Aquarius）。
+//
+// 用 path（POSIX 语义）而不是 filepath 清理：入参恒为 Windows 路径，而本函数在
+// Linux 宿主上也要能被测试（filepath.Clean 在那里不把 `\` 当分隔符，尾分隔符留着）。
 func wslPath(p string) (string, error) {
-	v := filepath.Clean(p)
-	if strings.HasPrefix(v, `\\`) {
+	slash := strings.ReplaceAll(p, `\`, "/")
+	if strings.HasPrefix(slash, "//") {
 		return "", fmt.Errorf("UNC 路径 %q 不在 WSL 挂载内", p)
 	}
+	v := path.Clean(slash)
 	if len(v) < 2 || v[1] != ':' {
 		return "", fmt.Errorf("非 Windows 盘符路径 %q", p)
 	}
 	drive := unicode.ToLower(rune(v[0]))
-	rest := strings.ReplaceAll(v[2:], `\`, "/")
+	rest := v[2:]
 	if rest == "/" { // 盘符根：E:\ → /mnt/e
 		rest = ""
 	}
