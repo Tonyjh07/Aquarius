@@ -413,6 +413,7 @@ const (
 	pageWeb               // 联网：搜索与抓取提供商、本地抓取参数（D200）
 	pageAudio             // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	pageAdv               // 高级：config.json 原文
+	pageLogs              // 日志：运行日志文件列表 + 末尾查看 + 打开目录（v0.9.0）
 	pageAbout             // 关于：图标 / 名字与一句话 / 构建版本 / 运行环境 / 项目主页 / 版权与许可
 	// pageConstCount 页常量个数（编译期锚；见上方说明）。
 	pageConstCount

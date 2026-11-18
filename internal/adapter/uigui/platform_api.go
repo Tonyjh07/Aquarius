@@ -81,6 +81,9 @@ type platformAPI interface {
 	// OpenURL 用系统默认浏览器打开链接（设置窗「关于」页的项目主页）。失败返回可读
 	// 原因（界面就地显示，不静默丢弃）。
 	OpenURL(url string) error
+	// OpenPath 用系统默认程序打开本地路径（设置窗「日志」页的「打开目录」）。与 OpenURL
+	// 同一个动词、同一条错误路径，只是参数是路径而不是链接。
+	OpenPath(path string) error
 
 	// —— 次窗 ——
 	CloseWindow(h platform.Handle)

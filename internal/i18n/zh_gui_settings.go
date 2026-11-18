@@ -18,6 +18,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.page.web":        "联网",
 	"ui.settings.page.audio":      "语音",
 	"ui.settings.page.adv":        "高级",
+	"ui.settings.page.logs":       "日志",
 	"ui.settings.page.about":      "关于",
 
 	// ── 表单与行渲染（settings.go / settings_row_body.go / settings_select.go /

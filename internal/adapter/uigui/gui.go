@@ -174,6 +174,8 @@ type Options struct {
 	// Version 构建版本号（装配根注入 `-ldflags -X main.version` 的那个值）：只给设置窗
 	// 「关于」页展示，空 或 "dev" = 开发构建。不参与任何行为分支。
 	Version string
+	// Logs 运行日志读侧（§7.13/D305）：设置窗「日志」页的数据面。nil = 本页只读占位。
+	Logs port.LogReader
 }
 
 // PromptTemplatePatch 人格模板的窄写回（D154；与 SettingsPatch 分开：全量 patch 带

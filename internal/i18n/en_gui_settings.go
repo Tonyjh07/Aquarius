@@ -17,6 +17,7 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.page.web":        "Web",
 	"ui.settings.page.audio":      "Audio",
 	"ui.settings.page.adv":        "Advanced",
+	"ui.settings.page.logs":       "Logs",
 	"ui.settings.page.about":      "About",
 
 	// Form and row rendering (settings.go / settings_row_body.go / settings_select.go /

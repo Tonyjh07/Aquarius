@@ -73,6 +73,7 @@ var settingsPages = []settingsPage{
 	webPage{},        // 联网：搜索与抓取提供商、本地抓取参数（D200）
 	audioPage{},      // 语音：识别 / 合成服务、音色与风格、试听（D179）
 	advPage{},        // 高级：config.json 原文
+	logsPage{},       // 日志：按天切分的运行日志 + 末尾查看 + 打开目录（v0.9.0）
 	aboutPage{},      // 关于：图标 / 版本 / 运行环境 / 项目主页 / 版权与许可（D208）
 }
 

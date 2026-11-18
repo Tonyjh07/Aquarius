@@ -27,7 +27,7 @@ func TestSettingsPageNamesContract(t *testing.T) {
 	t.Parallel()
 	// wantKeys 是页标识（Key，英文、不随语言变），wantNames 是 zh 下的显示名。两者分开锁：
 	// 页序与标识是契约，显示名只是取词结果——把中文当契约锁，加英文表时就会两头顾此失彼。
-	wantKeys := []string{"general", "model", "providers", "secrets", "chat", "prompt", "tools", "delegate", "skills", "characters", "web", "audio", "adv", "about"}
+	wantKeys := []string{"general", "model", "providers", "secrets", "chat", "prompt", "tools", "delegate", "skills", "characters", "web", "audio", "adv", "logs", "about"}
 	// 显示名与 pageName 同源：按生产规则从文案表按 Key 取词，不再锁死中文字面。
 	wantNames := make([]string, len(wantKeys))
 	for i, k := range wantKeys {

@@ -15,6 +15,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uitui"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/inhistory"
+	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -209,6 +210,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			PreviewVoice:        w.previewVoice,                                                                                                                                                 // D179：设置窗「语音」页试听
 			Blobs:               w.blobs,                                                                                                                                                        // D187：Ctrl+V 贴图直入附件库（nil = 禁用该入口）
 			Version:             version,                                                                                                                                                        // 设置窗「关于」页的构建版本（-ldflags 注入；dev = 开发构建）
+			Logs:                logReader{dir: logging.Dir(w.profileDir)},                                                                                                                      // 设置窗「日志」页：按天切分的那几个文件（D305）
 		})
 		w.ui = ui
 		// D141：`ui.welcomed` 缺失 → 启动后自动开一次欢迎窗；完成或显式关闭即置位。

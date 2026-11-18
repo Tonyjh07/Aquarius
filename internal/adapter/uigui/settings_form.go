@@ -11,6 +11,8 @@ import (
 	"gioui.org/app"
 	"gioui.org/layout"
 	"gioui.org/widget"
+
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // settingsForm 设置窗表单状态（次窗事件循环 goroutine 独占；控件即状态，不跨窗
@@ -241,6 +243,17 @@ type settingsForm struct {
 	aboutStatus  string
 	aboutErr     bool
 
+	// 日志页（D305）：logs 取 Options.Logs；文件清单在进入本页时现取（logsLoaded 去重，
+	// 刷新按钮重取）。动作按钮按文件名缓存，点击时读那一份的末尾。
+	logs       port.LogReader
+	logsLoaded bool
+	logsFiles  []port.LogFile
+	logsBtns   map[string]*widget.Clickable
+	logRefresh widget.Clickable
+	logOpenDir widget.Clickable
+	logStatus  string
+	logErr     bool
+
 	snap     SettingsSnapshot // 开窗快照（保存 diff 基准 + 变更提示）
 	profiles ProfilesSnapshot // profile 区数据面（动作后刷新，D110③）
 	status   string           // 保存反馈（本 goroutine 独占；"" = 默认提示）
@@ -314,6 +327,7 @@ func newSettingsFormState() *settingsForm {
 func newSettingsForm(u *UI) *settingsForm {
 	f := newSettingsFormState()
 	f.aboutVersion = u.opts.Version // 关于页的构建版本（空/dev = 开发构建）
+	f.logs = u.opts.Logs            // 日志页的读侧（D305；nil = 只读占位）
 	f.readOnly = u.opts.ApplySettings == nil
 	if u.opts.Profiles != nil {
 		f.profiles = u.opts.Profiles.Snapshot() // D110③：profile 区数据面

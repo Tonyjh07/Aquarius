@@ -122,6 +122,26 @@ var zhGuiPageAdminTexts = map[string]string{
 	"ui.page.about.open_failed":     "打不开浏览器：{err}；可以复制链接后手动打开",
 	"ui.page.about.opened":          "已在浏览器中打开",
 	"ui.page.about.copied":          "链接已复制",
+
+	// 日志页（v0.9.0）：按天切分的运行日志、末尾查看、打开目录。
+	"ui.page.logs.section_files": "运行日志文件",
+	"ui.page.logs.note": "按天切分，单份超过 4 MiB 轮转一代，保留 7 天。" +
+		"这里只看末尾若干行，整份内容用「打开目录」里的编辑器看。",
+	"ui.page.logs.empty":       "还没有日志文件：这一份 profile 下还没写过运行日志。",
+	"ui.page.logs.refresh":     "刷新",
+	"ui.page.logs.open_dir":    "打开目录",
+	"ui.page.logs.view_title":  "日志 {name}",
+	"ui.page.logs.opened":      "已打开 {name} 的末尾（最多 {lines} 行）",
+	"ui.page.logs.empty_file":  "{name} 里还没有内容",
+	"ui.page.logs.read_failed": "读不出来：{err}",
+	"ui.page.logs.list_failed": "列不出日志目录：{err}",
+	"ui.page.logs.dir_failed":  "打不开目录：{err}",
+	"ui.page.logs.dir_opened":  "已在文件管理器里打开",
+	"ui.page.logs.no_opener":   "当前平台不支持打开目录",
+	"ui.page.logs.file_meta":   "{size} · {at}",
+	"ui.page.logs.size_bytes":  "{n} 字节",
+	"ui.page.logs.size_kb":     "{n} KB",
+	"ui.page.logs.size_mb":     "{n} MB",
 	// 放行档位（D280/D282）：挂在「工具与 MCP」页的工具行上。
 	"ui.page.policy.seg.default": "默认",
 	"ui.page.policy.seg.ask":     "询问",

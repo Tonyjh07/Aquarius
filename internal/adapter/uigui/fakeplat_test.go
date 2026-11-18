@@ -80,6 +80,9 @@ type fakePlat struct {
 	// OpenURLs 请求用默认浏览器打开的链接；OpenURLErr 非 nil = 该请求失败（界面反馈）。
 	OpenURLs   []string
 	OpenURLErr error
+	// OpenPaths 请求用默认程序打开的本地路径（日志页「打开目录」）；OpenPathErr 同上。
+	OpenPaths   []string
+	OpenPathErr error
 }
 
 // newFakePlat 构造假平台：缺省对齐「Windows 实测档」的可用语义（自管窗口、可见、置顶、
@@ -269,6 +272,15 @@ func (f *fakePlat) OpenURL(url string) error {
 	f.mu.Lock()
 	f.OpenURLs = append(f.OpenURLs, url)
 	err := f.OpenURLErr
+	f.mu.Unlock()
+	return err
+}
+
+// —— 打开本地路径（「日志」页的打开目录）——
+func (f *fakePlat) OpenPath(path string) error {
+	f.mu.Lock()
+	f.OpenPaths = append(f.OpenPaths, path)
+	err := f.OpenPathErr
 	f.mu.Unlock()
 	return err
 }

@@ -207,6 +207,12 @@ const (
 	rowAboutLicense   // 许可证
 	rowAboutNote      // 说明（隐私规则 / 图标与产品名归属；不落卡）
 	rowAboutStatus    // 打开 / 复制反馈（不落卡）
+	// 日志页：按天切分的运行日志文件与查看动作（v0.9.0）。
+	rowLogNote   // 说明（日志在哪、保留多久；不落卡）
+	rowLogEmpty  // 还没有日志文件 / 未接线（不落卡）
+	rowLogFile   // 一份日志文件（点一行看末尾）
+	rowLogAction // 页级动作（刷新 / 打开目录；不落卡）
+	rowLogStatus // 查看与打开目录的反馈（不落卡）
 )
 
 // provModelCandMax 候选 chip 的上限（D153；欢迎窗「获取模型」仍用它）：服务端可能列出

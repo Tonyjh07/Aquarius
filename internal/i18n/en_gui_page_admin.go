@@ -126,6 +126,26 @@ var enGuiPageAdminTexts = map[string]string{
 	"ui.page.about.open_failed":     "Cannot open the browser: {err}; copy the link and open it manually",
 	"ui.page.about.opened":          "Opened in your browser",
 	"ui.page.about.copied":          "Link copied",
+
+	// Logs page (v0.9.0): per-day run logs, tail view, open folder.
+	"ui.page.logs.section_files": "Log files",
+	"ui.page.logs.note": "One file per day; a file rotates to .1 past 4 MiB and files are kept for 7 days. " +
+		"Only the tail is shown here; use Open folder for the whole file.",
+	"ui.page.logs.empty":       "No log files yet: nothing has been written under this profile.",
+	"ui.page.logs.refresh":     "Refresh",
+	"ui.page.logs.open_dir":    "Open folder",
+	"ui.page.logs.view_title":  "Log {name}",
+	"ui.page.logs.opened":      "Opened the tail of {name} (up to {lines} lines)",
+	"ui.page.logs.empty_file":  "{name} is still empty",
+	"ui.page.logs.read_failed": "Cannot read it: {err}",
+	"ui.page.logs.list_failed": "Cannot list the log directory: {err}",
+	"ui.page.logs.dir_failed":  "Cannot open the folder: {err}",
+	"ui.page.logs.dir_opened":  "Opened in the file manager",
+	"ui.page.logs.no_opener":   "Opening a folder is not supported on this platform",
+	"ui.page.logs.file_meta":   "{size} · {at}",
+	"ui.page.logs.size_bytes":  "{n} bytes",
+	"ui.page.logs.size_kb":     "{n} KB",
+	"ui.page.logs.size_mb":     "{n} MB",
 	// Tool-level allow policy (D280/D282): rendered on each row of "Tools & MCP".
 	"ui.page.policy.seg.default": "Default",
 	"ui.page.policy.seg.ask":     "Ask",
