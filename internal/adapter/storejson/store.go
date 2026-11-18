@@ -314,6 +314,63 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 	return out, nil
 }
 
+// BrokenFile 一份读不出来的会话文件（体检用，D306）。
+type BrokenFile struct {
+	Name   string // 文件名（含 .json）
+	Reason string // 已本地化的原因（解码或读文件报的第一句）
+}
+
+// Audit 逐个解码目录里的会话文件，把读不出来的挑出来（`/doctor` 的会话一项，D306）。
+// 「主文件没了、只剩一带备份」也算：那份会话在 /list 里同样不存在，而恢复只差一次改名。
+//
+// 不走 List：List 对解不开的文件是静默跳过（坏一个不该拖垮整张列表），于是这些会话在
+// `/list` 里就是「不存在」。体检要报的正是这一批——它们是「会话凭空少了」的唯一解释。
+//
+// 只读：不解锁、不加每会话锁、不动 .bak，也不缓存（体检要的是此刻磁盘上的样子）。
+func (s *Store) Audit(ctx context.Context) (total int, broken []BrokenFile, err error) {
+	if err := checkCtx(ctx); err != nil {
+		return 0, nil, err
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return 0, nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.list", "dir", s.dir), err)
+	}
+	// present 主文件名集合：用来认「只剩备份」的那些（主文件被删/被挪走）。
+	present := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			present[e.Name()] = true
+		}
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			continue
+		}
+		// 只剩一代备份：主文件没了，会话在 /list 里也就没了。改名回去就能恢复。
+		if strings.HasSuffix(name, ".json.bak") && !present[strings.TrimSuffix(name, ".bak")] {
+			total++
+			broken = append(broken, BrokenFile{Name: name, Reason: i18n.T("store.audit.orphan_backup")})
+			continue
+		}
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		total++
+		id := conversation.ID(strings.TrimSuffix(name, ".json"))
+		data, rerr := os.ReadFile(filepath.Join(s.dir, name))
+		if rerr != nil {
+			broken = append(broken, BrokenFile{Name: name, Reason: rerr.Error()})
+			continue
+		}
+		if _, derr := decode(data, id); derr != nil {
+			broken = append(broken, BrokenFile{Name: name, Reason: derr.Error()})
+		}
+	}
+	sort.Slice(broken, func(i, j int) bool { return broken[i].Name < broken[j].Name })
+	return total, broken, nil
+}
+
 // Remove 硬删除会话文件（连同各代 .bak 与 .tmp，含 keep 变化后遗留的更旧代）；
 // 什么都不存在时返回 ErrNotFound。
 func (s *Store) Remove(ctx context.Context, id conversation.ID) error {

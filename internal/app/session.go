@@ -112,6 +112,9 @@ type SessionDeps struct {
 	AuditPath string
 	// Version 构建版本（`/diag` 写进包头）。app 不 import 构建信息，由装配根给。
 	Version string
+	// Doctor 体检面（/doctor，§7.14/D306）：七项检查在装配根，这里只拿结论。
+	// nil 时 /doctor 报未接入。
+	Doctor HealthProbe
 	// Characters 角色卡目录（/character，§5.17）；nil 时 /character 报未接入。
 	Characters port.CharacterCatalog
 	// CharacterAdmin 角色卡管理面（/character import|remove，§5.17）；nil 时子命令报未接入。
@@ -164,7 +167,9 @@ type Session struct {
 	characters  port.CharacterCatalog
 	charAdmin   CharacterAdmin
 	charOpts    CharacterOptions
-	cur         *conversation.Conversation
+	// doctor 体检面（§7.14/D306）；nil 时 /doctor 报未接入。
+	doctor HealthProbe
+	cur    *conversation.Conversation
 	// treeEdit 树编辑会话（D258）：非 nil 时改父只改内存、退出时统一写入磁盘；
 	// nil = 不在模式里。状态只在这里存一份，UI 经 TreeEditActive 读。
 	treeEdit *treeEditSession
@@ -278,6 +283,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		characters:  d.Characters,
 		charAdmin:   d.CharacterAdmin,
 		charOpts:    d.CharacterOpts,
+		doctor:      d.Doctor,
 		dynamic:     map[string]CommandHandler{},
 		injectCh:    make(chan pendingInjection, injectQueueCap),
 		pendingQ:    newPendingList(),

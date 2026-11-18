@@ -930,3 +930,60 @@ func trHead(key string) string {
 	}
 	return t
 }
+
+// TestAuditReportsUnreadableFiles 体检要报的正是 List 静默跳过的那批（D306）：
+// 列表里少了一个会话，没有任何解释；Audit 把这份解释补上。
+func TestAuditReportsUnreadableFiles(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	if err := s.Save(ctx, mustConv(t)); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// 坏 JSON：List 跳过它（先断言这一点，否则这条测试守的就不是「被跳过的那批」）。
+	if err := os.WriteFile(filepath.Join(dir, "broken-1.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("write broken: %v", err)
+	}
+	// 内容合法但 ID 与文件名不符：也要报出来（客户端看到的是「打不开」，不是「没这条」）。
+	if err := os.WriteFile(filepath.Join(dir, "conv-2.json"), []byte(`{"id":"other","nodes":{},"head":""}`), 0o644); err != nil {
+		t.Fatalf("write mismatch: %v", err)
+	}
+	// 主文件被删、只剩一代备份：会话在 /list 里同样不存在，恢复只差一次改名。
+	if err := os.WriteFile(filepath.Join(dir, "orphan-9.json.bak"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write orphan bak: %v", err)
+	}
+
+	sum, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sum) != 1 {
+		t.Fatalf("List 应当只剩 1 个可读会话，得到 %d 个", len(sum))
+	}
+
+	total, broken, err := s.Audit(ctx)
+	if err != nil {
+		t.Fatalf("audit: %v", err)
+	}
+	if total != 4 {
+		t.Fatalf("总文件数 = %d, want 4", total)
+	}
+	if len(broken) != 3 {
+		t.Fatalf("坏文件数 = %d, want 3：%+v", len(broken), broken)
+	}
+	names := []string{broken[0].Name, broken[1].Name, broken[2].Name}
+	want := []string{"broken-1.json", "conv-2.json", "orphan-9.json.bak"}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("名字/顺序 = %v, want %v", names, want)
+		}
+	}
+	for _, b := range broken {
+		if strings.TrimSpace(b.Reason) == "" {
+			t.Fatalf("%s 没有原因", b.Name)
+		}
+	}
+}

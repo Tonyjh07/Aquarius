@@ -217,6 +217,7 @@ func runtimeCommands() []commandEntry {
 			},
 			Run: (*Session).execAudit},
 		{Names: []string{"diag"}, Desc: "cmd.diag.desc", Run: (*Session).execDiag},
+		{Names: []string{"doctor"}, Desc: "cmd.doctor.desc", Run: (*Session).execDoctor},
 		{Names: []string{"watch"}, Usage: "cmd.watch.usage", Desc: "cmd.watch.desc",
 			Params: []port.CommandParam{
 				{Name: "cmd.watch.p1.name", Kind: port.ParamChoice, Values: []string{"list", "stop"}, Desc: "cmd.watch.p1.desc"},

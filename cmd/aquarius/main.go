@@ -29,6 +29,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/app"
@@ -272,14 +273,15 @@ type wiring struct {
 	secretsBin *secretbin.Store
 
 	// assemble 段填充
-	store    port.ConversationStore
-	blobs    port.AttachmentStore
-	mem      *memoryfs.Store
-	merged   *mergedMemory
-	jobs     port.JobManager
-	jobMgr   *jobproc.Manager // 具体实现：关停时等已结束任务的收尾写完
-	jobWatch *app.JobWatcher
-	watcher  *app.Watcher
+	store     port.ConversationStore
+	storeJSON *storejson.Store // 同一份存储的具体实现：/doctor 逐个解码（D306）
+	blobs     port.AttachmentStore
+	mem       *memoryfs.Store
+	merged    *mergedMemory
+	jobs      port.JobManager
+	jobMgr    *jobproc.Manager // 具体实现：关停时等已结束任务的收尾写完
+	jobWatch  *app.JobWatcher
+	watcher   *app.Watcher
 	// 外部代理转交（§5.18/D244）：delegates 是套了收尾观察者装饰器的面（工具与命令共用），
 	// delegateMgr 保留具体实现只为关停时终止进程组；delegateAgents 是可用清单快照。
 	delegates      port.Delegate
@@ -421,8 +423,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := w.assembleTools(ctx, tc.toolConfirmer, tc.toolAsker); err != nil {
 		return fatal(stderr, "%v", err)
 	}
-	// 任务管理器在观察者之后关（defer 后进先出）：先停报告，再等已结束任务的收尾写完
-	// （退出行、日志句柄、台账终态），退出后不再动 jobs 目录（§5.8）。
+	// 任务管理器在观察者之后关（defer 后进先出）：先停报告，再等收尾写完，之后不再动 jobs 目录（§5.8）。
 	defer w.jobMgr.Close()
 	// D189：先停任务收尾观察者再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
 	defer w.jobWatch.Close()
@@ -511,6 +512,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		ExportsDir:     filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
 		AuditPath:      filepath.Join(w.profileDir, "audit.log"),                                  // /audit 读全量审计行
 		Version:        version,                                                                   // /diag 写进包头（-ldflags 注入）
+		Doctor:         healthProbe{w: w},                                                         // §7.14/D306：/doctor 的七项检查
 		Characters:     w.characters,                                                              // 角色卡只读清单（/character，§5.17）
 		CharacterAdmin: w.characters,                                                              // §5.17：/character import|remove
 		CharacterOpts:  w.cfg.characterOptions(),                                                  // §5.17：三处默认开的投影开关由 config 解析

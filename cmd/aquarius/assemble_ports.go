@@ -52,6 +52,7 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 		return err
 	}
 	w.store = store
+	w.storeJSON = store // /doctor 的会话一项要逐个解码（List 静默跳过坏文件，D306）
 	// 附件库（§4.2）：sha256 内容寻址存 <profile>/attachments（随 profile
 	// 隔离，D110 修订①）；启动 GC 按全量会话引用清扫（引用收集不完整则跳过，宁可漏清不误删）。
 	blobs, err := blobfs.New(filepath.Join(w.profileDir, "attachments"))

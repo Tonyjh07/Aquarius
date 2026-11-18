@@ -163,6 +163,7 @@ var zhAdapterExchangeTexts = map[string]string{
 
 	// ---- 会话写入磁盘（storejson）----
 	"store.err.legacy_format":    "storejson: 发现旧格式会话",
+	"store.audit.orphan_backup":  "主文件不见了，只剩这一份备份（去掉 .bak 后缀就能恢复）",
 	"store.err.empty_dir":        "storejson: 目录不能为空",
 	"store.err.create_dir":       "storejson: 创建目录 {dir}",
 	"store.err.clean":            "storejson: 清理 {path}",

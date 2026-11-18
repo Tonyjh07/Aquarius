@@ -187,6 +187,24 @@ var zhSessionTexts = map[string]string{
 	"session.diag.dumped":     "已写入 {path}（{size}）",
 	"session.diag.view_title": "诊断包 · {model}",
 
+	// /doctor：全绿只回一行，有问题时七项全列
+	"session.doctor.usage_err":     "用法：/doctor（不带参数，七项一次全查）",
+	"session.doctor.unwired":       "本次构建没有接入体检面",
+	"session.doctor.clean":         "体检通过：{n} 项都没有发现问题",
+	"session.doctor.head":          "体检：{n} 项，{bad} 项需要处理",
+	"session.doctor.item":          "[{state}] {name}：{detail}",
+	"session.doctor.fix":           "       修法：{fix}",
+	"session.doctor.state.ok":      "正常",
+	"session.doctor.state.warn":    "注意",
+	"session.doctor.state.fail":    "异常",
+	"session.doctor.name.config":   "配置解析",
+	"session.doctor.name.secrets":  "密钥库",
+	"session.doctor.name.sessions": "会话文件",
+	"session.doctor.name.mcp":      "MCP 声明",
+	"session.doctor.name.logs":     "日志目录",
+	"session.doctor.name.exports":  "导出目录",
+	"session.doctor.name.disk":     "磁盘余量",
+
 	// /audit：审计日志的查看口（模型与工具实际做了什么）
 	"usage.audit":             "用法：/audit [-n 行数] [--tool 工具名]",
 	"session.audit.head":      "审计日志 · 最近 {n} 行（文件共 {all} 行）",

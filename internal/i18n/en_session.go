@@ -183,6 +183,24 @@ var enSessionTexts = map[string]string{
 	"session.diag.dumped":     "Wrote {path} ({size})",
 	"session.diag.view_title": "Diagnostic bundle · {model}",
 
+	// /doctor: one line when clean, all seven items when something is off
+	"session.doctor.usage_err":     "Usage: /doctor (no arguments, all seven checks at once)",
+	"session.doctor.unwired":       "This build has no health check",
+	"session.doctor.clean":         "Health check passed: none of the {n} items has a problem",
+	"session.doctor.head":          "Health check: {n} items, {bad} need attention",
+	"session.doctor.item":          "[{state}] {name}: {detail}",
+	"session.doctor.fix":           "       Fix: {fix}",
+	"session.doctor.state.ok":      "OK",
+	"session.doctor.state.warn":    "WARN",
+	"session.doctor.state.fail":    "FAIL",
+	"session.doctor.name.config":   "Config",
+	"session.doctor.name.secrets":  "Keystore",
+	"session.doctor.name.sessions": "Conversation files",
+	"session.doctor.name.mcp":      "MCP declarations",
+	"session.doctor.name.logs":     "Log directory",
+	"session.doctor.name.exports":  "Export directory",
+	"session.doctor.name.disk":     "Disk space",
+
 	// /audit: a viewing surface for the audit log (what the model and tools actually did)
 	"usage.audit":             "Usage: /audit [-n count] [--tool name]",
 	"session.audit.head":      "Audit log · last {n} lines ({all} in the file)",

@@ -163,6 +163,7 @@ var enAdapterExchangeTexts = map[string]string{
 
 	// ---- 会话写入磁盘（storejson）----
 	"store.err.legacy_format":    "storejson: legacy conversation format found",
+	"store.audit.orphan_backup":  "the main file is gone and only this backup is left (drop the .bak suffix to restore it)",
 	"store.err.empty_dir":        "storejson: the directory must not be empty",
 	"store.err.create_dir":       "storejson: create directory {dir}",
 	"store.err.clean":            "storejson: remove {path}",
