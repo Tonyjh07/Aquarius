@@ -20,9 +20,8 @@ import (
 // （errors.Is 判定），不展示给用户，故不随界面语言变。
 var errFirstRun = errors.New("bootstrap: first run, config template written")
 
-// resolveDataDir 解析数据根目录：flag > ~/.aquarius（三级覆盖里的 flag 先于
-// env/config，§8）。
-func resolveDataDir(dataDir string) (string, error) {
+// dataDirPath 算出数据根目录的绝对路径，但不建它（`-doctor` 走这条：体检不写盘）。
+func dataDirPath(dataDir string) (string, error) {
 	dir := dataDir
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -35,6 +34,16 @@ func resolveDataDir(dataDir string) (string, error) {
 	// 路径等）必须可直接复制使用，且不受后续"相对路径再次校验"拒绝。
 	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
+	}
+	return dir, nil
+}
+
+// resolveDataDir 解析数据根目录并建好：flag > ~/.aquarius（三级覆盖里的 flag 先于
+// env/config，§8）。
+func resolveDataDir(dataDir string) (string, error) {
+	dir, err := dataDirPath(dataDir)
+	if err != nil {
+		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("%s: %w", i18n.Tf("cmd.boot.err.mkdir_data", "path", dir), err)

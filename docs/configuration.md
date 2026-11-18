@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-17 @ 6ac7f95 -->
+<!-- docs-sync: 2026-11-18 @ 1f062a9 -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -34,6 +34,10 @@ CLI flags  >  环境变量（AQUARIUS_*）  >  profiles/<name>/config.json
 | flag | `-data`（数据目录）、`-profile`（profile 选择）、`-model`（覆盖 model.name）、`-base-url`（覆盖 **primary provider** 的 base_url——调试逃生口）、`-log-level`（覆盖 `ui.log_level`）、`-log-format`（`text` / `json`，只影响本次运行） |
 | 环境变量 | `AQUARIUS_MODEL`（覆盖 model.name）、`AQUARIUS_BASE_URL`（同 `-base-url`）、`AQUARIUS_UI_LANG`（覆盖 `ui.lang`，测试与便携安装用）、`AQUARIUS_LOG_LEVEL`（覆盖 `ui.log_level`）；以及各把密钥引用（`secret:<名>`）指向的同名环境变量 |
 | config | 下表全部字段 |
+
+另有 `-version`（打印版本后退出）与 `-doctor`（跑一遍体检后退出，见 [usage.md](usage.md)
+的 `/doctor`）两个动作参数：它们不出现在覆盖链里，只是让进程做完一件事就退出。
+`-doctor` 不写盘——不建目录、不开日志，也不写根指针。
 
 首次运行会写入一份可运行模板并退出；改好后重新运行。
 

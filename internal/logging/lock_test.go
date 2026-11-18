@@ -51,6 +51,7 @@ type stderrPass struct {
 var stderrPasses = []stderrPass{
 	{"internal/logging/", "", "日志包自己：文件开不出时退化成只写 stderr（D276），这里就是那个出口"},
 	{"cmd/aquarius/main.go", "fatal", "fatal 要「一句话 + 消息框」，不是一条日志行（D276 边界）"},
+	{"cmd/aquarius/doctorcli.go", "", "命令行体检的启动报因：这条路径承诺不写盘、也不开日志，结论只能当面写给终端（与 fatal 同一种呈现，不弹框）"},
 	{"cmd/aquarius/welcome.go", "", "向导取消报因：面向用户的最终结论，与 fatal 同一种呈现（同时弹框）"},
 	{"cmd/aquarius/crash.go", "", "崩溃报告路径：进程已在崩溃路径上，日志句柄不可信，这是面向用户的最终结论（同时弹框）"},
 	{"internal/adapter/uitui/tui.go", "", "TUI 主循环异常退出的兜底：界面已失效，适配器不 import 日志包"},

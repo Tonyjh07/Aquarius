@@ -5,13 +5,11 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -29,7 +27,6 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
-	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/app"
@@ -273,15 +270,15 @@ type wiring struct {
 	secretsBin *secretbin.Store
 
 	// assemble 段填充
-	store     port.ConversationStore
-	storeJSON *storejson.Store // 同一份存储的具体实现：/doctor 逐个解码（D306）
-	blobs     port.AttachmentStore
-	mem       *memoryfs.Store
-	merged    *mergedMemory
-	jobs      port.JobManager
-	jobMgr    *jobproc.Manager // 具体实现：关停时等已结束任务的收尾写完
-	jobWatch  *app.JobWatcher
-	watcher   *app.Watcher
+	store      port.ConversationStore
+	sessionDir string // 会话目录：/doctor 逐个解码（D306；命令行入口只认路径，不装配存储）
+	blobs      port.AttachmentStore
+	mem        *memoryfs.Store
+	merged     *mergedMemory
+	jobs       port.JobManager
+	jobMgr     *jobproc.Manager // 具体实现：关停时等已结束任务的收尾写完
+	jobWatch   *app.JobWatcher
+	watcher    *app.Watcher
 	// 外部代理转交（§5.18/D244）：delegates 是套了收尾观察者装饰器的面（工具与命令共用），
 	// delegateMgr 保留具体实现只为关停时终止进程组；delegateAgents 是可用清单快照。
 	delegates      port.Delegate
@@ -347,31 +344,23 @@ type wiring struct {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	f, code, done := parseFlags(args, stderr)
+	if done {
+		return code
+	}
+	if code, done := f.early(stdout, stderr); done {
+		return code
+	}
+
 	// 双击静默启动（D108/§15.1，D114）：自建控制台即判即脱离（FreeConsole——WT 默认
 	// 终端下可见终端随会话销毁关闭）；终端启动（挂载 ≥2）不受影响、日志照常。
 	// repl/tui 前端随后恢复控制台并重绑 w.stdin/w.stdout/w.stderr。
 	hideSpawnedConsole()
-	flags := flag.NewFlagSet("aquarius", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-	dataDir := flags.String("data", "", i18n.T("cmd.boot.flag.data"))
-	profileFlag := flags.String("profile", "", i18n.T("cmd.boot.flag.profile"))
-	modelName := flags.String("model", "", i18n.T("cmd.boot.flag.model"))
-	baseURL := flags.String("base-url", "", i18n.T("cmd.boot.flag.base_url"))
-	logLevel := flags.String("log-level", "", i18n.T("cmd.boot.flag.log_level"))
-	logFormat := flags.String("log-format", "", i18n.T("cmd.boot.flag.log_format"))
-	showVersion := flags.Bool("version", false, i18n.T("cmd.boot.flag.version"))
-	if err := flags.Parse(args); err != nil {
-		return 2
-	}
-	if *showVersion {
-		fmt.Fprintf(stdout, "Aquarius %s (%s/%s, %s)\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
-		return 0
-	}
 
 	// 顺序骨架：profile 解析 → 端口装配 → UI → 工具/装饰器 → Agent/插件宿主/Session
 	// → 主循环；各段实现见 bootstrap_profile.go / assemble_ports.go / assemble_ui.go。
 	w := &wiring{stdin: stdin, stdout: stdout, stderr: stderr}
-	if err := w.bootstrap(*dataDir, *profileFlag, *modelName, *baseURL); err != nil {
+	if err := w.bootstrap(f.data, f.profile, f.model, f.baseURL); err != nil {
 		if errors.Is(err, errFirstRun) {
 			return 0 // 首跑已写模板并打印指引（原契约：生成配置后重跑）
 		}
@@ -380,7 +369,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// 运行日志（D276/§7.9）：profile 已定、目录已建，从这里起所有运行期事件都走它。
 	// 开不出文件不拦启动——Open 自己降级到 stderr 并记一条 warn。
-	if err := w.openLog(*logLevel, *logFormat); err != nil {
+	if err := w.openLog(f.logLevel, f.logFmt); err != nil {
 		return fatal(stderr, "%v", err) // 级别/形态写错是用户能改的错，按启动失败报
 	}
 	defer w.log.Close()
@@ -391,7 +380,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// D141：装配前欢迎向导窗——gui 且「配置不完整」（primary/fallback 的 secret: 取不到）
 	// 时先开窗引导；保存后重新读配置、同进程继续启动（取消 = 退出 0）。见 setupWizard。
-	if code, done := w.setupWizard(ctx, *dataDir, *profileFlag, *modelName, *baseURL); done {
+	if code, done := w.setupWizard(ctx, f.data, f.profile, f.model, f.baseURL); done {
 		return code
 	}
 

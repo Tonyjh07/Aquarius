@@ -11,9 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
@@ -33,16 +36,30 @@ const (
 const dirUsageMaxEntries = 20000
 
 // healthProbe app.HealthProbe 的装配根实现（D306）。
-type healthProbe struct{ w *wiring }
+//
+// cli = 命令行入口（`-doctor`）：那条路径不起界面、也不启动插件宿主，于是 MCP 一项
+// 改成校验配置里的声明本身，其余六项与 `/doctor` 是同一份代码。
+type healthProbe struct {
+	w   *wiring
+	cli bool
+}
 
 // Probe 跑七项检查。顺序固定：从「最上游、坏了一点都动不了」排到「只影响体验」。
 func (h healthProbe) Probe(ctx context.Context) []app.HealthCheck {
 	w := h.w
+	mcp, secrets := checkMCP(w), checkSecrets(ctx, w)
+	if h.cli {
+		mcp = checkMCPDeclared(w)
+		if _, err := os.Stat(w.profileDir); errors.Is(err, fs.ErrNotExist) {
+			// profile 目录还没有文件：没有库可解，与「本次构建没接入」是两件事。
+			secrets = app.HealthCheck{ID: "secrets", Detail: i18n.T("cmd.doctor.secrets_no_profile")}
+		}
+	}
 	return []app.HealthCheck{
 		checkConfig(w),
-		checkSecrets(ctx, w),
+		secrets,
 		checkSessions(ctx, w),
-		checkMCP(w),
+		mcp,
 		checkDir("logs", filepath.Join(w.profileDir, "logs"), logsWarnBytes),
 		checkDir("exports", filepath.Join(w.profileDir, "exports"), exportsWarnBytes),
 		checkDisk(w.profileDir),
@@ -102,12 +119,12 @@ func checkSecrets(ctx context.Context, w *wiring) app.HealthCheck {
 // 拖垮整张列表），于是那些会话在 /list 里就是「不存在」。体检要报的正是这一批。
 func checkSessions(ctx context.Context, w *wiring) app.HealthCheck {
 	c := app.HealthCheck{ID: "sessions"}
-	if w.storeJSON == nil {
+	if w.sessionDir == "" {
 		c.State = app.HealthWarn
 		c.Detail = i18n.T("cmd.doctor.sessions_unwired")
 		return c
 	}
-	total, broken, err := w.storeJSON.Audit(ctx)
+	total, broken, err := storejson.AuditDir(ctx, w.sessionDir)
 	if err != nil {
 		c.State = app.HealthFail
 		c.Detail = i18n.Tf("cmd.doctor.sessions_list_bad", "err", err)
@@ -175,6 +192,48 @@ func checkMCP(w *wiring) app.HealthCheck {
 	default:
 		c.Detail = i18n.Tf("cmd.doctor.mcp_ok", "ready", ready, "disabled", disabled)
 	}
+	return c
+}
+
+// checkMCPDeclared 命令行模式的 MCP 一项：没有插件宿主就不谈连接状态，只校验声明本身
+// （名字、transport、command / url、risk）。
+//
+// 启动时这些校验也做（fail-fast），但那里只报第一个致命错误；体检把全部声明过一遍。
+// 按名字排序遍历：map 的顺序每次都不同，而体检的结论不该随跑的次数变。
+func checkMCPDeclared(w *wiring) app.HealthCheck {
+	c := app.HealthCheck{ID: "mcp"}
+	cfg, err := loadConfig(w.cfgPath)
+	if err != nil {
+		c.State = app.HealthWarn
+		c.Detail = i18n.T("cmd.doctor.mcp_cli_no_config")
+		return c
+	}
+	if len(cfg.MCPServers) == 0 {
+		c.Detail = i18n.T("cmd.doctor.mcp_cli_none")
+		return c
+	}
+	names := make([]string, 0, len(cfg.MCPServers))
+	for name := range cfg.MCPServers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var bad []string
+	for _, name := range names {
+		if verr := cfg.MCPServers[name].Validate(name); verr != nil {
+			bad = append(bad, verr.Error())
+		}
+	}
+	if len(bad) > 0 {
+		c.State = app.HealthFail
+		c.Detail = i18n.Tf("cmd.doctor.mcp_cli_bad",
+			"n", len(names), "bad", len(bad), "err", bad[0])
+		if rest := len(bad) - 1; rest > 0 {
+			c.Detail += i18n.Tf("cmd.doctor.mcp_cli_more", "n", rest)
+		}
+		c.Fix = i18n.T("cmd.doctor.mcp_fix")
+		return c
+	}
+	c.Detail = i18n.Tf("cmd.doctor.mcp_cli_ok", "n", len(names))
 	return c
 }
 

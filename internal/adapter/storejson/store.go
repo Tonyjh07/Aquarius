@@ -328,12 +328,23 @@ type BrokenFile struct {
 //
 // 只读：不解锁、不加每会话锁、不动 .bak，也不缓存（体检要的是此刻磁盘上的样子）。
 func (s *Store) Audit(ctx context.Context) (total int, broken []BrokenFile, err error) {
+	return AuditDir(ctx, s.dir)
+}
+
+// AuditDir 同 Audit，但按目录路径直接审计，不要求先构造 Store（`-doctor` 的命令行入口用，
+// D306）：那条路径不装配存储面，也就不该为了查一处目录去建目录。
+//
+// 目录不存在 = 还没写过会话，返回 0 且不报错——全新安装不是故障。
+func AuditDir(ctx context.Context, dir string) (total int, broken []BrokenFile, err error) {
 	if err := checkCtx(ctx); err != nil {
 		return 0, nil, err
 	}
-	entries, err := os.ReadDir(s.dir)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil, nil
+	}
 	if err != nil {
-		return 0, nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.list", "dir", s.dir), err)
+		return 0, nil, fmt.Errorf("%s: %w", i18n.Tf("store.err.list", "dir", dir), err)
 	}
 	// present 主文件名集合：用来认「只剩备份」的那些（主文件被删/被挪走）。
 	present := make(map[string]bool, len(entries))
@@ -358,7 +369,7 @@ func (s *Store) Audit(ctx context.Context) (total int, broken []BrokenFile, err 
 		}
 		total++
 		id := conversation.ID(strings.TrimSuffix(name, ".json"))
-		data, rerr := os.ReadFile(filepath.Join(s.dir, name))
+		data, rerr := os.ReadFile(filepath.Join(dir, name))
 		if rerr != nil {
 			broken = append(broken, BrokenFile{Name: name, Reason: rerr.Error()})
 			continue

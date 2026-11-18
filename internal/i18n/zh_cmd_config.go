@@ -165,6 +165,7 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.boot.flag.log_level":  `运行日志级别（debug | info | warn | error；默认取 ui.log_level）`,
 	"cmd.boot.flag.log_format": `运行日志形态（text | json；只影响本次运行）`,
 	"cmd.boot.flag.version":    `打印版本并退出`,
+	"cmd.boot.flag.doctor":     `跑一遍体检并退出（不开界面、不写盘；有异常项时退出码为 1）`,
 
 	// main.go / bootstrap_profile.go：启动与主循环
 	"cmd.boot.banner":                `Aquarius — 输入 /help 查看命令，/quit 退出；Ctrl+C 取消当前生成`,

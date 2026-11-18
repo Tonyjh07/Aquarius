@@ -178,6 +178,8 @@ var enCmdConfigTexts = map[string]string{
 		`defaults to ui.log_level)`,
 	"cmd.boot.flag.log_format": `Run log format (text | json; this run only)`,
 	"cmd.boot.flag.version":    `Print the version and exit`,
+	"cmd.boot.flag.doctor": `Run the health check and exit (no UI, writes nothing; ` +
+		`exit code 1 when an item fails)`,
 
 	// main.go / bootstrap_profile.go
 	"cmd.boot.banner": `Aquarius — type /help for commands, /quit to exit; ` +

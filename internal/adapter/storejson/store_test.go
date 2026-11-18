@@ -987,3 +987,15 @@ func TestAuditReportsUnreadableFiles(t *testing.T) {
 		}
 	}
 }
+
+// TestAuditDirMissingDirectory 目录还不存在 = 还没写过会话，不是故障（`-doctor` 的
+// 命令行入口不建目录，全新安装会正好走到这里）。
+func TestAuditDirMissingDirectory(t *testing.T) {
+	total, broken, err := AuditDir(context.Background(), filepath.Join(t.TempDir(), "absent"))
+	if err != nil {
+		t.Fatalf("目录不存在不该报错：%v", err)
+	}
+	if total != 0 || len(broken) != 0 {
+		t.Fatalf("total = %d, broken = %d，都该是 0", total, len(broken))
+	}
+}

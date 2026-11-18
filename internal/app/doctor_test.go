@@ -21,7 +21,7 @@ func (f fakeProbe) Probe(context.Context) []HealthCheck { return f.checks }
 
 // TestRenderDoctorCleanIsOneLine 全绿只回一行：正常项没有可动作的信息（D306 决策 3）。
 func TestRenderDoctorCleanIsOneLine(t *testing.T) {
-	got := renderDoctor([]HealthCheck{
+	got := RenderDoctor([]HealthCheck{
 		{ID: "config", State: HealthOK, Detail: "解析正常"},
 		{ID: "disk", State: HealthOK, Detail: "可用 53.5 GB"},
 	})
@@ -42,7 +42,7 @@ func TestRenderDoctorListsEverything(t *testing.T) {
 		{ID: "secrets", State: HealthFail, Detail: i18n.Tf("cmd.doctor.secrets_bad", "err", "boom"), Fix: fix},
 		{ID: "disk", State: HealthWarn, Detail: "2.0 GB"},
 	}
-	got := renderDoctor(checks)
+	got := RenderDoctor(checks)
 	lines := strings.Split(got, "\n")
 	// 头 + 三项 + 一条修法
 	if len(lines) != 5 {
@@ -65,7 +65,7 @@ func TestRenderDoctorListsEverything(t *testing.T) {
 
 // TestRenderDoctorUnknownID 未登记的检查项原样露出 ID：宁可看见一个丑标识，也不要空着。
 func TestRenderDoctorUnknownID(t *testing.T) {
-	got := renderDoctor([]HealthCheck{{ID: "brand-new", State: HealthWarn, Detail: "d"}})
+	got := RenderDoctor([]HealthCheck{{ID: "brand-new", State: HealthWarn, Detail: "d"}})
 	if !strings.Contains(got, "brand-new") {
 		t.Fatalf("未知 ID 没露出：%q", got)
 	}

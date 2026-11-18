@@ -59,11 +59,14 @@ func (s *Session) execDoctor(ctx context.Context, cmd port.Command) (string, err
 	if s.doctor == nil {
 		return "", errors.New(i18n.T("session.doctor.unwired"))
 	}
-	return renderDoctor(s.doctor.Probe(ctx)), nil
+	return RenderDoctor(s.doctor.Probe(ctx)), nil
 }
 
-// renderDoctor 排版：全绿只回一行，有问题时七项全列（D306 决策 3）。
-func renderDoctor(checks []HealthCheck) string {
+// RenderDoctor 排版：全绿只回一行，有问题时七项全列（D306 决策 3）。
+//
+// 导出是给装配根的命令行入口（`-doctor`）用的：同一个问题在会话里问和不起界面问，
+// 结论与句子应当一字不差，所以排版只有这一份。
+func RenderDoctor(checks []HealthCheck) string {
 	bad := 0
 	for _, c := range checks {
 		if c.State != HealthOK {

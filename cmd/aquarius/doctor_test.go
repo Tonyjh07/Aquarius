@@ -80,7 +80,7 @@ func TestCheckSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}
-	w := &wiring{storeJSON: store}
+	w := &wiring{sessionDir: dir}
 
 	if got := checkSessions(ctx, w); got.State != app.HealthOK {
 		t.Fatalf("空目录应当正常：%+v", got)
