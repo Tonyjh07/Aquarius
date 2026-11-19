@@ -91,6 +91,10 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.provider_kind": `model.providers[{i}] ({provider}) 的 kind "{kind}" 不认识` +
 		`（可选：{a} / {b} / {c}）`,
 	"cmd.config.err.provider_base_url_empty": `model.providers[{i}] ({provider}) 的 base_url 不可为空`,
+	"cmd.config.err.provider_family": `model.providers[{i}] ({provider}) 的 family "{family}" 不认识；` +
+		`可填 {list}，或删掉该键按 base_url 的 host 猜`,
+	"cmd.config.err.server_cap_unknown": `model.providers[{i}] ({provider}) 的 {field} 含 ` +
+		`不认识的服务端能力 "{cap}"；可填 {list}`,
 	"cmd.config.err.provider_models_empty": `model.providers[{i}] ({provider}) 的 models 不可为空` +
 		`（首个 = 缺省请求模型）`,
 	"cmd.config.err.model_name_empty": `model.providers[{i}] ({provider}) 的 models[{j}].name 不可为空`,

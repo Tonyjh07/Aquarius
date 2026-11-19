@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/app"
@@ -31,6 +32,17 @@ type providerConfig struct {
 	// UnsupportedParams 服务端已知不认的请求参数（D34 自动记录，启动注入省略）。
 	// D173：只对 openai-chat 生效（另两种协议是自家规范，参数写错就是 bug）。
 	UnsupportedParams []string `json:"unsupported_params,omitempty"`
+	// Family 端点家族（D307）：只决定 server_caps 的缺省值，**不作门禁**。键缺失 = 按
+	// base_url 的 host 猜；猜不出来（含自建网关）就是空，一项服务端能力都不发。
+	// 用户显式填了就以它为准——网关后面挂着官方模型时，host 猜不出来但用户知道。
+	Family string `json:"family,omitempty"`
+	// ServerCaps 该端点认的服务端能力（D307）：nil = 键缺失 = 按 family 取缺省；
+	// 非 nil = 以声明为准（空数组 = 一项都不认）。指针区分「没写」与「写了空」，与
+	// modelEntry.Caps 同一套规则。
+	ServerCaps *[]string `json:"server_caps,omitempty"`
+	// UnsupportedServerCaps 实测不认的服务端能力（D307 自动记录，发之前剔除）。与
+	// UnsupportedParams 同源：收到 400 且错误指向该能力时记一笔，此后不再发。
+	UnsupportedServerCaps []string `json:"unsupported_server_caps,omitempty"`
 	// Headers 附加到每次 chat 请求的自定义头（D253）：兼容端点（自建网关/镜像）需要的
 	// 路由或计费头。**只对 openai-chat 生效**（同 UnsupportedParams 规则）。值原样发送，
 	// 同名时覆盖适配器的默认头与鉴权头。
@@ -165,6 +177,71 @@ func (p *providerConfig) capsOf(m modelEntry) port.ModelCaps {
 		return defaultCaps(p.protocolKind())
 	}
 	return port.CapsFromNames(*m.Caps)
+}
+
+// 端点家族（D307）：只登记「这一版真给了服务端能力缺省」的那几家。家族名不是身份判定，
+// 是缺省值来源——判「是不是官方」技术上做不到（网关可以反代官方模型），也没必要。
+const familyDeepSeek = "deepseek"
+
+// knownFamilies 合法家族名（启动校验只拦拼错的词：写错一个字母就等于把全部服务端能力
+// 静默关掉，而这件事没有任何运行期报错会提醒）。
+func knownFamilies() []string { return []string{familyDeepSeek} }
+
+// endpointFamily 生效家族：显式声明优先，键缺失才按 base_url 的 host 猜。
+func (p *providerConfig) endpointFamily() string {
+	if f := strings.ToLower(strings.TrimSpace(p.Family)); f != "" {
+		return f
+	}
+	return familyFromHost(p.BaseURL)
+}
+
+// familyFromHost 按 base_url 的 host 猜家族（猜不出来返回空）。
+//
+// 后缀匹配**必须带前导点**：裸 `HasSuffix(host, "deepseek.com")` 会把 `notdeepseek.com`
+// 判成同一家；带点之后 `api.deepseek.com.evil.com` 也正确落空。base_url 少了 scheme 时
+// 补一个 `//` 再解析——那是常见手写形态，不值得因此猜不出 host。
+func familyFromHost(baseURL string) string {
+	s := strings.TrimSpace(baseURL)
+	u, err := url.Parse(s)
+	if err == nil && u.Hostname() == "" {
+		u, err = url.Parse("//" + s)
+	}
+	if err != nil || u == nil {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == familyDeepSeek+".com" || strings.HasSuffix(host, "."+familyDeepSeek+".com") {
+		return familyDeepSeek
+	}
+	return ""
+}
+
+// defaultServerCaps 家族的缺省服务端能力：键缺失且 host 猜得出家族时用它。
+// 空家族 = 一项都不认（不认识的端点不替它假设能力；猜错的代价是发一次 400 而不是静默降级）。
+func defaultServerCaps(family string) port.ServerCaps {
+	switch family {
+	case familyDeepSeek:
+		return port.ServerCaps{Title: true, ReadURL: true, Files: true, WebSearch: true, Safety: true}
+	}
+	return port.ServerCaps{}
+}
+
+// serverCaps 该端点实际会发的服务端能力：显式 server_caps 优先（空数组 = 一项都不认），
+// 键缺失才取家族缺省；再减掉 unsupported_server_caps 里实测不认的那几项。
+//
+// 三个字段各自回答一件事，别混：「写了什么」（ServerCaps）、「按家族该给什么」
+// （Family / host）、「实测不认什么」（UnsupportedServerCaps）。消费方只问这一个函数。
+func (p *providerConfig) serverCaps() port.ServerCaps {
+	var c port.ServerCaps
+	if p.ServerCaps != nil {
+		c = port.ServerCapsFromNames(*p.ServerCaps)
+	} else {
+		c = defaultServerCaps(p.endpointFamily())
+	}
+	for _, n := range p.UnsupportedServerCaps {
+		c = c.Drop(n)
+	}
+	return c
 }
 
 // modelByName 按名取模型条目（未命中返回 nil）。
@@ -510,6 +587,35 @@ func validateSampling(s port.Sampling, kind, where string) error {
 	return nil
 }
 
+// isKnownFamily 家族名是否在词表内。
+func isKnownFamily(name string) bool {
+	for _, f := range knownFamilies() {
+		if f == name {
+			return true
+		}
+	}
+	return false
+}
+
+// validateServerCapList 校验一份服务端能力名单（D307）：词表外的名字直接报错。
+//
+// 与模型 caps 的「认不出就忽略」不同：那三项有协议缺省兜底，写错一个词只是少一项声明；
+// 这里写错等于那项能力永远不发，而没有任何运行期报错会提醒。
+func validateServerCapList(i int, provider, field string, list *[]string) error {
+	if list == nil {
+		return nil
+	}
+	for _, n := range *list {
+		if port.IsServerCap(n) {
+			continue
+		}
+		return fmt.Errorf("%s", i18n.Tf("cmd.config.err.server_cap_unknown",
+			"i", i, "provider", provider, "field", field, "cap", n,
+			"list", strings.Join(port.ServerCapNames(), i18n.T("cmd.config.sep.list"))))
+	}
+	return nil
+}
+
 // normalize 应用缺省值并 fail-fast 校验 model 段（D173，启动期调用）：
 // primary 缺省 = providers 首个；model.name 缺省 = primary.models[0]。
 //
@@ -546,6 +652,20 @@ func (m *modelConfig) normalize() error {
 		if p.BaseURL == "" {
 			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_base_url_empty",
 				"i", i, "provider", p.Name))
+		}
+		// 服务端能力声明（D307）：家族写错等于把能力全关，名单写错等于那项永远不发——
+		// 两者都没有运行期报错会提醒，只能启动时拦下。
+		p.Family = strings.ToLower(strings.TrimSpace(p.Family))
+		if p.Family != "" && !isKnownFamily(p.Family) {
+			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_family",
+				"i", i, "provider", p.Name, "family", p.Family,
+				"list", strings.Join(knownFamilies(), i18n.T("cmd.config.sep.list"))))
+		}
+		if err := validateServerCapList(i, p.Name, "server_caps", p.ServerCaps); err != nil {
+			return err
+		}
+		if err := validateServerCapList(i, p.Name, "unsupported_server_caps", &p.UnsupportedServerCaps); err != nil {
+			return err
 		}
 		if len(p.Models) == 0 || strings.TrimSpace(p.Models[0].Name) == "" {
 			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.provider_models_empty",

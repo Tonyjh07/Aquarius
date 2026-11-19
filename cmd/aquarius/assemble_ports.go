@@ -117,6 +117,49 @@ func (w *wiring) noteUnsupportedFor(providerName string) func(string) {
 	}
 }
 
+// noteServerCapFor 返回「端点不认某项服务端能力」的记录回调（D307）：与
+// noteUnsupportedFor 同一套——发起方确认 400 指向哪一项，这里写回 config
+// providers[<name>].unsupported_server_caps，此后启动与运行期都不再发。
+//
+// **不就地改内存里的 cfg**：消费方在本次运行里自己记住不再发（D34 的 `omit` 表同理），
+// 免得配置在请求路径上被并发改写。
+func (w *wiring) noteServerCapFor(providerName string) func(string) {
+	return func(capName string) {
+		w.log.Info(logging.LLM, "log.llm.cap_rejected", "log.act.recorded_unsupported_cap",
+			"cap", capName, "provider", providerName)
+		if err := persistConfig(w.cfgPath, func(generic map[string]any) {
+			p := providerSection(generic, providerName)
+			if p == nil {
+				return // providers 结构被外部改动：放弃记录，下次启动仍会试一次
+			}
+			list, _ := p["unsupported_server_caps"].([]any)
+			for _, v := range list {
+				if v == capName {
+					return // 已记录
+				}
+			}
+			p["unsupported_server_caps"] = append(list, capName)
+		}); err != nil {
+			w.log.Warn(logging.LLM, "log.llm.cap_record_failed", "log.act.retry_next_start", "err", err)
+		}
+	}
+}
+
+// logServerCaps 装配期记一行该端点的生效能力（D307）。这是「host 猜出来的缺省」与
+// 「用户显式声明的」唯一可见出口：真发出去 400 之前，想查为什么某项能力没生效只能看这行。
+func (w *wiring) logServerCaps(p *providerConfig) {
+	family := p.endpointFamily()
+	if family == "" {
+		family = i18n.T("log.llm.family_unknown")
+	}
+	caps := strings.Join(p.serverCaps().Names(), ",")
+	if caps == "" {
+		caps = i18n.T("log.llm.caps_none")
+	}
+	w.log.Info(logging.LLM, "log.llm.server_caps", "log.act.caps_resolved",
+		"provider", p.Name, "family", family, "caps", caps)
+}
+
 // buildClient 构建 provider 客户端（D173）：base_url/tokenizer 构造期固化
 // （port.LLM 不可热换）。密钥池在这里展开：一把钥匙一具 client（有的钥匙可能
 // 解析失败——那种钥匙不进池，启动打一行警告而不是整体失败），多把时用 KeyPool
@@ -232,6 +275,7 @@ func (w *wiring) buildLLMs() error {
 		w.client = unconfiguredLLM{}
 		return nil
 	}
+	w.logServerCaps(w.primary)
 	client, primaryCounter, err := w.buildClient(w.primary)
 	if err != nil {
 		// D278 决策 3 的延伸，但只对 gui 成立：首跑模板写的是 `secret:DEEPSEEK_API_KEY`，
@@ -257,6 +301,7 @@ func (w *wiring) buildLLMs() error {
 		if p == nil {
 			return fmt.Errorf("%s", i18n.Tf("cmd.asm.err.fallback_missing", "provider", fb.Provider))
 		}
+		w.logServerCaps(p)
 		c, counter, ferr := w.buildClient(p)
 		if ferr != nil {
 			// 降级目标缺密钥只丢这一条降级链，不影响主链启动；否则一条配错的 fallback

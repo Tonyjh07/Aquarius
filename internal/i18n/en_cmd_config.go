@@ -91,6 +91,10 @@ var enCmdConfigTexts = map[string]string{
 	"cmd.config.err.provider_kind": `model.providers[{i}] ({provider}) has unknown kind "{kind}"` +
 		` (choose from: {a} / {b} / {c})`,
 	"cmd.config.err.provider_base_url_empty": `model.providers[{i}] ({provider}): base_url cannot be empty`,
+	"cmd.config.err.provider_family": `model.providers[{i}] ({provider}): unknown family "{family}"; ` +
+		`use {list}, or drop the key to infer it from the base_url host`,
+	"cmd.config.err.server_cap_unknown": `model.providers[{i}] ({provider}): {field} contains an ` +
+		`unknown server capability "{cap}"; use {list}`,
 	"cmd.config.err.provider_models_empty": `model.providers[{i}] ({provider}): models cannot be ` +
 		`empty (the first one is the default request model)`,
 	"cmd.config.err.model_name_empty": `model.providers[{i}] ({provider}): models[{j}].name cannot be empty`,
