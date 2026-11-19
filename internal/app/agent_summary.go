@@ -69,9 +69,7 @@ func (a *Agent) generateSummary(ctx context.Context, id conversation.MessageID, 
 		if _, err := a.consume(ctx, stream, buf, id); err != nil {
 			return "", usage, fmt.Errorf("generate summary: %w", err)
 		}
-		usage.InputTokens += buf.round.InputTokens
-		usage.OutputTokens += buf.round.OutputTokens
-		usage.CostUSD += buf.round.CostUSD
+		usage = usage.Add(buf.round)
 		text = strings.TrimSpace(buf.text.String())
 		if text != "" && hasSummarySection(text) {
 			break

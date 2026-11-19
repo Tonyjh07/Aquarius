@@ -51,6 +51,8 @@ var zhSessionTexts = map[string]string{
 	"session.usage.last":          "上轮实测: in={in} out={out} tokens（服务端返回）",
 	"session.usage.total":         "本会话累计(Path): in={in} out={out} tokens（{gen} 次生成）",
 	"session.usage.cost":          "，约 ${usd}",
+	"session.usage.cache":         "缓存: 命中 {read} · 写入 {write} tokens（输入命中率 {pct}%）",
+	"session.usage.split":         "分项: 推理 {thinking} · 审核 {safety} tokens",
 	"session.usage.lore":          "世界书: 激活 {on} 条 · {tok} tokens",
 	"session.usage.lore_dropped":  "世界书: 激活 {on} 条 · {tok} tokens（另有 {dropped} 条命中但装不下）",
 
@@ -165,6 +167,7 @@ var zhSessionTexts = map[string]string{
 	"usage.cost":                "用法：/cost [session | model | day]",
 	"session.cost.head_session": "用量与花费 · 本会话",
 	"session.cost.row_session":  "{n} 轮 · in {in} · out {out} · {usd}",
+	"session.cost.cache":        " · 缓存命中 {pct}%",
 	"session.cost.head_model":   "用量与花费 · 按模型（全部会话）",
 	"session.cost.head_day":     "用量与花费 · 按天（全部会话，最近 {days} 天内改过的）",
 	"session.cost.row":          "{key}  in {in} · out {out} · {usd} · {n} 次",

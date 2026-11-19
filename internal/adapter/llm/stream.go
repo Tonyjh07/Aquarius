@@ -199,9 +199,51 @@ type chatCallDelta struct {
 	} `json:"function"`
 }
 
+// chatUsage chat.completion 的 usage（D308 分项）。
+//
+// 同一个键名在各家 OpenAI 兼容端上并不统一：缓存命中 OpenAI 报
+// prompt_tokens_details.cached_tokens、DeepSeek 报 prompt_cache_hit_tokens，推理 token
+// 则有 completion_tokens_details.reasoning_tokens 与 output_tokens_details.thinking_tokens
+// 两种写法。两种都收，谁先报用谁。
 type chatUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
+	PromptTokens         int `json:"prompt_tokens"`
+	CompletionTokens     int `json:"completion_tokens"`
+	PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
+	PromptTokensDetails  *struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+	CompletionTokensDetails *struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
+	OutputTokensDetails *struct {
+		ThinkingTokens  int `json:"thinking_tokens"`
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"output_tokens_details"`
+	SafetyTokens int `json:"safety_tokens"`
+}
+
+// toUsage 映射到树上的用量。InputTokens 用 prompt_tokens 原值：OpenAI 系本来就含命中量。
+func (u chatUsage) toUsage() conversation.Usage {
+	out := conversation.Usage{InputTokens: u.PromptTokens, OutputTokens: u.CompletionTokens}
+	if u.PromptTokensDetails != nil {
+		out.CacheRead = u.PromptTokensDetails.CachedTokens
+	}
+	if out.CacheRead == 0 {
+		out.CacheRead = u.PromptCacheHitTokens
+	}
+	if u.CompletionTokensDetails != nil {
+		out.Thinking = u.CompletionTokensDetails.ReasoningTokens
+	}
+	if u.OutputTokensDetails != nil {
+		if out.Thinking == 0 {
+			out.Thinking = u.OutputTokensDetails.ThinkingTokens
+		}
+		if out.Thinking == 0 {
+			out.Thinking = u.OutputTokensDetails.ReasoningTokens
+		}
+	}
+	out.Safety = u.SafetyTokens
+	return out
 }
 
 type chatError struct {
@@ -231,10 +273,7 @@ func (ch chatChunk) toDelta() port.Delta {
 		}
 	}
 	if ch.Usage != nil {
-		u := conversation.Usage{
-			InputTokens:  ch.Usage.PromptTokens,
-			OutputTokens: ch.Usage.CompletionTokens,
-		}
+		u := ch.Usage.toUsage()
 		d.Usage = &u
 	}
 	return d

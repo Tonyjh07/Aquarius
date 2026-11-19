@@ -27,6 +27,7 @@ var zhTuiTexts = map[string]string{
 	"tui.status.model":      "模型 {model}",
 	"tui.status.permission": "权限 {level}",
 	"tui.status.effort":     "思考档 {effort}",
+	"tui.status.cache":      "（缓存{pct}%）",
 	"tui.status.unattended": "无人值守",
 	"tui.status.pending":    "待发 {n} 条（Ctrl+U 撤销）",
 	"tui.hint.scroll":       "PgUp/PgDn 滚动",

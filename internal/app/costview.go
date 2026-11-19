@@ -30,10 +30,11 @@ const costDays = 14
 
 // costTally 一组用量。
 type costTally struct {
-	in, out  int
-	usd      float64
-	calls    int
-	uncosted int // 有 token 但 cost_usd 为 0 的调用数（未声明单价，未折算）
+	in, out   int
+	cacheRead int // 命中缓存的输入 tokens（D308；含在 in 里）
+	usd       float64
+	calls     int
+	uncosted  int // 有 token 但 cost_usd 为 0 的调用数（未声明单价，未折算）
 }
 
 // add 累计一次生成；没有 token 的节点（root/system/user）不算一次调用。
@@ -43,11 +44,20 @@ func (t *costTally) add(m conversation.Message) {
 	}
 	t.in += m.Usage.InputTokens
 	t.out += m.Usage.OutputTokens
+	t.cacheRead += m.Usage.CacheRead
 	t.usd += m.Usage.CostUSD
 	t.calls++
 	if m.Usage.CostUSD == 0 {
 		t.uncosted++
 	}
+}
+
+// cachePct 输入侧的缓存命中占比（0–100 的整数）；没有输入时返回 0。
+func (t *costTally) cachePct() int {
+	if t.in <= 0 || t.cacheRead <= 0 {
+		return 0
+	}
+	return int(float64(t.cacheRead)*100/float64(t.in) + 0.5)
 }
 
 // allMessages 读全部会话的**全部节点**（含放弃分支——它们也真花过钱）。
@@ -141,6 +151,9 @@ func renderCostSession(rep UsageReport) string {
 	b.WriteString(i18n.Tf("session.cost.row_session",
 		"n", fmt.Sprint(rep.Gen), "in", fmtTokens(rep.SumIn), "out", fmtTokens(rep.SumOut),
 		"usd", fmtUSD(rep.CostUSD)))
+	if pct := rep.CachePct(); pct > 0 {
+		b.WriteString(i18n.Tf("session.cost.cache", "pct", fmt.Sprint(pct)))
+	}
 	return b.String()
 }
 
@@ -159,6 +172,10 @@ func renderCostRows(head string, keys []string, tallies map[string]*costTally) s
 		b.WriteString(i18n.Tf("session.cost.row", "key", k,
 			"in", fmtTokens(t.in), "out", fmtTokens(t.out),
 			"usd", costPrice(t), "n", fmt.Sprint(t.calls)))
+		// 命中率只在真有过命中时补：一行账里多两个「0%」不会让人更明白。
+		if pct := t.cachePct(); pct > 0 {
+			b.WriteString(i18n.Tf("session.cost.cache", "pct", fmt.Sprint(pct)))
+		}
 		// 部分未折算才补注脚：整组都没有单价时金额位已经写着「未折算」了。
 		if t.uncosted > 0 && t.usd > 0 {
 			b.WriteString(i18n.Tf("session.cost.uncosted", "n", fmt.Sprint(t.uncosted)))

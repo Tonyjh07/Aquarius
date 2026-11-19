@@ -601,13 +601,8 @@ func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageNamed)
 }
 
-// addUsage 用量累加。
-func addUsage(a, b conversation.Usage) conversation.Usage {
-	a.InputTokens += b.InputTokens
-	a.OutputTokens += b.OutputTokens
-	a.CostUSD += b.CostUSD
-	return a
-}
+// addUsage 用量累加（分项一起加，见 conversation.Usage.Add）。
+func addUsage(a, b conversation.Usage) conversation.Usage { return a.Add(b) }
 
 // resetDraft 清流式草稿。
 func (m *model) resetDraft() {
@@ -741,7 +736,12 @@ func (m *model) statusLine() string {
 		parts = append(parts, i18n.Tf("tui.status.pending", "n", strconv.Itoa(n)))
 	}
 	if u := m.usage; u.InputTokens > 0 || u.OutputTokens > 0 {
-		parts = append(parts, fmt.Sprintf("↑%d ↓%d", u.InputTokens, u.OutputTokens))
+		line := fmt.Sprintf("↑%d ↓%d", u.InputTokens, u.OutputTokens)
+		// D308：命中缓存的占比只在端点报过命中时补——没报时这半个括号只是噪音。
+		if u.CacheRead > 0 {
+			line += i18n.Tf("tui.status.cache", "pct", strconv.Itoa(int(u.CacheHitRatio()*100+0.5)))
+		}
+		parts = append(parts, line)
 	}
 	parts = append(parts, i18n.T("tui.hint.scroll"), i18n.T("tui.hint.cancel"))
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Join(parts, " · "))

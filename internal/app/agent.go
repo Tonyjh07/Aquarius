@@ -420,8 +420,21 @@ type UsageReport struct {
 	Gen       int     // Path 内带用量的生成次数
 	LastIn    int     // 最近一次实测输入 tokens
 	LastOut   int     // 最近一次实测输出 tokens
+	// 分项累计（D308）：端点没报的项恒为 0，展示时整行省略。
+	SumCacheRead  int // Path 内累计命中缓存的输入 tokens（已含在 SumIn 里）
+	SumCacheWrite int // Path 内累计写入缓存的输入 tokens（已含在 SumIn 里）
+	SumThinking   int // Path 内累计推理 tokens（已含在 SumOut 里）
+	SumSafety     int // Path 内累计审核 tokens（独立计费，不含在 SumIn/SumOut 里）
 	// Lore 本轮世界书激活情况（D294）：条数、token 与被预算挡掉的条数。
 	Lore LoreActivation
+}
+
+// CachePct 输入侧的缓存命中占比（0–100 的整数，四舍五入）；没有输入时返回 0。
+func (r UsageReport) CachePct() int {
+	if r.SumIn <= 0 || r.SumCacheRead <= 0 {
+		return 0
+	}
+	return int(float64(r.SumCacheRead)*100/float64(r.SumIn) + 0.5)
 }
 
 // UsageReport 汇总当前上下文估算与树上实测用量（估算走三级链，实测直接读节点）。
@@ -449,6 +462,10 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 		rep.SumIn += m.Usage.InputTokens
 		rep.SumOut += m.Usage.OutputTokens
 		rep.CostUSD += m.Usage.CostUSD
+		rep.SumCacheRead += m.Usage.CacheRead
+		rep.SumCacheWrite += m.Usage.CacheWrite
+		rep.SumThinking += m.Usage.Thinking
+		rep.SumSafety += m.Usage.Safety
 		rep.Gen++
 		rep.LastIn, rep.LastOut = m.Usage.InputTokens, m.Usage.OutputTokens
 	}

@@ -153,6 +153,18 @@ func (s *Session) execUsage(ctx context.Context, cmd port.Command) (string, erro
 	if rep.CostUSD > 0 {
 		b.WriteString(i18n.Tf("session.usage.cost", "usd", fmt.Sprintf("%.4f", rep.CostUSD)))
 	}
+	// D308：缓存分项只在端点报过时出现。命中率的分母是总输入（四家协议已由适配器归一）。
+	if rep.SumCacheRead > 0 || rep.SumCacheWrite > 0 {
+		b.WriteByte('\n')
+		b.WriteString(i18n.Tf("session.usage.cache",
+			"read", fmtTokens(rep.SumCacheRead), "write", fmtTokens(rep.SumCacheWrite),
+			"pct", fmt.Sprint(rep.CachePct())))
+	}
+	if rep.SumThinking > 0 || rep.SumSafety > 0 {
+		b.WriteByte('\n')
+		b.WriteString(i18n.Tf("session.usage.split",
+			"thinking", fmtTokens(rep.SumThinking), "safety", fmtTokens(rep.SumSafety)))
+	}
 	// §5.17/D294：世界书一行只在真有命中时出现——没绑卡或没触发时多一行「激活 0 条」
 	// 只是噪音，而这行的用处是解释「上下文为什么比上一轮大」。
 	if rep.Lore.Hits > 0 {

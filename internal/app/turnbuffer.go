@@ -88,9 +88,7 @@ func (b *turnBuffer) sealRound() {
 		b.content = append(b.content, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})
 		b.text.Reset()
 	}
-	b.usage.InputTokens += b.round.InputTokens
-	b.usage.OutputTokens += b.round.OutputTokens
-	b.usage.CostUSD += b.round.CostUSD
+	b.usage = b.usage.Add(b.round)
 	b.round = conversation.Usage{}
 }
 

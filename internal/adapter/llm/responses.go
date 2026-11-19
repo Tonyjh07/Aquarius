@@ -345,9 +345,29 @@ type responsesResult struct {
 	Error  *responsesError    `json:"error"`
 }
 
+// responsesUsage response 对象的 usage 块（D308）：input_tokens 已含缓存命中量，
+// 分项另给两个 details 对象。
 type responsesUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens        int `json:"input_tokens"`
+	OutputTokens       int `json:"output_tokens"`
+	InputTokensDetails *struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
+	OutputTokensDetails *struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"output_tokens_details"`
+}
+
+// toUsage 映射到树上的用量。
+func (u responsesUsage) toUsage() conversation.Usage {
+	out := conversation.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+	if u.InputTokensDetails != nil {
+		out.CacheRead = u.InputTokensDetails.CachedTokens
+	}
+	if u.OutputTokensDetails != nil {
+		out.Thinking = u.OutputTokensDetails.ReasoningTokens
+	}
+	return out
 }
 
 type responsesError struct {
@@ -457,7 +477,8 @@ func (s *stream) finishDelta(r *responsesResult) port.Delta {
 		}
 	}
 	if r.Usage != nil {
-		out.Usage = &conversation.Usage{InputTokens: r.Usage.InputTokens, OutputTokens: r.Usage.OutputTokens}
+		u := r.Usage.toUsage()
+		out.Usage = &u
 	}
 	return out
 }

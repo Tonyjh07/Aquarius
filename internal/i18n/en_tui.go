@@ -24,6 +24,7 @@ var enTuiTexts = map[string]string{
 	"tui.status.model":      "Model {model}",
 	"tui.status.permission": "Permission {level}",
 	"tui.status.effort":     "Effort {effort}",
+	"tui.status.cache":      " (cache {pct}%)",
 	"tui.status.unattended": "Unattended",
 	"tui.status.pending":    "{n} queued (Ctrl+U to undo)",
 	"tui.hint.scroll":       "PgUp/PgDn to scroll",

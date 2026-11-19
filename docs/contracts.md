@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-19 @ b2a6746 -->
+<!-- docs-sync: 2026-11-19 @ c2e5661 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -322,6 +322,16 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 
 **计数**（D26 三级链②）：`TokenCounter` 是可选的精确计数（本地 tokenizer 或 `count_tokens`
 API）；未实现或报错时 app 回落通用估算（③），并以服务端实测 usage（①）自校准。
+
+**用量的分项**（D308）：`conversation.Usage` 除输入 / 输出 / 金额外还有四项——`CacheRead` /
+`CacheWrite` 是输入侧的缓存命中与写入，`Thinking` 是输出里的推理 token（**已含在输出里**，只
+作展示），`Safety` 是服务端审核消耗（独立计费，不并进输入输出）。零值一律表示**端点没报**，
+不是「报了 0 个」，展示面据此整行省略。
+
+`InputTokens` 一律是**总输入**：OpenAI 系的 `prompt_tokens` 本来就含命中量，Anthropic 的
+`input_tokens` 不含，由适配器把三段相加折进去。折的目的是让四家协议能用同一个
+`CacheRead / InputTokens` 算命中率——否则同一条 `/cost` 在两家的口径互不可比。金额仍按全价
+折算（`CostUSD` 只看输入输出两项），缓存读入的折扣价要另加价格字段才准，本版只记数不计费。
 
 **流式增量**（D34/D42/D175）：`Delta` 的文本、思维链分片、思考签名分片、工具调用增量
 （按 Index 聚合，app 层装配）、末尾 usage 各占一位；`Stream.Close` 等价 ctx 取消。

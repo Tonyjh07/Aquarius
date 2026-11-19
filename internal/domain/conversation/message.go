@@ -87,10 +87,42 @@ const (
 )
 
 // Usage 一次生成的用量与成本；port 的流式 Delta 直接引用本类型（D17）。
+//
+// 三个分项（D308）零值 = 端点没报，不当成 0 参与任何计算。四条口径：
+//   - CacheRead / CacheWrite 是**输入侧**的缓存命中与写入。InputTokens 一律表示总输入，
+//     OpenAI 系的 prompt_tokens 本来就含命中量；Anthropic 的 input_tokens 不含，由适配器
+//     把三项相加折进去，于是「命中率 = CacheRead / InputTokens」对四家协议同一套算法。
+//   - Thinking 是输出里的推理 token，**已含在 OutputTokens 里**，只作展示，不再相加。
+//   - Safety 是服务端审核消耗的 token，各家单独计费、也不并进 OutputTokens。
+//   - 金额仍按全价折算：缓存读入的折扣价要另加价格字段，不在这里改（D308 只记数、不计费）。
 type Usage struct {
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
 	CostUSD      float64 `json:"cost_usd"`
+	CacheRead    int     `json:"cache_read,omitempty"`
+	CacheWrite   int     `json:"cache_write,omitempty"`
+	Thinking     int     `json:"thinking,omitempty"`
+	Safety       int     `json:"safety,omitempty"`
+}
+
+// CacheHitRatio 输入侧命中缓存的占比（0–1）；总输入为 0 时返回 0。
+func (u Usage) CacheHitRatio() float64 {
+	if u.InputTokens <= 0 {
+		return 0
+	}
+	return float64(u.CacheRead) / float64(u.InputTokens)
+}
+
+// Add 累加另一份用量（分项一起加；Thinking 累加后仍是 OutputTokens 的子集）。
+func (u Usage) Add(o Usage) Usage {
+	u.InputTokens += o.InputTokens
+	u.OutputTokens += o.OutputTokens
+	u.CostUSD += o.CostUSD
+	u.CacheRead += o.CacheRead
+	u.CacheWrite += o.CacheWrite
+	u.Thinking += o.Thinking
+	u.Safety += o.Safety
+	return u
 }
 
 // Message 树节点：创建后内容只读，值语义。

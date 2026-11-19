@@ -396,8 +396,10 @@ func (c *Client) generateAnthropic(ctx context.Context, req port.GenerateRequest
 // anthropicStreamState SSE 归集状态：usage 分两次到达（message_start 给 input、
 // message_delta 给累计 output），端口增量一次只带一份 usage，故在 message_stop 合并。
 type anthropicStreamState struct {
-	inTokens  int
-	outTokens int
+	inTokens   int
+	outTokens  int
+	cacheRead  int
+	cacheWrite int
 }
 
 type anthropicEvent struct {
@@ -430,9 +432,13 @@ type anthropicEventDelta struct {
 	PartialJSON string `json:"partial_json"`
 }
 
+// anthropicEventUsage Messages 的 usage 块。Anthropic 把输入拆成三段报：input_tokens
+// 只算没命中缓存的部分，命中与写入另给两个数（D308）。
 type anthropicEventUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 }
 
 type anthropicEventErrorDetail struct {
@@ -449,7 +455,11 @@ func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (
 	switch ev.Type {
 	case "message_start":
 		if ev.Message != nil && ev.Message.Usage != nil {
-			st.inTokens = ev.Message.Usage.InputTokens
+			u := ev.Message.Usage
+			// InputTokens 折成总输入：Anthropic 的 input_tokens 不含缓存那两段，直接用它
+			// 会让「命中率」和「总输入」在两套口径之间对不上（D308）。
+			st.inTokens = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+			st.cacheRead, st.cacheWrite = u.CacheReadInputTokens, u.CacheCreationInputTokens
 		}
 		return port.Delta{}, false, nil
 
@@ -506,6 +516,7 @@ func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (
 		}
 		return port.Delta{Usage: &conversation.Usage{
 			InputTokens: st.inTokens, OutputTokens: st.outTokens,
+			CacheRead: st.cacheRead, CacheWrite: st.cacheWrite,
 		}}, true, nil
 
 	case "error":

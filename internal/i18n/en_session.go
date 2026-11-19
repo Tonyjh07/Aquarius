@@ -47,6 +47,8 @@ var enSessionTexts = map[string]string{
 	"session.usage.last":          "Last turn measured: in={in} out={out} tokens (reported by the server)",
 	"session.usage.total":         "Conversation total (Path): in={in} out={out} tokens ({gen} generations)",
 	"session.usage.cost":          ", about ${usd}",
+	"session.usage.cache":         "Cache: read {read} · write {write} tokens ({pct}% of input hit)",
+	"session.usage.split":         "Breakdown: thinking {thinking} · safety {safety} tokens",
 	"session.usage.lore":          "Lorebook: {on} active · {tok} tokens",
 	"session.usage.lore_dropped":  "Lorebook: {on} active · {tok} tokens ({dropped} more matched but did not fit)",
 
@@ -161,6 +163,7 @@ var enSessionTexts = map[string]string{
 	"usage.cost":                "Usage: /cost [session | model | day]",
 	"session.cost.head_session": "Usage and spend · this conversation",
 	"session.cost.row_session":  "{n} rounds · in {in} · out {out} · {usd}",
+	"session.cost.cache":        " · cache hit {pct}%",
 	"session.cost.head_model":   "Usage and spend · by model (all conversations)",
 	"session.cost.head_day":     "Usage and spend · by day (all conversations updated in the last {days} days)",
 	"session.cost.row":          "{key}  in {in} · out {out} · {usd} · {n} calls",

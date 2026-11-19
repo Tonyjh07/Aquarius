@@ -256,13 +256,8 @@ func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageWhenUnaddressable)
 }
 
-// addUsage 用量累加。
-func addUsage(a, b conversation.Usage) conversation.Usage {
-	a.InputTokens += b.InputTokens
-	a.OutputTokens += b.OutputTokens
-	a.CostUSD += b.CostUSD
-	return a
-}
+// addUsage 用量累加（分项一起加，见 conversation.Usage.Add）。
+func addUsage(a, b conversation.Usage) conversation.Usage { return a.Add(b) }
 
 // sanitizeControl 剥除转义序列与控制字符（保留 \n\t；§9 不可信数据只渲染）。
 // 实现在 internal/adapter/uicommon，四个消费方共用。
