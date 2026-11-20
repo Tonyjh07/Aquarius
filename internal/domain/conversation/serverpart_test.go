@@ -2,7 +2,7 @@ package conversation
 
 // serverpart_test.go 服务端工具块的形态约束（D310）
 //
-// 两条必须一直成立：只有 assistant 能携带（它是「这一轮读了什么」的记录），且原文不能空
+// 两条必须一直成立：只有 assistant 能携带（assistant 节点记的是「这一轮读了什么」），且原文不能空
 // （空壳回传等于没读过，问题要到下一轮才浮出来）。
 
 import (

@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-20 @ 5d15e04 -->
+<!-- docs-sync: 2026-11-20 @ 292f435 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -317,8 +317,8 @@
 | D306 | `/doctor` 一次体检：配置解析、密钥库、会话文件、MCP 声明状态、`logs/`/`exports/` 占用、卷余量共七项，三态（正常/注意/异常）+ 一句修法；全绿只回一行，有问题时七项全列；会话文件绕开 `List` 逐个解码（坏文件被静默跳过的那批）；不发模型请求、不连 MCP、不写盘；命令行 `-doctor` 走同一份检查与排版（没有宿主，MCP 一项改校验声明；有异常项时退出码 1） | 已完成（v0.9.0） |
 | D307 | 端点能力声明与自动收敛。`providerConfig` 加 `family` / `server_caps` / `unsupported_server_caps` 三键；判「这个端点认不认」，不判「是不是官方」。`family` 只给缺省值，不当门禁；键缺失按 `base_url` 的 host 猜（后缀带前导点），用户可显式覆盖；某项收到 400 就记进 `unsupported_server_caps` 并不再发（与 D34 同一机制）；词表外的家族名与能力名启动即报 | 已完成（v0.9.0） |
 | D308 | 用量分项：`conversation.Usage` 补 `CacheRead` / `CacheWrite` / `Thinking` / `Safety` 四项，零值 = 端点没报（展示面据此整行省略）；`InputTokens` 一律折成**总输入**（Anthropic 的 `input_tokens` 不含缓存那两段，由适配器相加），四家协议因此共用 `CacheRead / InputTokens` 一个命中率算法；四项落盘随节点走，`/usage`、`/cost` 与 TUI 状态行同步显示；**只记数不计费**，金额仍按全价折算 | 已完成（v0.9.0） |
-| D309 | 会话标题由模型顺带生成：`title.enabled`（键缺失 = 开）只让**首轮**请求带 `title: {enabled: true}`，标题从三套协议的收流末尾读回、一次给全；要不要问 = 配置开关 ∩ `server_caps` 含 `title` ∩ 标题仍可自动改写（仍是默认标题或首条消息的摘录，故 `/title` 起过的名字永不被覆盖，不加新字段）；拿不到静默回落摘录，不是错误；端点 400 点名时记进 `unsupported_server_caps` 而不是 `unsupported_params` | 已完成（v0.9.0） |
-| D310 | 服务端读链接：一次形态切换而不是加一条工具声明。触发是 `web_fetch` 只抓到壳子（`tool.Result.Fallback`）且地址在本轮用户消息里；那一轮**只声明 `deepseek_read_url`、不带本地工具**（协议里两类工具不能共存），只切一次；服务端块原文整块存进 `conversation.PartServer`（正文加密在 `signature` 里，解不开也改不得）并原样回传；用过它的回复不能续写，`/respond` 本地就拒；只有 Messages 协议发声明 | 已完成（v0.9.0） |
+| D309 | 会话标题由模型顺带生成：`title.enabled`（键缺失 = 开）只让**首轮**请求带 `title: {enabled: true}`，标题从三套协议的收流末尾读回、一次给全；要不要问取三条交集：配置开关、`server_caps` 含 `title`、标题仍可自动改写（仍是默认标题或首条消息的摘录）。所以 `/title` 起过的名字永不被覆盖，也不加新字段；拿不到静默回落摘录，不是错误；端点 400 点名时记进 `unsupported_server_caps` 而不是 `unsupported_params` | 已完成（v0.9.0） |
+| D310 | 服务端读链接：一次形态切换而不是加一条工具声明。触发是 `web_fetch` 只抓到壳子（`tool.Result.Fallback`）且地址在本轮用户消息里；那一轮**只声明 `deepseek_read_url`、不带本地工具**（协议里两类工具不能共存），只切一次；服务端块原文整块存进 `conversation.PartServer`（正文加密在 `signature` 里，客户端解不开也改不得）并原样回传；用过服务端阅读链接的回复不能续写，`/respond` 本地就拒；只有 Messages 协议发声明 | 已完成（v0.9.0） |
 
 ## 记录
 
@@ -2116,7 +2116,7 @@
 
 ### D309 · 会话标题：让服务端顺带写，拿不到就收回摘录
 
-- **背景**：标题一直是首条用户消息的前 24 字摘录（`titleRunes`）。它读起来像「把第一句截了一半」，
+- **背景**：标题一直是首条用户消息的前 24 字摘录（`titleRunes`）。这种标题读起来像「把第一句截了一半」，
   而列表里真正有用的是「这个会话在聊什么」。DeepSeek 的三套协议都支持在请求里带
   `title: {enabled: true}`，模型回答时顺带写一个短标题，不计费、不加请求。
 
@@ -2169,7 +2169,7 @@
   3. **只切一次**。`retryURLs` 消费即清。撞了墙再撞第二次只会再少一次工具、再等一轮。
   4. **原文整块存，原文整块回**。`conversation.PartServer` 只留 `Raw` 一份（外加展示用的地址与
      标题）；装配时原样放回 assistant 的 `content`。字段级重新编码可能丢掉服务端认的东西，
-     `signature` 尤其——它是网页正文本身。
+     `signature` 尤其——那里放的就是网页正文本身。
   5. **不能续写就在本地拒**。协议对「用过服务端工具的回复」续写返回 400，`/respond` 先判
      `PartServer` 在位，直接给一句能看懂的话。
   6. **只有 Messages 协议发这个声明**。官方 demo 也只走 Messages；Chat Completions 与 Responses

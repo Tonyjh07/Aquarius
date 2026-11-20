@@ -55,7 +55,7 @@ type PromptMessage struct {
 	ToolCalls          []tool.Call
 	CallID             string // role=tool：对应 assistant 调用的 ID
 	// ServerBlocks 服务端工具块原样回传（D310）：树内 PartServer.Raw 整块放回 assistant
-	// 的 content 数组。协议要求它们与本轮回答一起逐轮回传，缺了就等于那个网页没读过。
+	// 的 content 数组。协议要求服务端块与本轮回答一起逐轮回传，缺了就等于那个网页没读过。
 	ServerBlocks []json.RawMessage
 }
 
@@ -120,7 +120,7 @@ type GenerateRequest struct {
 	// ServerTools 本轮声明的服务端工具（D310）：取值为 port.ServerCap* 的能力名。
 	//
 	// 服务端工具与本地 function tools 在协议里**不能同时声明**（服务端会以 400 拒绝），
-	// 所以非空时调用方必须同时把 Tools 留空——声明它就是在说「这一轮交给服务端」。
+	// 所以非空时调用方必须同时把 Tools 留空——声明服务端工具就是在说「这一轮交给服务端」。
 	ServerTools []string
 }
 
@@ -231,10 +231,10 @@ type Delta struct {
 	// 的 thinking block signature、Responses 的 encrypted_content），随当前轮思考缓冲
 	// 并入 PartThinking.Signature。空 = 本次没有签名（多数端点）。
 	ReasoningSignature string
-	// Title 服务端生成的会话标题（D309）：三套协议都在收流末尾给出，一次即完整（不是增量）。
+	// Title 服务端生成的会话标题（D309）：三套协议都在收流末尾给出，整串一次到达。
 	// 空 = 本次没拿到（端点没开、被拒答、或回答结束时也没等到）——那是正常回落，不是错误。
 	Title string
-	// Server 服务端工具块（D310），一次给全、不是增量。适配器只认块的外形（调用块与结果块），
+	// Server 服务端工具块（D310），整块一次到达。适配器只认块的外形（调用块与结果块），
 	// 内容原样交给 app 存进树：网页正文加密在块内，客户端解不开。
 	Server *ServerBlock
 }

@@ -734,7 +734,7 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 			}
 			content = append(content, pp...)
 		case conversation.PartServer:
-			// 服务端工具块（D310）：不进 Content（它不是正文），整块原文交给适配器。
+			// 服务端工具块（D310）：不是正文，不进 Content；只把整块原文交给适配器。
 			if p.Server != nil && len(p.Server.Raw) > 0 {
 				servers = append(servers, p.Server.Raw)
 			}

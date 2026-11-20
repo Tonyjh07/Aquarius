@@ -131,7 +131,7 @@ func TestNormalizeValidatesServerCaps(t *testing.T) {
 	}
 }
 
-// TestNoteServerCapPersists 模拟一次 400：写回配置，之后解析出的能力里不再有它。
+// TestNoteServerCapPersists 模拟一次 400：写回配置，之后解析出的能力里不再有这一项。
 func TestNoteServerCapPersists(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

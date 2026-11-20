@@ -279,7 +279,7 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 				if resp2.StatusCode == http.StatusOK {
 					resp = resp2
 					tr.note("llm.trace.stripped", "fields", strings.Join(stripped, ", "))
-					// title 是请求开关不是采样参数：它的账记在 unsupported_server_caps
+					// title 是请求开关不是采样参数：这一笔记在 unsupported_server_caps
 					// （D307），不进 unsupported_params——两件事混在一个清单里，用户会看不出
 					// 「这个端点连标题都不认」。
 					params := make([]string, 0, len(stripped))

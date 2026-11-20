@@ -34,7 +34,7 @@ type providerConfig struct {
 	UnsupportedParams []string `json:"unsupported_params,omitempty"`
 	// Family 端点家族（D307）：只决定 server_caps 的缺省值，**不作门禁**。键缺失 = 按
 	// base_url 的 host 猜；猜不出来（含自建网关）就是空，一项服务端能力都不发。
-	// 用户显式填了就以它为准——网关后面挂着官方模型时，host 猜不出来但用户知道。
+	// 用户显式填了就以用户写的为准——网关后面挂着官方模型时，host 猜不出来但用户知道。
 	Family string `json:"family,omitempty"`
 	// ServerCaps 该端点认的服务端能力（D307）：nil = 键缺失 = 按 family 取缺省；
 	// 非 nil = 以声明为准（空数组 = 一项都不认）。指针区分「没写」与「写了空」，与
@@ -216,8 +216,8 @@ func familyFromHost(baseURL string) string {
 	return ""
 }
 
-// defaultServerCaps 家族的缺省服务端能力：键缺失且 host 猜得出家族时用它。
-// 空家族 = 一项都不认（不认识的端点不替它假设能力；猜错的代价是发一次 400 而不是静默降级）。
+// defaultServerCaps 家族的缺省服务端能力：键缺失且 host 猜得出家族时，缺省值取自这里。
+// 空家族 = 一项都不认：不认识的端点不假设能力，猜错的代价是发一次 400 而不是静默降级。
 func defaultServerCaps(family string) port.ServerCaps {
 	switch family {
 	case familyDeepSeek:
@@ -436,7 +436,7 @@ func (m *modelConfig) chainCaps() port.ModelCaps {
 // chainServerCaps 整条降级链**都认**的服务端能力（D307/D309）：与 chainCaps 同一套取与
 // 规则——某一环不认，那个字段就不发。首轮被 400 拒掉换不来标题，只换来一次失败。
 //
-// 空态（没有 provider）与链上有认不出的端点，一律返回空集：不认识的端点不替它假设能力。
+// 一个 provider 都没有，或链上有认不出的端点，一律返回空集。
 func (m *modelConfig) chainServerCaps() port.ServerCaps {
 	p := m.primaryProvider()
 	if p == nil {

@@ -42,7 +42,7 @@ func isDefaultTitle(title string) bool {
 // titleRunes 标题摘要的最大长度。
 const titleRunes = 24
 
-// quoteMarks 模型标题外层常见的包裹引号：直角引号与弯引号各两对。按码点构造是因为它们
+// quoteMarks 模型标题外层常见的包裹引号：直角引号与弯引号各两对。按码点构造是因为这些字符
 // 不是文案，只是要被剪掉的字符——直接写成字符会让「中文只许出现在 i18n 表」的锁报出来。
 var quoteMarks = string([]rune{0x300c, 0x300d, 0x300e, 0x300f, 0x201c, 0x201d, 0x2018, 0x2019})
 
@@ -58,8 +58,8 @@ func truncateTitle(text string) string {
 
 // autoTitleFrom 从树上第一条用户消息推出的自动标题；没有用户消息返回空串。
 //
-// 这是「什么算自动标题」的唯一判据（D309）：/title 手动改过的标题与它不相等，
-// 于是不会被模型标题覆盖；而首条消息之后 maybeSetTitle 写下的摘录与它恒等。
+// 这是「什么算自动标题」的唯一判据（D309）：/title 手动改过的标题与这个结果不相等，
+// 于是不会被模型标题覆盖；而首条消息之后 maybeSetTitle 写下的摘录与这个结果恒等。
 func autoTitleFrom(c *conversation.Conversation) string {
 	if c == nil {
 		return ""

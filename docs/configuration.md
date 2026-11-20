@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-20 @ 5d15e04 -->
+<!-- docs-sync: 2026-11-20 @ 292f435 -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -475,7 +475,7 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 |---|---|---|---|
 | `title.enabled` | bool | `true` | 是否让模型顺带生成会话标题。关掉后标题回到首条消息的前 24 字摘录 |
 
-- 只在**会话第一轮**问一次：拿到标题就换成它，拿不到就保留摘录——那不是故障，不报错也不提示。
+- 只在**会话第一轮**问一次：拿到标题就换掉摘录，拿不到就保留摘录——那不是故障，不报错也不提示。
 - [`/title`](usage.md) 手动起过名字的会话**永不被覆盖**；判断依据是「当前标题是否仍等于首条消息的摘录」。
 - 只有整条降级链上的端点**都认**这一项时才会发（`server_caps` 含 `title`，见
   [model.providers[].server_caps](#modelproviders)）。端点报 400 说没有这个字段时，会自动记进
@@ -499,8 +499,8 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
   之后指望把网页存成文件；跨到别的模型，那一页就不再进上下文。
 - 用过这条路径的回答**不能续写**（`/respond` 会直接拒绝），要接着聊请新发一条消息。
 - 只有 Messages 协议的端点会真的发这个声明；别的协议下这个开关不起作用。
-- 只有整条降级链上的端点**都认**这一项时才会切（`server_caps` 含 `read_url`）。端点报 400 说要
-  么没有这个工具、要么它不能和别的工具共存时，会自动记进 `unsupported_server_caps`，此后不再发。
+- 只有整条降级链上的端点**都认**这一项时才会切（`server_caps` 含 `read_url`）。端点报 400，说
+  没有这个工具、或者说这个工具不能和别的工具共存时，客户端会记进 `unsupported_server_caps`，此后不再发。
 
 ### backup（会话备份轮转）
 

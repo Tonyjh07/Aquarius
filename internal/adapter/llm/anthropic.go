@@ -333,7 +333,7 @@ func anthropicToolInput(raw json.RawMessage) (map[string]any, error) {
 //
 // 返回 []any 是因为服务端工具（D310）与 function tool 的形状不同：服务端工具只要
 // `{"type":"deepseek_read_url","name":"deepseek_read_url"}`，没有 schema。两者在协议里
-// 不能共存，调用方据此二选一（不是同一条清单里混着发）。
+// 不能共存，调用方据此二选一。
 func toAnthropicTools(specs []tool.Spec, wn *wireNames, serverTools []string) []any {
 	out := make([]any, 0, len(specs)+len(serverTools))
 	for _, s := range specs {
@@ -516,7 +516,7 @@ type anthropicEventDelta struct {
 }
 
 // anthropicEventUsage Messages 的 usage 块。Anthropic 把输入拆成三段报：input_tokens
-// 只算没命中缓存的部分，命中与写入另给两个数（D308）。
+// input_tokens 只算未命中缓存的输入，缓存命中与缓存写入分别报在另两个字段里（D308）。
 type anthropicEventUsage struct {
 	InputTokens              int `json:"input_tokens"`
 	OutputTokens             int `json:"output_tokens"`
@@ -539,7 +539,7 @@ func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (
 	case "message_start":
 		if ev.Message != nil && ev.Message.Usage != nil {
 			u := ev.Message.Usage
-			// InputTokens 折成总输入：Anthropic 的 input_tokens 不含缓存那两段，直接用它
+			// InputTokens 折成总输入：Anthropic 的 input_tokens 不含缓存那两段，直接拿这个字段
 			// 会让「命中率」和「总输入」在两套口径之间对不上（D308）。
 			st.inTokens = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 			st.cacheRead, st.cacheWrite = u.CacheReadInputTokens, u.CacheCreationInputTokens

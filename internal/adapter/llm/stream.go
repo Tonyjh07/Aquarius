@@ -187,8 +187,8 @@ type chatChoice struct {
 		ReasoningContent string          `json:"reasoning_content"`
 		Reasoning        string          `json:"reasoning"`
 		ToolCalls        []chatCallDelta `json:"tool_calls"`
-		// Title 会话标题（D309）：DeepSeek 把它放在最后几个 chunk 的 delta 里，
-		// 一次给全（不是增量），所以后到的直接覆盖先到的。
+		// Title 会话标题（D309）：DeepSeek 把整串标题放在最后几个 chunk 的 delta 里，
+		// 一次给全，所以后到的直接覆盖先到的。
 		Title string `json:"title"`
 	} `json:"delta"`
 	FinishReason string `json:"finish_reason"`

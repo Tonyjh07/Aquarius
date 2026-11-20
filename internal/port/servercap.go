@@ -2,7 +2,7 @@ package port
 
 import "strings"
 
-// 端点侧的服务端能力（D307）：请求里要显式声明、由服务端自己实现的功能。
+// 端点侧的服务端能力（D307）：这类功能要在请求里显式声明，具体做事的是服务端。
 //
 // 与 ModelCaps 不是一回事：那个说的是「这个模型会不会」，由协议与模型决定；这个说的是
 // 「这个端点认不认」，同一个模型挂在官方端点上认、挂在只做转发的网关上就可能不认。
@@ -72,7 +72,7 @@ func (c ServerCaps) And(o ServerCaps) ServerCaps {
 	}
 }
 
-// Drop 去掉一项（名字认不出时原样返回）。自动记录的不认项靠它剔除。
+// Drop 去掉一项（名字认不出时原样返回）。自动记录下来的不认项靠这个方法剔除。
 func (c ServerCaps) Drop(name string) ServerCaps {
 	switch normalizeCapName(name) {
 	case ServerCapTitle:

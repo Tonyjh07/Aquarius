@@ -14,7 +14,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// tmplPrefix 取一条文案在占位符之前的部分（用于判断这一行出没出现）。
+// tmplPrefix 返回占位符之前的文案前缀，用于判断该文案是否出现过。
 func tmplPrefix(key, slot string) string {
 	return strings.Split(i18n.T(key), "{"+slot+"}")[0]
 }

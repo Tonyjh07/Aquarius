@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-20 @ 5d15e04 -->
+<!-- docs-sync: 2026-11-20 @ 292f435 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -326,7 +326,7 @@ API）；未实现或报错时 app 回落通用估算（③），并以服务端
 **会话标题是请求开关**（D309）：`GenerateRequest.Title` 为真时三套协议都在顶层发
 `"title": {"enabled": true}`，标题从收流末尾读回——Chat Completions 在最后一个 chunk 的
 `delta.title`、Messages 在 `message_delta` 的 `delta.title`、Responses 在结束事件的
-`response.title`，走 `Delta.Title` 一次给全（不是增量）。空 = 这次没拿到，是正常回落。
+`response.title`，走 `Delta.Title` 一次给全：整串在收流末尾到达。空 = 这次没拿到，是正常回落。
 端点 400 点名 `title` 时记进 `unsupported_server_caps`（D307 那本账），**不进**
 `unsupported_params`——后者是采样参数的清单，混在一起用户会看不出「这个端点连标题都不认」。
 

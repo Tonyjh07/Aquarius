@@ -44,7 +44,7 @@ type turnBuffer struct {
 	usage    conversation.Usage // Turn 累计（各轮流末 usage 求和）
 	round    conversation.Usage // 当前轮流末 usage（校准用，sealRound 并入 usage）
 	// title 服务端顺带生成的会话标题（D309）。一次给全、后到的覆盖先到的；
-	// 不进 content（它不是这条消息的内容），Turn 收场后交给 Session 写回会话元数据。
+	// 不进 content（标题不是这条消息的内容），Turn 收场后交给 Session 写回会话元数据。
 	title string
 	// server 本轮收到的服务端工具块（D310），按到达序；sealRound 定稿成 PartServer。
 	server []conversation.ServerPart
@@ -101,7 +101,7 @@ func (b *turnBuffer) sealRound() {
 		b.thinking.Reset()
 		b.thinkSig = ""
 	}
-	// 服务端工具块（D310）排在思考之后、正文之前：协议里它们也在这两段之间到达，
+	// 服务端工具块（D310）排在思考之后、正文之前：协议里这两段也在思考与正文之间到达，
 	// 回传时服务端靠这个相对位置认出「这一轮的思考是基于读过的网页做的」。
 	for i := range b.server {
 		b.content = append(b.content, conversation.Part{Kind: conversation.PartServer, Server: &b.server[i]})

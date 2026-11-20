@@ -418,7 +418,7 @@ func (a *Agent) finishTurn(ctx context.Context, c *conversation.Conversation, bu
 	if err := c.AppendCommitted(node); err != nil {
 		return conversation.Message{}, err
 	}
-	// 会话标题（D309）：Turn 收场才交出去——它跟着一整轮的回答到齐，而写回会话元数据
+	// 会话标题（D309）：Turn 收场才交出去——标题跟着一整轮的回答到齐，而写回会话元数据
 	// 是 Session 的事（Agent 不改会话的标题）。
 	if buf.title != "" {
 		a.genTitle.Store(buf.title)

@@ -55,7 +55,7 @@ type fileConfig struct {
 }
 
 // titleConfig 会话标题（D309）：开启后首轮请求带 `title.enabled`，由模型顺带生成标题。
-// 键缺失 = 开——写了这一项就是想让它生效，关掉是例外；端点不认时由 server_caps 收敛，
+// 键缺失 = 开——写了这一项就是要这项能力生效，关掉是例外；端点不认时由 server_caps 收敛，
 // 不会因此每次请求都撞 400。
 type titleConfig struct {
 	Enabled *bool `json:"enabled,omitempty"`
