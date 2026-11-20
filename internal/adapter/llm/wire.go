@@ -26,6 +26,13 @@ type chatRequest struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// EnableThinking 思考开关（D34；dashscope 系）；nil = 不发送。
 	EnableThinking *bool `json:"enable_thinking,omitempty"`
+	// Title 会话标题开关（D309）；nil = 不发送。
+	Title *capToggle `json:"title,omitempty"`
+}
+
+// capToggle 服务端能力开关的统一形状（D309）：`{"enabled": true}`。
+type capToggle struct {
+	Enabled bool `json:"enabled"`
 }
 
 type chatStreamOptions struct {
@@ -113,6 +120,9 @@ func encodeChatRequest(req port.GenerateRequest, includeUsage bool, omit map[str
 	out.MaxTokens = req.Budget.MaxOutputTokens
 	if out.MaxTokens == 0 {
 		out.MaxTokens = req.Params.MaxTokens
+	}
+	if req.Title && !omit["title"] {
+		out.Title = &capToggle{Enabled: true} // D309：只在装配层开的那一轮出现
 	}
 	data, err := json.Marshal(out)
 	if err != nil {

@@ -61,6 +61,17 @@ func (c ServerCaps) With(name string) ServerCaps {
 	return c
 }
 
+// And 两项都认才算认（降级链取交用，D173 的 chainCaps 同规则）。
+func (c ServerCaps) And(o ServerCaps) ServerCaps {
+	return ServerCaps{
+		Title:     c.Title && o.Title,
+		ReadURL:   c.ReadURL && o.ReadURL,
+		Files:     c.Files && o.Files,
+		WebSearch: c.WebSearch && o.WebSearch,
+		Safety:    c.Safety && o.Safety,
+	}
+}
+
 // Drop 去掉一项（名字认不出时原样返回）。自动记录的不认项靠它剔除。
 func (c ServerCaps) Drop(name string) ServerCaps {
 	switch normalizeCapName(name) {

@@ -433,6 +433,26 @@ func (m *modelConfig) chainCaps() port.ModelCaps {
 	return caps
 }
 
+// chainServerCaps 整条降级链**都认**的服务端能力（D307/D309）：与 chainCaps 同一套取与
+// 规则——某一环不认，那个字段就不发。首轮被 400 拒掉换不来标题，只换来一次失败。
+//
+// 空态（没有 provider）与链上有认不出的端点，一律返回空集：不认识的端点不替它假设能力。
+func (m *modelConfig) chainServerCaps() port.ServerCaps {
+	p := m.primaryProvider()
+	if p == nil {
+		return port.ServerCaps{}
+	}
+	caps := p.serverCaps()
+	for _, fb := range m.Fallback {
+		q := m.byName(fb.Provider)
+		if q == nil {
+			return port.ServerCaps{}
+		}
+		caps = caps.And(q.serverCaps())
+	}
+	return caps
+}
+
 // enrichModels 用配置补齐服务端模型列表里缺的元信息（D173/D177）：服务端 `/models`
 // 只返回名字，能力位与上下文窗口只能来自 config。只填不删——列表的可用性以服务端为准，
 // 但声明过的元信息要能显示出来，否则 `/model` 里满屏都是没有标注的裸名字。

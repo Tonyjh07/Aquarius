@@ -80,6 +80,10 @@ var testDataLiterals = map[string][]string{
 	// 世界书接线的断言：比对的仍是卡里的条目标题与正文（用户数据），不是界面文案。
 	"internal/app/lore_wire_test.go":    {"每轮都在"},
 	"internal/app/session_lore_test.go": {"灰塔", "港口", "常驻设定"},
+	// 会话标题测试：模型输出（服务端生成的标题原样进会话元数据），断言的正是这些串——
+	// 换成英文等于换了被测对象（D309）。
+	"internal/adapter/llm/title_test.go": {"北京明天天气", "北京天气"},
+	"internal/app/title_test.go":         {"调试报错", "我自己起的", "北京天气"},
 	// markdown 解析器的输入与渲染结果：列表/引用前缀（`• `/`▏ `/`1. `）硬编码在生产
 	// markdown.go，不在 i18n 表里，整条都是解析数据。
 	"internal/adapter/uigui/markdown_test.go": {

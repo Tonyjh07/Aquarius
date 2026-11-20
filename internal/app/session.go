@@ -42,6 +42,84 @@ func isDefaultTitle(title string) bool {
 // titleRunes 标题摘要的最大长度。
 const titleRunes = 24
 
+// quoteMarks 模型标题外层常见的包裹引号：直角引号与弯引号各两对。按码点构造是因为它们
+// 不是文案，只是要被剪掉的字符——直接写成字符会让「中文只许出现在 i18n 表」的锁报出来。
+var quoteMarks = string([]rune{0x300c, 0x300d, 0x300e, 0x300f, 0x201c, 0x201d, 0x2018, 0x2019})
+
+// truncateTitle 按 titleRunes 截断（超长补省略号）。摘要与模型标题共用一份规则：
+// 两处口径不同的话，「还是自动标题吗」的比较会在长标题上永远不相等。
+func truncateTitle(text string) string {
+	r := []rune(strings.TrimSpace(text))
+	if len(r) > titleRunes {
+		return string(r[:titleRunes]) + "…"
+	}
+	return string(r)
+}
+
+// autoTitleFrom 从树上第一条用户消息推出的自动标题；没有用户消息返回空串。
+//
+// 这是「什么算自动标题」的唯一判据（D309）：/title 手动改过的标题与它不相等，
+// 于是不会被模型标题覆盖；而首条消息之后 maybeSetTitle 写下的摘录与它恒等。
+func autoTitleFrom(c *conversation.Conversation) string {
+	if c == nil {
+		return ""
+	}
+	for _, m := range c.Path() {
+		if m.Role == conversation.RoleUser {
+			return truncateTitle(ingestTitle(m.Content))
+		}
+	}
+	return ""
+}
+
+// titleEditable 标题还能被自动改写（D309）：仍是默认标题，或仍是首条消息的摘录。
+func titleEditable(c *conversation.Conversation) bool {
+	if c == nil {
+		return false
+	}
+	return isDefaultTitle(c.Title) || c.Title == autoTitleFrom(c)
+}
+
+// firstUserTurn 路径上只有一条用户消息（会话的第一轮）。
+//
+// 不用「路径长度 == 2」判定：persona 是树里的 system 首节点（D20），用户第一条消息
+// 进来时路径已经是 Root + persona + user 三条。
+func firstUserTurn(c *conversation.Conversation) bool {
+	n := 0
+	for _, m := range c.Path() {
+		if m.Role == conversation.RoleUser {
+			n++
+		}
+	}
+	return n == 1
+}
+
+// normalizeModelTitle 把服务端给的标题收拾成可落盘的一行：去空白与包裹引号、压成单行、
+// 按 titleRunes 截断。空 = 不作为标题（保留原来的摘录）。
+func normalizeModelTitle(raw string) string {
+	t := strings.TrimSpace(raw)
+	if t == "" {
+		return ""
+	}
+	t = strings.ReplaceAll(t, "\r", " ")
+	t = strings.ReplaceAll(t, "\n", " ")
+	t = strings.Trim(t, " \t\"'`"+quoteMarks)
+	if t == "" {
+		return ""
+	}
+	return truncateTitle(t)
+}
+
+// applyModelTitle 把服务端生成的标题写进当前会话（D309）：只在标题仍可自动改写时生效，
+// `/title` 手动命名过的永不覆盖。写盘由调用方随本轮的 Save 一并完成。
+func (s *Session) applyModelTitle(raw string) {
+	t := normalizeModelTitle(raw)
+	if t == "" || !titleEditable(s.cur) {
+		return
+	}
+	s.cur.Title = t
+}
+
 // SessionDeps 会话依赖（全部端口，测试注入替身）。
 type SessionDeps struct {
 	Store port.ConversationStore
@@ -462,6 +540,9 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 func (s *Session) runTurn(ctx context.Context) error {
 	for {
 		runErr := s.agent.Run(ctx, s.cur)
+		// 会话标题（D309）：首轮回答顺带给出的标题，在这一轮的写盘之前落到会话元数据上。
+		// 拿不到（空串）就走原来的截断标题——那不是故障，不报错。
+		s.applyModelTitle(s.agent.TakeTitle())
 		if err := s.store.Save(ctx, s.cur); err != nil {
 			if runErr != nil {
 				// 两个错误都保留：Turn 错误为主，保存失败附注。
@@ -561,12 +642,7 @@ func (s *Session) maybeSetTitle(text string) {
 	if !isDefaultTitle(s.cur.Title) {
 		return
 	}
-	r := []rune(text)
-	if len(r) > titleRunes {
-		s.cur.Title = string(r[:titleRunes]) + "…"
-		return
-	}
-	s.cur.Title = string(r)
+	s.cur.Title = truncateTitle(text)
 }
 
 // cancelWatchersFor 撤销某会话的后台任务观察者（D262）：只在**删除会话**与关停时调用。

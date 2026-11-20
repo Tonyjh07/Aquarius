@@ -43,6 +43,9 @@ type turnBuffer struct {
 	calls    callAssembler      // 当前轮调用聚合（takeCalls 后复位，轮界隔离）
 	usage    conversation.Usage // Turn 累计（各轮流末 usage 求和）
 	round    conversation.Usage // 当前轮流末 usage（校准用，sealRound 并入 usage）
+	// title 服务端顺带生成的会话标题（D309）。一次给全、后到的覆盖先到的；
+	// 不进 content（它不是这条消息的内容），Turn 收场后交给 Session 写回会话元数据。
+	title string
 }
 
 // newTurnBuffer 以 Turn 预分配的关联 ID 建缓冲。
@@ -62,6 +65,9 @@ func (b *turnBuffer) add(d port.Delta) {
 	b.calls.add(d.ToolCalls)
 	if d.Usage != nil {
 		b.round = *d.Usage
+	}
+	if d.Title != "" {
+		b.title = d.Title // D309：整串给全，后到的覆盖先到的
 	}
 }
 

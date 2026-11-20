@@ -120,6 +120,7 @@ const defaultConfig = `{
   "prompts": { "modules": {}, "persona": [], "user_name": "User" },
   "characters": { "prefer_system_prompt": false, "apply_post_history": true,
                   "inject_constant_book": true, "inject_examples": true },
+  "title": { "enabled": true },
   "backup": { "keep": 3 },
   "input": { "language": "auto" },
   "audio": { "asr": {}, "tts": {}, "vad": { "enabled": true } },

@@ -74,6 +74,12 @@ type Config struct {
 	// NoteUnsupported 剥离成功后的记录回调（装配根写回 config `model.unsupported_params`）；
 	// nil = 只在本进程内记住。**只对 openai-chat 生效**（同上）。
 	NoteUnsupported func(field string)
+	// UnsupportedServerCaps 启动注入的「端点已知不认」的服务端能力（D307，取值见
+	// port.ServerCapNames）；命中者请求里直接不发，三套协议都适用。
+	UnsupportedServerCaps []string
+	// NoteServerCap 端点 400 指向某项服务端能力时的记录回调（装配根写回 config
+	// `providers[].unsupported_server_caps`）；nil = 只在本进程内记住。
+	NoteServerCap func(capName string)
 	// Trace 原始响应留档回调（§7.1，`/raw`）：每次生成收流结束时交出一份有界的响应体
 	// 原文与元信息。nil = 不采。回调在收流的那条 goroutine 上执行，必须立即返回。
 	Trace func(port.WireTrace)
@@ -89,9 +95,11 @@ type Client struct {
 	hc      *http.Client
 	proto   Protocol
 	tok     *tokenizer.Tokenizer // 配置了本地 tokenizer 时非 nil（D26②）
-	mu      sync.Mutex           // 保护 omit（记录回调与编码并发取快照）
+	mu      sync.Mutex           // 保护 omit / caps（记录回调与编码并发取快照）
 	omit    map[string]bool      // 服务端已知不认的参数（启动注入 + 本次运行记录，D34；仅 chat 用）
+	caps    map[string]bool      // 端点已知不认的服务端能力（D307；三套协议共用）
 	note    func(field string)
+	noteCap func(capName string)
 	headers map[string]string    // 自定义请求头（D253；仅 chat 用）
 	trace   func(port.WireTrace) // 原始响应留档（§7.1；nil = 不采）
 }
@@ -149,12 +157,14 @@ func New(cfg Config) (*Client, error) {
 		hc = defaultClient()
 	}
 	c := &Client{
-		base:  strings.TrimRight(raw, "/"),
-		key:   strings.TrimSpace(cfg.APIKey),
-		hc:    hc,
-		omit:  make(map[string]bool, len(cfg.UnsupportedParams)),
-		note:  cfg.NoteUnsupported,
-		trace: cfg.Trace,
+		base:    strings.TrimRight(raw, "/"),
+		key:     strings.TrimSpace(cfg.APIKey),
+		hc:      hc,
+		omit:    make(map[string]bool, len(cfg.UnsupportedParams)),
+		caps:    make(map[string]bool, len(cfg.UnsupportedServerCaps)),
+		note:    cfg.NoteUnsupported,
+		noteCap: cfg.NoteServerCap,
+		trace:   cfg.Trace,
 	}
 	// 协议校验（D175）：只在认得的取值里挑；写错一个词就 fail-fast——把请求发给
 	// 另一套形状的服务端，报回来的错根本看不出是配置还是服务端的问题。
@@ -169,6 +179,11 @@ func New(cfg Config) (*Client, error) {
 	for _, f := range cfg.UnsupportedParams {
 		if f = strings.TrimSpace(f); f != "" {
 			c.omit[f] = true
+		}
+	}
+	for _, n := range cfg.UnsupportedServerCaps {
+		if n = strings.ToLower(strings.TrimSpace(n)); n != "" {
+			c.caps[n] = true
 		}
 	}
 	// 自定义头只对 chat 生效（D253）：另两种协议是自家规范，附加头会破坏鉴权。
@@ -208,6 +223,7 @@ func (c *Client) Generate(ctx context.Context, req port.GenerateRequest) (port.S
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, errors.New(i18n.T("llm.err.empty_model"))
 	}
+	req.Title = c.wantTitle(req.Title) // D307：记过不认的端点，请求里不再出现
 	if c.proto == ProtoResponses {
 		return c.generateResponses(ctx, req)
 	}
@@ -263,7 +279,18 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 				if resp2.StatusCode == http.StatusOK {
 					resp = resp2
 					tr.note("llm.trace.stripped", "fields", strings.Join(stripped, ", "))
-					c.markUnsupported(stripped...)
+					// title 是请求开关不是采样参数：它的账记在 unsupported_server_caps
+					// （D307），不进 unsupported_params——两件事混在一个清单里，用户会看不出
+					// 「这个端点连标题都不认」。
+					params := make([]string, 0, len(stripped))
+					for _, f := range stripped {
+						if f == port.ServerCapTitle {
+							c.markServerCap(port.ServerCapTitle)
+							continue
+						}
+						params = append(params, f)
+					}
+					c.markUnsupported(params...)
 				} else {
 					code = resp2.StatusCode
 					sn = tr.readBody(resp2.Body)
@@ -323,6 +350,11 @@ func unsupportedFields(sn string, req port.GenerateRequest, includeUsage bool) [
 	if hasPromptReasoning(req) && strings.Contains(sn, "reasoning_content") {
 		out = append(out, "reasoning_content")
 	}
+	// 会话标题（D309）：请求里带了 title 才可能被点名。记进的是
+	// unsupported_server_caps（见 markServerCap 分支），剥离动作与其它字段同一套。
+	if req.Title && strings.Contains(sn, port.ServerCapTitle) {
+		out = append(out, port.ServerCapTitle)
+	}
 	return out
 }
 
@@ -359,6 +391,48 @@ func containsStripped(fields []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// wantTitle 本次请求是否真的发 title（D307/D309）：调用方要、且这个端点没被记成不认。
+func (c *Client) wantTitle(want bool) bool {
+	if !want {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.caps[port.ServerCapTitle]
+}
+
+// markServerCap 登记「端点不认这项服务端能力」：本进程内不再发 + 回调写回 config（D307）。
+func (c *Client) markServerCap(names ...string) {
+	c.mu.Lock()
+	var fresh []string
+	for _, n := range names {
+		if n = strings.ToLower(strings.TrimSpace(n)); n != "" && !c.caps[n] {
+			c.caps[n] = true
+			fresh = append(fresh, n)
+		}
+	}
+	c.mu.Unlock()
+	if c.noteCap != nil {
+		for _, n := range fresh {
+			c.noteCap(n)
+		}
+	}
+}
+
+// noteCapFrom400 从一次失败响应里认出「不认的是哪项服务端能力」并记一笔（D307）。
+//
+// 判据与 unsupportedFields 同一条：状态码 400/422、错误文本点到该项的名字、且带
+// 「未知/不支持」措辞。只有标题走这条路——另四项的消费方还没到，届时按各自字段名接进来。
+func (c *Client) noteCapFrom400(code int, sn string, req port.GenerateRequest) {
+	if code != http.StatusBadRequest && code != http.StatusUnprocessableEntity {
+		return
+	}
+	if !req.Title || !strings.Contains(sn, port.ServerCapTitle) || !unknownParamPhrase(sn) {
+		return
+	}
+	c.markServerCap(port.ServerCapTitle)
 }
 
 // omitCopy 剥离名单快照（map 只在锁内增删，读侧拿副本，避免与记录回调竞争）。

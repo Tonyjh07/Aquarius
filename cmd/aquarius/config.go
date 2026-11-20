@@ -46,10 +46,24 @@ type fileConfig struct {
 	Delegate delegateConfig `json:"delegate"`
 	// Decide 模型辅助决策（D290）：实验性，模板不生成这一段。
 	Decide decideConfig `json:"decide"`
+	// Title 会话标题由模型顺带生成（D309）。
+	Title titleConfig `json:"title"`
 	// MCPServers MCP server 声明（D30/D31，M4 启用；校验见 plugin.MCPServer.Validate）。
 	MCPServers map[string]plugin.MCPServer `json:"mcpServers"`
 	// Plugins 启停与授权状态（D31，config 与 plugin.json 两种发现源共用）。
 	Plugins map[string]plugin.State `json:"plugins"`
+}
+
+// titleConfig 会话标题（D309）：开启后首轮请求带 `title.enabled`，由模型顺带生成标题。
+// 键缺失 = 开——写了这一项就是想让它生效，关掉是例外；端点不认时由 server_caps 收敛，
+// 不会因此每次请求都撞 400。
+type titleConfig struct {
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// titleEnabled 会话标题开关（D309）：键缺失 = 开。
+func (c *fileConfig) titleEnabled() bool {
+	return c.Title.Enabled == nil || *c.Title.Enabled
 }
 
 // backupConfig 备份轮转（D254）。只有会话树用它——密钥库按自己的单代规则走。

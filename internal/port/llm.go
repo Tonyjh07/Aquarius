@@ -110,6 +110,9 @@ type GenerateRequest struct {
 	Tools    []tool.Spec
 	Params   Sampling
 	Budget   TokenBudget
+	// Title 要求服务端在回答时顺带生成会话标题（D309）。只在会话首轮由装配层打开，
+	// 拿到标题就关；端点不认这一项时按 unsupported_server_caps 收敛（D307）。
+	Title bool
 }
 
 // ModelInfo 模型能力与单价声明；不支持的模态遇之明确报因（§4.2）。
@@ -219,6 +222,9 @@ type Delta struct {
 	// 的 thinking block signature、Responses 的 encrypted_content），随当前轮思考缓冲
 	// 并入 PartThinking.Signature。空 = 本次没有签名（多数端点）。
 	ReasoningSignature string
+	// Title 服务端生成的会话标题（D309）：三套协议都在收流末尾给出，一次即完整（不是增量）。
+	// 空 = 本次没拿到（端点没开、被拒答、或回答结束时也没等到）——那是正常回落，不是错误。
+	Title string
 }
 
 // ToolCallDelta 工具调用的流式分片：同一 Index 的分片聚合为一个 tool.Call。

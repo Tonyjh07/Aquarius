@@ -191,3 +191,47 @@ func capList(names ...string) *[]string {
 	copy(out, names)
 	return &out
 }
+
+// TestChainServerCaps 降级链取交（D173 的 chainCaps 同规则）：一环不认就不发。
+func TestChainServerCaps(t *testing.T) {
+	both := modelConfig{
+		Providers: []providerConfig{
+			{Name: "a", BaseURL: "https://api.deepseek.com/v1"},
+			{Name: "b", BaseURL: "https://api.deepseek.com/v1"},
+		},
+		Primary:  "a",
+		Fallback: []fallbackEntry{{Provider: "b"}},
+	}
+	if caps := both.chainServerCaps(); !caps.Has(port.ServerCapTitle) {
+		t.Fatal("两家都认时应保留 title")
+	}
+
+	mixed := both
+	mixed.Providers = []providerConfig{
+		{Name: "a", BaseURL: "https://api.deepseek.com/v1"},
+		{Name: "b", BaseURL: "https://gw.mycorp.com/v1"}, // 猜不出家族 = 一项都不认
+	}
+	if caps := mixed.chainServerCaps(); caps.Has(port.ServerCapTitle) {
+		t.Fatal("链上有一家不认时不该发")
+	}
+
+	// 空态：没有 provider 时一项都不假设。
+	if caps := (&modelConfig{}).chainServerCaps(); caps != (port.ServerCaps{}) {
+		t.Fatalf("空态应为空集，实际 %+v", caps)
+	}
+}
+
+// TestTitleEnabledDefault 标题开关三态（D309）：键缺失 = 开，显式 false 才关。
+func TestTitleEnabledDefault(t *testing.T) {
+	var missing fileConfig
+	if !missing.titleEnabled() {
+		t.Fatal("键缺失应视为开")
+	}
+	on, off := true, false
+	if !(&fileConfig{Title: titleConfig{Enabled: &on}}).titleEnabled() {
+		t.Fatal("显式 true 应为开")
+	}
+	if (&fileConfig{Title: titleConfig{Enabled: &off}}).titleEnabled() {
+		t.Fatal("显式 false 应为关")
+	}
+}

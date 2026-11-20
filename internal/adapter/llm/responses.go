@@ -50,6 +50,8 @@ type responsesRequest struct {
 	Temperature     *float64            `json:"temperature,omitempty"` // nil = 不发送（D204）
 	TopP            *float64            `json:"top_p,omitempty"`       // nil = 不发送（D204）
 	MaxOutputTokens int                 `json:"max_output_tokens,omitempty"`
+	// Title 会话标题开关（D309）；nil = 不发送。
+	Title *capToggle `json:"title,omitempty"`
 }
 
 // responsesTool 工具声明：扁平结构（name/description/parameters 直接挂在顶层，
@@ -132,6 +134,9 @@ func encodeResponsesRequest(req port.GenerateRequest) ([]byte, error) {
 		out.MaxOutputTokens = req.Params.MaxTokens
 	}
 	out.Reasoning = responsesReasoningOf(req.Params)
+	if req.Title {
+		out.Title = &capToggle{Enabled: true} // D309：只在装配层开的那一轮出现
+	}
 	if out.Reasoning != nil {
 		// 只有请求了思考才要加密内容：不开思考就没有 reasoning item 要回放，
 		// 也就不必给服务端出这道题（少一个可能被兼容端点拒掉的字段）。
@@ -303,6 +308,7 @@ func (c *Client) generateResponses(ctx context.Context, req port.GenerateRequest
 		_ = resp.Body.Close()
 		cancel()
 		tr.finish(port.WireEndStatus)
+		c.noteCapFrom400(code, sn, req) // D307：400 点名 title 时记一笔，此后不再发
 		return nil, c.statusError(responsesPath, code, sn, after)
 	}
 	s := newRawStream(streamCtx, cancel, &tracedBody{ReadCloser: resp.Body, tr: tr}, newWireNames(req.Tools))
@@ -343,6 +349,8 @@ type responsesResult struct {
 	Output []responsesOutItem `json:"output"`
 	Usage  *responsesUsage    `json:"usage"`
 	Error  *responsesError    `json:"error"`
+	// Title 会话标题（D309）：结束事件的 response.title，一次给全。
+	Title string `json:"title"`
 }
 
 // responsesUsage response 对象的 usage 块（D308）：input_tokens 已含缓存命中量，
@@ -436,7 +444,7 @@ func (s *stream) decodeResponses(payload string) (port.Delta, bool, error) {
 	case "response.completed", "response.incomplete":
 		s.finish = true // 之后不再有增量（Recv 本片发完即收流）
 		d := s.finishDelta(ev.Response)
-		ok := d.Usage != nil || len(d.ToolCalls) > 0 || d.ReasoningSignature != ""
+		ok := d.Usage != nil || len(d.ToolCalls) > 0 || d.ReasoningSignature != "" || d.Title != ""
 		return d, ok, nil
 
 	case "response.failed":
@@ -480,6 +488,7 @@ func (s *stream) finishDelta(r *responsesResult) port.Delta {
 		u := r.Usage.toUsage()
 		out.Usage = &u
 	}
+	out.Title = r.Title // D309：会话标题跟着结束事件到
 	return out
 }
 

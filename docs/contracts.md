@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-19 @ c2e5661 -->
+<!-- docs-sync: 2026-11-20 @ f954b89 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -322,6 +322,13 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 
 **计数**（D26 三级链②）：`TokenCounter` 是可选的精确计数（本地 tokenizer 或 `count_tokens`
 API）；未实现或报错时 app 回落通用估算（③），并以服务端实测 usage（①）自校准。
+
+**会话标题是请求开关**（D309）：`GenerateRequest.Title` 为真时三套协议都在顶层发
+`"title": {"enabled": true}`，标题从收流末尾读回——Chat Completions 在最后一个 chunk 的
+`delta.title`、Messages 在 `message_delta` 的 `delta.title`、Responses 在结束事件的
+`response.title`，走 `Delta.Title` 一次给全（不是增量）。空 = 这次没拿到，是正常回落。
+端点 400 点名 `title` 时记进 `unsupported_server_caps`（D307 那本账），**不进**
+`unsupported_params`——后者是采样参数的清单，混在一起用户会看不出「这个端点连标题都不认」。
 
 **用量的分项**（D308）：`conversation.Usage` 除输入 / 输出 / 金额外还有四项——`CacheRead` /
 `CacheWrite` 是输入侧的缓存命中与写入，`Thinking` 是输出里的推理 token（**已含在输出里**，只

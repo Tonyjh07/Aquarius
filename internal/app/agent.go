@@ -93,6 +93,13 @@ type Config struct {
 	// Vision = 图片是直接给模型看，还是降级为文字占位并写明原因。
 	// 零值 = 三项全关（显式空 caps 就是这个意思，不是「不知道」）。
 	Caps port.ModelCaps
+	// ServerCaps 整条降级链**都认**的服务端能力（D307，装配根按 provider 取交）。
+	// 与 Caps 同一套「取与」规则：某一环不认，那个字段就不发——首轮 400 换不来标题，
+	// 只换来一次失败。零值 = 一项都不发。
+	ServerCaps port.ServerCaps
+	// TitleEnabled 会话标题由模型顺带生成的开关（D309，config `title.enabled`，
+	// 键缺失 = 开）。真正发不发还要看 ServerCaps.Title、是不是首轮、标题是否被手动改过。
+	TitleEnabled bool
 	// Lore 世界书按关键词激活的规则（§5.17/D294）。Enabled 由配置面解析后显式传入
 	// （键缺失 = 开），零值 = 关。
 	Lore LoreOptions
@@ -127,6 +134,10 @@ type Agent struct {
 	// wires 最近几次生成的原始响应留档（/raw，§7.1）：适配器收流结束时回调写入，
 	// 环形留 wireKeep 份，最旧在后。只在内存（`/raw full` 才写入磁盘）。
 	wires atomic.Pointer[wireLog]
+	// genTitle 最近一次服务端给的会话标题（D309）：Turn 收场时写入，Session 取走后清空。
+	// 走原子值是因为写入在 Turn 内、读取在其后，哪怕同一进程只跑一个 Session 也不该
+	// 让两条路径共享一个普通字段。
+	genTitle atomic.Value // string
 }
 
 // setPending 注入待发清单（Session 构造时调用；一个进程只有一个在跑的 Session）。
@@ -403,8 +414,20 @@ func (a *Agent) finishTurn(ctx context.Context, c *conversation.Conversation, bu
 	if err := c.AppendCommitted(node); err != nil {
 		return conversation.Message{}, err
 	}
+	// 会话标题（D309）：Turn 收场才交出去——它跟着一整轮的回答到齐，而写回会话元数据
+	// 是 Session 的事（Agent 不改会话的标题）。
+	if buf.title != "" {
+		a.genTitle.Store(buf.title)
+	}
 	_ = a.ui.Emit(ctx, port.CommittedEvent{Message: node})
 	return node, nil
+}
+
+// TakeTitle 取走本轮服务端生成的会话标题并清空（D309）。没有则返回空串——
+// 空不是错误：被拒答、端点没开、或回答结束时也没等到标题，都走这条回落路径。
+func (a *Agent) TakeTitle() string {
+	s, _ := a.genTitle.Swap("").(string)
+	return strings.TrimSpace(s)
 }
 
 // UsageReport /usage 的用量汇总（§7.3，三级计数链 D26 的展示面）。
@@ -530,6 +553,10 @@ func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Convers
 		Messages: msgs,
 		Params:   a.Sampling(),
 		Budget:   a.cfg.Budget,
+		// 会话标题（D309）：只在这一轮问——用户的第一条消息、标题还没被 /title 改过、
+		// 整条降级链都认这一项。拿到就关：下一条消息起路径上不止一条 user，条件自然不成立。
+		Title: a.cfg.TitleEnabled && a.cfg.ServerCaps.Title &&
+			(buf == nil || buf.empty()) && firstUserTurn(c) && titleEditable(c),
 	}
 	// 思考参数（D34 + D173）：两道闸门。`/think` 是总开关，off 时 reasoning_effort
 	// 与 enable_thinking 一律不发（覆盖 /effort）；整条链没有思考能力时两个参数同样

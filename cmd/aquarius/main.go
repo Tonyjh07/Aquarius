@@ -453,6 +453,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Think: w.cfg.Model.Think, ReasoningEffort: w.cfg.Model.ReasoningEffort, // D34 初值
 			EchoThinking: w.cfg.Model.EchoThinking == nil || *w.cfg.Model.EchoThinking, // D42：键缺失 = 回传
 			Caps:         w.cfg.Model.chainCaps(),                                      // D173：降级链取与
+			// D307/D309：服务端能力同样取与；端点不认就不发那一项，免得首轮撞 400。
+			ServerCaps:   w.cfg.Model.chainServerCaps(),
+			TitleEnabled: w.cfg.titleEnabled(), // D309：标题由模型顺带生成（键缺失 = 开）
 			// §5.17/D247：会话尾部指令（卡的 post_history_instructions）是否随每轮装配发出。
 			ApplyPostHistory: w.cfg.applyPostHistory(),
 			// §5.17/D294：世界书按关键词激活（缺省开；卡里写了触发词就是想让它生效）。

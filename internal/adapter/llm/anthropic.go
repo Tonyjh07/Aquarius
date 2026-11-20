@@ -68,6 +68,8 @@ type anthropicRequest struct {
 	StopSeqs []string `json:"stop_sequences,omitempty"`
 	// Thinking 扩展思考开关（省略 = 交服务端默认）。
 	Thinking *anthropicThinking `json:"thinking,omitempty"`
+	// Title 会话标题开关（D309）；nil = 不发送。
+	Title *capToggle `json:"title,omitempty"`
 }
 
 // anthropicInbound 输入消息：content 恒为内容块数组（字符串形态表达力不足：
@@ -157,6 +159,9 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 	}
 	if out.MaxTokens <= 0 {
 		out.MaxTokens = anthropicDefaultMaxTokens
+	}
+	if req.Title {
+		out.Title = &capToggle{Enabled: true} // D309：只在装配层开的那一轮出现
 	}
 	if th := anthropicThinkingOf(req.Params); th != nil {
 		out.Thinking = th
@@ -378,6 +383,7 @@ func (c *Client) generateAnthropic(ctx context.Context, req port.GenerateRequest
 		_ = resp.Body.Close()
 		cancel()
 		tr.finish(port.WireEndStatus)
+		c.noteCapFrom400(code, sn, req) // D307：400 点名 title 时记一笔，此后不再发
 		return nil, c.statusError(anthropicPath, code, sn, after)
 	}
 	s := newRawStream(streamCtx, cancel, &tracedBody{ReadCloser: resp.Body, tr: tr}, newWireNames(req.Tools))
@@ -414,6 +420,8 @@ type anthropicEvent struct {
 
 type anthropicResult struct {
 	Usage *anthropicEventUsage `json:"usage"`
+	// Title 非流式形态的会话标题位置（D309）。
+	Title string `json:"title"`
 }
 
 type anthropicBlock struct {
@@ -430,6 +438,8 @@ type anthropicEventDelta struct {
 	Thinking    string `json:"thinking"`
 	Signature   string `json:"signature"`
 	PartialJSON string `json:"partial_json"`
+	// Title 会话标题（D309，message_delta 的 delta 里一次给全）。
+	Title string `json:"title"`
 }
 
 // anthropicEventUsage Messages 的 usage 块。Anthropic 把输入拆成三段报：input_tokens
@@ -460,6 +470,9 @@ func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (
 			// 会让「命中率」和「总输入」在两套口径之间对不上（D308）。
 			st.inTokens = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 			st.cacheRead, st.cacheWrite = u.CacheReadInputTokens, u.CacheCreationInputTokens
+		}
+		if ev.Message != nil && ev.Message.Title != "" {
+			return port.Delta{Title: ev.Message.Title}, true, nil
 		}
 		return port.Delta{}, false, nil
 
@@ -506,6 +519,10 @@ func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (
 	case "message_delta":
 		if ev.Usage != nil {
 			st.outTokens = ev.Usage.OutputTokens // 累计值，最后到的为准
+		}
+		// 会话标题（D309）随 message_delta 的 delta 一次给全；与 usage 同片，两者都要带。
+		if ev.Delta != nil && ev.Delta.Title != "" {
+			return port.Delta{Title: ev.Delta.Title}, true, nil
 		}
 		return port.Delta{}, false, nil
 

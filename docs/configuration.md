@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-19 @ b2a6746 -->
+<!-- docs-sync: 2026-11-20 @ f954b89 -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -466,6 +466,22 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
   卡删掉后这一轮起就没有世界书（人格快照还在）。
 - 想看这一轮激活了什么，用 [`/lore`](usage.md)；`/usage` 在有命中时也会多一行。
 
+### title（会话标题）
+
+不写这一段就是开。开启后，**会话第一轮**的请求末尾会带一个标题开关，模型在回答时顺带写出
+一个短标题（DeepSeek 文档：不计费，代价是回答结束后最多再等 5 秒）。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `title.enabled` | bool | `true` | 是否让模型顺带生成会话标题。关掉后标题回到首条消息的前 24 字摘录 |
+
+- 只在**会话第一轮**问一次：拿到标题就换成它，拿不到就保留摘录——那不是故障，不报错也不提示。
+- [`/title`](usage.md) 手动起过名字的会话**永不被覆盖**；判断依据是「当前标题是否仍等于首条消息的摘录」。
+- 只有整条降级链上的端点**都认**这一项时才会发（`server_caps` 含 `title`，见
+  [model.providers[].server_caps](#modelproviders)）。端点报 400 说没有这个字段时，会自动记进
+  `unsupported_server_caps`，此后不再发——不必自己去关这个开关。
+- 拿到后收拾成一行的规则：去首尾引号与换行、超过 24 字截断。
+
 ### backup（会话备份轮转）
 
 会话树每次写盘前，把现有文件轮转成一代备份保存。坏文件不会挤掉更旧的可用备份（保存前先确认现文件能完整解析）。
@@ -682,6 +698,7 @@ profile 配置 `<data>/profiles/default/config.json`：
   "skills": { "dirs": [] },
   "characters": { "prefer_system_prompt": false, "apply_post_history": true,
                   "inject_constant_book": true, "inject_examples": true },
+  "title": { "enabled": true },
   "backup": { "keep": 3 },
   "delegate": { "agents": {}, "timeout_sec": 1800 },
   "output": { "tts": false, "notify": true },

@@ -231,6 +231,12 @@ func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string), 
 		UnsupportedParams: p.UnsupportedParams,
 		NoteUnsupported:   note,
 		Headers:           p.Headers,
+		// D307：端点实测不认的服务端能力（启动注入 + 本次运行记录），三项协议共用一份。
+		UnsupportedServerCaps: p.UnsupportedServerCaps,
+	}
+	// 探测（note == nil）刻意发可能不被支持的字段，结论不该写进正式清单（同 NoteUnsupported）。
+	if note != nil {
+		cfg.NoteServerCap = w.noteServerCapFor(p.Name)
 	}
 	if rec {
 		// Agent 晚于客户端构造，故经 atomic 指针惰性取（调用时才读）。

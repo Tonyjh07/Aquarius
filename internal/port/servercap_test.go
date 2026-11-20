@@ -57,3 +57,16 @@ func TestIsServerCap(t *testing.T) {
 		t.Fatal("词表外的名字应判假")
 	}
 }
+
+// TestServerCapsAnd 取交：两项都认才算认（降级链用）。
+func TestServerCapsAnd(t *testing.T) {
+	a := ServerCaps{Title: true, ReadURL: true, Safety: true}
+	b := ServerCaps{Title: true, Files: true}
+	got := a.And(b)
+	if !got.Title || got.ReadURL || got.Safety || got.Files {
+		t.Fatalf("And 结果不对：%+v", got)
+	}
+	if got := (ServerCaps{Title: true}).And(ServerCaps{}); got != (ServerCaps{}) {
+		t.Fatalf("与空集取交应为空：%+v", got)
+	}
+}
