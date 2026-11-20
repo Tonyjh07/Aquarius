@@ -22,7 +22,7 @@
 格式：每行「键 `<TAB>` 值」，值可给多个候选（空格分隔，取第一个）。以 `#` 开头的行为注释。
 空行跳过。
 
-**为什么不用现成的 Go 移植**（`github.com/liuzl/gocc`）：它依赖 `github.com/liuzl/da`
+**为什么不用现成的 Go 移植**（`github.com/liuzl/gocc`）：这个移植依赖 `github.com/liuzl/da`
 → `github.com/liuzl/cedar-go`，后者是 GPL-2.0，静态链进单二进制会把整份交付物拖进 GPL。
 词典是 Apache-2.0，算法（最长前缀匹配）自己写二十行就够。
 
