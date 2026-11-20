@@ -250,7 +250,7 @@ func clickToolAction(t *testing.T, u *UI, f *settingsForm, ta *fakeToolsAdmin, k
 	t.Fatalf("%s 超时：actions=%v status=%q", key, ta.actionList(), f.toolsStatus)
 }
 
-// TestToolsPageSnapshotSync 工具页动作全链路：点击 → 异步执行 → 状态行回灌 + 快照重建
+// TestToolsPageSnapshotSync 工具页动作全路径：点击 → 异步执行 → 状态行回灌 + 快照重建
 // （内置启用 / 插件启停 / 逐能力撤销与预授权 / 撤销信任 / 日志）。假 ToolsAdmin 带真实
 // 状态语义（撤销清授权 + 停用、预授权加回），故「同一按钮再点翻转分支」可证。
 func TestToolsPageSnapshotSync(t *testing.T) {
@@ -317,7 +317,7 @@ func TestToolsPageSnapshotSync(t *testing.T) {
 	}
 }
 
-// TestToolsPageDirRules D282：目录级放宽单列一区（它不落在任何一行工具档位里），
+// TestToolsPageDirRules D282：目录级放宽单列一区（目录级放宽不落在任何一行工具档位里），
 // 撤销走同一套异步动作 + 快照刷新。
 func TestToolsPageDirRules(t *testing.T) {
 	t.Parallel()

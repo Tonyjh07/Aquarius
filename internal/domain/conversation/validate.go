@@ -17,7 +17,7 @@ func checkNodeShape(m Message) error {
 	if m.ID == "" {
 		return fmt.Errorf("%w: empty id", ErrInvalidNode)
 	}
-	// D150/D170：Source/Trust/Trigger 是注入节点专有字段，防未来某条路径把它们写到别的角色上。
+	// D150/D170：Source/Trust/Trigger 是注入节点专有字段，防未来某条路径把这三个字段写到别的角色上。
 	if m.Role != RoleInject && (m.Source != "" || m.Trigger || m.Trust != TrustExternal) {
 		return fmt.Errorf("node %q: %w: source/trust/trigger only allowed on inject message", m.ID, ErrInvalidNode)
 	}
@@ -234,7 +234,7 @@ func (c *Conversation) Validate() error {
 // 绕回就是环——「A 是 B 的新版本、B 又是 A 的新版本」，两端都在树里、结构边也完全合法，
 // 只有链本身是坏的。
 //
-// `Revise` 自己造不出环（新节点 ID 全新、旧节点必然更早存在），但两条路径能把它带进来：
+// `Revise` 自己造不出环（新节点 ID 全新、旧节点必然更早存在），但两条路径能把环带进来：
 // 读盘时文件被手工改过，以及改父之后跨父版本链与结构边不再同父（D255 允许并存）。成环的链
 // 会让「沿版本链找上游」永远走不到头，所以在此兜住。
 //
@@ -270,7 +270,7 @@ func (c *Conversation) editionCycleErrors() []error {
 			cur = old
 		}
 		done[start] = true
-		done[cur] = true // 断在环上时 cur 是环的入口，下一轮从它起步会重复报同一个环
+		done[cur] = true // 断在环上时 cur 是环的入口，下一轮从环的入口起步会重复报同一个环
 		for id := range onPath {
 			done[id] = true
 		}

@@ -16,7 +16,7 @@ const createNoWindow = 0x08000000
 
 // hideNotifyChild 压制通知子进程的窗口（D117）。两旗并挂、互不冲突：
 // CREATE_NO_WINDOW 断掉控制台窗创建（console 子进程正解），HideWindow 兜住任何顶层窗
-// （GUI 子进程只有它管用）。调用时机 = 命令构造后、Start 前；已有的 SysProcAttr 字段
+// （GUI 子进程只有 HideWindow 管用）。调用时机 = 命令构造后、Start 前；已有的 SysProcAttr 字段
 // 不覆盖（按位或 / 条件赋值，幂等可重入）。
 func hideNotifyChild(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {

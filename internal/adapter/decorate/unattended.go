@@ -6,7 +6,7 @@ package decorate
 //   - **拒绝而非放行**——权限矩阵原样，矩阵外的调用当场回绝并说明；模型自己改道。
 //   - **只管模型发起的那条链**——装配根只把装饰器罩到 `toolrun` 上；`/rm`、`/rmconv`
 //     等用户亲手输入的命令确认照常询问（人就在键盘前）。插件授权同规则但不走这里：
-//     宿主自己判无人值守，因为它要说清「不是用户拒的」。
+//     宿主自己判无人值守，因为宿主要说清「不是用户拒的」。
 //   - **不抢占交互面**——不开窗、不闪、不进输入栏，纯粹是一个同步返回。
 //
 // 开关是**热态**：`on` 每次调用现问，所以 `/unattended on|off`、菜单勾选、设置窗开关
@@ -37,7 +37,7 @@ type unattendedConfirmer struct {
 
 // Unattended 包装确认器：开启时立即返回「拒绝 + 原因」，不调内层、不留等待；
 // 关闭时原样透传。ctx 取消优先于开关判定——用户中断的轮次不该变成一次「拒绝」
-// 结论（toolrun 会把它归类为取消）。
+// 结论（toolrun 会把 ctx 取消归类为取消）。
 func Unattended(inner port.Confirmer, on func() bool) port.Confirmer {
 	return unattendedConfirmer{inner: inner, on: on}
 }

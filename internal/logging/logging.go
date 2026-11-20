@@ -35,7 +35,7 @@ func (lv Level) String() string {
 }
 
 // ParseLevel 解析级别写法。空串按 info（键缺失 = 模板值）；非法值报错——静默回落等于
-// 用户在配置里写的 `wran` 永远不生效，而他会以为自己在看 warn 以上的日志。
+// 用户在配置里写的 `wran` 永远不生效，而用户会以为自己在看 warn 以上的日志。
 func ParseLevel(raw string) (Level, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", "info":
@@ -69,7 +69,7 @@ func ParseFormat(raw string) (Format, error) {
 	return FormatText, fmt.Errorf("日志形态 %q 仅支持 text | json", raw)
 }
 
-// Context 子系统标识（contracts §7.9）。英文枚举：它是分类不是文案，不进文案表。
+// Context 子系统标识（contracts §7.9）。英文枚举：该枚举是分类不是文案，不进文案表。
 type Context string
 
 const (
@@ -88,7 +88,7 @@ const (
 	Web       Context = "web"
 )
 
-// Contexts 全部已登记的上下文（测试按它校验枚举没被随手加宽）。
+// Contexts 全部已登记的上下文（测试按该清单校验枚举没被随手加宽）。
 var Contexts = []Context{Boot, Attach, LLM, Audio, Job, Delegate, Plugin, Skill, Character, Session, Perm, UI, Web}
 
 const (
@@ -109,7 +109,7 @@ const (
 // Options 构造参数。零值可用：不落文件、只写 Stderr（除 Stderr 之外全取缺省）。
 type Options struct {
 	Dir      string    // 写入磁盘目录；空 = 不落文件
-	Level    Level     // 文件门槛（低于它的行不写）
+	Level    Level     // 文件门槛（低于该门槛的行不写）
 	Format   Format    // 渲染形态
 	Stderr   io.Writer // stderr 出口；nil = 不写 stderr
 	Echo     io.Writer // 终端回显出口（D288）；nil = 不回显
@@ -209,7 +209,7 @@ func (l *Logger) Error(ctx Context, event, action string, kv ...any) {
 	l.write(LevelError, ctx, event, action, "", kv)
 }
 
-// Log 按变量级别写一条（级别在装配期才定得下来时用；四个具名入口是它的简写）。
+// Log 按变量级别写一条（级别在装配期才定得下来时用；四个具名入口是 Log 的简写）。
 func (l *Logger) Log(lv Level, ctx Context, event, action string, kv ...any) {
 	l.write(lv, ctx, event, action, "", kv)
 }
@@ -217,7 +217,7 @@ func (l *Logger) Log(lv Level, ctx Context, event, action string, kv ...any) {
 // Write 写一条**整句已由调用方给出**的日志：msg 非空就不再按 event 取词，event 只留在
 // JSON 侧供聚合。给的是**整句**而不是 key——装配根只剩少数几处（降级说明、回放失败、明文
 // 密钥）由上游函数把句子拼好了，拆回 key 得连那边的措辞一起改，收益不成比例。事件 key 仍是
-// 聚合标识，`log.*` 段的占位句只为让它能被取词表覆盖。
+// 聚合标识，`log.*` 段的占位句只为让该 key 能被取词表覆盖。
 func (l *Logger) Write(lv Level, ctx Context, event, action, msg string, kv ...any) {
 	l.write(lv, ctx, event, action, msg, kv)
 }

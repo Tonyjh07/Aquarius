@@ -115,7 +115,7 @@ func TestHistLeftColumnCollapse(t *testing.T) {
 	}
 }
 
-// TestHistNewConversationButton 左栏标题行「＋」（D160）：点它投出 `/new`（与键入同路径），
+// TestHistNewConversationButton 左栏标题行「＋」（D160）：点这颗钮投出 `/new`（与键入同路径），
 // 且**不**投 /switch——两颗钮相邻，命中区不许串。
 func TestHistNewConversationButton(t *testing.T) {
 	t.Parallel()

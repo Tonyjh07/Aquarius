@@ -46,7 +46,7 @@ func (w *wiring) probeModel(ctx context.Context, model string) (app.ProbeReport,
 // 配置里**的时候发生，否则留给「应用 provider 变更」一并写入磁盘（Pending）。
 //
 // 为什么不要求先保存：模型行是不是「已声明」由配置文件决定，而用户眼里表格里那一行就是
-// 声明。以前直接报「不在 models 里」，用户无从下手——他并没有别的地方可以声明。
+// 声明。以前直接报「不在 models 里」，用户无从下手——用户并没有别的地方可以声明。
 func (w *wiring) probeForSettings(ctx context.Context, patch uigui.ProviderPatch, model string) (uigui.ProbeOutcome, error) {
 	provider := strings.TrimSpace(patch.Name)
 	model = strings.TrimSpace(model)
@@ -218,7 +218,7 @@ func (w *wiring) probeClient(p *providerConfig) (*llm.Client, error) {
 // （该模型条目在**磁盘配置**里是否存在；false = 还没应用，结论只能留在界面上）。
 //
 // 比较基准是**磁盘上的声明**而不是内存里的：同一进程里连探两次，第二次看到的应当是
-// 上次写回的结果，否则每次都会「写回」一遍。内存那份不动——它驱动的是运行中的装配
+// 上次写回的结果，否则每次都会「写回」一遍。内存那份不动——内存配置驱动的是运行中的装配
 // 规则（重启才生效），这里改了会让 /model 显示与实际发出去的请求不一致。
 func (w *wiring) writeProbeCaps(providerName, model string, results []port.ProbeResult) (written, declared bool, err error) {
 	disk, err := loadConfig(w.cfgPath)

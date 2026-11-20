@@ -59,7 +59,7 @@ func TestSplitCommandLine(t *testing.T) {
 	}
 }
 
-// TestCommandLineRoundTrip 展示形态能被拆回同样的命令（界面保存的就是它显示的那一行）。
+// TestCommandLineRoundTrip 展示形态能被拆回同样的命令（界面保存的就是展示出来的那一行）。
 func TestCommandLineRoundTrip(t *testing.T) {
 	t.Parallel()
 	command := `C:\Program Files\acp\agent.exe`

@@ -75,7 +75,7 @@ func TestICOImageTrayAsset(t *testing.T) {
 		t.Fatal("图像数据为空")
 	}
 	// 逐条比对载荷，确认选中的条目宽度 = trayIconPx：资产若被重新生成而丢了该档，
-	// icoImage 会挑最近一档（静默降级），这里让它现在就响。
+	// icoImage 会挑最近一档（静默降级），这里让该降级现在就响。
 	found := icoEntryWidth(t, assets.TrayICO, b)
 	if found != trayIconPx {
 		t.Fatalf("选中的条目是 %dpx，want %dpx（aquarius.ico 里缺该档 ⇒ 静默降级）", found, trayIconPx)

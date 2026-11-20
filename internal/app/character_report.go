@@ -67,7 +67,7 @@ func characterReportLines(card port.CharacterCard, opts CharacterOptions, greeti
 			"list", strings.Join(info.Unsupported, i18n.T("char.list_join"))))
 	}
 
-	// 四、只展示字段：说明它们只作展示、不进模型上下文。
+	// 四、只展示字段：说明这些字段只作展示、不进模型上下文。
 	lines = append(lines, i18n.T("char.report.display_only"))
 
 	// 提示一、界面 HTML 降级：不净化、不改写，标签会原样显示。

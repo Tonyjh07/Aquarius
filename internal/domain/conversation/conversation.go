@@ -79,7 +79,7 @@ func (k KeepMode) String() string {
 // 持久化走 Snapshot/Restore（snapshot.go）：适配器拿一份只读的整树导出，映射成自己的
 // wire 格式；反过来用 Restore 重建并自检。领域不为「磁盘上长什么样」负责。
 //
-// 因此本类型**不是** wire 格式：它故意没有任何 JSON tag——直接 json.Marshal 它只会得到
+// 因此本类型**不是** wire 格式：该类型故意没有任何 JSON tag——直接 json.Marshal 只会得到
 // ID/Title/Head 与两个时间戳（三张结构表是私有的），写入磁盘会静默丢掉整棵树。要存盘请走
 // Snapshot，要读盘请走 Restore。
 type Conversation struct {
@@ -91,15 +91,15 @@ type Conversation struct {
 	revisedFrom map[MessageID]MessageID   // 新→旧：版本链（纯结构元数据）
 	detached    []Detachment              // 溯源路牌（D256）：只记「搬过」，不参与任何结构查询
 
-	// Head 初始 = Root ID；无空串特例（D19）。留作导出字段：它是单个游标而非结构表，
+	// Head 初始 = Root ID；无空串特例（D19）。留作导出字段：Head 是单个游标而非结构表，
 	// 移动语义仍走 Checkout（写 Head 而不更新 UpdatedAt 才会破坏一致性，那是加载路径的事）。
 	Head MessageID
 
-	// Character 绑定的角色 slug（D243）：只作展示、头像与导出溯源，装配不读它；
-	// 空 = 不是角色会话。删卡不改写它（头像回落默认，会话照常可用）。
+	// Character 绑定的角色 slug（D243）：只作展示、头像与导出溯源，装配不读该字段；
+	// 空 = 不是角色会话。删卡不改写该字段（头像回落默认，会话照常可用）。
 	Character string
 	// Tail 历史之后追加的 system 文本（D243）：角色卡的 post_history_instructions 展开稿，
-	// 每轮请求追加在装配末尾（开关可关）。它是**元数据不是节点**——不进水位、不被压缩吸收、
+	// 每轮请求追加在装配末尾（开关可关）。Tail 是**元数据不是节点**——不进水位、不被压缩吸收、
 	// 不影响分支与导出树。空 = 无尾部指令。
 	Tail string
 
@@ -222,7 +222,7 @@ func (c *Conversation) Revise(id MessageID, content []Part, mode KeepMode) (Mess
 	}
 	c.revisedFrom[m.ID] = id
 
-	// Head 判定必须在子树处置（转移/拷贝）之前：转移会改写链路，之后旧 Head 就不再可达 id。
+	// Head 判定必须在子树处置（转移/拷贝）之前：转移会改写路径，之后旧 Head 就不再可达 id。
 	headInSubtree := c.isStrictDescendant(id, prevHead)
 	switch mode {
 	case Carry:
@@ -278,7 +278,7 @@ func (c *Conversation) transferChildren(from, to MessageID) []MessageID {
 	return kids
 }
 
-// attachChild 把 child 挂到 parent 的末尾并改写它的 Parent 指针（调用方保证 child 尚未挂在这里）。
+// attachChild 把 child 挂到 parent 的末尾并改写 child 的 Parent 指针（调用方保证 child 尚未挂在这里）。
 // 挂边与摘边是改父和 Carry 共用的两小块：整批转移只是「摘一次、挂多次」。
 func (c *Conversation) attachChild(parent, child MessageID) {
 	c.children[parent] = append(c.children[parent], child)
@@ -463,9 +463,9 @@ func (c *Conversation) Messages() []Message {
 
 // Branches 返回 id 所在版本组的其他成员（不含 id 自身），按创建时间升序；供 UI 做新旧
 // 版本对比、命令行 `/branch` 列同级分叉。Root 的分叉 = 其孩子（顶层消息）；id 不在树中、
-// 或 id 本身是衬垫（它不属于任何版本组）返回 nil。
+// 或 id 本身是衬垫（衬垫不属于任何版本组）返回 nil。
 //
-// 版本组跨过衬垫（padNode）：在 a1 之前插了摘要之后，a1 的结构父变成了衬垫，但它与 a2
+// 版本组跨过衬垫（padNode）：在 a1 之前插了摘要之后，a1 的结构父变成了衬垫，但 a1 与 a2
 // 仍然是同一个问题的两个版本——都还在这一组里。
 func (c *Conversation) Branches(id MessageID) []Message {
 	m, ok := c.nodes[id]

@@ -3,7 +3,7 @@ package perm
 // 不可覆盖的硬名单（D280 第 6 条）：策略表唯一说了不算的地方。
 //
 // 三类目标不参与「自动放行」：
-//  1. **执行控制类文件**——它们不是项目内容，而是「之后谁会跑起来」的开关
+//  1. **执行控制类文件**——这类文件是「之后谁会跑起来」的开关，不算项目内容
 //     （.git/hooks、.vscode、.mcp.json 等）；
 //  2. 装配层给的**敏感根**（密钥目录、配置目录、系统目录）；
 //  3. 目标无法判定时（空串）保守处理：不算硬名单，按常规路径走。
@@ -87,7 +87,7 @@ func withinRoot(target, root string) bool {
 
 // slashClean 平台无关的路径规整：两种分隔符都当分隔符、折叠重复、去尾分隔。
 //
-// 不用 filepath.Clean——它只认**宿主**的分隔符，同一条 `C:\proj\.git\hooks`
+// 不用 filepath.Clean——filepath.Clean 只认**宿主**的分隔符，同一条 `C:\proj\.git\hooks`
 // 在 Linux 上会被当成一整段名字，判定结果跟着宿主变。硬名单是安全边界，
 // 判据不该取决于跑在哪台机器上。
 func slashClean(p string) string {

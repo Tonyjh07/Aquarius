@@ -106,7 +106,7 @@ func (s *Search) Search(ctx context.Context, q port.WebQuery) (port.WebResults, 
 	}
 	if empty != nil {
 		// 全链都没有命中：如实回「这次谁答的、之前谁失败了」，模型据此说明覆盖不足。
-		// 应答的那家不算「降级到」它——从痕迹里去掉最后一项。
+		// 应答的那家不算「降级到」该 provider——从痕迹里去掉最后一项。
 		if n := len(fallbacks); n > 0 && fallbacks[n-1] == empty.Provider {
 			fallbacks = fallbacks[:n-1]
 		}

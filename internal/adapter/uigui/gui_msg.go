@@ -73,7 +73,7 @@ type (
 		ans   port.ConfirmAnswer
 		share *confirmShare
 	}
-	// drainMsg 排空标记（Close 投递：处理到它即代表此前 post 全部落进状态机）。
+	// drainMsg 排空标记（Close 投递：处理到该标记即代表此前 post 全部落进状态机）。
 	drainMsg struct{ done chan struct{} }
 	// eofMsg 输入流结束（关窗/外部泵投递；err 非空 = 读取错误，Next 原样上抛）。
 	eofMsg struct{ err error }
@@ -99,7 +99,7 @@ type (
 func (u *UI) apply(msg uiMsg) bool {
 	switch m := msg.(type) {
 	case eventMsg:
-		// 上下文全文（§7.1）走次窗，不进转写：它是一份十几万字符的排查材料，
+		// 上下文全文（§7.1）走次窗，不进转写：上下文全文是一份十几万字符的排查材料，
 		// 进转写区会把 markdown 解析与逐行选区一起拖进来。内容已先行写入磁盘，忽略也无损。
 		if cv, ok := m.ev.(port.TextViewEvent); ok {
 			u.showTextView(cv)
@@ -119,7 +119,7 @@ func (u *UI) apply(msg uiMsg) bool {
 		u.m.editMode = m.mode
 		u.m.editPart = m.part // D107②：编辑目标正文分片序号（提交转 --part token）
 		// D188：进编辑态先清掉上一次的删除标记，再挂上目标节点的已有附件；已在暂存的
-		// 新附件保留（它们就在 chip 排里，用户看得见，提交时一并加进这次修订）。
+		// 新附件保留（这些附件就在 chip 排里，用户看得见，提交时一并加进这次修订）。
 		u.m.editAtts = m.atts
 		u.m.editDropped = nil
 		if strings.Contains(m.text, "\n") || len(m.atts) > 0 {

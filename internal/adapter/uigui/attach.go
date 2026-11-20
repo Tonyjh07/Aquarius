@@ -43,7 +43,7 @@ func (a stagedAtt) displayName() string {
 
 // pathBase 取路径末段：两种分隔符都认。
 //
-// 不用 filepath.Base：它只认宿主的分隔符，而附件路径可能来自异平台（历史草稿、
+// 不用 filepath.Base：该函数只认宿主的分隔符，而附件路径可能来自异平台（历史草稿、
 // 代理给的路径、跨机同步的会话）。显示名取不出文件名时 chip 会退化成整条路径。
 func pathBase(p string) string {
 	if p == "" {
@@ -181,7 +181,7 @@ func (u *UI) attachChip(gtx layout.Context, label string, thumb *thumbSrc, cl *w
 }
 
 // attachChipState 同上，另带「已标记删除」态（D188 编辑态已有附件）：文字压暗 + 删除线、
-// 右侧 × 变 +（点击即恢复）——不能让它看起来像普通 chip。
+// 右侧 × 变 +（点击即恢复）——不能让删除态看起来像普通 chip。
 func (u *UI) attachChipState(gtx layout.Context, label string, thumb *thumbSrc, cl *widget.Clickable, dropped bool) layout.Dimensions {
 	// 压暗色 = tips 白字降不透明度（两主题同规则，不新增主题令牌）。
 	dimFg := tok().whiteText

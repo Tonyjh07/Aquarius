@@ -517,7 +517,7 @@ func TestRoundtripDetachments(t *testing.T) {
 	}
 	ctx := context.Background()
 	c := mustConv(t)
-	// 拿第一条 user 做 Carry：它的孩子（那条 assistant）整批转到新版本下。
+	// 拿第一条 user 做 Carry：该条 user 的孩子（那条 assistant）整批转到新版本下。
 	first := c.Path()[1]
 	m, err := c.Revise(first.ID, []conversation.Part{{Kind: conversation.PartText, Text: "改问"}}, conversation.Carry)
 	if err != nil {
@@ -943,7 +943,7 @@ func TestAuditReportsUnreadableFiles(t *testing.T) {
 	if err := s.Save(ctx, mustConv(t)); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	// 坏 JSON：List 跳过它（先断言这一点，否则这条测试守的就不是「被跳过的那批」）。
+	// 坏 JSON：List 跳过该文件（先断言这一点，否则这条测试守的就不是「被跳过的那批」）。
 	if err := os.WriteFile(filepath.Join(dir, "broken-1.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatalf("write broken: %v", err)
 	}

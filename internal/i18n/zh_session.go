@@ -3,7 +3,7 @@ package i18n
 // zhSessionTexts 会话命令的回执、用法行与报告（/compact、/unattended、/permission、
 // /memory、/usage、/jobs、/mic）。
 //
-// `usage.*` 是敲错参数时那句话——用户会照着它重敲，所以它算文案不是诊断。错误链上的
+// `usage.*` 是敲错参数时那句话——用户会照着这句话重敲，所以这句话算文案不是诊断。错误链上的
 // 包装前缀（`session: save conversation: %w`）不在这里：那是给改代码的人定位用的。
 var zhSessionTexts = map[string]string{
 

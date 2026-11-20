@@ -16,7 +16,7 @@ import (
 // monoFace 代码块等宽字体面（newTheme 从集合挑 Mono 系；零值 = 回落正文体，D65）。
 //
 // 要锁而不是裸变量：主题是**每窗各建一份**（winmgr 每窗独立 Shaper），建窗与主窗帧循环
-// 里读它画代码块是两条 goroutine——「组装期写定、帧循环只读」只在单窗时成立。
+// 里读 monoFace 画代码块是两条 goroutine——「组装期写定、帧循环只读」只在单窗时成立。
 var (
 	monoFaceMu sync.RWMutex
 	monoFace   font.Font
@@ -136,7 +136,7 @@ func mdHeadingSp(th *material.Theme, level int) unit.Sp {
 // 非 Windows 由平台层给常见 CJK 字体路径，全缺失 = nil → 上层回落 gofont）。
 //
 // 语义是「首个能解析的候选胜出」——候选表的其余项（msyhbd/simhei/simsun）只在首选
-// 缺失时才轮到，它们**不参与**字重分层。字重能生效是因为 Gio 的 shaper 默认还会扫描
+// 缺失时才轮到，其余项**不参与**字重分层。字重能生效是因为 Gio 的 shaper 默认还会扫描
 // 整机字体库（WithCollection 是**追加**而非替换），粗体面由系统那份提供；若改用
 // text.NoSystemFonts()，粗体才会真的退化成常规（D147）。
 func loadCJKFaces(paths []string) []text.FontFace {

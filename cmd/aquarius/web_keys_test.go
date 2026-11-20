@@ -94,7 +94,7 @@ func TestStoreWebKeysDeepSeekOwnKey(t *testing.T) {
 	}
 }
 
-// TestStoreWebKeysSkipsLocal local 没有密钥：填了也不入库（那字段对它不参与鉴权）。
+// TestStoreWebKeysSkipsLocal local 没有密钥：填了也不入库（那字段对 local 不参与鉴权）。
 func TestStoreWebKeysSkipsLocal(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeWebCfg(t)

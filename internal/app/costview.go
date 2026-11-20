@@ -60,7 +60,7 @@ func (t *costTally) cachePct() int {
 	return int(float64(t.cacheRead)*100/float64(t.in) + 0.5)
 }
 
-// allMessages 读全部会话的**全部节点**（含放弃分支——它们也真花过钱）。
+// allMessages 读全部会话的**全部节点**（含放弃分支——放弃分支也真花过钱）。
 //
 // 只读 UpdatedAt 在窗口内的会话：更老的会话不可能有新节点，而一次全量读盘在百会话量级
 // 也只是「一两秒」的量级，没必要为此建索引。

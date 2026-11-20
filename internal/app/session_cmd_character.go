@@ -161,7 +161,7 @@ func (s *Session) characterRemove(ctx context.Context, args []string) (string, e
 }
 
 // writeCharacterReport 写四类回执 + 两类提示（§5.17）：正文排版交给 characterReportLines，
-// 这里只管把它接进命令输出。
+// 这里只管把正文接进命令输出。
 func (s *Session) writeCharacterReport(b *strings.Builder, card port.CharacterCard) {
 	for _, line := range characterReportLines(card, s.charOpts, s.agent.CompactTokens()/4) {
 		b.WriteString(line)

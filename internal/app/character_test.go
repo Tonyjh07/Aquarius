@@ -92,7 +92,7 @@ func TestProjectCharacterExamplesOff(t *testing.T) {
 	if start.Tail == "" {
 		t.Fatalf("tail must be expanded regardless of the examples switch")
 	}
-	// 常驻世界书关：人格里没有它，但条目仍在取值里（交回目录/回执处理）。
+	// 常驻世界书关：人格里没有常驻世界书，但条目仍在取值里（交回目录/回执处理）。
 	if strings.Contains(start.Persona, "## Lore") {
 		t.Fatalf("book must not enter when InjectConstantBook is off:\n%s", start.Persona)
 	}

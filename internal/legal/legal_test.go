@@ -41,7 +41,7 @@ func TestTextsComplete(t *testing.T) {
 				t.Fatalf("%s 第 %d 节没有正文", d, i+1)
 			}
 		}
-		// 版本行在导言里：没有它，「同意的是哪一版」就只剩 config 里那个数。
+		// 版本行在导言里：没有版本行，「同意的是哪一版」就只剩 config 里那个数。
 		if len(zh.Lead) == 0 || len(en.Lead) == 0 {
 			t.Fatalf("%s 缺导言（版本行）", d)
 		}

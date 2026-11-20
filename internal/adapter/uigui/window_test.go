@@ -177,7 +177,7 @@ func TestInputRowRectsFollowsDesign(t *testing.T) {
 
 // TestOvershootStaysInFrame 过冲几何不越窗（D57）：easeOutBack 峰值处右钮沿 D54 同式
 // 外推越过窗宽（实测 send 右缘 620 > 窗宽 608）→ 按钮越出会被位图缓冲边缘切平（D62 后
-// 同旧形裁的窗界裁切观感）。整链路（inputBar 插值 → record）断言轮廓恒在窗内。
+// 同旧形裁的窗界裁切观感）。整条路径（inputBar 插值 → record）断言轮廓恒在窗内。
 func TestOvershootStaysInFrame(t *testing.T) {
 	t.Parallel()
 	u := newFrameUI()
@@ -234,8 +234,8 @@ func TestFrameItemsLive(t *testing.T) {
 func newFrameUI() *UI {
 	u := &UI{plat: newFakePlat(), followTail: true}
 	// D115/D135：不给测试起补提交梯次 goroutine（结束后仍会提交，-race）。D135 起梯次是
-	// UI 字段，改它不再污染包状态——包级 var 只能靠「全局置 nil」屏蔽，等于把这条跨
-	// goroutine 路径在所有测试里藏起来，-race 也就永远抓不到它读帧循环字段的问题。
+	// UI 字段，改该字段不再污染包状态——包级 var 只能靠「全局置 nil」屏蔽，等于把这条跨
+	// goroutine 路径在所有测试里藏起来，-race 也就永远抓不到这条路径读帧循环字段的问题。
 	u.representLadder = nil
 	u.plat = newFakePlat()
 	u.m = newModel(u)
@@ -471,7 +471,7 @@ func TestRepresentLadderConcurrentWithFrames(t *testing.T) {
 	}
 	u.representLadder = []time.Duration{time.Millisecond, time.Millisecond}
 
-	// 帧循环侧：交替尺寸跑若干帧（每帧重新分配 fadeBuf + 填充），与梯次并发。
+	// 帧循环侧：交替尺寸跑多帧（每帧重新分配 fadeBuf + 填充），与梯次并发。
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

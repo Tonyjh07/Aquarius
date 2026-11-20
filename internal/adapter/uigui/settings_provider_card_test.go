@@ -46,7 +46,7 @@ func TestProviderRowsShareOneCard(t *testing.T) {
 		t.Fatalf("两家 provider 组号相同（%d）——相邻卡片会被拼成一张", seen[0])
 	}
 
-	// 按钮行与它所在 provider 的字段行同组（这正是本次修的那一处）。
+	// 按钮行与按钮所在 provider 的字段行同组（这正是本次修的那一处）。
 	var btnGroup, nameGroup = -1, -1
 	for _, r := range rows {
 		switch r.kind {

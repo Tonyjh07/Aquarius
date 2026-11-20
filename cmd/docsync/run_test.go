@@ -203,7 +203,7 @@ func read(t *testing.T, dir, name string) string {
 }
 
 // TestRunHistoryFillsCommittedDoc 工作区干净的文档也要按历史补标记：
-// 日期/基线取它最近一次内容改动的那笔提交，而不是「今天 + HEAD」。
+// 日期/基线取该文档最近一次内容改动的那笔提交，而不是「今天 + HEAD」。
 func TestRunHistoryFillsCommittedDoc(t *testing.T) {
 	dir := gitRepo(t)
 

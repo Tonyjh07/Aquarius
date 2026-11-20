@@ -231,7 +231,7 @@ type micGeom struct {
 	cx, w               float32 // 圆心 x、胶囊头宽
 	headTop, headBottom float32
 	rIn                 float32 // 头圆角半径 = 头半宽
-	capCy               float32 // 头下圆角圆心 y（托架底部半圆与它同心）
+	capCy               float32 // 头下圆角圆心 y（托架底部半圆与头下圆角同心）
 	gap                 float32 // 头表面到托架描边的净间隙
 	half                float32 // 托架中心线半宽
 	arcBottom           float32 // 托架最底（中心线）

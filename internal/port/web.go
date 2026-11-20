@@ -6,12 +6,12 @@ import (
 )
 
 // ErrWebBadInput 调用方输入有误（查询为空/超长、URL 不合法）。
-// 换一个提供商也是同样的结果，所以失败切换链**不**因它降级。
+// 换一个提供商也是同样的结果，所以失败切换链**不**因输入错误降级。
 var ErrWebBadInput = errors.New("invalid web request")
 
 // WebQuery 一次网页搜索的输入（与具体提供商无关）。
 type WebQuery struct {
-	// Query 搜索词；提供商会把它原样交给搜索引擎，站点/时间等算符可直接写在里面。
+	// Query 搜索词；提供商会把搜索词原样交给搜索引擎，站点/时间等算符可直接写在里面。
 	Query string
 	// Count 期望条数（1-20）；0 = 适配器缺省。
 	Count int
@@ -39,7 +39,7 @@ type WebResults struct {
 	// Provider 实际应答的提供商名（deepseek / brave …）。
 	Provider string
 	// Fallbacks 应答之前失败的提供商名（按尝试顺序）。非空 = 这次是降级结果，
-	// 工具层会把它写进回填文本，模型才能如实说明「换了一家」。
+	// 工具层会把这份清单写进回填文本，模型才能如实说明「换了一家」。
 	Fallbacks []string
 }
 

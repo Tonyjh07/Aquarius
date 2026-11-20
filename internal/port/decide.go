@@ -9,7 +9,7 @@ import (
 // 让模型生成一段话。输出空间封闭——被注入也只能把概率推向错的一边，吐不出「你该
 // 做什么」。
 //
-// 与 Confirmer 的分工：默认确认器是终端/界面，装饰器决定**要不要走到它**。端口只给
+// 与 Confirmer 的分工：默认确认器是终端/界面，装饰器决定**要不要走到确认器**。端口只给
 // 分数，不给结论；三档分流在装饰器里按配置算，换模型重标阈值时不必动适配器。
 
 // DecideRequest 一次判定的输入。state 由适配器拼成固定六行（origin / tool / op /
@@ -25,7 +25,7 @@ type DecideRequest struct {
 
 // Decision 一次判定的输出：三题的分数，原样交回，不在这里做取舍。
 //
-// ShouldAllow 只进审计、不参与判定——实测它与 NeedsHuman 的 Pearson 系数 −0.93，
+// ShouldAllow 只进审计、不参与判定——实测 ShouldAllow 与 NeedsHuman 的 Pearson 系数 −0.93，
 // 留着是为阴影期后重标定。
 type Decision struct {
 	ShouldAllow float64

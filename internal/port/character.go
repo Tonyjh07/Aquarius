@@ -13,7 +13,7 @@ var ErrCharacterNotFound = errors.New("character not found")
 // CharacterInfo 一张已导入角色卡的最小事实（列表与详情展示用）。
 //
 // 只展示的字段（Creator / Version / Tags / ImportedAt / Warnings）不进模型上下文：
-// 它们是给用户看的来路说明，不是要遵循的指令。
+// 这些字段是给用户看的来路说明，不是要遵循的指令。
 type CharacterInfo struct {
 	Slug        string   // 目录名：由显示名派生，profile 内唯一
 	Name        string   // 卡里的 name
@@ -28,7 +28,7 @@ type CharacterInfo struct {
 	Assets      int      // 卡里 data.assets 条数（图标之外的表情 / 背景 / 语音等；保留未用）
 	HasAvatar   bool     // 有 avatar.png
 	// AvatarPath 头像文件的绝对路径（空 = 没有头像）。只给界面呈现用（设置窗「角色」页）：
-	// 它是落位事实，不是卡内容，绝不进模型上下文。
+	// 该路径是落位事实，不是卡内容，绝不进模型上下文。
 	AvatarPath string
 	ImportedAt time.Time // 导入时间（meta.json 缺时为零值）
 	// Unsupported 本版不执行的机制（按固定顺序，规范键名）：regex_scripts / tavern_helper /

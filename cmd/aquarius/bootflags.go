@@ -47,7 +47,7 @@ func parseFlags(args []string, stderr io.Writer) (f bootFlags, code int, done bo
 // early 两个「打印完就退出」的模式：`-version` 与 `-doctor`。
 //
 // 两者都在摘控制台之前跑：出口就是终端上的几行字，先把控制台脱离掉，字就打给一个已经
-// 看不见的句柄了。`-doctor` 还额外要求只读——所以它在端口装配之前，见 runDoctorMode。
+// 看不见的句柄了。`-doctor` 还额外要求只读——所以 `-doctor` 在端口装配之前，见 runDoctorMode。
 func (f bootFlags) early(stdout, stderr io.Writer) (code int, done bool) {
 	switch {
 	case f.version:

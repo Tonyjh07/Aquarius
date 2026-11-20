@@ -3,10 +3,10 @@ package vadsilero
 // 分段器的测试用两套素材：
 //
 //   - testdata/speech-16k.pcm：上游 Silero VAD 的真人语音样本（MIT，见 THIRD-PARTY-NOTICES），
-//     它的预期分段写在上游的 ExampleSegments 里——「三段话」这件事是真值，不是我自己说了算。
+//     该样本的预期分段写在上游的 ExampleSegments 里——「三段话」这件事是真值，不是我自己说了算。
 //   - 合成静音：只用来验证「纯静音不出段」这一条，不需要真值。
 //
-// 合成正弦信号在这里没有用：上游的模型把稳态正弦判成噪声（它的测试里就有一条
+// 合成正弦信号在这里没有用：上游的模型把稳态正弦判成噪声（上游的测试里就有一条
 // TestModelRejectsSilenceAndTone），用合成波形断言「这是语音」只会写出一个假绿测试。
 
 import (

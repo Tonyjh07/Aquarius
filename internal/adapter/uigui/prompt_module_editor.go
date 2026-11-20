@@ -31,7 +31,7 @@ import (
 //
 // **模态怎么成立**（与历史窗遮罩同一机制）：Gio 把一次点击投给所有命中的 handler，
 // 所以「画一层挡板」挡不住背景。真正起作用的是整盒输入区排在命中链顶——背景控件
-// 收不到指针事件；背景侧的显式不消费是纵深防御。宿主须把它画在最后一层（盖住
+// 收不到指针事件；背景侧的显式不消费是纵深防御。宿主须把该编辑窗画在最后一层（盖住
 // 自己的页脚钮）。
 func (f *promptEditor) moduleEditorFrame(gtx layout.Context, th *material.Theme) (layout.Dimensions, bool) {
 	st := &f.modEdit
@@ -43,7 +43,7 @@ func (f *promptEditor) moduleEditorFrame(gtx layout.Context, th *material.Theme)
 	event.Op(gtx.Ops, &st.tag)
 	area.Pop()
 
-	// Esc 关闭：弹窗是编辑区里唯一能「取消」的地方，没有它改错了只能关窗重开。
+	// Esc 关闭：弹窗是编辑区里唯一能「取消」的地方，没有该弹窗改错了只能关窗重开。
 	for {
 		ev, ok := gtx.Event(key.Filter{Focus: &st.tag, Name: key.NameEscape})
 		if !ok {

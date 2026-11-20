@@ -90,7 +90,7 @@ func (a *secretsAdmin) Delete(name string) error {
 //
 // 空 api_key 与 resolveAPIKey 同规则回落默认引用 `secret:DEEPSEEK_API_KEY`——
 // 不一致的话，「启动用环境变量、导入却跳过」会让用户以为导入漏了。这条只对 provider
-// 生效：语音、决策、联网的空值是「借别处 / 还没配」，把它们补成库里一条新条目不是导入。
+// 生效：语音、决策、联网的空值是「借别处 / 还没配」，把这几种空值补成库里一条新条目不是导入。
 func (a *secretsAdmin) Import() (uigui.SecretsImportResult, error) {
 	var res uigui.SecretsImportResult
 	if a.w.secretsBin == nil {

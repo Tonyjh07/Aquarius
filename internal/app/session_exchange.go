@@ -94,7 +94,7 @@ func (s *Session) execExport(ctx context.Context, cmd port.Command) (string, err
 	if err != nil {
 		return "", err
 	}
-	// 一个会话（缺省形态）用它自己的标题起名；--all / --ids 与多会话没有单一标题可用，
+	// 一个会话（缺省形态）用会话自己的标题起名；--all / --ids 与多会话没有单一标题可用，
 	// 取一个中性的缺省名（同一目录，同样走防覆盖后缀）。
 	stem := multiExportStem
 	if !all && len(idSet) == 0 && len(cs) == 1 {
@@ -197,7 +197,7 @@ func (s *Session) pickExportFormat(name string) (port.ExchangeFormat, error) {
 			continue
 		}
 		if f.NoExport {
-			// 只读的那一档：读得进来但我们不产出第二套同义格式，说清该用哪一份代替。
+			// 只读的那一档：读得进来但本程序不产出第二套同义格式，说清该用哪一份代替。
 			return port.ExchangeFormat{}, errors.New(i18n.Tf("exchange.format_readonly", "format", f.Name, "note", f.LossNote))
 		}
 		return f, nil
@@ -289,7 +289,7 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	}
 	// 先全部自检并取好身份、再一次性写入磁盘：第 3 个会话坏了，不该留下前 2 个已入库的半截状态。
 	// 新会话 ID 与 /new 同源（端口只管「文件 → 树」，会话身份由这里分配）。Root 节点 ID
-	// 恒等于会话 ID（domain 的构造规则），所以换 ID 要连 Root 和挂在它下面的边一起换。
+	// 恒等于会话 ID（domain 的构造规则），所以换 ID 要连 Root 和挂在 Root 下面的边一起换。
 	imported := make([]*conversation.Conversation, 0, len(trees))
 	for _, c := range trees {
 		c, err := remapConversationID(c, s.ids.ConversationID())
@@ -360,7 +360,7 @@ func parsePickIndex(v string) (int, bool) {
 }
 
 // remapConversationID 换会话 ID：Root 节点 ID 恒等于会话 ID（domain 的构造规则），所以
-// Root 的 ID、它自己那条结构与挂在它上面的边要一起换，换完再走 Restore 的全树自检。
+// Root 的 ID、Root 自己那条结构与挂在 Root 上面的边要一起换，换完再走 Restore 的全树自检。
 func remapConversationID(c *conversation.Conversation, id conversation.ID) (*conversation.Conversation, error) {
 	snap := c.Snapshot()
 	oldRoot := conversation.MessageID(snap.ID)

@@ -48,7 +48,7 @@ func startProcess(command string, args []string, wd string, env map[string]strin
 	return &process{cmd: cmd, stdin: stdin, stdout: stdout, stderr: tb}, nil
 }
 
-// kill 杀进程组（连带它自己拉起的子进程）。
+// kill 杀进程组（连带该进程自己拉起的子进程）。
 func (p *process) kill() error {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return nil
@@ -56,7 +56,7 @@ func (p *process) kill() error {
 	return killTree(p.cmd)
 }
 
-// wait 只启动一次 cmd.Wait，返回它的完成信号。exec 在 cmd.Stderr 不是 *os.File 时会另起
+// wait 只启动一次 cmd.Wait，返回 cmd.Wait 的完成信号。exec 在 cmd.Stderr 不是 *os.File 时会另起
 // goroutine 把管道内容拷进 tailBuffer，只有 Wait 返回才保证这段拷贝排空。abort 要在读
 // stderr 尾巴前等这个信号，terminate 也走同一处，避免 Wait 被调两次。
 func (p *process) wait() <-chan struct{} {
@@ -76,7 +76,7 @@ func (p *process) wait() <-chan struct{} {
 }
 
 // terminate 收尾：先温和地关 stdin（多数代理见到 EOF 会自己退出），再杀进程组，
-// 最后有界地等它被回收——不无限期挂在 Wait 上。
+// 最后有界地等进程被回收——不无限期挂在 Wait 上。
 func (p *process) terminate(grace time.Duration) {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
@@ -110,7 +110,7 @@ func (p *process) exited() bool {
 }
 
 // waitStderr 有界地等 stderr 拷贝排空。对端断连只说明 stdout 到了 EOF，exec 的拷贝
-// goroutine 可能还没把最后一截错误输出写进缓冲；不等就报不出「它为什么崩」。
+// goroutine 可能还没把最后一截错误输出写进缓冲；不等就报不出「进程为什么崩」。
 func (p *process) waitStderr(budget time.Duration) {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
@@ -130,7 +130,7 @@ func (p *process) stderrTail() string {
 }
 
 // tailBuffer 有界环形缓冲（保留最后 max 字节）：代理崩溃时 stderr 可能刷很长，
-// 我们只要末尾这段来说明原因。
+// Aquarius 只取末尾这段来说明原因。
 type tailBuffer struct {
 	mu  sync.Mutex
 	max int

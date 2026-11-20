@@ -27,7 +27,7 @@ func keyPoolFor(a, b *fakeLLM) (*KeyPool, *time.Time) {
 	return p, &now
 }
 
-// 第一把 429、第二把成功：立刻换钥匙（不退避）、被拒的那把进冷却、下次不再打它。
+// 第一把 429、第二把成功：立刻换钥匙（不退避）、被拒的那把进冷却、下次不再打该钥匙。
 func TestKeyPoolRotatesOnQuota(t *testing.T) {
 	a := &fakeLLM{genErrs: []error{quota(30 * time.Second)}}
 	b := &fakeLLM{}
@@ -126,7 +126,7 @@ func TestKeyPoolDoesNotRotateOnFatal(t *testing.T) {
 	}
 }
 
-// 冷却只延后不提前：同一把钥匙已有冷却时，更短的 Retry-After 不得把它提前解冻。
+// 冷却只延后不提前：同一把钥匙已有冷却时，更短的 Retry-After 不得把该钥匙提前解冻。
 // （正常路径下一轮请求会跳过冷却中的钥匙，所以这条守卫只在边界上生效——防的是
 // 将来有人复用 cool 时把刚被拒的钥匙又捞出来。）
 func TestKeyPoolCooldownNeverShortens(t *testing.T) {
@@ -153,7 +153,7 @@ func TestKeyPoolDefaultCooldown(t *testing.T) {
 	if _, err := p.Generate(context.Background(), port.GenerateRequest{}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	// 甲应在缺省冷却期内；立刻再调一次不该碰它。
+	// 甲应在缺省冷却期内；立刻再调一次不该碰甲。
 	if _, err := p.Generate(context.Background(), port.GenerateRequest{}); err != nil {
 		t.Fatalf("second generate: %v", err)
 	}

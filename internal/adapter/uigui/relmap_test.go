@@ -150,7 +150,7 @@ func TestRelA4_WeightIndependentOfDegree(t *testing.T) {
 	t.Parallel()
 	g := relFixtureGraph()
 	m1 := relMustModel(t, g)
-	// 目标：a2（w1 分叉位点）——给它加 5 个孩子，weight 必须不变。
+	// 目标：a2（w1 分叉位点）——给该节点加 5 个孩子，weight 必须不变。
 	target := relIdx(t, m1, "a2")
 	wBefore := m1.nodes[target].weight
 

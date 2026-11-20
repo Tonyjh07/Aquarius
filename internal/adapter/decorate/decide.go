@@ -66,7 +66,7 @@ type DecidePolicy struct {
 	DenyHumanAbove  float64
 }
 
-// Verdict 一次判定的结论（三档之一）。审计里也用它，`shadow` 下写的就是「本来会怎么判」。
+// Verdict 一次判定的结论（三档之一）。审计里也用该类型，`shadow` 下写的就是「本来会怎么判」。
 type Verdict string
 
 const (
@@ -134,7 +134,7 @@ func (c decideConfirmer) Confirm(ctx context.Context, req port.ConfirmRequest) (
 	dec, err := c.dec.Decide(dctx, decideRequestOf(req))
 	cancel()
 	if err != nil {
-		// 父 ctx 取消优先：用户按了中断，这不该记成一次「没判成」再回头去问他。
+		// 父 ctx 取消优先：用户按了中断，这不该记成一次「没判成」再回头去问用户。
 		if ctx.Err() != nil {
 			return port.ConfirmAnswer{}, ctx.Err()
 		}

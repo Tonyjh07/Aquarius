@@ -86,7 +86,7 @@ func (a *Agent) generateSummary(ctx context.Context, id conversation.MessageID, 
 
 // SummarizeBefore 生成「id 之上历史」的摘要并插到 id **之前**（D152 /summary 无文本档）。
 //
-// 输入 = Root→id 的父链（**不含 id 自身**：摘要只覆盖它上面的部分，id 及其子树留在水位之后），
+// 输入 = Root→id 的父链（**不含 id 自身**：摘要只覆盖 id 上面的部分，id 及其子树留在水位之后），
 // 水位化与提示词同 /compact（已有旧摘要则合并更新）。成功后节点入树、发 CommittedEvent，
 // Head 不变、子树零拷贝；失败只报错、树无损。返回插入的摘要节点（含 Model/Usage 记账）。
 //

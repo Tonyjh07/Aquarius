@@ -88,7 +88,7 @@ func TestDataReadmeCoversBothLanguages(t *testing.T) {
 // 这是唯一能拦住「代码里那份说明与磁盘规则分家」的一条：新增目录时改了 storage.md 却忘了
 // 改 README，测试红。
 //
-// 带 `<...>`（参数化路径）与 `*`（通配）的条目跳过——它们在正文里的写法与目录树不同。
+// 带 `<...>`（参数化路径）与 `*`（通配）的条目跳过——这些条目在正文里的写法与目录树不同。
 func TestDataReadmeEntriesExistInStorageDoc(t *testing.T) {
 	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "storage.md"))
 	if err != nil {
@@ -122,7 +122,7 @@ func TestDataReadmeLinksBothLanguages(t *testing.T) {
 }
 
 // TestDataReadmeStaysShort 单语正文行数上限。这份东西的用处是速查，一旦长到要翻页，
-// 读者会去翻的就不是它了；上限比现状留一点余量，只为挡住持续膨胀。
+// 读者会去翻的就不是这份速查了；上限比现状留一点余量，只为挡住持续膨胀。
 func TestDataReadmeStaysShort(t *testing.T) {
 	const limit = 70
 	for name, src := range map[string][]byte{

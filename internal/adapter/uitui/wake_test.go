@@ -7,7 +7,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestWakeReturnsInput 空闲唤醒经 Next 返回 Wake 标记（不混输入队列，Confirm 不读它）。
+// TestWakeReturnsInput 空闲唤醒经 Next 返回 Wake 标记（不混输入队列，Confirm 不读该标记）。
 func TestWakeReturnsInput(t *testing.T) {
 	u := &UI{
 		inCh:   make(chan port.UserInput, 1),

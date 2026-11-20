@@ -16,8 +16,8 @@ import (
 	"unsafe"
 )
 
-// TestOffscreenAnchorX 辅助窗口落在虚拟桌面最右侧之外：任何显示器布局都框不到它，
-// 全屏截图也不会把它拍进来。
+// TestOffscreenAnchorX 辅助窗口落在虚拟桌面最右侧之外：任何显示器布局都框不到该辅助窗口，
+// 全屏截图也不会把该辅助窗口拍进来。
 func TestOffscreenAnchorX(t *testing.T) {
 	cases := []struct {
 		left, width int32
@@ -190,7 +190,7 @@ func minimizeTestWindow(t *testing.T, hwnd uintptr) [6]int32 {
 	if !iconic(hwnd) {
 		t.Skip("the test window did not minimize in this session")
 	}
-	// 最小化态作为基线：抓取必须不改动它。
+	// 最小化态作为基线：抓取必须不改动该最小化态。
 	return testPlacement(hwnd)
 }
 
@@ -210,8 +210,8 @@ func grabMinimizedWindow(t *testing.T, hwnd uintptr) image.Image {
 
 // TestWindowCapturesMinimizedWindow 最小化窗口经 DWM 缩略图抓回真实内容。
 //
-// 这是本适配器唯一能证明「最小化窗口截得到内容」的测试：它不依赖桌面上恰好有某个窗口，
-// 而是自己开一个画着四色块的窗口、最小化它，再走生产的 Window() 路径抓回来，
+// 这是本适配器唯一能证明「最小化窗口截得到内容」的测试：该测试不依赖桌面上恰好有某个窗口，
+// 而是自己开一个画着四色块的窗口、最小化该窗口，再走生产的 Window() 路径抓回来，
 // 断言图里认得出那几种颜色，且窗口在抓取前后仍是最小化、位置未变。
 func TestWindowCapturesMinimizedWindow(t *testing.T) {
 	hwnd, stop := startTestWindow(t)
@@ -255,7 +255,7 @@ func testSentinelPix(pix []byte, i int) {
 	pix[i], pix[i+1], pix[i+2] = 0xFF, 0x00, 0xFF
 }
 
-// TestSentinelLike 哨兵底色的识别：纯洋红与它被抗锯齿混合后的样子都算，真实内容不算。
+// TestSentinelLike 哨兵底色的识别：纯洋红及其被抗锯齿混合后的样子都算，真实内容不算。
 func TestSentinelLike(t *testing.T) {
 	cases := []struct {
 		rgb  [3]byte

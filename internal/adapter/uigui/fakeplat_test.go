@@ -47,7 +47,7 @@ type fakePlat struct {
 	OnTopMost  func(on bool)
 	OnNotice   func(msg string)
 	OnMenuPost func(kind platform.MenuKind)
-	// OnOpenRequest / OnSaveRequest 文件框请求钩子：返回 (路径, true) = 假装用户选了它
+	// OnOpenRequest / OnSaveRequest 文件框请求钩子：返回 (路径, true) = 假装用户选了文件
 	// （平台线程会把结果回传给宿主）；返回 "", false = 用户取消。
 	OnOpenRequest func(req platform.OpenRequest) (string, bool)
 	OnSaveRequest func(req platform.SaveRequest) (string, bool)

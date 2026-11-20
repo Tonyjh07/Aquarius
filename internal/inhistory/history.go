@@ -65,7 +65,7 @@ func Open(path string) *Store {
 	return s
 }
 
-// Lines 最近 Max 条的副本（调用方改它不该改到历史）。
+// Lines 最近 Max 条的副本（调用方改这份副本不该改到历史）。
 func (s *Store) Lines() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

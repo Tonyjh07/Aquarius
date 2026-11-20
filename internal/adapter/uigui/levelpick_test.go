@@ -11,7 +11,7 @@ import (
 )
 
 // TestPermLevelCount 档位列表的控件数组长度与 permLevels 同源（D282）：两边一改一漏，
-// 列表就会少一行或多出几个空控件。序列本身是契约（logo 菜单下标按它算，D73）。
+// 列表就会少一行或多出几个空控件。序列本身是契约（logo 菜单下标按序列算，D73）。
 func TestPermLevelCount(t *testing.T) {
 	t.Parallel()
 	want := []string{"read-only", "strict", "permissive", "full-access"}

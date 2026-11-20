@@ -10,7 +10,7 @@ import (
 
 // contextrender.go 把 ContextReport 摊成人看的两种形态（§7.1）：概览与整份 dump。
 //
-// 概览（`/context`）只给分块账，不铺正文——它的用处是回答「上下文被谁占了」。
+// 概览（`/context`）只给分块账，不铺正文——概览的用处是回答「上下文被谁占了」。
 // dump（`/context full`）给全文，写进文件；几十万字符铺进转写区会拖垮渲染与行选。
 
 // previewRunes 概览里每条消息的正文预览长度（超出的部分不显示，全文用 `/context <n>`）。
@@ -35,7 +35,7 @@ func (a *Agent) renderContextSummary(rep ContextReport) string {
 		b.WriteString(i18n.T("session.ctx.src_live"))
 	}
 
-	// 按消息分组：先算出每条消息的小计与它包含的段序，再逐条铺。分组是为了让
+	// 按消息分组：先算出每条消息的小计与每条消息包含的段序，再逐条铺。分组是为了让
 	// 「首条 system 里并进了四段」读起来是一件事，而不是四条互不相干的 system。
 	type group struct {
 		msg   int
@@ -171,7 +171,7 @@ func sectionBody(rep ContextReport, n int) (string, bool) {
 }
 
 // renderContextDump 整份上下文（写文件用）。分节之间用分隔线，正文原样，不做转义——
-// 它的用途是逐字比对，任何改写都会让「这一处和发出去的不一样」变得无法判断。
+// dump 的用途是逐字比对，任何改写都会让「这一处和发出去的不一样」变得无法判断。
 func (a *Agent) renderContextDump(rep ContextReport) string {
 	var b strings.Builder
 	b.WriteString(i18n.Tf("session.ctx.dump_head", "model", rep.Model))

@@ -35,7 +35,7 @@ func buildTree(t *testing.T) *Conversation {
 	return c
 }
 
-// TestChildIDsReturnsCopy ChildIDs 的返回值是副本：调用方改写它不得影响树。
+// TestChildIDsReturnsCopy ChildIDs 的返回值是副本：调用方改写返回值不得影响树。
 //
 // 这条不是洁癖：展示面拿到切片后排序/截断是常见动作，若共享底层数组，
 // 「画一次树」就会把结构顺序改掉。
@@ -76,7 +76,7 @@ func TestNodeCountAndIDs(t *testing.T) {
 }
 
 // TestSubtreeSizeMatchesPrune SubtreeSize 的规则必须与 Prune 的实际删除量一致——
-// 它俩是同一个数字的两种取法（/rm 的确认提示与实际结果），不一致就是骗用户。
+// 两者是同一个数字的两种取法（/rm 的确认提示与实际结果），不一致就是骗用户。
 func TestSubtreeSizeMatchesPrune(t *testing.T) {
 	c := buildTree(t)
 	root := MessageID(c.ID)
@@ -126,7 +126,7 @@ func TestEditionFollowsVersionChain(t *testing.T) {
 }
 
 // TestTailMatchesSubtreeNewestLeaf VersionEnd 的返回值必须就是该子树里 CreatedAt 最新的叶子
-// （平局取 ID 序最大）——展示面的「切到这个版本」靠它落点。
+// （平局取 ID 序最大）——展示面的「切到这个版本」靠这个叶子落点。
 func TestTailMatchesSubtreeNewestLeaf(t *testing.T) {
 	c := buildTree(t)
 	root := MessageID(c.ID)
@@ -170,7 +170,7 @@ func newestLeafForTest(t *testing.T, c *Conversation, root MessageID) MessageID 
 	return best
 }
 
-// TestViewMatchesTailAndBranches View 是展示面唯一的数据来源，它给的规则必须与
+// TestViewMatchesTailAndBranches View 是展示面唯一的数据来源，View 给的规则必须与
 // Tail / Branches 逐节点一致——否则「切到某个版本的末端」与界面画出的分叉会各说各话。
 func TestViewMatchesTailAndBranches(t *testing.T) {
 	c := buildTree(t)
@@ -239,7 +239,7 @@ func TestViewMatchesTailAndBranches(t *testing.T) {
 }
 
 // TestViewVersionGroupsCrossPads 衬垫透明（D152）：在 a1 之前插一条摘要之后，a1 的结构父
-// 变成衬垫，但它与 a2 仍是同一个问题的两个版本——版本组必须跨过衬垫把它们放在一起，
+// 变成衬垫，但 a1 与 a2 仍是同一个问题的两个版本——版本组必须跨过衬垫把这两个版本放在一起，
 // 否则一次「插入摘要」就会让两个版本各自 1/1，图上分叉编号与左右切换一起消失。
 func TestViewVersionGroupsCrossPads(t *testing.T) {
 	useFixedClock(t)
@@ -294,8 +294,8 @@ func TestViewVersionGroupsCrossPads(t *testing.T) {
 	}
 }
 
-// TestViewVersionGroupsKeepAppendedWatermark 顺着链路追加的压缩摘要不是衬垫：它的孩子晚于
-// 它，不能把后续内容提升到祖父那一层（那会把「继续对话」错当成「另一个版本」）。
+// TestViewVersionGroupsKeepAppendedWatermark 顺着父链追加的压缩摘要不是衬垫：摘要的孩子晚于
+// 摘要，不能把后续内容提升到祖父那一层（那会把「继续对话」错当成「另一个版本」）。
 func TestViewVersionGroupsKeepAppendedWatermark(t *testing.T) {
 	useFixedClock(t)
 	c := New("conv-wm", "水位")
@@ -308,9 +308,9 @@ func TestViewVersionGroupsKeepAppendedWatermark(t *testing.T) {
 		t.Fatalf("append summary: %v", err)
 	}
 	if c.padNode(c.Head) {
-		t.Fatal("顺着链路追加的水位不是衬垫")
+		t.Fatal("顺着父链追加的水位不是衬垫")
 	}
-	// 同一个问句下的另一个回答：版本组仍是 a1 与它，摘要不算版本。
+	// 同一个问句下的另一个回答：版本组仍是 a1 与 a2，摘要不算版本。
 	if err := c.Checkout(u1.ID); err != nil {
 		t.Fatalf("checkout: %v", err)
 	}

@@ -12,7 +12,7 @@ import (
 )
 
 // webProvidersEqual 联网提供商列表等价（kind/来源/端点/国家语言/条数；密钥**不参与**
-// ——值不回显，patch 里的空 = 保持，不能拿它判变更）。用于保存提示的变更判定。
+// ——值不回显，patch 里的空 = 保持，不能拿空值判变更）。用于保存提示的变更判定。
 func webProvidersEqual(a []WebProviderPatch, b []WebProviderView) bool {
 	if len(a) != len(b) {
 		return false
@@ -118,7 +118,7 @@ func promptModulesEqual(a, b []PromptModuleView) bool {
 }
 
 // profileActionLabel 三动作的反馈前缀（渲染与反馈共用）。用动词小写形而不是
-// ui.common.copy 那种按钮文案：它嵌在「profile … 失败：」这句中间，不是独立按钮。
+// ui.common.copy 那种按钮文案：该前缀嵌在「profile … 失败：」这句中间，不是独立按钮。
 func profileActionLabel(act string) string {
 	switch act {
 	case "create":

@@ -306,7 +306,7 @@ func goEnvValue(key string) string {
 
 // parseGoEnv 解析 `go env` 的两种输出形态：Windows 上是 `set KEY=VALUE`（cmd 语法），
 // 其余平台是 `KEY='VALUE'`。只认一种就会把另一边的每一项都读成空——能力探测因此
-// 误报「本机没有 C 工具链」，这就是它当初被写出来的原因。
+// 误报「本机没有 C 工具链」，这就是 parseGoEnv 当初被写出来的原因。
 func parseGoEnv(out string) map[string]string {
 	m := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {

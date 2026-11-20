@@ -176,7 +176,7 @@ func TestBuildEdgesOrder(t *testing.T) {
 	if len(kids) != 2 || kids[0] != "B" || kids[1] != "A" {
 		t.Fatalf("兄弟顺序 = %v, want [B A]（按源里 children 的次序）", kids)
 	}
-	// 顶层节点自己仍要挂到 Root 下（不然它没有父边）。
+	// 顶层节点自己仍要挂到 Root 下（不然顶层节点没有父边）。
 	found := false
 	for _, e := range edges {
 		if e.Parent == "R" && len(e.Childs) == 1 && e.Childs[0] == "X" {

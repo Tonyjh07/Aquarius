@@ -160,7 +160,7 @@ func bubbleMenuItems(kind blockKind, canRespond bool) []menuIt {
 // frozen=true（树编辑模式期，D258/§5.6.5）时**只留只读项**：编辑三项、重新生成、生成响应、
 // 插入摘要、删除全部置灰。设计稿原写「删除/切版本/插入摘要/生成响应四项」，实现扩到编辑类，
 // 依据是同一节的纲：「编辑期结构只经拖拽一条路径变化」——编辑（Fresh/Carry/Clone）与重新生成
-// 都会造成结构改动，留着它们等于开第二条路径。只读项（复制 / 复制 ID / 查看原文）与引用
+// 都会造成结构改动，留着这些项等于开第二条路径。只读项（复制 / 复制 ID / 查看原文）与引用
 // （只往输入框追加文字，不动树）照常。
 func nodeMenuItems(kind blockKind, hasText, canSummary, frozen bool) []menuIt {
 	var head []menuIt
@@ -172,7 +172,7 @@ func nodeMenuItems(kind blockKind, hasText, canSummary, frozen bool) []menuIt {
 	default:
 		head = []menuIt{{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}, {id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}}
 	}
-	// 「生成响应」贴在**气泡项组末尾、分隔线之前**（2026-10-25 用户批注）：它是「对
+	// 「生成响应」贴在**气泡项组末尾、分隔线之前**（2026-10-25 用户批注）：「生成响应」是「对
 	// 这条消息做什么」，与编辑类同组更顺；且**任何非根节点都给**（含人格/系统/工具
 	// 节点）——从任意节点续写都合法（根节点整份菜单已去掉，故这里不再单独设门）。
 	items := append(head, menuIt{id: cmdNodeRespond, label: i18n.T("ui.menu.respond")})

@@ -136,7 +136,7 @@ func TestInstallDirWithNestedSkills(t *testing.T) {
 	}
 }
 
-// TestInstallZipStripsWrapper 压缩包：剥掉单一顶层目录、记录 Subdir（更新要靠它找回目录）。
+// TestInstallZipStripsWrapper 压缩包：剥掉单一顶层目录、记录 Subdir（更新要靠 Subdir 找回目录）。
 func TestInstallZipStripsWrapper(t *testing.T) {
 	inst := newTestInstaller(t, nil)
 	data := makeZip(t, map[string]string{

@@ -49,7 +49,7 @@ func TestReviseCarryRecordsDetachment(t *testing.T) {
 }
 
 // TestDetachmentsStaleIsComputed 陈旧是现算的：把被记的子树根又搬走，记录仍在但标 Stale；
-// 搬回去又成立。记录本身不删——另一次搬运可能让它重新生效。
+// 搬回去又成立。记录本身不删——另一次搬运可能让该记录重新生效。
 func TestDetachmentsStaleIsComputed(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
@@ -200,7 +200,7 @@ func TestSnapshotRoundTripPreservesDetachments(t *testing.T) {
 }
 
 // TestValidateRejectsDetachmentOutsideTree 路牌指向树外节点属于坏数据（磁盘不可信）：
-// 三端任一不在树就报错，而不是让它进内存后半死不活。
+// 三端任一不在树就报错，而不是让坏数据进内存后半死不活。
 func TestValidateRejectsDetachmentOutsideTree(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")

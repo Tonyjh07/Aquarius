@@ -4,7 +4,7 @@ package uigui
 //
 // 编辑区本体是 promptEditor（prompt_editor.go）——与设置窗「系统提示词」页同一份实现，
 // 这里只负责三件事：
-//  1. 把它画进遮罩卡片（同一个 rowLayout 版面，滚动容器换成裸 layout.List：
+//  1. 把 promptEditor 画进遮罩卡片（同一个 rowLayout 版面，滚动容器换成裸 layout.List：
 //     卡片里的常驻滚动条看着像排版故障，且模板页的模块网格本身就要占满宽）；
 //  2. 页脚两钮的语义——「保存模板」写回 config 的人格两键（只对新会话生效），
 //     「应用到本会话」按当前模板重新展开成最终 system 文本、经 /edit --keep 写回本会话；
@@ -133,7 +133,7 @@ func (ov *overlayState) applyTemplate(u *UI, st *historyState) {
 	_ = u.post(showExpandMsg{})
 }
 
-// personaMode 人格节点的应用方式恒为 Carry（D154；菜单预选不改变它）。
+// personaMode 人格节点的应用方式恒为 Carry（D154；菜单预选不改变这个应用方式）。
 func personaMode(m conversation.KeepMode) conversation.KeepMode {
 	if m == conversation.Fresh || m == conversation.Clone {
 		return conversation.Carry

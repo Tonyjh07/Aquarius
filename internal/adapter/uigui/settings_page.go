@@ -44,10 +44,10 @@ type settingsPage interface {
 type enterHook interface{ OnEnter(u *UI, f *settingsForm) }
 
 // fillPage 可选钩子：本页有一个「撑满剩余高度」的行，整页不滚动，该行吸走窗口多出来的
-// 高度（FillRow 返回它的下标）。
+// 高度（FillRow 返回该行的下标）。
 //
 // 为什么要这条：常规页是 material.List（虚拟化、可滚动），行拿到的高度上限是无穷大，
-// 无从知道视口还剩多少；一个块要不要截断由内容自己定。整文件编辑区恰好相反——它没有
+// 无从知道视口还剩多少；一个块要不要截断由内容自己定。整文件编辑区恰好相反——整文件编辑区没有
 // 「自然高度」，只有「窗口给多少就用多少」。这类页按 Flex 排（前面的行按自然高，目标行
 // Flexed(1)），行才能拿到确切高度。不这么做的结果：编辑区写死一个高度，窗口拉高后底下
 // 留一大片空白，而缩小窗口时又冒出滚动条。
@@ -83,11 +83,11 @@ var settingsPageCount = len(settingsPages)
 // pageName 第 i 页的导航文案（导航项与页标题共用）。**必须是函数**：语言在 main 里才定，
 // 包级变量初始化时 i18n 还没选语言，存下来的就永远是本机 locale 那套（与 defaultTitle 同一坑）。
 // Key() 是英文标识（"audio"），这里才换成当前语言的说法——标识稳定，页序、测试定位与日志
-// 都靠它，显示出来的字随语言走。
+// 都靠 Key()，显示出来的字随语言走。
 func pageName(i int) string { return i18n.T("ui.settings.page." + settingsPages[i].Key()) }
 
 // frameworkRow 框架通用行型（页标题 / 分区标题）：所有页面共用同一份渲染；页面模块的
-// Body 先问它、未命中再认领自己的行型。
+// Body 先问 frameworkRow、未命中再认领自己的行型。
 func frameworkRow(gtx layout.Context, th *material.Theme, r rowDesc) (layout.Dimensions, bool) {
 	switch r.kind {
 	case rowTitle:

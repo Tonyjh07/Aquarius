@@ -3,7 +3,7 @@ package uigui
 // theme_paper.go 次窗的 Paper 视觉方向（D148）：白面 + hairline 分层 + 单层柔阴影 +
 // 明确的圆角阶梯，强调色只给主操作与焦点环。
 //
-// **为什么跟主窗令牌分开**：主窗是 ULW 形裁窗（悬浮胶囊 / 球），它的配色与形状
+// **为什么跟主窗令牌分开**：主窗是 ULW 形裁窗（悬浮胶囊 / 球），主窗的配色与形状
 // 位图、亚帧透明度耦合在一起；次窗是普通装饰窗，白面与阴影在系统窗体里才成立。
 // 两者共用一个包级令牌槽时，只能取交集——那会让主窗的输入胶囊变白、次窗的卡片
 // 仍是窗灰底。故次窗改用**自己的快照**：`palette.paper` 随原子快照一起传播，
@@ -78,7 +78,7 @@ func paperLight() paperPalette {
 
 		sel: paperRGB(0xF2, 0xF5, 0xF8),
 
-		// 语义色也按 AA 定档：它们在白面与下沉面上都要能读清（原 ok/warn 只有 3.1/3.6）。
+		// 语义色也按 AA 定档：语义色在白面与下沉面上都要能读清（原 ok/warn 只有 3.1/3.6）。
 		danger: paperRGB(0xC6, 0x2F, 0x2F), // 白面 5.46:1
 		ok:     paperRGB(0x1B, 0x7F, 0x3F), // 白面 5.06:1
 		warn:   paperRGB(0x9A, 0x5B, 0x00), // 白面 5.43:1
@@ -265,7 +265,7 @@ func applyPaperTheme(th *material.Theme, pp paperPalette) {
 
 // paperCheckBox 次窗复选框：勾选框用品牌色而非 material 默认的 ContrastBg。
 //
-// 为什么不直接 material.CheckBox：它的 IconColor 固定取 th.Palette.ContrastBg——
+// 为什么不直接 material.CheckBox：material.CheckBox 的 IconColor 固定取 th.Palette.ContrastBg——
 // 也就是「主按钮底色」。在 Paper 里主按钮底是 accent（要压白字），而勾选框是**标识性
 // 图形**，按分工该用 brand。两者混用会让勾选框比主按钮还暗一档，与「图示用亮色、
 // 文字底用深色」的规则打架（实测：复选框残留 Gio 靛蓝 #3F51B5）。
@@ -281,7 +281,7 @@ func paperCheckBox(th *material.Theme, c *widget.Bool, label string) layout.Widg
 }
 
 // paperChip 候选项 chip（D153）：下沉面 + chip 圆角 + 主文字；点击即选中该项。与按钮
-// 的区别是**不做主操作配色**——它是一组候选项中的一个。
+// 的区别是**不做主操作配色**——chip 是一组候选项中的一个。
 func paperChip(th *material.Theme, c *widget.Clickable, label string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pp := paperOf()
@@ -394,9 +394,9 @@ const (
 
 // paperButton 次窗通用按钮：统一圆角、内衬与三档配色。
 //
-// 为什么不用 material.Button 的默认外观：它的默认底色是 Gio 的靛蓝 ContrastBg，
+// 为什么不用 material.Button 的默认外观：material.Button 的默认底色是 Gio 的靛蓝 ContrastBg，
 // 圆角 4dp 也与 Paper 的阶梯（控件 10dp）不符。这里只覆盖样式、点击语义仍走
-// material.Button（焦点环、涟漪、禁用态都由它提供）。
+// material.Button（焦点环、涟漪、禁用态都由 material.Button 提供）。
 func paperButton(th *material.Theme, c *widget.Clickable, label string, kind paperBtnKind, enabled bool) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pp := paperOf()

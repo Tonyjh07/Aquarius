@@ -57,7 +57,7 @@ func findUserParts(req port.GenerateRequest, kind conversation.PartKind) []port.
 	return nil
 }
 
-// TestSessionRawFilePipeline M3 验收链路：文件输入 → blobfs 入库 → Part 入树 →
+// TestSessionRawFilePipeline M3 验收路径：文件输入 → blobfs 入库 → Part 入树 →
 // 装配把图片字节 / 文档提取文本内联进请求；Note 走 NoticeEvent；标题取附件名。
 func TestSessionRawFilePipeline(t *testing.T) {
 	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x11}, 32)...)
@@ -218,7 +218,7 @@ func TestSessionRawKeepsDefaultTitle(t *testing.T) {
 	}
 }
 
-// TestSessionRawClipboardPipeline 剪贴板链路（§12 M3 验收并列项）：已入库 Blob →
+// TestSessionRawClipboardPipeline 剪贴板路径（§12 M3 验收并列项）：已入库 Blob →
 // ingestclip 校验 → PartImage 入树 → 装配把附件字节内联进请求。
 func TestSessionRawClipboardPipeline(t *testing.T) {
 	s, llm, _, blobs := newRawSession(t, textStream("看到图片"))
@@ -250,8 +250,8 @@ func TestSessionRawClipboardPipeline(t *testing.T) {
 	}
 }
 
-// TestSessionRawMultiAttachmentPipeline D186 链路验收：一条输入带多个附件 → 逐个摄取 →
-// 全部入树（按输入序）→ 装配把每个附件都内联进请求；坏文件跳过但整轮照常进行。
+// TestSessionRawMultiAttachmentPipeline D186 路径验收：一条输入带多个附件 → 逐个摄取 →
+// 全部入树（按输入序）→ 装配把每个附件都内联进请求；坏文件跳过但整轮照常继续。
 func TestSessionRawMultiAttachmentPipeline(t *testing.T) {
 	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x22}, 24)...)
 	s, llm, rec, _ := newRawSession(t,

@@ -35,7 +35,7 @@ func TestCharacterReportWorldBook(t *testing.T) {
 }
 
 // TestCharacterReportAssets 第二类：图标作头像、其余资产随原包保留。图标本身计入 data.assets，
-// 故「其余」要把它扣掉；没有资产也没有头像时不出这一行。
+// 故「其余」要把图标本身扣掉；没有资产也没有头像时不出这一行。
 func TestCharacterReportAssets(t *testing.T) {
 	withIcon := port.CharacterCard{Info: port.CharacterInfo{Assets: 3, HasAvatar: true}}
 	iconLine := i18n.T("char.report.assets_head") + i18n.T("char.report.assets_icon") +

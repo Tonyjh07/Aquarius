@@ -15,7 +15,7 @@ import (
 //
 // 只读与停止两条路：**声明**观察器是模型的活（watch_start），用户不该在这里手写
 // 探针与判据——那等于让用户替模型调试；
-// 但用户必须能看到它在盯什么、并且随时叫停。
+// 但用户必须能看到观察器在盯什么、并且随时叫停。
 func (s *Session) watchReport(ctx context.Context, args []string) (string, error) {
 	if s.watches == nil {
 		return "", errors.New("session: " + i18n.T("watch.unwired"))

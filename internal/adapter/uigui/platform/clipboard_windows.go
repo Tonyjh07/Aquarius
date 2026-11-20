@@ -123,7 +123,7 @@ func clipboardBytes(format uintptr) ([]byte, bool) {
 }
 
 // ptrFromUintptr Win32 返回的地址（uintptr）→ unsafe.Pointer。逐字写
-// unsafe.Pointer(uintptr) 会被 vet 的 unsafeptr 检查拦下（它无法确认这个整数确实
+// unsafe.Pointer(uintptr) 会被 vet 的 unsafeptr 检查拦下（vet 无法确认这个整数确实
 // 来自指针），中转一层是标准写法。
 func ptrFromUintptr(p uintptr) unsafe.Pointer {
 	var out unsafe.Pointer

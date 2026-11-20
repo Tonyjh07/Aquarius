@@ -412,7 +412,7 @@ func (u *UI) clampedLowBand() (top, end int) {
 }
 
 // fadeCompose 合成阶段（frame 调，**在 commit/submit/present 之前**）：headless 同布局
-// 重渲 → 整窗位图（av = vis × g(y) × alpha，D62 全帧合成）。不改屏幕态——它是一帧里
+// 重渲 → 整窗位图（av = vis × g(y) × alpha，D62 全帧合成）。不改屏幕态——该合成阶段是一帧里
 // 唯一的慢段（离屏 GPU 重渲 + 预乘），先跑完，之后的移窗/提交/ULW 才各自实现。
 // 返回位图是否可上屏（false = 降级：非 Windows / hwnd 未到 / 主窗隐藏 / 离屏渲染失败，
 // fadePresent 保持上一帧位图）。主窗隐藏在此判定（隐藏期间不提交，防被唤回）——唯启动
@@ -604,7 +604,7 @@ var fadeStallN int
 // `platform` 包后，测试改为注入假平台实现（`u.plat`），生产经 `*platform.Plat`
 // （编译期断言见 platform_api.go）。
 
-// presentable 合成/提交可否进行（D78）：主窗隐藏时不提交（HideWindow 语义——防隐藏后仍有
+// presentable 能否合成/提交（D78）：主窗隐藏时不提交（HideWindow 语义——防隐藏后仍有
 // 帧把位图唤回）；唯启动揭示期例外（revealPending：隐藏是我方所为，须照常合成提交，
 // 否则永不首帧）。
 func (u *UI) presentable() bool {

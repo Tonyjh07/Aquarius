@@ -36,7 +36,7 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 }
 
 // TestSnapshotCarriesCharacterMetadata 会话元数据（角色 slug 与尾部指令）随快照往返：
-// 它们是元数据不是节点，不进树表，但必须一起搬出去、原样装回来（D243）。
+// 这两项是元数据不是节点，不进树表，但必须一起搬出去、原样装回来（D243）。
 func TestSnapshotCarriesCharacterMetadata(t *testing.T) {
 	c := buildTree(t)
 	c.Character = "aria"
@@ -53,7 +53,7 @@ func TestSnapshotCarriesCharacterMetadata(t *testing.T) {
 	if back.Character != "aria" || back.Tail != "stay in character" {
 		t.Fatalf("restored metadata = (%q, %q)", back.Character, back.Tail)
 	}
-	// 元数据不进节点表：节点数不因它变化。
+	// 元数据不进节点表：节点数不因这些元数据变化。
 	if back.NodeCount() != c.NodeCount() {
 		t.Fatalf("metadata changed the node count: %d vs %d", back.NodeCount(), c.NodeCount())
 	}

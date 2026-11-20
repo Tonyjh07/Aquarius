@@ -9,7 +9,7 @@ package uigui
 // 为什么不是锚定下拉（点按钮、浮层挂在按钮正下方）：Gio 的布局不暴露控件的绝对坐标——
 // ops 记录后不可读，能拿到的只有「上一帧」画过的矩形。用上一帧矩形当锚点，滚动或缩放后
 // 会错位一帧；而表单本身是虚拟化的 material.List，锚在行内的浮层还会被列表视口裁掉。
-// 居中模态卡片没有这两个问题：它铺满整个设置窗（盖住内容区与底栏），不依赖任何行坐标，
+// 居中模态卡片没有这两个问题：居中模态卡片铺满整个设置窗（盖住内容区与底栏），不依赖任何行坐标，
 // 也不会被裁剪。与人格模块编辑窗、历史窗确认卡同一套机制。
 //
 // 模态怎么成立（与 overlay.go 头注同一机制）：Gio 把一次点击投给**所有**命中的 handler，
@@ -99,7 +99,7 @@ func (c *selectField) choose(i int) {
 
 // pickerState 选择器弹层的帧状态（全窗唯一的模态；零值可用）。
 //
-// 弹层是**纯界面状态**：它不写 config，也不参与保存 diff——收起即回到印证过的当前值。
+// 弹层是**纯界面状态**：弹层不写 config，也不参与保存 diff——收起即回到印证过的当前值。
 type pickerState struct {
 	open  bool
 	title string
@@ -114,11 +114,11 @@ type pickerState struct {
 	// 钉死在选中项上，用户就没法往下翻其它选项）。
 	scrolled bool
 	// focus 下帧把键盘焦点夺到弹层（Gio 只把键事件投给获焦的 handler：不夺，
-	// 背景编辑框仍在获焦态，Esc 会落在它身上，而且打字会继续改背后的字段）。
+	// 背景编辑框仍在获焦态，Esc 会落在背景编辑框身上，而且打字会继续改背后的字段）。
 	focus bool
 }
 
-// openPicker 消费某个选择器按钮的点击：命中即把**它**设为当前弹层。
+// openPicker 消费某个选择器按钮的点击：命中即把该选择器记为当前弹层。
 // 每个选择器都在所属页的 Events 里调一次（未渲染的控件 Clicked 恒假，代价可忽略）。
 func (f *settingsForm) openPicker(gtx layout.Context, label string, c *selectField) {
 	if len(c.values) == 0 {
@@ -156,7 +156,7 @@ func (f *settingsForm) pickerFrame(gtx layout.Context, th *material.Theme) (layo
 	event.Op(gtx.Ops, &p.tag)
 	area.Pop()
 	// 键盘焦点夺到弹层：Gio 只把键事件投给当前获焦的 handler，不夺的话背景编辑框
-	// 仍是获焦态——Esc 会落到它身上，打字还会继续改弹层背后那个字段。
+	// 仍是获焦态——Esc 会落到背景编辑框身上，打字还会继续改弹层背后那个字段。
 	if p.focus {
 		p.focus = false
 		gtx.Execute(key.FocusCmd{Tag: &p.tag})
@@ -258,7 +258,7 @@ func (f *settingsForm) pickerCard(gtx layout.Context, th *material.Theme) layout
 	p := &f.pick
 	c := p.field
 	pp := paperOf()
-	// 选中项可能在视口外（选项多时）：打开当帧把它滚进来，之后不再干预用户滚动。
+	// 选中项可能在视口外（选项多时）：打开当帧把选中项滚进来，之后不再干预用户滚动。
 	if !p.scrolled {
 		p.scrolled = true
 		if c.idx > 0 && c.idx < len(c.values) {

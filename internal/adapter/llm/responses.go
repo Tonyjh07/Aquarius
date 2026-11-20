@@ -99,8 +99,8 @@ type responsesFunctionOutput struct {
 }
 
 // responsesInputReasoning 回放的思考项：encrypted_content 原样带回（就是上一轮服务端
-// 给的那串），id 可省。summary 带上我们存过的思考文本——即使服务端不认加密内容，
-// 模型仍看得到它自己上一轮想了什么。
+// 给的那串），id 可省。summary 带上本程序存过的思考文本——即使服务端不认加密内容，
+// 模型仍看得到自己上一轮想了什么。
 type responsesInputReasoning struct {
 	Type             string                 `json:"type"` // 恒为 "reasoning"
 	ID               string                 `json:"id,omitempty"`
@@ -150,7 +150,7 @@ func encodeResponsesRequest(req port.GenerateRequest) ([]byte, error) {
 }
 
 // responsesItems 一条端口消息 → 0..n 个 input item。工具调用/思考不塞进 assistant 消息的
-// content，而是按 Responses 的模型各占一个 item（这是它与 chat 最大的形状差异）。
+// content，而是按 Responses 的模型各占一个 item（这是该协议与 chat 最大的形状差异）。
 func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 	switch m.Role {
 	case port.PromptSystem, port.PromptUser:
@@ -191,7 +191,7 @@ func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 				Type: "function_call", CallID: string(call.ID), Name: wn.Wire(call.Name), Arguments: args,
 			})
 		}
-		// 服务端要求 reasoning item 后面紧跟它产出的 assistant 消息或 function_call，
+		// 服务端要求 reasoning item 后面紧跟该思考项产出的 assistant 消息或 function_call，
 		// 才允许接下一条 user/system 消息——没有后继就不发（凭空补一条空 assistant
 		// 消息是往上下文里塞假数据）。此时这条思考只能丢，签名仍留在会话树里。
 		if reasoning != nil && len(items) > 0 {
@@ -542,8 +542,8 @@ type responsesSigBody struct {
 // encodeResponsesSignature 编码思考块签名为树内不透明串：
 // `responses:` + base64(flate(JSON{id, encrypted_content}))。
 // 压一道是因为 encrypted_content 要随会话树写入磁盘——原样存会把会话文件撑大一大截，
-// 而它是服务端生成的高熵串，压缩率恰好很高。
-// 没有 encrypted_content 就返回空串 = 不加签名：没它就回放不了，留个空壳只会误导。
+// 而 encrypted_content 是服务端生成的高熵串，压缩率恰好很高。
+// 没有 encrypted_content 就返回空串 = 不加签名：没该字段就回放不了，留个空壳只会误导。
 func encodeResponsesSignature(id, encrypted string) string {
 	if encrypted == "" {
 		return ""

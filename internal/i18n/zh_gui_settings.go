@@ -4,7 +4,7 @@ package i18n
 var zhGuiSettingsTexts = map[string]string{
 
 	// 设置窗导航页名。页面模块的 Key() 返回英文标识（"audio" 这类），页名在这里取词：
-	// 标识不随语言变，所以页序、日志与测试里的定位都靠它，只有显出来的字跟着语言走。
+	// 标识不随语言变，所以页序、日志与测试里的定位都靠该标识，只有显出来的字跟着语言走。
 	"ui.settings.page.general":    "常规",
 	"ui.settings.page.model":      "模型",
 	"ui.settings.page.providers":  "模型服务",

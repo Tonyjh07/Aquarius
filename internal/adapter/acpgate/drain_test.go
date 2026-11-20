@@ -60,7 +60,7 @@ func TestWaitNotifyDrainKeepsLateChunks(t *testing.T) {
 }
 
 // TestWaitNotifyDrainSkipsBeforePrompt 起不来、握手就报错的路径没有正文可保，
-// 不该为它付等待成本。
+// 不该为这条路径付等待成本。
 func TestWaitNotifyDrainSkipsBeforePrompt(t *testing.T) {
 	r := newRun("d2", Agent{}, port.DelegateSpec{}, "s1")
 	start := time.Now()

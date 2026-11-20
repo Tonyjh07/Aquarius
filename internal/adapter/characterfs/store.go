@@ -29,7 +29,7 @@ const avatarName = "avatar.png"
 const maxSlugRunes = 40
 
 // Store 角色卡目录（§5.17）：`<profile>/characters/<slug>/` 下的卡目录。实现
-// port.CharacterCatalog（只读 List/Load），外加用户面的 Import / Remove（装配根把它接到
+// port.CharacterCatalog（只读 List/Load），外加用户面的 Import / Remove（装配根把 Store 接到
 // app.CharacterAdmin）。目录是唯一事实来源：坏条目跳过不阻断其余。
 type Store struct {
 	root string
@@ -315,7 +315,7 @@ func isReservedDevice(slug string) bool {
 	return false
 }
 
-// meta.json 的形状（§5.17 落位）：列表与详情直接读它，避免每次解析整张卡（卡 JSON 可 17 MB）。
+// meta.json 的形状（§5.17 落位）：列表与详情直接读 meta.json，避免每次解析整张卡（卡 JSON 可 17 MB）。
 type metaJSON struct {
 	Slug        string    `json:"slug"`
 	Name        string    `json:"name"`

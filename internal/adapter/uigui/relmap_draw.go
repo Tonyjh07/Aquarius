@@ -32,8 +32,8 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 	for li, gi := range g.vis.nodes {
 		local[gi] = li
 	}
-	// 编辑态拖节点时，它那条**旧父边**要淡出（§5.6.3）：边的存在表达「它挂在那儿」，
-	// 而这一刻它正在被搬走——留着实线读起来像「拖不动」。
+	// 编辑态拖节点时，该节点那条**旧父边**要淡出（§5.6.3）：边的存在表达「节点挂在那儿」，
+	// 而这一刻节点正被搬走——留着实线读起来像「拖不动」。
 	dragGlobal, fade := -1, 1.0
 	if g.editOn && g.dragNode >= 0 && g.dragNode < len(g.vis.nodes) {
 		dragGlobal, fade = g.vis.nodes[g.dragNode], g.fadeEdgeAlpha(gtx.Now)
@@ -81,7 +81,7 @@ func (g *relGraph) draw(gtx layout.Context, th *material.Theme, u *UI, st *histo
 	if g.editOn {
 		g.drawEditOverlay(gtx, th)
 	}
-	// 树编辑光带（§5.6.2）压在最上层：它标的是「这块面板现在处于编辑态」，被卡片盖住就
+	// 树编辑光带（§5.6.2）压在最上层：该光带标的是「这块面板现在处于编辑态」，被卡片盖住就
 	// 读成卡片装饰了。亮度为 0 时整个函数空转（非编辑态一个 op 都不多）。
 	g.drawGlow(gtx)
 }

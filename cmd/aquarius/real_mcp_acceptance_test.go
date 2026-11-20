@@ -22,7 +22,7 @@ import (
 const realMCPNpx = "@modelcontextprotocol/server-everything"
 
 // TestRealMCPEverythingAcceptance §12 M4 验收线："stdio 与 streamable HTTP
-// 各接一个现成 MCP server 全链路可用"。依赖 npx（首拉需网络）；默认跳过，
+// 各接一个现成 MCP server 全路径可用"。依赖 npx（首拉需网络）；默认跳过，
 // AQUARIUS_E2E_REAL_MCP=1 启用。
 func TestRealMCPEverythingAcceptance(t *testing.T) {
 	if os.Getenv("AQUARIUS_E2E_REAL_MCP") != "1" {

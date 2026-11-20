@@ -1,5 +1,5 @@
 // Package asrfunasr 实现 port.Transcriber：走 FunASR 自带的 HTTP 服务
-// （`runtime/python/http/server.py`），它不是 OpenAI 形状。
+// （`runtime/python/http/server.py`），该服务不是 OpenAI 形状。
 //
 //	POST {base_url}/recognition
 //	Content-Type: multipart/form-data

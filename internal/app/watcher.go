@@ -266,7 +266,7 @@ func (e *watchEntry) state() port.WatchState {
 }
 
 // run 一条观察器：固定间隔取样 → 判据 → 命中才注入。不做退避（节奏是模型定的，
-// 退避会让它承诺的间隔变成一句空话）。
+// 退避会让模型承诺的间隔变成一句空话）。
 func (w *Watcher) run(ctx context.Context, e *watchEntry) {
 	defer w.wg.Done()
 	defer w.forget(e)

@@ -407,7 +407,7 @@ func TestPropertyPathChain(t *testing.T) {
 					}
 				}
 				if c.padNode(nid) {
-					// 衬垫透明：它不进任何版本组，自然也没有"同级"。
+					// 衬垫透明：衬垫不进任何版本组，自然也没有"同级"。
 					if br := c.Branches(nid); len(br) != 0 {
 						t.Fatalf("seed %d: branches(衬垫 %s) = %v, want 空", seed, nid, ids(br))
 					}

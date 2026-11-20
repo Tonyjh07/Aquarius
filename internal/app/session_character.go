@@ -53,7 +53,7 @@ func (s *Session) startCharacter(ctx context.Context, slug string, n int) (strin
 
 // newCharacterConversation 建角色会话：Root + persona 快照 + 示例注入节点 + 开场白，
 // 并把角色 slug 与尾部指令记进会话元数据。**独立于 newConversation**——那条被 /new、
-// /switch、/import 共用，语境里没有卡，硬塞一个「可选角色」参数会让三个调用点都背上它。
+// /switch、/import 共用，语境里没有卡，硬塞一个「可选角色」参数会让三个调用点都背上这个参数。
 func (s *Session) newCharacterConversation(card port.CharacterCard, start CharacterStart, greeting string) (*conversation.Conversation, error) {
 	c := conversation.New(s.ids.ConversationID(), card.Info.Display)
 	c.Character = start.Slug
@@ -89,7 +89,7 @@ func (s *Session) newCharacterConversation(card port.CharacterCard, start Charac
 			return nil, wrapSession("char.write_examples", err)
 		}
 	}
-	// 开场白作 assistant 节点、Head 落在它上面（§5.17）：空开场不造假消息。
+	// 开场白作 assistant 节点、Head 落在开场白节点上（§5.17）：空开场不造假消息。
 	if strings.TrimSpace(greeting) != "" {
 		if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{{Kind: conversation.PartText, Text: greeting}}); err != nil {
 			return nil, wrapSession("char.write_greeting", err)

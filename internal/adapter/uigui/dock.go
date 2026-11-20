@@ -500,7 +500,7 @@ func (u *UI) undockInstant() {
 		return
 	}
 	if u.dockAn.active && !u.dockAn.toDock {
-		// 召回滑行中：直接跳到它本要落的贴齐位。
+		// 召回滑行中：直接跳到窗口本要落的贴齐位。
 		u.x, u.y = u.dockAn.toPos.x, u.dockAn.toPos.y
 	} else if edge := edgeName(u.dockHint.Load()); edge != "" {
 		if a, ok := u.ballAnchor(); ok {

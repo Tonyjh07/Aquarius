@@ -4,7 +4,7 @@ package uigui
 //
 // 为什么不能选完文件直接投 `/import`：aqx 能装一组会话（D249），用户不知道自己刚挑的是
 // 哪份备份里的哪些会话；整份灌进来之后要挑出不要的那几个，只能再逐个删——那是先制造问题
-// 再解决它。所以拿到路径后先向内核要清单（`ExchangeIndexer.Index`，只读 `manifest.json`，
+// 再解决问题。所以拿到路径后先向内核要清单（`ExchangeIndexer.Index`，只读 `manifest.json`，
 // 不解析树），把「里面有什么」摊开，让用户勾完再导。
 //
 // 三条规则：
@@ -151,7 +151,7 @@ func (st *historyState) importPickFrame(gtx layout.Context, th *material.Theme, 
 // sendImportPick 投 `/import --pick <序号>… <路径>`（序号按清单顺序、一个 --pick 带全部）。
 //
 // 序号用**清单序号**而不是标题：标题可能重名或为空，序号是适配器与界面之间唯一的稳定
-// 锚点（`resolvePick` 认它）。
+// 锚点（`resolvePick` 认这个序号）。
 func (st *historyState) sendImportPick(u *UI, path string, picks []int) {
 	args := make([]string, 0, len(picks)+2)
 	for i, n := range picks {

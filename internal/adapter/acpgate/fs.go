@@ -2,12 +2,12 @@ package acpgate
 
 // 申报 fs 之后的两个 handler（A2）：代理的读与写都经 Aquarius 过手。
 //
-// 为什么接：`Changed` 现在是**代理自称**（`tool_call_update` 里的 path），它不报就漏、
+// 为什么接：`Changed` 现在是**代理自称**（`tool_call_update` 里的 path），代理不报就漏、
 // 报错就脏，而那份清单是报告里最容易被当成事实的一段。读写过手之后，「写过哪些文件」
-// 变成我们经手的事实，与它自称的分两段并列（D283）。
+// 变成 Aquarius 经手的事实，与代理自称的分两段并列（D283）。
 //
 // 边界要说清：这不是沙箱。代理自己起 shell 之后写盘不经过这里，所以闸门的性质与
-// `terminal`、根集那两条一致——**我们用来自拒的判据，不是内核围栏**。
+// `terminal`、根集那两条一致——**Aquarius 用来自拒的判据，不是内核围栏**。
 
 import (
 	"bufio"
@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	// maxReadBytes 单次读的上限：再大就不是「读一段文本」，而是把整块数据塞进代理的
-	// 上下文。要读大文件的尾部/片段，协议本来就有 line/limit。
+	// maxReadBytes 单次读的上限：再大就是把整块数据塞进代理的上下文，不再是「读一段文本」。
+	// 要读大文件的尾部/片段，协议本来就有 line/limit。
 	maxReadBytes = 8 << 20
 	// maxWriteBytes 单次写的上限（同上）。
 	maxWriteBytes = 16 << 20
@@ -42,14 +42,14 @@ var errReadTooLarge = errors.New("read exceeds the size limit")
 //
 // line/limit 是 **1 基行号切片**，不是字节偏移：只给 line = 读到尾；只给 limit = 从第一行起；
 // 都不给 = 整个文件；limit <= 0 按「不限」处理（协议没定义 0 的含义，按最小惊讶取）。
-// 行终止符原样保留（CRLF 不转 LF）：改写回来时逐字节对得上，才算没动过它没要求动的东西。
+// 行终止符原样保留（CRLF 不转 LF）：改写回来时逐字节对得上，才算没动过代理没要求动的东西。
 func (c *client) ReadTextFile(ctx context.Context, p acp.ReadTextFileRequest) (acp.ReadTextFileResponse, error) {
 	if err := c.fsGate(ctx, p.SessionId, p.Path); err != nil {
 		return acp.ReadTextFileResponse{}, err
 	}
 	resolved, root, err := c.r.rootSet().Locate(p.Path)
 	if err != nil {
-		// 解析不出来（链接环、权限）就说不清它要读哪儿 —— fail closed。
+		// 解析不出来（链接环、权限）就说不清代理要读哪儿 —— fail closed。
 		return acp.ReadTextFileResponse{}, fsDenied(p.Path, "cannot resolve the path: "+err.Error())
 	}
 	if root == "" {
@@ -93,7 +93,7 @@ func (c *client) ReadTextFile(ctx context.Context, p acp.ReadTextFileRequest) (a
 
 // WriteTextFile 替代理写一整份文本（`fs/write_text_file`）。
 //
-// 文件不存在必须创建（协议 MUST）；父目录不存在按「建」处理（协议没写，我们定成建，
+// 文件不存在必须创建（协议 MUST）；父目录不存在按「建」处理（协议没写，Aquarius 定成建，
 // 用户文档写死）；按字节写、不做换行转换；已存在的文件沿用既有权限位（atomicfile 保证）。
 func (c *client) WriteTextFile(ctx context.Context, p acp.WriteTextFileRequest) (acp.WriteTextFileResponse, error) {
 	if err := c.fsGate(ctx, p.SessionId, p.Path); err != nil {
@@ -107,7 +107,7 @@ func (c *client) WriteTextFile(ctx context.Context, p acp.WriteTextFileRequest) 
 	if err != nil {
 		return acp.WriteTextFileResponse{}, fsDenied(p.Path, "cannot resolve the path: "+err.Error())
 	}
-	// 控制文件与越界写都要问；控制文件优先（它更具体，且范围之内也会命中）。
+	// 控制文件与越界写都要问；控制文件优先（这条规则更具体，且范围之内也会命中）。
 	if rule := executionControl(resolved); rule != "" || root == "" {
 		if ok, why := c.allowWrite(ctx, p.Path, resolved, rule); !ok {
 			return acp.WriteTextFileResponse{}, fsDenied(p.Path, why)
@@ -124,7 +124,7 @@ func (c *client) WriteTextFile(ctx context.Context, p acp.WriteTextFileRequest) 
 }
 
 // fsGate fs 请求的共同前置：转交正在停 → 取消；会话不是本次的 → 参数错；
-// 相对路径 → 参数错（相对谁？子进程的 cwd 与我们的进程 cwd 不是一回事，猜错就是写到别处）。
+// 相对路径 → 参数错（相对谁？子进程的 cwd 与 Aquarius 的进程 cwd 不是一回事，猜错就是写到别处）。
 func (c *client) fsGate(ctx context.Context, sid acp.SessionId, path string) error {
 	if c.r.stopKind() != stopNone || ctx.Err() != nil {
 		return acp.NewRequestCancelled(map[string]any{"error": "the delegation is stopping"})
@@ -145,7 +145,7 @@ const reasonOutside = "outside the session root set"
 // 代理换个做法（少读几次、或者请用户改配置）才有意义。
 const reasonReadLimit = "the out-of-scope read limit for this delegation is used up"
 
-// fsDenied 我们自己拒掉的 fs 请求。协议没有「权限不足」这个码，选 -32603 是因为它
+// fsDenied 客户端自己拒掉的 fs 请求。协议没有「权限不足」这个码，选 -32603 是因为这个码
 // 既不是参数错也不是方法不存在——原因写在 message 里，代理能读懂也能换个做法。
 func fsDenied(path, reason string) *acp.RequestError {
 	return &acp.RequestError{Code: -32603, Message: reason, Data: map[string]any{"path": path}}
@@ -154,7 +154,7 @@ func fsDenied(path, reason string) *acp.RequestError {
 // allowOutside 越界访问的处置（D284）：读按次数问（默认 8 次），写每次都问。
 //
 // 拒绝落在 fail closed 那一侧；但别把这条判据说成围栏——代理自己起 shell 之后，
-// 这条路根本不经过我们。
+// 这条路根本不经过 Aquarius。
 func (c *client) allowOutside(_ context.Context, op, resolved string) bool {
 	c.r.note("%s outside the session root set was refused: %s", op, resolved)
 	return false
@@ -242,7 +242,7 @@ func (c *client) allowWrite(ctx context.Context, path, resolved, rule string) (b
 		Task: c.r.taskSummary(), Prompt: prompt,
 	}
 	if ok, why := c.askUser(ctx, req); !ok {
-		// 路径进 note 是为了让报告里能读出「它想改哪儿」，而不是只有一句「被拒了」。
+		// 路径进 note 是为了让报告里能读出「代理想改哪儿」，而不是只有一句「被拒了」。
 		c.r.note("write was refused (%s): %s", path, why)
 		if rule != "" {
 			return false, "writing an execution-control file was refused: " + why
@@ -289,7 +289,7 @@ func readTextSlice(f *os.File, line, limit int) (string, error) {
 	return b.String(), nil
 }
 
-// addWrote 记一次**经我们之手**写下的文件（去重；超出上限只记数）。
+// addWrote 记一次**经 Aquarius 之手**写下的文件（去重；超出上限只记数）。
 func (r *run) addWrote(path string) {
 	r.cmu.Lock()
 	defer r.cmu.Unlock()

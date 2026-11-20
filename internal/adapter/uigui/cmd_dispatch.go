@@ -58,7 +58,7 @@ var uiCommandTable = []uiCommand{
 }
 
 // UICommandNames 返回界面会投给内核的命令名副本，供装配根与内核静态命令表对账。
-// 返回副本，调用方改不到表本身；装配根的测试拿它与 app.CommandCatalog 比对。
+// 返回副本，调用方改不到表本身；装配根的测试拿该副本与 app.CommandCatalog 比对。
 func UICommandNames() []string {
 	names := make([]string, len(uiCommandTable))
 	for i, e := range uiCommandTable {

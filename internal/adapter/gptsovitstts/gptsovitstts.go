@@ -8,7 +8,7 @@
 //	  "media_type": "wav", "streaming_mode": false }
 //	→ WAV 字节流
 //
-// 它的音色不是「名字」，而是一段参考音频（音色克隆）：`ref_audio_path` 指服务端
+// 音色取自一段参考音频（音色克隆），与「名字」无关：`ref_audio_path` 指服务端
 // 本机的文件，`prompt_text` 必须与那段音频的内容一致，否则音色会跑。所以设置里
 // 的「音色」在这里填参考音频路径、「音色描述」填参考音频的文字。
 package gptsovitstts
@@ -144,7 +144,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	if ref == "" {
 		return conversation.BlobRef{}, errors.New(i18n.T("tts.gptsovits.err_ref_missing"))
 	}
-	// 参考音频的文字用「音色描述」框：GPT-SoVITS 要求它与参考音频的实际内容
+	// 参考音频的文字用「音色描述」框：GPT-SoVITS 要求音色描述与参考音频的实际内容
 	// 一致，否则合成出来的人声会飘。
 	prompt := strings.TrimSpace(req.Design)
 	if prompt == "" {

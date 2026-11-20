@@ -26,7 +26,7 @@ import (
 const (
 	ledgerName    = "ledger.json"
 	ledgerVersion = 1
-	// ledgerTailLines 对账报告里带的日志末几行：够看清它停在哪一步，又不会把上下文塞满。
+	// ledgerTailLines 对账报告里带的日志末几行：够看清任务停在哪一步，又不会把上下文塞满。
 	ledgerTailLines = 20
 )
 

@@ -79,7 +79,7 @@ func newSecretChain(bin *secretbin.Store, warnf func(string)) *secretChain {
 	return &secretChain{bin: bin, env: envSecrets{}, warnf: warnf}
 }
 
-// keySlotName 密钥池第 i 把钥匙的库键名——**库里键名的唯一规则**（各写入路径都走它，
+// keySlotName 密钥池第 i 把钥匙的库键名——**库里键名的唯一规则**（各写入路径都走 keySlotName，
 // 见下「两条」）。键名只决定「值存在哪一格」，与引用无关；config 里永远只写
 // `secret:<名>`。
 //
@@ -118,11 +118,11 @@ func secretRefName(ref string) (string, bool) {
 //
 // 纯 ASCII 名字（`deepseek`、`My-Provider.v2`）结果就是 `AQUARIUS_<名>_API_KEY`，与
 // 「同名环境变量兜底」严丝合缝。**名字里出现 ASCII 之外的内容字符**（中文、全角、重音
-// 字母）时，规范化会把它整段吃掉：`深度求索` 与 `月之暗面` 都变成
+// 字母）时，规范化会把这段内容整段吃掉：`深度求索` 与 `月之暗面` 都变成
 // `AQUARIUS_PROVIDER_API_KEY`，两家 provider 静默共用一个槽位、后写的覆盖先写的，
 // 先那家从此拿错密钥（报 401 且看不出原因）。这类名字补 4 位指纹区分。
 //
-// 分隔符（空格 `-` `.` `_` `/` `\` `+` `:` `@` `,` `(` `)` `&` `'`）不算丢信息——它们
+// 分隔符（空格 `-` `.` `_` `/` `\` `+` `:` `@` `,` `(` `)` `&` `'`）不算丢信息——分隔符
 // 本来就只是分隔，`My-Provider.v2` 不该为此多一截指纹。
 func deriveKeyName(providerName string) string {
 	name := strings.TrimSpace(providerName)
@@ -162,7 +162,7 @@ func normalizeStem(name string) (string, bool) {
 	return strings.Trim(b.String(), "_"), lossy
 }
 
-// isNameSeparator 只是分隔作用的字符（去掉它们不丢信息）。
+// isNameSeparator 只是分隔作用的字符（去掉分隔符不丢信息）。
 func isNameSeparator(r rune) bool {
 	return strings.ContainsRune(" -_./\\:+@,()&'", r)
 }

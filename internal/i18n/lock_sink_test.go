@@ -3,7 +3,7 @@ package i18n
 // I7 的第三把锁：出口扫描。
 //
 // 前两把（`TestNoCJKLiterals` / `TestKeysResolve`）都是从**中文**那一侧推的：源码里有中文就
-// 报错。它们有一个盲区——写死的**英文**文案在中文界面上照样漏出去，而且不漏到表里就永远
+// 报错。前两把锁有一个盲区——写死的**英文**文案在中文界面上照样漏出去，而且不漏到表里就永远
 // 不会被 `en` 侧的检查抓到。实测漏过三处：主输入框占位两处、「拒绝原因」占位一处，中文
 // 用户天天看见（`confirm_ui.go`）。
 //
@@ -41,7 +41,7 @@ var materialTextFns = map[string]bool{
 
 // uiguiTextFns `uigui` 自绘的文案出口，按被调函数名匹配（接收者写法不固定：`u.hoverTip`、
 // `sec`、`f.row` 都在这一类里）。`paperTitle` / `paperSection` / `paperBody` 是主题层的薄封装，
-// 内部才落到 `material.*`——只认 `material` 会绕过它们。
+// 内部才落到 `material.*`——只认 `material` 会绕过这几个薄封装。
 var uiguiTextFns = map[string]bool{
 	"hoverTip":     true, // 悬停提示条
 	"hoverCard":    true, // 悬停卡（`[]string` 形参）
@@ -156,7 +156,7 @@ func textSinkLiterals(fset *token.FileSet, rel string, f *ast.File) []string {
 //
 // 只认**渲染单元**那几种结构体：`rowDesc`（设置页的分组标题/页标题）、`mdBlock`（markdown
 // 渲染单元）、`rawContent`（折叠区正文）。不能按字段名一刀切——`inputMsg{text: "/new"}` 的
-// `text` 是输入缓冲区的内容，字面量正是它该有的样子。
+// `text` 是输入缓冲区的内容，字面量正是输入缓冲区内容该有的样子。
 func textFieldLiterals(fset *token.FileSet, rel string, f *ast.File) []string {
 	var bad []string
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -262,7 +262,7 @@ func englishLiteral(expr ast.Expr) (string, bool) {
 }
 
 // allowedSink 该文件的这条字面量是否已开过口子。同 cjkAllowed：整串相等或作为前缀才算，
-// 一条 "Aquarius" 只放过它自己，不放过「Aquarius — 首个中文…… 」这类整句。
+// 一条 "Aquarius" 只放过该字面量自身，不放过「Aquarius — 首个中文…… 」这类整句。
 func allowedSink(rel, s string) bool {
 	for _, frag := range sinkAllowed[rel] {
 		if s == frag || strings.HasPrefix(s, frag) {

@@ -4,12 +4,12 @@ import "time"
 
 // 运行日志的注入出口（D276 / contracts §7.9）。
 //
-// 日志包是叶子层，适配器不许 import 它（adapter → port 的方向）：装配根把 `Log` 注入到各
+// 日志包是叶子层，适配器不许 import 日志包（adapter → port 的方向）：装配根把 `Log` 注入到各
 // `Options` 里，适配器只交字段。放在 port 而不是各包各写一份签名，是因为五段（时间 / 级别 /
 // 上下文 / 事件 / 行动）是一份契约——形状散成八份，改一处就得追八处才知道漏了谁。
 
 // LogLevel 日志档位（D276）：四档，没有别的。取值与 `internal/logging` 的级别名一致，
-// 装配根按它翻成 `logging.Level`；这里复述一遍是因为适配器不许 import 日志包。
+// 装配根按该取值翻成 `logging.Level`；这里复述一遍是因为适配器不许 import 日志包。
 type LogLevel string
 
 const (
@@ -39,7 +39,7 @@ type LogFile struct {
 // 日志」「末尾读多少行」是写侧规则的延续，只能由装配根一处说了算。界面拿到的是文件名与
 // 一段文本，不碰目录布局。
 type LogReader interface {
-	// Dir 运行日志目录（「打开目录」用它，界面不自己拼路径）。
+	// Dir 运行日志目录（「打开目录」用这个目录，界面不自己拼路径）。
 	Dir() string
 	// List 按时间倒序列出日志文件；目录还不存在时返回空表。
 	List() ([]LogFile, error)

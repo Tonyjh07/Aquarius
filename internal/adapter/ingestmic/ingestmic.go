@@ -85,7 +85,7 @@ func (in *Ingestor) Listen(ctx context.Context, dur time.Duration) ([]string, ti
 		return nil, 0, errors.New(i18n.T("audio.mic.err_silent"))
 	}
 	// 用户按停止会把上下文取消（录音器据此收工）——转写照常走完，取消 ≠ 丢弃。
-	// 只有窗口关闭等真正的收尾才会让它再被打断（进程已是退出路径）。
+	// 只有窗口关闭等真正的收尾才会让转写再被打断（进程已是退出路径）。
 	netCtx := context.WithoutCancel(ctx)
 	texts := make([]string, 0, len(segs))
 	for i, seg := range segs {
@@ -93,7 +93,7 @@ func (in *Ingestor) Listen(ctx context.Context, dur time.Duration) ([]string, ti
 		if err != nil {
 			return nil, 0, err
 		}
-		// 这一段没识别出字（噪声被切成了段）：跳过它，不因此废掉整条消息。
+		// 这一段没识别出字（噪声被切成了段）：跳过该段，不因此废掉整条消息。
 		if text != "" {
 			texts = append(texts, text)
 		}

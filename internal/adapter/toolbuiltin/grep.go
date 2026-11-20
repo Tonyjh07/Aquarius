@@ -16,7 +16,7 @@ import (
 
 // grep.go `file_grep`：按内容搜文件（D301）。
 //
-// 为什么需要它：找「哪一行写了这个」现在只能 term_exec（Risk=Confirm，每次点一遍确认），
+// 为什么需要 file_grep：找「哪一行写了这个」现在只能 term_exec（Risk=Confirm，每次点一遍确认），
 // 而这是最典型的只读动作。file_search 只按文件名找，替代不了。一个 Safe 的只读搜索把
 // 每天几十次确认降到一个都没有。
 //
@@ -36,7 +36,7 @@ const (
 	maxGrepPatternChars = 512
 )
 
-// grepSkipDirs 默认跳过的目录名：版本库内部与依赖目录（搜它们几乎总是噪音）。
+// grepSkipDirs 默认跳过的目录名：版本库内部与依赖目录（搜这些目录几乎总是噪音）。
 var grepSkipDirs = map[string]bool{
 	".git": true, ".hg": true, ".svn": true, "node_modules": true,
 }

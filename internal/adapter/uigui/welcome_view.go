@@ -218,7 +218,7 @@ func welcomeStatusLine(th *material.Theme, f *welcomeForm) layout.Widget {
 // 与正文同底色（Paper 里不出现第二块大底色），只用一条 hairline 分层。
 //
 // 页脚按页定（D278）：第 1 页只有「开始」（无上一步，占位禁用让按钮不跳）；中间页「上一步 /
-// 继续」；末页「保存并继续」/「保存」。退出向导的灰钮只在首页与末页出现——中间页把它挤到
+// 继续」；末页「保存并继续」/「保存」。退出向导的灰钮只在首页与末页出现——中间页把该灰钮挤到
 // 主次难分的位置，而窗标题栏的关闭本来就在。
 func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
@@ -243,7 +243,7 @@ func welcomeFooter(th *material.Theme, f *welcomeForm) layout.Widget {
 		if !f.env.setup {
 			skipLabel = i18n.T("ui.common.close")
 		}
-		// 第 3 页的「跳过」是这轮唯一有实际落点的那个（D278 决策 3）：按它就直接进主窗，
+		// 第 3 页的「跳过」是这轮唯一有实际落点的那个（D278 决策 3）：按该按钮就直接进主窗，
 		// 所以按钮上明说「稍后配置」，而不是笼统的「以后再说」。
 		if f.page == welcomeAccess && f.env.setup {
 			skipLabel = i18n.T("ui.welcome.btn.config_later")

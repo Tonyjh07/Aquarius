@@ -36,7 +36,7 @@ func TestExchangeFormats(t *testing.T) {
 			t.Fatalf("格式表缺 %s", want)
 		}
 	}
-	// 无损的那一档必须是 aqx：命令面缺省导出格式按名字选它（「可原样回来」是缺省的承诺）。
+	// 无损的那一档必须是 aqx：命令面缺省导出格式按名字选 aqx（「可原样回来」是缺省的承诺）。
 	for _, f := range formats {
 		if f.Name == "aqx" && (f.Lossy || f.NoExport) {
 			t.Fatalf("aqx 应是无损且可导出的: %+v", f)

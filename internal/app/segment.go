@@ -53,7 +53,7 @@ func (a *Agent) cutSegment(ctx context.Context, c *conversation.Conversation, mi
 
 // appendUserNode 追加一个 user 节点并广播（轮内切段与轮末队列续跑共用）。
 //
-// 这条用户消息从来没经过前端回显（打字时一轮正在跑，前端把它放进了清单），所以它必须
+// 这条用户消息从来没经过前端回显（打字时一轮正在跑，前端把这条消息放进了清单），所以这条消息必须
 // 走 CommittedEvent——否则转写区里那句话凭空消失。常态输入相反：前端先本地回显，
 // 事件到达时按「最早未盖章且文本一致」回填 ID，不会画两遍。
 func (a *Agent) appendUserNode(ctx context.Context, c *conversation.Conversation, text string) (conversation.Message, error) {

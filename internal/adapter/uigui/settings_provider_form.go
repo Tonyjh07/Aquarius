@@ -119,7 +119,7 @@ func (pf *providerForm) providerSummary(primary bool) string {
 // 提供者与模型都得能改：provider 走枚举选择器（选项即 f.chainChoices），模型是单行
 // 编辑档（可填未声明的名字——链是运行时路由）。
 type fallbackForm struct {
-	provName string        // 当前 provider 名（选项表里没有它时的兜底）
+	provName string        // 当前 provider 名（选项表里没有此名时的兜底）
 	prov     selectField   // 提供者（选项来自 chainChoices）
 	model    widget.Editor // 模型名；空 = 取该 provider 的缺省模型
 	up       widget.Clickable
@@ -141,7 +141,7 @@ func (ff *fallbackForm) chainProvider() string {
 
 // chainPickNone 选择器里「不指定提供者」那一项的键值。
 //
-// 它不能与「空 provider 名」共用一个值：空串在 chainChoices 里是「没这项」，而这一项
+// chainPickNone 不能与「空 provider 名」共用一个值：空串在 chainChoices 里是「没这项」，而这一项
 // 是用户明确选的「不指定」。用一个不会与真名撞车的哨兵值区分两者。
 const chainPickNone = "\x00none"
 
@@ -250,7 +250,7 @@ func newModelRow(name, kind string, enabled bool) *providerModelForm {
 }
 
 // loadProviders 以快照重建 provider 编辑区（开窗填表；快照空 = 无条目，留新增入口）。
-// S11-7②：重建后全收起（展开态不跨重建保留——它是界面状态，重建即回到稳定落点）。
+// S11-7②：重建后全收起（展开态不跨重建保留——展开态属界面状态，重建即回到稳定落点）。
 func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 	f.provs = make([]*providerForm, 0, len(snap))
 	f.primaryIdx = 0
@@ -289,7 +289,7 @@ func (f *settingsForm) loadProviders(snap []ProviderSnapshot) {
 // 快照（同一份事实），故「模型服务」页改动后重开窗即同步；本窗内改 provider 列表不
 // 影响链选项（那类改动要重启才生效，运行态本就不同步）。未启用的模型不进候选（D180）。
 //
-// 同时带上端点与**密钥引用名**（D222）：联网/语音页的「填入」按钮靠它把「借」变成
+// 同时带上端点与**密钥引用名**（D222）：联网/语音页的「填入」按钮靠这些字段把「借」变成
 // 「抄一份能改的」。只抄引用名，值永不出编辑区（D35）。
 func (f *settingsForm) loadChainChoices(snap []ProviderSnapshot) {
 	f.chainChoices = make([]ProviderChoice, 0, len(snap))
@@ -319,7 +319,7 @@ func (f *settingsForm) loadFallback(chain []FallbackLink, choices []ProviderChoi
 }
 
 // setAudioProviderChoices 语音页 provider 选择器选项：首项「未配置」，其后为 provider
-// 快照里的名字；当前值不在快照内时补一项，避免开窗即把它悄悄改成「未配置」。
+// 快照里的名字；当前值不在快照内时补一项，避免开窗即把当前值悄悄改成「未配置」。
 func (f *settingsForm) setAudioProviderChoices(cur string, c *selectField) {
 	displays := []string{i18n.T("ui.settings.form.unconfigured")}
 	values := []string{""}
@@ -346,7 +346,7 @@ func (f *settingsForm) addFallbackForm() {
 // newFallbackForm 由一项链配置造编辑控件组：选项 = 各 provider 名，末尾补一项「不指定」。
 //
 // 当前名不在选项里时（provider 被删、或手写的失联引用）也补进选项表——开窗直接保存
-// 不会把它悄悄改成别的 provider。空名且已声明过（新增项）时缺省指向首个 provider。
+// 不会把当前名悄悄改成别的 provider。空名且已声明过（新增项）时缺省指向首个 provider。
 func newFallbackForm(l FallbackLink, choices []ProviderChoice) *fallbackForm {
 	displays := make([]string, 0, len(choices)+1)
 	values := make([]string, 0, len(choices)+1)

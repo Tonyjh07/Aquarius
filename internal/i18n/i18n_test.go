@@ -42,7 +42,7 @@ func TestParse(t *testing.T) {
 
 // TestTablesIsomorphic 两份表必须同构：key 集合相等、每条模板的占位符名集合相等、没有空值。
 //
-// 这是「两套界面说同一件事」唯一的机器判据（§7.8）。少了它，漏一条 key 不会被任何人发现，
+// 这是「两套界面说同一件事」唯一的机器判据（§7.8）。少了这个测试，漏一条 key 不会被任何人发现，
 // 只会让英文界面上突然冒出一句中文。
 func TestTablesIsomorphic(t *testing.T) {
 	if len(zhTexts) == 0 {
@@ -63,7 +63,7 @@ func TestTablesIsomorphic(t *testing.T) {
 	}
 	for key := range enTexts {
 		if _, ok := zhTexts[key]; !ok {
-			t.Errorf("en 多出 key %q（zh 是母版，只许它先有）", key)
+			t.Errorf("en 多出 key %q（zh 是母版，只许 zh 先有）", key)
 		}
 	}
 }
@@ -97,7 +97,7 @@ func TestFallbackToZh(t *testing.T) {
 	prev := current.Load()
 	defer current.Store(prev)
 
-	// 造一张缺词的 en 表：正常构建下同构测试会拦住，这里模拟的是它与测试同时失守的兜底。
+	// 造一张缺词的 en 表：正常构建下同构测试会拦住，这里模拟的是这张表与同构测试同时失守的兜底。
 	current.Store(&catalog{lang: LangEn, texts: map[string]string{}})
 
 	key := "boot.config_written"

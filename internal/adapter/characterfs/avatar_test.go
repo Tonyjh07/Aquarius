@@ -37,7 +37,7 @@ func injectText(t *testing.T, src []byte, kw, text string) []byte {
 }
 
 // TestEncodeAvatarStripsTextChunks 重编码后只剩像素：卡 JSON 所在的 tEXt 块消失，
-// 尺寸与像素不变，体积大幅下降。
+// 尺寸与像素不变，体积明显下降。
 func TestEncodeAvatarStripsTextChunks(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 8, 6))
 	for x := 0; x < 8; x++ {

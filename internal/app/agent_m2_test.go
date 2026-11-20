@@ -267,7 +267,7 @@ func TestContextCompactToolRound(t *testing.T) {
 	runner := &fakeRunner{specs: []tool.Spec{{Name: "context_compact"}}}
 	a := newAgent(t, llm, rec, Deps{Tools: runner}, Config{})
 	runner2 := &ctxlessRunner{inner: runner, a: a}
-	// context_compact 工具要真正接到 agent：经 runner 注册表没有它——直接包一层。
+	// context_compact 工具要真正接到 agent：经 runner 注册表没有该工具——直接包一层。
 	a.tools = &delegatingRunner{inner: runner2, extra: a.ContextCompactTool()}
 	_ = runner2
 

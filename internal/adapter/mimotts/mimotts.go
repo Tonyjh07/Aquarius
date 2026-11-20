@@ -122,7 +122,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	audio := audioParam{Format: "wav"}
 	switch modeOf(c.model) {
 	case modeDesign:
-		// 音色设计：user 消息就是音色描述（必填）；风格指令与它同属自然语言
+		// 音色设计：user 消息就是音色描述（必填）；风格指令与音色描述同属自然语言
 		// 描述，接在后面一起交给模型。voice 字段该模型不支持，必须省略。
 		desc := strings.TrimSpace(req.Design)
 		if desc == "" {

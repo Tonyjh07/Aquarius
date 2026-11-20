@@ -82,7 +82,7 @@ func historyFrame(gtx layout.Context, th *material.Theme, u *UI, st *historyStat
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return st.overlayFrame(gtx, th, u)
 		}),
-		// D157：同步确认弹窗再置顶（模态；主窗确认态与它同源，点任一处都作答）。
+		// D157：同步确认弹窗再置顶（模态；主窗确认态与该弹窗同源，点任一处都作答）。
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return st.confirmFrame(gtx, th, u)
 		}),
@@ -122,7 +122,7 @@ type histCtlItem struct {
 // （上限 relHardCap）。
 //
 // 树编辑脏时在末尾追加两项（§5.6.1：脏时开关左侧多一枚「放弃」+「已改 N 处」只读文字）：
-// 它们与视图控件同属文字档，故走同一份项集；开关本身是自绘控件，不在项集里。
+// 这两项与视图控件同属文字档，故走同一份项集；开关本身是自绘控件，不在项集里。
 func (st *historyState) histStatusCtlItems() []histCtlItem {
 	zoomPct := "100%"
 	if st.graph != nil {
@@ -149,7 +149,7 @@ func (st *historyState) histStatusCtlItems() []histCtlItem {
 // histStatusBar 状态栏（A7 落点）：共 N · 呈现 M + 控件项集 + 图例。
 //
 // 这里**不写会话标题**（2026-10-31 用户批注）：左栏已经点着当前会话，标题在这里只是重复；
-// 而它长度不受控，一长就把右边的控件与树编辑开关挤出可视区（开关直接消失）。
+// 而标题长度不受控，一长就把右边的控件与树编辑开关挤出可视区（开关直接消失）。
 func histStatusBar(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
 	N, M := 0, 0
 	if st.model != nil {
@@ -245,7 +245,7 @@ func histLegend(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	// 图例必须与画布同源：色块直接取 Paper 的深度色带，形状词与 relShapeOf 一一对应
 	// （□ user / ● assistant / ◇ system / ◯ 结构根）。此前图例列 4 色而画布只现 3 档、
 	// 结构根画成实心圆，图例与画面对不上——图例的用处就是「照着认」，对不上就是错的。
-	// 2026-10-19 撤掉色带后面那个空心圆：它没有标签，读起来像第 5 档色带（用户批注
+	// 2026-10-19 撤掉色带后面那个空心圆：空心圆没有标签，读起来像第 5 档色带（用户批注
 	// 「这里不知道哪来的圆」），而「◯ 会话根」在下面的形状组里已经写明。
 	d := paperOf().depth
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,

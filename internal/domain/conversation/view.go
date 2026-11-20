@@ -3,10 +3,10 @@ package conversation
 import "sort"
 
 // 本文件是聚合根的**只读视图 API**：把外部（应用层、展示面）需要的查询收成方法，
-// 而不是让它们直接读 Nodes/Children/RevisedFrom 三张表。
+// 而不是让外部直接读 Nodes/Children/RevisedFrom 三张表。
 //
 // 这些访问器存在的那一天，三张表才可能私有化——先有出口，再关门（否则应用层无处可去）。
-// 返回的切片一律是副本：调用方改写它不会影响树。
+// 返回的切片一律是副本：调用方改写返回的切片不会影响树。
 
 // NodeCount 树中节点总数（/rm 统计删除量、快照容量估算用）。
 func (c *Conversation) NodeCount() int { return len(c.nodes) }
@@ -56,7 +56,7 @@ func (c *Conversation) SubtreeSize(id MessageID) int {
 }
 
 // DroppedEditions 统计删掉 id 这棵子树会顺带清掉多少条溯源记录：版本链指向子树内旧节点、
-// 而新版本在子树外——剪除后那条边成了悬空边，Prune 会把它一并删除。于是**新版本会失去
+// 而新版本在子树外——剪除后那条边成了悬空边，Prune 会把悬空边一并删除。于是**新版本会失去
 // 「修订自谁」的记忆**（图上版本虚线退回顺接实线，`/branch` 也不再标修订来源）。
 // 调用方（/rm 的确认句）据此提前说明，不让人删完才发现。
 func (c *Conversation) DroppedEditions(id MessageID) int {
@@ -74,7 +74,7 @@ func (c *Conversation) DroppedEditions(id MessageID) int {
 	return n
 }
 
-// Edition 返回 id 的版本链上游（被它修订掉的那个节点）；非修订节点返回 ("", false)。
+// Edition 返回 id 的版本链上游（被 id 修订掉的那个节点）；非修订节点返回 ("", false)。
 // 这是 RevisedFrom 的唯一正向查询口（"这个节点是谁的新版本"）。
 func (c *Conversation) Edition(id MessageID) (MessageID, bool) {
 	old, ok := c.revisedFrom[id]
@@ -84,12 +84,12 @@ func (c *Conversation) Edition(id MessageID) (MessageID, bool) {
 // padNode 报告 id 是否为「衬垫」（D152）：为把摘要或注入上下文顶进路径中间而造的节点，
 // 本身不是任何发言的版本分支。判据不写进密钥库、全从结构读：
 //   - 角色 system|inject——衬垫承载的是上下文与水位，不是伪造的发言；
-//   - 恰好一个孩子——衬垫占据目标原来的位置，目标改挂到它下面；
-//   - 孩子比它自己更早——InsertBefore 顶开的是一个**已在树中**的节点，故目标先于衬垫
-//     存在；顺着链路追加的水位（压缩摘要）孩子恒晚于它，两者靠这一点区分；
+//   - 恰好一个孩子——衬垫占据目标原来的位置，目标改挂到衬垫下面；
+//   - 孩子比衬垫自己更早——InsertBefore 顶开的是一个**已在树中**的节点，故目标先于衬垫
+//     存在；顺着父链追加的水位（压缩摘要）孩子恒晚于衬垫，两者靠这一点区分；
 //   - 父不是结构根——会话首节点（人格快照）是真正的一层，不能被跨过。
 //
-// 展示面（版本组）据它把衬垫当透明：版本组跨过衬垫，它的孩子提升到祖父那一层。
+// 展示面（版本组）据这条判据把衬垫当透明：版本组跨过衬垫，衬垫的孩子提升到祖父那一层。
 func (c *Conversation) padNode(id MessageID) bool {
 	m, ok := c.nodes[id]
 	if !ok {
@@ -134,7 +134,7 @@ func (c *Conversation) versionGroup(owner MessageID) []MessageID {
 	walk = func(p MessageID) {
 		for _, kid := range c.children[p] {
 			if c.padNode(kid) {
-				walk(kid) // 衬垫透明：它的孩子算这一层的版本
+				walk(kid) // 衬垫透明：衬垫的孩子算这一层的版本
 				continue
 			}
 			out = append(out, kid)
@@ -158,12 +158,12 @@ func (c *Conversation) versionGroup(owner MessageID) []MessageID {
 // CreatedAt 不保证等于插入序，D15/D16）与「末端」规则（D94：子树里最新的叶子，分支切换
 // 落点）都是领域规则。此前 app 侧把两条各写了一遍，规则一改就要改两处，还很难保证一致。
 type View struct {
-	// Head 当前游标（快照需要它做图谱锚点）。
+	// Head 当前游标（快照需要 Head 做图谱锚点）。
 	Head MessageID
 	// Nodes 全部节点，按 (CreatedAt, ID) 升序——布局可复现，不依赖 map 遍历顺序。
 	Nodes []Message
 	// VersionGroups 每个版本组一组（键 "" 那组挂的是 Root，D19），按分组键升序。
-	// 版本组不是「同一个父的孩子」：衬垫（padNode）被跨过，它的孩子提升到祖父那一层
+	// 版本组不是「同一个父的孩子」：衬垫（padNode）被跨过，衬垫的孩子提升到祖父那一层
 	// ——否则插一条摘要就会把原来同父的两个回答拆到两个组里，分叉编号与切换按钮一起消失。
 	VersionGroups []SiblingGroup
 	// Tails 每个节点 → 其版本子树的对话末端（D94），规则与 Tail 相同。
@@ -171,8 +171,8 @@ type View struct {
 }
 
 // SiblingGroup 一个版本组的成员：IDs 按 (CreatedAt, ID) 升序，下标即版本序号。
-// Parent = 分组键（最近的非衬垫祖先），不是「结构上的父」——衬垫之后的原节点与它的
-// 兄弟仍在同一组，尽管它们的 Parent 已经不是同一个节点。
+// Parent = 分组键（最近的非衬垫祖先），不是「结构上的父」——衬垫之后的原节点与自己的
+// 兄弟仍在同一组，尽管两者的 Parent 已经不是同一个节点。
 type SiblingGroup struct {
 	Parent MessageID
 	IDs    []MessageID
@@ -193,8 +193,8 @@ func (c *Conversation) View() View {
 		return nodeLess(v.Nodes[i], v.Nodes[j])
 	})
 
-	// 版本组：按分组键（最近的、本身不是衬垫的祖先）聚合。衬垫不进任何组——它只是把
-	// 上下文顶进路径中间，不是发言的版本；它的孩子由 versionGroup 提升到祖父那一层。
+	// 版本组：按分组键（最近的、本身不是衬垫的祖先）聚合。衬垫不进任何组——衬垫只是把
+	// 上下文顶进路径中间，不是发言的版本；衬垫的孩子由 versionGroup 提升到祖父那一层。
 	grouped := make(map[MessageID][]MessageID, len(c.nodes))
 	for id := range c.nodes {
 		if id == MessageID(c.ID) || c.padNode(id) {

@@ -88,7 +88,7 @@ func New() *Recorder { return &Recorder{} }
 // 到达 max、或 sink 表示不再需要。
 //
 // ctx 取消不当作失败：已推出去的帧照常有效，返回 nil。停止是用户的正常操作，
-// 而他把停止按下去的前提正是刚说完话——这条语义丢了，按停止就等于丢半句话。
+// 而用户把停止按下去的前提正是刚说完话——这条语义丢了，按停止就等于丢半句话。
 func (r *Recorder) Record(ctx context.Context, max time.Duration, sink port.FrameSink) error {
 	if ctx == nil {
 		return errors.New(i18n.T("audio.rec.err_nil_context"))
@@ -161,7 +161,7 @@ func (r *Recorder) Record(ctx context.Context, max time.Duration, sink port.Fram
 done:
 	procStop.Call(hwi)
 	procReset.Call(hwi)
-	// 停止时不足一帧的尾巴补零推出去：丢掉它等于截断最后一个字。
+	// 停止时不足一帧的尾巴补零推出去：丢掉该尾巴等于截断最后一个字。
 	if len(pending) > 0 && written < maxRecordBytes {
 		frame := make([]byte, port.FrameBytes)
 		copy(frame, pending)
@@ -228,7 +228,7 @@ func drainBuffers(hwi uintptr, hdrs []waveHdr, bufs [][]byte, pending []byte) []
 		h.bytesRecorded, h.flags = 0, 0
 		if code, _, _ := procPrepare.Call(hwi, uintptr(unsafe.Pointer(h)), unsafe.Sizeof(*h)); code != noError {
 			// 这里没法返回错误（调用方是一次循环体）：把块标记成「未就绪」，
-			// 下一轮自然不再取它；真正的失败由后续 procAddBuffer 的返回码暴露。
+			// 下一轮自然不再取该块；真正的失败由后续 procAddBuffer 的返回码暴露。
 			continue
 		}
 		procAddBuffer.Call(hwi, uintptr(unsafe.Pointer(h)), unsafe.Sizeof(*h))

@@ -9,7 +9,7 @@ import (
 // BranchInfo 一个节点的版本视图（D80/§7.5）：同一版本组的全部成员按**创建序**（含自身）
 // 与自身下标。值语义、只读——UI 渲染分叉编号与左右切换只需这两个事实，拿不到树结构本体。
 //
-// 「版本组」不是「同父孩子」：插在某个节点之前的摘要会占掉它的结构父位，版本组按最近的非
+// 「版本组」不是「同父孩子」：插在某个节点之前的摘要会占掉该节点的结构父位，版本组按最近的非
 // 衬垫祖先分组，衬垫本身不属于任何组（Branches 对衬垫返回 ok=false）。
 type BranchInfo struct {
 	// IDs 版本组全部成员，按创建时间升序（含 id 自身）；至少含自身一条。
@@ -81,7 +81,7 @@ type TreeView interface {
 	// Graph 返回整树只读快照（D112②/D120⑦，S3 relation-map 数据面）；尚未发布时 ok=false。
 	Graph() (TreeGraph, bool)
 	// NodeText 返回 id 的正文全文（D132：气泡级动作的数据源）——`GraphNode.Snippet` 只有
-	// 40 字摘要，拿它预填编辑框会在提交时把消息截断成摘要。规则 = 正文分片（PartText）
+	// 40 字摘要，拿摘要预填编辑框会在提交时把消息截断成摘要。规则 = 正文分片（PartText）
 	// 依序拼接，跳过思考/工具/附件分片（与气泡块的正文规则同源）；id 不在树中（或尚未
 	// 发布）时 ok=false——调用方据此退化为空文本（内核拒空修订文本，不会误改）。
 	NodeText(id conversation.MessageID) (string, bool)

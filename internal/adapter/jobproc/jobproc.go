@@ -53,7 +53,7 @@ type Manager struct {
 	ledgerPath string
 	ledgerMu   sync.Mutex
 
-	closed bool // Close 之后不再接收新任务（台账写入不受影响：收尾要靠它）
+	closed bool // Close 之后不再接收新任务（台账写入不受影响：收尾要靠台账）
 }
 
 // jobRec 单个任务的运行时记录（除日志句柄外，字段均在 Manager.mu 下更新）。
@@ -65,7 +65,7 @@ type jobRec struct {
 	killed   bool // 显式 Kill（区分自然退出）
 	timedOut bool // Timeout 到点终止
 	// timer Timeout 的定时器（无超时任务为 nil）。由收割者 Stop：任务早退之后
-	// 它已经没有意义，留着只是白占一个 timer。
+	// 该定时器已经没有意义，留着只是白占一个 timer。
 	timer *time.Timer
 	// done 进入终态时关闭（D189）：Wait 阻塞在这个 channel 上，而不是让调用方
 	// 定时间去问 Status——收割者本来就知道进程什么时候退出。
@@ -322,7 +322,7 @@ func readLogWindow(path string) (text string, truncated bool, err error) {
 	return decodeOutput(string(buf)), start > 0, nil
 }
 
-// tailLines 取文本末尾 n 行。truncated 表示窗口起点截断了一行，先丢掉它再数。
+// tailLines 取文本末尾 n 行。truncated 表示窗口起点截断了一行，先丢掉被截断的那行再数。
 func tailLines(text string, n int, truncated bool) string {
 	// 先去掉行尾换行，避免 split 出空尾行挤占名额。
 	lines := strings.Split(strings.TrimRight(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n")
@@ -374,7 +374,7 @@ const closeGrace = 3 * time.Second
 // Close 关停任务管理器（幂等）：**不杀仍在跑的任务**（§10：任务不随会话/程序退出而终止，
 // 下次启动按台账对账），只等已经进入终态的收割者把手上的事做完再返回。
 //
-// 不等仍在跑的任务：它的收割者还挂在 cmd.Wait 上，等它等于把「退出」拖成「任务时长」。
+// 不等仍在跑的任务：该任务的收割者还挂在 cmd.Wait 上，等该任务等于把「退出」拖成「任务时长」。
 // 台账里那条 running 正是下次启动要说的事实，不需要在这里补。
 //
 // 等这一步的理由是**退出后不能再写 jobs 目录**：收割者在 cmd.Wait 返回之后才写退出行、
@@ -388,8 +388,8 @@ func (m *Manager) Close() {
 		return
 	}
 	m.closed = true
-	// 只收已进终态的记录：它们的收割者正在收尾，done 马上就会关（wait 里 close 在
-	// markFinished 之后，所以等到它就等于台账已写盘）。
+	// 只收已进终态的记录：这些记录的收割者正在收尾，done 马上就会关（wait 里 close 在
+	// markFinished 之后，所以等到 done 就等于台账已写盘）。
 	pending := make([]chan struct{}, 0, len(m.byID))
 	for _, r := range m.byID {
 		if r.job.Status != port.JobRunning {

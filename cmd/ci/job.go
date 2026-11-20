@@ -168,7 +168,7 @@ func defaultJobs(root, tmpDir string) []job {
 	}
 }
 
-// goVersion 只取一次：每个 job 的输出里都可能要它，反复起进程不值。
+// goVersion 只取一次：每个 job 的输出里都可能要 goVersion，反复起进程不值。
 var (
 	goVersionOnce sync.Once
 	goVersionVal  string

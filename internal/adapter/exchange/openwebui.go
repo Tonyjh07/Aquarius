@@ -16,17 +16,17 @@ import (
 
 // openwebui.go Open WebUI 会话的**只读**导入（§5.16「只读的一档」）。
 //
-// 它与 chatgpt 同为树形（`parentId` / `childrenIds` / 一个「当前节点」），所以结构上不缺任何
-// 东西；缺的是「我们该不该维护第二套同义产物」。答案是不：要喂 Open WebUI，给它 `chatgpt`
-// 那一份，它见到 `mapping` 会自己转换。于是这里只有入口，没有出口。
+// Open WebUI 与 chatgpt 同为树形（`parentId` / `childrenIds` / 一个「当前节点」），所以结构上不缺任何
+// 东西；缺的是「本程序该不该维护第二套同义产物」。答案是不：要喂 Open WebUI，给 Open WebUI `chatgpt`
+// 那一份，Open WebUI 见到 `mapping` 会自己转换。于是这里只有入口，没有出口。
 //
-// 它的导出有两种形状（新旧版本各一份），这里都收：
+// Open WebUI 的导出有两种形状（新旧版本各一份），这里都收：
 //   - `chat.history.messages` 是以 id 为键的**对象**，配 `chat.history.currentId`；
 //   - `chat.messages` 是**数组**，每项自带 `parentId` / `childrenIds`。
 //
 // 两种都是同一棵树，解析后交给共用的 materialize（节点 ID 重分配 + Restore 自检）。
 
-// owDoc Open WebUI 导出的顶层（只声明我们要用的字段）。
+// owDoc Open WebUI 导出的顶层（只声明本程序要用的字段）。
 type owDoc struct {
 	Title string `json:"title"`
 	Chat  owChat `json:"chat"`
@@ -103,7 +103,7 @@ func parseOpenWebUI(doc owDoc, msgs []owMessage) importedTree {
 	in := importedTree{
 		Title: title,
 		Head:  doc.Chat.History.CurrentID,
-		// 当前节点可能落在被跳过的消息上（纯图片、无 id）：materialize 靠它上溯。
+		// 当前节点可能落在被跳过的消息上（纯图片、无 id）：materialize 靠 ParentOf 上溯。
 		ParentOf: func(id string) (string, bool) {
 			m, ok := byID[id]
 			return m.ParentID, ok

@@ -17,8 +17,8 @@ import (
 
 // fakeRecorder 假采集器：把预设的帧按序推给 sink，可指定在推完之后返回的错误。
 //
-// 它还负责钉住一条语义（D295）：ctx 取消 = 用户主动停止，不是失败——
-// 假采集器在取消时照常把已推出的帧留在链路上，由上层决定还要不要。
+// 该假采集器还负责钉住一条语义（D295）：ctx 取消 = 用户主动停止，不是失败——
+// 假采集器在取消时照常把已推出的帧留在路径上，由上层决定还要不要。
 type fakeRecorder struct {
 	frames  [][]byte
 	err     error // 推完之后返回的错误
@@ -292,7 +292,7 @@ func TestRecordedDurationFromBytes(t *testing.T) {
 }
 
 // fixedSegmenter 按固定帧数切段：每 per 帧交出一段（per=0 = 永不交段）。
-// 它只把帧原样拼起来，用来验证「多段 → 多分片」的接线，不参与 VAD 判定。
+// 该切段器只把帧原样拼起来，用来验证「多段 → 多分片」的接线，不参与 VAD 判定。
 type fixedSegmenter struct {
 	per   int
 	frame int

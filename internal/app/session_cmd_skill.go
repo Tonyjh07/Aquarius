@@ -13,7 +13,7 @@ import (
 
 // execSkill 实现 /skill（D201）：无参/`list` 列清单，带名字 = 把该技能正文注入上下文。
 //
-// 载入不触发新一轮：用户载入技能之后紧接着要说自己的要求，替他把那轮跑掉只会浪费一次
+// 载入不触发新一轮：用户载入技能之后紧接着要说自己的要求，替用户把那轮跑掉只会浪费一次
 // 生成（与 /inject --no-trigger 同规则）。注入实现后走「清屏 + 回放」（移 Head 类命令
 // 统一规则，D81/D92），让转写区与 Head 恒一致。
 func (s *Session) execSkill(ctx context.Context, args []string) (string, error) {

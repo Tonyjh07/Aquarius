@@ -231,7 +231,7 @@ func (t *jobLogs) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 
 // jobKill 终止后台任务（Safe：只影响本应用启动的任务；启动本身已过确认）。
 // jobLister 只列任务：job_list 与「按前缀解析 id」只需这一项（§2.2）。
-// 定在消费方而不是 port——它没有独立的端口语义，只是 job_* 工具的解析前置。
+// 定在消费方而不是 port——该接口没有独立的端口语义，只是 job_* 工具的解析前置。
 type jobLister interface {
 	List(ctx context.Context) ([]port.Job, error)
 }
@@ -315,7 +315,7 @@ func (t *jobWait) Spec() tool.Spec {
 const jobWaitResultMax = 8000
 
 // Interactive 不吃默认工具超时（D189）：等任务收尾由 timeout_sec 和用户中断决定，
-// 不是「卡住」。schema 自声明 timeout_sec，ToolRunner 不会当保留参数截走它。
+// 不是「卡住」。schema 自声明 timeout_sec，ToolRunner 不会当保留参数截走 timeout_sec。
 func (t *jobWait) Interactive() bool { return true }
 
 func (t *jobWait) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {

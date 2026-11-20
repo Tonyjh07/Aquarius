@@ -285,7 +285,7 @@ func (u *UI) stepExpand(now time.Time) {
 }
 
 // startExpandAnim 启动（或反向重定）动画：起点 = 当前有效进度，**中途反向不跳变**。
-// headless（u.w == nil）只落状态、不起 ticker（D54：测试里没有帧循环去推进它）。
+// headless（u.w == nil）只落状态、不起 ticker（D54：测试里没有帧循环去推进动画）。
 func (u *UI) startExpandAnim(expand bool) {
 	a := &u.expandAn
 	if a.active && a.expand == expand {
@@ -393,7 +393,7 @@ func (u *UI) invalidate() {
 }
 
 // barP 当前输入栏行程进度（= send 行程：0 = 收起球，1 = D49 终位；过冲可 >1；
-// D76 分段几何的时钟——胶囊几何由它分段导出）。
+// D76 分段几何的时钟——胶囊几何由该时钟分段导出）。
 func (u *UI) barP() float64 {
 	p, _ := u.expandProgress()
 	return p

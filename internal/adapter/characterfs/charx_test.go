@@ -65,7 +65,7 @@ func TestParseCharxBasic(t *testing.T) {
 	}
 }
 
-// TestParseCharxIconPrefersMain 多个图标时优先 name=main，不管它在数组里的位置。
+// TestParseCharxIconPrefersMain 多个图标时优先 name=main，不管该图标在数组里的位置。
 func TestParseCharxIconPrefersMain(t *testing.T) {
 	card := v3Card("Aria", `[
 		{"type":"icon","name":"alt","uri":"embeded://assets/icon/alt.png"},

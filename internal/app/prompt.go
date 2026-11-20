@@ -42,7 +42,7 @@ type PromptSpec struct {
 	Persona []string
 	// Legacy 顶层 system_prompt（兼容）：作为内置 @default 的正文来源。
 	Legacy string
-	// Character 角色卡投影（§5.17/D247）：非 nil 时 @char.* 内置模块从它取值；
+	// Character 角色卡投影（§5.17/D247）：非 nil 时 @char.* 内置模块从该投影取值；
 	// nil = 非角色会话，六个 @char.* 全为空（条件内置：不出、不计缺失）。
 	Character *CharacterPrompt
 	// UserName {{user}} 的取值（config `prompts.user_name`）；空则按 "User"。
@@ -81,7 +81,7 @@ var builtinEnvRefs = []string{"@env.platform", "@env.terminal", "@env.sandbox", 
 var builtinCharRefs = []string{"@char.identity", "@char.description", "@char.personality", "@char.scenario", "@char.system", "@char.book"}
 
 // BuiltinModuleNames 内置模块引用名（含 `@` 前缀，展示序：@default → @env → 各子模块 →
-// @char → 各子模块）。设置窗用它列出「可引用的内置模块」（S7/D144）；返回副本，调用方可安全改写。
+// @char → 各子模块）。设置窗用这份清单列出「可引用的内置模块」（S7/D144）；返回副本，调用方可安全改写。
 func BuiltinModuleNames() []string {
 	out := make([]string, 0, 3+len(builtinEnvRefs)+len(builtinCharRefs))
 	out = append(out, "@default", "@env")
@@ -140,7 +140,7 @@ func (c *PersonaComposer) WithCharacter(cp *CharacterPrompt) *PersonaComposer {
 }
 
 // userPersona 卡以外的用户人格正文 U（§5.17/D247）：按人格模块树组合、去掉 `@env` 与
-// `@char.*`——U 只是用户写下的规则，运行环境与卡提示都不算在内（替换模式下它给
+// `@char.*`——U 只是用户写下的规则，运行环境与卡提示都不算在内（替换模式下 U 给
 // `{{original}}` 填值）。非角色会话返回空串。
 func (c *PersonaComposer) userPersona(base map[string]PromptModule) string {
 	if c.spec.Character == nil {
@@ -154,7 +154,7 @@ func (c *PersonaComposer) userPersona(base map[string]PromptModule) string {
 }
 
 // userOnlyRefs 算 U 用的顶层引用：去掉 @env 与 @char.*（§5.17/D247）——U 只是用户写下的
-// 人格正文，运行环境与会话提示都不算在内（替换模式下它要给 `{{original}}` 填值）。
+// 人格正文，运行环境与会话提示都不算在内（替换模式下 U 要给 `{{original}}` 填值）。
 func userOnlyRefs(refs []string) []string {
 	out := make([]string, 0, len(refs))
 	for _, r := range refs {
@@ -434,7 +434,7 @@ func waterline(path []conversation.Message) (personaIdx, watermarkIdx int) {
 // assembleOpts 装配规则（§7.1）：附件库、思考回传（D42）、视觉能力（D169）。
 //
 // 三件事都只影响「怎么投影」，不影响树本身，收进一个结构体是为了让调用方
-// 显式回答它们——散成多个布尔参数时，新加一个能力位很容易在某个调用点漏掉。
+// 显式回答这三件事——散成多个布尔参数时，新加一个能力位很容易在某个调用点漏掉。
 type assembleOpts struct {
 	blobs        port.AttachmentStore
 	echoThinking bool
@@ -443,7 +443,7 @@ type assembleOpts struct {
 	vision bool
 }
 
-// assembledMessage 装配产物里的一条消息，外加它来自哪一类内容（/context 用，§7.1）。
+// assembledMessage 装配产物里的一条消息，外加这条消息来自哪一类内容（/context 用，§7.1）。
 //
 // 标签与消息在生产处一一对应地记下来，而不是事后按角色反推：一条 system 在这条路上
 // 可能是人格、压缩摘要或宿主注入，角色本身分不出这三种，反推只能靠位置猜。
@@ -496,7 +496,7 @@ func assemblePathLabeled(ctx context.Context, path []conversation.Message, opt a
 	// 进入上下文的节点序列（水位之上）。工具分片的调用与结果同片（D95），
 	// 不存在"结果在位/失联"之分，无需跨节点配对集合。
 
-	// 遍历序列：有水位时先单独补发 persona（它不在 [start:] 内，恒回传，D20/D21）。
+	// 遍历序列：有水位时先单独补发 persona（persona 不在 [start:] 内，恒回传，D20/D21）。
 	seq := make([]int, 0, len(path))
 	if watermarkIdx >= 0 && personaIdx == 1 {
 		seq = append(seq, personaIdx)
@@ -604,7 +604,7 @@ func injectDetail(source string) string {
 //   - 外部（`conversation.TrustExternal`，零值）→ user + 数据围栏 + 前置说明句。
 //
 // **判定只看 `m.Trust`，不看 `Source` 前缀**：前缀是生产者自报的字符串（MCP 工具名、
-// 插件名都进这条路径），拿它当信任依据等于把"谁能造前缀"变成"谁能写宿主指令"。
+// 插件名都进这条路径），拿前缀当信任依据等于把"谁能造前缀"变成"谁能写宿主指令"。
 // 前缀仍用于展示与审计。
 //
 // 空内容返回 nil（不占一条消息，与 user/system 空节点同规则）。
@@ -646,7 +646,7 @@ func projectInjection(ctx context.Context, m conversation.Message, opt assembleO
 // neutralizeFence 中和注入正文里的围栏闭合标签（大小写不敏感）。
 //
 // 只动这一个标签，不整体做 HTML 转义：查询串、代码片段、正则里的 `<` `>` 一旦被改写，
-// 模型读到的东西就和真实文件不一致，而它要靠读到的内容做判断。
+// 模型读到的东西就和真实文件不一致，而模型要靠读到的内容做判断。
 func neutralizeFence(s string) string {
 	lower := strings.ToLower(s)
 	for {
@@ -660,7 +660,7 @@ func neutralizeFence(s string) string {
 }
 
 // escapeFenceAttr 转义围栏属性值（§9）：`"` 与 `<`/`>` 是标签边界字符，来源名可能来自
-// 外部（MCP 工具名），不能让它把围栏提前闭合。
+// 外部（MCP 工具名），不能让来源名把围栏提前闭合。
 func escapeFenceAttr(s string) string {
 	r := strings.NewReplacer(`"`, "&quot;", "<", "&lt;", ">", "&gt;")
 	return r.Replace(s)

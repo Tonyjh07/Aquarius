@@ -17,7 +17,7 @@ import (
 	"testing"
 )
 
-// TestRunRecordsUnsupportedParams D34 全链路：服务端 400 点名不认 reasoning_effort
+// TestRunRecordsUnsupportedParams D34 全路径：服务端 400 点名不认 reasoning_effort
 // → 同请求剥离重试成功 → 自动写回 config model.unsupported_params（重启后不再发送）。
 // TestRunKeyPoolRotatesOn429 密钥池端到端（D173/S11-4）：第一把钥匙 429（带 Retry-After）
 // 时立刻换第二把钥匙重试（不退避），并把被拒的那把拉进冷却。
@@ -272,7 +272,7 @@ func TestRunRecordsUnsupportedParams(t *testing.T) {
 	}
 }
 
-// TestRunTUIReasoningE2E D34/D42：思维链全链路——SSE reasoning_content 分片 → TUI
+// TestRunTUIReasoningE2E D34/D42：思维链全路径——SSE reasoning_content 分片 → TUI
 // [thinking] 暗块展示，正文照常提交（思考随节点入树见 app 层测试与 TestRunEchoThinkingE2E）。
 func TestRunTUIReasoningE2E(t *testing.T) {
 	reasonLine := `data: {"choices":[{"delta":{"reasoning_content":"先想一想"}}]}`
@@ -290,7 +290,7 @@ func TestRunTUIReasoningE2E(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{"[thinking]", "先想一想", "答案"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("TUI 思维链链路缺 %q: %.500s", want, got)
+			t.Fatalf("TUI 思维链路径缺 %q: %.500s", want, got)
 		}
 	}
 	if reqs.len() != 1 {
@@ -298,7 +298,7 @@ func TestRunTUIReasoningE2E(t *testing.T) {
 	}
 }
 
-// TestRunEchoThinkingE2E D42 链路验收：第一轮 SSE 思考分片随节点入树；
+// TestRunEchoThinkingE2E D42 路径验收：第一轮 SSE 思考分片随节点入树；
 // 第二轮请求把上一轮思考以消息级 reasoning_content 回传——config 键缺失 = 回传（缺省），
 // 显式 echo_thinking:false = 装配时过滤不发。
 func TestRunEchoThinkingE2E(t *testing.T) {

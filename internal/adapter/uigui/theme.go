@@ -38,7 +38,7 @@ type palette struct {
 	cardSystem   color.NRGBA
 	// 注入卡片（D166）：两版都用暗底 + 亮字——注入是「旁白」，与用户气泡（品牌色）、
 	// 助手气泡（浅白）在视觉上分档。底色带 alpha（浅色版更透）：卡片浮在桌面之上、
-	// 不带底板边缘，半透明让它读作「附注」而不是又一条消息；深色版透得少一档，
+	// 不带底板边缘，半透明让注入卡片读作「附注」而不是又一条消息；深色版透得少一档，
 	// 免得在深桌面上糊成一团。
 	cardInject color.NRGBA
 	textInject color.NRGBA

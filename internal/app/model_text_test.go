@@ -14,7 +14,7 @@ import (
 // 一律英文（D36）。这里用 go/parser 逐字面量断言 ASCII，而不是逐个引用常量：
 // 新增一条文案不用改测试，且注释/标识符不受影响（只查 StringLit）。
 //
-// 中文一旦漏进上下文不会有行为差异，只有门禁能拦住它。
+// 中文一旦漏进上下文不会有行为差异，只有门禁能拦住这种漏入。
 func TestModelTextFileIsASCII(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "model_text.go", nil, parser.ParseComments)

@@ -82,7 +82,7 @@ func TestCommandRunBrokenByChat(t *testing.T) {
 }
 
 // TestCommandOutAfterClear 清屏类命令（/switch、/regen）的结果晚于清屏到达：末尾已经
-// 没有它的命令条了，按提交时记下的命令行另起一条——否则这句话会以纯文本行的样子
+// 没有该命令的命令条了，按提交时记下的命令行另起一条——否则这句话会以纯文本行的样子
 // 落在一轮回放/回答后面（正是要治的那种噪声）。
 func TestCommandOutAfterClear(t *testing.T) {
 	t.Parallel()
@@ -237,7 +237,7 @@ func TestNoticeFoldsIntoStrip(t *testing.T) {
 }
 
 // TestNoticeAttentionStaysInline 改变了本轮上下文的提示（截断/压缩失败）留在转写里当
-// 一行提示（D267）：它必须立刻看得见，也值得事后回看。
+// 一行提示（D267）：该提示必须立刻看得见，也值得事后回看。
 func TestNoticeAttentionStaysInline(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModel(t)

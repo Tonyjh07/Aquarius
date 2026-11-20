@@ -11,9 +11,9 @@ import (
 )
 
 // 转交的上限（§5.18）：任务描述与收下的正文按字符数算，改动文件按条数算。
-// 上限放在端口层而不是配置层——它们是协议面的事实，不是用户可以调的偏好。
+// 上限放在端口层而不是配置层——这些上限是协议面的事实，不是用户可以调的偏好。
 const (
-	// MaxDelegateTaskChars 任务描述上限：再长也不是「一件任务」，而是把整个仓库贴进去。
+	// MaxDelegateTaskChars 任务描述上限：再长就是把整个仓库贴进去，不再是一件任务。
 	MaxDelegateTaskChars = 20000
 	// MaxDelegateReportChars 收下的正文上限（保头尾，中间省略并注明）。
 	MaxDelegateReportChars = 200000
@@ -25,9 +25,9 @@ const (
 	DefaultDelegateTimeout = 1800 * time.Second
 	// MaxDelegateTimeout 总闸上限（24 小时）。
 	MaxDelegateTimeout = 86400 * time.Second
-	// DefaultDelegateMaxConcurrent 每会话同时进行的转交上限。
+	// DefaultDelegateMaxConcurrent 每会话同时跑的转交上限。
 	DefaultDelegateMaxConcurrent = 2
-	// DefaultDelegateMaxTotal 全局同时进行的转交上限。
+	// DefaultDelegateMaxTotal 全局同时跑的转交上限。
 	DefaultDelegateMaxTotal = 4
 
 	// DefaultDelegateOutsideReadAsks 越界读的缺省询问次数（D284）：问满这么多次之后，
@@ -40,11 +40,11 @@ const (
 	// DelegateOutsideReadUnlimited 不限次（配置里写 -1：每次都问，且都算数）。
 	DelegateOutsideReadUnlimited = -1
 	// DelegateTerminalAskUnlimited 命令确认不限次（同上：-1 就是每次都问）。数值与
-	// 越界读那条相同，分开命名是因为它们回答的是两件事。
+	// 越界读那条相同，分开命名是因为这两个常量回答的是两件事。
 	DelegateTerminalAskUnlimited = -1
 )
 
-// DelegateID 一次转交的标识（回执、Wait、Kill、日志都用它）。
+// DelegateID 一次转交的标识（回执、Wait、Kill、日志都用这个标识）。
 type DelegateID string
 
 // DelegateInfo 清单里的一行（`/delegate list` 与 delegate 工具描述共用一份事实）。
@@ -69,7 +69,7 @@ type DelegateSpec struct {
 	//
 	// 语义是「在缺省范围之外再加」，不是「范围就是这个」：空 = 只用 WorkDir，所以最省事
 	// 的那条路永远最窄。扩大必须由调用方显式写出来，并过一道确认（见 delegate 工具）。
-	// 它只是 Aquarius 用来拒绝的判据，不是内核围栏——代理自己起 shell 那条路看不见。
+	// 该根集只是 Aquarius 用来拒绝的判据，不是内核围栏——代理自己起 shell 那条路看不见。
 	Roots []string `json:"roots,omitempty"`
 	// Session 复用位：空 = 每次新建会话。本版只接受空值（非空报
 	// "session reuse is not supported in this build"）——攒两份互相矛盾的历史比丢上下文更糟。
@@ -77,7 +77,7 @@ type DelegateSpec struct {
 }
 
 // AbsPath 绝对路径判定：Windows 盘符与 Unix 斜杠都认，`\share` 这类 UNC 简写单独放行
-// ——filepath.IsAbs 在 Windows 上对 "/tmp" 返回 false，但它仍是绝对定位，shell 与既有
+// ——filepath.IsAbs 在 Windows 上对 "/tmp" 返回 false，但 "/tmp" 仍是绝对定位，shell 与既有
 // 调用都按当前盘根解析。workdir 与根集共用这一份，别在别处再写第三个版本。
 func AbsPath(p string) bool {
 	return filepath.IsAbs(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\")
@@ -86,7 +86,7 @@ func AbsPath(p string) bool {
 // NormalizeRoots 根集归一：去空白、去空项、去重（保序），并逐项校验绝对路径。
 //
 // 归一与校验放在一起，是因为两者都只对「调用方写错」有意见：多一行空行不算错（丢掉），
-// 重复一条也不算错（去重），只有相对路径要报——它会让越界判定失去参照物。
+// 重复一条也不算错（去重），只有相对路径要报——相对路径会让越界判定失去参照物。
 func NormalizeRoots(in []string) ([]string, error) {
 	if len(in) == 0 {
 		return nil, nil
@@ -116,7 +116,7 @@ func NormalizeRoots(in []string) ([]string, error) {
 // CommandRun 一条经 Aquarius 执行的命令（A3）。
 //
 // 只记事实，不记判断：命令与参数原样、退出码或信号；失败的那条另附输出末尾一小段——
-// 读报告的人看到一个非零退出码却不知道它为什么失败，等于什么也没看到。
+// 读报告的人看到一个非零退出码却不知道那条命令为什么失败，等于什么也没看到。
 type CommandRun struct {
 	Line     string `json:"line"`                // command + args 原样（报告里按字面量渲染）
 	ExitCode *int   `json:"exit_code,omitempty"` // 正常结束时的退出码
@@ -129,7 +129,7 @@ type OptionValue struct {
 	Name  string `json:"name"`  // 配置项名（代理广告的那个）
 	Value string `json:"value"` // 代理最后回报的当前值
 	// Set 现值是否就是配置指定的那个值。false = 现值仍是代理自己的默认值（也可能是配置
-	// 的值没设上）——模型尤其要标出来：它随时可能变，不写清楚就无法复现同一份结论。
+	// 的值没设上）——模型尤其要标出来：现值随时可能变，不写清楚就无法复现同一份结论。
 	Set bool `json:"set,omitempty"`
 }
 
@@ -138,25 +138,25 @@ type DelegateRun struct {
 	Agent      string   `json:"agent"`
 	Session    string   `json:"session,omitempty"`     // ACP sessionId：只进回执与日志，本版不重用
 	StopReason string   `json:"stop_reason,omitempty"` // end_turn|max_tokens|max_turn_requests|refusal|cancelled
-	ToolCalls  int      `json:"tool_calls"`            // 子代理自己发起的工具调用次数（不是我们的）
-	Changed    []string `json:"changed,omitempty"`     // 它报过改动的文件（去重；可能不全）
+	ToolCalls  int      `json:"tool_calls"`            // 子代理自己发起的工具调用次数（不是本程序发起的）
+	Changed    []string `json:"changed,omitempty"`     // 代理报过改动的文件（去重；可能不全）
 	// Wrote 经 Aquarius 之手写下的文件（`fs/write_text_file` 的事实）。与 Changed 并列而
-	// **不合**：一份是我们经手的，一份是它自称的，混成一份就又变成「不比现在更假」（D283）。
+	// **不合**：一份是本程序经手的，一份是代理自称的，混成一份就又变成「不比现在更假」（D283）。
 	Wrote []string `json:"wrote,omitempty"`
-	// ReadOutside 它读过、而且是**问过用户之后**读的、落在会话根集之外的文件（D284）。
+	// ReadOutside 代理读过、而且是**问过用户之后**读的、落在会话根集之外的文件（D284）。
 	// 没问成的那些进 Notes；这里只列真的给出去过的。
 	ReadOutside []string `json:"read_outside,omitempty"`
 	// Commands 经 Aquarius 执行的命令（`terminal/create` 的事实，A3）。被拒的那些不进这里
-	// ——它们没跑，只进 Notes。条数由运行时上限管住（每次转交 32 条），所以这份清单不会
+	// ——这些命令没跑，只进 Notes。条数由运行时上限管住（每次转交 32 条），所以这份清单不会
 	// 溢出，也不必再带一个「还有 N 条没列」。
 	Commands []CommandRun `json:"commands,omitempty"`
 	// Options 实际生效的会话配置（D287）：model 恒在，其余只列配置指定过的项。
-	// 值取代理最后回报的那一份，不是我们请求的那一份。
+	// 值取代理最后回报的那一份，不是本程序请求的那一份。
 	Options  []OptionValue `json:"options,omitempty"`
 	Duration time.Duration `json:"duration"`
-	Report   string        `json:"report"`          // 最终正文（它交付的那段）
+	Report   string        `json:"report"`          // 最终正文（代理交付的那段）
 	Notes    []string      `json:"notes,omitempty"` // 能力协商、被拒的权限请求、跳过的东西（用户面）
-	// Denied 它提出而没人应答的权限请求数（无人值守、或用户不在发起会话）；ChangedOver
+	// Denied 代理提出而没人应答的权限请求数（无人值守、或用户不在发起会话）；ChangedOver
 	// 是超出清单上限、没逐个列出的改动文件数——两者都要说，否则读报告的人以为清单是完整的。
 	Denied      int `json:"denied,omitempty"`
 	ChangedOver int `json:"changed_over,omitempty"`
@@ -165,11 +165,11 @@ type DelegateRun struct {
 	WroteOver int `json:"wrote_over,omitempty"`
 	// ReadOutsideOver 同上，针对 ReadOutside。
 	ReadOutsideOver int `json:"read_outside_over,omitempty"`
-	// Killed 是被我们终止的（停止键 / delegate_kill）：报告可能是半截的，摘要行要说清。
+	// Killed 是被本程序终止的（停止键 / delegate_kill）：报告可能是半截的，摘要行要说清。
 	Killed bool `json:"killed,omitempty"`
 }
 
-// DelegateTask 派活回执（D261）：Start 立刻返回它，报告晚些经注入到达。
+// DelegateTask 派活回执（D261）：Start 立刻返回该回执，报告晚些经注入到达。
 type DelegateTask struct {
 	ID      DelegateID `json:"id"`
 	Agent   string     `json:"agent"`
@@ -190,7 +190,7 @@ type DelegateRunner interface {
 	// Wait 阻塞到终态并返回全过程事实。取消 ctx 只是不再等，**不会**停掉转交
 	// （那要走 Kill）：等的人可以走开，活还在干。
 	Wait(ctx context.Context, id DelegateID) (DelegateRun, error)
-	// Kill 终止一次转交：先发 session/cancel 通知，等它收成 cancelled，宽限后杀进程组。
+	// Kill 终止一次转交：先发 session/cancel 通知，等会话收成 cancelled，宽限后杀进程组。
 	Kill(ctx context.Context, id DelegateID) error
 }
 
@@ -209,12 +209,12 @@ func DelegateReportText(id DelegateID, run DelegateRun) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Delegation %s to %s finished in %s (stop=%s, tool calls=%d, files changed=%d).\n",
 		id, run.Agent, run.Duration.Round(time.Second), stopReasonText(run), run.ToolCalls, len(run.Changed))
-	// 模型紧跟标题：读报告的人要先知道这份结论是谁给的，再看它做了什么。
+	// 模型紧跟标题：读报告的人要先知道这份结论是谁给的，再看代理做了什么。
 	if len(run.Options) > 0 {
 		b.WriteString("Agent options: " + optionsText(run.Options) + "\n")
 	}
-	// 先列**我们经手**的那一段，再列它自称的那一段：读报告的人默认这两行是同一件事，
-	// 顺序摆在前面的会被当成依据（D283 把它们分开列，就是不想再混成一个数）。
+	// 先列**本程序经手**的那一段，再列代理自称的那一段：读报告的人默认这两行是同一件事，
+	// 顺序摆在前面的会被当成依据（D283 把这两段分开列，就是不想再混成一个数）。
 	// 命令排在文件之前：动作比结果更该先被看到（A3）。
 	if len(run.Commands) > 0 {
 		b.WriteString("Commands run through this session: " + commandsText(run.Commands) + "\n")
@@ -298,10 +298,10 @@ func commandsText(cmds []CommandRun) string {
 	return strings.Join(parts, ", ")
 }
 
-// quoteCommand 命令的展开展示：原样放进引号里，只把控制字符写成转义形式。
+// quoteCommand 命令的展开形态：原样放进引号里，只把控制字符写成转义形式。
 //
-// 不用 strconv.Quote：它会把 `E:\Aquarius` 里的每个反斜杠写成两个，报告里的路径一眼
-// 认不出来。读这段的人要的是「它跑了什么」，不是一段能重新解析的字面量。
+// 不用 strconv.Quote：strconv.Quote 会把 `E:\Aquarius` 里的每个反斜杠写成两个，报告里的路径一眼
+// 认不出来。读这段的人要的是「命令跑了什么」，不是一段能重新解析的字面量。
 //
 // 引号要挑一个命令里没出现的：外面套双引号、里面也是一串双引号时，一段命令会被读成
 // 两个字符串——那正是这份报告最不该犯的错。
@@ -344,9 +344,9 @@ func stopReasonText(run DelegateRun) string {
 
 // UnfinishedDelegate 上次退出时没有收尾的一次转交（启动对账的输入）。
 //
-// 与 UnfinishedJob 同一形状、同一套规则：它补的是**事实**不是报告——那次转交当时在跑，
+// 与 UnfinishedJob 同一形状、同一套规则：这份记录补的是**事实**不是报告——那次转交当时在跑，
 // 还是跑完了而报告没送到会话。进程早已随退出被终止（Close 会杀进程组），所以这里没有
-// 「可能还在跑」这一档：留下的只有「它存在过、做的是哪件活、结果没有下文」。
+// 「可能还在跑」这一档：留下的只有「那次转交存在过、做的是哪件活、结果没有下文」。
 type UnfinishedDelegate struct {
 	ID        DelegateID      `json:"id"`
 	Agent     string          `json:"agent"`
@@ -354,7 +354,7 @@ type UnfinishedDelegate struct {
 	Task      string          `json:"task,omitempty"`     // 任务描述（已截断）
 	WorkDir   string          `json:"work_dir,omitempty"` // 子进程的起点
 	StartedAt time.Time       `json:"started_at"`
-	// Stop / Error / EndedAt 非空 = 它跑到终态了，只是报告没送到（与 D264 的任务台账同规则）。
+	// Stop / Error / EndedAt 非空 = 那次转交跑到终态了，只是报告没送到（与 D264 的任务台账同规则）。
 	Stop    string    `json:"stop,omitempty"`
 	Error   string    `json:"error,omitempty"`
 	EndedAt time.Time `json:"ended_at,omitempty"`
@@ -364,6 +364,6 @@ type UnfinishedDelegate struct {
 type DelegateReconciler interface {
 	// Unfinished 取走全部未收尾条目（**读即清**）：取走后不再重报。
 	Unfinished(ctx context.Context) ([]UnfinishedDelegate, error)
-	// Settle 报告已送达会话：抹掉该条目，下次启动不再提它。
+	// Settle 报告已送达会话：抹掉该条目，下次启动不再提该条目。
 	Settle(ctx context.Context, id DelegateID) error
 }

@@ -42,7 +42,7 @@ func TestSamplingOverlay(t *testing.T) {
 }
 
 // TestSamplingOverlayKeepsThinking 思考三件套（会话级开关）同样按「非空才覆盖」合并：
-// 逐模型声明通常不写它们，不能让合并把 /think 的当前值清掉。
+// 逐模型声明通常不写这三项，不能让合并把 /think 的当前值清掉。
 func TestSamplingOverlayKeepsThinking(t *testing.T) {
 	on := true
 	base := Sampling{ReasoningEffort: "high", Thinking: &on}

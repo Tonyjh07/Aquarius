@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestPageKeysResolve 页签取词的闭环：`pageName(i)` 用 "ui.settings.page." + Key() 拼接，
+// TestPageKeysResolve 页签取词首尾对上：`pageName(i)` 用 "ui.settings.page." + Key() 拼接，
 // 缺键时 `T` 会把拼出来的 key 原样印在页签上，而 i18n 包的缺键扫描看不到这种拼法
 // （那边只登记了前缀）。逐页确认取得到词，才能说拼接那一侧也守住了。
 func TestPageKeysResolve(t *testing.T) {

@@ -28,7 +28,7 @@ func (s *Session) execInject(ctx context.Context, cmd port.Command) (string, err
 	in := port.Injection{
 		Source: source,
 		// 手动注入是用户自己的动作 → 宿主事实（D170）。`--source` 给任意名也不改信任级：
-		// 它只影响展示与触发默认，不是提权开关。
+		// 来源名只影响展示与触发默认，不是提权开关。
 		Trust: port.TrustHost,
 		Parts: []conversation.Part{{Kind: conversation.PartText, Text: text}},
 	}

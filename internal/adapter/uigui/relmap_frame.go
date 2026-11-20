@@ -354,7 +354,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 		g.spx = 1
 	}
 	g.z = g.zoom * g.dpx
-	// 模式状态先同步：手势与物理本帧就要用它（编辑态拖动要断开父子连接，见 relPin.Detached）。
+	// 模式状态先同步：手势与物理本帧就要用模式状态（编辑态拖动要断开父子连接，见 relPin.Detached）。
 	g.editOn, g.editCount = st.teOn, st.teEdits
 	// 视场调整只在这三处：拖后松手把树拉回视野（fitPending，不重置 zoom）；开窗首帧整树
 	// 适配（everFit，A13）；显式取景动作（viewPending：装下整树 / 两个聚焦域，D140）。
@@ -390,13 +390,13 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	// D139/D157：遮罩或确认弹窗开启期**不取手势**（模态）。绘制与物理继续走——背景要在
 	// scrim 下保持可见与运动。隔离是**双保险**：模态层的整窗 `event.Op` 输入区已按 Gio 命中链
 	// 把本栏遮蔽（实测：遮罩开启时右图收不到指针事件），此处显式不取是纵深防御，且是左栏/
-	// 状态栏这些**同链控件**的必需条件（它们不受本栏遮蔽影响，见 historyState.dispatch）。
+	// 状态栏这些**同链控件**的必需条件（同链控件不受本栏遮蔽影响，见 historyState.dispatch）。
 	if !st.modalActive(u) {
 		g.update(gtx, u, st)
 	}
 	// 编辑态光标（§5.6.1）：节点上 = grab、拖动中 = grabbing、空白处也是 grab（平移）。
 	// 只在编辑态设——平时的指针形状交给系统，不抢。光标 op 必须落在本栏 clip 内：
-	// 否则它会连左栏会话列表一起改掉。
+	// 否则光标 op 会连左栏会话列表一起改掉。
 	if g.editOn {
 		cur := pointer.CursorGrab
 		if g.dragNode >= 0 {
@@ -410,7 +410,7 @@ func (g *relGraph) frame(gtx layout.Context, th *material.Theme, u *UI, st *hist
 	if g.tickLayout() {
 		gtx.Execute(op.InvalidateCmd{})
 	}
-	// 改挂成功后的目标环高亮（400ms）也要帧：它是一段短动画，跑完即停。
+	// 改挂成功后的目标环高亮（400ms）也要帧：目标环高亮是一段短动画，跑完即停。
 	if g.dropFlashActive(gtx.Now) {
 		gtx.Execute(op.InvalidateCmd{})
 	}
@@ -486,13 +486,13 @@ func (g *relGraph) tickLayout() bool {
 	if g.dragNode >= 0 {
 		// 按住期间恒续帧（2026-10-18 实测修）：拖拽是用户驱动的一段会话，几何上「谁还在
 		// 动」不可预见（邻居被弹簧带、抓取偏移在衰减），提前判停会让树僵在非平衡态，
-		// 而指针不再产生事件时就没有下一帧来纠正它。松手后由 settled 接管，照常收敛即停。
+		// 而指针不再产生事件时就没有下一帧来纠正该状态。松手后由 settled 接管，照常收敛即停。
 		more = true
 	}
 	return more
 }
 
-// grabAt 记录抓取偏移（指针相对节点中心的偏移，**按下那一刻**测）。它不恒定保持：
+// grabAt 记录抓取偏移（指针相对节点中心的偏移，**按下那一刻**测）。抓取偏移不恒定保持：
 // 每帧衰减（tickLayout 里 relGrabDecay）——节点中心在起拖后 ~120ms 内平滑滑到光标
 // 正下方并锁死（D121 实测修：光标与节点不许错位；直接清零则标签区起拖会瞬跳）。
 func (g *relGraph) grabAt(li int, sx, sy float32) {

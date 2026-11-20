@@ -24,7 +24,7 @@ func TestParseInputDispatch(t *testing.T) {
 	}
 }
 
-// TestCommandFieldsQuotes 引号括起来的一段算一个参数——路径带空格靠的就是它。
+// TestCommandFieldsQuotes 引号括起来的一段算一个参数——路径带空格靠的就是引号。
 func TestCommandFieldsQuotes(t *testing.T) {
 	cases := []struct {
 		in   string

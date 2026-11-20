@@ -1,7 +1,7 @@
 package uigui
 
 // relmap_anim_bench_test.go 全程物理基准（D126 重订档：废除逐节点静息锚 → 树锚 + 卡片
-// 接触推力 + 松手采纳槽位）：200 节点下一帧全链路耗时（物理步进 + 全量绘制），对照 60fps
+// 接触推力 + 松手采纳槽位）：200 节点下一帧全路径耗时（物理步进 + 全量绘制），对照 60fps
 // 预算（16.67ms）。**实测（Ryzen 7 8700F, 900×700, PxPerDp=1.25，benchtime ≥1s）**：
 //
 //	物理仿真帧（源档步进 + 全量绘制，每轮注入扰动保持运动） ≈ 0.77 ms/帧（预算 ~5%）
@@ -77,7 +77,7 @@ func animBench(b *testing.B) (*UI, *historyState, *input.Router, *headless.Windo
 	return u, st, q, w
 }
 
-// renderFrame 一帧：frame() + router 提交 + 离屏渲染（真链路的 GPU 光栅化成本在内）。
+// renderFrame 一帧：frame() + router 提交 + 离屏渲染（真路径的 GPU 光栅化成本在内）。
 func renderFrame(b *testing.B, q *input.Router, u *UI, st *historyState, w *headless.Window) {
 	b.Helper()
 	var ops op.Ops
@@ -94,7 +94,7 @@ func renderFrame(b *testing.B, q *input.Router, u *UI, st *historyState, w *head
 }
 
 // BenchmarkRelmapPhysFrame200 物理仿真帧（200 节点：物理步进 + 全量绘制）。每轮注入
-// 一点位移使仿真保持运动（模拟持续扰动/展开），测一帧全链路成本。
+// 一点位移使仿真保持运动（模拟持续扰动/展开），测一帧全路径成本。
 func BenchmarkRelmapPhysFrame200(b *testing.B) {
 	u, st, q, w := animBench(b)
 	g := st.graph

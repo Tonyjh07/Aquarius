@@ -81,7 +81,7 @@ type imageViewState struct {
 	viewport image.Rectangle // 上帧视口（缩放锚点换算用）
 	close    func()          // 关闭动作（Esc）
 	inval    func()          // 重绘请求（解码 goroutine 完成后调用）
-	focused  bool            // 是否已把键盘焦点投到本窗输入区（Esc 需要它）
+	focused  bool            // 是否已把键盘焦点投到本窗输入区（Esc 需要键盘焦点）
 }
 
 // newImageViewState 构造 winImage 帧状态（close/inval 由次窗装配处给）。

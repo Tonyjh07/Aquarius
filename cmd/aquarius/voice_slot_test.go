@@ -17,8 +17,8 @@ func (fakeTranscriber) Transcribe(context.Context, conversation.BlobRef, string)
 // TestVoiceSlotNeedsASR 界面语音键槽的取舍：语音识别没装配就不给槽（右钮保持发送键）。
 //
 // 这里钉的是一条来自真机的报障：语音压根没配，麦克风图标却亮着，按下去只得到
-// 「语音识别未配置」。根因在装配——摄取器**总会**建出来（`/mic` 靠它报因），
-// 若直接把它转成 Voice，界面那条 `Voice == nil` 的判空就永远不成立。
+// 「语音识别未配置」。根因在装配——摄取器**总会**建出来（`/mic` 靠摄取器报因），
+// 若直接把摄取器转成 Voice，界面那条 `Voice == nil` 的判空就永远不成立。
 func TestVoiceSlotNeedsASR(t *testing.T) {
 	t.Parallel()
 	w := &wiring{}

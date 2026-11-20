@@ -21,7 +21,7 @@ import (
 //   - `/context full`   整份写进导出目录，回执给路径（`full last` 取上次实发）
 //
 // 全文不铺进转写区：一份上下文动辄十几万字符，铺开要过 markdown 解析与逐行选区，
-// 而它的实际用途是逐字比对、贴给别人、跨轮 diff——那三件事都更适合文件。
+// 而全文的实际用途是逐字比对、贴给别人、跨轮 diff——那三件事都更适合文件。
 func (s *Session) execContext(ctx context.Context, cmd port.Command) (string, error) {
 	args := cmd.Args
 	wantLast := false

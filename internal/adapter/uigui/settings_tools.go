@@ -31,7 +31,7 @@ type ToolsAdmin interface {
 	// 没有稳定的工具名，这一维到不了工具粒度。
 	SetAgentPolicy(mode string) error
 	// RevokeDirPolicy 撤销一条目录级放宽（D282 的「以后都允许」在文件类工具上写下的
-	// 那条）。这是它唯一的撤销入口——确认框里点出来的东西，用户事后只在这里能找回来。
+	// 那条）。这是该放宽唯一的撤销入口——确认框里点出来的东西，用户事后只在这里能找回来。
 	RevokeDirPolicy(tool, dir string) error
 	// SetPluginEnabled 插件启停（Enable 含信任门与 capability 授权流——会弹主窗确认）。
 	SetPluginEnabled(name string, enabled bool) error
@@ -50,7 +50,7 @@ type ToolsAdmin interface {
 type ToolsSnapshot struct {
 	Revision int64
 	// Level 当前权限档（read-only|strict|permissive|full-access）：行里的「默认」读起来
-	// 是「跟随哪个档」，说明行要用它把话说完。
+	// 是「跟随哪个档」，说明行要用该档把话说完。
 	Level string
 	// AgentPolicy 外部代理整来源的档位："" = 默认（跟随权限档）。
 	AgentPolicy string
@@ -268,7 +268,7 @@ func (f *settingsForm) builtinToolRow(gtx layout.Context, th *material.Theme, b 
 	}
 	values, labels := policySegments(b.Policy)
 	sel := policyIndex(values, b.Policy)
-	// 确认态里把「允许」画成选中：用户点的是它，写进密钥库要等他点确认。
+	// 确认态里把「允许」画成选中：用户点的是「允许」，写进密钥库要等用户点确认。
 	if f.polConfirm == b.Name {
 		sel = policyIndex(values, "allow")
 	}

@@ -180,7 +180,7 @@ func TestSessionOptionsSkippedWhenEqual(t *testing.T) {
 
 // TestSessionOptionsReadBack 代理接受了设置却回报旧值：必须判失败。
 //
-// opencode 就是这样——模型在候选里，设它回 model not found；反过来也可能有代理
+// opencode 就是这样——模型在候选里，设这个模型回 model not found；反过来也可能有代理
 // 「收下但不动」。只看请求成功就下结论，用户会以为在用自己选的模型。
 func TestSessionOptionsReadBack(t *testing.T) {
 	m := newManager(t, "options-echobad", func(o *Options) {
@@ -198,7 +198,7 @@ func TestSessionOptionsReadBack(t *testing.T) {
 	}
 }
 
-// TestSessionOptionsAgentRefuses 代理拒绝时，把它自己的话带出去（转述只会更糊）。
+// TestSessionOptionsAgentRefuses 代理拒绝时，把代理自己的话带出去（转述只会更糊）。
 func TestSessionOptionsAgentRefuses(t *testing.T) {
 	m := newManager(t, "options", func(o *Options) {
 		o.Home = t.TempDir()

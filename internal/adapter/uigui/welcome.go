@@ -2,7 +2,7 @@ package uigui
 
 // 欢迎 / 首次运行引导窗（D141/§15.7）：**同一套帧、两个宿主**——
 //  1. 装配前的独立向导窗（`RunSetupWindow`）：配置不完整（某条 provider 的 `secret:` 取不到）
-//     时，`cmd/aquarius` 在**内核装配之前**先开它；保存即写 config，随后同进程继续启动；
+//     时，`cmd/aquarius` 在**内核装配之前**先开向导窗；保存即写 config，随后同进程继续启动；
 //     取消 = 交回 SetupCancelled（调用方退出 + 指引）。宿主可注入（包级 var），测试不真开窗。
 //  2. 主窗宿主的 `winWelcome` 次窗：设置窗「打开」入口 + 「`ui.welcomed` 缺失」的兜底
 //     自动开一次（D263 起 welcomed 缺位的启动已由装配前向导接管，正常到不了这里）。
@@ -127,7 +127,7 @@ const (
 // welcomePageCount 总页数（步进条的 n/N 与翻页边界共用一处）。
 const welcomePageCount = int(welcomeDone) + 1
 
-// welcomePageName 页名（每帧取词：第 1 页切语言后它要跟着变）。
+// welcomePageName 页名（每帧取词：第 1 页切语言后页名要跟着变）。
 func welcomePageName(p welcomePage) string {
 	switch p {
 	case welcomeIntro:
@@ -231,7 +231,7 @@ var langSelections = [3]i18n.Selection{i18n.SelectionAuto, i18n.SelectionZh, i18
 
 // welcomeLangLabels 第 1 页三态展示名：后两项与设置窗共用（endonym 不翻译），
 // auto 一项本页专用——设置窗里是下拉的一整行，写「Follow system」够宽；这里三等分
-// 的一颗按钮在 200% 字号下会把它折成两行，选中项因此比另两项高出一截（离屏实测）。
+// 的一颗按钮在 200% 字号下会把「Follow system」折成两行，选中项因此比另两项高出一截（离屏实测）。
 func welcomeLangLabels() []string {
 	labels := uiLangLevels()
 	labels[0] = strings.TrimSpace(i18n.T("ui.welcome.lang.auto"))
@@ -288,7 +288,7 @@ func (f *welcomeForm) pickLang(sel i18n.Selection) {
 
 // saveLang 写入磁盘（只写变化过的那个）：语言是用户的第一个选择，**离开第 1 页就写**——
 // 而不是等到末页保存。中途取消（配置不完整、退出向导）时语言选择照样留着，下次进来
-// 不用再选一遍。写失败不阻断翻页以外的事：翻页/保存会把它当页面错误报出来。
+// 不用再选一遍。写失败不阻断翻页以外的事：翻页/保存会把该错误当页面错误报出来。
 func (f *welcomeForm) saveLang() error {
 	if f.lang == f.lang0 || f.env.mgr == nil {
 		return nil
@@ -347,7 +347,7 @@ func (f *welcomeForm) finish(out SetupOutcome) {
 	}
 }
 
-// pageErr 离开**当前页**前的闸门（下一页按钮与保存前都走它）。
+// pageErr 离开**当前页**前的闸门（下一页按钮与保存前都走 pageErr）。
 // 第 2 页要勾选同意；第 3 页要接入参数齐全；其余页无闸门。
 func (f *welcomeForm) pageErr() error {
 	switch f.page {
@@ -484,7 +484,7 @@ func (f *welcomeForm) onSave() {
 // （未写 provider，可启动空态）。in-app = 置 `ui.welcomed` 后关窗（显式关闭即「已看」，
 // 不再自动弹；置位失败不阻断关窗）。
 func (f *welcomeForm) onSkip() {
-	// 语言选择在这一步单独写入磁盘（不管后面是走是留）：它是用户已经做完的一个决定，
+	// 语言选择在这一步单独写入磁盘（不管后面是走是留）：语言选择是用户已经做完的一个决定，
 	// 不该因为「配置还没填完就退出」一起丢掉。失败静默——窗马上就关了。
 	_ = f.saveLang()
 	// 只重过第 2 页时没有「以后再说」：不同意就不能继续用（页脚也不给这个按钮，
@@ -495,7 +495,7 @@ func (f *welcomeForm) onSkip() {
 	}
 	if f.env.setup && f.page == welcomeAccess {
 		// 「稍后配置」跳过的只是这一页（D278 决策 3 的收尾规则）：同意已经在第 2 页
-		// 勾过了，而它写入磁盘的地点在末页——原先这里直接 Done，勾过的同意没有写回，下次
+		// 勾过了，而同意写入磁盘的地点在末页——原先这里直接 Done，勾过的同意没有写回，下次
 		// 启动又把人拉回条款页。教程页与末页照走，末页摘要改说「还没配置」。
 		f.accessSkipped = true
 		f.page = welcomeTutorial
@@ -503,7 +503,7 @@ func (f *welcomeForm) onSkip() {
 		return
 	}
 	if f.env.setup {
-		// 条款是使用的先决条件，「以后再说」不能绕过它：第 1 页/末页按了这个按钮而
+		// 条款是使用的先决条件，「以后再说」不能绕过条款：第 1 页/末页按了这个按钮而
 		// 还没勾选，就退回第 2 页把话说清楚（D278 决策 2 的闸门对每个出口都成立）。
 		if !f.consent.Value {
 			f.page = welcomeTerms
@@ -608,7 +608,7 @@ func (f *welcomeForm) drain() {
 }
 
 // applyModels 「获取模型」结果：候选列成 chip；模型名行仍是基线内容时自动填入前 8 个
-// （用户手写过就不动，避免一次网络结果冲掉他刚敲的名字）。
+// （用户手写过就不动，避免一次网络结果冲掉用户刚敲的名字）。
 func (f *welcomeForm) applyModels(r testOutcome) {
 	if r.err != nil {
 		f.cands, f.candClicks = nil, nil

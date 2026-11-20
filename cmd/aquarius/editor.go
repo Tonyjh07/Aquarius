@@ -30,7 +30,7 @@ func pickEditor(visual, editor, goos string) []string {
 // memoryEditor /memory 的装配实现（D24）：文档名 → 磁盘路径（缺失先建空文件）
 // → 系统编辑器阻塞打开；保存后下次读取即生效。
 // 三流取自 wiring（run() 注入）——保持「标准流可注入」的 e2e 契约（不直连 os.Std*）；
-// 子进程的 stderr 是它自己的原始输出，直接接宿主流，不进运行日志。
+// 子进程的 stderr 是子进程自己的原始输出，直接接宿主流，不进运行日志。
 func (w *wiring) memoryEditor(fe uiFrontend) func(name string) (string, error) {
 	mem, stdin, stdout, stderr := w.mem, w.stdin, w.stdout, w.stderr
 	return func(name string) (string, error) {

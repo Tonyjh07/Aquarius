@@ -4,7 +4,7 @@ package platform
 
 import "testing"
 
-// dropOf 把若干路径编成「每项一段 UTF-16 + NUL」的取项函数。
+// dropOf 把一组路径编成「每项一段 UTF-16 + NUL」的取项函数。
 func dropOf(paths ...string) func(i int) []uint16 {
 	items := make([][]uint16, 0, len(paths))
 	for _, p := range paths {

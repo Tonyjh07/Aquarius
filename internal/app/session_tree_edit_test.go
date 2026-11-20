@@ -274,7 +274,7 @@ func TestTreeEditExitAsksLikeSwitch(t *testing.T) {
 	}
 }
 
-// TestTreeEditExitOutsideMode 不在模式里 --exit 不是错误：它要的是「确保在模式外」，
+// TestTreeEditExitOutsideMode 不在模式里 --exit 不是错误：--exit 要的是「确保在模式外」，
 // 已经在外面就是成功（返回一句说明，不抛错）。
 func TestTreeEditExitOutsideMode(t *testing.T) {
 	store := newMemStore()

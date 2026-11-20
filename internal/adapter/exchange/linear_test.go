@@ -392,7 +392,7 @@ func TestSillyTavernTimeSymmetric(t *testing.T) {
 	if _, err := exportOne(context.Background(), New(Options{}), c, "sillytavern", &second); err != nil {
 		t.Fatalf("export#2: %v", err)
 	}
-	// 首行是 header（create_date 来自会话创建时间），比它更稳的是比消息行的时间。
+	// 首行是 header（create_date 来自会话创建时间），比 header 更稳的是比消息行的时间。
 	line1 := strings.Split(strings.TrimSpace(first.String()), "\n")
 	line2 := strings.Split(strings.TrimSpace(second.String()), "\n")
 	if len(line1) != 2 || len(line2) != 2 {

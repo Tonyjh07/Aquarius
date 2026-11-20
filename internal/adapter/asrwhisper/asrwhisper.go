@@ -5,7 +5,7 @@
 // `go build` 就够。模型是 whisper.cpp 的 ggml 格式（ggml-base.bin 等），
 // 由用户在设置里给路径——模型几十 MB 起，不进仓库、不进二进制。
 //
-// 它只吃 16kHz 单声道 float32 样本，不认任何音频容器。本适配器负责把附件库
+// whisper.cpp 只吃 16kHz 单声道 float32 样本，不认任何音频容器。本适配器负责把附件库
 // 里的 WAV 解成样本，其余格式直接报错（不做转码，不引解码器）。
 package asrwhisper
 
@@ -49,7 +49,7 @@ type Config struct {
 	Model Model
 }
 
-// Model 一次转写所需的模型能力（*whisper.Model 满足它）。
+// Model 一次转写所需的模型能力（*whisper.Model 满足该接口）。
 type Model interface {
 	Transcribe(ctx context.Context, pcm []float32, opts *whisper.TranscribeOptions) (*whisper.Result, error)
 	Close() error

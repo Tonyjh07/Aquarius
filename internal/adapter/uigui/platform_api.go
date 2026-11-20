@@ -93,9 +93,9 @@ type platformAPI interface {
 // newPlatform 构造平台实现（组装点：`uigui` 内唯一 import 具体实现处）。
 // trayIconPx 托盘图标取哪一档（像素）：32 = 16 档的 4 倍像素量。**不是显示尺寸**——16px
 // 是 shell 在 100% DPI 下的托盘尺寸；这里给 shell 的是**单张位图**，档位越高、高 DPI 下越
-// 少插值（Windows 会自行缩到它需要的尺寸）。48/64 档也在 aquarius.ico 里，取 32 是为
+// 少插值（Windows 会自行缩到系统需要的尺寸）。48/64 档也在 aquarius.ico 里，取 32 是为
 // 「清晰一倍」的最小代价：托盘图标按 16 显示，32 源在下采样时边缘干净；取 256 只会让
-// 图标文件与 DIB 变大而无进一步收益（用户 2026-10-13 报障：托盘图标模糊，可再清晰一倍）。
+// 图标文件与 DIB 变大，没有更多收益（用户 2026-10-13 报障：托盘图标模糊，可再清晰一倍）。
 const trayIconPx = 32
 
 func newPlatform(opts Options, window bool) platformAPI {

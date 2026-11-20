@@ -70,7 +70,7 @@ func relAnchorScreen(t *testing.T, g *relGraph) (f32.Point, int) {
 // TestRelGraphFitViewOnOpen A13（D127 横树版，D140 改规则）：开窗 = 整树适配视口 + 平移
 // 构图（Head 偏右、纵向盒心）；触底（长会话 zoom 到 relZoomMin 仍装不下）时退化为
 // 「Head 在场 + 视图跟随」。断言：zoom 夹在 [relZoomMin, relZoomMax]（A9）；**Head 在视口
-// 右半**（D7-b 起右基准位是平移**偏好**：两维贴满时它会被可行域钳到右侧贴边，不再恒等
+// 右半**（D7-b 起右基准位是平移**偏好**：两维贴满时右基准位会被可行域钳到右侧贴边，不再恒等
 // 0.72·视宽）；装得下的树另断言所有可见卡片在视口内（fit 语义本体）。
 func TestRelGraphFitViewOnOpen(t *testing.T) {
 	t.Parallel()
@@ -516,7 +516,7 @@ func TestRelGraphFitSizeDriven(t *testing.T) {
 // ——— D140：视场契约 v2（盒优先）———
 //
 // 用户 2026-10-15 报障（截图）：开窗后从「折叠播种」舒展到平衡态时**末端节点一动不动**
-// （相机把它钉在右基准位上 ⇒ 整树的位移被相机完全抵消），而树向四周舒展 ⇒ 顶端被裁、
+// （相机把末端节点钉在右基准位上 ⇒ 整树的位移被相机完全抵消），而树向四周舒展 ⇒ 顶端被裁、
 // 下方大片空白。实测（500×500 视口、源档；`go test -run TestZZD140Measure -v`）：
 //
 //	fixture7  静息盒 879×208  → 落定盒 873×403（纵向 1.94×）  首帧 zoom 0.488 / 落定需 0.573

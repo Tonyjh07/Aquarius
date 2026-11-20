@@ -22,12 +22,12 @@ type CharacterOptions struct {
 // CharacterStart 一张卡开新会话所需的投影文本（§5.17）。
 //
 // 全是**展开后的终稿**：人格与示例、尾部指令在这里做完宏替换，之后写入会话树 / 写入磁盘即定型，
-// 改 `prompts.user_name` 不再影响它（快照规则）。卡被删后这些文本照常可用。
+// 改 `prompts.user_name` 不再影响这些终稿（快照规则）。卡被删后这些文本照常可用。
 type CharacterStart struct {
 	Slug    string // 会话记住的角色 slug（Conversation.Character）
 	Persona string // 展开后的人格（含 @char.* 模块），落 persona 首节点
 	// Openings 开场白合并列表（§5.17）：[0] 恒为 first_mes，其后依次是 alternate_greetings。
-	// 序号 n（**1 起**）取 Openings[n-1]——契约把它写成 `alternate_greetings[n-1]`，按字面
+	// 序号 n（**1 起**）取 Openings[n-1]——契约把该条开场白写成 `alternate_greetings[n-1]`，按字面
 	// 读会跳过第 0 条 `first_mes`，故按合并列表定序（缺省与 `1` 都是 first_mes）。
 	Openings []string
 	Examples string   // mes_example 展开稿（空 = 不注入；开关关时恒空）

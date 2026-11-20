@@ -9,7 +9,7 @@ import (
 )
 
 // TestAdditionalDirectories 额外根的两种情形：对方申报了支持就发出去；没申报就不发，
-// 但本地照旧认这几个根，并在报告里说清「只在我们这边生效」。
+// 但本地照旧认这几个根，并在报告里说清「只在客户端这边生效」。
 //
 // 「本地照拦照放」这一半由 fs_test 的根集用例覆盖（根集与发不发无关）。
 func TestAdditionalDirectories(t *testing.T) {

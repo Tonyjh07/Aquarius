@@ -42,7 +42,7 @@ func rowLayout(gtx layout.Context, rows []rowDesc, i int, body layout.Widget) la
 	g := rowCardGroup(r)
 	if g < 0 {
 		// 分区标题按「间距有亲疏」单独给不对称留白（见 rowInset）；其余非卡行（说明段、
-		// 网格、整组按钮行）上下对称——它们不领起一个组，贴谁都不对。
+		// 网格、整组按钮行）上下对称——其余非卡行不领起一个组，贴谁都不对。
 		top, bottom := rowInset(rows, i)
 		return layout.Inset{
 			Left: unit.Dp(rowInsetDp), Right: unit.Dp(rowInsetDp),
@@ -139,7 +139,7 @@ func cardPad(first, last bool) (top, bottom int) {
 
 // rowInset 非卡行（不落卡）的上下留白（dp）。
 //
-// 只有分区标题（rowSection）用不对称留白——间距要有亲疏（D209）：标题贴住**它自己
+// 只有分区标题（rowSection）用不对称留白——间距要有亲疏（D209）：标题贴住**自己
 // 那一组**，所以上留白（与上一组之间）远大于下留白（与自己那组之间）。改前上下各
 // rowInsetDp，叠上卡片组界后上下完全对称，读者分不清标题属于上面还是下面那组。
 //
@@ -160,7 +160,7 @@ func rowInset(rows []rowDesc, i int) (top, bottom int) {
 //
 // 规则：**可编辑/可操作的表单行**打成一张卡（iOS 分组表读法）——分隔线在卡内、
 // 圆角只在组首组尾；标题、分区标题、说明段、整块内容（代码块/网格/预览）不落卡。
-// 「人格引用」整组落卡：它们是同一份有序列表的成员，逐行浮着会被误读成互不相关的项。
+// 「人格引用」整组落卡：这一组是同一份有序列表的成员，逐行浮着会被误读成互不相关的项。
 //
 // **归属按「属于谁」判，不按「是不是按钮」判**：provider 卡片里的「＋ 添加密钥」
 // 「＋ 添加模型」与底部动作行（测试连通 / 设为主 / 删除）都是**这一张卡自己的**动作，
@@ -189,7 +189,7 @@ func rowInCard(k rowKind) bool {
 // 一般表单行同属卡组 0（连续的字段行拼成一张卡）。**provider 卡片按 provider 分卡组**：
 // 每家一张卡，展开区里那些「属于这一家」的按钮行（＋ 添加密钥 / ＋ 添加模型 / 测试连通 ·
 // 设为主 · 删除）与字段行同组，卡片才不会在按钮前收边；同时相邻两家不会因为都是落卡行
-// 而拼进同一张卡（收起的摘要行必须属于它自己那一张）。
+// 而拼进同一张卡（收起的摘要行必须属于所属的那一张）。
 func rowCardGroup(r rowDesc) int {
 	if !rowInCard(r.kind) {
 		return -1

@@ -7,7 +7,7 @@ package port
 //
 // 清单**由一个前端直接读写**，不经 Prompter.Next 的输入通道：主循环此刻还卡在 Handle 里
 // （那一轮没结束），走通道就等于「等本轮结束才看得到」——那正是这条端口要修的毛病。
-// 因此这几个方法都不带 ctx：它们只是内存读写，收尾路径上调它们时不该被一个已取消的 ctx 拦住。
+// 因此这几个方法都不带 ctx：这些方法只是内存读写，在收尾路径上调用时不该被一个已取消的 ctx 拦住。
 
 import (
 	"time"
@@ -47,7 +47,7 @@ func (d Delivery) Valid() bool {
 
 // PendingInput 待发清单里的一条。
 type PendingInput struct {
-	// ID 清单内稳定 ID（前端按它撤销、改档、拉回）。
+	// ID 清单内稳定 ID（前端按这个 ID 撤销、改档、拉回）。
 	ID string `json:"id"`
 	// Text 正文（纯文本；带附件/语音的不进清单，那些走输入通道在本轮之后执行）。
 	Text string `json:"text"`

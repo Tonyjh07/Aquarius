@@ -478,7 +478,7 @@ func TestBeginDragBaseFollowsUndock(t *testing.T) {
 }
 
 // TestEndDragClickKeepsPark 抬手纯点击不夹取（D50 实测缺陷修订，§15.1）：「点击脱离
-// 停靠」把窗口落在半出屏贴边位（球锚点越界合法），展开态整窗锚点会把它推离边缘 →
+// 停靠」把窗口落在半出屏贴边位（球锚点越界合法），展开态整窗锚点会把窗口推离边缘 →
 // 收起后球离边超 snapDp、布防/停靠断链——纯点击必须原位保留；真拖动仍按态夹取。
 func TestEndDragClickKeepsPark(t *testing.T) {
 	t.Parallel()

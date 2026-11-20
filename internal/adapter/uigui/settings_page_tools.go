@@ -148,7 +148,7 @@ func (f *settingsForm) policyNoteRow(gtx layout.Context, th *material.Theme) lay
 // dirRuleRow 一条目录级放宽（D282）：[工具名 · 目录][撤销]。
 //
 // 这一行的存在本身就是提示——用户是在弹框里点的「以后都允许」，隔几天不会记得点过，
-// 目录要写全（不缩写、不换成「该项目」之类），否则他认不出这是哪个目录。
+// 目录要写全（不缩写、不换成「该项目」之类），否则用户认不出这是哪个目录。
 func (f *settingsForm) dirRuleRow(gtx layout.Context, th *material.Theme, rule DirRule) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {

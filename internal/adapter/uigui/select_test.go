@@ -80,7 +80,7 @@ func selArmDrag(t *testing.T, q *input.Router, u *UI) {
 	}
 }
 
-// TestSelDragAcrossBlocksCopy D91 主链路：块内按压候选（未越 slop 不激活）→
+// TestSelDragAcrossBlocksCopy D91 主路径：块内按压候选（未越 slop 不激活）→
 // 跨块拖动激活 → 锚 0 焦末的整段两键跨度 → 抬手保持 → Ctrl+C 写系统剪贴板
 // （键间 \n 拼接，方向不敏感——本例锚在前）。
 func TestSelDragAcrossBlocksCopy(t *testing.T) {

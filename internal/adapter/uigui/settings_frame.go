@@ -32,7 +32,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 			f.page = p
 		}
 	}
-	// 切页钩子（D181）：进入某页时的一次性动作——「模型服务」页借它在首次进入时自动
+	// 切页钩子（D181）：进入某页时的一次性动作——「模型服务」页借该钩子在首次进入时自动
 	// 拉一轮各家服务端清单。页面自己用表单标记去重（本窗只拉一次）。
 	if h, ok := settingsPages[f.page].(enterHook); ok {
 		h.OnEnter(u, f)
@@ -85,7 +85,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 							rows := f.pageRows(f.page)
 							if fp, ok := settingsPages[f.page].(fillPage); ok {
 								// 撑满页：最后一个块吸走窗口多出来的高度（高级页整文件编辑）。
-								// 只在目标行确实排在末尾时走这条路——它后面还有行的话，Flex
+								// 只在目标行确实排在末尾时走这条路——目标行后面还有行的话，Flex
 								// 会先把剩余高度分给目标行、再把后续行挤成 0 高，不如照旧滚动。
 								if i := fp.FillRow(rows); i >= 0 && i == len(rows)-1 {
 									return f.fillRows(gtx, th, rows, i)
@@ -100,7 +100,7 @@ func settingsFrame(gtx layout.Context, th *material.Theme, u *UI, f *settingsFor
 				}),
 			)
 		}),
-		// 编辑弹窗画在最后一层（模态）：它必须盖住内容区与底栏，否则遮罩盖不到的
+		// 编辑弹窗画在最后一层（模态）：该弹窗必须盖住内容区与底栏，否则遮罩盖不到的
 		// 「保存并应用」在弹窗背后仍是亮的，读起来像是可以直接点。D148。
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			dims, _ := f.moduleEditorFrame(gtx, th)

@@ -122,7 +122,7 @@ func (w *wiring) setOverride(origin, tool, dir, mode string) error {
 	}
 	if tool == "" && o == perm.OriginTool {
 		// 本地工具没有「整来源」这一档：那一维的意义是「某个具体工具带什么档」，
-		// 空工具只对外部代理成立（它的回调没有稳定工具名）。
+		// 空工具只对外部代理成立（外部代理的回调没有稳定工具名）。
 		return fmt.Errorf("%s", i18n.T("cmd.policy.err.need_tool"))
 	}
 	if dir != "" && tool == "" {
@@ -186,7 +186,7 @@ func (w *wiring) permitOverride(ov perm.Override, req port.ConfirmRequest) {
 }
 
 // auditPolicy 「以后都允许」的审计行（D282）：写成功、被硬名单拦下、写盘失败都记一条。
-// 这是这条全球永久放宽唯一「事后看得见」的出口——它的代价只能靠文案与审计兜。
+// 这是这条全球永久放宽唯一「事后看得见」的出口——这条放宽的代价只能靠文案与审计兜。
 func (w *wiring) auditPolicy(ov perm.Override, req port.ConfirmRequest, applied bool, why string) {
 	if w.audit == nil {
 		return

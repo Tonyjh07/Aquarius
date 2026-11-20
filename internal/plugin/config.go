@@ -134,7 +134,7 @@ func (d Decl) LaunchDesc() string {
 }
 
 // Fingerprint 启动描述的稳定指纹（D138）：transport + command + args + url。
-// env/headers **不进**指纹——它们的值是 secret 引用，随环境变化，且不改变信任的
+// env/headers **不进**指纹——这两项的值是 secret 引用，随环境变化，且不改变信任的
 // 对象（「跑的是哪个程序」）。指纹只用于「描述被改过 ⇒ 重新信任」，不做安全边界。
 func (d Decl) Fingerprint() string {
 	var b strings.Builder

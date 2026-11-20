@@ -19,7 +19,7 @@ var ErrQuit = errors.New("session: quit")
 
 // defaultTitle 新会话默认标题（首条消息后改写为消息摘要）。
 //
-// 函数不是常量：标题会落进会话库、被「是否还是默认标题」的比较用上，而它的文字要跟着
+// 函数不是常量：标题会落进会话库、被「是否还是默认标题」的比较用上，而标题的文字要跟着
 // 界面语言走。旧数据里的「新会话」不会因此被改写——比较的是同一语言下的同一个字符串。
 func defaultTitle() string { return i18n.T("session.default_title") }
 
@@ -304,7 +304,7 @@ type Session struct {
 	// 树变更始终单线程（§7.5），外部 goroutine 只碰这个 channel。
 	injectCh chan pendingInjection
 	// pendingQ 待发清单（D272）：会话级、内存态、有序、有上限。前端在**自己的事件循环
-	// 里**直接读写它——主循环此刻卡在 Handle 里，走输入通道等于「等本轮结束才看得到」，
+	// 里**直接读写待发清单——主循环此刻卡在 Handle 里，走输入通道等于「等本轮结束才看得到」，
 	// 那正是这条端口要修的毛病。切会话即丢（见 dropPending）。字段名不叫 pending：
 	// 注入队列的入口方法已经叫 pending（session_inject.go）。
 	pendingQ *pendingList
@@ -399,7 +399,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		injectCh:    make(chan pendingInjection, injectQueueCap),
 		pendingQ:    newPendingList(),
 	}
-	// 待发清单归会话持有，Agent 只借用它做两个取用边界（§7.1.2 轮内 / 轮末）。
+	// 待发清单归会话持有，Agent 只借用待发清单做两个取用边界（§7.1.2 轮内 / 轮末）。
 	d.Agent.setPending(s.pendingQ)
 
 	list, err := d.Store.List(ctx)
@@ -535,7 +535,7 @@ func (s *Session) Handle(ctx context.Context, in port.UserInput) (string, error)
 		}
 		return "", nil
 	}
-	// 真实用户输入到来：这一轮必然带上已落树的注入，欠着的那一轮就由它兑现了。
+	// 真实用户输入到来：这一轮必然带上已落树的注入，欠着的那一轮就由这次输入兑现了。
 	s.owedTurn = false
 	// D150 排空点①：用户输入优先，先把外部生产者攒下的注入实现（只写入、不起轮，
 	// 触发留给本轮——用户马上就发话，不必为注入单起一轮）。
@@ -712,7 +712,7 @@ func (s *Session) persist(ctx context.Context) error {
 	return nil
 }
 
-// TakeSteer 取走第一条引导（按插入序）。停止键中断一次请求之后，装配根用它立刻重新
+// TakeSteer 取走第一条引导（按插入序）。停止键中断一次请求之后，装配根用这条引导立刻重新
 // 请求——「停下来听我说这句」里，这句本来就已经在嘴边了，不该再让用户重打一遍。
 func (s *Session) Stopped() bool { return s.lastStop.Load() }
 

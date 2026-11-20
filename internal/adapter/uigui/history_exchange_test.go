@@ -2,7 +2,7 @@ package uigui
 
 // history_exchange_test.go 会话进出的 GUI 出口（§5.16）：两颗文字钮各自向平台要
 // 一个路径，拿到之后**只投一条内核命令**（与键入同路径）；取消则什么都不投。过滤器与
-// 预填文件名是界面替用户填的默认值，这里锁住它们与端口格式表不脱节。
+// 预填文件名是界面替用户填的默认值，这里锁住这两者与端口格式表不脱节。
 
 import (
 	"strings"
@@ -278,7 +278,7 @@ func TestDrainFilePicksIgnoresUnknownPurpose(t *testing.T) {
 	}
 }
 
-// TestExchangeFiltersMatchWhatTheEntryWrites 两颗钮各自只承诺它会兑现的东西：
+// TestExchangeFiltersMatchWhatTheEntryWrites 两颗钮各自只承诺自己能兑现的东西：
 //
 //   - 导出的「保存类型」下拉框 = 端口格式表里**全部可写格式**，一档一种、同序同数：
 //     用户选中哪一档，界面就投那个 `--format`。这里锁住「档位 ↔ 格式」的对应关系，
@@ -307,7 +307,7 @@ func TestExchangeFiltersMatchWhatTheEntryWrites(t *testing.T) {
 			t.Errorf("档位 %d → %+v, want %s", i, got, f.Name)
 		}
 	}
-	// 第一档必须是 aqx：预填名与缺省落点都照它算（无损、能原样导回）。
+	// 第一档必须是 aqx：预填名与缺省落点都照 aqx 算（无损、能原样导回）。
 	if writable[0].Name != "aqx" {
 		t.Errorf("第一档 = %s, want aqx（预填名与缺省落点照它算）", writable[0].Name)
 	}

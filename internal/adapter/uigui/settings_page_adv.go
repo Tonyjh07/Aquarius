@@ -20,7 +20,7 @@ func (advPage) Rows(f *settingsForm) []rowDesc {
 	return []rowDesc{sec(i18n.T("ui.page.adv.section_raw")), {kind: rowRaw}}
 }
 
-// Body 认领 rowRaw（改前它落进 rowBody 的 default 兜底；D162 起必须有页显式认领）。
+// Body 认领 rowRaw（改前 rowRaw 落进 rowBody 的 default 兜底；D162 起必须有页显式认领）。
 func (advPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
 	if rows[i].kind != rowRaw {
 		return layout.Dimensions{}, false
@@ -28,7 +28,7 @@ func (advPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, row
 	return editorBoxFill(th, &f.rawCfg, i18n.T("ui.page.adv.raw_hint"))(gtx), true
 }
 
-// FillRow 整文件编辑区是这一页唯一的可变高度行：它吸走内容区剩余高度。整份 config
+// FillRow 整文件编辑区是这一页唯一的可变高度行：该编辑区吸走内容区剩余高度。整份 config
 // 越短越好读——写死高度会让窗口拉高后底下留一大片空白。
 func (advPage) FillRow(rows []rowDesc) int {
 	for i, r := range rows {

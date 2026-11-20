@@ -3,7 +3,7 @@ package uigui
 // pending_hit_test.go 待发条能不能真的被点：用 Gio 的 input.Router 走一遍
 // press/release，断言命中后清单真的变了。
 //
-// 这层测的不是「逻辑对不对」（那在 pending_test 里），而是**热区到底铺在哪**——
+// 「逻辑对不对」在 pending_test 里；这层测的是**热区到底铺在哪**——
 // 待发条是手绘的，一行里叠了好几个矩形，画得出来不等于点得着。
 
 import (

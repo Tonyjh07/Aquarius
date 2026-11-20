@@ -420,7 +420,7 @@ func (pf *providerForm) modelPageBounds() (start, end int) {
 
 // providerModelRow 模型列表单行（S11-7③/D173；D181 改版）：启用勾选 + 名字 + 上下文窗口 +
 // 删除；下一行三个能力勾选 + 「探测能力」；再一行探测反馈（有才显示）。能力位的声明形态
-// 不写注脚——勾选本身就是声明，解释留在文档里（用户不读那行小字，却要为它让出按钮宽度）。
+// 不写注脚——勾选本身就是声明，解释留在文档里（用户不读那行小字，却要为小字让出按钮宽度）。
 func (f *settingsForm) providerModelRow(gtx layout.Context, th *material.Theme, prov, idx int) layout.Dimensions {
 	mf := f.provs[prov].modelForms[idx]
 	kids := []layout.FlexChild{

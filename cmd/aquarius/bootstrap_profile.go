@@ -20,7 +20,7 @@ import (
 // （errors.Is 判定），不展示给用户，故不随界面语言变。
 var errFirstRun = errors.New("bootstrap: first run, config template written")
 
-// dataDirPath 算出数据根目录的绝对路径，但不建它（`-doctor` 走这条：体检不写盘）。
+// dataDirPath 算出数据根目录的绝对路径，但不创建该目录（`-doctor` 走这条：体检不写盘）。
 func dataDirPath(dataDir string) (string, error) {
 	dir := dataDir
 	if dir == "" {
@@ -66,7 +66,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	}
 	w.dir = dir
 	// 数据目录说明（D291）：写完这一步任何 profile 都还没碰，换 profile 也只需重写一次。
-	// 它只是给人看的手册，写不出来不拦启动。
+	// 这份说明只是给人看的手册，写不出来不拦启动。
 	w.writeDataReadme()
 
 	profileName, err := resolveProfile(dir, profileFlag)
@@ -93,7 +93,7 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 	}
 
 	// 本机密钥库（D151/D161）：密钥库落在 profile 内（随 profile 隔离），读链 = 库 → 同名
-	// 环境变量；装配前向导窗（setupWizard）要用它探测缺密钥，故在此就位——profileDir 一
+	// 环境变量；装配前向导窗（setupWizard）要用这条链探测缺密钥，故在此就位——profileDir 一
 	// 定，两处（探测与真实构造）就是同一份链。库解不开不阻断：警告 + 环境变量兜底。
 	bin, err := secretbin.New(profileDir)
 	if err != nil {

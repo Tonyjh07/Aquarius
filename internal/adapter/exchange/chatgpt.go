@@ -16,14 +16,14 @@ import (
 
 // chatgpt.go ChatGPT 的 `conversations.json` 形状（§5.16「树形互通」）。
 //
-// 选它而不自定一套，是因为它已经是事实标准：Open WebUI 一类见到 `mapping` 会自己转换。
-// 我们的树本来就是树（parent 单值、children 有序），映射不需要降级成 DAG，所以这一档只丢
+// 选 chatgpt 形状而不自定一套，是因为这个形状已经是事实标准：Open WebUI 一类见到 `mapping` 会自己转换。
+// Aquarius 的树本来就是树（parent 单值、children 有序），映射不需要降级成 DAG，所以这一档只丢
 // 「分片种类」与「附件字节」，结构一点不丢——回执里照实说明丢的是这些。
 
 // chatEnvelope 文件顶层：真实导出是**数组**，一项一个会话。
 type chatEnvelope []chatConversation
 
-// chatConversation 一个会话（只声明我们要用的字段；其余原样忽略）。
+// chatConversation 一个会话（只声明本程序要用的字段；其余原样忽略）。
 type chatConversation struct {
 	Title       string              `json:"title"`
 	CreateTime  float64             `json:"create_time,omitempty"`
@@ -35,7 +35,7 @@ type chatConversation struct {
 // chatNode mapping 里的一个节点。
 //
 // Children 不用 omitempty：ChatGPT 自己的导出里叶子节点写的是 `"children": []`，缺这个键的
-// 形状对读它的人是不完整节点（它靠 children 走树）。空数组只多 14 字节，别为省这点字节
+// 形状对读者是不完整节点（读者靠 children 走树）。空数组只多 14 字节，别为省这点字节
 // 让产物与对方的规范有出入。
 type chatNode struct {
 	ID       string   `json:"id"`
@@ -65,7 +65,7 @@ type chatContent struct {
 	Text        string            `json:"text,omitempty"`
 }
 
-// exportChatGPT 我们这棵树 → 一个 chatgpt 会话对象（顶层数组只放这一项）。
+// exportChatGPT 本程序的树 → 一个 chatgpt 会话对象（顶层数组只放这一项）。
 func (e *Exchange) exportChatGPT(ctx context.Context, c *conversation.Conversation, w io.Writer) (port.ExchangeReport, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ExchangeReport{Format: "chatgpt"}, err
@@ -85,9 +85,9 @@ func (e *Exchange) exportChatGPT(ctx context.Context, c *conversation.Conversati
 
 // toChatConversation 树的投影。
 //
-// 结构照搬：每个节点一条 mapping 记录，`parent` / `children` 直接用我们的结构边，`current_node`
-// 是我们的 Head。Root 也要写（它的 message 为 null）——ChatGPT 的导出里同样有一个空根，
-// 少了它读回来时顶层消息就无处挂。
+// 结构照搬：每个节点一条 mapping 记录，`parent` / `children` 直接用本程序的结构边，`current_node`
+// 是本程序的 Head。Root 也要写（Root 的 message 为 null）——ChatGPT 的导出里同样有一个空根，
+// 少了 Root 读回来时顶层消息就无处挂。
 func toChatConversation(c *conversation.Conversation) (chatConversation, port.ExchangeReport) {
 	s := c.Snapshot()
 	rep := port.ExchangeReport{Format: "chatgpt", Nodes: nodeCount(c)}
@@ -125,7 +125,7 @@ func toChatConversation(c *conversation.Conversation) (chatConversation, port.Ex
 
 // toChatMessage 一个节点 → ChatGPT 消息；装不下的分片与元数据就地计入 counts。
 //
-// ChatGPT 的消息装得下文本、装不下附件字节、思考、工具调用（那些有各自的字段，但我们没有
+// ChatGPT 的消息装得下文本、装不下附件字节、思考、工具调用（那些有各自的字段，但本程序没有
 // 对得上号的东西可写）。所以这里只搬正文，其余逐类计数——回执告诉用户「带出去了什么」，
 // 而不是「大概能读」。
 func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
@@ -147,7 +147,7 @@ func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
 			}
 			counts[i18n.T("exchange.io.drop.doc_raw")]++
 		case conversation.PartImage, conversation.PartAudio:
-			// 一个字段都不写：ChatGPT 的图片是它的文件服务句柄，我们这边没有可用的地址，
+			// 一个字段都不写：ChatGPT 的图片是 ChatGPT 的文件服务句柄，本程序这边没有可用的地址，
 			// 硬塞一个对方取不到的伪指针只是把「没带」包装成「带了但取不到」。
 			counts[i18n.T("exchange.io.drop.attach_no_bytes")]++
 		case conversation.PartThinking:
@@ -172,7 +172,7 @@ func toChatMessage(m conversation.Message, counts map[string]int) chatMsg {
 
 // countChatMeta 逐类记下节点级元数据里带不出去的东西。
 //
-// ChatGPT 的消息没有地方放我们的终态/模型/用量，硬塞自定义键会被对方当成噪声；但「没带」
+// ChatGPT 的消息没有地方放本程序的终态/模型/用量，硬塞自定义键会被对方当成噪声；但「没带」
 // 是事实，回执要说出来。逐条计数而不逐条列名字：这些字段几乎每条 assistant 消息都有，
 // 按条列会把回执刷成一页。
 func countChatMeta(m conversation.Message, counts map[string]int) {
@@ -195,9 +195,9 @@ func countChatMeta(m conversation.Message, counts map[string]int) {
 	}
 }
 
-// chatRole 我们的角色 → ChatGPT 的角色。
+// chatRole 本程序的角色 → ChatGPT 的角色。
 //
-// inject（注入节点）降级成 system：它不是用户发言，伪装成用户比降级成系统更不诚实。
+// inject（注入节点）降级成 system：注入节点不是用户发言，伪装成用户比降级成系统更不诚实。
 func chatRole(r conversation.Role) string {
 	switch r {
 	case conversation.RoleUser:
@@ -252,7 +252,7 @@ func parseChatTree(conv chatConversation) importedTree {
 		Head:      conv.CurrentNode,
 		CreatedAt: fromUnixSeconds(conv.CreateTime),
 		UpdatedAt: fromUnixSeconds(conv.UpdateTime),
-		// 当前节点可能落在被跳过的消息上（纯图片、纯思考）：materialize 靠它上溯。
+		// 当前节点可能落在被跳过的消息上（纯图片、纯思考）：materialize 靠 ParentOf 上溯。
 		ParentOf: func(id string) (string, bool) {
 			n, ok := conv.Mapping[id]
 			return n.Parent, ok
@@ -267,7 +267,7 @@ func parseChatTree(conv chatConversation) importedTree {
 	for _, id := range ids {
 		n := conv.Mapping[id]
 		if n.Message == nil {
-			continue // 空根与挂在它下面的空节点：不是一个消息
+			continue // 空根与挂在空根下面的空节点：不是一个消息
 		}
 		role, ok := chatImportRole(n.Message.Author.Role)
 		if !ok {
@@ -294,7 +294,7 @@ func parseChatTree(conv chatConversation) importedTree {
 
 // reparent 把「父节点没被收下」的节点接到最近一个被收下的祖先上。
 //
-// ChatGPT 的导出里有几类空节点（空根、只有标题的节点）与被我们跳过的消息（纯图片）。它们的
+// ChatGPT 的导出里有几类空节点（空根、只有标题的节点）与被本程序跳过的消息（纯图片）。这些节点的
 // 子节点不能因此失去位置，也不能直接挂到根上把深度压平——顺着父指针往上找到第一个收下的
 // 节点，结构与源里一致，只是中间那几个空壳不在。
 func reparent(mapping map[string]chatNode, nodes []importedNode) {
@@ -332,9 +332,9 @@ func reparent(mapping map[string]chatNode, nodes []importedNode) {
 	}
 }
 
-// chatImportRole ChatGPT 的角色 → 我们的角色。
+// chatImportRole ChatGPT 的角色 → 本程序的角色。
 //
-// 这里的 `tool` 与我们已删除的 RoleTool 同名但不同义：它是「工具结果的正文」，我们把它读成
+// 这里的 `tool` 与本程序已删除的 RoleTool 同名但不同义：这个 `tool` 是「工具结果的正文」，本程序把这种角色读成
 // 注入节点（系统上下文）——正文来自工具、不是用户说的，所以既不当用户发言，也不丢。
 // 其余奇特角色（`critic` 之类）一律不认，计入丢弃项。
 func chatImportRole(role string) (conversation.Role, bool) {
@@ -352,7 +352,7 @@ func chatImportRole(role string) (conversation.Role, bool) {
 	}
 }
 
-// parseChatContent ChatGPT 的 content → 我们的分片。
+// parseChatContent ChatGPT 的 content → 本程序的分片。
 func parseChatContent(content chatContent, counts map[string]int) []conversation.Part {
 	if content.Text != "" && len(content.Parts) == 0 {
 		return []conversation.Part{{Kind: conversation.PartText, Text: content.Text}}

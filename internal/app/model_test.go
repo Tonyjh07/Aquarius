@@ -145,7 +145,7 @@ func TestModelCommandChainAnnotation(t *testing.T) {
 	}
 }
 
-// TestModelCommandBudget D177：/model 要说明上下文预算的生效值，以及它是被模型窗口
+// TestModelCommandBudget D177：/model 要说明上下文预算的生效值，以及该值是被模型窗口
 // 还是全局上限压住的——压缩提前触发时用户得能看出原因。
 func TestModelCommandBudget(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())

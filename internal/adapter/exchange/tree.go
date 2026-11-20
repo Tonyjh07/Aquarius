@@ -10,10 +10,10 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// tree.go 外部格式解析出来的一棵「待入库」树，以及把它搬成我们这棵树的唯一入口。
+// tree.go 外部格式解析出来的一棵「待入库」树，以及把这棵树搬成本程序这棵树的唯一入口。
 //
 // 为什么中间隔一层：chatgpt / openwebui 都是树形、openai / sillytavern 是线性，四家的字段名
-// 各说各的，但「谁是父、谁是子、谁是这个角色、正文是什么」是一回事。各家解析器只负责把它们
+// 各说各的，但「谁是父、谁是子、谁是这个角色、正文是什么」是一回事。各家解析器只负责把各家的
 // 的字段摊成 importedTree，节点 ID 重分配、Root 与 persona 的安置、不变量自检只写一遍。
 // 否则每接一家都要重抄一次「怎么建 Root」，而那种手抄最容易漏掉的正是校验。
 
@@ -33,7 +33,7 @@ type importedNode struct {
 	Role     conversation.Role
 	Parts    []conversation.Part
 	Created  time.Time
-	Parent   string   // "" = 树的挂点（我们的 Root 之下）
+	Parent   string   // "" = 树的挂点（本程序的 Root 之下）
 	Children []string // 有序；源里没给就按 Parent 反推
 }
 
@@ -44,25 +44,25 @@ type importedTree struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Nodes     []importedNode
-	// Dropped 源里我们不认、或装不下而丢掉的东西（逐项可读，进回执）。
+	// Dropped 源里本程序不认、或装不下而丢掉的东西（逐项可读，进回执）。
 	//
-	// materialize 也会往里补：它自己发现的事实（比如当前节点被跳过了）同样要进回执，
-	// 所以它改的是这份树的 Dropped，调用方在 materialize 之后才读。
+	// materialize 也会往里补：materialize 自己发现的事实（比如当前节点被跳过了）同样要进回执，
+	// 所以 materialize 改的是这份树的 Dropped，调用方在 materialize 之后才读。
 	Dropped []string
 	// ParentOf 源里的父指针查询（second = 该 ID 在源里确实存在）。
 	//
 	// 只在「当前节点被跳过」时需要：那时要顺着父指针上溯到最近收下的一条。源里没有父指针
-	// 概念的格式（线性）留空，Head 一定落在收下的节点上，用不到它。
+	// 概念的格式（线性）留空，Head 一定落在收下的节点上，用不到 ParentOf。
 	ParentOf func(id string) (parent string, ok bool)
 }
 
-// materialize 把 importedTree 搬成我们这棵树：新会话 ID、节点 ID 全部重分配、Root 补在最前，
+// materialize 把 importedTree 搬成本程序这棵树：新会话 ID、节点 ID 全部重分配、Root 补在最前，
 // 最后由 conversation.Restore 做统一自检。
 //
 // 源 ID 只用来建边，绝不带进新树：导两次同一份文件得到两棵互相独立的树，也不会与既有会话
 // 撞 ID（§5.16「写成新会话」）。
 //
-// 收 *importedTree 而不是值：它自己发现的事实（当前节点被跳过时回退了）也要进回执，而回执
+// 收 *importedTree 而不是值：materialize 自己发现的事实（当前节点被跳过时回退了）也要进回执，而回执
 // 的丢项清单是调用方在返回后读的那一份。
 func materialize(in *importedTree) (*conversation.Conversation, error) {
 	nodes, err := checkImported(*in)
@@ -125,7 +125,7 @@ func materialize(in *importedTree) (*conversation.Conversation, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 树外挂点单独一条边（"" → Root）：不变量 1 要求它恒存在且只有一个孩子（D19）。
+	// 树外挂点单独一条边（"" → Root）：不变量 1 要求这条边恒存在且只有一个孩子（D19）。
 	edges = append([]conversation.SnapshotEdge{{Parent: "", Childs: []conversation.MessageID{rootID}}}, edges...)
 	head, headNote := resolveHead(*in, nodes, newIDs, rootID)
 	if headNote != "" {
@@ -146,11 +146,11 @@ func materialize(in *importedTree) (*conversation.Conversation, error) {
 	return c, nil
 }
 
-// resolveHead 定 Head：源里声明了就按它，没声明就取最深的一条链。
+// resolveHead 定 Head：源里声明了就按声明值，没声明就取最深的一条链。
 //
-// 源里声明的那个节点可能被解析阶段跳过了（纯附件、纯思考、空壳——它们建不出消息），此时
+// 源里声明的那个节点可能被解析阶段跳过了（纯附件、纯思考、空壳——这些节点建不出消息），此时
 // 顺着源父指针上溯到最近一个收下的节点，并返回一行说明进回执。整份拒收是不对的：
-// Head 落在附件消息上是常态（用户发了张图、助手还没答），我们自己导出的 chatgpt 文件里
+// Head 落在附件消息上是常态（用户发了张图、助手还没答），本程序自己导出的 chatgpt 文件里
 // current_node 就可能正是这种节点，拒收等于「自己写的文件自己读不回来」。
 func resolveHead(in importedTree, nodes []importedNode, newIDs map[string]conversation.MessageID, rootID conversation.MessageID) (conversation.MessageID, string) {
 	if in.Head == "" {
@@ -170,7 +170,7 @@ func resolveHead(in importedTree, nodes []importedNode, newIDs map[string]conver
 	for hops := 0; hops <= len(nodes); hops++ {
 		parent, ok := in.ParentOf(cur)
 		if !ok {
-			// 源里根本没有这个 ID：不是「被跳过」而是文件对不上，仍按缺失处理但说明白。
+			// 源里根本没有这个 ID：与「被跳过」不同，这是文件对不上；仍按缺失处理但说明白。
 			return rootID, i18n.T("exchange.io.head_not_in_file")
 		}
 		if id, kept := newIDs[parent]; kept {
@@ -214,7 +214,7 @@ func checkImported(in importedTree) ([]importedNode, error) {
 	return in.Nodes, nil
 }
 
-// buildEdges 建结构边：源里有 children 就按它（顺序即兄弟顺序，D152），没有就按 Parent 反推。
+// buildEdges 建结构边：源里有 children 就按 children（顺序即兄弟顺序，D152），没有就按 Parent 反推。
 //
 // 两条都走：children 只列了一部分时，缺的那部分仍要按 Parent 补上——「尽力修复」与「补全
 // 源里漏写的结构」不是一回事，后者只补源里已经表达过的父子关系。
@@ -260,9 +260,9 @@ func buildEdges(nodes []importedNode, newIDs map[string]conversation.MessageID, 
 	return out, nil
 }
 
-// deepestNode 最深的一条链的末端（源里没声明当前节点时用它当 Head）。
+// deepestNode 最深的一条链的末端（源里没声明当前节点时用最深一条链的末端当 Head）。
 //
-// 线性格式与一些导出不带 `current_node`；此时「最后一条」比「随便挑一个」更接近用户预期。
+// 线性格式里并非每份导出都带 `current_node`；此时「最后一条」比「随便挑一个」更接近用户预期。
 func deepestNode(nodes []importedNode) string {
 	parent := make(map[string]string, len(nodes))
 	ids := make([]string, 0, len(nodes))
@@ -283,7 +283,7 @@ func deepestNode(nodes []importedNode) string {
 	return best
 }
 
-// depthOf 从节点往上数到挂点；父指针有环时返回 false（不能靠它挑头，交给自检报错）。
+// depthOf 从节点往上数到挂点；父指针有环时返回 false（不能靠父指针挑头，交给自检报错）。
 func depthOf(id string, parent map[string]string) (int, bool) {
 	seen := map[string]bool{}
 	d := 0

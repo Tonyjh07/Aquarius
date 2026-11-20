@@ -54,7 +54,7 @@ type ToolPart struct {
 // 就等于那个网页没读过。
 type ServerPart struct {
 	Tool  string          `json:"tool"`           // 服务端工具名（deepseek_read_url）
-	Kind  string          `json:"kind,omitempty"` // 块类别（read_link）；服务端靠它认回来
+	Kind  string          `json:"kind,omitempty"` // 块类别（read_link）；服务端靠该字段认回来
 	URL   string          `json:"url,omitempty"`  // 展示用
 	Title string          `json:"title,omitempty"`
 	Raw   json.RawMessage `json:"raw"` // 整块原文，回传时原样发出

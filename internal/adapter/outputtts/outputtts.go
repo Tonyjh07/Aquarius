@@ -1,5 +1,5 @@
 // Package outputtts 实现 port.OutputAdapter：把一条已提交回答的正文合成语音并播放
-// （D179）。它只取正文分片（PartText）——思考分片（PartThinking）不播报。
+// （D179）。该适配器只取正文分片（PartText）——思考分片（PartThinking）不播报。
 //
 // 合成是网络调用（数秒），而 outputsPresenter 在会话事件循环里同步调 Deliver，
 // 所以这里**立即返回**、把合成与播放放到后台；新一条回答开始播报时取消上一条
@@ -85,7 +85,7 @@ func (a *Adapter) Deliver(ctx context.Context, req port.OutputRequest) error {
 	a.seq++
 	seq := a.seq
 	// 脱钩轮次上下文：合成通常在回答提交之后才跑完，轮次 ctx 会先被取消；
-	// 但「新回答开始」与 Close 仍能经这里的 cancel 停掉它。
+	// 但「新回答开始」与 Close 仍能经这里的 cancel 停掉该合成任务。
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	a.cancel = cancel
 	a.mu.Unlock()

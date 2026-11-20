@@ -13,7 +13,7 @@ import (
 )
 
 // TestExportChatGPTShape 导出的形状要能被认这套的工具直接读：顶层数组、一项会话、
-// `mapping` 里每个节点带 parent/children、顶层 current_node 是我们的 Head。
+// `mapping` 里每个节点带 parent/children、顶层 current_node 是本程序的 Head。
 func TestExportChatGPTShape(t *testing.T) {
 	c := conversation.New(conversation.ID("conv-g"), "树形互通")
 	if _, err := c.Append(conversation.RoleUser, []conversation.Part{{Kind: conversation.PartText, Text: "第一句"}}); err != nil {
@@ -152,7 +152,7 @@ func TestChatGPTImportTree(t *testing.T) {
 	}
 }
 
-// TestChatGPTImportSkipsAndReparents 只带图片的消息与空壳节点被跳过，但它们的子节点要接上——
+// TestChatGPTImportSkipsAndReparents 只带图片的消息与空壳节点被跳过，但这些节点的子节点要接上——
 // 否则一份「中间夹着空的」导出会丢掉后半段。
 func TestChatGPTImportSkipsAndReparents(t *testing.T) {
 	const doc = `[{
@@ -178,10 +178,10 @@ func TestChatGPTImportSkipsAndReparents(t *testing.T) {
 		i18n.Tf("exchange.io.dropped.line", "kind", i18n.T("exchange.io.drop.image_ref"), "count", 1)) {
 		t.Fatalf("回执应说明图片没带进来: %v", rep.Dropped)
 	}
-	// 回答接在「问」之下（中间那张图不在，链路不能断）。
+	// 回答接在「问」之下（中间那张图不在，路径不能断）。
 	path := c.Path()
 	if len(path) != 3 || path[2].Content[0].Text != "答" {
-		t.Fatalf("链路 = %+v, want root→问→答", path)
+		t.Fatalf("路径 = %+v, want root→问→答", path)
 	}
 }
 
@@ -292,7 +292,7 @@ func TestDetectOpenAIWithChatWord(t *testing.T) {
 	if f, ok := New(Options{}).Detect("conv.json", []byte(doc)); !ok || f.Name != "openai" {
 		t.Fatalf("正文带 chat 一词的消息数组被认成 %+v, ok=%v；want openai", f, ok)
 	}
-	// 正文里出现 `"mapping"` 同样不该抢走它。
+	// 正文里出现 `"mapping"` 同样不该让这份文件被认成 chatgpt。
 	doc2 := `{"messages":[{"role":"user","content":"字段名叫 \"mapping\""}]}`
 	if f, ok := New(Options{}).Detect("conv.json", []byte(doc2)); !ok || f.Name != "openai" {
 		t.Fatalf("正文带 mapping 一词的消息数组被认成 %+v, ok=%v；want openai", f, ok)
@@ -327,7 +327,7 @@ func TestChatGPTHeadOnSkippedNode(t *testing.T) {
 // TestChatGPTExportImportHeadOnAttachment 真自往返：Head 是一条纯附件消息时，导出的
 // chatgpt 文件必须能自己导回来。
 //
-// 这条补的是「自己写的文件自己读不回来」：我们把 current_node 写成 Head，而 Head 完全可以
+// 这条补的是「自己写的文件自己读不回来」：本程序把 current_node 写成 Head，而 Head 完全可以
 // 是一条没有正文的消息（用户发了张图、助手还没答），解析阶段又恰好会跳过这种消息。
 func TestChatGPTExportImportHeadOnAttachment(t *testing.T) {
 	c := conversation.New(conversation.ID("conv-att"), "附件头")

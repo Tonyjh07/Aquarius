@@ -57,7 +57,7 @@ func TestWithEnvShadowed(t *testing.T) {
 }
 
 func TestRunOnePassAndFail(t *testing.T) {
-	// 用 go 自己的子命令当被测命令：它一定存在，输出也稳定。
+	// 用 go 自己的子命令当被测命令：go 自己的子命令一定存在，输出也稳定。
 	pass := runOne(context.Background(), job{
 		name: "ok", timeout: time.Minute,
 		steps: [][]string{{"go", "version"}},

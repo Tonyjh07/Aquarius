@@ -51,7 +51,7 @@ func collectResponses(t *testing.T, s port.Stream) (text, reasoning, sig string,
 }
 
 // responsesSSEScript 录制的 Responses 事件流：思考 item（含加密内容）→ 正文 → 工具调用
-// → completed（含 usage）。刻意保留 event: 行（chat 的解析忽略它们，这里也应当忽略）。
+// → completed（含 usage）。刻意保留 event: 行（chat 的解析忽略这些行，这里也应当忽略）。
 const responsesSSEScript = "" +
 	"event: response.output_item.added\n" +
 	`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"PARTIAL"}}` + "\n" +
@@ -354,7 +354,7 @@ func TestResponsesForeignSignatureIgnored(t *testing.T) {
 	}
 }
 
-// TestResponsesReasoningWithoutSuccessor 思考 item 必须有后继（产出它的消息/工具调用）——
+// TestResponsesReasoningWithoutSuccessor 思考 item 必须有后继（产出该思考项的消息/工具调用）——
 // 孤立思考不发（服务端会拒），空壳思考节点也就随之丢掉。
 func TestResponsesReasoningWithoutSuccessor(t *testing.T) {
 	srv, rec := newResponsesServer(t, `data: {"type":"response.completed","response":{}}`+"\n")

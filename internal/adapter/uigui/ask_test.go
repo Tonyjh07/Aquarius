@@ -447,7 +447,7 @@ func TestAskPanelKeyboard(t *testing.T) {
 	if u.m.ask.cursor != 1 {
 		t.Fatalf("↑ 游标 = %d, want 1", u.m.ask.cursor)
 	}
-	// 游标落到底 = 「自己输入」行：就地展开输入框，焦点让给它。
+	// 游标落到底 = 「自己输入」行：就地展开输入框，焦点让给输入框。
 	q.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})
 	expandFrame(q, u)
 	q.Queue(key.Event{Name: key.NameDownArrow, State: key.Press})

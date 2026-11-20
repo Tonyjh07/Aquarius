@@ -123,7 +123,7 @@ func TestRelSolveSettlesAndInvariants(t *testing.T) {
 // 求解后，同层拥挤处不得**深压**——接触推力把卡片推到「贴着」为止。星（根挂 11 个
 // 同层叶）是同层挤压最狠的一档：卡片总宽远大于能铺开的宽度，故断言的是**穿透有界**
 // （≤ 卡片宽的 relCardPenetrationMax），不是「零重叠」——后者在密集分支点本就不可达，
-// 真要它就得把标签砍没（A5 的取舍）。
+// 真要零重叠就得把标签砍没（A5 的取舍）。
 func TestRelSolveCardsDoNotOverlap(t *testing.T) {
 	t.Parallel()
 	const half, halfH = 70.0, 17.0

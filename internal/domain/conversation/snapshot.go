@@ -9,7 +9,7 @@ import (
 // snapshot.go 持久化与重建契约（§4.1/§5.3，D214）。
 //
 // 为什么领域要出这份 API：三张结构表私有之后，适配器不能再自己拼一棵树。但「把整棵树
-// 倒出来再装回去」是真实需求（storejson 写入磁盘、跨进程迁移、测试造树），所以给它一个
+// 倒出来再装回去」是真实需求（storejson 写入磁盘、跨进程迁移、测试造树），所以给这个需求一个
 // **受控**的出口，而不是重新导出 map：
 //
 //   - Snapshot 返回只读数据（切片 + 副本），调用方拿去做自己的 wire 格式；
@@ -39,13 +39,13 @@ type Snapshot struct {
 	UpdatedAt   time.Time
 }
 
-// SnapshotEdge 一个父节点与它的孩子（父 "" 即结构根挂点，D19）。
+// SnapshotEdge 一个父节点与自己的孩子（父 "" 即结构根挂点，D19）。
 type SnapshotEdge struct {
 	Parent MessageID
 	Childs []MessageID
 }
 
-// SnapshotEdition 一条版本链：New 是修订后的节点，Old 是被它取代的节点。
+// SnapshotEdition 一条版本链：New 是修订后的节点，Old 是被 New 取代的节点。
 type SnapshotEdition struct {
 	New MessageID
 	Old MessageID

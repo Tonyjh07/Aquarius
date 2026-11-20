@@ -212,7 +212,7 @@ func TestTerminalRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create long: %v", err)
 	}
-	// 先等它真的写出第一行再杀：kill 是先到先得的，进程还没轮到 stdout 就被杀掉时
+	// 先等终端真的写出第一行再杀：kill 是先到先得的，进程还没轮到 stdout 就被杀掉时
 	// 下面的断言无从谈起（Linux 上进程启动更快，更容易撞上这一拍）。
 	waitTerminalOutput(t, c, long.TerminalId, "out:sleep")
 	if _, err := c.KillTerminal(ctx, acp.KillTerminalRequest{SessionId: "sess-1", TerminalId: long.TerminalId}); err != nil {
@@ -240,7 +240,7 @@ func TestTerminalRuntime(t *testing.T) {
 		t.Fatal("release 之后 id 应失效")
 	}
 
-	// 5. cwd 越界：直接拒，不问用户（它只是起点，问也拦不住）。
+	// 5. cwd 越界：直接拒，不问用户（cwd 只是起点，问也拦不住）。
 	before := conf.calls
 	if _, err := c.CreateTerminal(ctx, acp.CreateTerminalRequest{
 		SessionId: "sess-1", Command: echoCmd, Cwd: &escape,
@@ -324,7 +324,7 @@ func TestTerminalAsks(t *testing.T) {
 	}
 }
 
-// TestTerminalCallbacks 走完整条链路（假代理发五个方法）：五个方法各有应答，
+// TestTerminalCallbacks 走完整条路径（假代理发五个方法）：五个方法各有应答，
 // 退出后仍可取输出，release 之后 id 失效。
 func TestTerminalCallbacks(t *testing.T) {
 	root := t.TempDir()
@@ -373,7 +373,7 @@ func TestTerminalCallbacks(t *testing.T) {
 		t.Fatalf("两条命令应各问一次，calls = %d", conf.calls)
 	}
 
-	// 报告要列出「它替你跑了什么」：两条命令与各自结局，被拒的才算备注。
+	// 报告要列出「代理替你跑了什么」：两条命令与各自结局，被拒的才算备注。
 	if len(run.Commands) != 2 {
 		t.Fatalf("commands = %+v，want 两条", run.Commands)
 	}

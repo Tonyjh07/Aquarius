@@ -274,7 +274,7 @@ func TestStorePlaintextKey(t *testing.T) {
 //
 // 复现过的问题：第 2 把钥匙重填明文时，键名取「原引用名」再拼一次 `_2`——原引用名本身
 // 已经带 `_2`，于是每重填一次就长一截（CUSTOM_2 → CUSTOM_2_2 → CUSTOM_2_2_2），库里
-// 留下一串没人引用的旧条目，而密钥库页把它们全列出来，用户看到一堆不知道是什么的东西。
+// 留下一串没人引用的旧条目，而密钥库页把旧条目全列出来，用户看到一堆不知道是什么的东西。
 //
 // 判据：同一槽位连续重填三次，引用名恒定；库里条目数不随重填次数增长。
 func TestKeySlotNameStableAcrossRewrite(t *testing.T) {
@@ -362,7 +362,7 @@ func TestResolvePatchKeyNoPlaintextWarn(t *testing.T) {
 // `welcomeManager.stderr`——就是用户的控制台）在「测试连通 / 获取模型」时不得出现写入磁盘警告。
 //
 // 上一条只锁 resolvePatchKey 本身；这条从 `WelcomeManager.Test` / `Models` 这两个真实入口
-// 走一遍，防「哪天有人把它们改回 resolveAPIKey」。
+// 走一遍，防「哪天有人把这两个入口改回 resolveAPIKey」。
 func TestWelcomeProbeDoesNotWarnPlaintextDraft(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

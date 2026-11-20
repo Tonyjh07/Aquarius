@@ -103,7 +103,7 @@ func TestTranscribeIgnoresLanguage(t *testing.T) {
 	}
 }
 
-// TestTranscribeReportsServerCode code 非 0 = 服务端明确失败，要把它的说明带出来。
+// TestTranscribeReportsServerCode code 非 0 = 服务端明确失败，要把服务端的说明带出来。
 func TestTranscribeReportsServerCode(t *testing.T) {
 	blobs := newTestBlobs(t)
 	ref := putAudio(t, blobs)

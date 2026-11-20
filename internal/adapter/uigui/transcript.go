@@ -185,7 +185,7 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 			keyBase: it.keyBase, keyN: it.selCount(),
 		})
 	}
-	// 待响应引导（D272）整块淡一档：气泡本体与旁边两枚控件一起算，它还不是会话节点，
+	// 待响应引导（D272）整块淡一档：气泡本体与旁边两枚控件一起算，该气泡还不是会话节点，
 	// 同在转写区的两种「我说的话」得靠观感分开。控件在同一层里画——淡得一样多，才不会
 	// 让人以为气泡是实心、按钮是贴上去的另一件东西。
 	var fade paint.OpacityStack
@@ -433,7 +433,7 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 				off := image.Pt(0, vs.y)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
 					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						// 输出用正文色（不给 Color）：它是给人读的内容，
+						// 输出用正文色（不给 Color）：输出是给人读的内容，
 						// 只有命令行那行退到暗色——层次靠「谁更淡」表达。
 						s := material.Body2(u.th, e.out)
 						s.State = rs.sel(2*k + 1)
@@ -441,7 +441,7 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 					}, 2*k+1, off, image.Point{})
 				})
 			}
-			if e.note != "" { // 操作回执（D267）：小字、更淡——它是附注，不是内容
+			if e.note != "" { // 操作回执（D267）：小字、更淡——操作回执是附注，不是内容
 				off := image.Pt(0, vs.y)
 				vs.add(func(gtx layout.Context) layout.Dimensions {
 					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {

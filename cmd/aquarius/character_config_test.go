@@ -2,7 +2,7 @@ package main
 
 // 角色卡配置（§5.17/D247）：`prompts.user_name` 与 `characters` 段的缺省解析。
 // 三处默认开的开关键（apply_post_history / inject_constant_book / inject_examples）用
-// 指针区分「键缺失 = 开」与「显式 false」——老配置没有这一段时不该把它们一并关掉。
+// 指针区分「键缺失 = 开」与「显式 false」——老配置没有这一段时不该把这几个开关键一并关掉。
 
 import (
 	"encoding/json"

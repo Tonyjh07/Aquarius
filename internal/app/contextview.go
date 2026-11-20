@@ -19,11 +19,11 @@ import (
 // 视图**只读装配产物**，不重拼一份：标签由 buildRequestTracked 在追加处记下（sectionMark），
 // 正文直接取自 req.Messages（只去掉段首用于分隔的空行），所以「看到的」就是「发出去的」。
 // 任何「按规则再拼一遍」的实现都会随规则演进与真实请求分叉，而这种视图一旦分叉就正好
-// 失去它唯一的价值。
+// 失去该视图唯一的价值。
 //
 // 视图层自己不写入磁盘、不发事件：写入磁盘与次窗由命令层决定（`/context full` 两者都做）。
 //
-// 另有一处**必须**守住的界限——它是排查工具，不是会话事实：不写入会话树。
+// 另有一处**必须**守住的界限——该视图是排查工具，不是会话事实：不写入会话树。
 
 // sectionMark 一段内容的坐标（§7.1）：Part < 0 表示整条消息，否则是该消息的第几个分片。
 type sectionMark struct {
@@ -59,8 +59,8 @@ type ContextReport struct {
 	Total     int
 	Exact     bool // 精确计数（false = 估算）
 	Last      bool // 来自上一轮实发快照（而非「下一轮将发送」）
-	// At 这份请求交出去的时刻（只有 Last 有值）。`/diag` 拿它与原始返回的起点对齐，
-	// 三部分才落在同一次请求上；`/context` 不展示它。
+	// At 这份请求交出去的时刻（只有 Last 有值）。`/diag` 拿该时刻与原始返回的起点对齐，
+	// 三部分才落在同一次请求上；`/context` 不展示该时刻。
 	At time.Time
 }
 
@@ -96,7 +96,7 @@ func (a *Agent) LastContextReport(ctx context.Context) (ContextReport, bool) {
 	return a.reportFrom(ctx, snap.req, snap.marks, true, snap.at), true
 }
 
-// saveLast 留档一份实发请求（只留最近一份）。at 取交付时刻，`/diag` 靠它与原始返回对齐。
+// saveLast 留档一份实发请求（只留最近一份）。at 取交付时刻，`/diag` 靠该时刻与原始返回对齐。
 func (a *Agent) saveLast(at time.Time, req port.GenerateRequest, marks []sectionMark) {
 	a.lastSnap.Store(&contextSnapshot{at: at, req: req, marks: marks})
 }
@@ -116,7 +116,7 @@ func (a *Agent) reportFrom(ctx context.Context, req port.GenerateRequest, marks 
 	rep.Total, rep.Exact = a.est.Estimate(ctx, req)
 
 	// 标签按（消息, 分片）排序：世界书/记忆/常驻声明的标签是装配后追加进 marks 的，
-	// 而它们的位置在首条消息内部——不排序会读成「首条消息之后」。
+	// 而这些标签的位置在首条消息内部——不排序会读成「首条消息之后」。
 	sorted := append([]sectionMark(nil), marks...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		if sorted[i].Msg != sorted[j].Msg {

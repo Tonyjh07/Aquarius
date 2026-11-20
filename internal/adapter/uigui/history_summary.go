@@ -50,7 +50,7 @@ const (
 type summaryDialog struct {
 	// tag 整窗输入区的路由锚点（Gio 要求地址稳定）。
 	tag                   struct{}
-	id                    conversation.MessageID // 目标节点：摘要插在它之前
+	id                    conversation.MessageID // 目标节点：摘要插在该节点之前
 	ed                    widget.Editor          // 摘要正文（多行；Enter 落换行，靠按钮提交）
 	list                  widget.List            // 正文区滚动（超长正文在卡内滚）
 	insert, model, cancel widget.Clickable

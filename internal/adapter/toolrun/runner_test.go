@@ -345,7 +345,7 @@ func TestConfirmPersist(t *testing.T) {
 	if want := filepath.Dir(target); got[0].Dir != want || got[0].Mode != perm.ModeAllow || got[0].Tool != "fw" {
 		t.Fatalf("override = %+v, want dir=%s", got[0], want)
 	}
-	// 请求要带上判定依据（Op/Target），审计靠它说清「是哪一次调用促使的」。
+	// 请求要带上判定依据（Op/Target），审计靠该依据说清「是哪一次调用促使的」。
 	if reqs[0].Op != perm.OpWrite || reqs[0].Target != target {
 		t.Fatalf("req = %+v, want op=write target=%s", reqs[0], target)
 	}

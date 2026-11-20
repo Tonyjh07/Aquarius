@@ -14,15 +14,15 @@ import (
 // TestTestyCallbacks 手工验证（**不进门禁**）：把官方 Rust SDK 的测试代理
 // （`agent-client-protocol-test`，俗称 testy）当外部代理跑一遍 `callbacks` 场景。
 //
-// 它按固定顺序发反向请求：`session/request_permission` → `fs/write_text_file` →
+// testy 按固定顺序发反向请求：`session/request_permission` → `fs/write_text_file` →
 // `fs/read_text_file` → 五个 `terminal/*` → 最后是 `elicitation/*`。本版申报了 fs 与
 // terminal、没申报 elicitation，所以期望是：
 //
-//   - 权限反问走确认器，fs 两个方法真的走通（写下去的字节与它发的一致）；
+//   - 权限反问走确认器，fs 两个方法真的走通（写下去的字节与 testy 发的一致）；
 //   - `terminal/*` 五个都走通：命令真的跑起来、能取到输出与退出码、`kill` 之后仍能取、
 //     `release` 之后 id 失效（A3）；
-//   - 末尾 `elicitation/*` 因未申报被它自己判为 -32602，`session/prompt` 以这个错误收尾
-//     ——**这是确定性的预期结果**，不是我们的 bug。
+//   - 末尾 `elicitation/*` 因未申报被 testy 自己判为 -32602，`session/prompt` 以这个错误收尾
+//     ——**这是确定性的预期结果**，不是客户端的 bug。
 //
 // 跑法：`AQUARIUS_TESTY=<testy 可执行文件> go test ./internal/adapter/acpgate -run TestTesty -v`
 //
@@ -61,7 +61,7 @@ func TestTestyCallbacks(t *testing.T) {
 	if want := 1 + len(run.Commands); conf.calls != want {
 		t.Fatalf("conf.calls = %d, want %d（1 次权限反问 + %d 条命令）", conf.calls, want, len(run.Commands))
 	}
-	// 写经我们过手：实现在 cwd 下，字节与它发的一模一样（不做换行转换），并记进 Wrote。
+	// 写经 Aquarius 过手：实现在 cwd 下，字节与 testy 发的一模一样（不做换行转换），并记进 Wrote。
 	want := filepath.Join(mustResolvePath(t, work), "testy-write.txt")
 	if len(run.Wrote) != 1 || !strings.EqualFold(run.Wrote[0], want) {
 		t.Fatalf("wrote = %v, want [%s]", run.Wrote, want)
@@ -75,7 +75,7 @@ func TestTestyCallbacks(t *testing.T) {
 	}
 
 	// 五个 terminal/* 都走通了：testy 在 callbacks 里至少建一条命令，且每条都留下了结局。
-	// 不按它的脚本文本断言具体命令——那是它的实现细节，我们只保证协议面成立。
+	// 不按 testy 的脚本文本断言具体命令——那是 testy 的实现细节，客户端只保证协议面成立。
 	if len(run.Commands) == 0 {
 		t.Fatalf("terminal/* 没有一条命令走通（notes = %v）", run.Notes)
 	}

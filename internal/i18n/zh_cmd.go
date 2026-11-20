@@ -4,7 +4,7 @@ package i18n
 //
 // key 形如 cmd.<主名>.desc / .usage / .p<n>.name / .p<n>.desc / .p<n>.valuename，
 // n 是 Params 数组下标（1 起）。命令名、取值（on/off、read-only 这类）、纯语法占位
-// （<id>、N）不进表——它们是命令语法的一部分，不是文案。
+// （<id>、N）不进表——命令名、取值与语法占位都属于命令语法，不是文案。
 //
 // 共享参数（开关类、权限等级）用 cmd.shared.*：一组只写一遍，改一处两个命令同时生效。
 var zhCmdTexts = map[string]string{

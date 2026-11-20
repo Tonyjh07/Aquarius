@@ -21,7 +21,7 @@ func (p *Plat) MainHandle() Handle { return 0 }
 // AttachMain 非 Windows 无句柄可挂（onHWND 不会触发：Gio 不暴露原生窗口）。
 func (p *Plat) AttachMain(Handle) {}
 
-// SetMainRun 非 Windows 无「窗口线程投递」需求（无修改性原生调用经由它下发）。
+// SetMainRun 非 Windows 无「窗口线程投递」需求（无修改性原生调用经由该投递下发）。
 func (p *Plat) SetMainRun(RunFunc) {}
 
 // WindowRect 无句柄可查（调用方回落自记账坐标）。

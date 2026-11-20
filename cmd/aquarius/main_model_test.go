@@ -233,7 +233,7 @@ func TestRunLegacyProfileConfigRejected(t *testing.T) {
 
 // TestRunLegacyProviderShapeRejected D173 前的 provider 列表形状（api_key 单值 /
 // models 字符串 / provider 上的 vision / fallback 名字数组）启动即显式报因：泛键解析
-// 会把它们静默读成零值，等于悄悄丢掉所有模型与密钥。
+// 会把旧形状的字段静默读成零值，等于悄悄丢掉所有模型与密钥。
 func TestRunLegacyProviderShapeRejected(t *testing.T) {
 	cases := map[string]string{
 		"api_key 单值":         `{"model":{"providers":[{"name":"p","base_url":"http://127.0.0.1:1","api_key":"secret:X","models":[{"name":"m"}]}],"name":"m"},"ui":{"kind":"repl"}}`,
@@ -275,7 +275,7 @@ func TestRunLegacyProviderShapeRejected(t *testing.T) {
 }
 
 // TestWiringContextBudget D177：装配根的三处消费者（压缩阈值 / /usage / 截断）都读
-// maxContextBudget；它必须与 /model 展示的规则同源，否则会出现「显示还有空间，发出去
+// maxContextBudget；maxContextBudget 必须与 /model 展示的规则同源，否则会出现「显示还有空间，发出去
 // 却被拒」这种分叉。
 func TestWiringContextBudget(t *testing.T) {
 	t.Parallel()
@@ -364,7 +364,7 @@ func TestModelEnrichModels(t *testing.T) {
 }
 
 // TestModelEnabledFlag D180：模型启用位——键缺失 = 启用；缺省请求模型取首个启用项；
-// `/model` 清单不列未启用的声明项（当前模型例外，它是正在跑的事实）；一家全关 = 启动校验拒绝。
+// `/model` 清单不列未启用的声明项（当前模型例外，当前模型是正在跑的事实）；一家全关 = 启动校验拒绝。
 func TestModelEnabledFlag(t *testing.T) {
 	t.Parallel()
 	off, on := false, true

@@ -44,7 +44,7 @@ func TestSharedFacesCapacityClamped(t *testing.T) {
 		t.Fatalf("共享集合容量未封住：len=%d cap=%d（调用方 append 会改写共享底层数组）",
 			len(faces), cap(faces))
 	}
-	// 真做一次 append，确认它另起了底层数组、原集合不受影响。
+	// 真做一次 append，确认 append 另起了底层数组、原集合不受影响。
 	before := len(faces)
 	more := append(faces, faces[0])
 	if len(faces) != before {

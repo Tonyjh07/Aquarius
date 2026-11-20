@@ -189,7 +189,7 @@ func TestSteerCutsSegment(t *testing.T) {
 }
 
 // TestSteerAtEndKeepsRunning 本来要收场那一刻插进来的话也算：本轮不结束，接着跑
-// （引导不带工具也能插进去——它是在流式输出期间说的）。
+// （引导不带工具也能插进去——该引导是在流式输出期间说的）。
 func TestSteerAtEndKeepsRunning(t *testing.T) {
 	var s *Session
 	llm := func(n int) {
@@ -374,7 +374,7 @@ func TestStopWithSteerResumes(t *testing.T) {
 		t.Fatalf("清单剩余 %d 条, want 1（只取引导那条）", n)
 	}
 
-	// 拿这句重新请求：新的一轮应当正常跑完，并且请求里带着它。
+	// 拿这句重新请求：新的一轮应当正常跑完，并且请求里带着这句引导。
 	inner.genErr = nil
 	if _, err := s.Handle(context.Background(), port.UserInput{Text: text}); err != nil {
 		t.Fatalf("重请求: %v", err)

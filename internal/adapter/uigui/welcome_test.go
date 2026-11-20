@@ -396,7 +396,7 @@ func TestWelcomeFormSaveError(t *testing.T) {
 }
 
 // TestWelcomeFormSkip 跳过 / 关闭：条款是使用的先决条件，**未勾选同意**时首页/末页的
-// 「以后再说」不能绕过它——退回第 2 页并报因；勾过之后 = 交回 Done、同意写入磁盘，不写
+// 「以后再说」不能绕过该条款——退回第 2 页并报因；勾过之后 = 交回 Done、同意写入磁盘，不写
 // provider（D278 决策 2/3：不写 provider 的完成 → 可启动空态；welcomed 由装配根收口）。
 // 第 3 页的「稍后配置」不走这条路，见 TestWelcomeSkipAccessKeepsWizard。
 // in-app = 置 welcomed（显式关闭即已看）后关窗。

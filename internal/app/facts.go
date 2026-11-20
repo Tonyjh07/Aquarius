@@ -8,7 +8,7 @@ import (
 )
 
 // factsSnapshot 会话展示事实快照（D82/§7.6，前置 B）：facts 为不可变发布值，sig 是
-// 计算它时的会话签名——签名不变则跳过重算（重算 = UsageReport 一次全量装配 + 计数，
+// 计算 facts 时的会话签名——签名不变则跳过重算（重算 = UsageReport 一次全量装配 + 计数，
 // 命令类输入不得空转）。发布后整只替换，UI 事件循环 goroutine 无锁读。
 type factsSnapshot struct {
 	facts port.SessionFacts

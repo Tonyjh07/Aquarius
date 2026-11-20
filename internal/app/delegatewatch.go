@@ -92,7 +92,7 @@ func (e *delegateEntry) takeByWatcher() bool {
 		e.mu.Unlock()
 		return true
 	}
-	// 前台正拿着它：等结论。前台的 Wait 一返回就会 release，所以这里实际上几乎不等；
+	// 前台正拿着归属：等结论。前台的 Wait 一返回就会 release，所以这里实际上几乎不等；
 	// 上限只是兜底——调用方漏掉 release 不该把收尾观察者永久卡住（关停会一起挂在 wg.Wait）。
 	settled := e.settled
 	e.mu.Unlock()
@@ -194,7 +194,7 @@ func (w *DelegateWatcher) Watch(task port.DelegateTask, session conversation.ID)
 }
 
 // Claim 预领终态报告（前台 delegate_wait 用）：返回 false = 归属已定（watcher 报过了）。
-// 返回的 release 必须调用，并告诉它结果有没有交出去——交不出去就要还回来。
+// 返回的 release 必须调用，并告诉该回调结果有没有交出去——交不出去就要还回来。
 func (w *DelegateWatcher) Claim(id port.DelegateID) (func(delivered bool), bool) {
 	if w == nil {
 		return func(bool) {}, true
@@ -331,7 +331,7 @@ func (w *DelegateWatcher) deliver(ctx context.Context, id port.DelegateID, in po
 	return false
 }
 
-// delegateFailureText 转交失败的报告正文（英文：进模型上下文）。它必须实现——否则
+// delegateFailureText 转交失败的报告正文（英文：进模型上下文）。该报告必须实现——否则
 // 一次失败就是一条静默丢失的活。已经收到的正文一并带上：中途失败不该把十几分钟的
 // 输出一起丢掉。
 func delegateFailureText(id port.DelegateID, agent string, run port.DelegateRun, err error) string {

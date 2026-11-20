@@ -16,7 +16,7 @@ import (
 )
 
 // pinLang 把界面语言钉在中文并在用例结束时还原：i18n 是进程级状态，run 会按配置或
-// 系统语言改它，不还原就会让同一进程里排在后面的用例跟着变。
+// 系统语言改界面语言，不还原就会让同一进程里排在后面的用例跟着变。
 func pinLang(t *testing.T) {
 	t.Helper()
 	before := i18n.Current()

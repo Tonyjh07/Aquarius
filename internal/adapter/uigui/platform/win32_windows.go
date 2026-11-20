@@ -342,7 +342,7 @@ func ensureDIB(w, h int32) error {
 	return nil
 }
 
-// dibReleaseFail 位图释放异常节流留证（D134）：释放失败 = 真泄漏，让它可见而非静默。
+// dibReleaseFail 位图释放异常节流留证（D134）：释放失败 = 真泄漏，让泄漏可见而非静默。
 // event 是两件事各自的 key（位图 / 内存 DC），不是文案（D288）。
 var dibReleaseFailN int
 

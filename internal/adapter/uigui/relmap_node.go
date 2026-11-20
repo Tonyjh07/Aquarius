@@ -39,7 +39,7 @@ func (g *relGraph) nodeRole(li int) conversation.Role {
 }
 
 // activateNode 原位左键抬起的落点（2026-10-25 用户批注）：会话根 = 复制会话 ID（轻提示，
-// 不弹窗）；其余节点 = 开消息查看/编辑遮罩（D139）。根没有消息内容可查看，复制它的 ID
+// 不弹窗）；其余节点 = 开消息查看/编辑遮罩（D139）。根没有消息内容可查看，复制根节点的 ID
 // 才有意义（根节点 ID 即会话 ID，D19）。
 func (g *relGraph) activateNode(gtx layout.Context, u *UI, st *historyState, li int) {
 	if g.isRoot(li) {
@@ -97,7 +97,7 @@ func (g *relGraph) openNodeMenu(u *UI, li int) {
 
 // nodeMenuCtx 组装图节点菜单上下文（D132）：
 //   - id/角色 → 档位（user/assistant 走气泡七项；root/system 只给复制/查看原文）；
-//   - 正文经 `port.TreeView.NodeText` 取**全文**（GraphNode.Snippet 只有 40 字摘要，拿它
+//   - 正文经 `port.TreeView.NodeText` 取**全文**（GraphNode.Snippet 只有 40 字摘要，拿该摘要
 //     预填编辑框会在提交时把消息截断成摘要——D132 的要点）；取不到（节点无正文/快照
 //     未发布）→ edit/copy 空，项集随之收敛为图侧三项（nodeMenuItems 的 hasText 分支）；
 //   - part = -1（缺省合段，/edit 语义：全部正文分片并为一条；与 NodeText 的拼接规则互逆）；

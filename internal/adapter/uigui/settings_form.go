@@ -25,7 +25,7 @@ type settingsForm struct {
 	page    int                // 当前页（pageGeneral..pageAbout）
 	pages   []widget.List      // 每页一个滚动列表（构造处定轴向）
 	navBtns []widget.Clickable // 左侧导航栏项（按页缓存）
-	// navList 左栏滚动（页数多到一个窗装不下时，靠它把下面的页滚进视口）。与 pages 同款
+	// navList 左栏滚动（页数多到一个窗装不下时，靠该列表把下面的页滚进视口）。与 pages 同款
 	// widget.List：页数按注册表长度长，导航项本身高度还是由 navItem 算。
 	navList widget.List
 	// navPage 左栏上一次滚到的页号（-1 = 还没滚过）：页号变了就把选中项滚进视口。

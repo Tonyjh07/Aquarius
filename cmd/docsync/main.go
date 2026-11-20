@@ -1,6 +1,6 @@
 // Command docsync 维护文档头部的「更新日期 + 对应提交」标记行。
 //
-// 为什么需要它：docs/ 各篇与 README 会随代码漂移，读者（与后续维护者）需要知道
+// 为什么需要这个工具：docs/ 各篇与 README 会随代码漂移，读者（与后续维护者）需要知道
 // 「这份文档对应哪份代码」。手工改容易漏、也容易写错哈希，所以把这条信息做成
 // 工具维护的单行标记，插在每个文件首个 H1 之后：
 //
@@ -35,7 +35,7 @@
 // 工作区干净的篇目一律以历史为准，免得手填的值覆盖掉可核对的记录。
 //
 // 覆盖范围：`docs/` 下全部 `*.md`（含子目录，如 `docs/releases/`）与仓库根的
-// `README.md`。`AGENTS.md` 不参与——它与代码同批修改，标记会立刻过时。
+// `README.md`。`AGENTS.md` 不参与——AGENTS.md 与代码同批修改，标记会立刻过时。
 package main
 
 import (
@@ -174,7 +174,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	picked := make(map[string]want, len(files))
 	switch {
 	case *commit != "":
-		// 读该提交的变更清单，只挑文档；日期/基线取该提交与它的父提交。
+		// 读该提交的变更清单，只挑文档；日期/基线取该提交和该提交的父提交。
 		if day == "" {
 			if day, err = commitDate(base, *commit); err != nil {
 				return fail(stderr, err)
@@ -322,12 +322,12 @@ func stripMarker(src string) string {
 // parent 是首父的短哈希，根提交为空；day 是该提交的日期。
 type histEntry struct {
 	sha    string // 完整哈希，用于取这一版的内容
-	short  string // 短哈希，根提交拿它当代码基线
+	short  string // 短哈希，根提交拿短哈希当代码基线
 	parent string
 	day    string
 }
 
-// rev 标记里应写的提交：代码基线（父提交）；根提交没有父，用它自己。
+// rev 标记里应写的提交：代码基线（父提交）；根提交没有父，用根提交自己。
 func (e histEntry) rev() string {
 	if e.parent == "" {
 		return e.short
@@ -546,7 +546,7 @@ func commitDate(root, rev string) (string, error) {
 	return day, nil
 }
 
-// parentRev 该提交的父提交短哈希（根提交无父 → 用它自己）。
+// parentRev 该提交的父提交短哈希（根提交无父 → 用根提交自己）。
 func parentRev(root, rev string) (string, error) {
 	out, err := exec.Command("git", "-C", root, "rev-parse", "--short", rev+"^").Output()
 	if err == nil {

@@ -63,7 +63,7 @@ type webProvider struct {
 	// Kind 提供商类型：搜索侧 deepseek | brave，抓取侧 deepseek | local。
 	Kind string `json:"kind"`
 	// From 借哪个 model.providers 条目（缺省 = 同 kind 名）。只补本条目没填的端点与
-	// 密钥；两项都自己填了就不必写它。老配置只写 kind 照样能用。
+	// 密钥；两项都自己填了就不必写 `from`。老配置只写 kind 照样能用。
 	From string `json:"from,omitempty"`
 	// Key 自己的密钥引用（secret:名 或明文）；空 = 借 From 那一条的第一把，
 	// 连 From 也没有则按侧回落（deepseek 走 _SEARCH_/_FETCH_，brave 走 _BRAVE_）。

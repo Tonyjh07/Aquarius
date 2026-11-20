@@ -105,7 +105,7 @@ func TestIngestMultipleAllOK(t *testing.T) {
 	}
 }
 
-// TestIngestMultiplePartialFailure D186 规则二：坏文件只跳过它自己，其余照常入树，
+// TestIngestMultiplePartialFailure D186 规则二：坏文件只跳过该文件自己，其余照常入树，
 // 回执里逐条列出被跳过的文件名与原因。
 func TestIngestMultiplePartialFailure(t *testing.T) {
 	in, _, dir := newIngestor(t)

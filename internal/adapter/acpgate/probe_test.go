@@ -73,7 +73,7 @@ func TestProbeOptions(t *testing.T) {
 	}
 }
 
-// TestProbeSessionRefused 建会话失败单列一类：没登录的代理握手是成功的，把它混进
+// TestProbeSessionRefused 建会话失败单列一类：没登录的代理握手是成功的，把建会话失败混进
 // 「握手失败」会把用户指向错误的地方。
 func TestProbeSessionRefused(t *testing.T) {
 	t.Parallel()
@@ -106,7 +106,7 @@ func TestProbeFailureClasses(t *testing.T) {
 		t.Fatalf("找不到命令应归 ErrProbeNotFound: %v", err)
 	}
 
-	// crash 模式：handshake 里对方直接退出，报因要带上它自己的 stderr 尾巴。
+	// crash 模式：handshake 里对方直接退出，报因要带上对方自己的 stderr 尾巴。
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	_, err = m.Probe(ctx, "fake")
@@ -118,7 +118,7 @@ func TestProbeFailureClasses(t *testing.T) {
 	}
 }
 
-// TestProbeAllowsDisabled 停用的代理也允许探测：它是「这条配置跑不跑得通」的诊断，
+// TestProbeAllowsDisabled 停用的代理也允许探测：探测是「这条配置跑不跑得通」的诊断，
 // 不是「能不能派活」的承诺（pick 才会拒绝停用）。
 func TestProbeAllowsDisabled(t *testing.T) {
 	t.Parallel()

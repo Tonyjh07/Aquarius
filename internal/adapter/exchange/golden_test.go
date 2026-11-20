@@ -3,8 +3,8 @@ package exchange
 // golden_test.go 三种互通格式的产物 golden（§5.16 验收规则）。
 //
 // 为什么锁字节而不是锁字段：这些文件是**给别人的程序读**的——字段名、嵌套形状、时间格式
-// 全都由对方的规范决定，只有把整份产物钉住，才拦得住「我们这边顺手改了个键名、对方读不
-// 出来」这类回归。树形与线性各一种，附件带着（aqx 是 ZIP，不比文本 golden，它的确定性
+// 全都由对方的规范决定，只有把整份产物钉住，才拦得住「本程序这边顺手改了个键名、对方读不
+// 出来」这类回归。树形与线性各一种，附件带着（aqx 是 ZIP，不比文本 golden，aqx 的确定性
 // 由 TestAQXDeterministic 守）。
 //
 // 首次生成/有意改动后重写：go test ./internal/adapter/exchange -run TestInteropFormatsGolden -update

@@ -1,8 +1,8 @@
 // Package acpgate 实现 port.Delegate（§5.18/D244）：把一件复杂任务**整个**交给一个
-// ACP 代理进程去跑，我们只收回它的报告。
+// ACP 代理进程去跑，客户端只收回代理的报告。
 //
-// 我们是客户端，不是代理：做 ACP v1 的六个方法，外加代理回调给我们的 `fs/*`（A2）与
-// `terminal/*`（A3）——申报一项就等于承诺替它做那一项。两条回调都是**经手**，不是围栏：
+// 本程序是客户端，不是代理：做 ACP v1 的六个方法，外加代理回调给客户端的 `fs/*`（A2）与
+// `terminal/*`（A3）——申报一项就等于承诺替代理做那一项。两条回调都是**经手**，不是围栏：
 // 代理自己起 shell 的那条路看不见（D283/A3）。
 //
 // 一次转交 = 一个进程、一个 ACP 会话（D261：后台任务模型，派活即返句柄）。进程跑完即关，
@@ -35,7 +35,7 @@ type Agent struct {
 	WorkDir string            `json:"workdir,omitempty"`
 	Enabled bool              `json:"enabled"`
 	Default bool              `json:"default,omitempty"`
-	// Options 建会话后要设上的配置项（D287）：键是代理广告的 configId，值是它广告的
+	// Options 建会话后要设上的配置项（D287）：键是代理广告的 configId，值是代理广告的
 	// value，两者原样使用。空 = 什么都不设，用对方的默认。
 	Options map[string]string `json:"options,omitempty"`
 }
@@ -57,7 +57,7 @@ type Options struct {
 	CurrentSession func() conversation.ID
 	// Timeout 单次转交总闸（0 = 不限）：防的是进程挂住一直占着并发名额。
 	Timeout time.Duration
-	// MaxConcurrent 每会话同时进行的转交上限；MaxTotal 全局上限（0 = 用端口缺省）。
+	// MaxConcurrent 每会话同时跑的转交上限；MaxTotal 全局上限（0 = 用端口缺省）。
 	MaxConcurrent int
 	MaxTotal      int
 	// OutsideReadAsks 越界读的询问次数：>0 = 那么多次；0 = 一次都不问（直接拒并留档）；
@@ -67,13 +67,13 @@ type Options struct {
 	// 留档）；负数 = 不限。nil = port.DefaultDelegateTerminalAsks。
 	TerminalAsks *int
 	// Terminal 是否申报 terminal 能力（A3）：nil = 申报。关掉之后 initialize 里不带这个
-	// 能力，五个方法回 -32601——此时代理只能自己起 shell，那条路我们看不见。
+	// 能力，五个方法回 -32601——此时代理只能自己起 shell，那条路客户端看不见。
 	Terminal *bool
 	// Log 运行日志（D276）：级别 / 上下文 / 事件 / 行动都按 key 给；nil = 丢弃。
 	Log port.Log
 	// LookPath 可执行探测（测试可覆盖）；nil = exec.LookPath。
 	LookPath func(string) (string, error)
-	// Grace 取消后等它收成 cancelled 的宽限（缺省 2s；测试缩短）。
+	// Grace 取消后等代理收成 cancelled 的宽限（缺省 2s；测试缩短）。
 	Grace time.Duration
 	// Handshake 单次启动+握手+建会话的上限（缺省 60s）。
 	Handshake time.Duration
@@ -85,7 +85,7 @@ type Options struct {
 	// Home 缺省工作目录（缺省 os.UserHomeDir）。
 	Home string
 	// LedgerPath 转交台账文件路径（空 = 不记；D269）。由装配根给到 `<profile>/jobs/delegates.json`
-	// ——与任务台账同目录：它们回答的是同一类问题「上次退出时还有什么没收尾」。
+	// ——与任务台账同目录：两份台账回答的是同一类问题「上次退出时还有什么没收尾」。
 	LedgerPath string
 }
 
@@ -287,7 +287,7 @@ func (m *Manager) Wait(ctx context.Context, id port.DelegateID) (port.DelegateRu
 	}
 }
 
-// Kill 终止一次转交：先发 session/cancel 通知，等它把 prompt 收成 cancelled，
+// Kill 终止一次转交：先发 session/cancel 通知，等代理把 prompt 收成 cancelled，
 // 宽限后仍不返回就杀进程组（§5.18）。
 func (m *Manager) Kill(ctx context.Context, id port.DelegateID) error {
 	r, err := m.lookup(id)

@@ -112,7 +112,7 @@ func TestRelGraphDragNodePinsAndSettles(t *testing.T) {
 	if px, py := g.toScreen(g.sol.Pos[li]); math.Abs(float64(px-to.X)) > 2 || math.Abs(float64(py-to.Y)) > 2 {
 		t.Fatalf("节点未跟随指针: 屏幕 (%v,%v), 指针 %v", px, py, to)
 	}
-	// 拖拽期间逐帧松弛：按住若干帧，周围应被斥力推开（渐进推开，不是一步到位）。
+	// 拖拽期间逐帧松弛：按住多帧，周围应被斥力推开（渐进推开，不是一步到位）。
 	for i := 0; i < 12; i++ {
 		relGFrame(q, u, st)
 	}

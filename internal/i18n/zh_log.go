@@ -61,7 +61,7 @@ var zhLogTexts = map[string]string{
 	"log.boot.readme_kept":    "{path} 不是本程序生成的，原样保留",
 	"log.boot.readme_failed":  "数据目录说明写不出来（{path}）：{err}",
 
-	// 模型链路
+	// 模型链（LLM 的调用与降级）
 	"log.llm.param_rejected":        "服务端不认参数 {field}，已从请求里剔除",
 	"log.llm.param_record_failed":   "记录 unsupported_params 失败：{err}",
 	"log.llm.cap_rejected":          "服务端不认能力 {cap}，已从请求里剔除",

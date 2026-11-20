@@ -14,7 +14,7 @@ import (
 
 // delegateTool 把一件复杂任务**整个**交给外部 ACP 代理（§5.18/D244）。
 //
-// 它派完活立刻返回（D261）：转交跑十几到几十分钟，同步形态等于把这一轮钉在子代理上，
+// 该工具派完活立刻返回（D261）：转交跑十几到几十分钟，同步形态等于把这一轮钉在子代理上，
 // 会话切不走、别的活一件干不了。要本轮就拿到结果的是 delegate_wait。
 type delegateTool struct {
 	jobs port.DelegateRunner
@@ -164,7 +164,7 @@ func (t *delegateWait) Execute(ctx context.Context, call tool.Call) (tool.Result
 	return okResult(port.DelegateReportText(id, run)), nil
 }
 
-// delegateKill 叫停一次转交（Safe：派活本身已过确认，叫停只影响我们自己起的那次）。
+// delegateKill 叫停一次转交（Safe：派活本身已过确认，叫停只影响本程序自己起的那次）。
 type delegateKill struct{ jobs port.DelegateRunner }
 
 func (t *delegateKill) Spec() tool.Spec {
@@ -214,7 +214,7 @@ func quoteList(names []string) string {
 
 // delegateDescribe 确认摘要把「代理 / 范围 / 任务」摊在用户面前。
 //
-// 为什么不用默认提示：它把原始参数压成一行截到 160 字，task 一长，workdir 与 roots 就滑出
+// 为什么不用默认提示：默认提示把原始参数压成一行截到 160 字，task 一长，workdir 与 roots 就滑出
 // 屏幕——而这两个字段正是用户唯一能判断「该不该批」的东西。所以范围全列、不截断，任务
 // 只留开头：任务写不清楚是模型的问题，范围看不见是界面的问题。
 func delegateDescribe(args json.RawMessage) string {

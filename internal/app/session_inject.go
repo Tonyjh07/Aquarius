@@ -24,7 +24,7 @@ type pendingInjection struct {
 	trigger bool
 	session conversation.ID // 目标会话（D261）：空 = 实现时取当前会话；非当前则异地实现
 	// done 送达回执（D264）：非 nil 时，排空把这条写成节点并写入磁盘（或确认丢弃）后写入结果。
-	// 投递方靠它区分「已入队」与「已实现」——报告要不要从台账上销账，只能按后者判。
+	// 投递方靠该回执区分「已入队」与「已实现」——报告要不要从台账上销账，只能按后者判。
 	done chan error
 }
 
@@ -32,7 +32,7 @@ type pendingInjection struct {
 var _ port.Injector = (*Session)(nil)
 
 // Inject 实现 port.Injector（D150）：**先校验、后非阻塞入队**。
-// 校验在入队前做——坏包（思考/工具分片、空内容）当场报给调用方，不让它无声落进树；
+// 校验在入队前做——坏包（思考/工具分片、空内容）当场报给调用方，不让坏包无声落进树；
 // 队列满则立即返回错误（调用方自行退避重试），不在这里阻塞等空位。
 func (s *Session) Inject(_ context.Context, in port.Injection) error {
 	item, err := s.pending(in)
@@ -47,15 +47,15 @@ func (s *Session) Inject(_ context.Context, in port.Injection) error {
 	}
 }
 
-// errInjectQueueFull 队列满（D150）：不阻塞调用方，由它自行退避重试。
+// errInjectQueueFull 队列满（D150）：不阻塞调用方，由调用方自行退避重试。
 func errInjectQueueFull() error { return errors.New("session: " + i18n.T("inject.queue_full")) }
 
 // InjectAndWait 同 Inject，但**等到真正送达并写入磁盘**才返回（D264）。
 //
-// 只给跨轮生产者（任务收尾报告）用：它们要拿这个结果决定台账销不销账。语义差别就一句话：
+// 只给跨轮生产者（任务收尾报告）用：这些生产者要拿这个结果决定台账销不销账。语义差别就一句话：
 // 入队的报告随进程一起消失，写入磁盘的不会。所以这里等的是排空完成，不只是入队成功。
 //
-// 必须在会话 goroutine 之外调用（会等它排空）；ctx 取消即放弃等待，此时内容**可能**稍后
+// 必须在会话 goroutine 之外调用（会等会话 goroutine 排空）；ctx 取消即放弃等待，此时内容**可能**稍后
 // 仍然实现，调用方按未确认处理即可——宁可下次启动多提一句，也不假装送到了。
 func (s *Session) InjectAndWait(ctx context.Context, in port.Injection) error {
 	item, err := s.pending(in)
@@ -185,7 +185,7 @@ func (s *Session) drainInjections(ctx context.Context, at drainPoint) (landed []
 	for {
 		select {
 		case item := <-s.injectCh:
-			// 目标会话不是当前会话（D261）：落到它自己的树上，不等用户切回去。
+			// 目标会话不是当前会话（D261）：落到目标会话自己的树上，不等用户切回去。
 			// 转交与后台任务都注定跨切换，报告按归属实现而不是按焦点实现。
 			if item.session != "" && item.session != s.cur.ID {
 				if err := s.landElsewhere(ctx, item); err != nil {
@@ -249,11 +249,11 @@ func (s *Session) landInjection(item pendingInjection, trigger bool) (conversati
 	return node, nil
 }
 
-// landElsewhere 异地送达（D261）：目标会话不是当前会话时，读它的树、追加注入、写回。
+// landElsewhere 异地送达（D261）：目标会话不是当前会话时，读目标会话的树、追加注入、写回。
 //
 // 为什么可以这样做：树变更仍只在会话 goroutine 里发生（§7.5）——这里读改写的是**不在
-// 内存里**的会话，它唯一的另一份活体是磁盘，而磁盘只有这个 goroutine 在碰。切回来时
-// replayHistory 自然把它铺出来。
+// 内存里**的会话，该会话唯一的另一份活体是磁盘，而磁盘只有这个 goroutine 在碰。切回来时
+// replayHistory 自然把该会话铺出来。
 //
 // Trigger 一律记 false：轮次是当前会话的事，异地那条没有起过一轮。目标已被删除则丢弃
 // 并记一条运行日志——不重建，重建出来的会话没有归属。

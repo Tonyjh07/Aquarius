@@ -31,7 +31,7 @@ type SettingsPatch struct {
 	// 改配置，进程内不换语言——界面照常提示重启（与 profile 切换同一套规则）。
 	Lang string
 	// Placeholder 输入框占位文字（D279/§7.8）：用户自己写的一行灰字，**不翻译**——切到
-	// 哪套界面语言都用它；"" = 清空自定义，回落内置文案（那一条随语言变）。恒写，
+	// 哪套界面语言都用这段占位文字；"" = 清空自定义，回落内置文案（那一条随语言变）。恒写，
 	// 不给「空 = 保持原值」的语义：清空是这条设置最常被用到的操作之一。
 	// 写回侧归一为单行并按 port.SettingsPlaceholderMax 拒写超限值，界面每帧取词，热生效。
 	Placeholder  string
@@ -150,7 +150,7 @@ type PromptModuleView struct {
 // 界面既过不了分层守卫，也会把这张表钉死在界面包里。
 const (
 	// SettingsFontSizeMin/Max 正文字号（sp）。低于下限正文在 125% 缩放下挤成一团，
-	// 高于上限一行放不下几个字。界面侧另据它做越界夹取（回落正文基准 15sp）。
+	// 高于上限一行放不下几个字。界面侧另据这对上下限做越界夹取（回落正文基准 15sp）。
 	SettingsFontSizeMin = 10.0
 	SettingsFontSizeMax = 28.0
 
@@ -159,7 +159,7 @@ const (
 	SettingsScaleMin = 0.75
 	SettingsScaleMax = 2.5
 
-	// SettingsWindowWidthMin/Max 与 SettingsWindowHeightMin/Max 主窗像素粗界：界面照它
+	// SettingsWindowWidthMin/Max 与 SettingsWindowHeightMin/Max 主窗像素粗界：界面照这组粗界
 	// 夹取用户填的尺寸，再叠加布局地板（240dp × DPI × 缩放）抬下限。
 	SettingsWindowWidthMin  = 200
 	SettingsWindowWidthMax  = 3840
@@ -176,7 +176,7 @@ const (
 	SettingsBackupKeepMin = 1
 	SettingsBackupKeepMax = 20
 
-	// SettingsPlaceholderMax 自定义输入框占位文字的字符上限（D279）。占位是**灰字**，它要
+	// SettingsPlaceholderMax 自定义输入框占位文字的字符上限（D279）。占位是**灰字**，灰字要
 	// 和用户真的在打的字区分开：长到能绕两行就不再是提示，而是正文压在输入框里。120 个
 	// 字符在 608dp 宽的输入栏里约两行多一点，再长就会把编辑区撑高、把胶囊顶变形。
 	SettingsPlaceholderMax = 120

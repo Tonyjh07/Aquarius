@@ -1,7 +1,7 @@
 package app
 
 // session_inject_wait_test.go 注入送达回执（D264）：报「已送达并写入磁盘」才回话，
-// 任务报告的台账销账靠它判，不再靠「入队成功」。
+// 任务报告的台账销账靠该回执判，不再靠「入队成功」。
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func TestInjectAndWaitLandsBeforeReturning(t *testing.T) {
 	}
 }
 
-// TestInjectAndWaitElsewherePersisted 目标不是当前会话：返回时它的树上已经有这条。
+// TestInjectAndWaitElsewherePersisted 目标不是当前会话：返回时目标的树上已经有这条。
 func TestInjectAndWaitElsewherePersisted(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := injectableSession(t, store)

@@ -4,7 +4,7 @@ package i18n
 // 回执与报错。
 //
 // 回执是分行的：一行一句事实，拼接交给调用方（每行一条 key）。发给模型的那批字符串
-// （system 提示、工具声明、工具回填）不在这里：它们一律英文且与界面语言无关（§7.8）。
+// （system 提示、工具声明、工具回填）不在这里：那批字符串一律英文且与界面语言无关（§7.8）。
 var zhAgentTexts = map[string]string{
 
 	// 用法
@@ -31,7 +31,7 @@ var zhAgentTexts = map[string]string{
 	"model.caps_none":        "（三项均未声明）",
 	"model.list_sep":         "、",
 
-	// 能力名：完整写法（能力行/探测）与短写（清单标注/链路归因）
+	// 能力名：完整写法（能力行/探测）与短写（清单标注/路径归因）
 	"model.cap_tools":      "工具调用",
 	"model.cap_reasoning":  "思考",
 	"model.cap_vision":     "图片输入",
@@ -51,7 +51,7 @@ var zhAgentTexts = map[string]string{
 	"model.verdict_unknown":     "无结论",
 	"model.elapsed_unknown":     "耗时未知",
 
-	// 上下文预算行：生效值，以及它是被模型窗口还是全局上限压住的（D177）
+	// 上下文预算行：生效值，以及该生效值是被模型窗口还是全局上限压住的（D177）
 	"model.budget_global_only": "上下文预算: {effective} tokens（全局上限；模型未声明窗口）",
 	"model.budget_model":       "上下文预算: {effective} tokens（模型窗口 {window} 在压；全局上限 {limit}）",
 	"model.budget_global":      "上下文预算: {effective} tokens（全局上限在压；模型窗口 {window}）",

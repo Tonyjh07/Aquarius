@@ -21,7 +21,7 @@ var _ port.AudioPlayer = (*Player)(nil)
 
 var (
 	procPlaySound = syscall.NewLazyDLL("winmm.dll").NewProc("PlaySoundW")
-	// playMu 串行化 PlaySound 调用：它操作的是进程级播放状态，多个 Player 实例
+	// playMu 串行化 PlaySound 调用：PlaySound 操作的是进程级播放状态，多个 Player 实例
 	// 并发调用会互相打断。
 	playMu sync.Mutex
 )

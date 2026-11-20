@@ -5,7 +5,7 @@ package main
 // doctor_disk_windows.go 卷余量（D306）：Win32 的 GetDiskFreeSpaceEx，按**卷**问，不按路径问。
 //
 // 走 x/sys/windows 而不是 syscall：后者没有这个函数。参数里第一个是「调用者可用的空闲
-// 字节」（磁盘配额下小于卷空闲），体检要的是「这个程序还能写多少」，取它。
+// 字节」（磁盘配额下小于卷空闲），体检要的是「这个程序还能写多少」，取第一个参数。
 
 import (
 	"fmt"

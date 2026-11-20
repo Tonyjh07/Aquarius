@@ -144,7 +144,7 @@ func isTerminal(r io.Reader) bool {
 
 // pumpLines 非 TTY 输入泵：按行读 UTF-8 直投（等价"输入行 + 回车"语义）。
 // 绕开 tea 的 localereader 代码页误解码；EOF 经事件循环排队（与输入行同一队列，
-// 先于它的提交必已入队）；扫描错误（如超长行）随 eofMsg 上抛，不再静默当 EOF。
+// 先于 EOF 的提交必已入队）；扫描错误（如超长行）随 eofMsg 上抛，不再静默当 EOF。
 func (u *UI) pumpLines(in io.Reader) {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64<<10), inputLineLimit)
@@ -212,7 +212,7 @@ func (u *UI) Wake() {
 
 // Next 阻塞读取下一条输入（斜杠命令解析与 repl 同规则）；
 // io.EOF = Ctrl+D（空输入）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
-// 广播到达时先取尽排队输入（eofMsg 经事件循环排队，先于它的提交必已入队），
+// 广播到达时先取尽排队输入（eofMsg 经事件循环排队，先于 EOF 的提交必已入队），
 // 取空才返回 EOF——任何 select 次序下都不丢输入、也不吞 EOF（审查修复）。
 func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 	for {
@@ -316,7 +316,7 @@ type (
 	}
 	// confirmResultMsg Confirm 侧自行得出应答后的模型状态收尾（关闭对话框 + 记转写）。
 	confirmResultMsg struct{ ans port.ConfirmAnswer }
-	// drainMsg 排空标记（Close 投递：处理到它即代表此前 Send 全部落帧）。
+	// drainMsg 排空标记（Close 投递：处理到该标记即代表此前 Send 全部落帧）。
 	drainMsg struct{ done chan struct{} }
 	// eofMsg 输入流结束（pump 投递：与输入行同一队列，杜绝 EOF 抢跑于排队输入）；
 	// err 非空 = 扫描错误（Next 原样上抛）。

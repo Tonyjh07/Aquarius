@@ -69,7 +69,7 @@ func (h healthProbe) Probe(ctx context.Context) []app.HealthCheck {
 // checkConfig 重新读一遍配置文件的磁盘现状。
 //
 // 读的是文件而不是启动快照：启动快照已经成功解析过了（否则启动就失败了），能坏掉的只有
-// 「程序跑着的时候有人改了它」——这正是体检要抓的一类。
+// 「程序跑着的时候有人改了配置文件」——这正是体检要抓的一类。
 func checkConfig(w *wiring) app.HealthCheck {
 	c := app.HealthCheck{ID: "config"}
 	cfg, err := loadConfig(w.cfgPath)
@@ -115,7 +115,7 @@ func checkSecrets(ctx context.Context, w *wiring) app.HealthCheck {
 
 // checkSessions 逐个解码会话文件。
 //
-// 不走 ConversationStore.List：它把解不开的文件静默跳过（对 /list 是对的，坏一个不该
+// 不走 ConversationStore.List：该方法把解不开的文件静默跳过（对 /list 是对的，坏一个不该
 // 拖垮整张列表），于是那些会话在 /list 里就是「不存在」。体检要报的正是这一批。
 func checkSessions(ctx context.Context, w *wiring) app.HealthCheck {
 	c := app.HealthCheck{ID: "sessions"}
@@ -315,7 +315,7 @@ func dirUsage(dir string) (size int64, files int, capped bool, err error) {
 }
 
 // humanSize 字节数的可读写法（回执里给人看）。与 app / toolbuiltin 的两份同一套规则：
-// 1024 进制、一位小数、小于 1 KiB 写整数。三处各一份是有意的——它们分属三层，抽公共包
+// 1024 进制、一位小数、小于 1 KiB 写整数。三处各一份是有意的——这三份实现分属三层，抽公共包
 // 只为了省十行，反而让依赖方向多一条。
 func humanSize(n int64) string {
 	const unit = 1024

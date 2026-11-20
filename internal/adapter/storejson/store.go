@@ -25,7 +25,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// ErrNotFound 会话文件不存在。它就是端口哨兵本身（别名而非新值），调用方按
+// ErrNotFound 会话文件不存在。ErrNotFound 就是端口哨兵本身（别名而非新值），调用方按
 // errors.Is(err, port.ErrConversationNotFound) 判「已删除」时不必认识这个适配器。
 var ErrNotFound = port.ErrConversationNotFound
 
@@ -125,7 +125,7 @@ func renameIfExists(from, to string) error {
 }
 
 // Save 整树序列化写入磁盘：先写临时文件，再把现有文件轮成备份代，最后原子换入（D7/D254）。
-// 轮转**只在现文件能完整解析时进行**（保存前完整性校验）——坏文件不许挤掉更旧的
+// 轮转**只在现文件能完整解析时发生**（保存前完整性校验）——坏文件不许挤掉更旧的
 // 可用备份。入树前做不变量自检，坏数据不写入磁盘。
 //
 // 同一会话的保存串行执行（见 Store.saveLocks），临时文件每次随机命名：并发保存
@@ -324,7 +324,7 @@ type BrokenFile struct {
 // 「主文件没了、只剩一带备份」也算：那份会话在 /list 里同样不存在，而恢复只差一次改名。
 //
 // 不走 List：List 对解不开的文件是静默跳过（坏一个不该拖垮整张列表），于是这些会话在
-// `/list` 里就是「不存在」。体检要报的正是这一批——它们是「会话凭空少了」的唯一解释。
+// `/list` 里就是「不存在」。体检要报的正是这一批——这些文件是「会话凭空少了」的唯一解释。
 //
 // 只读：不解锁、不加每会话锁、不动 .bak，也不缓存（体检要的是此刻磁盘上的样子）。
 func (s *Store) Audit(ctx context.Context) (total int, broken []BrokenFile, err error) {

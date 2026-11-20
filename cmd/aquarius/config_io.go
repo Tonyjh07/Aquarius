@@ -50,7 +50,7 @@ const (
 `
 )
 
-// defaultProfileName 首次运行创建的 profile 名（指针缺省指向它）。
+// defaultProfileName 首次运行创建的 profile 名（指针缺省指向 `default`）。
 const defaultProfileName = "default"
 
 // legacyConfigKeys D110 前单文件 config 的顶层键：根 config.json 任一出现即判旧格式
@@ -89,8 +89,8 @@ func (w *wiring) persistSkillDirs(dirs []string) error {
 //
 // 模板里的 provider 是 DeepSeek：国内可达、OpenAI 兼容协议，密钥引用直接用官方的
 // DEEPSEEK_API_KEY，用户按官方文档设好环境变量即可跑通。两个模型条目正好覆盖
-// 「省略」与「显式」两条解析路径：flash 显式声明工具 / 思考 / 图像全开（它确实收图），
-// v4-pro 省略 caps（按 openai-chat 协议缺省 = 工具 + 思考，无图像——正好对上它不收图）。
+// 「省略」与「显式」两条解析路径：flash 显式声明工具 / 思考 / 图像全开（flash 确实收图），
+// v4-pro 省略 caps（按 openai-chat 协议缺省 = 工具 + 思考，无图像——正好对上 v4-pro 不收图）。
 const defaultConfig = `{
   "model": {
     "providers": [
@@ -230,7 +230,7 @@ const configFileMode fs.FileMode = 0o600
 //
 // atomicfile 的「覆盖沿用既有权限位」只守一个方向（不把 0600 放宽），配置文件要的
 // 是相反方向：早先按 0644 建出来的那份也得收回来，否则手写的密钥对同机他人一直是
-// 可读的。chmod 失败不回滚写入——内容已经写入磁盘，把它报成「写失败」只会误导调用方；
+// 可读的。chmod 失败不回滚写入——内容已经写入磁盘，把 chmod 失败报成「写失败」只会误导调用方；
 // 权限收紧下次写回还会再来一次。
 func writeConfigFile(path string, data []byte) error {
 	if err := atomicfile.WriteFile(path, data, configFileMode); err != nil {
@@ -409,12 +409,12 @@ func (c *cfgWriter) persistLevel(l perm.Level) error {
 	}); err != nil {
 		return err
 	}
-	c.lvl.Set(l) // 工具链路活等级（D22 执行接入）
+	c.lvl.Set(l) // 工具链的活等级（D22 执行接入）
 	return nil
 }
 
 // persistUnattended 实现 /unattended 与菜单/设置窗开关写回 config 的
-// permissions.unattended（D185 规则四）：成功后同步活开关，工具与提问链路即时生效。
+// permissions.unattended（D185 规则四）：成功后同步活开关，工具与提问路径即时生效。
 func (c *cfgWriter) persistUnattended(on bool) error {
 	if err := persistConfig(c.path, func(generic map[string]any) {
 		perms, _ := generic["permissions"].(map[string]any)

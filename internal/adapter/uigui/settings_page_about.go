@@ -3,7 +3,7 @@ package uigui
 // settings_page_about.go 「关于」页（D208，页面注册表见 settings_page.go）：图标、名字与
 // 一句话定位、构建版本、运行环境、项目主页、版权与许可。
 //
-// 本页**没有配置项**——不进快照、不进 patch，「保存并应用」对它无意义（按下只报没有
+// 本页**没有配置项**——不进快照、不进 patch，「保存并应用」对本页无意义（按下只报没有
 // 改动）。因此 FirstEditor 返回 nil：开窗不把焦点抢到本页（本页没有可手输的字段）。
 //
 // 版本号来自装配根注入的 `-ldflags -X main.version`（Options.Version），空或 "dev" =
@@ -38,7 +38,7 @@ const aboutProjectURL = "https://github.com/Tonyjh07/Aquarius"
 // 里才调），常量会把这句话冻在初始化那一刻的语言上。
 func aboutTagline() string { return i18n.T("ui.page.about.tagline") }
 
-// aboutCopyright 版权行。年份与作者是**声明的规则**，写死而不从构建期推导——它不该随
+// aboutCopyright 版权行。年份与作者是**声明的规则**，写死而不从构建期推导——该声明不该随
 // 谁在哪台机器上编译而变。
 const aboutCopyright = "© 2026 Tonyjh07"
 
@@ -199,7 +199,7 @@ func aboutStatusRow(gtx layout.Context, th *material.Theme, f *settingsForm) lay
 	return l.Layout(gtx)
 }
 
-// aboutHeroRow 图标 + 名字 + 一句话（不落卡：它是页面的身份区，不是一行表单）。
+// aboutHeroRow 图标 + 名字 + 一句话（不落卡：该行是页面的身份区，不是一行表单）。
 func aboutHeroRow(gtx layout.Context, th *material.Theme, f *settingsForm) layout.Dimensions {
 	side := gtx.Dp(aboutIconDp)
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,

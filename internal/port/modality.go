@@ -44,7 +44,7 @@ type FrameSink func(pcm []byte) (bool, error)
 // Recorder 麦克风采集（D179/D295）：连续推 16kHz 单声道 16bit 的 PCM 帧。
 //
 // ctx 取消 = 用户主动停止，此时已推出去的帧照常有效、Record 返回 nil 而不是错误；
-// 停止不是失败，这是这条链路上唯一不能丢的语义（用户按停止的前提是他刚说完话）。
+// 停止不是失败，这是这条路径上唯一不能丢的语义（用户按停止键的前提是刚说完话）。
 type Recorder interface {
 	Record(ctx context.Context, max time.Duration, sink FrameSink) error
 }
@@ -59,7 +59,7 @@ type SpeechSegment struct {
 // SpeechSegmenter 语音分段（D295）：逐帧喂入，按说话切段。
 //
 // Feed 交出**在这一帧之内新结束的**语音段（一帧最多结束一段，也可能一段都不结束），
-// Flush 收尾交出仍在进行的那一段（太短的段按 MinSpeech 丢弃）。
+// Flush 收尾交出还没结束的那一段（太短的段按 MinSpeech 丢弃）。
 //
 // 一个采集流一个实例：检测器自带跨帧的隐状态（上下文窗口与 LSTM 记忆），
 // 两路采集共用一个实例等于让两段音频互相污染。实现不保证并发安全。

@@ -30,7 +30,7 @@ const (
 	thumbIdleSize   = 64
 	// thumbOffscreenGap 辅助窗口距虚拟桌面右缘的距离：足够远，任何布局下都不会露出来。
 	thumbOffscreenGap = 2000
-	// thumbSentinelColor 辅助窗口的底色（COLORREF = 0x00BBGGRR，洋红）。它只回答
+	// thumbSentinelColor 辅助窗口的底色（COLORREF = 0x00BBGGRR，洋红）。该底色只回答
 	// 「缩略图到了没」：判定是与基线帧做差，不靠颜色本身，所以真实内容是纯黑、纯白、
 	// 还是单色面板都不影响。合成器合成时会给边缘做抗锯齿混合，故识别靠 sentinelLike
 	// 的阈值而不是精确相等。
@@ -96,7 +96,7 @@ func (s *thumbService) capture(ctx context.Context, hwnd uintptr) (thumbResult, 
 	case res := <-out:
 		return res, res.err
 	case <-ctx.Done():
-		// 抓取已在专用线程里开始：让它自己收尾（注销缩略图、复位窗口），结果丢弃。
+		// 抓取已在专用线程里开始：让抓取线程自己收尾（注销缩略图、复位窗口），结果丢弃。
 		go func() { <-out }()
 		return thumbResult{}, ctx.Err()
 	}
@@ -131,7 +131,7 @@ func (s *thumbService) run() {
 // （不进任务栏与 Alt+Tab）、不激活。位置在虚拟桌面最右侧之外，用户看不见。
 //
 // 背景取**哨兵色**（洋红）而不是黑或系统窗口色：合成器还没把缩略图放上来时，读到的就是
-// 这个底色。它既不会被当成「纯黑 = 没画出来」（暗色面板本身就可能整张近黑，那样会被误
+// 这个底色。该底色既不会被当成「纯黑 = 没画出来」（暗色面板本身就可能整张近黑，那样会被误
 // 判成失败），也不可能被当作真实内容——判定靠「与注册缩略图前的基线帧做差」，见
 // grabViaThumbnail。这样单色窗口（纯黑、纯白、纯色面板）也能正常取到。
 func newThumbWindow() (hwnd uintptr, anchorX int32, err error) {
@@ -194,7 +194,7 @@ func grabViaThumbnail(ctx context.Context, dst uintptr, anchorX int32, src uintp
 
 	// 基线帧：此刻缩略图还**不可见**（DWM 缩略图注册后 fVisible 默认为 FALSE），所以读到的是
 	// 辅助窗口自己那副样子。之后「与基线不同」就等于缩略图已经盖上来。基线要读到稳定态，
-	// 否则它自己还在变（放大后擦背景、未初始化区域补画）就会被当成内容。
+	// 否则辅助窗口自己还在变（放大后擦背景、未初始化区域补画）就会被当成内容。
 	baseline := stableFrame(dst, sdc, w, h)
 
 	props := thumbnailProperties{
@@ -282,11 +282,11 @@ func trimSentinelBorder(pix []byte, w, h int) ([]byte, int, int) {
 	return out, nw, nh
 }
 
-// sentinelLike 判断某个像素是不是哨兵底色或它被混合后的样子。
+// sentinelLike 判断某个像素是不是哨兵底色或哨兵底色被混合后的样子。
 //
 // 合成器把缩略图画进目标矩形时，边缘那一两个像素是抗锯齿混合的结果：实测纯洋红
 // (255,0,255) 会变成 (181,47,181)、(166,47,166) 一类。精确比对判不出来，所以按
-// 「红蓝都高、绿明显低、红蓝相近」认它。这是**底色记号**的判据，不是内容的判据。
+// 「红蓝都高、绿明显低、红蓝相近」认该像素。这是**底色记号**的判据，不是内容的判据。
 func sentinelLike(pix []byte, i int) bool {
 	r, g, b := int(pix[i]), int(pix[i+1]), int(pix[i+2])
 	if r < sentinelMinRB || b < sentinelMinRB || g > sentinelMaxG {
@@ -333,7 +333,7 @@ func notAllSentinel(shot []byte, w, h int) bool {
 // stableFrame 读一张「稳定下来」的辅助窗口画面作为基线（专用线程调用）。
 //
 // 窗口刚放大时新露出的区域是未初始化的，系统擦背景也可能滞后一帧：只读一张容易把
-// 「正在擦」的中间态当成基线，之后它自己变稳就会被当成「缩略图来了」。这里读到相邻两帧
+// 「正在擦」的中间态当成基线，之后辅助窗口自己变稳就会被当成「缩略图来了」。这里读到相邻两帧
 // 完全相同为止，次数用尽就返回最后一张。
 func stableFrame(dst, sdc uintptr, w, h int) []byte {
 	var prev []byte

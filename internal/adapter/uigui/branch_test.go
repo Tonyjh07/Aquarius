@@ -322,7 +322,7 @@ func TestGotoBranchDispatchTail(t *testing.T) {
 	}
 }
 
-// TestBranchClickDispatches 点击链路（headless 帧，§15.5）：
+// TestBranchClickDispatches 点击路径（headless 帧，§15.5）：
 //   - 几何：分叉条在视口内登记形状（D62 逐像素命中的前提），且指针移入右箭头位置
 //     时该点击件确为 hover 态（命中区随记录宏在 paintRow 重放后落位正确）；
 //   - 分发：点击件命中 → 投递 `/goto <兄弟>` 到输入通道（与键入同路径）。

@@ -27,7 +27,7 @@ const logoIconPx = 60
 //
 // logoMu 守缓存档位（logoPx/logoOp/logoOK）：主窗与设置窗各自在自己那一侧绘制圆钮，
 // 两边都可能撞上 DPI 变化而重算同一档，裸读写就是数据竞争。解码本身由 logoOnce 守，
-// 它同时把 logoSrc/logoErr 的写变成了对所有调用者可见。
+// logoOnce 同时把 logoSrc/logoErr 的写变成了对所有调用者可见。
 var (
 	logoOnce sync.Once
 	logoMu   sync.Mutex

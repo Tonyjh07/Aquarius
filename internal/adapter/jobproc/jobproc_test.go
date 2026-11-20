@@ -105,8 +105,8 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 
 // awaitReaper 等收割者真的收尾（写完退出行、关日志句柄、标台账终态）。
 //
-// 只看 Status 变了还不够：那一瞬它手上还有活（§5.8 的关停不变量），TempDir 清理会撞上
-// 仍在写盘的子进程/未关闭的句柄。Wait 等的是 done——收割者把这一切做完才关它。
+// 只看 Status 变了还不够：那一瞬收割者手上还有活（§5.8 的关停不变量），TempDir 清理会撞上
+// 仍在写盘的子进程/未关闭的句柄。Wait 等的是 done——收割者把这一切做完才关 done。
 func awaitReaper(t *testing.T, m *Manager, id port.JobID) {
 	t.Helper()
 	if _, err := m.Wait(context.Background(), id); err != nil {
@@ -480,7 +480,7 @@ func TestStartTimeout(t *testing.T) {
 	})
 }
 
-// TestWaitStopsTimeoutTimer 任务正常结束后超时定时器被停掉：留着它只会在到点时
+// TestWaitStopsTimeoutTimer 任务正常结束后超时定时器被停掉：留着该定时器只会在到点时
 // 空转一次（被 Status 守卫吃掉），任务多时白占一堆 timer。
 func TestWaitStopsTimeoutTimer(t *testing.T) {
 	t.Parallel()
@@ -565,7 +565,7 @@ func TestLogsTail(t *testing.T) {
 	}
 }
 
-// TestLogsDecodesGBKOutput 后台任务日志读出与 Run 同规则按 D41 解码（job_logs 链路）。
+// TestLogsDecodesGBKOutput 后台任务日志读出与 Run 同规则按 D41 解码（job_logs 路径）。
 func TestLogsDecodesGBKOutput(t *testing.T) {
 	t.Parallel()
 	m, err := New(t.TempDir())

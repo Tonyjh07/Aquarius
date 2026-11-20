@@ -23,7 +23,7 @@ func (r Rect) Width() int32 { return r.Right - r.Left }
 func (r Rect) Height() int32 { return r.Bottom - r.Top }
 
 // RunFunc 把修改性调用送到指定窗口线程执行并等待完成（§15.6 铁律 1；实现 = Gio
-// `Window.Run`）。签名中性：平台层只当它是一个「在窗口线程跑 f」的能力。
+// `Window.Run`）。签名中性：平台层只把 RunFunc 当作一个「在窗口线程跑 f」的能力。
 type RunFunc func(f func())
 
 // MenuKind 菜单出处（项集由 `uigui` 按 kind 现组，平台只负责呈现与回传命令 ID）。
@@ -63,7 +63,7 @@ const (
 	PickCharacterCard
 )
 
-// FilePurpose 通用文件对话框的用途（请求时带上、回传时原样带回）：平台层只当它是一个
+// FilePurpose 通用文件对话框的用途（请求时带上、回传时原样带回）：平台层只把 FilePurpose 当作一个
 // 不透明标签，由 `uigui` 决定选中之后做什么。
 type FilePurpose int
 
@@ -103,7 +103,7 @@ type SaveRequest struct {
 	// 前三个字符，带点会被当成扩展名的一部分（MSDN：should not contain a period）。
 	// 非 Windows 侧拼预填名时自己加点（zenity/kdialog/osascript 要的是完整文件名）。
 	//
-	// 多档格式时它只是「用户不改就落到哪一档」的缺省，**不保证与所选档一致**：Win32 的
+	// 多档格式时 DefExt 只是「用户不改就落到哪一档」的缺省，**不保证与所选档一致**：Win32 的
 	// defExt 是静态的，换了「保存类型」也不会跟着变（见 FilePicked 的 filterIndex 契约）。
 	DefExt  string
 	Filters []FileFilter
@@ -156,6 +156,6 @@ type Host interface {
 	//
 	// filterIndex = 用户在「保存类型」里选中的那一档（**0 起**，与请求的 Filters 同序）；
 	// 平台报不出来给 **-1**（非 Windows 的 zenity/kdialog/osascript 只回路径）。宿主据此
-	// 决定写哪种格式——它是权威依据，扩展名只是用户顺手写的字。
+	// 决定写哪种格式——filterIndex 是权威依据，扩展名只是用户顺手写的字。
 	FilePicked(purpose FilePurpose, path string, filterIndex int)
 }

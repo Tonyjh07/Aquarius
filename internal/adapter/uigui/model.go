@@ -113,7 +113,7 @@ type model struct {
 	// 提交时转为 --part token；编辑态生命周期与 editTarget 同步收尾。
 	editPart int
 	// stagedFiles 已暂存附件（D186 多附件）：非空时附件槽显示 chip、Enter 提交
-	// Raw{Kind:"file", Attachments, Text:已输入文本}。D188 起编辑态也消费它——那是
+	// Raw{Kind:"file", Attachments, Text:已输入文本}。D188 起编辑态也消费 stagedFiles——那是
 	// **新增**的附件（提交时按 chip 序进 Command.Attachments），不再是"留到下一条"。
 	stagedFiles []stagedAtt
 	// editAtts 编辑态目标节点的已有附件（D188，进编辑态时从 port.TreeView 取一次快照）。
@@ -129,7 +129,7 @@ type model struct {
 	flushedDrafts []int
 
 	// pendingCmd 最近一次提交的命令行（D265）：命令结果要到 Handle 返回后才到，
-	// 中间可能被清屏（/switch、/regen 会清屏回放），那时末尾已经没有它的命令条了。
+	// 中间可能被清屏（/switch、/regen 会清屏回放），那时末尾已经没有该命令的命令条了。
 	// 记着命令行，迟到的结果才能归进一条新的折叠条，而不是以纯文本行落在一轮回答后面。
 	pendingCmd string
 }
@@ -174,7 +174,7 @@ func isCommandLine(line string) bool {
 
 // addNote 操作回执（D267）：不是命令输出、也没有命令可归（「已切换到会话 X」「正在
 // 录音」「密钥在冷却」）——归进末尾的折叠条（同一次操作的一串，或前一条提示），
-// 没有就自成一条「提示条」。它本来会以纯文本行（助手气泡底板）落在转写里，既占位置
+// 没有就自成一条「提示条」。操作回执本来会以纯文本行（助手气泡底板）落在转写里，既占位置
 // 又冒充发言；收进折叠条后收起只是一枚窄条。
 func (m *model) addNote(text string) {
 	m.flushThink() // 时序：提示在思维链之后
@@ -322,5 +322,5 @@ func (m *model) clear() {
 	m.u.cmdOpen = nil    // D265 同一套规则：命令条的开合也不跨清屏继承
 	m.u.injectOpen = nil // 注入块的折叠态同一套规则
 	// pendingCmd **不清**（D265）：清屏正发生在 /switch、/regen 这类命令中途，
-	// 它们的返回文本还没到——抹掉就等于让那条结果无处可归。
+	// 这类命令的返回文本还没到——抹掉就等于让那条结果无处可归。
 }

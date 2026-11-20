@@ -7,7 +7,7 @@ package tool
 import "encoding/json"
 
 // CallID 工具调用标识，由模型流式分片聚合（app 层 ToolCallAssembler）后确定。
-// 在整棵树内唯一；tool 结果节点以它做"存在性引用"（§4.1 不变量 2）。
+// 在整棵树内唯一；tool 结果节点以这个标识做"存在性引用"（§4.1 不变量 2）。
 type CallID string
 
 // Risk 工具风险等级；与 capability 权限判定取更严者（§9）。
@@ -42,7 +42,7 @@ type Spec struct {
 	//
 	// 为什么需要：默认提示把原始参数压成一行截到 160 字，参数里有长文本（delegate 的 task）
 	// 时，真正该看的字段会被挤出去——用户「看得见要允许什么」这件事必须由工具自己保证。
-	// 返回空串 = 退回默认提示。它**不进协议声明**（不是 Schema 的一部分），也不许有副作用。
+	// 返回空串 = 退回默认提示。该字段**不进协议声明**（不是 Schema 的一部分），也不许有副作用。
 	Describe func(args json.RawMessage) string `json:"-"`
 }
 

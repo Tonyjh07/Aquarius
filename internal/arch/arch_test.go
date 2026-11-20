@@ -40,9 +40,9 @@ const (
 // **反向依赖**（uigui 被别人依赖）与**跨层**（app 摸 adapter），见 TestNoReverseDependency。
 //
 // i18n 必须单独登记成一层，不能靠 layerOther 兜：other 是「源端 skip、目标端放行」，
-// 那样新包就没有任何约束——今天它只 import 标准库，是因为没人拦而不是因为规矩这么定。
+// 那样新包就没有任何约束——今天新包只 import 标准库，是因为没人拦而不是因为规矩这么定。
 var allowedTargets = map[layer][]layer{
-	// domain 与 plugin 也取词：它们的不变量报错与状态文案会原样冒到界面（app 只加一层
+	// domain 与 plugin 也取词：这两个包的不变量报错与状态文案会原样冒到界面（app 只加一层
 	// 短语前缀），不取词就只能硬编码中文，英文界面里那半句永远是中文。
 	layerDomain:    {layerDomain, layerI18n},
 	layerPort:      {layerDomain, layerI18n},
@@ -50,12 +50,12 @@ var allowedTargets = map[layer][]layer{
 	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI, layerI18n, layerLegal},
 	layerPlugin:    {layerDomain, layerPort, layerPluginAPI, layerI18n},
 	layerPluginAPI: {layerPluginAPI},
-	layerI18n:      {}, // 文案包谁都不 import：它是叶子
-	// 日志包只 import 文案包（日志正文在 log.* 段）；反过来谁都不许 import 它——
+	layerI18n:      {}, // 文案包谁都不 import：i18n 是叶子
+	// 日志包只 import 文案包（日志正文在 log.* 段）；反过来谁都不许 import 日志包——
 	// 适配器拿的是装配根注入的 Logf 回调，不是这个包（D276）。
 	layerLogging: {layerI18n},
 	// 法务正文包同理：四份 md 由 go:embed 打进二进制，读取方是界面适配器；
-	// 它自己只认 i18n.Lang（D278 决策 5）。
+	// 法务正文包自己只认 i18n.Lang（D278 决策 5）。
 	layerLegal: {layerI18n},
 }
 
@@ -74,7 +74,7 @@ var skippedDirNames = map[string]bool{
 
 // TestDependencyDirection 分层方向的守门人。
 //
-// 只约束**生产文件**：测试文件允许借用真实适配器做链路级验收（AGENTS.md「测试要求」），
+// 只约束**生产文件**：测试文件允许借用真实适配器做路径级验收（AGENTS.md「测试要求」），
 // 那不是生产代码的跨层直连。
 func TestDependencyDirection(t *testing.T) {
 	root, modPath := moduleRoot(t)
@@ -127,7 +127,7 @@ func TestNoReverseDependency(t *testing.T) {
 			if strings.HasPrefix(relTarget, cmdPrefix) && !strings.HasPrefix(relSource, cmdPrefix) {
 				t.Errorf("%s: %s 引用了装配根 %s（cmd 只进不出）", file, relSource, relTarget)
 			}
-			// uigui 只允许装配根（cmd）与自身内部使用；internal/* 引用它就是反向依赖。
+			// uigui 只允许装配根（cmd）与自身内部使用；internal/* 引用 uigui 就是反向依赖。
 			if strings.HasPrefix(relTarget, uiguiPrefix) &&
 				!strings.HasPrefix(relSource, uiguiPrefix) &&
 				!strings.HasPrefix(relSource, cmdPrefix) {
@@ -140,7 +140,7 @@ func TestNoReverseDependency(t *testing.T) {
 // TestGuardCatchesViolation 自检：故意造违规边，判定必须为假。
 //
 // 守门测试最大的失败模式是「永远绿」——规则写错、扫描根找错、跳过规则吃掉整棵树，
-// 都会让它安静地什么都不做。这里直接对判定函数喂正反例。
+// 都会让守门测试安静地什么都不做。这里直接对判定函数喂正反例。
 func TestGuardCatchesViolation(t *testing.T) {
 	cases := []struct {
 		src, dst layer
@@ -184,7 +184,7 @@ func TestGuardCatchesViolation(t *testing.T) {
 // TestAggregateRootHidesItsMaps 聚合根不得导出 map 字段。
 //
 // 为什么单立一条：`Conversation.Nodes` 曾经是导出的 map，于是 app、适配器、测试都能
-// 绕过方法直接读写整棵树——不变量只在「大家都守规矩」时成立，而这一点没有编译器或
+// 绕过方法直接读写整棵树——不变量只在「各方都守规矩」时成立，而这一点没有编译器或
 // 运行时兜底。私有化之后，这条规则必须有人盯着，否则下一次「就先导出一下方便」又会
 // 把门打开。
 //

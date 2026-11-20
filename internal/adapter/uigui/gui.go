@@ -88,7 +88,7 @@ type Options struct {
 	Hotkey string
 	// Pending 待发清单（D272）：生成中键入的消息停在这里，由内核在两个取用边界拿走；
 	// nil = 没有清单（老行为：全部经输入通道，等本轮结束）。实现方须线程安全——
-	// 界面在自己的事件循环 goroutine 里直接读写它。
+	// 界面在自己的事件循环 goroutine 里直接读写该清单。
 	Pending func() port.Pending
 	// Keys 输入栏三键（§5.19）：发送 / 引导 / 换行。零值 = 缺省 Enter / Shift+Enter /
 	// Ctrl+Enter（三键互不相同由配置面保证；这里再兜一次缺省）。
@@ -227,7 +227,7 @@ func clampKnobs(scale, fontSp float64) zoomKnobs {
 // UI GUI 前端句柄（装配根按 uiFrontend 使用）。
 type UI struct {
 	opts Options
-	// plat 平台实现（D111/S4b）：所有平台能力经它触达——Windows 实测实现 / 非 Windows
+	// plat 平台实现（D111/S4b）：所有平台能力经该实现触达——Windows 实测实现 / 非 Windows
 	// 降级实现；构造后只读（测试可在 newUI 后替换为假实现）。headless（window=false）
 	// 同样持有一个真实现（未起外壳线程，方法多为 no-op/中性回落）。
 	plat platformAPI
@@ -514,7 +514,7 @@ type UI struct {
 	m *model
 
 	// confirmShare 进行中的确认在窗间的**只读投影**（D157）：主窗事件循环在 startConfirm
-	// 发布、replyConfirm 收尾时清空；历史窗每帧读它并在窗内画同步确认弹窗——跨窗只经原子
+	// 发布、replyConfirm 收尾时清空；历史窗每帧读该投影并在窗内画同步确认弹窗——跨窗只经原子
 	// 快照 + Invalidate（§15.7），两窗显示的是**同一次**确认（内核侧只有一条应答通道）。
 	confirmShare atomic.Pointer[confirmShare]
 

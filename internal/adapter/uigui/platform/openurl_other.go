@@ -3,7 +3,7 @@
 package platform
 
 // 非 Windows 打开链接与目录：交给桌面环境的打开命令（macOS `open`、其余 `xdg-open`）。
-// 只 Start 不 Wait——浏览器与文件管理器都是独立进程，本程序不等它们。
+// 只 Start 不 Wait——浏览器与文件管理器都是独立进程，本程序不等这两个进程。
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ func (p *Plat) OpenURL(url string) error {
 	return openWithDesktop(url)
 }
 
-// OpenPath 打开一个本地路径（目录 → 文件管理器，文件 → 它的默认程序）。
+// OpenPath 打开一个本地路径（目录 → 文件管理器，文件 → 该文件的默认程序）。
 func (p *Plat) OpenPath(path string) error {
 	if path == "" {
 		return fmt.Errorf("%s", i18n.T("ui.platform.url.empty"))

@@ -82,7 +82,7 @@ func (a *Agent) Compact(ctx context.Context, c *conversation.Conversation) (conv
 // autoCompact 自动压缩轨（D21 轨2 / M2）：估算达阈值时先尝试 Compact——
 // 成功则重建请求（水位生效）并发 NoticeEvent；无可压缩内容则维持原请求；
 // 失败回退"最旧裁剪"（D21：保 leading system 与最近、丢中间）并提示省略条数。
-// 返回（执行后的请求, 与它配套的段标签, 用于 usage 校准的该请求估算）。
+// 返回（执行后的请求, 与执行后的请求配套的段标签, 用于 usage 校准的该请求估算）。
 //
 // 标签跟着请求一起换：重建就重新取一份，裁剪就按被删的下标平移——否则
 // `/context last` 会拿着旧标签去索引新消息，读到的是错位的正文。
@@ -102,7 +102,7 @@ func (a *Agent) autoCompact(ctx context.Context, c *conversation.Conversation, r
 	case errors.Is(err, ErrNothingToCompact):
 		return req, marks, est // 摘要之上无新内容（如 persona 巨大）：无可压，维持原请求
 	default:
-		// 前导 system 的位置与 trimOldest 同一规则（它不从这几条里裁）：算出来是为了把
+		// 前导 system 的位置与 trimOldest 同一规则（trimOldest 不从这几条里裁）：算出来是为了把
 		// 段标签平移到裁剪后的下标，两处都从「消息序列本身」读，不各存一份状态。
 		lead := 0
 		for lead < len(req.Messages) && req.Messages[lead].Role == port.PromptSystem {

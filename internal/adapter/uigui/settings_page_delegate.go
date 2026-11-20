@@ -4,7 +4,7 @@ package uigui
 // 数据面与动作见 settings_delegate.go。
 //
 // 页面三段：代理清单（每条可展开成字段级编辑）、新增条目、页级「重新检测」。
-// 展开是**行内**的：展开区的每一行也是独立 row，不用另开弹窗——这样它能跟普通字段行
+// 展开是**行内**的：展开区的每一行也是独立 row，不用另开弹窗——这样展开区能跟普通字段行
 // 共用标签列与输入框样式，滚动也归本页的 List 管。
 
 import (
@@ -140,7 +140,7 @@ const delegateMultilineH = 84
 
 // delegateAddRow 新增条目：名字 + 命令行 + 「添加」。
 //
-// 名字与命令行做成两个单行档而不是一行「命令行」：新增时最常错的是重名，把它单独摆出来
+// 名字与命令行做成两个单行档而不是一行「命令行」：新增时最常错的是重名，把名字单独摆出来
 // 才不会跟参数混在一行里。
 func (f *settingsForm) delegateAddRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,

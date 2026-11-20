@@ -26,7 +26,7 @@ func newTestModel(t *testing.T) (*model, *UI) {
 }
 
 // allText 拼接全部可见文本（定稿块 + 流式草稿 + 实时思考），供注入面断言。
-// 命令折叠条（D265）的正文在条目里，一并纳入——它虽然默认折着，文本仍是「可见文本」
+// 命令折叠条（D265）的正文在条目里，一并纳入——命令折叠条虽然默认折着，文本仍是「可见文本」
 // 的一部分（消毒与合并断言不该因为换了个容器就漏掉）。
 func allText(m *model) string {
 	var b strings.Builder

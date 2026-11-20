@@ -245,7 +245,7 @@ func TestImageViewFrame(t *testing.T) {
 		t.Fatalf("applied = %v, want %v", st.applied, c)
 	}
 	// 本 UI 没装附件库 → 解码必然失败；收下结果后 settled 且留错误文案。
-	// 解码走后台 goroutine，本帧返回时结果未必已回投；等它，别用 default 抢跑。
+	// 解码走后台 goroutine，本帧返回时结果未必已回投；等结果，别用 default 抢跑。
 	select {
 	case r := <-st.res:
 		if st.applied != nil && r.key == st.applied.ref.key() {
@@ -406,7 +406,7 @@ func TestChipHeaderShowsImageCount(t *testing.T) {
 	}
 }
 
-// TestAttachToolResultKeepsImages 工具结果里的图进 chip（展开体渲染与点击都靠它）。
+// TestAttachToolResultKeepsImages 工具结果里的图进 chip（展开体渲染与点击都靠这张图）。
 func TestAttachToolResultKeepsImages(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModel(t)
@@ -423,7 +423,7 @@ func TestAttachToolResultKeepsImages(t *testing.T) {
 	}
 }
 
-// TestImageClickOpensPreview 点击链路（headless 帧）：格子点击件命中 → 内容入原子槽 +
+// TestImageClickOpensPreview 点击路径（headless 帧）：格子点击件命中 → 内容入原子槽 +
 // 开预览窗。指针路由与 Clickable 的帧序在 Gio 无窗口 Router 下不稳定，故用 Clickable
 // 的程序化点击表达（同一 Clicked 通路），与分叉条点击测试同规则。
 func TestImageClickOpensPreview(t *testing.T) {

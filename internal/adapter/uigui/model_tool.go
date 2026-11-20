@@ -17,7 +17,7 @@ import (
 // `inCh`（壳内不旁路内核，同 D72/D73 菜单规则），区别仅在不回显——按钮不是用户输入，
 // 转写里写一行 `/goto <ulid>` 是噪音。返回 false = 输入缓冲满（点击丢弃，调用方给提示）。
 //
-// 但**返回文本仍要归处**（D265）：记下命令行，结果回来时归进命令折叠条——否则它会以
+// 但**返回文本仍要归处**（D265）：记下命令行，结果回来时归进命令折叠条——否则结果会以
 // 纯文本行的样子落在一轮回答后面，与助手气泡同底板，看着像模型说的话。
 func (m *model) submitCommand(line string) bool {
 	select {
@@ -111,7 +111,7 @@ func (m *model) startConfirm(req port.ConfirmRequest, reply chan port.ConfirmAns
 }
 
 // reopenChipFor 刚答过又立刻回来的同一次确认（D282 直选档位 → 判 Ask → 回到确认态）：
-// 只看最新一块，且它必须留过一版问答。不跨块向前找——并行调用里找错 chip 会把问句
+// 只看最新一块，且最新一块必须留过一版问答。不跨块向前找——并行调用里找错 chip 会把问句
 // 贴到另一次调用上。
 func (m *model) reopenChipFor(name string) int {
 	if name == "" || len(m.blocks) == 0 {
@@ -181,7 +181,7 @@ func confirmEcho(ans port.ConfirmAnswer) string {
 	if ans.Allow {
 		if ans.Persist {
 			// D282：点了「以后都允许」——回显要把这半句带上，否则用户看到的与点普通的
-			// 允许一模一样，下次不再来问时他会以为哪里坏了。
+			// 允许一模一样，下次不再来问时用户会以为哪里坏了。
 			return i18n.T("ui.confirm.always_echo")
 		}
 		return i18n.T("ui.common.allow")

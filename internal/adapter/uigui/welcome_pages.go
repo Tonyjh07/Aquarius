@@ -45,12 +45,12 @@ func (f *welcomeForm) pageBody(gtx layout.Context, th *material.Theme) layout.Di
 // 折成七八行，压在页眉与页脚之间放不下。
 //
 // **语言选择排在正文之前**，两个理由：一是首次启动时界面语言可能正好是用户读不懂的
-// 那种，第一个能操作的控件就该是它（正文可以读不懂，按钮上的「English」不会）；
+// 那种，第一个能操作的控件就该是语言选择（正文可以读不懂，按钮上的「English」不会）；
 // 二是 200% 字号下正文要占掉四行，排在后面的语言行会整个落到折叠线以下——一页里
 // 最重要的一件事反而要滚动才看得见（离屏实测）。
 //
 // 语言三态用并排三钮而不是下拉：这是用户在这个程序里做的**第一个**选择，藏进下拉
-// 等于告诉他「这个先别管」。选中项用主按钮配色，另外两项次按钮——同一组按钮里，
+// 等于告诉用户「这个先别管」。选中项用主按钮配色，另外两项次按钮——同一组按钮里，
 // 填色的那个就是当前值，不需要额外的勾选标记。
 //
 // 版式上整页居中（用户 11-04 反馈）：这一页只有品牌、一个选项和两句话，靠左上角
@@ -218,7 +218,7 @@ func welcomeBrand(th *material.Theme) layout.Widget {
 	}
 }
 
-// introFitLines 第 1 页内容大致要占的正文行数。视口折算出的行数低于它就改走
+// introFitLines 第 1 页内容大致要占的正文行数。视口折算出的行数低于 introFitLines 就改走
 // 「顶对齐 + 可滚 + 三钮竖排」，而不是硬居中（居中时超出的那部分没有滚动区可去）。
 const introFitLines = 14
 
@@ -291,7 +291,7 @@ func (f *welcomeForm) loadTerms() {
 	}
 	f.termsLoaded, f.termsLang, f.termsErr = true, lang, nil
 	f.terms = f.terms[:0]
-	// 页首那句说明也放进滚动区：200% 字号下它要折成三行，固定在顶上会把正文区挤到
+	// 页首那句说明也放进滚动区：200% 字号下这句说明要折成三行，固定在顶上会把正文区挤到
 	// 只剩一行高（离屏实测）。
 	if f.env.consentOnly {
 		f.terms = append(f.terms, termsRow{kind: termsNote,
@@ -364,7 +364,7 @@ func welcomeTermsRow(gtx layout.Context, th *material.Theme, r termsRow) layout.
 			return l.Layout(gtx)
 		})
 	case termsTip:
-		// 提示段：左侧竖条 + 加粗正文。竖条用 Background 画——它拿到的 Min 就是内容的
+		// 提示段：左侧竖条 + 加粗正文。竖条用 Background 画——Background 拿到的 Min 就是内容的
 		// 尺寸，所以竖条与段落的行数严格等高（用 Flex 量的话拿不到内容高度，只能猜）。
 		return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx,
@@ -476,7 +476,7 @@ func (f *welcomeForm) accessPage(gtx layout.Context, th *material.Theme) layout.
 			})
 		},
 	}
-	// 候选挂在**卡内**模型行下方（模拟稿位置）：它是这一行的补充说明，不是卡外的另一
+	// 候选挂在**卡内**模型行下方（模拟稿位置）：候选是这一行的补充说明，不是卡外的另一
 	// 个区块——放到卡外会被一条 card 边界与「模型名」割开。
 	if f.modelsHint.key != "" || len(f.cands) > 0 {
 		last := rows[len(rows)-1]
@@ -618,7 +618,7 @@ func welcomeProbe(gtx layout.Context, th *material.Theme, f *welcomeForm) layout
 	)
 }
 
-// tutTwoColSp 两栏版式的最小可用宽度（sp）。低于它就把说明折到用例下一行：左列按 sp
+// tutTwoColSp 两栏版式的最小可用宽度（sp）。低于 tutTwoColSp 就把说明折到用例下一行：左列按 sp
 // 量宽（字号放大时跟着放大），剩下的宽度不够写一句说明时不值得硬分两栏。
 const tutTwoColSp = 420
 
@@ -712,7 +712,7 @@ func (f *welcomeForm) donePage(gtx layout.Context, th *material.Theme) layout.Di
 				}),
 			)
 		}
-		// 有检查结果时先报它：200% 字号下这一页本来就只放得下三四行（正文区可滚），
+		// 有检查结果时先报检查结果：200% 字号下这一页本来就只放得下三四行（正文区可滚），
 		// 「启动后起不来」比「这一页跳过了」更该在首屏。
 		kids := []layout.FlexChild{layout.Rigid(welcomeDoneIssues(th, f.doneIssues))}
 		if len(f.doneIssues) > 0 {
@@ -816,7 +816,7 @@ func newUISideWelcome(mgr WelcomeManager, closeWin func()) *welcomeForm {
 }
 
 // RunSetupWindow 装配前的独立向导窗（阻塞至完成/关闭）。**宿主可注入**：cmd/aquarius 经
-// 包级 var 持有它，测试换假实现（首跑测试不得真开窗）。
+// 包级 var 持有 RunSetupWindow，测试换假实现（首跑测试不得真开窗）。
 // 窗口形态与次窗一致（Decorated 常规窗；platform.New 惰性——不会提前装托盘/热键）。
 func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	if req.Mgr == nil {

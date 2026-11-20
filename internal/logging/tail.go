@@ -1,6 +1,6 @@
 package logging
 
-// tail.go 日志目录的读侧（v0.9.0「图形界面看运行日志」）：列文件 + 读末尾若干行。
+// tail.go 日志目录的读侧（v0.9.0「图形界面看运行日志」）：列文件 + 读末尾几行。
 //
 // 只做这两件事，不做过滤、不做解析——查看口要看到的是文件里真实的那几行，加了筛选就会
 // 出现「界面里没有、文件里有」的分歧，而排查时人信的是文件。读末尾按窗口逐步放大，
@@ -19,12 +19,12 @@ import (
 type File struct {
 	Name string    // 文件名（不含目录）
 	Size int64     // 字节数
-	Mod  time.Time // 最后写入时刻（列表按它倒序）
+	Mod  time.Time // 最后写入时刻（列表按该时刻倒序）
 }
 
 // List 列出 dir 里由本包写出的文件，新的在前。
 //
-// 只认 `aquarius-*` 前缀：同目录还可能躺着 `audit.log`、`crash-*.txt`、`jobs/`，它们是
+// 只认 `aquarius-*` 前缀：同目录还可能躺着 `audit.log`、`crash-*.txt`、`jobs/`，这些是
 // 别的面（审计、崩溃报告、后台任务输出），混进来看起来像一回事，实际格式各不相同。
 // 目录不存在按「还没有日志」处理，返回空表而不是错误——首次运行就是这个状态。
 func List(dir string) ([]File, error) {
@@ -68,7 +68,7 @@ var tailWindows = []int64{64 << 10, 256 << 10, 1 << 20}
 // Tail 读 path 末尾至多 maxLines 行（返回的行不带行尾符，末尾不留空行）。
 //
 // 窗口内的第一行可能是半行（从中间切进去的），一律丢掉：半行看起来像完整的一行，
-// 读日志的人会照着它去猜一条不存在的事件。maxLines <= 0 时只按最小窗口读。
+// 读日志的人会照着这半行去猜一条不存在的事件。maxLines <= 0 时只按最小窗口读。
 func Tail(path string, maxLines int) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

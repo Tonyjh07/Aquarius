@@ -177,7 +177,7 @@ func writeFixture(t *testing.T, path, body string) {
 	}
 }
 
-// TestStartRejectsRelativeRoot 根集在入口归一：相对路径直接拒（它会让越界判定失去参照物）。
+// TestStartRejectsRelativeRoot 根集在入口归一：相对路径直接拒（相对路径会让越界判定失去参照物）。
 func TestStartRejectsRelativeRoot(t *testing.T) {
 	m, _ := ledgerManager(t, "ok")
 	if _, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "x", Roots: []string{"rel"}}); err == nil {

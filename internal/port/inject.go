@@ -31,13 +31,13 @@ type Injection struct {
 	// 生产者若忘声明，代价是内容被当成数据而不是指令，不会反过来。
 	Trust TrustLevel
 	// Parts 注入内容分片——与 user 同规则（text/image/audio/doc；thinking/tool 一律拒），
-	// 由内核在入队前校验：坏包当场报给调用方，不让它无声落进树。
+	// 由内核在入队前校验：坏包当场报给调用方，不让坏包无声落进树。
 	Parts []conversation.Part
 	// Trigger 是否随附起一轮响应：nil = 由内核按来源取默认（任务/观察/手动注入默认起，
 	// 工具/插件注入默认不起）；非 nil = 调用方显式覆盖。
 	Trigger *bool
 	// Session 目标会话（D167/D261，仅任务收尾/观察器等跨轮生产者使用）：空 = 实现时取当前会话；
-	// 非空而实现时当前会话已不是它 → 落到**那个会话自己的树**上（异地送达：load → 追加 →
+	// 非空而实现时当前会话已不是该目标 → 落到**那个会话自己的树**上（异地送达：load → 追加 →
 	// save），不丢弃。树变更仍只在会话 goroutine（§7.5），这里只是排空时的归属路由。
 	Session conversation.ID
 }
@@ -61,7 +61,7 @@ func InjectSourceLabel(source string) string {
 	if source == "user" {
 		return i18n.T("port.src.manual")
 	}
-	// 日期说明节点（`clock`）没有「余下」这一段：它与工具注入并列，来源本身就是全部信息。
+	// 日期说明节点（`clock`）没有「余下」这一段：该节点与工具注入并列，来源本身就是全部信息。
 	if source == "clock" {
 		return i18n.T("port.src.clock")
 	}

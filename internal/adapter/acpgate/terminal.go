@@ -2,7 +2,7 @@ package acpgate
 
 // 申报 terminal 之后的五个 handler（A3）：命令由 Aquarius 起进程，输出由 Aquarius 收。
 //
-// 为什么接：走这条路，我们才知道代理要跑什么、跑完退出码是多少；更重要的是**能拒**、
+// 为什么接：走这条路，Aquarius 才知道代理要跑什么、跑完退出码是多少；更重要的是**能拒**、
 // 能停。代理自己起 shell 的那条路（opencode 就走那条）永远看不见——两个实例并存的
 // 事实要跟用户讲清（guide）。
 //
@@ -28,7 +28,7 @@ import (
 
 const (
 	// maxLiveTerminals 一次转交里同时活着的终端上限：代理并行跑几条命令是常态，
-	// 但它不是终端复用器——四条以上同时在跑，更像它没在等结果。
+	// 但代理不是终端复用器——四条以上同时在跑，更像代理没在等结果。
 	maxLiveTerminals = 4
 	// maxTerminalCreates 一次转交里创建过的终端总数（含已 release 的）。代理通常
 	// create / wait / release 一条走完一条，32 条已经够一整轮排查。
@@ -44,7 +44,7 @@ const (
 
 // headBuffer 有界输出缓冲：超过上限时**从头**丢，并且丢在字符边界上。
 //
-// 方向不能反。协议要求代理看到的是「累计全文（被截断时是它的最长后缀）」，而主流实现
+// 方向不能反。协议要求代理看到的是「累计全文（被截断时是全文的最长后缀）」，而主流实现
 // 按**字符串长度差**取增量（kimi 每 250 ms 取一次）。留头丢尾会让长度忽增忽减，增量
 // 就错位；丢头则长度只增不减，取到的永远是新增的那一段。
 type headBuffer struct {
@@ -78,7 +78,7 @@ func (b *headBuffer) Write(p []byte) (int, error) {
 //
 // 命令输出可以不是 UTF-8（Windows 上的本地代码页、二进制残留）：非法字节换成 U+FFFD。
 // 末尾那个还没写完的字符先不显示——显示成替换字符会让按长度取增量的对端错位，
-// 而它下一轮就会被补全。
+// 而那个字符下一轮就会被补全。
 func (b *headBuffer) Visible() (string, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -126,7 +126,7 @@ func trimIncompleteTail(s string) string {
 	return s
 }
 
-// terminal 一条被我们代跑的命令。
+// terminal 一条被 Aquarius 代跑的命令。
 type terminal struct {
 	id   string
 	line string // command + args（报告里列的就是这一行）
@@ -151,7 +151,7 @@ func (t *terminal) exited() (*int, string, bool) {
 }
 
 // kill 杀掉进程树。幂等：已经退出的终端什么也不做，退出码保持原样——
-// 协议要求 kill 之后 wait_for_exit 仍能给出它。
+// 协议要求 kill 之后 wait_for_exit 仍能给出退出码。
 func (t *terminal) kill() {
 	if t == nil {
 		return
@@ -230,7 +230,7 @@ func (t *terminalTable) get(id string) (*terminal, bool) {
 	return term, ok
 }
 
-// drop 释放一个终端并归还它的缓冲额度。
+// drop 释放一个终端并归还该终端的缓冲额度。
 func (t *terminalTable) drop(id string) (*terminal, bool) {
 	t.init()
 	t.mu.Lock()
@@ -340,7 +340,7 @@ func (c *client) TerminalOutput(ctx context.Context, p acp.TerminalOutputRequest
 }
 
 // WaitForTerminalExit 等命令结束。三个出口：进程退出、请求 ctx 取消、本次转交被停——
-// 少了最后一个，代理不发 cancel 时我们会永远挂着。
+// 少了最后一个，代理不发 cancel 时客户端会永远挂着。
 func (c *client) WaitForTerminalExit(ctx context.Context, p acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error) {
 	if err := c.termGate(ctx, p.SessionId, "terminal/wait_for_exit"); err != nil {
 		return acp.WaitForTerminalExitResponse{}, err
@@ -396,8 +396,8 @@ func (c *client) ReleaseTerminal(ctx context.Context, p acp.ReleaseTerminalReque
 // 路径参数）。
 func (c *client) termGate(ctx context.Context, sid acp.SessionId, method string) error {
 	if !c.m.terminalEnabled() {
-		// 关掉之后仍可能收到：能力是给代理看的，它不看也照发。回 -32601 与「没申报」
-		// 一致，别让它以为换个参数就能过。
+		// 关掉之后仍可能收到：能力是给代理看的，代理不看也照发。回 -32601 与「没申报」
+		// 一致，别让代理以为换个参数就能过。
 		return acp.NewMethodNotFound(method)
 	}
 	if c.r.stopKind() != stopNone || ctx.Err() != nil {
@@ -411,7 +411,7 @@ func (c *client) termGate(ctx context.Context, sid acp.SessionId, method string)
 
 // terminalDir 命令的起点：缺省 = 会话 cwd，给了就必须是绝对路径且落在根集之内。
 //
-// 越界**直接拒、不问**：cwd 只是「从哪儿开始」，命令起来随时能 cd 出去，为它弹一个
+// 越界**直接拒、不问**：cwd 只是「从哪儿开始」，命令起来随时能 cd 出去，为 cwd 弹一个
 // 确认框拦不住任何东西，只会让用户以为被拦住了。
 func (c *client) terminalDir(cwd *string) (string, error) {
 	dir := strings.TrimSpace(deref(cwd))
@@ -432,12 +432,12 @@ func (c *client) terminalDir(cwd *string) (string, error) {
 	return resolved, nil
 }
 
-// unknownTerminal id 不认识（打错，或者已经 release）：参数错，不是我们的判断。
+// unknownTerminal id 不认识（打错，或者已经 release）：参数错，不是 Aquarius 的判断。
 func unknownTerminal(id string) *acp.RequestError {
 	return acp.NewInvalidParams(map[string]any{"error": "unknown terminalId", "terminalId": id})
 }
 
-// terminalDenied 我们自己拒掉的 terminal 请求。与 fsDenied 同一个码、同一个理由：
+// terminalDenied 客户端自己拒掉的 terminal 请求。与 fsDenied 同一个码、同一个理由：
 // -32603 既不是参数错也不是方法不存在，原因写在 message 里，代理读得懂也换得了做法。
 func terminalDenied(reason string) *acp.RequestError {
 	return &acp.RequestError{Code: -32603, Message: reason}
@@ -451,7 +451,7 @@ const reasonTerminalLimit = "the command-approval limit for this delegation is u
 // 不自造命令白/黑名单：四态策略表是 v0.7.0 的事，这里先塞一套，等于把同一套字段规则
 // 写两遍（D286）。
 func (c *client) allowTerminal(ctx context.Context, line, prompt string) (bool, string) {
-	// 策略表放行这一来源的命令；命令内容不进硬名单判定（判不了它到底写哪儿）。
+	// 策略表放行这一来源的命令；命令内容不进硬名单判定（判不了命令到底写哪儿）。
 	if c.policy("", "") == perm.Allow {
 		return true, ""
 	}
@@ -471,7 +471,7 @@ func (c *client) allowTerminal(ctx context.Context, line, prompt string) (bool, 
 }
 
 // terminalPrompt 命令确认的用户面文案：命令、目录、环境变量三者都出现（策略匹配的是
-// 三者，不是命令名），环境变量按名排序并截断——它是这一屏里最不重要的那一行。
+// 三者，不是命令名），环境变量按名排序并截断——环境变量是这一屏里最不重要的那一行。
 func terminalPrompt(agent, line, wd string, env map[string]string) string {
 	s := i18n.Tf("acp.confirm.terminal", "agent", agent, "command", clip(line, 500), "cwd", wd)
 	if text := envText(env); text != "" {
@@ -506,7 +506,7 @@ func clip(s string, max int) string {
 	return string(rs[:max]) + "…"
 }
 
-// commandText 命令行的一行写法（确认框与备注里用）。换行保留：脚本里的换行是它的一部分，
+// commandText 命令行的一行写法（确认框与备注里用）。换行保留：脚本里的换行是脚本的一部分，
 // 抹掉会让人看成另一条命令。
 //
 // 参数逐个过一遍 argv 的展示写法：`bash -c cd 'x' && git status` 与「-c 后面跟着一整段
@@ -523,7 +523,7 @@ func commandText(command string, args []string) string {
 // argText 单个 argv 的展示写法：含空白或引号才加双引号，让「这是一个参数」看得出来。
 //
 // 不转义反斜杠（Windows 路径满屏 `\\` 更难读），所以这不是一段可直接粘贴的 shell 命令：
-// 它回答的是「代理到底给了哪些参数」，不是「照抄能跑」。
+// 这一行回答的是「代理到底给了哪些参数」，不是「照抄能跑」。
 func argText(s string) string {
 	if s == "" {
 		return `""`
@@ -559,7 +559,7 @@ func terminalEnv(list []acp.EnvVariable) map[string]string {
 // 先后顺序也就保住了（分成两根，输出交错时读不出真实顺序）。
 //
 // Windows 上 `.cmd` / `.bat`（`npm` 会解析到 `npm.cmd`）不能直接 exec，起不来就照实
-// 把错误回给代理，让它换写法——我们不替它拼一层 `cmd.exe /c`，那等于绕开「不给 shell」。
+// 把错误回给代理，让代理换写法——Aquarius 不替代理拼一层 `cmd.exe /c`，那等于绕开「不给 shell」。
 func startTerminal(id, command string, args []string, wd string, env map[string]string, limit int) (*terminal, error) {
 	cmd := exec.Command(command, args...)
 	cmd.Dir = wd
@@ -601,9 +601,9 @@ func exitStatusOf(code *int, sig string) *acp.TerminalExitStatus {
 	return st
 }
 
-// closeTerminals 转交收尾：杀掉还活着的终端，不等代理 release——它可能永远不发。
+// closeTerminals 转交收尾：杀掉还活着的终端，不等代理 release——代理可能永远不发。
 //
-// 杀完有界地等它们回填退出信息：报告要列退出码，停在「刚才还在跑」等于白列一行。
+// 杀完有界地等这些终端回填退出信息：报告要列退出码，停在「刚才还在跑」等于白列一行。
 func (r *run) closeTerminals() {
 	alive := r.terms.killAll()
 	for _, term := range alive {
@@ -622,7 +622,7 @@ func (r *run) closeTerminals() {
 // terminalExitGrace 收尾时等全部终端回填退出信息的合计上限。
 const terminalExitGrace = 2 * time.Second
 
-// addCommand 记一条**真的跑起来了**的命令（被拒的不算：它没跑）。
+// addCommand 记一条**真的跑起来了**的命令（被拒的不算：命令没跑）。
 func (r *run) addCommand(term *terminal) {
 	r.cmu.Lock()
 	r.commands = append(r.commands, term)

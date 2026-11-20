@@ -40,7 +40,7 @@ import (
 // histSelBoxDp 选择态行内勾选框边长（dp）。行内左侧**恒**让出这么多，勾选不引起重排。
 const histSelBoxDp unit.Dp = 14
 
-// enterSelMode 进选择态（缺省一个都不勾：勾是用户的动作，不替他决定删/导什么）。
+// enterSelMode 进选择态（缺省一个都不勾：勾是用户的动作，不替用户决定删/导什么）。
 func (st *historyState) enterSelMode() {
 	st.selMode = true
 	st.sel = nil
@@ -159,7 +159,7 @@ func (st *historyState) requestBatchDelete(u *UI) {
 
 // dispatchSel 选择态的左栏动作：动作条四颗 + 行点击（= 勾选切换）。
 //
-// 状态栏的取景控件不在这里——它们与选择无关，选择态期间照常可用（见 dispatch 的 switch）。
+// 状态栏的取景控件不在这里——这些控件与选择无关，选择态期间照常可用（见 dispatch 的 switch）。
 func (st *historyState) dispatchSel(u *UI, gtx layout.Context) {
 	switch {
 	case st.btnSelCancel.Clicked(gtx):
@@ -233,7 +233,7 @@ func selRow(gtx layout.Context, th *material.Theme, s port.SessionSummary, check
 
 // selBoxGlyph 勾选框（纯绘制，不取事件）：未勾 = 描边空框，已勾 = 品牌色实心框 + 白勾。
 //
-// 自绘而不是 `material.CheckBox`：它内部是 `widget.Bool`，作为行点击件的子控件收不到
+// 自绘而不是 `material.CheckBox`：material.CheckBox 内部是 `widget.Bool`，作为行点击件的子控件收不到
 // 指针事件（行里的「✕」踩过同一个坑，见 histLeftColumn 的注释）。整行可点已经满足
 // 「点一下就勾上」，勾选框只负责把状态画清楚。
 func selBoxGlyph(gtx layout.Context, checked bool) layout.Dimensions {

@@ -35,7 +35,7 @@ func (audioPage) Rows(f *settingsForm) []rowDesc {
 	asrKind := f.asrKind.value()
 	ttsKind := f.ttsKind.value()
 	rows := []rowDesc{sec(i18n.T("ui.page.audio.section.asr")), {kind: rowAudioASRKind}}
-	// 每档只列它真正会读的字段：适配器不看的东西摆在这里，用户填了也不会生效，
+	// 每档只列该档真正会读的字段：适配器不看的东西摆在这里，用户填了也不会生效，
 	// 只会让人怀疑「是不是还要填点什么」。
 	switch asrKind {
 	case asrKindWhisper:
@@ -50,7 +50,7 @@ func (audioPage) Rows(f *settingsForm) []rowDesc {
 		rows = append(rows, rowDesc{kind: rowAudioASRProvider}, rowDesc{kind: rowAudioASREndpoint},
 			rowDesc{kind: rowAudioASRKey}, rowDesc{kind: rowAudioASRModel}, rowDesc{kind: rowAudioLang})
 	}
-	// 分段开关放在识别段末尾：它只影响「录进来的音频怎么切」，与合成无关（D295）。
+	// 分段开关放在识别段末尾：分段开关只影响「录进来的音频怎么切」，与合成无关（D295）。
 	rows = append(rows, rowDesc{kind: rowAudioVAD})
 	rows = append(rows, sec(i18n.T("ui.page.audio.section.tts")), rowDesc{kind: rowAudioTTSKind})
 	switch ttsKind {

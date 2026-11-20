@@ -13,7 +13,7 @@ import (
 const createNoWindow = 0x08000000
 
 // setupProc Windows：压制控制台窗（同 mcpgate / jobproc，D118）并让子进程自成一组，
-// 终止时 taskkill /T 才连它自己拉起的子进程一起收。
+// 终止时 taskkill /T 才连子进程自己拉起的孙进程一起收。
 func setupProc(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}

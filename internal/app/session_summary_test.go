@@ -73,7 +73,7 @@ func TestSessionSummaryHandwritten(t *testing.T) {
 }
 
 // TestSessionSummaryModel 模型档：总结「目标之上的历史」后插入；入树节点带 Model/Usage 记账；
-// 目标自身的内容不进摘要输入（它留在水位之后）。
+// 目标自身的内容不进摘要输入（该内容留在水位之后）。
 func TestSessionSummaryModel(t *testing.T) {
 	store := newMemStore()
 	s, llm, _, _, assistant := summaryFixture(t, store,
@@ -218,7 +218,7 @@ func TestSessionSummaryTransportErrorFails(t *testing.T) {
 	}
 }
 
-// TestSessionSummaryWaterlineApplies 插入摘要后装配只回传到它：其后往来的装配请求里
+// TestSessionSummaryWaterlineApplies 插入摘要后装配只回传到该摘要：其后往来的装配请求里
 // 不再出现被吸收的历史（水位生效）。
 func TestSessionSummaryWaterlineApplies(t *testing.T) {
 	store := newMemStore()
@@ -291,7 +291,7 @@ func TestSessionSummaryRejectsCoveredTarget(t *testing.T) {
 }
 
 // TestSummaryPadKeepsBranchSlots 插摘要不把原来同级的分叉拆散：a1/a2 仍是同一问题的两个
-// 版本（1/2、2/2），摘要自己不占槽位——它是衬垫，不是可切换的版本。
+// 版本（1/2、2/2），摘要自己不占槽位——摘要是衬垫，不是可切换的版本。
 func TestSummaryPadKeepsBranchSlots(t *testing.T) {
 	c := conversation.New(conversation.ID("convPad"), "衬垫")
 	root := conversation.MessageID(c.ID)
@@ -367,7 +367,7 @@ func TestSessionSummaryKeepsBranchStrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summary: %v", err)
 	}
-	// Head 在 a2 那条分支上，故摘要不在当前路径里：它挂在 u1 下（衬垫占 a1 的原位）。
+	// Head 在 a2 那条分支上，故摘要不在当前路径里：摘要挂在 u1 下（衬垫占 a1 的原位）。
 	var pad conversation.Message
 	for _, kid := range c.ChildIDs("u1") {
 		if m, ok := c.Find(kid); ok && m.Role == conversation.RoleSystem {

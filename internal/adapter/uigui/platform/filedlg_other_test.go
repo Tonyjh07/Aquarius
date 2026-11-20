@@ -39,8 +39,8 @@ func TestZenityAndKdialogFilters(t *testing.T) {
 
 // TestZenityFiltersSplitSemicolons 分号分隔的通配符必须拆成空格分隔。
 //
-// zenity 的模式串是 `NAME | PATTERN1 PATTERN2`；把 `*.aqx;*.json` 原样交给它，得到的是一个
-// 筛不出任何文件的伪模式——对话框里一个文件都不显示，而它自己不报错。
+// zenity 的模式串是 `NAME | PATTERN1 PATTERN2`；把 `*.aqx;*.json` 原样交给 zenity，得到的是一个
+// 筛不出任何文件的伪模式——对话框里一个文件都不显示，而 zenity 自己不报错。
 func TestZenityFiltersSplitSemicolons(t *testing.T) {
 	in := []FileFilter{
 		{Label: "会话文件", Pattern: "*.aqx;*.json;*.jsonl"},

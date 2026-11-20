@@ -66,7 +66,7 @@ type promptEditor struct {
 	overlayList widget.List
 }
 
-// init 控件骨架（map 初值；快照无关）。零值不可用——两个宿主都必须经它构造。
+// init 控件骨架（map 初值；快照无关）。零值不可用——两个宿主都必须经 init 构造。
 func (f *promptEditor) init() {
 	f.promptBtns = map[string]*widget.Clickable{}
 	f.overlayList.List.Axis = layout.Vertical

@@ -17,7 +17,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// stderrCap 子进程 stderr 的有界缓冲（§5.18 进程卫生）：只用于「它为什么起不来 /
+// stderrCap 子进程 stderr 的有界缓冲（§5.18 进程卫生）：只用于「进程为什么起不来 /
 // 为什么退出」这类报因，不进上下文。
 const stderrCap = 8 << 10
 
@@ -30,7 +30,7 @@ const stderrDrainBudget = 500 * time.Millisecond
 const notifyDrainBudgetDefault = 2 * time.Second
 
 // notifyDrainQuietWindow 失败收尾等第一条通知交付的静默窗口。只有「断连时队列里还有通知、
-// handler 尚未被调度」才用得到；队列本来是空的失败会等满这个窗口，所以它不宜长，
+// handler 尚未被调度」才用得到；队列本来是空的失败会等满这个窗口，所以这个窗口不宜长，
 // 但要盖得住 -race 满载下的 goroutine 调度延迟。
 const notifyDrainQuietWindow = 500 * time.Millisecond
 
@@ -62,11 +62,11 @@ type run struct {
 	stopCh chan struct{}
 	sessID string
 	proc   *process
-	// roots 本次转交的会话根集（cwd + 调用时批准过的额外目录），已解析：fs 闸门用它
+	// roots 本次转交的会话根集（cwd + 调用时批准过的额外目录），已解析：fs 闸门用这份根集
 	// 判定「在不在范围里」。只在 execute 里写一次，之后只读；但读方是各自独立的 fs
 	// 请求 goroutine，所以同样走 mu。
 	roots pathres.RootSet
-	// wd 会话 cwd（子进程的起点）：terminal/create 没给 cwd 时用它。
+	// wd 会话 cwd（子进程的起点）：terminal/create 没给 cwd 时用这个。
 	wd string
 	// optSnapshot 当前生效的会话配置选项（D287）。建会话时写入，设置选项后换成响应里的
 	// 那份，代理推 config_option_update 时也跟着换——后一项的候选可能由前一项决定，
@@ -75,7 +75,7 @@ type run struct {
 
 	// terms 终端表（A3）：五个 terminal/* 方法共用。自己带锁，与上面的 mu 无关。
 	terms terminalTable
-	// commands 真的跑起来的命令（按创建序）：报告要列「它替你跑了什么」。与 terms 不同，
+	// commands 真的跑起来的命令（按创建序）：报告要列「代理替你跑了什么」。与 terms 不同，
 	// release 之后这里仍然留着——报告说的是发生过的事。
 	commands []*terminal
 
@@ -94,7 +94,7 @@ type run struct {
 	changed     []string
 	changedSeen map[string]bool
 	changedOver int
-	// wrote 经 Aquarius 写下的文件（事实，不是它自称的）：与 changed 并列进报告，
+	// wrote 经 Aquarius 写下的文件（事实，不是代理自称的）：与 changed 并列进报告，
 	// 两份来源分开列（D283）。
 	wrote     []string
 	wroteSeen map[string]bool
@@ -112,7 +112,7 @@ type run struct {
 	peerGone          bool
 
 	// 通知排空信号。SDK 在断连时先关 Done() 让 Prompt 拿到 error，之后才在另一条
-	// goroutine 里把已入队的通知交回 SessionUpdate；排空完成才 cancel 它传给 handler 的
+	// goroutine 里把已入队的通知交回 SessionUpdate；排空完成才 cancel SDK 传给 handler 的
 	// inboundCtx。notifySeen 等第一条通知交付，drainDone 等那个 ctx 结束。
 	notifyOnce  sync.Once
 	notifySeen  chan struct{}
@@ -209,7 +209,7 @@ func (r *run) options() []acp.SessionConfigOption {
 	return append([]acp.SessionConfigOption(nil), r.optSnapshot...)
 }
 
-// workDir 会话 cwd（未设时为空：terminalDir 会发现它不是绝对路径而拒，fail closed）。
+// workDir 会话 cwd（未设时为空：terminalDir 会发现空 cwd 不是绝对路径而拒，fail closed）。
 func (r *run) workDir() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -309,7 +309,7 @@ func (r *run) markPeerIfClosed(conn *acp.ClientSideConnection) {
 func (r *run) armNotifyDrain() { r.notifyArmed = true }
 
 // observeNotifyCtx 记下 SDK 交给 session/update 的 ctx。每条通知都会走到这里，只认第一次：
-// 同一个 Connection 里所有通知共用同一个 inboundCtx，它的 Done() 才是排空完成的信号。
+// 同一个 Connection 里所有通知共用同一个 inboundCtx，这个 ctx 的 Done() 才是排空完成的信号。
 func (r *run) observeNotifyCtx(ctx context.Context) {
 	r.notifyOnce.Do(func() {
 		close(r.notifySeen)
@@ -446,7 +446,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 
 	conn := acp.NewClientSideConnection(&client{m: m, r: r}, proc.stdin, proc.stdout)
 	// SDK 的诊断日志按字节刷到 stderr（正常收尾也会打一条 "connection closed"）；
-	// 用户面的报因我们自己在 abort 里带 stderr 尾巴，这里不需要再吵一次。
+	// 用户面的报因客户端自己在 abort 里带 stderr 尾巴，这里不需要再吵一次。
 	conn.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	// 对端断连（崩溃、退出）：让阻塞中的调用尽快返回，报因里带 stderr 尾部。
@@ -464,8 +464,8 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	hctx, cancel := context.WithTimeout(r.cancelCtx, m.opts.Handshake)
 	init, err := conn.Initialize(hctx, acp.InitializeRequest{
 		ProtocolVersion: 1,
-		// 申报 fs（A2）：读写都经我们过手，`Changed` 才有事实可依（D283）。
-		// 申报 terminal（A3）：命令改由我们起进程、收输出、可停，于是「它跑了什么」
+		// 申报 fs（A2）：读写都经 Aquarius 过手，`Changed` 才有事实可依（D283）。
+		// 申报 terminal（A3）：命令改由 Aquarius 起进程、收输出、可停，于是「代理跑了什么」
 		// 才留得下来。两条都是**经手**不是围栏——代理自己起 shell 的路看不见
 		// （与根集同一条规则）。
 		ClientCapabilities: acp.ClientCapabilities{
@@ -488,7 +488,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	// -32000（auth required），那时再给出可执行的指引。
 
 	// 额外根（D283）只在对方申报了 `sessionCapabilities.additionalDirectories` 时才发：
-	// 没申报的代理收到这个字段只会当噪声，而我们本地照拦照放——两种情形都要在报告里
+	// 没申报的代理收到这个字段只会当噪声，而客户端本地照拦照放——两种情形都要在报告里
 	// 说清楚，否则「根集到底在哪一侧生效」就得靠猜。
 	extra := r.spec.Roots
 	var extraDirs []string
@@ -501,7 +501,7 @@ func (m *Manager) execute(r *run) (port.DelegateRun, error) {
 	nctx, cancelNew := context.WithTimeout(r.cancelCtx, m.opts.Handshake)
 	ns, err := conn.NewSession(nctx, acp.NewSessionRequest{
 		Cwd:                   wd,
-		McpServers:            []acp.McpServer{}, // 不转发我们的 MCP server（§5.18：两套授权链不搅在一起）
+		McpServers:            []acp.McpServer{}, // 不转发客户端的 MCP server（§5.18：两套授权链不搅在一起）
 		AdditionalDirectories: extraDirs,
 	})
 	cancelNew()
@@ -618,7 +618,7 @@ func (m *Manager) abort(r *run, proc *process, err error) (port.DelegateRun, err
 			Killed:     kind != stopNone,
 		}
 		// 「会话还没建起来」只在真是那个阶段时这么说：建好之后被停也照原样念，
-		// 用户会以为它一步都没跑。
+		// 用户会以为代理一步都没跑。
 		early := ""
 		if r.sessionID() == "" {
 			early = " before the session was established"
@@ -637,7 +637,7 @@ func (m *Manager) abort(r *run, proc *process, err error) (port.DelegateRun, err
 		out.Notes = cur.notes
 		return out, nil
 	}
-	// 进程已经结束同样要等：这才是「崩了」的实锤，watchdog 的标志只是旁证（它可能与
+	// 进程已经结束同样要等：这才是「崩了」的实锤，watchdog 的标志只是旁证（该标志可能与
 	// Prompt 的返回抢同一个 Done()，慢一步）。两条都看，避免报因丢掉 stderr。
 	if r.peerGoneNow() || proc.exited() {
 		// conn.Done() 只保证 stdout 到了 EOF，stderr 的拷贝 goroutine 可能还没排空。

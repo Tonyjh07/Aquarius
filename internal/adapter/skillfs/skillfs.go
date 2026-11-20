@@ -23,7 +23,7 @@ import (
 const (
 	// skillFileName 技能包的入口文件名（开放规范固定值，大小写敏感）。
 	skillFileName = "SKILL.md"
-	// scanDepth 每个技能根向下找几层（根自身 = 0）：2 层足够覆盖「一个仓库里放若干技能」。
+	// scanDepth 每个技能根向下找几层（根自身 = 0）：2 层足够覆盖「一个仓库里放多套技能」。
 	scanDepth = 2
 	// maxSkillFileBytes SKILL.md 上限：规范建议正文 < 500 行；超过这个大小基本是误放的文件。
 	maxSkillFileBytes = 1 << 20

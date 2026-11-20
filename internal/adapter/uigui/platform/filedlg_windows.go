@@ -135,7 +135,7 @@ func (p *Plat) saveOneFile(title, name, defExt string, filters []FileFilter, fil
 //
 // nFilterIndex 是 OPENFILENAME 里唯一的「入参兼出参」字段：进去指定预选哪一档，回来是
 // 用户最终停在哪一档。这两件事无法从路径反推（用户可以把文件名写成任何扩展名，也可以
-// 在「保存类型」里换了档却不改文件名），所以只能读它——`--format` 就靠这个值定。
+// 在「保存类型」里换了档却不改文件名），所以只能读 nFilterIndex——`--format` 就靠这个值定。
 func (p *Plat) runFileDlg(proc *syscall.LazyProc, title, name, defExt string, filters []FileFilter, filterIndex int, flags uint32) (string, int) {
 	filter := utf16Filters(filters)
 	t, err := syscall.UTF16FromString(title)

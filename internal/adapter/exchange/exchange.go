@@ -133,14 +133,14 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 //
 // 判定顺序按「形状的特异度」排，且**先看容器前缀再看键**：
 //   - ZIP 魔数最特异，扩展名 `.aqx` 兜底；
-//   - 顶层是 `[` 的才可能是 chatgpt（它的导出就是数组），再看里面有没有 `"mapping"`；
+//   - 顶层是 `[` 的才可能是 chatgpt（chatgpt 的导出就是数组），再看里面有没有 `"mapping"`；
 //   - 顶层是 `{` 时才可能是 openwebui / openai，看 `"chat"` 是否紧跟对象、`"messages"` 是否
 //     紧跟数组；
 //   - `.jsonl` 连整份 JSON 都不是，单独按首行判。
 //
 // 不能拿 `strings.Contains(head, "\"chat\"")` 这种子串兜底：正文里出现 chat 一词的普通
 // openai 文件就会先被认成 openwebui（错误文案还会说「文件里没有消息」）；反过来，标题较长
-// 的 chatgpt 导出在前几百字节里既没有完整 JSON 也没有 `"mapping"`，子串判断又漏掉它。
+// 的 chatgpt 导出在前几百字节里既没有完整 JSON 也没有 `"mapping"`，子串判断又漏掉这份导出。
 func (e *Exchange) Detect(name string, head []byte) (port.ExchangeFormat, bool) {
 	if isZip(head) || strings.EqualFold(fileExt(name), ".aqx") {
 		return formatNamed("aqx")
@@ -193,7 +193,7 @@ func topKeyStarts(head []byte, name string, opener byte) bool {
 		inStr     bool
 		escaped   bool
 		expectKey bool   // 对象里等一个键
-		pendingKe bool   // 刚读到键，等它的值
+		pendingKe bool   // 刚读到键，等这个键的值
 		pending   string // 待配对的键名
 	)
 	top := func() bool {

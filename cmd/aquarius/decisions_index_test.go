@@ -88,7 +88,7 @@ func TestDecisionsBodyInIndex(t *testing.T) {
 		inIndex[n] = true
 	}
 	// 索引表本该有几百行；个位数说明取号规则坏了（比如表格被挪进别的章节），
-	// 让它失，而不是让正文漏行在空集合上「恰好通过」。
+	// 让测试失败，而不是让正文漏行在空集合上「恰好通过」。
 	if len(inIndex) < 100 {
 		t.Fatalf("索引表只取到 %d 个决策号，明显不对——检查 `## 索引` 是否还在原位", len(inIndex))
 	}

@@ -2,7 +2,7 @@ package uigui
 
 // settings_segments.go 行内分段控件（D280/D282）。
 //
-// 为什么不用现成的 selectField：它是**居中模态**——点开要铺满整窗遮罩、再点一次才收。
+// 为什么不用现成的 selectField：该控件是**居中模态**——点开要铺满整窗遮罩、再点一次才收。
 // 设置窗里一行一个枚举那样做还行，几十个工具逐行改档位就是几十次遮罩往返，批量调整
 // 完全没法用。分段控件没有弹层：一次点击直接落值，扫一眼也能看出每行现在是哪一档。
 //
@@ -30,7 +30,7 @@ type segmented struct {
 	btns []widget.Clickable
 }
 
-// clicked 消费本帧点击，返回被点中的下标（-1 = 无）。渲染它的页面在 Events 里调一次。
+// clicked 消费本帧点击，返回被点中的下标（-1 = 无）。渲染该控件的页面在 Events 里调一次。
 func (s *segmented) clicked(gtx layout.Context) int {
 	for i := range s.btns {
 		if s.btns[i].Clicked(gtx) {
@@ -61,7 +61,7 @@ func (s *segmented) layout(gtx layout.Context, th *material.Theme, labels []stri
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 }
 
-// btn 单个分段：先按内容量出尺寸，再在它底下铺底色，最后画字（录制成宏保证顺序）。
+// btn 单个分段：先按内容量出尺寸，再在按钮底下铺底色，最后画字（录制成宏保证顺序）。
 func (s *segmented) btn(gtx layout.Context, th *material.Theme, c *widget.Clickable, label string, on bool) layout.Dimensions {
 	pp := paperOf()
 	return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

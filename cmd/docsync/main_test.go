@@ -65,7 +65,7 @@ func TestSyncTextKeepsInlineExample(t *testing.T) {
 	}
 }
 
-// TestMarkerRoundTrip 写进去的标记能被 hasMarker 认出来（-check 依赖它）。
+// TestMarkerRoundTrip 写进去的标记能被 hasMarker 认出来（-check 依赖 hasMarker）。
 func TestMarkerRoundTrip(t *testing.T) {
 	src := "# 标题\n\n正文\n"
 	if hasMarker(src) {

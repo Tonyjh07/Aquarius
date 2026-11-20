@@ -253,7 +253,7 @@ func TestPreviewPromptsCompose(t *testing.T) {
 	}
 
 	// 无卡预览（§5.17）：@char.* 是条件内置，非角色会话下六个模块恒空、不计缺失——
-	// 引用它们不该冒出任何角色段，用户人格照常。
+	// 引用这些模块不该冒出任何角色段，用户人格照常。
 	noCard := w.previewPrompts(nil, []string{"@default", "@char", "@char.system", "@char.book"}, "LEGACY")
 	if !strings.HasPrefix(noCard, "LEGACY") {
 		t.Errorf("无卡预览应仍出用户人格: %q", noCard)

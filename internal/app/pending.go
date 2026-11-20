@@ -129,7 +129,7 @@ func (p *pendingList) Clear() int {
 	return n
 }
 
-// takeSteer 取走全部引导（轮内边界；保持插入序，与它们被说出来的顺序一致）。
+// takeSteer 取走全部引导（轮内边界；保持插入序，与这些引导被说出来的顺序一致）。
 func (p *pendingList) takeSteer() []port.PendingInput {
 	p.mu.Lock()
 	defer p.mu.Unlock()

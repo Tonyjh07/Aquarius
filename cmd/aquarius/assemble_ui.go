@@ -37,7 +37,7 @@ func (w *wiring) voiceInput(ctx context.Context) (string, error) {
 
 // voiceSlot 界面语音键槽（D179）：语音识别没装配就给 nil。
 //
-// 摄取器本身总会建出来（`/mic` 靠它报因，入口不该静默消失），所以「可有语音键」
+// 摄取器本身总会建出来（`/mic` 靠摄取器报因，入口不该静默消失），所以「可有语音键」
 // 不能拿摄取器是否为空来判——那样麦克风键会在一台根本没配语音的机器上照样亮着，
 // 按下去只会得到「语音识别未配置」。界面据此保持发送键。
 func (w *wiring) voiceSlot() func(context.Context) (string, error) {

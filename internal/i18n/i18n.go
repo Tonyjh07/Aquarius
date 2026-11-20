@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 )
 
-// Lang 是界面语言。两种：zh 是母版，en 与它同 key（D275）。
+// Lang 是界面语言。两种：zh 是母版，en 与 zh 同 key（D275）。
 type Lang string
 
 const (
@@ -146,7 +146,7 @@ func fill(tmpl string, kv []any) string {
 
 // PlaceholderNames 列出模板里的 {name}（去重、升序）。
 //
-// 两份表的同构判据用它：key 集合相等之外，同一条文案的占位符名集合也必须相等——否则
+// 两份表的同构判据用 PlaceholderNames：key 集合相等之外，同一条文案的占位符名集合也必须相等——否则
 // 切了语言就少一个值，而少值不会报错，只会印出半句话。
 func PlaceholderNames(tmpl string) []string {
 	var out []string

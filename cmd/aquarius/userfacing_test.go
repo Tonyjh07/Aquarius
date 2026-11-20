@@ -29,7 +29,7 @@ var userFacingIDPattern = regexp.MustCompile(`\bD\d{2,}\b|§\d|\bM[0-4]\b`)
 
 // userFacingDocs 用户面 Markdown：面向使用者、不含内部编号的文档（docs/README.md 是
 // 贡献者的文档地图，会拿编号当例子讲，故不在此列；发布说明逐版累积，按 glob 全扫）。
-// 新增用户面文档时把路径加进来——否则这条守卫管不到它。
+// 新增用户面文档时把路径加进来——否则这条守卫管不到新增文档。
 var userFacingDocs = []string{
 	"README.md",
 	"docs/guide.md",

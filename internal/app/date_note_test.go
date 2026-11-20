@@ -79,7 +79,7 @@ func TestNoteDateChangeWithinOneDay(t *testing.T) {
 }
 
 // TestNoteDateChangeCrossesMidnight 跨过午夜：落一条注入节点，挂在上一条消息之后，
-// 内容给出新日期并点明旧日期，来源是日期、触发为否（它不该自己起一轮）。
+// 内容给出新日期并点明旧日期，来源是日期、触发为否（该注入节点不该自己起一轮）。
 func TestNoteDateChangeCrossesMidnight(t *testing.T) {
 	c := datedConv(t)
 	rec := &recorder{}

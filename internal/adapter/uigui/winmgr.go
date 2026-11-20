@@ -101,7 +101,7 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 
 // winHandle 单个次窗实例（winHost 持有；字段原子存取，跨线程安全）。
 type winHandle struct {
-	// plat 平台实现（spawn 时从 UI 取；次窗平台操作经它——主窗机制不作用于次窗）。
+	// plat 平台实现（spawn 时从 UI 取；次窗平台操作经 plat——主窗机制不作用于次窗）。
 	plat platformAPI
 	// done 次窗事件循环退出时 close（host watcher 据此摘除登记；close 提供 happens-before）。
 	done chan struct{}

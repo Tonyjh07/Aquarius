@@ -329,12 +329,12 @@ func iconSlot(gtx layout.Context, draw func(gtx layout.Context, box image.Rectan
 func (u *UI) confirmLevelable() bool { return u.levelPickable() }
 
 // confirmPersistable 「以后都允许」钮可见性（D282）：判定侧说这次可以写策略表才算——
-// 目标命中硬名单时它置 false（写了也永远轮不到，点了只会让人以为放宽了）。
+// 目标命中硬名单时该标志置 false（写了也永远轮不到，点了只会让人以为放宽了）。
 func (u *UI) confirmPersistable() bool {
 	return u.m.confirm != nil && u.m.confirm.req.CanPersist
 }
 
-// confirmPersistTip 第四颗钮的 tooltip：把**它到底放宽到哪**说清（D282 第 6 条）。
+// confirmPersistTip 第四颗钮的 tooltip：把**这次允许到底放宽到哪**说清（D282 第 6 条）。
 // 范围算在 perm.AutoAllow 里，与写进配置的那一条同源——两处各算一遍迟早对不上。
 func (u *UI) confirmPersistTip() string {
 	req := u.m.confirm.req

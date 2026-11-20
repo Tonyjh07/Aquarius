@@ -24,7 +24,7 @@ type ExchangeFormat struct {
 	Lossy bool
 	// LossNote 丢什么（一句话；帮助与回执共用，用户据此知道这次搬运少了什么）。
 	LossNote string
-	// NoExport 只认不写：openwebui 与 chatgpt 同族（都是树形），读进来不难，但我们只维护
+	// NoExport 只认不写：openwebui 与 chatgpt 同族（都是树形），读进来不难，但本程序只维护
 	// 一份树形出口，不产出第二套同义格式。
 	NoExport bool
 }
@@ -37,7 +37,7 @@ const MultiExportStem = "aquarius-backup"
 
 // ExchangeEntry 归档里的一个会话（**索引条目**：只给展示与选择用，不装树）。
 type ExchangeEntry struct {
-	// Index 清单序号，**1 起**（--pick 用它；顺序 = manifest 里的顺序）。
+	// Index 清单序号，**1 起**（--pick 用这个序号；顺序 = manifest 里的顺序）。
 	Index int
 	// ID 源会话 ID（回执溯源；导入时全部重新分配）。
 	ID string
@@ -134,7 +134,7 @@ func FileStem(title string) string {
 
 // ExchangeFormats 四种格式的静态事实（§5.16 的格式表，D242）。
 //
-// 放在端口而不在适配器：命令面的用法提示、导入识别失败时的「支持这几种」文案都要用它，
+// 放在端口而不在适配器：命令面的用法提示、导入识别失败时的「支持这几种」文案都要用这张表，
 // 而那时可能连适配器都没装配。适配器的 Formats() 由这张表派生，两处不会分叉。
 func ExchangeFormats() []ExchangeFormat {
 	return []ExchangeFormat{

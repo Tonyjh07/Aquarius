@@ -16,7 +16,7 @@ const ihistMax = 50
 type ihist struct {
 	lines []string
 	pos   int
-	draft string // 开始翻历史时框里的内容，翻回草稿要退回它
+	draft string // 开始翻历史时框里的内容，翻回草稿要退回这份内容
 }
 
 // push 记一条已提交的输入：空行不记（提交空行是取消/仅附件，翻回来没有意义），

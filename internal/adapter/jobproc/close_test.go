@@ -42,7 +42,7 @@ func TestCloseWaitsForFinishedReaper(t *testing.T) {
 }
 
 // TestCloseDoesNotWaitForRunningJob 仍在跑的任务不等（§10：退出不杀任务）：
-// 等它等于把退出拖成任务时长；台账里那条 running 就是下次启动要说的事实。
+// 等该任务等于把退出拖成任务时长；台账里那条 running 就是下次启动要说的事实。
 func TestCloseDoesNotWaitForRunningJob(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

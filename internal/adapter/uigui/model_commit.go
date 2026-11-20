@@ -103,7 +103,7 @@ func (m *model) commit(msg conversation.Message) {
 		// D207：纯图提交（无正文）也要盖章——回显块的正文同样为空，按空串配对。
 		if msg.Role == conversation.RoleUser {
 			if imgs := nodeImages(msg.Content); text != "" || len(imgs) > 0 {
-				// D272：轮内写成的 user 节点（引导/排队）没有本地回显——它进清单时界面
+				// D272：轮内写成的 user 节点（引导/排队）没有本地回显——该节点进清单时界面
 				// 只在待发条上画过一行，从没进过转写区。没得盖章就补一块，否则那句话
 				// 在转写区里凭空消失。
 				if !m.stampUserBlock(text, msg.ID, imgs) {

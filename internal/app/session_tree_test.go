@@ -186,7 +186,7 @@ func TestSessionRmCommand(t *testing.T) {
 		store := newMemStore()
 		s, conf := newConfirmedSession(t, store, []bool{true})
 		c := buildTree(t, s)
-		// 修订 a1 → 新版本记一条「修订自 a1」。旧版本此时是叶子，删它不牵连任何内容，
+		// 修订 a1 → 新版本记一条「修订自 a1」。旧版本此时是叶子，删旧版本不牵连任何内容，
 		// 但新版本的溯源记录会因悬空而一并清掉——确认句必须提前说明。
 		if _, err := handleCmd(s, "edit", "a1", "改答"); err != nil {
 			t.Fatalf("edit: %v", err)

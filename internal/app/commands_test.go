@@ -38,7 +38,7 @@ func TestCommandTableSelfCheck(t *testing.T) {
 		}
 	}
 
-	// 索引与表一致：每个名字都能查回它自己的那条记录（别名与主名同记录）。
+	// 索引与表一致：每个名字都能查回自己的那条记录（别名与主名同记录）。
 	for i, e := range commandTable {
 		for _, n := range e.Names {
 			got, ok := commandIndex[n]
@@ -210,7 +210,7 @@ func TestCommandNamesAreDispatched(t *testing.T) {
 			}
 		}
 	}
-	// /help 是最安全的探针：它只读表、不碰会话状态，且必须能命中。
+	// /help 是最安全的探针：该命令只读表、不碰会话状态，且必须能命中。
 	out, err := s.execCommand(context.Background(), port.Command{Name: "help"})
 	if err != nil {
 		t.Fatalf("execCommand(help) = %v", err)

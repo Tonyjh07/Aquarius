@@ -4,11 +4,11 @@ package main
 //
 // 规则三条：
 //  1. **页面显示的是配置 + 现算的 PATH 探测**，不是运行中的转交管理器。转交管理器按启动
-//     时的配置装配（命令、参数、env、上限），热改它等于在别人的进程还在跑时换掉它的身份；
+//     时的配置装配（命令、参数、env、上限），热改配置等于在别人的进程还在跑时换掉转交管理器的身份；
 //     所以这里改完一律「重启生效」，页面也照着新配置显示——而不是显示一份跑着但已过期的事实。
 //  2. 写回走 persistConfig 的泛键改写（与技能目录同一路），只动 `delegate.agents` 里那一条。
 //  3. 校验只做「写下去会让下次启动报错」的那两条：缺省代理不能停用、停用的代理不能设为缺省
-//     ——它们是 config 解析期的硬约束，放进界面拦比让用户下次启动吃一个 fatal 好。
+//     ——这两条是 config 解析期的硬约束，放进界面拦比让用户下次启动吃一个 fatal 好。
 
 import (
 	"context"
@@ -30,7 +30,7 @@ type delegateAdmin struct{ w *wiring }
 
 var _ uigui.DelegateAdmin = (*delegateAdmin)(nil)
 
-// delegateAvailable 命令能不能执行（绝对路径也认：LookPath 会直接检查它）。
+// delegateAvailable 命令能不能执行（绝对路径也认：LookPath 会直接检查命令）。
 func delegateAvailable(command string) bool {
 	if strings.TrimSpace(command) == "" {
 		return false
@@ -151,7 +151,7 @@ func (a *delegateAdmin) Add(name, commandLine string) error {
 	return nil
 }
 
-// Remove 删除一条。缺省代理也允许删：删完没有缺省是合法配置（只剩一条时自动选它）。
+// Remove 删除一条。缺省代理也允许删：删完没有缺省是合法配置（只剩一条时自动选剩下的那条）。
 func (a *delegateAdmin) Remove(name string) error {
 	idx := a.agentIndex(name)
 	if idx < 0 {
@@ -509,13 +509,13 @@ func splitCommandLine(line string) (string, []string, error) {
 
 // Probe 测一次连通性：起进程 → initialize 握手 → 立刻收掉。
 //
-// 它跑在设置窗的旁路 goroutine 里（界面循环不能等一次进程启动）。三条失败路各有
+// Probe 跑在设置窗的旁路 goroutine 里（界面循环不能等一次进程启动）。三条失败路各有
 // sentinel（不在 PATH / 起不来 / 握手失败），错误前缀直接给用户看，不再二次包装。
 func (a *delegateAdmin) Probe(name string) (uigui.DelegateProbe, error) {
 	if a.w.delegateMgr == nil {
 		return uigui.DelegateProbe{}, errors.New(i18n.T("cmd.delegate.err.probe_unwired"))
 	}
-	// 比 acpgate 自己的总闸多留一秒：让它的「超时」先说话，而不是这里的 ctx 先断。
+	// 比 acpgate 自己的总闸多留一秒：让 acpgate 总闸的「超时」先说话，而不是这里的 ctx 先断。
 	ctx, cancel := context.WithTimeout(context.Background(), acpgate.ProbeTimeout+time.Second)
 	defer cancel()
 	info, err := a.w.delegateMgr.Probe(ctx, name)

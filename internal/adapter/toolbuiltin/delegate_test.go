@@ -116,7 +116,7 @@ func TestDelegateToolRoots(t *testing.T) {
 		t.Fatalf("roots = %v（want 去空白去重后一条）", got)
 	}
 
-	// 相对路径：不收窄也不放宽，直接拒（它会让越界判定失去参照物）。
+	// 相对路径：不收窄也不放宽，直接拒（相对路径会让越界判定失去参照物）。
 	if _, err := tl.Execute(context.Background(), call(`{"task":"x","roots":["rel"]}`)); err == nil {
 		t.Fatal("相对根应报错")
 	}
@@ -186,7 +186,7 @@ func TestDelegateWaitText(t *testing.T) {
 	}
 }
 
-// TestDelegateKillTool 叫停只影响我们自己起的那次。
+// TestDelegateKillTool 叫停只影响本程序自己起的那次。
 func TestDelegateKillTool(t *testing.T) {
 	f := &fakeDelegates{}
 	tl := pick(t, New(delegateDeps(f)), "delegate_kill")

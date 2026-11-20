@@ -8,7 +8,7 @@ import (
 
 // TestDelegateReportTextShape 报告是「宿主的摘要行 + 外部代理的正文」两段：
 // 摘要行必须能被逐行读懂（Notes 换行、被拒的权限、没列出的改动都要说出来），
-// 正文前要有一句围栏提示——那段是外部程序写的，不是我们的结论。
+// 正文前要有一句围栏提示——那段是外部程序写的，不是本程序的结论。
 func TestDelegateReportTextShape(t *testing.T) {
 	run := DelegateRun{
 		Agent:       "claude",
@@ -133,7 +133,7 @@ func TestDelegateReportTextCommands(t *testing.T) {
 // TestNormalizeRoots 根集归一：去空白、去空项、去重（保序），相对路径拒收。
 //
 // 「多一行空行不算错、重复一条也不算错」是刻意的：手写或模型产出里出现这两样很常见，
-// 为它们报错只会让人反复试错；只有相对路径必须拒——它会让越界判定失去参照物。
+// 为这两样报错只会让人反复试错；只有相对路径必须拒——相对路径会让越界判定失去参照物。
 func TestNormalizeRoots(t *testing.T) {
 	t.Parallel()
 	got, err := NormalizeRoots([]string{" /a ", "", "/b", "/a", "   "})

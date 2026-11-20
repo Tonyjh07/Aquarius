@@ -32,7 +32,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// 密文档名（写进文件头，读时按它分派；跨平台文件只在同档可读）。
+// 密文档名（写进文件头，读时按密文档名分派；跨平台文件只在同档可读）。
 const (
 	cipherDPAPI  = "dpapi"
 	cipherAESGCM = "aesgcm"

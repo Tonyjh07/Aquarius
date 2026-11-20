@@ -24,7 +24,7 @@ const anthropicPath = "/messages"
 // anthropicVersion 必需的 API 版本头（Messages API 要求显式声明版本）。
 const anthropicVersion = "2023-06-01"
 
-// anthropicSigPrefix 思考块签名的协议前缀（D175 规则三）：只有本协议认它。
+// anthropicSigPrefix 思考块签名的协议前缀（D175 规则三）：只有本协议认该前缀。
 const anthropicSigPrefix = "anthropic:"
 
 // anthropicDefaultMaxTokens 未配置输出预算时的 max_tokens。
@@ -191,7 +191,7 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 // 两处结构性差异：
 //   - system 是**顶层字段**，Messages API 没有 system 角色。所有 system 消息按原序
 //     并进顶层 system（相对顺序保留；与其它消息的前后位置就此丢失——API 没有别的表达方式）。
-//   - tool 结果不是独立角色，而是 **user 消息里的 tool_result 内容块**；且 API 要求角色
+//   - tool 结果放在 **user 消息的 tool_result 内容块**里，不占独立角色；且 API 要求角色
 //     交替，所以相邻的同角色消息必须合并（工具结果 + 紧随其后的工具图片正好合成一条）。
 func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInbound, []anthropicText, error) {
 	var (

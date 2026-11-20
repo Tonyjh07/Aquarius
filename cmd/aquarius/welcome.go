@@ -449,7 +449,7 @@ func (w *wiring) setupWizard(ctx context.Context, dataDir, profileFlag, modelNam
 			return 0, false
 		}
 		// 现探一次再成句：用户在窗里切过语言（`i18n.Use` 是进程级的，关窗后仍然生效），
-		// 开窗前拼好的那几句是旧语言；这里重新问一遍，报因与他刚看的界面同一种语言。
+		// 开窗前拼好的那几句是旧语言；这里重新问一遍，报因与用户刚看的界面同一种语言。
 		if got := mgr.Issues(); len(got) > 0 {
 			issues = got
 		}

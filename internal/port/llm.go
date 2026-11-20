@@ -245,7 +245,7 @@ type Delta struct {
 // 重新编码都可能丢掉服务端认的东西（`signature` 尤其）。
 type ServerBlock struct {
 	Tool  string // 服务端工具名（deepseek_read_url）
-	Kind  string // 块类别（read_link）；回传时服务端靠它认出这是阅读链接
+	Kind  string // 块类别（read_link）；回传时服务端靠该字段认出这是阅读链接
 	URL   string // 展示用；调用块取 input.url，结果块取 content.url
 	Title string // 展示用；仅结果块有
 	Raw   json.RawMessage

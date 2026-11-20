@@ -82,7 +82,7 @@ func TestWebPageFillsSnapshot(t *testing.T) {
 }
 
 // TestWebProviderFormFromDefaults 老配置只写 kind（没有 from）时，「借用」下拉显示同名
-// 条目——启动确实借它，界面不能显示成「不借」。
+// 条目——启动确实借该条目，界面不能显示成「不借」。
 func TestWebProviderFormFromDefaults(t *testing.T) {
 	t.Parallel()
 	choices := []ProviderChoice{{Name: "deepseek"}, {Name: "mimo"}}
@@ -95,7 +95,7 @@ func TestWebProviderFormFromDefaults(t *testing.T) {
 	if got := pf.from.value(); got != "" {
 		t.Fatalf("无同名条目时借用 = %q, want 空", got)
 	}
-	// 显式写了 from 就照它来。
+	// 显式写了 from 就照 from 来。
 	pf = newWebProviderForm(WebProviderView{Kind: "deepseek", From: "mimo"}, true, choices)
 	if got := pf.from.value(); got != "mimo" {
 		t.Fatalf("显式借用 = %q, want mimo", got)

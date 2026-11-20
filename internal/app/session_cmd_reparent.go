@@ -15,7 +15,7 @@ func reparentUsage() string { return i18n.T("usage.reparent") }
 
 // execReparent 实现 /reparent（D255/D256）：整棵子树改挂到新父下，或反做最近一次搬运。
 //
-// 两条路走同一个领域原语（`Reparent` / `UndoLastDetachment`），关系图拖拽将来也走它——
+// 两条路走同一个领域原语（`Reparent` / `UndoLastDetachment`），关系图拖拽将来也走这套原语——
 // 界面与命令面在结构上做的是同一件事，不各写一套判断。
 func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) == 1 && cmd.Args[0] == "--undo" {
@@ -62,7 +62,7 @@ func (s *Session) execReparent(ctx context.Context, cmd port.Command) (string, e
 		return "", wrapSession("err.reparent_persist_stuck", err)
 	}
 
-	// Head 没动，但被搬子树若包含 Head，它上来的那条路换了——转写区要跟着重画
+	// Head 没动，但被搬子树若包含 Head，Head 上来的那条路换了——转写区要跟着重画
 	// （与 /goto 的清屏回放同规则）。不包含时路径一字未变，不必打断阅读。
 	if pathContains(s.cur, id, head) {
 		if err := s.emitClear(ctx); err != nil {
@@ -112,7 +112,7 @@ func (s *Session) undoReparent(ctx context.Context) (string, error) {
 }
 
 // pathContains 报告 id 是否在 Head 的路径上（含 Head 自身）。
-// 改父不改 Head，但把 Head 的某个祖先挪走会改变它上来的那条路。
+// 改父不改 Head，但把 Head 的某个祖先挪走会改变 Head 上来的那条路。
 func pathContains(c *conversation.Conversation, id, head conversation.MessageID) bool {
 	for cur := head; cur != ""; {
 		if cur == id {

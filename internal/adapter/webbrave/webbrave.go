@@ -150,7 +150,7 @@ func (c *Client) Search(ctx context.Context, q port.WebQuery) (port.WebResults, 
 			SiteName:  strings.TrimSpace(r.Profile.Name),
 			Authority: -1,
 		}
-		// extra_snippets 是 Brave 给模型的补充摘录：拼进 Summary，工具层优先读它。
+		// extra_snippets 是 Brave 给模型的补充摘录：拼进 Summary，工具层优先读 Summary。
 		if extra := strings.TrimSpace(strings.Join(r.ExtraSnippets, " ")); extra != "" {
 			item.Summary = extra
 		}

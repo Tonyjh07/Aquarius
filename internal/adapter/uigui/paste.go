@@ -40,7 +40,7 @@ func (u *UI) pasteImageKey(gtx layout.Context) {
 	if u.opts.Blobs == nil {
 		return
 	}
-	// 编辑器不持焦时这个键根本不会派给我们；先判掉，省下每帧的剪贴板探测
+	// 编辑器不持焦时这个键根本不会派给本程序；先判掉，省下每帧的剪贴板探测
 	// （淡出源恒无焦点，也一并跳过）。
 	if !gtx.Focused(&u.editor) {
 		return
@@ -127,7 +127,7 @@ func mbLabel(n int64) string {
 func mbSize(n int64) string { return fmt.Sprintf("%.1f", float64(n)/(1<<20)) }
 
 // stagePath 暂存一项路径附件（文件选择框 / 拖拽共用）：目录要当场说清——拖进来一个
-// 文件夹时，与其让用户在摄取报错里猜，不如立刻告诉他「这里只收文件」。
+// 文件夹时，与其让用户在摄取报错里猜，不如立刻告诉用户「这里只收文件」。
 func (u *UI) stagePath(path string) {
 	if strings.TrimSpace(path) == "" {
 		return

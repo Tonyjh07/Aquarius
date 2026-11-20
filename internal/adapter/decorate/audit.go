@@ -51,7 +51,7 @@ type auditLine struct {
 	In    int    `json:"in,omitempty"`  // usage.input_tokens（流末）
 	Out   int    `json:"out,omitempty"` // usage.output_tokens（流末）
 	// kind=policy：「以后都允许」写进策略表的那一条（D282）。谁、哪个工具、放宽到
-	// 哪一档、范围多宽，以及促使它的那次调用（操作 + 目标）——确认疲劳最容易发生在
+	// 哪一档、范围多宽，以及促使该策略写入的那次调用（操作 + 目标）——确认疲劳最容易发生在
 	// 这一刻，事后要能看出「这条是第 N 次弹窗时点的」。
 	Origin string `json:"origin,omitempty"`
 	Mode   string `json:"mode,omitempty"`
@@ -321,7 +321,7 @@ func (t *auditTool) Execute(ctx context.Context, call tool.Call) (tool.Result, e
 	return res, err
 }
 
-// Policy 记一条策略写入（D282「以后都允许」）：规范化的范围 + 触发它的那次调用。
+// Policy 记一条策略写入（D282「以后都允许」）：规范化的范围 + 触发该策略写入的那次调用。
 // applied=false 表示这次没写进配置（目标命中硬名单、或写盘失败），errMsg 说明原因——
 // 「用户以为放宽了、其实没有」必须能从审计里读出来。
 func (a *Audit) Policy(origin, tool, mode, dir, op, target string, applied bool, errMsg string) {
@@ -334,7 +334,7 @@ func (a *Audit) Policy(origin, tool, mode, dir, op, target string, applied bool,
 // Decide 记一次决策模型判定（D290）：结论、三个分数、当时生效的两个阈值与延迟。
 //
 // 落一条**判定**而不是一次请求：`shadow` 下用户照样点了确认，这里记的是「如果开着
-// 会怎么判」，两边对照着看才知道默认值该往哪挪。`should_allow` 也一并记下——它不参与
+// 会怎么判」，两边对照着看才知道默认值该往哪挪。`should_allow` 也一并记下——该字段不参与
 // 判定，但正是重标定时要重新算相关系数的那一列。
 func (a *Audit) Decide(rec DecideRecord) {
 	op := ""

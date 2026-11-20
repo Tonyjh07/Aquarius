@@ -26,7 +26,7 @@ func (u *UI) Say(text string) {
 // Prompt 输入提示：GUI 输入栏常驻，等价 no-op（保持前端接口同形）。
 func (u *UI) Prompt() {}
 
-// SetInterrupt 注入取消行为（装配根每轮 Turn 前设为取消该轮，nil = 无轮进行）；
+// SetInterrupt 注入取消行为（装配根每轮 Turn 前设为取消该轮，nil = 没有轮在跑）；
 // 同时驱动"生成中"标志（§15.2 发送键 ↔ 停止键、底栏状态行）。原子换，帧循环读。
 func (u *UI) SetInterrupt(fn func()) {
 	if fn == nil {
@@ -39,7 +39,7 @@ func (u *UI) SetInterrupt(fn func()) {
 	u.generating.Store(true)
 }
 
-// interruptNow 触发当前轮取消（停止键调用）；无轮进行时 no-op。
+// interruptNow 触发当前轮取消（停止键调用）；没有轮在跑时 no-op。
 func (u *UI) interruptNow() {
 	if f := u.interrupt.Load(); f != nil {
 		(*f)()
@@ -125,7 +125,7 @@ func (u *UI) Wake() {
 
 // Next 阻塞读取下一条输入（斜杠命令解析与 repl 同规则）；
 // io.EOF = 用户关窗（DestroyEvent）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
-// 广播到达时先取尽排队输入（eofMsg 经 inbox 排队，先于它的提交必已入队），
+// 广播到达时先取尽排队输入（eofMsg 经 inbox 排队，先于 eofMsg 的提交必已入队），
 // 取空才返回 EOF——任何 select 次序下都不丢输入、也不吞 EOF（uitui 审查修复同款）。
 func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 	for {

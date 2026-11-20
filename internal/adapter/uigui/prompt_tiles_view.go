@@ -98,7 +98,7 @@ func (f *promptEditor) drawModuleTile(gtx layout.Context, th *material.Theme, r 
 func (f *promptEditor) drawTileFace(gtx layout.Context, th *material.Theme, r image.Rectangle, pf *promptModuleForm, floating bool) {
 	pp := paperOf()
 	rad := gtx.Dp(unit.Dp(pp.rCard))
-	if floating { // 浮动卡：阴影抬起来 + 品牌色描一圈，让「它被拎起来了」成立
+	if floating { // 浮动卡：阴影抬起来 + 品牌色描一圈，让「浮动卡被拎起来了」成立
 		paperShadow(gtx, r, rad, 6, 6, 0x28)
 		paint.FillShape(gtx.Ops, pp.brand, clip.UniformRRect(r, rad).Op(gtx.Ops))
 		r = r.Inset(gtx.Dp(2))
@@ -132,7 +132,7 @@ func (f *promptEditor) drawTileFace(gtx layout.Context, th *material.Theme, r im
 
 // moduleMeta 磁贴第二行：组/叶 + 被引用次数。
 //
-// 被引用次数是这一页最需要一眼看到的信息——改了模块却不知道它有没有被用上，
+// 被引用次数是这一页最需要一眼看到的信息——改了模块却不知道该模块有没有被用上，
 // 就只能靠记忆去比对「人格引用」那一段。
 func moduleMeta(pf *promptModuleForm, refs []*promptRefForm) string {
 	name := strings.TrimSpace(pf.name.Text())

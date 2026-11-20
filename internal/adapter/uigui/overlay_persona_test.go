@@ -82,7 +82,7 @@ func TestOverlayPersonaEditable(t *testing.T) {
 	}
 	st.closeOverlay()
 
-	// 非 persona 的 system 节点（摘要）只读：它改的是一段上下文快照，不是人格。
+	// 非 persona 的 system 节点（摘要）只读：摘要改的是一段上下文快照，不是人格。
 	if sid := ovSystemNodeID(st); sid != "" {
 		st.openOverlay(u, sid, conversation.Fresh, overlayPageRendered)
 		if st.ov.editable {

@@ -171,7 +171,7 @@ func newWebProviderForm(v WebProviderView, search bool, choices []ProviderChoice
 	pf.from = selectField{displays: displays, values: values}
 	pf.from.setValue(strings.TrimSpace(v.From))
 	// 快照没写 from 的 deepseek（老配置 `{"kind":"deepseek"}`）实际是借同名条目：
-	// 下拉就显示它，而不是「不借」——否则界面说的和启动做的事不一致。
+	// 下拉就显示该条目，而不是「不借」——否则界面说的和启动做的事不一致。
 	if strings.TrimSpace(v.From) == "" && pf.kind.value() == "deepseek" && slices.Contains(values, "deepseek") {
 		pf.from.setValue("deepseek")
 	}

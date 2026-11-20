@@ -191,7 +191,7 @@ func waitFrames(d time.Duration) {
 }
 
 // offscreenAnchorX 辅助窗口的水平落点：虚拟桌面最右侧再往右 thumbOffscreenGap 像素。
-// 它在任何显示器布局之外，用户永远看不到，也不会被全屏截图框进来。
+// 该辅助窗口在任何显示器布局之外，用户永远看不到，也不会被全屏截图框进来。
 func offscreenAnchorX(virtualLeft, virtualWidth int32) int32 {
 	return virtualLeft + virtualWidth + thumbOffscreenGap
 }
@@ -309,7 +309,7 @@ func (capture) Window(ctx context.Context, h uintptr) (port.Image, error) {
 	if ok, _, _ := procIsWindow.Call(h); ok == 0 {
 		return port.Image{}, fmt.Errorf("window capture: %#x is not a window; get a current handle from window_list", h)
 	}
-	// 最小化窗口必须在任何 PrintWindow 之前分流：它的客户区已被系统压成占位矩形
+	// 最小化窗口必须在任何 PrintWindow 之前分流：该窗口的客户区已被系统压成占位矩形
 	// （159x27 一类），PrintWindow 会在那块占位画布上留下标题栏残留并返回成功，
 	// 几张非黑像素就足以让「纯黑才算没画」的判定放行——这正是要避免的「看起来成功」。
 	if iconic(h) {
@@ -362,7 +362,7 @@ func captureMinimizedWindow(ctx context.Context, h uintptr) (port.Image, error) 
 }
 
 // mergeActivePopup 把主窗的活动弹窗（右键菜单、下拉、owned 对话框）按各自客户区在屏幕上的
-// 偏移合成进主图。弹窗通常是独立顶层窗口，单抓主窗会把它漏掉；合成失败只丢这一层，不整次失败。
+// 偏移合成进主图。弹窗通常是独立顶层窗口，单抓主窗会把弹窗漏掉；合成失败只丢这一层，不整次失败。
 func mergeActivePopup(main []byte, w, h int, hwnd uintptr, ox, oy int, screenDC uintptr) {
 	root, _, _ := procGetAncestor.Call(hwnd, gaRootOwner)
 	if root == 0 {
@@ -517,7 +517,7 @@ func visible(hwnd uintptr) bool {
 	return ok != 0
 }
 
-// iconic 判断窗口是否最小化（IsWindowVisible 对最小化窗口仍为真，不能拿它当可见性判据）。
+// iconic 判断窗口是否最小化（IsWindowVisible 对最小化窗口仍为真，不能拿 IsWindowVisible 当可见性判据）。
 func iconic(hwnd uintptr) bool {
 	ok, _, _ := procIsIconic.Call(hwnd)
 	return ok != 0

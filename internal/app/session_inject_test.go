@@ -88,7 +88,7 @@ func TestInjectDrainAtHandleEntry(t *testing.T) {
 	}
 }
 
-// TestInjectDrainAtTurnEndWithFakeTool 排空点② + 轮内注入不打断当前轮：假工具在轮到它的
+// TestInjectDrainAtTurnEndWithFakeTool 排空点② + 轮内注入不打断当前轮：假工具在轮到自己的
 // 那一刻经 Inject 入队，注入落在**该轮 assistant 节点之后**，且本轮请求里不含注入内容。
 func TestInjectDrainAtTurnEndWithFakeTool(t *testing.T) {
 	s, llm, _ := injectableSession(t, newMemStore(), toolCallStream("call_1", "probe"), textStream("收场"))

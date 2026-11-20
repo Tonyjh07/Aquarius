@@ -1,7 +1,7 @@
 // Package webfetchlocal 本地抓网页并转 Markdown（port.WebFetch，§5.14）。
 //
 // 管线：HTTP GET → 字符集探测 → 正文提取（readability）→ HTML 转 Markdown。
-// 不依赖任何第三方服务，因此**不需要密钥**：远端提供商不可用时由它兜底。
+// 不依赖任何第三方服务，因此**不需要密钥**：远端提供商不可用时由本包兜底。
 //
 // 安全默认（本地发起请求意味着能打到内网）：
 //   - 只允许 http/https，URL 不得带用户名密码；
@@ -153,7 +153,7 @@ func proxyFunc(raw string) func(*http.Request) (*url.URL, error) {
 }
 
 // proxyHost 代理自身的 host:port（大小写归一）；空 = 不走代理。
-// 拨号校验要给它开个口子：代理常常就装在本机（127.0.0.1:7897），
+// 拨号校验要给代理开个口子：代理常常就装在本机（127.0.0.1:7897），
 // 不放行的话「配了代理」和「全拒绝」是同一个结果。
 func (c *Client) proxyHost() string {
 	req, err := http.NewRequest(http.MethodGet, "https://proxy-probe.invalid/", nil)

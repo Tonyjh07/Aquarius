@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// slots 只剥离来源标注（themeMode/dark）：resolvePalette 写入它们而预设本身不带，
+// slots 只剥离来源标注（themeMode/dark）：resolvePalette 写入来源标注而预设本身不带，
 // 其余字段一律逐一比对——这就是「预设 ↔ 活动快照同步完整」的判据。
 func slots(p palette) palette {
 	p.themeMode, p.dark = "", false

@@ -9,7 +9,7 @@ import (
 )
 
 // TestSessionWakeRunsTriggeredInjection 空闲唤醒：驱动式排空 + 自己跑一轮，落一条
-// Trigger=true 的 inject 节点和它的 assistant 子节点，不追加 user 节点。
+// Trigger=true 的 inject 节点和该 inject 节点的 assistant 子节点，不追加 user 节点。
 func TestSessionWakeRunsTriggeredInjection(t *testing.T) {
 	s, llm, _ := newTestSession(t, newMemStore(), textStream("已汇报"))
 	ctx := context.Background()

@@ -20,7 +20,7 @@ type PriceFunc func(model string) (in, out float64)
 // 实际跑的那家单价——放在降级外面就只能看到 primary 的名字。
 //
 // 折算规则：两侧单价都声明了才算（缺一侧就不折算，不拿单侧价格猜另一侧）。
-// 结果写进流末那条 Delta 的 Usage.CostUSD，随后既有的累加链路（turnbuffer /
+// 结果写进流末那条 Delta 的 Usage.CostUSD，随后既有的累加路径（turnbuffer /
 // 会话汇总）自然生效，不另立一份统计。
 type Cost struct {
 	inner port.LLM

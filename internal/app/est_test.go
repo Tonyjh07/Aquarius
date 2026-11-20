@@ -206,7 +206,7 @@ func TestTrimOldestOrphanTools(t *testing.T) {
 
 	e := newEstimator(nil)
 
-	// A：assistant 巨大 → 主循环裁掉它后 est 立即达标 → 清理循环必须裁掉尾随 tool。
+	// A：assistant 巨大 → 主循环裁掉该 assistant 后 est 立即达标 → 清理循环必须裁掉尾随 tool。
 	kept, omitted := e.trimOldest(context.Background(),
 		[]port.PromptMessage{sys, asstOf(1000), toolOf("c1", 100)}, 60)
 	noOrphan(t, kept)

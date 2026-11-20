@@ -61,7 +61,7 @@ func TestPlaceholderFollowsLang(t *testing.T) {
 	if enInput == zhInput {
 		t.Fatalf("切到 en 后内置占位没变：%q", enInput)
 	}
-	// 自定义值在 en 下原样保留——它没有译文，也不该被翻译。
+	// 自定义值在 en 下原样保留——该值没有译文，也不该被翻译。
 	u.SetPlaceholder("随手写点什么")
 	i18n.Use(i18n.SelectionEn)
 	if got := u.inputPlaceholder(); got != "随手写点什么" {

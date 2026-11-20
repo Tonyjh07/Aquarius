@@ -55,7 +55,7 @@ func TestAudioPageFillsSnapshot(t *testing.T) {
 }
 
 // TestAudioProviderChoicesKeepUnknown 快照引用了一个已不在 provider 列表里的名字时，
-// 选项里补上它——开窗后直接保存不会把它悄悄改成「未配置」。
+// 选项里补上该名字——开窗后直接保存不会把该名字悄悄改成「未配置」。
 func TestAudioProviderChoicesKeepUnknown(t *testing.T) {
 	t.Parallel()
 	s := audioSnapshot()

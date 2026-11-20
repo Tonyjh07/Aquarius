@@ -60,7 +60,7 @@ func (p *Plat) DarkMode() bool {
 //
 // 顺序语义 = **默认家族优先级**：调用方取首个能解析的候选，其余只在首选缺失时轮到
 // （D147）。所以 msyhbd.ttc 排第二**不是**「粗体面来源」——粗体由 Gio 的系统字体扫描
-// 补齐；此处保留它是为雅黑常规缺失时仍有可用的中文字面。
+// 补齐；此处保留 msyhbd.ttc 是为雅黑常规缺失时仍有可用的中文字面。
 func (p *Plat) SystemFontCandidates() []string {
 	return []string{
 		`C:\Windows\Fonts\msyh.ttc`,

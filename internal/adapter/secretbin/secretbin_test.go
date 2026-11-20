@@ -161,7 +161,7 @@ func TestFileKeepsNoPlaintext(t *testing.T) {
 			if strings.Contains(string(data), value) {
 				t.Fatalf("库文件里出现了密钥值")
 			}
-			// 密钥文件（AES 档）同样不该含明文——它是一串随机字节。
+			// 密钥文件（AES 档）同样不该含明文——密钥文件是一串随机字节。
 			if key, err := os.ReadFile(s.keyPath); err == nil && strings.Contains(string(key), value) {
 				t.Fatalf("密钥文件里出现了密钥值")
 			}

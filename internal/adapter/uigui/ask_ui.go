@@ -52,7 +52,7 @@ func (u *UI) askPanel(gtx layout.Context) layout.Dimensions {
 }
 
 // askHead 顶部：左侧 `1/3 个问题`，右侧进度段（点 = 跳题）。
-// 面板不设最小化：它在输入栏原地展开、高 ≤ 窗高 70%，没有「收起成一行」的必要
+// 面板不设最小化：该面板在输入栏原地展开、高 ≤ 窗高 70%，没有「收起成一行」的必要
 // （D199：原先右上角的收起钮与进度段抢位置，用户批注移除）。
 func (u *UI) askHead(gtx layout.Context) layout.Dimensions {
 	a := u.m.ask

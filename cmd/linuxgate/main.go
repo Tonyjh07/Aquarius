@@ -1,6 +1,6 @@
 // Command linuxgate 跑非 Windows 目标的构建门禁（S4b/D111 出口项）。
 //
-// 为什么需要它：`uigui` 依赖 Gio，而 Gio 在 Linux 上**必须 cgo**（X11/Wayland/EGL/
+// 为什么需要这个工具：`uigui` 依赖 Gio，而 Gio 在 Linux 上**必须 cgo**（X11/Wayland/EGL/
 // Vulkan 全走 cgo；`CGO_ENABLED=0` 时 `gioui.org/internal/vk` 与 `internal/gl` 直接
 // 「build constraints exclude all Go files」）。因此在 Windows 上无法用单个
 // `GOOS=linux go build ./...` 验证——Go 自带的交叉编译不带 Linux C 工具链与开发头。
@@ -129,7 +129,7 @@ func gate(distro, target, proxy, modcache, root string, runVet, runTest bool) in
 }
 
 // defaultModCache Windows 侧模块缓存（go env GOMODCACHE 优先，回落 %USERPROFILE%\go\pkg\mod）。
-// 复用它可以免去在 WSL 内重新下载全部依赖（国内镜像拉 2GB 级缓存很慢）。
+// 复用这份缓存可以免去在 WSL 内重新下载全部依赖（国内镜像拉 2GB 级缓存很慢）。
 func defaultModCache() string {
 	if v := os.Getenv("GOMODCACHE"); v != "" {
 		if st, err := os.Stat(v); err == nil && st.IsDir() {
@@ -217,7 +217,7 @@ func (q *quietWriter) line(b []byte) {
 	_, _ = q.w.Write(b)
 }
 
-// isWSLNoise 判定 wsl.exe 的「localhost 代理未镜像到 WSL」告警。它在管道里是 UTF-16
+// isWSLNoise 判定 wsl.exe 的「localhost 代理未镜像到 WSL」告警。该告警在管道里是 UTF-16
 // 字节（字符间夹 NUL），且中文控制台下整行编码混杂——故先剥 NUL 与空白再匹配。
 func isWSLNoise(line string) bool {
 	c := strings.Join(strings.Fields(strings.ReplaceAll(line, "\x00", "")), "")

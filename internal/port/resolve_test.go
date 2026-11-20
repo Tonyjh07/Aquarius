@@ -26,7 +26,7 @@ func TestMatchPrefix(t *testing.T) {
 	}
 }
 
-// TestMatchPrefixKeepsHitOrder 命中集必须按传入顺序返回：歧义提示的可读性依赖它。
+// TestMatchPrefixKeepsHitOrder 命中集必须按传入顺序返回：歧义提示的可读性依赖这个顺序。
 func TestMatchPrefixKeepsHitOrder(t *testing.T) {
 	ids := []WatchID{"w_a1", "w_a3", "w_a2"}
 	_, hits, ok := MatchPrefix(ids, "w_a")

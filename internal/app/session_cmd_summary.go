@@ -6,7 +6,7 @@ package app
 //	/summary <id>          让当前模型总结 id 之上的历史后插入（失败只报错、树无损）
 //
 // 插入 = 领域 InsertBefore/InsertCommitted：摘要占 id 的原位置、id 及其子树整体后移一位，
-// Head 不变。摘要成为新的压缩水位（装配只回传到它），故插入后清屏回放——转写区恒与 Head 一致。
+// Head 不变。摘要成为新的压缩水位（装配只回传到摘要），故插入后清屏回放——转写区恒与 Head 一致。
 
 import (
 	"context"
@@ -66,7 +66,7 @@ func (s *Session) execSummary(ctx context.Context, cmd port.Command) (string, er
 // 水位语义随之失效；会话首节点之上本来也没有可总结的历史。
 //
 // 另拦一类**插了也不生效**的目标：装配的水位取路径上**最后一个** system，若目标之下每条
-// 分支都已遇到 system（旧摘要），新摘要在任何路径上都会被它盖住——树里多一个节点、回执说
+// 分支都已遇到 system（旧摘要），新摘要在任何路径上都会被旧摘要盖住——树里多一个节点、回执说
 // 成功，上下文却一点没变（模型档还花了 token）。要重新总结，得把摘要插到旧摘要之后的节点
 // 之前，让新摘要成为最后一个 system。
 func (s *Session) summaryTarget(id conversation.MessageID) error {
@@ -84,7 +84,7 @@ func (s *Session) summaryTarget(id conversation.MessageID) error {
 }
 
 // summaryCovered 报告 id 之下（含自身）的**每条**路径是否都已遇到 system 节点：是 = 在
-// 这里插摘要后，任何后代路径上的最后一个 system 都不会是它。
+// 这里插摘要后，任何后代路径上的最后一个 system 都不会是新摘要。
 func (s *Session) summaryCovered(id conversation.MessageID) bool {
 	m, ok := s.cur.Find(id)
 	if !ok {

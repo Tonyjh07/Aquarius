@@ -2,7 +2,7 @@ package acpgate
 
 // 连通性探测（v0.6.0 的 A1）：起进程 → initialize 握手 → 建一次会话 → 立刻收掉。
 //
-// 这次探测回答「这条配置能不能跑通」。设置窗把它的回执摊给用户看：对方是谁、说
+// 这次探测回答「这条配置能不能跑通」。设置窗把探测的回执摊给用户看：对方是谁、说
 // 哪个版本的协议、支持哪些登录方式、申报了哪些能力。会话是顺带建的——能选哪些模型
 // 只在 `session/new` 的响应里，而这正是用户填 `options` 时最缺的东西（D287）；建完
 // 不发任务、不碰文件、立刻收掉。
@@ -76,7 +76,7 @@ var (
 const ProbeTimeout = 15 * time.Second
 
 // Probe 探测一个代理：起进程、握手、关掉。名字不存在报错；停用的也允许探测——
-// 它是「这条配置跑不跑得通」的诊断，不是「能不能派活」的承诺。
+// 探测是「这条配置跑不跑得通」的诊断，不是「能不能派活」的承诺。
 func (m *Manager) Probe(ctx context.Context, name string) (ProbeInfo, error) {
 	var agent Agent
 	found := false
@@ -213,7 +213,7 @@ func authMethodLabel(m acp.AuthMethod) (id, name string) {
 }
 
 // stderrTailOf 探测失败时带上对方 stderr 的尾巴：握手失败最常见的原因（参数不对、
-// 版本不兼容、缺依赖）都只写在它自己的 stderr 里。没有内容就返回空串。
+// 版本不兼容、缺依赖）都只写在代理自己的 stderr 里。没有内容就返回空串。
 func stderrTailOf(p *process) string {
 	if p == nil {
 		return ""
@@ -228,7 +228,7 @@ func stderrTailOf(p *process) string {
 
 // probeClient 探测用的客户端：什么也不做。
 //
-// 握手阶段对方不该发任何请求；真发了就是它在探我们申报了哪些能力——这时按「没申报、
+// 握手阶段对方不该发任何请求；真发了就是代理在探客户端申报了哪些能力——这时按「没申报、
 // 不接受」回绝，正好与 acpgate 自己的规则一致（不申报就不承诺）。
 type probeClient struct{}
 

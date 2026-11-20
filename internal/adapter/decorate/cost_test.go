@@ -120,7 +120,7 @@ func TestCostDoesNotMutateUpstreamUsage(t *testing.T) {
 	}
 }
 
-// TestFallbackSwapsSampling 降级到目标 provider 时采样参数一并换成它自己那份（D204）：
+// TestFallbackSwapsSampling 降级到目标 provider 时采样参数一并换成目标 provider 自己那份（D204）：
 // 模型名在装饰器里才确定，参数得跟着走；思考三件套（会话级）保持不动。
 func TestFallbackSwapsSampling(t *testing.T) {
 	on := true

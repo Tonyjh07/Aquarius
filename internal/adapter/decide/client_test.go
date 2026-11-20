@@ -18,7 +18,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// serve 起一个假端点：把请求体原样交给 handle，返回它给的响应。
+// serve 起一个假端点：把请求体原样交给 handle，返回 handle 给的响应。
 func serve(t *testing.T, handle func(req request) (int, string)) (*Client, *request) {
 	t.Helper()
 	var got request

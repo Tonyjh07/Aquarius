@@ -38,7 +38,7 @@ func ParseInput(line string) port.UserInput {
 // CommandFields 把一行命令切成参数：空白分隔，**双引号或单引号括起来的一段算一个参数**
 // （`/import "C:\My Docs\备份.aqx"` 是命令 import + 一个参数）。
 //
-// 不做反斜杠转义：Windows 路径里反斜杠是分隔符，把它当转义符会让 `C:\Users` 变成
+// 不做反斜杠转义：Windows 路径里反斜杠是分隔符，把反斜杠当转义符会让 `C:\Users` 变成
 // `C:Users`——那比「不认转义」坏得多。引号不配对时把剩下的整段都算作同一个参数（用户漏了
 // 收尾引号，报「用法错误」不如把原话交上去让命令面自己说哪里不对）。
 func CommandFields(s string) []string {

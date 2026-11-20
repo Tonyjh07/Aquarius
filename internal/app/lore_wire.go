@@ -32,7 +32,7 @@ type loreCard struct {
 }
 
 // load 取一张卡的条目。未导入或读失败返回零值：世界书缺失不该挡住对话，
-// 人格快照仍在，会话照常进行（D294 的降级规则）。
+// 人格快照仍在，会话照常继续（D294 的降级规则）。
 func (l *loreSource) load(ctx context.Context, slug string) loreCard {
 	if slug == "" {
 		return loreCard{}
@@ -74,7 +74,7 @@ func (a *Agent) attachLore(ctx context.Context, c *conversation.Conversation, tr
 
 // attachSystemNotes 把记忆块与「外部内容是数据」的常驻声明追加进首条 system（§7.1/D23/D170）。
 //
-// 两段都在树外、每轮重算：`/system` 改人格不会把它们改掉。常驻声明单列一条 system 会让
+// 两段都在树外、每轮重算：`/system` 改人格不会把这两段改掉。常驻声明单列一条 system 会让
 // 「首条 system 是人格」的既有规则分叉，所以并进同一条正文；也不逐条给工具结果套围栏
 // ——那会把上下文撑爆，还让正常代码读起来像可疑数据。记忆读取失败静默跳过，不阻断对话。
 func (a *Agent) attachSystemNotes(ctx context.Context, c *conversation.Conversation, msgs []port.PromptMessage, marks []sectionMark) ([]port.PromptMessage, []sectionMark) {

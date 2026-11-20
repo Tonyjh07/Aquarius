@@ -46,7 +46,7 @@ const (
 	maxArchiveEntries = 4000
 	// maxTreeBytes 单份 tree.json 上限（每个会话各算，不是合计）。
 	maxTreeBytes = 64 << 20
-	// maxManifestBytes 清单上限：它只有标题与计数，超过这个数说明不是我们写的。
+	// maxManifestBytes 清单上限：清单只有标题与计数，超过这个数说明不是 Aquarius 写的。
 	maxManifestBytes = 1 << 20
 	// maxNodeCount 单个会话的节点数上限（不是合计：一个会话装不下就是装不下）。
 	maxNodeCount = 20000
@@ -87,7 +87,7 @@ func tooLargeBlobs(count int, names string, mb int64) string {
 
 // legacyArchiveError 旧单树归档（根目录一个 tree.json）：本版不读。
 //
-// aqx 尚未正式发布，为一份没人持有的中间形状留长期兼容分支，代价大于收益：读它就得同时
+// aqx 尚未正式发布，为一份没人持有的中间形状留长期兼容分支，代价大于收益：读旧形状就得同时
 // 维护两套解包逻辑，而「重新导一次」对用户只是一步。
 //
 // 零宽结构体：errors.Is 与 == 照旧成立，而 Error() 每次取词。
@@ -180,7 +180,7 @@ func (e *Exchange) exportAQX(ctx context.Context, cs []*conversation.Conversatio
 // importAQX 无损导入：解包 → 逐树自检 → 附件字节回填。
 //
 // pick 是 1 起的清单序号（空 = 全部）。**只有选中的会话**参与解码与附件回填：没选中的树即使
-// 坏掉也不该挡住这次导入，它们本来就不会进库。
+// 坏掉也不该挡住这次导入，这些树本来就不会进库。
 func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
 	rep := port.ExchangeReport{Format: "aqx"}
 	data, err := readLimited(r, maxArchiveBytes, i18n.T("exchange.io.what.archive"))
@@ -224,7 +224,7 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 			}
 			man = m
 		case name == "tree.json":
-			// 旧形状：根目录的 tree.json。认下它就得再养一套解包逻辑，直接说清要重导。
+			// 旧形状：根目录的 tree.json。认下这份旧形状就得再养一套解包逻辑，直接说清要重导。
 			return nil, rep, errLegacyAQX
 		case strings.HasPrefix(name, "conversations/"):
 			i, ok := parseTreeName(name)
@@ -255,7 +255,7 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 		}
 	}
 	if len(unknown) > 0 {
-		// aqx 是我们自己的格式：不认识的条目意味着「不是这个版本写的」，猜着读比拒绝更糟。
+		// aqx 是 Aquarius 自己的格式：不认识的条目意味着「不是这个版本写的」，猜着读比拒绝更糟。
 		return nil, rep, errors.New(i18n.Tf("exchange.err.unknown_entries",
 			"names", summarizeNames(unknown)))
 	}
@@ -511,7 +511,7 @@ func (e *Exchange) restoreBlobs(ctx context.Context, files []*zip.File) ([]strin
 			return nil, errors.New(i18n.Tf("exchange.err.blob_hash_mismatch",
 				"name", f.Name, "want", shortHash(want), "got", shortHash(got)))
 		}
-		// 名字与 MIME 不在附件库里（它们随 Part.Ref 存在树里，D17），这里只放字节。
+		// 名字与 MIME 不在附件库里（名字与 MIME 随 Part.Ref 存在树里，D17），这里只放字节。
 		if _, err := e.blobs.Put(ctx, bytes.NewReader(body), "", ""); err != nil {
 			return nil, fmt.Errorf("%s: %w",
 				i18n.Tf("exchange.err.store_blob", "hash", shortHash(got)), err)
@@ -619,7 +619,7 @@ const fsSymlink = os.ModeSymlink
 // 与技能安装的 zip-slip 规则同源：归档同样是不可信输入。返回空串 = 无意义的条目（跳过）。
 //
 // 独立的目录条目（名字以 `/` 结尾，或模式位带目录）也返回空串：第三方重新打包时常带上
-// `blobs/` 这样的一条纯目录记录，它不是「不认识的条目」，拒绝整份归档太严。
+// `blobs/` 这样的一条纯目录记录，这条记录不是「不认识的条目」，拒绝整份归档太严。
 func safeArchivePath(name string) (string, error) {
 	n := strings.ReplaceAll(name, `\`, "/")
 	if strings.TrimSpace(n) == "" {

@@ -374,7 +374,7 @@ func TestReviseCloneDeepCopiesSubtree(t *testing.T) {
 	if len(c.nodes) != len(before)+1+3 {
 		t.Fatalf("nodes = %d, want %d", len(c.nodes), len(before)+1+3)
 	}
-	// Head 平移到拷贝对应节点：Head → a1 拷贝 → m 的链路成立，且不是原子树节点。
+	// Head 平移到拷贝对应节点：Head → a1 拷贝 → m 的路径成立，且不是原子树节点。
 	if c.Head == a2.ID || c.Head == a1.ID || c.Head == u2.ID {
 		t.Fatalf("head = %q, 不应留在原子树", c.Head)
 	}
@@ -530,7 +530,7 @@ func TestVersionEnd(t *testing.T) {
 		t.Fatalf("VersionEnd(u1) = %q %v, want 新分支末端 a2'", got, ok)
 	}
 
-	// 旧叶子时钟推后 → 它成为末端（CreatedAt 优先于 ID 序）。
+	// 旧叶子时钟推后 → 旧叶子成为末端（CreatedAt 优先于 ID 序）。
 	old := c.nodes[a2.ID]
 	old.CreatedAt = old.CreatedAt.Add(time.Hour)
 	c.nodes[a2.ID] = old

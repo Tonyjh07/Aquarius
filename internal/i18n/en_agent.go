@@ -28,7 +28,7 @@ var enAgentTexts = map[string]string{
 	"model.caps_none":        "(all three undeclared)",
 	"model.list_sep":         ", ",
 
-	// 能力名：完整写法（能力行/探测）与短写（清单标注/链路归因）
+	// 能力名：完整写法（能力行/探测）与短写（清单标注/路径归因）
 	"model.cap_tools":      "tool use",
 	"model.cap_reasoning":  "reasoning",
 	"model.cap_vision":     "image input",
@@ -48,7 +48,7 @@ var enAgentTexts = map[string]string{
 	"model.verdict_unknown":     "inconclusive",
 	"model.elapsed_unknown":     "duration unknown",
 
-	// 上下文预算行：生效值，以及它是被模型窗口还是全局上限压住的（D177）
+	// 上下文预算行：生效值，以及该生效值是被模型窗口还是全局上限压住的（D177）
 	"model.budget_global_only": "Context budget: {effective} tokens (global limit; the model declares no window)",
 	"model.budget_model":       "Context budget: {effective} tokens (the model window {window} is binding; global limit {limit})",
 	"model.budget_global":      "Context budget: {effective} tokens (the global limit is binding; model window {window})",

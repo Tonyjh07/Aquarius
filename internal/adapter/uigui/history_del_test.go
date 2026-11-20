@@ -58,7 +58,7 @@ func delRowY(t *testing.T, q *input.Router, u *UI, st *historyState, i int) int 
 	return (first + last) / 2
 }
 
-// delX 在第 y 行带里扫出「✕」的横坐标（判据 = ✕ 自身 hover：只有压在它的命中区上才真）。
+// delX 在第 y 行带里扫出「✕」的横坐标（判据 = ✕ 自身 hover：只有压在 ✕ 的命中区上才真）。
 // 每点两帧：hover 的进入事件在下一帧才被点击件消费。
 func delX(t *testing.T, q *input.Router, u *UI, st *historyState, y int) int {
 	t.Helper()

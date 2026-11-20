@@ -25,7 +25,7 @@ func jobEchoSpec(t *testing.T) string {
 	return `{"command":"/bin/sh","args":["-c","echo job-e2e"]}`
 }
 
-// TestRunTermExecE2E M3 验收①：term_exec 经确认链路执行，
+// TestRunTermExecE2E M3 验收①：term_exec 经确认路径执行，
 // 输出回填给模型（第二次请求可见）、tool 节点 OK 写入会话树。
 // 命令带引号（Windows 回归：cmd /c 的原始命令行不得被 argv 转义破坏）。
 func TestRunTermExecE2E(t *testing.T) {
@@ -99,7 +99,7 @@ func TestRunTermExecRejectE2E(t *testing.T) {
 	}
 }
 
-// findJobInject 找一条带 job 来源的注入节点，返回它所在的会话与正文。
+// findJobInject 找一条带 job 来源的注入节点，返回注入节点所在的会话与正文。
 func findJobInject(convs []*conversation.Conversation) (*conversation.Conversation, string) {
 	for _, c := range convs {
 		for _, m := range c.Snapshot().Nodes {
@@ -150,13 +150,13 @@ func TestRunJobLifecycleE2E(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if report == "" {
-		// 不读 out：run 还在写它（边写边读是数据竞争），等退出后由下面的断言报。
+		// 不读 out：run 还在写 out（边写边读是数据竞争），等退出后由下面的断言报。
 		t.Fatal("没等到任务完成报告（注入没送达）")
 	}
 	// 报告送达即起一轮（D189）：等这次请求发出，再收尾，断言才有确定的下标。
 	//
 	// 这一段不能提前塞 /jobs：用户输入优先于空闲唤醒（repl.Next 先取 lines），命令
-	// 会抢在注入前面把它实现成「未触发」，第三轮就永远不来。任务结束得越快越容易
+	// 会抢在注入前面把这次注入变成「未触发」，第三轮就永远不来。任务结束得越快越容易
 	// 撞上——Linux 上 /bin/sh 起停在一瞬，而 Windows 上进程启动慢，反倒侥幸不撞。
 	reqDeadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(reqDeadline) && reqs.len() < 3 {

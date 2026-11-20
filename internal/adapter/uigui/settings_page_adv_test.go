@@ -19,7 +19,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// TestAdvPageFillsRow （纯几何规则）高级页声明了撑满行，且它必须排在行表末尾——
+// TestAdvPageFillsRow （纯几何规则）高级页声明了撑满行，且该行必须排在行表末尾——
 // 后面还有行的话，Flex 会把剩余高度分给编辑区、把后续行挤成 0 高。
 func TestAdvPageFillsRow(t *testing.T) {
 	t.Parallel()

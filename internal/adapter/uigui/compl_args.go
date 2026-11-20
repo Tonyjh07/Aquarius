@@ -29,7 +29,7 @@ func complPhase(text string) bool {
 	return strings.HasPrefix(text, "/")
 }
 
-// complToken 末尾 token 的切分：返回它在这段文本里的起点与内容（终点恒为 len(text)）。
+// complToken 末尾 token 的切分：返回该 token 在这段文本里的起点与内容（终点恒为 len(text)）。
 //
 // 文本以空白结尾时返回空 token、start = len(text)——那正是用户刚敲完分隔符、下一个参数
 // 还没开始的位置，也是 Tab 落笔的位置。
@@ -132,7 +132,7 @@ func complArgItems(ci port.CommandInfo, args []string, tok string) []complItem {
 	if strings.HasPrefix(tok, "--") {
 		return complFlagItems(ci, args, tok)
 	}
-	// 2) 上一个 token 是吃值的开关、这一位就是它的值。
+	// 2) 上一个 token 是吃值的开关、这一位就是该开关的值。
 	if f, ok := waitingFlag(ci, args); ok {
 		if len(f.Values) > 0 {
 			if out := complValueItems(f.Values, tok, f.Desc); len(out) > 0 {
@@ -173,7 +173,7 @@ func complArgItems(ci port.CommandInfo, args []string, tok string) []complItem {
 	case port.ParamText:
 		out = append(out, complItem{label: p.Name, tail: p.Desc})
 	}
-	if tok == "" { // 新参数的开头：还能用的开关缀在后面（必填项排在前，Tab 先撞到的是它）
+	if tok == "" { // 新参数的开头：还能用的开关缀在后面（必填项排在前，Tab 先撞到的是必填项）
 		out = append(out, complFlagItems(ci, args, "")...)
 	}
 	return out
@@ -245,7 +245,7 @@ func positionalArgs(ci port.CommandInfo, args []string) []string {
 	return out
 }
 
-// waitingFlag 末尾 token 是不是一个「还等着值」的开关（args 末位就是它自己）。
+// waitingFlag 末尾 token 是不是一个「还等着值」的开关（args 末位就是该 token 自己）。
 func waitingFlag(ci port.CommandInfo, args []string) (port.CommandParam, bool) {
 	if len(args) == 0 {
 		return port.CommandParam{}, false

@@ -28,7 +28,7 @@ import (
 )
 
 // 拖动改挂的档位：落点半径、淡出与呼吸时长、环宽、虚线步长（都是可调的呈现常数，
-// 不影响任何语义——把它们当成「手感旋钮」，改这些不需要改契约）。
+// 不影响任何语义——把这些常数当成「手感旋钮」，改这些不需要改契约）。
 const (
 	relDropReachDp  = 48.0 // 落点判定半径（dp，屏幕规则——手势容差跟手不跟 zoom）
 	relDropFadeMs   = 120  // 旧父边淡出时长（拖起）
@@ -153,7 +153,7 @@ func (g *relGraph) dropCandidate() (int, int) {
 }
 
 // beginDropFade 拖起：旧父边 120ms 淡出（§5.6.3）。淡的是「这条边走不通了」这件事，不是
-// 节点——节点自己还在手上，它的子树照旧被弹簧带着。
+// 节点——节点自己还在手上，节点的子树照旧被弹簧带着。
 func (g *relGraph) beginDropFade(now time.Time) {
 	g.dragFade.retarget(now, 0, relDropFadeMs, relEaseOutCubic)
 }
@@ -222,7 +222,7 @@ func (g *relGraph) drawEditOverlay(gtx layout.Context, th *material.Theme) {
 	if g.dragNode < 0 {
 		return
 	}
-	// 被拖卡片提环：告诉用户「这一刻手里拿着的是它」，线宽 2dp、恒定亮度。
+	// 被拖卡片提环：告诉用户「这一刻手里拿着的是这张卡」，线宽 2dp、恒定亮度。
 	g.dropRing(gtx, g.dragNode, 1)
 	if g.dropTarget < 0 {
 		return

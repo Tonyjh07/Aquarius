@@ -150,7 +150,7 @@ func TestSecretsAdminImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	// 库已有 AQ_IMPORT_BIN（导入不应覆盖它），以及明文 provider 那一条派生名。
+	// 库已有 AQ_IMPORT_BIN（导入不应覆盖已有条目），以及明文 provider 那一条派生名。
 	if err := bin.Set(ctx, "AQ_IMPORT_BIN", "already-in-bin-1111"); err != nil {
 		t.Fatal(err)
 	}

@@ -217,7 +217,7 @@ func TestPendingFullShowsNotice(t *testing.T) {
 	}
 }
 
-// TestCommandDuringGenerationStaysQueued 命令不进清单：它照旧走输入通道，等本轮之后执行。
+// TestCommandDuringGenerationStaysQueued 命令不进清单：该命令照旧走输入通道，等本轮之后执行。
 func TestCommandDuringGenerationStaysQueued(t *testing.T) {
 	t.Parallel()
 	p := &fakePending{}

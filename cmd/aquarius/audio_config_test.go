@@ -267,7 +267,7 @@ func TestNormalizeAudioWhisperNeedsNoEndpoint(t *testing.T) {
 	if cfg.Audio.ASR.ModelPath != "/m/ggml-base.bin" {
 		t.Fatalf("模型路径未归一: %q", cfg.Audio.ASR.ModelPath)
 	}
-	// 装配路径不走 audioProvider（本地引擎不连网），这里确认它确实无端点可用。
+	// 装配路径不走 audioProvider（本地引擎不连网），这里确认本地引擎确实无端点可用。
 	if _, why := cfg.audioProvider("asr"); why == "" {
 		t.Fatal("本地引擎不该解析出端点")
 	}

@@ -26,7 +26,7 @@ import (
 // headPath 导出用的那条链：当前上下文（Root → Head）。
 //
 // Root 是挂点，不写进任何格式；其余节点按原角色映射，persona（首个 system 节点）自然写成
-// system——它是这次会话的语气来源，丢了会让导入回来的对话少一半上下文。
+// system——persona 是这次会话的语气来源，丢了会让导入回来的对话少一半上下文。
 func headPath(c *conversation.Conversation) []conversation.Message {
 	return c.Path()
 }
@@ -132,7 +132,7 @@ func (e *Exchange) importOpenAI(ctx context.Context, r io.Reader) (*conversation
 
 // stHeader SillyTavern `.jsonl` 的首行。
 //
-// 我们只声明读写需要的字段：`user_name` / `character_name` 是回执与标题的原料，其余（世界书、
+// 本程序只声明读写需要的字段：`user_name` / `character_name` 是回执与标题的原料，其余（世界书、
 // 正则、作者注）属于对方的工作区配置，不是这份对话本身（§5.16 不装配置）。
 type stHeader struct {
 	UserName      string `json:"user_name,omitempty"`
@@ -140,7 +140,7 @@ type stHeader struct {
 	CreateDate    string `json:"create_date,omitempty"`
 }
 
-// stMessage `.jsonl` 的每一行（只声明我们读写的字段；对方的 `extra` 等扩展原样忽略）。
+// stMessage `.jsonl` 的每一行（只声明本程序读写的字段；对方的 `extra` 等扩展原样忽略）。
 type stMessage struct {
 	Name     string `json:"name,omitempty"`
 	IsUser   bool   `json:"is_user"`
@@ -271,7 +271,7 @@ func (e *Exchange) importSillyTavern(ctx context.Context, r io.Reader) (*convers
 // linearText 一个节点在「只有正文」的线性格式里能带出去什么。
 //
 // 返回 ok=false 表示这条节点在线性格式里没有可写的内容（比如纯工具调用的回答）：不写空行，
-// 但也必须让调用方知道它没被带出去——计数在这里，回执里会说明。
+// 但也必须让调用方知道这条节点没被带出去——计数在这里，回执里会说明。
 func linearText(m conversation.Message, counts map[string]int) (string, bool) {
 	var texts []string
 	for _, p := range m.Content {
@@ -300,7 +300,7 @@ func linearText(m conversation.Message, counts map[string]int) (string, bool) {
 	return strings.Join(texts, "\n"), true
 }
 
-// linearRole 我们的角色 → 线性格式的角色。
+// linearRole 本程序的角色 → 线性格式的角色。
 func linearRole(r conversation.Role) string {
 	switch r {
 	case conversation.RoleUser:
@@ -312,7 +312,7 @@ func linearRole(r conversation.Role) string {
 	}
 }
 
-// linearImportRole 线性格式的角色 → 我们的角色。
+// linearImportRole 线性格式的角色 → 本程序的角色。
 func linearImportRole(role string) (conversation.Role, bool) {
 	switch role {
 	case "user":

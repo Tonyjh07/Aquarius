@@ -3,7 +3,7 @@ package main
 // 决策模型的装配（D290）：建客户端、套到模型链的确认器上、把判定送进审计。
 //
 // 顺序上有个约束：审计句柄原本在 stackDecorators 里才建，而那一步要等 ToolRunner
-// 就位之后（它包的是 runner）。决策模型的判定要落 `kind=decide` 行，所以审计提前到
+// 就位之后（那一步包的是 runner）。决策模型的判定要落 `kind=decide` 行，所以审计提前到
 // 确认链之前打开——见 openAudit。
 
 import (
@@ -18,11 +18,11 @@ import (
 )
 
 // warmupTimeout 预热这一趟的总时限。本机冷启动实测 61 s（模型被换出后再加载），
-// 所以给得比判定超时宽得多——预热不是判定，它慢一点只耽误一次后台加载。
+// 所以给得比判定超时宽得多——预热不是判定，预热慢一点只耽误一次后台加载。
 const warmupTimeout = 3 * time.Minute
 
 // openAudit 打开审计文件（幂等）。必须在确认链装配之前调用：决策模型的判定要落在
-// 同一条 audit.log 里，晚于它也写得进去，但「先有日志再有判定」这条顺序更好查。
+// 同一条 audit.log 里，晚于确认链装配也写得进去，但「先有日志再有判定」这条顺序更好查。
 func (w *wiring) openAudit() error {
 	if w.audit != nil {
 		return nil

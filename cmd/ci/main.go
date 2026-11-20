@@ -202,7 +202,7 @@ func selectJobs(all []job, prof profile, only string) []job {
 	return out
 }
 
-// parallelism 给缺省并行度：fast 档全是秒级 job，并行能把它压到十几秒；
+// parallelism 给缺省并行度：fast 档全是秒级 job，并行能把整档压到十几秒；
 // 其余档的 job 动辄跑满全部核心，再并行只会互相抢。
 func parallelism(prof profile, flagValue int) int {
 	if flagValue > 0 {
@@ -215,7 +215,7 @@ func parallelism(prof profile, flagValue int) int {
 }
 
 // printLastRuns 提示上一轮其他档位的结果，避免「我记得跑过」与「跑的是旧提交」混为一谈。
-// fast 档（pre-push）尤其需要：它挡不住 default 那一层，用户得知道有多久没跑过。
+// fast 档（pre-push）尤其需要：fast 档挡不住 default 那一层，用户得知道有多久没跑过。
 func printLastRuns(root string, prof profile, head string) {
 	if prof != profFast {
 		return

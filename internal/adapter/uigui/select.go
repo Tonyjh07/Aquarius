@@ -76,7 +76,7 @@ type selState struct {
 	// pressedNow 本批（同帧）处理过 Press：widget 尚未消化按压 → 锚用几何值
 	//（否则会读到陈旧选区）。异批激活时改用 widget 选区近端作锚（双击词锚）。
 	pressedNow bool
-	// cur 最新指针位（Press/Drag 更新，D102）：静止带内自动滚动按它判缘并重算端点。
+	// cur 最新指针位（Press/Drag 更新，D102）：静止带内自动滚动按该指针位判缘并重算端点。
 	cur image.Point
 }
 

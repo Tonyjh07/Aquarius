@@ -87,7 +87,7 @@ func TestImportSingleEntrySkipsPanel(t *testing.T) {
 }
 
 // TestImportIndexerErrorFallsThrough 取清单失败（不是归档 / 文件坏了）也直接投：命令面会把
-// 原因说清楚，界面不替它编一个说法（壳内不认格式）。
+// 原因说清楚，界面不替命令面编一个说法（壳内不认格式）。
 func TestImportIndexerErrorFallsThrough(t *testing.T) {
 	t.Parallel()
 	ix := &fakeIndexer{err: errors.New("不是归档")}

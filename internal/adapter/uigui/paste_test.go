@@ -70,7 +70,7 @@ func pngBytes(t *testing.T, w, h int, c color.NRGBA) []byte {
 }
 
 // frameUIWithInbox 帧级 UI + 可用的投递通道（newFrameUI 的 done 是 nil，post 会卡在
-// 第一个 select 上；后台 goroutine 回投类测试要补上它与带缓冲的 inbox）。
+// 第一个 select 上；后台 goroutine 回投类测试要补上 done 与带缓冲的 inbox）。
 func frameUIWithInbox() *UI {
 	u := newFrameUI()
 	u.inbox = make(chan uiMsg, 8)

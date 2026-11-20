@@ -2,13 +2,13 @@ package uigui
 
 // 外部代理页数据面（D270）：清单 / 可用性 / 缺省 / 命令行编辑。
 //
-// 这一页补的是一条**看得见**的路：在它之前，要加一个代理只能手改 config.json 的
+// 这一页补的是一条**看得见**的路：在这一页之前，要加一个代理只能手改 config.json 的
 // delegate.agents，要停掉某个 delegate 工具得记住 tools.disabled 的写法，而「命令不在
 // PATH 上」这种最常见的配错只会在第一次派活时以报错的形式出现。
 //
 // 三个动作都写 config、**重启生效**：转交管理器是启动期装配的（命令、参数、env、上限），
-// 热改它等于在别人的进程还在跑的时候换掉它的身份。所以每个动作的反馈都带一句「重启生效」，
-// 而不是假装它立刻就好了。
+// 热改代理配置等于在代理进程还在跑的时候换掉该代理的身份。所以每个动作的反馈都带一句「重启生效」，
+// 而不是假装改动立刻就好了。
 //
 // 与工具页的差别：改配置与探 PATH 都是本地同步读写；只有「测试连接」要起一个真进程，
 // 那一件事走旁路 goroutine + 结果通道（与技能/工具页同一套形状），其余动作同步做完。
@@ -33,9 +33,9 @@ type DelegateAdmin interface {
 	// Snapshot 清单（每次调用都重新探一遍可执行文件，所以「重新检测」= 再取一次）。
 	Snapshot() DelegateSnapshot
 	// Add 追加一条代理（名字 + 命令行）。名字重名、命令行空、引号未闭合都在这里拦下
-	// ——它们都会让下次启动吃 fatal，放进界面拦比让用户改文件好。
+	// ——这些错都会让下次启动吃 fatal，放进界面拦比让用户改文件好。
 	Add(name, commandLine string) error
-	// Remove 删除一条代理（缺省代理也允许删：删完没有缺省 = 只剩一条时自动选它）。
+	// Remove 删除一条代理（缺省代理也允许删：删完没有缺省 = 只剩一条时自动选该条）。
 	Remove(name string) error
 	// Rename 改一个代理的名字。
 	Rename(oldName, newName string) error
@@ -72,7 +72,7 @@ type DelegateProbe struct {
 	PromptEmbedded  bool
 	McpHTTP         bool
 	McpSSE          bool
-	// Model 探测时建一次会话读到的当前模型与它有几个可选项。用户在 `options` 里填
+	// Model 探测时建一次会话读到的当前模型，以及该模型有几个可选项。用户在 `options` 里填
 	// 模型时，最缺的就是「当前是哪个、还有多少可选」；完整候选在转交报错时给出。
 	Model      string
 	ModelCount int
@@ -91,7 +91,7 @@ type DelegateSnapshot struct {
 // DelegateAgentState 一个代理一行。
 type DelegateAgentState struct {
 	Name        string   // 配置里的名字（delegate 工具 agent 参数的取值）
-	CommandLine string   // `command args...` 的展示形态（改这里就是改它）
+	CommandLine string   // `command args...` 的展示形态（改这里就是改命令行）
 	Command     string   // 字段级编辑：命令
 	Args        []string // 字段级编辑：参数（一行一个）
 	Env         map[string]string
@@ -158,7 +158,7 @@ func (st DelegateAgentState) metaLine() string {
 // delegateForm 一条代理的字段编辑档（展开后才可见；按名字 get-or-create）。
 //
 // 与快照的关系：**快照是事实，档是草稿**。展开、保存成功、重新检测这三个时点把档对齐
-// 回快照；其余帧不动它——每帧 SetText 会打断正在敲的字。
+// 回快照；其余帧不动草稿——每帧 SetText 会打断正在敲的字。
 type delegateForm struct {
 	name    widget.Editor // 名字（改名也在这里改：保存时先改名再改别的字段）
 	cmd     widget.Editor
@@ -253,7 +253,7 @@ func (f *settingsForm) delegateButton(key, label string, kind paperBtnKind, th *
 // delegateAgentRow 一个代理的头部：名字 + 状态徽标 + 第二行脚注；右侧是动作。
 //
 // 动作按「改身份 / 改状态」分组：启停与设缺省是常用开关，放前面；删除放在最后，
-// 且要过一道行内确认（它改的是配置里的一条，没有撤销）。
+// 且要过一道行内确认（删除改的是配置里的一条，没有撤销）。
 func (f *settingsForm) delegateAgentRow(gtx layout.Context, th *material.Theme, st DelegateAgentState) layout.Dimensions {
 	confirming := f.delegateConfr == st.Name
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,

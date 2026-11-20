@@ -102,7 +102,7 @@ func (v vadConfig) padOrDefault() time.Duration {
 //
 // 三种形态（D222）：
 //   - 什么都不填 = 该能力不可用；上层据此隐藏入口并报因，而不是启动失败；
-//   - 只填 provider = 借它的端点与密钥（老配置的形状，行为不变）；
+//   - 只填 provider = 借该 provider 的端点与密钥（老配置的形状，行为不变）；
 //   - 填了 base_url / api_key = 独立配置，填了的那项覆盖借来的。
 type audioChannel struct {
 	Provider string `json:"provider,omitempty"`

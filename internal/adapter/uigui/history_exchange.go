@@ -33,10 +33,10 @@ func exchangeOpenFilters() []platform.FileFilter {
 // exchangeSaveFilters 导出侧过滤器：**按端口格式表列出全部可写格式**，一档一种。
 //
 // 这份列表就是「保存类型」下拉框的内容，档位与格式一一对应：用户选中哪一档，导出就写哪
-// 种格式（§5.16）。所以它必须与 `port.ExchangeFormats()` 里 `NoExport == false` 的那些
+// 种格式（§5.16）。所以这份列表必须与 `port.ExchangeFormats()` 里 `NoExport == false` 的那些
 // 条目严格同序、同数——序号错一位就是「选了 SillyTavern、拿到的却是 aqx 字节」。
 //
-// 只读格式（`openwebui`）不列：它没有第二套同义出口，列出来就是一句不会兑现的承诺。
+// 只读格式（`openwebui`）不列：openwebui 没有第二套同义出口，列出来就是一句不会兑现的承诺。
 func exchangeSaveFilters() []platform.FileFilter {
 	out := make([]platform.FileFilter, 0, len(exportFormats()))
 	for _, f := range exportFormats() {
@@ -106,7 +106,7 @@ func withFormatExt(path string, f port.ExchangeFormat) string {
 	return path + f.Ext
 }
 
-// knownFormatExt 这个扩展名是不是格式表里的某一档（含只读的 openwebui，它也可能出现在
+// knownFormatExt 这个扩展名是不是格式表里的某一档（含只读的 openwebui，openwebui 也可能出现在
 // 用户手打的落点里）。
 func knownFormatExt(ext string) bool {
 	for _, f := range port.ExchangeFormats() {
@@ -129,7 +129,7 @@ func (st *historyState) requestImport(u *UI) {
 // requestExport 打开保存框（导出侧），预填由当前会话标题派生的文件名。
 //
 // 预填 aqx 与缺省格式一致：用户直接点「保存」就得到一份能原样导回的归档；想换格式就在
-// 「保存类型」里换一档——档位随结果回来，命令面照它写 `--format`（§5.16）。
+// 「保存类型」里换一档——档位随结果回来，命令面照该档位写 `--format`（§5.16）。
 func (st *historyState) requestExport(u *UI) {
 	name := port.FileStem(st.currentTitle())
 	if name == "" {
@@ -188,7 +188,7 @@ func (st *historyState) drainFilePicks(u *UI) {
 // startImport 选完导入文件后的分流：先向内核要清单，多于一个会话才弹勾选面板。
 //
 // 只有一项（非 aqx，或只装了一个会话的 aqx）直接投——弹一个只有一行的勾选框只是多一次
-// 点击。取清单失败（文件损坏 / 不是归档）也直接投：命令面会把原因说清楚，界面不替它
+// 点击。取清单失败（文件损坏 / 不是归档）也直接投：命令面会把原因说清楚，界面不替命令面
 // 编一个「读不出来」的说法（壳内不认格式，铁律 5）。
 func (st *historyState) startImport(u *UI, path string) {
 	if u.opts.Indexer != nil {

@@ -12,7 +12,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// defaultKeyCooldown 配额错误的缺省冷却（D173）：服务端没给 `Retry-After` 时用它。
+// defaultKeyCooldown 配额错误的缺省冷却（D173）：服务端没给 `Retry-After` 时用该缺省冷却。
 // 取值依据：限流的恢复时间通常远大于一次退避（200ms 起），小到几秒等于把轮换降级成
 // 退避重试；大到十几分钟又会把「另一把我现在就能用」这条路径白等掉。
 const defaultKeyCooldown = 60 * time.Second
@@ -24,18 +24,18 @@ type KeyEntry struct {
 	LLM   port.LLM
 }
 
-// KeyPool 同 provider 内的密钥轮换装饰器（D173/§10）。分层：装配根把重试罩在它外面、
-// 它罩在 client 外面（铁律 9：装饰器只在装配根叠加）。
+// KeyPool 同 provider 内的密钥轮换装饰器（D173/§10）。分层：装配根把重试罩在本装饰器外面、
+// 本装饰器罩在 client 外面（铁律 9：装饰器只在装配根叠加）。
 //
 //   - 错误链含 port.ErrQuota（适配器对 429 的额外标注）→ 立刻换下一把钥匙重试，
 //     **不退避**（换钥匙本来就比退避快，多账号场景下这才是用户要的语义）；
 //   - 被拒的那把进入**进程内冷却**（读响应头的 `Retry-After`，缺省 60s），冷却期内
-//     跳过它；冷却状态不写入磁盘，重启清空；
+//     跳过该钥匙；冷却状态不写入磁盘，重启清空；
 //   - 其他瞬时错误（5xx/网络）**不换钥匙**——端点故障换钥匙没用，交给外层重试；
 //   - 钥匙全在冷却 = 这一轮放弃（错误照旧标瞬时，交外层降级）。
 //
 // 「先换钥匙、再换 provider」的顺序由分层保证：本装饰器在 provider 内链上，跨 provider
-// 降级（Fallback）在它外面，所以钥匙没换完就不会跨 provider。
+// 降级（Fallback）在本装饰器外面，所以钥匙没换完就不会跨 provider。
 type KeyPool struct {
 	mu          sync.Mutex
 	keys        []KeyEntry
@@ -140,7 +140,7 @@ func (p *KeyPool) pick() ([]int, time.Time) {
 	return order, earliest
 }
 
-// succeeded 清掉成功那把的冷却（它确实是好的：限流可能是短时的、也可能只是那一次
+// succeeded 清掉成功那把的冷却（该钥匙确实是好的：限流可能是短时的、也可能只是那一次
 // 请求撞上了窗口）。下次仍从第一把起试。
 func (p *KeyPool) succeeded(idx int) {
 	p.mu.Lock()

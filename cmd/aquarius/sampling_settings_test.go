@@ -220,7 +220,7 @@ func TestSamplingRefreshHotApply(t *testing.T) {
 	if got.Temperature == nil || *got.Temperature != 0.3 || got.MaxTokens != 512 {
 		t.Fatalf("热生效后缺省 = %+v", got)
 	}
-	// 逐模型覆盖仍压过缺省（cold 的温度是它自己写死的 0）。
+	// 逐模型覆盖仍压过缺省（cold 的温度是 cold 条目自己写死的 0）。
 	if got := w.samplingFor("cold"); got.Temperature == nil || *got.Temperature != 0 {
 		t.Fatalf("覆盖应压过新缺省: %v", got.Temperature)
 	}

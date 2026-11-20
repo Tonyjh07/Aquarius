@@ -52,7 +52,7 @@ type historyState struct {
 	btnMinus, btnPlus, btnHome widget.Clickable
 	btnSeed, btnLine, btnNode  widget.Clickable
 	// btnLeft 左栏收起/展开（D159）：展开时画在左栏标题行右端、收起时画在窄条顶部；
-	// leftCollapsed 是它的帧态（本窗自持，不写入磁盘——收起是临时视图选择，不是配置）。
+	// leftCollapsed 是该钮的帧态（本窗自持，不写入磁盘——收起是临时视图选择，不是配置）。
 	btnLeft       widget.Clickable
 	leftCollapsed bool
 	// teOn/teEdits 树编辑模式的**只读**状态（D258，每帧从端口取，见 syncTreeEdit）：
@@ -142,7 +142,7 @@ func (st *historyState) applyBudget(delta int) {
 }
 
 // sync 帧首同步数据面：左栏快照直接取（行数对齐）；右图按**内容发布号**判定要不要重建
-// 模型与预算（`TreeGraph.Revision`，同号 = 同一份内容）；树编辑状态每帧取（它是模式开关，
+// 模型与预算（`TreeGraph.Revision`，同号 = 同一份内容）；树编辑状态每帧取（该状态是模式开关，
 // 没有发布号可用——一帧的延迟就会让开关与内核不一致）。
 func (st *historyState) sync(u *UI) {
 	st.syncTreeEdit(u)
@@ -191,7 +191,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	if st.modalActive(u) {
 		return
 	}
-	// 左栏收起/展开（D159）：收起态只剩窄条，那颗钮仍要能点开（它是收起态唯一的交互件）。
+	// 左栏收起/展开（D159）：收起态只剩窄条，那颗钮仍要能点开（该钮是收起态唯一的交互件）。
 	if st.btnLeft.Clicked(gtx) {
 		st.leftCollapsed = !st.leftCollapsed
 		return
@@ -217,7 +217,7 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	}
 	// 批量选择态（D249）：行点击在这里表达「挑这一行」，**不**是切会话——继续往下走会
 	// 顺带把当前会话切走，用户以为只是选了一个备份对象。标题行四颗钮仍然照常工作
-	// （新建 / 导入 / 导出当前会话 / 收起都与「选了哪几个」无关，且它们都画在屏上，
+	// （新建 / 导入 / 导出当前会话 / 收起都与「选了哪几个」无关，且这四颗钮都画在屏上，
 	// 画出来却点不动比多一次确认更糟）。
 	if st.selMode {
 		st.dispatchSel(u, gtx)
@@ -286,7 +286,7 @@ func (st *historyState) dispatchView(u *UI, gtx layout.Context) {
 // dispatchTreeEdit 树编辑开关与「放弃」（D258）。
 //
 // 两者都只投命令：开关打开 = `/tree-edit`，关掉 = `--exit`（有未保存改动时内核按 §5.6.4
-// 问「保存 / 放弃 / 取消」，答完才真的退出——拒绝取消时开关下一帧仍是开的，因为它读的
+// 问「保存 / 放弃 / 取消」，答完才真的退出——拒绝取消时开关下一帧仍是开的，因为该开关读的
 // 是内核状态）；「放弃」= `--cancel`（放弃全部改动并退出，按钮本身就是那次确认）。
 func (st *historyState) dispatchTreeEdit(u *UI, gtx layout.Context) {
 	if st.btnTree.Clicked(gtx) {

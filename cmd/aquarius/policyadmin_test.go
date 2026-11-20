@@ -148,7 +148,7 @@ func TestToolPolicyRejectsBadInput(t *testing.T) {
 }
 
 // TestPermitOverrideWritesDirScope D282：确认框点了「以后都允许」——写一条带目录的
-// 例外；它与同一工具的工具级条目是两条规则，改一条不该顶掉另一条；审计要落一行。
+// 例外；目录级条目与同一工具的工具级条目是两条规则，改一条不该顶掉另一条；审计要落一行。
 func TestPermitOverrideWritesDirScope(t *testing.T) {
 	t.Parallel()
 	w, a, path := newPolicyTestWiring(t, `{"permissions":{"level":"strict"}}`)
@@ -169,7 +169,7 @@ func TestPermitOverrideWritesDirScope(t *testing.T) {
 	if len(rows) != 1 || rows[0]["dir"] != dir || rows[0]["mode"] != "allow" {
 		t.Fatalf("目录级条目 = %v", rows)
 	}
-	// 快照把它单列成 DirRules，不混进工具行的档位（那是另一条更宽的规则）。
+	// 快照把目录级条目单列成 DirRules，不混进工具行的档位（那是另一条更宽的规则）。
 	snap := a.Snapshot()
 	if len(snap.DirRules) != 1 || snap.DirRules[0].Dir != dir {
 		t.Fatalf("快照 DirRules = %+v", snap.DirRules)
@@ -207,7 +207,7 @@ func TestPermitOverrideWritesDirScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 1 { // 撤销走 setOverride，不写 policy 审计（它不是一个「放宽」）
+	if len(lines) != 1 { // 撤销走 setOverride，不写 policy 审计（撤销不是一个「放宽」）
 		t.Fatalf("审计行数 = %d：%s", len(lines), data)
 	}
 	var line map[string]any
@@ -233,7 +233,7 @@ func TestPermitOverrideSkipsHardTarget(t *testing.T) {
 	}
 	w.audit = au
 
-	target := w.cfgPath // 配置本身就在敏感根里（改写它等于接管权限）
+	target := w.cfgPath // 配置本身就在敏感根里（改写配置文件等于接管权限）
 	w.permitOverride(perm.AutoAllow(perm.OriginTool, "file_write", target, true),
 		port.ConfirmRequest{Origin: port.OriginTool, Tool: "file_write", Op: perm.OpWrite, HasOp: true, Target: target})
 

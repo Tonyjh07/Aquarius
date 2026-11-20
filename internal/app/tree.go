@@ -47,7 +47,7 @@ func makeTreeSnapshot(c *conversation.Conversation) *treeSnapshot {
 	sibIdx := make(map[conversation.MessageID]int, total)
 	sibN := make(map[conversation.MessageID]int, total)
 	// 版本组（D80/D152）：衬垫透明，故分组键是「最近的非衬垫祖先」而不是结构父。
-	// 衬垫自身不属于任何组——图上不给它版本编号（SiblingCount 0），它也不是可切换的版本。
+	// 衬垫自身不属于任何组——图上不给衬垫版本编号（SiblingCount 0），衬垫也不是可切换的版本。
 	for _, group := range view.VersionGroups {
 		for i, kid := range group.IDs {
 			snap.branches[kid] = port.BranchInfo{IDs: group.IDs, Index: i}
@@ -101,7 +101,7 @@ func (s *Session) publishTree() {
 	s.tree.Store(snap)
 }
 
-// sameGraph 两份整树快照内容是否一致（发布号不参与比较——它就是本函数的结果）。
+// sameGraph 两份整树快照内容是否一致（发布号不参与比较——该编号就是本函数的结果）。
 //
 // 逐节点整结构比较（`GraphNode` 全字段可比值）。`CreatedAt` 是 `time.Time`，`==` 连
 // 时区指针一起比——理论上同一时刻的两种 loc 会判成不等，代价只是多重建一次（错在「多算」

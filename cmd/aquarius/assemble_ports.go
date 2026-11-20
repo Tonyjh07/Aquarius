@@ -163,7 +163,7 @@ func (w *wiring) logServerCaps(p *providerConfig) {
 // buildClient 构建 provider 客户端（D173）：base_url/tokenizer 构造期固化
 // （port.LLM 不可热换）。密钥池在这里展开：一把钥匙一具 client（有的钥匙可能
 // 解析失败——那种钥匙不进池，启动打一行警告而不是整体失败），多把时用 KeyPool
-// 装饰器串起来（重试罩在它外面，见 stackDecorators）。
+// 装饰器串起来（重试罩在 KeyPool 外面，见 stackDecorators）。
 func (w *wiring) buildClient(p *providerConfig) (port.LLM, port.TokenCounter, error) {
 	refs := p.keyRefs()
 	keys := make([]decorate.KeyEntry, 0, len(refs))
@@ -258,7 +258,7 @@ func (w *wiring) newLLMClient(p *providerConfig, key string, note func(string), 
 }
 
 // llmProtocol config 的 kind → 适配器协议标识（D175）。认得的词在这里一一对上；
-// 不认得的词原样传给适配器，由它统一 fail-fast 报因——启动时的配置错误该由校验拦下
+// 不认得的词原样传给适配器，由适配器统一 fail-fast 报因——启动时的配置错误该由校验拦下
 // （config.normalize 已拦），这里是第二道保险。
 func llmProtocol(kind string) llm.Protocol {
 	switch kind {
@@ -285,7 +285,7 @@ func (w *wiring) buildLLMs() error {
 	client, primaryCounter, err := w.buildClient(w.primary)
 	if err != nil {
 		// D278 决策 3 的延伸，但只对 gui 成立：首跑模板写的是 `secret:DEEPSEEK_API_KEY`，
-		// 机器上没设这个变量是常态；把用户挡在主窗之外，他连设置窗都进不去补 key。
+		// 机器上没设这个变量是常态；把用户挡在主窗之外，用户连设置窗都进不去补 key。
 		// repl / tui 没有设置窗，缺密钥仍是启动期报因（D141 的原规则）。
 		if w.cfg.UI.Kind != "gui" {
 			return err
@@ -537,7 +537,7 @@ type zhSimplifier struct {
 	logf func(error)
 }
 
-// converter 繁转简的能力（*zhconv.Converter 满足它；测试可注入会失败的那种）。
+// converter 繁转简的能力（*zhconv.Converter 满足该接口；测试可注入会失败的那种）。
 type converter interface {
 	Convert(text string) (string, error)
 }
@@ -641,7 +641,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	}
 	w.skills = skills
 	// D202：安装面内核（副本落 `<profile>/skills`、git 检出进 `skill-cache`、台账
-	// `skill-installs.json`）。装配根在 cmd/aquarius/skillsadmin.go 把它适配成
+	// `skill-installs.json`）。装配根在 cmd/aquarius/skillsadmin.go 把安装器适配成
 	// uigui.SkillsAdmin / app.SkillAdmin 两套消费方接口。
 	installer, err := skillfs.NewInstaller(skillfs.InstallOptions{
 		Root:       filepath.Join(w.profileDir, "skills"),
@@ -723,7 +723,7 @@ func (w *wiring) assembleDelegates(ctx context.Context, confirmer port.Confirmer
 	// 放行策略（D280）：与本地工具共用一张表，来源维区分两条线。
 	opts.Overrides = w.policy.Get
 	opts.Sensitive = w.sensitiveRoots()
-	// D269：台账与任务台账同目录——它们回答的是同一类问题「上次退出时还有什么没收尾」。
+	// D269：台账与任务台账同目录——这两份台账回答的是同一类问题「上次退出时还有什么没收尾」。
 	opts.LedgerPath = filepath.Join(w.profileDir, "jobs", "delegates.json")
 	mgr := acpgate.New(opts)
 	w.delegateMgr = mgr

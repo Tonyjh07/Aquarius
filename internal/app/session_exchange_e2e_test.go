@@ -7,7 +7,7 @@ package app
 // 同一棵树」——路径挑选、ID 重分配、落新会话、清屏回放、回执这几步都在中间，任何一步写错
 // 都会让导回来的树少一点东西。
 //
-// 借用真实适配器（临时目录里的 blobfs / storejson / exchange）属于链路级验收，
+// 借用真实适配器（临时目录里的 blobfs / storejson / exchange）属于路径级验收，
 // AGENTS.md 允许测试这么做；生产代码的跨层直连仍由 arch 守卫盯着。
 
 import (
@@ -55,7 +55,7 @@ func newExchangeE2ESession(t *testing.T, streams ...*scriptStream) (*Session, *b
 		Exporter:   ex,
 		Importer:   ex,
 		ExportsDir: exports,
-		// 这条链路上的用例只关心「批量和单个都走同一条确认通路」，答案恒为允许。
+		// 这条路径上的用例只关心「批量和单个都走同一条确认通路」，答案恒为允许。
 		Confirmer: allowConfirmer{},
 	})
 	if err != nil {
@@ -101,8 +101,8 @@ func seedExchangeTree(t *testing.T, s *Session, blobs *blobfs.Store) {
 		t.Fatalf("append inject: %v", err)
 	}
 	// 分叉：再答一条（旁支），然后把带图那条 user 改掉（Fresh）——树里因此既有旁支又有版本链。
-	// 改完再把 Head 挪回注入节点：线性格式要能导出「含思考与工具的那条链」，得让它在当前
-	// 这条链上（否则它们只会被算进「旁支上的 N 条」）。
+	// 改完再把 Head 挪回注入节点：线性格式要能导出「含思考与工具的那条链」，得让该链落在当前
+	// 路径上（否则这些节点只会被算进「旁支上的 N 条」）。
 	if _, err := c.Append(conversation.RoleAssistant, []conversation.Part{
 		{Kind: conversation.PartText, Text: "旁支"},
 	}); err != nil {

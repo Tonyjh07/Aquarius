@@ -2,15 +2,15 @@ package uigui
 
 // pendingsteer.go 转写区里的引导气泡（D272）：用户已经说出口、等下一次请求取走的话。
 //
-// 为什么它不待在待发条里：排队是「等服务完再说」，引导是「马上就到模型眼前」——两者
+// 为什么引导气泡不待在待发条里：排队是「等服务完再说」，引导是「马上就到模型眼前」——两者
 // 的时间感差一整轮，挤在同一条带上分不清。引导直接铺成末端的用户气泡（与真节点同形），
-// 旁边挂两枚控件：↓ 让它退回队列（气泡消失、条目回到待发条），× 丢弃。
+// 旁边挂两枚控件：↓ 让该气泡退回队列（气泡消失、条目回到待发条），× 丢弃。
 //
 // 这两枚控件是**自绘热区**，不用气泡内的布局（气泡内容是量期录好的宏，两遍布局会让
 // Clickable 注册两次）。
 //
 // 气泡本体比真节点淡一档：转写区里同时存在「已经进树的话」与「还没被取走的话」，形状
-// 一样、含义不同，靠透明度分开。两枚控件跟着一起淡——它们和气泡是同一件事的不同部分，
+// 一样、含义不同，靠透明度分开。两枚控件跟着一起淡——两枚控件和气泡是同一件事的不同部分，
 // 淡得不一样就散成了两件东西。
 
 import (
@@ -46,9 +46,9 @@ const (
 	steerActDp = 20
 	// steerActGapDp 两枚控件之间的缝隙（dp）。
 	steerActGapDp = 4
-	// steerActInsetDp 气泡外侧留白（dp）：控件与气泡之间也用它。
+	// steerActInsetDp 气泡外侧留白（dp）：控件与气泡之间也用 steerActInsetDp。
 	steerActInsetDp = 6
-	// steerBubbleAlpha 待响应引导气泡的不透明度：它还不是会话节点，与已入树的气泡
+	// steerBubbleAlpha 待响应引导气泡的不透明度：待响应引导气泡还不是会话节点，与已入树的气泡
 	// 要一眼可分（0.7 仍看得清字，又明显淡于真气泡）。
 	steerBubbleAlpha = 0.7
 )
@@ -66,7 +66,7 @@ type steerHot struct {
 // 内部左上角——控件不能因为窗口窄就消失，那正是用户够不到的时候。
 //
 // 两枚圆钮**必须各自 record**（viewport = 转写视口）：Windows 上真正上屏的是全帧合成
-// （fadeFrame），它只写已登记形状覆盖的像素——画出来不等于留得下，漏了这一步控件会
+// （fadeFrame），fadeFrame 只写已登记形状覆盖的像素——画出来不等于留得下，漏了这一步控件会
 // 在合成阶段整颗被丢掉（气泡本体没这毛病，是因为 paintRow 登过记）。
 func (u *UI) steerActions(gtx layout.Context, id string, bg, viewport image.Rectangle) {
 	sz := gtx.Dp(steerActDp)
@@ -81,7 +81,7 @@ func (u *UI) steerActions(gtx layout.Context, id string, bg, viewport image.Rect
 
 	inside := false
 	if downRect.Min.X < margin {
-		// 退到气泡内部左上角（压在选择区之上，但它是按钮，点它不会被当选文本）。
+		// 退到气泡内部左上角（压在选择区之上，但该控件是按钮，点该控件不会被当选文本）。
 		inside = true
 		x0 := bg.Min.X + inset
 		downRect = image.Rect(x0, bg.Min.Y+inset, x0+sz, bg.Min.Y+inset+sz)

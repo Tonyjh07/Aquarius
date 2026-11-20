@@ -267,7 +267,7 @@ func (u *UI) onHWND(h platform.Handle) {
 	// 无可挂钩点，其间亚帧间隙接受）并置揭示待定；首帧 ULW 提交成功才揭示（fadePresent）。
 	// 【顺序敏感】先 SW_HIDE 再挂 WS_EX_LAYERED：层样式在**可见态**挂接、随后首帧 ULW 前
 	// 被隐藏，UpdateLayeredWindow 将永久失败（errno=87，重新显示也不恢复）——revealPending
-	// 永不清零、窗口永不揭示且呼出门死锁（实机「找不到窗口」）。隐藏态挂接则全链路正常。
+	// 永不清零、窗口永不揭示且呼出门死锁（实机「找不到窗口」）。隐藏态挂接则全路径正常。
 	u.revealPending.Store(true)
 	u.plat.HideUntilFirstPresent(h)
 	u.plat.EnsureLayered(h)       // 分层样式（D62 双保险）——须在隐藏后挂

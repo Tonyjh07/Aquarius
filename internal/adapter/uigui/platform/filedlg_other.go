@@ -120,7 +120,7 @@ func zenitySaveArgs(req SaveRequest) []string {
 }
 
 // runPickCommand 依次试给定的命令（zenity → kdialog）：第一条存在的那个负责呈现；
-// 它取消/失败即视同取消，不再回落第二条（免得同一个动作弹两次框）。
+// 该命令取消/失败即视同取消，不再回落第二条（免得同一个动作弹两次框）。
 func runPickCommand(cmds [][]string) (string, bool) {
 	for _, cmd := range cmds {
 		if _, err := exec.LookPath(cmd[0]); err != nil {

@@ -19,7 +19,7 @@ func restoreMemoryPolicy(t *testing.T) {
 	})
 }
 
-// readGCPercent 读当前 GC 百分比而不改变它（SetGCPercent 返回的是调用前的值）。
+// readGCPercent 读当前 GC 百分比而不改变 GC 百分比（SetGCPercent 返回的是调用前的值）。
 func readGCPercent() int {
 	prev := debug.SetGCPercent(-1)
 	debug.SetGCPercent(prev)
@@ -44,7 +44,7 @@ func TestApplyMemoryPolicySetsDefaults(t *testing.T) {
 }
 
 // TestApplyMemoryPolicyHonorsEnv 环境变量显式给出时对应的旋钮一律不动——用户/部署方的规则
-// 优先，代码里的默认值不该盖掉它。另一个旋钮照装。
+// 优先，代码里的默认值不该盖掉环境变量给出的值。另一个旋钮照装。
 func TestApplyMemoryPolicyHonorsEnv(t *testing.T) {
 	t.Setenv("GOMEMLIMIT", "512MiB")
 	t.Setenv("GOGC", "80")

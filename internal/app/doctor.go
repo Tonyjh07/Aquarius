@@ -4,7 +4,7 @@ package app
 //
 // 检查本身在装配根——配置路径、密钥库的口令链、目录布局、卷标都只有那里知道。这一层
 // 只定义结论的形状与排版：装配根给「哪一项、什么状态、一句现象、一句修法」，命令面负责
-// 让它在会话里读得下去（与 D276 同一条方向，app 不 import 那些适配器）。
+// 让结论在会话里读得下去（与 D276 同一条方向，app 不 import 那些适配器）。
 
 import (
 	"context"
@@ -33,7 +33,7 @@ const (
 // HealthCheck 一项体检结论。
 type HealthCheck struct {
 	// ID 稳定标识（config / secrets / sessions / mcp / logs / exports / disk）：
-	// 命令面按它取这一项的名字，装配根按它决定查什么。未知 ID 原样露出（§7.8 同规则：
+	// 命令面按该 ID 取这一项的名字，装配根按该 ID 决定查什么。未知 ID 原样露出（§7.8 同规则：
 	// 宁可看见一个丑标识，也不要一片空白）。
 	ID string
 	// State 三态结论。
@@ -41,7 +41,7 @@ type HealthCheck struct {
 	// Detail 一句现象：正常时写关键数字（几个文件、多少可用），异常时写具体原因。
 	Detail string
 	// Fix 一句修法，只在非正常时有意义：改哪个文件、跑哪条命令、要不要重启。
-	// 不猜用户意图，也不替他改文件。
+	// 不猜用户意图，也不替用户改文件。
 	Fix string
 }
 

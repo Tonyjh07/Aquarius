@@ -3,7 +3,7 @@ package i18n
 // zhGuiPlatformTexts 平台层的用户面措辞：文件选择框的标题与过滤器名、打开链接的失败提示、
 // 热键配置的校验报错、以及「本平台不支持 X」的降级提示。
 //
-// 这一族和 `ui.settings.*` 分开维护，因为它跨 Windows 与 Linux/macOS 两套实现：同一个概念
+// 这一族和 `ui.settings.*` 分开维护，因为这一族跨 Windows 与 Linux/macOS 两套实现：同一个概念
 // 在两个文件里各写一句（zenity 与 Win32 的对话框标题），**必须共用同一个 key**，否则切语言时
 // 会发现两个平台的对话框说着两种话。
 //

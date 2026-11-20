@@ -16,7 +16,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// errFakeWrite 写回失败的替身错误（状态行要把它说出来）。
+// errFakeWrite 写回失败的替身错误（状态行要把该错误说出来）。
 var errFakeWrite = errors.New("写不进 config")
 
 // fakeDelegateAdmin DelegateAdmin 测试替身（快照可变 + 动作记录）。
@@ -477,7 +477,7 @@ func TestDelegateProbe(t *testing.T) {
 	if !strings.Contains(line, "Log in first") {
 		t.Fatalf("登录方式应出现在能力行: %q", line)
 	}
-	// 模型行给当前值与可选个数：用户填 options 时要照着它填。
+	// 模型行给当前值与可选个数：用户填 options 时要照着该行填。
 	model := delegateModelLine(out.info)
 	if !strings.Contains(model, "xiaomi/mimo-v2.6-pro") || !strings.Contains(model, "23") {
 		t.Fatalf("模型行 = %q", model)

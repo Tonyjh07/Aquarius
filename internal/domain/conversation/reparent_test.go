@@ -6,7 +6,7 @@ import (
 )
 
 // personaThenQuestion 造一棵带人格的会话：Root → persona(system) → q1 → a1。
-// 人格是 Root 的首孩子，其余节点都在它下面——这正是环拦截让人格搬不动的前提。
+// 人格是 Root 的首孩子，其余节点都在人格下面——这正是环拦截让人格搬不动的前提。
 func personaThenQuestion(t *testing.T) (c *Conversation, persona, q1, a1 Message) {
 	t.Helper()
 	c = New(NewID(), "t")
@@ -143,7 +143,7 @@ func TestReparentRejectsIllegalTargets(t *testing.T) {
 func TestReparentHeadOutsideSubtreeStays(t *testing.T) {
 	useFixedClock(t)
 	c, persona, _, a1 := personaThenQuestion(t)
-	// 另起一支挂在 persona 下，Head 停在它上面。
+	// 另起一支挂在 persona 下，Head 停在这一支上面。
 	if err := c.Checkout(persona.ID); err != nil {
 		t.Fatalf("checkout: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestReparentHeadOutsideSubtreeStays(t *testing.T) {
 }
 
 // TestReparentKeepsEditionChain 版本链不随结构走（D255）：A′ 挪到别的父下后，
-// 它仍记着「修订自 A」，而版本组按结构重算——原先的兄弟关系不再成立。
+// A′ 仍记着「修订自 A」，而版本组按结构重算——原先的兄弟关系不再成立。
 func TestReparentKeepsEditionChain(t *testing.T) {
 	useFixedClock(t)
 	c, persona, _, a1 := personaThenQuestion(t)

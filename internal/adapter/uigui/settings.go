@@ -40,7 +40,7 @@ type ProviderKeySnapshot struct {
 
 // ProviderModelSnapshot provider 模型条目快照（S11-7③/D173）：能力位取**生效值**
 // （缺省时按协议缺省），CapsExplicit 区分「缺省」与「显式声明」——只有用户真动过
-// 能力位才把它固化成显式声明。
+// 能力位才把能力位固化成显式声明。
 type ProviderModelSnapshot struct {
 	Name          string
 	Caps          []string // 生效能力名（port.CapTools/CapReasoning/CapVision 的子集）
@@ -89,7 +89,7 @@ type ProviderModelPatch struct {
 }
 
 // ProviderPatch provider 编辑区单条提交（Apply 全量替换规则）。Orig = 编辑前的
-// 原名（cmd 侧按它保留原条目的无关键；空 = 新增条目）。
+// 原名（cmd 侧按原名保留原条目的无关键；空 = 新增条目）。
 type ProviderPatch struct {
 	Orig        string
 	Name        string
@@ -118,10 +118,10 @@ type ProbeOutcome struct {
 // 装配根，两边都得认这份形状，而 uigui 不能成为公共依赖。
 type FallbackLink = port.FallbackLink
 
-// ProviderChoice 「模型」页降级链编辑用的 provider 选项：名字 + 它声明的模型名。
+// ProviderChoice 「模型」页降级链编辑用的 provider 选项：名字 + 该 provider 声明的模型名。
 // 与 ProviderManager 的编辑面分开——那边编辑 provider 本体（怎么连），这里只挑路由目标。
 //
-// BaseURL / KeyRef（D222）：「联网」与「语音」页的「填入」按钮用它把某个服务的端点与
+// BaseURL / KeyRef（D222）：「联网」与「语音」页的「填入」按钮用这两个字段把某个服务的端点与
 // 密钥引用抄进独立配置。KeyRef 只会是 `secret:<名>` 或空（明文永不出编辑区）。
 type ProviderChoice struct {
 	Name    string
@@ -268,7 +268,7 @@ type SettingsSnapshot struct {
 	WebFetchTimeoutSec int    // 0 = 缺省 30
 
 	// Fallback 降级链（D173/D176 规则三）。模型 "" = 取该 provider 的缺省模型。
-	// 链条目可指向声明之外的模型名——它是运行时路由，不要求目标先在 provider 里声明。
+	// 链条目可指向声明之外的模型名——链条目是运行时路由，不要求目标先在 provider 里声明。
 	Fallback []FallbackLink
 	// FallbackNote 链窄于当前模型能力时的警示文案（cmd 侧按 caps 现算；空 = 不窄）。
 	// 与其余快照同规则：开窗取一次（降级链改动要重启才生效，运行态本就不同步）。
@@ -357,10 +357,10 @@ func langLevels() []string {
 
 // uiLangLevels 界面语言的展示名（D275/§7.8）。首项随当前语言走（「跟随系统」），后两项
 // **各用自己的语言写自己**（简体中文 / English）——语言选项的标准写法：用户在一段看不懂
-// 的文字里找自己那一项，靠的是那项的字形本身，不是它的译名。
+// 的文字里找自己那一项，靠的是那项的字形本身，不是那项的译名。
 //
 // 后两条刻意不进文案表：endonym 不翻译，进了表就有两份译文各写一遍的风险（而且 en 表
-// 里出现中文会被 `TestEnHasNoCJK` 拦下）。它们因此进 `cjkAllowed` 白名单——这是「文案表
+// 里出现中文会被 `TestEnHasNoCJK` 拦下）。后两条因此进 `cjkAllowed` 白名单——这是「文案表
 // 之外唯一允许出现中文的地方」这一类，理由写在白名单那条注释里。
 func uiLangLevels() []string {
 	return []string{

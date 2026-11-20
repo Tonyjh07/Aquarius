@@ -61,7 +61,7 @@ func loadAllConversations(t *testing.T, dir string) []*conversation.Conversation
 	return out
 }
 
-// findDelegateInject 找一条带 delegate 来源的注入节点，返回它所在的会话与正文。
+// findDelegateInject 找一条带 delegate 来源的注入节点，返回注入节点所在的会话与正文。
 func findDelegateInject(convs []*conversation.Conversation) (*conversation.Conversation, string) {
 	for _, c := range convs {
 		for _, m := range c.Snapshot().Nodes {
@@ -78,7 +78,7 @@ func findDelegateInject(convs []*conversation.Conversation) (*conversation.Conve
 	return nil, ""
 }
 
-// 端到端等的两个预算。转交要真起进程，而全量跑时它还要和别的包的测试抢 CPU：
+// 端到端等的两个预算。转交要真起进程，而全量跑时端到端用例还要和别的包的测试抢 CPU：
 // 20 秒在并行跑里不够用（见过 29 秒才实现）。轮询成功即退出，预算给宽不花钱；
 // 这两个数只防「程序真的卡死」，不是断言的一部分。
 const (
@@ -113,7 +113,7 @@ func TestRunDelegateE2E(t *testing.T) {
 	code := make(chan int, 1)
 	go func() { code <- run([]string{"-data", dir}, pr, &out, io.Discard) }()
 
-	// 派活（确认 y），然后立刻切到新会话——报告必须落在发起它的那个会话里。
+	// 派活（确认 y），然后立刻切到新会话——报告必须落在发起该任务的那个会话里。
 	if _, err := io.WriteString(pw, "把解析器交给外部代理\ny\n/new\n"); err != nil {
 		t.Fatalf("写 stdin: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestRunDelegateE2E(t *testing.T) {
 
 // TestRunDelegateReconcileE2E 上次退出时中断的转交（D269）：启动补一行提示 + 一条事实注入。
 //
-// 台账是直接写进 profile/jobs 的——重启这条路上，它就是唯一的事实来源（进程早没了）。
+// 台账是直接写进 profile/jobs 的——重启这条路上，台账就是唯一的事实来源（进程早没了）。
 func TestRunDelegateReconcileE2E(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{
@@ -228,7 +228,7 @@ func TestRunDelegateReconcileE2E(t *testing.T) {
 		t.Fatalf("stdout 应有中断提示：%q", out.String())
 	}
 	// 读即清：台账被取走，下一次启动不该重报（会话里那条注入是**这次**落的历史，
-	// 它会一直在，所以证据在台账文件上）。
+	// 这条注入会一直在，所以证据在台账文件上）。
 	if data, err := os.ReadFile(ledger); err != nil {
 		t.Fatalf("读台账: %v", err)
 	} else if strings.Contains(string(data), "d001") {

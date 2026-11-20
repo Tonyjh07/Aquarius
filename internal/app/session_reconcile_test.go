@@ -60,7 +60,7 @@ func TestReportUnfinishedLandsInCurrentSession(t *testing.T) {
 	}
 }
 
-// TestReportUnfinishedLandsElsewhere 目标不是当前会话：落到它自己的树上，当前会话不动。
+// TestReportUnfinishedLandsElsewhere 目标不是当前会话：落到目标自己的树上，当前会话不动。
 func TestReportUnfinishedLandsElsewhere(t *testing.T) {
 	store := newMemStore()
 	s, _, _ := newTestSession(t, store)

@@ -16,7 +16,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// newBatchSession 造一个有若干个会话的会话（每个会话带一条正文，便于核对条数）。
+// newBatchSession 造一个有多个会话的会话（每个会话带一条正文，便于核对条数）。
 func newBatchSession(t *testing.T, titles ...string) (*Session, *memStore, *scriptConfirmer) {
 	t.Helper()
 	store := newMemStore()
@@ -133,7 +133,7 @@ func TestRmconvBadIDDeletesNothing(t *testing.T) {
 }
 
 // TestRmconvCurrentWithBatchSkipsDeleted 批量删到当前会话时，继任者必须是**不在本批**里的那个——
-// 继任到一个刚删掉的 ID 会让下一次保存把它写回来（用户看到「删了又回来」）。
+// 继任到一个刚删掉的 ID 会让下一次保存把该 ID 写回来（用户看到「删了又回来」）。
 func TestRmconvCurrentWithBatchSkipsDeleted(t *testing.T) {
 	s, store, _ := newBatchSession(t, "甲", "乙", "丙")
 	ctx := context.Background()

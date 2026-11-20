@@ -8,7 +8,7 @@ package vadsilero
 //     （Segmenter 的 SpeechPad 自己会减/加），所以这里直接换算成字节，不再补第二遍。
 //  3. 区间 → PCM：按区间切出来交出去，写进密钥库与转写都只认这段 PCM。
 //
-// 缓冲的规矩只有一条：**只要当前段还没交出，它起点之后的音频一个字节都不能丢**。
+// 缓冲的规矩只有一条：**只要当前段还没交出，该段起点之后的音频一个字节都不能丢**。
 // 上游把段首往回补了 SpeechPad，所以起点可能落在几帧之前；而段尾只有在静音判够
 // 之后才出现，长段因此可以横跨几分钟——缓冲跟着段一起长，静音时才裁。
 
@@ -190,7 +190,7 @@ func (s *segmenter) slice(start, end int64) ([]byte, bool) {
 	return out, true
 }
 
-// Flush 收尾：仍在进行的那一段照常交出（太短的按 MinSpeech 丢弃）。
+// Flush 收尾：还没结束的那一段照常交出（太短的按 MinSpeech 丢弃）。
 func (s *segmenter) Flush() ([]port.SpeechSegment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -31,14 +31,14 @@ type ConfirmAnswer struct {
 	Reason string
 	// Level 用户在确认框里直选的权限档（D282）：非空 = 按这一档重判本次，此时
 	// Allow 不参与判定。界面只上报「选了哪档」，结论由 perm 算（改档位 = 永久改全局，
-	// 与 /permission 同一次授权）。只有工具确认会带回它——外部代理与命令行确认
+	// 与 /permission 同一次授权）。只有工具确认会带回权限档——外部代理与命令行确认
 	// 不读权限档，界面不给这个入口。
 	Level string
 	// Persist 用户点了「以后都允许」（D282）：范围由判定侧按工具性质算（执行类落工具、
-	// 文件类收窄到目标所在目录），界面不参与——它只表达「别再问这个」。没有策略表可写
+	// 文件类收窄到目标所在目录），界面不参与——该位只表达「别再问这个」。没有策略表可写
 	// 时退化为一次放行。
 	//
-	// 与 Allow 同义（点它当然是放行这次），单独一位是为了让判定侧知道要不要写策略表。
+	// 与 Allow 同义（点这个钮当然是放行这次），单独一位是为了让判定侧知道要不要写策略表。
 	Persist bool
 }
 
@@ -57,7 +57,7 @@ const (
 
 // ConfirmRequest 一次确认的完整请求（D280 第 7 条）。
 //
-// Prompt 是已经拼好的用户面文本，现有界面只读它；策略表与决策模型读其余字段，
+// Prompt 是已经拼好的用户面文本，现有界面只读这段文本；策略表与决策模型读其余字段，
 // 不再从一句中文里反解「要干什么」。拿不到的字段留零值：HasOp / HasRisk 区分
 // 「读」与「不涉及文件」、Safe 与「不适用」。
 type ConfirmRequest struct {
@@ -72,7 +72,7 @@ type ConfirmRequest struct {
 	Prompt  string
 	// CanPersist 这次确认允许提供「以后都允许」（D282）：判定侧在置位时已经算过
 	// 「写了也不会生效」的情形（目标命中硬名单——那条规则永远轮不到），界面据此
-	// 决定给不给这个钮。界面自己不做这个判断：它拿不到敏感根。
+	// 决定给不给这个钮。界面自己不做这个判断：界面拿不到敏感根。
 	CanPersist bool
 }
 
@@ -88,7 +88,7 @@ type FileTarget interface {
 	Target(ctx context.Context, call tool.Call) (path string, op perm.Op, ok bool)
 }
 
-// Interactive 可选能力（D184/D189）：工具自己的等待时长由它管，ToolRunner 不套默认
+// Interactive 可选能力（D184/D189）：工具自己的等待时长由这个能力管，ToolRunner 不套默认
 // 超时（limits.tool_timeout_sec）——等人应答（ask_user）、等外部事件（job_wait 等任务
 // 收尾）都不该被当成「卡住」；显式 timeout_sec 与 ctx 取消仍然生效。
 type Interactive interface {

@@ -35,7 +35,7 @@ func (s *Session) execCompact(ctx context.Context, cmd port.Command) (string, er
 // execUnattended 实现 /unattended [on|off]（D185 规则四）：无参 = 切换，有参 = 显式
 // 设置；写回 config 成功后活开关即时生效（装饰器每次调用现取）。
 // 开关语义是「越界即拒」，与 `-yes`（自动允许）相反——报告里必须说清，否则用户会
-// 把它当成另一种免确认档。
+// 把这个开关当成另一种免确认档。
 func (s *Session) execUnattended(_ context.Context, args []string) (string, error) {
 	if len(args) > 1 {
 		return "", errors.New(i18n.T("usage.unattended"))

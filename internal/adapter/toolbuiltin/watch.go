@@ -11,7 +11,7 @@ import (
 )
 
 // 观察器工具（D190）：模型声明「看什么、怎么算命中、多久看一次、什么时候放弃」，
-// 宿主按节奏取样，命中才把结果塞回会话。确定会结束的任务不用它——那是 job_wait。
+// 宿主按节奏取样，命中才把结果塞回会话。确定会结束的任务不用该工具——那是 job_wait。
 const (
 	watchDefaultIntervalSec = 30
 	watchDefaultMaxChecks   = 120

@@ -4,7 +4,7 @@ package uigui
 //
 // 这一层只做三件事：把编辑器里的话按档位送进清单、把清单里的条目变回编辑器里的字、
 // 以及把内核的三种拒绝理由翻成一句人话。清单本身归会话（app.Session）持有——界面在
-// 自己的事件循环 goroutine 里直接读写它，不经过 256 深的输入通道（那条通道要等本轮
+// 自己的事件循环 goroutine 里直接读写清单，不经过 256 深的输入通道（那条通道要等本轮
 // 结束才有人取，正是这个毛病逼出了待发清单）。
 
 import (
@@ -18,7 +18,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// pendingCtl 待发条一条目的点击态（按条目 ID 缓存，帧间复用——Clickable 靠它认「同一个
+// pendingCtl 待发条一条目的点击态（按条目 ID 缓存，帧间复用——Clickable 靠条目 ID 认「同一个
 // 按钮」；条目消失时一并丢弃）。
 type pendingCtl struct {
 	recall widget.Clickable // 拉回输入框
@@ -27,7 +27,7 @@ type pendingCtl struct {
 }
 
 // pendHot 一条待发在本帧占的热区（窗口坐标）。绘制时登记，供命中诊断与测试用——
-// 待发条是手绘的，热区与字形是两套坐标，只有把它记下来才能断言「点得着」。
+// 待发条是手绘的，热区与字形是两套坐标，只有把热区记下来才能断言「点得着」。
 type pendHot struct {
 	id     string
 	toggle image.Rectangle
@@ -169,7 +169,7 @@ func (u *UI) addPending(text string, d port.Delivery) bool {
 }
 
 // pendingErrText 三种拒绝理由的用户面说法（前端不该把 errors.New 的中文原样甩出来，
-// 但也别另造一套规则——这里只是把它说完整）。
+// 但也别另造一套规则——这里只是把这段话说完整）。
 func pendingErrText(err error) string {
 	switch {
 	case errors.Is(err, port.ErrPendingFull):

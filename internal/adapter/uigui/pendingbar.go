@@ -4,7 +4,7 @@ package uigui
 //
 // 形态刻意做得薄：每行一条，左侧档位徽标（排队/引导）、中间一句正文、右侧三个小动作
 // （拉回输入框 / 撤销 / 改档）。条数封顶 3 行，多出来的折成一行「还有 N 条」——输入栏
-// 上方是转写区的地盘，待发是附注，不该把它挤没。
+// 上方是转写区的地盘，待发是附注，不该把转写区挤没。
 //
 // 三态互转（输入框 / 待发送 / 等插入的引导）在这里各有一个入口：编辑器里的字按发送键
 // 进清单（排队）、按插话键进清单（引导）；退回编辑器点「拉回」；两档之间点「改档」。
@@ -97,7 +97,7 @@ func (u *UI) pendingBand(gtx layout.Context, w, absY int) {
 // pendingRow 一行待发：徽标 + 正文（超宽截断）+ 三个动作。
 //
 // 三个动作从左到右 = 转档（排队 ↔ 引导）、拉回输入框、撤销。改档单列一个按钮而不是
-// 藏在徽标上：徽标看着是标签，没人会去点它（实测如此），而「这句话什么时候到模型眼前」
+// 藏在徽标上：徽标看着是标签，没人会去点徽标（实测如此），而「这句话什么时候到模型眼前」
 // 恰恰是待发条上最该一眼找到的开关。
 func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingInput, absY int) {
 	ctl := u.ctlFor(it.ID)
@@ -105,7 +105,7 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 	paint.FillShape(gtx.Ops, tok().pillBg, clip.UniformRRect(rowRect, (rowH-2)/2).Op(gtx.Ops))
 	u.record(rowRect.Add(image.Pt(0, absY)), (rowH-2)/2, tok().pillBg, image.Rectangle{Max: u.frameSize})
 
-	// 档位徽标：引导用品牌色（它会更早到模型眼前），排队用静息灰。
+	// 档位徽标：引导用品牌色（引导会更早到模型眼前），排队用静息灰。
 	badge, bg := i18n.T("ui.state.queued"), tok().textMuted
 	if it.Delivery == port.DeliverySteer {
 		badge, bg = i18n.T("ui.state.steer"), tok().brandColor
@@ -179,7 +179,7 @@ func (u *UI) pendingRow(gtx layout.Context, x, y, w, rowH int, it port.PendingIn
 // Gio 的 Clickable 按当前变换原点注册指针区，所以先位移到矩形左上、再按尺寸布局。
 //
 // 顺序有讲究：**先取点击、再 Layout**。Gio v0.10 的 Clickable.Layout 自己会 update
-// 一遍并把点击结果丢掉（它只给「渲染一个按钮」用），Layout 完再 Clicked 永远是 false
+// 一遍并把点击结果丢掉（Clickable.Layout 只给「渲染一个按钮」用），Layout 完再 Clicked 永远是 false
 // ——这条曾让整条待发条点不动。
 func clickRect(gtx layout.Context, c *widget.Clickable, hit image.Rectangle) bool {
 	if hit.Empty() {
@@ -215,7 +215,7 @@ func measureHeight(gtx layout.Context, l material.LabelStyle) int {
 }
 
 // clampToWidth 把一行正文裁到可用宽度内（末尾省略号）：待发条是附注，一行读不完就
-// 读不完——真要看全文，把它拉回输入框。
+// 读不完——真要看全文，把全文拉回输入框。
 func clampToWidth(gtx layout.Context, th *material.Theme, s string, maxW int) string {
 	s = strings.ReplaceAll(strings.TrimSpace(s), "\n", " ")
 	l := material.Caption(th, s)

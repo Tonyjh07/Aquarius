@@ -24,7 +24,7 @@ import (
 // runDoctorMode 命令行体检：解析目录与 profile，跑七项，把结论写到 stdout。
 //
 // 退出码：有异常项 1，其余 0。注意项仍是 0——「还能用」与「不能用」在脚本里必须分得开，
-// 而阈值本来就是「离出事不远」的提示，让定时体检天天报警等于让人关掉它。
+// 而阈值本来就是「离出事不远」的提示，让定时体检天天报警等于让人关掉定时体检。
 func runDoctorMode(dataDir, profileFlag string, stdout, stderr io.Writer) int {
 	dir, err := dataDirPath(dataDir)
 	if err != nil {
@@ -57,7 +57,7 @@ func runDoctorMode(dataDir, profileFlag string, stdout, stderr io.Writer) int {
 	return doctorExitCode(checks)
 }
 
-// doctorExitCode 有异常项返回 1。注意项不算——它说的是「还能用，但离出事不远」。
+// doctorExitCode 有异常项返回 1。注意项不算——注意项说的是「还能用，但离出事不远」。
 func doctorExitCode(checks []app.HealthCheck) int {
 	for _, c := range checks {
 		if c.State == app.HealthFail {
@@ -100,7 +100,7 @@ func doctorProfile(dir, flagName string) (string, error) {
 
 // doctorLanguage 定界面语言：`AQUARIUS_UI_LANG` > 配置的 `ui.lang` > 系统语言。
 //
-// 写错的值按 auto 算：启动时那条链会为它报错退出，体检的活儿却是把别处的问题报出来，
+// 写错的值按 auto 算：启动时那条链会为写错的语言值报错退出，体检的活儿却是把别处的问题报出来，
 // 不该因为一个语言值退不出结论。
 func doctorLanguage(env, cfgPath string) {
 	sel := strings.TrimSpace(env)

@@ -729,7 +729,7 @@ func normalizeTypographic(s string) (string, [][2]int) {
 func replaceLoose(text, oldStr, newStr string) (string, bool) {
 	tLines := strings.Split(text, "\n")
 	oLines := strings.Split(strings.ReplaceAll(oldStr, "\r\n", "\n"), "\n")
-	// 末尾换行会切出一个空元素：它是"片段到此结束"的标记，不是要比较的空行。
+	// 末尾换行会切出一个空元素：该空元素是"片段到此结束"的标记，不是要比较的空行。
 	if n := len(oLines); n > 1 && oLines[n-1] == "" {
 		oLines = oLines[:n-1]
 	}

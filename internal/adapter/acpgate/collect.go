@@ -77,14 +77,14 @@ func (r *run) reportText() string {
 	return b.String()
 }
 
-// addToolCall 数一次工具调用（子代理自己发起的，不是我们的）。
+// addToolCall 数一次工具调用（子代理自己发起的，不是客户端的）。
 func (r *run) addToolCall() {
 	r.cmu.Lock()
 	r.toolCalls++
 	r.cmu.Unlock()
 }
 
-// addLocations 记它报过改动的文件（去重；超过上限只记数）。
+// addLocations 记代理报过改动的文件（去重；超过上限只记数）。
 func (r *run) addLocations(locs []acp.ToolCallLocation) {
 	r.cmu.Lock()
 	defer r.cmu.Unlock()

@@ -51,7 +51,7 @@ func fixture(t *testing.T, blobs port.AttachmentStore) *conversation.Conversatio
 	if err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	// 附件分片：先往附件库存一份，再引用它。
+	// 附件分片：先往附件库存一份，再引用这份附件。
 	if blobs != nil {
 		ref, err := blobs.Put(context.Background(), strings.NewReader("图片字节"), "image/png", "pic.png")
 		if err != nil {
@@ -238,7 +238,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 		},
 		{
 			// zip-slip：条目名带 `..` 不能只是「safeArchivePath 单函数测过」——要走 Import
-			// 全链路确认它在解包前就被拦住（真解出来会写到导出目录之外）。
+			// 全路径确认带 `..` 的条目在解包前就被拦住（真解出来会写到导出目录之外）。
 			name: "条目越出目录",
 			files: map[string]string{
 				"manifest.json":             `{"format":"aqx","version":1,"conversations":[{"id":"x","title":"t","nodes":1}]}`,
@@ -266,7 +266,7 @@ func TestImportRejectsUntrusted(t *testing.T) {
 	}
 }
 
-// TestImportRejectsOversizedArchive 条目数与解压总量都走 Import 全链路锁住：
+// TestImportRejectsOversizedArchive 条目数与解压总量都走 Import 全路径锁住：
 // 上限写在单文件常量里，只测那个常量等于没测——绕过上限的解包路径才是真正会中招的地方。
 func TestImportRejectsOversizedArchive(t *testing.T) {
 	ex := New(Options{Blobs: mustBlobs(t)})
@@ -285,7 +285,7 @@ func TestImportRejectsOversizedArchive(t *testing.T) {
 	}
 }
 
-// TestImportRejectsBlobHashMismatch 归档里的附件字节与它声明的哈希对不上 = 归档损坏，
+// TestImportRejectsBlobHashMismatch 归档里的附件字节与附件声明的哈希对不上 = 归档损坏，
 // 拒绝导入（按错误哈希入库会在装配时取到别的内容）。
 func TestImportRejectsBlobHashMismatch(t *testing.T) {
 	blobs := mustBlobs(t)

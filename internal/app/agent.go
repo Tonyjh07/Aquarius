@@ -19,8 +19,8 @@ import (
 
 // ErrMaxTurns 单次 Run 的"生成 + 工具"循环次数用尽（§7.1）。
 //
-// 不是 errors.New 常量，而是一个自带 Is 的类型：哨兵值要稳定（上游 errors.Is 靠它），
-// 但它同时是会显示给用户的那句话，文本必须跟着界面语言走。类型带轮次，是因为 %w 会把
+// 用一个自带 Is 的类型，不用 errors.New 常量：哨兵值要稳定（上游 errors.Is 靠该哨兵值），
+// 但该哨兵值同时是会显示给用户的那句话，文本必须跟着界面语言走。类型带轮次，是因为 %w 会把
 // Error() 的返回值原样带进外层包装——数字留在格式串里就只能是中文语序。
 var ErrMaxTurns error = &maxTurnsError{}
 
@@ -62,7 +62,7 @@ type Deps struct {
 // Config Agent 行为配置。
 type Config struct {
 	Model string
-	// Persona 人格组合器（D144/S7）：无树内 persona 时兜底注入的 system 文本由它展开
+	// Persona 人格组合器（D144/S7）：无树内 persona 时兜底注入的 system 文本由该组合器展开
 	// （nil = 空规格默认人格）。取代原 System/Env 两字段（环境块并入 @env 内置模块）。
 	Persona  *PersonaComposer
 	Sampling port.Sampling
@@ -161,7 +161,7 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	}
 	// `cfg.Model` 可以为空（D278 决策 3）：一条 provider 都没配时，程序照样起得来，
 	// 状态栏据实显示「未配置模型」，第一次生成由装配根的占位 LLM 给出明确提示。
-	// 把它当作依赖缺失挡在构造期，等于又把「没配好就别进主窗」捡了回来。
+	// 把空模型当作依赖缺失挡在构造期，等于又把「没配好就别进主窗」捡了回来。
 	persona := cfg.Persona
 	if persona == nil { // nil = 空规格默认人格（内置 @default + @env）
 		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)
@@ -211,7 +211,7 @@ func New(d Deps, cfg Config) (*Agent, error) {
 func (a *Agent) setModel(name string) { a.model.Store(name) }
 
 // CompactTokens 自动压缩阈值 tokens（= CompactThreshold × MaxContextTokens）；命令面据此
-// 判超长开场白（按它的四分之一），与自动压缩用的是同一个数，不各算各的。
+// 判超长开场白（按上下文窗口的四分之一），与自动压缩用的是同一个数，不各算各的。
 func (a *Agent) CompactTokens() int { return a.compactAt }
 
 // LoreFacts 世界书规则（§5.17/D294）：扫描深度、预算 tokens 与上下文预算，给 /lore 展示用。
@@ -243,7 +243,7 @@ func (a *Agent) Effort() string {
 
 // Sampling 当前生效的采样参数（按当前模型合并了逐模型覆盖，D204）。
 //
-// SamplingFor 由装配根注入并读它自己的原子快照——设置窗「保存并应用」后换掉那份
+// SamplingFor 由装配根注入并读装配根自己的原子快照——设置窗「保存并应用」后换掉那份
 // 快照即可热生效，不需要重建 Agent。
 func (a *Agent) Sampling() port.Sampling {
 	if a.cfg.SamplingFor != nil {
@@ -525,7 +525,7 @@ func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Convers
 	}
 	msgs := make([]port.PromptMessage, 0, len(labeled)+1)
 	var marks []sectionMark
-	// persona 恒回传（D20）：树内 persona 在位则由它充当 system；否则按人格模块树兜底注入（D144）。
+	// persona 恒回传（D20）：树内 persona 在位则由该 persona 充当 system；否则按人格模块树兜底注入（D144）。
 	if !(len(treePath) > 1 && treePath[1].Role == conversation.RoleSystem) {
 		sysText, _ := a.persona.Compose()
 		msgs = append(msgs, port.PromptMessage{
@@ -542,8 +542,8 @@ func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Convers
 	msgs, marks = a.attachLore(ctx, c, treePath, msgs, marks)
 	msgs, marks = a.attachSystemNotes(ctx, c, msgs, marks)
 	// 会话尾部指令（§5.17/D243）：角色卡的 post_history_instructions 展开稿存在会话元数据
-	// `Tail` 里，开关打开且非空时在**历史之后**追加一条 system。它是元数据不是节点——不进
-	// 水位、不进树，只影响本次请求；位置放在最末是它的语义（"历史之后"）所要求的。
+	// `Tail` 里，开关打开且非空时在**历史之后**追加一条 system。这条展开稿是元数据不是节点——不进
+	// 水位、不进树，只影响本次请求；位置放在最末是尾部指令的语义（"历史之后"）所要求的。
 	if a.cfg.ApplyPostHistory && strings.TrimSpace(c.Tail) != "" {
 		msgs = append(msgs, port.PromptMessage{
 			Role:    port.PromptSystem,

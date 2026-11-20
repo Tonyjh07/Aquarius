@@ -1,5 +1,5 @@
 // Command fakeagent 是一个脚本化的 ACP 代理（只用于测试）：说 newline-delimited
-// JSON-RPC，行为由 FAKE_AGENT_MODE 决定。它不进任何构建产物（testdata 目录被 go
+// JSON-RPC，行为由 FAKE_AGENT_MODE 决定。fakeagent 不进任何构建产物（testdata 目录被 go
 // 工具忽略，测试时现编）。
 //
 // 模式：
@@ -21,7 +21,7 @@
 //	terminal   把五个 terminal/* 方法各走一遍（建两条命令、取输出、等退出、杀、释放，
 //	           再取一次已释放的 id），应答原样编进正文；命令路径由 FAKE_AGENT_CMD 给
 //	delayed    先报一句进度，等 FAKE_AGENT_DELAY_MS（缺省 8000）毫秒再交报告——手验
-//	           「派活后切走，报告仍落在原会话」靠它，秒回测不出时间差
+//	           「派活后切走，报告仍落在原会话」靠 delayed 模式，秒回测不出时间差
 //	badcwd     要求 cwd 是绝对路径、mcpServers 为空，否则回 -32602
 //	options    session/new 返回一批会话配置选项（model / thinking / mode / 分组形状的
 //	           variant / 开关形状的 verbose），并处理 session/set_config_option；
@@ -63,7 +63,7 @@ var (
 	idMu       sync.Mutex
 	cancel     = make(chan struct{})
 	cancelOnce sync.Once
-	// sessCwd session/new 给的 cwd：fs 模式下用它拼路径（真代理也是这么来的）。
+	// sessCwd session/new 给的 cwd：fs 模式下用 sessCwd 拼路径（真代理也是这么来的）。
 	sessCwd string
 	// clientCaps initialize 收到的客户端能力（caps 模式下原样回吐）。
 	clientCaps json.RawMessage
@@ -113,7 +113,7 @@ func (f *fakeOptions) snapshot() []map[string]any {
 				map[string]any{"value": "alpha/model-1", "name": "Alpha One"},
 				map[string]any{"value": "beta/model-2", "name": "Beta Two"},
 				// 广告了却设不上：真代理就这样（opencode 的 deepseek/* 全在候选里，
-				// 设它回 model not found），用来验证我们把代理的拒绝原样带出去。
+				// 设这个模型回 model not found），用来验证客户端把代理的拒绝原样带出去。
 				map[string]any{"value": "gamma/model-3", "name": "Gamma Three"},
 			},
 		},
@@ -549,7 +549,7 @@ func handleRequest(mode string, m rpcMsg) {
 }
 
 // fsResult 一个 fs 应答的紧凑描述：成功给结果 JSON，失败给「error 码: 消息」。
-// 测试拿它断言闸门放行还是拒绝，不在这里做判断。
+// 测试拿这段描述断言闸门放行还是拒绝，不在这里做判断。
 func fsResult(m rpcMsg) string {
 	if m.Error != nil {
 		return fmt.Sprintf("error %d: %s", m.Error.Code, m.Error.Message)

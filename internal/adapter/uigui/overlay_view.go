@@ -50,7 +50,7 @@ func (st *historyState) overlayFrame(gtx layout.Context, th *material.Theme, u *
 	// 遮罩卡片是浮层：阴影必须先于卡片铺（自小而大），否则会被卡片自身盖掉。
 	cardRad := gtx.Dp(unit.Dp(paperOf().rCard))
 	paperShadow(gtx, card, cardRad, 14, 8, 0x38)
-	// 卡片：**显式定尺定位**到卡片盒。不能走 `layout.Center`——它只在 `Constraints.Min`
+	// 卡片：**显式定尺定位**到卡片盒。不能走 `layout.Center`——layout.Center 只在 `Constraints.Min`
 	// 内居中，而 `layout.Stacked` 会把子项的 Min 清成 0（stack.go），于是「居中」退化成
 	// 画在窗口左上角：底板与内容贴左上，`ov.card`（命中盒/点空白判定）却仍在正中，二者
 	// 错位（2026-10-15 实测：卡片自报尺寸 = 卡片盒，但 center 偏移 = 0）。
@@ -315,7 +315,7 @@ func (ov *overlayState) modeHint() string {
 	}
 }
 
-// overlayFooterRow 底行按钮本身（说明行由 overlayFooter 叠在它上面）。
+// overlayFooterRow 底行按钮本身（说明行由 overlayFooter 叠在底行按钮上面）。
 func overlayFooterRow(gtx layout.Context, th *material.Theme, ov *overlayState) layout.Dimensions {
 	children := []layout.FlexChild{}
 	switch {

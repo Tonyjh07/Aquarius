@@ -33,7 +33,7 @@ func wcagRatio(a, b color.NRGBA) float64 {
 	return (la + 0.05) / (lb + 0.05)
 }
 
-// TestPaperTextContrast 文字各档在它可能落在的每个面上都过 AA（4.5:1）。
+// TestPaperTextContrast 文字各档在可能落在的每个面上都过 AA（4.5:1）。
 //
 // **面要逐个列**：同一档文字会同时出现在窗体面、卡面与下沉面（输入框/状态栏）；
 // 只按白面算会漏掉最暗的那个组合（下沉面比白面低 0.4 左右）。
@@ -74,7 +74,7 @@ func TestPaperTextContrast(t *testing.T) {
 
 // TestPaperAccentContrast 强调色两档分工必须成立：
 //   - accent 承载 accentFg（按钮上的字）→ 4.5:1；
-//   - brand 是与 accent 同色相的标识色，**不得**被当成按钮底（它的白字达不到 AA，
+//   - brand 是与 accent 同色相的标识色，**不得**被当成按钮底（brand 的白字达不到 AA，
 //     这正是当初拆成两个令牌的原因——把这条性质写成断言，防止以后又被合并回去）。
 func TestPaperAccentContrast(t *testing.T) {
 	t.Parallel()

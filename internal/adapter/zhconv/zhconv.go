@@ -5,7 +5,7 @@
 // 简体，就得在识别之后过一道转换。
 //
 // 用的是 OpenCC 的词典（Apache-2.0，见 dict/ 下的文件与 THIRD-PARTY-NOTICES.md）
-// 和它 tw2sp 档的转换链：「繁体 → 简体（含词组与台湾用词）」，「軟體開發」能正确
+// 和 OpenCC tw2sp 档的转换链：「繁体 → 简体（含词组与台湾用词）」，「軟體開發」能正确
 // 变成「软件开发」。只做逐字映射的方案（如 ftz）会把「軟體」译成「软体」，不够用。
 //
 // 转换算法自己写（最长前缀匹配，三趟链）：上游的 Go 移植（github.com/liuzl/gocc）
@@ -52,7 +52,7 @@ type Converter struct {
 }
 
 // New 创建转换器。词典在首次转换时才加载（约几十毫秒，只发生一次），
-// 这样未启用中文识别的用户不必为它付启动成本。
+// 这样未启用中文识别的用户不必为词典加载付启动成本。
 func New(mode string) (*Converter, error) {
 	if strings.TrimSpace(mode) == "" {
 		mode = ModeTW2SP
@@ -124,7 +124,7 @@ func chainFiles(mode string) ([][]string, error) {
 	}
 }
 
-// group 一趟转换：若干本词典合并成一张「词 → 词」表。
+// group 一趟转换：多本词典合并成一张「词 → 词」表。
 //
 // 合并是安全的：OpenCC 的组内各本词典键不重叠（词组表只收多字词，单字表只收单字），
 // 同键时先声明的那本生效（与 OpenCC 的组语义一致）。

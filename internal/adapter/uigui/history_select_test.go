@@ -50,7 +50,7 @@ type batchHit struct{ x, y int }
 // batchLocate 扫左栏整列，定位一个点击件（判据 = 该件自己的 Hovered：真指针驱动，不硬编码
 // 排版常数）。左栏从标题行扫到底部动作条——「选择」在**列表底下**，只扫标题行那一带会扫不到。
 //
-// 步长 6：最小的点击件也比 6dp 宽（行尾的「✕」槽 20dp），格点必落在它的矩形里；逐像素扫
+// 步长 6：最小的点击件也比 6dp 宽（行尾的「✕」槽 20dp），格点必落在点击件的矩形里；逐像素扫
 // 只是把帧数翻九倍，换不来更准的定位（整包在 `-race` 下会因此超时）。
 func batchLocate(t *testing.T, q *input.Router, u *UI, st *historyState, c *widget.Clickable, what string) batchHit {
 	t.Helper()

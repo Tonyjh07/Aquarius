@@ -56,7 +56,7 @@ func TestRelDropCandidateRules(t *testing.T) {
 	if g.dragNode < 0 {
 		t.Fatal("u2 不在可见集")
 	}
-	// 把被拖节点挪到目标卡片上（拖拽期间它就是被 pin 到那儿的），再看预演结果。
+	// 把被拖节点挪到目标卡片上（拖拽期间该节点是被 pin 到那儿的），再看预演结果。
 	moveTo := func(drag, onto string) {
 		dl, ol := g.localOf(conversation.MessageID(drag)), g.localOf(conversation.MessageID(onto))
 		if dl < 0 || ol < 0 {

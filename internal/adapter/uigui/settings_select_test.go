@@ -25,7 +25,7 @@ func audioRowSet(f *settingsForm) map[rowKind]int {
 	return count
 }
 
-// TestAudioRowsFollowKind 语音页按协议位收字段（S4e）：每一档只列它真正会读的行。
+// TestAudioRowsFollowKind 语音页按协议位收字段（S4e）：每一档只列该档真正会读的行。
 //
 // 为什么按适配器源码而不是 config 结构判：结构体里字段恒有，用不用由适配器决定。
 // 把不看的值摆出来，用户会以为「这里空着所以没生效」——那是最难自查的一类困惑。

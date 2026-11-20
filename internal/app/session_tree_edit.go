@@ -14,7 +14,7 @@ import (
 // 为什么要会话而不是「每次改父都写入磁盘」：一次整理往往连着改十几处，逐次写盘会把备份轮转
 // 刷成同一天的中间态，而中间态恰恰是最没有价值的备份。
 type treeEditSession struct {
-	baseline conversation.Snapshot // 进入时的整树快照（放弃时回到它）
+	baseline conversation.Snapshot // 进入时的整树快照（放弃时回到基线）
 	before   int                   // 进入时的上下文条数（退出比对用，装配规则）
 	edits    int                   // 已生效的改父次数
 	saved    bool                  // 会话期间落过盘（来了新消息/跑了轮次），放弃时要把那次写盘也撤回
@@ -24,7 +24,7 @@ type treeEditSession struct {
 func treeEditUsage() string { return i18n.T("usage.tree_edit") }
 
 // TreeEditState 报告当前是否在树编辑模式，以及已改处数（D258），实现 port.TreeView。
-// 关系图的状态栏开关按它渲染——UI 不自己记状态，状态只有一份。
+// 关系图的状态栏开关按该状态渲染——UI 不自己记状态，状态只有一份。
 func (s *Session) TreeEditState() (active bool, edits int) {
 	if s.treeEdit == nil {
 		return false, 0
@@ -116,7 +116,7 @@ func (s *Session) commitTreeEdit(ctx context.Context) (string, error) {
 
 // abortTreeEdit 放弃并退出：整棵树回到进入时的样子。
 //
-// 会话期间若来过新消息（它照常落过盘），这里要再写一次把文件也拉回基线——否则内存里
+// 会话期间若来过新消息（新消息照常落过盘），这里要再写一次把文件也拉回基线——否则内存里
 // 是旧树、盘上是新树，下次打开就「复活」了被放弃的内容。
 func (s *Session) abortTreeEdit(ctx context.Context) (string, error) {
 	t := s.treeEdit
@@ -190,7 +190,7 @@ func (s *Session) confirm(ctx context.Context, prompt string) (bool, error) {
 }
 
 // contextCount 数一棵树会进上下文的节点条数（装配规则，D20/D21）：persona 恒回传、
-// 最新摘要之上的历史不回传、Root 不进上下文。退出编辑时用它前后对比。
+// 最新摘要之上的历史不回传、Root 不进上下文。退出编辑时用该计数前后对比。
 func contextCount(c *conversation.Conversation) int {
 	path := c.Path()
 	personaIdx, watermarkIdx := waterline(path)

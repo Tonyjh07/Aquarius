@@ -87,8 +87,8 @@ func TestImportOpenWebUIArrayShape(t *testing.T) {
 	}
 }
 
-// TestImportOpenWebUISkipsEmptyShell 它的导出里也常有空壳节点（没有正文）：不建空节点，
-// 但子节点要接上，否则链路断。
+// TestImportOpenWebUISkipsEmptyShell Open WebUI 的导出里也常有空壳节点（没有正文）：不建空节点，
+// 但子节点要接上，否则路径断。
 func TestImportOpenWebUISkipsEmptyShell(t *testing.T) {
 	const doc = `{
 	  "chat": {
@@ -113,7 +113,7 @@ func TestImportOpenWebUISkipsEmptyShell(t *testing.T) {
 	}
 	path := c.Path()[1:]
 	if len(path) != 2 || path[1].Content[0].Text != "答" {
-		t.Fatalf("链路 = %+v, want 问→答", path)
+		t.Fatalf("路径 = %+v, want 问→答", path)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestOpenWebUIIsReadOnlyOpenWebUI(t *testing.T) {
 	}
 }
 
-// TestDetectOpenWebUI 文件头认 openwebui；`{"messages":[]}`（openai 形状）不该被它抢走。
+// TestDetectOpenWebUI 文件头认 openwebui；`{"messages":[]}`（openai 形状）不该被认成 openwebui。
 func TestDetectOpenWebUI(t *testing.T) {
 	ex := New(Options{})
 	if f, ok := ex.Detect("chat.json", []byte(`{"title":"t","chat":{"history":{"messages":{}}}}`)); !ok || f.Name != "openwebui" {

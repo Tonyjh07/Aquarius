@@ -15,7 +15,7 @@ func relCardHalf(gn relGeoNode) (float64, float64) {
 }
 
 // relBadgeBox 形状徽标盒（屏幕坐标）：节点直径 = weight × 基准（A4，与 degree 无关），
-// 中心锚点即节点坐标——边连的也正是它。
+// 中心锚点即节点坐标——边连的也正是该锚点。
 func relBadgeBox(xs, ys, r float32) image.Rectangle {
 	return image.Rect(int(xs-r), int(ys-r), int(xs+r), int(ys+r))
 }

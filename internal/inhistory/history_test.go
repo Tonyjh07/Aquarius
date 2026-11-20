@@ -38,7 +38,7 @@ func TestPushSkipsBlankAndAdjacent(t *testing.T) {
 	if got := s.Lines(); len(got) != 1 {
 		t.Fatalf("lines = %v, want one entry", got)
 	}
-	// 重启后再推同一条：内存里已载入它，写侧就能判重，文件不会长出一行新的。
+	// 重启后再推同一条：内存里已载入这一条，写侧就能判重，文件不会长出一行新的。
 	again := Open(path)
 	again.Push("same")
 	if got := again.Lines(); len(got) != 1 {

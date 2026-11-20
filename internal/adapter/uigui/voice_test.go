@@ -103,7 +103,7 @@ func TestToggleVoiceRoundTrip(t *testing.T) {
 	}
 	u.toggleVoice() // 停止
 	// 录音结果由后台 goroutine 经 inbox 回投。recording 在 finishVoice 里先清零、随后
-	// 才回填输入框（同一帧内），所以先等它清零，再用 drain 屏障保证那次 apply 已走完，
+	// 才回填输入框（同一帧内），所以先等 recording 清零，再用 drain 屏障保证那次 apply 已走完，
 	// 之后读输入框才不与之竞争。
 	deadline := time.Now().Add(3 * time.Second)
 	for u.recording.Load() && time.Now().Before(deadline) {

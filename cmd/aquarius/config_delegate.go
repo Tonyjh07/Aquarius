@@ -1,8 +1,8 @@
 package main
 
 // 外部代理转交的配置面（§5.18/D244）：`delegate.agents` 是**唯一事实源**——不内置各家
-// 预设（registry 里四十多家代理的命令名、启动参数、登录方式都由它们自己决定，变得比
-// 我们发版快）。这里只做解析、归一与上限校验。
+// 预设（registry 里四十多家代理的命令名、启动参数、登录方式都由各家代理自己决定，变得比
+// 本程序发版快）。这里只做解析、归一与上限校验。
 
 import (
 	"fmt"
@@ -46,7 +46,7 @@ type delegateAgentConfig struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	Default bool  `json:"default,omitempty"`
 	// Options 建会话后要设上的会话选项（D287）：键是代理广告的配置项名（`model` /
-	// `mode` / `thinking` 这类），值是它广告的候选。解析期只查空键与空值——某项存不存在
+	// `mode` / `thinking` 这类），值是代理广告的候选。解析期只查空键与空值——某项存不存在
 	// 要等连上代理才知道，只能留到转交时报。
 	Options map[string]string `json:"options,omitempty"`
 }

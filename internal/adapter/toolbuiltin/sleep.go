@@ -22,7 +22,7 @@ func (t *sleepTool) Spec() tool.Spec {
 			"A sleep longer than the default per-call tool timeout must raise that timeout on the same call "+
 			"(the timeout_sec call option, 1-%d).", port.MaxCallTimeoutSec),
 		// seconds 声明自己的边界，但**不声明 timeout_sec**：那是调用级的保留参数（D38），
-		// schema 一旦声明它，runner 就把它当作工具自有语义、不再按次覆盖超时——
+		// schema 一旦声明 timeout_sec，runner 就把 timeout_sec 当作工具自有语义、不再按次覆盖超时——
 		// 300s 的 sleep 会被缺省 60s 掐掉（schema 声明与行为就此相反）。
 		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",

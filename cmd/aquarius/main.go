@@ -140,7 +140,7 @@ func uiKindDefault(kind string) string {
 
 // uiLangSetting 选出真正生效的 `ui.lang` 写法：`AQUARIUS_UI_LANG` 环境变量 > 配置 > 空
 // （空 = auto，D275/§7.8）。环境变量这一层不长在配置里，是因为首跑路径还没有配置文件，
-// 而界面语言必须在写模板之前就定下来；便携安装也用它临时换语言而不改配置。
+// 而界面语言必须在写模板之前就定下来；便携安装也用 `AQUARIUS_UI_LANG` 临时换语言而不改配置。
 func uiLangSetting(env, cfg string) string {
 	if v := strings.TrimSpace(env); v != "" {
 		return v
@@ -258,7 +258,7 @@ type wiring struct {
 	firstRun   bool
 	setupTried bool
 	// keys 输入栏三键（§5.19 / ui.keys）：bootstrap 解析并校验（撞键/非法键名启动即报），
-	// 装配时注入两个前端。repl 不用它——那里一行就是一次发送，没有「生成中途再说话」。
+	// 装配时注入两个前端。repl 不用这组键位——那里一行就是一次发送，没有「生成中途再说话」。
 	keys uicommon.KeyBindings
 	// lang 本次启动生效的界面语言（D275/§7.8）：bootstrap 定好后写进取词口，这里留一份
 	// 只读副本，供启动日志与诊断说话（前端取词直接走 i18n.T，不再传参）。
@@ -367,7 +367,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return fatal(stderr, "%v", err)
 	}
 
-	// 运行日志（D276/§7.9）：profile 已定、目录已建，从这里起所有运行期事件都走它。
+	// 运行日志（D276/§7.9）：profile 已定、目录已建，从这里起所有运行期事件都写入运行日志。
 	// 开不出文件不拦启动——Open 自己降级到 stderr 并记一条 warn。
 	if err := w.openLog(f.logLevel, f.logFmt); err != nil {
 		return fatal(stderr, "%v", err) // 级别/形态写错是用户能改的错，按启动失败报
@@ -416,7 +416,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer w.jobMgr.Close()
 	// D189：先停任务收尾观察者再关 UI（defer 后进先出）——唤醒不会落到已关闭的前端。
 	defer w.jobWatch.Close()
-	// D190：观察器同样在 UI 之前停掉（它的报告会唤醒前端）。
+	// D190：观察器同样在 UI 之前停掉（观察器的报告会唤醒前端）。
 	defer w.watcher.Close()
 	// §5.18/D262：转交先停收尾观察者（不再注入），退出时再主动终止进程组——ACP 会话
 	// 不能恢复（本版不做 session/load），留着只有一个后果：一路失去监督的子代理继续
@@ -459,7 +459,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			ReadURL:      w.cfg.readURLEnabled(), // D310：本地抓不到正文时改由服务端读
 			// §5.17/D247：会话尾部指令（卡的 post_history_instructions）是否随每轮装配发出。
 			ApplyPostHistory: w.cfg.applyPostHistory(),
-			// §5.17/D294：世界书按关键词激活（缺省开；卡里写了触发词就是想让它生效）。
+			// §5.17/D294：世界书按关键词激活（缺省开；卡里写了触发词就是想让世界书生效）。
 			Lore: w.lore,
 			// D204：采样参数走原子快照——整链缺省 + 逐模型覆盖；设置窗保存后换掉整份即热生效。
 			Sampling:    w.cfg.Model.Sampling.toSampling(),
@@ -531,8 +531,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if w.cfg.UI.Kind != "gui" {
 		w.ui.Say(i18n.T("cmd.boot.banner"))
 	}
-	// 启动对账（D262）：上次退出时没来得及收尾的任务，补一条「它当时在跑/已结束」的
-	// 事实注入；紧接着的历史回放会把它铺出来。台账读即清，补过就不会再报一次。
+	// 启动对账（D262）：上次退出时没来得及收尾的任务，补一条「该任务当时在跑/已结束」的
+	// 事实注入；紧接着的历史回放会把这条事实铺出来。台账读即清，补过就不会再报一次。
 	if items, jerr := w.jobs.Unfinished(ctx); jerr != nil {
 		w.note(logging.LevelWarn, logging.Job, "log.job.ledger_unreadable",
 			"log.act.continue", "err", jerr)
@@ -561,7 +561,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		w.noteText(logging.LevelWarn, logging.Session, "log.session.replay_failed",
 			"log.act.continue", rerr.Error())
 	}
-	// replay 停止键中断后立刻要发的那句引导（D274）：有它就不等用户再敲一遍。
+	// replay 停止键中断后立刻要发的那句引导（D274）：有这句引导就不等用户再敲一遍。
 	return w.mainLoop(ctx)
 }
 
@@ -608,7 +608,7 @@ func (w *wiring) mainLoop(ctx context.Context) int {
 		if errors.Is(herr, app.ErrQuit) {
 			return 0
 		}
-		// 停止键中断，而嘴边还有一句引导（D274）：不把它当成「本轮出错」，直接拿这句
+		// 停止键中断，而嘴边还有一句引导（D274）：不把这次中断当成「本轮出错」，直接拿这句
 		// 重新起一轮——用户按停止的意思是「先别跑这个，听我说这句话」，不是「我要走」。
 		if ctx.Err() == nil && w.sess.Stopped() {
 			if text, ok := w.sess.TakeSteer(); ok {

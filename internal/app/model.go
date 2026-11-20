@@ -27,7 +27,7 @@ type ModelStatus struct {
 	// Caps 整条降级链的生效能力（整链取与）。nil = 装配根未声明能力——
 	// 这时展示面改从 Chain 推导，与「服务端不报模态、能力只来自配置」同一套规则。
 	Caps *port.ModelCaps
-	// Chain 降级链逐环快照；空 = 未声明（省略链路与「谁拉低了整链」两段）。
+	// Chain 降级链逐环快照；空 = 未声明（省略降级链与「谁拉低了整链」两段）。
 	Chain []ModelLink
 	// Budget 上下文预算规则；零值 = 未声明（Effective 为 0 时该行不显示）。
 	Budget ContextBudget
@@ -58,7 +58,7 @@ type ModelSwitcher interface {
 }
 
 // ContextBudget 上下文预算的可读规则（D177：`/model` 展示用）。三处消费者（压缩阈值、
-// /usage 占用、硬保底截断）用的是同一个 Effective，这里只解释它从哪儿来。
+// /usage 占用、硬保底截断）用的是同一个 Effective，这里只解释 Effective 从哪儿来。
 type ContextBudget struct {
 	// Effective 实际生效的预算 tokens。
 	Effective int
@@ -135,7 +135,7 @@ func formatModels(current string, st ModelStatus, models []port.ModelInfo) strin
 	if line := formatBudget(st.Budget); line != "" {
 		b.WriteString(line + "\n")
 	}
-	// 服务端不报模态，能力只来自配置；不显示的话，用户只能靠"发张图试试"来发现它关着。
+	// 服务端不报模态，能力只来自配置；不显示的话，用户只能靠"发张图试试"来发现该能力关着。
 	var effective port.ModelCaps
 	haveCaps := false
 	if st.Caps != nil {
@@ -286,7 +286,7 @@ func shortDuration(d time.Duration) string {
 	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
-// narrowLinks 链上哪些环节比整链生效能力更宽（即它们自己有能力、被别的环节拖下来
+// narrowLinks 链上哪些环节比整链生效能力更宽（即这些环节自己有能力、被别的环节拖下来
 // 才没用上）。空 = 没有环被拉低。
 func narrowLinks(links []ModelLink, effective port.ModelCaps) []string {
 	var out []string

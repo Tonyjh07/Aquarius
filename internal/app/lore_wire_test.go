@@ -58,7 +58,7 @@ func loreConv(t *testing.T, slug, text string) *conversation.Conversation {
 	return c
 }
 
-// TestBuildRequestAttachesLore 命中条目并进首条 system，常驻条目不在这一段里（它在 persona）。
+// TestBuildRequestAttachesLore 命中条目并进首条 system，常驻条目不在这一段里（该条目在 persona）。
 func TestBuildRequestAttachesLore(t *testing.T) {
 	cat := loreCardFixture()
 	a := newAgent(t, &scriptLLM{t: t}, &recorder{}, Deps{Characters: cat},

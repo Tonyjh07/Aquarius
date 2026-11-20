@@ -40,7 +40,7 @@ type Options struct {
 	// Overrides 放行策略例外（D280）；nil = 全按矩阵。优先级：例外 > 矩阵 > 缺省 ask。
 	Overrides func() perm.Overrides
 	// Permit 把一条「以后都允许」写进策略表并落审计（D282）：范围由本包按
-	// perm.AutoAllow 算好，写入磁盘与审计是装配根的事（它持有配置与审计文件）。
+	// perm.AutoAllow 算好，写入磁盘与审计是装配根的事（装配根持有配置与审计文件）。
 	// nil = 没有可写的表（测试、未装配）：本次照常放行，只是什么也不记。
 	Permit func(perm.Override, port.ConfirmRequest)
 	// Sensitive 硬名单的敏感根（密钥目录、配置目录、系统目录，D280 第 6 条）：
@@ -275,7 +275,7 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 			}
 			return tool.Result{CallID: call.ID, OK: false, Err: denied}, nil
 		}
-		// D282「以后都允许」：写策略表是**顺带**的，本次放行与它无关——用户点的是允许，
+		// D282「以后都允许」：写策略表是**顺带**的，本次放行与写策略表无关——用户点的是允许，
 		// 写失败也不是拒绝的理由（装配根那边只记日志与审计）。
 		if ans.Persist {
 			r.persistAllow(req)
@@ -360,7 +360,7 @@ func applyCallTimeout(spec tool.Spec, call tool.Call, def time.Duration) (tool.C
 	}
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(call.Args, &m); err != nil {
-		return call, def, nil // 非 JSON 对象：按原样交给工具报它自己的参数错误
+		return call, def, nil // 非 JSON 对象：按原样交给工具报工具自己的参数错误
 	}
 	raw, hit := m["timeout_sec"]
 	if !hit || specDeclaresTimeout(spec) {
@@ -413,7 +413,7 @@ func (r *Runner) persistAllow(req port.ConfirmRequest) {
 // 读结构体而不是从提示文本里反解。
 //
 // level 显式传入而不是读 r.level()：确认框里直选档位之后要按**刚选的**那一档重判本次
-// （D282），而 /permission 的那次写回是异步的（经输入通道投递），等不到它实现。
+// （D282），而 /permission 的那次写回是异步的（经输入通道投递），等不到写回实现。
 func (r *Runner) decideAt(ctx context.Context, t port.Tool, call tool.Call, level perm.Level) (perm.Decision, string, perm.Op, bool) {
 	base := level.Tool(t.Spec().Risk)
 	target := ""
@@ -463,8 +463,8 @@ func (r *Runner) inSandbox(path string) bool {
 
 // confirmPrompt 确认提示：带目标路径与参数预览（用户看得见要允许什么）。
 //
-// 工具自己给了 Describe 就用它——默认那行把原始参数截到 160 字，参数里带长文本的调用
-// （delegate 的 task）会把真正要看的字段挤出屏幕。Describe 的输出**不截断**：它短是工具
+// 工具自己给了 Describe 就用 Describe——默认那行把原始参数截到 160 字，参数里带长文本的调用
+// （delegate 的 task）会把真正要看的字段挤出屏幕。Describe 的输出**不截断**：输出短是工具
 // 的责任，不是这里的。
 func confirmPrompt(call tool.Call, target string, spec tool.Spec) string {
 	if spec.Describe != nil {

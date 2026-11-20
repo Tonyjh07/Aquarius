@@ -32,7 +32,7 @@ const (
 	defaultCompactThreshold = 0.7
 	// DefaultMaxContextTokens 上下文预算默认值（见上注）。取 256k 是注意力、成本与长程
 	// 任务三者的平衡点：再小，一轮读几个文件就撞压缩；再大，长会话里早期的低相关历史
-	// 会持续占着注意力与费用。这只是「想用多少」的上限，模型声明的窗口比它小时按窗口走
+	// 会持续占着注意力与费用。这只是「想用多少」的上限，模型声明的窗口比该上限小时按窗口走
 	// （装配预算 = min(两者)，见配置文档「上下文窗口」）。
 	DefaultMaxContextTokens = 256000
 )
@@ -79,7 +79,7 @@ func (e *estimator) Calibrate(raw, actual int) {
 
 // payloadOf 拼接请求的可计数文本（思考回传 + 思考块签名 + 消息内容 + 工具调用参数 + 工具声明），
 // 返回文本与结构开销（每消息常数；图片字节不计入——按占位粗估已含在常数里）。
-// 签名按整串计入（D175）：它确实随请求发出去，只是模型侧不解析明文——估算规则要与发送
+// 签名按整串计入（D175）：签名确实随请求发出去，只是模型侧不解析明文——估算规则要与发送
 // 规则一致，否则 /usage 与压缩阈值会系统性低估。
 func payloadOf(req port.GenerateRequest) (string, int) {
 	var b strings.Builder

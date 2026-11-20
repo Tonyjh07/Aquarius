@@ -1,11 +1,11 @@
-// Package pathres 把路径换算成磁盘上的真实落点，再判断它落在哪个根之内。
+// Package pathres 把路径换算成磁盘上的真实落点，再判断该落点落在哪个根之内。
 //
 // 只做两件事：解析（Resolve）与逐段包含判定（Within / RootSet）。两处调用方——工具权限
 // 矩阵的特权目录判定（toolrun）与外部代理的文件访问闸门（acpgate）——必须用同一份判据：
 // 两份实现迟早对「链接、大小写、盘符」给出不同答案，而差异落在哪一边都是绕过。
 //
-// 判据只有一条用途：**我们自己用来拒绝**。它挡不住「检查完再把链接换掉」（TOCTOU），
-// 也不是内核围栏——进程能自己起 shell 的话，这条路根本不经过它（§5.18/A3）。
+// 判据只有一条用途：**本程序自己用来拒绝**。该判据挡不住「检查完再把链接换掉」（TOCTOU），
+// 也不是内核围栏——进程能自己起 shell 的话，这条路根本不经过该判据（§5.18/A3）。
 package pathres
 
 import (
@@ -18,7 +18,7 @@ import (
 // Resolve 把路径规整成**磁盘上的真实落点**：绝对化 → 大小写/分隔符规整（对最长存在
 // 前缀求 EvalSymlinks）→ 逐组件解析全部链接（symlink 与 Windows junction）。
 //
-// 尚不存在的尾部按字面拼回（写新文件要能判到它落在哪）；任何无法判定的情形都返回错误，
+// 尚不存在的尾部按字面拼回（写新文件要能判到该路径落在哪）；任何无法判定的情形都返回错误，
 // 调用方一律按「不在根内」处理（fail closed）——否则权限判据可以被一个读不出目标的链接绕开。
 func Resolve(p string) (string, error) {
 	if strings.TrimSpace(p) == "" {
@@ -93,10 +93,10 @@ func (s RootSet) Empty() bool { return len(s.roots) == 0 }
 // Roots 已解析的根（副本；顺序与传入一致）。
 func (s RootSet) Roots() []string { return append([]string(nil), s.roots...) }
 
-// Locate 解析目标并返回命中它的那个根；未命中时 root 为空。
+// Locate 解析目标并返回命中该目标的那个根；未命中时 root 为空。
 //
-// resolved 是**我们认定它要落的那个位置**，与磁盘上的字面写法可能不同（链接展开了），
-// 所以写盘前后要拿它来对账，不能拿入参路径去比。
+// resolved 是**本程序认定该目标要落的那个位置**，与磁盘上的字面写法可能不同（链接展开了），
+// 所以写盘前后要拿 resolved 来对账，不能拿入参路径去比。
 func (s RootSet) Locate(target string) (resolved, root string, err error) {
 	resolved, err = Resolve(target)
 	if err != nil {

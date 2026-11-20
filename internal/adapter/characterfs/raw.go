@@ -2,8 +2,8 @@ package characterfs
 
 import "encoding/json"
 
-// 卡 JSON 的读取形状（§5.17）。只声明我们读的键——原卡 JSON 逐字节留在 card.json，
-// 未知键一个不删，所以这里不需要把它们都列出来。
+// 卡 JSON 的读取形状（§5.17）。只声明本程序读的键——原卡 JSON 逐字节留在 card.json，
+// 未知键一个不删，所以这里不需要把未知键都列出来。
 //
 // V2 / V3 的卡字段都在 `data` 对象里；V3 是 V2 的超集，多出的 `nickname` / `assets` 等
 // 按需取用。`spec` / `spec_version` 在顶层。
@@ -72,7 +72,7 @@ type rawBookEntry struct {
 	Extensions    rawBookExt      `json:"extensions"`
 }
 
-// rawBookExt 条目扩展：启用位（SillyTavern 有时把它放这里）、位点、深度与身份。
+// rawBookExt 条目扩展：启用位（SillyTavern 有时把启用位放这里）、位点、深度与身份。
 // 位点在这边是**数字**（0 人格前 / 1 人格后 / 2 作者注前 / 3 作者注后 / 4 按深度）。
 type rawBookExt struct {
 	Enabled       *bool `json:"enabled"`

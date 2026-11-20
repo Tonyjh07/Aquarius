@@ -1,6 +1,6 @@
 package llm
 
-// 能力探测（D174）：对单个模型发一条最小请求，判断它到底收不收得下某项能力。
+// 能力探测（D174）：对单个模型发一条最小请求，判断该模型到底收不收得下某项能力。
 //
 // 三条原则：
 //   1. 探测**不**复用 Generate 的「剥离重试」路径——那会把「服务端点名拒绝」洗成一次
@@ -33,7 +33,7 @@ import (
 
 var _ port.Prober = (*Client)(nil)
 
-// probeMaxTokens 探测请求的输出上限：只要模型开个头就能判定，不必让它写作文。
+// probeMaxTokens 探测请求的输出上限：只要模型开个头就能判定，不必让模型写作文。
 //
 // 别压得太狠：思考型模型会先把额度花在思考上，正文还没开始就被截断（`finish_reason`
 // = "length"），于是「其实答上来了」被洗成空正文。64 曾在实测里正好踩中这种情况——
@@ -308,7 +308,7 @@ func probeAttempts(model, capability string) ([]probeAttempt, error) {
 }
 
 // encodeProbeRequest 探测请求体：非流式（一次读全，省掉 SSE 状态机），且不带
-// stream_options（有些服务端点名不认它，探测不该被它的兼容问题带偏）。
+// stream_options（有些服务端点名不认该字段，探测不该被该字段的兼容问题带偏）。
 func encodeProbeRequest(req port.GenerateRequest) ([]byte, error) {
 	body, err := encodeChatRequest(req, false, nil)
 	if err != nil {
@@ -332,7 +332,7 @@ func visionVerdict(text string) port.ProbeVerdict {
 	if text == "" {
 		return port.ProbeInconclusive
 	}
-	// 「明说看不到」优先于颜色词：一句 "I cannot see any red" 里有 red，但它恰恰是没看到。
+	// 「明说看不到」优先于颜色词：一句 "I cannot see any red" 里有 red，但该句恰恰是没看到。
 	if visionSaysBlind(text) {
 		return port.ProbeUnsupported
 	}
@@ -342,7 +342,7 @@ func visionVerdict(text string) port.ProbeVerdict {
 	case saysRed && !saysOther:
 		return port.ProbeSupported
 	case saysOther && !saysRed:
-		// 答成别的颜色：说明它「看到了什么」，但不是这张图里的东西。
+		// 答成别的颜色：说明模型「看到了什么」，但不是这张图里的东西。
 		return port.ProbeUnsupported
 	case saysRed && saysOther:
 		// 既提到目标色又提到别的色（"it's red, not blue" / "not red, it's blue"）：
@@ -352,7 +352,7 @@ func visionVerdict(text string) port.ProbeVerdict {
 	return port.ProbeInconclusive
 }
 
-// visionBlindPhrases 明确「看不到图」的说法（这比答错颜色更确定：它连图都没收到）。
+// visionBlindPhrases 明确「看不到图」的说法（这比答错颜色更确定：模型连图都没收到）。
 var visionBlindPhrases = []string{
 	"cannot see", "can't see", "can not see", "unable to see", "no image", "not an image",
 	"no image provided", "image unsupported", "unsupported image", "without an image",
@@ -406,7 +406,7 @@ func visionSaysWrongColor(text string) bool {
 }
 
 // hasWord 词边界匹配（大小写不敏感）。中文没有词边界，这里退化为子串匹配——
-// 颜色词短，误判风险可接受（"红" 出现在 "红色" 里正是我们想要的）。
+// 颜色词短，误判风险可接受（"红" 出现在 "红色" 里正是本程序想要的）。
 func hasWord(text, word string) bool {
 	t := strings.ToLower(text)
 	w := strings.ToLower(word)

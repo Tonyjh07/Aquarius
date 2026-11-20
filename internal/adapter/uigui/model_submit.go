@@ -38,7 +38,7 @@ func (m *model) replay(msg conversation.Message) {
 		flushSeg := func() {
 			s := sanitizeControl(seg.String())
 			if strings.TrimSpace(s) != "" || len(segImgs) > 0 {
-				// 段先不带 ID：末段统一盖。**不用 addMsg**——它按空文本丢弃，
+				// 段先不带 ID：末段统一盖。**不用 addMsg**——addMsg 按空文本丢弃，
 				// 纯图段（有图无字）会整段消失（D207）。
 				m.blocks = append(m.blocks, block{kind: blockAssistant, text: s, part: segStart, imgs: segImgs})
 			}
@@ -225,7 +225,7 @@ func (m *model) submitRaw(atts []stagedAtt, text string) {
 	if echo != "" {
 		echo += " "
 	}
-	// D207：图片附件不再以文字占位回显——它们以缩略图入块（imgs），回显文本只列
+	// D207：图片附件不再以文字占位回显——图片附件以缩略图入块（imgs），回显文本只列
 	// 非图片附件（文档等仍需要名字，否则提交后到回放前看不出附了什么）。
 	names := make([]string, 0, len(atts))
 	var imgs []imgRef

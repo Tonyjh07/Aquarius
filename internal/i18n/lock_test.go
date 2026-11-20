@@ -2,7 +2,7 @@ package i18n
 
 // I4 的两把锁：字面量扫描与缺键扫描。
 //
-// 它们守的是同一件事的两面——「界面上说的每一句都来自文案表」，缺一面就会漏：
+// 两把锁守的是同一件事的两面——「界面上说的每一句都来自文案表」，缺一面就会漏：
 //   - 字面量扫描：`_test.go` 之外的源码里不许再出现中文（除母版表与白名单）。漏了这面，
 //     新写的文案绕过表，切到 en 时那一句还是中文。
 //   - 缺键扫描：代码里引用的 key 必须在表里。漏了这面，`T` 会把 key 原样印到界面上
@@ -30,7 +30,7 @@ import (
 // i18nRepoRoot 仓库根（internal/i18n → ../..）。
 const i18nRepoRoot = "../.."
 
-// i18nScannedTops 参与扫描的顶层目录。新增顶层包时要加进来，否则锁管不到它。
+// i18nScannedTops 参与扫描的顶层目录。新增顶层包时要加进来，否则锁管不到该包。
 var i18nScannedTops = []string{"cmd", "internal", "pluginapi"}
 
 // i18nSkippedDirs 不参与扫描的目录名。
@@ -47,7 +47,7 @@ var i18nSkippedDirs = map[string]bool{
 //
 // 键是仓库相对路径（斜杠分隔），值是**内容片段**而不是文件名：同一个文件里后加的文案
 // 仍会被抓住。这是刻意选的粒度——整文件豁免等于给那份文件开后门。片段按「整串相等或以
-// 它开头」匹配，所以 "行" 只放过正好是 "行" 的那一条，不会放过「行高」「一行」。
+// 该片段开头」匹配，所以 "行" 只放过正好是 "行" 的那一条，不会放过「行高」「一行」。
 var cjkAllowed = map[string][]string{
 	// 选语言 / 选日志级别之前就要报的错：这两个包不能依赖文案表（鸡生蛋），而且这两句
 	// 只在配置写错时出现一次，读者是改配置的人。
@@ -55,7 +55,7 @@ var cjkAllowed = map[string][]string{
 	"internal/logging/logging.go": {"日志级别 %q 仅支持", "日志形态 %q 仅支持"},
 
 	// `/model probe` 的关键词表：匹配对象是**服务端报错原文与模型回复**，与界面语言无关。
-	// 搬进表后，界面切 en 时这些词不再参与匹配，探测结论会变差——它们是数据，不是文案。
+	// 搬进表后，界面切 en 时这些词不再参与匹配，探测结论会变差——这些词是数据，不是文案。
 	"internal/adapter/llm/probe.go": {
 		"红", "红色", "棕", "橙", "灰", "白", "粉", "紫", "绿", "蓝", "青", "黄", "黑",
 		"看不到", "看不见", "没有图", "未提供图片", "不是图片", "图片不支持", "无法看到", "图片",
@@ -74,7 +74,7 @@ var cjkAllowed = map[string][]string{
 	// 法务正文的解析规则：顿号是条款号的合法分隔符（数据，不是给人看的文案）。
 	"internal/legal/parse.go": {"^[0-9]+(\\.[0-9]+)*\\.?[\\s、]"},
 
-	// 表单清单解析用的中文逗号：它是**输入数据的分隔符**，与界面语言无关（用户可能粘贴
+	// 表单清单解析用的中文逗号：该逗号是**输入数据的分隔符**，与界面语言无关（用户可能粘贴
 	// 任何一种逗号），不是给人看的一句话。
 	"cmd/aquarius/providers.go": {"，"},
 
@@ -82,7 +82,7 @@ var cjkAllowed = map[string][]string{
 	"internal/adapter/uigui/input.go": {"行"},
 
 	// 界面语言选项里的中文自名（D275）：语言名按惯例用自己的语言写，不翻译。进了表就有
-	// 两份译文各写一遍的风险，而且 en 表里出现中文会被 TestEnHasNoCJK 拦下——所以它留在
+	// 两份译文各写一遍的风险，而且 en 表里出现中文会被 TestEnHasNoCJK 拦下——所以「简体中文」留在
 	// 代码里，由这条豁免放行。"English" 无中文，不需列。
 	"internal/adapter/uigui/settings.go": {"简体中文"},
 }
@@ -90,7 +90,7 @@ var cjkAllowed = map[string][]string{
 // i18nDynamicKeyPrefixes 拼接取词的已知前缀。
 //
 // 静态解析看不进 `"ui.settings.page." + Key()` 这种拼法，所以前缀在这里登记，另一侧由
-// 使用方的测试逐项断言（uigui 的 TestPageKeysResolve）——两边合起来才是闭环：这里保证
+// 使用方的测试逐项断言（uigui 的 TestPageKeysResolve）——两边合起来才算完整：这里保证
 // 前缀下的 key 都是英文标识，那边保证每个页面标识都取得到词。
 var i18nDynamicKeyPrefixes = []string{
 	"ui.settings.page.",
@@ -159,7 +159,7 @@ func TestKeysResolve(t *testing.T) {
 }
 
 // TestDynamicKeyPrefixesResolve 守住拼接取词的前缀：登记的前缀下，key 必须是英文标识，
-// 且确实有 key 用着它（否则前缀已废弃，该从白名单里删掉）。
+// 且确实有 key 用着该前缀（否则前缀已废弃，该从白名单里删掉）。
 func TestDynamicKeyPrefixesResolve(t *testing.T) {
 	for _, prefix := range i18nDynamicKeyPrefixes {
 		n := 0
@@ -286,7 +286,7 @@ func cjkLiteralsIn(t *testing.T, rel, path string) []string {
 // 不上界面。
 //
 // 日志回调在 L3 之后不再吃文案：`port.Log` 的实参是级别、上下文与两个 key（D276），
-// 没有中文可漏，所以这里也不再给它们开口子——口子留着，下次有人往里塞一句话就没人拦了。
+// 没有中文可漏，所以这里也不再给日志回调开口子——口子留着，下次有人往里塞一句话就没人拦了。
 func exemptLits(f *ast.File) map[token.Pos]bool {
 	out := make(map[token.Pos]bool)
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -448,7 +448,7 @@ func allStringLiterals(t *testing.T) (map[string]bool, error) {
 			if !strings.HasSuffix(path, ".go") {
 				return nil
 			}
-			// 文案表的定义文件本身不算「用」：连同它们一起扫的话，表里每一条 key 都被自己
+			// 文案表的定义文件本身不算「用」：连同这些定义文件一起扫的话，表里每一条 key 都被自己
 			// 的定义命中一次，孤儿检查永远是绿的（实测：塞一条假 key 进去也不报）。
 			if rel, rerr := filepath.Rel(i18nRepoRoot, path); rerr == nil && isTableFile(filepath.ToSlash(rel)) {
 				return nil
@@ -501,7 +501,7 @@ func hasCJK(s string) bool {
 		case unicode.Is(unicode.Han, r):
 			return true
 		// CJK 符号与标点（U+3000–303F，含「」『』）、全角 ASCII 变体（U+FF00–FFEF，
-		// 含（） ，：；）。省略号（…）与破折号（—）不算：英文排版同样用它们，
+		// 含（） ，：；）。省略号（…）与破折号（—）不算：英文排版同样用这两个符号，
 		// 纳入判定只会把纯 ASCII 界面误判成中文。
 		case r >= 0x3000 && r <= 0x303F:
 			return true

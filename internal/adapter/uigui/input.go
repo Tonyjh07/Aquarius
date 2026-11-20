@@ -28,7 +28,7 @@ import (
 // 发送/停止；确认态整体切换为 [允许/拒绝] 按钮组（非模态）。
 // inputBar 输入行（D49 三段式，§15.2）：[logo ⌀48] 12 [输入胶囊] 12 [send ⌀48]——三段等高
 // 独立成形（各自 record → vis/羽化，间隙透明且点击穿透），中间胶囊吃掉全部剩余宽度
-// （响应式：窗口宽变化只伸缩它，字号/圆钮尺寸不随窗口变）。坐标原点 = 输入行段左上，
+// （响应式：窗口宽变化只伸缩胶囊，字号/圆钮尺寸不随窗口变）。坐标原点 = 输入行段左上，
 // w = 窗口宽（均经 gtx.Dp 换算为物理 px）。D54：绘制顺序 = 胶囊 → 右钮 → logo（动画
 // p=0 时 logo 盖住前两者），几何按展开进度插值。
 func (u *UI) inputBar(gtx layout.Context, w, absY int) {
@@ -164,7 +164,7 @@ func (u *UI) inputBar(gtx layout.Context, w, absY int) {
 	// D103 补全浮层（tips 之后画——盖住转写区下部，胶囊上方锚定）：chrome 形状整窗
 	// 登记不受淡化带作用；行矩形随帧重登记（fade pass 同几何复登，bubbleRects 同构）。
 	u.drawCompl(gtx, absY, pill)
-	// D282 档位列表：与补全浮层同一锚定（胶囊上方、深色实色卡），压在它之上——
+	// D282 档位列表：与补全浮层同一锚定（胶囊上方、深色实色卡），压在补全浮层之上——
 	// 确认态不会有补全候选，两卡同屏只是理论情形，顺序取「后画的在上」。
 	u.drawLevelPick(gtx, absY, pill)
 }
@@ -326,12 +326,12 @@ func (u *UI) updateEditor(gtx layout.Context) {
 	// 粘贴）。必须在 editor.Update 之前——Gio 的事件先取先得，编辑器会把键吞掉。
 	u.pasteImageKey(gtx)
 	// D272：输入栏三键（ui.keys）。带修饰的那两个必须先于 editor.Update——编辑器对
-	// Enter 注册的是「提交」，对 Shift+Enter 注册的是「换行」，两者都要先被我们认领，
+	// Enter 注册的是「提交」，对 Shift+Enter 注册的是「换行」，两者都要先被本程序认领，
 	// 否则「Shift+Enter = 引导」这条就成了空话。纯 Enter 仍走编辑器 SubmitEvent
 	//（补全浮层 D103 认领 Enter 的既有路径不变）。
 	u.sendKeys(gtx)
 	// D250：收起态单行编辑时 ↑↓ 翻输入历史。同样必须先于 editor.Update（编辑器对
-	// ↑↓ 注册的是「不在开头就 MoveLines」，单行里它会把光标推到行首行尾）。
+	// ↑↓ 注册的是「不在开头就 MoveLines」，单行里编辑器会把光标推到行首行尾）。
 	u.historyKeys(gtx)
 	for {
 		evt, ok := u.editor.Update(gtx)
@@ -349,11 +349,11 @@ func (u *UI) updateEditor(gtx layout.Context) {
 // sendKeys 输入栏三键（D272 / ui.keys）：认领「带修饰的 Enter」这一类组合。
 //
 // 为什么必须在 editor.Update 之前：编辑器自己注册了 Enter = 提交、Shift+Enter = 换行。
-// 我们要把 Shift+Enter 抽走当「引导」、把 Ctrl+Enter 抽走当「换行」，就只能先到先得。
-// 纯 Enter 不在这里处理——补全浮层（D103）认领它的路径不能动，它照旧产出 SubmitEvent。
+// 本程序要把 Shift+Enter 抽走当「引导」、把 Ctrl+Enter 抽走当「换行」，就只能先到先得。
+// 纯 Enter 不在这里处理——补全浮层（D103）认领 Enter 的路径不能动，Enter 照旧产出 SubmitEvent。
 //
 // **两个键名都要认**：Gio 把主回车报成 `key.NameReturn`（"⏎"），小键盘的才是
-// `key.NameEnter`（"⌤"）。只认后者的话，真实键盘上的 Shift+Enter 会从我们手里漏过去，
+// `key.NameEnter`（"⌤"）。只认后者的话，真实键盘上的 Shift+Enter 会从本程序手里漏过去，
 // 被编辑器当换行吃掉（单行胶囊里看不见，用户看到的就是「按了没反应」）。
 func (u *UI) sendKeys(gtx layout.Context) {
 	if u.m.confirm != nil || u.m.ask != nil || u.inFadePass {
@@ -423,7 +423,7 @@ func gioMods(m uicommon.Mods) key.Modifiers {
 	return out
 }
 
-// gioEventMods 事件里的修饰键折回端口规则（只保留我们认识的四位）。
+// gioEventMods 事件里的修饰键折回端口规则（只保留本程序认识的四位）。
 func gioEventMods(m key.Modifiers) uicommon.Mods {
 	var out uicommon.Mods
 	if m&key.ModCtrl != 0 {
@@ -605,7 +605,7 @@ func (u *UI) submitLine(d port.Delivery) {
 	// D272：生成中的纯文本新消息进待发清单——本轮还卡在 Handle 里，走输入通道等于
 	// 「等本轮结束才有人取」。清单由会话持有、界面直接写，内核在下一个请求边界取用。
 	if u.generating.Load() { // 只在生成中：空闲时插话键与发送等价（§5.19）
-		// 命令不进清单：斜杠命令是「对会话做的事」（切会话、改设置、取消任务），把它
+		// 命令不进清单：斜杠命令是「对会话做的事」（切会话、改设置、取消任务），把斜杠命令
 		// 塞进待发条再等一轮结束才执行，只会让用户以为没生效。照旧走输入通道排队。
 		isCmd := strings.HasPrefix(text, "/")
 		if !isCmd && u.m.editTarget == "" && len(u.m.stagedFiles) == 0 && u.pending() != nil {
@@ -640,7 +640,7 @@ func (u *UI) submitLine(d port.Delivery) {
 
 // cancelEdit 退出编辑态（D92）：清目标节点与编辑框（Esc / 空提交共用）；分片序号随收
 // （D107② 生命周期与 editTarget 同步）。D188：已有附件快照与删除标记一起清，新增暂存
-// 保留（用户在选择文件时已经花过力气，Esc 不该把它们一起扔掉）。
+// 保留（用户在选择文件时已经花过力气，Esc 不该把新增暂存一起扔掉）。
 func (u *UI) cancelEdit() {
 	u.m.editTarget = ""
 	u.m.editMode = conversation.Fresh

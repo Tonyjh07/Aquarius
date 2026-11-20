@@ -49,14 +49,14 @@ func trimRunes(s string, n int) string {
 // fieldRow 一行：定宽标签列 + 控件（基线对齐，各行控件起点一致）。标签列宽随
 // 度量缩放（Dp）——裸 px 常量在高 DPI 下实际变窄，「接口地址」等四字标签折行。
 func fieldRow(gtx layout.Context, th *material.Theme, label string, control layout.Widget) layout.Dimensions {
-	// **不能按基线对齐**：基线只对单行文字成立，多行控件（正文区）的基线与它的
+	// **不能按基线对齐**：基线只对单行文字成立，多行控件（正文区）的基线与控件
 	// 顶边差很远，标签会掉到输入框下方去（离屏渲染实测：标签浮在框底之下）。
 	// 改为顶端对齐 + 给标签加与输入框首行等高的内衬，视觉上仍与首行文字齐平。
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			// 列宽走 sp 而不是 dp：这是**文字列**，字号放大时列宽得跟着放大。按 dp 取的话
 			// 200% 字号下 "Provider" 会折成 "Provi/der"、中文标签被切（离屏实测）。
-			// 到 2/5 行宽就封顶——再大的字号也不该让标签吃掉控件区，宁可让它自己折行。
+			// 到 2/5 行宽就封顶——再大的字号也不该让标签吃掉控件区，宁可让标签自己折行。
 			labelPx := gtx.Sp(unit.Sp(fieldLabelW()))
 			if cap := gtx.Constraints.Max.X * 2 / 5; labelPx > cap {
 				labelPx = cap
@@ -135,7 +135,7 @@ func editorBoxH(th *material.Theme, ed *widget.Editor, hint string, h int) layou
 }
 
 // editorBoxFill 撑满可用高度的多行编辑区（高级页整文件编辑）：高度取约束上限，由外层
-// 撑满行决定——上层把「页内容区减去它上面的行」作为确切高度给下来。
+// 撑满行决定——上层把「页内容区减去该编辑区上面的行」作为确切高度给下来。
 //
 // 为什么不能像 editorBoxH 那样写死一个数值：这个框没有内容决定的「自然高度」，只有
 // 窗口愿意给多高。写死 220dp 在窗口拉高后底下就是一大片空白，窗口压低时同一块又显得

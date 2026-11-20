@@ -21,7 +21,7 @@ type client struct {
 
 var _ acp.Client = (*client)(nil)
 
-// SessionUpdate 过程通知：数工具调用、记它报过的改动文件、攒最终正文。
+// SessionUpdate 过程通知：数工具调用、记代理报过的改动文件、攒最终正文。
 //
 // 子代理的转录、思考、计划表都不进会话树（§5.18）：这里是**收报告**，不是转播。
 func (c *client) SessionUpdate(ctx context.Context, n acp.SessionNotification) error {
@@ -47,7 +47,7 @@ func (c *client) SessionUpdate(ctx context.Context, n acp.SessionNotification) e
 	return nil
 }
 
-// RequestPermission 它动手前反问：回落到 port.Confirmer（§9/§5.18）。
+// RequestPermission 代理动手前反问：回落到 port.Confirmer（§9/§5.18）。
 //
 // 无人应答的两种情形当场拒绝并计数：无人值守（Confirmer 已被装饰成一律拒绝），
 // 以及用户不在发起这次转交的会话——不让转交卡在等确认上。
@@ -127,7 +127,7 @@ func pickOption(opts []acp.PermissionOption, allow bool) (acp.PermissionOptionId
 }
 
 // permissionPrompt 权限确认的用户面文案：**说清边界**——批准一次转交 = 批准那个程序
-// 在它自己判断下动手，权限核对它只覆盖它愿意问的那部分（§5.18/§9）。
+// 在自己判断下动手，权限核对只覆盖代理愿意问的那部分（§5.18/§9）。
 func permissionPrompt(a Agent, p acp.RequestPermissionRequest) string {
 	var b strings.Builder
 	b.WriteString(i18n.Tf("acp.prompt.head", "agent", a.Name))
@@ -201,7 +201,7 @@ func (c *client) policy(tool, target string) perm.Decision {
 }
 
 // toolTarget 这次调用涉及的第一处路径（ACP 的 locations）。权限反问通常只带标题，
-// 但带位置时硬名单要能看见它；没有就返回空串。
+// 但带位置时硬名单要能看见这个路径；没有就返回空串。
 func toolTarget(p acp.RequestPermissionRequest) string {
 	for _, loc := range p.ToolCall.Locations {
 		if s := strings.TrimSpace(loc.Path); s != "" {

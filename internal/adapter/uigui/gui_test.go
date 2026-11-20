@@ -163,7 +163,7 @@ func TestConfirmRejectsOnEOF(t *testing.T) {
 	}
 }
 
-// TestConfirmDrainsQueuedAnswer 排队输入在确认打开前已入队——Confirm 必须把它
+// TestConfirmDrainsQueuedAnswer 排队输入在确认打开前已入队——Confirm 必须把排队输入
 // 当应答取走（否则与已关闭的 eofCh 同时就绪时随机选中会把 y 误拒），后续行保留给 Next。
 func TestConfirmDrainsQueuedAnswer(t *testing.T) {
 	t.Parallel()

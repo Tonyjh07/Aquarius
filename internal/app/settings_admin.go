@@ -5,12 +5,12 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 )
 
-// 命令面用到的四个具名端口（P2-4）：它们原先都是 SessionDeps 上的匿名回调，调用点
+// 命令面用到的四个具名端口（P2-4）：原先都是 SessionDeps 上的匿名回调，调用点
 // 只有一两处，但每个都带着「nil 时这条命令报什么错」的隐含契约。收成接口后，
 // 判断变成 `if s.x == nil` 一处、实现由装配根一次性提供，而不是散在每条命令里。
 
 // PermissionSettings 权限面（`/permission` 与 `/unattended`，D22/D185）。
-// 两项合成一个接口：它们写的是同一段 config（`permissions`），改的是同一条执行链，
+// 两项合成一个接口：这两项写的是同一段 config（`permissions`），改的是同一条执行链，
 // 拆开只会让装配根把同一个 cfgWriter 适配两遍。
 type PermissionSettings interface {
 	// Unattended 无人值守当前是否开着。未接线时由调用方按「关」处理，

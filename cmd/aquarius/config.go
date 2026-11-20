@@ -1,6 +1,6 @@
 package main
 
-// config 的结构面：fileConfig 的字段与它直接调用的转换（人格组合、角色卡开关、备份
+// config 的结构面：fileConfig 的字段与这些字段直接调用的转换（人格组合、角色卡开关、备份
 // 代数），加上权限、界面、限额三个小节。`secret:` 引用解析与外部服务端点解析也在这
 // ——两处都被模型、语音、联网共用，跟着其中一家走会读成那一家专用。
 //
@@ -38,7 +38,7 @@ type fileConfig struct {
 	// Skills 技能目录（D201）：额外技能根（绝对路径、按声明序，先命中者胜）。
 	Skills skillsConfig `json:"skills"`
 	// Characters 角色卡投影开关（§5.17/D247）：只影响**之后新建**的角色会话；已开始的会话
-	// 人格与尾部指令已快照/写入磁盘（`apply_post_history` 例外，它决定发不发，立即生效）。
+	// 人格与尾部指令已快照/写入磁盘（`apply_post_history` 例外，该键决定发不发，立即生效）。
 	Characters charactersConfig `json:"characters"`
 	// Backup 备份轮转（D254）：会话树写盘前保留的 .bak 代数，用户可自定义。
 	Backup backupConfig `json:"backup"`
@@ -66,7 +66,7 @@ func (c *fileConfig) titleEnabled() bool {
 	return c.Title.Enabled == nil || *c.Title.Enabled
 }
 
-// backupConfig 备份轮转（D254）。只有会话树用它——密钥库按自己的单代规则走。
+// backupConfig 备份轮转（D254）。只有会话树用这段配置——密钥库按自己的单代规则走。
 type backupConfig struct {
 	// Keep 保留的备份代数（>=1）；0/省略 = 默认 3。
 	Keep int `json:"keep,omitempty"`
@@ -96,7 +96,7 @@ type promptsConfig struct {
 // （老配置没有这一段时不该把常驻世界书与示例一并关掉）。
 type charactersConfig struct {
 	// PreferSystemPrompt 替换态：卡的 system_prompt 顶掉用户人格引用（`@env` 保留）。
-	// 默认关——用户的人格承载着他自己的规则与安全约束，静默替换会造成真实损失。
+	// 默认关——用户的人格承载着用户自己的规则与安全约束，静默替换会造成真实损失。
 	PreferSystemPrompt bool `json:"prefer_system_prompt,omitempty"`
 	// ApplyPostHistory 每轮把会话 Tail（卡的 post_history_instructions）追加在历史之后；
 	// 键缺失 = 发（默认开）。
@@ -109,7 +109,7 @@ type charactersConfig struct {
 	Lore loreConfig `json:"lore"`
 }
 
-// loreConfig 世界书激活（§5.17/D294）。`enabled` 键缺失 = 开：卡里写了触发词就是想让它生效，
+// loreConfig 世界书激活（§5.17/D294）。`enabled` 键缺失 = 开：卡里写了触发词就是想让世界书生效，
 // 关掉是例外不是缺省。另两项省略即取 app 层的缺省值（扫描 4 条、预算占上下文的 15%）。
 type loreConfig struct {
 	Enabled     *bool   `json:"enabled,omitempty"`
@@ -230,10 +230,10 @@ func (c *fileConfig) normalizeSkills() error {
 type permissionsConfig struct {
 	Level string `json:"level"` // 空 = strict（perm.DefaultLevel）
 	// Unattended 无人值守（D185）：true 时模型发起的越界调用当场拒绝并说明，不阻塞轮次。
-	// 权限档本身不变——它只关掉「等人点确认」这一环。缺省 false。
+	// 权限档本身不变——该开关只关掉「等人点确认」这一环。缺省 false。
 	Unattended bool `json:"unattended,omitempty"`
 	// Overrides 放行策略例外（D280）：只存用户改过的条目，空 = 全按矩阵。
-	// 「禁用」不在这里：它是 tools.disabled，落在装配层。
+	// 「禁用」不在这里：禁用清单是 tools.disabled，落在装配层。
 	Overrides []policyOverride `json:"overrides,omitempty"`
 }
 
@@ -243,7 +243,7 @@ type policyOverride struct {
 	Tool   string `json:"tool,omitempty"`
 	Mode   string `json:"mode"` // ask | assist | allow
 	// Dir 收窄到的目录（D282）：空 = 整个工具，非空 = 只对该目录内的目标生效。
-	// 由确认框的「以后都允许」写进来（文件类工具），设置窗不设它、只管撤销。
+	// 由确认框的「以后都允许」写进来（文件类工具），设置窗不设该字段、只管撤销。
 	Dir string `json:"dir,omitempty"`
 }
 
@@ -308,7 +308,7 @@ type uiConfig struct {
 	// 一次，改完重启；-log-level 与 AQUARIUS_LOG_LEVEL 优先于本键，非法值启动报错。
 	LogLevel string `json:"log_level,omitempty"`
 	// InputPlaceholder 输入框占位文字（D279/§7.8）：用户自己写的一行灰字，**不翻译**——
-	// ui.lang 切到哪套都用它；空 = 回落内置文案（那一条随语言变）。单行、最多
+	// ui.lang 切到哪套都用这段文字；空 = 回落内置文案（那一条随语言变）。单行、最多
 	// port.SettingsPlaceholderMax 字符；启动期把换行折成空格，超长截断（手改的值不该拦住启动）。
 	InputPlaceholder string `json:"input_placeholder,omitempty"`
 	// Hotkey GUI 全局呼出快捷键（§15.1，如 "Alt+A"）；空 = 默认 Alt+A。仅 ui.kind=gui 用。
@@ -354,10 +354,10 @@ type limitsConfig struct {
 	ToolTimeoutSec   int     `json:"tool_timeout_sec"`  // 工具超时秒（ToolRunner，M2）
 }
 
-// defaultSecretRef 密钥引用缺省回落（D35）：api_key 为空时按它取用（resolveAPIKey 与
+// defaultSecretRef 密钥引用缺省回落（D35）：api_key 为空时按该常量取用（resolveAPIKey 与
 // 一键导入共用同一套规则——不一致会让「启动用环境变量、导入却跳过」看起来像漏导入）。
 //
-// 跟默认模板的 provider 走：模板预置 DeepSeek，缺省引用就是它官方文档里的环境变量名。
+// 跟默认模板的 provider 走：模板预置 DeepSeek，缺省引用就是 DeepSeek 官方文档里的环境变量名。
 // 换成 AQUARIUS_DEEPSEEK_API_KEY 反而要多一步——用户照着 DeepSeek 文档设的是
 // DEEPSEEK_API_KEY。
 const defaultSecretRef = "secret:DEEPSEEK_API_KEY"
@@ -385,7 +385,7 @@ func resolveAPIKey(ctx context.Context, provider, ref string, sec port.Secrets, 
 // 完全一致，只是**不打明文警告**。
 //
 // 为什么：那句警告说的是「密钥直接落在 config.json」——一项**已写盘**的事实。但探测用的
-// 是编辑框里的草稿，它根本还没写入磁盘（保存时才入库、config 只留引用）；拿它警告等于告诉用户
+// 是编辑框里的草稿，该草稿根本还没写入磁盘（保存时才入库、config 只留引用）；拿草稿警告等于告诉用户
 // 一件没发生的事。叠加一个现实后果：欢迎窗的「测试连通」与「获取模型」各探一次，同一份
 // 草稿会被警告两遍（用户实测日志里就是两条一模一样的话）。写入磁盘形态的警告仍由真实构造路径
 // （resolveAPIKey）负责，那里每次启动最多一遍。
@@ -394,7 +394,7 @@ func resolvePatchKey(ctx context.Context, provider, ref string, sec port.Secrets
 }
 
 // resolveAPIKeyTo 解析主体；warnPlain == nil = 只在内存里用一次、不报写入磁盘形态。
-// 明文警告的落点是一个回调而不是 io.Writer：装配根把它接到运行日志（D276），
+// 明文警告的落点是一个回调而不是 io.Writer：装配根把该回调接到运行日志（D276），
 // 这里只负责说出「哪家 provider 用了明文」。
 func resolveAPIKeyTo(ctx context.Context, provider, ref string, sec port.Secrets, warnPlain func(provider string)) (string, error) {
 	ref = strings.TrimSpace(ref)

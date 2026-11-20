@@ -270,7 +270,7 @@ func (s *Session) conversationTitle(ctx context.Context, id conversation.ID) str
 // successorConversation 当前会话被删后的继任会话：最近更新的其余会话（List 按时间降序）；
 // 一个不剩则新建空会话（persona 首节点）。
 //
-// skip 是本批要删的其余会话：不跳过它们就会继任到一个刚被删掉的 ID（下一次保存又把它写回来，
+// skip 是本批要删的其余会话：不跳过这些会话就会继任到一个刚被删掉的 ID（下一次保存又把这个会话写回来，
 // 还带着旧内容），用户看到的是「删了又回来」。
 func (s *Session) successorConversation(ctx context.Context, skip map[conversation.ID]bool) (*conversation.Conversation, error) {
 	sums, err := s.store.List(ctx)
@@ -384,7 +384,7 @@ func (s *Session) execRm(ctx context.Context, cmd port.Command) (string, error) 
 	}
 	size := s.cur.SubtreeSize(id)
 	prompt := i18n.Tf("tree.rm.prompt", "id", id, "n", size)
-	// 剪除会连带清掉指向子树内旧节点的溯源边：新版本在子树外时，它会失去「修订自谁」的
+	// 剪除会连带清掉指向子树内旧节点的溯源边：新版本在子树外时，新版本会失去「修订自谁」的
 	// 记录（图上版本虚线退回顺接实线）。删之前说明，不让人删完才发现。
 	droppedEditions := s.cur.DroppedEditions(id)
 	if droppedEditions > 0 {

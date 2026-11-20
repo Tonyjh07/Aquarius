@@ -95,7 +95,7 @@ type JobWatcherOptions struct {
 	Injector func() port.Injector
 	// Wake 完成报告注入后的空闲唤醒（D167）；nil = 只注入不唤醒（测试/无 UI）。
 	Wake func()
-	// Landed 报告已送达并写入磁盘后的回调（D264）：装配根用它从台账销账。nil = 不销账
+	// Landed 报告已送达并写入磁盘后的回调（D264）：装配根用该回调从台账销账。nil = 不销账
 	// （测试、未接对账的装配），条目会留给下次启动对账。
 	Landed func(id port.JobID)
 	// Log watcher 失败、报告未送达等运行日志（D276，上下文固定 job）；nil = 丢弃。
@@ -164,7 +164,7 @@ func (p *JobWatcher) Unwatch(id port.JobID) {
 // Claim 预领某任务的终态报告（D189，前台 job_wait 用）：前台自己会把这个结果交给
 // 模型，watcher 就不必再补一条重复的完成报告。返回值 claimed 为 false 表示归属已定
 // （watcher 先一步报了，或预领失败），release 是归还函数——前台没等到终态
-// （超时/取消）时应调用它，让 watcher 照常汇报。
+// （超时/取消）时应调用该归还函数，让 watcher 照常汇报。
 func (p *JobWatcher) Claim(id port.JobID) (release func(), claimed bool) {
 	if p == nil {
 		return func() {}, false
@@ -307,7 +307,7 @@ func (p *JobWatcher) settle(id port.JobID) {
 
 // lander 带送达回执的注入（D264）：返回 nil 表示已写成节点并写入磁盘，不只是入队。
 // 单独一个接口而不是加进 port.Injector：注入端口是所有插件/工具共用的，
-// 只有跨轮生产者需要回执，不该逼所有人实现它。
+// 只有跨轮生产者需要回执，不该逼所有人实现该接口。
 type lander interface {
 	InjectAndWait(ctx context.Context, in port.Injection) error
 }

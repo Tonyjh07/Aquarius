@@ -2,7 +2,7 @@
 
 package secretbin
 
-// DPAPI 档（D151/D161）：Windows 上默认用它——CryptProtectData 把整表绑到**当前用户
+// DPAPI 档（D151/D161）：Windows 上默认用 DPAPI 档——CryptProtectData 把整表绑到**当前用户
 // 账户**（无口令、无需额外密钥文件）。纯 syscall（crypt32.dll / kernel32.dll），
 // **不引入 cgo**，守住单二进制交付。
 //

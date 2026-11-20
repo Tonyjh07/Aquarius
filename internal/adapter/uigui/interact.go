@@ -66,7 +66,7 @@ func (u *UI) frameItems() []blockView {
 			live: true,
 		})
 	}
-	// D272 引导消息：已经说出口、等下一次请求取走的话。它比排队更靠近当下，所以直接
+	// D272 引导消息：已经说出口、等下一次请求取走的话。引导消息比排队更靠近当下，所以直接
 	// 铺在转写区末尾（用户气泡原样），而不是挤在输入栏上方的待发条里——那里只留排队。
 	for _, it := range u.pendingSteers() {
 		items = append(items, blockView{kind: blockUser, text: it.Text, live: true, pendID: it.ID})
@@ -512,7 +512,7 @@ func (u *UI) moveDrag() {
 // endDrag 抬起/取消收尾：锚点夹取 + 四边吸附贴齐（D50）+ 持久化位置。
 // 按下时已脱离停靠（undockInstant），故写入磁盘恒为未停靠。
 // 纯点击（位移 ≤ dragClickSlackPx）跳过夹取/吸附：「点击脱离停靠」把窗口落在半出屏
-// 贴边位（球锚点越界合法），若再按抬手时的态夹一次，展开态整窗锚点会把它推离边缘、
+// 贴边位（球锚点越界合法），若再按抬手时的态夹一次，展开态整窗锚点会把窗口推离边缘、
 // 收起后球离边超 snapDp → 布防/停靠断链（D50 实测缺陷修订，§15.1）。
 func (u *UI) endDrag() {
 	if u.dragging {

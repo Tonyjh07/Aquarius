@@ -80,7 +80,7 @@ type Deps struct {
 const logCtx = "plugin"
 
 // logf 一条运行日志：上下文固定 plugin——原先每句话前面的 `[plugin] ` 前缀就由这一位承担，
-// 前缀不许留在文案里（那样 JSON 侧的 ctx 是空的，而人读的那份又得靠字符串裁掉它）。
+// 前缀不许留在文案里（那样 JSON 侧的 ctx 是空的，而人读的那份又得靠字符串裁掉这个前缀）。
 func (h *Host) logf(lv port.LogLevel, event, act string, kv ...any) {
 	if h.log == nil {
 		return

@@ -98,7 +98,7 @@ func looksLikeJSONObject(data []byte) bool {
 // （纯 V1 拒绝）。字段分列读入，不预拼——拼法与取舍归 app 的人格模块树。
 // 同时返回生效的 data 对象（`.charx` 解析图标资产要用）。
 func parseCardJSON(raw []byte) (ParsedCard, rawCardData, error) {
-	clean := bytes.TrimPrefix(raw, bom) // 进场先去 BOM：json.Unmarshal 拒它
+	clean := bytes.TrimPrefix(raw, bom) // 进场先去 BOM：json.Unmarshal 拒 BOM
 	if len(clean) > maxCardJSONBytes {
 		return ParsedCard{}, rawCardData{}, errors.New(i18n.Tf("char.load.json_too_big", "size", len(clean)>>20, "limit", maxCardJSONBytes>>20))
 	}

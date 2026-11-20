@@ -353,7 +353,7 @@ func (m *modelConfig) samplingTables() *samplingTables {
 }
 
 // samplingFor 某模型（provider+model 二元组）的生效采样参数（D204）：model.sampling 作
-// 整链缺省，该模型条目自带的覆盖只改它写了的项。
+// 整链缺省，该模型条目自带的覆盖只改该条目写了的项。
 //
 // 降级路径要用**降级目标自己那份**：模型名在装饰器里才确定，而参数得跟着改。
 func (m *modelConfig) samplingFor(provider, model string) port.Sampling {
@@ -458,7 +458,7 @@ func (m *modelConfig) chainServerCaps() port.ServerCaps {
 // 但声明过的元信息要能显示出来，否则 `/model` 里满屏都是没有标注的裸名字。
 //
 // D180：**声明过但未启用**的模型不进可选清单（「保留声明但不参与选型」）；当前模型例外
-// ——它是正在跑的事实，藏起来只会让人以为配错了。
+// ——当前模型是正在跑的事实，藏起来只会让人以为配错了。
 func (m *modelConfig) enrichModels(infos []port.ModelInfo) []port.ModelInfo {
 	p := m.primaryProvider()
 	if p == nil {

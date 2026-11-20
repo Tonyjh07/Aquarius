@@ -160,7 +160,7 @@ func TestRunTUIAcceptsKind(t *testing.T) {
 	}
 }
 
-// TestRunTUIConfirmE2E §12 TUI 验收线：TUI 前端完成带工具确认的完整链路——
+// TestRunTUIConfirmE2E §12 TUI 验收线：TUI 前端完成带工具确认的完整路径——
 // 脚本 LLM 发起 file_delete → [y/N] 确认对话 → 键入 y 放行 → 结果回填 → /quit。
 func TestRunTUIConfirmE2E(t *testing.T) {
 	dir := t.TempDir()
@@ -188,7 +188,7 @@ func TestRunTUIConfirmE2E(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{"[y/N]", "[tool ok]", "已删除"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("TUI 确认链路缺 %q: %q", want, got)
+			t.Fatalf("TUI 确认路径缺 %q: %q", want, got)
 		}
 	}
 	if _, err := os.Stat(victim); !errors.Is(err, os.ErrNotExist) {
@@ -290,7 +290,7 @@ func TestRunRmConfirmE2E(t *testing.T) {
 // M2：记忆工具、确认拦截、权限等级生效（§12 M2 验收）
 // ---------------------------------------------------------------------------
 
-// TestRunFallbackDegradesE2E D110②/Q5 全链路：primary（bad）持续 5xx → 内层重试
+// TestRunFallbackDegradesE2E D110②/Q5 全路径：primary（bad）持续 5xx → 内层重试
 // 耗尽 → 降级到 fallback（good）成功；降级请求改写为其 models[0]，状态行出现一次性
 // 降级提示（NoticeEvent → repl 转写）。
 func TestRunFallbackDegradesE2E(t *testing.T) {
@@ -335,7 +335,7 @@ func TestRunFallbackDegradesE2E(t *testing.T) {
 	}
 }
 
-// TestRunProfileSwitchRestartE2E D110③ 切换全链路（GUI 受阻，headless 等价验收）：
+// TestRunProfileSwitchRestartE2E D110③ 切换全路径（GUI 受阻，headless 等价验收）：
 // default 起步 → 改写根指针（等价设置窗「切换」）→ 重启 = 换整目录——会话落新
 // profile、请求打新 provider 的端点并用其模型名，旧 profile 数据不动。
 func TestRunProfileSwitchRestartE2E(t *testing.T) {

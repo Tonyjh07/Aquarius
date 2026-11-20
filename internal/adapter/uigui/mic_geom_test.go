@@ -24,7 +24,7 @@ func TestMicGeomEqualGap(t *testing.T) {
 			}
 		}
 	}
-	// 规则钉在字面量上：净间隙 = 0.0525d（改它 = 改图标留白）。
+	// 规则钉在字面量上：净间隙 = 0.0525d（改这个字面量 = 改图标留白）。
 	if g := micGeomOf(48, 48*0.055); math.Abs(float64(g.gap-48*0.0525)) > 1e-4 {
 		t.Fatalf("48px 净间隙 = %g，应为 0.0525×48", g.gap)
 	}

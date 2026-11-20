@@ -51,7 +51,7 @@ func relEaseOutCubic(t float64) float64 {
 
 // relTween 单段补间的帧态：布防时记下起点与目标，此后每帧按墙钟取现值。
 //
-// 光带（§5.6.2 的扫亮/呼吸）与开关钮共用它——两处的共同点都是「目标变了才起跑，
+// 光带（§5.6.2 的扫亮/呼吸）与开关钮共用该补间——两处的共同点都是「目标变了才起跑，
 // 同目标每帧调用不动」，这正是 retarget 的判据。
 type relTween struct {
 	v       float64               // 当前显示值（静止时即终值）
@@ -153,7 +153,7 @@ func histTreeSwitch(gtx layout.Context, th *material.Theme, st *historyState) la
 }
 
 // histVDivider 状态栏里的一段竖分隔（1dp 宽）：把「视图控件」与「树编辑」分成两组。
-// 两侧各留 margin，上下各缩 h 的一半——不缩则它顶着行的上下沿，读成表格线。
+// 两侧各留 margin，上下各缩 h 的一半——不缩则竖分隔顶着行的上下沿，读成表格线。
 func histVDivider(gtx layout.Context, gap, h int) layout.Dimensions {
 	w := gtx.Dp(unit.Dp(1))
 	total := gtx.Dp(unit.Dp(h))

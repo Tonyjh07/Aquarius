@@ -170,7 +170,7 @@ func TestDelegateProtocolMismatch(t *testing.T) {
 	}
 }
 
-// TestDelegateCrash 进程起来就崩：报因带 stderr 尾巴（它是「为什么起不来」的唯一线索）。
+// TestDelegateCrash 进程起来就崩：报因带 stderr 尾巴（stderr 尾巴是「为什么起不来」的唯一线索）。
 func TestDelegateCrash(t *testing.T) {
 	m := newManager(t, "crash", func(o *Options) { o.Home = t.TempDir() })
 	task, err := m.Start(ctxWithSession("c1"), port.DelegateSpec{Task: "x"})
@@ -190,7 +190,7 @@ func TestDelegateCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond) // 让它进入 prompt
+	time.Sleep(200 * time.Millisecond) // 让代理进入 prompt
 	if err := m.Kill(context.Background(), task.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestDelegatePermissionAllow(t *testing.T) {
 	}
 }
 
-// TestDelegatePermissionDenied 拒绝 → reject_once；理由只进我们的提示与报告，不回传。
+// TestDelegatePermissionDenied 拒绝 → reject_once；理由只进客户端的提示与报告，不回传。
 func TestDelegatePermissionDenied(t *testing.T) {
 	conf := &fakeConfirmer{allow: false, reason: "不要动这个文件"}
 	m := newManager(t, "permission", func(o *Options) {

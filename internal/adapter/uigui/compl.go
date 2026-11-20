@@ -27,7 +27,7 @@ const (
 	complAnchorGapDp = 4   // 卡片与胶囊上沿间距
 )
 
-// complRowRect 一行的命中矩形 + 它在 complList 里的下标（提示行不登记，下标才需要
+// complRowRect 一行的命中矩形 + 该行在 complList 里的下标（提示行不登记，下标才需要
 // 单独记：否则行序与清单序会错位）。
 type complRowRect struct {
 	idx  int
@@ -83,7 +83,7 @@ func (u *UI) updateCompl(gtx layout.Context) {
 	// 键面（Focus 限编辑器——浮层随编辑框起落；编辑器不认 Tab，↑↓ 归历史，故只剩这两个）。
 	// 过滤器由上一帧 drawCompl 登记，Gio 一帧陈旧与手势同规则。
 	//
-	// Shift+Tab 与 Tab 同键名（key.NameTab + ModShift），故过滤器得把它列进 Optional——不列
+	// Shift+Tab 与 Tab 同键名（key.NameTab + ModShift），故过滤器得把 ModShift 列进 Optional——不列
 	// 的话带修饰键的事件直接不匹配，逆向轮换根本到不了这里。
 	for {
 		ev, ok := gtx.Event(

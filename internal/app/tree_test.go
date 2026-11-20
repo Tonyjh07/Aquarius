@@ -334,7 +334,7 @@ func TestSessionGraphUnknownBeforePublish(t *testing.T) {
 }
 
 // TestNodeText 节点正文全文（D132）：PartText 分片依序拼接、跳过思考/工具/附件分片；
-// 与 GraphNode.Snippet 的 40 字截断摘要是两回事（编辑预填靠它，不靠摘要）。
+// 与 GraphNode.Snippet 的 40 字截断摘要是两回事（编辑预填靠正文全文，不靠摘要）。
 func TestNodeText(t *testing.T) {
 	c := conversation.New(conversation.ID("convNT"), "正文")
 	root := conversation.MessageID(c.ID)
@@ -382,7 +382,7 @@ func TestNodeText(t *testing.T) {
 }
 
 // TestTreeRevisionFollowsContent 发布号只跟**内容**走：同样的树重复发布不换号，
-// 改父（数量/锚点/末节点全不动）必须换号——UI 靠它判定要不要重排。
+// 改父（数量/锚点/末节点全不动）必须换号——UI 靠该发布号判定要不要重排。
 func TestTreeRevisionFollowsContent(t *testing.T) {
 	s, _, _ := newTestSession(t, newMemStore())
 	persona, _, a1 := reparentFixture(t, s)

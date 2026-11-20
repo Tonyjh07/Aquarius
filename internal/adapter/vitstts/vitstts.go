@@ -5,9 +5,9 @@
 //	→ WAV 字节流（Content-Type: audio/wav）
 //
 // 同一个服务端还托管 Bert-VITS2、W2V2-VITS、GPT-SoVITS 等模型，这里只覆盖
-// VITS 那条路径——GPT-SoVITS 有它自己的原生接口（见 gptsovitstts）。
+// VITS 那条路径——GPT-SoVITS 有自己的原生接口（见 gptsovitstts）。
 //
-// 服务端是 AGPL-3.0：只能通过 HTTP 调用，不能链接它的代码。本适配器是独立的
+// 服务端是 AGPL-3.0：只能通过 HTTP 调用，不能链接服务端的代码。本适配器是独立的
 // HTTP 客户端，不含任何服务端代码。
 package vitstts
 

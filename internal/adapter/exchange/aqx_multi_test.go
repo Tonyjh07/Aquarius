@@ -248,7 +248,7 @@ func TestIndexListsManifest(t *testing.T) {
 	data := zipBytes(t, map[string]string{
 		"manifest.json": `{"format":"aqx","version":1,"conversations":[` +
 			`{"id":"c1","title":"第一个","nodes":4},{"id":"c2","title":"第二个","nodes":0}]}`,
-		// 树是坏的：Index 不解析它，所以照样能列出清单。
+		// 树是坏的：Index 不解析这份 tree.json，所以照样能列出清单。
 		"conversations/1/tree.json": "not json",
 		"conversations/2/tree.json": "not json",
 	})
@@ -302,7 +302,7 @@ func TestIndexRejects(t *testing.T) {
 	}
 }
 
-// TestImportPickIgnoresUnselectedTrees 没选中的树坏掉也不该挡住导入：它们本来就不会进库。
+// TestImportPickIgnoresUnselectedTrees 没选中的树坏掉也不该挡住导入：这些树本来就不会进库。
 func TestImportPickIgnoresUnselectedTrees(t *testing.T) {
 	blobs := mustBlobs(t)
 	src := []*conversation.Conversation{

@@ -4,7 +4,7 @@ package uigui
 // 本窗内开一层自绘遮罩（半透暗色 scrim + 居中卡片），看/改该条消息——
 //   - `呈现` 页签 = 主窗同款 markdown 渲染的**只读**预览（复用 mdBlockWidgetTh，
 //     传 nil 行选挂接件即无选区态）；
-//   - `源码` 页签 = 原始 markdown **多行可编辑**编辑器，提交给内核的就是它；
+//   - `源码` 页签 = 原始 markdown **多行可编辑**编辑器，提交给内核的就是这段 markdown；
 //   - **应用方式在界面上三选一**（另起新分支 Fresh / 转移历史 --keep / 复制历史
 //     --copy，默认 Fresh）→ 提交 = 结构化 `Command{Name:"edit", Args:[id,
 //     ("--keep"|"--copy")?, 文本]}` 经 u.inCh（与键入同路径，--part 缺省合段）。
@@ -14,7 +14,7 @@ package uigui
 // 两条叠加：
 //  1. **整窗输入区**（本文件 overlayFrame 里 `clip.Rect(整窗)` + `event.Op(&ov.tag)`）：
 //     Gio 的命中是**链式栈遍历**，排在链顶的整窗输入区会连带遮蔽背景——实测左栏会话行、
-//     状态栏按钮、右图手势在遮罩开启时都收不到指针事件（变异验证：去掉它 + 去掉背景门，
+//     状态栏按钮、右图手势在遮罩开启时都收不到指针事件（变异验证：去掉整窗输入区 + 去掉背景门，
 //     左栏立刻恢复响应）。
 //  2. **背景显式不消费**（`historyState.dispatch` 与 `relGraph.update` 见门即返回）：
 //     纵深防御——若遮罩输入区不再是整窗、或背景控件被排到遮罩之上，隔离仍成立。
@@ -110,7 +110,7 @@ type overlayState struct {
 	tplStatus  string
 	tplErr     bool
 
-	card        image.Rectangle // 本帧卡片盒（窗口系；点空白关闭按它判内外）
+	card        image.Rectangle // 本帧卡片盒（窗口系；点空白关闭按卡片盒判内外）
 	focusNeeded bool            // 源码页签要把键盘焦点交给编辑器
 	focusSink   bool            // 呈现页签要把键盘焦点交给遮罩自身（Esc 落点）
 }
@@ -128,7 +128,7 @@ func (st *historyState) openOverlay(u *UI, id conversation.MessageID, mode conve
 	role, _ := st.nodeRoleOf(id)
 	persona := st.isPersona(id)
 	source, trigger := st.injectInfoOf(id)
-	// persona 在 relNodeKind 里落 blockPlain（system），但它可以改首节点快照（D154）。
+	// persona 在 relNodeKind 里落 blockPlain（system），但 persona 可以改首节点快照（D154）。
 	editable := src != "" && (kind == blockUser || kind == blockAssistant || persona)
 	if persona {
 		// D154：改人格必须保留后续历史——Carry 是边转移，新人格接管整棵对话；
@@ -195,8 +195,8 @@ func (st *historyState) isPersona(id conversation.MessageID) bool {
 	return false
 }
 
-// hasChildren 节点是否已有后续内容（版本图上是否有以它为父的节点）。修订出来的新版本
-// 挂在原节点的父下，不算它的孩子——故这个判断就是「改这一条时会不会动到后面的历史」。
+// hasChildren 节点是否已有后续内容（版本图上是否有以该节点为父的节点）。修订出来的新版本
+// 挂在原节点的父下，不算原节点的孩子——故这个判断就是「改这一条时会不会动到后面的历史」。
 func (st *historyState) hasChildren(id conversation.MessageID) bool {
 	if st.model == nil {
 		return false

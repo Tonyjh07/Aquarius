@@ -22,7 +22,7 @@ import (
 )
 
 // maxRespBytes 单次响应上限：搜索 50 条 × 长摘要、抓取整页正文都在几 MB 内，
-// 超过就是上游异常或恶意端点，不能让它把内存吃穿。
+// 超过就是上游异常或恶意端点，不能让响应把内存吃穿。
 const maxRespBytes = 8 << 20
 
 // Config 构造参数。
@@ -192,7 +192,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 }
 
 // apiError 把上游错误体翻成一句可读的英文错误；400 额外标注 ErrWebBadInput
-// （换提供商也是同样的结果，失败切换链不该为它降级）。
+// （换提供商也是同样的结果，失败切换链不该为该错误降级）。
 func apiError(path string, status int, data []byte) error {
 	var body struct {
 		Error struct {

@@ -253,7 +253,7 @@ func TestProviderCardCollapse(t *testing.T) {
 			Constraints: layout.Exact(image.Pt(720, 560)),
 		}, th, u, f)
 	}
-	// 点第 2 张摘要行 = 展开它（同时收起其它）。
+	// 点第 2 张摘要行 = 展开该张（同时收起其它）。
 	f.provs[1].toggle.Click()
 	frame()
 	if f.provOpen != 1 {

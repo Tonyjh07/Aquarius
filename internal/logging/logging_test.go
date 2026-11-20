@@ -13,7 +13,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
 
-// at 固定时刻（带 +08:00），时间列断言用它——本地时区在不同机器上不同，测试不能依赖。
+// at 固定时刻（带 +08:00），时间列断言用 at——本地时区在不同机器上不同，测试不能依赖。
 func at() time.Time {
 	return time.Date(2026, 11, 2, 18, 20, 31, 482*int(time.Millisecond), time.FixedZone("CST", 8*3600))
 }
@@ -330,7 +330,7 @@ func TestConcurrent(t *testing.T) {
 	}
 }
 
-// TestParseLevel 非法值报错（不静默回落）：用户写了 wran，得让他知道没生效。
+// TestParseLevel 非法值报错（不静默回落）：用户写了 wran，得让用户知道没生效。
 func TestParseLevel(t *testing.T) {
 	cases := map[string]Level{"": LevelInfo, "debug": LevelDebug, "INFO": LevelInfo,
 		"warn": LevelWarn, "error": LevelError, " WARN ": LevelWarn}
@@ -358,7 +358,7 @@ func TestParseFormat(t *testing.T) {
 	}
 }
 
-// TestNilLoggerSafe 零值句柄不炸（装配失败路径上仍可能有人调它）。
+// TestNilLoggerSafe 零值句柄不炸（装配失败路径上仍可能有人调该句柄）。
 func TestNilLoggerSafe(t *testing.T) {
 	var l *Logger
 	l.Info(Boot, "log.act.skip", "")

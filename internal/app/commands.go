@@ -66,7 +66,7 @@ type commandEntry struct {
 }
 
 // commandTable 静态命令表（D245 单一事实源）：表序即 /help 的行序，也是补全浮层静态段
-// 的顺序。动态命令（/mcp:<server>:<prompt>）不在这张表里——它们随插件启停增删，混进来
+// 的顺序。动态命令（/mcp:<server>:<prompt>）不在这张表里——动态命令随插件启停增删，混进来
 // 会让「表不可变」这个前提失效；两者在 Commands() 处合并。
 //
 // 在 init() 里填而不是声明处填：/help 的处理函数渲染的就是这张表，声明处填会构成
@@ -87,7 +87,7 @@ func init() {
 // 每条记录的 Params（D250）逐参数说明「这个位置能填什么」，参数相浮层据此算候选；
 // Usage 仍是给人一眼看全的那句速记。两者由 TestCommandParamsMatchUsage 对账。
 // 文案只放 key（D275）：Desc / Usage / Params 的 Name·ValueName·Desc 都是 cmd.* 取词
-// key，纯语法（命令名、--flag、枚举值、<id> 这类占位）仍是字面量——它们是命令的一部分，
+// key，纯语法（命令名、--flag、枚举值、<id> 这类占位）仍是字面量——这些纯语法是命令的一部分，
 // 不是文案，翻不得。翻译发生在 commandInfos 投影时，所以语言选定之后拿到的清单就是
 // 选定语言的（/help 与补全浮层共用同一份投影）。
 func buildCommandTable() []commandEntry {
@@ -324,7 +324,7 @@ func buildCommandIndex(table []commandEntry) map[string]*commandEntry {
 }
 
 // argsOnly 适配器：只吃参数的处理函数（/skill /jobs 等）接进统一签名。
-// 它们不关心 port.Command 的其余字段（如 /edit 才用的 Attachments）。
+// 这些处理函数不关心 port.Command 的其余字段（如 /edit 才用的 Attachments）。
 func argsOnly(f func(s *Session, ctx context.Context, args []string) (string, error)) func(*Session, context.Context, port.Command) (string, error) {
 	return func(s *Session, ctx context.Context, cmd port.Command) (string, error) {
 		return f(s, ctx, cmd.Args)

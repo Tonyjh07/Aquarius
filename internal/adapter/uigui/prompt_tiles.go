@@ -27,7 +27,7 @@ const (
 	modTileHdp unit.Dp = 58
 	// modGridGapDp 磁贴间距。
 	modGridGapDp unit.Dp = 10
-	// modDragSlopDp 单击 / 拖动判定阈值：按下后位移超过它才判为拖拽排序。
+	// modDragSlopDp 单击 / 拖动判定阈值：按下后位移超过该阈值才判为拖拽排序。
 	modDragSlopDp unit.Dp = 4
 	// modDlgWdp / modDlgHdp 编辑弹窗尺寸。
 	modDlgWdp unit.Dp = 380

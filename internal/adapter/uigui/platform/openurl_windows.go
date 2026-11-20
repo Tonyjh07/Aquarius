@@ -29,7 +29,7 @@ func (p *Plat) OpenURL(url string) error {
 	return shellOpen(url)
 }
 
-// OpenPath 打开一个本地路径（目录 → 资源管理器，文件 → 它的默认程序）。
+// OpenPath 打开一个本地路径（目录 → 资源管理器，文件 → 该文件的默认程序）。
 func (p *Plat) OpenPath(path string) error {
 	if path == "" {
 		return fmt.Errorf("%s", i18n.T("ui.platform.url.empty"))

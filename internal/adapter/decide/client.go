@@ -3,7 +3,7 @@ package decide
 // System One 客户端（D281/D290）：`POST {base}/v1/systemone`，三题一次问完。
 //
 // 一份实现覆盖 Jev、Cloudflare clef-flash（Workers AI）、Ollama ≥ 0.35.1 与 Unsloth
-// Decision API——它们认同一个 wire format，只换 base_url 与 model。**不是** OpenAI chat
+// Decision API——这些服务认同一个 wire format，只换 base_url 与 model。**不是** OpenAI chat
 // 形状：拿 `kind: openai-chat` 的服务指向这里，必然失败。
 //
 // 适配器只做三件事：拼 state、发一次、解析回来。阈值不在这里判（那是装饰器的事），

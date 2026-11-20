@@ -52,7 +52,7 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 					// D160：标题行右端两颗钮——「＋」新建对话（左） + 「◀」收起左栏（右）。
 					// 新建排在收起**左侧**：收起钮语义是「把这条栏收掉」，贴边最右更顺；
-					// 且两颗钮都在这条标题行里，它们的位置语义与其它行操作一致。
+					// 且两颗钮都在这条标题行里，这两颗钮的位置语义与其它行操作一致。
 					layout.Rigid(histPlusBtn(&st.btnNew)),
 					// 两颗钮留 8dp 间隔：加号是细笔画、三角是实心块，贴在一起会读成
 					// 一个「＋▶」连字（2026-10-19 取像 4x 复看确认需要分开）。
@@ -100,14 +100,14 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
 							})
 						}),
-						// 「✕」：与行点击件**同级兄弟**，排在它之后（命中链更靠前）。
+						// 「✕」：与行点击件**同级兄弟**，排在行点击件之后（命中链更靠前）。
 						//
-						// **不能**把它嵌进行点击件的 widget 里（2026-10-19 探针实测）：嵌
+						// **不能**把 ✕ 嵌进行点击件的 widget 里（2026-10-19 探针实测）：嵌
 						// 进去的控件收不到任何指针事件——✕ 永远不悬浮、点了也没反应（逐点
-						// 扫描：整行 hover 正常、✕ 恒 false）。同级后 ✕ 正常命中，且它会把
+						// 扫描：整行 hover 正常、✕ 恒 false）。同级后 ✕ 正常命中，且 ✕ 会把
 						// 同一位置的行的命中遮掉（点 ✕ 只投 /rmconv，不会顺带切会话）。
 						//
-						// 选择态**不画**它（D249）：删除走底部动作条，两个删除入口同时在场
+						// 选择态**不画** ✕（D249）：删除走底部动作条，两个删除入口同时在场
 						// 只会点错。
 						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 							if st.selMode {
@@ -175,7 +175,7 @@ func histChromeBtn(c *widget.Clickable, content layout.Widget) layout.Widget {
 // histTextBtn 文字小钮（「导入」「导出」）：与字形象钮同款外壳，只是内容是一段字。
 //
 // 用文字不用图标：这两个动作在别处（命令行、文档）都以这两个词出现，图形符号得靠猜；
-// 左栏标题行只有这一处能放它们，字号与旁边的「会话」标签同档。
+// 左栏标题行只有这一处能放这两颗钮，字号与旁边的「会话」标签同档。
 func histTextBtn(th *material.Theme, c *widget.Clickable, label string) layout.Widget {
 	return histChromeBtn(c, func(gtx layout.Context) layout.Dimensions {
 		l := material.Caption(th, label)

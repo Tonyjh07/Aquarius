@@ -2,7 +2,7 @@ package uigui
 
 // settings_page_prompt.go 「系统提示词」页（D162 页面注册表）：人格模块树 / 有序引用 /
 // 内置只读模块 / 组合预览。编辑区本体是 promptEditor（prompt_editor.go）——与历史窗
-// 遮罩「默认模板」页签**同一份实现**（D154）；本页只把它接进设置窗的分页框架。
+// 遮罩「默认模板」页签**同一份实现**（D154）；本页只把该实现接进设置窗的分页框架。
 
 import (
 	"gioui.org/layout"

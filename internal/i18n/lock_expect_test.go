@@ -19,7 +19,7 @@ package i18n
 // 表驱动测试按**位置**初始化的元素（无字段名可判，AST 拿不到对应关系）——这三处是已知盲区，
 // 靠 `AQUARIUS_UI_LANG=en go test ./...` 兜底。
 //
-// 白名单 `testDataLiterals` 只收 plan I6 第 2 类：用户数据 / 模型输出 / 写入磁盘的内容——它们的
+// 白名单 `testDataLiterals` 只收 plan I6 第 2 类：用户数据 / 模型输出 / 写入磁盘的内容——这些内容的
 // 中文是被测对象本身，不随界面语言变。每一条都要写得出理由（同 cjkAllowed：按文件给、
 // 整串相等或前缀匹配）。
 
@@ -63,7 +63,7 @@ var testDataLiterals = map[string][]string{
 		"> 一 二", "已有草稿 > 引用",
 	},
 	// 状态行/回显里穿插的消息文本与模型输出；「允许执行？」是测试自己传给 Confirm 的
-	// prompt，断言它连着应答回显。
+	// prompt，断言该 prompt 连着应答回显。
 	"internal/adapter/uigui/gui_test.go": {
 		"第一行", "启动提示", "允许执行？ → ", // 用户数据
 		"最终答案", // 模型输出
@@ -145,7 +145,7 @@ var testDataLiterals = map[string][]string{
 	"internal/adapter/uigui/settings_test.go": {
 		"新人格",
 	},
-	// 负向防回归断言：展开全部已随界收口从状态栏移除，断言它不再出现。
+	// 负向防回归断言：展开全部已随界收口从状态栏移除，断言「展开全部」不再出现。
 	"internal/adapter/uigui/history_chrome_test.go": {
 		"展开全部",
 	},
@@ -312,7 +312,7 @@ var testDataLiterals = map[string][]string{
 	"internal/app/session_test.go": {
 		"讲个笑话", "摘要内容", "新问题", "新回答", "项目 X",
 	},
-	// 音频链路的 TTS 配置值与转写/合成的样例文本（含繁体：zhconv 转换数据）。
+	// 音频路径的 TTS 配置值与转写/合成的样例文本（含繁体：zhconv 转换数据）。
 	"cmd/aquarius/audio_config_test.go": {
 		"冰糖", "语速稍快",
 	},
@@ -496,7 +496,7 @@ var testDataLiterals = map[string][]string{
 		"粘贴的文本",
 	},
 	// 录音器错误原文（经 audio.mic.err_record 的 {err} 位回传）、转写样例与假分段器的
-	// 段文本——它们扮演模型输出与用户语音转写，不是界面文案。
+	// 段文本——这些文本扮演模型输出与用户语音转写，不是界面文案。
 	"internal/adapter/ingestmic/ingestmic_test.go": {
 		": 没有设备", "你好世界", "第一句", "第二句", "第三句", "半句话", ": 阈值越界",
 	},

@@ -1,7 +1,7 @@
 package port
 
 // 采样表单解析（D231）的归属在 port，所以范围与措辞的边界由这里守：设置窗的前置校验
-// 与写回侧解析都调它，两边不会再各写一份。
+// 与写回侧解析都调这个解析函数，两边不会再各写一份。
 
 import (
 	"strconv"
@@ -85,7 +85,7 @@ func TestParseSamplingTextStop(t *testing.T) {
 }
 
 // TestParseSamplingTextMessageIsUserFacing 报错文案面向设置窗反馈行：中文、带区间，
-// 不含内部编号。这条守的是「port 里为什么会出现中文」——它输出的不是模型上下文。
+// 不含内部编号。这条守的是「port 里为什么会出现中文」——报错文案输出的不是模型上下文。
 func TestParseSamplingTextMessageIsUserFacing(t *testing.T) {
 	_, err := ParseSamplingText("9", "", "", "")
 	if err == nil {

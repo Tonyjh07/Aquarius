@@ -38,15 +38,15 @@ type WatchProbe struct {
 // WatchProbeResult 一次取样结果。
 //
 // 只有**取不到**（进程起不来、连接失败、路径非法）才返回 error。非零退出码、非 2xx
-// 都是「取到了」，由判据去决定它算不算命中——探针不该替模型判断好坏。
+// 都是「取到了」，由判据去决定这次取样算不算命中——探针不该替模型判断好坏。
 type WatchProbeResult struct {
 	Status int    // HTTP 状态码 / 命令退出码；文件恒 0
 	Output string // 取样正文（已按上限裁剪）
 }
 
-// WatchProber 探针端口（D190）：观察器按模型声明的节奏调用它。
+// WatchProber 探针端口（D190）：观察器按模型声明的节奏调用探针。
 //
-// 实现必须尊重 ctx（期限/取消），且一次取样有上限——模型可能让它读一个很大的文件
+// 实现必须尊重 ctx（期限/取消），且一次取样有上限——模型可能让探针读一个很大的文件
 // 或一个不会结束的地址。
 type WatchProber interface {
 	Probe(ctx context.Context, spec WatchProbe) (WatchProbeResult, error)
@@ -79,7 +79,7 @@ type WatchState struct {
 // WatchManager 观察器端口（D190）：模型经 watch_* 工具声明，用户经 /watch 查/停。
 //
 // 与 JobManager 分开：任务有终态（完成事件靠 Wait），观察器等的是**外部不确定状态**，
-// 只能按模型给的节奏去看，`poller:` 前缀就是它的注入来源。
+// 只能按模型给的节奏去看，`poller:` 前缀就是观察器的注入来源。
 type WatchManager interface {
 	Start(ctx context.Context, spec WatchSpec) (WatchState, error)
 	List(ctx context.Context) ([]WatchState, error)

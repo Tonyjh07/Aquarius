@@ -66,7 +66,7 @@ type WireFrame struct {
 // splitWireFrames 把原始字节切成帧。
 //
 // 判据只有一条：出现 `data:` 行就按 SSE 切（空行分帧），否则整份算一帧——错误响应
-// 常常是单个 JSON 对象或一页 HTML，按 SSE 切会把它切碎。
+// 常常是单个 JSON 对象或一页 HTML，按 SSE 切会把这份响应切碎。
 func splitWireFrames(raw []byte) []WireFrame {
 	text := string(raw)
 	trimmed := strings.TrimSpace(text)
@@ -102,7 +102,7 @@ func splitWireFrames(raw []byte) []WireFrame {
 }
 
 // makeWireFrame 归纳一帧：种类取首个可判别的行（data / event / comment），
-// 摘要优先取 data 载荷——`event: ping` 这种帧的看点在它带没带 data。
+// 摘要优先取 data 载荷——`event: ping` 这种帧的看点在有没有带 data。
 func makeWireFrame(idx int, text string) WireFrame {
 	f := WireFrame{Index: idx, Text: text, Bytes: len(text)}
 	payload, first := "", ""

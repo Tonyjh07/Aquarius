@@ -2,8 +2,8 @@ package logging
 
 // L4 的两把锁：stderr 出口与日志条目的形状。
 //
-// 它们守的是同一件事的两面——「日志只有一条路，且每一行都说得清是谁、怎么处置的」：
-//   - stderr 出口：`fmt.Fprint*(…stderr…)` 只许出现在本包（它就是 stderr 出口本身）与
+// 两把锁守的是同一件事的两面——「日志只有一条路，且每一行都说得清是谁、怎么处置的」：
+//   - stderr 出口：`fmt.Fprint*(…stderr…)` 只许出现在本包（本包就是 stderr 出口本身）与
 //     `fatal` 那几个「面向用户的最终结论」上。漏了这面，有人会绕过日志再写一行裸文本：
 //     没有时间戳、没有上下文，还只上 stderr（GUI 双击启动看不见）。
 //   - 条目形状：调用点给出的 `log.*` 事件 key 必须紧跟一个 `log.act.*` 行动 key，且 key 的
@@ -37,7 +37,7 @@ var lockTops = []string{"cmd", "internal", "pluginapi"}
 var lockSkipDirs = map[string]bool{"testdata": true, "spike": true, "temp": true, ".git": true}
 
 // stderrPass 一处允许直接写 stderr 的位置：path 是仓库相对路径（目录以 `/` 结尾），
-// fn 非空时只放行这个函数（含它内部的闭包）。
+// fn 非空时只放行这个函数（含该函数内部的闭包）。
 type stderrPass struct {
 	path string
 	fn   string
@@ -358,7 +358,7 @@ func anyArgMentionsStderr(call *ast.CallExpr) bool {
 	return false
 }
 
-// enclosingFunc 最近的外层函数名（闭包归它所属的那个函数）。
+// enclosingFunc 最近的外层函数名（闭包归所属的那个函数）。
 func enclosingFunc(stk []ast.Node) string {
 	for i := len(stk) - 1; i >= 0; i-- {
 		if fd, ok := stk[i].(*ast.FuncDecl); ok {

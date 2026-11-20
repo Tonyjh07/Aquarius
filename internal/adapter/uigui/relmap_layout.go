@@ -9,14 +9,14 @@ package uigui
 // **物理步进在 `relmap_layout_source.go`**（RSM v1.2 的力参数 + 源实现的步进算法：三个
 // 通道直接改坐标 + 一条 friction 衰减时钟，运动时长由日程决定而非随规模漂移）。两件事
 // 分开的理由是谁的寿命长：静息布局 / 播种 / 拖拽 pin / 槽位采纳 / 视场基准与视口无关、
-// 与物理实现也无关，而「每帧怎么把坐标推一步」是唯一可能被替换的部分——替换它只需换掉
+// 与物理实现也无关，而「每帧怎么把坐标推一步」是唯一可能被替换的部分——替换物理步进只需换掉
 // 那个文件里的 step，本文件不动。
 //
 // 静息布局（rest layout，§3）是确定性参考（D127 横树）：
 // restPos(子) = restPos(父) + (restGap, restOff)——x = 层 × 列距（时间向右），
-// y = 兄弟叶数加权槽位（版本上下分杈）。它提供**播种初值 + 树锚点 + 视场基准**
+// y = 兄弟叶数加权槽位（版本上下分杈）。静息布局提供**播种初值 + 树锚点 + 视场基准**
 // （fit/recenter 取树盒——当前物理位形会动，不适合当视场基准）。**注意：源档的弹簧
-// 不看静息槽位**（它拉向「距父 200dp」），故静息布局在源档下不再等于平衡态（实测残差
+// 不看静息槽位**（弹簧拉向「距父 200dp」），故静息布局在源档下不再等于平衡态（实测残差
 // 可达静息跨度的 43%）——这是源档转正的已知代价之一（D128 待补项）。
 //
 // 可测性：坐标数值不确定 ⇒ 断言**不变量**：静息树形 / 层序（静息态）/ 有界盒 /
@@ -44,7 +44,7 @@ const (
 	relColAdoptMax = 2.0
 	// relSlotGapDp 兄弟槽位之间的额外间隙（dp）：卡片叠放时留条缝。
 	relSlotGapDp = 10.0
-	// relBound 坐标兜底的**下限**（dp；NaN / 越界时钳回）。它原是一个绝对值，实测**小于
+	// relBound 坐标兜底的**下限**（dp；NaN / 越界时钳回）。relBound 原是一个绝对值，实测**小于
 	// 合法深链的静息跨度**——卡片占位下 colGap ≈ 328dp，于是超过约 124 条消息的会话
 	// （164×(n−1) > 20000）首帧就把坐标钳进 ±20000，整树当场塌成一小团再"收敛"
 	// （实测 chain200：静息跨度 65,272dp → 末态盒宽 628dp、残差 32,481dp）。D128 起
@@ -127,7 +127,7 @@ type relLayout struct {
 	friction  float64
 	wasPinned bool
 	// anchorX/anchorY 树锚点（世界 dp） = 静息布局的包围盒中心：整树被拉向这里。
-	// D126：节点锚废除后，单个节点只受弹簧/接触推力（完全自由），整树的位置由它兜住。
+	// D126：节点锚废除后，单个节点只受弹簧/接触推力（完全自由），整树的位置由树锚点兜住。
 	anchorX, anchorY float64
 	// bound 本布局的坐标兜底（dp）= max(relBound, relBoundScale × 静息跨度 + 余量)：
 	// 防病态输入把坐标推爆，同时**装得下合法深链**（绝对值 20000 曾把 >124 条消息的
@@ -149,7 +149,7 @@ func newRelLayout(nodes []relGeoNode) (*relLayout, bool) {
 		return nil, false
 	}
 	// 列距按「结构锥形下限」取：弹簧距已由用户调短（200→100dp），若列距仍按卡片宽
-	// 定，静息布局会比物理平衡态宽一倍多 ⇒ 按它适配的视场（fit/restBox/树锚/播种）
+	// 定，静息布局会比物理平衡态宽一倍多 ⇒ 按静息布局适配的视场（fit/restBox/树锚/播种）
 	// 全部过宽、树在视口里只占一半。
 	colGap := math.Max(relRestLen, relSrcConeFrac*relSrcEdgeLength)
 	l := &relLayout{
@@ -294,7 +294,7 @@ func (l *relLayout) restPos() []relPoint {
 }
 
 // boxCenterOf 给定位形的包围盒中心（世界 dp；含卡片半宽/半高）。整棵树的平铺位置
-// 一律用**盒心**度量——它就是 fitView/recenterTree 对准视口中心的那个点（两份规则
+// 一律用**盒心**度量——盒心就是 fitView/recenterTree 对准视口中心的那个点（两份规则
 // 必须一致，否则「树锚」与「视场」说的不是同一个地方）。
 func (l *relLayout) boxCenterOf(x, y []float64) (float64, float64) {
 	minX, minY := math.Inf(1), math.Inf(1)
@@ -396,7 +396,7 @@ func (l *relLayout) step(pin relPin) {
 // snapToAnchor 静止时把整树平移到树锚点（收敛残差在阈值量级，视觉无感；
 // 但「树停在哪」是硬契约——D126：静止态整树盒心精确等于锚点，不偏几个 dp）。纯平移
 // 不改任何相对位置 ⇒ 弹簧/接触力的内部状态不受影响，下一帧仍静止。**钉住期间不平**
-// （pin 每步会把被拖节点拉回指针位，平移它只会制造亚像素闪跳）。
+// （pin 每步会把被拖节点拉回指针位，平移整树只会制造亚像素闪跳）。
 func (l *relLayout) snapToAnchor() {
 	cx, cy := l.boxCenterOf(l.x, l.y)
 	dx, dy := l.anchorX-cx, l.anchorY-cy
@@ -432,7 +432,7 @@ func (l *relLayout) refreshRestFrom(i int) {
 // 「拖完还是回到一个固定的形状」）——所以松手时把新位置**写回**静息槽位，新形状成为
 // 平衡态。**D127 横树**：纵向（兄弟/版本方向）自由；**横向（层/时间方向）钳在层带内**
 // （relColAdoptMin/Max × colGap：保「子恒在父之右」且父子卡片不叠）。结构根没有父：
-// 整棵静息布局随它平移（= 拖着整树走）。
+// 整棵静息布局随结构根平移（= 拖着整树走）。
 func (l *relLayout) adoptSlot(i int) {
 	n := len(l.nodes)
 	if i < 0 || i >= n {

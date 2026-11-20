@@ -87,7 +87,7 @@ func probeServer(t *testing.T, r probeReply) *probeSrv {
 	}
 	out := &probeSrv{}
 	// handler 里的 panic 会被 net/http 吞进日志、只表现为「连接中断」。探测把网络错误
-	// 一律判成「无结论」，于是期望「无结论」的用例会**假绿**——它验的分支其实没走到。
+	// 一律判成「无结论」，于是期望「无结论」的用例会**假绿**——该用例验的分支其实没走到。
 	// 把服务端日志接管下来，panic 出现即让测试失败。
 	var logMu sync.Mutex
 	var logBuf bytes.Buffer

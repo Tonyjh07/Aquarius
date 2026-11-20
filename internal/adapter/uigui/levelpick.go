@@ -2,12 +2,12 @@ package uigui
 
 // 确认态里的档位列表（D282 修订 D86 的「升一档」）。
 //
-// 位置与形状：锚在胶囊上沿之上、右缘对齐胶囊（🔑 在动作区最右，列表从它长出来），
+// 位置与形状：锚在胶囊上沿之上、右缘对齐胶囊（🔑 在动作区最右，列表从 🔑 长出来），
 // 深色实色卡（与补全浮层同一套：chrome 形状整窗登记、每帧重登记热区）。四项恒列
 // （升与降同一处），当前档打「当前」标；卡底一句说明这是**全局**改档，不是「这一次」。
 //
 // 选完不做任何安全判定：投 /permission（永久改档，与托盘/设置同一条路径）后把选中的
-// 档报给 runner，由它按新档重判本次（D282：判定只该有一个地方算）。
+// 档报给 runner，由 runner 按新档重判本次（D282：判定只该有一个地方算）。
 
 import (
 	"image"
@@ -40,7 +40,7 @@ func (u *UI) levelPickable() bool {
 }
 
 // levelPickRects 档位列表的几何（输入栏局部坐标）：卡 + 四行。抽出来是为了可测——
-// 卡片是浮层、不可见时没有任何控件能反推它的位置，几何错（出窗、行叠行）只能靠
+// 卡片是浮层、不可见时没有任何控件能反推卡片的位置，几何错（出窗、行叠行）只能靠
 // 断言拿住。
 //
 // 局部坐标可以是负的（卡越过输入行上沿、长在转写区之上，与 hoverCard 同规则），
@@ -70,7 +70,7 @@ func levelPickRects(gtx layout.Context, pill image.Rectangle, minTop int) (image
 
 // drawLevelPick 画档位列表（输入栏局部坐标：负 y = 溢出到转写区之上）。
 //
-// 行矩形每帧重登记到 u.levelRows（窗口系）：高亮与点击都按它算，与补全浮层同构
+// 行矩形每帧重登记到 u.levelRows（窗口系）：高亮与点击都按行矩形算，与补全浮层同构
 // （D85：光标直采比 Hover 事件态可靠——光标停在原处时没有 Move 事件）。
 func (u *UI) drawLevelPick(gtx layout.Context, absY int, pill image.Rectangle) {
 	u.levelRows = u.levelRows[:0]
@@ -147,7 +147,7 @@ func (u *UI) currentPermLevel() string {
 }
 
 // pickLevel 选了一档（D282）：先投 /permission（永久改档，托盘/设置同一条路径），
-// 再把选中的档报给 runner——放不放行由它按新档重判，界面不做安全判定。
+// 再把选中的档报给 runner——放不放行由 runner 按新档重判，界面不做安全判定。
 func (u *UI) pickLevel(lv string) {
 	u.levelPickOpen = false
 	u.m.submitCommand(commandLine(uiCmdPermission, lv))
