@@ -145,7 +145,8 @@ var enEditTexts = map[string]string{
 	"inject.elsewhere_save":   "save target conversation {id}",
 
 	// /respond
-	"respond.root":      "cannot generate a response at the conversation root (the root is the conversation itself and has no context to continue)",
-	"respond.move_head": "move Head",
-	"respond.done":      "Generated a response from that node (Head → {head})",
+	"respond.root":        "cannot generate a response at the conversation root (the root is the conversation itself and has no context to continue)",
+	"respond.server_tool": "this reply used server-side link reading and cannot be continued (send a new message instead)",
+	"respond.move_head":   "move Head",
+	"respond.done":        "Generated a response from that node (Head → {head})",
 }

@@ -455,7 +455,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			Caps:         w.cfg.Model.chainCaps(),                                      // D173：降级链取与
 			// D307/D309：服务端能力同样取与；端点不认就不发那一项，免得首轮撞 400。
 			ServerCaps:   w.cfg.Model.chainServerCaps(),
-			TitleEnabled: w.cfg.titleEnabled(), // D309：标题由模型顺带生成（键缺失 = 开）
+			TitleEnabled: w.cfg.titleEnabled(),   // D309：标题由模型顺带生成（键缺失 = 开）
+			ReadURL:      w.cfg.readURLEnabled(), // D310：本地抓不到正文时改由服务端读
 			// §5.17/D247：会话尾部指令（卡的 post_history_instructions）是否随每轮装配发出。
 			ApplyPostHistory: w.cfg.applyPostHistory(),
 			// §5.17/D294：世界书按关键词激活（缺省开；卡里写了触发词就是想让它生效）。

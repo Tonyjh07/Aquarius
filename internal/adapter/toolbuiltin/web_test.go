@@ -217,3 +217,27 @@ func TestWebToolsAreRegistered(t *testing.T) {
 		}
 	}
 }
+
+// TestWebFetchFallbackHint 正文几乎为空时给出降级目标（D310）：装配层据此把下一轮
+// 切到服务端阅读；正文够长时不能给，否则每次抓取都会多一次往返。
+func TestWebFetchFallbackHint(t *testing.T) {
+	thin := &fakeWebFetch{page: port.WebPage{URL: "https://e.com/a", Markdown: "Loading…", Provider: "local"}}
+	res, err := (&webFetchTool{fetch: thin}).Execute(t.Context(),
+		callWith(t, "web_fetch", map[string]any{"url": "https://e.com/a"}))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Fallback != "https://e.com/a" {
+		t.Fatalf("Fallback = %q，want 该地址", res.Fallback)
+	}
+
+	fat := &fakeWebFetch{page: port.WebPage{URL: "https://e.com/a", Markdown: strings.Repeat("x", 1000), Provider: "local"}}
+	res, err = (&webFetchTool{fetch: fat}).Execute(t.Context(),
+		callWith(t, "web_fetch", map[string]any{"url": "https://e.com/a"}))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Fallback != "" {
+		t.Fatalf("正文够长时不该建议降级，得到 %q", res.Fallback)
+	}
+}

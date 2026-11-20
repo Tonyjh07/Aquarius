@@ -72,6 +72,13 @@ type Result struct {
 	// Images 本次调用产出的图片引用（D169）：字节进附件库，这里只留寻址所需的最小事实。
 	// 不直接引 conversation.BlobRef——domain/tool 不 import conversation（依赖方向）。
 	Images []ImageRef `json:"images,omitempty"`
+	// Fallback 建议改走别的路径时填目标地址（D310）：web_fetch 本地抓不到正文
+	// （反爬、要渲染、正文过短）时填该 URL，装配层据此在这一轮把请求切到服务端路径。
+	// 空 = 结果可用，不需要另想办法。
+	//
+	// 由工具自己声明而不是让装配层解析结果文本：工具知道为什么没抓到，解析文案只会
+	// 把一句提示语的措辞变成契约。
+	Fallback string `json:"fallback,omitempty"`
 }
 
 // ImageRef 工具产出的图片引用（内容寻址，D169）：装配时经 AttachmentStore 取字节，

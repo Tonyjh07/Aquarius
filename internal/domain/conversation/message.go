@@ -17,6 +17,8 @@ const (
 	PartDoc      PartKind = "doc"
 	PartThinking PartKind = "thinking" // 思考过程（D42）：仅 assistant 节点可携带
 	PartTool     PartKind = "tool"     // 工具调用+结果同片（D95）：仅 assistant 节点可携带
+	// PartServer 服务端工具块（D310）：仅 assistant 节点可携带。内容不解释，只原样回传。
+	PartServer PartKind = "server"
 )
 
 // ApprovalState 工具确认态（D95 预留字段，M5 工具确认接线；"" = 未进入确认流程）。
@@ -47,6 +49,17 @@ type ToolPart struct {
 	Approval ApprovalState   `json:"approval,omitempty"` // 预留：M5 工具确认
 }
 
+// ServerPart 服务端工具块的原文（D310）：属性全是展示用，回传一律用 Raw。
+// 网页正文由服务端加密后放在块内的 signature 里，客户端解不开也改不得——改一个字符
+// 就等于那个网页没读过。
+type ServerPart struct {
+	Tool  string          `json:"tool"`           // 服务端工具名（deepseek_read_url）
+	Kind  string          `json:"kind,omitempty"` // 块类别（read_link）；服务端靠它认回来
+	URL   string          `json:"url,omitempty"`  // 展示用
+	Title string          `json:"title,omitempty"`
+	Raw   json.RawMessage `json:"raw"` // 整块原文，回传时原样发出
+}
+
 // Part 消息内容的多态片段。
 type Part struct {
 	Kind       PartKind  `json:"kind"`
@@ -54,6 +67,8 @@ type Part struct {
 	Ref        *BlobRef  `json:"ref,omitempty"`        // Kind=image|audio|doc：附件引用
 	Transcript string    `json:"transcript,omitempty"` // Kind=audio：ASR 转写文本（模型只见文本）
 	Tool       *ToolPart `json:"tool,omitempty"`       // Kind=tool：调用与结果同片（D95）
+	// Server Kind=server：服务端工具块的原文（D310）。
+	Server *ServerPart `json:"server,omitempty"`
 	// Signature Kind=thinking 的思考块签名（D175）：适配器写入的不透明串（**带协议前缀**，
 	// 如 `anthropic:<sig>` / `responses:<压缩 JSON>`），装配时原样回传，由各协议适配器按前缀
 	// 识别归属——跨 provider 复制会话时不会把 A 家的签名发给 B 家。空 = 该协议无回传要求

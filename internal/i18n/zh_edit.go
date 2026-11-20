@@ -149,7 +149,8 @@ var zhEditTexts = map[string]string{
 	"inject.elsewhere_save":   "保存目标会话 {id}",
 
 	// /respond
-	"respond.root":      "不能在会话根节点生成响应（根即会话本身，没有可续写的上下文）",
-	"respond.move_head": "移动 Head",
-	"respond.done":      "已从该节点生成响应（Head → {head}）",
+	"respond.root":        "不能在会话根节点生成响应（根即会话本身，没有可续写的上下文）",
+	"respond.server_tool": "这条回答用过服务端阅读链接，不能续写（要接着聊请新发一条消息）",
+	"respond.move_head":   "移动 Head",
+	"respond.done":        "已从该节点生成响应（Head → {head}）",
 }

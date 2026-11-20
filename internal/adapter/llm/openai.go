@@ -435,6 +435,22 @@ func (c *Client) noteCapFrom400(code int, sn string, req port.GenerateRequest) {
 	c.markServerCap(port.ServerCapTitle)
 }
 
+// noteServerToolFrom400 服务端工具被拒时记一笔（D310）。
+//
+// 与 noteCapFrom400 分开判：服务端工具没有「可剥离的单个字段」，被拒就是这一项能力
+// 在这个端点上不可用。判据只到「400 且错误里点名了那个工具」——不叠「不支持」措辞，
+// 因为「不能与其他工具共存」这种拒绝也是在说同一件事，措辞里没有那类关键词。
+func (c *Client) noteServerToolFrom400(code int, sn string, req port.GenerateRequest) {
+	if code != http.StatusBadRequest && code != http.StatusUnprocessableEntity {
+		return
+	}
+	for _, name := range req.ServerTools {
+		if name == port.ServerCapReadURL && strings.Contains(sn, "deepseek_read_url") {
+			c.markServerCap(port.ServerCapReadURL)
+		}
+	}
+}
+
 // omitCopy 剥离名单快照（map 只在锁内增删，读侧拿副本，避免与记录回调竞争）。
 func (c *Client) omitCopy() map[string]bool {
 	c.mu.Lock()

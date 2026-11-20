@@ -33,6 +33,7 @@ var enTuiTexts = map[string]string{
 	// TUI 通知
 	"tui.notice.pending_undone": "undid the queued input: {preview}",
 	"tui.notice.buffer_full":    "the input buffer is full, this line was not executed",
+	"tui.notice.server_read":    "read server-side: {url}",
 
 	// 附件占位（终端、TUI、GUI 共用）
 	"attach.transcript":  "[audio transcript]",

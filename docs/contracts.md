@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-20 @ f954b89 -->
+<!-- docs-sync: 2026-11-20 @ 5d15e04 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -329,6 +329,22 @@ API）；未实现或报错时 app 回落通用估算（③），并以服务端
 `response.title`，走 `Delta.Title` 一次给全（不是增量）。空 = 这次没拿到，是正常回落。
 端点 400 点名 `title` 时记进 `unsupported_server_caps`（D307 那本账），**不进**
 `unsupported_params`——后者是采样参数的清单，混在一起用户会看不出「这个端点连标题都不认」。
+
+**服务端读链接是一次形态切换**（D310）：`GenerateRequest.ServerTools` 非空时，请求只声明服务端
+工具、**不带本地 function tools**——协议里两类工具不能同时声明（服务端会以 400 拒绝）。触发条件
+是「上一轮 `web_fetch` 只拿到壳子」（工具把地址写进 `tool.Result.Fallback`），且该地址出现在本轮
+用户消息里（服务端只在最后一条用户消息里找链接，最多看前 10 个）、整条降级链都认 `read_url`、
+`web.read_url.enabled` 没关。切一次即止：`retryURLs` 消费后清空。
+
+服务端回的内容块（`server_tool_use` 调用块与 `web_fetch_tool_result` 结果块）落成
+`conversation.PartServer`，原文整块存在 `ServerPart.Raw` 里——**网页正文加密在块内的
+`signature` 字段**，客户端解不开也改不得。装配时原样放回 assistant 的 `content`（走
+`PromptMessage.ServerBlocks`），相对位置是「思考之后、正文之前」。没有有效 `signature` 时服务端
+只是不把那一页拼回上下文，请求照常。用过服务端工具的回复**不能续写**（协议 400），`/respond`
+在本地就拒。端点 400 点名工具名时记进 `unsupported_server_caps`。
+
+目前只有 Messages 协议发这个声明：Chat Completions 与 Responses 的服务端块流式形态没有公开文档，
+猜着写等于把「读不到」变成随机行为。
 
 **用量的分项**（D308）：`conversation.Usage` 除输入 / 输出 / 金额外还有四项——`CacheRead` /
 `CacheWrite` 是输入侧的缓存命中与写入，`Thinking` 是输出里的推理 token（**已含在输出里**，只

@@ -36,6 +36,7 @@ var zhTuiTexts = map[string]string{
 	// TUI 通知
 	"tui.notice.pending_undone": "已撤销待发：{preview}",
 	"tui.notice.buffer_full":    "输入缓冲已满，此行未执行",
+	"tui.notice.server_read":    "由服务端读取：{url}",
 
 	// 附件占位（终端、TUI、GUI 共用）
 	"attach.transcript":  "〔音频转写〕",

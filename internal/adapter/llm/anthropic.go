@@ -58,7 +58,7 @@ type anthropicRequest struct {
 	MaxTokens int                `json:"max_tokens"` // 必填
 	System    []anthropicText    `json:"system,omitempty"`
 	Messages  []anthropicInbound `json:"messages"`
-	Tools     []anthropicTool    `json:"tools,omitempty"`
+	Tools     []any              `json:"tools,omitempty"`
 	Stream    bool               `json:"stream"`
 	// Temperature 采样温度（nil = 不发送，交服务端默认 1.0；0 会照发，D204）。
 	// Messages API 只接受 0..1，超范围在启动校验时报因。
@@ -146,7 +146,7 @@ func encodeAnthropicRequest(req port.GenerateRequest) ([]byte, error) {
 		Model:       req.Model,
 		System:      system,
 		Messages:    msgs,
-		Tools:       toAnthropicTools(req.Tools, wn),
+		Tools:       toAnthropicTools(req.Tools, wn, req.ServerTools),
 		Stream:      true,
 		Temperature: req.Params.Temperature,
 		TopP:        req.Params.TopP,
@@ -279,13 +279,20 @@ func anthropicBlocks(parts []port.PromptPart, allowImage bool) ([]any, error) {
 }
 
 // anthropicAssistantBlocks assistant 消息 → 内容块。顺序固定为
-// 思考 → 正文 → 工具调用：思考块必须在其 assistant 消息的开头且原样（含签名）。
+// 思考 → 服务端块 → 正文 → 工具调用：思考块必须在其 assistant 消息的开头且原样（含签名）；
+// 服务端块（D310）在原响应里也排在正文之前，且必须紧跟同一轮的思考、在正文之前回传，
+// 服务端才认得出「这轮读过哪个网页」。
 func anthropicAssistantBlocks(m port.PromptMessage, wn *wireNames) ([]any, error) {
 	var blocks []any
 	if sig, ok := decodeAnthropicSignature(m.ReasoningSignature); ok && strings.TrimSpace(m.Reasoning) != "" {
 		blocks = append(blocks, anthropicThinkingBlock{
 			Type: "thinking", Thinking: m.Reasoning, Signature: sig,
 		})
+	}
+	for _, raw := range m.ServerBlocks {
+		if len(raw) > 0 {
+			blocks = append(blocks, raw) // 原样：signature 在块内，解码再编码只会丢东西
+		}
 	}
 	content, err := anthropicBlocks(m.Content, false)
 	if err != nil {
@@ -323,8 +330,12 @@ func anthropicToolInput(raw json.RawMessage) (map[string]any, error) {
 
 // toAnthropicTools 工具声明转换；空 Schema 补默认对象结构（input_schema 必填）。
 // 名字经 wireNames 换成端点安全别名（D195）。
-func toAnthropicTools(specs []tool.Spec, wn *wireNames) []anthropicTool {
-	out := make([]anthropicTool, 0, len(specs))
+//
+// 返回 []any 是因为服务端工具（D310）与 function tool 的形状不同：服务端工具只要
+// `{"type":"deepseek_read_url","name":"deepseek_read_url"}`，没有 schema。两者在协议里
+// 不能共存，调用方据此二选一（不是同一条清单里混着发）。
+func toAnthropicTools(specs []tool.Spec, wn *wireNames, serverTools []string) []any {
+	out := make([]any, 0, len(specs)+len(serverTools))
 	for _, s := range specs {
 		params := s.Schema
 		if len(params) == 0 {
@@ -332,7 +343,27 @@ func toAnthropicTools(specs []tool.Spec, wn *wireNames) []anthropicTool {
 		}
 		out = append(out, anthropicTool{Name: wn.Wire(s.Name), Description: s.Description, InputSchema: params})
 	}
+	for _, name := range serverTools {
+		if typ := anthropicServerToolType(name); typ != "" {
+			out = append(out, anthropicServerTool{Type: typ, Name: typ})
+		}
+	}
 	return out
+}
+
+// anthropicServerTool 服务端工具声明（D310）：type 与 name 同值，没有 schema。
+type anthropicServerTool struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+// anthropicServerToolType 能力名 → 服务端工具名；认不出（含本协议没有的能力）返回空。
+// Messages 这边目前只有阅读链接一项：服务端搜索与树模型正面冲突（plan 有记），不发。
+func anthropicServerToolType(capability string) string {
+	if capability == port.ServerCapReadURL {
+		return "deepseek_read_url"
+	}
+	return ""
 }
 
 // anthropicThinkingOf 思考参数映射（D34 规则 + D175 规则四）。Messages API 没有
@@ -383,7 +414,8 @@ func (c *Client) generateAnthropic(ctx context.Context, req port.GenerateRequest
 		_ = resp.Body.Close()
 		cancel()
 		tr.finish(port.WireEndStatus)
-		c.noteCapFrom400(code, sn, req) // D307：400 点名 title 时记一笔，此后不再发
+		c.noteCapFrom400(code, sn, req)        // D307：400 点名 title 时记一笔，此后不再发
+		c.noteServerToolFrom400(code, sn, req) // D310：服务端工具被拒同样记账
 		return nil, c.statusError(anthropicPath, code, sn, after)
 	}
 	s := newRawStream(streamCtx, cancel, &tracedBody{ReadCloser: resp.Body, tr: tr}, newWireNames(req.Tools))
@@ -409,10 +441,12 @@ type anthropicStreamState struct {
 }
 
 type anthropicEvent struct {
-	Type         string                     `json:"type"`
-	Index        int                        `json:"index"`
-	Message      *anthropicResult           `json:"message"`
-	ContentBlock *anthropicBlock            `json:"content_block"`
+	Type    string           `json:"type"`
+	Index   int              `json:"index"`
+	Message *anthropicResult `json:"message"`
+	// ContentBlock 保留原文（D310）：服务端工具块要原样回传，解成结构体再编回去
+	// 可能丢掉服务端认的字段（signature 尤其）。
+	ContentBlock json.RawMessage            `json:"content_block"`
 	Delta        *anthropicEventDelta       `json:"delta"`
 	Usage        *anthropicEventUsage       `json:"usage"`
 	Error        *anthropicEventErrorDetail `json:"error"`
@@ -424,10 +458,49 @@ type anthropicResult struct {
 	Title string `json:"title"`
 }
 
+// anthropicBlock content_block 里本适配器要认的字段（服务端块另走 anthropicServerBlockOf）。
 type anthropicBlock struct {
-	Type string `json:"type"` // "text" | "thinking" | "tool_use"
+	Type string `json:"type"` // "text" | "thinking" | "tool_use" | "server_tool_use" | "web_fetch_tool_result"
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// anthropicServerBlockOf 把 content_block 原文识别为服务端工具块（D310）：
+// 调用块（server_tool_use）与结果块（web_fetch_tool_result）。其它类型返回 nil。
+func anthropicServerBlockOf(raw json.RawMessage) *port.ServerBlock {
+	if len(raw) == 0 {
+		return nil
+	}
+	var head struct {
+		Type  string `json:"type"`
+		Kind  string `json:"kind"`
+		Name  string `json:"name"`
+		Input struct {
+			URL string `json:"url"`
+		} `json:"input"`
+		Content struct {
+			Type    string `json:"type"`
+			URL     string `json:"url"`
+			Content struct {
+				Title string `json:"title"`
+			} `json:"content"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return nil
+	}
+	switch head.Type {
+	case "server_tool_use":
+		// 只留阅读链接这一种：调用块里没有 signature，展示也不需要 action 之外的字段。
+		return &port.ServerBlock{Tool: head.Name, Kind: head.Kind, URL: head.Input.URL, Raw: raw}
+	case "web_fetch_tool_result":
+		return &port.ServerBlock{Tool: port.ServerCapReadURL, Kind: head.Kind, URL: head.Content.URL,
+			Title: head.Content.Content.Title, Raw: raw}
+	case "web_search_tool_result":
+		// 搜索工具本轮不声明（plan 有记：与树模型冲突），收到就说明端点自作主张，丢弃。
+		return nil
+	}
+	return nil
 }
 
 // anthropicEventDelta content_block_delta 的 delta / message_delta 的 delta 共用外壳
@@ -477,10 +550,18 @@ func decodeAnthropicEvent(s *stream, st *anthropicStreamState, payload string) (
 		return port.Delta{}, false, nil
 
 	case "content_block_start":
+		// 服务端工具块（D310）整块一次性下发：认出就原样交给 app（树的 PartServer）。
+		if sb := anthropicServerBlockOf(ev.ContentBlock); sb != nil {
+			return port.Delta{Server: sb}, true, nil
+		}
 		// 工具调用的 ID 与名字只在块开始时给出（后续只有参数增量）。
-		if ev.ContentBlock != nil && ev.ContentBlock.Type == "tool_use" {
+		var cb anthropicBlock
+		if len(ev.ContentBlock) > 0 {
+			_ = json.Unmarshal(ev.ContentBlock, &cb)
+		}
+		if cb.Type == "tool_use" {
 			return port.Delta{ToolCalls: []port.ToolCallDelta{{
-				Index: ev.Index, ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name,
+				Index: ev.Index, ID: cb.ID, Name: cb.Name,
 			}}}, true, nil
 		}
 		return port.Delta{}, false, nil

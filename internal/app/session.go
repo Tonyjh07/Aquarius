@@ -94,6 +94,39 @@ func firstUserTurn(c *conversation.Conversation) bool {
 	return n == 1
 }
 
+// urlInLastUserMessage urls 里是否有地址出现在本轮（路径上最后一条用户消息）里（D310）。
+//
+// 服务端读链接只在**最后一条用户消息**里找地址、且只认前 10 个，别处的地址发出去也
+// 读不到。所以在装配层先把这一层筛掉：不满足就别切形态，省下「少了工具还没读到网页」
+// 的那一轮。
+func urlInLastUserMessage(c *conversation.Conversation, urls []string) bool {
+	if c == nil || len(urls) == 0 {
+		return false
+	}
+	var text strings.Builder
+	for _, m := range c.Path() {
+		if m.Role != conversation.RoleUser {
+			continue
+		}
+		text.Reset()
+		for _, p := range m.Content {
+			if p.Kind == conversation.PartText {
+				text.WriteString(p.Text)
+			}
+		}
+	}
+	body := text.String() // 循环结束时留的是最后一条用户消息
+	if body == "" {
+		return false
+	}
+	for _, u := range urls {
+		if u != "" && strings.Contains(body, u) {
+			return true
+		}
+	}
+	return false
+}
+
 // normalizeModelTitle 把服务端给的标题收拾成可落盘的一行：去空白与包裹引号、压成单行、
 // 按 titleRunes 截断。空 = 不作为标题（保留原来的摘录）。
 func normalizeModelTitle(raw string) string {

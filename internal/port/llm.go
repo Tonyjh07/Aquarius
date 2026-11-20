@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -53,6 +54,9 @@ type PromptMessage struct {
 	ReasoningSignature string
 	ToolCalls          []tool.Call
 	CallID             string // role=tool：对应 assistant 调用的 ID
+	// ServerBlocks 服务端工具块原样回传（D310）：树内 PartServer.Raw 整块放回 assistant
+	// 的 content 数组。协议要求它们与本轮回答一起逐轮回传，缺了就等于那个网页没读过。
+	ServerBlocks []json.RawMessage
 }
 
 // Sampling 采样参数（D204）。
@@ -113,6 +117,11 @@ type GenerateRequest struct {
 	// Title 要求服务端在回答时顺带生成会话标题（D309）。只在会话首轮由装配层打开，
 	// 拿到标题就关；端点不认这一项时按 unsupported_server_caps 收敛（D307）。
 	Title bool
+	// ServerTools 本轮声明的服务端工具（D310）：取值为 port.ServerCap* 的能力名。
+	//
+	// 服务端工具与本地 function tools 在协议里**不能同时声明**（服务端会以 400 拒绝），
+	// 所以非空时调用方必须同时把 Tools 留空——声明它就是在说「这一轮交给服务端」。
+	ServerTools []string
 }
 
 // ModelInfo 模型能力与单价声明；不支持的模态遇之明确报因（§4.2）。
@@ -225,6 +234,21 @@ type Delta struct {
 	// Title 服务端生成的会话标题（D309）：三套协议都在收流末尾给出，一次即完整（不是增量）。
 	// 空 = 本次没拿到（端点没开、被拒答、或回答结束时也没等到）——那是正常回落，不是错误。
 	Title string
+	// Server 服务端工具块（D310），一次给全、不是增量。适配器只认块的外形（调用块与结果块），
+	// 内容原样交给 app 存进树：网页正文加密在块内，客户端解不开。
+	Server *ServerBlock
+}
+
+// ServerBlock 一个服务端工具块的原文（D310）。
+//
+// 字段全是从块里挑出来给展示用的，**回传一律用 Raw**——协议要求「原样」，任何字段级
+// 重新编码都可能丢掉服务端认的东西（`signature` 尤其）。
+type ServerBlock struct {
+	Tool  string // 服务端工具名（deepseek_read_url）
+	Kind  string // 块类别（read_link）；回传时服务端靠它认出这是阅读链接
+	URL   string // 展示用；调用块取 input.url，结果块取 content.url
+	Title string // 展示用；仅结果块有
+	Raw   json.RawMessage
 }
 
 // ToolCallDelta 工具调用的流式分片：同一 Index 的分片聚合为一个 tool.Call。

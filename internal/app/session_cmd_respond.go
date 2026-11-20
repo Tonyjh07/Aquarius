@@ -10,6 +10,16 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// usesServerTool 节点里是否带着服务端工具块（D310）。
+func usesServerTool(m conversation.Message) bool {
+	for _, p := range m.Content {
+		if p.Kind == conversation.PartServer {
+			return true
+		}
+	}
+	return false
+}
+
 // execRespond 实现 /respond：从所选节点继续生成一条响应。
 //
 // 落法 = /goto（移 Head + 清屏回放，D81）叠加一轮生成：`Checkout(id)` 把 Head 移到
@@ -34,6 +44,11 @@ func (s *Session) execRespond(ctx context.Context, cmd port.Command) (string, er
 	}
 	if m.Role == conversation.RoleRoot {
 		return "", errors.New(i18n.T("respond.root"))
+	}
+	// 用过服务端阅读的回答不能续写（D310）：协议会以 400 拒绝「续写的回复用过
+	// deepseek_read_url」，且没有可剥离的字段——在本地就拒，比发出去再失败好懂。
+	if usesServerTool(m) {
+		return "", errors.New(i18n.T("respond.server_tool"))
 	}
 	if err := s.cur.Checkout(id); err != nil {
 		return "", wrapSession("respond.move_head", err)

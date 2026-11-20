@@ -46,6 +46,11 @@ type turnBuffer struct {
 	// title 服务端顺带生成的会话标题（D309）。一次给全、后到的覆盖先到的；
 	// 不进 content（它不是这条消息的内容），Turn 收场后交给 Session 写回会话元数据。
 	title string
+	// server 本轮收到的服务端工具块（D310），按到达序；sealRound 定稿成 PartServer。
+	server []conversation.ServerPart
+	// retryURLs 建议改走服务端阅读的地址（D310）：web_fetch 只抓到壳子时由工具填进来，
+	// 下一次请求构造时消费一次即清——不留在缓冲里，否则每轮都会把请求切成服务端形态。
+	retryURLs []string
 }
 
 // newTurnBuffer 以 Turn 预分配的关联 ID 建缓冲。
@@ -69,6 +74,12 @@ func (b *turnBuffer) add(d port.Delta) {
 	if d.Title != "" {
 		b.title = d.Title // D309：整串给全，后到的覆盖先到的
 	}
+	if d.Server != nil {
+		b.server = append(b.server, conversation.ServerPart{
+			Tool: d.Server.Tool, Kind: d.Server.Kind,
+			URL: d.Server.URL, Title: d.Server.Title, Raw: d.Server.Raw,
+		}) // D310：整块原样留，回传只认 Raw
+	}
 }
 
 // takeCalls 返回当前轮聚合的调用并复位聚合器（轮界隔离：下一轮分片不得混入）。
@@ -90,6 +101,12 @@ func (b *turnBuffer) sealRound() {
 		b.thinking.Reset()
 		b.thinkSig = ""
 	}
+	// 服务端工具块（D310）排在思考之后、正文之前：协议里它们也在这两段之间到达，
+	// 回传时服务端靠这个相对位置认出「这一轮的思考是基于读过的网页做的」。
+	for i := range b.server {
+		b.content = append(b.content, conversation.Part{Kind: conversation.PartServer, Server: &b.server[i]})
+	}
+	b.server = nil
 	if b.text.Len() > 0 {
 		b.content = append(b.content, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})
 		b.text.Reset()
@@ -110,18 +127,22 @@ func (b *turnBuffer) addToolPart(call tool.Call, res *tool.Result) {
 
 // empty 缓冲是否没有任何可提交内容。
 func (b *turnBuffer) empty() bool {
-	return len(b.content) == 0 && b.text.Len() == 0 && b.thinking.Len() == 0 && b.thinkSig == ""
+	return len(b.content) == 0 && len(b.server) == 0 && b.text.Len() == 0 &&
+		b.thinking.Len() == 0 && b.thinkSig == ""
 }
 
 // inFlight 未提交缓冲的只读投影（轮间 buildRequest 用）：合成 assistant 节点，
 // 不进树、仅本次请求可见；已定稿段 + 当前轮 builder（防御性并入，正常轮界为空）。
 func (b *turnBuffer) inFlight() conversation.Message {
-	parts := make([]conversation.Part, len(b.content), len(b.content)+2)
+	parts := make([]conversation.Part, len(b.content), len(b.content)+2+len(b.server))
 	copy(parts, b.content)
 	if b.thinking.Len() > 0 || b.thinkSig != "" {
 		parts = append(parts, conversation.Part{
 			Kind: conversation.PartThinking, Text: b.thinking.String(), Signature: b.thinkSig,
 		})
+	}
+	for i := range b.server {
+		parts = append(parts, conversation.Part{Kind: conversation.PartServer, Server: &b.server[i]})
 	}
 	if b.text.Len() > 0 {
 		parts = append(parts, conversation.Part{Kind: conversation.PartText, Text: b.text.String()})

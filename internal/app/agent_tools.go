@@ -51,6 +51,11 @@ func (a *Agent) runTools(ctx context.Context, buf *turnBuffer, mid conversation.
 			return fmt.Errorf("tool %s failed: %w", call.Name, err)
 		}
 		buf.addToolPart(call, &res)
+		// 工具建议改走别的路径（D310）：记进缓冲，下一次请求构造时决定要不要切形态。
+		// 这里不判能力与配置——那是装配层的事，工具只把事实带上来。
+		if res.Fallback != "" {
+			buf.retryURLs = append(buf.retryURLs, res.Fallback)
+		}
 		_ = a.ui.Emit(ctx, port.ToolResultEvent{Result: res})
 	}
 	return nil

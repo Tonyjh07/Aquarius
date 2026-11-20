@@ -16,8 +16,20 @@ import (
 // 空列表 = 该能力不可用：对应工具照常注册（工具清单与设置窗保持稳定），执行时
 // 明确报「未配置提供商」，而不是静默返回空结果。
 type webConfig struct {
-	Search webSearchConfig `json:"search"`
-	Fetch  webFetchConfig  `json:"fetch"`
+	Search  webSearchConfig `json:"search"`
+	Fetch   webFetchConfig  `json:"fetch"`
+	ReadURL readURLConfig   `json:"read_url"`
+}
+
+// readURLConfig 服务端读链接（D310）：本地抓取只拿到壳子时，改由端点读那一页。
+// 键缺失 = 开——与标题同一口径：写了就想要，关掉是例外。端点不认时由 server_caps 收敛。
+type readURLConfig struct {
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// readURLEnabled 服务端读链接开关：键缺失 = 开。
+func (c *fileConfig) readURLEnabled() bool {
+	return c.Web.ReadURL.Enabled == nil || *c.Web.ReadURL.Enabled
 }
 
 // webSearchConfig 搜索侧。

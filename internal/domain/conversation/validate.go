@@ -46,6 +46,9 @@ func checkNodeShape(m Message) error {
 			if p.Kind == PartTool {
 				return fmt.Errorf("node %q: %w: tool part only allowed on assistant message", m.ID, ErrInvalidNode)
 			}
+			if p.Kind == PartServer {
+				return fmt.Errorf("node %q: %w: server part only allowed on assistant message", m.ID, ErrInvalidNode)
+			}
 		}
 	}
 	// 思考块签名（D175）只属于思考分片：写错位置（如文本分片带上签名）说明适配器接线有误，
@@ -78,6 +81,19 @@ func checkNodeShape(m Message) error {
 		if tp.Result != nil && tp.Result.CallID != tool.CallID(tp.CallID) {
 			return fmt.Errorf("node %q: %w: tool result call id %q does not match part %q",
 				m.ID, ErrInvalidNode, tp.Result.CallID, tp.CallID)
+		}
+	}
+	// 服务端工具块（D310）：载荷不能空、原文不能空。原文是回传的唯一依据——空原文
+	// 传出去就是一具空壳，服务端只会当作没读过，问题要到下一轮才发现。
+	for _, p := range m.Content {
+		if p.Kind != PartServer {
+			continue
+		}
+		if p.Server == nil {
+			return fmt.Errorf("node %q: %w: server part missing payload", m.ID, ErrInvalidNode)
+		}
+		if len(p.Server.Raw) == 0 {
+			return fmt.Errorf("node %q: %w: server part missing raw block", m.ID, ErrInvalidNode)
 		}
 	}
 	return nil

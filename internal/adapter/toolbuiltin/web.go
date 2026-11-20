@@ -26,6 +26,9 @@ const (
 	webFetchMaxChars = 20000
 	// webFetchMinChars 正文下限：低于这个数截断没有意义。
 	webFetchMinChars = 500
+	// webFetchThinChars 正文「几乎为空」的判定阈值：低于这个字数说明抓到的是壳子
+	// （反爬页、纯前端渲染、登录墙），这时建议改走服务端阅读（D310）。
+	webFetchThinChars = 200
 )
 
 // webSearchTool 联网搜索。
@@ -207,9 +210,17 @@ func (t *webFetchTool) Execute(ctx context.Context, call tool.Call) (tool.Result
 	}
 	page, err := t.fetch.Fetch(ctx, rawURL)
 	if err != nil {
+		// 抓不到就说清楚「可以再试的那条路」：装配层看到 Fallback 会把下一轮请求切到
+		// 服务端阅读（D310）。这里不给 Fallback——失败原因可能是 404、DNS、超时，
+		// 那类问题服务端也解决不了，多一次往返只是更慢地得到同一个结论。
 		return tool.Result{}, fmt.Errorf("web_fetch: %v", err)
 	}
-	return okResult(formatPage(page, maxChars)), nil
+	res := okResult(formatPage(page, maxChars))
+	if body := strings.TrimSpace(page.Markdown); len([]rune(body)) < webFetchThinChars {
+		// 抓到壳子但正文几乎为空：典型是反爬页、纯前端渲染页、登录墙。这才值得换服务端读。
+		res.Fallback = rawURL
+	}
+	return res, nil
 }
 
 // formatPage 抓取结果的回填形态：标题 + 来源 + 正文（超预算按字符截断并说明）。

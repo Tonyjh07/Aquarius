@@ -346,6 +346,11 @@ func (m *model) handleEvent(ev port.Event) {
 	m.flushThink() // 思维链阶段结束：落为暗块，后续正文/工具/提交照常
 	switch e := ev.(type) {
 	case port.DeltaEvent:
+		if e.Delta.Server != nil {
+			// 服务端读链接（D310）：正文不进客户端，用户只能看到「读了哪一页」。
+			m.queueTool(i18n.Tf("tui.notice.server_read", "url", e.Delta.Server.URL))
+			return
+		}
 		if e.Delta.Text == "" {
 			return // 工具调用分片、用量分片不进转写
 		}

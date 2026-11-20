@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -684,10 +685,11 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 		calls     []tool.Call
 		replies   []port.PromptMessage // tool 应答（紧跟 assistant 的全部调用）
 		images    []port.PromptMessage // 工具产图（全部应答之后）
+		servers   []json.RawMessage    // 服务端工具块（D310）：整块原样回传
 	)
 	flush := func() {
-		if len(content) == 0 && len(reasoning) == 0 && len(calls) == 0 && thinkSig == "" {
-			reasoning, thinkSig, content, calls, replies, images = nil, "", nil, nil, nil, nil
+		if len(content) == 0 && len(reasoning) == 0 && len(calls) == 0 && thinkSig == "" && len(servers) == 0 {
+			reasoning, thinkSig, content, calls, replies, images, servers = nil, "", nil, nil, nil, nil, nil
 			return
 		}
 		out = append(out, port.PromptMessage{
@@ -696,6 +698,7 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 			Reasoning:          strings.Join(reasoning, "\n\n"),
 			ReasoningSignature: thinkSig,
 			ToolCalls:          calls,
+			ServerBlocks:       servers,
 		})
 		out = append(out, replies...)
 		if len(images) > 0 {
@@ -730,6 +733,11 @@ func assembleAssistantNode(ctx context.Context, m conversation.Message, opt asse
 				return nil, err
 			}
 			content = append(content, pp...)
+		case conversation.PartServer:
+			// 服务端工具块（D310）：不进 Content（它不是正文），整块原文交给适配器。
+			if p.Server != nil && len(p.Server.Raw) > 0 {
+				servers = append(servers, p.Server.Raw)
+			}
 		case conversation.PartTool:
 			if p.Tool == nil || p.Tool.Result == nil {
 				continue // 未执行/被取消：不声明也不应答（API 不接受无应答的 tool_calls）

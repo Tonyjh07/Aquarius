@@ -235,3 +235,15 @@ func TestTitleEnabledDefault(t *testing.T) {
 		t.Fatal("显式 false 应为关")
 	}
 }
+
+// TestReadURLEnabledDefault 服务端读链接开关（D310）：键缺失 = 开，显式 false 才关。
+func TestReadURLEnabledDefault(t *testing.T) {
+	var missing fileConfig
+	if !missing.readURLEnabled() {
+		t.Fatal("键缺失应视为开")
+	}
+	off := false
+	if (&fileConfig{Web: webConfig{ReadURL: readURLConfig{Enabled: &off}}}).readURLEnabled() {
+		t.Fatal("显式 false 应为关")
+	}
+}

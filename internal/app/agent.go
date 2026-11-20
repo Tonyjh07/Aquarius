@@ -100,6 +100,10 @@ type Config struct {
 	// TitleEnabled 会话标题由模型顺带生成的开关（D309，config `title.enabled`，
 	// 键缺失 = 开）。真正发不发还要看 ServerCaps.Title、是不是首轮、标题是否被手动改过。
 	TitleEnabled bool
+	// ReadURL 本地抓取只拿到壳子时改由服务端读链接的开关（D310，config
+	// `web.read_url.enabled`，键缺失 = 开）。真正切不切还要看 ServerCaps.ReadURL
+	// 与那个地址是否在本轮用户消息里。
+	ReadURL bool
 	// Lore 世界书按关键词激活的规则（§5.17/D294）。Enabled 由配置面解析后显式传入
 	// （键缺失 = 开），零值 = 关。
 	Lore LoreOptions
@@ -558,6 +562,18 @@ func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Convers
 		Title: a.cfg.TitleEnabled && a.cfg.ServerCaps.Title &&
 			(buf == nil || buf.empty()) && firstUserTurn(c) && titleEditable(c),
 	}
+	// 服务端阅读（D310）：本地抓取只拿到壳子时，这一轮把请求交给服务端读链接。
+	//
+	// 代价必须写在明处：服务端工具与本地工具在协议里不能同时声明，所以**这一轮没有
+	// function tools**——模型只能读链接、然后回答。也正因如此只切一次（retryURLs
+	// 消费即清），撞了墙再撞第二次没有意义。
+	if buf != nil && len(buf.retryURLs) > 0 {
+		urls := buf.retryURLs
+		buf.retryURLs = nil
+		if a.cfg.ReadURL && a.cfg.ServerCaps.ReadURL && urlInLastUserMessage(c, urls) {
+			req.ServerTools = []string{port.ServerCapReadURL}
+		}
+	}
 	// 思考参数（D34 + D173）：两道闸门。`/think` 是总开关，off 时 reasoning_effort
 	// 与 enable_thinking 一律不发（覆盖 /effort）；整条链没有思考能力时两个参数同样
 	// 不发——发了也只会换来一次 400 与一次剥离重试。
@@ -575,7 +591,9 @@ func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Convers
 	}
 	// 工具清单（D173）：链上没有工具能力就整份不发。只省声明不够——模型会因为
 	// 看到工具而尝试调用，而那条路本来就走不通。
-	if a.tools != nil && a.cfg.Caps.Tools {
+	//
+	// 服务端工具在位的这一轮同样不发：协议里两类工具不能同时声明（D310）。
+	if len(req.ServerTools) == 0 && a.tools != nil && a.cfg.Caps.Tools {
 		specs, err := a.tools.Specs(ctx)
 		if err != nil {
 			return port.GenerateRequest{}, nil, fmt.Errorf("%s: %w", i18n.T("agent.err_tools"), err)
