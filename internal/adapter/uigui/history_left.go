@@ -19,6 +19,26 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
+// histFilterBox 单行过滤框（D322）：material.Editor（Hint 作空态占位）+ 框底一条淡线。
+// 不加提交钮——过滤是即时的，回车不承担任何语义；也不画整圈框——200dp 的窄栏里太挤，
+// 一条底线已读作「可输入」。
+func histFilterBox(gtx layout.Context, th *material.Theme, ed *widget.Editor, hint string) layout.Dimensions {
+	ed.SingleLine = true
+	return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return material.Editor(th, ed, hint).Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				h := gtx.Dp(1)
+				paint.FillShape(gtx.Ops, paperOf().hairline,
+					clip.Rect(image.Rectangle{Max: image.Pt(gtx.Constraints.Max.X, h)}).Op())
+				return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, h)}
+			}),
+		)
+	})
+}
+
 // histLeftColumnDp 左栏展开态宽度（§5.4）。
 const histLeftColumnDp unit.Dp = 200
 
@@ -31,6 +51,7 @@ const histLeftRailDp unit.Dp = 30
 // D249 批量选择态（st.selMode）下同一列换三处：每行**左侧**出复选框、行尾「✕」收起
 // （删除这时走底部动作条，两个删除入口同时在场只会点错）、列表底部换成动作条。
 func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historyState) layout.Dimensions {
+	st.applyFilter() // 过滤框每帧生效（sync 也算一次，编辑内容变化只经这里）
 	rowH := gtx.Dp(44)
 	return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -60,14 +81,19 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 					layout.Rigid(histGlyphBtn(th, &st.btnLeft, "◀")),
 				)
 			}),
+			// 过滤框（D322）：单行输入，对快照做客户端过滤——空 = 全量。放在标题行
+			// 之下、列表之上：它筛的是下面这一列，不是列表里某一行。
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return histFilterBox(gtx, th, &st.filt, i18n.T("ui.history.filter_hint"))
+			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return st.list.Layout(gtx, len(st.sessions), func(gtx layout.Context, i int) layout.Dimensions {
+				return st.list.Layout(gtx, len(st.view), func(gtx layout.Context, i int) layout.Dimensions {
 					c := st.rowClick(i)
 					return layout.Stack{}.Layout(gtx,
 						// 行底板（纯绘制，不取事件）：整行面，当前会话用选中色。
 						layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-							s := st.sessions[i]
+							s := st.view[i]
 							pp := paperOf()
 							fill := pp.win
 							if s.Current {
@@ -95,7 +121,7 @@ func histLeftColumn(gtx layout.Context, th *material.Theme, u *UI, st *historySt
 									if st.selMode {
 										return selRowByIndex(gtx, th, st, i)
 									}
-									return histSessionRow(gtx, th, st.sessions[i])
+									return histSessionRow(gtx, th, st.view[i])
 								})
 								return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, rowH)}
 							})

@@ -154,6 +154,8 @@ var zhGuiChatTexts = map[string]string{
 	"ui.history.export_selected_title": "导出选中的会话",
 	"ui.history.select_empty":          "没有会话可选（先新建或导入一个）",
 	"ui.history.select_all":            "全选",
+	"ui.history.filter_hint":           "过滤会话…",
+	"ui.history.import_pick_filter":    "过滤清单（标题或源 ID）…",
 	"ui.history.select_none":           "取消全选",
 	"ui.history.selected_count":        "已选 {n} 个",
 

@@ -36,6 +36,10 @@ type historyState struct {
 	dels     []*widget.Clickable   // 行尾「✕」删除钮（D157；同上按行序缓存）
 	delShown []bool                // 上帧「✕」显隐（悬浮态翻转时补一帧，见 rowDelSlot）
 	sessions []port.SessionSummary // 上帧读到的左栏快照（行数对齐）
+	// filt/view 左栏过滤框（D322）：对已发布的快照做客户端过滤（标题或 ID 命中，不分大小写），
+	// view = 本帧显示的行——左栏是「在手头这列里挑」，不走内核（D322 呈现决策）。
+	filt widget.Editor
+	view []port.SessionSummary
 	// rev/model/vis 右图数据面：rev = 快照的内容发布号（换了才重建模型与预算，R3 懒重排）；
 	// have = 已读过至少一份快照（发布号从零起，不能拿零值当「还没读过」）；
 	// model = 派生模型（§6.2），vis = 当前预算切片（A7 的「呈现 M」）。
@@ -163,6 +167,26 @@ func (st *historyState) sync(u *UI) {
 	if u.opts.Lister != nil {
 		st.sessions = u.opts.Lister.List()
 	}
+	st.applyFilter()
+}
+
+// applyFilter 左栏过滤（D322）：过滤框内容对快照做客户端过滤——标题或 ID 含查询子串
+// （不分大小写）的行留下。空查询 = 全量。每帧调用（sync 帧首），编辑器内容变化不过内核，
+// 下一帧直接生效。
+func (st *historyState) applyFilter() {
+	q := strings.ToLower(strings.TrimSpace(st.filt.Text()))
+	if q == "" {
+		st.view = st.sessions
+		return
+	}
+	view := make([]port.SessionSummary, 0, len(st.sessions))
+	for _, s := range st.sessions {
+		if strings.Contains(strings.ToLower(s.Title), q) ||
+			strings.Contains(strings.ToLower(string(s.ID)), q) {
+			view = append(view, s)
+		}
+	}
+	st.view = view
 }
 
 // rowClick 左栏会话行点击件 get-or-create（按行序缓存，同 branchClick 规则）。
@@ -230,17 +254,17 @@ func (st *historyState) dispatch(u *UI, gtx layout.Context) {
 	//
 	// 两个循环都只走**当前快照的行数**：点击件是按行序缓存的，会话删过之后尾部的旧件
 	// 已经不在屏上（收不到事件），不该再有机会参与判读。
-	for i := 0; i < len(st.sessions) && i < len(st.dels); i++ {
+	for i := 0; i < len(st.view) && i < len(st.dels); i++ {
 		if st.dels[i].Clicked(gtx) {
-			if id := st.sessions[i].ID; id != "" {
+			if id := st.view[i].ID; id != "" {
 				postCommand(u, uiCmdRmconv, string(id))
 			}
 			return
 		}
 	}
-	for i := 0; i < len(st.sessions) && i < len(st.rows); i++ {
+	for i := 0; i < len(st.view) && i < len(st.rows); i++ {
 		if st.rows[i].Clicked(gtx) {
-			postCommand(u, uiCmdSwitch, string(st.sessions[i].ID))
+			postCommand(u, uiCmdSwitch, string(st.view[i].ID))
 			return
 		}
 	}

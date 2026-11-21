@@ -4,9 +4,11 @@ package i18n
 var enExchangeTexts = map[string]string{
 
 	// 用法
-	"usage.export":         "Usage: /export [--format <name>] [--path <file>] [--all | --ids <id>[,<id>…]] (only the current conversation by default; aqx is lossless and lands in the export directory)",
-	"usage.import":         "Usage: /import [--all | --pick <index>]… [--no-files] <file> (the format is detected from the path and file contents; lands as a new conversation)",
-	"exchange.spaced_hint": "Quote the path when it contains spaces, for example /import \"C:\\My Documents\\chat.aqx\"",
+	"usage.export":             "Usage: /export [--format <name>] [--path <file>] [--all | --ids <id>[,<id>…]] (only the current conversation by default; aqx is lossless and lands in the export directory)",
+	"usage.import":             "Usage: /import [--all | --pick <index>]… [--filter <pattern>] [--no-files] <file> (the format is detected from the path and file contents; lands as a new conversation; --filter keeps the container entries whose title or source ID matches, indexes unchanged)",
+	"exchange.filter_no_index": "this format offers no manifest, so --filter cannot apply (aqx multi-conversation archives and DeepSeek exports can)",
+	"exchange.filter.empty":    "(no manifest entry matches)",
+	"exchange.spaced_hint":     "Quote the path when it contains spaces, for example /import \"C:\\My Documents\\chat.aqx\"",
 
 	// 导出回执
 	"exchange.export.to":           "Exported to {path}",

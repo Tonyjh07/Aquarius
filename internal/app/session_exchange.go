@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -37,10 +38,12 @@ func importUsage() string { return i18n.T("usage.import") }
 
 // importFlags /import 认识的 flag：只认路径之前的一段（`--pick 1,3 <文件>`）。
 // --all / --no-files 是 deepseek 整库一档（D321）的：清单先行，显式全导；附件可关。
+// --filter <正则> 按标题/源 ID 过滤容器清单，保留原清单序号（D322）。
 var importFlags = []flagDecl{
 	{name: "--pick", value: true},
 	{name: "--all"},
 	{name: "--no-files"},
+	{name: "--filter", value: true},
 }
 
 // multiExportStem 多会话导出的缺省文件名（没有单一会话标题可用）；规则在端口，
@@ -269,12 +272,19 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 		return "", err
 	}
 	var all, omitFiles bool
+	var filter *regexp.Regexp
 	for _, f := range flags {
 		switch f.name {
 		case "--all":
 			all = true
 		case "--no-files":
 			omitFiles = true
+		case "--filter":
+			re, err := exchangeFilter(f.value)
+			if err != nil {
+				return "", err
+			}
+			filter = re
 		}
 	}
 	path := rest[0]
@@ -303,10 +313,23 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 		}
 	}
 	if format.Name == "deepseek" {
-		return s.execImportDeepSeek(ctx, path, format, pick, all, omitFiles)
+		return s.execImportDeepSeek(ctx, path, format, pick, all, omitFiles, filter)
 	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return "", wrapSession("err.read_file", err)
+	}
+	if filter != nil {
+		var listing string
+		pick, listing, err = s.filterImportPicks(ctx, path, pick, all, filter)
+		if err != nil {
+			return "", err
+		}
+		if listing != "" {
+			return listing, nil // 只带 --filter：先看过滤后的清单，不导入
+		}
+		if len(pick) == 0 {
+			return "", errors.New(i18n.T("exchange.filter.empty"))
+		}
 	}
 	trees, rep, err := s.importer.Import(ctx, f, format, pick, port.ImportOptions{OmitFiles: omitFiles})
 	if err != nil {
@@ -354,6 +377,71 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 //
 // 只在这里做「是不是正整数」的格式判断；「有没有这一项」要等读到清单才知道，由适配器报因
 // 并附上清单——壳里拿不到清单，提前猜只会把越界报成格式错误。
+// exchangeFilter 解出 `--filter` 的正则（不分大小写）；非法正则报用法错（D322）。
+func exchangeFilter(v string) (*regexp.Regexp, error) {
+	re, err := regexp.Compile("(?i)" + v)
+	if err != nil {
+		return nil, errors.New(importUsage())
+	}
+	return re, nil
+}
+
+// filterImportPicks 把 `--filter` 落成 --pick 序号（D322）：清单按标题/源 ID 过滤，
+// **保留原清单序号**——--pick 与清单展示永远指同一套数字。--all 只导过滤后的集合；
+// 显式 --pick 必须落在过滤后的集合里（点到被滤掉的序号上，等于跟自己刚给的过滤打架）。
+// 不带 --all/--pick 时，过滤后的清单序号就是全导范围。
+func (s *Session) filterImportPicks(ctx context.Context, path string, pick []int, all bool, re *regexp.Regexp) ([]int, string, error) {
+	idx, ok := s.importer.(port.ExchangeIndexer)
+	if !ok {
+		return nil, "", errors.New(i18n.T("exchange.filter_no_index"))
+	}
+	entries, err := idx.Index(ctx, path)
+	if err != nil {
+		return nil, "", wrapSession("err.import_failed", err)
+	}
+	kept := make(map[int]bool, len(entries))
+	var b strings.Builder
+	shown := 0
+	for _, e := range entries {
+		if !re.MatchString(entryTitle(e)) && !re.MatchString(e.ID) {
+			continue
+		}
+		kept[e.Index] = true
+		if shown < 50 {
+			fmt.Fprintf(&b, "%s\n", i18n.Tf("exchange.import.listing.item",
+				"index", e.Index, "date", dsDay(e.UpdatedAt), "title", entryTitle(e), "count", e.Nodes))
+		}
+		shown++
+	}
+	if len(kept) == 0 {
+		return nil, "", nil
+	}
+	if len(pick) == 0 && !all {
+		head := i18n.Tf("exchange.import.listing.head", "count", len(kept))
+		out := head + "\n" + strings.TrimRight(b.String(), "\n")
+		if shown > 50 {
+			out += "\n" + i18n.Tf("exchange.import.listing.more", "count", shown-50)
+		}
+		return nil, out, nil
+	}
+	if all {
+		out := make([]int, 0, len(kept))
+		for _, e := range entries {
+			if kept[e.Index] {
+				out = append(out, e.Index)
+			}
+		}
+		return out, "", nil
+	}
+	for _, p := range pick {
+		if !kept[p] {
+			return nil, "", wrapSession("err.import_failed",
+				errors.New(i18n.Tf("exchange.bad_pick", "value", fmt.Sprintf("%d", p))))
+		}
+	}
+	return pick, "", nil
+}
+
 func parsePicks(flags []cmdFlag) ([]int, error) {
 	var raw []string
 	for _, f := range flags {

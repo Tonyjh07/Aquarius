@@ -21,6 +21,12 @@ var zhTreeTexts = map[string]string{
 	"usage.pin":       "用法: /pin <会话>（置顶 / 取消置顶，切换）",
 	"usage.clock":     "用法: /clock（查看当前档）｜/clock off|live|tree（会话内切换，不写配置）",
 	"usage.list":      "用法: /list（列出会话）｜/list --tag <名>（只列同时带这些标签的会话，可重复）",
+	"usage.search":    "用法: /search <关键词>（搜标题与正文，不分大小写）｜/search <正则> --regex（按正则）｜--tag <名>（可重复，只搜带这些标签的会话）",
+
+	// /search：跨会话搜索标题与正文的文案（D322）
+	"tree.search.no_match":  "（没有命中的会话）",
+	"tree.search.truncated": "（命中超过 100 行，只列前 100 行）",
+	"tree.search.failed":    "（{n} 个会话读取失败，已跳过）",
 
 	// /new、/list、/switch
 	"tree.new.done":      "已新建会话 {id}",

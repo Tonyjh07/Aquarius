@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"strings"
 
 	"gioui.org/font"
 	"gioui.org/io/event"
@@ -57,6 +58,11 @@ type importPickDialog struct {
 	focus  bool
 	// entries 清单快照（序号 / 标题 / 条数）；只供呈现与拼 --pick。
 	entries []port.ExchangeEntry
+	// filt/viewIdx 过滤框（D322）：对清单做客户端过滤（标题或源 ID 命中，不分大小写），
+	// viewIdx = 本帧可见的 entries 下标。勾选动作只作用于**可见行**——被滤掉的行视同
+	// 未勾：滤掉它就是用户说不要它，隐藏行仍被导出等于过滤器骗人。
+	filt    widget.Editor
+	viewIdx []int
 }
 
 // openImportPick 开勾选面板（entries 至少两项；不足两项时调用方应直接投导入）。
@@ -67,8 +73,10 @@ func (st *historyState) openImportPick(path string, entries []port.ExchangeEntry
 	d := &importPickDialog{path: path, entries: entries, focus: true}
 	d.list.List.Axis = layout.Vertical
 	d.rows = make([]widget.Bool, len(entries))
+	d.viewIdx = make([]int, len(entries))
 	for i := range d.rows {
 		d.rows[i].Value = true // 缺省全勾：备份恢复的主路径就是全要
+		d.viewIdx[i] = i       // 过滤框逐帧重算，初值先全量可见（开面板当帧就能勾）
 	}
 	st.pick = d
 }
@@ -77,9 +85,10 @@ func (st *historyState) openImportPick(path string, entries []port.ExchangeEntry
 func (st *historyState) closeImportPick() { st.pick = nil }
 
 // picked 当前勾中的清单序号（升序：清单顺序即导入顺序，勾选顺序不参与语义）。
+// 只数**可见行**（D322）：过滤框滤掉的条目视同未勾，不会偷偷跟着导进来。
 func (d *importPickDialog) picked() []int {
 	out := make([]int, 0, len(d.rows))
-	for i := range d.rows {
+	for _, i := range d.viewIdx {
 		if d.rows[i].Value {
 			out = append(out, d.entries[i].Index)
 		}
@@ -89,6 +98,34 @@ func (d *importPickDialog) picked() []int {
 
 // count 已勾几个（动作条与按钮文案用）。
 func (d *importPickDialog) count() int { return len(d.picked()) }
+
+// applyFilter 过滤框每帧生效（D322）：标题或源 ID 含查询子串（不分大小写）的条目可见。
+// 空查询 = 全量可见。
+func (d *importPickDialog) applyFilter() {
+	q := strings.ToLower(strings.TrimSpace(d.filt.Text()))
+	if q == "" {
+		d.viewIdx = d.viewIdx[:0]
+		for i := range d.entries {
+			d.viewIdx = append(d.viewIdx, i)
+		}
+		return
+	}
+	d.viewIdx = d.viewIdx[:0]
+	for i, e := range d.entries {
+		if strings.Contains(strings.ToLower(entryTitlePick(e)), q) ||
+			strings.Contains(strings.ToLower(e.ID), q) {
+			d.viewIdx = append(d.viewIdx, i)
+		}
+	}
+}
+
+// entryTitlePick 条目的展示标题（空标题回落到序号——空串行在过滤框里永远搜不到，序号兜底）。
+func entryTitlePick(e port.ExchangeEntry) string {
+	if e.Title == "" {
+		return fmt.Sprint(e.Index)
+	}
+	return e.Title
+}
 
 // importPickFrame 勾选面板单帧：未开 = 零尺寸空操作；开 = scrim + 居中卡片。
 func (st *historyState) importPickFrame(gtx layout.Context, th *material.Theme, u *UI) layout.Dimensions {
@@ -209,9 +246,16 @@ func importPickCard(gtx layout.Context, th *material.Theme, d *importPickDialog)
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			// 过滤框（D322）：条目多时（DeepSeek 整库 2274 条）没有它挑不动。
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				d.applyFilter()
+				return histFilterBox(gtx, th, &d.filt, i18n.T("ui.history.import_pick_filter"))
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return d.list.Layout(gtx, len(d.entries), func(gtx layout.Context, i int) layout.Dimensions {
-					return importPickRow(gtx, th, &d.rows[i], d.entries[i])
+				return d.list.Layout(gtx, len(d.viewIdx), func(gtx layout.Context, i int) layout.Dimensions {
+					vi := d.viewIdx[i]
+					return importPickRow(gtx, th, &d.rows[vi], d.entries[vi])
 				})
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),

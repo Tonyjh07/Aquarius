@@ -101,6 +101,10 @@ var testDataLiterals = map[string][]string{
 	// DeepSeek 导入测试：会话标题与片段正文都是**测试数据**（清单/树断言核对的就是它）。
 	"internal/adapter/exchange/deepseek_test.go":   {"版本组", "固定话术"},
 	"internal/app/session_import_deepseek_test.go": {"带图会话", "问答会话"},
+	// 夹具会话标题与正文关键词：搜索命中的判据就是这些**测试自造的用户数据**，
+	// 不是界面文案（D322）。
+	"internal/app/session_cmd_search_test.go":       {"工作备忘", "咖啡", "闲聊", "量子", "秘密思考"},
+	"internal/adapter/uigui/history_filter_test.go": {"乙"},
 	// 会话标题测试：模型输出（服务端生成的标题原样进会话元数据），断言的正是这些串——
 	// 换成英文等于换了被测对象（D309）。
 	"internal/adapter/llm/title_test.go": {"北京明天天气", "北京天气"},

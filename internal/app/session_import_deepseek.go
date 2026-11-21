@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -71,7 +72,7 @@ func saveSrcLedger(path string, ledger map[string]srcRecord) error {
 }
 
 // execImportDeepSeek deepseek 整库导入（execImport 认出格式后转到这里）。
-func (s *Session) execImportDeepSeek(ctx context.Context, path string, format port.ExchangeFormat, pick []int, all, omitFiles bool) (string, error) {
+func (s *Session) execImportDeepSeek(ctx context.Context, path string, format port.ExchangeFormat, pick []int, all, omitFiles bool, filter *regexp.Regexp) (string, error) {
 	if all && len(pick) > 0 {
 		return "", errors.New(i18n.T("exchange.all_and_pick"))
 	}
@@ -83,6 +84,17 @@ func (s *Session) execImportDeepSeek(ctx context.Context, path string, format po
 	if err != nil {
 		return "", wrapSession("err.import_failed", err)
 	}
+	// --filter 按标题/源 ID 过滤清单，保留原清单序号（D322）：--pick 与清单展示永远指
+	// 同一套数字；被滤掉的序号在下面 byIndex 取值处报越界。--all 只导过滤后的集合。
+	if filter != nil {
+		kept := entries[:0]
+		for _, e := range entries {
+			if filter.MatchString(entryTitle(e)) || filter.MatchString(e.ID) {
+				kept = append(kept, e)
+			}
+		}
+		entries = kept
+	}
 	if !all && len(pick) == 0 {
 		// 清单先行：塞 2274 条进左栏不该是一条命令的默认结果，让用户先看有什么再挑。
 		return dsListing(entries), nil
@@ -90,9 +102,11 @@ func (s *Session) execImportDeepSeek(ctx context.Context, path string, format po
 	// 选中的清单序号（--pick 已由调用方解好；越界交给下面的取值处报因）。
 	want := pick
 	if all {
-		want = make([]int, len(entries))
-		for i := range want {
-			want[i] = i + 1
+		// --all = 过滤后集合的全部（--filter 在场时 entries 已滤）——序号取条目自带的
+		// 原清单序号（D322：--filter 保留原序号，重排后 1..n 会指错条目）。
+		want = make([]int, 0, len(entries))
+		for _, e := range entries {
+			want = append(want, e.Index)
 		}
 	}
 	byIndex := make(map[int]port.ExchangeEntry, len(entries))
@@ -131,8 +145,32 @@ func (s *Session) execImportDeepSeek(ctx context.Context, path string, format po
 	if len(picks) == 0 {
 		return dsSkipReceipt(skipped), nil
 	}
+	imported, totalNodes, allEntries, counts, err := s.dsImportChunks(ctx, path, format, picks, ledger, ledgerPath, omitFiles)
+	if err != nil {
+		return "", err
+	}
+	if len(imported) == 0 {
+		return "", errors.New(i18n.T("exchange.empty_import"))
+	}
+	s.cur = imported[0]
+	// 会话已写入磁盘并切过来：从这里往下失败不能把已完成的事实报成失败（与主路径同一口径）。
+	if err := s.emitClear(ctx); err != nil {
+		return "", wrapSession("exchange.refresh_failed", err)
+	}
+	if _, err := s.replayHistory(ctx, "replay.verb.imported"); err != nil {
+		return "", wrapSession("exchange.replay_failed", err)
+	}
+	rep := port.ExchangeReport{Format: format.Name, Nodes: int(totalNodes), Entries: allEntries}
+	return dsImportReceipt(path, format, rep, counts, skipped, skipNote), nil
+}
+
+// dsImportChunks 分块导入（块内失败只回滚本块，Ctrl-C 留下的是已完成的整块——sidecar
+// 已写）。返回全部导入的会话、累计节点数、清单条目与丢弃计数。超长闸门（funcsize）把
+// 这段从 execImportDeepSeek 拆出来。
+func (s *Session) dsImportChunks(ctx context.Context, path string, format port.ExchangeFormat,
+	picks []int, ledger map[string]srcRecord, ledgerPath string, omitFiles bool,
+) ([]*conversation.Conversation, int64, []port.ExchangeEntry, map[string]int, error) {
 	opts := port.ImportOptions{OmitFiles: omitFiles}
-	// 分块导入：块内失败只回滚本块，Ctrl-C 留下的是已完成的整块（sidecar 已写）。
 	imported := make([]*conversation.Conversation, 0, len(picks))
 	var (
 		totalNodes int64
@@ -141,7 +179,7 @@ func (s *Session) execImportDeepSeek(ctx context.Context, path string, format po
 	)
 	for start := 0; start < len(picks); start += deepseekChunk {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return nil, 0, nil, nil, err
 		}
 		end := start + deepseekChunk
 		if end > len(picks) {
@@ -150,25 +188,25 @@ func (s *Session) execImportDeepSeek(ctx context.Context, path string, format po
 		chunk := picks[start:end]
 		f, err := os.Open(path)
 		if err != nil {
-			return "", wrapSession("err.open_file", err)
+			return nil, 0, nil, nil, wrapSession("err.open_file", err)
 		}
 		trees, rep, err := s.importer.Import(ctx, f, format, chunk, opts)
 		f.Close()
 		if err != nil {
-			return "", wrapSession("err.import_failed", err)
+			return nil, 0, nil, nil, wrapSession("err.import_failed", err)
 		}
 		saved := make([]string, 0, len(trees))
 		for i, c := range trees {
 			c, err := remapConversationID(c, s.ids.ConversationID())
 			if err != nil {
-				return "", wrapSession("err.assign_import_id", err)
+				return nil, 0, nil, nil, wrapSession("err.assign_import_id", err)
 			}
 			if err := s.store.Save(ctx, c); err != nil {
 				// 回滚本块已写入磁盘的：用户要知道哪几个进来了，半截状态比没导入更糟。
 				for _, id := range saved {
 					_ = s.store.Remove(ctx, conversation.ID(id))
 				}
-				return "", wrapSession("err.save_import", err)
+				return nil, 0, nil, nil, wrapSession("err.save_import", err)
 			}
 			saved = append(saved, string(c.ID))
 			if ledgerPath != "" && i < len(rep.Entries) {
@@ -186,7 +224,7 @@ func (s *Session) execImportDeepSeek(ctx context.Context, path string, format po
 		}
 		if ledgerPath != "" {
 			if err := saveSrcLedger(ledgerPath, ledger); err != nil {
-				return "", err
+				return nil, 0, nil, nil, err
 			}
 		}
 		// 进度行（Notice 通道）：大导入不能让用户对着黑屏猜跑没跑。
@@ -195,19 +233,7 @@ func (s *Session) execImportDeepSeek(ctx context.Context, path string, format po
 				"done", len(imported), "total", len(picks))})
 		}
 	}
-	if len(imported) == 0 {
-		return "", errors.New(i18n.T("exchange.empty_import"))
-	}
-	s.cur = imported[0]
-	// 会话已写入磁盘并切过来：从这里往下失败不能把已完成的事实报成失败（与主路径同一口径）。
-	if err := s.emitClear(ctx); err != nil {
-		return "", wrapSession("exchange.refresh_failed", err)
-	}
-	if _, err := s.replayHistory(ctx, "replay.verb.imported"); err != nil {
-		return "", wrapSession("exchange.replay_failed", err)
-	}
-	rep := port.ExchangeReport{Format: format.Name, Nodes: int(totalNodes), Entries: allEntries}
-	return dsImportReceipt(path, format, rep, counts, skipped, skipNote), nil
+	return imported, totalNodes, allEntries, counts, nil
 }
 
 // dsListing 清单先行：列出有什么（按清单序 = updated_at 倒序），不带导入动作。

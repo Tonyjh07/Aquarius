@@ -22,11 +22,18 @@ var zhCmdTexts = map[string]string{
 	"cmd.new.p1.desc": "会话标题；省略则用首条消息自动起名",
 
 	// /list
-	"cmd.list.desc":         "列出会话",
-	"cmd.list.usage":        "[--tag <名>...]",
-	"cmd.list.p1.name":      "--tag",
-	"cmd.list.p1.valuename": "<名>",
-	"cmd.list.p1.desc":      "只列同时带这些标签的会话（可重复，取交集）",
+	"cmd.list.desc":           "列出会话",
+	"cmd.list.usage":          "[--tag <名>...]",
+	"cmd.list.p1.name":        "--tag",
+	"cmd.list.p1.valuename":   "<名>",
+	"cmd.list.p1.desc":        "只列同时带这些标签的会话（可重复，取交集）",
+	"cmd.search.desc":         "跨会话搜索标题与正文",
+	"cmd.search.usage":        "<关键词> [--regex] [--tag <名>...]",
+	"cmd.search.p1.name":      "--tag",
+	"cmd.search.p1.valuename": "<名>",
+	"cmd.search.p1.desc":      "只搜同时带这些标签的会话（可重复，取交集）",
+	"cmd.search.p2.name":      "--regex",
+	"cmd.search.p2.desc":      "把关键词当正则（不分大小写）",
 
 	// /tag
 	"cmd.tag.desc":         "给会话打标签 / 删标签（--rm 删；无参显示现有标签）",

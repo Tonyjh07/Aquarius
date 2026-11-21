@@ -99,15 +99,21 @@ func buildCommandTable() []commandEntry {
 }
 
 // sessionCommands 收会话与消息树命令。分段只为把表字面量拆开，不改任何记录；
-// 三段的拼接顺序就是 /help 与补全浮层的行序，调段序会改掉帮助输出。
+// 各段（含 sessionAdminCommands）的拼接顺序就是 /help 与补全浮层的行序，调段序会改掉帮助输出。
 func sessionCommands() []commandEntry {
-	return []commandEntry{
+	table := []commandEntry{
 		{Names: []string{"new"}, Usage: "cmd.new.usage", Desc: "cmd.new.desc",
 			Params: []port.CommandParam{{Name: "cmd.new.p1.name", Kind: port.ParamText, Desc: "cmd.new.p1.desc"}},
 			Run:    (*Session).execNew},
 		{Names: []string{"list"}, Usage: "cmd.list.usage", Desc: "cmd.list.desc",
 			Params: []port.CommandParam{{Name: "cmd.list.p1.name", Kind: port.ParamFlag, ValueName: "cmd.list.p1.valuename", Repeatable: true, Desc: "cmd.list.p1.desc"}},
 			Run:    (*Session).execList},
+		{Names: []string{"search"}, Usage: "cmd.search.usage", Desc: "cmd.search.desc",
+			Params: []port.CommandParam{
+				{Name: "cmd.search.p1.name", Kind: port.ParamFlag, ValueName: "cmd.search.p1.valuename", Repeatable: true, Desc: "cmd.search.p1.desc"},
+				{Name: "cmd.search.p2.name", Kind: port.ParamFlag, Desc: "cmd.search.p2.desc"},
+			},
+			Run: (*Session).execSearch},
 		{Names: []string{"switch"}, Usage: "cmd.switch.usage", Desc: "cmd.switch.desc",
 			Params: []port.CommandParam{{Name: "cmd.switch.p1.name", Kind: port.ParamText, Desc: "cmd.switch.p1.desc"}},
 			Run:    (*Session).execSwitch},
@@ -171,6 +177,15 @@ func sessionCommands() []commandEntry {
 				{Name: "cmd.reparent.p3.name", Kind: port.ParamFlag, Desc: "cmd.reparent.p3.desc"},
 			},
 			Run: (*Session).execReparent},
+	}
+	table = append(table, sessionAdminCommands()...)
+	return table
+}
+
+// sessionAdminCommands 会话维护的后半段（删除 / 分叉 / 回收站 / 压缩 / 摘要）：
+// sessionCommands 超长闸门（funcsize）拆出的第二段，拼接顺序仍是行序。
+func sessionAdminCommands() []commandEntry {
+	return []commandEntry{
 		{Names: []string{"rm"}, Usage: "cmd.rm.usage", Desc: "cmd.rm.desc",
 			Params: []port.CommandParam{{Name: "cmd.rm.p1.name", Kind: port.ParamText, Desc: "cmd.rm.p1.desc"}},
 			Run:    (*Session).execRm},

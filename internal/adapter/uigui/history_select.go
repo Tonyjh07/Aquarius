@@ -91,13 +91,14 @@ func (st *historyState) selIDs() []string {
 // 死路，而多一颗「全不选」只是同一件事的第二个入口。
 func (st *historyState) selAll() {
 	n := st.selCount()
-	if n > 0 && n == len(st.sessions) {
+	if n > 0 && n == len(st.view) {
 		st.sel = nil
 		return
 	}
-	st.sel = make(map[conversation.ID]bool, len(st.sessions))
-	for i := range st.sessions {
-		st.sel[st.sessions[i].ID] = true
+	st.sel = make(map[conversation.ID]bool, len(st.view))
+	// 全选 = 勾**可见行**（D322）：过滤框滤掉的行不勾——「全选」的全是屏幕上看得见的全。
+	for i := range st.view {
+		st.sel[st.view[i].ID] = true
 	}
 }
 
@@ -176,9 +177,9 @@ func (st *historyState) dispatchSel(u *UI, gtx layout.Context) {
 		return
 	}
 	// 行点击 = 勾选切换（整行都是命中区）。**不**切会话：选择态里点行表达的是「挑这一行」。
-	for i := 0; i < len(st.sessions) && i < len(st.rows); i++ {
+	for i := 0; i < len(st.view) && i < len(st.rows); i++ {
 		if st.rows[i].Clicked(gtx) {
-			id := st.sessions[i].ID
+			id := st.view[i].ID
 			st.setSel(id, !st.sel[id])
 			return
 		}
@@ -187,10 +188,10 @@ func (st *historyState) dispatchSel(u *UI, gtx layout.Context) {
 
 // selRowByIndex 第 i 行的选择态内容（勾选态由行绑的会话 ID 从 st.sel 读——按 ID 记）。
 func selRowByIndex(gtx layout.Context, th *material.Theme, st *historyState, i int) layout.Dimensions {
-	if i < 0 || i >= len(st.sessions) {
+	if i < 0 || i >= len(st.view) {
 		return layout.Dimensions{}
 	}
-	s := st.sessions[i]
+	s := st.view[i]
 	return selRow(gtx, th, s, st.sel[s.ID])
 }
 
@@ -275,7 +276,7 @@ func (st *historyState) selActionBar(gtx layout.Context, th *material.Theme) lay
 	}
 	n := st.selCount()
 	allLabel := i18n.T("ui.history.select_all")
-	if n > 0 && n == len(st.sessions) {
+	if n > 0 && n == len(st.view) {
 		allLabel = i18n.T("ui.history.select_none")
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,

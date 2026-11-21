@@ -7,9 +7,11 @@ package i18n
 var zhExchangeTexts = map[string]string{
 
 	// 用法
-	"usage.export":         "用法: /export [--format <名字>] [--path <文件>] [--all | --ids <id>[,<id>…]]（缺省只导当前会话；aqx 无损、落在导出目录）",
-	"usage.import":         "用法: /import [--all | --pick <序号>]… [--no-files] <文件>（按文件内容与路径自动认格式；落成新会话）",
-	"exchange.spaced_hint": "路径里有空格时用引号括起来，例如 /import \"C:\\我的文档\\会话.aqx\"",
+	"usage.export":             "用法: /export [--format <名字>] [--path <文件>] [--all | --ids <id>[,<id>…]]（缺省只导当前会话；aqx 无损、落在导出目录）",
+	"usage.import":             "用法: /import [--all | --pick <序号>]… [--filter <正则>] [--no-files] <文件>（按文件内容与路径自动认格式；落成新会话；--filter 按标题/源 ID 过滤容器清单，序号不变）",
+	"exchange.filter_no_index": "该格式不提供清单，--filter 用不了（aqx 多会话与 DeepSeek 导出可以）",
+	"exchange.filter.empty":    "（清单里没有匹配的会话）",
+	"exchange.spaced_hint":     "路径里有空格时用引号括起来，例如 /import \"C:\\我的文档\\会话.aqx\"",
 
 	// 导出回执
 	"exchange.export.to":           "已导出到 {path}",

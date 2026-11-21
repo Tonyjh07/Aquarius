@@ -20,6 +20,12 @@ var enTreeTexts = map[string]string{
 	"usage.pin":       "Usage: /pin <conversation> (pin / unpin, as a toggle)",
 	"usage.clock":     "Usage: /clock (show the current mode) | /clock off|live|tree (session-scoped switch, not persisted)",
 	"usage.list":      "Usage: /list (list conversations) | /list --tag <name> (list only those carrying all the tags, repeatable)",
+	"usage.search":    "Usage: /search <query> (search titles and message text, case-insensitive) | /search <pattern> --regex (regular expression) | --tag <name> (repeatable; only search tagged conversations)",
+
+	// /search: texts for cross-conversation search (D322)
+	"tree.search.no_match":  "(no conversation matches)",
+	"tree.search.truncated": "(more than 100 hits; showing the first 100)",
+	"tree.search.failed":    "({n} conversations failed to load and were skipped)",
 
 	// /new、/list、/switch
 	"tree.new.done":      "Created conversation {id}",

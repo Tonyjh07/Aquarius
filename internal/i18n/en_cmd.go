@@ -19,11 +19,18 @@ var enCmdTexts = map[string]string{
 	"cmd.new.p1.desc": "conversation title; omitted = named after the first message",
 
 	// /list
-	"cmd.list.desc":         "List conversations",
-	"cmd.list.usage":        "[--tag <name>...]",
-	"cmd.list.p1.name":      "--tag",
-	"cmd.list.p1.valuename": "<name>",
-	"cmd.list.p1.desc":      "list only conversations carrying all of these tags (repeatable; intersection)",
+	"cmd.list.desc":           "List conversations",
+	"cmd.list.usage":          "[--tag <name>...]",
+	"cmd.list.p1.name":        "--tag",
+	"cmd.list.p1.valuename":   "<name>",
+	"cmd.list.p1.desc":        "list only conversations carrying all of these tags (repeatable; intersection)",
+	"cmd.search.desc":         "Search titles and message text across conversations",
+	"cmd.search.usage":        "<query> [--regex] [--tag <name>...]",
+	"cmd.search.p1.name":      "--tag",
+	"cmd.search.p1.valuename": "<name>",
+	"cmd.search.p1.desc":      "search only conversations carrying all of these tags (repeatable; intersection)",
+	"cmd.search.p2.name":      "--regex",
+	"cmd.search.p2.desc":      "treat the query as a regular expression (case-insensitive)",
 
 	// /tag
 	"cmd.tag.desc":         "Tag or untag a conversation (--rm removes; no args shows current tags)",

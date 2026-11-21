@@ -208,6 +208,39 @@ func TestAppImportDeepSeekNoFiles(t *testing.T) {
 	}
 }
 
+// TestAppImportDeepSeekFilter --filter 按标题/源 ID 过滤（D322）：只带 --filter 先列过滤
+// 后的清单；--filter --all 只导过滤后的集合；--pick 点到被滤掉的序号报越界（清单序 1 = 问答会话，被「带图」滤掉）。
+func TestAppImportDeepSeekFilter(t *testing.T) {
+	s, _ := dsAppSession(t)
+	path, _ := dsAppFixture(t, "2026-11-18T09:30:00Z")
+
+	// 只带 --filter：先看清单，不导入（库里还是只有 persona 会话）。
+	out, err := handleCmd(s, "import", "--filter", "带图", path)
+	if err != nil {
+		t.Fatalf("import --filter listing: %v", err)
+	}
+	if !strings.Contains(out, "带图会话") || strings.Contains(out, "问答会话") {
+		t.Fatalf("listing = %q, want 只列带图会话", out)
+	}
+	if len(dsList(t, s)) != 1 {
+		t.Fatalf("只列清单却导了 %d 个会话", len(dsList(t, s))-1)
+	}
+
+	// --filter --all：只导过滤后的集合。
+	out, err = handleCmd(s, "import", "--filter", "带图", "--all", path)
+	if err != nil {
+		t.Fatalf("import --filter --all: %v", err)
+	}
+	if len(dsList(t, s)) != 2 {
+		t.Fatalf("库里会话 = %d, want 2（只导带图那一个）", len(dsList(t, s)))
+	}
+
+	// --pick 点到被滤掉的序号：报越界（序号是原清单序号，1 = 问答会话，被「带图」滤掉）。
+	if _, err := handleCmd(s, "import", "--filter", "带图", "--pick", "1", path); err == nil {
+		t.Fatal("--pick 指到被滤掉的序号却不报错")
+	}
+}
+
 // dsHead 文案里第一个占位符之前的那截（宽断言跟着 key 走）。
 func dsHead(key string) string {
 	t := i18n.T(key)
