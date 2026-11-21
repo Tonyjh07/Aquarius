@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ e4cf497 -->
+<!-- docs-sync: 2026-11-21 @ c08aff6 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -329,7 +329,7 @@
 | D318 | 装配前缀稳定性对比：/context 概览加「与上一轮相比前 N 字符未变（x%）」——Agent 留两份快照（last 语义不变、新增 prev），按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出该行 | 已完成（v0.9.0） |
 | D319 | PTC-1：`tools.mode` 呈现模式（native/ptc，实验性）+ Starlark 进程内解释器；`run_code` 是普通 port.Tool、脚本内调用回同一 runtime 过权限矩阵；失败一律是结果字段 | 已完成（v0.9.0） |
 | D320 | PTC-2：脚本内确认去重（toolrun 层、ctx 携带 scope）+ 限额可配（tools.ptc 四键，修正 D319 写死）+ `/code` 只读留档 + 二段式 describe | 已完成（v0.9.0） |
-| D321 | DeepSeek 导出导入：整库 ZIP 只认不写（路径级识别 + 流式解包、清单 `--all`/`--pick`、100 条分块、`import-sources` sidecar 按 updated_at 去重、附件默认带 `--no-files` 可关、status 映射 Outcome）；搜索轨迹全丢计数、非图片文件丢弃、不建 persona 首节点（§5.16） | 进行中（v0.9.0） |
+| D321 | DeepSeek 导出导入：整库 ZIP 只认不写（路径级识别 + 流式解包、清单 `--all`/`--pick`、100 条分块、`import-sources` sidecar 按 updated_at 去重、附件默认带 `--no-files` 可关、status 映射 Outcome）；搜索轨迹全丢计数、非图片文件丢弃、不建 persona 首节点（§5.16） | 已完成（v0.9.0） |
 | D323 | 主窗反馈层：error 与无归属的命令输出收进 D265 命令折叠条（条目加严重度、头行按构成计数、有错误头行转红），plain 运行痕迹不再用助手气泡底板；对话气泡只承载对话内容 | 进行中（v0.9.0） |
 
 ## 记录

@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-21 @ 89b0f64 -->
+<!-- docs-sync: 2026-11-21 @ c08aff6 -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -167,6 +167,15 @@ live、app 零值 = off（直接构造 Agent 的路径与旧形状逐字节相�
 工具描述里的预算数字随配置现取；取消经 ctx 打断解释器与在途调用（error 通道上抛，
 Turn 归类取消）；脚本摘要（calls / dedup / capped）落运行日志；`/code` 只读查看最近
 一次脚本；`tools.describe(name)` 二段式按需展开（不计调用配额）。
+
+第十一条是**DeepSeek 会话导入**（D321）：`/import` 新增 deepseek 一档（整库 ZIP 只认不写）
+——`port.PathDetector` 路径级识别（ZIP 条目名在中央目录，64 KB 头与 aqx 无法区分），
+`io.ReaderAt` 流式解包（全量包不进内存）；清单按 `updated_at` 倒序，不带 `--all`/`--pick`
+只列清单；app 按 100 条一块导入落盘（块内失败只回滚本块，sidecar 每块写盘，Ctrl-C 留下
+已完成的整块）；`<profile>/import-sources/deepseek.json` 记「源会话 → 会话 ID 与
+updated_at」，重导同 id 未变跳过、变了导成新会话；图片按 `export_path` 流式入附件库，
+搜索轨迹与非图片文件计数丢弃，`status` 映射节点 `Outcome`，多根版本组挂 Root，不建
+persona 首节点。首轮实测：真实样例包 2 个会话全进、节点数与清单一致。
 
 ---
 
